@@ -1,0 +1,13 @@
+:root {
+  --cc-slate: #1b1d22;
+  --cc-slate-2: #2a2d34;
+  --cc-gold: #d9b45a;
+  --cc-gold-bright: #ffd97a;
+  --cc-parchment: #e9d9b4;
+  --cc-ink: #3a2a18;
+  --cc-red: #a3161f;
+  --cc-red-bright: #d2202f;
+  --cc-led: #53f2e4;
+}
+html, body { margin: 0; height: 100%; background: #000; color: var(--cc-parchment); overflow: hidden; }
+#app { position: fixed; inset: 0; }
