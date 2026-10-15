@@ -46,7 +46,12 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   // Clone materials so lighting the new village never recolours the old one.
   for(const kit of [village,nature,props]) {
     const copies=new Map<THREE.Material,THREE.Material>();
-    for(const [name,m] of kit.materials){const c=m.clone();copies.set(m,c);kit.materials.set(name,c);}
+    for(const [name,m] of kit.materials){
+      const c=m.clone();
+      // Light the actual glass panes, including their original lattice and shutter occlusion.
+      if(name==='MI_WindowGlass'&&c instanceof THREE.MeshStandardMaterial){c.color.set('#4d301c');c.emissive.set('#ffb65e');c.emissiveIntensity=1.15;c.roughness=.25;c.transparent=false;c.opacity=1;c.depthWrite=true;}
+      copies.set(m,c);kit.materials.set(name,c);
+    }
     for(const piece of kit.pieces.values())for(const part of piece.parts)part.material=copies.get(part.material)!;
   }
   const batch=new StaticBatch(village,'starhaven-homes');
@@ -85,9 +90,6 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   }
   root.add(poles,bulbs);
   for(const [x,z] of [[0,57],[-25,36],[20,35],[0,76]]){const light=new THREE.PointLight('#ffc78b',18,30,1.5);light.position.set(x,7,z);root.add(light);}
-  // Warm stained windows contrast with the cold moonlit wilderness.
-  const windowGlows=new THREE.InstancedMesh(new THREE.SphereGeometry(.12,5,4),lampMat,builder.lights.length);
-  builder.lights.forEach((spot,i)=>windowGlows.setMatrixAt(i,trs(spot.pos.x,spot.pos.y,spot.pos.z)));root.add(windowGlows);
   root.add(dressing.build(),villageProps.build());
   const scatter=new Scatter(nature,'star-island-forests');
   const rand=(i:number)=>{const a=Math.sin(i*127.1+23.7)*43758.5453;return a-Math.floor(a);};
