@@ -21,7 +21,7 @@ try {
  b.send({type:'chat',text:'Internet multiplayer works'});assert.equal((await a.next('chat')).text,'Internet multiplayer works');await b.next('chat');
  assert.equal(isolated.queue.some(m=>m.type!=='authority'),false);b.ws.close();assert.equal((await a.next('left')).id,joined.id);
  const c=await connect('join',r.room);const rejoined=await c.next('welcome');assert.notEqual(rejoined.id,joined.id);assert.deepEqual(rejoined.players[0].state,state);
- const world={weather:{mood:1,beacon:true,clock:123},entities:[{id:'e0',...state,level:1,hidden:false,invulnerable:false,targetable:true,stun:0,slow:0,slowPct:0,rust:0,rustFor:0,enemyState:'chase',xp:20}],bosses:[{id:'b3',state:'fight',phase:2,enraged:false,mech:{id:2,kind:'slam',at:[3,0,5],yaw:1,left:1}},{id:'b10',state:'dormant',phase:1,enraged:false,mech:null}],rust:false,abyss:false};
+ const world={weather:{mood:1,beacon:true,clock:123},entities:[{id:'e0',...state,level:1,hidden:false,invulnerable:false,targetable:true,stun:0,slow:0,slowPct:0,rust:0,rustFor:0,enemyState:'chase',xp:20}],bosses:[{id:'b3',state:'fight',phase:2,enraged:false,mech:{id:2,kind:'slam',at:[3,0,5],yaw:1,left:1}},{id:'b10',state:'dormant',phase:1,enraged:false,mech:null},{id:'b20',state:'dormant',phase:1,enraged:false,mech:null}],rust:false,abyss:false,chapter:1,firstEnding:false,trueCleared:false};
  a.send({type:'world',world});assert.deepEqual((await c.next('world')).world,world);
  c.send({type:'combat',event:{kind:'attack',target:'e0',amount:23}});const attack=await a.next('combat');assert.equal(attack.id,rejoined.id);assert.equal(attack.event.amount,23);
  c.send({type:'combat',event:{kind:'environment',target:'world',environment:{mood:1,beacon:true}}});assert.deepEqual((await a.next('combat')).event.environment,{mood:1,beacon:true});
@@ -32,6 +32,11 @@ try {
  a.ws.close();await c.next('left');let authority;do{authority=await c.next('authority');}while(authority.host!==rejoined.id);
  late.send({type:'combat',event:{kind:'environment',target:'world',environment:{mood:1,beacon:true}}});assert.deepEqual((await c.next('combat')).event.environment,{mood:1,beacon:true});
  c.send({type:'world',world:{...world,rust:true}});assert.equal((await late.next('world')).world.rust,true);
+ late.send({type:'combat',event:{kind:'chapter',target:'world'}});assert.equal((await c.next('combat')).event.kind,'chapter');
+ const chapter2={...world,chapter:2,firstEnding:true,rust:true,abyss:true,trueCleared:true,entities:world.entities.map(e=>({...e,level:20})),bosses:world.bosses.map(b=>({...b,state:'dead',mech:null}))};
+ c.send({type:'world',world:chapter2});const shared=await late.next('world');assert.equal(shared.world.chapter,2);assert.equal(shared.world.trueCleared,true);assert.equal(shared.world.entities[0].level,20);
+ const finalJoin=await connect('join',r.room);assert.deepEqual((await finalJoin.next('welcome')).world,chapter2);
+ console.log('PASS: live World II request, level 20, true ending and late join chapter checkpoint');
  assert.equal(isolated.queue.some(m=>['world','combat'].includes(m.type)),false);
  console.log('PASS: live combat host election, shared world/HP/boss telegraph, authenticated attacks/hits/deaths, late join checkpoint and host transfer');
  console.log('PASS: live internet create/join, appearance, state, action, chat, isolation, departure and reconnect');

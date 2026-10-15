@@ -133,7 +133,7 @@ export class CreditsRoll {
         p('The Crab Robot Open-source Challenge 2026'),
         p('World of Crabcraft is open source under the Apache License 2.0. Built in the browser with three.js.'),
       ),
-      sec(h('h1', { class: 'cc-title', style: 'font-size:40px' }, 'Thank you for playing'), p('The tide is calm. The beacon burns. The crabs are still dancing.', 'em')),
+      sec(h('h1', { class: 'cc-title', style: 'font-size:40px' }, opts.mode==='ending' ? 'TRUE ENDING · 세 왕관의 전설' : 'Thank you for playing'), p('The tide is calm. The beacon burns. The crabs are still dancing.', 'em')),
     );
 
     const btn = (label: string, fn: () => void, ghost = false) => {

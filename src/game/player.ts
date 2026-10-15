@@ -550,11 +550,12 @@ export class Player {
 
   gainXp(n: number): void {
     const g = this.game;
-    if (this.unit.level >= MAX_LEVEL) return;
-    this.xp += n;
+    const cap=this.game.world2?.chapter===2 ? MAX_LEVEL : 10;
+    if (this.unit.level >= cap) return;
+    this.xp = Math.min(LEVEL_XP[cap-1],this.xp+n);
     g.hud.floats.spawn(this.unit, `+${n} XP`, 'xp');
     g.hud.chat.system(`You gain ${n} experience.`);
-    while (this.unit.level < MAX_LEVEL && this.xp >= LEVEL_XP[this.unit.level]) this.levelUp();
+    while (this.unit.level < cap && this.xp >= LEVEL_XP[this.unit.level]) this.levelUp();
   }
 
   restoreXp(xp: number): void {

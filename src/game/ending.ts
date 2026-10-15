@@ -44,6 +44,8 @@ export class EndingSequence {
     if (this.active) return;
     const g = this.game;
     this.active = true;
+    g.journey?.closeChapterEnding();
+    g.world2.showEpilogue();
     g.hud.dialogue.close();
     g.hud.questLog.toggle(false);
     g.player.setTarget(null);
@@ -151,10 +153,10 @@ export class EndingSequence {
     this.placeCamera(t);
 
     const captions = [
-      [1.5, 'The Rust Tide has ebbed. The Saltmere beacon burns again.'],
-      [8, 'Clawhaven dances until the tide comes in.'],
-      [15, "Every step you see is a recorded rollout of Jumper's real trained policies."],
-      [22.5, `Thank you for playing, ${g.player.unit.name}.`],
+      [1.5, '녹의 파도와 검은 일식이 사라졌습니다. 두 세계에 빛이 돌아왔습니다.'],
+      [8, '세 왕관을 되찾은 영웅을 위해, 온 마을이 함께 춤을 춥니다.'],
+      [15, "잊힌 별의 섬은 더 이상 혼자가 아닙니다. 우리의 모험은 전설이 되었습니다."],
+      [22.5, `TRUE ENDING · 함께해 줘서 고마워요, ${g.player.unit.name}.`],
     ] as const;
     let idx = -1;
     for (let i = 0; i < captions.length; i++) if (t >= captions[i][0]) idx = i;

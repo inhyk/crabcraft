@@ -34,6 +34,7 @@ export class BattleSync {
     };
     game.enemies.forEach((e, i) => this.register(`e${i}`, e.unit));
     this.register('b3', game.boss.unit); this.register('b10', game.finalBoss.unit);
+    this.register('b20', game.worldBoss.unit); this.register('f20', game.worldBoss.freed);
     this.register('f3', game.boss.freed); this.register('f10', game.finalBoss.freed);
     for (const [id, u] of this.units) u.onAction = action => {
       if (this.active && this.authority && !this.applying) this.event({ kind: 'animation', target: id, action });
@@ -47,7 +48,7 @@ export class BattleSync {
     if (world) this.apply(world, true);
     if (world && this.authority) {
       for (const e of this.game.enemies) e.resumeAuthority();
-      for (const b of [this.game.boss,this.game.finalBoss]) b.resumeAuthority();
+      for (const b of [this.game.boss,this.game.finalBoss,this.game.worldBoss]) b.resumeAuthority();
     }
     this.elapsed = 1;
   }
@@ -58,7 +59,7 @@ export class BattleSync {
       // The former follower has the latest checkpoint. Discard any delayed local swings.
       for (const u of this.units.values()) u.cancelPendingHit();
       for (const e of this.game.enemies) e.resumeAuthority();
-      for (const b of [this.game.boss, this.game.finalBoss]) b.resumeAuthority();
+      for (const b of [this.game.boss, this.game.finalBoss, this.game.worldBoss]) b.resumeAuthority();
       this.goals.clear(); this.elapsed = 1;
       this.game.hud.messages.info('친구가 나가서 내가 전투를 이어받았어요.');
     }
@@ -100,9 +101,13 @@ export class BattleSync {
     const target = this.keys.get(dst);
     if (target) { this.event({ kind: 'death', target, serial: ++this.serial }); this.publish(); }
   }
-  challenge(target: 'b3' | 'b10') {
+  challenge(target: 'b3' | 'b10' | 'b20') {
     if (!this.active || this.authority) return false;
     this.event({ kind: 'challenge', target }); return true;
+  }
+  enterWorld2() {
+    if (!this.active || this.authority) return false;
+    this.event({kind:'chapter',target:'world'}); return true;
   }
   condition(u: Unit) {
     if (!this.active || this.authority) return;
@@ -117,6 +122,8 @@ export class BattleSync {
       if (!src || !src.alive) return;
       if (e.kind === 'attack' && u?.hostile && u.alive && !u.hidden && !u.invulnerable && src.distTo(u) < 38) {
         g.combat.damage(src, u, e.amount!, { crit: e.crit }); this.publish();
+      } else if (e.kind === 'chapter') {
+        if(g.journey?.abyssCleared && g.journey.firstEndingSeen) { g.world2.enter(); this.publish(); }
       } else if (e.kind === 'environment' && e.environment) {
         const env=e.environment;
         if(env.beacon) g.world.setBeaconLit(true);
@@ -130,8 +137,8 @@ export class BattleSync {
         if (f.slow>0) { u.slowUntil=Math.max(u.slowUntil,g.time+f.slow); u.slowPct=f.slowPct; }
         if (f.pushTime>0 && u.kind !== 'boss') { u.pushX=f.pushX; u.pushZ=f.pushZ; u.pushTime=f.pushTime; }
       } else if (e.kind === 'challenge') {
-        const b = e.target === 'b3' ? g.boss : g.finalBoss;
-        if (src.level >= b.profile.level && (b === g.boss || g.journey?.rustCleared) && !g.encounter.engaged) b.wake();
+        const b = e.target === 'b3' ? g.boss : e.target === 'b20' ? g.worldBoss : g.finalBoss;
+        if (src.level >= b.profile.level && (b === g.boss || g.journey?.rustCleared) && (b !== g.worldBoss || (g.world2.chapter === 2 && g.journey?.abyssCleared)) && !g.encounter.engaged) b.wake();
       }
       return;
     }
@@ -170,7 +177,7 @@ export class BattleSync {
         level: u.level, alive: u.alive, hidden: u.hidden, invulnerable: u.invulnerable, targetable: u.targetable,
         stun: Math.min(60,Math.max(0,u.stunUntil-now)), slow: Math.min(60,Math.max(0,u.slowUntil-now)), slowPct: u.slowPct,
         rust: u.rust, rustFor: Math.min(60,Math.max(0,u.rustUntil-now)), ...(e ? { enemyState: e.state, xp: e.stats.xp } : {}) };
-    }), bosses: [g.boss.networkState('b3'),g.finalBoss.networkState('b10')], rust: !!g.journey?.rustCleared, abyss: !!g.journey?.abyssCleared };
+    }), bosses: [g.boss.networkState('b3'),g.finalBoss.networkState('b10'),g.worldBoss.networkState('b20')], chapter:g.world2.chapter, firstEnding:!!g.journey?.firstEndingSeen, trueCleared:!!g.journey?.trueCleared, rust: !!g.journey?.rustCleared, abyss: !!g.journey?.abyssCleared };
   }
   private publish() { if (this.active && this.authority) this.send({ type: 'world', world: this.snapshot() }); }
   apply(world: WorldState, instant = false) {
@@ -178,6 +185,9 @@ export class BattleSync {
     const g = this.game;
     this.applying = true;
     try {
+      if (g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared; }
+      if(world.chapter===1 && g.world2.chapter===2) g.world2.returnToShore();
+      if(world.chapter===2 && g.world2.chapter===1) g.world2.enter(false);
       if (world.weather) {
         const current=g.world.getEnvironment();
         if (instant || current.mood!==world.weather.mood) this.originalMood(world.weather.mood,instant);
@@ -194,7 +204,7 @@ export class BattleSync {
         if (s.enemyState) { const e = u.ctrl as Enemy; e.state=s.enemyState; e.stats.xp=s.xp ?? e.stats.xp; }
         this.goals.set(u,s);
       }
-      for (const s of world.bosses) (s.id === 'b3' ? g.boss : g.finalBoss).applyNetwork(s);
+      for (const s of world.bosses) (s.id === 'b3' ? g.boss : s.id === 'b20' ? g.worldBoss : g.finalBoss).applyNetwork(s);
       if (g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; }
     } finally { this.applying = false; }
   }

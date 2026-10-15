@@ -23,7 +23,7 @@ const SLAM_RATE = 1.2;
 const SLAM_LEAD = skillDelay('attack_slam', 'hit', skillWindow('attack_slam', 'move', SLAM_RATE)) ?? 0.55;
 const SPRAY_LEAD = skillDelay('attack_swipe', 'hit') ?? 0.4;
 
-type Mech = 'slam' | 'spray' | 'undertow' | 'nova';
+type Mech = 'slam' | 'spray' | 'undertow' | 'nova' | 'eclipse';
 type State = 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead';
 
 const v1 = new THREE.Vector3();
@@ -86,7 +86,7 @@ export class Boss {
   }
 
   private remoteMechId = -1;
-  networkState(id: 'b3' | 'b10'): BossState {
+  networkState(id: 'b3' | 'b10' | 'b20'): BossState {
     const m = this.mech;
     return { id, state:this.state,phase:this.phase,enraged:this.enraged,mech:m ? {
       id:this.mechIndex,kind:m.kind,at:[m.at.x,m.at.y,m.at.z],yaw:m.yaw,left:Math.max(0,m.dur-m.t),
@@ -114,13 +114,14 @@ export class Boss {
     const duration=Math.max(0.05,m.left);
     if (m.kind === 'spray') fx.push(g.vfx.telegraphCone(at,m.yaw,11,0.55,duration,undefined,this.deckUnder(at,11,m.yaw,0.55)));
     else {
-      const radius=m.kind === 'slam' ? 3.4 : m.kind === 'nova' ? 6 : 5.5;
+      const radius=m.kind === 'eclipse' ? 11 : m.kind === 'slam' ? 3.4 : m.kind === 'nova' ? 6 : 5.5;
       fx.push(g.vfx.telegraphCircle(at,radius,duration,m.kind === 'nova' ? new THREE.Color(this.profile.color) : undefined,this.deckUnder(at,radius,0,Math.PI)));
+      if (m.kind === 'eclipse') fx.push(g.vfx.telegraphCircle(at,4.5,duration,new THREE.Color('#71ffca')));
       if (m.kind === 'undertow') g.vfx.undertow(at,5.5,duration);
     }
     this.mech={kind:m.kind,t:0,dur:duration,at,yaw:m.yaw,fx,fired:false,swung:false};
     this.mechIndex=m.id;
-    g.hud.messages.warn(m.kind === 'nova' ? '심해 파동! 푸른 원 밖으로 피하세요.' : m.kind === 'slam' ? '닻 내려찍기! 붉은 원을 피하세요.' : m.kind === 'spray' ? '녹 분사! 부채꼴 밖으로 피하세요.' : '끌어당기기! 멀리 피하세요.');
+    g.hud.messages.warn(m.kind === 'eclipse' ? '검은 일식! 보스 곁의 초록 원 안으로 피하세요.' : m.kind === 'nova' ? '심해 파동! 푸른 원 밖으로 피하세요.' : m.kind === 'slam' ? '닻 내려찍기! 붉은 원을 피하세요.' : m.kind === 'spray' ? '녹 분사! 부채꼴 밖으로 피하세요.' : '끌어당기기! 멀리 피하세요.');
   }
   resumeAuthority(): void {
     // Continue at the replicated position/phase, with fresh timers in this browser's clock.
@@ -131,7 +132,7 @@ export class Boss {
 
   /** The beacon is lit: Corrodius heaves himself up on the deck. */
   wake(): void {
-    if (this.game.multiplayer?.battle.challenge(this.profile.level === 10 ? 'b10' : 'b3')) return;
+    if (this.game.multiplayer?.battle.challenge(this.profile.level === 20 ? 'b20' : this.profile.level === 10 ? 'b10' : 'b3')) return;
     if (this.state !== 'dormant') return;
     const g = this.game;
     const u = this.unit;
@@ -156,7 +157,7 @@ export class Boss {
     this.nextSwing = g.time + 1.2;
     this.nextMech = g.time + 4;
     this.unit.express('angry', 3);
-    g.say(this.unit, this.profile.level === 10 ? '심해의 빛을 피할 수 있겠느냐!' : BOSS_YELLS.engage, true);
+    g.say(this.unit, this.profile.level === 20 ? '별의 문을 연 자여, 일식의 시험을 받아라!' : this.profile.level >= 10 ? '심해의 빛을 피할 수 있겠느냐!' : BOSS_YELLS.engage, true);
     g.audio.sfx('sfx-boss-roar');
     g.hud.bossFrame.show(this.unit);
     g.follow.shake(0.25, 0.6);
@@ -190,8 +191,8 @@ export class Boss {
     this.stateT = 0;
     this.clearMech();
     for (const a of this.adds) if (a.unit.alive) g.combat.kill(a.unit, null);
-    g.say(this.unit, this.profile.level === 10 ? '심해가 다시 잠잠해지는구나…' : BOSS_YELLS.death, true);
-    if (this.profile.level === 10) g.vfx.tidalNova(this.unit.pos, 8);
+    g.say(this.unit, this.profile.level === 20 ? '일식이 걷히는구나… 두 세계를 부탁한다.' : this.profile.level >= 10 ? '심해가 다시 잠잠해지는구나…' : BOSS_YELLS.death, true);
+    if (this.profile.level >= 10) g.vfx.tidalNova(this.unit.pos, 8);
     else g.vfx.rustPeel(this.unit, 4.5);
     g.follow.shake(0.35, 1.2);
     g.audio.sfx('sfx-boss-roar', { volume: 0.7, pitch: 0 });
@@ -222,7 +223,7 @@ export class Boss {
           this.state = 'idle';
           u.targetable = unlocked;
           u.act('attack_slam');
-          g.say(u, this.profile.level === 10 ? '네레이드가 심해에서 깨어났다.' : BOSS_YELLS.wake, true);
+          g.say(u, this.profile.level === 20 ? '아스트라가 별의 왕좌에서 깨어났다.' : this.profile.level >= 10 ? '네레이드가 심해에서 깨어났다.' : BOSS_YELLS.wake, true);
           g.audio.sfx('sfx-boss-roar');
         }
         u.feedLocomotion(dt);
@@ -296,12 +297,12 @@ export class Boss {
   private enterPhase2(): void {
     const g = this.game;
     this.phase = 2;
-    g.say(this.unit, this.profile.level === 10 ? '깊은 바다의 힘이 깨어난다!' : BOSS_YELLS.phase2, true);
+    g.say(this.unit, this.profile.level === 20 ? '별의 그림자 속으로 들어오라!' : this.profile.level >= 10 ? '깊은 바다의 힘이 깨어난다!' : BOSS_YELLS.phase2, true);
     g.audio.sfx('sfx-boss-roar');
     g.follow.shake(0.3, 0.6);
-    g.hud.messages.banner('PHASE II', this.profile.level === 10 ? '심해 파동 · 푸른 원을 벗어나세요!' : '녹의 하수인들이 깨어납니다!', 'boss');
+    g.hud.messages.banner('PHASE II', this.profile.level === 20 ? '검은 일식 · 초록 원 안쪽이 안전합니다!' : this.profile.level >= 10 ? '심해 파동 · 푸른 원을 벗어나세요!' : '녹의 하수인들이 깨어납니다!', 'boss');
     const u = this.unit;
-    for (let i = 0; i < (this.profile.level === 10 ? 0 : 3); i++) {
+    for (let i = 0; i < (this.profile.level >= 10 ? 0 : 3); i++) {
       const a = u.yaw + Math.PI + (i - 1) * 0.9;
       const r = u.radius + 3.5;
       const add = g.spawnAdd(u.pos.x + Math.sin(a) * r, u.pos.z + Math.cos(a) * r);
@@ -317,10 +318,10 @@ export class Boss {
     this.enraged = true;
     this.unit.setBaseTint('#fff1d6');
     this.unit.express('angry', 999);
-    g.say(this.unit, this.profile.level === 10 ? '왕관의 빛이여, 모든 것을 삼켜라!' : BOSS_YELLS.phase3, true);
+    g.say(this.unit, this.profile.level >= 10 ? '왕관의 빛이여, 모든 것을 삼켜라!' : BOSS_YELLS.phase3, true);
     g.audio.sfx('sfx-boss-roar');
     g.follow.shake(0.35, 0.8);
-    g.hud.messages.banner('PHASE III · 폭주', this.profile.level === 10 ? '심해의 왕관이 폭주합니다!' : '갑옷이 새하얗게 달아오릅니다!', 'boss');
+    g.hud.messages.banner('PHASE III · 폭주', this.profile.level >= 10 ? '심해의 왕관이 폭주합니다!' : '갑옷이 새하얗게 달아오릅니다!', 'boss');
     this.nextMech = g.time + 2.5;
   }
 
@@ -328,7 +329,7 @@ export class Boss {
     const g = this.game;
     const u = this.unit;
     const p = g.combatTarget?.(u) ?? g.player.unit;
-    const order: Mech[] = this.profile.level === 10 ?
+    const order: Mech[] = this.profile.level === 20 ? (this.phase === 1 ? ['slam','eclipse','nova'] : ['eclipse','nova','undertow','eclipse']) : this.profile.level >= 10 ?
       (this.phase === 1 ? ['slam', 'nova', 'spray'] : ['nova', 'undertow', 'slam', 'nova']) :
       this.phase === 1 ? ['slam', 'spray'] : this.phase === 2 ? ['undertow', 'slam', 'spray', 'slam'] : ['slam', 'spray', 'undertow'];
     const kind = order[this.mechIndex++ % order.length];
@@ -338,18 +339,23 @@ export class Boss {
       m.dur = 1.5 * speedUp;
       m.at.copy(p.pos);
       m.fx.push(g.vfx.telegraphCircle(m.at, 3.4, m.dur, undefined, this.deckUnder(m.at, 3.4, 0, Math.PI)));
-      g.hud.messages.warn(this.profile.level === 10 ? '심해의 집게! 붉은 원을 피하세요.' : '닻 내려찍기! 붉은 원을 피하세요.');
+      g.hud.messages.warn(this.profile.level >= 10 ? '심해의 집게! 붉은 원을 피하세요.' : '닻 내려찍기! 붉은 원을 피하세요.');
     } else if (kind === 'spray') {
       m.dur = 1.1 * speedUp;
       m.at.copy(u.pos);
       m.yaw = yawTo(u.pos.x, u.pos.z, p.pos.x, p.pos.z);
       u.setYaw(m.yaw);
       m.fx.push(g.vfx.telegraphCone(m.at, m.yaw, 11, 0.55, m.dur, undefined, this.deckUnder(m.at, 11, m.yaw, 0.55)));
+    } else if (kind === 'eclipse') {
+      m.dur = 2.8 * speedUp; m.at.copy(u.pos);
+      m.fx.push(g.vfx.telegraphCircle(m.at, 11, m.dur, new THREE.Color('#a050ff')));
+      m.fx.push(g.vfx.telegraphCircle(m.at, 4.5, m.dur, new THREE.Color('#71ffca')));
+      g.hud.messages.warn('검은 일식! 보스 곁의 초록 원 안으로 피하세요.');
     } else if (kind === 'nova') {
       m.dur = 2.2 * speedUp;
       m.at.copy(p.pos);
       m.fx.push(g.vfx.telegraphCircle(m.at, 6, m.dur, new THREE.Color(this.profile.color), this.deckUnder(m.at, 6, 0, Math.PI)));
-      g.hud.messages.warn('심해 파동! 푸른 원 밖으로 피하세요.');
+      g.hud.messages.warn(this.profile.level===20 ? '별빛 붕괴! 보라색 원 밖으로 피하세요.' : '심해 파동! 푸른 원 밖으로 피하세요.');
     } else {
       m.dur = 2.6;
       m.at.copy(u.pos);
@@ -438,6 +444,17 @@ export class Boss {
         }
         }
         this.mech = null;
+      }
+    } else if (m.kind === 'eclipse') {
+      if (!m.swung && m.t > m.dur - SLAM_LEAD) { m.swung=true; u.act('attack_slam', {speed:SLAM_RATE}); }
+      if (m.t >= m.dur) {
+        m.fired=true; g.vfx.ring(m.at,new THREE.Color('#b577ff'),11,4.5,0.8,0.9);
+        g.follow.shake(0.5,0.7); g.audio.sfx('sfx-crit');
+        for (const p of g.combatPlayers?.() ?? [g.player.unit]) {
+          const d=Math.hypot(p.pos.x-m.at.x,p.pos.z-m.at.z);
+          if(p.alive && d>4.5 && d<11+p.radius*0.5) g.combat.damage(u,p,p.maxHp*0.38);
+        }
+        this.mech=null;
       }
     } else if (m.kind === 'nova') {
       if (!m.swung && m.t > m.dur - SLAM_LEAD) { m.swung = true; u.act('attack_slam', { speed: SLAM_RATE }); }

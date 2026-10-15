@@ -17,6 +17,6 @@ export function specOf(value: unknown): Spec | null {
 }
 export function stateOf(s: State): State | null {
   if (!s || !finite(s.x, 2000) || !finite(s.z, 2000) || !finite(s.y, 200) || !finite(s.yaw, 10000) || !finite(s.hp, 100000) || !finite(s.maxHp, 100000) || s.maxHp <= 0 || typeof s.alive !== 'boolean') return null;
-  return { x: s.x, y: s.y, z: s.z, yaw: s.yaw, hp: Math.max(0, Math.min(s.hp, s.maxHp)), maxHp: s.maxHp, alive: s.alive, ...(Number.isInteger(s.level) && s.level! >= 1 && s.level! <= 10 ? { level: s.level } : {}) };
+  return { x: s.x, y: s.y, z: s.z, yaw: s.yaw, hp: Math.max(0, Math.min(s.hp, s.maxHp)), maxHp: s.maxHp, alive: s.alive, ...(Number.isInteger(s.level) && s.level! >= 1 && s.level! <= 20 ? { level: s.level } : {}) };
 }
 

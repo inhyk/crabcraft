@@ -17,7 +17,7 @@ function game() {
   networkState(){return {id,state:this.state,phase:this.phase,enraged:this.enraged,mech:null}},applyNetwork(s){Object.assign(this,s)},resumeAuthority(){},wake(){this.state='waking'}};return b};
  const noop=()=>{};
  let mood=0,beacon=false;
- const g={world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),journey:{rustCleared:false,abyssCleared:false},
+ const g={world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),world2:{chapter:1,enter(){this.chapter=2}},journey:{rustCleared:false,abyssCleared:false},
   player:{unit:p,gainRage:noop,onDamaged:noop,onWardHit:noop},hud:{floats:{spawn:noop},damageFlash:noop,messages:{info:noop}},
   follow:{shake:noop},audio:{sfx:noop},vfx:{deathPoof:noop,smoke:noop,stunStars:noop},onUnitDied(u){if(u.kind==='scrapling')this.rewards++}};
  g.combat=new Combat(g);return g;
@@ -69,4 +69,18 @@ test('boss night, celebration, beacon and world clock synchronize including late
  a.journey.abyssCleared=true;a.world.setMood(2);aa.update(.1);flush();
  const c=game(),cc=new BattleSync(c,()=>{},()=>new Map());c.multiplayer={battle:cc};cc.join('c','a',aa.snapshot());assert.deepEqual(c.world.getEnvironment(),{mood:2,beacon:true});
  const clock=bb.worldTime(12345,0);bb.elect('b');assert.equal(bb.worldTime(12345,0),clock);assert.equal(b.world.getEnvironment().mood,2);
+});
+
+test('World II entry and the final crown survive late join and authority transfer',()=>{
+ const {a,b,aa,bb,flush}=pair();
+ // Guest cannot open a locked realm.
+ bb.enterWorld2();flush();assert.equal(a.world2.chapter,1);
+ a.journey.rustCleared=true;a.journey.abyssCleared=true;a.journey.firstEndingSeen=true;
+ aa.update(.1);flush();bb.enterWorld2();flush();
+ assert.equal(a.world2.chapter,2);assert.equal(b.world2.chapter,2);
+ a.journey.trueCleared=true;a.worldBoss.state='dead';a.worldBoss.unit.level=20;
+ aa.update(.1);flush();assert.equal(b.journey.trueCleared,true);assert.equal(b.worldBoss.state,'dead');
+ const c=game(),cc=new BattleSync(c,()=>{},()=>new Map());cc.join('c','a',aa.snapshot());
+ assert.equal(c.world2.chapter,2);assert.equal(c.worldBoss.unit.level,20);assert.equal(c.journey.trueCleared,true);
+ bb.elect('b');assert.equal(bb.authority,true);assert.equal(b.world2.chapter,2);
 });

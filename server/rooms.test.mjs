@@ -107,7 +107,7 @@ test('foreign browser origins are rejected', async t => {
 });
 
 const world = { weather:{mood:1,beacon:true,clock:123}, entities: [{ id:'e0',...state,level:1,hidden:false,invulnerable:false,targetable:true,stun:0,slow:0,slowPct:0,rust:0,rustFor:0,enemyState:'idle',xp:20 }],
-  bosses:[{id:'b3',state:'dormant',phase:1,enraged:false,mech:null},{id:'b10',state:'dormant',phase:1,enraged:false,mech:null}],rust:false,abyss:false };
+  bosses:[{id:'b3',state:'dormant',phase:1,enraged:false,mech:null},{id:'b10',state:'dormant',phase:1,enraged:false,mech:null},{id:'b20',state:'dormant',phase:1,enraged:false,mech:null}],rust:false,abyss:false,chapter:1,firstEnding:false,trueCleared:false };
 
 test('combat uses one host, routes guest attacks only to host, checkpoints late joins and transfers authority', async t => {
   const {client}=await setup(t);

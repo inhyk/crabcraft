@@ -106,6 +106,7 @@ export class Minimap {
     c.font = `600 ${10 * d}px Georgia, serif`;
     c.textAlign = 'center';
     for (const [id, info] of Object.entries(POI_ICONS)) {
+      if(g.world2?.chapter===2) continue;
       const poi = g.world.pois[id as PoiId];
       if (!poi) continue;
       const [x, y] = toScreen(poi.position.x, poi.position.z);
@@ -166,7 +167,7 @@ export class Minimap {
       }
     }
     // Quest objective: a gold star, pinned to the rim when off the map.
-    const obj = g.objectivePos();
+    const obj = g.world2?.chapter===2 ? g.world2.arena.position : g.objectivePos();
     if (obj) {
       let [x, y] = toScreen(obj.x, obj.z);
       const dist = Math.hypot(x - half, y - half);

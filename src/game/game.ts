@@ -1,6 +1,7 @@
 // The game session: loads the world and every crab, runs the frame loop, routes input, and glues
 // quests, combat, AI, effects, music and the HUD together.
 import * as THREE from 'three';
+import { HiddenWorld } from './world2';
 import { Multiplayer } from '../multiplayer/client';
 import type { App } from '../app';
 import { localStorageGet, localStorageSet } from '../app';
@@ -95,9 +96,12 @@ export class Game {
   player!: Player;
   boss!: Boss;
   finalBoss!: Boss;
+  worldBoss!: Boss;
+  world2!: HiddenWorld;
   journey: BossJourney | null = null;
 
   get encounter(): Boss {
+    if (this.world2?.chapter===2 && this.worldBoss) return this.worldBoss;
     return this.finalBoss && this.finalBoss.state !== 'dormant' && this.finalBoss.state !== 'dead' ? this.finalBoss : this.boss;
   }
   objective!: ObjectiveMarker;
@@ -149,7 +153,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open;
+    return this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open;
   }
 
   // ================================================================ loading
@@ -176,6 +180,7 @@ export class Game {
       onProgress: (f, label) => progress(0.05 + f * 0.5, label),
     });
     if (!this.alive) return;
+    this.world2 = new HiddenWorld(this);
     this.engine.setView(this.scene, this.camera, { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } });
     this.vfx = new Vfx(this.scene);
     this.vfx.density = app.engine.quality === 'low' ? 0.55 : 1;
@@ -289,7 +294,14 @@ export class Game {
     const pearl = this.addUnit('Pearl', 'freed', 'friendly', pearlRig);
     pearl.title = '심해에서 돌아온 빛';
     this.finalBoss = new Boss(this, abyssUnit, pois.bossArena, pearl, BOSS_PROFILES.abyss);
+    const eclipseRig=await createCrab({race:'undead',sex:'female',classId:'priest',shell:3,crest:3,led:2,name:'Astra'});
+    eclipseRig.root.scale.multiplyScalar(4.5);
+    const eclipseUnit=this.addUnit(BOSS_PROFILES.eclipse.name,'boss','hostile',eclipseRig);
+    const starRig=await createCrab({race:'undead',sex:'female',classId:'priest',shell:2,crest:2,led:2,name:'Star'});
+    const star=this.addUnit('돌아온 별빛','freed','friendly',starRig);
+    this.worldBoss=new Boss(this,eclipseUnit,this.world2.arena,star,BOSS_PROFILES.eclipse);
     this.director = new CameraDirector(this);
+    this.director.bossSee.apply(eclipseRig.root);
     this.director.bossSee.apply(abyssRig.root);
     // His armour thins where it covers the player's crab, the player's claws where they cross the
     // face of the NPC it talks to (both get their own copies of the shared crab materials).
@@ -410,7 +422,7 @@ export class Game {
     return u;
   }
 
-  private takeMapSnapshot() {
+  takeMapSnapshot() {
     const pts: THREE.Vector3[] = Object.values(this.world.pois).map((p) => p.position);
     for (const s of this.world.spawns) pts.push(...s.points);
     let minX = Infinity;
@@ -470,6 +482,11 @@ export class Game {
   }
 
   private intro(): void {
+    if(this.world2.chapter===2) {
+      this.zone='잊힌 별의 섬';this.hud.minimap.setZone(this.zone,false);
+      this.hud.chat.system('WORLD II · 유적의 수호자들을 물리치고 20레벨에 일식의 여왕에게 도전하세요.');
+      this.updateMusic(true);return;
+    }
     const name = this.player.unit.name;
     this.zone = this.zoneAt(this.player.unit.pos);
     this.zoneCandidate = this.zone;
@@ -503,10 +520,10 @@ export class Game {
         for (const e of this.enemies) e.update(dt);
         this.boss.update(dt);
         this.finalBoss.update(dt);
+        this.worldBoss.update(dt);
       }
       this.journey?.update(dt);
-      for (const n of this.npcs) n.update(dt);
-      for (const t of this.townsfolk) t.update(dt);
+      if (this.world2.chapter===1) { for (const n of this.npcs) n.update(dt); for (const t of this.townsfolk) t.update(dt); }
       if (this.multiplayer?.battle.authority !== false) this.separate();
       this.ending.update(dt);
       this.updateDeath();
@@ -531,11 +548,13 @@ export class Game {
     }
     if (!paused) this.vfx.update(dt);
     this.updateSelection();
-    const goal = this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
-    this.hintVia = goal ? this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
+    const goal = this.ending.active || !this.player.unit.alive ? null : this.world2.chapter===2 ? this.worldBoss.unit.alive ? this.worldBoss.arena.position : null : this.objectivePos();
+    this.hintVia = goal ? this.world2.chapter===2 ? goal : this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
     this.objective.update(this.time, this.world, this.player.unit.pos, goal, this.hintVia, this.player.inCombat);
     if (!this.ending.active) this.director.update(dt);
-    this.world.update(dt, this.multiplayer?.battle.worldTime(f.elapsed,dt) ?? f.elapsed, this.camera);
+    const worldTime=this.multiplayer?.battle.worldTime(f.elapsed,dt) ?? f.elapsed;
+    this.world.update(dt, worldTime, this.camera);
+    this.world2.update(dt,worldTime);
     this.updateZone();
     this.updateInteractPrompt();
     this.updateMusic();
@@ -1063,7 +1082,7 @@ export class Game {
       const p = this.player.unit;
       p.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
       this.follow.yaw = p.yaw + Math.PI;
-      if (!this.multiplayer?.battle.active) { this.boss.reset(); this.finalBoss.reset(); }
+      if (!this.multiplayer?.battle.active) { this.boss.reset(); this.finalBoss.reset(); this.worldBoss.reset(); }
       this.engine.canvas.style.transition = '';
       this.engine.canvas.style.filter = '';
       this.hud.showDeath(false);
@@ -1110,7 +1129,7 @@ export class Game {
   }
 
   private updateZone(): void {
-    const z = this.zoneAt(this.player.unit.pos);
+    const z = this.world2.chapter===2 ? '잊힌 별의 섬' : this.zoneAt(this.player.unit.pos);
     if (z !== this.zoneCandidate) {
       this.zoneCandidate = z;
       this.zoneSince = this.time;
@@ -1156,6 +1175,7 @@ export class Game {
     this.units = [];
     this.vfx?.dispose();
     this.objective?.dispose();
+    this.world2?.dispose();
     this.world?.dispose();
     this.engine.canvas.style.filter = '';
     this.engine.canvas.style.transition = '';

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { Boss } from '../tmp/test-modules/boss.js';
-import { LEVEL_XP, levelForXp, BOSS_PROFILES, canChallenge, patrolReward } from '../src/game/progression.ts';
+import { LEVEL_XP, levelForXp, BOSS_PROFILES, canChallenge, canEnterWorld2, patrolReward } from '../src/game/progression.ts';
 
 function setup(profile=BOSS_PROFILES.rust, level=profile.level) {
  const damage=[], warnings=[], actions=[];
@@ -59,4 +59,27 @@ test('boss area attacks damage every party member inside the shared telegraph an
  game.time=10;boss.update(.1);boss.update(2);
  game.time=20;boss.update(.1);assert.equal(boss.mechName,'nova');
  const before=damage.length;boss.update(2.5);assert.equal(damage.length-before,2);assert.equal(dodger.hp,300);
+});
+
+test('hidden chapter gates and the level 20 cap preserve both endings',()=>{
+ assert.equal(LEVEL_XP.length,20);assert.equal(levelForXp(21999),19);assert.equal(levelForXp(22000),20);
+ assert.equal(canEnterWorld2(false,true),false);assert.equal(canEnterWorld2(true,false),false);assert.equal(canEnterWorld2(true,true),true);
+ assert.equal(canChallenge(20,20,true,false,2),false);assert.equal(canChallenge(20,20,true,true,1),false);
+ assert.equal(canChallenge(19,20,true,true,2),false);assert.equal(canChallenge(20,20,true,true,2),true);
+ let xp=6500,kills=0;while(xp<22000 && kills<200){const level=levelForXp(xp);xp+=140+12*(level-2);if(++kills%5===0)xp+=patrolReward(level);}
+ assert.ok(kills<80,`World II needs too many kills: ${kills}`);
+});
+test('the eclipse attack protects the inner sanctuary and hits the surrounding danger ring for every player',()=>{
+ const {game,boss,player,damage,warnings}=setup(BOSS_PROFILES.eclipse);
+ boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
+ game.time=10;boss.update(.1);boss.update(2);
+ game.time=20;boss.update(.1);assert.equal(boss.mechName,'eclipse');
+ const at=boss.networkState('b20').mech.at;
+ player.pos.set(at[0]+4,0,at[2]);
+ const friend={...player,pos:new THREE.Vector3(at[0]+8,0,at[2]),kind:'remote'};
+ const far={...player,pos:new THREE.Vector3(at[0]+15,0,at[2]),kind:'remote'};
+ game.combatPlayers=()=>[player,friend,far];
+ const before=damage.length;boss.update(3);assert.equal(damage.length-before,1);
+ assert.equal(friend.hp,player.hp-114);assert.equal(far.hp,player.hp);
+ assert.ok(warnings.some(x=>x.includes('초록 원')));
 });
