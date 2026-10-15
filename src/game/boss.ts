@@ -91,7 +91,9 @@ export class Boss {
   private remoteMechId = -1;
   networkState(id: 'b3' | 'b10' | 'b20'): BossState {
     const m = this.mech;
-    return { id, state:this.state,phase:this.phase,enraged:this.enraged,mech:m ? {
+    return { id, state:this.state,phase:this.phase,enraged:this.enraged,
+      timeline:this.state==='waking'||this.state==='dying'||this.freedT>=0 ? {state:Math.min(60,this.stateT),freed:this.freedT,freedYaw:this.freedYaw,released:this.freedStarted} : undefined,
+      mech:m ? {
       id:this.mechIndex,kind:m.kind,at:[m.at.x,m.at.y,m.at.z],yaw:m.yaw,left:Math.max(0,m.dur-m.t),
     } : null };
   }
@@ -99,6 +101,18 @@ export class Boss {
     const g=this.game;
     if (s.phase > this.phase && s.state === 'fight') g.hud.messages.banner(t(`${s.phase}단계`,`PHASE ${s.phase}`),this.profile.name,'boss');
     this.state=s.state; this.phase=s.phase; this.enraged=s.enraged;
+    const timeline=s.timeline;
+    if(timeline&&Number.isFinite(timeline.state)&&Number.isFinite(timeline.freed)&&Number.isFinite(timeline.freedYaw)&&typeof timeline.released==='boolean'){
+      this.stateT=THREE.MathUtils.clamp(timeline.state,0,60);
+      this.freedT=THREE.MathUtils.clamp(timeline.freed,-1,13);
+      this.freedYaw=THREE.MathUtils.clamp(timeline.freedYaw,-10000,10000);
+      this.freedStarted=timeline.released;
+      if(this.freedStarted&&this.freedT>=1.6)this.freed.npcId='bowed';
+      const growth=this.freedT>=0&&this.freedT<1.2 ? .3+.7*this.freedT/1.2 : 1;
+      this.freed.rig.root.scale.setScalar(this.freedBaseScale*growth);
+      this.freed.lift=this.freedT>10.5 ? -(this.freedT-10.5)*.8 : 0;
+    } else this.stateT=0; // Legacy checkpoints retain their previous restart behavior.
+
     this.unit.setBaseTint(this.enraged ? '#fff4d9' : this.profile.color);
     if (this.state === 'fight') g.hud.bossFrame.show(this.unit);
     else if (g.encounter === this) g.hud.bossFrame.hide();
@@ -131,9 +145,9 @@ export class Boss {
     this.warning=g.hud.messages.warn(bossWarning(m.kind,this.profile.level),{persistent:true});
   }
   resumeAuthority(): void {
-    // Continue at the replicated position/phase, with fresh timers in this browser's clock.
+    // Preserve replicated attack and cinematic timelines; restart only local scheduling timers.
     this.nextSwing=this.game.time+1; this.nextMech=this.game.time+3;
-    this.stateT=0; this.outside=0; this.unit.cancelPendingHit();
+    this.outside=0; this.unit.cancelPendingHit();
     if (this.profile.level===3) { this.adds.length=0; this.adds.push(...this.game.enemies.filter(e=>e.isAdd && e.unit.alive && !e.unit.hidden)); }
   }
 

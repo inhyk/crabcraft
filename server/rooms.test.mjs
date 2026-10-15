@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import WebSocket from 'ws';
 import { attachRooms } from './rooms.ts';
+import {worldOf} from './combatProtocol.ts';
 
 const spec = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Test crab' };
 const state = { x: 3, y: 0, z: 5, yaw: 1, hp: 80, maxHp: 100, alive: true };
@@ -140,4 +141,14 @@ test('malformed combat checkpoints and impossible packets are rejected', async t
   b.send({type:'combat',event:{kind:'condition',target:'e0',condition:{stun:999}}});
   a.send({type:'world',world});assert.deepEqual((await b.next('world')).world,world);
   assert.equal(a.queue.some(m=>m.type==='combat'),false);assert.equal(b.queue.some(m=>m.type==='world'),false);
+});
+
+
+test('optional boss cinematic timelines preserve legacy checkpoints and reject malformed values',()=>{
+ assert.ok(worldOf(world));
+ const timeline={state:7.5,freed:5.3,freedYaw:1.2,released:true};
+ const checkpoint={...world,bosses:world.bosses.map(b=>({...b,timeline}))};
+ assert.deepEqual(worldOf(checkpoint),checkpoint);
+ for(const invalid of [null,{}, {...timeline,state:-1},{...timeline,state:61},{...timeline,freed:-2},{...timeline,freed:14},{...timeline,freedYaw:Infinity},{...timeline,released:'yes'}])
+  assert.equal(worldOf({...world,bosses:world.bosses.map(b=>({...b,timeline:invalid}))}),null);
 });

@@ -7,6 +7,7 @@ export type EntityState = {
 };
 export type BossState = {
   id: 'b3' | 'b10' | 'b20'; state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; phase: number; enraged: boolean;
+  timeline?: { state: number; freed: number; freedYaw: number; released: boolean };
   mech: null | { id: number; kind: 'slam' | 'spray' | 'undertow' | 'nova' | 'eclipse'; at: number[]; yaw: number; left: number };
 };
 export type WorldState = { weather: { mood: 0 | 1 | 2 | 3; beacon: boolean; clock: number }; entities: EntityState[]; bosses: BossState[]; rust: boolean; abyss: boolean; chapter: 1 | 2; firstEnding: boolean; trueCleared: boolean; social?:{mode:'coop'|'pvp';parties:Record<string,number>} };
@@ -40,6 +41,8 @@ export function worldOf(v: unknown): WorldState | null {
   for (const b of v.bosses) {
     if (!record(b) || !['b3','b10','b20'].includes(b.id) || bossIds.has(b.id) || !['dormant','waking','idle','fight','dying','dead'].includes(b.state) || !n(b.phase,1,3) || typeof b.enraged !== 'boolean') return null;
     bossIds.add(b.id);
+    const timeline=b.timeline;
+    if(timeline!==undefined&&(!record(timeline)||!n(timeline.state,0,60)||!n(timeline.freed,-1,13)||!n(timeline.freedYaw,-10000,10000)||typeof timeline.released!=='boolean'))return null;
     const m = b.mech;
     if (m !== null && (!record(m) || !n(m.id) || !['slam','spray','undertow','nova','eclipse'].includes(m.kind) || !Array.isArray(m.at) || m.at.length !== 3 || !m.at.every((x: unknown) => n(x,-2000,2000)) || !n(m.yaw,-10000,10000) || !n(m.left,0,10))) return null;
   }

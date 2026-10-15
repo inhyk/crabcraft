@@ -137,3 +137,17 @@ test('a new host continues each latest attack checkpoint without recreating warn
  guest.boss.updateMech(.02);assert.equal(guest.damage.length,1,pose.kind);assert.equal(guest.boss.mech,null);
  }
 });
+
+
+test('host election preserves boss reveal and already released crab death timelines',()=>{
+ const host=setup(BOSS_PROFILES.eclipse),guest=setup(BOSS_PROFILES.eclipse);
+ host.boss.wake();host.boss.update(1.7);
+ guest.boss.applyNetwork(host.boss.networkState('b20'));guest.boss.resumeAuthority();guest.boss.update(.1);
+ assert.ok(Math.abs(guest.boss.stateT-1.8)<1e-9);assert.ok(guest.boss.unit.lift>-.3);
+ host.boss.state='dying';host.boss.stateT=7.5;host.boss.freedT=5.3;host.boss.freedStarted=true;host.boss.freedYaw=1.2;
+ guest.boss.applyNetwork(host.boss.networkState('b20'));guest.boss.resumeAuthority();
+ assert.equal(guest.boss.stateT,7.5);assert.equal(guest.boss.freedT,5.3);assert.equal(guest.boss.freedStarted,true);assert.equal(guest.boss.freed.npcId,'bowed');
+ guest.boss.updateDeath(0);assert.equal(guest.boss.stateT,7.5);assert.equal(guest.boss.freedT,5.3);
+ const early={...host.boss.networkState('b20'),timeline:{state:2.8,freed:.6,freedYaw:1.2,released:true}};
+ guest.boss.applyNetwork(early);assert.ok(Math.abs(guest.boss.freed.rig.root.scale.x-.65)<1e-9);
+});
