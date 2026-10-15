@@ -307,3 +307,10 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Initial QA iterations corrected an immediate Escape assertion to wait for the game frame, replaced a nonexistent ready-banner assumption with the actual reward/level event, and selected the existing Claim reward button. Final full replay passes. TypeScript/Vite build and whitespace checks pass. Public deployment follows; ten-hour quality work remains active.
 
 - Published e9ee8d6 as READY deployment dpl_EyGtc6FsYwdNAUqMKgeK2XzFMgNv. Complete stable-public story replay passes all 16 responsive cases, actual three-site exploration/quest turn-in, live language, click/Escape/timeout, warning priority and chapter cleanup; no page/console errors. seonn.dev/games/crabcraft returns HTTP 200 and links to the stable game alias. Wiki history has zero pending prompts/results. Ten-hour quality work remains active.
+
+
+### Persistent discovery journal — 2026-10-15 UTC
+
+- The three World II memories can now be reread in the existing w5 quest log after their discovery cards close. Shows discovered count and only completed objective stories, with an exploration hint before the first find. Completed quests remain selectable, so reward collection does not remove the journal. Uses existing saved objective progress; no duplicate persistence or multiplayer state.
+- tools/qa-memory-journal.mjs passes actual exploration events, no unknown-story spoilers, partial save/reload, all three discoveries, the real reward button and completed save/reload. Actual settings switching renders English titles/body. Six viewport/language cases pass 1280×800, 718×492 and 390×844 with real wheel scrolling, reachable final story and no horizontal overflow. Native desktop/phone captures inspected; no page/console errors. Corrected a font token to the existing display font and replayed the complete QA. TypeScript/Vite and whitespace checks pass.
+- At 16:34 UTC, approximately 3 hours 38 minutes have elapsed since 12:56:12 UTC. Ten-hour quality work remains active. Public deployment follows.

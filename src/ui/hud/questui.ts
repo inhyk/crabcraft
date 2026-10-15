@@ -5,6 +5,7 @@ import type { Game } from '../../game/game';
 import type { Unit } from '../../game/unit';
 import { QUESTS, QUEST_ORDER, type QuestId, type QuestLog } from '../../game/quests';
 import { portraitStyle } from './frames';
+import { starMemory } from '../../game/starMemories';
 
 export class QuestTracker {
   readonly el: HTMLElement;
@@ -118,6 +119,18 @@ export class QuestLogPanel {
       this.detailEl.append(button,h('p',{class:'qlog-track-hint'},t('선택하면 미니맵과 금빛 길잡이가 이 목표를 가리켜요.','The minimap and golden guide will point to this quest.')));
     }
     if (log.status[this.selected] === 'ready') this.detailEl.append(h('p', { style: 'margin-top:10px;font-style:italic' }, def.readyHint));
+    const memories = def.objectives.flatMap(o => {
+      const memory = starMemory(o.kind);
+      return memory ? [{ ...memory, found: log.objectiveDone(o) }] : [];
+    });
+    if (memories.length) {
+      const found = memories.filter(memory => memory.found);
+      const journal = h('section', { class:'qlog-memories', 'aria-label':t('발견한 기억','Discovered memories') },
+        h('div', { class:'dlg-sec' }, `${t('발견한 기억','Discovered memories')} · ${found.length}/${memories.length}`));
+      if (!found.length) journal.append(h('p', { class:'qlog-memory-hint' }, t('섬의 세 장소를 탐험하면 발견한 이야기가 여기에 남아요.','Explore the three island landmarks to keep their stories here.')));
+      for (const memory of found) journal.append(h('article', { class:'qlog-memory' }, h('h3', null, memory.title), h('p', null, memory.body)));
+      this.detailEl.append(journal);
+    }
     this.detailEl.append(h('div', { class: 'dlg-sec' }, t('이야기','Story')));
     for (const para of def.offer) this.detailEl.append(h('p', null, para));
     this.detailEl.append(h('div', { class: 'dlg-sec' }, t('보상','Reward')), h('div', { class: 'dlg-reward' }, h('span', { class: 'xp' }, `${def.xp} XP`)));
