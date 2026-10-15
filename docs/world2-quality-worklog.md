@@ -137,3 +137,6 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Two-browser replay confirms actual effect uniforms match on both peers: danger a050ff and sanctuary 71ffca, plus bilingual instructions/cancellation, parties, PvP, weather, travel, villagers and authority transfer.
 - tools/qa-beacon-reveal.mjs passes actual q3 completion/reward callbacks for off, travel and lit cases, plus q4 save/reload. Objectives are injected for focused timing coverage. No page errors.
 - Ten-hour development remains active; these resolve the prior milestone's two follow-up audit items.
+
+- Published 0fa6b13 as READY deployment dpl_Dqx1tpYDUQcYcQxf2SFQ5iTAEDDc. Extended the two-browser tool with CC_QA_URL: public runs use the deployed Internet backend with no WebSocket override. The entire multiplayer replay passed against the public game and Cloudflare room service, including matching actual purple/green effect uniforms, cancellation, PvP, parties, guest morning, both portals, residents and host departure with retained enemy stats. No page errors.
+- The complete off/travel/lit beacon reveal replay also passed on the public production URL, including q4 save/reload. This verifies focused quest timing and real Internet multiplayer separately; it is not a ten-hour stability claim.

@@ -1,13 +1,16 @@
-// GPU browser QA: run Vite preview with the room relay on port 5192.
+// GPU browser QA: defaults to preview + room relay on 5192.
+// Set CC_QA_URL to the public game URL to use its real Internet backend without interception.
 // Two independent browser contexts exercise real room packets and UI controls.
 import {chromium} from 'playwright';import assert from 'node:assert/strict';
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
 const errors=[];
+const baseUrl=process.env.CC_QA_URL??'http://127.0.0.1:5192/';
+const localRelay=new URL(baseUrl).hostname==='127.0.0.1';
 await (await import('node:fs/promises')).mkdir('tmp/qa',{recursive:true});
-async function open(name){const ctx=await browser.newContext({viewport:{width:1440,height:900}});const page=await ctx.newPage();page.on('pageerror',e=>{errors.push(e.message);console.log('PAGEERROR',e.message)});await page.addInitScript(name=>{
+async function open(name){const ctx=await browser.newContext({viewport:{width:1440,height:900}});const page=await ctx.newPage();page.on('pageerror',e=>{errors.push(e.message);console.log('PAGEERROR',e.message)});await page.addInitScript(({name,localRelay})=>{
  localStorage.clear();localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name}));localStorage.setItem('cc.quality','low');
- const Original=window.WebSocket;window.WebSocket=class extends Original{constructor(url,protocols){super(String(url).includes('/multiplayer')?'ws://127.0.0.1:5192/multiplayer':url,protocols);}};
-},name);await page.goto('http://127.0.0.1:5192/?screen=game');await page.waitForFunction(()=>window.app?.current?.game?.multiplayer,null,{timeout:90000});return page;}
+ if(localRelay){const Original=window.WebSocket;window.WebSocket=class extends Original{constructor(url,protocols){super(String(url).includes('/multiplayer')?'ws://127.0.0.1:5192/multiplayer':url,protocols);}};}
+},{name,localRelay});await page.goto(baseUrl+'?screen=game');await page.waitForFunction(()=>window.app?.current?.game?.multiplayer,null,{timeout:90000});return page;}
 try{
  const a=await open('Star Host'),b=await open('Star Friend');
  await a.evaluate(()=>window.app.current.game.multiplayer.connect('create'));await a.waitForFunction(()=>window.app.current.game.multiplayer.room,null,{timeout:10000});const room=await a.evaluate(()=>window.app.current.game.multiplayer.room);
