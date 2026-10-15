@@ -42,6 +42,11 @@ try{
  const locations=await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game;return {chapter:g.world2.chapter,clock:{sky:g.world2.sky.time.value,sea:g.world2.sea.time.value,wind:g.world2.wind.time.value},npcs:g.npcs.map(n=>({id:n.def.id,hidden:n.unit.hidden,x:n.unit.pos.x,z:n.unit.pos.z})),town:g.townsfolk.map(t=>[t.unit.pos.x,t.unit.pos.z])};})));
  assert.equal(locations[0].npcs.length,7);assert.deepEqual(locations[0].npcs,locations[1].npcs);assert.ok(locations[0].town.every((p,i)=>Math.hypot(p[0]-locations[1].town[i][0],p[1]-locations[1].town[i][1])<1));
  for(const state of locations){assert.equal(state.clock.sky,state.clock.sea);assert.equal(state.clock.sky,state.clock.wind);}assert.ok(Math.abs(locations[0].clock.sky-locations[1].clock.sky)<.75);console.log('PASS: sky, ocean and plants share the room clock on both peers',locations.map(s=>s.clock));
+ // Observe real host-simulated movement, then match the guest's network interpolation.
+ await a.waitForFunction(start=>{const ts=window.app.current.game.townsfolk;return ts.filter((t,i)=>Math.hypot(t.unit.pos.x-start[i][0],t.unit.pos.z-start[i][1])>2).length>=4;},locations[0].town,{timeout:20000});
+ const walkers=await a.evaluate(()=>window.app.current.game.townsfolk.map(t=>[t.unit.pos.x,t.unit.pos.z]));
+ await b.waitForFunction(expected=>window.app.current.game.townsfolk.every((t,i)=>Math.hypot(t.unit.pos.x-expected[i][0],t.unit.pos.z-expected[i][1])<1),walkers,{timeout:5000});
+ console.log('PASS: at least four residents actually stroll and guest mirrors their network positions');
  // Both players can respawn beside the World II portal without sending the room back to shore.
  await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game;g.god=false;g.player.unit.teleport(g.world,0,50,0);})));await a.waitForTimeout(300);
  await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game;g.combat.damage(null,g.player.unit,g.player.unit.maxHp*10);})));
