@@ -1,5 +1,9 @@
 ## Multiplayer edition · Crabcraft
 
+Play: https://inh-crabcraft-multiplayer.vercel.app · Portfolio: https://seonn.dev/games/crabcraft
+
+The `screenshots/` gallery reuses original gameplay images from `docs/media/`; these images do not show the new multiplayer panel.
+
 This fork extends [kubony/crabcraft](https://github.com/kubony/crabcraft). Original game and art: kubony and the contributors credited below. Robot: KingKong Robotics Jumper. Original Apache-2.0 LICENSE and NOTICE are retained.
 
 Open **멀티플레이** from the title, create your crab, then **방 만들기**. Share the invite link, or ask a friend to enter the six-character room code. Up to eight players share their appearance, movement, actions and chat. Quests, NPCs, enemies and combat remain individual; this is shared exploration, not synchronized co-op combat. Robot Mode remains single-player. Rooms are not accounts; anyone with the code may join. Chat is transient and not stored in a database.
@@ -7,6 +11,8 @@ Open **멀티플레이** from the title, create your crab, then **방 만들기*
 Internet hosting uses Vercel for the game and `server/cloudflare/worker.ts` for one Cloudflare Durable Object per room, with WebSocket hibernation, connection attachments, bounded messages, origin validation and rate limits. Room metadata expires after 24 hours when idle. The production endpoint is in `.env.production` (public configuration, no credentials). The Mac does not need to stay on for the hosted edition.
 
 Local development: `pnpm install && pnpm dev`. The Vite plugin runs the Node room relay on the same server. Local build: `pnpm build`; `pnpm multiplayer` serves the build to the LAN on port 5174. To test only the LAN relay instead of the cloud backend, build with `VITE_MULTIPLAYER_URL=/multiplayer pnpm build`.
+
+Live cloud smoke check: `node server/cloudflare/smoke.mjs` (creates temporary rooms and closes every client).
 
 Checks: `pnpm test:multiplayer`, `pnpm build`, `pnpm exec tsc -p server/cloudflare/tsconfig.json`. Worker types: `pnpm exec wrangler types --config server/cloudflare/wrangler.jsonc server/cloudflare/worker-configuration.d.ts`. Worker deployment: `pnpm exec wrangler deploy --config server/cloudflare/wrangler.jsonc` using the intended account. WebSocket implementation follows the [ws documentation](https://github.com/websockets/ws) and [Cloudflare WebSocket hibernation guide](https://developers.cloudflare.com/durable-objects/best-practices/websockets/).
 
