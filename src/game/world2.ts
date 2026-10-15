@@ -11,6 +11,7 @@ import { StarPortal } from './portal';
 import { StarVillageLife } from './world2Life';
 import {starGroundColor} from './world2Ground';
 import {facetedStarCrystal,starCrystalRadius} from './starCrystal';
+import {collectibleShadow} from './collectibleShadow';
 
 function naturalHeight(x:number,z:number){
   const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
@@ -53,7 +54,7 @@ export class HiddenWorld {
   private basePois = new Map<string, {position:THREE.Vector3;yaw:number}>();
   private basePeople: THREE.Vector3[] = [];
   private memories:{kind:ObjectiveKind;ring:THREE.Mesh;star:THREE.Mesh}[]=[];
-  private nodes: {kind:ObjectiveKind;objective:ObjectiveDef;position:THREE.Vector3;mesh:THREE.Mesh}[] = [];
+  private nodes: {kind:ObjectiveKind;objective:ObjectiveDef;position:THREE.Vector3;mesh:THREE.Mesh;shadowOpacity:THREE.IUniform<number>}[] = [];
   private sightAim=new THREE.Vector3();
   private sightRay=new THREE.Vector3();
   private sightOffset=new THREE.Vector3();
@@ -76,9 +77,10 @@ export class HiddenWorld {
       const position=new THREE.Vector3(point[0],this.height(...point),point[1]);
       const material=new THREE.MeshStandardMaterial({color:kind.startsWith('lamp')?'#ffdb95':'#9afff3',emissive:kind.startsWith('lamp')?'#a95d23':'#23cbbb',emissiveIntensity:1.8,metalness:.3,roughness:.25,transparent:true,depthWrite:false});
       const mesh=new THREE.Mesh(kind.startsWith('lamp')?new THREE.CylinderGeometry(.4,.65,2.6,8):new THREE.OctahedronGeometry(.9),material);
-      mesh.position.copy(position).y+=1.3;mesh.castShadow=true;this.root.add(mesh);
+      mesh.position.copy(position).y+=1.3;mesh.castShadow=true;
+      const shadowOpacity={value:1};mesh.customDepthMaterial=collectibleShadow(shadowOpacity);this.root.add(mesh);
       const objective=Object.values(QUESTS).flatMap(q=>q.objectives).find(o=>o.kind===kind)!;
-      this.nodes.push({kind:kind as ObjectiveKind,objective,position,mesh});
+      this.nodes.push({kind:kind as ObjectiveKind,objective,position,mesh,shadowOpacity});
     }
   }
   objectivePoint(kind:ObjectiveKind) {
@@ -272,10 +274,11 @@ export class HiddenWorld {
       const separation=this.sightOffset.addScaledVector(this.sightRay,-along).length();
       const radius=node.kind.startsWith('lamp')?1.4:.95;
       const sightFade=1-interior*(1-THREE.MathUtils.smoothstep(separation,radius,radius+.9));
-      (node.mesh.material as THREE.MeshStandardMaterial).opacity=sightFade*THREE.MathUtils.smoothstep(node.mesh.position.distanceTo(this.game.camera.position),3.5,8);
+      const opacity=sightFade*THREE.MathUtils.smoothstep(node.mesh.position.distanceTo(this.game.camera.position),3.5,8);
+      (node.mesh.material as THREE.MeshStandardMaterial).opacity=opacity;node.shadowOpacity.value=opacity;node.mesh.castShadow=opacity>.001;
     }
     for(const o of this.rotations){o.rotation.y+=dt*.6;o.rotation.z=Math.sin(time*.7+o.position.x)*.12;}
 
   }
-  dispose(){this.showEpilogue();this.game.scene.remove(this.root);this.baseRoot.remove(this.shorePortal.root);const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();for(const root of [this.root,this.shorePortal.root])root.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Points){geos.add(o.geometry);for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);}});this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats){m.dispose();}}
+  dispose(){this.showEpilogue();this.game.scene.remove(this.root);this.baseRoot.remove(this.shorePortal.root);const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();for(const root of [this.root,this.shorePortal.root])root.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Points){geos.add(o.geometry);for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);if(o.customDepthMaterial)mats.add(o.customDepthMaterial);}});this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats){m.dispose();}}
 }

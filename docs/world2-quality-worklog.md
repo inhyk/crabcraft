@@ -182,3 +182,11 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Ten-hour development remains active.
 
 - Published cf43fda as READY deployment dpl_Eey6TqyPbEGrbucgZUpywDNtP3jb. The entire tracking/save/collection replay passed on the public stable game URL, including near and distant intervening crystals at opacity 0, ahead opacity 1, side opacity 0.653 and actual F collection. No page errors; seonn.dev/games/crabcraft HTTP 200.
+
+## Collectible shadow visibility — 2026-10-15 14:56 UTC
+
+- Reproduced a ghost shadow on the public game: crystal IV opacity was 0 while castShadow remained true. Two synchronous renders differing only in that flag changed 28,772 pixels in the foreground, exposing the invisible crystal's opaque silhouette. Inspected both captures.
+- Added a shared depth-program variant with a per-node visibility uniform. Ordered shadow-texel coverage produces an even fade under the existing PCF filter; invisible nodes skip shadow rendering. Fully visible nodes preserve their shadows. World I is unaffected.
+- Initial native alpha-hash trial produced a blotchy intermediate silhouette; replaced it with ordered coverage and inspected the smoother half-visibility capture. The final shader does not allocate geometry, require additional lights or recompile on visibility changes.
+- Added tools/qa-collectible-shadows.mjs. In one frozen scene instant it renders no shadow, zero visibility, half visibility and full visibility. Zero visibility has exactly zero pixel difference from no caster; the full reference shadows 29,729 pixels, and half visibility produces 43.86% of its measured darkening. Actual camera fade sets both visible and shadow opacity to 0. No console shader errors or page errors.
+- Game disposal releases all seven owned custom depth materials. Production build and whitespace checks pass. Ten-hour development remains active.
