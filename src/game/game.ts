@@ -585,7 +585,7 @@ export class Game {
     if (!paused) this.vfx.update(dt);
     this.updateSelection();
     const goal = this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
-    this.hintVia = goal ? this.world2.chapter===2 ? goal : this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
+    this.hintVia = goal ? this.world2.chapter===2 ? this.world2.waypoint(this.player.unit.pos, goal, this.time) : this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
     this.objective.update(this.time, this.world, this.player.unit.pos, goal, this.hintVia, this.player.inCombat);
     if (!this.ending.active) this.director.update(dt);
     const worldTime=this.multiplayer?.battle.worldTime(f.elapsed,dt) ?? f.elapsed;

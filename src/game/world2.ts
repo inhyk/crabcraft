@@ -15,6 +15,7 @@ import {collectibleShadow} from './collectibleShadow';
 import {StarSky} from './starSky';
 import {StarSea} from './starSea';
 import {StarWind} from './starWind';
+import {NavHints} from './nav';
 
 function naturalHeight(x:number,z:number){
   const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
@@ -56,6 +57,8 @@ export class HiddenWorld {
   private collision: Collision | null = null;
   private life:StarVillageLife|null=null;
   private wind:StarWind|null=null;
+  private nav:NavHints|null=null;
+  waypoint(from:THREE.Vector3,goal:THREE.Vector3,now:number){return this.nav?.waypoint(from,goal,now)??goal;}
   private basePois = new Map<string, {position:THREE.Vector3;yaw:number}>();
   private basePeople: THREE.Vector3[] = [];
   private memories:{kind:ObjectiveKind;ring:THREE.Mesh;star:THREE.Mesh}[]=[];
@@ -205,6 +208,13 @@ export class HiddenWorld {
     for(const [id,x,z] of [['shore',-70,5],['wreck',70,-15],['grove',25,55],['forge',-25,36],['tavern',-20,58],['chapel',20,35],['lighthouse',0,-48],['beacon',0,-45],['bossArena',0,-75]] as const)w.pois[id].position.set(x,this.height(x,z),z);
     const walks=STAR_WALKS.map(([x,z])=>new THREE.Vector3(x,this.height(x,z),z));
     g.townsfolk.forEach((t,i)=>{const p=walks[i%walks.length];t.unit.hidden=false;t.unit.teleport(w,p.x+(i%3-1)*2,p.z, i*.8);t.relocate(walks,2.5);});
+    // The shore graph describes different streets. Build the island graph only after
+    // its collision surface and relocated POIs are active, including the pilgrim trails.
+    const routePoints=[...Object.values(STAR_TOWN),...STAR_WALKS,...STAR_TRAILS.flat(),[0,86],[0,-75],[-3,-55],[3,-55],[-14,-60],[14,-60],[-6,49],[-6,61],[6,49],[6,61]];
+    this.nav=new NavHints(w,{
+      points:routePoints.map(([x,z])=>new THREE.Vector3(x,this.height(x,z),z)),
+      includeWorldPoints:false, radius:g.player.unit.radius+.15, step:.5,
+    });
     g.boss.unit.hidden=g.finalBoss.unit.hidden=true;
     g.worldBoss.unit.hidden=g.worldBoss.state==='dormant'||g.worldBoss.state==='dead';
     g.quests.setChapter(2);

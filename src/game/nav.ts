@@ -1,5 +1,5 @@
 // Route finding for the quest hint only (crabs still steer straight). Nodes are the world's POIs and
-// spawn points, which the world places on streets, paths and decks; an edge exists when a crab can
+// spawn points or supplied trail waypoints. An edge exists when a crab can
 // walk the straight segment (no solids, no cliff steps), tested with World.resolveCollision and
 // World.heightAt. The hint then points at the next reachable waypoint instead of through a house.
 import * as THREE from 'three';
@@ -12,6 +12,13 @@ const MAX_RISE = 1.1;
 
 const tmp = new THREE.Vector2();
 
+interface NavOptions {
+  points?: readonly THREE.Vector3[];
+  includeWorldPoints?: boolean;
+  radius?: number;
+  step?: number;
+}
+
 export class NavHints {
   private nodes: THREE.Vector3[] = [];
   private adj: { to: number; cost: number }[][] = [];
@@ -21,10 +28,17 @@ export class NavHints {
   private checkAt = 0;
   private readonly next = new THREE.Vector3();
 
-  constructor(private readonly world: World) {
-    const pts: THREE.Vector3[] = [];
-    for (const p of Object.values(world.pois)) pts.push(p.position.clone());
-    for (const s of world.spawns) for (const p of s.points) pts.push(p.clone());
+  private readonly radius: number;
+  private readonly step: number;
+
+  constructor(private readonly world: World, options: NavOptions = {}) {
+    this.radius = options.radius ?? RADIUS;
+    this.step = options.step ?? STEP;
+    const pts = (options.points ?? []).map(p => p.clone());
+    if (options.includeWorldPoints !== false) {
+      for (const p of Object.values(world.pois)) pts.push(p.position.clone());
+      for (const s of world.spawns) for (const p of s.points) pts.push(p.clone());
+    }
     // Drop near-duplicates.
     for (const p of pts) if (!this.nodes.some((n) => n.distanceTo(p) < 2)) this.nodes.push(p);
     this.adj = this.nodes.map(() => []);
@@ -44,13 +58,13 @@ export class NavHints {
   walkable(a: THREE.Vector3, b: THREE.Vector3): boolean {
     const w = this.world;
     const d = Math.hypot(b.x - a.x, b.z - a.z);
-    const n = Math.max(1, Math.ceil(d / STEP));
+    const n = Math.max(1, Math.ceil(d / this.step));
     let prevY = w.heightAt(a.x, a.z);
     for (let i = 1; i <= n; i++) {
       const k = i / n;
       const x = a.x + (b.x - a.x) * k;
       const z = a.z + (b.z - a.z) * k;
-      const r = w.resolveCollision(x, z, RADIUS, tmp);
+      const r = w.resolveCollision(x, z, this.radius, tmp);
       // The end points themselves may sit against a wall (an NPC at a counter); be lenient there.
       if (i < n && Math.hypot(r.x - x, r.y - z) > 0.08) return false;
       const y = w.heightAt(x, z);
@@ -71,7 +85,7 @@ export class NavHints {
       this.path = this.plan(from, goal);
     }
     // Skip waypoints we have reached or can already walk past.
-    while (this.path.length > 1 && Math.hypot(this.path[0].x - from.x, this.path[0].z - from.z) < 3) this.path.shift();
+    while (this.path.length > 1 && Math.hypot(this.path[0].x - from.x, this.path[0].z - from.z) < 3 && this.walkable(from, this.path[1])) this.path.shift();
     if (now >= this.checkAt) {
       this.checkAt = now + 0.3;
       for (let i = Math.min(this.path.length - 1, 3); i > 0; i--) {
