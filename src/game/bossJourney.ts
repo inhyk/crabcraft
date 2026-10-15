@@ -145,25 +145,33 @@ export class BossJourney {
     this.save();
   }
 
+  private canJoin(boss: Boss): boolean {
+    const g=this.game;
+    return !!g.multiplayer?.battle.active && g.encounter===boss && boss.engaged &&
+      Math.hypot(g.player.unit.pos.x-boss.arena.position.x,g.player.unit.pos.z-boss.arena.position.z)>boss.arena.radius+3;
+  }
+
   private challenge(boss: Boss) {
     const g = this.game;
     const cleared = boss === g.boss ? this.rustCleared : boss === g.worldBoss ? this.trueCleared : this.abyssCleared;
+    const joining=this.canJoin(boss);
     if (boss.profile.level<20&&!g.beaconLit){g.hud.messages.info(t('등대를 켜면 밤이 되고 보스가 깨어나요.','Light the lighthouse to summon night and awaken the boss.'));return;}
-    if (cleared || !canChallenge(g.player.level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter) || g.controlsLocked || g.player.inCombat || g.encounter.engaged) return;
+    if (cleared || !canChallenge(g.player.level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter) || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining)) return;
     if (boss === g.finalBoss && g.boss.state !== 'dead') { g.hud.messages.info(t('첫 보스의 승리 연출이 끝난 뒤 도전해 주세요.','Wait until the first boss victory sequence ends.')); return; }
-    if (!g.multiplayer?.battle.challenge(boss === g.boss ? 'b3' : boss === g.worldBoss ? 'b20' : 'b10')) boss.wake();
+    if (!joining && !g.multiplayer?.battle.challenge(boss === g.boss ? 'b3' : boss === g.worldBoss ? 'b20' : 'b10')) boss.wake();
     const a = boss.arena;
     // Enter on the deck's walkable approach, facing the centre.
     const dx = Math.sin(a.yaw), dz = Math.cos(a.yaw);
     const distance = Math.min(9, a.radius * 0.85);
-    g.player.respawn();
+    if(!joining)g.player.respawn();
+    else {g.player.cancelChannel();g.player.interruptCast();g.player.setTarget(null);}
     g.player.unit.teleport(g.world, a.position.x + dx * distance, a.position.z + dz * distance, a.yaw + Math.PI);
     g.follow.cut();
     g.follow.yaw = g.player.unit.yaw + Math.PI;
     if(boss!==g.worldBoss)g.world.setMood(1);
     g.hud.dialogue.close();
     this.root.open = false;
-    g.hud.messages.banner(t(`LEVEL ${boss.profile.level} · 보스 도전`,`LEVEL ${boss.profile.level} · BOSS CHALLENGE`), boss.profile.name, 'boss');
+    g.hud.messages.banner(joining?t(`LEVEL ${boss.profile.level} · 전투 합류`,`LEVEL ${boss.profile.level} · BATTLE JOINED`):t(`LEVEL ${boss.profile.level} · 보스 도전`,`LEVEL ${boss.profile.level} · BOSS CHALLENGE`), boss.profile.name, 'boss');
   }
 
   update(dt: number) {
@@ -179,7 +187,7 @@ export class BossJourney {
       if(this.endingTime>12 && g.multiplayer?.battle.authority !== false) this.finishChapterEnding();
     }
     if(this.trueCleared && g.worldBoss.state==='dead' && !this.trueStarted && !g.ending.active) { this.trueStarted=true; this.save(); void g.ending.start(); }
-    const state = `${language()}|${g.beaconLit}|${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${g.finalBoss.state}|${g.boss.state}|${g.worldBoss.state}|${g.world2.chapter}|${this.firstEndingSeen}|${this.trueCleared}`;
+    const state = `${language()}|${g.beaconLit}|${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${this.canJoin(g.encounter)}|${g.finalBoss.state}|${g.boss.state}|${g.worldBoss.state}|${g.world2.chapter}|${this.firstEndingSeen}|${this.trueCleared}`;
     if (state !== this.last) {
       this.last = state;
       this.root.querySelector('summary')!.textContent=t('⚔ 보스 여정','⚔ Boss journey');
@@ -191,9 +199,10 @@ export class BossJourney {
         const cleared = boss === g.boss ? this.rustCleared : boss === g.worldBoss ? this.trueCleared : this.abyssCleared;
         const unlocked = canChallenge(level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter);
         const needsBeacon=boss!==g.worldBoss&&!g.beaconLit;
+        const joining=this.canJoin(boss);
         status.textContent = cleared ? t('✓ 왕관 획득','✓ Crown reclaimed') : needsBeacon ? t('등대를 켜면 도전할 수 있어요.','Light the lighthouse to challenge this boss.') : unlocked ? (boss.engaged ? t('전투 중','In battle') : boss === g.worldBoss ? t('도전 가능 · 별의 왕좌','Ready · The Star Throne') : t('도전 가능 · 철의 난파선','Ready · The Iron Wreck')) : t(`🔒 ${boss.profile.level}레벨${boss.profile.level === 20 ? ' + 월드 2' : boss.profile.level === 10 ? ' + 첫 보스 승리' : ''} 필요`,`🔒 Requires level ${boss.profile.level}${boss.profile.level===20?' + World II':boss.profile.level===10?' + first boss victory':''}`);
-        button.disabled = cleared || needsBeacon || !unlocked || g.controlsLocked || g.player.inCombat || g.encounter.engaged || (boss === g.finalBoss && g.boss.state !== 'dead');
-        button.textContent = cleared ? t('정복 완료','Conquered') : boss.engaged ? t('전투 중','In battle') : t('도전하기 →','Challenge →');
+        button.disabled = cleared || needsBeacon || !unlocked || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining) || (boss === g.finalBoss && g.boss.state !== 'dead');
+        button.textContent = cleared ? t('정복 완료','Conquered') : boss.engaged ? joining?t('전투 합류 →','Join battle →'):t('전투 중','In battle') : t('도전하기 →','Challenge →');
         const card=button.closest('article')!;card.querySelector('h3')!.textContent=boss.profile.name;boss.unit.name=boss.profile.name;boss.unit.title=boss.profile.title;
         card.querySelector('p')!.textContent=boss.profile.level===20?t('검은 일식 · 안쪽 안전지대 · 별빛 폭주','Black Eclipse · Inner sanctuary · Starfall enrage'):boss.profile.level===10?t('심해 파동 · 끌어당기기 · 3단계 폭주','Tidal Nova · Undertow · Phase III enrage'):t('닻 내려찍기 · 녹 분사 · 하수인 소환','Anchor Slam · Rust Spray · Rustling summons');
       }
