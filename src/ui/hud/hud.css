@@ -57,7 +57,8 @@
   text-shadow: var(--text-shadow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-bottom: 4px; display: flex; justify-content: space-between; gap: 6px;
 }
-.uf-name .tag { font: italic 11px var(--font-body); color: #c9b98e; align-self: center; }
+.uf-name > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.uf-name .tag { flex-shrink: 0; font: italic 11px var(--font-body); color: #c9b98e; align-self: center; }
 .uf-name.hostile { color: #ff8a7a; }
 .uf-name.friendly { color: #9cf08f; }
 .uf-name.long { font-size: 12.5px; }

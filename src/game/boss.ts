@@ -529,6 +529,11 @@ export class Boss {
     vfx.slamImpact(at,kind==='nova'?6:kind==='slam'?3.4:5.5);
   }
 
+  refreshLanguage():void {
+    this.unit.name=this.profile.name;this.unit.title=this.profile.title;
+    this.refreshWarning();
+  }
+
   refreshWarning():void {
     if(this.mech)this.warning=this.game.hud.messages.warn(bossWarning(this.mech.kind,this.profile.level),{persistent:true});
   }

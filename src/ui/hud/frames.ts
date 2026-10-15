@@ -63,11 +63,11 @@ interface AuraInfo {
 function auras(g: Game, u: Unit): AuraInfo[] {
   const now = g.time;
   const out: AuraInfo[] = [];
-  if (u.absorb > 0 && now < u.absorbUntil) out.push({ id: 'ward', name: 'Barnacle Ward', debuff: false, left: u.absorbUntil - now });
-  if (now < u.blessingUntil) out.push({ id: 'blessing', name: 'Moonwater Blessing', debuff: false, left: Infinity });
-  if (now < u.stunUntil) out.push({ id: 'stun', name: 'Stunned', debuff: true, left: u.stunUntil - now });
-  if (now < u.slowUntil) out.push({ id: 'slow', name: 'Frost Spray', debuff: true, left: u.slowUntil - now });
-  if (now < u.rustUntil && u.rust > 0) out.push({ id: 'rust', name: 'Rust', debuff: true, left: u.rustUntil - now, stacks: u.rust });
+  if (u.absorb > 0 && now < u.absorbUntil) out.push({ id: 'ward', name: t('따개비 보호막','Barnacle Ward'), debuff: false, left: u.absorbUntil - now });
+  if (now < u.blessingUntil) out.push({ id: 'blessing', name: t('달빛 연못의 축복','Moonwater Blessing'), debuff: false, left: Infinity });
+  if (now < u.stunUntil) out.push({ id: 'stun', name: t('기절','Stunned'), debuff: true, left: u.stunUntil - now });
+  if (now < u.slowUntil) out.push({ id: 'slow', name: t('서리 분사','Frost Spray'), debuff: true, left: u.slowUntil - now });
+  if (now < u.rustUntil && u.rust > 0) out.push({ id: 'rust', name: t('녹','Rust'), debuff: true, left: u.rustUntil - now, stacks: u.rust });
   return out;
 }
 
@@ -111,11 +111,12 @@ export class UnitFrame {
     if (!u) return;
     this.pic.setAttribute('style', portraitStyle(portraitArt, u.portrait));
     this.nameEl.textContent = u.name;
+    this.nameEl.title = u.name;
     const nameRow = this.nameEl.parentElement!;
     nameRow.classList.toggle('hostile', u.hostile);
     nameRow.classList.toggle('friendly', u.reaction === 'friendly');
     nameRow.classList.toggle('long', u.name.length > 20);
-    this.tagEl.textContent = u.kind === 'boss' ? 'Boss' : '';
+    this.tagEl.textContent = u.kind === 'boss' ? t('보스','Boss') : '';
     this.levelEl.classList.toggle('skull', u.kind === 'boss');
     this.levelEl.textContent = String(u.level);
     this.res.el.style.display = this.kind === 'player' ? '' : 'none';
@@ -126,11 +127,18 @@ export class UnitFrame {
   update(g: Game): void {
     const u = this.unit;
     if (!u) return;
+    if (this.nameEl.textContent !== u.name) {
+      this.nameEl.textContent = u.name;
+      this.nameEl.title = u.name;
+      this.nameEl.parentElement!.classList.toggle('long', u.name.length > 20);
+    }
+    const tag=u.kind==='boss'?t('보스','Boss'):'';
+    if(this.tagEl.textContent!==tag)this.tagEl.textContent=tag;
     if (this.kind === 'target' && u.kind !== 'boss') this.levelEl.textContent = String(u.level);
     if (this.kind === 'player') this.levelEl.textContent = String(u.level);
     const frac = u.hp / u.maxHp;
     const pct = Math.round(frac * 100);
-    setBar(this.hp, frac, this.kind === 'player' ? `${Math.ceil(u.hp)} / ${u.maxHp}` : u.alive ? `${Math.ceil(u.hp)} / ${u.maxHp}  (${pct}%)` : 'Dead');
+    setBar(this.hp, frac, this.kind === 'player' ? `${Math.ceil(u.hp)} / ${u.maxHp}` : u.alive ? `${Math.ceil(u.hp)} / ${u.maxHp}  (${pct}%)` : t('처치됨','Dead'));
     if (this.hp.absorb) {
       const a = u.absorb > 0 && g.time < u.absorbUntil ? Math.min(1, u.absorb / u.maxHp) : 0;
       this.hp.absorb.style.transform = `translateX(${Math.min(1, frac) * 100}%) scaleX(${a})`;
@@ -153,7 +161,7 @@ export class UnitFrame {
 
   private updateAuras(g: Game, u: Unit): void {
     const list = auras(g, u);
-    const key = list.map((a) => `${a.id}${a.stacks ?? ''}`).join(',');
+    const key = list.map((a) => `${a.id}:${a.name}:${a.stacks ?? ''}`).join(',');
     if (key !== this.auraKey) {
       this.auraKey = key;
       this.aurasEl.replaceChildren();
@@ -169,9 +177,9 @@ export class UnitFrame {
       }
     }
     list.forEach((a, i) => {
-      const t = this.auraTimes[i];
-      const s = Number.isFinite(a.left) ? `${Math.ceil(a.left)}s` : '';
-      if (t && t.textContent !== s) t.textContent = s;
+      const timer = this.auraTimes[i];
+      const s = Number.isFinite(a.left) ? t(`${Math.ceil(a.left)}초`,`${Math.ceil(a.left)}s`) : '';
+      if (timer && timer.textContent !== s) timer.textContent = s;
     });
   }
 }
@@ -204,7 +212,7 @@ export class BossFrame {
   show(u: Unit): void {
     this.unit = u;
     this.el.querySelector('.bf-name')!.textContent = u.name;
-    this.el.querySelector('.bf-sub')!.textContent = `LEVEL ${u.level} · ${u.title}`;
+    this.el.querySelector('.bf-sub')!.textContent = `${t('레벨','LEVEL')} ${u.level} · ${u.title}`;
     this.el.classList.toggle('abyss-boss', u.level === 10);
     this.last = -1;this.identity='';
     this.el.classList.add('on');
@@ -227,7 +235,7 @@ export class BossFrame {
     if(identity!==this.identity){
       this.identity=identity;this.last=-1;
       this.el.querySelector('.bf-name')!.textContent=profile.name;
-      this.el.querySelector('.bf-sub')!.textContent=`LEVEL ${u.level} · ${profile.title}`;
+      this.el.querySelector('.bf-sub')!.textContent=`${t('레벨','LEVEL')} ${u.level} · ${profile.title}`;
     }
     const f = Math.max(0, u.hp / u.maxHp);
     if (Math.abs(f - this.last) > 0.0005) {

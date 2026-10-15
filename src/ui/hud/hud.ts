@@ -101,7 +101,7 @@ export class Hud {
   refreshLanguage(): void {
     this.messages.refreshLanguage();
     this.hints.refreshLanguage();
-    this.game.encounter.refreshWarning();
+    for(const boss of [this.game.boss,this.game.finalBoss,this.game.worldBoss])boss.refreshLanguage();
     this.skipHint.textContent=t('Space를 눌러 계속하기','Press Space to continue');
     if(this.deathEl)this.showDeath(true);
   }
