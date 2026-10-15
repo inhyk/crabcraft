@@ -30,7 +30,7 @@ try {
  a.send({type:'combat',event:{kind:'death',target:'e0',serial:1}});assert.equal((await c.next('combat')).event.kind,'death');
  const late=await connect('join',r.room);const checkpoint=await late.next('welcome');assert.deepEqual(checkpoint.world,world);assert.equal(checkpoint.host,r.id);
  a.ws.close();await c.next('left');let authority;do{authority=await c.next('authority');}while(authority.host!==rejoined.id);
- c.send({type:'combat',event:{kind:'environment',target:'world',environment:{mood:1,beacon:true}}});assert.deepEqual((await a.next('combat')).event.environment,{mood:1,beacon:true});
+ late.send({type:'combat',event:{kind:'environment',target:'world',environment:{mood:1,beacon:true}}});assert.deepEqual((await c.next('combat')).event.environment,{mood:1,beacon:true});
  c.send({type:'world',world:{...world,rust:true}});assert.equal((await late.next('world')).world.rust,true);
  assert.equal(isolated.queue.some(m=>['world','combat'].includes(m.type)),false);
  console.log('PASS: live combat host election, shared world/HP/boss telegraph, authenticated attacks/hits/deaths, late join checkpoint and host transfer');

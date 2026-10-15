@@ -91,6 +91,7 @@ export const createWorld: CreateWorld = async ({ scene }) => {
   const ray = new THREE.Raycaster();
   const solids = root.children.filter((o) => (o as THREE.Mesh).isMesh && o !== ground && o !== sand && o !== water);
 
+  let moodId: 0 | 1 | 2 = 0, beaconOn = false;
   const world: World = {
     root,
     pois,
@@ -124,14 +125,17 @@ export const createWorld: CreateWorld = async ({ scene }) => {
     },
     update() {},
     setBeaconLit(lit) {
+      beaconOn = lit;
       beaconMat.color.set(lit ? 0xfff2b0 : 0x332211).multiplyScalar(lit ? 6 : 1);
     },
     setMood(mood) {
+      moodId = mood;
       const c = mood === 1 ? 0x1a2238 : mood === 2 ? 0x2a1840 : 0xf0a868;
       (scene.background as THREE.Color).set(c);
       (scene.fog as THREE.Fog).color.set(c);
       sun.intensity = mood === 1 ? 0.6 : 3;
     },
+    getEnvironment() { return { mood:moodId, beacon:beaconOn }; },
     dispose() {
       scene.remove(root);
     },

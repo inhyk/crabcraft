@@ -259,6 +259,8 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
   const mood: Mood = cloneMood(MOODS[0]);
   let target: Mood = MOODS[0];
   let blending = 1;
+  let moodId: 0 | 1 | 2 = 0;
+  let beaconOn = false;
   let envDirty = true;
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envScene = new THREE.Scene();
@@ -369,12 +371,14 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
       sun.target.updateMatrixWorld();
     },
     setBeaconLit(lit) {
+      beaconOn = lit;
       lighthouse.setLit(lit);
     },
-    setMood(m) {
-      target = MOODS[m];
-      blending = 0;
+    setMood(m, instant = false) {
+      moodId = m; target = MOODS[m]; blending = instant ? 1 : 0;
+      if (instant) { blendMood(mood, target, 1); applyMood(); envDirty = true; }
     },
+    getEnvironment() { return { mood: moodId, beacon: beaconOn }; },
     dispose() {
       scene.remove(root);
       if (scene.fog === fog) scene.fog = null;

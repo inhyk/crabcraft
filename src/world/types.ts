@@ -41,7 +41,8 @@ export interface World {
   /** Quest hooks. */
   setBeaconLit(lit: boolean): void;
   /** 0 = dusk (start), 1 = night (boss), 2 = celebration (ending fireworks). */
-  setMood(mood: 0 | 1 | 2): void;
+  setMood(mood: 0 | 1 | 2, instant?: boolean): void;
+  getEnvironment(): { mood: 0 | 1 | 2; beacon: boolean };
   dispose(): void;
 }
 
