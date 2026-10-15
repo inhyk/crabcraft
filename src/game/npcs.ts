@@ -25,7 +25,18 @@ export class Npc {
   }
 
   nextLine(): string {
-    if(this.game.world2.chapter===2)return t('함께 새 마을을 만들어 가요. 북쪽 유적과 수정 숲에는 아직 풀리지 않은 비밀이 많아요.','We are building a new home together. The northern ruins and crystal woods still hold many secrets.');
+    if(this.game.world2.chapter===2){
+      const lines:Record<NpcDef['id'],[string,string][]>= {
+        brinebeard:[['별빛 항구가 제법 마을다워졌군! 저 바다를 건너서도 우린 한 마을이지.','Starhaven is starting to feel like home! Across the sea, we are still one village.'],['서쪽 수정 숲을 순찰해 주게. 이삿짐을 나르는 주민들이 안심할 거야.','Keep an eye on the western crystal wood. The settlers will feel safer.']],
+        silvermoon:[['북쪽의 기억의 성소에서 별들의 노래를 들어 보세요.','Listen for the stars at the sanctuary of memory in the north.'],['달빛 연못은 멀리 있지만, 이 섬의 별들도 우리를 지켜봐요.','The Moonpool is far away, but these stars watch over us too.']],
+        coralline:[['바다를 건너온 모두에게 성소의 문은 열려 있어요.','The sanctuary is open to everyone who crossed the sea.'],['지쳤다면 여기서 쉬어요. 새 집을 만드는 일에도 휴식은 필요하죠.','Rest here if you are tired. Building a new home takes time.']],
+        grukk:[['그룩 새 문 지킨다. 저 동쪽 폐허, 이상한 소리 난다.','Grukk guards new gate. Strange noises in eastern ruins.'],['그룩 짐 열 상자 옮겼다. 간식 상자만 열한 개였다.','Grukk moved ten boxes. Eleven were snacks.']],
+        hoofclaw:[['별빛 항구에서도 수프는 따뜻하단다. 친구 몫도 가져가렴!','The soup is warm in Starhaven too. Take some for your friends!'],['이삿짐에서 주전자를 제일 먼저 꺼냈지. 집이란 맛있는 냄새가 나는 곳이란다.','The kettle was the first thing I unpacked. Home begins with a good smell.']],
+        rattlebolt:[['유적길 등불 세 개를 밝히면 밤길이 한결 든든할 게야.','Three waystones will make the road through the ruins much safer.'],['옛 등대는 포탈 건너 그대로 있지. 불을 끄면 해안에 아침이 온다네.','The old lighthouse is still across the portal. Turn it off to bring morning to the shore.']],
+        pip:[['수정은 서쪽 숲과 동쪽 유적에 있어. 밝게 빛나는 작은 원석을 찾아봐!','Crystals grow in the western wood and eastern ruins. Look for the small bright gems!'],['모루도 여기까지 이사 왔어. 새 마을에 걸맞은 도구를 만들어야지!','Even my anvil made the move. This new village deserves good tools!']],
+      };
+      const options=lines[this.def.id],line=options[this.lineIndex++%options.length];return t(...line);
+    }
     const l = this.def.lines[this.lineIndex % this.def.lines.length];
     this.lineIndex++;
     return l;
@@ -87,7 +98,10 @@ export class Townsfolk {
     const g = this.game;
     if (g.time < this.barkCd) return;
     this.barkCd = g.time + 4;
-    g.say(this.unit, g.world2.chapter===2?pick(['별빛 항구에 오신 걸 환영해요!','아빠네 바닷가에서 다 같이 이사 왔어요.','새 집 앞에 꽃을 심었어요!','피프가 수정으로 새 도구를 만든대요.','북쪽 유적의 일식은 조심하세요.','여기서도 친구들과 함께라서 든든해요.']):pick(TOWNSFOLK_BARKS));
+    const starLines:[string,string][]=[['별빛 항구에 오신 걸 환영해요!','Welcome to Starhaven!'],['바닷가 마을에서 다 같이 이사 왔어요.','We moved here together from the seaside town.'],['새 집 앞에 꽃을 심었어요!','I planted flowers outside my new home!'],['핍이 수정으로 새 도구를 만든대요.','Pip is making new tools from crystals.'],['북쪽 유적의 일식은 조심하세요.','Be careful of the eclipse in the northern ruins.'],['여기서도 친구들과 함께라서 든든해요.','I am glad our friends are here too.']];
+    const shoreKo=['옆걸음하기 좋은 저녁이네요.','앞으로 걸어 본 적 있어요? 저도 없어요.','오늘 LED가 어둡네요. 녹 때문인가?','그룩이 집게 씨름 세 판을 빚졌어요.','등대가 방금 깜빡였나요?','껍질을 닦았는데 아무도 몰라봐요!','다리가 여섯인데도 돌길에서 넘어져요.','주점 수프에서 승리의 향기가 나네요. 해초 향기도요.','역시 옆걸음이 최고예요.','선장님 수염이 지붕을 받칠 만큼 튼튼하대요.'];
+    const index=Math.floor(Math.random()*TOWNSFOLK_BARKS.length);
+    g.say(this.unit,g.world2.chapter===2?t(...pick(starLines)):t(shoreKo[index],TOWNSFOLK_BARKS[index]));
     this.walking = false;
     this.pauseUntil = g.time + 4;
     this.unit.act('gesture_hello');

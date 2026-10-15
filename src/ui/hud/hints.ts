@@ -3,6 +3,7 @@
 // six seconds after all but one are, when it is closed, or after 46 s of play, and never comes back
 // (cc.hintsSeen).
 import { h } from '../dom';
+import {t} from '../../i18n';
 import { localStorageGet, localStorageSet } from '../../app';
 
 export type HintStep = 'move' | 'look' | 'target' | 'ability' | 'interact';
@@ -40,6 +41,19 @@ export class ControlHints {
       list,
       h('div', { class: 'hints-foot' }, 'All controls are in the menu (Esc).'),
     );
+    this.refreshLanguage();
+  }
+
+  refreshLanguage(): void {
+    const texts=['이동하기 · A와 D로 옆걸음','주변을 보고 방향 조절하기','가장 가까운 적 선택하기','기술로 싸우기','게와 대화 · 등불 앞에서 길게 누르기'];
+    for(const [i,r] of ROWS.entries()){
+      const row=this.rows.get(r.step)!;
+      row.querySelector('.hints-text')!.textContent=t(texts[i],r.text);
+      if(r.step==='look')row.querySelector('kbd')!.textContent=t('우클릭 드래그','Right drag');
+    }
+    this.el.querySelector('.hints-head')!.textContent=t('처음 시작하기','Getting started');
+    this.el.querySelector('.hints-foot')!.textContent=t('모든 조작 방법은 메뉴(Esc)에 있어요.','All controls are in the menu (Esc).');
+    (this.el.querySelector('.hints-x') as HTMLElement).title=t('안내 닫기','Hide these hints');
   }
 
   /** Shows the card unless this player has already seen it. */

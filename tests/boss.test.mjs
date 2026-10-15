@@ -97,3 +97,10 @@ test('turning the lighthouse off prevents waking and suspends an existing encoun
  game.world.getEnvironment=()=>({mood:1,beacon:true});boss.wake();boss.update(2.5);assert.equal(boss.state,'idle');
  boss.sleep();assert.equal(boss.state,'dormant');assert.equal(boss.unit.hidden,true);assert.equal(boss.unit.invulnerable,true);assert.equal(boss.unit.targetable,false);
 });
+
+test('World II boss combat leaves the World I lighthouse and morning unchanged',()=>{
+ const {game,boss,player}=setup(BOSS_PROFILES.eclipse);
+ let mood=3;game.world.getEnvironment=()=>({mood,beacon:false});game.world.setMood=value=>{mood=value};
+ boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
+ assert.equal(boss.state,'fight');assert.equal(mood,3);assert.equal(game.world.getEnvironment().beacon,false);
+});

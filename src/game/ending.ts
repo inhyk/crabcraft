@@ -2,6 +2,7 @@
 // crab plays the recorded dances, fireworks burst over the bay, the camera orbits slowly with
 // depth of field, then the credits roll.
 import * as THREE from 'three';
+import {t as tr} from '../i18n';
 import type { MotionId } from '../motion/types';
 import type { Game } from './game';
 import type { Unit } from './unit';
@@ -52,7 +53,7 @@ export class EndingSequence {
     g.hud.questLog.toggle(false);
     g.player.setTarget(null);
     g.hud.setCinematic(true);
-    g.say(g.npcById('brinebeard')!.unit, 'Clawhaven! Gather round! Our hero is back!', true);
+    g.say(g.npcById('brinebeard')!.unit, tr('클로헤이븐 주민들! 모이게! 우리의 영웅이 돌아왔어!','Clawhaven! Gather round! Our hero is back!'), true);
     g.audio.playMusic('music-ending', 2.5);
     await g.app.blackout(true, 1100);
     if (!g.alive) return;
@@ -60,7 +61,7 @@ export class EndingSequence {
     g.follow.cut();
 
     g.world.setMood(2);
-    g.world.setBeaconLit(true);
+    g.world.setBeaconLit(true);g.beaconLit=true;
     for (const e of g.enemies) if (e.state !== 'gone') e.despawn();
     for (const a of g.boss.adds) a.despawn();
 
@@ -154,11 +155,11 @@ export class EndingSequence {
     const t = this.t;
     this.placeCamera(t);
 
-    const captions = this.mode==='chapter' ? [[1.5,'심해의 왕관을 되찾았습니다. 해안에 평화가 돌아왔어요.'],[8,'온 마을의 게들이 영웅과 함께 춤을 춥니다.'],[15,'함께 모험해 줘서 고마워요!'],[22.5,'첫 번째 모험의 끝 · 별빛 너머에는 새로운 섬이 기다립니다.']] as const : [
-      [1.5, '녹의 파도와 검은 일식이 사라졌습니다. 두 세계에 빛이 돌아왔습니다.'],
-      [8, '세 왕관을 되찾은 영웅을 위해, 온 마을이 함께 춤을 춥니다.'],
-      [15, "잊힌 별의 섬은 더 이상 혼자가 아닙니다. 우리의 모험은 전설이 되었습니다."],
-      [22.5, `TRUE ENDING · 함께해 줘서 고마워요, ${g.player.unit.name}.`],
+    const captions = this.mode==='chapter' ? [[1.5,tr('심해의 왕관을 되찾았습니다. 해안에 평화가 돌아왔어요.','The deep-sea crown is reclaimed. Peace has returned to the shore.')],[8,tr('온 마을의 게들이 영웅과 함께 춤을 춥니다.','The whole village dances with its hero.')],[15,tr('함께 모험해 줘서 고마워요!','Thank you for sharing this adventure!')],[22.5,tr('첫 번째 모험의 끝 · 별빛 너머에는 새로운 섬이 기다립니다.','The first adventure ends. Beyond the stars, a new island awaits.')]] as const : [
+      [1.5, tr('녹의 파도와 검은 일식이 사라졌습니다. 두 세계에 빛이 돌아왔습니다.','The Rust Tide and dark eclipse are gone. Light returns to both worlds.')],
+      [8, tr('세 왕관을 되찾은 영웅을 위해, 온 마을이 함께 춤을 춥니다.','The village dances for the hero who reclaimed the three crowns.')],
+      [15, tr('잊힌 별의 섬은 더 이상 혼자가 아닙니다. 우리의 모험은 전설이 되었습니다.','The Isle of Forgotten Stars is no longer alone. Our adventure has become a legend.')],
+      [22.5, tr(`TRUE ENDING · 함께해 줘서 고마워요, ${g.player.unit.name}.`,`TRUE ENDING · Thank you for joining us, ${g.player.unit.name}.`)],
     ] as const;
     let idx = -1;
     for (let i = 0; i < captions.length; i++) if (t >= captions[i][0]) idx = i;
@@ -180,7 +181,7 @@ export class EndingSequence {
     }
     if (t >= this.nextBark && this.dancers.length > 1) {
       this.nextBark = t + rand(1.6, 3.2);
-      g.say(pick(this.dancers.slice(1)), pick(ENDING_BARKS));
+      g.say(pick(this.dancers.slice(1)), pick(ENDING_BARKS.map((line,i)=>tr(['만세!','다 같이 춤춰요!','내 다리 조심!','빛이 돌아왔어!','최고의 밤이야!','꿈은 아니겠지?'][i],line))));
     }
     const skip = t > 4 && (g.input.wasPressed('Space') || g.input.wasPressed('Escape') || g.input.wasPressed('Enter'));
     if ((t >= LENGTH || skip) && !this.finishing) {

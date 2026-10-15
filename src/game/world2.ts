@@ -31,7 +31,7 @@ export class HiddenWorld {
   private baseNames:string[]=[];
   get portalPosition(){return this.chapter===2?this.spawn:this.shorePortal.root.position;}
   travel(){
-    const g=this.game;if(g.controlsLocked||g.player.inCombat||g.encounter.engaged){g.hud.messages.info('전투가 끝나면 포탈을 이용할 수 있어요.');return;}
+    const g=this.game;if(g.controlsLocked||g.player.inCombat||g.encounter.engaged){g.hud.messages.info(t('전투가 끝나면 포탈을 이용할 수 있어요.','You can travel through the portal after combat.'));return;}
     const chapter=this.chapter===2?1:2;
     if(!g.multiplayer?.battle.travel(chapter)){if(chapter===2)this.enter();else this.returnToShore();}
   }
@@ -41,6 +41,7 @@ export class HiddenWorld {
   private life:StarVillageLife|null=null;
   private basePois = new Map<string, {position:THREE.Vector3;yaw:number}>();
   private basePeople: THREE.Vector3[] = [];
+  private memories:{kind:ObjectiveKind;ring:THREE.Mesh;star:THREE.Mesh}[]=[];
   private nodes: {kind:ObjectiveKind;position:THREE.Vector3;mesh:THREE.Mesh}[] = [];
 
   async buildSettlement() {
@@ -49,6 +50,13 @@ export class HiddenWorld {
     for(const o of this.obstacles)this.collision.addCircle(o.x,o.z,o.r,this.height(o.x,o.z),this.height(o.x,o.z)+12);
     this.life=new StarVillageLife((x,z)=>this.height(x,z),this.collision);this.root.add(this.life.root);
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES)) {
+      if(kind.startsWith('explore-')){
+        const x=point[0],z=point[1],y=this.height(x,z);
+        const material=new THREE.MeshBasicMaterial({color:'#c0a0ff',transparent:true,opacity:.5,depthWrite:false});
+        const ring=new THREE.Mesh(new THREE.TorusGeometry(4.3,.055,5,64),material);ring.rotation.x=-Math.PI/2;ring.position.set(x,y+.13,z);this.root.add(ring);
+        const star=new THREE.Mesh(new THREE.OctahedronGeometry(.45),new THREE.MeshStandardMaterial({color:'#d6beff',emissive:'#7854ba',emissiveIntensity:1.7,metalness:.5,roughness:.25}));star.position.set(x,y+2.7,z);this.root.add(star);
+        this.memories.push({kind:kind as ObjectiveKind,ring,star});continue;
+      }
       if(!kind.startsWith('crystal-')&&!kind.startsWith('lamp-'))continue;
       const position=new THREE.Vector3(point[0],this.height(...point),point[1]);
       const material=new THREE.MeshStandardMaterial({color:kind.startsWith('lamp')?'#ffdb95':'#9afff3',emissive:kind.startsWith('lamp')?'#a95d23':'#23cbbb',emissiveIntensity:1.8,metalness:.3,roughness:.25});
@@ -112,7 +120,8 @@ export class HiddenWorld {
     for(let i=0;i<24;i++){const z=10-i*3.5,x=Math.sin(i*.5)*1.5;matrix.makeTranslation(x,this.height(x,z)+.08,z);road.setMatrixAt(i,matrix);}road.receiveShadow=true;this.root.add(road);
     for(let i=0;i<14;i++){const z=5-i*5,x=(i%2?1:-1)*6.5;const gem=new THREE.Mesh(new THREE.OctahedronGeometry(.4),teal);gem.position.set(x,this.height(x,z)+1,z);this.root.add(gem);this.rotations.push(gem);}
     this.portal=new StarPortal(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
-    const shorePosition=w.pois.spawn.position.clone().add(new THREE.Vector3(0,0,18));shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
+    // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
+    const shorePosition=new THREE.Vector3(44,0,2);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
     this.shorePortal=new StarPortal(shorePosition,'클로헤이븐 → 별빛 항구');w.root.add(this.shorePortal.root);
     const stars=new Float32Array(420*3);for(let i=0;i<420;i++){const a=rand(i+900)*Math.PI*2,y=80+rand(i+1400)*350,r=250+rand(i+1900)*300;stars.set([Math.sin(a)*r,y,Math.cos(a)*r],i*3);}
     const starGeo=new THREE.BufferGeometry();starGeo.setAttribute('position',new THREE.BufferAttribute(stars,3));this.root.add(new THREE.Points(starGeo,new THREE.PointsMaterial({color:'#b8adff',size:1.2,transparent:true,opacity:.8,depthWrite:false})));
@@ -120,6 +129,10 @@ export class HiddenWorld {
     const key=new THREE.DirectionalLight('#d6b9ff',1.8);key.position.set(-40,90,20);key.castShadow=true;key.shadow.mapSize.set(2048,2048);Object.assign(key.shadow.camera,{left:-75,right:75,top:75,bottom:-75,near:1,far:180});key.shadow.normalBias=.04;
     this.root.add(key,new THREE.HemisphereLight('#869cff','#1a1028',1.0));
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
+  }
+  refreshLanguage(){
+    if(this.chapter!==2)return;
+    for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');
   }
   regionAt(x:number,z:number){
     if(Math.hypot(x,z+75)<28)return t('별의 왕좌','The Star Throne');
@@ -166,17 +179,19 @@ export class HiddenWorld {
     g.hud.tracker.update(g.quests);
     {
       const mobs=g.enemies.filter(e=>!e.isAdd);
-      mobs.forEach((e,i)=>{const side=e.kind==='scrapling'?-1:1;const x=side*(60+(i%4)*7),z=28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority)e.respawnAt(x,z);e.unit.name=e.kind==='scrapling'?'수정 껍질 파수꾼':'별빛 유적 수호자';e.unit.setBaseTint('#b08cff');});
+      mobs.forEach((e,i)=>{const side=e.kind==='scrapling'?-1:1;const x=side*(60+(i%4)*7),z=28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority)e.respawnAt(x,z);e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.unit.setBaseTint('#b08cff');});
       for(const e of g.enemies.filter(e=>e.isAdd))e.despawn();
     }
     g.player.respawn();g.player.unit.teleport(w,this.spawn.x,this.spawn.z,Math.PI);g.follow.cut();g.follow.yaw=0;
-    g.player.setTarget(null);g.world.setMood(1);g.zone='';g.hud.messages.banner('WORLD II · 잊힌 별의 섬','별빛 항구 · 주민 퀘스트 7개 · 성장에는 끝이 없습니다','zone');
+    g.player.setTarget(null);g.zone='';g.hud.messages.banner(t('WORLD II · 잊힌 별의 섬','WORLD II · Isle of Forgotten Stars'),t('별빛 항구 · 주민 퀘스트 7개 · 성장에는 끝이 없습니다','Starhaven · Seven villager quests · Keep growing beyond level 20'),'zone');
     try{g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-140,maxX:140,minZ:-150,maxZ:170,topY:90},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));}catch{ /* The island still plays if map capture is unavailable. */ }
     g.journey?.save();
   }
   returnToShore() {
     if(this.chapter===1)return;
     this.showEpilogue();this.chapter=1;this.game.quests.setChapter(1);
+    // World II has its own lighting. Restore the untouched shore atmosphere and fog.
+    this.game.world.setMood(this.game.world.getEnvironment().mood,true);
     const g=this.game;
     g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);});
     this.travelArmed=false;this.travelAt=g.time+3;
@@ -204,6 +219,13 @@ export class HiddenWorld {
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
     this.glow.uniforms.time.value=time;this.life?.update(time);
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
+    for(const memory of this.memories){
+      const objective=QUESTS.w5.objectives.find(o=>o.kind===memory.kind)!;
+      const done=this.game.quests.objectiveDone(objective),active=this.game.quests.status.w5==='active';
+      (memory.ring.material as THREE.MeshBasicMaterial).color.set(done?'#9de4b8':'#c0a0ff');
+      (memory.ring.material as THREE.MeshBasicMaterial).opacity=done?.18:active?.5+Math.sin(time*2)*.15:.18;
+      memory.star.rotation.y=time*.5;memory.star.position.y=this.height(memory.star.position.x,memory.star.position.z)+2.7+Math.sin(time*1.5)*.12;
+    }
     for(const node of this.nodes){
       const objective=Object.values(QUESTS).flatMap(q=>q.objectives).find(o=>o.kind===node.kind);
       const done=objective?this.game.quests.objectiveDone(objective):false;

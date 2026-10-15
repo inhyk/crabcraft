@@ -485,8 +485,8 @@ export class Game {
 
   private intro(): void {
     if(this.world2.chapter===2) {
-      this.zone='잊힌 별의 섬';this.hud.minimap.setZone(this.zone,false);
-      this.hud.chat.system('WORLD II · 유적의 수호자들을 물리치고 20레벨에 일식의 여왕에게 도전하세요.');
+      this.zone=t('잊힌 별의 섬','Isle of Forgotten Stars');this.hud.minimap.setZone(this.zone,false);
+      this.hud.chat.system(t('WORLD II · 주민들의 이사를 돕고 유적을 탐험해 20레벨에 일식의 여왕에게 도전하세요.','WORLD II · Help the settlers, explore the ruins, and challenge the Eclipse Queen at level 20.'));
       this.updateMusic(true);return;
     }
     const name = this.player.unit.name;
@@ -494,15 +494,15 @@ export class Game {
     this.zoneCandidate = this.zone;
     this.hud.messages.banner(this.zone, ZONE_SUBTITLES[this.zone] ?? '', 'zone');
     this.hud.minimap.setZone(this.zone, false);
-    this.hud.chat.system(`Welcome to Clawhaven, ${name}!`);
-    this.hud.chat.system('Captain Brinebeard by the fountain has work for you. Walk up to him and press F.');
+    this.hud.chat.system(t(`${name}님, 클로헤이븐에 오신 걸 환영해요!`,`Welcome to Clawhaven, ${name}!`));
+    this.hud.chat.system(t('분수 옆 브라인비어드 선장이 기다려요. 가까이 가서 F를 누르세요.','Captain Brinebeard by the fountain has work for you. Walk up to him and press F.'));
     this.hud.tracker.update(this.quests);
     const brine = this.npcById('brinebeard');
     // After the zone banner (4.3 s) has faded, so the greeting bubble does not sit on top of it.
     setTimeout(() => {
       if (!this.alive || !brine) return;
       brine.unit.act('gesture_hello');
-      this.say(brine.unit, 'Ahoy! Over here, fresh shell!');
+      this.say(brine.unit, t('어서 와! 이쪽이야, 새 친구!','Ahoy! Over here, fresh shell!'));
     }, 4600);
     setTimeout(() => this.alive && this.hud.hints.start(), 900);
     this.updateMusic(true);
@@ -643,7 +643,7 @@ export class Game {
     if (inp.wasPressed('Enter') || inp.wasPressed('NumpadEnter')) {
       hud.bubbles.enabled = !hud.bubbles.enabled;
       if (!hud.bubbles.enabled) hud.bubbles.clear();
-      hud.messages.info(hud.bubbles.enabled ? 'Chat bubbles on' : 'Chat bubbles off');
+      hud.messages.info(hud.bubbles.enabled ? t('말풍선 켜짐','Chat bubbles on') : t('말풍선 꺼짐','Chat bubbles off'));
     }
     if (inp.wasPressed('KeyR')) {
       if (this.time < this.robotConfirmUntil) {
@@ -651,7 +651,7 @@ export class Game {
         return;
       }
       this.robotConfirmUntil = this.time + 3;
-      hud.messages.info('Press R again to open Robot Mode (your quest progress will reset)');
+      hud.messages.info(t('R을 다시 누르면 로봇 모드로 이동합니다. 진행 중인 모험 화면이 닫힙니다.','Press R again to open Robot Mode and leave this adventure.'));
     }
     if (this.controlsLocked) return;
     const hints = hud.hints;
@@ -700,7 +700,7 @@ export class Game {
       this.music = '';
     } else this.updateMusic(true);
     this.hud.actionBar.setMusicIcon(this.musicOn);
-    this.hud.messages.info(this.musicOn ? 'Music on' : 'Music off');
+    this.hud.messages.info(this.musicOn ? t('음악 켜짐','Music on') : t('음악 꺼짐','Music off'));
   }
 
   setQuality(q: QualitySetting): void {
@@ -752,22 +752,32 @@ export class Game {
     const it = this.findInteractable();
     if (!it) this.hud.prompt.hide();
     else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.chapter===2?t('월드 1로 돌아가기','Return to World I'):t('월드 2로 이동','Travel to World II'));
-    else if(it.kind==='world2')this.hud.prompt.show('F',it.node.kind.startsWith('lamp')?t('점성로 밝히기','Light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
+    else if(it.kind==='world2')this.hud.prompt.show('F',it.node.kind.startsWith('lamp')?t('길게 눌러 별빛 등불 켜기','Hold to light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
     else if (it.kind === 'beacon') this.hud.prompt.show('F', this.beaconLit?t('등대 끄기','Turn off lighthouse'):t('등대 켜기','Light lighthouse'));
-    else this.hud.prompt.show('F', `${it.unit.kind === 'npc' ? 'Talk to' : 'Chat with'} ${it.unit.name}`);
+    else this.hud.prompt.show('F', t(`${it.unit.name}에게 말 걸기`,`${it.unit.kind === 'npc' ? 'Talk to' : 'Chat with'} ${it.unit.name}`));
   }
 
   private interact(): void {
     const it = this.findInteractable();
     if (!it) return;
     if(it.kind==='portal'){this.world2.travel();return;}
-    if(it.kind==='world2'){this.player.setTarget(null);this.world2.collect(it.node.kind);return;}
+    if(it.kind==='world2'){
+      this.player.setTarget(null);
+      const node=it.node;
+      if(node.kind.startsWith('lamp')){
+        this.player.unit.setYaw(yawTo(this.player.unit.pos.x,this.player.unit.pos.z,node.position.x,node.position.z));
+        this.player.startChannel(t('별빛 등불 켜는 중','Lighting waystone'),1.5,'KeyF',node.mesh.position.clone(),()=>{
+          if(this.world2.chapter===2&&this.player.unit.pos.distanceTo(node.position)<3.5)this.world2.collect(node.kind);
+        });
+      }else this.world2.collect(node.kind);
+      return;
+    }
     if (it.kind === 'beacon') {
       const b = this.world.pois.beacon;
       const to = this.beaconPoint(v1).clone();
       this.player.setTarget(null);
       this.player.unit.setYaw(yawTo(this.player.unit.pos.x, this.player.unit.pos.z, b.position.x, b.position.z));
-      this.player.startChannel(this.beaconLit?'등대 끄는 중':'등대 켜는 중', 2, 'KeyF', to, () => this.setLighthouse(!this.beaconLit));
+      this.player.startChannel(this.beaconLit?t('등대 끄는 중','Turning off lighthouse'):t('등대 켜는 중','Lighting lighthouse'), 2, 'KeyF', to, () => this.setLighthouse(!this.beaconLit));
       return;
     }
     this.player.setTarget(it.unit);
@@ -811,7 +821,7 @@ export class Game {
         questTitle: def.title,
         paragraphs: def.complete,
         rewardXp: def.xp,
-        buttons: [{ label: def.completeButton ?? 'Complete Quest', primary: true, onClick: () => this.turnIn(ready) }],
+        buttons: [{ label: def.completeButton ?? t('보상 받기','Complete Quest'), primary: true, onClick: () => this.turnIn(ready) }],
       });
       return;
     }
@@ -913,8 +923,8 @@ export class Game {
     });
     ev.on('ready', (id) => {
       const def = QUESTS[id];
-      this.hud.messages.info(`${def.title} (Complete)`);
-      this.hud.chat.quest(`${def.title} completed. ${def.readyHint}`);
+      this.hud.messages.info(t(`${def.title} · 목표 완료`,`${def.title} (Complete)`));
+      this.hud.chat.quest(t(`${def.title} 목표 완료. ${def.readyHint}`,`${def.title} completed. ${def.readyHint}`));
       this.audio.sfx('sfx-quest-accept', { volume: 0.7 });
       this.hud.tracker.update(this.quests);
       this.journey?.save();
@@ -923,7 +933,7 @@ export class Game {
       const def = QUESTS[id];
       this.audio.sfx('sfx-quest-complete');
       this.hud.messages.banner(t('퀘스트 완료','Quest Complete'), def.title, 'quest');
-      this.hud.chat.quest(`${def.title} completed.`);
+      this.hud.chat.quest(t(`${def.title} 완료!`,`${def.title} completed.`));
       this.player.gainXp(def.xp);
       this.hud.tracker.update(this.quests);
       if (id === 'q3') this.onBeaconQuestDone();

@@ -22,4 +22,17 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Two independent browser contexts passed party selection, PvP damage, same-party damage prevention, guest-requested lighthouse and chapter travel, and synchronized villagers.
 - 23 game tests and 7 relay tests passed; TypeScript checks and production build passed. No browser errors in the checked flows.
 - Multiplayer Worker e3cf34c34334454397f25f7276c7a29e deployed; live internet smoke checks passed combat, chapter checkpoint, late join, host transfer and room isolation.
-- Frontend and seonn.dev milestone publication in progress. Ten-hour development request remains active; this is an early milestone.
+- Frontend production milestone published: commit 7366314, deployment dpl_9VtxF69XDLKkZMSv8g22a4dvMsfA, https://inh-crabcraft-multiplayer.vercel.app. Production browser replay passed creator, actual quest accept/collect, chapter travel and lighthouse with no page errors.
+- Hub commit e2785c6 published to https://seonn.dev/games/crabcraft (HTTP 200); live description and both screenshot hashes match the new village/dance assets. Git-triggered production deployment dpl_GpEHwBEC1DzcbJMdsU5DDUEy8gFt is READY.
+- Ten-hour development request remains active; this is an early milestone, not the ten-hour completion.
+
+## Second milestone — 2026-10-15 13:35 UTC
+
+- Found a real walk-through regression: the original World I portal site overlapped the tavern porch. Moved only the portal to the open eastern street at (44, 2); direct automatic crossing now succeeds in both directions without bouncing on arrival.
+- Added real 1.5-second hold-to-light channels to match the waystone quest instructions. Early release cancels without advancing progress.
+- Corrected Korean quest objective labels and directions to match actual World I inventory/delivery semantics. Added live language refresh for first-time hints and translated interaction prompts, village conversations, boss journey statuses and dance captions.
+- Named World II residents now have individual, alternating settlement dialogue. Added branching stone trails with tree clearance, and visible exploration glyphs that change when discovered.
+- Preserved World I lighthouse/weather while visiting and fighting in World II; restore original shore fog on return.
+- Added a repeatable GPU browser journey tool at tools/qa-starhaven.mjs. General quest acceptance, kills through the combat pipeline, collection, lantern cancellation/hold, delivery, six reward turn-ins, save/reload, automatic portal crossings and live language switching have been exercised. The full extended run passed all seven quests, 16-character final celebration and credits transition with no page errors.
+- 25 game/protocol tests pass, including language changes preserving objective IDs/progress and World II boss combat preserving morning. Production build and whitespace checks pass.
+- This is continued active development; ten hours have not elapsed.

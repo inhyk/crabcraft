@@ -81,7 +81,7 @@ export class QuestLogPanel {
     const known = QUEST_ORDER.filter((id) => log.inChapter(id) && log.status[id] !== 'locked' && log.status[id] !== 'available');
     if (!this.selected || !known.includes(this.selected)) this.selected = known.find((id) => log.status[id] !== 'done') ?? known[0] ?? null;
     this.listEl.replaceChildren(h('h3', null, t('퀘스트 기록','Quest Log')));
-    if (!known.length) this.listEl.append(h('div', { class: 'qlog-empty' }, this.game.world2.chapter===2 ? t('별빛 마을 주민들의 머리 위 ! 표시를 찾아 F로 대화하세요.','Look for ! above the villagers and press F to talk.') : 'No quests yet. Captain Brinebeard in the square looks like he needs help.'));
+    if (!known.length) this.listEl.append(h('div', { class: 'qlog-empty' }, this.game.world2.chapter===2 ? t('별빛 마을 주민들의 머리 위 ! 표시를 찾아 F로 대화하세요.','Look for ! above the villagers and press F to talk.') : t('광장에 있는 브라인비어드 선장에게 말을 걸어 보세요.','No quests yet. Captain Brinebeard in the square looks like he needs help.')));
     for (const id of known) {
       const st = log.status[id];
       const label = st === 'done' ? t('완료','Completed') : st === 'ready' ? t('보상 받기','Ready to turn in') : t('진행 중','In progress');

@@ -154,7 +154,7 @@ export class Boss {
     if(this.profile.level<20&&g.world.getEnvironment?.().beacon===false)return;
     if ((g.partyLevel ?? g.player.level) < this.profile.level) return;
     this.state = 'fight';
-    g.world.setMood?.(1);
+    if(this.profile.level<20)g.world.setMood?.(1);
     g.player.unit.blessingUntil = Infinity;
     this.nextSwing = g.time + 1.2;
     this.nextMech = g.time + 4;

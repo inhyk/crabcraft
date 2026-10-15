@@ -141,7 +141,7 @@ export class BossJourney {
     g.player.unit.teleport(g.world, a.position.x + dx * distance, a.position.z + dz * distance, a.yaw + Math.PI);
     g.follow.cut();
     g.follow.yaw = g.player.unit.yaw + Math.PI;
-    g.world.setMood(1);
+    if(boss!==g.worldBoss)g.world.setMood(1);
     g.hud.dialogue.close();
     this.root.open = false;
     g.hud.messages.banner(`LEVEL ${boss.profile.level} · 보스 도전`, boss.profile.name, 'boss');
@@ -171,13 +171,15 @@ export class BossJourney {
       for (const { boss, status, button } of this.cards) {
         const cleared = boss === g.boss ? this.rustCleared : boss === g.worldBoss ? this.trueCleared : this.abyssCleared;
         const unlocked = canChallenge(level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter);
-        status.textContent = cleared ? '✓ 왕관 획득' : unlocked ? (boss.engaged ? '전투 중' : boss === g.worldBoss ? '도전 가능 · 별의 왕좌' : '도전 가능 · 철의 난파선') : `🔒 ${boss.profile.level}레벨${boss.profile.level === 20 ? ' + 월드 2' : boss.profile.level === 10 ? ' + 첫 보스 승리' : ''} 필요`;
-        button.disabled = cleared || !unlocked || g.controlsLocked || g.player.inCombat || g.encounter.engaged || (boss === g.finalBoss && g.boss.state !== 'dead');
+        const needsBeacon=boss!==g.worldBoss&&!g.beaconLit;
+        status.textContent = cleared ? t('✓ 왕관 획득','✓ Crown reclaimed') : needsBeacon ? t('등대를 켜면 도전할 수 있어요.','Light the lighthouse to challenge this boss.') : unlocked ? (boss.engaged ? t('전투 중','In battle') : boss === g.worldBoss ? t('도전 가능 · 별의 왕좌','Ready · The Star Throne') : t('도전 가능 · 철의 난파선','Ready · The Iron Wreck')) : t(`🔒 ${boss.profile.level}레벨${boss.profile.level === 20 ? ' + 월드 2' : boss.profile.level === 10 ? ' + 첫 보스 승리' : ''} 필요`,`🔒 Requires level ${boss.profile.level}${boss.profile.level===20?' + World II':boss.profile.level===10?' + first boss victory':''}`);
+        button.disabled = cleared || needsBeacon || !unlocked || g.controlsLocked || g.player.inCombat || g.encounter.engaged || (boss === g.finalBoss && g.boss.state !== 'dead');
         button.textContent = cleared ? t('정복 완료','Conquered') : boss.engaged ? t('전투 중','In battle') : t('도전하기 →','Challenge →');
         const card=button.closest('article')!;const name=language()==='ko'?boss.profile.name:boss.profile.level===20?'Astra · Queen of the Eclipse':boss.profile.level===10?'Nereid · Lord of the Deep':'Corrodius · Tyrant of Rust';card.querySelector('h3')!.textContent=name;boss.unit.name=name;
       }
       this.portal.hidden = g.world2.chapter !== 1;
-      this.patrol.textContent = this.trueCleared ? '세 왕관을 되찾고 두 세계를 구했습니다.' : g.world2.chapter === 2 ? `WORLD II · 유적 순찰 ${this.kills}/5 · +${patrolReward(level)} XP · 목표 20레벨` : this.abyssCleared ? '첫 엔딩 너머, 숨겨진 별의 섬으로…' : this.rustCleared ? `해안 순찰 ${this.kills}/5 · 보너스 ${patrolReward(level)} XP` : '마을 퀘스트와 해안 전투로 3레벨에 도달하세요.';
+      this.patrol.textContent = this.trueCleared ? t('세 왕관을 되찾고 두 세계를 구했습니다.','You reclaimed the three crowns and saved both worlds.') : g.world2.chapter === 2 ? t(`WORLD II · 유적 순찰 ${this.kills}/5 · +${patrolReward(level)} XP · 목표 20레벨`,`WORLD II · Ruin patrol ${this.kills}/5 · +${patrolReward(level)} XP · Reach level 20`) : this.abyssCleared ? t('첫 엔딩 너머, 숨겨진 별의 섬으로…','Beyond the first ending, a hidden island awaits…') : this.rustCleared ? t(`해안 순찰 ${this.kills}/5 · 보너스 ${patrolReward(level)} XP`,`Shore patrol ${this.kills}/5 · Bonus ${patrolReward(level)} XP`) : t('마을 퀘스트와 해안 전투로 3레벨에 도달하세요.','Reach level 3 through village quests and shore battles.');
+      this.root.querySelector('small')!.textContent=t('적을 처치하고 퀘스트를 완료하면 성장해요. 멀티플레이에서는 함께 싸우며, 내 성장과 승리는 이 브라우저에 저장됩니다.','Grow by defeating enemies and completing quests. Battle together in multiplayer; your progress and victories are saved in this browser.');
       this.victory.hidden = !this.trueCleared;
       this.victory.disabled = g.worldBoss.state !== 'dead' || g.controlsLocked;
     }

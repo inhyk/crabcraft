@@ -14,6 +14,21 @@ export const STAR_OBJECTIVES: Partial<Record<ObjectiveKind,[number,number]>> = {
   'lamp-a':[0,15], 'lamp-b':[25,-15], 'lamp-c':[0,-45],
   'explore-west':[-75,-35], 'explore-east':[80,-40], 'explore-north':[0,-48],
 };
+// Forking pilgrim trails connect the village to each exploration destination.
+export const STAR_TRAILS: [number,number][][] = [
+  [[0,24],[-16,14],[-38,8],[-65,22],[-80,-10],[-75,-35]],
+  [[0,24],[18,13],[40,6],[65,12],[80,-20],[80,-40]],
+  [[0,15],[0,0],[25,-15],[14,-31],[0,-45],[0,-48]],
+];
+function trailDistance(x:number,z:number){
+  let best=Infinity;
+  for(const trail of STAR_TRAILS)for(let i=1;i<trail.length;i++){
+    const [ax,az]=trail[i-1],[bx,bz]=trail[i],dx=bx-ax,dz=bz-az;
+    const u=THREE.MathUtils.clamp(((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz),0,1);
+    best=Math.min(best,Math.hypot(x-ax-u*dx,z-az-u*dz));
+  }
+  return best;
+}
 export const STAR_WALKS = [[-15,62],[0,61],[15,62],[-15,44],[0,36],[15,44],[0,72],[0,24]];
 
 /** Deterministic, batched geometry; shared asset textures remain owned by the base world. */
@@ -80,6 +95,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     const x=(rand(i+100)-.5)*215,z=(rand(i+900)-.5)*255+10;
     if(Math.hypot(x/110,(z-10)/130)>.88 || Math.abs(x)<11 || Math.hypot(x,z+75)<27)continue;
     if(Math.abs(x)<53&&z>3&&z<98)continue;
+    if(trailDistance(x,z)<3)continue;
     if(Object.values(STAR_OBJECTIVES).some(p=>Math.hypot(x-p[0],z-p[1])<4))continue;
     const list=i%5===0?rockNames:treeNames;if(!list.length)continue;
     const scale=i%5===0?1.2+rand(i+88):.6+rand(i+55)*.65;
@@ -97,7 +113,18 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   const slab=new THREE.BoxGeometry(1.8,.12,1.8);
   for(let z=-72;z<=92;z+=2)for(let x=-4;x<=4;x+=2)if(Math.hypot(x,z-55)>3.7)roads.addGeometry(slab,roadMat,trs(x,height(x,z)+.015,z,0,1),false);
   for(let x=-26;x<=26;x+=2)for(let z=52;z<=58;z+=2)roads.addGeometry(slab,roadMat,trs(x,height(x,z)+.02,z),false);
-  root.add(roads.build());slab.dispose();
+  const trailMat=new THREE.MeshStandardMaterial({color:'#676979',roughness:.95});
+  const trailSlab=new THREE.BoxGeometry(1.65,.1,1.55);
+  for(const trail of STAR_TRAILS)for(let i=1;i<trail.length;i++){
+    const [ax,az]=trail[i-1],[bx,bz]=trail[i],distance=Math.hypot(bx-ax,bz-az),steps=Math.ceil(distance/1.9),yaw=Math.atan2(bx-ax,bz-az);
+    for(let j=0;j<steps;j++){
+      const u=j/steps,x=ax+(bx-ax)*u,z=az+(bz-az)*u;
+      // Keep the broad, paved village road clear of a second layer.
+      if(Math.abs(x)<6)continue;
+      roads.addGeometry(trailSlab,trailMat,trs(x,height(x,z)+.075,z,yaw),false);
+    }
+  }
+  root.add(roads.build());slab.dispose();trailSlab.dispose();
   for(const kit of [village,nature,props])for(const piece of kit.pieces.values())for(const part of piece.parts)part.geometry.dispose();
   return {root,collision,lots};
 }

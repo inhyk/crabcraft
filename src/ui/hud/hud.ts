@@ -1,6 +1,7 @@
 // The in-game HUD: composes every widget and updates them once per frame.
 import './hud.css';
 import { h } from '../dom';
+import {t} from '../../i18n';
 import type { Game } from '../../game/game';
 import { ActionBar, CastBar, Prompt } from './actionbar';
 import { BossFrame, UnitFrame } from './frames';
@@ -66,7 +67,7 @@ export class Hud {
     this.letterTop = h('div', { class: 'letterbox top hud-keep' });
     this.letterBottom = h('div', { class: 'letterbox bottom hud-keep' });
     this.caption = h('div', { class: 'caption hud-keep' });
-    this.skipHint = h('div', { class: 'skip-hint hud-keep' }, 'Press Space to continue');
+    this.skipHint = h('div', { class: 'skip-hint hud-keep' }, t('Space를 눌러 계속하기','Press Space to continue'));
     this.debugEl = h('div', { class: 'debug-readout hidden' });
     this.root = h(
       'div',
@@ -95,6 +96,11 @@ export class Hud {
       this.skipHint,
       this.menu.el,
     );
+  }
+
+  refreshLanguage(): void {
+    this.hints.refreshLanguage();
+    this.skipHint.textContent=t('Space를 눌러 계속하기','Press Space to continue');
   }
 
   update(dt: number): void {
