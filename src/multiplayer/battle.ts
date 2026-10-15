@@ -4,6 +4,7 @@ import type { Game } from '../game/game';
 import type { Unit } from '../game/unit';
 import type { HitOptions } from '../game/combat';
 import type { Enemy } from '../game/enemies';
+import type { Npc } from '../game/npcs';
 import type { CombatEvent, EntityState, WorldState } from '../../server/combatProtocol';
 
 /** Only the elected host runs enemy AI and resolves hits. Guests submit attacks. */
@@ -272,7 +273,11 @@ export class BattleSync {
       for (const [u,s] of this.goals) {
         const k=1-Math.exp(-25*dt);
         u.pos.x+=(s.x-u.pos.x)*k; u.pos.y+=(s.y-u.pos.y)*k; u.pos.z+=(s.z-u.pos.z)*k;
-        u.setYaw(u.yaw+Math.atan2(Math.sin(s.yaw-u.yaw),Math.cos(s.yaw-u.yaw))*k);
+        // Dialogue is personal: preserve this guest's look toward their own speaker.
+        // All idle NPCs and other units follow the authoritative shared orientation.
+        if (!(u.kind === 'npc' && (u.ctrl as Npc | null)?.talking)) {
+          u.setYaw(u.yaw+Math.atan2(Math.sin(s.yaw-u.yaw),Math.cos(s.yaw-u.yaw))*k);
+        }
         u.feedLocomotion(dt);
       }
     }

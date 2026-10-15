@@ -51,6 +51,15 @@ export class Npc {
     const u = this.unit;
     const p = g.player.unit;
     const now = g.time;
+    // Guests receive ambient poses/actions from the host. A personal conversation may
+    // turn toward its speaker, but interpolation feeds locomotion exactly once below.
+    if (g.multiplayer?.battle.authority === false) {
+      if (this.talking && !g.ending.active) {
+        const look = this.lookAt ?? p.pos;
+        u.setYaw(turnToward(u.yaw, yawTo(u.pos.x, u.pos.z, look.x, look.z), 2.6, dt));
+      }
+      return;
+    }
     if (g.ending.active) {
       u.feedLocomotion(dt);
       return;
