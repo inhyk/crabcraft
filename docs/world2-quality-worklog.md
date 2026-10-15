@@ -111,3 +111,5 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Inspected actual western/eastern landmark GPU captures. Trail centerlines remain clear and sight collision through all 63 decorative crystals passes.
 - Added tools/qa-world2-ground.mjs: all 22,701 rendered vertices match the live height/collision surface (maximum error 0.000000477 units), colours are finite, filtering respects device limits, and the real engaged boss emits Eclipse and Starfall telegraphs. Inspected the warmed boss-framing view and returned to shore without page errors. Encounter setup is injected for focused QA; this is not a claim of a manually played full boss victory.
 - All 31 game/protocol tests, production build and whitespace checks pass. Ten-hour development remains active.
+
+- Terrain art commit e3b05cb deployed READY as dpl_CtpLpmvuN9mVggmoPpZkTnb1HpWd. The entire terrain/boss-effect browser replay passed again on the public stable production URL with the same 22,701-vertex collision match and no page errors. Hub page HTTP 200.
