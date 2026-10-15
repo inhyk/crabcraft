@@ -20,6 +20,7 @@ import {StarAmbience} from './starAmbience';
 import {StarWaystoneKit} from './starWaystone';
 import {StarMemorySealKit} from './starMemorySeal';
 import {StarEnemyArmour} from './starEnemyArmour';
+import {StarThrone} from './starThrone';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
 
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
@@ -58,6 +59,7 @@ export class HiddenWorld {
   private collision: Collision | null = null;
   private life:StarVillageLife|null=null;
   private armour:StarEnemyArmour|null=null;
+  private throne:StarThrone;
   private wind:StarWind|null=null;
   private nav:NavHints|null=null;
   private ambience:StarAmbience;
@@ -158,11 +160,8 @@ export class HiddenWorld {
       crystals.setMatrixAt(i,matrix);
     }
     crystals.castShadow=true;this.root.add(crystals);
-    for(let i=0;i<12;i++){
-      const a=i/12*Math.PI*2,x=Math.sin(a)*21,z=-75+Math.cos(a)*21,h=5+(i%3)*2;
-      const column=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.7,h,8),stone);column.position.set(x,this.height(x,z)+h/2,z);column.castShadow=true;this.root.add(column);this.obstacles.push({x,z,r:1.7});
-      const gem=new THREE.Mesh(new THREE.OctahedronGeometry(.85),i%2?teal:crystal);gem.position.set(x,this.height(x,z)+h+1,z);this.root.add(gem);this.rotations.push(gem);
-    }
+    this.throne=new StarThrone((x,z)=>this.height(x,z),stone,teal,crystal);
+    this.root.add(this.throne.root);this.obstacles.push(...this.throne.solids);
     const disk=new THREE.Mesh(new THREE.CylinderGeometry(17,18,.3,64),stone);disk.position.copy(this.arena.position);disk.position.y=2.93;disk.receiveShadow=true;this.root.add(disk);
     for(const r of [3,9,16]){const ring=new THREE.Mesh(new THREE.TorusGeometry(r,.045,5,96),teal);ring.rotation.x=Math.PI/2;ring.position.set(0,3.12,-75);this.root.add(ring);}
     // The settlement owns the stone trails; keep only the luminous wayfinders here.
@@ -283,7 +282,7 @@ export class HiddenWorld {
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
     this.sea.update(time);
-    this.armour?.update(time);
+    this.armour?.update(time);this.throne.update(time);
     this.wind?.update(time);
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
     for(const memory of this.memories){
