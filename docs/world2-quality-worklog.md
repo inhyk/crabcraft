@@ -316,3 +316,9 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - At 16:34 UTC, approximately 3 hours 38 minutes have elapsed since 12:56:12 UTC. Ten-hour quality work remains active. Public deployment follows.
 
 - Published b404531 as READY dpl_6f11FLmr3yTmt5XWAWtERK68zneG. The full journal replay passes on the stable public game: undiscovered stories hidden, actual discoveries, partial and completed persistence, real reward collection, bilingual titles/body, six scrollable viewport cases, zero horizontal overflow and no page/console errors. Hub HTTP 200. Ten-hour quality work remains active.
+
+
+### Carved northern sanctuary — 2026-10-15 UTC
+
+- Current native exploration captures confirmed the northern sanctuary's four plain cylinder columns lacked the material/detail of the eastern ruins. Rebuilt their shafts with stepped stone bases/capitals, paired gold bands and three luminous diamond carvings per pillar. Original locations, 6.4-unit height and four collision cylinders remain unchanged. Adds three instanced render families, no lights/textures or simulation state.
+- Expanded tools/qa-star-landmarks.mjs to check every vertex in all 32 sanctuary components against the original colliders: zero radial excess, maximum height roundoff 3.79e-7. Complete local landmark replay passes all trail centerlines with a one-unit radius, 63 crystal sight colliders, faceted bounds/normals, all 70 eastern masonry components, rubble path clearance and three animated pool ripples. Native northern capture inspected; no page errors. TypeScript/Vite and whitespace checks pass. Public deployment follows; ten-hour quality work remains active.

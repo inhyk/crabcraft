@@ -36,11 +36,26 @@ export class StarLandmarks {
     }
     crystals.castShadow=true;this.root.add(crystals);
     // Memory Sanctuary: a carved arch sits beyond the discovery circle, leaving the road open.
-    const pillars=new THREE.InstancedMesh(new THREE.CylinderGeometry(.7,1,6.4,8),paleStone,4);
+    const pillars=new THREE.InstancedMesh(new THREE.CylinderGeometry(.58,.7,5.7,12),paleStone,4);
+    pillars.name='sanctuary-column-shafts';
+    const capitals=new THREE.InstancedMesh(new THREE.CylinderGeometry(.74,.95,.35,8),paleStone,8);
+    capitals.name='sanctuary-column-capitals';
+    const bands=new THREE.InstancedMesh(new THREE.CylinderGeometry(.73,.73,.14,12),gold,8);
+    bands.name='sanctuary-column-bands';
+    const glyphs=new THREE.InstancedMesh(new THREE.OctahedronGeometry(.14),violet,12);
+    glyphs.name='sanctuary-column-glyphs';
     for(const [i,x,z] of [[0,-4.8,-55],[1,4.8,-55],[2,-8,-47],[3,8,-47]]){
       const y=height(x,z);pillars.setMatrixAt(i,new THREE.Matrix4().makeTranslation(x,y+3.2,z));collision.addCircle(x,z,1,y,y+6.4);
+      for(let j=0;j<2;j++){
+        rotation.setFromAxisAngle(new THREE.Vector3(1,0,0),j*Math.PI);
+        matrix.compose(new THREE.Vector3(x,y+(j?6.225:.175),z),rotation,new THREE.Vector3(1,1,1));capitals.setMatrixAt(i*2+j,matrix);
+        bands.setMatrixAt(i*2+j,new THREE.Matrix4().makeTranslation(x,y+(j?5.7:.8),z));
+      }
+      for(let j=0;j<3;j++){
+        matrix.compose(new THREE.Vector3(x,y+3.7+j*.43,z+.66),new THREE.Quaternion(),new THREE.Vector3(j===1?1:.65,1.2,.5));glyphs.setMatrixAt(i*3+j,matrix);
+      }
     }
-    pillars.castShadow=true;this.root.add(pillars);
+    for(const mesh of [pillars,capitals,bands,glyphs]){mesh.castShadow=true;mesh.receiveShadow=true;this.root.add(mesh);}
     const arch=new THREE.InstancedMesh(new THREE.BoxGeometry(1.25,1.1,1.45),paleStone,11);
     const runes=new THREE.InstancedMesh(new THREE.OctahedronGeometry(.16),violet,11);
     for(let i=0;i<11;i++){
