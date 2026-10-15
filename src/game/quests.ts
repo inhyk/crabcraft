@@ -548,14 +548,6 @@ export const BOSS_YELLS = {
   get death(){return t('이 빛은… 따뜻하구나…','The light... it is... warm...');},
 };
 
-export const ZONE_SUBTITLES: Record<string, string> = {
-  Clawhaven: 'Harbour town of six peoples',
-  'The Brine Shore': 'Where the Scraplings crawl',
-  'Saltmere Lighthouse': 'Dark these three nights',
-  'The Iron Wreck': 'Rust and ruin',
-  'Moonpool Grove': 'Where the moon listens',
-};
-
 // ------------------------------------------------------------------ state
 
 export interface QuestEvents extends Record<string, unknown> {

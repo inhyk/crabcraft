@@ -84,7 +84,7 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 
 - Authority fix deployed READY as dpl_2LFBNnFxLiC3VxoAusvz2EixvFgn (commit 16de09f). Production browser smoke recovered damage 8.32–12.48 from intentionally stale coefficients without changing HP 52, then restored shore level 1 / respawn 30 / red LEDs. This smoke checks the deployed code; real WebSocket host departure was exercised in the two-browser local relay replay above. Hub page HTTP 200.
 
-## Bilingual boss clarity and island meadows — 2026-10-15 14:08 UTC
+## Bilingual boss clarity and island meadows — 2026-10-15 14:06 UTC
 
 - Unified host and guest mechanic warnings by semantic attack kind and boss level. Black Eclipse explicitly directs players into the green sanctuary; other attacks describe their correct outside safety zone. Host Rust Spray now announces its warning too.
 - Boss names, titles, phase banners, dialogue, patrol rewards and the first ending reveal follow Korean/English settings. Numeric encounter profiles and network identities remain unchanged.
@@ -93,3 +93,11 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Ten-hour development remains active; this is an intermediate deployment.
 
 - Published commit 94d74d2 as READY production deployment dpl_BH8zBBMo237PUHTCRVtu9UwXEsQB. A fresh headless browser against the public stable URL confirmed Astra's English name/title, the actual Eclipse inner-circle warning and 167 native meadow plants. No page errors occurred. seonn.dev/games/crabcraft returns HTTP 200.
+
+## World language consistency — 2026-10-15 14:10 UTC
+
+- Localized loading titles, stage labels and gameplay tips, plus shore region titles/subtitles and lighthouse on/off banners. Added an explicit Starhaven preparation stage.
+- Region identities stay stable in both worlds while their visible names follow the selected language. The original shore music comparisons still use the same region keys. Removed the unused English-only subtitle table.
+- GPU traversal found the northern exploration sanctuary incorrectly labelled as the Star Throne. Aligned the throne label radius with its 24-unit arena ground, so the sanctuary is correctly the Pilgrim’s Starroad.
+- Added tools/qa-world-language.mjs. A real isolated browser passed localized initial loading, actual language buttons, every island region in both languages, refresh persistence, chapter return, English lighthouse-off banner and original wreck boss-music selection. No page errors. All 31 game/protocol tests and production build pass.
+- Ten-hour development remains active; this is another intermediate release.

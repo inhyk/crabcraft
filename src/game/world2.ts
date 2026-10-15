@@ -152,12 +152,12 @@ export class HiddenWorld {
     for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');
   }
   regionAt(x:number,z:number){
-    if(Math.hypot(x,z+75)<28)return t('별의 왕좌','The Star Throne');
-    if(Math.abs(x)<54&&z>3&&z<100)return t('별빛 항구','Starhaven');
-    if(x<-40)return t('달그늘 수정 숲','Moonshade Crystalwood');
-    if(x>40)return t('무너진 별의 유적','The Fallen Star Ruins');
-    if(z<-25)return t('순례자의 별길','The Pilgrim’s Starroad');
-    return t('잊힌 별의 섬','The Forgotten Star');
+    if(Math.hypot(x,z+75)<24)return 'The Star Throne';
+    if(Math.abs(x)<54&&z>3&&z<100)return 'Starhaven';
+    if(x<-40)return 'Moonshade Crystalwood';
+    if(x>40)return 'The Fallen Star Ruins';
+    if(z<-25)return 'The Pilgrim’s Starroad';
+    return 'The Forgotten Star';
   }
   height(x:number,z:number) {
     if(Math.hypot(x,z+75)<24 || Math.abs(x)<9&&z>-100&&z<105 || Math.abs(x)<54&&z>3&&z<100)return 3;

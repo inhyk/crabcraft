@@ -1,4 +1,5 @@
 import {t} from '../i18n';
+import {loadingLabel,loadingTips,regionName,regionSubtitle} from './worldLocale';
 // The game session: loads the world and every crab, runs the frame loop, routes input, and glues
 // quests, combat, AI, effects, music and the HUD together.
 import * as THREE from 'three';
@@ -37,7 +38,6 @@ import {
   QuestLog,
   RATTLEBOLT_AFTER,
   RATTLEBOLT_Q3,
-  ZONE_SUBTITLES,
   type NpcId,
   type QuestId,
 } from './quests';
@@ -72,14 +72,6 @@ const TOWNSFOLK_TITLES: Record<RaceId, string> = {
   nightelf: 'Pearl Diver',
   tauren: 'Stew Taster',
 };
-
-const TIPS = [
-  'Crabs walk sideways. A and D scuttle, Q and E turn, right mouse steers.',
-  'Press Tab to target the nearest enemy in front of you, then 1 to 4 to fight.',
-  'A yellow ! means a crab has work for you. A yellow ? means it is ready to turn in.',
-  'Lost? Follow the golden beam and the glowing breadcrumbs.',
-  'Every walk, wave and dance in Clawhaven is a recorded rollout of the real Jumper robot policies.',
-];
 
 const v1 = new THREE.Vector3();
 const v2 = new THREE.Vector3();
@@ -183,6 +175,7 @@ export class Game {
     });
     if (!this.alive) return;
     this.world2 = new HiddenWorld(this);
+    progress(0.56, 'Building Starhaven');
     await this.world2.buildSettlement();
     this.engine.setView(this.scene, this.camera, { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } });
     this.vfx = new Vfx(this.scene);
@@ -446,20 +439,21 @@ export class Game {
   }
 
   private showLoading(): void {
-    const tip = TIPS[Math.floor(Math.random() * TIPS.length)];
+    const tips=loadingTips();
+    const tip = tips[Math.floor(Math.random() * tips.length)];
     const img = `art/loading-${1 + Math.floor(Math.random() * 2)}.webp`;
     const el = h(
       'div',
       { class: 'loading' },
       h('div', { class: 'ld-art', style: `background-image:url("${art(img)}")` }),
       h('div', { class: 'ld-shade' }),
-      h('div', { class: 'ld-zone' }, h('div', { class: 'ld-title cc-title' }, 'Clawhaven'), h('div', { class: 'ld-sub' }, 'The Tidelands  |  Harbour town of six peoples')),
+      h('div', { class: 'ld-zone' }, h('div', { class: 'ld-title cc-title' }, regionName('Clawhaven')), h('div', { class: 'ld-sub' }, t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples'))),
       h(
         'div',
         { class: 'ld-foot' },
-        h('div', { class: 'ld-tip' }, h('span', { class: 'ld-tip-k' }, 'Tip'), tip),
+        h('div', { class: 'ld-tip' }, h('span', { class: 'ld-tip-k' }, t('도움말','Tip')), tip),
         h('div', { class: 'ld-bar' }, h('i')),
-        h('div', { class: 'ld-label' }, 'Loading'),
+        h('div', { class: 'ld-label' }, t('불러오는 중','Loading')),
       ),
     );
     const probe = new Image();
@@ -473,7 +467,7 @@ export class Game {
     const el = this.loadingEl;
     if (!el) return;
     (el.querySelector('.ld-bar > i') as HTMLElement).style.transform = `scaleX(${Math.max(0, Math.min(1, f))})`;
-    (el.querySelector('.ld-label') as HTMLElement).textContent = label;
+    (el.querySelector('.ld-label') as HTMLElement).textContent = loadingLabel(label);
   }
 
   private hideLoading(): void {
@@ -486,15 +480,15 @@ export class Game {
 
   private intro(): void {
     if(this.world2.chapter===2) {
-      this.zone=t('잊힌 별의 섬','Isle of Forgotten Stars');this.hud.minimap.setZone(this.zone,false);
+      this.zone=this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z);this.zoneCandidate=this.zone;this.hud.minimap.setZone(regionName(this.zone),false);
       this.hud.chat.system(t('WORLD II · 주민들의 이사를 돕고 유적을 탐험해 20레벨에 일식의 여왕에게 도전하세요.','WORLD II · Help the settlers, explore the ruins, and challenge the Eclipse Queen at level 20.'));
       this.updateMusic(true);return;
     }
     const name = this.player.unit.name;
     this.zone = this.zoneAt(this.player.unit.pos);
     this.zoneCandidate = this.zone;
-    this.hud.messages.banner(this.zone, ZONE_SUBTITLES[this.zone] ?? '', 'zone');
-    this.hud.minimap.setZone(this.zone, false);
+    this.hud.messages.banner(regionName(this.zone), regionSubtitle(this.zone), 'zone');
+    this.hud.minimap.setZone(regionName(this.zone), false);
     this.hud.chat.system(t(`${name}님, 클로헤이븐에 오신 걸 환영해요!`,`Welcome to Clawhaven, ${name}!`));
     this.hud.chat.system(t('분수 옆 브라인비어드 선장이 기다려요. 가까이 가서 F를 누르세요.','Captain Brinebeard by the fountain has work for you. Walk up to him and press F.'));
     this.hud.tracker.update(this.quests);
@@ -954,7 +948,7 @@ export class Game {
     this.beaconLit=lit;this.world.setBeaconLit(lit);this.world.setMood(lit?1:3);
     if(!lit){this.boss.sleep();this.finalBoss.sleep();this.player.setTarget(null);}
     else this.quests.bump('beacon');
-    this.hud.messages.banner(lit?'등대를 켰어요':'등대를 껐어요',lit?'밤이 찾아왔습니다. 보스에 도전할 수 있어요.':'아침이 되었습니다. 보스는 다시 잠들었어요.','zone');
+    this.hud.messages.banner(lit?t('등대를 켰어요','Lighthouse lit'):t('등대를 껐어요','Lighthouse off'),lit?t('밤이 찾아왔습니다. 보스에 도전할 수 있어요.','Night has fallen. You can challenge the bosses.'):t('아침이 되었습니다. 보스는 다시 잠들었어요.','Morning has returned. The bosses are asleep again.'),'zone');
     this.journey?.save();
   }
 
@@ -1176,9 +1170,9 @@ export class Game {
     }
     if (z !== this.zone && this.time - this.zoneSince > 0.6 && !this.ending.active) {
       this.zone = z;
-      this.hud.messages.banner(z, ZONE_SUBTITLES[z] ?? '', 'zone');
+      this.hud.messages.banner(regionName(z), regionSubtitle(z), 'zone');
     }
-    this.hud.minimap.setZone(this.zone, this.player.inCombat);
+    this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }
 
   private updateMusic(force = false): void {
