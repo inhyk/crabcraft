@@ -151,3 +151,13 @@ test('host election preserves boss reveal and already released crab death timeli
  const early={...host.boss.networkState('b20'),timeline:{state:2.8,freed:.6,freedYaw:1.2,released:true}};
  guest.boss.applyNetwork(early);assert.ok(Math.abs(guest.boss.freed.rig.root.scale.x-.65)<1e-9);
 });
+
+test('World II nova leaves a stationary walker time to react and clear its damage radius in every phase',()=>{
+ for(const phase of [1,2,3]){
+  const {boss,player}=setup(BOSS_PROFILES.eclipse);boss.phase=phase;boss.enraged=phase===3;boss.mechIndex=phase===1?2:1;boss.startMech();
+  const m=boss.networkState('b20').mech;assert.equal(m.kind,'nova');
+  // 300ms reaction + ordinary 5m/s travel + acceleration allowance; no dash or invulnerability.
+  const needed=.3+(6+player.radius*.5)/5+.1;
+  assert.ok(m.left>=needed,`phase ${phase}: ${m.left}s warning is below ${needed}s walking budget`);
+ }
+});

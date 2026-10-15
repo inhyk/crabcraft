@@ -380,6 +380,8 @@ export class Boss {
       m.fx.push(g.vfx.telegraphCircle(m.at, 4.5, m.dur, new THREE.Color('#71ffca')));
     } else if (kind === 'nova') {
       m.dur = 2.2 * speedUp;
+      // Enrage must still allow a stationary walker to react and clear the 6m circle.
+      if (this.profile.level === 20) m.dur = Math.max(m.dur, 1.9);
       m.at.copy(p.pos);
       m.fx.push(g.vfx.telegraphCircle(m.at, 6, m.dur, new THREE.Color(this.profile.color), this.deckUnder(m.at, 6, 0, Math.PI)));
     } else {
