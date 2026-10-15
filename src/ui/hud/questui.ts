@@ -147,6 +147,7 @@ export interface DialoguePage {
   unit: Unit;
   portraitArt: string | null;
   questTitle?: string;
+  questId?: QuestId;
   paragraphs: string[];
   objectives?: string[];
   rewardXp?: number;
@@ -168,6 +169,7 @@ export class DialogueWindow {
   private total = 0;
   private talkT = 0;
   unit: Unit | null = null;
+  questId: QuestId | null = null;
   onClose: (() => void) | null = null;
 
   constructor(private readonly game: Game) {
@@ -211,6 +213,7 @@ export class DialogueWindow {
   open(p: DialoguePage): void {
     const u = p.unit;
     this.unit = u;
+    this.questId = p.questId ?? null;
     this.el.classList.remove('hidden');
     // restart the slide-in
     this.el.style.animation = 'none';
@@ -264,6 +267,7 @@ export class DialogueWindow {
     if (!this.unit) return;
     const u = this.unit;
     this.unit = null;
+    this.questId = null;
     this.el.classList.add('hidden');
     u.express('happy', 1);
     this.onClose?.();

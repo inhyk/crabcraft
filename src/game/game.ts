@@ -856,6 +856,7 @@ export class Game {
         unit: u,
         portraitArt: portrait,
         questTitle: def.title,
+        questId: ready,
         paragraphs: def.complete,
         rewardXp: def.xp,
         buttons: [{ label: def.completeButton ?? t('보상 받기','Complete Quest'), primary: true, onClick: () => this.turnIn(ready) }],
@@ -869,6 +870,7 @@ export class Game {
         unit: u,
         portraitArt: portrait,
         questTitle: def.title,
+        questId: offer,
         paragraphs: def.offer,
         objectives: def.objectives.map((o) => (o.count > 1 ? `${o.label}: 0/${o.count}` : o.label)),
         rewardXp: def.xp,
@@ -881,7 +883,7 @@ export class Game {
     }
     const prog = q.inProgressAt(id);
     if (prog && !(id === 'silvermoon' && prog === 'q4')) {
-      this.hud.dialogue.open({ unit: u, portraitArt: portrait, questTitle: QUESTS[prog].title, paragraphs: [QUESTS[prog].progress], buttons: [bye] });
+      this.hud.dialogue.open({ unit: u, portraitArt: portrait, questTitle: QUESTS[prog].title, questId: prog, paragraphs: [QUESTS[prog].progress], buttons: [bye] });
       return;
     }
     let line = npc.nextLine();
@@ -939,6 +941,16 @@ export class Game {
 
   // ================================================================ quests
 
+  /** Status transitions occur after progress events; keep visible personal views current. */
+  private refreshQuestViews(id: QuestId, refreshDialogue = false): void {
+    if (this.hud.questLog.open) this.hud.questLog.render();
+    const dialogue = this.hud.dialogue;
+    // A different offer from the same NPC must not be replaced by a friend's kill.
+    if (!refreshDialogue || dialogue.questId !== id || !dialogue.unit) return;
+    const npc = this.npcs.find(n => n.unit === dialogue.unit);
+    if (npc) this.openNpc(npc);
+  }
+
   private wireQuestEvents(): void {
     const ev = this.quests.events;
     ev.on('accepted', (id) => {
@@ -950,6 +962,7 @@ export class Game {
       if (id === 'q4') this.hud.messages.banner(def.title, 'New quest: defeat Corrodius on the Iron Wreck', 'quest');
       else this.hud.messages.banner(t('퀘스트 수락','Quest Accepted'), def.title, 'quest');
       this.hud.tracker.update(this.quests);
+      this.refreshQuestViews(id);
       this.journey?.save();
     });
     ev.on('progress', ({ objective, value }) => {
@@ -969,6 +982,7 @@ export class Game {
       this.hud.chat.quest(t(`${def.title} 목표 완료. ${def.readyHint}`,`${def.title} completed. ${def.readyHint}`));
       this.audio.sfx('sfx-quest-accept', { volume: 0.7 });
       this.hud.tracker.update(this.quests);
+      this.refreshQuestViews(id, true);
       this.journey?.save();
     });
     ev.on('completed', (id) => {
@@ -978,6 +992,7 @@ export class Game {
       this.hud.chat.quest(t(`${def.title} 완료!`,`${def.title} completed.`));
       this.player.gainXp(def.xp);
       this.hud.tracker.update(this.quests);
+      this.refreshQuestViews(id, def.turnIn === null);
       if (id === 'q3') this.onBeaconQuestDone();
       this.journey?.save();
     });
