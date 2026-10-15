@@ -77,7 +77,7 @@ try{
   await page.waitForTimeout(60);
  }
  await keys([]);assert.equal(won,true,'native-input pilot did not finish within ten minutes');
- await page.screenshot({path:'tmp/qa/real-boss-run-dance.png'});
+ await page.waitForFunction(()=>window.app.current.game.ending.t>5);await page.screenshot({path:'tmp/qa/real-boss-run-dance.png'});
  await page.waitForFunction(()=>window.app.current.game.ending.t>4);await page.keyboard.press('Space');await page.locator('.credits').waitFor({state:'visible',timeout:45000});
  await page.keyboard.press('Space');await page.getByRole('button',{name:'계속 모험하기',exact:true}).click();await page.waitForFunction(()=>window.app.currentId==='game'&&window.app.current.game.loaded,null,{timeout:90000});
  const resumed=await read();assert.equal(resumed.cleared,true);assert.equal(resumed.state,'dead');assert.equal(resumed.ending.active,false);assert.equal(resumed.god,false);assert.deepEqual(errors,[]);

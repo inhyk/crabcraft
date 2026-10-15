@@ -4,6 +4,7 @@
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192';
+const relay=process.env.CC_QA_RELAY??new URL('/multiplayer',base).href.replace(/^http/,'ws');
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[],heldByPage=new WeakMap(),inputs=[],pages=[];let page;
 async function keys(next){
@@ -24,7 +25,7 @@ function tangent(s,at,length){
 }
 try{
  async function prepare(name,language){
-  const p=await browser.newPage({viewport:{width:1280,height:800}});pages.push(p);p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(({name,language})=>{localStorage.setItem('cc.language',language);localStorage.setItem('cc.quality','low');localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'priest',shell:0,crest:0,led:0,name}));},{name,language});
+  const p=await browser.newPage({viewport:{width:1280,height:800}});pages.push(p);p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(({name,language,relay})=>{const Original=window.WebSocket;window.WebSocket=class extends Original{constructor(url,protocols){super(String(url).includes('/multiplayer')?relay:url,protocols);}};localStorage.setItem('cc.language',language);localStorage.setItem('cc.quality','low');localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'priest',shell:0,crest:0,led:0,name}));},{name,language,relay});
   await p.goto(base+'/?screen=game&multiplayer');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));await p.keyboard.type('13570');await p.getByRole('button',{name:language==='ko'?'레벨 +10':'Level +10',exact:true}).click();for(let i=0;i<9;i++)await p.getByRole('button',{name:language==='ko'?'레벨 +1':'Level +1',exact:true}).click();await p.getByRole('button',{name:language==='ko'?'제작자 화면 닫기':'Close creator tools',exact:true}).click();return p;
  }
  const host=await prepare('Coop Host','ko'),friend=await prepare('Coop Friend','en');
@@ -79,7 +80,7 @@ try{
  const deadline=Date.now()+600000;console.log('FULL_HEALTH',JSON.stringify(fullHealth));
  while(Date.now()<deadline&&!pilots.every(p=>p.won)){for(const p of pilots)if(!p.won)await tick(p);await new Promise(r=>setTimeout(r,60));}
  assert.equal(pilots.every(p=>p.won),true,'native coop pilot did not finish');
- for(const p of pilots){page=p.page;await keys([]);await page.screenshot({path:`tmp/qa/real-coop-${p.name}-dance.png`});await page.waitForFunction(()=>window.app.current.game.ending.t>4);await page.keyboard.press('Space');}
+ for(const p of pilots){page=p.page;await keys([]);await page.waitForFunction(()=>window.app.current.game.ending.t>5);await page.screenshot({path:`tmp/qa/real-coop-${p.name}-dance.png`});await page.waitForFunction(()=>window.app.current.game.ending.t>4);await page.keyboard.press('Space');}
  for(const p of pilots){page=p.page;await page.locator('.credits').waitFor({state:'visible',timeout:45000});await page.keyboard.press('Space');await page.getByRole('button',{name:p.lang==='ko'?'계속 모험하기':'Continue Adventure',exact:true}).click();await page.waitForFunction(()=>window.app.currentId==='game'&&window.app.current.game.loaded,null,{timeout:90000});const resumed=await read();assert.equal(resumed.cleared,true);assert.equal(resumed.state,'dead');assert.equal(resumed.god,false);assert.equal(resumed.ending.active,false);console.log('RESUMED',p.name,JSON.stringify(resumed));}
  assert.deepEqual(errors,[]);console.log('PASS: two actual native-input KO/EN level-20 priests defeat full-health shared boss without god/HP/damage/position injection after Challenge; both 16-dancer true endings and saved return; local relay and creator level/world setup');
 }catch(e){console.log('COOP_PILOT_FAILURE',e.message);for(let i=0;i<pages.length;i++)await pages[i].screenshot({path:`tmp/qa/real-coop-failure-${i}.png`}).catch(()=>{});throw e;}
