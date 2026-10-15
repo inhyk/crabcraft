@@ -19,6 +19,7 @@ import {NavHints} from './nav';
 import {StarAmbience} from './starAmbience';
 import {StarWaystoneKit} from './starWaystone';
 import {StarMemorySealKit} from './starMemorySeal';
+import {StarOreKit} from './starOre';
 import {StarEnemyArmour} from './starEnemyArmour';
 import {StarThrone} from './starThrone';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
@@ -79,7 +80,7 @@ export class HiddenWorld {
     for(const o of this.obstacles)this.collision.addCircle(o.x,o.z,o.r,this.height(o.x,o.z),this.height(o.x,o.z)+12);
     for(const o of this.crystalSolids)this.collision.addCircle(o.x,o.z,o.r,o.y0,o.y1);
     this.life=new StarVillageLife((x,z)=>this.height(x,z),this.collision);this.root.add(this.life.root);
-    const waystones=new StarWaystoneKit(),memorySeals=new StarMemorySealKit();
+    const waystones=new StarWaystoneKit(),memorySeals=new StarMemorySealKit(),ore=new StarOreKit();
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES)) {
       if(kind.startsWith('explore-')){
         const x=point[0],z=point[1],y=this.height(x,z);
@@ -92,11 +93,15 @@ export class HiddenWorld {
       const position=new THREE.Vector3(point[0],this.height(...point),point[1]);
       const material=new THREE.MeshStandardMaterial({color:kind.startsWith('lamp')?'#ffdb95':'#9afff3',emissive:kind.startsWith('lamp')?'#a95d23':'#23cbbb',emissiveIntensity:1.8,metalness:.3,roughness:.25,transparent:true,depthWrite:false});
       const waystone=kind.startsWith('lamp')?waystones.create(position,material):null;
-      const mesh=waystone?.core??new THREE.Mesh(new THREE.OctahedronGeometry(.9),material);
+      const mineral=waystone?null:ore.create(position,material);
+      const mesh=waystone?.core??mineral!.core;
       // Core stays in world coordinates for the existing channel/VFX and camera-fade paths.
       if(waystone){
         waystone.root.remove(mesh);this.root.add(waystone.root);
         this.collision.addCircle(position.x,position.z,.88,position.y,position.y+3.15);
+      }else if(mineral){
+        this.root.add(mineral.root);
+        this.collision.addCircle(position.x,position.z,1.05,position.y,position.y+.4);
       }
       mesh.position.copy(position).y+=waystone?1.46:1.3;mesh.castShadow=true;
       const shadowOpacity={value:1};mesh.customDepthMaterial=collectibleShadow(shadowOpacity);this.root.add(mesh);
