@@ -6,6 +6,7 @@ import type { Game } from '../../game/game';
 import type { AbilityDef } from '../../data/classes';
 import { GCD, xpForLevel } from '../../game/player';
 import { abilityNeedsTarget, isMeleeAbility } from '../../game/abilities';
+import {abilityName,abilityDescription} from '../../game/abilityLocale';
 import { iconEl, iconSvg } from './icons';
 
 interface Slot {
@@ -23,7 +24,10 @@ export class ActionBar {
   private xpFill: HTMLElement;
   private xpLabel: HTMLElement;
   private tooltip: HTMLElement | null = null;
+  private tooltipSource: {ab:AbilityDef;anchor:HTMLElement} | null = null;
   private musicBtn: HTMLButtonElement;
+  private microTitles: {el:HTMLElement;ko:string;en:string}[] = [];
+  private xpBar: HTMLElement;
   private lastXp = '';
 
   constructor(private readonly game: Game, onLog: () => void, onMenu: () => void, onMusic: () => void) {
@@ -47,8 +51,9 @@ export class ActionBar {
       slotsEl.append(el);
       this.slots.push({ ab, el, cd, cdText, state: '', wasCooling: false });
     }
-    const micro = (icon: string, title: string, fn: () => void) => {
-      const b = h('button', { class: 'hud-i', title }) as HTMLButtonElement;
+    const micro = (icon: string, ko: string, en: string, fn: () => void) => {
+      const b = h('button', { class: 'hud-i', title:t(ko,en) }) as HTMLButtonElement;
+      this.microTitles.push({el:b,ko,en});
       b.innerHTML = iconSvg(icon);
       b.addEventListener('click', () => {
         game.audio.sfx('sfx-click', { volume: 0.5 });
@@ -56,15 +61,16 @@ export class ActionBar {
       });
       return b;
     };
-    this.musicBtn = micro('music', 'Music (M)', onMusic);
-    const microEl = h('div', { class: 'ab-micro hud-plate' }, micro('log', 'Quest Log (L)', onLog), this.musicBtn, micro('menu', 'Game Menu (Esc)', onMenu));
+    this.musicBtn = micro('music', '음악 (M)', 'Music (M)', onMusic);
+    const microEl = h('div', { class: 'ab-micro hud-plate' }, micro('log', '퀘스트 기록 (L)', 'Quest Log (L)', onLog), this.musicBtn, micro('menu', '게임 메뉴 (Esc)', 'Game Menu (Esc)', onMenu));
     this.xpFill = h('div', { class: 'fill' });
     this.xpLabel = h('div', { class: 'ab-xp-label' });
+    this.xpBar = h('div', { class: 'ab-xp hud-i', title:t('경험치','Experience') }, this.xpFill, h('div', { class: 'ticks' }));
     this.el = h(
       'div',
       { class: 'ab' },
       h('div', { class: 'ab-row' }, slotsEl, microEl),
-      h('div', { class: 'ab-xp hud-i', title: 'Experience' }, this.xpFill, h('div', { class: 'ticks' })),
+      this.xpBar,
       this.xpLabel,
     );
   }
@@ -82,19 +88,20 @@ export class ActionBar {
 
   private showTip(ab: AbilityDef, anchor: HTMLElement): void {
     this.hideTip();
+    this.tooltipSource={ab,anchor};
     const cls = this.game.player.cls;
     const meta: string[] = [];
-    if (ab.cost) meta.push(`${ab.cost} ${cls.resource === 'rage' ? 'Rage' : 'Mana'}`);
-    meta.push(ab.castTime > 0 ? `${ab.castTime} sec cast` : 'Instant');
-    if (ab.cooldown > 0) meta.push(`${ab.cooldown} sec cooldown`);
-    const range = isMeleeAbility(ab) ? 'Melee range' : abilityNeedsTarget(ab) ? `${ab.range} m range` : ab.range > 0 ? `${ab.range} m radius` : 'Self';
+    if (ab.cost) meta.push(`${ab.cost} ${cls.resource === 'rage' ? t('분노','Rage') : t('마나','Mana')}`);
+    meta.push(ab.castTime > 0 ? t(`시전 ${ab.castTime}초`,`${ab.castTime} sec cast`) : t('즉시 시전','Instant'));
+    if (ab.cooldown > 0) meta.push(t(`재사용 ${ab.cooldown}초`,`${ab.cooldown} sec cooldown`));
+    const range = isMeleeAbility(ab) ? t('근접 거리','Melee range') : abilityNeedsTarget(ab) ? t(`사거리 ${ab.range}m`,`${ab.range} m range`) : ab.range > 0 ? t(`반경 ${ab.range}m`,`${ab.range} m radius`) : t('자신','Self');
     const tip = h(
       'div',
       { class: 'cc-tooltip' },
-      h('div', { class: 't-title' }, ab.name),
+      h('div', { class: 't-title' }, abilityName(ab)),
       h('div', { class: 't-meta' }, meta.join('  |  ')),
       h('div', { class: 't-meta' }, range),
-      h('div', { class: 't-desc' }, ab.description),
+      h('div', { class: 't-desc' }, abilityDescription(ab)),
     );
     document.body.append(tip);
     const r = anchor.getBoundingClientRect();
@@ -107,6 +114,14 @@ export class ActionBar {
   hideTip(): void {
     this.tooltip?.remove();
     this.tooltip = null;
+    this.tooltipSource = null;
+  }
+
+  refreshLanguage(): void {
+    for(const {el,ko,en} of this.microTitles)el.title=t(ko,en);
+    this.xpBar.title=t('경험치','Experience');
+    const source=this.tooltipSource;
+    if(source)this.showTip(source.ab,source.anchor);
   }
 
   update(): void {
@@ -174,6 +189,7 @@ export class CastBar {
   private channel = false;
   private active = false;
   private hideAt = 0;
+  private labelSource: string | (() => string) = '';
 
   constructor(private readonly game: Game) {
     this.fill = h('div', { class: 'fill' });
@@ -183,12 +199,13 @@ export class CastBar {
     this.el = h('div', { class: 'castbar' }, h('div', { class: 'cc-bar cast' }, this.fill, this.label, this.time, this.spark));
   }
 
-  start(name: string, seconds: number, channel = false): void {
+  start(name: string | (() => string), seconds: number, channel = false): void {
     this.t0 = this.game.time;
     this.dur = seconds;
     this.channel = channel;
     this.active = true;
-    this.label.textContent = name;
+    this.labelSource = name;
+    this.refreshLanguage();
     this.el.className = `castbar on${channel ? ' channel' : ''}`;
   }
 
@@ -210,6 +227,7 @@ export class CastBar {
   update(): void {
     const now = this.game.time;
     if (this.active) {
+      this.refreshLanguage();
       const k = Math.min(1, (now - this.t0) / this.dur);
       this.fill.style.transform = `scaleX(${k})`;
       this.spark.style.left = `${k * 100}%`;
@@ -220,6 +238,12 @@ export class CastBar {
       this.el.classList.remove('on');
       this.time.textContent = '';
     }
+  }
+
+  refreshLanguage(): void {
+    if(!this.active)return;
+    const text=typeof this.labelSource==='function'?this.labelSource():this.labelSource;
+    if(this.label.textContent!==text)this.label.textContent=text;
   }
 }
 

@@ -2,6 +2,7 @@
 // targeting, auto-attack, the cast/channel bars, resources, cooldowns and the global cooldown.
 import * as THREE from 'three';
 import {t} from '../i18n';
+import {abilityName} from './abilityLocale';
 import type { AbilityDef, ClassDef } from '../data/classes';
 import type { Game } from './game';
 import type { Unit } from './unit';
@@ -394,7 +395,7 @@ export class Player {
       this.cast = { ability: ab, start: now, end: now + ab.castTime, target };
       u.act('cast', { upper: true, loop: true, fade: 0.15 });
       g.audio.sfx('sfx-cast', { volume: 0.5 });
-      g.hud.castBar.start(ab.name, ab.castTime);
+      g.hud.castBar.start(() => abilityName(ab), ab.castTime);
     } else {
       this.commit(ab, target);
     }

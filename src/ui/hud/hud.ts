@@ -100,6 +100,8 @@ export class Hud {
   }
 
   refreshLanguage(): void {
+    this.actionBar.refreshLanguage();
+    this.castBar.refreshLanguage();
     this.messages.refreshLanguage();
     this.hints.refreshLanguage();
     for(const boss of [this.game.boss,this.game.finalBoss,this.game.worldBoss])boss.refreshLanguage();
