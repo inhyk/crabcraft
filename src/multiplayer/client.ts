@@ -25,6 +25,7 @@ export class Multiplayer {
   private partyElapsed=0;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
+  private rejoinParty: number | null = null;
   private status = h('p', { class: 'mp-status', role: 'status' }, '혼자 플레이 중');
   private code = h('div', { class: 'mp-code' });
   private roster = h('div', { class: 'mp-roster' });
@@ -101,6 +102,9 @@ export class Multiplayer {
         case 'welcome':
           this.room = msg.room; this.ownId = msg.id; this.retries = 0;
           this.battle.join(msg.id, msg.host, msg.world);
+          // A transport retry receives a new ID; restore only its explicit team choice.
+          const party=this.rejoinParty;this.rejoinParty=null;
+          if(party!==null)this.battle.setParty(party);
           for (const p of msg.players) this.addPeer(p.id, p.spec, p.state);
           this.setStatus('연결됨 · 친구를 초대해 보세요!','Connected · Invite a friend!');
           this.input.value = this.room;
@@ -129,10 +133,11 @@ export class Multiplayer {
       this.ws = null;
       this.clearPeers();
       if (this.room && this.retries++ < 5) {
+        this.rejoinParty ??= this.battle.parties[this.ownId] ?? null;
         this.setStatus('연결이 끊겼어요. 다시 연결 중…','Disconnected. Reconnecting…');
         const previousRoom = this.room;
         this.retry = setTimeout(() => this.openSocket('join', previousRoom), 1500);
-      } else { this.battle.leave(); this.room = ''; this.setStatus('연결할 수 없어요. 서버와 방 코드를 확인하고 다시 참가해 주세요.','Could not connect. Check the room code and try joining again.'); }
+      } else { this.rejoinParty=null;this.battle.leave(); this.room = ''; this.setStatus('연결할 수 없어요. 서버와 방 코드를 확인하고 다시 참가해 주세요.','Could not connect. Check the room code and try joining again.'); }
       this.updateUi();
     };
   }
@@ -258,6 +263,7 @@ export class Multiplayer {
   }
   private clearPeers() { for (const id of this.peers.keys()) this.removePeer(id); }
   private closeSocket() {
+    this.rejoinParty=null;
     if (this.retry) clearTimeout(this.retry);
     this.retry = null;
     const ws = this.ws; this.ws = null;
