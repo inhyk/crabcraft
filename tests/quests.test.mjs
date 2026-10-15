@@ -39,7 +39,7 @@ test('a personal quest choice guides its remaining objectives and turn-in, then 
  assert.equal(q.current().objective.kind,'explore-east');q.bump('explore-east');q.bump('explore-north');
  assert.equal(q.current().quest,'w5');assert.equal(q.current().step,'turnin');
  q.complete('w5');assert.equal(q.trackedQuest,null);assert.equal(q.current().quest,'w1');
- assert.equal(q.track('w5'),false);assert.equal(q.track('w7'),false);
+ assert.equal(q.track('w5'),false);assert.equal(q.track('q4'),false);
 });
 
 test('quest choices persist separately by world and reject invalid or cross-world saved values',()=>{
@@ -57,4 +57,13 @@ test('repeated KO/EN switches clear translated fallback reward buttons and keep 
   setQuestLanguage('en');assert.equal(QUESTS.q1.completeButton,undefined);assert.equal(QUESTS.q2.completeButton,undefined);assert.equal(QUESTS.q3.completeButton,undefined);assert.equal(QUESTS.q4.completeButton,'Keep exploring toward level 10');assert.equal(QUESTS.w1.completeButton,'Claim reward');
  }
  setQuestLanguage('ko');
+});
+
+test('an unaccepted island request can guide to its giver, persist, then guide its accepted objectives',()=>{
+ const q=new QuestLog();q.setChapter(2);q.accept('w1');assert.equal(q.current().quest,'w1');
+ assert.equal(q.track('w2'),true);assert.equal(q.status.w2,'available');assert.equal(q.current().step,'accept');assert.equal(q.current().poi,'npc:pip');
+ const restored=new QuestLog();Object.assign(restored.status,q.status);restored.restoreTracking(JSON.parse(JSON.stringify(q.tracked)));restored.setChapter(2);
+ assert.equal(restored.current().quest,'w2');assert.equal(restored.current().step,'accept');restored.accept('w2');assert.equal(restored.current().objective.kind,'crystal-a');
+ for(const kind of ['crystal-a','crystal-b','crystal-c','crystal-d'])restored.bump(kind);assert.equal(restored.current().step,'turnin');assert.equal(restored.current().poi,'npc:pip');restored.complete('w2');assert.equal(restored.current().quest,'w1');
+ restored.setChapter(1);assert.equal(restored.track('q1'),false);assert.equal(restored.track('q4'),false);assert.equal(restored.track('w3'),false);
 });

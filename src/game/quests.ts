@@ -580,22 +580,27 @@ export class QuestLog {
   readonly events = new Emitter<QuestEvents>();
   cogs = 0;
 
+  private canTrack(id: QuestId, chapter = this.chapter): boolean {
+    return (QUESTS[id].chapter ?? 1) === chapter &&
+      (['active', 'ready'].includes(this.status[id]) || chapter === 2 && this.status[id] === 'available');
+  }
+
   track(id: QuestId): boolean {
-    if (!this.inChapter(id) || !['active', 'ready'].includes(this.status[id])) return false;
+    if (!this.canTrack(id)) return false;
     this.tracked[this.chapter] = id;
     return true;
   }
 
   get trackedQuest(): QuestId | null {
     const id = this.tracked[this.chapter];
-    return id && this.inChapter(id) && ['active', 'ready'].includes(this.status[id]) ? id : null;
+    return id && this.canTrack(id) ? id : null;
   }
 
   restoreTracking(value: unknown): void {
     if (!value || typeof value !== 'object') return;
     for (const chapter of [1, 2] as const) {
       const id = (value as Record<string, unknown>)[chapter];
-      if (typeof id === 'string' && QUEST_ORDER.includes(id as QuestId) && (QUESTS[id as QuestId].chapter ?? 1) === chapter && ['active', 'ready'].includes(this.status[id as QuestId])) this.tracked[chapter] = id as QuestId;
+      if (typeof id === 'string' && QUEST_ORDER.includes(id as QuestId) && this.canTrack(id as QuestId, chapter)) this.tracked[chapter] = id as QuestId;
     }
   }
 
@@ -690,6 +695,10 @@ export class QuestLog {
 
   current(): CurrentObjective | null {
     const tracked = this.trackedQuest;
+    if (tracked && this.status[tracked] === 'available') {
+      const giver = QUESTS[tracked].giver;
+      return { quest: tracked, step: 'accept', poi: `npc:${giver}` as PoiId, label: t(`${npcName(giver)}에게 말 걸기`,`Speak with ${npcName(giver)}`) };
+    }
     const order = tracked ? [tracked, ...QUEST_ORDER.filter(id => id !== tracked)] : QUEST_ORDER;
     for (const id of order) {
       if(!this.inChapter(id))continue;

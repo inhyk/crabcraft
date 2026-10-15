@@ -3,7 +3,7 @@ import { h } from '../dom';
 import {language,t} from '../../i18n';
 import type { Game } from '../../game/game';
 import type { Unit } from '../../game/unit';
-import { QUESTS, QUEST_ORDER, type QuestId, type QuestLog } from '../../game/quests';
+import { QUESTS, QUEST_ORDER, npcName, type QuestId, type QuestLog } from '../../game/quests';
 import { portraitStyle } from './frames';
 import { starMemory } from '../../game/starMemories';
 
@@ -82,16 +82,22 @@ export class QuestLogPanel {
     const log = this.game.quests;
     const listScroll = this.listEl.scrollTop;
     const known = QUEST_ORDER.filter((id) => log.inChapter(id) && log.status[id] !== 'locked' && log.status[id] !== 'available');
-    if (!this.selected || !known.includes(this.selected)) this.selected = known.find((id) => log.status[id] !== 'done') ?? known[0] ?? null;
+    const offers = this.game.world2.chapter === 2 ? QUEST_ORDER.filter(id => log.inChapter(id) && log.status[id] === 'available') : [];
+    const visible = [...known, ...offers];
+    if (!this.selected || !visible.includes(this.selected)) this.selected = log.trackedQuest ?? known.find((id) => log.status[id] !== 'done') ?? offers[0] ?? known[0] ?? null;
     this.listEl.replaceChildren(h('h3', null, t('퀘스트 기록','Quest Log')));
-    if (!known.length) this.listEl.append(h('div', { class: 'qlog-empty' }, this.game.world2.chapter===2 ? t('별빛 마을 주민들의 머리 위 ! 표시를 찾아 F로 대화하세요.','Look for ! above the villagers and press F to talk.') : t('광장에 있는 브라인비어드 선장에게 말을 걸어 보세요.','No quests yet. Captain Brinebeard in the square looks like he needs help.')));
-    for (const id of known) {
+    if (!visible.length) this.listEl.append(h('div', { class: 'qlog-empty' }, this.game.world2.chapter===2 ? t('별빛 마을 주민들의 머리 위 ! 표시를 찾아 F로 대화하세요.','Look for ! above the villagers and press F to talk.') : t('광장에 있는 브라인비어드 선장에게 말을 걸어 보세요.','No quests yet. Captain Brinebeard in the square looks like he needs help.')));
+    for (const id of visible) {
+      if (id === offers[0]) this.listEl.append(h('h4', {class:'qlog-offers-heading'}, `${t('주민들의 부탁','Villager requests')} · ${offers.length}`));
       const st = log.status[id];
-      const label = st === 'done' ? t('완료','Completed') : st === 'ready' ? t('보상 받기','Ready to turn in') : t('진행 중','In progress');
-      const item = h('div', { class: `qlog-item${id === this.selected ? ' sel' : ''}${st === 'done' ? ' done' : ''}` }, QUESTS[id].title, h('span', { class: 'st' }, label));
+      const label = st === 'available' ? t('! 수락 가능','! Available') : st === 'done' ? t('완료','Completed') : st === 'ready' ? t('보상 받기','Ready to turn in') : t('진행 중','In progress');
+      const item = h('button', { type:'button', 'data-q':id, 'aria-pressed':String(id === this.selected), class: `qlog-item${id === this.selected ? ' sel' : ''}${st === 'done' ? ' done' : ''}` }, QUESTS[id].title, h('span', { class: 'st' }, label));
       item.addEventListener('click', () => {
+        const focused = document.activeElement === item;
         this.selected = id;
         this.render();
+        this.detailEl.scrollTop = 0;
+        if (focused) this.listEl.querySelector<HTMLButtonElement>(`[data-q="${id}"]`)?.focus({preventScroll:true});
       });
       this.listEl.append(item);
     }
@@ -100,14 +106,17 @@ export class QuestLogPanel {
     this.detailEl.replaceChildren();
     if (!this.selected) return;
     const def = QUESTS[this.selected];
-    this.detailEl.append(h('h2', null, def.title), h('p', null, def.summary), h('div', { class: 'cc-divider' }), h('div', { class: 'dlg-sec' }, t('목표','Objectives')));
+    const available = log.status[this.selected] === 'available';
+    this.detailEl.append(h('h2', null, def.title));
+    if (available) this.detailEl.append(h('div', {class:'qlog-giver'}, t(`부탁한 주민 · ${npcName(def.giver)}`,`Requested by · ${npcName(def.giver)}`)),h('p',{class:'qlog-offer-note'},t('아직 받지 않은 부탁이에요. 주민을 찾아가 F로 대화하면 퀘스트를 받을 수 있어요.','You have not accepted this request yet. Find the villager and press F to talk.')));
+    this.detailEl.append(h('p', null, def.summary), h('div', { class: 'cc-divider' }), h('div', { class: 'dlg-sec' }, t('목표','Objectives')));
     const ul = h('ul', { class: 'dlg-obj' });
     for (const o of def.objectives) {
       const v = log.value(o);
       ul.append(h('li', null, o.count > 1 ? `${o.label}: ${v}/${o.count}` : `${o.label}${v >= o.count ? t(' (완료)',' (done)') : ''}`));
     }
     this.detailEl.append(ul);
-    if (['active', 'ready'].includes(log.status[this.selected])) {
+    if (available || ['active', 'ready'].includes(log.status[this.selected])) {
       const tracked = log.trackedQuest === this.selected;
       const button = h('button', { class:'cc-btn qlog-track', 'aria-pressed':String(tracked), onclick:()=>{
         if (!this.selected || !log.track(this.selected)) return;
@@ -115,8 +124,8 @@ export class QuestLogPanel {
         this.game.journey?.save();
         this.game.audio.sfx('sfx-click', {volume:.5});
         this.render();
-      } }, tracked ? t('◆ 이 퀘스트 길 안내 중','◆ Tracking this quest') : t('◇ 이 퀘스트 길 안내','◇ Track this quest'));
-      this.detailEl.append(button,h('p',{class:'qlog-track-hint'},t('선택하면 미니맵과 금빛 길잡이가 이 목표를 가리켜요.','The minimap and golden guide will point to this quest.')));
+      } }, available ? (tracked ? t('◆ 이 주민에게 길 안내 중','◆ Guiding to this villager') : t('◇ 이 주민에게 길 안내','◇ Find this villager')) : (tracked ? t('◆ 이 퀘스트 길 안내 중','◆ Tracking this quest') : t('◇ 이 퀘스트 길 안내','◇ Track this quest')));
+      this.detailEl.append(button,h('p',{class:'qlog-track-hint'},available ? t('기록창을 닫으면 미니맵과 금빛 길잡이가 이 주민을 가리켜요. 가까이 가서 F를 누르세요.','Close the journal and follow the minimap and golden guide to this villager. Press F nearby.') : t('선택하면 미니맵과 금빛 길잡이가 이 목표를 가리켜요.','The minimap and golden guide will point to this quest.')));
     }
     if (log.status[this.selected] === 'ready') this.detailEl.append(h('p', { style: 'margin-top:10px;font-style:italic' }, def.readyHint));
     const memories = def.objectives.flatMap(o => {
@@ -131,8 +140,10 @@ export class QuestLogPanel {
       for (const memory of found) journal.append(h('article', { class:'qlog-memory' }, h('h3', null, memory.title), h('p', null, memory.body)));
       this.detailEl.append(journal);
     }
-    this.detailEl.append(h('div', { class: 'dlg-sec' }, t('이야기','Story')));
-    for (const para of def.offer) this.detailEl.append(h('p', null, para));
+    if (!available) {
+      this.detailEl.append(h('div', { class: 'dlg-sec' }, t('이야기','Story')));
+      for (const para of def.offer) this.detailEl.append(h('p', null, para));
+    }
     this.detailEl.append(h('div', { class: 'dlg-sec' }, t('보상','Reward')), h('div', { class: 'dlg-reward' }, h('span', { class: 'xp' }, `${def.xp} XP`)));
   }
 }

@@ -85,6 +85,11 @@ export class Input {
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (this.typing(e)) return;
+    // Focused UI controls own activation and focus traversal, rather than also jumping,
+    // changing combat targets or toggling speech bubbles behind the reading window.
+    const target = e.target;
+    if (target instanceof Element && target.closest('button,a[href],select,summary') &&
+      ['Tab', 'Enter', 'NumpadEnter', 'Space'].includes(e.code)) return;
     if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
     if (!e.repeat) this.pressed.add(e.code);
     this.down.add(e.code);

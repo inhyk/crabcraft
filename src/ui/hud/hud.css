@@ -341,7 +341,11 @@
 .qlog { position: absolute; left: 50%; top: 50%; width: 760px; height: 520px; transform: translate(-50%, -50%); display: flex; padding: 0 !important; animation: cc-fade-in 0.2s ease both; }
 .qlog-list { width: 250px; padding: 26px 16px; border-right: 1px solid rgba(110, 70, 20, 0.35); background: rgba(80, 50, 10, 0.08); }
 .qlog-list h3 { margin-bottom: 14px !important; }
-.qlog-item { padding: 7px 10px; border-radius: 4px; cursor: pointer; font: 600 16px var(--font-body); color: #3b220b; }
+.qlog-item { display: block; width: 100%; box-sizing: border-box; border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 4px; cursor: pointer; font: 600 16px var(--font-body); color: #3b220b; }
+.qlog-item:focus-visible { outline: 2px solid #765220; outline-offset: -2px; }
+.qlog-offers-heading { margin: 18px 10px 8px; font: 700 14px var(--font-body); color: #765220; }
+.qlog-giver { margin: 8px 0; font: 700 15px var(--font-body); color: #765220; }
+.qlog-detail .qlog-offer-note { border-left: 2px solid #b18b4a; padding-left: 10px; font-style: italic; }
 .qlog-item:hover { background: rgba(160, 110, 40, 0.18); }
 .qlog-item.sel { background: rgba(160, 110, 40, 0.3); box-shadow: inset 3px 0 0 #a3161f; }
 .qlog-item .st { display: block; font: italic 13px var(--font-body); color: #7a5a32; }
