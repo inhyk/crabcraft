@@ -94,6 +94,18 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   const treeNames=[...nature.pieces.keys()].filter(n=>/^CommonTree_[1-5]$/.test(n));
   const rockNames=[...nature.pieces.keys()].filter(n=>/^Rock_Medium_/.test(n));
   const flowerNames=[...nature.pieces.keys()].filter(n=>/Flower_[34]_Group|Bush_Common_Flowers/.test(n));
+  // A plant's leaves extend beyond its origin. Keep its full footprint and wind off the paving.
+  const plantRadius=new Map<string,number>();
+  const clearPaving=(name:string,x:number,z:number,scale:number)=>{
+    let radius=plantRadius.get(name);
+    if(radius===undefined){
+      const box=nature.get(name).box;
+      radius=Math.hypot(Math.max(Math.abs(box.min.x),Math.abs(box.max.x)),Math.max(Math.abs(box.min.z),Math.abs(box.max.z)))+.2;
+      plantRadius.set(name,radius);
+    }
+    const rect=(ax:number,bx:number,az:number,bz:number)=>Math.hypot(Math.max(ax-x,0,x-bx),Math.max(az-z,0,z-bz));
+    return Math.min(rect(-4.9,4.9,-72.9,92.9),rect(-26.9,26.9,51.1,58.9),Math.max(0,starTrailDistance(x,z)-1.15))>radius*scale;
+  };
   for(let i=0;i<340;i++) {
     const x=(rand(i+100)-.5)*215,z=(rand(i+900)-.5)*255+10;
     if(Math.hypot(x/110,(z-10)/130)>.88 || Math.abs(x)<11 || Math.hypot(x,z+75)<27)continue;
@@ -108,7 +120,10 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   for(let i=0;i<240;i++) {
     const x=(rand(i+1800)-.5)*105,z=10+rand(i+2500)*86;
     if(Math.abs(x)<12||lots.some(l=>Math.abs(x-l.x)<l.sx+3&&Math.abs(z-l.z)<l.sz+4))continue;
-    if(flowerNames.length)scatter.add(flowerNames[i%flowerNames.length],trs(x,height(x,z),z,rand(i+3000)*6.28,.7));
+    if(flowerNames.length){
+      const name=flowerNames[i%flowerNames.length];
+      if(clearPaving(name,x,z,.7))scatter.add(name,trs(x,height(x,z),z,rand(i+3000)*6.28,.7));
+    }
   }
   // Low meadows soften the cleared exploration sites without hiding markers or attack circles.
   // All plants use the original licensed kit and stay batched with the island's foliage.
@@ -121,7 +136,9 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       const a=i*2.39996+site*.8,r=6.1+rand(i+site*100+4200)*7.2,x=cx+Math.cos(a)*r,z=cz+Math.sin(a)*r;
       if(starTrailDistance(x,z)<2.4||Math.hypot(x,z+75)<27)continue;
       const names=i%3?grassNames:meadowFlowers;if(!names.length)continue;
-      scatter.add(names[i%names.length],trs(x,height(x,z),z,a,.5+rand(i+4500)*.3));meadowCount++;
+      const name=names[i%names.length],scale=.5+rand(i+4500)*.3;
+      if(!clearPaving(name,x,z,scale))continue;
+      scatter.add(name,trs(x,height(x,z),z,a,scale));meadowCount++;
     }
   }
   root.userData.meadowPlants=meadowCount;
