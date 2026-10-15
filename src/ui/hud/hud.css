@@ -41,7 +41,7 @@
 @keyframes uf-pulse { 50% { box-shadow: 0 0 0 3px #ff6a3a, 0 0 26px 8px rgba(255, 70, 30, 0.85); } }
 .uf-level {
   position: absolute; left: -4px; bottom: -2px; z-index: 3;
-  width: 28px; height: 28px; border-radius: 50%;
+  min-width: 28px; width: max-content; height: 28px; padding: 0 4px; box-sizing: border-box; border-radius: 999px;
   display: flex; align-items: center; justify-content: center;
   font: 700 14px var(--font-display); color: #ffe08a; text-shadow: 0 1px 0 #000;
   background: radial-gradient(circle at 40% 35%, #3a2a12, #120c04);

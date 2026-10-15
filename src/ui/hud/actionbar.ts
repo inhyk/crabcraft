@@ -1,6 +1,7 @@
 // Action bar (4 ability slots with cooldown sweeps, resource and range tints, tooltips), the XP
 // bar, micro menu, cast bar and the contextual interaction prompt.
 import { h } from '../dom';
+import {t} from '../../i18n';
 import type { Game } from '../../game/game';
 import type { AbilityDef } from '../../data/classes';
 import { GCD, xpForLevel } from '../../game/player';
@@ -153,7 +154,7 @@ export class ActionBar {
     let frac: number;
     const lo=xpForLevel(lvl),hi=xpForLevel(lvl+1);
     frac=(p.xp-lo)/(hi-lo);
-    xpText=`Level ${lvl}  |  ${Math.floor(p.xp-lo)} / ${hi-lo} XP · ∞`;
+    xpText=t(`레벨 ${lvl}  |  ${Math.floor(p.xp-lo)} / ${hi-lo} XP · ∞`,`Level ${lvl}  |  ${Math.floor(p.xp-lo)} / ${hi-lo} XP · ∞`);
     if (xpText !== this.lastXp) {
       this.lastXp = xpText;
       this.xpLabel.textContent = xpText;
