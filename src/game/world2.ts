@@ -12,6 +12,7 @@ import { StarVillageLife } from './world2Life';
 import {starGroundColor} from './world2Ground';
 import {facetedStarCrystal,starCrystalRadius} from './starCrystal';
 import {collectibleShadow} from './collectibleShadow';
+import {StarSky} from './starSky';
 
 function naturalHeight(x:number,z:number){
   const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
@@ -31,7 +32,7 @@ export class HiddenWorld {
   private originalRay: Game['world']['raycastSolid'];
   private groundTexture:THREE.DataTexture;
   private rotations: THREE.Object3D[] = [];
-  private glow: THREE.ShaderMaterial;
+  private sky: StarSky;
   private obstacles: { x:number; z:number; r:number }[] = [];
   private crystalSolids: {x:number;z:number;r:number;y0:number;y1:number}[] = [];
   private portal: StarPortal;
@@ -101,8 +102,7 @@ export class HiddenWorld {
     this.baseRoot=w.root;
     this.originalHeight=w.heightAt.bind(w);this.originalCollision=w.resolveCollision.bind(w);this.originalRay=w.raycastSolid.bind(w);
     this.root.visible=false;game.scene.add(this.root);
-    this.glow=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{time:{value:0}},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;uniform float time;void main(){vec3 d=normalize(v);float a=sin(d.x*11.+time*.07+d.z*5.)*.5+.5;float curtain=pow(max(0.,sin(d.y*9.+d.x*12.+time*.1)),6.)*smoothstep(-.1,.5,d.y);vec3 c=mix(vec3(.018,.012,.06),vec3(.16,.06,.28),pow(1.-max(0.,d.y),3.));c+=curtain*mix(vec3(.04,.24,.3),vec3(.3,.05,.36),a)*.45;gl_FragColor=vec4(c,1.);}' });
-    this.root.add(new THREE.Mesh(new THREE.SphereGeometry(800,48,24),this.glow));
+    this.sky=new StarSky();this.root.add(this.sky.root);
     const land=new THREE.PlaneGeometry(280,320,140,160);land.rotateX(-Math.PI/2);
     const pos=land.attributes.position,colors=[];
     const groundColor=new THREE.Color();
@@ -152,9 +152,6 @@ export class HiddenWorld {
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
     const shorePosition=new THREE.Vector3(44,0,2);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
     this.shorePortal=new StarPortal(shorePosition,'클로헤이븐 → 별빛 항구');w.root.add(this.shorePortal.root);
-    const stars=new Float32Array(420*3);for(let i=0;i<420;i++){const a=rand(i+900)*Math.PI*2,y=80+rand(i+1400)*350,r=250+rand(i+1900)*300;stars.set([Math.sin(a)*r,y,Math.cos(a)*r],i*3);}
-    const starGeo=new THREE.BufferGeometry();starGeo.setAttribute('position',new THREE.BufferAttribute(stars,3));this.root.add(new THREE.Points(starGeo,new THREE.PointsMaterial({color:'#b8adff',size:1.2,transparent:true,opacity:.8,depthWrite:false})));
-    const moon=new THREE.Mesh(new THREE.SphereGeometry(18,24,16),new THREE.MeshBasicMaterial({color:'#bca5ed'}));moon.position.set(-100,160,-260);this.root.add(moon);
     const key=new THREE.DirectionalLight('#d6b9ff',1.8);key.position.set(-40,90,20);key.castShadow=true;key.shadow.mapSize.set(2048,2048);Object.assign(key.shadow.camera,{left:-75,right:75,top:75,bottom:-75,near:1,far:180});key.shadow.normalBias=.04;
     this.root.add(key,new THREE.HemisphereLight('#869cff','#1a1028',1.0));
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
@@ -249,7 +246,7 @@ export class HiddenWorld {
     }
     if(!this.rendered)return;
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
-    this.glow.uniforms.time.value=time;this.life?.update(time);
+    this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
     for(const memory of this.memories){
       const objective=QUESTS.w5.objectives.find(o=>o.kind===memory.kind)!;

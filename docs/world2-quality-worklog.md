@@ -212,3 +212,12 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Ten-hour development remains active. Remote deployment and public replay are the next checks.
 
 - Published 385458e as READY deployment dpl_HCGAyVUYiDrpsidZjVkhJabP6qnh. The complete world-language replay passes on the public stable URL, including KO/EN saved World II loading titles, final welcome labels, actual WebP decode, narrow subtitle bounds, all five island regions and damaged-save shore fallback. No page errors.
+
+## Celestial visibility and animated night sky — 2026-10-15 15:15 UTC
+
+- Native GPU inspection confirmed the original 420 stars and moon inherited terrain fog at density .007; disabling fog in a frozen scene made distant stars visible again. The original high moon was also outside the usual low camera view.
+- Replaced the three celestial draws with StarSky: layered cyan/lavender aurora, 980 deterministic round stars with subtle per-star twinkle, and a softly shaded crescent moon near the horizon. Sky shaders bypass terrain fog; regular depth testing preserves terrain occlusion. A faint translucent unlit lunar side lets the aurora remain visible there. No lights, bitmap textures or per-frame allocations were added.
+- The sky follows camera translation to avoid celestial parallax, and point sizes follow the renderer's changing pixel ratio. Animation uses the existing shared multiplayer world time. World I's environment stays unchanged. Re-exported the native Starhaven loading panorama using the finished sky.
+- tools/qa-star-sky.mjs renders actual full/hidden-star/hidden-moon/later-time frames in one frozen scene: stars change 194 pixels, the crescent changes 761, and animation changes 167,359; zero changed pixels below row 400 in all three comparisons. Camera tracking and ratio adaptation pass. Returning to shore hides the celestial parent; all three owned geometries and materials receive disposal events. No shader/console/page errors.
+- Actual Eclipse and Starfall telegraph replay passes and captures remain readable. A 24-roundtrip soak keeps GPU counts stable at 465 geometries / 147 textures after warm-up; morning beacon state and personal quest progress remain intact. Inspected the real village sky and actual boss screenshots. Production build and whitespace checks pass; public deployment verification remains next.
+- Goal start 2026-10-15 12:56:12 UTC; this record at 15:15 UTC is approximately 2 hours 19 minutes into the requested ten hours. Development remains active.
