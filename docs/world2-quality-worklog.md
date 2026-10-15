@@ -172,3 +172,11 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Ten-hour development remains active.
 
 - Published 10446f2 as READY deployment dpl_Kt2EtHb3fZfeWgYgLX5UhAxZVBki. The complete landmark replay passed on the public stable game URL: all trails, crystal visibility/collision checks, 70 masonry envelopes, 62 rubble clearances and live water ripples. No page errors; seonn.dev/games/crabcraft HTTP 200.
+
+## Collectible sightline clearance — 2026-10-15 14:50 UTC
+
+- Reproduced the obstructed eastern approach on the public game: crystal IV sat between camera and shell at 5.278 units with opacity 0.345, still painting a large bright shape over the foreground. Its center was only 0.816 units from the shell sightline.
+- Collectible fading now combines lens distance with a soft camera-to-shell corridor. Passed crystals/lanterns clear that corridor; targets ahead of the player stay visible. Soft transitions near both segment ends avoid a hard visibility switch when passing an object. Three reusable vectors keep the per-frame calculation allocation-free. Interaction/progress identity is unchanged.
+- Extended the real quest-tracking replay: interposed near crystal opacity 0, interposed long-view crystal at 14.097 units opacity 0, target ahead opacity 1, off-center target opacity 0.654. Inspected the resulting GPU capture with the shell and trail unobscured.
+- Actual F-key collection still completes crystal IV. Bilingual tracking buttons, separate chapter pins, changing objectives and save/reload also pass, with no page errors. Production build and whitespace checks pass.
+- Ten-hour development remains active.

@@ -36,8 +36,18 @@ try{
  await page.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,80,-24,Math.PI);g.follow.cut();g.follow.yaw=0;g.follow.distance=9;g.follow.pitch=.28;});
  await page.waitForTimeout(1500);
  const fade=await page.evaluate(()=>{const g=window.app.current.game,n=g.world2.nodes.find(n=>n.kind==='crystal-d');return {distance:n.mesh.position.distanceTo(g.camera.position),opacity:n.mesh.material.opacity};});
- assert.ok(fade.distance<8,'replay must put the collectible close to the camera');assert.ok(fade.opacity<1,'a nearby collectible must fade');
+ assert.ok(fade.distance<8,'replay must put the collectible close to the camera');assert.ok(fade.opacity<.05,'a collectible covering the shell must become nearly invisible');
  await page.screenshot({path:'tmp/qa/collectible-camera-fade.png'});
+ const views=[];
+ for(const [view,x,z,distance] of [['ahead',80,-13,9],['side',83,-24,9],['long-sightline',80,-24,18]]){
+  await page.evaluate(([x,z,distance])=>{const g=window.app.current.game;g.player.unit.teleport(g.world,x,z,Math.PI);g.follow.cut();g.follow.yaw=0;g.follow.distance=distance;g.follow.pitch=.28;},[x,z,distance]);await page.waitForTimeout(1500);
+  const sample=await page.evaluate(()=>{const g=window.app.current.game,n=g.world2.nodes.find(n=>n.kind==='crystal-d');return {distance:n.mesh.position.distanceTo(g.camera.position),opacity:n.mesh.material.opacity};});
+  if(view==='ahead')assert.ok(sample.opacity>.95,'a collectible ahead remains clearly visible');
+  if(view==='side')assert.ok(sample.opacity>.2,'an off-center collectible remains visible');
+  if(view==='long-sightline'){assert.ok(sample.distance>8,'long view must exceed the old distance-only fade');assert.ok(sample.opacity<.05,'even distant intervening crystals must clear the shell');}
+  views.push({view,...sample});
+ }
+ console.log('collectible camera sightline cases',views);
  await page.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,80,-21,Math.PI);g.follow.cut();});
  await page.waitForTimeout(250);await page.keyboard.press('KeyF');
  await page.waitForFunction(()=>window.app.current.game.quests.progress.get('w2-gem-3')===1);

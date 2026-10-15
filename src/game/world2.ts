@@ -54,6 +54,9 @@ export class HiddenWorld {
   private basePeople: THREE.Vector3[] = [];
   private memories:{kind:ObjectiveKind;ring:THREE.Mesh;star:THREE.Mesh}[]=[];
   private nodes: {kind:ObjectiveKind;objective:ObjectiveDef;position:THREE.Vector3;mesh:THREE.Mesh}[] = [];
+  private sightAim=new THREE.Vector3();
+  private sightRay=new THREE.Vector3();
+  private sightOffset=new THREE.Vector3();
 
   async buildSettlement() {
     const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
@@ -253,14 +256,23 @@ export class HiddenWorld {
       (memory.ring.material as THREE.MeshBasicMaterial).opacity=done?.18:active?.5+Math.sin(time*2)*.15:.18;
       memory.star.rotation.y=time*.5;memory.star.position.y=this.height(memory.star.position.x,memory.star.position.z)+2.7+Math.sin(time*1.5)*.12;
     }
+    this.sightAim.copy(this.game.player.unit.pos).y+=this.game.player.unit.height*.55;
+    this.sightRay.subVectors(this.sightAim,this.game.camera.position);
+    const sightLengthSq=Math.max(.00001,this.sightRay.lengthSq());
     for(const node of this.nodes){
       const done=this.game.quests.objectiveDone(node.objective);
-      // A collectible can sit directly between the lens and the player. Fade it before it fills
-      // the screen, while keeping its interaction and quest state unchanged.
-      (node.mesh.material as THREE.MeshStandardMaterial).opacity=THREE.MathUtils.smoothstep(node.mesh.position.distanceTo(this.game.camera.position),3.5,8);
       node.mesh.visible=!done||node.kind.startsWith('lamp');
       if(node.kind.startsWith('lamp'))(node.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity=done?3:.25;
       else {node.mesh.rotation.y=time*.5;node.mesh.position.y=node.position.y+1.3+Math.sin(time*2+node.position.x)*.15;}
+      // Protect the shell's sightline as well as the lens. Targets ahead of the player remain
+      // visible; a passed collectible fades smoothly as it moves between the player and camera.
+      this.sightOffset.subVectors(node.mesh.position,this.game.camera.position);
+      const along=this.sightOffset.dot(this.sightRay)/sightLengthSq;
+      const interior=THREE.MathUtils.smoothstep(along,0,.12)*(1-THREE.MathUtils.smoothstep(along,.88,1));
+      const separation=this.sightOffset.addScaledVector(this.sightRay,-along).length();
+      const radius=node.kind.startsWith('lamp')?1.4:.95;
+      const sightFade=1-interior*(1-THREE.MathUtils.smoothstep(separation,radius,radius+.9));
+      (node.mesh.material as THREE.MeshStandardMaterial).opacity=sightFade*THREE.MathUtils.smoothstep(node.mesh.position.distanceTo(this.game.camera.position),3.5,8);
     }
     for(const o of this.rotations){o.rotation.y+=dt*.6;o.rotation.z=Math.sin(time*.7+o.position.x)*.12;}
 
