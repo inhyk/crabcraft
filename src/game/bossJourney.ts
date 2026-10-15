@@ -146,6 +146,7 @@ export class BossJourney {
   update(dt: number) {
     const g = this.game;
     const level = g.player.level;
+    this.root.hidden = g.ending.active || g.cinematic;
     if (g.multiplayer?.battle.authority !== false && g.partyLevel >= 3 && !this.rustCleared && g.boss.state === 'dormant') g.boss.wake();
     if (this.abyssCleared && !this.firstEndingSeen && g.finalBoss.state === 'dead' && !this.chapterEnding && g.world2.chapter === 1) this.showChapterEnding();
     if(this.chapterEnding) {
