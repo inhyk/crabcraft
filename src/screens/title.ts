@@ -24,6 +24,12 @@ export default class TitleScreen implements Screen {
       h('nav', { class: 'title-menu' },
         btn('Enter World', () => void app.go('create')),
         app.spec ? btn(`Continue as ${app.spec.name || 'your crab'}`, () => void app.go('game'), 'cc-btn ghost') : null,
+        btn('멀티플레이', () => {
+          const url = new URL(location.href);
+          url.searchParams.set('multiplayer', '1');
+          history.replaceState(null, '', url);
+          void app.go(app.spec ? 'game' : 'create');
+        }, 'cc-btn ghost'),
         btn('Robot Mode', () => void app.go('robot'), 'cc-btn ghost'),
         btn('Credits', () => void app.go('credits'), 'cc-btn ghost'),
       ),

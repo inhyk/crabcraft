@@ -7,7 +7,7 @@ import type { MotionController, MotionId } from '../motion/types';
 import type { World } from '../world/types';
 import { angleDiff, clamp, damp } from './util';
 
-export type UnitKind = 'player' | 'npc' | 'townsfolk' | 'scrapling' | 'scavenger' | 'boss' | 'freed';
+export type UnitKind = 'player' | 'remote' | 'npc' | 'townsfolk' | 'scrapling' | 'scavenger' | 'boss' | 'freed';
 export type Reaction = 'hostile' | 'friendly' | 'neutral' | 'player';
 
 const tmpV = new THREE.Vector3();
@@ -41,6 +41,7 @@ export class Unit {
   private static nextId = 1;
   readonly id = Unit.nextId++;
   title = '';
+  onAction: ((action: MotionId) => void) | null = null;
   level = 1;
   yaw = 0;
   /** Collision circle radius and shell-top height, measured from the rig's sockets. */
@@ -190,6 +191,7 @@ export class Unit {
 
   /** Play a clip; onHit fires on the clip's 'hit' event or after hitAt seconds, whichever is first. */
   act(id: MotionId, o: ActionOptions = {}): void {
+    this.onAction?.(id);
     // A skill clip is the whole recorded rollout: play its move, at its rate, unless told otherwise.
     const w = isSkill(id) ? skillWindow(id, o.part ?? (o.loop ? 'channel' : 'move'), o.speed) : null;
     if (o.onHit) {

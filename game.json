@@ -1,0 +1,18 @@
+{
+  "slug": "crabcraft",
+  "title": "Crabcraft",
+  "description": "아빠의 게 로봇 게임에 친구와 함께 탐험하고 채팅하는 멀티플레이를 더했어요.",
+  "longDescription": "아빠(kubony)의 World of Crabcraft를 바탕으로 만든 멀티플레이 확장 버전입니다. Jumper 게 로봇으로 판타지 마을을 탐험하며 최대 8명이 방 코드와 초대 링크로 만날 수 있습니다. 친구의 캐릭터, 움직임과 인사·춤을 보고 실시간 채팅을 나눌 수 있습니다. 퀘스트와 몬스터 전투는 각자 진행하며, 원작과 Jumper의 제작자·Apache-2.0 라이선스를 보존했습니다.",
+  "emoji": "🦀",
+  "techStack": [
+    "Three.js",
+    "TypeScript",
+    "Vite",
+    "Cloudflare Durable Objects",
+    "WebSocket"
+  ],
+  "category": "액션",
+  "createdAt": "2026-10",
+  "featured": false,
+  "repo": "inhyk/inh-crabcraft-multiplayer"
+}

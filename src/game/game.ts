@@ -1,6 +1,7 @@
 // The game session: loads the world and every crab, runs the frame loop, routes input, and glues
 // quests, combat, AI, effects, music and the HUD together.
 import * as THREE from 'three';
+import { Multiplayer } from '../multiplayer/client';
 import type { App } from '../app';
 import { localStorageGet, localStorageSet } from '../app';
 import type { FrameInfo, QualitySetting } from '../core/engine';
@@ -121,6 +122,7 @@ export class Game {
   private robotConfirmUntil = 0;
   private beaconLit = false;
   private readyFlag = false;
+  multiplayer: Multiplayer | null = null;
 
   constructor(readonly app: App) {
     this.combat = new Combat(this);
@@ -379,6 +381,7 @@ export class Game {
       }, 900);
     }, 700);
     this.intro();
+    this.multiplayer = new Multiplayer(this);
   }
 
   private addUnit(name: string, kind: UnitKind, reaction: Reaction, rig: CrabRig): Unit {
@@ -488,6 +491,7 @@ export class Game {
       this.updateDeath();
       this.updateStatuses();
     }
+    this.multiplayer?.update(dt);
     // Visual updates (culled when far away, simplified when small on screen)
     const cam = this.camera.position;
     // Screen pixels per world unit at distance 1 (CSS pixels, so Retina does not change the LOD).
@@ -1104,6 +1108,8 @@ export class Game {
     this.offFrame?.();
     this.offAfter?.();
     this.engine.onResolutionChange = null;
+    this.multiplayer?.dispose();
+    this.multiplayer = null;
     this.debug?.dispose();
     this.hud?.dispose();
     this.hideLoading();

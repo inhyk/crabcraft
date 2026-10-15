@@ -1,0 +1,15 @@
+.mp-panel { position:absolute; top:140px; right:18px; z-index:35; width:280px; max-width:calc(100vw - 36px); pointer-events:auto; padding:12px; border:1px solid #ac9051; border-radius:10px; background:rgba(18,25,30,.94); color:#f5e6c8; font:14px system-ui; box-shadow:0 5px 25px #0008 }
+.mp-panel summary { cursor:pointer; font-weight:700; color:#ffe09a }
+.mp-panel p { margin:8px 0; font-size:12px; color:#c9c3b3; line-height:1.45 }
+.mp-panel button,.mp-panel input { font:inherit; padding:7px 8px; border:1px solid #887348; border-radius:5px; color:#f5e6c8; background:#28333a; min-width:0 }
+.mp-panel button { cursor:pointer }
+.mp-panel button:disabled { opacity:.5; cursor:default }
+.mp-panel input { width:100%; box-sizing:border-box; background:#101b23 }
+.mp-panel form,.mp-row { display:flex; gap:6px; margin-top:8px }
+.mp-panel form input { flex:1; width:100px }
+.mp-panel .mp-status { color:#a8e1ca; overflow-wrap:anywhere }
+.mp-panel .mp-code { font:700 22px monospace; color:#ffe09a; letter-spacing:3px }
+.mp-log { max-height:130px; overflow-y:auto; font-size:12px; line-height:1.6; overflow-wrap:anywhere; margin-top:8px }
+.mp-roster { margin:8px 0; color:#b9d8ee; font-size:12px; overflow-wrap:anywhere }
+.mp-invite { margin-top:6px; font-size:11px!important }
+@media(max-height:720px) { .mp-panel { top:85px; width:245px } .mp-log { max-height:70px } }

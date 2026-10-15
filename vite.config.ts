@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { attachRooms } from './server/rooms.ts';
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,11 @@ const devPages = withDevPages
 
 export default defineConfig({
   base: './',
+  plugins: [{
+    name: 'crabcraft-multiplayer',
+    configureServer(server) { if (server.httpServer) attachRooms(server.httpServer); },
+    configurePreviewServer(server) { attachRooms(server.httpServer); },
+  }],
   server: {
     headers: {
       // SharedArrayBuffer for MuJoCo WASM threads and onnxruntime-web.

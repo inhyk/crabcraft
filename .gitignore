@@ -8,3 +8,14 @@ __pycache__/
 .vite/
 /tmp/
 /scratch/
+
+.wrangler/
+.vercel/
+.env.local
+.env.*.local
+.vercel
+.env*
+
+!.env.production
+.omx/
+*.log
