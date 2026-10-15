@@ -1,5 +1,6 @@
 // Quest tracker (right side), quest log (L) and the NPC dialogue window with typewriter text.
 import { h } from '../dom';
+import {language,t} from '../../i18n';
 import type { Game } from '../../game/game';
 import type { Unit } from '../../game/unit';
 import { QUESTS, QUEST_ORDER, type QuestId, type QuestLog } from '../../game/quests';
@@ -13,7 +14,7 @@ export class QuestTracker {
 
   constructor(onClick: (q: QuestId) => void) {
     this.list = h('div', { class: 'qt-list' });
-    this.el = h('div', { class: 'qt' }, h('div', { class: 'qt-head' }, 'Quests'), this.list);
+    this.el = h('div', { class: 'qt' }, h('div', { class: 'qt-head' }, t('퀘스트','Quests')), this.list);
     this.list.addEventListener('click', (e) => {
       const q = (e.target as HTMLElement).closest('[data-q]')?.getAttribute('data-q') as QuestId | null;
       if (q) onClick(q);
@@ -22,7 +23,8 @@ export class QuestTracker {
 
   update(log: QuestLog, flashId?: string): void {
     const active = log.active();
-    const key = active.map((id) => `${id}:${log.status[id]}:${QUESTS[id].objectives.map((o) => log.value(o)).join('.')}`).join('|');
+    this.el.querySelector('.qt-head')!.textContent=t('퀘스트','Quests');
+    const key = language()+active.map((id) => `${id}:${log.status[id]}:${QUESTS[id].objectives.map((o) => log.value(o)).join('.')}`).join('|');
     if (key === this.key && !flashId) return;
     this.key = key;
     this.list.replaceChildren();
@@ -76,13 +78,13 @@ export class QuestLogPanel {
 
   render(): void {
     const log = this.game.quests;
-    const known = QUEST_ORDER.filter((id) => log.status[id] !== 'locked' && log.status[id] !== 'available');
+    const known = QUEST_ORDER.filter((id) => log.inChapter(id) && log.status[id] !== 'locked' && log.status[id] !== 'available');
     if (!this.selected || !known.includes(this.selected)) this.selected = known.find((id) => log.status[id] !== 'done') ?? known[0] ?? null;
-    this.listEl.replaceChildren(h('h3', null, 'Quest Log'));
-    if (!known.length) this.listEl.append(h('div', { class: 'qlog-empty' }, 'No quests yet. Captain Brinebeard in the square looks like he needs help.'));
+    this.listEl.replaceChildren(h('h3', null, t('퀘스트 기록','Quest Log')));
+    if (!known.length) this.listEl.append(h('div', { class: 'qlog-empty' }, this.game.world2.chapter===2 ? t('별빛 마을 주민들의 머리 위 ! 표시를 찾아 F로 대화하세요.','Look for ! above the villagers and press F to talk.') : 'No quests yet. Captain Brinebeard in the square looks like he needs help.'));
     for (const id of known) {
       const st = log.status[id];
-      const label = st === 'done' ? 'Completed' : st === 'ready' ? 'Ready to turn in' : 'In progress';
+      const label = st === 'done' ? t('완료','Completed') : st === 'ready' ? t('보상 받기','Ready to turn in') : t('진행 중','In progress');
       const item = h('div', { class: `qlog-item${id === this.selected ? ' sel' : ''}${st === 'done' ? ' done' : ''}` }, QUESTS[id].title, h('span', { class: 'st' }, label));
       item.addEventListener('click', () => {
         this.selected = id;
@@ -93,7 +95,7 @@ export class QuestLogPanel {
     this.detailEl.replaceChildren();
     if (!this.selected) return;
     const def = QUESTS[this.selected];
-    this.detailEl.append(h('h2', null, def.title), h('p', null, def.summary), h('div', { class: 'cc-divider' }), h('div', { class: 'dlg-sec' }, 'Objectives'));
+    this.detailEl.append(h('h2', null, def.title), h('p', null, def.summary), h('div', { class: 'cc-divider' }), h('div', { class: 'dlg-sec' }, t('목표','Objectives')));
     const ul = h('ul', { class: 'dlg-obj' });
     for (const o of def.objectives) {
       const v = log.value(o);
@@ -101,9 +103,9 @@ export class QuestLogPanel {
     }
     this.detailEl.append(ul);
     if (log.status[this.selected] === 'ready') this.detailEl.append(h('p', { style: 'margin-top:10px;font-style:italic' }, def.readyHint));
-    this.detailEl.append(h('div', { class: 'dlg-sec' }, 'Story'));
+    this.detailEl.append(h('div', { class: 'dlg-sec' }, t('이야기','Story')));
     for (const para of def.offer) this.detailEl.append(h('p', null, para));
-    this.detailEl.append(h('div', { class: 'dlg-sec' }, 'Reward'), h('div', { class: 'dlg-reward' }, h('span', { class: 'xp' }, `${def.xp} XP`)));
+    this.detailEl.append(h('div', { class: 'dlg-sec' }, t('보상','Reward')), h('div', { class: 'dlg-reward' }, h('span', { class: 'xp' }, `${def.xp} XP`)));
   }
 }
 
@@ -202,13 +204,13 @@ export class DialogueWindow {
     }
     this.body.append(this.textEl);
     if (p.objectives?.length) {
-      this.body.append(h('div', { class: 'dlg-sec' }, 'Objectives'));
+      this.body.append(h('div', { class: 'dlg-sec' }, t('목표','Objectives')));
       const ul = h('ul', { class: 'dlg-obj' });
       for (const o of p.objectives) ul.append(h('li', null, o));
       this.body.append(ul);
     }
     if (p.rewardXp || p.rewardItem) {
-      this.body.append(h('div', { class: 'dlg-sec' }, 'Rewards'));
+      this.body.append(h('div', { class: 'dlg-sec' }, t('보상','Rewards')));
       const r = h('div', { class: 'dlg-reward' });
       if (p.rewardXp) r.append(h('span', { class: 'xp' }, `${p.rewardXp} XP`));
       if (p.rewardItem) r.append(h('span', { class: 'item' }, h('i'), p.rewardItem));

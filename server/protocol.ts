@@ -16,7 +16,7 @@ export function specOf(value: unknown): Spec | null {
   return { race: s.race, sex: s.sex, classId: s.classId, shell: s.shell, crest: s.crest, led: s.led, name: clean(s.name, 24) || 'Crab' };
 }
 export function stateOf(s: State): State | null {
-  if (!s || !finite(s.x, 2000) || !finite(s.z, 2000) || !finite(s.y, 200) || !finite(s.yaw, 10000) || !finite(s.hp, 100000) || !finite(s.maxHp, 100000) || s.maxHp <= 0 || typeof s.alive !== 'boolean') return null;
-  return { x: s.x, y: s.y, z: s.z, yaw: s.yaw, hp: Math.max(0, Math.min(s.hp, s.maxHp)), maxHp: s.maxHp, alive: s.alive, ...(Number.isInteger(s.level) && s.level! >= 1 && s.level! <= 20 ? { level: s.level } : {}) };
+  if (!s || !finite(s.x, 2000) || !finite(s.z, 2000) || !finite(s.y, 200) || !finite(s.yaw, 10000) || !finite(s.hp, Number.MAX_SAFE_INTEGER) || !finite(s.maxHp, Number.MAX_SAFE_INTEGER) || s.maxHp <= 0 || typeof s.alive !== 'boolean') return null;
+  return { x: s.x, y: s.y, z: s.z, yaw: s.yaw, hp: Math.max(0, Math.min(s.hp, s.maxHp)), maxHp: s.maxHp, alive: s.alive, ...(Number.isInteger(s.level) && s.level! >= 1 && s.level! <= Number.MAX_SAFE_INTEGER ? { level: s.level } : {}) };
 }
 

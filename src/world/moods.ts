@@ -126,6 +126,9 @@ export const MOODS: Mood[] = [
   },
 ];
 
+// Clear morning is a separate mood; the original golden-hour World I art remains unchanged.
+MOODS[3]={...MOODS[0],keyDir:new THREE.Vector3(.5,.8,.25).normalize(),keyColor:c('#fff3dc'),keyIntensity:4.2,hemiSky:c('#b4dafa'),hemiIntensity:1.1,zenith:c('#267dcc'),mid:c('#84bce5'),horizon:c('#d9e8ed'),fogColor:c('#c3ddec'),glow:c('#ffe3b2'),cloudLit:c('#fff7e8'),cloudShade:c('#8fa5ba'),lamps:.35,fireflies:0,fogDensity:.001};
+
 export function cloneMood(m: Mood): Mood {
   const o = { ...m } as Mood;
   for (const k of Object.keys(m) as (keyof Mood)[]) {

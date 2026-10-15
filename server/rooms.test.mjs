@@ -136,7 +136,7 @@ test('malformed combat checkpoints and impossible packets are rejected', async t
   a.send({type:'world',world:{...world,entities:[{...world.entities[0],hp:null}]}});
   a.send({type:'world',world:{...world,bosses:[world.bosses[0],world.bosses[0]]}});
   b.send({type:'combat',event:{kind:'attack',target:'e0',amount:Infinity}});
-  b.send({type:'combat',event:{kind:'attack',target:'e0',amount:2001}});
+  b.send({type:'combat',event:{kind:'attack',target:'e0',amount:Number.MAX_SAFE_INTEGER+1}});
   b.send({type:'combat',event:{kind:'condition',target:'e0',condition:{stun:999}}});
   a.send({type:'world',world});assert.deepEqual((await b.next('world')).world,world);
   assert.equal(a.queue.some(m=>m.type==='combat'),false);assert.equal(b.queue.some(m=>m.type==='world'),false);

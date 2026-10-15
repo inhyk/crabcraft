@@ -1,0 +1,24 @@
+import type { QuestDef, QuestId } from './quests';
+import type { Language } from '../i18n';
+type Text={title:string;offer:string[];progress:string;complete:string[];readyHint:string;labels:string[]};
+const korean:Partial<Record<QuestId,Text>>={
+ q1:{title:'해안의 작은 위협',offer:['클로헤이븐에 온 걸 환영하네! 해안의 고철 게들이 마을을 괴롭히고 있어.','바닷가에서 고철 게를 물리치고 돌아와 주겠나?'],progress:'바닷가의 고철 게를 물리치고 돌아오게.',complete:['잘했네! 이제 마을 사람들이 안심하고 바닷가를 걸을 수 있겠어.'],readyHint:'브라인비어드 선장에게 돌아가세요.',labels:['고철 게 처치']},
+ q2:{title:'달빛을 담은 톱니',offer:['고철 게들이 녹슨 톱니를 가지고 있더군.','톱니를 모아 달빛 연못의 실버문에게 전해 주게.'],progress:'녹슨 톱니를 모아 실버문에게 전달하세요.',complete:['달빛으로 녹을 씻으면 이 톱니에도 다시 빛이 깃들어요. 고마워요.'],readyHint:'실버문에게 돌아가세요.',labels:['녹슨 톱니 모으기','실버문에게 전달하기']},
+ q3:{title:'등대에 다시 빛을',offer:['등대가 사흘째 꺼져 있어! 계단에는 유적 게들이 가득하고.','유적 게를 물리치고 맨 위 등대에서 F를 길게 눌러 불을 켜 주게.'],progress:'등대의 유적 게를 처치하고 등대 꼭대기에 불을 켜세요.',complete:['저 빛을 보게! 바다에 다시 길이 생겼어.'],readyHint:'등대지기 래틀볼트에게 돌아가세요.',labels:['유적 게 처치','등대 켜기']},
+ q4:{title:'녹의 파도',offer:['등대의 빛이 철의 난파선을 깨웠습니다.','녹의 폭군 코로디우스를 물리쳐 해안에 평화를 되찾아 주세요.'],progress:'철의 난파선에서 코로디우스를 물리치세요.',complete:['녹의 파도가 잠들었습니다. 해안의 영웅이 되어 주어 고마워요.'],readyHint:'왕관을 되찾으세요.',labels:['코로디우스 처치']},
+};
+const english:Partial<Record<QuestId,Text>>={
+ w1:{title:'A New Place to Call Home',offer:['We crossed the sea together. Starhaven will be our new home.','Clear six crystal-shell sentries from the western shore so the villagers can settle safely.'],progress:'Defeat six crystal-shell sentries on the western shore.',complete:['The western shore is safe. Our new home finally feels welcoming.'],readyHint:'Return to Captain Brinebeard.',labels:['Defeat crystal-shell sentries']},
+ w2:{title:'The First Spark of the Starforge',offer:['I brought my anvil across the sea, but I need local crystals to work.','Find the four glowing star crystals in the western gardens and eastern ruins. Press F to gather each one.'],progress:'Find four different star crystals and gather them with F.',complete:['Look at that glow! The Starforge is open for business.'],readyHint:'Return to Ironjaw Pip.',labels:['Star crystal I','Star crystal II','Star crystal III','Star crystal IV']},
+ w3:{title:'Light the Sleeping Road',offer:['The old road north is dark. Let us give it a little starlight.','Find the three unlit waystones along the road to the throne and press F at each.'],progress:'Light all three waystones on the northern road.',complete:['A safe path, all the way to the ruins. Wonderful work!'],readyHint:'Return to Old Rattlebolt.',labels:['Light the southern waystone','Light the eastern waystone','Light the northern waystone']},
+ w4:{title:'Grukk’s Ruin Patrol',offer:['Grukk guard new village. Grukk need help with old ruins.','Defeat eight star-ruin guardians in the east. Then Grukk can eat snacks.'],progress:'Defeat eight star-ruin guardians in the eastern ruins.',complete:['Good bonking. New village safe. Grukk approve.'],readyHint:'Return to Grukk Shellbreaker.',labels:['Defeat star-ruin guardians']},
+ w5:{title:'Memories of the Forgotten Island',offer:['This island remembers a sky we have never seen.','Visit the western overlook, the eastern ruins and the northern approach. Let the island tell you its story.'],progress:'Explore all three marked locations.',complete:['You listened. The island is no longer forgotten.'],readyHint:'Return to Lady Silvermoon.',labels:['Visit the western overlook','Explore the eastern ruins','Reach the northern approach']},
+ w6:{title:'A Little Warmth After the Move',offer:['A move across the sea calls for a hot bowl of soup!','Take this basket to Sister Coralline outside the new chapel.'],progress:'Deliver Mama Hoofclaw’s soup to Sister Coralline.',complete:['A warm meal and a familiar face. That is how a new place becomes home.'],readyHint:'Speak with Sister Coralline.',labels:['Deliver soup to Sister Coralline']},
+ w7:{title:'A Promise Beyond the Eclipse',offer:['Our neighbours have a new home. Only the shadow over the throne remains.','At level 20, challenge Astra, Queen of the Eclipse, from the boss journey panel.'],progress:'Reach level 20 and defeat Astra at the Star Throne.',complete:['Light has returned to both worlds. Tonight, we dance together.'],readyHint:'Your reward is granted automatically.',labels:['Defeat Astra, Queen of the Eclipse']},
+};
+export function translatedQuest(def:QuestDef,language:Language):QuestDef {
+ const text=(language==='ko'?korean:english)[def.id];
+ if(!text)return structuredClone(def);
+ const {labels,...fields}=text;
+ return {...structuredClone(def),...fields,summary:fields.offer.join(' '),completeButton:language==='ko'?'보상 받기':'Claim reward',objectives:def.objectives.map((o,i)=>({...o,label:labels[i]??o.label}))};
+}

@@ -37,13 +37,15 @@ export class EndingSequence {
   private orbit0 = 0;
   private finishing = false;
   private captionIndex = -1;
+  private mode:'chapter'|'final'='final';
+  private onFinished:(()=>void)|null=null;
 
   constructor(private readonly game: Game) {}
 
-  async start(): Promise<void> {
+  async start(mode:'chapter'|'final'='final',onFinished?:()=>void): Promise<void> {
     if (this.active) return;
     const g = this.game;
-    this.active = true;
+    this.active = true;this.mode=mode;this.onFinished=onFinished??null;this.finishing=false;this.captionIndex=-1;
     g.journey?.closeChapterEnding();
     g.world2.showEpilogue();
     g.hud.dialogue.close();
@@ -152,7 +154,7 @@ export class EndingSequence {
     const t = this.t;
     this.placeCamera(t);
 
-    const captions = [
+    const captions = this.mode==='chapter' ? [[1.5,'심해의 왕관을 되찾았습니다. 해안에 평화가 돌아왔어요.'],[8,'온 마을의 게들이 영웅과 함께 춤을 춥니다.'],[15,'함께 모험해 줘서 고마워요!'],[22.5,'첫 번째 모험의 끝 · 별빛 너머에는 새로운 섬이 기다립니다.']] as const : [
       [1.5, '녹의 파도와 검은 일식이 사라졌습니다. 두 세계에 빛이 돌아왔습니다.'],
       [8, '세 왕관을 되찾은 영웅을 위해, 온 마을이 함께 춤을 춥니다.'],
       [15, "잊힌 별의 섬은 더 이상 혼자가 아닙니다. 우리의 모험은 전설이 되었습니다."],
@@ -183,7 +185,11 @@ export class EndingSequence {
     const skip = t > 4 && (g.input.wasPressed('Space') || g.input.wasPressed('Escape') || g.input.wasPressed('Enter'));
     if ((t >= LENGTH || skip) && !this.finishing) {
       this.finishing = true;
-      void g.app.go('ending', { name: g.player.unit.name });
+      if(this.mode==='chapter'){
+        this.active=false;this.started=false;g.hud.setCaption('');g.hud.showSkip(false);g.hud.setCinematic(false);g.follow.cut();
+        for(const u of this.dancers)u.motion.stop(undefined,.3);
+        this.onFinished?.();this.onFinished=null;
+      }else void g.app.go('ending', { name: g.player.unit.name });
     }
   }
 }

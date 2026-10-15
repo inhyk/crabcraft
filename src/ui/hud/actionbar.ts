@@ -3,7 +3,7 @@
 import { h } from '../dom';
 import type { Game } from '../../game/game';
 import type { AbilityDef } from '../../data/classes';
-import { GCD, LEVEL_XP, MAX_LEVEL } from '../../game/player';
+import { GCD, xpForLevel } from '../../game/player';
 import { abilityNeedsTarget, isMeleeAbility } from '../../game/abilities';
 import { iconEl, iconSvg } from './icons';
 
@@ -151,15 +151,9 @@ export class ActionBar {
     const lvl = p.unit.level;
     let xpText: string;
     let frac: number;
-    if (lvl >= MAX_LEVEL) {
-      xpText = `Level ${lvl}  |  Max level`;
-      frac = 1;
-    } else {
-      const lo = LEVEL_XP[lvl - 1];
-      const hi = LEVEL_XP[lvl];
-      frac = (p.xp - lo) / (hi - lo);
-      xpText = `Level ${lvl}  |  ${p.xp - lo} / ${hi - lo} XP`;
-    }
+    const lo=xpForLevel(lvl),hi=xpForLevel(lvl+1);
+    frac=(p.xp-lo)/(hi-lo);
+    xpText=`Level ${lvl}  |  ${Math.floor(p.xp-lo)} / ${hi-lo} XP · ∞`;
     if (xpText !== this.lastXp) {
       this.lastXp = xpText;
       this.xpLabel.textContent = xpText;

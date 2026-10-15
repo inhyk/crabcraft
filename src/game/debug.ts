@@ -4,13 +4,29 @@ import * as THREE from 'three';
 import type { Game } from './game';
 import { QUESTS } from './quests';
 import { C } from './vfx/vfx';
+import { xpForLevel } from './progression';
+import { h } from '../ui/dom';
 
 export class DebugTools {
   private acc = 0;
+  private enabled = new URLSearchParams(location.search).get('debug')==='1';
+  private code = '';
+  private lastKey = 0;
+  private panel:HTMLElement;
+
 
   constructor(private readonly game: Game) {
     window.addEventListener('keydown', this.onKey, true);
-    game.hud.debugEl.classList.remove('hidden');
+    game.hud.debugEl.classList.toggle('hidden',!this.enabled);
+    const button=(label:string,fn:()=>void)=>h('button',{type:'button',class:'cc-btn small',onclick:fn},label);
+    this.panel=h('details',{class:'boss-journey creator-tools',hidden:!this.enabled,open:true},h('summary',null,'🛠 제작자 모드 · 13570'),
+      h('p',null,'13570으로 열기 · F8 무적 · F9 목표 완료 · F10 목표 이동'),
+      button('무적 켜기 / 끄기',()=>this.toggleGod()),
+      button('레벨 +1',()=>this.addLevels(1)),button('레벨 +10',()=>this.addLevels(10)),
+      button('월드 2로 이동',()=>{if(!game.multiplayer?.battle.enterWorld2())game.world2.enter();}),
+      button('현재 목표 완료',()=>this.completeObjective()),button('목표로 이동',()=>this.teleport()),
+      button('제작자 화면 닫기',()=>{this.panel.hidden=true;}));
+    game.hud.sidePanels.append(this.panel);
     (window as unknown as { cc: unknown }).cc = {
       game,
       state: () => this.state(),
@@ -20,14 +36,34 @@ export class DebugTools {
   }
 
   private readonly onKey = (e: KeyboardEvent): void => {
+    const target=e.target as HTMLElement;
+    if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||target.matches('input,textarea,select')||target.isContentEditable)return;
+    if(performance.now()-this.lastKey>5000)this.code='';
+    this.lastKey=performance.now();
+    if(/^\d$/.test(e.key)){
+      this.code+=e.key;if(!'13570'.startsWith(this.code))this.code=e.key==='1'?'1':'';
+      if(this.code==='13570'){this.code='';this.enabled=true;this.panel.hidden=false;(this.panel as HTMLDetailsElement).open=true;this.game.hud.debugEl.classList.remove('hidden');this.game.hud.messages.banner('제작자 모드', '월드 이동 · 레벨 조절 · 테스트 도구', 'level');}
+    }else this.code='';
+    if(!this.enabled)return;
     if (e.code === 'F8' || e.code === 'F9' || e.code === 'F10') {
       e.preventDefault();
       if (e.repeat) return;
-      if (e.code === 'F8') this.toggleGod();
+      const target=e.target as HTMLElement;
+    if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||target.matches('input,textarea,select')||target.isContentEditable)return;
+    if(performance.now()-this.lastKey>5000)this.code='';
+    this.lastKey=performance.now();
+    if(/^\d$/.test(e.key)){
+      this.code+=e.key;if(!'13570'.startsWith(this.code))this.code=e.key==='1'?'1':'';
+      if(this.code==='13570'){this.code='';this.enabled=true;this.panel.hidden=false;(this.panel as HTMLDetailsElement).open=true;this.game.hud.debugEl.classList.remove('hidden');this.game.hud.messages.banner('제작자 모드', '월드 이동 · 레벨 조절 · 테스트 도구', 'level');}
+    }else this.code='';
+    if(!this.enabled)return;
+    if (e.code === 'F8') this.toggleGod();
       if (e.code === 'F9') this.completeObjective();
       if (e.code === 'F10') this.teleport();
     }
   };
+
+  private addLevels(count:number) {const p=this.game.player;this.game.player.gainXp(Math.max(0,xpForLevel(p.level+count)-p.xp));this.game.journey?.save();}
 
   toggleGod(): void {
     const g = this.game;
@@ -58,10 +94,15 @@ export class DebugTools {
       case 'beacon':
         g.lightBeacon();
         break;
+      case 'eclipse-boss':
+        if(g.multiplayer?.battle.authority===false){g.hud.messages.info('보스 테스트는 방장이 진행해요.');return;}
+        if(g.worldBoss.state==='dormant')g.worldBoss.wake();else g.worldBoss.debugAdvance();
+        break;
       case 'boss':
         if (g.boss.state === 'dormant') g.boss.wake();
         else g.boss.debugAdvance();
         break;
+      default:g.quests.completeObjective(o);g.journey?.save();break;
     }
   }
 
@@ -146,6 +187,7 @@ export class DebugTools {
   }
 
   update(dt: number): void {
+    if(!this.enabled)return;
     this.acc += dt;
     if (this.acc < 0.5) return;
     this.acc = 0;
@@ -159,6 +201,7 @@ export class DebugTools {
 
   dispose(): void {
     window.removeEventListener('keydown', this.onKey, true);
+    this.panel.remove();
     delete (window as unknown as { cc?: unknown }).cc;
   }
 }

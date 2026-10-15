@@ -259,7 +259,7 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
   const mood: Mood = cloneMood(MOODS[0]);
   let target: Mood = MOODS[0];
   let blending = 1;
-  let moodId: 0 | 1 | 2 = 0;
+  let moodId: 0 | 1 | 2 | 3 = 0;
   let beaconOn = false;
   let envDirty = true;
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -272,7 +272,7 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
     hemi.color.copy(mood.hemiSky);
     hemi.groundColor.copy(mood.hemiGround);
     hemi.intensity = mood.hemiIntensity;
-    skyU.uSunDir.value.copy(MOODS[0].keyDir);
+    skyU.uSunDir.value.copy(moodId===3?mood.keyDir:MOODS[0].keyDir);
     skyU.uMoonDir.value.copy(MOODS[1].keyDir);
     skyU.uZenith.value.copy(mood.zenith);
     skyU.uMid.value.copy(mood.mid);

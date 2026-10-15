@@ -8,6 +8,7 @@ import { createMotionController } from '../motion/provider';
 import type { MotionId } from '../motion/types';
 import { h } from '../ui/dom';
 import './multiplayer.css';
+import {t} from '../i18n';
 
 type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number };
 type Peer = { spec: CrabSpec; unit: Unit | null; state: State | null };
@@ -21,6 +22,7 @@ export class Multiplayer {
   private ownId = '';
   private disposed = false;
   private elapsed = 0;
+  private partyElapsed=0;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
   private status = h('p', { class: 'mp-status', role: 'status' }, '혼자 플레이 중');
@@ -35,6 +37,7 @@ export class Multiplayer {
   private share = h('button', { type: 'button', onclick: () => void this.copyInvite() }, '초대 링크 복사');
   private invite = h('input', { readonly: true, class: 'mp-invite', 'aria-label': '초대 링크', onclick: (e: Event) => (e.target as HTMLInputElement).select() });
   private sendButton = h('button', { type: 'submit' }, '전송');
+  private partyPanel=h('div',{class:'mp-party'});
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private game: Game) {
@@ -49,7 +52,9 @@ export class Multiplayer {
       h('p', null, '최대 8명 · 몬스터와 보스를 함께 공격해요. 체력·처치·전투 보상을 공유해요. 마을 퀘스트는 각자 진행해요.'),
       this.code, h('div', { class: 'mp-row' }, this.create, this.share, this.leave), form, this.invite, this.roster,
       h('div', { class: 'mp-row' }, h('button', { type: 'button', onclick: () => this.emote('gesture_hello') }, '👋 인사'), h('button', { type: 'button', onclick: () => this.emote('dance_crab') }, '💃 춤')),
-      this.log, chatForm,
+      h('div',{class:'mp-row'},h('button',{type:'button',onclick:()=>this.battle.setMode('coop')},t('협동 모드','Co-op')),h('button',{type:'button',onclick:()=>this.battle.setMode('pvp')},t('⚔ 싸우기 모드','⚔ PvP'))),
+      h('div',{class:'mp-row'},...([0,1,2,3,4].map(p=>h('button',{type:'button',onclick:()=>this.battle.setParty(p)},p===0?t('혼자','Solo'):`${t('파티','Party')} ${p}`)))),
+      this.partyPanel,this.log, chatForm,
     );
     // Opening a form clears held movement keys. Typing never controls the crab.
     this.root.addEventListener('focusin', () => window.dispatchEvent(new Event('blur')));
@@ -160,6 +165,10 @@ export class Multiplayer {
       const u = p.unit, s = p.state;
       if (!u || !s) continue;
       u.hidden = false;
+      const id=[...this.peers].find(([,peer])=>peer===p)![0];
+      const rival=this.battle.mode==='pvp'&&!this.battle.sameParty(this.ownId,id);
+      u.reaction=rival?'hostile':'friendly';u.targetable=rival;u.invulnerable=!rival;
+      u.title=`${rival?t('대전 상대','Rival'):t('친구','Friend')} · ${t('파티','Party')} ${this.battle.partyOf(id)||'—'}`;
       const goal = new THREE.Vector3(s.x, s.y, s.z);
       const k = u.pos.distanceToSquared(goal) > 100 ? 1 : 1 - Math.exp(-18 * dt);
       u.pos.lerp(goal, k);
@@ -170,9 +179,17 @@ export class Multiplayer {
       if (this.game.hud.menu.open) u.updateVisual(dt);
     }
     this.battle.update(dt);
+    this.partyElapsed+=dt;
+    if(this.partyElapsed>=.25){this.partyElapsed=0;this.partyPanel.replaceChildren(
+      h('strong',null,this.battle.mode==='pvp'?t('⚔ 싸우기 모드 · 같은 파티는 공격하지 않아요','⚔ PvP · teammates are protected'):t('🤝 협동 모드 · 모두 함께 모험해요','🤝 Co-op · adventure together')),
+      ...[{id:this.ownId,name:this.game.player.unit.name,unit:this.game.player.unit},...[...this.peers].map(([id,p])=>({id,name:p.spec.name,unit:p.unit}))].map(p=>{
+        const hp=p.unit?.hp??0,max=p.unit?.maxHp??1,party=this.battle.partyOf(p.id);
+        return h('div',{class:`mp-member party-${party}`},h('span',null,`${party?`${t('파티','Party')} ${party}`:t('개인','Solo')} · ${p.name}`),h('meter',{min:0,max,value:hp}),h('small',null,`${Math.ceil(hp)} / ${Math.ceil(max)}`));
+      }));}
+
   }
 
-  private emote(action: MotionId) { if (this.room && this.game.player.unit.alive) this.game.player.unit.act(action); }
+  private emote(action: MotionId) { if (this.game.player.unit.alive) this.game.player.unit.act(action); }
   private note(text: string) {
     this.log.append(h('div', null, text));
     while (this.log.childElementCount > 40) this.log.firstElementChild?.remove();

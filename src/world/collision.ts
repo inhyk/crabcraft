@@ -38,6 +38,8 @@ type Shape = { kind: 0; c: Circle } | { kind: 1; b: Box };
 const CELL = 8;
 const key = (i: number, j: number) => (i + 2048) * 4096 + (j + 2048);
 
+export interface CollisionTerrain {nx:number;nz:number;minX:number;minZ:number;step:number;h:Terrain['h'];heightAt(x:number,z:number):number}
+
 export class Collision {
   private shapes: Shape[] = [];
   private surfaces: Surface[] = [];
@@ -47,7 +49,7 @@ export class Collision {
   blocked: Uint8Array;
   private bnx: number;
 
-  constructor(readonly terrain: Terrain) {
+  constructor(readonly terrain: CollisionTerrain) {
     this.bnx = terrain.nx - 1;
     this.blocked = new Uint8Array((terrain.nx - 1) * (terrain.nz - 1));
   }

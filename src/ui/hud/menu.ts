@@ -1,6 +1,8 @@
 // Esc game menu: Resume, Settings (music and effects volume, graphics quality, chat bubbles),
 // Controls, Robot Mode, Return to Title.
 import { h } from '../dom';
+import {language,setLanguage,t,type Language} from '../../i18n';
+import {setQuestLanguage} from '../../game/quests';
 import { localStorageSet } from '../../app';
 import type { Game } from '../../game/game';
 import type { QualitySetting } from '../../core/engine';
@@ -20,7 +22,7 @@ const CONTROLS: [string, string][] = [
   ['L', 'Quest log'],
   ['M', 'Music on / off'],
   ['Enter', 'Chat bubbles on / off'],
-  ['R', 'Robot Mode'],
+  ['R', t('로봇 모드','Robot Mode')],
   ['Esc', 'Clear target, close windows, menu'],
 ];
 
@@ -61,12 +63,12 @@ export class GameMenu {
     const g = this.game;
     this.panel.className = 'menu cc-panel hud-i';
     this.panel.replaceChildren(
-      h('h2', { class: 'cc-title' }, 'Game Menu'),
-      this.btn('Resume', () => this.close()),
-      this.btn('Settings', () => this.settings(), true),
-      this.btn('Controls', () => this.controls(), true),
-      this.btn('Robot Mode', () => void g.app.go('robot'), true),
-      this.btn('Return to Title', () => void g.app.go('title'), true),
+      h('h2', { class: 'cc-title' }, t('게임 메뉴','Game Menu')),
+      this.btn(t('계속하기','Resume'), () => this.close()),
+      this.btn(t('설정','Settings'), () => this.settings(), true),
+      this.btn(t('조작 방법','Controls'), () => this.controls(), true),
+      this.btn(t('로봇 모드','Robot Mode'), () => void g.app.go('robot'), true),
+      this.btn(t('처음 화면','Return to Title'), () => void g.app.go('title'), true),
     );
   }
 
@@ -92,26 +94,30 @@ export class GameMenu {
     };
     this.panel.className = 'menu wide cc-panel hud-i';
     this.panel.replaceChildren(
-      h('h2', { class: 'cc-title' }, 'Settings'),
-      h('div', { class: 'row' }, 'Music volume', slider(audio.musicVolume, (v) => {
+      h('h2', { class: 'cc-title' }, t('설정','Settings')),
+      h('div',{class:'row'},t('언어','Language'),seg([['ko','한국어'],['en','English']],language(),v=>{
+        setLanguage(v as Language);setQuestLanguage(v as Language);for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}g.hud.dialogue.close();g.hud.tracker.update(g.quests);g.hud.questLog.render();this.settings();
+      })),
+      h('div',{class:'row'},t('월드 1 등대','World I lighthouse'),seg([['on',t('켜기 · 밤','On · night')],['off',t('끄기 · 아침','Off · morning')]],g.beaconLit?'on':'off',v=>g.setLighthouse(v==='on'))),
+      h('div', { class: 'row' }, t('음악 음량','Music volume'), slider(audio.musicVolume, (v) => {
         audio.setMusicVolume(v);
         g.musicOn = v > 0;
         localStorageSet('cc.musicVol', String(v));
       })),
-      h('div', { class: 'row' }, 'Effects volume', slider(audio.sfxVolume, (v) => {
+      h('div', { class: 'row' }, t('효과음 음량','Effects volume'), slider(audio.sfxVolume, (v) => {
         audio.setSfxVolume(v);
         localStorageSet('cc.sfxVol', String(v));
         audio.sfx('sfx-click', { volume: 0.6 });
       })),
-      h('div', { class: 'row' }, 'Graphics quality', seg([['auto', 'Auto'], ['high', 'High'], ['low', 'Low']], g.engine.setting, (q) => {
+      h('div', { class: 'row' }, t('그래픽 품질','Graphics quality'), seg([['auto', t('자동','Auto')], ['high', t('높음','High')], ['low', t('낮음','Low')]], g.engine.setting, (q) => {
         g.setQuality(q as QualitySetting);
         this.updateResNote();
       })),
       this.resNote,
-      h('div', { class: 'row' }, 'Chat bubbles', seg([['on', 'On'], ['off', 'Off']], g.hud.bubbles.enabled ? 'on' : 'off', (v) => {
+      h('div', { class: 'row' }, t('말풍선','Chat bubbles'), seg([['on', t('켜기','On')], ['off', t('끄기','Off')]], g.hud.bubbles.enabled ? 'on' : 'off', (v) => {
         g.hud.bubbles.enabled = v === 'on';
       })),
-      this.btn('Back', () => this.main()),
+      this.btn(t('뒤로','Back'), () => this.main()),
     );
     this.updateResNote();
   }
@@ -122,20 +128,21 @@ export class GameMenu {
     const pct = Math.round(e.resolutionFraction * 100);
     this.resNote.textContent =
       e.setting === 'auto'
-        ? `Auto keeps the frame rate smooth by adjusting resolution. Rendering at ${pct}% now.`
+        ? t(`해상도를 자동 조절해 움직임을 부드럽게 유지합니다. 현재 ${pct}%로 표시 중입니다.`,`Auto keeps the frame rate smooth by adjusting resolution. Rendering at ${pct}% now.`)
         : e.setting === 'high'
-          ? `Full resolution${pct < 100 ? ` (capped at ${pct}% of this screen)` : ''}, every effect on.`
-          : 'Fewer plants and particles, standard resolution. For older laptops.';
+          ? t(`모든 효과를 사용합니다. 현재 해상도 ${pct}%.`,`Full resolution${pct < 100 ? ` (capped at ${pct}% of this screen)` : ''}, every effect on.`)
+          : t('식물과 입자를 줄여 오래된 노트북에서도 부드럽게 플레이합니다.','Fewer plants and particles, standard resolution. For older laptops.');
   }
 
   controls(): void {
     const table = h('table');
-    for (const [k, what] of CONTROLS) {
+    const ko=['앞 / 뒤로 걷기','왼쪽 / 오른쪽으로 옆걸음','방향 돌리기','시점과 방향 조절','주변 둘러보기','앞으로 걷기','확대 / 축소','점프','적 선택','기술 사용','대화, 채집, 등대 켜기 / 끄기','퀘스트 기록','음악 켜기 / 끄기','말풍선 켜기 / 끄기','로봇 모드','대상 해제, 창 닫기, 메뉴'];
+    for (const [i,[k, what]] of CONTROLS.entries()) {
       const keys = h('td');
       for (const part of k.split(' / ')) keys.append(h('kbd', null, part));
-      table.append(h('tr', null, keys, h('td', null, what)));
+      table.append(h('tr', null, keys, h('td', null, t(ko[i],what))));
     }
     this.panel.className = 'menu wide cc-panel hud-i';
-    this.panel.replaceChildren(h('h2', { class: 'cc-title' }, 'Controls'), table, this.btn('Back', () => this.main()));
+    this.panel.replaceChildren(h('h2', { class: 'cc-title' }, t('조작 방법','Controls')), table, this.btn(t('뒤로','Back'), () => this.main()));
   }
 }

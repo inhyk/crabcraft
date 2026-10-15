@@ -13,3 +13,5 @@
 .mp-roster { margin:8px 0; color:#b9d8ee; font-size:12px; overflow-wrap:anywhere }
 .mp-invite { margin-top:6px; font-size:11px!important }
 @media(max-height:720px) { .mp-log { max-height:70px } }
+
+.mp-party{margin:10px 0;padding:10px;border:1px solid #7b9eae55;border-radius:8px;background:#0d172b9c}.mp-party strong{display:block;font-size:11px;color:#d6e8f2;margin-bottom:8px}.mp-member{display:grid;grid-template-columns:1fr 65px;gap:3px 8px;padding:6px 0;border-top:1px solid #ffffff0c}.mp-member span{font-size:11px;color:#d4dbe5}.mp-member meter{width:65px;height:10px;align-self:center;accent-color:#66d1b5}.mp-member small{grid-column:2;font-size:9px;color:#9daabf;text-align:right}.party-1 span{color:#8cbdff}.party-2 span{color:#ff9d9d}.party-3 span{color:#ffe6a0}.party-4 span{color:#d5abff}

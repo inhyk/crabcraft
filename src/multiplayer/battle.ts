@@ -11,6 +11,32 @@ export class BattleSync {
   host = '';
   ownId = '';
   applying = false;
+  mode:'coop'|'pvp'='coop';
+  parties:Record<string,number>={};
+  private duelAt=new Map<string,number>();
+  partyOf(id:string){return this.parties[id]??(this.mode==='coop'?1:0);}
+  sameParty(a:string,b:string){return this.partyOf(a)>0&&this.partyOf(a)===this.partyOf(b);}
+  setParty(party:number){
+    if(!this.active||!Number.isInteger(party)||party<0||party>4)return;
+    if(this.authority){this.parties[this.ownId]=party;this.publish();}else this.event({kind:'party',target:'world',party});
+  }
+  setMode(mode:'coop'|'pvp'){
+    if(!this.active||!this.authority){this.game.hud.messages.info('방장이 협동 / 싸우기 모드를 선택해요.');return;}
+    if(this.game.encounter?.engaged){this.game.hud.messages.info('보스 전투가 끝난 뒤 모드를 바꿔 주세요.');return;}
+    this.mode=mode;this.parties={};this.game.player.setTarget(null);this.publish();
+  }
+  private duel(id:string,target:string,amount:number,crit=false){
+    if(this.mode!=='pvp'||id===target||this.sameParty(id,target)||!Number.isFinite(amount)||amount<=0)return;
+    const src=id===this.ownId?this.game.player.unit:this.peers().get(id)?.unit;
+    const dst=target===this.ownId?this.game.player.unit:this.peers().get(target)?.unit;
+    if(!src?.alive||!dst?.alive||src.hidden||dst.hidden||src.distTo(dst)>38||this.game.time<(this.duelAt.get(id)??-1))return;
+    this.duelAt.set(id,this.game.time+.06);
+    const dmg=Math.min(Math.round(amount),Math.max(1,src.maxHp*2));
+    src.lastCombat=dst.lastCombat=this.game.time;
+    if(target===this.ownId){this.applying=true;try{this.game.combat.damage(src,dst,dmg,{crit});}finally{this.applying=false;}}
+    else this.event({kind:'hit',target,amount:dmg,crit});
+  }
+
   private elapsed = 0;
   private goals = new Map<Unit, EntityState>();
   private units = new Map<string, Unit>();
@@ -29,10 +55,12 @@ export class BattleSync {
       else this.originalMood(m,instant);
     };
     game.world.setBeaconLit=lit=>{
-      if (this.active && !this.authority && !this.applying) { if(lit) this.event({kind:'environment',target:'world',environment:{beacon:true}}); }
+      if (this.active && !this.authority && !this.applying) { this.event({kind:'environment',target:'world',environment:{beacon:lit}}); }
       else this.originalBeacon(lit);
     };
     game.enemies.forEach((e, i) => this.register(`e${i}`, e.unit));
+    game.npcs?.forEach((n,i)=>this.register(`n${i}`,n.unit));
+    game.townsfolk?.forEach((t,i)=>this.register(`t${i}`,t.unit));
     this.register('b3', game.boss.unit); this.register('b10', game.finalBoss.unit);
     this.register('b20', game.worldBoss.unit); this.register('f20', game.worldBoss.freed);
     this.register('f3', game.boss.freed); this.register('f10', game.finalBoss.freed);
@@ -52,7 +80,7 @@ export class BattleSync {
     }
     this.elapsed = 1;
   }
-  leave() { this.active = false; this.host = ''; this.goals.clear(); }
+  leave() { this.active = false; this.host = ''; this.goals.clear();this.mode='coop';this.parties={};this.duelAt.clear(); }
   elect(host: string) {
     const was = this.authority; this.host = host;
     if (!was && this.authority) {
@@ -67,10 +95,16 @@ export class BattleSync {
   /** null means continue the regular local damage pipeline. */
   routeDamage(src: Unit | null, dst: Unit, amount: number, o: HitOptions): number | null {
     if (!this.active || this.applying) return null;
+    if(src===this.game.player.unit&&dst.kind==='remote'){
+      const target=[...this.peers()].find(([,p])=>p.unit===dst)?.[0];
+      if(this.mode!=='pvp'||!target||this.sameParty(this.ownId,target))return 0;
+      if(this.authority)this.duel(this.ownId,target,amount,!!o.crit);else this.event({kind:'duel',target,amount:Math.max(1,Math.round(amount)),crit:o.crit});
+      if(o.rage)this.game.player.gainRage(o.rage);src.lastCombat=this.game.time;return amount;
+    }
     if (!this.authority && dst.hostile) {
       const target = this.keys.get(dst);
       if (src === this.game.player.unit && target && dst.alive && !dst.invulnerable) {
-        this.event({ kind: 'attack', target, amount: Math.max(1, Math.min(2000, Math.round(amount))), crit: o.crit, rage: o.rage });
+        this.event({ kind: 'attack', target, amount: Math.max(1, Math.min(Number.MAX_SAFE_INTEGER, Math.round(amount))), crit: o.crit, rage: o.rage });
         src.lastCombat = dst.lastCombat = this.game.time;
         if (o.rage) this.game.player.gainRage(o.rage);
         return amount;
@@ -105,9 +139,14 @@ export class BattleSync {
     if (!this.active || this.authority) return false;
     this.event({ kind: 'challenge', target }); return true;
   }
-  enterWorld2() {
+  requestLighthouse(lit:boolean) {
+    if(!this.active||this.authority)return false;
+    this.event({kind:'environment',target:'world',environment:{beacon:lit,mood:lit?1:3}});return true;
+  }
+  enterWorld2() {return this.travel(2);}
+  travel(chapter:1|2) {
     if (!this.active || this.authority) return false;
-    this.event({kind:'chapter',target:'world'}); return true;
+    this.event({kind:'chapter',target:'world',chapter}); return true;
   }
   condition(u: Unit) {
     if (!this.active || this.authority) return;
@@ -120,13 +159,16 @@ export class BattleSync {
     if (this.authority) {
       const src = this.peers().get(id)?.unit;
       if (!src || !src.alive) return;
+      if(e.kind==='party'){this.parties[id]=e.party!;this.publish();return;}
+      if(e.kind==='duel'){this.duel(id,e.target,e.amount!,!!e.crit);return;}
       if (e.kind === 'attack' && u?.hostile && u.alive && !u.hidden && !u.invulnerable && src.distTo(u) < 38) {
         g.combat.damage(src, u, e.amount!, { crit: e.crit }); this.publish();
       } else if (e.kind === 'chapter') {
-        if(g.journey?.abyssCleared && g.journey.firstEndingSeen) { g.world2.enter(); this.publish(); }
+        if(!g.encounter.engaged) { if(e.chapter===1)g.world2.returnToShore();else g.world2.enter(); this.publish(); }
       } else if (e.kind === 'environment' && e.environment) {
         const env=e.environment;
-        if(env.beacon) g.world.setBeaconLit(true);
+        if(typeof env.beacon==='boolean'){if(g.setLighthouse)g.setLighthouse(env.beacon);else g.world.setBeaconLit(env.beacon);}
+        if(env.mood===3 && !g.world.getEnvironment().beacon)g.world.setMood(3);
         if(env.mood===1 && src.level>=3) g.world.setMood(1);
         if(env.mood===2 && g.journey?.abyssCleared) g.world.setMood(2);
         this.publish();
@@ -138,7 +180,7 @@ export class BattleSync {
         if (f.pushTime>0 && u.kind !== 'boss') { u.pushX=f.pushX; u.pushZ=f.pushZ; u.pushTime=f.pushTime; }
       } else if (e.kind === 'challenge') {
         const b = e.target === 'b3' ? g.boss : e.target === 'b20' ? g.worldBoss : g.finalBoss;
-        if (src.level >= b.profile.level && (b === g.boss || g.journey?.rustCleared) && (b !== g.worldBoss || (g.world2.chapter === 2 && g.journey?.abyssCleared)) && !g.encounter.engaged) b.wake();
+        if (src.level >= b.profile.level && (b === g.boss || b === g.worldBoss || g.journey?.rustCleared) && (b !== g.worldBoss || g.world2.chapter === 2) && !g.encounter.engaged) b.wake();
       }
       return;
     }
@@ -170,7 +212,7 @@ export class BattleSync {
   }
   private snapshot(): WorldState {
     const g = this.game, now = g.time;
-    return { weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
+    return {social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
       const e = u.kind === 'scrapling' || u.kind === 'scavenger' ? u.ctrl as Enemy : null;
       const round = (n: number) => Math.round(n * 1000) / 1000;
       return { id, x: round(u.pos.x), y: round(u.pos.y), z: round(u.pos.z), yaw: round(u.yaw), hp: u.hp, maxHp: u.maxHp,
@@ -183,6 +225,7 @@ export class BattleSync {
   apply(world: WorldState, instant = false) {
     if (!this.active) return;
     const g = this.game;
+    this.mode=world.social?.mode??'coop';this.parties={...(world.social?.parties??{})};
     this.applying = true;
     try {
       if (g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared; }
@@ -192,6 +235,7 @@ export class BattleSync {
         const current=g.world.getEnvironment();
         if (instant || current.mood!==world.weather.mood) this.originalMood(world.weather.mood,instant);
         if (current.beacon!==world.weather.beacon) this.originalBeacon(world.weather.beacon);
+        g.beaconLit=world.weather.beacon;
         this.sceneClock=world.weather.clock;
       }
       for (const s of world.entities) {

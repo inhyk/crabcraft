@@ -134,6 +134,7 @@ export class Boss {
   wake(): void {
     if (this.game.multiplayer?.battle.challenge(this.profile.level === 20 ? 'b20' : this.profile.level === 10 ? 'b10' : 'b3')) return;
     if (this.state !== 'dormant') return;
+    if(this.profile.level<20 && this.game.world.getEnvironment?.().beacon===false)return;
     const g = this.game;
     const u = this.unit;
     this.state = 'waking';
@@ -150,6 +151,7 @@ export class Boss {
 
   private engage(): void {
     const g = this.game;
+    if(this.profile.level<20&&g.world.getEnvironment?.().beacon===false)return;
     if ((g.partyLevel ?? g.player.level) < this.profile.level) return;
     this.state = 'fight';
     g.world.setMood?.(1);
@@ -161,6 +163,12 @@ export class Boss {
     g.audio.sfx('sfx-boss-roar');
     g.hud.bossFrame.show(this.unit);
     g.follow.shake(0.25, 0.6);
+  }
+
+  sleep():void {
+    if(this.state==='dead'||this.state==='dying')return;
+    this.reset();this.state='dormant';this.unit.hidden=true;this.unit.invulnerable=true;this.unit.targetable=false;
+    this.unit.cancelPendingHit();this.unit.motion.stop(undefined,.2);
   }
 
   reset(): void {

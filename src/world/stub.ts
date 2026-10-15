@@ -91,7 +91,7 @@ export const createWorld: CreateWorld = async ({ scene }) => {
   const ray = new THREE.Raycaster();
   const solids = root.children.filter((o) => (o as THREE.Mesh).isMesh && o !== ground && o !== sand && o !== water);
 
-  let moodId: 0 | 1 | 2 = 0, beaconOn = false;
+  let moodId: 0 | 1 | 2 | 3 = 0, beaconOn = false;
   const world: World = {
     root,
     pois,

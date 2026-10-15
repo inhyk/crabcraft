@@ -16,8 +16,8 @@ const JUMP_TO = 1.56;
 const JUMP_RATE = 1.15;
 
 export const GCD = 1.0;
-import { LEVEL_XP, MAX_LEVEL } from './progression';
-export { LEVEL_XP, MAX_LEVEL } from './progression';
+import { xpForLevel, levelForXp } from './progression';
+export { xpForLevel, levelForXp } from './progression';
 const WALK_SPEED = 5;
 const MELEE_GAP = 1.5;
 const RANGED_AUTO = 20;
@@ -550,18 +550,18 @@ export class Player {
 
   gainXp(n: number): void {
     const g = this.game;
-    const cap=this.game.world2?.chapter===2 ? MAX_LEVEL : 10;
-    if (this.unit.level >= cap) return;
-    this.xp = Math.min(LEVEL_XP[cap-1],this.xp+n);
+    if(!Number.isFinite(n) || n<=0)return;
+    this.xp = Math.min(Number.MAX_SAFE_INTEGER,this.xp+n);
     g.hud.floats.spawn(this.unit, `+${n} XP`, 'xp');
     g.hud.chat.system(`You gain ${n} experience.`);
-    while (this.unit.level < cap && this.xp >= LEVEL_XP[this.unit.level]) this.levelUp();
+    const targetLevel=levelForXp(this.xp);
+    if(targetLevel-this.level>10){this.restoreXp(this.xp);g.vfx.levelUp(this.unit);g.audio.sfx('sfx-levelup');g.hud.messages.banner(`레벨 ${this.level}`, '계속해서 성장하세요!', 'level');}
+    else while (this.xp >= xpForLevel(this.unit.level+1)) this.levelUp();
   }
 
   restoreXp(xp: number): void {
-    this.xp = Math.max(0, Math.min(LEVEL_XP[MAX_LEVEL - 1], xp));
-    this.unit.level = 1;
-    while (this.unit.level < MAX_LEVEL && this.xp >= LEVEL_XP[this.unit.level]) this.unit.level++;
+    this.xp = Number.isFinite(xp) ? Math.max(0,Math.min(Number.MAX_SAFE_INTEGER,xp)) : 0;
+    this.unit.level = levelForXp(this.xp);
     this.unit.maxHp = this.unit.hp = Math.round(this.baseMaxHp * (1 + 0.15 * (this.level - 1)));
     if (!this.isRage) this.maxResource = this.resource = 120 + 20 * (this.level - 1);
   }

@@ -1,3 +1,4 @@
+import {t} from '../i18n';
 // The game session: loads the world and every crab, runs the frame loop, routes input, and glues
 // quests, combat, AI, effects, music and the HUD together.
 import * as THREE from 'three';
@@ -181,6 +182,7 @@ export class Game {
     });
     if (!this.alive) return;
     this.world2 = new HiddenWorld(this);
+    await this.world2.buildSettlement();
     this.engine.setView(this.scene, this.camera, { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } });
     this.vfx = new Vfx(this.scene);
     this.vfx.density = app.engine.quality === 'low' ? 0.55 : 1;
@@ -385,7 +387,7 @@ export class Game {
     bu.rig.root.visible = !bu.hidden;
     if (!this.alive) return;
 
-    if (new URLSearchParams(location.search).get('debug') === '1') this.debug = new DebugTools(this);
+    this.debug = new DebugTools(this);
     progress(1, 'Welcome to Clawhaven');
     this.offFrame = this.engine.onFrame(this.frame);
     this.offAfter = this.engine.onAfterFrame(() => {
@@ -518,12 +520,10 @@ export class Game {
       this.player.update(dt);
       if (this.multiplayer?.battle.authority !== false) {
         for (const e of this.enemies) e.update(dt);
-        this.boss.update(dt);
-        this.finalBoss.update(dt);
-        this.worldBoss.update(dt);
+        if(this.world2.chapter===1){this.boss.update(dt);this.finalBoss.update(dt);}else this.worldBoss.update(dt);
       }
       this.journey?.update(dt);
-      if (this.world2.chapter===1) { for (const n of this.npcs) n.update(dt); for (const t of this.townsfolk) t.update(dt); }
+      for (const n of this.npcs) n.update(dt); if(this.multiplayer?.battle.authority!==false)for (const t of this.townsfolk) t.update(dt);
       if (this.multiplayer?.battle.authority !== false) this.separate();
       this.ending.update(dt);
       this.updateDeath();
@@ -548,7 +548,7 @@ export class Game {
     }
     if (!paused) this.vfx.update(dt);
     this.updateSelection();
-    const goal = this.ending.active || !this.player.unit.alive ? null : this.world2.chapter===2 ? this.worldBoss.unit.alive ? this.worldBoss.arena.position : null : this.objectivePos();
+    const goal = this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
     this.hintVia = goal ? this.world2.chapter===2 ? goal : this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
     this.objective.update(this.time, this.world, this.player.unit.pos, goal, this.hintVia, this.player.inCombat);
     if (!this.ending.active) this.director.update(dt);
@@ -711,7 +711,7 @@ export class Game {
 
   // ================================================================ interaction and dialogue
 
-  private findInteractable(): { kind: 'unit'; unit: Unit } | { kind: 'beacon' } | null {
+  private findInteractable(): { kind: 'unit'; unit: Unit } | { kind: 'beacon' } | {kind:'world2';node:NonNullable<ReturnType<HiddenWorld['interactable']>>} | {kind:'portal'} | null {
     const p = this.player.unit;
     let best: Unit | null = null;
     let bestScore = Infinity;
@@ -727,14 +727,15 @@ export class Game {
       }
     }
     if (best) return { kind: 'unit', unit: best };
+    if(Math.hypot(p.pos.x-this.world2.portalPosition.x,p.pos.z-this.world2.portalPosition.z)<4)return {kind:'portal'};
+    if(this.world2.chapter===2){const node=this.world2.interactable();return node?{kind:'world2',node}:null;}
     const b = this.world.pois.beacon;
     const o = QUESTS.q3.objectives[1];
     // The flame is up on the gallery: you have to climb, standing under it does not count.
     const gy = this.world.heightAt(b.position.x, b.position.z);
     const flameY = Math.max(b.position.y, gy);
     if (
-      this.quests.status.q3 === 'active' &&
-      !this.quests.objectiveDone(o) &&
+      ((this.quests.status.q3 === 'active' && !this.quests.objectiveDone(o)) || this.quests.status.q3 === 'done' || this.beaconLit) &&
       Math.hypot(p.pos.x - b.position.x, p.pos.z - b.position.z) < b.radius + 3.5 &&
       Math.abs(p.pos.y - flameY) < 3
     ) {
@@ -750,19 +751,23 @@ export class Game {
     }
     const it = this.findInteractable();
     if (!it) this.hud.prompt.hide();
-    else if (it.kind === 'beacon') this.hud.prompt.show('F', 'Hold to relight the beacon');
+    else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.chapter===2?t('월드 1로 돌아가기','Return to World I'):t('월드 2로 이동','Travel to World II'));
+    else if(it.kind==='world2')this.hud.prompt.show('F',it.node.kind.startsWith('lamp')?t('점성로 밝히기','Light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
+    else if (it.kind === 'beacon') this.hud.prompt.show('F', this.beaconLit?t('등대 끄기','Turn off lighthouse'):t('등대 켜기','Light lighthouse'));
     else this.hud.prompt.show('F', `${it.unit.kind === 'npc' ? 'Talk to' : 'Chat with'} ${it.unit.name}`);
   }
 
   private interact(): void {
     const it = this.findInteractable();
     if (!it) return;
+    if(it.kind==='portal'){this.world2.travel();return;}
+    if(it.kind==='world2'){this.player.setTarget(null);this.world2.collect(it.node.kind);return;}
     if (it.kind === 'beacon') {
       const b = this.world.pois.beacon;
       const to = this.beaconPoint(v1).clone();
       this.player.setTarget(null);
       this.player.unit.setYaw(yawTo(this.player.unit.pos.x, this.player.unit.pos.z, b.position.x, b.position.z));
-      this.player.startChannel('Relighting the Beacon', 3, 'KeyF', to, () => this.lightBeacon());
+      this.player.startChannel(this.beaconLit?'등대 끄는 중':'등대 켜는 중', 2, 'KeyF', to, () => this.setLighthouse(!this.beaconLit));
       return;
     }
     this.player.setTarget(it.unit);
@@ -793,9 +798,10 @@ export class Game {
     const u = npc.unit;
     npc.talking = true;
     u.setYaw(yawTo(u.pos.x, u.pos.z, this.player.unit.pos.x, this.player.unit.pos.z));
-    if (id === 'silvermoon' && q.status.q2 === 'active') q.bump('deliver');
+    if(this.world2.chapter===2&&id==='coralline'&&q.status.w6==='active')q.bump('deliver-supplies');
+    if (this.world2.chapter===1 && id === 'silvermoon' && q.status.q2 === 'active') q.bump('deliver');
     const portrait = `art/npc/${id}.webp`;
-    const bye = { label: 'Goodbye', onClick: () => this.hud.dialogue.close() };
+    const bye = { label: t('다음에 만나요','Goodbye'), onClick: () => this.hud.dialogue.close() };
     const ready = q.readyAt(id);
     if (ready) {
       const def = QUESTS[ready];
@@ -820,8 +826,8 @@ export class Game {
         objectives: def.objectives.map((o) => (o.count > 1 ? `${o.label}: 0/${o.count}` : o.label)),
         rewardXp: def.xp,
         buttons: [
-          { label: 'Accept', primary: true, onClick: () => this.acceptQuest(offer) },
-          { label: 'Decline', onClick: () => this.hud.dialogue.close() },
+          { label: t('퀘스트 받기','Accept quest'), primary: true, onClick: () => this.acceptQuest(offer) },
+          { label: t('나중에 할게요','Maybe later'), onClick: () => this.hud.dialogue.close() },
         ],
       });
       return;
@@ -832,8 +838,8 @@ export class Game {
       return;
     }
     let line = npc.nextLine();
-    if (id === 'rattlebolt') line = q.status.q3 === 'active' ? RATTLEBOLT_Q3 : this.beaconLit ? RATTLEBOLT_AFTER : line;
-    if (id === 'silvermoon' && q.status.q4 === 'active') line = 'Go, little moon. The blessing of the pool goes with you. Corrodius waits on the Iron Wreck.';
+    if (this.world2.chapter===1 && id === 'rattlebolt') line = q.status.q3 === 'active' ? RATTLEBOLT_Q3 : this.beaconLit ? RATTLEBOLT_AFTER : line;
+    if (this.world2.chapter===1 && id === 'silvermoon' && q.status.q4 === 'active') line = 'Go, little moon. The blessing of the pool goes with you. Corrodius waits on the Iron Wreck.';
     if (id === 'coralline') {
       const p = this.player.unit;
       if (p.hp < p.maxHp) this.combat.heal(u, p, p.maxHp - p.hp);
@@ -891,11 +897,13 @@ export class Game {
     ev.on('accepted', (id) => {
       const def = QUESTS[id];
       this.audio.sfx('sfx-quest-accept');
-      this.hud.chat.quest(`Quest accepted: ${def.title}`);
+      this.hud.chat.quest(t(`퀘스트 수락: ${def.title}`,`Quest accepted: ${def.title}`));
+      if(id==='w7'&&this.journey?.trueCleared)this.quests.bump('eclipse-boss');
       if (id === 'q4' && this.journey?.rustCleared) this.quests.bump('boss');
       if (id === 'q4') this.hud.messages.banner(def.title, 'New quest: defeat Corrodius on the Iron Wreck', 'quest');
-      else this.hud.messages.banner('Quest Accepted', def.title, 'quest');
+      else this.hud.messages.banner(t('퀘스트 수락','Quest Accepted'), def.title, 'quest');
       this.hud.tracker.update(this.quests);
+      this.journey?.save();
     });
     ev.on('progress', ({ objective, value }) => {
       const txt = objective.count > 1 ? `${objective.label}: ${value}/${objective.count}` : `${objective.label}`;
@@ -909,21 +917,34 @@ export class Game {
       this.hud.chat.quest(`${def.title} completed. ${def.readyHint}`);
       this.audio.sfx('sfx-quest-accept', { volume: 0.7 });
       this.hud.tracker.update(this.quests);
+      this.journey?.save();
     });
     ev.on('completed', (id) => {
       const def = QUESTS[id];
       this.audio.sfx('sfx-quest-complete');
-      this.hud.messages.banner('Quest Complete', def.title, 'quest');
+      this.hud.messages.banner(t('퀘스트 완료','Quest Complete'), def.title, 'quest');
       this.hud.chat.quest(`${def.title} completed.`);
       this.player.gainXp(def.xp);
       this.hud.tracker.update(this.quests);
       if (id === 'q3') this.onBeaconQuestDone();
+      this.journey?.save();
     });
+  }
+
+  setLighthouse(lit:boolean) {
+    if(this.world2.chapter!==1)return;
+    if(this.multiplayer?.battle.requestLighthouse(lit))return;
+    this.beaconLit=lit;this.world.setBeaconLit(lit);this.world.setMood(lit?1:3);
+    if(!lit){this.boss.sleep();this.finalBoss.sleep();this.player.setTarget(null);}
+    else this.quests.bump('beacon');
+    this.hud.messages.banner(lit?'등대를 켰어요':'등대를 껐어요',lit?'밤이 찾아왔습니다. 보스에 도전할 수 있어요.':'아침이 되었습니다. 보스는 다시 잠들었어요.','zone');
+    this.journey?.save();
   }
 
   lightBeacon(): void {
     if (this.beaconLit) return;
     this.beaconLit = true;
+    this.world.setMood(1);
     this.world.setBeaconLit(true);
     const at = this.beaconPoint(v1);
     this.vfx.beaconBlaze(at);
@@ -955,7 +976,7 @@ export class Game {
     const id = u.npcId as NpcId;
     const q = this.quests;
     if (q.readyAt(id)) return '?ready';
-    if (id === 'silvermoon' && q.status.q2 === 'active') return '?ready';
+    if (this.world2.chapter===1 && id === 'silvermoon' && q.status.q2 === 'active') return '?ready';
     if (q.offeredBy(id)) return '!';
     if (q.inProgressAt(id)) return '?';
     return null;
@@ -964,10 +985,11 @@ export class Game {
   /** Where the golden hint points: the nearest quest enemy, the quest NPC, or the POI. */
   objectivePos(): THREE.Vector3 | null {
     const cur = this.quests.current();
-    if (!cur) return null;
+    if (!cur) return this.world2.chapter===2&&!this.journey?.trueCleared ? this.world2.arena.position : null;
     const p = this.player.unit.pos;
     if (cur.step === 'objective' && cur.objective) {
       const k = cur.objective.kind;
+      if(this.world2.chapter===2){const point=this.world2.objectivePoint(k);if(point)return point;if(k==='eclipse-boss')return this.world2.arena.position;}
       const kind: EnemyKind | null = k === 'kill-scrapling' || k === 'collect-cog' ? 'scrapling' : k === 'kill-scavenger' ? 'scavenger' : null;
       if (kind) {
         const area = this.world.pois[cur.poi].position;
@@ -1027,6 +1049,7 @@ export class Game {
     }
     if (u.kind === 'boss') {
       const boss = u.ctrl as Boss;
+      if(boss===this.worldBoss)this.quests.bump('eclipse-boss');
       this.journey?.onBossDefeated(boss);
       this.player.unit.blessingUntil = 0;
       setTimeout(() => {
@@ -1129,7 +1152,7 @@ export class Game {
   }
 
   private updateZone(): void {
-    const z = this.world2.chapter===2 ? '잊힌 별의 섬' : this.zoneAt(this.player.unit.pos);
+    const z = this.world2.chapter===2 ? this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z) : this.zoneAt(this.player.unit.pos);
     if (z !== this.zoneCandidate) {
       this.zoneCandidate = z;
       this.zoneSince = this.time;

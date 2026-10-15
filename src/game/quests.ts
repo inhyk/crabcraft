@@ -1,11 +1,13 @@
 // "The Rust Tide" quest chain (docs/design.md): data, dialogue and progress state.
 import type { PoiId } from '../world/types';
 import { Emitter } from './util';
+import {language,t,type Language} from '../i18n';
+import {translatedQuest} from './questLocale';
 
-export type QuestId = 'q1' | 'q2' | 'q3' | 'q4';
+export type QuestId = 'q1' | 'q2' | 'q3' | 'q4' | 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6' | 'w7';
 export type NpcId = 'brinebeard' | 'silvermoon' | 'coralline' | 'grukk' | 'hoofclaw' | 'rattlebolt' | 'pip';
 export type QuestStatus = 'locked' | 'available' | 'active' | 'ready' | 'done';
-export type ObjectiveKind = 'kill-scrapling' | 'kill-scavenger' | 'collect-cog' | 'deliver' | 'beacon' | 'boss';
+export type ObjectiveKind = 'kill-scrapling' | 'kill-scavenger' | 'collect-cog' | 'deliver' | 'beacon' | 'boss' | 'crystal-a' | 'crystal-b' | 'crystal-c' | 'crystal-d' | 'lamp-a' | 'lamp-b' | 'lamp-c' | 'explore-west' | 'explore-east' | 'explore-north' | 'deliver-supplies' | 'eclipse-boss';
 
 export interface ObjectiveDef {
   id: string;
@@ -17,6 +19,7 @@ export interface ObjectiveDef {
 
 export interface QuestDef {
   id: QuestId;
+  chapter?: 1 | 2;
   title: string;
   giver: NpcId;
   /** null = completes by itself when the objectives are done. */
@@ -120,9 +123,254 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     xp: 600,
     completeButton: '10레벨을 향해 계속 탐험하기',
   },
+  w1: {
+  "id": "w1",
+  "chapter": 2,
+  "title": "새로운 보금자리",
+  "giver": "brinebeard",
+  "turnIn": "brinebeard",
+  "offer": [
+    "차원문 너머까지 함께 왔구나! 이 섬에 별빛 마을을 세우기로 했어.",
+    "서쪽 수정 정원의 파수꾼 6마리를 처치해 주민들이 안심하고 이사할 수 있게 도와줘."
+  ],
+  "progress": "서쪽 수정 정원에서 파수꾼을 처치하고 선장에게 돌아오세요.",
+  "complete": [
+    "덕분에 이삿짐을 풀 수 있겠어. 이곳에도 웃음소리가 들리겠구나!"
+  ],
+  "summary": "차원문 너머까지 함께 왔구나! 이 섬에 별빛 마을을 세우기로 했어. 서쪽 수정 정원의 파수꾼 6마리를 처치해 주민들이 안심하고 이사할 수 있게 도와줘.",
+  "readyHint": "브라인비어드 선장에게 돌아가세요.",
+  "objectives": [
+    {
+      "id": "w1-kill",
+      "kind": "kill-scrapling",
+      "label": "수정 껍질 파수꾼 처치",
+      "count": 6,
+      "poi": "shore"
+    }
+  ],
+  "xp": 1100,
+  "completeButton": "보상 받기"
+},
+  w2: {
+  "id": "w2",
+  "chapter": 2,
+  "title": "별빛 대장간의 첫 불꽃",
+  "giver": "pip",
+  "turnIn": "pip",
+  "offer": [
+    "이사하느라 모루까지 끌고 왔지! 그런데 이곳 수정 없이는 새 장비를 만들 수 없어.",
+    "수정 정원과 유적에 흩어진 네 개의 별빛 원석을 찾아 F로 주워 와."
+  ],
+  "progress": "빛나는 원석 가까이에서 F를 누르세요.",
+  "complete": [
+    "이 빛 좀 봐! 별빛 대장간이 드디어 문을 열었어."
+  ],
+  "summary": "이사하느라 모루까지 끌고 왔지! 그런데 이곳 수정 없이는 새 장비를 만들 수 없어. 수정 정원과 유적에 흩어진 네 개의 별빛 원석을 찾아 F로 주워 와.",
+  "readyHint": "대장장이 핍에게 돌아가세요.",
+  "objectives": [
+    {
+      "id": "w2-gem-0",
+      "kind": "crystal-a",
+      "label": "별빛 원석 1",
+      "count": 1,
+      "poi": "shore"
+    },
+    {
+      "id": "w2-gem-1",
+      "kind": "crystal-b",
+      "label": "별빛 원석 2",
+      "count": 1,
+      "poi": "shore"
+    },
+    {
+      "id": "w2-gem-2",
+      "kind": "crystal-c",
+      "label": "별빛 원석 3",
+      "count": 1,
+      "poi": "wreck"
+    },
+    {
+      "id": "w2-gem-3",
+      "kind": "crystal-d",
+      "label": "별빛 원석 4",
+      "count": 1,
+      "poi": "wreck"
+    }
+  ],
+  "xp": 1500,
+  "completeButton": "보상 받기"
+},
+  w3: {
+  "id": "w3",
+  "chapter": 2,
+  "title": "잠든 길에 불을 켜다",
+  "giver": "rattlebolt",
+  "turnIn": "rattlebolt",
+  "offer": [
+    "내 등대는 바다 건너에 두고 왔지만, 여기에도 불을 밝힐 일이 있더군.",
+    "유적길의 세 별빛 등불에 다가가 F를 길게 눌러 불을 켜 줘."
+  ],
+  "progress": "세 등불에서 F를 길게 눌러 밝히세요.",
+  "complete": [
+    "봐라! 이젠 누구도 어두운 유적길에서 길을 잃지 않겠구나."
+  ],
+  "summary": "내 등대는 바다 건너에 두고 왔지만, 여기에도 불을 밝힐 일이 있더군. 유적길의 세 별빛 등불에 다가가 F를 길게 눌러 불을 켜 줘.",
+  "readyHint": "등불지기 래틀볼트에게 돌아가세요.",
+  "objectives": [
+    {
+      "id": "w3-lamp-0",
+      "kind": "lamp-a",
+      "label": "남쪽 별빛 등불 점화",
+      "count": 1,
+      "poi": "lighthouse"
+    },
+    {
+      "id": "w3-lamp-1",
+      "kind": "lamp-b",
+      "label": "동쪽 별빛 등불 점화",
+      "count": 1,
+      "poi": "lighthouse"
+    },
+    {
+      "id": "w3-lamp-2",
+      "kind": "lamp-c",
+      "label": "북쪽 별빛 등불 점화",
+      "count": 1,
+      "poi": "lighthouse"
+    }
+  ],
+  "xp": 1700,
+  "completeButton": "보상 받기"
+},
+  w4: {
+  "id": "w4",
+  "chapter": 2,
+  "title": "그룩의 유적 순찰",
+  "giver": "grukk",
+  "turnIn": "grukk",
+  "offer": [
+    "그룩 새 마을 지킨다. 새 마을 간식도 지킨다.",
+    "동쪽 폐허의 유적 수호자 여덟 마리! 네가 정리하면 그룩 문 지킨다."
+  ],
+  "progress": "동쪽 유적에서 별빛 유적 수호자 8마리를 처치하세요.",
+  "complete": [
+    "그룩 인정한다. 너, 이사 잘했다."
+  ],
+  "summary": "그룩 새 마을 지킨다. 새 마을 간식도 지킨다. 동쪽 폐허의 유적 수호자 여덟 마리! 네가 정리하면 그룩 문 지킨다.",
+  "readyHint": "그룩에게 돌아가세요.",
+  "objectives": [
+    {
+      "id": "w4-kill",
+      "kind": "kill-scavenger",
+      "label": "별빛 유적 수호자 처치",
+      "count": 8,
+      "poi": "wreck"
+    }
+  ],
+  "xp": 1800,
+  "completeButton": "보상 받기"
+},
+  w5: {
+  "id": "w5",
+  "chapter": 2,
+  "title": "잊힌 섬의 기억",
+  "giver": "silvermoon",
+  "turnIn": "silvermoon",
+  "offer": [
+    "우리가 이곳으로 온 것은 우연이 아니에요. 섬의 별들이 당신을 기다렸어요.",
+    "수정 정원, 별의 전망대, 왕좌 앞 기억의 성소를 탐험하고 돌아오세요."
+  ],
+  "progress": "세 장소의 빛나는 표식 안으로 들어가세요.",
+  "complete": [
+    "섬의 기억이 다시 이어졌어요. 이제 일식의 그림자를 걷을 수 있을 거예요."
+  ],
+  "summary": "우리가 이곳으로 온 것은 우연이 아니에요. 섬의 별들이 당신을 기다렸어요. 수정 정원, 별의 전망대, 왕좌 앞 기억의 성소를 탐험하고 돌아오세요.",
+  "readyHint": "실버문에게 돌아가세요.",
+  "objectives": [
+    {
+      "id": "w5-west",
+      "kind": "explore-west",
+      "label": "서쪽 수정 정원 탐험",
+      "count": 1,
+      "poi": "shore"
+    },
+    {
+      "id": "w5-east",
+      "kind": "explore-east",
+      "label": "동쪽 별의 전망대 탐험",
+      "count": 1,
+      "poi": "grove"
+    },
+    {
+      "id": "w5-north",
+      "kind": "explore-north",
+      "label": "기억의 성소 탐험",
+      "count": 1,
+      "poi": "lighthouse"
+    }
+  ],
+  "xp": 2000,
+  "completeButton": "보상 받기"
+},
+  w6: {
+  "id": "w6",
+  "chapter": 2,
+  "title": "이삿짐 속 따뜻한 마음",
+  "giver": "hoofclaw",
+  "turnIn": "coralline",
+  "offer": [
+    "바다를 건너 이사했어도 따뜻한 수프는 빠질 수 없지!",
+    "성소 앞의 코랄린에게 이 수프 바구니를 전해 주렴. 긴 여정에 모두 배가 고플 거야."
+  ],
+  "progress": "별빛 성소의 코랄린에게 수프를 전달하세요.",
+  "complete": [
+    "모두 같은 마을에서 다시 만나니 기쁘네요. 따뜻한 마음을 전해 줘서 고마워요."
+  ],
+  "summary": "바다를 건너 이사했어도 따뜻한 수프는 빠질 수 없지! 성소 앞의 코랄린에게 이 수프 바구니를 전해 주렴. 긴 여정에 모두 배가 고플 거야.",
+  "readyHint": "코랄린에게 돌아가세요.",
+  "objectives": [
+    {
+      "id": "w6-deliver",
+      "kind": "deliver-supplies",
+      "label": "코랄린에게 이삿짐 수프 전달",
+      "count": 1,
+      "poi": "npc:coralline"
+    }
+  ],
+  "xp": 1000,
+  "completeButton": "보상 받기"
+},
+  w7: {
+  "id": "w7",
+  "chapter": 2,
+  "title": "일식 너머의 약속",
+  "giver": "coralline",
+  "turnIn": null,
+  "offer": [
+    "이 섬에 온 주민들은 당신과 함께 새 삶을 시작했어요. 이제 마지막 그림자만 남았어요.",
+    "20레벨이 되면 별의 왕좌에서 일식의 여왕 아스트라를 쓰러뜨려 주세요."
+  ],
+  "progress": "20레벨부터 보스 여정에서 아스트라에게 도전하세요.",
+  "complete": [
+    "두 세계와 우리의 새 보금자리에 평화가 돌아왔습니다."
+  ],
+  "summary": "이 섬에 온 주민들은 당신과 함께 새 삶을 시작했어요. 이제 마지막 그림자만 남았어요. 20레벨이 되면 별의 왕좌에서 일식의 여왕 아스트라를 쓰러뜨려 주세요.",
+  "readyHint": "보상이 지급됩니다.",
+  "objectives": [
+    {
+      "id": "w7-boss",
+      "kind": "eclipse-boss",
+      "label": "아스트라 · 일식의 여왕 처치",
+      "count": 1,
+      "poi": "bossArena"
+    }
+  ],
+  "xp": 2600,
+  "completeButton": "보상 받기"
+},
 };
 
-export const QUEST_ORDER: QuestId[] = ['q1', 'q2', 'q3', 'q4'];
+export const QUEST_ORDER: QuestId[] = ['q1', 'q2', 'q3', 'q4', 'w1','w2','w3','w4','w5','w6','w7'];
 
 export interface NpcDef {
   id: NpcId;
@@ -327,7 +575,13 @@ export interface CurrentObjective {
 }
 
 export class QuestLog {
-  readonly status: Record<QuestId, QuestStatus> = { q1: 'available', q2: 'locked', q3: 'locked', q4: 'locked' };
+  readonly status: Record<QuestId, QuestStatus> = { q1: 'available', q2: 'locked', q3: 'locked', q4: 'locked', w1:'locked',w2:'locked',w3:'locked',w4:'locked',w5:'locked',w6:'locked',w7:'locked' };
+  chapter:1|2=1;
+  inChapter(id: QuestId) { return (QUESTS[id].chapter ?? 1)===this.chapter; }
+  setChapter(chapter:1|2) {
+    this.chapter=chapter;
+    if(chapter===2)for(const id of QUEST_ORDER)if(this.inChapter(id) && this.status[id]==='locked')this.status[id]='available';
+  }
   readonly progress = new Map<string, number>();
   readonly events = new Emitter<QuestEvents>();
   cogs = 0;
@@ -341,6 +595,7 @@ export class QuestLog {
   }
 
   accept(id: QuestId): void {
+    if (!this.inChapter(id)) return;
     if (this.status[id] !== 'available' && this.status[id] !== 'locked') return;
     this.status[id] = 'active';
     this.events.emit('accepted', id);
@@ -351,7 +606,7 @@ export class QuestLog {
   /** Count an event toward every active quest objective of that kind. */
   bump(kind: ObjectiveKind, amount = 1): void {
     for (const id of QUEST_ORDER) {
-      if (this.status[id] !== 'active') continue;
+      if (!this.inChapter(id) || this.status[id] !== 'active') continue;
       for (const o of QUESTS[id].objectives) {
         if (o.kind !== kind) continue;
         const v = this.value(o);
@@ -388,18 +643,18 @@ export class QuestLog {
     this.status[id] = 'done';
     const i = QUEST_ORDER.indexOf(id);
     const next = QUEST_ORDER[i + 1];
-    if (next && this.status[next] === 'locked') this.status[next] = 'available';
+    if (next && (QUESTS[next].chapter??1)===(QUESTS[id].chapter??1) && this.status[next] === 'locked') this.status[next] = 'available';
     this.events.emit('completed', id);
   }
 
   /** Quests this NPC can offer right now. */
   offeredBy(npc: NpcId): QuestId | null {
-    for (const id of QUEST_ORDER) if (this.status[id] === 'available' && QUESTS[id].giver === npc && id !== 'q4') return id;
+    for (const id of QUEST_ORDER) if (this.inChapter(id) && this.status[id] === 'available' && QUESTS[id].giver === npc && id !== 'q4') return id;
     return null;
   }
 
   readyAt(npc: NpcId): QuestId | null {
-    for (const id of QUEST_ORDER) if (this.status[id] === 'ready' && QUESTS[id].turnIn === npc) return id;
+    for (const id of QUEST_ORDER) if (this.inChapter(id) && this.status[id] === 'ready' && QUESTS[id].turnIn === npc) return id;
     return null;
   }
 
@@ -407,21 +662,22 @@ export class QuestLog {
   inProgressAt(npc: NpcId): QuestId | null {
     for (const id of QUEST_ORDER) {
       const d = QUESTS[id];
-      if (this.status[id] === 'active' && (d.turnIn === npc || d.giver === npc)) return id;
+      if (this.inChapter(id) && this.status[id] === 'active' && (d.turnIn === npc || d.giver === npc)) return id;
     }
     return null;
   }
 
   active(): QuestId[] {
-    return QUEST_ORDER.filter((id) => this.status[id] === 'active' || this.status[id] === 'ready');
+    return QUEST_ORDER.filter((id) => this.inChapter(id) && (this.status[id] === 'active' || this.status[id] === 'ready'));
   }
 
   get allDone(): boolean {
-    return QUEST_ORDER.every((id) => this.status[id] === 'done');
+    return QUEST_ORDER.filter(id=>this.inChapter(id)).every((id) => this.status[id] === 'done');
   }
 
   current(): CurrentObjective | null {
     for (const id of QUEST_ORDER) {
+      if(!this.inChapter(id))continue;
       const def = QUESTS[id];
       if (this.status[id] === 'ready' && def.turnIn) {
         return { quest: id, step: 'turnin', poi: `npc:${def.turnIn}` as PoiId, label: def.readyHint };
@@ -433,9 +689,9 @@ export class QuestLog {
     }
     for (const id of QUEST_ORDER) {
       // The Rust Tide is pushed to the player when the beacon catches; nobody hands it out.
-      if (this.status[id] === 'available' && id !== 'q4') {
+      if (this.inChapter(id) && this.status[id] === 'available' && id !== 'q4') {
         const giver = QUESTS[id].giver;
-        return { quest: id, step: 'accept', poi: `npc:${giver}` as PoiId, label: `Speak with ${npcName(giver)}` };
+        return { quest: id, step: 'accept', poi: `npc:${giver}` as PoiId, label: t(`${npcName(giver)}에게 말 걸기`,`Speak with ${npcName(giver)}`) };
       }
     }
     return null;
@@ -445,3 +701,17 @@ export class QuestLog {
 export function npcName(id: NpcId): string {
   return NPCS.find((n) => n.id === id)?.name ?? id;
 }
+
+const originalQuestText=structuredClone(QUESTS);
+const originalNpcText=structuredClone(NPCS);
+const koreanNpcText:Record<NpcId,{name:string;title:string;lines:string[]}>= {
+ brinebeard:{name:'브라인비어드 선장',title:'클로헤이븐의 선장',lines:['어서 오게, 새 친구! 바다에서 돌아온 이야기 좀 들려주겠나?','주민들과 이야기해 보게. 작은 도움이 멋진 모험의 시작이 된다네.']},
+ silvermoon:{name:'실버문',title:'달빛 연못의 수호자',lines:['달빛이 당신의 껍질 위에서 반짝이네요.','연못은 이곳을 찾아온 모든 게를 기억한답니다.']},
+ coralline:{name:'코랄린',title:'파도의 성소',lines:['파도가 당신의 껍질을 치유하기를. 아픈 곳은 없나요?','지친 몸을 잠시 쉬게 해 주세요. 모험은 기다려 줄 거예요.']},
+ grukk:{name:'그룩',title:'마을 경비병',lines:['그룩 마을 지킨다. 간식도 지킨다.','고철 게 오면 그룩이 혼내 준다! 같이 할래?']},
+ hoofclaw:{name:'마마 후프클로',title:'허물을 벗는 주전자 주점',lines:['앉으렴! 영웅을 위한 해초 수프가 끓고 있단다.','따뜻한 밥을 먹으면 다시 모험할 힘이 생기지!']},
+ rattlebolt:{name:'래틀볼트',title:'등대지기',lines:['등대가 꺼지면 배들이 길을 잃어. 꼭대기에 불을 켜 주겠나?','등대를 켜면 밤의 수호자가 깨어나지. 끄면 다시 아침이 된다네.']},
+ pip:{name:'대장장이 핍',title:'따개비 대장간',lines:['불꽃 조심해! 오늘도 좋은 장비를 만들고 있지.','집게를 단단히! 모험에는 튼튼한 장비가 필요한 법이야.']},
+};
+export function setQuestLanguage(value:Language){for(const id of QUEST_ORDER)Object.assign(QUESTS[id],translatedQuest(originalQuestText[id],value));for(const npc of NPCS){const source=value==='ko'?koreanNpcText[npc.id]:originalNpcText.find(n=>n.id===npc.id)!;npc.name=source.name;npc.title=source.title;npc.lines=[...source.lines];}}
+setQuestLanguage(language());

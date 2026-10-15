@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { Boss } from '../tmp/test-modules/boss.js';
-import { LEVEL_XP, levelForXp, BOSS_PROFILES, canChallenge, canEnterWorld2, patrolReward } from '../src/game/progression.ts';
+import { LEVEL_XP, xpForLevel, levelForXp, BOSS_PROFILES, canChallenge, canEnterWorld2, patrolReward } from '../src/game/progression.ts';
 
 function setup(profile=BOSS_PROFILES.rust, level=profile.level) {
  const damage=[], warnings=[], actions=[];
@@ -61,10 +61,10 @@ test('boss area attacks damage every party member inside the shared telegraph an
  const before=damage.length;boss.update(2.5);assert.equal(damage.length-before,2);assert.equal(dodger.hp,300);
 });
 
-test('hidden chapter gates and the level 20 cap preserve both endings',()=>{
+test('direct chapter travel preserves story checkpoints and unlimited levels',()=>{
  assert.equal(LEVEL_XP.length,20);assert.equal(levelForXp(21999),19);assert.equal(levelForXp(22000),20);
  assert.equal(canEnterWorld2(false,true),false);assert.equal(canEnterWorld2(true,false),false);assert.equal(canEnterWorld2(true,true),true);
- assert.equal(canChallenge(20,20,true,false,2),false);assert.equal(canChallenge(20,20,true,true,1),false);
+ assert.equal(canChallenge(20,20,true,false,2),true);assert.equal(canChallenge(20,20,true,true,1),false);
  assert.equal(canChallenge(19,20,true,true,2),false);assert.equal(canChallenge(20,20,true,true,2),true);
  let xp=6500,kills=0;while(xp<22000 && kills<200){const level=levelForXp(xp);xp+=140+12*(level-2);if(++kills%5===0)xp+=patrolReward(level);}
  assert.ok(kills<80,`World II needs too many kills: ${kills}`);
@@ -82,4 +82,18 @@ test('the eclipse attack protects the inner sanctuary and hits the surrounding d
  const before=damage.length;boss.update(3);assert.equal(damage.length-before,1);
  assert.equal(friend.hp,player.hp-114);assert.equal(far.hp,player.hp);
  assert.ok(warnings.some(x=>x.includes('초록 원')));
+});
+
+
+test('unlimited thresholds remain ordered and invert exactly above 20',()=>{
+ for(const level of [21,22,50,100,1000,100000]) {
+   const xp=xpForLevel(level);assert.equal(levelForXp(xp),level);assert.equal(levelForXp(xp-1),level-1);
+   assert.ok(xpForLevel(level+1)>xp);
+ }
+ assert.equal(xpForLevel(21),24200);assert.equal(xpForLevel(22),26600);
+});
+test('turning the lighthouse off prevents waking and suspends an existing encounter',()=>{
+ const {game,boss}=setup();game.world.getEnvironment=()=>({mood:3,beacon:false});boss.wake();assert.equal(boss.state,'dormant');
+ game.world.getEnvironment=()=>({mood:1,beacon:true});boss.wake();boss.update(2.5);assert.equal(boss.state,'idle');
+ boss.sleep();assert.equal(boss.state,'dormant');assert.equal(boss.unit.hidden,true);assert.equal(boss.unit.invulnerable,true);assert.equal(boss.unit.targetable,false);
 });

@@ -17,8 +17,8 @@ function game() {
   networkState(){return {id,state:this.state,phase:this.phase,enraged:this.enraged,mech:null}},applyNetwork(s){Object.assign(this,s)},resumeAuthority(){},wake(){this.state='waking'}};return b};
  const noop=()=>{};
  let mood=0,beacon=false;
- const g={world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),world2:{chapter:1,enter(){this.chapter=2}},journey:{rustCleared:false,abyssCleared:false},
-  player:{unit:p,gainRage:noop,onDamaged:noop,onWardHit:noop},hud:{floats:{spawn:noop},damageFlash:noop,messages:{info:noop}},
+ const g={world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),encounter:{engaged:false},world2:{chapter:1,enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
+  player:{unit:p,setTarget:noop,gainRage:noop,onDamaged:noop,onWardHit:noop},hud:{floats:{spawn:noop},damageFlash:noop,messages:{info:noop}},
   follow:{shake:noop},audio:{sfx:noop},vfx:{deathPoof:noop,smoke:noop,stunStars:noop},onUnitDied(u){if(u.kind==='scrapling')this.rewards++}};
  g.combat=new Combat(g);return g;
 }
@@ -73,8 +73,8 @@ test('boss night, celebration, beacon and world clock synchronize including late
 
 test('World II entry and the final crown survive late join and authority transfer',()=>{
  const {a,b,aa,bb,flush}=pair();
- // Guest cannot open a locked realm.
- bb.enterWorld2();flush();assert.equal(a.world2.chapter,1);
+ // A guest can use direct travel, but cannot teleport the room during combat.
+ a.encounter.engaged=true;bb.enterWorld2();flush();assert.equal(a.world2.chapter,1);a.encounter.engaged=false;
  a.journey.rustCleared=true;a.journey.abyssCleared=true;a.journey.firstEndingSeen=true;
  aa.update(.1);flush();bb.enterWorld2();flush();
  assert.equal(a.world2.chapter,2);assert.equal(b.world2.chapter,2);
@@ -83,4 +83,30 @@ test('World II entry and the final crown survive late join and authority transfe
  const c=game(),cc=new BattleSync(c,()=>{},()=>new Map());cc.join('c','a',aa.snapshot());
  assert.equal(c.world2.chapter,2);assert.equal(c.worldBoss.unit.level,20);assert.equal(c.journey.trueCleared,true);
  bb.elect('b');assert.equal(bb.authority,true);assert.equal(b.world2.chapter,2);
+});
+
+
+test('two-way portals synchronize both chapters without losing story crowns',()=>{
+ const {a,b,aa,bb,flush}=pair();a.journey.rustCleared=true;a.journey.abyssCleared=true;
+ bb.travel(2);flush();assert.equal(a.world2.chapter,2);assert.equal(b.world2.chapter,2);
+ bb.travel(1);flush();assert.equal(a.world2.chapter,1);assert.equal(b.world2.chapter,1);assert.equal(b.journey.abyssCleared,true);
+});
+test('a guest can turn off the shared beacon and request morning',()=>{
+ const {a,b,aa,bb,flush}=pair();a.world.setBeaconLit(true);aa.update(.1);flush();
+ bb.requestLighthouse(false);flush();assert.equal(a.world.getEnvironment().beacon,false);assert.equal(b.beaconLit,false);
+});
+
+
+test('room PvP is off by default; parties prevent friendly fire and rivals receive one hit',()=>{
+ const {a,b,aa,bb,ar,flush}=pair();ar.invulnerable=false;
+ a.combat.damage(a.player.unit,ar,15);flush();assert.equal(b.player.unit.hp,100);
+ aa.setMode('pvp');flush();assert.equal(bb.mode,'pvp');
+ a.combat.damage(a.player.unit,ar,15);flush();assert.equal(b.player.unit.hp,85);
+ aa.setParty(2);bb.setParty(2);flush();a.time+=1;
+ a.combat.damage(a.player.unit,ar,15);flush();assert.equal(b.player.unit.hp,85);
+ bb.setParty(3);flush();a.time+=1;a.combat.damage(a.player.unit,ar,15);flush();assert.equal(b.player.unit.hp,70);
+});
+test('guests cannot enable PvP and out-of-range attacks do no damage',()=>{
+ const {a,b,aa,bb,ar,flush}=pair();bb.setMode('pvp');flush();assert.equal(aa.mode,'coop');
+ aa.setMode('pvp');flush();ar.pos.set(100,0,100);a.combat.damage(a.player.unit,ar,20);flush();assert.equal(b.player.unit.hp,100);
 });

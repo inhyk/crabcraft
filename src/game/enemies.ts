@@ -306,7 +306,7 @@ export class Enemy {
   }
 
   private scaleForJourney(): void {
-    if (this.isAdd || !this.game.journey?.rustCleared) return;
+    if (this.isAdd || (!this.game.journey?.rustCleared && this.game.world2?.chapter!==2)) return;
     const base = ENEMY_STATS[this.kind];
     const inWorld2=this.game.world2?.chapter===2;
     const level = Math.max(inWorld2 ? 10 : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0));

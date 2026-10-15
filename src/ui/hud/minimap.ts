@@ -1,6 +1,7 @@
 // Round minimap (top right). The zone picture is a top-down render of the world made at load;
 // the map turns with the camera so "up" is always where you are looking.
 import { h } from '../dom';
+import {t} from '../../i18n';
 import type { Game } from '../../game/game';
 import type { MapSnapshot } from '../../game/snapshots';
 import type { PoiId } from '../../world/types';
@@ -105,8 +106,10 @@ export class Minimap {
     // POIs
     c.font = `600 ${10 * d}px Georgia, serif`;
     c.textAlign = 'center';
-    for (const [id, info] of Object.entries(POI_ICONS)) {
-      if(g.world2?.chapter===2) continue;
+    const icons:typeof POI_ICONS=g.world2?.chapter===2?{
+      forge:{label:t('대장간','Forge'),color:'#ffb36b'},chapel:{label:t('성소','Chapel'),color:'#f6e0a1'},tavern:{label:t('주점','Tavern'),color:'#ffc995'},grove:{label:t('연못','Moonpool'),color:'#bbadff'},shore:{label:t('수정 숲','Crystalwood'),color:'#90e6d4'},wreck:{label:t('유적','Ruins'),color:'#a49eda'},bossArena:{label:t('왕좌','Throne'),color:'#d3a6ff'}
+    }:POI_ICONS;
+    for (const [id, info] of Object.entries(icons)) {
       const poi = g.world.pois[id as PoiId];
       if (!poi) continue;
       const [x, y] = toScreen(poi.position.x, poi.position.z);
@@ -129,6 +132,9 @@ export class Minimap {
       c.strokeText(info!.label, lx, ly);
       c.fillText(info!.label, lx, ly);
     }
+    // The two-way portal remains visible while quest and party markers change.
+    const portal=g.world2.portalPosition,[portalX,portalY]=toScreen(portal.x,portal.z);
+    if(Math.hypot(portalX-half,portalY-half)<half-8*d){c.strokeStyle='#c7b1ff';c.lineWidth=2*d;c.beginPath();c.ellipse(portalX,portalY,4*d,6*d,0,0,Math.PI*2);c.stroke();}
     // Units
     for (const u of g.units) {
       if (u.kind === 'player' || u.hidden || !u.alive) continue;
@@ -167,7 +173,7 @@ export class Minimap {
       }
     }
     // Quest objective: a gold star, pinned to the rim when off the map.
-    const obj = g.world2?.chapter===2 ? g.world2.arena.position : g.objectivePos();
+    const obj = g.objectivePos();
     if (obj) {
       let [x, y] = toScreen(obj.x, obj.z);
       const dist = Math.hypot(x - half, y - half);

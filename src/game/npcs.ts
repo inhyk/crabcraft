@@ -1,6 +1,7 @@
 // Named NPCs (stand at their POI, greet the player, gesture now and then, talk) and ambient
 // townsfolk (stroll between the town's spawn points with real locomotion).
 import * as THREE from 'three';
+import {t} from '../i18n';
 import type { Poi } from '../world/types';
 import type { Game } from './game';
 import type { Unit } from './unit';
@@ -24,6 +25,7 @@ export class Npc {
   }
 
   nextLine(): string {
+    if(this.game.world2.chapter===2)return t('함께 새 마을을 만들어 가요. 북쪽 유적과 수정 숲에는 아직 풀리지 않은 비밀이 많아요.','We are building a new home together. The northern ruins and crystal woods still hold many secrets.');
     const l = this.def.lines[this.lineIndex % this.def.lines.length];
     this.lineIndex++;
     return l;
@@ -72,18 +74,20 @@ export class Townsfolk {
   constructor(
     private readonly game: Game,
     readonly unit: Unit,
-    private readonly points: THREE.Vector3[],
-    private readonly radius: number,
+    private points: THREE.Vector3[],
+    private radius: number,
   ) {
     unit.ctrl = this;
     this.pauseUntil = game.time + rand(0, 4);
   }
 
+  relocate(points:THREE.Vector3[],radius:number) {this.points=points;this.radius=radius;this.walking=false;this.velX=this.velZ=0;this.pauseUntil=this.game.time+1;this.frozen=false;}
+
   bark(): void {
     const g = this.game;
     if (g.time < this.barkCd) return;
     this.barkCd = g.time + 4;
-    g.say(this.unit, pick(TOWNSFOLK_BARKS));
+    g.say(this.unit, g.world2.chapter===2?pick(['별빛 항구에 오신 걸 환영해요!','아빠네 바닷가에서 다 같이 이사 왔어요.','새 집 앞에 꽃을 심었어요!','피프가 수정으로 새 도구를 만든대요.','북쪽 유적의 일식은 조심하세요.','여기서도 친구들과 함께라서 든든해요.']):pick(TOWNSFOLK_BARKS));
     this.walking = false;
     this.pauseUntil = g.time + 4;
     this.unit.act('gesture_hello');

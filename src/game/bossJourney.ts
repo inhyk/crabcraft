@@ -1,9 +1,10 @@
 import * as THREE from 'three';
+import {t,language} from '../i18n';
 import type { Game } from './game';
 import type { Boss } from './boss';
 import { localStorageGet, localStorageSet } from '../app';
 import { h } from '../ui/dom';
-import { LEVEL_XP, MAX_LEVEL, canChallenge, patrolReward } from './progression';
+import { xpForLevel, canChallenge, patrolReward } from './progression';
 import { QUEST_ORDER, QUESTS, type QuestStatus } from './quests';
 import './bossJourney.css';
 
@@ -17,6 +18,7 @@ export class BossJourney {
   private chapterEnding: HTMLElement | null = null;
   private endingTime = 0;
   private trueStarted = false;
+  private chapterCelebrating=false;
   private kills = 0;
   private last = '';
   private saveAt = 0;
@@ -29,7 +31,7 @@ export class BossJourney {
     if (this.trueCleared && this.game.worldBoss.state === 'dead' && !this.game.controlsLocked) { this.save(); void this.game.ending.start(); }
   } }, '✨ 진짜 엔딩 다시 보기');
 
-  private readonly portal = h('button', {type:'button',class:'bj-portal',onclick:()=>this.enterWorld2()}, '✧ 숨겨진 월드 2로 들어가기 →');
+  private readonly portal = h('button', {type:'button',class:'bj-portal',onclick:()=>this.enterWorld2()}, '✧ 월드 2 바로가기 →');
 
   constructor(private readonly game: Game) {
     const spec = game.player.unit.rig.spec;
@@ -59,12 +61,12 @@ export class BossJourney {
     try {
       const data = JSON.parse(localStorageGet(this.key) ?? 'null');
       if (!data || !Number.isFinite(data.xp)) return;
-      const second = data.chapter === 2 && data.abyss === true && data.firstEnding === true;
-      this.game.player.restoreXp(Math.min(data.xp, LEVEL_XP[second ? 19 : 9]));
+      const second = data.chapter === 2;
+      this.game.player.restoreXp(data.xp);
       this.rustCleared = data.rust === true;
       this.abyssCleared = this.rustCleared && data.abyss === true;
       this.firstEndingSeen = this.abyssCleared && data.firstEnding === true;
-      this.trueCleared = second && data.trueCleared === true;
+      this.trueCleared = data.trueCleared === true;
       this.trueStarted = this.trueCleared;
       this.kills = Number.isInteger(data.kills) && data.kills >= 0 && data.kills < 5 ? data.kills : 0;
       for (const id of QUEST_ORDER) {
@@ -74,12 +76,13 @@ export class BossJourney {
           if (Number.isInteger(n) && n >= 0 && n <= o.count) this.game.quests.progress.set(o.id, n);
         }
       }
-      if (this.game.quests.status.q3 === 'done') {
+      if (typeof data.beacon==='boolean'){this.game.beaconLit=data.beacon;this.game.world.setBeaconLit(data.beacon);this.game.world.setMood(data.beacon?1:data.mood===3?3:0,true);}
+      else if (this.game.quests.status.q3 === 'done') {
         this.game.beaconLit = true;
         this.game.world.setBeaconLit(true);
         this.game.player.unit.blessingUntil = Infinity;
       }
-      if (this.abyssCleared) this.game.world.setMood(2);
+      if (this.abyssCleared && typeof data.beacon!=='boolean') this.game.world.setMood(2);
       for (const [boss, cleared] of [[this.game.boss, this.rustCleared], [this.game.finalBoss, this.abyssCleared], [this.game.worldBoss, this.trueCleared]] as const) {
         if (cleared) { boss.state = 'dead'; boss.unit.alive = false; boss.unit.hidden = true; boss.unit.rig.root.visible = false; }
       }
@@ -88,12 +91,12 @@ export class BossJourney {
   }
 
   save() {
-    localStorageSet(this.key, JSON.stringify({ chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
+    localStorageSet(this.key, JSON.stringify({ beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
       quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress) }));
   }
 
   onKill() {
-    if (!this.rustCleared || this.trueCleared || this.game.player.level >= (this.game.world2.chapter === 2 ? MAX_LEVEL : 10)) return;
+    if (!this.rustCleared && this.game.world2.chapter===1) return;
     if (++this.kills >= 5) {
       this.kills = 0;
       const xp = patrolReward(this.game.player.level);
@@ -126,6 +129,7 @@ export class BossJourney {
   private challenge(boss: Boss) {
     const g = this.game;
     const cleared = boss === g.boss ? this.rustCleared : boss === g.worldBoss ? this.trueCleared : this.abyssCleared;
+    if (boss.profile.level<20&&!g.beaconLit){g.hud.messages.info('등대를 켜면 밤이 되고 보스가 깨어나요.');return;}
     if (cleared || !canChallenge(g.player.level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter) || g.controlsLocked || g.player.inCombat || g.encounter.engaged) return;
     if (boss === g.finalBoss && g.boss.state !== 'dead') { g.hud.messages.info('첫 보스의 승리 연출이 끝난 뒤 도전해 주세요.'); return; }
     if (!g.multiplayer?.battle.challenge(boss === g.boss ? 'b3' : boss === g.worldBoss ? 'b20' : 'b10')) boss.wake();
@@ -147,8 +151,8 @@ export class BossJourney {
     const g = this.game;
     const level = g.player.level;
     this.root.hidden = g.ending.active || g.cinematic;
-    if (g.multiplayer?.battle.authority !== false && g.partyLevel >= 3 && !this.rustCleared && g.boss.state === 'dormant') g.boss.wake();
-    if (this.abyssCleared && !this.firstEndingSeen && g.finalBoss.state === 'dead' && !this.chapterEnding && g.world2.chapter === 1) this.showChapterEnding();
+    if (g.multiplayer?.battle.authority !== false && g.world2.chapter===1 && g.beaconLit && g.partyLevel >= 3 && !this.rustCleared && g.boss.state === 'dormant') g.boss.wake();
+    if (this.abyssCleared && !this.firstEndingSeen && g.finalBoss.state === 'dead' && !this.chapterEnding && !this.chapterCelebrating && !g.ending.active && g.world2.chapter === 1) this.showChapterEnding();
     if(this.chapterEnding) {
       this.endingTime+=dt;
       this.chapterEnding.classList.toggle('revealed',this.endingTime>4);
@@ -156,19 +160,23 @@ export class BossJourney {
       if(this.endingTime>12 && g.multiplayer?.battle.authority !== false) this.finishChapterEnding();
     }
     if(this.trueCleared && g.worldBoss.state==='dead' && !this.trueStarted && !g.ending.active) { this.trueStarted=true; this.save(); void g.ending.start(); }
-    const state = `${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${g.finalBoss.state}|${g.boss.state}|${g.worldBoss.state}|${g.world2.chapter}|${this.firstEndingSeen}|${this.trueCleared}`;
+    const state = `${language()}|${g.beaconLit}|${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${g.finalBoss.state}|${g.boss.state}|${g.worldBoss.state}|${g.world2.chapter}|${this.firstEndingSeen}|${this.trueCleared}`;
     if (state !== this.last) {
       this.last = state;
-      const next = LEVEL_XP[level];
-      this.progress.textContent = level >= (g.world2.chapter === 2 ? 20 : 10) ? `LEVEL ${level} · 왕관에 도전할 준비 완료` : `LEVEL ${level} → ${level + 1} · ${next - g.player.xp} XP 남음`;
+      this.root.querySelector('summary')!.textContent=t('⚔ 보스 여정','⚔ Boss journey');
+      this.root.querySelector('.bj-heading strong')!.textContent=t('세 왕관의 전설','Legend of the Three Crowns');
+      this.portal.textContent=t('✧ 월드 2 바로가기 →','✧ Travel to World II →');this.victory.textContent=t('✨ 춤추는 엔딩 다시 보기','✨ Replay the dance ending');
+      const next = xpForLevel(level+1);
+      this.progress.textContent = t(`LEVEL ${level} → ${level + 1} · ${next - g.player.xp} XP 남음`,`LEVEL ${level} → ${level+1} · ${next-g.player.xp} XP to go`);
       for (const { boss, status, button } of this.cards) {
         const cleared = boss === g.boss ? this.rustCleared : boss === g.worldBoss ? this.trueCleared : this.abyssCleared;
         const unlocked = canChallenge(level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter);
         status.textContent = cleared ? '✓ 왕관 획득' : unlocked ? (boss.engaged ? '전투 중' : boss === g.worldBoss ? '도전 가능 · 별의 왕좌' : '도전 가능 · 철의 난파선') : `🔒 ${boss.profile.level}레벨${boss.profile.level === 20 ? ' + 월드 2' : boss.profile.level === 10 ? ' + 첫 보스 승리' : ''} 필요`;
         button.disabled = cleared || !unlocked || g.controlsLocked || g.player.inCombat || g.encounter.engaged || (boss === g.finalBoss && g.boss.state !== 'dead');
-        button.textContent = cleared ? '정복 완료' : boss.engaged ? '전투 중' : '도전하기 →';
+        button.textContent = cleared ? t('정복 완료','Conquered') : boss.engaged ? t('전투 중','In battle') : t('도전하기 →','Challenge →');
+        const card=button.closest('article')!;const name=language()==='ko'?boss.profile.name:boss.profile.level===20?'Astra · Queen of the Eclipse':boss.profile.level===10?'Nereid · Lord of the Deep':'Corrodius · Tyrant of Rust';card.querySelector('h3')!.textContent=name;boss.unit.name=name;
       }
-      this.portal.hidden = !(this.abyssCleared && this.firstEndingSeen && g.world2.chapter === 1);
+      this.portal.hidden = g.world2.chapter !== 1;
       this.patrol.textContent = this.trueCleared ? '세 왕관을 되찾고 두 세계를 구했습니다.' : g.world2.chapter === 2 ? `WORLD II · 유적 순찰 ${this.kills}/5 · +${patrolReward(level)} XP · 목표 20레벨` : this.abyssCleared ? '첫 엔딩 너머, 숨겨진 별의 섬으로…' : this.rustCleared ? `해안 순찰 ${this.kills}/5 · 보너스 ${patrolReward(level)} XP` : '마을 퀘스트와 해안 전투로 3레벨에 도달하세요.';
       this.victory.hidden = !this.trueCleared;
       this.victory.disabled = g.worldBoss.state !== 'dead' || g.controlsLocked;
@@ -184,6 +192,10 @@ export class BossJourney {
   }
 
   private showChapterEnding() {
+    this.chapterCelebrating=true;
+    void this.game.ending.start('chapter',()=>{this.chapterCelebrating=false;this.showChapterReveal();});
+  }
+  private showChapterReveal() {
     const g=this.game; this.endingTime=0; g.cinematic=true;
     g.player.setTarget(null); g.player.unit.invulnerable=true; g.hud.dialogue.close(); g.hud.setCinematic(true);
     this.chapterEnding=h('section',{class:'chapter-ending',role:'dialog','aria-label':'첫 엔딩'},
@@ -207,7 +219,7 @@ export class BossJourney {
     this.game.cinematic=false; this.game.player.unit.invulnerable=false; this.game.hud.setCinematic(false);
   }
   private enterWorld2() {
-    if(!this.abyssCleared || !this.firstEndingSeen || this.game.world2.chapter===2) return;
+    if(this.game.world2.chapter===2 || this.game.controlsLocked) return;
     if(!this.game.multiplayer?.battle.enterWorld2()) this.game.world2.enter();
     this.root.open=false; this.save();
   }
