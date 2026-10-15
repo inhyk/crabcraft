@@ -15,12 +15,12 @@ try{
  // Killing uses the real combat damage -> death -> quest pipeline, with immediate respawn to avoid waiting for timers.
  await page.evaluate(()=>{const g=window.app.current.game;for(const [kind,count] of [['scrapling',6],['scavenger',8]]){const e=g.enemies.find(e=>e.kind===kind&&!e.isAdd);for(let i=0;i<count;i++){e.respawnAt(e.home.x,e.home.z);g.combat.damage(g.player.unit,e.unit,e.unit.maxHp*2);}}});
  assert.deepEqual(await page.evaluate(()=>{const q=window.app.current.game.quests;return [q.status.w1,q.status.w4];}),['ready','ready']);
- for(const [x,z] of [[-65,22],[-80,-10],[65,12],[80,-20]]){await page.evaluate(([x,z])=>{const g=window.app.current.game;g.player.unit.teleport(g.world,x,z,0);g.follow.cut();},[x,z]);await page.waitForTimeout(200);await page.keyboard.press('KeyF');await page.waitForTimeout(200);}
+ for(const kind of ['crystal-a','crystal-b','crystal-c','crystal-d']){await page.evaluate(kind=>{const g=window.app.current.game,n=g.world2.nodes.find(n=>n.kind===kind);g.player.unit.teleport(g.world,n.position.x+2,n.position.z,0);g.follow.cut();},kind);await page.waitForTimeout(200);await page.keyboard.press('KeyF');await page.waitForTimeout(200);}
  assert.equal(await page.evaluate(()=>window.app.current.game.quests.status.w2),'ready');
- await page.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,0,15,0);g.follow.cut();});await page.waitForTimeout(300);
+ await page.evaluate(()=>{const g=window.app.current.game;const n=g.world2.nodes.find(n=>n.kind==='lamp-a');g.player.unit.teleport(g.world,n.position.x+2,n.position.z+1,0);g.follow.cut();});await page.waitForTimeout(300);
  await page.keyboard.down('KeyF');await page.waitForTimeout(350);await page.keyboard.up('KeyF');await page.waitForTimeout(200);
  assert.equal(await page.evaluate(()=>window.app.current.game.quests.progress.get('w3-lamp-0')??0),0,'early release must not light the waystone');
- for(const [x,z] of [[0,15],[25,-15],[0,-45]]){await page.evaluate(([x,z])=>{const g=window.app.current.game;g.player.unit.teleport(g.world,x,z,0);g.follow.cut();},[x,z]);await page.waitForTimeout(200);await page.keyboard.down('KeyF');await page.waitForTimeout(1800);await page.keyboard.up('KeyF');await page.waitForTimeout(200);}
+ for(const kind of ['lamp-a','lamp-b','lamp-c']){await page.evaluate(kind=>{const g=window.app.current.game,n=g.world2.nodes.find(n=>n.kind===kind);g.player.unit.teleport(g.world,n.position.x+2,n.position.z+1,0);g.follow.cut();},kind);await page.waitForTimeout(200);await page.keyboard.down('KeyF');await page.waitForTimeout(1800);await page.keyboard.up('KeyF');await page.waitForTimeout(200);}
  assert.equal(await page.evaluate(()=>window.app.current.game.quests.status.w3),'ready');
  for(const [x,z] of [[-75,-35],[80,-40],[0,-48]]){await page.evaluate(([x,z])=>{const g=window.app.current.game;g.player.unit.teleport(g.world,x,z,0);g.follow.cut();},[x,z]);await page.waitForTimeout(250);}
  assert.equal(await page.evaluate(()=>window.app.current.game.quests.status.w5),'ready');

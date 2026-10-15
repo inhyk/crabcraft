@@ -10,10 +10,12 @@ export const STAR_TOWN: Record<NpcId, [number,number]> = {
   silvermoon:[25,55], grukk:[0,20], rattlebolt:[18,76],
 };
 export const STAR_OBJECTIVES: Partial<Record<ObjectiveKind,[number,number]>> = {
-  'crystal-a':[-65,22], 'crystal-b':[-80,-10], 'crystal-c':[65,12], 'crystal-d':[80,-20],
-  'lamp-a':[0,15], 'lamp-b':[25,-15], 'lamp-c':[0,-45],
+  // Solid quest props sit beside the trails so their beds and frames leave the road open.
+  'crystal-a':[-65,26], 'crystal-b':[-84,-10], 'crystal-c':[65,16], 'crystal-d':[84,-20],
+  'lamp-a':[-7.4,15], 'lamp-b':[29,-15], 'lamp-c':[-7.4,-41],
   'explore-west':[-75,-35], 'explore-east':[80,-40], 'explore-north':[0,-48],
 };
+// Road centerlines stay independent of the nearby quest alcoves.
 // Forking pilgrim trails connect the village to each exploration destination.
 export const STAR_TRAILS: [number,number][][] = [
   [[0,24],[-16,24],[-38,8],[-65,22],[-80,-10],[-75,-35]],

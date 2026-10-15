@@ -9,7 +9,7 @@ try{
  page.on('pageerror',e=>errors.push(e.message));page.on('console',msg=>{if(msg.type()==='error')errors.push(msg.text());});
  await page.goto((process.env.CC_QA_URL??'http://127.0.0.1:5192/')+'?screen=game');
  await page.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});
- await page.evaluate(()=>{const g=window.app.current.game;g.world2.enter();g.god=true;g.player.unit.teleport(g.world,80,-24,Math.PI);g.follow.cut();g.follow.yaw=0;g.follow.distance=9;g.follow.pitch=.28;});
+ await page.evaluate(()=>{const g=window.app.current.game;g.world2.enter();g.god=true;const n=g.world2.nodes.find(n=>n.kind==='crystal-d');g.player.unit.teleport(g.world,n.position.x,n.position.z-4,Math.PI);g.follow.cut();g.follow.yaw=0;g.follow.distance=9;g.follow.pitch=.28;});
  await page.waitForTimeout(1700);
  const automatic=await page.evaluate(()=>{const n=window.app.current.game.world2.nodes.find(n=>n.kind==='crystal-d');return {opacity:n.mesh.material.opacity,shadow:n.shadowOpacity.value,casts:n.mesh.castShadow};});
  assert.ok(automatic.opacity<.05);assert.equal(automatic.shadow,automatic.opacity);assert.equal(automatic.casts,false);

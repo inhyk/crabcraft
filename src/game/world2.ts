@@ -20,6 +20,7 @@ import {StarAmbience} from './starAmbience';
 import {StarWaystoneKit} from './starWaystone';
 import {StarMemorySealKit} from './starMemorySeal';
 import {StarOreKit} from './starOre';
+import {StarSun} from './starSun';
 import {StarEnemyArmour} from './starEnemyArmour';
 import {StarThrone} from './starThrone';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
@@ -27,6 +28,7 @@ import {buildStarHeights,starSurfaceHeight} from './world2Height';
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
   readonly root = new THREE.Group();
+  private readonly sun=new StarSun();
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 = 1;
   readonly spawn = new THREE.Vector3(0, 3, 86);
@@ -175,8 +177,7 @@ export class HiddenWorld {
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
     const shorePosition=new THREE.Vector3(44,0,2);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
     this.shorePortal=new StarPortal(shorePosition,'클로헤이븐 → 별빛 항구');w.root.add(this.shorePortal.root);
-    const key=new THREE.DirectionalLight('#d6b9ff',1.8);key.position.set(-40,90,20);key.castShadow=true;key.shadow.mapSize.set(2048,2048);Object.assign(key.shadow.camera,{left:-75,right:75,top:75,bottom:-75,near:1,far:180});key.shadow.normalBias=.04;
-    this.root.add(key,new THREE.HemisphereLight('#869cff','#1a1028',1.0));
+    this.root.add(this.sun.light,this.sun.light.target,new THREE.HemisphereLight('#869cff','#1a1028',1.0));
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
   }
   refreshLanguage(){
@@ -288,6 +289,7 @@ export class HiddenWorld {
     }
     if(!this.rendered)return;
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
+    this.sun.update(position.x,position.z);
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
