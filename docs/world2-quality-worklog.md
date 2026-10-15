@@ -123,3 +123,6 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Two-browser relay replay passed bilingual Eclipse instructions and cancellation on both peers, plus PvP, party protection, weather, portals, villagers and authority transfer. All 31 game/protocol tests and production build pass.
 - Follow-up audit: inspect the delayed World I lighthouse quest reveal against an intervening off toggle or chapter travel; its existing callback currently sets night unconditionally.
 - Ten-hour development remains active.
+
+- Published warning commit 9b44cef as READY deployment dpl_7Vy21jDqzjmbAKNKYYwY4M1XfLNG. The complete warning lifecycle/language browser replay passed again on the public stable URL, with no page errors. Hub page HTTP 200.
+- Additional source audit for the next iteration: guest Eclipse outer telegraphs still use the generic default tint while the host explicitly uses purple; align that tint and verify actual effects on both peers.
