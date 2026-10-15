@@ -133,6 +133,7 @@ export class BossJourney {
     } else if (boss === this.game.worldBoss) {
       if(this.trueCleared) return;
       this.trueCleared=true;
+      this.game.player.gainXp(boss.profile.reward);
       this.game.hud.chat.system(t('세 번째 왕관을 되찾았습니다. 두 세계에 빛이 돌아옵니다.','The third crown is reclaimed. Light returns to both worlds.'));
     } else {
       if (this.abyssCleared) return;
