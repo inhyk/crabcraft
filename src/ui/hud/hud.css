@@ -355,7 +355,10 @@
 .menu { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 340px; text-align: center; animation: cc-fade-in 0.2s both; }
 .menu h2 { font-size: 24px; margin: 0 0 16px; }
 .menu .cc-btn { display: block; width: 100%; margin: 10px 0; }
-.menu.wide { width: 520px; }
+.menu.wide { width: 520px; box-sizing: border-box; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
+.controls-guide { text-align: left; border-top: 1px solid #8b754b; margin-top: 16px; padding-top: 12px; color: #f1e6c8; font: 14px/1.5 var(--font-body); }
+.controls-guide h3 { margin: 0 0 8px; color: #ffe5a5; font: 600 17px var(--font-display); }
+.controls-guide p { margin: 0 0 10px; }
 .menu .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 0; font: 600 16px var(--font-body); color: #f1e6c8; text-align: left; }
 .menu input[type='range'] { width: 220px; accent-color: #d9b45a; }
 .menu .seg { display: flex; gap: 6px; }

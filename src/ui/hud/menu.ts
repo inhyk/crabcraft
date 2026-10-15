@@ -137,12 +137,20 @@ export class GameMenu {
   controls(): void {
     const table = h('table');
     const ko=['앞 / 뒤로 걷기','왼쪽 / 오른쪽으로 옆걸음','방향 돌리기','시점과 방향 조절','주변 둘러보기','앞으로 걷기','확대 / 축소','점프','적 선택','기술 사용','대화, 채집, 등대 켜기 / 끄기','퀘스트 기록','음악 켜기 / 끄기','말풍선 켜기 / 끄기','로봇 모드','대상 해제, 창 닫기, 메뉴'];
+    const mouseKeys:Record<string,string>={'Right mouse drag':'우클릭 드래그','Left mouse drag':'좌클릭 드래그','Both mouse buttons':'마우스 양쪽 버튼','Mouse wheel':'마우스 휠','Click':'클릭'};
     for (const [i,[k, what]] of CONTROLS.entries()) {
       const keys = h('td');
-      for (const part of k.split(' / ')) keys.append(h('kbd', null, part));
-      table.append(h('tr', null, keys, h('td', null, t(ko[i],what))));
+      for (const part of k.split(' / ')) keys.append(h('kbd', null, t(mouseKeys[part]??part,part)));
+      const description=k==='F'&&this.game.world2.chapter===2?t('대화·수정 채집·포탈 이용, 등불 앞에서 길게 누르기','Talk, gather crystals, use portals; hold at waystones'):k==='R'?t('두 번 눌러 로봇 모드 열기','Press twice to open Robot Mode'):t(ko[i],what);
+      table.append(h('tr', null, keys, h('td', null, description)));
     }
     this.panel.className = 'menu wide cc-panel hud-i';
-    this.panel.replaceChildren(h('h2', { class: 'cc-title' }, t('조작 방법','Controls')), table, this.btn(t('뒤로','Back'), () => this.main()));
+    const guide=this.game.world2.chapter===2?h('section',{class:'controls-guide'},
+      h('h3',null,t('별빛 항구 안내','Starhaven guide')),
+      h('p',null,t('주민 가까이에서 F로 퀘스트를 받고 보상을 받으세요. 퀘스트 기록(L)에서 목표를 선택하면 지도에 표시돼요.','Press F near villagers to accept quests and collect rewards. Select a quest in the journal (L) to show its objective on the map.')),
+      h('p',null,t('수정은 F로 채집하고, 별빛 등불은 F를 1.5초 동안 누르세요. 포탈 중앙으로 걷거나 가까이서 F를 누르면 월드 1로 돌아가요. 도착하면 포탈 밖으로 나온 뒤 다시 이용하세요.','Press F to gather crystals; hold F for 1.5 seconds at waystones. Walk into the portal or press F nearby to return to World I. Step away after arrival before using it again.')),
+      h('p',null,t('친구와의 퀘스트는 각자 진행해요. 멀티플레이 메뉴에서 파티를 고르고 춤출 수 있어요. 싸우기 모드는 방장이 선택하며, 같은 파티는 서로 공격하지 않아요.','Quest progress is personal. Choose a party or dance in the multiplayer panel. The host selects PvP; teammates cannot hurt each other.')),
+    ):null;
+    this.panel.replaceChildren(h('h2', { class: 'cc-title' }, t('조작 방법','Controls')), table, ...(guide?[guide]:[]), this.btn(t('뒤로','Back'), () => this.main()));
   }
 }

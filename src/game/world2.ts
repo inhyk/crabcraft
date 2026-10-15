@@ -196,7 +196,7 @@ export class HiddenWorld {
     g.ending.cancel();
     g.hud.messages.closeDiscovery();
     if(!this.baseHomes.length)this.baseHomes=g.enemies.map(e=>e.home.clone());
-    this.chapter=2;this.rendered=true;this.resetPortalArrival();
+    this.chapter=2;g.hud.hints.setChapter(2);this.rendered=true;this.resetPortalArrival();
     if(!this.armour){this.armour=new StarEnemyArmour(g.enemies);this.root.add(this.armour.root);}
     this.ambience.start(g.time);
     if(!this.baseNames.length)this.baseNames=g.enemies.map(e=>e.unit.name);
@@ -249,7 +249,7 @@ export class HiddenWorld {
     if(this.chapter===1)return;
     this.game.ending.cancel();
     this.game.hud.messages.closeDiscovery();
-    this.showEpilogue();this.chapter=1;this.game.quests.setChapter(1);
+    this.showEpilogue();this.chapter=1;this.game.hud.hints.setChapter(1);this.game.quests.setChapter(1);
     // World II has its own lighting. Restore the untouched shore atmosphere and fog.
     this.game.world.setMood(this.game.world.getEnvironment().mood,true);
     const g=this.game;
