@@ -450,13 +450,14 @@ export class Engine {
     this.winT += rawDt;
     if (this.winT < 1) return;
     const dts = this.dtWin.sort((a, b) => a - b);
-    const med = dts[Math.floor(dts.length / 2)];
+    const frameCount = dts.length;
+    const med = dts[Math.floor(frameCount / 2)];
     const gpus = this.gpuWin.sort((a, b) => a - b);
     this.gpuMs = gpus.length >= 10 ? gpus[Math.floor(gpus.length / 2)] : -1;
     this.dtWin.length = 0;
     this.gpuWin.length = 0;
     this.winT = 0;
-    if (dts.length < 20) return;
+    if (frameCount < 20) return;
 
     const i = this.stepIndex(this.autoPr);
     // Only a GPU-bound frame gets faster at a lower resolution. A frame cap (a browser's battery
