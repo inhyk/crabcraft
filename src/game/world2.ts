@@ -199,7 +199,7 @@ export class HiddenWorld {
     g.hud.tracker.update(g.quests);
     {
       const mobs=g.enemies.filter(e=>!e.isAdd);
-      mobs.forEach((e,i)=>{const side=e.kind==='scrapling'?-1:1;const x=side*(60+(i%4)*7),z=28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority)e.respawnAt(x,z);e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.unit.setBaseTint('#b08cff');});
+      mobs.forEach((e,i)=>{const side=e.kind==='scrapling'?-1:1;const x=side*(60+(i%4)*7),z=28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority)e.respawnAt(x,z);e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.refreshAppearance();});
       for(const e of g.enemies.filter(e=>e.isAdd))e.despawn();
     }
     g.player.respawn();g.player.unit.teleport(w,this.spawn.x,this.spawn.z,Math.PI);g.follow.cut();g.follow.yaw=0;
@@ -213,7 +213,7 @@ export class HiddenWorld {
     // World II has its own lighting. Restore the untouched shore atmosphere and fog.
     this.game.world.setMood(this.game.world.getEnvironment().mood,true);
     const g=this.game;
-    g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);});
+    g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);e.refreshAppearance();});
     this.travelArmed=false;this.travelAt=g.time+3;
     g.worldBoss.unit.hidden=true;
     for(const b of [g.boss,g.finalBoss])b.unit.hidden=b.state==='dormant'||b.state==='dead';

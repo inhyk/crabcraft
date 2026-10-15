@@ -94,6 +94,10 @@ export class Enemy {
 
   resumeAuthority(): void {
     this.unit.cancelPendingHit(); this.leap=null;
+    // Followers mirror HP and level, but do not run the host's spawn logic. Rebuild the combat
+    // coefficients from that exact level without healing or rescaling an encounter in progress.
+    this.applyStats(this.unit.level);
+    this.refreshAppearance();
     this.nextSwing=this.game.time+0.8;
     if (this.state === 'dead') this.deadAt=this.game.time;
   }
@@ -127,7 +131,7 @@ export class Enemy {
     u.motion.stop(undefined, 0);
     u.express('neutral', 0.1);
     u.teleport(this.game.world, x, z, rand(0, TAU));
-    u.setBaseTint(this.game.world2?.chapter===2 ? '#b08cff' : LED[this.kind]);
+    this.refreshAppearance();
     this.state = 'idle';
     this.rise = 0.6;
     this.game.vfx.burrow(u.pos);
@@ -306,18 +310,24 @@ export class Enemy {
   }
 
   private scaleForJourney(): void {
-    if (this.isAdd || (!this.game.journey?.rustCleared && this.game.world2?.chapter!==2)) return;
     const base = ENEMY_STATS[this.kind];
-    const inWorld2=this.game.world2?.chapter===2;
-    const level = Math.max(inWorld2 ? 10 : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0));
+    const inWorld2=this.game.world2?.chapter===2&&!this.isAdd;
+    const scaling=!this.isAdd&&(inWorld2||this.game.journey?.rustCleared);
+    const level = scaling ? Math.max(inWorld2 ? 10 : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0)) : base.level;
     if (this.stats.level === level && this.stats.respawn === (inWorld2 ? 12 : base.respawn)) return;
-    const scale = 1 + 0.12 * (level - base.level);
-    this.stats.level = this.unit.level = level;
-    this.stats.hp = Math.round(base.hp * scale);
-    this.stats.xp = base.xp + 12 * (level - base.level) + (inWorld2 ? 90 : 0);
-    if(inWorld2)this.stats.respawn=12;
-    this.stats.dmg = [base.dmg[0] * scale, base.dmg[1] * scale];
+    this.applyStats(level);
+    this.unit.level=level;
     this.unit.maxHp = this.unit.hp = this.stats.hp;
+  }
+
+  private applyStats(level:number): void {
+    const base=ENEMY_STATS[this.kind],inWorld2=this.game.world2?.chapter===2&&!this.isAdd;
+    const scale=1+.12*(level-base.level);
+    Object.assign(this.stats,{level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:inWorld2?12:base.respawn,dmg:[base.dmg[0]*scale,base.dmg[1]*scale]});
+  }
+
+  refreshAppearance(): void {
+    this.unit.setBaseTint(this.game.world2?.chapter===2 ? '#b08cff' : LED[this.kind]);
   }
 
   private canRespawnUnseen(): boolean {

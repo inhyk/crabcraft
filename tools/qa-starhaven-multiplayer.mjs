@@ -34,5 +34,18 @@ try{
  assert.equal(locations[0].npcs.length,7);assert.deepEqual(locations[0].npcs,locations[1].npcs);assert.ok(locations[0].town.every((p,i)=>Math.hypot(p[0]-locations[1].town[i][0],p[1]-locations[1].town[i][1])<1));
  await a.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,0,72,Math.PI);g.follow.cut();g.multiplayer.root.open=true;});await a.waitForTimeout(1500);await a.screenshot({path:'tmp/qa/star-party.png'});
  await b.evaluate(()=>window.app.current.game.multiplayer.battle.travel(1));await a.waitForFunction(()=>window.app.current.game.world2.chapter===1);await b.waitForFunction(()=>window.app.current.game.world2.chapter===1);
+ assert.deepEqual(await b.evaluate(()=>window.app.current.game.enemies.filter(e=>!e.isAdd).map(e=>e.unit.baseTint)),await a.evaluate(()=>window.app.current.game.enemies.filter(e=>!e.isAdd).map(e=>e.unit.baseTint)),'guest shore LEDs match the host');
+ // A new host must inherit combat coefficients as well as the mirrored health/level.
+ await a.evaluate(()=>{const g=window.app.current.game;g.player.restoreXp(22000);g.world2.enter();});
+ await b.waitForFunction(()=>window.app.current.game.world2.chapter===2&&window.app.current.game.enemies[0].unit.level>=19);
+ const checkpoint=await a.evaluate(()=>{const g=window.app.current.game,e=g.enemies[0];e.unit.hp=Math.round(e.unit.maxHp*.6);e.state='idle';e.unit.stunUntil=g.time+1000;return {hp:e.unit.hp,maxHp:e.unit.maxHp,level:e.unit.level,damage:[...e.stats.dmg],xp:e.stats.xp,respawn:e.stats.respawn};});
+ await b.waitForFunction(hp=>window.app.current.game.enemies[0].unit.hp===hp,checkpoint.hp);
+ await a.getByRole('button',{name:'나가기',exact:true}).click();
+ await b.waitForFunction(()=>window.app.current.game.multiplayer.battle.authority===true);
+ const inherited=await b.evaluate(()=>{const e=window.app.current.game.enemies[0];return {hp:e.unit.hp,maxHp:e.unit.maxHp,level:e.unit.level,damage:[...e.stats.dmg],xp:e.stats.xp,respawn:e.stats.respawn};});
+ assert.deepEqual(inherited,checkpoint);
+ await b.evaluate(()=>window.app.current.game.world2.returnToShore());await b.waitForFunction(()=>window.app.current.game.world2.chapter===1);
+ assert.deepEqual(await b.evaluate(()=>{const e=window.app.current.game.enemies[0];return {level:e.unit.level,respawn:e.stats.respawn,tint:e.unit.baseTint};}),{level:1,respawn:30,tint:'#ff2a1a'});
+ console.log('PASS host departure: injured enemy checkpoint, scaled damage/XP, island respawn and original shore restoration',inherited);
  console.log('PASS two browsers: bilingual UI, host-only mode buttons, selected parties, PvP damage, party protection, co-op, guest morning toggle, two-way portals, all seven NPCs, synchronized walking villagers');console.log('ERRORS',errors);assert.deepEqual(errors,[]);
 }finally{await browser.close();}

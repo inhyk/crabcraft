@@ -66,8 +66,18 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Quest collectibles close to the camera fade without affecting interaction. GPU replay reproduced the foreground obstruction, measured opacity 0.345 at 5.28 units, then successfully collected the same crystal with F. Removed per-frame quest-list flattening for each node.
 - Strengthened trail sampling to reject displacements above 0.05 units; every trail centerline passed, as did sight collision through all 63 decorative crystals.
 - 27 game/protocol tests pass. Real bilingual tracking-button replay passed selection, changing objectives, save/reload and separate World I/II choices. Two-browser multiplayer replay passed PvP, party protection, morning toggle, portals and resident movement with no page errors.
-- Audit follow-up: enemy migration should reconstruct scaled damage/respawn stats from the mirrored level without healing an injured enemy; guest shore return should explicitly restore its LED appearance. These need direct regression coverage in the next milestone.
+- Audit identified enemy migration coefficients and guest shore LEDs as follow-up work; resolved with the regression evidence below.
 - Ten-hour development remains active; no ten-hour completion claim.
 
 - Public verification for navigation milestone: commit 0323c96 deployed READY as dpl_A1xq4UXwxghe5qYTdMdgAfRzF5Gi. The full tracking/camera browser replay also passed against the stable production URL, including refresh persistence and F collection. seonn.dev/games/crabcraft returns HTTP 200.
 - Milestone timestamps above use the actual UTC minute of the retained validation/commit rather than estimated future times.
+
+## Enemy authority handover — 2026-10-15 13:59 UTC
+
+- Reconstructed enemy damage, XP and respawn coefficients from the mirrored level when taking authority. This preserves the current HP, maximum HP, level and AI state instead of healing the enemy or reverting it to low-level damage.
+- Fixed World II's 12-second respawn timer leaking into World I. Direct creator visitors returning to an uncleared shore restore original level/stats; post-boss shore enemies retain their intended level scaling and original respawn timer.
+- Guest chapter return explicitly restores original LED appearance without reviving or healing mirrored enemies.
+- Four new tests use the real Enemy class. All 31 game/protocol tests and the production build pass.
+- Extended two-browser replay passed actual host departure. New host retained level 19, HP 80/133, damage 12.64–18.96, XP 326 and island respawn 12 seconds. Its subsequent shore return restored level 1, respawn 30 seconds and red LEDs. PvP, parties, weather, portals and villager checks also passed with no page errors.
+- Initial extended replay stopped because the QA tool used the guest-only travel request on the host; corrected the replay to invoke the host's chapter transition. No duplicate process was started while the prior handle was live.
+- Ten-hour development remains active.
