@@ -2,6 +2,7 @@ import {t} from '../i18n';
 // The game session: loads the world and every crab, runs the frame loop, routes input, and glues
 // quests, combat, AI, effects, music and the HUD together.
 import * as THREE from 'three';
+import {starMemory} from './starMemories';
 import { HiddenWorld } from './world2';
 import { Multiplayer } from '../multiplayer/client';
 import type { App } from '../app';
@@ -918,6 +919,12 @@ export class Game {
     ev.on('progress', ({ objective, value }) => {
       const txt = objective.count > 1 ? `${objective.label}: ${value}/${objective.count}` : `${objective.label}`;
       this.hud.messages.info(txt);
+      const memory=starMemory(objective.kind);
+      if(memory){
+        this.hud.messages.banner(memory.title,memory.body,'quest');
+        this.hud.chat.system(`${memory.title} · ${memory.body}`);
+        this.audio.sfx('sfx-quest-complete',{volume:.5});
+      }
       this.hud.tracker.update(this.quests, objective.id);
       if (this.hud.questLog.open) this.hud.questLog.render();
     });

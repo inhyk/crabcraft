@@ -50,3 +50,11 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Ran 24 complete World I → World II → World I journeys in a real GPU browser. Geometry count stayed 439 and texture count stayed 144 from the warmed baseline to the last cycle; no growing GPU allocation was observed in this scenario.
 - Every cycle retained the morning/off lighthouse state and in-progress World I quest count. No page errors occurred. This checks repeated travel, not ten-hour stability.
 - Retained the replay in tools/qa-world-travel-soak.mjs.
+
+## Exploration landmarks — 2026-10-15 13:48 UTC
+
+- Added distinct western crystal glade, eastern animated celestial observatory and northern carved sanctuary, with localized discovery stories for the exploration quest. Kept discovery centers open and flattened the western/eastern medallion ground with smooth transitions.
+- Collision sampling found trails crossing two village houses; routed them around the houses. New centerline replay reports zero blocked samples for a one-unit player radius. Expanded forest clearances around the three destinations.
+- Removed an obsolete stepping-stone layer overlapping the settlement road; checked the corrected sanctuary view in a GPU browser.
+- Production build, 25 game/protocol tests and full seven-quest GPU journey passed. The journey includes reward persistence, both automatic portals, morning preservation and the 16-dancer true ending; no page errors. Added tools/qa-star-landmarks.mjs for path checks and views.
+- Ten-hour work remains active; this is a publishable intermediate milestone.

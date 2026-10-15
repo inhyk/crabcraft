@@ -3,16 +3,22 @@ import {t} from '../i18n';
 import type { Game } from './game';
 import type { Poi } from '../world/types';
 import { snapshotMap } from './snapshots';
-import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES } from './world2Settlement';
+import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS } from './world2Settlement';
 import { QUESTS, type ObjectiveKind } from './quests';
 import type { Collision } from '../world/collision';
 import { xpForLevel } from './progression';
 import { StarPortal } from './portal';
 import { StarVillageLife } from './world2Life';
 
+function naturalHeight(x:number,z:number){
+  const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
+  return 3+Math.sin(x*.08)*Math.cos(z*.06)*1.8+Math.max(0,r-.65)*12-coast*21;
+}
+
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
   readonly root = new THREE.Group();
+  readonly trails=STAR_TRAILS;
   chapter: 1 | 2 = 1;
   readonly spawn = new THREE.Vector3(0, 3, 86);
   readonly arena: Poi = { id:'bossArena',position:new THREE.Vector3(0,3,-75),yaw:0,radius:17 };
@@ -115,9 +121,7 @@ export class HiddenWorld {
     }
     const disk=new THREE.Mesh(new THREE.CylinderGeometry(17,18,.3,64),stone);disk.position.copy(this.arena.position);disk.position.y=2.93;disk.receiveShadow=true;this.root.add(disk);
     for(const r of [3,9,16]){const ring=new THREE.Mesh(new THREE.TorusGeometry(r,.045,5,96),teal);ring.rotation.x=Math.PI/2;ring.position.set(0,3.12,-75);this.root.add(ring);}
-    // Stepping-stone road, luminous wayfinders, ruined arches.
-    const road=new THREE.InstancedMesh(new THREE.BoxGeometry(3.8,.15,2.6),stone,24);
-    for(let i=0;i<24;i++){const z=10-i*3.5,x=Math.sin(i*.5)*1.5;matrix.makeTranslation(x,this.height(x,z)+.08,z);road.setMatrixAt(i,matrix);}road.receiveShadow=true;this.root.add(road);
+    // The settlement owns the stone trails; keep only the luminous wayfinders here.
     for(let i=0;i<14;i++){const z=5-i*5,x=(i%2?1:-1)*6.5;const gem=new THREE.Mesh(new THREE.OctahedronGeometry(.4),teal);gem.position.set(x,this.height(x,z)+1,z);this.root.add(gem);this.rotations.push(gem);}
     this.portal=new StarPortal(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
@@ -144,9 +148,12 @@ export class HiddenWorld {
   }
   height(x:number,z:number) {
     if(Math.hypot(x,z+75)<24 || Math.abs(x)<9&&z>-100&&z<105 || Math.abs(x)<54&&z>3&&z<100)return 3;
-    const r=Math.hypot(x/115,(z-10)/140);
-    const coast=THREE.MathUtils.smoothstep(r,.83,1.04);
-    return 3+Math.sin(x*.08)*Math.cos(z*.06)*1.8+Math.max(0,r-.65)*12-coast*21;
+    let y=naturalHeight(x,z);
+    for(const kind of ['explore-west','explore-east'] as const){
+      const p=STAR_OBJECTIVES[kind]!,d=Math.hypot(x-p[0],z-p[1]);
+      if(d<13)y=THREE.MathUtils.lerp(naturalHeight(...p),y,THREE.MathUtils.smoothstep(d,8,13));
+    }
+    return y;
   }
 
   enter(authority=true) {

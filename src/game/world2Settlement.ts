@@ -16,8 +16,8 @@ export const STAR_OBJECTIVES: Partial<Record<ObjectiveKind,[number,number]>> = {
 };
 // Forking pilgrim trails connect the village to each exploration destination.
 export const STAR_TRAILS: [number,number][][] = [
-  [[0,24],[-16,14],[-38,8],[-65,22],[-80,-10],[-75,-35]],
-  [[0,24],[18,13],[40,6],[65,12],[80,-20],[80,-40]],
+  [[0,24],[-16,24],[-38,8],[-65,22],[-80,-10],[-75,-35]],
+  [[0,24],[18,20],[40,6],[65,12],[80,-20],[80,-40]],
   [[0,15],[0,0],[25,-15],[14,-31],[0,-45],[0,-48]],
 ];
 function trailDistance(x:number,z:number){
@@ -96,7 +96,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     if(Math.hypot(x/110,(z-10)/130)>.88 || Math.abs(x)<11 || Math.hypot(x,z+75)<27)continue;
     if(Math.abs(x)<53&&z>3&&z<98)continue;
     if(trailDistance(x,z)<3)continue;
-    if(Object.values(STAR_OBJECTIVES).some(p=>Math.hypot(x-p[0],z-p[1])<4))continue;
+    if(Object.entries(STAR_OBJECTIVES).some(([kind,p])=>Math.hypot(x-p[0],z-p[1])<(kind.startsWith('explore-')?13:4)))continue;
     const list=i%5===0?rockNames:treeNames;if(!list.length)continue;
     const scale=i%5===0?1.2+rand(i+88):.6+rand(i+55)*.65;
     scatter.add(list[i%list.length],trs(x,height(x,z),z,rand(i+40)*6.28,scale));
