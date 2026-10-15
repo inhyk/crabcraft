@@ -24,7 +24,8 @@ export class BattleSync {
   setMode(mode:'coop'|'pvp'){
     if(!this.active||!this.authority){this.game.hud.messages.info(t('방장이 협동 / 싸우기 모드를 선택해요.','The host chooses co-op or PvP mode.'));return;}
     if(this.game.encounter?.engaged){this.game.hud.messages.info(t('보스 전투가 끝난 뒤 모드를 바꿔 주세요.','Wait until the boss battle ends to change mode.'));return;}
-    this.mode=mode;this.parties={};this.game.player.setTarget(null);this.publish();
+    // Explicit teams belong to the room, so changing its combat rules keeps friends together.
+    this.mode=mode;this.game.player.setTarget(null);this.publish();
   }
   private duel(id:string,target:string,amount:number,crit=false){
     if(this.mode!=='pvp'||id===target||this.sameParty(id,target)||!Number.isFinite(amount)||amount<=0)return;

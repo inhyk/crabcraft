@@ -26,10 +26,16 @@ try{
  await a.evaluate(()=>{const g=window.app.current.game;g.combat.damage(g.player.unit,[...g.multiplayer.peers.values()][0].unit,20);});
  await b.waitForFunction(hp=>window.app.current.game.player.unit.hp<=hp-20,hp,{timeout:5000});
  await a.getByRole('button',{name:'파티 2',exact:true}).click();await b.getByRole('button',{name:'Party 2',exact:true}).click();await a.waitForFunction(()=>{const b=window.app.current.game.multiplayer.battle;return Object.values(b.parties).length===2&&Object.values(b.parties).every(p=>p===2);},null,{timeout:10000});
- await a.waitForTimeout(300);assert.equal(await a.locator('[data-party="2"]').getAttribute('aria-pressed'),'true');assert.equal(await b.locator('[data-party="2"]').getAttribute('aria-pressed'),'true');
+ for(const p of [a,b])await p.waitForFunction(()=>document.querySelector('[data-party="2"]').getAttribute('aria-pressed')==='true');
  console.log('PARTIES',await a.evaluate(()=>window.app.current.game.multiplayer.battle.parties));
  const before=await b.evaluate(()=>window.app.current.game.player.unit.hp);await a.evaluate(()=>{const g=window.app.current.game;g.combat.damage(g.player.unit,[...g.multiplayer.peers.values()][0].unit,20);});await a.waitForTimeout(500);assert.equal(await b.evaluate(()=>window.app.current.game.player.unit.hp),before);
- await a.getByRole('button',{name:'협동 모드',exact:true}).click();await a.evaluate(()=>window.app.current.game.setLighthouse(true));await b.waitForFunction(()=>window.app.current.game.beaconLit===true);
+ await a.getByRole('button',{name:'협동 모드',exact:true}).click();await b.waitForFunction(()=>window.app.current.game.multiplayer.battle.mode==='coop');
+ for(const p of [a,b])assert.ok(await p.evaluate(()=>Object.values(window.app.current.game.multiplayer.battle.parties).length===2&&Object.values(window.app.current.game.multiplayer.battle.parties).every(p=>p===2)),'explicit party selections survive the co-op switch');
+ await a.getByRole('button',{name:'⚔ 싸우기 모드',exact:true}).click();await b.waitForFunction(()=>window.app.current.game.multiplayer.battle.mode==='pvp');
+ for(const p of [a,b])await p.waitForFunction(()=>document.querySelector('[data-party="2"]').getAttribute('aria-pressed')==='true');
+ const protectedHp=await b.evaluate(()=>window.app.current.game.player.unit.hp);await a.evaluate(()=>{const g=window.app.current.game;g.combat.damage(g.player.unit,[...g.multiplayer.peers.values()][0].unit,20);});await a.waitForTimeout(400);assert.equal(await b.evaluate(()=>window.app.current.game.player.unit.hp),protectedHp);
+ await a.getByRole('button',{name:'협동 모드',exact:true}).click();await b.waitForFunction(()=>window.app.current.game.multiplayer.battle.mode==='coop');
+ console.log('PASS: explicit parties survive co-op/PvP/co-op switches and teammates remain protected');await a.evaluate(()=>window.app.current.game.setLighthouse(true));await b.waitForFunction(()=>window.app.current.game.beaconLit===true);
  await b.evaluate(()=>window.app.current.game.setLighthouse(false));await a.waitForFunction(()=>window.app.current.game.world.getEnvironment().mood===3);await b.waitForFunction(()=>window.app.current.game.world.getEnvironment().mood===3);
  await b.evaluate(()=>{const g=window.app.current.game;g.player.unit.lastCombat=-999;g.multiplayer.battle.travel(2);});await a.waitForFunction(()=>window.app.current.game.world2.chapter===2);await b.waitForFunction(()=>window.app.current.game.world2.chapter===2);
  await a.waitForTimeout(800);
