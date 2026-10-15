@@ -529,7 +529,7 @@ export class Game {
     const name = this.player.unit.name;
     this.zone = this.zoneAt(this.player.unit.pos);
     this.zoneCandidate = this.zone;
-    this.hud.messages.banner(regionName(this.zone), regionSubtitle(this.zone), 'zone');
+    this.hud.messages.banner(() => (regionName(this.zone)),() => (regionSubtitle(this.zone)), 'zone');
     this.hud.minimap.setZone(regionName(this.zone), false);
     this.hud.chat.system(t(`${name}님, 클로헤이븐에 오신 걸 환영해요!`,`Welcome to Clawhaven, ${name}!`));
     this.hud.chat.system(t('분수 옆 브라인비어드 선장이 기다려요. 가까이 가서 F를 누르세요.','Captain Brinebeard by the fountain has work for you. Walk up to him and press F.'));
@@ -964,8 +964,8 @@ export class Game {
       if(id==='q3'&&this.world2.chapter===1&&this.beaconLit)this.quests.bump('beacon');
       if(id==='w7'&&this.journey?.trueCleared)this.quests.bump('eclipse-boss');
       if (id === 'q4' && this.journey?.rustCleared) this.quests.bump('boss');
-      if (id === 'q4') this.hud.messages.banner(def.title, t('새 퀘스트: 철의 난파선에서 코로디우스를 쓰러뜨리세요.','New quest: defeat Corrodius on the Iron Wreck'), 'quest');
-      else this.hud.messages.banner(t('퀘스트 수락','Quest Accepted'), def.title, 'quest');
+      if (id === 'q4') this.hud.messages.banner(() => (def.title),() => (t('새 퀘스트: 철의 난파선에서 코로디우스를 쓰러뜨리세요.','New quest: defeat Corrodius on the Iron Wreck')), 'quest');
+      else this.hud.messages.banner(() => (t('퀘스트 수락','Quest Accepted')),() => (def.title), 'quest');
       this.hud.tracker.update(this.quests);
       this.refreshQuestViews(id);
       this.journey?.save();
@@ -993,7 +993,7 @@ export class Game {
     ev.on('completed', (id) => {
       const def = QUESTS[id];
       this.audio.sfx('sfx-quest-complete');
-      this.hud.messages.banner(t('퀘스트 완료','Quest Complete'), def.title, 'quest');
+      this.hud.messages.banner(() => (t('퀘스트 완료','Quest Complete')),() => (def.title), 'quest');
       this.hud.chat.quest(t(`${def.title} 완료!`,`${def.title} completed.`));
       this.player.gainXp(def.xp);
       this.hud.tracker.update(this.quests);
@@ -1009,7 +1009,7 @@ export class Game {
     this.beaconLit=lit;this.world.setBeaconLit(lit);this.world.setMood(lit?1:3);
     if(!lit){this.boss.sleep();this.finalBoss.sleep();this.player.setTarget(null);}
     else this.quests.bump('beacon');
-    this.hud.messages.banner(lit?t('등대를 켰어요','Lighthouse lit'):t('등대를 껐어요','Lighthouse off'),lit?t('밤이 찾아왔습니다. 보스에 도전할 수 있어요.','Night has fallen. You can challenge the bosses.'):t('아침이 되었습니다. 보스는 다시 잠들었어요.','Morning has returned. The bosses are asleep again.'),'zone');
+    this.hud.messages.banner(() => (lit?t('등대를 켰어요','Lighthouse lit'):t('등대를 껐어요','Lighthouse off')),() => (lit?t('밤이 찾아왔습니다. 보스에 도전할 수 있어요.','Night has fallen. You can challenge the bosses.'):t('아침이 되었습니다. 보스는 다시 잠들었어요.','Morning has returned. The bosses are asleep again.')),'zone');
     this.journey?.save();
   }
 
@@ -1025,7 +1025,7 @@ export class Game {
     this.vfx.levelUp(this.player.unit);
     this.audio.sfx('sfx-beacon');
     this.follow.shake(0.2, 0.6);
-    this.hud.messages.banner(t('등대가 밝게 타오릅니다','The Beacon Blazes'), t('솔트미어에 빛이 돌아왔어요','Light returns to Saltmere'), 'quest');
+    this.hud.messages.banner(() => (t('등대가 밝게 타오릅니다','The Beacon Blazes')),() => (t('솔트미어에 빛이 돌아왔어요','Light returns to Saltmere')), 'quest');
     this.quests.bump('beacon');
   }
 
@@ -1133,7 +1133,7 @@ export class Game {
       setTimeout(() => {
         if (!this.alive) return;
         if (boss === this.boss) this.quests.bump('boss');
-        this.hud.messages.banner('VICTORY · 왕관 획득', boss.profile.name, 'boss');
+        this.hud.messages.banner(() => (t('승리 · 왕관 획득','VICTORY · Crown reclaimed')),() => (boss.profile.name), 'boss');
         this.vfx.levelUp(this.player.unit);
       }, 1800);
       setTimeout(() => this.alive && this.hud.bossFrame.hide(), 5000);
@@ -1240,7 +1240,7 @@ export class Game {
     }
     if (z !== this.zone && this.time - this.zoneSince > 0.6 && !this.ending.active) {
       this.zone = z;
-      this.hud.messages.banner(regionName(z), regionSubtitle(z), 'zone');
+      this.hud.messages.banner(() => (regionName(z)),() => (regionSubtitle(z)), 'zone');
     }
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }

@@ -21,19 +21,20 @@
 | KO/EN 전투 안내 | 실제 서로 다른 언어의 호스트/게스트, 전투 중 설정 변경, 공유 피해와 방장 교체 | `mixed-combat-language-final.log`; `tools/qa-mixed-combat-language.mjs` |
 | 채팅/미니맵/보스 안내 | 48개 실제 기술·언어·화면 조합에서 경고와 주요 HUD 간 겹침 없음 | `compact-mechanics-final.log`; `tools/qa-compact-combat.mjs`. 검사하지 않은 모든 화면 크기의 보장은 아님 |
 
-## 현재 후보의 남은 검사
+## 현재 후보의 검사 결과와 남은 항목
 
 - 원격 끌어당김 잔류 결함은 `b569006`에서 수정했다. 기존 버전에서 실패하는 회귀 사례를 포함한 보스/전투/적/퀘스트 42개 검사가 통과했고 타입 검사와 프로덕션 빌드가 통과했다. `remote-push-unit-complete.log`, `remote-push-build-refined.log`.
 - 최신 소스의 방 8개·보스/전투/적/퀘스트 43개·엔진 4개, 총 55개 검사가 21:16 UTC에 모두 통과했다. `release-rooms-current.log`, `release-boss-current.log`, `release-engine-current.log`. 이들은 아래 실제 브라우저 검사를 대체하지 않는다.
 - **실제 두 클라이언트의 집중 이동 검사가 통과했다.** `candidate-b569006-movement.log`에서 짧은 힘은 0.16000000000000003m 이동 후 2초 이상 정지했고, 정상 길이 Undertow는 게스트를 약 7.41m 끌어당긴 뒤 2.4초 동안 위치가 유지됐다. 페이지 오류는 없었다. `tools/qa-remote-push.mjs`로 실행했다. 주입한 힘·보스 단계·생존 설정은 명시적 검사 fixture이며 자연스럽게 보스를 이긴 증거가 아니다.
 - 수정 전 동결 빌드의 실제 60분 검사는 20:13:11.296–21:13:11.301 UTC, 3600.005초 실행을 마쳤다. 두 연결 유지, 컨텍스트 유실 0, 468회 공격 완료, geometry/texture/program 461/125/274와 효과 풀 14개 유지, errors 없음. `combat-endurance-final.json`과 `combat-endurance-live.log`. 게스트가 -110.12m까지 밀린 알려진 결함은 그대로 관찰되었으므로 **이전 버전의 자원/연결 지속 검사**만 뒷받침하며 이동 정상 증거가 아니다.
-- 수정 후보 동결 빌드는 `tmp/qa/endurance-b569006`, 33개 HTML/JS/CSS SHA256은 `endurance-b569006-manifest.json`. 별도 미리보기 `http://127.0.0.1:5196/`에 준비했다. 이전 검사와 집중 이동 검사를 마친 뒤 수정 후보의 실제 60분 검사를 시작했다. 고유 출력 `candidate-b569006-endurance`, 준비 후 위치 편차 상한 0.1m. 아직 지속 검사 성공 결과는 없다.
-- 순차 검사기 `tools/qa-candidate-sequence.mjs`는 기존 프로세스의 실제 종료·3600초 결과·동결 해시를 확인하고 집중 이동 검사까지 통과한 뒤 21:13:32.657 UTC에 `repaired-endurance` 단계에 들어갔다(핸들39787). 상태는 `candidate-b569006-sequence.json`, 로그는 `candidate-b569006-sequence-coordinated.log`; 실행 중인 지속 검사의 성공을 뜻하지 않는다.
-- 수정 후보의 실제 30분 중간 기록은 1800.281초·60개 체크포인트·234회 공격 완료다. 준비 120초 이후 두 클라이언트 위치 편차는 각각 0m, 연결 유지·컨텍스트 유실 0, FPS 59.984–60.029, geometry/texture 461/125와 효과 풀 14개 유지. program은 호스트 273·게스트 274로 각각 유지됐고 강제 GC 없이 heap 범위는 169.00–195.59 / 168.46–196.55MB였다. `candidate-b569006-half-hour.json`. **60분 실행은 여전히 진행 중이며 최종 통과가 아니다.**
-- 추가로 한국어 기술 툴팁/시전 이름의 영어 잔류를 수정했다. `ability-language-build-final.log`에서 빌드 통과. `tools/qa-ability-language.mjs`의 48개 실제 툴팁과 시전 시간 보존 검사는 현재 GPU 검사 사슬 종료 뒤 실행할 예정이며 **아직 네이티브 통과 결과가 없다**. 이 UI 변경은 기존 동결 `b569006` 자원 검사와 별도로 검증한다.
-- 월드 II 폭주 파동의 1.3728초 경고가 일반 이동 회피에 부족한 물리적 상한을 확인해, 해당 공격에만 최소 1.9초를 적용했다. 이전 실패/현재 43개 검사 통과와 빌드 결과는 `nova-walking-{before,unit,build}.log`. `tools/qa-nova-walking.mjs`의 실제 W 입력 회피와 최신 공유 공격 시간 재검증은 **아직 대기 중**이다. 동결 `b569006`에는 이 경고 시간 변경이 포함되지 않는다.
-- `tools/qa-real-boss-run.mjs`는 제작자 UI로 레벨/세계만 준비한 뒤 실제 도전 버튼과 키 입력으로 전체 HP 보스 전투→16명 최종 춤→저장 복귀를 확인하도록 준비했다. 읽기 전용 상태 관찰 외에 HP·피해·위치·무적을 조작하지 않는 추가 검사이며 **아직 실행하지 않았다**. 자동 조작의 실패는 곧바로 게임 밸런스 결함을 뜻하지 않는다.
+- 수정 후보 동결 빌드 `b569006`의 실제 60분 검사가 통과했다. 21:13:41.314–22:13:41.323 UTC, 3600.009초·120체크포인트·468회 공격. 두 연결 유지, 컨텍스트 유실 0, 준비 120초 후 위치 편차 각각 0m. geometry/texture 461/125, program 호스트273·게스트274, 효과 풀14가 각각 유지됐다. FPS 59.984–60.029 / 59.984–60.053, 강제 GC 없는 heap 169.00–197.26 / 168.46–196.55MB. `candidate-b569006-hour-summary.json`, `candidate-b569006-endurance-final.json`. 생존 무적/보스 단계 fixture를 둔 로컬 지속 검사이며 자연 승리 증거가 아니다.
+- 순차 검사기 `tools/qa-candidate-sequence.mjs`는 이전 실제 프로세스 종료와 33개 동결 해시/서빙 HTML, 집중 이동, 수정 60분을 순서대로 확인하고 22:13:41.503 UTC에 종료 코드0으로 완료했다. `candidate-b569006-sequence-coordinated.log`, 상태 `candidate-b569006-sequence.json`. 이 동결 소스에는 이후 기술 표시 번역과 Nova 최소1.9초 변경이 포함되지 않는다.
+- 실제 48개 KO/EN 기술 툴팁(세 직업×네 기술×두 언어×두 화면) 이름·설명·화면 경계 검사 통과. 실제 설정 KO→EN→KO에서 치유 시전 시작/종료/GCD/시계 보존, W/Escape 중단 문구와 기존 만료 시간 보존도 통과했다. `ability-language-current.log`; 동결 이전 빌드의 영어 잔류는 `ability-language-baseline.log`에 보관. 새 기술 설계 변경은 없다.
+- 월드 II 폭주 Nova의 실제 비교: 이전1.3728초는 300ms 후 W 이동5.040m에도136피해, 현재1.9초는7.625m 이동해 피해0. 정지 양성 대조군은 두 버전 모두136피해였다. `nova-walking-baseline.log`, `nova-walking-current.log`. 단계/시작 위치를 둔 무적 없는 로컬 공격 fixture이며 전체 자연 승리 증거가 아니다. 최신 두 클라이언트 혼합 언어 검사도 공유120피해·정상 Nova·설정 전환·호스트 교체·재참가 통과(`mixed-combat-language-current.log`).
+- 전체 HP6200의 레벨20 보스를 실제 도전 버튼 이후 키 입력만으로 쓰러뜨렸다. 무적 없음, 전투 중 위치·HP·피해·단계 조작 없음. 16명 최종 춤→크레딧→계속 모험하기에서 월드II/최종 왕관/보스 dead/무적false 복귀 통과. `real-boss-run-current.log`, `tools/qa-real-boss-run.mjs`. 제작자 UI로 시작 레벨/세계를 준비했으므로 레벨1부터 전체 퀘스트 진행한 증거는 아니다.
 - `tools/qa-walk-ore-quest.mjs`는 제작자 UI로 레벨/세계만 준비한 뒤 읽기 전용 충돌 경로를 따라 실제 키 입력으로 광석 퀘스트 수락→네 곳 수집→보상 1500 XP→재로드를 확인하도록 준비했다. 위치·HP·퀘스트 진척을 직접 주입하지 않는 추가 검사이며 **아직 실행 전**이다.
+- 실제 설정 전환에서 지역/퀘스트/보스/레벨 배너는 같은 DOM의 문구만 바꾸고 원래 애니메이션과4.3초 만료를 유지한다. 일시정지된 솔로 설정에서도 보스 여정이 즉시 번역되며 시계/보스 상태가 바뀌지 않는다. 1월드 미니맵 canvas 시설명 KO/EN 전환과 다른 언어 잔류 없음도 실제 검사 통과. `banner-language-current.log`; 빌드/타입 검사 및43개 관련 회귀 검사 통과. `tools/qa-banner-language.mjs`.
+- 추가 실제 두 클라이언트 전체 HP 보스 협동 전투와 세 등불/기억 탐험/수프 배달의 실제 걷기 검사를 준비했다(`tools/qa-real-coop-run.mjs`, `tools/qa-walk-island-requests.mjs`). 아직 통과를 주장하지 않는다.
 - 요청한 10시간의 가장 이른 종료는 **2026-10-15 22:56:12 UTC / 2026-10-16 07:56:12 KST**다. 그 전에는 전체 목표를 완료 처리하지 않는다.
 
 ## 공개 상태

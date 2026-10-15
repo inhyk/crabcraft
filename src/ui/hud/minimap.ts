@@ -9,14 +9,14 @@ import type { PoiId } from '../../world/types';
 // Match the existing party roster colors. Shapes distinguish players from townsfolk.
 const PARTY_COLORS:Record<number,string>={0:'#d4dbe5',1:'#8cbdff',2:'#ff9d9d',3:'#ffe6a0',4:'#d5abff'};
 
-const POI_ICONS: Partial<Record<PoiId, { label: string; color: string }>> = {
-  forge: { label: 'Forge', color: '#ff9a4a' },
-  chapel: { label: 'Chapel', color: '#ffe9a0' },
-  tavern: { label: 'Tavern', color: '#ffb36b' },
-  grove: { label: 'Grove', color: '#b7a0ff' },
-  lighthouse: { label: 'Lighthouse', color: '#fff3c0' },
-  wreck: { label: 'Wreck', color: '#ff6a4a' },
-};
+const shorePoiIcons = (): Partial<Record<PoiId, { label: string; color: string }>> => ({
+  forge: { label: t('대장간','Forge'), color: '#ff9a4a' },
+  chapel: { label: t('성소','Chapel'), color: '#ffe9a0' },
+  tavern: { label: t('주점','Tavern'), color: '#ffb36b' },
+  grove: { label: t('숲','Grove'), color: '#b7a0ff' },
+  lighthouse: { label: t('등대','Lighthouse'), color: '#fff3c0' },
+  wreck: { label: t('난파선','Wreck'), color: '#ff6a4a' },
+});
 
 export class Minimap {
   readonly el: HTMLElement;
@@ -109,9 +109,9 @@ export class Minimap {
     // POIs
     c.font = `600 ${10 * d}px Georgia, serif`;
     c.textAlign = 'center';
-    const icons:typeof POI_ICONS=g.world2?.chapter===2?{
+    const icons:ReturnType<typeof shorePoiIcons>=g.world2?.chapter===2?{
       forge:{label:t('대장간','Forge'),color:'#ffb36b'},chapel:{label:t('성소','Chapel'),color:'#f6e0a1'},tavern:{label:t('주점','Tavern'),color:'#ffc995'},grove:{label:t('연못','Moonpool'),color:'#bbadff'},shore:{label:t('수정 숲','Crystalwood'),color:'#90e6d4'},wreck:{label:t('유적','Ruins'),color:'#a49eda'},bossArena:{label:t('왕좌','Throne'),color:'#d3a6ff'}
-    }:POI_ICONS;
+    }:shorePoiIcons();
     for (const [id, info] of Object.entries(icons)) {
       const poi = g.world.pois[id as PoiId];
       if (!poi) continue;

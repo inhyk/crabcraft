@@ -249,7 +249,7 @@ export class HiddenWorld {
       for(const e of g.enemies.filter(e=>e.isAdd))e.despawn();
     }
     g.player.respawn();g.player.unit.teleport(w,this.spawn.x,this.spawn.z,Math.PI);g.follow.cut();g.follow.yaw=0;
-    g.player.setTarget(null);g.zone='';g.hud.messages.banner(t('WORLD II · 잊힌 별의 섬','WORLD II · Isle of Forgotten Stars'),t('별빛 항구 · 주민 퀘스트 7개 · 성장에는 끝이 없습니다','Starhaven · Seven villager quests · Keep growing beyond level 20'),'zone');
+    g.player.setTarget(null);g.zone='';g.hud.messages.banner(() => (t('WORLD II · 잊힌 별의 섬','WORLD II · Isle of Forgotten Stars')),() => (t('별빛 항구 · 주민 퀘스트 7개 · 성장에는 끝이 없습니다','Starhaven · Seven villager quests · Keep growing beyond level 20')),'zone');
     try{g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-140,maxX:140,minZ:-150,maxZ:170,topY:90},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));}catch{ /* The island still plays if map capture is unavailable. */ }
     g.journey?.save();
   }

@@ -99,7 +99,7 @@ export class Boss {
   }
   applyNetwork(s: BossState): void {
     const g=this.game;
-    if (s.phase > this.phase && s.state === 'fight') g.hud.messages.banner(t(`${s.phase}단계`,`PHASE ${s.phase}`),this.profile.name,'boss');
+    if (s.phase > this.phase && s.state === 'fight') g.hud.messages.banner(() => (t(`${s.phase}단계`,`PHASE ${s.phase}`)),() => (this.profile.name),'boss');
     this.state=s.state; this.phase=s.phase; this.enraged=s.enraged;
     const timeline=s.timeline;
     if(timeline&&Number.isFinite(timeline.state)&&Number.isFinite(timeline.freed)&&Number.isFinite(timeline.freedYaw)&&typeof timeline.released==='boolean'){
@@ -329,7 +329,7 @@ export class Boss {
     g.say(this.unit, this.profile.level === 20 ? t('별의 그림자 속으로 들어오라!','Step into the shadow of the stars!') : this.profile.level >= 10 ? t('깊은 바다의 힘이 깨어난다!','The power of the deep awakens!') : BOSS_YELLS.phase2, true);
     g.audio.sfx('sfx-boss-roar');
     g.follow.shake(0.3, 0.6);
-    g.hud.messages.banner(t('2단계','PHASE II'), this.profile.level === 20 ? t('검은 일식 · 초록 원 안쪽이 안전합니다!','Black Eclipse · Stay inside the green circle!') : this.profile.level >= 10 ? t('심해 파동 · 푸른 원을 벗어나세요!','Tidal Nova · Leave the blue circle!') : t('녹의 하수인들이 깨어납니다!','The rustlings awaken!'), 'boss');
+    g.hud.messages.banner(() => (t('2단계','PHASE II')),() => (this.profile.level === 20 ? t('검은 일식 · 초록 원 안쪽이 안전합니다!','Black Eclipse · Stay inside the green circle!') : this.profile.level >= 10 ? t('심해 파동 · 푸른 원을 벗어나세요!','Tidal Nova · Leave the blue circle!') : t('녹의 하수인들이 깨어납니다!','The rustlings awaken!')), 'boss');
     const u = this.unit;
     for (let i = 0; i < (this.profile.level >= 10 ? 0 : 3); i++) {
       const a = u.yaw + Math.PI + (i - 1) * 0.9;
@@ -350,7 +350,7 @@ export class Boss {
     g.say(this.unit, this.profile.level >= 10 ? t('왕관의 빛이여, 모든 것을 삼켜라!','Light of the crown, consume everything!') : BOSS_YELLS.phase3, true);
     g.audio.sfx('sfx-boss-roar');
     g.follow.shake(0.35, 0.8);
-    g.hud.messages.banner(t('3단계 · 폭주','PHASE III · ENRAGE'), this.profile.level === 20 ? t('별의 왕관이 폭주합니다!','The Star Crown is enraged!') : this.profile.level >= 10 ? t('심해의 왕관이 폭주합니다!','The Deep Crown is enraged!') : t('갑옷이 새하얗게 달아오릅니다!','The armour burns white-hot!'), 'boss');
+    g.hud.messages.banner(() => (t('3단계 · 폭주','PHASE III · ENRAGE')),() => (this.profile.level === 20 ? t('별의 왕관이 폭주합니다!','The Star Crown is enraged!') : this.profile.level >= 10 ? t('심해의 왕관이 폭주합니다!','The Deep Crown is enraged!') : t('갑옷이 새하얗게 달아오릅니다!','The armour burns white-hot!')), 'boss');
     this.nextMech = g.time + 2.5;
   }
 

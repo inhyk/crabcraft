@@ -120,7 +120,7 @@ export class BossJourney {
       this.kills = 0;
       const xp = patrolReward(this.game.player.level);
       this.game.player.gainXp(xp);
-      this.game.hud.messages.banner(this.game.world2.chapter===2?t('유적 순찰 완료','Ruin Patrol Complete'):t('해안 순찰 완료','Shore Patrol Complete'), t(`다섯 적 처치 · +${xp} XP`,`Five enemies defeated · +${xp} XP`), 'quest');
+      this.game.hud.messages.banner(() => (this.game.world2.chapter===2?t('유적 순찰 완료','Ruin Patrol Complete'):t('해안 순찰 완료','Shore Patrol Complete')),() => (t(`다섯 적 처치 · +${xp} XP`,`Five enemies defeated · +${xp} XP`)), 'quest');
     }
     this.save();
   }
@@ -172,12 +172,11 @@ export class BossJourney {
     if(boss!==g.worldBoss)g.world.setMood(1);
     g.hud.dialogue.close();
     this.root.open = false;
-    g.hud.messages.banner(joining?t(`LEVEL ${boss.profile.level} · 전투 합류`,`LEVEL ${boss.profile.level} · BATTLE JOINED`):t(`LEVEL ${boss.profile.level} · 보스 도전`,`LEVEL ${boss.profile.level} · BOSS CHALLENGE`), boss.profile.name, 'boss');
+    g.hud.messages.banner(() => (joining?t(`LEVEL ${boss.profile.level} · 전투 합류`,`LEVEL ${boss.profile.level} · BATTLE JOINED`):t(`LEVEL ${boss.profile.level} · 보스 도전`,`LEVEL ${boss.profile.level} · BOSS CHALLENGE`)),() => (boss.profile.name), 'boss');
   }
 
   update(dt: number) {
     const g = this.game;
-    const level = g.player.level;
     this.root.hidden = g.ending.active || g.cinematic;
     if (g.multiplayer?.battle.authority !== false && g.world2.chapter===1 && g.beaconLit && g.partyLevel >= 3 && !this.rustCleared && g.boss.state === 'dormant') g.boss.wake();
     if (this.abyssCleared && !this.firstEndingSeen && g.finalBoss.state === 'dead' && !this.chapterEnding && !this.chapterCelebrating && !g.ending.active && g.world2.chapter === 1) this.showChapterEnding();
@@ -188,6 +187,22 @@ export class BossJourney {
       if(this.endingTime>12 && g.multiplayer?.battle.authority !== false) this.finishChapterEnding();
     }
     if(this.trueCleared && g.worldBoss.state==='dead' && !this.trueStarted && !g.ending.active) { this.trueStarted=true; this.save(); void g.ending.start(); }
+    this.render();
+    if ((this.saveAt += dt) > 3) { this.saveAt = 0; this.save(); }
+    const crowned = g.world2.chapter===2 ? g.worldBoss : g.finalBoss;
+    const u = crowned.unit;
+    this.aura.visible = !u.hidden && u.alive;
+    this.aura.position.copy(u.pos);
+    this.aura.position.y += u.height * 0.8;
+    this.aura.rotation.y += dt * (crowned.enraged ? 1.2 : 0.35);
+    this.aura.scale.setScalar(1 + Math.sin(g.time * 2) * 0.035);
+  }
+
+  /** Refresh copy while a solo Settings menu pauses simulation; never advance encounters. */
+  refreshLanguage(): void { this.last = ''; this.render(); }
+
+  private render(): void {
+    const g = this.game, level = g.player.level;
     const state = `${language()}|${g.beaconLit}|${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${this.canJoin(g.encounter)}|${g.finalBoss.state}|${g.boss.state}|${g.worldBoss.state}|${g.world2.chapter}|${this.firstEndingSeen}|${this.trueCleared}`;
     if (state !== this.last) {
       this.last = state;
@@ -213,14 +228,6 @@ export class BossJourney {
       this.victory.hidden = !this.trueCleared;
       this.victory.disabled = g.worldBoss.state !== 'dead' || g.controlsLocked;
     }
-    if ((this.saveAt += dt) > 3) { this.saveAt = 0; this.save(); }
-    const crowned = g.world2.chapter===2 ? g.worldBoss : g.finalBoss;
-    const u = crowned.unit;
-    this.aura.visible = !u.hidden && u.alive;
-    this.aura.position.copy(u.pos);
-    this.aura.position.y += u.height * 0.8;
-    this.aura.rotation.y += dt * (crowned.enraged ? 1.2 : 0.35);
-    this.aura.scale.setScalar(1 + Math.sin(g.time * 2) * 0.035);
   }
 
   private showChapterEnding() {

@@ -48,7 +48,7 @@ try{
  await page.goto(base+'/?screen=game');await page.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await page.waitForFunction(()=>!document.querySelector('.loading'));
  await page.keyboard.type('13570');await page.getByRole('button',{name:'레벨 +10',exact:true}).click();for(let i=0;i<9;i++)await page.getByRole('button',{name:'레벨 +1',exact:true}).click();await page.getByRole('button',{name:'월드 2로 이동',exact:true}).click();await page.waitForFunction(()=>window.app.current.game.world2.chapter===2);await page.getByRole('button',{name:'제작자 화면 닫기',exact:true}).click();
  // A click on the canvas releases focus left on the removed Creator UI.
- await page.mouse.click(640,720);const before=await read();assert.equal(before.god,false);assert.equal(before.level,20);assert.equal(before.status,'available');
+ await page.mouse.click(640,496);const before=await read();assert.equal(before.god,false);assert.equal(before.level,20);assert.equal(before.status,'available');
  await walk('pip');await page.keyboard.press('KeyF');await page.locator('.dlg').waitFor({state:'visible'});await page.getByRole('button',{name:'퀘스트 받기',exact:true}).click();await page.waitForFunction(()=>window.app.current.game.quests.status.w2==='active');
  for(const kind of ['crystal-a','crystal-b','crystal-c','crystal-d']){
   await walk(kind);await page.keyboard.press('KeyF');await page.waitForFunction(kind=>{const g=window.app.current.game;return g.world2.nodes.find(n=>n.kind===kind)&&g.quests.objectiveDone(g.world2.nodes.find(n=>n.kind===kind).objective);},kind,{timeout:3000});

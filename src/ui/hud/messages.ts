@@ -3,12 +3,16 @@
 import { h } from '../dom';
 import {t} from '../../i18n';
 
+type BannerText = string | (() => string);
+const bannerText = (copy: BannerText): string => typeof copy === 'function' ? copy() : copy;
+
 export class Messages {
   readonly el: HTMLElement;
   private errors: HTMLElement;
   private warnEl: HTMLElement;
   private bannerEl: HTMLElement;
   private discoveryEl: HTMLElement;
+  private bannerCopy: {el:HTMLElement;bigEl:HTMLElement;subEl:HTMLElement;big:BannerText;sub:BannerText} | null = null;
   private discoveryCopy: (() => {title:string;body:string} | null) | null = null;
   private discoveryTimer = 0;
   private lastError = '';
@@ -87,21 +91,34 @@ export class Messages {
     return wasOpen;
   }
 
-  refreshLanguage(): void { this.renderDiscovery(); }
-  dispose(): void { this.closeDiscovery(); }
+  refreshLanguage(): void { this.renderDiscovery(); this.renderBanner(); }
+  dispose(): void { this.closeDiscovery(); this.bannerCopy = null; this.bannerEl.replaceChildren(); }
 
   /** Big gold text mid-screen: zone names, quest accepted/completed, level up. */
-  banner(big: string, sub: string, kind: 'zone' | 'quest' | 'level' | 'boss' = 'quest'): void {
-    const el = h(
-      'div',
-      { class: `cc-banner ${kind}` },
-      h('div', { class: 'big cc-title' }, big),
-      kind === 'zone' ? h('div', { class: 'rule' }) : null,
-      sub ? h('div', { class: 'sub' }, sub) : null,
-    );
+  banner(big: BannerText, sub: BannerText, kind: 'zone' | 'quest' | 'level' | 'boss' = 'quest'): void {
+    const bigEl = h('div', {class:'big cc-title'});
+    const subEl = h('div', {class:'sub'});
+    const el = h('div', {class:`cc-banner ${kind}`}, bigEl,
+      kind === 'zone' ? h('div', {class:'rule'}) : null, subEl);
     this.bannerEl.replaceChildren(el);
-    setTimeout(() => el.remove(), 4300);
+    this.bannerCopy = {el,bigEl,subEl,big,sub};
+    this.renderBanner();
+    // Keep the original animation and expiry when Settings changes language.
+    setTimeout(() => {
+      el.remove();
+      if (this.bannerCopy?.el === el) this.bannerCopy = null;
+    }, 4300);
   }
+
+  private renderBanner(): void {
+    const copy = this.bannerCopy;
+    if (!copy) return;
+    copy.bigEl.textContent = bannerText(copy.big);
+    const sub = bannerText(copy.sub);
+    copy.subEl.textContent = sub;
+    copy.subEl.hidden = !sub;
+  }
+
 }
 
 export class ChatLog {

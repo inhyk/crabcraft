@@ -571,7 +571,7 @@ export class Player {
     g.hud.floats.spawn(this.unit, `+${n} XP`, 'xp');
     g.hud.chat.system(t(`경험치 ${n}을 얻었습니다.`,`You gain ${n} experience.`));
     const targetLevel=levelForXp(this.xp);
-    if(targetLevel-this.level>10){this.restoreXp(this.xp);g.vfx.levelUp(this.unit);g.audio.sfx('sfx-levelup');g.hud.messages.banner(t(`레벨 ${this.level}`,`Level ${this.level}`),t('계속해서 성장하세요!','Keep growing!'),'level');}
+    if(targetLevel-this.level>10){this.restoreXp(this.xp);g.vfx.levelUp(this.unit);g.audio.sfx('sfx-levelup');g.hud.messages.banner(() => (t(`레벨 ${this.level}`,`Level ${this.level}`)),() => (t('계속해서 성장하세요!','Keep growing!')),'level');}
     else while (this.xp >= xpForLevel(this.unit.level+1)) this.levelUp();
   }
 
@@ -596,7 +596,7 @@ export class Player {
     g.vfx.levelUp(u);
     g.audio.sfx('sfx-levelup');
     u.express('happy', 2);
-    g.hud.messages.banner(t(`레벨 ${u.level}`,`Level ${u.level}`),t(`껍질이 더 단단해졌어요. 체력 ${oldMax} → ${u.maxHp}`,`Your shell hardens. Health ${oldMax} to ${u.maxHp}.`),'level');
+    g.hud.messages.banner(() => (t(`레벨 ${u.level}`,`Level ${u.level}`)),() => (t(`껍질이 더 단단해졌어요. 체력 ${oldMax} → ${u.maxHp}`,`Your shell hardens. Health ${oldMax} to ${u.maxHp}.`)),'level');
     g.hud.chat.system(t(`레벨 ${u.level}이 되었습니다!`,`Congratulations, you have reached level ${u.level}!`));
   }
 

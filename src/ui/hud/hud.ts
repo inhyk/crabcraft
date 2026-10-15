@@ -103,6 +103,7 @@ export class Hud {
     this.actionBar.refreshLanguage();
     this.castBar.refreshLanguage();
     this.messages.refreshLanguage();
+    this.game.journey?.refreshLanguage();
     this.hints.refreshLanguage();
     for(const boss of [this.game.boss,this.game.finalBoss,this.game.worldBoss])boss.refreshLanguage();
     this.skipHint.textContent=t('Space를 눌러 계속하기','Press Space to continue');
