@@ -447,7 +447,7 @@
 .credits-roll { position: absolute; right: 6vw; top: 0; bottom: 0; width: min(640px, 46vw); overflow: hidden; mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 86%, transparent 100%); }
 .credits-track { position: absolute; left: 0; right: 0; top: 100%; text-align: center; will-change: transform; }
 .credits-track section { margin-bottom: 64px; }
-.credits-track h1 { font-size: 56px; margin: 0 0 6px; }
+.credits-track h1 { font-size: 40px; margin: 0 0 6px; }
 .credits-track h2 { font-size: 22px; margin: 0 0 14px; letter-spacing: 0.14em; }
 .credits-track p { font: 18px/1.55 var(--font-body); color: #efe4c8; text-shadow: var(--text-shadow); margin: 0 0 8px; }
 .credits-track .em { font-style: italic; color: #ffe2a0; }
@@ -588,4 +588,35 @@
   .memory-discovery {left:16px;right:16px;top:max(260px,32%);max-height:max(150px,calc(100dvh - 430px));padding:14px 16px;}
   .memory-discovery .memory-title {font-size:24px;}
   .memory-body {font-size:16px;line-height:1.5;}
+}
+
+/* Credits remain readable when the ending is opened in a compact game window. */
+@media (max-width:900px), (max-height:600px) {
+  .credits-thanks { top:24px; }
+  .credits-thanks .cc-title { font-size:28px; line-height:1.15; }
+  .credits-thanks p { font-size:14px; line-height:1.45; }
+  .credits-track h1 { font-size:28px; line-height:1.25; }
+  .credits-track p { font-size:16px; }
+  .credits-end { bottom:48px; gap:8px; }
+  .credits-end .cc-btn { min-width:220px; }
+}
+@media (max-width:639px) {
+  .credits-thanks { left:24px; right:24px; max-width:none; }
+  .credits-thanks .cc-title { font-size:26px; }
+  .credits-thanks p { margin-top:10px; }
+  .credits-roll { left:24px; right:24px; width:auto; top:180px; bottom:250px; }
+  .credits-end { left:24px; right:24px; bottom:60px; }
+  .credits-end .cc-btn { width:100%; min-width:0; font-size:18px; padding-left:12px; padding-right:12px; }
+  .credits-skip { right:24px; bottom:20px; font-size:12px; }
+}
+@media (max-width:639px) and (max-height:600px) {
+  .credits-thanks { top:16px; }
+  .credits-thanks .cc-title { font-size:22px; }
+  .credits-thanks p { display:none; }
+  .credits-roll { top:88px; bottom:210px; }
+  .credits-track h1 { font-size:22px; }
+  .credits-track p { font-size:14px; }
+  .credits-end { bottom:44px; }
+  .credits-end .cc-btn { padding-top:8px; padding-bottom:8px; }
+  .credits-skip { bottom:12px; }
 }
