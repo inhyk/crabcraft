@@ -24,6 +24,7 @@
 ## 현재 후보의 남은 검사
 
 - 원격 끌어당김 잔류 결함은 `b569006`에서 수정했다. 기존 버전에서 실패하는 회귀 사례를 포함한 보스/전투/적/퀘스트 42개 검사가 통과했고 타입 검사와 프로덕션 빌드가 통과했다. `remote-push-unit-complete.log`, `remote-push-build-refined.log`.
+- 최신 소스의 방 8개·보스/전투/적/퀘스트 43개·엔진 4개, 총 55개 검사가 21:16 UTC에 모두 통과했다. `release-rooms-current.log`, `release-boss-current.log`, `release-engine-current.log`. 이들은 아래 실제 브라우저 검사를 대체하지 않는다.
 - **실제 두 클라이언트의 집중 이동 검사가 통과했다.** `candidate-b569006-movement.log`에서 짧은 힘은 0.16000000000000003m 이동 후 2초 이상 정지했고, 정상 길이 Undertow는 게스트를 약 7.41m 끌어당긴 뒤 2.4초 동안 위치가 유지됐다. 페이지 오류는 없었다. `tools/qa-remote-push.mjs`로 실행했다. 주입한 힘·보스 단계·생존 설정은 명시적 검사 fixture이며 자연스럽게 보스를 이긴 증거가 아니다.
 - 수정 전 동결 빌드의 실제 60분 검사는 20:13:11.296–21:13:11.301 UTC, 3600.005초 실행을 마쳤다. 두 연결 유지, 컨텍스트 유실 0, 468회 공격 완료, geometry/texture/program 461/125/274와 효과 풀 14개 유지, errors 없음. `combat-endurance-final.json`과 `combat-endurance-live.log`. 게스트가 -110.12m까지 밀린 알려진 결함은 그대로 관찰되었으므로 **이전 버전의 자원/연결 지속 검사**만 뒷받침하며 이동 정상 증거가 아니다.
 - 수정 후보 동결 빌드는 `tmp/qa/endurance-b569006`, 33개 HTML/JS/CSS SHA256은 `endurance-b569006-manifest.json`. 별도 미리보기 `http://127.0.0.1:5196/`에 준비했다. 이전 검사와 집중 이동 검사를 마친 뒤 수정 후보의 실제 60분 검사를 시작했다. 고유 출력 `candidate-b569006-endurance`, 준비 후 위치 편차 상한 0.1m. 아직 지속 검사 성공 결과는 없다.
