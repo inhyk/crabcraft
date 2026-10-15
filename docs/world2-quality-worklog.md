@@ -192,3 +192,10 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Game disposal releases all seven owned custom depth materials. Production build and whitespace checks pass. Ten-hour development remains active.
 
 - Published d19f97a as READY production deployment dpl_5BScWF8tbtsBTBvw6kKPsbFeg7tz. The complete frozen-scene shadow replay passed on the public stable URL: invisible shadow pixel difference 0, half-visibility darkening 44.19% of the full reference, all seven depth materials disposed, no console shader/page errors. seonn.dev/games/crabcraft HTTP 200.
+
+## Deployment source hygiene — 2026-10-15 14:59 UTC
+
+- Read the active Vercel CLI's ignore implementation: source uploads use .vercelignore/.nowignore, while .gitignore itself is merely excluded. Git-ignored local QA output was therefore still uploaded. The prior deploy transferred a 9 MB delta.
+- Queried the actual deployed source-file manifest (metadata only): 990 files, including 348 duplicate dist outputs, 69 tmp files and temporary Worker build output. Local env files were already absent; the public .env.production was retained.
+- Added .vercelignore to exclude local build/QA outputs, tools/tests/docs and screenshot working files. Required TypeScript build inputs, 315 public assets, 141 game source files, dev source and upstream license/notice remain available. A manifest comparison identifies 492 unnecessary files excluded; the source bundle before adding the ignore file contains 498 retained files.
+- Worktree whitespace checks pass. The remote build and next deployed manifest will verify the actual filtered upload, rather than assuming the predicted count. Ten-hour development remains active.
