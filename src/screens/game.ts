@@ -11,8 +11,8 @@ export default class GameScreen implements Screen {
     this.game = game;
     // Load in the background so the loading screen fades in right away.
     game.load().catch((err: unknown) => {
-      console.error(err);
       if (this.game !== game) return;
+      console.error(err);
       app.ui.append(
         h(
           'div',

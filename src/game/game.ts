@@ -112,6 +112,9 @@ export class Game {
   debug: DebugTools | null = null;
   loaded = false;
   alive = true;
+  private loading = false;
+  private resourcesReleased = false;
+  private loadingRigs = new Set<CrabRig>();
   cinematic = false;
   zone = '';
   musicOn = true;
@@ -153,6 +156,31 @@ export class Game {
   // ================================================================ loading
 
   async load(): Promise<void> {
+    if (!this.alive) return;
+    this.loading = true;
+    try {
+      await this.loadContent();
+    } catch (error) {
+      this.dispose();
+      throw error;
+    } finally {
+      this.loading = false;
+      if (!this.alive) this.releaseResources();
+    }
+  }
+
+  private async loadContent(): Promise<void> {
+    // Shared asset requests may also serve a newer game. Keep ownership of every
+    // completed rig until it joins a unit, and dispose late arrivals after cancellation.
+    const acquire = async (pending: Promise<CrabRig>): Promise<CrabRig> => {
+      const rig = await pending;
+      if (this.alive) this.loadingRigs.add(rig);
+      else rig.dispose();
+      return rig;
+    };
+    const loadCrab = (...args: Parameters<typeof createCrab>) => acquire(createCrab(...args));
+    const loadCrabX = (...args: Parameters<typeof createCrabX>) => acquire(createCrabX(...args));
+    const loadEnemy = (...args: Parameters<typeof createEnemyCrab>) => acquire(createEnemyCrab(...args));
     const app = this.app;
     const spec: CrabSpec = { ...DEFAULT_SPEC, ...(app.spec ?? {}) };
     if (!CLASSES[spec.classId]) spec.classId = 'warrior';
@@ -178,6 +206,7 @@ export class Game {
     this.world2 = new HiddenWorld(this);
     progress(0.56, 'Building Starhaven');
     await this.world2.buildSettlement();
+    if (!this.alive) return;
     this.engine.setView(this.scene, this.camera, { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } });
     this.vfx = new Vfx(this.scene);
     this.vfx.density = app.engine.quality === 'low' ? 0.55 : 1;
@@ -187,16 +216,18 @@ export class Game {
 
     progress(0.58, 'Waking the crabs of Clawhaven');
     const pois = this.world.pois;
-    const playerRig = await createCrab(spec);
+    const playerRig = await loadCrab(spec);
+    if (!this.alive) return;
     const pu = this.addUnit(spec.name || 'Pinchwick', 'player', 'player', playerRig);
     this.player = new Player(this, pu, CLASSES[spec.classId]);
 
     // Named NPCs
     const npcRigs = await Promise.all(
       NPCS.map((n) =>
-        createCrabX({ race: n.race, sex: n.sex, classId: n.classId, shell: n.shell, crest: n.crest, led: n.led, name: n.name }, n.extras),
+        loadCrabX({ race: n.race, sex: n.sex, classId: n.classId, shell: n.shell, crest: n.crest, led: n.led, name: n.name }, n.extras),
       ),
     );
+    if (!this.alive) return;
     NPCS.forEach((def, i) => {
       const poi = pois[def.poi];
       const u = this.addUnit(def.name, 'npc', 'friendly', npcRigs[i]);
@@ -223,7 +254,8 @@ export class Game {
         name: TOWNSFOLK_NAMES[i % TOWNSFOLK_NAMES.length],
       });
     });
-    const folkRigs = await Promise.all(folkSpecs.map((s) => createCrab(s)));
+    const folkRigs = await Promise.all(folkSpecs.map((s) => loadCrab(s)));
+    if (!this.alive) return;
     const folkPoints = town?.points.length ? town.points : [pois.spawn.position];
     folkSpecs.forEach((s, i) => {
       const u = this.addUnit(s.name, 'townsfolk', 'friendly', folkRigs[i]);
@@ -256,7 +288,8 @@ export class Game {
     if (scav) {
       for (let k = 0; k < Math.max(3, scav.points.length); k++) enemyJobs.push({ kind: 'scavenger', home: scav.points[k % scav.points.length], radius: Math.min(scav.radius, 4), pack: 100 + k });
     }
-    const enemyRigs = await Promise.all(enemyJobs.map((j) => createEnemyCrab(j.kind)));
+    const enemyRigs = await Promise.all(enemyJobs.map((j) => loadEnemy(j.kind)));
+    if (!this.alive) return;
     const packs = new Map<number, Enemy[]>();
     enemyJobs.forEach((j, i) => {
       const u = this.addUnit(ENEMY_STATS[j.kind].name, j.kind, 'hostile', enemyRigs[i]);
@@ -274,27 +307,32 @@ export class Game {
     // Boss, his adds, and the little crab inside.
     progress(0.84, 'Something stirs in the Iron Wreck');
     const [bossRig, freedRig, ...addRigs] = await Promise.all([
-      createEnemyCrab('corrodius'),
-      createCrab({ race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 1, led: 0, name: 'Little Red' }),
-      createEnemyCrab('scrapling'),
-      createEnemyCrab('scrapling'),
-      createEnemyCrab('scrapling'),
+      loadEnemy('corrodius'),
+      loadCrab({ race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 1, led: 0, name: 'Little Red' }),
+      loadEnemy('scrapling'),
+      loadEnemy('scrapling'),
+      loadEnemy('scrapling'),
     ]);
+    if (!this.alive) return;
     const bu = this.addUnit('Corrodius, the Rust Tyrant', 'boss', 'hostile', bossRig);
     const fu = this.addUnit('Little Red', 'freed', 'friendly', freedRig);
     fu.title = 'Free at last';
     this.boss = new Boss(this, bu, pois.bossArena, fu);
-    const abyssRig = await createCrab({ race: 'nightelf', sex: 'female', classId: 'mage', shell: 2, crest: 3, led: 2, name: 'Nereid' });
+    const abyssRig = await loadCrab({ race: 'nightelf', sex: 'female', classId: 'mage', shell: 2, crest: 3, led: 2, name: 'Nereid' });
+    if (!this.alive) return;
     abyssRig.root.scale.multiplyScalar(3.5);
     const abyssUnit = this.addUnit(BOSS_PROFILES.abyss.name, 'boss', 'hostile', abyssRig);
-    const pearlRig = await createCrab({ race: 'nightelf', sex: 'female', classId: 'priest', shell: 2, crest: 1, led: 2, name: 'Pearl' });
+    const pearlRig = await loadCrab({ race: 'nightelf', sex: 'female', classId: 'priest', shell: 2, crest: 1, led: 2, name: 'Pearl' });
+    if (!this.alive) return;
     const pearl = this.addUnit('Pearl', 'freed', 'friendly', pearlRig);
     pearl.title = '심해에서 돌아온 빛';
     this.finalBoss = new Boss(this, abyssUnit, pois.bossArena, pearl, BOSS_PROFILES.abyss);
-    const eclipseRig=await createCrab({race:'undead',sex:'female',classId:'priest',shell:3,crest:3,led:2,name:'Astra'});
+    const eclipseRig=await loadCrab({race:'undead',sex:'female',classId:'priest',shell:3,crest:3,led:2,name:'Astra'});
+    if (!this.alive) return;
     eclipseRig.root.scale.multiplyScalar(4.5);
     const eclipseUnit=this.addUnit(BOSS_PROFILES.eclipse.name,'boss','hostile',eclipseRig);
-    const starRig=await createCrab({race:'undead',sex:'female',classId:'priest',shell:2,crest:2,led:2,name:'Star'});
+    const starRig=await loadCrab({race:'undead',sex:'female',classId:'priest',shell:2,crest:2,led:2,name:'Star'});
+    if (!this.alive) return;
     const star=this.addUnit('돌아온 별빛','freed','friendly',starRig);
     this.worldBoss=new Boss(this,eclipseUnit,this.world2.arena,star,BOSS_PROFILES.eclipse);
     this.director = new CameraDirector(this);
@@ -413,6 +451,7 @@ export class Game {
   private addUnit(name: string, kind: UnitKind, reaction: Reaction, rig: CrabRig): Unit {
     // Shadows from the simplified body (the real crab rig offers it; see JumperRig.useShadowProxy).
     (rig as CrabRig & { useShadowProxy?: (on: boolean) => void }).useShadowProxy?.(true);
+    this.loadingRigs.delete(rig);
     const u = new Unit(name, kind, reaction, rig, createMotionController(rig));
     this.scene.add(rig.root);
     this.units.push(u);
@@ -1202,25 +1241,37 @@ export class Game {
   // ================================================================ teardown
 
   dispose(): void {
+    if (!this.alive) return;
     this.alive = false;
     this.offFrame?.();
     this.offAfter?.();
     this.engine.onResolutionChange = null;
+    this.hideLoading();
+    // A builder may still be filling its root. Release it once the current await
+    // finishes, without allowing the old game to touch the next screen's engine/UI.
+    this.scene.visible = false;
+    this.engine.canvas.style.filter = '';
+    this.engine.canvas.style.transition = '';
+    (window as unknown as { __ready?: boolean }).__ready = false;
+    if (!this.loading) this.releaseResources();
+  }
+
+  private releaseResources(): void {
+    if (this.resourcesReleased) return;
+    this.resourcesReleased = true;
     this.journey?.dispose();
     this.journey = null;
     this.multiplayer?.dispose();
     this.multiplayer = null;
     this.debug?.dispose();
     this.hud?.dispose();
-    this.hideLoading();
+    for (const rig of this.loadingRigs) rig.dispose();
+    this.loadingRigs.clear();
     for (const u of this.units) u.dispose();
     this.units = [];
     this.vfx?.dispose();
     this.objective?.dispose();
     this.world2?.dispose();
     this.world?.dispose();
-    this.engine.canvas.style.filter = '';
-    this.engine.canvas.style.transition = '';
-    (window as unknown as { __ready?: boolean }).__ready = false;
   }
 }
