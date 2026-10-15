@@ -99,6 +99,7 @@ export class Hud {
   }
 
   refreshLanguage(): void {
+    this.messages.refreshLanguage();
     this.hints.refreshLanguage();
     this.game.encounter.refreshWarning();
     this.skipHint.textContent=t('Space를 눌러 계속하기','Press Space to continue');
@@ -173,6 +174,7 @@ export class Hud {
   dispose(): void {
     this.actionBar.hideTip();
     this.chat.dispose();
+    this.messages.dispose();
     this.root.remove();
   }
 }

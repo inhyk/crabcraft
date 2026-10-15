@@ -297,3 +297,11 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 
 - Published a44b430 as READY deployment dpl_DEMKF6HKzn7B4JSMjzcvrQvcn5P9. The stable public replay passes all 30 collision routes and the real held-W exploration walk (three turns/1,298 detour frames), advances to explore-east, preserves the shore graph and rebuilds walkable guidance on re-entry. No page/console errors; hub page HTTP 200. At 16:21:08 UTC, approximately 3 hours 25 minutes have elapsed; ten-hour quality work remains active.
 - Next visual review: native western-memory capture shows its long story text crossing the left journey/right multiplayer panels. A direct DOM probe confirms text spans x247.59–1032.41 at 1280px; it is inside the viewport, so this is HUD overlap rather than text overflow. Capture tmp/qa/memory-banner-before.png and probe tmp/qa-memory-probe.mjs are local ignored evidence; no discovery-text layout change is included in this deployment.
+
+
+### Readable island discoveries — 2026-10-15 UTC
+
+- Replaced the long generic discovery banner with a dedicated bilingual story card, with a title, readable body, accessible close button, Escape dismissal and 12-second reading window. Live language changes preserve the story. Combat warnings take priority; chapter travel and HUD disposal clear it. Quest/level banners cannot overwrite the final discovery.
+- Responsive placement keeps the card clear of the minimap and action bar. Native desktop, compact and phone captures were inspected; this does not claim the entire phone HUD was redesigned.
+- tools/qa-star-memories.mjs passes genuine western/eastern/northern exploration events, the real quest reward button and 16 language/story/viewport cases at 1280×800, 1024×768, 718×492 and 390×844. Zero map/action overlap, horizontal text overflow or page/console errors. Actual settings language switch, click/Escape/timeout, warning priority and return-to-shore cleanup pass.
+- Initial QA iterations corrected an immediate Escape assertion to wait for the game frame, replaced a nonexistent ready-banner assumption with the actual reward/level event, and selected the existing Claim reward button. Final full replay passes. TypeScript/Vite build and whitespace checks pass. Public deployment follows; ten-hour quality work remains active.

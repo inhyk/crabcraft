@@ -8,6 +8,9 @@ export class Messages {
   private errors: HTMLElement;
   private warnEl: HTMLElement;
   private bannerEl: HTMLElement;
+  private discoveryEl: HTMLElement;
+  private discoveryCopy: (() => {title:string;body:string} | null) | null = null;
+  private discoveryTimer = 0;
   private lastError = '';
   private lastErrorAt = 0;
 
@@ -15,7 +18,8 @@ export class Messages {
     this.errors = h('div', { class: 'msg-errors' });
     this.warnEl = h('div', { class: 'msg-warn' });
     this.bannerEl = h('div');
-    this.el = h('div', { class: 'messages hud-keep', style: 'position:absolute;inset:0;pointer-events:none' }, this.bannerEl, this.errors, this.warnEl);
+    this.discoveryEl = h('section', {class:'memory-discovery',hidden:true,role:'status','aria-live':'polite','aria-atomic':'true'});
+    this.el = h('div', { class: 'messages hud-keep', style: 'position:absolute;inset:0;pointer-events:none' }, this.bannerEl, this.errors, this.warnEl, this.discoveryEl);
   }
 
   private push(el: HTMLElement, ms: number): void {
@@ -51,6 +55,40 @@ export class Messages {
     if(notice&&this.warnEl.firstElementChild!==notice)return;
     this.warnEl.replaceChildren();this.el.classList.remove('combat-warning');
   }
+
+  /** Longer discoveries get their own reading card, so quest-ready banners cannot replace them. */
+  discovery(copy: () => {title:string;body:string} | null): void {
+    this.discoveryCopy = copy;
+    this.renderDiscovery();
+    clearTimeout(this.discoveryTimer);
+    this.discoveryTimer = window.setTimeout(() => this.closeDiscovery(), 12000);
+  }
+
+  private renderDiscovery(): void {
+    const copy = this.discoveryCopy?.();
+    if (!copy) return;
+    this.discoveryEl.replaceChildren(
+      h('div', {class:'memory-heading'},
+        h('span', null, t('✧ 잊힌 섬의 기억','✧ Memories of the island')),
+        h('button', {type:'button',class:'memory-close','aria-label':t('발견한 이야기 닫기','Close discovery'),title:t('닫기 · Esc','Close · Esc'),onclick:()=>this.closeDiscovery()}, '×')),
+      h('h2', {class:'memory-title cc-title'}, copy.title),
+      h('p', {class:'memory-body'}, copy.body),
+    );
+    this.discoveryEl.hidden = false;
+    this.el.classList.add('discovering');
+  }
+
+  closeDiscovery(): boolean {
+    const wasOpen = !this.discoveryEl.hidden;
+    clearTimeout(this.discoveryTimer);
+    this.discoveryCopy = null;
+    this.discoveryEl.hidden = true;
+    this.el.classList.remove('discovering');
+    return wasOpen;
+  }
+
+  refreshLanguage(): void { this.renderDiscovery(); }
+  dispose(): void { this.closeDiscovery(); }
 
   /** Big gold text mid-screen: zone names, quest accepted/completed, level up. */
   banner(big: string, sub: string, kind: 'zone' | 'quest' | 'level' | 'boss' = 'quest'): void {

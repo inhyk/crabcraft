@@ -670,7 +670,7 @@ export class Game {
         this.player.interruptCast('Cancelled');
         this.player.cancelChannel();
       } else if (this.player.target) this.player.setTarget(null);
-      else this.toggleMenu();
+      else if (!hud.messages.closeDiscovery()) this.toggleMenu();
       return;
     }
     if (hud.menu.open) return;
@@ -953,13 +953,12 @@ export class Game {
     });
     ev.on('progress', ({ objective, value }) => {
       const txt = objective.count > 1 ? `${objective.label}: ${value}/${objective.count}` : `${objective.label}`;
-      this.hud.messages.info(txt);
       const memory=starMemory(objective.kind);
       if(memory){
-        this.hud.messages.banner(memory.title,memory.body,'quest');
+        this.hud.messages.discovery(()=>starMemory(objective.kind));
         this.hud.chat.system(`${memory.title} · ${memory.body}`);
         this.audio.sfx('sfx-quest-complete',{volume:.5});
-      }
+      } else this.hud.messages.info(txt);
       this.hud.tracker.update(this.quests, objective.id);
       if (this.hud.questLog.open) this.hud.questLog.render();
     });

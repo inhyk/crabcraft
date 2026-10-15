@@ -555,3 +555,33 @@
   .qlog-detail { min-height: 0; padding: 18px; }
   .menu { padding: 22px; }
 }
+
+
+/* Discovery stories stay readable between the side panels and outlive incidental banners. */
+.memory-discovery {
+  position:absolute; left:340px; right:340px; top:max(120px,18%); z-index:55;
+  max-width:760px; max-height:calc(100dvh - 300px); margin-inline:auto;
+  box-sizing:border-box; display:flex; flex-direction:column; gap:10px; padding:18px 22px;
+  border:1px solid #b9a274a8; border-radius:14px;
+  background:linear-gradient(135deg,#14252bf5,#211a32f5); box-shadow:0 14px 45px #0007,inset 0 1px #e4d5a31a;
+  pointer-events:auto; animation:warning-enter .3s ease-out both;
+}
+.memory-discovery[hidden] {display:none!important;}
+.memory-heading {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0;color:#d8bf88;font:600 11px/1.4 var(--font-body);letter-spacing:.06em;}
+.memory-close {flex-shrink:0;width:28px;height:28px;border:1px solid #b9a27466;border-radius:50%;background:#ffffff08;color:#e8d7b2;font:20px/1 var(--font-body);cursor:pointer;}
+.memory-close:hover {background:#cfb77c24;}
+.memory-close:focus-visible {outline:2px solid #bdf5ef;outline-offset:3px;}
+.memory-discovery .memory-title {margin:0;flex-shrink:0;font-size:clamp(22px,2vw,30px);line-height:1.2;overflow-wrap:anywhere;}
+.memory-body {min-height:0;overflow:auto;margin:0;color:#ede7d9;font:17px/1.65 var(--font-body);text-wrap:pretty;scrollbar-color:#a38e69 #19232b;}
+.messages.discovering .cc-banner:not(.boss),.messages.combat-warning .memory-discovery,.hud.boss-on .memory-discovery {visibility:hidden;}
+@media(min-width:640px) and (max-width:900px) {
+  .memory-discovery {left:18px;right:300px;top:158px;max-height:calc(100dvh - 290px);padding:12px 16px;gap:8px;}
+  .memory-discovery .memory-title {font-size:22px;}
+  .memory-body {font-size:14px;line-height:1.5;}
+  .memory-heading {font-size:10px;}
+}
+@media(max-width:639px) {
+  .memory-discovery {left:16px;right:16px;top:max(260px,32%);max-height:max(150px,calc(100dvh - 430px));padding:14px 16px;}
+  .memory-discovery .memory-title {font-size:24px;}
+  .memory-body {font-size:16px;line-height:1.5;}
+}
