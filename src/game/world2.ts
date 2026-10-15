@@ -17,11 +17,7 @@ import {StarSea} from './starSea';
 import {StarWind} from './starWind';
 import {NavHints} from './nav';
 import {StarAmbience} from './starAmbience';
-
-function naturalHeight(x:number,z:number){
-  const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
-  return 3+Math.sin(x*.08)*Math.cos(z*.06)*1.8+Math.max(0,r-.65)*12-coast*21;
-}
+import {buildStarHeights,starSurfaceHeight} from './world2Height';
 
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
@@ -35,6 +31,7 @@ export class HiddenWorld {
   private originalCollision: Game['world']['resolveCollision'];
   private originalRay: Game['world']['raycastSolid'];
   private groundTexture:THREE.DataTexture;
+  private groundHeights=buildStarHeights();
   private rotations: THREE.Object3D[] = [];
   private sky: StarSky;
   private sea: StarSea;
@@ -180,13 +177,7 @@ export class HiddenWorld {
     return 'The Forgotten Star';
   }
   height(x:number,z:number) {
-    if(Math.hypot(x,z+75)<24 || Math.abs(x)<9&&z>-100&&z<105 || Math.abs(x)<54&&z>3&&z<100)return 3;
-    let y=naturalHeight(x,z);
-    for(const kind of ['explore-west','explore-east'] as const){
-      const p=STAR_OBJECTIVES[kind]!,d=Math.hypot(x-p[0],z-p[1]);
-      if(d<13)y=THREE.MathUtils.lerp(naturalHeight(...p),y,THREE.MathUtils.smoothstep(d,8,13));
-    }
-    return y;
+    return starSurfaceHeight(this.groundHeights,x,z);
   }
 
   enter(authority=true) {
