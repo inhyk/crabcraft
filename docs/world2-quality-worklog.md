@@ -43,4 +43,10 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Multiplayer room controls, invitations, messages, connection errors and emotes now switch live between Korean and English. The chosen room mode and personal party are marked with pressed states; guest mode buttons are disabled and explain host authority. Offline party/mode controls are disabled while solo dancing still works.
 - Localized combat reach/resource errors, interrupted channels and experience/level-up messages.
 - Two-browser replay passed actual bilingual mode/party buttons, selected state, host permissions, PvP damage, friendly-fire protection, guest lighthouse control, both chapter transitions and moving NPC/townsfolk synchronization with no page errors. Added tools/qa-starhaven-multiplayer.mjs for replay.
-- 25 game/protocol tests and production build pass. Follow-up multiplayer UI polish is not deployed yet.
+- 25 game/protocol tests and production build pass. Multiplayer UI polish deployed READY as dpl_FzKHG9fVP19gUDstP5oR1kjLCZ5a (commit 0ff7e0d).
+
+## Repeated travel stability — 2026-10-15 13:40 UTC
+
+- Ran 24 complete World I → World II → World I journeys in a real GPU browser. Geometry count stayed 439 and texture count stayed 144 from the warmed baseline to the last cycle; no growing GPU allocation was observed in this scenario.
+- Every cycle retained the morning/off lighthouse state and in-progress World I quest count. No page errors occurred. This checks repeated travel, not ten-hour stability.
+- Retained the replay in tools/qa-world-travel-soak.mjs.
