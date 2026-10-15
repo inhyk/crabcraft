@@ -35,7 +35,7 @@ try{
  assert.equal(await page.evaluate(()=>window.app.current.game.player.target===window.app.current.game.worldBoss.unit),true,'native targeting must select the actual boss');
  const read=()=>page.evaluate(()=>{const g=window.app.current.game,p=g.player,u=p.unit,b=g.worldBoss,m=b.mech;return {time:g.time,god:g.god,alive:u.alive,hp:u.hp,maxHp:u.maxHp,absorb:u.absorb,resource:p.resource,cast:p.cast?.ability.id,channel:!!p.channel,gcd:p.gcdEnd,abilities:p.cls.abilities.map(a=>({id:a.id,cost:a.cost,cd:p.cooldownLeft(a),cast:a.castTime})),target:p.target?.id,bossTarget:p.target===b.unit,p:[u.pos.x,u.pos.z],yaw:u.yaw,b:[b.unit.pos.x,b.unit.pos.z],bossHp:b.unit.hp,bossMax:b.unit.maxHp,phase:b.phase,state:b.state,arena:[b.arena.position.x,b.arena.position.z],mech:m?{id:b.mechIndex,kind:m.kind,at:[m.at.x,m.at.z],left:m.dur-m.t}:null,ending:{active:g.ending.active,started:g.ending.started,mode:g.ending.mode,dancers:g.ending.dancers.length},cleared:g.journey.trueCleared,adds:g.units.filter(v=>v.hostile&&v.alive&&!v.hidden&&v!==b.unit&&Math.hypot(v.pos.x-u.pos.x,v.pos.z-u.pos.z)-v.radius<=6).length};});
  const start=await read();assert.equal(start.god,false);console.log('START',JSON.stringify({...start,fullHealth}));
- let mechId=null,goal=null,lastLog=-Infinity,lastAbility=-Infinity,won=false;
+ let mechId=null,goal=null,kiting=false,lastLog=-Infinity,lastAbility=-Infinity,won=false;
  const deadline=Date.now()+600000;
  while(Date.now()<deadline){
   const s=await read();assert.equal(s.god,false);assert.equal(s.alive,true,'pilot died; inspect tactics before changing game balance');
@@ -43,6 +43,7 @@ try{
   if(s.time-lastLog>=15){console.log('COMBAT',JSON.stringify({...s,abilityPresses:inputs.length,goal}));lastLog=s.time;}
   const distance=Math.hypot(s.p[0]-s.b[0],s.p[1]-s.b[1]);
   if(s.mech){
+   kiting=false;
    if(mechId!==s.mech.id){
     mechId=s.mech.id;
     if(s.mech.kind==='nova'||s.mech.kind==='slam')goal=tangent(s,s.mech.at,s.mech.kind==='nova'?7.4:4.4);
@@ -54,11 +55,14 @@ try{
    }
   }else{
    mechId=null;
-   if(distance<11.5){
+   // Complete a safe cast. Start kiting below 10m, then create breathing room
+   // to 14m before another cast, rather than interrupting at every tiny approach.
+   if(!s.cast&&(distance<10||(kiting&&distance<14))){
+    kiting=true;
     const a=Math.atan2(s.p[1]-s.arena[1],s.p[0]-s.arena[0]);
     const options=[-.65,.65].map(v=>[s.arena[0]+14*Math.cos(a+v),s.arena[1]+14*Math.sin(a+v)]);
     goal=options.sort((a,b)=>Math.hypot(b[0]-s.b[0],b[1]-s.b[1])-Math.hypot(a[0]-s.b[0],a[1]-s.b[1]))[0];
-   }else goal=null;
+   }else {goal=null;kiting=false;}
   }
   const next=goal?toward(s,goal):[];await keys(next);
   if(!s.cast&&!s.channel&&s.time>=s.gcd&&s.time-lastAbility>.15){
