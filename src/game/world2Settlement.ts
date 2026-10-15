@@ -68,6 +68,8 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   root.add(batch.build());
   const dressing=new StaticBatch(props,'starhaven-market');
   const villageProps=new StaticBatch(village,'starhaven-gardens');
+  const residents=Object.values(STAR_TOWN);
+  const residentClearance=(x:number,z:number)=>Math.min(...residents.map(([px,pz])=>Math.hypot(x-px,z-pz)-1.8));
   const put=(name:string,x:number,z:number,yaw=0,scale=1,dy=0)=>{if(props.has(name))dressing.add(name,trs(x,height(x,z)+dy,z,yaw,scale));};
   for(const [i,x,z] of [[0,-12,48],[1,12,48],[2,-12,70],[3,12,70]]) {
     put('Stall_Empty',x,z,i%2?Math.PI:0);put('Barrel_Apples',x+2,z+1);put('FarmCrate_Apple',x-.5,z,0,1,.82);put('FarmCrate_Carrot',x+.5,z,0,1,.82);put('Crate_Wooden',x-2,z+1);
@@ -75,7 +77,11 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   // Asset names vary between kit versions: select actual named pieces, not invisible placeholders.
   const names=[...props.pieces.keys()];
   const barrel=names.find(n=>/barrel/i.test(n)),crate=names.find(n=>/crate/i.test(n)),bench=names.find(n=>/bench/i.test(n));
-  for(let i=0;i<18;i++){const x=(i%2?1:-1)*(19+i%3*3),z=30+Math.floor(i/2)*6;if(barrel)put(barrel,x,z,i*.7,.85);if(crate&&i%3===0)put(crate,x+1.4,z+.7,0,.8);}
+  for(let i=0;i<18;i++){
+    const x=(i%2?1:-1)*(19+i%3*3),z=30+Math.floor(i/2)*6;
+    if(barrel&&residentClearance(x,z)>1.2)put(barrel,x,z,i*.7,.85);
+    if(crate&&i%3===0&&residentClearance(x+1.4,z+.7)>1.1)put(crate,x+1.4,z+.7,0,.8);
+  }
   if(bench)for(const [x,z] of [[-8,55],[8,55],[-8,61],[8,61]])put(bench,x,z,x<0?Math.PI/2:-Math.PI/2);
   if(village.has('Prop_Wagon'))for(const x of [-15,15])villageProps.add('Prop_Wagon',trs(x,3,88,x>0?.4:-.4));
   for(const lot of lots)for(let j=-2;j<=2;j++)if(village.has('Prop_WoodenFence_Single'))villageProps.add('Prop_WoodenFence_Single',trs(lot.x+j*2,3,lot.z-7,0));
@@ -106,7 +112,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       plantRadius.set(name,radius);
     }
     const rect=(ax:number,bx:number,az:number,bz:number)=>Math.hypot(Math.max(ax-x,0,x-bx),Math.max(az-z,0,z-bz));
-    return Math.min(rect(-4.9,4.9,-72.9,92.9),rect(-26.9,26.9,51.1,58.9),Math.max(0,starTrailDistance(x,z)-1.15))>radius*scale;
+    return Math.min(rect(-4.9,4.9,-72.9,92.9),rect(-26.9,26.9,51.1,58.9),Math.max(0,starTrailDistance(x,z)-1.15),residentClearance(x,z))>radius*scale;
   };
   for(let i=0;i<340;i++) {
     const x=(rand(i+100)-.5)*215,z=(rand(i+900)-.5)*255+10;

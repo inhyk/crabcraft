@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {StarLandmarks} from './starLandmarks';
 import {StarObservatory} from './starObservatory';
 import {StarMoths} from './starMoths';
+import {StarVillageSigns} from './starVillageSigns';
 import type { Collision } from '../world/collision';
 
 /** Small animated details give the settlement a shared rhythm without simulating extra actors. */
@@ -15,8 +16,10 @@ export class StarVillageLife {
   private observatory:StarObservatory;
   private waves:THREE.Mesh[]=[];
   private moths:StarMoths;
+  private signs:StarVillageSigns;
   constructor(height:(x:number,z:number)=>number,collision:Collision){
     this.root.name='starhaven-life';
+    this.signs=new StarVillageSigns(height,collision);this.root.add(this.signs.root);
     this.moths=new StarMoths(height);this.root.add(this.moths.root);
     this.landmarks=new StarLandmarks(height,collision);this.root.add(this.landmarks.root);
     const stone=new THREE.MeshStandardMaterial({color:'#b4ad9f',roughness:.8});
@@ -39,7 +42,7 @@ export class StarVillageLife {
     this.observatory=new StarObservatory(height,collision);this.root.add(this.observatory.root);
   }
   update(time:number){
-    this.landmarks.update(time);this.observatory.update(time);this.moths.update(time);
+    this.landmarks.update(time);this.observatory.update(time);this.moths.update(time);this.signs.update(time);
     this.flags.uniforms.time.value=time;this.star.rotation.y=time*.35;this.star.position.y=6+Math.sin(time*1.4)*.12;
     this.water.rotation.z=Math.sin(time*.1)*.03;this.motes.position.y=Math.sin(time*.35)*.3;
     this.waves.forEach((wave,i)=>{const p=(time*.25+i/3)%1;wave.scale.setScalar(.5+p*2.4);(wave.material as THREE.MeshBasicMaterial).opacity=(1-p)*.35;});
