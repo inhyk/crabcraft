@@ -98,8 +98,9 @@ export class BossJourney {
       else if (this.game.quests.status.q3 === 'done') {
         this.game.beaconLit = true;
         this.game.world.setBeaconLit(true);
-        this.game.player.unit.blessingUntil = Infinity;
       }
+      const legacyBlessing = !this.rustCleared && !this.abyssCleared && !this.trueCleared;
+      this.game.player.unit.blessingUntil = this.game.quests.status.q3 === 'done' && (typeof data.moonwater === 'boolean' ? data.moonwater : legacyBlessing) ? Infinity : 0;
       if (this.abyssCleared && typeof data.beacon!=='boolean') this.game.world.setMood(2);
       for (const [boss, cleared] of [[this.game.boss, this.rustCleared], [this.game.finalBoss, this.abyssCleared], [this.game.worldBoss, this.trueCleared]] as const) {
         if (cleared) { boss.state = 'dead'; boss.unit.alive = false; boss.unit.hidden = true; boss.unit.rig.root.visible = false; }
@@ -109,7 +110,7 @@ export class BossJourney {
   }
 
   save() {
-    localStorageSet(this.key, JSON.stringify({ beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
+    localStorageSet(this.key, JSON.stringify({ moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
       quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked }));
   }
 

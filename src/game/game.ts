@@ -1123,8 +1123,9 @@ export class Game {
     if (u.kind === 'boss') {
       const boss = u.ctrl as Boss;
       if(boss===this.worldBoss)this.quests.bump('eclipse-boss');
-      this.journey?.onBossDefeated(boss);
+      // Save the consumed personal blessing with the boss victory, before any reload.
       this.player.unit.blessingUntil = 0;
+      this.journey?.onBossDefeated(boss);
       setTimeout(() => {
         if (!this.alive) return;
         if (boss === this.boss) this.quests.bump('boss');
