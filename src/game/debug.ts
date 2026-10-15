@@ -1,4 +1,4 @@
-// ?debug=1 only: F8 god mode, F9 complete the current objective, F10 teleport to the next
+// 13570 or ?debug=1: F8 god mode, F9 complete the current objective, F10 teleport to the next
 // objective, an fps / draw-call readout, and window.cc for the playtest script.
 import * as THREE from 'three';
 import type { Game } from './game';
@@ -6,6 +6,7 @@ import { QUESTS } from './quests';
 import { C } from './vfx/vfx';
 import { xpForLevel } from './progression';
 import { h } from '../ui/dom';
+import { t } from '../i18n';
 
 export class DebugTools {
   private acc = 0;
@@ -18,14 +19,8 @@ export class DebugTools {
   constructor(private readonly game: Game) {
     window.addEventListener('keydown', this.onKey, true);
     game.hud.debugEl.classList.toggle('hidden',!this.enabled);
-    const button=(label:string,fn:()=>void)=>h('button',{type:'button',class:'cc-btn small',onclick:fn},label);
-    this.panel=h('details',{class:'boss-journey creator-tools',hidden:!this.enabled,open:true},h('summary',null,'🛠 제작자 모드 · 13570'),
-      h('p',null,'13570으로 열기 · F8 무적 · F9 목표 완료 · F10 목표 이동'),
-      button('무적 켜기 / 끄기',()=>this.toggleGod()),
-      button('레벨 +1',()=>this.addLevels(1)),button('레벨 +10',()=>this.addLevels(10)),
-      button('월드 2로 이동',()=>{if(!game.multiplayer?.battle.enterWorld2())game.world2.enter();}),
-      button('현재 목표 완료',()=>this.completeObjective()),button('목표로 이동',()=>this.teleport()),
-      button('제작자 화면 닫기',()=>{this.panel.hidden=true;}));
+    this.panel=h('details',{class:'boss-journey creator-tools',hidden:!this.enabled,open:true});
+    this.refreshLanguage();
     game.hud.sidePanels.append(this.panel);
     (window as unknown as { cc: unknown }).cc = {
       game,
@@ -35,6 +30,17 @@ export class DebugTools {
     };
   }
 
+  refreshLanguage(): void {
+    const button=(ko:string,en:string,fn:()=>void)=>h('button',{type:'button',class:'cc-btn small',onclick:fn},t(ko,en));
+    this.panel.replaceChildren(h('summary',null,t('🛠 제작자 모드 · 13570','🛠 Creator mode · 13570')),
+      h('p',null,t('13570으로 열기 · F8 무적 · F9 목표 완료 · F10 목표 이동','Enter 13570 · F8 god mode · F9 complete objective · F10 teleport')),
+      button('무적 켜기 / 끄기','Toggle god mode',()=>this.toggleGod()),
+      button('레벨 +1','Level +1',()=>this.addLevels(1)),button('레벨 +10','Level +10',()=>this.addLevels(10)),
+      button('월드 2로 이동','Travel to World II',()=>{if(!this.game.multiplayer?.battle.enterWorld2())this.game.world2.enter();}),
+      button('현재 목표 완료','Complete current objective',()=>this.completeObjective()),button('목표로 이동','Teleport to objective',()=>this.teleport()),
+      button('제작자 화면 닫기','Close creator tools',()=>{this.panel.hidden=true;}));
+  }
+
   private readonly onKey = (e: KeyboardEvent): void => {
     const target=e.target as HTMLElement;
     if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||target.matches('input,textarea,select')||target.isContentEditable)return;
@@ -42,22 +48,12 @@ export class DebugTools {
     this.lastKey=performance.now();
     if(/^\d$/.test(e.key)){
       this.code+=e.key;if(!'13570'.startsWith(this.code))this.code=e.key==='1'?'1':'';
-      if(this.code==='13570'){this.code='';this.enabled=true;this.panel.hidden=false;(this.panel as HTMLDetailsElement).open=true;this.game.hud.debugEl.classList.remove('hidden');this.game.hud.messages.banner('제작자 모드', '월드 이동 · 레벨 조절 · 테스트 도구', 'level');}
+      if(this.code==='13570'){this.code='';this.enabled=true;this.panel.hidden=false;(this.panel as HTMLDetailsElement).open=true;this.game.hud.debugEl.classList.remove('hidden');this.game.hud.messages.banner(t('제작자 모드','Creator mode'), t('월드 이동 · 레벨 조절 · 테스트 도구','World travel · Level controls · Testing tools'), 'level');}
     }else this.code='';
     if(!this.enabled)return;
     if (e.code === 'F8' || e.code === 'F9' || e.code === 'F10') {
       e.preventDefault();
-      if (e.repeat) return;
-      const target=e.target as HTMLElement;
-    if(e.repeat||e.ctrlKey||e.metaKey||e.altKey||target.matches('input,textarea,select')||target.isContentEditable)return;
-    if(performance.now()-this.lastKey>5000)this.code='';
-    this.lastKey=performance.now();
-    if(/^\d$/.test(e.key)){
-      this.code+=e.key;if(!'13570'.startsWith(this.code))this.code=e.key==='1'?'1':'';
-      if(this.code==='13570'){this.code='';this.enabled=true;this.panel.hidden=false;(this.panel as HTMLDetailsElement).open=true;this.game.hud.debugEl.classList.remove('hidden');this.game.hud.messages.banner('제작자 모드', '월드 이동 · 레벨 조절 · 테스트 도구', 'level');}
-    }else this.code='';
-    if(!this.enabled)return;
-    if (e.code === 'F8') this.toggleGod();
+      if (e.code === 'F8') this.toggleGod();
       if (e.code === 'F9') this.completeObjective();
       if (e.code === 'F10') this.teleport();
     }
@@ -68,7 +64,7 @@ export class DebugTools {
   toggleGod(): void {
     const g = this.game;
     g.god = !g.god;
-    g.hud.messages.info(g.god ? 'God mode ON' : 'God mode OFF');
+    g.hud.messages.info(g.god ? t('무적 모드 켜짐','God mode ON') : t('무적 모드 꺼짐','God mode OFF'));
   }
 
   completeObjective(): void {
@@ -95,10 +91,11 @@ export class DebugTools {
         g.lightBeacon();
         break;
       case 'eclipse-boss':
-        if(g.multiplayer?.battle.authority===false){g.hud.messages.info('보스 테스트는 방장이 진행해요.');return;}
+        if(g.multiplayer?.battle.authority===false){g.hud.messages.info(t('보스 테스트는 방장이 진행해요.','Only the host can advance boss tests.'));return;}
         if(g.worldBoss.state==='dormant')g.worldBoss.wake();else g.worldBoss.debugAdvance();
         break;
       case 'boss':
+        if(g.multiplayer?.battle.authority===false){g.hud.messages.info(t('보스 테스트는 방장이 진행해요.','Only the host can advance boss tests.'));return;}
         if (g.boss.state === 'dormant') g.boss.wake();
         else g.boss.debugAdvance();
         break;

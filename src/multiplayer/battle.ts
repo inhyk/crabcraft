@@ -253,6 +253,8 @@ export class BattleSync {
       for (const s of world.bosses) (s.id === 'b3' ? g.boss : s.id === 'b20' ? g.worldBoss : g.finalBoss).applyNetwork(s);
       if (g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; }
     } finally { this.applying = false; }
+    // Shared environment satisfies each player's active beacon objective, including late accepts.
+    if(g.world2.chapter===1&&g.beaconLit)g.quests.bump('beacon');
   }
   update(dt: number) {
     if (!this.active) return;

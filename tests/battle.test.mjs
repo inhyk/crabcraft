@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {BattleSync} from '../tmp/test-modules/battle.js';
 import {Combat} from '../tmp/test-modules/combat.js';
+import {QuestLog} from '../tmp/test-modules/quests.js';
 
 function unit(kind='scrapling') {
  const u={kind,name:kind,reaction:kind==='scrapling'||kind==='boss'?'hostile':'friendly',pos:new THREE.Vector3(),hp:100,maxHp:100,level:3,alive:true,hidden:false,invulnerable:false,targetable:true,
@@ -17,7 +18,7 @@ function game() {
   networkState(){return {id,state:this.state,phase:this.phase,enraged:this.enraged,mech:null}},applyNetwork(s){Object.assign(this,s)},resumeAuthority(){},wake(){this.state='waking'}};return b};
  const noop=()=>{};
  let mood=0,beacon=false;
- const g={world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),encounter:{engaged:false},world2:{chapter:1,enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
+ const g={quests:new QuestLog(),world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),encounter:{engaged:false},world2:{chapter:1,enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
   player:{unit:p,setTarget:noop,gainRage:noop,onDamaged:noop,onWardHit:noop},hud:{floats:{spawn:noop},damageFlash:noop,messages:{info:noop}},
   follow:{shake:noop},audio:{sfx:noop},vfx:{deathPoof:noop,smoke:noop,stunStars:noop},onUnitDied(u){if(u.kind==='scrapling')this.rewards++}};
  g.combat=new Combat(g);return g;
@@ -117,4 +118,17 @@ test('a stale guest night request cannot override an extinguished beacon or chan
  assert.deepEqual(a.world.getEnvironment(),{mood:3,beacon:false});assert.deepEqual(b.world.getEnvironment(),{mood:3,beacon:false});
  a.world.setBeaconLit(true);a.world.setMood(0);a.world2.enter();aa.update(.1);flush();b.world.setMood(1);flush();
  assert.deepEqual(a.world.getEnvironment(),{mood:0,beacon:true});assert.deepEqual(b.world.getEnvironment(),{mood:0,beacon:true});
+});
+
+
+test('shared lit beacon completes the guest quest once and never credits it in World II',()=>{
+ const {a,b,aa,flush}=pair();let completed=0;
+ b.quests.events.on('completed',id=>{if(id==='q3')completed++});
+ b.quests.accept('q3');b.quests.bump('kill-scavenger',3);
+ a.world.setBeaconLit(true);aa.publish();flush();
+ assert.equal(b.quests.status.q3,'done');assert.equal(completed,1);
+ aa.publish();flush();assert.equal(completed,1);
+ b.quests=new QuestLog();b.quests.accept('q3');b.quests.bump('kill-scavenger',3);
+ a.world2.chapter=2;aa.publish();flush();
+ assert.equal(b.quests.status.q3,'active');assert.equal(b.quests.progress.get('q3-beacon')??0,0);
 });

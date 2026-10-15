@@ -957,6 +957,7 @@ export class Game {
       const def = QUESTS[id];
       this.audio.sfx('sfx-quest-accept');
       this.hud.chat.quest(t(`퀘스트 수락: ${def.title}`,`Quest accepted: ${def.title}`));
+      if(id==='q3'&&this.world2.chapter===1&&this.beaconLit)this.quests.bump('beacon');
       if(id==='w7'&&this.journey?.trueCleared)this.quests.bump('eclipse-boss');
       if (id === 'q4' && this.journey?.rustCleared) this.quests.bump('boss');
       if (id === 'q4') this.hud.messages.banner(def.title, t('새 퀘스트: 철의 난파선에서 코로디우스를 쓰러뜨리세요.','New quest: defeat Corrodius on the Iron Wreck'), 'quest');
@@ -1009,7 +1010,9 @@ export class Game {
   }
 
   lightBeacon(): void {
-    if (this.beaconLit) return;
+    if(this.world2.chapter!==1)return;
+    if(this.multiplayer?.battle.requestLighthouse(true))return;
+    if (this.beaconLit) {this.quests.bump('beacon');return;}
     this.beaconLit = true;
     this.world.setMood(1);
     this.world.setBeaconLit(true);
