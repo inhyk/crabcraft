@@ -110,7 +110,12 @@ export class Boss {
       }
       this.clearMech(); this.remoteMechId=-1; return;
     }
-    if (m.id === this.remoteMechId) return;
+    if (m.id === this.remoteMechId && this.mech) {
+      // Followers do not simulate attacks. Keep the latest checkpoint time for host election
+      // without recreating the visible warning/telegraphs on every room snapshot.
+      this.mech.t=Math.max(0,this.mech.dur-m.left);
+      return;
+    }
     this.clearMech(); this.remoteMechId=m.id;
     const at=new THREE.Vector3(...m.at),fx:Fx[]=[];
     const duration=Math.max(0.05,m.left);

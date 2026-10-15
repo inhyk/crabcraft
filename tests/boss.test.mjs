@@ -116,3 +116,24 @@ test('host and network follower use matching attack colours and impact effects f
   assert.deepEqual(g.effects,h.effects,checkpoint.mech.kind+' resolved effects');
  }
 });
+
+
+test('a new host continues each latest attack checkpoint without recreating warnings or delaying damage',()=>{
+ for(const [profile,phase,index] of [[BOSS_PROFILES.rust,1,0],[BOSS_PROFILES.rust,1,1],[BOSS_PROFILES.rust,2,0],[BOSS_PROFILES.abyss,2,0],[BOSS_PROFILES.eclipse,2,0]]){
+ const host=setup(profile),guest=setup(profile);guest.game.enemies=[];
+ host.boss.state='fight';host.boss.phase=phase;host.boss.mechIndex=index;host.boss.startMech();
+ const id=profile.level===20?'b20':profile.level===10?'b10':'b3';
+ guest.boss.applyNetwork(host.boss.networkState(id));
+ const pose=guest.boss.mech,fx=pose.fx,warnings=guest.warnings.length;
+ host.boss.updateMech(host.boss.mech.dur*.75);
+ const checkpoint=host.boss.networkState(id);guest.boss.applyNetwork(checkpoint);
+ assert.equal(guest.boss.mech,pose);assert.equal(guest.boss.mech.fx,fx);assert.equal(guest.warnings.length,warnings);
+ assert.ok(Math.abs(guest.boss.mech.dur-guest.boss.mech.t-checkpoint.mech.left)<1e-9);
+ guest.player.pos.copy(pose.at);
+ if(pose.kind==='eclipse')guest.player.pos.x+=8;
+ if(pose.kind==='spray'){guest.player.pos.x+=Math.sin(pose.yaw)*3;guest.player.pos.z+=Math.cos(pose.yaw)*3;}
+ guest.boss.resumeAuthority();
+ guest.boss.updateMech(checkpoint.mech.left-.01);assert.equal(guest.damage.length,0,pose.kind);
+ guest.boss.updateMech(.02);assert.equal(guest.damage.length,1,pose.kind);assert.equal(guest.boss.mech,null);
+ }
+});

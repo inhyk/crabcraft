@@ -91,7 +91,7 @@ export class BattleSync {
       for (const e of this.game.enemies) e.resumeAuthority();
       for (const b of [this.game.boss, this.game.finalBoss, this.game.worldBoss]) b.resumeAuthority();
       this.goals.clear(); this.elapsed = 1;
-      this.game.hud.messages.info('친구가 나가서 내가 전투를 이어받았어요.');
+      this.game.hud.messages.info(t('친구가 나가서 내가 전투를 이어받았어요.','Your friend left. You are now hosting the battle.'));
     }
   }
   /** null means continue the regular local damage pipeline. */
