@@ -6,6 +6,10 @@ The `screenshots/` gallery reuses original gameplay images from `docs/media/`; t
 
 This fork extends [kubony/crabcraft](https://github.com/kubony/crabcraft). Original game and art: kubony and the contributors credited below. Robot: KingKong Robotics Jumper. Original Apache-2.0 LICENSE and NOTICE are retained.
 
+The boss journey now continues to level 10. At level 3, challenge Corrodius on the Iron Wreck. After the first victory, ordinary enemies scale on respawn and every five kills earns a patrol XP bonus. At level 10, challenge Nereid, a separate blue-lit boss with a crystal crown, three combat phases and a telegraphed, avoidable abyss nova. Open **보스 여정** to see unlock conditions and travel to a challenge. The first story ending now continues into this journey; the village celebration is available after both victories. Character XP, quests and boss victories save locally by character identity. `pnpm test:boss` checks progression gates, phases, reset and nova avoidance.
+
+The multiplayer panel and quest tracker share a scrolling stack below the minimap, leaving the map visible when chat expands.
+
 Open **멀티플레이** from the title, create your crab, then **방 만들기**. Share the invite link, or ask a friend to enter the six-character room code. Up to eight players share their appearance, movement, actions and chat. Quests, NPCs, enemies and combat remain individual; this is shared exploration, not synchronized co-op combat. Robot Mode remains single-player. Rooms are not accounts; anyone with the code may join. Chat is transient and not stored in a database.
 
 Internet hosting uses Vercel for the game and `server/cloudflare/worker.ts` for one Cloudflare Durable Object per room, with WebSocket hibernation, connection attachments, bounded messages, origin validation and rate limits. Room metadata expires after 24 hours when idle. The production endpoint is in `.env.production` (public configuration, no credentials). The Mac does not need to stay on for the hosted edition.

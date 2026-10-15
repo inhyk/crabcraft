@@ -46,7 +46,7 @@ export class CameraDirector {
   update(dt: number): void {
     const g = this.game;
     const f = g.follow;
-    const b = g.boss;
+    const b = g.encounter;
     const bu = b.unit;
     const p = g.player.unit;
 
@@ -116,7 +116,7 @@ export class CameraDirector {
     const n = u ?? (this.linger > 0 ? this.lastTalk : null);
     if (n && this.takingControl()) this.released = true;
     const p = g.player.unit;
-    if (!n || this.released || g.boss.engaged || !p.alive) return null;
+    if (!n || this.released || g.encounter.engaged || !p.alive) return null;
 
     let ux = n.pos.x - p.pos.x;
     let uz = n.pos.z - p.pos.z;

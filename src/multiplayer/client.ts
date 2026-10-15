@@ -51,7 +51,7 @@ export class Multiplayer {
     // Opening a form clears held movement keys. Typing never controls the crab.
     this.root.addEventListener('focusin', () => window.dispatchEvent(new Event('blur')));
     this.root.addEventListener('keydown', e => e.stopPropagation());
-    game.app.ui.append(this.root);
+    game.hud.sidePanels.prepend(this.root);
     game.player.unit.onAction = action => this.send({ type: 'action', action });
     this.updateUi();
     const room = new URLSearchParams(location.search).get('room');
@@ -75,7 +75,7 @@ export class Multiplayer {
   private openSocket(type: 'create' | 'join', code: string) {
     this.status.textContent = '연결 중…';
     const url = new URL(import.meta.env.VITE_MULTIPLAYER_URL || '/multiplayer', location.href);
-    url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.protocol = url.protocol === 'https:' || location.protocol === 'https:' ? 'wss:' : 'ws:';
     url.search = ''; url.hash = '';
     url.searchParams.set('mode', type);
     if (code) url.searchParams.set('room', code);

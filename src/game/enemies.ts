@@ -59,7 +59,7 @@ export class Enemy {
     readonly home: THREE.Vector3,
     readonly wanderRadius: number,
   ) {
-    this.stats = ENEMY_STATS[kind];
+    this.stats = { ...ENEMY_STATS[kind], dmg: [...ENEMY_STATS[kind].dmg] };
     unit.ctrl = this;
     unit.level = this.stats.level;
     unit.maxHp = unit.hp = this.stats.hp;
@@ -109,6 +109,7 @@ export class Enemy {
   }
 
   respawnAt(x: number, z: number): void {
+    this.scaleForJourney();
     const u = this.unit;
     u.alive = true;
     u.hidden = false;
@@ -132,6 +133,7 @@ export class Enemy {
     const now = g.time;
     const p = g.player.unit;
     if (this.state === 'gone') return;
+    if (this.state === 'idle' && u.hp >= u.maxHp && u.distTo(p) > 20) this.scaleForJourney();
 
     if (this.state === 'dead') {
       const t = now - this.deadAt;
@@ -295,6 +297,19 @@ export class Enemy {
       if (p.alive && u.gapTo(p) < 1.6) g.combat.damage(u, p, rand(8, 11));
       this.nextSwing = g.time + 0.8;
     }
+  }
+
+  private scaleForJourney(): void {
+    if (this.isAdd || !this.game.journey?.rustCleared) return;
+    const base = ENEMY_STATS[this.kind];
+    const level = Math.max(base.level, this.game.player.level - (this.kind === 'scrapling' ? 1 : 0));
+    if (this.stats.level === level) return;
+    const scale = 1 + 0.12 * (level - base.level);
+    this.stats.level = this.unit.level = level;
+    this.stats.hp = Math.round(base.hp * scale);
+    this.stats.xp = base.xp + 12 * (level - base.level);
+    this.stats.dmg = [base.dmg[0] * scale, base.dmg[1] * scale];
+    this.unit.maxHp = this.unit.hp = this.stats.hp;
   }
 
   private canRespawnUnseen(): boolean {

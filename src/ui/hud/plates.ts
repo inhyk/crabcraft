@@ -73,7 +73,7 @@ export class Nameplates {
         p.key = key;
         p.name.className = `name ${u.reaction}`;
         p.name.replaceChildren();
-        if (u.hostile) p.name.append(h('span', { class: 'lvl' }, u.kind === 'boss' ? '??' : String(u.level)));
+        if (u.hostile) p.name.append(h('span', { class: 'lvl' }, String(u.level)));
         p.name.append(u.name);
         p.title.textContent = u.title && !u.hostile ? `<${u.title}>` : '';
         p.title.style.display = p.title.textContent ? '' : 'none';

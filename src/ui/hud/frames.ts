@@ -116,7 +116,7 @@ export class UnitFrame {
     nameRow.classList.toggle('long', u.name.length > 20);
     this.tagEl.textContent = u.kind === 'boss' ? 'Boss' : '';
     this.levelEl.classList.toggle('skull', u.kind === 'boss');
-    this.levelEl.textContent = u.kind === 'boss' ? '??' : String(u.level);
+    this.levelEl.textContent = String(u.level);
     this.res.el.style.display = this.kind === 'player' ? '' : 'none';
     this.hp.last = -1;
     this.auraKey = '';
@@ -201,6 +201,9 @@ export class BossFrame {
 
   show(u: Unit): void {
     this.unit = u;
+    this.el.querySelector('.bf-name')!.textContent = u.name;
+    this.el.querySelector('.bf-sub')!.textContent = `LEVEL ${u.level} · ${u.title}`;
+    this.el.classList.toggle('abyss-boss', u.level === 10);
     this.last = -1;
     this.el.classList.add('on');
   }
@@ -224,9 +227,9 @@ export class BossFrame {
       this.lag.style.transform = `scaleX(${f})`;
       this.label.textContent = u.alive ? `${Math.ceil(f * 100)}%` : 'Defeated';
     }
-    const phase = g.boss.phase;
-    const txt = !u.alive ? 'The Rust Tide ebbs' : phase === 3 ? 'Phase 3: Enraged' : `Phase ${phase}`;
+    const phase = g.encounter.phase;
+    const txt = !u.alive ? '왕관 획득 · 보스 처치' : phase === 3 ? 'Phase 3: Enraged' : `Phase ${phase}`;
     if (this.phase.textContent !== txt) this.phase.textContent = txt;
-    this.el.classList.toggle('enraged', g.boss.enraged && u.alive);
+    this.el.classList.toggle('enraged', g.encounter.enraged && u.alive);
   }
 }

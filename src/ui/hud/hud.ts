@@ -30,6 +30,7 @@ export class Hud {
   readonly chat: ChatLog;
   readonly menu: GameMenu;
   readonly hints: ControlHints;
+  readonly sidePanels: HTMLElement;
   private dmgFlash: HTMLElement;
   private lowHp: HTMLElement;
   private letterTop: HTMLElement;
@@ -53,6 +54,9 @@ export class Hud {
     this.floats = new FloatingText();
     this.bubbles = new Bubbles();
     this.minimap = new Minimap(game);
+    this.sidePanels = h('div', { class: 'hud-side-panels' }, this.tracker.el);
+    this.sidePanels.addEventListener('wheel', e => e.stopPropagation());
+    this.minimap.el.append(this.sidePanels);
     this.messages = new Messages();
     this.chat = new ChatLog();
     this.menu = new GameMenu(game);
@@ -76,7 +80,6 @@ export class Hud {
       this.targetFrame.el,
       this.bossFrame.el,
       this.minimap.el,
-      this.tracker.el,
       this.chat.el,
       this.castBar.el,
       this.prompt.el,

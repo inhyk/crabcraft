@@ -471,3 +471,15 @@
   .dlg-head { padding: 12px 18px 8px; }
   .dlg-portrait { width: 80px; height: 80px; }
 }
+
+/* The final encounter carries its own cold palette. */
+.bf.abyss-boss .bf-name{background:linear-gradient(#e7fdff,#7adfff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 25px #28bce34d}
+.bf.abyss-boss .bf-bar>.fill{background:linear-gradient(#72e9ff,#136caa 55%,#103e69)}
+.bf.abyss-boss .bf-sub{color:#9bd8e9}
+
+/* Map stays above a separately scrollable stack: chat never covers the map. */
+.mm-ring{flex-shrink:0}
+.hud-side-panels{position:relative;align-self:flex-end;display:flex;flex-direction:column;gap:12px;width:300px;max-width:calc(100vw - 44px);margin-top:22px;max-height:max(80px,calc(100dvh - 370px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;pointer-events:auto;padding:0 2px 4px}
+.hud-side-panels>.qt{position:relative;top:auto;right:auto;width:100%;box-sizing:border-box;padding:8px 10px;text-align:right;flex-shrink:0}
+.hud-side-panels>.mp-panel{flex-shrink:0}
+@media(max-width:700px){.hud-side-panels{width:245px}}

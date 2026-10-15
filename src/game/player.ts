@@ -16,8 +16,8 @@ const JUMP_TO = 1.56;
 const JUMP_RATE = 1.15;
 
 export const GCD = 1.0;
-export const LEVEL_XP = [0, 300, 900];
-export const MAX_LEVEL = 3;
+import { LEVEL_XP, MAX_LEVEL } from './progression';
+export { LEVEL_XP, MAX_LEVEL } from './progression';
 const WALK_SPEED = 5;
 const MELEE_GAP = 1.5;
 const RANGED_AUTO = 20;
@@ -555,6 +555,14 @@ export class Player {
     g.hud.floats.spawn(this.unit, `+${n} XP`, 'xp');
     g.hud.chat.system(`You gain ${n} experience.`);
     while (this.unit.level < MAX_LEVEL && this.xp >= LEVEL_XP[this.unit.level]) this.levelUp();
+  }
+
+  restoreXp(xp: number): void {
+    this.xp = Math.max(0, Math.min(LEVEL_XP[MAX_LEVEL - 1], xp));
+    this.unit.level = 1;
+    while (this.unit.level < MAX_LEVEL && this.xp >= LEVEL_XP[this.unit.level]) this.unit.level++;
+    this.unit.maxHp = this.unit.hp = Math.round(this.baseMaxHp * (1 + 0.15 * (this.level - 1)));
+    if (!this.isRage) this.maxResource = this.resource = 120 + 20 * (this.level - 1);
   }
 
   private levelUp(): void {

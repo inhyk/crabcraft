@@ -17,6 +17,8 @@ import { h, art } from '../ui/dom';
 import { Hud } from '../ui/hud/hud';
 import type { QuestMark } from '../ui/hud/plates';
 import { Boss } from './boss';
+import { BossJourney } from './bossJourney';
+import { BOSS_PROFILES } from './progression';
 import { Combat } from './combat';
 import { DebugTools } from './debug';
 import { CameraDirector } from './director';
@@ -92,6 +94,12 @@ export class Game {
   director!: CameraDirector;
   player!: Player;
   boss!: Boss;
+  finalBoss!: Boss;
+  journey: BossJourney | null = null;
+
+  get encounter(): Boss {
+    return this.finalBoss && this.finalBoss.state !== 'dormant' && this.finalBoss.state !== 'dead' ? this.finalBoss : this.boss;
+  }
   objective!: ObjectiveMarker;
   nav!: NavHints;
   /** Next waypoint of the quest hint (debug and playtest read it). */
@@ -120,7 +128,7 @@ export class Game {
   private loadingEl: HTMLElement | null = null;
   private cogMisses = 0;
   private robotConfirmUntil = 0;
-  private beaconLit = false;
+  beaconLit = false;
   private readyFlag = false;
   multiplayer: Multiplayer | null = null;
 
@@ -274,7 +282,15 @@ export class Game {
     const fu = this.addUnit('Little Red', 'freed', 'friendly', freedRig);
     fu.title = 'Free at last';
     this.boss = new Boss(this, bu, pois.bossArena, fu);
+    const abyssRig = await createCrab({ race: 'nightelf', sex: 'female', classId: 'mage', shell: 2, crest: 3, led: 2, name: 'Nereid' });
+    abyssRig.root.scale.multiplyScalar(3.5);
+    const abyssUnit = this.addUnit(BOSS_PROFILES.abyss.name, 'boss', 'hostile', abyssRig);
+    const pearlRig = await createCrab({ race: 'nightelf', sex: 'female', classId: 'priest', shell: 2, crest: 1, led: 2, name: 'Pearl' });
+    const pearl = this.addUnit('Pearl', 'freed', 'friendly', pearlRig);
+    pearl.title = '심해에서 돌아온 빛';
+    this.finalBoss = new Boss(this, abyssUnit, pois.bossArena, pearl, BOSS_PROFILES.abyss);
     this.director = new CameraDirector(this);
+    this.director.bossSee.apply(abyssRig.root);
     // His armour thins where it covers the player's crab, the player's claws where they cross the
     // face of the NPC it talks to (both get their own copies of the shared crab materials).
     this.director.bossSee.apply(bossRig.root);
@@ -380,6 +396,7 @@ export class Game {
         hudRoot.style.opacity = '';
       }, 900);
     }, 700);
+    this.journey = new BossJourney(this);
     this.intro();
     this.multiplayer = new Multiplayer(this);
   }
@@ -484,6 +501,8 @@ export class Game {
       this.player.update(dt);
       for (const e of this.enemies) e.update(dt);
       this.boss.update(dt);
+      this.finalBoss.update(dt);
+      this.journey?.update(dt);
       for (const n of this.npcs) n.update(dt);
       for (const t of this.townsfolk) t.update(dt);
       this.separate();
@@ -816,7 +835,10 @@ export class Game {
     const giverOfNext = this.npcById(def.turnIn ?? 'brinebeard');
     this.quests.complete(id);
     if (id === 'q4') {
-      void this.ending.start();
+      this.hud.dialogue.close();
+      this.journey!.root.open = true;
+      this.hud.messages.info('첫 보스의 여정 완료! 해안 순찰로 10레벨에 도전하세요.');
+      this.journey?.save();
       return;
     }
     // Chain straight into the next offer from the same crab, like the old games.
@@ -849,6 +871,7 @@ export class Game {
       const def = QUESTS[id];
       this.audio.sfx('sfx-quest-accept');
       this.hud.chat.quest(`Quest accepted: ${def.title}`);
+      if (id === 'q4' && this.journey?.rustCleared) this.quests.bump('boss');
       if (id === 'q4') this.hud.messages.banner(def.title, 'New quest: defeat Corrodius on the Iron Wreck', 'quest');
       else this.hud.messages.banner('Quest Accepted', def.title, 'quest');
       this.hud.tracker.update(this.quests);
@@ -895,7 +918,7 @@ export class Game {
     setTimeout(() => {
       if (!this.alive) return;
       this.world.setMood(1);
-      this.boss.wake();
+      if (!this.journey?.rustCleared) this.boss.wake();
       this.audio.sfx('sfx-boss-roar');
       this.follow.shake(0.3, 1.2);
       this.hud.messages.warn('Corrodius stirs on the Iron Wreck!');
@@ -963,7 +986,7 @@ export class Game {
     if (u.kind === 'scrapling' || u.kind === 'scavenger') {
       const e = u.ctrl as Enemy;
       if (byPlayer) {
-        this.player.gainXp(e.stats.xp);
+        if (!e.isAdd) { this.player.gainXp(e.stats.xp); this.journey?.onKill(); }
         if (u.kind === 'scrapling') {
           this.quests.bump('kill-scrapling');
           this.tryLootCog(u);
@@ -973,11 +996,14 @@ export class Game {
       for (const m of e.pack) if (m !== e && m.unit.alive) m.aggro(false);
     }
     if (u.kind === 'boss') {
+      const boss = u.ctrl as Boss;
+      this.journey?.onBossDefeated(boss);
       this.player.unit.blessingUntil = 0;
       setTimeout(() => {
         if (!this.alive) return;
-        this.quests.bump('boss');
-        this.hud.messages.banner('Victory', 'Corrodius, the Rust Tyrant, has fallen', 'boss');
+        if (boss === this.boss) this.quests.bump('boss');
+        this.hud.messages.banner('VICTORY · 왕관 획득', boss.profile.name, 'boss');
+        this.vfx.levelUp(this.player.unit);
       }, 1800);
       setTimeout(() => this.alive && this.hud.bossFrame.hide(), 5000);
     }
@@ -1027,6 +1053,7 @@ export class Game {
       p.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
       this.follow.yaw = p.yaw + Math.PI;
       this.boss.reset();
+      this.finalBoss.reset();
       this.engine.canvas.style.transition = '';
       this.engine.canvas.style.filter = '';
       this.hud.showDeath(false);
@@ -1089,7 +1116,7 @@ export class Game {
     if (!this.musicOn || this.ending.active) return;
     let want = 'music-town';
     const now = this.time;
-    if (this.boss.engaged || (this.zone === 'The Iron Wreck' && this.quests.status.q4 === 'active' && this.boss.state !== 'dead' && this.boss.state !== 'dying')) {
+    if (this.encounter.engaged || (this.zone === 'The Iron Wreck' && this.quests.status.q4 === 'active' && this.boss.state !== 'dead' && this.boss.state !== 'dying')) {
       want = 'music-boss';
     } else if (this.player.inCombat && this.zone !== 'Clawhaven') {
       this.combatMusicUntil = now + 6;
@@ -1108,6 +1135,8 @@ export class Game {
     this.offFrame?.();
     this.offAfter?.();
     this.engine.onResolutionChange = null;
+    this.journey?.dispose();
+    this.journey = null;
     this.multiplayer?.dispose();
     this.multiplayer = null;
     this.debug?.dispose();

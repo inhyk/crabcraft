@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "shot": "node tools/shot.mjs",
     "multiplayer": "vite preview --host 0.0.0.0 --port 5174 --strictPort",
-    "test:multiplayer": "node --experimental-strip-types --test server/rooms.test.mjs"
+    "test:multiplayer": "node --experimental-strip-types --test server/rooms.test.mjs",
+    "test:boss": "node tests/run-boss.mjs"
   },
   "dependencies": {
     "@mujoco/mujoco": "3.11.0",
