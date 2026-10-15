@@ -79,6 +79,7 @@ export class QuestLogPanel {
 
   render(): void {
     const log = this.game.quests;
+    const listScroll = this.listEl.scrollTop;
     const known = QUEST_ORDER.filter((id) => log.inChapter(id) && log.status[id] !== 'locked' && log.status[id] !== 'available');
     if (!this.selected || !known.includes(this.selected)) this.selected = known.find((id) => log.status[id] !== 'done') ?? known[0] ?? null;
     this.listEl.replaceChildren(h('h3', null, t('퀘스트 기록','Quest Log')));
@@ -93,6 +94,8 @@ export class QuestLogPanel {
       });
       this.listEl.append(item);
     }
+    // Selecting a quest redraws the list; keep its place in compact scrollable layouts.
+    this.listEl.scrollTop = listScroll;
     this.detailEl.replaceChildren();
     if (!this.selected) return;
     const def = QUESTS[this.selected];

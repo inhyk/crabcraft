@@ -521,3 +521,37 @@
   .hud.boss-on .msg-warn { left: 18px; right: 300px; top: 57%; }
   .msg-warn > div { font-size: 20px; }
 }
+
+/* Interactive reading windows must cover the map, portraits and creator tools. */
+.dlg, .qlog { z-index: 70; }
+.game-menu-root { z-index: 80; }
+.dlg-head, .dlg-buttons { flex-shrink: 0; }
+.dlg-body { min-height: 0; overscroll-behavior: contain; }
+.qlog-list { overflow-y: auto; overscroll-behavior: contain; }
+.qlog-detail { min-width: 0; overscroll-behavior: contain; }
+@media (max-width: 900px), (max-height: 760px) {
+  .qlog { box-sizing: border-box; width: min(760px, calc(100vw - 32px)); height: min(520px, calc(100dvh - 32px)); }
+  .qlog-list { box-sizing: border-box; width: 34%; flex-shrink: 0; padding: 22px 14px; }
+  .qlog-detail { padding: 26px 22px; }
+  .dlg { box-sizing: border-box; top: 50%; max-height: calc(100dvh - 32px); }
+  .menu { box-sizing: border-box; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
+  .menu .row { flex-wrap: wrap; }
+  .menu .seg { flex-wrap: wrap; }
+  .menu .seg button { width: auto; margin: 0; }
+  .menu input[type='range'] { max-width: 100%; }
+}
+@media (max-width: 560px) {
+  .dlg { left: 16px; width: calc(100vw - 32px); }
+  .dlg-head { gap: 12px; padding: 16px 18px; }
+  .dlg-portrait { width: 60px; height: 60px; }
+  .dlg-name { font-size: 18px; padding-right: 20px; }
+  .dlg-title { font-size: 13px; }
+  .dlg-body { padding: 14px 18px 6px; }
+  .dlg-buttons { padding: 12px 14px 16px; gap: 8px; }
+  .dlg-buttons .cc-btn { font-size: 14px; padding: 9px 8px; }
+  .qlog { flex-direction: column; }
+  .qlog-list { width: 100%; max-height: 32%; border-right: 0; border-bottom: 1px solid rgba(110,70,20,.35); padding: 16px 18px; }
+  .qlog-list h3 { padding-right: 26px; }
+  .qlog-detail { min-height: 0; padding: 18px; }
+  .menu { padding: 22px; }
+}

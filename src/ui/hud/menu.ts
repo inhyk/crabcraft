@@ -35,7 +35,7 @@ export class GameMenu {
 
   constructor(private readonly game: Game) {
     this.panel = h('div', { class: 'menu cc-panel hud-i' });
-    this.el = h('div', { class: 'hidden', style: 'position:absolute;inset:0;pointer-events:auto' }, h('div', { class: 'menu-back', onclick: () => this.close() }), this.panel);
+    this.el = h('div', { class: 'game-menu-root hidden', style: 'position:absolute;inset:0;pointer-events:auto' }, h('div', { class: 'menu-back', onclick: () => this.close() }), this.panel);
   }
 
   private btn(label: string, fn: () => void, ghost = false): HTMLElement {
