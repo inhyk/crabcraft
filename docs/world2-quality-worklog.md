@@ -180,3 +180,5 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Extended the real quest-tracking replay: interposed near crystal opacity 0, interposed long-view crystal at 14.097 units opacity 0, target ahead opacity 1, off-center target opacity 0.654. Inspected the resulting GPU capture with the shell and trail unobscured.
 - Actual F-key collection still completes crystal IV. Bilingual tracking buttons, separate chapter pins, changing objectives and save/reload also pass, with no page errors. Production build and whitespace checks pass.
 - Ten-hour development remains active.
+
+- Published cf43fda as READY deployment dpl_Eey6TqyPbEGrbucgZUpywDNtP3jb. The entire tracking/save/collection replay passed on the public stable game URL, including near and distant intervening crystals at opacity 0, ahead opacity 1, side opacity 0.653 and actual F collection. No page errors; seonn.dev/games/crabcraft HTTP 200.
