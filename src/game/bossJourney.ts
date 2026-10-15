@@ -76,6 +76,7 @@ export class BossJourney {
           if (Number.isInteger(n) && n >= 0 && n <= o.count) this.game.quests.progress.set(o.id, n);
         }
       }
+      this.game.quests.restoreTracking(data.trackedQuests);
       if (typeof data.beacon==='boolean'){this.game.beaconLit=data.beacon;this.game.world.setBeaconLit(data.beacon);this.game.world.setMood(data.beacon?1:data.mood===3?3:0,true);}
       else if (this.game.quests.status.q3 === 'done') {
         this.game.beaconLit = true;
@@ -92,7 +93,7 @@ export class BossJourney {
 
   save() {
     localStorageSet(this.key, JSON.stringify({ beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
-      quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress) }));
+      quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked }));
   }
 
   onKill() {

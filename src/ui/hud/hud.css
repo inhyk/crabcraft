@@ -482,4 +482,8 @@
 .hud-side-panels{position:relative;align-self:flex-end;display:flex;flex-direction:column;gap:12px;width:300px;max-width:calc(100vw - 44px);margin-top:22px;max-height:max(80px,calc(100dvh - 370px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;pointer-events:auto;padding:0 2px 4px}
 .hud-side-panels>.qt{position:relative;top:auto;right:auto;width:100%;box-sizing:border-box;padding:8px 10px;text-align:right;flex-shrink:0}
 .hud-side-panels>.mp-panel{flex-shrink:0}
+.qt-q.tracked{border-right:2px solid #ddb65d;padding-right:7px;background:linear-gradient(270deg,#cfae4814,transparent)}
+.qlog-track{margin-top:12px;white-space:normal;text-align:left}
+.qlog-track[aria-pressed="true"]{border-color:#c5a551;background:#584b2c;color:#fff0bc}
+.qlog-track-hint{font-size:13px!important;opacity:.75;margin-top:6px!important}
 @media(max-width:700px){.hud-side-panels{width:245px}}

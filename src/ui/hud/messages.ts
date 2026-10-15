@@ -1,6 +1,7 @@
 // Centre-screen text (red errors, yellow quest progress, orange boss warnings, big banners) and the
 // chat log in the bottom-left corner.
 import { h } from '../dom';
+import {t} from '../../i18n';
 
 export class Messages {
   readonly el: HTMLElement;
@@ -79,13 +80,13 @@ export class ChatLog {
     this.add('quest', text);
   }
   say(name: string, text: string): void {
-    this.add('say', h('b', null, `${name} says: `), text);
+    this.add('say', h('b', null, t(`${name}: `,`${name} says: `)), text);
   }
   yell(name: string, text: string): void {
-    this.add('yell', h('b', null, `${name} yells: `), text);
+    this.add('yell', h('b', null, t(`${name}의 외침: `,`${name} yells: `)), text);
   }
   whisper(name: string, text: string): void {
-    this.add('whisper', `${name} whispers: ${text}`);
+    this.add('whisper', t(`${name}의 귓속말: ${text}`,`${name} whispers: ${text}`));
   }
 
   dispose(): void {

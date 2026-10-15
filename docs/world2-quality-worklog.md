@@ -58,3 +58,13 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Removed an obsolete stepping-stone layer overlapping the settlement road; checked the corrected sanctuary view in a GPU browser.
 - Production build, 25 game/protocol tests and full seven-quest GPU journey passed. The journey includes reward persistence, both automatic portals, morning preservation and the 16-dancer true ending; no page errors. Added tools/qa-star-landmarks.mjs for path checks and views.
 - Ten-hour work remains active; this is a publishable intermediate milestone.
+
+## Personal navigation and camera clearance — 2026-10-15 13:56 UTC
+
+- Added a real tracking control to the quest log. The chosen active/ready quest directs the minimap and golden navigation marker, highlights in the tracker and persists separately for each world. Completed choices safely fall back; malformed saved IDs are ignored.
+- All natural decorative crystals now avoid trails, discovery circles and the combat arena. Added physical/camera collision to the 63 retained crystals instead of letting the lens pass through opaque geometry.
+- Quest collectibles close to the camera fade without affecting interaction. GPU replay reproduced the foreground obstruction, measured opacity 0.345 at 5.28 units, then successfully collected the same crystal with F. Removed per-frame quest-list flattening for each node.
+- Strengthened trail sampling to reject displacements above 0.05 units; every trail centerline passed, as did sight collision through all 63 decorative crystals.
+- 27 game/protocol tests pass. Real bilingual tracking-button replay passed selection, changing objectives, save/reload and separate World I/II choices. Two-browser multiplayer replay passed PvP, party protection, morning toggle, portals and resident movement with no page errors.
+- Audit follow-up: enemy migration should reconstruct scaled damage/respawn stats from the mirrored level without healing an injured enemy; guest shore return should explicitly restore its LED appearance. These need direct regression coverage in the next milestone.
+- Ten-hour development remains active; no ten-hour completion claim.

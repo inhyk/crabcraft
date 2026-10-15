@@ -24,7 +24,8 @@ export class QuestTracker {
   update(log: QuestLog, flashId?: string): void {
     const active = log.active();
     this.el.querySelector('.qt-head')!.textContent=t('퀘스트','Quests');
-    const key = language()+active.map((id) => `${id}:${log.status[id]}:${QUESTS[id].objectives.map((o) => log.value(o)).join('.')}`).join('|');
+    const tracked = log.trackedQuest;
+    const key = language()+tracked+active.map((id) => `${id}:${log.status[id]}:${QUESTS[id].objectives.map((o) => log.value(o)).join('.')}`).join('|');
     if (key === this.key && !flashId) return;
     this.key = key;
     this.list.replaceChildren();
@@ -33,7 +34,7 @@ export class QuestTracker {
       const def = QUESTS[id];
       const isNew = !this.seen.has(id);
       this.seen.add(id);
-      const q = h('div', { class: `qt-q hud-i${isNew ? ' new' : ''}`, 'data-q': id }, h('div', { class: 'qt-title' }, def.title));
+      const q = h('div', { class: `qt-q hud-i${isNew ? ' new' : ''}${tracked === id ? ' tracked' : ''}`, 'data-q': id }, h('div', { class: 'qt-title' }, `${tracked === id ? '◆ ' : ''}${def.title}`));
       if (log.status[id] === 'ready') {
         q.append(h('div', { class: 'qt-ready' }, def.readyHint));
       } else {
@@ -99,9 +100,20 @@ export class QuestLogPanel {
     const ul = h('ul', { class: 'dlg-obj' });
     for (const o of def.objectives) {
       const v = log.value(o);
-      ul.append(h('li', null, o.count > 1 ? `${o.label}: ${v}/${o.count}` : `${o.label}${v >= o.count ? ' (done)' : ''}`));
+      ul.append(h('li', null, o.count > 1 ? `${o.label}: ${v}/${o.count}` : `${o.label}${v >= o.count ? t(' (완료)',' (done)') : ''}`));
     }
     this.detailEl.append(ul);
+    if (['active', 'ready'].includes(log.status[this.selected])) {
+      const tracked = log.trackedQuest === this.selected;
+      const button = h('button', { class:'cc-btn qlog-track', 'aria-pressed':String(tracked), onclick:()=>{
+        if (!this.selected || !log.track(this.selected)) return;
+        this.game.hud.tracker.update(log);
+        this.game.journey?.save();
+        this.game.audio.sfx('sfx-click', {volume:.5});
+        this.render();
+      } }, tracked ? t('◆ 이 퀘스트 길 안내 중','◆ Tracking this quest') : t('◇ 이 퀘스트 길 안내','◇ Track this quest'));
+      this.detailEl.append(button,h('p',{class:'qlog-track-hint'},t('선택하면 미니맵과 금빛 길잡이가 이 목표를 가리켜요.','The minimap and golden guide will point to this quest.')));
+    }
     if (log.status[this.selected] === 'ready') this.detailEl.append(h('p', { style: 'margin-top:10px;font-style:italic' }, def.readyHint));
     this.detailEl.append(h('div', { class: 'dlg-sec' }, t('이야기','Story')));
     for (const para of def.offer) this.detailEl.append(h('p', null, para));

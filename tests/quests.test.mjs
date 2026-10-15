@@ -31,3 +31,22 @@ test('language changes preserve objective identity and active progress in both w
  setQuestLanguage('en');assert.match(QUESTS.w3.offer.join(' '),/hold F/);assert.equal(q.value(QUESTS.w3.objectives[0]),1);assert.deepEqual(shape(),before);
  setQuestLanguage('ko');assert.deepEqual(shape(),before);assert.equal(QUESTS.q1.objectives[1].label,'녹슨 톱니 모으기');assert.match(QUESTS.q2.objectives[0].label,/전달/);assert.equal(q.value(QUESTS.q1.objectives[1]),2);
 });
+
+test('a personal quest choice guides its remaining objectives and turn-in, then falls back after completion',()=>{
+ const q=new QuestLog();q.setChapter(2);q.accept('w1');q.accept('w5');
+ assert.equal(q.current().quest,'w1');assert.equal(q.track('w5'),true);
+ assert.equal(q.current().objective.kind,'explore-west');q.bump('explore-west');
+ assert.equal(q.current().objective.kind,'explore-east');q.bump('explore-east');q.bump('explore-north');
+ assert.equal(q.current().quest,'w5');assert.equal(q.current().step,'turnin');
+ q.complete('w5');assert.equal(q.trackedQuest,null);assert.equal(q.current().quest,'w1');
+ assert.equal(q.track('w5'),false);assert.equal(q.track('w7'),false);
+});
+
+test('quest choices persist separately by world and reject invalid or cross-world saved values',()=>{
+ const q=new QuestLog();q.accept('q1');q.track('q1');q.setChapter(2);q.accept('w2');q.accept('w5');q.track('w5');
+ assert.equal(q.track('q1'),false);assert.equal(q.current().quest,'w5');
+ q.setChapter(1);assert.equal(q.current().quest,'q1');q.setChapter(2);assert.equal(q.current().quest,'w5');
+ const restored=new QuestLog();Object.assign(restored.status,q.status);restored.restoreTracking(JSON.parse(JSON.stringify(q.tracked)));restored.setChapter(2);
+ assert.equal(restored.current().quest,'w5');restored.setChapter(1);assert.equal(restored.current().quest,'q1');
+ const malformed=new QuestLog();malformed.restoreTracking({1:'w5',2:'constructor'});assert.deepEqual(malformed.tracked,{});
+});

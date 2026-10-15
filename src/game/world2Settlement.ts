@@ -20,7 +20,7 @@ export const STAR_TRAILS: [number,number][][] = [
   [[0,24],[18,20],[40,6],[65,12],[80,-20],[80,-40]],
   [[0,15],[0,0],[25,-15],[14,-31],[0,-45],[0,-48]],
 ];
-function trailDistance(x:number,z:number){
+export function starTrailDistance(x:number,z:number){
   let best=Infinity;
   for(const trail of STAR_TRAILS)for(let i=1;i<trail.length;i++){
     const [ax,az]=trail[i-1],[bx,bz]=trail[i],dx=bx-ax,dz=bz-az;
@@ -28,6 +28,9 @@ function trailDistance(x:number,z:number){
     best=Math.min(best,Math.hypot(x-ax-u*dx,z-az-u*dz));
   }
   return best;
+}
+export function nearStarObjective(x:number,z:number,padding=0){
+  return Object.entries(STAR_OBJECTIVES).some(([kind,p])=>Math.hypot(x-p[0],z-p[1])<(kind.startsWith('explore-')?13:4)+padding);
 }
 export const STAR_WALKS = [[-15,62],[0,61],[15,62],[-15,44],[0,36],[15,44],[0,72],[0,24]];
 
@@ -95,8 +98,8 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     const x=(rand(i+100)-.5)*215,z=(rand(i+900)-.5)*255+10;
     if(Math.hypot(x/110,(z-10)/130)>.88 || Math.abs(x)<11 || Math.hypot(x,z+75)<27)continue;
     if(Math.abs(x)<53&&z>3&&z<98)continue;
-    if(trailDistance(x,z)<3)continue;
-    if(Object.entries(STAR_OBJECTIVES).some(([kind,p])=>Math.hypot(x-p[0],z-p[1])<(kind.startsWith('explore-')?13:4)))continue;
+    if(starTrailDistance(x,z)<3)continue;
+    if(nearStarObjective(x,z))continue;
     const list=i%5===0?rockNames:treeNames;if(!list.length)continue;
     const scale=i%5===0?1.2+rand(i+88):.6+rand(i+55)*.65;
     scatter.add(list[i%list.length],trs(x,height(x,z),z,rand(i+40)*6.28,scale));

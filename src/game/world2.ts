@@ -3,8 +3,8 @@ import {t} from '../i18n';
 import type { Game } from './game';
 import type { Poi } from '../world/types';
 import { snapshotMap } from './snapshots';
-import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS } from './world2Settlement';
-import { QUESTS, type ObjectiveKind } from './quests';
+import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS, starTrailDistance, nearStarObjective } from './world2Settlement';
+import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
 import { xpForLevel } from './progression';
 import { StarPortal } from './portal';
@@ -30,6 +30,7 @@ export class HiddenWorld {
   private rotations: THREE.Object3D[] = [];
   private glow: THREE.ShaderMaterial;
   private obstacles: { x:number; z:number; r:number }[] = [];
+  private crystalSolids: {x:number;z:number;r:number;y0:number;y1:number}[] = [];
   private portal: StarPortal;
   private shorePortal: StarPortal;
   private travelArmed=false;
@@ -48,12 +49,13 @@ export class HiddenWorld {
   private basePois = new Map<string, {position:THREE.Vector3;yaw:number}>();
   private basePeople: THREE.Vector3[] = [];
   private memories:{kind:ObjectiveKind;ring:THREE.Mesh;star:THREE.Mesh}[]=[];
-  private nodes: {kind:ObjectiveKind;position:THREE.Vector3;mesh:THREE.Mesh}[] = [];
+  private nodes: {kind:ObjectiveKind;objective:ObjectiveDef;position:THREE.Vector3;mesh:THREE.Mesh}[] = [];
 
   async buildSettlement() {
     const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
     this.collision=settlement.collision;this.root.add(settlement.root);
     for(const o of this.obstacles)this.collision.addCircle(o.x,o.z,o.r,this.height(o.x,o.z),this.height(o.x,o.z)+12);
+    for(const o of this.crystalSolids)this.collision.addCircle(o.x,o.z,o.r,o.y0,o.y1);
     this.life=new StarVillageLife((x,z)=>this.height(x,z),this.collision);this.root.add(this.life.root);
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES)) {
       if(kind.startsWith('explore-')){
@@ -65,10 +67,11 @@ export class HiddenWorld {
       }
       if(!kind.startsWith('crystal-')&&!kind.startsWith('lamp-'))continue;
       const position=new THREE.Vector3(point[0],this.height(...point),point[1]);
-      const material=new THREE.MeshStandardMaterial({color:kind.startsWith('lamp')?'#ffdb95':'#9afff3',emissive:kind.startsWith('lamp')?'#a95d23':'#23cbbb',emissiveIntensity:1.8,metalness:.3,roughness:.25});
+      const material=new THREE.MeshStandardMaterial({color:kind.startsWith('lamp')?'#ffdb95':'#9afff3',emissive:kind.startsWith('lamp')?'#a95d23':'#23cbbb',emissiveIntensity:1.8,metalness:.3,roughness:.25,transparent:true,depthWrite:false});
       const mesh=new THREE.Mesh(kind.startsWith('lamp')?new THREE.CylinderGeometry(.4,.65,2.6,8):new THREE.OctahedronGeometry(.9),material);
       mesh.position.copy(position).y+=1.3;mesh.castShadow=true;this.root.add(mesh);
-      this.nodes.push({kind:kind as ObjectiveKind,position,mesh});
+      const objective=Object.values(QUESTS).flatMap(q=>q.objectives).find(o=>o.kind===kind)!;
+      this.nodes.push({kind:kind as ObjectiveKind,objective,position,mesh});
     }
   }
   objectivePoint(kind:ObjectiveKind) {
@@ -112,7 +115,17 @@ export class HiddenWorld {
     const rand=(i:number)=>{const x=Math.sin(i*127.1+41.7)*43758.5453;return x-Math.floor(x);};
     // Jagged crystal gardens frame the open combat paths. One geometry/material per family.
     const crystals=new THREE.InstancedMesh(new THREE.OctahedronGeometry(1,0),crystal,90);const matrix=new THREE.Matrix4();const q=new THREE.Quaternion();
-    for(let i=0;i<90;i++){const a=rand(i+1)*Math.PI*2,r=58+rand(i+120)*48,x=Math.sin(a)*r,z=10+Math.cos(a)*r,h=1.5+rand(i+250)*6;q.setFromEuler(new THREE.Euler(rand(i)*.25,a,.15));matrix.compose(new THREE.Vector3(x,this.height(x,z)+h*.5,z),q,new THREE.Vector3(.7+rand(i+300),h,1));if(Math.abs(x)<55&&z>0&&z<104)matrix.makeScale(0,0,0);crystals.setMatrixAt(i,matrix);}
+    for(let i=0;i<90;i++){
+      const a=rand(i+1)*Math.PI*2,r=58+rand(i+120)*48,x=Math.sin(a)*r,z=10+Math.cos(a)*r,h=1.5+rand(i+250)*6,width=.7+rand(i+300),radius=Math.max(width,1)+h*.15;
+      const clear=Math.abs(x)<55&&z>0&&z<104 || Math.hypot(x,z+75)<27 || starTrailDistance(x,z)<radius+2 || nearStarObjective(x,z,radius);
+      if(clear)matrix.makeScale(0,0,0);
+      else{
+        const y=this.height(x,z);
+        q.setFromEuler(new THREE.Euler(rand(i)*.25,a,.15));matrix.compose(new THREE.Vector3(x,y+h*.5,z),q,new THREE.Vector3(width,h,1));
+        this.crystalSolids.push({x,z,r:radius,y0:y-.5,y1:y+h*1.6});
+      }
+      crystals.setMatrixAt(i,matrix);
+    }
     crystals.castShadow=true;this.root.add(crystals);
     for(let i=0;i<12;i++){
       const a=i/12*Math.PI*2,x=Math.sin(a)*21,z=-75+Math.cos(a)*21,h=5+(i%3)*2;
@@ -234,8 +247,10 @@ export class HiddenWorld {
       memory.star.rotation.y=time*.5;memory.star.position.y=this.height(memory.star.position.x,memory.star.position.z)+2.7+Math.sin(time*1.5)*.12;
     }
     for(const node of this.nodes){
-      const objective=Object.values(QUESTS).flatMap(q=>q.objectives).find(o=>o.kind===node.kind);
-      const done=objective?this.game.quests.objectiveDone(objective):false;
+      const done=this.game.quests.objectiveDone(node.objective);
+      // A collectible can sit directly between the lens and the player. Fade it before it fills
+      // the screen, while keeping its interaction and quest state unchanged.
+      (node.mesh.material as THREE.MeshStandardMaterial).opacity=THREE.MathUtils.smoothstep(node.mesh.position.distanceTo(this.game.camera.position),3.5,8);
       node.mesh.visible=!done||node.kind.startsWith('lamp');
       if(node.kind.startsWith('lamp'))(node.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity=done?3:.25;
       else {node.mesh.rotation.y=time*.5;node.mesh.position.y=node.position.y+1.3+Math.sin(time*2+node.position.x)*.15;}

@@ -583,8 +583,29 @@ export class QuestLog {
     if(chapter===2)for(const id of QUEST_ORDER)if(this.inChapter(id) && this.status[id]==='locked')this.status[id]='available';
   }
   readonly progress = new Map<string, number>();
+  /** Personal navigation choices stay separate for the two worlds. */
+  readonly tracked: Partial<Record<1 | 2, QuestId>> = {};
   readonly events = new Emitter<QuestEvents>();
   cogs = 0;
+
+  track(id: QuestId): boolean {
+    if (!this.inChapter(id) || !['active', 'ready'].includes(this.status[id])) return false;
+    this.tracked[this.chapter] = id;
+    return true;
+  }
+
+  get trackedQuest(): QuestId | null {
+    const id = this.tracked[this.chapter];
+    return id && this.inChapter(id) && ['active', 'ready'].includes(this.status[id]) ? id : null;
+  }
+
+  restoreTracking(value: unknown): void {
+    if (!value || typeof value !== 'object') return;
+    for (const chapter of [1, 2] as const) {
+      const id = (value as Record<string, unknown>)[chapter];
+      if (typeof id === 'string' && QUEST_ORDER.includes(id as QuestId) && (QUESTS[id as QuestId].chapter ?? 1) === chapter && ['active', 'ready'].includes(this.status[id as QuestId])) this.tracked[chapter] = id as QuestId;
+    }
+  }
 
   value(o: ObjectiveDef): number {
     return this.progress.get(o.id) ?? 0;
@@ -676,7 +697,9 @@ export class QuestLog {
   }
 
   current(): CurrentObjective | null {
-    for (const id of QUEST_ORDER) {
+    const tracked = this.trackedQuest;
+    const order = tracked ? [tracked, ...QUEST_ORDER.filter(id => id !== tracked)] : QUEST_ORDER;
+    for (const id of order) {
       if(!this.inChapter(id))continue;
       const def = QUESTS[id];
       if (this.status[id] === 'ready' && def.turnIn) {
