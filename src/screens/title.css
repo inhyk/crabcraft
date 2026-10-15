@@ -22,3 +22,14 @@
 .title-menu { position: absolute; left: 0; right: 0; bottom: 17vh; display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .title-menu .cc-btn { min-width: 300px; }
 .title-footer { position: absolute; left: 0; right: 0; bottom: 3vh; text-align: center; color: #f3e2b5; text-shadow: var(--text-shadow); font-size: 15px; }
+
+.title-menu .cc-btn { box-sizing: border-box; max-width: calc(100vw - 32px); overflow-wrap: anywhere; }
+@media (max-height: 640px) {
+  .title-screen { box-sizing: border-box; display: flex; flex-direction: column; align-items: center; padding: 16px; overflow-y: auto; }
+  .title-logo-wrap { position: relative; top: auto; left: auto; right: auto; width: 100%; flex: 1 0 80px; display: flex; align-items: center; justify-content: center; }
+  .title-logo { width: min(45vw, 320px); max-height: 22vh; object-fit: contain; }
+  .title-fallback { font-size: clamp(32px, 8vw, 56px); }
+  .title-menu { position: relative; left: auto; right: auto; bottom: auto; width: 100%; flex-shrink: 0; gap: 8px; margin: 16px 0; }
+  .title-menu .cc-btn, .title-menu .cc-btn.ghost { width: min(360px, 100%); min-width: 0; padding: 8px 22px; font-size: 16px; letter-spacing: .04em; }
+  .title-footer { position: relative; left: auto; right: auto; bottom: auto; width: 100%; flex-shrink: 0; margin: 8px 0; font-size: 12px; }
+}
