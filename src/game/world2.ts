@@ -18,6 +18,7 @@ import {StarWind} from './starWind';
 import {NavHints} from './nav';
 import {StarAmbience} from './starAmbience';
 import {StarWaystoneKit} from './starWaystone';
+import {StarMemorySealKit} from './starMemorySeal';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
 
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
@@ -74,14 +75,14 @@ export class HiddenWorld {
     for(const o of this.obstacles)this.collision.addCircle(o.x,o.z,o.r,this.height(o.x,o.z),this.height(o.x,o.z)+12);
     for(const o of this.crystalSolids)this.collision.addCircle(o.x,o.z,o.r,o.y0,o.y1);
     this.life=new StarVillageLife((x,z)=>this.height(x,z),this.collision);this.root.add(this.life.root);
-    const waystones=new StarWaystoneKit();
+    const waystones=new StarWaystoneKit(),memorySeals=new StarMemorySealKit();
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES)) {
       if(kind.startsWith('explore-')){
         const x=point[0],z=point[1],y=this.height(x,z);
         const material=new THREE.MeshBasicMaterial({color:'#c0a0ff',transparent:true,opacity:.5,depthWrite:false});
         const ring=new THREE.Mesh(new THREE.TorusGeometry(4.3,.055,5,64),material);ring.rotation.x=-Math.PI/2;ring.position.set(x,y+.13,z);this.root.add(ring);
         const star=new THREE.Mesh(new THREE.OctahedronGeometry(.45),new THREE.MeshStandardMaterial({color:'#d6beff',emissive:'#7854ba',emissiveIntensity:1.7,metalness:.5,roughness:.25}));star.position.set(x,y+2.7,z);this.root.add(star);
-        this.memories.push({kind:kind as ObjectiveKind,ring,star});continue;
+        star.add(memorySeals.create());this.memories.push({kind:kind as ObjectiveKind,ring,star});continue;
       }
       if(!kind.startsWith('crystal-')&&!kind.startsWith('lamp-'))continue;
       const position=new THREE.Vector3(point[0],this.height(...point),point[1]);
@@ -286,6 +287,8 @@ export class HiddenWorld {
       const done=this.game.quests.objectiveDone(objective),active=this.game.quests.status.w5==='active';
       (memory.ring.material as THREE.MeshBasicMaterial).color.set(done?'#9de4b8':'#c0a0ff');
       (memory.ring.material as THREE.MeshBasicMaterial).opacity=done?.18:active?.5+Math.sin(time*2)*.15:.18;
+      const core=memory.star.material as THREE.MeshStandardMaterial;
+      core.color.set(done?'#9de4b8':'#d6beff');core.emissive.set(done?'#257e61':'#7854ba');core.emissiveIntensity=done?1.25:1.7;
       memory.star.rotation.y=time*.5;memory.star.position.y=this.height(memory.star.position.x,memory.star.position.z)+2.7+Math.sin(time*1.5)*.12;
     }
     this.sightAim.copy(this.game.player.unit.pos).y+=this.game.player.unit.height*.55;
