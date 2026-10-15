@@ -50,3 +50,11 @@ test('quest choices persist separately by world and reject invalid or cross-worl
  assert.equal(restored.current().quest,'w5');restored.setChapter(1);assert.equal(restored.current().quest,'q1');
  const malformed=new QuestLog();malformed.restoreTracking({1:'w5',2:'constructor'});assert.deepEqual(malformed.tracked,{});
 });
+
+test('repeated KO/EN switches clear translated fallback reward buttons and keep the final shore action English',()=>{
+ for(let i=0;i<3;i++){
+  setQuestLanguage('ko');assert.equal(QUESTS.q1.completeButton,'보상 받기');assert.equal(QUESTS.w1.completeButton,'보상 받기');
+  setQuestLanguage('en');assert.equal(QUESTS.q1.completeButton,undefined);assert.equal(QUESTS.q2.completeButton,undefined);assert.equal(QUESTS.q3.completeButton,undefined);assert.equal(QUESTS.q4.completeButton,'Keep exploring toward level 10');assert.equal(QUESTS.w1.completeButton,'Claim reward');
+ }
+ setQuestLanguage('ko');
+});

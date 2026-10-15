@@ -121,7 +121,7 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     readyHint: 'Return to Captain Brinebeard in Clawhaven Square.',
     objectives: [{ id: 'q4-boss', kind: 'boss', label: 'Corrodius defeated', count: 1, poi: 'bossArena' }],
     xp: 600,
-    completeButton: '10레벨을 향해 계속 탐험하기',
+    completeButton: 'Keep exploring toward level 10',
   },
   w1: {
   "id": "w1",

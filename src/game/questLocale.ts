@@ -18,7 +18,8 @@ const english:Partial<Record<QuestId,Text>>={
 };
 export function translatedQuest(def:QuestDef,language:Language):QuestDef {
  const text=(language==='ko'?korean:english)[def.id];
- if(!text)return structuredClone(def);
+ // Object.assign must also clear a translated override absent from the source language.
+ if(!text)return {...structuredClone(def),completeButton:def.completeButton};
  const {labels,...fields}=text;
  return {...structuredClone(def),...fields,summary:fields.offer.join(' '),completeButton:language==='ko'?'보상 받기':'Claim reward',objectives:def.objectives.map((o,i)=>({...o,label:labels[i]??o.label}))};
 }

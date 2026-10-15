@@ -920,8 +920,12 @@ export class Game {
     // Chain straight into the next offer from the same crab, like the old games.
     const next = giverOfNext ? this.quests.offeredBy(giverOfNext.def.id) : null;
     if (next && giverOfNext) {
+      const chapter = this.world2.chapter;
       setTimeout(() => {
-        if (this.alive && !this.ending.active) this.openNpc(giverOfNext);
+        // Shared travel or a newly opened reading window supersedes this old conversation.
+        if (this.alive && !this.controlsLocked && this.world2.chapter === chapter &&
+          !this.hud.dialogue.isOpen && !this.hud.questLog.open &&
+          this.player.unit.distTo(giverOfNext.unit) <= 8 && this.quests.offeredBy(giverOfNext.def.id) === next) this.openNpc(giverOfNext);
       }, 350);
       this.hud.dialogue.close();
     } else {

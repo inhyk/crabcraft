@@ -194,6 +194,7 @@ export class HiddenWorld {
     if(this.chapter===2)return;
     const g=this.game,w=g.world;
     g.ending.cancel();
+    g.hud.dialogue.close();
     g.hud.messages.closeDiscovery();
     if(!this.baseHomes.length)this.baseHomes=g.enemies.map(e=>e.home.clone());
     this.chapter=2;g.hud.hints.setChapter(2);this.rendered=true;this.resetPortalArrival();
@@ -235,6 +236,7 @@ export class HiddenWorld {
     // A direct visitor starts at the island's intended difficulty without faking story victories.
     if(g.player.level<10)g.player.restoreXp(xpForLevel(10));
     g.hud.tracker.update(g.quests);
+    if(g.hud.questLog.open)g.hud.questLog.render();
     {
       const mobs=g.enemies.filter(e=>!e.isAdd);
       mobs.forEach((e,i)=>{const side=e.kind==='scrapling'?-1:1;const x=side*(60+(i%4)*7),z=28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority)e.respawnAt(x,z);e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.refreshAppearance();});
@@ -248,6 +250,7 @@ export class HiddenWorld {
   returnToShore() {
     if(this.chapter===1)return;
     this.game.ending.cancel();
+    this.game.hud.dialogue.close();
     this.game.hud.messages.closeDiscovery();
     this.showEpilogue();this.chapter=1;this.game.hud.hints.setChapter(1);this.game.quests.setChapter(1);
     // World II has its own lighting. Restore the untouched shore atmosphere and fog.
@@ -259,7 +262,9 @@ export class HiddenWorld {
     for(const b of [g.boss,g.finalBoss])b.unit.hidden=b.state==='dormant'||b.state==='dead';
     for(const u of [...g.npcs.map(n=>n.unit),...g.townsfolk.map(t=>t.unit)])u.hidden=false;
     g.player.respawn();g.player.unit.teleport(g.world,this.shorePortal.root.position.x,this.shorePortal.root.position.z+5,Math.PI);g.follow.cut();
-    g.hud.tracker.update(g.quests);g.hud.minimap.setSnapshot(g.takeMapSnapshot());g.journey?.save();
+    g.hud.tracker.update(g.quests);
+    if(g.hud.questLog.open)g.hud.questLog.render();
+    g.hud.minimap.setSnapshot(g.takeMapSnapshot());g.journey?.save();
   }
   showEpilogue() {
     this.ambience.stop();
