@@ -2,7 +2,7 @@
 // Set CC_QA_URL to the public game URL to use its real Internet backend without interception.
 // Two independent browser contexts exercise real room packets and UI controls.
 import {chromium} from 'playwright';import assert from 'node:assert/strict';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
+const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 const baseUrl=process.env.CC_QA_URL??'http://127.0.0.1:5192/';
 const localRelay=new URL(baseUrl).hostname==='127.0.0.1';
@@ -43,6 +43,12 @@ try{
  assert.equal(locations[0].npcs.length,7);assert.deepEqual(locations[0].npcs,locations[1].npcs);assert.ok(locations[0].town.every((p,i)=>Math.hypot(p[0]-locations[1].town[i][0],p[1]-locations[1].town[i][1])<1));
  for(const state of locations){assert.equal(state.clock.sky,state.clock.sea);assert.equal(state.clock.sky,state.clock.wind);}assert.ok(Math.abs(locations[0].clock.sky-locations[1].clock.sky)<.75);console.log('PASS: sky, ocean and plants share the room clock on both peers',locations.map(s=>s.clock));
  for(let i=0;i<24;i++){const offset=i*16;assert.ok(Math.hypot(...[12,13,14].map(j=>locations[0].moths[offset+j]-locations[1].moths[offset+j]))<1,'moth positions agree across independently rendered peers');}console.log('PASS: all 24 moths follow the synchronized room clock');
+ // New island equipment must follow the locally animated head on both peers.
+ const sentry=await a.evaluate(()=>{const g=window.app.current.game,e=g.enemies.find(e=>!e.isAdd&&e.kind==='scrapling');e.unit.stunUntil=g.time+100;return {x:e.unit.pos.x,z:e.unit.pos.z};});
+ await Promise.all([a,b].map(p=>p.evaluate(pos=>{const g=window.app.current.game;g.god=true;g.player.unit.teleport(g.world,pos.x+6,pos.z+6);g.follow.cut();},sentry)));await a.waitForTimeout(800);
+ const armour=await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game,kit=g.world2.armour;kit.update(g.time);const group=kit.groups.find(x=>x.kind==='scrapling'),u=group.enemies[0].unit,s=u.rig.getSocket('head'),m=s.matrixWorld.clone();s.updateWorldMatrix(true,false);group.armour.getMatrixAt(0,m);return {draws:kit.root.children.length,colours:kit.groups.map(x=>x.core.material.color.getHexString()),hidden:u.hidden,culled:u.culled,attached:Math.hypot(...[12,13,14].map(i=>m.elements[i]-s.matrixWorld.elements[i])),position:[12,13,14].map(i=>m.elements[i]),finite:kit.groups.every(x=>[x.armour,x.core].every(mesh=>Array.from(mesh.instanceMatrix.array).every(Number.isFinite)))};})));
+ for(const state of armour){assert.equal(state.draws,4);assert.deepEqual(state.colours,['8debdc','bca0ff']);assert.equal(state.hidden,false);assert.equal(state.culled,false);assert.ok(state.attached<.0001);assert.equal(state.finite,true);}assert.ok(Math.hypot(...armour[0].position.map((v,i)=>v-armour[1].position[i]))<.35);
+ console.log('PASS: both peers render distinct island equipment attached to the mirrored animated sentry',armour);
  // Observe real host-simulated movement, then match the guest's network interpolation.
  await a.waitForFunction(start=>{const ts=window.app.current.game.townsfolk;return ts.filter((t,i)=>Math.hypot(t.unit.pos.x-start[i][0],t.unit.pos.z-start[i][1])>2).length>=4;},locations[0].town,{timeout:20000});
  const walkers=await a.evaluate(()=>window.app.current.game.townsfolk.map(t=>[t.unit.pos.x,t.unit.pos.z]));

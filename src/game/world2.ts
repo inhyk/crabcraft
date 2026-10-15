@@ -19,6 +19,7 @@ import {NavHints} from './nav';
 import {StarAmbience} from './starAmbience';
 import {StarWaystoneKit} from './starWaystone';
 import {StarMemorySealKit} from './starMemorySeal';
+import {StarEnemyArmour} from './starEnemyArmour';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
 
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
@@ -56,6 +57,7 @@ export class HiddenWorld {
   private baseHomes: THREE.Vector3[] = [];
   private collision: Collision | null = null;
   private life:StarVillageLife|null=null;
+  private armour:StarEnemyArmour|null=null;
   private wind:StarWind|null=null;
   private nav:NavHints|null=null;
   private ambience:StarAmbience;
@@ -196,6 +198,7 @@ export class HiddenWorld {
     g.hud.messages.closeDiscovery();
     if(!this.baseHomes.length)this.baseHomes=g.enemies.map(e=>e.home.clone());
     this.chapter=2;this.rendered=true;this.resetPortalArrival();
+    if(!this.armour){this.armour=new StarEnemyArmour(g.enemies);this.root.add(this.armour.root);}
     this.ambience.start(g.time);
     if(!this.baseNames.length)this.baseNames=g.enemies.map(e=>e.unit.name);
     g.cinematic=false;g.journey?.closeChapterEnding();
@@ -280,6 +283,7 @@ export class HiddenWorld {
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
     this.sea.update(time);
+    this.armour?.update(time);
     this.wind?.update(time);
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
     for(const memory of this.memories){
