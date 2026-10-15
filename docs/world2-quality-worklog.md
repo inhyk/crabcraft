@@ -161,3 +161,12 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - All 33 game/protocol tests, production build and whitespace checks pass. Ten-hour development remains active.
 
 - Published 01f7cb9 as READY production deployment dpl_2gmBUfhWHEa8D8RS55dQhHobG4TG. The full two-browser replay passed against the public game and actual Internet room backend, including both host/guest Starhaven deaths and respawns with no portal bounce, bilingual instructions, party/PvP, weather, villagers and authority transfer. No page errors.
+
+## Fallen Star Observatory masonry and water — 2026-10-15 14:45 UTC
+
+- Replaced the ten plain, identical ruin cylinders with faceted shafts, stepped bases, varied heights, warm capitals, narrow bands and small inward-facing luminous inscriptions. Their original positions and 0.9-unit footprint remain; collision height follows the visible masonry. Kept World I scenery unchanged.
+- Added a 24-mark celestial dial around the observatory pool, a quieter clear-coated water material and three low-opacity expanding ripples. The original floating astrolabe remains the landmark silhouette. Detail families are instanced; no new lights or frame-by-frame geometry construction. Inspected the rendered eastern approach.
+- Cleared two decorative rubble stones from the marked approach. All 62 retained stones stay at least 1.677 units from the trail centerline after accounting for their actual transformed radius.
+- Extended the existing GPU landmark replay: every vertex of all 70 column pieces fits its physical envelope (maximum radial floating-point excess 0.00000245 units); all trail centerlines and crystal sight checks pass. Actual pool ripples animate and stay within the basin. No page errors. Production build and whitespace checks pass.
+- A 24-round-trip GPU soak with the new observatory retains morning, q1 progress and stable geometry/texture counts: 464/147 after warmup and at the end. This is focused travel/resource coverage, not a ten-hour stability claim.
+- Ten-hour development remains active.

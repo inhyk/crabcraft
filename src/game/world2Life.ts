@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {StarLandmarks} from './starLandmarks';
+import {StarObservatory} from './starObservatory';
 import type { Collision } from '../world/collision';
 
 /** Small animated details give the settlement a shared rhythm without simulating extra actors. */
@@ -10,6 +11,7 @@ export class StarVillageLife {
   private flags:THREE.ShaderMaterial;
   private motes:THREE.Points;
   private landmarks:StarLandmarks;
+  private observatory:StarObservatory;
   private waves:THREE.Mesh[]=[];
   constructor(height:(x:number,z:number)=>number,collision:Collision){
     this.root.name='starhaven-life';
@@ -31,17 +33,10 @@ export class StarVillageLife {
     const positions=new Float32Array(140*3);for(let i=0;i<140;i++){const a=i*2.39996,r=8+(i*17%35);positions.set([Math.cos(a)*r,3+(i*13%40)/10,55+Math.sin(a)*r],i*3);}
     const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));
     this.motes=new THREE.Points(geometry,new THREE.PointsMaterial({color:'#d5efb8',size:.065,transparent:true,opacity:.65,depthWrite:false}));this.root.add(this.motes);
-    const ruinstone=new THREE.MeshStandardMaterial({color:'#7c7c8e',roughness:.87,metalness:.12});
-    const pillars=new THREE.InstancedMesh(new THREE.CylinderGeometry(.7,.9,5,7),ruinstone,10);
-    for(let i=0;i<10;i++){const a=i/10*Math.PI*2,x=80+Math.cos(a)*9,z=-40+Math.sin(a)*9;const y=height(x,z);pillars.setMatrixAt(i,new THREE.Matrix4().makeTranslation(x,y+2.5,z));collision.addCircle(x,z,.9,y,y+5);}
-    pillars.castShadow=true;this.root.add(pillars);
-    const rubble=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(.7,0),ruinstone,64),m=new THREE.Matrix4(),q=new THREE.Quaternion();
-    for(let i=0;i<64;i++){const a=i*2.39996,r=10+(i*11%80)/10,x=80+Math.cos(a)*r,z=-40+Math.sin(a)*r;q.setFromEuler(new THREE.Euler(i*.3,i,.4));m.compose(new THREE.Vector3(x,height(x,z)+.3,z),q,new THREE.Vector3(.5+i%3*.2,.4+i%2*.2,.7));rubble.setMatrixAt(i,m);}rubble.castShadow=true;this.root.add(rubble);
-    const well=new THREE.Mesh(new THREE.TorusGeometry(3,.35,6,48),ruinstone);well.rotation.x=Math.PI/2;well.position.set(80,height(80,-40)+.2,-40);this.root.add(well);
-    const pool=new THREE.Mesh(new THREE.CircleGeometry(2.75,48),new THREE.MeshStandardMaterial({color:'#544f9d',emissive:'#51499a',emissiveIntensity:.7,roughness:.25,metalness:.5}));pool.rotation.x=-Math.PI/2;pool.position.set(80,height(80,-40)+.1,-40);this.root.add(pool);
+    this.observatory=new StarObservatory(height,collision);this.root.add(this.observatory.root);
   }
   update(time:number){
-    this.landmarks.update(time);
+    this.landmarks.update(time);this.observatory.update(time);
     this.flags.uniforms.time.value=time;this.star.rotation.y=time*.35;this.star.position.y=6+Math.sin(time*1.4)*.12;
     this.water.rotation.z=Math.sin(time*.1)*.03;this.motes.position.y=Math.sin(time*.35)*.3;
     this.waves.forEach((wave,i)=>{const p=(time*.25+i/3)%1;wave.scale.setScalar(.5+p*2.4);(wave.material as THREE.MeshBasicMaterial).opacity=(1-p)*.35;});
