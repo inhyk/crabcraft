@@ -37,6 +37,8 @@ export class HiddenWorld {
   private shorePortal: StarPortal;
   private travelArmed=false;
   private travelAt=0;
+  /** Arrival (including respawn) must not immediately trigger the return gateway. */
+  resetPortalArrival(){this.travelArmed=false;this.travelAt=this.game.time+3;}
   private baseNames:string[]=[];
   get portalPosition(){return this.chapter===2?this.spawn:this.shorePortal.root.position;}
   travel(){
@@ -178,7 +180,7 @@ export class HiddenWorld {
     if(this.chapter===2)return;
     const g=this.game,w=g.world;
     if(!this.baseHomes.length)this.baseHomes=g.enemies.map(e=>e.home.clone());
-    this.chapter=2;this.rendered=true;this.travelArmed=false;this.travelAt=g.time+3;
+    this.chapter=2;this.rendered=true;this.resetPortalArrival();
     if(!this.baseNames.length)this.baseNames=g.enemies.map(e=>e.unit.name);
     g.cinematic=false;g.journey?.closeChapterEnding();
     this.baseRoot.visible=false;this.root.visible=true;
@@ -219,7 +221,7 @@ export class HiddenWorld {
     this.game.world.setMood(this.game.world.getEnvironment().mood,true);
     const g=this.game;
     g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);e.refreshAppearance();});
-    this.travelArmed=false;this.travelAt=g.time+3;
+    this.resetPortalArrival();
     g.worldBoss.unit.hidden=true;
     for(const b of [g.boss,g.finalBoss])b.unit.hidden=b.state==='dormant'||b.state==='dead';
     for(const u of [...g.npcs.map(n=>n.unit),...g.townsfolk.map(t=>t.unit)])u.hidden=false;
@@ -235,7 +237,7 @@ export class HiddenWorld {
   }
   update(dt:number,time:number) {
     this.shorePortal.update(time);this.portal.update(time);
-    if(!this.game.ending.active&&!this.game.cinematic){
+    if(!this.game.ending.active&&!this.game.controlsLocked){
       const distance=Math.hypot(this.game.player.unit.pos.x-this.portalPosition.x,this.game.player.unit.pos.z-this.portalPosition.z);
       if(distance>4.5)this.travelArmed=true;
       if(this.travelArmed&&distance<1.7&&this.game.time>this.travelAt){this.travelArmed=false;this.travelAt=this.game.time+3;this.travel();}

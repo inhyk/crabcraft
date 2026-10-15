@@ -102,6 +102,7 @@ export class Hud {
     this.hints.refreshLanguage();
     this.game.encounter.refreshWarning();
     this.skipHint.textContent=t('Space를 눌러 계속하기','Press Space to continue');
+    if(this.deathEl)this.showDeath(true);
   }
 
   update(dt: number): void {
@@ -155,11 +156,17 @@ export class Hud {
 
   showDeath(on: boolean): void {
     if (on && !this.deathEl) {
-      this.deathEl = h('div', { class: 'death hud-keep' }, h('div', { class: 'big' }, 'You have died'), h('div', { class: 'sub' }, 'Your shell will be carried back to Clawhaven Square...'));
+      this.deathEl = h('div', { class: 'death hud-keep' }, h('div', { class: 'big' }), h('div', { class: 'sub' }));
       this.root.append(this.deathEl);
     } else if (!on && this.deathEl) {
       this.deathEl.remove();
       this.deathEl = null;
+    }
+    if(on&&this.deathEl){
+      this.deathEl.querySelector('.big')!.textContent=t('쓰러졌어요','You have fallen');
+      this.deathEl.querySelector('.sub')!.textContent=this.game.world2.chapter===2
+        ?t('별빛 항구의 포탈 곁에서 다시 일어납니다…','You will awaken beside the portal in Starhaven…')
+        :t('클로헤이븐 광장에서 다시 일어납니다…','You will awaken in Clawhaven Square…');
     }
   }
 

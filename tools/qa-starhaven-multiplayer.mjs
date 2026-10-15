@@ -35,6 +35,15 @@ try{
  await a.waitForTimeout(800);
  const locations=await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game;return {chapter:g.world2.chapter,npcs:g.npcs.map(n=>({id:n.def.id,hidden:n.unit.hidden,x:n.unit.pos.x,z:n.unit.pos.z})),town:g.townsfolk.map(t=>[t.unit.pos.x,t.unit.pos.z])};})));
  assert.equal(locations[0].npcs.length,7);assert.deepEqual(locations[0].npcs,locations[1].npcs);assert.ok(locations[0].town.every((p,i)=>Math.hypot(p[0]-locations[1].town[i][0],p[1]-locations[1].town[i][1])<1));
+ // Both players can respawn beside the World II portal without sending the room back to shore.
+ await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game;g.god=false;g.player.unit.teleport(g.world,0,50,0);})));await a.waitForTimeout(300);
+ await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game;g.combat.damage(null,g.player.unit,g.player.unit.maxHp*10);})));
+ for(const p of [a,b])await p.waitForSelector('.death');
+ assert.match(await a.locator('.death').innerText(),/별빛 항구/);assert.match(await b.locator('.death').innerText(),/Starhaven/);
+ for(const p of [a,b])await p.waitForFunction(()=>{const g=window.app.current.game;return g.player.unit.alive&&!g.respawning&&!document.querySelector('.death');},null,{timeout:30000});
+ await a.waitForTimeout(3500);
+ for(const p of [a,b])assert.deepEqual(await p.evaluate(()=>{const g=window.app.current.game,u=g.player.unit;return {chapter:g.world2.chapter,x:u.pos.x,z:u.pos.z,full:u.hp===u.maxHp};}),{chapter:2,x:0,z:86,full:true});
+ console.log('PASS: host and guest respawn at Starhaven with no portal bounce or shared chapter change');
  // Inject the phase-II encounter setup, then use the real mechanic and room checkpoint pipeline.
  await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game;g.god=true;g.player.unit.teleport(g.world,0,-68,0);g.follow.cut();})));
  await a.evaluate(()=>{const g=window.app.current.game,boss=g.worldBoss;g.player.restoreXp(22000);boss.wake();boss.state='fight';boss.phase=2;boss.unit.invulnerable=false;boss.unit.targetable=true;boss.mechIndex=0;boss.startMech();});

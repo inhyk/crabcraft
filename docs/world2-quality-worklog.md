@@ -150,3 +150,12 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - All 33 game/protocol tests, production build and whitespace checks pass. Ten-hour development remains active; this is an intermediate release.
 
 - Published f59c85d as READY production deployment dpl_HEkFuhTXc8M1ay5vuAXpZNwJLdon. The full landmark browser replay passed again on the public stable game URL: trails, 63 sight collisions, both crystal surface families and all 69 measured collider envelopes, with no page errors. seonn.dev/games/crabcraft returns HTTP 200 and its play link points to the updated stable game.
+
+## Respawn destination and portal safety — 2026-10-15 14:40 UTC
+
+- Public GPU inspection confirms current Eclipse and Starfall ground warnings remain visible on the arena surface; all 22,701 painted terrain vertices still match collision. No art change was needed for that check.
+- Found a chapter-specific death presentation error: World II death and recovery used English Clawhaven text. Death overlays, chat and recovery messages now follow language and actual destination; changing settings while down updates the existing overlay.
+- The first real lethal-damage replay exposed a gameplay regression: an armed World II return portal fired immediately upon respawn at (0,86), sending the player back to World I. Respawn now resets portal arrival state, and automatic gateway checks respect locked controls. The player must leave the arrival radius before walking through again.
+- New tools/qa-respawn-language.mjs passes four lethal-damage/respawn cycles across both chapters and languages, live language switches while down, destination coordinates, full HP, retained XP/level/active quest status and no delayed bounce after cooldown. Ordinary walk-through travel still re-arms correctly.
+- Extended the two-browser room replay with host and guest lethal damage. Both respawn at Starhaven with full HP and no shared chapter change; existing parties, PvP, bilingual boss effects, weather, travel, residents and authority transfer still pass. No page errors.
+- All 33 game/protocol tests, production build and whitespace checks pass. Ten-hour development remains active.

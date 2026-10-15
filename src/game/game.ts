@@ -1103,7 +1103,7 @@ export class Game {
     this.engine.canvas.style.transition = 'filter 2s ease';
     this.engine.canvas.style.filter = 'grayscale(1) brightness(0.75)';
     this.hud.showDeath(true);
-    this.hud.chat.system('You have died.');
+    this.hud.chat.system(t('쓰러졌어요. 잠시 뒤 다시 일어납니다.','You have fallen. You will awaken shortly.'));
     if (this.boss.engaged) this.say(this.boss.unit, 'Another shell for the scrap heap!', true);
     if (!this.multiplayer?.battle.active) for (const e of this.enemies) e.evade();
   }
@@ -1115,6 +1115,7 @@ export class Game {
       await this.app.blackout(true, 900);
       if (!this.alive) return;
       const spawn = this.world.pois.spawn;
+      this.world2.resetPortalArrival();
       this.player.respawn();
       const p = this.player.unit;
       p.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
@@ -1126,7 +1127,9 @@ export class Game {
       this.respawning = false;
       await this.app.blackout(false, 900);
       this.vfx.mendGlow(p);
-      this.hud.messages.info('You return to Clawhaven Square, shell mended.');
+      this.hud.messages.info(this.world2.chapter===2
+        ?t('껍질을 회복하고 별빛 항구의 포탈 곁으로 돌아왔어요.','Shell mended, you return to the portal in Starhaven.')
+        :t('껍질을 회복하고 클로헤이븐 광장으로 돌아왔어요.','Shell mended, you return to Clawhaven Square.'));
     })();
   }
 
