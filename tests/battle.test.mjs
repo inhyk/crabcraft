@@ -110,3 +110,11 @@ test('guests cannot enable PvP and out-of-range attacks do no damage',()=>{
  const {a,b,aa,bb,ar,flush}=pair();bb.setMode('pvp');flush();assert.equal(aa.mode,'coop');
  aa.setMode('pvp');flush();ar.pos.set(100,0,100);a.combat.damage(a.player.unit,ar,20);flush();assert.equal(b.player.unit.hp,100);
 });
+
+test('a stale guest night request cannot override an extinguished beacon or change shore weather from World II',()=>{
+ const {a,b,aa,flush}=pair();
+ a.world.setMood(3);a.world.setBeaconLit(false);aa.update(.1);flush();b.world.setMood(1);flush();
+ assert.deepEqual(a.world.getEnvironment(),{mood:3,beacon:false});assert.deepEqual(b.world.getEnvironment(),{mood:3,beacon:false});
+ a.world.setBeaconLit(true);a.world.setMood(0);a.world2.enter();aa.update(.1);flush();b.world.setMood(1);flush();
+ assert.deepEqual(a.world.getEnvironment(),{mood:0,beacon:true});assert.deepEqual(b.world.getEnvironment(),{mood:0,beacon:true});
+});

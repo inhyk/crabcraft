@@ -967,18 +967,21 @@ export class Game {
   }
 
   private onBeaconQuestDone(): void {
-    this.hud.chat.whisper('Lady Silvermoon', 'The light returns! Look to the bay... the Iron Wreck is waking.');
+    const activeShore=this.world2.chapter===1&&this.beaconLit;
+    this.hud.chat.whisper(t('실버문 여사','Lady Silvermoon'),activeShore?t('빛이 돌아왔어요! 만을 보세요… 철의 난파선이 깨어납니다.','The light returns! Look to the bay... the Iron Wreck is waking.'):t('빛을 되찾아 줘서 고마워요. 등대를 다시 켜면 난파선에 도전할 수 있어요.','Thank you for restoring the light. Relight the lighthouse when you are ready to face the wreck.'));
+    // These are personal quest rewards, not part of the delayed world-state reveal.
+    // Grant them now so travelling during the scene cannot strand the next shore quest.
+    this.player.unit.blessingUntil = Infinity;
+    this.vfx.mendGlow(this.player.unit);
+    this.hud.chat.system(t('실버문 여사의 달샘 축복을 받았어요. 전투 중에도 껍질이 천천히 회복됩니다.','Lady Silvermoon blesses you with moonwater. Your shell slowly mends while you fight.'));
+    this.quests.accept('q4');
     setTimeout(() => {
-      if (!this.alive) return;
-      this.world.setMood(1);
-      if (!this.journey?.rustCleared) this.boss.wake();
+      // The player may have switched off the lighthouse or left the shore in the meantime.
+      if (!this.alive||this.world2.chapter!==1||!this.beaconLit||this.journey?.rustCleared) return;
+      this.boss.wake();
       this.audio.sfx('sfx-boss-roar');
       this.follow.shake(0.3, 1.2);
-      this.hud.messages.warn('Corrodius stirs on the Iron Wreck!');
-      this.player.unit.blessingUntil = Infinity;
-      this.vfx.mendGlow(this.player.unit);
-      this.hud.chat.system('Lady Silvermoon blesses you with moonwater. Your shell slowly mends while you fight.');
-      this.quests.accept('q4');
+      this.hud.messages.warn(t('철의 난파선에서 코로디우스가 깨어납니다!','Corrodius stirs on the Iron Wreck!'));
     }, 2600);
   }
 

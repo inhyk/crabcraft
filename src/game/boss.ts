@@ -106,8 +106,7 @@ export class Boss {
     if (!m) {
       const old=this.mech;
       if (old && s.state === 'fight') {
-        if (old.kind === 'spray') g.vfx.rustSpray(old.at,old.yaw,11,0.55);
-        else g.vfx.slamImpact(old.at,old.kind === 'nova' ? 6 : old.kind === 'slam' ? 3.4 : 5.5);
+        this.impactVisual(old.kind,old.at,old.yaw);
       }
       this.clearMech(); this.remoteMechId=-1; return;
     }
@@ -118,7 +117,7 @@ export class Boss {
     if (m.kind === 'spray') fx.push(g.vfx.telegraphCone(at,m.yaw,11,0.55,duration,undefined,this.deckUnder(at,11,m.yaw,0.55)));
     else {
       const radius=m.kind === 'eclipse' ? 11 : m.kind === 'slam' ? 3.4 : m.kind === 'nova' ? 6 : 5.5;
-      fx.push(g.vfx.telegraphCircle(at,radius,duration,m.kind === 'nova' ? new THREE.Color(this.profile.color) : undefined,this.deckUnder(at,radius,0,Math.PI)));
+      fx.push(g.vfx.telegraphCircle(at,radius,duration,m.kind === 'eclipse' ? new THREE.Color('#a050ff') : m.kind === 'nova' ? new THREE.Color(this.profile.color) : undefined,this.deckUnder(at,radius,0,Math.PI)));
       if (m.kind === 'eclipse') fx.push(g.vfx.telegraphCircle(at,4.5,duration,new THREE.Color('#71ffca')));
       if (m.kind === 'undertow') g.vfx.undertow(at,5.5,duration);
     }
@@ -424,7 +423,7 @@ export class Boss {
       }
       if (m.t >= m.dur) {
         m.fired = true;
-        g.vfx.slamImpact(m.at, 3.4);
+        this.impactVisual('slam',m.at);
         g.follow.shake(0.5, 0.5);
         g.audio.sfx('sfx-crit');
         for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && Math.hypot(p.pos.x - m.at.x, p.pos.z - m.at.z) < 3.4 + p.radius * 0.5) {
@@ -437,7 +436,7 @@ export class Boss {
       if (!m.swung && m.t > m.dur - SPRAY_LEAD) {
         m.swung = true;
         u.act('attack_swipe', { upper: true });
-        g.vfx.rustSpray(m.at, m.yaw, 11, 0.55);
+        this.impactVisual('spray',m.at,m.yaw);
       }
       if (m.t >= m.dur) {
         m.fired = true;
@@ -456,7 +455,7 @@ export class Boss {
     } else if (m.kind === 'eclipse') {
       if (!m.swung && m.t > m.dur - SLAM_LEAD) { m.swung=true; u.act('attack_slam', {speed:SLAM_RATE}); }
       if (m.t >= m.dur) {
-        m.fired=true; g.vfx.ring(m.at,new THREE.Color('#b577ff'),11,4.5,0.8,0.9);
+        m.fired=true; this.impactVisual('eclipse',m.at);
         g.follow.shake(0.5,0.7); g.audio.sfx('sfx-crit');
         for (const p of g.combatPlayers?.() ?? [g.player.unit]) {
           const d=Math.hypot(p.pos.x-m.at.x,p.pos.z-m.at.z);
@@ -468,10 +467,7 @@ export class Boss {
       if (!m.swung && m.t > m.dur - SLAM_LEAD) { m.swung = true; u.act('attack_slam', { speed: SLAM_RATE }); }
       if (m.t >= m.dur) {
         m.fired = true;
-        const color = new THREE.Color(this.profile.color);
-        g.vfx.ring(m.at, color, 0.5, 7, 0.6, 0.85);
-        g.vfx.ring(m.at, color, 1, 6, 0.8, 0.7);
-        g.vfx.slamImpact(m.at, 6);
+        this.impactVisual('nova',m.at);
         g.follow.shake(0.4, 0.5);
         g.audio.sfx('sfx-crit');
         for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && Math.hypot(p.pos.x - m.at.x, p.pos.z - m.at.z) < 6 + p.radius * 0.5) g.combat.damage(u, p, p.maxHp * 0.32);
@@ -494,13 +490,24 @@ export class Boss {
       }
       if (m.t >= m.dur) {
         m.fired = true;
-        g.vfx.slamImpact(m.at, 5.5);
+        this.impactVisual('undertow',m.at);
         g.follow.shake(0.55, 0.6);
         g.audio.sfx('sfx-crit');
         for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && u.distTo(p) < 5.5 + p.radius * 0.5) g.combat.damage(u, p, p.maxHp * 0.24);
         this.finishMech();
       }
     }
+  }
+
+  private impactVisual(kind:Mech,at:THREE.Vector3,yaw=0):void {
+    const vfx=this.game.vfx;
+    if(kind==='spray'){vfx.rustSpray(at,yaw,11,.55);return;}
+    if(kind==='eclipse'){vfx.ring(at,new THREE.Color('#b577ff'),11,4.5,.8,.9);return;}
+    if(kind==='nova'){
+      const color=new THREE.Color(this.profile.color);
+      vfx.ring(at,color,.5,7,.6,.85);vfx.ring(at,color,1,6,.8,.7);
+    }
+    vfx.slamImpact(at,kind==='nova'?6:kind==='slam'?3.4:5.5);
   }
 
   refreshWarning():void {

@@ -39,7 +39,8 @@ try{
  await b.waitForFunction(()=>document.querySelector('.msg-warn').textContent.includes('Enter the green circle'));
  assert.match(await b.evaluate(()=>window.app.current.game.worldBoss.unit.name),/Astra/);
  assert.match(await b.evaluate(()=>window.app.current.game.worldBoss.unit.title),/Guardian/);
- console.log('PASS: same Eclipse mechanic gives Korean host / English guest the same inner-circle safety instruction');
+ const colours=await Promise.all([a,b].map(p=>p.evaluate(()=>window.app.current.game.worldBoss.mech.fx.map(f=>f.u.uColor.value.getHexString()))));assert.deepEqual(colours[0],['a050ff','71ffca']);assert.deepEqual(colours[1],colours[0]);
+ console.log('PASS: same Eclipse safety instruction and purple/green telegraph colours on both peers',colours);
  await a.evaluate(()=>window.app.current.game.worldBoss.sleep());await b.waitForFunction(()=>window.app.current.game.worldBoss.state==='dormant');
  for(const p of [a,b]){assert.equal(await p.locator('.msg-warn').textContent(),'');assert.equal(await p.locator('.messages').evaluate(el=>el.classList.contains('combat-warning')),false);}
  console.log('PASS: host cancellation removes the mechanic instruction in both browsers');

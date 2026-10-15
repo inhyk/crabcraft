@@ -170,7 +170,7 @@ export class BattleSync {
         const env=e.environment;
         if(typeof env.beacon==='boolean'){if(g.setLighthouse)g.setLighthouse(env.beacon);else g.world.setBeaconLit(env.beacon);}
         if(env.mood===3 && !g.world.getEnvironment().beacon)g.world.setMood(3);
-        if(env.mood===1 && src.level>=3) g.world.setMood(1);
+        if(env.mood===1 && src.level>=3 && g.world2.chapter===1 && g.world.getEnvironment().beacon) g.world.setMood(1);
         if(env.mood===2 && g.journey?.abyssCleared) g.world.setMood(2);
         this.publish();
       } else if (e.kind === 'condition' && u?.hostile && u.alive && !u.invulnerable && src.distTo(u)<38 && e.condition) {

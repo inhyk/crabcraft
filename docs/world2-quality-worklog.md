@@ -126,3 +126,14 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 
 - Published warning commit 9b44cef as READY deployment dpl_7Vy21jDqzjmbAKNKYYwY4M1XfLNG. The complete warning lifecycle/language browser replay passed again on the public stable URL, with no page errors. Hub page HTTP 200.
 - Additional source audit for the next iteration: guest Eclipse outer telegraphs still use the generic default tint while the host explicitly uses purple; align that tint and verify actual effects on both peers.
+
+## Lighthouse reveal race and shared boss effect palette — 2026-10-15 14:25 UTC
+
+- Reproduced a live regression before the fix: completing q3 and immediately turning the beacon off changed {mood:3, beacon:false} back to {mood:1, beacon:false} after the delayed reveal. The boss remained dormant, leaving inconsistent weather.
+- The reveal no longer writes weather. It checks the current chapter, lit state and story victory before waking/announcing the shore boss. Moonwater and q4 are granted immediately through the actual quest event pipeline, so travel during the 2.6-second reveal cannot strand q4 as an unoffered available quest. Localized that narrative.
+- Stale guest night requests are ignored if the lighthouse is off or the party is visiting World II. New regression coverage preserves the existing valid lit-shore night request.
+- Guest Eclipse telegraphs now use the host's purple danger tint. Shared impact visuals preserve matching Eclipse annuli and Nova rings, alongside slam, spray and undertow effects; damage authority is unchanged.
+- Added a real-class regression covering telegraph colours and resolved effect calls for every mechanic across host/follower. All 33 game/protocol tests and the production build pass.
+- Two-browser replay confirms actual effect uniforms match on both peers: danger a050ff and sanctuary 71ffca, plus bilingual instructions/cancellation, parties, PvP, weather, travel, villagers and authority transfer.
+- tools/qa-beacon-reveal.mjs passes actual q3 completion/reward callbacks for off, travel and lit cases, plus q4 save/reload. Objectives are injected for focused timing coverage. No page errors.
+- Ten-hour development remains active; these resolve the prior milestone's two follow-up audit items.

@@ -104,3 +104,15 @@ test('World II boss combat leaves the World I lighthouse and morning unchanged',
  boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
  assert.equal(boss.state,'fight');assert.equal(mood,3);assert.equal(game.world.getEnvironment().beacon,false);
 });
+
+test('host and network follower use matching attack colours and impact effects for every mechanic',()=>{
+ for(const [profile,phase,index] of [[BOSS_PROFILES.rust,1,0],[BOSS_PROFILES.rust,1,1],[BOSS_PROFILES.rust,2,0],[BOSS_PROFILES.abyss,2,0],[BOSS_PROFILES.eclipse,2,0],[BOSS_PROFILES.eclipse,2,1]]){
+  const host=setup(profile),guest=setup(profile);
+  const record=s=>{const effects=[],circles=[];for(const name of ['ring','slamImpact','rustSpray'])s.game.vfx[name]=(...args)=>{effects.push([name,...args.map(v=>v?.isColor?v.getHexString():v?.isVector3?v.toArray():v)]);return {};};s.game.vfx.telegraphCircle=(_at,r,_dur,color)=>{circles.push([r,color?.getHexString()??'default']);return {};};return {effects,circles};};
+  const h=record(host),g=record(guest);host.boss.state='fight';host.boss.phase=phase;host.boss.mechIndex=index;host.boss.startMech();
+  const checkpoint=host.boss.networkState(profile.level===20?'b20':profile.level===10?'b10':'b3');guest.boss.applyNetwork(checkpoint);
+  assert.deepEqual(g.circles,h.circles,checkpoint.mech.kind+' warning colours');
+  host.boss.updateMech(host.boss.mech.dur);guest.boss.applyNetwork({...checkpoint,mech:null});
+  assert.deepEqual(g.effects,h.effects,checkpoint.mech.kind+' resolved effects');
+ }
+});
