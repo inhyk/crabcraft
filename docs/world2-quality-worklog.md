@@ -103,3 +103,11 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Ten-hour development remains active; this is another intermediate release.
 
 - Published 90b326d as READY deployment dpl_DM9HGh8qBmmiakPSGrLfV5D7LMZR. The entire world-language browser replay also passed on the public stable production URL, including loading, both languages, all five island regions, save/reload, shore return and music-key checks.
+
+## Island ground art direction — 2026-10-15 14:15 UTC
+
+- Replaced the island-wide height-only tint with continuous region palettes: teal moss in Moonshade, lavender mineral dust at the ruins, warm earth in Starhaven, heather on the pilgrim road and dark slate around the arena. Worn trail strips and broad mineral variation blend smoothly.
+- All colouring is baked into the existing vertex buffer at load time; no extra draw calls, meshes or per-frame terrain updates. Added bounded anisotropic filtering for ground viewed at shallow camera angles and reduced its metallic sheen.
+- Inspected actual western/eastern landmark GPU captures. Trail centerlines remain clear and sight collision through all 63 decorative crystals passes.
+- Added tools/qa-world2-ground.mjs: all 22,701 rendered vertices match the live height/collision surface (maximum error 0.000000477 units), colours are finite, filtering respects device limits, and the real engaged boss emits Eclipse and Starfall telegraphs. Inspected the warmed boss-framing view and returned to shore without page errors. Encounter setup is injected for focused QA; this is not a claim of a manually played full boss victory.
+- All 31 game/protocol tests, production build and whitespace checks pass. Ten-hour development remains active.

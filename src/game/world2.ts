@@ -9,6 +9,7 @@ import type { Collision } from '../world/collision';
 import { xpForLevel } from './progression';
 import { StarPortal } from './portal';
 import { StarVillageLife } from './world2Life';
+import {starGroundColor} from './world2Ground';
 
 function naturalHeight(x:number,z:number){
   const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
@@ -96,8 +97,8 @@ export class HiddenWorld {
     this.root.add(new THREE.Mesh(new THREE.SphereGeometry(800,48,24),this.glow));
     const land=new THREE.PlaneGeometry(280,320,140,160);land.rotateX(-Math.PI/2);
     const pos=land.attributes.position,colors=[];
-    const low=new THREE.Color('#263941'),high=new THREE.Color('#657358');
-    for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i),y=this.height(x,z);pos.setY(i,y);const c=low.clone().lerp(high,Math.max(0,Math.min(1,(y+1)/10)));colors.push(c.r,c.g,c.b);}
+    const groundColor=new THREE.Color();
+    for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i),y=this.height(x,z);pos.setY(i,y);starGroundColor(x,z,y,groundColor);colors.push(groundColor.r,groundColor.g,groundColor.b);}
     land.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));land.computeVertexNormals();
     const pixels=new Uint8Array(128*128*4);
     for(let z=0;z<128;z++)for(let x=0;x<128;x++){
@@ -106,8 +107,8 @@ export class HiddenWorld {
       const shade=Math.round((.68+grain-vein)*255),i=(z*128+x)*4;
       pixels.set([shade,shade,shade,255],i);
     }
-    const texture=this.groundTexture=new THREE.DataTexture(pixels,128,128);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(18,18);texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearMipmapLinearFilter;texture.generateMipmaps=true;texture.needsUpdate=true;
-    const ground=new THREE.Mesh(land,new THREE.MeshStandardMaterial({map:texture,vertexColors:true,roughness:.94,metalness:.13}));ground.receiveShadow=true;this.root.add(ground);
+    const texture=this.groundTexture=new THREE.DataTexture(pixels,128,128);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(18,18);texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearMipmapLinearFilter;texture.generateMipmaps=true;texture.anisotropy=Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy());texture.needsUpdate=true;
+    const ground=new THREE.Mesh(land,new THREE.MeshStandardMaterial({map:texture,vertexColors:true,roughness:.94,metalness:.08}));ground.name='star-island-ground';ground.receiveShadow=true;this.root.add(ground);
     const sea=new THREE.Mesh(new THREE.PlaneGeometry(1600,1600),new THREE.MeshStandardMaterial({color:'#080d24',metalness:.82,roughness:.18,emissive:'#080829',emissiveIntensity:.3}));sea.rotation.x=-Math.PI/2;sea.position.y=-3;this.root.add(sea);
     const stone=new THREE.MeshStandardMaterial({color:'#3c3b57',roughness:.78,metalness:.3});
     const crystal=new THREE.MeshStandardMaterial({color:'#a57bff',emissive:'#6524c9',emissiveIntensity:1.5,metalness:.5,roughness:.2});
