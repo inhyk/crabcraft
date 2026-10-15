@@ -81,3 +81,5 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Extended two-browser replay passed actual host departure. New host retained level 19, HP 80/133, damage 12.64–18.96, XP 326 and island respawn 12 seconds. Its subsequent shore return restored level 1, respawn 30 seconds and red LEDs. PvP, parties, weather, portals and villager checks also passed with no page errors.
 - Initial extended replay stopped because the QA tool used the guest-only travel request on the host; corrected the replay to invoke the host's chapter transition. No duplicate process was started while the prior handle was live.
 - Ten-hour development remains active.
+
+- Authority fix deployed READY as dpl_2LFBNnFxLiC3VxoAusvz2EixvFgn (commit 16de09f). Production browser smoke recovered damage 8.32–12.48 from intentionally stale coefficients without changing HP 52, then restored shore level 1 / respawn 30 / red LEDs. This smoke checks the deployed code; real WebSocket host departure was exercised in the two-browser local relay replay above. Hub page HTTP 200.
