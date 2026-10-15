@@ -8,6 +8,7 @@ import type { Unit } from './unit';
 import type { NavHints } from './nav';
 import type { NpcDef } from './quests';
 import { TOWNSFOLK_BARKS } from './quests';
+import {starNpcProgressLine,STAR_VICTORY_BARKS} from './starDialogue';
 import { damp, pick, rand, TAU, turnToward, yawTo } from './util';
 
 export class Npc {
@@ -27,6 +28,8 @@ export class Npc {
 
   nextLine(): string {
     if(this.game.world2.chapter===2){
+      const progress=starNpcProgressLine(this.def.id,this.game.quests.status,!!this.game.journey?.trueCleared);
+      if(progress)return progress;
       const lines:Record<NpcDef['id'],[string,string][]>= {
         brinebeard:[['별빛 항구가 제법 마을다워졌군! 저 바다를 건너서도 우린 한 마을이지.','Starhaven is starting to feel like home! Across the sea, we are still one village.'],['서쪽 수정 숲을 순찰해 주게. 이삿짐을 나르는 주민들이 안심할 거야.','Keep an eye on the western crystal wood. The settlers will feel safer.']],
         silvermoon:[['북쪽의 기억의 성소에서 별들의 노래를 들어 보세요.','Listen for the stars at the sanctuary of memory in the north.'],['달빛 연못은 멀리 있지만, 이 섬의 별들도 우리를 지켜봐요.','The Moonpool is far away, but these stars watch over us too.']],
@@ -105,7 +108,7 @@ export class Townsfolk {
     const starLines:[string,string][]=[['별빛 항구에 오신 걸 환영해요!','Welcome to Starhaven!'],['바닷가 마을에서 다 같이 이사 왔어요.','We moved here together from the seaside town.'],['새 집 앞에 꽃을 심었어요!','I planted flowers outside my new home!'],['핍이 수정으로 새 도구를 만든대요.','Pip is making new tools from crystals.'],['북쪽 유적의 일식은 조심하세요.','Be careful of the eclipse in the northern ruins.'],['여기서도 친구들과 함께라서 든든해요.','I am glad our friends are here too.']];
     const shoreKo=['옆걸음하기 좋은 저녁이네요.','앞으로 걸어 본 적 있어요? 저도 없어요.','오늘 LED가 어둡네요. 녹 때문인가?','그룩이 집게 씨름 세 판을 빚졌어요.','등대가 방금 깜빡였나요?','껍질을 닦았는데 아무도 몰라봐요!','다리가 여섯인데도 돌길에서 넘어져요.','주점 수프에서 승리의 향기가 나네요. 해초 향기도요.','역시 옆걸음이 최고예요.','선장님 수염이 지붕을 받칠 만큼 튼튼하대요.'];
     const index=Math.floor(Math.random()*TOWNSFOLK_BARKS.length);
-    g.say(this.unit,g.world2.chapter===2?t(...pick(starLines)):t(shoreKo[index],TOWNSFOLK_BARKS[index]));
+    g.say(this.unit,g.world2.chapter===2?t(...pick(g.journey?.trueCleared?STAR_VICTORY_BARKS:starLines)):t(shoreKo[index],TOWNSFOLK_BARKS[index]));
     this.walking = false;
     this.pauseUntil = g.time + 4;
     this.unit.act('gesture_hello');

@@ -537,7 +537,7 @@ export class Game {
     const brine = this.npcById('brinebeard');
     // After the zone banner (4.3 s) has faded, so the greeting bubble does not sit on top of it.
     setTimeout(() => {
-      if (!this.alive || !brine) return;
+      if (!this.alive || !brine || this.world2.chapter !== 1) return;
       brine.unit.act('gesture_hello');
       this.say(brine.unit, t('어서 와! 이쪽이야, 새 친구!','Ahoy! Over here, fresh shell!'));
     }, 4600);
