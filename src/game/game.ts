@@ -157,7 +157,8 @@ export class Game {
     const spec: CrabSpec = { ...DEFAULT_SPEC, ...(app.spec ?? {}) };
     if (!CLASSES[spec.classId]) spec.classId = 'warrior';
     if (!RACES[spec.race]) spec.race = 'human';
-    this.showLoading();
+    const savedChapter = BossJourney.savedChapter(spec);
+    this.showLoading(savedChapter);
     const progress = (f: number, label: string) => this.setLoading(f, label);
 
     const musicVol = Number(localStorageGet('cc.musicVol') ?? NaN);
@@ -382,7 +383,7 @@ export class Game {
     if (!this.alive) return;
 
     this.debug = new DebugTools(this);
-    progress(1, 'Welcome to Clawhaven');
+    progress(1, savedChapter === 2 ? 'Welcome to Starhaven' : 'Welcome to Clawhaven');
     this.offFrame = this.engine.onFrame(this.frame);
     this.offAfter = this.engine.onAfterFrame(() => {
       if (!this.readyFlag && this.loaded) {
@@ -438,16 +439,17 @@ export class Game {
     return snapshotMap(this.engine.renderer, this.scene, { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad, topY: topY + 70 }, hide);
   }
 
-  private showLoading(): void {
-    const tips=loadingTips();
+  private showLoading(chapter: 1 | 2): void {
+    const second = chapter === 2;
+    const tips=loadingTips(chapter);
     const tip = tips[Math.floor(Math.random() * tips.length)];
-    const img = `art/loading-${1 + Math.floor(Math.random() * 2)}.webp`;
+    const img = second ? 'art/loading-starhaven.webp' : `art/loading-${1 + Math.floor(Math.random() * 2)}.webp`;
     const el = h(
       'div',
-      { class: 'loading' },
+      { class: second ? 'loading starhaven' : 'loading' },
       h('div', { class: 'ld-art', style: `background-image:url("${art(img)}")` }),
       h('div', { class: 'ld-shade' }),
-      h('div', { class: 'ld-zone' }, h('div', { class: 'ld-title cc-title' }, regionName('Clawhaven')), h('div', { class: 'ld-sub' }, t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples'))),
+      h('div', { class: 'ld-zone' }, h('div', { class: 'ld-title cc-title' }, regionName(second ? 'Starhaven' : 'Clawhaven')), h('div', { class: 'ld-sub' }, second ? t('월드 II  |  별빛 아래 다시 만난 친구들','World II  |  Friends reunited beneath the stars') : t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples'))),
       h(
         'div',
         { class: 'ld-foot' },

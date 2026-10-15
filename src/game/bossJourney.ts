@@ -2,14 +2,31 @@ import * as THREE from 'three';
 import {t,language} from '../i18n';
 import type { Game } from './game';
 import type { Boss } from './boss';
+import type { CrabSpec } from '../crab/types';
 import { localStorageGet, localStorageSet } from '../app';
 import { h } from '../ui/dom';
 import { xpForLevel, canChallenge, patrolReward } from './progression';
 import { QUEST_ORDER, QUESTS, type QuestStatus } from './quests';
 import './bossJourney.css';
 
+function readJourneySave(key: string) {
+  try {
+    const data = JSON.parse(localStorageGet(key) ?? 'null');
+    return data && Number.isFinite(data.xp) ? data : null;
+  } catch { return null; }
+}
+
 /** The journey stays playable after the first story boss, including after a reload. */
 export class BossJourney {
+  private static saveKey(spec: CrabSpec): string {
+    return `cc.journey.v1:${spec.race}:${spec.sex}:${spec.classId}:${spec.name}`;
+  }
+
+  /** Preview the same character save that restore() will accept, before models are loaded. */
+  static savedChapter(spec: CrabSpec): 1 | 2 {
+    return readJourneySave(this.saveKey(spec))?.chapter === 2 ? 2 : 1;
+  }
+
   readonly root: HTMLDetailsElement;
   rustCleared = false;
   abyssCleared = false;
@@ -35,7 +52,7 @@ export class BossJourney {
 
   constructor(private readonly game: Game) {
     const spec = game.player.unit.rig.spec;
-    this.key = `cc.journey.v1:${spec.race}:${spec.sex}:${spec.classId}:${spec.name}`;
+    this.key = BossJourney.saveKey(spec);
     this.root = h('details', { class: 'boss-journey' }, h('summary', null, '⚔ 보스 여정'),
       h('div', { class: 'bj-heading' }, h('span', null, 'THE TIDELANDS'), h('strong', null, '세 왕관의 전설')), this.progress);
     for (const boss of [game.boss, game.finalBoss, game.worldBoss]) {
@@ -59,8 +76,8 @@ export class BossJourney {
 
   private restore() {
     try {
-      const data = JSON.parse(localStorageGet(this.key) ?? 'null');
-      if (!data || !Number.isFinite(data.xp)) return;
+      const data = readJourneySave(this.key);
+      if (!data) return;
       const second = data.chapter === 2;
       this.game.player.restoreXp(data.xp);
       this.rustCleared = data.rust === true;

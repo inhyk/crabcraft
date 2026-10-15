@@ -37,9 +37,16 @@ const LOADING_LABELS:Record<string,string>={
   'Painting the portraits':'초상화 그리는 중',
   'Lighting the lamps':'가로등 밝히는 중',
   'Welcome to Clawhaven':'클로헤이븐에 오신 걸 환영해요',
+  'Welcome to Starhaven':'별빛 항구에 다시 오신 걸 환영해요',
 };
 export const loadingLabel=(key:string)=>LOADING_LABELS[key]?t(LOADING_LABELS[key],key):key;
-export function loadingTips(){return [
+export function loadingTips(chapter: 1 | 2 = 1){return chapter === 2 ? [
+  t('별빛 항구로 이사 온 친구들에게 말을 걸어 월드 2 퀘스트를 받아 보세요.','Speak to the friends who moved to Starhaven to accept World II quests.'),
+  t('보랏빛 포탈은 두 세계를 이어 줘요. 가까이 가서 F를 누르면 해안으로 돌아갈 수 있어요.','The violet portal joins both worlds. Approach it and press F to return to the shore.'),
+  t('별 등불은 F를 누르고 있어야 켜져요. 등불 옆에서 잠시 멈춰 주세요.','Hold F beside a star lamp to light it. Stay close until its light awakens.'),
+  t('달그늘 수정 숲과 별의 유적, 북쪽 별길에는 옛 세계의 기억이 남아 있어요.','The Crystalwood, the Fallen Star Ruins, and the northern Starroad hold memories of this world.'),
+  t('20레벨이 되면 별의 왕좌에 도전하세요. 검은 일식이 오면 안쪽 안전지대로 피하세요.','Challenge the Star Throne at level 20. When the Black Eclipse falls, move into the inner sanctuary.'),
+] : [
   t('게는 옆으로 걸어요. A·D로 옆걸음, Q·E로 회전하고 마우스 오른쪽 버튼으로 방향을 조절하세요.','Crabs walk sideways. A and D scuttle, Q and E turn, right mouse steers.'),
   t('Tab으로 앞쪽의 가까운 적을 선택한 뒤 1~4번 기술로 싸우세요.','Press Tab to target the nearest enemy in front of you, then 1 to 4 to fight.'),
   t('노란 !는 받을 수 있는 퀘스트, 노란 ?는 보상을 받을 수 있는 퀘스트예요.','A yellow ! means a crab has work for you. A yellow ? means it is ready to turn in.'),
