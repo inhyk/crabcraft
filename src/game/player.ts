@@ -219,9 +219,10 @@ export class Player {
       nz += this.velZ * dt;
     }
     if (u.pushTime > 0) {
-      u.pushTime -= dt;
-      nx += u.pushX * dt;
-      nz += u.pushZ * dt;
+      const pushDt = Math.min(dt, u.pushTime);
+      u.pushTime = Math.max(0, u.pushTime - dt);
+      nx += u.pushX * pushDt;
+      nz += u.pushZ * pushDt;
     }
     u.moveTo(g.world, nx, nz, dt);
     if (this.spinT > 0) {

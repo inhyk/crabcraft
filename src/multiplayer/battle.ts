@@ -45,6 +45,7 @@ export class BattleSync {
   private units = new Map<string, Unit>();
   private keys = new Map<Unit, string>();
   private effectAt = 0;
+  private remotePush = new Map<string, { x: number; z: number; seconds: number }>();
   private serial = 0;
   private sceneClock = 0;
   private originalMood: Game['world']['setMood'];
@@ -83,7 +84,7 @@ export class BattleSync {
     }
     this.elapsed = 1;
   }
-  leave() { this.active = false; this.host = ''; this.goals.clear();this.mode='coop';this.parties={};this.duelAt.clear(); }
+  leave() { this.active = false; this.host = ''; this.goals.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
   elect(host: string) {
     const was = this.authority; this.host = host;
     if (!was && this.authority) {
@@ -91,7 +92,7 @@ export class BattleSync {
       for (const u of this.units.values()) u.cancelPendingHit();
       for (const e of this.game.enemies) e.resumeAuthority();
       for (const b of [this.game.boss, this.game.finalBoss, this.game.worldBoss]) b.resumeAuthority();
-      this.goals.clear(); this.elapsed = 1;
+      this.goals.clear(); this.remotePush.clear(); this.elapsed = 1;
       this.game.hud.messages.info(t('친구가 나가서 내가 전투를 이어받았어요.','Your friend left. You are now hosting the battle.'));
     }
   }
@@ -209,7 +210,13 @@ export class BattleSync {
         const p = g.player.unit, f = e.effect;
         p.stunUntil = Math.max(p.stunUntil, g.time + f.stun);
         if (f.rustFor > 0) { p.rust = f.rust; p.rustUntil = g.time + f.rustFor; }
-        if (f.pushTime > 0) { p.pushX = f.pushX; p.pushZ = f.pushZ; p.pushTime = f.pushTime; }
+        if (f.pushTime > 0) {
+          // A slightly early next packet must not discard the previous packet's last frame.
+          const left = Math.max(0, p.pushTime), seconds = left + f.pushTime;
+          p.pushX = (p.pushX * left + f.pushX * f.pushTime) / seconds;
+          p.pushZ = (p.pushZ * left + f.pushZ * f.pushTime) / seconds;
+          p.pushTime = seconds;
+        }
       }
     } finally { this.applying = false; }
   }
@@ -261,12 +268,27 @@ export class BattleSync {
     if (!this.active) return;
     if (this.authority) {
       if ((this.elapsed += dt) >= 0.1) { this.elapsed = 0; this.publish(); }
+      const peers = this.peers();
+      // Remote proxies have no Player.update to expire forces. Integrate the intended movement
+      // before the 5Hz effect packet, preserving short impulses and continuous pulls alike.
+      for (const [id, p] of peers) {
+        const u = p.unit;
+        if (!u || u.pushTime <= 0 || dt <= 0) continue;
+        const seconds = Math.min(dt, u.pushTime);
+        const push = this.remotePush.get(id) ?? { x: 0, z: 0, seconds: 0 };
+        push.x += u.pushX * seconds; push.z += u.pushZ * seconds; push.seconds += seconds;
+        this.remotePush.set(id, push);
+        u.pushTime = Math.max(0, u.pushTime - dt);
+      }
+      for (const id of this.remotePush.keys()) if (!peers.has(id)) this.remotePush.delete(id);
       if ((this.effectAt += dt) >= 0.2) {
         this.effectAt = 0;
-        for (const [id, p] of this.peers()) {
+        for (const [id, p] of peers) {
           const u = p.unit; if (!u) continue;
           const stun = Math.max(0,u.stunUntil-this.game.time), rustFor=Math.max(0,u.rustUntil-this.game.time);
-          if (stun || rustFor || u.pushTime > 0) this.event({ kind:'effect',target:id,effect:{stun,rust:u.rust,rustFor,pushX:u.pushX,pushZ:u.pushZ,pushTime:Math.max(0,u.pushTime)} });
+          const push = this.remotePush.get(id);
+          if (stun || rustFor || push) this.event({ kind:'effect',target:id,effect:{stun,rust:u.rust,rustFor,pushX:push ? push.x / push.seconds : 0,pushZ:push ? push.z / push.seconds : 0,pushTime:push?.seconds ?? 0} });
+          this.remotePush.delete(id);
         }
       }
     } else {

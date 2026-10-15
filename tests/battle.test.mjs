@@ -132,3 +132,35 @@ test('shared lit beacon completes the guest quest once and never credits it in W
  a.world2.chapter=2;aa.publish();flush();
  assert.equal(b.quests.status.q3,'active');assert.equal(b.quests.progress.get('q3-beacon')??0,0);
 });
+
+test('a finite remote push is transmitted once, then expires without stale repeats',()=>{
+ const g=game(),peer=unit('remote'),packets=[];
+ const sync=new BattleSync(g,p=>packets.push(p),()=>new Map([['b',{unit:peer}]]));sync.join('a','a',null);
+ peer.pushX=3.2;peer.pushTime=.05;
+ for(let i=0;i<120;i++){g.time+=1/60;sync.update(1/60);}
+ const effects=packets.filter(p=>p.type==='combat'&&p.event.kind==='effect'&&p.event.effect.pushTime>0).map(p=>p.event.effect);
+ assert.equal(effects.length,1);assert.ok(Math.abs(effects.reduce((x,f)=>x+f.pushX*f.pushTime,0)-.16)<1e-9);assert.equal(peer.pushTime,0);
+});
+
+test('continuous remote pull preserves its displacement across 30/60/144Hz and the 5Hz relay cadence',()=>{
+ for(const hz of [30,60,144]){
+  const g=game(),peer=unit('remote'),packets=[],sync=new BattleSync(g,p=>packets.push(p),()=>new Map([['b',{unit:peer}]]));sync.join('a','a',null);
+  for(let i=0;i<hz*2;i++){if(i<hz){peer.pushX=3.2;peer.pushZ=-1.6;peer.pushTime=1/hz;}g.time+=1/hz;sync.update(1/hz);}
+  const effects=packets.filter(p=>p.type==='combat'&&p.event.kind==='effect').map(p=>p.event.effect);
+  assert.ok(Math.abs(effects.reduce((x,f)=>x+f.pushX*f.pushTime,0)-3.2)<1e-9,`x at ${hz}Hz`);
+  assert.ok(Math.abs(effects.reduce((x,f)=>x+f.pushZ*f.pushTime,0)+1.6)<1e-9,`z at ${hz}Hz`);
+  assert.ok(effects.length<=6,`bounded 5Hz traffic at ${hz}Hz`);assert.equal(peer.pushTime,0);
+ }
+});
+
+test('a new remote effect preserves the unconsumed displacement of an overlapping packet',()=>{
+ const {b,bb}=pair(),u=b.player.unit;u.pushX=4;u.pushZ=-2;u.pushTime=.05;
+ bb.receive('a',{kind:'effect',target:'b',effect:{stun:0,rust:0,rustFor:0,pushX:2,pushZ:3,pushTime:.1}});
+ assert.ok(Math.abs(u.pushX*u.pushTime-.4)<1e-9);assert.ok(Math.abs(u.pushZ*u.pushTime-.2)<1e-9);assert.ok(Math.abs(u.pushTime-.15)<1e-9);
+});
+
+test('an unsent force cannot carry into a fresh peer after leaving a room',()=>{
+ const g=game(),peer=unit('remote'),packets=[],peers=new Map([['b',{unit:peer}]]),sync=new BattleSync(g,p=>packets.push(p),()=>peers);sync.join('a','a',null);
+ peer.pushX=3;peer.pushTime=.05;sync.update(.05);sync.leave();peers.set('b',{unit:unit('remote')});sync.join('a','a',null);sync.update(.3);
+ assert.equal(packets.filter(p=>p.type==='combat'&&p.event.kind==='effect').length,0);
+});
