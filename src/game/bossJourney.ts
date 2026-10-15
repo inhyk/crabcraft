@@ -235,6 +235,7 @@ export class BossJourney {
     } else this.enterWorld2();
   }
   closeChapterEnding() {
+    this.chapterCelebrating=false;
     if(!this.chapterEnding) return;
     this.chapterEnding.remove(); this.chapterEnding=null;
     this.game.cinematic=false; this.game.player.unit.invulnerable=false; this.game.hud.setCinematic(false);

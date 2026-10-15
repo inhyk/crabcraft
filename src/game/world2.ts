@@ -183,6 +183,7 @@ export class HiddenWorld {
   enter(authority=true) {
     if(this.chapter===2)return;
     const g=this.game,w=g.world;
+    g.ending.cancel();
     g.hud.messages.closeDiscovery();
     if(!this.baseHomes.length)this.baseHomes=g.enemies.map(e=>e.home.clone());
     this.chapter=2;this.rendered=true;this.resetPortalArrival();
@@ -235,6 +236,7 @@ export class HiddenWorld {
   }
   returnToShore() {
     if(this.chapter===1)return;
+    this.game.ending.cancel();
     this.game.hud.messages.closeDiscovery();
     this.showEpilogue();this.chapter=1;this.game.quests.setChapter(1);
     // World II has its own lighting. Restore the untouched shore atmosphere and fog.

@@ -8,7 +8,7 @@ import { HiddenWorld } from './world2';
 import { Multiplayer } from '../multiplayer/client';
 import type { App } from '../app';
 import { localStorageGet, localStorageSet } from '../app';
-import type { FrameInfo, QualitySetting } from '../core/engine';
+import type { FrameInfo, QualitySetting, ViewOptions } from '../core/engine';
 import { FollowCamera } from '../core/followCamera';
 import { createCrab, createEnemyCrab } from '../crab/provider';
 import type { CrabRig, CrabSpec, RaceId } from '../crab/types';
@@ -54,6 +54,7 @@ export const DEFAULT_SPEC: CrabSpec = { race: 'human', sex: 'male', classId: 'wa
 
 const CULL_DIST = 80;
 const SHADOW_DIST = 18;
+const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },
@@ -207,7 +208,7 @@ export class Game {
     progress(0.56, 'Building Starhaven');
     await this.world2.buildSettlement();
     if (!this.alive) return;
-    this.engine.setView(this.scene, this.camera, { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } });
+    this.engine.setView(this.scene, this.camera, GAME_VIEW);
     this.vfx = new Vfx(this.scene);
     this.vfx.density = app.engine.quality === 'low' ? 0.55 : 1;
     this.objective = new ObjectiveMarker(this.vfx.fx);
@@ -1219,6 +1220,13 @@ export class Game {
       this.hud.messages.banner(regionName(z), regionSubtitle(z), 'zone');
     }
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
+  }
+
+  /** Celebration effects and direct music requests must not leak into the next adventure. */
+  resumeAfterEnding(): void {
+    this.engine.setView(this.scene, this.camera, GAME_VIEW);
+    if (this.musicOn) this.updateMusic(true);
+    else this.audio.stopMusic(.4);
   }
 
   private updateMusic(force = false): void {

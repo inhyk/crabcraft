@@ -34,18 +34,22 @@ export class EndingSequence {
   private nextFirework = 0;
   private nextBark = 0;
   private dancers: Unit[] = [];
+  private crowdHomes: { unit:Unit; x:number; z:number; yaw:number }[] = [];
   private centre = new THREE.Vector3();
   private orbit0 = 0;
   private finishing = false;
   private captionIndex = -1;
   private mode:'chapter'|'final'='final';
   private onFinished:(()=>void)|null=null;
+  private sequence = 0;
 
   constructor(private readonly game: Game) {}
 
   async start(mode:'chapter'|'final'='final',onFinished?:()=>void): Promise<void> {
     if (this.active) return;
     const g = this.game;
+    const sequence = ++this.sequence;
+    this.started = false;
     this.active = true;this.mode=mode;this.onFinished=onFinished??null;this.finishing=false;this.captionIndex=-1;
     g.journey?.closeChapterEnding();
     g.world2.showEpilogue();
@@ -54,9 +58,9 @@ export class EndingSequence {
     g.player.setTarget(null);
     g.hud.setCinematic(true);
     g.say(g.npcById('brinebeard')!.unit, tr('클로헤이븐 주민들! 모이게! 우리의 영웅이 돌아왔어!','Clawhaven! Gather round! Our hero is back!'), true);
-    g.audio.playMusic('music-ending', 2.5);
+    if (g.musicOn) void g.audio.playMusic('music-ending', 2.5);
     await g.app.blackout(true, 1100);
-    if (!g.alive) return;
+    if (!g.alive || sequence !== this.sequence) return;
     // Under the black: drop any dialogue shot and its long lens before the ending camera takes over.
     g.follow.cut();
 
@@ -69,6 +73,7 @@ export class EndingSequence {
     const p = g.player.unit;
     // Everyone in town, every race.
     const crowd = [...g.npcs.map((n) => n.unit), ...g.townsfolk.map((t) => t.unit)];
+    this.crowdHomes = crowd.map(unit=>({unit,x:unit.pos.x,z:unit.pos.z,yaw:unit.yaw}));
     const n = crowd.length;
     const slots = ringSlots(n);
     const c = this.openSquare(spawn.position, spawn.yaw, slots);
@@ -102,6 +107,24 @@ export class EndingSequence {
     this.nextBark = 2.5;
     this.placeCamera(0);
     await g.app.blackout(false, 1400);
+  }
+
+  /** Shared travel can end a guest's celebration before its local dance has finished. */
+  cancel(): void {
+    if (!this.active) return;
+    ++this.sequence;
+    this.active = this.started = false;
+    this.onFinished = null;
+    const g = this.game;
+    for (const u of this.dancers) u.motion.stop(undefined, .3);
+    this.dancers = [];
+    for (const home of this.crowdHomes) home.unit.teleport(g.world,home.x,home.z,home.yaw);
+    this.crowdHomes = [];
+    g.hud.setCaption('');g.hud.showSkip(false);g.hud.setCinematic(false);
+    g.follow.cut();
+    g.resumeAfterEnding();
+    // Invalidate the pre-dance blackout too; its late continuation checks sequence.
+    void g.app.blackout(false, 0);
   }
 
   /** A spot near the square where the whole ring fits on open, level ground (fountains get in the way). */
@@ -187,10 +210,10 @@ export class EndingSequence {
     if ((t >= LENGTH || skip) && !this.finishing) {
       this.finishing = true;
       if(this.mode==='chapter'){
-        this.active=false;this.started=false;g.hud.setCaption('');g.hud.showSkip(false);g.hud.setCinematic(false);g.follow.cut();
-        for(const u of this.dancers)u.motion.stop(undefined,.3);
-        this.onFinished?.();this.onFinished=null;
-      }else void g.app.go('ending', { name: g.player.unit.name });
+        const finished = this.onFinished;
+        this.cancel();
+        finished?.();
+      }else void g.app.go('ending', { name: g.player.unit.name, musicOn: g.musicOn });
     }
   }
 }
