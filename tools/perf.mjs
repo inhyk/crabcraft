@@ -9,6 +9,7 @@
 //
 // Usage: node tools/perf.mjs [--url http://localhost:5209] [--dpr 1] [--size 1600x900]
 //          [--class mage] [--scenes town,combat,boss,ending] [--quality high] [--json out.json]
+// World II: --scenes star-town,star-forest,star-ruins,star-boss
 // --quality sets cc.quality before boot (high | low | auto). Measurements default to 'high' so a
 // fixed pixel ratio is compared; 'auto' lets dynamic resolution react.
 import { chromium } from 'playwright';
@@ -37,7 +38,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await chromium.launch({
   channel: 'chrome',
   headless: true,
-  args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'],
+  args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--mute-audio'],
 });
 const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: dpr });
 const page = await ctx.newPage();
@@ -186,7 +187,27 @@ const results = [];
 const g = (fn, arg) => page.evaluate(fn, arg);
 
 for (const s of scenes) {
-  if (s === 'town') {
+  if (['star-town','star-forest','star-ruins','star-boss'].includes(s)) {
+    await g((scene) => {
+      const game=window.cc.game;game.god=true;game.world2.enter();
+      const [x,z]=({'star-town':[0,55],'star-forest':[-75,-35],'star-ruins':[80,-40],'star-boss':[0,-65]})[scene];
+      game.player.unit.teleport(game.world,x,z,Math.PI);game.follow.yaw=0;game.follow.pitch=.3;game.follow.cut();
+      if(scene==='star-boss'){game.player.restoreXp(22000);game.worldBoss.wake();}
+    },s);
+    await sleep(s==='star-boss'?3000:1200);
+    if(s==='star-boss'){
+      await page.waitForFunction(()=>window.cc.game.worldBoss.state==='fight',null,{timeout:10000});
+      await g(()=>{const game=window.cc.game;game.combat.damage(game.player.unit,game.worldBoss.unit,game.worldBoss.unit.maxHp*.45);});
+      await page.waitForFunction(()=>window.cc.game.worldBoss.phase===2,null,{timeout:5000});
+    }
+    const observed=[];
+    const result=await measure(s,8,async(i)=>{
+      const pose=await g(k=>{const game=window.cc.game;if(k)game.follow.yaw+=Math.PI/4;return {state:game.worldBoss.state,phase:game.worldBoss.phase,mechanic:game.worldBoss.mech?.kind??null};},i);
+      if(s==='star-boss'){if(pose.state!=='fight'||pose.phase<2)throw Error('Boss benchmark must contain actual phase-two combat');observed.push(pose);}
+    });
+    if(s==='star-boss')result.combatCheckpoints=observed;
+    results.push(result);
+  } else if (s === 'town') {
     await g(() => {
       const game = window.cc.game;
       const sp = game.world.pois.spawn;

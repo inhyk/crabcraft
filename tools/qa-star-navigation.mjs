@@ -12,24 +12,26 @@ try{
  await page.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await page.waitForFunction(()=>!document.querySelector('.loading'));
  const routes=await page.evaluate(()=>{
   const g=window.app.current.game;g.god=true;g.world2.enter();const u=g.player.unit;
-  const points=[...g.world2.nodes.map(n=>[n.kind,n.position.x,n.position.z]),...g.world2.memories.map(n=>[n.kind,n.star.position.x,n.star.position.z]),['throne',0,-75]];
+  const points=[...g.world2.nodes.map(n=>[n.kind,n.position.x,n.position.z+(n.kind.startsWith('lamp')?2.8:0)]),...g.world2.memories.map(n=>[n.kind,n.star.position.x,n.star.position.z]),['throne',0,-75]];
+  // A solid lantern is approached within its 3.5-unit F interaction radius, not walked through.
+  for(const n of g.world2.nodes.filter(n=>n.kind.startsWith('lamp'))){const p=points.find(p=>p[0]===n.kind);if(Math.hypot(p[1]-n.position.x,p[2]-n.position.z)>=3.5)throw Error('Waystone approach exceeds interaction reach');}
   const jobs=[...g.npcs.map(n=>[n.def.id,0,86,n.unit.pos.x,n.unit.pos.z])];
   for(const [name,x,z] of points){jobs.push([name,0,24,x,z],[name+' return',x,z,0,24]);}
   jobs.push(['arrival to throne',0,86,0,-75]);let now=100;const results=[];
   for(const [name,fx,fz,tx,tz] of jobs){
-   u.teleport(g.world,fx,fz);const goal=u.pos.clone().set(tx,g.world.heightAt(tx,tz),tz);let count=0,blocked=null,distance=0;now+=1000;
-   for(;count<1800&&Math.hypot(u.pos.x-goal.x,u.pos.z-goal.z)>1;count++){
+   u.teleport(g.world,fx,fz);const goal=u.pos.clone().set(tx,g.world.heightAt(tx,tz),tz);const lamp=g.world2.nodes.find(n=>n.kind===name&&n.kind.startsWith('lamp'));const tolerance=lamp ? .3 : 1;let count=0,blocked=null,distance=0;now+=1000;
+   for(;count<1800&&Math.hypot(u.pos.x-goal.x,u.pos.z-goal.z)>tolerance;count++){
     const via=g.world2.waypoint(u.pos,goal,now),dx=via.x-u.pos.x,dz=via.z-u.pos.z,d=Math.hypot(dx,dz),step=Math.min(.25,d);
     if(d<.001){blocked='stationary waypoint';break;}
     const x=u.pos.x+dx/d*step,z=u.pos.z+dz/d*step;u.moveTo(g.world,x,z,.05);
     if(Math.hypot(u.pos.x-x,u.pos.z-z)>.08){blocked={x,z,actual:[u.pos.x,u.pos.z],via:via.toArray()};break;}
     distance+=step;now+=.05;
    }
-   results.push({name,count,distance,remaining:Math.hypot(u.pos.x-goal.x,u.pos.z-goal.z),blocked});
+   results.push({name,count,distance,remaining:Math.hypot(u.pos.x-goal.x,u.pos.z-goal.z),interactionDistance:lamp?u.pos.distanceTo(lamp.position):null,blocked});
   }
   return {radius:u.radius,graphNodes:g.world2.nav.nodes.length,results};
  });
- for(const r of routes.results){assert.equal(r.blocked,null,JSON.stringify(r));assert.ok(r.remaining<=1.01,JSON.stringify(r));}
+ for(const r of routes.results){assert.equal(r.blocked,null,JSON.stringify(r));assert.ok(r.remaining<=1.01,JSON.stringify(r));if(r.interactionDistance!==null)assert.ok(r.interactionDistance<3.5,JSON.stringify(r));}
  console.log('collision routes',JSON.stringify(routes));
  await page.evaluate(()=>{
   const g=window.app.current.game;g.player.unit.teleport(g.world,0,86,Math.PI);g.world2.resetPortalArrival();g.follow.cut();g.quests.accept('w5');g.quests.track('w5');
