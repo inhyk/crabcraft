@@ -1,3 +1,4 @@
+import { BattleSync } from './battle';
 import * as THREE from 'three';
 import type { Game } from '../game/game';
 import { Unit } from '../game/unit';
@@ -8,11 +9,12 @@ import type { MotionId } from '../motion/types';
 import { h } from '../ui/dom';
 import './multiplayer.css';
 
-type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean };
+type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number };
 type Peer = { spec: CrabSpec; unit: Unit | null; state: State | null };
 
 export class Multiplayer {
   readonly root: HTMLDetailsElement;
+  readonly battle: BattleSync;
   private ws: WebSocket | null = null;
   private peers = new Map<string, Peer>();
   private room = '';
@@ -36,6 +38,7 @@ export class Multiplayer {
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private game: Game) {
+    this.battle = new BattleSync(game, packet => this.send(packet), () => this.peers);
     const form = h('form', { onsubmit: (e: Event) => { e.preventDefault(); this.connect('join', this.input.value); } }, this.input, this.join);
     const chatForm = h('form', { onsubmit: (e: Event) => {
       e.preventDefault();
@@ -43,7 +46,7 @@ export class Multiplayer {
     } }, this.chat, this.sendButton);
     this.root = h('details', { class: 'mp-panel', open: new URLSearchParams(location.search).has('multiplayer') || new URLSearchParams(location.search).has('room') },
       h('summary', null, '🦀 멀티플레이'), this.status,
-      h('p', null, '최대 8명 · 함께 탐험하고 채팅해요. 퀘스트와 몬스터 전투는 각자 진행해요.'),
+      h('p', null, '최대 8명 · 몬스터와 보스를 함께 공격해요. 체력·처치·전투 보상을 공유해요. 마을 퀘스트는 각자 진행해요.'),
       this.code, h('div', { class: 'mp-row' }, this.create, this.share, this.leave), form, this.invite, this.roster,
       h('div', { class: 'mp-row' }, h('button', { type: 'button', onclick: () => this.emote('gesture_hello') }, '👋 인사'), h('button', { type: 'button', onclick: () => this.emote('dance_crab') }, '💃 춤')),
       this.log, chatForm,
@@ -66,7 +69,7 @@ export class Multiplayer {
     if (this.disposed) return;
     const code = room.trim().toUpperCase();
     if (type === 'join' && !/^[A-F0-9]{6}$/.test(code)) { this.status.textContent = '방 코드 6자리를 확인해 주세요.'; return; }
-    this.closeSocket();
+    this.battle.leave(); this.closeSocket();
     this.room = '';
     this.retries = 0;
     this.openSocket(type, code);
@@ -83,7 +86,7 @@ export class Multiplayer {
     this.ws = ws;
     this.updateUi();
     const timeout = setTimeout(() => ws.close(), 10000);
-    ws.onopen = () => { clearTimeout(timeout); if (this.ws === ws) this.send({ type, room: code, spec: this.game.player.unit.rig.spec }); };
+    ws.onopen = () => { clearTimeout(timeout); if (this.ws === ws) this.send({ type, room: code, combatVersion: 1, spec: this.game.player.unit.rig.spec }); };
     ws.onmessage = e => {
       if (this.ws !== ws || this.disposed) return;
       let msg;
@@ -91,12 +94,16 @@ export class Multiplayer {
       switch (msg.type) {
         case 'welcome':
           this.room = msg.room; this.ownId = msg.id; this.retries = 0;
+          this.battle.join(msg.id, msg.host, msg.world);
           for (const p of msg.players) this.addPeer(p.id, p.spec, p.state);
           this.status.textContent = '연결됨 · 친구를 초대해 보세요!';
           this.input.value = this.room;
           this.note(`방 ${this.room}에 참가했어요.`);
           this.updateUi();
           break;
+        case 'authority': this.battle.elect(msg.host); break;
+        case 'world': if (!this.battle.authority) this.battle.apply(msg.world); break;
+        case 'combat': this.battle.receive(msg.id, msg.event); break;
         case 'joined': this.addPeer(msg.id, msg.spec, null); this.note(`${msg.spec.name}님이 들어왔어요.`); this.updateUi(); break;
         case 'left': this.removePeer(msg.id); this.updateUi(); break;
         case 'state': { const p = this.peers.get(msg.id); if (p) p.state = msg.state; break; }
@@ -106,7 +113,7 @@ export class Multiplayer {
           { const unit = msg.id === this.ownId ? this.game.player.unit : this.peers.get(msg.id)?.unit;
             if (unit) this.game.hud.bubbles.say(this.game, unit, msg.text); }
           break;
-        case 'error': this.status.textContent = msg.message; this.room = ''; this.closeSocket(); this.updateUi(); break;
+        case 'error': this.status.textContent = msg.message; this.room = ''; this.battle.leave(); this.closeSocket(); this.updateUi(); break;
       }
     };
     ws.onerror = () => { /* onclose handles retry and the user-facing error */ };
@@ -119,7 +126,7 @@ export class Multiplayer {
         this.status.textContent = '연결이 끊겼어요. 다시 연결 중…';
         const previousRoom = this.room;
         this.retry = setTimeout(() => this.openSocket('join', previousRoom), 1500);
-      } else { this.room = ''; this.status.textContent = '연결할 수 없어요. 서버와 방 코드를 확인하고 다시 참가해 주세요.'; }
+      } else { this.battle.leave(); this.room = ''; this.status.textContent = '연결할 수 없어요. 서버와 방 코드를 확인하고 다시 참가해 주세요.'; }
       this.updateUi();
     };
   }
@@ -131,7 +138,7 @@ export class Multiplayer {
     void createCrab(spec).then(rig => {
       if (this.disposed || this.peers.get(id) !== peer) { rig.dispose(); return; }
       const unit = new Unit(spec.name, 'remote', 'friendly', rig, createMotionController(rig));
-      unit.title = '함께 탐험 중'; unit.targetable = false; unit.invulnerable = true;
+      unit.title = '함께 전투 중'; unit.targetable = false; unit.invulnerable = true;
       const spawn = state ?? this.game.player.unit.pos;
       unit.pos.set(spawn.x, 'y' in spawn ? spawn.y : 0, spawn.z);
       unit.hidden = !peer.state;
@@ -147,7 +154,7 @@ export class Multiplayer {
     if (this.room && this.elapsed >= 0.05) {
       this.elapsed = 0;
       const u = this.game.player.unit;
-      this.send({ type: 'state', state: { x: u.pos.x, y: u.pos.y, z: u.pos.z, yaw: u.yaw, hp: u.hp, maxHp: u.maxHp, alive: u.alive } });
+      this.send({ type: 'state', state: { x: u.pos.x, y: u.pos.y, z: u.pos.z, yaw: u.yaw, hp: u.hp, maxHp: u.maxHp, alive: u.alive, level: u.level } });
     }
     for (const p of this.peers.values()) {
       const u = p.unit, s = p.state;
@@ -158,10 +165,11 @@ export class Multiplayer {
       u.pos.lerp(goal, k);
       const angle = Math.atan2(Math.sin(s.yaw - u.yaw), Math.cos(s.yaw - u.yaw));
       u.setYaw(u.yaw + angle * k);
-      u.hp = s.hp; u.maxHp = s.maxHp; u.alive = s.alive;
+      u.hp = s.hp; u.maxHp = s.maxHp; u.alive = s.alive; u.level = s.level ?? 1;
       u.feedLocomotion(dt);
       if (this.game.hud.menu.open) u.updateVisual(dt);
     }
+    this.battle.update(dt);
   }
 
   private emote(action: MotionId) { if (this.room && this.game.player.unit.alive) this.game.player.unit.act(action); }
@@ -210,11 +218,11 @@ export class Multiplayer {
     const ws = this.ws; this.ws = null;
     ws?.close(); this.clearPeers();
   }
-  private disconnect() { this.room = ''; this.closeSocket(); this.status.textContent = '혼자 플레이 중'; this.updateUi(); }
+  private disconnect() { this.battle.leave(); this.room = ''; this.closeSocket(); this.status.textContent = '혼자 플레이 중'; this.updateUi(); }
   dispose() {
     this.disposed = true;
     if (this.timer) clearTimeout(this.timer);
     this.game.player.unit.onAction = null;
-    this.closeSocket(); this.root.remove();
+    this.battle.dispose(); this.closeSocket(); this.root.remove();
   }
 }

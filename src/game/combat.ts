@@ -30,6 +30,8 @@ export class Combat {
 
   damage(src: Unit | null, dst: Unit, amount: number, o: HitOptions = {}): number {
     const g = this.game;
+    const routed = g.multiplayer?.battle.routeDamage(src, dst, amount, o);
+    if (routed !== undefined && routed !== null) return routed;
     if (!dst.alive || dst.hidden) return 0;
     const now = g.time;
     if (src) src.lastCombat = now;
@@ -55,6 +57,7 @@ export class Combat {
       }
     }
     dst.hp = Math.max(0, dst.hp - dmg);
+    g.multiplayer?.battle.onDamage(src, dst, dmg, o);
     const crit = !!o.crit;
     if (dst.kind === 'player') {
       g.hud.floats.spawn(dst, `-${dmg}`, 'taken');
@@ -120,5 +123,6 @@ export class Combat {
     const ctrl = dst.ctrl as { onDeath?: (killer: Unit | null) => void } | null;
     ctrl?.onDeath?.(src);
     g.onUnitDied(dst, src);
+    g.multiplayer?.battle.onDeath(dst);
   }
 }

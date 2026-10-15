@@ -33,7 +33,7 @@ function hit(g: Game, p: Player, t: Unit, min: number, max: number, school: 'phy
   return g.combat.damage(p.unit, t, rand(min, max) * p.dmgMul * (crit ? CRIT_MULT : 1), { crit, school });
 }
 
-function knockback(t: Unit, fromX: number, fromZ: number, dist: number, seconds = 0.35): void {
+function knockback(g: Game, t: Unit, fromX: number, fromZ: number, dist: number, seconds = 0.35): void {
   if (t.kind === 'boss') return;
   const dx = t.pos.x - fromX;
   const dz = t.pos.z - fromZ;
@@ -41,6 +41,7 @@ function knockback(t: Unit, fromX: number, fromZ: number, dist: number, seconds 
   t.pushX = (dx / len) * (dist / seconds);
   t.pushZ = (dz / len) * (dist / seconds);
   t.pushTime = seconds;
+  g.multiplayer?.battle.condition(t);
 }
 
 export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit | null): void {
@@ -72,6 +73,7 @@ export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit 
           const stun = t.kind === 'boss' ? 1 : 2;
           t.stunUntil = Math.max(t.stunUntil, g.time + stun);
           t.cancelPendingHit();
+          g.multiplayer?.battle.condition(t);
           g.vfx.impact(t.centre(v1), C.white, 1.3);
           g.vfx.ring(t.pos, N.gold, 0.3, 2.4, 0.4, 0.75);
           g.vfx.stunStars(t, stun);
@@ -95,7 +97,7 @@ export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit 
       g.follow.shake(0.1, 0.3);
       for (const t of enemiesNear(g, u.pos.x, u.pos.z, ab.range)) {
         hit(g, p, t, 15, 20, 'water');
-        knockback(t, u.pos.x, u.pos.z, 1.6);
+        knockback(g, t, u.pos.x, u.pos.z, 1.6);
       }
       break;
     }
@@ -121,6 +123,7 @@ export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit 
         hit(g, p, t, 15, 19, 'frost');
         t.slowUntil = now + 4;
         t.slowPct = 0.5;
+        g.multiplayer?.battle.condition(t);
       }
       break;
     }
@@ -152,8 +155,9 @@ export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit 
       g.audio.sfx('sfx-crit', { volume: 0.5 });
       for (const t of enemiesNear(g, u.pos.x, u.pos.z, ab.range)) {
         hit(g, p, t, 20, 26, 'water');
-        knockback(t, u.pos.x, u.pos.z, 5);
+        knockback(g, t, u.pos.x, u.pos.z, 5);
         t.stunUntil = Math.max(t.stunUntil, now + 0.6);
+        g.multiplayer?.battle.condition(t);
       }
       break;
     }

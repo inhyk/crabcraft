@@ -50,3 +50,13 @@ test('level 10 nova is telegraphed and avoidable, but hits a player who stays in
   assert.equal(damage.length-before,dodge?0:1);
  }
 });
+
+test('boss area attacks damage every party member inside the shared telegraph and spare those outside',()=>{
+ const {game,boss,player,damage}=setup(BOSS_PROFILES.abyss);
+ const friend={...player,pos:new THREE.Vector3(1,0,8),kind:'remote'},dodger={...player,pos:new THREE.Vector3(20,0,8),kind:'remote'};
+ game.combatPlayers=()=>[player,friend,dodger];game.combatTarget=()=>player;
+ boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
+ game.time=10;boss.update(.1);boss.update(2);
+ game.time=20;boss.update(.1);assert.equal(boss.mechName,'nova');
+ const before=damage.length;boss.update(2.5);assert.equal(damage.length-before,2);assert.equal(dodger.hp,300);
+});

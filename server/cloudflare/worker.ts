@@ -1,8 +1,9 @@
+import { worldOf, eventOf, type WorldState } from '../combatProtocol';
 import { DurableObject } from 'cloudflare:workers';
 import { specOf, stateOf, actions, clean, type Spec, type State } from '../protocol';
 
-type Connection = { id: string; room: string; spec: Spec | null; state: State | null; rateAt: number; messages: number; chatAt: number };
-type Message = { type: string; spec?: unknown; state?: State; action?: string; text?: string };
+type Connection = { id: string; room: string; spec: Spec | null; state: State | null; rateAt: number; messages: number; chatAt: number; combat?: boolean; joinedAt?: number };
+type Message = { type: string; spec?: unknown; state?: State; action?: string; text?: string; combatVersion?: number; world?: unknown; event?: unknown };
 
 export class CrabRoom extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
@@ -18,16 +19,16 @@ export class CrabRoom extends DurableObject<Env> {
     if (this.ctx.getWebSockets().length >= 8) return new Response('Room is full', { status: 409 });
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ id: crypto.randomUUID(), room, spec: null, state: null, rateAt: Date.now(), messages: 0, chatAt: 0 } satisfies Connection);
+    server.serializeAttachment({ id: crypto.randomUUID(), room, spec: null, state: null, rateAt: Date.now(), messages: 0, chatAt: 0, combat: false, joinedAt: Date.now() } satisfies Connection);
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
-    if (typeof raw !== 'string' || raw.length > 4096) { ws.close(1009, 'Message too large'); return; }
+  async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
+    if (typeof raw !== 'string' || raw.length > 65536) { ws.close(1009, 'Message too large'); return; }
     const c = ws.deserializeAttachment() as Connection;
     const now = Date.now();
     if (now - c.rateAt >= 1000) { c.rateAt = now; c.messages = 0; }
-    if (++c.messages > 60) { ws.close(1008, 'Too many messages'); return; }
+    if (++c.messages > (c.combat && c.id === this.host() ? 240 : 60)) { ws.close(1008, 'Too many messages'); return; }
     ws.serializeAttachment(c);
     let msg: Message;
     try { msg = JSON.parse(raw); } catch { return; }
@@ -37,10 +38,12 @@ export class CrabRoom extends DurableObject<Env> {
       const spec = specOf(msg.spec);
       if (!spec) { this.send(ws, { type: 'error', message: '캐릭터 정보를 확인해 주세요.' }); return; }
       const players = this.ctx.getWebSockets().filter(other => other !== ws).map(other => other.deserializeAttachment() as Connection).filter(other => other.spec).map(other => ({ id: other.id, spec: other.spec, state: other.state }));
-      c.spec = spec;
+      c.spec = spec; c.combat = msg.combatVersion === 1;
+      c.joinedAt=Math.max(Date.now(),...this.ctx.getWebSockets().map(s => (s.deserializeAttachment() as Connection).joinedAt ?? 0))+1;
       ws.serializeAttachment(c);
-      this.send(ws, { type: 'welcome', id: c.id, room: c.room, players });
+      this.send(ws, { type: 'welcome', host: this.host(), world: await this.ctx.storage.get<WorldState>('world') ?? null, id: c.id, room: c.room, players });
       this.broadcast({ type: 'joined', id: c.id, spec }, ws);
+      if (this.host()) this.broadcast({ type: 'authority', host: this.host() });
       return;
     }
     if (!c.spec) return;
@@ -49,6 +52,17 @@ export class CrabRoom extends DurableObject<Env> {
       if (state) { c.state = state; this.broadcast({ type: 'state', id: c.id, state }, ws); }
     } else if (msg.type === 'action' && actions.has(msg.action!)) {
       this.broadcast({ type: 'action', id: c.id, action: msg.action }, ws);
+    } else if (c.combat && msg.type === 'world' && c.id === this.host()) {
+      const world = worldOf(msg.world);
+      if (world) { await this.ctx.storage.put('world', world); this.broadcast({ type: 'world', world }, ws); }
+    } else if (c.combat && msg.type === 'combat') {
+      const authority = c.id === this.host();
+      const event = eventOf(msg.event, authority);
+      if (event) {
+        const packet = { type: 'combat', id: c.id, event };
+        if (authority) this.broadcast(packet, ws);
+        else { const h = this.ctx.getWebSockets().find(s => (s.deserializeAttachment() as Connection).id === this.host()); if (h) this.send(h, packet); }
+      }
     } else if (msg.type === 'chat' && now - c.chatAt >= 700) {
       const text = clean(msg.text, 200);
       if (text) { c.chatAt = now; this.broadcast({ type: 'chat', id: c.id, name: c.spec.name, text }); }
@@ -63,7 +77,11 @@ export class CrabRoom extends DurableObject<Env> {
     if (c?.spec) {
       this.broadcast({ type: 'left', id: c.id }, ws);
       c.spec = null; ws.serializeAttachment(c);
+      this.broadcast({ type: 'authority', host: this.host() });
     }
+  }
+  private host() {
+    return this.ctx.getWebSockets().map(s => s.deserializeAttachment() as Connection).filter(c => c.spec && c.combat).sort((a,b) => (a.joinedAt! - b.joinedAt!) || a.id.localeCompare(b.id))[0]?.id ?? '';
   }
   private send(ws: WebSocket, data: unknown) {
     try { ws.send(JSON.stringify(data)); } catch { /* close callback cleans up */ }

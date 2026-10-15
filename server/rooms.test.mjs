@@ -54,7 +54,7 @@ test('rooms synchronize appearance, state, action and chat; isolate other rooms;
   b.send({ type: 'chat', text: '<img onerror=alert(1)> hello' });
   assert.equal((await a.next('chat')).text, '<img onerror=alert(1)> hello');
   assert.equal((await b.next('chat')).name, 'Friend');
-  assert.deepEqual(other.queue, []);
+  assert.equal(other.queue.some(m=>m.type !== 'authority'), false);
   b.ws.close();
   assert.equal((await a.next('left')).id, joined.id);
   assert.equal(relay.rooms.get(room.room).size, 1);
@@ -104,4 +104,40 @@ test('foreign browser origins are rejected', async t => {
   const ws = new WebSocket(`ws://127.0.0.1:${server.address().port}/multiplayer`, { origin: 'https://unrelated.invalid' });
   ws.on('error', () => {});
   const code = await new Promise(resolve => ws.on('close', resolve)); assert.equal(code, 1006);
+});
+
+const world = { weather:{mood:1,beacon:true,clock:123}, entities: [{ id:'e0',...state,level:1,hidden:false,invulnerable:false,targetable:true,stun:0,slow:0,slowPct:0,rust:0,rustFor:0,enemyState:'idle',xp:20 }],
+  bosses:[{id:'b3',state:'dormant',phase:1,enraged:false,mech:null},{id:'b10',state:'dormant',phase:1,enraged:false,mech:null}],rust:false,abyss:false };
+
+test('combat uses one host, routes guest attacks only to host, checkpoints late joins and transfers authority', async t => {
+  const {client}=await setup(t);
+  const a=await client(),b=await client(),c=await client(),isolated=await client();
+  a.send({type:'create',spec,combatVersion:1}); const r=await a.next('welcome');assert.equal(r.host,r.id);
+  b.send({type:'join',room:r.room,spec,combatVersion:1});const br=await b.next('welcome');assert.equal(br.host,r.id);
+  a.send({type:'world',world});assert.deepEqual((await b.next('world')).world,world);
+  isolated.send({type:'create',spec,combatVersion:1});await isolated.next('welcome');
+  b.send({type:'combat',event:{kind:'attack',target:'e0',amount:23,source:'forged'}});
+  const attack=await a.next('combat');assert.equal(attack.id,br.id);assert.equal(attack.event.amount,23);assert.equal(attack.event.source,undefined);
+  b.send({type:'world',world:{...world,rust:true}}); // A guest cannot publish health or wins.
+  b.send({type:'combat',event:{kind:'death',target:'e0'}});
+  a.send({type:'combat',event:{kind:'hit',target:'e0',amount:23}});assert.equal((await b.next('combat')).event.kind,'hit');
+  c.send({type:'join',room:r.room,spec,combatVersion:1});const cr=await c.next('welcome');assert.deepEqual(cr.world,world);
+  assert.equal(cr.world.rust,false);
+  a.ws.close();await b.next('left');
+  let elected; do {elected=await b.next('authority');} while(elected.host!==br.id);
+  b.send({type:'world',world:{...world,rust:true}});assert.equal((await c.next('world')).world.rust,true);
+  assert.equal(isolated.queue.some(m=>['world','combat'].includes(m.type)),false);
+});
+
+test('malformed combat checkpoints and impossible packets are rejected', async t => {
+  const {client}=await setup(t);const a=await client(),b=await client();
+  a.send({type:'create',spec,combatVersion:1});const r=await a.next('welcome');
+  b.send({type:'join',room:r.room,spec,combatVersion:1});await b.next('welcome');
+  a.send({type:'world',world:{...world,entities:[{...world.entities[0],hp:null}]}});
+  a.send({type:'world',world:{...world,bosses:[world.bosses[0],world.bosses[0]]}});
+  b.send({type:'combat',event:{kind:'attack',target:'e0',amount:Infinity}});
+  b.send({type:'combat',event:{kind:'attack',target:'e0',amount:2001}});
+  b.send({type:'combat',event:{kind:'condition',target:'e0',condition:{stun:999}}});
+  a.send({type:'world',world});assert.deepEqual((await b.next('world')).world,world);
+  assert.equal(a.queue.some(m=>m.type==='combat'),false);assert.equal(b.queue.some(m=>m.type==='world'),false);
 });

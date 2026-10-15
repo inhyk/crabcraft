@@ -494,18 +494,20 @@ export class Game {
   private readonly frame = (f: FrameInfo): void => {
     if (!this.loaded) return;
     const dt = f.dt;
-    const paused = this.hud.menu.open;
+    const paused = this.hud.menu.open && !this.multiplayer?.battle.active;
     this.handleInput();
     if (!paused) {
       this.time += dt;
       this.player.update(dt);
-      for (const e of this.enemies) e.update(dt);
-      this.boss.update(dt);
-      this.finalBoss.update(dt);
+      if (this.multiplayer?.battle.authority !== false) {
+        for (const e of this.enemies) e.update(dt);
+        this.boss.update(dt);
+        this.finalBoss.update(dt);
+      }
       this.journey?.update(dt);
       for (const n of this.npcs) n.update(dt);
       for (const t of this.townsfolk) t.update(dt);
-      this.separate();
+      if (this.multiplayer?.battle.authority !== false) this.separate();
       this.ending.update(dt);
       this.updateDeath();
       this.updateStatuses();
@@ -533,7 +535,7 @@ export class Game {
     this.hintVia = goal ? this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
     this.objective.update(this.time, this.world, this.player.unit.pos, goal, this.hintVia, this.player.inCombat);
     if (!this.ending.active) this.director.update(dt);
-    this.world.update(dt, f.elapsed, this.camera);
+    this.world.update(dt, this.multiplayer?.battle.worldTime(f.elapsed,dt) ?? f.elapsed, this.camera);
     this.updateZone();
     this.updateInteractPrompt();
     this.updateMusic();
@@ -975,6 +977,15 @@ export class Game {
     return this.world.pois[cur.poi].position;
   }
 
+  get partyLevel(): number {
+    return Math.max(this.player.level, ...this.units.filter(u => u.kind === 'remote' && u.alive && !u.hidden).map(u => u.level));
+  }
+  combatTarget(from: Unit): Unit {
+    const targets = [this.player.unit, ...this.units.filter(u => u.kind === 'remote' && !u.hidden)].filter(u => u.alive);
+    return targets.sort((a,b) => from.distTo(a)-from.distTo(b))[0] ?? this.player.unit;
+  }
+  combatPlayers(): Unit[] { return this.units.filter(u => (u.kind === 'player' || u.kind === 'remote') && u.alive && !u.hidden); }
+
   // ================================================================ combat outcomes
 
   onUnitDied(u: Unit, killer: Unit | null): void {
@@ -982,7 +993,7 @@ export class Game {
       this.playerDied();
       return;
     }
-    const byPlayer = killer?.kind === 'player';
+    const byPlayer = killer?.kind === 'player' || killer?.kind === 'remote';
     if (u.kind === 'scrapling' || u.kind === 'scavenger') {
       const e = u.ctrl as Enemy;
       if (byPlayer) {
@@ -1038,7 +1049,7 @@ export class Game {
     this.hud.showDeath(true);
     this.hud.chat.system('You have died.');
     if (this.boss.engaged) this.say(this.boss.unit, 'Another shell for the scrap heap!', true);
-    for (const e of this.enemies) e.evade();
+    if (!this.multiplayer?.battle.active) for (const e of this.enemies) e.evade();
   }
 
   private updateDeath(): void {
@@ -1052,8 +1063,7 @@ export class Game {
       const p = this.player.unit;
       p.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
       this.follow.yaw = p.yaw + Math.PI;
-      this.boss.reset();
-      this.finalBoss.reset();
+      if (!this.multiplayer?.battle.active) { this.boss.reset(); this.finalBoss.reset(); }
       this.engine.canvas.style.transition = '';
       this.engine.canvas.style.filter = '';
       this.hud.showDeath(false);

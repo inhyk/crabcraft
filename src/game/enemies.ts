@@ -92,6 +92,12 @@ export class Enemy {
     this.unit.lift = 0;
   }
 
+  resumeAuthority(): void {
+    this.unit.cancelPendingHit(); this.leap=null;
+    this.nextSwing=this.game.time+0.8;
+    if (this.state === 'dead') this.deadAt=this.game.time;
+  }
+
   /** Back to spawn instantly (player died, boss reset). */
   evade(): void {
     if (this.state === 'chase') {
@@ -131,7 +137,7 @@ export class Enemy {
     const g = this.game;
     const u = this.unit;
     const now = g.time;
-    const p = g.player.unit;
+    const p = g.combatTarget?.(u) ?? g.player.unit;
     if (this.state === 'gone') return;
     if (this.state === 'idle' && u.hp >= u.maxHp && u.distTo(p) > 20) this.scaleForJourney();
 
@@ -171,7 +177,7 @@ export class Enemy {
     }
 
     if (this.state === 'idle') {
-      if (p.alive && !g.controlsLocked && u.distTo(p) < this.stats.aggro && Math.abs(p.pos.y - u.pos.y) < 3) this.aggro(true);
+      if (p.alive && !(p.kind === 'player' && g.controlsLocked) && u.distTo(p) < this.stats.aggro && Math.abs(p.pos.y - u.pos.y) < 3) this.aggro(true);
       if (now > this.wanderAt) {
         this.wanderAt = now + rand(4, 9);
         const a = rand(0, TAU);
@@ -194,7 +200,7 @@ export class Enemy {
       }
     } else if (this.state === 'chase') {
       const fromHome = Math.hypot(u.pos.x - this.home.x, u.pos.z - this.home.z);
-      if (!p.alive || g.controlsLocked || (!this.isAdd && fromHome > this.stats.leash)) {
+      if (!p.alive || (p.kind === 'player' && g.controlsLocked) || (!this.isAdd && fromHome > this.stats.leash)) {
         this.state = 'leash';
         u.invulnerable = true;
         g.hud.floats.spawn(u, 'Evade', 'info');
@@ -258,7 +264,7 @@ export class Enemy {
   private startLeap(): void {
     const g = this.game;
     const u = this.unit;
-    const p = g.player.unit;
+    const p = g.combatTarget?.(u) ?? g.player.unit;
     const d = u.distTo(p) || 1;
     const back = (u.radius + p.radius + 0.2) / d;
     this.leap = {
@@ -293,7 +299,7 @@ export class Enemy {
       u.lift = 0;
       g.vfx.slamImpact(u.pos, 1.6);
       g.follow.shake(0.1, 0.2);
-      const p = g.player.unit;
+      const p = g.combatTarget?.(u) ?? g.player.unit;
       if (p.alive && u.gapTo(p) < 1.6) g.combat.damage(u, p, rand(8, 11));
       this.nextSwing = g.time + 0.8;
     }
@@ -302,7 +308,7 @@ export class Enemy {
   private scaleForJourney(): void {
     if (this.isAdd || !this.game.journey?.rustCleared) return;
     const base = ENEMY_STATS[this.kind];
-    const level = Math.max(base.level, this.game.player.level - (this.kind === 'scrapling' ? 1 : 0));
+    const level = Math.max(base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0));
     if (this.stats.level === level) return;
     const scale = 1 + 0.12 * (level - base.level);
     this.stats.level = this.unit.level = level;
@@ -314,8 +320,7 @@ export class Enemy {
 
   private canRespawnUnseen(): boolean {
     const g = this.game;
-    const p = g.player.unit;
-    if (Math.hypot(p.pos.x - this.home.x, p.pos.z - this.home.z) < 22) return false;
+    if (g.combatPlayers().some(p => Math.hypot(p.pos.x-this.home.x,p.pos.z-this.home.z)<22)) return false;
     const cam = g.camera;
     projScreen.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projScreen);

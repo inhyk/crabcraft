@@ -39,7 +39,7 @@ export class BossJourney {
       this.root.append(card);
       this.cards.push({ boss, status, button });
     }
-    this.root.append(this.patrol, h('small', null, '해안의 적을 처치하면 성장해요. 보스전은 각자 진행하며, 성장과 승리는 이 브라우저에 자동 저장됩니다.'), this.victory);
+    this.root.append(this.patrol, h('small', null, '해안의 적을 처치하면 성장해요. 멀티플레이에서는 보스전도 함께 진행하며, 성장과 승리는 이 브라우저에 자동 저장됩니다.'), this.victory);
     this.root.addEventListener('keydown', e => e.stopPropagation());
     this.root.addEventListener('focusin', () => window.dispatchEvent(new Event('blur')));
     game.app.ui.append(this.root);
@@ -112,7 +112,7 @@ export class BossJourney {
     const cleared = boss === g.boss ? this.rustCleared : this.abyssCleared;
     if (cleared || !canChallenge(g.player.level, boss.profile.level, this.rustCleared) || g.controlsLocked || g.player.inCombat || g.encounter.engaged) return;
     if (boss === g.finalBoss && g.boss.state !== 'dead') { g.hud.messages.info('첫 보스의 승리 연출이 끝난 뒤 도전해 주세요.'); return; }
-    boss.wake();
+    if (!g.multiplayer?.battle.challenge(boss === g.boss ? 'b3' : 'b10')) boss.wake();
     const a = boss.arena;
     // Enter on the deck's walkable approach, facing the centre.
     const dx = Math.sin(a.yaw), dz = Math.cos(a.yaw);
@@ -130,7 +130,7 @@ export class BossJourney {
   update(dt: number) {
     const g = this.game;
     const level = g.player.level;
-    if (level >= 3 && !this.rustCleared && g.boss.state === 'dormant') g.boss.wake();
+    if (g.multiplayer?.battle.authority !== false && g.partyLevel >= 3 && !this.rustCleared && g.boss.state === 'dormant') g.boss.wake();
     const state = `${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${g.finalBoss.state}|${g.boss.state}`;
     if (state !== this.last) {
       this.last = state;

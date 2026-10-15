@@ -19,3 +19,5 @@ __pycache__/
 !.env.production
 .omx/
 *.log
+
+/server/cloudflare/tmp/

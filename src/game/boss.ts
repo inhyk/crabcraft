@@ -1,6 +1,7 @@
 // Corrodius, the Rust Tyrant (docs/design.md "Boss fight"). Three phases, telegraphed Anchor Slam,
 // Rust Spray cone with a stacking slow, Scrapling adds and Undertow in phase 2, enrage in phase 3,
 // and the death sequence where a small red crab steps out of the armour and walks into the sea.
+import type { BossState } from '../../server/combatProtocol';
 import * as THREE from 'three';
 import type { Poi } from '../world/types';
 import type { Game } from './game';
@@ -84,8 +85,53 @@ export class Boss {
     return this.mech?.kind ?? null;
   }
 
+  private remoteMechId = -1;
+  networkState(id: 'b3' | 'b10'): BossState {
+    const m = this.mech;
+    return { id, state:this.state,phase:this.phase,enraged:this.enraged,mech:m ? {
+      id:this.mechIndex,kind:m.kind,at:[m.at.x,m.at.y,m.at.z],yaw:m.yaw,left:Math.max(0,m.dur-m.t),
+    } : null };
+  }
+  applyNetwork(s: BossState): void {
+    const g=this.game;
+    if (s.phase > this.phase && s.state === 'fight') g.hud.messages.banner(`PHASE ${s.phase}`,this.profile.name,'boss');
+    this.state=s.state; this.phase=s.phase; this.enraged=s.enraged;
+    this.unit.setBaseTint(this.enraged ? '#fff4d9' : this.profile.color);
+    if (this.state === 'fight') g.hud.bossFrame.show(this.unit);
+    else if (g.encounter === this) g.hud.bossFrame.hide();
+    const m=s.mech;
+    if (!m) {
+      const old=this.mech;
+      if (old && s.state === 'fight') {
+        if (old.kind === 'spray') g.vfx.rustSpray(old.at,old.yaw,11,0.55);
+        else g.vfx.slamImpact(old.at,old.kind === 'nova' ? 6 : old.kind === 'slam' ? 3.4 : 5.5);
+      }
+      this.clearMech(); this.remoteMechId=-1; return;
+    }
+    if (m.id === this.remoteMechId) return;
+    this.clearMech(); this.remoteMechId=m.id;
+    const at=new THREE.Vector3(...m.at),fx:Fx[]=[];
+    const duration=Math.max(0.05,m.left);
+    if (m.kind === 'spray') fx.push(g.vfx.telegraphCone(at,m.yaw,11,0.55,duration,undefined,this.deckUnder(at,11,m.yaw,0.55)));
+    else {
+      const radius=m.kind === 'slam' ? 3.4 : m.kind === 'nova' ? 6 : 5.5;
+      fx.push(g.vfx.telegraphCircle(at,radius,duration,m.kind === 'nova' ? new THREE.Color(this.profile.color) : undefined,this.deckUnder(at,radius,0,Math.PI)));
+      if (m.kind === 'undertow') g.vfx.undertow(at,5.5,duration);
+    }
+    this.mech={kind:m.kind,t:0,dur:duration,at,yaw:m.yaw,fx,fired:false,swung:false};
+    this.mechIndex=m.id;
+    g.hud.messages.warn(m.kind === 'nova' ? '심해 파동! 푸른 원 밖으로 피하세요.' : m.kind === 'slam' ? '닻 내려찍기! 붉은 원을 피하세요.' : m.kind === 'spray' ? '녹 분사! 부채꼴 밖으로 피하세요.' : '끌어당기기! 멀리 피하세요.');
+  }
+  resumeAuthority(): void {
+    // Continue at the replicated position/phase, with fresh timers in this browser's clock.
+    this.nextSwing=this.game.time+1; this.nextMech=this.game.time+3;
+    this.stateT=0; this.outside=0; this.unit.cancelPendingHit();
+    if (this.profile.level===3) { this.adds.length=0; this.adds.push(...this.game.enemies.filter(e=>e.isAdd && e.unit.alive && !e.unit.hidden)); }
+  }
+
   /** The beacon is lit: Corrodius heaves himself up on the deck. */
   wake(): void {
+    if (this.game.multiplayer?.battle.challenge(this.profile.level === 10 ? 'b10' : 'b3')) return;
     if (this.state !== 'dormant') return;
     const g = this.game;
     const u = this.unit;
@@ -98,13 +144,14 @@ export class Boss {
   }
 
   onDamaged(src: Unit | null): void {
-    if (this.state === 'idle' && src && this.game.player.level >= this.profile.level) this.engage();
+    if (this.state === 'idle' && src && (this.game.partyLevel ?? this.game.player.level) >= this.profile.level) this.engage();
   }
 
   private engage(): void {
     const g = this.game;
-    if (g.player.level < this.profile.level) return;
+    if ((g.partyLevel ?? g.player.level) < this.profile.level) return;
     this.state = 'fight';
+    g.world.setMood?.(1);
     g.player.unit.blessingUntil = Infinity;
     this.nextSwing = g.time + 1.2;
     this.nextMech = g.time + 4;
@@ -155,9 +202,9 @@ export class Boss {
     const g = this.game;
     const u = this.unit;
     const now = g.time;
-    const p = g.player.unit;
+    const p = g.combatTarget?.(u) ?? g.player.unit;
     this.stateT += dt;
-    const unlocked = p.level >= this.profile.level;
+    const unlocked = (g.partyLevel ?? p.level) >= this.profile.level;
     u.invulnerable = !unlocked;
     if (this.state === 'idle') u.targetable = unlocked;
     switch (this.state) {
@@ -183,7 +230,7 @@ export class Boss {
       }
       case 'idle': {
         // Wait on the deck; anyone stepping onto it is noticed.
-        if (unlocked && p.alive && !g.controlsLocked && Math.hypot(p.pos.x - this.arena.position.x, p.pos.z - this.arena.position.z) < this.arena.radius * 0.9) this.engage();
+        if (unlocked && p.alive && !(p.kind === 'player' && g.controlsLocked) && Math.hypot(p.pos.x - this.arena.position.x, p.pos.z - this.arena.position.z) < this.arena.radius * 0.9) this.engage();
         u.setYaw(turnToward(u.yaw, p.alive ? yawTo(u.pos.x, u.pos.z, p.pos.x, p.pos.z) : this.arena.yaw, 0.8, dt));
         u.feedLocomotion(dt);
         return;
@@ -280,7 +327,7 @@ export class Boss {
   private startMech(): void {
     const g = this.game;
     const u = this.unit;
-    const p = g.player.unit;
+    const p = g.combatTarget?.(u) ?? g.player.unit;
     const order: Mech[] = this.profile.level === 10 ?
       (this.phase === 1 ? ['slam', 'nova', 'spray'] : ['nova', 'undertow', 'slam', 'nova']) :
       this.phase === 1 ? ['slam', 'spray'] : this.phase === 2 ? ['undertow', 'slam', 'spray', 'slam'] : ['slam', 'spray', 'undertow'];
@@ -353,7 +400,6 @@ export class Boss {
   private updateMech(dt: number): void {
     const g = this.game;
     const u = this.unit;
-    const p = g.player.unit;
     const m = this.mech!;
     m.t += dt;
     if (m.kind === 'slam') {
@@ -367,7 +413,7 @@ export class Boss {
         g.vfx.slamImpact(m.at, 3.4);
         g.follow.shake(0.5, 0.5);
         g.audio.sfx('sfx-crit');
-        if (p.alive && Math.hypot(p.pos.x - m.at.x, p.pos.z - m.at.z) < 3.4 + p.radius * 0.5) {
+        for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && Math.hypot(p.pos.x - m.at.x, p.pos.z - m.at.z) < 3.4 + p.radius * 0.5) {
           g.combat.damage(u, p, p.maxHp * 0.26);
           p.stunUntil = Math.max(p.stunUntil, g.time + 0.5);
         }
@@ -381,6 +427,7 @@ export class Boss {
       }
       if (m.t >= m.dur) {
         m.fired = true;
+        for (const p of g.combatPlayers?.() ?? [g.player.unit]) {
         const d = Math.hypot(p.pos.x - m.at.x, p.pos.z - m.at.z);
         const a = yawTo(m.at.x, m.at.z, p.pos.x, p.pos.z);
         if (p.alive && d < 11 + p.radius && Math.abs(angleDiff(a, m.yaw)) < 0.55 + Math.atan2(p.radius, Math.max(1, d))) {
@@ -388,6 +435,7 @@ export class Boss {
           p.rust = Math.min(5, (g.time < p.rustUntil ? p.rust : 0) + 1);
           p.rustUntil = g.time + 10;
           g.hud.floats.spawn(p, `Rust x${p.rust}`, 'info');
+        }
         }
         this.mech = null;
       }
@@ -401,12 +449,12 @@ export class Boss {
         g.vfx.slamImpact(m.at, 6);
         g.follow.shake(0.4, 0.5);
         g.audio.sfx('sfx-crit');
-        if (p.alive && Math.hypot(p.pos.x - m.at.x, p.pos.z - m.at.z) < 6 + p.radius * 0.5) g.combat.damage(u, p, p.maxHp * 0.32);
+        for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && Math.hypot(p.pos.x - m.at.x, p.pos.z - m.at.z) < 6 + p.radius * 0.5) g.combat.damage(u, p, p.maxHp * 0.32);
         this.mech = null;
       }
     } else {
       // Undertow: drag the player toward the hull, then slam everything around it.
-      if (p.alive && m.t < m.dur - 0.3) {
+      for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && m.t < m.dur - 0.3) {
         const d = u.distTo(p);
         if (d < 18 && d > u.radius + p.radius + 0.3) {
           const pull = 3.2;
@@ -424,7 +472,7 @@ export class Boss {
         g.vfx.slamImpact(m.at, 5.5);
         g.follow.shake(0.55, 0.6);
         g.audio.sfx('sfx-crit');
-        if (p.alive && u.distTo(p) < 5.5 + p.radius * 0.5) g.combat.damage(u, p, p.maxHp * 0.24);
+        for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && u.distTo(p) < 5.5 + p.radius * 0.5) g.combat.damage(u, p, p.maxHp * 0.24);
         this.mech = null;
       }
     }
@@ -482,7 +530,7 @@ export class Boss {
     f.hidden = false;
     f.rig.root.visible = true;
     f.alive = true;
-    const p = g.player.unit;
+    const p = g.combatTarget?.(u) ?? g.player.unit;
     const toward = yawTo(u.pos.x, u.pos.z, p.pos.x, p.pos.z);
     f.teleport(g.world, u.pos.x, u.pos.z, toward);
     f.rig.root.scale.setScalar(this.freedBaseScale * 0.3);
@@ -500,7 +548,7 @@ export class Boss {
     const g = this.game;
     const f = this.freed;
     const u = this.unit;
-    const p = g.player.unit;
+    const p = g.combatTarget?.(u) ?? g.player.unit;
     this.freedT += dt;
     const t = this.freedT;
     // 0..1.2 grow and step out of the hull
