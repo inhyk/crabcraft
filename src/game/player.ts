@@ -436,7 +436,8 @@ export class Player {
     if (!this.cast) return;
     this.cast = null;
     this.unit.motion.stop('cast', 0.15);
-    this.game.hud.castBar.fail(reason);
+    const ko:Record<string,string>={Interrupted:'중단됨',Cancelled:'취소됨','Invalid target':'대상을 다시 선택하세요'};
+    this.game.hud.castBar.fail(() => t(ko[reason]??reason,reason));
   }
 
   startChannel(label: string, seconds: number, key: string, to: THREE.Vector3, onDone: () => void): void {
@@ -453,7 +454,7 @@ export class Player {
     if (!this.channel) return;
     this.channel = null;
     this.unit.motion.stop('cast', 0.2);
-    this.game.hud.castBar.fail(t('중단됨','Interrupted'));
+    this.game.hud.castBar.fail(() => t('중단됨','Interrupted'));
   }
 
   // Ability helpers used by abilities.ts

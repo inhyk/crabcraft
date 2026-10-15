@@ -217,17 +217,18 @@ export class CastBar {
     this.hideAt = this.game.time + 0.35;
   }
 
-  fail(reason: string): void {
+  fail(reason: string | (() => string)): void {
     this.active = false;
-    this.label.textContent = reason;
+    this.labelSource = reason;
     this.el.className = 'castbar on fail';
     this.hideAt = this.game.time + 0.8;
+    this.refreshLanguage();
   }
 
   update(): void {
     const now = this.game.time;
+    this.refreshLanguage();
     if (this.active) {
-      this.refreshLanguage();
       const k = Math.min(1, (now - this.t0) / this.dur);
       this.fill.style.transform = `scaleX(${k})`;
       this.spark.style.left = `${k * 100}%`;
@@ -241,7 +242,7 @@ export class CastBar {
   }
 
   refreshLanguage(): void {
-    if(!this.active)return;
+    if(!this.active&&(!this.hideAt||this.game.time>this.hideAt))return;
     const text=typeof this.labelSource==='function'?this.labelSource():this.labelSource;
     if(this.label.textContent!==text)this.label.textContent=text;
   }
