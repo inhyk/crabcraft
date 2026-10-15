@@ -17,6 +17,7 @@ import {StarSea} from './starSea';
 import {StarWind} from './starWind';
 import {NavHints} from './nav';
 import {StarAmbience} from './starAmbience';
+import {StarWaystoneKit} from './starWaystone';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
 
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
@@ -61,7 +62,7 @@ export class HiddenWorld {
   private basePois = new Map<string, {position:THREE.Vector3;yaw:number}>();
   private basePeople: THREE.Vector3[] = [];
   private memories:{kind:ObjectiveKind;ring:THREE.Mesh;star:THREE.Mesh}[]=[];
-  private nodes: {kind:ObjectiveKind;objective:ObjectiveDef;position:THREE.Vector3;mesh:THREE.Mesh;shadowOpacity:THREE.IUniform<number>}[] = [];
+  private nodes: {kind:ObjectiveKind;objective:ObjectiveDef;position:THREE.Vector3;mesh:THREE.Mesh;shadowOpacity:THREE.IUniform<number>;halo?:THREE.Mesh<THREE.TorusGeometry,THREE.MeshBasicMaterial>}[] = [];
   private sightAim=new THREE.Vector3();
   private sightRay=new THREE.Vector3();
   private sightOffset=new THREE.Vector3();
@@ -73,6 +74,7 @@ export class HiddenWorld {
     for(const o of this.obstacles)this.collision.addCircle(o.x,o.z,o.r,this.height(o.x,o.z),this.height(o.x,o.z)+12);
     for(const o of this.crystalSolids)this.collision.addCircle(o.x,o.z,o.r,o.y0,o.y1);
     this.life=new StarVillageLife((x,z)=>this.height(x,z),this.collision);this.root.add(this.life.root);
+    const waystones=new StarWaystoneKit();
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES)) {
       if(kind.startsWith('explore-')){
         const x=point[0],z=point[1],y=this.height(x,z);
@@ -84,11 +86,17 @@ export class HiddenWorld {
       if(!kind.startsWith('crystal-')&&!kind.startsWith('lamp-'))continue;
       const position=new THREE.Vector3(point[0],this.height(...point),point[1]);
       const material=new THREE.MeshStandardMaterial({color:kind.startsWith('lamp')?'#ffdb95':'#9afff3',emissive:kind.startsWith('lamp')?'#a95d23':'#23cbbb',emissiveIntensity:1.8,metalness:.3,roughness:.25,transparent:true,depthWrite:false});
-      const mesh=new THREE.Mesh(kind.startsWith('lamp')?new THREE.CylinderGeometry(.4,.65,2.6,8):new THREE.OctahedronGeometry(.9),material);
-      mesh.position.copy(position).y+=1.3;mesh.castShadow=true;
+      const waystone=kind.startsWith('lamp')?waystones.create(position,material):null;
+      const mesh=waystone?.core??new THREE.Mesh(new THREE.OctahedronGeometry(.9),material);
+      // Core stays in world coordinates for the existing channel/VFX and camera-fade paths.
+      if(waystone){
+        waystone.root.remove(mesh);this.root.add(waystone.root);
+        this.collision.addCircle(position.x,position.z,.88,position.y,position.y+3.15);
+      }
+      mesh.position.copy(position).y+=waystone?1.46:1.3;mesh.castShadow=true;
       const shadowOpacity={value:1};mesh.customDepthMaterial=collectibleShadow(shadowOpacity);this.root.add(mesh);
       const objective=Object.values(QUESTS).flatMap(q=>q.objectives).find(o=>o.kind===kind)!;
-      this.nodes.push({kind:kind as ObjectiveKind,objective,position,mesh,shadowOpacity});
+      this.nodes.push({kind:kind as ObjectiveKind,objective,position,mesh,shadowOpacity,halo:waystone?.halo});
     }
   }
   objectivePoint(kind:ObjectiveKind) {
@@ -286,7 +294,11 @@ export class HiddenWorld {
     for(const node of this.nodes){
       const done=this.game.quests.objectiveDone(node.objective);
       node.mesh.visible=!done||node.kind.startsWith('lamp');
-      if(node.kind.startsWith('lamp'))(node.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity=done?3:.25;
+      if(node.kind.startsWith('lamp')){
+        (node.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity=done?2.3+Math.sin(time*1.6+node.position.z)*.25:.16;
+        node.mesh.rotation.y=time*.25+node.position.z;
+        if(node.halo)node.halo.material.opacity=done?.56+Math.sin(time*1.6+node.position.z)*.1:.06;
+      }
       else {node.mesh.rotation.y=time*.5;node.mesh.position.y=node.position.y+1.3+Math.sin(time*2+node.position.x)*.15;}
       // Protect the shell's sightline as well as the lens. Targets ahead of the player remain
       // visible; a passed collectible fades smoothly as it moves between the player and camera.
