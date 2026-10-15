@@ -149,7 +149,7 @@ export class GameMenu {
       h('h3',null,t('별빛 항구 안내','Starhaven guide')),
       h('p',null,t('주민 가까이에서 F로 퀘스트를 받고 보상을 받으세요. 퀘스트 기록(L)에서 목표를 선택하면 지도에 표시돼요.','Press F near villagers to accept quests and collect rewards. Select a quest in the journal (L) to show its objective on the map.')),
       h('p',null,t('수정은 F로 채집하고, 별빛 등불은 F를 1.5초 동안 누르세요. 포탈 중앙으로 걷거나 가까이서 F를 누르면 월드 1로 돌아가요. 도착하면 포탈 밖으로 나온 뒤 다시 이용하세요.','Press F to gather crystals; hold F for 1.5 seconds at waystones. Walk into the portal or press F nearby to return to World I. Step away after arrival before using it again.')),
-      h('p',null,t('친구와의 퀘스트는 각자 진행해요. 멀티플레이 메뉴에서 파티를 고르고 춤출 수 있어요. 싸우기 모드는 방장이 선택하며, 같은 파티는 서로 공격하지 않아요.','Quest progress is personal. Choose a party or dance in the multiplayer panel. The host selects PvP; teammates cannot hurt each other.')),
+      h('p',null,t('친구와의 퀘스트는 각자 진행해요. 멀티플레이 메뉴에서 파티를 고르고 춤출 수 있어요. 싸우기 모드는 방장이 선택하며, 같은 파티는 서로 공격하지 않아요. 친구는 미니맵의 마름모, 멀리 있는 파티원은 화살표로 표시돼요.','Quest progress is personal. Choose a party or dance in the multiplayer panel. The host selects PvP; teammates cannot hurt each other. Diamonds mark friends on the minimap; arrows point to distant teammates.')),
     ):null;
     this.panel.replaceChildren(h('h2', { class: 'cc-title' }, t('조작 방법','Controls')), table, ...(guide?[guide]:[]), this.btn(t('뒤로','Back'), () => this.main()));
   }

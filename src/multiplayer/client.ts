@@ -195,6 +195,11 @@ export class Multiplayer {
 
   }
 
+  mapParty(unit:Unit):{party:number;teammate:boolean}|null{
+    for(const [id,peer] of this.peers)if(peer.unit===unit)return {party:this.battle.partyOf(id),teammate:this.battle.sameParty(this.ownId,id)};
+    return null;
+  }
+
   private emote(action: MotionId) { if (this.game.player.unit.alive) this.game.player.unit.act(action); }
   private note(text: string) {
     this.log.append(h('div', null, text));

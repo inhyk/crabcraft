@@ -6,6 +6,9 @@ import type { Game } from '../../game/game';
 import type { MapSnapshot } from '../../game/snapshots';
 import type { PoiId } from '../../world/types';
 
+// Match the existing party roster colors. Shapes distinguish players from townsfolk.
+const PARTY_COLORS:Record<number,string>={0:'#d4dbe5',1:'#8cbdff',2:'#ff9d9d',3:'#ffe6a0',4:'#d5abff'};
+
 const POI_ICONS: Partial<Record<PoiId, { label: string; color: string }>> = {
   forge: { label: 'Forge', color: '#ff9a4a' },
   chapel: { label: 'Chapel', color: '#ffe9a0' },
@@ -139,7 +142,24 @@ export class Minimap {
     for (const u of g.units) {
       if (u.kind === 'player' || u.hidden || !u.alive) continue;
       const [x, y] = toScreen(u.pos.x, u.pos.z);
-      if (Math.hypot(x - half, y - half) > half - 4 * d) continue;
+      const distance=Math.hypot(x-half,y-half);
+      if(u.kind==='remote'){
+        const party=g.multiplayer?.mapParty(u),rim=half-8*d,far=distance>rim;
+        // Only teammates get long-distance guidance; rivals are shown nearby.
+        if(far&&!party?.teammate)continue;
+        c.save();c.strokeStyle='#17202c';c.lineWidth=1.6*d;
+        c.fillStyle=u.hostile?'#ff756c':PARTY_COLORS[party?.party??0];
+        c.beginPath();
+        if(far){
+          const angle=Math.atan2(y-half,x-half);
+          c.translate(half+Math.cos(angle)*rim,half+Math.sin(angle)*rim);c.rotate(angle);
+          c.moveTo(5*d,0);c.lineTo(-4*d,-4*d);c.lineTo(-4*d,4*d);
+        }else{
+          c.moveTo(x,y-5*d);c.lineTo(x+5*d,y);c.lineTo(x,y+5*d);c.lineTo(x-5*d,y);
+        }
+        c.closePath();c.fill();c.stroke();c.restore();continue;
+      }
+      if (distance > half - 4 * d) continue;
       if (u.hostile) {
         c.fillStyle = u.kind === 'boss' ? '#ff2a1a' : '#ff4a3a';
         c.beginPath();
