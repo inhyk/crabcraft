@@ -125,7 +125,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     }
   }
   root.userData.meadowPlants=meadowCount;
-  root.add(scatter.build());
+  root.add(scatter.build({boundsPadding:.2}));
   const roadMat=new THREE.MeshStandardMaterial({color:'#797886',roughness:.95});
   const roads=new StaticBatch(village,'starhaven-roads');
   const slab=new THREE.BoxGeometry(1.8,.12,1.8);

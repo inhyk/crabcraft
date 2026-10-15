@@ -14,6 +14,7 @@ import {facetedStarCrystal,starCrystalRadius} from './starCrystal';
 import {collectibleShadow} from './collectibleShadow';
 import {StarSky} from './starSky';
 import {StarSea} from './starSea';
+import {StarWind} from './starWind';
 
 function naturalHeight(x:number,z:number){
   const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
@@ -54,6 +55,7 @@ export class HiddenWorld {
   private baseHomes: THREE.Vector3[] = [];
   private collision: Collision | null = null;
   private life:StarVillageLife|null=null;
+  private wind:StarWind|null=null;
   private basePois = new Map<string, {position:THREE.Vector3;yaw:number}>();
   private basePeople: THREE.Vector3[] = [];
   private memories:{kind:ObjectiveKind;ring:THREE.Mesh;star:THREE.Mesh}[]=[];
@@ -65,6 +67,7 @@ export class HiddenWorld {
   async buildSettlement() {
     const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
     this.collision=settlement.collision;this.root.add(settlement.root);
+    this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!);
     for(const o of this.obstacles)this.collision.addCircle(o.x,o.z,o.r,this.height(o.x,o.z),this.height(o.x,o.z)+12);
     for(const o of this.crystalSolids)this.collision.addCircle(o.x,o.z,o.r,o.y0,o.y1);
     this.life=new StarVillageLife((x,z)=>this.height(x,z),this.collision);this.root.add(this.life.root);
@@ -250,6 +253,7 @@ export class HiddenWorld {
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
     this.sea.update(time);
+    this.wind?.update(time);
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
     for(const memory of this.memories){
       const objective=QUESTS.w5.objectives.find(o=>o.kind===memory.kind)!;

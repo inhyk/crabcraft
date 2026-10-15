@@ -220,7 +220,7 @@ export class Scatter {
     list.push(m.clone());
   }
 
-  build(opts: { castShadow?: boolean; materialFor?: (m: THREE.Material) => THREE.Material } = {}): THREE.Group {
+  build(opts: { castShadow?: boolean; materialFor?: (m: THREE.Material) => THREE.Material; boundsPadding?:number } = {}): THREE.Group {
     const group = new THREE.Group();
     group.name = this.name;
     const byMat = new Map<THREE.Material, { geo: THREE.BufferGeometry; mats: THREE.Matrix4[] }[]>();
@@ -246,6 +246,11 @@ export class Scatter {
       bm.sortObjects = false;
       bm.perObjectFrustumCulled = true;
       for (const e of list) {
+        // Shader wind can move vertices beyond their rest pose; retain conservative culling.
+        if(opts.boundsPadding){
+          e.geo.computeBoundingBox();e.geo.boundingBox!.expandByScalar(opts.boundsPadding);
+          e.geo.computeBoundingSphere();e.geo.boundingSphere!.radius+=opts.boundsPadding;
+        }
         const gid = bm.addGeometry(e.geo);
         for (const m of e.mats) bm.setMatrixAt(bm.addInstance(gid), m);
       }
