@@ -260,7 +260,7 @@ export class HiddenWorld {
     for(const b of [g.boss,g.finalBoss])b.unit.hidden=b.state==='dormant'||b.state==='dead';
     for(const u of [...g.npcs.map(n=>n.unit),...g.townsfolk.map(t=>t.unit)])u.hidden=false;
     g.player.respawn();g.player.unit.teleport(g.world,this.shorePortal.root.position.x,this.shorePortal.root.position.z+5,Math.PI);g.follow.cut();
-    g.hud.tracker.update(g.quests);g.takeMapSnapshot();g.journey?.save();
+    g.hud.tracker.update(g.quests);g.hud.minimap.setSnapshot(g.takeMapSnapshot());g.journey?.save();
   }
   showEpilogue() {
     this.ambience.stop();

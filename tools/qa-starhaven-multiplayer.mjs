@@ -13,6 +13,7 @@ async function open(name){const ctx=await browser.newContext({viewport:{width:14
 },{name,localRelay});await page.goto(baseUrl+'?screen=game');await page.waitForFunction(()=>window.app?.current?.game?.multiplayer,null,{timeout:90000});return page;}
 try{
  const a=await open('Star Host'),b=await open('Star Friend');
+ const shoreMap=await a.evaluate(()=>{const s=window.app.current.game.hud.minimap.snap;return {size:s.size,minX:s.minX,minZ:s.minZ};});
  await a.evaluate(()=>window.app.current.game.multiplayer.connect('create'));await a.waitForFunction(()=>window.app.current.game.multiplayer.room,null,{timeout:10000});const room=await a.evaluate(()=>window.app.current.game.multiplayer.room);
  await b.evaluate(room=>window.app.current.game.multiplayer.connect('join',room),room);await b.waitForFunction(()=>window.app.current.game.multiplayer.battle.active,null,{timeout:10000});
  await a.waitForFunction(()=>[...window.app.current.game.multiplayer.peers.values()][0]?.unit,null,{timeout:30000});await b.waitForFunction(()=>[...window.app.current.game.multiplayer.peers.values()][0]?.unit,null,{timeout:30000});
@@ -77,6 +78,7 @@ try{
  console.log('PASS: host cancellation removes the mechanic instruction in both browsers');
  await a.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,0,72,Math.PI);g.follow.cut();g.multiplayer.root.open=true;});await a.waitForTimeout(1500);await a.screenshot({path:'tmp/qa/star-party.png'});
  await b.evaluate(()=>window.app.current.game.multiplayer.battle.travel(1));await a.waitForFunction(()=>window.app.current.game.world2.chapter===1);await b.waitForFunction(()=>window.app.current.game.world2.chapter===1);
+ for(const p of [a,b])assert.deepEqual(await p.evaluate(()=>{const s=window.app.current.game.hud.minimap.snap;return {size:s.size,minX:s.minX,minZ:s.minZ};}),shoreMap);console.log('PASS: host and guest both restore the original shore map after shared portal travel');
  assert.deepEqual(await b.evaluate(()=>window.app.current.game.enemies.filter(e=>!e.isAdd).map(e=>e.unit.baseTint)),await a.evaluate(()=>window.app.current.game.enemies.filter(e=>!e.isAdd).map(e=>e.unit.baseTint)),'guest shore LEDs match the host');
  // A new host must inherit combat coefficients as well as the mirrored health/level.
  await a.evaluate(()=>{const g=window.app.current.game;g.player.restoreXp(22000);g.world2.enter();});
