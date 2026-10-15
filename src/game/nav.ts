@@ -1,4 +1,5 @@
-// Route finding for the quest hint only (crabs still steer straight). Nodes are the world's POIs and
+// Route finding for quest guidance and island residents. Each traveler owns its route cursor.
+// Nodes are the world's POIs and
 // spawn points or supplied trail waypoints. An edge exists when a crab can
 // walk the straight segment (no solids, no cliff steps), tested with World.resolveCollision and
 // World.heightAt. The hint then points at the next reachable waypoint instead of through a house.

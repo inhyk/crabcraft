@@ -203,7 +203,13 @@ export class HiddenWorld {
     for(const npc of g.npcs){const [x,z]=STAR_TOWN[npc.def.id];npc.poi.position.set(x,this.height(x,z),z);npc.poi.yaw=Math.PI;npc.unit.hidden=false;npc.unit.teleport(w,x,z,Math.PI);}
     for(const [id,x,z] of [['shore',-70,5],['wreck',70,-15],['grove',25,55],['forge',-25,36],['tavern',-20,58],['chapel',20,35],['lighthouse',0,-48],['beacon',0,-45],['bossArena',0,-75]] as const)w.pois[id].position.set(x,this.height(x,z),z);
     const walks=STAR_WALKS.map(([x,z])=>new THREE.Vector3(x,this.height(x,z),z));
-    g.townsfolk.forEach((t,i)=>{const p=walks[i%walks.length];t.unit.hidden=false;t.unit.teleport(w,p.x+(i%3-1)*2,p.z, i*.8);t.relocate(walks,2.5);});
+    const residentPoints=[...walks,...[[-6,49],[-6,61],[6,49],[6,61]].map(([x,z])=>new THREE.Vector3(x,this.height(x,z),z))];
+    g.townsfolk.forEach((t,i)=>{
+      const p=walks[i%walks.length];t.unit.hidden=false;t.unit.teleport(w,p.x+(i%3-1)*2,p.z,i*.8);
+      // Each resident owns the mutable route cursor; neither other residents nor the
+      // player's quest guidance can overwrite their destination or cached path.
+      t.relocate(walks,2.5,new NavHints(w,{points:residentPoints,includeWorldPoints:false,radius:t.unit.radius+.15,step:.5}));
+    });
     // The shore graph describes different streets. Build the island graph only after
     // its collision surface and relocated POIs are active, including the pilgrim trails.
     const routePoints=[...Object.values(STAR_TOWN),...STAR_WALKS,...STAR_TRAILS.flat(),[0,86],[0,-75],[-3,-55],[3,-55],[-14,-60],[14,-60],[-6,49],[-6,61],[6,49],[6,61]];

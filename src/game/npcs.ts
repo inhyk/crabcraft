@@ -5,6 +5,7 @@ import {t} from '../i18n';
 import type { Poi } from '../world/types';
 import type { Game } from './game';
 import type { Unit } from './unit';
+import type { NavHints } from './nav';
 import type { NpcDef } from './quests';
 import { TOWNSFOLK_BARKS } from './quests';
 import { damp, pick, rand, TAU, turnToward, yawTo } from './util';
@@ -79,6 +80,9 @@ export class Townsfolk {
   private velX = 0;
   private velZ = 0;
   private barkCd = 0;
+  private stuckFor = 0;
+  private route: NavHints | null = null;
+  private readonly clearDest = new THREE.Vector2();
   /** Set by the ending: stand still and dance. */
   frozen = false;
 
@@ -92,7 +96,7 @@ export class Townsfolk {
     this.pauseUntil = game.time + rand(0, 4);
   }
 
-  relocate(points:THREE.Vector3[],radius:number) {this.points=points;this.radius=radius;this.walking=false;this.velX=this.velZ=0;this.pauseUntil=this.game.time+1;this.frozen=false;}
+  relocate(points:THREE.Vector3[],radius:number,route:NavHints|null=null) {this.points=points;this.radius=radius;this.route=route;this.walking=false;this.velX=this.velZ=0;this.stuckFor=0;this.pauseUntil=this.game.time+1;this.frozen=false;}
 
   bark(): void {
     const g = this.game;
@@ -122,6 +126,11 @@ export class Townsfolk {
       const a = rand(0, TAU);
       const r = rand(0, this.radius);
       this.dest.set(base.x + Math.cos(a) * r, 0, base.z + Math.sin(a) * r);
+      if (this.route) {
+        g.world.resolveCollision(this.dest.x, this.dest.z, u.radius + .15, this.clearDest);
+        this.dest.set(this.clearDest.x, 0, this.clearDest.y);
+      }
+      this.stuckFor = 0;
       this.walking = true;
       this.sideways = Math.random() < 0.55;
       this.speed = rand(1.3, 2.1);
@@ -135,8 +144,10 @@ export class Townsfolk {
         this.pauseUntil = now + rand(3, 9);
         if (Math.random() < 0.35 && !u.culled) u.act(pick(['gesture_paw', 'gesture_hello', 'claw_left', 'gesture_salute'] as const));
       } else {
-        tx = dx / d;
-        tz = dz / d;
+        const next = this.route?.waypoint(u.pos, this.dest, now) ?? this.dest;
+        const nx = next.x - u.pos.x, nz = next.z - u.pos.z;
+        const nd = Math.hypot(nx, nz);
+        if (nd > .001) { tx = nx / nd; tz = nz / nd; }
         const travel = Math.atan2(tx, tz);
         u.setYaw(turnToward(u.yaw, this.sideways ? travel + Math.PI / 2 : travel, 3, dt));
       }
@@ -153,8 +164,9 @@ export class Townsfolk {
     const ox = u.pos.x;
     const oz = u.pos.z;
     u.moveTo(g.world, u.pos.x + this.velX * dt, u.pos.z + this.velZ * dt, dt);
-    // Stuck against a wall: pick a new stroll.
-    if (this.walking && Math.hypot(u.pos.x - ox, u.pos.z - oz) < this.speed * dt * 0.2) {
+    // Allow the initial acceleration before treating sustained lack of movement as a wall.
+    this.stuckFor = this.walking && Math.hypot(u.pos.x - ox, u.pos.z - oz) < this.speed * dt * 0.2 ? this.stuckFor + dt : 0;
+    if (this.stuckFor > .5) {
       this.walking = false;
       this.pauseUntil = now + rand(0.5, 2);
     }
