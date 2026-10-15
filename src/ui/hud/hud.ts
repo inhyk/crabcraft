@@ -32,6 +32,7 @@ export class Hud {
   readonly menu: GameMenu;
   readonly hints: ControlHints;
   readonly sidePanels: HTMLElement;
+  private bossBottom = -1;
   private dmgFlash: HTMLElement;
   private lowHp: HTMLElement;
   private letterTop: HTMLElement;
@@ -111,6 +112,10 @@ export class Hud {
     // Layout reads before this frame's writes: where the boss frame ends, for the speech bubbles.
     const bossOn = this.bossFrame.el.classList.contains('on');
     const topLimit = bossOn ? this.bossFrame.el.getBoundingClientRect().bottom + 6 : 96;
+    if (topLimit !== this.bossBottom) {
+      this.bossBottom = topLimit;
+      this.root.style.setProperty('--boss-bottom', `${topLimit}px`);
+    }
     this.root.classList.toggle('boss-on', bossOn);
     this.hints.el.classList.toggle('muted', this.dialogue.isOpen || this.questLog.open || this.menu.open);
     this.playerFrame.update(g);

@@ -229,7 +229,7 @@ export class Bubbles {
     b.inner.style.animation = 'none';
     void b.inner.offsetWidth;
     b.inner.style.animation = '';
-    b.el.className = `bubble${yell ? ' yell' : ''}`;
+    b.el.className = `bubble${unit.kind === 'boss' ? ' boss-speech' : ''}${yell ? ' yell' : ''}`;
     b.until = g.time + Math.min(7, 2.5 + text.length * 0.055);
     b.el.style.display = '';
   }

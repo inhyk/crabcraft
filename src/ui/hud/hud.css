@@ -549,8 +549,11 @@
   .hud.boss-on .cc-banner .big { font-size: 28px; }
   .hud.boss-on .cc-banner .sub { font-size: 15px; }
   .hud.boss-on .cc-banner .rule { width: 100%; }
-  .hud.boss-on .msg-warn { left: 18px; right: 300px; top: 57%; }
-  .msg-warn > div { font-size: 20px; }
+  .hud.boss-on .msg-warn { left: 18px; right: 300px; top: calc(var(--boss-bottom, 234px) + 8px); }
+  .msg-warn > div { font-size: 18px; line-height: 1.2; }
+  .hud.boss-on .chat { max-height: 52px; }
+  /* The same yell remains in chat while the urgent instruction occupies this space. */
+  .hud:has(.messages.combat-warning) .boss-speech { visibility: hidden; }
 }
 @media (min-width: 640px) and (max-width: 700px) {
   .cc-banner:not(.boss) .big { font-size: 24px; }
