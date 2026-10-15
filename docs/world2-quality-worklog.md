@@ -45,13 +45,13 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Two-browser replay passed actual bilingual mode/party buttons, selected state, host permissions, PvP damage, friendly-fire protection, guest lighthouse control, both chapter transitions and moving NPC/townsfolk synchronization with no page errors. Added tools/qa-starhaven-multiplayer.mjs for replay.
 - 25 game/protocol tests and production build pass. Multiplayer UI polish deployed READY as dpl_FzKHG9fVP19gUDstP5oR1kjLCZ5a (commit 0ff7e0d).
 
-## Repeated travel stability — 2026-10-15 13:40 UTC
+## Repeated travel stability — 2026-10-15 13:39 UTC
 
 - Ran 24 complete World I → World II → World I journeys in a real GPU browser. Geometry count stayed 439 and texture count stayed 144 from the warmed baseline to the last cycle; no growing GPU allocation was observed in this scenario.
 - Every cycle retained the morning/off lighthouse state and in-progress World I quest count. No page errors occurred. This checks repeated travel, not ten-hour stability.
 - Retained the replay in tools/qa-world-travel-soak.mjs.
 
-## Exploration landmarks — 2026-10-15 13:48 UTC
+## Exploration landmarks — 2026-10-15 13:46 UTC
 
 - Added distinct western crystal glade, eastern animated celestial observatory and northern carved sanctuary, with localized discovery stories for the exploration quest. Kept discovery centers open and flattened the western/eastern medallion ground with smooth transitions.
 - Collision sampling found trails crossing two village houses; routed them around the houses. New centerline replay reports zero blocked samples for a one-unit player radius. Expanded forest clearances around the three destinations.
@@ -59,7 +59,7 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Production build, 25 game/protocol tests and full seven-quest GPU journey passed. The journey includes reward persistence, both automatic portals, morning preservation and the 16-dancer true ending; no page errors. Added tools/qa-star-landmarks.mjs for path checks and views.
 - Ten-hour work remains active; this is a publishable intermediate milestone.
 
-## Personal navigation and camera clearance — 2026-10-15 13:56 UTC
+## Personal navigation and camera clearance — 2026-10-15 13:54 UTC
 
 - Added a real tracking control to the quest log. The chosen active/ready quest directs the minimap and golden navigation marker, highlights in the tracker and persists separately for each world. Completed choices safely fall back; malformed saved IDs are ignored.
 - All natural decorative crystals now avoid trails, discovery circles and the combat arena. Added physical/camera collision to the 63 retained crystals instead of letting the lens pass through opaque geometry.
@@ -68,3 +68,6 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - 27 game/protocol tests pass. Real bilingual tracking-button replay passed selection, changing objectives, save/reload and separate World I/II choices. Two-browser multiplayer replay passed PvP, party protection, morning toggle, portals and resident movement with no page errors.
 - Audit follow-up: enemy migration should reconstruct scaled damage/respawn stats from the mirrored level without healing an injured enemy; guest shore return should explicitly restore its LED appearance. These need direct regression coverage in the next milestone.
 - Ten-hour development remains active; no ten-hour completion claim.
+
+- Public verification for navigation milestone: commit 0323c96 deployed READY as dpl_A1xq4UXwxghe5qYTdMdgAfRzF5Gi. The full tracking/camera browser replay also passed against the stable production URL, including refresh persistence and F collection. seonn.dev/games/crabcraft returns HTTP 200.
+- Milestone timestamps above use the actual UTC minute of the retained validation/commit rather than estimated future times.
