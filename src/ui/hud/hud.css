@@ -493,3 +493,31 @@
 .qlog-track[aria-pressed="true"]{border-color:#c5a551;background:#584b2c;color:#fff0bc}
 .qlog-track-hint{font-size:13px!important;opacity:.75;margin-top:6px!important}
 @media(max-width:700px){.hud-side-panels{width:245px}}
+
+/* Compact desktop windows keep combat information to the left of the map. */
+@media (min-width: 640px) and (max-width: 900px) {
+  .uf-player { left: 18px; }
+  .uf-portrait { width: 64px; height: 64px; }
+  .uf-body { width: 172px; padding-top: 4px; padding-bottom: 6px; }
+  .uf-name { font-size: 13px; }
+  .uf-target { left: 300px; }
+  .uf-target .uf-portrait { display: none; }
+  .uf-target .uf-body { width: 140px; margin-left: 0; padding: 6px 8px; }
+  .uf-auras { top: 74px; }
+  .mm { width: 164px; right: 18px; }
+  .mm-ring { width: 136px; height: 136px; }
+  .mm-zone { font-size: 12px; padding: 3px 9px; }
+  .hud-side-panels { width: 245px; margin-top: 18px; max-height: max(80px, calc(100dvh - 325px)); }
+  .bf { left: 18px; top: 154px; width: calc(100% - 300px); transform: none; }
+  .bf-name { white-space: normal; font-size: 15px; }
+  .bf-sub { font-size: 12px; }
+  .bf-bar { height: 18px; }
+  .ab { bottom: 12px; transform: translateX(-50%) scale(.85); transform-origin: bottom center; }
+  .chat { bottom: 125px; width: calc(100% - 300px); max-height: 60px; overflow: hidden; font-size: 12px; }
+  .hud.boss-on .cc-banner { left: 18px; right: 300px; top: 49%; }
+  .hud.boss-on .cc-banner .big { font-size: 28px; }
+  .hud.boss-on .cc-banner .sub { font-size: 15px; }
+  .hud.boss-on .cc-banner .rule { width: 100%; }
+  .hud.boss-on .msg-warn { left: 18px; right: 300px; top: 57%; }
+  .msg-warn > div { font-size: 20px; }
+}

@@ -17,3 +17,5 @@
 .bj-card.eclipse{border-color:#b18ce879;background:radial-gradient(ellipse at top right,#67339766,transparent 80%),#19132b}.eclipse .bj-badge{border-color:#bc90ff;background:#39224d;color:#e6cbff}.eclipse h3{color:#e0c7ff}.eclipse button{background:linear-gradient(#533573,#2b1d3c);border-color:#ad7cda;color:#edd9ff}
 
 .boss-journey[hidden]{display:none!important}.creator-tools{left:335px;width:280px;z-index:60}.creator-tools button{display:block;width:100%;margin:7px 0}.creator-tools p{color:#b5c8dc}@media(max-width:700px){.creator-tools{left:10px;top:200px}}
+
+@media(min-width:640px) and (max-width:900px){.boss-journey{left:18px;top:100px;width:270px;padding:8px 12px}.boss-journey[open]{max-height:calc(100dvh - 235px)}.creator-tools{left:300px;width:calc(100vw - 510px);min-width:180px;top:100px}}

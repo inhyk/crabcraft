@@ -226,8 +226,9 @@ export class Minimap {
     c.restore();
 
     // "N" marker on the rim: world -Z is north, which lands at (-rz, fz) on screen.
-    this.northEl.style.left = `${(0.5 - rz * 0.5) * this.size}px`;
-    this.northEl.style.top = `${(0.5 + fz * 0.5) * this.size}px`;
+    // Percentages follow the ring when the compact HUD changes its CSS size.
+    this.northEl.style.left = `${(0.5 - rz * 0.5) * 100}%`;
+    this.northEl.style.top = `${(0.5 + fz * 0.5) * 100}%`;
   }
 }
 

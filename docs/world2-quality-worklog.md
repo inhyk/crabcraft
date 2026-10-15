@@ -236,3 +236,9 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 
 - Published e907ae5 as READY deployment dpl_9Gr7LY6vkU49YTJzhnFbgxFFXL6E. Public GPU sea replay passes: 46,440 animated water pixels, zero outside-water changes, 14,613 visible true-coast foam pixels and zero offshore foam. Public KO/EN saved-chapter/loading replay passes every region and damaged-save fallback.
 - Full actual Internet-room replay passes on the public stable URL. Sky and sea clocks match exactly per peer; host/guest differ by .117 seconds in this sample. Party/PvP protection, weather, guest travel, all residents, respawn without portal bounce, identical Eclipse safety colours/instructions, cancellation and injured-enemy host handover all pass, with no page errors. Ten-hour development remains active.
+
+### Compact desktop combat HUD — 2026-10-15 UTC
+
+- Reproduced at the user's 718×492 image size: the full boss frame covered the map, chat sat behind ability buttons, and the side stack reached the action bar.
+- Added a compact 640–900px desktop layout with a smaller map, readable condensed target frame, boss information to the left of the scrolling party/quest stack, and chat above the action bar. The map's north marker now uses percentage coordinates so it stays on the resized rim. Larger layouts and narrow phone layouts retain their prior dimensions.
+- Real browser replay (tools/qa-compact-hud.mjs) clicks Party 1 through the scrolling stack and confirms selection, then enters the level-20 encounter. Boss right edge 436 < side stack left 451; map bottom 178 < stack top 196; stack bottom 367 < action bar top 377.15. Screenshots inspected, TypeScript/Vite build passes. Ten-hour quality work remains active.
