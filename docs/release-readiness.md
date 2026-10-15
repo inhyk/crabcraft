@@ -44,3 +44,10 @@
 공개 중계 서버의 프로토콜 검사는 `server/cloudflare/smoke.mjs`로 다시 실행해 종료 코드 0을 확인했다(`release-public-relay-smoke.log`). 실제 인터넷 WebSocket 방 생성/참가·채팅·전투 메시지·호스트 이전·재참가·월드 II 체크포인트와 방 격리를 확인한 **프로토콜 fixture 검사**다. 최신 프런트엔드가 공개됐다는 증거는 아니다. 중계 서버의 브라우저 Origin 제한은 유지한다. `tools/qa-mixed-combat-language.mjs`의 `CC_QA_BASE`/`CC_QA_RELAY` 설정을 준비했으며, 최신 프런트엔드의 공개 중계 브라우저 검사는 실제 허용 도메인 배포 후 실행해야 한다. 해당 최신 공개 브라우저 검사는 아직 남아 있다.
 
 `https://seonn.dev/games/crabcraft`의 공개 게임은 `fc0fee5` 수준이다. 이후 작업 브랜치 변경은 공개 버전이 아니다. 2026-10-15 16:51:30 UTC 프로덕션 배포가 Vercel `api-deployments-free-per-day` 한도로 거절되었으며 retry24h가 안내되었다. 새 프로젝트·계정·결제·우회나 반복 배포를 시도하지 않았다. 한도 해제 이후 실제 배포 성공과 공개 URL 검증이 필요하다.
+
+
+## 2026-10-15 22:58 UTC · 배포 차단 재개 기준
+
+현재 검증/QA 커밋은 `072edcb`이며 원격 feat/multiplayer-rooms와 일치하고 작업 트리가 깨끗하다. 읽기 전용 `vercel inspect` 재확인도 종료 코드0이며 공개 alias는 여전히 `dpl_G2iUGtqSge21qVXcDfpNz8iGcVqB`다(`release-blocker-audit-inspect.log`). 16:51:30 UTC 최초 거절부터 연속된 여러 목표 작업에서 동일 일일 배포 한도를 기록했다. 실제10시간 개발/검증을 마친 현재 남은 단계는 최신판 배포와 허용 공개 도메인에서 두 브라우저 검증이다. 새 배포 재시도·계정/프로젝트 우회·구매는 실행하지 않았다.
+
+재개 시 기존 `/Users/inkeun/projects/crabcraft`의 연결된 Vercel 프로젝트를 사용한다. 기존24시간 재시도 안내 시각은2026-10-16 16:51:30 UTC(한국시간10월17일01:51:30)이며 자동 실행 예약을 만들거나 배포 성공을 보장한 것은 아니다. 배포 성공 후 stable alias의 새 deployment/소스 일치, seonn.dev/games/crabcraft의 링크/페이지, 실제 KO/EN 두 브라우저의 공개 중계 방 생성·참가·피해·날씨·여행·파티·저장/복귀를 확인해야 한다. 공개 브라우저 검사기는 `tools/qa-mixed-combat-language.mjs`의 CC_QA_BASE/CC_QA_RELAY로 기존 허용 도메인과 공개 relay를 지정할 수 있다. 로컬 검사 성공이나 프로토콜 fixture만으로 이 단계를 완료 처리하지 않는다.
