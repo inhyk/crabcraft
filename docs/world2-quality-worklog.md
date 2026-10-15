@@ -170,3 +170,5 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Extended the existing GPU landmark replay: every vertex of all 70 column pieces fits its physical envelope (maximum radial floating-point excess 0.00000245 units); all trail centerlines and crystal sight checks pass. Actual pool ripples animate and stay within the basin. No page errors. Production build and whitespace checks pass.
 - A 24-round-trip GPU soak with the new observatory retains morning, q1 progress and stable geometry/texture counts: 464/147 after warmup and at the end. This is focused travel/resource coverage, not a ten-hour stability claim.
 - Ten-hour development remains active.
+
+- Published 10446f2 as READY deployment dpl_Kt2EtHb3fZfeWgYgLX5UhAxZVBki. The complete landmark replay passed on the public stable game URL: all trails, crystal visibility/collision checks, 70 masonry envelopes, 62 rubble clearances and live water ripples. No page errors; seonn.dev/games/crabcraft HTTP 200.
