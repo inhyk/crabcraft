@@ -91,3 +91,5 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Added batched low flowers and grasses around the three exploration landmarks, avoiding the trails and boss arena. Inspected the western crystal garden in the actual GPU-rendered view.
 - All 31 game/protocol tests and the production build pass. Two-browser replay passed the same Eclipse instruction in Korean for the host and English for the guest, plus existing party, PvP, travel, weather and authority checks. Trail sampling and all 63 crystal sight collisions pass.
 - Ten-hour development remains active; this is an intermediate deployment.
+
+- Published commit 94d74d2 as READY production deployment dpl_BH8zBBMo237PUHTCRVtu9UwXEsQB. A fresh headless browser against the public stable URL confirmed Astra's English name/title, the actual Eclipse inner-circle warning and 167 native meadow plants. No page errors occurred. seonn.dev/games/crabcraft returns HTTP 200.
