@@ -113,3 +113,13 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - All 31 game/protocol tests, production build and whitespace checks pass. Ten-hour development remains active.
 
 - Terrain art commit e3b05cb deployed READY as dpl_CtpLpmvuN9mVggmoPpZkTnb1HpWd. The entire terrain/boss-effect browser replay passed again on the public stable production URL with the same 22,701-vertex collision match and no page errors. Hub page HTTP 200.
+
+## Mechanic warning priority and lifecycle — 2026-10-15 14:20 UTC
+
+- Boss mechanic instructions now stay visible until the actual attack resolves or is cancelled, rather than fading on a fixed wall-clock animation. Solo menu pauses preserve the instruction with the paused simulation. General announcements still expire normally.
+- Incidental zone/quest/XP banners are hidden while a warning is active; boss phase banners remain eligible. Warning ownership prevents a late callback or older encounter from removing a newer message.
+- Host and guest cancellation clear their respective instructions. Language settings refresh an in-progress warning, and the boss frame name/title/phase/death labels now follow the selected language, including during a pause.
+- Added tools/qa-boss-warning.mjs. Actual-browser replay passed a pause over three seconds, full warning opacity, suppressed region banner, attack completion cleanup, boss sleep cleanup, language switch during an active mechanic and stale-owner protection. Inspected the clearer combat screenshot.
+- Two-browser relay replay passed bilingual Eclipse instructions and cancellation on both peers, plus PvP, party protection, weather, portals, villagers and authority transfer. All 31 game/protocol tests and production build pass.
+- Follow-up audit: inspect the delayed World I lighthouse quest reveal against an intervening off toggle or chapter travel; its existing callback currently sets night unconditionally.
+- Ten-hour development remains active.

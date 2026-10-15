@@ -1,3 +1,4 @@
+import {t} from '../../i18n';
 // Player and target unit frames (portrait ring, level badge, health and resource bars, auras)
 // and the boss frame at the top of the screen.
 import { h, art } from '../dom';
@@ -183,6 +184,7 @@ export class BossFrame {
   private phase: HTMLElement;
   private unit: Unit | null = null;
   private last = -1;
+  private identity = '';
 
   constructor() {
     this.fill = h('div', { class: 'fill' });
@@ -204,7 +206,7 @@ export class BossFrame {
     this.el.querySelector('.bf-name')!.textContent = u.name;
     this.el.querySelector('.bf-sub')!.textContent = `LEVEL ${u.level} · ${u.title}`;
     this.el.classList.toggle('abyss-boss', u.level === 10);
-    this.last = -1;
+    this.last = -1;this.identity='';
     this.el.classList.add('on');
   }
 
@@ -220,15 +222,22 @@ export class BossFrame {
   update(g: Game): void {
     const u = this.unit;
     if (!u) return;
+    const profile=g.encounter.profile;
+    const identity=`${profile.name}|${profile.title}|${u.level}`;
+    if(identity!==this.identity){
+      this.identity=identity;this.last=-1;
+      this.el.querySelector('.bf-name')!.textContent=profile.name;
+      this.el.querySelector('.bf-sub')!.textContent=`LEVEL ${u.level} · ${profile.title}`;
+    }
     const f = Math.max(0, u.hp / u.maxHp);
     if (Math.abs(f - this.last) > 0.0005) {
       this.last = f;
       this.fill.style.transform = `scaleX(${f})`;
       this.lag.style.transform = `scaleX(${f})`;
-      this.label.textContent = u.alive ? `${Math.ceil(f * 100)}%` : 'Defeated';
+      this.label.textContent = u.alive ? `${Math.ceil(f * 100)}%` : t('처치 완료','Defeated');
     }
     const phase = g.encounter.phase;
-    const txt = !u.alive ? '왕관 획득 · 보스 처치' : phase === 3 ? 'Phase 3: Enraged' : `Phase ${phase}`;
+    const txt = !u.alive ? t('왕관 획득 · 보스 처치','Crown reclaimed · Boss defeated') : phase === 3 ? t('3단계 · 폭주','Phase 3: Enraged') : t(`${phase}단계`,`Phase ${phase}`);
     if (this.phase.textContent !== txt) this.phase.textContent = txt;
     this.el.classList.toggle('enraged', g.encounter.enraged && u.alive);
   }

@@ -87,6 +87,7 @@ export class Boss {
     return this.mech?.kind ?? null;
   }
 
+  private warning:HTMLElement|null=null;
   private remoteMechId = -1;
   networkState(id: 'b3' | 'b10' | 'b20'): BossState {
     const m = this.mech;
@@ -123,7 +124,7 @@ export class Boss {
     }
     this.mech={kind:m.kind,t:0,dur:duration,at,yaw:m.yaw,fx,fired:false,swung:false};
     this.mechIndex=m.id;
-    g.hud.messages.warn(bossWarning(m.kind,this.profile.level));
+    this.warning=g.hud.messages.warn(bossWarning(m.kind,this.profile.level),{persistent:true});
   }
   resumeAuthority(): void {
     // Continue at the replicated position/phase, with fresh timers in this browser's clock.
@@ -370,7 +371,7 @@ export class Boss {
       g.vfx.undertow(m.at, 5.5, m.dur);
       g.say(u, BOSS_YELLS.undertow, true);
     }
-    g.hud.messages.warn(bossWarning(kind,this.profile.level));
+    this.warning=g.hud.messages.warn(bossWarning(kind,this.profile.level),{persistent:true});
     this.mech = m;
     this.nextMech = g.time + m.dur + (this.phase === 3 ? 4.2 : this.phase === 2 ? 5.5 : 6);
   }
@@ -430,7 +431,7 @@ export class Boss {
           g.combat.damage(u, p, p.maxHp * 0.26);
           p.stunUntil = Math.max(p.stunUntil, g.time + 0.5);
         }
-        this.mech = null;
+        this.finishMech();
       }
     } else if (m.kind === 'spray') {
       if (!m.swung && m.t > m.dur - SPRAY_LEAD) {
@@ -450,7 +451,7 @@ export class Boss {
           g.hud.floats.spawn(p, t(`녹 ${p.rust}중첩`,`Rust x${p.rust}`), 'info');
         }
         }
-        this.mech = null;
+        this.finishMech();
       }
     } else if (m.kind === 'eclipse') {
       if (!m.swung && m.t > m.dur - SLAM_LEAD) { m.swung=true; u.act('attack_slam', {speed:SLAM_RATE}); }
@@ -461,7 +462,7 @@ export class Boss {
           const d=Math.hypot(p.pos.x-m.at.x,p.pos.z-m.at.z);
           if(p.alive && d>4.5 && d<11+p.radius*0.5) g.combat.damage(u,p,p.maxHp*0.38);
         }
-        this.mech=null;
+        this.finishMech();
       }
     } else if (m.kind === 'nova') {
       if (!m.swung && m.t > m.dur - SLAM_LEAD) { m.swung = true; u.act('attack_slam', { speed: SLAM_RATE }); }
@@ -474,7 +475,7 @@ export class Boss {
         g.follow.shake(0.4, 0.5);
         g.audio.sfx('sfx-crit');
         for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && Math.hypot(p.pos.x - m.at.x, p.pos.z - m.at.z) < 6 + p.radius * 0.5) g.combat.damage(u, p, p.maxHp * 0.32);
-        this.mech = null;
+        this.finishMech();
       }
     } else {
       // Undertow: drag the player toward the hull, then slam everything around it.
@@ -497,12 +498,26 @@ export class Boss {
         g.follow.shake(0.55, 0.6);
         g.audio.sfx('sfx-crit');
         for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && u.distTo(p) < 5.5 + p.radius * 0.5) g.combat.damage(u, p, p.maxHp * 0.24);
-        this.mech = null;
+        this.finishMech();
       }
     }
   }
 
+  refreshWarning():void {
+    if(this.mech)this.warning=this.game.hud.messages.warn(bossWarning(this.mech.kind,this.profile.level),{persistent:true});
+  }
+
+  private clearMechWarning():void {
+    if(this.warning)this.game.hud.messages.clearWarning(this.warning);
+    this.warning=null;
+  }
+
+  private finishMech():void {
+    this.clearMechWarning();this.mech=null;
+  }
+
   private clearMech(): void {
+    this.clearMechWarning();
     if (!this.mech) return;
     for (const f of this.mech.fx) this.game.vfx.fx.release(f);
     this.mech = null;

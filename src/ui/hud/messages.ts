@@ -15,7 +15,7 @@ export class Messages {
     this.errors = h('div', { class: 'msg-errors' });
     this.warnEl = h('div', { class: 'msg-warn' });
     this.bannerEl = h('div');
-    this.el = h('div', { class: 'hud-keep', style: 'position:absolute;inset:0;pointer-events:none' }, this.bannerEl, this.errors, this.warnEl);
+    this.el = h('div', { class: 'messages hud-keep', style: 'position:absolute;inset:0;pointer-events:none' }, this.bannerEl, this.errors, this.warnEl);
   }
 
   private push(el: HTMLElement, ms: number): void {
@@ -36,8 +36,20 @@ export class Messages {
     this.push(h('div', { class: 'info' }, text), 2500);
   }
 
-  warn(text: string): void {
-    this.warnEl.replaceChildren(h('div', null, text));
+  warn(text: string, options: {persistent?:boolean} = {}): HTMLElement {
+    const notice=h('div',{class:options.persistent?'mechanic-warning':''},text);
+    this.warnEl.replaceChildren(notice);
+    this.el.classList.add('combat-warning');
+    // General announcements expire with their animation. Mechanics follow the simulation clock,
+    // so a paused solo game cannot lose its instruction before the attack actually happens.
+    if(!options.persistent)notice.addEventListener('animationend',()=>this.clearWarning(notice),{once:true});
+    return notice;
+  }
+
+  clearWarning(notice?:HTMLElement):void {
+    // An old encounter/animation must not erase a newer warning.
+    if(notice&&this.warnEl.firstElementChild!==notice)return;
+    this.warnEl.replaceChildren();this.el.classList.remove('combat-warning');
   }
 
   /** Big gold text mid-screen: zone names, quest accepted/completed, level up. */

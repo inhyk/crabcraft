@@ -231,6 +231,10 @@
 .msg-errors .info { font: 700 19px var(--font-display); color: #ffd23a; text-shadow: var(--text-shadow); animation: cc-fade-out 2.4s ease both; }
 .msg-warn { position: absolute; left: 0; right: 0; top: 30%; text-align: center; }
 .msg-warn > div { font: 800 28px var(--font-display); letter-spacing: 0.04em; color: #ff7a2a; text-shadow: 0 2px 0 #000, 0 0 14px rgba(255, 90, 20, 0.6); animation: warn 2.6s ease both; }
+.msg-warn > .mechanic-warning { animation: warning-enter .16s ease-out both; }
+@keyframes warning-enter { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+/* Mechanic instructions take priority over incidental area, XP and quest announcements. */
+.messages.combat-warning .cc-banner:not(.boss) { visibility: hidden; }
 @keyframes warn { 0% { opacity: 0; transform: scale(1.4); } 10% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
 .cc-banner.level .big { font-size: 64px; }
 .cc-banner.quest .big { font-size: 42px; }

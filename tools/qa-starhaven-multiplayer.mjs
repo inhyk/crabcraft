@@ -41,6 +41,8 @@ try{
  assert.match(await b.evaluate(()=>window.app.current.game.worldBoss.unit.title),/Guardian/);
  console.log('PASS: same Eclipse mechanic gives Korean host / English guest the same inner-circle safety instruction');
  await a.evaluate(()=>window.app.current.game.worldBoss.sleep());await b.waitForFunction(()=>window.app.current.game.worldBoss.state==='dormant');
+ for(const p of [a,b]){assert.equal(await p.locator('.msg-warn').textContent(),'');assert.equal(await p.locator('.messages').evaluate(el=>el.classList.contains('combat-warning')),false);}
+ console.log('PASS: host cancellation removes the mechanic instruction in both browsers');
  await a.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,0,72,Math.PI);g.follow.cut();g.multiplayer.root.open=true;});await a.waitForTimeout(1500);await a.screenshot({path:'tmp/qa/star-party.png'});
  await b.evaluate(()=>window.app.current.game.multiplayer.battle.travel(1));await a.waitForFunction(()=>window.app.current.game.world2.chapter===1);await b.waitForFunction(()=>window.app.current.game.world2.chapter===1);
  assert.deepEqual(await b.evaluate(()=>window.app.current.game.enemies.filter(e=>!e.isAdd).map(e=>e.unit.baseTint)),await a.evaluate(()=>window.app.current.game.enemies.filter(e=>!e.isAdd).map(e=>e.unit.baseTint)),'guest shore LEDs match the host');
