@@ -21,7 +21,8 @@ try {
     g.vfx.group.visible=false;g.objective.group.visible=false;
     g.camera.aspect=1600/900;g.camera.updateProjectionMatrix();
     g.camera.position.set(34,25,104);g.camera.lookAt(0,6,43);g.camera.updateMatrixWorld();
-    g.world2.sky.update(g.time,g.camera,e.renderer.getPixelRatio());
+    const sceneTime=g.world2.sky.time.value;
+    g.world2.sky.update(sceneTime,g.camera,e.renderer.getPixelRatio());g.world2.sea.update(sceneTime);
     e.composer.render(0);
     return e.canvas.toDataURL('image/webp',.88);
   });

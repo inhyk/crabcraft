@@ -13,6 +13,7 @@ import {starGroundColor} from './world2Ground';
 import {facetedStarCrystal,starCrystalRadius} from './starCrystal';
 import {collectibleShadow} from './collectibleShadow';
 import {StarSky} from './starSky';
+import {StarSea} from './starSea';
 
 function naturalHeight(x:number,z:number){
   const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
@@ -33,6 +34,7 @@ export class HiddenWorld {
   private groundTexture:THREE.DataTexture;
   private rotations: THREE.Object3D[] = [];
   private sky: StarSky;
+  private sea: StarSea;
   private obstacles: { x:number; z:number; r:number }[] = [];
   private crystalSolids: {x:number;z:number;r:number;y0:number;y1:number}[] = [];
   private portal: StarPortal;
@@ -117,7 +119,7 @@ export class HiddenWorld {
     }
     const texture=this.groundTexture=new THREE.DataTexture(pixels,128,128);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(18,18);texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearMipmapLinearFilter;texture.generateMipmaps=true;texture.anisotropy=Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy());texture.needsUpdate=true;
     const ground=new THREE.Mesh(land,new THREE.MeshStandardMaterial({map:texture,vertexColors:true,roughness:.94,metalness:.08}));ground.name='star-island-ground';ground.receiveShadow=true;this.root.add(ground);
-    const sea=new THREE.Mesh(new THREE.PlaneGeometry(1600,1600),new THREE.MeshStandardMaterial({color:'#080d24',metalness:.82,roughness:.18,emissive:'#080829',emissiveIntensity:.3}));sea.rotation.x=-Math.PI/2;sea.position.y=-3;this.root.add(sea);
+    this.sea=new StarSea();this.root.add(this.sea.root);
     const stone=new THREE.MeshStandardMaterial({color:'#3c3b57',roughness:.78,metalness:.3});
     const crystal=new THREE.MeshStandardMaterial({color:'#a57bff',emissive:'#6524c9',emissiveIntensity:1.5,metalness:.5,roughness:.2});
     const teal=new THREE.MeshStandardMaterial({color:'#b0fff1',emissive:'#26afba',emissiveIntensity:1.3,metalness:.6,roughness:.25});
@@ -247,6 +249,7 @@ export class HiddenWorld {
     if(!this.rendered)return;
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
+    this.sea.update(time);
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
     for(const memory of this.memories){
       const objective=QUESTS.w5.objectives.find(o=>o.kind===memory.kind)!;
