@@ -148,3 +148,5 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - An actual transformed-vertex audit found seven old approximate collider envelopes exceeded by tilted facets, up to 0.507 units. Collider radii now include the measured rotated geometry plus clearance, computed once during construction.
 - GPU replay confirms all 63 decorative crystals and all six western glade crystals fit their analytic colliders; all trail centerlines remain clear for a one-unit player and all 63 sight collisions pass. No page errors.
 - All 33 game/protocol tests, production build and whitespace checks pass. Ten-hour development remains active; this is an intermediate release.
+
+- Published f59c85d as READY production deployment dpl_HEkFuhTXc8M1ay5vuAXpZNwJLdon. The full landmark browser replay passed again on the public stable game URL: trails, 63 sight collisions, both crystal surface families and all 69 measured collider envelopes, with no page errors. seonn.dev/games/crabcraft returns HTTP 200 and its play link points to the updated stable game.
