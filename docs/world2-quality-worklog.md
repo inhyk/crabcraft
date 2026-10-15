@@ -159,3 +159,5 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - New tools/qa-respawn-language.mjs passes four lethal-damage/respawn cycles across both chapters and languages, live language switches while down, destination coordinates, full HP, retained XP/level/active quest status and no delayed bounce after cooldown. Ordinary walk-through travel still re-arms correctly.
 - Extended the two-browser room replay with host and guest lethal damage. Both respawn at Starhaven with full HP and no shared chapter change; existing parties, PvP, bilingual boss effects, weather, travel, residents and authority transfer still pass. No page errors.
 - All 33 game/protocol tests, production build and whitespace checks pass. Ten-hour development remains active.
+
+- Published 01f7cb9 as READY production deployment dpl_2gmBUfhWHEa8D8RS55dQhHobG4TG. The full two-browser replay passed against the public game and actual Internet room backend, including both host/guest Starhaven deaths and respawns with no portal bounce, bilingual instructions, party/PvP, weather, villagers and authority transfer. No page errors.
