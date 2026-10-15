@@ -101,3 +101,5 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - GPU traversal found the northern exploration sanctuary incorrectly labelled as the Star Throne. Aligned the throne label radius with its 24-unit arena ground, so the sanctuary is correctly the Pilgrim’s Starroad.
 - Added tools/qa-world-language.mjs. A real isolated browser passed localized initial loading, actual language buttons, every island region in both languages, refresh persistence, chapter return, English lighthouse-off banner and original wreck boss-music selection. No page errors. All 31 game/protocol tests and production build pass.
 - Ten-hour development remains active; this is another intermediate release.
+
+- Published 90b326d as READY deployment dpl_DM9HGh8qBmmiakPSGrLfV5D7LMZR. The entire world-language browser replay also passed on the public stable production URL, including loading, both languages, all five island regions, save/reload, shore return and music-key checks.
