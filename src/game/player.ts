@@ -1,6 +1,7 @@
 // The player's crab: WASD movement with acceleration, WoW-style turning and steering, jumping,
 // targeting, auto-attack, the cast/channel bars, resources, cooldowns and the global cooldown.
 import * as THREE from 'three';
+import {t} from '../i18n';
 import type { AbilityDef, ClassDef } from '../data/classes';
 import type { Game } from './game';
 import type { Unit } from './unit';
@@ -450,7 +451,7 @@ export class Player {
     if (!this.channel) return;
     this.channel = null;
     this.unit.motion.stop('cast', 0.2);
-    this.game.hud.castBar.fail('Interrupted');
+    this.game.hud.castBar.fail(t('중단됨','Interrupted'));
   }
 
   // Ability helpers used by abilities.ts
@@ -493,7 +494,19 @@ export class Player {
   }
 
   error(msg: string): void {
-    this.game.hud.messages.error(msg);
+    const translations:Record<string,string>={
+      'You are stunned.':'기절한 동안에는 움직일 수 없어요.',
+      'Another action is in progress.':'다른 행동을 마친 뒤 사용하세요.',
+      'Ability is not ready yet.':'아직 기술을 다시 사용할 수 없어요.',
+      'Not enough rage.':'분노가 부족해요.',
+      'Not enough mana.':'마나가 부족해요.',
+      'You have no target.':'먼저 대상을 선택하세요.',
+      'Invalid target.':'이 대상에게는 사용할 수 없어요.',
+      'Out of range.':'조금 더 가까이 다가가세요.',
+      'Target too close.':'대상과 조금 더 거리를 두세요.',
+      'Target not in line of sight.':'대상이 장애물에 가려져 있어요.',
+    };
+    this.game.hud.messages.error(t(translations[msg]??msg,msg));
     this.game.audio.sfx('sfx-error', { volume: 0.6 });
   }
 
@@ -553,9 +566,9 @@ export class Player {
     if(!Number.isFinite(n) || n<=0)return;
     this.xp = Math.min(Number.MAX_SAFE_INTEGER,this.xp+n);
     g.hud.floats.spawn(this.unit, `+${n} XP`, 'xp');
-    g.hud.chat.system(`You gain ${n} experience.`);
+    g.hud.chat.system(t(`경험치 ${n}을 얻었습니다.`,`You gain ${n} experience.`));
     const targetLevel=levelForXp(this.xp);
-    if(targetLevel-this.level>10){this.restoreXp(this.xp);g.vfx.levelUp(this.unit);g.audio.sfx('sfx-levelup');g.hud.messages.banner(`레벨 ${this.level}`, '계속해서 성장하세요!', 'level');}
+    if(targetLevel-this.level>10){this.restoreXp(this.xp);g.vfx.levelUp(this.unit);g.audio.sfx('sfx-levelup');g.hud.messages.banner(t(`레벨 ${this.level}`,`Level ${this.level}`),t('계속해서 성장하세요!','Keep growing!'),'level');}
     else while (this.xp >= xpForLevel(this.unit.level+1)) this.levelUp();
   }
 
@@ -580,8 +593,8 @@ export class Player {
     g.vfx.levelUp(u);
     g.audio.sfx('sfx-levelup');
     u.express('happy', 2);
-    g.hud.messages.banner(`Level ${u.level}`, `Your shell hardens. Health ${oldMax} to ${u.maxHp}.`, 'level');
-    g.hud.chat.system(`Congratulations, you have reached level ${u.level}!`);
+    g.hud.messages.banner(t(`레벨 ${u.level}`,`Level ${u.level}`),t(`껍질이 더 단단해졌어요. 체력 ${oldMax} → ${u.maxHp}`,`Your shell hardens. Health ${oldMax} to ${u.maxHp}.`),'level');
+    g.hud.chat.system(t(`레벨 ${u.level}이 되었습니다!`,`Congratulations, you have reached level ${u.level}!`));
   }
 
   respawn(): void {

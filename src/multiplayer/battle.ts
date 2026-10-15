@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {t} from '../i18n';
 import type { Game } from '../game/game';
 import type { Unit } from '../game/unit';
 import type { HitOptions } from '../game/combat';
@@ -21,8 +22,8 @@ export class BattleSync {
     if(this.authority){this.parties[this.ownId]=party;this.publish();}else this.event({kind:'party',target:'world',party});
   }
   setMode(mode:'coop'|'pvp'){
-    if(!this.active||!this.authority){this.game.hud.messages.info('방장이 협동 / 싸우기 모드를 선택해요.');return;}
-    if(this.game.encounter?.engaged){this.game.hud.messages.info('보스 전투가 끝난 뒤 모드를 바꿔 주세요.');return;}
+    if(!this.active||!this.authority){this.game.hud.messages.info(t('방장이 협동 / 싸우기 모드를 선택해요.','The host chooses co-op or PvP mode.'));return;}
+    if(this.game.encounter?.engaged){this.game.hud.messages.info(t('보스 전투가 끝난 뒤 모드를 바꿔 주세요.','Wait until the boss battle ends to change mode.'));return;}
     this.mode=mode;this.parties={};this.game.player.setTarget(null);this.publish();
   }
   private duel(id:string,target:string,amount:number,crit=false){

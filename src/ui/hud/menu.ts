@@ -96,7 +96,7 @@ export class GameMenu {
     this.panel.replaceChildren(
       h('h2', { class: 'cc-title' }, t('설정','Settings')),
       h('div',{class:'row'},t('언어','Language'),seg([['ko','한국어'],['en','English']],language(),v=>{
-        setLanguage(v as Language);setQuestLanguage(v as Language);for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}g.hud.refreshLanguage();g.world2.refreshLanguage();g.hud.dialogue.close();g.hud.tracker.update(g.quests);g.hud.questLog.render();this.settings();
+        setLanguage(v as Language);setQuestLanguage(v as Language);for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}g.hud.refreshLanguage();g.world2.refreshLanguage();g.multiplayer?.refreshLanguage();g.hud.dialogue.close();g.hud.tracker.update(g.quests);g.hud.questLog.render();this.settings();
       })),
       g.world2.chapter===1?h('div',{class:'row'},t('월드 1 등대','World I lighthouse'),seg([['on',t('켜기 · 밤','On · night')],['off',t('끄기 · 아침','Off · morning')]],g.beaconLit?'on':'off',v=>g.setLighthouse(v==='on'))):h('div',{class:'res-note'},t('등대는 월드 1로 돌아가면 조절할 수 있어요.','Return to World I to control the lighthouse.')),
       h('div', { class: 'row' }, t('음악 음량','Music volume'), slider(audio.musicVolume, (v) => {

@@ -38,6 +38,7 @@ export class Multiplayer {
   private invite = h('input', { readonly: true, class: 'mp-invite', 'aria-label': '초대 링크', onclick: (e: Event) => (e.target as HTMLInputElement).select() });
   private sendButton = h('button', { type: 'submit' }, '전송');
   private partyPanel=h('div',{class:'mp-party'});
+  private statusText:[string,string]=['혼자 플레이 중','Playing solo'];
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private game: Game) {
@@ -48,12 +49,12 @@ export class Multiplayer {
       if (this.room && this.chat.value.trim()) { this.send({ type: 'chat', text: this.chat.value }); this.chat.value = ''; }
     } }, this.chat, this.sendButton);
     this.root = h('details', { class: 'mp-panel', open: new URLSearchParams(location.search).has('multiplayer') || new URLSearchParams(location.search).has('room') },
-      h('summary', null, '🦀 멀티플레이'), this.status,
-      h('p', null, '최대 8명 · 몬스터와 보스를 함께 공격해요. 체력·처치·전투 보상을 공유해요. 마을 퀘스트는 각자 진행해요.'),
+      h('summary', null, t('🦀 멀티플레이','🦀 Multiplayer')), this.status,
+      h('p', {class:'mp-intro'}, t('최대 8명 · 함께 모험하거나 싸우기 모드로 대전해요. 같은 파티는 서로 공격하지 않아요. 퀘스트는 각자 진행해요.','Up to 8 players · Adventure together or duel in PvP. Teammates cannot hurt each other. Quests progress individually.')),
       this.code, h('div', { class: 'mp-row' }, this.create, this.share, this.leave), form, this.invite, this.roster,
-      h('div', { class: 'mp-row' }, h('button', { type: 'button', onclick: () => this.emote('gesture_hello') }, '👋 인사'), h('button', { type: 'button', onclick: () => this.emote('dance_crab') }, '💃 춤')),
-      h('div',{class:'mp-row'},h('button',{type:'button',onclick:()=>this.battle.setMode('coop')},t('협동 모드','Co-op')),h('button',{type:'button',onclick:()=>this.battle.setMode('pvp')},t('⚔ 싸우기 모드','⚔ PvP'))),
-      h('div',{class:'mp-row'},...([0,1,2,3,4].map(p=>h('button',{type:'button',onclick:()=>this.battle.setParty(p)},p===0?t('혼자','Solo'):`${t('파티','Party')} ${p}`)))),
+      h('div', { class: 'mp-row' }, h('button', { type: 'button', 'data-emote':'hello', onclick: () => this.emote('gesture_hello') }, '👋 인사'), h('button', { type: 'button', 'data-emote':'dance', onclick: () => this.emote('dance_crab') }, '💃 춤')),
+      h('div',{class:'mp-row'},h('button',{type:'button','data-mode':'coop',onclick:()=>this.battle.setMode('coop')},t('협동 모드','Co-op')),h('button',{type:'button','data-mode':'pvp',onclick:()=>this.battle.setMode('pvp')},t('⚔ 싸우기 모드','⚔ PvP'))),
+      h('div',{class:'mp-row'},...([0,1,2,3,4].map(p=>h('button',{type:'button','data-party':p,onclick:()=>this.battle.setParty(p)},p===0?t('혼자','Solo'):`${t('파티','Party')} ${p}`)))),
       this.partyPanel,this.log, chatForm,
     );
     // Opening a form clears held movement keys. Typing never controls the crab.
@@ -61,7 +62,7 @@ export class Multiplayer {
     this.root.addEventListener('keydown', e => e.stopPropagation());
     game.hud.sidePanels.prepend(this.root);
     game.player.unit.onAction = action => this.send({ type: 'action', action });
-    this.updateUi();
+    this.refreshLanguage();
     const room = new URLSearchParams(location.search).get('room');
     if (room) { this.input.value = room; this.timer = setTimeout(() => this.connect('join', room), 500); }
   }
@@ -73,7 +74,7 @@ export class Multiplayer {
   private connect(type: 'create' | 'join', room = '') {
     if (this.disposed) return;
     const code = room.trim().toUpperCase();
-    if (type === 'join' && !/^[A-F0-9]{6}$/.test(code)) { this.status.textContent = '방 코드 6자리를 확인해 주세요.'; return; }
+    if (type === 'join' && !/^[A-F0-9]{6}$/.test(code)) { this.setStatus('방 코드 6자리를 확인해 주세요.','Check the six-character room code.'); return; }
     this.battle.leave(); this.closeSocket();
     this.room = '';
     this.retries = 0;
@@ -81,7 +82,7 @@ export class Multiplayer {
   }
 
   private openSocket(type: 'create' | 'join', code: string) {
-    this.status.textContent = '연결 중…';
+    this.setStatus('연결 중…','Connecting…');
     const url = new URL(import.meta.env.VITE_MULTIPLAYER_URL || '/multiplayer', location.href);
     url.protocol = url.protocol === 'https:' || location.protocol === 'https:' ? 'wss:' : 'ws:';
     url.search = ''; url.hash = '';
@@ -101,15 +102,15 @@ export class Multiplayer {
           this.room = msg.room; this.ownId = msg.id; this.retries = 0;
           this.battle.join(msg.id, msg.host, msg.world);
           for (const p of msg.players) this.addPeer(p.id, p.spec, p.state);
-          this.status.textContent = '연결됨 · 친구를 초대해 보세요!';
+          this.setStatus('연결됨 · 친구를 초대해 보세요!','Connected · Invite a friend!');
           this.input.value = this.room;
-          this.note(`방 ${this.room}에 참가했어요.`);
+          this.note(t(`방 ${this.room}에 참가했어요.`,`Joined room ${this.room}.`));
           this.updateUi();
           break;
         case 'authority': this.battle.elect(msg.host); break;
         case 'world': if (!this.battle.authority) this.battle.apply(msg.world); break;
         case 'combat': this.battle.receive(msg.id, msg.event); break;
-        case 'joined': this.addPeer(msg.id, msg.spec, null); this.note(`${msg.spec.name}님이 들어왔어요.`); this.updateUi(); break;
+        case 'joined': this.addPeer(msg.id, msg.spec, null); this.note(t(`${msg.spec.name}님이 들어왔어요.`,`${msg.spec.name} joined.`)); this.updateUi(); break;
         case 'left': this.removePeer(msg.id); this.updateUi(); break;
         case 'state': { const p = this.peers.get(msg.id); if (p) p.state = msg.state; break; }
         case 'action': this.peers.get(msg.id)?.unit?.act(msg.action); break;
@@ -118,7 +119,7 @@ export class Multiplayer {
           { const unit = msg.id === this.ownId ? this.game.player.unit : this.peers.get(msg.id)?.unit;
             if (unit) this.game.hud.bubbles.say(this.game, unit, msg.text); }
           break;
-        case 'error': this.status.textContent = msg.message; this.room = ''; this.battle.leave(); this.closeSocket(); this.updateUi(); break;
+        case 'error': this.setStatus(...this.serverError(String(msg.message))); this.room = ''; this.battle.leave(); this.closeSocket(); this.updateUi(); break;
       }
     };
     ws.onerror = () => { /* onclose handles retry and the user-facing error */ };
@@ -128,10 +129,10 @@ export class Multiplayer {
       this.ws = null;
       this.clearPeers();
       if (this.room && this.retries++ < 5) {
-        this.status.textContent = '연결이 끊겼어요. 다시 연결 중…';
+        this.setStatus('연결이 끊겼어요. 다시 연결 중…','Disconnected. Reconnecting…');
         const previousRoom = this.room;
         this.retry = setTimeout(() => this.openSocket('join', previousRoom), 1500);
-      } else { this.battle.leave(); this.room = ''; this.status.textContent = '연결할 수 없어요. 서버와 방 코드를 확인하고 다시 참가해 주세요.'; }
+      } else { this.battle.leave(); this.room = ''; this.setStatus('연결할 수 없어요. 서버와 방 코드를 확인하고 다시 참가해 주세요.','Could not connect. Check the room code and try joining again.'); }
       this.updateUi();
     };
   }
@@ -143,7 +144,7 @@ export class Multiplayer {
     void createCrab(spec).then(rig => {
       if (this.disposed || this.peers.get(id) !== peer) { rig.dispose(); return; }
       const unit = new Unit(spec.name, 'remote', 'friendly', rig, createMotionController(rig));
-      unit.title = '함께 전투 중'; unit.targetable = false; unit.invulnerable = true;
+      unit.title = t('함께 전투 중','Adventuring together'); unit.targetable = false; unit.invulnerable = true;
       const spawn = state ?? this.game.player.unit.pos;
       unit.pos.set(spawn.x, 'y' in spawn ? spawn.y : 0, spawn.z);
       unit.hidden = !peer.state;
@@ -151,7 +152,7 @@ export class Multiplayer {
       this.game.units.push(unit);
       unit.measure();
       peer.unit = unit;
-    }).catch(() => { if (!this.disposed) this.note(`${spec.name} 캐릭터를 불러오지 못했어요.`); });
+    }).catch(() => { if (!this.disposed) this.note(t(`${spec.name} 캐릭터를 불러오지 못했어요.`,`Could not load ${spec.name}’s character.`)); });
   }
 
   update(dt: number) {
@@ -180,7 +181,7 @@ export class Multiplayer {
     }
     this.battle.update(dt);
     this.partyElapsed+=dt;
-    if(this.partyElapsed>=.25){this.partyElapsed=0;this.partyPanel.replaceChildren(
+    if(this.partyElapsed>=.25){this.partyElapsed=0;this.updateSocialButtons();this.partyPanel.replaceChildren(
       h('strong',null,this.battle.mode==='pvp'?t('⚔ 싸우기 모드 · 같은 파티는 공격하지 않아요','⚔ PvP · teammates are protected'):t('🤝 협동 모드 · 모두 함께 모험해요','🤝 Co-op · adventure together')),
       ...[{id:this.ownId,name:this.game.player.unit.name,unit:this.game.player.unit},...[...this.peers].map(([id,p])=>({id,name:p.spec.name,unit:p.unit}))].map(p=>{
         const hp=p.unit?.hp??0,max=p.unit?.maxHp??1,party=this.battle.partyOf(p.id);
@@ -204,9 +205,36 @@ export class Multiplayer {
     this.leave.disabled = !this.ws && !this.room;
     this.chat.disabled = !connected; this.sendButton.disabled = !connected;
     this.code.textContent = this.room;
-    this.roster.textContent = this.room ? `${this.peers.size + 1}/8명 · ${[this.game.player.unit.name, ...[...this.peers.values()].map(p => p.spec.name)].join(', ')}` : '';
+    this.roster.textContent = this.room ? `${this.peers.size+1}/8${t('명',' players')} · ${[this.game.player.unit.name,...[...this.peers.values()].map(p=>p.spec.name)].join(', ')}` : '';
     this.invite.hidden = !connected;
     this.invite.value = this.inviteUrl();
+  }
+  private setStatus(ko:string,en:string){this.statusText=[ko,en];this.status.textContent=t(ko,en);}
+  private serverError(message:string):[string,string]{
+    const errors:[string,string][]=[['캐릭터 정보를 확인해 주세요.','Invalid character.'],['서버가 가득 찼어요. 잠시 뒤 다시 시도하세요.','Server full. Try again later.'],['방을 찾을 수 없어요. 6자리 코드를 확인하세요.','Room not found. Check the six-character code.'],['방이 가득 찼어요. 최대 8명까지 참가할 수 있어요.','Room is full (8 players).']];
+    return errors.find(pair=>pair.includes(message))??[message,message];
+  }
+  refreshLanguage(){
+    this.root.querySelector('summary')!.textContent=t('🦀 멀티플레이','🦀 Multiplayer');
+    this.root.querySelector('.mp-intro')!.textContent=t('최대 8명 · 함께 모험하거나 싸우기 모드로 대전해요. 같은 파티는 서로 공격하지 않아요. 퀘스트는 각자 진행해요.','Up to 8 players · Adventure together or duel in PvP. Teammates cannot hurt each other. Quests progress individually.');
+    for(const [button,ko,en] of [[this.create,'방 만들기','Create room'],[this.join,'참가','Join'],[this.leave,'나가기','Leave'],[this.share,'초대 링크 복사','Copy invite link'],[this.sendButton,'전송','Send']] as const)button.textContent=t(ko,en);
+    this.input.placeholder=t('방 코드 6자리','Six-character room code');this.input.setAttribute('aria-label',t('방 코드','Room code'));
+    this.chat.placeholder=t('친구에게 말하기','Message your friends');this.chat.setAttribute('aria-label',t('채팅 메시지','Chat message'));
+    this.log.setAttribute('aria-label',t('방 채팅','Room chat'));this.invite.setAttribute('aria-label',t('초대 링크','Invite link'));
+    this.root.querySelector('[data-emote="hello"]')!.textContent=t('👋 인사','👋 Wave');this.root.querySelector('[data-emote="dance"]')!.textContent=t('💃 춤','💃 Dance');
+    this.setStatus(...this.statusText);this.updateUi();this.updateSocialButtons();
+  }
+  private updateSocialButtons(){
+    for(const button of this.root.querySelectorAll<HTMLButtonElement>('[data-mode]')){
+      const mode=button.dataset.mode!;button.textContent=mode==='coop'?t('협동 모드','Co-op'):t('⚔ 싸우기 모드','⚔ PvP');
+      button.disabled=!this.battle.active||!this.battle.authority||this.game.encounter.engaged;
+      button.title=!!this.room&&!this.battle.authority?t('방장이 모드를 바꿀 수 있어요.','Only the host can change the mode.'):'';
+      button.setAttribute('aria-pressed',String(this.battle.mode===mode));
+    }
+    for(const button of this.root.querySelectorAll<HTMLButtonElement>('[data-party]')){
+      const party=Number(button.dataset.party);button.disabled=!this.battle.active;button.textContent=party===0?t('혼자','Solo'):`${t('파티','Party')} ${party}`;
+      button.setAttribute('aria-pressed',String(this.battle.partyOf(this.ownId)===party));
+    }
   }
   private inviteUrl() {
     const url = new URL(location.href);
@@ -215,8 +243,8 @@ export class Multiplayer {
     return url.toString();
   }
   private async copyInvite() {
-    try { await navigator.clipboard.writeText(this.inviteUrl()); this.status.textContent = '초대 링크를 복사했어요!'; }
-    catch { this.invite.select(); this.status.textContent = '아래 초대 링크를 복사해 주세요.'; }
+    try { await navigator.clipboard.writeText(this.inviteUrl()); this.setStatus('초대 링크를 복사했어요!','Invite link copied!'); }
+    catch { this.invite.select(); this.setStatus('아래 초대 링크를 복사해 주세요.','Copy the invite link below.'); }
   }
   private removePeer(id: string) {
     const p = this.peers.get(id);
@@ -235,7 +263,7 @@ export class Multiplayer {
     const ws = this.ws; this.ws = null;
     ws?.close(); this.clearPeers();
   }
-  private disconnect() { this.battle.leave(); this.room = ''; this.closeSocket(); this.status.textContent = '혼자 플레이 중'; this.updateUi(); }
+  private disconnect() { this.battle.leave(); this.room = ''; this.closeSocket(); this.setStatus('혼자 플레이 중','Playing solo'); this.updateUi(); }
   dispose() {
     this.disposed = true;
     if (this.timer) clearTimeout(this.timer);

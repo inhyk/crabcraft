@@ -36,3 +36,11 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Added a repeatable GPU browser journey tool at tools/qa-starhaven.mjs. General quest acceptance, kills through the combat pipeline, collection, lantern cancellation/hold, delivery, six reward turn-ins, save/reload, automatic portal crossings and live language switching have been exercised. The full extended run passed all seven quests, 16-character final celebration and credits transition with no page errors.
 - 25 game/protocol tests pass, including language changes preserving objective IDs/progress and World II boss combat preserving morning. Production build and whitespace checks pass.
 - This is continued active development; ten hours have not elapsed.
+
+## Third milestone — multiplayer usability, 2026-10-15 13:38 UTC
+
+- Second milestone deployed READY as dpl_Aze758pYZRUd53Uta5p6yAXUPXHu (commit 73e00e6).
+- Multiplayer room controls, invitations, messages, connection errors and emotes now switch live between Korean and English. The chosen room mode and personal party are marked with pressed states; guest mode buttons are disabled and explain host authority. Offline party/mode controls are disabled while solo dancing still works.
+- Localized combat reach/resource errors, interrupted channels and experience/level-up messages.
+- Two-browser replay passed actual bilingual mode/party buttons, selected state, host permissions, PvP damage, friendly-fire protection, guest lighthouse control, both chapter transitions and moving NPC/townsfolk synchronization with no page errors. Added tools/qa-starhaven-multiplayer.mjs for replay.
+- 25 game/protocol tests and production build pass. Follow-up multiplayer UI polish is not deployed yet.
