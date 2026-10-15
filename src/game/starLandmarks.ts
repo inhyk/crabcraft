@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Collision } from '../world/collision';
+import {facetedStarCrystal,starCrystalRadius} from './starCrystal';
 
 /** Distinct silhouettes at the three memories; the middle stays open for players and quest markers. */
 export class StarLandmarks {
@@ -24,12 +25,14 @@ export class StarLandmarks {
       const border=place(new THREE.Mesh(new THREE.TorusGeometry(5,.05,5,64),gold),x,y+.055,z);border.rotation.x=-Math.PI/2;
     }
     // Moonshade: six enormous blue crystal leaves frame a quiet, walkable glade.
-    const crystals=new THREE.InstancedMesh(new THREE.OctahedronGeometry(1),cyan,6);
+    const crystalFaces=cyan.clone();crystalFaces.vertexColors=true;crystalFaces.flatShading=true;crystalFaces.emissiveIntensity=.45;crystalFaces.metalness=.35;crystalFaces.roughness=.3;
+    const crystals=new THREE.InstancedMesh(facetedStarCrystal(),crystalFaces,6);crystals.name='moonshade-crystal-leaves';
     for(let i=0;i<6;i++){
       const a=i/6*Math.PI*2,x=-75+Math.cos(a)*7.7,z=-35+Math.sin(a)*7.7,h=3.5+(i%3)*1.1;
       rotation.setFromEuler(new THREE.Euler(Math.sin(a)*.12,a,Math.cos(a)*.12));
-      matrix.compose(new THREE.Vector3(x,height(x,z)+h*.55,z),rotation,new THREE.Vector3(1.1,h,.85));crystals.setMatrixAt(i,matrix);
-      collision.addCircle(x,z,1.2,height(x,z),height(x,z)+h*1.7);
+      const scale=new THREE.Vector3(1.1,h,.85);
+      matrix.compose(new THREE.Vector3(x,height(x,z)+h*.55,z),rotation,scale);crystals.setMatrixAt(i,matrix);
+      collision.addCircle(x,z,Math.max(1.2,starCrystalRadius(crystals.geometry,scale,rotation)),height(x,z),height(x,z)+h*1.7);
     }
     crystals.castShadow=true;this.root.add(crystals);
     // Memory Sanctuary: a carved arch sits beyond the discovery circle, leaving the road open.

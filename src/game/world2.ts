@@ -10,6 +10,7 @@ import { xpForLevel } from './progression';
 import { StarPortal } from './portal';
 import { StarVillageLife } from './world2Life';
 import {starGroundColor} from './world2Ground';
+import {facetedStarCrystal,starCrystalRadius} from './starCrystal';
 
 function naturalHeight(x:number,z:number){
   const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
@@ -115,14 +116,17 @@ export class HiddenWorld {
     const teal=new THREE.MeshStandardMaterial({color:'#b0fff1',emissive:'#26afba',emissiveIntensity:1.3,metalness:.6,roughness:.25});
     const rand=(i:number)=>{const x=Math.sin(i*127.1+41.7)*43758.5453;return x-Math.floor(x);};
     // Jagged crystal gardens frame the open combat paths. One geometry/material per family.
-    const crystals=new THREE.InstancedMesh(new THREE.OctahedronGeometry(1,0),crystal,90);const matrix=new THREE.Matrix4();const q=new THREE.Quaternion();
+    const crystalFaces=crystal.clone();crystalFaces.vertexColors=true;crystalFaces.flatShading=true;crystalFaces.emissiveIntensity=.45;crystalFaces.metalness=.35;crystalFaces.roughness=.3;
+    const crystals=new THREE.InstancedMesh(facetedStarCrystal(),crystalFaces,90);crystals.name='star-island-crystal-gardens';const matrix=new THREE.Matrix4();const q=new THREE.Quaternion();
     for(let i=0;i<90;i++){
-      const a=rand(i+1)*Math.PI*2,r=58+rand(i+120)*48,x=Math.sin(a)*r,z=10+Math.cos(a)*r,h=1.5+rand(i+250)*6,width=.7+rand(i+300),radius=Math.max(width,1)+h*.15;
+      const a=rand(i+1)*Math.PI*2,r=58+rand(i+120)*48,x=Math.sin(a)*r,z=10+Math.cos(a)*r,h=1.5+rand(i+250)*6,width=.7+rand(i+300),scale=new THREE.Vector3(width,h,1);
+      q.setFromEuler(new THREE.Euler(rand(i)*.25,a,.15));
+      const radius=Math.max(Math.max(width,1)+h*.15,starCrystalRadius(crystals.geometry,scale,q));
       const clear=Math.abs(x)<55&&z>0&&z<104 || Math.hypot(x,z+75)<27 || starTrailDistance(x,z)<radius+2 || nearStarObjective(x,z,radius);
       if(clear)matrix.makeScale(0,0,0);
       else{
         const y=this.height(x,z);
-        q.setFromEuler(new THREE.Euler(rand(i)*.25,a,.15));matrix.compose(new THREE.Vector3(x,y+h*.5,z),q,new THREE.Vector3(width,h,1));
+        matrix.compose(new THREE.Vector3(x,y+h*.5,z),q,scale);
         this.crystalSolids.push({x,z,r:radius,y0:y-.5,y1:y+h*1.6});
       }
       crystals.setMatrixAt(i,matrix);

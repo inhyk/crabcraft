@@ -140,3 +140,11 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 
 - Published 0fa6b13 as READY deployment dpl_Dqx1tpYDUQcYcQxf2SFQ5iTAEDDc. Extended the two-browser tool with CC_QA_URL: public runs use the deployed Internet backend with no WebSocket override. The entire multiplayer replay passed against the public game and Cloudflare room service, including matching actual purple/green effect uniforms, cancellation, PvP, parties, guest morning, both portals, residents and host departure with retained enemy stats. No page errors.
 - The complete off/travel/lit beacon reveal replay also passed on the public production URL, including q4 save/reload. This verifies focused quest timing and real Internet multiplayer separately; it is not a ten-hour stability claim.
+
+## Faceted crystal gardens and collision fidelity — 2026-10-15 14:35 UTC
+
+- Replaced stretched octahedrons in the decorative gardens and Moonshade glade with six-sided crystals: bevelled shoulders, long prism faces, pointed crowns and restrained per-face brightness. Collectible crystals retain their brighter distinct appearance. World I scenery is unchanged.
+- Actual geometry checks cover all 36 triangles in each crystal family: finite coordinates, outward normals and bounded local geometry. Inspected the rendered western garden.
+- An actual transformed-vertex audit found seven old approximate collider envelopes exceeded by tilted facets, up to 0.507 units. Collider radii now include the measured rotated geometry plus clearance, computed once during construction.
+- GPU replay confirms all 63 decorative crystals and all six western glade crystals fit their analytic colliders; all trail centerlines remain clear for a one-unit player and all 63 sight collisions pass. No page errors.
+- All 33 game/protocol tests, production build and whitespace checks pass. Ten-hour development remains active; this is an intermediate release.
