@@ -888,7 +888,7 @@ export class Game {
     }
     let line = npc.nextLine();
     if (this.world2.chapter===1 && id === 'rattlebolt') line = q.status.q3 === 'active' ? RATTLEBOLT_Q3 : this.beaconLit ? RATTLEBOLT_AFTER : line;
-    if (this.world2.chapter===1 && id === 'silvermoon' && q.status.q4 === 'active') line = 'Go, little moon. The blessing of the pool goes with you. Corrodius waits on the Iron Wreck.';
+    if (this.world2.chapter===1 && id === 'silvermoon' && q.status.q4 === 'active') line = t('가세요, 작은 달님. 달빛 연못의 축복이 함께할 거예요. 코로디우스가 철의 난파선에서 기다리고 있어요.','Go, little moon. The blessing of the pool goes with you. Corrodius waits on the Iron Wreck.');
     if (id === 'coralline') {
       const p = this.player.unit;
       if (p.hp < p.maxHp) this.combat.heal(u, p, p.maxHp - p.hp);
@@ -913,7 +913,7 @@ export class Game {
     if (id === 'q4') {
       this.hud.dialogue.close();
       this.journey!.root.open = true;
-      this.hud.messages.info('첫 보스의 여정 완료! 해안 순찰로 10레벨에 도전하세요.');
+      this.hud.messages.info(t('첫 보스의 여정 완료! 해안 순찰로 10레벨에 도전하세요.','First boss journey complete! Patrol the shore to reach level 10.'));
       this.journey?.save();
       return;
     }
@@ -959,7 +959,7 @@ export class Game {
       this.hud.chat.quest(t(`퀘스트 수락: ${def.title}`,`Quest accepted: ${def.title}`));
       if(id==='w7'&&this.journey?.trueCleared)this.quests.bump('eclipse-boss');
       if (id === 'q4' && this.journey?.rustCleared) this.quests.bump('boss');
-      if (id === 'q4') this.hud.messages.banner(def.title, 'New quest: defeat Corrodius on the Iron Wreck', 'quest');
+      if (id === 'q4') this.hud.messages.banner(def.title, t('새 퀘스트: 철의 난파선에서 코로디우스를 쓰러뜨리세요.','New quest: defeat Corrodius on the Iron Wreck'), 'quest');
       else this.hud.messages.banner(t('퀘스트 수락','Quest Accepted'), def.title, 'quest');
       this.hud.tracker.update(this.quests);
       this.refreshQuestViews(id);
@@ -1018,7 +1018,7 @@ export class Game {
     this.vfx.levelUp(this.player.unit);
     this.audio.sfx('sfx-beacon');
     this.follow.shake(0.2, 0.6);
-    this.hud.messages.banner('The Beacon Blazes', 'Light returns to Saltmere', 'quest');
+    this.hud.messages.banner(t('등대가 밝게 타오릅니다','The Beacon Blazes'), t('솔트미어에 빛이 돌아왔어요','Light returns to Saltmere'), 'quest');
     this.quests.bump('beacon');
   }
 
