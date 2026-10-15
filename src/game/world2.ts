@@ -284,5 +284,22 @@ export class HiddenWorld {
     for(const o of this.rotations){o.rotation.y+=dt*.6;o.rotation.z=Math.sin(time*.7+o.position.x)*.12;}
 
   }
-  dispose(){this.showEpilogue();this.game.scene.remove(this.root);this.baseRoot.remove(this.shorePortal.root);const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();for(const root of [this.root,this.shorePortal.root])root.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Points){geos.add(o.geometry);for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);if(o.customDepthMaterial)mats.add(o.customDepthMaterial);}});this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats){m.dispose();}}
+  dispose(){
+    this.showEpilogue();this.game.scene.remove(this.root);this.baseRoot.remove(this.shorePortal.root);
+    const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
+    for(const root of [this.root,this.shorePortal.root])root.traverse(o=>{
+      if(o instanceof THREE.DirectionalLight||o instanceof THREE.PointLight||o instanceof THREE.SpotLight)o.shadow.dispose();
+      if(o instanceof THREE.Mesh||o instanceof THREE.Points){
+        // BatchedMesh owns matrix/indirection textures as well as its private geometry.
+        if(o instanceof THREE.BatchedMesh)o.dispose();
+        else {
+          geos.add(o.geometry);
+          if(o instanceof THREE.InstancedMesh)o.dispose();
+        }
+        for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);
+        if(o.customDepthMaterial)mats.add(o.customDepthMaterial);
+      }
+    });
+    this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
+  }
 }

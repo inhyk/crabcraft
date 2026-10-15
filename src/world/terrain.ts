@@ -464,6 +464,10 @@ export function createTerrainMaterial(terrain: Terrain, tex: TerrainTextures, un
     uTime: uniforms.uTime,
     uNoise: { value: noiseTexture() },
   };
+  // These textures belong to this terrain material; the kit maps/noise are shared caches.
+  mat.addEventListener('dispose',()=>{
+    u.uSplat.value.dispose();white.dispose();flat.dispose();
+  });
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, u);
     shader.vertexShader = shader.vertexShader

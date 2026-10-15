@@ -117,6 +117,7 @@ export class ObjectiveMarker {
     this.chevron.geometry.dispose();
     this.chevMat.dispose();
     this.crumbs.geometry.dispose();
+    this.crumbs.dispose();
     this.crumbMat.dispose();
     this.group.removeFromParent();
   }

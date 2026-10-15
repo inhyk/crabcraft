@@ -211,6 +211,8 @@ export class Engine {
     this.scene = scene;
     this.camera = camera;
     this.viewOpts = opts;
+    // Removing passes detaches them; their effect render targets still need explicit cleanup.
+    for(const pass of this.composer.passes)pass.dispose();
     this.composer.removeAllPasses();
     this.composer.addPass(new RenderPass(scene, camera));
 

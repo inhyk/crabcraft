@@ -385,8 +385,10 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
       if (envRT && scene.environment === envRT.texture) scene.environment = null;
       envRT?.dispose();
       pmrem.dispose();
+      sun.shadow.dispose();
+      water.uniforms.uHeight.value.dispose();
       const mats = new Set<THREE.Material>();
-      root.traverse((o) => {
+      for(const owner of [root,envScene])owner.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose();
         const m = mesh.material;
