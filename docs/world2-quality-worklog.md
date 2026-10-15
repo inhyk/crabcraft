@@ -83,3 +83,11 @@ User requested ten hours of actual development. Start: 2026-10-15 12:56:12 UTC /
 - Ten-hour development remains active.
 
 - Authority fix deployed READY as dpl_2LFBNnFxLiC3VxoAusvz2EixvFgn (commit 16de09f). Production browser smoke recovered damage 8.32–12.48 from intentionally stale coefficients without changing HP 52, then restored shore level 1 / respawn 30 / red LEDs. This smoke checks the deployed code; real WebSocket host departure was exercised in the two-browser local relay replay above. Hub page HTTP 200.
+
+## Bilingual boss clarity and island meadows — 2026-10-15 14:08 UTC
+
+- Unified host and guest mechanic warnings by semantic attack kind and boss level. Black Eclipse explicitly directs players into the green sanctuary; other attacks describe their correct outside safety zone. Host Rust Spray now announces its warning too.
+- Boss names, titles, phase banners, dialogue, patrol rewards and the first ending reveal follow Korean/English settings. Numeric encounter profiles and network identities remain unchanged.
+- Added batched low flowers and grasses around the three exploration landmarks, avoiding the trails and boss arena. Inspected the western crystal garden in the actual GPU-rendered view.
+- All 31 game/protocol tests and the production build pass. Two-browser replay passed the same Eclipse instruction in Korean for the host and English for the guest, plus existing party, PvP, travel, weather and authority checks. Trail sampling and all 63 crystal sight collisions pass.
+- Ten-hour development remains active; this is an intermediate deployment.

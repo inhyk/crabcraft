@@ -32,6 +32,15 @@ try{
  await a.waitForTimeout(800);
  const locations=await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game;return {chapter:g.world2.chapter,npcs:g.npcs.map(n=>({id:n.def.id,hidden:n.unit.hidden,x:n.unit.pos.x,z:n.unit.pos.z})),town:g.townsfolk.map(t=>[t.unit.pos.x,t.unit.pos.z])};})));
  assert.equal(locations[0].npcs.length,7);assert.deepEqual(locations[0].npcs,locations[1].npcs);assert.ok(locations[0].town.every((p,i)=>Math.hypot(p[0]-locations[1].town[i][0],p[1]-locations[1].town[i][1])<1));
+ // Inject the phase-II encounter setup, then use the real mechanic and room checkpoint pipeline.
+ await Promise.all([a,b].map(p=>p.evaluate(()=>{const g=window.app.current.game;g.god=true;g.player.unit.teleport(g.world,0,-68,0);g.follow.cut();})));
+ await a.evaluate(()=>{const g=window.app.current.game,boss=g.worldBoss;g.player.restoreXp(22000);boss.wake();boss.state='fight';boss.phase=2;boss.unit.invulnerable=false;boss.unit.targetable=true;boss.mechIndex=0;boss.startMech();});
+ await a.waitForFunction(()=>document.querySelector('.msg-warn').textContent.includes('초록 원'));
+ await b.waitForFunction(()=>document.querySelector('.msg-warn').textContent.includes('Enter the green circle'));
+ assert.match(await b.evaluate(()=>window.app.current.game.worldBoss.unit.name),/Astra/);
+ assert.match(await b.evaluate(()=>window.app.current.game.worldBoss.unit.title),/Guardian/);
+ console.log('PASS: same Eclipse mechanic gives Korean host / English guest the same inner-circle safety instruction');
+ await a.evaluate(()=>window.app.current.game.worldBoss.sleep());await b.waitForFunction(()=>window.app.current.game.worldBoss.state==='dormant');
  await a.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,0,72,Math.PI);g.follow.cut();g.multiplayer.root.open=true;});await a.waitForTimeout(1500);await a.screenshot({path:'tmp/qa/star-party.png'});
  await b.evaluate(()=>window.app.current.game.multiplayer.battle.travel(1));await a.waitForFunction(()=>window.app.current.game.world2.chapter===1);await b.waitForFunction(()=>window.app.current.game.world2.chapter===1);
  assert.deepEqual(await b.evaluate(()=>window.app.current.game.enemies.filter(e=>!e.isAdd).map(e=>e.unit.baseTint)),await a.evaluate(()=>window.app.current.game.enemies.filter(e=>!e.isAdd).map(e=>e.unit.baseTint)),'guest shore LEDs match the host');

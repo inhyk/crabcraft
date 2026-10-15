@@ -2,6 +2,8 @@
 // Rust Spray cone with a stacking slow, Scrapling adds and Undertow in phase 2, enrage in phase 3,
 // and the death sequence where a small red crab steps out of the armour and walks into the sea.
 import type { BossState } from '../../server/combatProtocol';
+import {t} from '../i18n';
+import {bossWarning} from './bossLocale';
 import * as THREE from 'three';
 import type { Poi } from '../world/types';
 import type { Game } from './game';
@@ -94,7 +96,7 @@ export class Boss {
   }
   applyNetwork(s: BossState): void {
     const g=this.game;
-    if (s.phase > this.phase && s.state === 'fight') g.hud.messages.banner(`PHASE ${s.phase}`,this.profile.name,'boss');
+    if (s.phase > this.phase && s.state === 'fight') g.hud.messages.banner(t(`${s.phase}단계`,`PHASE ${s.phase}`),this.profile.name,'boss');
     this.state=s.state; this.phase=s.phase; this.enraged=s.enraged;
     this.unit.setBaseTint(this.enraged ? '#fff4d9' : this.profile.color);
     if (this.state === 'fight') g.hud.bossFrame.show(this.unit);
@@ -121,7 +123,7 @@ export class Boss {
     }
     this.mech={kind:m.kind,t:0,dur:duration,at,yaw:m.yaw,fx,fired:false,swung:false};
     this.mechIndex=m.id;
-    g.hud.messages.warn(m.kind === 'eclipse' ? '검은 일식! 보스 곁의 초록 원 안으로 피하세요.' : m.kind === 'nova' ? '심해 파동! 푸른 원 밖으로 피하세요.' : m.kind === 'slam' ? '닻 내려찍기! 붉은 원을 피하세요.' : m.kind === 'spray' ? '녹 분사! 부채꼴 밖으로 피하세요.' : '끌어당기기! 멀리 피하세요.');
+    g.hud.messages.warn(bossWarning(m.kind,this.profile.level));
   }
   resumeAuthority(): void {
     // Continue at the replicated position/phase, with fresh timers in this browser's clock.
@@ -159,7 +161,7 @@ export class Boss {
     this.nextSwing = g.time + 1.2;
     this.nextMech = g.time + 4;
     this.unit.express('angry', 3);
-    g.say(this.unit, this.profile.level === 20 ? '별의 문을 연 자여, 일식의 시험을 받아라!' : this.profile.level >= 10 ? '심해의 빛을 피할 수 있겠느냐!' : BOSS_YELLS.engage, true);
+    g.say(this.unit, this.profile.level === 20 ? t('별의 문을 연 자여, 일식의 시험을 받아라!','You who opened the star gate, face the trial of the eclipse!') : this.profile.level >= 10 ? t('심해의 빛을 피할 수 있겠느냐!','Can you escape the light of the deep?') : BOSS_YELLS.engage, true);
     g.audio.sfx('sfx-boss-roar');
     g.hud.bossFrame.show(this.unit);
     g.follow.shake(0.25, 0.6);
@@ -199,7 +201,7 @@ export class Boss {
     this.stateT = 0;
     this.clearMech();
     for (const a of this.adds) if (a.unit.alive) g.combat.kill(a.unit, null);
-    g.say(this.unit, this.profile.level === 20 ? '일식이 걷히는구나… 두 세계를 부탁한다.' : this.profile.level >= 10 ? '심해가 다시 잠잠해지는구나…' : BOSS_YELLS.death, true);
+    g.say(this.unit, this.profile.level === 20 ? t('일식이 걷히는구나… 두 세계를 부탁한다.','The eclipse fades… Take care of both worlds.') : this.profile.level >= 10 ? t('심해가 다시 잠잠해지는구나…','The deep grows quiet once more…') : BOSS_YELLS.death, true);
     if (this.profile.level >= 10) g.vfx.tidalNova(this.unit.pos, 8);
     else g.vfx.rustPeel(this.unit, 4.5);
     g.follow.shake(0.35, 1.2);
@@ -231,7 +233,7 @@ export class Boss {
           this.state = 'idle';
           u.targetable = unlocked;
           u.act('attack_slam');
-          g.say(u, this.profile.level === 20 ? '아스트라가 별의 왕좌에서 깨어났다.' : this.profile.level >= 10 ? '네레이드가 심해에서 깨어났다.' : BOSS_YELLS.wake, true);
+          g.say(u, this.profile.level === 20 ? t('아스트라가 별의 왕좌에서 깨어났다.','Astra awakens upon the Star Throne.') : this.profile.level >= 10 ? t('네레이드가 심해에서 깨어났다.','Nereid awakens from the deep.') : BOSS_YELLS.wake, true);
           g.audio.sfx('sfx-boss-roar');
         }
         u.feedLocomotion(dt);
@@ -256,7 +258,7 @@ export class Boss {
     const fromArena = Math.hypot(p.pos.x - this.arena.position.x, p.pos.z - this.arena.position.z);
     this.outside = fromArena > this.arena.radius + ARENA_LEASH ? this.outside + dt : 0;
     if (!p.alive || this.outside > 4) {
-      if (p.alive) g.say(u, 'Run, little shell. The rust remembers.', true);
+      if (p.alive) g.say(u, t('달아나라, 작은 껍질아. 녹은 기억한다.','Run, little shell. The rust remembers.'), true);
       this.reset();
       return;
     }
@@ -305,10 +307,10 @@ export class Boss {
   private enterPhase2(): void {
     const g = this.game;
     this.phase = 2;
-    g.say(this.unit, this.profile.level === 20 ? '별의 그림자 속으로 들어오라!' : this.profile.level >= 10 ? '깊은 바다의 힘이 깨어난다!' : BOSS_YELLS.phase2, true);
+    g.say(this.unit, this.profile.level === 20 ? t('별의 그림자 속으로 들어오라!','Step into the shadow of the stars!') : this.profile.level >= 10 ? t('깊은 바다의 힘이 깨어난다!','The power of the deep awakens!') : BOSS_YELLS.phase2, true);
     g.audio.sfx('sfx-boss-roar');
     g.follow.shake(0.3, 0.6);
-    g.hud.messages.banner('PHASE II', this.profile.level === 20 ? '검은 일식 · 초록 원 안쪽이 안전합니다!' : this.profile.level >= 10 ? '심해 파동 · 푸른 원을 벗어나세요!' : '녹의 하수인들이 깨어납니다!', 'boss');
+    g.hud.messages.banner(t('2단계','PHASE II'), this.profile.level === 20 ? t('검은 일식 · 초록 원 안쪽이 안전합니다!','Black Eclipse · Stay inside the green circle!') : this.profile.level >= 10 ? t('심해 파동 · 푸른 원을 벗어나세요!','Tidal Nova · Leave the blue circle!') : t('녹의 하수인들이 깨어납니다!','The rustlings awaken!'), 'boss');
     const u = this.unit;
     for (let i = 0; i < (this.profile.level >= 10 ? 0 : 3); i++) {
       const a = u.yaw + Math.PI + (i - 1) * 0.9;
@@ -326,10 +328,10 @@ export class Boss {
     this.enraged = true;
     this.unit.setBaseTint('#fff1d6');
     this.unit.express('angry', 999);
-    g.say(this.unit, this.profile.level >= 10 ? '왕관의 빛이여, 모든 것을 삼켜라!' : BOSS_YELLS.phase3, true);
+    g.say(this.unit, this.profile.level >= 10 ? t('왕관의 빛이여, 모든 것을 삼켜라!','Light of the crown, consume everything!') : BOSS_YELLS.phase3, true);
     g.audio.sfx('sfx-boss-roar');
     g.follow.shake(0.35, 0.8);
-    g.hud.messages.banner('PHASE III · 폭주', this.profile.level >= 10 ? '심해의 왕관이 폭주합니다!' : '갑옷이 새하얗게 달아오릅니다!', 'boss');
+    g.hud.messages.banner(t('3단계 · 폭주','PHASE III · ENRAGE'), this.profile.level === 20 ? t('별의 왕관이 폭주합니다!','The Star Crown is enraged!') : this.profile.level >= 10 ? t('심해의 왕관이 폭주합니다!','The Deep Crown is enraged!') : t('갑옷이 새하얗게 달아오릅니다!','The armour burns white-hot!'), 'boss');
     this.nextMech = g.time + 2.5;
   }
 
@@ -347,7 +349,6 @@ export class Boss {
       m.dur = 1.5 * speedUp;
       m.at.copy(p.pos);
       m.fx.push(g.vfx.telegraphCircle(m.at, 3.4, m.dur, undefined, this.deckUnder(m.at, 3.4, 0, Math.PI)));
-      g.hud.messages.warn(this.profile.level >= 10 ? '심해의 집게! 붉은 원을 피하세요.' : '닻 내려찍기! 붉은 원을 피하세요.');
     } else if (kind === 'spray') {
       m.dur = 1.1 * speedUp;
       m.at.copy(u.pos);
@@ -358,20 +359,18 @@ export class Boss {
       m.dur = 2.8 * speedUp; m.at.copy(u.pos);
       m.fx.push(g.vfx.telegraphCircle(m.at, 11, m.dur, new THREE.Color('#a050ff')));
       m.fx.push(g.vfx.telegraphCircle(m.at, 4.5, m.dur, new THREE.Color('#71ffca')));
-      g.hud.messages.warn('검은 일식! 보스 곁의 초록 원 안으로 피하세요.');
     } else if (kind === 'nova') {
       m.dur = 2.2 * speedUp;
       m.at.copy(p.pos);
       m.fx.push(g.vfx.telegraphCircle(m.at, 6, m.dur, new THREE.Color(this.profile.color), this.deckUnder(m.at, 6, 0, Math.PI)));
-      g.hud.messages.warn(this.profile.level===20 ? '별빛 붕괴! 보라색 원 밖으로 피하세요.' : '심해 파동! 푸른 원 밖으로 피하세요.');
     } else {
       m.dur = 2.6;
       m.at.copy(u.pos);
       m.fx.push(g.vfx.telegraphCircle(m.at, 5.5, m.dur, undefined, this.deckUnder(m.at, 5.5, 0, Math.PI)));
       g.vfx.undertow(m.at, 5.5, m.dur);
       g.say(u, BOSS_YELLS.undertow, true);
-      g.hud.messages.warn('The Undertow pulls you in. Run!');
     }
+    g.hud.messages.warn(bossWarning(kind,this.profile.level));
     this.mech = m;
     this.nextMech = g.time + m.dur + (this.phase === 3 ? 4.2 : this.phase === 2 ? 5.5 : 6);
   }
@@ -448,7 +447,7 @@ export class Boss {
           g.combat.damage(u, p, rand(6, 9) * this.profile.damage);
           p.rust = Math.min(5, (g.time < p.rustUntil ? p.rust : 0) + 1);
           p.rustUntil = g.time + 10;
-          g.hud.floats.spawn(p, `Rust x${p.rust}`, 'info');
+          g.hud.floats.spawn(p, t(`녹 ${p.rust}중첩`,`Rust x${p.rust}`), 'info');
         }
         }
         this.mech = null;
@@ -575,30 +574,30 @@ export class Boss {
     const u = this.unit;
     const p = g.combatTarget?.(u) ?? g.player.unit;
     this.freedT += dt;
-    const t = this.freedT;
+    const freedTime = this.freedT;
     // 0..1.2 grow and step out of the hull
-    if (t < 1.2) {
-      const k = t / 1.2;
+    if (freedTime < 1.2) {
+      const k = freedTime / 1.2;
       f.rig.root.scale.setScalar(this.freedBaseScale * (0.3 + 0.7 * k));
       const out = u.radius + 1.6;
       f.moveTo(g.world, u.pos.x + Math.sin(this.freedYaw) * out * k, u.pos.z + Math.cos(this.freedYaw) * out * k, dt);
-    } else if (t < 1.6) {
+    } else if (freedTime < 1.6) {
       f.rig.root.scale.setScalar(this.freedBaseScale);
       f.setYaw(turnToward(f.yaw, yawTo(f.pos.x, f.pos.z, p.pos.x, p.pos.z), 6, dt));
-    } else if (t < 4.6) {
+    } else if (freedTime < 4.6) {
       if (!f.npcId) {
         f.npcId = 'bowed';
         f.act('gesture_bow');
         f.express('love', 3);
-        g.say(f, 'Thank you. It was very dark in there.');
+        g.say(f, t('고마워. 그 안은 정말 어두웠어.','Thank you. It was very dark in there.'));
       }
-    } else if (t < 12) {
+    } else if (freedTime < 12) {
       // Scuttle sideways into the sea.
       const sea = g.seaDirection();
       const yaw = Math.atan2(sea.x, sea.z) + Math.PI / 2;
       f.setYaw(turnToward(f.yaw, yaw, 4, dt));
       f.moveTo(g.world, f.pos.x + sea.x * 3.4 * dt, f.pos.z + sea.z * 3.4 * dt, dt);
-      if (t > 10.5) f.lift = -(t - 10.5) * 0.8;
+      if (freedTime > 10.5) f.lift = -(freedTime - 10.5) * 0.8;
       if (Math.random() < 0.3) g.vfx.smoke(f.pos, C.foam, 1, 0.5, 0.6, 0.3, 0.6);
     } else {
       f.hidden = true;

@@ -110,6 +110,21 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     if(Math.abs(x)<12||lots.some(l=>Math.abs(x-l.x)<l.sx+3&&Math.abs(z-l.z)<l.sz+4))continue;
     if(flowerNames.length)scatter.add(flowerNames[i%flowerNames.length],trs(x,height(x,z),z,rand(i+3000)*6.28,.7));
   }
+  // Low meadows soften the cleared exploration sites without hiding markers or attack circles.
+  // All plants use the original licensed kit and stay batched with the island's foliage.
+  const meadowFlowers=flowerNames.filter(n=>/^Flower_[34]_Group$/.test(n));
+  const grassNames=['Grass_Common_Short','Grass_Wispy_Short'].filter(n=>nature.has(n));
+  let meadowCount=0;
+  for(const [site,kind] of (['explore-west','explore-east','explore-north'] as const).entries()){
+    const [cx,cz]=STAR_OBJECTIVES[kind]!;
+    for(let i=0;i<72;i++){
+      const a=i*2.39996+site*.8,r=6.1+rand(i+site*100+4200)*7.2,x=cx+Math.cos(a)*r,z=cz+Math.sin(a)*r;
+      if(starTrailDistance(x,z)<2.4||Math.hypot(x,z+75)<27)continue;
+      const names=i%3?grassNames:meadowFlowers;if(!names.length)continue;
+      scatter.add(names[i%names.length],trs(x,height(x,z),z,a,.5+rand(i+4500)*.3));meadowCount++;
+    }
+  }
+  root.userData.meadowPlants=meadowCount;
   root.add(scatter.build());
   const roadMat=new THREE.MeshStandardMaterial({color:'#797886',roughness:.95});
   const roads=new StaticBatch(village,'starhaven-roads');

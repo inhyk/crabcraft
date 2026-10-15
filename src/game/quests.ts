@@ -539,13 +539,13 @@ export const TOWNSFOLK_BARKS = [
 export const ENDING_BARKS = ['Hooray!', 'Dance, everyone!', 'Mind my legs!', 'The light is back!', 'Best night ever!', 'Pinch me, I am dreaming!'];
 
 export const BOSS_YELLS = {
-  wake: 'Who dares shine a light on MY rust?',
-  engage: 'Fresh bolts! Come closer, little shell!',
-  phase2: 'Rise, my rustlings! Feast!',
-  undertow: 'The tide... takes... ALL!',
-  phase3: 'I... WILL... CORRODE... EVERYTHING!',
-  kill: 'Another shell for the scrap heap!',
-  death: 'The light... it is... warm...',
+  get wake(){return t('누가 감히 내 녹에 빛을 비추는가?','Who dares shine a light on MY rust?');},
+  get engage(){return t('새 볼트로군! 이리 오너라, 작은 껍질아!','Fresh bolts! Come closer, little shell!');},
+  get phase2(){return t('일어나라, 녹의 하수인들이여! 잔치를 벌여라!','Rise, my rustlings! Feast!');},
+  get undertow(){return t('밀려오는 파도가… 모두를… 삼킨다!','The tide... takes... ALL!');},
+  get phase3(){return t('모든 것을… 녹슬게… 만들겠다!','I... WILL... CORRODE... EVERYTHING!');},
+  get kill(){return t('고철 더미에 껍질 하나가 더 늘었군!','Another shell for the scrap heap!');},
+  get death(){return t('이 빛은… 따뜻하구나…','The light... it is... warm...');},
 };
 
 export const ZONE_SUBTITLES: Record<string, string> = {
