@@ -16,6 +16,7 @@ import {StarSky} from './starSky';
 import {StarSea} from './starSea';
 import {StarWind} from './starWind';
 import {NavHints} from './nav';
+import {StarAmbience} from './starAmbience';
 
 function naturalHeight(x:number,z:number){
   const r=Math.hypot(x/115,(z-10)/140),coast=THREE.MathUtils.smoothstep(r,.83,1.04);
@@ -58,6 +59,7 @@ export class HiddenWorld {
   private life:StarVillageLife|null=null;
   private wind:StarWind|null=null;
   private nav:NavHints|null=null;
+  private ambience:StarAmbience;
   waypoint(from:THREE.Vector3,goal:THREE.Vector3,now:number){return this.nav?.waypoint(from,goal,now)??goal;}
   private basePois = new Map<string, {position:THREE.Vector3;yaw:number}>();
   private basePeople: THREE.Vector3[] = [];
@@ -106,6 +108,7 @@ export class HiddenWorld {
 
 
   constructor(private game: Game) {
+    this.ambience=new StarAmbience(game.audio);
     const w=game.world;
     this.baseRoot=w.root;
     this.originalHeight=w.heightAt.bind(w);this.originalCollision=w.resolveCollision.bind(w);this.originalRay=w.raycastSolid.bind(w);
@@ -192,6 +195,7 @@ export class HiddenWorld {
     g.hud.messages.closeDiscovery();
     if(!this.baseHomes.length)this.baseHomes=g.enemies.map(e=>e.home.clone());
     this.chapter=2;this.rendered=true;this.resetPortalArrival();
+    this.ambience.start(g.time);
     if(!this.baseNames.length)this.baseNames=g.enemies.map(e=>e.unit.name);
     g.cinematic=false;g.journey?.closeChapterEnding();
     this.baseRoot.visible=false;this.root.visible=true;
@@ -248,6 +252,7 @@ export class HiddenWorld {
     g.hud.tracker.update(g.quests);g.takeMapSnapshot();g.journey?.save();
   }
   showEpilogue() {
+    this.ambience.stop();
     if(!this.rendered)return;this.rendered=false;this.root.visible=false;this.baseRoot.visible=true;
     const w=this.game.world;w.heightAt=this.originalHeight;w.resolveCollision=this.originalCollision;w.raycastSolid=this.originalRay;
     for(const [id,old] of this.basePois){const poi=w.pois[id as keyof typeof w.pois];poi.position.copy(old.position);poi.yaw=old.yaw;}
@@ -262,6 +267,8 @@ export class HiddenWorld {
       if(this.travelArmed&&distance<1.7&&this.game.time>this.travelAt){this.travelArmed=false;this.travelAt=this.game.time+3;this.travel();}
     }
     if(!this.rendered)return;
+    const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
+    this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
     this.sea.update(time);
@@ -297,6 +304,7 @@ export class HiddenWorld {
 
   }
   dispose(){
+    this.ambience.dispose();
     this.showEpilogue();this.game.scene.remove(this.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
     for(const root of [this.root,this.shorePortal.root])root.traverse(o=>{

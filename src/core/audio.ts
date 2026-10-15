@@ -168,6 +168,13 @@ export class AudioManager {
     this.sfxBus.gain.value = v;
   }
 
+  /** Caller owns this gain and its sources; ambience follows effects volume and master mute. */
+  createEffectsGain(): GainNode {
+    const gain=this.ctx.createGain();
+    gain.connect(this.sfxBus);
+    return gain;
+  }
+
   toggleMute(): boolean {
     this.muted = !this.muted;
     this.master.gain.value = this.muted ? 0 : 1;
