@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -91,7 +92,8 @@ BREAKS = {
     "break_sixstep": ("X", "break_sixstep", None),
     "break_clawstand": ("Y", "break_clawstand", None),
     "break_oneclaw": ("L3", "break_oneclaw", None),
-    # No recording and no clock: it spins until let go. 3.5 s is the spin-up and about six turns.
+    # No recording and no clock: it spins until let go. 3.5 s is the spin-up and about eight turns
+    # (2.32 rev/s held through the final bundle, whose controller lets its targets past the stops).
     "break_spin": ("LB", "power_spin", 3.5),
     # No recording and no clock either: each jumps once and stands. Let go after the landing has
     # settled, at Robot Mode's own times (src/robot/sim/core.ts, AUTO_LEAVE_S).
@@ -103,6 +105,16 @@ BREAKS = {
 DPAD = {"dpad_up": (0, 1), "dpad_down": (0, -1), "dpad_left": (-1, 0), "dpad_right": (1, 0)}
 
 STAND = 1.5  # seconds standing before anything is asked
+
+
+def jumper_branch(bundle: Path) -> str | None:
+    """The jumper branch the bundle's checkout is on (clip provenance), if it is in one."""
+    try:
+        out = subprocess.run(["git", "-C", str(bundle), "rev-parse", "--abbrev-ref", "HEAD"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return out if out and out != "HEAD" else None
 
 
 def save(out: Path, cid: str, host: Host, meta: dict) -> None:
@@ -376,7 +388,7 @@ def main() -> None:
         elif kind == "break":
             h = record_break(cid)
             meta = {"kind": kind, "source": BREAKS[cid][1], "bundle": str(h.bundle),
-                    "method": "bundle"}
+                    "method": "bundle", "jumper_branch": jumper_branch(h.bundle)}
         else:
             h = record_motion(cid)
             meta = {"kind": kind, "source": GESTURES[cid][2]}
