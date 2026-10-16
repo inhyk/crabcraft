@@ -47,6 +47,11 @@ export class Unit {
   readonly id = Unit.nextId++;
   title = '';
   onAction: ((action: MotionId) => void) | null = null;
+  /**
+   * The breakdance routine (src/game/breakdance.ts) on this crab was cut short. Its moves reach
+   * onAction as they start; one that plays to its end reports nothing more.
+   */
+  onBreakdanceStop: (() => void) | null = null;
   level = 1;
   yaw = 0;
   /** Collision circle radius and shell-top height, measured from the rig's sockets. */

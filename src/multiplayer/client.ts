@@ -1,4 +1,6 @@
 import { BattleSync } from './battle';
+import { BreakRoutine, preloadRoutine } from '../game/breakdance';
+import { ROUTINE } from '../motion/breakdance';
 import * as THREE from 'three';
 import type { Game } from '../game/game';
 import { Unit } from '../game/unit';
@@ -11,7 +13,8 @@ import './multiplayer.css';
 import {t} from '../i18n';
 
 type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number };
-type Peer = { spec: CrabSpec; unit: Unit | null; state: State | null };
+/** `dance`: the peer's breakdance, replayed here move by move as the peer announces them. */
+type Peer = { spec: CrabSpec; unit: Unit | null; state: State | null; dance: BreakRoutine | null };
 
 export class Multiplayer {
   readonly root: HTMLDetailsElement;
@@ -53,7 +56,9 @@ export class Multiplayer {
       h('summary', null, t('🦀 멀티플레이','🦀 Multiplayer')), this.status,
       h('p', {class:'mp-intro'}, t('최대 8명 · 함께 모험하거나 싸우기 모드로 대전해요. 같은 파티는 서로 공격하지 않아요. 퀘스트는 각자 진행해요.','Up to 8 players · Adventure together or duel in PvP. Teammates cannot hurt each other. Quests progress individually.')),
       this.code, h('div', { class: 'mp-row' }, this.create, this.share, this.leave), form, this.invite, this.roster,
-      h('div', { class: 'mp-row' }, h('button', { type: 'button', 'data-emote':'hello', onclick: () => this.emote('gesture_hello') }, '👋 인사'), h('button', { type: 'button', 'data-emote':'dance', onclick: () => this.emote('dance_crab') }, '💃 춤')),
+      h('div', { class: 'mp-row' }, h('button', { type: 'button', 'data-emote':'hello', onclick: () => this.emote('gesture_hello') }, '👋 인사'), h('button', { type: 'button', 'data-emote':'dance', onclick: () => this.emote('dance_crab') }, '💃 춤'),
+        // The B emote. The button gives the keyboard back so moving can end the routine.
+        h('button', { type: 'button', 'data-emote':'breakdance', onclick: (e: Event) => { (e.currentTarget as HTMLElement).blur(); this.game.player.toggleBreakdance(); } }, '🕺 브레이크댄스')),
       h('div',{class:'mp-row'},h('button',{type:'button','data-mode':'coop',onclick:()=>this.battle.setMode('coop')},t('협동 모드','Co-op')),h('button',{type:'button','data-mode':'pvp',onclick:()=>this.battle.setMode('pvp')},t('⚔ 싸우기 모드','⚔ PvP'))),
       h('div',{class:'mp-row'},...([0,1,2,3,4].map(p=>h('button',{type:'button','data-party':p,onclick:()=>this.battle.setParty(p)},p===0?t('혼자','Solo'):`${t('파티','Party')} ${p}`)))),
       this.partyPanel,this.log, chatForm,
@@ -63,6 +68,7 @@ export class Multiplayer {
     this.root.addEventListener('keydown', e => e.stopPropagation());
     game.hud.sidePanels.prepend(this.root);
     game.player.unit.onAction = action => this.send({ type: 'action', action });
+    game.player.unit.onBreakdanceStop = () => this.send({ type: 'action', action: 'breakdance_stop' });
     this.refreshLanguage();
     const room = new URLSearchParams(location.search).get('room');
     if (room) { this.input.value = room; this.timer = setTimeout(() => this.connect('join', room), 500); }
@@ -117,7 +123,7 @@ export class Multiplayer {
         case 'joined': this.addPeer(msg.id, msg.spec, null); this.note(t(`${msg.spec.name}님이 들어왔어요.`,`${msg.spec.name} joined.`)); this.updateUi(); break;
         case 'left': this.removePeer(msg.id); this.updateUi(); break;
         case 'state': { const p = this.peers.get(msg.id); if (p) p.state = msg.state; break; }
-        case 'action': this.peers.get(msg.id)?.unit?.act(msg.action); break;
+        case 'action': this.peerAction(msg.id, msg.action); break;
         case 'chat':
           this.note(`${msg.name}: ${msg.text}`);
           { const unit = msg.id === this.ownId ? this.game.player.unit : this.peers.get(msg.id)?.unit;
@@ -144,7 +150,8 @@ export class Multiplayer {
 
   private addPeer(id: string, spec: CrabSpec, state: State | null) {
     if (this.peers.has(id) || id === this.ownId) return;
-    const peer: Peer = { spec, state, unit: null };
+    const peer: Peer = { spec, state, unit: null, dance: null };
+    void preloadRoutine();
     this.peers.set(id, peer);
     void createCrab(spec).then(rig => {
       if (this.disposed || this.peers.get(id) !== peer) { rig.dispose(); return; }
@@ -182,6 +189,7 @@ export class Multiplayer {
       u.setYaw(u.yaw + angle * k);
       u.hp = s.hp; u.maxHp = s.maxHp; u.alive = s.alive; u.level = s.level ?? 1;
       u.feedLocomotion(dt);
+      p.dance?.update(dt);
       if (this.game.hud.menu.open) u.updateVisual(dt);
     }
     this.battle.update(dt);
@@ -201,6 +209,15 @@ export class Multiplayer {
   }
 
   private emote(action: MotionId) { if (this.game.player.unit.alive) this.game.player.unit.act(action); }
+  /** A peer's clip, or a move of its breakdance (played with the routine's timing), or its stop. */
+  private peerAction(id: string, action: string) {
+    const p = this.peers.get(id), u = p?.unit;
+    if (!p || !u) return;
+    const step = ROUTINE.findIndex(s => s.id === action);
+    if (step >= 0) (p.dance ??= new BreakRoutine(u)).follow(step);
+    else if (action === 'breakdance_stop') p.dance?.cancel();
+    else u.act(action as MotionId);
+  }
   private note(text: string) {
     this.log.append(h('div', null, text));
     while (this.log.childElementCount > 40) this.log.firstElementChild?.remove();
@@ -232,6 +249,7 @@ export class Multiplayer {
     this.chat.placeholder=t('친구에게 말하기','Message your friends');this.chat.setAttribute('aria-label',t('채팅 메시지','Chat message'));
     this.log.setAttribute('aria-label',t('방 채팅','Room chat'));this.invite.setAttribute('aria-label',t('초대 링크','Invite link'));
     this.root.querySelector('[data-emote="hello"]')!.textContent=t('👋 인사','👋 Wave');this.root.querySelector('[data-emote="dance"]')!.textContent=t('💃 춤','💃 Dance');
+    this.root.querySelector('[data-emote="breakdance"]')!.textContent=t('🕺 브레이크댄스','🕺 Breakdance');
     this.setStatus(...this.statusText);this.updateUi();this.updateSocialButtons();
   }
   private updateSocialButtons(){
@@ -279,6 +297,7 @@ export class Multiplayer {
     this.disposed = true;
     if (this.timer) clearTimeout(this.timer);
     this.game.player.unit.onAction = null;
+    this.game.player.unit.onBreakdanceStop = null;
     this.battle.dispose(); this.closeSocket(); this.root.remove();
   }
 }

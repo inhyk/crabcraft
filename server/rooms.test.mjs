@@ -80,6 +80,20 @@ test('invalid joins, malformed states and unsupported actions do not corrupt a r
   assert.equal(relay.rooms.get(r.room).size, 2);
 });
 
+test('the breakdance reaches the rest of the room move by move, and its stop; other clips do not', async t => {
+  const { client } = await setup(t);
+  const a = await client(), b = await client();
+  a.send({ type: 'create', spec }); const r = await a.next('welcome');
+  b.send({ type: 'join', room: r.room, spec }); const br = await b.next('welcome'); await a.next('joined');
+  const moves = ['break_toprock', 'break_sixstep', 'break_spin', 'break_jumpspin', 'break_backflip', 'break_oneclaw'];
+  // The claw stand is recorded but not in the routine; a made-up move or the old start name is dropped.
+  for (const action of ['break_clawstand', 'break_windmill', 'breakdance', ...moves, 'breakdance_stop']) b.send({ type: 'action', action });
+  for (const action of [...moves, 'breakdance_stop']) assert.deepEqual(await a.next('action'), { type: 'action', id: br.id, action });
+  b.send({ type: 'state', state }); await a.next('state');
+  assert.equal(a.queue.some(m => m.type === 'action'), false);
+  assert.equal(b.queue.some(m => m.type === 'action'), false);
+});
+
 test('room limit is eight; joining a full room preserves the previous room', async t => {
   const { client, relay } = await setup(t);
   const a = await client(); a.send({ type: 'create', spec }); const r = await a.next('welcome');

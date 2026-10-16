@@ -60,6 +60,21 @@ export class BreakRoutine {
     this.next();
   }
 
+  /**
+   * Keep a copy of another client's routine in step with it, told each move as it starts there:
+   * play move `index` now if the copy's own clock has fallen behind (a slow frame here, a fast one
+   * there), or start the copy at it (it was not running: a late join). A move already playing or
+   * already passed in this run is left alone; the first move always starts a new run.
+   */
+  follow(index: number): void {
+    if (index < 0 || index >= this.steps.length) return;
+    if (this.running && index !== 0 && index <= this.index) return;
+    if (!this.running || index === 0) this.elapsed = 0;
+    this.running = true;
+    this.index = index - 1;
+    this.next();
+  }
+
   /** Cut it short: the move playing fades back to standing, its travel carried over. */
   cancel(fade = 0.25): void {
     if (!this.running) return;
@@ -114,6 +129,7 @@ export class BreakRoutine {
     if (!this.running) return;
     this.running = false;
     this.lastCompleted = completed;
+    if (!completed) this.unit.onBreakdanceStop?.();
     this.hooks.onEnd?.(completed);
   }
 }
