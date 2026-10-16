@@ -17,6 +17,23 @@ where standing still is 11 to 39 degrees off. Gameplay plays each move's window 
 rollout (`src/motion/skills.ts`) and times hits, the cast release and the corpse settling by the
 clip's own moments.
 
+The hero can also break (B, and the ending's finale): toprock, six-step, spin, 720 jump spin, back
+flip, one-claw freeze, from seven more new Jumper tasks in `jumper/`: four tracked moves
+(`jumper.break_*`) and three reward-driven power moves (`jumper.power_spin_feet`,
+`power_jumpspin720`, `power_backflip`). They are simulation results; none has run on a physical
+robot. The back flip's mode lifts the robot controller's 50-degree tilt guard while it runs, which
+a physical robot would need with care: nothing catches a fall during the flip. The spin's mode
+lets its joint targets go up to 1.7 rad past the joint stops, as it trained, which on a robot would
+hold a joint against its stop at up to 1.746 N m and can send a target of about 6.45 rad (untested
+on a physical robot); the 720 was trained again with its targets clamped at the stops and sends none
+past them. Both jumps stand still after their landing, the 720 about 10 degrees nose-up, the flip
+level near the standing pose. The six-step closes its turn, 357.7 of 360 degrees, on a heading error
+the controller builds from the IMU's yaw since the move began (whether a physical robot's AHRS yaw
+follows its gyro is unchecked). The routine (`src/motion/breakdance.ts`) plays each move's window in
+turn and carries the move's travel and turn over to the crab, so the six-step's last 2 degrees and
+the 720's 751 degrees from its start to its landing leave the crab facing where the policy left the
+robot.
+
 Tagline: **Six shells. One tide.**
 
 ## Rules for originality
@@ -124,8 +141,10 @@ Target length 8 to 12 minutes. Level 1 to 3 (levels are cosmetic: +HP, ding effe
    Quest 4 **"The Rust Tide"**: defeat **Corrodius, the Rust Tyrant** on the wreck deck.
 4. **Ending.** Return to the Square. The whole town (every race) gathers; the beacon sweeps the
    bay; crabs perform the real recorded dances (`dance_crab`, `dance_brazilian`,
-   `dance_dream_wings`, `dance_maze`) in a ring around the player; fireworks; credits roll with
-   the "real robot motion" note and an invitation to try Robot Mode.
+   `dance_dream_wings`, `dance_maze`) in a ring around the player; then the ring makes room and
+   the player's crab performs the breakdance routine, each move captioned, the crowd waving along,
+   hopping and raising its claws at the landings and the freeze; everyone dances again; fireworks;
+   credits roll with the "real robot motion" note and an invitation to try Robot Mode.
 
 NPC roster (all races appear):
 
@@ -165,7 +184,8 @@ Fail state: on death, fade to grey, respawn at the Square with full HP; boss res
 
 WASD move (A/D strafe, crabs are sideways walkers), right-mouse drag orbit camera, left-mouse drag
 orbit without turning, wheel zoom, Space jump (`jump` clip), Tab cycle target, click to target,
-1 to 4 abilities, F interact, Esc menu, Enter chat bubbles off, M toggle music, R open Robot Mode.
+1 to 4 abilities, F interact, B breakdance (moving, turning, jumping, an ability or a hit ends it),
+Esc menu, Enter chat bubbles off, M toggle music, R open Robot Mode.
 Gamepad support is a stretch goal.
 
 ## Robot Mode
@@ -174,9 +194,13 @@ A separate scene (opened from the title screen or with R): a sunny tabletop aren
 TVC (warm light, shallow depth of field). The chosen crab runs live: MuJoCo WASM physics plus the
 bundle's ONNX policies and controller wasm, the same files the physical robot loads. Keyboard /
 on-screen buttons switch modes exactly like the robot's controller (walk with WASD, jump, dances,
-gestures, the six skills on 5 6 7 8 9 0, claw). A HUD shows the live mode, its control rate from the
-contract (200 Hz for locomotion and jump, 50 Hz for dances, gestures, skills and claw) and the joint
-telemetry. A toggle
+gestures, the six skills on 5 6 7 8 9 0, the four tracked breaking moves on Shift + 1 2 3 4, the
+spin on Shift + 5, the 720 on Shift + 6 and the back flip on Shift + 7, claw). A HUD shows the live
+mode, its control rate from the contract (200 Hz for locomotion, jump, the spin and the two power
+jumps, 50 Hz for dances, gestures, skills, tracked breaking moves and claw) and the joint telemetry.
+The 720 and the back flip have no end of their own; the page presses their switch again 1.4 s and
+1.2 s after the handover, once they have landed and come to rest (by 1.14 s and 0.86 s at the latest
+through the bundle's controller), and logs that it did. A toggle
 shows the bare robot vs. the race appearance.
 
 ## Art direction

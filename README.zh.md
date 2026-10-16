@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>一款在浏览器里运行的奇幻 RPG：每个角色都是 Jumper 螃蟹机器人，<br>
-  每一次行走、挥手和舞蹈都来自机器人自己训练出的策略。</b>
+  每一次行走、挥手、舞蹈和霹雳舞动作都来自机器人自己训练出的策略。</b>
 </p>
 
 <p align="center">
@@ -16,19 +16,22 @@
   <a href="docs/SUBMISSION.md">参赛介绍</a>
 </p>
 
-六个种族、三个职业、一座港口小镇、由四个任务组成的主线、一个三阶段 Boss，最后全镇一起跳舞。玩家、NPC 和 Boss 全都是 KingKong Robotics 的 [Jumper](https://github.com/KingKongRobotics/jumper) 机器人，只是涂装和装备不同。打开 **Robot Mode（机器人模式）**，你创建的螃蟹就会在同一个标签页里，用 Jumper 真实的控制器和策略在 MuJoCo 中实时运行。
+六个种族、三个职业、一座港口小镇、由四个任务组成的主线、一个三阶段 Boss，最后全镇一起跳舞，你的螃蟹还会跳一段霹雳舞：toprock、six-step、原地旋转、720 度跳转、后空翻和单钳定格。玩家、NPC 和 Boss 全都是 KingKong Robotics 的 [Jumper](https://github.com/KingKongRobotics/jumper) 机器人，只是涂装和装备不同。打开 **Robot Mode（机器人模式）**，你创建的螃蟹就会在同一个标签页里，用 Jumper 真实的控制器和策略在 MuJoCo 中实时运行。
 
 ## 真实策略，而不是手工动画
 
-- 游戏里全部 37 段动作，都是 Jumper 策略通过 bundle 自带的控制器扩展，在 MuJoCo 3.11 中闭环运行后录制下来的。其中 31 段来自 Jumper 示例 bundle：8 个方向的行走、转身、快速步态、跳跃、左右钳子模式、4 个手势和 4 支舞蹈，`dance_crab` 保留了完整的 238.6 秒。
+- 游戏里全部 44 段动作，都是训练好的 Jumper 策略在 MuJoCo 3.11 中闭环运行后录制下来的，全部通过 bundle 自带的控制器扩展运行。31 段来自 Jumper 示例 bundle：8 个方向的行走、转身、快速步态、跳跃、左右钳子模式、4 个手势和 4 支舞蹈，`dance_crab` 保留了完整的 238.6 秒。
 - 机器人原本没有策略的 6 段战斗动作（`attack_swipe`、`attack_slam`、`cast`、`hit_react`、`death`、`sit`），来自随本项目一同发布在 `jumper/` 目录中的 **6 个新 Jumper 任务**：`jumper.skill_swipe`、`skill_slam`、`skill_cast`、`skill_flinch`、`skill_powerdown`、`skill_sit`。参考动作在机器人自己的模型上制作，再用动作模仿强化学习训练成策略（每个在一张 H100 上训练 2000 到 3000 次 PPO 迭代）。在任务自己的环境中从站立姿态出发，84 次运行（每个动作 10 次带训练时的域随机化，4 次不带）没有一次摔倒；动作区间内的关节 RMS 误差为 0.26 到 1.54 度，而原地不动会差 11 到 39 度。死亡现在就是 power-down 策略：腿一条条软下去，外壳落到地上，尸体一直保持这个姿态。
-- 一致性检查 `tools/motion/check_bundle.py`：控制器回放 `reference.json`，观测差 0，目标差 0；ONNX 输出与录制动作的最大差为 9.5e-07（示例 bundle）和 0（crabcraft bundle）。
+- **霹雳舞，每个动作都是训练出的策略。** 按 <kbd>B</kbd> 螃蟹就会开始跳；在结局里它是压轴表演，全镇一起欢呼。为此我们又写了 7 个新 Jumper 任务（同样在 `jumper/` 中）：4 个跟踪参考动作的任务 `jumper.break_toprock`（107 bpm 的 8 拍）、`break_sixstep`（绕着两只钳子转一圈的地面步法）、`break_clawstand` 和 `break_oneclaw`（头朝下撑在钳子上的定格），以及 3 个靠奖励学出来的大招 `jumper.power_spin_feet`（只用脚原地旋转，每秒 2.3 圈）、`power_jumpspin720`（空中平均转 679 度，带域随机化 32 次落地全部站稳，训练时关节目标就截断在限位处）和 `power_backflip`（完整的后空翻，32 次全部用脚落地，落地后在站立姿态附近水平站稳）。两个跳跃都从控制器切换模式时交给策略的站立姿态起跳，落地后站稳不动。套路按策略自己的节奏连续播放其中 6 个（claw stand 在 Robot Mode 里），并把每个动作的位移和转向交给螃蟹本身，所以差 2 度没转满一圈的 six-step、到落地时已经转了 751 度的 720，都会让螃蟹停在策略让机器人停下的朝向，下一个动作从那里接着开始。这些都是仿真结果，7 个策略都没有在实体 Jumper 上运行过。six-step 能转满一圈（360 度中的 357.7 度），因为它的策略能看到自己的朝向比参考动作落后了多少；这个量由控制器根据动作开始以来 IMU 的偏航角算出。实体 Jumper 的 AHRS 偏航角是否跟随陀螺仪（这一点是前提）还没有验证过。后空翻在空中会整个翻过来（倾角 177 度），所以它的模式只在自己运行期间解除控制器 50 度的倾角保护；在实体机器人上，这意味着后空翻运行时摔倒不会被保护接住，需要格外小心（软地面，手放在释放键上）。
+- 一致性检查 `tools/motion/check_bundle.py`：控制器回放 `reference.json`，观测差 0，目标差 0（示例 bundle 和 crabcraft bundle）；ONNX 输出与录制动作的最大差为 9.5e-07（示例 bundle）和 0（crabcraft bundle）。
 - 螃蟹模型由 Jumper 的 URDF 和外观网格生成（`tools/build_crab.py`）。与 MuJoCo 对比 41 个刚体 x 13 个姿态，最大位置误差 0.000534 mm。
 - 游戏中的螃蟹播放的是录制好的策略轨迹，并不做物理仿真；实时运行物理和策略的是 Robot Mode。
 
 ## Robot Mode：真实的控制栈，在浏览器里实时运行
 
-官方 MuJoCo 3.11.0 WebAssembly 版本（`@mujoco/mujoco`）、onnxruntime-web 1.30.0 和 bundle 自带的 `controller.wasm`，加载 17 个 ONNX 策略（18 种模式）：示例 bundle 的 11 个加上 6 个新技能，由 Jumper 自己的 `scripts/deploy.py` 打包成一个 bundle，按机器人的控制频率运行（行走时实测 199 Hz）。按 5 6 7 8 9 0 可以实时做出挥砍、重砸、施法、受击、断电倒地和坐下，结束后自动交回行走策略。机器人启动前，页面先做自检：用控制器回放 `reference.json`（24 帧，差值 0），比较策略输出与录制动作（最大差 8.3e-7），并用 SHA-256 校验 53 个 bundle 文件。
+官方 MuJoCo 3.11.0 WebAssembly 版本（`@mujoco/mujoco`）、onnxruntime-web 1.30.0 和 bundle 自带的 `controller.wasm`，加载 24 个 ONNX 策略（25 种模式）：示例 bundle 的 11 个、6 个新技能和全部 7 个霹雳舞动作，由 Jumper 自己的 `scripts/deploy.py` 打包成一个 bundle，按机器人的控制频率运行（行走时实测 199 Hz）。按 5 6 7 8 9 0 可以实时做出挥砍、重砸、施法、受击、断电倒地和坐下，按 <kbd>Shift</kbd> + 1 2 3 4 实时做出 toprock、six-step、claw stand 和单钳定格，结束后自动交回行走策略；<kbd>Shift</kbd> + 5 开始旋转，再按一次停止（浏览器物理下每秒 2.3 圈）。<kbd>Shift</kbd> + 6 是 720，<kbd>Shift</kbd> + 7 是后空翻：在浏览器物理下从站立和行走中各做 12 次，720 在空中转 682 到 750 度，后空翻向后翻 375 到 383 度，两者落地后都站稳不动，720 用后腿撑着、机头朝上约 10 度，后空翻在站立姿态附近，倾角在 1 度以内。这两个动作自己不会结束，所以站稳后页面会替你再按一次它们的按键（控制器交接后 1.4 秒和 1.2 秒，比最晚的站稳时刻至少晚 0.26 秒），并在日志里写明；交回行走时 720 也回到水平。旋转的关节目标最多可以超出关节限位 1.7 rad，和它训练时一样；720 重新训练时关节目标就截断在限位处，发送的目标都不超出限位（见“已知限制”）。机器人启动前，页面先做自检：用控制器回放 `reference.json`（24 帧，观测差 0，目标差 0），比较策略输出与录制动作（最大差 8.3e-7），并用 SHA-256 校验 71 个 bundle 文件。
+
+**整套霹雳舞，实时运行，踩在节拍上。** 在 Robot Mode 里按 <kbd>P</kbd>（或点 dock 里的 Routine），机器人会把整套霹雳舞连起来跳完：toprock、six-step、原地旋转、720、后空翻和单钳定格，每个动作都是它自己的策略在 bundle 控制器下实时运行，配一段原创的、与 toprock 相同的 107.14 bpm 节拍音乐。没有任何录制片段被拼接进来。页面只按 bundle 自己的模式按键（<kbd>Shift</kbd> + 1、2、5、6、7、4），每按一次都写进日志，并按仿真时间安排按键时刻，让每个策略都在它那一小节的强拍上开始：控制器要先把关节滑到该动作的初始姿态（0.59 到 0.83 秒），所以按键必须提前这么久，页面根据关节离初始姿态有多远来预测这段时间。每个动作都先交回行走，再按下一个；旋转在一拍上由它自己的按键结束，720 和后空翻落地后由页面再按一次，定格正好落在最后一个重音的强拍上。从站立、行走、转身、横移和刚做完一个动作这几种起点无头运行 10 次，10 次都完整跳完，没有进入 Safe Hold，最后都站稳回到行走；大招在强拍前后 15 毫秒内开始，跟踪动作在 60 毫秒内。按任何机器人操作键、动手柄或再按一次 <kbd>P</kbd> 都会停下并交回行走。音乐是霹雳舞视频那段合成节拍按这套动作的 17 个小节重新编排的，页面让它跟着仿真走（Chrome 中误差在 30 毫秒以内）。这同样是仿真结果，这套动作没有在实体 Jumper 上运行过。
 
 按 <kbd>T</kbd> 可以在裸机器人和你创建的螃蟹之间切换。装备、武器和 LED 面部都会跟随同一个实时仿真逐帧摆姿，螃蟹的各个连杆与物理刚体的偏差在 0.0013 mm 以内。同一个策略，任意外观。
 
@@ -36,7 +39,7 @@
   <img src="docs/media/robot-switch.webp" alt="Robot Mode：同一次 dance_crab 策略运行，先显示为玩家的螃蟹，再切换成裸 Jumper 机器人，再切换回来" width="100%">
 </p>
 
-无头检查 `node tools/robot-sim-check.ts`：行走 30 秒前进 21.65 m，没有摔倒，最大倾角 1.88 度，跳跃最高 0.228 m；6 个技能都能按键进入、播放完毕并交回行走（最大倾角 11.3 度，坐下）。
+无头检查 `node tools/robot-sim-check.ts`：行走 30 秒前进 21.65 m，没有摔倒，最大倾角 1.88 度，跳跃最高 0.228 m；6 个技能和 5 个霹雳舞模式都能按键进入、播放完毕（旋转保持 4 秒，每秒 2.35 圈，然后松开）并交回行走（最大倾角 35.0 度，单钳定格）。整套实时霹雳舞默认从 5 种起点各跑一次（`--routine 10` 跑 10 次）：每次都完整跳完，每个动作都进入并交回行走，没有 Safe Hold，最后站稳行走，大招在强拍前后 15 毫秒内开始，跟踪动作在 60 毫秒内。
 
 ## 功能一览
 
@@ -56,7 +59,7 @@
 
 <img src="docs/media/ending.jpg" alt="结局：全镇螃蟹在广场上跳舞" width="100%">
 
-- **结局**：全镇围成一圈，跳录制下来的舞蹈策略（`dance_crab`、`dance_brazilian`、`dance_dream_wings`、`dance_maze`），烟花升起，然后滚动字幕。
+- **结局**：全镇围成一圈，跳录制下来的舞蹈策略（`dance_crab`、`dance_brazilian`、`dance_dream_wings`、`dance_maze`），烟花升起。接着人群让出场地，你的螃蟹跳完整套霹雳舞，每个动作都有字幕：人群跟着 toprock 挥手，为旋转喝彩，720 和后空翻落地时跳起来举钳，定格时烟花齐放。然后大家再一起跳舞，最后滚动字幕。
 
 <img src="docs/media/robot.jpg" alt="Robot Mode：上方是带 HUD 的行走画面，下方是同一支舞蹈的螃蟹外观与裸机器人外观" width="100%">
 
@@ -85,8 +88,8 @@ pnpm preview    # 本地预览 dist/
 
 **操作**
 
-- 游戏：<kbd>W</kbd> <kbd>S</kbd> 前进后退，<kbd>A</kbd> <kbd>D</kbd> 横着走，<kbd>Q</kbd> <kbd>E</kbd> 转身，<kbd>Space</kbd> 跳跃，<kbd>Tab</kbd> 选择目标，<kbd>1</kbd> 到 <kbd>4</kbd> 技能，<kbd>F</kbd> 对话和交互，<kbd>Esc</kbd> 菜单（画质设置），连按两次 <kbd>R</kbd> 进入 Robot Mode。
-- Robot Mode：<kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 行走，<kbd>Q</kbd> <kbd>E</kbd> 转身，<kbd>Space</kbd> 跳跃，<kbd>1</kbd> 到 <kbd>4</kbd> 手势，<kbd>Ctrl</kbd> + <kbd>1</kbd> 到 <kbd>4</kbd> 舞蹈，<kbd>V</kbd> <kbd>B</kbd> 左右钳子，<kbd>T</kbd> 切换外观，<kbd>R</kbd> 重置。
+- 游戏：<kbd>W</kbd> <kbd>S</kbd> 前进后退，<kbd>A</kbd> <kbd>D</kbd> 横着走，<kbd>Q</kbd> <kbd>E</kbd> 转身，<kbd>Space</kbd> 跳跃，<kbd>B</kbd> 霹雳舞（移动、转身、跳跃、技能或受击都会打断），<kbd>Tab</kbd> 选择目标，<kbd>1</kbd> 到 <kbd>4</kbd> 技能，<kbd>F</kbd> 对话和交互，<kbd>Esc</kbd> 菜单（画质设置），连按两次 <kbd>R</kbd> 进入 Robot Mode。
+- Robot Mode：<kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 行走，<kbd>Q</kbd> <kbd>E</kbd> 转身，<kbd>Space</kbd> 跳跃，<kbd>1</kbd> 到 <kbd>4</kbd> 手势，<kbd>Ctrl</kbd> + <kbd>1</kbd> 到 <kbd>4</kbd> 舞蹈，<kbd>5</kbd> 到 <kbd>0</kbd> 技能，<kbd>Shift</kbd> + <kbd>1</kbd> 到 <kbd>7</kbd> 霹雳舞动作（6 和 7 的 720 与后空翻落地后自动回到行走），<kbd>V</kbd> <kbd>B</kbd> 左右钳子，<kbd>P</kbd> 整套霹雳舞（踩着节拍实时运行，带音乐；再按一次或按任何操作键停止），<kbd>T</kbd> 切换外观，<kbd>R</kbd> 重置。
 
 完整的按键表、架构图和验证表见 [English README](README.md)。
 
@@ -94,7 +97,13 @@ pnpm preview    # 本地预览 dist/
 
 - 只有一个区域，单人游戏，面向桌面键鼠；只有 Robot Mode 支持手柄。
 - 60 fps 只在 Apple M4 Pro Mac 的 Chrome 上测得，其他硬件没有测量。
-- 音乐和音效没有经过人工试听。
+- 霹雳舞只在仿真中验证过：为它训练的 7 个策略都没有在实体 Jumper 上运行过。后空翻的模式在运行期间解除了控制器 50 度的倾角保护，在实体机器人上，翻失败时不会被它接住。
+- 720 和后空翻自己不会结束。Robot Mode 在控制器交接后的固定时间（1.4 秒、1.2 秒，比经 bundle 控制器测得的最晚站稳时刻晚 0.28 秒和 0.275 秒）替你再按一次按键，并不检测落地。
+- 旋转这个模式设了 `target_margin`，关节目标最多可以超出关节限位 1.7 rad，和它训练时一样（其他模式都在限位处截断）：截断时旋转每秒慢 0.3 圈。在实体机器人上，这意味着关节顶到限位后，只要目标还指向限位之外，就会以最高 1.746 N m 的力矩一直顶着，发送的目标最远可达约 6.45 rad。这些都没有在实体 Jumper 上试过。
+- 720 以前也需要同样的 margin，后来在关节目标截断于限位的条件下重新训练，现在发送的目标都在限位以内。代价是：起跳高度从 0.39 米降到 0.35 米，落地后机头朝上约 10 度站着，带训练时的随机化时 32 次落地中有一次倾角达到 49.1 度，接近控制器 50 度的倾角保护。
+- six-step 靠 IMU 的偏航角（从动作开始时算起）把一圈转满。实体 Jumper 的 AHRS 偏航角是否跟随陀螺仪还没有验证；如果它不动，策略会以为自己越转越落后，并用力追赶。
+- 整套实时霹雳舞的按键时刻来自在本仿真上拟合的控制器滑动时间模型（`src/robot/sim/routine.ts`）；跟踪动作的滑动时间有模型解释不了的波动，所以它们会偏离强拍最多约 60 毫秒。整套动作会让机器人移动约 0.4 米，桌面上有玩具和书，紧挨着它们开始的话，某个动作可能落在上面。轮到某个动作时如果机器人不在行走状态，会等一个小节（并写进日志），连续等四个小节就停止。
+- 音乐和音效没有经过人工试听（包括实时霹雳舞用 `tools/trailer/breakdance/beat.py` 合成的节拍）。
 
 ## 致谢与许可
 
