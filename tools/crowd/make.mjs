@@ -12,6 +12,7 @@
 //     [--workers 2]                capture pages per layout running at once
 //     [--url http://localhost:5291 | --port 5291]   a running dev server, or the port for one
 //     [--dsf 2] [--fps 60] [--preroll 3] [--reuse] [--skip-capture] [--shots 0,3]
+//     [--crf 18] [--maxrate 16M]   x264 quality and its bitrate cap (a crowd hundreds strong is busy)
 //     [--options '{"json":1}']     passed to the choreography's build()
 //
 // The choreography is a module whose default export build({ grid, clips, options }) returns the
@@ -49,6 +50,8 @@ const dsf = opt('--dsf', '2');
 const fps = Number(opt('--fps', '60'));
 const preroll = opt('--preroll', '3');
 const options = JSON.parse(opt('--options', '{}'));
+const crf = opt('--crf', '18');
+const maxrate = opt('--maxrate', '16M');
 const port = Number(opt('--port', '5291'));
 let url = opt('--url', '');
 const SIZE = { land: [1920, 1080], port: [1080, 1920] };
@@ -172,7 +175,7 @@ try {
       // The captured frames are full-range BT.601 JPEGs: out to limited-range BT.709.
       '-filter_complex', `[0:v]setpts=N/(${fps}*TB),scale=${W}:${H}:flags=lanczos:in_range=pc:out_range=tv:in_color_matrix=bt601:out_color_matrix=bt709,format=yuv420p[v]`,
       '-map', '[v]', '-map', '1:a', '-r', String(fps), '-frames:v', String(frames),
-      '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'slow', '-crf', '17', '-g', String(fps * 2),
+      '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'slow', '-crf', crf, '-maxrate', maxrate, '-bufsize', `${2 * parseFloat(maxrate)}${maxrate.replace(/[\d.]/g, '')}`, '-g', String(fps * 2),
       '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
       '-c:a', 'aac', '-b:a', '256k', '-ar', '48000', '-shortest', '-movflags', '+faststart', OUT[l]]);
     const sheet = OUT[l].replace(/\.mp4$/, '-sheet.jpg');
