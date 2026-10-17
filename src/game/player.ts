@@ -7,6 +7,7 @@ import type { AbilityDef, ClassDef } from '../data/classes';
 import type { Game } from './game';
 import type { Unit } from './unit';
 import { executeAbility, abilityNeedsTarget, isMeleeAbility } from './abilities';
+import { BreakRoutine } from './breakdance';
 import { rollCrit, CRIT_MULT } from './combat';
 import { C, N, type WardHandle } from './vfx/vfx';
 import { Sprite } from './vfx/atlas';
@@ -69,8 +70,16 @@ export class Player {
   private lastSpend = -10;
   private targetDeadAt = 0;
   baseMaxHp: number;
+  /**
+   * The B emote: the breakdance routine, every move a trained Jumper policy. Moving, turning,
+   * jumping, an ability, a hit or a fight ends it; B again does too.
+   */
+  readonly breakdance: BreakRoutine;
 
   constructor(private readonly game: Game, readonly unit: Unit, readonly cls: ClassDef) {
+    this.breakdance = new BreakRoutine(unit, {
+      onEvent: (name, step) => this.onBreakEvent(name, step.id),
+    });
     this.baseMaxHp = cls.baseHp;
     unit.maxHp = unit.hp = cls.baseHp;
     if (cls.resource === 'mana') this.maxResource = this.resource = 120;
@@ -103,6 +112,7 @@ export class Player {
   }
 
   onDamaged(dmg: number): void {
+    this.breakdance.cancel(0.12);
     if (this.isRage) this.gainRage(dmg * 0.5);
     if (this.cast && this.cast.ability.castTime > 0) {
       // Pushback: taking damage delays the cast a little, like the old games.
@@ -142,6 +152,17 @@ export class Player {
     }
     const stunned = u.stunned(now);
     if (stunned || this.dash) fwd = strafe = turn = 0;
+
+    // Breakdance (B). Anything that moves the crab or starts a fight ends it, as an emote ends.
+    if (free && inp.wasPressed('KeyB')) this.toggleBreakdance();
+    if (
+      this.breakdance.active &&
+      (fwd !== 0 || strafe !== 0 || turn !== 0 || stunned || this.dash || g.follow.steering ||
+        (free && inp.wasPressed('Space')) || this.cast || this.channel || this.inCombat)
+    ) {
+      this.breakdance.cancel();
+    }
+    this.breakdance.update(dt);
 
     // Facing: right-drag steers to the camera, Q/E turn and drag the camera along.
     if (free && g.follow.steering && !stunned && !this.dash) {
@@ -361,6 +382,38 @@ export class Player {
     }
   }
 
+  // ---------------------------------------------------------------- breakdance
+
+  /** B: start the routine from standing, or end it. */
+  toggleBreakdance(): void {
+    const g = this.game;
+    const u = this.unit;
+    if (this.breakdance.active) {
+      this.breakdance.cancel();
+      return;
+    }
+    if (!u.alive || g.controlsLocked) return;
+    if (this.inCombat) return this.error("You can't dance while in combat.");
+    if (u.stunned(g.time)) return this.error('You are stunned.');
+    if (this.cast || this.channel || this.dash) return this.error('Another action is in progress.');
+    if (this.jumpT > 0 || Math.hypot(this.velX, this.velZ) > 0.6) return this.error('Stand still to dance.');
+    this.velX = this.velZ = 0;
+    this.breakdance.start();
+    u.express('happy', 3);
+    g.hud.messages.info(t('브레이크댄스: 탑록, 식스스텝, 스핀, 720, 백플립, 한 집게 프리즈. 움직이면 멈춰요.', 'Breakdance: toprock, six-step, spin, 720, back flip, one-claw freeze. Move to stop.'));
+  }
+
+  /** The routine's moments: a whir on every take-off, a thud on every landing and freeze. */
+  private onBreakEvent(name: string, id: string): void {
+    const g = this.game;
+    const sand = g.zone === 'The Brine Shore' || g.zone === 'The Iron Wreck';
+    if (name === 'takeoff' || (name === 'spin_from' && id === 'break_spin')) g.audio.sfx('sfx-servo-whir', { volume: 0.4 });
+    else if (name === 'land' || (name === 'hit' && id === 'break_oneclaw')) {
+      g.audio.sfx(sand ? 'sfx-footstep-sand' : 'sfx-footstep-stone', { volume: 0.55, pitch: 0.08 });
+      this.unit.express('love', 1.2);
+    }
+  }
+
   // ---------------------------------------------------------------- abilities
 
   useAbility(slot: number): void {
@@ -368,6 +421,7 @@ export class Player {
     const u = this.unit;
     const ab = this.cls.abilities[slot - 1];
     if (!ab || !u.alive || g.controlsLocked || g.villageGames?.playing) return;
+    this.breakdance.cancel(0.12);
     const now = g.time;
     g.hud.actionBar.press(slot);
     if (u.stunned(now)) return this.error('You are stunned.');
@@ -511,6 +565,8 @@ export class Player {
       'Out of range.':'조금 더 가까이 다가가세요.',
       'Target too close.':'대상과 조금 더 거리를 두세요.',
       'Target not in line of sight.':'대상이 장애물에 가려져 있어요.',
+      "You can't dance while in combat.":'전투 중에는 춤출 수 없어요.',
+      'Stand still to dance.':'멈춰 선 다음에 춤출 수 있어요.',
     };
     this.game.hud.messages.error(t(translations[msg]??msg,msg));
     this.game.audio.sfx('sfx-error', { volume: 0.6 });
@@ -638,6 +694,7 @@ export class Player {
     this.ward = null;
     this.velX = this.velZ = 0;
     u.lastCombat = -1e9;
+    this.breakdance.cancel(0);
     u.motion.stop(undefined, 0);
     u.express('neutral', 0.1);
     u.rig.face.setTint(null);

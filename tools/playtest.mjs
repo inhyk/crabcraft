@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 // End-to-end playtest of the whole quest chain in installed Chrome (real GPU).
-// Boots ?screen=game&debug=1 with a saved crab for each class, plays through every quest with the
-// debug hooks (F8 god mode, F9 complete objective, F10 teleport) plus real movement and ability
-// key presses, screenshots each stage, and fails on any console error or uncaught exception.
+// Boots ?screen=game&debug=1 with a saved crab for each class (in English), plays through every
+// quest with the debug hooks (F8 god mode, F9 complete objective, F10 teleport) plus real movement
+// and ability key presses, screenshots each stage, and fails on any console error or uncaught
+// exception. In the multiplayer edition Corrodius waits for level 3 and the dance endings come after
+// the later bosses: Nereid's defeat (level 10) plays the chapter ending, Astra's in World II opens
+// World III, and Solarkan's there plays the true ending and the credits. The launch notice is
+// confirmed first, and the hero's breakdance must play in both endings, to the end in the true one.
 //
 // Usage: node tools/playtest.mjs [--url http://localhost:5206] [--out dir] [--class warrior,mage,priest] [--headed]
 // Needs a dev or preview server running (pnpm dev --port 5206 --strictPort).
@@ -56,6 +60,8 @@ async function run(cls) {
   });
   await page.addInitScript((spec) => {
     localStorage.setItem('cc.spec', JSON.stringify(spec));
+    // The edition starts in Korean; the dialogue buttons below are found by their English labels.
+    localStorage.setItem('cc.language', 'en');
   }, SPECS[cls]);
 
   const shots = [];
@@ -134,9 +140,12 @@ async function run(cls) {
   };
 
   let ok = true;
+  const breaks = [];
   try {
     step('boot');
     await page.goto(`${base}/?screen=game&debug=1`, { waitUntil: 'load', timeout: 60000 });
+    // The edition asks the player to confirm a short notice before anything loads.
+    await page.locator('.launch-notice-start').click({ timeout: 30000 });
     await page.waitForFunction(() => window.__ready === true && window.cc, null, { timeout: 90000 });
     await sleep(1800);
     await shot('01-spawn');
@@ -158,7 +167,7 @@ async function run(cls) {
     await waitFor((s) => s.dialogueOpen, 5000, 'dialogue');
     await sleep(1600);
     await shot('02-dialogue');
-    await click('Accept');
+    await click('Accept quest');
     await waitFor((s) => s.quests.q1 === 'active', 5000, 'q1 active');
 
     step('quest 1: shore combat');
@@ -168,9 +177,10 @@ async function run(cls) {
     await waitFor((s) => !!s.target, 5000, 'target');
     await fights[cls]();
     fps.combat = (await state()).fps;
-    await key('F9');
-    await sleep(300);
-    await key('F9');
+    for (let i = 0; i < 6 && (await state()).quests.q1 !== 'ready'; i++) {
+      await key('F9');
+      await sleep(400);
+    }
     await waitFor((s) => s.quests.q1 === 'ready', 8000, 'q1 ready');
 
     step('quest 1 turn-in, quest 2');
@@ -179,7 +189,7 @@ async function run(cls) {
     await key('KeyF');
     await click('Complete Quest');
     await sleep(900);
-    await click('Accept');
+    await click('Accept quest');
     await waitFor((s) => s.quests.q2 === 'active', 5000, 'q2 active');
 
     step('quest 2: Moonpool Grove');
@@ -188,7 +198,7 @@ async function run(cls) {
     await key('KeyF');
     await click('Complete Quest');
     await sleep(900);
-    await click('Accept');
+    await click('Accept quest');
     await waitFor((s) => s.quests.q3 === 'active', 5000, 'q3 active');
 
     step('quest 3: scavengers');
@@ -215,6 +225,8 @@ async function run(cls) {
     await waitFor((s) => s.quests.q4 === 'active' && s.boss.state === 'idle', 15000, 'boss awake');
 
     step('quest 4: Corrodius');
+    // The edition gates Corrodius at level 3 (src/game/progression.ts BOSS_PROFILES.rust).
+    await page.evaluate(() => { const p = window.cc.game.player; if (p.level < 3) p.restoreXp(Math.max(900, p.xp)); });
     await key('F10');
     await waitFor((s) => s.boss.state === 'fight', 8000, 'boss engaged');
     await key('Tab');
@@ -242,12 +254,50 @@ async function run(cls) {
     await key('F10');
     await sleep(600);
     await key('KeyF');
-    await click("Let's dance!");
-    await waitFor((s) => s.ending, 5000, 'ending');
-    await sleep(9000);
-    await shot('07-ending-dance');
-    fps.ending = (await state()).fps;
+    await click('Keep exploring toward level 10');
+    await waitFor((s) => s.quests.q4 === 'done', 5000, 'q4 done');
+    // Level 20 and Nereid down: the chapter ending.
+    await page.evaluate(() => {
+      const g = window.cc.game;
+      g.player.restoreXp(22000);
+      g.combat.kill(g.finalBoss.unit, g.player.unit);
+    });
+    await waitFor((s) => s.ending, 20000, 'chapter ending');
+    await waitFor((s) => s.endingBreakdance && s.endingBreakdance.step === 'break_sixstep', 20000, 'chapter ending breakdance');
+    await sleep(1500);
+    await shot('07a-chapter-ending-break');
+    breaks.push((await state()).endingBreakdance);
+    await key('Space');
+    await page.waitForFunction(() => document.querySelector('.chapter-ending button') && !document.querySelector('.chapter-ending button').disabled, null, { timeout: 30000 });
+    await page.click('.chapter-ending button');
+    await page.waitForFunction(() => window.cc.game.world2.chapter === 2, null, { timeout: 60000 });
     await sleep(2000);
+    // Astra down in World II opens World III; Solarkan down there plays the true ending, then the credits.
+    await page.evaluate(() => {
+      const g = window.cc.game;
+      g.combat.kill(g.worldBoss.unit, g.player.unit);
+    });
+    await page.waitForFunction(() => window.cc.game.journey.trueCleared, null, { timeout: 30000 });
+    await page.evaluate(() => {
+      const g = window.cc.game;
+      g.player.restoreXp(90000);
+      g.world2.go(3);
+    });
+    await page.waitForFunction(() => window.cc.game.world2.chapter === 3, null, { timeout: 60000 });
+    await sleep(2000);
+    await page.evaluate(() => {
+      const g = window.cc.game;
+      g.combat.kill(g.dawnBoss.unit, g.player.unit);
+    });
+    await waitFor((s) => s.ending, 30000, 'true ending');
+    await waitFor((s) => s.endingBreakdance && s.endingBreakdance.step === 'break_backflip', 40000, 'true ending back flip');
+    await shot('07-ending-break-backflip');
+    await waitFor((s) => s.endingBreakdance && !s.endingBreakdance.active, 20000, 'true ending routine end');
+    breaks.push((await state()).endingBreakdance);
+    if (breaks.at(-1).lastCompleted !== true) throw new Error(`the true ending's routine was cut short: ${JSON.stringify(breaks.at(-1))}`);
+    await sleep(2500);
+    await shot('07b-ending-dance');
+    fps.ending = (await state()).fps;
     await key('Space');
     await page.waitForSelector('.credits', { timeout: 15000 });
     await sleep(6000);
@@ -269,6 +319,7 @@ async function run(cls) {
   const pass = ok && errors.length === 0;
   console.log(`${pass ? 'PASS' : 'FAIL'} ${cls}`);
   console.log(`  fps ${JSON.stringify(Object.fromEntries(Object.entries(fps).map(([k, v]) => [k, Math.round(v)])))}`);
+  console.log(`  ending routines: ${JSON.stringify(breaks)}`);
   console.log(`  console errors: ${errors.length}`);
   for (const e of errors) console.log(`    ${e}`);
   console.log(`  warnings: ${warnings.length}${warnings.length ? ` (first: ${warnings[0]})` : ''}`);
