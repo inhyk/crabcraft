@@ -176,3 +176,9 @@ J 또는 Esc 메뉴의 업적 화면에10개 업적(첫10m 항해, 두 명 동�
 달조각 섬에는 수정9개·달 고리·돌 원형 유적, 노을 난파선 섬에는 부서진 선체/늑골·돛·보급통·야영지를 만들었다. 기하와 재질을 재사용하고 동적 광원은 추가하지 않았다. 각 보물상자는100/125코인을 캐릭터당 한 번 지급하며 열린 뚜껑을 저장된 업적으로 복원한다. 새 발견2·보물2·세 섬 모두 발견 업적1을 추가해 총15개다. 기존 업적 ID와 journey 저장 형식을 유지했다.
 
 빌드와 전투/배76개 검사 통과. `tools/qa-archipelago.mjs` 실Chrome 로컬 검사가 종료0/페이지 오류0으로 두 새 섬의 실제 W 접근/F 안전 하선·걸어서 보물 획득·한 번씩225코인·배 재탑승·기존 저장 호환·15개 업적·작은 화면 뒤로 버튼·재로드 업적/코인 보존을 확인했다(archipelago-{build,tests,native-local}.log). 기존 산호바람 발견 기록과 각 섬 앞의 배 출발 위치/무적은 명시적 fixture이며 전체 자연 항로 완주를 주장하지 않는다. 재로드 fixture가 저장을 덮지 않도록 처음 한 번만 기록한다. 두 섬의 스크린샷을 직접 확인했다.
+
+기존 섬 왕복 항해/상자/15개 업적/작은 화면/저장/빈 배 호출/두 브라우저 손님 하선·재탑승 회귀 검사도 로컬 종료0/페이지 오류0으로 통과했다(archipelago-regression-local.log). 최종 소스 `f8ef399`를 Vercel `dpl_J7NsawyqN7kTi8LHjBjub2PYhh8Q` production/Ready 및 기존 stable alias에 배포했다. 공개 index/JS/CSS27개 SHA256 일치와 seonn.dev/games/crabcraft HTTP200/기존 플레이 링크를 확인했다(archipelago-{inspect,public-assets}.log). 공개 실Chrome의 두 새 섬 전체 검사도 종료0/페이지 오류0으로 통과해 실제 접근·하선·각 보물 한 번·재탑승·225코인/새 업적 재로드를 확인했다(archipelago-native-public.log). 서버 프로토콜/Worker/계정 구조 변경은 없다.
+
+GitHub 저장소가 `inhyk/crabcraft`로 이동했고 기존 feat/multiplayer-rooms 브랜치는 잠겨 있어 그 브랜치 push가 거절되었다. origin/dev와 origin/main이 기존 기준 커밋 a4c1e5a와 같은 것을 확인한 후 새 feat/archipelago-islands 브랜치로 정상 업로드했다. 보호 규칙은 변경하지 않았다.
+
+공개 기존 섬 회귀 검사도 종료0/페이지 오류0으로 통과했다(archipelago-regression-public.log). 실제 왕복 항해·상자75코인 한 번·업적15개 화면·저장·빈 배 호출과 두 브라우저의 동승 업적/손님 하선/정박 재탑승을 확인했다.
