@@ -201,3 +201,16 @@ test('guest village start uses the authenticated ID, synchronizes state and canc
  b.villageGames.playing=true;assert.equal(b.combat.damage(a.player.unit,b.player.unit,50),0);assert.equal(b.player.unit.hp,hp);
  bb.leave();assert.equal(b.villageGames.state,null);
 });
+
+test('Solarkan gate rejects low-level damage and remote commands even with a level 100 friend',()=>{
+ const {a,b,aa,bb,ar,flush}=pair();
+ a.dawnBoss.profile=b.dawnBoss.profile={level:100};a.dawnBoss.unit.invulnerable=b.dawnBoss.unit.invulnerable=false;
+ a.player.unit.level=b.player.unit.level=ar.level=99;
+ assert.equal(a.combat.damage(a.player.unit,a.dawnBoss.unit,10),0);
+ b.combat.damage(b.player.unit,b.dawnBoss.unit,10);flush();assert.equal(a.dawnBoss.unit.hp,100);
+ aa.receive('b',{kind:'attack',target:'b30',amount:40});assert.equal(a.dawnBoss.unit.hp,100);
+ aa.receive('b',{kind:'condition',target:'b30',condition:{stun:2,slow:4,slowPct:.5,pushX:0,pushZ:0,pushTime:0}});assert.equal(a.dawnBoss.unit.stunUntil,0);
+ aa.receive('b',{kind:'challenge',target:'b30'});assert.equal(a.dawnBoss.state,'dormant');
+ a.player.unit.level=100;a.combat.damage(a.player.unit,a.dawnBoss.unit,10);assert.equal(a.dawnBoss.unit.hp,90);
+ ar.level=100;aa.receive('b',{kind:'attack',target:'b30',amount:10});assert.equal(a.dawnBoss.unit.hp,80);
+});
