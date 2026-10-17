@@ -264,6 +264,78 @@
     "source": "https://kenney.nl/assets/rpg-audio"
   },
   {
+    "id": "music-world2-explore",
+    "files": [
+      "music-world2-explore.ogg",
+      "music-world2-explore.mp3"
+    ],
+    "loop": true,
+    "volume": 0.85,
+    "credit": "Original composition and synthesis for Crabcraft",
+    "license": "Apache-2.0",
+    "source": "tools/art/world_music.py"
+  },
+  {
+    "id": "music-world2-combat",
+    "files": [
+      "music-world2-combat.ogg",
+      "music-world2-combat.mp3"
+    ],
+    "loop": true,
+    "volume": 0.85,
+    "credit": "Original composition and synthesis for Crabcraft",
+    "license": "Apache-2.0",
+    "source": "tools/art/world_music.py"
+  },
+  {
+    "id": "music-world2-boss",
+    "files": [
+      "music-world2-boss.ogg",
+      "music-world2-boss.mp3"
+    ],
+    "loop": true,
+    "volume": 0.85,
+    "credit": "Original composition and synthesis for Crabcraft",
+    "license": "Apache-2.0",
+    "source": "tools/art/world_music.py"
+  },
+  {
+    "id": "music-world3-explore",
+    "files": [
+      "music-world3-explore.ogg",
+      "music-world3-explore.mp3"
+    ],
+    "loop": true,
+    "volume": 0.85,
+    "credit": "Original composition and synthesis for Crabcraft",
+    "license": "Apache-2.0",
+    "source": "tools/art/world_music.py"
+  },
+  {
+    "id": "music-world3-combat",
+    "files": [
+      "music-world3-combat.ogg",
+      "music-world3-combat.mp3"
+    ],
+    "loop": true,
+    "volume": 0.85,
+    "credit": "Original composition and synthesis for Crabcraft",
+    "license": "Apache-2.0",
+    "source": "tools/art/world_music.py"
+  },
+  {
+    "id": "music-world3-boss",
+    "files": [
+      "music-world3-boss.ogg",
+      "music-world3-boss.mp3"
+    ],
+    "loop": true,
+    "volume": 0.85,
+    "credit": "Original composition and synthesis for Crabcraft",
+    "license": "Apache-2.0",
+    "source": "tools/art/world_music.py"
+  },
+  {
     "id": "music-breaking",
     "files": [
       "music-breaking.ogg",

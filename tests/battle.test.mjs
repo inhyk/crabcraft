@@ -189,3 +189,15 @@ test('sea drone warning and XP checkpoint reach friends once, including a late j
  const invalid=aa.snapshot();invalid.entities[0].seaCast={id:2,x:Infinity,y:.2,z:18,left:.9};bb.apply(invalid);assert.equal(rings.length,1);
  a.time+=1;aa.update(.1);flush();assert.equal(rings.length,1);
 });
+
+test('guest village start uses the authenticated ID, synchronizes state and cancels on disconnect',()=>{
+ const {a,b,aa,bb,flush}=pair();let requester='';
+ a.villageGames={state:null,request(id,mode){requester=id;this.state={id:'round-1',mode,phase:'ready',left:15,starter:id,seeker:id,members:['a','b'],caught:[],result:''}},reset(){this.state=null},get playing(){return !!this.state}};
+ b.villageGames={state:null,apply(s){this.state=s},reset(){this.state=null}};
+ bb.village('hide');flush();assert.equal(requester,'b');assert.equal(a.villageGames.state.seeker,'b');assert.deepEqual(b.villageGames.state,a.villageGames.state);
+ // Starting a room game cannot be used as a way to route PvP damage.
+ aa.mode='pvp';aa.setParty(0);bb.setParty(0);flush();const hp=b.player.unit.hp;b.villageGames.playing=true;bb.receive('a',{kind:'hit',target:'b',amount:50});assert.equal(b.player.unit.hp,hp);
+ // Local combat protection lives in Combat, independently of host/guest packet routing.
+ b.villageGames.playing=true;assert.equal(b.combat.damage(a.player.unit,b.player.unit,50),0);assert.equal(b.player.unit.hp,hp);
+ bb.leave();assert.equal(b.villageGames.state,null);
+});

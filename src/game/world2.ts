@@ -196,7 +196,7 @@ export class HiddenWorld {
     for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');
   }
   regionAt(x:number,z:number){
-    if(this.chapter===3)return z<-45?t('황혼 성채','Twilight Citadel'):z<12?t('새벽으로 오르는 길','The Dawn Ascent'):Math.abs(x)>45?t('잿빛 야자 해안','Ashen Palm Coast'):t('새벽 항구','Dawnharbor');
+    if(this.chapter===3)return z<-45?'Twilight Citadel':z<12?'The Dawn Ascent':x>52&&z>52?'Dawnwatch Lighthouse':x< -45&&z>25?'Seabreeze Gardens':Math.abs(x)>45?'Ashen Palm Coast':'Dawnharbor';
     if(Math.hypot(x,z+75)<24)return 'The Star Throne';
     if(Math.abs(x)<54&&z>3&&z<100)return 'Starhaven';
     if(x<-40)return 'Moonshade Crystalwood';
@@ -323,14 +323,14 @@ export class HiddenWorld {
   update(dt:number,time:number) {
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
     this.thirdGate.root.visible=!!this.game.journey?.trueCleared||this.game.creatorTravel;
-    if(this.chapter===3)this.third.update(time,!!this.game.journey?.finalCleared);
+    if(this.chapter===3)this.third.update(time,!!this.game.journey?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);
     if(!this.game.ending.active&&!this.game.controlsLocked){
       const distance=Math.hypot(this.game.player.unit.pos.x-this.portalPosition.x,this.game.player.unit.pos.z-this.portalPosition.z);
       if(distance>4.5)this.travelArmed=true;
       if(this.travelArmed&&distance<1.7&&this.game.time>this.travelAt){this.travelArmed=false;this.travelAt=this.game.time+3;this.travel();}
     }
     if(!this.rendered)return;
-    if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#c5a582');fog.density=.0045;}return;}
+    if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#a4b5c4');fog.density=.0025;}return;}
     const echo=this.game.enemies.find(e=>e.isEcho);
     if(echo&&this.game.multiplayer?.battle.authority!==false&&echo.state==='gone'&&time>this.echoAt&&!this.game.encounter.engaged){echo.home.set(0,this.height(0,-22),-22);echo.respawnAt(0,-22);this.echoAt=time+120;this.game.hud.messages.info(t('녹의 폭군의 잔영이 별길에 나타났어요!','An echo of the Rust Tyrant has appeared on the Starroad!'));}
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
@@ -394,6 +394,7 @@ export class HiddenWorld {
         if(o.customDepthMaterial)mats.add(o.customDepthMaterial);
       }
     });
+    const ownedTextures=new Set<THREE.Texture>();for(const m of mats){const map=(m as THREE.MeshStandardMaterial).map;if(map?.userData.islandPaving)ownedTextures.add(map);}for(const texture of ownedTextures)texture.dispose();
     this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
   }
 }
