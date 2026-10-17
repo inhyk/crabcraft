@@ -38,3 +38,22 @@ test('guest chapter appearance refresh does not resurrect or heal a mirrored dea
  game.world2.chapter=1;enemy.refreshAppearance();
  assert.equal(unit.baseTint,'#ff2a1a');assert.equal(unit.hp,0);assert.equal(unit.alive,false);assert.equal(enemy.state,'dead');
 });
+
+function jellyFight(){
+ const s=make('jellyfish'),{game,unit,enemy}=s;game.world2.chapter=1;game.controlsLocked=false;enemy.state='chase';unit.radius=.7;unit.height=2;unit.pos.set(0,-.5,0);unit.pushTime=0;unit.lift=0;
+ const target={kind:'player',alive:true,pos:new THREE.Vector3(0,-.5,3)};
+ unit.stunned=()=>false;unit.gapTo=()=>2;unit.distTo=p=>unit.pos.distanceTo(p.pos);unit.speedMul=()=>1;unit.feedLocomotion=()=>{};unit.setYaw=()=>{};unit.moveTo=(_w,x,z)=>unit.pos.set(x,-.5,z);unit.act=(_id,opts)=>{s.hit=opts.onHit;};
+ Object.assign(game,{combatTarget:()=>target,player:{unit:target,lineOfSight:()=>true},combat:{damage(){s.hits++;}},vfx:{ring(){s.warnings++;},sparks(){}},hud:{floats:{spawn(){}}}});
+ game.world.heightAt=()=>-.5;game.world.resolveCollision=(x,z,_r,out)=>out.set(x,z);s.hits=0;s.warnings=0;s.target=target;return s;
+}
+test('sea drone warns before electricity, respects its recovery and can be dodged',()=>{
+ const s=jellyFight();s.enemy.update(.016);assert.equal(s.warnings,1);assert.equal(s.hits,0);assert.equal(typeof s.hit,'function');
+ s.enemy.update(.016);assert.equal(s.warnings,1);s.target.pos.x=3;s.hit();assert.equal(s.hits,0);
+ s.game.time+=4;s.target.pos.x=0;s.enemy.update(.016);assert.equal(s.warnings,2);s.hit();assert.equal(s.hits,1);
+});
+test('dead or stunned sea drones cannot finish a pending electric attack',()=>{
+ for(const mode of ['dead','stunned']){const s=jellyFight();s.enemy.update(.016);if(mode==='dead')s.unit.alive=false;else s.unit.stunned=()=>true;s.hit();assert.equal(s.hits,0);}
+});
+test('sea drones stop at dry land rather than chasing the player onto the beach',()=>{
+ const s=jellyFight();s.unit.gapTo=()=>6;s.game.world.heightAt=()=>1;s.enemy.update(.1);assert.equal(s.unit.pos.x,0);assert.equal(s.unit.pos.z,0);assert.equal(s.enemy.state,'leash');
+});

@@ -1,3 +1,5 @@
+import {Account} from './account';
+import {storageKey,progressKey} from './accountStorage';
 // App shell: owns the engine, input, audio and UI root, and switches between screens.
 import { Engine, type QualitySetting } from './core/engine';
 import { Input } from './core/input';
@@ -23,6 +25,7 @@ const loaders: Record<ScreenId, () => Promise<{ default: new () => Screen }>> = 
 };
 
 export class App {
+  readonly account:Account;
   readonly engine: Engine;
   readonly input: Input;
   readonly audio: AudioManager;
@@ -51,6 +54,12 @@ export class App {
     this.audio = new AudioManager();
     this.engine.onAfterFrame(() => this.input.endFrame());
     this.engine.start();
+    this.account=new Account(this);
+    this.reloadSpec();
+  }
+
+  reloadSpec():void {
+    this.spec=null;
     const saved = localStorageGet('cc.spec');
     if (saved) {
       try {
@@ -89,7 +98,7 @@ export class App {
 
 export function localStorageGet(key: string): string | null {
   try {
-    return localStorage.getItem(key);
+    return localStorage.getItem(storageKey(key));
   } catch {
     return null;
   }
@@ -97,7 +106,9 @@ export function localStorageGet(key: string): string | null {
 
 export function localStorageSet(key: string, value: string): void {
   try {
-    localStorage.setItem(key, value);
+    const resolved=storageKey(key),changed=localStorage.getItem(resolved)!==value;
+    localStorage.setItem(resolved, value);
+    if(changed&&progressKey(key))window.dispatchEvent(new Event('cc-progress-saved'));
   } catch {
     /* private mode */
   }

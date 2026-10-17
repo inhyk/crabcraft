@@ -66,12 +66,16 @@ export class GameMenu {
     this.panel.replaceChildren(
       h('h2', { class: 'cc-title' }, t('게임 메뉴','Game Menu')),
       this.btn(t('계속하기','Resume'), () => this.close()),
+      this.btn(g.app.account.label,()=>g.app.account.show(),true),
+      this.btn(t('🏆 업적 · J','🏆 Achievements · J'),()=>this.achievements(),true),
       this.btn(t('설정','Settings'), () => this.settings(), true),
       this.btn(t('조작 방법','Controls'), () => this.controls(), true),
       this.btn(t('로봇 모드','Robot Mode'), () => void g.app.go('robot'), true),
       this.btn(t('처음 화면','Return to Title'), () => void g.app.go('title'), true),
     );
   }
+
+  achievements():void {this.panel.className='menu cc-panel hud-i achievement-menu';this.panel.replaceChildren(h('h2',{class:'cc-title'},t('항해와 모험의 업적','Voyage & Adventure Achievements')),this.game.achievements?.panel()??h('div'),this.btn(t('뒤로','Back'),()=>this.main(),true));}
 
   settings(): void {
     const g = this.game;
@@ -142,9 +146,10 @@ export class GameMenu {
     for (const [i,[k, what]] of CONTROLS.entries()) {
       const keys = h('td');
       for (const part of k.split(' / ')) keys.append(h('kbd', null, t(mouseKeys[part]??part,part)));
-      const description=k==='F'&&this.game.world2.chapter===2?t('대화·수정 채집·포탈 이용, 등불 앞에서 길게 누르기','Talk, gather crystals, use portals; hold at waystones'):k==='R'?t('두 번 눌러 로봇 모드 열기','Press twice to open Robot Mode'):t(ko[i],what);
+      const description=k==='Shift'?t('누르고 이동하면 빠르게 달리기','Hold while moving to sprint'):k==='G'?t('큰 지도 열기 / 닫기','Open / close the expanded map'):k==='F'&&this.game.world2.chapter===2?t('대화·수정 채집·포탈 이용, 등불 앞에서 길게 누르기','Talk, gather crystals, use portals; hold at waystones'):k==='R'?t('두 번 눌러 로봇 모드 열기','Press twice to open Robot Mode'):t(ko[i],what);
       table.append(h('tr', null, keys, h('td', null, description)));
     }
+    for(const [key,ko,en] of [['Shift','누르고 이동하면 빠르게 달리기','Hold while moving to sprint'],['G','큰 지도 열기 / 닫기','Open / close expanded map'],['T','2초 동안 꾹 눌러 현재 섬의 광장으로 돌아가기','Hold for 2 seconds to return to this island’s square']])table.append(h('tr',null,h('td',null,h('kbd',null,key)),h('td',null,t(ko,en))));
     this.panel.className = 'menu wide cc-panel hud-i';
     const guide=this.game.world2.chapter===2?h('section',{class:'controls-guide'},
       h('h3',null,t('별빛 항구 안내','Starhaven guide')),

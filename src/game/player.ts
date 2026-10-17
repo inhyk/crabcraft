@@ -50,6 +50,8 @@ export class Player {
   resource = 0;
   maxResource = 100;
   xp = 0;
+  coins = 0;
+  attackRank = 0;
   gcdStart = 0;
   gcdEnd = 0;
   readonly cooldowns = new Map<string, { start: number; end: number }>();
@@ -92,7 +94,7 @@ export class Player {
   }
 
   get dmgMul(): number {
-    return 1 + 0.12 * (this.unit.level - 1);
+    return (1 + 0.12 * (this.unit.level - 1)) * (1 + this.attackRank * .08);
   }
 
   get inCombat(): boolean {
@@ -218,7 +220,8 @@ export class Player {
       nx = u.pos.x;
       nz = u.pos.z;
     } else {
-      const sp = WALK_SPEED * u.speedMul(now);
+      const sprint = free && !stunned && moving && (inp.isDown('ShiftLeft') || inp.isDown('ShiftRight'));
+      const sp = WALK_SPEED * (sprint ? 1.65 : 1) * u.speedMul(now);
       let lx = strafe;
       let lz = fwd;
       const len = Math.hypot(lx, lz);
@@ -654,6 +657,24 @@ export class Player {
     u.express('happy', 2);
     g.hud.messages.banner(() => (t(`레벨 ${u.level}`,`Level ${u.level}`)),() => (t(`껍질이 더 단단해졌어요. 체력 ${oldMax} → ${u.maxHp}`,`Your shell hardens. Health ${oldMax} to ${u.maxHp}.`)),'level');
     g.hud.chat.system(t(`레벨 ${u.level}이 되었습니다!`,`Congratulations, you have reached level ${u.level}!`));
+  }
+
+  returnToSquare(): void {
+    const g = this.game;
+    const spawn = g.world.pois.spawn;
+    // Island arrival gates are at the docks; recall goes to the inhabited square.
+    const chapter = g.world2.chapter;
+    const x = chapter === 1 ? spawn.position.x : 0;
+    const z = chapter === 1 ? spawn.position.z : chapter === 2 ? 63 : 60;
+    this.velX = this.velZ = 0;
+    this.dash = null;
+    this.queued = null;
+    this.setTarget(null);
+    g.world2.resetPortalArrival();
+    this.unit.teleport(g.world, x, z, spawn.yaw);
+    g.follow.yaw = this.unit.yaw + Math.PI;
+    g.follow.cut();
+    g.vfx.mendGlow(this.unit);
   }
 
   respawn(): void {

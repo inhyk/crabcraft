@@ -109,13 +109,13 @@ Race lore (shown on the parchment):
 ## Classes
 
 Resource bar: Warrior uses **Rage** (red, builds on hitting and being hit), Mage and Priest use
-**Mana** (blue, regenerates). Global cooldown 1.0 s. Auto-attack for all classes.
+**Mana** (blue, regenerates). Global cooldown 1.0 s. Auto-attack for all classes. Every active ability has a personal cooldown measured from successful release; interrupted casts do not release an effect or start personal recovery.
 
 | Class | Weapon | 1 | 2 | 3 | 4 |
 |---|---|---|---|---|---|
-| Warrior | Sword in right claw, round shield in left | **Pincer Strike** - heavy hit, 10 rage | **Shell Bash** - stun 2 s, 15 rage, 8 s cd | **Sideways Charge** - dash to target, generates 15 rage, 12 s cd | **Whirlpool** - spinning AoE around you, 30 rage, 10 s cd |
-| Mage | Staff with a sea-glass orb in right claw | **Bubble Bolt** - ranged hit, 1.5 s cast | **Frost Spray** - cone, slows 50 % 4 s, 8 s cd | **Steam Blink** - teleport 8 m forward, 15 s cd | **Tidal Nova** - AoE burst, knockback, 20 s cd |
-| Priest | Censer / holy lantern in right claw, book in left | **Smite** - ranged holy hit, 1.5 s cast | **Mend Shell** - heal 35 % HP, 2 s cast | **Barnacle Ward** - absorb shield, 20 s cd | **Holy Tide** - AoE damage + heal self, 15 s cd |
+| Warrior | Sword in right claw, round shield in left | **Pincer Strike** - heavy hit, 10 rage, 3 s cd | **Shell Bash** - stun 2 s, 15 rage, 8 s cd | **Sideways Charge** - dash to target, generates 15 rage, 12 s cd | **Whirlpool** - spinning AoE around you, 30 rage, 10 s cd |
+| Mage | Staff with a sea-glass orb in right claw | **Bubble Bolt** - ranged hit, 1.5 s cast + 3 s cd | **Frost Spray** - cone, slows 50 % 4 s, 8 s cd | **Steam Blink** - teleport 8 m forward, 15 s cd | **Tidal Nova** - AoE burst, knockback, 20 s cd |
+| Priest | Censer / holy lantern in right claw, book in left | **Smite** - ranged holy hit, 1.5 s cast + 3 s cd | **Mend Shell** - heal 35 % HP, 2 s cast + 10 s cd | **Barnacle Ward** - absorb shield, 20 s cd | **Holy Tide** - AoE damage + heal self, 15 s cd |
 
 Class lore:
 

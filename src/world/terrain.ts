@@ -1,6 +1,7 @@
 // Heightfield terrain: shaped from the layout (coast, headland, hills, plazas, lots, roads),
 // rendered as one mesh with a splat-painted stylised material (grass, sand, dirt, cobble, rock).
 import * as THREE from 'three';
+import {islandDistance,islandHeight} from './voyage';
 import { clamp, lerp, Simplex, smoothstep } from './noise';
 import {
   COAST,
@@ -103,6 +104,7 @@ export class Terrain {
 
   /** Natural land before plazas, lots and roads. */
   private natural(x: number, z: number, d: number): number {
+    const island=islandHeight(x,z);if(island!==null)return island;
     const N = this.noise;
     let h: number;
     if (d < 0) {
@@ -159,7 +161,7 @@ export class Terrain {
       for (let i = 0; i < nx; i++) {
         const x = minX + i * step;
         const k = j * nx + i;
-        const d = polySignedDist(x, z, COAST);
+        const d = Math.max(polySignedDist(x, z, COAST),islandDistance(x,z));
         coast[k] = d;
         h[k] = this.natural(x, z, d);
       }

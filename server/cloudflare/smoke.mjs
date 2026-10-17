@@ -32,7 +32,7 @@ try {
  a.ws.close();await c.next('left');let authority;do{authority=await c.next('authority');}while(authority.host!==rejoined.id);
  late.send({type:'combat',event:{kind:'environment',target:'world',environment:{mood:1,beacon:true}}});assert.deepEqual((await c.next('combat')).event.environment,{mood:1,beacon:true});
  c.send({type:'world',world:{...world,rust:true}});assert.equal((await late.next('world')).world.rust,true);
- late.send({type:'combat',event:{kind:'chapter',target:'world'}});assert.equal((await c.next('combat')).event.kind,'chapter');
+ late.send({type:'combat',event:{kind:'chapter',target:'world',chapter:2}});assert.equal((await c.next('combat')).event.kind,'chapter');
  const chapter2={...world,chapter:2,firstEnding:true,rust:true,abyss:true,trueCleared:true,entities:world.entities.map(e=>({...e,level:20})),bosses:world.bosses.map(b=>({...b,state:'dead',mech:null}))};
  c.send({type:'world',world:chapter2});const shared=await late.next('world');assert.equal(shared.world.chapter,2);assert.equal(shared.world.trueCleared,true);assert.equal(shared.world.entities[0].level,20);
  const finalJoin=await connect('join',r.room);assert.deepEqual((await finalJoin.next('welcome')).world,chapter2);

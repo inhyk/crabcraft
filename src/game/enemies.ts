@@ -5,8 +5,9 @@ import type { Game } from './game';
 import type { Unit } from './unit';
 import { C } from './vfx/vfx';
 import { damp, rand, TAU, turnToward, yawTo } from './util';
+import {t} from '../i18n';
 
-export type EnemyKind = 'scrapling' | 'scavenger';
+export type EnemyKind = 'scrapling' | 'scavenger' | 'jellyfish';
 
 interface Stats {
   name: string;
@@ -22,12 +23,13 @@ interface Stats {
 }
 
 export const ENEMY_STATS: Record<EnemyKind, Stats> = {
+  jellyfish: {name:'Tide Jelly Drone',level:2,hp:85,speed:2.6,aggro:9,dmg:[6,9],swing:3.8,xp:45,leash:20,respawn:40},
   scrapling: { name: 'Scrapling', level: 1, hp: 42, speed: 4.0, aggro: 8.5, dmg: [4, 6], swing: 2.0, xp: 20, leash: 30, respawn: 30 },
   scavenger: { name: 'Rustclaw Scavenger', level: 2, hp: 105, speed: 4.3, aggro: 11, dmg: [7, 10], swing: 2.2, xp: 50, leash: 32, respawn: 45 },
 };
 
 /** LED eye colours (design: Scraplings have one red eye; Scavengers glow amber). */
-const LED: Record<EnemyKind, string> = { scrapling: '#ff2a1a', scavenger: '#ffb020' };
+const LED: Record<EnemyKind, string> = { scrapling: '#ff2a1a', scavenger: '#ffb020',jellyfish:'#68f0df' };
 
 const v1 = new THREE.Vector3();
 const frustum = new THREE.Frustum();
@@ -41,6 +43,8 @@ export class Enemy {
   pack: Enemy[] = [];
   /** Boss adds never respawn. */
   isAdd = false;
+  isEcho = false;
+  seaCast: { id:number; x:number; y:number; z:number; until:number } | null = null;
   private nextSwing = 0;
   private wanderAt = 0;
   private wander: THREE.Vector3 | null = null;
@@ -140,9 +144,11 @@ export class Enemy {
   update(dt: number): void {
     const g = this.game;
     const u = this.unit;
+    if(this.isEcho&&(g.world2?.chapter!==2||this.state==='gone'))return;
     const now = g.time;
     const p = g.combatTarget?.(u) ?? g.player.unit;
     if (this.state === 'gone') return;
+    if(this.kind==='jellyfish')u.name=t('심해 해파리 드론','Tide Jelly Drone');
     if (this.state === 'idle' && u.hp >= u.maxHp && u.distTo(p) > 20) this.scaleForJourney();
 
     if (this.state === 'dead') {
@@ -157,7 +163,7 @@ export class Enemy {
       }
       if (!this.isAdd && t > this.stats.respawn && this.canRespawnUnseen()) {
         const a = rand(0, TAU);
-        const r = rand(0, this.wanderRadius * 0.7);
+        const r = this.kind==='jellyfish'?0:rand(0, this.wanderRadius * 0.7);
         this.respawnAt(this.home.x + Math.cos(a) * r, this.home.z + Math.sin(a) * r);
       }
       return;
@@ -211,15 +217,25 @@ export class Enemy {
       } else {
         const gap = u.gapTo(p);
         faceYaw = yawTo(u.pos.x, u.pos.z, p.pos.x, p.pos.z);
-        if (gap > 0.9) {
+        if (gap > (this.kind==='jellyfish'?3.5:.9)) {
           const d = u.distTo(p) || 1;
           tx = (p.pos.x - u.pos.x) / d;
           tz = (p.pos.z - u.pos.z) / d;
           speed = this.stats.speed;
         }
-        if (this.kind === 'scavenger' && !stunned && now > this.leapCd && gap > 3.5 && gap < 10 && g.player.lineOfSight(u)) {
+        if(this.kind==='jellyfish'&&!stunned&&gap<5&&now>=this.nextSwing&&g.player.lineOfSight(u)){
+          this.nextSwing=now+this.stats.swing;
+          const at=p.pos.clone();at.y=Math.max(.2,g.world.heightAt(at.x,at.z)+.28);
+          this.seaCast={id:(this.seaCast?.id??0)+1,x:at.x,y:at.y,z:at.z,until:now+.9};
+          g.vfx.ring(at,C.water,1.7,1.7,.9,.85,0);
+          u.act('attack_swipe',{upper:true,hitAt:.9,onHit:()=>{
+            if(!u.alive||!p.alive||u.stunned(g.time)||g.world2.chapter!==1||u.distTo(p)>9)return;
+            g.vfx.sparks(at,C.water,14,4);
+            if(Math.hypot(p.pos.x-at.x,p.pos.z-at.z)<1.7)g.combat.damage(u,p,rand(this.stats.dmg[0],this.stats.dmg[1]));
+          }});
+        } else if (this.kind === 'scavenger' && !stunned && now > this.leapCd && gap > 3.5 && gap < 10 && g.player.lineOfSight(u)) {
           this.startLeap();
-        } else if (!stunned && gap <= 1.15 && now >= this.nextSwing) {
+        } else if (this.kind!=='jellyfish' && !stunned && gap <= 1.15 && now >= this.nextSwing) {
           this.nextSwing = now + this.stats.swing * rand(0.9, 1.1);
           u.act('attack_swipe', {
             upper: true,
@@ -260,6 +276,12 @@ export class Enemy {
       nx += u.pushX * dt;
       nz += u.pushZ * dt;
     }
+    // Sea drones stay in reachable water and never pursue a player onto dry land.
+    if(this.kind==='jellyfish'&&g.world2.chapter===1){
+      const resolved=new THREE.Vector2();g.world.resolveCollision(nx,nz,u.radius,resolved);
+      const depth=g.world.heightAt(resolved.x,resolved.y);
+      if(depth>-.08||depth<-.95||Math.hypot(resolved.x-this.home.x,resolved.y-this.home.z)>this.stats.leash){nx=u.pos.x;nz=u.pos.z;if(this.state==='chase'){this.state='leash';u.invulnerable=true;}else if(this.state==='leash'){nx=this.home.x;nz=this.home.z;this.state='idle';u.invulnerable=false;u.hp=u.maxHp;this.velX=this.velZ=0;}this.wander=null;}
+    }
     u.moveTo(g.world, nx, nz, dt);
     if (faceYaw !== null && !stunned) u.setYaw(turnToward(u.yaw, faceYaw, 7, dt));
     u.feedLocomotion(dt);
@@ -268,6 +290,7 @@ export class Enemy {
   private startLeap(): void {
     const g = this.game;
     const u = this.unit;
+    if(this.isEcho&&(g.world2?.chapter!==2||this.state==='gone'))return;
     const p = g.combatTarget?.(u) ?? g.player.unit;
     const d = u.distTo(p) || 1;
     const back = (u.radius + p.radius + 0.2) / d;
@@ -289,6 +312,7 @@ export class Enemy {
   private updateLeap(dt: number): void {
     const g = this.game;
     const u = this.unit;
+    if(this.isEcho&&(g.world2?.chapter!==2||this.state==='gone'))return;
     const l = this.leap!;
     const dur = 0.75;
     l.t += dt;
@@ -311,9 +335,10 @@ export class Enemy {
 
   private scaleForJourney(): void {
     const base = ENEMY_STATS[this.kind];
-    const inWorld2=this.game.world2?.chapter===2&&!this.isAdd;
+    if(this.isEcho){this.applyStats(Math.max(10,this.game.partyLevel));this.unit.level=this.stats.level;this.unit.maxHp=this.unit.hp=this.stats.hp;return;}
+    const inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
     const scaling=!this.isAdd&&(inWorld2||this.game.journey?.rustCleared);
-    const level = scaling ? Math.max(inWorld2 ? 10 : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0)) : base.level;
+    const level = scaling ? Math.max(inWorld2 ? (this.game.world2.chapter===3?20:10) : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0)) : base.level;
     if (this.stats.level === level && this.stats.respawn === (inWorld2 ? 12 : base.respawn)) return;
     this.applyStats(level);
     this.unit.level=level;
@@ -321,13 +346,14 @@ export class Enemy {
   }
 
   private applyStats(level:number): void {
-    const base=ENEMY_STATS[this.kind],inWorld2=this.game.world2?.chapter===2&&!this.isAdd;
+    const base=ENEMY_STATS[this.kind],inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
     const scale=1+.12*(level-base.level);
+    if(this.isEcho){Object.assign(this.stats,{level,hp:Math.round(500*scale),xp:350+level*10,respawn:120,speed:2.8,aggro:10,leash:24,dmg:[14+level,18+level]});return;}
     Object.assign(this.stats,{level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:inWorld2?12:base.respawn,dmg:[base.dmg[0]*scale,base.dmg[1]*scale]});
   }
 
   refreshAppearance(): void {
-    this.unit.setBaseTint(this.game.world2?.chapter===2 ? '#b08cff' : LED[this.kind]);
+    this.unit.setBaseTint((this.game.world2?.chapter??1)>=2 ? '#b08cff' : LED[this.kind]);
   }
 
   private canRespawnUnseen(): boolean {

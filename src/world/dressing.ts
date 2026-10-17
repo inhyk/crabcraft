@@ -377,6 +377,7 @@ export function buildDressing(
     [133, 29, 1.2],
   ] as [number, number, number][]) {
     const b = new THREE.Mesh(boatGeo, R() < 0.5 ? boatMat : boatTrim);
+    if(bx===149)b.name='shore-rideable-rowboat';
     b.position.set(bx, 0.15, bz);
     b.rotation.set(0, r + Math.PI / 2, 0.04);
     b.castShadow = b.receiveShadow = true;

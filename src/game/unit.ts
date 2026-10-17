@@ -7,7 +7,7 @@ import type { MotionController, MotionId } from '../motion/types';
 import type { World } from '../world/types';
 import { angleDiff, clamp, damp } from './util';
 
-export type UnitKind = 'player' | 'remote' | 'npc' | 'townsfolk' | 'scrapling' | 'scavenger' | 'boss' | 'freed';
+export type UnitKind = 'player' | 'remote' | 'npc' | 'townsfolk' | 'scrapling' | 'scavenger' | 'jellyfish' | 'boss' | 'freed';
 export type Reaction = 'hostile' | 'friendly' | 'neutral' | 'player';
 
 const tmpV = new THREE.Vector3();

@@ -26,6 +26,9 @@ export class Multiplayer {
   private disposed = false;
   private elapsed = 0;
   private partyElapsed=0;
+  private partyKey='';
+  private socialKey='';
+  private readonly peerGoal=new THREE.Vector3();
   private retry: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
   private rejoinParty: number | null = null;
@@ -66,7 +69,7 @@ export class Multiplayer {
     // Opening a form clears held movement keys. Typing never controls the crab.
     this.root.addEventListener('focusin', () => window.dispatchEvent(new Event('blur')));
     this.root.addEventListener('keydown', e => e.stopPropagation());
-    game.hud.sidePanels.prepend(this.root);
+    game.hud.tracker.el.after(this.root);
     game.player.unit.onAction = action => this.send({ type: 'action', action });
     game.player.unit.onBreakdanceStop = () => this.send({ type: 'action', action: 'breakdance_stop' });
     this.refreshLanguage();
@@ -174,15 +177,14 @@ export class Multiplayer {
       const u = this.game.player.unit;
       this.send({ type: 'state', state: { x: u.pos.x, y: u.pos.y, z: u.pos.z, yaw: u.yaw, hp: u.hp, maxHp: u.maxHp, alive: u.alive, level: u.level } });
     }
-    for (const p of this.peers.values()) {
+    for (const [id,p] of this.peers) {
       const u = p.unit, s = p.state;
       if (!u || !s) continue;
       u.hidden = false;
-      const id=[...this.peers].find(([,peer])=>peer===p)![0];
       const rival=this.battle.mode==='pvp'&&!this.battle.sameParty(this.ownId,id);
       u.reaction=rival?'hostile':'friendly';u.targetable=rival;u.invulnerable=!rival;
       u.title=`${rival?t('대전 상대','Rival'):t('친구','Friend')} · ${t('파티','Party')} ${this.battle.partyOf(id)||'—'}`;
-      const goal = new THREE.Vector3(s.x, s.y, s.z);
+      const goal = this.peerGoal.set(s.x, s.y, s.z);
       const k = u.pos.distanceToSquared(goal) > 100 ? 1 : 1 - Math.exp(-18 * dt);
       u.pos.lerp(goal, k);
       const angle = Math.atan2(Math.sin(s.yaw - u.yaw), Math.cos(s.yaw - u.yaw));
@@ -194,13 +196,22 @@ export class Multiplayer {
     }
     this.battle.update(dt);
     this.partyElapsed+=dt;
-    if(this.partyElapsed>=.25){this.partyElapsed=0;this.updateSocialButtons();this.partyPanel.replaceChildren(
-      h('strong',null,this.battle.mode==='pvp'?t('⚔ 싸우기 모드 · 같은 파티는 공격하지 않아요','⚔ PvP · teammates are protected'):t('🤝 협동 모드 · 모두 함께 모험해요','🤝 Co-op · adventure together')),
-      ...[{id:this.ownId,name:this.game.player.unit.name,unit:this.game.player.unit},...[...this.peers].map(([id,p])=>({id,name:p.spec.name,unit:p.unit}))].map(p=>{
-        const hp=p.unit?.hp??0,max=p.unit?.maxHp??1,party=this.battle.partyOf(p.id);
-        return h('div',{class:`mp-member party-${party}`},h('span',null,`${party?`${t('파티','Party')} ${party}`:t('개인','Solo')} · ${p.name}`),h('meter',{min:0,max,value:hp}),h('small',null,`${Math.ceil(hp)} / ${Math.ceil(max)}`));
-      }));}
+    if(this.partyElapsed>=.25){this.partyElapsed=0;this.updateSocialButtons();this.updatePartyPanel();}
+  }
 
+  private updatePartyPanel(){
+    const heading=this.battle.mode==='pvp'?t('⚔ 싸우기 모드 · 같은 파티는 공격하지 않아요','⚔ PvP · teammates are protected'):t('🤝 협동 모드 · 모두 함께 모험해요','🤝 Co-op · adventure together');
+    const members=[{id:this.ownId,name:this.game.player.unit.name,unit:this.game.player.unit},...[...this.peers].map(([id,p])=>({id,name:p.spec.name,unit:p.unit}))].map(p=>({
+      id:p.id,name:p.name,hp:p.unit?.hp??0,max:p.unit?.maxHp??1,party:this.battle.partyOf(p.id),
+    }));
+    // Keep the existing nodes while their displayed state is unchanged. In particular,
+    // an idle room must not rebuild all health meters four times every second.
+    const partyLabel=t('파티','Party'),soloLabel=t('개인','Solo');
+    const key=JSON.stringify([heading,partyLabel,soloLabel,members]);
+    if(key===this.partyKey)return;
+    this.partyKey=key;
+    this.partyPanel.replaceChildren(h('strong',null,heading),...members.map(p=>
+      h('div',{class:`mp-member party-${p.party}`},h('span',null,`${p.party?`${partyLabel} ${p.party}`:soloLabel} · ${p.name}`),h('meter',{min:0,max:p.max,value:p.hp}),h('small',null,`${Math.ceil(p.hp)} / ${Math.ceil(p.max)}`))));
   }
 
   mapParty(unit:Unit):{party:number;teammate:boolean}|null{
@@ -253,6 +264,9 @@ export class Multiplayer {
     this.setStatus(...this.statusText);this.updateUi();this.updateSocialButtons();
   }
   private updateSocialButtons(){
+    const key=JSON.stringify([t('파티','Party'),this.battle.active,this.battle.authority,this.game.encounter.engaged,!!this.room,this.battle.mode,this.battle.partyOf(this.ownId)]);
+    if(key===this.socialKey)return;
+    this.socialKey=key;
     for(const button of this.root.querySelectorAll<HTMLButtonElement>('[data-mode]')){
       const mode=button.dataset.mode!;button.textContent=mode==='coop'?t('협동 모드','Co-op'):t('⚔ 싸우기 모드','⚔ PvP');
       button.disabled=!this.battle.active||!this.battle.authority||this.game.encounter.engaged;

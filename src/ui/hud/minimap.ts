@@ -1,5 +1,6 @@
 // Round minimap (top right). The zone picture is a top-down render of the world made at load;
 // the map turns with the camera so "up" is always where you are looking.
+import {CORAL_ISLAND} from '../../world/voyage';
 import { h } from '../dom';
 import {t} from '../../i18n';
 import type { Game } from '../../game/game';
@@ -25,6 +26,12 @@ export class Minimap {
   private zoneEl: HTMLElement;
   private northEl: HTMLElement;
   private snap: MapSnapshot | null = null;
+  expanded = false;
+  private expandedRadius = 200;
+  private compactRadius = 52;
+  private expandButton: HTMLButtonElement;
+  private mapHelp: HTMLElement;
+  private mapControls: HTMLElement;
   private acc = 0;
   /** World units from centre to rim. */
   radius = 52;
@@ -37,16 +44,51 @@ export class Minimap {
     this.ctx = this.canvas.getContext('2d')!;
     this.zoneEl = h('div', { class: 'mm-zone' }, 'Clawhaven');
     this.northEl = h('div', { class: 'mm-n' }, 'N');
-    const ring = h('div', { class: 'mm-ring hud-i', title: 'Mouse wheel over the map to zoom' }, this.canvas, this.northEl);
+    const ring = h('div', { class: 'mm-ring hud-i' }, this.canvas, this.northEl);
+    this.expandButton=h('button',{class:'mm-expand hud-i',type:'button'},'');
+    this.expandButton.addEventListener('click',()=>this.toggle());
+    const zoomIn=h('button',{type:'button','aria-label':t('지도 확대','Zoom in')},'+');
+    const zoomOut=h('button',{type:'button','aria-label':t('지도 축소','Zoom out')},'−');
+    zoomIn.addEventListener('click',()=>this.zoom(1/1.25));zoomOut.addEventListener('click',()=>this.zoom(1.25));
+    this.mapControls=h('div',{class:'mm-controls hud-i'},zoomOut,zoomIn);
+    this.mapHelp=h('div',{class:'mm-help'},'');
     ring.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.radius = Math.max(25, Math.min(110, this.radius * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
+      this.zoom(e.deltaY > 0 ? 1.15 : 1/1.15);
     }, { passive: false });
-    this.el = h('div', { class: 'mm' }, this.zoneEl, ring);
+    this.el = h('div', { class: 'mm' }, this.zoneEl, ring, this.expandButton, this.mapControls, this.mapHelp);
+    this.refreshLanguage();
   }
 
   setSnapshot(s: MapSnapshot): void {
     this.snap = s;
+    this.expandedRadius=s.size*.72;
+    if(this.expanded)this.radius=this.expandedRadius;
+  }
+
+  toggle(force = !this.expanded): void {
+    if(force===this.expanded)return;
+    if(force&&(this.game.cinematic||this.game.ending.active||!this.game.player.unit.alive))return;
+    if(force){this.compactRadius=this.radius;this.radius=this.expandedRadius;}
+    else {this.expandedRadius=this.radius;this.radius=this.compactRadius;}
+    this.expanded=force;
+    this.el.classList.toggle('expanded',force);
+    this.canvas.width=this.canvas.height=Math.round((force?760:this.size)*this.dpr);
+    this.acc=1;this.refreshLanguage();this.update(0);
+    this.expandButton.focus({preventScroll:true});
+  }
+
+  private zoom(factor: number): void {
+    this.radius=Math.max(this.expanded?40:25,Math.min(this.expanded?450:110,this.radius*factor));
+    this.acc=1;
+  }
+
+  refreshLanguage(): void {
+    this.expandButton.textContent=this.expanded?t('지도 닫기 · G / Esc','Close map · G / Esc'):t('지도 크게 · G','Expand map · G');
+    this.expandButton.setAttribute('aria-expanded',String(this.expanded));
+    this.mapHelp.textContent=t('★ 퀘스트   ◇ 플레이어   ○ 포탈   ● 보스 · 휠 / + − 확대·축소','★ Quest   ◇ Players   ○ Portal   ● Boss · Wheel / + − to zoom');
+    const buttons=this.mapControls.querySelectorAll('button');
+    buttons[0].setAttribute('aria-label',t('지도 축소','Zoom out'));buttons[1].setAttribute('aria-label',t('지도 확대','Zoom in'));
   }
 
   setZone(name: string, combat: boolean): void {
@@ -55,16 +97,21 @@ export class Minimap {
   }
 
   update(dt: number): void {
+    if(this.expanded&&(this.game.cinematic||this.game.ending.active||!this.game.player.unit.alive))this.toggle(false);
     this.acc += dt;
     if (this.acc < 1 / 30) return;
     this.acc = 0;
     const g = this.game;
     const c = this.ctx;
+    const mapSize=this.expanded?Math.max(100,Math.floor(window.innerWidth<=760?Math.min(window.innerWidth*.75,window.innerHeight-210):Math.min(window.innerWidth*.74,window.innerHeight-205,760))):this.size;
+    const pixels=Math.round(mapSize*this.dpr);
+    if(this.canvas.width!==pixels)this.canvas.width=this.canvas.height=pixels;
     const S = this.canvas.width;
     const half = S / 2;
     const scale = half / this.radius;
-    const p = g.player.unit.pos;
-    const a = g.follow.forwardYaw;
+    const playerPos = g.player.unit.pos;
+    const p = this.expanded&&this.snap?{x:this.snap.minX+this.snap.size/2,z:this.snap.minZ+this.snap.size/2}:playerPos;
+    const a = this.expanded?Math.PI:g.follow.forwardYaw;
     const fx = Math.sin(a);
     const fz = Math.cos(a);
     const rx = -Math.cos(a);
@@ -109,7 +156,7 @@ export class Minimap {
     // POIs
     c.font = `600 ${10 * d}px Georgia, serif`;
     c.textAlign = 'center';
-    const icons:ReturnType<typeof shorePoiIcons>=g.world2?.chapter===2?{
+    const icons:ReturnType<typeof shorePoiIcons>=g.world2?.chapter===3?{forge:{label:t('대장간','Forge'),color:'#ffb36b'},tavern:{label:t('항구 광장','Harbor Square'),color:'#ffc995'},shore:{label:t('야자 해안','Palm Coast'),color:'#90e6d4'},wreck:{label:t('파수병 주둔지','Sentinel Camp'),color:'#e4a181'},bossArena:{label:t('황혼 성채','Twilight Citadel'),color:'#ffd58a'}}:g.world2?.chapter===2?{
       forge:{label:t('대장간','Forge'),color:'#ffb36b'},chapel:{label:t('성소','Chapel'),color:'#f6e0a1'},tavern:{label:t('주점','Tavern'),color:'#ffc995'},grove:{label:t('연못','Moonpool'),color:'#bbadff'},shore:{label:t('수정 숲','Crystalwood'),color:'#90e6d4'},wreck:{label:t('유적','Ruins'),color:'#a49eda'},bossArena:{label:t('왕좌','Throne'),color:'#d3a6ff'}
     }:shorePoiIcons();
     for (const [id, info] of Object.entries(icons)) {
@@ -134,6 +181,11 @@ export class Minimap {
       const lx = Math.min(Math.max(x, half - chord + w / 2), half + chord - w / 2);
       c.strokeText(info!.label, lx, ly);
       c.fillText(info!.label, lx, ly);
+    }
+    if(g.world2.chapter===1){
+      for(const [wx,wz,label,color] of [[CORAL_ISLAND.x,CORAL_ISLAND.z,t('산호바람 섬','Coralwind Isle'),'#8bffe0'],[g.boats?.state.x??151,g.boats?.state.z??18.5,t('배','Skiff'),'#ffd58b']] as [number,number,string,string][]){
+        const [x,y]=toScreen(wx,wz);if(Math.hypot(x-half,y-half)>half-22*d)continue;c.fillStyle=color;c.strokeStyle='#10202b';c.lineWidth=3*d;c.beginPath();c.arc(x,y,4*d,0,Math.PI*2);c.fill();c.stroke();c.strokeText(label,x,y-9*d);c.fillText(label,x,y-9*d);
+      }
     }
     // The two-way portal remains visible while quest and party markers change.
     const portal=g.world2.portalPosition,[portalX,portalY]=toScreen(portal.x,portal.z);
@@ -230,7 +282,8 @@ export class Minimap {
     const vy = -(Math.sin(py) * fx + Math.cos(py) * fz);
     const ang = Math.atan2(vy, vx);
     c.save();
-    c.translate(half, half);
+    const [playerX,playerY]=toScreen(playerPos.x,playerPos.z);
+    c.translate(playerX, playerY);
     c.rotate(ang + Math.PI / 2);
     c.fillStyle = '#ffe9a0';
     c.strokeStyle = '#1a1000';

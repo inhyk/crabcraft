@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { createAtlas, Sprite } from './atlas';
 import { FxPool, type Fx } from './effects';
+import {conformTelegraph} from './telegraphGround';
 import { ParticleSystem, type EmitOptions } from './particles';
 import type { Unit } from '../unit';
 import { hdr, rand, TAU } from '../util';
@@ -83,7 +84,7 @@ export class Vfx {
   /** Quality scales particle counts. */
   density = 1;
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, private readonly groundHeight?: (x: number, z: number) => number) {
     this.atlas = createAtlas();
     this.add = new ParticleSystem(5000, true, this.atlas);
     this.alpha = new ParticleSystem(2500, false, this.atlas);
@@ -794,9 +795,7 @@ export class Vfx {
     });
     (fx.u.uColor.value as THREE.Color).copy(color);
     (fx.u.uParam.value as THREE.Vector4).x = Math.PI;
-    fx.mesh.position.set(at.x, at.y + 0.07, at.z);
-    this.layDecal(fx, 0, ground);
-    fx.mesh.scale.set(radius, 1, radius);
+    this.placeTelegraph(fx, at, 0, radius, radius, ground);
     return fx;
   }
 
@@ -807,10 +806,36 @@ export class Vfx {
     });
     (fx.u.uColor.value as THREE.Color).copy(color);
     (fx.u.uParam.value as THREE.Vector4).x = half;
-    fx.mesh.position.set(at.x, at.y + 0.08, at.z);
-    this.layDecal(fx, yaw, ground);
-    fx.mesh.scale.set(range, 1, range);
+    this.placeTelegraph(fx, at, yaw, range, range, ground);
     return fx;
+  }
+
+  telegraphLane(at: THREE.Vector3, yaw: number, halfLength: number, halfWidth: number, dur: number, color = N.ember): Fx {
+    const fx = this.fx.spawn('decal', dur, (f, _dt, k) => {
+      f.u.uProgress.value = k;
+      f.u.uAlpha.value = dur < 0.6 ? 1-k : Math.min(1, f.t*6);
+    });
+    (fx.u.uColor.value as THREE.Color).copy(color);
+    (fx.u.uParam.value as THREE.Vector4).y = 1;
+    this.placeTelegraph(fx, at, yaw, halfWidth, halfLength);
+    return fx;
+  }
+
+  private placeTelegraph(fx: Fx, at: THREE.Vector3, yaw: number, width: number, length: number, ground?: THREE.Vector3): void {
+    fx.mesh.position.copy(at);
+    fx.mesh.rotation.set(0, yaw, 0);
+    fx.mesh.scale.set(width, 1, length);
+    if (this.groundHeight) {
+      // Geometry belongs to this pooled instance and is reused, never allocated per frame.
+      if (!fx.mesh.userData.telegraphGeometry) {
+        fx.mesh.geometry = new THREE.PlaneGeometry(2, 2, 32, 32).rotateX(Math.PI/2);
+        fx.mesh.userData.telegraphGeometry = true;
+      }
+      conformTelegraph(fx.mesh.geometry, at, yaw, width, length, this.groundHeight);
+    } else {
+      fx.mesh.position.y += 0.28;
+      this.layDecal(fx, yaw, ground);
+    }
   }
 
   /** Pooled decals are reused: set the whole rotation, tilted onto the ground's plane if given. */

@@ -19,3 +19,7 @@
 .boss-journey[hidden]{display:none!important}.creator-tools{left:335px;width:280px;z-index:60}.creator-tools button{display:block;width:100%;margin:7px 0}.creator-tools p{color:#b5c8dc}@media(max-width:700px){.creator-tools{left:10px;top:200px}}
 
 @media(min-width:640px) and (max-width:900px){.boss-journey{left:18px;top:100px;width:270px;padding:8px 12px}.boss-journey[open]{max-height:calc(100dvh - 235px)}.creator-tools{left:300px;width:calc(100vw - 510px);min-width:180px;top:100px}}
+
+.coin-wallet{position:relative;align-self:flex-end;flex-shrink:0;max-width:100%;box-sizing:border-box;border:1px solid #ae8d49;border-radius:20px;background:#151e25e8;color:#ffe6a0;padding:7px 14px;font:600 12px var(--font-body);pointer-events:none}.coin-wallet[hidden]{display:none}@media(max-width:900px){.coin-wallet{font-size:10px;padding:5px 9px}}
+
+.bj-card.dawn{border-color:#efb15c99;background:radial-gradient(ellipse at top right,#ad5e2966,transparent 80%),#292027}.dawn .bj-badge{border-color:#ffd07c;background:#55351d;color:#ffe4ae}.dawn h3{color:#ffe1a3}.dawn button{background:linear-gradient(#7a4925,#392716);border-color:#dfac65;color:#ffe5b8}

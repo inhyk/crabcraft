@@ -2,6 +2,7 @@ import {t} from '../i18n';
 
 // Stable region keys also drive music and travel logic. Translate only their presentation.
 const REGIONS:Record<string,readonly [string,string,string]>={
+  'Coralwind Isle':['산호바람 섬','바다를 건너 찾은 진주빛 쉼터','A pearl-lit refuge across the sea'],
   'Clawhaven':['클로헤이븐','여섯 종족이 함께 사는 항구 마을','Harbour town of six peoples'],
   'The Brine Shore':['소금물 해안','고철벌레들이 기어 다니는 해변','Where the Scraplings crawl'],
   'Saltmere Lighthouse':['솔트미어 등대','밤을 밝히는 해안의 길잡이','A guiding light for the shore'],

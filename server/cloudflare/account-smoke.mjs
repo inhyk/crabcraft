@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import {randomBytes} from 'node:crypto';
+const base=process.env.CC_ACCOUNT_BASE??'http://127.0.0.1:8795',origin=process.env.CC_ACCOUNT_ORIGIN??'http://127.0.0.1:5205';
+const username='qa_'+randomBytes(6).toString('hex'),password=randomBytes(20).toString('base64url');
+const spec={race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name:'Account QA'};
+const save={'cc.spec':JSON.stringify(spec),['cc.journey.v1:human:male:mage:Account QA']:JSON.stringify({xp:137,coins:73,chapter:1})};
+async function api(action,body,cookie='',extra={}){const r=await fetch(base+'/api/account/'+action,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-Crabcraft-Account':'1',Origin:origin,...(cookie?{Cookie:cookie}:{}),...extra},...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]??'',headers:r.headers};}
+let a=await api('session');assert.equal(a.status,401);
+a=await api('signup',{username,password,save});assert.equal(a.status,200);assert.equal(a.data.username,username);assert.deepEqual(a.data.save,save);assert.ok(a.cookie.length>64);const cookie=a.cookie;
+assert.match(a.headers.get('set-cookie'),/HttpOnly/);assert.match(a.headers.get('set-cookie'),/SameSite=Strict/);assert.match(a.headers.get('cache-control'),/no-store/);
+assert.equal((await api('signup',{username,password,save})).status,409);
+assert.equal((await api('login',{username,password:randomBytes(20).toString('hex')})).status,401);
+const login=await api('login',{username:username.toUpperCase(),password});assert.equal(login.status,200);assert.deepEqual(login.data.save,save);
+assert.equal((await api('session',undefined,cookie.slice(0,-1)+'z')).status,401);
+const modified={...save,[Object.keys(save)[1]]:JSON.stringify({xp:246,coins:99,chapter:1})};
+const concurrent=await Promise.all([api('save',{revision:0,save:modified},cookie),api('save',{revision:0,save},login.cookie)]);assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,409]);
+const after=await api('session',undefined,cookie);assert.equal(after.data.revision,1);
+assert.equal((await api('save',{revision:1,save:{'cc.spec':'null'}},cookie)).status,400);
+assert.equal((await api('save',{revision:1,save:{'cc.musicVol':'1'}},cookie)).status,400);
+assert.equal((await api('save',{revision:1,save},cookie,{Origin:'https://untrusted.example'})).status,403);
+assert.equal((await api('save',{revision:1,save},cookie,{'X-Crabcraft-Account':''})).status,403);
+const other=await api('signup',{username:username+'_b',password,save:{}});assert.equal(other.status,200);assert.deepEqual((await api('session',undefined,other.cookie)).data.save,{});
+assert.equal((await api('logout',{},cookie)).status,200);assert.equal((await api('session',undefined,cookie)).status,401);assert.equal((await api('session',undefined,login.cookie)).status,200);
+const raceName=username+'_r';const race=await Promise.all([api('signup',{username:raceName,password,save:{}}),api('signup',{username:raceName,password,save:{}})]);assert.deepEqual(race.map(r=>r.status).sort(),[200,409]);
+for(let i=0;i<21;i++)a=await api('login',{username:username+'_missing',password});assert.equal(a.status,429);
+console.log('PASS: signup/login normalization, unique account race, password rejection, opaque HttpOnly session, save validation, optimistic concurrent writes, account isolation, origin/header rejection, logout revocation, other device session, rate limiting; no credentials logged');

@@ -1,3 +1,5 @@
+import {accountRequest} from './accounts';
+export {CrabAccount} from './accounts';
 import { worldOf, eventOf, type WorldState } from '../combatProtocol';
 import { DurableObject } from 'cloudflare:workers';
 import { specOf, stateOf, actions, clean, type Spec, type State } from '../protocol';
@@ -98,6 +100,7 @@ export class CrabRoom extends DurableObject<Env> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if(url.pathname.startsWith('/api/account/'))return accountRequest(request,env);
     if (url.pathname === '/health') return Response.json({ ok: true, game: 'crabcraft-multiplayer' });
     if (url.pathname !== '/multiplayer' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected WebSocket', { status: 426 });
     const origin = request.headers.get('Origin');

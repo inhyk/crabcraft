@@ -23,6 +23,7 @@ export default class TitleScreen implements Screen {
         h('h1', { class: 'cc-title title-fallback' }, 'World of Crabcraft'),
       ),
       h('nav', { class: 'title-menu' },
+        btn(app.account.label,()=>app.account.show(),'cc-btn ghost'),
         btn(t('새 모험 시작','Enter World'), () => void app.go('create')),
         app.spec ? btn(t(`${app.spec.name || '내 게'}로 이어하기`,`Continue as ${app.spec.name || 'your crab'}`), () => void app.go('game'), 'cc-btn ghost') : null,
         btn(t('멀티플레이','Multiplayer'), () => {

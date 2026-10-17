@@ -5,7 +5,7 @@ const NX=141,NZ=161,STEP=2,MIN_X=-140,MIN_Z=-160;
 
 function naturalHeight(x:number,z:number){
   const r=Math.hypot(x/115,(z-10)/140),coast=MathUtils.smoothstep(r,.83,1.04);
-  return 3+Math.sin(x*.08)*Math.cos(z*.06)*1.8+Math.max(0,r-.65)*12-coast*21;
+  return 7*(1-MathUtils.smoothstep(Math.hypot(x-27,z+19),5,28))+3+Math.sin(x*.08)*Math.cos(z*.06)*1.8+Math.max(0,r-.65)*12-coast*21;
 }
 
 function shapedHeight(x:number,z:number){
