@@ -3,7 +3,11 @@
 # bar to help read the sections. Writes the grid JSON tools/crowd/make.mjs reads (no audio).
 #
 #   uv run --no-project --with librosa python tools/crowd/sidestep/beatgrid.py \
-#     tools/crowd/sidestep/sidestep.mp3 tools/crowd/sidestep/grid.json 150
+#     tools/crowd/sidestep/sidestep.mp3 tools/crowd/sidestep/grid.json 150 [downbeat]
+#
+# `downbeat` (0-3) says which of the first four beats starts bar 0, for a mix whose kick lands on
+# every beat about as hard (the profile it prints is then nearly flat): read the bar line from the
+# arrangement (where the sections, the stops and the sung lines start) and pass it.
 import json, sys
 import numpy as np
 import librosa
@@ -44,7 +48,7 @@ idx = np.round(beats * fr).astype(int)
 idx = idx[idx < len(lowd)]
 k = np.array([lowd[max(0, i - 2): i + 3].max() for i in idx])
 pos = [k[j::4].mean() for j in range(4)]
-d0 = int(np.argmax(pos))
+d0 = int(sys.argv[4]) if len(sys.argv) > 4 else int(np.argmax(pos))
 downbeats = beats[d0::4]
 # energy per bar (rms) to help section reading
 rms = librosa.feature.rms(y=y, hop_length=hop)[0]

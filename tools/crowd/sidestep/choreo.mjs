@@ -21,113 +21,19 @@
 // The song was asked for bridge B to bar 79, pre-chorus 3 to 87 and the final chorus in 88-103; it
 // came two bars shorter (the band cuts at 77, the last pre-chorus has three bars), so from bar 77
 // on everything sits two bars earlier than that plan.
-import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
+import { stage } from './kit.mjs';
 
 export default async function build({ grid, clips, repo }) {
-  // The game's own windows for the breakdance moves (generated from the clips with them).
-  let BREAK = {};
-  try {
-    BREAK = (await import(pathToFileURL(resolve(repo, 'src/motion/breakClips.ts')).href)).BREAK_CLIPS;
-  } catch {
-    BREAK = {};
-  }
-  const B = grid.beat;
-  const DB = grid.downbeats;
-  const BAR = 4 * B;
-  /** Song second of bar b (+ beats). */
-  const D = (b, beats = 0) => (b < DB.length ? DB[b] : DB[DB.length - 1] + (b - DB.length + 1) * BAR) + beats * B;
-  const ev = (id, name) => {
-    const t = clips[id]?.events?.[name]?.[0];
-    if (t === undefined) throw new Error(`clip ${id} has no event ${name}`);
-    return t;
-  };
-  const len = (id) => clips[id].length;
-
-  // ------------------------------------------------------------------------------ formation
-
-  const F = { rows: 17, cols: 20, dx: 2.9, dz: 2.7, aisle: 1.6, hero: 4.5, stagger: false, seed: 11, weapons: 0.12 };
-  const width = (F.cols - 1) * F.dx + F.aisle;
-  const depth = (F.rows - 1) * F.dz;
-  const FRONT = depth / 2; // front row z
-  const HERO_Z = FRONT + F.hero;
-  const program = {
-    // The shout and its ring end about a second after the last downbeat; the frame holds a little longer.
-    length: D(102) + 2.25,
-    // On the bay north of the pier, the crowd facing south toward the pier with Saltmere's
-    // headland and lighthouse behind it; the low sun from the south-south-east lights its front.
-    site: { x: 150, z: -34, yaw: 0 },
-    deck: { width: width + 7.4, depth: depth + 12.8, y: 1.1, front: HERO_Z + 3.9, stage: { width: 12, depth: 7.2, rise: 0.35 } },
-    formation: F,
-    // The song's own rests, which make.mjs's silence check lets through: the breaths between
-    // "One, two... ready?" and the shout, and the silence after "Here we go!".
-    quiet: [
-      [D(0, 3), D(1)],
-      [D(1, 2), D(1, 3)],
-      [D(78, 2), D(79)],
-    ],
-    cues: [],
-    faces: [],
-    shots: [],
-    fx: [],
-  };
-  const cues = program.cues;
-  const cue = (c) => cues.push(c);
-
-  // ------------------------------------------------------------------------------ moves
-
-  /** Each dance's tempo: the time scale that puts its beat on the song's. */
-  const tempo = (id) => {
-    const bt = clips[id].beat;
-    if (!bt) throw new Error(`no beat measured for ${id}`);
-    return { speed: bt.period / B, bt };
-  };
-
-  /**
-   * A dance from bar `bar` for `bars` bars: the clip beat nearest `near` (clip seconds) lands on the
-   * bar's downbeat, the clip time-scaled to the song's tempo; it starts `lead` song seconds early
-   * (the crossfade) and runs a little past its last bar for the next move to fade over.
-   */
-  const dance = (id, bar, bars, near, extra = {}) => {
-    const { speed, bt } = tempo(id);
-    const k = Math.round((near - bt.phase) / bt.period);
-    const sync = bt.phase + k * bt.period;
-    const lead = extra.lead ?? 0.3;
-    const from = Math.max(0, sync - lead * speed);
-    const to = Math.min(len(id), sync + (bars * BAR + 0.6) * speed);
-    const { lead: _l, ...rest } = extra;
-    cue({ at: D(bar), clip: id, from, to, sync, speed, who: 'all', fade: lead, ...rest });
-  };
-
-  /** A breakdance move's window from the game (breakClips.ts), or from its events. */
-  const win = (id) => {
-    if (BREAK[id]) return { from: BREAK[id].from, to: BREAK[id].to };
-    const e = clips[id].events;
-    const from = e.policy_start?.[0] ?? 0;
-    const to = e.settled ? e.settled[0] + 0.25 : e.recovered ? e.recovered[0] : e.hit ? e.hit[0] + 0.6 : len(id);
-    return { from, to };
-  };
-  /** A one-shot move whose `event` lands at song time `at`. */
-  const shot1 = (id, event, at, extra = {}) => {
-    const w = win(id);
-    cue({ at, clip: id, from: extra.from ?? w.from, to: extra.to ?? w.to, sync: ev(id, event), who: 'all', fade: 0.22, ...extra });
-  };
-  /** The hop: Jumper's jump, landing at `at` (+ the wave). */
-  const hop = (at, extra = {}) => cue({ at, clip: 'jump', from: ev('jump', 'policy_start'), to: ev('jump', 'policy_end'), sync: ev('jump', 'land'), who: 'all', fade: 0.18, ...extra });
-  /** The claws gather and fling wide at `at`, and hold there. */
-  const cast = (at, extra = {}) => cue({ at, clip: 'cast', from: ev('cast', 'gather') - 0.5, to: ev('cast', 'release') + 0.12, sync: ev('cast', 'release'), hold: true, who: 'all', fade: 0.25, ...extra });
-  /**
-   * The "Hey!" fill: a hop rippling across the columns over 2.4 beats of bar `bar`, the last column
-   * landing on the shout (beat 4), or at `end`.
-   */
-  const fill = (bar, reverse = false, end = D(bar, 3)) => {
-    const span = 2.4 * B;
-    hop(end - span, { wave: { by: 'col', step: span / (F.cols - 1), reverse } });
-  };
-  const face = (at, expr, who = 'all', wave) => program.faces.push({ at, who, expr, ...(wave ? { wave } : {}) });
-
-  // Windows of the dances (clip seconds), all among their liveliest stretches.
-  const W = { crab: [16.3, 28.3, 92.3, 168.3, 60.3, 120.3, 140.3], braz: [7.3, 20.3, 36.3, 60.3, 46.3], wings: [13.3, 17.3, 41.3, 22.3] };
+  const { program, B, D, ev, F, depth, FRONT, HERO_Z, cue, tempo, dance, win, shot1, hop, cast, fill, face, W, fw, shot, K, hero } = await stage({ grid, clips, repo });
+  // The shout and its ring end about a second after the last downbeat; the frame holds a little longer.
+  program.length = D(102) + 2.25;
+  // The song's own rests, which make.mjs's silence check lets through: the breaths between
+  // "One, two... ready?" and the shout, and the silence after "Here we go!".
+  program.quiet = [
+    [D(0, 3), D(1)],
+    [D(1, 2), D(1, 3)],
+    [D(78, 2), D(79)],
+  ];
 
   // ---- intro (bars 0-3): "One, two... ready?" the crowd stands sleepy-eyed; on the shout
   // "Sidestep!" the faces wake from the middle out and everyone raises a claw to wave.
@@ -252,9 +158,6 @@ export default async function build({ grid, clips, repo }) {
   // Dusk, the beacon dark and the stage lights off from the top (a shot rendered after a night
   // shot in the same page eases back within its pre-roll).
   program.fx.push({ at: 0, kind: 'mood', mood: 0 }, { at: 0, kind: 'beacon', on: false }, { at: 0, kind: 'lights', level: 0, d: 0.01 });
-  const COLORS = ['#ffd76a', '#ff4a3a', '#59d8ff', '#b07cff', '#7dff8a', '#fff1c0'];
-  let ci = 0;
-  const fw = (at, x, z, h) => program.fx.push({ at, kind: 'firework', p: [x, -1, z], color: COLORS[ci++ % COLORS.length], height: h });
   // A salvo on every downbeat of the last chorus, bigger on the four-bar lines.
   for (let b = 86; b < 102; b++) {
     const n = [86, 90, 94, 98].includes(b) ? 5 : 2;
@@ -270,9 +173,6 @@ export default async function build({ grid, clips, repo }) {
   // ------------------------------------------------------------------------------ camera
   // Formation coordinates: x to the crowd's left (screen right when it faces the camera), z front.
   const S = program.shots;
-  const shot = (b0, keys, extra = {}) => S.push({ from: typeof b0 === 'number' ? D(b0) : b0.t, keys, ...extra });
-  const K = (u, p, l, fov = 40, roll = 0) => ({ u, p, l, fov, ...(roll ? { roll } : {}) });
-  const hero = (dy = 0.35, dz = 0) => ({ hero: [0, dy, dz] });
 
   // intro: down out of the sky over the bay to the deck, then the hero's face in the breath before
   // the shout, waking up on "Sidestep!"
