@@ -66,6 +66,8 @@ async function open(url, spec) {
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   if (spec) await page.addInitScript((s) => localStorage.setItem('cc.spec', JSON.stringify(s)), spec);
   await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+  // The edition asks the player to confirm a short notice before anything loads (as tools/playtest.mjs).
+  await page.locator('.launch-notice-start').click({ timeout: 30000 });
   return { browser, page, errors };
 }
 
