@@ -4,7 +4,8 @@
 # Points /srv/crabcraft/<env>/current at releases/<git-sha> (an atomic rename), restarts
 # crabcraft-server@<env> when that release ships server-dist/main.mjs (stops it when not),
 # waits for GET /healthz, and switches back to the previous release if the check fails.
-# Keeps the last 5 activated releases plus current and previous; older ones are deleted.
+# Keeps the last 5 activated releases plus current and previous; older ones are deleted
+# (a never-activated upload is left alone for its first hour).
 #
 # The deploy user may run exactly this script through sudo (/etc/sudoers.d/crabcraft-deploy),
 # so every argument is validated before use.
@@ -68,9 +69,11 @@ point() { # point <link-name> <sha>: atomic symlink replacement
 healthy() {
 	local i
 	for ((i = 0; i < HEALTH_TIMEOUT; i++)); do
-		if curl -fsS --max-time 2 -o /dev/null "http://127.0.0.1:$PORT/healthz"; then
+		if curl -fs --max-time 2 -o /dev/null "http://127.0.0.1:$PORT/healthz" 2>/dev/null; then
 			return 0
 		fi
+		# Gave up restarting (StartLimitBurst): no point waiting out the timeout.
+		systemctl is-failed --quiet "$UNIT" && return 1
 		sleep 1
 	done
 	return 1
@@ -100,7 +103,7 @@ log "$ENV: ${PREV:-none} -> $SHA$(has_server "$SHA" && echo ' (with server)' || 
 point current "$SHA"
 
 if ! run_server_for "$SHA"; then
-	log "$UNIT did not pass /healthz on port $PORT within ${HEALTH_TIMEOUT}s"
+	log "$UNIT did not pass /healthz on port $PORT (waited up to ${HEALTH_TIMEOUT}s)"
 	journalctl -u "$UNIT" -n 30 --no-pager 2>/dev/null | sed 's/^/  /' || true
 	if [ -n "$PREV" ] && [ "$PREV" != "$SHA" ] && check_release "$PREV"; then
 		log "rolling $ENV back to $PREV"
@@ -135,6 +138,8 @@ for dir in "$RELEASES"/*; do
 	name=${dir##*/}
 	[[ "$name" =~ ^[0-9a-f]{7,40}$ ]] || continue
 	[ -n "${keep[$name]:-}" ] && continue
+	# Never activated and touched within the hour: probably an upload still in flight.
+	[ -n "$(find "$dir" -maxdepth 0 -mmin -60)" ] && continue
 	log "pruning release $name"
 	# Release files belong to the deploy user; delete them as that user, never as root.
 	runuser -u deploy -- rm -rf -- "$dir" || log "could not prune $dir"
