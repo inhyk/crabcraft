@@ -67,7 +67,7 @@ test('direct chapter travel preserves story checkpoints and unlimited levels',()
  assert.equal(LEVEL_XP.length,20);assert.equal(levelForXp(21999),19);assert.equal(levelForXp(22000),20);
  assert.equal(canEnterWorld2(false,true),false);assert.equal(canEnterWorld2(true,false),true);assert.equal(canEnterWorld2(true,true),true);
  assert.equal(canChallenge(20,20,true,false,2),false);assert.equal(canChallenge(20,20,true,true,1),false);
- assert.equal(canChallenge(29,30,true,true,3),false);assert.equal(canChallenge(30,30,true,true,2),false);assert.equal(canChallenge(30,30,true,true,3),true);assert.equal(canChallenge(30,30,true,false,3),false);
+ assert.equal(canChallenge(99,100,true,true,3),false);assert.equal(canChallenge(100,100,true,true,2),false);assert.equal(canChallenge(100,100,true,true,3),true);assert.equal(canChallenge(100,100,true,false,3),false);
  assert.equal(canChallenge(19,20,true,true,2),false);assert.equal(canChallenge(20,20,true,true,2),true);
  let xp=6500,kills=0;while(xp<22000 && kills<200){const level=levelForXp(xp);xp+=140+12*(level-2);if(++kills%5===0)xp+=patrolReward(level);}
  assert.ok(kills<80,`World II needs too many kills: ${kills}`);
@@ -210,4 +210,59 @@ test('room snapshots accept the new patterns and still reject unknown pattern ki
  const boss=(id,kind)=>({id,state:'fight',phase:2,enraged:false,mech:{id:1,kind,at:[0,0,0],yaw:0,left:2.6}});
  const world={entities:[],bosses:[boss('b3','cross'),boss('b10','barrage'),boss('b20','cross')],rust:true,abyss:true,chapter:2,firstEnding:true,trueCleared:false,weather:{mood:3,beacon:true,clock:0}};
  assert.equal(worldOf(world),world);world.bosses[0].mech.kind='unknown';assert.equal(worldOf(world),null);
+});
+
+test('Solarkan is locked at 99 and unlocks at 100, without changing XP or earlier bosses',()=>{
+ const {game,boss,player}=setup(BOSS_PROFILES.dawn,99);
+ boss.wake();assert.equal(boss.state,'dormant');
+ game.partyLevel=100;boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
+ assert.equal(boss.state,'idle');assert.equal(boss.unit.invulnerable,true);
+ game.player.level=player.level=100;boss.update(.1);assert.equal(boss.state,'fight');
+ assert.equal(boss.unit.level,100);assert.equal(boss.unit.maxHp,180000);
+ assert.deepEqual([BOSS_PROFILES.rust.level,BOSS_PROFILES.abyss.level,BOSS_PROFILES.eclipse.level],[3,10,20]);
+ assert.equal(levelForXp(xpForLevel(100)),100);assert.equal(canChallenge(99,100,true,true,3),false);
+});
+
+test('Solarkan eight fire rays leave visible safe wedges and hit an overlap only once',()=>{
+ const s=newPattern('cross',BOSS_PROFILES.dawn),{boss,game,player,damage}=s;
+ const angles=[];game.vfx.telegraphLane=(_at,yaw,length,width)=>{angles.push([yaw,length,width]);return {}};
+ boss.clearMech();boss.mechIndex=0;boss.startMech();assert.equal(angles.length,4);assert.equal(angles[0][1],15);
+ const at=boss.mech.at,yaw=boss.mech.yaw;
+ const pos=a=>new THREE.Vector3(at.x+Math.sin(a)*9,0,at.z+Math.cos(a)*9);
+ const center={...player,pos:at.clone()},diagonal={...player,pos:pos(yaw+Math.PI/4)},safe={...player,pos:pos(yaw+Math.PI/8)};
+ game.combatPlayers=()=>[center,diagonal,safe];boss.updateMech(boss.mech.dur-.01);assert.equal(damage.length,0);
+ boss.updateMech(.02);assert.equal(damage.length,2);assert.equal(safe.hp,300);assert.equal(center.hp,156);
+});
+
+test('Solarkan five simultaneous bombs spare gaps and ineligible characters',()=>{
+ const {boss,game,player,damage}=newPattern('barrage',BOSS_PROFILES.dawn);
+ const points=boss.barragePoints(boss.mech.at,boss.mech.yaw);assert.equal(points.length,5);
+ const players=points.map(pos=>({...player,pos:pos.clone()})),low={...player,level:99,pos:points[0].clone()};
+ game.combatPlayers=()=>[...players,low];boss.updateMech(boss.mech.dur);
+ assert.equal(damage.length,5);assert.ok(players.every(p=>p.hp===174));assert.equal(low.hp,300);
+});
+
+test('Solarkan has early pressure phases, faster recovery, and cannot be stun locked',()=>{
+ const {boss,game,player}=setup(BOSS_PROFILES.dawn);boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
+ boss.unit.hp=boss.unit.maxHp*.74;boss.update(.1);assert.equal(boss.phase,2);
+ boss.unit.hp=boss.unit.maxHp*.39;boss.update(.1);assert.equal(boss.phase,3);
+ game.time=100;boss.unit.stunned=()=>true;boss.update(.1);assert.equal(boss.mechName,'cross');
+ assert.ok(Math.abs(boss.nextMech-game.time-boss.mech.dur-.9)<1e-8);
+ for(const kind of ['nova','slam','eclipse','undertow']){
+  const {boss,player}=newPattern(kind,BOSS_PROFILES.dawn);
+  const escape=kind==='eclipse'?11:boss.radius(kind)+player.radius*.5;
+  assert.ok(boss.mech.dur>=.3+escape/5+.1,`${kind} must allow a walking dodge`);
+ }
+});
+
+test('all Solarkan patterns match the follower layout and continue after host migration',()=>{
+ for(const phase of [1,2,3])for(let index=0;index<(phase===1?5:phase===2?6:8);index++){
+  const host=setup(BOSS_PROFILES.dawn),guest=setup(BOSS_PROFILES.dawn),shapes=s=>{
+   const out=[];for(const name of ['telegraphCircle','telegraphLane','telegraphCone'])s.game.vfx[name]=(...args)=>{out.push([name,...args.map(v=>v?.isColor?v.getHexString():v?.isVector3?v.toArray():v)]);return {}};return out;
+  };
+  const hs=shapes(host),gs=shapes(guest);host.boss.phase=phase;host.boss.enraged=phase===3;host.boss.state='fight';host.boss.mechIndex=index;host.boss.startMech();
+  const snapshot=host.boss.networkState('b30');guest.boss.applyNetwork(snapshot);assert.deepEqual(gs,hs);
+  guest.boss.applyNetwork({...snapshot,mech:{...snapshot.mech,left:.1}});guest.boss.resumeAuthority();
+  guest.boss.updateMech(.09);assert.ok(guest.boss.mech);guest.boss.updateMech(.02);assert.equal(guest.boss.mech,null);
+ }
 });
