@@ -27,7 +27,7 @@ export class Npc {
   }
 
   nextLine(): string {
-    if(this.game.world2.chapter===3)return this.game.journey?.finalCleared?t('미라가 돌아왔어요! 이제 세 섬의 친구들이 함께할 수 있어요.','Mira is home! Friends from all three islands can be together.'):t('친구 미라는 북쪽 황혼 성채에 갇혀 있어요. 선장의 부탁을 받고 30레벨 왕에게 도전하세요.','Mira is imprisoned in the northern citadel. Take the captain’s requests and face the level 30 king.');
+    if(this.game.world2.chapter===3)return this.game.journey?.finalCleared?t('미라가 돌아왔어요! 이제 세 섬의 친구들이 함께할 수 있어요.','Mira is home! Friends from all three islands can be together.'):t('친구 미라는 북쪽 황혼 성채에 갇혀 있어요. 선장의 부탁을 받고 100레벨 왕에게 도전하세요.','Mira is imprisoned in the northern citadel. Take the captain’s requests and face the level 100 king.');
     if(this.game.world2.chapter===2){
       const progress=starNpcProgressLine(this.def.id,this.game.quests.status,!!this.game.journey?.trueCleared);
       if(progress)return progress;
