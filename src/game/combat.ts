@@ -30,6 +30,7 @@ export class Combat {
 
   damage(src: Unit | null, dst: Unit, amount: number, o: HitOptions = {}): number {
     const g = this.game;
+    if(g.villageGames?.playing&&(dst.kind==='player'||dst.kind==='remote'||src?.kind==='player'||src?.kind==='remote'))return 0;
     const routed = g.multiplayer?.battle.routeDamage(src, dst, amount, o);
     if (routed !== undefined && routed !== null) return routed;
     if (!dst.alive || dst.hidden) return 0;

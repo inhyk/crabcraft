@@ -1,3 +1,4 @@
+import {VillageGames} from './villageGames';
 import {t} from '../i18n';
 import {loadingLabel,loadingTips,regionName,regionSubtitle} from './worldLocale';
 // The game session: loads the world and every crab, runs the frame loop, routes input, and glues
@@ -105,6 +106,7 @@ export class Game {
   journey: BossJourney | null = null;
   lighthouseSecret: LighthouseSecret | null = null;
   boats:ShoreBoat|null=null;
+  villageGames:VillageGames|null=null;
   achievements:Achievements|null=null;
   voyageIsland:VoyageIsland|null=null;
 
@@ -166,7 +168,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
+    return !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -492,6 +494,7 @@ export class Game {
     this.achievements=new Achievements(this);
     this.journey.restore();
     this.intro();
+    this.villageGames=new VillageGames(this);
     this.multiplayer = new Multiplayer(this);
   }
 
@@ -607,13 +610,14 @@ export class Game {
         if(this.world2.chapter===1){this.boss.update(dt);this.finalBoss.update(dt);}else if(this.world2.chapter===2)this.worldBoss.update(dt);else this.dawnBoss.update(dt);
       }
       this.journey?.update(dt);
-      for (const n of this.npcs) n.update(dt); if(this.multiplayer?.battle.authority!==false)for (const t of this.townsfolk) t.update(dt);
+      for (const n of this.npcs) n.update(dt); if(this.multiplayer?.battle.authority!==false)for (const t of this.townsfolk) if(!this.villageGames?.ownsNpc(t.unit))t.update(dt);
       if (this.multiplayer?.battle.authority !== false) this.separate();
       this.ending.update(dt);
       this.updateDeath();
       this.updateStatuses();
     }
     this.multiplayer?.update(dt);
+    this.villageGames?.update(paused?0:dt);
     this.boats?.update(paused?0:dt);
     this.achievements?.update(paused?0:dt);
     this.voyageIsland?.update();
@@ -755,7 +759,7 @@ export class Game {
       for (let i = 1; i <= 4; i++) if (inp.wasPressed(`Digit${i}`)) hints.mark('ability');
       if (inp.wasPressed('KeyF')) hints.mark('interact');
     }
-    if (inp.wasPressed('KeyT') && !hud.dialogue.isOpen && !hud.questLog.open && !this.player.channel) {
+    if (inp.wasPressed('KeyT') && !this.villageGames?.playing && !hud.dialogue.isOpen && !hud.questLog.open && !this.player.channel) {
       const chapter = this.world2.chapter;
       const origin = this.player.unit.pos.clone().add(new THREE.Vector3(0, 1, 0));
       this.player.startChannel(t('광장으로 돌아가는 중 · T를 계속 누르세요', 'Returning to the square · Keep holding T'), 2, 'KeyT', origin, () => {
@@ -1382,6 +1386,7 @@ export class Game {
     this.lighthouseSecret?.dispose();
     this.lighthouseSecret = null;
     this.journey = null;
+    this.villageGames?.dispose();this.villageGames=null;
     this.multiplayer?.dispose();
     this.multiplayer = null;
     this.debug?.dispose();

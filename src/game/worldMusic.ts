@@ -1,5 +1,5 @@
 export type MusicMood='explore'|'combat'|'boss';
-/** World I keeps its familiar score; the other realms have distinct full arrangements. */
-export function worldMusic(chapter:1|2|3,mood:MusicMood){
- return chapter===1?`music-${mood==='explore'?'town':mood}`:`music-world${chapter}-${mood}`;
+/** All realms share the original score, with separate exploration and battle moods. */
+export function worldMusic(_chapter:1|2|3,mood:MusicMood){
+ return `music-${mood==='explore'?'town':mood}`;
 }

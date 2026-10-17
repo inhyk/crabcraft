@@ -1,3 +1,4 @@
+import {islandPaths} from './islandPaths';
 import * as THREE from 'three';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
 import { TownBuilder } from '../world/buildings';
@@ -52,6 +53,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       const c=m.clone();
       // Light the actual glass panes, including their original lattice and shutter occlusion.
       if(name==='MI_WindowGlass'&&c instanceof THREE.MeshStandardMaterial){c.color.set('#4d301c');c.emissive.set('#ffb65e');c.emissiveIntensity=1.15;c.roughness=.25;c.transparent=false;c.opacity=1;c.depthWrite=true;}
+      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#d9eed7');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;}
       copies.set(m,c);kit.materials.set(name,c);
     }
     for(const piece of kit.pieces.values())for(const part of piece.parts)part.material=copies.get(part.material)!;
@@ -114,7 +116,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       plantRadius.set(name,radius);
     }
     const rect=(ax:number,bx:number,az:number,bz:number)=>Math.hypot(Math.max(ax-x,0,x-bx),Math.max(az-z,0,z-bz));
-    return Math.min(rect(-4.9,4.9,-72.9,92.9),rect(-26.9,26.9,51.1,58.9),Math.max(0,starTrailDistance(x,z)-1.15),residentClearance(x,z))>radius*scale;
+    return Math.min(rect(-4.9,4.9,-72.9,92.9),rect(-26.9,26.9,51.1,58.9),rect(-26,-4.7,34.8,37.2),rect(4.7,21,33.8,36.2),rect(-23,-4.7,80.8,83.2),rect(4.7,25,82.8,85.2),Math.max(0,starTrailDistance(x,z)-1.15),residentClearance(x,z))>radius*scale;
   };
   for(let i=0;i<340;i++) {
     const x=(rand(i+100)-.5)*215,z=(rand(i+900)-.5)*255+10;
@@ -127,6 +129,15 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     scatter.add(list[i%list.length],trs(x,height(x,z),z,rand(i+40)*6.28,scale));
     if(i%5!==0)collision.addCircle(x,z,.5*scale,height(x,z),height(x,z)+8);
   }
+  // Leafy garden trees bring the forest into view from the village streets.
+  let gardenTrees=0;
+  for(const [x,z] of [[-15,33],[14,34],[-15,81],[15,81],[-55,28],[55,30],[-56,58],[57,60],[-54,87],[55,88]]){
+    if(!treeNames.length)break;
+    const scale=Math.abs(x)<20?.68:.95,name=treeNames[gardenTrees%treeNames.length];
+    scatter.add(name,trs(x,height(x,z),z,gardenTrees*2.39996,scale));
+    collision.addCircle(x,z,.5*scale,height(x,z),height(x,z)+9);gardenTrees++;
+  }
+  root.userData.gardenTrees=gardenTrees;
   for(let i=0;i<240;i++) {
     const x=(rand(i+1800)-.5)*105,z=10+rand(i+2500)*86;
     if(Math.abs(x)<12||lots.some(l=>Math.abs(x-l.x)<l.sx+3&&Math.abs(z-l.z)<l.sz+4))continue;
@@ -153,23 +164,15 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   }
   root.userData.meadowPlants=meadowCount;
   root.add(scatter.build({boundsPadding:.2}));
-  const roadMat=new THREE.MeshStandardMaterial({color:'#797886',roughness:.95});
-  const roads=new StaticBatch(village,'starhaven-roads');
-  const slab=new THREE.BoxGeometry(1.8,.12,1.8);
-  for(let z=-72;z<=92;z+=2)for(let x=-4;x<=4;x+=2)if(Math.hypot(x,z-55)>3.7)roads.addGeometry(slab,roadMat,trs(x,height(x,z)+.015,z,0,1),false);
-  for(let x=-26;x<=26;x+=2)for(let z=52;z<=58;z+=2)roads.addGeometry(slab,roadMat,trs(x,height(x,z)+.02,z),false);
-  const trailMat=new THREE.MeshStandardMaterial({color:'#676979',roughness:.95});
-  const trailSlab=new THREE.BoxGeometry(1.65,.1,1.55);
-  for(const trail of STAR_TRAILS)for(let i=1;i<trail.length;i++){
-    const [ax,az]=trail[i-1],[bx,bz]=trail[i],distance=Math.hypot(bx-ax,bz-az),steps=Math.ceil(distance/1.9),yaw=Math.atan2(bx-ax,bz-az);
-    for(let j=0;j<steps;j++){
-      const u=j/steps,x=ax+(bx-ax)*u,z=az+(bz-az)*u;
-      // Keep the broad, paved village road clear of a second layer.
-      if(Math.abs(x)<6)continue;
-      roads.addGeometry(trailSlab,trailMat,trs(x,height(x,z)+.075,z,yaw),false);
-    }
-  }
-  root.add(roads.build());slab.dispose();trailSlab.dispose();
+  root.add(islandPaths(height,[
+    {points:[[0,92],[0,-54]],width:9.5,trim:true},
+    {points:[[-26,55],[26,55]],width:7,trim:true},
+    {points:[[-4.7,36],[-25,36]],width:2.4},
+    {points:[[4.7,35],[20,35]],width:2.4},
+    {points:[[-4.7,82],[-22,82]],width:2.4},
+    {points:[[4.7,84],[24,84]],width:2.4},
+    ...STAR_TRAILS.map(points=>({points,width:2.4,trim:false})),
+  ],2));
   for(const kit of [village,nature,props])for(const piece of kit.pieces.values())for(const part of piece.parts)part.geometry.dispose();
   return {root,collision,lots};
 }

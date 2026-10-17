@@ -53,7 +53,7 @@ export class ShoreBoat {
   interact(){const b=this.g.multiplayer?.battle;const command:BoatCommand={action:this.seated?'leave':this.canSummon()?'call':'board',throttle:0,steer:0};if(b)b.boat(command);else this.request('solo',command);}
   private unit(id:string){return id==='solo'?this.g.player.unit:this.g.multiplayer?.battle.boatUnit(id);}
   request(id:string,c:BoatCommand){
-    const g=this.g,u=this.unit(id);if(!u?.alive||g.world2.chapter!==1)return;
+    const g=this.g,u=this.unit(id);if(g.villageGames?.playing)return;if(!u?.alive||g.world2.chapter!==1)return;
     if(c.action==='call'){if(!this.state.seats.some(Boolean)&&Math.hypot(u.pos.x-144,u.pos.z-19)<4.5)this.resetHome();return;}
     const seat=this.state.seats.indexOf(id);
     if(c.action==='leave'){if(seat>=0){

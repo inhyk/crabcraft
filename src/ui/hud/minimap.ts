@@ -195,7 +195,7 @@ export class Minimap {
     if(Math.hypot(portalX-half,portalY-half)<half-8*d){c.strokeStyle='#c7b1ff';c.lineWidth=2*d;c.beginPath();c.ellipse(portalX,portalY,4*d,6*d,0,0,Math.PI*2);c.stroke();}
     // Units
     for (const u of g.units) {
-      if (u.kind === 'player' || u.hidden || !u.alive) continue;
+      if (g.villageGames?.concealMap(u) || u.kind === 'player' || u.hidden || !u.alive) continue;
       const [x, y] = toScreen(u.pos.x, u.pos.z);
       const distance=Math.hypot(x-half,y-half);
       if(u.kind==='remote'){

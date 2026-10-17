@@ -8,7 +8,7 @@ export class DawnScenery {
  constructor(height:(x:number,z:number)=>number,collision:Collision){
   this.root.name='dawnreach-landmarks';
   const mat=(color:string,glow=0)=>new THREE.MeshStandardMaterial({color,roughness:.83,emissive:color,emissiveIntensity:glow});
-  const stone=mat('#666b76'),trim=mat('#baad88'),wood=mat('#855e43'),teal=mat('#397f82'),ivory=mat('#e7d6ae'),gold=mat('#f5c46c',.35),leaf=mat('#547654'),pink=mat('#e9a299'),blue=mat('#89bfc1'),dark=mat('#323946');
+  const stone=mat('#666b76'),trim=mat('#baad88'),wood=mat('#855e43'),teal=mat('#397f82'),ivory=mat('#e7d6ae'),gold=mat('#f5c46c',.35),leaf=mat('#547654'),pink=mat('#e9a299'),dark=mat('#323946');
   const box=new THREE.BoxGeometry(1,1,1),cyl=new THREE.CylinderGeometry(1,1,1,10),cone=new THREE.ConeGeometry(1,1,8),ball=new THREE.SphereGeometry(1,8,6);
   // Static dressing is instanced by material and geometry, including wall blocks and flower beds.
   const pools=new Map<string,{geo:THREE.BufferGeometry;mat:THREE.Material;transforms:THREE.Matrix4[]}>();
@@ -32,8 +32,6 @@ export class DawnScenery {
   for(let i=0;i<13;i++){const a=i/12*Math.PI*1.5;ground(box,ivory,lx+Math.cos(a)*6,lz+Math.sin(a)*6,.45,1.1,.45);}
   // Terraced seaside orchard and rose beds, kept clear of the existing town doors.
   for(const side of [-1,1])for(const z of [16,0,-18]){const x=side*17,y=height(x,z);place(box,stone,x,y+.2,z,9,.4,4);for(let i=0;i<7;i++){const px=x-3+i,py=height(px,z);place(ball,leaf,px,py+.55,z,.65,.5,1.4);place(ball,i%2?pink:gold,px,py+1,z+.2,.19,.19,.19);}}
-  for(let i=0;i<16;i++){const a=i*2.39996,x=-62+Math.cos(a)*(5+i%4*2),z=48+Math.sin(a)*(6+i%3*2),y=height(x,z);place(cyl,wood,x,y+1.8,z,.16,3.6,.16);place(ball,leaf,x,y+4,z,1.8,2,1.7);for(let j=0;j<3;j++)place(ball,gold,x+Math.sin(j*2)*1.1,y+3.4,z+Math.cos(j*2),.16,.16,.16);}
-  for(let i=0;i<72;i++){const x=-76+(i*7.19)%30,z=29+(i*3.77)%39,y=height(x,z);place(cone,leaf,x,y+.35,z,.2,.7,.2);place(ball,i%3?pink:blue,x,y+.75,z,.15,.12,.15);}
   for(const [x,z] of [[-57,68],[-72,40],[59,62]]){ground(box,wood,x,z,3,.3,.75,.6);for(const side of [-1,1])ground(box,stone,x+side,z,.3,.6,.7);}
   // A fortress silhouette around, rather than inside, the boss's 20 m arena.
   for(const side of [-1,1]){for(let i=0;i<12;i++){const z=-47-i*5;ground(box,stone,side*35,z,2.6,9,5.1);ground(box,trim,side*35,z,3,1.3,2.2,9);}

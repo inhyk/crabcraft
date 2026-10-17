@@ -30,7 +30,7 @@ export class BattleSync {
     this.mode=mode;this.game.player.setTarget(null);this.publish();
   }
   private duel(id:string,target:string,amount:number,crit=false){
-    if(this.mode!=='pvp'||id===target||this.sameParty(id,target)||!Number.isFinite(amount)||amount<=0)return;
+    if(this.game.villageGames?.playing||this.mode!=='pvp'||id===target||this.sameParty(id,target)||!Number.isFinite(amount)||amount<=0)return;
     const src=id===this.ownId?this.game.player.unit:this.peers().get(id)?.unit;
     const dst=target===this.ownId?this.game.player.unit:this.peers().get(target)?.unit;
     if(!src?.alive||!dst?.alive||src.hidden||dst.hidden||src.distTo(dst)>38||this.game.time<(this.duelAt.get(id)??-1))return;
@@ -41,6 +41,8 @@ export class BattleSync {
     else this.event({kind:'hit',target,amount:dmg,crit});
   }
 
+  villageMembers(){return [this.active?this.ownId:'solo',...[...this.peers()].filter(([,p])=>p.unit?.alive&&!p.unit.hidden).map(([id])=>id)];}
+  village(command:'hide'|'tag'|'stop'){if(this.authority)this.game.villageGames?.request(this.active?this.ownId:'solo',command);else this.event({kind:'village',target:'world',village:command});}
   boatUnit(id:string){return id===this.ownId?this.game.player.unit:this.peers().get(id)?.unit;}
   hasBoatMember(id:string){return id===this.ownId||this.peers().has(id);}
   boat(command:BoatCommand){if(this.authority)this.game.boats?.request(this.active?this.ownId:'solo',command);else this.event({kind:'boat',target:'world',boat:command});}
@@ -90,7 +92,7 @@ export class BattleSync {
     }
     this.elapsed = 1;
   }
-  leave() { this.game.boats?.disconnect();this.active = false; this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
+  leave() { this.game.villageGames?.reset();this.game.boats?.disconnect();this.active = false; this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
   elect(host: string) {
     const was = this.authority; this.host = host;this.seaWarnings.clear();
     if (!was && this.authority) {
@@ -107,7 +109,7 @@ export class BattleSync {
     if (!this.active || this.applying) return null;
     if(src===this.game.player.unit&&dst.kind==='remote'){
       const target=[...this.peers()].find(([,p])=>p.unit===dst)?.[0];
-      if(this.mode!=='pvp'||!target||this.sameParty(this.ownId,target))return 0;
+      if(this.game.villageGames?.playing||this.mode!=='pvp'||!target||this.sameParty(this.ownId,target))return 0;
       if(this.authority)this.duel(this.ownId,target,amount,!!o.crit);else this.event({kind:'duel',target,amount:Math.max(1,Math.round(amount)),crit:o.crit});
       if(o.rage)this.game.player.gainRage(o.rage);src.lastCombat=this.game.time;return amount;
     }
@@ -169,6 +171,8 @@ export class BattleSync {
     if (this.authority) {
       const src = this.peers().get(id)?.unit;
       if (!src || !src.alive) return;
+      if(e.kind==='village'&&e.village){g.villageGames?.request(id,e.village);this.publish();return;}
+      if(g.villageGames?.playing&&['attack','duel','condition','challenge'].includes(e.kind))return;
       if(e.kind==='boat'&&e.boat){g.boats?.request(id,e.boat);if(e.boat.action!=='drive')this.publish();return;}
       if(e.kind==='party'){this.parties[id]=e.party!;this.publish();return;}
       if(e.kind==='duel'){this.duel(id,e.target,e.amount!,!!e.crit);return;}
@@ -230,7 +234,7 @@ export class BattleSync {
   }
   private snapshot(): WorldState {
     const g = this.game, now = g.time;
-    return {boat:g.boats?.networkState(),social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
+    return {village:g.villageGames?.state??null,boat:g.boats?.networkState(),social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
       const e = u.kind === 'scrapling' || u.kind === 'scavenger' || u.kind === 'jellyfish' ? u.ctrl as Enemy : null;
       const round = (n: number) => Math.round(n * 1000) / 1000;
       return { id, x: round(u.pos.x), y: round(u.pos.y), z: round(u.pos.z), yaw: round(u.yaw), hp: u.hp, maxHp: u.maxHp,
@@ -250,6 +254,7 @@ export class BattleSync {
       if (g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared;g.journey.finalCleared=!!world.finalCleared; }
       if(world.chapter!==g.world2.chapter)g.world2.go(world.chapter,false);
       g.boats?.applyNetwork(world.boat);
+      g.villageGames?.apply(world.village??null);
       if (world.weather) {
         const current=g.world.getEnvironment();
         if (instant || current.mood!==world.weather.mood) this.originalMood(world.weather.mood,instant);
