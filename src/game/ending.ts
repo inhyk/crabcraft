@@ -1,9 +1,13 @@
 // The celebration: the whole town gathers in a ring around the player in Clawhaven Square, every
-// crab plays the recorded dances, fireworks burst over the bay, the camera orbits slowly with
-// depth of field, then the credits roll.
+// crab plays the recorded dances, then the ring makes room and the hero breaks: the breakdance
+// routine (toprock, six-step, spin, 720, back flip, one-claw freeze), every move a trained Jumper
+// policy, with the ring cheering the landings and the freeze. Then everyone dances again,
+// fireworks burst over the bay, the camera orbits slowly with depth of field, and the credits roll.
 import * as THREE from 'three';
 import {t as tr} from '../i18n';
+import { routineLength, type RoutineStep } from '../motion/breakdance';
 import type { MotionId } from '../motion/types';
+import { BreakRoutine, preloadRoutine } from './breakdance';
 import type { Game } from './game';
 import type { Unit } from './unit';
 import { ENDING_BARKS } from './quests';
@@ -12,7 +16,48 @@ import { easeInOut, pick, rand, yawTo } from './util';
 
 const DANCES: MotionId[] = ['dance_crab', 'dance_brazilian', 'dance_dream_wings', 'dance_maze'];
 const FIREWORK_COLORS = [C.gold, C.redHot, C.water, C.purple, C.green, C.holy];
-const LENGTH = 30;
+/** Seconds into the ending when the ring makes room and the hero starts the routine. */
+const BREAK_AT = 3.2;
+/**
+ * Seconds of dancing after the routine before the credits: the Jumper line, then the three lines
+ * of the chapter's or the true ending's celebration, about three seconds each.
+ */
+const AFTER = 12.5;
+/** The player's jump window (src/game/player.ts), for the ring hopping on a landing. */
+const HOP = { from: 0.8, to: 1.56, speed: 1.15, fade: 0.06 } as const;
+
+/** What the ring shouts at each move, [Korean, English]. */
+const BREAK_BARKS: Partial<Record<RoutineStep['id'], [string, string][]>> = {
+  break_sixstep: [['다리 좀 봐!', 'Look at those legs go!'], ['풋워크!', 'Footwork!']],
+  break_spin: [['돌려라!', 'Spin it!'], ['빙글빙글!', 'Round and round!']],
+  break_jumpspin: [['두 바퀴나 돌았어!', 'Two full turns!'], ['720도!', 'Seven-twenty!']],
+  break_backflip: [['백플립이다!', 'A back flip!'], ['뒤로 한 바퀴!', 'It flipped!']],
+  break_oneclaw: [['프리즈!', 'Freeze!'], ['집게 하나로 섰어!', 'On one claw!']],
+};
+
+/** The caption for each move while the hero breaks, [Korean, English]. */
+const STEP_LABEL: Record<RoutineStep['id'], [string, string]> = {
+  break_toprock: ['탑록', 'Toprock'],
+  break_sixstep: ['식스스텝', 'Six-step'],
+  break_spin: ['스핀', 'Spin'],
+  break_jumpspin: ['720', '720'],
+  break_backflip: ['백플립', 'Back flip'],
+  break_oneclaw: ['한 집게 프리즈', 'One-claw freeze'],
+  break_clawstand: ['클로 스탠드', 'Claw stand'],
+};
+
+const bark = (lines: [string, string][]): string => {
+  const [ko, en] = pick(lines);
+  return tr(ko, en);
+};
+
+/** Moves the ring answers when they land, not when they start. */
+const ON_LANDING = new Set<RoutineStep['id']>(['break_jumpspin', 'break_backflip', 'break_oneclaw']);
+
+interface Reaction {
+  at: number;
+  run: () => void;
+}
 
 /** Two staggered rings so the whole town fits around the hero in a small square. */
 function ringSlots(n: number): { a: number; r: number }[] {
@@ -38,10 +83,18 @@ export class EndingSequence {
   private centre = new THREE.Vector3();
   private orbit0 = 0;
   private finishing = false;
-  private captionIndex = -1;
   private mode:'chapter'|'final'='final';
   private onFinished:(()=>void)|null=null;
   private sequence = 0;
+  private captionText: string | null = null;
+  /** The hero's breakdance, started at BREAK_AT (built with the ending: the player comes later). */
+  routine: BreakRoutine | null = null;
+  private breakStarted = false;
+  /** Seconds into the ending when the routine ended (-1 until then). */
+  private breakEnded = -1;
+  private stepId: RoutineStep['id'] | null = null;
+  private length = BREAK_AT + routineLength() + AFTER;
+  private reactions: Reaction[] = [];
 
   constructor(private readonly game: Game) {}
 
@@ -50,15 +103,17 @@ export class EndingSequence {
     const g = this.game;
     const sequence = ++this.sequence;
     this.started = false;
-    this.active = true;this.mode=mode;this.onFinished=onFinished??null;this.finishing=false;this.captionIndex=-1;
+    this.active = true;this.mode=mode;this.onFinished=onFinished??null;this.finishing=false;this.captionText=null;this.stepId=null;
     g.journey?.closeChapterEnding();
     g.world2.showEpilogue();
     g.hud.dialogue.close();
     g.hud.questLog.toggle(false);
     g.player.setTarget(null);
+    g.player.breakdance.cancel(0);
     g.hud.setCinematic(true);
     g.say(g.npcById('brinebeard')!.unit, tr('클로헤이븐 주민들! 모이게! 우리의 영웅이 돌아왔어!','Clawhaven! Gather round! Our hero is back!'), true);
     if (g.musicOn) void g.audio.playMusic('music-ending', 2.5);
+    void preloadRoutine();
     await g.app.blackout(true, 1100);
     if (!g.alive || sequence !== this.sequence) return;
     // Under the black: drop any dialogue shot and its long lens before the ending camera takes over.
@@ -101,7 +156,16 @@ export class EndingSequence {
       vignette: { offset: 0.25, darkness: 0.65 },
       saturation: 0.08,
     });
+    this.routine = new BreakRoutine(p, {
+      onStep: (step) => this.onBreakStep(step),
+      onEvent: (name, step) => this.onBreakEvent(name, step),
+      onEnd: () => this.onBreakEnd(),
+    });
     this.t = 0;
+    this.breakStarted = false;
+    this.breakEnded = -1;
+    this.reactions = [];
+    this.length = BREAK_AT + routineLength() + AFTER;
     this.started = true;
     this.nextFirework = 1.2;
     this.nextBark = 2.5;
@@ -116,6 +180,9 @@ export class EndingSequence {
     this.active = this.started = false;
     this.onFinished = null;
     const g = this.game;
+    // The hero's routine first: its end hook would queue the after-dance otherwise.
+    this.routine?.cancel(0);
+    this.reactions = [];
     for (const u of this.dancers) u.motion.stop(undefined, .3);
     this.dancers = [];
     for (const home of this.crowdHomes) home.unit.teleport(g.world,home.x,home.z,home.yaw);
@@ -158,6 +225,110 @@ export class EndingSequence {
     return best;
   }
 
+  // ---------------------------------------------------------------- the hero's breakdance
+
+  private get crowd(): Unit[] {
+    return this.dancers.slice(1);
+  }
+
+  /** Run `fn` `delay` seconds from now, on the ending's clock. */
+  private later(delay: number, fn: () => void): void {
+    this.reactions.push({ at: this.t + delay, run: fn });
+  }
+
+  private startBreak(): void {
+    const g = this.game;
+    this.breakStarted = true;
+    // The ring stops to watch, facing the hero, and the hero takes the floor.
+    for (const u of this.crowd) {
+      u.motion.stop(undefined, 0.5);
+      u.express('happy', 30);
+    }
+    const brine = g.npcById('brinebeard')?.unit;
+    if (brine) g.say(brine, tr('자리를 비켜 주게! 우리 영웅이 브레이킹을 한다네!', 'Make room! Our hero is going to break!'), true);
+    this.routine?.start();
+  }
+
+  private onBreakStep(step: RoutineStep): void {
+    const g = this.game;
+    this.stepId = step.id;
+    const barks = BREAK_BARKS[step.id];
+    const crowd = this.crowd;
+    if (barks && crowd.length && !ON_LANDING.has(step.id)) {
+      this.later(rand(1.2, 2), () => g.say(pick(crowd), bark(barks)));
+    }
+    if (step.id === 'break_toprock') {
+      // A few in the ring wave along with the count.
+      for (const u of crowd) if (Math.random() < 0.35) this.later(rand(0.6, 2.5), () => u.act('gesture_hello', { fade: 0.25 }));
+    }
+  }
+
+  private onBreakEvent(name: string, step: RoutineStep): void {
+    const g = this.game;
+    if (name === 'takeoff') g.audio.sfx('sfx-servo-whir', { volume: 0.45 });
+    const landing = name === 'land' && (step.id === 'break_jumpspin' || step.id === 'break_backflip');
+    const freeze = name === 'hit' && step.id === 'break_oneclaw';
+    if (!landing && !freeze) return;
+    g.audio.sfx('sfx-footstep-stone', { volume: 0.6, pitch: 0.06 });
+    g.audio.sfx('sfx-crit', { volume: 0.3, delay: 0.05 });
+    // The ring erupts: hops, raised claws, a shout, fireworks right over the square.
+    const crowd = this.crowd;
+    const share = step.id === 'break_backflip' || freeze ? 0.85 : 0.6;
+    for (const u of crowd) {
+      if (Math.random() > share) continue;
+      const d = rand(0.05, 0.35);
+      if (freeze || Math.random() < 0.35) {
+        const wave: MotionId = Math.random() < 0.5 ? 'gesture_salute' : 'gesture_hello';
+        this.later(d, () => u.act(wave, { fade: 0.15 }));
+      } else this.later(d, () => u.act('jump', HOP));
+      u.express('love', 4);
+    }
+    const barks = BREAK_BARKS[step.id];
+    if (barks && crowd.length) g.say(pick(crowd), bark(barks), true);
+    for (let i = 0; i < (freeze ? 4 : 2); i++) {
+      const a = Math.random() * Math.PI * 2;
+      const at = this.centre.clone().add(new THREE.Vector3(Math.cos(a) * rand(6, 12), 0, Math.sin(a) * rand(6, 12)));
+      at.y = g.world.heightAt(at.x, at.z);
+      this.later(i * 0.18, () => g.vfx.firework(at, pick(FIREWORK_COLORS), rand(8, 11)));
+    }
+  }
+
+  private onBreakEnd(): void {
+    if (this.finishing) return;
+    this.breakEnded = this.t;
+    this.length = this.t + AFTER;
+    // Everyone dances again, the hero with them.
+    this.dancers.forEach((u, i) => {
+      this.later(i === 0 ? 0.6 : rand(0.1, 0.8), () => u.act(DANCES[i % DANCES.length], { loop: true, fade: 0.4, speed: rand(0.95, 1.05) }));
+    });
+  }
+
+  /**
+   * Before the break, the chapter's or the true ending's first line; the move's name while the
+   * hero breaks; after it, the Jumper line and then the rest of the celebration's lines.
+   */
+  private caption(t: number): string {
+    const name = this.game.player.unit.name;
+    const lines = this.mode === 'chapter' ? [
+      tr('심해의 왕관을 되찾았습니다. 해안에 평화가 돌아왔어요.','The deep-sea crown is reclaimed. Peace has returned to the shore.'),
+      tr('온 마을의 게들이 영웅과 함께 춤을 춥니다.','The whole village dances with its hero.'),
+      tr('함께 모험해 줘서 고마워요!','Thank you for sharing this adventure!'),
+      tr('첫 번째 모험의 끝 · 별빛 너머에는 새로운 섬이 기다립니다.','The first adventure ends. Beyond the stars, a new island awaits.'),
+    ] : [
+      tr('솔라칸을 물리치고 친구 미라를 구했습니다. 세 섬에 새 아침이 밝았어요.','Solarkan is defeated and Mira is free. Dawn returns to all three islands.'),
+      tr('돌아온 친구와 네 왕관의 영웅을 위해, 온 마을이 함께 춤을 춥니다.','The village dances for its rescued friend and the hero of four crowns.'),
+      tr('잊힌 별의 섬은 더 이상 혼자가 아닙니다. 우리의 모험은 전설이 되었습니다.','The Isle of Forgotten Stars is no longer alone. Our adventure has become a legend.'),
+      tr(`TRUE ENDING · 함께해 줘서 고마워요, ${name}.`,`TRUE ENDING · Thank you for joining us, ${name}.`),
+    ];
+    if (!this.breakStarted) return t >= 1.5 ? lines[0] : '';
+    if (this.breakEnded < 0) return this.stepId ? tr(...STEP_LABEL[this.stepId]) : '';
+    const after = t - this.breakEnded;
+    if (after < 3.5) return tr('방금 춤의 모든 동작은 MuJoCo에서 실행한 Jumper 학습 정책이에요.','Every move of that routine is a trained Jumper policy, rolled out in MuJoCo.');
+    if (after < 6.5) return lines[1];
+    if (after < 9.5) return lines[2];
+    return lines[3];
+  }
+
   private placeCamera(t: number): void {
     const g = this.game;
     // Start high and wide over the ring, then settle inside it at crab height.
@@ -176,19 +347,26 @@ export class EndingSequence {
     const g = this.game;
     this.t += dt;
     const t = this.t;
-    this.placeCamera(t);
 
-    const captions = this.mode==='chapter' ? [[1.5,tr('심해의 왕관을 되찾았습니다. 해안에 평화가 돌아왔어요.','The deep-sea crown is reclaimed. Peace has returned to the shore.')],[8,tr('온 마을의 게들이 영웅과 함께 춤을 춥니다.','The whole village dances with its hero.')],[15,tr('함께 모험해 줘서 고마워요!','Thank you for sharing this adventure!')],[22.5,tr('첫 번째 모험의 끝 · 별빛 너머에는 새로운 섬이 기다립니다.','The first adventure ends. Beyond the stars, a new island awaits.')]] as const : [
-      [1.5, tr('솔라칸을 물리치고 친구 미라를 구했습니다. 세 섬에 새 아침이 밝았어요.','Solarkan is defeated and Mira is free. Dawn returns to all three islands.')],
-      [8, tr('돌아온 친구와 네 왕관의 영웅을 위해, 온 마을이 함께 춤을 춥니다.','The village dances for its rescued friend and the hero of four crowns.')],
-      [15, tr('잊힌 별의 섬은 더 이상 혼자가 아닙니다. 우리의 모험은 전설이 되었습니다.','The Isle of Forgotten Stars is no longer alone. Our adventure has become a legend.')],
-      [22.5, tr(`TRUE ENDING · 함께해 줘서 고마워요, ${g.player.unit.name}.`,`TRUE ENDING · Thank you for joining us, ${g.player.unit.name}.`)],
-    ] as const;
-    let idx = -1;
-    for (let i = 0; i < captions.length; i++) if (t >= captions[i][0]) idx = i;
-    if (idx !== this.captionIndex) {
-      this.captionIndex = idx;
-      g.hud.setCaption(idx >= 0 ? captions[idx][1] : '');
+    if (!this.breakStarted && t >= BREAK_AT) this.startBreak();
+    this.routine?.update(dt);
+    // The camera's centre follows the hero, whose moves travel a little.
+    const p = g.player.unit.pos;
+    const follow = Math.min(1, dt * 1.5);
+    this.centre.x += (p.x - this.centre.x) * follow;
+    this.centre.z += (p.z - this.centre.z) * follow;
+    this.placeCamera(t);
+    for (let i = this.reactions.length - 1; i >= 0; i--) {
+      const r = this.reactions[i];
+      if (t < r.at) continue;
+      this.reactions.splice(i, 1);
+      r.run();
+    }
+
+    const text = this.caption(t);
+    if (text !== this.captionText) {
+      this.captionText = text;
+      g.hud.setCaption(text);
     }
     if (t > 4) g.hud.showSkip(true);
 
@@ -202,13 +380,16 @@ export class EndingSequence {
       g.vfx.firework(base, pick(FIREWORK_COLORS), rand(7, 12));
       if (Math.random() < 0.4) g.audio.sfx('sfx-crit', { volume: 0.25, delay: 1.2 });
     }
-    if (t >= this.nextBark && this.dancers.length > 1) {
+    // The ring chats while it dances; while the hero breaks it shouts at the moves instead.
+    const dancing = !this.breakStarted || this.breakEnded >= 0;
+    if (t >= this.nextBark && this.dancers.length > 1 && dancing) {
       this.nextBark = t + rand(1.6, 3.2);
       g.say(pick(this.dancers.slice(1)), pick(ENDING_BARKS.map((line,i)=>tr(['만세!','다 같이 춤춰요!','내 다리 조심!','빛이 돌아왔어!','최고의 밤이야!','꿈은 아니겠지?'][i],line))));
     }
     const skip = t > 4 && (g.input.wasPressed('Space') || g.input.wasPressed('Escape') || g.input.wasPressed('Enter'));
-    if ((t >= LENGTH || skip) && !this.finishing) {
+    if ((t >= this.length || skip) && !this.finishing) {
       this.finishing = true;
+      this.routine?.cancel(0.2);
       if(this.mode==='chapter'){
         const finished = this.onFinished;
         this.cancel();

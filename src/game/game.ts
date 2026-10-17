@@ -1,3 +1,4 @@
+import {VillageGames} from './villageGames';
 import {t} from '../i18n';
 import {loadingLabel,loadingTips,regionName,regionSubtitle} from './worldLocale';
 // The game session: loads the world and every crab, runs the frame loop, routes input, and glues
@@ -6,7 +7,8 @@ import * as THREE from 'three';
 import {starMemory} from './starMemories';
 import {Achievements} from './achievements';
 import {VoyageIsland} from './voyageIsland';
-import {CORAL_ISLAND} from '../world/voyage';
+import {worldMusic,type MusicMood} from './worldMusic';
+import {VOYAGE_ISLANDS} from '../world/voyage';
 import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
@@ -104,6 +106,7 @@ export class Game {
   journey: BossJourney | null = null;
   lighthouseSecret: LighthouseSecret | null = null;
   boats:ShoreBoat|null=null;
+  villageGames:VillageGames|null=null;
   achievements:Achievements|null=null;
   voyageIsland:VoyageIsland|null=null;
 
@@ -133,6 +136,7 @@ export class Game {
   zone = '';
   musicOn = true;
   private music = '';
+  private musicChapter:1|2|3=1;
   private combatMusicUntil = 0;
   private zoneCandidate = '';
   private zoneSince = 0;
@@ -164,7 +168,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
+    return !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -490,6 +494,7 @@ export class Game {
     this.achievements=new Achievements(this);
     this.journey.restore();
     this.intro();
+    this.villageGames=new VillageGames(this);
     this.multiplayer = new Multiplayer(this);
   }
 
@@ -506,7 +511,7 @@ export class Game {
   takeMapSnapshot() {
     const pts: THREE.Vector3[] = Object.values(this.world.pois).map((p) => p.position);
     for (const s of this.world.spawns) pts.push(...s.points);
-    if(this.world2.chapter===1)pts.push(new THREE.Vector3(CORAL_ISLAND.x+CORAL_ISLAND.radius,4,CORAL_ISLAND.z));
+    if(this.world2.chapter===1)for(const i of VOYAGE_ISLANDS)for(const sign of [-1,1])pts.push(new THREE.Vector3(i.x+sign*i.radius,8,i.z+sign*i.radius));
     let minX = Infinity;
     let maxX = -Infinity;
     let minZ = Infinity;
@@ -605,13 +610,14 @@ export class Game {
         if(this.world2.chapter===1){this.boss.update(dt);this.finalBoss.update(dt);}else if(this.world2.chapter===2)this.worldBoss.update(dt);else this.dawnBoss.update(dt);
       }
       this.journey?.update(dt);
-      for (const n of this.npcs) n.update(dt); if(this.multiplayer?.battle.authority!==false)for (const t of this.townsfolk) t.update(dt);
+      for (const n of this.npcs) n.update(dt); if(this.multiplayer?.battle.authority!==false)for (const t of this.townsfolk) if(!this.villageGames?.ownsNpc(t.unit))t.update(dt);
       if (this.multiplayer?.battle.authority !== false) this.separate();
       this.ending.update(dt);
       this.updateDeath();
       this.updateStatuses();
     }
     this.multiplayer?.update(dt);
+    this.villageGames?.update(paused?0:dt);
     this.boats?.update(paused?0:dt);
     this.achievements?.update(paused?0:dt);
     this.voyageIsland?.update();
@@ -753,7 +759,7 @@ export class Game {
       for (let i = 1; i <= 4; i++) if (inp.wasPressed(`Digit${i}`)) hints.mark('ability');
       if (inp.wasPressed('KeyF')) hints.mark('interact');
     }
-    if (inp.wasPressed('KeyT') && !hud.dialogue.isOpen && !hud.questLog.open && !this.player.channel) {
+    if (inp.wasPressed('KeyT') && !this.villageGames?.playing && !hud.dialogue.isOpen && !hud.questLog.open && !this.player.channel) {
       const chapter = this.world2.chapter;
       const origin = this.player.unit.pos.clone().add(new THREE.Vector3(0, 1, 0));
       this.player.startChannel(t('광장으로 돌아가는 중 · T를 계속 누르세요', 'Returning to the square · Keep holding T'), 2, 'KeyT', origin, () => {
@@ -855,7 +861,7 @@ export class Game {
     }
     const it = this.findInteractable();
     if (!it) this.hud.prompt.hide();
-    else if(it.kind==='islandTreasure')this.hud.prompt.show('F',this.achievements?.has('treasure')?t('보물상자 살펴보기','Inspect treasure chest'):t('진주빛 보물상자 열기 · 75 코인','Open pearl treasure · 75 coins'));
+    else if(it.kind==='islandTreasure')this.hud.prompt.show('F',this.voyageIsland?.treasurePrompt??'');
     else if(it.kind==='boat')this.hud.prompt.show('F',this.boats!.label());
     else if(it.kind==='secret')this.hud.prompt.show('F',t('길게 눌러 바위의 게 문양 살펴보기','Hold to inspect the crab carving'));
     else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.portalLabel());
@@ -1315,7 +1321,7 @@ export class Game {
   }
 
   private updateZone(): void {
-    const z = this.world2.chapter>=2 ? this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z) : this.voyageIsland?.onIsland?'Coralwind Isle':this.zoneAt(this.player.unit.pos);
+    const z = this.world2.chapter>=2 ? this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z) : this.voyageIsland?.currentIsland?this.voyageIsland.currentIsland.name:this.zoneAt(this.player.unit.pos);
     if (z !== this.zoneCandidate) {
       this.zoneCandidate = z;
       this.zoneSince = this.time;
@@ -1336,17 +1342,20 @@ export class Game {
 
   private updateMusic(force = false): void {
     if (!this.musicOn || this.ending.active) return;
-    let want = 'music-town';
+    const chapter=this.world2.chapter;
+    if(this.musicChapter!==chapter){this.musicChapter=chapter;this.combatMusicUntil=0;}
+    let mood:MusicMood='explore';
     const now = this.time;
-    if (this.encounter.engaged || (this.zone === 'The Iron Wreck' && this.quests.status.q4 === 'active' && this.boss.state !== 'dead' && this.boss.state !== 'dying')) {
-      want = 'music-boss';
+    if (this.encounter.engaged || (chapter===1 && this.zone === 'The Iron Wreck' && this.quests.status.q4 === 'active' && this.boss.state !== 'dead' && this.boss.state !== 'dying')) {
+      mood = 'boss';
     } else if (this.player.inCombat && this.zone !== 'Clawhaven') {
       this.combatMusicUntil = now + 6;
-      want = 'music-combat';
-    } else if (now < this.combatMusicUntil) want = 'music-combat';
+      mood = 'combat';
+    } else if (now < this.combatMusicUntil) mood = 'combat';
+    const want=worldMusic(chapter,mood);
     if (want !== this.music || force) {
       this.music = want;
-      void this.audio.playMusic(want, want === 'music-combat' ? 1.2 : 2.2);
+      void this.audio.playMusic(want, mood === 'combat' ? 1.2 : 2.2);
     }
   }
 
@@ -1377,6 +1386,7 @@ export class Game {
     this.lighthouseSecret?.dispose();
     this.lighthouseSecret = null;
     this.journey = null;
+    this.villageGames?.dispose();this.villageGames=null;
     this.multiplayer?.dispose();
     this.multiplayer = null;
     this.debug?.dispose();

@@ -2,6 +2,7 @@
 
     python -I tools/motion/record_clips.py [--out scratch/motion-raw] [--only walk_fwd,jump]
     python -I tools/motion/record_clips.py --bundle <jumper>/out/bundle_<ts>/crabcraft --only skills
+    python -I tools/motion/record_clips.py --bundle <jumper>/out/bundle_<ts>/crabcraft --only breaks
 
 Each clip is a fresh robot standing on the floor at the calibrated home pose, driven through the
 bundle's controller exactly like `play --app` drives it: velocity commands for locomotion, the
@@ -9,12 +10,18 @@ bundle's own pad bindings to enter jump / gestures / dances / claws / skills. Wr
 `<id>.npz` per clip (200 Hz control-tick samples); `export_clips.py` turns those into game clips.
 
 The six skills (attack_swipe, attack_slam, cast, hit_react, death, sit) are the `jumper.skill_*`
-policies, which only the crabcraft bundle carries: record them with `--bundle` pointing at it.
+policies, which only the crabcraft bundle carries: record them with `--bundle` pointing at it. So are
+the seven breakdance clips, on the bundle's Home chords: the four `jumper.break_*` moves, the spin
+(`jumper.power_spin_feet`), the 720 jump spin (`jumper.power_jumpspin720`) and the back flip
+(`jumper.power_backflip`). The last three have no recording and no clock, so nothing ends them: each is
+let go with its own chord after a fixed time, as a person would, the same time Robot Mode's host waits
+before it presses the switch for them (src/robot/sim/core.ts, AUTO_LEAVE_S).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -76,7 +83,38 @@ SKILLS = {
     "sit": ("L3", "skill_sit"),
 }
 
+# The crabcraft bundle's breakdance modes (deploy/crabcraft.manifests.json): Home + a pad button
+# (or the d-pad's up), from locomotion. Game clip id -> (pad control held with Home, bundle mode,
+# seconds the policy is left running before its switch is pressed again, or None for a recording
+# that ends by itself).
+BREAKS = {
+    "break_toprock": ("A", "break_toprock", None),
+    "break_sixstep": ("X", "break_sixstep", None),
+    "break_clawstand": ("Y", "break_clawstand", None),
+    "break_oneclaw": ("L3", "break_oneclaw", None),
+    # No recording and no clock: it spins until let go. 3.5 s is the spin-up and about eight turns
+    # (2.27 to 2.28 rev/s held through the bundle, whose controller clamps its targets at the stops).
+    "break_spin": ("LB", "power_spin", 3.5),
+    # No recording and no clock either: each jumps once and stands. Let go after the landing has
+    # settled, at Robot Mode's own times (src/robot/sim/core.ts, AUTO_LEAVE_S).
+    "break_jumpspin": ("RB", "power_jumpspin", 1.4),
+    "break_backflip": ("dpad_up", "power_backflip", 1.2),
+}
+
+# The d-pad is a pad axis pair, not a button: control name -> (x, y).
+DPAD = {"dpad_up": (0, 1), "dpad_down": (0, -1), "dpad_left": (-1, 0), "dpad_right": (1, 0)}
+
 STAND = 1.5  # seconds standing before anything is asked
+
+
+def jumper_branch(bundle: Path) -> str | None:
+    """The jumper branch the bundle's checkout is on (clip provenance), if it is in one."""
+    try:
+        out = subprocess.run(["git", "-C", str(bundle), "rev-parse", "--abbrev-ref", "HEAD"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return out if out and out != "HEAD" else None
 
 
 def save(out: Path, cid: str, host: Host, meta: dict) -> None:
@@ -178,6 +216,62 @@ def record_skill(cid: str) -> Host:
     return h
 
 
+def record_break(cid: str) -> Host:
+    """Home held, the move's button pressed and let go, Home let go: the bundle's own chord.
+
+    A recording plays out and hands back by itself; the spin and the two jumps, which have no end of
+    their own, are left running for their seconds from the handover and then let go with the same
+    chord, as a person would. Then until the walking policy is running again, and 1.2 s of standing
+    after, as for the skills."""
+    button, mode, hold = BREAKS[cid]
+    h = new_host()
+    if mode not in h.contracts:
+        raise SystemExit(f"{cid}: the bundle {h.bundle} has no mode {mode}; record the breakdance "
+                         "with --bundle <the crabcraft bundle>")
+
+    def control(down: bool) -> None:
+        if button in DPAD:
+            h.pad(dpad=DPAD[button] if down else (0, 0))
+        else:
+            h.button(button, down)
+
+    def chord() -> None:
+        h.button("home", True)
+        h.run(0.04)
+        control(True)
+        h.run(0.04)
+        control(False)
+        h.run(0.04)
+        h.button("home", False)
+
+    h.run(STAND)
+    h.rec.mark("trigger", h.t)
+    chord()
+    entered = False
+    started = None
+    limit = 60.0
+    while h.t < limit:
+        h.step()
+        if h.mode == mode:
+            entered = True
+            if started is None and h.fsm.running_policy:
+                started = h.t
+            if hold is not None and started is not None and h.t - started >= hold:
+                h.rec.mark("let_go", h.t)
+                chord()
+                hold = None
+        elif entered and h.mode == "locomotion":
+            h.rec.mark("left", h.t)
+            break
+    if not entered:
+        raise SystemExit(f"{cid}: the controller never entered {mode}")
+    while not h.fsm.running_policy and h.t < limit:
+        h.step()
+    h.rec.mark("locomotion", h.t)
+    h.run(1.2)
+    return h
+
+
 def record_jump() -> Host:
     h = new_host()
     h.run(STAND)
@@ -241,7 +335,9 @@ def record_claw(side: str) -> Host:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=ROOT / "scratch" / "motion-raw")
-    ap.add_argument("--only", default="", help="clip ids, comma-separated; `skills` for the six skills")
+    ap.add_argument("--only", default="",
+                    help="clip ids, comma-separated; `skills` for the six skills, `breaks` for the "
+                         "seven breakdance clips")
     ap.add_argument("--bundle", type=Path, default=None,
                     help="the bundle to drive (default: the jumper checkout's example bundle)")
     args = ap.parse_args()
@@ -251,6 +347,8 @@ def main() -> None:
     only = set(filter(None, args.only.split(",")))
     if "skills" in only:
         only = (only - {"skills"}) | set(SKILLS)
+    if "breaks" in only:
+        only = (only - {"breaks"}) | set(BREAKS)
     jobs = [(cid, "locomotion", cmd) for cid, cmd in LOCOMOTION.items()]
     jobs += [("jump", "jump", None), ("claw_left", "claw", "left"), ("claw_right", "claw", "right")]
     jobs += [(cid, "motion", None) for cid in GESTURES]
@@ -258,6 +356,12 @@ def main() -> None:
     modes = json.loads((bundle / "bundle.json").read_text("utf-8"))["modes"]
     carried = [cid for cid, (_, mode) in SKILLS.items() if mode in modes]
     jobs += [(cid, "skill", None) for cid in carried]
+    carried_breaks = [cid for cid, (_, mode, _) in BREAKS.items() if mode in modes]
+    jobs += [(cid, "break", None) for cid in carried_breaks]
+    missing_breaks = sorted(set(BREAKS) - set(carried_breaks))
+    if only & set(missing_breaks):
+        raise SystemExit(f"{bundle} has no mode for {sorted(only & set(missing_breaks))}; record the "
+                         "breakdance with --bundle <the crabcraft bundle>")
     missing = sorted(set(SKILLS) - set(carried))
     if only & set(missing):
         raise SystemExit(f"{bundle} has no mode for {sorted(only & set(missing))}; record the skills "
@@ -281,6 +385,10 @@ def main() -> None:
         elif kind == "skill":
             h = record_skill(cid)
             meta = {"kind": kind, "source": SKILLS[cid][1], "bundle": str(h.bundle)}
+        elif kind == "break":
+            h = record_break(cid)
+            meta = {"kind": kind, "source": BREAKS[cid][1], "bundle": str(h.bundle),
+                    "method": "bundle", "jumper_branch": jumper_branch(h.bundle)}
         else:
             h = record_motion(cid)
             meta = {"kind": kind, "source": GESTURES[cid][2]}

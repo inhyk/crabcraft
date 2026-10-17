@@ -1,0 +1,60 @@
+# World of Crabcraft on crabcraft-1. Installed to /etc/caddy/Caddyfile by deploy/vm/setup.sh.
+# crab-dev.seonn.dev serves branch dev, crab.seonn.dev serves branch main.
+# Caddy obtains the certificates itself once the A records point at this VM.
+
+{
+	servers {
+		# The GCP firewall opens tcp 80/443 only, so do not advertise HTTP/3 (udp 443).
+		protocols h1 h2
+	}
+}
+
+# args[0] = env (dev|prod), args[1] = local port of that env's Node server
+(crabcraft) {
+	encode zstd gzip
+
+	header {
+		# SharedArrayBuffer for MuJoCo WASM threads and onnxruntime-web (was vercel.json "headers").
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Embedder-Policy "require-corp"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	# Multiplayer rooms (WebSocket upgrade) and accounts go to the env's own Node server.
+	# /api/account/* was a vercel.json rewrite to the Cloudflare Worker.
+	handle /multiplayer {
+		reverse_proxy 127.0.0.1:{args[1]}
+	}
+	handle /api/account/* {
+		reverse_proxy 127.0.0.1:{args[1]}
+	}
+	handle /healthz {
+		reverse_proxy 127.0.0.1:{args[1]}
+	}
+
+	# Videos synced from gs://crabcraft-seonn-media/media/ by crabcraft-media-sync.timer.
+	handle_path /media/* {
+		root * /srv/crabcraft/media
+		header Cache-Control "public, max-age=3600"
+		file_server
+	}
+
+	# The game itself: the active release's Vite build.
+	handle {
+		root * /srv/crabcraft/{args[0]}/current/dist
+		@hashed path /assets/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@unhashed not path /assets/*
+		header @unhashed Cache-Control "no-cache"
+		file_server
+	}
+}
+
+crab-dev.seonn.dev {
+	import crabcraft dev 8081
+}
+
+crab.seonn.dev {
+	import crabcraft prod 8080
+}

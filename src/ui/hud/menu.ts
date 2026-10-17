@@ -1,9 +1,10 @@
 // Esc game menu: Resume, Settings (music and effects volume, graphics quality, chat bubbles),
-// Controls, Robot Mode, Return to Title.
+// Controls, Videos, Robot Mode, Return to Title.
 import { h } from '../dom';
 import {language,setLanguage,t,type Language} from '../../i18n';
 import {setQuestLanguage} from '../../game/quests';
 import { localStorageSet } from '../../app';
+import { openVideos } from '../videos';
 import type { Game } from '../../game/game';
 import type { QualitySetting } from '../../core/engine';
 
@@ -16,6 +17,7 @@ const CONTROLS: [string, string][] = [
   ['Both mouse buttons', 'Walk forward'],
   ['Mouse wheel', 'Zoom'],
   ['Space', 'Jump'],
+  ['B', 'Breakdance: six trained moves in a row (move to stop)'],
   ['Tab / Click', 'Target an enemy'],
   ['1 2 3 4', 'Abilities'],
   ['F', 'Talk, continue a conversation, hold at the beacon'],
@@ -67,11 +69,24 @@ export class GameMenu {
       this.btn(t('계속하기','Resume'), () => this.close()),
       this.btn(g.app.account.label,()=>g.app.account.show(),true),
       this.btn(t('🏆 업적 · J','🏆 Achievements · J'),()=>this.achievements(),true),
+      this.btn(t('🙈 마을 놀이','🙈 Village games'),()=>this.villageGames(),true),
       this.btn(t('설정','Settings'), () => this.settings(), true),
       this.btn(t('조작 방법','Controls'), () => this.controls(), true),
+      this.btn(t('영상','Videos'), () => openVideos(g.audio), true),
       this.btn(t('로봇 모드','Robot Mode'), () => void g.app.go('robot'), true),
       this.btn(t('처음 화면','Return to Title'), () => void g.app.go('title'), true),
     );
+  }
+
+  villageGames():void {
+    const g=this.game,start=(mode:'hide'|'tag')=>{if(g.world2.chapter!==1){g.hud.messages.info(t('월드 1 마을에서 시작할 수 있어요.','Start in the World I village.'));return;}g.villageGames?.command(mode);this.close();};
+    this.panel.className='menu cc-panel hud-i';
+    this.panel.replaceChildren(h('h2',{class:'cc-title'},t('마을 놀이','Village games')),
+      h('p',{class:'village-games-guide'},t('혼자라면 마을 주민이 술래! 친구와 함께라면 시작한 사람이 술래예요. 모두 광장으로 모여요. 숨바꼭질은 15초 동안 숨고 2분 동안 찾아요. 술래잡기는 5초 준비 후 90초 동안 도망가요. 가까이 닿으면 잡히고 광장에서 60m를 벗어나면 탈락해요. 놀이 중에는 전투 피해를 받지 않아요.','Solo: a villager seeks. With friends: whoever starts is the seeker. Everyone gathers at the square. Hide & Seek: hide for 15 seconds, then search for 2 minutes. Tag: 5 seconds to prepare, then run for 90 seconds. Contact catches a runner; leaving the 60m town area counts as caught. Combat damage is disabled during the round.')),
+      this.btn(t('🙈 숨바꼭질 시작','🙈 Start Hide & Seek'),()=>start('hide')),
+      this.btn(t('🏃 술래잡기 시작','🏃 Start Tag'),()=>start('tag')),
+      this.btn(t('놀이 끝내기','End round'),()=>{g.villageGames?.command('stop');this.close();},true),
+      this.btn(t('뒤로','Back'),()=>this.main(),true));
   }
 
   achievements():void {this.panel.className='menu cc-panel hud-i achievement-menu';this.panel.replaceChildren(h('h2',{class:'cc-title'},t('항해와 모험의 업적','Voyage & Adventure Achievements')),this.game.achievements?.panel()??h('div'),this.btn(t('뒤로','Back'),()=>this.main(),true));}
@@ -140,7 +155,7 @@ export class GameMenu {
 
   controls(): void {
     const table = h('table');
-    const ko=['앞 / 뒤로 걷기','왼쪽 / 오른쪽으로 옆걸음','방향 돌리기','시점과 방향 조절','주변 둘러보기','앞으로 걷기','확대 / 축소','점프','적 선택','기술 사용','대화, 채집, 등대 켜기 / 끄기','퀘스트 기록','음악 켜기 / 끄기','말풍선 켜기 / 끄기','로봇 모드','대상 해제, 창 닫기, 메뉴'];
+    const ko=['앞 / 뒤로 걷기','왼쪽 / 오른쪽으로 옆걸음','방향 돌리기','시점과 방향 조절','주변 둘러보기','앞으로 걷기','확대 / 축소','점프','브레이크댄스: 학습된 동작 여섯 개를 이어서 춰요 (움직이면 멈춰요)','적 선택','기술 사용','대화, 채집, 등대 켜기 / 끄기','퀘스트 기록','음악 켜기 / 끄기','말풍선 켜기 / 끄기','로봇 모드','대상 해제, 창 닫기, 메뉴'];
     const mouseKeys:Record<string,string>={'Right mouse drag':'우클릭 드래그','Left mouse drag':'좌클릭 드래그','Both mouse buttons':'마우스 양쪽 버튼','Mouse wheel':'마우스 휠','Click':'클릭'};
     for (const [i,[k, what]] of CONTROLS.entries()) {
       const keys = h('td');
