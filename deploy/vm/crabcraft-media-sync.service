@@ -1,0 +1,19 @@
+# Mirrors gs://crabcraft-seonn-media/media/ to /srv/crabcraft/media/ (served by Caddy at /media/).
+# Started every 10 minutes by crabcraft-media-sync.timer. Installed by deploy/vm/setup.sh.
+[Unit]
+Description=Crabcraft media sync from Cloud Storage
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=crabcraft
+Group=crabcraft
+# gcloud is a snap; snap-confine needs its setuid bit, so NoNewPrivileges stays off here.
+Environment=HOME=/var/lib/crabcraft
+Environment=CLOUDSDK_CORE_DISABLE_PROMPTS=1
+ExecStart=/srv/crabcraft/bin/media-sync.sh
+UMask=0022
+TimeoutStartSec=30min
+Nice=10
+IOSchedulingClass=idle
