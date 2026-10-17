@@ -4,9 +4,9 @@
 // quest with the debug hooks (F8 god mode, F9 complete objective, F10 teleport) plus real movement
 // and ability key presses, screenshots each stage, and fails on any console error or uncaught
 // exception. In the multiplayer edition Corrodius waits for level 3 and the dance endings come after
-// the later bosses: Nereid's defeat (level 10) plays the chapter ending, Astra's in World II the
-// true ending and the credits; both are reached the way tools/qa-dance-endings.mjs reaches them, and
-// the hero's breakdance must play in both, to the end in the true ending.
+// the later bosses: Nereid's defeat (level 10) plays the chapter ending, Astra's in World II opens
+// World III, and Solarkan's there plays the true ending and the credits. The launch notice is
+// confirmed first, and the hero's breakdance must play in both endings, to the end in the true one.
 //
 // Usage: node tools/playtest.mjs [--url http://localhost:5206] [--out dir] [--class warrior,mage,priest] [--headed]
 // Needs a dev or preview server running (pnpm dev --port 5206 --strictPort).
@@ -144,6 +144,8 @@ async function run(cls) {
   try {
     step('boot');
     await page.goto(`${base}/?screen=game&debug=1`, { waitUntil: 'load', timeout: 60000 });
+    // The edition asks the player to confirm a short notice before anything loads.
+    await page.locator('.launch-notice-start').click({ timeout: 30000 });
     await page.waitForFunction(() => window.__ready === true && window.cc, null, { timeout: 90000 });
     await sleep(1800);
     await shot('01-spawn');
@@ -270,10 +272,22 @@ async function run(cls) {
     await page.click('.chapter-ending button');
     await page.waitForFunction(() => window.cc.game.world2.chapter === 2, null, { timeout: 60000 });
     await sleep(2000);
-    // Astra down in World II: the true ending, then the credits.
+    // Astra down in World II opens World III; Solarkan down there plays the true ending, then the credits.
     await page.evaluate(() => {
       const g = window.cc.game;
       g.combat.kill(g.worldBoss.unit, g.player.unit);
+    });
+    await page.waitForFunction(() => window.cc.game.journey.trueCleared, null, { timeout: 30000 });
+    await page.evaluate(() => {
+      const g = window.cc.game;
+      g.player.restoreXp(90000);
+      g.world2.go(3);
+    });
+    await page.waitForFunction(() => window.cc.game.world2.chapter === 3, null, { timeout: 60000 });
+    await sleep(2000);
+    await page.evaluate(() => {
+      const g = window.cc.game;
+      g.combat.kill(g.dawnBoss.unit, g.player.unit);
     });
     await waitFor((s) => s.ending, 30000, 'true ending');
     await waitFor((s) => s.endingBreakdance && s.endingBreakdance.step === 'break_backflip', 40000, 'true ending back flip');
