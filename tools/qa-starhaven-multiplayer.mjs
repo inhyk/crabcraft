@@ -19,7 +19,7 @@ try{
  await a.waitForFunction(()=>[...window.app.current.game.multiplayer.peers.values()][0]?.unit,null,{timeout:30000});await b.waitForFunction(()=>[...window.app.current.game.multiplayer.peers.values()][0]?.unit,null,{timeout:30000});
  await Promise.all([a,b].map(p=>p.evaluate(()=>window.app.current.game.multiplayer.root.open=true)));
  await b.evaluate(()=>{const g=window.app.current.game;g.toggleMenu();g.hud.menu.settings();});await b.getByRole('button',{name:'English',exact:true}).click();await b.evaluate(()=>window.app.current.game.hud.menu.close());
- assert.equal(await b.locator('.mp-panel summary').textContent(),'🦀 Multiplayer');
+ assert.equal(await b.locator('.mp-panel summary').textContent(),'🦀 Room with friends · 2');
  assert.equal(await b.getByRole('button',{name:'⚔ PvP',exact:true}).isDisabled(),true);
  await a.getByRole('button',{name:'⚔ 싸우기 모드',exact:true}).click();await b.waitForFunction(()=>window.app.current.game.multiplayer.battle.mode==='pvp');
  await Promise.all([a,b].map((p,i)=>p.evaluate(i=>{const g=window.app.current.game;g.player.unit.teleport(g.world,12+i*2,0,0);g.player.unit.hp=g.player.unit.maxHp;g.player.unit.lastCombat=-100;},i)));await a.waitForTimeout(600);

@@ -24,7 +24,7 @@ async function open(guest=false,en=false){const p=await browser.newPage({viewpor
 // The button leaves for start, the fake Google and the callback as full-page redirects; the game reloads behind them.
 async function viaGoogle(p,en=false){await p.getByRole('button',{name:en?'Sign in with Google':'Google로 로그인',exact:true}).click();await start(p);assert.ok(!new URL(p.url()).searchParams.has('account'));}
 async function signedIn(p){await p.waitForFunction(()=>/^g[a-f0-9]{23}$/.test(window.app.account.username));}
-async function game(p){await p.getByRole('button',{name:/이어하기|Continue as/}).click();await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));}
+async function game(p){await p.getByRole('button',{name:/^(입장하기|Enter World)$/}).click();await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));}
 try{
  await run([join(root,'server-dist/main.mjs')],{PORT:'8795',HOST:'127.0.0.1',DATABASE_URL:postgres.url,GOOGLE_CLIENT_ID:clientId,GOOGLE_CLIENT_SECRET:clientSecret,GOOGLE_AUTH_URL:google.authUrl,GOOGLE_TOKEN_URL:google.tokenUrl},/listening on/);
  await run([join(root,'node_modules/vite/bin/vite.js'),'preview','--host','127.0.0.1','--port','5205','--strictPort'],{},/5205/);
