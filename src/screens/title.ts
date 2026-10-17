@@ -2,6 +2,7 @@
 import type { App, Screen } from '../app';
 import { h, art } from '../ui/dom';
 import {t} from '../i18n';
+import { openVideos } from '../ui/videos';
 import './title.css';
 
 export default class TitleScreen implements Screen {
@@ -33,6 +34,7 @@ export default class TitleScreen implements Screen {
           void app.go(app.spec ? 'game' : 'create');
         }, 'cc-btn ghost'),
         btn(t('로봇 모드','Robot Mode'), () => void app.go('robot'), 'cc-btn ghost'),
+        btn(t('영상','Videos'), () => openVideos(app.audio), 'cc-btn ghost'),
         btn(t('만든 사람들','Credits'), () => void app.go('credits'), 'cc-btn ghost'),
       ),
       h('footer', { class: 'title-footer cc-passive' },

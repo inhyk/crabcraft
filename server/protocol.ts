@@ -1,6 +1,9 @@
 const races = ['human', 'orc', 'dwarf', 'undead', 'nightelf', 'tauren'];
 const classes = ['warrior', 'mage', 'priest'];
-export const actions = new Set(['jump', 'gesture_hello', 'gesture_bow', 'gesture_salute', 'gesture_paw', 'dance_crab', 'dance_brazilian', 'dance_dream_wings', 'dance_maze', 'attack_swipe', 'attack_slam', 'cast', 'hit_react', 'death', 'sit']);
+// Clips a player plays. The breakdance's six moves (src/motion/breakdance.ts ROUTINE) are sent one by
+// one as they start, so every copy keeps step with its owner; 'breakdance_stop' cuts one short.
+export const actions = new Set(['jump', 'gesture_hello', 'gesture_bow', 'gesture_salute', 'gesture_paw', 'dance_crab', 'dance_brazilian', 'dance_dream_wings', 'dance_maze', 'attack_swipe', 'attack_slam', 'cast', 'hit_react', 'death', 'sit',
+  'break_toprock', 'break_sixstep', 'break_spin', 'break_jumpspin', 'break_backflip', 'break_oneclaw', 'breakdance_stop']);
 const finite = (n: unknown, max: number) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
 export const clean = (s: unknown, max: number) => typeof s === 'string' ? s.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max) : '';
 

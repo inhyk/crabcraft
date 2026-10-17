@@ -12,7 +12,7 @@ The three-crown journey spans two worlds. Defeat level 3 Corrodius, then level 1
 
 The multiplayer panel and quest tracker share a scrolling stack below the minimap, leaving the map visible when chat expands.
 
-Open **멀티플레이** from the title, create your crab, then **방 만들기**. Share the invite link, or ask a friend to enter the six-character room code. Up to eight players share appearance, movement, actions, chat and co-op combat. One elected browser simulates enemies and both bosses; party attacks, enemy health, positions, deaths, XP, boss phases and telegraphs synchronize through the room server. Boss-night skies, fog, lighting, lighthouse state and the cloud/water animation clock also belong to the room; late joins receive its current environment immediately. Enemy attacks can hit any party member, and AoE hits everyone inside the warning. Stuns, slows and knockback are shared. Late joins receive the current world; when the host leaves, the next connected player continues from that checkpoint. Village quest dialogue and objectives remain personal. Robot Mode remains single-player. Rooms are not accounts; anyone with the code may join. Chat is transient and not stored in a database.
+Open **멀티플레이** from the title, create your crab, then **방 만들기**. Share the invite link, or ask a friend to enter the six-character room code. Up to eight players share appearance, movement, actions, chat and co-op combat. One elected browser simulates enemies and both bosses; party attacks, enemy health, positions, deaths, XP, boss phases and telegraphs synchronize through the room server. Boss-night skies, fog, lighting, lighthouse state and the cloud/water animation clock also belong to the room; late joins receive its current environment immediately. Enemy attacks can hit any party member, and AoE hits everyone inside the warning. Stuns, slows and knockback are shared. Late joins receive the current world; when the host leaves, the next connected player continues from that checkpoint. Village quest dialogue and objectives remain personal. The breakdance (**B**, or **🕺 브레이크댄스** in the panel) plays for everyone in the room: each of the six trained moves is announced as it starts and every browser plays it with the routine's timing, so a slow frame on either side does not leave the copies apart. Robot Mode remains single-player. Rooms are not accounts; anyone with the code may join. Chat is transient and not stored in a database.
 
 Internet hosting uses Vercel for the game and `server/cloudflare/worker.ts` for one Cloudflare Durable Object per room, with WebSocket hibernation, connection attachments, bounded messages, origin validation, authenticated host authority and rate limits. Combat world checkpoints persist across hibernation; the room server relays combat but does not run a cheat-resistant dedicated simulation. Room metadata expires after 24 hours when idle. The production endpoint is in `.env.production` (public configuration, no credentials). The Mac does not need to stay on for the hosted edition.
 
@@ -32,7 +32,7 @@ Checks: `pnpm test:multiplayer`, `pnpm build`, `pnpm exec tsc -p server/cloudfla
 
 <p align="center">
   <b>A fantasy RPG in the browser where every character is a Jumper crab robot,<br>
-  and every walk, wave and dance comes from the robot's own trained policies.</b>
+  and every walk, wave, dance and breakdance move comes from the robot's own trained policies.</b>
 </p>
 
 <p align="center">
@@ -43,7 +43,8 @@ Checks: `pnpm test:multiplayer`, `pnpm build`, `pnpm exec tsc -p server/cloudfla
 </p>
 
 Six races, three classes, one harbour town, a four-quest chain, a three-phase boss and a town-wide
-dance party at the end. Every crab, from the player to the boss, is the
+dance party at the end, where your crab breaks: toprock, six-step, spin, a 720, a back flip and a
+one-claw freeze. Every crab, from the player to the boss, is the
 [Jumper](https://github.com/KingKongRobotics/jumper) robot by KingKong Robotics wearing different
 paint and gear. Then open **Robot Mode** and the crab you made runs on Jumper's real controller and
 policies, live, in MuJoCo, in the same tab.
@@ -52,9 +53,9 @@ policies, live, in MuJoCo, in the same tab.
 
 ## What makes it different
 
-**The motion is the robot's, not an animator's.** All 37 of the game's motion clips are closed-loop
-rollouts of Jumper policies, driven through a bundle's own controller extension in MuJoCo 3.11.
-31 come from the Jumper example bundle: walking in 8 directions, turning, the fast gait, the jump,
+**The motion is the robot's, not an animator's.** All 44 of the game's motion clips are closed-loop
+rollouts of trained Jumper policies in MuJoCo 3.11, every one driven through a bundle's own
+controller extension. 31 come from the Jumper example bundle: walking in 8 directions, turning, the fast gait, the jump,
 both claw modes, 4 gestures and 4 dances, with `dance_crab` at its full 238.6 s. The 6 combat moves
 the robot had no policy for (`attack_swipe`, `attack_slam`, `cast`, `hit_react`, `death`, `sit`)
 come from **six new Jumper tasks, published with this project in [`jumper/`](jumper/)**: `jumper.skill_swipe`, `skill_slam`,
@@ -66,14 +67,66 @@ reference within 0.26 to 1.54 degrees joint RMS over the move, where standing st
 39 degrees off. Death is now the power-down policy: the legs give way and the shell settles on the
 ground, where the corpse stays.
 
+**A breakdance, every move a trained policy.** Press <kbd>B</kbd> and your crab breaks; at the ending
+it is the finale while the town cheers. Seven more new Jumper tasks, in [`jumper/`](jumper/) too:
+four tracked moves, `jumper.break_toprock` (an 8-count at 107 bpm), `break_sixstep` (footwork
+round the claws), `break_clawstand` and `break_oneclaw` (freezes held nose-down on the claws), and
+three reward-driven power moves, `jumper.power_spin_feet` (2.3 turns a second on its feet: a calf,
+a claw palm or the shell touches the floor in 22% of its steps, where the spin it replaced touched
+in 43%), `power_jumpspin720` (714 and 710 degrees in the air on average over two seeds, 64 of 64
+landings upright with domain randomisation, coming to rest facing where it started, 719 and 713
+degrees round) and `power_backflip` (a whole back flip, 32 of 32 landing on its feet), the two jumps
+taking off from the pose the controller hands a new mode and coming to rest level near the standing
+pose once they have landed. All three, like every other mode, keep their
+joint targets within the joint stops: the spin and the 720 were trained with their targets clamped
+there, as the controller clamps them. The routine plays six of them in a row (the claw stand is in Robot Mode) at the policies' own pace and carries each move's travel and turn over
+to the crab, so the six-step that comes out 2 degrees short of a full turn and the 720, which has
+turned 773 degrees by its landing and settles back to 718, leave the crab facing where the policy
+left the robot. These are
+simulation results: none of the seven has run on a physical Jumper. The six-step closes its turn,
+357.7 of 360 degrees, because its policy sees how far its heading has fallen behind the recording's,
+a term the controller builds from the IMU's yaw since the move began; whether a physical Jumper's
+AHRS yaw follows its gyro, which that needs, has not been checked. The back flip turns upside down in
+the air (177 degrees of tilt), so its mode lifts the controller's 50-degree tilt fallback for that
+mode only; on a physical robot nothing would catch a fall while the flip runs, so it would need
+care (a soft floor, a hand on the release).
+
 **Robot Mode runs the real stack in your browser.** The official MuJoCo 3.11.0 WebAssembly build
-(`@mujoco/mujoco`), onnxruntime-web 1.30.0 and the bundle's own `controller.wasm` load 17 ONNX
-policies (18 modes): the example bundle's 11 and the six skills, built into one bundle by Jumper's
-own `scripts/deploy.py`, at the robot's control rate (199 Hz measured while walking). Keys 5 6 7 8 9 0
-swipe, slam, cast, flinch, power down and sit, live, and hand back to walking. Before the robot
-wakes, the page proves it agrees with the bundle: it replays `reference.json` through the controller
-(24 frames, diff 0), compares the policy outputs with the recorded actions (max diff 8.3e-7) and
-checks 53 bundle files against their SHA-256.
+(`@mujoco/mujoco`), onnxruntime-web 1.30.0 and the bundle's own `controller.wasm` load 24 ONNX
+policies (25 modes): the example bundle's 11, the six skills and all seven breakdance moves, built
+into one bundle by Jumper's own `scripts/deploy.py`, at the robot's control rate (199 Hz measured
+while walking). Keys 5 6 7 8 9 0 swipe, slam, cast, flinch, power down and sit, live, and hand back
+to walking; <kbd>Shift</kbd> + 1 2 3 4 toprock, six-step, claw stand and one-claw freeze the same
+way, and <kbd>Shift</kbd> + 5 spins until pressed again (2.3 turns a second on the browser's
+physics). <kbd>Shift</kbd> + 6 is the 720 and <kbd>Shift</kbd> + 7 the back flip: on the browser's
+physics, 12 times each from standing and from walking, the 720 turns 707 to 749 degrees in the air
+and comes to rest facing where it started, 721.6 degrees round on average (694.9 to 748.4), within
+1.6 degrees of level near the standing pose; the flip turns 375 to 383 degrees nose-up and comes to
+rest within a degree of level. Neither has an end of its own, so the page presses its switch again
+once it is at rest (1.4 s and 1.2 s after the controller hands over, at least 0.24 s after the latest
+rest), and says so in the log. Every mode keeps its joint targets within the joint stops: the bundle sets
+no `target_margin`, and the spin and the 720 were trained again with their targets clamped at the
+stops (see Known limits). Before
+the robot wakes, the page proves it agrees with the bundle: it replays `reference.json` through
+the controller (24 frames, observation diff 0, target diff 0), compares the policy outputs
+with the recorded actions (max diff 8.3e-7) and checks 71 bundle files against their SHA-256.
+
+**The whole breakdance, live, on the beat.** Press <kbd>P</kbd> in Robot Mode (or Routine in the
+dock) and the robot performs the routine as one set: toprock, six-step, spin, 720, back flip and the
+one-claw freeze, each move its own policy running live under the bundle's controller, to an original
+beat at the toprock's 107.14 bpm. Nothing is recorded or spliced in. The page presses the bundle's
+own switches (<kbd>Shift</kbd> + 1, 2, 5, 6, 7, 4), says every press in the log, and times them in
+simulated time so that each policy starts on the downbeat of its bar: a press has to come early by
+the controller's ramp to the move's home pose (0.59 to 0.83 s), which the page predicts from how far
+the joints are from that pose. Every move hands the robot back to walking before the next press, the
+spin is ended by its own switch on a beat, the 720 and the back flip by the page's press after the
+landing, and the freeze lands on the downbeat of the final stab. In 10 headless runs from standing,
+walking, turning, strafing and just after a move, all 10 completed without a Safe Hold and ended
+walking upright, the power moves started within 15 ms of their downbeats and the tracked moves within
+60 ms. Any robot control, the gamepad or <kbd>P</kbd> again stops it and hands the robot back to
+walking. The music is the breakdance video's synthesised beat arranged on the routine's 17 bars, and
+the page keeps it in step with the simulation (within 30 ms in Chrome). This is the simulation again:
+the routine has not run on a physical Jumper.
 
 **Same policy, any appearance.** Press <kbd>T</kbd> in Robot Mode to switch between the bare robot and
 the crab you created, gear, weapon and LED face included, posed every frame from the same live
@@ -141,8 +194,10 @@ the armour.
 <img src="docs/media/ending.jpg" alt="The player's crab dances in Clawhaven Square at night with the townsfolk; caption: every step you see is a recorded rollout of Jumper's real trained policies" width="100%">
 
 Back in the square the whole town gathers in a ring around you and dances the recorded dance policies
-(`dance_crab`, `dance_brazilian`, `dance_dream_wings`, `dance_maze`) under fireworks, then the credits
-roll.
+(`dance_crab`, `dance_brazilian`, `dance_dream_wings`, `dance_maze`) under fireworks. Then the ring
+makes room and your crab performs the breakdance routine, each move captioned: the crowd waves along
+with the toprock, shouts at the spin, hops and raises its claws when the 720 and the back flip land,
+and erupts with fireworks at the freeze. Everyone dances again, then the credits roll.
 
 ### Robot Mode
 
@@ -166,6 +221,7 @@ and, after <kbd>T</kbd>, as the bare robot.
 | Left drag, right drag, wheel | Orbit the camera, orbit and steer, zoom |
 | Both mouse buttons | Walk forward |
 | <kbd>Space</kbd> | Jump |
+| <kbd>B</kbd> | Breakdance: the six-move routine from standing; moving, turning, jumping, an ability or a hit ends it |
 | <kbd>Tab</kbd>, click | Target the nearest enemy in front; target what you click (a nearby NPC also starts talking) |
 | <kbd>1</kbd> to <kbd>4</kbd> | Abilities |
 | <kbd>F</kbd> | Talk, interact, take the main dialogue choice; hold to relight the beacon |
@@ -176,7 +232,7 @@ and, after <kbd>T</kbd>, as the bare robot.
 | <kbd>R</kbd> twice | Open Robot Mode (resets quest progress) |
 
 **In Robot Mode** (the bundle's own bindings from its `controller.toml` and manual; <kbd>Q</kbd>
-<kbd>E</kbd>, <kbd>T</kbd>, <kbd>C</kbd> and <kbd>R</kbd> are added by the page)
+<kbd>E</kbd>, <kbd>T</kbd>, <kbd>C</kbd>, <kbd>P</kbd> and <kbd>R</kbd> are added by the page)
 
 | Input | Action |
 |---|---|
@@ -186,13 +242,18 @@ and, after <kbd>T</kbd>, as the bare robot.
 | <kbd>Space</kbd> | Jump |
 | <kbd>1</kbd> to <kbd>4</kbd> | Gestures: hello, bow, paw, salute |
 | <kbd>Ctrl</kbd> + <kbd>1</kbd> to <kbd>4</kbd> | Dances: crab, Brazilian, maze, dream wings |
+| <kbd>5</kbd> to <kbd>0</kbd> | Skills: swipe, slam, cast, flinch, power down, sit |
+| <kbd>Shift</kbd> + <kbd>1</kbd> to <kbd>4</kbd> | Breaking: toprock, six-step, claw stand, one-claw freeze |
+| <kbd>Shift</kbd> + <kbd>5</kbd> | Spin; press again to stop |
+| <kbd>Shift</kbd> + <kbd>6</kbd> <kbd>7</kbd> | 720 jump spin, back flip; back to walking by themselves after the landing |
+| <kbd>P</kbd> | The whole breakdance routine, live on the beat, with its music; <kbd>P</kbd> again or any robot control stops it |
 | <kbd>V</kbd> <kbd>B</kbd> | Left or right claw mode |
-| <kbd>Ctrl</kbd> | End a gesture or dance early |
+| <kbd>Ctrl</kbd> | End a gesture, dance, skill or breaking move early |
 | <kbd>Esc</kbd> | Let go of every control |
 | <kbd>T</kbd> | Bare robot or your crab |
 | <kbd>C</kbd>, <kbd>R</kbd> | Follow camera on or off, reset the robot |
 | Drag, wheel | Orbit, zoom |
-| Gamepad | The robot's own pad bindings (sticks walk and turn, A jumps, D-pad gestures, menu + D-pad dances, LB and RB claws) |
+| Gamepad | The robot's own pad bindings (sticks walk and turn, A jumps, D-pad gestures, menu + D-pad dances, LB and RB claws, menu + A X Y LB RB L3 skills, home + A X Y L3 LB breaking moves) |
 
 ## Run it
 
@@ -234,7 +295,7 @@ flowchart LR
     URDF["URDF + visual meshes"]
     MJCF["jumper.xml (MJCF)"]
     BUNDLE["Example policy bundle<br/>11 ONNX policies, controller,<br/>contracts, reference.json"]
-    SKILL["Six new tasks, jumper.skill_*<br/>trained for this game<br/>crabcraft bundle = example + 6"]
+    SKILL["New tasks for this game<br/>jumper.skill_*, break_*, power_*<br/>crabcraft bundle = example + 11"]
   end
   subgraph T["Offline pipelines (tools/)"]
     BC["build_crab.py<br/>Blender"]
@@ -247,7 +308,7 @@ flowchart LR
   subgraph P["public/ (committed)"]
     GLB["models/crab/jumper.glb"]
     GEAR["models/gear, models/weapons"]
-    MOT["motions/ (37 clips)"]
+    MOT["motions/ (44 clips)"]
     RB["robot/bundle, robot/jumper"]
     WG["models/world"]
   end
@@ -290,7 +351,15 @@ flowchart LR
   played it and writes the game's windows to `src/motion/skillClips.ts`. In the game, `src/motion/`
   blends the clips (phase-synchronised walking underneath, actions layered on top) and
   `src/motion/skills.ts` plays each skill's move, not its whole rollout, with gameplay timed by the
-  clip's own moments. Gameplay crabs play recorded rollouts; physics runs live only in Robot Mode.
+  clip's own moments. The breakdance's seven moves are recorded the same way, on the crabcraft bundle's
+  Home chords; the spin and the two jumps, which have no end of their own, are let go with the same
+  chord after a fixed time.
+  `src/motion/breakdance.ts` plays the routine from the windows in `src/motion/breakClips.ts` and
+  hands each move's travel and turn over to the crab as it fades out
+  (`MotionPlayOptions.carryRoot`): where one move hands over to the next, the body's heading changes
+  by under 1 degree while the crab's root turns up to 24 (the spin, which lets go 24 degrees short of
+  its eighth turn). Gameplay crabs play recorded rollouts;
+  physics runs live only in Robot Mode.
 - **Robot Mode.** `tools/export_robot.py` exports Jumper's physics model with the training contact
   and solver settings; `tools/build_robot_visual.py` decimates the visual meshes. In the browser a Web
   Worker (`src/robot/sim/`) loads the bundle the way its README asks a host to, builds MuJoCo, the
@@ -298,6 +367,10 @@ flowchart LR
   `set_state, operator input, tick, infer, positions/kp/kd` every 5 ms with the robot's servo law
   (PD torque clipped to the measured torque-speed curve and thermal budget). The page renders about
   120 pose frames a second on the TVC-style desk and hands your keys and gamepad to the controller.
+  The live routine (`src/robot/sim/routine.ts`) runs inside that same control tick, in simulated
+  time: it presses the bundle's switches through the path the keyboard takes, and the page's music
+  (`public/audio/music-breaking.*`, arranged by `tools/robot-routine-music.mjs`) follows the
+  simulation's clock rather than the other way round.
 - **World and game.** `src/world/` builds Clawhaven and the Brine Shore from code plus the Quaternius
   kits; `src/game/` runs quests, combat, AI, the boss, effects, music and the HUD.
 
@@ -305,16 +378,18 @@ flowchart LR
 
 | Check | Command | Result |
 |---|---|---|
-| Motion host agrees with the bundle | `tools/motion/check_bundle.py [--bundle <crabcraft bundle>]` | Controller replay of `reference.json`: observation diff 0, target diff 0. ONNX vs recorded actions: max diff 9.5e-07 (example bundle), 0 (crabcraft bundle) |
+| Motion host agrees with the bundle | `tools/motion/check_bundle.py [--bundle <crabcraft bundle>]` | Controller replay of `reference.json`: observation diff 0; target diff 0 (example bundle and crabcraft bundle). ONNX vs recorded actions: max diff 9.5e-07 (example bundle), 0 (crabcraft bundle) |
 | The six skill policies track their moves | evaluation in each task's own environment, from the standing pose | 0 falls in 84 rollouts; joint RMS over the move 0.26 to 1.54 deg without domain randomisation, 0.42 to 1.68 deg with it (standing still: 11.2 to 39.4 deg) |
 | Crab model is kinematically Jumper | `tools/check_crab_fk.py` | 41 bodies x 13 poses vs MuJoCo: max position error 0.000534 mm |
-| Robot Mode simulation, headless | `node tools/robot-sim-check.ts` | 21.65 m in 30 s of walking without a fall, max tilt 1.88 deg, jump apex 0.228 m; each of the six skills entered on its key, played out and handed back to walking (max tilt 11.3 deg, the sit) |
-| Robot Mode start-up checks, in the page | open `/?screen=robot` | `reference.json` replay 24 frames, diff 0; policy outputs vs recorded actions 8.3e-7; 53 bundle files match their SHA-256 |
+| The breakdance policies | evaluation in each task's own environment, from the standing pose | tracked moves: 0 falls in 70 rollouts, joint RMS over the move 0.65 to 2.68 deg with domain randomisation (standing still: 10.1 to 32.8 deg); the six-step turns 357.7 of 360 deg (355.5 to 359.4 with randomisation). Power moves, 32 rollouts each with randomisation, the jumps from the controller's handover, every target clamped at the stops: spin 2.24 turns/s, a calf, a claw palm or the shell on the floor in 9 and 15% of steps over two seeds (the spin before it: 32 and 38%); 720 jump spin 714 and 710 deg in the air over two seeds, 64 of 64 upright, at rest 719 and 713 deg round from its start; back flip 384 deg in the air, 32 of 32 upright; from 0.5 s after the landing their joints move at 0.01 to 0.02 and 0.03 rad/s RMS (`tools/eval_calm.py`, 16 rollouts) |
+| Robot Mode simulation, headless | `node tools/robot-sim-check.ts` | 21.65 m in 30 s of walking without a fall, max tilt 1.88 deg, jump apex 0.228 m; each of the six skills and the five breaking modes entered on its key, played out (the spin held 4 s at 2.31 turns/s, then let go; the six-step turning 357.7 deg under its policy, the check asks for 350) and handed back to walking (max tilt 35.0 deg, the one-claw freeze); the 720 and the back flip, each from standing and from walking, take off, land upright (never in `safe`; tilt 0.3 s after touchdown 0.8 and 1.7 deg for the 720, 3.4 and 3.3 for the flip) and are handed back by the page's own press: 720 724 and 709 deg in the air at 0.385 and 0.386 m of rise, at rest 714 and 706 deg round from where it started, flip 385 and 383 deg nose-up (the check asks for 700 and 330 at least, and the 720 at rest within 25 deg of 720); no mode in the bundle sets `target_margin` (the check fails on one); the live routine, 5 runs (10 with `--routine 10`) from standing, walking, turning, strafing and after a move: every run completes, every move entered and handed back, no Safe Hold, ending walking upright, policies starting within 15 ms (power moves) and 60 ms (tracked moves) of their downbeats |
+| Robot Mode start-up checks, in the page | open `/?screen=robot` | `reference.json` replay 24 frames, observation diff 0, target diff 0; policy outputs vs recorded actions 8.3e-7; 71 bundle files match their SHA-256 |
+| The breakdance, in the page | `node tools/breakdance-check.mjs` (dev server running) | <kbd>B</kbd> plays all six moves in order and ends completed, walking ends it early; in Robot Mode each of the seven breaking modes runs live and hands back to walking, the two jumps by the page's own press and never through the Safe Hold; <kbd>P</kbd> plays the live routine to the end on its downbeats with the page's presses logged and the music within 30 ms of the simulation, and <kbd>P</kbd> again stops it back to walking; 0 console errors |
 | Crab drawn on the live simulation | `node tools/robot-skin-shots.mjs <app url> <out dir>` | All 41 crab links within 0.0013 mm of the physics bodies while standing, walking and dancing |
 | Whole game, end to end | `pnpm dev --port 5206` in one terminal, `node tools/playtest.mjs` in another | Warrior, Mage and Priest each play every quest, the boss and the ending with 0 console errors |
 
 The Python tools need a Jumper checkout (`JUMPER_ROOT`, with the example bundle built at
-`out/bundle_example/jumper`; the skills need the six `jumper.skill_*` tasks applied from [`jumper/`](jumper/) and the
+`out/bundle_example/jumper`; the skills and the breakdance need the tasks applied from [`jumper/`](jumper/) and the
 crabcraft bundle, `python scripts/deploy.py --manifests deploy/crabcraft.manifests.json
 --allow-incomplete`) and an
 interpreter with `mujoco` and `onnxruntime`; the Blender scripts need Blender. See the docstring at
@@ -346,6 +421,44 @@ requirements/       the original requirements
 - One zone, single player, desktop keyboard and mouse. Gamepad input exists only in Robot Mode.
 - In the game the crabs replay recorded policy rollouts; they are not simulated. Robot Mode is the
   part that runs physics and policies live.
+- The breakdance is simulation only. Seven of its policies were trained for this game and none has
+  run on a physical Jumper. The back flip's mode lifts the controller's 50-degree tilt fallback while
+  it runs; on a robot, a flip that went wrong would not be caught by it.
+- The 720 and the back flip have no end of their own. Robot Mode presses their switch again at a
+  fixed time after the handover (1.4 s, 1.2 s), 0.245 s and 0.26 s after the latest either came to
+  rest on the browser's physics, rather than detecting the landing.
+- Every mode keeps its joint targets within the joint stops; the bundle sets no `target_margin`. The
+  spin and the 720 first trained with nothing clamping their targets and shipped with them let 1.7
+  rad past the stops; both were trained again with the targets clamped there, as the controller
+  clamps them. Through the bundle's controller the spin sends 2.71 rad at most and the 720 3.44, and
+  no target past a stop. None of it has been tried on a physical Jumper.
+- The spin keeps to its feet: through the controller it spins 2.27 and 2.28 turns a second from
+  standing and walking with a calf, a claw palm or the shell on the floor in 23% and 21% of the
+  ticks, where the spin before it spun 2.29 and 2.30 with them on the floor in 43% and 42% (24 trials,
+  simulation without randomisation). The policy before that touched in 33 to 35% with its targets let
+  past the stops. The training simulator (MuJoCo Warp) gives a mesh four contact points on the
+  floor where native MuJoCo, which the game and the measurements use, gives one, so the spin had
+  hardly been charged for those touches; the one that ships finished its training on native
+  MuJoCo. A real leg's grip on another is not modelled (the legs pass over each other
+  frictionlessly): with the calves, palms and shell gripping the floor and each other at 0.4 it
+  spins 2.14 to 2.15 turns a second.
+- The 720 lands facing where it started: through the controller it comes to rest 724 and 719
+  degrees round from where it started, from standing and walking (705 to 734 in 24 trials), where
+  the 720 before it rested 780 and 789 degrees round, 60 to 69 past. It turns 709 to 742 degrees in
+  the air, rises 0.385 to 0.399 m, rests within 1.3 degrees of level near its standing pose and walks
+  again 0.43 s after its switch. In its own environment without randomisation it rests 12 to 14
+  degrees further round (734 and 736 at two seeds); the game runs the controller. The turn still
+  leans the body: 34 degrees at most through the controller, and with the training's randomisation
+  43.3 at the worst of 64 flights, under the controller's 50-degree fallback.
+- The six-step's turn closes on the IMU's yaw, counted from the moment the move begins. Whether a
+  physical Jumper's AHRS yaw follows its gyro has not been checked; if it held still, the policy
+  would see its turn falling behind and push to catch up.
+- The live routine's presses are timed from a model of the controller's ramp fitted on this
+  simulation (`src/robot/sim/routine.ts`); the tracked moves' ramps vary in ways the model does not
+  explain, so they start up to about 60 ms off the downbeat. The routine moves the robot up to about
+  0.4 m and the desk has toys and books on it: started next to them, a move can land on one. It
+  waits a bar (and logs it) when the robot is not walking when a move is due, and stops if that goes
+  on for four bars.
 - The bundle has no get-up policy. If the robot tips over in Robot Mode it holds in `safe`, and the
   page stands it back up after 3 s.
 - The bundle marks its web controller as not verified by the consumer; Robot Mode shows that notice
@@ -354,7 +467,7 @@ requirements/       the original requirements
   Apple M4 Pro Mac in Chrome. Other hardware has not been measured; the Esc menu has a Low quality
   setting.
 - The music and sound effects were not checked by listening; they are built by script from CC0
-  sources.
+  sources, and the live routine's beat is synthesised by `tools/trailer/breakdance/beat.py`.
 
 ## Credits
 

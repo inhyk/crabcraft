@@ -1,9 +1,10 @@
 // Esc game menu: Resume, Settings (music and effects volume, graphics quality, chat bubbles),
-// Controls, Robot Mode, Return to Title.
+// Controls, Videos, Robot Mode, Return to Title.
 import { h } from '../dom';
 import {language,setLanguage,t,type Language} from '../../i18n';
 import {setQuestLanguage} from '../../game/quests';
 import { localStorageSet } from '../../app';
+import { openVideos } from '../videos';
 import type { Game } from '../../game/game';
 import type { QualitySetting } from '../../core/engine';
 
@@ -16,6 +17,7 @@ const CONTROLS: [string, string][] = [
   ['Both mouse buttons', 'Walk forward'],
   ['Mouse wheel', 'Zoom'],
   ['Space', 'Jump'],
+  ['B', 'Breakdance: six trained moves in a row (move to stop)'],
   ['Tab / Click', 'Target an enemy'],
   ['1 2 3 4', 'Abilities'],
   ['F', 'Talk, continue a conversation, hold at the beacon'],
@@ -69,6 +71,7 @@ export class GameMenu {
       this.btn(t('🏆 업적 · J','🏆 Achievements · J'),()=>this.achievements(),true),
       this.btn(t('설정','Settings'), () => this.settings(), true),
       this.btn(t('조작 방법','Controls'), () => this.controls(), true),
+      this.btn(t('영상','Videos'), () => openVideos(g.audio), true),
       this.btn(t('로봇 모드','Robot Mode'), () => void g.app.go('robot'), true),
       this.btn(t('처음 화면','Return to Title'), () => void g.app.go('title'), true),
     );
@@ -140,7 +143,7 @@ export class GameMenu {
 
   controls(): void {
     const table = h('table');
-    const ko=['앞 / 뒤로 걷기','왼쪽 / 오른쪽으로 옆걸음','방향 돌리기','시점과 방향 조절','주변 둘러보기','앞으로 걷기','확대 / 축소','점프','적 선택','기술 사용','대화, 채집, 등대 켜기 / 끄기','퀘스트 기록','음악 켜기 / 끄기','말풍선 켜기 / 끄기','로봇 모드','대상 해제, 창 닫기, 메뉴'];
+    const ko=['앞 / 뒤로 걷기','왼쪽 / 오른쪽으로 옆걸음','방향 돌리기','시점과 방향 조절','주변 둘러보기','앞으로 걷기','확대 / 축소','점프','브레이크댄스: 학습된 동작 여섯 개를 이어서 춰요 (움직이면 멈춰요)','적 선택','기술 사용','대화, 채집, 등대 켜기 / 끄기','퀘스트 기록','음악 켜기 / 끄기','말풍선 켜기 / 끄기','로봇 모드','대상 해제, 창 닫기, 메뉴'];
     const mouseKeys:Record<string,string>={'Right mouse drag':'우클릭 드래그','Left mouse drag':'좌클릭 드래그','Both mouse buttons':'마우스 양쪽 버튼','Mouse wheel':'마우스 휠','Click':'클릭'};
     for (const [i,[k, what]] of CONTROLS.entries()) {
       const keys = h('td');
