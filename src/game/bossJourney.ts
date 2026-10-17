@@ -71,7 +71,8 @@ export class BossJourney {
     this.root.append(this.portal, this.patrol, h('small', null, '해안의 적을 처치하면 성장해요. 멀티플레이에서는 보스전도 함께 진행하며, 성장과 승리는 이 브라우저에 자동 저장됩니다.'), this.victory);
     this.root.addEventListener('keydown', e => e.stopPropagation());
     this.root.addEventListener('focusin', () => window.dispatchEvent(new Event('blur')));
-    game.app.ui.append(this.root,this.wallet);
+    game.app.ui.append(this.root);
+    game.hud.tracker.el.after(this.wallet);
     this.makeAura();
     this.update(0);
   }

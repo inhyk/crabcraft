@@ -64,7 +64,7 @@ export class Multiplayer {
     // Opening a form clears held movement keys. Typing never controls the crab.
     this.root.addEventListener('focusin', () => window.dispatchEvent(new Event('blur')));
     this.root.addEventListener('keydown', e => e.stopPropagation());
-    game.hud.sidePanels.prepend(this.root);
+    game.hud.tracker.el.after(this.root);
     game.player.unit.onAction = action => this.send({ type: 'action', action });
     this.refreshLanguage();
     const room = new URLSearchParams(location.search).get('room');

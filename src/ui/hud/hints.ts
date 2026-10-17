@@ -55,7 +55,7 @@ export class ControlHints {
       if(r.step==='look')row.querySelector('kbd')!.textContent=t('우클릭 드래그','Right drag');
     }
     this.el.querySelector('.hints-head')!.textContent=t('처음 시작하기','Getting started');
-    this.el.querySelector('.hints-foot')!.textContent=t('모든 조작 방법은 메뉴(Esc)에 있어요.','All controls are in the menu (Esc).');
+    this.el.querySelector('.hints-foot')!.textContent=t('T를 2초 꾹 누르면 광장으로! · 모든 조작은 메뉴(Esc)','Hold T for 2 seconds to return to the square! · Controls: Esc');
     (this.el.querySelector('.hints-x') as HTMLElement).title=t('안내 닫기','Hide these hints');
   }
 

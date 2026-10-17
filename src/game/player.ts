@@ -603,6 +603,24 @@ export class Player {
     g.hud.chat.system(t(`레벨 ${u.level}이 되었습니다!`,`Congratulations, you have reached level ${u.level}!`));
   }
 
+  returnToSquare(): void {
+    const g = this.game;
+    const spawn = g.world.pois.spawn;
+    // Island arrival gates are at the docks; recall goes to the inhabited square.
+    const chapter = g.world2.chapter;
+    const x = chapter === 1 ? spawn.position.x : 0;
+    const z = chapter === 1 ? spawn.position.z : chapter === 2 ? 63 : 60;
+    this.velX = this.velZ = 0;
+    this.dash = null;
+    this.queued = null;
+    this.setTarget(null);
+    g.world2.resetPortalArrival();
+    this.unit.teleport(g.world, x, z, spawn.yaw);
+    g.follow.yaw = this.unit.yaw + Math.PI;
+    g.follow.cut();
+    g.vfx.mendGlow(this.unit);
+  }
+
   respawn(): void {
     const u = this.unit;
     u.alive = true;

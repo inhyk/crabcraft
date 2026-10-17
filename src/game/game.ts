@@ -721,6 +721,16 @@ export class Game {
       for (let i = 1; i <= 4; i++) if (inp.wasPressed(`Digit${i}`)) hints.mark('ability');
       if (inp.wasPressed('KeyF')) hints.mark('interact');
     }
+    if (inp.wasPressed('KeyT') && !hud.dialogue.isOpen && !hud.questLog.open && !this.player.channel) {
+      const chapter = this.world2.chapter;
+      const origin = this.player.unit.pos.clone().add(new THREE.Vector3(0, 1, 0));
+      this.player.startChannel(t('광장으로 돌아가는 중 · T를 계속 누르세요', 'Returning to the square · Keep holding T'), 2, 'KeyT', origin, () => {
+        if (this.controlsLocked || hud.dialogue.isOpen || hud.questLog.open || this.world2.chapter !== chapter) return;
+        this.player.returnToSquare();
+        this.audio.sfx('sfx-levelup');
+        this.hud.messages.info(t('광장에 도착했어요!', 'You have returned to the square!'));
+      });
+    }
     if (inp.wasPressed('Tab')) this.player.tabTarget();
     for (let i = 1; i <= 4; i++) if (inp.wasPressed(`Digit${i}`) || inp.wasPressed(`Numpad${i}`)) this.player.useAbility(i);
     if (inp.wasPressed('KeyF')) {

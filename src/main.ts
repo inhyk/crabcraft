@@ -2,12 +2,16 @@
 import './capture/clock';
 import './ui/kit.css';
 import { App } from './app';
+import { showLaunchNotice } from './ui/launchNotice';
 
 const root = document.getElementById('app')!;
-const app = new App(root);
-// Debug handle for the console and the screenshot tool.
-(window as unknown as { app: App }).app = app;
-
-const params = new URLSearchParams(location.search);
-const start = (params.get('screen') as Parameters<App['go']>[0]) || 'title';
-void app.go(start);
+async function startApp(): Promise<void> {
+  await showLaunchNotice(root);
+  const app = new App(root);
+  // Debug handle for the console and the screenshot tool.
+  (window as unknown as { app: App }).app = app;
+  const params = new URLSearchParams(location.search);
+  const start = (params.get('screen') as Parameters<App['go']>[0]) || 'title';
+  await app.go(start);
+}
+void startApp();
