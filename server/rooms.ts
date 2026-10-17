@@ -1,18 +1,37 @@
 import { worldOf, eventOf, type WorldState } from './combatProtocol.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { EventEmitter } from 'node:events';
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import { specOf, stateOf, actions, clean, type Spec, type State } from './protocol.ts';
 
 type Member = { id: string; ws: WebSocket; spec: Spec; state: State | null; room: string; pong: boolean; rateAt: number; messages: number; chatAt: number; combat: boolean };
 
+export type RoomOptions = {
+  /** Browser origins allowed to connect. By default only same-host origins may. */
+  allowOrigin?: (origin: string, req: IncomingMessage) => boolean;
+  /** Keep a created room and its world checkpoint until it is found empty at a check this many ms after creation; 0 drops it when the last player leaves. */
+  keepRooms?: number;
+  maxRooms?: number;
+  maxMembers?: number;
+};
+
+const sameHost = (origin: string, req: IncomingMessage) => { try { return new URL(origin).host === req.headers.host; } catch { return false; } };
+const reject = (socket: Duplex, status: string) => { socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); };
+
 /** Room-scoped relay with an authenticated combat authority and world checkpoints. */
-export function attachRooms(server: EventEmitter) {
+export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
+  const { allowOrigin = sameHost, keepRooms = 0, maxRooms = 64, maxMembers = 128 } = options;
   const wss = new WebSocketServer({ noServer: true, maxPayload: 65536, perMessageDeflate: false });
   const rooms = new Map<string, Map<string, Member>>();
   const members = new Set<Member>();
   const worlds = new Map<string, WorldState>();
+  const alarms = new Map<string, number>();
+  const drop = (code: string) => { rooms.delete(code); worlds.delete(code); alarms.delete(code); };
+  // Make room for a new one by forgetting the oldest room nobody is in.
+  const evict = () => { for (const [code, room] of rooms) if (!room.size) { drop(code); return true; } return false; };
   const host = (room: string) => [...(rooms.get(room)?.values() ?? [])].find(m => m.combat)?.id ?? '';
   function send(ws: WebSocket, data: unknown) {
     if (ws.readyState !== WebSocket.OPEN) return;
@@ -27,19 +46,16 @@ export function attachRooms(server: EventEmitter) {
     const room = rooms.get(m.room);
     room?.delete(m.id);
     broadcast(m.room, { type: 'left', id: m.id });
-    if (!room?.size) { rooms.delete(m.room); worlds.delete(m.room); }
+    if (!room?.size) { if (!keepRooms) drop(m.room); }
     else broadcast(m.room, { type: 'authority', host: host(m.room) });
     m.room = '';
     m.state = null;
   }
-  const upgrade = (req: import('node:http').IncomingMessage, socket: import('node:stream').Duplex, head: Buffer) => {
+  const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     if (req.url?.split('?')[0] !== '/multiplayer') return;
     // No cross-site websocket access. Non-browser clients have no Origin header.
-    if (req.headers.origin) {
-      try { if (new URL(req.headers.origin).host !== req.headers.host) { socket.destroy(); return; } }
-      catch { socket.destroy(); return; }
-    }
-    if (members.size >= 128) { socket.destroy(); return; }
+    if (req.headers.origin && !allowOrigin(req.headers.origin, req)) { reject(socket, '403 Forbidden'); return; }
+    if (members.size >= maxMembers) { reject(socket, '503 Service Unavailable'); return; }
     wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws));
   };
   server.on('upgrade', upgrade);
@@ -62,8 +78,9 @@ export function attachRooms(server: EventEmitter) {
         if (!spec) { send(ws, { type: 'error', message: 'Invalid character.' }); return; }
         let code = clean(msg.room, 6).toUpperCase();
         if (msg.type === 'create') {
-          if (rooms.size >= 64) { send(ws, { type: 'error', message: 'Server full. Try again later.' }); return; }
+          if (rooms.size >= maxRooms && !evict()) { send(ws, { type: 'error', message: 'Server full. Try again later.' }); return; }
           do { code = randomBytes(3).toString('hex').toUpperCase(); } while (rooms.has(code));
+          if (keepRooms) alarms.set(code, now + keepRooms);
         } else if (!/^[A-F0-9]{6}$/.test(code) || !rooms.has(code)) {
           send(ws, { type: 'error', message: 'Room not found. Check the six-character code.' }); return;
         }
@@ -112,8 +129,15 @@ export function attachRooms(server: EventEmitter) {
     }
   }, 15000);
   heartbeat.unref();
+  // Like the Worker's room alarm: an empty room expires at its check, an occupied one gets another period.
+  const sweep = setInterval(() => {
+    const now = Date.now();
+    for (const [code, at] of alarms) if (at <= now) { if (rooms.get(code)?.size) alarms.set(code, now + keepRooms); else drop(code); }
+  }, Math.min(60000, keepRooms || 60000));
+  sweep.unref();
   const close = () => {
     clearInterval(heartbeat);
+    clearInterval(sweep);
     server.off('upgrade', upgrade);
     for (const m of members) m.ws.terminate();
     wss.close();
