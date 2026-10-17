@@ -1,5 +1,5 @@
 # World of Crabcraft on crabcraft-1. Installed to /etc/caddy/Caddyfile by deploy/vm/setup.sh.
-# crabcraft-dev.seonn.dev serves branch dev, crabcraft.seonn.dev serves branch main.
+# crab-dev.seonn.dev serves branch dev, crab.seonn.dev serves branch main.
 # Caddy obtains the certificates itself once the A records point at this VM.
 
 {
@@ -51,10 +51,10 @@
 	}
 }
 
-crabcraft-dev.seonn.dev {
+crab-dev.seonn.dev {
 	import crabcraft dev 8081
 }
 
-crabcraft.seonn.dev {
+crab.seonn.dev {
 	import crabcraft prod 8080
 }

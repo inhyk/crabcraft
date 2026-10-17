@@ -1,6 +1,6 @@
 # Builds the game (and the Node server once `pnpm build:server` exists) and ships it to the
-# crabcraft-1 VM: push to dev -> https://crabcraft-dev.seonn.dev, push to main ->
-# https://crabcraft.seonn.dev. The VM side lives in deploy/vm/ (activate.sh, Caddyfile, units).
+# crabcraft-1 VM: push to dev -> https://crab-dev.seonn.dev, push to main ->
+# https://crab.seonn.dev. The VM side lives in deploy/vm/ (activate.sh, Caddyfile, units).
 name: Deploy
 
 on:
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     env:
       DEPLOY_ENV: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
-      SITE: ${{ github.ref_name == 'main' && 'crabcraft.seonn.dev' || 'crabcraft-dev.seonn.dev' }}
+      SITE: ${{ github.ref_name == 'main' && 'crab.seonn.dev' || 'crab-dev.seonn.dev' }}
       SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v7

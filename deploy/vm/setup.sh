@@ -19,7 +19,7 @@ NODE_MAJOR=24
 PG_MAJOR=16
 ROOT=/srv/crabcraft
 ENVS=(dev prod)
-declare -A HOST=([dev]=crabcraft-dev.seonn.dev [prod]=crabcraft.seonn.dev)
+declare -A HOST=([dev]=crab-dev.seonn.dev [prod]=crab.seonn.dev)
 declare -A PORT=([dev]=8081 [prod]=8080)
 
 step() { printf '\n== %s\n' "$*"; }
