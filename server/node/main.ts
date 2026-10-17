@@ -1,11 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { attachRooms } from '../rooms.ts';
-import { accountHandler, originAllowed } from './accounts.ts';
+import { accountHandler, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, originAllowed } from './accounts.ts';
 import { createPool, migrate } from './db.ts';
 
 // Rooms and accounts for the browser client: what server/cloudflare/worker.ts served, on one VM behind Caddy.
-// Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy.
+// Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy,
+// GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for sign-in (GOOGLE_AUTH_URL and GOOGLE_TOKEN_URL override Google's endpoints in tests).
 const env = process.env;
 const port = Number(env.PORT || 8080), host = env.HOST || '127.0.0.1';
 const origins = (env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
@@ -13,6 +14,10 @@ const trustProxy = env.TRUST_PROXY === '1';
 if (!env.DATABASE_URL) { console.error('DATABASE_URL is required'); process.exit(1); }
 if (!Number.isInteger(port) || port < 0 || port > 65535) { console.error(`Invalid PORT: ${env.PORT}`); process.exit(1); }
 if (!origins.length) console.warn('ALLOWED_ORIGINS is empty: only local origins and clients without an Origin header are accepted');
+const google = env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+  ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, authUrl: env.GOOGLE_AUTH_URL || GOOGLE_AUTH_URL, tokenUrl: env.GOOGLE_TOKEN_URL || GOOGLE_TOKEN_URL }
+  : null;
+if (!google) console.warn('GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is not set: Google sign-in answers 503');
 
 const pool = createPool(env.DATABASE_URL);
 for (let attempt = 1; ; attempt++) {
@@ -38,7 +43,7 @@ function clientIp(req: IncomingMessage) {
   return req.socket.remoteAddress ?? 'unknown';
 }
 
-const accounts = accountHandler(pool, origins, clientIp);
+const accounts = accountHandler(pool, origins, clientIp, google);
 const text = (res: ServerResponse, status: number, body: string) => { res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(body); };
 async function healthy() {
   try { await pool.query('SELECT 1'); return true; } catch { return false; }

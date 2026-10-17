@@ -1,55 +1,38 @@
-// pnpm test:server — runs server-dist/main.mjs against a throwaway Postgres cluster on a free port.
+// pnpm test:server — runs server-dist/main.mjs against a throwaway Postgres cluster on a free port and a fake Google.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { request } from 'node:http';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { join } from 'node:path';
 import { once } from 'node:events';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import WebSocket from 'ws';
+import { fakeGoogle } from './fake-google.mjs';
+import { freePort, startPostgres } from './local-postgres.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const ORIGIN = 'https://crab.seonn.dev', OTHER_ORIGIN = 'https://crab-dev.seonn.dev';
+const CLIENT_ID = 'qa-client.apps.googleusercontent.com', CLIENT_SECRET = 'GOCSPX-' + randomBytes(18).toString('base64url');
 
-function pgBin() {
-  const dirs = [process.env.PG_BIN, ...(process.env.PATH ?? '').split(delimiter), '/opt/homebrew/bin', '/usr/local/bin'];
-  for (const base of ['/opt/homebrew/opt', '/usr/lib/postgresql']) {
-    try { for (const d of readdirSync(base).sort().reverse()) dirs.push(base === '/usr/lib/postgresql' ? join(base, d, 'bin') : join(base, d, 'bin')); } catch { /* not installed here */ }
-  }
-  const dir = dirs.find(d => d && existsSync(join(d, 'initdb')) && existsSync(join(d, 'pg_ctl')));
-  if (!dir) throw new Error('Postgres binaries (initdb, pg_ctl) not found; set PG_BIN');
-  return dir;
-}
-async function freePort() {
-  for (;;) {
-    const s = createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening');
-    const { port } = s.address(); s.close(); await once(s, 'close');
-    if (port !== 5432) return port;
-  }
-}
-
-let dir, bin, data, db, server, base, port, output = '';
+let postgres, db, server, base, port, google, DATABASE_URL, output = '';
 before(async () => {
-  bin = pgBin();
-  dir = mkdtempSync(join(tmpdir(), 'crabcraft-pg-'));
-  data = join(dir, 'data');
-  const pgPort = await freePort();
-  execFileSync(join(bin, 'initdb'), ['-D', data, '-U', 'postgres', '-A', 'trust', '-E', 'UTF8', '--locale=C', '--no-sync'], { stdio: 'ignore' });
-  // TCP on 127.0.0.1 only, no Unix socket: nothing shared with any other cluster.
-  execFileSync(join(bin, 'pg_ctl'), ['-D', data, '-l', join(dir, 'postgres.log'), '-w', '-t', '30', '-o', `-c listen_addresses=127.0.0.1 -p ${pgPort} -c unix_socket_directories='' -c fsync=off`, 'start'], { stdio: 'ignore' });
-  const admin = new pg.Client({ connectionString: `postgres://postgres@127.0.0.1:${pgPort}/postgres` });
-  await admin.connect(); await admin.query('CREATE DATABASE crabcraft'); await admin.end();
-  const DATABASE_URL = `postgres://postgres@127.0.0.1:${pgPort}/crabcraft`;
+  postgres = await startPostgres();
+  DATABASE_URL = postgres.url;
+  google = await fakeGoogle({ clientId: CLIENT_ID, clientSecret: CLIENT_SECRET });
   db = new pg.Pool({ connectionString: DATABASE_URL });
+  // A database from before Google sign-in: 001 applied, with a password account and its session.
+  await db.query(readFileSync(join(root, 'server/node/migrations/001_accounts.sql'), 'utf8'));
+  await db.query(`CREATE TABLE schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now()); INSERT INTO schema_migrations (version) VALUES ('001_accounts')`);
+  await db.query(`INSERT INTO accounts (username, salt, hash, save, updated, created) VALUES ('qa_password', repeat('a', 64), repeat('b', 64), '{}', 1, 1)`);
+  await db.query(`INSERT INTO sessions (token_hash, username, expires) VALUES (repeat('c', 64), 'qa_password', 9999999999999); INSERT INTO rate_limits (id, count, until) VALUES ('login:qa_password', 1, 9999999999999)`);
   port = await freePort();
   base = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, [join(root, 'server-dist/main.mjs')], {
-    env: { PATH: process.env.PATH, PORT: String(port), HOST: '127.0.0.1', DATABASE_URL, ALLOWED_ORIGINS: `${ORIGIN}, ${OTHER_ORIGIN}`, TRUST_PROXY: '1' },
+    env: { PATH: process.env.PATH, PORT: String(port), HOST: '127.0.0.1', DATABASE_URL, ALLOWED_ORIGINS: `${ORIGIN}, ${OTHER_ORIGIN}`, TRUST_PROXY: '1',
+      GOOGLE_CLIENT_ID: CLIENT_ID, GOOGLE_CLIENT_SECRET: CLIENT_SECRET, GOOGLE_AUTH_URL: google.authUrl, GOOGLE_TOKEN_URL: google.tokenUrl },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout.on('data', d => { output += d; });
@@ -64,8 +47,8 @@ before(async () => {
 after(async () => {
   if (server && server.exitCode === null) { server.kill('SIGKILL'); await once(server, 'exit'); }
   await db?.end().catch(() => {});
-  if (data && existsSync(join(data, 'postmaster.pid'))) execFileSync(join(bin, 'pg_ctl'), ['-D', data, '-m', 'fast', '-w', 'stop'], { stdio: 'ignore' });
-  if (dir) rmSync(dir, { recursive: true, force: true });
+  await google?.close();
+  postgres?.stop();
 });
 
 /** Raw HTTP so tests can set Host and read every Set-Cookie header. */
@@ -120,7 +103,11 @@ test('healthz reports the database; other paths answer like the Worker', async (
   assert.equal((await http('GET', '/multiplayer')).status, 426);
   assert.equal((await http('GET', '/nope')).status, 404);
   const { rows } = await db.query('SELECT version FROM schema_migrations ORDER BY version');
-  assert.deepEqual(rows.map(r => r.version), ['001_accounts']);
+  assert.deepEqual(rows.map(r => r.version), ['001_accounts', '002_google_only']);
+  // 002 removed the password account, its session and its login counter.
+  const counts = await db.query(`SELECT (SELECT count(*) FROM accounts)::int AS a, (SELECT count(*) FROM sessions)::int AS s, (SELECT count(*) FROM rate_limits WHERE id LIKE 'login:%')::int AS r`);
+  assert.deepEqual(counts.rows[0], { a: 0, s: 0, r: 0 });
+  await assert.rejects(db.query(`INSERT INTO accounts (username, save, updated, created) VALUES ('qa_password', '{}', 1, 1)`), /accounts_google/);
 });
 
 test('two clients share a room: join, state, action, chat, combat world and departure', async () => {
@@ -180,78 +167,209 @@ test('disallowed origins, oversized messages and other upgrade paths are refused
   assert.equal(code, 1009);
 });
 
-test('signup, login, save, load and logout with cookies; secrets stay hashed and unlogged', async () => {
-  const username = 'qa_' + randomBytes(5).toString('hex'), password = randomBytes(18).toString('base64url');
+const xff = ip => ({ 'X-Forwarded-For': `203.0.113.250, ${ip}` });
+const hostHeader = host => (host ? { Host: host } : {});
+const setCookies = res => res.headers['set-cookie'] ?? [];
+const googleStart = ({ ret = '/', ip = freshIp(), host } = {}) =>
+  http('GET', '/api/account/google/start?return=' + encodeURIComponent(ret), { headers: { ...xff(ip), ...hostHeader(host) } });
+/** The whole round trip: start, the fake Google redirecting back with a code, then the callback with the state cookie. */
+async function googleSignIn({ sub, ret = '/', ip = freshIp(), host, claims = {}, state } = {}) {
+  const start = await googleStart({ ret, ip, host });
+  assert.equal(start.status, 302, start.text);
+  const auth = new URL(start.headers.location);
+  for (const [k, v] of Object.entries({ sub, ...claims })) if (v !== undefined) auth.searchParams.set(k, String(v));
+  const google = await fetch(auth, { redirect: 'manual' });
+  assert.equal(google.status, 302);
+  const back = new URL(google.headers.get('location'));
+  if (state !== undefined) back.searchParams.set('state', state);
+  const callback = await http('GET', back.pathname + back.search, { headers: { Cookie: cookieOf(start), ...xff(ip), ...hostHeader(host) } });
+  const session = setCookies(callback).find(c => c.startsWith('cc_account='));
+  const cookie = session?.split(';')[0];
+  if (cookie) tokens.push(cookie.split('.')[1]);
+  return { start, back, callback, session, cookie };
+}
+const usernameOf = sub => 'g' + createHash('sha256').update('google:' + sub).digest('hex').slice(0, 23);
+const tokens = [];
+
+test('Google start sets a Lax state cookie and redirects to Google with an S256 challenge', async () => {
+  const start = await googleStart({ ret: '/?screen=title' });
+  assert.equal(start.status, 302);
+  assert.match(start.headers['cache-control'], /no-store/);
+  const location = new URL(start.headers.location), q = location.searchParams;
+  assert.equal(location.origin + location.pathname, google.authUrl);
+  assert.deepEqual([q.get('client_id'), q.get('redirect_uri'), q.get('response_type'), q.get('scope'), q.get('code_challenge_method'), q.get('prompt')],
+    [CLIENT_ID, `${base}/api/account/google/callback`, 'code', 'openid', 'S256', 'select_account']);
+  const [setCookie] = setCookies(start);
+  const m = setCookie.match(/^cc_oauth=([A-Za-z0-9_-]{43})\.([A-Za-z0-9_-]{43})\.([A-Za-z0-9_-]+); Path=\/api\/account\/google; HttpOnly; SameSite=Lax; Max-Age=600$/);
+  assert.ok(m, setCookie);
+  assert.equal(q.get('state'), m[1]);
+  assert.equal(q.get('code_challenge'), createHash('sha256').update(m[2]).digest('base64url'));
+  assert.equal(Buffer.from(m[3], 'base64url').toString(), '/?screen=title');
+  // Behind Caddy the Host is public: Google returns to that origin, and the cookie is Secure.
+  const pub = await googleStart({ host: 'crab-dev.seonn.dev' });
+  assert.equal(new URL(pub.headers.location).searchParams.get('redirect_uri'), 'https://crab-dev.seonn.dev/api/account/google/callback');
+  assert.match(setCookies(pub)[0], /; HttpOnly; SameSite=Lax; Secure; Max-Age=600$/);
+  for (const host of ['evil.example', 'crab.seonn.dev.evil.example', 'crab.seonn.dev:8443']) assert.deepEqual((await googleStart({ host })).json, { error: 'origin' });
+  assert.equal((await http('POST', '/api/account/google/start', { headers: xff(freshIp()) })).status, 405);
+});
+
+test('the first Google sign-in creates an account, the next reuses it; session, save and logout keep their contract', async () => {
+  const sub = 'qa-' + randomBytes(6).toString('hex'), username = usernameOf(sub);
+  assert.match(username, /^g[a-f0-9]{23}$/);
+  const first = await googleSignIn({ sub, ret: '/?screen=title' });
+  assert.equal(first.callback.status, 302);
+  assert.equal(first.callback.headers.location, '/?screen=title');
+  assert.equal(first.callback.headers['referrer-policy'], 'no-referrer');
+  assert.match(setCookies(first.callback)[0], /^cc_oauth=; Path=\/api\/account\/google; HttpOnly; SameSite=Lax; Max-Age=0$/);
+  assert.match(first.session, /^cc_account=g[a-f0-9]{23}\.[a-f0-9]{64}; Path=\/api\/account; HttpOnly; SameSite=Strict; Max-Age=604800$/);
+  assert.equal(first.cookie.split('=')[1].split('.')[0], username);
+  const fresh = await api('session', undefined, { cookie: first.cookie });
+  assert.deepEqual(fresh.json, { username, revision: 0, save: {}, updated: fresh.json.updated });
   const save = { 'cc.spec': JSON.stringify(spec), 'cc.journey.v1:human:male:warrior:Test crab': JSON.stringify({ xp: 137, coins: 73, chapter: 1 }) };
-  const ip = freshIp();
-  assert.equal((await api('session')).status, 401);
-  const signup = await api('signup', { username, password, save }, { ip });
-  assert.equal(signup.status, 200);
-  assert.deepEqual(signup.json, { username, revision: 0, save, updated: signup.json.updated });
-  assert.equal(typeof signup.json.updated, 'number');
-  const setCookie = signup.headers['set-cookie'][0];
-  assert.match(setCookie, /^cc_account=[a-z0-9_]+\.[a-f0-9]{64}; Path=\/api\/account; HttpOnly; SameSite=Strict; Max-Age=604800$/);
-  assert.match(signup.headers['cache-control'], /no-store/);
-  assert.equal(signup.headers['x-content-type-options'], 'nosniff');
-  const cookie = cookieOf(signup), token = cookie.split('.')[1];
-  assert.equal((await api('signup', { username, password, save }, { ip })).json.error, 'taken');
-  const wrong = await api('login', { username, password: password + 'x' }, { ip });
-  assert.deepEqual([wrong.status, wrong.json], [401, { error: 'credentials' }]);
-  const login = await api('login', { username: username.toUpperCase(), password }, { ip });
-  assert.equal(login.status, 200); assert.deepEqual(login.json.save, save);
-  const loaded = await api('session', undefined, { cookie });
-  assert.deepEqual([loaded.status, loaded.json.save, loaded.json.revision], [200, save, 0]);
-  const progressed = { ...save, 'cc.journey.v1:human:male:warrior:Test crab': JSON.stringify({ xp: 246, coins: 99, chapter: 1 }), 'cc.lighthouseSecret.v1': 'found' };
-  const saved = await api('save', { revision: 0, save: progressed }, { cookie });
-  assert.deepEqual([saved.status, saved.json.revision, saved.json.save], [200, 1, undefined]);
-  assert.equal((await api('save', { revision: 0, save }, { cookie: cookieOf(login) })).json.error, 'conflict');
-  assert.equal((await api('save', { revision: 1, save: { 'cc.musicVol': '1' } }, { cookie })).json.error, 'save');
-  assert.equal((await api('save', { revision: 1, save: { 'cc.spec': 'null' } }, { cookie })).json.error, 'save');
-  const reloaded = await api('session', undefined, { cookie: cookieOf(login) });
-  assert.deepEqual([reloaded.json.revision, reloaded.json.save], [1, progressed]);
-  assert.deepEqual(Object.keys(reloaded.json.save), Object.keys(progressed));
-  const logout = await api('logout', {}, { cookie });
-  assert.equal(logout.status, 200);
+  const saved = await api('save', { revision: 0, save }, { cookie: first.cookie });
+  assert.deepEqual([saved.status, saved.json.username, saved.json.revision, saved.json.save], [200, username, 1, undefined]);
+  // The same Google account on another device lands on the same save.
+  const second = await googleSignIn({ sub });
+  assert.equal(second.callback.headers.location, '/');
+  assert.notEqual(second.cookie, first.cookie);
+  const loaded = await api('session', undefined, { cookie: second.cookie });
+  assert.deepEqual([loaded.json.username, loaded.json.revision, loaded.json.save], [username, 1, save]);
+  assert.deepEqual(Object.keys(loaded.json.save), Object.keys(save));
+  assert.equal((await api('save', { revision: 0, save }, { cookie: second.cookie })).json.error, 'conflict');
+  assert.equal((await api('save', { revision: 1, save: { 'cc.musicVol': '1' } }, { cookie: second.cookie })).json.error, 'save');
+  assert.equal((await api('save', { revision: 1, save: { 'cc.spec': 'null' } }, { cookie: second.cookie })).json.error, 'save');
+  const other = await googleSignIn({ sub: sub + '-other' });
+  assert.notEqual(other.cookie.split('=')[1].split('.')[0], username);
+  assert.equal((await api('session', undefined, { cookie: other.cookie })).json.revision, 0);
+  const logout = await api('logout', {}, { cookie: first.cookie });
+  assert.deepEqual([logout.status, logout.json], [200, { ok: true }]);
   assert.match(logout.headers['set-cookie'][0], /^cc_account=; Path=\/api\/account; HttpOnly; SameSite=Strict; Max-Age=0$/);
-  assert.equal((await api('session', undefined, { cookie })).status, 401);
-  assert.equal((await api('session', undefined, { cookie: cookieOf(login) })).status, 200);
-  const { rows: [row] } = await db.query('SELECT salt, hash FROM accounts WHERE username = $1', [username]);
-  assert.match(row.salt, /^[a-f0-9]{64}$/); assert.match(row.hash, /^[a-f0-9]{64}$/); assert.notEqual(row.hash, password);
+  assert.equal((await api('session', undefined, { cookie: first.cookie })).status, 401);
+  assert.equal((await api('session', undefined, { cookie: second.cookie })).status, 200);
+  // Only the hashed account key, the save and hashed session tokens are stored: no Google sub, email or name.
+  const { rows: columns } = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'accounts' ORDER BY ordinal_position`);
+  assert.deepEqual(columns.map(c => c.column_name), ['username', 'revision', 'save', 'updated', 'created']);
+  const { rows: [row] } = await db.query('SELECT * FROM accounts WHERE username = $1', [username]);
+  assert.ok(!JSON.stringify(row).includes(sub));
   const { rows: sessions } = await db.query('SELECT token_hash FROM sessions WHERE username = $1', [username]);
   assert.equal(sessions.length, 1);
-  assert.ok(sessions.every(s => /^[a-f0-9]{64}$/.test(s.token_hash) && s.token_hash !== token && s.token_hash !== cookieOf(login).split('.')[1]));
-  assert.ok(!output.includes(password) && !output.includes(token));
+  assert.equal(sessions[0].token_hash, createHash('sha256').update(second.cookie.split('.')[1]).digest('hex'));
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM accounts WHERE username = $1', [username])).rows[0].n, 1);
+});
+
+test('the callback refuses a wrong or missing state, a refusal at Google and bad id tokens', async () => {
+  const sub = 'qa-' + randomBytes(6).toString('hex');
+  const refused = async (result, location = '/?account=error') => {
+    assert.equal(result.callback.status, 302);
+    assert.equal(result.callback.headers.location, location);
+    assert.equal(result.session, undefined);
+    assert.match(setCookies(result.callback)[0], /^cc_oauth=; .*Max-Age=0$/);
+  };
+  await refused(await googleSignIn({ sub, state: 'A'.repeat(43) }));
+  await refused(await googleSignIn({ sub, state: '' }));
+  await refused(await googleSignIn({ sub, ret: '/?screen=title', claims: { aud: 'someone-else.apps.googleusercontent.com' } }), '/?screen=title&account=error');
+  await refused(await googleSignIn({ sub, claims: { exp: Math.floor(Date.now() / 1000) - 60 } }));
+  await refused(await googleSignIn({ sub, claims: { iss: 'https://evil.example' } }));
+  await refused(await googleSignIn({ sub, claims: { sub: '' } }));
+  // No state cookie at all (another browser, or it expired).
+  const start = await googleStart();
+  const state = new URL(start.headers.location).searchParams.get('state');
+  const bare = await http('GET', `/api/account/google/callback?code=x&state=${state}`, { headers: xff(freshIp()) });
+  assert.deepEqual([bare.status, bare.headers.location], [302, '/?account=error']);
+  // The player cancels at Google.
+  const denied = await http('GET', `/api/account/google/callback?error=access_denied&state=${state}`, { headers: { Cookie: cookieOf(start), ...xff(freshIp()) } });
+  assert.deepEqual([denied.status, denied.headers.location], [302, '/?account=error']);
+  assert.ok(!setCookies(denied).some(c => c.startsWith('cc_account=')));
+  // A code can be redeemed once: replaying the callback with a new state cookie fails at the token endpoint.
+  const ok = await googleSignIn({ sub });
+  assert.ok(ok.cookie);
+  const again = await googleStart();
+  const replay = new URL(ok.back); replay.searchParams.set('state', new URL(again.headers.location).searchParams.get('state'));
+  const replayed = await http('GET', replay.pathname + replay.search, { headers: { Cookie: cookieOf(again), ...xff(freshIp()) } });
+  assert.equal(replayed.headers.location, '/?account=error');
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM accounts WHERE username = $1', [usernameOf(sub)])).rows[0].n, 1);
+});
+
+test('return paths stay on this site', async () => {
+  const sub = 'qa-' + randomBytes(6).toString('hex');
+  for (const ret of ['//evil.example', 'https://evil.example', '/\\evil.example', '\\\\evil.example', '/\t/evil.example', '/\n/evil.example', 'javascript:alert(1)', 'evil.example', '', '/' + 'a'.repeat(600)]) {
+    const r = await googleSignIn({ sub, ret });
+    assert.equal(r.callback.headers.location, '/', JSON.stringify(ret));
+    const error = await googleSignIn({ sub, ret, claims: { aud: 'nope' } });
+    assert.equal(error.callback.headers.location, '/?account=error', JSON.stringify(ret));
+  }
+  assert.equal((await googleSignIn({ sub, ret: '/?screen=game&multiplayer=1' })).callback.headers.location, '/?screen=game&multiplayer=1');
+  assert.equal((await googleSignIn({ sub, ret: '/play/index.html?lang=en' })).callback.headers.location, '/play/index.html?lang=en');
+});
+
+test('username and password sign-in is gone', async () => {
+  const ip = freshIp();
+  assert.deepEqual([(await api('signup', { username: 'qa_gone', password: 'long enough password', save: {} }, { ip })).status, (await api('signup', {}, { ip })).json], [404, { error: 'route' }]);
+  assert.deepEqual([(await api('login', { username: 'qa_gone', password: 'long enough password' }, { ip })).status, (await api('login', undefined, { ip })).json], [404, { error: 'route' }]);
+  assert.equal((await api('google', undefined)).status, 404);
+  assert.equal((await api('session/extra', undefined)).status, 404);
 });
 
 test('origin, header, method, body size and public-host cookie rules', async () => {
   assert.deepEqual((await api('session', undefined, { Origin: 'https://evil.example' })).json, { error: 'origin' });
   assert.deepEqual((await api('session', undefined, { 'X-Crabcraft-Account': '' })).json, { error: 'origin' });
   assert.equal((await http('GET', '/api/account/session', { headers: { Origin: ORIGIN } })).status, 403);
-  assert.equal((await api('login', undefined)).status, 405);
+  assert.equal((await api('save', undefined)).status, 405);
   assert.equal((await api('session', {})).status, 405);
+  assert.equal((await api('session', undefined)).status, 401);
   assert.equal((await api('session', undefined, { Origin: 'http://localhost:5173' })).status, 401);
-  assert.equal((await api('login', { username: 'qa_big', password: 'x'.repeat(70000) }, { ip: freshIp() })).json.error, 'request');
-  assert.equal((await api('login', '[1]', { ip: freshIp() })).json.error, 'request');
-  assert.equal((await api('login', { username: 'no', password: 'long enough password' }, { ip: freshIp() })).json.error, 'username');
-  // Behind Caddy the Host is public: local origins stop working and the cookie becomes Secure.
-  const publicHost = { Host: 'crab.seonn.dev' };
-  assert.equal((await api('session', undefined, { ...publicHost, Origin: 'http://localhost:5173' })).status, 403);
-  const username = 'qa_' + randomBytes(5).toString('hex');
-  const signup = await api('signup', { username, password: randomBytes(18).toString('base64url'), save: {} }, { ip: freshIp(), ...publicHost });
-  assert.equal(signup.status, 200);
-  assert.match(signup.headers['set-cookie'][0], /; HttpOnly; SameSite=Strict; Secure; Max-Age=604800$/);
+  assert.equal((await api('save', { revision: 0, save: { 'cc.spec': 'x'.repeat(70000) } })).json.error, 'request');
+  assert.equal((await api('save', '[1]')).json.error, 'request');
+  // Behind Caddy the Host is public: local origins stop working and the cookies become Secure.
+  const publicHost = 'crab.seonn.dev';
+  assert.equal((await api('session', undefined, { Host: publicHost, Origin: 'http://localhost:5173' })).status, 403);
+  const signedIn = await googleSignIn({ sub: 'qa-' + randomBytes(6).toString('hex'), host: publicHost });
+  assert.match(signedIn.session, /; HttpOnly; SameSite=Strict; Secure; Max-Age=604800$/);
+  assert.match(setCookies(signedIn.callback)[0], /; HttpOnly; SameSite=Lax; Secure; Max-Age=0$/);
+  assert.equal((await api('session', undefined, { cookie: signedIn.cookie, Host: publicHost })).status, 200);
+  assert.match((await api('logout', {}, { cookie: signedIn.cookie, Host: publicHost })).headers['set-cookie'][0], /; HttpOnly; SameSite=Strict; Secure; Max-Age=0$/);
 });
 
-test('per-account and per-IP rate limits', async () => {
-  const missing = 'qa_' + randomBytes(5).toString('hex'), ip = freshIp();
-  for (let i = 0; i < 20; i++) assert.equal((await api('login', { username: missing, password: 'not the password' }, { ip })).status, 401);
-  assert.deepEqual((await api('login', { username: missing, password: 'not the password' }, { ip: freshIp() })).json, { error: 'rate' });
-  // The IP window counts every signup or login attempt from the last X-Forwarded-For hop.
-  const busy = freshIp();
-  const attempts = await Promise.all(Array.from({ length: 100 }, (_, i) => api('login', { username: `qa_ip_${i}`, password: 'short' }, { ip: busy })));
-  assert.ok(attempts.every(r => r.json.error === 'password'));
-  assert.deepEqual((await api('login', { username: 'qa_ip_x', password: 'short' }, { ip: busy })).json, { error: 'rate' });
-  assert.equal((await api('login', { username: 'qa_ip_x', password: 'short' }, { ip: freshIp() })).json.error, 'password');
+test('per-IP limits on Google start and callback, per-account limit on save', async () => {
+  // The IP window counts every start and callback from the last X-Forwarded-For hop.
+  const busy = freshIp(), sub = 'qa-' + randomBytes(6).toString('hex');
+  const starts = await Promise.all(Array.from({ length: 99 }, () => googleStart({ ip: busy })));
+  assert.ok(starts.every(r => r.status === 302));
+  const last = await googleSignIn({ sub, ip: busy });
+  assert.equal(last.callback.headers.location, '/?account=error');
+  assert.deepEqual((await googleStart({ ip: busy })).json, { error: 'rate' });
+  assert.equal((await googleStart({ ip: freshIp() })).status, 302);
+  const { cookie } = await googleSignIn({ sub });
+  for (let revision = 0; revision < 60; revision++) assert.equal((await api('save', { revision, save: {} }, { cookie })).status, 200);
+  assert.deepEqual((await api('save', { revision: 60, save: {} }, { cookie })).json, { error: 'rate' });
+});
+
+test('without GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, start answers 503 and the callback sends players back', async () => {
+  const bare = spawn(process.execPath, [join(root, 'server-dist/main.mjs')], {
+    env: { PATH: process.env.PATH, PORT: String(await freePort()), HOST: '127.0.0.1', DATABASE_URL, ALLOWED_ORIGINS: ORIGIN },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let log = '';
+  bare.stdout.on('data', d => { log += d; }); bare.stderr.on('data', d => { log += d; });
+  try {
+    const until = Date.now() + 20000;
+    while (!/listening on 127\.0\.0\.1:(\d+)/.test(log)) {
+      if (bare.exitCode !== null || Date.now() > until) throw new Error('server did not start:\n' + log);
+      await new Promise(r => setTimeout(r, 50));
+    }
+    const at = 'http://127.0.0.1:' + log.match(/listening on 127\.0\.0\.1:(\d+)/)[1];
+    const start = await fetch(at + '/api/account/google/start?return=%2F', { redirect: 'manual' });
+    assert.deepEqual([start.status, await start.json()], [503, { error: 'google' }]);
+    const callback = await fetch(at + '/api/account/google/callback?code=x&state=y', { redirect: 'manual' });
+    assert.deepEqual([callback.status, callback.headers.get('location')], [302, '/?account=error']);
+    assert.match(log, /GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is not set/);
+  } finally { bare.kill('SIGKILL'); await once(bare, 'exit'); }
+});
+
+test('the server log never holds the client secret, codes, tokens or session tokens', async () => {
+  assert.ok(google.issued.length > 20 && tokens.length > 10);
+  assert.match(output, /account google callback: (state|aud|exp|iss|token-400)/);
+  for (const secret of [CLIENT_SECRET, ...google.issued, ...google.issued.map(encodeURIComponent), ...tokens]) assert.ok(!output.includes(secret), 'leaked into the log');
 });
 
 test('SIGTERM closes sockets and exits cleanly', async () => {
