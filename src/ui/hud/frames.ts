@@ -84,6 +84,7 @@ export class UnitFrame {
   private auraTimes: HTMLElement[] = [];
   unit: Unit | null = null;
   private lowHp = false;
+  private absorbStyle = '';
 
   constructor(private readonly kind: 'player' | 'target') {
     this.pic = h('div', { class: 'uf-pic' });
@@ -134,14 +135,14 @@ export class UnitFrame {
     }
     const tag=u.kind==='boss'?t('보스','Boss'):'';
     if(this.tagEl.textContent!==tag)this.tagEl.textContent=tag;
-    if (this.kind === 'target' && u.kind !== 'boss') this.levelEl.textContent = String(u.level);
-    if (this.kind === 'player') this.levelEl.textContent = String(u.level);
+    if ((this.kind === 'player' || u.kind !== 'boss') && this.levelEl.textContent !== String(u.level)) this.levelEl.textContent = String(u.level);
     const frac = u.hp / u.maxHp;
     const pct = Math.round(frac * 100);
     setBar(this.hp, frac, this.kind === 'player' ? `${Math.ceil(u.hp)} / ${u.maxHp}` : u.alive ? `${Math.ceil(u.hp)} / ${u.maxHp}  (${pct}%)` : t('처치됨','Dead'));
     if (this.hp.absorb) {
       const a = u.absorb > 0 && g.time < u.absorbUntil ? Math.min(1, u.absorb / u.maxHp) : 0;
-      this.hp.absorb.style.transform = `translateX(${Math.min(1, frac) * 100}%) scaleX(${a})`;
+      const style = `translateX(${Math.min(1, frac) * 100}%) scaleX(${a})`;
+      if(style!==this.absorbStyle){this.absorbStyle=style;this.hp.absorb.style.transform=style;}
     }
     const low = u.alive && frac < 0.3;
     if (low !== this.lowHp) {
@@ -150,7 +151,8 @@ export class UnitFrame {
     }
     if (this.kind === 'player') {
       const p = g.player;
-      this.res.el.className = `cc-bar res ${p.isRage ? 'rage' : 'mana'}`;
+      const resourceClass = `cc-bar res ${p.isRage ? 'rage' : 'mana'}`;
+      if(this.res.el.className!==resourceClass)this.res.el.className=resourceClass;
       setBar(this.res, p.resource / p.maxResource, `${Math.floor(p.resource)} / ${p.maxResource}`);
       this.el.classList.toggle('in-combat', p.inCombat && u.alive);
     } else {
