@@ -287,7 +287,7 @@ export class HiddenWorld {
     g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const x=(i%2?1:-1)*(43+i%4*8),z=16-Math.floor(i/2)*10;e.home.set(x,third.height(x,z),z);if(authority)e.respawnAt(x,z);});
     g.quests.setChapter(3);g.hud.hints.setChapter(3);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
     g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
-    g.hud.messages.banner(()=>t('WORLD III · 새벽을 잃은 섬','WORLD III · Isle of the Stolen Dawn'),()=>t('친구 미라를 구하고 30레벨 황혼의 왕에게 도전하세요','Rescue Mira and challenge the Twilight King at level 30'),'zone');
+    g.hud.messages.banner(()=>t('WORLD III · 새벽을 잃은 섬','WORLD III · Isle of the Stolen Dawn'),()=>t('친구 미라를 구하고 100레벨 황혼의 왕에게 도전하세요','Rescue Mira and challenge the Twilight King at level 100'),'zone');
     g.hud.chat.system(t('친구 미라는 황혼 성채에 갇혀 있어요. 항구의 선장에게 구조 의뢰를 받으세요.','Mira is imprisoned in the Twilight Citadel. Speak to the captain in Dawnharbor.'));
     g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-150,maxX:150,minZ:-175,maxZ:175,topY:110},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));g.journey?.save();
   }
