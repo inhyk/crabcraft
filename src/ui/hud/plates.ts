@@ -239,6 +239,12 @@ export class Bubbles {
     this.list = [];
   }
 
+  /** Removes one unit's bubble, e.g. a player who was just blocked. */
+  forget(unit: Unit): void {
+    for (const b of this.list) if (b.unit === unit) b.el.remove();
+    this.list = this.list.filter((b) => b.unit !== unit);
+  }
+
   /** `topLimit`: no bubble rises above this screen y (the boss frame, the top of the screen). */
   update(g: Game, topLimit = 96): void {
     const cam = g.camera;
