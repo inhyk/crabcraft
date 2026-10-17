@@ -142,3 +142,9 @@ T를 2초 유지하면 현재 섬의 광장으로 귀환한다. 월드1은 원�
 빌드/Worker 타입 검사/배포 dry-run, 기존 전투68·방9·엔진4개 통과. 실제 로컬 workerd/SQLite에 대한 `server/cloudflare/account-smoke.mjs`가 가입 중복/동시 가입 경합·틀린 비밀번호·세션/로그아웃 폐기·계정 격리·저장 검증·동시 revision 충돌·출처/헤더 차단·요청 제한을 통과했다. 실Chrome `tools/qa-accounts.mjs`는 실제 가입/비밀번호 확인·718×492 스크롤 모달·HttpOnly·기존137XP/73코인 가져오기·487XP/99코인 자동 저장·영어 두 번째 기기에서 같은 진행 복원·700XP/123코인 새 저장에 대한 오래된 창의 충돌 보호·세션 재로드·게스트137XP/73코인 복귀를 확인했다. 페이지 오류0. 진행 변경은 명시적 fixture이며 자연 플레이 성장 검사가 아니다. 근거는 `tmp/qa/account-{build,worker-types,worker-dry,local-api,native-local,boss-tests,room-tests,engine-tests}.log` 및 모달 스크린샷이다.
 
 공개 검증 완료: 소스 e66d334, Worker 07b6e933-b490-420e-beb1-d38c348d023a, Vercel dpl_47L9cJGLdcw3mGPPdLv4veGG5NJq production/Ready. 공개 index/JS/CSS27개 SHA256 일치 및 seonn.dev 기존 카드 HTTP200/플레이 링크를 확인했다. 공개 API 검사와 실Chrome 전체 계정 검사도 종료0/페이지 오류0으로 통과했다(account-public-api.log, account-native-public.log, account-public-assets.log). 기존 방 검사에서 누락되어 있던 chapter 요청 필드를 보완한 뒤 공개 방 검사도 통과했다(account-public-rooms.log).
+
+## 2026-10-17 · 두 명이 함께 타는 항구 배
+
+항구 첫 노젓는 배를 두 좌석의 청록색/나무/황동 배로 교체했다. 부두 끝 (144,19) 근처에서 F로 탑승하고 첫 탑승자가 W/S 전후진·A/D 방향을 조종한다. 동승자는 별도 좌석에 타며 세 번째 탑승은 거절한다. F로 부두 (143,23)에 안전하게 내린다. 조종자가 내리거나 연결이 끊기면 동승자가 조종을 이어받고 빈 배는 항구로 돌아온다. 탑승 중 일반 이동·스킬을 잠그고 HP/XP/코인/쿨다운을 초기화하지 않는다. 한국어/영어 탑승·조종·동승·정원 안내를 구분했다.
+
+호스트가 좌석과 배 이동을 결정한다. 기존 월드 체크포인트에 선택 boat 필드를 추가하고 손님은 인증된 자기 ID로 탑승/하선/조종 입력만 보낸다. 두 좌석/유일한 ID/유한 좌표·속도/입력 범위를 relay에서 검증한다. 호스트는 부두 거리·챕터·생존·좌석·조종자 소유권을 재확인한다. 0.4초 입력 만료 시 감속, 선체 9점 지형 검사와 해역 경계로 육지 진입을 막는다. 월드2/3 이동 시 좌석을 비우며 해당 월드 입장 위치를 보존한다. 서버 바인딩/마이그레이션과 계정 기능을 유지했다.

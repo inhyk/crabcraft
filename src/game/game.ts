@@ -4,6 +4,7 @@ import {loadingLabel,loadingTips,regionName,regionSubtitle} from './worldLocale'
 // quests, combat, AI, effects, music and the HUD together.
 import * as THREE from 'three';
 import {starMemory} from './starMemories';
+import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
 import { HiddenWorld } from './world2';
@@ -99,6 +100,7 @@ export class Game {
   world2!: HiddenWorld;
   journey: BossJourney | null = null;
   lighthouseSecret: LighthouseSecret | null = null;
+  boats:ShoreBoat|null=null;
 
   get encounter(): Boss {
     if (this.world2?.chapter===3 && this.dawnBoss) return this.dawnBoss;
@@ -157,7 +159,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
+    return !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -478,6 +480,7 @@ export class Game {
     }, 700);
     this.journey = new BossJourney(this);
     this.lighthouseSecret = new LighthouseSecret(this);
+    this.boats=new ShoreBoat(this);
     this.journey.restore();
     this.intro();
     this.multiplayer = new Multiplayer(this);
@@ -601,6 +604,7 @@ export class Game {
       this.updateStatuses();
     }
     this.multiplayer?.update(dt);
+    this.boats?.update(paused?0:dt);
     // Visual updates (culled when far away, simplified when small on screen)
     const cam = this.camera.position;
     // Screen pixels per world unit at distance 1 (CSS pixels, so Retina does not change the LOD).
@@ -728,6 +732,7 @@ export class Game {
       this.robotConfirmUntil = this.time + 3;
       hud.messages.info(t('R을 다시 누르면 로봇 모드로 이동합니다. 진행 중인 모험 화면이 닫힙니다.','Press R again to open Robot Mode and leave this adventure.'));
     }
+    if(this.boats?.seated){if(inp.wasPressed('KeyF'))this.boats.interact();return;}
     if (this.controlsLocked) return;
     const hints = hud.hints;
     if (hints.active) {
@@ -796,8 +801,9 @@ export class Game {
 
   // ================================================================ interaction and dialogue
 
-  private findInteractable(): { kind: 'unit'; unit: Unit } | { kind: 'beacon' } | {kind:'secret'} | {kind:'world2';node:NonNullable<ReturnType<HiddenWorld['interactable']>>} | {kind:'portal'} | null {
+  private findInteractable(): { kind: 'unit'; unit: Unit } | { kind: 'beacon' } | {kind:'secret'} | {kind:'boat'} | {kind:'world2';node:NonNullable<ReturnType<HiddenWorld['interactable']>>} | {kind:'portal'} | null {
     const p = this.player.unit;
+    if(this.boats?.nearby())return {kind:'boat'};
     if(this.lighthouseSecret?.nearby())return {kind:'secret'};
     let best: Unit | null = null;
     let bestScore = Infinity;
@@ -837,6 +843,7 @@ export class Game {
     }
     const it = this.findInteractable();
     if (!it) this.hud.prompt.hide();
+    else if(it.kind==='boat')this.hud.prompt.show('F',this.boats!.label());
     else if(it.kind==='secret')this.hud.prompt.show('F',t('길게 눌러 바위의 게 문양 살펴보기','Hold to inspect the crab carving'));
     else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.portalLabel());
     else if(it.kind==='world2')this.hud.prompt.show('F',it.node.kind.startsWith('lamp')?t('길게 눌러 별빛 등불 켜기','Hold to light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
@@ -847,6 +854,7 @@ export class Game {
   private interact(): void {
     const it = this.findInteractable();
     if (!it) return;
+    if(it.kind==='boat'){this.boats?.interact();return;}
     if(it.kind==='secret'){this.lighthouseSecret?.interact();return;}
     if(it.kind==='portal'){this.world2.travel();return;}
     if(it.kind==='world2'){
@@ -1350,6 +1358,7 @@ export class Game {
     if (this.resourcesReleased) return;
     this.resourcesReleased = true;
     this.journey?.dispose();
+    this.boats?.dispose();this.boats=null;
     this.lighthouseSecret?.dispose();
     this.lighthouseSecret = null;
     this.journey = null;

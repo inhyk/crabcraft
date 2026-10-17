@@ -6,7 +6,7 @@ import type { Unit } from '../game/unit';
 import type { HitOptions } from '../game/combat';
 import type { Enemy } from '../game/enemies';
 import type { Npc } from '../game/npcs';
-import type { CombatEvent, EntityState, WorldState } from '../../server/combatProtocol';
+import type { BoatCommand, CombatEvent, EntityState, WorldState } from '../../server/combatProtocol';
 
 /** Only the elected host runs enemy AI and resolves hits. Guests submit attacks. */
 export class BattleSync {
@@ -41,6 +41,9 @@ export class BattleSync {
     else this.event({kind:'hit',target,amount:dmg,crit});
   }
 
+  boatUnit(id:string){return id===this.ownId?this.game.player.unit:this.peers().get(id)?.unit;}
+  hasBoatMember(id:string){return id===this.ownId||this.peers().has(id);}
+  boat(command:BoatCommand){if(this.authority)this.game.boats?.request(this.active?this.ownId:'solo',command);else this.event({kind:'boat',target:'world',boat:command});}
   private elapsed = 0;
   private goals = new Map<Unit, EntityState>();
   private units = new Map<string, Unit>();
@@ -87,7 +90,7 @@ export class BattleSync {
     }
     this.elapsed = 1;
   }
-  leave() { this.active = false; this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
+  leave() { this.game.boats?.disconnect();this.active = false; this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
   elect(host: string) {
     const was = this.authority; this.host = host;this.seaWarnings.clear();
     if (!was && this.authority) {
@@ -166,6 +169,7 @@ export class BattleSync {
     if (this.authority) {
       const src = this.peers().get(id)?.unit;
       if (!src || !src.alive) return;
+      if(e.kind==='boat'&&e.boat){g.boats?.request(id,e.boat);if(e.boat.action!=='drive')this.publish();return;}
       if(e.kind==='party'){this.parties[id]=e.party!;this.publish();return;}
       if(e.kind==='duel'){this.duel(id,e.target,e.amount!,!!e.crit);return;}
       if (e.kind === 'attack' && u?.hostile && u.alive && !u.hidden && !u.invulnerable && src.distTo(u) < 38) {
@@ -226,7 +230,7 @@ export class BattleSync {
   }
   private snapshot(): WorldState {
     const g = this.game, now = g.time;
-    return {social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
+    return {boat:g.boats?.networkState(),social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
       const e = u.kind === 'scrapling' || u.kind === 'scavenger' || u.kind === 'jellyfish' ? u.ctrl as Enemy : null;
       const round = (n: number) => Math.round(n * 1000) / 1000;
       return { id, x: round(u.pos.x), y: round(u.pos.y), z: round(u.pos.z), yaw: round(u.yaw), hp: u.hp, maxHp: u.maxHp,
@@ -245,6 +249,7 @@ export class BattleSync {
     try {
       if (g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared;g.journey.finalCleared=!!world.finalCleared; }
       if(world.chapter!==g.world2.chapter)g.world2.go(world.chapter,false);
+      g.boats?.applyNetwork(world.boat);
       if (world.weather) {
         const current=g.world.getEnvironment();
         if (instant || current.mood!==world.weather.mood) this.originalMood(world.weather.mood,instant);

@@ -159,3 +159,15 @@ test('World III requires a complete four-boss checkpoint and accepts level30 cha
  assert.ok(worldOf(third));assert.equal(worldOf({...world,chapter:3}),null);assert.equal(worldOf({...world,finalCleared:true}),null);
  assert.equal(worldOf({...third,bosses:third.bosses.filter(b=>b.id!=='b10')}),null);
 });
+
+test('boat controls route to host and two-seat checkpoints survive late joins',async t=>{
+ const {client}=await setup(t);const a=await client(),b=await client(),c=await client();
+ a.send({type:'create',spec,combatVersion:1});const ar=await a.next('welcome');b.send({type:'join',room:ar.room,spec,combatVersion:1});const br=await b.next('welcome');
+ const boat={x:155,z:19,yaw:1.5,speed:3,seats:[ar.id,br.id]},checkpoint={...world,boat};
+ a.send({type:'world',world:checkpoint});assert.deepEqual((await b.next('world')).world.boat,boat);
+ b.send({type:'combat',event:{kind:'boat',target:'world',boat:{action:'drive',throttle:1,steer:-1},seats:['forged']}});const input=await a.next('combat');assert.equal(input.id,br.id);assert.deepEqual(input.event,{kind:'boat',target:'world',boat:{action:'drive',throttle:1,steer:-1}});
+ c.send({type:'join',room:ar.room,spec,combatVersion:1});assert.deepEqual((await c.next('welcome')).world.boat,boat);
+ b.send({type:'combat',event:{kind:'boat',target:'world',boat:{action:'drive',throttle:9,steer:0}}});
+ a.send({type:'world',world});await b.next('world');assert.equal(a.queue.some(p=>p.type==='combat'),false);
+ assert.equal(worldOf({...checkpoint,boat:{...boat,seats:[ar.id,ar.id]}}),null);assert.equal(worldOf({...checkpoint,boat:{...boat,seats:[ar.id,br.id,'third']}}),null);assert.equal(worldOf({...checkpoint,boat:{...boat,x:NaN}}),null);
+});
