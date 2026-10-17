@@ -35,6 +35,11 @@ export interface ActionOptions {
   part?: SkillPart;
   /** Named clip events other than 'hit' ('takeoff', 'land', ...). */
   onEvent?: (name: string) => void;
+  /**
+   * The clip moves the crab: its travel and turn are carried over to the crab's position and
+   * heading when it fades out (MotionPlayOptions.carryRoot), instead of being taken out.
+   */
+  carryRoot?: boolean;
 }
 
 export class Unit {
@@ -42,6 +47,11 @@ export class Unit {
   readonly id = Unit.nextId++;
   title = '';
   onAction: ((action: MotionId) => void) | null = null;
+  /**
+   * The breakdance routine (src/game/breakdance.ts) on this crab was cut short. Its moves reach
+   * onAction as they start; one that plays to its end reports nothing more.
+   */
+  onBreakdanceStop: (() => void) | null = null;
   level = 1;
   yaw = 0;
   /** Collision circle radius and shell-top height, measured from the rig's sockets. */
@@ -218,7 +228,25 @@ export class Unit {
         }
       },
       onEnd: o.onEnd,
+      carryRoot: o.carryRoot ? (dx, dz, dyaw) => this.carryRoot(dx, dz, dyaw) : undefined,
     });
+  }
+
+  /**
+   * Move the root by a clip's travel and turn (robot metres in the crab's local frame, x to its
+   * left, z forward; radians, positive = left). Ground and collisions follow on the next moveTo;
+   * locomotion is told nothing moved, since the body was already there.
+   */
+  carryRoot(dx: number, dz: number, dyaw: number): void {
+    const m = this.rig.metersToUnits;
+    const s = Math.sin(this.yaw);
+    const c = Math.cos(this.yaw);
+    this.pos.x += (dx * c + dz * s) * m;
+    this.pos.z += (-dx * s + dz * c) * m;
+    this.setYaw(this.yaw + dyaw);
+    this.prevX = this.pos.x;
+    this.prevZ = this.pos.z;
+    this.prevYaw = this.yaw;
   }
 
   express(e: Expression, hold = 0.8): void {
