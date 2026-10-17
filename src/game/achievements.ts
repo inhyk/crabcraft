@@ -16,7 +16,7 @@ export const ACHIEVEMENTS=[
  ['rust','녹슨 왕관','Rusty Crown','3레벨 보스 처치','Defeat the level 3 boss'],
  ['abyss','심해 정복자','Deep Conqueror','10레벨 보스 처치','Defeat the level 10 boss'],
  ['eclipse','일식을 넘어서','Beyond the Eclipse','20레벨 보스 처치','Defeat the level 20 boss'],
- ['dawn','친구와 맞는 새벽','Dawn with Friends','30레벨 보스 처치','Defeat the level 30 boss'],
+ ['dawn','친구와 맞는 새벽','Dawn with Friends','100레벨 보스 처치','Defeat the level 100 boss'],
  ['secret','등대의 작은 비밀','Keeper’s Secret','등대 아래 이스터에그 발견','Find the secret below the lighthouse'],
 ] as const;
 export type AchievementId=typeof ACHIEVEMENTS[number][0];

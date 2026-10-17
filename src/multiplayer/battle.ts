@@ -173,6 +173,7 @@ export class BattleSync {
       if (!src || !src.alive) return;
       if(e.kind==='village'&&e.village){g.villageGames?.request(id,e.village);this.publish();return;}
       if(g.villageGames?.playing&&['attack','duel','condition','challenge'].includes(e.kind))return;
+      if(e.target==='b30'&&src.level<g.dawnBoss.profile.level)return;
       if(e.kind==='boat'&&e.boat){g.boats?.request(id,e.boat);if(e.boat.action!=='drive')this.publish();return;}
       if(e.kind==='party'){this.parties[id]=e.party!;this.publish();return;}
       if(e.kind==='duel'){this.duel(id,e.target,e.amount!,!!e.crit);return;}
