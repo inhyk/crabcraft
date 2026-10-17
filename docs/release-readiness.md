@@ -216,3 +216,11 @@ GitHub 저장소가 `inhyk/crabcraft`로 이동했고 기존 feat/multiplayer-ro
 100 미만의 캐릭터는100 이상 친구가 있어도 피해/상태이상/도전 요청을 적용하지 못한다. 실제 전투 대상과 광역 피격도100 이상 참가자만 고른다. 솔라칸이 없다면 기존 월드1·2의 전투 조건은 유지한다. 온라인 요청은 기존 방 권한자가 발신자 레벨을 확인한다.
 
 빌드와 전투·배83/방13/엔진4 검사(총100개)가 통과했다. 새 검사는99/100 경계, 강제 XP 변경 없음, 낮은 레벨의 로컬/손님 공격·상태·도전 거부,8방향 안전 틈과 교차 중복 피해 방지,5곳 폭격과 레벨 필터,조기 단계/기절 방지/걷기 회피 시간,19개 단계별 패턴의 호스트/손님 경고 일치와 호스트 이전 후 남은 공격 시점을 포함한다. 실Chrome 로컬 검사는 종료0/페이지 오류0이다(dawn100-native-local.log). 실제 보스 카드의99잠김→100클릭 도전, 실제 D키로 넓어진 내려찍기 회피,99호스트의 접근으로 전투가 시작되지 않음/100손님의 UI 도전,3단계5곳 경고·체력 동기화,99피해 차단/100피해 수신을 확인했다. 테스트만의 스토리 잠금 해제·XP·위치·3단계 체력/패턴 시작 fixture를 사용했으며100레벨까지 자연 성장/전체 보스 격파를 주장하지 않는다. 첫 QA의 제작자/보스 여정 summary 중복 선택자를 정확한 카드 부모로 고쳐 재실행했다. 최종8방향/온라인5폭격 스크린샷을 직접 확인했다.
+
+### 최신 dev 이관과 현재 배포 규칙
+
+이 작업 초기에 로컬 레포는 이전 feat/archipelago-islands 기준이며 AGENTS.md가 없었다. 예전 경로로 Vercel dpl_6fuhXoiy2bYsrkeFYRKeecFaNBbW(소스0ea804e)을 한 번 배포한 뒤 원격을 재확인하면서 PR3의 squash 머지와 dev45073da의 VM/구글 로그인/춤 변경 및 새 AGENTS.md를 발견했다. 이전 경로를 먼저 사용한 순서 오류를 기록한다. 원격의 새 규칙을 읽은 뒤 Vercel/Worker 추가 배포를 중단했고, 머지된 PR3의 제목/본문은 기존 내용으로 되돌렸다.
+
+새 규칙에 맞춰 본체를 dev에 두고 전용 worktree .worktrees/feat-solarkan-100-20261017, feat/solarkan-100-20261017 브랜치를 origin/dev45073da에서 만들었다. 솔라칸 변경 한 커밋만 cherry-pick해04efa3e로 이관했으며 로그인·춤·영상·VM 서버의 최신 변경을 보존한다. pnpm10.10.0/frozen-lockfile 설치, pnpm build/build:server와 전투·배83/방14/엔진4(총101개) 검사가 모두 통과했다(dawn100-current-{build,server-build,tests,rooms,engine}.log). 최신 빌드의 실Chrome 두 사람 전체 검사도 종료0/페이지 오류0으로 통과했다(dawn100-current-native.log). 실제 보스 도전·내려찍기 걷기 회피·레벨별 참여 제한·폭격 위치/HP 동기화를 확인했고 fixture 범위는 위와 같다. PR에서 확인할8방향 및5곳 폭격 사진을 docs/qa/solarkan100-{cross,barrage-online}.png에 보관한다.
+
+crab-dev.seonn.dev는 dev PR 머지 후 GitHub Actions로 자동 반영된다. 효연은 AGENTS.md의 “효연, 수영은 gh pr merge 를 하지 않는다”에 따라 머지/VM 수동 배포를 하지 않는다. seonn.dev/games/crabcraft는 현재도 기존 Vercel 플레이 주소를 가리키는 것을 읽기 확인했으며 이 작업에서 허브 링크를 바꾸지 않는다. 최신 VM 반영은 아빠의 PR 확인과 머지 뒤 자동 배포가 필요하다.
