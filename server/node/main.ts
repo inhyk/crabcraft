@@ -5,7 +5,7 @@ import { accountHandler, originAllowed } from './accounts.ts';
 import { createPool, migrate } from './db.ts';
 
 // Rooms and accounts for the browser client: what server/cloudflare/worker.ts served, on one VM behind Caddy.
-// Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated), TRUST_PROXY=1 behind Caddy.
+// Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy.
 const env = process.env;
 const port = Number(env.PORT || 8080), host = env.HOST || '127.0.0.1';
 const origins = (env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);

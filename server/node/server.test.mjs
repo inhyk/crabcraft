@@ -14,7 +14,7 @@ import pg from 'pg';
 import WebSocket from 'ws';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const ORIGIN = 'https://crabcraft.example', OTHER_ORIGIN = 'https://crabcraft-dev.example';
+const ORIGIN = 'https://crab.seonn.dev', OTHER_ORIGIN = 'https://crab-dev.seonn.dev';
 
 function pgBin() {
   const dirs = [process.env.PG_BIN, ...(process.env.PATH ?? '').split(delimiter), '/opt/homebrew/bin', '/usr/local/bin'];
@@ -234,7 +234,7 @@ test('origin, header, method, body size and public-host cookie rules', async () 
   assert.equal((await api('login', '[1]', { ip: freshIp() })).json.error, 'request');
   assert.equal((await api('login', { username: 'no', password: 'long enough password' }, { ip: freshIp() })).json.error, 'username');
   // Behind Caddy the Host is public: local origins stop working and the cookie becomes Secure.
-  const publicHost = { Host: 'crabcraft.example' };
+  const publicHost = { Host: 'crab.seonn.dev' };
   assert.equal((await api('session', undefined, { ...publicHost, Origin: 'http://localhost:5173' })).status, 403);
   const username = 'qa_' + randomBytes(5).toString('hex');
   const signup = await api('signup', { username, password: randomBytes(18).toString('base64url'), save: {} }, { ip: freshIp(), ...publicHost });
