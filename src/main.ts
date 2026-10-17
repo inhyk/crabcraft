@@ -23,6 +23,8 @@ async function startApp(): Promise<void> {
   await app.account.init();
   // Debug handle for the console and the screenshot tool.
   (window as unknown as { app: App }).app = app;
-  await app.go(start as Parameters<App['go']>[0]);
+  await app.go((params.get('screen') || app.account.resume || 'title') as Parameters<App['go']>[0]);
+  // The game screen greets once its world has loaded.
+  if (app.currentId !== 'game') app.account.greet();
 }
 void startApp();

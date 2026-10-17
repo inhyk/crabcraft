@@ -12,12 +12,26 @@ import pg from 'pg';
 import WebSocket from 'ws';
 import { fakeGoogle } from './fake-google.mjs';
 import { freePort, startPostgres } from './local-postgres.mjs';
+import { Link } from '../../src/multiplayer/link.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const ORIGIN = 'https://crab.seonn.dev', OTHER_ORIGIN = 'https://crab-dev.seonn.dev';
 const CLIENT_ID = 'qa-client.apps.googleusercontent.com', CLIENT_SECRET = 'GOCSPX-' + randomBytes(18).toString('base64url');
 
 let postgres, db, server, base, port, google, DATABASE_URL, output = '';
+const serverEnv = () => ({ PATH: process.env.PATH, PORT: String(port), HOST: '127.0.0.1', DATABASE_URL, ALLOWED_ORIGINS: `${ORIGIN}, ${OTHER_ORIGIN}`, TRUST_PROXY: '1',
+  GOOGLE_CLIENT_ID: CLIENT_ID, GOOGLE_CLIENT_SECRET: CLIENT_SECRET, GOOGLE_AUTH_URL: google.authUrl, GOOGLE_TOKEN_URL: google.tokenUrl });
+async function startServer() {
+  server = spawn(process.execPath, [join(root, 'server-dist/main.mjs')], { env: serverEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
+  const started = output.length;
+  server.stdout.on('data', d => { output += d; });
+  server.stderr.on('data', d => { output += d; });
+  const until = Date.now() + 20000;
+  while (!/listening on/.test(output.slice(started))) {
+    if (server.exitCode !== null || Date.now() > until) throw new Error('server did not start:\n' + output);
+    await new Promise(r => setTimeout(r, 50));
+  }
+}
 before(async () => {
   postgres = await startPostgres();
   DATABASE_URL = postgres.url;
@@ -30,18 +44,7 @@ before(async () => {
   await db.query(`INSERT INTO sessions (token_hash, username, expires) VALUES (repeat('c', 64), 'qa_password', 9999999999999); INSERT INTO rate_limits (id, count, until) VALUES ('login:qa_password', 1, 9999999999999)`);
   port = await freePort();
   base = `http://127.0.0.1:${port}`;
-  server = spawn(process.execPath, [join(root, 'server-dist/main.mjs')], {
-    env: { PATH: process.env.PATH, PORT: String(port), HOST: '127.0.0.1', DATABASE_URL, ALLOWED_ORIGINS: `${ORIGIN}, ${OTHER_ORIGIN}`, TRUST_PROXY: '1',
-      GOOGLE_CLIENT_ID: CLIENT_ID, GOOGLE_CLIENT_SECRET: CLIENT_SECRET, GOOGLE_AUTH_URL: google.authUrl, GOOGLE_TOKEN_URL: google.tokenUrl },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  server.stdout.on('data', d => { output += d; });
-  server.stderr.on('data', d => { output += d; });
-  const until = Date.now() + 20000;
-  while (!/listening on/.test(output)) {
-    if (server.exitCode !== null || Date.now() > until) throw new Error('server did not start:\n' + output);
-    await new Promise(r => setTimeout(r, 50));
-  }
+  await startServer();
 });
 
 after(async () => {
@@ -343,8 +346,15 @@ test('origin, header, method, body size and public-host cookie rules', async () 
   assert.equal((await http('GET', '/api/account/session', { headers: { Origin: ORIGIN } })).status, 403);
   assert.equal((await api('save', undefined)).status, 405);
   assert.equal((await api('session', {})).status, 405);
-  assert.equal((await api('session', undefined)).status, 401);
-  assert.equal((await api('session', undefined, { Origin: 'http://localhost:5173' })).status, 401);
+  // A guest (no session cookie) is an answer, not an error the browser logs; a cookie that is there but bad is still 401.
+  for (const extra of [{}, { Origin: 'http://localhost:5173' }, { Cookie: 'cc_lang=en' }]) {
+    const guest = await api('session', undefined, extra);
+    assert.deepEqual([guest.status, guest.json, guest.headers['cache-control']], [200, { signedIn: false }, 'no-store, private']);
+  }
+  for (const cookie of ['cc_account=', 'cc_account=nope', `cc_account=g${'0'.repeat(23)}.${'a'.repeat(64)}`]) assert.deepEqual((await api('session', undefined, { cookie })).json, { error: 'session' }, cookie);
+  assert.equal((await api('session', undefined, { cookie: 'cc_account=nope' })).status, 401);
+  // Saving and signing out still need a session.
+  assert.deepEqual([(await api('save', { revision: 0, save: {} })).status, (await api('logout', {})).status], [401, 401]);
   assert.equal((await api('save', { revision: 0, save: { 'cc.spec': 'x'.repeat(70000) } })).json.error, 'request');
   assert.equal((await api('save', '[1]')).json.error, 'request');
   // Behind Caddy the Host is public: local origins stop working and the cookies become Secure.
@@ -399,13 +409,44 @@ test('the server log never holds the client secret, codes, tokens or session tok
   for (const secret of [CLIENT_SECRET, ...google.issued, ...google.issued.map(encodeURIComponent), ...tokens]) assert.ok(!output.includes(secret), 'leaked into the log');
 });
 
-test('SIGTERM closes sockets and exits cleanly', async () => {
+test('SIGTERM tells every socket the server is restarting, exits cleanly, and public-shard players come back to the new process', async t => {
   const a = await client('create');
   await a.next('welcome');
   const closed = once(a.ws, 'close');
+  // Two players in a public shard, connected the way the game connects (src/multiplayer/link.ts).
+  const crabs = ['Ada', 'Bo'].map(name => {
+    const seen = { welcomes: [], back: [] };
+    const link = new Link(() => `ws://127.0.0.1:${port}/multiplayer`, {
+      hello: () => ({ type: 'enter', area: 1, spec: { ...spec, name } }),
+      message: msg => { if (msg.type === 'welcome') seen.welcomes.push(msg); },
+      lost: () => {},
+      back: info => seen.back.push(info),
+    });
+    t.after(() => link.dispose());
+    link.connect('enter');
+    return { link, seen };
+  });
+  const welcomed = n => Promise.all(crabs.map(async c => { for (const until = Date.now() + 20000; !(c.seen.welcomes.length >= n && c.link.open);) { if (Date.now() > until) throw new Error('no welcome #' + n); await new Promise(r => setTimeout(r, 20)); } }));
+  await welcomed(1);
+  assert.equal(crabs[0].seen.welcomes[0].room, crabs[1].seen.welcomes[0].room);
+  const stopped = Date.now();
   server.kill('SIGTERM');
   const [code] = await once(server, 'exit');
   assert.equal(code, 0);
-  await closed;
+  const [closeCode] = await closed;
+  assert.equal(closeCode, 1012);
+  assert.ok(a.queue.some(m => m.type === 'restarting'), JSON.stringify(a.queue));
   assert.match(output, /SIGTERM: shutting down/);
+  // A deploy starts the new process on the same port; nobody clicks anything. (How soon depends on how long the
+  // process takes to start here; tools/qa-shard-restart.mjs times it in the browser.)
+  await startServer();
+  const listening = Date.now();
+  await welcomed(2);
+  // Within one backoff step (at most 8 s +25%) of the new process listening.
+  assert.ok(Date.now() - listening < 10000, `back ${Date.now() - listening} ms after the new process listened, ${Date.now() - stopped} ms after SIGTERM`);
+  assert.equal(crabs[0].seen.welcomes[1].room, crabs[1].seen.welcomes[1].room);
+  assert.match(crabs[0].seen.welcomes[1].room, /^W1/);
+  for (const c of crabs) assert.equal(c.seen.back[0].restart, true);
+  server.kill('SIGTERM');
+  assert.equal((await once(server, 'exit'))[0], 0);
 });
