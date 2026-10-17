@@ -11,28 +11,28 @@ import type { MotionId } from '../motion/types';
 import { h } from '../ui/dom';
 import './multiplayer.css';
 import {t} from '../i18n';
+import { Link, type Lost, type Message, type Mode } from './link';
 
 type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number };
 /** `dance`: the peer's breakdance, replayed here move by move as the peer announces them. */
 type Peer = { spec: CrabSpec; unit: Unit | null; state: State | null; dance: BreakRoutine | null };
-type Mode = 'enter' | 'create' | 'join';
 const ROMAN = ['', 'I', 'II', 'III'];
 
 /**
  * Entering the world joins a public shard of the current world area; travelling moves to that area's shard.
  * A shard shares presence, emotes and chat, while combat, quests and saves stay each player's own.
  * A code room with friends (`room`) shares one simulated world: bosses, travel and parties.
+ * A dropped shard socket keeps coming back (see ./link); a code room retries a few times, then returns to the public world.
  */
 export class Multiplayer {
   readonly root: HTMLDetailsElement;
   readonly battle: BattleSync;
-  private ws: WebSocket | null = null;
+  private readonly link: Link;
   private peers = new Map<string, Peer>();
   private room = '';
   /** Public shard code and its world area while in one. */
   private shard = '';
   private area = 0;
-  private mode: Mode = 'enter';
   private offline = false;
   private ownId = '';
   private disposed = false;
@@ -41,8 +41,6 @@ export class Multiplayer {
   private partyKey='';
   private socialKey='';
   private readonly peerGoal=new THREE.Vector3();
-  private retry: ReturnType<typeof setTimeout> | null = null;
-  private retries = 0;
   private rejoinParty: number | null = null;
   private status = h('p', { class: 'mp-status', role: 'status' }, '연결 중…');
   private summary = h('summary', null, '🦀');
@@ -67,6 +65,19 @@ export class Multiplayer {
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private game: Game) {
+    this.link = new Link((mode, room) => this.socketUrl(mode, room), {
+      hello: (mode, room) => {
+        const spec = this.game.player.unit.rig.spec;
+        return mode === 'enter' ? { type: mode, area: this.game.world2.chapter, spec } : { type: mode, room, combatVersion: 1, spec };
+      },
+      message: msg => this.receive(msg),
+      lost: info => this.lost(info),
+      back: ({ gap, restart }) => {
+        // A short blip passes unnoticed; after a longer gap in the public world, say why the crowd vanished and came back.
+        if (gap < 3000 || this.room) return;
+        this.game.hud.messages.info(restart ? t('서버가 다시 시작돼서 다시 연결했어요.','Reconnected after a server restart.') : t('다시 연결했어요.','Reconnected.'));
+      },
+    });
     this.battle = new BattleSync(game, packet => this.send(packet), () => this.peers);
     const form = h('form', { onsubmit: (e: Event) => { e.preventDefault(); this.connect('join', this.input.value); } }, this.input, this.join);
     const chatForm = h('form', { onsubmit: (e: Event) => {
@@ -95,8 +106,12 @@ export class Multiplayer {
     // An invite link joins its room; otherwise the player goes online with everyone in this world area.
     const room = params.get('room');
     if (room) { this.input.value = room; this.timer = setTimeout(() => /^[A-F0-9]{6}$/i.test(room.trim()) ? this.connect('join', room) : this.connect('enter'), 500); }
-    else this.openSocket('enter', '');
+    else this.connect('enter');
   }
+
+  /** For tools: the current socket and pending retry. */
+  get ws() { return this.link.ws; }
+  get retry() { return this.link.retry; }
 
   /** Opens the panel at the room controls, for the game menu. */
   showFriends() {
@@ -105,9 +120,7 @@ export class Multiplayer {
     if (!this.room) this.create.focus();
   }
 
-  private send(msg: unknown) {
-    if (this.ws?.readyState === WebSocket.OPEN && this.ws.bufferedAmount < 65536) this.ws.send(JSON.stringify(msg));
-  }
+  private send(msg: unknown) { this.link.send(msg); }
 
   private connect(type: Mode, room = '') {
     if (this.disposed) return;
@@ -115,93 +128,90 @@ export class Multiplayer {
     if (type === 'join' && !/^[A-F0-9]{6}$/.test(code)) { this.setStatus('방 코드 6자리를 확인해 주세요.','Check the six-character room code.'); return; }
     this.battle.leave(); this.closeSocket();
     this.room = ''; this.shard = ''; this.area = 0;
-    this.retries = 0;
-    this.openSocket(type, code);
+    this.setStatus('연결 중…','Connecting…');
+    this.link.connect(type, code);
+    this.updateUi();
   }
 
-  private openSocket(type: Mode, code: string) {
-    this.mode = type;
-    this.setStatus('연결 중…','Connecting…');
+  private socketUrl(type: Mode, code: string) {
     const url = new URL(import.meta.env.VITE_MULTIPLAYER_URL || '/multiplayer', location.href);
     url.protocol = url.protocol === 'https:' || location.protocol === 'https:' ? 'wss:' : 'ws:';
     url.search = ''; url.hash = '';
     url.searchParams.set('mode', type);
     if (code) url.searchParams.set('room', code);
-    const ws = new WebSocket(url);
-    this.ws = ws;
-    this.updateUi();
-    // Until the welcome: a server without public shards never answers `enter`.
-    const timeout = setTimeout(() => ws.close(), 10000);
-    ws.onopen = () => {
-      if (this.ws !== ws) return;
-      const spec = this.game.player.unit.rig.spec;
-      this.send(type === 'enter' ? { type, area: this.game.world2.chapter, spec } : { type, room: code, combatVersion: 1, spec });
-    };
-    ws.onmessage = e => {
-      if (this.ws !== ws || this.disposed) return;
-      let msg;
-      try { msg = JSON.parse(e.data); } catch { return; }
-      switch (msg.type) {
-        case 'welcome': {
-          clearTimeout(timeout);
-          this.ownId = msg.id; this.retries = 0; this.offline = false;
-          if (msg.public) {
-            this.shard = msg.room; this.area = msg.area; this.room = '';
-            this.note(t(`월드 ${ROMAN[this.area]}에 들어왔어요. 근처 모험가와 인사해 보세요.`,`Entered World ${ROMAN[this.area]}. Say hello to the adventurers nearby.`));
-          } else {
-            this.room = msg.room; this.shard = ''; this.area = 0;
-            this.battle.join(msg.id, msg.host, msg.world);
-            // A transport retry receives a new ID; restore only its explicit team choice.
-            const party=this.rejoinParty;this.rejoinParty=null;
-            if(party!==null)this.battle.setParty(party);
-            this.setStatus('연결됨 · 친구를 초대해 보세요!','Connected · Invite a friend!');
-            this.input.value = this.room;
-            this.note(t(`방 ${this.room}에 참가했어요.`,`Joined room ${this.room}.`));
-          }
-          for (const p of msg.players) this.addPeer(p.id, p.spec, p.state);
-          this.updateUi();
-          break;
+    return url;
+  }
+
+  private receive(msg: Message) {
+    if (this.disposed) return;
+    switch (msg.type) {
+      case 'welcome': {
+        this.ownId = msg.id; this.offline = false;
+        if (msg.public) {
+          this.shard = msg.room; this.area = msg.area; this.room = '';
+          this.note(t(`월드 ${ROMAN[this.area]}에 들어왔어요. 근처 모험가와 인사해 보세요.`,`Entered World ${ROMAN[this.area]}. Say hello to the adventurers nearby.`));
+        } else {
+          this.room = msg.room; this.shard = ''; this.area = 0;
+          this.battle.join(msg.id, msg.host, msg.world);
+          // A transport retry receives a new ID; restore only its explicit team choice.
+          const party=this.rejoinParty;this.rejoinParty=null;
+          if(party!==null)this.battle.setParty(party);
+          this.setStatus('연결됨 · 친구를 초대해 보세요!','Connected · Invite a friend!');
+          this.input.value = this.room;
+          this.note(t(`방 ${this.room}에 참가했어요.`,`Joined room ${this.room}.`));
         }
-        case 'authority': this.battle.elect(msg.host); break;
-        case 'world': if (!this.battle.authority) this.battle.apply(msg.world); break;
-        case 'combat': this.battle.receive(msg.id, msg.event); break;
-        case 'joined': this.addPeer(msg.id, msg.spec, null); this.note(t(`${msg.spec.name}님이 들어왔어요.`,`${msg.spec.name} joined.`)); this.updateUi(); break;
-        case 'left': this.removePeer(msg.id); this.updateUi(); break;
-        case 'state': { const p = this.peers.get(msg.id); if (p) p.state = msg.state; break; }
-        case 'action': this.peerAction(msg.id, msg.action); break;
-        case 'chat':
-          this.note(`${msg.name}: ${msg.text}`);
-          { const unit = msg.id === this.ownId ? this.game.player.unit : this.peers.get(msg.id)?.unit;
-            if (unit) this.game.hud.bubbles.say(this.game, unit, msg.text); }
-          break;
-        case 'error': {
-          const error = this.serverError(String(msg.message)), tried = this.mode;
-          this.room = ''; this.shard = ''; this.area = 0; this.battle.leave(); this.closeSocket();
-          // A room that cannot be made or joined leaves the player in the public world.
-          if (tried !== 'enter') { this.note(t(...error)); this.game.hud.messages.info(t(...error)); this.connect('enter'); }
-          else { this.setStatus(...error); this.goOffline(); }
-          this.updateUi();
-          break;
-        }
+        for (const p of msg.players) this.addPeer(p.id, p.spec, p.state);
+        this.updateUi();
+        break;
       }
-    };
-    ws.onerror = () => { /* onclose handles retry and the user-facing error */ };
-    ws.onclose = () => {
-      clearTimeout(timeout);
-      if (this.ws !== ws || this.disposed) return;
-      this.ws = null;
-      this.clearPeers();
-      if ((this.room || this.shard) && this.retries++ < 5) {
-        this.setStatus('연결이 끊겼어요. 다시 연결 중…','Disconnected. Reconnecting…');
-        if (this.room) {
-          this.rejoinParty ??= this.battle.parties[this.ownId] ?? null;
-          const previousRoom = this.room;
-          this.retry = setTimeout(() => this.openSocket('join', previousRoom), 1500);
-        } else this.retry = setTimeout(() => this.openSocket('enter', ''), 1500);
-      } else if (this.room || this.mode !== 'enter') { this.rejoinParty=null;this.battle.leave(); this.room = ''; this.setStatus('연결할 수 없어요. 서버와 방 코드를 확인하고 다시 참가해 주세요.','Could not connect. Check the room code and try joining again.'); this.goOffline(); }
+      case 'authority': this.battle.elect(msg.host); break;
+      case 'world': if (!this.battle.authority) this.battle.apply(msg.world); break;
+      case 'combat': this.battle.receive(msg.id, msg.event); break;
+      case 'joined': this.addPeer(msg.id, msg.spec, null); this.note(t(`${msg.spec.name}님이 들어왔어요.`,`${msg.spec.name} joined.`)); this.updateUi(); break;
+      case 'left': this.removePeer(msg.id); this.updateUi(); break;
+      case 'state': { const p = this.peers.get(msg.id); if (p) p.state = msg.state; break; }
+      case 'action': this.peerAction(msg.id, msg.action); break;
+      case 'chat':
+        this.note(`${msg.name}: ${msg.text}`);
+        { const unit = msg.id === this.ownId ? this.game.player.unit : this.peers.get(msg.id)?.unit;
+          if (unit) this.game.hud.bubbles.say(this.game, unit, msg.text); }
+        break;
+      case 'error': {
+        const error = this.serverError(String(msg.message)), tried = this.link.mode;
+        this.room = ''; this.shard = ''; this.area = 0; this.battle.leave(); this.closeSocket();
+        // A room that cannot be made or joined leaves the player in the public world.
+        if (tried !== 'enter') { this.note(t(...error)); this.game.hud.messages.info(t(...error)); this.connect('enter'); }
+        else { this.setStatus(...error); this.goOffline(); }
+        this.updateUi();
+        break;
+      }
+    }
+  }
+
+  /** The socket dropped. The link is already retrying unless a code room has run out of tries. */
+  private lost({ mode, attempt, delay, welcomed }: Lost) {
+    if (this.disposed) return;
+    this.clearPeers();
+    if (mode !== 'enter') {
+      if (delay === null) {
+        // Instead of going offline, back to the public world.
+        this.rejoinParty = null; this.battle.leave(); this.room = '';
+        const text: [string, string] = welcomed
+          ? ['방에 다시 연결하지 못해 공개 월드로 돌아왔어요.','Could not reconnect to the room. Back in the public world.']
+          : ['방에 연결할 수 없어요. 방 코드를 확인하고 다시 참가해 주세요.','Could not connect. Check the room code and try joining again.'];
+        this.note(t(...text)); this.game.hud.messages.info(t(...text));
+        this.connect('enter');
+        return;
+      }
+      this.rejoinParty ??= this.battle.parties[this.ownId] ?? null;
+      this.setStatus('연결이 끊겼어요. 다시 연결 중…','Disconnected. Reconnecting…');
+    } else {
+      this.shard = ''; this.area = 0;
+      // The link keeps trying for as long as the player is in the world; after a few misses say so and offer the button.
+      if (welcomed && attempt <= 4) this.setStatus('연결이 끊겼어요. 다시 연결 중…','Disconnected. Reconnecting…');
       else { this.setStatus('오프라인 · 서버에 연결할 수 없어 혼자 플레이해요.','Offline · Could not reach the server, playing solo.'); this.goOffline(); }
-      this.updateUi();
-    };
+    }
+    this.updateUi();
   }
 
   private addPeer(id: string, spec: CrabSpec, state: State | null) {
@@ -233,7 +243,7 @@ export class Multiplayer {
   update(dt: number) {
     this.elapsed += dt;
     // Each world area has its own shards: travelling leaves this one for one where you arrive.
-    if (this.shard && this.area !== this.game.world2.chapter && this.ws?.readyState === WebSocket.OPEN) this.connect('enter');
+    if (this.shard && this.area !== this.game.world2.chapter && this.link.open) this.connect('enter');
     if ((this.room || this.shard) && this.elapsed >= 0.05) {
       this.elapsed = 0;
       const u = this.game.player.unit;
@@ -299,9 +309,9 @@ export class Multiplayer {
     this.log.scrollTop = this.log.scrollHeight;
   }
   private updateUi() {
-    const open = this.ws?.readyState === WebSocket.OPEN;
+    const open = this.link.open;
     const connected = !!this.room && open, online = connected || (!!this.shard && open);
-    const connecting = this.ws?.readyState === WebSocket.CONNECTING;
+    const connecting = this.link.connecting;
     const count = this.peers.size + 1;
     this.create.disabled = !!connecting || !!connected;
     this.join.disabled = !!connecting || !!connected;
@@ -312,7 +322,8 @@ export class Multiplayer {
     this.roster.textContent = online ? `${count}/8${t('명',' players')} · ${[this.game.player.unit.name,...[...this.peers.values()].map(p=>p.spec.name)].join(', ')}` : '';
     this.invite.hidden = !connected;
     this.invite.value = this.inviteUrl();
-    this.reconnect.hidden = !this.offline || !!this.ws || !!this.retry;
+    // Offline, the link still retries on its own; the button tries now.
+    this.reconnect.hidden = !this.offline || !!connecting || open;
     this.modeRow.hidden = this.partyRow.hidden = this.partyPanel.hidden = !this.room;
     if (online && !this.room) this.setStatus(`온라인 · 월드 ${ROMAN[this.area]} · ${count}명이 함께 있어요`,`Online · World ${ROMAN[this.area]} · ${count} here`);
     this.summary.textContent = this.room ? t(`🦀 친구와 방 · ${count}명`,`🦀 Room with friends · ${count}`) : online ? t(`🦀 온라인 · ${count}명`,`🦀 Online · ${count}`) : this.offline ? t('🦀 오프라인','🦀 Offline') : t('🦀 연결 중…','🦀 Connecting…');
@@ -373,10 +384,7 @@ export class Multiplayer {
   private clearPeers() { for (const id of this.peers.keys()) this.removePeer(id); }
   private closeSocket() {
     this.rejoinParty=null;
-    if (this.retry) clearTimeout(this.retry);
-    this.retry = null;
-    const ws = this.ws; this.ws = null;
-    ws?.close(); this.clearPeers();
+    this.link.stop(); this.clearPeers();
   }
   /** Leaving a room with friends goes back to the public world. */
   private disconnect() { this.connect('enter'); }
@@ -385,6 +393,6 @@ export class Multiplayer {
     if (this.timer) clearTimeout(this.timer);
     this.game.player.unit.onAction = null;
     this.game.player.unit.onBreakdanceStop = null;
-    this.battle.dispose(); this.closeSocket(); this.root.remove();
+    this.battle.dispose(); this.closeSocket(); this.link.dispose(); this.root.remove();
   }
 }

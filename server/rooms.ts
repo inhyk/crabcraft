@@ -73,8 +73,10 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     broadcast(code, { type: 'joined', id: m.id, spec }, m.id);
     if (host(code)) broadcast(code, { type: 'authority', host: host(code) });
   }
+  let stopping = false;
   const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     if (req.url?.split('?')[0] !== '/multiplayer') return;
+    if (stopping) { reject(socket, '503 Service Unavailable'); return; }
     // No cross-site websocket access. Non-browser clients have no Origin header.
     if (req.headers.origin && !allowOrigin(req.headers.origin, req)) { reject(socket, '403 Forbidden'); return; }
     if (members.size >= maxMembers) { reject(socket, '503 Service Unavailable'); return; }
@@ -170,6 +172,16 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     for (const m of members) m.ws.terminate();
     wss.close();
   };
+  /**
+   * Before the process stops: tell every player the server is restarting, so clients come back at once, and close
+   * their sockets. Until the HTTP server closes, new sockets are refused with 503 instead of left waiting.
+   */
+  const restart = async (wait = 1000) => {
+    stopping = true;
+    for (const m of members) { send(m.ws, { type: 'restarting' }); m.ws.close(1012, 'Server restarting'); }
+    for (const until = Date.now() + wait; members.size && Date.now() < until;) await new Promise(r => setTimeout(r, 20));
+    for (const m of members) m.ws.terminate();
+  };
   server.once('close', close);
-  return { close, rooms, publics };
+  return { close, restart, rooms, publics };
 }

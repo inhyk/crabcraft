@@ -94,7 +94,8 @@ async function shutdown(signal: string) {
   console.log(`${signal}: shutting down`);
   setTimeout(() => { console.error('shutdown timed out'); process.exit(1); }, 10000).unref();
   clearInterval(cleanup);
-  relay.close();
+  // Players hear `restarting` and reconnect after a short random delay instead of finding out from a dead socket.
+  await relay.restart();
   const closed = new Promise(resolve => server.close(resolve));
   server.closeIdleConnections();
   await closed;
