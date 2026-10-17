@@ -417,7 +417,10 @@ test('a public-shard crab comes back by itself when the server drops every socke
   assert.ok(gap < 10000, `back in ${gap} ms`);
   assert.equal(a.seen.welcomes[2].room, b.seen.welcomes[2].room);
   assert.equal(relay.relay.rooms.get(a.seen.welcomes[2].room).size, 2);
-  assert.deepEqual(a.seen.welcomes[2].players.map(p => p.spec.name).concat(b.seen.welcomes[2].players.map(p => p.spec.name)).sort(), ['Ada']);
+  // Whoever is back second finds the other already there.
+  const [first, second] = a.seen.welcomes[2].players.length ? [b, a] : [a, b];
+  assert.deepEqual(first.seen.welcomes[2].players, []);
+  assert.deepEqual(second.seen.welcomes[2].players.map(p => p.spec.name), [first === a ? 'Ada' : 'Bo']);
 });
 
 test('a code room retries five times as before, then gives up so the game can return to the public world', async t => {
