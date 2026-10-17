@@ -293,7 +293,7 @@ export default async function build({ grid, clips, repo }) {
   shot(23, [K(0, [6, 9, -50], [0, 1, 16], 44), K(1, [3, 7, -40], [0, 1, 14], 42)], { ease: 'linear', focusRange: 60 });
   shot(26, [K(0, [-1.5, 0.75, HERO_Z + 5.5], hero(0.45), 34), K(1, [-0.6, 0.7, HERO_Z + 4.2], hero(0.45), 32)], { focus: 'hero', focusRange: 8, ease: 'linear' });
   // chorus 2: the 720 rolling back through the rows from the front left, high front, front row, crane
-  shot(28, [K(0, [-24, 4, 32], [0, 2.0, 2], 46), K(1, [-20, 5, 29], [0, 1.4, 0], 46)], { focusRange: 80, ease: 'out' });
+  shot(28, [K(0, [-24, 4, 32], [0, 2.0, 2], 46), K(1, [-20.5, 5.2, 29.4], [0, 1.4, 0], 46)], { focusRange: 80, ease: 'out' });
   shot(30, [K(0, [0, 15, 46], [0, 0, 0], 46), K(1, [0, 11, 41], [0, 0.5, 0], 46)], { focusRange: 80 });
   shot(32, [K(0, [30, 1.15, HERO_Z - 1.2], [18, 1.0, FRONT - 6], 46), K(1, [-30, 1.15, HERO_Z - 1.2], [-18, 1.0, FRONT - 6], 46)], { ease: 'linear', focusRange: 30 });
   shot(34, [K(0, [0, 1.4, HERO_Z + 5], hero(0.4), 38), K(1, [0, 26, HERO_Z + 22], [0, 0, -4], 46)], { ease: 'inout', focusRange: 60 });
@@ -325,7 +325,7 @@ export default async function build({ grid, clips, repo }) {
   shot(80, [K(0, [-4.5, 1.1, HERO_Z + 6.5], hero(0.5), 34), K(1, [-2.5, 0.9, HERO_Z + 4.8], hero(0.5), 32)], { focus: 'hero', focusRange: 10, ease: 'linear' });
   // pre-chorus 3: round the hero, then a sweep in from the side for the drop
   shot(83, [K(0, [-6, 2.0, HERO_Z + 6], hero(0.3), 34), K(1, [6, 2.0, HERO_Z + 6], hero(0.3), 34)], { focus: 'hero', focusRange: 10, ease: 'linear' });
-  shot({ t: D(84, 2) }, [K(0, [40, 8, 22], [0, 0, 0], 42), K(1, [10, 5, 44], [0, 1, 0], 42)], { ease: 'inout', focusRange: 80 });
+  shot({ t: D(84, 2) }, [K(0, [40, 8, 22], [0, 0, 0], 42), K(1, [10.5, 5.2, 44.4], [0, 1, 0], 42)], { ease: 'inout', focusRange: 80 });
   // final chorus: the 720 bursting out from the front left, front, the back flip from the side,
   // the front row, a sweep round the front with the fireworks behind, straight down on the spin,
   // the hero, and up and away from the freeze
