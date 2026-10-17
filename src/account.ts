@@ -7,7 +7,9 @@ import './account.css';
 type Session={username:string;revision:number;save?:Record<string,string>;updated:number};
 class AccountError extends Error{constructor(readonly code:string){super(code);}}
 // Set just before leaving for Google as `<time>:<screen>`, so the return trip knows it is a fresh sign-in and where to land.
-const PENDING='cc.account.pending';
+const PENDING='cc.account.pending',PENDING_MS=15*60000;
+/** This page load is the return from a Google round trip started less than 15 minutes ago. */
+export function returningFromGoogle():boolean{try{return Date.now()-Number((localStorage.getItem(PENDING)??'').split(':')[0])<PENDING_MS;}catch{return false;}}
 const GOOGLE_MARK='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
 const errorText=(code:string)=>({
  saving:t('저장이 끝나면 다시 눌러 주세요.','Please wait until saving finishes.'),
@@ -41,7 +43,7 @@ export class Account {
   const params=new URLSearchParams(location.search),result=params.get('account');
   if(result!==null){params.delete('account');const query=params.toString();history.replaceState(history.state,'',location.pathname+(query?'?'+query:'')+location.hash);}
   let pending=false,fresh=false,signedIn=false,from='title';
-  try{const [at,screen]=(localStorage.getItem(PENDING)??'').split(':');localStorage.removeItem(PENDING);pending=Date.now()-Number(at)<15*60000;from=screen??from;}catch{ /* No storage. */ }
+  try{const [at,screen]=(localStorage.getItem(PENDING)??'').split(':');localStorage.removeItem(PENDING);pending=Date.now()-Number(at)<PENDING_MS;from=screen??from;}catch{ /* No storage. */ }
   try{
    const session=await this.api('session');signedIn=true;
    // Back from Google: a new account starts empty and takes this device's guest adventure, as signup did;
