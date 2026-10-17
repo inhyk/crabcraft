@@ -102,3 +102,9 @@ GitHub의 방문 통계 커밋 `32c9257`을 보존해 병합한 `0da0759`를 기
 공개 페이지/공개 Worker를 사용한 실Chrome 두 브라우저에서도 전체 `qa-third-world.mjs`가 종료0, 페이지 오류0으로 통과했다(`third-world-public-browser.log`). 10레벨 왕관 전 월드2 잠금, 20레벨 왕관 전 월드3 잠금, 실제F입장과3→2→1귀환, 1레벨137XP/37레벨90000XP 보존, 달리기4.109m→6.800m, 주민 퀘스트 수락/사망 진척1과89코인, 강화250→150코인/rank1 및 다음200코인 구매 거절, 큰 지도와718×492화면, 월드3/코인/강화/퀘스트 재로드, 영어 친구의 늦은 참가, 실제30레벨 도전 버튼과공유10500HP/폭격, 폭격 중 방장 이탈/자연 만료, 미라 포함17명 춤 엔딩을 확인했다. 이는 앞 절과 같은 진행·생존·위치·패턴·사망 피해 fixture 범위이며 자연30레벨 승리 주장이 아니다. 관련 단위/방/엔진 총77개 통과.
 
 추가 복귀 확인: 엔딩 후 월드3를 불러올 때 구출된 미라를 항구(14,60)에 배치했다. 새 캐릭터의 완료 저장 fixture로 로드/재로드 모두 월드3·37레벨90000XP·finalCleared·미라 표시/항구 위치·빈 감옥을 확인했고 페이지 오류0(`third-world-mira-restore.log`).
+
+### 최종 공개판 및 허브
+
+구출 후 미라의 항구 배치를 포함한 `aa425e7`을 `dpl_Dj42uz4CMvdmw8oWzRThLKzXK4qu`에 배포했다. stable alias Ready/production과 로컬 최종 index/JS/CSS29개 SHA256 일치를 재확인했다(`third-world-final-public-inspect.log`, `third-world-final-public-assets.log`). 세 섬 소개/사진3장은 별도 깨끗한 허브 작업트리에서 최신 `359b5c9`를 보존한 `7769d91`로 반영했다. 허브 전체빌드가 통과했고 `dpl_DRhQePo12MTsz7nVKyBeEzXUoEBC` Ready 및 seonn.dev alias, 소개의 세 섬/30레벨 문구, 사진3장 SHA256 일치를 확인했다(`/tmp/crabcraft-third-world-hub-*.log`). 사용자의 작업 중인 원래 허브 작업트리는 변경하지 않았다.
+
+최종 stable alias에서도 확장된 실브라우저 검사가 종료0으로 통과했다(`third-world-final-public-browser.log`). 배 옆 포탈 중심의 충돌 밀림0m, 모든 기존 이동/잠금/코인/퀘스트/대장간/재로드/공유30레벨 보스/방장 교체/17명 엔딩 검증을 유지했고, 엔딩 후 월드3로 돌아와 저장·재로드하면 구출한 미라가 항구에 표시되고37레벨90000XP와최종 왕관도 유지됐다(`RESCUED_MIRA_PERSISTS_IN_HARBOR`). 페이지 오류0이다. 허브 로그 사본도 `tmp/qa/third-world-hub-{build,deploy,inspect,public}.log`에 보존했다. 이 작업에서 소유한5205 미리보기만 종료했고 사용자 브라우저와 다른 포트의 프로세스는 유지했다.
