@@ -1,0 +1,48 @@
+# Crabcraft Node server for one env: crabcraft-server@dev (port 8081), crabcraft-server@prod (port 8080).
+# Installed to /etc/systemd/system/ by deploy/vm/setup.sh. activate.sh enables and restarts it
+# when the active release ships server-dist/, and stops it when the release has none.
+[Unit]
+Description=Crabcraft server (%i)
+Wants=network-online.target
+After=network-online.target postgresql.service
+# A release without server-dist/ leaves the unit skipped instead of failing in a loop.
+ConditionPathExists=/srv/crabcraft/%i/current/server-dist/main.mjs
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=crabcraft
+Group=crabcraft
+EnvironmentFile=/etc/crabcraft/%i.env
+Environment=NODE_ENV=production
+WorkingDirectory=/srv/crabcraft/%i/current
+ExecStart=/usr/bin/node /srv/crabcraft/%i/current/server-dist/main.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+
+# Hardening. Node's JIT needs writable+executable memory, so no MemoryDenyWriteExecute.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0027
+MemoryMax=1536M
+
+[Install]
+WantedBy=multi-user.target
