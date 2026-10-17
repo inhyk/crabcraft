@@ -8,25 +8,30 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:server": "node server/node/build.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "shot": "node tools/shot.mjs",
     "multiplayer": "vite preview --host 0.0.0.0 --port 5174 --strictPort",
     "test:multiplayer": "node --experimental-strip-types --test server/rooms.test.mjs",
+    "test:server": "node server/node/build.mjs && node --test server/node/server.test.mjs",
     "test:boss": "node tests/run-boss.mjs",
     "test:engine": "node tests/run-engine.mjs"
   },
   "dependencies": {
     "@mujoco/mujoco": "3.11.0",
     "onnxruntime-web": "1.30.0",
+    "pg": "^8.23.1",
     "postprocessing": "^6.39.5",
     "three": "^0.186.1",
     "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
     "@types/three": "^0.186.0",
     "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
     "playwright": "^1.64.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",

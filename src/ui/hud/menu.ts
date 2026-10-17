@@ -1,9 +1,10 @@
 // Esc game menu: Resume, Settings (music and effects volume, graphics quality, chat bubbles),
-// Controls, Robot Mode, Return to Title.
+// Controls, Videos, Robot Mode, Return to Title.
 import { h } from '../dom';
 import {language,setLanguage,t,type Language} from '../../i18n';
 import {setQuestLanguage} from '../../game/quests';
 import { localStorageSet } from '../../app';
+import { openVideos } from '../videos';
 import type { Game } from '../../game/game';
 import type { QualitySetting } from '../../core/engine';
 
@@ -70,6 +71,7 @@ export class GameMenu {
       this.btn(t('🏆 업적 · J','🏆 Achievements · J'),()=>this.achievements(),true),
       this.btn(t('설정','Settings'), () => this.settings(), true),
       this.btn(t('조작 방법','Controls'), () => this.controls(), true),
+      this.btn(t('영상','Videos'), () => openVideos(g.audio), true),
       this.btn(t('로봇 모드','Robot Mode'), () => void g.app.go('robot'), true),
       this.btn(t('처음 화면','Return to Title'), () => void g.app.go('title'), true),
     );
