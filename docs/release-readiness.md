@@ -1,6 +1,6 @@
 # Crabcraft 배포 전 확인
 
-기준: 작업 브랜치(`11d2742`에서 점검 시작), 2026-10-15 UTC. **이번 후보의 전체 검증과 배포는 아직 완료되지 않았다.** 이전 로컬 실행 증거, 현재 후보의 검사, 실제 공개 버전을 구분한다. 상세 개발 기록은 [world2-quality-worklog.md](world2-quality-worklog.md)에 있다.
+최신 상태: **2026-10-17 KST, 최적화 소스 `d4516ea`의 프로덕션 배포와 공개 두 브라우저 검사를 완료했다.** `11d2742`에서 시작한 이전 로컬 검사와 최신 공개 검사 범위를 구분한다. 상세 개발 기록은 [world2-quality-worklog.md](world2-quality-worklog.md)에 있다.
 
 ## 요구 사항과 보관된 증거
 
@@ -39,15 +39,33 @@
 - 실제 순찰도 통과했다: 서쪽6/동쪽8 처치, NPC 보상1100/1800 XP, 총XP34036/24레벨·w1/w4 done·월드II·무적false 재로드 유지. 적 재생성은 화면 밖에서 기다리는 실제 이동으로 확인했다(`walk-patrol-current.log`). 실제 PvP 지연 검사도 통과했다(`native-pvp-delayed-current.log`): 레벨1 기본 캐릭터의 Bubble Bolt 시전/피해, 파티2에서 HP60 보존, 혼자로 바꾼 뒤 사망/기본100HP 부활·모드/파티 유지, 협동 전환 후 춤 전달. 시작 레벨/HP/위치/전투 fixture 없이 실제 버튼/키만 사용했다. 로컬 각 전달75ms(약150ms 편도)를 모사했으며 실제 공개 프런트엔드 검증은 아니다.
 - 시작2026-10-15 12:56:12 UTC부터 실제 개발/검증을 계속했고 22:56:39 UTC 확인으로 요청한10시간을 넘겼다. 최신 배포와 공개 프런트엔드 검증이 남아 있으므로 전체 목표 완료로 처리하지 않는다.
 
-## 공개 상태
+## 2026-10-15 당시 공개 상태 · 아래 차단은 10월17일 해소
 
 공개 중계 서버의 프로토콜 검사는 `server/cloudflare/smoke.mjs`로 다시 실행해 종료 코드 0을 확인했다(`release-public-relay-smoke.log`). 실제 인터넷 WebSocket 방 생성/참가·채팅·전투 메시지·호스트 이전·재참가·월드 II 체크포인트와 방 격리를 확인한 **프로토콜 fixture 검사**다. 최신 프런트엔드가 공개됐다는 증거는 아니다. 중계 서버의 브라우저 Origin 제한은 유지한다. `tools/qa-mixed-combat-language.mjs`의 `CC_QA_BASE`/`CC_QA_RELAY` 설정을 준비했으며, 최신 프런트엔드의 공개 중계 브라우저 검사는 실제 허용 도메인 배포 후 실행해야 한다. 해당 최신 공개 브라우저 검사는 아직 남아 있다.
 
 `https://seonn.dev/games/crabcraft`의 공개 게임은 `fc0fee5` 수준이다. 이후 작업 브랜치 변경은 공개 버전이 아니다. 2026-10-15 16:51:30 UTC 프로덕션 배포가 Vercel `api-deployments-free-per-day` 한도로 거절되었으며 retry24h가 안내되었다. 새 프로젝트·계정·결제·우회나 반복 배포를 시도하지 않았다. 한도 해제 이후 실제 배포 성공과 공개 URL 검증이 필요하다.
 
 
-## 2026-10-15 22:58 UTC · 배포 차단 재개 기준
+## 2026-10-15 22:58 UTC · 당시 배포 차단 재개 기준 (10월17일 해소)
 
 현재 검증/QA 커밋은 `072edcb`이며 원격 feat/multiplayer-rooms와 일치하고 작업 트리가 깨끗하다. 읽기 전용 `vercel inspect` 재확인도 종료 코드0이며 공개 alias는 여전히 `dpl_G2iUGtqSge21qVXcDfpNz8iGcVqB`다(`release-blocker-audit-inspect.log`). 16:51:30 UTC 최초 거절부터 연속된 여러 목표 작업에서 동일 일일 배포 한도를 기록했다. 실제10시간 개발/검증을 마친 현재 남은 단계는 최신판 배포와 허용 공개 도메인에서 두 브라우저 검증이다. 새 배포 재시도·계정/프로젝트 우회·구매는 실행하지 않았다.
 
 재개 시 기존 `/Users/inkeun/projects/crabcraft`의 연결된 Vercel 프로젝트를 사용한다. 기존24시간 재시도 안내 시각은2026-10-16 16:51:30 UTC(한국시간10월17일01:51:30)이며 자동 실행 예약을 만들거나 배포 성공을 보장한 것은 아니다. 배포 성공 후 stable alias의 새 deployment/소스 일치, seonn.dev/games/crabcraft의 링크/페이지, 실제 KO/EN 두 브라우저의 공개 중계 방 생성·참가·피해·날씨·여행·파티·저장/복귀를 확인해야 한다. 공개 브라우저 검사기는 `tools/qa-mixed-combat-language.mjs`의 CC_QA_BASE/CC_QA_RELAY로 기존 허용 도메인과 공개 relay를 지정할 수 있다. 로컬 검사 성공이나 프로토콜 fixture만으로 이 단계를 완료 처리하지 않는다.
+
+
+## 2026-10-17 KST · 최적화판 공개 검증 완료
+
+기존 Vercel 프로젝트에서 프로덕션 배포가 성공했다. 소스는 `d4516ea`, deployment는 `dpl_E5ozHvN68kQD3Aq71hu15XvwYoSD`, stable alias는 https://inh-crabcraft-multiplayer.vercel.app 이다. `optimization-deploy.log` 종료0과 `optimization-public-inspect.log`의 Ready/production/alias 일치를 확인했다. https://seonn.dev/games/crabcraft HTTP200과 기존 플레이 링크도 확인했으며 허브 카드 중복 등록·별도 허브 변경은 하지 않았다. 공개 index.html은 로컬 프로덕션 빌드와 바이트 일치하며 모든 JS/CSS 파일도 각각 SHA256/바이트 일치를 확인했다(`optimization-public-assets.log`). 이전 일일 배포 한도는 안내된24시간 이후 기존 프로젝트의 정상 배포로 해소했으며 계정·Origin 보호·구매 설정을 바꾸지 않았다.
+
+그래픽/해상도/전투 수치/전송 주기를 유지하면서 정지 상태3초의 레벨 DOM 갱신180회→0회, 파티 DOM 갱신11회→0회를 실제 전후 비교했다. 실제 레벨업/HP 변화/파티 변경/KO→EN→KO 시 표시는 갱신된다. 친구별 배열 복사·역탐색과 매 프레임 Vector3 할당도 제거했다. 고품질 월드II 네 장소는 전후 모두 약60fps였으며 전체 CPU/FPS 개선을 주장하지 않는다. 빌드/타입 및 방8+보스43+엔진4 회귀 검사55개가 통과했다. 세부 전후 수치/동결 기준은 작업 기록에 있다.
+
+다음은 stable alias와 공개 `wss://inh-crabcraft-rooms.seonn.workers.dev/multiplayer`를 사용한 실제 브라우저 검사이며 모두 종료0/페이지 오류0이다. 서로 다른 검사를 GPU 경합 없이 순차 실행했다. WebSocket Origin은 브라우저가 실제 공개 주소에서 보낸 값이며 덮어쓰지 않았다.
+
+- `optimization-public-native-pvp.log`: 기본 레벨1 KO/EN 캐릭터의 실제 방 생성/참가, 기술로100→60피해, 파티2에서HP60보존, 혼자 전환 후60→0, 자연100HP부활 및 PvP/파티 유지, 협동/춤 송수신, 친구 이탈 시 파티 행 감소. 전투/HP/위치 주입 없음.
+- `optimization-public-mixed.log`: KO/EN 보스·공격 안내, 정상 길이 Eclipse/Nova, 공유120피해, 전투 중 설정 언어 전환, 방장 교체/재참가 후HP3290·단계2·공격 시간 유지. 시작 세계/위치/레벨/보스 단계/피해와 생존 설정을 둔 **전투 fixture**이며 자연 보스 승리 검사로 계산하지 않는다.
+- `optimization-public-portal.log`: 게스트 실제F로 두 월드 왕복, 도착 후3.3초 재진입 없음, 파티3/PvP 유지, 서로 다른10연결 재참가, 유효하고 참가자 수에 맞는 체크포인트, 방장 이탈 후 새 방장F복귀. 포탈 근처 위치/생존 설정을 둔 **여행 fixture**이며 전체 도보 여정의 증거는 아니다.
+- `optimization-public-beacon.log`: 실제 등대F길게 누르기, 두 사람의 밤/축복/개인q3완료·q4시작/XP1730일치, 재전송 시 중복XP없음, 늦게 온 세 번째 참가자의 퀘스트 연결. 시작 위치/레벨/선행 퀘스트와 생존을 준비한 **퀘스트 fixture**다.
+
+공개 첫 PvP 시도는 검사기 relay 치환이 URL의 mode/room query를 버려 방 생성 전 실패했다(`optimization-public-native-pvp-query-attempt.log`). 로컬 relay는 메시지에서도 방 정보를 받지만 공개 Worker는 upgrade query가 필요하다. 네 검사기의 relay 치환에서 원래 query를 보존하도록 수정하고 위 최종 실행을 완료했다. 게임/Worker 코드는 이 실패 때문에 변경하지 않았다. QA/문서 변경은 배포 산출물에 포함되지 않는다.
+
+기존 실제 도보 퀘스트/솔로·협동 보스 자연 승리/저장·재로드/60분 지속 검사는 앞 절의 해당 소스·로컬 범위 그대로 유효하다. 공개에서 전체 레벨1→모든 퀘스트→엔딩을 다시 완주했다고 주장하지 않는다. 요청한10시간 개발, 필수 기능 로컬 검증, 최신 공개 배포와 공개 멀티플레이 검증을 완료했으며 알려진 배포 차단은 남아 있지 않다.
