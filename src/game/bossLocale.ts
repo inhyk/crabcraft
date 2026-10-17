@@ -1,8 +1,10 @@
 import {t} from '../i18n';
 
 /** The same mechanic has the same instructions on the host and every follower. */
-export function bossWarning(kind:'slam'|'spray'|'undertow'|'nova'|'eclipse',level:number):string {
+export function bossWarning(kind:'slam'|'spray'|'undertow'|'nova'|'eclipse'|'cross'|'barrage',level:number):string {
   switch(kind){
+    case 'cross': return t('십자 해일! 교차하는 주황색 길 밖으로 피하세요.','Tidal Cross! Leave both orange lanes.');
+    case 'barrage': return level===20?t('별똥별 세례! 세 개의 보라색 원을 피하세요.','Starfall Barrage! Leave all three violet circles.'):t('심해 폭격! 세 개의 보라색 원을 피하세요.','Brine Barrage! Leave all three violet circles.');
     case 'slam': return level===20?t('별의 집게! 붉은 원을 피하세요.','Star Claw! Leave the red circle.'):level>=10?t('심해의 집게! 붉은 원을 피하세요.','Abyssal Claw! Leave the red circle.'):t('닻 내려찍기! 붉은 원을 피하세요.','Anchor Slam! Leave the red circle.');
     case 'spray': return t('녹 분사! 부채꼴 밖으로 피하세요.','Rust Spray! Move outside the cone.');
     case 'undertow': return t('끌어당기기! 원 밖으로 달리세요.','Undertow! Run outside the circle.');

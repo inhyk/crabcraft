@@ -25,7 +25,7 @@ const SLAM_RATE = 1.2;
 const SLAM_LEAD = skillDelay('attack_slam', 'hit', skillWindow('attack_slam', 'move', SLAM_RATE)) ?? 0.55;
 const SPRAY_LEAD = skillDelay('attack_swipe', 'hit') ?? 0.4;
 
-type Mech = 'slam' | 'spray' | 'undertow' | 'nova' | 'eclipse';
+type Mech = NonNullable<BossState['mech']>['kind'];
 type State = 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead';
 
 const v1 = new THREE.Vector3();
@@ -133,13 +133,7 @@ export class Boss {
     this.clearMech(); this.remoteMechId=m.id;
     const at=new THREE.Vector3(...m.at),fx:Fx[]=[];
     const duration=Math.max(0.05,m.left);
-    if (m.kind === 'spray') fx.push(g.vfx.telegraphCone(at,m.yaw,11,0.55,duration,undefined,this.deckUnder(at,11,m.yaw,0.55)));
-    else {
-      const radius=m.kind === 'eclipse' ? 11 : m.kind === 'slam' ? 3.4 : m.kind === 'nova' ? 6 : 5.5;
-      fx.push(g.vfx.telegraphCircle(at,radius,duration,m.kind === 'eclipse' ? new THREE.Color('#a050ff') : m.kind === 'nova' ? new THREE.Color(this.profile.color) : undefined,this.deckUnder(at,radius,0,Math.PI)));
-      if (m.kind === 'eclipse') fx.push(g.vfx.telegraphCircle(at,4.5,duration,new THREE.Color('#71ffca')));
-      if (m.kind === 'undertow') g.vfx.undertow(at,5.5,duration);
-    }
+    fx.push(...this.mechTelegraphs(m.kind,at,m.yaw,duration));
     this.mech={kind:m.kind,t:0,dur:duration,at,yaw:m.yaw,fx,fired:false,swung:false};
     this.mechIndex=m.id;
     this.warning=g.hud.messages.warn(bossWarning(m.kind,this.profile.level),{persistent:true});
@@ -358,42 +352,52 @@ export class Boss {
     const g = this.game;
     const u = this.unit;
     const p = g.combatTarget?.(u) ?? g.player.unit;
-    const order: Mech[] = this.profile.level === 20 ? (this.phase === 1 ? ['slam','eclipse','nova'] : ['eclipse','nova','undertow','eclipse']) : this.profile.level >= 10 ?
-      (this.phase === 1 ? ['slam', 'nova', 'spray'] : ['nova', 'undertow', 'slam', 'nova']) :
-      this.phase === 1 ? ['slam', 'spray'] : this.phase === 2 ? ['undertow', 'slam', 'spray', 'slam'] : ['slam', 'spray', 'undertow'];
+    const order: Mech[] = this.profile.level === 20 ? (this.phase === 1 ? ['slam','eclipse','nova','cross','barrage'] : ['eclipse','nova','undertow','cross','barrage','eclipse']) : this.profile.level >= 10 ?
+      (this.phase === 1 ? ['slam', 'nova', 'spray', 'cross', 'barrage'] : ['nova', 'undertow', 'slam', 'cross', 'barrage', 'nova']) :
+      this.phase === 1 ? ['slam', 'spray'] : this.phase === 2 ? ['undertow', 'slam', 'spray', 'cross', 'slam'] : ['slam', 'spray', 'undertow', 'cross', 'barrage'];
     const kind = order[this.mechIndex++ % order.length];
     const m: ActiveMech = { kind, t: 0, dur: 1.5, at: new THREE.Vector3(), yaw: u.yaw, fx: [], fired: false, swung: false };
     const speedUp = (this.enraged ? 0.8 : 1) * this.profile.tempo;
-    if (kind === 'slam') {
-      m.dur = 1.5 * speedUp;
+    if (kind === 'slam') { m.dur=1.5*speedUp; m.at.copy(p.pos); }
+    else if (kind === 'spray') {
+      m.dur=1.1*speedUp; m.at.copy(u.pos);
+      m.yaw=yawTo(u.pos.x,u.pos.z,p.pos.x,p.pos.z); u.setYaw(m.yaw);
+    } else if (kind === 'eclipse') { m.dur=2.8*speedUp; m.at.copy(u.pos); }
+    else if (kind === 'nova') {
+      m.dur=2.2*speedUp;
+      if (this.profile.level === 20) m.dur=Math.max(m.dur,1.9);
       m.at.copy(p.pos);
-      m.fx.push(g.vfx.telegraphCircle(m.at, 3.4, m.dur, undefined, this.deckUnder(m.at, 3.4, 0, Math.PI)));
-    } else if (kind === 'spray') {
-      m.dur = 1.1 * speedUp;
-      m.at.copy(u.pos);
-      m.yaw = yawTo(u.pos.x, u.pos.z, p.pos.x, p.pos.z);
-      u.setYaw(m.yaw);
-      m.fx.push(g.vfx.telegraphCone(m.at, m.yaw, 11, 0.55, m.dur, undefined, this.deckUnder(m.at, 11, m.yaw, 0.55)));
-    } else if (kind === 'eclipse') {
-      m.dur = 2.8 * speedUp; m.at.copy(u.pos);
-      m.fx.push(g.vfx.telegraphCircle(m.at, 11, m.dur, new THREE.Color('#a050ff')));
-      m.fx.push(g.vfx.telegraphCircle(m.at, 4.5, m.dur, new THREE.Color('#71ffca')));
-    } else if (kind === 'nova') {
-      m.dur = 2.2 * speedUp;
-      // Enrage must still allow a stationary walker to react and clear the 6m circle.
-      if (this.profile.level === 20) m.dur = Math.max(m.dur, 1.9);
-      m.at.copy(p.pos);
-      m.fx.push(g.vfx.telegraphCircle(m.at, 6, m.dur, new THREE.Color(this.profile.color), this.deckUnder(m.at, 6, 0, Math.PI)));
+    } else if (kind === 'cross') {
+      m.dur=Math.max(2.6,3.1*speedUp); m.at.copy(u.pos);
+      m.yaw=yawTo(u.pos.x,u.pos.z,p.pos.x,p.pos.z);
+    } else if (kind === 'barrage') {
+      m.dur=Math.max(2.6,3*speedUp); m.at.copy(p.pos);
+      m.yaw=yawTo(u.pos.x,u.pos.z,p.pos.x,p.pos.z);
     } else {
-      m.dur = 2.6;
-      m.at.copy(u.pos);
-      m.fx.push(g.vfx.telegraphCircle(m.at, 5.5, m.dur, undefined, this.deckUnder(m.at, 5.5, 0, Math.PI)));
-      g.vfx.undertow(m.at, 5.5, m.dur);
-      g.say(u, BOSS_YELLS.undertow, true);
+      m.dur=2.6; m.at.copy(u.pos); g.say(u,BOSS_YELLS.undertow,true);
     }
+    m.fx.push(...this.mechTelegraphs(kind,m.at,m.yaw,m.dur));
     this.warning=g.hud.messages.warn(bossWarning(kind,this.profile.level),{persistent:true});
     this.mech = m;
     this.nextMech = g.time + m.dur + (this.phase === 3 ? 4.2 : this.phase === 2 ? 5.5 : 6);
+  }
+
+  private barragePoints(at: THREE.Vector3, yaw: number): THREE.Vector3[] {
+    return [-6,0,6].map(offset => new THREE.Vector3(at.x+Math.cos(yaw)*offset,at.y,at.z-Math.sin(yaw)*offset));
+  }
+
+  /** One layout for host and followers; shape dimensions also match damage tests below. */
+  private mechTelegraphs(kind: Mech, at: THREE.Vector3, yaw: number, duration: number): Fx[] {
+    const vfx=this.game.vfx;
+    if (kind==='cross') return [yaw,yaw+Math.PI/2].map(a=>vfx.telegraphLane(at,a,12,1.8,duration,new THREE.Color('#ffb64d')));
+    if (kind==='barrage') return this.barragePoints(at,yaw).map(p=>vfx.telegraphCircle(p,2.6,duration,new THREE.Color('#cf8aff'),this.deckUnder(p,2.6,0,Math.PI)));
+    if (kind==='spray') return [vfx.telegraphCone(at,yaw,11,.55,duration,undefined,this.deckUnder(at,11,yaw,.55))];
+    const radius=kind==='eclipse'?11:kind==='slam'?3.4:kind==='nova'?6:5.5;
+    const color=kind==='eclipse'?new THREE.Color('#a050ff'):kind==='nova'?new THREE.Color(this.profile.color):undefined;
+    const fx=[vfx.telegraphCircle(at,radius,duration,color,this.deckUnder(at,radius,0,Math.PI))];
+    if(kind==='eclipse')fx.push(vfx.telegraphCircle(at,4.5,duration,new THREE.Color('#71ffca'),this.deckUnder(at,4.5,0,Math.PI)));
+    if(kind==='undertow')vfx.undertow(at,5.5,duration);
+    return fx;
   }
 
   /**
@@ -494,6 +498,22 @@ export class Boss {
         for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && Math.hypot(p.pos.x - m.at.x, p.pos.z - m.at.z) < 6 + p.radius * 0.5) g.combat.damage(u, p, p.maxHp * 0.32);
         this.finishMech();
       }
+    } else if (m.kind==='cross' || m.kind==='barrage') {
+      if (!m.swung && m.t>m.dur-SLAM_LEAD) { m.swung=true; u.act('attack_slam',{speed:SLAM_RATE}); }
+      if (m.t>=m.dur) {
+        m.fired=true; this.impactVisual(m.kind,m.at,m.yaw);g.follow.shake(.3,.4);g.audio.sfx('sfx-crit');
+        const points=m.kind==='barrage'?this.barragePoints(m.at,m.yaw):[];
+        for(const p of g.combatPlayers?.()??[g.player.unit]) {
+          if(!p.alive)continue;
+          const dx=p.pos.x-m.at.x,dz=p.pos.z-m.at.z;
+          const x=dx*Math.cos(m.yaw)-dz*Math.sin(m.yaw),z=dx*Math.sin(m.yaw)+dz*Math.cos(m.yaw);
+          const hit=m.kind==='cross'
+            ? (Math.abs(x)<1.8+p.radius*.5&&Math.abs(z)<12)||(Math.abs(z)<1.8+p.radius*.5&&Math.abs(x)<12)
+            : points.some(at=>Math.hypot(p.pos.x-at.x,p.pos.z-at.z)<2.6+p.radius*.5);
+          if(hit)g.combat.damage(u,p,p.maxHp*(m.kind==='cross'?.28:.24));
+        }
+        this.finishMech();
+      }
     } else {
       // Undertow: drag the player toward the hull, then slam everything around it.
       for (const p of g.combatPlayers?.() ?? [g.player.unit]) if (p.alive && m.t < m.dur - 0.3) {
@@ -522,6 +542,8 @@ export class Boss {
 
   private impactVisual(kind:Mech,at:THREE.Vector3,yaw=0):void {
     const vfx=this.game.vfx;
+    if(kind==='cross'){for(const a of [yaw,yaw+Math.PI/2])vfx.telegraphLane(at,a,12,1.8,.4,new THREE.Color('#ffd390'));return;}
+    if(kind==='barrage'){for(const p of this.barragePoints(at,yaw)){p.y=this.game.world.heightAt(p.x,p.z);vfx.slamImpact(p,2.6);}return;}
     if(kind==='spray'){vfx.rustSpray(at,yaw,11,.55);return;}
     if(kind==='eclipse'){vfx.ring(at,new THREE.Color('#b577ff'),11,4.5,.8,.9);return;}
     if(kind==='nova'){

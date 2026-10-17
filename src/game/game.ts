@@ -151,7 +151,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open;
+    return this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -209,7 +209,7 @@ export class Game {
     await this.world2.buildSettlement();
     if (!this.alive) return;
     this.engine.setView(this.scene, this.camera, GAME_VIEW);
-    this.vfx = new Vfx(this.scene);
+    this.vfx = new Vfx(this.scene, (x,z) => this.world.heightAt(x,z));
     this.vfx.density = app.engine.quality === 'low' ? 0.55 : 1;
     this.objective = new ObjectiveMarker(this.vfx.fx);
     this.scene.add(this.objective.group);
@@ -664,7 +664,8 @@ export class Game {
     const hud = this.hud;
     if (this.ending.active) return;
     if (inp.wasPressed('Escape')) {
-      if (hud.menu.open) hud.menu.close();
+      if (hud.minimap.expanded) hud.minimap.toggle(false);
+      else if (hud.menu.open) hud.menu.close();
       else if (hud.dialogue.isOpen) hud.dialogue.close();
       else if (hud.questLog.open) hud.questLog.toggle(false);
       else if (this.player.cast || this.player.channel) {
@@ -675,6 +676,8 @@ export class Game {
       return;
     }
     if (hud.menu.open) return;
+    if (inp.wasPressed('KeyG')) { hud.minimap.toggle(); return; }
+    if (hud.minimap.expanded) return;
     if (inp.wasPressed('KeyL')) hud.questLog.toggle();
     if (inp.wasPressed('KeyM')) this.toggleMusic();
     if (inp.wasPressed('Enter') || inp.wasPressed('NumpadEnter')) {

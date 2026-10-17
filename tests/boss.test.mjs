@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { Boss } from '../tmp/test-modules/boss.js';
+import {conformTelegraph} from '../src/game/vfx/telegraphGround.ts';
+import {worldOf} from '../server/combatProtocol.ts';
 import { LEVEL_XP, xpForLevel, levelForXp, BOSS_PROFILES, canChallenge, canEnterWorld2, patrolReward } from '../src/game/progression.ts';
 
 function setup(profile=BOSS_PROFILES.rust, level=profile.level) {
@@ -106,7 +108,7 @@ test('World II boss combat leaves the World I lighthouse and morning unchanged',
 });
 
 test('host and network follower use matching attack colours and impact effects for every mechanic',()=>{
- for(const [profile,phase,index] of [[BOSS_PROFILES.rust,1,0],[BOSS_PROFILES.rust,1,1],[BOSS_PROFILES.rust,2,0],[BOSS_PROFILES.abyss,2,0],[BOSS_PROFILES.eclipse,2,0],[BOSS_PROFILES.eclipse,2,1]]){
+ for(const [profile,phase,index] of [[BOSS_PROFILES.rust,1,0],[BOSS_PROFILES.rust,1,1],[BOSS_PROFILES.rust,2,0],[BOSS_PROFILES.abyss,2,0],[BOSS_PROFILES.eclipse,2,0],[BOSS_PROFILES.eclipse,2,1],[BOSS_PROFILES.eclipse,2,3],[BOSS_PROFILES.eclipse,2,4]]){
   const host=setup(profile),guest=setup(profile);
   const record=s=>{const effects=[],circles=[];for(const name of ['ring','slamImpact','rustSpray'])s.game.vfx[name]=(...args)=>{effects.push([name,...args.map(v=>v?.isColor?v.getHexString():v?.isVector3?v.toArray():v)]);return {};};s.game.vfx.telegraphCircle=(_at,r,_dur,color)=>{circles.push([r,color?.getHexString()??'default']);return {};};return {effects,circles};};
   const h=record(host),g=record(guest);host.boss.state='fight';host.boss.phase=phase;host.boss.mechIndex=index;host.boss.startMech();
@@ -119,7 +121,7 @@ test('host and network follower use matching attack colours and impact effects f
 
 
 test('a new host continues each latest attack checkpoint without recreating warnings or delaying damage',()=>{
- for(const [profile,phase,index] of [[BOSS_PROFILES.rust,1,0],[BOSS_PROFILES.rust,1,1],[BOSS_PROFILES.rust,2,0],[BOSS_PROFILES.abyss,2,0],[BOSS_PROFILES.eclipse,2,0]]){
+ for(const [profile,phase,index] of [[BOSS_PROFILES.rust,1,0],[BOSS_PROFILES.rust,1,1],[BOSS_PROFILES.rust,2,0],[BOSS_PROFILES.abyss,2,0],[BOSS_PROFILES.eclipse,2,0],[BOSS_PROFILES.eclipse,2,3],[BOSS_PROFILES.eclipse,2,4]]){
  const host=setup(profile),guest=setup(profile);guest.game.enemies=[];
  host.boss.state='fight';host.boss.phase=phase;host.boss.mechIndex=index;host.boss.startMech();
  const id=profile.level===20?'b20':profile.level===10?'b10':'b3';
@@ -160,4 +162,51 @@ test('World II nova leaves a stationary walker time to react and clear its damag
   const needed=.3+(6+player.radius*.5)/5+.1;
   assert.ok(m.left>=needed,`phase ${phase}: ${m.left}s warning is below ${needed}s walking budget`);
  }
+});
+
+
+function newPattern(kind,profile=BOSS_PROFILES.eclipse){
+ const s=setup(profile);s.boss.phase=3;s.boss.enraged=true;s.boss.state='fight';s.player.pos.set(0,0,8);
+ for(let index=0;index<8;index++){s.boss.mechIndex=index;s.boss.startMech();if(s.boss.mechName===kind)return s;s.boss.clearMech();}
+ throw Error('Pattern absent from rotation: '+kind);
+}
+
+test('new attacks have generous fixed warnings in every boss rotation, even during enrage',()=>{
+ for(const profile of Object.values(BOSS_PROFILES))for(const kind of ['cross','barrage']){
+  const {boss,warnings}=newPattern(kind,profile);assert.ok(boss.mech.dur>=2.6);assert.ok(warnings.at(-1).length>10);
+ }
+});
+
+test('cross lanes hit once at their intersection and spare the four diagonal safe areas',()=>{
+ const {game,boss,player,damage}=newPattern('cross');
+ const copy=(x,z)=>({...player,pos:new THREE.Vector3(x,0,z)});
+ const players=[copy(0,0),copy(0,8),copy(8,0),copy(4,4),copy(-4,4),copy(-4,-4),copy(4,-4),copy(0,14)];
+ game.combatPlayers=()=>players;boss.updateMech(boss.mech.dur-.01);assert.equal(damage.length,0);
+ boss.updateMech(.02);assert.equal(damage.length,3);assert.deepEqual(players.map(p=>p.hp),[216,216,216,300,300,300,300,300]);
+});
+
+test('barrage damages each marked location once and spares players outside the circles',()=>{
+ const {game,boss,player,damage}=newPattern('barrage');const points=boss.barragePoints(boss.mech.at,boss.mech.yaw);
+ const players=points.map(pos=>({...player,pos:pos.clone()}));players.push({...player,pos:points[1].clone().add(new THREE.Vector3(0,0,6))});
+ game.combatPlayers=()=>players;boss.updateMech(boss.mech.dur);assert.equal(damage.length,3);assert.deepEqual(players.map(p=>p.hp),[228,228,228,300]);
+});
+
+test('terrain warnings retain their 0.28m clearance when pooled geometry is rotated and reused',()=>{
+ const geometry=new THREE.PlaneGeometry(2,2,32,32).rotateX(Math.PI/2),at=new THREE.Vector3(4,7,-12);
+ const height=(x,z)=>Math.sin(x*.8)*2+Math.cos(z*.6)*1.5+x*.1;
+ for(const [yaw,width,length] of [[0,6,6],[1.2,1.8,12],[-2,11,11]]){
+  conformTelegraph(geometry,at,yaw,width,length,height);const positions=geometry.getAttribute('position');
+  for(let i=0;i<positions.count;i++){
+   const x=positions.getX(i)*width,z=positions.getZ(i)*length;
+   const expected=height(at.x+x*Math.cos(yaw)+z*Math.sin(yaw),at.z-x*Math.sin(yaw)+z*Math.cos(yaw))+.28;
+   assert.ok(Math.abs(at.y+positions.getY(i)-expected)<1e-6);
+  }
+ }
+ geometry.dispose();
+});
+
+test('room snapshots accept the new patterns and still reject unknown pattern kinds',()=>{
+ const boss=(id,kind)=>({id,state:'fight',phase:2,enraged:false,mech:{id:1,kind,at:[0,0,0],yaw:0,left:2.6}});
+ const world={entities:[],bosses:[boss('b3','cross'),boss('b10','barrage'),boss('b20','cross')],rust:true,abyss:true,chapter:2,firstEnding:true,trueCleared:false,weather:{mood:3,beacon:true,clock:0}};
+ assert.equal(worldOf(world),world);world.bosses[0].mech.kind='unknown';assert.equal(worldOf(world),null);
 });

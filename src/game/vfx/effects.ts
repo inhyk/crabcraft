@@ -60,6 +60,13 @@ void main() {
   decal: /* glsl */ `
 void main() {
   vec2 p = vUv * 2.0 - 1.0;
+  if (uParam.y > 0.5) {
+    float edge = max(smoothstep(0.82, 0.98, abs(p.x)), smoothstep(0.94, 0.99, abs(p.y)));
+    float pulse = 0.5 + 0.5*sin(uTime*10.0);
+    float stripes = step(0.6, fract((p.y+p.x)*6.0-uTime));
+    gl_FragColor = vec4(uColor*(0.85+edge*0.6), (0.24+edge*0.66+stripes*0.08+pulse*0.05)*uAlpha);
+    return;
+  }
   float r = length(p);
   if (r > 1.0) discard;
   float halfA = uParam.x;
@@ -293,7 +300,10 @@ export class FxPool {
 
   dispose(): void {
     this.clear();
-    for (const list of this.free.values()) for (const fx of list) (fx.mesh.material as THREE.Material).dispose();
+    for (const list of this.free.values()) for (const fx of list) {
+      (fx.mesh.material as THREE.Material).dispose();
+      if (fx.mesh.userData.telegraphGeometry) fx.mesh.geometry.dispose();
+    }
     this.free.clear();
   }
 }
