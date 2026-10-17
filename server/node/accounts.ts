@@ -179,7 +179,8 @@ function googleHandler(db: Pool, origins: readonly string[], clientIp: (req: Inc
     if (!google) return fail('config');
     const state = url.searchParams.get('state') ?? '', code = url.searchParams.get('code') ?? '';
     if (!cookie) return fail('cookie');
-    if (state.length !== cookie[1].length || !timingSafeEqual(Buffer.from(state), Buffer.from(cookie[1]))) return fail('state');
+    // The shape check first: timingSafeEqual throws on buffers of different byte length.
+    if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !timingSafeEqual(Buffer.from(state), Buffer.from(cookie[1]))) return fail('state');
     if (url.searchParams.has('error')) return fail('denied');
     if (!code || code.length > 2048) return fail('code');
     try { if (!await limit(db, 'ip:' + digest(clientIp(req)), 100, 900)) return fail('rate'); }

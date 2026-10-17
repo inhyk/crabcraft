@@ -50,7 +50,9 @@ async function healthy() {
 }
 
 const server = createServer((req, res) => {
-  const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+  let path: string;
+  // A request target such as '//' is no URL; throwing here would take the whole process down.
+  try { path = new URL(req.url ?? '/', 'http://localhost').pathname; } catch { text(res, 400, 'Bad request'); return; }
   if (path.startsWith('/api/account/')) { void accounts(req, res); return; }
   if (path === '/healthz') { void healthy().then(ok => text(res, ok ? 200 : 503, ok ? 'ok\n' : 'database unavailable\n')); return; }
   if (path === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, game: 'crabcraft-multiplayer' })); return; }

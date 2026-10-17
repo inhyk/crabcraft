@@ -102,6 +102,9 @@ test('healthz reports the database; other paths answer like the Worker', async (
   assert.deepEqual((await http('GET', '/health')).json, { ok: true, game: 'crabcraft-multiplayer' });
   assert.equal((await http('GET', '/multiplayer')).status, 426);
   assert.equal((await http('GET', '/nope')).status, 404);
+  // A request target that is no URL is refused instead of taking the process down.
+  assert.equal((await http('GET', '//')).status, 400);
+  assert.equal((await http('GET', '/healthz')).status, 200);
   const { rows } = await db.query('SELECT version FROM schema_migrations ORDER BY version');
   assert.deepEqual(rows.map(r => r.version), ['001_accounts', '002_google_only']);
   // 002 removed the password account, its session and its login counter.
@@ -267,6 +270,8 @@ test('the callback refuses a wrong or missing state, a refusal at Google and bad
   };
   await refused(await googleSignIn({ sub, state: 'A'.repeat(43) }));
   await refused(await googleSignIn({ sub, state: '' }));
+  // Same length in characters, longer in bytes: must not throw inside the comparison.
+  await refused(await googleSignIn({ sub, state: 'é' + 'A'.repeat(42) }));
   await refused(await googleSignIn({ sub, ret: '/?screen=title', claims: { aud: 'someone-else.apps.googleusercontent.com' } }), '/?screen=title&account=error');
   await refused(await googleSignIn({ sub, claims: { exp: Math.floor(Date.now() / 1000) - 60 } }));
   await refused(await googleSignIn({ sub, claims: { iss: 'https://evil.example' } }));

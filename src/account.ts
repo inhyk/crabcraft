@@ -44,7 +44,7 @@ export class Account {
    this.accept(session,!pending);
    if(fresh){const guest=readBundle('');if(Object.keys(guest).length)applyBundle(session.username,guest);else fresh=false;}
   }
-  catch(e){if(e instanceof AccountError&&e.code==='session')setSaveProfile('');else{try{const previous=localStorage.getItem('cc.lastAccount');if(previous&&/^[a-z0-9_]{3,24}$/.test(previous)){this.username=previous;setSaveProfile(previous);this.state=errorText('network');}}catch{setSaveProfile('');}}}
+  catch(e){if(e instanceof AccountError&&e.code==='session')setSaveProfile('');else{try{const previous=localStorage.getItem('cc.lastAccount');if(previous&&/^g[a-f0-9]{23}$/.test(previous)){this.username=previous;setSaveProfile(previous);this.state=errorText('network');}}catch{setSaveProfile('');}}}
   if(result==='error')this.state=errorText('error');
   this.ready=true;this.app.reloadSpec();
   if(fresh)void this.flush();else this.schedule();
