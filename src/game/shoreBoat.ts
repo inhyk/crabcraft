@@ -80,7 +80,7 @@ export class ShoreBoat {
     this.root.visible=g.world2.chapter===1;
     if(!this.root.visible){this.state=home();this.wasSeated=false;return;}
     if(authority){let removed=false;for(let i=0;i<2;i++){const id=this.state.seats[i];if(id&&((id!=='solo'&&!b?.hasBoatMember(id))||this.unit(id)?.alive===false)){this.state.seats[i]=null;removed=true;}}if(removed){this.compact();if(!this.state.seats.some(Boolean)&&!this.landing())this.resetHome();}if(!this.state.seats[0]&&this.state.seats[1])this.compact();if(!this.state.seats.some(Boolean)&&this.state.speed!==0)this.compact();}
-    if(this.seated&&!this.wasSeated){this.clearPose();g.hud.messages.info(t('산호바람 섬은 부두 동북쪽에 있어요. G 지도로 섬과 배를 찾아보세요!','Coralwind Isle lies northeast of the dock. Press G to find the island and skiff!'));}
+    if(this.seated&&!this.wasSeated){this.clearPose();g.hud.messages.info(t('바다에 섬 3개가 있어요! G 지도에서 섬과 배를 찾아보세요.','Three islands await! Press G to locate the islands and your skiff.'));}
     if(!this.seated&&this.wasSeated&&g.player.unit.alive){const exit=this.state.exits?.[this.id];if(exit){g.player.unit.teleport(g.world,exit.x,exit.z);if(exit.shore)g.achievements?.unlock('landfall');}else this.dock();}
     this.wasSeated=this.seated;
     if(this.state.seats[0]===this.id&&g.time-this.sentAt>.09){this.sentAt=g.time;const allowed=!g.app.account.open&&!g.hud.menu.open&&!g.hud.minimap.expanded&&!g.cinematic&&!g.ending.active;const inp=g.input,c:BoatCommand={action:'drive',throttle:allowed?Number(inp.isDown('KeyW'))-Number(inp.isDown('KeyS')):0,steer:allowed?Number(inp.isDown('KeyA'))-Number(inp.isDown('KeyD')):0};if(b)b.boat(c);else this.request('solo',c);}

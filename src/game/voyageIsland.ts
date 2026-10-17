@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import type {Game} from './game';
-import {islandDistance} from '../world/voyage';
+import {islandDistance,VOYAGE_ISLANDS} from '../world/voyage';
+import type {AchievementId} from './achievements';
 import {t} from '../i18n';
 /** Dressing shares the real terrain heightfield: beach, water foam and collision agree. */
 export class VoyageIsland {
  readonly root=new THREE.Group();readonly chest=new THREE.Vector3();private lid=new THREE.Group();
+ private treasures:{id:AchievementId;position:THREE.Vector3;lid:THREE.Group;coins:number;ko:string;en:string}[]=[];
  private resources:(THREE.BufferGeometry|THREE.Material)[]=[];
  constructor(private g:Game){
   this.root.name='Coralwind Isle';
@@ -21,11 +23,40 @@ export class VoyageIsland {
   const flag=prop(240,-20);mesh(cyl,wood,flag,0,2.8,0,.1,5.6,.1);mesh(box,cloth,flag,.9,4.7,0,1.8,1.1,.06);mesh(sphere,gold,flag,0,5.7,0,.18,.18,.18);
   const treasure=prop(229,-24);this.chest.copy(treasure.position);mesh(box,wood,treasure,0,.5,0,1.7,.8,1.1);for(const x of [-.6,.6])mesh(box,gold,treasure,x,.55,0,.13,.9,1.15);this.lid.position.set(0,.95,-.55);treasure.add(this.lid);mesh(box,wood,this.lid,0,.04,.55,1.8,.22,1.2);mesh(box,gold,treasure,0,.7,.59,.25,.28,.08);
   for(let i=0;i<12;i++){const x=216+i*.8,z=-22+Math.sin(i*.5)*.6,y=g.world.heightAt(x,z);if(y>.3)mesh(sphere,sand,this.root,x,y+.025,z,.12,.03,.17);}
+  this.treasures.push({id:'treasure',position:this.chest,lid:this.lid,coins:75,ko:'진주빛 보물',en:'Pearl treasure'});
+  // Reuse a small geometry/material palette across both new islands.
+  const violet=mat('#a88cf1',.35),ice=mat('#97e7ed',.45),amber=mat('#e6a05a'),dark=mat('#392e36');
+  for(const site of VOYAGE_ISLANDS.slice(1)){
+   const center=prop(site.x,site.z);
+   if(site.id==='moon'){
+    // Faceted crystal garden, fallen star and a ring of weathered moon stones.
+    for(let i=0;i<9;i++){const a=i*2.399,r=4+i%3;const p=prop(site.x+Math.cos(a)*r,site.z+Math.sin(a)*r*.7);p.rotation.y=a;const crystal=mesh(cone,i%2?ice:violet,p,0,1+i%3*.4,0,.6,2+i%3*.8,.6);crystal.rotation.z=(i%3-1)*.18;mesh(sphere,stone,p,0,.15,0,.9,.3,.8);}
+    const ringGeo=new THREE.TorusGeometry(2.1,.16,6,32);this.resources.push(ringGeo);mesh(ringGeo,violet,center,0,2.7,-1,1,1,1);
+    for(let i=0;i<7;i++){const a=i*Math.PI*2/7;const p=prop(site.x+Math.cos(a)*3,site.z+Math.sin(a)*2.5);mesh(box,stone,p,0,.35,0,.5,.7,.6).rotation.y=a;}
+    mesh(sphere,ice,center,0,.6,-1,.65,.65,.65);
+   }else{
+    // Broken ship ribs, tilted prow, torn sail, supply barrels and a camp.
+    const wreck=prop(site.x+2,site.z-2);wreck.rotation.y=-.55;
+    mesh(box,dark,wreck,0,.4,0,6,.5,3);
+    for(const side of [-1,1])for(let i=0;i<6;i++){const rib=mesh(box,wood,wreck,-2.5+i,1.1,side*1.4,.2,1.8,.2);rib.rotation.x=side*.25;mesh(box,wood,wreck,0,.8,side*1.65,6.5,.3,.14);}
+    mesh(cone,wood,wreck,3.4,.9,0,1.4,2,1.5).rotation.z=-Math.PI/2;
+    const mast=mesh(cyl,wood,wreck,0,3.2,0,.13,6.4,.13);mast.rotation.z=-.2;
+    const sailGeo=new THREE.BufferGeometry();sailGeo.setAttribute('position',new THREE.Float32BufferAttribute([-.3,5.7,0,-.3,2.6,0,2.3,2.9,0,2.3,2.9,0,-.3,2.6,0,1,2.1,0],3));sailGeo.computeVertexNormals();this.resources.push(sailGeo);const sail=mat('#d7be8c');sail.side=THREE.DoubleSide;mesh(sailGeo,sail,wreck,0,0,0,1,1,1);
+    for(let i=0;i<3;i++){const p=prop(site.x-5+i*.9,site.z-4);mesh(cyl,wood,p,0,.55,0,.45,1.1,.45);for(const y of [.25,.85])mesh(cyl,dark,p,0,y,0,.47,.08,.47);}
+    const camp=prop(site.x-5,site.z+4);mesh(cone,amber,camp,0,.7,0,1.7,1.4,1.7);mesh(cone,dark,camp,0,.65,.7,.6,1.2,.6);
+    for(let i=0;i<4;i++){const a=i*1.7,p=prop(site.x+Math.cos(a)*12,site.z+Math.sin(a)*9);mesh(sphere,amber,p,0,.3,0,1.2,.5,.8);}
+   }
+   const p=prop(site.x-2,site.z+2),lid=new THREE.Group();mesh(box,wood,p,0,.5,0,1.7,.8,1.1);for(const x of [-.6,.6])mesh(box,gold,p,x,.55,0,.13,.9,1.15);lid.position.set(0,.95,-.55);p.add(lid);mesh(box,site.id==='moon'?violet:wood,lid,0,.04,.55,1.8,.22,1.2);mesh(box,gold,p,0,.7,.59,.25,.28,.08);
+   this.treasures.push({id:site.id==='moon'?'moonTreasure':'sunsetTreasure',position:p.position.clone(),lid,coins:site.id==='moon'?100:125,ko:site.id==='moon'?'달조각 보물':'선장의 보물',en:site.id==='moon'?'Moonshard treasure':'Captain’s treasure'});
+  }
   g.world.root.add(this.root);
  }
- nearby(){const g=this.g;return g.world2.chapter===1&&!g.boats?.seated&&g.player.unit.pos.distanceTo(this.chest)<3;}
- interact(){if(!this.nearby()||this.g.controlsLocked)return;const a=this.g.achievements;if(!a||a.has('treasure')){this.g.hud.messages.info(t('보물은 이미 챙겼어요. 섬의 추억은 남아 있어요!','You already found this treasure. The memory is yours!'));return;}a.unlock('treasure');this.g.player.coins=Math.min(Number.MAX_SAFE_INTEGER,this.g.player.coins+75);this.g.journey?.save();this.g.audio.sfx('sfx-quest-complete');}
- update(){this.root.visible=this.g.world2.chapter===1;this.lid.rotation.x=this.g.achievements?.has('treasure')?-1.2:0;}
- get onIsland(){return this.g.world2.chapter===1&&islandDistance(this.g.player.unit.pos.x,this.g.player.unit.pos.z)>.25;}
+ private get nearbyTreasure(){const g=this.g;if(g.world2.chapter!==1||g.boats?.seated)return undefined;return this.treasures.find(c=>g.player.unit.pos.distanceTo(c.position)<3);}
+ nearby(){return !!this.nearbyTreasure;}
+ get treasurePrompt(){const c=this.nearbyTreasure;if(!c)return '';return this.g.achievements?.has(c.id)?t('보물상자 살펴보기','Inspect treasure chest'):t(`${c.ko} 열기 · ${c.coins} 코인`,`Open ${c.en} · ${c.coins} coins`);}
+ interact(){const c=this.nearbyTreasure;if(!c||this.g.controlsLocked)return;const a=this.g.achievements;if(!a||a.has(c.id)){this.g.hud.messages.info(t('보물은 이미 챙겼어요. 섬의 추억은 남아 있어요!','You already found this treasure. The memory is yours!'));return;}a.unlock(c.id);this.g.player.coins=Math.min(Number.MAX_SAFE_INTEGER,this.g.player.coins+c.coins);this.g.journey?.save();this.g.audio.sfx('sfx-quest-complete');}
+ update(){this.root.visible=this.g.world2.chapter===1;for(const c of this.treasures)c.lid.rotation.x=this.g.achievements?.has(c.id)?-1.2:0;}
+ get currentIsland(){return this.g.world2.chapter===1?VOYAGE_ISLANDS.find(i=>islandDistance(this.g.player.unit.pos.x,this.g.player.unit.pos.z,i)>.25):undefined;}
+ get onIsland(){return this.currentIsland?.id==='island';}
  dispose(){this.root.removeFromParent();for(const r of this.resources)r.dispose();}
 }

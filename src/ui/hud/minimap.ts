@@ -1,6 +1,6 @@
 // Round minimap (top right). The zone picture is a top-down render of the world made at load;
 // the map turns with the camera so "up" is always where you are looking.
-import {CORAL_ISLAND} from '../../world/voyage';
+import {VOYAGE_ISLANDS} from '../../world/voyage';
 import { h } from '../dom';
 import {t} from '../../i18n';
 import type { Game } from '../../game/game';
@@ -183,7 +183,7 @@ export class Minimap {
       c.fillText(info!.label, lx, ly);
     }
     if(g.world2.chapter===1){
-      for(const [wx,wz,label,color] of [[CORAL_ISLAND.x,CORAL_ISLAND.z,t('산호바람 섬','Coralwind Isle'),'#8bffe0'],[g.boats?.state.x??151,g.boats?.state.z??18.5,t('배','Skiff'),'#ffd58b']] as [number,number,string,string][]){
+      for(const [wx,wz,label,color] of [...VOYAGE_ISLANDS.map(i=>[i.x,i.z,t(i.ko,i.name),i.color]),[g.boats?.state.x??151,g.boats?.state.z??18.5,t('배','Skiff'),'#ffd58b']] as [number,number,string,string][]){
         const [x,y]=toScreen(wx,wz);if(Math.hypot(x-half,y-half)>half-22*d)continue;c.fillStyle=color;c.strokeStyle='#10202b';c.lineWidth=3*d;c.beginPath();c.arc(x,y,4*d,0,Math.PI*2);c.fill();c.stroke();c.strokeText(label,x,y-9*d);c.fillText(label,x,y-9*d);
       }
     }

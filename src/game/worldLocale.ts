@@ -2,6 +2,8 @@ import {t} from '../i18n';
 
 // Stable region keys also drive music and travel logic. Translate only their presentation.
 const REGIONS:Record<string,readonly [string,string,string]>={
+  'Moonshard Isle':['달조각 섬','별빛 수정과 달의 고리를 찾아서','Discover starlit crystals and the moon ring'],
+  'Amberwreck Isle':['노을 난파선 섬','모래에 잠든 배와 선장의 보물','A stranded ship and its captain’s treasure'],
   'Coralwind Isle':['산호바람 섬','바다를 건너 찾은 진주빛 쉼터','A pearl-lit refuge across the sea'],
   'Clawhaven':['클로헤이븐','여섯 종족이 함께 사는 항구 마을','Harbour town of six peoples'],
   'The Brine Shore':['소금물 해안','고철벌레들이 기어 다니는 해변','Where the Scraplings crawl'],

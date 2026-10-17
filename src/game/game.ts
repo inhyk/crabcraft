@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import {starMemory} from './starMemories';
 import {Achievements} from './achievements';
 import {VoyageIsland} from './voyageIsland';
-import {CORAL_ISLAND} from '../world/voyage';
+import {VOYAGE_ISLANDS} from '../world/voyage';
 import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
@@ -506,7 +506,7 @@ export class Game {
   takeMapSnapshot() {
     const pts: THREE.Vector3[] = Object.values(this.world.pois).map((p) => p.position);
     for (const s of this.world.spawns) pts.push(...s.points);
-    if(this.world2.chapter===1)pts.push(new THREE.Vector3(CORAL_ISLAND.x+CORAL_ISLAND.radius,4,CORAL_ISLAND.z));
+    if(this.world2.chapter===1)for(const i of VOYAGE_ISLANDS)for(const sign of [-1,1])pts.push(new THREE.Vector3(i.x+sign*i.radius,8,i.z+sign*i.radius));
     let minX = Infinity;
     let maxX = -Infinity;
     let minZ = Infinity;
@@ -855,7 +855,7 @@ export class Game {
     }
     const it = this.findInteractable();
     if (!it) this.hud.prompt.hide();
-    else if(it.kind==='islandTreasure')this.hud.prompt.show('F',this.achievements?.has('treasure')?t('보물상자 살펴보기','Inspect treasure chest'):t('진주빛 보물상자 열기 · 75 코인','Open pearl treasure · 75 coins'));
+    else if(it.kind==='islandTreasure')this.hud.prompt.show('F',this.voyageIsland?.treasurePrompt??'');
     else if(it.kind==='boat')this.hud.prompt.show('F',this.boats!.label());
     else if(it.kind==='secret')this.hud.prompt.show('F',t('길게 눌러 바위의 게 문양 살펴보기','Hold to inspect the crab carving'));
     else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.portalLabel());
@@ -1315,7 +1315,7 @@ export class Game {
   }
 
   private updateZone(): void {
-    const z = this.world2.chapter>=2 ? this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z) : this.voyageIsland?.onIsland?'Coralwind Isle':this.zoneAt(this.player.unit.pos);
+    const z = this.world2.chapter>=2 ? this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z) : this.voyageIsland?.currentIsland?this.voyageIsland.currentIsland.name:this.zoneAt(this.player.unit.pos);
     if (z !== this.zoneCandidate) {
       this.zoneCandidate = z;
       this.zoneSince = this.time;
