@@ -4,6 +4,8 @@ import {loadingLabel,loadingTips,regionName,regionSubtitle} from './worldLocale'
 // quests, combat, AI, effects, music and the HUD together.
 import * as THREE from 'three';
 import {starMemory} from './starMemories';
+import {LighthouseSecret} from './lighthouseSecret';
+import {createJellyfishRig} from '../crab/jellyfish';
 import { HiddenWorld } from './world2';
 import { Multiplayer } from '../multiplayer/client';
 import type { App } from '../app';
@@ -96,6 +98,7 @@ export class Game {
   creatorTravel = false;
   world2!: HiddenWorld;
   journey: BossJourney | null = null;
+  lighthouseSecret: LighthouseSecret | null = null;
 
   get encounter(): Boss {
     if (this.world2?.chapter===3 && this.dawnBoss) return this.dawnBoss;
@@ -294,13 +297,24 @@ export class Game {
     }
     // Shallow-water patrols are reachable from the beach; deep ocean remains collision-blocked.
     if(scrap){const shore=this.world.pois.shore.position;for(let i=0;i<3;i++){let best=shore.clone(),delta=Infinity;for(let dx=-22;dx<=22;dx+=2)for(let dz=-22;dz<=22;dz+=2){const x=shore.x+dx+i*4,z=shore.z+dz,y=this.world.heightAt(x,z);const d=Math.abs(y-.4);if(d<delta&&Math.hypot(dx,dz)>6&&(()=>{const out=new THREE.Vector2();this.world.resolveCollision(x,z,.8,out);return Math.hypot(out.x-x,out.y-z)<.2;})()){delta=d;best.set(x,y,z);}}enemyJobs.push({kind:'scrapling',home:best,radius:2,pack:200+i});}}
-    const enemyRigs = await Promise.all(enemyJobs.map((j) => loadEnemy(j.kind)));
+    const seaHomes:THREE.Vector3[]=[];
+    for(const [ax,az] of [[118,24],[130,43],[130,65],[142,84],[156,102],[174,83]]){
+      let best:THREE.Vector3|null=null,score=Infinity;
+      for(let dx=-28;dx<=28;dx+=2)for(let dz=-24;dz<=24;dz+=2){
+        const x=ax+dx,z=az+dz,y=this.world.heightAt(x,z),out=new THREE.Vector2();
+        if(y>-.15||y<-.9||seaHomes.some(p=>Math.hypot(p.x-x,p.z-z)<10))continue;
+        this.world.resolveCollision(x,z,1.3,out);if(Math.hypot(out.x-x,out.y-z)>.15)continue;
+        const s=Math.abs(y+.55)+Math.hypot(dx,dz)*.008;if(s<score){score=s;best=new THREE.Vector3(x,y,z);}
+      }
+      if(best){seaHomes.push(best);enemyJobs.push({kind:'jellyfish',home:best,radius:3,pack:300+seaHomes.length});}
+    }
+    const enemyRigs = await Promise.all(enemyJobs.map((j) => j.kind==='jellyfish'?acquire(Promise.resolve(createJellyfishRig())):loadEnemy(j.kind)));
     if (!this.alive) return;
     const packs = new Map<number, Enemy[]>();
     enemyJobs.forEach((j, i) => {
       const u = this.addUnit(ENEMY_STATS[j.kind].name, j.kind, 'hostile', enemyRigs[i]);
       const a = rnd() * Math.PI * 2;
-      const r = rnd() * j.radius * 0.6;
+      const r = j.kind==='jellyfish'?0:rnd() * j.radius * 0.6;
       u.teleport(this.world, j.home.x + Math.cos(a) * r, j.home.z + Math.sin(a) * r, rnd() * Math.PI * 2);
       const e = new Enemy(this, u, j.kind, j.home.clone(), j.radius);
       this.enemies.push(e);
@@ -404,7 +418,7 @@ export class Game {
     const shotByKind = new Map<string, string>();
     for (const u of this.units) {
       if (u.kind === 'townsfolk') continue;
-      const key = u.kind === 'scrapling' || u.kind === 'scavenger' ? u.kind : `id${u.id}`;
+      const key = u.kind === 'scrapling' || u.kind === 'scavenger' || u.kind==='jellyfish' ? u.kind : `id${u.id}`;
       let shot = shotByKind.get(key);
       if (!shot) {
         try {
@@ -463,6 +477,7 @@ export class Game {
       }, 900);
     }, 700);
     this.journey = new BossJourney(this);
+    this.lighthouseSecret = new LighthouseSecret(this);
     this.journey.restore();
     this.intro();
     this.multiplayer = new Multiplayer(this);
@@ -611,6 +626,7 @@ export class Game {
     const worldTime=this.multiplayer?.battle.worldTime(f.elapsed,dt) ?? f.elapsed;
     this.world.update(dt, worldTime, this.camera);
     this.world2.update(dt,worldTime);
+    this.lighthouseSecret?.update();
     this.updateZone();
     this.updateInteractPrompt();
     this.updateMusic();
@@ -780,8 +796,9 @@ export class Game {
 
   // ================================================================ interaction and dialogue
 
-  private findInteractable(): { kind: 'unit'; unit: Unit } | { kind: 'beacon' } | {kind:'world2';node:NonNullable<ReturnType<HiddenWorld['interactable']>>} | {kind:'portal'} | null {
+  private findInteractable(): { kind: 'unit'; unit: Unit } | { kind: 'beacon' } | {kind:'secret'} | {kind:'world2';node:NonNullable<ReturnType<HiddenWorld['interactable']>>} | {kind:'portal'} | null {
     const p = this.player.unit;
+    if(this.lighthouseSecret?.nearby())return {kind:'secret'};
     let best: Unit | null = null;
     let bestScore = Infinity;
     for (const u of this.units) {
@@ -820,6 +837,7 @@ export class Game {
     }
     const it = this.findInteractable();
     if (!it) this.hud.prompt.hide();
+    else if(it.kind==='secret')this.hud.prompt.show('F',t('길게 눌러 바위의 게 문양 살펴보기','Hold to inspect the crab carving'));
     else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.portalLabel());
     else if(it.kind==='world2')this.hud.prompt.show('F',it.node.kind.startsWith('lamp')?t('길게 눌러 별빛 등불 켜기','Hold to light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
     else if (it.kind === 'beacon') this.hud.prompt.show('F', this.beaconLit?t('등대 끄기','Turn off lighthouse'):t('등대 켜기','Light lighthouse'));
@@ -829,6 +847,7 @@ export class Game {
   private interact(): void {
     const it = this.findInteractable();
     if (!it) return;
+    if(it.kind==='secret'){this.lighthouseSecret?.interact();return;}
     if(it.kind==='portal'){this.world2.travel();return;}
     if(it.kind==='world2'){
       this.player.setTarget(null);
@@ -1152,14 +1171,14 @@ export class Game {
       return;
     }
     const byPlayer = killer?.kind === 'player' || killer?.kind === 'remote';
-    if (u.kind === 'scrapling' || u.kind === 'scavenger') {
+    if (u.kind === 'scrapling' || u.kind === 'scavenger' || u.kind==='jellyfish') {
       const e = u.ctrl as Enemy;
       if (byPlayer) {
         if (!e.isAdd) { this.player.coins=Math.min(Number.MAX_SAFE_INTEGER,this.player.coins+Math.max(5,Math.round(e.stats.xp/4))); this.player.gainXp(e.stats.xp); this.journey?.onKill(); }
         if (u.kind === 'scrapling') {
           this.quests.bump('kill-scrapling');
           this.tryLootCog(u);
-        } else this.quests.bump('kill-scavenger');
+        } else if(u.kind==='scavenger')this.quests.bump('kill-scavenger');
       }
       // Killing the pack leader makes the rest come running.
       for (const m of e.pack) if (m !== e && m.unit.alive) m.aggro(false);
@@ -1331,6 +1350,8 @@ export class Game {
     if (this.resourcesReleased) return;
     this.resourcesReleased = true;
     this.journey?.dispose();
+    this.lighthouseSecret?.dispose();
+    this.lighthouseSecret = null;
     this.journey = null;
     this.multiplayer?.dispose();
     this.multiplayer = null;

@@ -177,3 +177,15 @@ test('guest portal requests cannot skip the level10 or level20 crown; World III 
  assert.equal(c.world2.chapter,3);assert.equal(c.journey.finalCleared,true);assert.equal(c.dawnBoss.state,'dead');assert.equal(cc.snapshot().bosses.length,4);
  bb.elect('b');assert.equal(b.journey.finalCleared,true);assert.equal(b.world2.chapter,3);
 });
+
+test('sea drone warning and XP checkpoint reach friends once, including a late join',()=>{
+ const {a,b,aa,bb,flush}=pair(),u=a.enemies[0].unit,v=b.enemies[0].unit;
+ u.kind=v.kind='jellyfish';u.stunned=()=>false;u.ctrl.kind='jellyfish';u.ctrl.stats.xp=45;
+ u.ctrl.seaCast={id:1,x:12,y:.2,z:18,until:a.time+.9};
+ const rings=[];b.vfx.ring=(at,_color,_a,_b,left)=>rings.push({at:at.toArray(),left});
+ aa.update(.1);flush();assert.equal(rings.length,1);assert.deepEqual(rings[0].at,[12,.2,18]);assert.equal(v.ctrl.stats.xp,45);
+ aa.update(.1);flush();assert.equal(rings.length,1);
+ const c=game(),cc=new BattleSync(c,()=>{},()=>new Map());c.enemies[0].unit.kind='jellyfish';let late=0;c.vfx.ring=()=>late++;cc.join('c','a',aa.snapshot());assert.equal(late,1);
+ const invalid=aa.snapshot();invalid.entities[0].seaCast={id:2,x:Infinity,y:.2,z:18,left:.9};bb.apply(invalid);assert.equal(rings.length,1);
+ a.time+=1;aa.update(.1);flush();assert.equal(rings.length,1);
+});

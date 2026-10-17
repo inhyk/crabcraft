@@ -5,8 +5,9 @@ import type { Game } from './game';
 import type { Unit } from './unit';
 import { C } from './vfx/vfx';
 import { damp, rand, TAU, turnToward, yawTo } from './util';
+import {t} from '../i18n';
 
-export type EnemyKind = 'scrapling' | 'scavenger';
+export type EnemyKind = 'scrapling' | 'scavenger' | 'jellyfish';
 
 interface Stats {
   name: string;
@@ -22,12 +23,13 @@ interface Stats {
 }
 
 export const ENEMY_STATS: Record<EnemyKind, Stats> = {
+  jellyfish: {name:'Tide Jelly Drone',level:2,hp:85,speed:2.6,aggro:9,dmg:[6,9],swing:3.8,xp:45,leash:20,respawn:40},
   scrapling: { name: 'Scrapling', level: 1, hp: 42, speed: 4.0, aggro: 8.5, dmg: [4, 6], swing: 2.0, xp: 20, leash: 30, respawn: 30 },
   scavenger: { name: 'Rustclaw Scavenger', level: 2, hp: 105, speed: 4.3, aggro: 11, dmg: [7, 10], swing: 2.2, xp: 50, leash: 32, respawn: 45 },
 };
 
 /** LED eye colours (design: Scraplings have one red eye; Scavengers glow amber). */
-const LED: Record<EnemyKind, string> = { scrapling: '#ff2a1a', scavenger: '#ffb020' };
+const LED: Record<EnemyKind, string> = { scrapling: '#ff2a1a', scavenger: '#ffb020',jellyfish:'#68f0df' };
 
 const v1 = new THREE.Vector3();
 const frustum = new THREE.Frustum();
@@ -42,6 +44,7 @@ export class Enemy {
   /** Boss adds never respawn. */
   isAdd = false;
   isEcho = false;
+  seaCast: { id:number; x:number; y:number; z:number; until:number } | null = null;
   private nextSwing = 0;
   private wanderAt = 0;
   private wander: THREE.Vector3 | null = null;
@@ -145,6 +148,7 @@ export class Enemy {
     const now = g.time;
     const p = g.combatTarget?.(u) ?? g.player.unit;
     if (this.state === 'gone') return;
+    if(this.kind==='jellyfish')u.name=t('심해 해파리 드론','Tide Jelly Drone');
     if (this.state === 'idle' && u.hp >= u.maxHp && u.distTo(p) > 20) this.scaleForJourney();
 
     if (this.state === 'dead') {
@@ -159,7 +163,7 @@ export class Enemy {
       }
       if (!this.isAdd && t > this.stats.respawn && this.canRespawnUnseen()) {
         const a = rand(0, TAU);
-        const r = rand(0, this.wanderRadius * 0.7);
+        const r = this.kind==='jellyfish'?0:rand(0, this.wanderRadius * 0.7);
         this.respawnAt(this.home.x + Math.cos(a) * r, this.home.z + Math.sin(a) * r);
       }
       return;
@@ -213,15 +217,25 @@ export class Enemy {
       } else {
         const gap = u.gapTo(p);
         faceYaw = yawTo(u.pos.x, u.pos.z, p.pos.x, p.pos.z);
-        if (gap > 0.9) {
+        if (gap > (this.kind==='jellyfish'?3.5:.9)) {
           const d = u.distTo(p) || 1;
           tx = (p.pos.x - u.pos.x) / d;
           tz = (p.pos.z - u.pos.z) / d;
           speed = this.stats.speed;
         }
-        if (this.kind === 'scavenger' && !stunned && now > this.leapCd && gap > 3.5 && gap < 10 && g.player.lineOfSight(u)) {
+        if(this.kind==='jellyfish'&&!stunned&&gap<5&&now>=this.nextSwing&&g.player.lineOfSight(u)){
+          this.nextSwing=now+this.stats.swing;
+          const at=p.pos.clone();at.y=Math.max(.2,g.world.heightAt(at.x,at.z)+.28);
+          this.seaCast={id:(this.seaCast?.id??0)+1,x:at.x,y:at.y,z:at.z,until:now+.9};
+          g.vfx.ring(at,C.water,1.7,1.7,.9,.85,0);
+          u.act('attack_swipe',{upper:true,hitAt:.9,onHit:()=>{
+            if(!u.alive||!p.alive||u.stunned(g.time)||g.world2.chapter!==1||u.distTo(p)>9)return;
+            g.vfx.sparks(at,C.water,14,4);
+            if(Math.hypot(p.pos.x-at.x,p.pos.z-at.z)<1.7)g.combat.damage(u,p,rand(this.stats.dmg[0],this.stats.dmg[1]));
+          }});
+        } else if (this.kind === 'scavenger' && !stunned && now > this.leapCd && gap > 3.5 && gap < 10 && g.player.lineOfSight(u)) {
           this.startLeap();
-        } else if (!stunned && gap <= 1.15 && now >= this.nextSwing) {
+        } else if (this.kind!=='jellyfish' && !stunned && gap <= 1.15 && now >= this.nextSwing) {
           this.nextSwing = now + this.stats.swing * rand(0.9, 1.1);
           u.act('attack_swipe', {
             upper: true,
@@ -261,6 +275,12 @@ export class Enemy {
       u.pushTime -= dt;
       nx += u.pushX * dt;
       nz += u.pushZ * dt;
+    }
+    // Sea drones stay in reachable water and never pursue a player onto dry land.
+    if(this.kind==='jellyfish'&&g.world2.chapter===1){
+      const resolved=new THREE.Vector2();g.world.resolveCollision(nx,nz,u.radius,resolved);
+      const depth=g.world.heightAt(resolved.x,resolved.y);
+      if(depth>-.08||depth<-.95||Math.hypot(resolved.x-this.home.x,resolved.y-this.home.z)>this.stats.leash){nx=u.pos.x;nz=u.pos.z;if(this.state==='chase'){this.state='leash';u.invulnerable=true;}else if(this.state==='leash'){nx=this.home.x;nz=this.home.z;this.state='idle';u.invulnerable=false;u.hp=u.maxHp;this.velX=this.velZ=0;}this.wander=null;}
     }
     u.moveTo(g.world, nx, nz, dt);
     if (faceYaw !== null && !stunned) u.setYaw(turnToward(u.yaw, faceYaw, 7, dt));

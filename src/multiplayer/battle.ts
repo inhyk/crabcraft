@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {t} from '../i18n';
+import {C} from '../game/vfx/vfx';
 import type { Game } from '../game/game';
 import type { Unit } from '../game/unit';
 import type { HitOptions } from '../game/combat';
@@ -47,6 +48,7 @@ export class BattleSync {
   private effectAt = 0;
   private remotePush = new Map<string, { x: number; z: number; seconds: number }>();
   private serial = 0;
+  private seaWarnings = new Map<string,number>();
   private sceneClock = 0;
   private originalMood: Game['world']['setMood'];
   private originalBeacon: Game['world']['setBeaconLit'];
@@ -85,9 +87,9 @@ export class BattleSync {
     }
     this.elapsed = 1;
   }
-  leave() { this.active = false; this.host = ''; this.goals.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
+  leave() { this.active = false; this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
   elect(host: string) {
-    const was = this.authority; this.host = host;
+    const was = this.authority; this.host = host;this.seaWarnings.clear();
     if (!was && this.authority) {
       // The former follower has the latest checkpoint. Discard any delayed local swings.
       for (const u of this.units.values()) u.cancelPendingHit();
@@ -225,12 +227,13 @@ export class BattleSync {
   private snapshot(): WorldState {
     const g = this.game, now = g.time;
     return {social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
-      const e = u.kind === 'scrapling' || u.kind === 'scavenger' ? u.ctrl as Enemy : null;
+      const e = u.kind === 'scrapling' || u.kind === 'scavenger' || u.kind === 'jellyfish' ? u.ctrl as Enemy : null;
       const round = (n: number) => Math.round(n * 1000) / 1000;
       return { id, x: round(u.pos.x), y: round(u.pos.y), z: round(u.pos.z), yaw: round(u.yaw), hp: u.hp, maxHp: u.maxHp,
         level: u.level, alive: u.alive, hidden: u.hidden, invulnerable: u.invulnerable, targetable: u.targetable,
         stun: Math.min(60,Math.max(0,u.stunUntil-now)), slow: Math.min(60,Math.max(0,u.slowUntil-now)), slowPct: u.slowPct,
-        rust: u.rust, rustFor: Math.min(60,Math.max(0,u.rustUntil-now)), ...(e ? { enemyState: e.state, xp: e.stats.xp } : {}) };
+        rust: u.rust, rustFor: Math.min(60,Math.max(0,u.rustUntil-now)), ...(e ? { enemyState: e.state, xp: e.stats.xp } : {}),
+        ...(e?.kind==='jellyfish'&&e.seaCast&&e.seaCast.until>now&&u.alive&&!u.stunned(now)?{seaCast:{id:e.seaCast.id,x:e.seaCast.x,y:e.seaCast.y,z:e.seaCast.z,left:Math.min(.9,e.seaCast.until-now)}}:{}) };
     }), bosses: [g.boss.networkState('b3'),g.finalBoss.networkState('b10'),g.worldBoss.networkState('b20'),g.dawnBoss.networkState('b30')], chapter:g.world2.chapter,finalCleared:!!g.journey?.finalCleared, firstEnding:!!g.journey?.firstEndingSeen, trueCleared:!!g.journey?.trueCleared, rust: !!g.journey?.rustCleared, abyss: !!g.journey?.abyssCleared };
   }
   private publish() { if (this.active && this.authority) this.send({ type: 'world', world: this.snapshot() }); }
@@ -257,6 +260,12 @@ export class BattleSync {
         Object.assign(u, { hp:s.hp,maxHp:s.maxHp,level:s.level,alive:s.alive,hidden:s.hidden,invulnerable:s.invulnerable,targetable:s.targetable,
           stunUntil:g.time+s.stun,slowUntil:g.time+s.slow,slowPct:s.slowPct,rust:s.rust,rustUntil:g.time+s.rustFor });
         if (s.enemyState) { const e = u.ctrl as Enemy; e.state=s.enemyState; e.stats.xp=s.xp ?? e.stats.xp; }
+        const cast=s.seaCast;
+        if(u.kind==='jellyfish'&&u.alive&&!u.hidden&&cast&&Number.isSafeInteger(cast.id)&&cast.id>0&&
+          [cast.x,cast.y,cast.z].every(n=>Number.isFinite(n)&&Math.abs(n)<=2000)&&Number.isFinite(cast.left)&&cast.left>0&&cast.left<=.9&&this.seaWarnings.get(s.id)!==cast.id){
+          this.seaWarnings.set(s.id,cast.id);
+          g.vfx.ring(new THREE.Vector3(cast.x,cast.y,cast.z),C.water,1.7,1.7,cast.left,.85,0);
+        }
         this.goals.set(u,s);
       }
       for (const s of world.bosses) (s.id==='b30'?g.dawnBoss:s.id === 'b3' ? g.boss : s.id === 'b20' ? g.worldBoss : g.finalBoss).applyNetwork(s);

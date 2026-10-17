@@ -258,7 +258,7 @@ export class HiddenWorld {
     if(g.hud.questLog.open)g.hud.questLog.render();
     {
       const mobs=g.enemies.filter(e=>!e.isAdd);
-      mobs.forEach((e,i)=>{const side=e.kind==='scrapling'?-1:1;const x=i<3?[19,30,20][i]:side*(60+(i%4)*7),z=i<3?[-8,-22,-34][i]:28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority&&!e.isEcho)e.respawnAt(x,z);if(e.isEcho)e.despawn();e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.refreshAppearance();});
+      mobs.forEach((e,i)=>{if(e.kind==='jellyfish'){e.despawn();return;}const side=e.kind==='scrapling'?-1:1;const x=i<3?[19,30,20][i]:side*(60+(i%4)*7),z=i<3?[-8,-22,-34][i]:28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority&&!e.isEcho)e.respawnAt(x,z);if(e.isEcho)e.despawn();e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.refreshAppearance();});
       for(const e of g.enemies.filter(e=>e.isAdd))e.despawn();
     }
     this.echoAt=g.time+45;
@@ -284,7 +284,7 @@ export class HiddenWorld {
     this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,4,26),new THREE.Vector3(0,9,-22),third.arena.position],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
     for(const b of [g.boss,g.finalBoss,g.worldBoss]){b.unit.hidden=true;b.freed.hidden=true;}g.dawnBoss.unit.hidden=['dormant','dead'].includes(g.dawnBoss.state);
     {const f=g.dawnBoss.freed;f.hidden=false;f.targetable=false;if(g.journey?.finalCleared)f.teleport(w,14,60);else f.teleport(w,13,-57);}
-    g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho){e.despawn();return;}const x=(i%2?1:-1)*(43+i%4*8),z=16-Math.floor(i/2)*10;e.home.set(x,third.height(x,z),z);if(authority)e.respawnAt(x,z);});
+    g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const x=(i%2?1:-1)*(43+i%4*8),z=16-Math.floor(i/2)*10;e.home.set(x,third.height(x,z),z);if(authority)e.respawnAt(x,z);});
     g.quests.setChapter(3);g.hud.hints.setChapter(3);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
     g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
     g.hud.messages.banner(()=>t('WORLD III · 새벽을 잃은 섬','WORLD III · Isle of the Stolen Dawn'),()=>t('친구 미라를 구하고 30레벨 황혼의 왕에게 도전하세요','Rescue Mira and challenge the Twilight King at level 30'),'zone');

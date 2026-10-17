@@ -3,6 +3,7 @@ export type EntityState = {
   id: string; x: number; y: number; z: number; yaw: number; hp: number; maxHp: number;
   level: number; alive: boolean; hidden: boolean; invulnerable: boolean; targetable: boolean;
   stun: number; slow: number; slowPct: number; rust: number; rustFor: number;
+  seaCast?: { id:number; x:number; y:number; z:number; left:number };
   enemyState?: 'idle' | 'chase' | 'leash' | 'dead' | 'gone'; xp?: number;
 };
 export type BossState = {
