@@ -1,0 +1,103 @@
+# Builds the game (and the Node server once `pnpm build:server` exists) and ships it to the
+# crabcraft-1 VM: push to dev -> https://crabcraft-dev.seonn.dev, push to main ->
+# https://crabcraft.seonn.dev. The VM side lives in deploy/vm/ (activate.sh, Caddyfile, units).
+name: Deploy
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DEPLOY_ENV: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+      SITE: ${{ github.ref_name == 'main' && 'crabcraft.seonn.dev' || 'crabcraft-dev.seonn.dev' }}
+      SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+          cache: true
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - name: Build the server (when the repo has one)
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.['build:server'] ? 0 : 1)"; then
+            pnpm build:server
+            test -f server-dist/main.mjs
+          else
+            echo "no build:server script; this release is static only"
+          fi
+
+      - run: pnpm test:multiplayer
+
+      - name: Stage the release
+        run: |
+          mkdir release
+          mv dist release/dist
+          if [ -d server-dist ]; then mv server-dist release/server-dist; fi
+          du -sh release/*
+
+      - name: SSH key
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_KNOWN_HOSTS: ${{ secrets.VM_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Upload to releases/${{ github.sha }}
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          # --link-dest reuses unchanged files from the live release on the VM, so only what
+          # changed crosses the network. Checksums, not mtimes: the runner's files are all new.
+          rsync -rlc --delete --chmod=D755,F644 \
+            --link-dest="/srv/crabcraft/$DEPLOY_ENV/current/" \
+            -e "ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes" \
+            release/ "deploy@$VM_HOST:/srv/crabcraft/$DEPLOY_ENV/releases/$SHA/"
+
+      - name: Activate
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "deploy@$VM_HOST" "sudo /srv/crabcraft/bin/activate.sh $DEPLOY_ENV $SHA"
+
+      - name: Smoke test https://${{ env.SITE }}
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS -o /dev/null -D headers.txt "https://$SITE/"; then break; fi
+            sleep 6
+          done
+          cat headers.txt
+          grep -qi '^cross-origin-opener-policy: same-origin' headers.txt
+          grep -qi '^cross-origin-embedder-policy: require-corp' headers.txt
+          curl -fsS "https://$SITE/" | cmp - release/dist/index.html
+          if [ -d release/server-dist ]; then curl -fsS "https://$SITE/healthz"; fi
+
+      - name: Remove the SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
