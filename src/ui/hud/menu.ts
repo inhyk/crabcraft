@@ -1,10 +1,11 @@
-// Esc game menu: Resume, Settings (music and effects volume, graphics quality, chat bubbles),
+// Esc game menu: Resume, Settings (music and effects volume, graphics quality, chat bubbles, public chat),
 // Controls, Videos, Robot Mode, Return to Title.
 import { h } from '../dom';
 import {language,setLanguage,t,type Language} from '../../i18n';
 import {setQuestLanguage} from '../../game/quests';
 import { localStorageSet } from '../../app';
 import { openVideos } from '../videos';
+import { publicChatOn, setPublicChat } from '../../multiplayer/chatSafety';
 import type { Game } from '../../game/game';
 import type { QualitySetting } from '../../core/engine';
 
@@ -137,6 +138,11 @@ export class GameMenu {
       h('div', { class: 'row' }, t('말풍선','Chat bubbles'), seg([['on', t('켜기','On')], ['off', t('끄기','Off')]], g.hud.bubbles.enabled ? 'on' : 'off', (v) => {
         g.hud.bubbles.enabled = v === 'on';
       })),
+      h('div', { class: 'row' }, t('공개 채팅 보기','Show public chat'), seg([['on', t('켜기','On')], ['off', t('끄기','Off')]], publicChatOn() ? 'on' : 'off', (v) => {
+        setPublicChat(v === 'on');
+        g.multiplayer?.setPublicChat(v === 'on');
+      })),
+      h('div', { class: 'res-note' }, t('끄면 모르는 모험가의 채팅과 말풍선이 보이지 않아요. 친구와 만든 방의 채팅은 그대로 보여요.','Off hides chat and bubbles from strangers in the public world. Rooms with friends still show chat.')),
       this.btn(t('뒤로','Back'), () => this.main()),
     );
     this.updateResNote();
