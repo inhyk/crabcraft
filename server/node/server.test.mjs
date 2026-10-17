@@ -109,7 +109,7 @@ test('healthz reports the database; other paths answer like the Worker', async (
   assert.equal((await http('GET', '//')).status, 400);
   assert.equal((await http('GET', '/healthz')).status, 200);
   const { rows } = await db.query('SELECT version FROM schema_migrations ORDER BY version');
-  assert.deepEqual(rows.map(r => r.version), ['001_accounts', '002_google_only']);
+  assert.deepEqual(rows.map(r => r.version), ['001_accounts', '002_google_only', '003_chat_reports']);
   // 002 removed the password account, its session and its login counter.
   const counts = await db.query(`SELECT (SELECT count(*) FROM accounts)::int AS a, (SELECT count(*) FROM sessions)::int AS s, (SELECT count(*) FROM rate_limits WHERE id LIKE 'login:%')::int AS r`);
   assert.deepEqual(counts.rows[0], { a: 0, s: 0, r: 0 });
@@ -176,6 +176,47 @@ test('entering the world puts players in a public shard of their area, dropped o
   assert.match(cr.room, /^W3/); assert.notEqual(cr.room, ar.room); assert.deepEqual(cr.players, []);
   const lost = await client('join', ar.room);
   assert.match((await lost.next('error')).message, /not found/);
+});
+
+test('chat is masked and reports are stored in Postgres; three reporters mute a player, who still hears themselves', async () => {
+  const sid = i => `server-test-${i}-${'y'.repeat(10)}`;
+  const target = await client('enter', '', ORIGIN, { area: 2, session: sid('t'), spec: { ...spec, name: 'Rude crab' } });
+  const tr = await target.next('welcome');
+  const kids = [];
+  for (let i = 0; i < 3; i++) { const c = await client('enter', '', OTHER_ORIGIN, { area: 2, session: sid(i), spec: { ...spec, name: `Kid ${i}` } }); assert.equal((await c.next('welcome')).room, tr.room); kids.push(c); }
+  const renamed = await client('enter', '', ORIGIN, { area: 2, spec: { ...spec, name: 'ㅅㅂ crab' } });
+  assert.equal((await renamed.next('welcome')).renamed, '게 모험가');
+  assert.equal((await kids[0].next('joined')).spec.name, 'Kid 1');
+  target.send({ type: 'chat', text: '병신아 010 1234 5678 로 문자해' });
+  for (const c of kids) assert.equal((await c.next('chat')).text, '**아 *** **** **** 로 문자해');
+  for (const [i, c] of kids.entries()) {
+    c.send({ type: 'report', id: tr.id, reason: ['abuse', 'personal', 'harassment'][i] });
+    assert.deepEqual(await c.next('reported'), { type: 'reported', id: tr.id, ok: true });
+  }
+  let rows = [];
+  for (const until = Date.now() + 3000; rows.length < 3 && Date.now() < until; await new Promise(r => setTimeout(r, 50)))
+    ({ rows } = await db.query('SELECT * FROM chat_reports WHERE target_session = $1 ORDER BY id', [sid('t')]));
+  assert.deepEqual(rows.map(r => [r.reason, r.muted, r.reporter_name, r.reporter_session, r.reporter_account, r.target_name, r.room]), [
+    ['abuse', false, 'Kid 0', sid(0), null, 'Rude crab', tr.room], ['personal', false, 'Kid 1', sid(1), null, 'Rude crab', tr.room], ['harassment', true, 'Kid 2', sid(2), null, 'Rude crab', tr.room]]);
+  assert.deepEqual(rows[0].target_lines.map(l => l.text), ['**아 *** **** **** 로 문자해']);
+  assert.ok(rows[0].created instanceof Date && Math.abs(rows[0].created - Date.now()) < 60000);
+  // Nothing in a row looks like an address: the relay never hands one over.
+  assert.equal(/\b\d{1,3}(\.\d{1,3}){3}\b/.test(JSON.stringify(rows)), false);
+  await new Promise(r => setTimeout(r, 720));
+  target.send({ type: 'chat', text: 'anyone?' });
+  assert.equal((await target.next('chat')).text, '**아 *** **** **** 로 문자해');
+  assert.equal((await target.next('chat')).text, 'anyone?');
+  await new Promise(r => setTimeout(r, 150));
+  for (const c of kids) assert.equal(c.queue.some(m => m.type === 'chat'), false);
+  // The lister on the VM reads them back.
+  const lister = spawn(process.execPath, [join(root, 'server-dist/reports.mjs'), '--hours', '1'], { env: { PATH: process.env.PATH, DATABASE_URL }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let listed = ''; lister.stdout.on('data', d => { listed += d; }); lister.stderr.on('data', d => { listed += d; });
+  assert.equal((await once(lister, 'exit'))[0], 0, listed);
+  assert.match(listed, /chat reports in the last 1 h: 3/);
+  assert.match(listed, /괴롭힘 harassment {2}-> muted for 30 min/);
+  assert.match(listed, /target {4}Rude crab/);
+  assert.ok(listed.includes('**아 *** **** **** 로 문자해'), listed);
+  for (const c of [target, renamed, ...kids]) c.ws.close();
 });
 
 test('disallowed origins, oversized messages and other upgrade paths are refused', async () => {

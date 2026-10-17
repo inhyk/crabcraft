@@ -12,6 +12,7 @@ import { h } from '../ui/dom';
 import './multiplayer.css';
 import {t} from '../i18n';
 import { Link, type Lost, type Message, type Mode } from './link';
+import { Blocklist, REPORT_REASONS, chatSession, displayName, markSafetyNote, publicChatOn, safetyNoteSeen } from './chatSafety';
 
 type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number };
 /** `dance`: the peer's breakdance, replayed here move by move as the peer announces them. */
@@ -23,6 +24,7 @@ const ROMAN = ['', 'I', 'II', 'III'];
  * A shard shares presence, emotes and chat, while combat, quests and saves stay each player's own.
  * A code room with friends (`room`) shares one simulated world: bosses, travel and parties.
  * A dropped shard socket keeps coming back (see ./link); a code room retries a few times, then returns to the public world.
+ * The server masks chat; here a player can block and report others and hide public chat (./chatSafety).
  */
 export class Multiplayer {
   readonly root: HTMLDetailsElement;
@@ -62,13 +64,23 @@ export class Multiplayer {
   private sendButton = h('button', { type: 'submit' }, '전송');
   private partyPanel=h('div',{class:'mp-party'});
   private statusText:[string,string]=['연결 중…','Connecting…'];
+  private readonly blocked = new Blocklist();
+  private readonly session = chatSession();
+  private publicChat = publicChatOn();
+  /** The player whose block and report buttons are open, from the roster or a chat line. */
+  private picked: { id: string; name: string; reporting: boolean } | null = null;
+  private actions = h('div', { class: 'mp-act', role: 'group', hidden: true });
+  private blockedList = h('details', { class: 'mp-blocked', hidden: true });
+  private rosterKey = '';
+  private renamedNoted = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private game: Game) {
     this.link = new Link((mode, room) => this.socketUrl(mode, room), {
       hello: (mode, room) => {
         const spec = this.game.player.unit.rig.spec;
-        return mode === 'enter' ? { type: mode, area: this.game.world2.chapter, spec } : { type: mode, room, combatVersion: 1, spec };
+        const session = this.session;
+        return mode === 'enter' ? { type: mode, area: this.game.world2.chapter, spec, session } : { type: mode, room, combatVersion: 1, spec, session };
       },
       message: msg => this.receive(msg),
       lost: info => this.lost(info),
@@ -84,17 +96,23 @@ export class Multiplayer {
       e.preventDefault();
       if ((this.room || this.shard) && this.chat.value.trim()) { this.send({ type: 'chat', text: this.chat.value }); this.chat.value = ''; }
     } }, this.chat, this.sendButton);
+    // Once, the first time the chat opens among strangers.
+    this.chat.addEventListener('focus', () => {
+      if (!this.shard || safetyNoteSeen()) return;
+      markSafetyNote();
+      this.note(t('모르는 사람에게 이름, 학교, 전화번호를 알려 주지 마세요.','Never share your name, school or phone number with strangers.'), 'mp-safety');
+    });
     this.modeRow = h('div',{class:'mp-row'},h('button',{type:'button','data-mode':'coop',onclick:()=>this.battle.setMode('coop')},t('협동 모드','Co-op')),h('button',{type:'button','data-mode':'pvp',onclick:()=>this.battle.setMode('pvp')},t('⚔ 싸우기 모드','⚔ PvP')));
     this.partyRow = h('div',{class:'mp-row'},...([0,1,2,3,4].map(p=>h('button',{type:'button','data-party':p,onclick:()=>this.battle.setParty(p)},p===0?t('혼자','Solo'):`${t('파티','Party')} ${p}`))));
     const params = new URLSearchParams(location.search);
     this.root = h('details', { class: 'mp-panel', open: params.has('multiplayer') || params.has('room') },
-      this.summary, this.status, this.intro, this.roster, this.reconnect,
+      this.summary, this.status, this.intro, this.roster, this.blockedList, this.reconnect,
       this.friends, this.code, h('div', { class: 'mp-row' }, this.create, this.share, this.leave), form, this.invite,
       h('div', { class: 'mp-row' }, h('button', { type: 'button', 'data-emote':'hello', onclick: () => this.emote('gesture_hello') }, '👋 인사'), h('button', { type: 'button', 'data-emote':'dance', onclick: () => this.emote('dance_crab') }, '💃 춤'),
         // The B emote. The button gives the keyboard back so moving can end the routine.
         h('button', { type: 'button', 'data-emote':'breakdance', onclick: (e: Event) => { (e.currentTarget as HTMLElement).blur(); this.game.player.toggleBreakdance(); } }, '🕺 브레이크댄스')),
       this.modeRow, this.partyRow,
-      this.partyPanel,this.log, chatForm,
+      this.partyPanel,this.actions,this.log, chatForm,
     );
     // Opening a form clears held movement keys. Typing never controls the crab.
     this.root.addEventListener('focusin', () => window.dispatchEvent(new Event('blur')));
@@ -160,6 +178,10 @@ export class Multiplayer {
           this.input.value = this.room;
           this.note(t(`방 ${this.room}에 참가했어요.`,`Joined room ${this.room}.`));
         }
+        if (typeof msg.renamed === 'string' && !this.renamedNoted) {
+          this.renamedNoted = true;
+          this.note(t(`이름에 쓸 수 없는 말이 있어서 다른 모험가에게는 ‘${displayName(msg.renamed)}’로 보여요.`,`Your name has words that cannot be shown, so others see you as “${displayName(msg.renamed)}”.`), 'mp-system');
+        }
         for (const p of msg.players) this.addPeer(p.id, p.spec, p.state);
         this.updateUi();
         break;
@@ -167,14 +189,23 @@ export class Multiplayer {
       case 'authority': this.battle.elect(msg.host); break;
       case 'world': if (!this.battle.authority) this.battle.apply(msg.world); break;
       case 'combat': this.battle.receive(msg.id, msg.event); break;
-      case 'joined': this.addPeer(msg.id, msg.spec, null); this.note(t(`${msg.spec.name}님이 들어왔어요.`,`${msg.spec.name} joined.`)); this.updateUi(); break;
+      case 'joined': { this.addPeer(msg.id, msg.spec, null); const name = displayName(msg.spec.name); this.note(t(`${name}님이 들어왔어요.`,`${name} joined.`)); this.updateUi(); break; }
       case 'left': this.removePeer(msg.id); this.updateUi(); break;
       case 'state': { const p = this.peers.get(msg.id); if (p) p.state = msg.state; break; }
       case 'action': this.peerAction(msg.id, msg.action); break;
-      case 'chat':
-        this.note(`${msg.name}: ${msg.text}`);
-        { const unit = msg.id === this.ownId ? this.game.player.unit : this.peers.get(msg.id)?.unit;
-          if (unit) this.game.hud.bubbles.say(this.game, unit, msg.text); }
+      case 'chat': {
+        const line = this.chatLine(String(msg.id), String(msg.name), String(msg.text));
+        const unit = msg.id === this.ownId ? this.game.player.unit : this.peers.get(msg.id)?.unit;
+        if (unit && !line.hidden) this.game.hud.bubbles.say(this.game, unit, msg.text);
+        break;
+      }
+      case 'chatRefused': {
+        const why: Record<string, [string, string]> = { fast: ['조금 천천히 보내 주세요.', 'Slow down a little.'], burst: ['너무 많이 보냈어요. 잠시 뒤에 다시 보내 주세요.', 'Too many messages. Wait a moment.'], repeat: ['같은 말은 조금 뒤에 다시 보낼 수 있어요.', 'You just sent that. Try again later.'] };
+        this.note(t(...(why[msg.reason] ?? why.fast)), 'mp-system');
+        break;
+      }
+      case 'reported':
+        this.note(msg.ok ? t('신고를 보냈어요. 알려 줘서 고마워요.','Report sent. Thank you for telling us.') : t('신고를 보내지 못했어요. 이미 신고했거나 잠시 뒤에 다시 할 수 있어요.','Could not send the report. You may have reported them already; try again later.'), 'mp-system');
         break;
       case 'error': {
         const error = this.serverError(String(msg.message)), tried = this.link.mode;
@@ -221,7 +252,7 @@ export class Multiplayer {
     this.peers.set(id, peer);
     void createCrab(spec).then(rig => {
       if (this.disposed || this.peers.get(id) !== peer) { rig.dispose(); return; }
-      const unit = new Unit(spec.name, 'remote', 'friendly', rig, createMotionController(rig));
+      const unit = new Unit(displayName(spec.name), 'remote', 'friendly', rig, createMotionController(rig));
       unit.title = t('함께 전투 중','Adventuring together'); unit.targetable = false; unit.invulnerable = true;
       const spawn = state ?? this.game.player.unit.pos;
       unit.pos.set(spawn.x, 'y' in spawn ? spawn.y : 0, spawn.z);
@@ -303,10 +334,82 @@ export class Multiplayer {
     else if (action === 'breakdance_stop') p.dance?.cancel();
     else u.act(action as MotionId);
   }
-  private note(text: string) {
-    this.log.append(h('div', null, text));
+  private note(text: string, cls = '') {
+    this.append(h('div', { class: cls || undefined }, text));
+  }
+  private append(line: HTMLElement) {
+    this.log.append(line);
     while (this.log.childElementCount > 40) this.log.firstElementChild?.remove();
     this.log.scrollTop = this.log.scrollHeight;
+  }
+  /** A chat line; another player's name opens block and report. Returns it hidden when that player is blocked or public chat is off. */
+  private chatLine(id: string, name: string, text: string) {
+    const own = id === this.ownId, shown = displayName(name);
+    const who = own ? h('strong', null, shown) : h('button', { type: 'button', class: 'mp-who', 'aria-label': t(`${shown}: 차단 또는 신고`,`${shown}: block or report`), onclick: () => this.pick({ id, name }) }, shown);
+    const line = h('div', { class: 'mp-line', 'data-id': id, 'data-name': name, 'data-public': this.shard ? '1' : null }, who, ': ', text);
+    line.hidden = this.hides(line);
+    this.append(line);
+    return line;
+  }
+  private hides(line: HTMLElement) {
+    return (line.dataset.public === '1' && !this.publicChat) || (line.dataset.id !== this.ownId && this.blocked.has(line.dataset.id!, line.dataset.name!));
+  }
+  /** After a block, an unblock or the public chat switch: which lines and bubbles show. */
+  private refreshChat() {
+    for (const line of this.log.querySelectorAll<HTMLElement>('.mp-line')) line.hidden = this.hides(line);
+    for (const [id, p] of this.peers) if (p.unit && ((this.shard && !this.publicChat) || this.blocked.has(id, p.spec.name))) this.game.hud.bubbles.forget(p.unit);
+    this.renderBlocked(); this.rosterKey = ''; this.updateUi();
+  }
+  /** Esc menu, Settings: show or hide public-shard chat. Rooms with friends are not affected. */
+  setPublicChat(on: boolean) {
+    if (on === this.publicChat) return;
+    this.publicChat = on;
+    this.note(on ? t('공개 채팅을 켰어요.','Public chat is on.') : t('공개 채팅을 껐어요. Esc 메뉴의 설정에서 다시 켤 수 있어요.','Public chat is off. Turn it back on in Settings (Esc).'), 'mp-system');
+    this.refreshChat();
+  }
+  /** Opens (or with null closes) the block and report buttons for a player. */
+  private pick(who: { id: string; name: string } | null, reporting = false) {
+    this.picked = who && { ...who, reporting };
+    const p = this.picked;
+    this.actions.hidden = !p;
+    if (!p) { this.actions.replaceChildren(); return; }
+    const shown = displayName(p.name), blocked = this.blocked.has(p.id, p.name);
+    const button = (label: string, run: () => void, cls = '') => h('button', { type: 'button', class: cls || undefined, onclick: run }, label);
+    this.actions.setAttribute('aria-label', t(`${shown}에게 할 일`,`Actions for ${shown}`));
+    this.actions.replaceChildren(
+      h('strong', null, reporting ? t(`${shown}님을 신고하는 이유`,`Why are you reporting ${shown}?`) : shown),
+      h('div', { class: 'mp-row' }, ...(reporting
+        ? [...REPORT_REASONS.map(([reason, ko, en]) => button(t(ko, en), () => { this.send({ type: 'report', id: p.id, reason }); this.pick(null); })), button(t('취소','Cancel'), () => this.pick(null))]
+        : [blocked ? button(t('차단 풀기','Unblock'), () => { this.blocked.unblock(p.name); this.pick(null); this.refreshChat(); }) : button(t('🚫 차단','🚫 Block'), () => this.block(p.id, p.name), 'mp-block'),
+          button(t('🚩 신고','🚩 Report'), () => this.pick(p, true), 'mp-report'), button(t('닫기','Close'), () => this.pick(null))])));
+    this.actions.scrollIntoView({ block: 'nearest' });
+  }
+  private block(id: string, name: string) {
+    this.blocked.block(id, name);
+    this.pick(null);
+    const shown = displayName(name);
+    this.note(t(`${shown}님을 차단했어요. 채팅과 말풍선이 보이지 않아요.`,`Blocked ${shown}. You will not see their chat or bubbles.`), 'mp-system');
+    this.refreshChat();
+  }
+  private renderBlocked() {
+    const names = this.blocked.list();
+    this.blockedList.hidden = !names.length;
+    this.blockedList.replaceChildren(h('summary', null, t(`차단한 모험가 ${names.length}명`,`Blocked players: ${names.length}`)),
+      ...names.map(name => h('div', { class: 'mp-row mp-blocked-row' }, h('span', null, displayName(name)),
+        h('button', { type: 'button', 'aria-label': t(`${displayName(name)} 차단 풀기`,`Unblock ${displayName(name)}`), onclick: () => { this.blocked.unblock(name); this.refreshChat(); } }, t('차단 풀기','Unblock')))));
+  }
+  /** Players here; each other player's name opens block and report. Rebuilt only when it changes, so focus stays. */
+  private renderRoster(online: boolean, count: number) {
+    const others = [...this.peers].map(([id, p]) => [id, p.spec.name] as const);
+    const key = JSON.stringify([online, count, this.game.player.unit.name, others, others.map(([id, name]) => this.blocked.has(id, name)), t('명',' players')]);
+    if (key === this.rosterKey) return;
+    this.rosterKey = key;
+    if (!online) { this.roster.replaceChildren(); return; }
+    this.roster.replaceChildren(`${count}/8${t('명',' players')} · `, h('span', null, this.game.player.unit.name),
+      ...others.flatMap(([id, name]) => {
+        const shown = displayName(name), blocked = this.blocked.has(id, name);
+        return [', ', h('button', { type: 'button', class: `mp-who${blocked ? ' blocked' : ''}`, 'aria-label': t(`${shown}${blocked ? ' (차단함)' : ''}: 차단 또는 신고`,`${shown}${blocked ? ' (blocked)' : ''}: block or report`), onclick: () => this.pick({ id, name }) }, shown)];
+      }));
   }
   private updateUi() {
     const open = this.link.open;
@@ -317,9 +420,11 @@ export class Multiplayer {
     this.join.disabled = !!connecting || !!connected;
     this.share.disabled = !connected;
     this.leave.disabled = !this.room; this.leave.hidden = !this.room;
-    this.chat.disabled = !online; this.sendButton.disabled = !online;
+    const muted = !!this.shard && !this.publicChat;
+    this.chat.disabled = !online || muted; this.sendButton.disabled = !online || muted;
+    this.chat.placeholder = muted ? t('공개 채팅이 꺼져 있어요','Public chat is off') : t('함께 있는 모험가에게 말하기','Message everyone here');
     this.code.textContent = this.room;
-    this.roster.textContent = online ? `${count}/8${t('명',' players')} · ${[this.game.player.unit.name,...[...this.peers.values()].map(p=>p.spec.name)].join(', ')}` : '';
+    this.renderRoster(online, count);
     this.invite.hidden = !connected;
     this.invite.value = this.inviteUrl();
     // Offline, the link still retries on its own; the button tries now.
@@ -340,10 +445,11 @@ export class Multiplayer {
     this.friends.textContent=t('친구와 방 만들기','Room with friends');
     for(const [button,ko,en] of [[this.create,'방 만들기','Create room'],[this.join,'참가','Join'],[this.leave,'나가기','Leave'],[this.share,'초대 링크 복사','Copy invite link'],[this.sendButton,'전송','Send'],[this.reconnect,'다시 연결','Reconnect']] as const)button.textContent=t(ko,en);
     this.input.placeholder=t('방 코드 6자리','Six-character room code');this.input.setAttribute('aria-label',t('방 코드','Room code'));
-    this.chat.placeholder=t('함께 있는 모험가에게 말하기','Message everyone here');this.chat.setAttribute('aria-label',t('채팅 메시지','Chat message'));
+    this.chat.setAttribute('aria-label',t('채팅 메시지','Chat message'));
     this.log.setAttribute('aria-label',t('채팅','Chat'));this.invite.setAttribute('aria-label',t('초대 링크','Invite link'));
     this.root.querySelector('[data-emote="hello"]')!.textContent=t('👋 인사','👋 Wave');this.root.querySelector('[data-emote="dance"]')!.textContent=t('💃 춤','💃 Dance');
     this.root.querySelector('[data-emote="breakdance"]')!.textContent=t('🕺 브레이크댄스','🕺 Breakdance');
+    this.rosterKey='';if(this.picked)this.pick(this.picked,this.picked.reporting);this.renderBlocked();
     this.setStatus(...this.statusText);this.updateUi();this.updateSocialButtons();
   }
   private updateSocialButtons(){

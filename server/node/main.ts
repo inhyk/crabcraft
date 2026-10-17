@@ -3,6 +3,7 @@ import type { Duplex } from 'node:stream';
 import { attachRooms } from '../rooms.ts';
 import { accountHandler, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, originAllowed } from './accounts.ts';
 import { createPool, migrate } from './db.ts';
+import { storeReport } from './reports.ts';
 
 // Rooms and accounts for the browser client: what server/cloudflare/worker.ts served, on one VM behind Caddy.
 // Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy,
@@ -68,16 +69,19 @@ const relay = attachRooms(server, {
   keepRooms: 24 * 60 * 60 * 1000,
   maxRooms: 512,
   maxMembers: 512,
+  // Read with server-dist/reports.mjs on the VM.
+  report: r => storeReport(pool, r),
 });
 // attachRooms only answers /multiplayer upgrades; refuse the rest instead of leaving them open.
 server.on('upgrade', (req: IncomingMessage, socket: Duplex) => {
   if (req.url?.split('?')[0] !== '/multiplayer') socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
 });
 
-// Expired sessions and rate-limit windows are only ever read to be rejected; drop them hourly.
+// Expired sessions and rate-limit windows are only ever read to be rejected; drop them hourly. Chat reports go after 90 days.
 const cleanup = setInterval(() => {
   const now = Date.now();
-  void Promise.all([pool.query('DELETE FROM sessions WHERE expires < $1', [now]), pool.query('DELETE FROM rate_limits WHERE until < $1', [now])])
+  void Promise.all([pool.query('DELETE FROM sessions WHERE expires < $1', [now]), pool.query('DELETE FROM rate_limits WHERE until < $1', [now]),
+    pool.query(`DELETE FROM chat_reports WHERE created < now() - interval '90 days'`)])
     .catch(e => console.error(`cleanup: ${e instanceof Error ? e.message : String(e)}`));
 }, 60 * 60 * 1000);
 cleanup.unref();

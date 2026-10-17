@@ -40,6 +40,15 @@ cat /srv/crabcraft/prod/history                    # 활성화 기록
 - Caddy 설정은 `/etc/caddy/Caddyfile`, 서버 유닛은 `crabcraft-server@.service` 다.
 - 영상은 버킷 `gs://crabcraft-seonn-media/media/` 에 올린다. VM 이 10분마다 `/srv/crabcraft/media/` 로 받아 와(`crabcraft-media-sync.timer`) `/media/` 로 내보낸다. 버킷은 공개할 수 없어서 이렇게 한다.
 
+## 채팅 신고 보기
+
+플레이어가 채팅에서 신고하면 서버가 `chat_reports` 표에 남긴다(신고한 사람과 신고된 사람의 이름, 신고된 사람의 최근 채팅 20줄(이미 가려진 글), 방 코드, 이유, 시각. IP 주소는 남기지 않는다). 10분 안에 서로 다른 세 사람이 같은 사람을 신고하면 그 사람의 채팅은 30분 동안 본인에게만 보인다. 90일이 지난 신고는 매시간 정리할 때 지운다. VM 에서 읽기만 하는 명령으로 본다.
+
+```bash
+sudo -u crabcraft node --env-file=/etc/crabcraft/prod.env /srv/crabcraft/prod/current/server-dist/reports.mjs --hours 48
+sudo -u crabcraft node --env-file=/etc/crabcraft/dev.env /srv/crabcraft/dev/current/server-dist/reports.mjs --limit 20 --json
+```
+
 ## VM 설정 바꾸기
 
 `deploy/vm/` 의 파일(Caddyfile, 유닛, 스크립트)은 워크플로가 올리지 않는다. 바꿨으면 merge 한 뒤 VM 에서 `setup.sh` 를 다시 실행한다. 여러 번 실행해도 같은 결과가 나오고, 기존 DB 비밀번호와 env 파일 값은 그대로 둔다.

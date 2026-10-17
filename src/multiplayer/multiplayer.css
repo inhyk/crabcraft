@@ -23,3 +23,20 @@
 .mp-panel .mp-friends{margin:12px 0 2px;padding-top:10px;border-top:1px solid #ffffff1a;font-size:12px;font-weight:700;color:#ffe09a}
 .mp-panel .mp-reconnect{margin-top:4px}
 .mp-panel [hidden]{display:none!important}
+
+.mp-panel .mp-who{padding:0 3px;border:0;border-radius:3px;background:none;color:#ffe09a;font-weight:700;text-decoration:underline dotted #ffe09a88;text-underline-offset:2px}
+.mp-panel .mp-who:hover,.mp-panel .mp-who:focus-visible{background:#ffe09a22}
+.mp-panel .mp-who.blocked{color:#9a958a;text-decoration:line-through}
+.mp-roster .mp-who{color:#b9d8ee;font-weight:600}
+.mp-log .mp-line strong{color:#a8e1ca}
+.mp-log .mp-system{color:#9fb3c2;font-style:italic}
+.mp-log .mp-safety{margin:4px 0;padding:6px 8px;border-left:3px solid #f1cc76;border-radius:4px;background:#f1cc761a;color:#ffe9b0;font-weight:600}
+.mp-act{margin-top:8px;padding:8px;border:1px solid #c98a6a88;border-radius:8px;background:#2a1d1a}
+.mp-act strong{display:block;font-size:12px;color:#ffd7c2}
+.mp-act .mp-row{flex-wrap:wrap}
+.mp-act button{font-size:12px!important;padding:6px 8px!important}
+.mp-act .mp-block,.mp-act .mp-report{border-color:#c98a6a}
+.mp-blocked{margin-top:8px;font-size:12px;color:#c9c3b3}
+.mp-blocked summary{cursor:pointer;font-weight:400;color:#c9c3b3}
+.mp-blocked-row{align-items:center;justify-content:space-between;margin-top:4px}
+.mp-blocked-row button{font-size:11px!important;padding:4px 6px!important}
