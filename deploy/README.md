@@ -7,7 +7,7 @@
 | https://crabcraft-dev.seonn.dev | `dev` | 8081 |
 | https://crabcraft.seonn.dev | `main` | 8080 |
 
-두 주소 모두 같은 출처에서 게임 파일, WebSocket `/multiplayer`, 계정 API `/api/account/*`, 영상 `/media/*` 를 내보낸다. 앞단은 Caddy 이고, Caddy 가 인증서를 직접 받는다.
+두 주소 모두 같은 출처에서 게임 파일, WebSocket `/multiplayer`, 계정 API `/api/account/*`, 영상 `/media/*` 를 내보낸다. 앞단은 Caddy 이고, Caddy 가 Let's Encrypt 인증서를 직접 받는다. 가비아 A 레코드가 `34.47.79.56` 을 가리켜야 인증서가 나온다. Let's Encrypt 는 주소마다 한 시간에 실패 5번까지만 받아 주므로 DNS 가 없을 때 Caddy 를 여러 번 reload 하지 않는다. `dig +short crabcraft-dev.seonn.dev` 가 IP 를 돌려준 뒤 15분이 지나도 https 가 안 열리면 `sudo systemctl reload caddy` 를 한 번 실행한다.
 
 ## 릴리스가 VM 에 닿는 길
 

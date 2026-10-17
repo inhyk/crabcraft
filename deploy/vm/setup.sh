@@ -171,9 +171,17 @@ step "caddy"
 install -o root -g root -m 0644 "$HERE/Caddyfile" /etc/caddy/Caddyfile.new
 caddy validate --config /etc/caddy/Caddyfile.new --adapter caddyfile >/dev/null 2>&1 ||
 	{ caddy validate --config /etc/caddy/Caddyfile.new --adapter caddyfile; die "Caddyfile does not validate"; }
-mv -f /etc/caddy/Caddyfile.new /etc/caddy/Caddyfile
 systemctl enable --quiet caddy
-if systemctl is-active --quiet caddy; then systemctl reload caddy; else systemctl start caddy; fi
+# Reload only on a real change: every reload restarts certificate issuance, and while DNS is
+# not pointing here each attempt counts against Let's Encrypt's 5 failed validations per
+# hostname per hour.
+if cmp -s /etc/caddy/Caddyfile.new /etc/caddy/Caddyfile && systemctl is-active --quiet caddy; then
+	rm -f /etc/caddy/Caddyfile.new
+	echo "Caddyfile unchanged, caddy not reloaded"
+else
+	mv -f /etc/caddy/Caddyfile.new /etc/caddy/Caddyfile
+	if systemctl is-active --quiet caddy; then systemctl reload caddy; else systemctl start caddy; fi
+fi
 echo "caddy: $(systemctl is-active caddy)"
 
 step "media sync (gs://crabcraft-seonn-media/media/ -> $ROOT/media/ every 10 minutes)"
