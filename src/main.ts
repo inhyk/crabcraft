@@ -2,6 +2,7 @@
 import './capture/clock';
 import './ui/kit.css';
 import { App } from './app';
+import { returningFromGoogle } from './account';
 import { showLaunchNotice } from './ui/launchNotice';
 
 const root = document.getElementById('app')!;
@@ -18,7 +19,8 @@ async function startApp(): Promise<void> {
     await crowd.startCrowdScene(app);
     return;
   }
-  if (!capture) await showLaunchNotice(root);
+  // Back from Google sign-in: the player confirmed the notice before leaving.
+  if (!capture && !returningFromGoogle()) await showLaunchNotice(root);
   const app = new App(root);
   await app.account.init();
   // Debug handle for the console and the screenshot tool.
