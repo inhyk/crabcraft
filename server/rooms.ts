@@ -18,10 +18,19 @@ export type RoomOptions = {
   maxMembers?: number;
 };
 
+/** Players per room or public shard. In a room, the elected host's browser simulates the world for all of them. */
+export const ROOM_CAP = 8;
+/** World areas a public shard can hold: World I, II and III. */
+const areaOf = (v: unknown) => v === 2 || v === 3 ? v : 1;
+
 const sameHost = (origin: string, req: IncomingMessage) => { try { return new URL(origin).host === req.headers.host; } catch { return false; } };
 const reject = (socket: Duplex, status: string) => { socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); };
 
-/** Room-scoped relay with an authenticated combat authority and world checkpoints. */
+/**
+ * Room-scoped relay with an authenticated combat authority and world checkpoints.
+ * `enter` puts a player in the least-full public shard of their world area. Shards relay presence and chat
+ * only: nobody there is a combat authority, so strangers never take over each other's world or saves.
+ */
 export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   const { allowOrigin = sameHost, keepRooms = 0, maxRooms = 64, maxMembers = 128 } = options;
   const wss = new WebSocketServer({ noServer: true, maxPayload: 65536, perMessageDeflate: false });
@@ -29,7 +38,9 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   const members = new Set<Member>();
   const worlds = new Map<string, WorldState>();
   const alarms = new Map<string, number>();
-  const drop = (code: string) => { rooms.delete(code); worlds.delete(code); alarms.delete(code); };
+  /** Public shard code to its world area. Shard codes start with W, so they cannot be joined by code. */
+  const publics = new Map<string, number>();
+  const drop = (code: string) => { rooms.delete(code); worlds.delete(code); alarms.delete(code); publics.delete(code); };
   // Make room for a new one by forgetting the oldest room nobody is in.
   const evict = () => { for (const [code, room] of rooms) if (!room.size) { drop(code); return true; } return false; };
   const host = (room: string) => [...(rooms.get(room)?.values() ?? [])].find(m => m.combat)?.id ?? '';
@@ -46,10 +57,21 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     const room = rooms.get(m.room);
     room?.delete(m.id);
     broadcast(m.room, { type: 'left', id: m.id });
-    if (!room?.size) { if (!keepRooms) drop(m.room); }
-    else broadcast(m.room, { type: 'authority', host: host(m.room) });
+    // An empty shard has nothing to keep; a private room may keep its checkpoint.
+    if (!room?.size) { if (!keepRooms || publics.has(m.room)) drop(m.room); }
+    else if (!publics.has(m.room)) broadcast(m.room, { type: 'authority', host: host(m.room) });
     m.room = '';
     m.state = null;
+  }
+  function admit(m: Member, code: string, spec: Spec, combat: boolean) {
+    m.spec = spec; m.combat = combat;
+    m.room = code;
+    if (!rooms.has(code)) rooms.set(code, new Map());
+    const room = rooms.get(code)!, area = publics.get(code);
+    send(m.ws, { type: 'welcome', host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, ...(area ? { public: true, area } : {}), players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
+    room.set(m.id, m);
+    broadcast(code, { type: 'joined', id: m.id, spec }, m.id);
+    if (host(code)) broadcast(code, { type: 'authority', host: host(code) });
   }
   const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     if (req.url?.split('?')[0] !== '/multiplayer') return;
@@ -73,7 +95,20 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
       if (!msg || typeof msg !== 'object') return;
-      if (msg.type === 'create' || msg.type === 'join') {
+      if (msg.type === 'enter') {
+        const spec = specOf(msg.spec);
+        if (!spec) { send(ws, { type: 'error', message: 'Invalid character.' }); return; }
+        const area = areaOf(msg.area);
+        leave(m);
+        let code = '', least = ROOM_CAP;
+        for (const [c, a] of publics) { const size = rooms.get(c)?.size ?? 0; if (a === area && size < least) { code = c; least = size; } }
+        if (!code) {
+          if (rooms.size >= maxRooms && !evict()) { send(ws, { type: 'error', message: 'Server full. Try again later.' }); return; }
+          do { code = `W${area}${randomBytes(2).toString('hex').toUpperCase()}`; } while (rooms.has(code));
+          publics.set(code, area);
+        }
+        admit(m, code, spec, false);
+      } else if (msg.type === 'create' || msg.type === 'join') {
         const spec = specOf(msg.spec);
         if (!spec) { send(ws, { type: 'error', message: 'Invalid character.' }); return; }
         let code = clean(msg.room, 6).toUpperCase();
@@ -84,16 +119,9 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
         } else if (!/^[A-F0-9]{6}$/.test(code) || !rooms.has(code)) {
           send(ws, { type: 'error', message: 'Room not found. Check the six-character code.' }); return;
         }
-        if ((rooms.get(code)?.size ?? 0) >= 8) { send(ws, { type: 'error', message: 'Room is full (8 players).' }); return; }
+        if ((rooms.get(code)?.size ?? 0) >= ROOM_CAP) { send(ws, { type: 'error', message: 'Room is full (8 players).' }); return; }
         leave(m);
-        m.spec = spec; m.combat = msg.combatVersion === 1;
-        m.room = code;
-        if (!rooms.has(code)) rooms.set(code, new Map());
-        const room = rooms.get(code)!;
-        send(ws, { type: 'welcome', host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
-        room.set(m.id, m);
-        broadcast(code, { type: 'joined', id: m.id, spec }, m.id);
-        if (host(code)) broadcast(code, { type: 'authority', host: host(code) });
+        admit(m, code, spec, msg.combatVersion === 1);
       } else if (msg.type === 'leave') { leave(m); send(ws, { type: 'leftRoom' }); }
       else if (m.room && msg.type === 'state') {
         const state = stateOf(msg.state);
@@ -143,5 +171,5 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     wss.close();
   };
   server.once('close', close);
-  return { close, rooms };
+  return { close, rooms, publics };
 }

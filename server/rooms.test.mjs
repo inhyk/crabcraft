@@ -9,9 +9,9 @@ import {worldOf} from './combatProtocol.ts';
 const spec = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Test crab' };
 const state = { x: 3, y: 0, z: 5, yaw: 1, hp: 80, maxHp: 100, alive: true };
 
-async function setup(t) {
+async function setup(t, options) {
   const server = createServer();
-  const relay = attachRooms(server);
+  const relay = attachRooms(server, options);
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const clients = [];
@@ -213,4 +213,126 @@ test('village checkpoints reject invalid members, duplicate catches and unbounde
  assert.ok(worldOf({...world,village}));assert.ok(worldOf({...world,village:null}));
  for(const patch of [{left:Infinity},{left:181},{members:['solo','solo']},{members:Array(9).fill('solo')},{members:[]},{starter:'stranger'},{seeker:'stranger'},{caught:['stranger']},{caught:['solo','solo']},{phase:'invented'},{mode:'pvp'}])assert.equal(worldOf({...world,village:{...village,...patch}}),null);
  assert.equal(worldOf({...world,village:{...village,seeker:'solo',caught:['solo']}}),null);
+});
+
+const until = async (check, what) => {
+  const end = Date.now() + 2000;
+  while (!check()) { if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`); await new Promise(r => setTimeout(r, 10)); }
+};
+
+test('entering the world joins a public shard of the same area without a code; shards relay presence but no combat', async t => {
+  const { client, relay } = await setup(t);
+  const a = await client(), b = await client(), far = await client();
+  a.send({ type: 'enter', area: 1, spec, combatVersion: 1 });
+  const ar = await a.next('welcome');
+  assert.match(ar.room, /^W1[A-F0-9]{4}$/);
+  assert.deepEqual([ar.public, ar.area, ar.host, ar.world, ar.players], [true, 1, '', null, []]);
+  a.send({ type: 'state', state });
+  b.send({ type: 'enter', area: 1, spec: { ...spec, name: 'Stranger' } });
+  const br = await b.next('welcome');
+  assert.equal(br.room, ar.room);
+  assert.deepEqual(br.players.map(p => [p.id, p.state]), [[ar.id, state]]);
+  assert.equal((await a.next('joined')).spec.name, 'Stranger');
+  far.send({ type: 'enter', area: 2, spec });
+  const fr = await far.next('welcome');
+  assert.match(fr.room, /^W2[A-F0-9]{4}$/); assert.equal(fr.area, 2);
+  b.send({ type: 'state', state: { ...state, x: 9 } });
+  assert.equal((await a.next('state')).state.x, 9);
+  b.send({ type: 'action', action: 'dance_crab' });
+  assert.equal((await a.next('action')).action, 'dance_crab');
+  b.send({ type: 'chat', text: 'hello, world one' });
+  assert.equal((await a.next('chat')).text, 'hello, world one');
+  // Nobody in a shard is a combat authority: checkpoints and combat events go nowhere.
+  a.send({ type: 'world', world });
+  b.send({ type: 'combat', event: { kind: 'attack', target: 'e0', amount: 5 } });
+  a.send({ type: 'combat', event: { kind: 'hit', target: br.id, amount: 5 } });
+  b.send({ type: 'state', state }); await a.next('state');
+  a.send({ type: 'state', state }); await b.next('state');
+  for (const c of [a, b]) assert.equal(c.queue.some(m => ['world', 'combat', 'authority'].includes(m.type)), false);
+  assert.equal(far.queue.some(m => ['joined', 'state', 'action', 'chat'].includes(m.type)), false);
+  // A shard cannot be joined by its code, and a bad area falls back to World I.
+  far.send({ type: 'join', room: ar.room, spec }); assert.match((await far.next('error')).message, /not found/);
+  const odd = await client(); odd.send({ type: 'enter', area: 'sky', spec }); assert.equal((await odd.next('welcome')).room, ar.room);
+  odd.send({ type: 'enter', area: 1, spec: { ...spec, race: 'oops' } }); assert.equal((await odd.next('error')).message, 'Invalid character.');
+  // Travelling to another area moves the player to that area's shard on the same socket.
+  a.send({ type: 'enter', area: 2, spec });
+  const moved = await a.next('welcome');
+  assert.equal(moved.room, fr.room); assert.equal(moved.id, ar.id);
+  assert.equal((await b.next('left')).id, ar.id);
+  assert.equal((await far.next('joined')).id, ar.id);
+  assert.deepEqual([...relay.publics].sort(), [[ar.room, 1], [fr.room, 2]].sort());
+});
+
+test('public shards fill the least-full shard first, open a new one only when all are full, and hold eight', async t => {
+  const { client, relay } = await setup(t);
+  const enter = async () => { const c = await client(); c.send({ type: 'enter', area: 1, spec }); c.welcome = await c.next('welcome'); return c; };
+  const first = [];
+  for (let i = 0; i < 8; i++) first.push(await enter());
+  const one = first[0].welcome.room;
+  assert.ok(first.every(c => c.welcome.room === one));
+  assert.equal(relay.rooms.get(one).size, 8);
+  const ninth = await enter(), tenth = await enter();
+  const two = ninth.welcome.room;
+  assert.notEqual(two, one); assert.equal(tenth.welcome.room, two);
+  assert.deepEqual(ninth.welcome.players, []);
+  // Another area never shares these shards, however empty they are.
+  const elsewhere = await client(); elsewhere.send({ type: 'enter', area: 3, spec });
+  assert.match((await elsewhere.next('welcome')).room, /^W3/);
+  for (const c of first.slice(1)) c.ws.close();
+  await until(() => relay.rooms.get(one)?.size === 1, 'the first shard to empty out');
+  // One player in the first shard, two in the second: the next goes to the first; a tie goes to the older shard.
+  const order = [];
+  for (let i = 0; i < 4; i++) order.push((await enter()).welcome.room);
+  assert.deepEqual(order, [one, one, two, one]);
+  assert.deepEqual([relay.rooms.get(one).size, relay.rooms.get(two).size], [4, 3]);
+});
+
+test('an empty public shard is dropped at once while private rooms keep their checkpoint', async t => {
+  const { client, relay } = await setup(t, { keepRooms: 60000 });
+  const a = await client(), b = await client(), host = await client();
+  a.send({ type: 'enter', area: 2, spec }); const shard = (await a.next('welcome')).room;
+  b.send({ type: 'enter', area: 2, spec }); assert.equal((await b.next('welcome')).room, shard);
+  host.send({ type: 'create', spec, combatVersion: 1 }); const room = (await host.next('welcome')).room;
+  host.send({ type: 'world', world });
+  a.ws.close();
+  await until(() => relay.rooms.get(shard)?.size === 1, 'one player left in the shard');
+  assert.equal(relay.publics.get(shard), 2);
+  b.send({ type: 'leave' }); await b.next('leftRoom');
+  assert.equal(relay.rooms.has(shard), false); assert.equal(relay.publics.has(shard), false);
+  host.ws.close();
+  await until(() => relay.rooms.get(room)?.size === 0, 'the private room to empty out');
+  const back = await client(); back.send({ type: 'join', room, spec, combatVersion: 1 });
+  const rejoined = await back.next('welcome');
+  assert.equal(rejoined.room, room); assert.deepEqual(rejoined.world, world);
+  const later = await client(); later.send({ type: 'enter', area: 2, spec });
+  const fresh = await later.next('welcome');
+  assert.notEqual(fresh.room, shard); assert.deepEqual(fresh.players, []);
+});
+
+test('private code rooms work as before next to public shards', async t => {
+  const { client, relay } = await setup(t, { maxRooms: 3 });
+  const a = await client(), b = await client(), c = await client();
+  for (const x of [a, b, c]) x.send({ type: 'enter', area: 1, spec });
+  const shard = (await a.next('welcome')).room;
+  await b.next('welcome'); await c.next('welcome');
+  a.send({ type: 'create', spec, combatVersion: 1 });
+  const room = await a.next('welcome');
+  assert.match(room.room, /^[A-F0-9]{6}$/);
+  assert.equal(room.public, undefined); assert.equal(room.host, room.id);
+  assert.equal((await b.next('left')).id, room.id);
+  b.send({ type: 'join', room: room.room.toLowerCase(), spec, combatVersion: 1 });
+  const joined = await b.next('welcome');
+  assert.equal(joined.host, room.id); assert.deepEqual(joined.players.map(p => p.id), [room.id]);
+  a.send({ type: 'world', world }); assert.deepEqual((await b.next('world')).world, world);
+  b.send({ type: 'combat', event: { kind: 'attack', target: 'e0', amount: 7 } }); assert.equal((await a.next('combat')).event.amount, 7);
+  assert.equal(c.queue.some(m => ['world', 'combat', 'joined'].includes(m.type)), false);
+  assert.equal(relay.rooms.get(shard).size, 1);
+  // Shards count toward the room limit; a full server refuses a new room but leaves the shard alone.
+  const d = await client(), e = await client();
+  d.send({ type: 'create', spec, combatVersion: 1 }); await d.next('welcome');
+  e.send({ type: 'create', spec, combatVersion: 1 }); assert.match((await e.next('error')).message, /Server full/);
+  e.send({ type: 'enter', area: 1, spec }); assert.equal((await e.next('welcome')).room, shard);
+  // Leaving a private room for the world puts the player back in a shard.
+  b.send({ type: 'enter', area: 1, spec }); assert.equal((await b.next('welcome')).room, shard);
+  assert.equal((await a.next('left')).id, joined.id);
 });

@@ -77,7 +77,7 @@ const world = { weather: { mood: 1, beacon: true, clock: 123 }, entities: [{ id:
   bosses: [{ id: 'b3', state: 'dormant', phase: 1, enraged: false, mech: null }, { id: 'b10', state: 'dormant', phase: 1, enraged: false, mech: null }, { id: 'b20', state: 'dormant', phase: 1, enraged: false, mech: null }], rust: false, abyss: false, chapter: 1, firstEnding: false, trueCleared: false };
 
 const sockets = [];
-async function client(mode, room = '', origin = ORIGIN) {
+async function client(mode, room = '', origin = ORIGIN, extra = {}) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/multiplayer?mode=${mode}${room ? '&room=' + room : ''}`, { origin });
   const queue = [];
   ws.on('message', raw => queue.push(JSON.parse(raw.toString())));
@@ -92,7 +92,7 @@ async function client(mode, room = '', origin = ORIGIN) {
     }
     throw new Error(`Timed out waiting for ${type}: ${JSON.stringify(queue)}`);
   } };
-  c.send({ type: mode, room, spec, combatVersion: 1 });
+  c.send({ type: mode, room, spec, combatVersion: 1, ...extra });
   return c;
 }
 after(() => { for (const ws of sockets) ws.terminate(); });
@@ -150,6 +150,28 @@ test('a room and its checkpoint outlive its last player, as Worker rooms did', a
   assert.equal(back.room, r.room); assert.equal(back.players.length, 0);
   assert.equal(back.world.rust, true);
   const lost = await client('join', 'ABCDEF');
+  assert.match((await lost.next('error')).message, /not found/);
+});
+
+test('entering the world puts players in a public shard of their area, dropped once empty though rooms are kept', async () => {
+  const a = await client('enter', '', ORIGIN, { area: 3 });
+  const ar = await a.next('welcome');
+  const b = await client('enter', '', OTHER_ORIGIN, { area: 3, spec: { ...spec, name: 'Stranger' } });
+  const br = await b.next('welcome');
+  assert.match(ar.room, /^W3[A-F0-9]{4}$/); assert.equal(ar.public, true); assert.equal(ar.host, '');
+  assert.equal(br.room, ar.room);
+  assert.equal((await a.next('joined')).spec.name, 'Stranger');
+  b.send({ type: 'chat', text: 'hello, World III' });
+  assert.equal((await a.next('chat')).text, 'hello, World III');
+  a.ws.close(); await once(a.ws, 'close');
+  assert.equal((await b.next('left')).id, ar.id);
+  b.ws.close(); await once(b.ws, 'close');
+  await new Promise(res => setTimeout(res, 100));
+  // Unlike a created room, an empty shard is not kept: the next player starts a new one.
+  const c = await client('enter', '', ORIGIN, { area: 3 });
+  const cr = await c.next('welcome');
+  assert.match(cr.room, /^W3/); assert.notEqual(cr.room, ar.room); assert.deepEqual(cr.players, []);
+  const lost = await client('join', ar.room);
   assert.match((await lost.next('error')).message, /not found/);
 });
 
