@@ -17,7 +17,8 @@
 //
 // The choreography is a module whose default export build({ grid, clips, options }) returns the
 // program (src/capture/crowd/program.ts); the grid is { beat, downbeats, beats? } in seconds of the
-// audio file. Writes <out-dir>/<name>-1920x1080.mp4 and <name>-1080x1920.mp4, their contact sheets
+// audio file; the program's optional `quiet` lists the song's own rests for the silence check.
+// Writes <out-dir>/<name>-1920x1080.mp4 and <name>-1080x1920.mp4, their contact sheets
 // (<name>-1920x1080-sheet.jpg ...) and <work>/report.json. Needs ffmpeg, uv and installed Chrome.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -227,7 +228,9 @@ try {
   const bad = layouts.flatMap((l) => {
     const r = report[l];
     const why = [];
-    const early = r.silences.filter((s) => s > 0.5 && s < Math.min(songEnd, length) - 6);
+    // The song's own rests, as the program lists them, are not gaps.
+    const rest = (s) => (program.quiet ?? []).some(([a, b]) => s >= a - 0.15 && s <= b);
+    const early = r.silences.filter((s) => s > 0.5 && s < Math.min(songEnd, length) - 6 && !rest(s));
     if (early.length) why.push(`${l}: silence at ${early.join(', ')}`);
     if (r.blackRuns.length || r.blackFrames.length) why.push(`${l}: black frames`);
     if (Math.abs(r.loudness.integratedLUFS + 14) > 0.6) why.push(`${l}: ${r.loudness.integratedLUFS} LUFS`);

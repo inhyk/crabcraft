@@ -166,6 +166,8 @@ export interface CrowdProgram {
   fx?: Fx[];
   /** Song seconds the stage lights flare on (the beat), decaying over a tenth of a second or so. */
   pulses?: number[];
+  /** Song seconds [from, to] where the song itself falls silent; tools/crowd/make.mjs lets those silences through. */
+  quiet?: [number, number][];
 }
 
 /** Fill in what a program may leave out: each shot ends where the next starts. */
