@@ -346,8 +346,15 @@ test('origin, header, method, body size and public-host cookie rules', async () 
   assert.equal((await http('GET', '/api/account/session', { headers: { Origin: ORIGIN } })).status, 403);
   assert.equal((await api('save', undefined)).status, 405);
   assert.equal((await api('session', {})).status, 405);
-  assert.equal((await api('session', undefined)).status, 401);
-  assert.equal((await api('session', undefined, { Origin: 'http://localhost:5173' })).status, 401);
+  // A guest (no session cookie) is an answer, not an error the browser logs; a cookie that is there but bad is still 401.
+  for (const extra of [{}, { Origin: 'http://localhost:5173' }, { Cookie: 'cc_lang=en' }]) {
+    const guest = await api('session', undefined, extra);
+    assert.deepEqual([guest.status, guest.json, guest.headers['cache-control']], [200, { signedIn: false }, 'no-store, private']);
+  }
+  for (const cookie of ['cc_account=', 'cc_account=nope', `cc_account=g${'0'.repeat(23)}.${'a'.repeat(64)}`]) assert.deepEqual((await api('session', undefined, { cookie })).json, { error: 'session' }, cookie);
+  assert.equal((await api('session', undefined, { cookie: 'cc_account=nope' })).status, 401);
+  // Saving and signing out still need a session.
+  assert.deepEqual([(await api('save', { revision: 0, save: {} })).status, (await api('logout', {})).status], [401, 401]);
   assert.equal((await api('save', { revision: 0, save: { 'cc.spec': 'x'.repeat(70000) } })).json.error, 'request');
   assert.equal((await api('save', '[1]')).json.error, 'request');
   // Behind Caddy the Host is public: local origins stop working and the cookies become Secure.

@@ -1,4 +1,4 @@
-import type {App} from './app';
+import type {App,ScreenId} from './app';
 import {h} from './ui/dom';
 import {t} from './i18n';
 import {applyBundle,readBundle,setSaveProfile} from './accountStorage';
@@ -6,7 +6,7 @@ import './account.css';
 
 type Session={username:string;revision:number;save?:Record<string,string>;updated:number};
 class AccountError extends Error{constructor(readonly code:string){super(code);}}
-// Set just before leaving for Google, so the return trip knows it is a fresh sign-in.
+// Set just before leaving for Google as `<time>:<screen>`, so the return trip knows it is a fresh sign-in and where to land.
 const PENDING='cc.account.pending';
 const GOOGLE_MARK='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
 const errorText=(code:string)=>({
@@ -19,6 +19,9 @@ const errorText=(code:string)=>({
 }[code]??t('연결하지 못했어요. 이 기기의 진행은 저장되어 있어요. 다시 시도해 주세요.','Could not connect. Your local progress is safe. Please try again.'));
 export class Account {
  username='';revision=0;open=false;
+ /** Where to land after the Google round trip: the screen the player left from. */
+ resume:ScreenId|null=null;
+ private greeting='';
  private modal:HTMLDialogElement|null=null;
  private state='';private conflict=false;private clash=false;private busy=false;private timer=0;private ready=false;private saved='';
  constructor(private app:App){
@@ -28,16 +31,19 @@ export class Account {
  }
  private async api(action:string,body?:unknown):Promise<Session>{
   const r=await fetch('/api/account/'+action,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Crabcraft-Account':'1'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(10000)});
-  const data=await r.json();if(!r.ok)throw new AccountError(data.error??'network');return data;
+  const data=await r.json();if(!r.ok)throw new AccountError(data.error??'network');
+  // A guest's session answer: no cookie, nobody signed in.
+  if(data.signedIn===false)throw new AccountError('session');
+  return data;
  }
  async init(){
   // The Google callback lands here with ?account=error on failure; keep the address clean either way.
   const params=new URLSearchParams(location.search),result=params.get('account');
   if(result!==null){params.delete('account');const query=params.toString();history.replaceState(history.state,'',location.pathname+(query?'?'+query:'')+location.hash);}
-  let pending=false,fresh=false;
-  try{const at=Number(localStorage.getItem(PENDING));localStorage.removeItem(PENDING);pending=Date.now()-at<15*60000;}catch{ /* No storage. */ }
+  let pending=false,fresh=false,signedIn=false,from='title';
+  try{const [at,screen]=(localStorage.getItem(PENDING)??'').split(':');localStorage.removeItem(PENDING);pending=Date.now()-Number(at)<15*60000;from=screen??from;}catch{ /* No storage. */ }
   try{
-   const session=await this.api('session');
+   const session=await this.api('session');signedIn=true;
    // Back from Google: a new account starts empty and takes this device's guest adventure, as signup did;
    // an existing one loads its cloud save over this device's copy, as login did.
    fresh=pending&&session.revision===0&&!Object.keys(session.save??{}).length;
@@ -48,7 +54,15 @@ export class Account {
   if(result==='error')this.state=errorText('error');
   this.ready=true;this.app.reloadSpec();
   if(fresh)void this.flush();else this.schedule();
-  if(pending||result==='error')this.show();
+  // Back from Google signed in: straight back to where the player was, with a short note instead of the dialog.
+  if(pending&&signedIn&&result!=='error'){this.resume=from==='game'&&this.app.spec?'game':'title';this.greeting=t('Google 계정으로 로그인했어요','Signed in with Google');}
+  else if(pending||result==='error')this.show();
+ }
+ /** Once the first screen is up (the game calls it when loaded): the sign-in note, once. */
+ greet(){
+  if(!this.greeting)return;
+  const el=h('div',{class:'account-toast cc-passive',role:'status'},this.greeting);this.greeting='';
+  this.app.overlay.append(el);setTimeout(()=>el.remove(),4200);
  }
  private accept(session:Session,restoreLocal=false){
   const local=readBundle(session.username),cloud=JSON.stringify(session.save??{}),metaKey='cc.account.meta:'+session.username;
@@ -81,13 +95,14 @@ export class Account {
  /** Full-page redirect to Google and back: popups and Google's script do not work on this cross-origin isolated page. */
  private async google(button:HTMLButtonElement){
   button.disabled=true;this.state=t('Google로 가는 중…','Opening Google…');this.updateStatus();
+  const from=this.app.currentId==='game'?'game':'title';
   try{
    await this.leaveGame();
    const target='/api/account/google/start?return='+encodeURIComponent(location.pathname+location.search);
    // Ask first, so a server without Google set up answers here instead of on a blank page.
    const r=await fetch(target,{redirect:'manual',credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(10000)});
    if(r.type!=='opaqueredirect'){let code='network';try{code=(await r.json()).error??code;}catch{ /* Not JSON. */ }throw new AccountError(code);}
-   try{localStorage.setItem(PENDING,String(Date.now()));}catch{ /* Without storage the sign-in still works, without the guest import. */ }
+   try{localStorage.setItem(PENDING,`${Date.now()}:${from}`);}catch{ /* Without storage the sign-in still works, without the guest import. */ }
    location.href=target;
   }catch(e){this.state=errorText(e instanceof AccountError?e.code:'network');this.updateStatus();button.disabled=false;}
  }
