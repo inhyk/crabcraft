@@ -4,7 +4,41 @@
   "main": "worker.ts",
   "compatibility_date": "2026-10-15",
   "workers_dev": true,
-  "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "CrabRoom" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CrabRoom"] }],
-  "observability": { "enabled": true, "logs": { "enabled": true, "head_sampling_rate": 0.1 }, "traces": { "enabled": true, "head_sampling_rate": 0.01 } }
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROOMS",
+        "class_name": "CrabRoom"
+      },
+      {
+        "name": "ACCOUNTS",
+        "class_name": "CrabAccount"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "CrabRoom"
+      ]
+    },
+    {
+      "tag": "v2-accounts",
+      "new_sqlite_classes": [
+        "CrabAccount"
+      ]
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.01
+    }
+  }
 }

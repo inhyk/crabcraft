@@ -25,7 +25,9 @@ export default defineConfig({
     configureServer(server) { if (server.httpServer) attachRooms(server.httpServer); },
     configurePreviewServer(server) { attachRooms(server.httpServer); },
   }],
+  preview:{proxy:{'/api/account':{target:'http://127.0.0.1:8795',changeOrigin:true}}},
   server: {
+    proxy:{'/api/account':{target:'http://127.0.0.1:8795',changeOrigin:true}},
     headers: {
       // SharedArrayBuffer for MuJoCo WASM threads and onnxruntime-web.
       'Cross-Origin-Opener-Policy': 'same-origin',

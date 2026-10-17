@@ -68,7 +68,7 @@ export class BossJourney {
       this.root.append(card);
       this.cards.push({ boss, status, button });
     }
-    this.root.append(this.portal, this.patrol, h('small', null, '해안의 적을 처치하면 성장해요. 멀티플레이에서는 보스전도 함께 진행하며, 성장과 승리는 이 브라우저에 자동 저장됩니다.'), this.victory);
+    this.root.append(this.portal, this.patrol, h('small', null, '적을 처치하고 퀘스트를 완료하면 성장해요. 로그인하면 계정에도 모험이 자동 저장돼요.'), this.victory);
     this.root.addEventListener('keydown', e => e.stopPropagation());
     this.root.addEventListener('focusin', () => window.dispatchEvent(new Event('blur')));
     game.app.ui.append(this.root);
@@ -234,7 +234,7 @@ export class BossJourney {
       }
       this.portal.hidden = g.world2.chapter !== 1;this.portal.disabled=!this.abyssCleared;
       this.patrol.textContent = g.world2.chapter===3?t(`WORLD III · 친구 구출 · 목표30레벨 · 순찰 ${this.kills}/5`,`WORLD III · Rescue your friend · Reach level 30 · Patrol ${this.kills}/5`):this.trueCleared ? t('월드3가 열렸어요. 북쪽 별길의 포탈로 친구를 구하러 가세요.','World III is open. Take the north Starroad portal to rescue your friend.') : g.world2.chapter === 2 ? t(`WORLD II · 유적 순찰 ${this.kills}/5 · +${patrolReward(level)} XP · 목표 20레벨`,`WORLD II · Ruin patrol ${this.kills}/5 · +${patrolReward(level)} XP · Reach level 20`) : this.abyssCleared ? t('첫 엔딩 너머, 숨겨진 별의 섬으로…','Beyond the first ending, a hidden island awaits…') : this.rustCleared ? t(`해안 순찰 ${this.kills}/5 · 보너스 ${patrolReward(level)} XP`,`Shore patrol ${this.kills}/5 · Bonus ${patrolReward(level)} XP`) : t('마을 퀘스트와 해안 전투로 3레벨에 도달하세요.','Reach level 3 through village quests and shore battles.');
-      this.root.querySelector('small')!.textContent=t('적을 처치하고 퀘스트를 완료하면 성장해요. 멀티플레이에서는 함께 싸우며, 내 성장과 승리는 이 브라우저에 저장됩니다.','Grow by defeating enemies and completing quests. Battle together in multiplayer; your progress and victories are saved in this browser.');
+      this.root.querySelector('small')!.textContent=t('적을 처치하고 퀘스트를 완료하면 성장해요. 로그인하면 계정에도 모험이 자동 저장돼요.','Grow by defeating enemies and completing quests. Sign in to save your adventure to your account too.');
       this.victory.hidden = !this.finalCleared;
       this.victory.disabled = g.dawnBoss.state !== 'dead' || g.controlsLocked;
     }

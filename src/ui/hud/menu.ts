@@ -65,6 +65,7 @@ export class GameMenu {
     this.panel.replaceChildren(
       h('h2', { class: 'cc-title' }, t('게임 메뉴','Game Menu')),
       this.btn(t('계속하기','Resume'), () => this.close()),
+      this.btn(g.app.account.label,()=>g.app.account.show(),true),
       this.btn(t('설정','Settings'), () => this.settings(), true),
       this.btn(t('조작 방법','Controls'), () => this.controls(), true),
       this.btn(t('로봇 모드','Robot Mode'), () => void g.app.go('robot'), true),

@@ -157,7 +157,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
+    return this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -584,7 +584,7 @@ export class Game {
   private readonly frame = (f: FrameInfo): void => {
     if (!this.loaded) return;
     const dt = f.dt;
-    const paused = this.hud.menu.open && !this.multiplayer?.battle.active;
+    const paused = (this.hud.menu.open||this.app.account.open) && !this.multiplayer?.battle.active;
     this.handleInput();
     if (!paused) {
       this.time += dt;

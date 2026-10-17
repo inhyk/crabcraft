@@ -8,6 +8,7 @@ const root = document.getElementById('app')!;
 async function startApp(): Promise<void> {
   await showLaunchNotice(root);
   const app = new App(root);
+  await app.account.init();
   // Debug handle for the console and the screenshot tool.
   (window as unknown as { app: App }).app = app;
   const params = new URLSearchParams(location.search);

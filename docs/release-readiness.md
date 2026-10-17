@@ -130,3 +130,13 @@ T를 2초 유지하면 현재 섬의 광장으로 귀환한다. 월드1은 원�
 `npm run build`, 전투/스킬68개, 방9개가 통과했다. `tools/qa-lighthouse-sea.mjs`의 실Chrome 로컬 검사는 종료0/페이지 오류0이다(`tmp/qa/{secret-sea-build,secret-sea-tests,secret-sea-relay-tests,lighthouse-sea-browser}.log`). 실제 F 유지/취소·재로드 저장·AI 전기 피해·한 번의 XP/코인·세 월드 격리/귀환과 두 브라우저의 같은 예고/손님 공격7HP/공유 처치 보상을 확인했다. 위치·진행 잠금 해제·생존·처치 피해는 명시적 fixture이며 자연 진행 완주를 주장하지 않는다. 스크린샷에서 등대 아래 무대와 물속 발광 해파리 모델을 직접 확인했다.
 
 공개 배포: 소스 `29c7a59`, Vercel `dpl_GPvwCnjyCzBHBeFDDEYcqqXLiEcH` production/Ready와 기존 stable alias를 확인했다(`secret-sea-deploy.log`, `secret-sea-inspect-ready.log`). 공개 index와 전체 JS/CSS28개 파일의 SHA256이 로컬 dist와 일치하고 seonn.dev/games/crabcraft HTTP200/기존 플레이 링크를 확인했다(`secret-sea-public-assets.log`). 공개 stable alias와 실제 공개 Worker에서도 위 실Chrome 전체 검사가 종료0/페이지 오류0으로 통과했다(`lighthouse-sea-public-browser.log`): 저장/재발견·전기 피해·한 번의 보상·월드 이동과 두 브라우저의 공유 예고·손님 공격·처치 XP를 확인했다. Worker는 호환되는 기존 버전을 유지했다. 소유한5205 미리보기만 종료했고 사용자 브라우저/다른 서버/작업 중인 허브는 변경하지 않았다.
+
+## 2026-10-17 · 계정 로그인과 클라우드 진행 저장
+
+시작 화면과 Esc 게임 메뉴에 한국어/영어 로그인·회원가입·계정 관리 창을 추가했다. 아이디(영문/숫자/밑줄3~24자, 대소문자 통합)와10~128자 비밀번호로 가입하며 현재 기기의 게스트 캐릭터를 최초 계정에 가져온다. 로그인은 해당 계정의 캐릭터/XP/코인/퀘스트/월드/등대 발견 기록을 불러온다. 기기 설정과 게스트 진행은 별도로 유지한다. 로그아웃은 게스트 진행으로 돌아간다. 비밀번호 재설정/이메일 로그인은 이번 범위에 포함하지 않는다.
+
+기존 Worker에 사용자별 SQLite Durable Object `CrabAccount`/`ACCOUNTS`를 추가했다. 기존 방 바인딩과 v1 마이그레이션을 유지하고 v2-accounts 신규 클래스만 추가한다. 무작위 salt/PBKDF2-SHA256(100000회)/상수 시간 비교,256비트 무작위 세션(서버에는 SHA256만 저장),7일 HttpOnly/Secure/SameSite=Strict 쿠키, 로그아웃 시 세션 폐기, 계정/IP별 요청 제한을 사용한다. Vercel의 같은 출처 `/api/account/*` 프록시로 브라우저의 제3자 쿠키에 의존하지 않는다. JSON 크기·저장 키·캐릭터/XP 검증, Origin/사용자 지정 헤더 검사, no-store 응답을 적용했다. 비밀번호/세션 값은 로그·문서에 기록하지 않는다. [Workers Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/), [DO storage](https://developers.cloudflare.com/durable-objects/best-practices/access-durable-objects-storage/), [Vercel rewrites](https://vercel.com/docs/routing/rewrites)를 확인했다.
+
+계정마다 로컬 저장 영역을 나누고 변경된 진행을 자동 업로드한다. 서버 revision으로 동시 저장 충돌을 거부해 오래된 창이 새 저장을 덮지 않게 했다. 연결 실패 시 로컬을 유지/재시도하고, 재접속 시 같은 revision의 미전송 진행을 우선 업로드한다. 더 최신 계정 저장을 불러올 때 밀려나는 로컬 진행은 별도 backup 키에 보관한다.
+
+빌드/Worker 타입 검사/배포 dry-run, 기존 전투68·방9·엔진4개 통과. 실제 로컬 workerd/SQLite에 대한 `server/cloudflare/account-smoke.mjs`가 가입 중복/동시 가입 경합·틀린 비밀번호·세션/로그아웃 폐기·계정 격리·저장 검증·동시 revision 충돌·출처/헤더 차단·요청 제한을 통과했다. 실Chrome `tools/qa-accounts.mjs`는 실제 가입/비밀번호 확인·718×492 스크롤 모달·HttpOnly·기존137XP/73코인 가져오기·487XP/99코인 자동 저장·영어 두 번째 기기에서 같은 진행 복원·700XP/123코인 새 저장에 대한 오래된 창의 충돌 보호·세션 재로드·게스트137XP/73코인 복귀를 확인했다. 페이지 오류0. 진행 변경은 명시적 fixture이며 자연 플레이 성장 검사가 아니다. 근거는 `tmp/qa/account-{build,worker-types,worker-dry,local-api,native-local,boss-tests,room-tests,engine-tests}.log` 및 모달 스크린샷이다.
