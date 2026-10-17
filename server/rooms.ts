@@ -6,8 +6,10 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import { specOf, stateOf, actions, clean, type Spec, type State } from './protocol.ts';
+import { Moderation, Talk, CHAT, reasonOf, sessionOf, shownName, type Report } from './chat/safety.ts';
 
-type Member = { id: string; ws: WebSocket; spec: Spec; state: State | null; room: string; pong: boolean; rateAt: number; messages: number; chatAt: number; combat: boolean };
+/** `session`: the client's per-tab id (see chat/safety.ts); `lastRoom`: where a departed player was, for reports. */
+type Member = { id: string; ws: WebSocket; spec: Spec; state: State | null; room: string; pong: boolean; rateAt: number; messages: number; combat: boolean; session: string; talk: Talk; lastRoom: string };
 
 export type RoomOptions = {
   /** Browser origins allowed to connect. By default only same-host origins may. */
@@ -16,6 +18,8 @@ export type RoomOptions = {
   keepRooms?: number;
   maxRooms?: number;
   maxMembers?: number;
+  /** Stores a chat report. Without it (the Vite relay) reports are only logged. */
+  report?: (report: Report) => void | Promise<void>;
 };
 
 /** Players per room or public shard. In a room, the elected host's browser simulates the world for all of them. */
@@ -25,17 +29,22 @@ const areaOf = (v: unknown) => v === 2 || v === 3 ? v : 1;
 
 const sameHost = (origin: string, req: IncomingMessage) => { try { return new URL(origin).host === req.headers.host; } catch { return false; } };
 const reject = (socket: Duplex, status: string) => { socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); };
+const logReport = (r: Report) => console.log(`chat report: ${JSON.stringify(r)}`);
 
 /**
  * Room-scoped relay with an authenticated combat authority and world checkpoints.
  * `enter` puts a player in the least-full public shard of their world area. Shards relay presence and chat
  * only: nobody there is a combat authority, so strangers never take over each other's world or saves.
+ * Chat is filtered and rate limited, names with bad words are replaced, and reports can mute a player (chat/safety.ts).
  */
 export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
-  const { allowOrigin = sameHost, keepRooms = 0, maxRooms = 64, maxMembers = 128 } = options;
+  const { allowOrigin = sameHost, keepRooms = 0, maxRooms = 64, maxMembers = 128, report = logReport } = options;
   const wss = new WebSocketServer({ noServer: true, maxPayload: 65536, perMessageDeflate: false });
   const rooms = new Map<string, Map<string, Member>>();
   const members = new Set<Member>();
+  /** Players by id, kept for a while after they leave so they can still be reported. */
+  const known = new Map<string, { member: Member; gone: number }>();
+  const moderation = new Moderation();
   const worlds = new Map<string, WorldState>();
   const alarms = new Map<string, number>();
   /** Public shard code to its world area. Shard codes start with W, so they cannot be joined by code. */
@@ -60,15 +69,19 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     // An empty shard has nothing to keep; a private room may keep its checkpoint.
     if (!room?.size) { if (!keepRooms || publics.has(m.room)) drop(m.room); }
     else if (!publics.has(m.room)) broadcast(m.room, { type: 'authority', host: host(m.room) });
+    m.lastRoom = m.room;
     m.room = '';
     m.state = null;
   }
-  function admit(m: Member, code: string, spec: Spec, combat: boolean) {
-    m.spec = spec; m.combat = combat;
+  function admit(m: Member, code: string, spec: Spec, combat: boolean, session: unknown) {
+    // Strangers see a neutral name instead of one with a bad word or contact details; the player is told.
+    const name = shownName(spec.name), renamed = name !== spec.name;
+    m.spec = { ...spec, name }; m.combat = combat; spec = m.spec;
+    m.session = sessionOf(session, m.session);
     m.room = code;
     if (!rooms.has(code)) rooms.set(code, new Map());
     const room = rooms.get(code)!, area = publics.get(code);
-    send(m.ws, { type: 'welcome', host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, ...(area ? { public: true, area } : {}), players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
+    send(m.ws, { type: 'welcome', host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, ...(area ? { public: true, area } : {}), ...(renamed ? { renamed: name } : {}), players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
     room.set(m.id, m);
     broadcast(code, { type: 'joined', id: m.id, spec }, m.id);
     if (host(code)) broadcast(code, { type: 'authority', host: host(code) });
@@ -84,11 +97,18 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   };
   server.on('upgrade', upgrade);
   wss.on('connection', ws => {
-    const m: Member = { id: randomUUID(), ws, spec: { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Crab' }, state: null, room: '', pong: true, rateAt: Date.now(), messages: 0, chatAt: 0, combat: false };
+    const id = randomUUID();
+    const m: Member = { id, ws, spec: { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Crab' }, state: null, room: '', pong: true, rateAt: Date.now(), messages: 0, combat: false, session: id, talk: new Talk(), lastRoom: '' };
     members.add(m);
+    known.set(id, { member: m, gone: 0 });
     ws.on('error', () => ws.terminate());
     ws.on('pong', () => { m.pong = true; });
-    ws.on('close', () => { leave(m); members.delete(m); });
+    ws.on('close', () => {
+      leave(m); members.delete(m);
+      // Moved to the end, so under a flood of short connections the oldest departures go first.
+      known.delete(m.id); known.set(m.id, { member: m, gone: Date.now() });
+      for (const [old, k] of known) { if (known.size <= maxMembers * 8) break; if (k.gone) known.delete(old); }
+    });
     ws.on('message', (raw, binary) => {
       if (binary) return;
       const now = Date.now();
@@ -109,7 +129,7 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
           do { code = `W${area}${randomBytes(2).toString('hex').toUpperCase()}`; } while (rooms.has(code));
           publics.set(code, area);
         }
-        admit(m, code, spec, false);
+        admit(m, code, spec, false, msg.session);
       } else if (msg.type === 'create' || msg.type === 'join') {
         const spec = specOf(msg.spec);
         if (!spec) { send(ws, { type: 'error', message: 'Invalid character.' }); return; }
@@ -123,7 +143,7 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
         }
         if ((rooms.get(code)?.size ?? 0) >= ROOM_CAP) { send(ws, { type: 'error', message: 'Room is full (8 players).' }); return; }
         leave(m);
-        admit(m, code, spec, msg.combatVersion === 1);
+        admit(m, code, spec, msg.combatVersion === 1, msg.session);
       } else if (msg.type === 'leave') { leave(m); send(ws, { type: 'leftRoom' }); }
       else if (m.room && msg.type === 'state') {
         const state = stateOf(msg.state);
@@ -143,11 +163,23 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
           if (authority) broadcast(m.room, packet, m.id);
           else { const h = rooms.get(m.room)?.get(host(m.room)); if (h) send(h.ws, packet); }
         }
-      } else if (m.room && msg.type === 'chat' && now - m.chatAt >= 700) {
-        const text = clean(msg.text, 200);
-        if (!text) return;
-        m.chatAt = now;
-        broadcast(m.room, { type: 'chat', id: m.id, name: m.spec.name, text });
+      } else if (m.room && msg.type === 'chat') {
+        const said = m.talk.say(msg.text, now);
+        if (!said) return;
+        if ('refused' in said) { send(ws, { type: 'chatRefused', reason: said.refused }); return; }
+        const packet = { type: 'chat', id: m.id, name: m.spec.name, text: said.text };
+        // A muted player still sees their own lines, so nothing tells them to try harder.
+        if (moderation.muted(m.session, now)) send(ws, packet); else broadcast(m.room, packet);
+      } else if (m.room && msg.type === 'report') {
+        // Someone in this room or the last one, up to ten minutes after they left; a player's id is only ever sent to their room.
+        const reason = reasonOf(msg.reason), target = typeof msg.id === 'string' ? known.get(msg.id)?.member : undefined;
+        const room = target && [m.room, m.lastRoom].find(r => r && (r === target.room || r === target.lastRoom));
+        if (!reason || !target || target === m || !room) { send(ws, { type: 'reported', id: String(msg.id ?? '').slice(0, 64), ok: false }); return; }
+        const counted = moderation.report(m.session, target.session, now);
+        send(ws, { type: 'reported', id: target.id, ok: counted.ok });
+        if (!counted.ok) return;
+        const row: Report = { at: now, room, reason, muted: counted.muted, reporter: { session: m.session, name: m.spec.name }, target: { session: target.session, name: target.spec.name, lines: [...target.talk.lines] } };
+        void Promise.resolve().then(() => report(row)).catch(e => console.error(`chat report: ${e instanceof Error ? e.message : String(e)}`));
       }
     });
   });
@@ -163,6 +195,8 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   const sweep = setInterval(() => {
     const now = Date.now();
     for (const [code, at] of alarms) if (at <= now) { if (rooms.get(code)?.size) alarms.set(code, now + keepRooms); else drop(code); }
+    for (const [id, k] of known) if (k.gone && now - k.gone > CHAT.reportMs) known.delete(id);
+    moderation.sweep(now);
   }, Math.min(60000, keepRooms || 60000));
   sweep.unref();
   const close = () => {
@@ -183,5 +217,5 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     for (const m of members) m.ws.terminate();
   };
   server.once('close', close);
-  return { close, restart, rooms, publics };
+  return { close, restart, rooms, publics, moderation };
 }

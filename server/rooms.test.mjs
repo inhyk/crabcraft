@@ -445,3 +445,96 @@ test('a code room retries five times as before, then gives up so the game can re
   await eventually(() => never.seen.lost.length === 1, 'the failed join');
   assert.deepEqual([never.seen.lost[0].delay, never.seen.lost[0].welcomed], [null, false]);
 });
+
+test('relayed chat is masked before anyone sees it, and a name with a bad word or contact details is replaced', async t => {
+  const { client } = await setup(t);
+  const a = await client(), b = await client(), c = await client();
+  a.send({ type: 'enter', area: 3, spec }); const ar = await a.next('welcome');
+  assert.equal(ar.renamed, undefined);
+  b.send({ type: 'enter', area: 3, spec: { ...spec, name: '시발크랩' } });
+  const br = await b.next('welcome');
+  assert.equal(br.renamed, '게 모험가');
+  assert.equal((await a.next('joined')).spec.name, '게 모험가');
+  c.send({ type: 'enter', area: 3, spec: { ...spec, name: 'kakao kid_99' } });
+  assert.deepEqual((await c.next('welcome')).players.map(p => p.spec.name).sort(), ['Test crab', '게 모험가']);
+  assert.equal((await a.next('joined')).spec.name, '게 모험가');
+  b.send({ type: 'chat', text: '시발 내 번호 010-1234-5678 이야' });
+  const line = await a.next('chat');
+  assert.deepEqual([line.id, line.name, line.text], [br.id, '게 모험가', '** 내 번호 ************* 이야']);
+  assert.equal((await b.next('chat')).text, '** 내 번호 ************* 이야');
+  assert.equal((await c.next('chat')).text, '** 내 번호 ************* 이야');
+  await new Promise(r => setTimeout(r, 700));
+  b.send({ type: 'chat', text: '카톡 아이디 abc123 naver.com' });
+  assert.equal((await c.next('chat')).text, '** *** ****** *********');
+});
+
+test('a line too soon, or the same line again, is dropped and the sender is told why', async t => {
+  const { client } = await setup(t);
+  const a = await client(), b = await client();
+  a.send({ type: 'create', spec }); const r = await a.next('welcome');
+  b.send({ type: 'join', room: r.room, spec }); await b.next('welcome'); await a.next('joined');
+  b.send({ type: 'chat', text: 'hello' });
+  assert.equal((await a.next('chat')).text, 'hello');
+  b.send({ type: 'chat', text: 'hello again' });
+  assert.deepEqual(await b.next('chatRefused'), { type: 'chatRefused', reason: 'fast' });
+  await new Promise(r => setTimeout(r, 720));
+  b.send({ type: 'chat', text: 'hello' });
+  assert.deepEqual(await b.next('chatRefused'), { type: 'chatRefused', reason: 'repeat' });
+  b.send({ type: 'chat', text: 'something new' });
+  assert.equal((await a.next('chat')).text, 'something new');
+  assert.equal(a.queue.some(m => m.type === 'chat' || m.type === 'chatRefused'), false);
+});
+
+test('reports keep the target\'s last lines; three reporters mute them, and a muted player only hears themselves', async t => {
+  const reports = [];
+  const { client, relay } = await setup(t, { report: r => { reports.push(r); } });
+  const target = await client(), ones = [await client(), await client(), await client()], away = await client();
+  const sid = i => `session-${i}-${'x'.repeat(12)}`;
+  target.send({ type: 'enter', area: 2, spec: { ...spec, name: 'Rude crab' }, session: sid('t') }); const tr = await target.next('welcome');
+  const ids = [];
+  for (const [i, c] of ones.entries()) { c.send({ type: 'enter', area: 2, spec: { ...spec, name: `Kid ${i}` }, session: sid(i) }); ids.push((await c.next('welcome')).id); }
+  away.send({ type: 'enter', area: 3, spec, session: sid('away') }); await away.next('welcome');
+  target.send({ type: 'chat', text: '너 학교 어디야?' });
+  for (const c of [target, ...ones]) assert.equal((await c.next('chat')).text, '너 학교 어디야?');
+  // A bad reason, an unknown id, oneself, and someone never met are refused.
+  ones[0].send({ type: 'report', id: tr.id, reason: '욕설' });
+  assert.deepEqual(await ones[0].next('reported'), { type: 'reported', id: tr.id, ok: false });
+  ones[0].send({ type: 'report', id: 'nobody', reason: 'other' }); assert.equal((await ones[0].next('reported')).ok, false);
+  ones[0].send({ type: 'report', id: ids[0], reason: 'other' }); assert.equal((await ones[0].next('reported')).ok, false);
+  away.send({ type: 'report', id: tr.id, reason: 'other' }); assert.equal((await away.next('reported')).ok, false);
+  ones[0].send({ type: 'report', id: tr.id, reason: 'personal' });
+  assert.deepEqual(await ones[0].next('reported'), { type: 'reported', id: tr.id, ok: true });
+  ones[0].send({ type: 'report', id: tr.id, reason: 'abuse' }); assert.equal((await ones[0].next('reported')).ok, false);
+  ones[1].send({ type: 'report', id: tr.id, reason: 'harassment' }); assert.equal((await ones[1].next('reported')).ok, true);
+  assert.equal(relay.moderation.muted(sid('t'), Date.now()), false);
+  await new Promise(r => setTimeout(r, 720));
+  target.send({ type: 'chat', text: 'still here' });
+  for (const c of [target, ...ones]) assert.equal((await c.next('chat')).text, 'still here');
+  ones[2].send({ type: 'report', id: tr.id, reason: 'other' }); assert.equal((await ones[2].next('reported')).ok, true);
+  await until(() => reports.length === 3, 'three stored reports');
+  assert.deepEqual(reports.map(r => [r.reason, r.muted, r.reporter.name, r.target.name, r.room]), [
+    ['personal', false, 'Kid 0', 'Rude crab', tr.room], ['harassment', false, 'Kid 1', 'Rude crab', tr.room], ['other', true, 'Kid 2', 'Rude crab', tr.room]]);
+  assert.deepEqual(reports[0].target.lines.map(l => l.text), ['너 학교 어디야?']);
+  assert.deepEqual(reports[2].target.lines.map(l => l.text), ['너 학교 어디야?', 'still here']);
+  assert.deepEqual([reports[0].reporter.session, reports[0].target.session], [sid(0), sid('t')]);
+  assert.equal(JSON.stringify(reports).includes('127.0.0.1'), false);
+  // Muted: the line comes back to its sender as usual and reaches nobody else.
+  await new Promise(r => setTimeout(r, 720));
+  target.send({ type: 'chat', text: 'can you hear me' });
+  assert.deepEqual(await target.next('chat'), { type: 'chat', id: tr.id, name: 'Rude crab', text: 'can you hear me' });
+  ones[0].send({ type: 'chat', text: 'bye' });
+  assert.equal((await target.next('chat')).text, 'bye');
+  for (const c of ones) { assert.equal((await c.next('chat')).text, 'bye'); assert.equal(c.queue.some(m => m.type === 'chat'), false); }
+  // The mute follows the player's session to a new socket; a player who left can still be reported for a while.
+  target.ws.close(); await ones[0].next('left');
+  const back = await client(); back.send({ type: 'enter', area: 2, spec: { ...spec, name: 'Rude crab' }, session: sid('t') }); const bk = await back.next('welcome');
+  assert.equal(bk.room, tr.room); await ones[0].next('joined');
+  back.send({ type: 'chat', text: 'hello?' });
+  assert.equal((await back.next('chat')).text, 'hello?');
+  await new Promise(r => setTimeout(r, 100));
+  for (const c of ones) assert.equal(c.queue.some(m => m.type === 'chat'), false);
+  ones[1].ws.close(); await ones[0].next('left');
+  ones[0].send({ type: 'report', id: ids[1], reason: 'other' }); assert.equal((await ones[0].next('reported')).ok, true);
+  await until(() => reports.length === 4, 'a report on a player who left');
+  assert.deepEqual(reports[3].target.name, 'Kid 1');
+});
