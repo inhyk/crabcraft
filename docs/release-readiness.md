@@ -116,3 +116,5 @@ GitHub의 방문 통계 커밋 `32c9257`을 보존해 병합한 `0da0759`를 기
 T를 2초 유지하면 현재 섬의 광장으로 귀환한다. 월드1은 원래 광장, 월드2는 (0,63), 월드3은 (0,60)이며 섬의 입장 포탈과 구분한다. 손 떼기/이동/점프/Esc/창 비활성화는 기존 채널 취소 동작을 사용한다. 메뉴/큰 지도/대화/퀘스트 창/죽음/연출 중에는 시작할 수 없다. HP·XP·레벨·스킬 쿨다운을 초기화하지 않는다.
 
 `npm run build`, 기존 전투/스킬 검사64개, 실Chrome `tools/qa-square-recall.mjs`가 종료0으로 통과했다(`tmp/qa/square-{build,boss-tests,recall}.log`). 한국어/영어 시작 안내와 확인 버튼, 1280×800/834×600/718×492의 접힘·펼침6개 배치, 실제 T 유지/해제/이동 취소, 채팅 입력과 메뉴 중 차단, blur 취소, 세 월드의 광장 귀환을 확인했다. 레벨1/137XP/HP70 유지, 목적지 충돌 밀림0m, 페이지 오류0이다. 섬 잠금 해제를 위한 진행 상태·생존·출발 위치·전투 중 HP 자연 회복 차단을 명시적으로 주입한 기능 검사이며 자연 진행 승리 검사가 아니다. 작은 화면에서 넘친 패널은 오른쪽 스크롤로 접근한다.
+
+배포 완료: 소스 `0460b27`, Vercel `dpl_DhFRvW2cbz32yTHQCHzJbmb9Z1xr`가 production/Ready이며 기존 플레이 alias에 연결됐다(`square-deploy.log`, `square-inspect-ready.log`). 공개 index와 JS/CSS 전체28개 SHA-256이 로컬 dist와 일치하고, seonn.dev/games/crabcraft는 HTTP200 및 같은 플레이 링크를 유지한다. 공개 alias의 실Chrome 검사도 같은 전체 항목으로 종료0/페이지 오류0을 확인했다(`square-public-browser.log`). 서버 변경이 없어 Worker는 재배포하지 않았다.
