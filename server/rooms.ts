@@ -18,7 +18,7 @@ export type RoomOptions = {
   maxMembers?: number;
 };
 
-/** Players per room, private or public. The elected host's browser simulates the whole room. */
+/** Players per room or public shard. In a room, the elected host's browser simulates the world for all of them. */
 export const ROOM_CAP = 8;
 /** World areas a public shard can hold: World I, II and III. */
 const areaOf = (v: unknown) => v === 2 || v === 3 ? v : 1;

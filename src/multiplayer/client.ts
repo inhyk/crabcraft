@@ -94,7 +94,7 @@ export class Multiplayer {
     this.refreshLanguage();
     // An invite link joins its room; otherwise the player goes online with everyone in this world area.
     const room = params.get('room');
-    if (room) { this.input.value = room; this.timer = setTimeout(() => this.connect('join', room), 500); }
+    if (room) { this.input.value = room; this.timer = setTimeout(() => /^[A-F0-9]{6}$/i.test(room.trim()) ? this.connect('join', room) : this.connect('enter'), 500); }
     else this.openSocket('enter', '');
   }
 
