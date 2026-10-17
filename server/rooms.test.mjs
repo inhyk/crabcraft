@@ -192,3 +192,25 @@ test('boat shore exits are validated and authenticated empty-boat calls route to
  b.send({type:'combat',event:{kind:'boat',target:'world',boat:{action:'call',throttle:0,steer:0}}});assert.equal((await a.next('combat')).id,br.id);
  assert.equal(worldOf({...world,boat:{...boat,exits:{bad:{x:Infinity,z:0,shore:true}}}}),null);assert.equal(worldOf({...world,boat:{...boat,exits:{bad:{x:1,z:0,shore:'yes'}}}}),null);
 });
+
+test('village games authenticate guest initiator, isolate commands and checkpoint spectators',async t=>{
+ const {client}=await setup(t),a=await client(),b=await client(),c=await client(),other=await client();
+ a.send({type:'create',spec,combatVersion:1});const ar=await a.next('welcome');
+ b.send({type:'join',room:ar.room,spec,combatVersion:1});const br=await b.next('welcome');
+ other.send({type:'create',spec,combatVersion:1});await other.next('welcome');
+ b.send({type:'combat',event:{kind:'village',target:'world',village:'hide',source:ar.id,seeker:ar.id}});
+ const request=await a.next('combat');assert.equal(request.id,br.id);assert.deepEqual(request.event,{kind:'village',target:'world',village:'hide'});
+ const village={id:'round-1',mode:'hide',phase:'ready',left:15,starter:br.id,seeker:br.id,members:[ar.id,br.id],caught:[],result:''};
+ a.send({type:'world',world:{...world,village}});assert.deepEqual((await b.next('world')).world.village,village);
+ b.send({type:'world',world:{...world,village:{...village,seeker:ar.id}}});
+ b.send({type:'combat',event:{kind:'village',target:'world',village:'win'}});
+ c.send({type:'join',room:ar.room,spec,combatVersion:1});assert.deepEqual((await c.next('welcome')).world.village,village);
+ assert.equal(a.queue.some(x=>x.type==='combat'),false);assert.equal(other.queue.some(x=>['world','combat'].includes(x.type)),false);
+});
+
+test('village checkpoints reject invalid members, duplicate catches and unbounded clocks',()=>{
+ const village={id:'round-1',mode:'tag',phase:'play',left:90,starter:'solo',seeker:'npc0',members:['solo'],caught:[],result:''};
+ assert.ok(worldOf({...world,village}));assert.ok(worldOf({...world,village:null}));
+ for(const patch of [{left:Infinity},{left:181},{members:['solo','solo']},{members:Array(9).fill('solo')},{members:[]},{starter:'stranger'},{seeker:'stranger'},{caught:['stranger']},{caught:['solo','solo']},{phase:'invented'},{mode:'pvp'}])assert.equal(worldOf({...world,village:{...village,...patch}}),null);
+ assert.equal(worldOf({...world,village:{...village,seeker:'solo',caught:['solo']}}),null);
+});

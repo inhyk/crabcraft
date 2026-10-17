@@ -328,7 +328,7 @@ export class Player {
     }
 
     // Auto-attack
-    if (t && t.alive && t.hostile && !this.cast && !this.channel && !this.dash && now >= this.nextSwing && u.alive && !u.stunned(now)) {
+    if (!g.villageGames?.playing && t && t.alive && t.hostile && !this.cast && !this.channel && !this.dash && now >= this.nextSwing && u.alive && !u.stunned(now)) {
       if (this.isRage) {
         if (u.gapTo(t) <= MELEE_GAP) {
           this.nextSwing = now + 2.0;
@@ -420,7 +420,7 @@ export class Player {
     const g = this.game;
     const u = this.unit;
     const ab = this.cls.abilities[slot - 1];
-    if (!ab || !u.alive || g.controlsLocked) return;
+    if (!ab || !u.alive || g.controlsLocked || g.villageGames?.playing) return;
     this.breakdance.cancel(0.12);
     const now = g.time;
     g.hud.actionBar.press(slot);

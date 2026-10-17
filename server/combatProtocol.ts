@@ -1,3 +1,4 @@
+export type VillageRound={id:string;mode:'hide'|'tag';phase:'ready'|'play'|'done';left:number;starter:string;seeker:string;members:string[];caught:string[];result:'seekers'|'runners'|'cancelled'|''};
 export type BoatState={exits?:Record<string,{x:number;z:number;shore:boolean}>;x:number;z:number;yaw:number;speed:number;seats:[string|null,string|null]};
 export type BoatCommand={action:'board'|'leave'|'drive'|'call';throttle:number;steer:number};
 /** One elected browser simulates the world. The relay authenticates its authority. */
@@ -13,10 +14,11 @@ export type BossState = {
   timeline?: { state: number; freed: number; freedYaw: number; released: boolean };
   mech: null | { id: number; kind: 'slam' | 'spray' | 'undertow' | 'nova' | 'eclipse' | 'cross' | 'barrage'; at: number[]; yaw: number; left: number };
 };
-export type WorldState = { boat?:BoatState; weather: { mood: 0 | 1 | 2 | 3; beacon: boolean; clock: number }; entities: EntityState[]; bosses: BossState[]; rust: boolean; abyss: boolean; chapter: 1 | 2 | 3; finalCleared?: boolean; firstEnding: boolean; trueCleared: boolean; social?:{mode:'coop'|'pvp';parties:Record<string,number>} };
+export type WorldState = { village?:VillageRound|null; boat?:BoatState; weather: { mood: 0 | 1 | 2 | 3; beacon: boolean; clock: number }; entities: EntityState[]; bosses: BossState[]; rust: boolean; abyss: boolean; chapter: 1 | 2 | 3; finalCleared?: boolean; firstEnding: boolean; trueCleared: boolean; social?:{mode:'coop'|'pvp';parties:Record<string,number>} };
 export type CombatEvent = {
+  village?:'hide'|'tag'|'stop';
   boat?:BoatCommand;
-  kind: 'boat' | 'party' | 'duel' | 'chapter' | 'environment' | 'condition' | 'attack' | 'hit' | 'death' | 'animation' | 'challenge' | 'effect';
+  kind: 'village' | 'boat' | 'party' | 'duel' | 'chapter' | 'environment' | 'condition' | 'attack' | 'hit' | 'death' | 'animation' | 'challenge' | 'effect';
   target: string; chapter?:1|2|3; party?:number; serial?: number; source?: string; amount?: number; crit?: boolean; rage?: number; action?: string;
   environment?: { mood?: 0 | 1 | 2 | 3; beacon?: boolean };
   condition?: { stun: number; slow: number; slowPct: number; pushX: number; pushZ: number; pushTime: number };
@@ -28,6 +30,10 @@ const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'ob
 export function worldOf(v: unknown): WorldState | null {
   if (!record(v) || !Array.isArray(v.entities) || v.entities.length > 128 || !Array.isArray(v.bosses) || ![3,4].includes(v.bosses.length) || typeof v.rust !== 'boolean' || typeof v.abyss !== 'boolean' || ![1,2,3].includes(v.chapter) || (v.finalCleared!==undefined&&typeof v.finalCleared!=='boolean') || typeof v.firstEnding !== 'boolean' || typeof v.trueCleared !== 'boolean') return null;
   if (!record(v.weather) || ![0,1,2,3].includes(v.weather.mood) || typeof v.weather.beacon !== 'boolean' || !n(v.weather.clock,0,10000000)) return null;
+  if(v.village!==undefined&&v.village!==null){
+    const r=v.village,member=(id:unknown)=>typeof id==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(id);
+    if(!record(r)||!member(r.id)||!member(r.starter)||!member(r.seeker)||!['hide','tag'].includes(r.mode)||!['ready','play','done'].includes(r.phase)||!n(r.left,0,180)||!['','seekers','runners','cancelled'].includes(r.result)||!Array.isArray(r.members)||r.members.length<1||r.members.length>8||r.members.some((id:unknown)=>!member(id))||new Set(r.members).size!==r.members.length||!r.members.includes(r.starter)||(!r.members.includes(r.seeker)&&!/^npc[0-9]{1,3}$/.test(r.seeker))||!Array.isArray(r.caught)||new Set(r.caught).size!==r.caught.length||r.caught.some((id:unknown)=>!r.members.includes(id)||id===r.seeker))return null;
+  }
   if(v.social!==undefined){
     if(!record(v.social)||!['coop','pvp'].includes(v.social.mode)||!record(v.social.parties))return null;
     const members=Object.entries(v.social.parties);if(members.length>8||members.some(([id,p])=>!/^[a-zA-Z0-9-]{1,64}$/.test(id)||!Number.isInteger(p)||!n(p,0,4)))return null;
@@ -58,6 +64,7 @@ export function worldOf(v: unknown): WorldState | null {
 export function eventOf(v: unknown, authority: boolean): CombatEvent | null {
   if (!record(v) || typeof v.target !== 'string' || v.target.length > 64) return null;
   if (!authority) {
+    if(v.kind==='village'&&v.target==='world'&&['hide','tag','stop'].includes(v.village))return {kind:'village',target:'world',village:v.village};
     if(v.kind==='boat'&&v.target==='world'&&record(v.boat)&&['board','leave','drive','call'].includes(v.boat.action)&&Number.isInteger(v.boat.throttle)&&n(v.boat.throttle,-1,1)&&Number.isInteger(v.boat.steer)&&n(v.boat.steer,-1,1))return {kind:'boat',target:'world',boat:{action:v.boat.action,throttle:v.boat.throttle,steer:v.boat.steer}};
     if(v.kind==='party'&&Number.isInteger(v.party)&&n(v.party,0,4))return {kind:'party',target:'world',party:v.party};
     if(v.kind==='duel'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.target)&&n(v.amount,1,Number.MAX_SAFE_INTEGER))return {kind:'duel',target:v.target,amount:v.amount,crit:v.crit===true};

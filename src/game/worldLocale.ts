@@ -2,6 +2,14 @@ import {t} from '../i18n';
 
 // Stable region keys also drive music and travel logic. Translate only their presentation.
 const REGIONS:Record<string,readonly [string,string,string]>={
+  'Dawnharbor':['새벽 항구','돛과 등불 아래 다시 모인 친구들','Friends reunited beneath sails and lanterns'],
+  'Twilight Citadel':['황혼 성채','성벽 너머, 빼앗긴 새벽과 친구를 되찾으세요','Reclaim your friend and the stolen dawn beyond the walls'],
+  'The Dawn Ascent':['새벽으로 오르는 길','꽃이 핀 계단에서 황혼의 성문까지','From flowering terraces to the twilight gate'],
+  'Dawnwatch Lighthouse':['새벽 등대','황금빛 등불이 돌아갈 항로를 밝힙니다','A golden beacon lights the way home'],
+  'Seabreeze Gardens':['바닷바람 정원','바다를 내려다보는 꽃길과 과수원','Flower paths and an orchard overlooking the sea'],
+  'Ashen Palm Coast':['잿빛 야자 해안','파도와 야자수 사이를 지나는 순찰길','A patrol route between palms and surf'],
+  'Moonshard Isle':['달조각 섬','별빛 수정과 달의 고리를 찾아서','Discover starlit crystals and the moon ring'],
+  'Amberwreck Isle':['노을 난파선 섬','모래에 잠든 배와 선장의 보물','A stranded ship and its captain’s treasure'],
   'Coralwind Isle':['산호바람 섬','바다를 건너 찾은 진주빛 쉼터','A pearl-lit refuge across the sea'],
   'Clawhaven':['클로헤이븐','여섯 종족이 함께 사는 항구 마을','Harbour town of six peoples'],
   'The Brine Shore':['소금물 해안','고철벌레들이 기어 다니는 해변','Where the Scraplings crawl'],
