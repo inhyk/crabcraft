@@ -128,3 +128,5 @@ T를 2초 유지하면 현재 섬의 광장으로 귀환한다. 월드1은 원�
 기존 host-authenticated world checkpoint의 선택 필드로 전기 예고 위치·남은 시간을 전달한다. 새 필드는 기존 relay의 확장 필드 전달과 호환되며 Worker 실행 로직은 변경하지 않았다(서버 파일 변경은 TS 타입뿐). 수신자는 좌표/시간/ID를 검증하고 같은 예고를 다시 만들지 않는다. 해파리 상태/XP도 공통 전투 체크포인트에 포함한다.
 
 `npm run build`, 전투/스킬68개, 방9개가 통과했다. `tools/qa-lighthouse-sea.mjs`의 실Chrome 로컬 검사는 종료0/페이지 오류0이다(`tmp/qa/{secret-sea-build,secret-sea-tests,secret-sea-relay-tests,lighthouse-sea-browser}.log`). 실제 F 유지/취소·재로드 저장·AI 전기 피해·한 번의 XP/코인·세 월드 격리/귀환과 두 브라우저의 같은 예고/손님 공격7HP/공유 처치 보상을 확인했다. 위치·진행 잠금 해제·생존·처치 피해는 명시적 fixture이며 자연 진행 완주를 주장하지 않는다. 스크린샷에서 등대 아래 무대와 물속 발광 해파리 모델을 직접 확인했다.
+
+공개 배포: 소스 `29c7a59`, Vercel `dpl_GPvwCnjyCzBHBeFDDEYcqqXLiEcH` production/Ready와 기존 stable alias를 확인했다(`secret-sea-deploy.log`, `secret-sea-inspect-ready.log`). 공개 index와 전체 JS/CSS28개 파일의 SHA256이 로컬 dist와 일치하고 seonn.dev/games/crabcraft HTTP200/기존 플레이 링크를 확인했다(`secret-sea-public-assets.log`). 공개 stable alias와 실제 공개 Worker에서도 위 실Chrome 전체 검사가 종료0/페이지 오류0으로 통과했다(`lighthouse-sea-public-browser.log`): 저장/재발견·전기 피해·한 번의 보상·월드 이동과 두 브라우저의 공유 예고·손님 공격·처치 XP를 확인했다. Worker는 호환되는 기존 버전을 유지했다. 소유한5205 미리보기만 종료했고 사용자 브라우저/다른 서버/작업 중인 허브는 변경하지 않았다.
