@@ -27,7 +27,8 @@ export default defineConfig({
   }],
   preview:{proxy:{'/api/account':{target:'http://127.0.0.1:8795',changeOrigin:true}}},
   server: {
-    proxy:{'/api/account':{target:'http://127.0.0.1:8795',changeOrigin:true}},
+    // Videos and posters live on the game server, not in public/ (VITE_MEDIA_BASE, default /media).
+    proxy:{'/api/account':{target:'http://127.0.0.1:8795',changeOrigin:true},'/media/':{target:'https://crabcraft-dev.seonn.dev',changeOrigin:true}},
     headers: {
       // SharedArrayBuffer for MuJoCo WASM threads and onnxruntime-web.
       'Cross-Origin-Opener-Policy': 'same-origin',
