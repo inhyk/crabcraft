@@ -60,6 +60,7 @@ export class AudioManager {
   musicVolume = 0.55;
   sfxVolume = 0.8;
   muted = false;
+  private held = false;
 
   constructor() {
     this.ctx = new AudioContext();
@@ -241,8 +242,14 @@ export class AudioManager {
 
   toggleMute(): boolean {
     this.muted = !this.muted;
-    this.master.gain.value = this.muted ? 0 : 1;
+    this.master.gain.value = this.muted || this.held ? 0 : 1;
     return this.muted;
+  }
+
+  /** Silence music and effects while a video plays; the player's own mute setting is kept. */
+  hold(on: boolean): void {
+    this.held = on;
+    this.master.gain.value = this.muted || this.held ? 0 : 1;
   }
 }
 
