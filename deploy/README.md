@@ -35,7 +35,7 @@ cat /srv/crabcraft/prod/history                    # 활성화 기록
 
 ## 설정 파일과 비밀값
 
-- 서버 환경 변수는 `/etc/crabcraft/dev.env`, `/etc/crabcraft/prod.env` 에 있다(`root:crabcraft`, 0640). `PORT`, `HOST`, `DATABASE_URL`, `ALLOWED_ORIGINS`, `TRUST_PROXY` 가 들어 있다. DB 비밀번호는 이 파일에만 있고 레포에는 없다. 값을 바꾸면 `sudo systemctl restart crabcraft-server@<env>` 로 반영한다.
+- 서버 환경 변수는 `/etc/crabcraft/dev.env`, `/etc/crabcraft/prod.env` 에 있다(`root:crabcraft`, 0640). `PORT`, `HOST`, `DATABASE_URL`, `ALLOWED_ORIGINS`, `TRUST_PROXY`, 그리고 Google 로그인용 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` 이 들어 있다. 두 Google 값이 없으면 로그인 버튼이 "로그인 준비 중이에요" 를 보여 준다. Google 콘솔의 승인된 리디렉션 URI 는 `https://<주소>/api/account/google/callback` 이다. DB 비밀번호는 이 파일에만 있고 레포에는 없다. 값을 바꾸면 `sudo systemctl restart crabcraft-server@<env>` 로 반영한다.
 - PostgreSQL 16 에 DB 와 역할이 `crabcraft_dev`, `crabcraft_prod` 로 하나씩 있다. 서로의 DB 에는 접속할 수 없다.
 - Caddy 설정은 `/etc/caddy/Caddyfile`, 서버 유닛은 `crabcraft-server@.service` 다.
 - 영상은 버킷 `gs://crabcraft-seonn-media/media/` 에 올린다. VM 이 10분마다 `/srv/crabcraft/media/` 로 받아 와(`crabcraft-media-sync.timer`) `/media/` 로 내보낸다. 버킷은 공개할 수 없어서 이렇게 한다.
