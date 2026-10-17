@@ -212,6 +212,8 @@ export function accountHandler(db: Pool, origins: readonly string[], clientIp: (
     try { body = req.method === 'POST' ? await boundedBody(req) : {}; }
     catch { headers.Connection = 'close'; return respond(400, { error: 'request' }); }
     const cookie = req.headers.cookie?.match(/(?:^|;\s*)cc_account=([a-z0-9_]{3,24})\.([a-f0-9]{64})(?:;|$)/);
+    // A guest has no session cookie: that is an answer, not an error the browser should log. A cookie that is there but bad stays 401.
+    if (!cookie && action === 'session' && !/(?:^|;\s*)cc_account=/.test(req.headers.cookie ?? '')) return respond(200, { signedIn: false });
     if (!cookie) return respond(401, { error: 'session' });
     try {
       const result = await handle(db, action, cookie[1], cookie[2], body);

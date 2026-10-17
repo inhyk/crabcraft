@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import WebSocket from 'ws';
 import { attachRooms } from './rooms.ts';
 import {worldOf} from './combatProtocol.ts';
+import { Link, ROOM_RETRIES, backoff, restartDelay } from '../src/multiplayer/link.ts';
 
 const spec = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Test crab' };
 const state = { x: 3, y: 0, z: 5, yaw: 1, hp: 80, maxHp: 100, alive: true };
@@ -335,4 +336,112 @@ test('private code rooms work as before next to public shards', async t => {
   // Leaving a private room for the world puts the player back in a shard.
   b.send({ type: 'enter', area: 1, spec }); assert.equal((await b.next('welcome')).room, shard);
   assert.equal((await a.next('left')).id, joined.id);
+});
+
+// The browser's socket handling (src/multiplayer/link.ts) against the real relay, with Node's WebSocket.
+const eventually = async (check, what, ms = 8000) => {
+  const end = Date.now() + ms;
+  while (!check()) { if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`); await new Promise(r => setTimeout(r, 20)); }
+};
+async function relayAt(port = 0, options = {}) {
+  const server = createServer(), relay = attachRooms(server, options);
+  server.listen(port, '127.0.0.1'); await once(server, 'listening');
+  const stop = async () => { relay.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); };
+  return { server, relay, port: server.address().port, stop };
+}
+/** A crab in the world as the game connects it; `random: () => 0` takes the shortest delay of each step. */
+function crab(t, port, name) {
+  const seen = { welcomes: [], lost: [], back: [] };
+  const link = new Link(() => `ws://127.0.0.1:${port}/multiplayer`, {
+    hello: (mode, room) => mode === 'enter' ? { type: 'enter', area: 2, spec: { ...spec, name } } : { type: mode, room, spec: { ...spec, name }, combatVersion: 1 },
+    message: msg => { if (msg.type === 'welcome') seen.welcomes.push(msg); },
+    lost: info => seen.lost.push(info),
+    back: info => seen.back.push(info),
+  }, { random: () => 0 });
+  t.after(() => link.dispose());
+  return { link, seen, welcomed: n => eventually(() => seen.welcomes.length >= n && link.open, `${name}'s welcome #${n}`) };
+}
+
+test('reconnect delays: about 1, 2, 4, 8, 16 s, then every 30 s with jitter; 0.5 to 3 s after a restart notice', async () => {
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 20].map(a => backoff(a, () => 0.5)), [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
+  assert.deepEqual([backoff(0, () => 0), backoff(0, () => 1), backoff(9, () => 0), backoff(9, () => 1)], [750, 1250, 22500, 37500]);
+  assert.deepEqual([restartDelay(() => 0), restartDelay(() => 1)], [500, 3000]);
+});
+
+test('relay.restart tells every socket the server is restarting before closing it', async t => {
+  const { client, relay, server } = await setup(t);
+  const a = await client(), b = await client();
+  a.send({ type: 'enter', area: 1, spec }); await a.next('welcome');
+  b.send({ type: 'create', spec, combatVersion: 1 }); await b.next('welcome');
+  const closed = [a, b].map(c => once(c.ws, 'close'));
+  await relay.restart();
+  for (const c of [a, b]) assert.ok(c.queue.some(m => m.type === 'restarting'));
+  assert.deepEqual((await Promise.all(closed)).map(([code]) => code), [1012, 1012]);
+  // Nobody new gets in while it stops.
+  const late = new WebSocket(`ws://127.0.0.1:${server.address().port}/multiplayer`);
+  late.on('error', () => {});
+  assert.equal((await once(late, 'unexpected-response'))[1].statusCode, 503);
+  late.terminate();
+});
+
+test('a public-shard crab comes back by itself when the server drops every socket, and after a full restart', async t => {
+  let relay = await relayAt();
+  const port = relay.port;
+  t.after(() => relay.stop());
+  const a = crab(t, port, 'Ada'), b = crab(t, port, 'Bo');
+  a.link.connect('enter'); await a.welcomed(1);
+  b.link.connect('enter'); await b.welcomed(1);
+  const shard = a.seen.welcomes[0].room;
+  assert.match(shard, /^W2/); assert.equal(b.seen.welcomes[0].room, shard);
+  // Every socket drops without a word (a network blip, a proxy reload): both back in a shard within a second or so.
+  for (const room of relay.relay.rooms.values()) for (const m of room.values()) m.ws.terminate();
+  await a.welcomed(2); await b.welcomed(2);
+  for (const c of [a, b]) assert.deepEqual(c.seen.lost.map(l => [l.mode, l.attempt, l.delay]), [['enter', 1, 750]]);
+  assert.equal(a.seen.welcomes[1].public, true);
+  assert.equal(relay.relay.rooms.get(a.seen.welcomes[1].room).size, 2);
+  // A deploy: SIGTERM's restart notice, then the process is gone for a moment and a new one listens on the same port.
+  const stopped = Date.now();
+  await relay.relay.restart();
+  await relay.stop();
+  await eventually(() => a.seen.lost.length >= 3 && b.seen.lost.length >= 3, 'tries against the stopped server');
+  relay = await relayAt(port);
+  await a.welcomed(3); await b.welcomed(3);
+  const gap = Date.now() - stopped;
+  for (const c of [a, b]) {
+    // The first try waits the restart delay, the rest back off; nothing gives up.
+    assert.equal(c.seen.lost[1].delay, 500);
+    assert.ok(c.seen.lost.slice(2).every((l, i) => l.mode === 'enter' && l.delay === backoff(i, () => 0)), JSON.stringify(c.seen.lost));
+    assert.equal(c.seen.back.at(-1).restart, true);
+    assert.ok(c.seen.back.at(-1).gap > 1000);
+  }
+  assert.ok(gap < 10000, `back in ${gap} ms`);
+  assert.equal(a.seen.welcomes[2].room, b.seen.welcomes[2].room);
+  assert.equal(relay.relay.rooms.get(a.seen.welcomes[2].room).size, 2);
+  // Whoever is back second finds the other already there.
+  const [first, second] = a.seen.welcomes[2].players.length ? [b, a] : [a, b];
+  assert.deepEqual(first.seen.welcomes[2].players, []);
+  assert.deepEqual(second.seen.welcomes[2].players.map(p => p.spec.name), [first === a ? 'Ada' : 'Bo']);
+});
+
+test('a code room retries five times as before, then gives up so the game can return to the public world', async t => {
+  const relay = await relayAt(0, { keepRooms: 60000 });
+  t.after(() => relay.stop());
+  const a = crab(t, relay.port, 'Host');
+  a.link.connect('create'); await a.welcomed(1);
+  const room = a.seen.welcomes[0].room;
+  assert.match(room, /^[A-F0-9]{6}$/);
+  assert.deepEqual([a.link.mode, a.link.room], ['join', room]);
+  // A socket that drops while the room is still there comes back to the same room.
+  for (const m of relay.relay.rooms.get(room).values()) m.ws.terminate();
+  await a.welcomed(2);
+  assert.equal(a.seen.welcomes[1].room, room);
+  await relay.stop();
+  await eventually(() => a.seen.lost.at(-1)?.delay === null, 'the room to give up', 15000);
+  assert.deepEqual(a.seen.lost.slice(1).map(l => [l.mode, l.attempt, l.delay]), [1, 2, 3, 4, 5, 6].map(n => ['join', n, n <= ROOM_RETRIES ? 1500 : null]));
+  assert.equal(a.link.retry, null);
+  // A room that was never reached gives up at once, as before.
+  const never = crab(t, relay.port, 'Late');
+  never.link.connect('join', 'ABCDEF');
+  await eventually(() => never.seen.lost.length === 1, 'the failed join');
+  assert.deepEqual([never.seen.lost[0].delay, never.seen.lost[0].welcomed], [null, false]);
 });

@@ -476,6 +476,8 @@ export class Game {
     });
     this.loaded = true;
     this.hideLoading();
+    // Back from Google into the game: the sign-in note waits for the world, not the loading painting.
+    this.app.account.greet();
     // The HUD fades in once the loading painting has mostly gone, instead of showing through it.
     const hudRoot = this.hud.root;
     hudRoot.style.opacity = '0';
