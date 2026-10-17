@@ -4,10 +4,10 @@ import { Emitter } from './util';
 import {language,t,type Language} from '../i18n';
 import {translatedQuest} from './questLocale';
 
-export type QuestId = 'q1' | 'q2' | 'q3' | 'q4' | 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6' | 'w7';
+export type QuestId = 'q1' | 'q2' | 'q3' | 'q4' | 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6' | 'w7' | 'd1' | 'd2';
 export type NpcId = 'brinebeard' | 'silvermoon' | 'coralline' | 'grukk' | 'hoofclaw' | 'rattlebolt' | 'pip';
 export type QuestStatus = 'locked' | 'available' | 'active' | 'ready' | 'done';
-export type ObjectiveKind = 'kill-scrapling' | 'kill-scavenger' | 'collect-cog' | 'deliver' | 'beacon' | 'boss' | 'crystal-a' | 'crystal-b' | 'crystal-c' | 'crystal-d' | 'lamp-a' | 'lamp-b' | 'lamp-c' | 'explore-west' | 'explore-east' | 'explore-north' | 'deliver-supplies' | 'eclipse-boss';
+export type ObjectiveKind = 'kill-scrapling' | 'kill-scavenger' | 'collect-cog' | 'deliver' | 'beacon' | 'boss' | 'crystal-a' | 'crystal-b' | 'crystal-c' | 'crystal-d' | 'lamp-a' | 'lamp-b' | 'lamp-c' | 'explore-west' | 'explore-east' | 'explore-north' | 'deliver-supplies' | 'eclipse-boss' | 'dawn-boss';
 
 export interface ObjectiveDef {
   id: string;
@@ -19,7 +19,7 @@ export interface ObjectiveDef {
 
 export interface QuestDef {
   id: QuestId;
-  chapter?: 1 | 2;
+  chapter?: 1 | 2 | 3;
   title: string;
   giver: NpcId;
   /** null = completes by itself when the objectives are done. */
@@ -37,6 +37,8 @@ export interface QuestDef {
 }
 
 export const QUESTS: Record<QuestId, QuestDef> = {
+ d1:{id:'d1',chapter:3,title:'The Missing Friend',giver:'brinebeard',turnIn:'brinebeard',offer:['Mira was taken by Solarkan when the dawn went dark. She is imprisoned in the northern citadel.','Defeat six Twilight Sentinels along the ascent. Reach level 30, reclaim the crown and bring our friend home.'],progress:'Clear the sentinel patrols on the way to the citadel.',complete:['The ascent is safe! Follow the golden road north to Mira’s prison.'],summary:'Help the Dawnharbor captain by defeating six Twilight Sentinels.',readyHint:'Return to the captain in Dawnharbor.',objectives:[{id:'d1-kill',kind:'kill-scavenger',label:'Twilight Sentinels defeated',count:6,poi:'wreck'}],xp:2800},
+ d2:{id:'d2',chapter:3,title:'Bring Mira Home',giver:'brinebeard',turnIn:'brinebeard',offer:['Mira’s light is still shining through the bars. Solarkan holds the prison key.','Challenge the level 30 king and we will all dance together again.'],progress:'Defeat Solarkan at level 30 and free Mira.',complete:['You brought Mira home. This dawn belongs to every friend on our three islands.'],summary:'Defeat Solarkan, free Mira, and celebrate with the whole village.',readyHint:'Return to the captain.',objectives:[{id:'d2-boss',kind:'dawn-boss',label:'Solarkan defeated and Mira freed',count:1,poi:'bossArena'}],xp:3500},
   q1: {
     id: 'q1',
     title: 'Salt in the Gears',
@@ -370,7 +372,7 @@ export const QUESTS: Record<QuestId, QuestDef> = {
 },
 };
 
-export const QUEST_ORDER: QuestId[] = ['q1', 'q2', 'q3', 'q4', 'w1','w2','w3','w4','w5','w6','w7'];
+export const QUEST_ORDER: QuestId[] = ['q1', 'q2', 'q3', 'q4', 'w1','w2','w3','w4','w5','w6','w7','d1','d2'];
 
 export interface NpcDef {
   id: NpcId;
@@ -567,22 +569,22 @@ export interface CurrentObjective {
 }
 
 export class QuestLog {
-  readonly status: Record<QuestId, QuestStatus> = { q1: 'available', q2: 'locked', q3: 'locked', q4: 'locked', w1:'locked',w2:'locked',w3:'locked',w4:'locked',w5:'locked',w6:'locked',w7:'locked' };
-  chapter:1|2=1;
+  readonly status: Record<QuestId, QuestStatus> = { q1: 'available', q2: 'locked', q3: 'locked', q4: 'locked', w1:'locked',w2:'locked',w3:'locked',w4:'locked',w5:'locked',w6:'locked',w7:'locked',d1:'locked',d2:'locked' };
+  chapter:1|2|3=1;
   inChapter(id: QuestId) { return (QUESTS[id].chapter ?? 1)===this.chapter; }
-  setChapter(chapter:1|2) {
+  setChapter(chapter:1|2|3) {
     this.chapter=chapter;
-    if(chapter===2)for(const id of QUEST_ORDER)if(this.inChapter(id) && this.status[id]==='locked')this.status[id]='available';
+    if(chapter>=2)for(const id of QUEST_ORDER)if(this.inChapter(id) && this.status[id]==='locked')this.status[id]='available';
   }
   readonly progress = new Map<string, number>();
   /** Personal navigation choices stay separate for the two worlds. */
-  readonly tracked: Partial<Record<1 | 2, QuestId>> = {};
+  readonly tracked: Partial<Record<1 | 2 | 3, QuestId>> = {};
   readonly events = new Emitter<QuestEvents>();
   cogs = 0;
 
   private canTrack(id: QuestId, chapter = this.chapter): boolean {
     return (QUESTS[id].chapter ?? 1) === chapter &&
-      (['active', 'ready'].includes(this.status[id]) || chapter === 2 && this.status[id] === 'available');
+      (['active', 'ready'].includes(this.status[id]) || chapter >= 2 && this.status[id] === 'available');
   }
 
   track(id: QuestId): boolean {
@@ -598,7 +600,7 @@ export class QuestLog {
 
   restoreTracking(value: unknown): void {
     if (!value || typeof value !== 'object') return;
-    for (const chapter of [1, 2] as const) {
+    for (const chapter of [1, 2, 3] as const) {
       const id = (value as Record<string, unknown>)[chapter];
       if (typeof id === 'string' && QUEST_ORDER.includes(id as QuestId) && this.canTrack(id as QuestId, chapter)) this.tracked[chapter] = id as QuestId;
     }

@@ -24,7 +24,7 @@ export class ControlHints {
   private done = new Set<HintStep>();
   private shownFor = 0;
   active = false;
-  private chapter:1|2=1;
+  private chapter:1|2|3=1;
 
   constructor() {
     const list = h('div', { class: 'hints-list' });
@@ -45,10 +45,10 @@ export class ControlHints {
     this.refreshLanguage();
   }
 
-  setChapter(chapter:1|2):void{if(this.chapter!==chapter){this.chapter=chapter;this.refreshLanguage();}}
+  setChapter(chapter:1|2|3):void{if(this.chapter!==chapter){this.chapter=chapter;this.refreshLanguage();}}
 
   refreshLanguage(): void {
-    const texts=['이동하기 · A와 D로 옆걸음','주변을 보고 방향 조절하기','가장 가까운 적 선택하기','기술로 싸우기','게와 대화 · 등불 앞에서 길게 누르기'];
+    const texts=['이동하기 · Shift로 달리기 · A/D 옆걸음','주변을 보고 방향 조절하기','가장 가까운 적 선택하기','기술로 싸우기','게와 대화 · 등불 앞에서 길게 누르기'];
     for(const [i,r] of ROWS.entries()){
       const row=this.rows.get(r.step)!;
       row.querySelector('.hints-text')!.textContent=r.step==='interact'&&this.chapter===2?t('대화·수정 채집 · 등불 앞에서 길게 누르기','Talk, gather crystals; hold at waystones'):t(texts[i],r.text);

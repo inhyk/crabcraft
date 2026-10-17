@@ -49,6 +49,8 @@ export class Player {
   resource = 0;
   maxResource = 100;
   xp = 0;
+  coins = 0;
+  attackRank = 0;
   gcdStart = 0;
   gcdEnd = 0;
   readonly cooldowns = new Map<string, { start: number; end: number }>();
@@ -83,7 +85,7 @@ export class Player {
   }
 
   get dmgMul(): number {
-    return 1 + 0.12 * (this.unit.level - 1);
+    return (1 + 0.12 * (this.unit.level - 1)) * (1 + this.attackRank * .08);
   }
 
   get inCombat(): boolean {
@@ -197,7 +199,8 @@ export class Player {
       nx = u.pos.x;
       nz = u.pos.z;
     } else {
-      const sp = WALK_SPEED * u.speedMul(now);
+      const sprint = free && !stunned && moving && (inp.isDown('ShiftLeft') || inp.isDown('ShiftRight'));
+      const sp = WALK_SPEED * (sprint ? 1.65 : 1) * u.speedMul(now);
       let lx = strafe;
       let lz = fwd;
       const len = Math.hypot(lx, lz);

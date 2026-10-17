@@ -36,7 +36,8 @@ export class DebugTools {
       h('p',null,t('13570으로 열기 · F8 무적 · F9 목표 완료 · F10 목표 이동','Enter 13570 · F8 god mode · F9 complete objective · F10 teleport')),
       button('무적 켜기 / 끄기','Toggle god mode',()=>this.toggleGod()),
       button('레벨 +1','Level +1',()=>this.addLevels(1)),button('레벨 +10','Level +10',()=>this.addLevels(10)),
-      button('월드 2로 이동','Travel to World II',()=>{if(!this.game.multiplayer?.battle.enterWorld2())this.game.world2.enter();}),
+      button('월드 2로 이동','Travel to World II',()=>{this.game.creatorTravel=true;if(!this.game.multiplayer?.battle.enterWorld2())this.game.world2.go(2);}),
+      button('월드 3로 이동','Travel to World III',()=>{this.game.creatorTravel=true;if(!this.game.multiplayer?.battle.travel(3))this.game.world2.go(3);}),
       button('현재 목표 완료','Complete current objective',()=>this.completeObjective()),button('목표로 이동','Teleport to objective',()=>this.teleport()),
       button('제작자 화면 닫기','Close creator tools',()=>{this.panel.hidden=true;}));
   }

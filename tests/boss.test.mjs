@@ -65,8 +65,9 @@ test('boss area attacks damage every party member inside the shared telegraph an
 
 test('direct chapter travel preserves story checkpoints and unlimited levels',()=>{
  assert.equal(LEVEL_XP.length,20);assert.equal(levelForXp(21999),19);assert.equal(levelForXp(22000),20);
- assert.equal(canEnterWorld2(false,true),false);assert.equal(canEnterWorld2(true,false),false);assert.equal(canEnterWorld2(true,true),true);
- assert.equal(canChallenge(20,20,true,false,2),true);assert.equal(canChallenge(20,20,true,true,1),false);
+ assert.equal(canEnterWorld2(false,true),false);assert.equal(canEnterWorld2(true,false),true);assert.equal(canEnterWorld2(true,true),true);
+ assert.equal(canChallenge(20,20,true,false,2),false);assert.equal(canChallenge(20,20,true,true,1),false);
+ assert.equal(canChallenge(29,30,true,true,3),false);assert.equal(canChallenge(30,30,true,true,2),false);assert.equal(canChallenge(30,30,true,true,3),true);assert.equal(canChallenge(30,30,true,false,3),false);
  assert.equal(canChallenge(19,20,true,true,2),false);assert.equal(canChallenge(20,20,true,true,2),true);
  let xp=6500,kills=0;while(xp<22000 && kills<200){const level=levelForXp(xp);xp+=140+12*(level-2);if(++kills%5===0)xp+=patrolReward(level);}
  assert.ok(kills<80,`World II needs too many kills: ${kills}`);

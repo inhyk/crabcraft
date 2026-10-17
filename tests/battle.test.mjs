@@ -18,7 +18,7 @@ function game() {
   networkState(){return {id,state:this.state,phase:this.phase,enraged:this.enraged,mech:null}},applyNetwork(s){Object.assign(this,s)},resumeAuthority(){},wake(){this.state='waking'}};return b};
  const noop=()=>{};
  let mood=0,beacon=false;
- const g={quests:new QuestLog(),world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),encounter:{engaged:false},world2:{chapter:1,enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
+ const g={quests:new QuestLog(),world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),dawnBoss:boss('b30'),encounter:{engaged:false},world2:{chapter:1,canTravel(ch){return ch===1||!!g.journey.abyssCleared&&(ch===2||!!g.journey.trueCleared)},go(ch){if(!this.canTravel(ch))return false;this.chapter=ch;return true;},enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
   player:{unit:p,setTarget:noop,gainRage:noop,onDamaged:noop,onWardHit:noop},hud:{floats:{spawn:noop},damageFlash:noop,messages:{info:noop}},
   follow:{shake:noop},audio:{sfx:noop},vfx:{deathPoof:noop,smoke:noop,stunStars:noop},onUnitDied(u){if(u.kind==='scrapling')this.rewards++}};
  g.combat=new Combat(g);return g;
@@ -129,7 +129,7 @@ test('shared lit beacon completes the guest quest once and never credits it in W
  assert.equal(b.quests.status.q3,'done');assert.equal(completed,1);
  aa.publish();flush();assert.equal(completed,1);
  b.quests=new QuestLog();b.quests.accept('q3');b.quests.bump('kill-scavenger',3);
- a.world2.chapter=2;aa.publish();flush();
+ a.journey.abyssCleared=true;a.world2.chapter=2;aa.publish();flush();
  assert.equal(b.quests.status.q3,'active');assert.equal(b.quests.progress.get('q3-beacon')??0,0);
 });
 
@@ -163,4 +163,17 @@ test('an unsent force cannot carry into a fresh peer after leaving a room',()=>{
  const g=game(),peer=unit('remote'),packets=[],peers=new Map([['b',{unit:peer}]]),sync=new BattleSync(g,p=>packets.push(p),()=>peers);sync.join('a','a',null);
  peer.pushX=3;peer.pushTime=.05;sync.update(.05);sync.leave();peers.set('b',{unit:unit('remote')});sync.join('a','a',null);sync.update(.3);
  assert.equal(packets.filter(p=>p.type==='combat'&&p.event.kind==='effect').length,0);
+});
+
+test('guest portal requests cannot skip the level10 or level20 crown; World III restores all four bosses',()=>{
+ const {a,b,aa,bb,flush}=pair();
+ a.player.unit.level=100;bb.travel(2);flush();assert.equal(a.world2.chapter,1);assert.equal(b.world2.chapter,1);
+ a.journey.rustCleared=a.journey.abyssCleared=true;aa.publish();flush();bb.travel(3);flush();assert.equal(a.world2.chapter,1);
+ bb.travel(2);flush();assert.equal(a.world2.chapter,2);
+ a.journey.trueCleared=true;a.worldBoss.state='dead';aa.publish();flush();bb.travel(3);flush();assert.equal(a.world2.chapter,3);assert.equal(b.world2.chapter,3);
+ a.dawnBoss.state='fight';a.dawnBoss.unit.level=30;aa.publish();flush();assert.equal(b.dawnBoss.state,'fight');assert.equal(b.dawnBoss.unit.level,30);
+ a.journey.finalCleared=true;a.dawnBoss.state='dead';aa.publish();flush();
+ const c=game(),cc=new BattleSync(c,()=>{},()=>new Map());c.multiplayer={battle:cc};cc.join('c','a',aa.snapshot());
+ assert.equal(c.world2.chapter,3);assert.equal(c.journey.finalCleared,true);assert.equal(c.dawnBoss.state,'dead');assert.equal(cc.snapshot().bosses.length,4);
+ bb.elect('b');assert.equal(b.journey.finalCleared,true);assert.equal(b.world2.chapter,3);
 });

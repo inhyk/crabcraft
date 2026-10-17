@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {DawnIsland} from './world3';
 import {t} from '../i18n';
 import type { Game } from './game';
 import type { Poi } from '../world/types';
@@ -6,7 +7,6 @@ import { snapshotMap } from './snapshots';
 import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS, starTrailDistance, nearStarObjective } from './world2Settlement';
 import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
-import { xpForLevel } from './progression';
 import { StarPortal } from './portal';
 import { StarVillageLife } from './world2Life';
 import {starGroundColor} from './world2Ground';
@@ -30,7 +30,10 @@ export class HiddenWorld {
   readonly root = new THREE.Group();
   private readonly sun=new StarSun();
   readonly trails=STAR_TRAILS;
-  chapter: 1 | 2 = 1;
+  chapter: 1 | 2 | 3 = 1;
+  readonly third=new DawnIsland();
+  private thirdGate:StarPortal;
+  private echoAt=0;
   readonly spawn = new THREE.Vector3(0, 3, 86);
   readonly arena: Poi = { id:'bossArena',position:new THREE.Vector3(0,3,-75),yaw:0,radius:17 };
   private baseRoot: THREE.Group;
@@ -51,11 +54,15 @@ export class HiddenWorld {
   /** Arrival (including respawn) must not immediately trigger the return gateway. */
   resetPortalArrival(){this.travelArmed=false;this.travelAt=this.game.time+3;}
   private baseNames:string[]=[];
-  get portalPosition(){return this.chapter===2?this.spawn:this.shorePortal.root.position;}
+  get portalPosition(){if(this.chapter===3)return this.third.spawn;if(this.chapter===2&&this.game.player.unit.pos.distanceTo(this.thirdGate.root.position)<6)return this.thirdGate.root.position;return this.chapter===2?this.spawn:this.shorePortal.root.position;}
+  portalLabel(){return this.chapter===3?t('월드 2로 돌아가기','Return to World II'):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?t('월드 3 · 새벽의 섬으로','World III · Sail to Dawnreach'):this.chapter===2?t('월드 1로 돌아가기','Return to World I'):t('월드 2로 이동','Travel to World II');}
+  canTravel(chapter:1|2|3){return chapter===1||this.game.creatorTravel||this.game.multiplayer?.battle.applying||(chapter===2?!!this.game.journey?.abyssCleared:!!this.game.journey?.abyssCleared&&!!this.game.journey?.trueCleared);}
+  go(chapter:1|2|3,authority=true){if(!this.canTravel(chapter)){this.game.hud.messages.info(chapter===2?t('10레벨 심해의 군주를 이겨야 월드2가 열려요.','Defeat the level 10 Lord of the Deep to unlock World II.'):t('월드2의 20레벨 일식 여왕을 이겨야 월드3가 열려요.','Defeat the level 20 Eclipse Queen to unlock World III.'));return false;}if(chapter===1)this.returnToShore();else if(chapter===3)this.enterThird(authority);else this.enter(authority);return true;}
   travel(){
     const g=this.game;if(g.controlsLocked||g.player.inCombat||g.encounter.engaged){g.hud.messages.info(t('전투가 끝나면 포탈을 이용할 수 있어요.','You can travel through the portal after combat.'));return;}
-    const chapter=this.chapter===2?1:2;
-    if(!g.multiplayer?.battle.travel(chapter)){if(chapter===2)this.enter();else this.returnToShore();}
+    const chapter=this.chapter===3?2:this.chapter===2&&this.portalPosition===this.thirdGate.root.position?3:this.chapter===2?1:2;
+    if(!this.canTravel(chapter)){this.go(chapter);return;}
+    if(!g.multiplayer?.battle.travel(chapter))this.go(chapter);
   }
   private rendered = false;
   private baseHomes: THREE.Vector3[] = [];
@@ -76,6 +83,7 @@ export class HiddenWorld {
   private sightOffset=new THREE.Vector3();
 
   async buildSettlement() {
+    await this.third.buildSettlement();
     const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
     this.collision=settlement.collision;this.root.add(settlement.root);
     this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!);
@@ -129,7 +137,7 @@ export class HiddenWorld {
     const w=game.world;
     this.baseRoot=w.root;
     this.originalHeight=w.heightAt.bind(w);this.originalCollision=w.resolveCollision.bind(w);this.originalRay=w.raycastSolid.bind(w);
-    this.root.visible=false;game.scene.add(this.root);
+    this.root.visible=false;game.scene.add(this.root,this.third.root);
     this.sky=new StarSky();this.root.add(this.sky.root);
     const land=new THREE.PlaneGeometry(280,320,140,160);land.rotateX(-Math.PI/2);
     const pos=land.attributes.position,colors=[];
@@ -175,16 +183,20 @@ export class HiddenWorld {
     for(let i=0;i<14;i++){const z=5-i*5,x=(i%2?1:-1)*6.5;const gem=new THREE.Mesh(new THREE.OctahedronGeometry(.4),teal);gem.position.set(x,this.height(x,z)+1,z);this.root.add(gem);this.rotations.push(gem);}
     this.portal=new StarPortal(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
-    const shorePosition=new THREE.Vector3(44,0,2);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
+    const ship=w.pois.wreck.position;
+    const shorePosition=new THREE.Vector3(ship.x-7,0,ship.z+7);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
     this.shorePortal=new StarPortal(shorePosition,'클로헤이븐 → 별빛 항구');w.root.add(this.shorePortal.root);
+    this.thirdGate=new StarPortal(new THREE.Vector3(0,this.height(0,-41),-41),'별빛 항구 → 새벽의 섬');this.root.add(this.thirdGate.root);
     this.root.add(this.sun.light,this.sun.light.target,new THREE.HemisphereLight('#869cff','#1a1028',1.0));
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
   }
   refreshLanguage(){
+    if(this.chapter===3){this.game.dawnBoss.freed.name=t('미라 · 사라진 친구','Mira · The Missing Friend');const names=[['새벽 항구의 로안 선장','Captain Roan'],['새벽의 사제 셀레네','Selene of Dawn'],['의무관 산호','Medic Coral'],['성문 수비대장 바론','Gatewarden Baron'],['여관주인 메리','Innkeeper Merry'],['항해사 루멘','Navigator Lumen'],['대장장이 플린','Smith Flynn']];this.game.npcs.forEach((n,i)=>{n.unit.name=t(names[i][0],names[i][1]);n.unit.title=t('새벽 항구의 주민','Dawnharbor Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('잿빛 해안 약탈자','Ash Coast Raider'):t('황혼 성채 파수병','Twilight Sentinel');return;}
     if(this.chapter!==2)return;
     for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');
   }
   regionAt(x:number,z:number){
+    if(this.chapter===3)return z<-45?t('황혼 성채','Twilight Citadel'):z<12?t('새벽으로 오르는 길','The Dawn Ascent'):Math.abs(x)>45?t('잿빛 야자 해안','Ashen Palm Coast'):t('새벽 항구','Dawnharbor');
     if(Math.hypot(x,z+75)<24)return 'The Star Throne';
     if(Math.abs(x)<54&&z>3&&z<100)return 'Starhaven';
     if(x<-40)return 'Moonshade Crystalwood';
@@ -197,7 +209,9 @@ export class HiddenWorld {
   }
 
   enter(authority=true) {
+    if(!this.canTravel(2)){this.go(2);return;}
     if(this.chapter===2)return;
+    if(this.chapter===3)this.returnToShore();
     const g=this.game,w=g.world;
     g.ending.cancel();
     g.hud.dialogue.close();
@@ -237,34 +251,60 @@ export class HiddenWorld {
       includeWorldPoints:false, radius:g.player.unit.radius+.15, step:.5,
     });
     g.boss.unit.hidden=g.finalBoss.unit.hidden=true;
+    g.dawnBoss.unit.hidden=g.dawnBoss.freed.hidden=true;
     g.worldBoss.unit.hidden=g.worldBoss.state==='dormant'||g.worldBoss.state==='dead';
     g.quests.setChapter(2);
-    // A direct visitor starts at the island's intended difficulty without faking story victories.
-    if(g.player.level<10)g.player.restoreXp(xpForLevel(10));
     g.hud.tracker.update(g.quests);
     if(g.hud.questLog.open)g.hud.questLog.render();
     {
       const mobs=g.enemies.filter(e=>!e.isAdd);
-      mobs.forEach((e,i)=>{const side=e.kind==='scrapling'?-1:1;const x=side*(60+(i%4)*7),z=28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority)e.respawnAt(x,z);e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.refreshAppearance();});
+      mobs.forEach((e,i)=>{const side=e.kind==='scrapling'?-1:1;const x=i<3?[19,30,20][i]:side*(60+(i%4)*7),z=i<3?[-8,-22,-34][i]:28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority&&!e.isEcho)e.respawnAt(x,z);if(e.isEcho)e.despawn();e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.refreshAppearance();});
       for(const e of g.enemies.filter(e=>e.isAdd))e.despawn();
     }
+    this.echoAt=g.time+45;
     g.player.respawn();g.player.unit.teleport(w,this.spawn.x,this.spawn.z,Math.PI);g.follow.cut();g.follow.yaw=0;
     g.player.setTarget(null);g.zone='';g.hud.messages.banner(() => (t('WORLD II · 잊힌 별의 섬','WORLD II · Isle of Forgotten Stars')),() => (t('별빛 항구 · 주민 퀘스트 7개 · 성장에는 끝이 없습니다','Starhaven · Seven villager quests · Keep growing beyond level 20')),'zone');
     try{g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-140,maxX:140,minZ:-150,maxZ:170,topY:90},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));}catch{ /* The island still plays if map capture is unavailable. */ }
     g.journey?.save();
   }
+  private enterThird(authority=true){
+    if(this.chapter===3)return;
+    const g=this.game;
+    if(this.chapter===2)this.returnToShore();
+    // Capture the original homes/POIs once using the same restoration path as World II.
+    if(!this.baseHomes.length){this.enter(authority);this.returnToShore();}
+    g.ending.cancel();g.hud.dialogue.close();g.hud.messages.closeDiscovery();
+    this.chapter=3;this.rendered=true;this.baseRoot.visible=false;this.root.visible=false;this.third.root.visible=true;this.resetPortalArrival();
+    const w=g.world,third=this.third;w.heightAt=(x,z)=>third.height(x,z);
+    w.resolveCollision=(x,z,r,out)=>{const d=Math.hypot(x/122,(z-3)/149);if(d>.81){x*=.81/d;z=3+(z-3)*.81/d;}return third.collision.resolve(x,z,r,out);};w.raycastSolid=(a,b)=>third.collision.raycast(a,b);
+    w.pois.spawn.position.copy(third.spawn);w.pois.spawn.yaw=Math.PI;
+    for(const [id,x,z] of [['forge',20,64],['chapel',16,48],['tavern',-20,64],['grove',-55,36],['shore',55,36],['wreck',55,-25],['lighthouse',0,-40],['beacon',0,-44],['bossArena',0,-72]] as const)w.pois[id].position.set(x,third.height(x,z),z);
+    g.npcs.forEach((n,i)=>{const [x,z]=third.town[i];n.poi.position.set(x,third.height(x,z),z);n.unit.hidden=false;n.unit.teleport(w,x,z,Math.PI);});
+    const walks=third.town.map(([x,z])=>new THREE.Vector3(x,third.height(x,z),z));g.townsfolk.forEach((f,i)=>{const p=walks[i%walks.length];f.unit.hidden=false;f.unit.teleport(w,p.x,p.z+3);f.relocate(walks,1.8);});
+    this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,4,26),new THREE.Vector3(0,9,-22),third.arena.position],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
+    for(const b of [g.boss,g.finalBoss,g.worldBoss]){b.unit.hidden=true;b.freed.hidden=true;}g.dawnBoss.unit.hidden=['dormant','dead'].includes(g.dawnBoss.state);
+    if(!g.journey?.finalCleared){const f=g.dawnBoss.freed;f.hidden=false;f.targetable=false;f.teleport(w,13,-57);}
+    g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho){e.despawn();return;}const x=(i%2?1:-1)*(43+i%4*8),z=16-Math.floor(i/2)*10;e.home.set(x,third.height(x,z),z);if(authority)e.respawnAt(x,z);});
+    g.quests.setChapter(3);g.hud.hints.setChapter(3);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
+    g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
+    g.hud.messages.banner(()=>t('WORLD III · 새벽을 잃은 섬','WORLD III · Isle of the Stolen Dawn'),()=>t('친구 미라를 구하고 30레벨 황혼의 왕에게 도전하세요','Rescue Mira and challenge the Twilight King at level 30'),'zone');
+    g.hud.chat.system(t('친구 미라는 황혼 성채에 갇혀 있어요. 항구의 선장에게 구조 의뢰를 받으세요.','Mira is imprisoned in the Twilight Citadel. Speak to the captain in Dawnharbor.'));
+    g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-150,maxX:150,minZ:-175,maxZ:175,topY:110},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));g.journey?.save();
+  }
+
   returnToShore() {
     if(this.chapter===1)return;
     this.game.ending.cancel();
     this.game.hud.dialogue.close();
     this.game.hud.messages.closeDiscovery();
-    this.showEpilogue();this.chapter=1;this.game.hud.hints.setChapter(1);this.game.quests.setChapter(1);
+    this.showEpilogue();this.third.root.visible=false;this.chapter=1;this.game.hud.hints.setChapter(1);this.game.quests.setChapter(1);
     // World II has its own lighting. Restore the untouched shore atmosphere and fog.
     this.game.world.setMood(this.game.world.getEnvironment().mood,true);
     const g=this.game;
-    g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);e.refreshAppearance();});
+    g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&!e.isEcho&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);e.refreshAppearance();if(e.isEcho)e.despawn();});
+    for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}
     this.resetPortalArrival();
-    g.worldBoss.unit.hidden=true;
+    g.worldBoss.unit.hidden=true;g.dawnBoss.unit.hidden=g.dawnBoss.freed.hidden=true;
     for(const b of [g.boss,g.finalBoss])b.unit.hidden=b.state==='dormant'||b.state==='dead';
     for(const u of [...g.npcs.map(n=>n.unit),...g.townsfolk.map(t=>t.unit)])u.hidden=false;
     g.player.respawn();g.player.unit.teleport(g.world,this.shorePortal.root.position.x,this.shorePortal.root.position.z+5,Math.PI);g.follow.cut();
@@ -273,7 +313,7 @@ export class HiddenWorld {
     g.hud.minimap.setSnapshot(g.takeMapSnapshot());g.journey?.save();
   }
   showEpilogue() {
-    this.ambience.stop();
+    this.ambience.stop();this.third.root.visible=false;
     if(!this.rendered)return;this.rendered=false;this.root.visible=false;this.baseRoot.visible=true;
     const w=this.game.world;w.heightAt=this.originalHeight;w.resolveCollision=this.originalCollision;w.raycastSolid=this.originalRay;
     for(const [id,old] of this.basePois){const poi=w.pois[id as keyof typeof w.pois];poi.position.copy(old.position);poi.yaw=old.yaw;}
@@ -281,13 +321,18 @@ export class HiddenWorld {
     const town=w.spawns.find(s=>s.id==='townsfolk');if(town)for(const t of this.game.townsfolk)t.relocate(town.points,town.radius);
   }
   update(dt:number,time:number) {
-    this.shorePortal.update(time);this.portal.update(time);
+    this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
+    this.thirdGate.root.visible=!!this.game.journey?.trueCleared||this.game.creatorTravel;
+    if(this.chapter===3)this.third.update(time,!!this.game.journey?.finalCleared);
     if(!this.game.ending.active&&!this.game.controlsLocked){
       const distance=Math.hypot(this.game.player.unit.pos.x-this.portalPosition.x,this.game.player.unit.pos.z-this.portalPosition.z);
       if(distance>4.5)this.travelArmed=true;
       if(this.travelArmed&&distance<1.7&&this.game.time>this.travelAt){this.travelArmed=false;this.travelAt=this.game.time+3;this.travel();}
     }
     if(!this.rendered)return;
+    if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#c5a582');fog.density=.0045;}return;}
+    const echo=this.game.enemies.find(e=>e.isEcho);
+    if(echo&&this.game.multiplayer?.battle.authority!==false&&echo.state==='gone'&&time>this.echoAt&&!this.game.encounter.engaged){echo.home.set(0,this.height(0,-22),-22);echo.respawnAt(0,-22);this.echoAt=time+120;this.game.hud.messages.info(t('녹의 폭군의 잔영이 별길에 나타났어요!','An echo of the Rust Tyrant has appeared on the Starroad!'));}
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
     this.sun.update(position.x,position.z);
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
@@ -334,9 +379,9 @@ export class HiddenWorld {
   }
   dispose(){
     this.ambience.dispose();
-    this.showEpilogue();this.game.scene.remove(this.root);this.baseRoot.remove(this.shorePortal.root);
+    this.showEpilogue();this.game.scene.remove(this.root,this.third.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
-    for(const root of [this.root,this.shorePortal.root])root.traverse(o=>{
+    for(const root of [this.root,this.shorePortal.root,this.third.root])root.traverse(o=>{
       if(o instanceof THREE.DirectionalLight||o instanceof THREE.PointLight||o instanceof THREE.SpotLight)o.shadow.dispose();
       if(o instanceof THREE.Mesh||o instanceof THREE.Points){
         // BatchedMesh owns matrix/indirection textures as well as its private geometry.

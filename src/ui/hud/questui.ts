@@ -82,11 +82,11 @@ export class QuestLogPanel {
     const log = this.game.quests;
     const listScroll = this.listEl.scrollTop;
     const known = QUEST_ORDER.filter((id) => log.inChapter(id) && log.status[id] !== 'locked' && log.status[id] !== 'available');
-    const offers = this.game.world2.chapter === 2 ? QUEST_ORDER.filter(id => log.inChapter(id) && log.status[id] === 'available') : [];
+    const offers = this.game.world2.chapter >= 2 ? QUEST_ORDER.filter(id => log.inChapter(id) && log.status[id] === 'available') : [];
     const visible = [...known, ...offers];
     if (!this.selected || !visible.includes(this.selected)) this.selected = log.trackedQuest ?? known.find((id) => log.status[id] !== 'done') ?? offers[0] ?? known[0] ?? null;
     this.listEl.replaceChildren(h('h3', null, t('퀘스트 기록','Quest Log')));
-    if (!visible.length) this.listEl.append(h('div', { class: 'qlog-empty' }, this.game.world2.chapter===2 ? t('별빛 마을 주민들의 머리 위 ! 표시를 찾아 F로 대화하세요.','Look for ! above the villagers and press F to talk.') : t('광장에 있는 브라인비어드 선장에게 말을 걸어 보세요.','No quests yet. Captain Brinebeard in the square looks like he needs help.')));
+    if (!visible.length) this.listEl.append(h('div', { class: 'qlog-empty' }, this.game.world2.chapter>=2 ? t('별빛 마을 주민들의 머리 위 ! 표시를 찾아 F로 대화하세요.','Look for ! above the villagers and press F to talk.') : t('광장에 있는 브라인비어드 선장에게 말을 걸어 보세요.','No quests yet. Captain Brinebeard in the square looks like he needs help.')));
     for (const id of visible) {
       if (id === offers[0]) this.listEl.append(h('h4', {class:'qlog-offers-heading'}, `${t('주민들의 부탁','Villager requests')} · ${offers.length}`));
       const st = log.status[id];

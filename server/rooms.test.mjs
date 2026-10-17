@@ -152,3 +152,10 @@ test('optional boss cinematic timelines preserve legacy checkpoints and reject m
  for(const invalid of [null,{}, {...timeline,state:-1},{...timeline,state:61},{...timeline,freed:-2},{...timeline,freed:14},{...timeline,freedYaw:Infinity},{...timeline,released:'yes'}])
   assert.equal(worldOf({...world,bosses:world.bosses.map(b=>({...b,timeline:invalid}))}),null);
 });
+
+
+test('World III requires a complete four-boss checkpoint and accepts level30 challenges',()=>{
+ const third={...world,chapter:3,finalCleared:false,bosses:[...world.bosses,{id:'b30',state:'fight',phase:2,enraged:false,mech:{id:5,kind:'barrage',at:[0,17,-72],yaw:0,left:2.6}}]};
+ assert.ok(worldOf(third));assert.equal(worldOf({...world,chapter:3}),null);assert.equal(worldOf({...world,finalCleared:true}),null);
+ assert.equal(worldOf({...third,bosses:third.bosses.filter(b=>b.id!=='b10')}),null);
+});

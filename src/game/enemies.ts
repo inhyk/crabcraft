@@ -41,6 +41,7 @@ export class Enemy {
   pack: Enemy[] = [];
   /** Boss adds never respawn. */
   isAdd = false;
+  isEcho = false;
   private nextSwing = 0;
   private wanderAt = 0;
   private wander: THREE.Vector3 | null = null;
@@ -140,6 +141,7 @@ export class Enemy {
   update(dt: number): void {
     const g = this.game;
     const u = this.unit;
+    if(this.isEcho&&(g.world2?.chapter!==2||this.state==='gone'))return;
     const now = g.time;
     const p = g.combatTarget?.(u) ?? g.player.unit;
     if (this.state === 'gone') return;
@@ -268,6 +270,7 @@ export class Enemy {
   private startLeap(): void {
     const g = this.game;
     const u = this.unit;
+    if(this.isEcho&&(g.world2?.chapter!==2||this.state==='gone'))return;
     const p = g.combatTarget?.(u) ?? g.player.unit;
     const d = u.distTo(p) || 1;
     const back = (u.radius + p.radius + 0.2) / d;
@@ -289,6 +292,7 @@ export class Enemy {
   private updateLeap(dt: number): void {
     const g = this.game;
     const u = this.unit;
+    if(this.isEcho&&(g.world2?.chapter!==2||this.state==='gone'))return;
     const l = this.leap!;
     const dur = 0.75;
     l.t += dt;
@@ -311,9 +315,10 @@ export class Enemy {
 
   private scaleForJourney(): void {
     const base = ENEMY_STATS[this.kind];
-    const inWorld2=this.game.world2?.chapter===2&&!this.isAdd;
+    if(this.isEcho){this.applyStats(Math.max(10,this.game.partyLevel));this.unit.level=this.stats.level;this.unit.maxHp=this.unit.hp=this.stats.hp;return;}
+    const inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
     const scaling=!this.isAdd&&(inWorld2||this.game.journey?.rustCleared);
-    const level = scaling ? Math.max(inWorld2 ? 10 : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0)) : base.level;
+    const level = scaling ? Math.max(inWorld2 ? (this.game.world2.chapter===3?20:10) : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0)) : base.level;
     if (this.stats.level === level && this.stats.respawn === (inWorld2 ? 12 : base.respawn)) return;
     this.applyStats(level);
     this.unit.level=level;
@@ -321,13 +326,14 @@ export class Enemy {
   }
 
   private applyStats(level:number): void {
-    const base=ENEMY_STATS[this.kind],inWorld2=this.game.world2?.chapter===2&&!this.isAdd;
+    const base=ENEMY_STATS[this.kind],inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
     const scale=1+.12*(level-base.level);
+    if(this.isEcho){Object.assign(this.stats,{level,hp:Math.round(500*scale),xp:350+level*10,respawn:120,speed:2.8,aggro:10,leash:24,dmg:[14+level,18+level]});return;}
     Object.assign(this.stats,{level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:inWorld2?12:base.respawn,dmg:[base.dmg[0]*scale,base.dmg[1]*scale]});
   }
 
   refreshAppearance(): void {
-    this.unit.setBaseTint(this.game.world2?.chapter===2 ? '#b08cff' : LED[this.kind]);
+    this.unit.setBaseTint((this.game.world2?.chapter??1)>=2 ? '#b08cff' : LED[this.kind]);
   }
 
   private canRespawnUnseen(): boolean {
