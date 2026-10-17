@@ -20,7 +20,7 @@ const errorText=(code:string)=>({
 export class Account {
  username='';revision=0;open=false;
  private modal:HTMLDialogElement|null=null;
- private state='';private conflict=false;private busy=false;private timer=0;private ready=false;private saved='';
+ private state='';private conflict=false;private clash=false;private busy=false;private timer=0;private ready=false;private saved='';
  constructor(private app:App){
   window.addEventListener('cc-progress-saved',()=>this.schedule());
   window.addEventListener('online',()=>this.schedule());
@@ -60,7 +60,7 @@ export class Account {
   }
   localStorage.setItem(metaKey,JSON.stringify({revision:session.revision,snapshot:cloud}));
   this.username=session.username;this.revision=session.revision;setSaveProfile(session.username);localStorage.setItem('cc.lastAccount',session.username);
-  this.saved=cloud;this.conflict=false;this.state=t('계정에 저장됐어요.','Saved to your account.');this.app.reloadSpec();
+  this.saved=cloud;this.conflict=false;this.clash=false;this.state=t('계정에 저장됐어요.','Saved to your account.');this.app.reloadSpec();
  }
  private schedule(){
   if(!this.ready||!this.username||this.conflict)return;
@@ -73,7 +73,7 @@ export class Account {
   if(snapshot===this.saved)return true;
   this.busy=true;this.state=t('계정에 저장 중…','Saving to your account…');this.updateStatus();
   try{const session=await this.api('save',{revision:this.revision,save:JSON.parse(snapshot)});this.revision=session.revision;this.saved=snapshot;localStorage.setItem('cc.account.meta:'+this.username,JSON.stringify({revision:this.revision,snapshot}));this.state=t('계정에 저장됐어요.','Saved to your account.');return true;}
-  catch(e){const code=e instanceof AccountError?e.code:'network';this.conflict=code==='conflict'||code==='session';this.state=errorText(code);if(!this.conflict)this.timer=window.setTimeout(()=>void this.flush(),15000);return false;}
+  catch(e){const code=e instanceof AccountError?e.code:'network',clash=code==='conflict';this.conflict=clash||code==='session';this.state=errorText(code);if(!this.conflict)this.timer=window.setTimeout(()=>void this.flush(),15000);if(clash!==this.clash){this.clash=clash;this.render();}return false;}
   finally{this.busy=false;this.updateStatus();if(!this.conflict&&JSON.stringify(readBundle())!==snapshot)this.schedule();}
  }
  private updateStatus(){const el=this.modal?.querySelector('.account-status');if(el)el.textContent=this.state;}
@@ -102,10 +102,10 @@ export class Account {
   const status=h('p',{class:'account-status',role:'status','aria-live':'polite'},this.state);
   const title=h('h2',null,t('모험가의 항해 기록','Your adventure log'));
   if(this.username){
-   const save=h('button',{type:'button',class:'cc-btn',onclick:()=>{void this.flush();}},t('지금 저장','Save now'));
    const reload=h('button',{type:'button',class:'cc-btn ghost',onclick:()=>{void (async()=>{reload.disabled=true;try{await this.leaveGame();const session=await this.api('session');this.accept(session);this.render();}catch(e){this.state=errorText(e instanceof AccountError?e.code:'network');this.updateStatus();}finally{reload.disabled=false;}})();}},t('계정 저장 불러오기','Load account save'));
    const logout=h('button',{type:'button',class:'cc-btn ghost',onclick:()=>{void (async()=>{logout.disabled=true;try{await this.leaveGame();if(!await this.flush()){this.state+=' '+t('진행을 보관한 채 나가려면 아래 버튼을 눌러 주세요.','Use the button below to sign out and keep a local copy.');this.updateStatus();const force=h('button',{class:'cc-btn ghost',onclick:()=>void this.logout()},t('이 기기에 보관하고 로그아웃','Keep local copy and sign out'));d.append(force);return;}await this.logout();}catch{this.state=errorText('network');this.updateStatus();}finally{logout.disabled=false;}})();}},t('로그아웃','Sign out'));
-   d.replaceChildren(close,title,h('p',{class:'account-name'},t('Google 계정으로 로그인됨','Signed in with Google')),h('p',null,t('캐릭터·레벨·퀘스트·월드 진행을 계정에 자동 저장해요.','Your character, level, quests and worlds save automatically.')),status,save,reload,logout);return;
+   // Saving is automatic; loading the account save only resolves a conflict with another window.
+   d.replaceChildren(close,title,h('p',{class:'account-name'},t('Google 계정으로 로그인됨','Signed in with Google')),h('p',null,t('캐릭터·레벨·퀘스트·월드 진행을 계정에 자동 저장해요.','Your character, level, quests and worlds save automatically.')),status,...(this.clash?[reload]:[]),logout);return;
   }
   const mark=h('span',{class:'account-google-mark'});mark.innerHTML=GOOGLE_MARK;
   const google=h('button',{type:'button',class:'account-google',onclick:()=>void this.google(google)},mark,h('span',null,t('Google로 로그인','Sign in with Google')));

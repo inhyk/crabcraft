@@ -41,7 +41,7 @@ export class BattleSync {
     else this.event({kind:'hit',target,amount:dmg,crit});
   }
 
-  villageMembers(){return [this.active?this.ownId:'solo',...[...this.peers()].filter(([,p])=>p.unit?.alive&&!p.unit.hidden).map(([id])=>id)];}
+  villageMembers(){return this.active?[this.ownId,...[...this.peers()].filter(([,p])=>p.unit?.alive&&!p.unit.hidden).map(([id])=>id)]:['solo'];}
   village(command:'hide'|'tag'|'stop'){if(this.authority)this.game.villageGames?.request(this.active?this.ownId:'solo',command);else this.event({kind:'village',target:'world',village:command});}
   boatUnit(id:string){return id===this.ownId?this.game.player.unit:this.peers().get(id)?.unit;}
   hasBoatMember(id:string){return id===this.ownId||this.peers().has(id);}

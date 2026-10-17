@@ -19,3 +19,7 @@
 .mp-panel button[aria-pressed="true"]{border-color:#f1cc76;background:#5a4a2c;color:#fff1bd;box-shadow:inset 0 0 0 1px #d2b46c66}
 
 .mp-panel button[data-party]{flex:1;white-space:nowrap;font-size:12px;padding:7px 4px}
+
+.mp-panel .mp-friends{margin:12px 0 2px;padding-top:10px;border-top:1px solid #ffffff1a;font-size:12px;font-weight:700;color:#ffe09a}
+.mp-panel .mp-reconnect{margin-top:4px}
+.mp-panel [hidden]{display:none!important}
