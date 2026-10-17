@@ -81,6 +81,7 @@ export class BossJourney {
     try {
       const data = readJourneySave(this.key);
       if (!data) return;
+      this.game.achievements?.restore(data.achievements);
       const second = data.chapter === 2 || data.chapter===3;
       this.game.player.restoreXp(data.xp);
       this.game.player.coins=Number.isSafeInteger(data.coins)&&data.coins>=0?data.coins:0;
@@ -116,7 +117,7 @@ export class BossJourney {
   }
 
   save() {
-    localStorageSet(this.key, JSON.stringify({ coins:this.game.player.coins,attackRank:this.game.player.attackRank,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
+    localStorageSet(this.key, JSON.stringify({ achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
       quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked }));
   }
 

@@ -1,5 +1,5 @@
-export type BoatState={x:number;z:number;yaw:number;speed:number;seats:[string|null,string|null]};
-export type BoatCommand={action:'board'|'leave'|'drive';throttle:number;steer:number};
+export type BoatState={exits?:Record<string,{x:number;z:number;shore:boolean}>;x:number;z:number;yaw:number;speed:number;seats:[string|null,string|null]};
+export type BoatCommand={action:'board'|'leave'|'drive'|'call';throttle:number;steer:number};
 /** One elected browser simulates the world. The relay authenticates its authority. */
 export type EntityState = {
   id: string; x: number; y: number; z: number; yaw: number; hp: number; maxHp: number;
@@ -33,6 +33,7 @@ export function worldOf(v: unknown): WorldState | null {
     const members=Object.entries(v.social.parties);if(members.length>8||members.some(([id,p])=>!/^[a-zA-Z0-9-]{1,64}$/.test(id)||!Number.isInteger(p)||!n(p,0,4)))return null;
   }
   if(v.boat!==undefined){const b=v.boat;if(!record(b)||!n(b.x,-2000,2000)||!n(b.z,-2000,2000)||!n(b.yaw,-10000,10000)||!n(b.speed,-10,10)||!Array.isArray(b.seats)||b.seats.length!==2||b.seats.some((id:unknown)=>id!==null&&(typeof id!=='string'||!/^[a-zA-Z0-9-]{1,64}$/.test(id)))||(b.seats[0]!==null&&b.seats[0]===b.seats[1]))return null;}
+  if(v.boat?.exits!==undefined){const exits=v.boat.exits;if(!record(exits)||Object.keys(exits).length>8||Object.entries(exits).some(([id,e])=>!/^[a-zA-Z0-9-]{1,64}$/.test(id)||!record(e)||!n(e.x,-2000,2000)||!n(e.z,-2000,2000)||typeof e.shore!=='boolean'))return null;}
   const ids = new Set<string>();
   for (const e of v.entities) {
     if (!record(e) || !key(e.id) || ids.has(e.id)) return null;
@@ -57,7 +58,7 @@ export function worldOf(v: unknown): WorldState | null {
 export function eventOf(v: unknown, authority: boolean): CombatEvent | null {
   if (!record(v) || typeof v.target !== 'string' || v.target.length > 64) return null;
   if (!authority) {
-    if(v.kind==='boat'&&v.target==='world'&&record(v.boat)&&['board','leave','drive'].includes(v.boat.action)&&Number.isInteger(v.boat.throttle)&&n(v.boat.throttle,-1,1)&&Number.isInteger(v.boat.steer)&&n(v.boat.steer,-1,1))return {kind:'boat',target:'world',boat:{action:v.boat.action,throttle:v.boat.throttle,steer:v.boat.steer}};
+    if(v.kind==='boat'&&v.target==='world'&&record(v.boat)&&['board','leave','drive','call'].includes(v.boat.action)&&Number.isInteger(v.boat.throttle)&&n(v.boat.throttle,-1,1)&&Number.isInteger(v.boat.steer)&&n(v.boat.steer,-1,1))return {kind:'boat',target:'world',boat:{action:v.boat.action,throttle:v.boat.throttle,steer:v.boat.steer}};
     if(v.kind==='party'&&Number.isInteger(v.party)&&n(v.party,0,4))return {kind:'party',target:'world',party:v.party};
     if(v.kind==='duel'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.target)&&n(v.amount,1,Number.MAX_SAFE_INTEGER))return {kind:'duel',target:v.target,amount:v.amount,crit:v.crit===true};
     if (v.kind === 'chapter' && v.target === 'world' && [1,2,3].includes(v.chapter)) return {kind:'chapter',target:'world',chapter:v.chapter};

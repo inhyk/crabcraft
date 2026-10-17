@@ -4,6 +4,9 @@ import {loadingLabel,loadingTips,regionName,regionSubtitle} from './worldLocale'
 // quests, combat, AI, effects, music and the HUD together.
 import * as THREE from 'three';
 import {starMemory} from './starMemories';
+import {Achievements} from './achievements';
+import {VoyageIsland} from './voyageIsland';
+import {CORAL_ISLAND} from '../world/voyage';
 import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
@@ -101,6 +104,8 @@ export class Game {
   journey: BossJourney | null = null;
   lighthouseSecret: LighthouseSecret | null = null;
   boats:ShoreBoat|null=null;
+  achievements:Achievements|null=null;
+  voyageIsland:VoyageIsland|null=null;
 
   get encounter(): Boss {
     if (this.world2?.chapter===3 && this.dawnBoss) return this.dawnBoss;
@@ -401,6 +406,7 @@ export class Game {
     this.follow.pitch = 0.3;
 
     progress(0.9, 'Painting the portraits');
+    this.voyageIsland=new VoyageIsland(this);
     this.hud = new Hud(this);
     this.app.ui.append(this.hud.root);
     this.hud.root.style.visibility = 'hidden';
@@ -481,6 +487,7 @@ export class Game {
     this.journey = new BossJourney(this);
     this.lighthouseSecret = new LighthouseSecret(this);
     this.boats=new ShoreBoat(this);
+    this.achievements=new Achievements(this);
     this.journey.restore();
     this.intro();
     this.multiplayer = new Multiplayer(this);
@@ -499,6 +506,7 @@ export class Game {
   takeMapSnapshot() {
     const pts: THREE.Vector3[] = Object.values(this.world.pois).map((p) => p.position);
     for (const s of this.world.spawns) pts.push(...s.points);
+    if(this.world2.chapter===1)pts.push(new THREE.Vector3(CORAL_ISLAND.x+CORAL_ISLAND.radius,4,CORAL_ISLAND.z));
     let minX = Infinity;
     let maxX = -Infinity;
     let minZ = Infinity;
@@ -605,6 +613,8 @@ export class Game {
     }
     this.multiplayer?.update(dt);
     this.boats?.update(paused?0:dt);
+    this.achievements?.update(paused?0:dt);
+    this.voyageIsland?.update();
     // Visual updates (culled when far away, simplified when small on screen)
     const cam = this.camera.position;
     // Screen pixels per world unit at distance 1 (CSS pixels, so Retina does not change the LOD).
@@ -715,6 +725,7 @@ export class Game {
       return;
     }
     if (hud.menu.open) return;
+    if(inp.wasPressed('KeyJ')){hud.menu.show();hud.menu.achievements();return;}
     if (inp.wasPressed('KeyG')) { hud.minimap.toggle(); return; }
     if (hud.minimap.expanded) return;
     if (inp.wasPressed('KeyL')) hud.questLog.toggle();
@@ -801,8 +812,9 @@ export class Game {
 
   // ================================================================ interaction and dialogue
 
-  private findInteractable(): { kind: 'unit'; unit: Unit } | { kind: 'beacon' } | {kind:'secret'} | {kind:'boat'} | {kind:'world2';node:NonNullable<ReturnType<HiddenWorld['interactable']>>} | {kind:'portal'} | null {
+  private findInteractable(): { kind: 'unit'; unit: Unit } | { kind: 'beacon' } | {kind:'secret'} | {kind:'boat'} | {kind:'islandTreasure'} | {kind:'world2';node:NonNullable<ReturnType<HiddenWorld['interactable']>>} | {kind:'portal'} | null {
     const p = this.player.unit;
+    if(this.voyageIsland?.nearby())return {kind:'islandTreasure'};
     if(this.boats?.nearby())return {kind:'boat'};
     if(this.lighthouseSecret?.nearby())return {kind:'secret'};
     let best: Unit | null = null;
@@ -843,6 +855,7 @@ export class Game {
     }
     const it = this.findInteractable();
     if (!it) this.hud.prompt.hide();
+    else if(it.kind==='islandTreasure')this.hud.prompt.show('F',this.achievements?.has('treasure')?t('보물상자 살펴보기','Inspect treasure chest'):t('진주빛 보물상자 열기 · 75 코인','Open pearl treasure · 75 coins'));
     else if(it.kind==='boat')this.hud.prompt.show('F',this.boats!.label());
     else if(it.kind==='secret')this.hud.prompt.show('F',t('길게 눌러 바위의 게 문양 살펴보기','Hold to inspect the crab carving'));
     else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.portalLabel());
@@ -854,6 +867,7 @@ export class Game {
   private interact(): void {
     const it = this.findInteractable();
     if (!it) return;
+    if(it.kind==='islandTreasure'){this.voyageIsland?.interact();return;}
     if(it.kind==='boat'){this.boats?.interact();return;}
     if(it.kind==='secret'){this.lighthouseSecret?.interact();return;}
     if(it.kind==='portal'){this.world2.travel();return;}
@@ -1301,7 +1315,7 @@ export class Game {
   }
 
   private updateZone(): void {
-    const z = this.world2.chapter>=2 ? this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z) : this.zoneAt(this.player.unit.pos);
+    const z = this.world2.chapter>=2 ? this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z) : this.voyageIsland?.onIsland?'Coralwind Isle':this.zoneAt(this.player.unit.pos);
     if (z !== this.zoneCandidate) {
       this.zoneCandidate = z;
       this.zoneSince = this.time;
@@ -1358,6 +1372,7 @@ export class Game {
     if (this.resourcesReleased) return;
     this.resourcesReleased = true;
     this.journey?.dispose();
+    this.voyageIsland?.dispose();this.voyageIsland=null;
     this.boats?.dispose();this.boats=null;
     this.lighthouseSecret?.dispose();
     this.lighthouseSecret = null;

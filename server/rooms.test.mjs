@@ -171,3 +171,10 @@ test('boat controls route to host and two-seat checkpoints survive late joins',a
  a.send({type:'world',world});await b.next('world');assert.equal(a.queue.some(p=>p.type==='combat'),false);
  assert.equal(worldOf({...checkpoint,boat:{...boat,seats:[ar.id,ar.id]}}),null);assert.equal(worldOf({...checkpoint,boat:{...boat,seats:[ar.id,br.id,'third']}}),null);assert.equal(worldOf({...checkpoint,boat:{...boat,x:NaN}}),null);
 });
+
+test('boat shore exits are validated and authenticated empty-boat calls route to host',async t=>{
+ const {client}=await setup(t);const a=await client(),b=await client();a.send({type:'create',spec,combatVersion:1});const ar=await a.next('welcome');b.send({type:'join',room:ar.room,spec,combatVersion:1});const br=await b.next('welcome');
+ const boat={x:207,z:-22,yaw:1.5,speed:0,seats:[ar.id,null],exits:{[br.id]:{x:216,z:-22,shore:true}}};a.send({type:'world',world:{...world,boat}});assert.deepEqual((await b.next('world')).world.boat,boat);
+ b.send({type:'combat',event:{kind:'boat',target:'world',boat:{action:'call',throttle:0,steer:0}}});assert.equal((await a.next('combat')).id,br.id);
+ assert.equal(worldOf({...world,boat:{...boat,exits:{bad:{x:Infinity,z:0,shore:true}}}}),null);assert.equal(worldOf({...world,boat:{...boat,exits:{bad:{x:1,z:0,shore:'yes'}}}}),null);
+});

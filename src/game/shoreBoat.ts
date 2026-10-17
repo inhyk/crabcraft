@@ -28,27 +28,49 @@ export class ShoreBoat {
   }
   private get id(){const b=this.g.multiplayer?.battle;return b?.active?b.ownId:'solo';}
   get seated(){return this.state.seats.includes(this.id);}
-  nearby(){const p=this.g.player.unit.pos;return this.g.world2.chapter===1&&(this.seated||(Math.hypot(p.x-144,p.z-19)<4.5&&Math.hypot(this.state.x-151,this.state.z-18.5)<10));}
+  nearby(){const p=this.g.player.unit.pos;return this.g.world2.chapter===1&&(this.seated||this.canSummon()||this.canBoard(p.x,p.y,p.z));}
+  private atDock(){const p=this.g.player.unit.pos;return Math.hypot(p.x-144,p.z-19)<4.5;}
+  private canSummon(){return !this.state.seats.some(Boolean)&&Math.hypot(this.state.x-151,this.state.z-18.5)>12&&this.atDock();}
+  private canBoard(x:number,y:number,z:number){return Math.hypot(x-this.state.x,z-this.state.z)<12&&Math.abs(this.state.speed)<.5&&y>.15&&Math.abs(y-this.g.world.heightAt(x,z))<2;}
+  /** Forward first, then the flanks: never land on cliffs, water or inside a wall. */
+  landing(radius=this.g.player.unit.radius??1.2){
+    const g=this.g,s=this.state,out=new THREE.Vector2(),r=Math.max(.8,radius);
+    for(const angle of [0,-.35,.35,-.7,.7,-1.2,1.2,Math.PI])for(let d=5;d<=11;d+=.75){
+      const a=s.yaw+angle,x=s.x+Math.sin(a)*d,z=s.z+Math.cos(a)*d,y=g.world.heightAt(x,z);
+      if(y<.25||y>2.8)continue;
+      if(![[0,0],[-r,0],[r,0],[0,-r],[0,r]].every(([dx,dz])=>{const h=g.world.heightAt(x+dx,z+dz);return h>.15&&Math.abs(h-y)<1.05;}))continue;
+      if(g.units?.some(u=>u.alive&&!u.hidden&&(u.kind==='player'||u.kind==='remote')&&!s.seats.some(id=>id&&this.unit(id)===u)&&Math.hypot(u.pos.x-x,u.pos.z-z)<r+u.radius+.2))continue;
+      g.world.resolveCollision(x,z,r,out);if(Math.hypot(out.x-x,out.y-z)>.4)continue;
+      return {x,z};
+    }return null;
+  }
   label(){
+    if(this.canSummon())return t('빈 배를 부두로 부르기','Call the empty skiff to the dock');
     const count=this.state.seats.filter(Boolean).length;
-    if(this.seated)return this.state.seats[0]===this.id?t('부두로 내리기 · W/S 이동 · A/D 조종','Return to dock · W/S move · A/D steer'):t('동승 중 · 부두로 내리기','Passenger · Return to dock');
+    if(this.seated){const land=this.landing(),pilot=this.state.seats[0]===this.id;return land?t(pilot?'가까운 해안에 내리기 · W/S 이동 · A/D 조종':'동승 중 · 가까운 해안에 내리기',pilot?'Land on shore · W/S move · A/D steer':'Passenger · Land on shore'):t(pilot?'부두로 귀환 · W/S 이동 · A/D 조종':'동승 중 · 부두로 귀환',pilot?'Return to dock · W/S move · A/D steer':'Passenger · Return to dock');}
     return count===2?t('배 정원 2/2명 · 친구가 내리면 탈 수 있어요','Skiff full · 2/2 riders'):t(`배 타기 · ${count}/2명`,`Board skiff · ${count}/2 seats`);
   }
-  interact(){const b=this.g.multiplayer?.battle;const command:BoatCommand={action:this.seated?'leave':'board',throttle:0,steer:0};if(b)b.boat(command);else this.request('solo',command);}
+  interact(){const b=this.g.multiplayer?.battle;const command:BoatCommand={action:this.seated?'leave':this.canSummon()?'call':'board',throttle:0,steer:0};if(b)b.boat(command);else this.request('solo',command);}
   private unit(id:string){return id==='solo'?this.g.player.unit:this.g.multiplayer?.battle.boatUnit(id);}
   request(id:string,c:BoatCommand){
     const g=this.g,u=this.unit(id);if(!u?.alive||g.world2.chapter!==1)return;
+    if(c.action==='call'){if(!this.state.seats.some(Boolean)&&Math.hypot(u.pos.x-144,u.pos.z-19)<4.5)this.resetHome();return;}
     const seat=this.state.seats.indexOf(id);
-    if(c.action==='leave'){if(seat>=0){this.state.seats[seat]=null;this.compact();}return;}
+    if(c.action==='leave'){if(seat>=0){
+      const land=this.landing(u.radius??1.2),exit=land??{x:143,z:23};this.state.exits={...(this.state.exits??{}),[id]:{...exit,shore:!!land}};
+      const entries=Object.entries(this.state.exits);this.state.exits=Object.fromEntries(entries.slice(-8));
+      this.state.seats[seat]=null;u.teleport(g.world,exit.x,exit.z);this.compact();if(!land&&!this.state.seats.some(Boolean))this.resetHome();
+    }return;}
     if(c.action==='board'){
-      if(seat>=0||g.encounter.engaged||Math.hypot(u.pos.x-144,u.pos.z-19)>4.5||Math.hypot(this.state.x-151,this.state.z-18.5)>10||Math.abs(this.state.speed)>.5||Math.abs(u.pos.y-.85)>3)return;
+      if(seat>=0||g.encounter.engaged||!this.canBoard(u.pos.x,u.pos.y,u.pos.z))return;
       const free=this.state.seats.indexOf(null);if(free<0){if(id===this.id)g.hud.messages.info(t('배가 꽉 찼어요! 최대 2명이에요.','The skiff is full! Two riders maximum.'));return;}
-      this.state.seats[free]=id;return;
+      this.state.seats[free]=id;if(this.state.exits)delete this.state.exits[id];return;
     }
     if(seat===0){this.throttle=c.throttle;this.steer=c.steer;this.inputAt=g.time;}
   }
-  private compact(){this.state.seats=this.state.seats.filter(Boolean).concat([null,null]).slice(0,2) as BoatState['seats'];this.throttle=this.steer=0;this.state.speed=0;if(!this.state.seats[0])this.state=home();}
-  networkState():BoatState{return {...this.state,seats:[...this.state.seats]};}
+  private compact(){this.state.seats=this.state.seats.filter(Boolean).concat([null,null]).slice(0,2) as BoatState['seats'];this.throttle=this.steer=0;this.state.speed=0;}
+  private resetHome(){this.state={...home(),exits:this.state.exits};}
+  networkState():BoatState{return {...this.state,seats:[...this.state.seats],exits:this.state.exits?structuredClone(this.state.exits):undefined};}
   applyNetwork(s:BoatState|undefined){if(s)this.state={...s,seats:[...s.seats]};}
   disconnect(){if(this.seated&&this.g.world2.chapter===1)this.dock();this.wasSeated=false;this.state=home();this.throttle=this.steer=0;}
   private dock(){const p=this.g.player;p.unit.teleport(this.g.world,143,23,-Math.PI/2);p.unit.motion.stop(undefined,0);}
@@ -57,9 +79,9 @@ export class ShoreBoat {
     const g=this.g,b=g.multiplayer?.battle,authority=b?.authority!==false;
     this.root.visible=g.world2.chapter===1;
     if(!this.root.visible){this.state=home();this.wasSeated=false;return;}
-    if(authority){let removed=false;for(let i=0;i<2;i++){const id=this.state.seats[i];if(id&&((id!=='solo'&&!b?.hasBoatMember(id))||this.unit(id)?.alive===false)){this.state.seats[i]=null;removed=true;}}if(removed)this.compact();if(!this.state.seats[0]&&this.state.seats[1])this.compact();if(!this.state.seats.some(Boolean)&&this.state.speed!==0)this.compact();}
-    if(this.seated&&!this.wasSeated)this.clearPose();
-    if(!this.seated&&this.wasSeated&&g.player.unit.alive)this.dock();
+    if(authority){let removed=false;for(let i=0;i<2;i++){const id=this.state.seats[i];if(id&&((id!=='solo'&&!b?.hasBoatMember(id))||this.unit(id)?.alive===false)){this.state.seats[i]=null;removed=true;}}if(removed){this.compact();if(!this.state.seats.some(Boolean)&&!this.landing())this.resetHome();}if(!this.state.seats[0]&&this.state.seats[1])this.compact();if(!this.state.seats.some(Boolean)&&this.state.speed!==0)this.compact();}
+    if(this.seated&&!this.wasSeated){this.clearPose();g.hud.messages.info(t('산호바람 섬은 부두 동북쪽에 있어요. G 지도로 섬과 배를 찾아보세요!','Coralwind Isle lies northeast of the dock. Press G to find the island and skiff!'));}
+    if(!this.seated&&this.wasSeated&&g.player.unit.alive){const exit=this.state.exits?.[this.id];if(exit){g.player.unit.teleport(g.world,exit.x,exit.z);if(exit.shore)g.achievements?.unlock('landfall');}else this.dock();}
     this.wasSeated=this.seated;
     if(this.state.seats[0]===this.id&&g.time-this.sentAt>.09){this.sentAt=g.time;const allowed=!g.app.account.open&&!g.hud.menu.open&&!g.hud.minimap.expanded&&!g.cinematic&&!g.ending.active;const inp=g.input,c:BoatCommand={action:'drive',throttle:allowed?Number(inp.isDown('KeyW'))-Number(inp.isDown('KeyS')):0,steer:allowed?Number(inp.isDown('KeyA'))-Number(inp.isDown('KeyD')):0};if(b)b.boat(c);else this.request('solo',c);}
     if(authority){
@@ -67,7 +89,7 @@ export class ShoreBoat {
       this.state.speed+=(target-this.state.speed)*Math.min(1,dt*2.5);
       this.state.yaw+= (active?this.steer:0)*dt*.9*Math.min(1,Math.abs(this.state.speed)+.2);
       const x=this.state.x+Math.sin(this.state.yaw)*this.state.speed*dt,z=this.state.z+Math.cos(this.state.yaw)*this.state.speed*dt;
-      const clear=x>149&&x<235&&z>-70&&z<95&&[-3.8,0,3.8].every(d=>[-1.6,0,1.6].every(w=>g.world.heightAt(x+Math.sin(this.state.yaw)*d+Math.cos(this.state.yaw)*w,z+Math.cos(this.state.yaw)*d-Math.sin(this.state.yaw)*w)<.2));
+      const clear=x>105&&x<265&&z>-78&&z<96&&[-3.8,0,3.8].every(d=>[-1.6,0,1.6].every(w=>g.world.heightAt(x+Math.sin(this.state.yaw)*d+Math.cos(this.state.yaw)*w,z+Math.cos(this.state.yaw)*d-Math.sin(this.state.yaw)*w)<.2));
       if(clear){this.state.x=x;this.state.z=z;}else this.state.speed=0;
       this.state.yaw=Math.atan2(Math.sin(this.state.yaw),Math.cos(this.state.yaw));
     }
