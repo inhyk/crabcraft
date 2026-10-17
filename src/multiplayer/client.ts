@@ -15,13 +15,25 @@ import {t} from '../i18n';
 type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number };
 /** `dance`: the peer's breakdance, replayed here move by move as the peer announces them. */
 type Peer = { spec: CrabSpec; unit: Unit | null; state: State | null; dance: BreakRoutine | null };
+type Mode = 'enter' | 'create' | 'join';
+const ROMAN = ['', 'I', 'II', 'III'];
 
+/**
+ * Entering the world joins a public shard of the current world area; travelling moves to that area's shard.
+ * A shard shares presence, emotes and chat, while combat, quests and saves stay each player's own.
+ * A code room with friends (`room`) shares one simulated world: bosses, travel and parties.
+ */
 export class Multiplayer {
   readonly root: HTMLDetailsElement;
   readonly battle: BattleSync;
   private ws: WebSocket | null = null;
   private peers = new Map<string, Peer>();
   private room = '';
+  /** Public shard code and its world area while in one. */
+  private shard = '';
+  private area = 0;
+  private mode: Mode = 'enter';
+  private offline = false;
   private ownId = '';
   private disposed = false;
   private elapsed = 0;
@@ -32,7 +44,13 @@ export class Multiplayer {
   private retry: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
   private rejoinParty: number | null = null;
-  private status = h('p', { class: 'mp-status', role: 'status' }, '혼자 플레이 중');
+  private status = h('p', { class: 'mp-status', role: 'status' }, '연결 중…');
+  private summary = h('summary', null, '🦀');
+  private intro = h('p', { class: 'mp-intro' });
+  private friends = h('h3', { class: 'mp-friends' });
+  private reconnect = h('button', { type: 'button', class: 'mp-reconnect', hidden: true, onclick: () => this.connect('enter') }, '다시 연결');
+  private modeRow: HTMLElement;
+  private partyRow: HTMLElement;
   private code = h('div', { class: 'mp-code' });
   private roster = h('div', { class: 'mp-roster' });
   private log = h('div', { class: 'mp-log', role: 'log', 'aria-label': '방 채팅' });
@@ -45,7 +63,7 @@ export class Multiplayer {
   private invite = h('input', { readonly: true, class: 'mp-invite', 'aria-label': '초대 링크', onclick: (e: Event) => (e.target as HTMLInputElement).select() });
   private sendButton = h('button', { type: 'submit' }, '전송');
   private partyPanel=h('div',{class:'mp-party'});
-  private statusText:[string,string]=['혼자 플레이 중','Playing solo'];
+  private statusText:[string,string]=['연결 중…','Connecting…'];
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private game: Game) {
@@ -53,17 +71,18 @@ export class Multiplayer {
     const form = h('form', { onsubmit: (e: Event) => { e.preventDefault(); this.connect('join', this.input.value); } }, this.input, this.join);
     const chatForm = h('form', { onsubmit: (e: Event) => {
       e.preventDefault();
-      if (this.room && this.chat.value.trim()) { this.send({ type: 'chat', text: this.chat.value }); this.chat.value = ''; }
+      if ((this.room || this.shard) && this.chat.value.trim()) { this.send({ type: 'chat', text: this.chat.value }); this.chat.value = ''; }
     } }, this.chat, this.sendButton);
-    this.root = h('details', { class: 'mp-panel', open: new URLSearchParams(location.search).has('multiplayer') || new URLSearchParams(location.search).has('room') },
-      h('summary', null, t('🦀 멀티플레이','🦀 Multiplayer')), this.status,
-      h('p', {class:'mp-intro'}, t('최대 8명 · 함께 모험하거나 싸우기 모드로 대전해요. 같은 파티는 서로 공격하지 않아요. 퀘스트는 각자 진행해요.','Up to 8 players · Adventure together or duel in PvP. Teammates cannot hurt each other. Quests progress individually.')),
-      this.code, h('div', { class: 'mp-row' }, this.create, this.share, this.leave), form, this.invite, this.roster,
+    this.modeRow = h('div',{class:'mp-row'},h('button',{type:'button','data-mode':'coop',onclick:()=>this.battle.setMode('coop')},t('협동 모드','Co-op')),h('button',{type:'button','data-mode':'pvp',onclick:()=>this.battle.setMode('pvp')},t('⚔ 싸우기 모드','⚔ PvP')));
+    this.partyRow = h('div',{class:'mp-row'},...([0,1,2,3,4].map(p=>h('button',{type:'button','data-party':p,onclick:()=>this.battle.setParty(p)},p===0?t('혼자','Solo'):`${t('파티','Party')} ${p}`))));
+    const params = new URLSearchParams(location.search);
+    this.root = h('details', { class: 'mp-panel', open: params.has('multiplayer') || params.has('room') },
+      this.summary, this.status, this.intro, this.roster, this.reconnect,
+      this.friends, this.code, h('div', { class: 'mp-row' }, this.create, this.share, this.leave), form, this.invite,
       h('div', { class: 'mp-row' }, h('button', { type: 'button', 'data-emote':'hello', onclick: () => this.emote('gesture_hello') }, '👋 인사'), h('button', { type: 'button', 'data-emote':'dance', onclick: () => this.emote('dance_crab') }, '💃 춤'),
         // The B emote. The button gives the keyboard back so moving can end the routine.
         h('button', { type: 'button', 'data-emote':'breakdance', onclick: (e: Event) => { (e.currentTarget as HTMLElement).blur(); this.game.player.toggleBreakdance(); } }, '🕺 브레이크댄스')),
-      h('div',{class:'mp-row'},h('button',{type:'button','data-mode':'coop',onclick:()=>this.battle.setMode('coop')},t('협동 모드','Co-op')),h('button',{type:'button','data-mode':'pvp',onclick:()=>this.battle.setMode('pvp')},t('⚔ 싸우기 모드','⚔ PvP'))),
-      h('div',{class:'mp-row'},...([0,1,2,3,4].map(p=>h('button',{type:'button','data-party':p,onclick:()=>this.battle.setParty(p)},p===0?t('혼자','Solo'):`${t('파티','Party')} ${p}`)))),
+      this.modeRow, this.partyRow,
       this.partyPanel,this.log, chatForm,
     );
     // Opening a form clears held movement keys. Typing never controls the crab.
@@ -73,25 +92,35 @@ export class Multiplayer {
     game.player.unit.onAction = action => this.send({ type: 'action', action });
     game.player.unit.onBreakdanceStop = () => this.send({ type: 'action', action: 'breakdance_stop' });
     this.refreshLanguage();
-    const room = new URLSearchParams(location.search).get('room');
+    // An invite link joins its room; otherwise the player goes online with everyone in this world area.
+    const room = params.get('room');
     if (room) { this.input.value = room; this.timer = setTimeout(() => this.connect('join', room), 500); }
+    else this.openSocket('enter', '');
+  }
+
+  /** Opens the panel at the room controls, for the game menu. */
+  showFriends() {
+    this.root.open = true;
+    this.friends.scrollIntoView({ block: 'nearest' });
+    if (!this.room) this.create.focus();
   }
 
   private send(msg: unknown) {
     if (this.ws?.readyState === WebSocket.OPEN && this.ws.bufferedAmount < 65536) this.ws.send(JSON.stringify(msg));
   }
 
-  private connect(type: 'create' | 'join', room = '') {
+  private connect(type: Mode, room = '') {
     if (this.disposed) return;
     const code = room.trim().toUpperCase();
     if (type === 'join' && !/^[A-F0-9]{6}$/.test(code)) { this.setStatus('방 코드 6자리를 확인해 주세요.','Check the six-character room code.'); return; }
     this.battle.leave(); this.closeSocket();
-    this.room = '';
+    this.room = ''; this.shard = ''; this.area = 0;
     this.retries = 0;
     this.openSocket(type, code);
   }
 
-  private openSocket(type: 'create' | 'join', code: string) {
+  private openSocket(type: Mode, code: string) {
+    this.mode = type;
     this.setStatus('연결 중…','Connecting…');
     const url = new URL(import.meta.env.VITE_MULTIPLAYER_URL || '/multiplayer', location.href);
     url.protocol = url.protocol === 'https:' || location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -101,25 +130,38 @@ export class Multiplayer {
     const ws = new WebSocket(url);
     this.ws = ws;
     this.updateUi();
+    // Until the welcome: a server without public shards never answers `enter`.
     const timeout = setTimeout(() => ws.close(), 10000);
-    ws.onopen = () => { clearTimeout(timeout); if (this.ws === ws) this.send({ type, room: code, combatVersion: 1, spec: this.game.player.unit.rig.spec }); };
+    ws.onopen = () => {
+      if (this.ws !== ws) return;
+      const spec = this.game.player.unit.rig.spec;
+      this.send(type === 'enter' ? { type, area: this.game.world2.chapter, spec } : { type, room: code, combatVersion: 1, spec });
+    };
     ws.onmessage = e => {
       if (this.ws !== ws || this.disposed) return;
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
       switch (msg.type) {
-        case 'welcome':
-          this.room = msg.room; this.ownId = msg.id; this.retries = 0;
-          this.battle.join(msg.id, msg.host, msg.world);
-          // A transport retry receives a new ID; restore only its explicit team choice.
-          const party=this.rejoinParty;this.rejoinParty=null;
-          if(party!==null)this.battle.setParty(party);
+        case 'welcome': {
+          clearTimeout(timeout);
+          this.ownId = msg.id; this.retries = 0; this.offline = false;
+          if (msg.public) {
+            this.shard = msg.room; this.area = msg.area; this.room = '';
+            this.note(t(`월드 ${ROMAN[this.area]}에 들어왔어요. 근처 모험가와 인사해 보세요.`,`Entered World ${ROMAN[this.area]}. Say hello to the adventurers nearby.`));
+          } else {
+            this.room = msg.room; this.shard = ''; this.area = 0;
+            this.battle.join(msg.id, msg.host, msg.world);
+            // A transport retry receives a new ID; restore only its explicit team choice.
+            const party=this.rejoinParty;this.rejoinParty=null;
+            if(party!==null)this.battle.setParty(party);
+            this.setStatus('연결됨 · 친구를 초대해 보세요!','Connected · Invite a friend!');
+            this.input.value = this.room;
+            this.note(t(`방 ${this.room}에 참가했어요.`,`Joined room ${this.room}.`));
+          }
           for (const p of msg.players) this.addPeer(p.id, p.spec, p.state);
-          this.setStatus('연결됨 · 친구를 초대해 보세요!','Connected · Invite a friend!');
-          this.input.value = this.room;
-          this.note(t(`방 ${this.room}에 참가했어요.`,`Joined room ${this.room}.`));
           this.updateUi();
           break;
+        }
         case 'authority': this.battle.elect(msg.host); break;
         case 'world': if (!this.battle.authority) this.battle.apply(msg.world); break;
         case 'combat': this.battle.receive(msg.id, msg.event); break;
@@ -132,7 +174,15 @@ export class Multiplayer {
           { const unit = msg.id === this.ownId ? this.game.player.unit : this.peers.get(msg.id)?.unit;
             if (unit) this.game.hud.bubbles.say(this.game, unit, msg.text); }
           break;
-        case 'error': this.setStatus(...this.serverError(String(msg.message))); this.room = ''; this.battle.leave(); this.closeSocket(); this.updateUi(); break;
+        case 'error': {
+          const error = this.serverError(String(msg.message)), tried = this.mode;
+          this.room = ''; this.shard = ''; this.area = 0; this.battle.leave(); this.closeSocket();
+          // A room that cannot be made or joined leaves the player in the public world.
+          if (tried !== 'enter') { this.note(t(...error)); this.game.hud.messages.info(t(...error)); this.connect('enter'); }
+          else { this.setStatus(...error); this.goOffline(); }
+          this.updateUi();
+          break;
+        }
       }
     };
     ws.onerror = () => { /* onclose handles retry and the user-facing error */ };
@@ -141,12 +191,15 @@ export class Multiplayer {
       if (this.ws !== ws || this.disposed) return;
       this.ws = null;
       this.clearPeers();
-      if (this.room && this.retries++ < 5) {
-        this.rejoinParty ??= this.battle.parties[this.ownId] ?? null;
+      if ((this.room || this.shard) && this.retries++ < 5) {
         this.setStatus('연결이 끊겼어요. 다시 연결 중…','Disconnected. Reconnecting…');
-        const previousRoom = this.room;
-        this.retry = setTimeout(() => this.openSocket('join', previousRoom), 1500);
-      } else { this.rejoinParty=null;this.battle.leave(); this.room = ''; this.setStatus('연결할 수 없어요. 서버와 방 코드를 확인하고 다시 참가해 주세요.','Could not connect. Check the room code and try joining again.'); }
+        if (this.room) {
+          this.rejoinParty ??= this.battle.parties[this.ownId] ?? null;
+          const previousRoom = this.room;
+          this.retry = setTimeout(() => this.openSocket('join', previousRoom), 1500);
+        } else this.retry = setTimeout(() => this.openSocket('enter', ''), 1500);
+      } else if (this.room || this.mode !== 'enter') { this.rejoinParty=null;this.battle.leave(); this.room = ''; this.setStatus('연결할 수 없어요. 서버와 방 코드를 확인하고 다시 참가해 주세요.','Could not connect. Check the room code and try joining again.'); this.goOffline(); }
+      else { this.setStatus('오프라인 · 서버에 연결할 수 없어 혼자 플레이해요.','Offline · Could not reach the server, playing solo.'); this.goOffline(); }
       this.updateUi();
     };
   }
@@ -170,9 +223,18 @@ export class Multiplayer {
     }).catch(() => { if (!this.disposed) this.note(t(`${spec.name} 캐릭터를 불러오지 못했어요.`,`Could not load ${spec.name}’s character.`)); });
   }
 
+  /** Without a server the game plays on alone; say so once until a connection comes back. */
+  private goOffline() {
+    this.shard = ''; this.area = 0;
+    if (!this.offline) this.game.hud.messages.info(t('서버에 연결할 수 없어 혼자 플레이해요.','Could not reach the server. Playing offline.'));
+    this.offline = true;
+  }
+
   update(dt: number) {
     this.elapsed += dt;
-    if (this.room && this.elapsed >= 0.05) {
+    // Each world area has its own shards: travelling leaves this one for one where you arrive.
+    if (this.shard && this.area !== this.game.world2.chapter && this.ws?.readyState === WebSocket.OPEN) this.connect('enter');
+    if ((this.room || this.shard) && this.elapsed >= 0.05) {
       this.elapsed = 0;
       const u = this.game.player.unit;
       this.send({ type: 'state', state: { x: u.pos.x, y: u.pos.y, z: u.pos.z, yaw: u.yaw, hp: u.hp, maxHp: u.maxHp, alive: u.alive, level: u.level } });
@@ -183,7 +245,7 @@ export class Multiplayer {
       u.hidden = false;
       const rival=this.battle.mode==='pvp'&&!this.battle.sameParty(this.ownId,id);
       u.reaction=rival?'hostile':'friendly';u.targetable=rival;u.invulnerable=!rival;
-      u.title=`${rival?t('대전 상대','Rival'):t('친구','Friend')} · ${t('파티','Party')} ${this.battle.partyOf(id)||'—'}`;
+      u.title=this.battle.active?`${rival?t('대전 상대','Rival'):t('친구','Friend')} · ${t('파티','Party')} ${this.battle.partyOf(id)||'—'}`:t('모험가','Adventurer');
       const goal = this.peerGoal.set(s.x, s.y, s.z);
       const k = u.pos.distanceToSquared(goal) > 100 ? 1 : 1 - Math.exp(-18 * dt);
       u.pos.lerp(goal, k);
@@ -200,6 +262,7 @@ export class Multiplayer {
   }
 
   private updatePartyPanel(){
+    if(!this.room)return;
     const heading=this.battle.mode==='pvp'?t('⚔ 싸우기 모드 · 같은 파티는 공격하지 않아요','⚔ PvP · teammates are protected'):t('🤝 협동 모드 · 모두 함께 모험해요','🤝 Co-op · adventure together');
     const members=[{id:this.ownId,name:this.game.player.unit.name,unit:this.game.player.unit},...[...this.peers].map(([id,p])=>({id,name:p.spec.name,unit:p.unit}))].map(p=>({
       id:p.id,name:p.name,hp:p.unit?.hp??0,max:p.unit?.maxHp??1,party:this.battle.partyOf(p.id),
@@ -215,7 +278,8 @@ export class Multiplayer {
   }
 
   mapParty(unit:Unit):{party:number;teammate:boolean}|null{
-    for(const [id,peer] of this.peers)if(peer.unit===unit)return {party:this.battle.partyOf(id),teammate:this.battle.sameParty(this.ownId,id)};
+    // Strangers in a public shard are shown nearby, without arrows that follow them across the map.
+    for(const [id,peer] of this.peers)if(peer.unit===unit)return this.battle.active?{party:this.battle.partyOf(id),teammate:this.battle.sameParty(this.ownId,id)}:{party:0,teammate:false};
     return null;
   }
 
@@ -235,17 +299,26 @@ export class Multiplayer {
     this.log.scrollTop = this.log.scrollHeight;
   }
   private updateUi() {
-    const connected = !!this.room && this.ws?.readyState === WebSocket.OPEN;
+    const open = this.ws?.readyState === WebSocket.OPEN;
+    const connected = !!this.room && open, online = connected || (!!this.shard && open);
     const connecting = this.ws?.readyState === WebSocket.CONNECTING;
+    const count = this.peers.size + 1;
     this.create.disabled = !!connecting || !!connected;
     this.join.disabled = !!connecting || !!connected;
     this.share.disabled = !connected;
-    this.leave.disabled = !this.ws && !this.room;
-    this.chat.disabled = !connected; this.sendButton.disabled = !connected;
+    this.leave.disabled = !this.room; this.leave.hidden = !this.room;
+    this.chat.disabled = !online; this.sendButton.disabled = !online;
     this.code.textContent = this.room;
-    this.roster.textContent = this.room ? `${this.peers.size+1}/8${t('명',' players')} · ${[this.game.player.unit.name,...[...this.peers.values()].map(p=>p.spec.name)].join(', ')}` : '';
+    this.roster.textContent = online ? `${count}/8${t('명',' players')} · ${[this.game.player.unit.name,...[...this.peers.values()].map(p=>p.spec.name)].join(', ')}` : '';
     this.invite.hidden = !connected;
     this.invite.value = this.inviteUrl();
+    this.reconnect.hidden = !this.offline || !!this.ws || !!this.retry;
+    this.modeRow.hidden = this.partyRow.hidden = this.partyPanel.hidden = !this.room;
+    if (online && !this.room) this.setStatus(`온라인 · 월드 ${ROMAN[this.area]} · ${count}명이 함께 있어요`,`Online · World ${ROMAN[this.area]} · ${count} here`);
+    this.summary.textContent = this.room ? t(`🦀 친구와 방 · ${count}명`,`🦀 Room with friends · ${count}`) : online ? t(`🦀 온라인 · ${count}명`,`🦀 Online · ${count}`) : this.offline ? t('🦀 오프라인','🦀 Offline') : t('🦀 연결 중…','🦀 Connecting…');
+    this.intro.textContent = this.room
+      ? t('최대 8명 · 함께 모험하거나 싸우기 모드로 대전해요. 같은 파티는 서로 공격하지 않아요. 퀘스트는 각자 진행해요.','Up to 8 players · Adventure together or duel in PvP. Teammates cannot hurt each other. Quests progress individually.')
+      : t('같은 월드의 모험가를 최대 8명까지 만나요. 전투, 퀘스트, 저장은 각자 진행해요. 보스와 포탈을 함께하려면 친구와 방을 만드세요.','Meet up to 8 adventurers in your world. Combat, quests and saves stay your own. To share bosses and portals, make a room with friends.');
   }
   private setStatus(ko:string,en:string){this.statusText=[ko,en];this.status.textContent=t(ko,en);}
   private serverError(message:string):[string,string]{
@@ -253,12 +326,11 @@ export class Multiplayer {
     return errors.find(pair=>pair.includes(message))??[message,message];
   }
   refreshLanguage(){
-    this.root.querySelector('summary')!.textContent=t('🦀 멀티플레이','🦀 Multiplayer');
-    this.root.querySelector('.mp-intro')!.textContent=t('최대 8명 · 함께 모험하거나 싸우기 모드로 대전해요. 같은 파티는 서로 공격하지 않아요. 퀘스트는 각자 진행해요.','Up to 8 players · Adventure together or duel in PvP. Teammates cannot hurt each other. Quests progress individually.');
-    for(const [button,ko,en] of [[this.create,'방 만들기','Create room'],[this.join,'참가','Join'],[this.leave,'나가기','Leave'],[this.share,'초대 링크 복사','Copy invite link'],[this.sendButton,'전송','Send']] as const)button.textContent=t(ko,en);
+    this.friends.textContent=t('친구와 방 만들기','Room with friends');
+    for(const [button,ko,en] of [[this.create,'방 만들기','Create room'],[this.join,'참가','Join'],[this.leave,'나가기','Leave'],[this.share,'초대 링크 복사','Copy invite link'],[this.sendButton,'전송','Send'],[this.reconnect,'다시 연결','Reconnect']] as const)button.textContent=t(ko,en);
     this.input.placeholder=t('방 코드 6자리','Six-character room code');this.input.setAttribute('aria-label',t('방 코드','Room code'));
-    this.chat.placeholder=t('친구에게 말하기','Message your friends');this.chat.setAttribute('aria-label',t('채팅 메시지','Chat message'));
-    this.log.setAttribute('aria-label',t('방 채팅','Room chat'));this.invite.setAttribute('aria-label',t('초대 링크','Invite link'));
+    this.chat.placeholder=t('함께 있는 모험가에게 말하기','Message everyone here');this.chat.setAttribute('aria-label',t('채팅 메시지','Chat message'));
+    this.log.setAttribute('aria-label',t('채팅','Chat'));this.invite.setAttribute('aria-label',t('초대 링크','Invite link'));
     this.root.querySelector('[data-emote="hello"]')!.textContent=t('👋 인사','👋 Wave');this.root.querySelector('[data-emote="dance"]')!.textContent=t('💃 춤','💃 Dance');
     this.root.querySelector('[data-emote="breakdance"]')!.textContent=t('🕺 브레이크댄스','🕺 Breakdance');
     this.setStatus(...this.statusText);this.updateUi();this.updateSocialButtons();
@@ -306,7 +378,8 @@ export class Multiplayer {
     const ws = this.ws; this.ws = null;
     ws?.close(); this.clearPeers();
   }
-  private disconnect() { this.battle.leave(); this.room = ''; this.closeSocket(); this.setStatus('혼자 플레이 중','Playing solo'); this.updateUi(); }
+  /** Leaving a room with friends goes back to the public world. */
+  private disconnect() { this.connect('enter'); }
   dispose() {
     this.disposed = true;
     if (this.timer) clearTimeout(this.timer);

@@ -25,14 +25,9 @@ export default class TitleScreen implements Screen {
       ),
       h('nav', { class: 'title-menu' },
         btn(app.account.label,()=>app.account.show(),'cc-btn ghost'),
-        btn(t('새 모험 시작','Enter World'), () => void app.go('create')),
-        app.spec ? btn(t(`${app.spec.name || '내 게'}로 이어하기`,`Continue as ${app.spec.name || 'your crab'}`), () => void app.go('game'), 'cc-btn ghost') : null,
-        btn(t('멀티플레이','Multiplayer'), () => {
-          const url = new URL(location.href);
-          url.searchParams.set('multiplayer', '1');
-          history.replaceState(null, '', url);
-          void app.go(app.spec ? 'game' : 'create');
-        }, 'cc-btn ghost'),
+        // The world is always online: entering takes the saved crab in, or makes one first.
+        btn(t('입장하기','Enter World'), () => void app.go(app.spec ? 'game' : 'create')),
+        app.spec ? btn(t('새 캐릭터 만들기','New character'), () => void app.go('create'), 'cc-btn ghost') : null,
         btn(t('로봇 모드','Robot Mode'), () => void app.go('robot'), 'cc-btn ghost'),
         btn(t('영상','Videos'), () => openVideos(app.audio), 'cc-btn ghost'),
         btn(t('만든 사람들','Credits'), () => void app.go('credits'), 'cc-btn ghost'),

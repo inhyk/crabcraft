@@ -1182,14 +1182,16 @@ export class Game {
     return this.world.pois[cur.poi].position;
   }
 
+  /** Other players who fight in this world: only a room's, never strangers passing through a public shard. */
+  private allies(): Unit[] { return this.multiplayer?.battle.active ? this.units.filter(u => u.kind === 'remote' && u.alive && !u.hidden) : []; }
   get partyLevel(): number {
-    return Math.max(this.player.level, ...this.units.filter(u => u.kind === 'remote' && u.alive && !u.hidden).map(u => u.level));
+    return Math.max(this.player.level, ...this.allies().map(u => u.level));
   }
   combatTarget(from: Unit): Unit {
-    const targets = [this.player.unit, ...this.units.filter(u => u.kind === 'remote' && !u.hidden)].filter(u => u.alive);
+    const targets = [this.player.unit, ...this.allies()].filter(u => u.alive);
     return targets.sort((a,b) => from.distTo(a)-from.distTo(b))[0] ?? this.player.unit;
   }
-  combatPlayers(): Unit[] { return this.units.filter(u => (u.kind === 'player' || u.kind === 'remote') && u.alive && !u.hidden); }
+  combatPlayers(): Unit[] { return [this.player.unit, ...this.allies()].filter(u => u.alive && !u.hidden); }
 
   // ================================================================ combat outcomes
 
