@@ -283,7 +283,7 @@ export class HiddenWorld {
     const walks=third.town.map(([x,z])=>new THREE.Vector3(x,third.height(x,z),z));g.townsfolk.forEach((f,i)=>{const p=walks[i%walks.length];f.unit.hidden=false;f.unit.teleport(w,p.x,p.z+3);f.relocate(walks,1.8);});
     this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,4,26),new THREE.Vector3(0,9,-22),third.arena.position],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
     for(const b of [g.boss,g.finalBoss,g.worldBoss]){b.unit.hidden=true;b.freed.hidden=true;}g.dawnBoss.unit.hidden=['dormant','dead'].includes(g.dawnBoss.state);
-    if(!g.journey?.finalCleared){const f=g.dawnBoss.freed;f.hidden=false;f.targetable=false;f.teleport(w,13,-57);}
+    {const f=g.dawnBoss.freed;f.hidden=false;f.targetable=false;if(g.journey?.finalCleared)f.teleport(w,14,60);else f.teleport(w,13,-57);}
     g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho){e.despawn();return;}const x=(i%2?1:-1)*(43+i%4*8),z=16-Math.floor(i/2)*10;e.home.set(x,third.height(x,z),z);if(authority)e.respawnAt(x,z);});
     g.quests.setChapter(3);g.hud.hints.setChapter(3);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
     g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
