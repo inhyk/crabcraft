@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import {StarSun} from './starSun';
+import {DawnScenery} from './dawnScenery';
 import {StarPortal} from './portal';
 import {loadKit,StaticBatch,trs} from '../world/kit';
 import {TownBuilder} from '../world/buildings';
@@ -14,6 +16,7 @@ export class DawnIsland {
  readonly collision=new Collision({minX:-150,minZ:-175,step:2,nx:151,nz:176,h:new Float32Array(151*176),heightAt:(x,z)=>this.height(x,z)});
  readonly portal=new StarPortal(this.spawn,'새벽 항구 → 별빛 항구');
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
+ private scenery:DawnScenery;private sun=new StarSun();
  private rotating:THREE.Object3D[]=[];
  private cage=new THREE.Group();
  height(x:number,z:number){
@@ -26,14 +29,14 @@ export class DawnIsland {
  constructor(){
   this.root.name='WORLD III · Dawnreach';this.root.visible=false;
   const stone=new THREE.MeshStandardMaterial({color:'#393c4b',roughness:.9});
-  const sand=new THREE.MeshStandardMaterial({color:'#cfad76',roughness:.95,vertexColors:true});
+  const sand=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.95,vertexColors:true});
   const roof=new THREE.MeshStandardMaterial({color:'#267b82',roughness:.7});
   const gold=new THREE.MeshStandardMaterial({color:'#ffd67a',emissive:'#d57b23',emissiveIntensity:.65,metalness:.6,roughness:.35});
   const lava=new THREE.MeshStandardMaterial({color:'#ff763b',emissive:'#ff4612',emissiveIntensity:1.2});
   const land=new THREE.PlaneGeometry(300,350,120,140);land.rotateX(-Math.PI/2);const p=land.getAttribute('position'),col=[];
-  for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i),y=this.height(x,z);p.setY(i,y);const c=new THREE.Color(y>12?'#625b65':y<3?'#a99777':Math.abs(x)>45?'#788a57':'#d4bb8e');col.push(c.r,c.g,c.b);}
+  for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i),y=this.height(x,z);p.setY(i,y);const c=new THREE.Color(y>12?'#747478':y<3?'#d2bd90':Math.abs(x)>24?'#84976a':'#cbbb95');col.push(c.r,c.g,c.b);}
   land.setAttribute('color',new THREE.Float32BufferAttribute(col,3));land.computeVertexNormals();const ground=new THREE.Mesh(land,sand);ground.receiveShadow=true;this.root.add(ground);
-  const sky=new THREE.Mesh(new THREE.SphereGeometry(850,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;void main(){float h=clamp(normalize(v).y,0.,1.);gl_FragColor=vec4(mix(vec3(.96,.73,.48),vec3(.23,.48,.68),pow(h,.5)),1.);}'}));sky.renderOrder=-100;this.root.add(sky);
+  const sky=new THREE.Mesh(new THREE.SphereGeometry(850,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;void main(){float h=clamp(normalize(v).y,0.,1.);gl_FragColor=vec4(mix(vec3(.82,.47,.23),vec3(.08,.32,.65),pow(h,.5)),1.);}'}));sky.renderOrder=-100;this.root.add(sky);
   const sea=new THREE.Mesh(new THREE.PlaneGeometry(1800,1800),new THREE.MeshStandardMaterial({color:'#245e74',roughness:.3,metalness:.4,transparent:true,opacity:.94}));sea.rotation.x=-Math.PI/2;sea.position.y=.2;this.root.add(sea);
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
   // Ring town: a generous square, fountain, homes and people on both sides of the avenue.
@@ -55,7 +58,8 @@ export class DawnIsland {
   for(let i=0;i<40;i++){const a=i*2.39996,x=(Math.sin(a)<0?-1:1)*Math.max(16,Math.abs(Math.sin(a)*(55+i%5*5))),z=30+Math.cos(a)*55,y=this.height(x,z);matrix.makeTranslation(x,y+3,z);trunks.setMatrixAt(i,matrix);matrix.makeTranslation(x,y+6,z);leaves.setMatrixAt(i,matrix);}trunks.castShadow=leaves.castShadow=true;this.root.add(trunks,leaves);
   this.cage.position.set(13,this.height(13,-57),-57);
   for(let i=0;i<12;i++){const a=i/12*Math.PI*2,bar=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,4.5,5),gold);bar.position.set(Math.sin(a)*2.1,2.25,Math.cos(a)*2.1);this.cage.add(bar);}for(const y of [.3,4.5]){const ring=new THREE.Mesh(new THREE.TorusGeometry(2.1,.12,6,32),gold);ring.rotation.x=Math.PI/2;ring.position.y=y;this.cage.add(ring);}this.root.add(this.cage);
-  this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',1.5));const sun=new THREE.DirectionalLight('#ffe6b3',2.8);sun.position.set(-60,90,30);this.root.add(sun,sun.target);
+  this.scenery=new DawnScenery((x,z)=>this.height(x,z),this.collision);this.root.add(this.scenery.root);
+  this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',.9));const sun=this.sun.light;sun.name='dawnreach-sun';sun.color.set('#ffe6b3');sun.intensity=2.8;this.root.add(sun,sun.target);
  }
  async buildSettlement(){
   const village=await loadKit('models/world/village.glb'),props=await loadKit('models/world/props.glb');
@@ -68,5 +72,5 @@ export class DawnIsland {
   for(const side of [-1,1])for(const z of [37,57,74]){const x=side*23;put('Stall_Empty',x,z,side<0?Math.PI/2:-Math.PI/2);put('Barrel_Apples',x+side*2,z+1);put('Crate_Wooden',x+side*2,z-2);put('FarmCrate_Apple',x,z,0,1,.82);}
   this.root.add(market.build());
  }
- update(time:number,rescued:boolean){this.portal.update(time);this.cage.visible=!rescued;for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
+ update(time:number,rescued:boolean,x:number,z:number){this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);this.cage.visible=!rescued;for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
 }

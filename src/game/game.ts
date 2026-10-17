@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import {starMemory} from './starMemories';
 import {Achievements} from './achievements';
 import {VoyageIsland} from './voyageIsland';
+import {worldMusic,type MusicMood} from './worldMusic';
 import {VOYAGE_ISLANDS} from '../world/voyage';
 import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
@@ -133,6 +134,7 @@ export class Game {
   zone = '';
   musicOn = true;
   private music = '';
+  private musicChapter:1|2|3=1;
   private combatMusicUntil = 0;
   private zoneCandidate = '';
   private zoneSince = 0;
@@ -1336,17 +1338,20 @@ export class Game {
 
   private updateMusic(force = false): void {
     if (!this.musicOn || this.ending.active) return;
-    let want = 'music-town';
+    const chapter=this.world2.chapter;
+    if(this.musicChapter!==chapter){this.musicChapter=chapter;this.combatMusicUntil=0;}
+    let mood:MusicMood='explore';
     const now = this.time;
-    if (this.encounter.engaged || (this.zone === 'The Iron Wreck' && this.quests.status.q4 === 'active' && this.boss.state !== 'dead' && this.boss.state !== 'dying')) {
-      want = 'music-boss';
+    if (this.encounter.engaged || (chapter===1 && this.zone === 'The Iron Wreck' && this.quests.status.q4 === 'active' && this.boss.state !== 'dead' && this.boss.state !== 'dying')) {
+      mood = 'boss';
     } else if (this.player.inCombat && this.zone !== 'Clawhaven') {
       this.combatMusicUntil = now + 6;
-      want = 'music-combat';
-    } else if (now < this.combatMusicUntil) want = 'music-combat';
+      mood = 'combat';
+    } else if (now < this.combatMusicUntil) mood = 'combat';
+    const want=worldMusic(chapter,mood);
     if (want !== this.music || force) {
       this.music = want;
-      void this.audio.playMusic(want, want === 'music-combat' ? 1.2 : 2.2);
+      void this.audio.playMusic(want, mood === 'combat' ? 1.2 : 2.2);
     }
   }
 

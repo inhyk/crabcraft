@@ -187,6 +187,9 @@ export class Minimap {
         const [x,y]=toScreen(wx,wz);if(Math.hypot(x-half,y-half)>half-22*d)continue;c.fillStyle=color;c.strokeStyle='#10202b';c.lineWidth=3*d;c.beginPath();c.arc(x,y,4*d,0,Math.PI*2);c.fill();c.stroke();c.strokeText(label,x,y-9*d);c.fillText(label,x,y-9*d);
       }
     }
+    if(g.world2.chapter===3){
+      for(const [wx,wz,label] of [[67,72,t('새벽 등대','Dawnwatch')],[-62,48,t('바닷바람 정원','Seabreeze Gardens')]] as [number,number,string][]){const [x,y]=toScreen(wx,wz);if(Math.hypot(x-half,y-half)>half-22*d)continue;c.fillStyle='#ffe2a1';c.strokeStyle='#182932';c.lineWidth=3*d;c.beginPath();c.arc(x,y,4*d,0,Math.PI*2);c.fill();c.stroke();c.strokeText(label,x,y-9*d);c.fillText(label,x,y-9*d);}
+    }
     // The two-way portal remains visible while quest and party markers change.
     const portal=g.world2.portalPosition,[portalX,portalY]=toScreen(portal.x,portal.z);
     if(Math.hypot(portalX-half,portalY-half)<half-8*d){c.strokeStyle='#c7b1ff';c.lineWidth=2*d;c.beginPath();c.ellipse(portalX,portalY,4*d,6*d,0,0,Math.PI*2);c.stroke();}
