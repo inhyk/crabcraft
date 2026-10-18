@@ -26,9 +26,9 @@ test('a direct World II visitor returning to an uncleared shore restores the ori
  assert.equal(unit.level,ENEMY_STATS.scrapling.level);assert.deepEqual(enemy.stats,ENEMY_STATS.scrapling);assert.equal(unit.baseTint,'#ff2a1a');
 });
 
-test('a post-boss shore retains level scaling but restores its slower respawn timer',()=>{
+test('a post-boss shore keeps its original fixed level and slower respawn timer',()=>{
  const {game,unit,enemy}=make('scavenger');enemy.respawnAt(0,0);game.journey.rustCleared=true;game.world2.chapter=1;enemy.respawnAt(0,0);
- assert.equal(unit.level,20);assert.equal(enemy.stats.respawn,ENEMY_STATS.scavenger.respawn);
+ assert.equal(unit.level,ENEMY_STATS.scavenger.level);assert.equal(enemy.stats.respawn,ENEMY_STATS.scavenger.respawn);
  const before={hp:unit.hp,maxHp:unit.maxHp};unit.hp-=5;enemy.resumeAuthority();assert.equal(unit.hp,before.hp-5);assert.equal(unit.maxHp,before.maxHp);
  assert.equal(unit.baseTint,'#ffb020');
 });
@@ -56,4 +56,33 @@ test('dead or stunned sea drones cannot finish a pending electric attack',()=>{
 });
 test('sea drones stop at dry land rather than chasing the player onto the beach',()=>{
  const s=jellyFight();s.unit.gapTo=()=>6;s.game.world.heightAt=()=>1;s.enemy.update(.1);assert.equal(s.unit.pos.x,0);assert.equal(s.unit.pos.z,0);assert.equal(s.enemy.state,'leash');
+});
+
+
+test('enemy levels stay fixed by world and kind as players grow or high-level friends join',()=>{
+ for(const kind of ['scrapling','scavenger','jellyfish'])for(const chapter of [1,2,3,4]){
+  const {game,unit,enemy}=make(kind);game.world2.chapter=chapter;game.partyLevel=1;game.journey.rustCleared=true;
+  enemy.respawnAt(0,0);const original={level:unit.level,hp:unit.maxHp,dmg:[...enemy.stats.dmg],xp:enemy.stats.xp};
+  for(const level of [100,300,1000,100000]){game.partyLevel=level;enemy.respawnAt(0,0);assert.deepEqual({level:unit.level,hp:unit.maxHp,dmg:[...enemy.stats.dmg],xp:enemy.stats.xp},original);}
+ }
+ const {game,unit,enemy}=make();enemy.isEcho=true;game.partyLevel=10000;enemy.respawnAt(0,0);assert.equal(unit.level,10);
+ enemy.isEcho=false;enemy.isAdd=true;enemy.respawnAt(0,0);assert.equal(unit.level,ENEMY_STATS.scrapling.level);
+});
+
+test('taking over an old scaled checkpoint restores fixed tiers while preserving damage already dealt',()=>{
+ const {unit,enemy}=make();unit.level=1000;unit.maxHp=10000;unit.hp=2500;enemy.state='chase';enemy.resumeAuthority();
+ assert.equal(unit.level,10);assert.equal(unit.maxHp,enemy.stats.hp);assert.equal(unit.hp,Math.ceil(unit.maxHp*.25));assert.equal(enemy.state,'chase');
+});
+
+
+test('World II and III quest guardians respawn twice as often without appearing beside players',()=>{
+ for(const chapter of [2,3]){
+  const {game,enemy}=make('scavenger');game.world2.chapter=chapter;enemy.respawnAt(0,0);
+  assert.equal(enemy.stats.respawn,6);
+  const player={pos:new THREE.Vector3(7,0,0)};game.combatPlayers=()=>[player];
+  assert.equal(enemy.canRespawnUnseen(),false);
+  player.pos.x=9;assert.equal(enemy.canRespawnUnseen(),true);
+  game.world2.chapter=4;enemy.respawnAt(0,0);assert.equal(enemy.stats.respawn,12);
+  assert.equal(enemy.canRespawnUnseen(),false);
+ }
 });

@@ -374,13 +374,14 @@ export interface AreaOptions {
   readonly seed: number; readonly policy: AreaPolicy; readonly actionData: ActionData; readonly context: AreaContext;
   readonly limits: { eventCount: number; inputCommandsPerTick: number; timers: number; projectiles: number };
 }
+export interface BossObservation {readonly unit:EntityRef;readonly profile:BossProfileId;readonly state:BossSim['state'];readonly phase:number;readonly enraged:boolean;readonly stateTime:number;readonly freed:EntityRef;readonly freedTime:number;readonly showFrame:boolean}
 export interface AreaSnapshot {
   readonly area: AreaId; readonly world: WorldId; readonly tick: Tick; readonly time: number;
   readonly units: readonly Readonly<SimUnit>[];
   readonly players: readonly Readonly<PlayerState>[];
   readonly projectiles: readonly Readonly<ProjectileState>[];
   readonly features: {readonly beaconLit:boolean;readonly exploration:readonly {unit:EntityRef;activeUntil:number}[];readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
-  readonly recovery: {readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
+  readonly recovery: {readonly bosses:readonly BossObservation[];readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
 } // Deep copied and stable sorted by ID; slowPct remains fraction0..1; S4 adapter scales to0..100.
 /** Complete canonical test/debug data, not a production persistence protocol. No functions or refs. */
 export type DebugValue = null | boolean | number | string | readonly DebugValue[] | { readonly [key: string]: DebugValue };

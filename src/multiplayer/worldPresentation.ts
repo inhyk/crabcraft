@@ -335,6 +335,7 @@ export class WorldPresentation {
     for (const [id] of this.warnings) this.clearWarning(id);
     for (const ward of this.wards.values()) ward.pop(); this.wards.clear();
     if (this.castKey) this.ports.hud.castBar.observe(null, 0, 0);
+    this.ports.hud.bossFrame.hide();
     this.pending = []; this.state = null; this.binding = ''; this.elapsed = 0; this.lastOrder = -1; this.castKey = this.endingKey = ''; this.recoveredEndingTick = -1;
   }
   dispose(): void { if (!this.disposed) { this.reset(); this.disposed = true; } }
