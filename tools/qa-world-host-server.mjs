@@ -15,18 +15,20 @@ import { acquireHostOwnership } from '../server/world/ownership.ts';
 import { loadWorldCatalog, createGameplayCatalog } from '../server/world/catalog.ts';
 import { createActualWorldHost } from '../server/world/host.ts';
 import { createCoreCharacterCodec } from '../src/sim/persistence.ts';
+import { setQuestChapter } from '../src/sim/data/quests.ts';
 import { createWorldVariants, personalNpcVisible } from '../src/sim/areas/variants.ts';
 import { createGameplayProtocol, projectObservationExtras } from '../server/world/gameplay/protocol.ts';
 
-const args = { port: 5287, clientOrigin: 'http://127.0.0.1:5276', metadata: '' };
+const args = { port: 5287, clientOrigin: 'http://127.0.0.1:5276', metadata: '', world: 'w1' };
 for (let i = 2; i < process.argv.length; i += 2) {
-  const key = { '--port': 'port', '--client-origin': 'clientOrigin', '--metadata': 'metadata' }[process.argv[i]];
+  const key = { '--port': 'port', '--client-origin': 'clientOrigin', '--metadata': 'metadata', '--world': 'world' }[process.argv[i]];
   if (!key || process.argv[i + 1] === undefined) throw new Error('expected --port N --client-origin URL --metadata ABSOLUTE_TMP_PATH');
   args[key] = key === 'port' ? Number(process.argv[i + 1]) : process.argv[i + 1];
 }
 const clientURL = new URL(args.clientOrigin);
 if (!['127.0.0.1', 'localhost'].includes(clientURL.hostname) || clientURL.protocol !== 'http:' || clientURL.origin !== args.clientOrigin || !Number.isInteger(args.port) || args.port < 0 || args.port > 65535) throw new Error('QA launcher requires HTTP loopback');
 if (!isAbsolute(args.metadata) || !['/tmp/', '/private/tmp/'].some(prefix => resolve(args.metadata).startsWith(prefix))) throw new Error('metadata must be an absolute temporary path');
+if (!['w1', 'w2', 'w3', 'w4'].includes(args.world)) throw new Error('QA world must be w1..w4');
 
 let cluster, pool, ownership, host, server, metadataWritten = false, closing;
 async function cleanup() {
@@ -60,8 +62,17 @@ try {
   const accountId = 'g' + randomBytes(12).toString('hex').slice(0, 23), rawToken = randomBytes(32).toString('hex'), expiresAt = Date.now() + 3600000;
   await pool.query('INSERT INTO accounts(username,updated,created) VALUES($1,$2,$2)', [accountId, Date.now()]);
   await pool.query('INSERT INTO sessions(token_hash,username,expires) VALUES($1,$2,$3)', [createHash('sha256').update(rawToken).digest('hex'), accountId, expiresAt]);
-  const character = await characters.create(accountId, { schema: 'world-identity-v1', classId: 'mage', archetype: 'human',
+  let character = await characters.create(accountId, { schema: 'world-identity-v1', classId: 'mage', archetype: 'human',
     appearance: { race: 'human', sex: 'female', classId: 'mage', shell: 0, crest: 0, led: 0, name: 'World QA' } });
+  if (args.world !== 'w1') {
+    // Trusted render fixture only. No XP, coins or story/unlock flags are granted, and no browser teleport occurs.
+    const checkpoint = structuredClone(character.checkpoint), loaded = worlds.get(args.world), destination = loaded.publicDefinition.spawn;
+    const out = { x: 0, y: 0, set(x, y) { this.x = x; this.y = y; return this; } };
+    loaded.query.resolveCollision(destination.position.x, destination.position.z, loaded.actionData.archetype('human').radius, out);
+    checkpoint.world = args.world; checkpoint.location = { x: out.x, y: loaded.query.heightAt(out.x, out.y), z: out.y, yaw: destination.yaw };
+    setQuestChapter(checkpoint.progress.quests, Number(args.world.slice(1)));
+    character = await characters.saveCheckpoint(accountId, character.characterId, character.revision, checkpoint, []);
+  }
   const allowed = [args.clientOrigin];
   const ip = req => req.socket.remoteAddress ?? 'unknown';
   const accounts = accountHandler(pool, allowed, ip, null, admission);
@@ -92,8 +103,9 @@ try {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(args.port, '127.0.0.1', resolve); });
   const baseURL = `http://127.0.0.1:${server.address().port}`;
   await writeFile(args.metadata, JSON.stringify({ origin: baseURL, clientOrigin: args.clientOrigin, characterId: character.characterId,
-    cookie: { name: 'cc_account', value: `${accountId}.${rawToken}`, path: '/api/account' }, catalog, appearance: character.identity.appearance,
-    fixture: 'Seeded Google-shaped QA session and new level-1 mage. No OAuth/provider call. Actual Node Area/bakes; QA population and explicit restore policy.' }), { flag: 'wx', mode: 0o600 });
+    cookie: { name: 'cc_account', value: `${accountId}.${rawToken}`, path: '/api/account' }, catalog, appearance: character.identity.appearance, initialWorld: args.world,
+    earnedTravel: false, renderFixture: args.world !== 'w1', world: args.world, chapter: character.checkpoint.progress.quests.chapter, spawn: character.checkpoint.location,
+    fixture: 'Seeded Google-shaped QA session and new level-1 mage. No OAuth/provider call. Actual Node Area/bakes; QA population and explicit restore policy. Non-W1 selection is a trusted saved-world render fixture with zero XP and no earned unlock claims.' }), { flag: 'wx', mode: 0o600 });
   metadataWritten = true;
   process.stdout.write(JSON.stringify({ ready: true, baseURL, metadataPath: args.metadata }) + '\n');
 } catch {
