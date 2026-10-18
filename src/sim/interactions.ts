@@ -1,7 +1,7 @@
 import type { AreaDefinition, AreaServices, ChannelState, EntityRef, PlayerCommand, PlayerSim } from './types.ts';
 import { activeObjective, QUESTS, questAccept, questBump, questComplete, questTrack } from './data/quests.ts';
 import { worldChapter } from './math.ts';
-import { canChallenge, canReplayFrostEnding, canTravelTo } from './data/progression.ts';
+import { canChallenge, canPresentFrostEnding, canTravelTo } from './data/progression.ts';
 import { teleport } from './unit.ts';
 import { transactEquipment, type EquipmentOperation, type EquipmentResult, type EquipmentSlot } from './data/equipment.ts';
 import { BOSS_PROFILES } from './data/bosses.ts';
@@ -46,13 +46,13 @@ export class InteractionRules {
   }
   const p=this.player(ref);if(!p)return false;
   if(command.kind==='questTrack')return questTrack(p.state.quests,command.questId);
-  if(command.kind==='endingReplay'){if(!canReplayFrostEnding(worldChapter(s.world),p.state.flags,s.bossByProfile('frost')?.state??'dormant',p.state.controlsLocked))return false;p.state.flags.frostEndingStarted=true;s.emit({type:'endingReady',unit:p.state.unit,chapter:4,replay:true});return true;}
+  if(command.kind==='endingReplay'){if(!canPresentFrostEnding(s.context.mode,worldChapter(s.world),p.state.flags,s.bossByProfile('frost')?.state??null,p.state.controlsLocked))return false;p.state.flags.frostEndingStarted=true;s.emit({type:'endingReady',unit:p.state.unit,chapter:4,replay:true});return true;}
   if(command.kind==='bossChallenge'){
    const boss=s.bossByProfile(command.profile),definition=s.definition.bosses.find(b=>b.profile===command.profile),u=s.getUnit(ref)!;if(!boss||!definition)return false;
    const stats=BOSS_PROFILES[command.profile],chapter=worldChapter(s.world);
    const joining=boss.engaged&&Math.hypot(u.x-definition.arena.position.x,u.z-definition.arena.position.z)>definition.arena.radius+3;
    if(boss.state==='dying'||stats.level<20&&!this.world.beaconLit||!canChallenge(u.level,stats.level,!!p.state.flags.rustCleared,!!p.state.flags.abyssCleared,chapter)||s.time-u.lastCombat<5||s.encounterActive()&&!joining)return false;
-   if(command.profile==='abyss'&&s.bossByProfile('rust')?.state!=='dead')return false;
+   if(command.profile==='abyss'){const rust=s.bossByProfile('rust');if(rust?rust.state!=='dead':s.context.mode!=='party-encounter'||!p.state.flags.rustCleared||!this.world.beaconLit)return false;}
    if(!joining){boss.wake();p.respawn();}else{p.cancelChannel();p.interruptCast();this.clearTarget(p);}
    const unit=s.getUnit(p.state.unit)!;const distance=Math.min(9,definition.arena.radius*.85);teleport(unit,s.query,definition.arena.position.x+Math.sin(definition.arena.yaw)*distance,definition.arena.position.z+Math.cos(definition.arena.yaw)*distance,definition.arena.yaw+Math.PI);return true;
   }
