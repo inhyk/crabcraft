@@ -4,7 +4,7 @@ import {createWorld1Definition} from '../src/sim/areas/world1.ts';
 import {createWorld2Definition} from '../src/sim/areas/world2.ts';
 import {createWorld3Definition} from '../src/sim/areas/world3.ts';
 const query={heightAt:(x,z)=>2+Math.sin(x/20)+Math.cos(z/20),resolveCollision:(x,z,r,out)=>out.set(x,z),raycastSolid:()=>null};
-const config={query,fixedLevels:{scrapling:3,scavenger:5,jellyfish:4,echo:11},population:{scrapling:12,scavenger:4,jellyfish:0}};
+const config={query,personalProps:query,fixedLevels:{scrapling:3,scavenger:5,jellyfish:4,echo:11},population:{scrapling:12,scavenger:4,jellyfish:0}};
 test('three worlds have independent immutable spawn, NPC, arena and interaction definitions',()=>{
  const [w1,w2,w3]=[createWorld1Definition(config),createWorld2Definition(config),createWorld3Definition(config)];
  assert.deepEqual([w1.world,w2.world,w3.world],['w1','w2','w3']);assert.deepEqual([w1.spawn.position.x,w2.spawn.position.x,w3.spawn.position.z],[-.5,0,84]);
@@ -35,4 +35,10 @@ test('real three-world replay is unchanged by interleaving and snapshot/event ob
 });
 test('World II echo spawns on its own clock and does not postpone an elapsed respawn deadline while alive',async()=>{
  const {worldArea,tick}=await import('./core/worldHarness.mjs'),island=worldArea('echo-world','w2'),shore=worldArea('echo-shore'),echo=[...island.enemies.values()].find(e=>e.isEcho);assert.equal(echo.state,'gone');tick(island,1349);assert.equal(echo.state,'gone');tick(island,2);assert.equal(echo.state,'idle');assert.equal(island.services.getUnit(echo.unit).archetype,'echo');const firstLife=echo.unit.life;tick(island,3601);assert.equal(echo.unit.life,firstLife);echo.despawn();tick(island);assert.equal(echo.state,'idle');assert.equal(echo.unit.life,firstLife+1);assert.equal(shore.services.time,0);assert.equal(shore.enemies.size,1);
+});
+test('World IV separates nominal recall from arrival and retains independent Frostlight definitions',async()=>{
+ const{createWorld4Definition}=await import('../src/sim/areas/world4.ts'),w4=createWorld4Definition(config),w3=createWorld3Definition(config);assert.equal(w4.world,'w4');assert.deepEqual(w4.spawn.position,{x:-12,y:5,z:90});assert.equal(w4.recall,w4.spawn);assert.equal(w4.pois.arrival.position.x,0);assert.equal(w4.pois.arrival.position.z,82);assert.deepEqual(w4.bosses.map(b=>[b.profile,b.freedNpcId]),[['frost','mira']]);assert.deepEqual(w3.bosses.map(b=>b.freedNpcId),['dawnkeeper']);assert.equal(w3.interactions.find(i=>i.id==='gate:w4').position.x,14);assert.equal(w4.interactions[0].destination,'w3');assert.deepEqual(w4.enemies.slice(0,4).map(e=>[e.home.x,e.home.z]),[[-44,20],[51,20],[-58,8],[65,8]]);assert.equal(w4.enemies.some(e=>e.kind==='jellyfish'||e.role==='echo'),false);
+});
+test('all twenty-one Dawn props require explicit raw placement and sample height after radius-one resolution',()=>{
+ assert.throws(()=>createWorld3Definition({...config,personalProps:undefined}),/personal-prop-query-required/);const calls=[],actorQuery={...query,resolveCollision:(x,z,r,out)=>out.set(999,999)},raw={heightAt:(x,z)=>x*2+z,resolveCollision(x,z,r,out){calls.push([x,z,r]);return out.set(x+2,z-3);}},world=createWorld3Definition({...config,query:actorQuery,personalProps:raw}),nodes=world.interactions.filter(i=>i.objective?.startsWith('dawn-'));assert.equal(nodes.length,21);assert.equal(calls.length,21);assert.ok(calls.every(c=>c[2]===1));for(let i=0;i<nodes.length;i++){const[x,z]=calls[i];assert.deepEqual(nodes[i].position,{x:x+2,y:(x+2)*2+z-3,z:z-3});}assert.equal(nodes.filter(i=>i.kind==='waystone').length,3);assert.equal(nodes.filter(i=>i.kind==='explore').length,3);
 });
