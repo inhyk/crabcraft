@@ -12,7 +12,7 @@ import type { Area, AreaSnapshot, BossProfileId, EntityRef, EventRecord, PlayerC
 import { canChallenge } from '../../src/sim/data/progression.ts';
 import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { TREASURES, LIGHTHOUSE_SECRET } from '../../src/sim/features/exploration.ts';
-import { CharacterStore, type Character, type VictimOutcomeResources, type GrantBatchEntry } from './character-store.ts';
+import { CharacterStore, CharacterStoreError, type Character, type VictimOutcomeResources, type GrantBatchEntry } from './character-store.ts';
 import { WorldTicketRegistry, type SessionBinding } from './admission.ts';
 import type { HostOwnership } from './ownership.ts';
 import { DeadlineScheduler } from './scheduler.ts';
@@ -40,6 +40,7 @@ export interface HostPolicies {
   readonly maxMutationSourcesPerTick: number;
   readonly loopIntervalMs: number;
   readonly victimOutcome: VictimOutcomeResources;
+  readonly victimOutcomeRetryCeiling?: VictimOutcomeResources;
   readonly persistence: { maxQueuedPerCharacter: number; maxAttempts: number; retryMs: number; maxRecoveryRounds: number };
   readonly areaLimits: { eventCount: number; inputCommandsPerTick: number; timers: number; projectiles: number };
   readonly restore: RestorePolicy;
@@ -69,6 +70,8 @@ export interface ActualWorldHostDeps {
 export interface ActualWorldHost {
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void;
   stopAdmission(): void;
+  /** Internal recovery only. No HTTP or client authority is exposed. */
+  retryDurability(resources: VictimOutcomeResources): Promise<boolean>;
   shutdown(deadlineMs: number): Promise<{ durable: boolean; unresolved: number }>;
   stats(): Readonly<Record<string, number | boolean>>;
 }
@@ -91,6 +94,7 @@ interface Waiting { connection: Connection; record: StoredCharacter; replay: Gra
 interface PendingTravel { actor: Actor; source: Slot; ref: EntityRef; gate: string; destination: WorldId }
 const HOST_COMMAND_KINDS = new Set(HOST_COMMANDS);
 const ECONOMIC_INTERACTIONS = new Set<string>([...TREASURES.map(t => t.id), LIGHTHOUSE_SECRET.id]);
+class OutcomeResourcePause extends Error {}
 const sameRef = (a: EntityRef, b: EntityRef) => a.area === b.area && a.id === b.id && a.life === b.life;
 const buffer = (raw: RawData) => Buffer.isBuffer(raw) ? raw : raw instanceof ArrayBuffer ? Buffer.from(raw) : Buffer.concat(raw);
 const reject = (socket: Duplex, status: string) => socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
@@ -106,6 +110,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     p.maxAuthFrameBytes > p.maxFrameBytes || p.maxConnectionsPerIp > p.maxConnections) throw new Error('invalid host recovery/frame limits');
   if (p.party && (!Number.isSafeInteger(p.party.maxParties) || p.party.maxParties < 1 || !Number.isSafeInteger(p.party.maxEncounters) || p.party.maxEncounters < 1)) throw new Error('invalid party capacity');
   if (!p.victimOutcome || ![p.victimOutcome.maxEntries, p.victimOutcome.maxPayloadBytes, p.victimOutcome.timeoutMs].every(value => Number.isSafeInteger(value) && value > 0) || p.victimOutcome.timeoutMs > 2147483647) throw new Error('explicit victim outcome resource budgets required');
+  if (p.victimOutcomeRetryCeiling && (!(['maxEntries', 'maxPayloadBytes', 'timeoutMs'] as const).every(key => Number.isSafeInteger(p.victimOutcomeRetryCeiling![key]) && p.victimOutcomeRetryCeiling![key] > 0) || p.victimOutcomeRetryCeiling.timeoutMs > 2147483647 || (['maxEntries', 'maxPayloadBytes', 'timeoutMs'] as const).some(key => p.victimOutcomeRetryCeiling![key] < p.victimOutcome[key]))) throw new Error('invalid victim outcome retry ceiling');
   if (!!deps.chat !== !!p.chat || p.chat && (!Number.isSafeInteger(p.chat.maxPending) || p.chat.maxPending < 1)) throw new Error('explicit chat pending limit required');
   deps.ownership.assertOwned();
   const registry = new InMemoryCharacterRegistry();
@@ -123,7 +128,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const completion: (() => void)[] = [];
   const persistence = new PersistenceCoordinator(deps.characters, deps.ownership, { ...p.persistence, now: deps.nowMonotonicMs });
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
-  let accepting = true; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
+  let admissionRequested = true; let accepting = true; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
+  let victimResources = { ...p.victimOutcome };
+  let pausedDurability: { run: () => Promise<void>; ownership: HostOwnership } | null = null;
   let generation = 1; let unresolved = 0; let pendingChat = 0;
   const chatTargets = new Map<string, { participant: ChatParticipant; expires: number }>();
   const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
@@ -506,10 +513,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         const key = JSON.stringify(source.grant.victim), group = groups.get(key) ?? []; group.push(source); groups.set(key, group);
       }
       for (const group of groups.values()) {
-        if (group.length > p.victimOutcome.maxEntries) throw new Error('victim outcome resource budget; complete source retained');
+        if (group.length > victimResources.maxEntries) throw new OutcomeResourcePause('victim outcome resource budget; complete source retained');
         const entries: GrantBatchEntry<GrantJson>[] = [];
         for (const { grant } of group) entries.push({ accountId: await deps.characters.getOwner(grant.recipient), characterId: grant.recipient, id: grant.id, payload: deps.codec.grantToJson(grant) });
-        const recorded = await deps.characters.recordVictimOutcome(entries, p.victimOutcome);
+        const recorded = await deps.characters.recordVictimOutcome(entries, victimResources);
         if (recorded.length !== entries.length || recorded.some((entry, index) => entry.id !== entries[index].id)) throw new Error('incomplete victim outcome journal');
       }
       await boundary(() => {
@@ -578,7 +585,20 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         observe('persistenceBarrier', deps.nowMonotonicMs() - began);
       });
     };
-    barrier = work().catch(error => { deps.onFailure?.('durability', error); unresolved++; failClosed(); }).finally(() => { barrier = null; });
+    runDurability(work);
+  }
+  function runDurability(work: () => Promise<void>) {
+    barrier = work().then(() => {
+      if (pausedDurability?.run === work) { pausedDurability = null; unresolved--; frozen = false; accepting = admissionRequested && !draining; }
+    }).catch(error => {
+      deps.onFailure?.('durability', error);
+      const resourceOnly = error instanceof OutcomeResourcePause || error instanceof CharacterStoreError && error.code === 'resource_limit';
+      if (resourceOnly && !deps.ownership.closed.aborted && !draining) {
+        if (!pausedDurability) unresolved++;
+        pausedDurability = { run: work, ownership: deps.ownership };
+      } else { if (!pausedDurability) unresolved++; pausedDurability = null; }
+      failClosed();
+    }).finally(() => { barrier = null; });
   }
 
   const retireDetached = (now: number) => {
@@ -809,9 +829,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         });
       });
     },
-    stopAdmission() { accepting = false; },
+    stopAdmission() { admissionRequested = false; accepting = false; },
+    async retryDurability(resources) {
+      const pause = pausedDurability, ceiling = p.victimOutcomeRetryCeiling;
+      if (!pause || !ceiling || barrier || !frozen || draining || stopped || pause.ownership !== deps.ownership || deps.ownership.closed.aborted) return false;
+      const keys = ['maxEntries', 'maxPayloadBytes', 'timeoutMs'] as const;
+      if (!resources || keys.some(key => !Number.isSafeInteger(resources[key]) || resources[key] < victimResources[key] || resources[key] > ceiling[key]) || !keys.some(key => resources[key] > victimResources[key])) throw new Error('retry requires increased explicit budgets within ceiling');
+      deps.ownership.assertOwned(); victimResources = { ...resources }; runDurability(pause.run);
+      await barrier; return pausedDurability === null && !frozen && !deps.ownership.closed.aborted;
+    },
     async shutdown(deadlineMs) {
-      accepting = false; draining = true;
+      admissionRequested = false; accepting = false; draining = true;
       const end = deps.nowMonotonicMs() + deadlineMs;
       for (const c of connections) { if (!sendControl(c, { type: 'restarting', retryAfterSeconds: 1 })) json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor) c.actor.slot.area.neutralizeInput(c.actor.ref); }
       if (!barrier && !frozen) startDurability();
@@ -829,7 +857,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     stats: () => ({ ...metrics, ...timingStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
       processCpuSystemMs: process.cpuUsage(processCpuStart).system / 1000, processElapsedMs: deps.nowMonotonicMs() - processStarted,
       activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
-      publicAreas: slots.size, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
+      publicAreas: slots.size, resourcePaused: pausedDurability !== null, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
       pendingChat, partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length,
       droppedTicks: [...allSlots].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...allSlots].reduce((n, s) => n + s.snapshot.dropped, 0) }),
   };

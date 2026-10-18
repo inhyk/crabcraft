@@ -67,6 +67,7 @@ async function runtime(options = {}) {
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
       maxMutationSourcesPerTick: 64, loopIntervalMs: 2, chat: options.chat ? { maxPending: 4 } : undefined,
       victimOutcome: { maxEntries: options.victimMaxEntries ?? 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 },
+      victimOutcomeRetryCeiling: options.victimRetry ? { maxEntries: 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 } : undefined,
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
       areaLimits: { eventCount: 4096, inputCommandsPerTick: 32, timers: 256, projectiles: 256 }, restore: explicitRestore,
       party: options.party ? { maxParties: 8, maxEncounters: 8, returnSpawn: () => 'bossArena' } : undefined,
@@ -419,7 +420,7 @@ test('economic results use actual delegated outcomes and original input origins 
 });
 
 test('actual PG ownership backend loss during blocked checkpoint suppresses late snapshot and durable command publication although old SQL may commit', { timeout: 12000 }, async () => {
-  const c = await character(), rt = await runtime(); let bot, blocker; let oldResult;
+  const c = await character(), rt = await runtime({victimRetry:true}); let bot, blocker; let oldResult;
   try {
     bot = await client(rt, c); await ready(rt, bot); await until(() => !rt.host.stats().durableBarrier);
     const owner = (await pool.query("SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database())")).rows;
@@ -433,6 +434,7 @@ test('actual PG ownership backend loss during blocked checkpoint suppresses late
     await blocker.query('COMMIT'); blocker.release(); blocker=null;
     await until(() => !rt.host.stats().durableBarrier); await delay(50);
     assert.equal(bot.state.sequence,stateSequence); assert.equal(bot.results.length,resultsBefore); assert.equal(rt.host.stats().frozen,true);
+    assert.equal(await rt.host.retryDurability({maxEntries:2048,maxPayloadBytes:8*1024*1024,timeoutMs:5000}),false);
     const after=await store.getOwned(c.binding.accountId,c.record.characterId);
     assert.equal(after.revision,before.revision+1); assert.equal(after.checkpoint.progress.quests.status.q1,'active');
     assert.deepEqual(bot.errors,[]);
@@ -479,4 +481,33 @@ test('257 trusted offline journal fixtures drain through committed bounded pages
     assert.equal((await pool.query('SELECT 1 FROM world_character_grants WHERE character_id=ANY($1::uuid[])',[records.map(c=>c.record.characterId)])).rowCount,0);
     for(const bot of bots){assert.equal(bot.state.self.player.xp,0);assert.deepEqual(bot.errors,[]);}
   }finally{for(const t of timers)clearInterval(t);for(const b of bots)b.ws.close();const result=await rt.close();assert.equal(result.durable,false);}
+});
+
+test('resource-only outcome pause retries the same retained Area within explicit ceiling and reopens only after complete durable reconciliation', { timeout: 12000 }, async () => {
+ const rt=await runtime({combat:true,victimMaxEntries:1,victimRetry:true}),bots=[],records=[],timers=[];let resumed;
+ try {
+  for(let i=0;i<2;i++){const c=await character('mage'),b=await client(rt,c);records.push(c);bots.push(b);await ready(rt,b);}
+  const area=bots[0].binding.area;
+  for(const b of bots){const target=b.state.actors.find(a=>a.kind==='scrapling');b.send([{kind:'target',target:target.ref},{kind:'ability',slot:1}]);timers.push(setInterval(()=>{if(b.ws.readyState===WebSocket.OPEN)b.send([]);},50));}
+  await until(()=>rt.host.stats().resourcePaused&&!rt.host.stats().durableBarrier,10000);
+  assert.equal(rt.host.stats().accepting,false);assert.equal(rt.host.stats().pendingSourceGrants,2);
+  await assert.rejects(rt.host.retryDurability({maxEntries:2049,maxPayloadBytes:8*1024*1024,timeoutMs:5000}),/ceiling/);
+  assert.equal(await rt.host.retryDurability({maxEntries:2,maxPayloadBytes:8*1024*1024,timeoutMs:5000}),true);
+  assert.equal(rt.host.stats().resourcePaused,false);assert.equal(rt.host.stats().pendingSourceGrants,0);assert.equal(rt.host.stats().unresolved,0);assert.equal(rt.host.stats().accepting,true);
+  for(const c of records)assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,20);
+  resumed=await client(rt,records[0]);await until(()=>resumed.state);assert.equal(resumed.binding.area,area);assert.equal(resumed.state.self.player.xp,20);assert.deepEqual(resumed.errors,[]);
+  assert.equal(await rt.host.retryDurability({maxEntries:3,maxPayloadBytes:8*1024*1024,timeoutMs:5000}),false);
+ }finally{for(const t of timers)clearInterval(t);for(const b of bots)b.ws.close();resumed?.ws.close();assert.equal((await rt.close()).durable,true);}
+});
+
+ test('generic actual PG checkpoint failure never becomes a resumable outcome resource pause', { timeout: 10000 }, async () => {
+  const c=await character(), rt=await runtime({victimRetry:true});let bot;
+  try {
+   bot=await client(rt,c);await ready(rt,bot);await until(()=>!rt.host.stats().durableBarrier);
+   await pool.query("CREATE FUNCTION qa_checkpoint_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.character_id::text=TG_ARGV[0] THEN RAISE EXCEPTION 'qa failure' USING ERRCODE='XX000'; END IF; RETURN NEW; END $$");
+   await pool.query(`CREATE TRIGGER qa_checkpoint_failure BEFORE UPDATE ON world_characters FOR EACH ROW EXECUTE FUNCTION qa_checkpoint_failure('${c.record.characterId}')`);
+   bot.send([{kind:'questAccept',questId:'q1',npcId:'brinebeard'}]);await until(()=>rt.host.stats().frozen&&!rt.host.stats().durableBarrier);
+   assert.equal(rt.host.stats().resourcePaused,false);assert.equal(await rt.host.retryDurability({maxEntries:2048,maxPayloadBytes:8*1024*1024,timeoutMs:5000}),false);assert.equal(rt.host.stats().accepting,false);
+   assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.quests.status.q1,'available');
+  }finally{await pool.query('DROP TRIGGER IF EXISTS qa_checkpoint_failure ON world_characters');await pool.query('DROP FUNCTION IF EXISTS qa_checkpoint_failure()');bot?.ws.close();assert.equal((await rt.close()).durable,false);}
 });
