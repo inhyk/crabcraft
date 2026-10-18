@@ -47,6 +47,7 @@ export class Combat implements CombatRules {
   heal(source: EntityRef | null, target: EntityRef, amount: number, crit = false): number {
     const g = this.services, dst = g.getUnit(target), src = source ? g.getUnit(source) : null;
     if (!dst?.alive || (source && !src) || !Number.isFinite(amount)) return 0;
+    if(src?.kind==='player'&&dst.kind==='player'&&isAttackTarget(g,src,dst))return 0;
     const before = dst.hp; dst.hp = Math.min(dst.maxHp, dst.hp + Math.round(amount));
     g.emit({type:'heal',src:src?.ref ?? null,dst:dst.ref,amount,crit});
     if (src) src.lastCombat = Math.max(src.lastCombat,g.time - 4);

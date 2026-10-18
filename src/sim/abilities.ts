@@ -39,7 +39,7 @@ function healAllies(g:AreaServices,u:SimUnit,ability:LanternHeal):void {
   const rule=LANTERN_HEALS[ability],source=g.context.members.find(m=>m.unit.id===u.ref.id);
   if(source?.villagePlaying)return;
   for(const dst of g.players()){
-    if(dst.ref.id===u.ref.id||!dst.alive||dst.hidden||Math.hypot(dst.x-u.x,dst.z-u.z)>rule.range||!lineOfSight(g.query,u,dst))continue;
+    if(dst.ref.id===u.ref.id||!dst.alive||dst.hidden||isAttackTarget(g,u,dst)||Math.hypot(dst.x-u.x,dst.z-u.z)>rule.range||!lineOfSight(g.query,u,dst))continue;
     const member=g.context.members.find(m=>m.unit.id===dst.ref.id);
     if(member?.villagePlaying||g.context.pvp!=='disabled'&&(!source?.party||source.party!==member?.party))continue;
     g.combat.heal(u.ref,dst.ref,dst.maxHp*rule.fraction);
