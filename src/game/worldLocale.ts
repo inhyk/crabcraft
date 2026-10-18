@@ -2,6 +2,12 @@ import {t} from '../i18n';
 
 // Stable region keys also drive music and travel logic. Translate only their presentation.
 const REGIONS:Record<string,readonly [string,string,string]>={
+  'Emberharbor':['잿불 항구','화산 바다를 건너 세운 대장장이들의 마을','A smiths’ haven above the molten sea'],
+  'Obsidian Wilds':['흑요석 황야','불꽃 광석과 잃어버린 탐험대의 흔적','Fire ore and traces of lost expeditions'],
+  'Ember Sanctuary':['잿불 성역','불의 봉인을 복구하고 하늘숲으로 향하세요','Restore the fire seals and travel to Skybloom'],
+  'Skyharbor':['하늘 항구','구름 위에서 새롭게 시작하는 모험','A new adventure above the clouds'],
+  'Whisperleaf Woods':['속삭이는 잎의 숲','빛나는 열매와 고대 수호자들의 숲','Luminous fruit and ancient guardians'],
+  'Worldtree Sanctuary':['세계수 성역','하늘숲의 기억을 되찾는 원정','Recover the memories of Skybloom'],
   'Snowfall Village':['눈꽃 마을','따뜻한 창빛과 눈 쌓인 지붕 아래의 쉼터','Warm windows and snow-covered rooftops'],
   'Frostpine Woods':['서리 소나무 숲','눈꽃이 내려앉은 침엽수 사이의 순찰길','Patrol beneath snow-laden evergreen boughs'],
   'Aurora Snowfields':['오로라 설원','서리 파수병을 물리치며 300레벨을 향해','Defeat frost sentinels and grow toward level 300'],
@@ -53,7 +59,7 @@ const LOADING_LABELS:Record<string,string>={
   'Welcome to Starhaven':'별빛 항구에 다시 오신 걸 환영해요',
 };
 export const loadingLabel=(key:string)=>LOADING_LABELS[key]?t(LOADING_LABELS[key],key):key;
-export function loadingTips(chapter: 1 | 2 | 3 | 4 = 1){return chapter === 4 ? [
+export function loadingTips(chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1){return chapter>=5?[t('새 월드의 주민들에게 12개의 원정 퀘스트를 받아 보세요.','Accept twelve frontier requests from the villagers.'),t('포탈로 이전 월드와 왕복할 수 있어요. 레벨과 퀘스트는 그대로 유지돼요.','Portals connect the worlds; your level and quest progress stay with you.'),t('등불은 F를 길게 눌러 켜고, 탐험 지점은 가까이 다가가면 발견돼요.','Hold F to light guide lamps; approach landmarks to discover them.')]:chapter === 4 ? [
   t('눈꽃 마을의 주민들에게 말을 걸어 설원 퀘스트를 받아 보세요.','Speak to the people of Snowfall Village to accept snowfield quests.'),
   t('300레벨이 되면 얼음 왕좌의 보레아스에게 도전할 수 있어요.','Reach level 300 to challenge Boreas at the Frozen Throne.'),
   t('기술 위에 마우스를 올리면 바닥에서 실제 공격 범위를 확인할 수 있어요.','Hover over a skill to see its actual range on the ground.'),

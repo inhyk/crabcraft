@@ -32,8 +32,8 @@ test('beacon completes real two-second channel, personal q3 reward and world-loc
  command(area,a,1,[{kind:'channelStart',channel:'beacon',targetId:'beacon'}],{heldChannel:'beacon'});assert.ok(a.p.state.channel);tick(area,62);assert.equal(a.p.state.flags.beaconLit,true);assert.equal(a.p.state.quests.status.q3,'done');assert.equal(a.p.state.quests.status.q4,'active');assert.equal(a.p.state.xp,330);assert.equal(a.u.encounterBlessing,true);assert.equal(other.services.bossAvailable('rust'),false);
  a.p.gainXp(600);tick(area);assert.equal(area.services.bossByProfile('rust').state,'waking');command(area,a,2,[{kind:'interact',targetId:'beacon'}],{heldChannel:'beacon'});tick(area,62);assert.equal(a.p.state.flags.beaconLit,false);assert.equal(area.services.bossByProfile('rust').state,'dormant');assert.equal(other.services.bossByProfile('rust').state,'dormant');
 });
-test('thirty-five numeric quests retain Dawn and Snow objectives and automatic boss completion',async()=>{
- const{QUESTS,QUEST_ORDER,freshQuests,questBump}=await import('../src/sim/data/quests.ts');assert.equal(QUEST_ORDER.length,35);assert.deepEqual(QUEST_ORDER.slice(13,25),['d3','d4','d5','d6','d7','d8','d9','d10','d11','d12','s1','s2']);assert.deepEqual(QUEST_ORDER.filter(id=>QUESTS[id].chapter===3).length,12);assert.equal(QUESTS.s1.xp,18000);assert.equal(QUESTS.s2.xp,24000);assert.equal(QUESTS.s2.turnIn,null);const area=worldArea('snow-quests','w4'),a=addActor(area);assert.equal(Object.values(freshQuests(4).status).filter(v=>v==='available').length,13);questAccept(a.p,area.services,'s2');questBump(a.p,area.services,'frost-boss');assert.equal(a.p.state.quests.status.s2,'done');assert.equal(a.p.state.xp,24000);questBump(a.p,area.services,'frost-boss');assert.equal(a.p.state.xp,24000);
+test('fifty-nine numeric quests retain Dawn and Snow objectives and automatic boss completion',async()=>{
+ const{QUESTS,QUEST_ORDER,freshQuests,questBump}=await import('../src/sim/data/quests.ts');assert.equal(QUEST_ORDER.length,59);assert.deepEqual(QUEST_ORDER.slice(13,25),['d3','d4','d5','d6','d7','d8','d9','d10','d11','d12','s1','s2']);assert.deepEqual(QUEST_ORDER.filter(id=>QUESTS[id].chapter===3).length,12);assert.equal(QUESTS.s1.xp,18000);assert.equal(QUESTS.s2.xp,24000);assert.equal(QUESTS.s2.turnIn,null);const area=worldArea('snow-quests','w4'),a=addActor(area);assert.equal(Object.values(freshQuests(4).status).filter(v=>v==='available').length,13);questAccept(a.p,area.services,'s2');questBump(a.p,area.services,'frost-boss');assert.equal(a.p.state.quests.status.s2,'done');assert.equal(a.p.state.xp,24000);questBump(a.p,area.services,'frost-boss');assert.equal(a.p.state.xp,24000);
 });
 test('Dawn raw placed props enforce strict 3D radius and per-player collection without shared beacon effects',async()=>{
  const{QUESTS}=await import('../src/sim/data/quests.ts'),area=worldArea('dawn-personal','w3'),a=addActor(area,'a'),b=addActor(area,'b');questAccept(a.p,area.services,'d3');questAccept(b.p,area.services,'d3');const node=area.services.definition.interactions.find(i=>i.id==='dawn-crate-a');Object.assign(a.u,node.position);a.u.y+=3.5;assert.equal(area.services.runCommand(a.p.state.unit,{kind:'interact',targetId:node.id}),false);a.u.y=node.position.y+3.499;assert.equal(area.services.runCommand(a.p.state.unit,{kind:'interact',targetId:node.id}),true);assert.equal(a.p.state.quests.progress['d3-a'],1);assert.equal(b.p.state.quests.progress['d3-a'],undefined);assert.equal(area.services.runCommand(a.p.state.unit,{kind:'interact',targetId:node.id}),false);assert.equal(a.p.state.flags.beaconLit,undefined);assert.equal(b.p.state.flags.beaconLit,undefined);assert.equal(area.services.definition.interactions.filter(i=>i.objective?.startsWith('dawn-')).length,21);assert.equal(QUESTS.d3.objectives.length,3);
@@ -118,4 +118,28 @@ test('private Frostlight ending still requires actual Frost dead and personal cl
 
 test('Snow request collection and visits retain canonical strict three-dimensional range boundaries',()=>{
  const area=worldArea('snow-boundaries','w4'),a=addActor(area);questAccept(a.p,area.services,'s3');questAccept(a.p,area.services,'s6');const crate=area.services.definition.interactions.find(i=>i.id==='snow-crate-a'),visit=area.services.definition.interactions.find(i=>i.id==='snow-visit-forest');Object.assign(a.u,{...crate.position,x:crate.position.x+3.5});assert.equal(area.services.runCommand(a.ref,{kind:'interact',targetId:crate.id}),false);Object.assign(a.u,{...crate.position,y:crate.position.y+3.5});assert.equal(area.services.runCommand(a.ref,{kind:'interact',targetId:crate.id}),false);Object.assign(a.u,{...crate.position,x:crate.position.x+3.499});assert.equal(area.services.runCommand(a.ref,{kind:'interact',targetId:crate.id}),true);assert.equal(a.p.state.quests.progress['s3-1'],1);Object.assign(a.u,{...visit.position,x:visit.position.x+4});area.step(new Map());assert.equal(a.p.state.quests.progress['s6-1'],undefined);a.u.x=visit.position.x+3.999;area.step(new Map());assert.equal(a.p.state.quests.progress['s6-1'],1);
+});
+
+for(const chapter of [5,6])test(`frontier world ${chapter}: twelve personal quests, channel, exploration and one-time payout`,async()=>{
+ const {QUESTS,questBump}=await import('../src/sim/data/quests.ts');
+ const area=worldArea(`frontier-${chapter}`,`w${chapter}`),a=addActor(area,'hero'),observer=addActor(area,'observer');
+ const defs=Object.values(QUESTS).filter(q=>q.chapter===chapter);assert.equal(defs.length,12);
+ for(const q of defs){
+  const giver=area.services.npcById(q.giver);Object.assign(a.u,{x:giver.x,y:giver.y,z:giver.z});
+  assert.equal(questAccept(a.p,area.services,q.id),true);
+  for(const o of q.objectives){
+   const point=area.services.definition.interactions.find(i=>i.objective===o.kind);
+   if(point){Object.assign(a.u,point.position);a.u.lastCombat=-100;
+    if(point.kind==='explore')tick(area,2);
+    else if(point.kind==='waystone'){assert.equal(area.services.runCommand(a.p.state.unit,{kind:'interact',targetId:point.id}),true);command(area,a,10+chapter*100+defs.indexOf(q),[],{heldChannel:'waystone'});tick(area,60);}
+    else assert.equal(area.services.runCommand(a.p.state.unit,{kind:'interact',targetId:point.id}),true);
+   }else if(o.kind.endsWith('-letter')){const npc=area.services.npcById('brinebeard');Object.assign(a.u,{x:npc.x,y:npc.y,z:npc.z});assert.equal(area.services.runCommand(a.p.state.unit,{kind:'interact',targetId:'npc:brinebeard'}),true);}
+   else questBump(a.p,area.services,o.kind,o.count);
+  }
+  assert.equal(a.p.state.quests.status[q.id],'ready',q.id);const npc=area.services.npcById(q.turnIn);Object.assign(a.u,{x:npc.x,y:npc.y,z:npc.z});const xp=a.p.state.xp;
+  assert.equal(area.services.runCommand(a.p.state.unit,{kind:'questTurnIn',questId:q.id,npcId:q.turnIn}),true);
+  assert.equal(a.p.state.xp,xp+q.xp);assert.equal(area.services.runCommand(a.p.state.unit,{kind:'questTurnIn',questId:q.id,npcId:q.turnIn}),false);assert.deepEqual(observer.p.state.quests.progress,{});
+ }
+ area.dispose();
+
 });
