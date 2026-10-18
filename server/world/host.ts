@@ -12,7 +12,7 @@ import type { Area, AreaSnapshot, BossProfileId, EntityRef, EventRecord, PlayerC
 import { canChallenge } from '../../src/sim/data/progression.ts';
 import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { TREASURES, LIGHTHOUSE_SECRET } from '../../src/sim/features/exploration.ts';
-import { CharacterStore, type Character } from './character-store.ts';
+import { CharacterStore, type Character, type VictimOutcomeResources } from './character-store.ts';
 import { WorldTicketRegistry, type SessionBinding } from './admission.ts';
 import type { HostOwnership } from './ownership.ts';
 import { DeadlineScheduler } from './scheduler.ts';
@@ -39,6 +39,7 @@ export interface HostPolicies {
   readonly maxQueuedInputs: number;
   readonly maxMutationSourcesPerTick: number;
   readonly loopIntervalMs: number;
+  readonly victimOutcome: VictimOutcomeResources;
   readonly persistence: { maxQueuedPerCharacter: number; maxAttempts: number; retryMs: number; maxRecoveryRounds: number };
   readonly areaLimits: { eventCount: number; inputCommandsPerTick: number; timers: number; projectiles: number };
   readonly restore: RestorePolicy;
@@ -104,6 +105,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   if (!Number.isSafeInteger(p.persistence.maxRecoveryRounds) || p.persistence.maxRecoveryRounds < 0 || p.persistence.maxRecoveryRounds > 32 ||
     p.maxAuthFrameBytes > p.maxFrameBytes || p.maxConnectionsPerIp > p.maxConnections) throw new Error('invalid host recovery/frame limits');
   if (p.party && (!Number.isSafeInteger(p.party.maxParties) || p.party.maxParties < 1 || !Number.isSafeInteger(p.party.maxEncounters) || p.party.maxEncounters < 1)) throw new Error('invalid party capacity');
+  if (!p.victimOutcome || ![p.victimOutcome.maxEntries, p.victimOutcome.maxPayloadBytes, p.victimOutcome.timeoutMs].every(value => Number.isSafeInteger(value) && value > 0) || p.victimOutcome.timeoutMs > 2147483647) throw new Error('explicit victim outcome resource budgets required');
   if (!!deps.chat !== !!p.chat || p.chat && (!Number.isSafeInteger(p.chat.maxPending) || p.chat.maxPending < 1)) throw new Error('explicit chat pending limit required');
   deps.ownership.assertOwned();
   const registry = new InMemoryCharacterRegistry();
@@ -125,7 +127,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   let generation = 1; let unresolved = 0; let pendingChat = 0;
   const chatTargets = new Map<string, { participant: ChatParticipant; expires: number }>();
   const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
-    authFailures: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
+    authFailures: 0, pendingSourceGrants: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
   const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
   const timings = new Map<string, { values: number[]; cursor: number }>();
   const observe = (name: string, ms: number) => {
@@ -491,6 +493,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const tokens = new Map<Slot, string>();
     for (const slot of allSlots) if (slot.area.players.size) tokens.set(slot, slot.area.beginDurabilityBarrier('checkpoint'));
     const sources = [...allSlots].flatMap(slot => slot.area.pendingGrants().map(entry => ({ slot, ...entry })));
+    metrics.pendingSourceGrants = sources.length;
     const work = async () => {
       // Group an entire death's recipients in one transaction. No recipient is ACKed individually.
       const groups = new Map<string, typeof sources>();
@@ -503,9 +506,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         const key = JSON.stringify(source.grant.victim), group = groups.get(key) ?? []; group.push(source); groups.set(key, group);
       }
       for (const group of groups.values()) {
-        if (group.length > 100) throw new Error('contributor batch capacity');
-        const entries = await Promise.all(group.map(async ({ grant }) => ({ accountId: await deps.characters.getOwner(grant.recipient), characterId: grant.recipient, id: grant.id, payload: deps.codec.grantToJson(grant) })));
-        await deps.characters.recordGrantBatch(entries);
+        if (group.length > p.victimOutcome.maxEntries) throw new Error('victim outcome resource budget; complete source retained');
+        const entries = [];
+        for (const { grant } of group) entries.push({ accountId: await deps.characters.getOwner(grant.recipient), characterId: grant.recipient, id: grant.id, payload: deps.codec.grantToJson(grant) });
+        const recorded = await deps.characters.recordVictimOutcome(entries, p.victimOutcome);
+        if (recorded.length !== entries.length || recorded.some((entry, index) => entry.id !== entries[index].id)) throw new Error('incomplete victim outcome journal');
       }
       await boundary(() => {
         deps.ownership.assertOwned();
@@ -565,6 +570,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       await boundary(() => {
         deps.ownership.assertOwned();
         for (const source of sources) source.slot.area.acknowledgeGrant(source.grant.id);
+        metrics.pendingSourceGrants = 0;
         for (const [slot, token] of tokens) { drain(slot); slot.area.releaseDurabilityBarrier(token); slot.lastCheckpoint = deps.nowMonotonicMs(); }
         for (const actor of actors.values()) if (actor.connection) sendResults(actor.connection);
         if (p.party) syncPartyContexts();

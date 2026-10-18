@@ -66,6 +66,7 @@ async function runtime(options = {}) {
       checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
       maxMutationSourcesPerTick: 64, loopIntervalMs: 2, chat: options.chat ? { maxPending: 4 } : undefined,
+      victimOutcome: { maxEntries: options.victimMaxEntries ?? 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 },
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
       areaLimits: { eventCount: 4096, inputCommandsPerTick: 32, timers: 256, projectiles: 256 }, restore: explicitRestore,
       party: options.party ? { maxParties: 8, maxEncounters: 8, returnSpawn: () => 'bossArena' } : undefined,
@@ -207,6 +208,7 @@ test('two actual combat contributors receive complete identical XP in one atomic
     await until(() => bots.every(bot => bot.state.self.player.xp > 0) || rt.failures.length, 10000);
     assert.deepEqual(rt.failures, []); assert.equal(bots[0].state.self.player.xp, 20); assert.equal(bots[1].state.self.player.xp, 20);
     const rows = await pool.query('SELECT g.character_id,r.applied_revision FROM world_character_grants g JOIN world_character_grant_receipts r USING(grant_id) WHERE g.character_id=ANY($1::uuid[])', [characters.map(c => c.record.characterId)]);
+    const seals = await pool.query('SELECT recipient_count FROM world_victim_outcomes WHERE outcome_key=$1', [JSON.stringify([bots[0].events.find(e=>e.event.type==="death").event.unit.area,bots[0].events.find(e=>e.event.type==="death").event.unit.id,bots[0].events.find(e=>e.event.type==="death").event.unit.life])]); assert.equal(Number(seals.rows[0].recipient_count),2);
     assert.equal(rows.rowCount, 2); assert.equal(new Set(rows.rows.map(r => r.character_id)).size, 2);
     for (const c of characters) assert.equal((await store.getOwned(c.binding.accountId, c.record.characterId)).checkpoint.progress.xp, 20);
   } finally { for (const timer of timers) clearInterval(timer); for (const bot of bots) bot.ws.close(); await rt.close(); }
@@ -465,4 +467,16 @@ test('257 trusted offline journal fixtures drain through committed bounded pages
   assert.deepEqual(receipts.rows.map(r=>r.n),[100,100,57]);assert.equal((await store.pendingGrants(c.binding.accountId,c.record.characterId)).length,0);assert.deepEqual(bot.errors,[]);assert.deepEqual(rt.failures,[]);
  }finally{bot?.ws.close();await rt.close();}
  const resumed=await runtime();let next;try{next=await client(resumed,c);await ready(resumed,next);assert.equal(next.state.self.player.coins,257);}finally{next?.ws.close();await resumed.close();}
+});
+
+ test('insufficient whole outcome budget freezes complete two-contributor source with no journal or public reward', { timeout: 12000 }, async () => {
+  const rt=await runtime({combat:true,victimMaxEntries:1}),bots=[],records=[],timers=[];
+  try {
+    for(let i=0;i<2;i++){const record=await character('mage'),bot=await client(rt,record);records.push(record);bots.push(bot);await ready(rt,bot);}
+    for(const bot of bots){const target=bot.state.actors.find(a=>a.kind==='scrapling');bot.send([{kind:'target',target:target.ref},{kind:'ability',slot:1}]);timers.push(setInterval(()=>{if(bot.ws.readyState===WebSocket.OPEN)bot.send([]);},50));}
+    await until(()=>rt.host.stats().frozen,10000);assert.equal(rt.host.stats().pendingSourceGrants,2);
+    assert.ok(rt.failures.some(f=>f.stage==='durability'&&f.message.includes('complete source retained')));
+    assert.equal((await pool.query('SELECT 1 FROM world_character_grants WHERE character_id=ANY($1::uuid[])',[records.map(c=>c.record.characterId)])).rowCount,0);
+    for(const bot of bots){assert.equal(bot.state.self.player.xp,0);assert.deepEqual(bot.errors,[]);}
+  }finally{for(const t of timers)clearInterval(t);for(const b of bots)b.ws.close();const result=await rt.close();assert.equal(result.durable,false);}
 });

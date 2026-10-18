@@ -93,6 +93,7 @@ try {
     policies: { authTimeoutMs: 2000, inputTimeoutMs: 300, reconnectGraceMs: 3000, sessionRevalidateMs: 1000, checkpointIntervalMs: 2000,
       maxConnections: 16, maxConnectionsPerIp: 16, maxWaiting: 16, maxAuthFrameBytes: 2048, maxFrameBytes: 65536,
       maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128, maxMutationSourcesPerTick: 64, loopIntervalMs: 2, chat: { maxPending: 16 },
+      victimOutcome: { maxEntries: 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 }, // Explicit QA backpressure, not an eligibility cut.
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 3, retryMs: 20, maxRecoveryRounds: 2 },
       areaLimits: { eventCount: 4096, inputCommandsPerTick: 32, timers: 512, projectiles: 512 },
       party: args.party === '1' ? { maxParties: 8, maxEncounters: 8, returnSpawn: () => 'spawn' } : undefined,
