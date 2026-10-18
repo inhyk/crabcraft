@@ -1,3 +1,6 @@
+import type {OutcomeCapture} from './outcomes.ts';
+import type {ContributionSummary,ContributionSnapshot,CreditBatch,PlannedPage,PagedOutcomeSeal,PlannerCursor} from './ledger.ts';
+export type {OutcomeCapture} from './outcomes.ts';
 import type {RenderPoseRecipe} from './renderPose.ts';
 import type {CharacterCheckpointV1,RestoredPlayerData} from './persistence.ts';
 export type {CharacterCheckpointV1,RestoredPlayerData,RestorePolicy} from './persistence.ts';
@@ -372,6 +375,7 @@ export interface AreaServices {
 }
 export interface AreaOptions {
   readonly ledgerMode?: 'retained' | 'external-durable';
+  readonly ledgerLimits?:{readonly maxDirtyCreditEntries:number;readonly maxDirtyCreditBytes:number;readonly maxPendingDeaths:number;readonly maxStagedBytes:number};
   readonly characters?: CharacterRegistry; // host injects same registry into all Areas and coordinator
   readonly id: AreaId; readonly definition: AreaDefinition; readonly query: WorldQuery;
   readonly seed: number; readonly policy: AreaPolicy; readonly actionData: ActionData; readonly context: AreaContext;
@@ -452,6 +456,9 @@ export interface TransferCoordinator {
   transfer(character: CharacterId, source: Area, destination: Area, gate: string, hostTick: number): { ok: true; ref: EntityRef } | { ok: false; reason: string };
 }
 
+export type LedgerStepReadiness={readonly ready:true}|{readonly ready:false;readonly reason:'flush-required'|'outcomes-pending'|'summary-required'|'receipts-flush-required'};
+export interface ContributionSummaryRead {readonly token:string;readonly area:AreaId;readonly tick:Tick;readonly victims:readonly EntityRef[];readonly residents:readonly {character:CharacterId;unit:EntityRef}[]}
+export interface StagedOutcomeResult {readonly cursor:PlannerCursor;readonly residentGrants:readonly EarnedGrant[];readonly random:{readonly startState:number;readonly finalState:number;readonly drawCount:number}}
 export interface DurableLedgerBinding {readonly actor:EntityRef;readonly character:CharacterId;readonly ownerGeneration:number;readonly ledgerGeneration:number;readonly durableRevision:number}
 export interface GrantReadToken extends DurableLedgerBinding {readonly area:AreaId;readonly nonce:number}
 export interface CertifiedGrantPage {readonly revision:number;readonly grants:readonly EarnedGrant[]}
@@ -480,6 +487,18 @@ export interface Area {
   releaseDurabilityBarrier(token:string):void;
   neutralizeInput(ref:EntityRef):void;
   resetInputSession(ref:EntityRef):void;
+  prepareLedgerStep():LedgerStepReadiness;
+  contributionSummariesNeeded():readonly EntityRef[];
+  beginContributionSummaryRead(limit:number):ContributionSummaryRead|null;
+  installContributionSummaries(read:ContributionSummaryRead,summaries:readonly ContributionSummary[]):void;
+  cancelContributionSummaryRead(read:ContributionSummaryRead):void;
+  captureDirtyCredits(limit:number):CreditBatch|null;
+  markCreditsDurable(token:string):'acknowledged'|'not-current';
+  pendingDeathRecipes(limit:number):readonly OutcomeCapture[];
+  planStagedOutcomePage(capture:OutcomeCapture,credits:readonly ContributionSnapshot[]):PlannedPage;
+  acceptStagedOutcomePage(capture:OutcomeCapture,page:PlannedPage,credits:readonly ContributionSnapshot[]):void;
+  stagedOutcomeResult(capture:OutcomeCapture):StagedOutcomeResult;
+  retireJournaledOutcome(capture:OutcomeCapture,seal:PagedOutcomeSeal):void;
   bindDurableLedger(ref:EntityRef,revision:number):void;
   beginGrantRead(ref:EntityRef,expectedRevision:number):GrantReadToken;
   applyCertifiedGrants(token:GrantReadToken,page:CertifiedGrantPage):readonly GrantApplyResult[];
