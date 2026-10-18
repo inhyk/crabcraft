@@ -30,9 +30,10 @@ export class ForgePanel {
   const p=this.g.player,key=`${language()}|${p.coins}|${p.attackRank}|${p.armorRank}|${p.weaponOwned}|${p.armorOwned}|${p.inCombat}`;
   if(key!==this.last){this.last=key;this.render();}
  }
- private buy(slot:EquipmentSlot){
+ private async buy(slot:EquipmentSlot){
   const buying=!this.g.player.ownsEquipment(slot);
-  const result=buying?this.g.player.buyEquipment(slot):this.g.player.upgradeEquipment(slot);
+  let result;try{result=this.g.server?await this.g.server.forge(slot,buying?'buy':'upgrade',this.npc?.def.id??'pip'):buying?this.g.player.buyEquipment(slot):this.g.player.upgradeEquipment(slot);}catch{if(this.open)this.notice.textContent=t('서버 확인을 기다릴 수 없습니다. 다시 연결해 주세요.','Confirmation unavailable. Reconnect to the server.');return;}
+  if(!this.open)return;
   if(result!=='upgraded'&&result!=='bought'){
    this.notice.textContent=result==='busy'?t('전투가 끝나면 강화할 수 있어요.','Wait until combat ends to upgrade.'):result==='max'?t('최고 강화 단계예요!','Maximum upgrade rank reached!'):t('코인이 부족해요. 적과 보스를 잡아 모아 주세요.','Not enough coins. Earn more by defeating enemies and bosses.');return;
   }

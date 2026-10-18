@@ -9,6 +9,12 @@ const data=JSON.parse(await readFile(root+'src/sim/data/pose-data.json','utf8'))
 const {version,...payload}=data;if(version!=='shipped-motion-v1-'+createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0,20))throw new Error('Numeric motion artifact content hash mismatch');
 const stale=[];for(const [path,hash] of Object.entries(data.sourceHashes))if(createHash('sha256').update(await readFile(root+path)).digest('hex')!==hash)stale.push(path);
 if(stale.length)throw new Error(`Stale numeric motion derivation: ${stale.join(', ')}`);
+const catalog=JSON.parse(await readFile(root+'src/sim/data/rig-catalog.json','utf8'));
+const {version:catalogVersion,...catalogPayload}=catalog;
+if(catalogVersion!=='shipped-rigs-v1-'+createHash('sha256').update(JSON.stringify(catalogPayload)).digest('hex').slice(0,20))throw new Error('Rig catalog content hash mismatch');
+if(catalog.motionVersion!==data.version||JSON.stringify(catalog.sourceHashes)!==JSON.stringify(data.sourceHashes))throw new Error('Rig catalog and motion artifact generations differ');
+const expectedRigs=Object.fromEntries(Object.entries(data.rigSources).map(([id,source])=>[id,{...source,rootScale:data.archetypes[id].rootScale,metersToUnits:data.archetypes[id].metersToUnits}]));
+if(JSON.stringify(catalog.rigs)!==JSON.stringify(expectedRigs))throw new Error('Rig catalog differs from measured factory provenance');
 if(process.argv.includes('--freshness-only')){console.log(`PASS: ${Object.keys(data.sourceHashes).length} source hashes match ${data.version}`);process.exit(0);}
 const server=await createServer({root,server:{host:'127.0.0.1',port:5266,strictPort:true},logLevel:'error'});await server.listen();let browser;
 try{
@@ -85,6 +91,23 @@ try{
    for(let frame=0;frame<10;frame++)step(1/30,0,0,0);
    ctrl.dispose();rig.dispose();
   }
+  // The small presentation catalog builds the same real rig as independent shipped specs.
+  const {rigCatalog,rigCatalogVersion}=await import('/src/sim/data/rig-catalog.ts');
+  let catalogAnchors=0,maxCatalogAnchorDelta=0;
+  for(const id of rigs){
+   const meta=rigCatalog(id),expected=await makeRig(id);
+   const actual=meta.factory==='createCrab'?await createCrab({...meta.spec},[...(meta.extras??[])]):meta.factory==='createEnemyCrab'?await createEnemyCrab(meta.kind):createJellyfishRig();
+   actual.root.scale.multiplyScalar(meta.rootMultiplier);
+   for(let axis=0;axis<3;axis++)near(actual.root.scale.toArray()[axis],expected.root.scale.toArray()[axis],`${id} catalog scale`,0);
+   near(actual.metersToUnits,expected.metersToUnits,`${id} catalog units`,0);
+   const compare=p=>{
+    for(const rig of [actual,expected]){rig.root.position.set(7,2,-3);rig.root.rotation.y=.63;rig.setPose(p.q);rig.body.position.fromArray(p.pos).multiplyScalar(rig.metersToUnits);rig.body.quaternion.fromArray(p.rot);rig.root.updateMatrixWorld(true);}
+    for(const socket of ['head','clawR']){const a=actual.getSocket(socket).getWorldPosition(new THREE.Vector3()),b=expected.getSocket(socket).getWorldPosition(new THREE.Vector3());for(const axis of ['x','y','z'])maxCatalogAnchorDelta=Math.max(maxCatalogAnchorDelta,near(a[axis],b[axis],`${id} catalog ${socket} ${axis}`,1e-12));catalogAnchors++;}
+   };
+   compare(new legacy.Pose());
+   if(id!=='jellyfish')for(const e of lib.list()){const c=lib.get(e.id);for(const t of [0,c.length*.17,c.length*.53,c.length]){const p=new legacy.Pose();legacy.sampleClip(c,t,false,p,true);compare(p);}}
+   actual.dispose();expected.dispose();
+  }
   // Sex and class change gear/face, but must not silently change numerical colliders/sockets.
   for(const race of ['human','orc','dwarf','undead','nightelf','tauren'])for(const sex of ['male','female'])for(const classId of ['warrior','mage','priest']){
    const rig=await createCrab({...spec(race),sex,classId}),u=newUnit(race),p=new legacy.Pose();
@@ -124,7 +147,7 @@ try{
    twitch.push({archetype:id,checks,maxOrigin,maxHead,maxSpawnRadiusDelta:maxRadius,maxFlightSeconds,maxArrivalTicks,worst});rig.dispose();
   }
   renderer.dispose();
-  return {version:realActionData.version,clips:lib.list().length,rigs:rigs.length,specVariants,samples,anchors,roots,maxSampleDelta,maxAnchorDelta,maxRootDelta,twitch};
+  return {version:realActionData.version,clips:lib.list().length,rigs:rigs.length,specVariants,samples,anchors,roots,maxSampleDelta,maxAnchorDelta,maxRootDelta,catalogVersion:rigCatalogVersion,catalogAnchors,maxCatalogAnchorDelta,twitch};
  });
  const output=process.argv.indexOf('--output');if(output>=0){if(!process.argv[output+1])throw new Error('--output needs a path');await writeFile(process.argv[output+1],JSON.stringify(result,null,2)+'\n');}
  console.log(JSON.stringify(result,null,2));
