@@ -227,6 +227,17 @@ class CinemaStage {
     this.anchor = performance.now();
     this.lastT = t - 1e-6;
     this.vfx.clear();
+    for (const e of this.effects) e.reset?.();
+    // Pick up what each actor was doing at t: its latest clip (from where it would be by now) and face.
+    for (const a of this.actors.values()) {
+      const act = (a.track.acts ?? []).filter((c) => c.t < t).sort((x, y) => x.t - y.t).pop();
+      if (act) {
+        const from = act.part ? act.from : (act.from ?? 0) + (t - act.t) * (act.speed ?? 1);
+        a.unit.act(act.clip as never, { loop: act.loop, speed: act.speed, from, to: act.to, upper: act.upper, fade: 0, part: act.part });
+      }
+      const face = (a.track.faces ?? []).filter((f) => f.t < t).sort((x, y) => x.t - y.t).pop();
+      if (face) a.unit.express(face.expr, face.hold ?? 99);
+    }
   }
 
   get time(): number {

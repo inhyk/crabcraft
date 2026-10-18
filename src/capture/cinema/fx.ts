@@ -27,6 +27,8 @@ export interface FxContext {
 export interface Effect {
   update(ctx: FxContext): void;
   dispose(): void;
+  /** Back to the state before t (the stage seeks backwards for stills and pre-rolls). */
+  reset?(): void;
 }
 
 const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -213,10 +215,10 @@ class Flames implements Effect {
           float w = (1.0 - uv.y) * 0.5 + 0.08;
           float body = smoothstep(w, w * 0.25, abs(uv.x - 0.5 + (n - 0.5) * 0.35 * uv.y));
           float heat = body * smoothstep(1.0, 0.0, uv.y + (n2 - 0.5) * 0.55) * smoothstep(0.0, 0.08, uv.y);
-          heat = clamp(heat * 1.6, 0.0, 1.0);
-          vec3 col = mix(vec3(0.55, 0.05, 0.0), vec3(1.0, 0.45, 0.05), smoothstep(0.1, 0.55, heat));
-          col = mix(col, vec3(1.0, 0.92, 0.6), smoothstep(0.65, 1.0, heat));
-          gl_FragColor = vec4(col * heat * 3.0 * uGain, heat);
+          heat = clamp(heat * 1.35, 0.0, 1.0);
+          vec3 col = mix(vec3(0.45, 0.03, 0.0), vec3(1.0, 0.32, 0.02), smoothstep(0.05, 0.5, heat));
+          col = mix(col, vec3(1.0, 0.75, 0.3), smoothstep(0.7, 1.0, heat));
+          gl_FragColor = vec4(col * heat * 1.5 * uGain, heat);
         }`,
     });
     const spots = (cue.spots as [number, number, number?][] | undefined) ?? [];
@@ -443,6 +445,9 @@ class Burst implements Effect {
     this.fired = true;
     this.fire(ctx);
   }
+  reset(): void {
+    this.fired = false;
+  }
   dispose(): void {}
 }
 
@@ -460,6 +465,9 @@ class Emitter implements Effect {
       this.acc -= 1;
       this.emit(ctx, (ctx.t - this.cue.t) / Math.max(1e-3, num(this.cue.until, ctx.t + 1) - this.cue.t));
     }
+  }
+  reset(): void {
+    this.acc = 0;
   }
   dispose(): void {}
 }
@@ -513,6 +521,10 @@ class Meteor implements Effect {
       this.exploded = true;
       explode(ctx, to, this.cue);
     }
+  }
+
+  reset(): void {
+    this.exploded = false;
   }
 
   dispose(): void {
