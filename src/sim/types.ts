@@ -370,6 +370,7 @@ export interface AreaServices {
   onUnitDied(victim: EntityRef, killer: EntityRef | null): void;
 }
 export interface AreaOptions {
+  readonly ledgerMode?: 'retained' | 'external-durable';
   readonly characters?: CharacterRegistry; // host injects same registry into all Areas and coordinator
   readonly id: AreaId; readonly definition: AreaDefinition; readonly query: WorldQuery;
   readonly seed: number; readonly policy: AreaPolicy; readonly actionData: ActionData; readonly context: AreaContext;
@@ -420,6 +421,7 @@ export interface TransferDTO {
   quests: QuestState; flags: Readonly<Record<string, boolean>>; cogMisses: number;
   achievements?: {earned:string[];distance:number}; lighthouseSecretFound?:boolean;
   appliedGrantIds: readonly string[];
+  ledger?:{readonly mode:'external-durable';readonly revision:number};
   durableGrantIds?:readonly string[]; // subset already committed with its checkpoint before travel
 }
 export interface Admission { token: string; character: CharacterId; destination: AreaId; spawn: string; expiresAtHostTick: number }
@@ -449,7 +451,11 @@ export interface TransferCoordinator {
   transfer(character: CharacterId, source: Area, destination: Area, gate: string, hostTick: number): { ok: true; ref: EntityRef } | { ok: false; reason: string };
 }
 
-export interface CapturedPlayer {readonly captureId:string;readonly ref:EntityRef;readonly checkpoint:CharacterCheckpointV1;readonly appliedGrantIds:readonly string[]}
+export interface DurableLedgerBinding {readonly actor:EntityRef;readonly character:CharacterId;readonly ownerGeneration:number;readonly ledgerGeneration:number;readonly durableRevision:number}
+export interface GrantReadToken extends DurableLedgerBinding {readonly area:AreaId;readonly nonce:number}
+export interface CertifiedGrantPage {readonly revision:number;readonly grants:readonly EarnedGrant[]}
+export interface GrantApplyResult {readonly id:string;readonly result:'applied'|'duplicate'}
+export interface CapturedPlayer {readonly ledger?:DurableLedgerBinding;readonly captureId:string;readonly ref:EntityRef;readonly checkpoint:CharacterCheckpointV1;readonly appliedGrantIds:readonly string[]}
 export interface PlayerRetirement {readonly token:string;readonly capture:CapturedPlayer}
 export interface CommandOutcome {readonly unit:EntityRef;readonly commandIndex:number;readonly success:boolean}
 export interface Area {
@@ -473,21 +479,27 @@ export interface Area {
   releaseDurabilityBarrier(token:string):void;
   neutralizeInput(ref:EntityRef):void;
   resetInputSession(ref:EntityRef):void;
+  bindDurableLedger(ref:EntityRef,revision:number):void;
+  beginGrantRead(ref:EntityRef,expectedRevision:number):GrantReadToken;
+  applyCertifiedGrants(token:GrantReadToken,page:CertifiedGrantPage):readonly GrantApplyResult[];
+  cancelGrantRead(token:GrantReadToken):void;
+  invalidateGrantRead(ref:EntityRef):void;
+  resourceUsage():Readonly<Record<string,number>>;
   capturePlayerCheckpoint(ref:EntityRef):CapturedPlayer;
   appliedGrantIds(character:CharacterId):readonly string[];
   markCheckpointDurable(captureId:string,revision:number,ids:readonly string[]):void;
   quiescePlayer(ref:EntityRef,reason:string):PlayerRetirement;
   abortPlayerRetirement(token:string):void;
   commitPlayerRetirement(token:string):void;
-  stageRestoredArrival(admission:Admission,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData):StagedArrival;
+  stageRestoredArrival(admission:Admission,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData,ledger?:{revision:number}):StagedArrival;
   activateRestoredArrival(token:string):EntityRef;
-  restorePlayerCheckpoint(ref:EntityRef,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData,receiptIds?:readonly string[]):EntityRef;
+  restorePlayerCheckpoint(ref:EntityRef,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData,receiptIds?:readonly string[],revision?:number):EntityRef;
   snapshot(): AreaSnapshot;
   debugState(): AreaDebugState;
   drainEvents(): readonly EventRecord[]; // overflow fails actor/step preflight; fail-stop on unforeseen overflow, no silent loss/continued partial tick
   applyContext(context: AreaContext): void; // copied at boundary, validates membership before stepping
   /** Authority host supplies trusted fresh/loaded character state, never arbitrary browser save. */
-  attachFresh(character: CharacterId, classId: ClassId, archetype: string, spawn: string): EntityRef;
+  attachFresh(character: CharacterId, classId: ClassId, archetype: string, spawn: string, revision?:number): EntityRef;
   reserveAdmission(character: CharacterId, spawn: string, hostTick: number): Admission | null;
   releaseAdmission(token: string): void; // idempotent for reserved or staged token; releases capacity on any precommit failure
   stageDeparture(player: EntityRef): StagedDeparture;
