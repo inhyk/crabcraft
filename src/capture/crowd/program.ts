@@ -161,6 +161,12 @@ export interface CrowdProgram {
   formation: FormationSpec;
   /** Optional cinematic terrain fit: minimum clearance of feet/palm pads above the terrain. */
   terrainClearance?: number;
+  /** A single cinematic performer using the actual first-world boss appearance. */
+  actor?: 'corrodius';
+  /** Preserve recorded joint kinematics without race stance/hunch bias or servo twitches. */
+  exactMotion?: boolean;
+  /** Bound terrain correction speed (world units/sec) using a precomputed clearance envelope. */
+  terrainLiftRate?: number;
   /** Choreography; for one crab, the cue that started last is the one playing. */
   cues: Cue[];
   faces?: FaceCue[];
