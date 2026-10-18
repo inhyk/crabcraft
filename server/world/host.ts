@@ -23,7 +23,7 @@ import { PersistenceCoordinator, readCertifiedGrantPage, AreaSourceDrain, PagedO
 import { PUBLIC_WORLDS, HOSTABLE_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, InputRateBudget, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
 import { prepareObservationSnapshot, releasePreparedObservation } from './gameplay/protocol.ts';
-import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
+import type { GameplayCatalog, GameplayProtocol, ObservationInput, PreparedObservation, WireBinding, WorldControl } from './gameplay/protocol.ts';
 import type { CommandResult } from './gameplay/events.ts';
 
 type StoredCharacter = Character<IdentityJson, CheckpointJson>;
@@ -104,6 +104,8 @@ interface Connection {
 interface Waiting { connection: Connection; record: StoredCharacter; world: WorldId }
 interface PendingTravel { actor: Actor; source: Slot; ref: EntityRef; gate: string; destination: WorldId }
 const HOST_COMMAND_KINDS = new Set(HOST_COMMANDS);
+/** Victim outcome transactions of one save round in flight at once (the pg pool has 10 clients, one holds ownership). */
+const JOURNAL_CONCURRENCY = 4;
 const ECONOMIC_INTERACTIONS = new Set<string>([...TREASURES.map(t => t.id), LIGHTHOUSE_SECRET.id]);
 class OutcomeResourcePause extends Error {}
 const sameRef = (a: EntityRef, b: EntityRef) => a.area === b.area && a.id === b.id && a.life === b.life;
@@ -141,7 +143,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const completion: (() => void)[] = [];
   const persistence = new PersistenceCoordinator(deps.characters, deps.ownership, { ...p.persistence, now: deps.nowMonotonicMs });
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
-  let admissionRequested = true; let accepting = !external; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let barrierHalts = false; let timer: ReturnType<typeof setTimeout> | undefined;
+  let admissionRequested = true; let accepting = !external; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let barrierHalts = false; let timer: ReturnType<typeof setTimeout> | undefined; let slice: ReturnType<typeof setImmediate> | undefined;
   const failedSources = new Set<Slot>(), drainedFailedSources = new Set<Slot>(), attemptedFailedSources = new Set<Slot>();
   let startupRecovery = external, nextRecovery = deps.nowMonotonicMs(), lastSave = deps.nowMonotonicMs();
   /** A barrier that holds the world: no tick and no snapshot until it ends. A retained save round does not hold it. */
@@ -589,13 +591,31 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       unique.set(source.grant.id, signature);
       const key = JSON.stringify(source.grant.victim), group = groups.get(key) ?? []; group.push(source); groups.set(key, group);
     }
+    for (const group of groups.values()) if (group.length > victimResources.maxEntries) throw new OutcomeResourcePause('victim outcome resource budget; complete source retained');
+    // Each death is its own whole-outcome transaction. Deaths that share a recipient run one after another in one lane (so
+    // none waits on another's row lock inside its deadline); up to JOURNAL_CONCURRENCY lanes run at once. Every one settles
+    // before the first failure is reported, so a retry never races a transaction of this round.
+    const lanes = new Map<string, SourceGrant[][]>(), owner = new Map<string, string>();
+    const root = (character: string): string => { let at = character; while (owner.get(at) !== at) at = owner.get(at)!; return at; };
     for (const group of groups.values()) {
-      if (group.length > victimResources.maxEntries) throw new OutcomeResourcePause('victim outcome resource budget; complete source retained');
-      const entries: GrantBatchEntry<GrantJson>[] = [];
-      for (const { grant } of group) entries.push({ accountId: await deps.characters.getOwner(grant.recipient), characterId: grant.recipient, id: grant.id, payload: deps.codec.grantToJson(grant) });
-      const recorded = await deps.characters.recordVictimOutcome(entries, victimResources);
-      if (recorded.length !== entries.length || recorded.some((entry, index) => entry.id !== entries[index].id)) throw new Error('incomplete victim outcome journal');
+      const recipients = group.map(({ grant }) => grant.recipient);
+      for (const recipient of recipients) if (!owner.has(recipient)) owner.set(recipient, recipient);
+      for (const recipient of recipients.slice(1)) owner.set(root(recipient), root(recipients[0]));
     }
+    for (const group of groups.values()) { const lane = root(group[0].grant.recipient), list = lanes.get(lane) ?? []; list.push(group); lanes.set(lane, list); }
+    const resources = victimResources, pending = [...lanes.values()], failures: unknown[] = [];
+    const record = async (group: SourceGrant[]) => {
+      const entries: GrantBatchEntry<GrantJson>[] = [];
+      // An actor's account is its record's; offline recipients are looked up as before.
+      for (const { grant } of group) entries.push({ accountId: actors.get(grant.recipient)?.record.accountId ?? await deps.characters.getOwner(grant.recipient), characterId: grant.recipient, id: grant.id, payload: deps.codec.grantToJson(grant) });
+      const recorded = await deps.characters.recordVictimOutcome(entries, resources);
+      if (recorded.length !== entries.length || recorded.some((entry, index) => entry.id !== entries[index].id)) throw new Error('incomplete victim outcome journal');
+    };
+    await Promise.all(Array.from({ length: Math.min(JOURNAL_CONCURRENCY, pending.length) }, async () => {
+      for (let lane = pending.shift(); lane; lane = pending.shift()) for (const group of lane) { try { await record(group); } catch (error) { failures.push(error); break; } }
+    }));
+    // Any failure that is not resource-only fails closed rather than becoming a resumable pause.
+    if (failures.length) throw failures.find(error => !(error instanceof CharacterStoreError && error.code === 'resource_limit')) ?? failures[0];
   }
   /** Halting save round: the world is held (no tick, no snapshot) from its start to its end. See startSave() for the other kind. */
   function startDurability() {
@@ -881,25 +901,47 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (!ids.has(self.ref.id)) { ids.add(self.ref.id); near++; }
     metrics.aoiNear += near; metrics.aoiFar += far; return ids;
   };
+  /**
+   * One Area publication: a shared prepared snapshot, then every recipient's observation. Recipients are encoded in slices
+   * of at most PUBLISH_SLICE_MS; between slices the event loop runs IO callbacks (PG replies of a save in flight, inputs)
+   * but the pump does nothing else until the publication ends: no tick, no boundary completion, no admission or travel, so
+   * every recipient sees the same snapshot, events and stream state as with one synchronous pass.
+   */
+  const PUBLISH_SLICE_MS = 4;
+  let publication: { slot: Slot; snapshot: AreaSnapshot; prepared: PreparedObservation; appearances: ObservationInput['appearances']; beat: number;
+    events: EventRecord[]; watermark: number; recipients: Actor[]; index: number; started: number; busy: number } | null = null;
   const publish = (slot: Slot) => {
-    if (halted() || frozen || [...actors.values()].some(actor => actor.pendingReplay)) return;
+    if (halted() || frozen || publication || [...actors.values()].some(actor => actor.pendingReplay)) return;
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
     const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
     const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog, { verify: deps.gameplay.verifyObservations ?? true });
     observe('snapshotPrepare', deps.nowMonotonicMs() - start);
-    const beat = slot.publishes++;
+    publication = { slot, snapshot, prepared, appearances, beat: slot.publishes++, events: slot.events, watermark: slot.watermark,
+      recipients: [...actors.values()].filter(actor => actor.slot === slot), index: 0, started: start, busy: deps.nowMonotonicMs() - start };
+    slot.events = [];
+    continuePublication();
+  };
+  const endPublication = (complete: boolean) => {
+    const job = publication!; publication = null; releasePreparedObservation(job.prepared);
+    if (complete) { metrics.snapshotBatchMs += job.busy; observe('snapshotBatch', job.busy); observe('snapshotWall', deps.nowMonotonicMs() - job.started); }
+  };
+  function continuePublication() {
+    const job = publication!, slot = job.slot, snapshot = job.snapshot, prepared = job.prepared;
+    // Nothing is published after fail-closed, ownership loss, drain or the Area's retirement.
+    if (frozen || draining || stopped || deps.ownership.closed.aborted || !allSlots.has(slot)) { endPublication(false); return; }
+    const sliceStart = deps.nowMonotonicMs();
     try {
-      for (const actor of actors.values()) {
-        const c = actor.connection;
+      while (job.index < job.recipients.length) {
+        const actor = job.recipients[job.index++], c = actor.connection;
         if (actor.slot !== slot || !c || c.closed || !c.stream || !c.input) continue;
         if (c.ws.bufferedAmount > p.maxBufferedBytes) { close(c, 'slow-client', true); continue; }
         try {
           const encodeStart = deps.nowMonotonicMs(), wasFull = c.full, held = new Set<number>();
-          c.visible = visible(slot, actor, c, beat, held);
+          c.visible = visible(slot, actor, c, job.beat, held);
           if (!c.full) metrics.aoiFarHeld += held.size;
           const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
             acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c), selfRef: actor.ref,
-            snapshot, prepared, events: slot.events, visibleIds: c.visible, heldIds: c.full ? undefined : held, full: c.full, eventWatermark: slot.watermark, appearances,
+            snapshot, prepared, events: job.events, visibleIds: c.visible, heldIds: c.full ? undefined : held, full: c.full, eventWatermark: job.watermark, appearances: job.appearances,
             results: materializeResults(c),
             ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
           observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
@@ -907,10 +949,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           c.full = false; c.baselineSequence = c.sequence; c.ready = []; metrics.snapshots++;
           if (wasFull) { if (p.party) publishParty(c); if (c.chatPreferences) sendControl(c, { type: 'chatPreferences', ...c.chatPreferences }); }
         } catch (error) { deps.onFailure?.('observation', error); close(c, 'observation-unavailable', true); }
+        if (deps.nowMonotonicMs() - sliceStart >= PUBLISH_SLICE_MS) break;
       }
-    } finally { releasePreparedObservation(prepared); }
-    slot.events = []; metrics.snapshotBatchMs += deps.nowMonotonicMs() - start; observe('snapshotBatch', deps.nowMonotonicMs() - start);
-  };
+    } finally { job.busy += deps.nowMonotonicMs() - sliceStart; }
+    if (job.index >= job.recipients.length) endPublication(true);
+  }
   const step = (slot: Slot) => {
     if (halted() || frozen || draining) return;
     if (slot.ledgerMode === 'external-durable' && !slot.area.prepareLedgerStep().ready) { startDurability(); return; }
@@ -995,36 +1038,47 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (stopped) return;
     try {
       if (deps.ownership.closed.aborted) failClosed();
-      for (let count = 0; completion.length && count < p.maxConnections * 8 + 16; count++) completion.shift()!();
-      const now = deps.nowMonotonicMs();
-      if (external && !barrier && failedSources.size) startFailedSourceDrain();
-      for (const c of connections) if (c.binding && !c.closed) {
-        if (c.binding.expiresAt <= deps.nowWallMs()) { close(c, 'session-expired'); continue; }
-        if (!c.validating && now >= c.nextValidation) {
-          c.validating = true; const attempt = c.generation; c.nextValidation = now + p.sessionRevalidateMs;
-          void deps.admission.revalidate(c.binding).then(binding => enqueue(() => {
-            if (c.closed || c.generation !== attempt) return; c.validating = false;
-            if (!binding) close(c, 'session-expired'); else c.binding = binding;
-          }), () => enqueue(() => { if (!c.closed && c.generation === attempt) close(c, 'session-unavailable', true); }));
-        }
+      if (publication) continuePublication();
+      if (!publication) pumpWorld();
+    } catch (error) { if (publication) endPublication(false); deps.onFailure?.('pump', error); unresolved++; failClosed(); }
+    // An open publication or due catch-up ticks continue right after pending IO callbacks; otherwise the loop interval applies.
+    if (publication || behind) slice = setImmediate(pump); else timer = setTimeout(pump, p.loopIntervalMs);
+  };
+  const TICK_SLICE_MS = 8; let behind = false;
+  const pumpWorld = () => {
+    behind = false;
+    for (let count = 0; completion.length && count < p.maxConnections * 8 + 16; count++) completion.shift()!();
+    const now = deps.nowMonotonicMs();
+    if (external && !barrier && failedSources.size) startFailedSourceDrain();
+    for (const c of connections) if (c.binding && !c.closed) {
+      if (c.binding.expiresAt <= deps.nowWallMs()) { close(c, 'session-expired'); continue; }
+      if (!c.validating && now >= c.nextValidation) {
+        c.validating = true; const attempt = c.generation; c.nextValidation = now + p.sessionRevalidateMs;
+        void deps.admission.revalidate(c.binding).then(binding => enqueue(() => {
+          if (c.closed || c.generation !== attempt) return; c.validating = false;
+          if (!binding) close(c, 'session-expired'); else c.binding = binding;
+        }), () => enqueue(() => { if (!c.closed && c.generation === attempt) close(c, 'session-unavailable', true); }));
       }
-      if (!frozen && !draining && !deps.ownership.closed.aborted) for (const c of connections) if (c.phase === 'admitted' && c.chatNeedsPreferences && !c.chatBusy && pendingChat < p.chat!.maxPending) chatCommand(c, { kind: 'chatPreferences' });
-      if (!frozen && !draining) {
-        if (!barrier) {
-          if (external && (startupRecovery || now >= nextRecovery || [...allSlots].some(sourceNeedsIO))) startDurability();
-          admitWaiting(); if (!barrier && [...actors.values()].some(actor => actor.pendingReplay)) startDurability(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
-          if (!barrier && !external && now - lastSave >= p.checkpointIntervalMs) startSave();
-        }
-        // A retained save round in flight does not hold the world; every other barrier does. While held, the schedulers are
-        // left alone (not idled), so the first pump after the barrier catches up as before.
-        if (!halted()) for (const slot of allSlots) {
-          if (!slot.area.players.size || halted()) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
-          slot.tick.run(now, () => step(slot));
-          if (!halted()) slot.snapshot.run(now, () => publish(slot));
-        }
+    }
+    if (!frozen && !draining && !deps.ownership.closed.aborted) for (const c of connections) if (c.phase === 'admitted' && c.chatNeedsPreferences && !c.chatBusy && pendingChat < p.chat!.maxPending) chatCommand(c, { kind: 'chatPreferences' });
+    if (!frozen && !draining) {
+      if (!barrier) {
+        if (external && (startupRecovery || now >= nextRecovery || [...allSlots].some(sourceNeedsIO))) startDurability();
+        admitWaiting(); if (!barrier && [...actors.values()].some(actor => actor.pendingReplay)) startDurability(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
+        if (!barrier && !external && now - lastSave >= p.checkpointIntervalMs) startSave();
       }
-    } catch (error) { deps.onFailure?.('pump', error); unresolved++; failClosed(); }
-    timer = setTimeout(pump, p.loopIntervalMs);
+      // A retained save round in flight does not hold the world; every other barrier does. While held, the schedulers are
+      // left alone (not idled), so the first pump after the barrier catches up as before.
+      if (!halted()) for (const slot of allSlots) {
+        if (publication) break; // the rest waits for the publication that just started
+        if (!slot.area.players.size || halted()) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
+        // Catch-up ticks stop after TICK_SLICE_MS; the next turn (right after pending IO) runs the rest.
+        const ticked = deps.nowMonotonicMs();
+        slot.tick.runFor(now, () => step(slot), () => deps.nowMonotonicMs() - ticked, TICK_SLICE_MS);
+        if (now >= slot.tick.next) behind = true;
+        if (!halted()) slot.snapshot.run(now, () => publish(slot));
+      }
+    }
   };
   const ledgerStats = () => {
     if (!external) return {};
@@ -1115,7 +1169,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!barrier && !frozen) startDurability();
       while (barrier && deps.nowMonotonicMs() < end) await new Promise(resolve => setTimeout(resolve, p.loopIntervalMs));
       const persisted = await persistence.shutdown(Math.max(0, end - deps.nowMonotonicMs()));
-      stopped = true; if (timer) clearTimeout(timer); deps.ownership.closed.removeEventListener('abort', onLost);
+      stopped = true; if (timer) clearTimeout(timer); if (slice) clearImmediate(slice); deps.ownership.closed.removeEventListener('abort', onLost);
       for (const c of connections) { if (c.authTimer) clearTimeout(c.authTimer); c.ws.close(1012, 'Server restarting'); }
       await new Promise<void>(resolve => {
         const timeout = setTimeout(() => { for (const c of connections) c.ws.terminate(); resolve(); }, Math.max(0, end - deps.nowMonotonicMs()));

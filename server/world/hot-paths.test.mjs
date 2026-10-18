@@ -3,7 +3,7 @@
 // as the code they replace. The references here are the unchanged FragmentAssembler, selectEvents and unprepared paths.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGameplayProtocol, GameplayReceiver, FragmentAssembler, decodeClientFrame, encodeControl, validateControl, projectObservationExtras, prepareObservationSnapshot, releasePreparedObservation } from './gameplay/protocol.ts';
+import { createGameplayProtocol, GameplayReceiver, FragmentAssembler, decodeClientFrame, encodeControl, validateControl, projectObservationExtras, prepareObservationSnapshot, releasePreparedObservation, encodeValue, decodeValue, DICTIONARY_KEYS, LIMITS } from './gameplay/protocol.ts';
 import { encodeInput, decodeInput, inputFromFrame, validateInput, InputSession } from './gameplay/intents.ts';
 import { selectEvents, indexEvents, selectIndexedEvents } from './gameplay/events.ts';
 import { worldArea, addActor, intent } from '../../tests/core/worldHarness.mjs';
@@ -151,3 +151,70 @@ test('verify off skips only re-validation: forged prepared tokens, list bounds a
     releasePreparedObservation(token);
   } finally { area.dispose(); }
 });
+
+// The value encoder before its allocation-free rewrite, verbatim apart from formatting, as the byte and error reference.
+function referenceEncodeValue(value) {
+  const fail = message => { throw new Error(`gameplay-v3: ${message}`); };
+  const number = v => { if (typeof v !== 'number' || !Number.isFinite(v) || Number.isInteger(v) && !Number.isSafeInteger(v)) fail('invalid numeric value'); };
+  const KEY_INDEX = new Map(); DICTIONARY_KEYS.forEach((key, index) => { if (!KEY_INDEX.has(key)) KEY_INDEX.set(key, index); });
+  const encoder = new TextEncoder();
+  class Writer {
+    bytes = new Uint8Array(1024); view = new DataView(this.bytes.buffer); offset = 0;
+    need(n) { if (this.offset + n > LIMITS.messageBytes) fail('message size limit'); if (this.offset + n > this.bytes.length) { const next = new Uint8Array(Math.min(LIMITS.messageBytes, Math.max(this.bytes.length * 2, this.offset + n))); next.set(this.bytes); this.bytes = next; this.view = new DataView(next.buffer); } }
+    u8(n) { this.need(1); this.view.setUint8(this.offset++, n); }
+    u16(n) { this.need(2); this.view.setUint16(this.offset, n, true); this.offset += 2; }
+    f32(n) { number(n); if (Math.fround(n) !== n) fail('lossy f32 forbidden'); this.need(4); this.view.setFloat32(this.offset, n, true); this.offset += 4; }
+    f64(n) { number(n); this.need(8); this.view.setFloat64(this.offset, n, true); this.offset += 8; }
+    raw(b) { this.need(b.length); this.bytes.set(b, this.offset); this.offset += b.length; }
+    string(s) { const b = encoder.encode(s); if (b.length > LIMITS.stringBytes) fail('string size limit'); this.u16(b.length); this.raw(b); }
+    finish() { return this.bytes.slice(0, this.offset); }
+  }
+  const w = new Writer(), seen = new Set(), strings = new Map(); let nodes = 0;
+  const write = (v, depth) => {
+    if (++nodes > LIMITS.nodes || depth > LIMITS.depth) fail('value complexity limit');
+    if (v === null) { w.u8(0); return; } if (v === false || v === true) { w.u8(v ? 2 : 1); return; } if (typeof v === 'number') { w.u8(3); w.f64(v); return; }
+    if (typeof v === 'string') { const index = strings.get(v); if (index !== undefined) { w.u8(9); w.u16(index); } else { if (strings.size >= 65535) fail('string table limit'); strings.set(v, strings.size); w.u8(4); w.string(v); } return; }
+    if (!v || typeof v !== 'object' || seen.has(v)) fail('non-value or cyclic data'); seen.add(v);
+    if (Array.isArray(v)) {
+      if (v.length > LIMITS.array) fail('array size limit'); const numeric = v.length > 0 && v.every(n => typeof n === 'number'), exact32 = numeric && v.every(n => Number.isFinite(n) && Math.fround(n) === n); w.u8(exact32 ? 8 : numeric ? 7 : 5); w.u16(v.length);
+      if (numeric) { nodes += v.length; if (nodes > LIMITS.nodes) fail('value complexity limit'); v.forEach(n => exact32 ? w.f32(n) : w.f64(n)); } else v.forEach(n => write(n, depth + 1));
+    } else {
+      if (![Object.prototype, null].includes(Object.getPrototypeOf(v))) fail('non-plain data'); const entries = Object.entries(v).filter(([, x]) => x !== undefined);
+      if (entries.length > LIMITS.object) fail('object size limit'); w.u8(6); w.u16(entries.length);
+      for (const [k, x] of entries) { if (['__proto__', 'constructor', 'prototype'].includes(k)) fail('unsafe map key'); const i = KEY_INDEX.get(k) ?? -1; w.u16(i + 1); if (i < 0) w.string(k); write(x, depth + 1); }
+    } seen.delete(v);
+  };
+  write(value, 0); return w.finish();
+}
+test('the rewritten value encoder gives the reference bytes and errors for random valid and invalid values', () => {
+  let seed = 0x5eed1234; const random = () => { seed = Math.imul(seed ^ seed >>> 15, 0x2c1b3c6d) + 0x9e3779b9 | 0; return ((seed ^ seed >>> 13) >>> 0) / 2 ** 32; };
+  const pick = list => list[Math.floor(random() * list.length)];
+  const strings = ['', 'a', 'w1', 'scrapling', 'idle', '별빛 🦀', 'café', '\ud800', 'x'.repeat(4096), 'y'.repeat(4097), '가'.repeat(1366), '가'.repeat(1365), ...DICTIONARY_KEYS.slice(0, 40)];
+  const numbers = () => pick([0, -0, 1, -7, 0.5, 1.25, Math.fround(0.1), 0.1, 1e300, 2 ** 53 - 1, 2 ** 53, -(2 ** 60), NaN, Infinity, random() * 1000 - 500, Math.fround(random())]);
+  const value = depth => {
+    const r = random();
+    if (depth > 4 || r < .25) return pick([null, true, false, numbers(), numbers(), pick(strings), pick(strings)]);
+    if (r < .45) { const n = Math.floor(random() * 6); return Array.from({ length: n }, () => random() < .6 ? numbers() : value(depth + 1)); }
+    if (r < .5) return Array.from({ length: 1 + Math.floor(random() * 5) }, () => Math.fround(random() * 10));
+    if (r < .52) return pick([new Date(0), new Map(), () => 1, Symbol('s'), undefined, Object.create({ inherited: 1 }), Object.create(null)]);
+    if (r < .53) return JSON.parse('{"__proto__":1}');
+    if (r < .535) return { constructor: 1 };
+    if (r < .54) return Object.fromEntries(Array.from({ length: 257 }, (_, i) => ['k' + i, i]));
+    if (r < .545) { const cyclic = { a: 1 }; cyclic.self = cyclic; return cyclic; }
+    const object = {}, n = Math.floor(random() * 7);
+    for (let i = 0; i < n; i++) object[random() < .7 ? pick(DICTIONARY_KEYS) : pick(strings.slice(0, 8)) + i] = random() < .1 ? undefined : value(depth + 1);
+    return object;
+  };
+  const outcome = run => { try { return { bytes: run() }; } catch (error) { return { error: error.message }; } };
+  let valid = 0, invalid = 0;
+  for (let i = 0; i < 4000; i++) {
+    const v = value(0), expected = outcome(() => referenceEncodeValue(v)), actual = outcome(() => encodeValue(v));
+    assert.deepEqual(actual, expected, `case ${i}`);
+    if (expected.bytes) { valid++; assert.deepEqual(encodeValue(decodeValue(expected.bytes)), expected.bytes); } else invalid++;
+  }
+  // Repeated strings use the string table; a very long table still fails at the same point.
+  const repeated = Array.from({ length: 300 }, (_, i) => ({ name: 's' + (i % 37), npcId: 'n' + i }));
+  assert.deepEqual(encodeValue(repeated), referenceEncodeValue(repeated));
+  assert.ok(valid > 1000 && invalid > 200, JSON.stringify({ valid, invalid }));
+});
+
