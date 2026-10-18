@@ -5,14 +5,15 @@
 //   node tools/bake-collision.mjs           # write the files
 //   node tools/bake-collision.mjs --check   # exit 1 if the files on disk differ from a fresh bake
 import { readFileSync } from 'node:fs';
-import { bakedPath, runBake, serialize, WORLDS, writeBaked } from './collision-bake-lib.mjs';
+import { bakedPath, bakedDifference, loadSim, runBake, WORLDS, writeBaked } from './collision-bake-lib.mjs';
 
 const t0 = performance.now();
 const { baked, source, inputs } = await runBake();
 const ms = Math.round(performance.now() - t0);
 if (process.argv.includes('--check')) {
+  const sim = await loadSim();
   const stale = WORLDS.filter((w) => {
-    try { return readFileSync(bakedPath(w), 'utf8') !== serialize(baked[w]); } catch { return true; }
+    try { const disk = JSON.parse(readFileSync(bakedPath(w), 'utf8')); return disk.source !== source || bakedDifference(disk, baked[w], sim.base64ToFloats) !== null; } catch { return true; }
   });
   if (stale.length) {
     console.error(`stale: ${stale.map((w) => `public/world/collision-${w}.json`).join(', ')}. Run node tools/bake-collision.mjs`);

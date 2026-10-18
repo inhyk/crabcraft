@@ -136,7 +136,9 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
   const small = new Placements();
   const counts: Record<string, number> = {};
   const count = (k: string) => (counts[k] = (counts[k] ?? 0) + 1);
-  const dense = quality === 'high' ? 1 : 0.6;
+  // Solid placements must be identical for every client and the server bake.
+  // Consume the same random sequence at both quality settings; only decoration is thinned later.
+  const dense = 1;
 
   const groundOk = (x: number, z: number, minH = 0.9) => {
     const h = terrain.heightAt(x, z);
@@ -311,6 +313,12 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
     placedTufts++;
   }
   counts.tufts = placedTufts;
+  if (quality === 'low') {
+    for (const [name, matrices] of small.items) {
+      // All rocks stay visible because the larger ones block movement.
+      if (!name.startsWith('Rock_')) small.items.set(name, matrices.filter((_, i) => i % 5 < 3));
+    }
+  }
   return { trees, small, tufts, counts, groveGlow };
 }
 

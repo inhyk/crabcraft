@@ -4,8 +4,8 @@
 // solids, surfaces, blocked cells and ground heights, then runs heightAt, resolveCollision and
 // raycastSolid at the same points (a 100 x 100 grid plus two points at every solid) on both sides.
 //   node tools/qa-collision-bake.mjs [--url http://localhost:4173/] [--quality high]
-// Needs a dev or preview server (pnpm build && pnpm preview). The bake uses quality high: World I's
-// foliage, and so its tree and rock colliders, are thinner at quality low.
+// Needs a dev or preview server (pnpm build && pnpm preview). Both quality settings must use
+// the same solid placements; only visual decoration and detail may change.
 // Tolerance: Chrome's Math.sin, cos, atan2 and exp differ from Node's in the last bit, so colliders
 // placed with them (box angles, World II's sin-hash scatter) agree to about 1e-9, not exactly.
 import { chromium } from 'playwright';
@@ -68,7 +68,7 @@ try {
     };
     const describe = (n, d) => (d === 0 ? `${n} identical` : d <= TOL ? `${n} within ${d.toExponential(1)}` : `DIFFER (${d})`);
     const checks = {
-      quality: browserSide.quality === 'high' || quality !== 'high' ? browserSide.quality : `${browserSide.quality} (asked ${quality})`,
+      quality: browserSide.quality === quality ? browserSide.quality : `DIFFER (${browserSide.quality}, asked ${quality})`,
       solids: describe(baked.shapes.length, maxDiff(browserSide.shapes, baked.shapes)),
       surfaces: describe(baked.surfaces.length, maxDiff(browserSide.surfaces, baked.surfaces)),
       blocked: same(browserSide.blocked, bakedBlocked) && same(browserSide.cells, [c.minX, c.minZ, c.step, c.nx, c.nz]) ? `${bakedBlocked.length} cells identical` : 'DIFFER',

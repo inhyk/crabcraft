@@ -10,7 +10,7 @@ test('baked collision files are up to date with the layout and collision sources
     const disk = readBaked(w);
     const diff = bakedDifference(disk, baked[w], sim.base64ToFloats);
     assert.equal(diff, null, `public/world/collision-${w}.json is stale (${diff}). Run: node tools/bake-collision.mjs`);
-    if (disk.source !== source) console.log(`# ${w}: source files changed since the bake, but its colliders did not`);
+    assert.equal(disk.source, source, `${w}: source changed; run node tools/bake-collision.mjs`);
   }
 });
 
@@ -26,4 +26,22 @@ test('the loader answers heightAt, resolveCollision and raycastSolid like the li
     assert.ok(pts.length >= 10000, `${w}: ${pts.length} points`);
     assert.deepEqual(d, { points: pts.length, height: 0, resolve: 0, ray: 0, rayHitMismatch: 0 }, `${w} differs`);
   }
+});
+
+// Graphic settings may reduce decoration, never the tree/rock walls used by the server.
+test('low and high quality share the same solid collision and queries', async () => {
+  const { url } = await bundle('src/game/collisionBake.ts', 'quality-layouts');
+  const { layoutWorlds } = await import(url);
+  const high = layoutWorlds(glbPieceNames(), 'high'), low = layoutWorlds(glbPieceNames(), 'low');
+  for (const w of WORLDS) {
+    assert.deepEqual(low[w].col.shapes, high[w].col.shapes, `${w}: solids depend on quality`);
+    const pts = samplePoints(w, readBaked(w));
+    assert.deepEqual(runQueries(low[w], pts), runQueries(high[w], pts), `${w}: queries depend on quality`);
+  }
+});
+
+test('the standalone collision loader has no render, asset or Node dependencies', async () => {
+  const { inputs, imports } = await bundle('src/sim/world/baked.ts', 'boundary');
+  assert.ok(inputs.every(p => p.startsWith('src/sim/world/')), inputs.join(', '));
+  assert.deepEqual(imports, []);
 });

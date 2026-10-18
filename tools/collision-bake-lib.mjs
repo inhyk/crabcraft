@@ -35,7 +35,7 @@ export async function bundle(entry, name) {
     define: { 'import.meta.env': '{"BASE_URL":"./"}' },
   });
   const inputs = Object.keys(r.metafile.inputs).filter((p) => !p.includes('node_modules/') && !p.startsWith('<'));
-  return { url: `${pathToFileURL(outfile).href}?t=${Date.now()}`, inputs };
+  return { url: `${pathToFileURL(outfile).href}?t=${Date.now()}`, inputs, imports: Object.values(r.metafile.outputs).flatMap(o => o.imports) };
 }
 
 /** sha256 over the bake's sources, the kit it reads and three.js's version. */
@@ -151,13 +151,13 @@ export function compareRuns(a, b) {
 
 /** First difference between two baked files beyond float noise (|a - b| > 1e-6), ignoring `source`. */
 export function bakedDifference(a, b, decodeFloats, path = '') {
-  if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b)) ? null : `${path}: ${a} != ${b}`;
+  if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) <= 1e-6 ? null : `${path}: ${a} != ${b}`;
   if (typeof a === 'string' && typeof b === 'string') {
     if (a === b) return null;
     if (!path.endsWith('.h')) return `${path} differs`;
     const fa = decodeFloats(a), fb = decodeFloats(b);
     if (fa.length !== fb.length) return `${path}: ${fa.length} != ${fb.length} heights`;
-    for (let i = 0; i < fa.length; i++) if (Math.abs(fa[i] - fb[i]) > 1e-6 * Math.max(1, Math.abs(fa[i]))) return `${path}[${i}]: ${fa[i]} != ${fb[i]}`;
+    for (let i = 0; i < fa.length; i++) if (Math.abs(fa[i] - fb[i]) > 1e-6) return `${path}[${i}]: ${fa[i]} != ${fb[i]}`;
     return null;
   }
   if (Array.isArray(a) && Array.isArray(b)) {
