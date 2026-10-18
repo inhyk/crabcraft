@@ -222,7 +222,7 @@ test('Solarkan is locked at 99 and unlocks at 100, without changing XP or earlie
  game.partyLevel=100;boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
  assert.equal(boss.state,'idle');assert.equal(boss.unit.invulnerable,true);
  game.player.level=player.level=100;boss.update(.1);assert.equal(boss.state,'fight');
- assert.equal(boss.unit.level,100);assert.equal(boss.unit.maxHp,180000);
+ assert.equal(boss.unit.level,100);assert.equal(boss.unit.maxHp,24000);
  assert.deepEqual([BOSS_PROFILES.rust.level,BOSS_PROFILES.abyss.level,BOSS_PROFILES.eclipse.level],[3,10,20]);
  assert.equal(levelForXp(xpForLevel(100)),100);assert.equal(canChallenge(99,100,true,true,3),false);
 });
@@ -235,7 +235,7 @@ test('Solarkan eight fire rays leave visible safe wedges and hit an overlap only
  const pos=a=>new THREE.Vector3(at.x+Math.sin(a)*9,0,at.z+Math.cos(a)*9);
  const center={...player,pos:at.clone()},diagonal={...player,pos:pos(yaw+Math.PI/4)},safe={...player,pos:pos(yaw+Math.PI/8)};
  game.combatPlayers=()=>[center,diagonal,safe];boss.updateMech(boss.mech.dur-.01);assert.equal(damage.length,0);
- boss.updateMech(.02);assert.equal(damage.length,2);assert.equal(safe.hp,300);assert.equal(center.hp,156);
+ boss.updateMech(.02);assert.equal(damage.length,2);assert.equal(safe.hp,300);assert.equal(center.hp,228);
 });
 
 test('Solarkan five simultaneous bombs spare gaps and ineligible characters',()=>{
@@ -243,15 +243,15 @@ test('Solarkan five simultaneous bombs spare gaps and ineligible characters',()=
  const points=boss.barragePoints(boss.mech.at,boss.mech.yaw);assert.equal(points.length,5);
  const players=points.map(pos=>({...player,pos:pos.clone()})),low={...player,level:99,pos:points[0].clone()};
  game.combatPlayers=()=>[...players,low];boss.updateMech(boss.mech.dur);
- assert.equal(damage.length,5);assert.ok(players.every(p=>p.hp===174));assert.equal(low.hp,300);
+ assert.equal(damage.length,5);assert.ok(players.every(p=>p.hp===234));assert.equal(low.hp,300);
 });
 
-test('Solarkan has early pressure phases, faster recovery, and cannot be stun locked',()=>{
+test('Solarkan has early pressure phases, longer recovery, and cannot be stun locked',()=>{
  const {boss,game,player}=setup(BOSS_PROFILES.dawn);boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
  boss.unit.hp=boss.unit.maxHp*.74;boss.update(.1);assert.equal(boss.phase,2);
  boss.unit.hp=boss.unit.maxHp*.39;boss.update(.1);assert.equal(boss.phase,3);
  game.time=100;boss.unit.stunned=()=>true;boss.update(.1);assert.equal(boss.mechName,'cross');
- assert.ok(Math.abs(boss.nextMech-game.time-boss.mech.dur-.9)<1e-8);
+ assert.ok(Math.abs(boss.nextMech-game.time-boss.mech.dur-2.4)<1e-8);
  for(const kind of ['nova','slam','eclipse','undertow']){
   const {boss,player}=newPattern(kind,BOSS_PROFILES.dawn);
   const escape=kind==='eclipse'?11:boss.radius(kind)+player.radius*.5;
@@ -276,7 +276,7 @@ test('Boreas requires level 300 in World IV and uses an ice prison opener and se
  const low=setup(BOSS_PROFILES.frost,299);low.boss.wake();assert.equal(low.boss.state,'dormant');
  const ready=setup(BOSS_PROFILES.frost,300);ready.boss.wake();ready.boss.update(2.5);ready.player.pos.set(0,0,8);ready.boss.update(.1);assert.equal(ready.boss.state,'fight');
  ready.boss.startMech();assert.equal(ready.boss.mechName,'eclipse');assert.equal(ready.boss.barragePoints(new THREE.Vector3(),0).length,7);assert.equal(ready.boss.crossAngles(0).length,3);
- const peer=setup(BOSS_PROFILES.frost,300);peer.boss.applyNetwork(ready.boss.networkState('b300'));assert.equal(peer.boss.mechName,'eclipse');assert.equal(peer.boss.unit.hp,620000);
+ const peer=setup(BOSS_PROFILES.frost,300);peer.boss.applyNetwork(ready.boss.networkState('b300'));assert.equal(peer.boss.mechName,'eclipse');assert.equal(peer.boss.unit.hp,90000);
 });
 
 

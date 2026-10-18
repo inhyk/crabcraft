@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type {Game} from './game';
 import type {BoatState, BoatCommand} from '../../server/combatProtocol';
 import {t} from '../i18n';
+import type {EntityRef} from '../sim/types.ts';
 
 const home=()=>({x:151,z:18.5,yaw:Math.PI/2,speed:0,seats:[null,null] as [string|null,string|null]});
 /** The host owns reservations and navigation. Guests only submit controls. */
@@ -9,9 +10,9 @@ export class ShoreBoat {
   readonly root=new THREE.Group();
   state:BoatState=home();
   private throttle=0;private steer=0;private inputAt=-10;private sentAt=-10;
-  private wasSeated=false;
+  private wasSeated=false;private observedSelf='';
   private resources:(THREE.BufferGeometry|THREE.Material)[]=[];
-  constructor(private g:Game){
+  constructor(private g:Game,private observed=false){
     this.root.name='Two-seat shore skiff';
     const mat=(color:string,metalness=0)=>{const m=new THREE.MeshStandardMaterial({color,roughness:.65,metalness});this.resources.push(m);return m;};
     const wood=mat('#754731'),trim=mat('#e5bc76',.35),paint=mat('#236a75'),dark=mat('#30251e'),light=mat('#a7f8e4');
@@ -26,7 +27,7 @@ export class ShoreBoat {
     g.world.root.getObjectByName('shore-rideable-rowboat')?.removeFromParent();
     g.world.root.add(this.root);
   }
-  private get id(){const b=this.g.multiplayer?.battle;return b?.active?b.ownId:'solo';}
+  private get id(){if(this.observed)return this.observedSelf;const b=this.g.multiplayer?.battle;return b?.active?b.ownId:'solo';}
   get seated(){return this.state.seats.includes(this.id);}
   nearby(){const p=this.g.player.unit.pos;return this.g.world2.chapter===1&&(this.seated||this.canSummon()||this.canBoard(p.x,p.y,p.z));}
   private atDock(){const p=this.g.player.unit.pos;return Math.hypot(p.x-144,p.z-19)<4.5;}
@@ -50,9 +51,10 @@ export class ShoreBoat {
     if(this.seated){const land=this.landing(),pilot=this.state.seats[0]===this.id;return land?t(pilot?'가까운 해안에 내리기 · W/S 이동 · A/D 조종':'동승 중 · 가까운 해안에 내리기',pilot?'Land on shore · W/S move · A/D steer':'Passenger · Land on shore'):t(pilot?'부두로 귀환 · W/S 이동 · A/D 조종':'동승 중 · 부두로 귀환',pilot?'Return to dock · W/S move · A/D steer':'Passenger · Return to dock');}
     return count===2?t('배 정원 2/2명 · 친구가 내리면 탈 수 있어요','Skiff full · 2/2 riders'):t(`배 타기 · ${count}/2명`,`Board skiff · ${count}/2 seats`);
   }
-  interact(){const b=this.g.multiplayer?.battle;const command:BoatCommand={action:this.seated?'leave':this.canSummon()?'call':'board',throttle:0,steer:0};if(b)b.boat(command);else this.request('solo',command);}
-  private unit(id:string){return id==='solo'?this.g.player.unit:this.g.multiplayer?.battle.boatUnit(id);}
+  interact(){const b=this.g.multiplayer?.battle;const command:BoatCommand={action:this.seated?'leave':this.canSummon()?'call':'board',throttle:0,steer:0};if(this.observed){this.g.server?.command({kind:'boat',command});return;}if(b)b.boat(command);else this.request('solo',command);}
+  private unit(id:string){if(this.observed)return this.g.units.find(u=>u.ref&&JSON.stringify([u.ref.area,u.ref.id,u.ref.life])===id);return id==='solo'?this.g.player.unit:this.g.multiplayer?.battle.boatUnit(id);}
   request(id:string,c:BoatCommand){
+    if(this.observed)throw new Error('Server owns boat rules');
     const g=this.g,u=this.unit(id);if(g.villageGames?.playing)return;if(!u?.alive||g.world2.chapter!==1)return;
     if(c.action==='call'){if(!this.state.seats.some(Boolean)&&Math.hypot(u.pos.x-144,u.pos.z-19)<4.5)this.resetHome();return;}
     const seat=this.state.seats.indexOf(id);
@@ -71,11 +73,14 @@ export class ShoreBoat {
   private compact(){this.state.seats=this.state.seats.filter(Boolean).concat([null,null]).slice(0,2) as BoatState['seats'];this.throttle=this.steer=0;this.state.speed=0;}
   private resetHome(){this.state={...home(),exits:this.state.exits};}
   networkState():BoatState{return {...this.state,seats:[...this.state.seats],exits:this.state.exits?structuredClone(this.state.exits):undefined};}
-  applyNetwork(s:BoatState|undefined){if(s)this.state={...s,seats:[...s.seats]};}
-  disconnect(){if(this.seated&&this.g.world2.chapter===1)this.dock();this.wasSeated=false;this.state=home();this.throttle=this.steer=0;}
+  applyNetwork(s:BoatState|undefined){if(this.observed)throw new Error('Observed boat rejects legacy state');if(s)this.state={...s,seats:[...s.seats]};}
+  disconnect(){if(this.observed){this.root.visible=false;return;}if(this.seated&&this.g.world2.chapter===1)this.dock();this.wasSeated=false;this.state=home();this.throttle=this.steer=0;}
   private dock(){const p=this.g.player;p.unit.teleport(this.g.world,143,23,-Math.PI/2);p.unit.motion.stop(undefined,0);}
   private clearPose(){const p=this.g.player;p.setTarget(null);p.interruptCast('');p.cancelChannel();p.unit.cancelPendingHit();p.unit.pushTime=0;p.unit.motion.stop(undefined,0);}
+  observe(state:{x:number;z:number;yaw:number;speed:number;seats:readonly (EntityRef|null)[]}|null,self:EntityRef):void {if(!this.observed)throw new Error('Not an observed boat');this.observedSelf=JSON.stringify([self.area,self.id,self.life]);if(!state){this.root.visible=false;return;}this.state={x:state.x,z:state.z,yaw:state.yaw,speed:state.speed,seats:state.seats.map(ref=>ref?JSON.stringify([ref.area,ref.id,ref.life]):null) as [string|null,string|null]};}
+  renderObserved(time:number,chapter:number):void {if(!this.observed)throw new Error('Not an observed boat');this.root.visible=chapter===1;const s=this.state;this.root.position.set(s.x,.2+Math.sin(time*1.8)*.055,s.z);this.root.rotation.set(0,s.yaw,Math.sin(time*1.2)*.012);}
   update(dt:number){
+    if(this.observed)throw new Error('Server owns boat progression');
     const g=this.g,b=g.multiplayer?.battle,authority=b?.authority!==false;
     this.root.visible=g.world2.chapter===1;
     if(!this.root.visible){this.state=home();this.wasSeated=false;return;}

@@ -66,6 +66,19 @@ test('actual core codec creates fresh level 1 from full appearance; legacy save 
   });
 });
 
+test('public character names reject existing prohibited terms and contact details before insertion', async () => {
+  const a = await session();
+  await withHttp(async ({ create }) => {
+    for (const name of ['fuck', '01012345678', 'a@example.com']) {
+      const result = await create(a.cookie, { ...appearance, name });
+      assert.equal(result.status, 400); assert.equal(result.json.error, 'identity');
+    }
+    assert.equal((await characters.listOwned(a.accountId)).length, 0);
+    const allowed = await create(a.cookie); assert.equal(allowed.status, 201);
+    assert.equal(allowed.json.character.identity.appearance.name, appearance.name);
+  });
+});
+
 test('configured real catalog supports every race and class with all appearance fields preserved', async () => {
   const a = await session(), classes = Object.keys(CLASSES);
   await withHttp(async ({ create }) => {

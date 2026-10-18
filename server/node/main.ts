@@ -1,9 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { attachRooms } from '../rooms.ts';
-import { accountHandler, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, originAllowed } from './accounts.ts';
+import { accountHandler, createWorldAdmission, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, originAllowed } from './accounts.ts';
 import { createPool, migrate } from './db.ts';
 import { storeReport } from './reports.ts';
+import { createCharacterHandler } from '../world/characters-http.ts';
 
 // Rooms and accounts for the browser client: what server/cloudflare/worker.ts served, on one VM behind Caddy.
 // Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy,
@@ -44,9 +45,26 @@ function clientIp(req: IncomingMessage) {
   return req.socket.remoteAddress ?? 'unknown';
 }
 
-const accounts = accountHandler(pool, origins, clientIp, google);
+const admission = createWorldAdmission(pool);
+let world: Awaited<ReturnType<typeof import('../world/startup.ts').startConfiguredWorld>> | null = null;
+if (env.WORLD_ENABLED === '1') {
+  try {
+    if (!env.WORLD_CONFIG_JSON) throw new Error('WORLD_CONFIG_JSON is required');
+    const { startConfiguredWorld } = await import('../world/startup.ts');
+    world = await startConfiguredWorld({ pool, admission, assets: new URL('./world/', import.meta.url),
+      config: JSON.parse(env.WORLD_CONFIG_JSON), clientIp,
+      originAllowed: (origin, req) => originAllowed(origin, origins, req.headers.host) });
+  } catch {
+    console.error('world startup failed: check explicit policy configuration and packaged collision assets');
+    await pool.end(); process.exit(1);
+  }
+}
+const accounts = accountHandler(pool, origins, clientIp, google, admission);
+const worldCharacters = world ? createCharacterHandler({ pool, characters: world.characters, codec: world.codec,
+  origins, clientIp, policy: world.config.characters ?? {} }) : null;
 const text = (res: ServerResponse, status: number, body: string) => { res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(body); };
 async function healthy() {
+  if (stopping || world?.ownership.closed.aborted || world?.host.stats().frozen) return false;
   try { await pool.query('SELECT 1'); return true; } catch { return false; }
 }
 
@@ -54,10 +72,21 @@ const server = createServer((req, res) => {
   let path: string;
   // A request target such as '//' is no URL; throwing here would take the whole process down.
   try { path = new URL(req.url ?? '/', 'http://localhost').pathname; } catch { text(res, 400, 'Bad request'); return; }
+  if (path === '/api/account/world-catalog' && world) {
+    if (req.method !== 'GET') { text(res, 405, 'Expected GET'); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(world.gameplayCatalog)); return;
+  }
+  if (path === '/api/account/world-characters' && worldCharacters) {
+    if (stopping) { text(res, 503, 'Server restarting'); return; }
+    void worldCharacters(req, res); return;
+  }
+  if (stopping && path === '/api/account/world-ticket') { text(res, 503, 'Server restarting'); return; }
   if (path.startsWith('/api/account/')) { void accounts(req, res); return; }
   if (path === '/healthz') { void healthy().then(ok => text(res, ok ? 200 : 503, ok ? 'ok\n' : 'database unavailable\n')); return; }
   if (path === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, game: 'crabcraft-multiplayer' })); return; }
   if (path === '/multiplayer') { text(res, 426, 'Expected WebSocket'); return; }
+  if (path === '/world' && world) { text(res, 426, 'Expected WebSocket'); return; }
   text(res, 404, 'Not found');
 });
 server.requestTimeout = 30000;
@@ -72,9 +101,12 @@ const relay = attachRooms(server, {
   // Read with server-dist/reports.mjs on the VM.
   report: r => storeReport(pool, r),
 });
-// attachRooms only answers /multiplayer upgrades; refuse the rest instead of leaving them open.
-server.on('upgrade', (req: IncomingMessage, socket: Duplex) => {
-  if (req.url?.split('?')[0] !== '/multiplayer') socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+// Each upgrade has exactly one route owner; the legacy relay ignores /world.
+server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+  const path = req.url?.split('?')[0];
+  if (path === '/multiplayer') return;
+  if (path === '/world' && world) { world.host.handleUpgrade(req, socket, head); return; }
+  socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
 });
 
 // Expired sessions and rate-limit windows are only ever read to be rejected; drop them hourly. Chat reports go after 90 days.
@@ -98,13 +130,21 @@ async function shutdown(signal: string) {
   console.log(`${signal}: shutting down`);
   setTimeout(() => { console.error('shutdown timed out'); process.exit(1); }, 10000).unref();
   clearInterval(cleanup);
+  let durable = true;
+  if (world) {
+    world.host.stopAdmission();
+    const result = await world.host.shutdown(7000);
+    durable = result.durable;
+    if (!durable) console.error(`world shutdown unresolved: ${result.unresolved}`);
+    await world.ownership.release();
+  }
   // Players hear `restarting` and reconnect after a short random delay instead of finding out from a dead socket.
   await relay.restart();
   const closed = new Promise(resolve => server.close(resolve));
   server.closeIdleConnections();
   await closed;
   await pool.end();
-  process.exit(0);
+  process.exit(durable ? 0 : 1);
 }
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));

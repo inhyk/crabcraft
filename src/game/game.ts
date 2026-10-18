@@ -1,3 +1,4 @@
+import type {ServerGameBridge} from './serverBridge';
 import type { CoreGameBridge } from './coreBridge';
 import {VillageGames} from './villageGames';
 import {t} from '../i18n';
@@ -91,6 +92,8 @@ const v2 = new THREE.Vector3();
 
 export class Game {
   core:CoreGameBridge|null=null;
+  server:ServerGameBridge|null=null;
+  readonly serverMode=new URLSearchParams(location.search).get('world')==='server';
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
   /** Everything the simulation shows or plays goes out here; `sink` turns it into HUD, effects and sound. */
@@ -187,7 +190,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
+    return !!this.server?.locked || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -222,7 +225,7 @@ export class Game {
     const spec: CrabSpec = { ...DEFAULT_SPEC, ...(app.spec ?? {}) };
     if (!CLASSES[spec.classId]) spec.classId = 'warrior';
     if (!RACES[spec.race]) spec.race = 'human';
-    const savedChapter = BossJourney.savedChapter(spec);
+    const savedChapter = this.serverMode?1:BossJourney.savedChapter(spec);
     this.showLoading(savedChapter);
     const progress = (f: number, label: string) => this.setLoading(f, label);
 
@@ -444,7 +447,7 @@ export class Game {
     this.hud.dialogue.onClose = () => {
       for (const n of this.npcs) n.talking = false;
     };
-    this.wireQuestEvents();
+    if(!this.serverMode)this.wireQuestEvents();
     this.engine.onResolutionChange = () => {
       if (this.hud.menu.open) this.hud.menu.updateResNote();
     };
@@ -517,6 +520,7 @@ export class Game {
         hudRoot.style.opacity = '';
       }, 900);
     }, 700);
+    if(this.serverMode){this.loaded=false;const {ServerGameBridge}=await import('./serverBridge');this.server=await ServerGameBridge.create(this,new URLSearchParams(location.search).get('character')??'');this.loaded=true;return;}
     this.journey = new BossJourney(this);
     this.lighthouseSecret = new LighthouseSecret(this);
     this.boats=new ShoreBoat(this);
@@ -630,6 +634,7 @@ export class Game {
   private readonly frame = (f: FrameInfo): void => {
     if (!this.loaded) return;
     const dt = f.dt;
+    if(this.serverMode){this.server?.frame(dt,f.elapsed);return;}
     const paused = (this.hud.menu.open||this.app.account.open) && !this.multiplayer?.battle.active;
     this.handleInput();
     const authority = this.multiplayer?.battle.authority !== false;
@@ -950,6 +955,7 @@ export class Game {
   }
 
   talkTo(u: Unit): void {
+    if(this.server){this.server.talk(u);return;}
     if (u.kind === 'townsfolk') {
       (u.ctrl as Townsfolk).faceToward(this.player.unit);
       (u.ctrl as Townsfolk).bark();
@@ -1036,6 +1042,7 @@ export class Game {
   }
 
   turnIn(id: QuestId): void {
+    if(this.server){this.server.command({kind:'questTurnIn',questId:id,npcId:QUESTS[id].turnIn??QUESTS[id].giver});this.hud.dialogue.close();return;}
     const def = QUESTS[id];
     const giverOfNext = this.npcById(def.turnIn ?? 'brinebeard');
     this.quests.complete(id);
@@ -1378,6 +1385,20 @@ export class Game {
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }
 
+  /** A duel keeps the adventure alive, even when entered from a shared victory celebration. */
+  resumeFriendAdventure(authority:boolean):void {
+    this.ending.cancel();this.journey?.closeChapterEnding();
+    this.world2.resumeAdventure(authority);
+    if(!authority)return;
+    for(const e of this.enemies){
+      if(e.state==='gone'&&!e.isAdd&&!e.isEcho&&(this.world2.chapter===1||e.kind!=='jellyfish')){e.respawnAt(e.home.x,e.home.z);e.resumeAuthority();}
+    }
+    const bosses=this.world2.chapter===1?[this.boss,this.finalBoss]:[this.encounter];
+    for(const b of bosses){
+      if(b.unit.hidden&&['waking','idle','fight'].includes(b.state)){b.unit.hidden=false;b.unit.rig.root.visible=true;b.resumeAuthority();}
+    }
+  }
+
   /** Celebration effects and direct music requests must not leak into the next adventure. */
   resumeAfterEnding(): void {
     this.engine.setView(this.scene, this.camera, GAME_VIEW);
@@ -1425,6 +1446,7 @@ export class Game {
   private releaseResources(): void {
     if (this.resourcesReleased) return;
     this.resourcesReleased = true;
+    this.server?.dispose();this.server=null;
     this.journey?.dispose();
     this.voyageIsland?.dispose();this.voyageIsland=null;
     this.boats?.dispose();this.boats=null;

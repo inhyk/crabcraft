@@ -27,6 +27,8 @@ try{
   const renderer=new THREE.WebGLRenderer();initAssets(renderer);
   const lib=new MotionLibrary('/motions/');await lib.ready;await Promise.all(lib.list().map(e=>lib.load(e.id)));
   let maxSampleDelta=0,samples=0,maxAnchorDelta=0,anchors=0,maxRootDelta=0,roots=0,specVariants=0;
+  const {createRenderPoseRecipe,evaluateRenderPoseRecipe,RENDER_POSE_RECIPE_VERSION}=await import('/src/sim/renderPose.ts');
+  let recipePoses=0,recipeOracleComponents=0;const oracleQ=new WeakMap();
   const near=(a,b,label,tol=1e-6)=>{const d=Math.abs(a-b);if(!Number.isFinite(d)||d>tol)throw new Error(`${label}: ${a} vs ${b} delta ${d}`);return d;};
   for(const entry of lib.list()){
    const old=await lib.load(entry.id),fresh=numericClip(entry.id);
@@ -69,8 +71,20 @@ try{
    }[id];const r=await createCrab(scaled?.[0]??spec(id));if(scaled)r.root.scale.multiplyScalar(scaled[1]);return r;
   };
   const newUnit=id=>({ref:{area:'parity',id:1,life:1},archetype:id,x:7,y:2,z:-3,yaw:.63,pose:numeric.initializeNumericPose(),actions:[],pendingHit:null});
-  const checkAnchor=(u,r)=>{
-   r.root.updateMatrixWorld(true);const expected=r.getSocket('clawR').getWorldPosition(new THREE.Vector3()),got=realActionData.launchAnchor(u,u.pose);
+  const checkAnchor=(u,r,checkRecipe=true)=>{
+   let pose=u.pose;
+   if(checkRecipe){
+    const rebuilt=evaluateRenderPoseRecipe(createRenderPoseRecipe(u));
+    for(const key of ['appliedQ','appliedPosition','appliedRotation'])for(let i=0;i<rebuilt[key].length;i++)if(!Object.is(rebuilt[key][i],u.pose[key][i]))throw new Error(`${u.archetype} recipe ${key}[${i}] differs from authoritative applied pose`);
+    const actualQ=oracleQ.get(r);
+    if(actualQ){
+     for(let i=0;i<actualQ.length;i++){if(!Object.is(actualQ[i],rebuilt.appliedQ[i]))throw new Error(`${u.archetype} independent controller joint ${i} differs`);recipeOracleComponents++;}
+     for(let i=0;i<3;i++){near(r.body.position.toArray()[i],rebuilt.appliedPosition[i]*r.metersToUnits,`${u.archetype} controller body position ${i}`,0);recipeOracleComponents++;}
+     for(let i=0;i<4;i++){near(r.body.quaternion.toArray()[i],rebuilt.appliedRotation[i],`${u.archetype} controller quaternion ${i}`,0);recipeOracleComponents++;}
+    }
+    pose={...u.pose,...rebuilt};recipePoses++;
+   }
+   r.root.updateMatrixWorld(true);const expected=r.getSocket('clawR').getWorldPosition(new THREE.Vector3()),got=realActionData.launchAnchor(u,pose);
    for(const key of ['x','y','z'])maxAnchorDelta=Math.max(maxAnchorDelta,near(expected[key],got[key],`${u.archetype} ${key}`));anchors++;
   };
   const rigs=['human','orc','dwarf','undead','nightelf','tauren','scrapling','scavenger','corrodius','jellyfish','abyss','eclipse','dawn','frost','echo',...NPCS.map(n=>`npc:${n.id}`),...Object.keys(freedSpecs),...folkSpecs.map((_,i)=>`townsfolk:${i}`)];
@@ -79,6 +93,7 @@ try{
    const height=rig.getSocket('head').getWorldPosition(new THREE.Vector3()).y-u.y;
    near(height,realActionData.archetype(id).height,`${id} collider`,1e-12);
    if(id==='jellyfish'){checkAnchor(u,rig);rig.dispose();continue;}
+   const originalSetPose=rig.setPose.bind(rig);rig.setPose=q=>{oracleQ.set(rig,Array.from(q));originalSetPose(q);};
    const ctrl=createMotionController(rig,lib),actions=new Actions(realActionData,()=>{},()=>{});
    const play=(id,o={})=>{const request=actionRequest(realActionData,id,o);actions.play(u,request);ctrl.play(id,{from:request.from,to:request.to??undefined,loopFrom:request.loopFrom??undefined,speed:request.speed,loop:request.loop,fade:request.fade,upperBodyOnly:request.upper,carryRoot:request.carryRoot?(x,z,yaw)=>{const c=Math.cos(rig.root.rotation.y),s=Math.sin(rig.root.rotation.y),m=rig.metersToUnits;rig.root.position.x+=(x*c+z*s)*m;rig.root.position.z+=(-x*s+z*c)*m;rig.root.rotation.y+=yaw;roots++;}:undefined});};
    const step=(dt,vx,vz,w)=>{u.pose.localVx=vx;u.pose.localVz=vz;u.pose.yawRate=w;const tiny=Math.abs(vx)<.05&&Math.abs(vz)<.05&&Math.abs(w)<.05;ctrl.setLocomotion(tiny?0:vx,tiny?0:vz,tiny?0:w);actions.update(u,dt);numeric.advanceNumericPose(u,dt);ctrl.update(dt);for(const key of ['x','z'])maxRootDelta=Math.max(maxRootDelta,near(u[key],rig.root.position[key],`${id} carry ${key}`,1e-12));maxRootDelta=Math.max(maxRootDelta,near(u.yaw,rig.root.rotation.y,`${id} carry yaw`,1e-12));checkAnchor(u,rig);};
@@ -114,7 +129,7 @@ try{
    rig.root.position.set(u.x,u.y,u.z);rig.root.rotation.y=u.yaw;
    near(rig.getSocket('head').getWorldPosition(new THREE.Vector3()).y-u.y,realActionData.archetype(race).height,`${race}/${sex}/${classId} height`,1e-12);
    legacy.sampleClip(lib.get('cast'),3.27,false,p);rig.setPose(p.q);rig.body.position.fromArray(p.pos).multiplyScalar(rig.metersToUnits);rig.body.quaternion.fromArray(p.rot);
-   u.pose.appliedQ=Array.from(p.q);u.pose.appliedPosition=Array.from(p.pos);u.pose.appliedRotation=Array.from(p.rot);checkAnchor(u,rig);specVariants++;rig.dispose();
+   u.pose.appliedQ=Array.from(p.q);u.pose.appliedPosition=Array.from(p.pos);u.pose.appliedRotation=Array.from(p.rot);checkAnchor(u,rig,false);specVariants++;rig.dispose();
   }
   // Deterministic envelope of the view-only random twitch: source maximum amplitude is .075.
   const twitch=[];
@@ -147,7 +162,7 @@ try{
    twitch.push({archetype:id,checks,maxOrigin,maxHead,maxSpawnRadiusDelta:maxRadius,maxFlightSeconds,maxArrivalTicks,worst});rig.dispose();
   }
   renderer.dispose();
-  return {version:realActionData.version,clips:lib.list().length,rigs:rigs.length,specVariants,samples,anchors,roots,maxSampleDelta,maxAnchorDelta,maxRootDelta,catalogVersion:rigCatalogVersion,catalogAnchors,maxCatalogAnchorDelta,twitch};
+  return {version:realActionData.version,clips:lib.list().length,rigs:rigs.length,specVariants,samples,anchors,roots,maxSampleDelta,maxAnchorDelta,maxRootDelta,recipeVersion:RENDER_POSE_RECIPE_VERSION,recipePoses,recipeOracleComponents,catalogVersion:rigCatalogVersion,catalogAnchors,maxCatalogAnchorDelta,twitch};
  });
  const output=process.argv.indexOf('--output');if(output>=0){if(!process.argv[output+1])throw new Error('--output needs a path');await writeFile(process.argv[output+1],JSON.stringify(result,null,2)+'\n');}
  console.log(JSON.stringify(result,null,2));

@@ -1,0 +1,65 @@
+/** Value-only contribution spill and deterministic reward planning. No storage, clocks or global RNG. */
+import type { BossProfileId, EarnedGrant, EntityRef, WorldId } from './types.ts';
+import { immutable } from './events.ts';
+import { Random } from './random.ts';
+export type LedgerMode = 'retained'|'external-durable';
+export type ContributionSnapshot = {character:string;cogEligible:boolean;cogMisses:number;flags:Record<string,boolean>};
+export type CreditWrite = {victim:EntityRef;character:string;version:number;credit:ContributionSnapshot};
+export type CreditBatch = {token:string;writes:readonly CreditWrite[]};
+export type VictimRewardFacts = {kind:'scrapling'|'scavenger'|'jellyfish'|'boss';level:number;role:'ordinary'|'add'|'echo';profile:BossProfileId|null;xp:number;coins:number};
+export type DeathRecipe = {schema:'world-death-v1';victim:EntityRef;world:WorldId;throughVersion:number;facts:VictimRewardFacts;overrides:ContributionSnapshot[];random:{algorithm:'mulberry32-v1';state:number}};
+export type PlannerCursor = {schema:'world-planner-v1';pageSequence:number;afterCharacter:string|null;recipientCount:number;randomDraws:number;randomState:number};
+export type PlannedPage = {pageSequence:number;afterCharacter:string|null;throughCharacter:string;expectedCursor:PlannerCursor;nextCursor:PlannerCursor;grants:EarnedGrant[]};
+export type PagedOutcomeSeal = {format:'paged-v1';key:string;victim:EntityRef;codecVersion:number;recipientCount:number;digestScheme:'sha256-chain-v1';contentDigest:string;recipeDigest:string;finalCursor:PlannerCursor};
+const FLAGS:Readonly<Record<BossProfileId,string>>=Object.freeze({rust:'rustCleared',abyss:'abyssCleared',eclipse:'trueCleared',dawn:'finalCleared',frost:'frostCleared'});
+const utf8=(value:unknown)=>new TextEncoder().encode(JSON.stringify(value)).length;
+export const victimKey=(ref:EntityRef):string=>JSON.stringify([ref.area,ref.id,ref.life]);
+export const creditKey=(write:Pick<CreditWrite,'victim'|'character'>):string=>JSON.stringify([write.victim.area,write.victim.id,write.victim.life,write.character]);
+function fail(message:string):never {throw new Error(`ledger: ${message}`);}
+function int(value:unknown,min=0,max=Number.MAX_SAFE_INTEGER):asserts value is number {if(typeof value!=='number'||!Number.isSafeInteger(value)||value<min||value>max)fail('invalid integer');}
+function text(value:unknown,max=512):asserts value is string {if(typeof value!=='string'||!value.length||new TextEncoder().encode(value).length>max||/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(value))fail('invalid text');}
+function fields(value:unknown,required:readonly string[]):Record<string,unknown> {if(!value||typeof value!=='object'||Array.isArray(value)||![Object.prototype,null].includes(Object.getPrototypeOf(value))||Object.getOwnPropertySymbols(value).length)fail('invalid object');const v=value as Record<string,unknown>;if(Object.keys(v).length!==required.length||Object.keys(v).some(k=>!required.includes(k))||required.some(k=>!Object.hasOwn(v,k)))fail('invalid fields');for(const k of Object.keys(v))if(!('value'in Object.getOwnPropertyDescriptor(v,k)!))fail('accessor');return v;}
+function ref(value:unknown):void {const v=fields(value,['area','id','life']);text(v.area);int(v.id,1,0xffffffff);int(v.life,1,0xffffffff);}
+export function validateContributionSnapshot(value:unknown):ContributionSnapshot {const v=fields(value,['character','cogEligible','cogMisses','flags']);text(v.character);if(typeof v.cogEligible!=='boolean')fail('cog eligibility');int(v.cogMisses,0,2);const flags=v.flags;if(!flags||typeof flags!=='object'||Array.isArray(flags)||![Object.prototype,null].includes(Object.getPrototypeOf(flags))||Object.keys(flags).length>64||Object.getOwnPropertySymbols(flags).length)fail('credit flags');for(const [name,d]of Object.entries(Object.getOwnPropertyDescriptors(flags))){text(name,128);if(!d.enumerable||!('value'in d)||typeof d.value!=='boolean')fail('credit flag');}return immutable(v) as ContributionSnapshot;}
+export function validateCreditWrite(value:unknown):CreditWrite {const v=fields(value,['victim','character','version','credit']);ref(v.victim);text(v.character);int(v.version,1);const credit=validateContributionSnapshot(v.credit);if(credit.character!==v.character)fail('credit character mismatch');return immutable({...v,credit}) as CreditWrite;}
+export function validateDeathRecipe(value:unknown):DeathRecipe {
+ const r=fields(value,['schema','victim','world','throughVersion','facts','overrides','random']);if(r.schema!=='world-death-v1'||!['w1','w2','w3','w4'].includes(r.world as string))fail('recipe version/world');ref(r.victim);int(r.throughVersion);const f=fields(r.facts,['kind','level','role','profile','xp','coins']);if(!['scrapling','scavenger','jellyfish','boss'].includes(f.kind as string)||!['ordinary','add','echo'].includes(f.role as string))fail('victim kind/role');int(f.level,1);int(f.xp);int(f.coins);if(f.kind==='boss'){if(typeof f.profile!=='string'||!Object.hasOwn(FLAGS,f.profile)||f.role!=='ordinary')fail('boss profile');}else if(f.profile!==null)fail('enemy profile');if(f.role==='add'&&(f.xp!==0||f.coins!==0))fail('add rewards');
+ const random=fields(r.random,['algorithm','state']);if(random.algorithm!=='mulberry32-v1')fail('random algorithm');int(random.state,0,0xffffffff);if(!Array.isArray(r.overrides)||r.overrides.length>100)fail('resident override bounds');let previous:string|null=null;const overrides=r.overrides.map(raw=>{const c=validateContributionSnapshot(raw);if(previous!==null&&c.character<=previous)fail('override order');previous=c.character;return c;});return immutable({...r,overrides}) as DeathRecipe;
+}
+export function advancePlannerRandomState(state:number,draws:number):number {int(state,0,0xffffffff);int(draws);return Number((BigInt(state)+0x6d2b79f5n*BigInt(draws))&0xffffffffn);}
+export function initialPlannerCursor(recipe:DeathRecipe):PlannerCursor {const r=validateDeathRecipe(recipe);return immutable({schema:'world-planner-v1',pageSequence:0,afterCharacter:null,recipientCount:0,randomDraws:0,randomState:r.random.state});}
+export function validatePlannerCursor(recipe:DeathRecipe,value:unknown):PlannerCursor {const c=fields(value,['schema','pageSequence','afterCharacter','recipientCount','randomDraws','randomState']);if(c.schema!=='world-planner-v1')fail('cursor version');int(c.pageSequence);int(c.recipientCount);int(c.randomDraws,0,c.recipientCount);int(c.randomState,0,0xffffffff);if(c.recipientCount===0){if(c.pageSequence!==0||c.afterCharacter!==null)fail('empty cursor');}else{text(c.afterCharacter);if(c.pageSequence<1||c.pageSequence>c.recipientCount)fail('cursor page count');}if(c.randomState!==advancePlannerRandomState(recipe.random.state,c.randomDraws))fail('cursor RNG mismatch');return immutable(c) as PlannerCursor;}
+/** Exact extracted source award formula. Pity resolves later against current-owner state in applyGrant. */
+export function planGrant(recipe:DeathRecipe,credit:ContributionSnapshot,nextRandom:()=>number):EarnedGrant {
+ const f=recipe.facts,objectives:{kind:string;amount:number}[]=[],flags:string[]=[];
+ if(f.kind==='boss'){const profile=f.profile!;flags.push(FLAGS[profile]);if(profile!=='abyss')objectives.push({kind:profile==='eclipse'?'eclipse-boss':profile==='dawn'?'dawn-boss':profile==='frost'?'frost-boss':'boss',amount:1});objectives.push({kind:'clear-encounter-blessing',amount:1});}
+ else{if(f.role!=='add'&&(recipe.world!=='w1'||credit.flags.rustCleared))objectives.push({kind:'patrol-kill',amount:1});if(f.kind==='scrapling'){objectives.push({kind:'kill-scrapling',amount:1});if(credit.cogEligible){const roll=nextRandom();if(!Number.isFinite(roll)||roll<0||roll>=1)fail('invalid RNG draw');objectives.push({kind:'cog-roll',amount:roll});}}else if(f.kind==='scavenger')objectives.push({kind:'kill-scavenger',amount:1});}
+ return immutable({id:JSON.stringify([recipe.victim.area,recipe.victim.id,recipe.victim.life,credit.character]),victim:recipe.victim,recipient:credit.character,xp:f.xp,coins:f.coins,objectives,flags});
+}
+/** One detached bounded page. A persisted cursor retries with identical draws and payloads. */
+export function planOutcomePage(recipe:DeathRecipe,cursor:PlannerCursor,credits:readonly ContributionSnapshot[]):PlannedPage {
+ const r=validateDeathRecipe(recipe),c=validatePlannerCursor(r,cursor);if(!Array.isArray(credits)||credits.length<1||credits.length>100)fail('credit page bounds');const random=new Random(c.randomState),overrides=new Map(r.overrides.map(o=>[o.character,o]));let previous=c.afterCharacter,draws=c.randomDraws;const grants:EarnedGrant[]=[];
+ for(const raw of credits){const credit=validateContributionSnapshot(raw);if(previous!==null&&credit.character<=previous)fail('credit page order');previous=credit.character;grants.push(planGrant(r,overrides.get(credit.character)??credit,()=>{draws++;int(draws);return random.next();}));}
+ const pageSequence=c.pageSequence+1,recipientCount=c.recipientCount+grants.length;int(pageSequence,1);int(recipientCount,1);const nextCursor:PlannerCursor={schema:'world-planner-v1',pageSequence,afterCharacter:previous,recipientCount,randomDraws:draws,randomState:random.state()};validatePlannerCursor(r,nextCursor);return immutable({pageSequence,afterCharacter:c.afterCharacter,throughCharacter:previous!,expectedCursor:c,nextCursor,grants});
+}
+/** Dirty latest values only. Durable ACK never removes a newer same-key write. */
+export class DirtyContributionLedger {
+ private readonly entries=new Map<string,{write:CreditWrite;bytes:number}>();
+ private active:CreditBatch|null=null;
+ private bytes=0;
+ private nextToken=1;
+ private readonly area:string;
+ private readonly maxEntries:number;
+ private readonly maxBytes:number;
+ constructor(area:string,limits:{maxEntries:number;maxBytes:number}) {text(area);int(limits.maxEntries,1);int(limits.maxBytes,1);this.area=area;this.maxEntries=limits.maxEntries;this.maxBytes=limits.maxBytes;}
+ record(raw:CreditWrite):'recorded'|'duplicate'|'stale' {const write=validateCreditWrite(raw);if(write.victim.area!==this.area)fail('credit area');const key=creditKey(write),old=this.entries.get(key);if(old&&old.write.version>write.version)return 'stale';if(old?.write.version===write.version){if(JSON.stringify(old.write)!==JSON.stringify(write))fail('credit version conflict');return 'duplicate';}const bytes=utf8(write);if(this.entries.size+(old?0:1)>this.maxEntries||this.bytes-(old?.bytes??0)+bytes>this.maxBytes)fail('dirty credit capacity');this.entries.set(key,{write,bytes});this.bytes+=bytes-(old?.bytes??0);return 'recorded';}
+ capture(limit:number):CreditBatch|null {int(limit,1,100);if(this.active)return immutable(this.active);if(!this.entries.size)return null;const writes:CreditWrite[]=[];for(const entry of this.entries.values()){writes.push(entry.write);if(writes.length===limit)break;}int(this.nextToken,1);this.active=immutable({token:JSON.stringify([this.area,'credit-batch',this.nextToken++]),writes});return immutable(this.active);}
+ markDurable(token:string):'acknowledged'|'not-current' {if(!this.active||this.active.token!==token)return 'not-current';for(const write of this.active.writes){const key=creditKey(write),entry=this.entries.get(key);if(entry?.write.version===write.version){this.entries.delete(key);this.bytes-=entry.bytes;}}this.active=null;return 'acknowledged';}
+ cancelCapture(token:string):void {if(this.active?.token===token)this.active=null;}
+ hasVictim(victim:EntityRef):boolean {const key=victimKey(victim);for(const {write}of this.entries.values())if(victimKey(write.victim)===key)return true;return false;}
+ resourceUsage(){return{dirtyCreditEntries:this.entries.size,dirtyCreditBytes:this.bytes,creditCaptures:this.active?1:0};}
+ debugState(){return immutable({entries:[...this.entries.values()].map(e=>e.write),active:this.active,nextToken:this.nextToken});}
+}
+/** Bounded resident effects for retrying a suspended source step; never collects offline recipients. */
+export function residentOutcomePage(recipe:DeathRecipe,page:PlannedPage):readonly EarnedGrant[] {const r=validateDeathRecipe(recipe);validatePlannerCursor(r,page.nextCursor);if(page.grants.length>100)fail('grant page bounds');const residents=new Set(r.overrides.map(c=>c.character));return immutable(page.grants.filter(g=>residents.has(g.recipient)));}
+export function plannerRandomProgress(recipe:DeathRecipe,cursor:PlannerCursor):{startState:number;finalState:number;drawCount:number} {const r=validateDeathRecipe(recipe),c=validatePlannerCursor(r,cursor);return immutable({startState:r.random.state,finalState:c.randomState,drawCount:c.randomDraws});}

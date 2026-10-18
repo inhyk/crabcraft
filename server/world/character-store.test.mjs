@@ -27,9 +27,21 @@ function testCodec() {
   };
 }
 let postgres, pool, store;
+const liveClients = new Set();
+async function closeMainPool() {
+  // pg-pool end() can resolve after removing idle clients, before their sockets end.
+  // Await the public client end events before stopping the throwaway cluster.
+  const closed = [...liveClients].map(client => once(client, 'end'));
+  await pool?.end();
+  await Promise.all(closed);
+}
 before(async () => {
   try {
     postgres = await startPostgres(); pool = new pg.Pool({ connectionString: postgres.url });
+    pool.on('connect', client => {
+      liveClients.add(client);
+      client.once('end', () => liveClients.delete(client));
+    });
     // Start with actual existing schema and account data, then apply only the new additive migration.
     await pool.query('CREATE TABLE schema_migrations(version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
     for (const version of ['001_accounts', '002_google_only', '003_chat_reports']) {
@@ -44,9 +56,9 @@ before(async () => {
     assert.equal((await pool.query('SELECT save FROM accounts WHERE username=$1', [A])).rows[0].save, '{"legacyXP":999999}');
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM world_characters')).rows[0].n, 0);
     store = new CharacterStore(pool, testCodec());
-  } catch (e) { await pool?.end(); postgres?.stop(); throw e; }
+  } catch (e) { await closeMainPool(); postgres?.stop(); throw e; }
 });
-after(async () => { try { await pool?.end(); } finally { postgres?.stop(); } });
+after(async () => { try { await closeMainPool(); assert.equal(liveClients.size, 0); } finally { postgres?.stop(); } });
 const error = code => e => e instanceof CharacterStoreError && e.code === code;
 const fresh = () => store.create(A, identity);
 const grant = (c, id, xp = 10) => store.recordGrant(A, c.characterId, id, { xp, coins: 2 });

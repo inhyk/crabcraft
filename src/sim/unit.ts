@@ -1,4 +1,4 @@
-import type { ActionData, EntityRef, Reaction, SimUnit, UnitKind, Vec2Out, Vec3, WorldQuery } from './types.ts';
+import type { AreaServices, ActionData, EntityRef, Reaction, SimUnit, UnitKind, Vec2Out, Vec3, WorldQuery } from './types.ts';
 import { angleDiff, clamp, damp, distXZ } from './math.ts';
 import { immutable } from './events.ts';
 import { initializeNumericPose } from './pose.ts';
@@ -18,3 +18,12 @@ export const speedMul = (unit: Readonly<SimUnit>,now:number):number => (now<unit
 
 export function resetLocomotionOrigin(unit:SimUnit):void {unit.pose.previousX=unit.x;unit.pose.previousZ=unit.z;unit.pose.previousYaw=unit.yaw;}
 export function feedLocomotion(unit:SimUnit,dt:number):void {if(dt<=0)return;const p=unit.pose;let dx=(unit.x-p.previousX)/dt,dz=(unit.z-p.previousZ)/dt;const speed=Math.hypot(dx,dz);if(speed>14){dx*=14/speed;dz*=14/speed;}const sin=Math.sin(unit.yaw),cos=Math.cos(unit.yaw);p.localVx=damp(p.localVx,dx*cos-dz*sin,14,dt);p.localVz=damp(p.localVz,dx*sin+dz*cos,14,dt);p.yawRate=damp(p.yawRate,clamp(angleDiff(unit.yaw,p.previousYaw)/dt,-6,6),12,dt);resetLocomotionOrigin(unit);}
+
+/** Trusted private-party PvP expands player attacks without making NPCs damageable. */
+export function isAttackTarget(g:AreaServices,source:Readonly<SimUnit>,target:Readonly<SimUnit>):boolean {
+ if(source.ref.area!==target.ref.area||source.ref.id===target.ref.id)return false;
+ if(target.reaction==='hostile')return true;
+ if(source.kind!=='player'||target.kind!=='player'||g.context.mode!=='party-encounter'||g.context.pvp!=='party-only')return false;
+ const a=g.context.members.find(m=>m.unit.id===source.ref.id&&m.unit.life===source.ref.life),b=g.context.members.find(m=>m.unit.id===target.ref.id&&m.unit.life===target.ref.life);
+ return !!a?.party&&a.party===b?.party;
+}

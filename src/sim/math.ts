@@ -16,3 +16,5 @@ export const easeInOut = (t: number): number => t < .5 ? 2 * t * t : 1 - (-2 * t
 export function validatePopulation(value:{desired:number;respawnSeconds:number}):{desired:0|1;respawnSeconds:number} {if((value.desired!==0&&value.desired!==1)||!Number.isFinite(value.respawnSeconds)||value.respawnSeconds<0)throw new RangeError('Population policy requires desired 0 or 1 and finite nonnegative respawnSeconds');return {desired:value.desired,respawnSeconds:value.respawnSeconds};}
 
 export const worldChapter = (world: WorldId): Chapter => ({w1:1,w2:2,w3:3,w4:4} as const)[world];
+
+export function populationRadius(value:number):number {if(!Number.isFinite(value)||value<=0)throw new RangeError('Invalid population radius');return value;}

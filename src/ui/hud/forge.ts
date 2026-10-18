@@ -13,6 +13,7 @@ export class ForgePanel {
  private npc:Npc|null=null;
  private request:(()=>void)|null=null;
  private last='';
+ private generation=0;
  get open(){return this.el.open;}
  constructor(private g:Game){
   this.el.append(this.content,this.notice);
@@ -20,19 +21,20 @@ export class ForgePanel {
   this.el.addEventListener('cancel',e=>{e.preventDefault();this.close();});
  }
  show(npc:Npc,request:()=>void){
-  this.npc=npc;this.request=request;this.last='';this.notice.textContent='';this.el.classList.remove('forged');
+  this.generation++;this.npc=npc;this.request=request;this.last='';this.notice.textContent='';this.el.classList.remove('forged');
   this.render();if(!this.open)this.el.showModal();
  }
- close(){if(this.open)this.el.close();this.npc=null;this.request=null;}
+ close(){this.generation++;if(this.open)this.el.close();this.npc=null;this.request=null;}
  update(){
   if(!this.open)return;
   if(!this.g.player.unit.alive||this.g.cinematic||this.g.ending.active||!this.npc||this.g.player.unit.distTo(this.npc.unit)>8){this.close();return;}
   const p=this.g.player,key=`${language()}|${p.coins}|${p.attackRank}|${p.armorRank}|${p.weaponOwned}|${p.armorOwned}|${p.inCombat}`;
   if(key!==this.last){this.last=key;this.render();}
  }
- private buy(slot:EquipmentSlot){
-  const buying=!this.g.player.ownsEquipment(slot);
-  const result=buying?this.g.player.buyEquipment(slot):this.g.player.upgradeEquipment(slot);
+ private async buy(slot:EquipmentSlot){
+  const generation=this.generation,buying=!this.g.player.ownsEquipment(slot);
+  let result;try{result=this.g.server?await this.g.server.forge(slot,buying?'buy':'upgrade',this.npc?.def.id??'pip'):buying?this.g.player.buyEquipment(slot):this.g.player.upgradeEquipment(slot);}catch{if(this.open&&generation===this.generation)this.notice.textContent=t('서버 확인을 기다릴 수 없습니다. 다시 연결해 주세요.','Confirmation unavailable. Reconnect to the server.');return;}
+  if(!this.open||generation!==this.generation)return;
   if(result!=='upgraded'&&result!=='bought'){
    this.notice.textContent=result==='busy'?t('전투가 끝나면 강화할 수 있어요.','Wait until combat ends to upgrade.'):result==='max'?t('최고 강화 단계예요!','Maximum upgrade rank reached!'):t('코인이 부족해요. 적과 보스를 잡아 모아 주세요.','Not enough coins. Earn more by defeating enemies and bosses.');return;
   }

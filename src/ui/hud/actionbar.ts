@@ -1,5 +1,6 @@
 // Action bar (5 ability slots with cooldown sweeps, resource and range tints, tooltips), the XP
 // bar, micro menu, cast bar and the contextual interaction prompt.
+import {AbilityRange} from '../../game/abilityRange';
 import { h } from '../dom';
 import {t} from '../../i18n';
 import type { Game } from '../../game/game';
@@ -28,9 +29,11 @@ export class ActionBar {
   private musicBtn: HTMLButtonElement;
   private microTitles: {el:HTMLElement;ko:string;en:string}[] = [];
   private xpBar: HTMLElement;
+  private rangePreview: AbilityRange;
   private lastXp = '';
 
   constructor(private readonly game: Game, onLog: () => void, onMenu: () => void, onMusic: () => void) {
+    this.rangePreview = new AbilityRange(game);
     const cls = game.player.cls;
     const slotsEl = h('div', { class: 'ab-slots hud-plate' });
     for (const ab of cls.abilities) {
@@ -46,7 +49,7 @@ export class ActionBar {
         ab.cost ? h('div', { class: 'ab-cost' }, String(ab.cost)) : null,
       );
       el.addEventListener('click', () => game.player.useAbility(ab.slot));
-      el.addEventListener('mouseenter', () => this.showTip(ab, el));
+      el.addEventListener('mouseenter', () => this.showTip(this.slots[ab.slot-1]!.ab, el));
       el.addEventListener('mouseleave', () => this.hideTip());
       slotsEl.append(el);
       this.slots.push({ ab, el, cd, cdText, state: '', wasCooling: false });
@@ -75,6 +78,9 @@ export class ActionBar {
     );
   }
 
+  /** An authenticated character can differ from the local preview used while assets loaded. */
+  bindClass():void {this.hideTip();const cls=this.game.player.cls;for(let i=0;i<this.slots.length;i++){const slot=this.slots[i]!,ab=cls.abilities[i]!;slot.ab=ab;slot.state='';slot.wasCooling=false;slot.el.className=`ab-slot hud-i ${cls.resource}${ab.slot===5?' ultimate':''}`;slot.el.replaceChildren(iconEl(ab.id,ab.icon),slot.cd,slot.cdText,h('div',{class:'ab-key'},String(ab.slot)),...(ab.cost?[h('div',{class:'ab-cost'},String(ab.cost))]:[]));}}
+
   setMusicIcon(on: boolean): void {
     this.musicBtn.innerHTML = iconSvg(on ? 'music' : 'music-off');
   }
@@ -89,18 +95,20 @@ export class ActionBar {
   private showTip(ab: AbilityDef, anchor: HTMLElement): void {
     this.hideTip();
     this.tooltipSource={ab,anchor};
+    this.rangePreview.show(ab);
     const cls = this.game.player.cls;
     const meta: string[] = [];
     if (ab.cost) meta.push(`${ab.cost} ${cls.resource === 'rage' ? t('분노','Rage') : t('마나','Mana')}`);
     meta.push(ab.castTime > 0 ? t(`시전 ${ab.castTime}초`,`${ab.castTime} sec cast`) : t('즉시 시전','Instant'));
     if (ab.cooldown > 0) meta.push(t(`재사용 ${ab.cooldown}초`,`${ab.cooldown} sec cooldown`));
-    const range = isMeleeAbility(ab) ? t('근접 거리','Melee range') : abilityNeedsTarget(ab) ? t(`사거리 ${ab.range}m`,`${ab.range} m range`) : ab.range > 0 ? t(`반경 ${ab.range}m`,`${ab.range} m radius`) : t('자신','Self');
+    const range = ab.id==='steam-blink'?t(`최대 이동 ${ab.range}m`,`Travel up to ${ab.range} m`):ab.id==='frost-spray'?t(`전방 ${ab.range}m · 부채꼴`,`Forward ${ab.range} m · cone`):isMeleeAbility(ab) ? t('근접 거리 1.8m','Melee reach 1.8 m') : abilityNeedsTarget(ab) ? t(`사거리 ${ab.range}m`,`${ab.range} m range`) : ab.range > 0 ? t(`반경 ${ab.range}m`,`${ab.range} m radius`) : t('자신','Self');
     const tip = h(
       'div',
       { class: 'cc-tooltip' },
       h('div', { class: 't-title' }, abilityName(ab)),
       h('div', { class: 't-meta' }, meta.join('  |  ')),
       h('div', { class: 't-meta' }, range),
+      ab.range>0?h('div',{class:'t-meta'},t('지면에 범위 표시 · 눈금 1m · 벽에 막힐 수 있어요','Ground preview · 1 m ticks · walls may block the skill')):null,
       h('div', { class: 't-desc' }, abilityDescription(ab)),
     );
     document.body.append(tip);
@@ -115,7 +123,10 @@ export class ActionBar {
     this.tooltip?.remove();
     this.tooltip = null;
     this.tooltipSource = null;
+    this.rangePreview.show(null);
   }
+
+  dispose():void {this.hideTip();this.rangePreview.dispose();}
 
   refreshLanguage(): void {
     for(const {el,ko,en} of this.microTitles)el.title=t(ko,en);
@@ -125,6 +136,7 @@ export class ActionBar {
   }
 
   update(): void {
+    this.rangePreview.update();
     const g = this.game;
     const p = g.player;
     const now = g.time;
@@ -154,7 +166,7 @@ export class ActionBar {
       const nores = p.resource < s.ab.cost;
       let oor = false;
       const t = p.target;
-      if (abilityNeedsTarget(s.ab) && t && t.alive && t.hostile) {
+      if (abilityNeedsTarget(s.ab) && t && t.alive && (g.server?g.server.attackable(t):t.hostile)) {
         oor = isMeleeAbility(s.ab) ? p.unit.gapTo(t) > 1.8 : p.unit.distTo(t) - t.radius > s.ab.range;
       }
       const state = `${nores ? 'n' : ''}${oor ? 'o' : ''}`;
@@ -207,6 +219,13 @@ export class CastBar {
     this.labelSource = name;
     this.refreshLanguage();
     this.el.className = `castbar on${channel ? ' channel' : ''}`;
+  }
+
+  /** Restore the original cast fraction after reconnect, without starting a gameplay cast. */
+  observe(name:string|(()=>string)|null,start:number,end:number,channel=false):void {
+    if(name===null){this.active=false;this.hideAt=0;this.el.classList.remove('on');this.time.textContent='';return;}
+    if(!Number.isFinite(start)||!Number.isFinite(end)||end<start)throw new Error('Invalid observed cast clock');
+    this.t0=start;this.dur=Math.max(.000001,end-start);this.channel=channel;this.active=true;this.hideAt=0;this.labelSource=name;this.refreshLanguage();this.el.className=`castbar on${channel?' channel':''}`;this.update();
   }
 
   finish(): void {

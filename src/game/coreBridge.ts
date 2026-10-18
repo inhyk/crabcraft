@@ -15,7 +15,7 @@ import { createWorld1Definition } from '../sim/areas/world1.ts';
 import { createWorld2Definition } from '../sim/areas/world2.ts';
 import { createWorld3Definition } from '../sim/areas/world3.ts';
 import { createWorld4Definition } from '../sim/areas/world4.ts';
-import { ENEMY_STATS } from '../sim/data/enemies.ts';
+import { canonicalEnemyLevel, canonicalEnemyRespawn } from '../sim/data/enemies.ts';
 
 class RecordMap<T> extends Map<string,T>{
   private record:()=>Record<string,T>;
@@ -52,7 +52,7 @@ export class CoreGameBridge {
     const builders=[createWorld1Definition,createWorld2Definition,createWorld3Definition,createWorld4Definition];
     const definitions=queries.map((query,i)=>builders[i]!({query,personalProps:{heightAt:query.heightAt.bind(query),resolveCollision:(x,z,r,out)=>query.collision.resolve(x,z,r,out)},fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population}));
     const areas=new Map<WorldId,SimulationArea>();
-    for(let i=0;i<ids.length;i++){const world=ids[i]!,definition=definitions[i]!;areas.set(world,createArea({id:`browser-${world}`,definition,query:queries[i]!,actionData:realActionData,seed:1337+i,context:{mode:'public',members:[],pvp:'disabled'},limits:{eventCount:10000,inputCommandsPerTick:32,timers:1000,projectiles:1000},policy:{enemyLevel:(spawn,ctx)=>{const base=ENEMY_STATS[spawn.kind].level;if(spawn.role==='echo')return Math.max(10,ctx.partyLevel);if(spawn.role==='add')return base;return ctx.chapter>=2||ctx.rustCleared?Math.max(ctx.chapter===4?100:ctx.chapter===3?20:ctx.chapter===2?10:base,ctx.partyLevel-(spawn.kind==='scrapling'?1:0)):base;},enemyPopulation:spawn=>({desired:1,respawnSeconds:world==='w1'?ENEMY_STATS[spawn.kind].respawn:12}),damageAllowed:(_context,_source,target)=>!(target.kind==='player'&&game.god),canInteract:()=>true}}));}
+    for(let i=0;i<ids.length;i++){const world=ids[i]!,definition=definitions[i]!;areas.set(world,createArea({id:`browser-${world}`,definition,query:queries[i]!,actionData:realActionData,seed:1337+i,context:{mode:'public',members:[],pvp:'disabled'},limits:{eventCount:10000,inputCommandsPerTick:32,timers:1000,projectiles:1000},policy:{enemyLevel:(spawn,ctx)=>canonicalEnemyLevel(spawn.kind,ctx.chapter,spawn.role),enemyPopulation:spawn=>({desired:1,respawnSeconds:canonicalEnemyRespawn(spawn.kind,i+1,spawn.role)}),damageAllowed:(_context,_source,target)=>!(target.kind==='player'&&game.god),canInteract:()=>true}}));}
     return new CoreGameBridge(game,areas,`w${game.world2.chapter}` as WorldId);
   }
   private constructor(game:Game,areas:Map<WorldId,SimulationArea>,world:WorldId){

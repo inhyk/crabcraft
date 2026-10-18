@@ -31,6 +31,7 @@ export class Account {
   window.addEventListener('online',()=>this.schedule());
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')void this.flush();});
  }
+ private get serverRoute(){return new URLSearchParams(location.search).get('world')==='server';}
  private async api(action:string,body?:unknown):Promise<Session>{
   const r=await fetch('/api/account/'+action,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Crabcraft-Account':'1'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(10000)});
   const data=await r.json();if(!r.ok)throw new AccountError(data.error??'network');
@@ -48,7 +49,7 @@ export class Account {
    const session=await this.api('session');signedIn=true;
    // Back from Google: a new account starts empty and takes this device's guest adventure, as signup did;
    // an existing one loads its cloud save over this device's copy, as login did.
-   fresh=pending&&session.revision===0&&!Object.keys(session.save??{}).length;
+   fresh=!this.serverRoute&&pending&&session.revision===0&&!Object.keys(session.save??{}).length;
    this.accept(session,!pending);
    if(fresh){const guest=readBundle('');if(Object.keys(guest).length)applyBundle(session.username,guest);else fresh=false;}
   }
@@ -57,7 +58,7 @@ export class Account {
   this.ready=true;this.app.reloadSpec();
   if(fresh)void this.flush();else this.schedule();
   // Back from Google signed in: straight back to where the player was, with a short note instead of the dialog.
-  if(pending&&signedIn&&result!=='error'){this.resume=from==='game'&&this.app.spec?'game':'title';this.greeting=t('Google 계정으로 로그인했어요','Signed in with Google');}
+  if(pending&&signedIn&&result!=='error'){this.resume=from==='game'&&(this.serverRoute||this.app.spec)?'game':'title';this.greeting=t('Google 계정으로 로그인했어요','Signed in with Google');}
   else if(pending||result==='error')this.show();
  }
  /** Once the first screen is up (the game calls it when loaded): the sign-in note, once. */
@@ -67,6 +68,7 @@ export class Account {
   this.app.overlay.append(el);setTimeout(()=>el.remove(),4200);
  }
  private accept(session:Session,restoreLocal=false){
+  if(this.serverRoute){this.username=session.username;this.revision=session.revision;this.conflict=this.clash=false;this.state=t('Google 계정으로 로그인됨','Signed in with Google');return;}
   const local=readBundle(session.username),cloud=JSON.stringify(session.save??{}),metaKey='cc.account.meta:'+session.username;
   let meta:{revision:number;snapshot:string}|null=null;try{meta=JSON.parse(localStorage.getItem(metaKey)??'null');}catch{ /* No previous sync. */ }
   const keepLocal=restoreLocal&&meta?.revision===session.revision&&Object.keys(local).length>0&&JSON.stringify(local)!==meta.snapshot;
@@ -79,10 +81,12 @@ export class Account {
   this.saved=cloud;this.conflict=false;this.clash=false;this.state=t('계정에 저장됐어요.','Saved to your account.');this.app.reloadSpec();
  }
  private schedule(){
+  if(this.serverRoute){clearTimeout(this.timer);return;}
   if(!this.ready||!this.username||this.conflict)return;
   clearTimeout(this.timer);this.timer=window.setTimeout(()=>void this.flush(),1800);
  }
  async flush():Promise<boolean>{
+  if(this.serverRoute){clearTimeout(this.timer);return true;}
   clearTimeout(this.timer);if(!this.username)return true;if(this.conflict)return false;
   if(this.busy)return false;
   let snapshot:string;try{snapshot=JSON.stringify(readBundle());}catch{return false;}
@@ -122,15 +126,15 @@ export class Account {
    const reload=h('button',{type:'button',class:'cc-btn ghost',onclick:()=>{void (async()=>{reload.disabled=true;try{await this.leaveGame();const session=await this.api('session');this.accept(session);this.render();}catch(e){this.state=errorText(e instanceof AccountError?e.code:'network');this.updateStatus();}finally{reload.disabled=false;}})();}},t('계정 저장 불러오기','Load account save'));
    const logout=h('button',{type:'button',class:'cc-btn ghost',onclick:()=>{void (async()=>{logout.disabled=true;try{await this.leaveGame();if(!await this.flush()){this.state+=' '+t('진행을 보관한 채 나가려면 아래 버튼을 눌러 주세요.','Use the button below to sign out and keep a local copy.');this.updateStatus();const force=h('button',{class:'cc-btn ghost',onclick:()=>void this.logout()},t('이 기기에 보관하고 로그아웃','Keep local copy and sign out'));d.append(force);return;}await this.logout();}catch{this.state=errorText('network');this.updateStatus();}finally{logout.disabled=false;}})();}},t('로그아웃','Sign out'));
    // Saving is automatic; loading the account save only resolves a conflict with another window.
-   d.replaceChildren(close,title,h('p',{class:'account-name'},t('Google 계정으로 로그인됨','Signed in with Google')),h('p',null,t('캐릭터·레벨·퀘스트·월드 진행을 계정에 자동 저장해요.','Your character, level, quests and worlds save automatically.')),status,...(this.clash?[reload]:[]),logout);return;
+   d.replaceChildren(close,title,h('p',{class:'account-name'},t('Google 계정으로 로그인됨','Signed in with Google')),h('p',null,t('캐릭터·레벨·퀘스트·월드 진행을 계정에 자동 저장해요.','Your character, level, quests and worlds save automatically.')),status,...(!this.serverRoute&&this.clash?[reload]:[]),logout);return;
   }
   const mark=h('span',{class:'account-google-mark'});mark.innerHTML=GOOGLE_MARK;
   const google=h('button',{type:'button',class:'account-google',onclick:()=>void this.google(google)},mark,h('span',null,t('Google로 로그인','Sign in with Google')));
-  d.replaceChildren(close,title,h('p',null,t('Google 계정으로 로그인하면 다른 컴퓨터에서도 같은 모험을 이어 가요. 처음 로그인하면 이 기기의 게스트 모험이 계정에 저장돼요.','Sign in with Google to continue the same adventure on another computer. The first time, this device’s guest adventure is saved to your account.')),google,status,h('p',{class:'account-note'},t('Google 이름, 이메일, 사진은 저장하지 않아요.','Your Google name, email and photo are not stored.')),h('button',{type:'button',class:'account-guest',onclick:()=>d.close()},t('로그인 없이 계속하기','Continue without signing in')));
+  d.replaceChildren(close,title,h('p',null,this.serverRoute?t('Google로 로그인한 뒤 서버 캐릭터를 선택하거나 새로 만들 수 있어요.','Sign in with Google to select or create a server character.'):t('Google 계정으로 로그인하면 다른 컴퓨터에서도 같은 모험을 이어 가요. 처음 로그인하면 이 기기의 게스트 모험이 계정에 저장돼요.','Sign in with Google to continue the same adventure on another computer. The first time, this device’s guest adventure is saved to your account.')),google,status,h('p',{class:'account-note'},t('Google 이름, 이메일, 사진은 저장하지 않아요.','Your Google name, email and photo are not stored.')),...(this.serverRoute?[]:[h('button',{type:'button',class:'account-guest',onclick:()=>d.close()},t('로그인 없이 계속하기','Continue without signing in'))]));
  }
  private async logout(){
   if(this.busy){this.state=t('저장이 끝나면 다시 눌러 주세요.','Please wait until saving finishes.');this.updateStatus();return;}
-  try{await this.api('logout',{});setSaveProfile('');localStorage.removeItem('cc.lastAccount');this.username='';this.saved='';this.conflict=false;this.state=t('로그아웃했어요. 게스트 모험으로 돌아왔어요.','Signed out. Your guest adventure is ready.');this.app.reloadSpec();this.render();await this.app.go('title');}
+  try{await this.api('logout',{});setSaveProfile('');localStorage.removeItem('cc.lastAccount');this.username='';this.saved='';this.conflict=false;this.state=this.serverRoute?t('로그아웃했습니다. 서버 접속에는 로그인이 필요합니다.','Signed out. Sign in to connect to the server.'):t('로그아웃했어요. 게스트 모험으로 돌아왔어요.','Signed out. Your guest adventure is ready.');this.app.reloadSpec();this.render();await this.app.go('title');}
   catch{this.state=errorText('network');this.updateStatus();}
  }
  get label(){return this.username?t('계정 · Google','Account · Google'):t('로그인','Sign in');}
