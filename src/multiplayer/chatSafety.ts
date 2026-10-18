@@ -25,24 +25,31 @@ export function chatSession() {
   return fresh;
 }
 
-/** Blocked players: by server id for this tab's session, and by name in this browser (except the shared neutral name). */
+/** The name a player chose, without the ` #2` the server adds while someone else online has it (server/rooms.ts admit).
+ * The number follows arrival order: a block keyed by it would miss the same player next time, and for the neutral
+ * name it would catch whoever happens to be the second one renamed. */
+const chosen = (name: string) => name.replace(/ #\d+$/, '');
+
+/** Blocked players: by server id for this tab's session, and by chosen name in this browser (except the shared neutral name). */
 export class Blocklist {
   private ids: Record<string, string> = json(get(session, 'cc.chat.blockedIds'), {});
-  private names: string[] = json(get(local, 'cc.chat.blockedNames'), []);
+  private names: string[] = [...new Set(json<string[]>(get(local, 'cc.chat.blockedNames'), []).map(chosen))];
 
-  has(id: string, name: string) { return id in this.ids || (name !== NEUTRAL_NAME && this.names.includes(name)); }
+  has(id: string, name: string) { const n = chosen(name); return id in this.ids || (n !== NEUTRAL_NAME && this.names.includes(n)); }
   block(id: string, name: string) {
-    this.ids[id] = name;
-    if (name !== NEUTRAL_NAME && !this.names.includes(name)) this.names.push(name);
+    const n = chosen(name);
+    this.ids[id] = n;
+    if (n !== NEUTRAL_NAME && !this.names.includes(n)) this.names.push(n);
     this.save();
   }
   /** Unblocks a name everywhere: its remembered name and every id blocked under it. */
   unblock(name: string) {
-    this.names = this.names.filter(n => n !== name);
-    for (const [id, n] of Object.entries(this.ids)) if (n === name) delete this.ids[id];
+    const n = chosen(name);
+    this.names = this.names.filter(b => b !== n);
+    for (const [id, b] of Object.entries(this.ids)) if (chosen(b) === n) delete this.ids[id];
     this.save();
   }
-  list() { return [...new Set([...this.names, ...Object.values(this.ids)])]; }
+  list() { return [...new Set([...this.names, ...Object.values(this.ids).map(chosen)])]; }
   private save() {
     set(session, 'cc.chat.blockedIds', JSON.stringify(this.ids));
     set(local, 'cc.chat.blockedNames', this.names.length ? JSON.stringify(this.names.slice(-200)) : null);
