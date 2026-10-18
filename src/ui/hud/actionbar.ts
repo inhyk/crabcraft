@@ -1,4 +1,4 @@
-// Action bar (4 ability slots with cooldown sweeps, resource and range tints, tooltips), the XP
+// Action bar (5 ability slots with cooldown sweeps, resource and range tints, tooltips), the XP
 // bar, micro menu, cast bar and the contextual interaction prompt.
 import { h } from '../dom';
 import {t} from '../../i18n';
@@ -38,7 +38,7 @@ export class ActionBar {
       const cdText = h('div', { class: 'ab-cdtext' });
       const el = h(
         'div',
-        { class: `ab-slot hud-i ${cls.resource}` },
+        { class: `ab-slot hud-i ${cls.resource}${ab.slot===5?' ultimate':''}` },
         iconEl(ab.id, ab.icon),
         cd,
         cdText,

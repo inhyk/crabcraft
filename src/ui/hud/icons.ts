@@ -36,6 +36,7 @@ function frame(school: School, glyph: string): string {
 }
 
 const GLYPHS: Record<string, [School, string]> = {
+  'crown-burst': ['holy', `<path d="M10 22 L20 30 L32 12 L44 30 L54 22 L48 46 H16 Z" fill="currentColor" fill-opacity=".4"/><path d="M18 52 H46 M32 28 V40 M26 34 H38"/>`],
   'pincer-strike': [
     'steel',
     `<path d="M16 50 C 12 34 18 18 36 14 C 31 22 30 27 33 31 L 47 23 C 52 33 45 46 30 47 Z" fill="currentColor" fill-opacity="0.25"/>
