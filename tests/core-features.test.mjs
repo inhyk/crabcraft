@@ -14,7 +14,7 @@ function fixture(count=2){
  const humans=new Map(),npcs=new Map(),events=[],actions=new Actions(realActionData,()=>{},()=>{});
  const query={heightAt:x=>x<146?.85:-2,resolveCollision:(x,z,r,out)=>out.set(x,z),raycastSolid:()=>null};
  const context={areaId:'feature-area',chapter:1,time:1,authority:true,authorityEpoch:1,rng:new Random(37),query,encounterEngaged:false,endingActive:false,authorityId:'a',navPoints:[],
-  actors:()=>[...humans].map(([id,unit])=>({id,unit})),resolve:id=>humans.get(id)??npcs.get(id)??null,townsfolk:()=>[...npcs].map(([id,unit])=>({id,unit})),
+  ownsProgression:()=>context.authority,actors:()=>[...humans].map(([id,unit])=>({id,unit})),resolve:id=>humans.get(id)??npcs.get(id)??null,townsfolk:()=>[...npcs].map(([id,unit])=>({id,unit})),
   clearControls:u=>{u.pendingHit=null;u.pushTime=0;actions.stop(u,undefined,0);},stopActions:u=>actions.stop(u,undefined,0),emit:e=>events.push(structuredClone(e))};
  for(let i=0;i<count;i++)humans.set(String.fromCharCode(97+i),createUnit({area:context.areaId,id:i+1,life:1},'human','player','player',realActionData,{x:143,y:.85,z:19}));
  const npc=createUnit({area:context.areaId,id:99,life:1},'human','townsfolk','friendly',realActionData,{x:10,y:.85,z:10});npcs.set('npc0',npc);
@@ -211,4 +211,25 @@ test('debug exposes every feature-owned timing, identity, navigation and dedupe 
  assert.equal(vd.nav.goal,null);vd.state.members.length=0;assert.equal(village.snapshot().members.length,1);
  const bd=boat.debug();for(const key of ['sequence','epoch','seatedBefore','previous','distance','earned','inputAt','throttle','steer','voyage','serial','bindings'])assert.ok(key in bd,key);
  assert.doesNotThrow(()=>JSON.stringify({vd,bd}));
+});
+
+test('two-client guest earns personal sail, crew and landfall from accepted fixed-tick snapshots',()=>{
+ const host=fixture(),guest=fixture();guest.context.authority=false;
+ host.context.ownsProgression=id=>id==='a';guest.context.ownsProgression=id=>id==='b';
+ host.boat.request(host.ref('a'),command('board'));host.boat.request(host.ref('b'),command('board'));
+ let sequence=0;const relay=()=>{const state=host.boat.snapshot();assert.equal(guest.boat.applyObservation({area:guest.context.areaId,epoch:1,sequence:sequence++,state}),true);guest.step();};
+ host.step();relay();
+ for(let i=0;i<140;i++){host.boat.request(host.ref('a'),command('drive',1));host.step();relay();}
+ assert.deepEqual(guest.events.filter(e=>e.type==='boatAchievement').map(e=>[e.id,e.achievement]),[['b','crew'],['b','sail']]);
+ assert.deepEqual(host.events.filter(e=>e.type==='boatAchievement').map(e=>[e.id,e.achievement]),[['a','crew'],['a','sail']]);
+ const x=host.boat.snapshot().x;host.context.query.heightAt=px=>px>x+5?1:-2;guest.context.query.heightAt=host.context.query.heightAt;
+ assert.equal(host.boat.request(host.ref('b'),command('leave')),true);assert.equal(host.boat.snapshot().exits.b.shore,true);relay();relay();
+ const awards=guest.events.filter(e=>e.type==='boatAchievement');assert.equal(awards.length,3);assert.equal(awards[2].achievement,'landfall');assert.ok(awards.every(e=>e.key.startsWith('feature-area:boat:1:observed:')));
+ assert.equal(host.events.some(e=>e.type==='boatAchievement'&&e.id==='b'),false);
+});
+test('personal boat save restore keeps distance and achievement dedupe without accepting observed owners',()=>{
+ const f=fixture();f.context.ownsProgression=id=>id==='a';
+ assert.equal(f.boat.restoreProgress('b',{distance:9,earned:[]}),false);assert.equal(f.boat.restoreProgress('a',{distance:NaN,earned:[]}),false);
+ assert.equal(f.boat.restoreProgress('a',{distance:10,earned:['crew','other']}),true);f.boat.request(f.ref('a'),command('board'));f.boat.request(f.ref('b'),command('board'));f.step();
+ assert.deepEqual(f.events.filter(e=>e.type==='boatAchievement').map(e=>e.achievement),['sail']);
 });

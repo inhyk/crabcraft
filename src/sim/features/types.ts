@@ -16,6 +16,8 @@ export interface FeatureContext {
   actors(): readonly FeatureActor[];
   resolve(id: string): SimUnit | null;
   townsfolk(): readonly FeatureActor[];
+  /** Server: each real player. Legacy: only the local owner, including a room follower. */
+  ownsProgression(id: string): boolean;
   readonly navPoints: readonly Readonly<Vec3>[];
   /** Clear numeric target/cast/channel/dash, pending hit, push and root actions. */
   clearControls(unit: SimUnit): void;

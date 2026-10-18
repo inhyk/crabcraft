@@ -74,7 +74,7 @@ export class NumericVillageGames {
     g.emit({type:'villageStarted',round:r.id,mode:r.mode,members:[...r.members],seeker:r.seeker});
   }
   private finish(result:VillageResult):void {
-    const r=this.state;if(!r||r.phase==='done')return;
+    const r=this.state;if(!r)return;
     r.phase='done';r.result=result;r.left=8;this.restoreNpc();this.finishedObservation();
   }
   private finishedObservation():void {

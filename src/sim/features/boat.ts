@@ -98,6 +98,7 @@ export class NumericBoat {
     if(!validStamp(this.context,observation,this.sequence)||!validBoat(observation.state)
       ||!validBindings(this.context,observation.state.seats.filter((id):id is string=>id!==null),observation.bindings))return false;
     const s=copyValue(observation.state);
+    if(s.seats.some(Boolean)&&(!this.voyage||!this.state.seats.some(Boolean)))this.voyage=`${this.context.areaId}:boat:${this.epoch}:observed:${observation.sequence}`;
     for(const id of s.seats)if(id){
       const ref=observation.bindings[id],before=this.seatedBefore.get(id);
       if(before&&!sameRef(before,ref)){this.seatedBefore.delete(id);this.previous.delete(id);}
@@ -135,6 +136,7 @@ export class NumericBoat {
       const u=g.resolve(id);if(u?.alive&&sameRef(u.ref,ref)){
         const exit=s.exits?.[id]??{x:143,z:23,shore:false};teleport(u,g.query,exit.x,exit.z,exit.shore?undefined:-Math.PI/2);
         g.emit({type:'boatLeft',actor:{...u.ref},id,...exit,voyage:this.voyage});
+        if(exit.shore)this.achievement(id,u,'landfall');
       }
       this.seatedBefore.delete(id);this.previous.delete(id);
     }
@@ -148,7 +150,7 @@ export class NumericBoat {
       const offset=i===0?1.65:-1.65;
       u.x=s.x+Math.sin(s.yaw)*offset;u.y=.88+Math.sin(g.time*1.8)*.055;u.z=s.z+Math.cos(s.yaw)*offset;u.yaw=s.yaw;u.pushTime=0;
       u.pose.localVx=u.pose.localVz=u.pose.yawRate=0;resetLocomotionOrigin(u);
-      if(g.authority){
+      if(g.ownsProgression(id)){
         const previous=this.previous.get(id),d=previous?Math.hypot(s.x-previous.x,s.z-previous.z):0;
         if(previous&&dt>0&&d<Math.max(2,dt*12))this.distance.set(id,(this.distance.get(id)??0)+d);
         this.previous.set(id,{x:s.x,z:s.z});
@@ -158,9 +160,16 @@ export class NumericBoat {
     });
   }
   private achievement(id:string,unit:SimUnit,achievement:BoatAchievement):void {
+    if(!this.context.ownsProgression(id))return;
     const earned=this.earned.get(id)??new Set<BoatAchievement>();if(earned.has(achievement))return;
     earned.add(achievement);this.earned.set(id,earned);
     this.context.emit({type:'boatAchievement',actor:{...unit.ref},id,achievement,key:`${this.voyage}:${id}:${achievement}`,distance:this.distance.get(id)??0});
+  }
+  /** Trusted personal save initialization; never accepts remote snapshot progression. */
+  restoreProgress(id:string, value:{distance:number;earned:readonly string[]}):boolean {
+    if(!this.context.ownsProgression(id)||!value||!Number.isFinite(value.distance)||value.distance<0||!Array.isArray(value.earned))return false;
+    this.distance.set(id,Math.min(1e7,value.distance));
+    this.earned.set(id,new Set(value.earned.filter((s):s is BoatAchievement=>s==='sail'||s==='crew'||s==='landfall')));return true;
   }
   /** Disconnect/Area disposal. reset(false) avoids teleporting into a newly entered world. */
   reset(dock=true):void {
