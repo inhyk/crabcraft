@@ -1,17 +1,10 @@
 import type { ActionId, ActionRequest, AreaServices, DebugValue, EnemySpawn, EntityRef, HitPlan, SimUnit, Vec3 } from './types.ts';
+import { angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
+import { gapTo as gap, moveTo, speedMul, lineOfSight as unitLineOfSight } from './unit.ts';
+export { angleDiff, turn, distance, gap, speedMul };
 import { enemyStats, RESPAWN_CLEAR, type EnemyStats } from './data/enemies.ts';
 
-export const distance=(a:Readonly<Vec3>,b:Readonly<Vec3>):number=>Math.hypot(a.x-b.x,a.z-b.z);
-export const gap=(a:SimUnit,b:SimUnit):number=>Math.max(0,distance(a,b)-a.radius-b.radius);
-export const angleDiff=(a:number,b:number):number=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
-export const turn=(a:number,b:number,k:number,dt:number):number=>a+angleDiff(b,a)*(1-Math.exp(-k*dt));
-export const speedMul=(u:SimUnit,now:number):number=>(now<u.slowUntil?1-u.slowPct:1)*(now<u.rustUntil?1-.1*u.rust:1);
-export function moveCreature(s:AreaServices,u:SimUnit,x:number,z:number,dt:number):void{
-  const out={x:0,y:0,set(x:number,y:number){this.x=x;this.y=y;return this;}};
-  s.query.resolveCollision(x,z,u.radius,out);u.x=out.x;u.z=out.y;
-  const gy=s.query.heightAt(u.x,u.z)+u.lift;
-  u.y=Math.abs(gy-u.y)>3?gy:gy+(u.y-gy)*Math.exp(-18*dt);
-}
+export function moveCreature(s:AreaServices,u:SimUnit,x:number,z:number,dt:number):void{moveTo(u,s.query,x,z,dt);}
 export function creatureAction(s:AreaServices,u:SimUnit,id:ActionId,opts:Partial<ActionRequest>={},hit?:HitPlan):void{
   const c=s.actionData.clip(id),skill=id==='attack_swipe'||id==='attack_slam';
   const from=skill?(id==='attack_swipe'?1.085:1.485):0;
@@ -26,10 +19,7 @@ export function creatureHitDelay(s:AreaServices,id:'attack_swipe'|'attack_slam',
   return Math.max(0,(hit-(id==='attack_swipe'?1.085:1.485))/speed);
 }
 export const eligible=(s:AreaServices,p:SimUnit):boolean=>p.alive&&!p.hidden&&!s.player(p.ref)?.state.controlsLocked;
-export function lineOfSight(s:AreaServices,a:SimUnit,b:SimUnit):boolean{
-  const from={x:a.x,y:a.y+a.height*.5,z:a.z},to={x:b.x,y:b.y+b.height*.5,z:b.z};
-  const hit=s.query.raycastSolid(from,to);return hit===null||hit>=Math.hypot(from.x-to.x,from.y-to.y,from.z-to.z)-.2;
-}
+export function lineOfSight(s:AreaServices,a:SimUnit,b:SimUnit):boolean{return unitLineOfSight(s.query,a,b);}
 export type EnemyState='idle'|'chase'|'leash'|'dead'|'gone';
 export class Enemy {
   readonly services:AreaServices;readonly actor:SimUnit;readonly spawn:EnemySpawn;
@@ -125,5 +115,5 @@ export class Enemy {
     else{if(gap(u,p)<1.6)s.combat.damage(this.unit,p.ref,this.rand(8,11));}
     s.emit({type:'attack',src:this.unit,attack:plan.attack,stage:'hit',target:p.ref,at:plan.attack==='enemy-leap'?{x:u.x,y:u.y,z:u.z}:undefined});return true;
   }
-  debugState():DebugValue{return structuredClone({unit:this.unit,spawnId:this.spawnId,state:this.state,stats:this.stats,seaCast:this.seaCast,nextSwing:this.nextSwing,wanderAt:this.wanderAt,wander:this.wander,wanderSideways:this.wanderSideways,leapCd:this.leapCd,leap:this.leap,deadAt:this.deadAt,rise:this.rise,velX:this.velX,velZ:this.velZ,pack:this.pack.map(e=>e.spawnId)});}
+  debugState():DebugValue{return structuredClone({unit:this.unit,spawnId:this.spawnId,state:this.state,stats:this.stats,seaCast:this.seaCast,nextSwing:this.nextSwing,wanderAt:this.wanderAt,wander:this.wander,wanderSideways:this.wanderSideways,leapCd:this.leapCd,leap:this.leap,deadAt:this.deadAt,rise:this.rise,velX:this.velX,velZ:this.velZ,pack:this.pack.map(e=>e.spawnId)}) as unknown as DebugValue;}
 }

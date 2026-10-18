@@ -100,9 +100,9 @@ export class Boss {
   private crossAngles(yaw:number):number[]{return this.isDawn?[yaw,yaw+Math.PI/4,yaw+Math.PI/2,yaw+3*Math.PI/4]:[yaw,yaw+Math.PI/2];}
   private barragePoints(at:Vec3,yaw:number):Vec3[]{const points=this.isDawn?[[0,0],[6,0],[-6,0],[0,6],[0,-6]]:[[-6,0],[0,0],[6,0]];return points.map(([x,z])=>({x:at.x+x*Math.cos(yaw)+z*Math.sin(yaw),y:at.y,z:at.z-x*Math.sin(yaw)+z*Math.cos(yaw)}));}
   private telegraphShapes(kind:MechId,at:Vec3,yaw:number):TelegraphShape[]{
-    if(kind==='cross')return this.crossAngles(yaw).map(a=>({shape:'lane',at:pos(at),yaw:a,halfLength:this.laneLength,halfWidth:this.laneWidth,color:'#ffc76c'}));
-    if(kind==='barrage')return this.barragePoints(at,yaw).map(p=>({shape:'circle',at:p,radius:this.barrageRadius,color:'#ff9863',ground:this.deckUnder(p,this.barrageRadius,0,Math.PI)}));
-    if(kind==='spray')return [{shape:'cone',at:pos(at),yaw,range:11,half:.55,ground:this.deckUnder(at,11,yaw,.55)}];
+    if(kind==='cross')return this.crossAngles(yaw).map(a=>({shape:'lane',at:pos(at),yaw:a,halfLength:this.laneLength,halfWidth:this.laneWidth,color:'#ffb64d'}));
+    if(kind==='barrage')return this.barragePoints(at,yaw).map(p=>{const ground=this.deckUnder(p,this.barrageRadius,0,Math.PI);return {shape:'circle',at:pos(p),radius:this.barrageRadius,color:'#cf8aff',ground};});
+    if(kind==='spray'){const ground=this.deckUnder(at,11,yaw,.55);return [{shape:'cone',at:pos(at),yaw,range:11,half:.55,ground}];}
     const radius=this.radius(kind),color=kind==='eclipse'?'#a050ff':kind==='nova'?this.stats.color:undefined,ground=this.deckUnder(at,radius,0,Math.PI);
     const shapes:TelegraphShape[]=[{shape:'circle',at:pos(at),radius,color,ground}];
     if(kind==='eclipse')shapes.push({shape:'circle',at:pos(at),radius:this.innerRadius,color:'#71ffca',ground:this.deckUnder(at,this.innerRadius,0,Math.PI)});
@@ -169,5 +169,5 @@ export class Boss {
     else if(t<12){const spawn=s.definition.spawn.position,wreck=s.definition.pois.wreck?.position??spawn,dx=wreck.x-spawn.x,dz=wreck.z-spawn.z,d=Math.hypot(dx,dz),x=d?dx/d:0,z=d?dz/d:0;f.yaw=turn(f.yaw,Math.atan2(x,z)+Math.PI/2,4,dt);moveCreature(s,f,f.x+x*3.4*dt,f.z+z*3.4*dt,dt);if(t>10.5)f.lift=-(t-10.5)*.8;}
     else{f.hidden=true;f.alive=false;this.freedT=-1;}
   }
-  debugState():DebugValue{return structuredClone({unit:this.unit,profile:this.profile,state:this.state,phase:this.phase,enraged:this.enraged,adds:this.adds.map(a=>a.unit),nextSwing:this.nextSwing,nextMech:this.nextMech,mechIndex:this.mechIndex,mech:this.mech,stateT:this.stateT,freedStarted:this.freedStarted,outside:this.outside,freedT:this.freedT,freedYaw:this.freedYaw});}
+  debugState():DebugValue{return structuredClone({unit:this.unit,profile:this.profile,state:this.state,phase:this.phase,enraged:this.enraged,adds:this.adds.map(a=>a.unit),nextSwing:this.nextSwing,nextMech:this.nextMech,mechIndex:this.mechIndex,mech:this.mech,stateT:this.stateT,freedStarted:this.freedStarted,outside:this.outside,freedT:this.freedT,freedYaw:this.freedYaw}) as unknown as DebugValue;}
 }
