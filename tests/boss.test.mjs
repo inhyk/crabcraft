@@ -2,17 +2,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { Boss } from '../tmp/test-modules/boss.js';
+import { bossWarning } from '../tmp/test-modules/bossLocale.js';
 import {conformTelegraph} from '../src/game/vfx/telegraphGround.ts';
 import {worldOf} from '../server/combatProtocol.ts';
 import { LEVEL_XP, xpForLevel, levelForXp, BOSS_PROFILES, canChallenge, canEnterWorld2, patrolReward } from '../src/game/progression.ts';
 
 function setup(profile=BOSS_PROFILES.rust, level=profile.level) {
- const damage=[], warnings=[], actions=[];
+ const damage=[], warnings=[], actions=[], telegraphs=[], impacts=[];
+ // The boss's warnings and impacts arrive as sim events; the warning text is the HUD's.
+ const events={emit(e){if(e.type==='telegraph'){telegraphs.push(e);warnings.push(bossWarning(e.mech,e.level));}if(e.type==='impact')impacts.push(e);}};
  function unit(){return {pos:new THREE.Vector3(),rig:{root:new THREE.Group(),face:{setTint(){}}},level:1,hp:1,maxHp:1,alive:true,hidden:false,height:3,radius:1,yaw:0,lift:0,stunUntil:0,slowUntil:0,motion:{stop(){}},setBaseTint(){},express(){},act(a){actions.push(a)},cancelPendingHit(){},setYaw(y){this.yaw=y},teleport(w,x,z,yaw=0){this.pos.set(x,0,z);this.yaw=yaw},moveTo(w,x,z){this.pos.set(x,0,z)},feedLocomotion(){},stunned(){return false},speedMul(){return 1},distTo(other){return this.pos.distanceTo(other.pos)},gapTo(other){return this.distTo(other)-this.radius-other.radius}};}
  const player=unit();player.level=level;player.hp=player.maxHp=300;player.pos.set(100,0,100);
- const game={time:0,world:{heightAt(){return 0}},player:{unit:player,level},controlsLocked:false,say(){},audio:{sfx(){}},hud:{bossFrame:{show(){},hide(){}},messages:{warn(x){warnings.push(x)},banner(){}},floats:{spawn(){}}},follow:{shake(){}},vfx:new Proxy({fx:{release(){}}},{get(target,key){return key in target?target[key]:()=>({})}}),combat:{damage(a,b,n){damage.push(n);b.hp-=n},kill(u){u.alive=false}},spawnAdd(){return null},seaDirection(){return new THREE.Vector3(1,0,0)}};
+ const game={time:0,world:{heightAt(){return 0}},player:{unit:player,level},controlsLocked:false,say(){},audio:{sfx(){}},hud:{bossFrame:{show(){},hide(){}},messages:{warn(x){warnings.push(x)},banner(){}},floats:{spawn(){}}},follow:{shake(){}},vfx:new Proxy({fx:{release(){}}},{get(target,key){return key in target?target[key]:()=>({})}}),combat:{damage(a,b,n){damage.push(n);b.hp-=n},kill(u){u.alive=false}},spawnAdd(){return null},seaDirection(){return new THREE.Vector3(1,0,0)},
+  events,combatPlayers(){return [player]},combatTarget(){return player},_party:undefined,get partyLevel(){return this._party??player.level},set partyLevel(v){this._party=v}};
  const boss=new Boss(game,unit(),{position:new THREE.Vector3(),radius:15,yaw:0},unit(),profile);
- return {game,boss,player,damage,warnings,actions};
+ return {game,boss,player,damage,warnings,actions,telegraphs,impacts};
 }
 
 test('levels 3 and 10 are reachable with ordered thresholds and genuine progression gates',()=>{
@@ -111,12 +115,12 @@ test('World II boss combat leaves the World I lighthouse and morning unchanged',
 test('host and network follower use matching attack colours and impact effects for every mechanic',()=>{
  for(const [profile,phase,index] of [[BOSS_PROFILES.rust,1,0],[BOSS_PROFILES.rust,1,1],[BOSS_PROFILES.rust,2,0],[BOSS_PROFILES.abyss,2,0],[BOSS_PROFILES.eclipse,2,0],[BOSS_PROFILES.eclipse,2,1],[BOSS_PROFILES.eclipse,2,3],[BOSS_PROFILES.eclipse,2,4]]){
   const host=setup(profile),guest=setup(profile);
-  const record=s=>{const effects=[],circles=[];for(const name of ['ring','slamImpact','rustSpray'])s.game.vfx[name]=(...args)=>{effects.push([name,...args.map(v=>v?.isColor?v.getHexString():v?.isVector3?v.toArray():v)]);return {};};s.game.vfx.telegraphCircle=(_at,r,_dur,color)=>{circles.push([r,color?.getHexString()??'default']);return {};};return {effects,circles};};
-  const h=record(host),g=record(guest);host.boss.state='fight';host.boss.phase=phase;host.boss.mechIndex=index;host.boss.startMech();
+  host.boss.state='fight';host.boss.phase=phase;host.boss.mechIndex=index;host.boss.startMech();
   const checkpoint=host.boss.networkState(profile.level===20?'b20':profile.level===10?'b10':'b3');guest.boss.applyNetwork(checkpoint);
-  assert.deepEqual(g.circles,h.circles,checkpoint.mech.kind+' warning colours');
+  assert.deepEqual(guest.telegraphs.map(e=>e.shapes),host.telegraphs.map(e=>e.shapes),checkpoint.mech.kind+' warning marks and colours');
   host.boss.updateMech(host.boss.mech.dur);guest.boss.applyNetwork({...checkpoint,mech:null});
-  assert.deepEqual(g.effects,h.effects,checkpoint.mech.kind+' resolved effects');
+  assert.ok(host.impacts.length>0,checkpoint.mech.kind+' resolves with effects');
+  assert.deepEqual(guest.impacts.map(e=>e.shapes),host.impacts.map(e=>e.shapes),checkpoint.mech.kind+' resolved effects');
  }
 });
 
@@ -127,10 +131,10 @@ test('a new host continues each latest attack checkpoint without recreating warn
  host.boss.state='fight';host.boss.phase=phase;host.boss.mechIndex=index;host.boss.startMech();
  const id=profile.level===20?'b20':profile.level===10?'b10':'b3';
  guest.boss.applyNetwork(host.boss.networkState(id));
- const pose=guest.boss.mech,fx=pose.fx,warnings=guest.warnings.length;
+ const pose=guest.boss.mech,marks=guest.telegraphs.length,warnings=guest.warnings.length;
  host.boss.updateMech(host.boss.mech.dur*.75);
  const checkpoint=host.boss.networkState(id);guest.boss.applyNetwork(checkpoint);
- assert.equal(guest.boss.mech,pose);assert.equal(guest.boss.mech.fx,fx);assert.equal(guest.warnings.length,warnings);
+ assert.equal(guest.boss.mech,pose);assert.equal(guest.telegraphs.length,marks);assert.equal(guest.warnings.length,warnings);
  assert.ok(Math.abs(guest.boss.mech.dur-guest.boss.mech.t-checkpoint.mech.left)<1e-9);
  guest.player.pos.copy(pose.at);
  if(pose.kind==='eclipse')guest.player.pos.x+=8;
@@ -218,20 +222,20 @@ test('Solarkan is locked at 99 and unlocks at 100, without changing XP or earlie
  game.partyLevel=100;boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
  assert.equal(boss.state,'idle');assert.equal(boss.unit.invulnerable,true);
  game.player.level=player.level=100;boss.update(.1);assert.equal(boss.state,'fight');
- assert.equal(boss.unit.level,100);assert.equal(boss.unit.maxHp,180000);
+ assert.equal(boss.unit.level,100);assert.equal(boss.unit.maxHp,24000);
  assert.deepEqual([BOSS_PROFILES.rust.level,BOSS_PROFILES.abyss.level,BOSS_PROFILES.eclipse.level],[3,10,20]);
  assert.equal(levelForXp(xpForLevel(100)),100);assert.equal(canChallenge(99,100,true,true,3),false);
 });
 
 test('Solarkan eight fire rays leave visible safe wedges and hit an overlap only once',()=>{
- const s=newPattern('cross',BOSS_PROFILES.dawn),{boss,game,player,damage}=s;
- const angles=[];game.vfx.telegraphLane=(_at,yaw,length,width)=>{angles.push([yaw,length,width]);return {}};
- boss.clearMech();boss.mechIndex=0;boss.startMech();assert.equal(angles.length,4);assert.equal(angles[0][1],15);
+ const s=newPattern('cross',BOSS_PROFILES.dawn),{boss,game,player,damage,telegraphs}=s;
+ boss.clearMech();boss.mechIndex=0;boss.startMech();
+ const lanes=telegraphs.at(-1).shapes;assert.equal(lanes.length,4);assert.ok(lanes.every(l=>l.shape==='lane'));assert.equal(lanes[0].halfLength,15);
  const at=boss.mech.at,yaw=boss.mech.yaw;
  const pos=a=>new THREE.Vector3(at.x+Math.sin(a)*9,0,at.z+Math.cos(a)*9);
  const center={...player,pos:at.clone()},diagonal={...player,pos:pos(yaw+Math.PI/4)},safe={...player,pos:pos(yaw+Math.PI/8)};
  game.combatPlayers=()=>[center,diagonal,safe];boss.updateMech(boss.mech.dur-.01);assert.equal(damage.length,0);
- boss.updateMech(.02);assert.equal(damage.length,2);assert.equal(safe.hp,300);assert.equal(center.hp,156);
+ boss.updateMech(.02);assert.equal(damage.length,2);assert.equal(safe.hp,300);assert.equal(center.hp,228);
 });
 
 test('Solarkan five simultaneous bombs spare gaps and ineligible characters',()=>{
@@ -239,15 +243,15 @@ test('Solarkan five simultaneous bombs spare gaps and ineligible characters',()=
  const points=boss.barragePoints(boss.mech.at,boss.mech.yaw);assert.equal(points.length,5);
  const players=points.map(pos=>({...player,pos:pos.clone()})),low={...player,level:99,pos:points[0].clone()};
  game.combatPlayers=()=>[...players,low];boss.updateMech(boss.mech.dur);
- assert.equal(damage.length,5);assert.ok(players.every(p=>p.hp===174));assert.equal(low.hp,300);
+ assert.equal(damage.length,5);assert.ok(players.every(p=>p.hp===234));assert.equal(low.hp,300);
 });
 
-test('Solarkan has early pressure phases, faster recovery, and cannot be stun locked',()=>{
+test('Solarkan has early pressure phases, longer recovery, and cannot be stun locked',()=>{
  const {boss,game,player}=setup(BOSS_PROFILES.dawn);boss.wake();boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);
  boss.unit.hp=boss.unit.maxHp*.74;boss.update(.1);assert.equal(boss.phase,2);
  boss.unit.hp=boss.unit.maxHp*.39;boss.update(.1);assert.equal(boss.phase,3);
  game.time=100;boss.unit.stunned=()=>true;boss.update(.1);assert.equal(boss.mechName,'cross');
- assert.ok(Math.abs(boss.nextMech-game.time-boss.mech.dur-.9)<1e-8);
+ assert.ok(Math.abs(boss.nextMech-game.time-boss.mech.dur-2.4)<1e-8);
  for(const kind of ['nova','slam','eclipse','undertow']){
   const {boss,player}=newPattern(kind,BOSS_PROFILES.dawn);
   const escape=kind==='eclipse'?11:boss.radius(kind)+player.radius*.5;
@@ -257,11 +261,10 @@ test('Solarkan has early pressure phases, faster recovery, and cannot be stun lo
 
 test('all Solarkan patterns match the follower layout and continue after host migration',()=>{
  for(const phase of [1,2,3])for(let index=0;index<(phase===1?5:phase===2?6:8);index++){
-  const host=setup(BOSS_PROFILES.dawn),guest=setup(BOSS_PROFILES.dawn),shapes=s=>{
-   const out=[];for(const name of ['telegraphCircle','telegraphLane','telegraphCone'])s.game.vfx[name]=(...args)=>{out.push([name,...args.map(v=>v?.isColor?v.getHexString():v?.isVector3?v.toArray():v)]);return {}};return out;
-  };
-  const hs=shapes(host),gs=shapes(guest);host.boss.phase=phase;host.boss.enraged=phase===3;host.boss.state='fight';host.boss.mechIndex=index;host.boss.startMech();
-  const snapshot=host.boss.networkState('b30');guest.boss.applyNetwork(snapshot);assert.deepEqual(gs,hs);
+  const host=setup(BOSS_PROFILES.dawn),guest=setup(BOSS_PROFILES.dawn);
+  host.boss.phase=phase;host.boss.enraged=phase===3;host.boss.state='fight';host.boss.mechIndex=index;host.boss.startMech();
+  const snapshot=host.boss.networkState('b30');guest.boss.applyNetwork(snapshot);
+  assert.equal(host.telegraphs.length,1);assert.deepEqual(guest.telegraphs.map(e=>[e.mech,e.shapes]),host.telegraphs.map(e=>[e.mech,e.shapes]));
   guest.boss.applyNetwork({...snapshot,mech:{...snapshot.mech,left:.1}});guest.boss.resumeAuthority();
   guest.boss.updateMech(.09);assert.ok(guest.boss.mech);guest.boss.updateMech(.02);assert.equal(guest.boss.mech,null);
  }
@@ -273,7 +276,7 @@ test('Boreas requires level 300 in World IV and uses an ice prison opener and se
  const low=setup(BOSS_PROFILES.frost,299);low.boss.wake();assert.equal(low.boss.state,'dormant');
  const ready=setup(BOSS_PROFILES.frost,300);ready.boss.wake();ready.boss.update(2.5);ready.player.pos.set(0,0,8);ready.boss.update(.1);assert.equal(ready.boss.state,'fight');
  ready.boss.startMech();assert.equal(ready.boss.mechName,'eclipse');assert.equal(ready.boss.barragePoints(new THREE.Vector3(),0).length,7);assert.equal(ready.boss.crossAngles(0).length,3);
- const peer=setup(BOSS_PROFILES.frost,300);peer.boss.applyNetwork(ready.boss.networkState('b300'));assert.equal(peer.boss.mechName,'eclipse');assert.equal(peer.boss.unit.hp,620000);
+ const peer=setup(BOSS_PROFILES.frost,300);peer.boss.applyNetwork(ready.boss.networkState('b300'));assert.equal(peer.boss.mechName,'eclipse');assert.equal(peer.boss.unit.hp,90000);
 });
 
 
@@ -309,4 +312,10 @@ test('a follower grants one coin reward again after a new authoritative rematch 
  assert.equal(boss.claimVictoryCoins(),150);assert.equal(boss.claimVictoryCoins(),0);
  boss.applyNetwork({id:'b3',state:'waking',phase:1,enraged:false,mech:null});
  boss.state='dying';assert.equal(boss.claimVictoryCoins(),150);assert.equal(boss.claimVictoryCoins(),0);
+});
+
+test('every boss pays positive, increasing experience alongside coins on repeat victories',()=>{
+ const profiles=Object.values(BOSS_PROFILES).sort((a,b)=>a.level-b.level);
+ assert.deepEqual(profiles.map(p=>p.reward),[500,1000,1500,3200,18000]);
+ for(const profile of profiles)assert.ok(Number.isSafeInteger(profile.reward)&&profile.reward>0);
 });

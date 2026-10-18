@@ -1,9 +1,10 @@
 // Scraplings and Rustclaw Scavengers: wander near their spawn, aggro (with their pack), chase,
-// claw, leash back home, die, drop cogs and respawn out of sight.
+// claw, leash back home, die, drop cogs and respawn when no player is near. Effects and sounds
+// leave as events (src/game/events.ts).
 import * as THREE from 'three';
 import type { Game } from './game';
-import type { Unit } from './unit';
-import { C } from './vfx/vfx';
+import { lineOfSight, type Unit } from './unit';
+import { v3 } from './events';
 import { damp, rand, TAU, turnToward, yawTo } from './util';
 import {t} from '../i18n';
 
@@ -31,9 +32,8 @@ export const ENEMY_STATS: Record<EnemyKind, Stats> = {
 /** LED eye colours (design: Scraplings have one red eye; Scavengers glow amber). */
 const LED: Record<EnemyKind, string> = { scrapling: '#ff2a1a', scavenger: '#ffb020',jellyfish:'#68f0df' };
 
-const v1 = new THREE.Vector3();
-const frustum = new THREE.Frustum();
-const projScreen = new THREE.Matrix4();
+/** A dead enemy comes back only when no player is this close to its home. */
+const RESPAWN_CLEAR = 22;
 
 type State = 'idle' | 'chase' | 'leash' | 'dead' | 'gone';
 
@@ -85,7 +85,7 @@ export class Enemy {
     this.state = 'chase';
     this.unit.express('angry', 2);
     this.nextSwing = Math.max(this.nextSwing, this.game.time + 0.6);
-    this.game.audio.sfx('sfx-servo-whir', { volume: 0.25, pitch: 0.2 });
+    this.game.events.emit({ type: 'aggro', unit: this.unit });
     if (withPack) for (const m of this.pack) if (m !== this) m.aggro(false);
   }
 
@@ -98,9 +98,11 @@ export class Enemy {
 
   resumeAuthority(): void {
     this.unit.cancelPendingHit(); this.leap=null;
-    // Followers mirror HP and level, but do not run the host's spawn logic. Rebuild the combat
-    // coefficients from that exact level without healing or rescaling an encounter in progress.
-    this.applyStats(this.unit.level);
+    // A new host uses the world's fixed enemy tier, including old scaled checkpoints.
+    const hp=this.unit.hp,maxHp=this.unit.maxHp;
+    this.applyStats(this.fixedLevel());
+    this.unit.level=this.stats.level;this.unit.maxHp=this.stats.hp;
+    this.unit.hp=maxHp===this.stats.hp?hp:Math.min(this.stats.hp,Math.ceil(hp/Math.max(1,maxHp)*this.stats.hp));
     this.refreshAppearance();
     this.nextSwing=this.game.time+0.8;
     if (this.state === 'dead') this.deadAt=this.game.time;
@@ -138,7 +140,7 @@ export class Enemy {
     this.refreshAppearance();
     this.state = 'idle';
     this.rise = 0.6;
-    this.game.vfx.burrow(u.pos);
+    this.game.events.emit({ type: 'spawn', unit: u });
   }
 
   update(dt: number): void {
@@ -146,7 +148,7 @@ export class Enemy {
     const u = this.unit;
     if(this.isEcho&&(g.world2?.chapter!==2||this.state==='gone'))return;
     const now = g.time;
-    const p = g.combatTarget?.(u) ?? g.player.unit;
+    const p = g.combatTarget(u);
     if (this.state === 'gone') return;
     if(this.kind==='jellyfish')u.name=t('심해 해파리 드론','Tide Jelly Drone');
     if (this.state === 'idle' && u.hp >= u.maxHp && u.distTo(p) > 20) this.scaleForJourney();
@@ -213,7 +215,7 @@ export class Enemy {
       if (!p.alive || (p.kind === 'player' && g.controlsLocked) || (!this.isAdd && fromHome > this.stats.leash)) {
         this.state = 'leash';
         u.invulnerable = true;
-        g.hud.floats.spawn(u, 'Evade', 'info');
+        g.events.emit({ type: 'leash', unit: u });
       } else {
         const gap = u.gapTo(p);
         faceYaw = yawTo(u.pos.x, u.pos.z, p.pos.x, p.pos.z);
@@ -223,17 +225,18 @@ export class Enemy {
           tz = (p.pos.z - u.pos.z) / d;
           speed = this.stats.speed;
         }
-        if(this.kind==='jellyfish'&&!stunned&&gap<5&&now>=this.nextSwing&&g.player.lineOfSight(u)){
+        if(this.kind==='jellyfish'&&!stunned&&gap<5&&now>=this.nextSwing&&lineOfSight(g.world,p,u)){
           this.nextSwing=now+this.stats.swing;
           const at=p.pos.clone();at.y=Math.max(.2,g.world.heightAt(at.x,at.z)+.28);
           this.seaCast={id:(this.seaCast?.id??0)+1,x:at.x,y:at.y,z:at.z,until:now+.9};
-          g.vfx.ring(at,C.water,1.7,1.7,.9,.85,0);
-          u.act('attack_swipe',{upper:true,hitAt:.9,onHit:()=>{
+          g.events.emit({type:'attack',src:u,attack:'seaCast',stage:'start',target:p,at:v3(at)});
+          // The zap lands on the swipe's own hit (0.28 s), inside the ring's 0.9 s, as it did on screen.
+          u.act('attack_swipe',{upper:true,onHit:()=>{
             if(!u.alive||!p.alive||u.stunned(g.time)||g.world2.chapter!==1||u.distTo(p)>9)return;
-            g.vfx.sparks(at,C.water,14,4);
+            g.events.emit({type:'attack',src:u,attack:'seaCast',stage:'hit',target:p,at:v3(at)});
             if(Math.hypot(p.pos.x-at.x,p.pos.z-at.z)<1.7)g.combat.damage(u,p,rand(this.stats.dmg[0],this.stats.dmg[1]));
           }});
-        } else if (this.kind === 'scavenger' && !stunned && now > this.leapCd && gap > 3.5 && gap < 10 && g.player.lineOfSight(u)) {
+        } else if (this.kind === 'scavenger' && !stunned && now > this.leapCd && gap > 3.5 && gap < 10 && lineOfSight(g.world, p, u)) {
           this.startLeap();
         } else if (this.kind!=='jellyfish' && !stunned && gap <= 1.15 && now >= this.nextSwing) {
           this.nextSwing = now + this.stats.swing * rand(0.9, 1.1);
@@ -242,7 +245,7 @@ export class Enemy {
             onHit: () => {
               if (!u.alive || !p.alive || u.gapTo(p) > 2) return;
               g.combat.damage(u, p, rand(this.stats.dmg[0], this.stats.dmg[1]));
-              g.vfx.sparks(p.centre(v1), C.ember, 6, 4);
+              g.events.emit({ type: 'attack', src: u, attack: 'claw', stage: 'hit', target: p });
             },
           });
         }
@@ -291,7 +294,7 @@ export class Enemy {
     const g = this.game;
     const u = this.unit;
     if(this.isEcho&&(g.world2?.chapter!==2||this.state==='gone'))return;
-    const p = g.combatTarget?.(u) ?? g.player.unit;
+    const p = g.combatTarget(u);
     const d = u.distTo(p) || 1;
     const back = (u.radius + p.radius + 0.2) / d;
     this.leap = {
@@ -305,8 +308,7 @@ export class Enemy {
     u.setYaw(yawTo(u.pos.x, u.pos.z, p.pos.x, p.pos.z));
     // Crouch to landing of the recorded jump, stretched over the 0.75 s leap.
     u.act('jump', { fade: 0.06, from: 0.95, to: 1.6, speed: 0.87 });
-    g.audio.sfx('sfx-servo-whir', { volume: 0.5 });
-    g.hud.floats.spawn(u, 'Leap!', 'info');
+    g.events.emit({ type: 'attack', src: u, attack: 'leap', stage: 'start', target: p });
   }
 
   private updateLeap(dt: number): void {
@@ -325,44 +327,52 @@ export class Enemy {
     if (k >= 1) {
       this.leap = null;
       u.lift = 0;
-      g.vfx.slamImpact(u.pos, 1.6);
-      g.follow.shake(0.1, 0.2);
-      const p = g.combatTarget?.(u) ?? g.player.unit;
+      const p = g.combatTarget(u);
+      g.events.emit({ type: 'attack', src: u, attack: 'leap', stage: 'hit', target: p, at: v3(u.pos) });
       if (p.alive && u.gapTo(p) < 1.6) g.combat.damage(u, p, rand(8, 11));
       this.nextSwing = g.time + 0.8;
     }
   }
 
+  private isQuestGuardian(): boolean {
+    const chapter=this.game.world2?.chapter??1;
+    return this.kind==='scavenger'&&!this.isAdd&&!this.isEcho&&(chapter===2||chapter===3);
+  }
+
+  private respawnDelay(): number {
+    if(this.isEcho)return 120;
+    if(this.isQuestGuardian())return 6;
+    return (this.game.world2?.chapter??1)>=2&&!this.isAdd?12:ENEMY_STATS[this.kind].respawn;
+  }
+
+  private fixedLevel():number {
+    const base=ENEMY_STATS[this.kind];
+    if(this.isEcho)return 10;
+    const chapter=this.game.world2?.chapter??1;
+    if(this.isAdd||chapter===1)return base.level;
+    return (chapter===4?100:chapter===3?20:10)+(this.kind==='scavenger'?2:0);
+  }
+
   private scaleForJourney(): void {
-    const base = ENEMY_STATS[this.kind];
-    if(this.isEcho){this.applyStats(Math.max(10,this.game.partyLevel));this.unit.level=this.stats.level;this.unit.maxHp=this.unit.hp=this.stats.hp;return;}
-    const inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
-    const scaling=!this.isAdd&&(inWorld2||this.game.journey?.rustCleared);
-    const level = scaling ? Math.max(inWorld2 ? (this.game.world2.chapter===4?100:this.game.world2.chapter===3?20:10) : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0)) : base.level;
-    if (this.stats.level === level && this.stats.respawn === (inWorld2 ? 12 : base.respawn)) return;
-    this.applyStats(level);
-    this.unit.level=level;
-    this.unit.maxHp = this.unit.hp = this.stats.hp;
+    const level=this.fixedLevel();
+    if(this.stats.level===level&&this.unit.level===level&&this.stats.respawn===this.respawnDelay())return;
+    this.applyStats(level);this.unit.level=level;
+    this.unit.maxHp=this.unit.hp=this.stats.hp;
   }
 
   private applyStats(level:number): void {
     const base=ENEMY_STATS[this.kind],inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
     const scale=1+.12*(level-base.level);
     if(this.isEcho){Object.assign(this.stats,{level,hp:Math.round(500*scale),xp:350+level*10,respawn:120,speed:2.8,aggro:10,leash:24,dmg:[14+level,18+level]});return;}
-    Object.assign(this.stats,{level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:inWorld2?12:base.respawn,dmg:[base.dmg[0]*scale,base.dmg[1]*scale]});
+    Object.assign(this.stats,{level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:this.respawnDelay(),dmg:[base.dmg[0]*scale,base.dmg[1]*scale]});
   }
 
   refreshAppearance(): void {
     this.unit.setBaseTint(this.game.world2?.chapter===4?'#a5eaff':(this.game.world2?.chapter??1)>=2 ? '#b08cff' : LED[this.kind]);
   }
 
+  /** No player near the home: the same rule for every player (there is no one camera to hide from). */
   private canRespawnUnseen(): boolean {
-    const g = this.game;
-    if (g.combatPlayers().some(p => Math.hypot(p.pos.x-this.home.x,p.pos.z-this.home.z)<22)) return false;
-    const cam = g.camera;
-    projScreen.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
-    frustum.setFromProjectionMatrix(projScreen);
-    v1.set(this.home.x, g.world.heightAt(this.home.x, this.home.z) + 0.5, this.home.z);
-    return !frustum.containsPoint(v1) || cam.position.distanceTo(v1) > 45;
+    return !this.game.combatPlayers().some(p => Math.hypot(p.pos.x-this.home.x,p.pos.z-this.home.z)<(this.isQuestGuardian()?8:RESPAWN_CLEAR));
   }
 }
