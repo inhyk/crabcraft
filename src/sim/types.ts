@@ -285,7 +285,7 @@ export interface AreaDefinition {
   readonly pois: Readonly<Record<string, Poi>>; readonly enemies: readonly EnemySpawn[];
   readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string; freedPosition?: Readonly<Vec3>; captiveBeforeVictory?: boolean }[];
   readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string }[];
-  readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string }[];
+  readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string; channelTo?: Readonly<Vec3> }[];
 }
 /** Required explicit host policy. Formula/levels are configuration, not newly decided balance.
  * Must be deterministic and may depend only on inputs, never a clock/RNG outside Area.
