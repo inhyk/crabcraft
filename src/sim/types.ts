@@ -281,8 +281,8 @@ export interface EnemySpawn {
 export interface AreaDefinition {
   readonly world: WorldId; readonly spawn: Poi; readonly recall: Poi;
   readonly pois: Readonly<Record<string, Poi>>; readonly enemies: readonly EnemySpawn[];
-  readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string }[];
-  readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number }[];
+  readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string }[];
+  readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string }[];
   readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string }[];
 }
 /** Required explicit host policy. Formula/levels are configuration, not newly decided balance.
