@@ -78,8 +78,17 @@ function identity(value:unknown):CharacterIdentityV1 {
  const v=fields(detached(value,4096),['schema','classId','archetype','appearance'],'identity');member(v.schema,['world-identity-v1'],'identity.schema');member(v.classId,Object.keys(CLASSES),'class');text(v.archetype,'archetype',256);
  const a=fields(v.appearance,['race','sex','classId','shell','crest','led','name'],'appearance');member(a.race,['human','orc','dwarf','undead','nightelf','tauren'],'appearance.race');member(a.sex,['male','female'],'appearance.sex');if(a.classId!==v.classId||a.race!==v.archetype)fail('appearance.identity');integer(a.shell,'appearance.shell',0,3);integer(a.crest,'appearance.crest',0,3);integer(a.led,'appearance.led',0,2);text(a.name,'appearance.name',96);if(a.name.length>24||a.name.trim()!==a.name)fail('appearance.name');return v as CharacterIdentityV1;
 }
+const PRE_SNOW_QUEST_IDS=Object.freeze(['q1','q2','q3','q4','w1','w2','w3','w4','w5','w6','w7','d1','d2','d3','d4','d5','d6','d7','d8','d9','d10','d11','d12','s1','s2']);
+const ADDED_SNOW_QUEST_IDS=Object.freeze(['s3','s4','s5','s6','s7','s8','s9','s10','s11','s12']);
 function quests(value:unknown,world:WorldId):void {
  const q=fields(value,['chapter','status','progress','cogs','tracked'],'quests');if(q.chapter!==worldChapter(world))fail('quests.chapter');
+ const rawStatus=object(q.status,'quests.status');
+ // The released v1 catalog had exactly25 entries. Upgrade only that complete known shape.
+ if(Object.keys(rawStatus).length===PRE_SNOW_QUEST_IDS.length&&PRE_SNOW_QUEST_IDS.every(id=>Object.hasOwn(rawStatus,id))){
+  const progress=object(q.progress,'quests.progress'),tracked=object(q.tracked,'quests.tracked');
+  if(ADDED_SNOW_QUEST_IDS.some(id=>QUESTS[id].objectives.some(o=>Object.hasOwn(progress,o.id)))||Object.values(tracked).some(id=>ADDED_SNOW_QUEST_IDS.includes(id as string)))fail('quests.pre-snow.references');
+  for(const id of ADDED_SNOW_QUEST_IDS)rawStatus[id]=q.chapter===4?'available':'locked';
+ }
  const status=fields(q.status,QUEST_ORDER,'quests.status');for(const v of Object.values(status))member(v,['locked','available','active','ready','done'],'quest.status');
  const objectives=new Map(Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>[o.id,o.count] as const)));objectives.set('patrol-kills',4);
  const progress=object(q.progress,'quests.progress');for(const [id,n]of Object.entries(progress)){if(!objectives.has(id))fail('quest.objective');integer(n,`quests.${id}`,0,objectives.get(id));}
@@ -87,7 +96,7 @@ function quests(value:unknown,world:WorldId):void {
  const tracked=object(q.tracked,'quests.tracked');for(const [chapter,id]of Object.entries(tracked)){if(!['1','2','3','4'].includes(chapter)||typeof id!=='string'||!QUESTS[id]||QUESTS[id].chapter!==Number(chapter))fail('quests.tracked');}
  for(const id of QUEST_ORDER){const def=QUESTS[id];if(['ready','done'].includes(status[id] as string)&&!def.objectives.every(o=>(progress[o.id]??0)===o.count))fail(`quests.${id}.completion`);}
 }
-/** Strictly validates a detached snapshot; never repairs or clamps server data. */
+/** Strict detached validation, with only the complete released25-quest v1 catalog upgrade. No clamping or partial-shape repair. */
 export function validateCheckpoint(value:unknown,context?:IdentityContext):CharacterCheckpointV1 {
  const c=fields(detached(value),['schema','character','classId','archetype','world','location','progress','survival','activity'],'root');member(c.schema,['world-character-v1'],'schema');text(c.character,'character');member(c.classId,Object.keys(CLASSES),'class');text(c.archetype,'archetype',256);member(c.world,['w1','w2','w3','w4'],'world');location(c.location);
  if(context&&(c.character!==context.characterId||c.classId!==context.identity.classId||c.archetype!==context.identity.archetype))fail('identity-mismatch');
