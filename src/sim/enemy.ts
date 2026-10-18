@@ -4,6 +4,7 @@ import { immutable } from './events.ts';
 import { worldChapter, populationRadius, validatePopulation, angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
 import { gapTo as gap, moveTo, speedMul, lineOfSight as unitLineOfSight } from './unit.ts';
 export { angleDiff, turn, distance, gap, speedMul };
+import { dungeonEnemyStats } from './data/dungeon-enemies.ts';
 import { enemyStats, enemyRespawnClearance, type EnemyStats } from './data/enemies.ts';
 
 export function moveCreature(s:AreaServices,u:SimUnit,x:number,z:number,dt:number):void{moveTo(u,s.query,x,z,dt);}
@@ -23,6 +24,7 @@ export class Enemy {
   readonly services:AreaServices;readonly actor:SimUnit;readonly spawn:EnemySpawn;
   state:EnemyState='idle';stats:EnemyStats;pack:Enemy[]=[];
   seaCast:{id:number;x:number;y:number;z:number;until:number}|null=null;
+  private dungeonCaptain=false;
   private nextSwing=0;private wanderAt=0;private wander:Vec3|null=null;private wanderSideways=false;
   private leapCd=0;private leap:{fromX:number;fromZ:number;toX:number;toZ:number;t:number}|null=null;
   private deadAt=0;private rise=0;private velX=0;private velZ=0;
@@ -32,9 +34,11 @@ export class Enemy {
     this.wanderAt=services.time+this.rand(1,6);this.leapCd=services.time+2;
   }
   get unit():EntityRef{return this.actor.ref;}get spawnId():string{return this.spawn.id;}
-  get kind(){return this.spawn.kind;}get isAdd():boolean{return this.spawn.role==='add';}get isEcho():boolean{return this.spawn.role==='echo';}
+  get kind(){return this.spawn.kind;}get isDungeon():boolean{return this.spawn.role==='dungeon';}get captain():boolean{return this.dungeonCaptain;}get isAdd():boolean{return this.spawn.role==='add';}get isEcho():boolean{return this.spawn.role==='echo';}
+  configureDungeon(captain:boolean):void {if(!this.isDungeon||this.state!=='gone')throw new Error('Dungeon slot must be inactive');this.dungeonCaptain=captain;}
   private rand(a:number,b:number){return a+(b-a)*this.services.random.next();}
   private scaledStats():EnemyStats{
+    if(this.spawn.role==='dungeon')return dungeonEnemyStats(this.spawn.dungeonTier,this.dungeonCaptain);
     const s=this.services,players=s.players(),partyLevel=Math.max(1,...players.map(p=>p.level)),chapter=worldChapter(s.world);
     const rustCleared=players.some(p=>s.player(p.ref)?.state.flags.rustCleared===true);
     return enemyStats(this.kind,s.policy.enemyLevel(this.spawn,{partyLevel,rustCleared,chapter}),chapter,this.spawn.role);
@@ -56,7 +60,7 @@ export class Enemy {
   update(dt:number):void{
     const s=this.services,u=this.actor,now=s.time,p=s.targetFor(this.unit);
     if(this.isEcho&&s.world!=='w2')return;
-    const dynamic=!this.isAdd&&s.policy.populationRadius!==undefined,clearance=enemyRespawnClearance(this.kind,worldChapter(s.world),this.spawn.role),radius=dynamic?populationRadius(s.policy.populationRadius!(this.spawn)):clearance;
+    const dynamic=!this.isAdd&&!this.isDungeon&&s.policy.populationRadius!==undefined,clearance=this.isDungeon?0:enemyRespawnClearance(this.kind,worldChapter(s.world),this.spawn.role),radius=dynamic?populationRadius(s.policy.populationRadius!(this.spawn)):clearance;
     const players=s.players().filter(p=>p.alive&&!p.hidden),density=players.filter(p=>distance(p,this.spawn.home)<radius).length,clear=players.every(p=>distance(p,this.spawn.home)>=clearance);
     if(!this.isAdd&&!this.isEcho&&dynamic){const desired=validatePopulation(s.policy.enemyPopulation(this.spawn,density)).desired;if(this.state==='gone'){if(desired&&clear)this.respawnAt(this.spawn.home.x,this.spawn.home.z);return;}if(this.state==='idle'&&!desired&&clear&&u.hp>=u.maxHp&&now-u.lastCombat>=5){this.despawn();return;}}
     if(this.state==='gone')return;
@@ -65,7 +69,7 @@ export class Enemy {
     }
     if(this.state==='dead'){
       const t=now-this.deadAt;if(t>8&&!u.hidden){u.lift=-Math.min(1.4,(t-8)*.9)*u.height;u.y=s.query.heightAt(u.x,u.z)+u.lift;if(t>9.6)u.hidden=true;}
-      if(this.isAdd)return;
+      if(this.isAdd||this.isDungeon)return;
       const population=validatePopulation(s.policy.enemyPopulation(this.spawn,density));
       if(population.desired>0&&t>(this.isEcho?120:population.respawnSeconds)&&clear){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
     }
@@ -77,7 +81,7 @@ export class Enemy {
       if(now>this.wanderAt){this.wanderAt=now+this.rand(4,9);const a=this.rand(0,Math.PI*2),r=this.rand(0,this.spawn.wanderRadius);this.wander={x:this.spawn.home.x+Math.cos(a)*r,y:0,z:this.spawn.home.z+Math.sin(a)*r};this.wanderSideways=s.random.next()<.6;}
       if(this.wander){const dx=this.wander.x-u.x,dz=this.wander.z-u.z,d=Math.hypot(dx,dz);if(d<.4)this.wander=null;else{tx=dx/d;tz=dz/d;speed=1.3;face=Math.atan2(tx,tz)+(this.wanderSideways?Math.PI/2:0);}}
     }else if(this.state==='chase'){
-      if(!p||!eligible(s,p)||(!this.isAdd&&distance(u,this.spawn.home)>this.stats.leash)){this.state='leash';u.invulnerable=true;s.emit({type:'leash',unit:this.unit});}
+      if(!p||!eligible(s,p)||(!this.isAdd&&!this.isDungeon&&distance(u,this.spawn.home)>this.stats.leash)){this.state='leash';u.invulnerable=true;s.emit({type:'leash',unit:this.unit});}
       else{const g=gap(u,p);face=Math.atan2(p.x-u.x,p.z-u.z);if(g>(this.kind==='jellyfish'?3.5:.9)){const d=distance(u,p)||1;tx=(p.x-u.x)/d;tz=(p.z-u.z)/d;speed=this.stats.speed;}
         if(this.kind==='jellyfish'&&!stunned&&g<5&&now>=this.nextSwing&&lineOfSight(s,p,u)){
           this.nextSwing=now+this.stats.swing;const at={x:p.x,y:Math.max(.2,s.query.heightAt(p.x,p.z)+.28),z:p.z};
@@ -117,5 +121,5 @@ export class Enemy {
     else{if(gap(u,p)<1.6)s.combat.damage(this.unit,p.ref,this.rand(8,11));}
     s.emit({type:'attack',src:this.unit,attack:plan.attack,stage:'hit',target:p.ref,at:plan.attack==='enemy-leap'?{x:u.x,y:u.y,z:u.z}:undefined});return true;
   }
-  debugState():DebugValue{return structuredClone({unit:this.unit,spawnId:this.spawnId,state:this.state,stats:this.stats,seaCast:this.seaCast,nextSwing:this.nextSwing,wanderAt:this.wanderAt,wander:this.wander,wanderSideways:this.wanderSideways,leapCd:this.leapCd,leap:this.leap,deadAt:this.deadAt,rise:this.rise,velX:this.velX,velZ:this.velZ,pack:this.pack.map(e=>e.spawnId)}) as unknown as DebugValue;}
+  debugState():DebugValue{return structuredClone({unit:this.unit,spawnId:this.spawnId,...(this.isDungeon?{dungeonCaptain:this.dungeonCaptain}:{}),state:this.state,stats:this.stats,seaCast:this.seaCast,nextSwing:this.nextSwing,wanderAt:this.wanderAt,wander:this.wander,wanderSideways:this.wanderSideways,leapCd:this.leapCd,leap:this.leap,deadAt:this.deadAt,rise:this.rise,velX:this.velX,velZ:this.velZ,pack:this.pack.map(e=>e.spawnId)}) as unknown as DebugValue;}
 }
