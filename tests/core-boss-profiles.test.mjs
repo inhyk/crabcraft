@@ -77,3 +77,41 @@ test('real Combat death kills living adds, frees crab at2.2s, bows and leaves by
 test('empty and ineligible encounters never fabricate targets or crash',()=>{
   const h=creatureHarness(),u=h.unit('boss'),f=h.unit('freed'),b=new Boss(h.s,u,{id:'arena',position:{x:0,y:0,z:0},yaw:0,radius:17},f,'dawn');b.wake();for(let i=0;i<200;i++)h.step([b]);assert.equal(b.state,'dormant');assert.equal(u.hidden,true);
 });
+
+test('Dawn seven mechanics preserve profile damage fractions, geometry and minimum warning time',()=>{
+  const cases=[['slam',1,.5,1.6],['spray',1,null,1.3],['undertow',2,.45,3],['cross',1,.48,2.6],['barrage',1,.42,2.6],['nova',1,.58,2.4],['eclipse',2,.62,2.8]];
+  for(const [kind,phase,fraction,warning] of cases){
+    const h=fight('dawn',[99,100]),w=advanceTo(h,kind,phase),shape=w.shapes[0],at=shape.at;
+    assert.equal(w.seconds,warning,kind);assert.equal(w.shapes.length,kind==='cross'?4:kind==='barrage'?5:kind==='eclipse'||kind==='undertow'?2:1);
+    const x=kind==='eclipse'?at.x+5:kind==='spray'?at.x+Math.sin(shape.yaw)*5:at.x;
+    const z=kind==='spray'?at.z+Math.cos(shape.yaw)*5:at.z;
+    for(const p of h.ps){p.x=x;p.z=z;}const delta=finish(h);
+    assert.equal(delta[0],0,`${kind} excludes99`);
+    if(fraction!==null)assert.equal(delta[1],10000*fraction,kind);else{assert.ok(delta[1]>=192&&delta[1]<=288);assert.equal(h.ps[1].rust,1);}
+  }
+});
+
+test('mechanic boundaries are strict and use half player radius padding',()=>{
+  const slam=fight(),sw=advanceTo(slam,'slam'),sat=sw.shapes[0].at;
+  //3.4+(.5radius*.5)=3.65, points just inside/outside must differ.
+  slam.ps[0].x=sat.x+3.649;slam.ps[0].z=sat.z;slam.ps[1].x=sat.x+3.651;slam.ps[1].z=sat.z;assert.deepEqual(finish(slam),[2600,0]);
+  const eclipse=fight('eclipse'),ew=advanceTo(eclipse,'eclipse'),eat=ew.shapes[0].at;
+  eclipse.ps[0].x=eat.x+4.501;eclipse.ps[0].z=eat.z;eclipse.ps[1].x=eat.x+4.5;eclipse.ps[1].z=eat.z;assert.deepEqual(finish(eclipse),[3800,0]);
+  const cross=fight(),cw=advanceTo(cross,'cross',2),lane=cw.shapes[0],a=lane.yaw;
+  // Local x=lane half width+.25 padding, local z=8 is clear of the perpendicular lane.
+  const place=(p,x,z)=>{p.x=lane.at.x+x*Math.cos(a)+z*Math.sin(a);p.z=lane.at.z-x*Math.sin(a)+z*Math.cos(a);};
+  place(cross.ps[0],2.049,8);place(cross.ps[1],2.051,8);assert.deepEqual(finish(cross),[2800,0]);
+});
+
+test('boss claw samples enrage at impact, respects2.4 edge range and stale lives',()=>{
+  const h=fight('abyss'),p=h.ps[0],u=h.b.actor;p.x=u.x;p.z=u.z;
+  const before=p.hp;h.b.enraged=true;h.b.resolveHit({attack:'boss-claw',source:u.ref,target:p.ref});assert.ok(before-p.hp>=18&&before-p.hp<=26);
+  const hp=p.hp;p.x=u.x+u.radius+p.radius+2.401;h.b.resolveHit({attack:'boss-claw',source:u.ref,target:p.ref});assert.equal(p.hp,hp);
+  const stale={...p.ref};h.s.respawnUnit(p.ref);p.x=u.x;h.b.resolveHit({attack:'boss-claw',source:u.ref,target:stale});assert.equal(p.hp,hp);
+});
+
+test('unavailable beacon blocks wake and engage; outside arena resets after4s grace',()=>{
+  const h=creatureHarness(),p=h.unit(),u=h.unit('boss'),f=h.unit('freed');p.level=3;
+  const b=new Boss(h.s,u,{id:'arena',position:{x:0,y:0,z:0},yaw:0,radius:17},f);h.s.bossAvailable=()=>false;b.wake();assert.equal(b.state,'dormant');
+  const h2=fight();h2.ps.forEach(p=>p.x=100);for(let i=0;i<120;i++)h2.step([h2.b]);assert.equal(h2.b.state,'fight');h2.step([h2.b]);assert.equal(h2.b.state,'idle');
+});
