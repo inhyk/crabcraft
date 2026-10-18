@@ -1,5 +1,7 @@
 import type { Character, EarnedGrant, Json } from './character-store.ts';
 import type { HostOwnership } from './ownership.ts';
+import type { Area, EntityRef, GrantApplyResult } from '../../src/sim/types.ts';
+import type { IdentityJson, CheckpointJson, GrantJson, CoreCharacterCodec } from '../../src/sim/persistence.ts';
 
 export interface PlayerCommit<C extends Json> {
   readonly captureId: string;
@@ -131,4 +133,52 @@ export async function readCertifiedGrantPage<I extends Json, C extends Json, G e
     if (recovery.grants.length !== candidates.length || recovery.grants.some(grant => !candidateIds.includes(grant.id))) throw new Error('incomplete receipt certification');
     return { kind: 'page', revision: recovery.character.revision, grants: recovery.grants.filter(grant => grant.appliedRevision === null), more: candidateIds.length === read.limit };
   } catch { return { kind: 'unresolved', reason: ownership.closed.aborted ? 'ownership' : 'storage' }; }
+}
+
+export type AreaPageDelivery =
+  | { kind: 'applied'; more: boolean; results: readonly GrantApplyResult[] }
+  | { kind: 'capacity' | 'stale' }
+  | { kind: 'recovery'; recovery: Recovery<IdentityJson, CheckpointJson, GrantJson> }
+  | { kind: 'unresolved'; reason: 'ownership' | 'storage' };
+
+/** External-mode adapter. Caller owns the whole-Area barrier and lifecycle lease throughout this IO. */
+export async function deliverCertifiedAreaPage(input: {
+  area: Area;
+  ref: EntityRef;
+  accountId: string; characterId: string; expectedRevision: number;
+  store: PendingGrantStore<IdentityJson, CheckpointJson, GrantJson>;
+  codec: CoreCharacterCodec;
+  ownership: HostOwnership;
+  boundary<T>(run: () => T): Promise<T>;
+  isCurrent(): boolean;
+}): Promise<AreaPageDelivery> {
+  const { area, ownership, boundary, codec, store, isCurrent, accountId, characterId, expectedRevision } = input, ref = { ...input.ref };
+  if (ownership.closed.aborted) return { kind: 'unresolved', reason: 'ownership' };
+  const prepared = await boundary(() => {
+    ownership.assertOwned();
+    if (!isCurrent()) return null;
+    const limit = Math.min(100, 256 - area.appliedGrantIds(characterId).length);
+    if (limit < 0) throw new Error('checkpoint receipt capacity');
+    if (!limit) return { limit, token: null };
+    area.bindDurableLedger(ref, expectedRevision);
+    return { limit, token: area.beginGrantRead(ref, expectedRevision) };
+  });
+  if (!prepared) return { kind: 'stale' };
+  if (!prepared.token) return { kind: 'capacity' };
+  const token = prepared.token;
+  try {
+    const result = await readCertifiedGrantPage(store, ownership, { accountId, characterId, expectedRevision, limit: prepared.limit });
+    return await boundary(() => {
+      if (ownership.closed.aborted) { area.cancelGrantRead(token); return { kind: 'unresolved' as const, reason: 'ownership' as const }; }
+      ownership.assertOwned();
+      if (!isCurrent()) { area.cancelGrantRead(token); return { kind: 'stale' as const }; }
+      if (result.kind !== 'page') { area.cancelGrantRead(token); return result; }
+      const results = area.applyCertifiedGrants(token, { revision: result.revision, grants: result.grants.map(grant => codec.grantFromJson(grant.payload)) });
+      return { kind: 'applied' as const, more: result.more, results };
+    });
+  } catch (error) {
+    // Matching-token cancellation cannot remove a newer proof; a partially applied prefix is never blindly replayed.
+    await boundary(() => area.cancelGrantRead(token));
+    throw error;
+  }
 }

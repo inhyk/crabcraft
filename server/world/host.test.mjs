@@ -12,6 +12,8 @@ import { acquireHostOwnership } from './ownership.ts';
 import { WorldChatService } from './chat.ts';
 import { loadWorldCatalog, createGameplayCatalog } from './catalog.ts';
 import { createActualWorldHost } from './host.ts';
+import { createArea } from '../../src/sim/area.ts';
+import { deliverCertifiedAreaPage } from './persistence-coordinator.ts';
 import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
 import { createGameplayProtocol, GameplayReceiver, projectObservationExtras } from './gameplay/protocol.ts';
@@ -536,4 +538,25 @@ test('disconnect during a certified read discards the old connection lease and r
   resumed=await client(rt,c);await ready(rt,resumed);assert.equal(resumed.state.self.player.xp,1);assert.equal(resumed.state.self.player.coins,1);assert.equal(resumed.state.self.player.quests.status.q1,'active');
   assert.equal((await store.loadForRecovery(c.binding.accountId,c.record.characterId,[id])).grants[0].appliedRevision!==null,true);assert.deepEqual(rt.failures,[]);assert.deepEqual(resumed.errors,[]);
  }finally{release();bot?.ws.close();resumed?.ws.close();await rt.close();}
+});
+
+ test('real Area and PG certified adapter drains 257 grants with exact receipt pruning and no retained saved ID history', { timeout: 15000 }, async () => {
+  const c=await character(), ownership=await acquireHostOwnership(pool,'certified-area-page-test'),world=loaded.get('w1');
+  let area,barrier;
+  try {
+  for(let offset=0;offset<257;offset+=100){const entries=[];for(let i=offset;i<Math.min(257,offset+100);i++){const victim={area:'adapter-offline',id:i+1,life:1},id=JSON.stringify([victim.area,victim.id,victim.life,c.record.characterId]);entries.push({accountId:c.binding.accountId,characterId:c.record.characterId,id,payload:{id,victim,recipient:c.record.characterId,xp:0,coins:1,objectives:[],flags:[]}});}await store.recordGrantBatch(entries);}
+  area=createArea({id:'actual-external-adapter',ledgerMode:'external-durable',limits:{eventCount:4096,inputCommandsPerTick:32,timers:256,projectiles:256},definition:world.publicDefinition,query:world.query,actionData:world.actionData,policy:world.policy,seed:1,context:{mode:'public',pvp:'disabled',members:[]}});
+  const ref=area.attachFresh(c.record.characterId,'warrior','human','spawn',0);barrier=area.beginDurabilityBarrier('certified-adapter');let record=c.record;const pageCounts=[];
+   for(;;){const expectedRevision=record.revision,result=await deliverCertifiedAreaPage({area,ref,accountId:c.binding.accountId,characterId:c.record.characterId,expectedRevision,store,codec,ownership,boundary:async run=>run(),isCurrent:()=>record.revision===expectedRevision});
+    assert.equal(result.kind,'applied');pageCounts.push(result.results.length);const capture=area.capturePlayerCheckpoint(ref);record=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,record.revision,codec.toJson(capture.checkpoint),capture.appliedGrantIds);area.markCheckpointDurable(capture.captureId,record.revision,capture.appliedGrantIds);
+    const usage=area.resourceUsage();assert.equal(usage.appliedGrantIds,0);assert.equal(usage.replayTokens,0);assert.equal(usage.captures,0);assert.equal(usage.durableCharacters,0);assert.equal(usage.ledgerOwners,1);if(!result.more)break;
+   }
+   assert.deepEqual(pageCounts,[100,100,57]);assert.equal(area.services.player(ref).state.coins,257);assert.equal(record.checkpoint.progress.coins,257);
+   const fresh=await deliverCertifiedAreaPage({area,ref,accountId:c.binding.accountId,characterId:c.record.characterId,expectedRevision:record.revision,store,codec,ownership,boundary:async run=>run(),isCurrent:()=>true});assert.equal(fresh.kind,'applied');assert.deepEqual(fresh.results,[]);assert.equal(area.services.player(ref).state.coins,257);
+   const victim={area:'late-adapter-proof',id:1,life:1},id=JSON.stringify([victim.area,victim.id,victim.life,c.record.characterId]),payload={id,victim,recipient:c.record.characterId,xp:0,coins:1,objectives:[],flags:[]};await store.recordGrant(c.binding.accountId,c.record.characterId,id,payload);
+   const oldRevision=record.revision;
+   const superseded={async pendingGrants(...args){const candidates=await store.pendingGrants(...args),proof=await store.loadForRecovery(c.binding.accountId,c.record.characterId,[id]);area.applyCertifiedGrants(area.beginGrantRead(ref,proof.character.revision),{revision:proof.character.revision,grants:proof.grants.filter(g=>g.appliedRevision===null).map(g=>codec.grantFromJson(g.payload))});const capture=area.capturePlayerCheckpoint(ref);record=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,record.revision,codec.toJson(capture.checkpoint),capture.appliedGrantIds);area.markCheckpointDurable(capture.captureId,record.revision,capture.appliedGrantIds);return candidates;},loadForRecovery:(...args)=>store.loadForRecovery(...args)};
+   const late=await deliverCertifiedAreaPage({area,ref,accountId:c.binding.accountId,characterId:c.record.characterId,expectedRevision:oldRevision,store:superseded,codec,ownership,boundary:async run=>run(),isCurrent:()=>record.revision===oldRevision});assert.equal(late.kind,'stale');assert.equal(area.services.player(ref).state.coins,258);assert.equal(area.resourceUsage().appliedGrantIds,0);assert.equal(area.resourceUsage().replayTokens,0);
+
+  }finally{try{if(area){if(barrier)area.releaseDurabilityBarrier(barrier);area.dispose();}}finally{await ownership.release();}}
 });
