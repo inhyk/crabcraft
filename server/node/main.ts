@@ -59,6 +59,9 @@ if (env.WORLD_ENABLED === '1') {
     world = await startConfiguredWorld({ pool, admission, assets: new URL('./world/', import.meta.url),
       config: JSON.parse(env.WORLD_CONFIG_JSON),
       ledgerConfig: env.WORLD_LEDGER_CONFIG_JSON === undefined ? undefined : JSON.parse(env.WORLD_LEDGER_CONFIG_JSON), clientIp,
+      // Re-validating the payloads the host builds is for tests and development; the systemd unit sets NODE_ENV=production.
+      // WORLD_VERIFY_OBSERVATIONS=1 turns it back on in production, any other value turns it off.
+      verifyObservations: env.WORLD_VERIFY_OBSERVATIONS === undefined ? env.NODE_ENV !== 'production' : env.WORLD_VERIFY_OBSERVATIONS === '1',
       originAllowed: (origin, req) => originAllowed(origin, origins, req.headers.host) });
   } catch (error) {
     worldStartupFailed = true;

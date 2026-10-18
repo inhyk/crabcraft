@@ -355,3 +355,17 @@ test('bounded creation rolls back codec failure even after the INSERT returned a
   assert.deepEqual(await store.listOwned(owner), []);
   assert.equal((await store.createBounded(owner, identity, 1)).revision, 0);
 });
+
+test('charactersWithPendingGrants lists exactly the characters pendingGrants has rows for; saveCheckpoint returns what getOwned reads', async () => {
+  const [c, d, e] = [await fresh(), await fresh(), await fresh()];
+  assert.deepEqual(await store.charactersWithPendingGrants([]), new Set());
+  assert.deepEqual(await store.charactersWithPendingGrants([c.characterId, d.characterId, e.characterId]), new Set());
+  const earned = await grant(c, `pending-index:${c.characterId}`); await grant(d, `pending-index:${d.characterId}`);
+  assert.deepEqual(await store.charactersWithPendingGrants([c.characterId, d.characterId, e.characterId]), new Set([c.characterId, d.characterId]));
+  assert.deepEqual(await store.charactersWithPendingGrants([e.characterId, c.characterId]), new Set([c.characterId]));
+  const saved = await store.saveCheckpoint(A, c.characterId, 0, { ...c.checkpoint, xp: 10, coins: 2 }, [earned.id]);
+  assert.deepEqual(await store.getOwned(A, c.characterId), saved); assert.deepEqual(await store.pendingGrants(A, c.characterId), []);
+  assert.deepEqual(await store.charactersWithPendingGrants([c.characterId, d.characterId, e.characterId]), new Set([d.characterId]));
+  for (const ids of [['not-a-character'], [d.characterId, d.characterId]]) await assert.rejects(store.charactersWithPendingGrants(ids), error('invalid'));
+  await assert.rejects(store.pendingGrants(B, d.characterId), error('not_found'));
+});
