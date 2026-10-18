@@ -206,7 +206,8 @@ export type PlayerCommand =
   | { kind: 'interact'; targetId: string }
   | { kind: 'questAccept' | 'questTurnIn'; questId: string; npcId: string }
   | { kind: 'forgeBuy'; npcId: string }
-  | { kind: 'travel'; gateId: string };
+  | { kind: 'travel'; gateId: string }
+  | { kind: 'bossChallenge'; profile: BossSim['profile'] };
 /** Input seq acknowledgment/transport validation is host work; no client position/HP/result.
  * Continuous held values replace previous values; commands execute once in supplied order.
  * Core retains continuous fields on missing input, but commands only run for seq>lastConsumedSeq.
@@ -270,7 +271,7 @@ export interface TimerState { id: number; due: number; insertion: number; action
  */
 export interface AreaTimers { schedule(due: number, action: TimerAction): number; cancel(id: number): void }
 export interface EnemySim extends CombatController { readonly unit: EntityRef; readonly spawnId: string; readonly state: 'idle' | 'chase' | 'leash' | 'dead' | 'gone'; update(dt: number): void; despawn(): void; respawnAt(x: number, z: number): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
-export interface BossSim extends CombatController { readonly unit: EntityRef; readonly profile: 'rust' | 'abyss' | 'eclipse' | 'dawn'; update(dt: number): void; wake(): void; reset(): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
+export interface BossSim extends CombatController { readonly state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; readonly engaged: boolean; readonly arena: Poi; sleep(): void; readonly unit: EntityRef; readonly profile: 'rust' | 'abyss' | 'eclipse' | 'dawn'; update(dt: number): void; wake(): void; reset(): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
 export interface EnemySpawn {
   readonly id: string; readonly kind: 'scrapling' | 'scavenger' | 'jellyfish';
   readonly home: Readonly<Vec3>; readonly wanderRadius: number; readonly pack: string;
@@ -331,6 +332,8 @@ export interface AreaServices {
   cancelPendingHit(unit: EntityRef): void;
   launch(projectile: Omit<ProjectileState, 'id' | 'elapsed' | 'bornStep'>): number; // Area stamps birth stage; stage-start-list eligibility only
   spawnAdd(boss: EntityRef, x: number, z: number): EnemySim | null;
+  runCommand(player: EntityRef, command: PlayerCommand): boolean;
+  bossByProfile(profile: BossSim['profile']): BossSim | null;
   encounterActive(): boolean;
   bossAvailable(profile: BossSim['profile']): boolean;
   completeChannel(player: EntityRef, channel: ChannelState): void;
@@ -359,6 +362,7 @@ export interface AreaDebugState {
   contributions: readonly Contribution[]; grants: readonly EarnedGrant[]; acknowledgedGrantIds: readonly string[];
   heldIntents: readonly { actor: EntityRef; intent: PlayerIntent; lastConsumedSeq: number }[];
   // Debug export only at between-tick boundary: no accepted commands remain pending after step().
+  lifecycle: DebugValue;
   interactions: DebugValue; context: AreaContext;
 }
 /** Owned data: deadlines are REMAINING seconds at sourceTime, histories are ELAPSED ages.
