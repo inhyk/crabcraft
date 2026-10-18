@@ -12,10 +12,18 @@ const inputSource = readFileSync(new URL('../src/core/input.ts', import.meta.url
 const { code } = transformSync(inputSource, { loader: 'ts', format: 'esm', target: 'es2022' });
 const { Input } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 function keyboard() {
-  const previousWindow = globalThis.window, previousElement = globalThis.Element;
-  class Element extends EventTarget { closest() { return null; } }
+  const previousWindow = globalThis.window, previousElement = globalThis.Element, previousDocument = globalThis.document;
+  class Element extends EventTarget {
+    captured = new Set();
+    closest() { return null; }
+    contains(other) { return other === this; }
+    setPointerCapture(id) { this.captured.add(id); }
+    hasPointerCapture(id) { return this.captured.has(id); }
+    releasePointerCapture(id) { this.captured.delete(id); }
+  }
   const window = new EventTarget(), target = new Element();
   globalThis.window = window;
+  globalThis.document = new EventTarget();
   globalThis.Element = Element;
   const input = new Input(target);
   const key = (type, code, repeat = false, eventTarget = null) => {
@@ -28,11 +36,12 @@ function keyboard() {
     input, key,
     pointer(type, button) {
       const event = new Event(type);
-      Object.assign(event, { button, clientX: 0, clientY: 0 });
-      (type === 'pointerdown' ? target : window).dispatchEvent(event);
+      Object.assign(event, { button, pointerId: 1, pointerType: 'mouse', clientX: 0, clientY: 0 });
+      Object.defineProperty(event, 'target', { value: target });
+      window.dispatchEvent(event);
     },
     blur() { window.dispatchEvent(new Event('blur')); },
-    close() { input.dispose(); globalThis.window = previousWindow; globalThis.Element = previousElement; },
+    close() { input.dispose(); globalThis.window = previousWindow; globalThis.Element = previousElement; globalThis.document = previousDocument; },
   };
 }
 const gameFor = input => ({ input, controlsLocked: false, follow: { yaw: .3, steering: false, forwardYaw: 1.2 } });
