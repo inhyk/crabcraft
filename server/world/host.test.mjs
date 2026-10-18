@@ -71,7 +71,7 @@ async function runtime(options = {}) {
     policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
       checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
-      maxMutationSourcesPerTick: 64, loopIntervalMs: 2, ledger: options.ledger ? {sourceLimits:options.ledgerSourceLimits??sourceLimits,drainLimits:{pageSize:100,creditBatchesPerSlice:1,outcomesPerSlice:1,summaryVictimsPerSlice:10,writeAttempts:2},recoveryLimits:{draftsPerSlice:10,pageSize:100},recoveryIntervalMs:options.recoveryIntervalMs??100} : undefined, chat: options.chat ? { maxPending: 4 } : undefined,
+      maxMutationSourcesPerTick: 64, loopIntervalMs: 2, ledger: options.ledger ? {sourceLimits:options.ledgerSourceLimits??sourceLimits,drainLimits:{pageSize:100,creditBatchesPerSlice:1,outcomesPerSlice:1,summaryVictimsPerSlice:10,writeAttempts:2},recoveryLimits:{draftsPerSlice:10,pageSize:options.recoveryPageSize??100},recoveryIntervalMs:options.recoveryIntervalMs??100} : undefined, chat: options.chat ? { maxPending: 4 } : undefined,
       victimOutcome: { maxEntries: options.victimMaxEntries ?? 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 },
       victimOutcomeRetryCeiling: options.victimRetry ? { maxEntries: 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 } : undefined,
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
@@ -695,6 +695,27 @@ test('actual external factory.ready holds admission until currently discoverable
  try{
   await until(()=>entered);assert.equal(rt.host.stats().ready,false);assert.equal(rt.host.stats().accepting,false);ws=new WebSocket(rt.url,{headers:{Origin:origin}});ws.on('error',()=>{});const status=await new Promise(resolve=>ws.on('unexpected-response',(_req,res)=>{resolve(res.statusCode);res.resume();}));assert.equal(status,503);ws.terminate();release();await rt.host.ready();assert.equal(rt.host.stats().ready,true);assert.equal(rt.host.stats().accepting,true);assert.deepEqual(rt.failures,[]);
  }finally{release();ws?.terminate();await rt.close();}
+});
+
+test('actual factory.ready waits across known three-recipient one-row pages and the final PG seal before admitting', {timeout:10000},async()=>{
+ const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),records=[await character(),await character(),await character()],draft=await recoveryDraft(ledger,{area:'factory-known-multipage',id:1,life:1},records,false);
+ let releasePage,releaseSeal,appends=0,pageBlocked=false,sealBlocked=false,readyResolved=false;
+ const pageGate=new Promise(resolve=>{releasePage=resolve;}),sealGate=new Promise(resolve=>{releaseSeal=resolve;});
+ const blocked=new Proxy(ledger,{get(target,key){
+  if(key==='appendVictimPage')return async(...args)=>{appends++;if(appends===2){pageBlocked=true;await pageGate;}return target.appendVictimPage(...args);};
+  if(key==='sealVictimDraft')return async(...args)=>{sealBlocked=true;await sealGate;return target.sealVictimDraft(...args);};
+  const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+ }}),rt=await runtime({ledger:true,deferReady:true,outcomes:blocked,recoveryPageSize:1});
+ void rt.host.ready().then(()=>{readyResolved=true;});
+ const denied=async()=>{const ws=new WebSocket(rt.url,{headers:{Origin:origin}});ws.on('error',()=>{});try{const status=await new Promise(resolve=>ws.on('unexpected-response',(_req,res)=>{resolve(res.statusCode);res.resume();}));assert.equal(status,503);}finally{ws.terminate();}};
+ try{
+  await until(()=>pageBlocked||rt.failures.length);assert.deepEqual(rt.failures,[]);assert.equal((await ledger.getVictimDraft(draft.draftId)).cursor.recipientCount,1);assert.equal(readyResolved,false);assert.equal(rt.host.stats().ready,false);assert.equal(rt.host.stats().accepting,false);await denied();
+  releasePage();await until(()=>sealBlocked||rt.failures.length);assert.deepEqual(rt.failures,[]);assert.equal(appends,3);assert.equal((await ledger.getVictimDraft(draft.draftId)).cursor.recipientCount,3);assert.equal(await ledger.getVictimSeal(draft.victim),null);assert.equal(readyResolved,false);assert.equal(rt.host.stats().accepting,false);await denied();
+  for(const c of records)assert.deepEqual(await store.pendingGrants(c.binding.accountId,c.record.characterId),[]);
+  releaseSeal();await rt.host.ready();assert.equal(readyResolved,true);assert.equal(rt.host.stats().ready,true);assert.equal(rt.host.stats().accepting,true);assert.equal((await ledger.getVictimSeal(draft.victim)).recipientCount,3);
+  for(const c of records){const grants=await store.pendingGrants(c.binding.accountId,c.record.characterId);assert.equal(grants.length,1);assert.equal(grants[0].payload.xp,20);assert.equal(grants[0].payload.coins,5);}
+  assert.deepEqual(rt.failures,[]);
+ }finally{releasePage();releaseSeal();await rt.close();}
 });
 
 test('external optional pair and full-roster capacity reject before admission while absent pair stays retained',async()=>{
