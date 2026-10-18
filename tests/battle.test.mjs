@@ -266,3 +266,17 @@ test('late public arrivals can pass defeated shared bosses without losing person
  assert.equal(b.journey.rustCleared,true);assert.equal(b.journey.abyssCleared,true);assert.deepEqual(b.quests.status,status);
  a.journey.abyssCleared=false;aa.update(.1);flush();assert.equal(b.journey.abyssCleared,true);
 });
+
+test('armor reduces solo incoming damage before temporary shields and never grants invulnerability',()=>{
+ const g=game();g.player.armorRank=25;g.player.unit.absorb=10;g.player.unit.absorbUntil=20;
+ assert.equal(g.combat.damage(g.enemies[0].unit,g.player.unit,40),10);assert.equal(g.player.unit.hp,90);assert.equal(g.player.unit.absorb,0);
+ g.player.armorRank=100;assert.equal(g.combat.damage(null,g.player.unit,1),1);assert.equal(g.player.unit.hp,89);
+ g.player.armorRank=0;assert.equal(g.combat.damage(null,g.player.unit,20),20);
+});
+
+test('multiplayer armor is applied once by the damage recipient in both directions and PvP',()=>{
+ const {a,b,aa,ar,flush}=pair();a.player.armorRank=100;b.player.armorRank=25;
+ a.combat.damage(a.enemies[0].unit,ar,40);flush();assert.equal(b.player.unit.hp,80);assert.equal(a.player.unit.hp,100);
+ a.combat.damage(a.enemies[0].unit,a.player.unit,40);flush();assert.equal(a.player.unit.hp,92);assert.equal(b.player.unit.hp,80);
+ aa.setMode('pvp');flush();a.time+=1;a.combat.damage(a.player.unit,ar,40);flush();assert.equal(b.player.unit.hp,60);
+});

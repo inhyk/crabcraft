@@ -2,6 +2,7 @@
 // targeting, auto-attack, the cast/channel bars, resources, cooldowns and the global cooldown.
 import * as THREE from 'three';
 import {t} from '../i18n';
+import {equipmentRank,MAX_EQUIPMENT_RANK,upgradeCost,weaponMultiplier,type EquipmentSlot} from './equipment';
 import {abilityName} from './abilityLocale';
 import type { AbilityDef, ClassDef } from '../data/classes';
 import type { Game } from './game';
@@ -52,6 +53,7 @@ export class Player {
   xp = 0;
   coins = 0;
   attackRank = 0;
+  armorRank = 0;
   gcdStart = 0;
   gcdEnd = 0;
   readonly cooldowns = new Map<string, { start: number; end: number }>();
@@ -94,7 +96,18 @@ export class Player {
   }
 
   get dmgMul(): number {
-    return (1 + 0.12 * (this.unit.level - 1)) * (1 + this.attackRank * .08);
+    return (1 + 0.12 * (this.unit.level - 1)) * weaponMultiplier(this.attackRank);
+  }
+
+  upgradeEquipment(slot:EquipmentSlot):'upgraded'|'busy'|'max'|'coins' {
+    if(!this.unit.alive||this.inCombat||this.game.cinematic||this.game.ending?.active||this.game.villageGames?.playing)return 'busy';
+    const key=slot==='weapon'?'attackRank':'armorRank',rank=equipmentRank(this[key]);
+    if(rank>=MAX_EQUIPMENT_RANK)return 'max';
+    const cost=upgradeCost(rank);
+    if(!Number.isSafeInteger(this.coins)||this.coins<cost)return 'coins';
+    this.coins-=cost;this[key]=rank+1;
+    this.game.journey?.save();
+    return 'upgraded';
   }
 
   get inCombat(): boolean {

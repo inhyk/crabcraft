@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { Game } from './game';
 import type { Unit } from './unit';
 import { C } from './vfx/vfx';
+import {armorMultiplier} from './equipment';
 
 export type School = 'physical' | 'frost' | 'water' | 'holy' | 'rust';
 
@@ -51,6 +52,8 @@ export class Combat {
       g.player.onDamaged(dmg);
       return 0;
     }
+    // The owning client applies armor once, after routing and before temporary shields.
+    if(dst===g.player.unit)dmg=Math.max(1,Math.round(dmg*armorMultiplier(g.player.armorRank)));
     // Absorb shields soak first.
     if (dst.absorb > 0 && now < dst.absorbUntil) {
       const soaked = Math.min(dst.absorb, dmg);
