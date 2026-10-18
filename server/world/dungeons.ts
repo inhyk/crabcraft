@@ -3,7 +3,37 @@ import { canonicalLedgerJson } from './character-store.ts';
 import type { HostOwnership } from './ownership.ts';
 import { dungeonAwardsFor, validateDungeonCompletionManifest, MAX_DUNGEON_RECIPIENTS, type DungeonCompletionManifest, type DungeonCompletionSeal, type DungeonCompletionStore, type DungeonAwardRead } from './dungeon-completion-store.ts';
 import { MAX_FEATURE_AWARD_PAGE } from '../../src/sim/features/dungeon-awards.ts';
-import type { Area, EntityRef, FeatureAwardApplyResult } from '../../src/sim/types.ts';
+import { validateDungeonReturn } from '../../src/sim/features/dungeon-persistence.ts';
+import { dungeonFor, type DungeonTier } from '../../src/sim/data/dungeons.ts';
+import type { Area, DungeonReturnBinding, DungeonRunKey, EntityRef, FeatureAwardApplyResult, SimUnit, WorldId, WorldQuery } from '../../src/sim/types.ts';
+
+/** Ordered commands from the authenticated current character. Runs are named by their host run UUID. */
+export type DungeonCommand =
+  | { readonly kind: 'dungeonStart'; readonly tier: DungeonTier }
+  | { readonly kind: 'dungeonJoin' | 'dungeonReturn'; readonly run: string };
+export type DungeonCommandResult =
+  | { readonly ok: true; readonly run: DungeonRunKey; readonly tier: DungeonTier }
+  | { readonly ok: false; readonly code: string };
+const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Strict owned copy; no owner IDs, flags or amounts are accepted from the requester. */
+export function validateDungeonCommand(value: unknown): DungeonCommand {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error('invalid dungeon command');
+  const c = value as Record<string, unknown>, keys = Object.keys(c).sort().join();
+  if (c.kind === 'dungeonStart' && keys === 'kind,tier' && typeof c.tier === 'number' && dungeonFor(c.tier)) return { kind: 'dungeonStart', tier: c.tier as DungeonTier };
+  if ((c.kind === 'dungeonJoin' || c.kind === 'dungeonReturn') && keys === 'kind,run' && typeof c.run === 'string' && RUN_ID.test(c.run)) return { kind: c.kind, run: c.run };
+  throw new Error('invalid dungeon command');
+}
+export const dungeonWorld = (tier: DungeonTier): WorldId => `w${dungeonFor(tier)!.chapter}` as WorldId;
+/**
+ * Grounded, collision-stable public origin for an entrant, checked with the same parent-world rule the Area binding uses.
+ * Throws instead of guessing another location.
+ */
+export function dungeonReturnFor(world: WorldId, query: WorldQuery, unit: Readonly<SimUnit>): Readonly<DungeonReturnBinding> {
+  const out = { x: 0, y: 0, set(x: number, y: number) { this.x = x; this.y = y; return this; } };
+  let x = unit.x, z = unit.z;
+  for (let i = 0; i < 4; i++) { query.resolveCollision(x, z, unit.radius, out); const moved = Math.hypot(out.x - x, out.y - z); x = out.x; z = out.y; if (moved <= 1e-9) break; }
+  return validateDungeonReturn({ version: 1, world, location: { x, y: query.heightAt(x, z), z, yaw: unit.yaw } }, world, query, unit.radius);
+}
 
 /** A character the host still holds in the run Area: connected, in disconnect grace, alive or dead. */
 export interface DungeonResident { readonly characterId: string; readonly accountId: string; readonly ref: EntityRef }

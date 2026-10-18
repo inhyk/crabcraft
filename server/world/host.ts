@@ -25,6 +25,11 @@ import { InputSession, InputRateBudget, HOST_COMMANDS, type HostCommand, type Pr
 import { prepareObservationSnapshot, releasePreparedObservation } from './gameplay/protocol.ts';
 import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
 import type { CommandResult } from './gameplay/events.ts';
+import { createDungeonDefinition, createDungeonQuery } from '../../src/sim/areas/dungeon.ts';
+import { dungeonFor, type DungeonTier } from '../../src/sim/data/dungeons.ts';
+import type { Admission, DungeonObservation, DungeonReturnBinding, StagedArrival, StagedDeparture } from '../../src/sim/types.ts';
+import type { DungeonCompletionStore } from './dungeon-completion-store.ts';
+import { freezeDungeonCompletion, sealDungeonCompletion, deliverDungeonAwards, dungeonReturnFor, dungeonWorld, validateDungeonCommand, type DungeonCommand, type DungeonCommandResult, type FrozenDungeonCompletion } from './dungeons.ts';
 
 type StoredCharacter = Character<IdentityJson, CheckpointJson>;
 export interface HostPolicies {
@@ -50,6 +55,8 @@ export interface HostPolicies {
   readonly restore: RestorePolicy;
   readonly chat?: { maxPending: number };
   readonly party?: { maxParties: number; maxEncounters: number; returnSpawn(world: WorldId, profile: BossProfileId): string };
+  /** Dungeon runs share the party room pool. While enabled every Area keeps feature award receipts. */
+  readonly dungeons?: { readonly tiers: readonly DungeonTier[]; readonly maxPendingAwards: number };
   /** A clock anomaly is an explicit restore failure, never a hidden offline-policy choice. */
   offlineSeconds(character: StoredCharacter, nowWallMs: number): number;
   visible(unit: Readonly<SimUnit>, viewer: Readonly<PlayerState>): boolean;
@@ -64,6 +71,7 @@ export interface ActualWorldHostDeps {
   ownership: HostOwnership;
   chat?: WorldChatService;
   outcomes?: DurableOutcomeStore;
+  dungeonCompletions?: Pick<DungeonCompletionStore, 'recordDungeonCompletion' | 'readPendingDungeonAwards'>;
   policies: HostPolicies;
   originAllowed(origin: string, req: IncomingMessage): boolean;
   clientIp(req: IncomingMessage): string;
@@ -80,10 +88,15 @@ export interface ActualWorldHost {
   retryDurability(resources: VictimOutcomeResources): Promise<boolean>;
   shutdown(deadlineMs: number): Promise<{ durable: boolean; unresolved: number }>;
   stats(): Readonly<Record<string, number | boolean>>;
+  /** Trusted typed dungeon commands for a connected, authenticated character. The wire decoder for them is D3. */
+  dungeon(characterId: string, command: DungeonCommand): Promise<DungeonCommandResult>;
+  /** Read-only view of the character's current run, or null outside a dungeon. */
+  dungeonObservation(characterId: string): Readonly<DungeonObservation> | null;
 }
-interface Slot { kind: 'public' | 'party'; ledgerMode: LedgerMode; source?: AreaSourceDrain; world: LoadedWorldDefinition['world']; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
-interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; pendingReplay: boolean; grantRead?: GrantReadToken; returnTo?: { world: WorldId; spawn: string } }
-interface Party { code: string; leader: string; members: Map<string, string>; pvp: boolean; encounter?: Slot }
+interface DungeonRun { readonly runId: string; readonly tier: DungeonTier; frozen?: FrozenDungeonCompletion }
+interface Slot { kind: 'public' | 'party' | 'dungeon'; ledgerMode: LedgerMode; source?: AreaSourceDrain; world: LoadedWorldDefinition['world']; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId; dungeon?: DungeonRun }
+interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; pendingReplay: boolean; grantRead?: GrantReadToken; returnTo?: { world: WorldId; spawn: string }; dungeonAwards?: boolean }
+interface Party { code: string; leader: string; members: Map<string, string>; pvp: boolean; encounter?: Slot; dungeon?: Slot }
 interface Connection {
   ws: WebSocket; ip: string; origin: string; generation: number; closed: boolean;
   phase: 'preauth' | 'authenticating' | 'loading' | 'queued' | 'admitted' | 'closed';
@@ -121,6 +134,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   if (!p.victimOutcome || ![p.victimOutcome.maxEntries, p.victimOutcome.maxPayloadBytes, p.victimOutcome.timeoutMs].every(value => Number.isSafeInteger(value) && value > 0) || p.victimOutcome.timeoutMs > 2147483647) throw new Error('explicit victim outcome resource budgets required');
   if (p.victimOutcomeRetryCeiling && (!(['maxEntries', 'maxPayloadBytes', 'timeoutMs'] as const).every(key => Number.isSafeInteger(p.victimOutcomeRetryCeiling![key]) && p.victimOutcomeRetryCeiling![key] > 0) || p.victimOutcomeRetryCeiling.timeoutMs > 2147483647 || (['maxEntries', 'maxPayloadBytes', 'timeoutMs'] as const).some(key => p.victimOutcomeRetryCeiling![key] < p.victimOutcome[key]))) throw new Error('invalid victim outcome retry ceiling');
   if (!!deps.chat !== !!p.chat || p.chat && (!Number.isSafeInteger(p.chat.maxPending) || p.chat.maxPending < 1)) throw new Error('explicit chat pending limit required');
+  if (!!deps.dungeonCompletions !== !!p.dungeons) throw new Error('dungeon store and explicit dungeon policy must be paired');
+  if (p.dungeons && (!p.party || !Number.isSafeInteger(p.dungeons.maxPendingAwards) || p.dungeons.maxPendingAwards < 1 || p.dungeons.maxPendingAwards > 256 ||
+    !Array.isArray(p.dungeons.tiers) || !p.dungeons.tiers.length || new Set(p.dungeons.tiers).size !== p.dungeons.tiers.length ||
+    p.dungeons.tiers.some(tier => !dungeonFor(tier) || !deps.worlds.has(dungeonWorld(tier))))) throw new Error('invalid dungeon policy');
+  const featureAwards = p.dungeons ? { maxPending: p.dungeons.maxPendingAwards } : undefined;
   deps.ownership.assertOwned();
   const registry = new InMemoryCharacterRegistry();
   const transfers = new InMemoryTransferCoordinator(registry);
@@ -134,6 +152,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const travels = new Map<string, PendingTravel>();
   const encounterRequests = new Map<string, { actor: Actor; profile: BossProfileId }>();
   const returnRequests = new Map<string, { actor: Actor; leaveParty: boolean }>();
+  const dungeonRequests = new Map<string, { actor: Actor; command: DungeonCommand; resolve(result: DungeonCommandResult): void }>();
+  const dungeonExits = new Map<string, { actor: Actor; slot: Slot; leaveParty: boolean }>();
+  let nextDungeonSeal = 0;
   const completion: (() => void)[] = [];
   const persistence = new PersistenceCoordinator(deps.characters, deps.ownership, { ...p.persistence, now: deps.nowMonotonicMs });
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
@@ -150,7 +171,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   let generation = 1; let unresolved = 0; let pendingChat = 0;
   const chatTargets = new Map<string, { participant: ChatParticipant; expires: number }>();
   const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, discardedRevokedFrames: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
-    authFailures: 0, pendingSourceGrants: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
+    authFailures: 0, pendingSourceGrants: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0, dungeonClears: 0, dungeonSealRetries: 0 };
   const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
   const timings = new Map<string, { values: number[]; cursor: number }>();
   const observe = (name: string, ms: number) => {
@@ -172,16 +193,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const ledgerMode: LedgerMode = external ? 'external-durable' : 'retained';
     const area = createArea({ ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
       actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed, characters: registry,
-      context: { mode: 'public', pvp: 'disabled', members: [] }, limits: p.areaLimits });
+      context: { mode: 'public', pvp: 'disabled', members: [] }, limits: p.areaLimits, ...(featureAwards ? { featureAwards } : {}) });
     const slot: Slot = { kind: 'public', ledgerMode, world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
     slots.set(world, slot); allSlots.add(slot);
   }
   if (external && p.party) for (const loaded of deps.worlds.values()) for (const definition of loaded.encounterDefinitions.values()) {
     const validation = createArea({ id: `party:${randomUUID()}`, ledgerMode: 'external-durable', ledgerLimits: p.ledger!.sourceLimits, definition,
       query: loaded.query, actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed,
-      context: { mode: 'party-encounter', pvp: 'disabled', members: [] }, limits: p.areaLimits });
+      context: { mode: 'party-encounter', pvp: 'disabled', members: [] }, limits: p.areaLimits, ...(featureAwards ? { featureAwards } : {}) });
     validation.dispose();
   }
+  if (external && p.dungeons) for (const tier of p.dungeons.tiers) createDungeonArea(tier, 'external-durable', randomUUID()).dispose();
   const enqueue = (fn: () => void) => {
     if (stopped) return;
     // Each admitted connection owns at most a small fixed number of in-flight IO operations.
@@ -258,13 +280,13 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     }
     for (const c of connections) if (c.actor && !c.closed) publishParty(c);
   }
-  function leaveParty(character: string) {
+  function leaveParty(character: string, sync = true) {
     const party = memberParty.get(character);
     if (!party) return;
     party.members.delete(character); memberParty.delete(character);
     if (!party.members.size) parties.delete(party.code);
     else if (party.leader === character) party.leader = party.members.keys().next().value!;
-    syncPartyContexts();
+    if (sync) syncPartyContexts();
   }
   function partyCommand(c: Connection, command: { kind: string; code?: string; enabled?: boolean }) {
     const actor = c.actor!, character = actor.record.characterId, party = memberParty.get(character);
@@ -283,11 +305,14 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         !unit?.alive || member?.seatedBoat || member?.villagePlaying) { controlError(c, 'party-join-unavailable'); return; }
       target.members.set(character, randomUUID()); memberParty.set(character, target); syncPartyContexts();
     } else if (command.kind === 'partyLeave') {
-      if (actor.slot.kind === 'party') returnRequests.set(character, { actor, leaveParty: true }); else leaveParty(character);
+      if (actor.slot.kind === 'party') returnRequests.set(character, { actor, leaveParty: true });
+      else if (actor.slot.kind === 'dungeon') dungeonExits.set(character, { actor, slot: actor.slot, leaveParty: true });
+      else leaveParty(character);
     } else if (command.kind === 'partyPvp') {
       if (!party || party.leader !== character || typeof command.enabled !== 'boolean') { controlError(c, 'party-leader-required'); return; }
       party.pvp = command.enabled; syncPartyContexts();
     } else if (command.kind === 'encounterLeave') {
+      if (actor.slot.kind === 'dungeon') { dungeonExits.set(character, { actor, slot: actor.slot, leaveParty: false }); return; }
       if (actor.slot.kind !== 'party') { controlError(c, 'encounter-unavailable'); return; }
       returnRequests.set(character, { actor, leaveParty: false });
     }
@@ -414,7 +439,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       stage = slot.area.stageRestoredArrival(admission, checkpoint, prepareRestore(checkpoint, offline, p.restore), { revision: request.record.revision });
       if (!registry.compareAndSwap(request.record.characterId, null, stage.newRef)) throw new Error('character ownership conflict');
       const ref = slot.area.activateRestoredArrival(stage.token); slot.area.releaseAdmission(admission.token);
-      const actor: Actor = { record: request.record, slot, ref, connection: null, detachedAt: null, generation: generation++, pendingReplay: true };
+      const actor: Actor = { record: request.record, slot, ref, connection: null, detachedAt: null, generation: generation++, pendingReplay: true, dungeonAwards: !!p.dungeons };
       actors.set(request.record.characterId, actor); bootstrap(c, actor); return true;
     } catch {
       if (stage) slot.area.abortArrival(stage.token);
@@ -491,16 +516,16 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         Math.hypot(unit.x - boss.arena.position.x, unit.y - boss.arena.position.y, unit.z - boss.arena.position.z) > boss.arena.radius + 3) {
         if (c) controlError(c, 'encounter-prerequisites'); continue;
       }
-      if (party.encounter && (party.encounter.profile !== profile || party.encounter.world !== source.world)) { controlError(c, 'party-encounter-active'); continue; }
+      if (party.dungeon || party.encounter && (party.encounter.profile !== profile || party.encounter.world !== source.world)) { controlError(c, 'party-encounter-active'); continue; }
       const returnSpawn = p.party.returnSpawn(source.world, profile);
       const publicDefinition = source.area.services.definition;
       if (![publicDefinition.spawn.id, publicDefinition.recall.id, ...Object.values(publicDefinition.pois).map(poi => poi.id)].includes(returnSpawn)) { controlError(c, 'encounter-return-unconfigured'); continue; }
       let destination = party.encounter;
       if (!destination) {
-        if ([...allSlots].filter(s => s.kind === 'party').length >= p.party.maxEncounters) { controlError(c, 'encounter-capacity'); continue; }
+        if ([...allSlots].filter(s => s.kind !== 'public').length >= p.party.maxEncounters) { controlError(c, 'encounter-capacity'); continue; }
         const loaded = deps.worlds.get(source.world)!, now = deps.nowMonotonicMs();
         const area = createArea({ ledgerMode: source.ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `party:${randomUUID()}`, definition, query: loaded.query, actionData: loaded.actionData,
-          policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'party-encounter', pvp: party.pvp ? 'party-only' : 'disabled', members: [] }, limits: p.areaLimits });
+          policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'party-encounter', pvp: party.pvp ? 'party-only' : 'disabled', members: [] }, limits: p.areaLimits, ...(featureAwards ? { featureAwards } : {}) });
         area.bootstrapEncounter(profile, { beaconLit: beacon });
         destination = { kind: 'party', ledgerMode: source.ledgerMode, world: source.world, area, party, profile, tick: new DeadlineScheduler(30, now),
           snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
@@ -541,6 +566,204 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       slot.area.dispose(); allSlots.delete(slot); failedSources.delete(slot); drainedFailedSources.delete(slot); attemptedFailedSources.delete(slot); if (slot.party?.encounter === slot) slot.party.encounter = undefined;
     }
   };
+  // Private dungeon runs. A run Area is created per start and shares the party room pool with boss encounters.
+  function createDungeonArea(tier: DungeonTier, ledgerMode: LedgerMode, runId: string): Area {
+    const loaded = deps.worlds.get(dungeonWorld(tier))!;
+    return createArea({ ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `dungeon:${runId}`, definition: createDungeonDefinition(tier), query: createDungeonQuery(loaded.query),
+      actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'dungeon', pvp: 'disabled', members: [] },
+      limits: p.areaLimits, dungeon: { runId, tier }, featureAwards });
+  }
+  const unsealedDungeon = () => [...allSlots].some(slot => !!slot.dungeon?.frozen);
+  const settled = (actor: Actor) => !actor.slot.area.appliedGrantIds(actor.record.characterId).length && !actor.slot.area.appliedFeatureAwardIds(actor.record.characterId).length;
+  function settleDungeonRequests(code: string) {
+    for (const request of dungeonRequests.values()) request.resolve({ ok: false, code });
+    dungeonRequests.clear();
+  }
+  /** All-or-nothing entry: every admission and staged transfer exists before the first ownership switch. */
+  function enterDungeon(members: readonly Actor[], destination: Slot, returns: ReadonlyMap<Actor, Readonly<DungeonReturnBinding>>): boolean {
+    const staged: { actor: Actor; source: Slot; admission: Admission; departure?: StagedDeparture; arrival?: StagedArrival }[] = [];
+    try {
+      for (const actor of members) {
+        const admission = destination.area.reserveAdmission(actor.record.characterId, destination.area.services.definition.spawn.id, metrics.ticks);
+        if (!admission) throw new Error('dungeon admission full');
+        staged.push({ actor, source: actor.slot, admission });
+      }
+      for (const entry of staged) { entry.departure = entry.source.area.stageDeparture(entry.actor.ref); entry.arrival = destination.area.stageArrival(entry.admission, entry.departure.dto); }
+      for (const entry of staged) if (!sameRef(registry.owner(entry.actor.record.characterId) ?? { area: '', id: 0, life: 0 }, entry.actor.ref)) throw new Error('dungeon ownership conflict');
+    } catch {
+      for (const entry of staged) {
+        if (entry.arrival) destination.area.abortArrival(entry.arrival.token);
+        if (entry.departure) entry.source.area.abortDeparture(entry.departure.token);
+        destination.area.releaseAdmission(entry.admission.token);
+      }
+      return false;
+    }
+    // Commit boundary: owners were checked above and nothing below awaits, ticks or publishes.
+    for (const entry of staged) {
+      const { actor, source } = entry;
+      if (!registry.compareAndSwap(actor.record.characterId, actor.ref, entry.arrival!.newRef)) throw new Error('dungeon ownership conflict');
+      source.area.commitDeparture(entry.departure!.token);
+      actor.ref = destination.area.activateArrival(entry.arrival!.token); destination.area.releaseAdmission(entry.admission.token);
+      destination.area.bindDungeonReturn(actor.ref, returns.get(actor)!, deps.worlds.get(source.world)!.query);
+      actor.slot = destination; actor.generation = generation++; drain(source);
+    }
+    return true;
+  }
+  /** Same-process exit through the source-owned checkpoint stage: survival, death clock and progression are preserved. */
+  function exitDungeon(actor: Actor, slot: Slot): 'moved' | 'wait' | 'failed' {
+    const character = actor.record.characterId, destination = slots.get(slot.world)!;
+    if (!settled(actor)) return 'wait';
+    const admission = destination.area.reserveAdmission(character, destination.area.services.definition.spawn.id, metrics.ticks);
+    if (!admission) return 'wait';
+    let exit: ReturnType<Area['stageInstanceExit']> | undefined, arrival: StagedArrival | undefined, committed = false;
+    try {
+      exit = slot.area.stageInstanceExit(actor.ref);
+      arrival = destination.area.stageInstanceArrival(admission, exit);
+      slot.area.validateInstanceExit(exit.token); destination.area.validateInstanceArrival(arrival.token);
+      if (!registry.compareAndSwap(character, exit.sourceRef, arrival.newRef)) throw new Error('dungeon exit ownership conflict');
+      committed = true;
+      slot.area.commitInstanceExit(exit.token, arrival.newRef);
+      actor.ref = destination.area.activateInstanceArrival(arrival.token);
+    } catch (error) {
+      if (committed) throw error;
+      if (arrival) destination.area.abortArrival(arrival.token);
+      if (exit) slot.area.abortInstanceExit(exit.token);
+      destination.area.releaseAdmission(admission.token); return 'failed';
+    }
+    destination.area.releaseAdmission(admission.token);
+    actor.slot = destination; actor.generation = generation++; drain(slot);
+    return 'moved';
+  }
+  function dungeonCommand(actor: Actor, command: DungeonCommand): DungeonCommandResult | 'wait' {
+    const character = actor.record.characterId, party = memberParty.get(character), fail = (code: string) => ({ ok: false as const, code });
+    if (actors.get(character) !== actor || !actor.connection || actor.connection.closed) return fail('dungeon-unavailable');
+    if (command.kind === 'dungeonReturn') {
+      const slot = actor.slot, run = slot.dungeon;
+      if (slot.kind !== 'dungeon' || !run || run.runId !== command.run) return fail('dungeon-run-unavailable');
+      const phase = slot.area.dungeonObservation()!.phase;
+      // The leader may end an active run. Once it has ended anyone may bring the whole run home, dead or alive.
+      if (phase !== 'clear' && phase !== 'failed' && party?.leader !== character) return fail('dungeon-leader-required');
+      for (const resident of actors.values()) if (resident.slot === slot && !dungeonExits.has(resident.record.characterId)) dungeonExits.set(resident.record.characterId, { actor: resident, slot, leaveParty: false });
+      return { ok: true, run: { area: slot.area.services.id, runId: run.runId }, tier: run.tier };
+    }
+    const source = actor.slot;
+    if (source.kind !== 'public') return fail('dungeon-unavailable');
+    if (!party) return fail('dungeon-party-required');
+    let destination: Slot | undefined, tier: DungeonTier, members: Actor[];
+    if (command.kind === 'dungeonStart') {
+      tier = command.tier;
+      if (!p.dungeons!.tiers.includes(tier)) return fail('dungeon-unavailable');
+      if (party.leader !== character) return fail('dungeon-leader-required');
+      if (party.encounter || party.dungeon) return fail('party-encounter-active');
+      if ([...allSlots].filter(slot => slot.kind !== 'public').length >= p.party!.maxEncounters) return fail('dungeon-capacity');
+      members = [...party.members.keys()].map(id => actors.get(id)!);
+    } else {
+      destination = party.dungeon;
+      if (!destination?.dungeon || destination.dungeon.runId !== command.run) return fail('dungeon-run-unavailable');
+      const run = destination.area.dungeonObservation()!;
+      // A late joiner cannot claim a run that already ended or holds an unsealed clear.
+      if (run.phase === 'clear' || run.phase === 'failed' || run.completionPending || destination.dungeon.frozen) return fail('dungeon-run-ended');
+      tier = destination.dungeon.tier; members = [actor];
+    }
+    if (source.world !== dungeonWorld(tier)) return fail('dungeon-world');
+    const returns = new Map<Actor, Readonly<DungeonReturnBinding>>();
+    for (const member of members) {
+      if (!member?.connection || member.connection.closed || member.slot !== source) return fail('dungeon-party-not-ready');
+      const unit = source.area.services.getUnit(member.ref)!;
+      if (unit.level < tier) return fail('dungeon-level');
+      if (!available(member)) return fail('dungeon-party-busy');
+      try { returns.set(member, dungeonReturnFor(source.world, deps.worlds.get(source.world)!.query, unit)); } catch { return fail('dungeon-return-unsafe'); }
+    }
+    if (!members.every(settled)) return 'wait';
+    if (!destination) {
+      const runId = randomUUID(), area = createDungeonArea(tier, source.ledgerMode, runId), now = deps.nowMonotonicMs();
+      destination = { kind: 'dungeon', ledgerMode: source.ledgerMode, world: source.world, area, party, tick: new DeadlineScheduler(30, now),
+        snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now, dungeon: { runId, tier } };
+      if (!enterDungeon(members, destination, returns)) { area.dispose(); return fail('dungeon-unavailable'); }
+      party.dungeon = destination; allSlots.add(destination); destination.source = sourceAdapter(destination);
+    } else if (!enterDungeon(members, destination, returns)) return fail('dungeon-full');
+    syncPartyContexts();
+    for (const member of members) bootstrap(member.connection!, member);
+    return { ok: true, run: { area: destination.area.services.id, runId: destination.dungeon!.runId }, tier };
+  }
+  const advanceDungeons = () => {
+    if (barrier || frozen || !p.dungeons) return;
+    let flush = false;
+    for (const [character, request] of dungeonRequests) {
+      const result = dungeonCommand(request.actor, request.command);
+      if (result === 'wait') { flush = true; continue; } // Receipts must be durable before an ownership switch.
+      dungeonRequests.delete(character); flush ||= result.ok;
+      if (!result.ok && request.actor.connection) controlError(request.actor.connection, result.code);
+      request.resolve(result);
+    }
+    for (const [character, request] of dungeonExits) {
+      const { actor, slot } = request;
+      if (actors.get(character) !== actor || actor.slot !== slot) { dungeonExits.delete(character); continue; }
+      const moved = exitDungeon(actor, slot);
+      if (moved === 'wait') { flush = true; continue; }
+      dungeonExits.delete(character);
+      if (moved === 'failed') { if (actor.connection) controlError(actor.connection, 'dungeon-return-unavailable'); continue; }
+      if (request.leaveParty) leaveParty(character); else syncPartyContexts();
+      if (actor.connection) bootstrap(actor.connection, actor);
+      flush = true;
+    }
+    if (flush) startDurability();
+  };
+  const cleanupDungeons = () => {
+    if (barrier || frozen) return;
+    for (const slot of allSlots) if (slot.kind === 'dungeon' && slot.area.players.size === 0 && !slot.dungeon!.frozen && !slot.area.pendingDungeonCompletion() &&
+      (!slot.source || !slot.area.resourceUsage().dirtyCreditEntries && !slot.area.resourceUsage().pendingDeaths)) {
+      slot.area.dispose(); allSlots.delete(slot); failedSources.delete(slot); drainedFailedSources.delete(slot); attemptedFailedSources.delete(slot);
+      if (slot.party?.dungeon === slot) slot.party.dungeon = undefined;
+    }
+  };
+  /** A safe public checkpoint cannot restore in the chamber: discard the local life and readmit the durable one publicly. */
+  function evictDungeonResident(actor: Actor, recovery: Recovery<IdentityJson, CheckpointJson, GrantJson>) {
+    const character = actor.record.characterId, slot = actor.slot, c = actor.connection;
+    slot.area.evictForRecovery(actor.ref); metrics.recoveries++;
+    actors.delete(character); travels.delete(character); encounterRequests.delete(character); returnRequests.delete(character); dungeonExits.delete(character);
+    // Inside a durability barrier contexts cannot change; the barrier's final boundary resyncs every party.
+    actor.connection = null; leaveParty(character, false); drain(slot);
+    if (c && !c.closed) waiting.unshift({ connection: c, record: recovery.character, world: deps.codec.toCore(recovery.character.checkpoint).world });
+  }
+  /** Journal each frozen clear, then ACK its Area candidate. A failed write keeps the same roster for the next barrier. */
+  async function sealDungeonRuns() {
+    if (!deps.dungeonCompletions) return;
+    for (const slot of [...allSlots]) {
+      const frozenClear = slot.dungeon?.frozen, area = slot.area;
+      if (!frozenClear) continue;
+      const result = await sealDungeonCompletion({ area, frozen: frozenClear, store: deps.dungeonCompletions, ownership: deps.ownership, boundary,
+        isCurrent: () => !stopped && allSlots.has(slot) && slot.area === area && slot.dungeon?.frozen === frozenClear });
+      await boundary(() => {
+        if (result.kind === 'unresolved') {
+          if (result.reason === 'ownership') throw new Error('dungeon seal ownership lost');
+          metrics.dungeonSealRetries++; nextDungeonSeal = deps.nowMonotonicMs() + p.checkpointIntervalMs; return;
+        }
+        if (slot.dungeon?.frozen === frozenClear) slot.dungeon.frozen = undefined;
+        if (result.kind === 'sealed') { metrics.dungeonClears++; for (const r of frozenClear.manifest.recipients) { const a = actors.get(r.characterId); if (a) a.dungeonAwards = true; } }
+      });
+    }
+  }
+  /** Certified clear awards for every actor that may have unpaid rows. Returns true when the round must restart. */
+  async function deliverPendingDungeonAwards(): Promise<boolean> {
+    if (!p.dungeons || !deps.dungeonCompletions) return false;
+    const store = deps.dungeonCompletions, maxPending = p.dungeons.maxPendingAwards;
+    const leases = await boundary(() => { deps.ownership.assertOwned(); return [...actors.values()].filter(a => a.dungeonAwards).map(actor => ({ actor, generation: actor.generation, slot: actor.slot, ref: { ...actor.ref }, revision: actor.record.revision })); });
+    const results = await Promise.all(leases.map(async lease => ({ lease, result: await deliverDungeonAwards({ area: lease.slot.area, ref: lease.ref, accountId: lease.actor.record.accountId,
+      characterId: lease.actor.record.characterId, expectedRevision: lease.revision, maxPending, store, ownership: deps.ownership, boundary,
+      isCurrent: () => actors.get(lease.actor.record.characterId) === lease.actor && lease.actor.generation === lease.generation && lease.actor.slot === lease.slot &&
+        sameRef(lease.actor.ref, lease.ref) && lease.actor.record.revision === lease.revision }) })));
+    return boundary(() => {
+      deps.ownership.assertOwned(); let retry = false;
+      for (const { lease, result } of results) {
+        if (result.kind === 'unresolved') throw new Error('dungeon award certification unresolved: ' + result.reason);
+        if (result.kind === 'stale' || result.kind === 'revision') retry = true;
+        else if (result.kind === 'applied') { lease.actor.dungeonAwards = result.more; if (result.more) lease.actor.pendingReplay = true; }
+      }
+      for (const slot of allSlots) drain(slot);
+      return retry;
+    });
+  }
   const load = (c: Connection, characterId: string) => {
     const attempt = c.generation, binding = c.binding!; c.phase = 'loading';
     void deps.characters.getOwned(binding.accountId, characterId).then(record => enqueue(() => {
@@ -555,6 +778,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
 
   function restoreDurableActor(actor: Actor, recovery: Recovery<IdentityJson, CheckpointJson, GrantJson>) {
     deps.ownership.assertOwned();
+    if (actor.slot.kind === 'dungeon') { evictDungeonResident(actor, recovery); return; }
+    actor.dungeonAwards = !!p.dungeons;
     const checkpoint = deps.codec.toCore(recovery.character.checkpoint), restored = prepareRestore(checkpoint, 0, p.restore);
     const ref = actor.slot.area.restorePlayerCheckpoint(actor.ref, checkpoint, restored, recovery.grants.filter(grant => grant.appliedRevision !== null).map(grant => grant.id), recovery.character.revision);
     actor.ref = ref; actor.record = recovery.character; actor.generation = generation++; actor.pendingReplay = true;
@@ -567,7 +792,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     return !!usage.dirtyCreditEntries || !!usage.pendingDeaths || !!slot.area.contributionSummariesNeeded().length;
   };
   function startDurability() {
-    if (barrier || frozen || !actors.size && !external) return;
+    if (barrier || frozen || !actors.size && !external && !unsealedDungeon()) return;
     metrics.persistenceBarriers++; const began = deps.nowMonotonicMs();
     const tokens = new Map<Slot, string>();
     for (const slot of allSlots) if (slot.area.players.size || slot.ledgerMode === 'external-durable') tokens.set(slot, slot.area.beginDurabilityBarrier('checkpoint'));
@@ -605,6 +830,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         nextRecovery = deps.nowMonotonicMs() + p.ledger!.recoveryIntervalMs;
         startupDrained = initial;
       }
+      await sealDungeonRuns();
       for (let round = 0; round <= p.persistence.maxRecoveryRounds; round++) {
         // Retained-mode host fence. Area-owned one-use tokens are still required before pruning is enabled.
         const leases = await boundary(() => {
@@ -648,6 +874,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           return retry;
         });
         if (reread) { if (round === p.persistence.maxRecoveryRounds) throw new Error('journal certification recovery capacity'); continue; }
+        if (await deliverPendingDungeonAwards()) { if (round === p.persistence.maxRecoveryRounds) throw new Error('dungeon award recovery capacity'); continue; }
         const captures = await boundary(() => { deps.ownership.assertOwned(); return [...actors.values()].map(actor => ({ actor, generation: actor.generation, capture: actor.slot.area.capturePlayerCheckpoint(actor.ref) })); });
         const results = await Promise.all(captures.map(({ actor, capture }) => persistence.commit({ captureId: capture.captureId,
           accountId: actor.record.accountId, characterId: actor.record.characterId, expectedRevision: actor.record.revision,
@@ -773,6 +1000,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const publish = (slot: Slot) => {
     if (barrier || frozen || [...actors.values()].some(actor => actor.pendingReplay)) return;
+    // The current observation schema has no dungeon mode; D3 adds a typed run view. Events stay bounded meanwhile.
+    if (slot.kind === 'dungeon') { slot.events = []; return; }
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
     const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
     const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog);
@@ -828,6 +1057,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     for (const actor of actors.values()) if (actor.slot === slot) {
       const current = slot.area.services.playerByCharacter(actor.record.characterId)?.state.unit;
       if (current && !sameRef(actor.ref, current)) { actor.ref = current; actor.generation = generation++; changedLives.push(actor); }
+    }
+    if (slot.dungeon && !slot.dungeon.frozen) {
+      // Policy A roster: every character the run still holds at this clear boundary, before any exit, leave or retirement.
+      const cleared = freezeDungeonCompletion(slot.area, [...actors.values()].filter(a => a.slot === slot).map(a => ({ characterId: a.record.characterId, accountId: a.record.accountId, ref: a.ref })));
+      if (cleared) { slot.dungeon.frozen = cleared; progression = true; }
     }
     for (const { c, frame } of prepared) c.input!.commitConsumed(frame.token);
     for (const { c, command, inputSequence } of hostCommands) {
@@ -894,10 +1128,12 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           }), () => enqueue(() => { if (!c.closed && c.generation === attempt) close(c, 'session-unavailable', true); }));
         }
       }
+      if (frozen || draining || deps.ownership.closed.aborted) settleDungeonRequests('host-unavailable');
       if (!frozen && !draining && !deps.ownership.closed.aborted) for (const c of connections) if (c.phase === 'admitted' && c.chatNeedsPreferences && !c.chatBusy && pendingChat < p.chat!.maxPending) chatCommand(c, { kind: 'chatPreferences' });
       if (!barrier && !frozen && !draining) {
         if (external && (startupRecovery || now >= nextRecovery || [...allSlots].some(sourceNeedsIO))) startDurability();
-        admitWaiting(); if (!barrier && [...actors.values()].some(actor => actor.pendingReplay)) startDurability(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
+        if (!barrier && unsealedDungeon() && now >= nextDungeonSeal) startDurability();
+        admitWaiting(); if (!barrier && [...actors.values()].some(actor => actor.pendingReplay)) startDurability(); advanceTravel(); advanceEncounters(); cleanupEncounters(); advanceDungeons(); cleanupDungeons(); retireDetached(now);
         for (const slot of allSlots) {
           if (!slot.area.players.size || barrier) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
           slot.tick.run(now, () => step(slot));
@@ -994,20 +1230,35 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!barrier && !frozen) startDurability();
       while (barrier && deps.nowMonotonicMs() < end) await new Promise(resolve => setTimeout(resolve, p.loopIntervalMs));
       const persisted = await persistence.shutdown(Math.max(0, end - deps.nowMonotonicMs()));
-      stopped = true; if (timer) clearTimeout(timer); deps.ownership.closed.removeEventListener('abort', onLost);
+      stopped = true; if (timer) clearTimeout(timer); deps.ownership.closed.removeEventListener('abort', onLost); settleDungeonRequests('host-unavailable');
       for (const c of connections) { if (c.authTimer) clearTimeout(c.authTimer); c.ws.close(1012, 'Server restarting'); }
       await new Promise<void>(resolve => {
         const timeout = setTimeout(() => { for (const c of connections) c.ws.terminate(); resolve(); }, Math.max(0, end - deps.nowMonotonicMs()));
         wss.close(() => { clearTimeout(timeout); resolve(); });
       });
-      const count = unresolved + persisted.unresolved + (barrier ? 1 : 0);
+      // An unsealed clear is an owed obligation lost with this process; report it rather than claim a durable stop.
+      const count = unresolved + persisted.unresolved + (barrier ? 1 : 0) + [...allSlots].filter(slot => slot.dungeon?.frozen).length;
       return { durable: persisted.durable && count === 0, unresolved: count };
+    },
+    dungeon(characterId, command) {
+      return new Promise<DungeonCommandResult>(resolve => {
+        let owned: DungeonCommand;
+        try { owned = validateDungeonCommand(command); } catch { resolve({ ok: false, code: 'invalid-command' }); return; }
+        const actor = actors.get(characterId);
+        if (!p.dungeons || stopped || frozen || draining || !actor?.connection || actor.connection.closed) { resolve({ ok: false, code: 'dungeon-unavailable' }); return; }
+        if (dungeonRequests.has(characterId)) { resolve({ ok: false, code: 'dungeon-busy' }); return; }
+        dungeonRequests.set(characterId, { actor, command: owned, resolve });
+      });
+    },
+    dungeonObservation(characterId) {
+      const actor = actors.get(characterId);
+      return actor?.slot.kind === 'dungeon' ? actor.slot.area.dungeonObservation() : null;
     },
     stats: () => ({ ...metrics, ...timingStats(), ...ledgerStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
       processCpuSystemMs: process.cpuUsage(processCpuStart).system / 1000, processElapsedMs: deps.nowMonotonicMs() - processStarted,
       activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
       publicAreas: slots.size, ready: readyDone && !startupRecovery && !frozen && !deps.ownership.closed.aborted, failedSources: failedSources.size, resourcePaused: pausedDurability !== null, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
-      pendingChat, partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length,
+      pendingChat, partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length, dungeonAreas: [...allSlots].filter(slot => slot.kind === 'dungeon').length,
       droppedTicks: [...allSlots].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...allSlots].reduce((n, s) => n + s.snapshot.dropped, 0) }),
   };
 }

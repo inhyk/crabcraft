@@ -1,0 +1,316 @@
+// Actual PG + WebSocket host with dungeon runs enabled. Dungeon commands use the trusted typed host API until D3 adds wire messages;
+// combat, presence, reconnect and persistence go through real sockets, the real numeric host loop and PostgreSQL.
+import test, { before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { readFile } from 'node:fs/promises';
+import { WebSocket } from 'ws';
+import { startPostgres } from '../node/local-postgres.mjs';
+import { createPool, migrate } from '../node/db.ts';
+import { CharacterStore } from './character-store.ts';
+import { DungeonCompletionStore } from './dungeon-completion-store.ts';
+import { WorldTicketRegistry } from './admission.ts';
+import { acquireHostOwnership } from './ownership.ts';
+import { loadWorldCatalog, createGameplayCatalog } from './catalog.ts';
+import { createActualWorldHost } from './host.ts';
+import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
+import { createWorldVariants } from '../../src/sim/areas/variants.ts';
+import { xpForLevel } from '../../src/sim/data/progression.ts';
+import { DUNGEON_CHAMBER } from '../../src/sim/data/dungeons.ts';
+import { createGameplayProtocol, GameplayReceiver, projectObservationExtras } from './gameplay/protocol.ts';
+import { encodeInput } from './gameplay/intents.ts';
+
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(check, ms = 8000, what = 'condition') { const end = performance.now() + ms; while (!(await check())) { if (performance.now() > end) throw new Error(`${what} timeout`); await delay(10); } }
+let cluster, pool, loaded, codec, store, dungeonStore, gameplayCatalog, accountNumber = 0;
+const origin = 'http://localhost:5261';
+const appearance = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Diver' };
+const restore = { version: 'dungeon-test-pause-preserve', restore: checkpoint => ({ ...checkpoint,
+  activity: { seated: false, village: false, controlsLocked: false, cast: null, channel: null, dash: false, pendingHit: false, rootPending: false,
+    motion: { velocityX: 0, velocityZ: 0, jumpRemaining: 0, spinRemaining: 0, pushX: 0, pushZ: 0, pushRemaining: 0, lift: 0, dashElapsed: null } } }) };
+const policy = { enemyLevel: spawn => spawn.fixedLevel, enemyPopulation: () => ({ desired: 1, respawnSeconds: 300 }),
+  damageAllowed: (context, source, target) => !(source?.kind === 'player' && target.kind === 'player'), canInteract: () => true };
+
+before(async () => {
+  cluster = await startPostgres(); pool = createPool(cluster.url); await migrate(pool);
+  const directory = new URL('../../public/world/', import.meta.url), ids = ['w1', 'w2', 'w3', 'w4'];
+  const source = JSON.parse(await readFile(new URL('collision-w1.json', directory), 'utf8')).source;
+  // No public enemies, so nothing outside the run touches the test characters.
+  loaded = await loadWorldCatalog({ directory, expectedBakeSource: source, maxBakeBytes: 16 * 1024 * 1024, maxCells: 1000000,
+    configs: Object.fromEntries(ids.map(id => [id, { fixedLevels: { scrapling: 1, scavenger: 1, jellyfish: 1, echo: 1 }, population: { scrapling: 0, scavenger: 0, jellyfish: 0 } }])),
+    policies: Object.fromEntries(ids.map(id => [id, policy])), seeds: { w1: 1, w2: 2, w3: 3, w4: 4 }, variants: createWorldVariants });
+  const spawn = loaded.get('w1').publicDefinition.spawn;
+  codec = createCoreCharacterCodec({ identities: [{ classId: 'warrior', archetype: 'human' }], freshLocation: { ...spawn.position, yaw: spawn.yaw } });
+  store = new CharacterStore(pool, codec); dungeonStore = new DungeonCompletionStore(pool); gameplayCatalog = createGameplayCatalog(loaded);
+});
+after(async () => { await pool?.end(); cluster?.stop(); });
+
+/** Seal writes can be held failing to prove the frozen roster is retried unchanged. */
+function sealGate() { const gate = { failing: false, attempts: 0 }; gate.store = { recordDungeonCompletion: async m => { gate.attempts++; if (gate.failing) throw new Error('db down'); return dungeonStore.recordDungeonCompletion(m); }, readPendingDungeonAwards: (...args) => dungeonStore.readPendingDungeonAwards(...args) }; return gate; }
+async function runtime(options = {}) {
+  const admission = new WorldTicketRegistry(async binding => {
+    const r = await pool.query('SELECT expires FROM sessions WHERE username=$1 AND token_hash=$2', [binding.accountId, binding.sessionKey]);
+    return r.rows[0] && Number(r.rows[0].expires) > Date.now() ? { ...binding, expiresAt: Number(r.rows[0].expires) } : null;
+  });
+  const ownership = await acquireHostOwnership(pool, 'world-dungeon-host-test'), failures = [];
+  let host;
+  try {
+    host = createActualWorldHost({ admission, characters: store, worlds: loaded, codec, ownership, dungeonCompletions: options.dungeonStore ?? dungeonStore,
+      gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
+      policies: { authTimeoutMs: 1000, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 3000, sessionRevalidateMs: 1000, checkpointIntervalMs: 200,
+        maxConnections: 16, maxConnectionsPerIp: 16, maxWaiting: 16, maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
+        maxMutationSourcesPerTick: 64, loopIntervalMs: 2, victimOutcome: { maxEntries: 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 },
+        persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
+        areaLimits: { eventCount: 4096, inputCommandsPerTick: 32, timers: 256, projectiles: 256 }, restore,
+        party: { maxParties: 8, maxEncounters: options.maxEncounters ?? 4, returnSpawn: () => 'bossArena' },
+        dungeons: { tiers: [35, 50], maxPendingAwards: 8 },
+        offlineSeconds: (record, now) => Math.max(0, now - record.updatedAt) / 1000, visible: () => true, observationExtras: projectObservationExtras },
+      originAllowed: value => value === origin, clientIp: () => '127.0.0.1', nowMonotonicMs: () => performance.now(), nowWallMs: Date.now,
+      onFailure: (stage, error) => { failures.push({ stage, message: error.message }); } });
+  } catch (error) { await ownership.release(); throw error; }
+  const server = createServer(); server.on('upgrade', host.handleUpgrade); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  await host.ready();
+  return { host, admission, failures, url: `ws://127.0.0.1:${server.address().port}/world`, async close() {
+    const result = await host.shutdown(3000); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await ownership.release(); return result;
+  } };
+}
+/** Trusted world/level fixture written before login: the character stands at a grounded W3 point. Nothing here is earned by play. */
+async function character({ level = 1, hp, world = 'w3', offset = 0 } = {}) {
+  const accountId = 'g' + (++accountNumber).toString(16).padStart(23, '0'), sessionKey = (accountNumber + 4096).toString(16).padStart(64, '0'), expiresAt = Date.now() + 120000;
+  await pool.query('INSERT INTO accounts(username,updated,created) VALUES($1,0,0)', [accountId]);
+  await pool.query('INSERT INTO sessions(token_hash,username,expires) VALUES($1,$2,$3)', [sessionKey, accountId, expiresAt]);
+  let record = await store.create(accountId, { schema: 'world-identity-v1', classId: 'warrior', archetype: 'human', appearance: { ...appearance, name: `Diver${accountNumber}` } });
+  if (world !== 'w1' || level > 1 || hp !== undefined) {
+    const checkpoint = structuredClone(record.checkpoint), w = loaded.get(world), arrival = w.publicDefinition.pois.arrival ?? w.publicDefinition.spawn;
+    const out = { x: 0, y: 0, set(x, y) { this.x = x; this.y = y; return this; } }, radius = w.actionData.archetype('human').radius;
+    w.query.resolveCollision(arrival.position.x + offset, arrival.position.z, radius, out);
+    checkpoint.world = world; checkpoint.location = { x: out.x, y: w.query.heightAt(out.x, out.y), z: out.y, yaw: 0 };
+    checkpoint.progress.quests.chapter = Number(world[1]);
+    checkpoint.progress.xp = xpForLevel(level); checkpoint.survival.maxHp = Math.round(checkpoint.progress.baseMaxHp * (1 + .15 * (level - 1)));
+    checkpoint.survival.hp = hp ?? checkpoint.survival.maxHp;
+    record = await store.saveCheckpoint(accountId, record.characterId, record.revision, checkpoint, []);
+  }
+  return { record, binding: { accountId, sessionKey, expiresAt }, id: record.characterId };
+}
+/** Re-level an online character through a genuine external revision; the host recovers it from PG. */
+async function relevel(c, level) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const current = await store.getOwned(c.binding.accountId, c.id), checkpoint = structuredClone(current.checkpoint);
+    checkpoint.progress.xp = xpForLevel(level); checkpoint.survival.maxHp = checkpoint.survival.hp = Math.round(checkpoint.progress.baseMaxHp * (1 + .15 * (level - 1)));
+    try { await store.saveCheckpoint(c.binding.accountId, c.id, current.revision, checkpoint, []); return; } catch (error) { if (error.code !== 'conflict') throw error; }
+  }
+  throw new Error('relevel fixture conflict');
+}
+async function client(rt, c) {
+  const ws = new WebSocket(rt.url, { headers: { Origin: origin } });
+  const bot = { ws, c, state: null, receiver: null, binding: null, sequence: 0, errors: [], controls: [] };
+  ws.on('message', (bytes, binary) => {
+    try {
+      if (!binary) {
+        const value = JSON.parse(bytes.toString()); bot.controls.push(value);
+        if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.state = null; bot.receiver = new GameplayReceiver(binding, gameplayCatalog); }
+      } else {
+        const result = bot.receiver.accept(bytes, performance.now() / 1000);
+        if (result?.kind === 'snapshot') bot.state = result.state; else if (result?.kind === 'control') bot.controls.push(result.control);
+      }
+    } catch (error) { bot.errors.push(error.message); }
+  });
+  await once(ws, 'open');
+  ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.id }));
+  bot.send = commands => { if (ws.readyState === WebSocket.OPEN) ws.send(encodeInput({ binding: bot.binding, intent: { seq: ++bot.sequence, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, commands } }, gameplayCatalog)); };
+  bot.self = () => bot.state?.actors.find(a => a.ref.id === bot.state.selfRef.id && a.ref.life === bot.state.selfRef.life);
+  bot.party = () => bot.controls.filter(v => v.type === 'party').at(-1)?.state ?? null;
+  bot.inPublic = () => !!bot.binding?.area.startsWith('w') && bot.state?.header.area === bot.binding.area;
+  // Dungeon slots publish no observation until D3, so a dungeon login is complete once it is bound there.
+  await until(() => bot.state || bot.binding?.area.startsWith('dungeon:') || bot.errors.length || bot.controls.some(v => v.type === 'error'), 8000, 'login');
+  assert.deepEqual(bot.errors, []); assert.ok(bot.state || bot.binding?.area.startsWith('dungeon:'), JSON.stringify(bot.controls));
+  return bot;
+}
+async function closeBot(bot) { if (bot && bot.ws.readyState !== WebSocket.CLOSED) { bot.ws.close(); await once(bot.ws, 'close'); } }
+const heartbeat = bots => setInterval(() => { for (const bot of bots) bot.send([]); }, 50);
+async function party(leader, ...members) {
+  leader.send([{ kind: 'partyCreate' }]); await until(() => leader.party());
+  for (const m of members) { m.send([{ kind: 'partyJoin', code: leader.party().code }]); await until(() => m.party()?.members.length === members.indexOf(m) + 2); }
+  await until(() => leader.party().members.length === members.length + 1);
+}
+const inDungeon = bot => bot.binding.area.startsWith('dungeon:');
+const position = bot => { const s = bot.self(); return { x: s.x, z: s.z }; };
+const near = (a, b, what) => { assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < .01, `${what}: ${JSON.stringify([a, b])}`); };
+const count = async table => (await pool.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n;
+
+test('dungeon start checks leader, level, world, party and room capacity before anyone moves, then the whole party enters together', { timeout: 30000 }, async () => {
+  const rt = await runtime({ maxEncounters: 1 }), bots = []; let beat;
+  try {
+    const [a, b, d, e] = [await character({ level: 40 }), await character({ level: 20, offset: 1.5 }), await character({ level: 40, world: 'w1' }), await character({ level: 40, offset: -1.5 })];
+    for (const c of [a, b, d, e]) bots.push(await client(rt, c));
+    const [A, B, D, E] = bots; beat = heartbeat(bots);
+    assert.deepEqual(await rt.host.dungeon(e.id, { kind: 'dungeonStart', tier: 35 }), { ok: false, code: 'dungeon-party-required' });
+    await party(A, B);
+    const areas = bots.map(bot => bot.binding.area), origins = [position(A), position(B)];
+    assert.deepEqual(await rt.host.dungeon(b.id, { kind: 'dungeonStart', tier: 35 }), { ok: false, code: 'dungeon-leader-required' });
+    // One under-level member denies the whole start: the leader stays at the source too.
+    assert.deepEqual(await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 35 }), { ok: false, code: 'dungeon-level' });
+    assert.deepEqual(await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 50 }), { ok: false, code: 'dungeon-level' });
+    assert.deepEqual(await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 75 }), { ok: false, code: 'dungeon-unavailable' }, 'tier not configured');
+    assert.deepEqual(await rt.host.dungeon(a.id, { kind: 'dungeonJoin', run: '00000000-0000-4000-8000-000000000000' }), { ok: false, code: 'dungeon-run-unavailable' });
+    assert.deepEqual(await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 35, owner: a.id }), { ok: false, code: 'invalid-command' });
+    D.send([{ kind: 'partyCreate' }]); await until(() => D.party());
+    assert.deepEqual(await rt.host.dungeon(d.id, { kind: 'dungeonStart', tier: 35 }), { ok: false, code: 'dungeon-world' }, 'tier 35 starts only in World III');
+    await delay(100);
+    assert.deepEqual(bots.map(bot => bot.binding.area), areas); assert.equal(rt.host.stats().dungeonAreas, 0);
+    assert.ok(A.controls.some(v => v.type === 'error' && v.code === 'dungeon-level'), 'denial is also sent as a control error');
+
+    await relevel(b, 35); await until(() => B.self()?.level === 35, 8000, 'relevel');
+    const started = await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 35 });
+    assert.equal(started.ok, true, JSON.stringify(started)); assert.equal(started.tier, 35); assert.match(started.run.runId, /^[0-9a-f-]{36}$/);
+    await until(() => inDungeon(A) && inDungeon(B), 5000, 'both enter');
+    const inside = (await store.getOwned(b.binding.accountId, b.id)).revision;
+    assert.equal(A.binding.area, started.run.area); assert.equal(B.binding.area, started.run.area);
+    assert.equal(rt.host.stats().dungeonAreas, 1); assert.equal(rt.host.dungeonObservation(b.id).run.runId, started.run.runId);
+    assert.deepEqual(rt.host.dungeonObservation(a.id).run, started.run); assert.equal(rt.host.dungeonObservation(d.id), null);
+    assert.equal(A.party().members.length, 2, 'party is retained inside the run');
+    // Saved while inside: the public origin, never the y80 chamber.
+    await until(async () => (await store.getOwned(b.binding.accountId, b.id)).revision > inside, 5000, 'save inside');
+    const saved = await store.getOwned(b.binding.accountId, b.id);
+    assert.equal(saved.checkpoint.world, 'w3'); near(saved.checkpoint.location, origins[1], 'saved origin'); assert.ok(Math.abs(saved.checkpoint.location.y - DUNGEON_CHAMBER.y) > 20);
+    // The room pool is shared with boss encounters and capped by maxEncounters=1.
+    E.send([{ kind: 'partyCreate' }]); await until(() => E.party());
+    assert.deepEqual(await rt.host.dungeon(e.id, { kind: 'dungeonStart', tier: 35 }), { ok: false, code: 'dungeon-capacity' });
+    assert.deepEqual(rt.failures, []); for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { clearInterval(beat); for (const bot of bots) await closeBot(bot); await rt.close(); }
+});
+
+test('grace reconnect resumes the same run, a member leaves and late-joins, and the leader ends the run returning everyone to their origins', { timeout: 30000 }, async () => {
+  const rt = await runtime(), bots = []; let beat;
+  try {
+    const a = await character({ level: 120 }), b = await character({ level: 120, offset: 2 });
+    const A = await client(rt, a); let B = await client(rt, b); bots.push(A, B); beat = heartbeat(bots);
+    await party(A, B); const origins = [position(A), position(B)];
+    const started = await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 35 }); assert.equal(started.ok, true);
+    await until(() => inDungeon(A) && inDungeon(B));
+    // Same-process reconnect inside grace resumes the owned dungeon actor in the same run.
+    await closeBot(B); bots.splice(1, 1);
+    B = await client(rt, b); bots.push(B); assert.ok(inDungeon(B));
+    assert.equal(B.binding.area, started.run.area); assert.equal(rt.host.dungeonObservation(b.id).run.runId, started.run.runId);
+    // A follower cannot end an active run; it can leave alone and come back while the run is still going.
+    assert.deepEqual(await rt.host.dungeon(b.id, { kind: 'dungeonReturn', run: started.run.runId }), { ok: false, code: 'dungeon-leader-required' });
+    B.send([{ kind: 'encounterLeave' }]); await until(() => B.inPublic(), 5000, 'leave alone');
+    near(position(B), origins[1], 'individual leave origin'); assert.equal(B.party().members.length, 2);
+    // A late join needs the canonical five seconds out of combat; the sentinels may have hit the member before it left.
+    let joined;
+    await until(async () => { joined = await rt.host.dungeon(b.id, { kind: 'dungeonJoin', run: started.run.runId }); return joined.ok || joined.code !== 'dungeon-party-busy'; }, 8000, 'late join admission');
+    assert.equal(joined.ok, true, JSON.stringify(joined));
+    await until(() => inDungeon(B), 5000, 'late join'); assert.equal(B.binding.area, started.run.area);
+    assert.deepEqual(await rt.host.dungeon(a.id, { kind: 'dungeonReturn', run: '00000000-0000-4000-8000-000000000000' }), { ok: false, code: 'dungeon-run-unavailable' });
+    assert.equal((await rt.host.dungeon(a.id, { kind: 'dungeonReturn', run: started.run.runId })).ok, true);
+    await until(() => A.inPublic() && B.inPublic(), 5000, 'leader ends run');
+    near(position(A), origins[0], 'leader origin'); near(position(B), origins[1], 'member origin');
+    assert.equal(A.party().members.length, 2, 'returning keeps the party');
+    await until(() => rt.host.stats().dungeonAreas === 0, 3000, 'empty run disposed');
+    assert.deepEqual(rt.failures, []); for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { clearInterval(beat); for (const bot of bots) await closeBot(bot); await rt.close(); }
+});
+
+test('host restart restores a dungeon resident at its safe public return point', { timeout: 30000 }, async () => {
+  const a = await character({ level: 40 }); let rt = await runtime(), A, beat, origin;
+  try {
+    A = await client(rt, a); beat = heartbeat([A]); await party(A); origin = position(A);
+    assert.equal((await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 35 })).ok, true);
+    await until(() => inDungeon(A)); await delay(300);
+  } finally { clearInterval(beat); assert.deepEqual(await rt.close(), { durable: true, unresolved: 0 }); await closeBot(A); }
+  const saved = await store.getOwned(a.binding.accountId, a.id);
+  assert.equal(saved.checkpoint.world, 'w3'); near(saved.checkpoint.location, origin, 'saved at restart');
+  rt = await runtime();
+  try {
+    A = await client(rt, a);
+    assert.ok(A.inPublic(), A.binding.area); assert.equal(A.state.world, 'w3'); near(position(A), origin, 'restored after restart');
+    assert.equal(rt.host.stats().dungeonAreas, 0); assert.deepEqual(rt.failures, []);
+  } finally { await closeBot(A); await rt.close(); }
+});
+
+test('a member killed in a wiped run returns dead, without revival, and stays dead in PG', { timeout: 30000 }, async () => {
+  const rt = await runtime(); let A, beat;
+  try {
+    const a = await character({ level: 35, hp: 1 });
+    A = await client(rt, a); beat = heartbeat([A]); await party(A); const origin = position(A);
+    const started = await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 35 }); assert.equal(started.ok, true);
+    // Actual sentinels, timing and damage kill the 1 HP fixture; with nobody eligible left the run fails.
+    await until(() => rt.host.dungeonObservation(a.id)?.phase === 'failed', 15000, 'wipe');
+    assert.equal(rt.host.dungeonObservation(a.id).activeEnemies.length, 0);
+    assert.equal((await rt.host.dungeon(a.id, { kind: 'dungeonReturn', run: started.run.runId })).ok, true);
+    await until(() => A.inPublic(), 5000, 'dead return');
+    const self = A.self(); assert.equal(self.alive, false); assert.equal(self.hp, 0); near(position(A), origin, 'dead return origin');
+    await until(async () => { const r = await store.getOwned(a.binding.accountId, a.id); return r.checkpoint.survival.alive === false && Math.abs(r.checkpoint.location.y - DUNGEON_CHAMBER.y) > 20; }, 5000, 'dead save');
+    const saved = await store.getOwned(a.binding.accountId, a.id);
+    assert.equal(saved.checkpoint.survival.hp, 0); assert.ok(saved.checkpoint.survival.respawnRemaining > 0); assert.equal(saved.checkpoint.progress.flags.dungeonCleared35, undefined);
+    assert.deepEqual(rt.failures, []); assert.deepEqual(A.errors, []);
+  } finally { clearInterval(beat); await closeBot(A); await rt.close(); }
+});
+
+test('a real clear freezes the clear-time roster, retries the seal unchanged, and pays each recipient once online and once after an offline return', { timeout: 90000 }, async () => {
+  const gate = sealGate(), rt = await runtime({ dungeonStore: gate.store, grace: 300 }), bots = []; let beat, fight;
+  try {
+    const a = await character({ level: 650 }), b = await character({ level: 200, offset: 2 });
+    const A = await client(rt, a), B = await client(rt, b); bots.push(A, B); beat = heartbeat([B]);
+    await party(A, B); const origins = [position(A), position(B)];
+    const before = await Promise.all([a, b].map(c => store.getOwned(c.binding.accountId, c.id)));
+    const counts = [await count('world_dungeon_completions'), await count('world_dungeon_awards'), await count('world_dungeon_award_receipts')];
+    gate.failing = true;
+    const started = await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 35 }); assert.equal(started.ok, true);
+    await until(() => inDungeon(A) && inDungeon(B));
+    // The level 650 leader fights with ordinary target/ability inputs over its socket.
+    let turn = 0;
+    fight = setInterval(() => { const run = rt.host.dungeonObservation(a.id), target = run?.activeEnemies[0]; A.send(target && run.phase === 'wave' ? [{ kind: 'target', target }, { kind: 'ability', slot: turn++ % 2 ? 1 : 4 }] : []); }, 50);
+    await until(() => rt.host.dungeonObservation(a.id)?.phase === 'clear', 70000, 'clear');
+    clearInterval(fight); fight = undefined;
+    await until(() => gate.attempts >= 2, 5000, 'seal retries');
+    assert.equal(await count('world_dungeon_completions'), counts[0], 'nothing is sealed while the write fails');
+    // After the clear boundary: the follower disconnects and retires, the leader leaves alone. Both stay on the frozen roster.
+    clearInterval(beat); beat = heartbeat([A]); await closeBot(B);
+    await until(() => rt.host.stats().activeActors === 1, 8000, 'follower retired');
+    A.send([{ kind: 'encounterLeave' }]); await until(() => A.inPublic(), 5000, 'leader leaves after clear');
+    assert.deepEqual(await rt.host.dungeon(a.id, { kind: 'dungeonJoin', run: started.run.runId }), { ok: false, code: 'dungeon-run-ended' });
+    const retired = await store.getOwned(b.binding.accountId, b.id);
+    assert.equal(retired.checkpoint.progress.flags.dungeonCleared35, undefined); near(retired.checkpoint.location, origins[1], 'retired at origin');
+    gate.failing = false;
+    await until(async () => (await store.getOwned(a.binding.accountId, a.id)).checkpoint.progress.flags.dungeonCleared35 === true, 8000, 'online award');
+    assert.equal(rt.host.stats().dungeonClears, 1);
+    assert.deepEqual([await count('world_dungeon_completions'), await count('world_dungeon_awards')], [counts[0] + 1, counts[1] + 2]);
+    const manifest = (await pool.query('SELECT manifest_json FROM world_dungeon_completions WHERE run_id=$1', [started.run.runId])).rows[0].manifest_json;
+    assert.deepEqual(JSON.parse(manifest).recipients.map(r => r.characterId), [a.id, b.id].sort());
+    const paidA = await store.getOwned(a.binding.accountId, a.id);
+    assert.equal(paidA.checkpoint.progress.xp, before[0].checkpoint.progress.xp + 1800); assert.equal(paidA.checkpoint.progress.coins, before[0].checkpoint.progress.coins + 1800);
+    await until(() => rt.host.stats().dungeonAreas === 0, 3000, 'sealed empty run disposed');
+    // The offline recipient receives the same award once in whatever public Area it joins next.
+    const B2 = await client(rt, b); bots.push(B2); clearInterval(beat); beat = heartbeat([A, B2]);
+    assert.ok(B2.inPublic()); near(position(B2), origins[1], 'offline recipient origin');
+    await until(async () => (await store.getOwned(b.binding.accountId, b.id)).checkpoint.progress.flags.dungeonCleared35 === true, 8000, 'offline award');
+    await delay(600);
+    const paid = await Promise.all([a, b].map(c => store.getOwned(c.binding.accountId, c.id)));
+    paid.forEach((r, i) => { assert.equal(r.checkpoint.progress.xp, before[i].checkpoint.progress.xp + 1800); assert.equal(r.checkpoint.progress.coins, before[i].checkpoint.progress.coins + 1800); });
+    assert.equal(await count('world_dungeon_award_receipts'), counts[2] + 2);
+    assert.deepEqual(await dungeonStore.readPendingDungeonAwards(b.binding.accountId, b.id, paid[1].revision, 10), { kind: 'page', page: { revision: paid[1].revision, awards: [] }, more: false });
+    await until(() => B2.state.self.player.flags.dungeonCleared35 === true, 3000, 'award visible to the returning client');
+    assert.deepEqual(rt.failures, []); for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { clearInterval(beat); clearInterval(fight); for (const bot of bots) await closeBot(bot); await rt.close(); }
+});
+
+test('a dungeon resident whose PG revision moves underneath it is readmitted publicly from the durable checkpoint', { timeout: 30000 }, async () => {
+  const rt = await runtime(); let A, B, beat;
+  try {
+    const a = await character({ level: 120 }), b = await character({ level: 120, offset: 2 });
+    A = await client(rt, a); B = await client(rt, b); beat = heartbeat([A, B]); await party(A, B); const origin = position(A);
+    const started = await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 35 }); assert.equal(started.ok, true); await until(() => inDungeon(A) && inDungeon(B));
+    await relevel(a, 125);
+    await until(() => A.inPublic() && A.self()?.level === 125, 8000, 'recovered publicly');
+    near(position(A), origin, 'recovered at origin'); assert.equal(rt.host.stats().activeActors, 2);
+    // The other member keeps the run; the recovered member is no longer in the party.
+    assert.equal(B.binding.area, started.run.area); assert.equal(rt.host.dungeonObservation(b.id).run.runId, started.run.runId);
+    await until(() => B.party()?.members.length === 1 && A.party() === null, 3000, 'party resync');
+    assert.equal(rt.host.stats().dungeonAreas, 1);
+    assert.equal((await rt.host.dungeon(b.id, { kind: 'dungeonReturn', run: started.run.runId })).ok, true);
+    await until(() => B.inPublic() && rt.host.stats().dungeonAreas === 0, 5000, 'run ended');
+    assert.deepEqual(rt.failures, []); assert.deepEqual(A.errors, []); assert.deepEqual(B.errors, []);
+  } finally { clearInterval(beat); await closeBot(A); await closeBot(B); await rt.close(); }
+});
