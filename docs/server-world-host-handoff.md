@@ -18,7 +18,7 @@ Node build는 collision JSON 네 개와 source/bytes/SHA256 manifest를 `server-
 - `node tools/qa-world-main-browser.mjs`: production dist와 actual bundled main, 실제 임시 PG에서 캐릭터를 미리 만들지 않고 UI로 생성, 이동, 재접속한다. HTTP 로그인 세션만 fixture로 제공한다.
 - `node tools/qa-server-game.mjs`: 실제 Game/host의 정상 level-1 mage 전투, 보상과 재접속을 검사한다. `WORLD_QA_BROWSER_PORT`와 `WORLD_QA_HOST_PORT`로 격리한다.
 - `node tools/qa-world-social.mjs`: 실제 Game에서 채팅, native party와 계정 설정 복구를 검사한다. 현재 두 캐릭터는 같은 QA 계정이므로 교차계정 Chrome 증거로 쓰지 않는다.
-- `docs/evidence/world-motion-dev362f843-{parity,provenance}.json`: source114개와 실제 controller parity, 독립 browser observation graph 근거다.
+- `docs/evidence/world-motion-dev55a15e4-{parity,provenance}.json`: 최신 dev75 source114개와 실제 controller parity 근거다. 이전 검증 파일도 보존한다.
 
 실행 환경은 Node24.22.0, pnpm10.10.0이다. 로컬 임시 PG는 기능 검증용이며 fsync-off이므로 DB 운영 성능 근거가 아니다.
 
@@ -32,3 +32,11 @@ Node build는 collision JSON 네 개와 source/bytes/SHA256 manifest를 `server-
 ## 최신 dev 던전 원정 보존
 
 PR69의 dev `9c06f54`를 반영했다. 기존 경로의 여섯 던전과 pointer capture, 월드 layout은 유지한다. 새 서버 경로에서는 browser가 좌표/충돌/보상/적을 직접 바꾸는 기존 DungeonExpeditions를 생성하지 않는다. 여섯 던전의 서버 권한 이전은 S7 후속 범위다. 이 경계를 production browser QA에서 확인한다.
+
+## 최신 퀘스트와 XP 축복 저장
+
+dev `55a15e4`의 설원 퀘스트와 Astra/Solarkan 10분 XP 축복을 보존한다. 새 축복 key는 checkpoint와 private binary cooldown에서 허용하며 시전 가능한 ability에는 추가하지 않는다. 기존 정확한25-key 퀘스트 catalog만35-key로 읽기 변환한다. 읽을 때 PG 원문, revision, updatedAt는 바꾸지 않고 다음 정상 CAS 저장에서 새 형태를 기록한다. 부분 catalog, 알 수 없는 key와 구 catalog에 섞인 신규 objective는 거부한다.
+
+새35-key 진행 또는 XP 축복이 저장된 뒤에는 이를 이해하는 core codec과 catalog가 있는 build로 rollback해야 한다. 예전25-key core binary로 되돌리는 호환성은 보장하지 않는다. 후속007의 구 CharacterStore SQL 가시성 검사는 구 core codec 전체의 호환성을 뜻하지 않는다. offline 축복 시간은 명시한 cooldown pause/elapse 설정을 따른다.
+
+개인 endingReady 복구 기록은 shared NPC와 주민의 시간을 멈추지 않는다. 엔딩 표시와 완주는 여전히 별도 후속 범위다.
