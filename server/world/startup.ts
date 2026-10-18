@@ -18,6 +18,8 @@ import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, OPTIONAL_WORLDS
 import { createGameplayProtocol, projectObservationExtras } from './gameplay/protocol.ts';
 import { acquireHostOwnership } from './ownership.ts';
 import { createActualWorldHost, type HostPolicies } from './host.ts';
+import { DungeonCompletionStore } from './dungeon-completion-store.ts';
+import { DUNGEONS, type DungeonTier } from '../../src/sim/data/dungeons.ts';
 import { WorldConfigError } from './startup-error.ts';
 
 type TimingMode = 'pause' | 'elapse';
@@ -30,6 +32,8 @@ const HOST_DEFAULTS = Object.freeze({authTimeoutMs:5000,inputTimeoutMs:400,recon
 const AREA_DEFAULTS = Object.freeze({eventCount:16384,inputCommandsPerTick:32,timers:4096,projectiles:4096});
 const PERSISTENCE_DEFAULTS = Object.freeze({maxQueuedPerCharacter:1,maxAttempts:3,retryMs:100,maxRecoveryRounds:2});
 export type ConfiguredParty = {enabled:false}|{enabled:true;maxParties:number;maxEncounters:number;returns:Partial<Record<HostedBossProfileId,{world:WorldId;spawn:string}>>};
+/** Optional; absent or disabled keeps every Area without dungeon runs or feature award receipts. */
+export type ConfiguredDungeons = {enabled:false}|{enabled:true;tiers:readonly DungeonTier[];maxPendingAwards:number};
 export type ValidatedWorldConfig = {
  schema:'world-startup-v1';
  ownership:{key:string;heartbeatMs:number;queryTimeoutMs:number};
@@ -37,7 +41,7 @@ export type ValidatedWorldConfig = {
  worlds:WorldConfiguration<ConfiguredRegion>;restore:ConfiguredRestore;
  limits:{[K in keyof typeof HOST_DEFAULTS]:number};areaLimits:{[K in keyof typeof AREA_DEFAULTS]:number};persistence:{[K in keyof typeof PERSISTENCE_DEFAULTS]:number};
  victimOutcome:HostPolicies['victimOutcome'];victimOutcomeRetryCeiling?:HostPolicies['victimOutcome'];chat:{maxPending:number};
- party:ConfiguredParty;characters?:{maxCharactersPerAccount?:number};
+ party:ConfiguredParty;characters?:{maxCharactersPerAccount?:number};dungeons?:ConfiguredDungeons;
 };
 function fail(path:string):never {throw new WorldConfigError(path);}
 function detached(value:unknown):unknown {
@@ -58,7 +62,7 @@ function validateRestore(value:unknown):ConfiguredRestore {
  return freeze({cooldowns:choice(r.cooldowns,timing,'restore.cooldowns'),statuses:choice(r.statuses,timing,'restore.statuses'),death:choice(r.death,timing,'restore.death'),history:choice(r.history,timing,'restore.history'),hp:choice(r.hp,['preserve'],'restore.hp'),resource:choice(r.resource,['preserve'],'restore.resource'),location:choice(r.location,['saved','arrival'],'restore.location'),activity:choice(r.activity,['cancel'],'restore.activity')});
 }
 export function validateWorldConfig(value:unknown):ValidatedWorldConfig {
- const c=object(detached(value),['schema','ownership','assets','worlds','restore','victimOutcome','chat'],['limits','areaLimits','persistence','party','characters','victimOutcomeRetryCeiling'],'root');choice(c.schema,['world-startup-v1'],'schema');
+ const c=object(detached(value),['schema','ownership','assets','worlds','restore','victimOutcome','chat'],['limits','areaLimits','persistence','party','characters','victimOutcomeRetryCeiling','dungeons'],'root');choice(c.schema,['world-startup-v1'],'schema');
  const own=object(c.ownership,['key'],['heartbeatMs','queryTimeoutMs'],'ownership');if(typeof own.key!=='string'||!own.key.length||Buffer.byteLength(own.key)>128||/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(own.key))fail('ownership.key');
  const a=object(c.assets,['source','manifest'],['maxBakeBytes','maxTotalBakeBytes','maxManifestBytes','maxCells'],'assets');
  const assets={source:hash(a.source,'assets.source'),manifest:choice(a.manifest,['world-manifest.json'],'assets.manifest'),maxBakeBytes:integer(optional(a,'maxBakeBytes',16777216),'assets.maxBakeBytes',1,134217728),maxTotalBakeBytes:integer(optional(a,'maxTotalBakeBytes',67108864),'assets.maxTotalBakeBytes',1,268435456),maxManifestBytes:integer(optional(a,'maxManifestBytes',16384),'assets.maxManifestBytes',1,65536),maxCells:integer(optional(a,'maxCells',1000000),'assets.maxCells',4,4000000)};
@@ -82,7 +86,8 @@ export function validateWorldConfig(value:unknown):ValidatedWorldConfig {
  let characters:{maxCharactersPerAccount?:number}|undefined;if(c.characters!==undefined){const p=object(c.characters,[],['maxCharactersPerAccount'],'characters');characters=Object.hasOwn(p,'maxCharactersPerAccount')?{maxCharactersPerAccount:integer(p.maxCharactersPerAccount,'characters.maxCharactersPerAccount',1,Number.MAX_SAFE_INTEGER)}:{};}
  let party:ConfiguredParty={enabled:false};if(c.party!==undefined){const p=object(c.party,['enabled'],['maxParties','maxEncounters','returns'],'party');if(p.enabled===false){object(p,['enabled'],[],'party disabled');}else if(p.enabled===true){const profiles=HOSTED_BOSSES.filter(profile=>enabled.includes(BOSS_WORLDS[profile])),returns=object(p.returns,profiles,[],'party.returns'),maxParties=integer(p.maxParties,'party.maxParties',1,10000),maxEncounters=integer(p.maxEncounters,'party.maxEncounters',1,1024);if(maxEncounters>maxParties)fail('party encounter/party bounds');const destinations=Object.fromEntries(profiles.map(profile=>{const r=object(returns[profile],['world','spawn'],[],`party.returns.${profile}`);if(typeof r.spawn!=='string'||!r.spawn.length||r.spawn.length>128)fail(`party.returns.${profile}.spawn`);return[profile,{world:choice(r.world,enabled,`party.returns.${profile}.world`),spawn:r.spawn}];})) as Extract<ConfiguredParty,{enabled:true}>['returns'];party={enabled:true,maxParties,maxEncounters,returns:destinations};}else fail('party.enabled');}
 
- return freeze({schema:'world-startup-v1',ownership:{key:own.key,heartbeatMs:integer(optional(own,'heartbeatMs',1000),'ownership.heartbeatMs',1,60000),queryTimeoutMs:integer(optional(own,'queryTimeoutMs',1000),'ownership.queryTimeoutMs',1,60000)},assets,worlds:regions,restore,limits,areaLimits,persistence,victimOutcome,chat,...(retry?{victimOutcomeRetryCeiling:retry}:{}),party,...(characters===undefined?{}:{characters})});
+ let dungeons:ConfiguredDungeons|undefined;if(c.dungeons!==undefined){const d=object(c.dungeons,['enabled'],['tiers','maxPendingAwards'],'dungeons');if(d.enabled===false){object(d,['enabled'],[],'dungeons disabled');dungeons={enabled:false};}else if(d.enabled===true){if(!party.enabled)fail('dungeons require party');object(d,['enabled','tiers','maxPendingAwards'],[],'dungeons');if(!Array.isArray(d.tiers)||!d.tiers.length||d.tiers.length>DUNGEONS.length||new Set(d.tiers).size!==d.tiers.length)fail('dungeons.tiers');const tiers=d.tiers.map((tier:unknown,i:number)=>{const known=DUNGEONS.find(x=>x.level===tier);if(!known||!enabled.includes(`w${known.chapter}` as WorldId))fail(`dungeons.tiers.${i}`);return known.level;});dungeons={enabled:true,tiers,maxPendingAwards:integer(d.maxPendingAwards,'dungeons.maxPendingAwards',1,256)};}else fail('dungeons.enabled');}
+ return freeze({schema:'world-startup-v1',ownership:{key:own.key,heartbeatMs:integer(optional(own,'heartbeatMs',1000),'ownership.heartbeatMs',1,60000),queryTimeoutMs:integer(optional(own,'queryTimeoutMs',1000),'ownership.queryTimeoutMs',1,60000)},assets,worlds:regions,restore,limits,areaLimits,persistence,victimOutcome,chat,...(retry?{victimOutcomeRetryCeiling:retry}:{}),party,...(characters===undefined?{}:{characters}),...(dungeons===undefined?{}:{dungeons})});
 }
 /** Separate composition envelope: old WORLD_CONFIG_JSON remains valid across a binary rollback. */
 export type ConfiguredLedgerConfig = NonNullable<HostPolicies['ledger']>&{schema:'world-ledger-v1';queryTimeoutMs:number};
@@ -142,8 +147,8 @@ export async function startConfiguredWorld(options:ConfiguredWorldOptions) {
  const outcomes=ledgerConfig?new DurableOutcomeStore(options.pool,codec,{planOutcomePage,queryTimeoutMs:ledgerConfig.queryTimeoutMs}):undefined;
  const ownership=await acquireHostOwnership(options.pool,config.ownership.key,config.ownership);
  let host:ReturnType<typeof createActualWorldHost>|undefined;
- try{const policies:HostPolicies={...config.limits,...(ledgerConfig?{ledger:{sourceLimits:ledgerConfig.sourceLimits,drainLimits:ledgerConfig.drainLimits,recoveryLimits:ledgerConfig.recoveryLimits,recoveryIntervalMs:ledgerConfig.recoveryIntervalMs}}:{}),victimOutcome:config.victimOutcome,...(config.victimOutcomeRetryCeiling?{victimOutcomeRetryCeiling:config.victimOutcomeRetryCeiling}:{}),chat:config.chat,...(party?{party}:{}),persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
-  host=createActualWorldHost({...(outcomes?{outcomes}:{}),chat:new WorldChatService(options.pool),admission:options.admission,characters,worlds:catalog,codec,gameplay:{catalog:gameplayCatalog,create:()=>createGameplayProtocol(gameplayCatalog)},ownership,policies,originAllowed:options.originAllowed,clientIp:options.clientIp,nowMonotonicMs:()=>performance.now(),nowWallMs:Date.now});
+ try{const policies:HostPolicies={...config.limits,...(ledgerConfig?{ledger:{sourceLimits:ledgerConfig.sourceLimits,drainLimits:ledgerConfig.drainLimits,recoveryLimits:ledgerConfig.recoveryLimits,recoveryIntervalMs:ledgerConfig.recoveryIntervalMs}}:{}),victimOutcome:config.victimOutcome,...(config.victimOutcomeRetryCeiling?{victimOutcomeRetryCeiling:config.victimOutcomeRetryCeiling}:{}),chat:config.chat,...(party?{party}:{}),...(config.dungeons?.enabled?{dungeons:{tiers:config.dungeons.tiers,maxPendingAwards:config.dungeons.maxPendingAwards}}:{}),persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
+  host=createActualWorldHost({...(outcomes?{outcomes}:{}),...(config.dungeons?.enabled?{dungeonCompletions:new DungeonCompletionStore(options.pool)}:{}),chat:new WorldChatService(options.pool),admission:options.admission,characters,worlds:catalog,codec,gameplay:{catalog:gameplayCatalog,create:()=>createGameplayProtocol(gameplayCatalog)},ownership,policies,originAllowed:options.originAllowed,clientIp:options.clientIp,nowMonotonicMs:()=>performance.now(),nowWallMs:Date.now});
   await host.ready();
   return {host,catalog,ownership,characters,codec,gameplayCatalog,config,ledgerConfig};
  }catch(error){const errors=[error];if(host){try{host.stopAdmission();await host.shutdown(7000);}catch(shutdownError){errors.push(shutdownError);}}try{await ownership.release();}catch(releaseError){errors.push(releaseError);}if(errors.length>1)throw new AggregateError(errors,'World assembly cleanup reported errors');throw error;}
