@@ -29,6 +29,10 @@ function grantId(value: string) {
       /[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(value)) fail('invalid', 'grant ID must be 1..512 UTF-8 bytes without controls or unpaired surrogates');
 }
 function revision(value: number) { if (!Number.isSafeInteger(value) || value < 0 || value >= Number.MAX_SAFE_INTEGER) fail('invalid', 'invalid revision'); }
+function featureIds(ids: readonly string[]) {
+  if (!Array.isArray(ids) || ids.length > MAX_CHECKPOINT_GRANT_RECEIPTS || new Set(ids).size !== ids.length) fail('invalid', 'expected at most 256 distinct dungeon award IDs');
+  for (const id of ids) if (typeof id !== 'string' || Buffer.byteLength(id) < 1 || Buffer.byteLength(id) > 2048) fail('invalid', 'invalid dungeon award ID');
+}
 function pageSize(value: number) { if (!Number.isSafeInteger(value) || value < 1 || value > 100) fail('invalid', 'page size must be 1..100'); }
 
 /** Canonical bounded JSON, including rejection of values JSON.stringify would silently discard/coerce. */
@@ -262,12 +266,13 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
     return result.rows.map(row => this.decodeGrant(row, context));
   }
   /** A consistent checkpoint + bounded receipt ledger for freeze/reload recovery after a conflict or lost ACK. */
-  async loadForRecovery(accountId: string, characterId: string, ids: readonly string[]): Promise<{
+  async loadForRecovery(accountId: string, characterId: string, ids: readonly string[], dungeonAwardIds?: readonly string[]): Promise<{
     character: Character<I, C>; grants: (EarnedGrant<G> & { appliedRevision: number | null })[];
+    dungeonAwards?: { id: string; appliedRevision: number | null }[];
   }> {
     account(accountId); character(characterId);
     if (!Array.isArray(ids) || ids.length > MAX_CHECKPOINT_GRANT_RECEIPTS || new Set(ids).size !== ids.length) fail('invalid', 'expected at most 256 distinct grant IDs');
-    ids.forEach(grantId);
+    ids.forEach(grantId); if (dungeonAwardIds !== undefined) featureIds(dungeonAwardIds);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -283,14 +288,24 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
         if (appliedRevision !== null && (!Number.isSafeInteger(appliedRevision) || appliedRevision < 1 || appliedRevision > current.revision)) fail('invalid', 'corrupt grant receipt revision');
         grants.push({ ...this.decodeGrant(row, current), appliedRevision });
       }
-      await client.query('COMMIT'); return { character: current, grants };
+      if (dungeonAwardIds === undefined) { await client.query('COMMIT'); return { character: current, grants }; }
+      const dungeonAwards: { id: string; appliedRevision: number | null }[] = [];
+      for (const id of dungeonAwardIds) {
+        const row = (await client.query<{ applied_revision: string | null }>(`SELECT r.applied_revision FROM world_dungeon_awards a
+          LEFT JOIN world_dungeon_award_receipts r ON r.award_id=a.award_id WHERE a.award_id=$1 AND a.character_id=$2 AND a.account_id=$3`, [id, characterId, accountId])).rows[0];
+        if (!row) fail('not_found', 'dungeon award not found for character');
+        const appliedRevision = row.applied_revision === null ? null : Number(row.applied_revision);
+        if (appliedRevision !== null && (!Number.isSafeInteger(appliedRevision) || appliedRevision < 1 || appliedRevision > current.revision)) fail('invalid', 'corrupt dungeon award receipt revision');
+        dungeonAwards.push({ id, appliedRevision });
+      }
+      await client.query('COMMIT'); return { character: current, grants, dungeonAwards };
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
   /** Caller captures only trusted core state. Receipts and this checkpoint commit together or neither does. */
-  async saveCheckpoint(accountId: string, characterId: string, expectedRevision: number, checkpointInput: C, appliedGrantIds: readonly string[] = []): Promise<Character<I, C>> {
+  async saveCheckpoint(accountId: string, characterId: string, expectedRevision: number, checkpointInput: C, appliedGrantIds: readonly string[] = [], appliedDungeonAwardIds: readonly string[] = []): Promise<Character<I, C>> {
     account(accountId); character(characterId); revision(expectedRevision);
     if (!Array.isArray(appliedGrantIds) || appliedGrantIds.length > MAX_CHECKPOINT_GRANT_RECEIPTS || new Set(appliedGrantIds).size !== appliedGrantIds.length) fail('invalid', 'expected at most 256 distinct grant IDs');
-    appliedGrantIds.forEach(grantId);
+    appliedGrantIds.forEach(grantId); featureIds(appliedDungeonAwardIds);
     const checkpointJson = json(checkpointInput, 262144), client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -304,10 +319,16 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
         const receipt = await client.query('SELECT 1 FROM world_character_grant_receipts WHERE grant_id=$1', [id]);
         if (receipt.rowCount) fail('already_applied', 'grant already applied; reload before retry');
       }
+      // Dungeon clear awards (migration 008) only enter when the capture carries them; old callers never touch those tables.
+      for (const id of appliedDungeonAwardIds) {
+        if (!(await client.query('SELECT 1 FROM world_dungeon_awards WHERE award_id=$1 AND character_id=$2 AND account_id=$3', [id, characterId, accountId])).rowCount) fail('not_found', 'dungeon award not found for character');
+        if ((await client.query('SELECT 1 FROM world_dungeon_award_receipts WHERE award_id=$1', [id])).rowCount) fail('already_applied', 'dungeon award already applied; reload before retry');
+      }
       const result = await client.query<Row>(`UPDATE world_characters SET checkpoint_json=$1,revision=revision+1,updated_at=now()
         WHERE character_id=$2 AND account_id=$3 AND revision=$4 RETURNING *`, [json(checkpoint, 262144), characterId, accountId, expectedRevision]);
       if (!result.rowCount) fail('conflict', 'checkpoint revision conflict');
       for (const id of appliedGrantIds) await client.query('INSERT INTO world_character_grant_receipts(grant_id,character_id,applied_revision) VALUES($1,$2,$3)', [id, characterId, expectedRevision + 1]);
+      for (const id of appliedDungeonAwardIds) await client.query('INSERT INTO world_dungeon_award_receipts(award_id,character_id,applied_revision) VALUES($1,$2,$3)', [id, characterId, expectedRevision + 1]);
       const saved = this.decode(result.rows[0]); await client.query('COMMIT'); return saved;
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }

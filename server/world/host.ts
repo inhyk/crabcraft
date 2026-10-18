@@ -651,19 +651,21 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         const captures = await boundary(() => { deps.ownership.assertOwned(); return [...actors.values()].map(actor => ({ actor, generation: actor.generation, capture: actor.slot.area.capturePlayerCheckpoint(actor.ref) })); });
         const results = await Promise.all(captures.map(({ actor, capture }) => persistence.commit({ captureId: capture.captureId,
           accountId: actor.record.accountId, characterId: actor.record.characterId, expectedRevision: actor.record.revision,
-          checkpoint: deps.codec.toJson(capture.checkpoint), appliedGrantIds: capture.appliedGrantIds })));
+          checkpoint: deps.codec.toJson(capture.checkpoint), appliedGrantIds: capture.appliedGrantIds,
+          ...(capture.appliedFeatureAwardIds ? { appliedFeatureAwardIds: capture.appliedFeatureAwardIds } : {}) })));
         const recovered = await boundary(() => {
           deps.ownership.assertOwned(); let retry = false;
           for (const [index, result] of results.entries()) {
             const { actor, generation: capturedGeneration, capture } = captures[index];
             if (actor.generation !== capturedGeneration) throw new Error('capture owner changed during barrier');
             if (result.kind === 'unresolved') throw new Error('checkpoint unresolved');
-            if (result.kind === 'saved') { actor.record = result.character; actor.slot.area.markCheckpointDurable(capture.captureId, result.character.revision, capture.appliedGrantIds); }
+            if (result.kind === 'saved') { actor.record = result.character; actor.slot.area.markCheckpointDurable(capture.captureId, result.character.revision, capture.appliedGrantIds, capture.appliedFeatureAwardIds); }
             else {
               metrics.recoveries++; const recovery = result.recovery;
-              const exact = isDeepStrictEqual(recovery.character.checkpoint, deps.codec.toJson(capture.checkpoint)) && recovery.grants.every(g => g.appliedRevision !== null);
+              const exact = isDeepStrictEqual(recovery.character.checkpoint, deps.codec.toJson(capture.checkpoint)) && recovery.grants.every(g => g.appliedRevision !== null) &&
+                (recovery.dungeonAwards ?? []).every(a => a.appliedRevision !== null) && (capture.appliedFeatureAwardIds?.length ?? 0) === (recovery.dungeonAwards?.length ?? 0);
               actor.record = recovery.character;
-              if (exact) actor.slot.area.markCheckpointDurable(capture.captureId, recovery.character.revision, capture.appliedGrantIds);
+              if (exact) actor.slot.area.markCheckpointDurable(capture.captureId, recovery.character.revision, capture.appliedGrantIds, capture.appliedFeatureAwardIds);
               else {
                 restoreDurableActor(actor, recovery);
                 retry = true;
@@ -722,13 +724,14 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (barrier || frozen) return;
     const actor = [...actors.values()].find(a => !a.connection && a.detachedAt !== null && now - a.detachedAt >= p.reconnectGraceMs);
     if (!actor) return;
-    if ([...allSlots].some(slot => slot.area.pendingGrants().length) || actor.slot.area.appliedGrantIds(actor.record.characterId).length) { startDurability(); return; }
+    if ([...allSlots].some(slot => slot.area.pendingGrants().length) || actor.slot.area.appliedGrantIds(actor.record.characterId).length || actor.slot.area.appliedFeatureAwardIds(actor.record.characterId).length) { startDurability(); return; }
     const retirement = actor.slot.area.quiescePlayer(actor.ref, 'disconnect');
     const capturedGeneration = actor.generation;
     const task = async () => {
       const result = await persistence.commit({ captureId: retirement.capture.captureId, accountId: actor.record.accountId,
         characterId: actor.record.characterId, expectedRevision: actor.record.revision,
-        checkpoint: deps.codec.toJson(retirement.capture.checkpoint), appliedGrantIds: retirement.capture.appliedGrantIds });
+        checkpoint: deps.codec.toJson(retirement.capture.checkpoint), appliedGrantIds: retirement.capture.appliedGrantIds,
+        ...(retirement.capture.appliedFeatureAwardIds ? { appliedFeatureAwardIds: retirement.capture.appliedFeatureAwardIds } : {}) });
       await boundary(() => {
         deps.ownership.assertOwned();
         if (capturedGeneration !== actor.generation || actor.connection) throw new Error('retirement owner changed');
@@ -739,7 +742,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           return;
         }
         actor.record = result.character;
-        actor.slot.area.markCheckpointDurable(retirement.capture.captureId, result.character.revision, retirement.capture.appliedGrantIds);
+        actor.slot.area.markCheckpointDurable(retirement.capture.captureId, result.character.revision, retirement.capture.appliedGrantIds, retirement.capture.appliedFeatureAwardIds);
         actor.slot.area.commitPlayerRetirement(retirement.token);
         actors.delete(actor.record.characterId); travels.delete(actor.record.characterId); encounterRequests.delete(actor.record.characterId); returnRequests.delete(actor.record.characterId);
         leaveParty(actor.record.characterId); drain(actor.slot);
