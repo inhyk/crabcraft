@@ -12,6 +12,7 @@ import type { AreaPolicy, BossProfileId, EnemySpawn, PlayerState, SimUnit, World
 import { WorldChatService } from './chat.ts';
 import { CharacterStore } from './character-store.ts';
 import { DurableOutcomeStore } from './contribution-store.ts';
+import { createEndingStage } from '../../src/sim/features/worldRules.ts';
 import { planOutcomePage } from '../../src/sim/ledger.ts';
 import { type WorldTicketRegistry } from './admission.ts';
 import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, HOSTED_BOSSES, type LoadedWorldDefinition, type HostedWorldId, type HostedBossProfileId } from './catalog.ts';
@@ -135,13 +136,15 @@ export interface ConfiguredWorldOptions {pool:Pool;admission:WorldTicketRegistry
 export async function startConfiguredWorld(options:ConfiguredWorldOptions) {
  const config=validateWorldConfig(options.config),ledgerConfig=options.ledgerConfig===undefined?undefined:validateLedgerConfig(options.ledgerConfig);if(typeof options.originAllowed!=='function'||typeof options.clientIp!=='function')fail('HTTP callbacks');
  const catalog=await loadCheckedCatalog(options.assets,config),party=createConfiguredPartyPolicy(config.party,catalog),spawn=catalog.get('w1')!.publicDefinition.spawn;
+ const frost=catalog.get('w4')!.encounterDefinitions.get('frost');if(!frost)fail('ending Frost metadata');
+ const endingPresentation={stage:createEndingStage(catalog.get('w1')!.publicDefinition,frost)};
  const codec=createCoreCharacterCodec({identities:['human','orc','dwarf','undead','nightelf','tauren'].flatMap(archetype=>Object.keys(CLASSES).map(classId=>({classId:classId as keyof typeof CLASSES,archetype}))),freshLocation:{...spawn.position,yaw:spawn.yaw}}),characters=new CharacterStore(options.pool,codec),gameplayCatalog=createGameplayCatalog(catalog),restore=createConfiguredRestorePolicy(config.restore,catalog);
  // Construct/validate the concrete protocol before retaining a database ownership session.
  createGameplayProtocol(gameplayCatalog);
  const outcomes=ledgerConfig?new DurableOutcomeStore(options.pool,codec,{planOutcomePage,queryTimeoutMs:ledgerConfig.queryTimeoutMs}):undefined;
  const ownership=await acquireHostOwnership(options.pool,config.ownership.key,config.ownership);
  let host:ReturnType<typeof createActualWorldHost>|undefined;
- try{const policies:HostPolicies={...config.limits,...(ledgerConfig?{ledger:{sourceLimits:ledgerConfig.sourceLimits,drainLimits:ledgerConfig.drainLimits,recoveryLimits:ledgerConfig.recoveryLimits,recoveryIntervalMs:ledgerConfig.recoveryIntervalMs}}:{}),victimOutcome:config.victimOutcome,...(config.victimOutcomeRetryCeiling?{victimOutcomeRetryCeiling:config.victimOutcomeRetryCeiling}:{}),chat:config.chat,...(party?{party}:{}),persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
+ try{const policies:HostPolicies={...config.limits,endingPresentation,...(ledgerConfig?{ledger:{sourceLimits:ledgerConfig.sourceLimits,drainLimits:ledgerConfig.drainLimits,recoveryLimits:ledgerConfig.recoveryLimits,recoveryIntervalMs:ledgerConfig.recoveryIntervalMs}}:{}),victimOutcome:config.victimOutcome,...(config.victimOutcomeRetryCeiling?{victimOutcomeRetryCeiling:config.victimOutcomeRetryCeiling}:{}),chat:config.chat,...(party?{party}:{}),persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
   host=createActualWorldHost({...(outcomes?{outcomes}:{}),chat:new WorldChatService(options.pool),admission:options.admission,characters,worlds:catalog,codec,gameplay:{catalog:gameplayCatalog,create:()=>createGameplayProtocol(gameplayCatalog)},ownership,policies,originAllowed:options.originAllowed,clientIp:options.clientIp,nowMonotonicMs:()=>performance.now(),nowWallMs:Date.now});
   await host.ready();
   return {host,catalog,ownership,characters,codec,gameplayCatalog,config,ledgerConfig};
