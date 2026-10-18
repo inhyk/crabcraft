@@ -65,8 +65,8 @@ export class Enemy {
     if(this.state==='dead'){
       const t=now-this.deadAt;if(t>8&&!u.hidden){u.lift=-Math.min(1.4,(t-8)*.9)*u.height;u.y=s.query.heightAt(u.x,u.z)+u.lift;if(t>9.6)u.hidden=true;}
       const nearby=s.players().filter(p=>distance(p,this.spawn.home)<RESPAWN_CLEAR).length;
-      const respawn=s.policy.enemyPopulation(this.spawn,nearby).respawnSeconds;
-      if(!this.isAdd&&t>respawn&&nearby===0){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
+      const population=s.policy.enemyPopulation(this.spawn,nearby);
+      if(!this.isAdd&&population.desired>0&&t>population.respawnSeconds&&nearby===0){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
     }
     if(this.rise>0){this.rise=Math.max(0,this.rise-dt);u.lift=-this.rise*1.3*u.height;}
     if(this.leap){this.updateLeap(dt);return;}

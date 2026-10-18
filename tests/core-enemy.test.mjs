@@ -51,4 +51,9 @@ if(fileURLToPath(import.meta.url)===process.argv[1]){
     assert.ok(e.actor.z<=1);assert.ok(['idle','chase','leash'].includes(e.state));assert.equal(p.hp,100);
   });
 
+  test('explicit host population zero suppresses ordinary respawn',()=>{
+    const h=creatureHarness(),e=h.enemy();h.s.policy.enemyPopulation=()=>({desired:0,respawnSeconds:0});h.s.combat.kill(e.unit,null);
+    for(let i=0;i<300;i++)h.step([e]);assert.equal(e.state,'dead');h.s.policy.enemyPopulation=()=>({desired:1,respawnSeconds:0});h.step([e]);assert.equal(e.state,'idle');
+  });
+
 }
