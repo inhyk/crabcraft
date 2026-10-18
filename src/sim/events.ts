@@ -18,11 +18,13 @@ export const sameRef = (a: EntityRef, b: EntityRef): boolean => a.area === b.are
 export class Events {
   private list: EventRecord[] = [];
   private order = 0;
+  private transactionEvents: {tick:number;event:CoreEvent}[] | null = null;
   private capacity: number;
   constructor(capacity: number) { if (!Number.isSafeInteger(capacity) || capacity < 1) throw new RangeError('Invalid event limit'); this.capacity = capacity; }
   get nextOrder(): number { return this.order; }
   get count(): number { return this.list.length; }
   assertRoom(count: number): void { if (this.list.length + count > this.capacity) throw new RangeError('Event capacity exceeded'); }
-  emit(tick: number, event: CoreEvent): void { this.assertRoom(1); const record = immutable({ tick, order: this.order, event }); this.order++; this.list.push(record); }
+  transaction(run:()=>void):void { if(this.transactionEvents){run();return;}this.transactionEvents=[];try{run();const pending=this.transactionEvents;this.assertRoom(pending.length);this.transactionEvents=null;for(const e of pending)this.emit(e.tick,e.event);}finally{this.transactionEvents=null;} }
+  emit(tick: number, event: CoreEvent): void { if(this.transactionEvents){this.transactionEvents.push({tick,event:immutable(event)});return;}this.assertRoom(1); const record = immutable({ tick, order: this.order, event }); this.order++; this.list.push(record); }
   drain(): readonly EventRecord[] { const result = Object.freeze(this.list); this.list = []; return result; }
 }

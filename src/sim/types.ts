@@ -323,6 +323,7 @@ export interface AreaServices {
   players(): readonly SimUnit[]; // stable order, no required singleton local player
   targetFor(source: EntityRef): SimUnit | null; // empty area is valid
   hostilesNear(x: number, z: number, radius: number): readonly SimUnit[];
+  outcomeTransaction(run: () => void): void; // sim-owned state operation, buffered event commit
   emit(event: CoreEvent): void; // enqueue copied data, no reentrant browser sink
   startAction(unit: EntityRef, action: ActionRequest, hit?: PendingHit): void;
   stopAction(unit: EntityRef, id?: ActionId, fade?: number): void;
