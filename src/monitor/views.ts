@@ -10,7 +10,10 @@ import { ROUTINE } from '../motion/breakdance';
 import type { MonitorPlayer } from '../../server/monitor';
 import { scenery, type Scenery } from './scenery';
 
-type Actor = { player: MonitorPlayer; unit: Unit | null; dance: BreakRoutine | null; seq: number; loading: boolean; failed: boolean };
+type Sample = { t: number; x: number; y: number; z: number; yaw: number };
+type Actor = { player: MonitorPlayer; unit: Unit | null; dance: BreakRoutine | null; seq: number; loading: boolean; failed: boolean; samples: Sample[] };
+/** Feeds show where a player was this long ago, so there are always two received positions to move between. */
+const DELAY = 300;
 type Tile = { canvas: HTMLCanvasElement; message: HTMLElement };
 type Stage = { value?: Scenery; error?: boolean };
 
@@ -25,6 +28,9 @@ export class Views {
   private last = 0;
   private frame = 0;
   private turn = 0;
+  /** Server clock minus this browser's clock, from each snapshot's `at`. */
+  private offset: number | null = null;
+  private here = new THREE.Vector3();
   private goal = new THREE.Vector3();
   private aim = new THREE.Vector3();
   paused = false;
@@ -38,16 +44,25 @@ export class Views {
     this.frame = requestAnimationFrame(t => this.render(t));
   }
 
-  sync(players: MonitorPlayer[], tiles: Map<string, Tile>) {
+  sync(players: MonitorPlayer[], tiles: Map<string, Tile>, at = Date.now()) {
     this.tiles = tiles;
+    const offset = at - Date.now();
+    this.offset = this.offset === null ? offset : this.offset + (offset - this.offset) * .2;
     const ids = new Set(players.map(p => p.id));
     for (const [id, actor] of this.actors) if (!ids.has(id)) {
       actor.unit?.rig.root.removeFromParent(); actor.unit?.dispose(); this.actors.delete(id);
     }
     for (const player of players) {
       const existing = this.actors.get(player.id);
-      if (existing) { existing.player = player; continue; }
-      this.actors.set(player.id, { player, unit: null, dance: null, seq: 0, loading: false, failed: false });
+      const actor = existing ?? { player, unit: null, dance: null, seq: 0, loading: false, failed: false, samples: [] };
+      if (!existing) this.actors.set(player.id, actor);
+      actor.player = player;
+      const s = player.state, last = actor.samples.at(-1);
+      if (!s || !player.updatedAt) { actor.samples = []; continue; }
+      if (!last || player.updatedAt > last.t) {
+        actor.samples.push({ t: player.updatedAt, x: s.x, y: s.y, z: s.z, yaw: s.yaw });
+        if (actor.samples.length > 12) actor.samples.shift();
+      }
     }
   }
 
@@ -79,8 +94,9 @@ export class Views {
   private render(time: number) {
     if (this.stopped) return;
     this.frame = requestAnimationFrame(t => this.render(t));
-    // Bound GPU work, including high-refresh displays. No offscreen or background rendering.
-    if (document.hidden || this.paused || time - this.last < 1000 / 12) return;
+    // Bound GPU work, including high-refresh displays: smooth for a few feeds, lighter for a full wall.
+    const fps = this.tiles.size <= 4 ? 30 : this.tiles.size <= 9 ? 20 : 12;
+    if (document.hidden || this.paused || time - this.last < 1000 / fps - 2) return;
     const dt = Math.min(.12, (time - this.last) / 1000); this.last = time;
     const visible = [...this.tiles].filter(([, tile]) => {
       const r = tile.canvas.getBoundingClientRect();
@@ -93,10 +109,8 @@ export class Views {
       if (!u) { if (!actor.loading && !actor.failed) this.loadActor(actor); continue; }
       const stage = this.stage(p.area).value;
       if (stage && u.rig.root.parent !== stage.scene) stage.scene.add(u.rig.root);
-      const s = p.state;
-      this.goal.set(s.x, s.y, s.z);
-      u.pos.lerp(this.goal, u.pos.distanceToSquared(this.goal) > 100 ? 1 : 1 - Math.exp(-12 * dt));
-      u.setYaw(u.yaw + Math.atan2(Math.sin(s.yaw - u.yaw), Math.cos(s.yaw - u.yaw)) * (1 - Math.exp(-12 * dt)));
+      const s = p.state, yaw = this.place(actor, this.here);
+      u.pos.copy(this.here); u.setYaw(yaw);
       u.hp = s.hp; u.maxHp = s.maxHp; u.alive = s.alive;
       u.feedLocomotion(dt);
       if (p.action && p.action.seq !== actor.seq) {
@@ -145,6 +159,23 @@ export class Views {
       this.renderer.render(stage.value.scene, this.camera);
       tile.canvas.getContext('2d')?.drawImage(this.renderer.domElement, 0, 0);
     }
+  }
+
+  /** Position between the two received samples around (now - DELAY) on the server clock; holds the newest when late. */
+  private place(actor: Actor, out: THREE.Vector3): number {
+    const list = actor.samples, s = actor.player.state!;
+    if (!list.length) { out.set(s.x, s.y, s.z); return s.yaw; }
+    const t = Date.now() + (this.offset ?? 0) - DELAY;
+    let i = list.length - 1;
+    while (i > 0 && list[i - 1]!.t > t) i--;
+    const b = list[i]!, a = list[Math.max(0, i - 1)]!;
+    if (t >= b.t || a === b) { out.set(b.x, b.y, b.z); return b.yaw; }
+    if (t <= a.t) { out.set(a.x, a.y, a.z); return a.yaw; }
+    // A jump of more than 30 m between samples is a teleport or portal: no sliding across the map.
+    if ((b.x - a.x) ** 2 + (b.z - a.z) ** 2 > 900) { out.set(b.x, b.y, b.z); return b.yaw; }
+    const k = (t - a.t) / (b.t - a.t);
+    out.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
+    return a.yaw + Math.atan2(Math.sin(b.yaw - a.yaw), Math.cos(b.yaw - a.yaw)) * k;
   }
 
   clear() {
