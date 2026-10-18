@@ -2,7 +2,7 @@
 "format":"crabcraft-collision",
 "version":1,
 "world":"w3",
-"source":"a862f7caa308b4f0a35af2287a03edb195d2e87dd84ded0249fc2859e9a81b32",
+"source":"1f8d74e2cb0c10f03b2ff5ca76d939cbab297107de13aa8efbb6609aaeff5e2d",
 "ground":{"kind":"dawn"},
 "heightAt":"ground",
 "cells":{"minX":-150,"minZ":-175,"step":2,"nx":151,"nz":176,"blocked":null},
