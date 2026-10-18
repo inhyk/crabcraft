@@ -60,11 +60,12 @@ test('current Dawnreach and Frostlight geometry keep distinct landmarks and boun
   assert.equal(dawn.heightAt(0, 70), 4);
   assert.equal(dawn.collision.shapes.some(s => s.kind === 0 && s.c.x === -11 && s.c.z === 53), false);
   assert.equal(snowData.shapes.filter(s => s[0] === 1).length, 6);
-  const fountain = snowData.shapes.find(s => s[0] === 0 && s[1] === -10 && s[2] === 56);
+  const fountain = snowData.shapes.find(s => s[0] === 0 && s[1] === -13 && s[2] === 65);
   assert.ok(fountain);
+  assert.equal(snow.raycastSolid({x:-18,y:6,z:56},{x:-2,y:6,z:56}),null);
   const y = (fountain[4] + fountain[5]) / 2;
-  assert.notEqual(snow.raycastSolid({x:-14,y,z:56}, {x:-6,y,z:56}), null);
-  assert.equal(snow.raycastSolid({x:-14,y:fountain[5]+1,z:56}, {x:-6,y:fountain[5]+1,z:56}), null);
+  assert.notEqual(snow.raycastSolid({x:-17,y,z:65}, {x:-9,y,z:65}), null);
+  assert.equal(snow.raycastSolid({x:-17,y:fountain[5]+1,z:65}, {x:-9,y:fountain[5]+1,z:65}), null);
   const out = {x:0,y:0,set(x,y){this.x=x;this.y=y;return this;}};
   snow.resolveCollision(200, 2, .5, out);
   assert.ok(Math.abs(out.x - 102.4) < 1e-6);
