@@ -232,3 +232,7 @@ test('party host commands occupy exclusive frames while ordinary prefix and suff
     f.client.pump(500); assert.deepEqual(decodeInput(socket.sent.at(-1), f.world.binding, catalog).commands, []);
   } finally { f.client.dispose(); }
 });
+
+test('frontier queue notices are supported before binding and unknown worlds still close',async()=>{
+ for(const world of ['w5','w6','w7']){const controls=[],f=clientFixture(actualWorld(),{onControl:c=>controls.push(c)});try{const promise=f.client.connect('owned-character');promise.catch(()=>{});await tickAsync();const socket=f.sockets.at(-1);socket.open();socket.receive(JSON.stringify({type:'queued',world,position:2}));await tickAsync();if(world==='w7')assert.equal(socket.closed,true);else{assert.equal(socket.closed,false);assert.equal(f.client.state,'queued');}}finally{f.client.dispose();}}
+});

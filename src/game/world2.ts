@@ -404,21 +404,20 @@ export class HiddenWorld {
   }
   /** Static world/camera presentation for a committed server world; never moves an actor. */
   observeChapter(chapter:1|2|3|4|5|6):void {
-    if(chapter===5||chapter===6)throw new Error('This server does not host that world');
     const g=this.game,w=g.world;if(this.chapter===chapter)return;
     if(!this.basePois.size)for(const [id,poi]of Object.entries(w.pois))this.basePois.set(id,{position:poi.position.clone(),yaw:poi.yaw});
-    this.chapter=chapter;this.rendered=chapter!==1;this.baseRoot.visible=chapter===1;this.root.visible=chapter===2;this.third.root.visible=chapter===3;this.fourth.root.visible=chapter===4;this.fifth.root.visible=false;this.sixth.root.visible=false;
+    this.chapter=chapter;this.rendered=chapter!==1;this.baseRoot.visible=chapter===1;this.root.visible=chapter===2;this.third.root.visible=chapter===3;this.fourth.root.visible=chapter===4;this.fifth.root.visible=chapter===5;this.sixth.root.visible=chapter===6;
     if(chapter===1){w.heightAt=this.originalHeight;w.resolveCollision=this.originalCollision;w.raycastSolid=this.originalRay;for(const[id,old]of this.basePois){const poi=w.pois[id as keyof typeof w.pois];poi.position.copy(old.position);poi.yaw=old.yaw;}this.ambience.stop();}
     else {
-      const island=chapter===3?this.third:chapter===4?this.fourth:null;w.heightAt=island?(x,z)=>island.height(x,z):(x,z)=>this.height(x,z);
-      w.resolveCollision=(x,z,r,out)=>resolveOnIsland(island?.collision??this.collision,chapter===2?STAR_BOUNDS:chapter===3?DAWN_BOUNDS:SNOW_BOUNDS,chapter===2?this.obstacles:[],x,z,r,out);
+      const island=chapter===3?this.third:chapter===4?this.fourth:chapter===5?this.fifth:chapter===6?this.sixth:null;w.heightAt=island?(x,z)=>island.height(x,z):(x,z)=>this.height(x,z);
+      w.resolveCollision=(x,z,r,out)=>resolveOnIsland(island?.collision??this.collision,chapter===2?STAR_BOUNDS:chapter===3?DAWN_BOUNDS:chapter>=5?FRONTIER_BOUNDS:SNOW_BOUNDS,chapter===2?this.obstacles:[],x,z,r,out);
       w.raycastSolid=(a,b)=>(island?.collision??this.collision)?.raycast(a,b)??null;
-      w.pois.spawn.position.copy(island?.spawn??this.spawn);w.pois.spawn.yaw=Math.PI;
-      const points=chapter===2?[['shore',-70,5],['wreck',70,-15],['grove',25,55],['forge',-25,36],['tavern',-20,58],['chapel',20,35],['lighthouse',0,-48],['beacon',0,-45],['bossArena',0,-75]] as const:chapter===3?[['forge',20,64],['chapel',16,48],['tavern',-20,64],['grove',-55,36],['shore',55,36],['wreck',55,-25],['lighthouse',0,-40],['beacon',0,-44],['bossArena',0,-72]] as const:[['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-55,25],['shore',55,25],['wreck',48,-15],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-78]] as const;
+      if(chapter>=5)w.pois.spawn.position.set(0,w.heightAt(0,82),82);else w.pois.spawn.position.copy(island?.spawn??this.spawn);w.pois.spawn.yaw=Math.PI;
+      const points=chapter===2?[['shore',-70,5],['wreck',70,-15],['grove',25,55],['forge',-25,36],['tavern',-20,58],['chapel',20,35],['lighthouse',0,-48],['beacon',0,-45],['bossArena',0,-75]] as const:chapter===3?[['forge',20,64],['chapel',16,48],['tavern',-20,64],['grove',-55,36],['shore',55,36],['wreck',55,-25],['lighthouse',0,-40],['beacon',0,-44],['bossArena',0,-72]] as const:chapter>=5?[['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-50,26],['shore',61,22],['wreck',44,-6],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-72]] as const:[['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-55,25],['shore',55,25],['wreck',48,-15],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-78]] as const;
       for(const[id,x,z]of points)w.pois[id].position.set(x,w.heightAt(x,z),z);if(chapter===2)this.ambience.start(g.time);else this.ambience.stop();
     }
     this.nav=null;g.hud.hints.setChapter(chapter);g.follow.cut();g.hud.dialogue.close();g.hud.messages.closeDiscovery();
-    const bounds=chapter===2?{minX:-140,maxX:140,minZ:-150,maxZ:170,topY:90}:chapter===3?{minX:-150,maxX:150,minZ:-175,maxZ:175,topY:110}:{minX:-145,maxX:145,minZ:-165,maxZ:165,topY:100};
+    const bounds=chapter===2?{minX:-140,maxX:140,minZ:-150,maxZ:170,topY:90}:chapter===3?{minX:-150,maxX:150,minZ:-175,maxZ:175,topY:110}:{minX:-145,maxX:145,minZ:-165,maxZ:165,topY:chapter>=5?160:100};
     g.hud.minimap.setSnapshot(chapter===1?g.takeMapSnapshot():snapshotMap(g.engine.renderer,g.scene,bounds,[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));
   }
   update(dt:number,time:number,observation?:{flags:Readonly<Record<string,boolean>>}) {
