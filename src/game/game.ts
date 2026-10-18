@@ -114,6 +114,8 @@ export class Game {
   worldBoss!: Boss;
   dawnBoss!: Boss;
   frostBoss!: Boss;
+  emberBoss!: Boss;
+  skyBoss!: Boss;
   creatorTravel = false;
   world2!: HiddenWorld;
   journey: BossJourney | null = null;
@@ -125,6 +127,8 @@ export class Game {
   dungeons:DungeonExpeditions|null=null;
 
   get encounter(): Boss {
+    if(this.world2?.chapter===6&&this.skyBoss)return this.skyBoss;
+    if(this.world2?.chapter===5&&this.emberBoss)return this.emberBoss;
     if(this.world2?.chapter===4&&this.frostBoss)return this.frostBoss;
     if (this.world2?.chapter===3 && this.dawnBoss) return this.dawnBoss;
     if (this.world2?.chapter===2 && this.worldBoss) return this.worldBoss;
@@ -406,7 +410,18 @@ export class Game {
     if(!this.alive)return;
     const frostFriend=this.addUnit(t('미라 · 사라진 친구','Mira · The Missing Friend'),'freed','friendly',frostFriendRig);
     this.frostBoss=new Boss(this,frostUnit,this.world2.fourth.arena,frostFriend,BOSS_PROFILES.frost);
+    for(const [field,profile,race,sex,classId,shell,crest,led,island]of [
+      ['emberBoss','ember','orc','male','warrior',3,3,1,this.world2.fifth],
+      ['skyBoss','sky','nightelf','female','priest',2,2,2,this.world2.sixth],
+    ]as const){
+      const rig=await loadCrab({race,sex,classId,shell,crest,led,name:profile});if(!this.alive)return;rig.root.scale.multiplyScalar(profile==='ember'?4.7:4.5);
+      const unit=this.addUnit(BOSS_PROFILES[profile].name,'boss','hostile',rig);
+      const freedRig=await loadCrab({race:'human',sex:'female',classId:'priest',shell:1,crest:2,led:2,name:profile+'keeper'});if(!this.alive)return;
+      const freed=this.addUnit(profile==='ember'?t('잿불의 수호자','Emberkeeper'):t('바람의 수호자','Windkeeper'),'freed','friendly',freedRig);
+      this[field]=new Boss(this,unit,island.arena,freed,BOSS_PROFILES[profile]);
+    }
     this.director = new CameraDirector(this);
+    this.director.bossSee.apply(this.emberBoss.unit.rig.root);this.director.bossSee.apply(this.skyBoss.unit.rig.root);
     this.director.bossSee.apply(frostRig.root);
     this.director.bossSee.apply(dawnRig.root);
     this.director.bossSee.apply(eclipseRig.root);
@@ -585,8 +600,8 @@ export class Game {
       1: {region:'Clawhaven',image:`art/loading-${1 + Math.floor(Math.random() * 2)}.webp`,subtitle:t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples')},
       2: {region:'Starhaven',image:'art/loading-starhaven.webp',subtitle:t('월드 II  |  별빛 아래 다시 만난 친구들','World II  |  Friends reunited beneath the stars')},
       3: {region:'Dawnharbor',image:'art/loading-dawnharbor.webp',subtitle:t('월드 III  |  빼앗긴 새벽을 되찾는 여정','World III  |  Reclaim the stolen dawn')},
-      5: {region:'Emberharbor',image:'art/loading-emberreach.svg',subtitle:t('월드 V | 잿불 군도의 새로운 원정','World V | A new expedition through Emberreach')},
-      6: {region:'Skyharbor',image:'art/loading-skybloom.svg',subtitle:t('월드 VI | 구름 위 하늘숲의 기억','World VI | Memories of the forest above the clouds')},
+      5: {region:'Emberharbor',image:'art/loading-emberreach.webp',subtitle:t('월드 V | 잿불 군도의 새로운 원정','World V | A new expedition through Emberreach')},
+      6: {region:'Skyharbor',image:'art/loading-skybloom.webp',subtitle:t('월드 VI | 구름 위 하늘숲의 기억','World VI | Memories of the forest above the clouds')},
       4: {region:'Snowfall Village',image:'art/loading-frostlight.webp',subtitle:t('월드 IV  |  눈꽃 마을 너머 영원의 서리왕','World IV  |  The King of Eternal Frost awaits')},
     }[chapter];
     const tips=loadingTips(chapter);
@@ -666,7 +681,7 @@ export class Game {
       this.time += dt;
       this.timers.update(this.time);
       this.player.update(dt);
-      const bosses = this.world2.chapter===1 ? [this.boss,this.finalBoss] : this.world2.chapter===2 ? [this.worldBoss] : this.world2.chapter===3 ? [this.dawnBoss] : [this.frostBoss];
+      const bosses = this.world2.chapter===1 ? [this.boss,this.finalBoss] : this.world2.chapter===2 ? [this.worldBoss] : this.world2.chapter===3 ? [this.dawnBoss] : [this.encounter];
       if (authority) {
         for (const e of this.enemies) e.update(dt);
         if(!this.dungeons?.active)for (const b of bosses) b.update(dt);
@@ -1349,7 +1364,7 @@ export class Game {
       const p = this.player.unit;
       p.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
       this.follow.yaw = p.yaw + Math.PI;
-      if (!this.multiplayer?.battle.active) { this.boss.reset(); this.finalBoss.reset(); this.worldBoss.reset(); this.dawnBoss.reset(); this.frostBoss.reset(); }
+      if (!this.multiplayer?.battle.active) { this.boss.reset(); this.finalBoss.reset(); this.worldBoss.reset(); this.dawnBoss.reset(); this.frostBoss.reset(); this.emberBoss.reset(); this.skyBoss.reset(); }
       this.engine.canvas.style.transition = '';
       this.engine.canvas.style.filter = '';
       this.hud.showDeath(false);
