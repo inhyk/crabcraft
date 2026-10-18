@@ -334,3 +334,24 @@ test('receipt cap rejects a final capture containing more than 256 applied grant
   await assert.rejects(store.loadForRecovery(A, c.characterId, ids), error('invalid'));
   assert.deepEqual(await store.getOwned(A, c.characterId), c);
 });
+
+test('bounded creation uses one account-locking transaction and respects racing independent pools', async () => {
+  const owner = 'g' + 'd'.repeat(23); await pool.query("INSERT INTO accounts(username,save,updated,created) VALUES($1,'{}',1,1)", [owner]);
+  const secondPool = new pg.Pool({ connectionString: postgres.url });
+  try {
+    const second = new CharacterStore(secondPool, testCodec());
+    const results = await Promise.allSettled([store.createBounded(owner, identity, 1), second.createBounded(owner, identity, 1)]);
+    assert.equal(results.filter(r => r.status === 'fulfilled').length, 1); assert.equal(results.find(r => r.status === 'rejected').reason.code, 'character_limit');
+    assert.equal((await store.listOwned(owner)).length, 1);
+    for (const max of [undefined, 0, -1, 1.5, Infinity]) await assert.rejects(store.createBounded(owner, identity, max), error('invalid'));
+  } finally { await secondPool.end(); }
+});
+
+test('bounded creation rolls back codec failure even after the INSERT returned a row', async () => {
+  const owner = 'g' + 'e'.repeat(23); await pool.query("INSERT INTO accounts(username,save,updated,created) VALUES($1,'{}',1,1)", [owner]);
+  let validations = 0; const original = testCodec();
+  const badDecode = new CharacterStore(pool, { ...original, validateCheckpoint(value, context) { validations++; if (validations === 2) throw new Error('injected post-insert decode failure'); return original.validateCheckpoint(value, context); } });
+  await assert.rejects(badDecode.createBounded(owner, identity, 1), /post-insert decode/);
+  assert.deepEqual(await store.listOwned(owner), []);
+  assert.equal((await store.createBounded(owner, identity, 1)).revision, 0);
+});
