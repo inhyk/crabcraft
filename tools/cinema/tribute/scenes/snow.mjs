@@ -228,15 +228,15 @@ const wide = {
     beast: { path: [{ t: 0, x: WD.b0[0], z: WD.b0[1] }, { t: 7.7, x: WD.b1[0], z: WD.b1[1] }] },
   },
   cam: move([
-    { t: 0, p: G(9, 6, 1.8), l: G(4, -72, 7), fov: 30 },
-    { t: 7.7, p: G(12.5, 5.2, 2.2), l: G(5, -72, 7.5), fov: 29 },
+    { t: 0, p: G(9, 6, 1.8), l: G(14, -72, 7), fov: 30 },
+    { t: 7.7, p: G(12.5, 5.2, 2.2), l: G(15, -72, 7.5), fov: 29 },
   ]),
   fx: [
     ...blizzard({ wind: [-3, -2.5, 10], heavy: 1.2, drift: 0.12, sky: '#cdd3e2', zenith: '#9aa3c2' }),
     ROAD_OUT,
     PRISON_OUT,
     ARENA_OUT,
-    { t: -3, kind: 'snow-pines', trees: [[17, -5, 0.9], [19.5, -11, 1.15]] },
+    { t: -3, kind: 'snow-pines', trees: [[18.3, -3.9, 0.9], [21.6, -9.5, 1.15]] },
     { t: 6.3, kind: 'snow-leaves', count: 260, box: [9, 6, 9], drift: [-2.5, -1.2, 3.5], size: 0.15, color: '#b8436f', color2: '#7a3fb8', fadeIn: 0.8 },
     { t: 6.6, kind: 'snow-whiteout', curve: [[6.6, 0], [7.0, 0.25], [7.35, 0.62], [7.6, 1], [7.7, 1]] },
   ],
@@ -252,10 +252,10 @@ const charge = {
   fog: { color: '#cdd6e2', density: 0.03 },
   actors: cast2([-58, -6], [-56, -10.5], PI / 2),
   tracks: {
-    beast: { path: [{ t: 0, x: -56, z: -10.5 }, { t: 2.92, x: -27, z: -10.2 }], faces: [{ t: -2, expr: 'angry' }] },
-    dwarf: { path: [{ t: 0, x: -64, z: -7 }, { t: 2.92, x: -46, z: -7.5 }], faces: [{ t: -2, expr: 'angry' }] },
+    beast: { path: [{ t: 0, x: -39.5, z: -10.6 }, { t: 2.92, x: -27.5, z: -10.4 }], faces: [{ t: -2, expr: 'angry' }] },
+    dwarf: { path: [{ t: 0, x: -58, z: -7 }, { t: 2.92, x: -42, z: -7.5 }], faces: [{ t: -2, expr: 'angry' }] },
   },
-  cam: { keys: [{ t: 0, p: G(CH[0], CH[1], 0.5), l: { a: 'beast', o: [0, 1.2, 0] }, fov: 46 }, { t: 2.92, p: G(CH[0] + 0.3, CH[1] + 0.2, 0.45), l: { a: 'beast', o: [0, 1.2, 0] }, fov: 46 }], ease: 'linear' },
+  cam: { keys: [{ t: 0, p: G(CH[0], CH[1], 0.45), l: G(-44, -10.4, 1.3), fov: 48 }, { t: 2.92, p: G(CH[0] + 0.25, CH[1] + 0.15, 0.4), l: G(-44, -10.6, 1.2), fov: 48 }], ease: 'linear' },
   fx: [...blizzard({ wind: [6, -2, 4], heavy: 1.3 }), ROAD_OUT, { t: 2.2, kind: 'shake', d: 0.8, amp: 0.06 }],
 };
 const chargeDwarf = {
@@ -265,7 +265,7 @@ const chargeDwarf = {
   actors: cast2([-50, -6.5], [-34, -10], PI / 2),
   tracks: {
     beast: { path: [{ t: 0, x: -34, z: -10.6 }, { t: 2.42, x: -16, z: -11.5 }], faces: [{ t: -2, expr: 'angry' }] },
-    dwarf: { path: [{ t: 0, x: -50, z: -6.5 }, { t: 2.42, x: -34, z: -8.8 }], faces: [{ t: -2, expr: 'angry' }], acts: [{ t: -0.5, clip: 'claw_right', upper: true }] },
+    dwarf: { path: [{ t: 0, x: -45.5, z: -6.8 }, { t: 2.42, x: -33, z: -8.9 }], faces: [{ t: -2, expr: 'angry' }], acts: [{ t: -0.3, clip: 'claw_right', upper: true }] },
   },
   cam: { keys: [{ t: 0, p: G(-37, -9.6, 0.45), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }, { t: 2.42, p: G(-36.8, -9.8, 0.45), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }], ease: 'linear' },
   fx: [...blizzard({ wind: [6, -2, 4], heavy: 1.3 }), ROAD_OUT],
