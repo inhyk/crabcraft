@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {DawnIsland} from './world3';
+import {DawnRequests} from './dawnRequests';
 import {SnowIsland} from './world4';
 import {t} from '../i18n';
 import type { Game } from './game';
@@ -34,6 +35,7 @@ export class HiddenWorld {
   chapter: 1 | 2 | 3 | 4 = 1;
   readonly third=new DawnIsland();
   readonly fourth=new SnowIsland();
+  readonly dawnRequests:DawnRequests;
   private snowGate:StarPortal;
   private thirdGate:StarPortal;
   private echoAt=0;
@@ -87,6 +89,7 @@ export class HiddenWorld {
 
   async buildSettlement() {
     await this.third.buildSettlement();
+    this.dawnRequests.build();
     const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
     this.collision=settlement.collision;this.root.add(settlement.root);
     this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!);
@@ -123,19 +126,23 @@ export class HiddenWorld {
     }
   }
   objectivePoint(kind:ObjectiveKind) {
+    if(this.chapter===3)return this.dawnRequests.point(kind);
     const p=STAR_OBJECTIVES[kind];return p?new THREE.Vector3(p[0],this.height(...p),p[1]):null;
   }
   interactable() {
+    if(this.chapter===3)return this.dawnRequests.interactable();
     if(this.chapter!==2)return null;
     const active=this.game.quests.active();
     return this.nodes.find(n=>this.game.player.unit.pos.distanceTo(n.position)<3.5&&active.some(id=>QUESTS[id].objectives.some(o=>o.kind===n.kind&&!this.game.quests.objectiveDone(o))))??null;
   }
   collect(kind:ObjectiveKind) {
+    if(this.chapter===3){this.dawnRequests.collect(kind);return;}
     this.game.quests.bump(kind);this.game.audio.sfx('sfx-quest-accept');this.game.vfx.mendGlow(this.game.player.unit);this.game.journey?.save();
   }
 
 
   constructor(private game: Game) {
+    this.dawnRequests=new DawnRequests(game,this.third);
     this.ambience=new StarAmbience(game.audio);
     const w=game.world;
     this.baseRoot=w.root;
@@ -361,7 +368,7 @@ export class HiddenWorld {
     if(this.chapter===4)this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!this.game.journey?.frostCleared);
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
     this.thirdGate.root.visible=!!this.game.journey?.trueCleared||this.game.creatorTravel;
-    if(this.chapter===3)this.third.update(time,!!this.game.journey?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);
+    if(this.chapter===3){this.third.update(time,!!this.game.journey?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);this.dawnRequests.update(time);}
     if(!this.game.ending.active&&!this.game.controlsLocked){
       const distance=Math.hypot(this.game.player.unit.pos.x-this.portalPosition.x,this.game.player.unit.pos.z-this.portalPosition.z);
       if(distance>4.5)this.travelArmed=true;
