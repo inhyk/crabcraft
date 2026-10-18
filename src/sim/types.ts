@@ -6,7 +6,9 @@
  * No runtime imports, renderer objects, UI callbacks, process globals or I/O here.
  * Split this review artifact into the file ownership sets in the companion plan.
  */
-export type WorldId = 'w1' | 'w2' | 'w3';
+export type WorldId = 'w1' | 'w2' | 'w3' | 'w4';
+export type Chapter = 1 | 2 | 3 | 4;
+export type BossProfileId = 'rust' | 'abyss' | 'eclipse' | 'dawn' | 'frost';
 export type AreaId = string; // host-assigned unique INSTANCE/incarnation, never reused after recreation
 export type EntityKey = string; // canonical encoding of full [area-instance,id,life], not EntityId alone
 export type CharacterId = string; // opaque stable host identity, never EntityId or a guest token
@@ -135,7 +137,7 @@ export interface PendingHit { left: number; plan: HitPlan } // countdown, decrem
 export type School = 'physical' | 'frost' | 'water' | 'holy' | 'rust';
 export interface HitOptions { crit?: boolean; school?: School; noReact?: boolean; rage?: number }
 export interface CombatController {
-  readonly profile?: 'rust' | 'abyss' | 'eclipse' | 'dawn';
+  readonly profile?: BossProfileId;
   onDamaged?(source: EntityRef | null, damage: number): void;
   onHurt?(damage: number): void;
   gainRage?(amount: number): void;
@@ -227,9 +229,9 @@ export interface PlayerIntent {
 export interface CastState { ability: AbilityId; start: number; end: number; target: EntityRef | null }
 export interface ChannelState { kind: ChannelKind; start: number; end: number; targetId: string | null; to: Readonly<Vec3> }
 export interface QuestState {
-  chapter: 1 | 2 | 3; status: Record<string, 'locked' | 'available' | 'active' | 'ready' | 'done'>;
+  chapter: Chapter; status: Record<string, 'locked' | 'available' | 'active' | 'ready' | 'done'>;
   progress: Record<string, number>; cogs: number;
-  tracked: Partial<Record<1 | 2 | 3, string>>; // preserve personal tracking across chapter travel
+  tracked: Partial<Record<Chapter, string>>; // preserve personal tracking across chapter travel
 }
 export interface PlayerState {
   character: CharacterId; unit: EntityRef; classId: ClassId; resource: number; maxResource: number;
@@ -271,7 +273,7 @@ export interface TimerState { id: number; due: number; insertion: number; action
  */
 export interface AreaTimers { schedule(due: number, action: TimerAction): number; cancel(id: number): void }
 export interface EnemySim extends CombatController { readonly unit: EntityRef; readonly spawnId: string; readonly state: 'idle' | 'chase' | 'leash' | 'dead' | 'gone'; update(dt: number): void; despawn(): void; respawnAt(x: number, z: number): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
-export interface BossSim extends CombatController { readonly state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; readonly engaged: boolean; readonly arena: Poi; sleep(): void; readonly unit: EntityRef; readonly profile: 'rust' | 'abyss' | 'eclipse' | 'dawn'; update(dt: number): void; wake(): void; reset(): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
+export interface BossSim extends CombatController { readonly state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; readonly engaged: boolean; readonly arena: Poi; sleep(): void; readonly unit: EntityRef; readonly profile: BossProfileId; update(dt: number): void; wake(): void; reset(): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
 export interface EnemySpawn {
   readonly id: string; readonly kind: 'scrapling' | 'scavenger' | 'jellyfish';
   readonly home: Readonly<Vec3>; readonly wanderRadius: number; readonly pack: string;
@@ -289,7 +291,7 @@ export interface AreaDefinition {
  * legacy policy preserves S1 scaling where needed; server policy must use fixed spawn levels.
  */
 export interface AreaPolicy {
-  enemyLevel(spawn: EnemySpawn, legacyContext: { partyLevel: number; rustCleared: boolean; chapter: 1 | 2 | 3 }): number;
+  enemyLevel(spawn: EnemySpawn, legacyContext: { partyLevel: number; rustCleared: boolean; chapter: Chapter }): number;
   // Final server policy returns spawn.fixedLevel. Legacy policy can retain actual S1 scaling.
   enemyPopulation(spawn: EnemySpawn, nearbyPlayers: number): { desired: 0 | 1; respawnSeconds: number };
   damageAllowed(context: Readonly<AreaContext>, source: Readonly<SimUnit> | null, target: Readonly<SimUnit>): boolean;
