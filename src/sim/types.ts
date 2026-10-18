@@ -276,6 +276,7 @@ export interface EnemySim extends CombatController { readonly unit: EntityRef; r
 export interface BossSim extends CombatController { readonly state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; readonly engaged: boolean; readonly arena: Poi; sleep(): void; readonly unit: EntityRef; readonly profile: BossProfileId; update(dt: number): void; wake(): void; reset(): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
 export interface EnemySpawn {
   readonly id: string; readonly kind: 'scrapling' | 'scavenger' | 'jellyfish';
+  readonly legacySlot?: string; // explicit original spawn-job identity, never inferred from Area iteration order
   readonly home: Readonly<Vec3>; readonly wanderRadius: number; readonly pack: string;
   readonly fixedLevel: number; readonly role: 'ordinary' | 'add' | 'echo';
 }
