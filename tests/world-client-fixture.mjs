@@ -6,7 +6,7 @@ import { CLASSES } from '../src/sim/data/classes.ts';
 import { RACES } from '../src/data/races.ts';
 const motion = JSON.parse(readFileSync(new URL('../src/sim/data/pose-data.json', import.meta.url), 'utf8'));
 export const catalog = {
-  version: motion.version, archetypes: [...Object.keys(motion.archetypes), 'boss-rust', 'boss-abyss', 'boss-eclipse', 'boss-dawn', 'boss-frost'],
+  version: motion.version, poseProviderVersion: motion.version, archetypes: [...Object.keys(motion.archetypes), 'boss-rust', 'boss-abyss', 'boss-eclipse', 'boss-dawn', 'boss-frost'],
   actions: Object.keys(motion.clips), abilities: [...new Set(Object.values(CLASSES).flatMap(c => c.abilities.map(a => a.id)))],
   quests: Object.keys(QUESTS), npcs: ['brinebeard', 'silvermoon', 'coralline', 'grukk', 'hoofclaw', 'rattlebolt', 'pip'],
   interactions: ['npc:brinebeard', 'beacon'], gates: ['gate:w2'], objectives: Object.values(QUESTS).flatMap(q => q.objectives.map(o => o.id)),

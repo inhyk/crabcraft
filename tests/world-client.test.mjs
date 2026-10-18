@@ -88,12 +88,12 @@ test('missing publication keeps the last complete view, sends one resync, and fu
 });
 
 test('fragmented actual Area observations do not commit partial actor or HUD state', async () => {
-  const f = clientFixture(actualWorld(32));
+  const f = clientFixture(actualWorld(100));
   try {
     const pending = f.client.connect('owned-character'); pending.catch(() => {}); await tickAsync(); const socket = f.sockets[0]; socket.open(); socket.receive(JSON.stringify({ type: 'world-bound', ...f.world.binding }));
     const packets = f.world.packets(); assert.ok(packets.length > 1);
     deliver(socket, packets.slice(0, -1)); assert.equal(f.client.view, null); assert.equal(f.snapshots.length, 0);
-    socket.receive(packets.at(-1)); await pending; assert.equal(f.client.view.actors.length, 32); assert.equal(f.snapshots.length, 1);
+    socket.receive(packets.at(-1)); await pending; assert.equal(f.client.view.actors.length, 100); assert.equal(f.snapshots.length, 1);
   } finally { f.client.dispose(); }
 });
 
@@ -194,7 +194,7 @@ test('queue status has no gameplay actor and bounded ticket response/auth failur
 
 test('stalled partial fragments trigger bounded recovery even when the server sends nothing else', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const f = clientFixture(actualWorld(32));
+  const f = clientFixture(actualWorld(100));
   try {
     const socket = await f.admitted(), before = f.client.view;
     f.world.area.step(new Map());
