@@ -61,3 +61,21 @@ test('expiry does not bypass insufficient mana or allow two different instant sk
  s.game.time=s.player.cooldowns.get(ab.id).end;s.player.resource=ab.cost-1;s.player.useAbility(2);
  assert.equal(s.player.cooldownLeft(ab),0);assert.equal(s.player.resource,ab.cost-1);
 });
+
+for (const cls of Object.values(CLASSES)) test(`${cls.id}: ultimate locks for exactly 60 seconds, rejects locked play and cannot reset on respawn`,()=>{
+ const ab=cls.abilities.find(a=>a.slot===5);assert.ok(ab);assert.equal(ab.cooldown,60);
+ const s=setup(cls,ab),{game,player}=s;player.resource=0;
+ game.controlsLocked=true;player.useAbility(5);assert.equal(s.effects.length,0);game.controlsLocked=false;
+ game.villageGames={playing:true};player.useAbility(5);assert.equal(s.effects.length,0);game.villageGames.playing=false;
+ player.useAbility(5);assert.equal(s.effects.length,1);const cd={...player.cooldowns.get(ab.id)};
+ assert.equal(cd.end-cd.start,60);player.restoreXp(900);player.target=null;player.respawn();assert.deepEqual(player.cooldowns.get(ab.id),cd);
+ game.time=cd.end-.1;player.useAbility(5);player.updateCombat();assert.equal(s.effects.length,1);
+ game.time=cd.end;player.updateCombat();assert.equal(s.effects.length,2);assert.equal(player.cooldownLeft(ab),60);
+});
+
+test('ultimate respects range, hidden enemies and line of sight',()=>{
+ const cls=CLASSES.mage,ab=cls.abilities[4],s=setup(cls,ab);const near=s.game.units[0];
+ s.game.units.push({...near,pos:new THREE.Vector3(40,0,0)},{...near,hidden:true});
+ s.game.world.raycastSolid=()=>0;s.player.useAbility(5);assert.equal(s.effects.length,0);
+ s.game.world.raycastSolid=()=>null;s.game.time+=60;s.player.useAbility(5);assert.equal(s.effects.length,1);
+});

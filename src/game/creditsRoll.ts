@@ -94,6 +94,8 @@ export class CreditsRoll {
       'div',
       { class: 'credits-track' },
       sec(logo, p(t('여섯 껍질, 하나의 바다.', 'Six shells. One tide.'), 'em')),
+      sec(h('h2', { class: 'cc-title' }, t('만든 사람들', 'Created by')),
+        p('서인혁 · 서인근', 'who')),
       sec(
         h('h2', { class: 'cc-title' }, t('주인공', 'Starring')),
         h('div', { class: 'who' }, 'Jumper'),
