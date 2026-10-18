@@ -91,6 +91,7 @@ export class SimulationArea implements AreaContract {
     this.services={
       id:options.id,world:options.definition.world,query:options.query,actionData:options.actionData,definition:this.options.definition,policy:this.options.policy,random:this.rng,ids:this.ids,timers:this.timers,
       get time(){return self.clock;},get tick(){return self.stepId;},get context(){return self.context;},get combat(){return self.combat;},
+      reserveOutcomeRandom:(start,count,end)=>{if(!this.externalLedger)throw new Error('External ledger mode required');this.rng.reserve(start,count,end);},
       getUnit:ref=>this.getUnit(ref),controller:ref=>this.getUnit(ref)?this.controllerMap.get(ref.id)??null:null,
       player:ref=>this.getUnit(ref)?this.playerMap.get(ref.id)??null:null,
       npcById:id=>[...this.unitMap.values()].find(u=>u.npcId===id)??null,
@@ -235,7 +236,7 @@ export class SimulationArea implements AreaContract {
     if(!Number.isSafeInteger(revision)||revision<0||revision<(this.revisions.get(c.checkpoint.character)??0))throw new Error('Invalid checkpoint revision');
     if(!Array.isArray(ids)||new Set(ids).size!==ids.length||ids.length!==c.appliedGrantIds.length||ids.some(id=>!c.appliedGrantIds.includes(id)))throw new Error('Checkpoint receipt mismatch');
     if(this.externalLedger){
-      this.ledgerBoundary();this.ledgerPlayer(c.ref);if(!c.ledger)throw new Error('Missing checkpoint ledger capture');
+      this.ledgerBoundary();this.ledgerPlayer(c.ref);if(!c.ledger)throw new Error('Missing checkpoint ledger capture');if(ids.length&&revision<=c.ledger.durableRevision)throw new Error('Receipts require advancing durable revision');
       const binding=this.receiptLedger.prepareMark(c.ledger,revision);
       this.worldRules.pruneAppliedGrantIds(c.checkpoint.character,ids);this.receiptLedger.activate(binding);
       for(const [token,r]of this.retirements)if(r.capture.captureId===captureId)this.retirementLedger.set(token,binding);
