@@ -26,7 +26,7 @@ export interface ClassDef {
   resource: Resource;
   weapon: string;
   baseHp: number;
-  abilities: AbilityDef[];
+  abilities: readonly AbilityDef[];
 }
 
 const icon = (c: ClassId, s: number) => `art/icons/ability-${c}-${s}.webp`;
@@ -85,3 +85,9 @@ export const CLASSES: Record<ClassId, ClassDef> = {
 };
 
 export const CLASS_ORDER: ClassId[] = ['warrior', 'mage', 'priest'];
+
+// Shared rule catalogs must not leak mutable aliases between Areas.
+Object.freeze(ULTIMATE);
+for (const cls of Object.values(CLASSES)) { for (const ability of cls.abilities) Object.freeze(ability); Object.freeze(cls.abilities); Object.freeze(cls); }
+Object.freeze(CLASSES);
+Object.freeze(CLASS_ORDER);
