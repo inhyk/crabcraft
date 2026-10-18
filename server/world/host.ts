@@ -16,7 +16,7 @@ import { CharacterStore, CharacterStoreError, type Character, type VictimOutcome
 import { WorldTicketRegistry, type SessionBinding } from './admission.ts';
 import type { HostOwnership } from './ownership.ts';
 import { DeadlineScheduler } from './scheduler.ts';
-import { PersistenceCoordinator } from './persistence-coordinator.ts';
+import { PersistenceCoordinator, readCertifiedGrantPage, type Recovery } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
 import { prepareObservationSnapshot } from './gameplay/protocol.ts';
@@ -76,7 +76,7 @@ export interface ActualWorldHost {
   stats(): Readonly<Record<string, number | boolean>>;
 }
 interface Slot { kind: 'public' | 'party'; world: WorldId; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
-interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; replay: GrantJson[]; pendingReplay: boolean; returnTo?: { world: WorldId; spawn: string } }
+interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; pendingReplay: boolean; returnTo?: { world: WorldId; spawn: string } }
 interface Party { code: string; leader: string; members: Map<string, string>; pvp: boolean; encounter?: Slot }
 interface Connection {
   ws: WebSocket; ip: string; origin: string; generation: number; closed: boolean;
@@ -90,7 +90,7 @@ interface Connection {
   chatBusy: boolean; chatPreferences?: ChatPreferences; chatNeedsPreferences: boolean;
   discoveries: { unit: EntityRef; id: string; startOrder: number; inputSequence: number; commandIndex: number }[];
 }
-interface Waiting { connection: Connection; record: StoredCharacter; replay: GrantJson[]; world: WorldId }
+interface Waiting { connection: Connection; record: StoredCharacter; world: WorldId }
 interface PendingTravel { actor: Actor; source: Slot; ref: EntityRef; gate: string; destination: WorldId }
 const HOST_COMMAND_KINDS = new Set(HOST_COMMANDS);
 const ECONOMIC_INTERACTIONS = new Set<string>([...TREASURES.map(t => t.id), LIGHTHOUSE_SECRET.id]);
@@ -363,7 +363,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       stage = slot.area.stageRestoredArrival(admission, checkpoint, prepareRestore(checkpoint, offline, p.restore));
       if (!registry.compareAndSwap(request.record.characterId, null, stage.newRef)) throw new Error('character ownership conflict');
       const ref = slot.area.activateRestoredArrival(stage.token); slot.area.releaseAdmission(admission.token);
-      const actor: Actor = { record: request.record, slot, ref, connection: null, detachedAt: null, generation: generation++, replay: request.replay, pendingReplay: true };
+      const actor: Actor = { record: request.record, slot, ref, connection: null, detachedAt: null, generation: generation++, pendingReplay: true };
       actors.set(request.record.characterId, actor); bootstrap(c, actor); return true;
     } catch {
       if (stage) slot.area.abortArrival(stage.token);
@@ -490,10 +490,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const world = deps.codec.toCore(record.checkpoint).world;
       if (!slots.has(world)) { close(c, 'world-unavailable'); return; }
       if (waiting.length >= p.maxWaiting) { close(c, 'queue-full', true); return; }
-      c.phase = 'queued'; waiting.push({ connection: c, record, replay: [], world }); metrics.queued++; admitWaiting();
+      c.phase = 'queued'; waiting.push({ connection: c, record, world }); metrics.queued++; admitWaiting();
     }), () => enqueue(() => { if (!c.closed && c.generation === attempt) close(c, 'character-unavailable'); }));
   };
 
+  function restoreDurableActor(actor: Actor, recovery: Recovery<IdentityJson, CheckpointJson, GrantJson>) {
+    deps.ownership.assertOwned();
+    const checkpoint = deps.codec.toCore(recovery.character.checkpoint), restored = prepareRestore(checkpoint, 0, p.restore);
+    const ref = actor.slot.area.restorePlayerCheckpoint(actor.ref, checkpoint, restored, recovery.grants.filter(grant => grant.appliedRevision !== null).map(grant => grant.id));
+    actor.ref = ref; actor.record = recovery.character; actor.generation = generation++; actor.pendingReplay = true;
+    if (actor.connection) bootstrap(actor.connection, actor);
+  }
   function startDurability() {
     if (barrier || frozen || !actors.size) return;
     metrics.persistenceBarriers++; const began = deps.nowMonotonicMs();
@@ -519,31 +526,39 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         const recorded = await deps.characters.recordVictimOutcome(entries, victimResources);
         if (recorded.length !== entries.length || recorded.some((entry, index) => entry.id !== entries[index].id)) throw new Error('incomplete victim outcome journal');
       }
-      await boundary(() => {
-        deps.ownership.assertOwned();
-        for (const { grant, appliedHere } of sources) {
-          const actor = actors.get(grant.recipient);
-          // appliedHere is a historical fact; absent receipt never authorizes applying it twice.
-          if (actor && !appliedHere && !actor.slot.area.appliedGrantIds(grant.recipient).includes(grant.id)) actor.slot.area.receiveGrant(grant);
-        }
-
-        for (const slot of allSlots) drain(slot);
-      });
-      // Read only the remaining receipt capacity. Commit this exact state before reading another page.
-      const pages = await Promise.all([...actors.values()].map(async actor => {
-        const room = 256 - actor.slot.area.appliedGrantIds(actor.record.characterId).length;
-        if (room < 0) throw new Error('checkpoint receipt capacity');
-        const limit = Math.min(100, room);
-        return { actor, limit, grants: limit ? await deps.characters.pendingGrants(actor.record.accountId, actor.record.characterId, { limit }) : [] };
-      }));
-      await boundary(() => {
-        deps.ownership.assertOwned();
-        for (const { actor, limit, grants } of pages) {
-          for (const grant of grants) actor.slot.area.receiveGrant(deps.codec.grantFromJson(grant.payload));
-          actor.replay = []; actor.pendingReplay = !limit || grants.length === limit;
-        }
-      });
       for (let round = 0; round <= p.persistence.maxRecoveryRounds; round++) {
+        // Retained-mode host fence. Area-owned one-use tokens are still required before pruning is enabled.
+        const leases = await boundary(() => {
+          deps.ownership.assertOwned();
+          return [...actors.values()].map(actor => {
+            const room = 256 - actor.slot.area.appliedGrantIds(actor.record.characterId).length;
+            if (room < 0) throw new Error('checkpoint receipt capacity');
+            const connection = actor.connection;
+            return { actor, ownerGeneration: actor.generation, slot: actor.slot, ref: { ...actor.ref },
+              revision: actor.record.revision, connection, connectionGeneration: connection?.generation, session: connection?.stream?.session,
+              limit: Math.min(100, room) };
+          });
+        });
+        const pages = await Promise.all(leases.map(async lease => ({ lease, result: lease.limit ? await readCertifiedGrantPage(deps.characters, deps.ownership, {
+          accountId: lease.actor.record.accountId, characterId: lease.actor.record.characterId, expectedRevision: lease.revision, limit: lease.limit,
+        }) : null })));
+        const reread = await boundary(() => {
+          deps.ownership.assertOwned(); let retry = false;
+          for (const { lease, result } of pages) {
+            const actor = lease.actor, connection = actor.connection;
+            const current = actors.get(actor.record.characterId) === actor && actor.generation === lease.ownerGeneration && actor.slot === lease.slot &&
+              sameRef(actor.ref, lease.ref) && actor.record.revision === lease.revision && connection === lease.connection && connection?.generation === lease.connectionGeneration && connection?.stream?.session === lease.session;
+            if (!current) { actor.pendingReplay = true; retry = true; continue; }
+            if (!result) { actor.pendingReplay = true; continue; }
+            if (result.kind === 'unresolved') throw new Error('journal certification unresolved: ' + result.reason);
+            if (result.kind === 'recovery') { metrics.recoveries++; restoreDurableActor(actor, result.recovery); retry = true; continue; }
+            for (const grant of result.grants) actor.slot.area.receiveGrant(deps.codec.grantFromJson(grant.payload));
+            actor.pendingReplay = result.more;
+          }
+          for (const slot of allSlots) drain(slot);
+          return retry;
+        });
+        if (reread) { if (round === p.persistence.maxRecoveryRounds) throw new Error('journal certification recovery capacity'); continue; }
         const captures = await boundary(() => { deps.ownership.assertOwned(); return [...actors.values()].map(actor => ({ actor, generation: actor.generation, capture: actor.slot.area.capturePlayerCheckpoint(actor.ref) })); });
         const results = await Promise.all(captures.map(({ actor, capture }) => persistence.commit({ captureId: capture.captureId,
           accountId: actor.record.accountId, characterId: actor.record.characterId, expectedRevision: actor.record.revision,
@@ -561,10 +576,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
               actor.record = recovery.character;
               if (exact) actor.slot.area.markCheckpointDurable(capture.captureId, recovery.character.revision, capture.appliedGrantIds);
               else {
-                const checkpoint = deps.codec.toCore(recovery.character.checkpoint);
-                actor.ref = actor.slot.area.restorePlayerCheckpoint(actor.ref, checkpoint, prepareRestore(checkpoint, 0, p.restore), recovery.grants.filter(g => g.appliedRevision !== null).map(g => g.id));
-                for (const grant of recovery.grants) if (grant.appliedRevision === null) actor.slot.area.receiveGrant(deps.codec.grantFromJson(grant.payload));
-                if (actor.connection) bootstrap(actor.connection, actor);
+                restoreDurableActor(actor, recovery);
                 retry = true;
               }
             }
@@ -617,10 +629,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         if (capturedGeneration !== actor.generation || actor.connection) throw new Error('retirement owner changed');
         if (result.kind === 'unresolved') throw new Error('retirement unresolved');
         if (result.kind === 'recovery') {
-          actor.record = result.recovery.character;
-          const checkpoint = deps.codec.toCore(actor.record.checkpoint);
-          actor.ref = actor.slot.area.restorePlayerCheckpoint(actor.ref, checkpoint, prepareRestore(checkpoint, 0, p.restore), result.recovery.grants.filter(g => g.appliedRevision !== null).map(g => g.id));
-          for (const grant of result.recovery.grants) if (grant.appliedRevision === null) actor.slot.area.receiveGrant(deps.codec.grantFromJson(grant.payload));
+          restoreDurableActor(actor, result.recovery);
           // Replacement invalidates the retirement token. A new bounded capture is required next pump.
           return;
         }

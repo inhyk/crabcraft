@@ -60,7 +60,7 @@ async function runtime(options = {}) {
   // Vertical test relocates one actual W1 enemy template beside actual baked spawn, without altering its rules/stats.
   if (options.combat) worlds.set('w1', { ...base, publicDefinition: { ...base.publicDefinition, enemies: [{ ...base.publicDefinition.enemies[0], home: { x: spawn.x + 3, y: base.query.heightAt(spawn.x + 3, spawn.z), z: spawn.z }, wanderRadius: 0 }] } });
   const failures = [];
-  const host = createActualWorldHost({ admission, characters: store, worlds, codec, ownership, chat: options.chat ? new WorldChatService(pool) : undefined,
+  const host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, chat: options.chat ? new WorldChatService(pool) : undefined,
     gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
     policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
       checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
@@ -420,13 +420,14 @@ test('economic results use actual delegated outcomes and original input origins 
 });
 
 test('actual PG ownership backend loss during blocked checkpoint suppresses late snapshot and durable command publication although old SQL may commit', { timeout: 12000 }, async () => {
-  const c = await character(), rt = await runtime({victimRetry:true}); let bot, blocker; let oldResult;
+  const c = await character(); let bot, blocker, armed = false; let oldResult;
+  const delayed = new Proxy(store,{get(target,key){if(key==='saveCheckpoint')return async(...args)=>{if(armed){armed=false;blocker=await pool.connect();await blocker.query('BEGIN');await blocker.query('SELECT 1 FROM world_characters WHERE character_id=$1 FOR UPDATE',[c.record.characterId]);}return target.saveCheckpoint(...args);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+  const rt = await runtime({victimRetry:true,characters:delayed});
   try {
     bot = await client(rt, c); await ready(rt, bot); await until(() => !rt.host.stats().durableBarrier);
     const owner = (await pool.query("SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database())")).rows;
     assert.equal(owner.length,1);
-    blocker = await pool.connect(); await blocker.query('BEGIN'); await blocker.query('SELECT 1 FROM world_characters WHERE character_id=$1 FOR UPDATE',[c.record.characterId]);
-    const before = await store.getOwned(c.binding.accountId,c.record.characterId);
+    const before = await store.getOwned(c.binding.accountId,c.record.characterId); armed = true;
     bot.send([{kind:'questAccept',questId:'q1',npcId:'brinebeard'}]);
     for(let i=0;;i++) { const waiting=(await pool.query("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%world_characters%FOR UPDATE%'" )).rowCount; if(waiting)break; if(i>200)throw new Error('checkpoint did not block'); await delay(10); }
     const stateSequence=bot.state.sequence, resultsBefore=bot.results.length;
@@ -510,4 +511,29 @@ test('resource-only outcome pause retries the same retained Area within explicit
    assert.equal(rt.host.stats().resourcePaused,false);assert.equal(await rt.host.retryDurability({maxEntries:2048,maxPayloadBytes:8*1024*1024,timeoutMs:5000}),false);assert.equal(rt.host.stats().accepting,false);
    assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.quests.status.q1,'available');
   }finally{await pool.query('DROP TRIGGER IF EXISTS qa_checkpoint_failure ON world_characters');await pool.query('DROP FUNCTION IF EXISTS qa_checkpoint_failure()');bot?.ws.close();assert.equal((await rt.close()).durable,false);}
+});
+
+ test('actual host certifies a pending candidate against a newer committed checkpoint before any replay', { timeout: 10000 }, async () => {
+  const c=await character(),victim={area:'trusted-certification-fixture',id:1,life:1},id=JSON.stringify([victim.area,victim.id,victim.life,c.record.characterId]);
+  await store.recordGrant(c.binding.accountId,c.record.characterId,id,{id,victim,recipient:c.record.characterId,xp:25,coins:1,objectives:[],flags:[]});
+  let raced=false;
+  const racing=new Proxy(store,{get(target,key){if(key==='pendingGrants')return async(...args)=>{const candidates=await target.pendingGrants(...args);if(!raced&&args[1]===c.record.characterId){raced=true;const checkpoint=structuredClone(c.record.checkpoint);checkpoint.progress.xp=25;checkpoint.progress.coins=1;await target.saveCheckpoint(c.binding.accountId,c.record.characterId,0,checkpoint,[id]);}return candidates;};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+  const rt=await runtime({characters:racing});let bot;
+  try{bot=await client(rt,c);await ready(rt,bot);assert.equal(raced,true);assert.equal(bot.state.self.player.xp,25);assert.equal(bot.state.self.player.coins,1);assert.equal(rt.host.stats().recoveries,1);assert.equal((await store.loadForRecovery(c.binding.accountId,c.record.characterId,[id])).grants[0].appliedRevision,1);assert.deepEqual(rt.failures,[]);assert.deepEqual(bot.errors,[]);}
+  finally{bot?.ws.close();await rt.close();}
+});
+
+test('disconnect during a certified read discards the old connection lease and recertifies before reconnect delivery', { timeout: 10000 }, async () => {
+ const c=await character();let armed=false,entered=false,release;const gate=new Promise(resolve=>{release=resolve;});
+ const delayed=new Proxy(store,{get(target,key){if(key==='pendingGrants')return async(...args)=>{const rows=await target.pendingGrants(...args);if(armed){armed=false;entered=true;await gate;}return rows;};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+ const rt=await runtime({characters:delayed,grace:10000});let bot,resumed;
+ try{
+  bot=await client(rt,c);await ready(rt,bot);await until(()=>!rt.host.stats().durableBarrier);
+  const victim={area:'trusted-lease-fixture',id:1,life:1},id=JSON.stringify([victim.area,victim.id,victim.life,c.record.characterId]);
+  await store.recordGrant(c.binding.accountId,c.record.characterId,id,{id,victim,recipient:c.record.characterId,xp:1,coins:1,objectives:[],flags:[]});
+  armed=true;bot.send([{kind:'questAccept',questId:'q1',npcId:'brinebeard'}]);await until(()=>entered);
+  bot.ws.close();await once(bot.ws,'close');await delay(20);release();await until(()=>!rt.host.stats().durableBarrier);
+  resumed=await client(rt,c);await ready(rt,resumed);assert.equal(resumed.state.self.player.xp,1);assert.equal(resumed.state.self.player.coins,1);assert.equal(resumed.state.self.player.quests.status.q1,'active');
+  assert.equal((await store.loadForRecovery(c.binding.accountId,c.record.characterId,[id])).grants[0].appliedRevision!==null,true);assert.deepEqual(rt.failures,[]);assert.deepEqual(resumed.errors,[]);
+ }finally{release();bot?.ws.close();resumed?.ws.close();await rt.close();}
 });
