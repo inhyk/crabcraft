@@ -18,7 +18,7 @@ function game() {
   networkState(){return {id,state:this.state,phase:this.phase,enraged:this.enraged,mech:null}},applyNetwork(s){Object.assign(this,s)},resumeAuthority(){},wake(){this.state='waking'}};return b};
  const noop=()=>{};
  let mood=0,beacon=false;
- const g={quests:new QuestLog(),world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),dawnBoss:boss('b30'),encounter:{engaged:false},world2:{chapter:1,canTravel(ch){return ch===1||!!g.journey.abyssCleared&&(ch===2||!!g.journey.trueCleared)},go(ch){if(!this.canTravel(ch))return false;this.chapter=ch;return true;},enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
+ const g={quests:new QuestLog(),world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),dawnBoss:boss('b30'),frostBoss:boss('b300'),encounter:{engaged:false},world2:{chapter:1,canTravel(ch){return ch===1||!!g.journey.abyssCleared&&(ch===2||!!g.journey.trueCleared&&(ch!==4||!!g.journey.finalCleared))},go(ch){if(!this.canTravel(ch))return false;this.chapter=ch;return true;},enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
   player:{unit:p,setTarget:noop,gainRage:noop,onDamaged:noop,onWardHit:noop},hud:{floats:{spawn:noop},damageFlash:noop,messages:{info:noop}},
   follow:{shake:noop},audio:{sfx:noop},vfx:{deathPoof:noop,smoke:noop,stunStars:noop},onUnitDied(u){if(u.kind==='scrapling')this.rewards++}};
  g.combat=new Combat(g);return g;
@@ -165,7 +165,7 @@ test('an unsent force cannot carry into a fresh peer after leaving a room',()=>{
  assert.equal(packets.filter(p=>p.type==='combat'&&p.event.kind==='effect').length,0);
 });
 
-test('guest portal requests cannot skip the level10 or level20 crown; World III restores all four bosses',()=>{
+test('guest portal requests cannot skip the level10 or level20 crown; World III restores all five boss checkpoints',()=>{
  const {a,b,aa,bb,flush}=pair();
  a.player.unit.level=100;bb.travel(2);flush();assert.equal(a.world2.chapter,1);assert.equal(b.world2.chapter,1);
  a.journey.rustCleared=a.journey.abyssCleared=true;aa.publish();flush();bb.travel(3);flush();assert.equal(a.world2.chapter,1);
@@ -174,7 +174,7 @@ test('guest portal requests cannot skip the level10 or level20 crown; World III 
  a.dawnBoss.state='fight';a.dawnBoss.unit.level=30;aa.publish();flush();assert.equal(b.dawnBoss.state,'fight');assert.equal(b.dawnBoss.unit.level,30);
  a.journey.finalCleared=true;a.dawnBoss.state='dead';aa.publish();flush();
  const c=game(),cc=new BattleSync(c,()=>{},()=>new Map());c.multiplayer={battle:cc};cc.join('c','a',aa.snapshot());
- assert.equal(c.world2.chapter,3);assert.equal(c.journey.finalCleared,true);assert.equal(c.dawnBoss.state,'dead');assert.equal(cc.snapshot().bosses.length,4);
+ assert.equal(c.world2.chapter,3);assert.equal(c.journey.finalCleared,true);assert.equal(c.dawnBoss.state,'dead');assert.equal(cc.snapshot().bosses.length,5);
  bb.elect('b');assert.equal(b.journey.finalCleared,true);assert.equal(b.world2.chapter,3);
 });
 
@@ -213,4 +213,56 @@ test('Solarkan gate rejects low-level damage and remote commands even with a lev
  aa.receive('b',{kind:'challenge',target:'b30'});assert.equal(a.dawnBoss.state,'dormant');
  a.player.unit.level=100;a.combat.damage(a.player.unit,a.dawnBoss.unit,10);assert.equal(a.dawnBoss.unit.hp,90);
  ar.level=100;aa.receive('b',{kind:'attack',target:'b30',amount:10});assert.equal(a.dawnBoss.unit.hp,80);
+});
+
+
+test('Frostlight travel requires the final crown and carries snow boss HP, mechanics, victory and host transfer',()=>{
+ const {a,b,aa,bb,flush}=pair();a.journey.abyssCleared=a.journey.trueCleared=true;aa.publish();flush();
+ bb.travel(4);flush();assert.equal(a.world2.chapter,1);
+ a.journey.finalCleared=true;aa.publish();flush();bb.travel(4);flush();assert.equal(a.world2.chapter,4);assert.equal(b.world2.chapter,4);
+ a.frostBoss.state='fight';a.frostBoss.unit.hp=450000;a.frostBoss.unit.maxHp=620000;a.frostBoss.unit.level=300;aa.publish();flush();
+ assert.equal(b.frostBoss.state,'fight');assert.equal(b.frostBoss.unit.hp,450000);
+ a.journey.frostCleared=true;a.frostBoss.state='dead';aa.publish();flush();
+ bb.elect('b');assert.equal(b.journey.frostCleared,true);assert.equal(b.frostBoss.state,'dead');
+});
+
+test('level 299 guest cannot challenge, condition or attack Boreas; level 300 guest can request the fight',()=>{
+ const {a,aa,ar}=pair();a.world2.chapter=4;a.journey.abyssCleared=a.journey.trueCleared=a.journey.finalCleared=true;
+ a.frostBoss.profile={level:300};ar.level=299;a.frostBoss.unit.invulnerable=false;
+ for(const event of [{kind:'challenge',target:'b300'},{kind:'attack',target:'b300',amount:90},{kind:'condition',target:'b300',condition:{stun:2,slow:0,slowPct:0,pushX:0,pushZ:0,pushTime:0}}])aa.receive('b',event);
+ assert.equal(a.frostBoss.state,'dormant');assert.equal(a.frostBoss.unit.hp,100);assert.equal(a.frostBoss.unit.stunUntil,0);
+ ar.level=300;aa.receive('b',{kind:'challenge',target:'b300'});assert.equal(a.frostBoss.state,'waking');
+});
+
+test('level 299 cannot exchange damage with Boreas even when a level 300 friend is present',()=>{
+ const g=game();g.player.unit.level=299;assert.equal(g.combat.damage(g.player.unit,g.frostBoss.unit,80),0);assert.equal(g.combat.damage(g.frostBoss.unit,g.player.unit,80),0);
+ g.player.unit.level=300;assert.equal(g.combat.damage(g.player.unit,g.frostBoss.unit,80),80);
+});
+
+
+test('public-area followers share HP and lighthouse without importing story progress or portal travel',()=>{
+ const {a,b,aa,bb,flush}=pair();aa.sharedArea=bb.sharedArea=true;
+ a.journey.rustCleared=true;a.journey.abyssCleared=true;a.world.setBeaconLit(true);a.world.setMood(1);
+ aa.update(.1);flush();assert.equal(b.beaconLit,true);assert.equal(b.journey.rustCleared,false);assert.equal(b.journey.abyssCleared,false);
+ b.combat.damage(b.player.unit,b.enemies[0].unit,23);flush();assert.equal(a.enemies[0].unit.hp,77);assert.equal(b.enemies[0].unit.hp,77);
+ bb.requestLighthouse(false);flush();assert.equal(a.world.getEnvironment().beacon,false);assert.equal(b.beaconLit,false);
+ assert.equal(bb.travel(2),false);assert.equal(a.world2.chapter,1);
+ a.world2.chapter=2;aa.update(.1);flush();assert.equal(b.world2.chapter,1);assert.equal(b.enemies[0].unit.hp,77);
+});
+test('public-area boats survive late join and authority transfer, while room-only commands are ignored',()=>{
+ const {a,b,aa,bb,flush}=pair();aa.sharedArea=bb.sharedArea=true;
+ const boat={x:170,z:22,yaw:1.2,speed:3,seats:['a','b']};let received;
+ a.boats={networkState:()=>structuredClone(boat)};b.boats={applyNetwork:s=>{received=structuredClone(s)}};
+ aa.update(.1);flush();assert.deepEqual(received,boat);
+ const c=game();c.boats={applyNetwork:s=>{received=structuredClone(s)}};const cc=new BattleSync(c,()=>{},()=>new Map());cc.join('c','a',aa.snapshot(),true);assert.deepEqual(received,boat);
+ bb.setMode('pvp');bb.setParty(2);bb.receive('a',{kind:'chapter',target:'world',chapter:2});flush();assert.equal(bb.mode,'coop');assert.deepEqual(bb.parties,{});assert.equal(b.world2.chapter,1);
+ bb.elect('b');assert.equal(bb.authority,true);assert.deepEqual(received,boat);
+});
+
+test('late public arrivals can pass defeated shared bosses without losing personal crowns or quest progress',()=>{
+ const {a,b,aa,bb,flush}=pair();aa.sharedArea=bb.sharedArea=true;
+ b.journey.rustCleared=true;b.quests.accept('q1');const status={...b.quests.status};
+ a.journey.abyssCleared=true;a.finalBoss.state='dead';a.finalBoss.unit.alive=false;aa.update(.1);flush();
+ assert.equal(b.journey.rustCleared,true);assert.equal(b.journey.abyssCleared,true);assert.deepEqual(b.quests.status,status);
+ a.journey.abyssCleared=false;aa.update(.1);flush();assert.equal(b.journey.abyssCleared,true);
 });

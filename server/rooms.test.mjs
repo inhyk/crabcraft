@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import WebSocket from 'ws';
 import { attachRooms } from './rooms.ts';
-import {worldOf} from './combatProtocol.ts';
+import {worldOf,eventOf} from './combatProtocol.ts';
 import { Link, ROOM_RETRIES, backoff, restartDelay } from '../src/multiplayer/link.ts';
 
 const spec = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Test crab' };
@@ -537,4 +537,53 @@ test('reports keep the target\'s last lines; three reporters mute them, and a mu
   ones[0].send({ type: 'report', id: ids[1], reason: 'other' }); assert.equal((await ones[0].next('reported')).ok, true);
   await until(() => reports.length === 4, 'a report on a player who left');
   assert.deepEqual(reports[3].target.name, 'Kid 1');
+});
+
+
+test('Frostlight validates five bosses, b300/f300 keys and chapter4 while retaining legacy checkpoints',()=>{
+ const fourth={...world,chapter:4,finalCleared:true,frostCleared:false,bosses:[...world.bosses,...['b30','b300'].map(id=>({id,state:'dormant',phase:1,enraged:false,mech:null}))]};
+ assert.ok(worldOf(world));assert.ok(worldOf(fourth));assert.equal(worldOf({...fourth,bosses:fourth.bosses.filter(b=>b.id!=='b300')}),null);
+ assert.equal(worldOf({...fourth,frostCleared:'yes'}),null);assert.equal(worldOf({...fourth,chapter:5}),null);
+ assert.deepEqual(eventOf({kind:'chapter',target:'world',chapter:4},false),{kind:'chapter',target:'world',chapter:4});
+ assert.ok(eventOf({kind:'challenge',target:'b300'},false));assert.ok(eventOf({kind:'attack',target:'b300',amount:100},false));assert.ok(eventOf({kind:'animation',target:'f300',action:'walk'},true));
+});
+
+test('snow-capable rooms cannot mix old screens, including empty retained rooms; old rooms still work',async t=>{
+ const {client}=await setup(t,{keepRooms:60000});const a=await client(),b=await client(),c=await client();
+ a.send({type:'create',spec,combatVersion:1,snowWorld:true});const r=await a.next('welcome');
+ b.send({type:'join',room:r.room,spec,combatVersion:1});assert.match((await b.next('error')).message,/refresh/);
+ a.send({type:'leave'});await a.next('leftRoom');
+ b.send({type:'join',room:r.room,spec,combatVersion:1});assert.match((await b.next('error')).message,/refresh/);
+ c.send({type:'join',room:r.room,spec,combatVersion:1,snowWorld:true});await c.next('welcome');
+ a.send({type:'create',spec,combatVersion:1});const old=await a.next('welcome');
+ b.send({type:'join',room:old.room,spec,combatVersion:1});await b.next('welcome');
+ c.send({type:'join',room:old.room,spec,combatVersion:1,snowWorld:true});assert.match((await c.next('error')).message,/refresh/);
+ b.send({type:'combat',event:{kind:'challenge',target:'b300'}});b.send({type:'combat',event:{kind:'attack',target:'e0',amount:20}});assert.equal((await a.next('combat')).event.target,'e0');
+});
+
+
+test('opt-in public worlds relay combat, lighthouse and boat checkpoints and elect a successor',async t=>{
+ const {client}=await setup(t);const a=await client(),b=await client(),legacy=await client(),far=await client();
+ const enter=area=>({type:'enter',area,spec,combatVersion:1,snowWorld:true,sharedWorld:1});
+ a.send(enter(1));const ar=await a.next('welcome');assert.equal(ar.sharedWorld,1);assert.equal(ar.host,ar.id);
+ b.send(enter(1));const br=await b.next('welcome');assert.equal(br.room,ar.room);assert.equal(br.host,ar.id);
+ legacy.send({type:'enter',area:1,spec});assert.notEqual((await legacy.next('welcome')).room,ar.room);
+ far.send(enter(2));assert.notEqual((await far.next('welcome')).room,ar.room);
+ const checkpoint={...world,weather:{mood:1,beacon:true,clock:7},boat:{x:171,z:22,yaw:1,speed:3,seats:[ar.id,br.id]}};
+ a.send({type:'world',world:checkpoint});assert.deepEqual((await b.next('world')).world,checkpoint);
+ b.send({type:'combat',event:{kind:'attack',target:'e0',amount:23}});assert.equal((await a.next('combat')).event.amount,23);
+ b.send({type:'combat',event:{kind:'environment',target:'world',environment:{beacon:false,mood:3}}});assert.equal((await a.next('combat')).event.environment.beacon,false);
+ b.send({type:'combat',event:{kind:'boat',target:'world',boat:{action:'drive',throttle:1,steer:-1}}});assert.equal((await a.next('combat')).event.boat.throttle,1);
+ const c=await client();c.send(enter(1));assert.deepEqual((await c.next('welcome')).world,checkpoint);
+ a.ws.close();await b.next('left');let next;do{next=await b.next('authority');}while(next.host===ar.id);assert.equal(next.host,br.id);
+ b.send({type:'world',world:checkpoint});assert.deepEqual((await c.next('world')).world,checkpoint);
+ assert.equal(legacy.queue.some(m=>['world','combat'].includes(m.type)),false);assert.equal(far.queue.some(m=>['world','combat'].includes(m.type)),false);
+});
+test('shared public worlds reject guest checkpoints, cross-area travel and room-only commands',async t=>{
+ const {client}=await setup(t);const a=await client(),b=await client();const enter={type:'enter',area:1,spec,combatVersion:1,snowWorld:true,sharedWorld:1};
+ a.send(enter);await a.next('welcome');b.send(enter);await b.next('welcome');
+ a.send({type:'world',world:{...world,chapter:2}});b.send({type:'world',world});
+ for(const e of [{kind:'chapter',target:'world',chapter:2},{kind:'party',target:'world',party:2},{kind:'duel',target:'other',amount:20}])b.send({type:'combat',event:e});
+ b.send({type:'state',state});await a.next('state');a.send({type:'state',state});await b.next('state');
+ assert.equal(a.queue.some(m=>m.type==='world'||m.type==='combat'),false);assert.equal(b.queue.some(m=>m.type==='world'),false);
 });
