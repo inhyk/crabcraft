@@ -56,3 +56,19 @@ test('public catalog cannot accidentally host story bosses or substitute mismatc
 test('public decoding catalog explicitly advertises the compiled binary schema without account or presentation state',async()=>{
  const worlds=await loadWorldCatalog(options()),catalog=createGameplayCatalog(worlds);assert.equal(catalog.wireSchemaRevision,WIRE_SCHEMA_REVISION);assert.equal(Object.isFrozen(catalog),true);assert.match(catalog.version,/^world-v3-[a-f0-9]{64}$/);for(const key of ['accountId','characterId','endingPresentation','schemaRevision'])assert.equal(key in catalog,false);
 });
+
+function frontierOptions(enabled=['w5','w6']) {
+ const c=options();for(const world of enabled){c.configs[world]=structuredClone(c.configs.w4);c.policies[world]=policy;c.seeds[world]=Number(world.slice(1));}return c;
+}
+test('optional frontier catalogs use the six canonical bakes and advertise only enabled encounter aliases',async()=>{
+ const four=createGameplayCatalog(await loadWorldCatalog(options()));assert(!four.archetypes.includes('boss-ember'));assert(!four.archetypes.includes('boss-sky'));
+ for(const extra of [['w5'],['w6'],['w5','w6']]){
+  const worlds=await loadWorldCatalog(frontierOptions(extra)),catalog=createGameplayCatalog(worlds);assert.deepEqual([...worlds.keys()],[...ids,...extra]);
+  for(const [world,profile]of [['w5','ember'],['w6','sky']]){assert.equal(catalog.archetypes.includes(`boss-${profile}`),extra.includes(world));if(!extra.includes(world))continue;const loaded=worlds.get(world);assert.equal(loaded.encounterDefinitions.get(profile).bosses[0].profile,profile);assert.equal(loaded.publicDefinition.bosses.length,0);assert(Number.isFinite(loaded.query.heightAt(0,82)));assert.equal(loaded.seed,Number(world.slice(1)));}
+  for(const loaded of worlds.values())for(const definition of [loaded.publicDefinition,...loaded.encounterDefinitions.values()])for(const gate of definition.interactions.filter(i=>i.kind==='gate'))assert(worlds.has(gate.destination));
+  assert.equal(catalog.gates.includes('gate:w5'),extra.includes('w5'));assert.equal(catalog.gates.includes('gate:w6'),extra.includes('w5')&&extra.includes('w6'));
+ }
+});
+test('optional world sets cannot silently default a missing policy, seed, or region',async()=>{
+ for(const mutate of [o=>delete o.policies.w5,o=>delete o.seeds.w5,o=>o.configs.w5=undefined,o=>o.configs.w7=o.configs.w4]){const o=frontierOptions();mutate(o);await assert.rejects(loadWorldCatalog(o),/configured worlds|configuration/);}
+});

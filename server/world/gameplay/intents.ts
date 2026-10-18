@@ -34,7 +34,7 @@ export function validateCommand(value:unknown,catalog:GameplayCatalog,area:strin
   case 'questTrack':object(c,{kind,questId:quest});break;
   case 'forgeBuy':case 'forgeUpgrade':object(c,{kind,npcId:npc},{slot:choice('weapon','armor'),request:v=>integer(v,1)});break;
   case 'travel':object(c,{kind,gateId:catalogValue(catalog.gates)});break;
-  case 'bossChallenge':object(c,{kind,profile:choice('rust','abyss','eclipse','dawn','frost')});break;
+  case 'bossChallenge':object(c,{kind,profile:choice('rust','abyss','eclipse','dawn','frost','ember','sky')});if((c.profile==='ember'||c.profile==='sky')&&!catalog.archetypes.includes(`boss-${c.profile}`))fail('boss profile unavailable');break;
   case 'chatSay':object(c,{kind,channel:choice('area','party'),text:v=>{if(typeof v!=='string'||v.length>LIMITS.stringBytes)fail('invalid chat text');}});break;
   case 'chatPreferences':object(c,{kind},{enabled:bool,partyOnly:bool});break;
   case 'chatBlock':object(c,{kind,target:reference,blocked:bool});break;

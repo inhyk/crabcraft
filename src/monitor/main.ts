@@ -18,13 +18,22 @@ const retry = h('button', { type: 'button' }, '다시 연결');
 // One wall of feeds, like a CCTV desk: every world on one screen, cells touching, no section headings.
 const wall = h('main', { class: 'wall', id: 'wall' });
 const empty = h('div', { class: 'wall-empty' }, '접속 중인 유저가 없습니다');
+/** Nobody online: the World I town from a slowly circling camera (./views) instead of an empty black wall. */
+const town = h('canvas', { class: 'town', 'aria-label': '클로헤이븐 마을 전경', hidden: true });
 root.append(
   h('header', { class: 'bar' },
     h('span', { class: 'brand' }, 'CRABCRAFT MONITOR'),
     h('span', { class: `environment ${environment.toLowerCase()}` }, environment),
     h('span', { class: 'count' }, '접속 ', total, '명'), connection,
     h('span', { class: 'spacer' }), search, pause, updated),
-  h('div', { class: 'stage' }, wall, empty, notice));
+  h('div', { class: 'stage' }, wall, town, empty, notice));
+
+function showTown(on: boolean) {
+  town.hidden = !on;
+  empty.classList.toggle('over-town', on);
+  if (on) empty.replaceChildren(h('span', { class: 'cam' }, '클로헤이븐'), h('span', null, '접속 중인 유저가 없습니다'));
+  if (views) views.panorama = on ? town : null;
+}
 
 /** A live spectator view: the real game, invisible in the player's room, following them (src/spectate.ts). */
 type Feed = { frame: HTMLIFrameElement; room: string; follow: string; live: boolean };
@@ -176,13 +185,15 @@ function render() {
   order.forEach((el, i) => { el.style.order = String(i); if (el.parentElement !== wall) wall.append(el); });
   for (const el of [...wall.children]) if (!order.includes(el as HTMLElement)) el.remove();
   empty.hidden = order.length > 0;
-  empty.textContent = players.length ? '검색 조건에 맞는 유저가 없습니다' : '접속 중인 유저가 없습니다';
+  if (players.length) empty.textContent = '검색 조건에 맞는 유저가 없습니다';
+  // A traveller's tile still waits on the wall for a few seconds; the town comes after it.
+  showTown(!players.length && !order.length);
   layout(order.length);
   syncFeeds(players, wallIds);
   // A tile showing its live view needs no light rendering.
   const tiles = new Map([...cards].filter(([, c]) => !c.root.hidden && !c.feed?.live).map(([id, c]) => [id, { canvas: c.canvas, message: c.message }]));
   views?.sync(players, tiles, snapshot.at);
-  if (players.length && !views && !viewsLoading) {
+  if (!views && !viewsLoading) {
     viewsLoading = true;
     void import('./views').then(({ Views }) => {
       if (disposed) return;
@@ -206,7 +217,7 @@ function showError(code: string, status: number) {
   if (status === 401 || status === 403 || code === 'monitor_unconfigured') {
     terminal = true;
     snapshot = null; views?.clear(); cards.clear(); wall.replaceChildren(); total.textContent = '0';
-    empty.hidden = false; empty.textContent = '접근 권한 확인 필요';
+    showTown(false); empty.hidden = false; empty.textContent = '접근 권한 확인 필요';
   }
   if (status === 401) notice.append(h('a', { class: 'signin', href: '/api/account/google/start?return=%2Fmonitor%2F' }, 'Google로 로그인'));
 }

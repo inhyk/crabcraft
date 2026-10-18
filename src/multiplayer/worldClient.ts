@@ -222,7 +222,7 @@ export class WorldClient {
         this.nextSend = this.now(); this.setState('loading');
         this.deadline(this.options.recoveryMs ?? 5000, this.generation, 'baseline-timeout');
       } else if (message.type === 'queued') {
-        if (this.binding || !ownKeys(message, ['type', 'world', 'position']) || !['w1', 'w2', 'w3', 'w4'].includes(String(message.world)) || !Number.isSafeInteger(message.position) || Number(message.position) < 1) throw new Error('invalid queue');
+        if (this.binding || !ownKeys(message, ['type', 'world', 'position']) || !['w1', 'w2', 'w3', 'w4', 'w5', 'w6'].includes(String(message.world)) || !Number.isSafeInteger(message.position) || Number(message.position) < 1) throw new Error('invalid queue');
         this.clearTimer(); this.queueInfo = { world: String(message.world), position: Number(message.position) }; this.setState('queued');
       } else if (message.type === 'error') {
         if (!ownKeys(message, ['type', 'code', 'retryable']) || typeof message.code !== 'string' || message.code.length > 128 || typeof message.retryable !== 'boolean') throw new Error('invalid error');

@@ -21,7 +21,7 @@ import type { DurableOutcomeStore } from './contribution-store.ts';
 import type { SourceLedgerLimits } from '../../src/sim/outcomes.ts';
 import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator, readCertifiedGrantPage, AreaSourceDrain, PagedOutcomeRecovery, type Recovery } from './persistence-coordinator.ts';
-import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
+import { PUBLIC_WORLDS, HOSTABLE_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, InputRateBudget, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
 import { prepareObservationSnapshot, releasePreparedObservation, WIRE_SCHEMA_REVISION, validateWireSchema } from './gameplay/protocol.ts';
 import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
@@ -174,7 +174,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       return actor ? { ...actor.record.identity.appearance, name: shownName(actor.record.identity.appearance.name) } : null;
     },
   } : undefined;
-  for (const world of PUBLIC_WORLDS) {
+  if (PUBLIC_WORLDS.some(world => !deps.worlds.has(world)) || [...deps.worlds.keys()].some(world => !HOSTABLE_WORLDS.some(id => id === world))) throw new Error('missing safe public world configuration');
+  for (const world of HOSTABLE_WORLDS.filter(id => deps.worlds.has(id))) {
     const loaded = deps.worlds.get(world);
     if (!loaded || loaded.world !== world || loaded.publicDefinition.bosses.length) throw new Error(`missing safe public world: ${world}`);
     if (loaded.publicDefinition.enemies.length > p.maxMutationSourcesPerTick) throw new Error('population exceeds bounded checkpoint receipts');
@@ -214,7 +215,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (c.ws.readyState === WebSocket.OPEN) { const data = JSON.stringify(value); c.ws.send(data); metrics.packets++; metrics.bytesSent += Buffer.byteLength(data); }
   };
   const queueNotice = (c: Connection, world: WorldId, position: number) => {
-    const hostedWorld = PUBLIC_WORLDS.find(id => id === world);
+    const hostedWorld = HOSTABLE_WORLDS.find(id => id === world && slots.has(id));
     if (!hostedWorld) { sendControl(c, { type: 'error', code: 'world-unavailable', retryable: false }); return; }
     const key = `${world}:${position}`;
     if (c.queueKey === key) return;
