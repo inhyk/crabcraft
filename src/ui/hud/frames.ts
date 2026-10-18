@@ -156,7 +156,7 @@ export class UnitFrame {
       setBar(this.res, p.resource / p.maxResource, `${Math.floor(p.resource)} / ${p.maxResource}`);
       this.el.classList.toggle('in-combat', p.inCombat && u.alive);
     } else {
-      this.el.classList.toggle('in-combat', u.alive && u.hostile && g.time - u.lastCombat < 4);
+      this.el.classList.toggle('in-combat', !u.observed && u.alive && u.hostile && g.time - u.lastCombat < 4);
     }
     this.updateAuras(g, u);
   }

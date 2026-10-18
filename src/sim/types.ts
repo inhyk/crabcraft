@@ -314,6 +314,7 @@ export interface AreaDefinition {
 export interface AreaPolicy {
   enemyLevel(spawn: EnemySpawn, legacyContext: { partyLevel: number; rustCleared: boolean; chapter: Chapter }): number;
   // Final server policy returns spawn.fixedLevel. Legacy policy can retain actual S1 scaling.
+  populationRadius?(spawn:EnemySpawn):number; // explicit nearby-slots policy; clearance remains22m
   enemyPopulation(spawn: EnemySpawn, nearbyPlayers: number): { desired: 0 | 1; respawnSeconds: number };
   damageAllowed(context: Readonly<AreaContext>, source: Readonly<SimUnit> | null, target: Readonly<SimUnit>): boolean;
   canInteract(context: Readonly<AreaContext>, player: Readonly<PlayerState>, interactionId: string): boolean;
@@ -347,7 +348,7 @@ export interface AreaServices {
   applyEarnedGrant(grant: EarnedGrant): 'applied' | 'duplicate' | 'not-owner'; // real gainXp/coin/quest/flag effects
   players(): readonly SimUnit[]; // stable order, no required singleton local player
   targetFor(source: EntityRef): SimUnit | null; // empty area is valid
-  hostilesNear(x: number, z: number, radius: number): readonly SimUnit[];
+  hostilesNear(x: number, z: number, radius: number, source?:EntityRef): readonly SimUnit[];
   outcomeTransaction(run: () => void): void; // sim-owned state operation, buffered event commit
   emit(event: CoreEvent): void; // enqueue copied data, no reentrant browser sink
   startAction(unit: EntityRef, action: ActionRequest, hit?: PendingHit): void;
@@ -376,7 +377,7 @@ export interface AreaSnapshot {
   readonly units: readonly Readonly<SimUnit>[];
   readonly players: readonly Readonly<PlayerState>[];
   readonly projectiles: readonly Readonly<ProjectileState>[];
-  readonly features: {readonly beaconLit:boolean;readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
+  readonly features: {readonly beaconLit:boolean;readonly exploration:readonly {unit:EntityRef;activeUntil:number}[];readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
   readonly recovery: {readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
 } // Deep copied and stable sorted by ID; slowPct remains fraction0..1; S4 adapter scales to0..100.
 /** Complete canonical test/debug data, not a production persistence protocol. No functions or refs. */
@@ -461,6 +462,7 @@ export interface Area {
    * No renderer step, wall clock or20Hz snapshot call may advance any of these stages.
    */
   step(inputs: ReadonlyMap<EntityId, PlayerIntent>): void;
+  bootstrapEncounter(profile:BossProfileId,facts:{beaconLit:boolean}):void;
   beginDurabilityBarrier(reason:string):string;
   releaseDurabilityBarrier(token:string):void;
   neutralizeInput(ref:EntityRef):void;

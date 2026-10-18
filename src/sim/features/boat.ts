@@ -167,8 +167,8 @@ export class NumericBoat {
   }
   /** Trusted personal save initialization; never accepts remote snapshot progression. */
   restoreProgress(id:string, value:{distance:number;earned:readonly string[]}):boolean {
-    if(!this.context.ownsProgression(id)||!value||!Number.isFinite(value.distance)||value.distance<0||!Array.isArray(value.earned))return false;
-    this.distance.set(id,Math.min(1e7,value.distance));
+    if(!this.context.ownsProgression(id)||!value||!Number.isFinite(value.distance)||value.distance<0||value.distance>Number.MAX_SAFE_INTEGER||!Array.isArray(value.earned))return false;
+    this.distance.set(id,value.distance);
     this.earned.set(id,new Set(value.earned.filter((s):s is BoatAchievement=>s==='sail'||s==='crew'||s==='landfall')));return true;
   }
   /** Remove a retired life without teleporting or earning a landing reward. */
