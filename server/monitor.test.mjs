@@ -105,3 +105,11 @@ test('database failure returns unavailable without exposing presence', async t =
   const app = await setup(t); await app.client(); app.fail();
   const res = await app.get(); assert.equal(res.status, 503); assert.deepEqual(await res.json(), { error: 'unavailable' });
 });
+
+test('frontier worlds V and VI keep their area; an unknown world number stays unknown', async t => {
+  const app = await setup(t), p = await app.client({ type: 'create', spec });
+  p.send({ type: 'state', state: { ...state, area: 6 } }); await tick();
+  assert.equal((await (await app.get()).json()).players[0].area, 6);
+  p.send({ type: 'state', state: { ...state, area: 7 } }); await tick();
+  assert.equal((await (await app.get()).json()).players[0].area, null);
+});

@@ -4,8 +4,8 @@ import { COAST } from '../world/layout';
 import type { MonitorPlayer, MonitorSnapshot } from '../../server/monitor';
 import type { Views } from './views';
 
-const WORLD_NAMES = ['위치 확인 중', '클로헤이븐', '별빛 항구', '새벽의 섬', '서리빛 설원'];
-const WORLD_EN = ['', 'CLAWHAVEN', 'STARHAVEN', 'DAWNREACH', 'FROSTLIGHT'];
+const WORLD_NAMES = ['위치 확인 중', '클로헤이븐', '별빛 항구', '새벽의 섬', '서리빛 설원', '잿불 군도', '하늘숲'];
+const WORLD_EN = ['', 'CLAWHAVEN', 'STARHAVEN', 'DAWNREACH', 'FROSTLIGHT', 'EMBERREACH', 'SKYBLOOM'];
 const host = location.hostname;
 const environment = host === 'crab-dev.seonn.dev' ? 'DEV' : host === 'crab.seonn.dev' ? 'MAIN' : 'LOCAL';
 const root = document.getElementById('monitor')!;
@@ -35,7 +35,7 @@ let timer = 0, busy = false, paused = false, disposed = false, fresh = false, ge
 let receipt = 0, retryDelay = 500;
 let terminal = false;
 
-for (const area of [1, 2, 3, 4, 0]) {
+for (const area of [1, 2, 3, 4, 5, 6, 0]) {
   const count = h('span', { class: 'world-count' }, '0명');
   const grid = h('canvas', { width: 320, height: 220, 'aria-hidden': 'true' });
   const pins = h('div', { class: 'map-pins' });
