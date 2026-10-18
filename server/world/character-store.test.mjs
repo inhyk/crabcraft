@@ -223,3 +223,34 @@ test('UTF-8 grant ID bounds and C0/C1 controls agree across API and SQL constrai
   const quoted = `SQL 'quotes'; $1 and \\backslash`;
   assert.equal((await grant(c, quoted)).id, quoted);
 });
+
+test('sparse arrays with out-of-range numeric properties reject without changing checkpoint or revision', async () => {
+  const permissive = new CharacterStore(pool, { ...testCodec(), validateCheckpoint: v => v });
+  let c = await permissive.create(A, identity);
+  c = await permissive.saveCheckpoint(A, c.characterId, 0, { ...c.checkpoint, items: ['kept', { slots: [1, 2] }] });
+  const before = (await pool.query('SELECT checkpoint_json,revision FROM world_characters WHERE character_id=$1', [c.characterId])).rows[0];
+  for (const key of ['4294967295', '9007199254740993', '184467440737095516160000']) {
+    const invalid = Array(1); invalid[key] = 'must not disappear';
+    // This has one own numeric-looking property and length 1, but no real index 0.
+    assert.equal(Object.keys(invalid).length, invalid.length); assert.equal(Object.hasOwn(invalid, 0), false);
+    await assert.rejects(permissive.saveCheckpoint(A, c.characterId, c.revision, { ...c.checkpoint, items: invalid }), error('invalid'));
+    assert.deepEqual((await pool.query('SELECT checkpoint_json,revision FROM world_characters WHERE character_id=$1', [c.characterId])).rows[0], before);
+    assert.deepEqual(await permissive.getOwned(A, c.characterId), c);
+  }
+});
+
+test('sparse arrays returned by checkpoint codec reject and roll back without changing durable state', async () => {
+  const c = await fresh();
+  const before = (await pool.query('SELECT checkpoint_json,revision FROM world_characters WHERE character_id=$1', [c.characterId])).rows[0];
+  for (const key of ['4294967295', '9007199254740993', '184467440737095516160000']) {
+    const invalid = Array(1); invalid[key] = 'codec output must not disappear';
+    const codec = { ...testCodec(), validateCheckpoint(v) {
+      // Decode of the current checkpoint remains valid; the next validated checkpoint introduces the sparse array.
+      return v.xp === 1 ? { ...v, items: invalid } : v;
+    } };
+    const badOutput = new CharacterStore(pool, codec);
+    await assert.rejects(badOutput.saveCheckpoint(A, c.characterId, 0, { ...c.checkpoint, xp: 1 }), error('invalid'));
+    assert.deepEqual((await pool.query('SELECT checkpoint_json,revision FROM world_characters WHERE character_id=$1', [c.characterId])).rows[0], before);
+    assert.deepEqual(await store.getOwned(A, c.characterId), c);
+  }
+});

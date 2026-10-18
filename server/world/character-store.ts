@@ -41,7 +41,11 @@ function json(value: unknown, maxBytes: number): string {
     if (Object.getOwnPropertySymbols(v).length) fail('invalid', 'symbol JSON keys are forbidden');
     active.add(v);
     const keys = Object.keys(v).sort();
-    if (array && (keys.length !== v.length || keys.some(k => !/^(0|[1-9][0-9]*)$/.test(k)))) fail('invalid', 'expected dense JSON array');
+    // Unique own keys must cover exactly 0..length-1; numeric-looking ordinary properties cannot fill holes.
+    if (array && (keys.length !== v.length || keys.some(key => {
+      const index = Number(key);
+      return !Number.isSafeInteger(index) || index < 0 || index >= v.length || String(index) !== key;
+    }))) fail('invalid', 'expected dense JSON array');
     const out: Json = array ? [] : Object.create(null);
     for (const key of keys) {
       if (Buffer.byteLength(key) > maxBytes) fail('invalid', 'JSON key too large');
