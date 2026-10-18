@@ -25,7 +25,7 @@ export type RoomOptions = {
 /** Players per room or public shard. In a room, the elected host's browser simulates the world for all of them. */
 export const ROOM_CAP = 8;
 /** Public presence is isolated by world area, including Frostlight. */
-const areaOf = (v: unknown) => v === 2 || v === 3 || v === 4 ? v : 1;
+const areaOf = (v: unknown) => v === 2 || v === 3 || v === 4 || v === 5 || v === 6 ? v : 1;
 
 const sameHost = (origin: string, req: IncomingMessage) => { try { return new URL(origin).host === req.headers.host; } catch { return false; } };
 const reject = (socket: Duplex, status: string) => { socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); };
@@ -168,11 +168,11 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
         broadcast(m.room, { type: 'action', id: m.id, action: msg.action }, m.id);
       } else if (m.room && m.combat && msg.type === 'world' && host(m.room) === m.id) {
         const world = worldOf(msg.world);
-        if (world && (!publics.has(m.room)||sharedAreas.has(m.room)&&world.chapter===publics.get(m.room)) && (m.snow || world.chapter!==4&&!world.bosses.some(b=>b.id==='b300'))) { worlds.set(m.room, world); broadcast(m.room, { type: 'world', world }, m.id); }
+        if (world && (!publics.has(m.room)||sharedAreas.has(m.room)&&world.chapter===publics.get(m.room)) && (m.snow || world.chapter<4&&!world.bosses.some(b=>b.id==='b300'))) { worlds.set(m.room, world); broadcast(m.room, { type: 'world', world }, m.id); }
       } else if (m.room && m.combat && msg.type === 'combat') {
         const authority = host(m.room) === m.id;
         const event = eventOf(msg.event, authority);
-        if (event && (!publics.has(m.room)||!['chapter','party','duel','dungeon-return'].includes(event.kind)) && (m.snow || event.chapter!==4&&![event.target,event.source].some(key=>key==='b300'||key==='f300'))) {
+        if (event && (!publics.has(m.room)||!['chapter','party','duel','dungeon-return'].includes(event.kind)) && (m.snow || (event.chapter??1)<4&&![event.target,event.source].some(key=>key==='b300'||key==='f300'))) {
           const packet = { type: 'combat', id: m.id, event };
           if (authority) broadcast(m.room, packet, m.id);
           else { const h = rooms.get(m.room)?.get(host(m.room)); if (h) send(h.ws, packet); }
