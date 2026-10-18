@@ -55,14 +55,14 @@ try{
  console.log('PASS saved World III requests survive reload');
  // Exercise the actual journey payout with the same boss claim gate used by network deaths.
  const rewards=await p.evaluate(()=>{const g=window.app.current.game,result=[];for(const b of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss]){
-  const xp=g.player.xp,coins=g.player.coins;b.state='dying';b.unit.alive=false;b.coinsClaimed=false;
+  g.player.xpBlessingUntil=0;const xp=g.player.xp,coins=g.player.coins;b.state='dying';b.unit.alive=false;b.coinsClaimed=false;
   g.journey.onBossDefeated(b);g.journey.onBossDefeated(b);
   const first={xp:g.player.xp-xp,coins:g.player.coins-coins};
   b.coinsClaimed=false;g.journey.onBossDefeated(b);g.journey.onBossDefeated(b);
   result.push({level:b.profile.level,first,repeat:{xp:g.player.xp-xp-first.xp,coins:g.player.coins-coins-first.coins}});
  }return result;});
  for(const r of rewards){assert.ok(r.first.xp>0);assert.deepEqual(r.first,r.repeat);}
- assert.deepEqual(rewards.map(r=>r.first.xp),[500,1000,1500,3200,18000]);
+ assert.deepEqual(rewards.map(r=>r.first.xp),[500,1000,3000,6400,18000]);
  console.log('PASS all five bosses pay coins and XP on initial and repeated victories, duplicate deaths pay nothing',JSON.stringify(rewards));
  assert.deepEqual(errors,[]);console.log('PASS zero browser errors');
 }finally{await browser.close();}

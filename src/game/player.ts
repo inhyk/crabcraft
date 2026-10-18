@@ -48,6 +48,8 @@ export class Player implements CombatController {
   resource = 0;
   maxResource = 100;
   xp = 0;
+  /** Real-time expiry continues while menus or the game are closed. */
+  xpBlessingUntil = 0;
   coins = 0;
   attackRank = 0;
   armorRank = 0;
@@ -605,6 +607,7 @@ export class Player implements CombatController {
   gainXp(n: number): void {
     const g = this.game;
     if(!Number.isFinite(n) || n<=0)return;
+    if (Date.now() < this.xpBlessingUntil) n *= 2;
     this.xp = Math.min(Number.MAX_SAFE_INTEGER,this.xp+n);
     g.events.emit({ type: 'xp', unit: this.unit, amount: n });
     const targetLevel=levelForXp(this.xp);
