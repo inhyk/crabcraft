@@ -1,0 +1,64 @@
+import type { AreaServices, BossSim, CharacterId, Contribution, EarnedGrant, EntityRef, PlayerCommand, PlayerSim, ChannelState, TimerAction } from './types.ts';
+import { enemyStats } from './data/enemies.ts';
+import { BOSS_PROFILES } from './data/bosses.ts';
+import { canChallenge, patrolReward } from './data/progression.ts';
+import { activeObjective, questBump } from './data/quests.ts';
+import { InteractionRules } from './interactions.ts';
+const key=(ref:EntityRef):string=>JSON.stringify([ref.area,ref.id,ref.life]);
+const copy=<T>(value:T):T=>structuredClone(value);
+interface Credit { character:CharacterId; cogEligible:boolean; cogMisses:number; flags:Record<string,boolean> }
+interface VictimCredit {victim:EntityRef;contributors:Map<CharacterId,Credit>}
+const FLAGS:Readonly<Record<BossSim['profile'],string>>=Object.freeze({rust:'rustCleared',abyss:'abyssCleared',eclipse:'trueCleared',dawn:'finalCleared'});
+/** Lifetime contribution ownership and synchronous real progression. No visual callback grants. */
+export class WorldRules {
+ readonly services:AreaServices;
+ beaconLit=false;
+ private readonly credits=new Map<string,VictimCredit>();
+ private readonly settled=new Set<string>();
+ private readonly grants=new Map<string,{grant:EarnedGrant;appliedHere:boolean;acknowledged:boolean}>();
+ private readonly applied=new Map<CharacterId,Set<string>>();
+ private readonly interactions:InteractionRules;
+ constructor(services:AreaServices){this.services=services;this.interactions=new InteractionRules(services,this);}
+ recordContribution(victim:EntityRef,attacker:EntityRef,damage:number):void {if(!Number.isFinite(damage)||damage<=0||victim.area!==this.services.id)return;const player=this.services.player(attacker),unit=this.services.getUnit(victim);if(!player||!unit||unit.reaction!=='hostile')return;const k=key(victim);if(this.settled.has(k))return;let entry=this.credits.get(k);if(!entry){entry={victim:copy(victim),contributors:new Map()};this.credits.set(k,entry);}const p=player.state;entry.contributors.set(p.character,{character:p.character,cogEligible:activeObjective(p.quests,'collect-cog'),cogMisses:p.cogMisses,flags:copy(p.flags)});}
+ onUnitDied(victim:EntityRef,killer:EntityRef|null):void {
+  const s=this.services,u=s.getUnit(victim),k=key(victim);if(!u||this.settled.has(k))return;
+  // A kill source also contributes if direct kill() bypassed damage(), as in debug/trusted combat.
+  if(killer&&!this.credits.get(k)?.contributors.size)this.recordContribution(victim,killer,1);
+  this.settled.add(k);const entry=this.credits.get(k);if(!entry)return;
+  const characters:CharacterId[]=[];
+  for(const original of [...entry.contributors.values()].sort((a,b)=>a.character<b.character?-1:a.character>b.character?1:0)){
+   const player=s.playerByCharacter(original.character),credit:Credit=player?{character:original.character,cogEligible:activeObjective(player.state.quests,'collect-cog'),cogMisses:player.state.cogMisses,flags:player.state.flags}:original;
+   let xp=0,coins=0;const objectives:{kind:string;amount:number}[]=[],flags:string[]=[];
+   if(u.kind==='scrapling'||u.kind==='scavenger'||u.kind==='jellyfish'){
+    const controller=s.controller(victim),spawnId=controller&&'spawnId' in controller&&typeof controller.spawnId==='string'?controller.spawnId:null,spawn=s.definition.enemies.find(e=>e.id===spawnId),role=spawn?.role??(spawnId?.includes(':add:')?'add':'ordinary');
+    const stats=enemyStats(u.kind,u.level,s.world==='w1'?1:s.world==='w2'?2:3,role);
+    if(role!=='add'){xp=stats.xp;coins=Math.max(5,Math.round(stats.xp/4));if(s.world!=='w1'||credit.flags.rustCleared)objectives.push({kind:'patrol-kill',amount:1});}
+    if(u.kind==='scrapling'){objectives.push({kind:'kill-scrapling',amount:1});if(credit.cogEligible){const drop=s.random.next()<.7||credit.cogMisses>=2;objectives.push({kind:drop?'cog-reset':'cog-miss',amount:1});if(drop)objectives.push({kind:'collect-cog',amount:1});}}
+    else if(u.kind==='scavenger')objectives.push({kind:'kill-scavenger',amount:1});
+   }else if(u.kind==='boss'){
+    const controller=s.controller(victim),profile=controller&&'profile' in controller?controller.profile:null;if(typeof profile!=='string'||!(profile in BOSS_PROFILES))continue;const id=profile as BossSim['profile'];if(!credit.flags[FLAGS[id]])xp=BOSS_PROFILES[id].reward;flags.push(FLAGS[id]);objectives.push({kind:id==='eclipse'?'eclipse-boss':id==='dawn'?'dawn-boss':'boss',amount:1},{kind:'clear-encounter-blessing',amount:1});
+   }else continue;
+   const grant:EarnedGrant={id:JSON.stringify([victim.area,victim.id,victim.life,credit.character]),victim:copy(victim),recipient:credit.character,xp,coins,objectives,flags};
+   const appliedHere=this.applyGrant(grant)!=='not-owner';this.grants.set(grant.id,{grant:copy(grant),appliedHere,acknowledged:false});s.emit({type:'reward',grant,appliedHere});characters.push(credit.character);
+   if(objectives.some(o=>o.kind==='collect-cog'))s.timers.schedule(s.time+.45,{kind:'lootPresentation',grantId:grant.id,corpse:copy(victim),recipient:credit.character,item:'cog'});
+  }
+  if(u.kind==='boss'&&characters.length){s.timers.schedule(s.time+1.8,{kind:'victory',boss:copy(victim),recipients:characters,stage:'banner'});s.timers.schedule(s.time+5,{kind:'victory',boss:copy(victim),recipients:characters,stage:'end'});}
+ }
+ applyGrant(grant:EarnedGrant):'applied'|'duplicate'|'not-owner' {
+  const s=this.services,p=s.playerByCharacter(grant.recipient);if(!p)return 'not-owner';let ids=this.applied.get(grant.recipient);if(ids?.has(grant.id))return 'duplicate';if(!ids){ids=new Set();this.applied.set(grant.recipient,ids);}p.gainXp(grant.xp);p.state.coins=Math.min(Number.MAX_SAFE_INTEGER,p.state.coins+grant.coins);
+  for(const flag of grant.flags)p.state.flags[flag]=true;
+  for(const o of grant.objectives){if(o.kind==='clear-encounter-blessing'){const u=s.getUnit(p.state.unit);if(u){u.blessingUntil=0;u.encounterBlessing=false;}}else if(o.kind==='cog-reset')p.state.cogMisses=0;else if(o.kind==='cog-miss')p.state.cogMisses++;else if(o.kind==='patrol-kill'){const kills=(p.state.quests.progress['patrol-kills']??0)+o.amount;p.state.quests.progress['patrol-kills']=kills%5;if(kills>=5){const u=s.getUnit(p.state.unit);if(u)p.gainXp(patrolReward(u.level)*Math.floor(kills/5));}}else questBump(p,s,o.kind,o.amount,true);}
+  ids.add(grant.id);return 'applied';
+ }
+ pendingGrants():readonly {grant:EarnedGrant;appliedHere:boolean}[]{return [...this.grants.values()].filter(e=>!e.acknowledged).map(({grant,appliedHere})=>({grant:copy(grant),appliedHere}));}
+ acknowledgeGrant(id:string):void {const entry=this.grants.get(id);if(!entry)throw new Error('unknown-grant');entry.acknowledged=true;}
+ appliedGrantIds(character:CharacterId):readonly string[]{return [...(this.applied.get(character)??[])];}
+ restoreAppliedGrantIds(character:CharacterId,ids:readonly string[]):void {const known=this.applied.get(character)??new Set<string>();for(const id of ids)known.add(id);this.applied.set(character,known);}
+ encounterAvailable(profile:BossSim['profile']):boolean {if((profile==='rust'||profile==='abyss')&&(!this.beaconLit||this.services.world!=='w1'))return false;return this.services.players().some(u=>{const p=this.services.player(u.ref);return !!p&&u.alive&&!u.hidden&&canChallenge(u.level,BOSS_PROFILES[profile].level,!!p.state.flags.rustCleared,!!p.state.flags.abyssCleared,this.services.world==='w1'?1:this.services.world==='w2'?2:3);});}
+ command(player:EntityRef,command:PlayerCommand):boolean{return this.interactions.command(player,command);}
+ interact(player:EntityRef,id:string):boolean{return this.interactions.interact(player,id);}
+ completeChannel(player:PlayerSim,channel:ChannelState):void {this.interactions.completeChannel(player,channel);}
+ update():void {this.interactions.update();}
+ onTimer(action:TimerAction):void {const s=this.services;if(action.kind==='lootPresentation'){const p=s.playerByCharacter(action.recipient);if(p)s.emit({type:'loot',unit:action.corpse,recipient:p.state.unit,item:'cog'});}else if(action.kind==='victory'){const recipients=action.recipients.flatMap(c=>{const p=s.playerByCharacter(c);return p?[p.state.unit]:[];});s.emit({type:'victory',boss:action.boss,recipients,stage:action.stage});}}
+ debugState():{contributions:Contribution[];grants:EarnedGrant[];acknowledgedGrantIds:string[];interactions:ReturnType<InteractionRules['debugState']>} {return {contributions:[...this.credits.values()].map(e=>({victim:copy(e.victim),contributors:[...e.contributors.keys()]})),grants:[...this.grants.values()].map(e=>copy(e.grant)),acknowledgedGrantIds:[...this.grants.values()].filter(e=>e.acknowledged).map(e=>e.grant.id),interactions:this.interactions.debugState()};}
+}
