@@ -45,7 +45,7 @@ export function validateEvent(value:unknown,c:GameplayCatalog,area:string):asser
    case 'victory':object(e,{type,boss:ref,recipients:list(ref,100),stage:choice('banner','end')});break;
    case 'action':object(e,{type,unit:ref,action:nullable(x=>actionState(x,c))});break;
    case 'rootRebase':object(e,{type,unit:ref,generation:x=>integer(x,1),root:x=>object(x,{x:number,z:number,yaw:number}),position:vector,yaw:number});break;
-   case 'reward':object(e,{type,grant:x=>object(x,{id:v=>text(v,1024),victim:ref,recipient:text,xp:number,coins:number,objectives:list(y=>object(y,{kind:text,amount:number}),64),flags:list(catalogValue(c.flags),64)}),appliedHere:bool});break;
+   case 'reward':object(e,{type,grant:x=>object(x,{id:v=>text(v,1024),victim:reference,recipient:text,xp:number,coins:number,objectives:list(y=>object(y,{kind:text,amount:number}),64),flags:list(catalogValue(c.flags),64)}),appliedHere:bool});break;
    case 'respawn':object(e,{type,unit:ref,position:vector,yaw:number});break;
    case 'quest':object(e,{type,unit:ref,quest:catalogValue(c.quests),stage:choice('accepted','progress','ready','completed')},{objective:catalogValue(c.objectives),value:number});break;
    case 'equipment':object(e,{type,unit:ref,slot:choice('weapon','armor'),operation:choice('buy','upgrade'),result:choice('bought','owned','busy','coins','upgraded','unowned','max')},{request:x=>integer(x,1)});break;
