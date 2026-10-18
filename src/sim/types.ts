@@ -6,6 +6,8 @@ import type { LegacyConfig, LegacyEnvelope, LegacyRequest } from './legacy.ts';
  */
 export type WorldId = 'w1' | 'w2' | 'w3' | 'w4';
 export type Chapter = 1 | 2 | 3 | 4;
+export type EquipmentSlot = 'weapon' | 'armor';
+export type EquipmentResult = 'bought' | 'owned' | 'busy' | 'coins' | 'upgraded' | 'unowned' | 'max';
 export type BossProfileId = 'rust' | 'abyss' | 'eclipse' | 'dawn' | 'frost';
 export type AreaId = string; // host-assigned unique INSTANCE/incarnation, never reused after recreation
 export type EntityKey = string; // canonical encoding of full [area-instance,id,life], not EntityId alone
@@ -135,6 +137,7 @@ export interface PendingHit { left: number; plan: HitPlan } // countdown, decrem
 export type School = 'physical' | 'frost' | 'water' | 'holy' | 'rust';
 export interface HitOptions { crit?: boolean; school?: School; noReact?: boolean; rage?: number }
 export interface CombatController {
+  readonly damageTakenMultiplier?: number;
   readonly profile?: BossProfileId;
   onDamaged?(source: EntityRef | null, damage: number): void;
   onHurt?(damage: number): void;
@@ -194,6 +197,7 @@ export type CoreEvent =
   | { type: 'reward'; grant: EarnedGrant; appliedHere: boolean }
   | { type: 'respawn'; unit: EntityRef; position: Readonly<Vec3>; yaw: number }
   | { type: 'quest'; unit: EntityRef; quest: string; stage: 'accepted' | 'progress' | 'ready' | 'completed'; objective?: string; value?: number }
+  | { type: 'equipment'; unit: EntityRef; slot: EquipmentSlot; operation: 'buy' | 'upgrade'; result: EquipmentResult; request?: number }
   | { type: 'endingReady'; unit: EntityRef; chapter: 4; replay: boolean }
   | { type: 'travelReady'; unit: EntityRef; destination: WorldId; gate: string };
 export interface EventRecord { readonly tick: Tick; readonly order: number; readonly event: CoreEvent }
@@ -207,7 +211,7 @@ export type PlayerCommand =
   | { kind: 'interact'; targetId: string }
   | { kind: 'questAccept' | 'questTurnIn'; questId: string; npcId: string }
   | { kind: 'questTrack'; questId: string }
-  | { kind: 'forgeBuy'; npcId: string }
+  | { kind: 'forgeBuy' | 'forgeUpgrade'; npcId: string; slot?: EquipmentSlot; request?: number }
   | { kind: 'travel'; gateId: string }
   | { kind: 'bossChallenge'; profile: BossSim['profile'] }
   | { kind: 'endingReplay' };
@@ -236,7 +240,7 @@ export interface QuestState {
 }
 export interface PlayerState {
   character: CharacterId; unit: EntityRef; classId: ClassId; resource: number; maxResource: number;
-  xp: number; coins: number; attackRank: number; baseMaxHp: number;
+  xp: number; coins: number; attackRank: number; armorRank: number; weaponOwned: boolean; armorOwned: boolean; baseMaxHp: number;
   gcdStart: number; gcdEnd: number; cooldowns: Record<string, { start: number; end: number }>;
   cast: CastState | null; channel: ChannelState | null; target: EntityRef | null;
   warded: boolean; nextSwing: number; lastAttack: number; queued: AbilityId | null;
@@ -387,7 +391,7 @@ export interface AreaDebugState {
  */
 export interface TransferDTO {
   version: 's2-transfer-v1'; character: CharacterId; classId: ClassId; archetype: string;
-  hp: number; maxHp: number; resource: number; maxResource: number; xp: number; coins: number; attackRank: number; baseMaxHp: number;
+  hp: number; maxHp: number; resource: number; maxResource: number; xp: number; coins: number; attackRank: number; armorRank: number; weaponOwned: boolean; armorOwned: boolean; baseMaxHp: number;
   cooldowns: Readonly<Record<string, { startAge: number; endRemaining: number }>>;
   gcd: { startAge: number; endRemaining: number };
   status: { stunRemaining: number; slowRemaining: number; slowPct: number; rustRemaining: number; rust: number;

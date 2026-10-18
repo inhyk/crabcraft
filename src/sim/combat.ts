@@ -24,6 +24,7 @@ export class Combat implements CombatRules {
     if (dst.invulnerable) { g.emit({ type:'blocked', unit:dst.ref, reason:'evade' }); return 0; }
     let damage = Math.max(1, Math.round(amount));
     const controller = g.controller(dst.ref);
+    damage=Math.max(1,Math.round(damage*(controller?.damageTakenMultiplier??1)));
     if (dst.absorb > 0 && g.time < dst.absorbUntil) {
       const soaked = Math.min(dst.absorb, damage); dst.absorb -= soaked; damage -= soaked;
       controller?.onWardHit?.(dst.absorb <= 0);

@@ -16,7 +16,7 @@ const sameRef=(a:EntityRef|null,b:EntityRef|null)=>a===b || !!(a&&b&&a.area===b.
 export function createPlayerState(character:CharacterId,unit:SimUnit,classId:ClassId,now=0):PlayerState {
   const cls=CLASSES[classId],mana=cls.resource==='mana';
   unit.maxHp=unit.hp=cls.baseHp;
-  return {character,unit:unit.ref,classId,resource:mana?120:0,maxResource:mana?120:100,xp:0,coins:0,attackRank:0,baseMaxHp:cls.baseHp,gcdStart:now,gcdEnd:now,cooldowns:{},cast:null,channel:null,target:null,warded:false,nextSwing:now,lastAttack:now-10,queued:null,velX:0,velZ:0,jumpT:0,spinT:0,lastSpend:now-10,targetDeadAt:0,dash:null,deadUntil:null,role:'authoritative',controlsLocked:false,talkTarget:null,quests:freshQuests(1),flags:{},cogMisses:0};
+  return {character,unit:unit.ref,classId,resource:mana?120:0,maxResource:mana?120:100,xp:0,coins:0,attackRank:0,armorRank:0,weaponOwned:false,armorOwned:false,baseMaxHp:cls.baseHp,gcdStart:now,gcdEnd:now,cooldowns:{},cast:null,channel:null,target:null,warded:false,nextSwing:now,lastAttack:now-10,queued:null,velX:0,velZ:0,jumpT:0,spinT:0,lastSpend:now-10,targetDeadAt:0,dash:null,deadUntil:null,role:'authoritative',controlsLocked:false,talkTarget:null,quests:freshQuests(1),flags:{},cogMisses:0};
 }
 export class PlayerController implements PlayerSim {
   readonly services:AreaServices;
@@ -28,6 +28,7 @@ export class PlayerController implements PlayerSim {
   private danceIndex=-1;
   private danceTime=0;
   constructor(services:AreaServices,unit:SimUnit,state:PlayerState) { this.services=services;this.unit=unit;this.state=state; }
+  get damageTakenMultiplier():number{return 1/(1+.04*(Number.isSafeInteger(this.state.armorRank)?Math.max(0,Math.min(100,this.state.armorRank)):0));}
   get isRage():boolean{return CLASSES[this.state.classId].resource==='rage';}
   get inCombat():boolean{return this.services.time-this.unit.lastCombat<5;}
   get heldIntent():PlayerIntent{return {...this.held,commands:[]};}
