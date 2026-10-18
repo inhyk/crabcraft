@@ -19,7 +19,7 @@ export interface PlayerInputGame {
 /** Called once per render frame, before any number of fixed simulation ticks. */
 export function sampleHeld(
   game: PlayerInputGame,
-  accumulator: InputAccumulator,
+  accumulator: Pick<InputAccumulator,'sampleHeld'>,
   dt: number,
   currentChannel: ChannelKind | null = null,
 ): void {
@@ -44,7 +44,7 @@ export function sampleHeld(
 }
 
 /** GUI callbacks queue their own commands; only legacy Player.update edges are captured here. */
-export function captureEdges(game: PlayerInputGame, accumulator: InputAccumulator): void {
+export function captureEdges(game: PlayerInputGame, accumulator: Pick<InputAccumulator,'push'>): void {
   if (game.controlsLocked) return;
   if (game.input.wasPressed('Space')) accumulator.push({ kind: 'jump' });
   if (game.input.wasPressed('KeyB')) accumulator.push({ kind: 'dance' });
