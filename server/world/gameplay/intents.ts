@@ -16,7 +16,7 @@ export function validateCommand(value:unknown,catalog:GameplayCatalog,area:strin
   case 'ability':object(c,{kind,slot:v=>integer(v,1,5)});break;
   case 'target':object(c,{kind,target:v=>{if(v!==null)reference(v,area);}});break;
   case 'jump':case 'dance':case 'cancel':case 'endingReplay':case 'talkEnd':object(c,{kind});break;
-  case 'channelStart':object(c,{kind,channel:choice('recall','beacon','waystone')},{targetId:catalogValue(catalog.interactions)});break;
+  case 'channelStart':object(c,{kind,channel:choice('recall','beacon','waystone','lighthouse-secret')},{targetId:catalogValue(catalog.interactions)});break;
   case 'interact':object(c,{kind,targetId:catalogValue(catalog.interactions)});break;
   case 'questAccept':case 'questTurnIn':object(c,{kind,questId:quest,npcId:npc});break;
   case 'questTrack':object(c,{kind,questId:quest});break;
@@ -29,7 +29,7 @@ export function validateCommand(value:unknown,catalog:GameplayCatalog,area:strin
  }
 }
 export function validateInput(value:unknown,catalog:GameplayCatalog,area:string):asserts value is GameplayInput {
- object(value,{seq:v=>integer(v,1),forward:axis,strafe:axis,turn:axis,sprint:bool,steeringYaw:v=>{if(v!==null){number(v);if(v< -Math.PI||v>Math.PI)fail('unnormalized steering yaw');}},heldChannel:choice(null,'recall','beacon','waystone'),commands:v=>{if(!Array.isArray(v)||v.length>LIMITS.commands)fail('command capacity');v.forEach(c=>validateCommand(c,catalog,area));}});
+ object(value,{seq:v=>integer(v,1),forward:axis,strafe:axis,turn:axis,sprint:bool,steeringYaw:v=>{if(v!==null){number(v);if(v< -Math.PI||v>Math.PI)fail('unnormalized steering yaw');}},heldChannel:choice(null,'recall','beacon','waystone','lighthouse-secret'),commands:v=>{if(!Array.isArray(v)||v.length>LIMITS.commands)fail('command capacity');v.forEach(c=>validateCommand(c,catalog,area));}});
 }
 export function encodeInput(packet:InputPacket,catalog:GameplayCatalog):Uint8Array {
  object(packet,{binding:v=>{object(v,{session:text,area:text,epoch:n=>integer(n,1),catalog:text});},intent:v=>validateInput(v,catalog,packet.binding.area)});
