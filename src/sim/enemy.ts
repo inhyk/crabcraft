@@ -61,7 +61,7 @@ export class Enemy {
     }
     if(this.state==='dead'){
       const t=now-this.deadAt;if(t>8&&!u.hidden){u.lift=-Math.min(1.4,(t-8)*.9)*u.height;u.y=s.query.heightAt(u.x,u.z)+u.lift;if(t>9.6)u.hidden=true;}
-      const nearby=s.players().filter(p=>distance(p,this.spawn.home)<RESPAWN_CLEAR).length;
+      const nearby=s.players().filter(p=>p.alive&&!p.hidden&&distance(p,this.spawn.home)<RESPAWN_CLEAR).length;
       const population=s.policy.enemyPopulation(this.spawn,nearby);
       if(!this.isAdd&&population.desired>0&&t>population.respawnSeconds&&nearby===0){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
     }
