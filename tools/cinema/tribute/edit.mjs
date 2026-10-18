@@ -5,13 +5,14 @@
 //
 // Usage: node tools/cinema/tribute/edit.mjs --soundtrack <video or audio file> --cards <dir>
 //          --shots <dir>[,<dir>...] --out <file.mp4> [--compare <file.mp4>] [--reference <video>]
+//          [--program <program.mjs>]
 // --compare also writes the original (from --reference, default the soundtrack file) above the
 // tribute, frame for frame, for review.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { FFMPEG } from '../../trailer/lib.mjs';
-import { shots } from './program.mjs';
 import { FPS, LENGTH, RANGES } from './timeline.mjs';
 
 const args = process.argv.slice(2);
@@ -25,6 +26,8 @@ const shotDirs = opt('--shots', '').split(',').filter(Boolean).map((d) => resolv
 const out = resolve(opt('--out', 'tribute.mp4'));
 const compare = opt('--compare', null);
 const reference = resolve(opt('--reference', soundtrack));
+// The shots' timing comes from the program (default: this folder's program.mjs).
+const { shots } = await import(pathToFileURL(resolve(opt('--program', new URL('./program.mjs', import.meta.url).pathname))).href);
 if (!existsSync(soundtrack)) throw new Error(`soundtrack not found: ${soundtrack}`);
 mkdirSync(dirname(out), { recursive: true });
 
@@ -85,6 +88,8 @@ filters.push(`${timeline.map((_, i) => `[v${i}]`).join('')}concat=n=${timeline.l
 run([...inputs, '-filter_complex', filters.join(';'), '-map', '[vout]', '-map', `${audioIndex}:a:0`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-c:a', 'copy', '-movflags', '+faststart', out]);
 const got = frames(out);
 writeFileSync(out.replace(/\.mp4$/, '-timeline.json'), JSON.stringify({ frames: got, expected: total, segments: report }, null, 1));
+// A short picture drifts against the soundtrack: refuse it (a shot file rewritten mid-edit does this).
+if (got !== total) throw new Error(`${out}: ${got} frames, expected ${total}; re-run once no shot is being rendered`);
 console.log(`${out}: ${got} frames (expected ${total}), ${timeline.filter((s) => s.file).length} segments rendered, ${timeline.filter((s) => !s.file).length} black`);
 
 if (compare) {
