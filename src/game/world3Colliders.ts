@@ -58,6 +58,8 @@ export function dawnLots(): Lot[] {
 export function dawnForest() {
   const trees: { i: number; x: number; z: number; a: number; scale: number }[] = [];
   for (let i = 0; i < 75; i++) {
+    // Thin alternate outer trees while keeping the existing clear paths and landmarks.
+    if (i % 2 === 1) continue;
     const a = i * 2.39996,
       x = Math.sin(a) * (56 + (i % 5) * 5),
       z = 30 + Math.cos(a) * 66;
@@ -72,6 +74,7 @@ export function dawnForest() {
 export function dawnGrove() {
   const trees: { i: number; x: number; z: number; a: number }[] = [];
   for (let i = 0; i < 12; i++) {
+    if (i % 2 === 1) continue;
     const a = i * 2.39996,
       x = -65 + Math.cos(a) * (7 + (i % 3) * 2),
       z = 45 + Math.sin(a) * (8 + (i % 4) * 2);

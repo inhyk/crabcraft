@@ -422,6 +422,15 @@ export class Game {
       this.enemies.push(e);
     }
 
+    // Append after all existing enemy slots so old multiplayer IDs keep their meaning.
+    const islandRigs=await Promise.all(Array.from({length:6},()=>loadEnemy('scavenger')));
+    if(!this.alive)return;
+    for(const [slot,rig] of islandRigs.entries()){
+      const unit=this.addUnit(ENEMY_STATS.scavenger.name,'scavenger','hostile',rig);
+      const enemy=new Enemy(this,unit,'scavenger',new THREE.Vector3(),3);
+      enemy.islandSlot=slot;enemy.pack=[enemy];enemy.despawn();this.enemies.push(enemy);
+    }
+
     // Player start
     const spawn = pois.spawn;
     pu.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
@@ -1389,7 +1398,7 @@ export class Game {
     this.world2.resumeAdventure(authority);
     if(!authority)return;
     for(const e of this.enemies){
-      if(e.state==='gone'&&!e.isAdd&&!e.isEcho&&(this.world2.chapter===1||e.kind!=='jellyfish')){e.respawnAt(e.home.x,e.home.z);e.resumeAuthority();}
+      if(e.state==='gone'&&!e.isAdd&&!e.isEcho&&(!e.isIslandOnly||this.world2.chapter>=2)&&(this.world2.chapter===1||e.kind!=='jellyfish')){e.respawnAt(e.home.x,e.home.z);e.resumeAuthority();}
     }
     const bosses=this.world2.chapter===1?[this.boss,this.finalBoss]:[this.encounter];
     for(const b of bosses){

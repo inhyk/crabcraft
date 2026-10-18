@@ -14,7 +14,7 @@
 1. `dev` 나 `main` 에 PR 이 merge 되면 GitHub Actions 의 `Deploy` 워크플로(`.github/workflows/deploy.yml`)가 돈다. Actions 탭에서 `Run workflow` 로 직접 돌릴 수도 있다.
 2. 워크플로는 `pnpm install --frozen-lockfile`, `pnpm build`, (있으면) `pnpm build:server`, `pnpm test:multiplayer` 를 실행한다.
 3. `dist/` 와 `server-dist/` 를 rsync 로 `deploy@34.47.79.56:/srv/crabcraft/<env>/releases/<커밋 sha>/` 에 올린다.
-4. `sudo /srv/crabcraft/bin/activate.sh <env> <sha>` 가 `current` 링크를 새 릴리스로 바꾸고, 서버가 들어 있으면 `crabcraft-server@<env>` 를 다시 띄워 `/healthz` 를 기다린다. 응답이 없으면 바로 앞 릴리스로 되돌리고 워크플로는 실패로 끝난다.
+4. `sudo /srv/crabcraft/bin/activate.sh <env> <sha>` 가 `current` 링크를 새 릴리스로 바꾸고, 서버가 들어 있으면 `crabcraft-server@<env>` 를 다시 띄워 `/healthz` 를 기다린다. 응답이 없으면 바로 앞 릴리스로 되돌리고 워크플로는 실패로 끝난다. 새 릴리스의 `server-dist/` 가 지금 도는 서버가 시작한 릴리스(`/srv/crabcraft/<env>/server` 링크)와 파일 하나하나 같으면(화면만 바뀐 배포) 서버를 다시 띄우지 않아서 접속한 사람이 끊기지 않는다. 서버가 멈춰 있거나 `/healthz` 가 실패하면 그때는 다시 띄운다. 이 동작은 `bash deploy/vm/activate.test.sh`(Linux, CI 의 Deploy scripts)로 검사한다.
 5. 마지막으로 공개 주소에서 첫 화면과 COOP/COEP 헤더를 확인한다.
 
 릴리스는 env 마다 최근 5개를 남긴다. 워크플로가 쓰는 비밀값은 `VM_SSH_KEY`, `VM_HOST`, `VM_KNOWN_HOSTS` 세 개다. `deploy` 사용자의 SSH 키는 릴리스 업로드와 `activate.sh` 실행만 할 수 있다.

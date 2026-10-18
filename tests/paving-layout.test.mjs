@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {PavingLayout,pavingArea,pavingGround,subtractPaving} from '../src/game/pavingLayout.ts';
+const rect=(x,z,w,l,yaw=0)=>[[-w/2,-l/2],[w/2,-l/2],[w/2,l/2],[-w/2,l/2]].map(([a,b])=>[x+a*Math.cos(yaw)+b*Math.sin(yaw),z-a*Math.sin(yaw)+b*Math.cos(yaw)]);
+const area=pieces=>pieces.reduce((sum,p)=>sum+pavingArea(p),0);
+function assertDisjoint(pieces){for(let i=0;i<pieces.length;i++)for(let j=0;j<i;j++)assert.ok(Math.abs(area(subtractPaving(pieces[i],pieces[j]))-pavingArea(pieces[i]))<1e-6,`overlap ${i}/${j}`);}
+test('identical roads do not lay a second surface',()=>{const layout=new PavingLayout();assert.equal(layout.reserve(rect(0,0,2,2)).length,1);assert.deepEqual(layout.reserve(rect(0,0,2,2)),[]);});
+test('crossroads retain exactly the uncovered area',()=>{const pieces=subtractPaving(rect(0,0,6,2),rect(0,0,2,6));assert.equal(area(pieces),8);assertDisjoint(pieces);});
+test('rotated crossings, bends and curbs produce disjoint stone fragments',()=>{const layout=new PavingLayout(),pieces=[];for(const yaw of [0,Math.PI/2,.32,-.7])for(let i=-4;i<=4;i++)pieces.push(...layout.reserve(rect(Math.sin(yaw)*i,Math.cos(yaw)*i,2.4,.95,yaw)));assert.ok(pieces.length>20);assertDisjoint(pieces);});
+test('neighboring tiles retain their shape and bevel clearance',()=>{const layout=new PavingLayout(),a=layout.reserve(rect(0,0,1,1)),b=layout.reserve(rect(1.05,0,1,1));assert.equal(a.length,1);assert.equal(b.length,1);assertDisjoint([...a,...b]);assert.ok(Math.abs(area(a)-.92*.92)<1e-8);});
+test('rendered hill triangles cannot emerge above the paving sample',()=>{const hill=(x,z)=>Math.sin(x*1.7)+Math.cos(z*.9);for(const realm of [2,3,4])for(let i=0;i<100;i++){const x=i*.137,z=i*.281,step=realm===2?2:2.5,minX=realm===2?-140:-150,minZ=realm===2?-160:-175,ax=minX+Math.floor((x-minX)/step)*step,az=minZ+Math.floor((z-minZ)/step)*step,u=(x-ax)/step,v=(z-az)/step;const rendered=u+v<=1?hill(ax,az)*(1-u-v)+hill(ax+step,az)*u+hill(ax,az+step)*v:hill(ax+step,az+step)*(u+v-1)+hill(ax,az+step)*(1-u)+hill(ax+step,az)*(1-v);assert.ok(pavingGround(hill,x,z,realm)>=rendered-1e-8);assert.ok(pavingGround(hill,x,z,realm)>=hill(x,z));}});
