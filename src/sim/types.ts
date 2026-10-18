@@ -1,3 +1,6 @@
+import type {DungeonTier} from './data/dungeons.ts';
+import type {DungeonOptions,DungeonObservation,CapturedDungeonCompletion} from './features/dungeon.ts';
+export type {DungeonOptions,DungeonObservation,DungeonCompletionCandidate,CapturedDungeonCompletion,DungeonRunKey} from './features/dungeon.ts';
 import type {OutcomeCapture} from './outcomes.ts';
 import type {ContributionSummary,ContributionSnapshot,CreditBatch,PlannedPage,PagedOutcomeSeal,PlannerCursor} from './ledger.ts';
 export type {OutcomeCapture} from './outcomes.ts';
@@ -293,12 +296,13 @@ export interface TimerState { id: number; due: number; insertion: number; action
 export interface AreaTimers { schedule(due: number, action: TimerAction): number; cancel(id: number): void }
 export interface EnemySim extends CombatController { readonly unit: EntityRef; readonly spawnId: string; readonly state: 'idle' | 'chase' | 'leash' | 'dead' | 'gone'; update(dt: number): void; despawn(): void; respawnAt(x: number, z: number): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
 export interface BossSim extends CombatController { readonly state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; readonly engaged: boolean; readonly arena: Poi; sleep(): void; readonly unit: EntityRef; readonly profile: BossProfileId; update(dt: number): void; wake(): void; reset(): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
-export interface EnemySpawn {
+interface EnemySpawnBase {
   readonly id: string; readonly kind: 'scrapling' | 'scavenger' | 'jellyfish';
   readonly legacySlot?: string; // explicit original spawn-job identity, never inferred from Area iteration order
   readonly home: Readonly<Vec3>; readonly wanderRadius: number; readonly pack: string;
-  readonly fixedLevel: number; readonly role: 'ordinary' | 'add' | 'echo';
+  readonly fixedLevel: number;
 }
+export type EnemySpawn=EnemySpawnBase&({readonly role:'ordinary'|'add'|'echo'}|{readonly role:'dungeon';readonly dungeonTier:DungeonTier;readonly dungeonSlot:number});
 export interface AmbientSpawn {
   readonly id: string; readonly ambientSlot: string; readonly archetype: string;
   readonly position: Readonly<Vec3>; readonly yaw?: number;
@@ -327,7 +331,7 @@ export interface AreaPolicy {
   // Additional policy only: core still verifies known ID, same Area, alive, range and actual prerequisites.
 }
 export interface AreaContext {
-  mode: 'public' | 'party-encounter' | 'legacy-room';
+  mode: 'public' | 'party-encounter' | 'legacy-room' | 'dungeon';
   members: readonly { character: CharacterId; unit: EntityRef; party: string | null; villagePlaying: boolean; featureLocked?:boolean; seatedBoat: string | null }[];
   pvp: 'disabled' | 'party-only';
 }
@@ -375,6 +379,7 @@ export interface AreaServices {
   onUnitDied(victim: EntityRef, killer: EntityRef | null): void;
 }
 export interface AreaOptions {
+  readonly dungeon?:DungeonOptions;
   readonly ledgerMode?: 'retained' | 'external-durable';
   readonly ledgerLimits?:{readonly maxDirtyCreditEntries:number;readonly maxDirtyCreditBytes:number;readonly maxPendingDeaths:number;readonly maxStagedBytes:number};
   readonly characters?: CharacterRegistry; // host injects same registry into all Areas and coordinator
@@ -532,6 +537,10 @@ export interface Area {
    */
   commitDeparture(token: string): void;
   activateArrival(token: string): EntityRef;
+  /** One-run dungeon observations and a trusted exact-token durable completion boundary. */
+  dungeonObservation():Readonly<DungeonObservation>|null;
+  pendingDungeonCompletion():Readonly<CapturedDungeonCompletion>|null;
+  acknowledgeDungeonCompletion(token:string):void;
   /** Earned grants are synchronously determined/applied at death, once per victim life/recipient.
    * Already-earned eligibility of all valid damage contributors survives disconnect/transfer;
    * do not introduce additional time/range/party cutoffs while extracting the decided reward rule.
