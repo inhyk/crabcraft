@@ -1,18 +1,36 @@
 /** Input-driven authoritative player. Contains no camera, renderer, keyboard or socket state. */
-import type { ActionId, AreaServices, ChannelKind, CharacterId, ClassId, EntityRef, PlayerIntent, PlayerSim, PlayerState, SimUnit, Vec3 } from './types.ts';
+import type { AreaServices, ChannelKind, CharacterId, ClassId, EntityRef, PlayerIntent, PlayerSim, PlayerState, SimUnit, Vec3 } from './types.ts';
 import { CLASSES, type AbilityDef } from './data/classes.ts';
 import { abilityNeedsTarget, executeAbility, isMeleeAbility, launchAt, playAction } from './abilities.ts';
 import { damp, turnToward, yawTo } from './math.ts';
 import { distTo, gapTo, lineOfSight, moveTo, speedMul, teleport } from './unit.ts';
 import { levelForXp, xpForLevel } from './data/progression.ts';
+import { activeObjective, freshQuests } from './data/quests.ts';
+import { BREAK_ROUTINE } from './data/actions.ts';
 export const GCD=1;
 export const JUMP_CLIP=Object.freeze({from:.8,to:1.56,speed:1.15});
 const NEUTRAL:PlayerIntent={seq:0,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands:[]};
 const sameRef=(a:EntityRef|null,b:EntityRef|null)=>a===b || !!(a&&b&&a.area===b.area&&a.id===b.id&&a.life===b.life);
+function validCommand(command:unknown):boolean {
+  if(!command||typeof command!=='object')return false;
+  const c=command as Record<string,unknown>,text=(v:unknown)=>typeof v==='string'&&v.length>0&&v.length<=128;
+  switch(c.kind){
+    case 'ability':return [1,2,3,4,5].includes(c.slot as number);
+    case 'target':{if(c.target===null)return true;if(!c.target||typeof c.target!=='object')return false;const r=c.target as Record<string,unknown>;return text(r.area)&&Number.isSafeInteger(r.id)&&Number(r.id)>0&&Number(r.id)<=0xffffffff&&Number.isSafeInteger(r.life)&&Number(r.life)>0&&Number(r.life)<=0xffffffff;}
+    case 'jump':case 'dance':case 'cancel':return true;
+    case 'channelStart':return ['recall','beacon','waystone'].includes(c.channel as string)&&(c.targetId===undefined||text(c.targetId));
+    case 'interact':return text(c.targetId);
+    case 'questAccept':case 'questTurnIn':return text(c.questId)&&text(c.npcId);
+    case 'forgeBuy':return text(c.npcId);
+    case 'travel':return text(c.gateId);
+    default:return false;
+  }
+}
+
 export function createPlayerState(character:CharacterId,unit:SimUnit,classId:ClassId,now=0):PlayerState {
   const cls=CLASSES[classId],mana=cls.resource==='mana';
   unit.maxHp=unit.hp=cls.baseHp;
-  return {character,unit:unit.ref,classId,resource:mana?120:0,maxResource:mana?120:100,xp:0,coins:0,attackRank:0,baseMaxHp:cls.baseHp,gcdStart:now,gcdEnd:now,cooldowns:{},cast:null,channel:null,target:null,warded:false,nextSwing:now,lastAttack:now-10,queued:null,velX:0,velZ:0,jumpT:0,spinT:0,lastSpend:now-10,targetDeadAt:0,dash:null,deadUntil:null,role:'authoritative',controlsLocked:false,talkTarget:null,quests:{chapter:1,status:{},progress:{},cogs:0,tracked:{}},flags:{},cogMisses:0};
+  return {character,unit:unit.ref,classId,resource:mana?120:0,maxResource:mana?120:100,xp:0,coins:0,attackRank:0,baseMaxHp:cls.baseHp,gcdStart:now,gcdEnd:now,cooldowns:{},cast:null,channel:null,target:null,warded:false,nextSwing:now,lastAttack:now-10,queued:null,velX:0,velZ:0,jumpT:0,spinT:0,lastSpend:now-10,targetDeadAt:0,dash:null,deadUntil:null,role:'authoritative',controlsLocked:false,talkTarget:null,quests:freshQuests(1),flags:{},cogMisses:0};
 }
 export class PlayerController implements PlayerSim {
   readonly services:AreaServices;
@@ -29,14 +47,15 @@ export class PlayerController implements PlayerSim {
   get heldIntent():PlayerIntent{return {...this.held,commands:[]};}
   /** Accepted intents execute commands immediately at old Area time; held fields persist. */
   applyIntent(intent:PlayerIntent):void {
+    if(!intent||typeof intent!=='object')return;
     if(!Number.isSafeInteger(intent.seq)||intent.seq<0||intent.seq<=this.lastConsumedSeq)return;
     if(![intent.forward,intent.strafe,intent.turn].every(n=>Number.isFinite(n)&&n>=-1&&n<=1)||typeof intent.sprint!=='boolean'||(intent.steeringYaw!==null&&!Number.isFinite(intent.steeringYaw))||!Array.isArray(intent.commands)||intent.commands.length>32||![null,'recall','beacon','waystone'].includes(intent.heldChannel))return;
     // Validate every command before accepting any field, so malformed frames have no partial effect.
-    if(intent.commands.some(c=>!c||!['ability','target','jump','dance','cancel','channelStart','interact','questAccept','questTurnIn','forgeBuy','travel'].includes(c.kind)||(c.kind==='ability'&&![1,2,3,4,5].includes(c.slot))))return;
+    if(!intent.commands.every(validCommand))return;
     this.lastConsumedSeq=intent.seq;this.held={...intent,commands:[]};
     for(const command of intent.commands){
       switch(command.kind){
-        case 'target':this.setTarget(command.target ? this.services.getUnit(command.target) : null);break;
+        case 'target':{if(command.target===null)this.setTarget(null);else{const target=this.services.getUnit(command.target);if(target&&!target.hidden&&target.targetable)this.setTarget(target);}break;}
         case 'ability':this.useAbility(command.slot);break;
         case 'jump':this.jump();break;
         case 'dance':this.toggleDance();break;
@@ -51,7 +70,6 @@ export class PlayerController implements PlayerSim {
   update(dt:number):void {
     const g=this.services,u=this.unit,s=this.state,now=g.time;
     if(!u.alive){if(s.deadUntil!==null&&now>=s.deadUntil)this.respawn();return;}
-    const before={x:u.x,z:u.z,yaw:u.yaw};
     const free=!this.locked(),stunned=now<u.stunUntil;
     let fwd=free?this.held.forward:0,strafe=free?this.held.strafe:0,turn=free?this.held.turn:0;
     if(stunned||s.dash)fwd=strafe=turn=0;
@@ -83,8 +101,6 @@ export class PlayerController implements PlayerSim {
     s.spinT=Math.max(0,s.spinT-dt);
     const velocity=Math.hypot(s.velX,s.velZ);
     if(velocity>1&&s.jumpT<=0){this.footstep-=dt*velocity/5;if(this.footstep<=0){this.footstep=.34;g.emit({type:'footstep',unit:u.ref});}}
-    // Numeric locomotion is driven only by authoritative displacement, independent of rendering.
-    if(dt>0){let dx=(u.x-before.x)/dt,dz=(u.z-before.z)/dt;const speed=Math.hypot(dx,dz);if(speed>14){dx*=14/speed;dz*=14/speed;}const sin=Math.sin(u.yaw),cos=Math.cos(u.yaw);u.pose.localVx=damp(u.pose.localVx,dx*cos-dz*sin,14,dt);u.pose.localVz=damp(u.pose.localVz,dx*sin+dz*cos,14,dt);let d=(u.yaw-before.yaw)%(Math.PI*2);if(d>Math.PI)d-=Math.PI*2;if(d< -Math.PI)d+=Math.PI*2;u.pose.yawRate=damp(u.pose.yawRate,Math.max(-6,Math.min(6,d/dt)),12,dt);u.pose.locomotionTime+=dt;}
     this.updateCombat();this.updateResources(dt);
   }
   private jump():void {
@@ -103,7 +119,7 @@ export class PlayerController implements PlayerSim {
       if(c.target&&!target?.alive)this.interruptCast('Invalid target');
       else if(now>=c.end){s.cast=null;playAction(g,u,'cast',{upper:true,part:'release',fade:.1});g.emit({type:'castEnd',unit:u.ref,channel:false,result:'done'});if(target&&abilityNeedsTarget(ab)&&!this.checkReach(ab,target))return;this.commit(ab,target);}
     }
-    if(s.channel){const ch=s.channel;if(this.held.heldChannel!==ch.kind)this.cancelChannel();else if(now>=ch.end){s.channel=null;playAction(g,u,'cast',{upper:true,part:'release',fade:.1});g.emit({type:'castEnd',unit:u.ref,channel:true,result:'done'});this.finishChannel(ch.kind,ch.targetId,ch.to);}}
+    if(s.channel){const ch=s.channel;if(this.held.heldChannel!==ch.kind)this.cancelChannel();else if(now>=ch.end){s.channel=null;playAction(g,u,'cast',{upper:true,part:'release',fade:.1});g.emit({type:'castEnd',unit:u.ref,channel:true,result:'done'});this.finishChannel(ch.kind,ch.targetId,ch.to,ch.start,ch.end);}}
     if(s.queued&&now>=s.gcdEnd&&!s.cast){const queued=s.queued;s.queued=null;const a=CLASSES[s.classId].abilities.find(a=>a.id===queued);if(a)this.useAbility(a.slot);}
     t=s.target?g.getUnit(s.target):null;
     if(!this.villagePlaying()&&t?.alive&&t.reaction==='hostile'&&!t.hidden&&!s.cast&&!s.channel&&!s.dash&&now>=s.nextSwing&&u.alive&&now>=u.stunUntil){
@@ -144,8 +160,8 @@ export class PlayerController implements PlayerSim {
   interruptCast(reason='Interrupted'):void {if(!this.state.cast)return;this.state.cast=null;this.services.stopAction(this.unit.ref,'cast',.15);this.services.emit({type:'castEnd',unit:this.unit.ref,channel:false,result:'interrupted',reason});}
   cancelChannel():void {if(!this.state.channel)return;this.state.channel=null;this.services.stopAction(this.unit.ref,'cast',.2);this.services.emit({type:'castEnd',unit:this.unit.ref,channel:true,result:'interrupted',reason:'Interrupted'});}
   startChannel(kind:ChannelKind,seconds:number,to:Readonly<Vec3>,targetId:string|null=null):void {if(!this.unit.alive||this.locked()||this.services.time<this.unit.stunUntil)return;this.cancelDance();this.interruptCast();this.cancelChannel();const start=this.services.time,end=start+seconds;this.state.channel={kind,start,end,to:{...to},targetId};this.state.velX=this.state.velZ=0;playAction(this.services,this.unit,'cast',{upper:true,loop:true,fade:.2});this.services.emit({type:'castStart',unit:this.unit.ref,seconds,channel:{kind,to:{...to},start,end}});}
-  private startRequestedChannel(kind:ChannelKind,targetId?:string):void {const g=this.services;if(kind==='recall'){this.startChannel(kind,2,g.definition.recall.position);return;}const item=g.definition.interactions.find(i=>i.id===targetId&&i.kind===kind);if(!item||Math.hypot(this.unit.x-item.position.x,this.unit.z-item.position.z)>item.range||!g.policy.canInteract(g.context,this.state,item.id))return;this.startChannel(kind,kind==='waystone'?1.5:2,item.position,item.id);}
-  private finishChannel(kind:ChannelKind,targetId:string|null,to:Readonly<Vec3>):void {if(kind==='recall'){this.state.velX=this.state.velZ=0;this.state.dash=null;this.state.queued=null;this.setTarget(null);teleport(this.unit,this.services.query,to.x,to.z,this.services.definition.recall.yaw);this.services.emit({type:'recall',unit:this.unit.ref});}else {void targetId; /* Area interaction completion is integrated by the world rules owner. */}}
+  private startRequestedChannel(kind:ChannelKind,targetId?:string):void {const g=this.services;if(kind==='recall'){if(this.state.channel)return;this.startChannel(kind,2,{x:this.unit.x,y:this.unit.y+1,z:this.unit.z});return;}const item=g.definition.interactions.find(i=>i.id===targetId&&i.kind===kind);if(!item||Math.hypot(this.unit.x-item.position.x,this.unit.z-item.position.z)>item.range||!g.policy.canInteract(g.context,this.state,item.id))return;if(kind==='waystone'&&(!item.objective||!activeObjective(this.state.quests,item.objective)))return;if(kind==='beacon'&&!(this.state.quests.status.q3==='done'||this.state.flags.beaconLit||(this.state.quests.status.q3==='active'&&activeObjective(this.state.quests,'beacon'))))return;this.startChannel(kind,kind==='waystone'?1.5:2,item.position,item.id);}
+  private finishChannel(kind:ChannelKind,targetId:string|null,to:Readonly<Vec3>,start=0,end=0):void {if(kind==='recall'){this.state.velX=this.state.velZ=0;this.state.dash=null;this.state.queued=null;this.setTarget(null);teleport(this.unit,this.services.query,this.services.definition.recall.position.x,this.services.definition.recall.position.z,this.services.definition.recall.yaw);this.services.emit({type:'recall',unit:this.unit.ref});}else this.services.completeChannel(this.unit.ref,{kind,targetId,to:{...to},start,end});}
   setTarget(target:SimUnit|null):void {if(sameRef(this.state.target,target?.ref??null))return;this.state.target=target?.ref??null;this.state.targetDeadAt=target&&!target.alive?this.services.time:0;this.services.emit({type:'target',unit:this.unit.ref,target:this.state.target});}
   startDash(target:SimUnit):void{this.state.dash={target:target.ref,t:0};this.state.velX=this.state.velZ=0;}
   private updateDash(dt:number):void {const g=this.services,s=this.state,u=this.unit,d=s.dash!,t=g.getUnit(d.target);if(!t){s.dash=null;u.lift=0;return;}d.t+=dt;const step=26*dt;u.yaw=yawTo(u.x,u.z,t.x,t.z);if(gapTo(u,t)<=.6+step||d.t>.9||!t.alive){s.dash=null;u.lift=0;g.emit({type:'ability',caster:u.ref,ability:'sideways-charge',stage:'hit',target:t.ref});s.nextSwing=Math.min(s.nextSwing,g.time+.1);return;}const k=step/Math.max(.001,distTo(u,t));u.x+=(t.x-u.x)*k;u.z+=(t.z-u.z)*k;u.lift=Math.sin(Math.min(1,d.t/.45)*Math.PI)*.25;}
@@ -161,13 +177,12 @@ export class PlayerController implements PlayerSim {
     const g=this.services,u=this.unit,s=this.state;this.cancelDance(0);g.cancelPendingHit(u.ref);g.stopAction(u.ref,undefined,0);
     s.unit=g.respawnUnit(u.ref);u.alive=true;u.hp=u.maxHp;u.hidden=false;s.resource=this.isRage?0:s.maxResource;s.cast=null;s.channel=null;s.dash=null;s.queued=null;s.deadUntil=null;
     u.stunUntil=u.slowUntil=u.rustUntil=0;u.rust=0;u.absorb=0;u.lift=0;u.pushTime=0;this.dropWard();s.velX=s.velZ=0;s.jumpT=s.spinT=0;u.lastCombat=-1e9;this.setTarget(null);
-    const spawn=g.definition.recall;teleport(u,g.query,spawn.position.x,spawn.position.z,spawn.yaw);g.emit({type:'respawn',unit:u.ref,position:{x:u.x,y:u.y,z:u.z},yaw:u.yaw});
+    const spawn=g.definition.spawn;teleport(u,g.query,spawn.position.x,spawn.position.z,spawn.yaw);g.emit({type:'respawn',unit:u.ref,position:{x:u.x,y:u.y,z:u.z},yaw:u.yaw});
   }
   private toggleDance():void {if(this.danceIndex>=0){this.cancelDance();return;}const u=this.unit,s=this.state;if(!u.alive||this.locked())return;if(this.inCombat)return this.error("You can't dance while in combat.");if(this.services.time<u.stunUntil)return this.error('You are stunned.');if(s.cast||s.channel||s.dash)return this.error('Another action is in progress.');if(s.jumpT>0||Math.hypot(s.velX,s.velZ)>.6)return this.error('Stand still to dance.');s.velX=s.velZ=0;this.danceIndex=0;this.danceTime=0;this.startDanceStep();this.services.emit({type:'dance',unit:u.ref,stage:'start'});}
-  private danceIds:readonly ActionId[]=['break_toprock','break_sixstep','break_spin','break_jumpspin','break_backflip','break_oneclaw'];
-  private startDanceStep():void {const id=this.danceIds[this.danceIndex];playAction(this.services,this.unit,id,{speed:1,fade:.25,carryRoot:true});this.services.emit({type:'dance',unit:this.unit.ref,stage:'moment',moment:'step',move:id});}
-  private updateDance(dt:number):void {if(this.danceIndex<0)return;const id=this.danceIds[this.danceIndex],action=[...this.unit.actions].reverse().find(a=>a.targetWeight>0&&!a.ended);if(action&&action.id!==id){this.cancelDance();return;}const clip=this.services.actionData.clip(id),from=clip.events.window_from?.[0]??0,to=clip.events.window_to?.[0]??clip.length;this.danceTime+=dt;if(this.danceTime>=to-from-(this.danceIndex<this.danceIds.length-1?.25:0)){this.danceIndex++;this.danceTime=dt;if(this.danceIndex>=this.danceIds.length){this.danceIndex=-1;return;}this.startDanceStep();}}
-  private cancelDance(fade=.25):void {if(this.danceIndex<0)return;this.services.stopAction(this.unit.ref,this.danceIds[this.danceIndex],fade);this.danceIndex=-1;this.services.emit({type:'dance',unit:this.unit.ref,stage:'stop'});}
+  private startDanceStep():void {const step=BREAK_ROUTINE[this.danceIndex];playAction(this.services,this.unit,step.id,{from:step.from,to:step.to,speed:1,fade:step.fade,carryRoot:true});this.services.emit({type:'dance',unit:this.unit.ref,stage:'moment',moment:'step',move:step.id});}
+  private updateDance(dt:number):void {if(this.danceIndex<0)return;const step=BREAK_ROUTINE[this.danceIndex],action=[...this.unit.actions].reverse().find(a=>a.targetWeight>0&&!a.ended);if(action&&action.id!==step.id){this.cancelDance();return;}const next=BREAK_ROUTINE[this.danceIndex+1],length=step.to-step.from;this.danceTime+=dt;if(this.danceTime>=length-(next?.fade??0)){this.danceIndex++;this.danceTime=dt;if(this.danceIndex>=BREAK_ROUTINE.length){this.danceIndex=-1;return;}this.startDanceStep();}}
+  private cancelDance(fade=.25):void {if(this.danceIndex<0)return;this.services.stopAction(this.unit.ref,BREAK_ROUTINE[this.danceIndex].id,fade);this.danceIndex=-1;this.services.emit({type:'dance',unit:this.unit.ref,stage:'stop'});}
   error(reason:string):void{this.services.emit({type:'error',unit:this.unit.ref,reason});}
   debugState():object{return {held:this.held,lastConsumedSeq:this.lastConsumedSeq,footstep:this.footstep,danceIndex:this.danceIndex,danceTime:this.danceTime};}
 }

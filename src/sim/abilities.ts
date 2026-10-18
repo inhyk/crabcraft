@@ -5,24 +5,17 @@ import { CRIT_MULT, rollCrit } from './combat.ts';
 import { angleDiff, yawTo } from './math.ts';
 import { distTo, gapTo, lineOfSight, teleport } from './unit.ts';
 import type { PlayerController } from './player.ts';
+import { actionRequest, actionHitDelay } from './data/actions.ts';
 
 const TARGETED = new Set(['pincer-strike','shell-bash','sideways-charge','bubble-bolt','smite']);
 export const abilityNeedsTarget = (a: AbilityDef): boolean => TARGETED.has(a.id);
 export const isMeleeAbility = (a: AbilityDef): boolean => a.id === 'pincer-strike' || a.id === 'shell-bash';
 
-/** Skill windows are read from mandatory numerical clip metadata, never visual asset availability. */
+/** Timing comes from the shipped numerical catalog, including skill windows. */
 export function playAction(g: AreaServices,u:SimUnit,id:ActionId,o:Partial<ActionRequest> = {},hit?:HitPlan):void {
-  const clip=g.actionData.clip(id);
-  const ev=clip.events;
-  const first=(key:string,fallback:number)=>ev[key]?.[0] ?? fallback;
-  const skill=['attack_swipe','attack_slam','cast','hit_react','death','sit'].includes(id);
-  const part=o.part ?? (o.loop ? 'channel' : 'move');
-  const baseFrom=first('window_from',0), baseTo=first('window_to',clip.length);
-  const from=id==='cast' && part==='release' ? first('release',baseFrom)-.05 : baseFrom+((id==='attack_swipe'||id==='attack_slam')?.25:0);
-  const request:ActionRequest={id,part,upper:false,from:skill?from:0,to:skill?baseTo:null,loopFrom:null,loop:false,speed:({attack_swipe:1.25,attack_slam:1.2,cast:1.25,hit_react:1,death:1.2,sit:1} as Partial<Record<ActionId,number>>)[id] ?? 1,fade:.12,carryRoot:false,...o};
-  if(id==='cast' && part==='channel') { request.from=o.from ?? baseFrom; request.to=o.to ?? first('channel_to',baseTo);request.loopFrom=first('channel_from',baseFrom); }
-  const hitTime=clip.events.hit?.[0];
-  g.startAction(u.ref,request,hit?{left:hitTime===undefined?.3:Math.max(0,(hitTime-request.from)/request.speed),plan:hit}:undefined);
+  const request=actionRequest(g.actionData,id,o);
+  const delay=o.from===undefined?actionHitDelay(g.actionData,request):null;
+  g.startAction(u.ref,request,hit?{left:delay??.3,plan:hit}:undefined);
 }
 export function enemiesNear(g:AreaServices,x:number,z:number,radius:number):readonly SimUnit[] { return g.hostilesNear(x,z,radius).filter(t=>t.reaction==='hostile' && t.alive && !t.hidden && Math.hypot(t.x-x,t.z-z)-t.radius<=radius); }
 export function damageMultiplier(p:PlayerSim,u:SimUnit):number { return (1+.12*(u.level-1))*(1+p.state.attackRank*.08); }
