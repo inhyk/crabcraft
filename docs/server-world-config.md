@@ -43,7 +43,7 @@ W5/W6에도 위 표의 `seed`, `populationMode`, `fixedLevels`, `population`, `r
 
 Catalog는 실제 활성 encounter에 대해서만 `boss-ember`/`boss-sky` alias를 광고한다. 비활성 destination의 gate는 public/encounter definition과 wire catalog에서 모두 제거한다. W4에서 W5로 가는 canonical `frostCleared` 조건, W5/W6의 캐릭터별 퀘스트와 보상, Ember500/Sky750 조건은 core 규칙을 그대로 사용한다. Startup에서 플래그, XP 또는 승리 상태를 만들어 넣지 않는다.
 
-패키지는 canonical collision bake6개와 공통 source/hash manifest를 생성한다. 현재 loader는 4개 또는 선택 artifact가 추가된 manifest를 허용하되 활성 world의 artifact 누락은 ownership 획득 전에 거부한다. Manifest에 선언한 artifact는 비활성 world여도 크기/hash budget 검사를 받는다. 6개 package에 4월드 config를 사용하면 Area는4개만 생성한다. 4월드 rollback은 해당 binary와 일치하는 기존 4개 manifest/package 및 source 설정을 함께 복원해야 한다. 이전 binary가 새6개 manifest를 읽는다고 가정하지 않는다.
+패키지는 canonical collision bake6개와 공통 source/hash manifest를 생성한다. 현재 loader는 4개 또는 선택 artifact가 추가된 manifest를 허용하되 활성 world의 artifact 누락은 ownership 획득 전에 거부한다. Manifest에 선언한 artifact는 비활성 world여도 크기/hash budget 검사를 받는다. 6개 package에 4월드 config를 사용하면 Area는4개만 생성한다. 4월드 rollback은 해당 binary와 일치하는 기존 4개 manifest/package 및 source 설정을 함께 복원해야 한다. 이전 binary가 새6개 manifest를 읽는다고 가정하지 않는다. W5/W6에 저장된 캐릭터를 해당 world가 비활성인 host에 접속시키면 world-unavailable로 거부하며 다른 world로 옮기거나 저장 데이터를 지우지 않는다.
 
 ## 반응형 bounded slot pool
 
@@ -109,7 +109,7 @@ Offline seconds는 저장 row의 trusted `updatedAt`과 현재 server wall clock
 
 ## Packaged asset manifest
 
-Root build는 `server-dist/world/`에 실제 collision JSON 4개와 `world-manifest.json`을 함께 배치한다. 4개 원본 JSON의 common source가 다르면 build가 실패해야 한다.
+Root build는 `server-dist/world/`에 실제 collision JSON 6개와 `world-manifest.json`을 함께 배치한다. 6개 원본 JSON의 common source가 다르면 build가 실패한다. 다음은 현재 package의 shape다. 기존 4개 항목만 있는 manifest도 4월드 설정에 계속 사용할 수 있다.
 
 ```json
 {
@@ -120,12 +120,14 @@ Root build는 `server-dist/world/`에 실제 collision JSON 4개와 `world-manif
     "w1":{"file":"collision-w1.json","bytes":123,"sha256":"<64 hex>"},
     "w2":{"file":"collision-w2.json","bytes":123,"sha256":"<64 hex>"},
     "w3":{"file":"collision-w3.json","bytes":123,"sha256":"<64 hex>"},
-    "w4":{"file":"collision-w4.json","bytes":123,"sha256":"<64 hex>"}
+    "w4":{"file":"collision-w4.json","bytes":123,"sha256":"<64 hex>"},
+    "w5":{"file":"collision-w5.json","bytes":123,"sha256":"<64 hex>"},
+    "w6":{"file":"collision-w6.json","bytes":123,"sha256":"<64 hex>"}
   }
 }
 ```
 
-위 byte/hash 값은 shape 설명용이다. 실제 build가 측정한 값을 사용한다. Config의 `assets.source`는 검토한 release source hash를 명시적으로 pin한다. Manifest source, 4개 exact filename, byte 수, SHA256, collision schema/world/source/cell 수를 모두 검사한다. Catalog가 다시 읽은 실제 artifact hash도 manifest와 비교해 loading 중 변경을 감지한다. HTTP URL, 경로 이동 filename, source mismatch, 과대 파일, 누락 파일을 허용하지 않는다.
+위 byte/hash 값은 shape 설명용이다. 실제 build가 측정한 값을 사용한다. Config의 `assets.source`는 검토한 release source hash를 명시적으로 pin한다. Manifest source와 선언된 모든 artifact의 exact filename, byte 수, SHA256을 검사한다. 활성 world는 collision schema/world/source/cell 수까지 검사한다. Catalog가 다시 읽은 실제 artifact hash도 manifest와 비교해 loading 중 변경을 감지한다. HTTP URL, 경로 이동 filename, source mismatch, 과대 파일, 누락 파일을 허용하지 않는다.
 
 `assets` 필수값은 `source`, `manifest:"world-manifest.json"`이다. 기술 budget 기본값은 artifact당16MiB, 합계64MiB, manifest16KiB, artifact당1,000,000 cells다. `maxBakeBytes`, `maxTotalBakeBytes`, `maxManifestBytes`, `maxCells`로 각각 최대128MiB/256MiB/64KiB/4,000,000까지 override할 수 있다. 이들은 게임 balance 값이 아니다.
 

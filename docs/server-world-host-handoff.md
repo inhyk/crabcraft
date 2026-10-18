@@ -52,3 +52,14 @@ Host는 기존 W1~W4를 기본으로 유지하며 완전한 region 설정이 있
 ## 파티 대전 치유
 
 party-only PvP의 대전 상대는 `isAttackTarget`과 같은 판정으로 중앙 `Combat.heal`과 ally-heal 후보에서 제외한다. 상대 피해와 자기 치료, 대전 상대가 아닌 파티원의 기존 치료는 유지한다. 공개 PvP는 disabled다. 기존 브라우저 `BattleSync.resolveHealing`도 PvP 적을 제외하므로 브라우저 소스는 변경하지 않았다.
+
+## 선택적 Frontier host 검증
+
+`2aa6a511` 기준의 host에 A6 `bae0339` wire/view를 합성했다. 기존 4월드 JSON은 그대로 유지하며, 명시적 W5/W6 config가 있을 때만 Area와 Ember/Sky encounter를 추가한다. 배포 JSON, VM, 활성화 설정은 수정하지 않았다.
+
+- `node --test server/world/catalog.test.mjs server/world/startup.test.mjs`: 39건 통과. 4/5/6개 활성 catalog, 누락한 region/manifest 거부, 6개 package의 기존 4월드 설정, 실제 PG/WS W4→W5→W6→W5→W4 이동과 추적/cooldown/재접속, Ember/Sky level gate와 private boss recovery, 실제 Area 보상→PG receipt→새 Area 복원을 검사했다.
+- `node --test server/world/host.test.mjs server/world/gameplay/protocol.test.mjs server/world/gameplay/frontier.test.mjs`: 83건 통과. 기존 retained/external host, durable ACK, certified replay, party/public capacity와 P1 input rate, snapshot cache, 6월드 wire 경계를 유지한다.
+- `node server/node/build.mjs` 후 `node --test server/node/world-main.test.mjs`: 4건 통과. 실제 package의 6개 bake/hash와 4월드 JSON으로 기동한 계정/WS route를 검사했다. 4월드 HTTP catalog는 frontier boss alias를 광고하지 않는다.
+- `pnpm build`: 통과. 실행 환경은 Node24, pnpm10.10.0이다.
+
+테스트의 level/story/위치 fixture는 서버의 production 초기값이 아니다. Frontier 이동 전 unlock 거부와 level1 보스 입장 거부를 먼저 확인하고, 이후 명시적 trusted fixture로 해당 경계를 검사한다. 이 결과는 운영 population 값의 승인이나 VM 부하 통과를 뜻하지 않는다. 10개 dungeon 이전은 별도 core/host 작업이다.

@@ -53,7 +53,7 @@ for(const externalLedger of [false,true]) test(`bundled ${externalLedger?'extern
   const character=await store.create(account,identity);
   processState=start(cluster.url,JSON.stringify(fixtureConfig(manifest.source)),externalLedger?{schema:'world-ledger-v1',queryTimeoutMs:3000,sourceLimits:{maxDirtyCreditEntries:102400,maxDirtyCreditBytes:67108864,maxPendingDeaths:512,maxStagedBytes:67108864},drainLimits:{pageSize:100,creditBatchesPerSlice:4,outcomesPerSlice:4,summaryVictimsPerSlice:4,writeAttempts:3},recoveryLimits:{draftsPerSlice:4,pageSize:100},recoveryIntervalMs:100}:undefined);const origin=await processState.ready();
   assert.equal((await fetch(origin+'/healthz')).status,200);assert.equal((await fetch(origin+'/world')).status,426);
-  const catalogResponse=await fetch(origin+'/api/account/world-catalog');assert.equal(catalogResponse.status,200);assert.equal(catalogResponse.headers.get('cache-control'),'no-store');const catalog=await catalogResponse.json();
+  const catalogResponse=await fetch(origin+'/api/account/world-catalog');assert.equal(catalogResponse.status,200);assert.equal(catalogResponse.headers.get('cache-control'),'no-store');const catalog=await catalogResponse.json();assert(!catalog.archetypes.includes('boss-ember'));assert(!catalog.archetypes.includes('boss-sky'));
   const characterHeaders={Origin:origin,'X-Crabcraft-Account':'1',Cookie:cookie,'Content-Type':'application/json'};
   const listed=await fetch(origin+'/api/account/world-characters',{headers:characterHeaders});assert.equal(listed.status,200);assert.deepEqual((await listed.json()).characters.map(c=>c.characterId),[character.characterId]);
   const appearance={...identity.appearance,classId:'priest',name:'Created Main QA'};
