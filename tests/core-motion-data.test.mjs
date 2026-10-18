@@ -67,3 +67,11 @@ test('immutable provider rejects mutation and never substitutes missing data',()
  assert.throws(()=>{data.archetype('human').height=99;},TypeError);
  assert.throws(()=>data.launchAnchor({...unit(),pose:{}},{}),TypeError);
 });
+
+test('Boreas numeric rig is derived from the actual shipped mage and resolves boss-frost',async()=>{
+ const raw=JSON.parse(await readFile(new URL('../src/sim/data/pose-data.json',import.meta.url),'utf8'));
+ assert.deepEqual(raw.rigSources.frost,{factory:'createCrab',spec:{race:'undead',sex:'male',classId:'mage',shell:3,crest:1,led:2,name:'Boreas'},rootMultiplier:4.5});
+ assert.equal(data.archetype('boss-frost'),data.archetype('frost'));
+ assert.equal(Object.keys(raw.archetypes).length,15);
+ for(let axis=0;axis<3;axis++)near(data.archetype('frost').rootScale[axis],data.archetype('undead').rootScale[axis]*4.5);
+});
