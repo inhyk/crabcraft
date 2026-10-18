@@ -573,6 +573,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     for (const slot of allSlots) if (slot.area.players.size || slot.ledgerMode === 'external-durable') tokens.set(slot, slot.area.beginDurabilityBarrier('checkpoint'));
     const sources = [...allSlots].filter(slot => slot.ledgerMode === 'retained').flatMap(slot => slot.area.pendingGrants().map(entry => ({ slot, ...entry })));
     metrics.pendingSourceGrants = sources.length;
+    // Retained mode: the certified page read (about five queries and two checkpoint decodes per actor) is skipped for an
+    // actor with nothing to read: not a recipient of this barrier's grants, not pendingReplay, and no unreceipted journal
+    // row at the start of the round (charactersWithPendingGrants, which also sees rows that other writers such as a late
+    // old-owner seal committed). A skipped actor's revision is still checked by its checkpoint commit in the same round.
+    const grantRecipients = external ? null : new Set(sources.map(source => source.grant.recipient));
     const work = async () => {
       let startupDrained = false;
       // Group an entire death's recipients in one transaction. No recipient is ACKed individually.
@@ -606,6 +611,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         startupDrained = initial;
       }
       for (let round = 0; round <= p.persistence.maxRecoveryRounds; round++) {
+        const unread = grantRecipients ? await deps.characters.charactersWithPendingGrants([...actors.keys()]) : null;
         // Retained-mode host fence. Area-owned one-use tokens are still required before pruning is enabled.
         const leases = await boundary(() => {
           deps.ownership.assertOwned();
@@ -618,11 +624,12 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
               actor.slot.area.bindDurableLedger(actor.ref, actor.record.revision);
               token = actor.slot.area.beginGrantRead(actor.ref, actor.record.revision); actor.grantRead = token; grantProofsActive = true;
             }
+            const skip = !!unread && limit > 0 && !actor.pendingReplay && !grantRecipients!.has(actor.record.characterId) && !unread.has(actor.record.characterId);
             return { actor, ownerGeneration: actor.generation, slot: actor.slot, ref: { ...actor.ref }, token,
-              revision: actor.record.revision, connection, connectionGeneration: connection?.generation, session: connection?.stream?.session, limit };
+              revision: actor.record.revision, connection, connectionGeneration: connection?.generation, session: connection?.stream?.session, limit, skip };
           });
         });
-        const pages = await Promise.all(leases.map(async lease => ({ lease, result: lease.limit ? await readCertifiedGrantPage(deps.characters, deps.ownership, {
+        const pages = await Promise.all(leases.map(async lease => ({ lease, result: lease.skip ? null : lease.limit ? await readCertifiedGrantPage(deps.characters, deps.ownership, {
           accountId: lease.actor.record.accountId, characterId: lease.actor.record.characterId, expectedRevision: lease.revision, limit: lease.limit,
         }) : null })));
         const reread = await boundary(() => {
@@ -632,6 +639,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
             const current = actors.get(actor.record.characterId) === actor && actor.generation === lease.ownerGeneration && actor.slot === lease.slot &&
               sameRef(actor.ref, lease.ref) && actor.record.revision === lease.revision && connection === lease.connection && connection?.generation === lease.connectionGeneration && connection?.stream?.session === lease.session;
             if (!current) { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); actor.grantRead = undefined; actor.pendingReplay = true; retry = true; continue; }
+            if (lease.skip) continue;
             if (!result) { actor.pendingReplay = true; continue; }
             if (result.kind === 'unresolved') { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); actor.grantRead = undefined; throw new Error('journal certification unresolved: ' + result.reason); }
             if (result.kind === 'recovery') { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); actor.grantRead = undefined; metrics.recoveries++; restoreDurableActor(actor, result.recovery); retry = true; continue; }
