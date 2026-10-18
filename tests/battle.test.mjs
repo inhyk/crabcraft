@@ -282,3 +282,13 @@ test('multiplayer armor is applied once by the damage recipient in both directio
  a.combat.damage(a.enemies[0].unit,a.player.unit,40);flush();assert.equal(a.player.unit.hp,92);assert.equal(b.player.unit.hp,80);
  aa.setMode('pvp');flush();a.time+=1;a.combat.damage(a.player.unit,ar,40);flush();assert.equal(b.player.unit.hp,60);
 });
+
+
+test('a fresh private room restarts AI schedules even without a saved world checkpoint',()=>{
+ const g=game();let resumed=0;
+ for(const controller of [...g.enemies,g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss])controller.resumeAuthority=()=>resumed++;
+ const b=new BattleSync(g,()=>{},()=>new Map());b.join('new-host','new-host',null);assert.equal(resumed,6);
+ let restored=0;g.resumeFriendAdventure=authority=>{assert.equal(authority,true);restored++};
+ b.setMode('pvp');assert.equal(restored,1);assert.equal(b.authority,true);
+ b.setMode('coop');assert.equal(restored,1);
+});

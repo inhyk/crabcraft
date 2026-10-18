@@ -120,23 +120,39 @@ export function snapshotMap(
   const rt = new THREE.WebGLRenderTarget(1024, 1024, { type: THREE.UnsignedByteType });
   const fog = scene.fog;
   const bg = scene.background;
-  const vis = hide.map((o) => o.visible);
-  scene.fog = null;
-  scene.background = new THREE.Color(0x1d3d52);
-  hide.forEach((o) => (o.visible = false));
+  // Perspective-sized particles become huge discs in an orthographic map. Capture static
+  // geometry only; keep ambient spray, lamp halos and light shafts in the playable world.
+  const hidden = new Set(hide);
+  scene.traverse(o => {
+    if (o instanceof THREE.Points || o instanceof THREE.Sprite) hidden.add(o);
+    if (o instanceof THREE.Mesh) {
+      const materials = Array.isArray(o.material) ? o.material : [o.material];
+      if (materials.every(m => m.blending === THREE.AdditiveBlending)) hidden.add(o);
+    }
+  });
+  const visibility = [...hidden].map(o => [o, o.visible] as const);
   const prev = renderer.getRenderTarget();
-  renderer.setRenderTarget(rt);
-  renderer.setClearColor(0x1d3d52, 1);
-  renderer.clear();
-  renderer.render(scene, cam);
-  renderer.setRenderTarget(prev);
-  scene.fog = fog;
-  scene.background = bg;
-  hide.forEach((o, i) => (o.visible = vis[i]));
+  const clearColor = renderer.getClearColor(new THREE.Color()).clone();
+  const clearAlpha = renderer.getClearAlpha();
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 1024;
-  targetToCanvas(renderer, rt, canvas, false);
-  rt.dispose();
+  try {
+    scene.fog = null;
+    scene.background = new THREE.Color(0x1d3d52);
+    hidden.forEach(o => { o.visible = false; });
+    renderer.setRenderTarget(rt);
+    renderer.setClearColor(0x1d3d52, 1);
+    renderer.clear();
+    renderer.render(scene, cam);
+    targetToCanvas(renderer, rt, canvas, false);
+  } finally {
+    renderer.setRenderTarget(prev);
+    renderer.setClearColor(clearColor, clearAlpha);
+    scene.fog = fog;
+    scene.background = bg;
+    visibility.forEach(([o, visible]) => { o.visible = visible; });
+    rt.dispose();
+  }
   // cam.up = -Z means the top of the image is -Z; minimap code maps world (x, z) to
   // ((x - minX) / size, (z - minZ) / size) in image space.
   return { canvas, minX: cx - half, minZ: cz - half, size };
