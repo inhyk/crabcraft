@@ -666,3 +666,163 @@ test('lantern relay authenticates priest requests, host results and room isolati
  host.send({type:'combat',event:{kind:'heal',target:priest.id,source:h.id,amount:35}});assert.equal((await healer.next('combat')).event.kind,'heal');
  await new Promise(r=>setTimeout(r,30));assert.equal(host.queue.filter(p=>p.type==='combat').length,0);assert.equal(outside.queue.filter(p=>p.type==='combat').length,0);
 });
+
+// The developer monitor's spectator views (docs/features/developer-monitor.md): invisible observers of one room.
+const allowTicket = { observe: (_req, ticket) => ticket === 'monitor-ok' };
+test('without an observe rule (the Vite relay) nobody may observe', async t => {
+  const { client } = await setup(t);
+  const a = await client(), o = await client();
+  a.send({ type: 'create', spec, combatVersion: 1 }); const r = await a.next('welcome');
+  const closed = once(o.ws, 'close');
+  o.send({ type: 'observe', room: r.room, ticket: 'monitor-ok' });
+  assert.equal((await o.next('error')).message, 'Monitor access required.');
+  assert.equal((await closed)[0], 1008);
+  assert.equal(a.queue.some(m => m.type === 'joined'), false);
+});
+
+test('an unauthorized observer is refused and closed; an unknown room is refused', async t => {
+  const { client, relay } = await setup(t, allowTicket);
+  const a = await client(), bad = await client(), lost = await client();
+  a.send({ type: 'enter', area: 1, spec, combatVersion: 1, snowWorld: true, sharedWorld: 1 }); const r = await a.next('welcome');
+  const closed = once(bad.ws, 'close');
+  bad.send({ type: 'observe', room: r.room, ticket: 'forged' });
+  assert.equal((await bad.next('error')).message, 'Monitor access required.');
+  assert.equal((await closed)[0], 1008);
+  assert.equal(bad.queue.some(m => m.type === 'welcome'), false);
+  lost.send({ type: 'observe', room: 'W1FFFF', ticket: 'monitor-ok' });
+  assert.match((await lost.next('error')).message, /Room not found/);
+  assert.equal(relay.rooms.get(r.room).size, 1);
+});
+
+test('an authorized observer gets the room and every broadcast; players never see it', async t => {
+  const { client, relay } = await setup(t, allowTicket);
+  const enter = { type: 'enter', area: 1, spec, combatVersion: 1, snowWorld: true, sharedWorld: 1 };
+  const a = await client(), b = await client(), o = await client();
+  a.send(enter); const ar = await a.next('welcome');
+  b.send({ ...enter, spec: { ...spec, name: 'Friend' } }); const br = await b.next('welcome'); await a.next('joined');
+  a.send({ type: 'state', state }); await b.next('state');
+  a.send({ type: 'world', world }); await b.next('world');
+  o.send({ type: 'observe', room: ar.room.toLowerCase(), ticket: 'monitor-ok' });
+  const ow = await o.next('welcome');
+  assert.equal(ow.observer, true); assert.equal(ow.room, ar.room); assert.equal(ow.public, true); assert.equal(ow.area, 1); assert.equal(ow.sharedWorld, 1);
+  assert.equal(ow.host, ar.id); assert.deepEqual(ow.world, world);
+  assert.deepEqual(ow.players.map(p => p.id).sort(), [ar.id, br.id].sort());
+  assert.deepEqual(ow.players.find(p => p.id === ar.id).state, state);
+  // Everything the room hears, the observer hears.
+  a.send({ type: 'state', state: { ...state, x: 9 } }); assert.equal((await o.next('state')).state.x, 9);
+  b.send({ type: 'action', action: 'attack_swipe' }); assert.deepEqual(await o.next('action'), { type: 'action', id: br.id, action: 'attack_swipe' });
+  a.send({ type: 'world', world: { ...world, rust: true } }); assert.equal((await o.next('world')).world.rust, true);
+  a.send({ type: 'combat', event: { kind: 'hit', target: 'e0', amount: 23 } }); assert.equal((await o.next('combat')).event.amount, 23);
+  b.send({ type: 'chat', text: 'hello' }); assert.equal((await o.next('chat')).text, 'hello');
+  // A guest's attack goes to the host only, as before.
+  b.send({ type: 'combat', event: { kind: 'attack', target: 'e0', amount: 5 } }); await a.next('combat');
+  // Nobody is told, nobody counts it, the monitor does not list it.
+  const c = await client(); c.send({ ...enter, spec: { ...spec, name: 'Crab' } }); const cr = await c.next('welcome');
+  assert.equal(cr.room, ar.room); assert.equal(cr.displayName, 'Crab'); assert.equal(cr.players.length, 2);
+  assert.equal((await o.next('joined')).id, cr.id);
+  assert.equal(relay.rooms.get(ar.room).size, 3);
+  assert.deepEqual(relay.monitorSnapshot().players.map(p => p.id).sort(), [ar.id, br.id, cr.id].sort());
+  for (const p of [a, b, c]) assert.equal(p.queue.some(m => (m.type === 'joined' || m.type === 'left') && m.id === ow.id), false);
+  assert.equal(o.queue.some(m => m.type === 'combat' && m.event.kind === 'attack'), false);
+});
+
+test('a player\'s skill effects reach the rest of the room and its observer; malformed ones and an observer\'s are dropped', async t => {
+  const { client } = await setup(t, allowTicket);
+  const enter = { type: 'enter', area: 1, spec, combatVersion: 1, snowWorld: true, sharedWorld: 1 };
+  const a = await client(), b = await client(), o = await client();
+  a.send(enter); const ar = await a.next('welcome');
+  b.send({ ...enter, spec: { ...spec, name: 'Friend' } }); await b.next('welcome'); await a.next('joined');
+  o.send({ type: 'observe', room: ar.room, ticket: 'monitor-ok' }); await o.next('welcome');
+  const at = { x: 3, y: 0.5, z: 5 };
+  const skills = [
+    { fx: 'ability', ability: 'frost-spray', stage: 'start', at, yaw: 1.2, range: 8, half: 0.55 },
+    { fx: 'ability', ability: 'shell-bash', stage: 'hit', at, yaw: 0, target: 'e4', range: 2.2, stun: 2 },
+    { fx: 'ability', ability: 'steam-blink', stage: 'start', at, yaw: 0, from: { x: 0, y: 0.5, z: 0 }, range: 8 },
+    { fx: 'projectile', stage: 'spawn', id: 7, target: 'b20', from: at, style: 'bubble', speed: 18 },
+    { fx: 'projectile', stage: 'hit', id: 7 },
+    { fx: 'cast', ability: 'bubble-bolt', seconds: 1.5 },
+    { fx: 'cast', seconds: 0 },
+    { fx: 'ward', stage: 'up', seconds: 10 },
+  ];
+  const bad = [
+    { fx: 'ability', ability: 'nuke', stage: 'start', at, yaw: 0 },
+    { fx: 'ability', ability: 'smite', stage: 'start', yaw: 0 },
+    { fx: 'ability', ability: 'smite', stage: 'start', at, yaw: 0, target: '<script>' },
+    { fx: 'ability', ability: 'tidal-nova', stage: 'start', at, yaw: 0, range: 1e9 },
+    { fx: 'projectile', stage: 'spawn', id: 1, target: 'e0', from: at, style: 'laser', speed: 18 },
+    { fx: 'projectile', stage: 'hit', id: -1 },
+    { fx: 'cast', ability: 'nuke', seconds: 1 },
+    { fx: 'ward', stage: 'explode' },
+    { fx: 'damage', amount: 999 },
+    null,
+  ];
+  for (const skill of [...bad, ...skills]) a.send({ type: 'skill', skill });
+  for (const skill of skills) {
+    assert.deepEqual(await b.next('skill'), { type: 'skill', id: ar.id, skill });
+    assert.deepEqual(await o.next('skill'), { type: 'skill', id: ar.id, skill });
+  }
+  // Only the listed fields travel, and the sender does not hear itself.
+  a.send({ type: 'skill', skill: { fx: 'ward', stage: 'down', amount: 999, extra: 'x' } });
+  assert.deepEqual((await b.next('skill')).skill, { fx: 'ward', stage: 'down' });
+  await o.next('skill');
+  o.send({ type: 'skill', skill: skills[0] });
+  a.send({ type: 'state', state }); await b.next('state');
+  assert.equal([...a.queue, ...b.queue, ...o.queue].some(m => m.type === 'skill'), false);
+});
+
+test('an observer cannot play, send, chat, join or become the host, and leaving changes nothing', async t => {
+  const { client, relay } = await setup(t, allowTicket);
+  const a = await client(), b = await client(), o = await client();
+  a.send({ type: 'create', spec, combatVersion: 1 }); const r = await a.next('welcome');
+  b.send({ type: 'join', room: r.room, spec, combatVersion: 1 }); const br = await b.next('welcome'); await a.next('joined');
+  o.send({ type: 'observe', room: r.room, ticket: 'monitor-ok' }); const ow = await o.next('welcome');
+  assert.equal(ow.public, undefined); assert.equal(ow.host, r.id);
+  for (const m of [{ type: 'state', state }, { type: 'action', action: 'jump' }, { type: 'world', world: { ...world, rust: true } },
+    { type: 'combat', event: { kind: 'attack', target: 'e0', amount: 99 } }, { type: 'combat', event: { kind: 'hit', target: br.id, amount: 99 } },
+    { type: 'chat', text: 'sneaky' }, { type: 'report', id: r.id, reason: 'spam' }, { type: 'join', room: r.room, spec }, { type: 'create', spec }, { type: 'enter', area: 1, spec }]) o.send(m);
+  b.send({ type: 'state', state }); await a.next('state');
+  for (const p of [a, b]) assert.equal(p.queue.some(m => ['state', 'action', 'world', 'combat', 'chat', 'joined'].includes(m.type)), false);
+  assert.equal(o.queue.some(m => m.type === 'welcome' || m.type === 'reported'), false);
+  assert.equal(relay.rooms.get(r.room).size, 2);
+  // Seven players and an observer: the eighth player still fits.
+  for (let i = 0; i < 5; i++) { const c = await client(); c.send({ type: 'join', room: r.room, spec, combatVersion: 1 }); await c.next('welcome'); }
+  const eighth = await client(); eighth.send({ type: 'join', room: r.room, spec, combatVersion: 1 }); assert.equal((await eighth.next('welcome')).room, r.room);
+  assert.equal(relay.rooms.get(r.room).size, 8);
+  // The host leaves: a player takes over, never the observer.
+  a.ws.close(); await b.next('left');
+  let elected; do { elected = await o.next('authority'); } while (elected.host === r.id);
+  assert.notEqual(elected.host, ow.id); assert.ok([...relay.rooms.get(r.room).keys()].includes(elected.host));
+  // Leaving and closing tell nobody.
+  o.send({ type: 'leave' }); await o.next('leftRoom'); o.queue.length = 0;
+  b.send({ type: 'state', state }); await eighth.next('state');
+  assert.equal(o.queue.some(m => m.type === 'state'), false);
+  o.ws.close(); await once(o.ws, 'close');
+  b.send({ type: 'action', action: 'jump' }); await eighth.next('action');
+  assert.equal(b.queue.some(m => m.type === 'left' && m.id === ow.id), false);
+  assert.equal(relay.rooms.get(r.room).size, 7);
+});
+
+test('a spectator link stays an observer: a dropped socket comes back observing the same room, with the public backoff', async t => {
+  const relay = await relayAt(0, { ...allowTicket, keepRooms: 60000 }), upgraded = [];
+  relay.server.on('upgrade', (_req, socket) => upgraded.push(socket));
+  t.after(() => relay.stop());
+  const host = crab(t, relay.port, 'Watched');
+  host.link.connect('create'); await host.welcomed(1);
+  const room = host.seen.welcomes[0].room;
+  const seen = { welcomes: [], lost: [] };
+  const link = new Link(() => `ws://127.0.0.1:${relay.port}/multiplayer`, {
+    hello: (mode, code) => ({ type: mode, room: code, ticket: 'monitor-ok' }),
+    message: msg => { if (msg.type === 'welcome') seen.welcomes.push(msg); },
+    lost: info => seen.lost.push(info),
+  }, { random: () => 0 });
+  t.after(() => link.dispose());
+  link.connect('observe', room);
+  await eventually(() => seen.welcomes.length === 1 && link.open, 'the observer welcome');
+  assert.equal(seen.welcomes[0].observer, true); assert.equal(link.mode, 'observe');
+  upgraded[1].destroy();
+  await eventually(() => seen.welcomes.length === 2 && link.open, 'the observer back');
+  assert.deepEqual(seen.lost.map(l => [l.mode, l.attempt, l.delay]), [['observe', 1, 750]]);
+  assert.equal(seen.welcomes[1].observer, true); assert.equal(seen.welcomes[1].room, room); assert.equal(link.mode, 'observe');
+  assert.equal(relay.relay.rooms.get(room).size, 1);
+  assert.equal(host.seen.lost.length, 0);
+});

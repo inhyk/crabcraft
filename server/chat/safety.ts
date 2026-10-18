@@ -70,8 +70,10 @@ export class Talk {
     this.sent = array(sent, CHAT.burst).map(time);
     this.lines = array(lines, CHAT.lines).map(value => {
       const [at, text] = fields(value, ['at', 'text']);
-      if (typeof text !== 'string' || !text || text.length > CHAT_MAX || filterText(text).text !== text) return invalid();
-      return { at: time(at), text };
+      if (typeof text !== 'string' || !text || text.length > CHAT_MAX) return invalid();
+      const filtered = filterText(text).text;
+      if (!filtered) return invalid();
+      return { at: time(at), text: filtered };
     });
     for (const list of [this.sent, this.lines.map(line => line.at)]) {
       if (list.some((at, i) => i > 0 && at < list[i - 1])) invalid();

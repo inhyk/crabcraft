@@ -120,8 +120,12 @@ export class BattleSync {
       if (this.active && this.authority && !this.applying) this.event({ kind: 'animation', target: id, action });
     };
   }
-  get authority() { return !this.active || (!!this.host && this.host === this.ownId); }
+  /** A spectator view never simulates; it only follows the room's host. */
+  get authority() { return !this.game.spectator && (!this.active || (!!this.host && this.host === this.ownId)); }
   private register(id: string, u: Unit) { this.units.set(id, u); this.keys.set(u, id); }
+  /** A shared world unit's combat key and back, while combat is shared (otherwise each browser has its own). */
+  keyOf(u: Unit) { return this.active ? this.keys.get(u) : undefined; }
+  unitOf(key: string) { return this.active ? this.units.get(key) : undefined; }
   private event(event: CombatEvent) { this.send({ type: 'combat', event }); }
   join(ownId: string, host: string, world: WorldState | null, sharedArea = false) {
     this.sharedArea=sharedArea;this.active = true; this.ownId = ownId; this.host = host;
@@ -277,8 +281,10 @@ export class BattleSync {
         // Award from the unique event even when that checkpoint already marked the unit dead.
         this.credited.add(`${id}:${e.serial}`);
         if (this.credited.size>256) this.credited.delete(this.credited.values().next().value!);
-        if (u.alive) g.combat.kill(u, g.player.unit);
-        else g.onUnitDied(u, g.player.unit);
+        // A spectator's hidden crab earns nothing and must not level up on screen.
+        const credit = g.spectator ? null : g.player.unit;
+        if (u.alive) g.combat.kill(u, credit);
+        else g.onUnitDied(u, credit);
       } else if (e.kind === 'effect' && e.target === this.ownId && e.effect) {
         const p = g.player.unit, f = e.effect;
         p.stunUntil = Math.max(p.stunUntil, g.time + f.stun);

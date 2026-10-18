@@ -1,0 +1,300 @@
+{
+  "label": "local real createActualWorldHost+PG+tickets+WS; trusted initial shore-placement fixture; not VM",
+  "node": "v24.22.0",
+  "viewers": 25,
+  "seconds": 15.099335542,
+  "timingWindow": "host lifetime including warmup",
+  "configuredPopulation": {
+    "scrapling": 60,
+    "scavenger": 30,
+    "jellyfish": 10
+  },
+  "actualEnemies": 98,
+  "hostCpuPercent": 75.29432648460842,
+  "before": {
+    "ticks": 165,
+    "snapshots": 2350,
+    "packets": 4771,
+    "receivedPackets": 3210,
+    "discardedRevokedFrames": 0,
+    "bytesSent": 57048533,
+    "bytesReceived": 1488252,
+    "rejected": 0,
+    "queued": 25,
+    "authFailures": 0,
+    "pendingSourceGrants": 0,
+    "persistenceBarriers": 27,
+    "persistenceMs": 1229.0059970000004,
+    "tickMs": 354.76187199999754,
+    "snapshotBatchMs": 2047.1235029999996,
+    "neutralizations": 0,
+    "recoveries": 0,
+    "persistenceBarrierP50Ms": 45.19250000000011,
+    "persistenceBarrierP99Ms": 59.74437500000022,
+    "persistenceBarrierSamples": 27,
+    "tickP50Ms": 2.046875,
+    "tickP99Ms": 3.437541999999894,
+    "tickSamples": 165,
+    "snapshotPrepareP50Ms": 7.018500000000131,
+    "snapshotPrepareP99Ms": 10.515083000000004,
+    "snapshotPrepareSamples": 98,
+    "recipientEncodeP50Ms": 0.48183400000016263,
+    "recipientEncodeP99Ms": 1.5639169999999467,
+    "recipientEncodeSamples": 2350,
+    "snapshotBatchP50Ms": 20.372666999999637,
+    "snapshotBatchP99Ms": 31.865375000000313,
+    "snapshotBatchSamples": 98,
+    "processCpuUserMs": 4232.684,
+    "processCpuSystemMs": 185.862,
+    "processElapsedMs": 6039.849749999999,
+    "activeConnections": 25,
+    "activeActors": 25,
+    "waiting": 0,
+    "publicAreas": 4,
+    "resourcePaused": false,
+    "frozen": false,
+    "accepting": true,
+    "draining": false,
+    "stopped": false,
+    "ownershipHeld": true,
+    "durableBarrier": false,
+    "unresolved": 0,
+    "pendingChat": 0,
+    "partyCount": 0,
+    "encounterAreas": 0,
+    "droppedTicks": 0,
+    "droppedSnapshots": 14
+  },
+  "after": {
+    "ticks": 614,
+    "snapshots": 9100,
+    "packets": 15057,
+    "receivedPackets": 12655,
+    "discardedRevokedFrames": 2,
+    "bytesSent": 172456017,
+    "bytesReceived": 5670295,
+    "rejected": 0,
+    "queued": 25,
+    "authFailures": 0,
+    "pendingSourceGrants": 0,
+    "persistenceBarriers": 79,
+    "persistenceMs": 3914.694624000009,
+    "tickMs": 1256.510092000008,
+    "snapshotBatchMs": 7626.805461999999,
+    "neutralizations": 0,
+    "recoveries": 0,
+    "persistenceBarrierP50Ms": 49.83412500000031,
+    "persistenceBarrierP99Ms": 61.63654200000019,
+    "persistenceBarrierSamples": 79,
+    "tickP50Ms": 1.9835829999992711,
+    "tickP99Ms": 3.379707999999937,
+    "tickSamples": 614,
+    "snapshotPrepareP50Ms": 7.7086249999993015,
+    "snapshotPrepareP99Ms": 9.932416999999987,
+    "snapshotPrepareSamples": 368,
+    "recipientEncodeP50Ms": 0.39141700000254787,
+    "recipientEncodeP99Ms": 1.2221250000002328,
+    "recipientEncodeSamples": 4096,
+    "snapshotBatchP50Ms": 20.849707999999737,
+    "snapshotBatchP99Ms": 30.66737500000022,
+    "snapshotBatchSamples": 368,
+    "processCpuUserMs": 15015.514,
+    "processCpuSystemMs": 772.029,
+    "processElapsedMs": 21140.419416,
+    "activeConnections": 25,
+    "activeActors": 25,
+    "waiting": 0,
+    "publicAreas": 4,
+    "resourcePaused": false,
+    "frozen": false,
+    "accepting": true,
+    "draining": false,
+    "stopped": false,
+    "ownershipHeld": true,
+    "durableBarrier": false,
+    "unresolved": 0,
+    "pendingChat": 0,
+    "partyCount": 0,
+    "encounterAreas": 0,
+    "droppedTicks": 0,
+    "droppedSnapshots": 46
+  },
+  "bots": [
+    {
+      "index": 0,
+      "bytes": 8259516,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 1,
+      "bytes": 9027474,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 2,
+      "bytes": 7282464,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 3,
+      "bytes": 6512255,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 4,
+      "bytes": 5065828,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 5,
+      "bytes": 7588867,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 6,
+      "bytes": 6776306,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 7,
+      "bytes": 4603830,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 8,
+      "bytes": 8473611,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 9,
+      "bytes": 8410708,
+      "snapshots": 368,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 10,
+      "bytes": 7226253,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 11,
+      "bytes": 6360648,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 12,
+      "bytes": 4934233,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 13,
+      "bytes": 7368149,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 14,
+      "bytes": 6835588,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 15,
+      "bytes": 5910352,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 16,
+      "bytes": 8530269,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 17,
+      "bytes": 8319315,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 18,
+      "bytes": 7008831,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 19,
+      "bytes": 6397456,
+      "snapshots": 363,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 20,
+      "bytes": 4876731,
+      "snapshots": 358,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 21,
+      "bytes": 8006495,
+      "snapshots": 358,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 22,
+      "bytes": 5153239,
+      "snapshots": 358,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 23,
+      "bytes": 5242116,
+      "snapshots": 358,
+      "closes": 0,
+      "errors": []
+    },
+    {
+      "index": 24,
+      "bytes": 8285483,
+      "snapshots": 358,
+      "closes": 0,
+      "errors": []
+    }
+  ],
+  "failures": []
+}

@@ -1,0 +1,31 @@
+{
+  "snapshotParent": "bdc9a8288fd0b7bba159b495fd6bc04f0953d69c",
+  "ledgerParent": "55390293a95cd10c5778024c83fce308cb9bcaa0",
+  "localComposition": "e6ee9da9e8841dec96fec65df66f65b31bc32102",
+  "state": "local only; no push or dependency approval",
+  "conflict": "host.ts publication recipient loop only; preserved publishedConsumed(c)/materializeResults(c) inside try/finally releasePreparedObservation",
+  "sourceSha256": {
+    "server/world/host.ts": "336e4a1bdee3c29cd2bb5540dfcf7453eb8307487a9fa5cc335c63995b30d795",
+    "server/world/gameplay/protocol.ts": "6be61417833f74494474dd1b5a7a603e6d96fb241a4798fd630c6deba4b50f13",
+    "server/world/gameplay/events.ts": "c863867ca70b66c0f262f2198d2412c6a2b505ab62f44fa042c79bedba7d724e",
+    "server/world/gameplay/intents.ts": "86045ced8c3275fd6de7da2027b4d3f6fcc39d8feeb1f19c76577d41db8b763d"
+  },
+  "protocolSameAsSnapshotParent": true,
+  "intentsSameAsLedgerParent": true,
+  "verification": {
+    "command": "npx -y node@24 --test server/world/gameplay/protocol.test.mjs server/world/host.test.mjs tests/world-client.test.mjs tests/world-view.test.mjs",
+    "tests": 98,
+    "pass": 98,
+    "fail": 0,
+    "skipped": 0,
+    "build": "npx -y pnpm@10.10.0 build",
+    "buildExit": 0
+  },
+  "performanceRemeasured": false,
+  "newGoldenRun": false,
+  "goldenReason": "protocol.ts, events.ts, and intents.ts unchanged from snapshot parent; provider unchanged in this dependency merge. Historical golden and pinned timing claims remain unchanged.",
+  "artifactSha256": {
+    "pr77-composed-build.txt": "3f0c59df09141be9d0166b3c8c5d5b9d969bb9a755a4030b696b0b1a28162d85",
+    "pr77-composed-boundary.txt": "727c4d865decb14bbb6cd17444add8c973c493e1abb87238df6f6c90aaa35de9"
+  }
+}

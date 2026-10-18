@@ -1,0 +1,63 @@
+
+> crabcraft@1.0.0 build /Users/inkeun/projects/crabcraft/.worktrees/work-world-snapshot-batch
+> tsc --noEmit && vite build
+
+vite v8.3.4 building client environment for production...
+transforming...
+[plugin rolldown:vite-resolve] Module "module" has been externalized for browser compatibility, imported by "/Users/inkeun/projects/crabcraft/.worktrees/work-world-snapshot-batch/node_modules/.pnpm/@mujoco+mujoco@3.11.0/node_modules/@mujoco/mujoco/mujoco.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+✓ 263 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                        0.62 kB │ gzip:     0.34 kB
+dist/monitor/index.html                                0.66 kB │ gzip:     0.35 kB
+dist/assets/basis_transcoder-o4Hde_L7.js              57.52 kB
+dist/assets/draco_wasm_wrapper-fZCQGLGb.js            58.45 kB
+dist/assets/draco_wasm_wrapper-DxJM36Ib.js            58.76 kB
+dist/assets/draco_decoder-Z1_iN-Ht.wasm              192.42 kB │ gzip:    64.11 kB
+dist/assets/worker-BUEI1x2U.js                       199.84 kB
+dist/assets/draco_decoder-C32yEggz.wasm              285.74 kB │ gzip:    89.66 kB
+dist/assets/basis_transcoder-VXdx5NbI.wasm           527.33 kB │ gzip:   248.94 kB
+dist/assets/draco_decoder-fzg4nYZr.js                719.41 kB
+dist/assets/mujoco-Mp9KyG2b.wasm                  10,117.57 kB │ gzip: 2,524.19 kB
+dist/assets/ort-wasm-simd-threaded-DcHrbrbl.wasm  14,239.89 kB │ gzip: 3,736.91 kB
+dist/assets/serverBridge-GITkmwdg.css                  0.98 kB │ gzip:     0.45 kB
+dist/assets/videos-BgMfaKeC.css                        2.58 kB │ gzip:     1.05 kB
+dist/assets/title-DWxF3g1Z.css                         3.39 kB │ gzip:     1.35 kB
+dist/assets/monitor-DGD3TD0c.css                       4.14 kB │ gzip:     1.64 kB
+dist/assets/main-CEkSvUpm.css                         12.80 kB │ gzip:     3.88 kB
+dist/assets/create-ospq2HSS.css                       16.43 kB │ gzip:     4.49 kB
+dist/assets/robot-BJ9ErDF7.css                        16.57 kB │ gzip:     4.14 kB
+dist/assets/game-CoTAy_Ac.css                         26.44 kB │ gzip:     7.23 kB
+dist/assets/hud-jLNSZ1pl.css                          41.58 kB │ gzip:    10.02 kB
+dist/assets/jellyfish-D7JILDkm.js                      0.05 kB │ gzip:     0.07 kB
+dist/assets/credits-x_5HN2uw.js                        0.21 kB │ gzip:     0.17 kB
+dist/assets/ending-cLpCK0dl.js                         0.30 kB │ gzip:     0.22 kB
+dist/assets/robot-rf25r4nw.js                          0.98 kB │ gzip:     0.59 kB
+dist/assets/util-Bt4rHsQG.js                           1.03 kB │ gzip:     0.57 kB
+dist/assets/videos-rp0bkvfX.js                         2.56 kB │ gzip:     1.34 kB
+dist/assets/preload-helper-D3X3qFuW.js                 2.74 kB │ gzip:     1.29 kB
+dist/assets/classes-C5SWFSFq.js                        3.08 kB │ gzip:     1.22 kB
+dist/assets/names-Cj8N2lRC.js                          3.14 kB │ gzip:     1.26 kB
+dist/assets/title-CPLkJ0cs.js                          3.93 kB │ gzip:     1.93 kB
+dist/assets/races-BVhtnCFv.js                          4.43 kB │ gzip:     1.81 kB
+dist/assets/layout-DGI5_5ni.js                         5.04 kB │ gzip:     1.94 kB
+dist/assets/views-wMiSmVXd.js                          7.14 kB │ gzip:     3.16 kB
+dist/assets/monitor-Dg8z4BG_.js                        8.04 kB │ gzip:     3.94 kB
+dist/assets/provider-Ble7f8QQ.js                      14.91 kB │ gzip:     5.82 kB
+dist/assets/creditsRoll-tDMdtiRU.js                   16.18 kB │ gzip:     6.98 kB
+dist/assets/crab-CByEOe1r.js                          31.16 kB │ gzip:    11.76 kB
+dist/assets/robot-C-3LICib.js                         61.91 kB │ gzip:    23.57 kB
+dist/assets/create-DOqBUaFt.js                        73.91 kB │ gzip:    24.48 kB
+dist/assets/hud-Cdd8Bxq4.js                           84.93 kB │ gzip:    19.73 kB
+dist/assets/world2Colliders-ByoY39C9.js              202.11 kB │ gzip:    73.11 kB
+dist/assets/main-BSK_mLol.js                         212.55 kB │ gzip:    88.96 kB
+dist/assets/game-BbKUqs5I.js                         450.59 kB │ gzip:   156.94 kB
+dist/assets/assets-QdZ1DW6u.js                       880.67 kB │ gzip:   235.38 kB
+dist/assets/serverBridge-BUElyTos.js               3,351.40 kB │ gzip: 2,349.87 kB
+
+✓ built in 720ms
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
