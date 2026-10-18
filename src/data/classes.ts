@@ -31,7 +31,7 @@ export interface ClassDef {
 
 const icon = (c: ClassId, s: number) => `art/icons/ability-${c}-${s}.webp`;
 
-export const ULTIMATE: AbilityDef = { id: 'crown-burst', slot: 5, name: 'Crown Burst', description: 'Ultimate: unleash a powerful blast against visible enemies within 10 m. Recovers in 60 seconds.', castTime: 0, cooldown: 60, cost: 0, range: 10, icon: '' };
+export const ULTIMATE: AbilityDef = { id: 'crown-burst', slot: 5, name: 'Crown Burst', description: 'Ultimate: unleash a powerful blast against visible enemies within 10 m. Recovers in 60 seconds.', castTime: 0, cooldown: 60, cost: 0, range: 10, icon: 'art/icons/ability-ultimate-burst.webp' };
 
 export const CLASSES: Record<ClassId, ClassDef> = {
   warrior: {
@@ -61,7 +61,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     abilities: [
       { id: 'bubble-bolt', slot: 1, name: 'Bubble Bolt', description: 'Hurls a scalding bubble.', castTime: 1.5, cooldown: 3, cost: 8, range: 24, icon: icon('mage', 1) },
       { id: 'frost-spray', slot: 2, name: 'Frost Spray', description: 'Cone of frost. Slows by 50% for 4 sec.', castTime: 0, cooldown: 8, cost: 14, range: 8, icon: icon('mage', 2) },
-      { id: 'steam-blink', slot: 3, name: 'Steam Blink', description: 'Teleport 8 m forward.', castTime: 0, cooldown: 15, cost: 10, range: 8, icon: icon('mage', 3) },
+      { id: 'steam-blink', slot: 3, name: 'Steam Blink', description: 'Restore 10 HP and teleport up to 8 m forward.', castTime: 0, cooldown: 15, cost: 10, range: 8, icon: icon('mage', 3) },
       { id: 'tidal-nova', slot: 4, name: 'Tidal Nova', description: 'Burst of water around you. Knocks enemies back.', castTime: 0, cooldown: 20, cost: 22, range: 6, icon: icon('mage', 4) },
       { ...ULTIMATE },
     ],

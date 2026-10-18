@@ -54,17 +54,19 @@ export class Boss {
   private mech: ActiveMech | null = null;
   private stateT = 0;
   private freedStarted = false;
+  private coinsClaimed = false;
   private outside = 0;
-  private get isDawn(){return this.profile.level===100;}
-  private participants(){return this.game.combatPlayers().filter(p=>!this.isDawn||p.level>=this.profile.level);}
-  private target(){return this.isDawn?this.participants().filter(p=>p.alive).sort((a,b)=>this.unit.distTo(a)-this.unit.distTo(b))[0]??this.game.combatTarget(this.unit):this.game.combatTarget(this.unit);}
-  private radius(kind:Mech){return kind==='eclipse'?(this.isDawn?14:11):kind==='slam'?(this.isDawn?4.8:3.4):kind==='nova'?(this.isDawn?8:6):this.isDawn?6.5:5.5;}
-  private crossAngles(yaw:number){return this.isDawn?[yaw,yaw+Math.PI/4,yaw+Math.PI/2,yaw+3*Math.PI/4]:[yaw,yaw+Math.PI/2];}
-  private get laneLength(){return this.isDawn?15:12;}
-  private get laneWidth(){return this.isDawn?1.4:1.8;}
-  private get barrageRadius(){return this.isDawn?3:2.6;}
-  private get innerRadius(){return this.isDawn?3:4.5;}
-  private fraction(kind:Mech){return this.isDawn?({slam:.5,nova:.58,eclipse:.62,cross:.48,barrage:.42,undertow:.45,spray:.4})[kind]:({slam:.26,nova:.32,eclipse:.38,cross:.28,barrage:.24,undertow:.24,spray:.2})[kind];}
+  private get isEndgame(){return this.profile.level>=100;}
+  private get isFrost(){return this.profile.level===300;}
+  private participants(){return this.game.combatPlayers().filter(p=>!this.isEndgame||p.level>=this.profile.level);}
+  private target(){return this.isEndgame?this.participants().filter(p=>p.alive).sort((a,b)=>this.unit.distTo(a)-this.unit.distTo(b))[0]??this.game.combatTarget(this.unit):this.game.combatTarget(this.unit);}
+  private radius(kind:Mech){return kind==='eclipse'?(this.isEndgame?14:11):kind==='slam'?(this.isEndgame?4.8:3.4):kind==='nova'?(this.isEndgame?8:6):this.isEndgame?6.5:5.5;}
+  private crossAngles(yaw:number){return this.isFrost?[yaw,yaw+Math.PI/3,yaw+2*Math.PI/3]:this.isEndgame?[yaw,yaw+Math.PI/4,yaw+Math.PI/2,yaw+3*Math.PI/4]:[yaw,yaw+Math.PI/2];}
+  private get laneLength(){return this.isEndgame?15:12;}
+  private get laneWidth(){return this.isEndgame?1.4:1.8;}
+  private get barrageRadius(){return this.isEndgame?3:2.6;}
+  private get innerRadius(){return this.isEndgame?3:4.5;}
+  private fraction(kind:Mech){return this.isEndgame?({slam:.5,nova:.58,eclipse:.62,cross:.48,barrage:.42,undertow:.45,spray:.4})[kind]:({slam:.26,nova:.32,eclipse:.38,cross:.28,barrage:.24,undertow:.24,spray:.2})[kind];}
 
   constructor(private readonly game: Game, readonly unit: Unit, readonly arena: Poi, readonly freed: Unit, readonly profile: BossProfile = BOSS_PROFILES.rust) {
     unit.ctrl = this;
@@ -117,6 +119,7 @@ export class Boss {
   applyNetwork(s: BossState): void {
     const g=this.game;
     if (s.phase > this.phase && s.state === 'fight') g.events.emit({type:'boss',boss:this.unit,stage:'phase',phase:s.phase,remote:true});
+    if ((this.state === 'dead' || this.state === 'dying') && ['waking', 'idle', 'fight'].includes(s.state)) this.coinsClaimed = false;
     this.state=s.state; this.phase=s.phase; this.enraged=s.enraged;
     const timeline=s.timeline;
     if(timeline&&Number.isFinite(timeline.state)&&Number.isFinite(timeline.freed)&&Number.isFinite(timeline.freedYaw)&&typeof timeline.released==='boolean'){
@@ -163,12 +166,39 @@ export class Boss {
 
   /** The beacon is lit: Corrodius heaves himself up on the deck. */
   wake(): void {
-    if(this.isDawn&&this.game.partyLevel<this.profile.level)return;
-    if (this.game.multiplayer?.battle.challenge(this.profile.level === 100 ? 'b30' : this.profile.level === 20 ? 'b20' : this.profile.level === 10 ? 'b10' : 'b3')) return;
-    if (this.state !== 'dormant') return;
+    if(this.isEndgame&&this.game.partyLevel<this.profile.level)return;
+    if (this.game.multiplayer?.battle.challenge(this.isFrost ? 'b300' : this.profile.level === 100 ? 'b30' : this.profile.level === 20 ? 'b20' : this.profile.level === 10 ? 'b10' : 'b3')) return;
+    if (this.state !== 'dormant' && this.state !== 'dead') return;
     if(this.profile.level<20 && this.game.world.getEnvironment?.().beacon===false)return;
     const g = this.game;
     const u = this.unit;
+    if (this.state === 'dead') {
+      this.coinsClaimed = false;
+      // A rematch starts a fresh encounter without changing earned story progress.
+      this.clearMech();
+      for (const add of this.adds) add.despawn();
+      this.adds.length = 0;
+      u.hp = u.maxHp;
+      u.alive = true;
+      u.targetable = false;
+      u.stunUntil = u.slowUntil = u.rustUntil = u.rust = u.absorb = u.absorbUntil = u.pushTime = 0;
+      u.cancelPendingHit();
+      u.motion.stop(undefined, 0.2);
+      u.express('neutral');
+      u.setBaseTint(this.profile.color);
+      this.phase = 1;
+      this.enraged = false;
+      this.outside = this.mechIndex = 0;
+      this.remoteMechId = -1;
+      this.freedStarted = false;
+      this.freedT = -1;
+      this.freed.hidden = true;
+      this.freed.rig.root.visible = false;
+      this.freed.rig.root.scale.setScalar(this.freedBaseScale);
+      this.freed.lift = 0;
+      this.freed.npcId = '';
+      this.freed.motion.stop(undefined, 0.2);
+    }
     this.state = 'waking';
     this.stateT = 0;
     u.hidden = false;
@@ -196,7 +226,7 @@ export class Boss {
     this.nextSwing = g.time + 1.2;
     this.nextMech = g.time + 4;
     this.unit.express('angry', 3);
-    this.yell(this.unit, this.profile.level === 100 ? t('너희의 새벽도, 친구도 내 것이다!','Your dawn and your friend belong to me!') : this.profile.level === 20 ? t('별의 문을 연 자여, 일식의 시험을 받아라!','You who opened the star gate, face the trial of the eclipse!') : this.profile.level >= 10 ? t('심해의 빛을 피할 수 있겠느냐!','Can you escape the light of the deep?') : BOSS_YELLS.engage);
+    this.yell(this.unit, this.isFrost ? t('너희 친구도 영원한 겨울 속에 갇힐 것이다!','Your friend shall remain imprisoned in eternal winter!') : this.profile.level === 100 ? t('서리왕에게 가는 길은 내가 막겠다!','I guard the road to the Frost King!') : this.profile.level === 20 ? t('별의 문을 연 자여, 일식의 시험을 받아라!','You who opened the star gate, face the trial of the eclipse!') : this.profile.level >= 10 ? t('심해의 빛을 피할 수 있겠느냐!','Can you escape the light of the deep?') : BOSS_YELLS.engage);
     g.events.emit({ type: 'boss', boss: this.unit, stage: 'engage' });
   }
 
@@ -228,13 +258,20 @@ export class Boss {
     g.events.emit({ type: 'boss', boss: u, stage: 'reset' });
   }
 
+  /** Claim once per victory; snapshots and duplicate death events grant no extra coins. */
+  claimVictoryCoins(): number {
+    if (this.coinsClaimed || this.unit.alive || (this.state !== 'dying' && this.state !== 'dead')) return 0;
+    this.coinsClaimed = true;
+    return this.profile.coins;
+  }
+
   onDeath(): void {
     const g = this.game;
     this.state = 'dying';
     this.stateT = 0;
     this.clearMech();
     for (const a of this.adds) if (a.unit.alive) g.combat.kill(a.unit, null);
-    this.yell(this.unit, this.profile.level === 100 ? t('새벽의 빛을… 가둘 수는 없었구나.','The dawn… could never be imprisoned.') : this.profile.level === 20 ? t('일식이 걷히는구나… 두 세계를 부탁한다.','The eclipse fades… Take care of both worlds.') : this.profile.level >= 10 ? t('심해가 다시 잠잠해지는구나…','The deep grows quiet once more…') : BOSS_YELLS.death);
+    this.yell(this.unit, this.isFrost ? t('얼어붙은 왕관에도… 봄이 오는구나.','Even the frozen crown… must welcome spring.') : this.profile.level === 100 ? t('새벽의 빛을… 가둘 수는 없었구나.','The dawn… could never be imprisoned.') : this.profile.level === 20 ? t('일식이 걷히는구나… 두 세계를 부탁한다.','The eclipse fades… Take care of both worlds.') : this.profile.level >= 10 ? t('심해가 다시 잠잠해지는구나…','The deep grows quiet once more…') : BOSS_YELLS.death);
     g.events.emit({ type: 'boss', boss: this.unit, stage: 'death' });
     this.unit.targetable = false;
   }
@@ -245,7 +282,7 @@ export class Boss {
     const now = g.time;
     const p = this.target();
     this.stateT += dt;
-    const unlocked = this.isDawn?p.level>=this.profile.level:(g.partyLevel ?? p.level) >= this.profile.level;
+    const unlocked = this.isEndgame?p.level>=this.profile.level:(g.partyLevel ?? p.level) >= this.profile.level;
     u.invulnerable = !unlocked;
     if (this.state === 'idle') u.targetable = unlocked;
     switch (this.state) {
@@ -263,7 +300,7 @@ export class Boss {
           this.state = 'idle';
           u.targetable = unlocked;
           u.act('attack_slam');
-          this.yell(u, this.profile.level === 100 ? t('솔라칸이 황혼 성채에서 깨어났다.','Solarkan awakens in the Twilight Citadel.') : this.profile.level === 20 ? t('아스트라가 별의 왕좌에서 깨어났다.','Astra awakens upon the Star Throne.') : this.profile.level >= 10 ? t('네레이드가 심해에서 깨어났다.','Nereid awakens from the deep.') : BOSS_YELLS.wake);
+          this.yell(u, this.isFrost ? t('보레아스가 얼음 왕좌에서 깨어났다.','Boreas awakens upon the Frozen Throne.') : this.profile.level === 100 ? t('솔라칸이 황혼 성채에서 깨어났다.','Solarkan awakens in the Twilight Citadel.') : this.profile.level === 20 ? t('아스트라가 별의 왕좌에서 깨어났다.','Astra awakens upon the Star Throne.') : this.profile.level >= 10 ? t('네레이드가 심해에서 깨어났다.','Nereid awakens from the deep.') : BOSS_YELLS.wake);
           g.events.emit({ type: 'boss', boss: u, stage: 'awake' });
         }
         u.feedLocomotion(dt);
@@ -287,7 +324,7 @@ export class Boss {
     // Leash: the player died, or left the wreck and stayed away.
     const fromArena = Math.hypot(p.pos.x - this.arena.position.x, p.pos.z - this.arena.position.z);
     this.outside = fromArena > this.arena.radius + ARENA_LEASH ? this.outside + dt : 0;
-    if (!p.alive || this.isDawn&&p.level<this.profile.level || this.outside > 4) {
+    if (!p.alive || this.isEndgame&&p.level<this.profile.level || this.outside > 4) {
       if (p.alive) this.yell(u, t('달아나라, 작은 껍질아. 녹은 기억한다.','Run, little shell. The rust remembers.'));
       this.reset();
       return;
@@ -295,10 +332,10 @@ export class Boss {
 
     // Phase changes (an enraged boss vents heat; the sink draws it from `enraged`)
     const frac = u.hp / u.maxHp;
-    if (this.phase === 1 && frac < (this.isDawn?.75:.6)) this.enterPhase2();
-    if (this.phase === 2 && frac < (this.isDawn?.4:.25)) this.enterPhase3();
+    if (this.phase === 1 && frac < (this.isEndgame?.75:.6)) this.enterPhase2();
+    if (this.phase === 2 && frac < (this.isEndgame?.4:.25)) this.enterPhase3();
 
-    const stunned = !this.isDawn&&u.stunned(now);
+    const stunned = !this.isEndgame&&u.stunned(now);
     if (this.mech) {
       this.updateMech(dt);
     } else if (!stunned) {
@@ -307,12 +344,12 @@ export class Boss {
       const want = yawTo(u.pos.x, u.pos.z, p.pos.x, p.pos.z);
       u.setYaw(turnToward(u.yaw, want, this.enraged ? 3 : 2.2, dt));
       if (gap > 1.0) {
-        const sp = this.isDawn?(this.enraged?4.2:3.4):(this.enraged ? 2.8 : 2.0) * u.speedMul(now);
+        const sp = this.isEndgame?(this.enraged?4.2:3.4):(this.enraged ? 2.8 : 2.0) * u.speedMul(now);
         const d = u.distTo(p) || 1;
         u.moveTo(g.world, u.pos.x + ((p.pos.x - u.pos.x) / d) * sp * dt, u.pos.z + ((p.pos.z - u.pos.z) / d) * sp * dt, dt);
       }
       if (gap <= 1.6 && now >= this.nextSwing && Math.abs(angleDiff(want, u.yaw)) < 0.8) {
-        this.nextSwing = now + (this.isDawn?(this.enraged?1.3:1.8):(this.enraged ? 1.8 : 2.6));
+        this.nextSwing = now + (this.isEndgame?(this.enraged?1.3:1.8):(this.enraged ? 1.8 : 2.6));
         u.act('attack_swipe', {
           upper: true,
           speed: this.enraged ? 1.4 : 1,
@@ -331,7 +368,7 @@ export class Boss {
   private enterPhase2(): void {
     const g = this.game;
     this.phase = 2;
-    this.yell(this.unit, this.profile.level === 100 ? t('황혼의 불길 속으로 들어오라!','Step into the flames of twilight!') : this.profile.level === 20 ? t('별의 그림자 속으로 들어오라!','Step into the shadow of the stars!') : this.profile.level >= 10 ? t('깊은 바다의 힘이 깨어난다!','The power of the deep awakens!') : BOSS_YELLS.phase2);
+    this.yell(this.unit, this.isFrost ? t('눈보라여, 얼어붙은 왕관을 지켜라!','Blizzard, defend the Frozen Crown!') : this.profile.level === 100 ? t('황혼의 불길 속으로 들어오라!','Step into the flames of twilight!') : this.profile.level === 20 ? t('별의 그림자 속으로 들어오라!','Step into the shadow of the stars!') : this.profile.level >= 10 ? t('깊은 바다의 힘이 깨어난다!','The power of the deep awakens!') : BOSS_YELLS.phase2);
     g.events.emit({ type: 'boss', boss: this.unit, stage: 'phase', phase: 2 });
     const u = this.unit;
     for (let i = 0; i < (this.profile.level >= 10 ? 0 : 3); i++) {
@@ -359,7 +396,7 @@ export class Boss {
     const g = this.game;
     const u = this.unit;
     const p = this.target();
-    const order: Mech[] = this.isDawn ? (this.phase===1?['cross','barrage','slam','nova','spray']:this.phase===2?['barrage','eclipse','cross','nova','undertow','slam']:['cross','barrage','eclipse','nova','cross','undertow','barrage','slam']) : this.profile.level === 20 ? (this.phase === 1 ? ['slam','eclipse','nova','cross','barrage'] : ['eclipse','nova','undertow','cross','barrage','eclipse']) : this.profile.level >= 10 ?
+    const order: Mech[] = this.isFrost ? (this.phase===1?['eclipse','spray','barrage','undertow','slam']:this.phase===2?['undertow','nova','eclipse','barrage','spray','cross']:['eclipse','undertow','barrage','nova','spray','cross','slam']) : this.isEndgame ? (this.phase===1?['cross','barrage','slam','nova','spray']:this.phase===2?['barrage','eclipse','cross','nova','undertow','slam']:['cross','barrage','eclipse','nova','cross','undertow','barrage','slam']) : this.profile.level === 20 ? (this.phase === 1 ? ['slam','eclipse','nova','cross','barrage'] : ['eclipse','nova','undertow','cross','barrage','eclipse']) : this.profile.level >= 10 ?
       (this.phase === 1 ? ['slam', 'nova', 'spray', 'cross', 'barrage'] : ['nova', 'undertow', 'slam', 'cross', 'barrage', 'nova']) :
       this.phase === 1 ? ['slam', 'spray'] : this.phase === 2 ? ['undertow', 'slam', 'spray', 'cross', 'slam'] : ['slam', 'spray', 'undertow', 'cross', 'barrage'];
     const kind = order[this.mechIndex++ % order.length];
@@ -383,18 +420,19 @@ export class Boss {
     } else {
       m.dur=2.6; m.at.copy(u.pos); this.yell(u,BOSS_YELLS.undertow);
     }
-    if(this.isDawn){
+    if(this.isEndgame){
       // Larger warnings retain time to walk out; difficulty comes from pressure and mistakes.
       m.dur=Math.max(m.dur,kind==='nova'?2.4:kind==='eclipse'?2.8:kind==='undertow'?3:kind==='slam'?1.6:1.3);
     }
     const shapes = this.telegraphShapes(kind,m.at,m.yaw);
     this.mech = m;
     g.events.emit({ type: 'telegraph', src: u, mech: kind, level: this.profile.level, seconds: m.dur, shapes });
-    this.nextMech = g.time + m.dur + (this.isDawn?(this.phase===3?.9:this.phase===2?1.2:1.8):(this.phase === 3 ? 4.2 : this.phase === 2 ? 5.5 : 6));
+    this.nextMech = g.time + m.dur + (this.isEndgame?(this.phase===3?.9:this.phase===2?1.2:1.8):(this.phase === 3 ? 4.2 : this.phase === 2 ? 5.5 : 6));
   }
 
   private barragePoints(at: THREE.Vector3, yaw: number): THREE.Vector3[] {
-    if(this.isDawn)return [[0,0],[6,0],[-6,0],[0,6],[0,-6]].map(([x,z])=>new THREE.Vector3(at.x+x*Math.cos(yaw)+z*Math.sin(yaw),at.y,at.z-x*Math.sin(yaw)+z*Math.cos(yaw)));
+    if(this.isFrost)return [[0,0],[7,0],[-7,0],[3.5,6],[-3.5,6],[3.5,-6],[-3.5,-6]].map(([x,z])=>new THREE.Vector3(at.x+x*Math.cos(yaw)+z*Math.sin(yaw),at.y,at.z-x*Math.sin(yaw)+z*Math.cos(yaw)));
+    if(this.isEndgame)return [[0,0],[6,0],[-6,0],[0,6],[0,-6]].map(([x,z])=>new THREE.Vector3(at.x+x*Math.cos(yaw)+z*Math.sin(yaw),at.y,at.z-x*Math.sin(yaw)+z*Math.cos(yaw)));
     return [-6,0,6].map(offset => new THREE.Vector3(at.x+Math.cos(yaw)*offset,at.y,at.z-Math.sin(yaw)*offset));
   }
 
@@ -403,7 +441,7 @@ export class Boss {
    * is laid on the deck under it, which moves `at` onto the deck (the circle's centre height).
    */
   private telegraphShapes(kind: Mech, at: THREE.Vector3, yaw: number): TelegraphShape[] {
-    if (kind==='cross') return this.crossAngles(yaw).map(a=>({shape:'lane',at:v3(at),yaw:a,halfLength:this.laneLength,halfWidth:this.laneWidth,color:'#ffb64d'}));
+    if (kind==='cross') return this.crossAngles(yaw).map(a=>({shape:'lane',at:v3(at),yaw:a,halfLength:this.laneLength,halfWidth:this.laneWidth,color:this.isFrost?'#75e9ff':'#ffb64d'}));
     if (kind==='barrage') return this.barragePoints(at,yaw).map(p=>{const ground=v3(this.deckUnder(p,this.barrageRadius,0,Math.PI));return {shape:'circle',at:v3(p),radius:this.barrageRadius,color:'#cf8aff',ground};});
     if (kind==='spray') {const ground=v3(this.deckUnder(at,11,yaw,.55));return [{shape:'cone',at:v3(at),yaw,range:11,half:.55,ground}];}
     const radius=this.radius(kind);

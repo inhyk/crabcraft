@@ -184,3 +184,19 @@ test('the traps do record a touch (so an empty list means none)', () => {
   game.player.unit = null;
   assert.deepEqual(game.touched, ['vfx.ring', 'vfx.ring()', 'hud.floats', 'hud.floats.spawn', 'hud.floats.spawn()', 'player.unit=']);
 });
+
+test('Steam Blink teleports and heals once through the combat event sink', () => {
+  const { game, events } = H.recordingGame();
+  const c = game.addPlayer('mage', 5);
+  H.place(c.unit, game.world, 0, 0);
+  c.unit.hp = c.unit.maxHp - 30;
+  c.player.nextSwing = Infinity;
+  const blink = H.CLASSES.mage.abilities.find(ab => ab.id === 'steam-blink');
+  const hp = c.unit.hp;
+  c.player.useAbility(blink.slot);
+  assert.equal(c.unit.hp, hp + 10);
+  assert.ok(Math.hypot(c.unit.pos.x, c.unit.pos.z) > 5);
+  assert.equal(of(events, 'heal', e => e.dst === c.unit).length, 1);
+  assert.equal(of(events, 'ability', e => e.ability === 'steam-blink').length, 1);
+  assert.deepEqual(game.touched, []);
+});

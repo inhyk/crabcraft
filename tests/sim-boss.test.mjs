@@ -112,3 +112,55 @@ test('Corrodius dies: his adds go with him, the freed crab walks out, and the de
   assert.equal(boss.state, 'dead');
   assert.deepEqual(game.touched, []);
 });
+
+test('Boreas emits six cyan lanes and seven barrage marks with the same follower shapes', () => {
+  const make = () => {
+    const { game, events } = H.recordingGame();
+    const player = game.addPlayer('warrior', 300);
+    H.place(player.unit, game.world, 0, 3);
+    const boss = game.addBoss(H.BOSS_PROFILES.frost);
+    boss.state = 'fight';
+    boss.unit.hidden = false;
+    boss.unit.invulnerable = false;
+    return { game, events, boss };
+  };
+  const host = make(), guest = make();
+  host.boss.phase = 2;
+  host.boss.mechIndex = 5;
+  host.boss.startMech();
+  let warning = of(host.events, 'telegraph').at(-1);
+  assert.equal(warning.mech, 'cross');
+  assert.equal(warning.shapes.length, 3, 'three complete lanes make six rays');
+  assert.ok(warning.shapes.every(s => s.shape === 'lane' && s.color === '#75e9ff'));
+  guest.boss.applyNetwork(host.boss.networkState('b300'));
+  assert.deepEqual(of(guest.events, 'telegraph').at(-1).shapes, warning.shapes);
+  host.boss.phase = 1;
+  host.boss.mechIndex = 2;
+  host.boss.startMech();
+  warning = of(host.events, 'telegraph').at(-1);
+  assert.equal(warning.mech, 'barrage');
+  assert.equal(warning.shapes.length, 7);
+  assert.ok(warning.shapes.every(s => s.shape === 'circle'));
+  assert.deepEqual(host.game.touched, []);
+  assert.deepEqual(guest.game.touched, []);
+});
+
+test('a boss rematch refreshes its one-victory coin claim and cancels the previous swing', () => {
+  const { game, boss, tank } = arena();
+  boss.wake();
+  H.stepUntil(game, () => boss.state === 'fight', 6, DT);
+  game.combat.damage(tank.unit, boss.unit, 1e6);
+  assert.equal(boss.claimVictoryCoins(), boss.profile.coins);
+  assert.equal(boss.claimVictoryCoins(), 0);
+  H.stepUntil(game, () => boss.state === 'dead', 15, DT);
+  boss.wake();
+  assert.equal(boss.state, 'waking');
+  assert.equal(boss.unit.alive, true);
+  assert.equal(boss.unit.hp, boss.unit.maxHp);
+  assert.equal(boss.freed.hidden, true);
+  H.stepUntil(game, () => boss.state === 'fight', 6, DT);
+  game.combat.damage(tank.unit, boss.unit, 1e6);
+  assert.equal(boss.claimVictoryCoins(), boss.profile.coins);
+  assert.equal(boss.claimVictoryCoins(), 0);
+  assert.deepEqual(game.touched, []);
+});

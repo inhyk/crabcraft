@@ -146,6 +146,7 @@ export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit 
         z = r.y;
       }
       u.teleport(g.world, x, z);
+      g.combat.heal(u, u, 10);
       // A puff where the crab left and one where it stands.
       fx('start', { from });
       break;
