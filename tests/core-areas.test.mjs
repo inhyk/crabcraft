@@ -26,3 +26,10 @@ test('W1 retains shipped pack layout and terrain-selected shallow patrol templat
  const world=createWorld1Definition({...config,query,population:{...config.population,shallowPatrols:3}}),normal=world.enemies.filter(e=>e.id.startsWith('w1:scrapling:')),patrols=world.enemies.filter(e=>e.id.startsWith('w1:shallow:'));
  assert.deepEqual([...new Set(normal.map(e=>e.pack))].map(pack=>normal.filter(e=>e.pack===pack).length),[3,2,2,3,2]);assert.equal(patrols.length,3);for(const p of patrols){assert.equal(p.home.y,.4);assert.equal(p.wanderRadius,2);assert.equal(p.fixedLevel,3);assert.ok(Math.hypot(p.home.x-world.pois.shore.position.x,p.home.z-world.pois.shore.position.z)>6);}
 });
+test('real three-world replay is unchanged by interleaving and snapshot/event observation cadence',async()=>{
+ const {worldArea,addActor,intent}=await import('./core/worldHarness.mjs');
+ const run=(order,observe)=>{const areas=[worldArea('replay-w1'),worldArea('replay-w2','w2'),worldArea('replay-w3','w3')],actors=areas.map((a,i)=>addActor(a,`c${i}`)),history=areas.map(()=>[]);const victim=[...areas[0].enemies.values()][0];const target=areas[0].services.getUnit(victim.unit);Object.assign(actors[0].u,{x:target.x-2,y:target.y,z:target.z});
+ // Direct fixture placement retains the actual Player, Enemy and Combat controllers.
+ for(let frame=0;frame<180;frame++)for(const i of order){const area=areas[i],actor=actors[i],commands=frame===0&&i===0?[{kind:'ability',slot:5}]:[];area.step(new Map([[actor.ref.id,intent(frame,commands,{forward:i===2?.2:0})]]));if(observe){area.snapshot();area.debugState();history[i].push(...area.drainEvents());}}for(let i=0;i<3;i++)history[i].push(...areas[i].drainEvents());return {states:areas.map(a=>a.debugState()),history};};
+ const first=run([0,1,2],false),second=run([2,0,1],true);assert.deepEqual(first,second);assert.equal(first.states[0].snapshot.players[0].xp,20);assert.equal(first.states[1].snapshot.players[0].xp,0);assert.equal(first.states[2].snapshot.players[0].xp,0);
+});

@@ -19,7 +19,7 @@ export class InteractionRules {
  }
  private npc(player:PlayerSim,id:string):boolean {const s=this.services,npc=s.definition.npcs.find(n=>n.id===id);return !!npc&&this.near(player,npc.position,8)&&s.policy.canInteract(s.context,player.state,`npc:${id}`);}
  interact(ref:EntityRef,id:string):boolean {const player=this.player(ref);if(!player)return false;const s=this.services;
-  if(id.startsWith('npc:')){const npc=id.slice(4);if(!this.npc(player,npc))return false;const unit=s.players().find(u=>u.npcId===npc);player.state.talkTarget=unit?.ref??null;if(npc==='silvermoon')questBump(player,s,'deliver');if(npc==='coralline')questBump(player,s,'deliver-supplies');return true;}
+  if(id.startsWith('npc:')){const npc=id.slice(4);if(!this.npc(player,npc))return false;const unit=s.npcById(npc);player.state.talkTarget=unit?.ref??null;if(npc==='silvermoon')questBump(player,s,'deliver');if(npc==='coralline')questBump(player,s,'deliver-supplies');return true;}
   const point=this.validate(player,id);if(!point)return false;
   if(point.kind==='beacon'||point.kind==='waystone'){if(player.state.channel||player.state.cast||player.state.dash)return false;const unit=s.getUnit(ref)!;player.state.target=null;unit.yaw=Math.atan2(point.position.x-unit.x,point.position.z-unit.z);player.startChannel(point.kind==='beacon'?'beacon':'waystone',point.kind==='beacon'?2:1.5,point.position,point.id);return true;}
   if(point.kind==='crystal'||point.kind==='explore'){questBump(player,s,point.objective!);return true;}
@@ -41,7 +41,7 @@ export class InteractionRules {
   if(command.kind==='travel')return this.interact(ref,command.gateId);
   if(command.kind==='forgeBuy'){if(command.npcId!=='pip'||!this.npc(p,'pip')||p.state.attackRank>=100||p.state.coins<forgeCost(p.state.attackRank))return false;p.state.coins-=forgeCost(p.state.attackRank);p.state.attackRank++;return true;}
   if(command.kind==='questAccept'||command.kind==='questTurnIn'){const def=QUESTS[command.questId];if(!def||def.chapter!==p.state.quests.chapter||!this.npc(p,command.npcId))return false;
-   if(command.kind==='questAccept'){if(def.giver!==command.npcId||p.state.quests.status[def.id]!=='available'||def.id==='q4')return false;return questAccept(p,s,def.id);}
+   if(command.kind==='questAccept'){if(def.giver!==command.npcId||p.state.quests.status[def.id]!=='available'||def.id==='q4')return false;if(def.id==='q3')p.state.flags.beaconLit=this.world.beaconLit;return questAccept(p,s,def.id);}
    if(def.turnIn!==command.npcId||p.state.quests.status[def.id]!=='ready')return false;return questComplete(p,s,def.id);
   }return false;
  }
