@@ -259,7 +259,7 @@ for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}a 
 });
 
 for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}a real clear freezes the clear-time roster, retries the seal unchanged, and pays each recipient once online or after an offline return`, { timeout: 150000 }, async () => {
-  const gate = sealGate(), rt = await runtime({ dungeonStore: gate.store, grace: 300, ledger }), bots = []; let beat, fight;
+  const gate = sealGate(), bots = []; let rt = await runtime({ dungeonStore: gate.store, grace: 300, ledger }), beat, fight;
   try {
     const people = [await character({ level: 650 }), await character({ level: 200, offset: 2 }), await character({ level: 200, offset: -2 }), await character({ level: 200, offset: 4 })];
     const [a, b, c, d] = people, [A, B, C, D] = await Promise.all(people.map(p => client(rt, p))); bots.push(A, B, C, D); beat = heartbeat([B, C, D]);
@@ -295,8 +295,11 @@ for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}a 
     const manifest = JSON.parse((await pool.query('SELECT manifest_json FROM world_dungeon_completions WHERE run_id=$1', [started.run.runId])).rows[0].manifest_json);
     assert.deepEqual(manifest.recipients.map(r => r.characterId), [a.id, b.id, c.id].sort());
     await until(() => rt.host.stats().dungeonAreas === 0, 3000, 'sealed empty run disposed');
-    // The offline recipient receives the same award once in whatever public Area it joins next.
-    const B2 = await client(rt, b); bots.push(B2); clearInterval(beat); beat = heartbeat([A, C, D, B2]);
+    // The committed manifest outlives this process: the offline recipient is paid once by the next host, in a public Area.
+    clearInterval(beat); assert.deepEqual(rt.failures, []); for (const bot of bots) assert.deepEqual(bot.errors, []);
+    assert.deepEqual(await rt.close(), { durable: true, unresolved: 0 }); for (const bot of bots.splice(0)) await closeBot(bot);
+    rt = await runtime({ ledger });
+    const B2 = await client(rt, b); bots.push(B2); beat = heartbeat([B2]);
     assert.ok(B2.inPublic()); near(position(B2), origins[1], 'offline recipient origin');
     await until(async () => (await store.getOwned(b.binding.accountId, b.id)).checkpoint.progress.flags.dungeonCleared35 === true, 8000, 'offline award');
     await until(() => B2.state?.self.player.flags.dungeonCleared35 === true, 3000, 'award visible to the returning client');
@@ -308,6 +311,29 @@ for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}a 
     for (const [i, p] of people.entries()) assert.deepEqual(await dungeonStore.readPendingDungeonAwards(p.binding.accountId, p.id, paid[i].revision, 10), { kind: 'page', page: { revision: paid[i].revision, awards: [] }, more: false });
     assert.deepEqual(rt.failures, []); for (const bot of bots) assert.deepEqual(bot.errors, []);
   } finally { clearInterval(beat); clearInterval(fight); for (const bot of bots) await closeBot(bot); await rt.close(); }
+});
+
+test('a clear whose manifest never committed is reported as unresolved at shutdown and pays nothing after restart', { timeout: 120000 }, async () => {
+  const gate = sealGate(), a = await character({ level: 650 }); let rt = await runtime({ dungeonStore: gate.store }), A, beat, fight, origin, run;
+  try {
+    A = await client(rt, a); beat = heartbeat([A]); await party(A); origin = position(A);
+    const started = await rt.host.dungeon(a.id, { kind: 'dungeonStart', tier: 35 }); assert.equal(started.ok, true); run = started.run.runId;
+    await until(() => inDungeon(A)); clearInterval(beat); gate.failing = true;
+    let turn = 0;
+    fight = setInterval(() => { const o = rt.host.dungeonObservation(a.id), target = o?.activeEnemies[0]; A.send(target && o.phase === 'wave' ? [{ kind: 'target', target }, { kind: 'ability', slot: [3, 1, 4][turn++ % 3] }] : []); }, 50);
+    await until(() => rt.host.dungeonObservation(a.id)?.phase === 'clear', 90000, 'clear');
+    clearInterval(fight); fight = undefined; await until(() => gate.attempts >= 1, 5000, 'seal attempt');
+  } finally { clearInterval(beat); clearInterval(fight); }
+  assert.deepEqual(await rt.close(), { durable: false, unresolved: 1 }, 'an owed clear lost with the process is not a durable stop');
+  await closeBot(A);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM world_dungeon_completions WHERE run_id=$1', [run])).rows[0].n, 0);
+  const saved = await store.getOwned(a.binding.accountId, a.id);
+  assert.equal(saved.checkpoint.progress.flags.dungeonCleared35, undefined); near(saved.checkpoint.location, origin, 'saved at origin');
+  rt = await runtime();
+  try {
+    A = await client(rt, a); assert.ok(A.inPublic()); near(position(A), origin, 'restarted at origin'); await delay(500);
+    assert.equal((await store.getOwned(a.binding.accountId, a.id)).checkpoint.progress.flags.dungeonCleared35, undefined); assert.deepEqual(rt.failures, []);
+  } finally { await closeBot(A); await rt.close(); }
 });
 
 for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}a dungeon resident whose PG revision moves underneath it is readmitted publicly from the durable checkpoint`, { timeout: 30000 }, async () => {
