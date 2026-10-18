@@ -48,6 +48,18 @@ export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit 
   const u = p.unit;
   const now = g.time;
   switch (ab.id) {
+    case 'crown-burst': {
+      u.act('attack_slam', { upper: true });
+      g.vfx.tidalNova(u.pos, ab.range);
+      g.vfx.ring(u.pos, N.gold, 0.5, ab.range, 0.8, 0.9);
+      g.vfx.impact(u.centre(v1), C.gold, 2);
+      g.audio.sfx('sfx-crit', { volume: 0.7 });
+      g.follow.shake(0.22, 0.4);
+      for (const target of enemiesNear(g, u.pos.x, u.pos.z, ab.range)) {
+        if (p.lineOfSight(target)) hit(g, p, target, 95, 115, 'water');
+      }
+      break;
+    }
     // ------------------------------------------------------------ Warrior
     case 'pincer-strike': {
       const t = target!;

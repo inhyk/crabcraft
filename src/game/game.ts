@@ -758,7 +758,7 @@ export class Game {
       if (inp.isDown('KeyW') || inp.isDown('KeyA') || inp.isDown('KeyS') || inp.isDown('KeyD')) hints.mark('move');
       if ((inp.isButtonDown(0) || inp.isButtonDown(2)) && Math.abs(inp.dx) > 2) hints.mark('look');
       if (inp.wasPressed('Tab')) hints.mark('target');
-      for (let i = 1; i <= 4; i++) if (inp.wasPressed(`Digit${i}`)) hints.mark('ability');
+      for (let i = 1; i <= 5; i++) if (inp.wasPressed(`Digit${i}`)) hints.mark('ability');
       if (inp.wasPressed('KeyF')) hints.mark('interact');
     }
     if (inp.wasPressed('KeyT') && !this.villageGames?.playing && !hud.dialogue.isOpen && !hud.questLog.open && !this.player.channel) {
@@ -772,7 +772,7 @@ export class Game {
       });
     }
     if (inp.wasPressed('Tab')) this.player.tabTarget();
-    for (let i = 1; i <= 4; i++) if (inp.wasPressed(`Digit${i}`) || inp.wasPressed(`Numpad${i}`)) this.player.useAbility(i);
+    for (let i = 1; i <= 5; i++) if (inp.wasPressed(`Digit${i}`) || inp.wasPressed(`Numpad${i}`)) this.player.useAbility(i);
     if (inp.wasPressed('KeyF')) {
       // F also drives the dialogue: finish the text, then take the main choice.
       if (hud.dialogue.isOpen && hud.dialogue.typing) hud.dialogue.skipTyping();

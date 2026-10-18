@@ -674,3 +674,5 @@
 .mm-controls button { width:44px; height:34px; color:#ffdfa0; border:1px solid #a88b52; border-radius:6px; background:#1b2936; cursor:pointer; font-size:24px; }
 .mm.expanded .mm-help { display:block; color:#e7d9b5; font:500 12px var(--font-body); text-align:center; }
 @media(max-width:760px) { .mm.expanded { inset:6px; padding:10px; gap:9px; } .mm.expanded .mm-zone { font-size:16px; margin-top:32px; } .mm.expanded .mm-help { max-width:90%; font-size:11px; } .mm.expanded .mm-ring { width:min(75vw,calc(100dvh - 210px)); height:min(75vw,calc(100dvh - 210px)); } }
+
+.ab-slot.ultimate { border-color: #ffe58a; box-shadow: 0 0 0 1px #6e480d, 0 0 12px rgba(255, 199, 69, .35); }
