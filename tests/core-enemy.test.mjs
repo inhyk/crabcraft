@@ -34,4 +34,21 @@ if(fileURLToPath(import.meta.url)===process.argv[1]){
   test('scavenger .75s leap lands real damage and bounded arc',()=>{const h=creatureHarness(),p=h.unit('player',{x:0,y:0,z:7}),e=h.enemy('scavenger');h.s.time=3;e.aggro(false);h.step([e]);assert.equal(e.actor.actions.at(-1).id,'jump');let maxLift=0;for(let i=0;i<23;i++){h.step([e]);maxLift=Math.max(maxLift,e.actor.lift);}assert.ok(maxLift>2.19&&maxLift<=2.2);assert.ok(p.hp>=89&&p.hp<=92);assert.equal(e.actor.lift,0);});
   test('seeded constructors and wander preserve full future state without observers drawing RNG',()=>{const a=creatureHarness(3),b=creatureHarness(3),c=creatureHarness(4),ea=a.enemy(),eb=b.enemy(),ec=c.enemy();for(let i=0;i<500;i++){a.step([ea]);a.s.random.state();ea.debugState();b.step([eb]);c.step([ec]);}assert.deepEqual(ea.debugState(),eb.debugState());assert.equal(a.s.random.state(),b.s.random.state());assert.notDeepEqual(ea.debugState(),ec.debugState());});
   test('stale source and target plans cannot mutate HP after respawn',()=>{const h=creatureHarness(),p=h.unit('player',{x:0,y:0,z:1}),e=h.enemy(),old=e.unit;e.respawnAt(0,0);e.resolveHit({attack:'enemy-claw',source:old,target:p.ref});assert.equal(p.hp,100);h.s.respawnUnit(p.ref);e.resolveHit({attack:'enemy-claw',source:e.unit,target:{...p.ref,life:1}});assert.equal(p.hp,100);});
+  test('sea cast actual damage, stun, chapter and range guards use impact state',()=>{
+    for(const mode of ['hit','stun','chapter','range']){
+      const h=creatureHarness(12,-.4),p=h.unit('player',{x:0,y:-.4,z:3}),e=h.enemy('jellyfish');e.aggro(false);
+      while(!e.actor.pendingHit)h.step([e]);const plan=structuredClone(e.actor.pendingHit.plan);
+      if(mode==='stun')e.actor.stunUntil=h.s.time+2;
+      if(mode==='chapter')h.s.world='w2';if(mode==='range')p.z=30;
+      for(let i=0;i<9;i++)h.step([e]);
+      if(mode==='hit')assert.ok(p.hp>=91&&p.hp<=94);else assert.equal(p.hp,100);
+      assert.equal(plan.at.z,3);
+    }
+  });
+  test('jellyfish cannot pursue onto dry terrain and returns home through leash',()=>{
+    const h=creatureHarness(4,-.4),p=h.unit('player',{x:0,y:0,z:8}),e=h.enemy('jellyfish');
+    h.s.query.heightAt=(x,z)=>z>1?0:-.4;e.aggro(false);for(let i=0;i<100;i++)h.step([e]);
+    assert.ok(e.actor.z<=1);assert.ok(['idle','chase','leash'].includes(e.state));assert.equal(p.hp,100);
+  });
+
 }
