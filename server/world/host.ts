@@ -60,7 +60,8 @@ export interface ActualWorldHostDeps {
   characters: CharacterStore<IdentityJson, CheckpointJson, GrantJson>;
   worlds: ReadonlyMap<WorldId, LoadedWorldDefinition>;
   codec: CoreCharacterCodec;
-  gameplay: { catalog: GameplayCatalog; create(): GameplayProtocol };
+  /** verifyObservations (default true): see ObservationChecks in gameplay/protocol.ts; create() must use the same choice. */
+  gameplay: { catalog: GameplayCatalog; create(): GameplayProtocol; verifyObservations?: boolean };
   ownership: HostOwnership;
   chat?: WorldChatService;
   outcomes?: DurableOutcomeStore;
@@ -780,7 +781,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (barrier || frozen || [...actors.values()].some(actor => actor.pendingReplay)) return;
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
     const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
-    const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog);
+    const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog, { verify: deps.gameplay.verifyObservations ?? true });
     observe('snapshotPrepare', deps.nowMonotonicMs() - start);
     try {
       for (const actor of actors.values()) {
