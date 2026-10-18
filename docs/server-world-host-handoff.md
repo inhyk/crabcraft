@@ -43,7 +43,7 @@ dev `fd222a8`의 설원/잿불/하늘숲 퀘스트와 Astra/Solarkan 10분 XP �
 
 ## 서버4월드와 기존6월드 경계
 
-이 PR의 실제 host/config/queue/party/wire는 W1~W4를 제공한다. PR79의 기존 W5/W6, 렌더와 퀘스트59개는 보존하며 서버의 새 캐릭터에 기존 browser 저장을 가져오지 않는다. host catalog를 구성할 때 미지원 destination gate를 core definition과 advertised catalog에서 제외한다. W4의 기존 Ember gate는 서버 UI에서 이동 prompt/입력으로 쓰지 않는다. 예상 밖 미지원 internal travelReady는 개인 world-unavailable 응답으로 처리한다. W5/W6의 실제 host, 저장/이동과 관측은 후속 이전 범위다.
+Host는 기존 W1~W4를 기본으로 유지하며 완전한 region 설정이 있는 W5/W6를 선택적으로 연다. 퀘스트59개와 canonical Ember/Sky 규칙을 사용하고 새 캐릭터에 browser 저장을 가져오지 않는다. 비활성 destination gate는 core definition과 advertised catalog에서 제외하며 예상 밖 travelReady는 개인 world-unavailable로 처리한다. W5/W6 활성화에 필요한 명시적 region/party return 및 bake 계약은 `docs/server-world-config.md`의 선택적 W5/W6 절에 있다. 실제 운영 JSON과 VM 활성화는 이 소스 변경에서 수행하지 않는다.
 
 ## 부활과 이동의 입력 stream
 
@@ -52,3 +52,16 @@ dev `fd222a8`의 설원/잿불/하늘숲 퀘스트와 Astra/Solarkan 10분 XP �
 ## 파티 대전 치유
 
 party-only PvP의 대전 상대는 `isAttackTarget`과 같은 판정으로 중앙 `Combat.heal`과 ally-heal 후보에서 제외한다. 상대 피해와 자기 치료, 대전 상대가 아닌 파티원의 기존 치료는 유지한다. 공개 PvP는 disabled다. 기존 브라우저 `BattleSync.resolveHealing`도 PvP 적을 제외하므로 브라우저 소스는 변경하지 않았다.
+
+## 선택적 Frontier host 검증
+
+`2aa6a511` 기준의 host에 A6 `bae0339` wire/view를 합성했다. 기존 4월드 JSON은 그대로 유지하며, 명시적 W5/W6 config가 있을 때만 Area와 Ember/Sky encounter를 추가한다. 배포 JSON, VM, 활성화 설정은 수정하지 않았다.
+
+- `node --test server/world/catalog.test.mjs server/world/startup.test.mjs`: 39건 통과. 4/5/6개 활성 catalog, 누락한 region/manifest 거부, 6개 package의 기존 4월드 설정, 실제 PG/WS W4→W5→W6→W5→W4 이동과 추적/cooldown/재접속, Ember/Sky level gate와 private boss recovery, 실제 Area 보상→PG receipt→새 Area 복원을 검사했다.
+- `node --test server/world/host.test.mjs server/world/gameplay/protocol.test.mjs server/world/gameplay/frontier.test.mjs`: 83건 통과. 기존 retained/external host, durable ACK, certified replay, party/public capacity와 P1 input rate, snapshot cache, 6월드 wire 경계를 유지한다.
+- `node server/node/build.mjs` 후 `node --test server/node/world-main.test.mjs`: 4건 통과. 실제 package의 6개 bake/hash와 4월드 JSON으로 기동한 계정/WS route를 검사했다. 4월드 HTTP catalog는 frontier boss alias를 광고하지 않는다.
+- `pnpm build`: 통과. 실행 환경은 Node24, pnpm10.10.0이다.
+
+테스트의 level/story/위치 fixture는 서버의 production 초기값이 아니다. Frontier 이동 전 unlock 거부와 level1 보스 입장 거부를 먼저 확인하고, 이후 명시적 trusted fixture로 해당 경계를 검사한다. 이 결과는 운영 population 값의 승인이나 VM 부하 통과를 뜻하지 않는다. 10개 dungeon 이전은 별도 core/host 작업이다.
+
+최신 dev52/A6 `ef29562`를 `46d8374`에서 충돌 없이 합성한 뒤 build와 다음55건을 재검사했다: `node --test server/world/catalog.test.mjs server/world/startup.test.mjs server/world/gameplay/frontier.test.mjs tests/core-motion-data.test.mjs`. 실제 PG/WS 이동과 보상, 기존 4월드 packet reference, 새 provider/source freshness가 모두 통과했다. 이 합성에서 catalog/startup/host/build의 B6 구현 diff는 추가로 생기지 않았다. 운영 설정과 VM은 변경하지 않았다.
