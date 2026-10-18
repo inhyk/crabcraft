@@ -15,13 +15,13 @@ export type BossState = {
   mech: null | { id: number; kind: 'slam' | 'spray' | 'undertow' | 'nova' | 'eclipse' | 'cross' | 'barrage'; at: number[]; yaw: number; left: number };
 };
 import type {DungeonState} from '../src/game/dungeonData.ts';
-export type WorldState = { dungeon?:DungeonState|null; village?:VillageRound|null; boat?:BoatState; weather: { mood: 0 | 1 | 2 | 3; beacon: boolean; clock: number }; entities: EntityState[]; bosses: BossState[]; rust: boolean; abyss: boolean; chapter: 1 | 2 | 3 | 4; frostCleared?: boolean; finalCleared?: boolean; firstEnding: boolean; trueCleared: boolean; social?:{mode:'coop'|'pvp';parties:Record<string,number>} };
+export type WorldState = { dungeon?:DungeonState|null; village?:VillageRound|null; boat?:BoatState; weather: { mood: 0 | 1 | 2 | 3; beacon: boolean; clock: number }; entities: EntityState[]; bosses: BossState[]; rust: boolean; abyss: boolean; chapter: 1 | 2 | 3 | 4 | 5 | 6; frostCleared?: boolean; finalCleared?: boolean; firstEnding: boolean; trueCleared: boolean; social?:{mode:'coop'|'pvp';parties:Record<string,number>} };
 export type CombatEvent = {
   village?:'hide'|'tag'|'stop';
   boat?:BoatCommand;
   run?:string;
   kind: 'dungeon-return' | 'village' | 'boat' | 'party' | 'duel' | 'chapter' | 'environment' | 'condition' | 'attack' | 'hit' | 'death' | 'animation' | 'challenge' | 'effect';
-  target: string; chapter?:1|2|3|4; party?:number; serial?: number; source?: string; amount?: number; crit?: boolean; rage?: number; action?: string;
+  target: string; chapter?:1|2|3|4|5|6; party?:number; serial?: number; source?: string; amount?: number; crit?: boolean; rage?: number; action?: string;
   environment?: { mood?: 0 | 1 | 2 | 3; beacon?: boolean };
   condition?: { stun: number; slow: number; slowPct: number; pushX: number; pushZ: number; pushTime: number };
   effect?: { stun: number; rust: number; rustFor: number; pushX: number; pushZ: number; pushTime: number };
@@ -30,7 +30,7 @@ const n = (v: unknown, lo = 0, hi = Number.MAX_SAFE_INTEGER): v is number => typ
 const key = (v: unknown): v is string => typeof v === 'string' && /^([ent]\d{1,3}|b3|b10|b20|b30|b300|f3|f10|f20|f30|f300)$/.test(v);
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
 export function worldOf(v: unknown): WorldState | null {
-  if (!record(v) || !Array.isArray(v.entities) || v.entities.length > 128 || !Array.isArray(v.bosses) || ![3,4,5].includes(v.bosses.length) || typeof v.rust !== 'boolean' || typeof v.abyss !== 'boolean' || ![1,2,3,4].includes(v.chapter) || (v.frostCleared!==undefined&&typeof v.frostCleared!=='boolean') || (v.finalCleared!==undefined&&typeof v.finalCleared!=='boolean') || typeof v.firstEnding !== 'boolean' || typeof v.trueCleared !== 'boolean') return null;
+  if (!record(v) || !Array.isArray(v.entities) || v.entities.length > 128 || !Array.isArray(v.bosses) || ![3,4,5].includes(v.bosses.length) || typeof v.rust !== 'boolean' || typeof v.abyss !== 'boolean' || ![1,2,3,4,5,6].includes(v.chapter) || (v.frostCleared!==undefined&&typeof v.frostCleared!=='boolean') || (v.finalCleared!==undefined&&typeof v.finalCleared!=='boolean') || typeof v.firstEnding !== 'boolean' || typeof v.trueCleared !== 'boolean') return null;
   if (!record(v.weather) || ![0,1,2,3].includes(v.weather.mood) || typeof v.weather.beacon !== 'boolean' || !n(v.weather.clock,0,10000000)) return null;
   if(v.dungeon!==undefined&&v.dungeon!==null){const d=v.dungeon;
     if(!record(d)||(d.level<100?v.chapter!==3:v.chapter!==4)||![35,50,75,150,200,250].includes(d.level)||typeof d.run!=='string'||!/^[a-zA-Z0-9-]{1,64}$/.test(d.run)||!Number.isInteger(d.stage)||!n(d.stage,1,3)||!['wave','rest','clear','failed'].includes(d.phase)||!n(d.left,0,10)||!n(d.clock,0,10000000)||!Number.isSafeInteger(d.hazard)||!n(d.hazard,0,10000000)||!Array.isArray(d.members)||d.members.length>8||d.members.some((m:unknown)=>typeof m!=='string'||m.length>64)||new Set(d.members).size!==d.members.length)return null;
@@ -63,7 +63,7 @@ export function worldOf(v: unknown): WorldState | null {
     const m = b.mech;
     if (m !== null && (!record(m) || !n(m.id) || !['slam','spray','undertow','nova','eclipse','cross','barrage'].includes(m.kind) || !Array.isArray(m.at) || m.at.length !== 3 || !m.at.every((x: unknown) => n(x,-2000,2000)) || !n(m.yaw,-10000,10000) || !n(m.left,0,10))) return null;
   }
-  if(!['b3','b10','b20'].every(id=>bossIds.has(id))||(v.chapter>=3&&!bossIds.has('b30'))||(v.chapter===4&&!bossIds.has('b300'))||(v.frostCleared===true&&!bossIds.has('b300'))||(v.finalCleared===true&&!bossIds.has('b30')))return null;
+  if(!['b3','b10','b20'].every(id=>bossIds.has(id))||(v.chapter>=3&&!bossIds.has('b30'))||(v.chapter>=4&&!bossIds.has('b300'))||(v.frostCleared===true&&!bossIds.has('b300'))||(v.finalCleared===true&&!bossIds.has('b30')))return null;
   return v as WorldState;
 }
 export function eventOf(v: unknown, authority: boolean): CombatEvent | null {
@@ -74,7 +74,7 @@ export function eventOf(v: unknown, authority: boolean): CombatEvent | null {
     if(v.kind==='boat'&&v.target==='world'&&record(v.boat)&&['board','leave','drive','call'].includes(v.boat.action)&&Number.isInteger(v.boat.throttle)&&n(v.boat.throttle,-1,1)&&Number.isInteger(v.boat.steer)&&n(v.boat.steer,-1,1))return {kind:'boat',target:'world',boat:{action:v.boat.action,throttle:v.boat.throttle,steer:v.boat.steer}};
     if(v.kind==='party'&&Number.isInteger(v.party)&&n(v.party,0,4))return {kind:'party',target:'world',party:v.party};
     if(v.kind==='duel'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.target)&&n(v.amount,1,Number.MAX_SAFE_INTEGER))return {kind:'duel',target:v.target,amount:v.amount,crit:v.crit===true};
-    if (v.kind === 'chapter' && v.target === 'world' && [1,2,3,4].includes(v.chapter)) return {kind:'chapter',target:'world',chapter:v.chapter};
+    if (v.kind === 'chapter' && v.target === 'world' && [1,2,3,4,5,6].includes(v.chapter)) return {kind:'chapter',target:'world',chapter:v.chapter};
     if (v.kind === 'environment' && record(v.environment) && ([0,1,2,3].includes(v.environment.mood) || typeof v.environment.beacon === 'boolean')) return {kind:'environment',target:'world',environment:{...([0,1,2,3].includes(v.environment.mood)?{mood:v.environment.mood}:{}),...(typeof v.environment.beacon==='boolean'?{beacon:v.environment.beacon}:{})}};
     const f=v.condition;
     if (v.kind === 'condition' && key(v.target) && record(f) && n(f.stun,0,2) && n(f.slow,0,4) && n(f.slowPct,0,0.5) && n(f.pushX,-30,30) && n(f.pushZ,-30,30) && n(f.pushTime,0,0.5)) return { kind:'condition',target:v.target,condition:f as CombatEvent['condition'] };
