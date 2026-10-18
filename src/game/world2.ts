@@ -27,7 +27,7 @@ import {StarEnemyArmour} from './starEnemyArmour';
 import {StarThrone} from './starThrone';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
 import {layoutStarhaven,starCrystalGarden} from './world2Colliders';
-import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS} from '../sim/world/queries';
+import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
 
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
@@ -305,7 +305,7 @@ export class HiddenWorld {
     const w=g.world,island=this.fourth;this.chapter=4;this.rendered=true;
     this.baseRoot.visible=this.root.visible=this.third.root.visible=false;island.root.visible=true;this.resetPortalArrival();
     w.heightAt=(x,z)=>island.height(x,z);
-    w.resolveCollision=(x,z,r,out)=>{const d=Math.hypot(x/128,(z-2)/155);if(d>.8){x*=.8/d;z=2+(z-2)*.8/d;}return island.collision.resolve(x,z,r,out);};
+    w.resolveCollision=(x,z,r,out)=>resolveOnIsland(island.collision,SNOW_BOUNDS,[],x,z,r,out);
     w.raycastSolid=(a,b)=>island.collision.raycast(a,b);
     w.pois.spawn.position.copy(island.spawn);w.pois.spawn.yaw=Math.PI;
     for(const [id,x,z] of [['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-55,25],['shore',55,25],['wreck',48,-15],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-78]] as const)w.pois[id].position.set(x,island.height(x,z),z);

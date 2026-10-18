@@ -9,6 +9,8 @@
 // Tolerance: Chrome's Math.sin, cos, atan2 and exp differ from Node's in the last bit, so colliders
 // placed with them (box angles, World II's sin-hash scatter) agree to about 1e-9, not exactly.
 import { chromium } from 'playwright';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { compareRuns, loadSim, readBaked, runQueries, samplePoints, WORLDS } from './collision-bake-lib.mjs';
 
 const args = process.argv.slice(2);
@@ -16,6 +18,9 @@ const opt = (name, dflt) => (args.includes(name) ? args[args.indexOf(name) + 1] 
 const url = opt('--url', process.env.CC_QA_URL ?? 'http://localhost:4173/');
 const quality = opt('--quality', 'high');
 const TOL = 1e-6;
+const out = resolve(opt('--out', 'tmp/qa/collision-current-dev'));
+mkdirSync(out, { recursive: true });
+const report = { quality, url, tolerance: TOL, worlds: [], errors: [] };
 
 const sim = await loadSim();
 const browser = await chromium.launch({ channel: 'chrome', headless: !args.includes('--headed'), args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
@@ -38,8 +43,11 @@ try {
       ([w, src, pts]) => {
         const g = window.app.current.game;
         g.creatorTravel = true;
-        g.world2.go(w === 'w1' ? 1 : w === 'w2' ? 2 : 3);
-        const col = w === 'w1' ? g.world.debug.collision : w === 'w2' ? g.world2.collision : g.world2.third.collision;
+        g.god = true;
+        const chapter = Number(w.slice(1));
+        g.world2.go(chapter);
+        if (g.world2.chapter !== chapter) throw new Error(`travel failed: ${w}`);
+        const col = w === 'w1' ? g.world.debug.collision : w === 'w2' ? g.world2.collision : w === 'w3' ? g.world2.third.collision : g.world2.fourth.collision;
         const shapes = col.shapes.map((s) => (s.kind === 0 ? [0, s.c.x, s.c.z, s.c.r, s.c.y0, s.c.y1, s.c.los ? 1 : 0] : [1, s.b.x, s.b.z, s.b.hx, s.b.hz, s.b.c, s.b.s, s.b.y0, s.b.y1, s.b.los ? 1 : 0]));
         const blocked = [];
         col.blocked.forEach((b, i) => b && blocked.push(i));
@@ -54,7 +62,7 @@ try {
     const bakedBlocked = [];
     loaded.collision.blocked.forEach((b, i) => b && bakedBlocked.push(i));
     const c = baked.cells;
-    const bakedGround = baked.ground.kind === 'dawn' ? null : Array.from(sim.base64ToFloats(baked.ground.h));
+    const bakedGround = ['dawn', 'snow'].includes(baked.ground.kind) ? null : Array.from(sim.base64ToFloats(baked.ground.h));
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     // Largest numeric difference between two structures, or Infinity if their shapes differ.
     const maxDiff = (a, b) => {
@@ -77,13 +85,19 @@ try {
     const d = compareRuns(browserSide.rows, runQueries(loaded, pts));
     const ok = !Object.values(checks).some((v) => String(v).includes('DIFFER')) && d.height <= TOL && d.resolve <= TOL && d.ray <= TOL && d.rayHitMismatch === 0;
     failed ||= !ok;
-    console.log(`${ok ? 'PASS' : 'FAIL'} ${w}`, JSON.stringify({ ...checks, points: d.points, maxDiff: { heightAt: d.height, resolveCollision: d.resolve, raycastSolid: d.ray }, rayHitMismatch: d.rayHitMismatch }));
+    const result = { world: w, source: baked.source, ok, ...checks, points: d.points, maxDiff: { heightAt: d.height, resolveCollision: d.resolve, raycastSolid: d.ray }, rayHitMismatch: d.rayHitMismatch };
+    report.worlds.push(result);
+    console.log(`${ok ? 'PASS' : 'FAIL'} ${w}`, JSON.stringify(result));
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: resolve(out, `${quality}-${w}.png`) });
   }
+  report.errors = errors;
   if (errors.length) {
     failed = true;
     console.log('page errors:', errors);
   }
 } finally {
+  writeFileSync(resolve(out, `${quality}.json`), JSON.stringify({ ...report, passed: !failed && report.worlds.length === WORLDS.length, totalPoints: report.worlds.reduce((n, w) => n + w.points, 0) }, null, 2));
   await browser.close();
 }
 process.exit(failed ? 1 : 0);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Bakes every world's colliders to public/world/collision-w{1,2,3}.json for the server (numbers only,
+// Bakes every world's colliders to public/world/collision-w{1,2,3,4}.json for the server (numbers only,
 // loaded by src/sim/world/baked.ts). Runs the same layout functions the browser runs, in Node,
 // without the GLB kits; only the nature kit's piece names are read from its file.
 //   node tools/bake-collision.mjs           # write the files

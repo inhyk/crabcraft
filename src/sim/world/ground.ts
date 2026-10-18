@@ -1,4 +1,4 @@
-// Ground height of the three worlds, shared by the browser and the server (numbers only).
+// Ground height of the four worlds, shared by the browser and the server (numbers only).
 
 export interface HeightGrid {
   minX: number;
@@ -60,4 +60,13 @@ export function dawnHeight(x: number, z: number): number {
   const upland = 13 * smoothstep(-z, 5, 55);
   const hills = Math.sin(x * 0.045) * Math.sin(z * 0.04) * 2 * (1 - Math.exp((-x * x) / 400));
   return radial > 0.86 ? shore : 4 + upland + hills;
+}
+
+/** World IV: Frostlight's shore, rising trail and flat Boreas arena. */
+export function snowHeight(x: number, z: number): number {
+  const edge = Math.hypot(x / 128, (z - 2) / 155);
+  const plateau = 5 + 14 * smoothstep(-z, 5, 55);
+  const hills = Math.sin(x * .052) * Math.sin(z * .037) * 2.5 * (1 - Math.exp(-x * x / 600));
+  const t = smoothstep(Math.hypot(x, z + 78), 22, 32);
+  return edge > .83 ? 5 - (edge - .83) * 70 : (1 - t) * 19 + t * (plateau + hills);
 }

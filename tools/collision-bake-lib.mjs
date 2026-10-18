@@ -11,7 +11,7 @@ let esbuild;
 try { esbuild = require('esbuild'); } catch { esbuild = require(require.resolve('esbuild', { paths: [require.resolve('wrangler')] })); }
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-export const WORLDS = ['w1', 'w2', 'w3'];
+export const WORLDS = ['w1', 'w2', 'w3', 'w4'];
 export const bakedPath = (w) => join(ROOT, 'public/world', `collision-${w}.json`);
 /** The kit whose piece names the bake reads (World II's forest needs its trees). */
 const NATURE_GLB = 'public/models/world/nature.glb';
@@ -94,7 +94,7 @@ export async function loadSim() {
 }
 
 /** Where each world is sampled: x0, x1, z0, z1. */
-export const SAMPLE_BOX = { w1: [-230, 270, -250, 250], w2: [-140, 140, -150, 170], w3: [-150, 150, -175, 175] };
+export const SAMPLE_BOX = { w1: [-230, 270, -250, 250], w2: [-140, 140, -150, 170], w3: [-150, 150, -175, 175], w4: [-150, 150, -175, 175] };
 
 /**
  * Query points: a jittered 100 x 100 grid over the world, plus two points at every solid (inside

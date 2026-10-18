@@ -10,6 +10,7 @@ export interface IslandBounds {
   max: number;
 }
 export const STAR_BOUNDS: IslandBounds = { cz: 10, rx: 110, rz: 132, max: 0.91 };
+export const SNOW_BOUNDS: IslandBounds = { cz: 2, rx: 128, rz: 155, max: 0.8 };
 export const DAWN_BOUNDS: IslandBounds = { cz: 3, rx: 122, rz: 149, max: 0.81 };
 
 export interface PushCircle {

@@ -5,7 +5,7 @@
 // and ability key presses, screenshots each stage, and fails on any console error or uncaught
 // exception. In the multiplayer edition Corrodius waits for level 3 and the dance endings come after
 // the later bosses: Nereid's defeat (level 10) plays the chapter ending, Astra's in World II opens
-// World III, and Solarkan's there plays the true ending and the credits. The launch notice is
+// World III, Solarkan unlocks World IV, and Boreas plays the true ending and credits. The launch notice is
 // confirmed first, and the hero's breakdance must play in both endings, to the end in the true one.
 //
 // Usage: node tools/playtest.mjs [--url http://localhost:5206] [--out dir] [--class warrior,mage,priest] [--headed]
@@ -272,7 +272,7 @@ async function run(cls) {
     await page.click('.chapter-ending button');
     await page.waitForFunction(() => window.cc.game.world2.chapter === 2, null, { timeout: 60000 });
     await sleep(2000);
-    // Astra down in World II opens World III; Solarkan down there plays the true ending, then the credits.
+    // Astra opens World III; Solarkan opens World IV, where level 300 Boreas rescues Mira.
     await page.evaluate(() => {
       const g = window.cc.game;
       g.combat.kill(g.worldBoss.unit, g.player.unit);
@@ -289,6 +289,21 @@ async function run(cls) {
       const g = window.cc.game;
       g.combat.kill(g.dawnBoss.unit, g.player.unit);
     });
+    await page.waitForFunction(() => window.cc.game.journey.finalCleared, null, { timeout: 30000 });
+    if (await page.evaluate(() => window.cc.game.ending.active)) throw new Error('Solarkan started the ending before Boreas');
+    await page.evaluate(() => {
+      const g = window.cc.game;
+      g.player.restoreXp(22000 + 2200 * 280 + 100 * 280 * 279);
+      g.world2.go(4);
+    });
+    await page.waitForFunction(() => window.cc.game.world2.chapter === 4, null, { timeout: 60000 });
+    await sleep(2000);
+    await shot('07c-frostlight');
+    await page.evaluate(() => {
+      const g = window.cc.game;
+      g.combat.kill(g.frostBoss.unit, g.player.unit);
+    });
+    await page.waitForFunction(() => window.cc.game.journey.frostCleared, null, { timeout: 30000 });
     await waitFor((s) => s.ending, 30000, 'true ending');
     await waitFor((s) => s.endingBreakdance && s.endingBreakdance.step === 'break_backflip', 40000, 'true ending back flip');
     await shot('07-ending-break-backflip');
