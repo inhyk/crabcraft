@@ -28,7 +28,7 @@ function freezeGrant(grant:EarnedGrant):EarnedGrant {const g=copy(grant);Object.
 export class InMemoryAwardMailbox implements AwardMailbox {
  private readonly entries=new Map<string,{grant:EarnedGrant;applied:boolean}>();
  record(grant:EarnedGrant,alreadyAppliedToOwner:boolean):'recorded'|'duplicate' {const old=this.entries.get(grant.id);if(old){if(JSON.stringify(old.grant)!==JSON.stringify(grant))throw new Error('grant-id-content-conflict');if(alreadyAppliedToOwner)old.applied=true;return 'duplicate';}this.entries.set(grant.id,{grant:freezeGrant(grant),applied:alreadyAppliedToOwner});return 'recorded';}
- pending(character:CharacterId):readonly EarnedGrant[] {return [...this.entries.values()].filter(e=>e.grant.recipient===character&&!e.applied).map(e=>copy(e.grant));}
+ pending(character:CharacterId):readonly EarnedGrant[] {return [...this.entries.values()].filter(e=>e.grant.recipient===character&&!e.applied).map(e=>freezeGrant(e.grant));}
  acknowledgeApplied(character:CharacterId,grantId:string):void {const e=this.entries.get(grantId);if(!e||e.grant.recipient!==character)throw new Error('unknown-grant');e.applied=true;}
  debugState():readonly {grant:EarnedGrant;applied:boolean}[] {return copy([...this.entries.values()]);}
 }

@@ -2,7 +2,7 @@ import type { AreaServices, BossSim, CharacterId, Contribution, EarnedGrant, Ent
 import { enemyStats } from './data/enemies.ts';
 import { BOSS_PROFILES } from './data/bosses.ts';
 import { canChallenge, patrolReward } from './data/progression.ts';
-import { activeObjective, questBump } from './data/quests.ts';
+import { activeObjective, QUESTS, questBump } from './data/quests.ts';
 import { InteractionRules } from './interactions.ts';
 const key=(ref:EntityRef):string=>JSON.stringify([ref.area,ref.id,ref.life]);
 const copy=<T>(value:T):T=>structuredClone(value);
@@ -33,7 +33,7 @@ export class WorldRules {
     const controller=s.controller(victim),spawnId=controller&&'spawnId' in controller&&typeof controller.spawnId==='string'?controller.spawnId:null,spawn=s.definition.enemies.find(e=>e.id===spawnId),role=spawn?.role??(spawnId?.includes(':add:')?'add':'ordinary');
     const stats=enemyStats(u.kind,u.level,s.world==='w1'?1:s.world==='w2'?2:3,role);
     if(role!=='add'){xp=stats.xp;coins=Math.max(5,Math.round(stats.xp/4));if(s.world!=='w1'||credit.flags.rustCleared)objectives.push({kind:'patrol-kill',amount:1});}
-    if(u.kind==='scrapling'){objectives.push({kind:'kill-scrapling',amount:1});if(credit.cogEligible){const drop=s.random.next()<.7||credit.cogMisses>=2;objectives.push({kind:drop?'cog-reset':'cog-miss',amount:1});if(drop)objectives.push({kind:'collect-cog',amount:1});}}
+    if(u.kind==='scrapling'){objectives.push({kind:'kill-scrapling',amount:1});if(credit.cogEligible)objectives.push({kind:'cog-roll',amount:s.random.next()});}
     else if(u.kind==='scavenger')objectives.push({kind:'kill-scavenger',amount:1});
    }else if(u.kind==='boss'){
     const controller=s.controller(victim),profile=controller&&'profile' in controller?controller.profile:null;if(typeof profile!=='string'||!(profile in BOSS_PROFILES))continue;const id=profile as BossSim['profile'];if(!credit.flags[FLAGS[id]])xp=BOSS_PROFILES[id].reward;flags.push(FLAGS[id]);objectives.push({kind:id==='eclipse'?'eclipse-boss':id==='dawn'?'dawn-boss':'boss',amount:1},{kind:'clear-encounter-blessing',amount:1});
@@ -42,17 +42,18 @@ export class WorldRules {
    planned.push(grant);this.grants.set(grant.id,{grant:copy(grant),appliedHere:false,acknowledged:false});characters.push(credit.character);
   }
   // All entitlements exist before mutating the first recipient. A failed recipient remains queued.
-  for(const grant of planned){const appliedHere=this.applyGrant(grant)!=='not-owner';this.grants.get(grant.id)!.appliedHere=appliedHere;s.emit({type:'reward',grant,appliedHere});if(grant.objectives.some(o=>o.kind==='collect-cog'))s.timers.schedule(s.time+.45,{kind:'lootPresentation',grantId:grant.id,corpse:copy(victim),recipient:grant.recipient,item:'cog'});}
+  for(const grant of planned){const appliedHere=this.applyGrant(grant)!=='not-owner';this.grants.get(grant.id)!.appliedHere=appliedHere;s.emit({type:'reward',grant,appliedHere});}
   if(u.kind==='boss'&&characters.length){s.timers.schedule(s.time+1.8,{kind:'victory',boss:copy(victim),recipients:characters,stage:'banner'});s.timers.schedule(s.time+5,{kind:'victory',boss:copy(victim),recipients:characters,stage:'end'});}
  }
  applyGrant(grant:EarnedGrant):'applied'|'duplicate'|'not-owner' {
+  for(const o of grant.objectives)if(o.kind==='cog-roll'&&(!Number.isFinite(o.amount)||o.amount<0||o.amount>=1))throw new Error('invalid-cog-roll');
   const s=this.services,p=s.playerByCharacter(grant.recipient);if(!p)return 'not-owner';let ids=this.applied.get(grant.recipient);if(ids?.has(grant.id))return 'duplicate';if(!ids){ids=new Set();this.applied.set(grant.recipient,ids);}
-  const unit=s.getUnit(p.state.unit);if(!unit)return 'not-owner';const priorState=copy(p.state),priorUnit=copy(unit);
+  const unit=s.getUnit(p.state.unit);if(!unit)return 'not-owner';const priorState=copy(p.state),priorUnit=copy(unit);let cogPresentation=false;
   try{s.outcomeTransaction(()=>{p.gainXp(grant.xp);p.state.coins=Math.min(Number.MAX_SAFE_INTEGER,p.state.coins+grant.coins);
   for(const flag of grant.flags)p.state.flags[flag]=true;
-  for(const o of grant.objectives){if(o.kind==='clear-encounter-blessing'){const u=s.getUnit(p.state.unit);if(u){u.blessingUntil=0;u.encounterBlessing=false;}}else if(o.kind==='cog-reset')p.state.cogMisses=0;else if(o.kind==='cog-miss')p.state.cogMisses++;else if(o.kind==='patrol-kill'){const kills=(p.state.quests.progress['patrol-kills']??0)+o.amount;p.state.quests.progress['patrol-kills']=kills%5;if(kills>=5){const u=s.getUnit(p.state.unit);if(u)p.gainXp(patrolReward(u.level)*Math.floor(kills/5));}}else questBump(p,s,o.kind,o.amount,true);}
+  for(const o of grant.objectives){if(o.kind==='clear-encounter-blessing'){const u=s.getUnit(p.state.unit);if(u){u.blessingUntil=0;u.encounterBlessing=false;}}else if(o.kind==='cog-roll'){const objective=QUESTS.q1.objectives.find(o=>o.kind==='collect-cog')!;if(p.state.quests.status.q1!=='active'||(p.state.quests.progress[objective.id]??0)>=objective.count)continue;if(o.amount<.7||p.state.cogMisses>=2){p.state.cogMisses=0;questBump(p,s,'collect-cog',1,true);cogPresentation=true;}else p.state.cogMisses++;}else if(o.kind==='cog-reset')p.state.cogMisses=0;else if(o.kind==='cog-miss')p.state.cogMisses++;else if(o.kind==='patrol-kill'){const kills=(p.state.quests.progress['patrol-kills']??0)+o.amount;p.state.quests.progress['patrol-kills']=kills%5;if(kills>=5){const u=s.getUnit(p.state.unit);if(u)p.gainXp(patrolReward(u.level)*Math.floor(kills/5));}}else questBump(p,s,o.kind,o.amount,true);}
   });}catch(error){Object.assign(p.state,priorState);Object.assign(unit,priorUnit);throw error;}
-  ids.add(grant.id);const retained=this.grants.get(grant.id);if(retained)retained.appliedHere=true;return 'applied';
+  ids.add(grant.id);const retained=this.grants.get(grant.id);if(retained)retained.appliedHere=true;if(cogPresentation)s.timers.schedule(s.time+.45,{kind:'lootPresentation',grantId:grant.id,corpse:copy(grant.victim),recipient:grant.recipient,item:'cog'});return 'applied';
  }
  pendingGrants():readonly {grant:EarnedGrant;appliedHere:boolean}[]{return [...this.grants.values()].filter(e=>!e.acknowledged).map(({grant,appliedHere})=>({grant:copy(grant),appliedHere}));}
  acknowledgeGrant(id:string):void {const entry=this.grants.get(id);if(!entry)throw new Error('unknown-grant');entry.acknowledged=true;}
