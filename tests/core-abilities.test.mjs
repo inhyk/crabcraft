@@ -46,7 +46,15 @@ test('warrior auto checks impact reach; a stun cancels an existing actual swing'
 test('real combat crit-scaled lethal damage invokes death only once, heals preserve reported over-heal',()=>{const {area,unit,target}=fixture();target.hp=1;assert.equal(area.services.combat.damage(unit.ref,target.ref,25,{crit:true,school:'physical'}),25);assert.equal(target.alive,false);assert.equal(target.hp,0);area.services.combat.kill(target.ref,unit.ref);assert.equal(area.drainEvents().filter(r=>r.event.type==='death'&&r.event.unit.id===target.ref.id).length,1);unit.hp=unit.maxHp-2;assert.equal(area.services.combat.heal(unit.ref,unit.ref,10,true),2);const heal=area.drainEvents().find(r=>r.event.type==='heal').event;assert.equal(heal.amount,10);assert.equal(heal.crit,true);});
 
 
-test('world and player commands run in supplied order, forge rank affects only later attacks',()=>{for(const forgeFirst of [true,false]){const {area,player,unit,target}=fixture('mage',query,{npcs:[{id:'pip',position:{x:0,y:0,z:0},yaw:0}]});player.state.coins=100;const r=new Random(area.services.random.state()),crit=r.next()<.12,damage=(95+r.next()*20)*(crit?1.75:1);const forge={kind:'forgeBuy',npcId:'pip'},ability={kind:'ability',slot:5};area.step(new Map([[unit.ref.id,{seq:1,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands:forgeFirst?[forge,ability]:[ability,forge]}]]));assert.equal(player.state.attackRank,1);assert.equal(player.state.coins,0);assert.equal(5000-target.hp,Math.round(damage*(forgeFirst?1.08:1)));}});
+test('ordered real forge transactions affect later attacks and reject purchases after entering combat',()=>{
+ for(const [operation,rank,cost]of [['forgeBuy',0,100],['forgeUpgrade',3,400]])for(const forgeFirst of [true,false]){
+  const {area,player,unit,target}=fixture('mage',query,{npcs:[{id:'pip',position:{x:0,y:0,z:0},yaw:0}]});player.state.coins=cost;player.state.attackRank=rank;
+  const r=new Random(area.services.random.state()),crit=r.next()<.12,damage=(95+r.next()*20)*(crit?1.75:1),forge={kind:operation,npcId:'pip',slot:'weapon',request:41},ability={kind:'ability',slot:5};
+  area.step(new Map([[unit.ref.id,{seq:1,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands:forgeFirst?[forge,ability]:[ability,forge]}]]));
+  const expectedRank=forgeFirst?rank+1:rank;assert.equal(player.state.attackRank,expectedRank);assert.equal(player.state.coins,forgeFirst?0:cost);assert.equal(5000-target.hp,Math.round(damage*(1+expectedRank*.08)));
+  const result=area.drainEvents().find(r=>r.event.type==='equipment').event;assert.equal(result.request,41);assert.equal(result.result,forgeFirst?(operation==='forgeBuy'?'bought':'upgraded'):'busy');
+ }
+});
 
 // Exercise the real Area Combat so event, health cap and payment contracts stay coupled.
 test('steam blink heals10 after free or blocked travel, caps HP, and preserves cost/recovery',()=>{
