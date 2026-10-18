@@ -46,7 +46,7 @@ export class InMemoryTransferCoordinator implements TransferCoordinator {
   if(!point||point.destination!==destination.services.world||Math.hypot(unit.x-point.position.x,unit.y-point.position.y,unit.z-point.position.z)>point.range||!source.services.policy.canInteract(source.services.context,player.state,gate))return {ok:false,reason:'invalid-gate'};
   const chapter=destination.services.world==='w1'?1:destination.services.world==='w2'?2:3;
   if(chapter>=2&&(!player.state.flags.abyssCleared||chapter===3&&!player.state.flags.trueCleared))return {ok:false,reason:'locked-world'};
-  if(source.services.time-unit.lastCombat<5)return {ok:false,reason:'in-combat'};
+  if(source.services.encounterActive()||source.services.time-unit.lastCombat<5)return {ok:false,reason:'in-combat'};
   let admission:ReturnType<Area['reserveAdmission']>=null,departure:ReturnType<Area['stageDeparture']>|null=null,arrival:ReturnType<Area['stageArrival']>|null=null;
   try {admission=destination.reserveAdmission(character,destination.services.definition.spawn.id,hostTick);if(!admission)return {ok:false,reason:'destination-full'};departure=source.stageDeparture(unit.ref);arrival=destination.stageArrival(admission,departure.dto);this.journal(source);
    if(!this.characters.compareAndSwap(character,owner,arrival.newRef))throw new Error('registry-conflict');
