@@ -7,27 +7,11 @@ import { distTo, gapTo, lineOfSight, moveTo, speedMul, teleport } from './unit.t
 import { levelForXp, xpForLevel } from './data/progression.ts';
 import { freshQuests } from './data/quests.ts';
 import { BREAK_ROUTINE } from './data/actions.ts';
+import { validCommand } from './input.ts';
 export const GCD=1;
 export const JUMP_CLIP=Object.freeze({from:.8,to:1.56,speed:1.15});
 const NEUTRAL:PlayerIntent={seq:0,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands:[]};
 const sameRef=(a:EntityRef|null,b:EntityRef|null)=>a===b || !!(a&&b&&a.area===b.area&&a.id===b.id&&a.life===b.life);
-function validCommand(command:unknown):boolean {
-  if(!command||typeof command!=='object')return false;
-  const c=command as Record<string,unknown>,text=(v:unknown)=>typeof v==='string'&&v.length>0&&v.length<=128;
-  switch(c.kind){
-    case 'ability':return [1,2,3,4,5].includes(c.slot as number);
-    case 'target':{if(c.target===null)return true;if(!c.target||typeof c.target!=='object')return false;const r=c.target as Record<string,unknown>;return text(r.area)&&Number.isSafeInteger(r.id)&&Number(r.id)>0&&Number(r.id)<=0xffffffff&&Number.isSafeInteger(r.life)&&Number(r.life)>0&&Number(r.life)<=0xffffffff;}
-    case 'jump':case 'dance':case 'cancel':case 'endingReplay':return true;
-    case 'channelStart':return ['recall','beacon','waystone'].includes(c.channel as string)&&(c.targetId===undefined||text(c.targetId));
-    case 'interact':return text(c.targetId);
-    case 'questTrack':return text(c.questId);
-    case 'questAccept':case 'questTurnIn':return text(c.questId)&&text(c.npcId);
-    case 'forgeBuy':return text(c.npcId);
-    case 'travel':return text(c.gateId);
-    case 'bossChallenge':return ['rust','abyss','eclipse','dawn','frost'].includes(c.profile as string);
-    default:return false;
-  }
-}
 
 export function createPlayerState(character:CharacterId,unit:SimUnit,classId:ClassId,now=0):PlayerState {
   const cls=CLASSES[classId],mana=cls.resource==='mana';
