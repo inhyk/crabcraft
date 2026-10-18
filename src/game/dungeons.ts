@@ -130,7 +130,7 @@ export class DungeonExpeditions {
   private strike(){
     const s=this.state!,index=DUNGEONS.findIndex(d=>d.level===s.level),src=this.pool.find(e=>e.unit.alive)?.unit;
     if(!src)return;
-    for(const p of this.g.combatPlayers())if(p.alive&&dungeonDanger(index,s.hazard,p.pos.x-X,p.pos.z-Z))this.g.combat.damage(src,p,Math.round(18+s.level*.42));
+    for(const p of this.g.combatPlayers())if(p.alive&&dungeonDanger(index,s.hazard,p.pos.x-X,p.pos.z-Z))this.g.combat.damage(src,p,Math.round((18+s.level*.42)*1.25));
     this.g.vfx.ring(new THREE.Vector3(X,Y+.18,Z),new THREE.Color(0xffb978),1,17,.5,.8,0);
   }
   private reward(){
