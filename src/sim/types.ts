@@ -1,3 +1,4 @@
+import type { LegacyConfig, LegacyEnvelope, LegacyRequest } from './legacy.ts';
 /** Shared contract for the implemented deterministic numeric simulation core.
  * Current gameplay refresh follows canonical dev 60df24f plus the merged S4 foundation.
  * Browser facade conversion, S1 event wiring and S3 baked query integration have separate gates.
@@ -315,6 +316,10 @@ export interface Contribution { victim: EntityRef; contributors: readonly Charac
  * Subsystem controllers receive these services, not Game or server/WS/DOM objects.
  */
 export interface AreaServices {
+  readonly execution?: 'authoritative' | 'legacy-host' | 'legacy-follower';
+  routeDamage?(source:EntityRef|null,target:EntityRef,amount:number,options:HitOptions):number|null;
+  requestBossWake?(boss:EntityRef):boolean;
+  reportDamage?(source:EntityRef|null,target:EntityRef,amount:number,options:HitOptions):void;
   readonly id: AreaId; readonly world: WorldId; readonly time: number; readonly tick: Tick;
   readonly query: WorldQuery; readonly actionData: ActionData; readonly context: AreaContext; readonly definition: AreaDefinition; readonly policy: AreaPolicy;
   readonly random: RandomSource; readonly ids: IdSource; readonly combat: CombatRules; readonly timers: AreaTimers;
@@ -419,6 +424,12 @@ export interface TransferCoordinator {
 }
 
 export interface Area {
+  configureLegacy(config:LegacyConfig|null):void;
+  bindLegacy(key:string,unit:EntityRef,owner?:string):void;
+  enqueueLegacy(packet:LegacyEnvelope):boolean;
+  drainLegacyRequests():readonly LegacyRequest[];
+  attachReplica(character:CharacterId,peer:string,archetype:string):EntityRef;
+  detachReplica(ref:EntityRef):void;
   readonly services: AreaServices;
   readonly units: ReadonlyMap<EntityId, SimUnit>;
   readonly players: ReadonlyMap<EntityId, PlayerSim>;

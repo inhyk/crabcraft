@@ -1,5 +1,6 @@
 import type { ActionId, ActionRequest, AreaServices, DebugValue, EnemySpawn, EntityRef, HitPlan, SimUnit, Vec3 } from './types.ts';
 import { actionRequest, actionHitDelay } from './data/actions.ts';
+import type { LegacyUnitObservation } from './legacy.ts';
 import { immutable } from './events.ts';
 import { worldChapter, validatePopulation, angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
 import { gapTo as gap, moveTo, speedMul, lineOfSight as unitLineOfSight } from './unit.ts';
@@ -39,6 +40,8 @@ export class Enemy {
     const rustCleared=players.some(p=>s.player(p.ref)?.state.flags.rustCleared===true);
     return enemyStats(this.kind,s.policy.enemyLevel(this.spawn,{partyLevel,rustCleared,chapter}),chapter,this.spawn.role);
   }
+  applyObservation(value:LegacyUnitObservation):void {if(value.enemyState)this.state=value.enemyState;if(value.xp!==undefined)this.stats.xp=value.xp;const cast=value.seaCast;if(cast){const changed=this.seaCast?.id!==cast.id;this.seaCast={id:cast.id,x:cast.x,y:cast.y,z:cast.z,until:this.services.time+cast.left};if(changed)this.services.emit({type:'attack',src:this.unit,attack:'enemy-sea-cast',stage:'start',at:{x:cast.x,y:cast.y,z:cast.z}});}else this.seaCast=null;}
+  resumeAuthority():void {this.services.cancelPendingHit(this.unit);this.leap=null;this.stats=enemyStats(this.kind,this.actor.level,worldChapter(this.services.world),this.spawn.role);this.nextSwing=this.services.time+.8;if(this.state==='dead')this.deadAt=this.services.time;}
   onDamaged(source:EntityRef|null):void{if(this.state==='idle'&&source&&this.services.getUnit(source))this.aggro(true);}
   aggro(withPack:boolean):void{
     if(this.state!=='idle'||!this.actor.alive)return;this.state='chase';this.nextSwing=Math.max(this.nextSwing,this.services.time+.6);
