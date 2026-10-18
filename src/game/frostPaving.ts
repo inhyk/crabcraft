@@ -14,6 +14,8 @@ import {SNOW_DEFORM_READ,type SnowDeform} from './snowDeform';
  * Deep snow and the outer edge fade out so the snowfield itself shows, ripples and glints included, and the two
  * never meet at a seam. The kerbs lie under the banked snow, as they would.
  * Everything visible stays inside onIslandPath(), so prints, spray and covers() agree with what is drawn.
+ * The snow glints follow snowSurface.ts's port of SNOWFLOW's grazing-angle glints (shading.wgsl, MIT, Copyright (c)
+ * 2026 Maksymilian Dendura; see NOTICE.md), one octave.
  */
 
 const MAX_SEG = 8;
