@@ -10,6 +10,9 @@ export class Input {
   private buttons = new Set<number>();
   private buttonsPressed = new Set<number>();
   private buttonsReleased = new Set<number>();
+  private pointerId: number | null = null;
+  /** Keep the gesture's origin until contextmenu, which can follow pointerup on Windows. */
+  private suppressContextMenu = false;
   /** Mouse movement since the last endFrame(), in CSS pixels. */
   dx = 0;
   dy = 0;
@@ -25,11 +28,14 @@ export class Input {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('blur', this.onBlur);
-    target.addEventListener('pointerdown', this.onPointerDown);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    window.addEventListener('pointerdown', this.onPointerDown, true);
     window.addEventListener('pointerup', this.onPointerUp);
     window.addEventListener('pointermove', this.onPointerMove);
+    window.addEventListener('pointercancel', this.onPointerCancel);
+    target.addEventListener('lostpointercapture', this.onLostPointerCapture);
     target.addEventListener('wheel', this.onWheel, { passive: false });
-    target.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('contextmenu', this.onContextMenu, true);
   }
 
   /** `code` is a KeyboardEvent.code, e.g. 'KeyW', 'Space', 'Digit1', 'Tab', 'Escape'. */
@@ -69,16 +75,28 @@ export class Input {
   }
 
   /** Clear all accepted browser edges when focus or authenticated ownership changes. */
-  reset():void {this.down.clear();this.buttons.clear();this.endFrame();this.dragDistance=0;}
+  reset(): void {
+    this.down.clear();
+    this.buttons.clear();
+    this.endFrame();
+    this.dragDistance = 0;
+    this.suppressContextMenu = false;
+    this.releasePointer();
+  }
 
   dispose(): void {
+    this.onBlur();
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
-    this.target.removeEventListener('pointerdown', this.onPointerDown);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    window.removeEventListener('pointerdown', this.onPointerDown, true);
     window.removeEventListener('pointerup', this.onPointerUp);
     window.removeEventListener('pointermove', this.onPointerMove);
+    window.removeEventListener('pointercancel', this.onPointerCancel);
+    this.target.removeEventListener('lostpointercapture', this.onLostPointerCapture);
     this.target.removeEventListener('wheel', this.onWheel);
+    window.removeEventListener('contextmenu', this.onContextMenu, true);
   }
 
   private typing(e: Event): boolean {
@@ -104,17 +122,65 @@ export class Input {
   private readonly onBlur = (): void => {
     this.reset();
   };
+  private readonly onVisibilityChange = (): void => {
+    if (document.visibilityState === 'hidden') this.onBlur();
+  };
+  private releasePointer(): void {
+    const id = this.pointerId;
+    this.pointerId = null;
+    if (id !== null && this.target.hasPointerCapture(id)) this.target.releasePointerCapture(id);
+  }
+  private readonly onPointerCancel = (e: PointerEvent): void => {
+    if (e.pointerId === this.pointerId) this.onBlur();
+  };
+  private readonly onLostPointerCapture = (e: PointerEvent): void => {
+    // Normal pointerup also drops capture; it must not clear a still-held movement key.
+    if (e.pointerId === this.pointerId && this.buttons.size) this.onBlur();
+  };
+  private readonly onContextMenu = (e: MouseEvent): void => {
+    if (this.target.contains(e.target as Node) || this.suppressContextMenu || this.buttons.has(2)) {
+      e.preventDefault();
+    }
+    this.suppressContextMenu = false;
+  };
   private readonly onPointerDown = (e: PointerEvent): void => {
+    const onTarget = this.target.contains(e.target as Node);
+    // A new click on UI owns its normal menu, even after an earlier canvas drag.
+    this.suppressContextMenu = onTarget && e.button === 2;
+    if (!onTarget) return;
     this.buttons.add(e.button);
     this.buttonsPressed.add(e.button);
     this.dragDistance = 0;
     this.mouseX = e.clientX;
     this.mouseY = e.clientY;
+    this.pointerId = e.pointerId;
+    try {
+      this.target.setPointerCapture(e.pointerId);
+    } catch {
+      // A synthetic event or an already-cancelled pointer has no active pointer to capture.
+    }
   };
   private readonly onPointerUp = (e: PointerEvent): void => {
+    if (e.pointerId !== this.pointerId) return;
     if (this.buttons.delete(e.button)) this.buttonsReleased.add(e.button);
+    if (!this.buttons.size) this.releasePointer();
   };
   private readonly onPointerMove = (e: PointerEvent): void => {
+    if (this.pointerId !== null && e.pointerId !== this.pointerId) return;
+    // If the release happened outside the window, the next mouse move reports the truth.
+    if (e.pointerType === 'mouse' && this.buttons.size) {
+      for (const button of this.buttons) {
+        const mask = button === 0 ? 1 : button === 2 ? 2 : button === 1 ? 4 : 1 << button;
+        if (!(e.buttons & mask)) {
+          this.buttons.delete(button);
+          this.buttonsPressed.delete(button);
+        }
+      }
+      if (!this.buttons.size) {
+        this.dx = this.dy = 0;
+        this.releasePointer();
+      }
+    }
     const dx = e.clientX - this.mouseX;
     const dy = e.clientY - this.mouseY;
     this.mouseX = e.clientX;
