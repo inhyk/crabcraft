@@ -265,7 +265,8 @@ class Locomotion {
  constructor(unit:Readonly<SimUnit>){
   const p=unit.pose,m=numericArchetype(unit.archetype).metersToUnits;
   this.vel={x:p.controllerVx,z:p.controllerVz,yaw:p.controllerYaw};
-  this.want={x:p.localVx/m,z:p.localVz/m,yaw:p.yawRate};
+  const tiny=Math.abs(p.localVx)<.05&&Math.abs(p.localVz)<.05&&Math.abs(p.yawRate)<.05;
+  this.want={x:tiny?0:p.localVx/m,z:tiny?0:p.localVz/m,yaw:tiny?0:p.yawRate};
   this.phase=p.gaitPhase;this.idleT=p.locomotionTime;
   this.loco.q.set(p.locomotionQ);this.loco.pos.set(p.locomotionPosition);this.loco.rot.set(p.locomotionRotation);
  }
@@ -394,7 +395,7 @@ class Locomotion {
 /** Fresh authoritative pose clocks, independent for each unit. */
 export function initializeNumericPose():NumericPoseState {
  const p=new Pose();
- return {locomotionTime:0,localVx:0,localVz:0,yawRate:0,gaitPhase:0,controllerVx:0,controllerVz:0,controllerYaw:0,locomotionWeights:{},
+ return {previousX:0,previousZ:0,previousYaw:0,locomotionTime:0,localVx:0,localVz:0,yawRate:0,gaitPhase:0,controllerVx:0,controllerVz:0,controllerYaw:0,locomotionWeights:{},
  locomotionQ:Array.from(p.q),locomotionPosition:Array.from(p.pos) as [number,number,number],locomotionRotation:Array.from(p.rot) as [number,number,number,number],
  appliedQ:Array.from(p.q),appliedPosition:Array.from(p.pos) as [number,number,number],appliedRotation:Array.from(p.rot) as [number,number,number,number]};
 }
