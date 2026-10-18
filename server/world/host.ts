@@ -75,7 +75,7 @@ export interface ActualWorldHost {
   shutdown(deadlineMs: number): Promise<{ durable: boolean; unresolved: number }>;
   stats(): Readonly<Record<string, number | boolean>>;
 }
-interface Slot { kind: 'public' | 'party'; world: WorldId; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
+interface Slot { kind: 'public' | 'party'; world: LoadedWorldDefinition['world']; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
 interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; replay: GrantJson[]; pendingReplay: boolean; returnTo?: { world: WorldId; spawn: string } }
 interface Party { code: string; leader: string; members: Map<string, string>; pvp: boolean; encounter?: Slot }
 interface Connection {
@@ -169,10 +169,12 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (c.ws.readyState === WebSocket.OPEN) { const data = JSON.stringify(value); c.ws.send(data); metrics.packets++; metrics.bytesSent += Buffer.byteLength(data); }
   };
   const queueNotice = (c: Connection, world: WorldId, position: number) => {
+    const hostedWorld = PUBLIC_WORLDS.find(id => id === world);
+    if (!hostedWorld) { sendControl(c, { type: 'error', code: 'world-unavailable', retryable: false }); return; }
     const key = `${world}:${position}`;
     if (c.queueKey === key) return;
     c.queueKey = key;
-    if (!sendControl(c, { type: 'queued', world, position })) json(c, { type: 'queued', world, position });
+    if (!sendControl(c, { type: 'queued', world: hostedWorld, position })) json(c, { type: 'queued', world: hostedWorld, position });
   };
   const close = (c: Connection, code: string, retryable = false) => {
     if (c.closed) return;
@@ -322,7 +324,12 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     for (const c of connections) close(c, 'host-unavailable', true);
   }
   const drain = (slot: Slot) => {
-    const events = slot.area.drainEvents();
+    const events = slot.area.drainEvents().filter(({ event }) => {
+      if (event.type !== 'travelReady' || slots.has(event.destination)) return true;
+      const actor = [...actors.values()].find(a => sameRef(a.ref, event.unit));
+      if (actor?.connection) sendControl(actor.connection, { type: 'error', code: 'world-unavailable', retryable: false });
+      return false;
+    });
     if (slot.events.length + events.length > p.areaLimits.eventCount) throw new Error('publication event capacity');
     slot.events.push(...events); if (events.length) slot.watermark = events.at(-1)!.order;
     for (const { event } of events) if (event.type === 'travelReady') {

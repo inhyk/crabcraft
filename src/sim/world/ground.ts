@@ -73,3 +73,14 @@ export function snowHeight(x: number, z: number): number {
   const t = smoothstep(Math.hypot(x, z + 78), 22, 32);
   return edge > .83 ? 5 - (edge - .83) * 70 : (1 - t) * 19 + t * (plateau + hills);
 }
+
+/** Broad, walkable frontier terraces with the same surface in rendering and simulation. */
+export function realmHeight(chapter:5|6,x:number,z:number):number {
+ const edge=Math.hypot(x/128,(z-2)/155);
+ if(edge>.83)return 6-(edge-.83)*85;
+ const rise=chapter===5?9:12;
+ const hills=Math.sin(x*.047)*Math.sin(z*.035)*(chapter===5?2:1.4)*(1-Math.exp(-x*x/900));
+ const y=6+rise*smoothstep(-z,0,65)+hills;
+ const plaza=1-smoothstep(Math.hypot(x,z+72),20,28);
+ return y+(6+rise-y)*plaza;
+}

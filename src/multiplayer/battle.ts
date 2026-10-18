@@ -171,7 +171,7 @@ export class BattleSync {
     return true;
   }
   enterWorld2() {return this.travel(2);}
-  travel(chapter:1|2|3|4) {
+  travel(chapter:1|2|3|4|5|6) {
     if (this.sharedArea || !this.active || this.authority) return false;
     this.event({kind:'chapter',target:'world',chapter}); return true;
   }

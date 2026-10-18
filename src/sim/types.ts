@@ -7,8 +7,8 @@ import type {BoatCommand, BoatState, VillageRound, FeatureEvent, NpcFeatureEvent
  * Browser facade conversion, S1 event wiring and S3 baked query integration have separate gates.
  * Core state and events contain numeric/value data, never renderer objects, browser callbacks or I/O.
  */
-export type WorldId = 'w1' | 'w2' | 'w3' | 'w4';
-export type Chapter = 1 | 2 | 3 | 4;
+export type WorldId = 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6';
+export type Chapter = 1 | 2 | 3 | 4 | 5 | 6;
 export type EquipmentSlot = 'weapon' | 'armor';
 export type EquipmentResult = 'bought' | 'owned' | 'busy' | 'coins' | 'upgraded' | 'unowned' | 'max';
 export type BossProfileId = 'rust' | 'abyss' | 'eclipse' | 'dawn' | 'frost';
