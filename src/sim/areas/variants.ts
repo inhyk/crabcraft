@@ -1,7 +1,7 @@
 /** Server registrations derived from the same immutable gameplay layout. No runtime ownership here. */
 import type { AreaDefinition, BossProfileId, WorldId } from '../types.ts';
 import { deepFreeze } from './world1.ts';
-const FLAGS = Object.freeze({rust:'rustCleared',abyss:'abyssCleared',eclipse:'trueCleared',dawn:'finalCleared',frost:'frostCleared'} as const);
+const FLAGS = Object.freeze({rust:'rustCleared',abyss:'abyssCleared',eclipse:'trueCleared',dawn:'finalCleared',frost:'frostCleared',ember:'emberCleared',sky:'skyCleared'} as const);
 /** Public rescued/captive actors are personal presentation, never a substitute boss victory. */
 export function createPublicDefinition(definition:AreaDefinition):AreaDefinition {
  const d=structuredClone(definition),rescued:AreaDefinition['npcs'][number][]=d.bosses.map(b=>({id:b.freedNpcId,archetype:b.freedArchetype,position:b.freedPosition??b.arena.position,yaw:b.arena.yaw,targetable:false,personalVisibility:{flag:FLAGS[b.profile],value:!b.captiveBeforeVictory}}));

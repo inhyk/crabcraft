@@ -111,12 +111,12 @@ export class Boss {
   }
   private radius(kind:MechId){return mechanicRadius(this.isEndgame,kind);}
   private get laneLength(){return this.isEndgame?15:12;}private get laneWidth(){return this.isEndgame?1.4:1.8;}
-  private get barrageRadius(){return this.isEndgame?3:2.6;}private get innerRadius(){return this.isEndgame?3:4.5;}
-  private crossAngles(yaw:number):number[]{return this.isFrost?[yaw,yaw+Math.PI/3,yaw+2*Math.PI/3]:this.isEndgame?[yaw,yaw+Math.PI/4,yaw+Math.PI/2,yaw+3*Math.PI/4]:[yaw,yaw+Math.PI/2];}
-  private barragePoints(at:Vec3,yaw:number):Vec3[]{const points=this.isFrost?[[0,0],[7,0],[-7,0],[3.5,6],[-3.5,6],[3.5,-6],[-3.5,-6]]:this.isEndgame?[[0,0],[6,0],[-6,0],[0,6],[0,-6]]:[[-6,0],[0,0],[6,0]];return points.map(([x,z])=>({x:at.x+x*Math.cos(yaw)+z*Math.sin(yaw),y:at.y,z:at.z-x*Math.sin(yaw)+z*Math.cos(yaw)}));}
+  private get barrageRadius(){return this.isEndgame?3:2.6;}private get innerRadius(){return this.profile==='sky'?5:this.isEndgame?3:4.5;}
+  private crossAngles(yaw:number):number[]{return this.profile==='sky'?[yaw,yaw+Math.PI/2]:this.profile==='ember'?[yaw+Math.PI/6,yaw+Math.PI/2]:this.isFrost?[yaw,yaw+Math.PI/3,yaw+2*Math.PI/3]:this.isEndgame?[yaw,yaw+Math.PI/4,yaw+Math.PI/2,yaw+3*Math.PI/4]:[yaw,yaw+Math.PI/2];}
+  private barragePoints(at:Vec3,yaw:number):Vec3[]{const points=this.profile==='sky'?Array.from({length:5},(_,i)=>[Math.sin(i*Math.PI*2/5)*8,Math.cos(i*Math.PI*2/5)*8]):this.profile==='ember'?[[-9,-5],[-3,5],[3,-5],[9,5]]:this.isFrost?[[0,0],[7,0],[-7,0],[3.5,6],[-3.5,6],[3.5,-6],[-3.5,-6]]:this.isEndgame?[[0,0],[6,0],[-6,0],[0,6],[0,-6]]:[[-6,0],[0,0],[6,0]];return points.map(([x,z])=>({x:at.x+x*Math.cos(yaw)+z*Math.sin(yaw),y:at.y,z:at.z-x*Math.sin(yaw)+z*Math.cos(yaw)}));}
   private telegraphShapes(kind:MechId,at:Vec3,yaw:number):TelegraphShape[]{
-    if(kind==='cross')return this.crossAngles(yaw).map(a=>({shape:'lane',at:pos(at),yaw:a,halfLength:this.laneLength,halfWidth:this.laneWidth,color:this.isFrost?'#75e9ff':'#ffb64d'}));
-    if(kind==='barrage')return this.barragePoints(at,yaw).map(p=>{const ground=this.deckUnder(p,this.barrageRadius,0,Math.PI);return {shape:'circle',at:pos(p),radius:this.barrageRadius,color:'#cf8aff',ground};});
+    if(kind==='cross')return this.crossAngles(yaw).map(a=>({shape:'lane',at:pos(at),yaw:a,halfLength:this.laneLength,halfWidth:this.laneWidth,color:this.stats.level>=500?this.stats.color:this.isFrost?'#75e9ff':'#ffb64d'}));
+    if(kind==='barrage')return this.barragePoints(at,yaw).map(p=>{const ground=this.deckUnder(p,this.barrageRadius,0,Math.PI);return {shape:'circle',at:pos(p),radius:this.barrageRadius,color:this.stats.level>=500?this.stats.color:'#cf8aff',ground};});
     if(kind==='spray'){const ground=this.deckUnder(at,11,yaw,.55);return [{shape:'cone',at:pos(at),yaw,range:11,half:.55,ground}];}
     const radius=this.radius(kind),color=kind==='eclipse'?'#a050ff':kind==='nova'?this.stats.color:undefined,ground=this.deckUnder(at,radius,0,Math.PI);
     const shapes:TelegraphShape[]=[{shape:'circle',at:pos(at),radius,color,ground}];

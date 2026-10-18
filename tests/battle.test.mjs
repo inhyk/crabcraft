@@ -19,7 +19,7 @@ function game() {
   networkState(){return {id,state:this.state,phase:this.phase,enraged:this.enraged,mech:null}},applyNetwork(s){Object.assign(this,s)},resumeAuthority(){},wake(){this.state='waking'}};return b};
  const noop=()=>{};
  let mood=0,beacon=false;
- const g={quests:new QuestLog(),world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),dawnBoss:boss('b30'),frostBoss:boss('b300'),encounter:{engaged:false},world2:{chapter:1,canTravel(ch){return ch===1||!!g.journey.abyssCleared&&(ch===2||!!g.journey.trueCleared&&(ch!==4||!!g.journey.finalCleared))},go(ch){if(!this.canTravel(ch))return false;this.chapter=ch;return true;},enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
+ const g={quests:new QuestLog(),world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),dawnBoss:boss('b30'),frostBoss:boss('b300'),emberBoss:boss('b500'),skyBoss:boss('b750'),encounter:{engaged:false},world2:{chapter:1,canTravel(ch){return ch===1||!!g.journey.abyssCleared&&(ch===2||!!g.journey.trueCleared&&(ch!==4||!!g.journey.finalCleared))},go(ch){if(!this.canTravel(ch))return false;this.chapter=ch;return true;},enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
   player:{unit:p,setTarget:noop,gainRage:noop,onDamaged:noop,onWardHit:noop},hud:{floats:{spawn:noop},damageFlash:noop,messages:{info:noop}},
   follow:{shake:noop},audio:{sfx:noop},vfx:{deathPoof:noop,smoke:noop,stunStars:noop},events:{emit:noop},onUnitDied(u){if(u.kind==='scrapling')this.rewards++}};
  Object.defineProperty(g.player,'damageTakenMultiplier',{get:()=>armorMultiplier(g.player.armorRank)});p.ctrl=g.player;
@@ -167,7 +167,7 @@ test('an unsent force cannot carry into a fresh peer after leaving a room',()=>{
  assert.equal(packets.filter(p=>p.type==='combat'&&p.event.kind==='effect').length,0);
 });
 
-test('guest portal requests cannot skip the level10 or level20 crown; World III restores all five boss checkpoints',()=>{
+test('guest portal requests cannot skip the level10 or level20 crown; World III restores all seven boss checkpoints',()=>{
  const {a,b,aa,bb,flush}=pair();
  a.player.unit.level=100;bb.travel(2);flush();assert.equal(a.world2.chapter,1);assert.equal(b.world2.chapter,1);
  a.journey.rustCleared=a.journey.abyssCleared=true;aa.publish();flush();bb.travel(3);flush();assert.equal(a.world2.chapter,1);
@@ -176,7 +176,7 @@ test('guest portal requests cannot skip the level10 or level20 crown; World III 
  a.dawnBoss.state='fight';a.dawnBoss.unit.level=30;aa.publish();flush();assert.equal(b.dawnBoss.state,'fight');assert.equal(b.dawnBoss.unit.level,30);
  a.journey.finalCleared=true;a.dawnBoss.state='dead';aa.publish();flush();
  const c=game(),cc=new BattleSync(c,()=>{},()=>new Map());c.multiplayer={battle:cc};cc.join('c','a',aa.snapshot());
- assert.equal(c.world2.chapter,3);assert.equal(c.journey.finalCleared,true);assert.equal(c.dawnBoss.state,'dead');assert.equal(cc.snapshot().bosses.length,5);
+ assert.equal(c.world2.chapter,3);assert.equal(c.journey.finalCleared,true);assert.equal(c.dawnBoss.state,'dead');assert.equal(cc.snapshot().bosses.length,7);
  bb.elect('b');assert.equal(b.journey.finalCleared,true);assert.equal(b.world2.chapter,3);
 });
 
@@ -286,8 +286,8 @@ test('multiplayer armor is applied once by the damage recipient in both directio
 
 test('a fresh private room restarts AI schedules even without a saved world checkpoint',()=>{
  const g=game();let resumed=0;
- for(const controller of [...g.enemies,g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss])controller.resumeAuthority=()=>resumed++;
- const b=new BattleSync(g,()=>{},()=>new Map());b.join('new-host','new-host',null);assert.equal(resumed,6);
+ for(const controller of [...g.enemies,g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss,g.emberBoss,g.skyBoss])controller.resumeAuthority=()=>resumed++;
+ const b=new BattleSync(g,()=>{},()=>new Map());b.join('new-host','new-host',null);assert.equal(resumed,8);
  let restored=0;g.resumeFriendAdventure=authority=>{assert.equal(authority,true);restored++};
  b.setMode('pvp');assert.equal(restored,1);assert.equal(b.authority,true);
  b.setMode('coop');assert.equal(restored,1);
@@ -320,4 +320,12 @@ test('dungeon returns reject strangers, public shards and stale run IDs',()=>{
  aa.receive('b',{...request,run:'stale-run'});assert.ok(a.dungeons.state);
  ar.name='non-member';aa.receive('b',request);assert.ok(a.dungeons.state);
  ar.name='guest';aa.sharedArea=true;aa.receive('b',request);assert.ok(a.dungeons.state);
+});
+
+for(const [field,key,chapter,level]of [['emberBoss','b500',5,500],['skyBoss','b750',6,750]])test(`${key} HP, level gate, crown and host migration synchronize`,()=>{
+ const {a,b,aa,bb,ar,flush}=pair();a.world2.chapter=b.world2.chapter=chapter;a.world2.canTravel=()=>true;
+ const boss=a[field];boss.profile={level};boss.unit.level=level;boss.unit.invulnerable=false;boss.unit.hidden=false;
+ ar.level=level-1;aa.receive('b',{kind:'challenge',target:key});aa.receive('b',{kind:'attack',target:key,amount:10});assert.equal(boss.state,'dormant');assert.equal(boss.unit.hp,100);
+ ar.level=level;aa.receive('b',{kind:'challenge',target:key});assert.equal(boss.state,'waking');aa.receive('b',{kind:'attack',target:key,amount:10});flush();assert.equal(b[field].unit.hp,90);
+ a.journey[chapter===5?'emberCleared':'skyCleared']=true;boss.state='dead';aa.publish();flush();bb.elect('b');assert.equal(b[field].state,'dead');assert.equal(b.journey[chapter===5?'emberCleared':'skyCleared'],true);
 });
