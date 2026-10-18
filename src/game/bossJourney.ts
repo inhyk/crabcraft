@@ -49,7 +49,7 @@ export class BossJourney {
   private readonly cards: { boss: Boss; status: HTMLElement; button: HTMLButtonElement }[] = [];
   private readonly aura = new THREE.Group();
   private readonly victory = h('button', { type: 'button', class: 'bj-celebrate', onclick: () => {
-    if (this.finalCleared && this.game.dawnBoss.state === 'dead' && !this.game.controlsLocked) { this.save(); void this.game.ending.start(); }
+    if (this.frostCleared && this.game.frostBoss.state === 'dead' && !this.game.controlsLocked) { this.save(); void this.game.ending.start(); }
   } }, '✨ 진짜 엔딩 다시 보기');
 
   private readonly portal = h('button', {type:'button',class:'bj-portal',onclick:()=>this.enterWorld2()}, '✧ 월드 2 바로가기 →');
@@ -93,7 +93,7 @@ export class BossJourney {
       this.trueCleared = this.abyssCleared && data.trueCleared === true;
       this.finalCleared=this.trueCleared&&data.finalCleared===true;this.world2Celebrated=this.trueCleared;
       this.frostCleared=this.finalCleared&&data.frostCleared===true;
-      this.trueStarted = this.finalCleared;
+      this.trueStarted = this.frostCleared;
       this.kills = Number.isInteger(data.kills) && data.kills >= 0 && data.kills < 5 ? data.kills : 0;
       for (const id of QUEST_ORDER) {
         if (['locked', 'available', 'active', 'ready', 'done'].includes(data.quests?.[id])) this.game.quests.status[id] = data.quests[id] as QuestStatus;
@@ -135,15 +135,21 @@ export class BossJourney {
   }
 
   onBossDefeated(boss: Boss) {
+    const coins = boss.claimVictoryCoins();
+    if (coins > 0) {
+      this.game.player.coins = Math.min(Number.MAX_SAFE_INTEGER, this.game.player.coins + coins);
+      this.game.hud.chat.system(t(`보스 처치! +${coins.toLocaleString()} 코인`, `Boss defeated! +${coins.toLocaleString()} coins`));
+      this.save();
+    }
     if (boss === this.game.boss) {
       if (this.rustCleared) return;
       this.rustCleared = true;
       this.game.player.gainXp(boss.profile.reward);
       this.game.hud.chat.system(t('첫 왕관 획득! 해안 순찰로 10레벨을 달성하고 심해의 군주에게 도전하세요.','First crown reclaimed! Patrol the shore, reach level 10 and challenge the Lord of the Deep.'));
     } else if(boss===this.game.frostBoss){
-      if(this.frostCleared)return;this.frostCleared=true;this.game.player.gainXp(boss.profile.reward);this.game.hud.messages.banner(()=>t('영원의 겨울을 녹였어요!','Eternal winter has ended!'),()=>t('서리 왕관 획득 · +18,000 XP · 모험은 계속됩니다','Frozen crown reclaimed · +18,000 XP · Your adventure continues'),'quest');
+      if(this.frostCleared)return;this.frostCleared=true;this.game.player.gainXp(boss.profile.reward);this.game.hud.messages.banner(()=>t('영원의 겨울을 녹였어요!','Eternal winter has ended!'),()=>t('미라 구출 · 서리 왕관 획득 · +18,000 XP','Mira rescued · Frozen crown reclaimed · +18,000 XP'),'quest');
     } else if(boss===this.game.dawnBoss){
-      if(this.finalCleared)return;this.finalCleared=true;this.game.player.gainXp(boss.profile.reward);this.game.hud.chat.system(t('미라를 구했어요! 세 섬의 친구들과 마지막 춤을 함께 춰요.','Mira is free! Celebrate with your friends from all three islands.'));
+      if(this.finalCleared)return;this.finalCleared=true;this.game.player.gainXp(boss.profile.reward);this.game.hud.chat.system(t('설원으로 가는 길이 열렸어요! 보레아스에게 잡힌 미라를 구하러 가요.','The route to Frostlight is open! Rescue Mira from Boreas.'));
     } else if (boss === this.game.worldBoss) {
       if(this.trueCleared) return;
       this.trueCleared=true;
@@ -167,10 +173,9 @@ export class BossJourney {
 
   private challenge(boss: Boss) {
     const g = this.game;
-    const cleared = boss===g.frostBoss?this.frostCleared:boss === g.boss ? this.rustCleared : boss===g.dawnBoss?this.finalCleared:boss === g.worldBoss ? this.trueCleared : this.abyssCleared;
     const joining=this.canJoin(boss);
     if (boss.profile.level<20&&!g.beaconLit){g.hud.messages.info(t('등대를 켜면 밤이 되고 보스가 깨어나요.','Light the lighthouse to summon night and awaken the boss.'));return;}
-    if (cleared || !canChallenge(g.player.level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter) || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining)) return;
+    if (boss.state === 'dying' || !canChallenge(g.player.level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter) || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining)) return;
     if (boss === g.finalBoss && g.boss.state !== 'dead') { g.hud.messages.info(t('첫 보스의 승리 연출이 끝난 뒤 도전해 주세요.','Wait until the first boss victory sequence ends.')); return; }
     if (!joining && !g.multiplayer?.battle.challenge(boss===g.frostBoss?'b300':boss===g.dawnBoss?'b30':boss === g.boss ? 'b3' : boss === g.worldBoss ? 'b20' : 'b10')) boss.wake();
     const a = boss.arena;
@@ -199,7 +204,7 @@ export class BossJourney {
       const button=this.chapterEnding.querySelector('button')!; button.disabled=this.endingTime<5;
       if(this.endingTime>12 && g.multiplayer?.battle.authority !== false) this.finishChapterEnding();
     }
-    if(this.finalCleared && g.dawnBoss.state==='dead' && !this.trueStarted && !g.ending.active) { this.trueStarted=true; this.save(); void g.ending.start(); }
+    if(this.frostCleared && g.frostBoss.state==='dead' && g.world2.chapter===4 && !this.trueStarted && !g.ending.active) { this.trueStarted=true; this.save(); void g.ending.start(); }
     if(this.trueCleared&&g.worldBoss.state==='dead'&&!this.world2Celebrated&&!g.ending.active&&g.world2.chapter===2){this.world2Celebrated=true;g.hud.messages.banner(()=>t('월드3의 항로가 열렸어요!','The route to World III is open!'),()=>t('북쪽 별길의 포탈을 타고 친구를 구하러 떠나요','Take the north Starroad portal to rescue your friend'),'quest');this.save();}
     this.render();
     if ((this.saveAt += dt) > 3) { this.saveAt = 0; this.save(); }
@@ -232,16 +237,17 @@ export class BossJourney {
         const needsBeacon=boss.profile.level<20&&!g.beaconLit;
         const joining=this.canJoin(boss);
         status.textContent = cleared ? t('✓ 왕관 획득','✓ Crown reclaimed') : needsBeacon ? t('등대를 켜면 도전할 수 있어요.','Light the lighthouse to challenge this boss.') : unlocked ? (boss.engaged ? t('전투 중','In battle') : boss===g.frostBoss?t('도전 가능 · 얼음 왕좌','Ready · Frozen Throne'):boss===g.dawnBoss?t('도전 가능 · 황혼 성채','Ready · Twilight Citadel'):boss === g.worldBoss ? t('도전 가능 · 별의 왕좌','Ready · The Star Throne') : t('도전 가능 · 철의 난파선','Ready · The Iron Wreck')) : t(`🔒 ${boss.profile.level}레벨${boss.profile.level===300?' + 월드 4':boss.profile.level===100?' + 월드 3':boss.profile.level === 20 ? ' + 월드 2' : boss.profile.level === 10 ? ' + 첫 보스 승리' : ''} 필요`,`🔒 Requires level ${boss.profile.level}${boss.profile.level===300?' + World IV':boss.profile.level===100?' + World III':boss.profile.level===20?' + World II':boss.profile.level===10?' + first boss victory':''}`);
-        button.disabled = cleared || needsBeacon || !unlocked || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining) || (boss === g.finalBoss && g.boss.state !== 'dead');
-        button.textContent = cleared ? t('정복 완료','Conquered') : boss.engaged ? joining?t('전투 합류 →','Join battle →'):t('전투 중','In battle') : t('도전하기 →','Challenge →');
+        status.textContent += t(` · 처치 보상 ${boss.profile.coins.toLocaleString()} 코인`, ` · Victory reward: ${boss.profile.coins.toLocaleString()} coins`);
+        button.disabled = boss.state === 'dying' || needsBeacon || !unlocked || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining) || (boss === g.finalBoss && g.boss.state !== 'dead');
+        button.textContent = boss.state === 'dead' ? t('다시 도전하기 →','Challenge again →') : boss.engaged ? joining?t('전투 합류 →','Join battle →'):t('전투 중','In battle') : t('도전하기 →','Challenge →');
         const card=button.closest('article')!;card.querySelector('h3')!.textContent=boss.profile.name;boss.unit.name=boss.profile.name;boss.unit.title=boss.profile.title;
         card.querySelector('p')!.textContent=boss.profile.level===300?t('서리 감옥 · 7중 눈보라 · 빙결 파동 · 300레벨','Frost prison · Sevenfold blizzard · Glacial pulse · Level 300'):boss.profile.level===100?t('8방향 화염 · 5중 폭격 · 극한 폭주 · 100레벨','Eight fire rays · Five bombs · Extreme enrage · Level 100'):boss.profile.level===20?t('검은 일식 · 안쪽 안전지대 · 별빛 폭주','Black Eclipse · Inner sanctuary · Starfall enrage'):boss.profile.level===10?t('심해 파동 · 끌어당기기 · 3단계 폭주','Tidal Nova · Undertow · Phase III enrage'):t('닻 내려찍기 · 녹 분사 · 하수인 소환','Anchor Slam · Rust Spray · Rustling summons');
       }
       this.portal.hidden = g.world2.chapter !== 1;this.portal.disabled=!this.abyssCleared;
-      this.patrol.textContent = g.world2.chapter===4?t(`WORLD IV · 서리빛 설원 · 목표 300레벨 · 순찰 ${this.kills}/5 · +${patrolReward(level)} XP`,`WORLD IV · Frostlight · Reach level 300 · Patrol ${this.kills}/5 · +${patrolReward(level)} XP`):g.world2.chapter===3?t(`WORLD III · 친구 구출 · 목표100레벨 · 순찰 ${this.kills}/5`,`WORLD III · Rescue your friend · Reach level 100 · Patrol ${this.kills}/5`):this.trueCleared ? t('월드3가 열렸어요. 북쪽 별길의 포탈로 친구를 구하러 가세요.','World III is open. Take the north Starroad portal to rescue your friend.') : g.world2.chapter === 2 ? t(`WORLD II · 유적 순찰 ${this.kills}/5 · +${patrolReward(level)} XP · 목표 20레벨`,`WORLD II · Ruin patrol ${this.kills}/5 · +${patrolReward(level)} XP · Reach level 20`) : this.abyssCleared ? t('첫 엔딩 너머, 숨겨진 별의 섬으로…','Beyond the first ending, a hidden island awaits…') : this.rustCleared ? t(`해안 순찰 ${this.kills}/5 · 보너스 ${patrolReward(level)} XP`,`Shore patrol ${this.kills}/5 · Bonus ${patrolReward(level)} XP`) : t('마을 퀘스트와 해안 전투로 3레벨에 도달하세요.','Reach level 3 through village quests and shore battles.');
+      this.patrol.textContent = g.world2.chapter===4?t(`WORLD IV · 서리빛 설원 · 목표 300레벨 · 순찰 ${this.kills}/5 · +${patrolReward(level)} XP`,`WORLD IV · Frostlight · Reach level 300 · Patrol ${this.kills}/5 · +${patrolReward(level)} XP`):g.world2.chapter===3?t(`WORLD III · 설원으로 가는 길 · 목표100레벨 · 순찰 ${this.kills}/5`,`WORLD III · The road to Frostlight · Reach level 100 · Patrol ${this.kills}/5`):this.trueCleared ? t('월드3가 열렸어요. 북쪽 별길의 포탈로 친구를 구하러 가세요.','World III is open. Take the north Starroad portal to rescue your friend.') : g.world2.chapter === 2 ? t(`WORLD II · 유적 순찰 ${this.kills}/5 · +${patrolReward(level)} XP · 목표 20레벨`,`WORLD II · Ruin patrol ${this.kills}/5 · +${patrolReward(level)} XP · Reach level 20`) : this.abyssCleared ? t('첫 엔딩 너머, 숨겨진 별의 섬으로…','Beyond the first ending, a hidden island awaits…') : this.rustCleared ? t(`해안 순찰 ${this.kills}/5 · 보너스 ${patrolReward(level)} XP`,`Shore patrol ${this.kills}/5 · Bonus ${patrolReward(level)} XP`) : t('마을 퀘스트와 해안 전투로 3레벨에 도달하세요.','Reach level 3 through village quests and shore battles.');
       this.root.querySelector('small')!.textContent=t('적을 처치하고 퀘스트를 완료하면 성장해요. 로그인하면 계정에도 모험이 자동 저장돼요.','Grow by defeating enemies and completing quests. Sign in to save your adventure to your account too.');
-      this.victory.hidden = !this.finalCleared;
-      this.victory.disabled = g.dawnBoss.state !== 'dead' || g.controlsLocked;
+      this.victory.hidden = !this.frostCleared;
+      this.victory.disabled = g.frostBoss.state !== 'dead' || g.controlsLocked;
     }
   }
 
@@ -263,7 +269,7 @@ export class BossJourney {
   private finishChapterEnding() {
     this.firstEndingSeen=true; this.closeChapterEnding(); this.save();
     this.root.open=true;
-    if(this.game.multiplayer?.battle.authority === false) {
+    if(this.game.multiplayer?.battle.authority === false&&!this.game.multiplayer.battle.sharedArea) {
       this.game.hud.messages.info(t('방장이 차원문을 열면 모두 함께 월드 2로 이동해요.','When the host opens the portal, everyone will travel to World II together.'));
     } else this.enterWorld2();
   }

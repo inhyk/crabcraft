@@ -238,3 +238,31 @@ test('level 299 cannot exchange damage with Boreas even when a level 300 friend 
  const g=game();g.player.unit.level=299;assert.equal(g.combat.damage(g.player.unit,g.frostBoss.unit,80),0);assert.equal(g.combat.damage(g.frostBoss.unit,g.player.unit,80),0);
  g.player.unit.level=300;assert.equal(g.combat.damage(g.player.unit,g.frostBoss.unit,80),80);
 });
+
+
+test('public-area followers share HP and lighthouse without importing story progress or portal travel',()=>{
+ const {a,b,aa,bb,flush}=pair();aa.sharedArea=bb.sharedArea=true;
+ a.journey.rustCleared=true;a.journey.abyssCleared=true;a.world.setBeaconLit(true);a.world.setMood(1);
+ aa.update(.1);flush();assert.equal(b.beaconLit,true);assert.equal(b.journey.rustCleared,false);assert.equal(b.journey.abyssCleared,false);
+ b.combat.damage(b.player.unit,b.enemies[0].unit,23);flush();assert.equal(a.enemies[0].unit.hp,77);assert.equal(b.enemies[0].unit.hp,77);
+ bb.requestLighthouse(false);flush();assert.equal(a.world.getEnvironment().beacon,false);assert.equal(b.beaconLit,false);
+ assert.equal(bb.travel(2),false);assert.equal(a.world2.chapter,1);
+ a.world2.chapter=2;aa.update(.1);flush();assert.equal(b.world2.chapter,1);assert.equal(b.enemies[0].unit.hp,77);
+});
+test('public-area boats survive late join and authority transfer, while room-only commands are ignored',()=>{
+ const {a,b,aa,bb,flush}=pair();aa.sharedArea=bb.sharedArea=true;
+ const boat={x:170,z:22,yaw:1.2,speed:3,seats:['a','b']};let received;
+ a.boats={networkState:()=>structuredClone(boat)};b.boats={applyNetwork:s=>{received=structuredClone(s)}};
+ aa.update(.1);flush();assert.deepEqual(received,boat);
+ const c=game();c.boats={applyNetwork:s=>{received=structuredClone(s)}};const cc=new BattleSync(c,()=>{},()=>new Map());cc.join('c','a',aa.snapshot(),true);assert.deepEqual(received,boat);
+ bb.setMode('pvp');bb.setParty(2);bb.receive('a',{kind:'chapter',target:'world',chapter:2});flush();assert.equal(bb.mode,'coop');assert.deepEqual(bb.parties,{});assert.equal(b.world2.chapter,1);
+ bb.elect('b');assert.equal(bb.authority,true);assert.deepEqual(received,boat);
+});
+
+test('late public arrivals can pass defeated shared bosses without losing personal crowns or quest progress',()=>{
+ const {a,b,aa,bb,flush}=pair();aa.sharedArea=bb.sharedArea=true;
+ b.journey.rustCleared=true;b.quests.accept('q1');const status={...b.quests.status};
+ a.journey.abyssCleared=true;a.finalBoss.state='dead';a.finalBoss.unit.alive=false;aa.update(.1);flush();
+ assert.equal(b.journey.rustCleared,true);assert.equal(b.journey.abyssCleared,true);assert.deepEqual(b.quests.status,status);
+ a.journey.abyssCleared=false;aa.update(.1);flush();assert.equal(b.journey.abyssCleared,true);
+});

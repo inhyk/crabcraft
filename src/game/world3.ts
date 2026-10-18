@@ -30,7 +30,6 @@ export class DawnIsland {
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
  private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new StarSun();
  private rotating:THREE.Object3D[]=[];
- private cage=new THREE.Group();
  height(x:number,z:number){
   const radial=Math.hypot(x/122,(z-3)/149);
   const shore=4-Math.max(0,radial-.83)*65;
@@ -62,8 +61,6 @@ export class DawnIsland {
   for(const r of [6,13,20]){const ring=add(new THREE.TorusGeometry(r,.07,5,96),gold,0,17.12,-72);ring.rotation.x=Math.PI/2;}
   for(let i=0;i<32;i++){const a=i/32*Math.PI*2,x=Math.sin(a)*67,z=-45+Math.cos(a)*50;if(Math.abs(x)<12)continue;const y=this.height(x,z),r=2+i%3;const rock=add(new THREE.DodecahedronGeometry(r,0),stone,x,y+r*.65,z);rock.scale.y=1.5;if(i%3===0){const core=add(new THREE.OctahedronGeometry(.8),lava,x,y+3,z);this.rotating.push(core);}this.collision.addCircle(x,z,r+1,y,y+7);}
   this.root.add(islandPaths((x,z)=>this.height(x,z),DAWN_PATHS,3));
-  this.cage.position.set(13,this.height(13,-57),-57);
-  for(let i=0;i<12;i++){const a=i/12*Math.PI*2,bar=new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,4.5,5),gold);bar.position.set(Math.sin(a)*2.1,2.25,Math.cos(a)*2.1);this.cage.add(bar);}for(const y of [.3,4.5]){const ring=new THREE.Mesh(new THREE.TorusGeometry(2.1,.12,6,32),gold);ring.rotation.x=Math.PI/2;ring.position.y=y;this.cage.add(ring);}this.root.add(this.cage);
   this.scenery=new DawnScenery((x,z)=>this.height(x,z),this.collision);this.root.add(this.scenery.root);
   this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',.9));const sun=this.sun.light;sun.name='dawnreach-sun';sun.color.set('#ffe6b3');sun.intensity=2.8;this.root.add(sun,sun.target);
  }
@@ -105,5 +102,5 @@ export class DawnIsland {
   for(const side of [-1,1])for(const z of [37,57,74]){const x=side*23;put('Stall_Empty',x,z,side<0?Math.PI/2:-Math.PI/2);put('Barrel_Apples',x+side*2,z+1);put('Crate_Wooden',x+side*2,z-2);put('FarmCrate_Apple',x,z,0,1,.82);}
   this.root.add(market.build());
  }
- update(time:number,rescued:boolean,x:number,z:number){this.wind?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);this.cage.visible=!rescued;for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
+ update(time:number,_rescued:boolean,x:number,z:number){this.wind?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
 }

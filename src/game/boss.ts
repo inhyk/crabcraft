@@ -56,6 +56,7 @@ export class Boss {
   private mech: ActiveMech | null = null;
   private stateT = 0;
   private freedStarted = false;
+  private coinsClaimed = false;
   private outside = 0;
   private get isEndgame(){return this.profile.level>=100;}
   private get isFrost(){return this.profile.level===300;}
@@ -111,6 +112,7 @@ export class Boss {
   applyNetwork(s: BossState): void {
     const g=this.game;
     if (s.phase > this.phase && s.state === 'fight') g.hud.messages.banner(() => (t(`${s.phase}단계`,`PHASE ${s.phase}`)),() => (this.profile.name),'boss');
+    if ((this.state === 'dead' || this.state === 'dying') && ['waking', 'idle', 'fight'].includes(s.state)) this.coinsClaimed = false;
     this.state=s.state; this.phase=s.phase; this.enraged=s.enraged;
     const timeline=s.timeline;
     if(timeline&&Number.isFinite(timeline.state)&&Number.isFinite(timeline.freed)&&Number.isFinite(timeline.freedYaw)&&typeof timeline.released==='boolean'){
@@ -160,10 +162,37 @@ export class Boss {
   wake(): void {
     if(this.isEndgame&&(this.game.partyLevel??this.game.player.level)<this.profile.level)return;
     if (this.game.multiplayer?.battle.challenge(this.isFrost ? 'b300' : this.profile.level === 100 ? 'b30' : this.profile.level === 20 ? 'b20' : this.profile.level === 10 ? 'b10' : 'b3')) return;
-    if (this.state !== 'dormant') return;
+    if (this.state !== 'dormant' && this.state !== 'dead') return;
     if(this.profile.level<20 && this.game.world.getEnvironment?.().beacon===false)return;
     const g = this.game;
     const u = this.unit;
+    if (this.state === 'dead') {
+      this.coinsClaimed = false;
+      // A rematch starts a fresh encounter without changing earned story progress.
+      this.clearMech();
+      for (const add of this.adds) add.despawn();
+      this.adds.length = 0;
+      u.hp = u.maxHp;
+      u.alive = true;
+      u.targetable = false;
+      u.stunUntil = u.slowUntil = u.rustUntil = u.rust = u.absorb = u.absorbUntil = u.pushTime = 0;
+      u.cancelPendingHit();
+      u.motion.stop(undefined, 0.2);
+      u.express('neutral');
+      u.setBaseTint(this.profile.color);
+      this.phase = 1;
+      this.enraged = false;
+      this.outside = this.mechIndex = 0;
+      this.remoteMechId = -1;
+      this.freedStarted = false;
+      this.freedT = -1;
+      this.freed.hidden = true;
+      this.freed.rig.root.visible = false;
+      this.freed.rig.root.scale.setScalar(this.freedBaseScale);
+      this.freed.lift = 0;
+      this.freed.npcId = '';
+      this.freed.motion.stop(undefined, 0.2);
+    }
     this.state = 'waking';
     this.stateT = 0;
     u.hidden = false;
@@ -186,7 +215,7 @@ export class Boss {
     this.nextSwing = g.time + 1.2;
     this.nextMech = g.time + 4;
     this.unit.express('angry', 3);
-    g.say(this.unit, this.isFrost ? t('영원한 겨울 속에 잠들어라!','Sleep beneath the eternal winter!') : this.profile.level === 100 ? t('너희의 새벽도, 친구도 내 것이다!','Your dawn and your friend belong to me!') : this.profile.level === 20 ? t('별의 문을 연 자여, 일식의 시험을 받아라!','You who opened the star gate, face the trial of the eclipse!') : this.profile.level >= 10 ? t('심해의 빛을 피할 수 있겠느냐!','Can you escape the light of the deep?') : BOSS_YELLS.engage, true);
+    g.say(this.unit, this.isFrost ? t('너희 친구도 영원한 겨울 속에 갇힐 것이다!','Your friend shall remain imprisoned in eternal winter!') : this.profile.level === 100 ? t('서리왕에게 가는 길은 내가 막겠다!','I guard the road to the Frost King!') : this.profile.level === 20 ? t('별의 문을 연 자여, 일식의 시험을 받아라!','You who opened the star gate, face the trial of the eclipse!') : this.profile.level >= 10 ? t('심해의 빛을 피할 수 있겠느냐!','Can you escape the light of the deep?') : BOSS_YELLS.engage, true);
     g.audio.sfx('sfx-boss-roar');
     g.hud.bossFrame.show(this.unit);
     g.follow.shake(0.25, 0.6);
@@ -218,6 +247,13 @@ export class Boss {
     this.mechIndex = 0;
     u.cancelPendingHit();
     g.hud.bossFrame.hide();
+  }
+
+  /** Claim once per victory; snapshots and duplicate death events grant no extra coins. */
+  claimVictoryCoins(): number {
+    if (this.coinsClaimed || this.unit.alive || (this.state !== 'dying' && this.state !== 'dead')) return 0;
+    this.coinsClaimed = true;
+    return this.profile.coins;
   }
 
   onDeath(): void {
