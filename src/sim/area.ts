@@ -1,4 +1,4 @@
-import type { CapturedPlayer, PlayerRetirement, CharacterCheckpointV1, RestoredPlayerData, EventRecord, PlayerCommand, ActionId, ActionRequest, Admission, Area as AreaContract, AreaContext, AreaDebugState, AreaOptions, AreaServices, AreaSnapshot, BossSim, CharacterId, ClassId, CombatController, DebugValue, EarnedGrant, EnemySim, EntityId, EntityRef, HitPlan, PendingHit, PlayerIntent, PlayerSim, ProjectileState, SimUnit, StagedArrival, StagedDeparture, TimerAction, TransferDTO } from './types.ts';
+import type { CommandOutcome, CapturedPlayer, PlayerRetirement, CharacterCheckpointV1, RestoredPlayerData, EventRecord, PlayerCommand, ActionId, ActionRequest, Admission, Area as AreaContract, AreaContext, AreaDebugState, AreaOptions, AreaServices, AreaSnapshot, BossSim, CharacterId, ClassId, CombatController, DebugValue, EarnedGrant, EnemySim, EntityId, EntityRef, HitPlan, PendingHit, PlayerIntent, PlayerSim, ProjectileState, SimUnit, StagedArrival, StagedDeparture, TimerAction, TransferDTO } from './types.ts';
 import { Actions } from './actions.ts';
 import { populationRadius, validatePopulation, worldChapter } from './math.ts';
 import { Combat } from './combat.ts';
@@ -62,6 +62,8 @@ export class SimulationArea implements AreaContract {
   private durableIds=new Map<CharacterId,Set<string>>();
   private revisions=new Map<CharacterId,number>();
   private restoredArrivals=new Map<string,RestoredArrival>();
+  private commandOutcomes:CommandOutcome[]=[];
+  private inputStage=false;
   private running=false;
   private disposed=false;
   private failed=false;
@@ -96,7 +98,7 @@ export class SimulationArea implements AreaContract {
       cancelPendingHit:ref=>{const u=this.getUnit(ref);if(u)u.pendingHit=null;},resolveHit:plan=>this.resolveHit(plan),
       launch:input=>this.flights.launch(input,this.stepId),spawnAdd:(boss,x,z)=>this.spawnAdd(boss,x,z),
       respawnUnit:ref=>this.respawnUnit(ref),bossAvailable:profile=>this.worldRules.encounterAvailable(profile),
-      runCommand:(ref,command)=>this.command(ref,command),bossByProfile:profile=>[...this.bossMap.values()].find(b=>b.profile===profile)??null,
+      runCommand:(ref,command,commandIndex)=>{const success=this.command(ref,command);if(this.inputStage&&commandIndex!==undefined)this.commandOutcomes.push(immutable({unit:ref,commandIndex,success}));return success;},bossByProfile:profile=>[...this.bossMap.values()].find(b=>b.profile===profile)??null,
       encounterActive:()=>[...this.bossMap.values()].some(b=>b.engaged),
       completeChannel:(ref,ch)=>{const p=this.services.player(ref);if(p)this.worldRules.completeChannel(p,ch);},
       preflightEarnedGrants:grants=>{const counts=new Map<string,Set<string>>();for(const g of grants){if(!this.services.playerByCharacter(g.recipient))continue;const ids=counts.get(g.recipient)??new Set(this.worldRules.appliedGrantIds(g.recipient).filter(id=>!this.durableIds.get(g.recipient)?.has(id)));if(!this.worldRules.appliedGrantIds(g.recipient).includes(g.id))ids.add(g.id);if(ids.size>256)throw new Error('Checkpoint receipt capacity exceeded');counts.set(g.recipient,ids);}},
@@ -164,15 +166,15 @@ export class SimulationArea implements AreaContract {
     this.timers.removeWhere(a=>a.kind==='respawn'?sameRef(a.player,ref):a.kind==='bossWake'?sameRef(a.boss,ref):false);
   }
   private timer(action:TimerAction):void {if(action.kind==='respawn'){const p=this.services.player(action.player);if(p&&!this.getUnit(action.player)?.alive)p.respawn();}else if(action.kind==='bossWake'){if(this.getUnit(action.boss))this.bossMap.get(action.boss.id)?.wake();}else if(action.kind==='echoSpawn'){const e=[...this.enemyMap.values()].find(e=>e.spawnId===action.spawnId),spawn=this.options.definition.enemies.find(s=>s.id===action.spawnId);if(e&&spawn)e.respawnAt(spawn.home.x,spawn.home.z);}else this.worldRules.onTimer(action);}
-  step(inputs:ReadonlyMap<EntityId,PlayerIntent>):void {
+  step(inputs:ReadonlyMap<EntityId,PlayerIntent>):readonly CommandOutcome[] {
     this.boundary();if(this.departures.size||this.arrivals.size||this.restoredArrivals.size)throw new Error('Transfer transaction active');
     // Fail before actor work when undrained history leaves no room for even the first observation.
     this.events.assertRoom(1);
     for(const [id,input] of inputs)if(!this.playerMap.has(id)||!Array.isArray(input.commands)||input.commands.length>this.options.limits.inputCommandsPerTick)throw new RangeError('Invalid/oversized actor input');
-    this.running=true;
+    this.running=true;this.inputStage=true;this.commandOutcomes=[];
     try {
       for(const [id,p] of this.playerMap){const input=inputs.get(id);if(!input)continue;p.applyIntent(input);}
-      this.clock+=DT;this.stepId++;
+      this.inputStage=false;this.clock+=DT;this.stepId++;
       this.timers.update(this.clock,a=>this.timer(a));
       for(const p of this.playerMap.values()){p.update(DT);feedLocomotion(p.unit,DT);}
       for(const e of [...this.enemyMap.values()]){e.update(DT);const u=this.getUnit(e.unit);if(u)feedLocomotion(u,DT);}
@@ -184,7 +186,7 @@ export class SimulationArea implements AreaContract {
       for(const u of this.unitMap.values())this.actions.updateHit(u,DT);
       this.flights.update(DT);
       for(const u of this.unitMap.values()){this.actions.update(u,DT);advanceNumericPose(u,DT);}
-    }catch(error){this.failed=true;throw error;}finally{this.running=false;}
+    }catch(error){this.failed=true;throw error;}finally{this.running=false;this.inputStage=false;}return immutable(this.commandOutcomes);
   }
   private separate():void {const list=[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&(u.reaction==='hostile'||u.kind==='player'));for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){const a=list[i]!,b=list[j]!,dx=b.x-a.x,dz=b.z-a.z,min=(a.radius+b.radius)*.85,d2=dx*dx+dz*dz;if(d2>=min*min||d2<1e-6)continue;const d=Math.sqrt(d2),push=(min-d)/d,wa=a.kind==='boss'?0:a.kind==='player'?.2:.5,wb=b.kind==='boss'?0:b.kind==='player'?.2:.5,sum=wa+wb||1;a.x-=dx*push*wa/sum;a.z-=dz*push*wa/sum;b.x+=dx*push*wb/sum;b.z+=dz*push*wb/sum;}}
   bootstrapEncounter(profile:BossSim['profile'],facts:{beaconLit:boolean}):void {this.boundary();if(this.context.mode!=='party-encounter'||this.playerMap.size||this.reservations.size||this.options.definition.bosses.length!==1||this.options.definition.bosses[0].profile!==profile||typeof facts.beaconLit!=='boolean')throw new Error('Invalid encounter bootstrap');this.worldRules.beaconLit=facts.beaconLit;}

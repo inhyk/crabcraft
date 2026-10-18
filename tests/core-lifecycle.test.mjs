@@ -79,3 +79,10 @@ test('trusted encounter bootstrap is empty private matching encounter only and a
  const definition={...publicArea.services.definition,bosses:publicArea.services.definition.bosses.filter(b=>b.profile==='rust')};const privateArea=worldArea('private','w1',{definition,context:{mode:'party-encounter',members:[],pvp:'disabled'}});
  assert.throws(()=>privateArea.bootstrapEncounter('abyss',{beaconLit:true}),/bootstrap/);privateArea.bootstrapEncounter('rust',{beaconLit:true});assert.equal(privateArea.snapshot().features.beaconLit,true);assert.deepEqual(privateArea.drainEvents(),[]);const {p}=addActor(privateArea);assert.equal(p.state.xp,0);assert.deepEqual(p.state.flags,{});assert.throws(()=>privateArea.bootstrapEncounter('rust',{beaconLit:false}),/bootstrap/);
 });
+
+test('step returns actual delegated command outcomes by supplied index without inferring success from events',()=>{
+ const a=worldArea('command-results'),{u,p}=addActor(a),npc=a.services.npcById('pip');Object.assign(u,{x:npc.x,y:npc.y,z:npc.z});p.state.coins=150;
+ const commands=[{kind:'target',target:npc.ref},{kind:'forgeBuy',npcId:'pip',slot:'weapon',request:1},{kind:'forgeBuy',npcId:'pip',slot:'armor',request:2}];const result=a.step(new Map([[u.ref.id,intent(9,commands)]]));
+ assert.deepEqual(result,[{unit:u.ref,commandIndex:1,success:true},{unit:u.ref,commandIndex:2,success:false}]);assert.equal(p.state.coins,50);assert.ok(Object.isFrozen(result));assert.ok(Object.isFrozen(result[0]));
+ assert.deepEqual(a.step(new Map([[u.ref.id,intent(9,commands)]])),[]);assert.deepEqual(a.step(new Map()),[]);
+});
