@@ -6,6 +6,7 @@ import {StarPortal} from './portal';
 import {islandPaths} from './islandPaths';
 import {SnowDeform} from './snowDeform';
 import {applySnowSurface,SnowFootfalls} from './snowSurface';
+import {SnowSpray} from './snowSpray';
 import {crystalCluster,crystalGeometry,iceMaterial,type Crystal} from './iceCrystals';
 import type {Unit} from './unit';
 
@@ -24,6 +25,8 @@ export class SnowIsland {
  /** Prints and berms the crabs leave in the snowfield (SNOWFLOW's deformation buffer). */
  readonly deform=new SnowDeform(40);
  private footfalls=new SnowFootfalls();
+ /** Powder the same footfalls kick up; the arena's ice floor is not snow. */
+ readonly spray=new SnowSpray(this.root,{sun:this.sun,bare:(x,z)=>Math.hypot(x-this.arena.position.x,z-this.arena.position.z)<this.arena.radius+1});
  private refreshSnow:()=>void;
  private refreshIce:()=>void;
  height(x:number,z:number){
@@ -101,7 +104,7 @@ export class SnowIsland {
   this.sun.position.set(40,85,45);this.root.add(this.sun,this.sun.target);
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
- updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z);this.deform.step(renderer,dt,x,z,quality);this.refreshSnow();this.refreshIce();}
- disposeSnow(){this.deform.dispose();}
+ updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSnow();this.refreshIce();}
+ disposeSnow(){this.deform.dispose();this.spray.dispose();}
  update(time:number,x:number,z:number,rescued=false){this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;}
 }

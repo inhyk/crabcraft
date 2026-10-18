@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SNOW_DEFORM_READ, type SnowDeform } from './snowDeform';
+import type { SnowSpray } from './snowSpray';
 import type { Unit } from './unit';
 
 /*
@@ -141,19 +142,23 @@ export function applySnowSurface(material: THREE.MeshStandardMaterial, deform: S
 }
 
 const FEET = ['LM', 'RM', 'LR', 'RR'] as const;
-interface FootState { nodes: THREE.Object3D[]; down: boolean[]; last: Float32Array }
+/** `ux, uz` is the body at frame `seen`, `vx, vz` its smoothed ground velocity. */
+interface FootState { nodes: THREE.Object3D[]; down: boolean[]; last: Float32Array; ux: number; uz: number; vx: number; vz: number; seen: number }
 type LinkedRig = { linkNode?: (name: string) => THREE.Object3D };
 
 /**
  * Turns walking crabs into brushes. A foot leaves one print when it touches down, and another only after it
  * has moved a stride while still down, so a sliding foot ploughs a groove instead of stamping every frame.
+ * Each stamp also kicks powder into `spray`, so spray and prints always come from the same footfall.
  */
 export class SnowFootfalls {
   private readonly state = new WeakMap<Unit, FootState | null>();
   private readonly p = new THREE.Vector3();
+  private frame = 0;
 
-  update(units: readonly Unit[], deform: SnowDeform, height: (x: number, z: number) => number, cx: number, cz: number): void {
+  update(units: readonly Unit[], deform: SnowDeform, height: (x: number, z: number) => number, cx: number, cz: number, spray?: SnowSpray, dt = 1 / 60): void {
     const reach = deform.size * 0.42;
+    this.frame++;
     for (const u of units) {
       if (!u.alive || u.hidden || !u.rig.root.visible) continue;
       const pos = u.pos;
@@ -161,14 +166,25 @@ export class SnowFootfalls {
       let st = this.state.get(u);
       if (st === undefined) { st = this.bind(u); this.state.set(u, st); }
       if (!st) continue;
+      // Body velocity from its own motion, so remote players, NPCs and knockbacks all count. A body that was
+      // out of range last frame, or jumped faster than 30 m/s (a teleport), starts again from rest.
+      if (dt > 1e-4) {
+        const mx = (pos.x - st.ux) / dt, mz = (pos.z - st.uz) / dt, w = 1 - Math.exp(-dt * 10);
+        if (st.seen !== this.frame - 1 || mx * mx + mz * mz > 900) { st.vx = 0; st.vz = 0; } else { st.vx += (mx - st.vx) * w; st.vz += (mz - st.vz) * w; }
+      }
+      st.ux = pos.x;
+      st.uz = pos.z;
+      st.seen = this.frame;
       const s = THREE.MathUtils.clamp(u.height, 0.5, 4);
       for (let i = 0; i < st.nodes.length; i++) {
         st.nodes[i].getWorldPosition(this.p);
-        const contact = this.p.y - height(this.p.x, this.p.z) < 0.09 * s;
+        const ground = height(this.p.x, this.p.z);
+        const contact = this.p.y - ground < 0.09 * s;
         if (contact) {
           const dx = this.p.x - st.last[i * 2], dz = this.p.z - st.last[i * 2 + 1];
           if (!st.down[i] || dx * dx + dz * dz > (0.2 * s) ** 2) {
             deform.brush({ x: this.p.x, z: this.p.z, radius: 0.11 * s, elongation: 1.3, yaw: u.yaw, depth: 0.09 * s, berm: 0.035 * s, compression: 0.55, roughness: 0.7, seed: (this.p.x * 7.13 + this.p.z * 3.71) % 97 });
+            spray?.kick(this.p.x, ground, this.p.z, st.vx, st.vz, s, !st.down[i]);
             st.last[i * 2] = this.p.x;
             st.last[i * 2 + 1] = this.p.z;
           }
@@ -183,7 +199,7 @@ export class SnowFootfalls {
     if (typeof rig.linkNode !== 'function') return null;
     try {
       const nodes = FEET.map((f) => rig.linkNode!(`${f}_foot_tip_link`));
-      return { nodes, down: nodes.map(() => true), last: new Float32Array(nodes.length * 2).fill(1e6) };
+      return { nodes, down: nodes.map(() => true), last: new Float32Array(nodes.length * 2).fill(1e6), ux: u.pos.x, uz: u.pos.z, vx: 0, vz: 0, seen: -1 };
     } catch {
       return null;
     }
