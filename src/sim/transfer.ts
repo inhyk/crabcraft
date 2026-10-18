@@ -1,5 +1,6 @@
 import type { Area, AreaServices, AwardMailbox, CharacterId, CharacterRegistry, EarnedGrant, EntityRef, PlayerSim, PlayerState, SimUnit, TransferCoordinator, TransferDTO, WorldId } from './types.ts';
-import { levelForXp } from './data/progression.ts';
+import { worldChapter } from './math.ts';
+import { canTravelTo, levelForXp } from './data/progression.ts';
 import { setQuestChapter } from './data/quests.ts';
 const copy=<T>(value:T):T=>structuredClone(value);
 const sameRef=(a:EntityRef|null,b:EntityRef|null):boolean=>a===null?b===null:b!==null&&a.area===b.area&&a.id===b.id&&a.life===b.life;
@@ -16,7 +17,7 @@ export function restoreTransfer(dto:TransferDTO,unit:SimUnit,state:PlayerState,n
  if(dto.version!=='s2-transfer-v1'||state.character!==dto.character)throw new Error('transfer-identity');const d=copy(dto);
  Object.assign(unit,{hp:d.hp,maxHp:d.maxHp,alive:true,level:levelForXp(d.xp),stunUntil:now+d.status.stunRemaining,slowUntil:now+d.status.slowRemaining,slowPct:d.status.slowRemaining>0?d.status.slowPct:0,rustUntil:now+d.status.rustRemaining,rust:d.status.rustRemaining>0?d.status.rust:0,absorbUntil:now+d.status.absorbRemaining,absorb:d.status.absorbRemaining>0?d.status.absorb:0,absorbMax:d.status.absorbMax,blessingUntil:now+d.status.blessingRemaining,encounterBlessing:false,lastCombat:now-d.history.combatAge,pushX:0,pushZ:0,pushTime:0,lift:0,pendingHit:null,actions:[]});
  Object.assign(state,{unit:unit.ref,resource:d.resource,maxResource:d.maxResource,xp:d.xp,coins:d.coins,attackRank:d.attackRank,baseMaxHp:d.baseMaxHp,cooldowns:Object.fromEntries(Object.entries(d.cooldowns).map(([id,c])=>[id,{start:now-c.startAge,end:now+c.endRemaining}])),gcdStart:now-d.gcd.startAge,gcdEnd:now+d.gcd.endRemaining,lastSpend:now-d.history.spendAge,lastAttack:now-d.history.attackAge,nextSwing:now+d.history.nextSwingRemaining,quests:d.quests,flags:d.flags,cogMisses:d.cogMisses,warded:d.status.absorbRemaining>0&&d.status.absorb>0,cast:null,channel:null,target:null,queued:null,velX:0,velZ:0,jumpT:0,spinT:0,targetDeadAt:0,dash:null,deadUntil:null,controlsLocked:false,talkTarget:null});
- setQuestChapter(state.quests,destinationWorld==='w1'?1:destinationWorld==='w2'?2:3);
+ setQuestChapter(state.quests,worldChapter(destinationWorld));
 }
 export class InMemoryCharacterRegistry implements CharacterRegistry {
  private readonly owners=new Map<CharacterId,EntityRef>();
@@ -44,12 +45,12 @@ export class InMemoryTransferCoordinator implements TransferCoordinator {
   if(!player||!unit?.alive||!sameRef(owner,unit.ref)||member?.seatedBoat||member?.villagePlaying||player.state.controlsLocked)return {ok:false,reason:'travel-busy'};
   const point=source.services.definition.interactions.find(i=>i.id===gate&&i.kind==='gate');
   if(!point||point.destination!==destination.services.world||Math.hypot(unit.x-point.position.x,unit.y-point.position.y,unit.z-point.position.z)>point.range||!source.services.policy.canInteract(source.services.context,player.state,gate))return {ok:false,reason:'invalid-gate'};
-  const chapter=destination.services.world==='w1'?1:destination.services.world==='w2'?2:3;
-  if(chapter>=2&&(!player.state.flags.abyssCleared||chapter===3&&!player.state.flags.trueCleared))return {ok:false,reason:'locked-world'};
+  const chapter=worldChapter(destination.services.world);
+  if(!canTravelTo(chapter,player.state.flags))return {ok:false,reason:'locked-world'};
   if(source.services.encounterActive()||source.services.time-unit.lastCombat<5)return {ok:false,reason:'in-combat'};
   let preparedGrants:readonly {grant:EarnedGrant;appliedHere:boolean}[]=[];
   let admission:ReturnType<Area['reserveAdmission']>=null,departure:ReturnType<Area['stageDeparture']>|null=null,arrival:ReturnType<Area['stageArrival']>|null=null;
-  try {admission=destination.reserveAdmission(character,destination.services.definition.spawn.id,hostTick);if(!admission)return {ok:false,reason:'destination-full'};departure=source.stageDeparture(unit.ref);arrival=destination.stageArrival(admission,departure.dto);preparedGrants=source.pendingGrants();for(const entry of preparedGrants)this.awards.record(entry.grant,entry.appliedHere);
+  try {admission=destination.reserveAdmission(character,(destination.services.definition.pois.arrival??destination.services.definition.spawn).id,hostTick);if(!admission)return {ok:false,reason:'destination-full'};departure=source.stageDeparture(unit.ref);arrival=destination.stageArrival(admission,departure.dto);preparedGrants=source.pendingGrants();for(const entry of preparedGrants)this.awards.record(entry.grant,entry.appliedHere);
    if(!this.characters.compareAndSwap(character,owner,arrival.newRef))throw new Error('registry-conflict');
   }catch(error){if(arrival)destination.abortArrival(arrival.token);if(departure)source.abortDeparture(departure.token);if(admission)destination.releaseAdmission(admission.token);return {ok:false,reason:error instanceof Error?error.message:'transfer-failed'};}
   // Contract: no observer/tick/I/O here, these operations cannot fail after registry CAS.

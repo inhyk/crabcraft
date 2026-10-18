@@ -1,5 +1,6 @@
 import type { AreaDefinition, AreaServices, ChannelState, EntityRef, PlayerCommand, PlayerSim } from './types.ts';
 import { activeObjective, QUESTS, questAccept, questBump, questComplete } from './data/quests.ts';
+import { worldChapter } from './math.ts';
 import { canChallenge, canTravelTo, forgeCost } from './data/progression.ts';
 import { teleport } from './unit.ts';
 import { BOSS_PROFILES } from './data/bosses.ts';
@@ -12,14 +13,15 @@ export class InteractionRules {
  private player(ref:EntityRef):PlayerSim|null {const s=this.services,p=s.player(ref),u=s.getUnit(ref);if(!p||!u?.alive||u.hidden||p.state.controlsLocked)return null;const member=s.context.members.find(m=>m.character===p.state.character);if(member?.villagePlaying||member?.seatedBoat)return null;return p;}
  private near(player:PlayerSim,position:{x:number;y:number;z:number},range:number):boolean {const u=this.services.getUnit(player.state.unit);return !!u&&Math.hypot(u.x-position.x,u.y-position.y,u.z-position.z)<=range;}
  private validate(player:PlayerSim,id:string):Interaction|null {const s=this.services,point=s.definition.interactions.find(i=>i.id===id);if(!point||!this.player(player.state.unit)||!this.near(player,point.position,point.range)||!s.policy.canInteract(s.context,player.state,id))return null;
+  if(point.objective?.startsWith('dawn-')){const u=s.getUnit(player.state.unit)!;if(s.world!=='w3'||Math.hypot(u.x-point.position.x,u.y-point.position.y,u.z-point.position.z)>=point.range)return null;}
   if(point.kind==='beacon'&&!(player.state.quests.status.q3==='done'||player.state.flags.beaconLit||activeObjective(player.state.quests,'beacon')))return null;
   if((point.kind==='crystal'||point.kind==='waystone'||point.kind==='explore')&&(!point.objective||!activeObjective(player.state.quests,point.objective)))return null;
-  if(point.kind==='gate'){const chapter=point.destination==='w1'?1:point.destination==='w2'?2:3;if(!canTravelTo(chapter,player.state.flags))return null;const u=s.getUnit(player.state.unit)!;if(s.encounterActive()||s.time-u.lastCombat<5)return null;}
+  if(point.kind==='gate'){const chapter=worldChapter(point.destination!);if(!canTravelTo(chapter,player.state.flags))return null;const u=s.getUnit(player.state.unit)!;if(s.encounterActive()||s.time-u.lastCombat<5)return null;}
   return point;
  }
  private npc(player:PlayerSim,id:string):boolean {const s=this.services,npc=s.definition.npcs.find(n=>n.id===id);return !!npc&&this.near(player,npc.position,8)&&s.policy.canInteract(s.context,player.state,`npc:${id}`);}
  interact(ref:EntityRef,id:string):boolean {const player=this.player(ref);if(!player)return false;const s=this.services;
-  if(id.startsWith('npc:')){const npc=id.slice(4);if(!this.npc(player,npc))return false;const unit=s.npcById(npc);player.state.talkTarget=unit?.ref??null;if(npc==='silvermoon')questBump(player,s,'deliver');if(npc==='coralline')questBump(player,s,'deliver-supplies');return true;}
+  if(id.startsWith('npc:')){const npc=id.slice(4);if(!this.npc(player,npc))return false;const unit=s.npcById(npc);player.state.talkTarget=unit?.ref??null;if(npc==='brinebeard'&&s.world==='w3')questBump(player,s,'dawn-letter');if(npc==='silvermoon')questBump(player,s,'deliver');if(npc==='coralline')questBump(player,s,'deliver-supplies');return true;}
   const point=this.validate(player,id);if(!point)return false;
   if(point.kind==='beacon'||point.kind==='waystone'){if(player.state.channel||player.state.cast||player.state.dash)return false;const unit=s.getUnit(ref)!;player.state.target=null;unit.yaw=Math.atan2(point.position.x-unit.x,point.position.z-unit.z);player.startChannel(point.kind==='beacon'?'beacon':'waystone',point.kind==='beacon'?2:1.5,point.position,point.id);return true;}
   if(point.kind==='crystal'||point.kind==='explore'){questBump(player,s,point.objective!);return true;}
@@ -29,9 +31,9 @@ export class InteractionRules {
  command(ref:EntityRef,command:PlayerCommand):boolean {const p=this.player(ref);if(!p)return false;const s=this.services;
   if(command.kind==='bossChallenge'){
    const boss=s.bossByProfile(command.profile),definition=s.definition.bosses.find(b=>b.profile===command.profile),u=s.getUnit(ref)!;if(!boss||!definition)return false;
-   const flag=command.profile==='rust'?'rustCleared':command.profile==='abyss'?'abyssCleared':command.profile==='eclipse'?'trueCleared':'finalCleared',stats=BOSS_PROFILES[command.profile],chapter=s.world==='w1'?1:s.world==='w2'?2:3;
+   const stats=BOSS_PROFILES[command.profile],chapter=worldChapter(s.world);
    const joining=boss.engaged&&Math.hypot(u.x-definition.arena.position.x,u.z-definition.arena.position.z)>definition.arena.radius+3;
-   if(p.state.flags[flag]||stats.level<20&&!this.world.beaconLit||!canChallenge(u.level,stats.level,!!p.state.flags.rustCleared,!!p.state.flags.abyssCleared,chapter)||s.time-u.lastCombat<5||s.encounterActive()&&!joining)return false;
+   if(boss.state==='dying'||stats.level<20&&!this.world.beaconLit||!canChallenge(u.level,stats.level,!!p.state.flags.rustCleared,!!p.state.flags.abyssCleared,chapter)||s.time-u.lastCombat<5||s.encounterActive()&&!joining)return false;
    if(command.profile==='abyss'&&s.bossByProfile('rust')?.state!=='dead')return false;
    if(!joining){boss.wake();p.respawn();}else{p.cancelChannel();p.interruptCast();p.state.target=null;}
    const unit=s.getUnit(p.state.unit)!;const distance=Math.min(9,definition.arena.radius*.85);teleport(unit,s.query,definition.arena.position.x+Math.sin(definition.arena.yaw)*distance,definition.arena.position.z+Math.cos(definition.arena.yaw)*distance,definition.arena.yaw+Math.PI);return true;
