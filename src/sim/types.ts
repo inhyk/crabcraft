@@ -1,5 +1,5 @@
 /** Shared contract for the implemented deterministic numeric simulation core.
- * Current gameplay refresh follows canonical dev 60df24f and S4 foundation d480e24.
+ * Current gameplay refresh follows canonical dev 60df24f plus the merged S4 foundation.
  * Browser facade conversion, S1 event wiring and S3 baked query integration have separate gates.
  * Core state and events contain numeric/value data, never renderer objects, browser callbacks or I/O.
  */
@@ -205,6 +205,7 @@ export type PlayerCommand =
   | { kind: 'channelStart'; channel: ChannelKind; targetId?: string }
   | { kind: 'interact'; targetId: string }
   | { kind: 'questAccept' | 'questTurnIn'; questId: string; npcId: string }
+  | { kind: 'questTrack'; questId: string }
   | { kind: 'forgeBuy'; npcId: string }
   | { kind: 'travel'; gateId: string }
   | { kind: 'bossChallenge'; profile: BossSim['profile'] }
@@ -275,13 +276,14 @@ export interface EnemySim extends CombatController { readonly unit: EntityRef; r
 export interface BossSim extends CombatController { readonly state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; readonly engaged: boolean; readonly arena: Poi; sleep(): void; readonly unit: EntityRef; readonly profile: BossProfileId; update(dt: number): void; wake(): void; reset(): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
 export interface EnemySpawn {
   readonly id: string; readonly kind: 'scrapling' | 'scavenger' | 'jellyfish';
+  readonly legacySlot?: string; // explicit original spawn-job identity, never inferred from Area iteration order
   readonly home: Readonly<Vec3>; readonly wanderRadius: number; readonly pack: string;
   readonly fixedLevel: number; readonly role: 'ordinary' | 'add' | 'echo';
 }
 export interface AreaDefinition {
   readonly world: WorldId; readonly spawn: Poi; readonly recall: Poi;
   readonly pois: Readonly<Record<string, Poi>>; readonly enemies: readonly EnemySpawn[];
-  readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string }[];
+  readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string; freedPosition?: Readonly<Vec3>; captiveBeforeVictory?: boolean }[];
   readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string }[];
   readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string }[];
 }
