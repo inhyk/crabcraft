@@ -209,7 +209,7 @@ const smoke = {
     ...VILLAGE_FX(),
     // First flames licking up close to the lens at the bottom of the frame.
     { t: 2.4, kind: 'dusk-fire', spots: [[-1.4, 18.6, 0.5], [2.2, 19.2, 0.45], [0.2, 19.6, 0.4], [3.6, 19.8, 0.5]], height: 2.2, seed: 41, smoke: 0, grow: [[2.4, 0], [3.4, 0.8], [4.25, 1.1]] },
-    { t: -2, kind: 'dusk-haze', alpha: [[0, 1], [2.6, 1], [3.6, 0.75], [4.25, 0.55]], cover: [[0, 0.75], [2.6, 0.6], [4.25, 0.45]], back: 1, color: '#160503', color2: '#8c1e08', color3: '#ff6a1a', flow: [-0.16, 0.04], scale: 1.5 },
+    { t: -2, kind: 'dusk-haze', alpha: [[0, 1], [2.6, 1], [3.6, 0.75], [4.25, 0.55]], cover: [[0, 0.55], [2.6, 0.5], [4.25, 0.4]], back: 1, color: '#4a0d05', color2: '#b8300c', color3: '#ff7a24', flow: [-0.16, 0.04], scale: 1.5 },
     { t: -2, kind: 'embers', box: [16, 10, 16], count: 900, drift: [-1.6, 1.4, 0.2], size: 0.05, shift: [0, 0, 5] },
   ],
 };
@@ -305,6 +305,8 @@ const tower = {
   },
   fx: [
     ...TOWER_SKY(-6),
+    // Out of the white burn into a warm mist that clears off the tower.
+    { t: 0, kind: 'fade', color: '#e8a890', curve: [[0, 0.5], [0.45, 0.2], [1.3, 0]] },
     // 137.0: the fireball comes in from the left of the frame and strikes the tower.
     { t: 0.06, kind: 'dusk-fireball', from: [LH_HIT[0] + 9, LH_HIT[1] + 13, LH_HIT[2] + 30], to: LH_HIT, d: 0.44, size: 1.6, trail: 80, light: 1400, distance: 22, accel: 1.2 },
     { t: 0.5, kind: 'dusk-blast', at: LH_HIT, r: 3.2, column: 3.5, light: 700, distance: 14, flashA: 0.6, flashD: 0.2, flashColor: '#ffd8a0', shake: 0.08, puffs: 40, debris: 40, gravity: 9.8 },
