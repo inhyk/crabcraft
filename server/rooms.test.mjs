@@ -633,12 +633,12 @@ test('dungeon return requests authenticate the guest and route only to its priva
  });
 
 
-test('frontier bosses and twelve expedition tiers coexist with legacy five-boss checkpoints',()=>{
+test('frontier bosses and ten expedition tiers coexist with legacy five-boss checkpoints',()=>{
  const bosses=[...world.bosses,...['b30','b300','b500','b750'].map(id=>({id,state:'dormant',phase:1,enraged:false,mech:null}))];
  const six={...world,chapter:6,bosses,emberCleared:true,skyCleared:false};
  assert.ok(worldOf(six));assert.ok(worldOf({...six,bosses:bosses.slice(0,5),emberCleared:undefined}));
  for(const target of ['b500','b750']){assert.ok(eventOf({kind:'challenge',target},false));assert.ok(eventOf({kind:'attack',target,amount:20},false));}
- for(const [level,chapter]of [[350,5],[425,5],[500,5],[550,6],[650,6],[750,6]]){
+ for(const [level,chapter]of [[350,5],[450,5],[550,6],[650,6]]){
   const dungeon={level,run:`run-${level}`,stage:3,phase:'wave',left:0,clock:8,hazard:1,members:['crab']};
   assert.ok(worldOf({...six,chapter,dungeon}));assert.equal(worldOf({...six,chapter:4,dungeon}),null);
  }

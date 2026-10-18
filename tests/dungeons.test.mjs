@@ -1,8 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {DUNGEONS,dungeonDanger} from '../src/game/dungeonData.ts';
-test('twelve fixed tiers bridge the gaps between story bosses with increasing rewards',()=>{
- assert.deepEqual(DUNGEONS.map(d=>d.level),[35,50,75,150,200,250,350,425,500,550,650,750]);
+import {DUNGEONS,dungeonDanger,dungeonFor} from '../src/game/dungeonData.ts';
+test('ten fixed tiers bridge the gaps between story bosses with increasing rewards',()=>{
+ assert.deepEqual(DUNGEONS.map(d=>d.level),[35,50,75,150,200,250,350,450,550,650]);
  for(const [i,d]of DUNGEONS.entries()){assert.equal(d.chapter,d.level<100?3:d.level<300?4:d.level<=500?5:6);assert.ok(d.name[0]&&d.name[1]);if(i){assert.ok(d.coins>DUNGEONS[i-1].coins);assert.ok(d.xp>DUNGEONS[i-1].xp);}}
 });
 test('each telegraphed hazard has matching safe ground and a distinct footprint',()=>{
@@ -13,3 +13,5 @@ test('each telegraphed hazard has matching safe ground and a distinct footprint'
  assert.notEqual(dungeonDanger(4,0,12,0),dungeonDanger(4,2,12,0));
  assert.notEqual(dungeonDanger(5,0,0,0),dungeonDanger(5,1,0,0));
 });
+
+test('removed and renamed dungeon entries cannot be selected for a new run',()=>{for(const level of [425,500,750])assert.equal(dungeonFor(level),undefined);assert.equal(dungeonFor(450).chapter,5);});
