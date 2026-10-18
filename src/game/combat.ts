@@ -50,6 +50,7 @@ export class Combat {
     if(src===g.frostBoss?.unit&&(dst.kind==='player'||dst.kind==='remote')&&dst.level<300)return 0;
     if(dst===g.dawnBoss?.unit&&(src?.kind==='player'||src?.kind==='remote')&&src.level<100)return 0;
     if(src===g.dawnBoss?.unit&&(dst.kind==='player'||dst.kind==='remote')&&dst.level<100)return 0;
+    if(g.dungeons?.active&&dst.hostile&&(dst.ctrl as {isDungeonOnly?:boolean})?.isDungeonOnly&&(src?.kind==='player'||src?.kind==='remote')&&src.level<g.dungeons.state!.level)return 0;
     const routed = g.multiplayer?.battle.routeDamage(src, dst, amount, o);
     if (routed !== undefined && routed !== null) return routed;
     if (!dst.alive || dst.hidden) return 0;

@@ -510,6 +510,9 @@ export class Multiplayer {
     this.link.stop(); this.clearPeers();
   }
   /** Leaving a room with friends goes back to the public world. */
+  pauseDungeonConnection(){this.closeSocket();}
+  createDungeonRoom(){this.connect('create');}
+  leaveDungeonRoom(){this.disconnect();}
   private disconnect() { this.connect('enter'); }
   dispose() {
     this.disposed = true;
