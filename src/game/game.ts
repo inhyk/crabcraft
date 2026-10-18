@@ -557,16 +557,21 @@ export class Game {
   }
 
   private showLoading(chapter: 1 | 2 | 3 | 4): void {
-    const second = chapter >= 2;
-    const tips=loadingTips(chapter>=2?2:1);
+    const entry = {
+      1: {region:'Clawhaven',image:`art/loading-${1 + Math.floor(Math.random() * 2)}.webp`,subtitle:t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples')},
+      2: {region:'Starhaven',image:'art/loading-starhaven.webp',subtitle:t('월드 II  |  별빛 아래 다시 만난 친구들','World II  |  Friends reunited beneath the stars')},
+      3: {region:'Dawnharbor',image:'art/loading-dawnharbor.webp',subtitle:t('월드 III  |  빼앗긴 새벽을 되찾는 여정','World III  |  Reclaim the stolen dawn')},
+      4: {region:'Snowfall Village',image:'art/loading-frostlight.webp',subtitle:t('월드 IV  |  눈꽃 마을 너머 영원의 서리왕','World IV  |  The King of Eternal Frost awaits')},
+    }[chapter];
+    const tips=loadingTips(chapter);
     const tip = tips[Math.floor(Math.random() * tips.length)];
-    const img = second ? 'art/loading-starhaven.webp' : `art/loading-${1 + Math.floor(Math.random() * 2)}.webp`;
+    const img = entry.image;
     const el = h(
       'div',
-      { class: second ? 'loading starhaven' : 'loading' },
+      { class: chapter >= 2 ? 'loading starhaven' : 'loading', 'data-chapter':String(chapter) },
       h('div', { class: 'ld-art', style: `background-image:url("${art(img)}")` }),
       h('div', { class: 'ld-shade' }),
-      h('div', { class: 'ld-zone' }, h('div', { class: 'ld-title cc-title' }, regionName(second ? 'Starhaven' : 'Clawhaven')), h('div', { class: 'ld-sub' }, second ? t('월드 II  |  별빛 아래 다시 만난 친구들','World II  |  Friends reunited beneath the stars') : t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples'))),
+      h('div', { class: 'ld-zone' }, h('div', { class: 'ld-title cc-title' }, regionName(entry.region)), h('div', { class: 'ld-sub' }, entry.subtitle)),
       h(
         'div',
         { class: 'ld-foot' },
