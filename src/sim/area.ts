@@ -91,6 +91,7 @@ export class SimulationArea implements AreaContract {
     this.services={
       id:options.id,world:options.definition.world,query:options.query,actionData:options.actionData,definition:this.options.definition,policy:this.options.policy,random:this.rng,ids:this.ids,timers:this.timers,
       get time(){return self.clock;},get tick(){return self.stepId;},get context(){return self.context;},get combat(){return self.combat;},
+      reserveOutcomeRandom:(start,count,end)=>{if(!this.externalLedger)throw new Error('External ledger mode required');this.rng.reserve(start,count,end);},
       getUnit:ref=>this.getUnit(ref),controller:ref=>this.getUnit(ref)?this.controllerMap.get(ref.id)??null:null,
       player:ref=>this.getUnit(ref)?this.playerMap.get(ref.id)??null:null,
       npcById:id=>[...this.unitMap.values()].find(u=>u.npcId===id)??null,

@@ -339,6 +339,7 @@ export interface Contribution { victim: EntityRef; contributors: readonly Charac
  * Subsystem controllers receive these services, not Game or server/WS/DOM objects.
  */
 export interface AreaServices {
+  reserveOutcomeRandom(startState:number,drawCount:number,finalState:number):void;
   readonly id: AreaId; readonly world: WorldId; readonly time: number; readonly tick: Tick;
   readonly query: WorldQuery; readonly actionData: ActionData; readonly context: AreaContext; readonly definition: AreaDefinition; readonly policy: AreaPolicy;
   readonly random: RandomSource; readonly ids: IdSource; readonly combat: CombatRules; readonly timers: AreaTimers;

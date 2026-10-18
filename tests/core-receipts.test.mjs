@@ -72,3 +72,10 @@ test('durable retirement releases owner metadata and session changes invalidate 
 test('registry ownership loss rejects a previously valid proof before any reward mutation',()=>{
  const registry=new InMemoryCharacterRegistry(),a=area('owner',{characters:registry}),{ref,p}=actor(a);a.beginDurabilityBarrier('read');const token=a.beginGrantRead(ref,0);registry.compareAndSwap('hero',ref,{area:'destination',id:1,life:1});assert.throws(()=>a.applyCertifiedGrants(token,{revision:0,grants:[grant(1)]}),/registry/);assert.equal(p.state.coins,0);assert.equal(a.resourceUsage().replayTokens,0);
 });
+
+test('reserved Mulberry block preserves sequential rolls and same-stack subsequent RNG exactly',async()=>{
+ const {Random,advanceRandomState}=await import('../src/sim/random.ts');for(const seed of [0,1,0xffffffff])for(const count of [0,1,7,1000]){const actual=new Random(seed),oracle=new Random(seed);for(let i=0;i<count;i++)oracle.next();actual.reserve(seed,count,advanceRandomState(seed,count));assert.equal(actual.state(),oracle.state());assert.equal(actual.next(),oracle.next());}
+ const big=new Random(123);assert.equal(advanceRandomState(123,2**32),123);assert.equal(advanceRandomState(123,Number.MAX_SAFE_INTEGER),(123-0x6d2b79f5)>>>0);big.reserve(123,Number.MAX_SAFE_INTEGER,advanceRandomState(123,Number.MAX_SAFE_INTEGER));
+ const state=big.state();assert.throws(()=>big.reserve(state,Number.MAX_SAFE_INTEGER+1,state));assert.throws(()=>big.reserve(state,1,state));assert.throws(()=>big.reserve(0,1,advanceRandomState(0,1)));assert.equal(big.state(),state);
+ const a=area('reserve'),start=a.debugState().rng.state;a.services.reserveOutcomeRandom(start,2**32,start);assert.equal(a.debugState().rng.state,start);assert.throws(()=>worldArea('retained-rng').services.reserveOutcomeRandom(0,0,0),/External/);
+});
