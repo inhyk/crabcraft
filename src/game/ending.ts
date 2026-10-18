@@ -127,7 +127,7 @@ export class EndingSequence {
     const spawn = g.world.pois.spawn;
     const p = g.player.unit;
     // Everyone in town, every race.
-    const crowd = [...g.npcs.map((n) => n.unit), ...g.townsfolk.map((t) => t.unit),...(this.mode==='final'&&g.journey?.finalCleared?[g.dawnBoss.freed]:[])];
+    const crowd = [...g.npcs.map((n) => n.unit), ...g.townsfolk.map((t) => t.unit),...(this.mode==='final'&&g.journey?.frostCleared?[g.frostBoss.freed]:[])];
     this.crowdHomes = crowd.map(unit=>({unit,x:unit.pos.x,z:unit.pos.z,yaw:unit.yaw}));
     const n = crowd.length;
     const slots = ringSlots(n);
@@ -315,8 +315,8 @@ export class EndingSequence {
       tr('함께 모험해 줘서 고마워요!','Thank you for sharing this adventure!'),
       tr('첫 번째 모험의 끝 · 별빛 너머에는 새로운 섬이 기다립니다.','The first adventure ends. Beyond the stars, a new island awaits.'),
     ] : [
-      tr('솔라칸을 물리치고 친구 미라를 구했습니다. 세 섬에 새 아침이 밝았어요.','Solarkan is defeated and Mira is free. Dawn returns to all three islands.'),
-      tr('돌아온 친구와 네 왕관의 영웅을 위해, 온 마을이 함께 춤을 춥니다.','The village dances for its rescued friend and the hero of four crowns.'),
+      tr('보레아스를 물리치고 친구 미라를 구했습니다. 네 섬에 새 아침이 밝았어요.','Boreas is defeated and Mira is free. Dawn returns to all four islands.'),
+      tr('돌아온 친구와 다섯 왕관의 영웅을 위해, 온 마을이 함께 춤을 춥니다.','The village dances for its rescued friend and the hero of five crowns.'),
       tr('잊힌 별의 섬은 더 이상 혼자가 아닙니다. 우리의 모험은 전설이 되었습니다.','The Isle of Forgotten Stars is no longer alone. Our adventure has become a legend.'),
       tr(`TRUE ENDING · 함께해 줘서 고마워요, ${name}.`,`TRUE ENDING · Thank you for joining us, ${name}.`),
     ];

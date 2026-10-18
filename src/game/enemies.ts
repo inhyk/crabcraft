@@ -338,7 +338,7 @@ export class Enemy {
     if(this.isEcho){this.applyStats(Math.max(10,this.game.partyLevel));this.unit.level=this.stats.level;this.unit.maxHp=this.unit.hp=this.stats.hp;return;}
     const inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
     const scaling=!this.isAdd&&(inWorld2||this.game.journey?.rustCleared);
-    const level = scaling ? Math.max(inWorld2 ? (this.game.world2.chapter===3?20:10) : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0)) : base.level;
+    const level = scaling ? Math.max(inWorld2 ? (this.game.world2.chapter===4?100:this.game.world2.chapter===3?20:10) : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0)) : base.level;
     if (this.stats.level === level && this.stats.respawn === (inWorld2 ? 12 : base.respawn)) return;
     this.applyStats(level);
     this.unit.level=level;
@@ -353,7 +353,7 @@ export class Enemy {
   }
 
   refreshAppearance(): void {
-    this.unit.setBaseTint((this.game.world2?.chapter??1)>=2 ? '#b08cff' : LED[this.kind]);
+    this.unit.setBaseTint(this.game.world2?.chapter===4?'#a5eaff':(this.game.world2?.chapter??1)>=2 ? '#b08cff' : LED[this.kind]);
   }
 
   private canRespawnUnseen(): boolean {

@@ -17,11 +17,11 @@ import { Blocklist, REPORT_REASONS, chatSession, displayName, markSafetyNote, pu
 type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number };
 /** `dance`: the peer's breakdance, replayed here move by move as the peer announces them. */
 type Peer = { spec: CrabSpec; unit: Unit | null; state: State | null; dance: BreakRoutine | null };
-const ROMAN = ['', 'I', 'II', 'III'];
+const ROMAN = ['', 'I', 'II', 'III', 'IV'];
 
 /**
  * Entering the world joins a public shard of the current world area; travelling moves to that area's shard.
- * A shard shares presence, emotes and chat, while combat, quests and saves stay each player's own.
+ * A shard shares presence, emotes and chat, and opt-in shared combat, lighthouse and boats. Quests, saves and portal travel stay personal.
  * A code room with friends (`room`) shares one simulated world: bosses, travel and parties.
  * A dropped shard socket keeps coming back (see ./link); a code room retries a few times, then returns to the public world.
  * The server masks chat; here a player can block and report others and hide public chat (./chatSafety).
@@ -80,7 +80,7 @@ export class Multiplayer {
       hello: (mode, room) => {
         const spec = this.game.player.unit.rig.spec;
         const session = this.session;
-        return mode === 'enter' ? { type: mode, area: this.game.world2.chapter, spec, session } : { type: mode, room, combatVersion: 1, spec, session };
+        return mode === 'enter' ? { type: mode, area: this.game.world2.chapter, combatVersion:1, snowWorld:true, sharedWorld:1, spec, session } : { type: mode, room, combatVersion: 1, snowWorld:true, spec, session };
       },
       message: msg => this.receive(msg),
       lost: info => this.lost(info),
@@ -167,6 +167,7 @@ export class Multiplayer {
         this.ownId = msg.id; this.offline = false;
         if (msg.public) {
           this.shard = msg.room; this.area = msg.area; this.room = '';
+          if(msg.sharedWorld===1)this.battle.join(msg.id,msg.host,msg.world,true);
           this.note(t(`월드 ${ROMAN[this.area]}에 들어왔어요. 근처 모험가와 인사해 보세요.`,`Entered World ${ROMAN[this.area]}. Say hello to the adventurers nearby.`));
         } else {
           this.room = msg.room; this.shard = ''; this.area = 0;
@@ -237,7 +238,7 @@ export class Multiplayer {
       this.rejoinParty ??= this.battle.parties[this.ownId] ?? null;
       this.setStatus('연결이 끊겼어요. 다시 연결 중…','Disconnected. Reconnecting…');
     } else {
-      this.shard = ''; this.area = 0;
+      this.battle.leave();this.shard = ''; this.area = 0;
       // The link keeps trying for as long as the player is in the world; after a few misses say so and offer the button.
       if (welcomed && attempt <= 4) this.setStatus('연결이 끊겼어요. 다시 연결 중…','Disconnected. Reconnecting…');
       else { this.setStatus('오프라인 · 서버에 연결할 수 없어 혼자 플레이해요.','Offline · Could not reach the server, playing solo.'); this.goOffline(); }
@@ -434,11 +435,11 @@ export class Multiplayer {
     this.summary.textContent = this.room ? t(`🦀 친구와 방 · ${count}명`,`🦀 Room with friends · ${count}`) : online ? t(`🦀 온라인 · ${count}명`,`🦀 Online · ${count}`) : this.offline ? t('🦀 오프라인','🦀 Offline') : t('🦀 연결 중…','🦀 Connecting…');
     this.intro.textContent = this.room
       ? t('최대 8명 · 함께 모험하거나 싸우기 모드로 대전해요. 같은 파티는 서로 공격하지 않아요. 퀘스트는 각자 진행해요.','Up to 8 players · Adventure together or duel in PvP. Teammates cannot hurt each other. Quests progress individually.')
-      : t('같은 월드의 모험가를 최대 8명까지 만나요. 전투, 퀘스트, 저장은 각자 진행해요. 보스와 포탈을 함께하려면 친구와 방을 만드세요.','Meet up to 8 adventurers in your world. Combat, quests and saves stay your own. To share bosses and portals, make a room with friends.');
+      : t('같은 월드에서 몬스터 체력·등대·배를 함께 공유해요. 퀘스트와 포탈 이동은 각자 진행해요.','Share monster health, lighthouse and boats in the same world. Quests and portal travel stay personal.');
   }
   private setStatus(ko:string,en:string){this.statusText=[ko,en];this.status.textContent=t(ko,en);}
   private serverError(message:string):[string,string]{
-    const errors:[string,string][]=[['캐릭터 정보를 확인해 주세요.','Invalid character.'],['서버가 가득 찼어요. 잠시 뒤 다시 시도하세요.','Server full. Try again later.'],['방을 찾을 수 없어요. 6자리 코드를 확인하세요.','Room not found. Check the six-character code.'],['방이 가득 찼어요. 최대 8명까지 참가할 수 있어요.','Room is full (8 players).']];
+    const errors:[string,string][]=[['게임 버전이 달라요. 모두 새로고침한 뒤 같은 방에 들어와 주세요.','Game versions differ. Everyone must refresh before joining.'],['캐릭터 정보를 확인해 주세요.','Invalid character.'],['서버가 가득 찼어요. 잠시 뒤 다시 시도하세요.','Server full. Try again later.'],['방을 찾을 수 없어요. 6자리 코드를 확인하세요.','Room not found. Check the six-character code.'],['방이 가득 찼어요. 최대 8명까지 참가할 수 있어요.','Room is full (8 players).']];
     return errors.find(pair=>pair.includes(message))??[message,message];
   }
   refreshLanguage(){

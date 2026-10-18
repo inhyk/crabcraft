@@ -84,8 +84,7 @@ export function dawnGrove() {
 export function layoutDawnreach(): Collision {
   const h = dawnHeight;
   const col = new Collision({ minX: -150, minZ: -175, step: 2, nx: 151, nz: 176, h: new Float32Array(151 * 176), heightAt: h });
-  // The town fountain, the citadel's flanking towers and the rock ring.
-  col.addCircle(-11, 53, 3.7, 4, 9);
+  // The citadel's flanking towers and the rock ring.
   for (const side of [-1, 1]) col.addCircle(side * 27, -56, 4.5, 4, 35);
   for (const { x, z, r } of dawnRocks()) {
     const y = h(x, z);

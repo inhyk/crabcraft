@@ -27,7 +27,8 @@ export class Npc {
   }
 
   nextLine(): string {
-    if(this.game.world2.chapter===3)return this.game.journey?.finalCleared?t('미라가 돌아왔어요! 이제 세 섬의 친구들이 함께할 수 있어요.','Mira is home! Friends from all three islands can be together.'):t('친구 미라는 북쪽 황혼 성채에 갇혀 있어요. 선장의 부탁을 받고 100레벨 왕에게 도전하세요.','Mira is imprisoned in the northern citadel. Take the captain’s requests and face the level 100 king.');
+    if(this.game.world2.chapter===4)return this.game.journey?.frostCleared?t('보레아스를 물리치고 미라가 돌아왔어요!','Boreas is defeated and Mira is home!'):t('보레아스가 미라를 북쪽 얼음 감옥에 가뒀어요. 300레벨에 친구를 구해주세요.','Boreas holds Mira in the northern ice prison. Rescue your friend at level 300.');
+    if(this.game.world2.chapter===3)return this.game.journey?.finalCleared?t('설원으로 가는 길이 열렸어요. 보레아스에게 잡힌 미라를 구하러 가세요.','The route to Frostlight is open. Rescue Mira from Boreas.'):t('보레아스가 미라를 설원으로 데려갔어요. 100레벨 솔라칸을 이겨 길을 여세요.','Boreas has taken Mira to Frostlight. Defeat level 100 Solarkan to open the route.');
     if(this.game.world2.chapter===2){
       const progress=starNpcProgressLine(this.def.id,this.game.quests.status,!!this.game.journey?.trueCleared);
       if(progress)return progress;

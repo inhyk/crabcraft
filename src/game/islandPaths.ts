@@ -3,7 +3,7 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 export type IslandPath={points:readonly (readonly [number,number])[];width:number;trim?:boolean};
 
 /** Weathered bevelled flagstones drape onto the exact gameplay surface, including hills. */
-export function islandPaths(height:(x:number,z:number)=>number,paths:IslandPath[],realm:2|3){
+export function islandPaths(height:(x:number,z:number)=>number,paths:IslandPath[],realm:2|3|4){
  const root=new THREE.Group();root.name=`world${realm}-flagstone-paths`;
  let seed=realm*1307;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
  const canvas=document.createElement('canvas');canvas.width=canvas.height=256;const ctx=canvas.getContext('2d')!;
@@ -12,7 +12,7 @@ export function islandPaths(height:(x:number,z:number)=>number,paths:IslandPath[
  // Shallow mineral veins and softened chipped edges are visible even close to the ground.
  for(let i=0;i<17;i++){ctx.strokeStyle=i%2?'#8e8b7b44':'#e1ddca55';ctx.lineWidth=.5+random()*1.5;ctx.beginPath();let x=random()*256,y=random()*256;ctx.moveTo(x,y);for(let j=0;j<5;j++){x+=(random()-.5)*35;y+=12+random()*13;ctx.lineTo(x,y);}ctx.stroke();}
  const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=4;texture.name='weathered-flagstone';texture.userData.islandPaving=true;
- const palette=realm===2?['#acb8ba','#a4adae','#bcc4bd','#919fa5','#c3bfb3']:['#c7bea7','#b6ad98','#d7cbb0','#aaa58f','#c3b49c'];
+ const palette=realm===4?['#95aebe','#b5cddd','#c5dce7','#879eaf','#a9c5d8']:realm===2?['#acb8ba','#a4adae','#bcc4bd','#919fa5','#c3bfb3']:['#c7bea7','#b6ad98','#d7cbb0','#aaa58f','#c3b49c'];
  const materials=palette.map(color=>new THREE.MeshStandardMaterial({color,map:texture,bumpMap:texture,bumpScale:.055,roughness:.94}));
  const edgeMaterial=new THREE.MeshStandardMaterial({color:realm===2?'#9eafad':'#d7c39c',map:texture,bumpMap:texture,bumpScale:.035,roughness:.9});
  const pools:THREE.BufferGeometry[][]=materials.map(()=>[]),edges:THREE.BufferGeometry[]=[];
@@ -32,7 +32,7 @@ export function islandPaths(height:(x:number,z:number)=>number,paths:IslandPath[
      const across=(c+.5-columns/2)*cw,x=cx+nx*across,z=cz+nz*across;
      // Preserve fountain clearance in Starhaven and avoid repaving the existing boss floors.
      if(realm===2&&(Math.hypot(x,z-55)<3.8||Math.hypot(x,z+75)<19))continue;
-     if(realm===3&&(Math.hypot(x+11,z-53)<3.8||Math.hypot(x,z+72)<22))continue;
+     if(realm===3&&Math.hypot(x,z+72)<22)continue;
      stone(x,z,cw-.065-random()*.03,step-.065-random()*.03,yaw+(random()-.5)*.028,pools[Math.floor(random()*materials.length)]);
     }
     if(path.trim)for(const side of [-1,1]){const across=side*(path.width/2+.17);const x=cx+nx*across,z=cz+nz*across;if(realm===2&&Math.hypot(x,z-55)<4)continue;stone(x,z,.24,step-.04,yaw,edges);}
