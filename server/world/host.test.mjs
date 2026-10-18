@@ -265,8 +265,8 @@ test('private encounter admission uses actual beacon channel and trusted readine
   } finally { if (heartbeat) clearInterval(heartbeat); bot?.ws.close(); await rt.close(); }
 });
 
-test('100 actual authenticated sockets occupy one public Area; 101st queues, takes a released seat and cancels cleanly (paused simulation clock)', { timeout: 30000 }, async () => {
-  const rt = await runtime({ capacity: true, grace: 0 }); const bots = [];
+for(const ledger of [false,true])test(ledger?'external 100 actual sockets and 101st queue preserve one public Area and cancel cleanly (paused simulation clock)':'100 actual authenticated sockets occupy one public Area; 101st queues, takes a released seat and cancels cleanly (paused simulation clock)', { timeout: 30000 }, async () => {
+  const rt = await runtime({ capacity: true, grace: 0, ledger }); const bots = [];
   try {
     const records = [];
     for (let i = 0; i < 101; i++) records.push(await character());
