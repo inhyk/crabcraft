@@ -72,6 +72,27 @@ test('Boreas numeric rig is derived from the actual shipped mage and resolves bo
  const raw=JSON.parse(await readFile(new URL('../src/sim/data/pose-data.json',import.meta.url),'utf8'));
  assert.deepEqual(raw.rigSources.frost,{factory:'createCrab',spec:{race:'undead',sex:'male',classId:'mage',shell:3,crest:1,led:2,name:'Boreas'},rootMultiplier:4.5});
  assert.equal(data.archetype('boss-frost'),data.archetype('frost'));
- assert.equal(Object.keys(raw.archetypes).length,15);
+ assert.equal(Object.keys(raw.archetypes).length,27);
  for(let axis=0;axis<3;axis++)near(data.archetype('frost').rootScale[axis],data.archetype('undead').rootScale[axis]*4.5);
+});
+
+test('named NPC and rescue rigs retain their shipped identities and equipment provenance',async()=>{
+ const raw=JSON.parse(await readFile(new URL('../src/sim/data/pose-data.json',import.meta.url),'utf8'));
+ const expected={
+  'npc:brinebeard':['dwarf','male','warrior',0,3,1], 'npc:silvermoon':['nightelf','female','priest',0,2,1],
+  'npc:coralline':['human','female','priest',2,2,0], 'npc:grukk':['orc','male','warrior',0,1,0],
+  'npc:hoofclaw':['tauren','female','priest',1,2,1], 'npc:rattlebolt':['undead','male','mage',0,3,0],
+  'npc:pip':['dwarf','female','warrior',1,2,2],
+  'freed-rust':['human','male','warrior',0,1,0], 'freed-abyss':['nightelf','female','priest',2,1,2],
+  'freed-eclipse':['undead','female','priest',2,2,2], 'freed-dawn':['human','female','mage',1,2,1],
+  'freed-frost':['human','female','mage',1,2,1],
+ };
+ for(const [id,fields] of Object.entries(expected)){
+  const source=raw.rigSources[id];assert.equal(source.factory,'createCrab');assert.equal(source.rootMultiplier,1);
+  assert.deepEqual(['race','sex','classId','shell','crest','led'].map(k=>source.spec[k]),fields,id);
+  assert.equal(data.archetype(id).height,raw.archetypes[id].height);
+ }
+ assert.deepEqual(raw.rigSources['npc:brinebeard'].extras,['captain-hat']);
+ assert.notEqual(data.archetype('npc:brinebeard').height,data.archetype('human').height);
+ assert.notEqual(data.archetype('freed-abyss').height,data.archetype('human').height);
 });
