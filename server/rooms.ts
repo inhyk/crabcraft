@@ -5,7 +5,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, WebSocket } from 'ws';
 
-import { specOf, stateOf, actions, clean, type Spec, type State } from './protocol.ts';
+import { specOf, stateOf, skillOf, actions, clean, type Spec, type State } from './protocol.ts';
 import type { MonitorSnapshot, MonitorPlayer } from './monitor.ts';
 import { Moderation, Talk, CHAT, reasonOf, sessionOf, shownName, type Report } from './chat/safety.ts';
 
@@ -212,6 +212,9 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
         const old = observed.get(m.id);
         observed.set(m.id, { updatedAt: old?.updatedAt ?? null, action: { name: msg.action, seq: ++actionSeq, at: now } });
         broadcast(m.room, { type: 'action', id: m.id, action: msg.action }, m.id);
+      } else if (m.room && msg.type === 'skill') {
+        const skill = skillOf(msg.skill);
+        if (skill) broadcast(m.room, { type: 'skill', id: m.id, skill }, m.id);
       } else if (m.room && m.combat && msg.type === 'world' && host(m.room) === m.id) {
         const world = worldOf(msg.world);
         if (world && (!publics.has(m.room)||sharedAreas.has(m.room)&&world.chapter===publics.get(m.room)) && (m.snow || world.chapter<4&&!world.bosses.some(b=>b.id==='b300'))) { worlds.set(m.room, world); broadcast(m.room, { type: 'world', world }, m.id); }
