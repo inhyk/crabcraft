@@ -27,6 +27,7 @@ jobs:
           version: 10.10.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:sim:core
+      - run: node --test tests/sim-view-input.test.mjs
       - run: pnpm build
       - run: pnpm build:server
       - run: pnpm test:boss
