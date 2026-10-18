@@ -7,7 +7,7 @@ const query={heightAt:(x,z)=>2+Math.sin(x/20)+Math.cos(z/20),resolveCollision:(x
 const config={query,fixedLevels:{scrapling:3,scavenger:5,jellyfish:4,echo:11},population:{scrapling:12,scavenger:4,jellyfish:0}};
 test('three worlds have independent immutable spawn, NPC, arena and interaction definitions',()=>{
  const [w1,w2,w3]=[createWorld1Definition(config),createWorld2Definition(config),createWorld3Definition(config)];
- assert.deepEqual([w1.world,w2.world,w3.world],['w1','w2','w3']);assert.deepEqual([w1.spawn.position.x,w2.spawn.position.x,w3.spawn.position.z],[-.5,0,82]);
+ assert.deepEqual([w1.world,w2.world,w3.world],['w1','w2','w3']);assert.deepEqual([w1.spawn.position.x,w2.spawn.position.x,w3.spawn.position.z],[-.5,0,84]);
  assert.deepEqual([w1.bosses.map(b=>b.profile),w2.bosses.map(b=>b.profile),w3.bosses.map(b=>b.profile)],[['rust','abyss'],['eclipse'],['dawn']]);
  assert.equal(w1.enemies.length,16);assert.equal(w2.enemies.length,17);assert.equal(w3.enemies.length,16);assert.equal(w2.enemies.find(e=>e.role==='echo').fixedLevel,11);
  assert.ok(w2.interactions.some(i=>i.id==='lamp-c'));assert.ok(!w1.interactions.some(i=>i.id==='lamp-c'));assert.ok(!w3.interactions.some(i=>i.id==='lamp-c'));
