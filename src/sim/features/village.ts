@@ -86,6 +86,7 @@ export class NumericVillageGames {
     if(saved&&r&&this.context.chapter===1){const u=this.context.resolve(r.seeker);if(u&&sameRef(u.ref,saved.ref))teleport(u,this.context.query,saved.position.x,saved.position.z);}
     this.npcHome=null;this.nav=null;
   }
+  detach(ref:EntityRef):void {if([...this.bindings.values()].some(r=>sameRef(r,ref)))this.reset();}
   reset():void {this.restoreNpc();this.state=null;this.bindings.clear();}
   /** Accepted trusted observations only. Snapshots never tick clocks, catch actors, or grant rewards. */
   applyObservation(observation:FeatureObservation<VillageRound|null>):boolean {
