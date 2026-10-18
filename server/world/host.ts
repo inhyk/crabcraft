@@ -16,8 +16,10 @@ import { TREASURES, LIGHTHOUSE_SECRET } from '../../src/sim/features/exploration
 import { CharacterStore, CharacterStoreError, type Character, type VictimOutcomeResources, type GrantBatchEntry } from './character-store.ts';
 import { WorldTicketRegistry, type SessionBinding } from './admission.ts';
 import type { HostOwnership } from './ownership.ts';
+import type { DurableOutcomeStore } from './contribution-store.ts';
+import type { SourceLedgerLimits } from '../../src/sim/outcomes.ts';
 import { DeadlineScheduler } from './scheduler.ts';
-import { PersistenceCoordinator, readCertifiedGrantPage, type Recovery } from './persistence-coordinator.ts';
+import { PersistenceCoordinator, readCertifiedGrantPage, AreaSourceDrain, PagedOutcomeRecovery, type Recovery } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
 import { prepareObservationSnapshot } from './gameplay/protocol.ts';
@@ -40,6 +42,7 @@ export interface HostPolicies {
   readonly maxQueuedInputs: number;
   readonly maxMutationSourcesPerTick: number;
   readonly loopIntervalMs: number;
+  readonly ledger?: { sourceLimits: SourceLedgerLimits; drainLimits: Omit<ConstructorParameters<typeof AreaSourceDrain>[3], 'codecVersion'>; recoveryLimits: Omit<ConstructorParameters<typeof PagedOutcomeRecovery>[2], 'codecVersion'>; recoveryIntervalMs: number };
   readonly victimOutcome: VictimOutcomeResources;
   readonly victimOutcomeRetryCeiling?: VictimOutcomeResources;
   readonly persistence: { maxQueuedPerCharacter: number; maxAttempts: number; retryMs: number; maxRecoveryRounds: number };
@@ -60,6 +63,7 @@ export interface ActualWorldHostDeps {
   gameplay: { catalog: GameplayCatalog; create(): GameplayProtocol };
   ownership: HostOwnership;
   chat?: WorldChatService;
+  outcomes?: DurableOutcomeStore;
   policies: HostPolicies;
   originAllowed(origin: string, req: IncomingMessage): boolean;
   clientIp(req: IncomingMessage): string;
@@ -69,6 +73,7 @@ export interface ActualWorldHostDeps {
   onFailure?(stage: string, error: unknown): void;
 }
 export interface ActualWorldHost {
+  ready(): Promise<void>;
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void;
   stopAdmission(): void;
   /** Internal recovery only. No HTTP or client authority is exposed. */
@@ -76,8 +81,8 @@ export interface ActualWorldHost {
   shutdown(deadlineMs: number): Promise<{ durable: boolean; unresolved: number }>;
   stats(): Readonly<Record<string, number | boolean>>;
 }
-interface Slot { kind: 'public' | 'party'; ledgerMode: LedgerMode; world: WorldId; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
-interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; pendingReplay: boolean; returnTo?: { world: WorldId; spawn: string } }
+interface Slot { kind: 'public' | 'party'; ledgerMode: LedgerMode; source?: AreaSourceDrain; world: WorldId; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
+interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; pendingReplay: boolean; grantRead?: GrantReadToken; returnTo?: { world: WorldId; spawn: string } }
 interface Party { code: string; leader: string; members: Map<string, string>; pvp: boolean; encounter?: Slot }
 interface Connection {
   ws: WebSocket; ip: string; origin: string; generation: number; closed: boolean;
@@ -86,6 +91,7 @@ interface Connection {
   sequence: number; epoch: number; full: boolean; lastInput: number; timedOut: boolean; nextValidation: number; validating: boolean; authTimer?: ReturnType<typeof setTimeout>;
   visible: Set<number>;
   queueKey?: string;
+  publishedConsumed: number;
   baselineSequence: number;
   results: CommandResult[];
   chatBusy: boolean; chatPreferences?: ChatPreferences; chatNeedsPreferences: boolean;
@@ -102,7 +108,9 @@ const reject = (socket: Duplex, status: string) => socket.end(`HTTP/1.1 ${status
 
 /** Actual numeric simulation host. The synthetic v2 fixture is intentionally not imported. */
 export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHost {
-  const p = deps.policies;
+  const p = deps.policies, external = !!p.ledger;
+  if (!!deps.outcomes !== external) throw new Error('outcomes service and explicit ledger policy must be paired');
+  if (p.ledger && (!Number.isSafeInteger(p.ledger.recoveryIntervalMs) || p.ledger.recoveryIntervalMs < 1)) throw new Error('explicit recovery interval required');
   for (const key of ['authTimeoutMs', 'inputTimeoutMs', 'sessionRevalidateMs', 'checkpointIntervalMs', 'maxConnections', 'maxConnectionsPerIp', 'maxWaiting', 'maxAuthFrameBytes', 'maxFrameBytes', 'maxBufferedBytes', 'maxQueuedInputs', 'maxMutationSourcesPerTick', 'loopIntervalMs'] as const) {
     if (!Number.isSafeInteger(p[key]) || p[key] < 1) throw new Error(`invalid host limit: ${key}`);
   }
@@ -129,7 +137,13 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const completion: (() => void)[] = [];
   const persistence = new PersistenceCoordinator(deps.characters, deps.ownership, { ...p.persistence, now: deps.nowMonotonicMs });
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
-  let admissionRequested = true; let accepting = true; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
+  let admissionRequested = true; let accepting = !external; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
+  const failedSources = new Set<Slot>(), drainedFailedSources = new Set<Slot>(), attemptedFailedSources = new Set<Slot>();
+  let startupRecovery = external, nextRecovery = deps.nowMonotonicMs();
+  let readyDone = !external, resolveReady!: () => void, rejectReady!: (error: unknown) => void;
+  const readiness = external ? new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; }) : Promise.resolve();
+  void readiness.catch(() => {});
+  const outcomeRecovery = deps.outcomes && p.ledger ? new PagedOutcomeRecovery(deps.outcomes, deps.ownership, { ...p.ledger.recoveryLimits, codecVersion: deps.codec.version }) : null;
   let victimResources = { ...p.victimOutcome };
   let pausedDurability: { run: () => Promise<void>; ownership: HostOwnership } | null = null;
   let grantProofsActive = false;
@@ -154,13 +168,18 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (!loaded || loaded.world !== world || loaded.publicDefinition.bosses.length) throw new Error(`missing safe public world: ${world}`);
     if (loaded.publicDefinition.enemies.length > p.maxMutationSourcesPerTick) throw new Error('population exceeds bounded checkpoint receipts');
     const now = deps.nowMonotonicMs();
-    // Source summary/spill is not ready: no configuration surface can select external mode here.
-    const ledgerMode: LedgerMode = 'retained';
-    const area = createArea({ ledgerMode, id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
+    const ledgerMode: LedgerMode = external ? 'external-durable' : 'retained';
+    const area = createArea({ ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
       actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed, characters: registry,
       context: { mode: 'public', pvp: 'disabled', members: [] }, limits: p.areaLimits });
     const slot: Slot = { kind: 'public', ledgerMode, world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
     slots.set(world, slot); allSlots.add(slot);
+  }
+  if (external && p.party) for (const loaded of deps.worlds.values()) for (const definition of loaded.encounterDefinitions.values()) {
+    const validation = createArea({ id: `party:${randomUUID()}`, ledgerMode: 'external-durable', ledgerLimits: p.ledger!.sourceLimits, definition,
+      query: loaded.query, actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed,
+      context: { mode: 'party-encounter', pvp: 'disabled', members: [] }, limits: p.areaLimits });
+    validation.dispose();
   }
   const enqueue = (fn: () => void) => {
     if (stopped) return;
@@ -169,6 +188,15 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     completion.push(fn);
   };
   const boundary = <T>(fn: () => T): Promise<T> => new Promise((resolve, rejectPromise) => enqueue(() => { try { resolve(fn()); } catch (error) { rejectPromise(error); } }));
+  function sourceAdapter(slot: Slot): AreaSourceDrain | undefined {
+    if (slot.ledgerMode !== 'external-durable') return;
+    const area = slot.area, ownership = deps.ownership;
+    return new AreaSourceDrain(area, deps.outcomes!, ownership, { ...p.ledger!.drainLimits, codecVersion: deps.codec.version }, boundary,
+      () => !stopped && allSlots.has(slot) && slot.area === area && deps.ownership === ownership && !drainedFailedSources.has(slot));
+  }
+  for (const slot of allSlots) slot.source = sourceAdapter(slot);
+  const publishedConsumed = (c: Connection) => external ? c.publishedConsumed : c.input!.consumedInput;
+  const sourceFailed = (slot: Slot) => failedSources.has(slot) || drainedFailedSources.has(slot);
   const json = (c: Connection, value: unknown) => {
     if (c.ws.readyState === WebSocket.OPEN) { const data = JSON.stringify(value); c.ws.send(data); metrics.packets++; metrics.bytesSent += Buffer.byteLength(data); }
   };
@@ -186,7 +214,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   function sendControl(c: Connection, value: WorldControl): boolean {
     if (!c.stream || !c.input || !c.actor || c.stream.area !== c.actor.slot.area.services.id || c.closed || c.ws.readyState !== WebSocket.OPEN) return false;
     for (const chunk of c.protocol.encodeControl({ ...c.stream, sequence: ++c.sequence, tick: c.actor.slot.area.services.tick,
-      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, value)) {
+      acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c) }, value)) {
       c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength;
     }
     return true;
@@ -201,7 +229,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (!c.results.length || !c.baselineSequence || !c.stream || !c.input || !c.actor || c.closed || c.ws.readyState !== WebSocket.OPEN) return;
     if (c.ws.bufferedAmount > p.maxBufferedBytes) { close(c, 'result-backpressure', true); return; }
     const chunks = c.protocol.encodeEvents({ ...c.stream, sequence: ++c.sequence, tick: c.actor.slot.area.services.tick,
-      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, { baselineSequence: c.baselineSequence, events: [], results: materializeResults(c) });
+      acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c) }, { baselineSequence: c.baselineSequence, events: [], results: materializeResults(c) });
     for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
     c.results = [];
   }
@@ -323,10 +351,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   }
   function failClosed() {
     accepting = false; frozen = true;
+    if (!readyDone) { readyDone = true; rejectReady(new Error('world unavailable before ledger readiness')); }
     if (grantProofsActive) {
       grantProofsActive = false;
       for (const actor of actors.values()) if (actor.slot.ledgerMode === 'external-durable') {
-        try { actor.slot.area.invalidateGrantRead(actor.ref); } catch (error) { deps.onFailure?.('ledger-invalidate', error); }
+        try { actor.slot.area.invalidateGrantRead(actor.ref); actor.grantRead = undefined; } catch (error) { deps.onFailure?.('ledger-invalidate', error); }
       }
     }
     for (const c of connections) close(c, 'host-unavailable', true);
@@ -346,7 +375,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     c.actor = actor; actor.connection = c; actor.detachedAt = null; actor.generation = generation++;
     c.stream = { session: randomUUID(), area: actor.slot.area.services.id, epoch: c.epoch, catalog: deps.gameplay.catalog.version };
     c.sequence = 0; c.full = true; c.visible.clear(); c.protocol.reset(c.stream);
-    c.baselineSequence = 0; c.results = []; c.discoveries = [];
+    c.publishedConsumed = 0; c.baselineSequence = 0; c.results = []; c.discoveries = [];
     c.queueKey = undefined;
     c.input = new InputSession(c.stream, deps.gameplay.catalog, { now: deps.nowMonotonicMs() / 1000, maxQueued: p.maxQueuedInputs, timeoutSeconds: p.inputTimeoutMs / 1000 });
     actor.slot.area.resetInputSession(actor.ref); c.phase = 'admitted'; c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
@@ -458,12 +487,12 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!destination) {
         if ([...allSlots].filter(s => s.kind === 'party').length >= p.party.maxEncounters) { controlError(c, 'encounter-capacity'); continue; }
         const loaded = deps.worlds.get(source.world)!, now = deps.nowMonotonicMs();
-        const area = createArea({ ledgerMode: source.ledgerMode, id: `party:${randomUUID()}`, definition, query: loaded.query, actionData: loaded.actionData,
+        const area = createArea({ ledgerMode: source.ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `party:${randomUUID()}`, definition, query: loaded.query, actionData: loaded.actionData,
           policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'party-encounter', pvp: party.pvp ? 'party-only' : 'disabled', members: [] }, limits: p.areaLimits });
         area.bootstrapEncounter(profile, { beaconLit: beacon });
         destination = { kind: 'party', ledgerMode: source.ledgerMode, world: source.world, area, party, profile, tick: new DeadlineScheduler(30, now),
           snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
-        party.encounter = destination; allSlots.add(destination);
+        party.encounter = destination; allSlots.add(destination); destination.source = sourceAdapter(destination);
       }
       // A public request starts a dormant/rematch boss or joins an already running encounter.
       // Transfer places joins inside the arena, so the local outside-arena bossChallenge heuristic does not apply.
@@ -496,8 +525,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const cleanupEncounters = () => {
     if (barrier || frozen) return;
-    for (const slot of allSlots) if (slot.kind === 'party' && slot.area.players.size === 0 && slot.area.pendingGrants().length === 0) {
-      slot.area.dispose(); allSlots.delete(slot); if (slot.party?.encounter === slot) slot.party.encounter = undefined;
+    for (const slot of allSlots) if (slot.kind === 'party' && slot.area.players.size === 0 && slot.area.pendingGrants().length === 0 && (!slot.source || !slot.area.resourceUsage().dirtyCreditEntries && !slot.area.resourceUsage().pendingDeaths)) {
+      slot.area.dispose(); allSlots.delete(slot); failedSources.delete(slot); drainedFailedSources.delete(slot); attemptedFailedSources.delete(slot); if (slot.party?.encounter === slot) slot.party.encounter = undefined;
     }
   };
   const load = (c: Connection, characterId: string) => {
@@ -519,14 +548,21 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     actor.ref = ref; actor.record = recovery.character; actor.generation = generation++; actor.pendingReplay = true;
     if (actor.connection) bootstrap(actor.connection, actor);
   }
+  const liveSourceArea = (areaId: string) => [...allSlots].some(slot => slot.area.services.id === areaId && slot.ledgerMode === 'external-durable' && !drainedFailedSources.has(slot));
+  const sourceNeedsIO = (slot: Slot) => {
+    if (slot.ledgerMode !== 'external-durable' || failedSources.has(slot) || drainedFailedSources.has(slot)) return false;
+    const usage = slot.area.resourceUsage();
+    return !!usage.dirtyCreditEntries || !!usage.pendingDeaths || !!slot.area.contributionSummariesNeeded().length;
+  };
   function startDurability() {
-    if (barrier || frozen || !actors.size) return;
+    if (barrier || frozen || !actors.size && !external) return;
     metrics.persistenceBarriers++; const began = deps.nowMonotonicMs();
     const tokens = new Map<Slot, string>();
-    for (const slot of allSlots) if (slot.area.players.size) tokens.set(slot, slot.area.beginDurabilityBarrier('checkpoint'));
-    const sources = [...allSlots].flatMap(slot => slot.area.pendingGrants().map(entry => ({ slot, ...entry })));
+    for (const slot of allSlots) if (slot.area.players.size || slot.ledgerMode === 'external-durable') tokens.set(slot, slot.area.beginDurabilityBarrier('checkpoint'));
+    const sources = [...allSlots].filter(slot => slot.ledgerMode === 'retained').flatMap(slot => slot.area.pendingGrants().map(entry => ({ slot, ...entry })));
     metrics.pendingSourceGrants = sources.length;
     const work = async () => {
+      let startupDrained = false;
       // Group an entire death's recipients in one transaction. No recipient is ACKed individually.
       const groups = new Map<string, typeof sources>();
       const unique = new Map<string, string>();
@@ -544,6 +580,19 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         const recorded = await deps.characters.recordVictimOutcome(entries, victimResources);
         if (recorded.length !== entries.length || recorded.some((entry, index) => entry.id !== entries[index].id)) throw new Error('incomplete victim outcome journal');
       }
+      for (const slot of allSlots) if (slot.source) {
+        for (;;) { const progress = await slot.source.drain({ refreshSummaries: true }); if (!progress.more) break; }
+      }
+      if (outcomeRecovery && (startupRecovery || !draining && deps.nowMonotonicMs() >= nextRecovery)) {
+        const initial = startupRecovery;
+        for (;;) {
+          if (draining && initial) throw new Error('shutdown before initial ledger recovery');
+          const sweep = await outcomeRecovery.sweep({ isLiveArea: liveSourceArea });
+          if (!initial || sweep.cycleComplete && !sweep.cycleHasPending) break;
+        }
+        nextRecovery = deps.nowMonotonicMs() + p.ledger!.recoveryIntervalMs;
+        startupDrained = initial;
+      }
       for (let round = 0; round <= p.persistence.maxRecoveryRounds; round++) {
         // Retained-mode host fence. Area-owned one-use tokens are still required before pruning is enabled.
         const leases = await boundary(() => {
@@ -555,7 +604,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
             let token: GrantReadToken | null = null;
             if (limit && actor.slot.ledgerMode === 'external-durable') {
               actor.slot.area.bindDurableLedger(actor.ref, actor.record.revision);
-              token = actor.slot.area.beginGrantRead(actor.ref, actor.record.revision); grantProofsActive = true;
+              token = actor.slot.area.beginGrantRead(actor.ref, actor.record.revision); actor.grantRead = token; grantProofsActive = true;
             }
             return { actor, ownerGeneration: actor.generation, slot: actor.slot, ref: { ...actor.ref }, token,
               revision: actor.record.revision, connection, connectionGeneration: connection?.generation, session: connection?.stream?.session, limit };
@@ -570,17 +619,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
             const actor = lease.actor, connection = actor.connection;
             const current = actors.get(actor.record.characterId) === actor && actor.generation === lease.ownerGeneration && actor.slot === lease.slot &&
               sameRef(actor.ref, lease.ref) && actor.record.revision === lease.revision && connection === lease.connection && connection?.generation === lease.connectionGeneration && connection?.stream?.session === lease.session;
-            if (!current) { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); actor.pendingReplay = true; retry = true; continue; }
+            if (!current) { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); actor.grantRead = undefined; actor.pendingReplay = true; retry = true; continue; }
             if (!result) { actor.pendingReplay = true; continue; }
-            if (result.kind === 'unresolved') { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); throw new Error('journal certification unresolved: ' + result.reason); }
-            if (result.kind === 'recovery') { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); metrics.recoveries++; restoreDurableActor(actor, result.recovery); retry = true; continue; }
+            if (result.kind === 'unresolved') { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); actor.grantRead = undefined; throw new Error('journal certification unresolved: ' + result.reason); }
+            if (result.kind === 'recovery') { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); actor.grantRead = undefined; metrics.recoveries++; restoreDurableActor(actor, result.recovery); retry = true; continue; }
             const grants = result.grants.map(grant => deps.codec.grantFromJson(grant.payload));
             if (lease.token) actor.slot.area.applyCertifiedGrants(lease.token, { revision: result.revision, grants });
             else {
               if (actor.slot.ledgerMode !== 'retained') throw new Error('external grant delivery requires an Area proof');
               for (const grant of grants) actor.slot.area.receiveGrant(grant);
             }
-            actor.pendingReplay = result.more;
+            actor.grantRead = undefined; actor.pendingReplay = result.more;
           }
           grantProofsActive = false;
           for (const slot of allSlots) drain(slot);
@@ -619,6 +668,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         for (const source of sources) source.slot.area.acknowledgeGrant(source.grant.id);
         metrics.pendingSourceGrants = 0;
         for (const [slot, token] of tokens) { drain(slot); slot.area.releaseDurabilityBarrier(token); slot.lastCheckpoint = deps.nowMonotonicMs(); }
+        for (const c of connections) if (c.input) c.publishedConsumed = c.input.consumedInput;
+        if (startupDrained && startupRecovery) { startupRecovery = false; accepting = admissionRequested && !draining; readyDone = true; resolveReady(); }
         for (const actor of actors.values()) if (actor.connection) sendResults(actor.connection);
         if (p.party) syncPartyContexts();
         metrics.persistenceMs += deps.nowMonotonicMs() - began;
@@ -641,6 +692,20 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     }).finally(() => { barrier = null; });
   }
 
+  function startFailedSourceDrain() {
+    if (barrier || stopped || deps.ownership.closed.aborted) return;
+    const pending = [...failedSources].filter(slot => !attemptedFailedSources.has(slot));
+    if (!pending.length) return;
+    for (const slot of pending) attemptedFailedSources.add(slot);
+    const work = async () => {
+      for (const slot of pending) {
+        if (!slot.source) throw new Error('failed external Area missing source adapter');
+        for (;;) { const progress = await slot.source.drain({ refreshSummaries: false }); if (!progress.more) break; }
+        await boundary(() => { deps.ownership.assertOwned(); failedSources.delete(slot); drainedFailedSources.add(slot); });
+      }
+    };
+    barrier = work().catch(error => { deps.onFailure?.('failed-source-drain', error); unresolved++; failClosed(); }).finally(() => { barrier = null; });
+  }
   const retireDetached = (now: number) => {
     if (barrier || frozen) return;
     const actor = [...actors.values()].find(a => !a.connection && a.detachedAt !== null && now - a.detachedAt >= p.reconnectGraceMs);
@@ -705,7 +770,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         const encodeStart = deps.nowMonotonicMs(), wasFull = c.full;
         c.visible = visible(slot, actor, c);
         const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
-          acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput, selfRef: actor.ref,
+          acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c), selfRef: actor.ref,
           snapshot, prepared, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark, appearances,
           results: materializeResults(c),
           ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
@@ -719,6 +784,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const step = (slot: Slot) => {
     if (barrier || frozen || draining) return;
+    if (slot.ledgerMode === 'external-durable' && !slot.area.prepareLedgerStep().ready) { startDurability(); return; }
     const inputs = new Map<number, PlayerIntent>(), prepared: { c: Connection; frame: PreparedInput; unit: EntityRef }[] = [];
     const hostCommands: { c: Connection; command: HostCommand | Extract<PlayerCommand, {kind:'bossChallenge'}>; inputSequence: number }[] = [];
     const now = deps.nowMonotonicMs(); let progression = false;
@@ -737,7 +803,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       } else if (!c.timedOut && now - c.lastInput >= p.inputTimeoutMs) { slot.area.neutralizeInput(actor.ref); c.timedOut = true; metrics.neutralizations++; }
     }
     const inputTick = slot.area.services.tick;
-    const started = deps.nowMonotonicMs(), outcomes = slot.area.step(inputs); metrics.ticks++; metrics.tickMs += deps.nowMonotonicMs() - started; observe('tick', deps.nowMonotonicMs() - started);
+    const started = deps.nowMonotonicMs(); let outcomes: ReturnType<Area['step']>;
+    try { outcomes = slot.area.step(inputs); }
+    catch (error) { if (slot.source) failedSources.add(slot); throw error; }
+    metrics.ticks++; metrics.tickMs += deps.nowMonotonicMs() - started; observe('tick', deps.nowMonotonicMs() - started);
     const changedLives: Actor[] = [];
     for (const actor of actors.values()) if (actor.slot === slot) {
       const current = slot.area.services.playerByCharacter(actor.record.characterId)?.state.unit;
@@ -788,7 +857,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     for (const actor of changedLives) if (actor.connection) bootstrap(actor.connection, actor);
     progression ||= slot.area.pendingGrants().length > 0 || emitted.some(({ event }) =>
       ['quest', 'xp', 'levelUp', 'equipment', 'achievement', 'discovery', 'endingReady', 'death', 'respawn'].includes(event.type));
-    if (progression || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
+    if (progression || sourceNeedsIO(slot) || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
+    else for (const { c } of prepared) c.publishedConsumed = c.input!.consumedInput;
   };
   const pump = () => {
     if (stopped) return;
@@ -796,6 +866,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (deps.ownership.closed.aborted) failClosed();
       for (let count = 0; completion.length && count < p.maxConnections * 8 + 16; count++) completion.shift()!();
       const now = deps.nowMonotonicMs();
+      if (external && !barrier && failedSources.size) startFailedSourceDrain();
       for (const c of connections) if (c.binding && !c.closed) {
         if (c.binding.expiresAt <= deps.nowWallMs()) { close(c, 'session-expired'); continue; }
         if (!c.validating && now >= c.nextValidation) {
@@ -808,6 +879,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       }
       if (!frozen && !draining && !deps.ownership.closed.aborted) for (const c of connections) if (c.phase === 'admitted' && c.chatNeedsPreferences && !c.chatBusy && pendingChat < p.chat!.maxPending) chatCommand(c, { kind: 'chatPreferences' });
       if (!barrier && !frozen && !draining) {
+        if (external && (startupRecovery || now >= nextRecovery || [...allSlots].some(sourceNeedsIO))) startDurability();
         admitWaiting(); if (!barrier && [...actors.values()].some(actor => actor.pendingReplay)) startDurability(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
         for (const slot of allSlots) {
           if (!slot.area.players.size || barrier) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
@@ -818,9 +890,23 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     } catch (error) { deps.onFailure?.('pump', error); unresolved++; failClosed(); }
     timer = setTimeout(pump, p.loopIntervalMs);
   };
-  const onLost = () => failClosed(); deps.ownership.closed.addEventListener('abort', onLost);
+  const ledgerStats = () => {
+    if (!external) return {};
+    const keys = ['dirtyCreditEntries','dirtyCreditBytes','pendingDeaths','stagedBytes','appliedGrantIds','replayTokens','ledgerOwners','summaryReads','captures'];
+    const totals: Record<string, number> = {};
+    for (const slot of allSlots) { const usage = slot.area.resourceUsage(); for (const key of keys) totals['ledger' + key[0].toUpperCase() + key.slice(1)] = (totals['ledger' + key[0].toUpperCase() + key.slice(1)] ?? 0) + (usage[key] ?? 0); }
+    if (outcomeRecovery) for (const [key, value] of Object.entries(outcomeRecovery.metrics)) totals['ledgerRecovery' + key[0].toUpperCase() + key.slice(1)] = value;
+    return totals;
+  };
+  const onLost = () => {
+    for (const actor of actors.values()) if (actor.slot.ledgerMode === 'external-durable' && !failedSources.has(actor.slot) && !drainedFailedSources.has(actor.slot)) {
+      try { actor.slot.area.invalidateGrantRead(actor.ref); actor.grantRead = undefined; } catch (error) { deps.onFailure?.('ledger-ownership-loss', error); }
+    }
+    failClosed();
+  }; deps.ownership.closed.addEventListener('abort', onLost);
   pump();
   return {
+    ready: () => readiness,
     handleUpgrade(req, socket, head) {
       if (req.url?.split('?')[0] !== '/world') return;
       if (!accepting || frozen || deps.ownership.closed.aborted) { reject(socket, '503 Service Unavailable'); return; }
@@ -830,7 +916,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (connections.size >= p.maxConnections || [...connections].filter(c => c.ip === ip).length >= p.maxConnectionsPerIp) { reject(socket, '503 Service Unavailable'); return; }
       wss.handleUpgrade(req, socket, head, ws => {
         const c: Connection = { ws, ip, origin, generation: generation++, closed: false, phase: 'preauth',
-          protocol: deps.gameplay.create(), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set(), baselineSequence: 0, results: [], discoveries: [], chatBusy: false, chatNeedsPreferences: false };
+          protocol: deps.gameplay.create(), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set(), publishedConsumed: 0, baselineSequence: 0, results: [], discoveries: [], chatBusy: false, chatNeedsPreferences: false };
         connections.add(c);
         c.authTimer = setTimeout(() => { if (c.phase === 'preauth' || c.phase === 'authenticating') close(c, 'auth-timeout'); }, p.authTimeoutMs);
         ws.on('error', () => ws.terminate());
@@ -839,7 +925,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           enqueue(() => {
             for (let i = waiting.length - 1; i >= 0; i--) if (waiting[i].connection === c) waiting.splice(i, 1);
             const actor = c.actor;
-            if (actor?.connection === c) { actor.connection = null; actor.detachedAt = deps.nowMonotonicMs(); actor.slot.area.neutralizeInput(actor.ref); }
+            if (actor?.connection === c) { actor.connection = null; actor.detachedAt = deps.nowMonotonicMs(); if (!sourceFailed(actor.slot)) { if (actor.grantRead) actor.slot.area.cancelGrantRead(actor.grantRead); actor.slot.area.neutralizeInput(actor.ref); } actor.grantRead = undefined; }
           });
         });
         ws.on('message', (raw, binary) => {
@@ -878,7 +964,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     async shutdown(deadlineMs) {
       admissionRequested = false; accepting = false; draining = true;
       const end = deps.nowMonotonicMs() + deadlineMs;
-      for (const c of connections) { if (!sendControl(c, { type: 'restarting', retryAfterSeconds: 1 })) json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor) c.actor.slot.area.neutralizeInput(c.actor.ref); }
+      for (const c of connections) { if (!sendControl(c, { type: 'restarting', retryAfterSeconds: 1 })) json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor && !sourceFailed(c.actor.slot)) c.actor.slot.area.neutralizeInput(c.actor.ref); }
+      if (external && failedSources.size) startFailedSourceDrain();
       if (!barrier && !frozen) startDurability();
       while (barrier && deps.nowMonotonicMs() < end) await new Promise(resolve => setTimeout(resolve, p.loopIntervalMs));
       const persisted = await persistence.shutdown(Math.max(0, end - deps.nowMonotonicMs()));
@@ -891,10 +978,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const count = unresolved + persisted.unresolved + (barrier ? 1 : 0);
       return { durable: persisted.durable && count === 0, unresolved: count };
     },
-    stats: () => ({ ...metrics, ...timingStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
+    stats: () => ({ ...metrics, ...timingStats(), ...ledgerStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
       processCpuSystemMs: process.cpuUsage(processCpuStart).system / 1000, processElapsedMs: deps.nowMonotonicMs() - processStarted,
       activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
-      publicAreas: slots.size, resourcePaused: pausedDurability !== null, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
+      publicAreas: slots.size, ready: readyDone && !startupRecovery && !frozen && !deps.ownership.closed.aborted, failedSources: failedSources.size, resourcePaused: pausedDurability !== null, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
       pendingChat, partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length,
       droppedTicks: [...allSlots].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...allSlots].reduce((n, s) => n + s.snapshot.dropped, 0) }),
   };
