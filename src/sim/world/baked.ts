@@ -1,9 +1,9 @@
 // Baked collision: a world's colliders as plain numbers (public/world/collision-w*.json), written by
 // tools/bake-collision.mjs and loaded here by the server and the browser alike. Loading rebuilds the
 // same Collision the browser builds from its layout, so queries agree to the last bit.
-import { Collision, type Shape, type SurfaceSpec, surfaceFromSpec, type Vec2Out, type Vec3Like } from './collision';
-import { dawnHeight, snowHeight, gridHeight, STAR_GRID, starSurfaceHeight } from './ground';
-import { type IslandBounds, type PushCircle, resolveOnIsland } from './queries';
+import { Collision, type Shape, type SurfaceSpec, surfaceFromSpec, type Vec2Out, type Vec3Like } from './collision.ts';
+import { dawnHeight, snowHeight, gridHeight, STAR_GRID, starSurfaceHeight } from './ground.ts';
+import { type IslandBounds, type PushCircle, resolveOnIsland } from './queries.ts';
 
 export type WorldId = 'w1' | 'w2' | 'w3' | 'w4';
 
