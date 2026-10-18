@@ -1,11 +1,12 @@
 /** Input-driven authoritative player. Contains no camera, renderer, keyboard or socket state. */
-import type { ActionId, AreaServices, ChannelKind, CharacterId, ClassId, EntityRef, PlayerIntent, PlayerSim, PlayerState, SimUnit, Vec3 } from './types.ts';
+import type { AreaServices, ChannelKind, CharacterId, ClassId, EntityRef, PlayerIntent, PlayerSim, PlayerState, SimUnit, Vec3 } from './types.ts';
 import { CLASSES, type AbilityDef } from './data/classes.ts';
 import { abilityNeedsTarget, executeAbility, isMeleeAbility, launchAt, playAction } from './abilities.ts';
 import { damp, turnToward, yawTo } from './math.ts';
 import { distTo, gapTo, lineOfSight, moveTo, speedMul, teleport } from './unit.ts';
 import { levelForXp, xpForLevel } from './data/progression.ts';
 import { activeObjective, freshQuests } from './data/quests.ts';
+import { BREAK_ROUTINE } from './data/actions.ts';
 export const GCD=1;
 export const JUMP_CLIP=Object.freeze({from:.8,to:1.56,speed:1.15});
 const NEUTRAL:PlayerIntent={seq:0,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands:[]};
@@ -162,10 +163,9 @@ export class PlayerController implements PlayerSim {
     const spawn=g.definition.recall;teleport(u,g.query,spawn.position.x,spawn.position.z,spawn.yaw);g.emit({type:'respawn',unit:u.ref,position:{x:u.x,y:u.y,z:u.z},yaw:u.yaw});
   }
   private toggleDance():void {if(this.danceIndex>=0){this.cancelDance();return;}const u=this.unit,s=this.state;if(!u.alive||this.locked())return;if(this.inCombat)return this.error("You can't dance while in combat.");if(this.services.time<u.stunUntil)return this.error('You are stunned.');if(s.cast||s.channel||s.dash)return this.error('Another action is in progress.');if(s.jumpT>0||Math.hypot(s.velX,s.velZ)>.6)return this.error('Stand still to dance.');s.velX=s.velZ=0;this.danceIndex=0;this.danceTime=0;this.startDanceStep();this.services.emit({type:'dance',unit:u.ref,stage:'start'});}
-  private danceIds:readonly ActionId[]=['break_toprock','break_sixstep','break_spin','break_jumpspin','break_backflip','break_oneclaw'];
-  private startDanceStep():void {const id=this.danceIds[this.danceIndex];playAction(this.services,this.unit,id,{speed:1,fade:.25,carryRoot:true});this.services.emit({type:'dance',unit:this.unit.ref,stage:'moment',moment:'step',move:id});}
-  private updateDance(dt:number):void {if(this.danceIndex<0)return;const id=this.danceIds[this.danceIndex],action=[...this.unit.actions].reverse().find(a=>a.targetWeight>0&&!a.ended);if(action&&action.id!==id){this.cancelDance();return;}const clip=this.services.actionData.clip(id),from=clip.events.window_from?.[0]??0,to=clip.events.window_to?.[0]??clip.length;this.danceTime+=dt;if(this.danceTime>=to-from-(this.danceIndex<this.danceIds.length-1?.25:0)){this.danceIndex++;this.danceTime=dt;if(this.danceIndex>=this.danceIds.length){this.danceIndex=-1;return;}this.startDanceStep();}}
-  private cancelDance(fade=.25):void {if(this.danceIndex<0)return;this.services.stopAction(this.unit.ref,this.danceIds[this.danceIndex],fade);this.danceIndex=-1;this.services.emit({type:'dance',unit:this.unit.ref,stage:'stop'});}
+  private startDanceStep():void {const step=BREAK_ROUTINE[this.danceIndex];playAction(this.services,this.unit,step.id,{from:step.from,to:step.to,speed:1,fade:step.fade,carryRoot:true});this.services.emit({type:'dance',unit:this.unit.ref,stage:'moment',moment:'step',move:step.id});}
+  private updateDance(dt:number):void {if(this.danceIndex<0)return;const step=BREAK_ROUTINE[this.danceIndex],action=[...this.unit.actions].reverse().find(a=>a.targetWeight>0&&!a.ended);if(action&&action.id!==step.id){this.cancelDance();return;}const next=BREAK_ROUTINE[this.danceIndex+1],length=step.to-step.from;this.danceTime+=dt;if(this.danceTime>=length-(next?.fade??0)){this.danceIndex++;this.danceTime=dt;if(this.danceIndex>=BREAK_ROUTINE.length){this.danceIndex=-1;return;}this.startDanceStep();}}
+  private cancelDance(fade=.25):void {if(this.danceIndex<0)return;this.services.stopAction(this.unit.ref,BREAK_ROUTINE[this.danceIndex].id,fade);this.danceIndex=-1;this.services.emit({type:'dance',unit:this.unit.ref,stage:'stop'});}
   error(reason:string):void{this.services.emit({type:'error',unit:this.unit.ref,reason});}
   debugState():object{return {held:this.held,lastConsumedSeq:this.lastConsumedSeq,footstep:this.footstep,danceIndex:this.danceIndex,danceTime:this.danceTime};}
 }
