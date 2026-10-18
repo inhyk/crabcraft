@@ -171,6 +171,9 @@ export class NumericBoat {
     this.distance.set(id,Math.min(1e7,value.distance));
     this.earned.set(id,new Set(value.earned.filter((s):s is BoatAchievement=>s==='sail'||s==='crew'||s==='landfall')));return true;
   }
+  /** Remove a retired life without teleporting or earning a landing reward. */
+  detach(ref:EntityRef):void {for(const [id,bound] of this.bindings)if(sameRef(bound,ref)){this.state.seats=this.state.seats.map(s=>s===id?null:s) as BoatState['seats'];this.bindings.delete(id);this.seatedBefore.delete(id);this.previous.delete(id);this.compact();}}
+  progress(id:string):{distance:number;earned:readonly string[]}{return {distance:this.distance.get(id)??0,earned:[...(this.earned.get(id)??[])]};}
   /** Disconnect/Area disposal. reset(false) avoids teleporting into a newly entered world. */
   reset(dock=true):void {
     if(dock&&this.context.chapter===1)for(const [id,ref] of this.seatedBefore){const u=this.context.resolve(id);if(u?.alive&&sameRef(u.ref,ref)){this.context.stopActions(u);teleport(u,this.context.query,143,23,-Math.PI/2);}}
