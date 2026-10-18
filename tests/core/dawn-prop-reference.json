@@ -1,0 +1,174 @@
+{
+  "baseline": "60df24f462f032ca9a2db5e4abfe3c9fc37163c1",
+  "collisionSource": "96bad46179aecc6303b48e9be64bc4e3ed2a62b7b47affa6f64fedacf0e7612e",
+  "points": [
+    {
+      "kind": "dawn-crate-a",
+      "position": [
+        -12,
+        3.9684720928479784,
+        76
+      ]
+    },
+    {
+      "kind": "dawn-crate-b",
+      "position": [
+        12,
+        4.104138089097653,
+        70
+      ]
+    },
+    {
+      "kind": "dawn-crate-c",
+      "position": [
+        -12,
+        3.8090088823473334,
+        62
+      ]
+    },
+    {
+      "kind": "dawn-herb-a",
+      "position": [
+        -55,
+        2.7860761677966357,
+        44
+      ]
+    },
+    {
+      "kind": "dawn-herb-b",
+      "position": [
+        -62,
+        3.312147628373204,
+        38
+      ]
+    },
+    {
+      "kind": "dawn-herb-c",
+      "position": [
+        -56,
+        2.9149174789960517,
+        30
+      ]
+    },
+    {
+      "kind": "dawn-lamp-a",
+      "position": [
+        -7,
+        3.9487520669726868,
+        20
+      ]
+    },
+    {
+      "kind": "dawn-lamp-b",
+      "position": [
+        7,
+        4,
+        0
+      ]
+    },
+    {
+      "kind": "dawn-lamp-c",
+      "position": [
+        -7,
+        7.5415576004358895,
+        -22
+      ]
+    },
+    {
+      "kind": "dawn-ore-a",
+      "position": [
+        23.702293199172733,
+        4.358654589928323,
+        6.872542137117188
+      ]
+    },
+    {
+      "kind": "dawn-ore-b",
+      "position": [
+        32,
+        3.559244264469541,
+        -8
+      ]
+    },
+    {
+      "kind": "dawn-ore-c",
+      "position": [
+        22,
+        7.58857535747765,
+        -25
+      ]
+    },
+    {
+      "kind": "dawn-pearl-a",
+      "position": [
+        68,
+        4.151924932659577,
+        30
+      ]
+    },
+    {
+      "kind": "dawn-pearl-b",
+      "position": [
+        72,
+        3.870433071300107,
+        18
+      ]
+    },
+    {
+      "kind": "dawn-pearl-c",
+      "position": [
+        64,
+        4.082402599030772,
+        4
+      ]
+    },
+    {
+      "kind": "dawn-seal-a",
+      "position": [
+        -18,
+        7.38487220544588,
+        -20
+      ]
+    },
+    {
+      "kind": "dawn-seal-b",
+      "position": [
+        18,
+        11.631536443467494,
+        -35
+      ]
+    },
+    {
+      "kind": "dawn-seal-c",
+      "position": [
+        -16,
+        16.00151539925397,
+        -44
+      ]
+    },
+    {
+      "kind": "dawn-visit-garden",
+      "position": [
+        -54,
+        2.695366202089982,
+        40
+      ]
+    },
+    {
+      "kind": "dawn-visit-coast",
+      "position": [
+        69,
+        4.052487854699212,
+        20
+      ]
+    },
+    {
+      "kind": "dawn-visit-watch",
+      "position": [
+        62,
+        4.281842473324341,
+        68
+      ]
+    }
+  ]
+}
