@@ -11,7 +11,7 @@ const json = <T>(text: string | null, fallback: T): T => { try { return text ? J
 
 /** The server's replacement for a name it will not show (server/chat/filter.ts NEUTRAL_NAME). */
 const NEUTRAL_NAME = '게 모험가';
-export const displayName = (name: string) => name === NEUTRAL_NAME ? t('게 모험가', 'Crab Adventurer') : name;
+export const displayName = (name: string) => name === NEUTRAL_NAME || /^게 모험가 #\d+$/.test(name) ? t('게 모험가', 'Crab Adventurer') + name.slice(NEUTRAL_NAME.length) : name;
 
 export const REPORT_REASONS = [['abuse', '욕설', 'Bad words'], ['personal', '개인정보 요구', 'Asked for personal info'], ['harassment', '괴롭힘', 'Bullying'], ['other', '기타', 'Other']] as const;
 
