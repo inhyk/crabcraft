@@ -82,5 +82,5 @@ export class InteractionRules {
    const distance=Math.hypot(unit.x-gate.position.x,unit.z-gate.position.z);if(distance>4.5)portal.armed=true;if(portal.armed&&distance<1.7&&s.time>portal.readyAt){portal.armed=false;portal.readyAt=s.time+3;this.interact(unit.ref,gate.id);}
   }for(const character of this.portals.keys())if(!characters.has(character))this.portals.delete(character);
  }
- debugState():{beaconLit:boolean;portals:readonly {character:string;ref:EntityRef;armed:boolean;readyAt:number}[]}{return {beaconLit:this.world.beaconLit,portals:[...this.portals].map(([character,p])=>({character,...p,ref:{...p.ref}}))};} 
+ debugState():{beaconLit:boolean;portals:readonly {character:string;ref:EntityRef;armed:boolean;readyAt:number}[]}{return {beaconLit:this.world.beaconLit,portals:[...this.portals].map(([character,p])=>({character,...p,ref:{...p.ref}}))};}
 }
