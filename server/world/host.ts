@@ -960,7 +960,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
             try {
               const message = c.protocol.decodeClientMessage(bytes, c.stream);
               if (message.kind === 'resync') { c.inputBudget.consume(deps.nowMonotonicMs() / 1000); c.revoked = undefined; c.full = true; return; }
-              c.input.accept(bytes, deps.nowMonotonicMs() / 1000); c.revoked = undefined; c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
+              c.input.acceptDecoded(message.intent, deps.nowMonotonicMs() / 1000); c.revoked = undefined; c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
             } catch {
               try {
                 const prior = c.revoked; if (!prior) throw new Error('unknown input binding');

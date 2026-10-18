@@ -6,7 +6,7 @@ import type {RenderPoseRecipe} from '../../../src/sim/renderPose.ts';
 import { ACHIEVEMENT_IDS } from '../../../src/sim/persistence.ts';
 import type { CommandResult } from './events.ts';
 import type { AreaSnapshot, BossObservation, EntityRef, EventRecord, PlayerState, ProjectileState, SimUnit, NumericPoseState } from '../../../src/sim/types.ts';
-import { encodeInput, decodeInput } from './intents.ts';
+import { encodeInput, decodeInput, inputFromFrame } from './intents.ts';
 import { encodeEvents, validateEvent, selectEvents, validateEventPayload, validateResult } from './events.ts';
 export const MAGIC=0x5747, VERSION=3;
 export const LIMITS=Object.freeze({fragmentBytes:16384,messageBytes:2097152,fragments:256,actors:2048,projectiles:4096,events:512,commands:32,depth:24,nodes:300000,stringBytes:4096,array:16384,object:256,assemblySeconds:5});
@@ -105,6 +105,25 @@ function frameMessage(kind:1|2|16|17,h:WireHeader,body:Uint8Array,hash:number):U
  return Array.from({length:count},(_,i)=>{const w=new Writer();w.u16(MAGIC);w.u8(VERSION);w.u8(kind);w.u16(hbytes.length);w.raw(hbytes);w.u16(i);w.u16(count);w.u32(body.length);w.u32(hash);w.raw(body.slice(i*room,(i+1)*room));return w.finish();});
 }
 export interface DecodedMessage {kind:1|2|16|17;header:WireHeader;payload:Value;interrupted:boolean}
+/** Parse one fragment's envelope and header. The caller has already checked the fragment byte limit. */
+function readFragment(bytes:Uint8Array,expected:WireBinding){
+ const r=new Reader(bytes);if(r.u16()!==MAGIC||r.u8()!==VERSION)fail('unsupported protocol');const kind=r.u8();if(![1,2,16,17].includes(kind))fail('unknown packet kind');
+ const h=decodeValue(r.raw(r.u16()));header(h);if(!sameBinding(h,expected))fail('stale stream binding');
+ const index=r.u16(),count=r.u16(),total=r.u32(),hash=r.u32();integer(count,1,LIMITS.fragments);integer(index,0,count-1);integer(total,1,LIMITS.messageBytes);
+ const part=r.raw(bytes.length-r.offset);if(!part.length||part.length>total)fail('invalid fragment payload');
+ return {kind:kind as DecodedMessage['kind'],header:h,index,count,total,hash,part};
+}
+/**
+ * One client frame decoded exactly as `new FragmentAssembler(expected).accept(bytes,0)` would (same checks, same order,
+ * same errors), without building an assembler and copying the binding for every message. Null when the frame is only
+ * the first part of a group, which a fresh assembler would also return.
+ */
+export function decodeClientFrame(bytes:Uint8Array,expected:WireBinding):DecodedMessage|null {
+ binding(expected);if(bytes.length>LIMITS.fragmentBytes)fail('fragment size limit');
+ const f=readFragment(bytes,expected);if(f.count>1)return null;
+ if(f.part.length!==f.total)fail('fragment size mismatch');if(checksum(f.part)!==f.hash)fail('fragment checksum mismatch');
+ return {kind:f.kind,header:f.header,payload:decodeValue(f.part),interrupted:false};
+}
 /** One bounded in-flight group. No snapshot state changes until every fragment validates. */
 export class FragmentAssembler {
  private binding:WireBinding;
@@ -116,10 +135,7 @@ export class FragmentAssembler {
  accept(bytes:Uint8Array,now:number):DecodedMessage|null {
   number(now);if(bytes.length>LIMITS.fragmentBytes)fail('fragment size limit');
   if(this.pending&&now-this.pending.started>LIMITS.assemblySeconds){this.pending=null;fail('fragment timeout; resync required');}
-  const r=new Reader(bytes);if(r.u16()!==MAGIC||r.u8()!==VERSION)fail('unsupported protocol');const kind=r.u8();if(![1,2,16,17].includes(kind))fail('unknown packet kind');
-  const h=decodeValue(r.raw(r.u16()));header(h);if(!sameBinding(h,this.binding))fail('stale stream binding');
-  const index=r.u16(),count=r.u16(),total=r.u32(),hash=r.u32();integer(count,1,LIMITS.fragments);integer(index,0,count-1);integer(total,1,LIMITS.messageBytes);
-  const part=r.raw(bytes.length-r.offset);if(!part.length||part.length>total)fail('invalid fragment payload');
+  const {kind,header:h,index,count,total,hash,part}=readFragment(bytes,this.binding);
   let p=this.pending,interrupted=false;
   if(p&&(p.kind!==kind||p.header.sequence!==h.sequence)){if(kind===1&&h.sequence>p.header.sequence){p=null;this.pending=null;interrupted=true;}else fail('interleaved group; resync required');}
   if(p&&(JSON.stringify(p.header)!==JSON.stringify(h)||p.count!==count||p.total!==total||p.hash!==hash||now<p.started))fail('inconsistent fragment group');
@@ -247,8 +263,8 @@ export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol
   catalog:clone(catalog),encodeEvents:(h,p)=>encodeEvents(h,p,catalog),encodeControl,
   encodeInput:p=>encodeInput(p,catalog),decodeInput:(b,e)=>decodeInput(b,e,catalog),
   decodeClientMessage(bytes,expected){
-   const m=new FragmentAssembler(expected).accept(bytes,0);if(!m)fail('client message must fit one frame');
-   if(m.kind===16)return {kind:'input',intent:decodeInput(bytes,expected,catalog)};
+   const m=decodeClientFrame(bytes,expected);if(!m)fail('client message must fit one frame');
+   if(m.kind===16)return {kind:'input',intent:inputFromFrame(m,expected,catalog)};
    if(m.kind!==17||m.header.tick||m.header.acceptedInput||m.header.consumedInput)fail('forged client control');validateControl(m.payload);
    if(m.payload.type!=='resync')fail('client cannot publish server control');
    if(!controlBinding||!sameBinding(controlBinding,expected)){controlBinding=clone(expected);controlSequence=0;resyncPending=false;}
