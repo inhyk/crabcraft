@@ -7,8 +7,8 @@ import { enemyStats, RESPAWN_CLEAR, type EnemyStats } from './data/enemies.ts';
 export function moveCreature(s:AreaServices,u:SimUnit,x:number,z:number,dt:number):void{moveTo(u,s.query,x,z,dt);}
 export function creatureAction(s:AreaServices,u:SimUnit,id:ActionId,opts:Partial<ActionRequest>={},hit?:HitPlan):void{
   const c=s.actionData.clip(id),skill=id==='attack_swipe'||id==='attack_slam';
-  const from=skill?(id==='attack_swipe'?1.085:1.485):0;
-  const to=skill?(id==='attack_swipe'?1.775:2.335):c.length;
+  const from=skill?(c.events.window_from?.[0]??0)+.25:0;
+  const to=c.events.window_to?.[0]??c.length;
   const request:ActionRequest={id,part:'move',upper:false,from,to,loopFrom:null,loop:false,speed:id==='attack_swipe'?1.25:id==='attack_slam'?1.2:1,fade:.12,carryRoot:false,...opts};
   const at=c.events.hit?.[0];
   s.startAction(u.ref,request,hit?{left:at===undefined?.3:Math.max(0,(at-request.from)/request.speed),plan:hit}:undefined);
@@ -16,7 +16,7 @@ export function creatureAction(s:AreaServices,u:SimUnit,id:ActionId,opts:Partial
 export function creatureHitDelay(s:AreaServices,id:'attack_swipe'|'attack_slam',speed=id==='attack_swipe'?1.25:1.2):number{
   const hit=s.actionData.clip(id).events.hit?.[0];
   if(hit===undefined)throw new Error(`Missing canonical hit event: ${id}`);
-  return Math.max(0,(hit-(id==='attack_swipe'?1.085:1.485))/speed);
+  return Math.max(0,(hit-(s.actionData.clip(id).events.window_from?.[0]??0)-.25)/speed);
 }
 export const eligible=(s:AreaServices,p:SimUnit):boolean=>p.alive&&!p.hidden&&!s.player(p.ref)?.state.controlsLocked;
 export function lineOfSight(s:AreaServices,a:SimUnit,b:SimUnit):boolean{return unitLineOfSight(s.query,a,b);}

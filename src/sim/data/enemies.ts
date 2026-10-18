@@ -12,3 +12,5 @@ export function enemyStats(kind:EnemyKind, level:number, chapter:number, role:'o
   if(role==='echo')return {level,hp:Math.round(500*scale),xp:350+level*10,respawn:120,speed:2.8,aggro:10,leash:24,dmg:[14+level,18+level],swing:base.swing};
   return {...base,level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:inWorld2?12:base.respawn,dmg:[base.dmg[0]*scale,base.dmg[1]*scale]};
 }
+
+for(const stats of Object.values(ENEMY_STATS))Object.freeze(stats.dmg);
