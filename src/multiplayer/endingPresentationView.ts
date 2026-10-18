@@ -143,8 +143,7 @@ export class EndingPresentationView {
  render():void {
   const state=this.current;if(!state||this.disposed)return;
   for(const actor of state.cast){const rig=this.rigs.get(actor.ref.slot);if(rig)applyNumericPose(rig,{...actor.position,yaw:actor.yaw,pose:evaluateRenderPoseRecipe(actor.recipe)});}
-  const hero=state.cast[0];if(!hero)return;
-  const shot=endingShot(state);this.cut=shot;if(!shot)return;
+  const hero=state.cast[0],shot=hero?endingShot(state):null;this.cut=shot;if(!hero||!shot)return;
   // The framing is a function of the accepted observation, the loaded rigs and the screen shape; frames
   // between two observations reuse it.
   const camera=this.ports.camera,key=`${state.sequence}|${this.rigs.size}|${camera.aspect}`;
@@ -212,7 +211,8 @@ export class EndingPresentationView {
    // it; a tall screen is too narrow for that and looks on from above the ring gap instead.
    const tall=camera.aspect<.95;
    view=state.move==='break_oneclaw'?(tall?station(-1.05,3.2,-.35):station(-1.05,1.7,1.4)):station(-1.75,THREE.MathUtils.lerp(5.4,5.8,portrait),THREE.MathUtils.lerp(-.35,-.9,portrait));
-   fitCorners=heroCorners;frame={x:.78,top:.5,bottom:-.34,pitch:.08};lens=[18,76];
+   // The cypher keeps a lens wide enough for the circle of guests; the freeze may close in on the hero.
+   fitCorners=heroCorners;frame={x:.78,top:.5,bottom:-.34,pitch:.08};lens=[state.move==='break_oneclaw'?18:50,76];
   }else if(shot==='low'){
    // Ground level inside the ring, looking up: the hero against the dusk sky with the bell tower beside him.
    // A tall screen is too narrow for the spin from in there; it stands behind the ring gap at eye height,
