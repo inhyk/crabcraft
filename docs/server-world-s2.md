@@ -1,79 +1,84 @@
-# S2 숫자 시뮬레이션 코어 준비
+# S2 숫자 코어와 서버 연결 경계
 
-이 변경은 기존 전투 규칙을 Node에서 실행하는 새 `src/sim/` 모듈을 추가한다. 현재 브라우저의 `Game`, `Unit`, `Player` 실행 경로는 이 코어로 전환하지 않는다. 전체 S2 완료와 서버 세계 배포는 별도 검증 단계다.
+`src/sim/`은 실제 전투와 네 월드를 Node에서 실행한다. `docs/server-world.md` 6장의 결정이 이전 단계 제안보다 우선한다. 최종 gameplay authority는 authenticated server Area이고 browser는 입력과 화면을 담당한다.
 
-의존 PR은 [S1 #26](https://github.com/inhyk/crabcraft/pull/26), [S3 #25](https://github.com/inhyk/crabcraft/pull/25)다. 두 PR의 소스를 추출 근거로 읽었으며, 해당 커밋이나 변경 파일을 이 준비 PR에 복사하지 않았다. 기존 브라우저 전환과 실제 baked query 연결은 두 의존성이 `dev`에 들어온 뒤 진행한다. [S4 #30](https://github.com/inhyk/crabcraft/pull/30)의 합성 네트워크 fixture도 아직 실제 코어에 연결하지 않는다.
+현재 `?simCore=1`은 Vite DEV에서만 켜지는 내부 Chrome 검증 경로다. 이 경로에서 local Area를 실행해 실제 rig와 HUD를 검사한다. production build의 기존 gameplay는 그대로 유지한다. 전체 서버 세계 전환, 실제 host와 영속 저장 연결은 아직 완료되지 않았다.
 
-## 코어 경계
+의존 PR [S1 #26](https://github.com/inhyk/crabcraft/pull/26), [S3 #25](https://github.com/inhyk/crabcraft/pull/25), [S4 네트워크 #30](https://github.com/inhyk/crabcraft/pull/30), [QA #36](https://github.com/inhyk/crabcraft/pull/36)은 dev에 머지됐다. 이번 코어에는 equipment와 forge가 포함된 canonical dev `c5e5a6b`도 반영했다. PR #49의 character store는 별도 준비 코드이며 실제 Area와 연결되지 않았다.
 
-![현재 숫자 코어와 남은 연결 단계](images/s2-core.png)
+## 실행 경계
 
-`SimulationArea`는 입력, 시계, RNG, ID, timer, 전투, NPC와 적, 보스, 보상, action과 projectile을 소유한다. 고정 간격은 `1 / 30`초다. 한 tick은 입력 명령, 시계 증가와 due timer, 플레이어와 적 및 보스, 월드 규칙과 분리, pending hit와 projectile, action clock과 numeric pose 순으로 실행한다. 한 입력의 명령 순서를 보존하며 같은 seq를 다시 실행하지 않는다.
+![서버 우선 구현 상태](images/s2-server-first-status.png)
 
-`snapshot()`과 `debugState()`는 복사한 불변 값을 반환한다. `drainEvents()`는 순서가 붙은 ID와 값으로 된 관측을 소비한다. 렌더러나 event sink가 피해와 진행을 계산하지 않는다. `AreaId / EntityId / life` 전체가 수명 참조이며, 재생성 후 예전 참조는 무효다. 전역 RNG, 실제 시계, DOM, THREE와 기존 browser game 모듈은 코어에서 금지한다. import guard와 Node 직접 import 검사가 이를 확인한다.
+실선 상자는 구현과 제한된 검사가 있는 부분, 점선은 연결 또는 최종 수용 검사가 남은 부분이다. 이 그림의 검사 수치는 아래 명시한 checkpoint 기준이다.
 
-새 코어의 `public` 정원은 100명, `party-encounter`는 8명이다. 부착된 플레이어와 아직 살아 있는 입장 예약을 합쳐 검사한다. `applyContext`로 정원을 줄일 때도 같은 조건을 확인한다. 기존 코드 방 서버의 정원은 8명으로 유지하며 새 코어에 연결하지 않는다. 코어의 `legacy-room` context는 아직 adapter가 없는 준비 경로이며 현재 100명 상한을 기존 방의 정원으로 사용하지 않는다. 그 adapter와 정원 연결, 대기열, party 생성 UI와 계정별 중복 접속 차단은 이후 host 연결 단계다.
+`SimulationArea`는 입력, 시계, RNG, ID, timer, 전투, 적과 보스, 보상, action과 projectile을 소유한다. 고정 간격은 `1 / 30`초다. 입력 명령 순서를 보존하며 같은 sequence를 다시 실행하지 않는다. `snapshot()`과 `debugState()`는 복사한 불변 값을 반환하고 `drainEvents()`는 순서가 붙은 관측을 소비한다. event sink는 피해나 보상을 다시 적용하지 않는다.
 
-| 모듈 | 실제 동작 |
+`AreaId / EntityId / life` 전체가 개체 수명 참조다. respawn 후 이전 참조는 무효다. 전역 RNG, 실제 시계, DOM, THREE와 기존 browser game 모듈을 core에서 금지한다. import guard와 Node 직접 import 검사가 이를 확인한다.
+
+| 모듈 | 구현 범위 |
 | --- | --- |
-| `player`, `combat`, `abilities` | 세 클래스의 13종 기술과 15개 slot, GCD와 자원, 시전과 채널, 이동과 재생성 |
-| `enemy`, `boss` | 일반 적 AI, 네 보스 profile, 일곱 mechanic, add pool과 reset 및 freed 연출 상태 |
-| `areas`, `outcomes`, `interactions` | 서로 분리된 세 월드 배치, 퀘스트와 NPC, 보스 도전, 기여자별 전체 보상 |
-| `transfer` | 이동 예약과 staging, 소유권 CAS, 시계 변환, 보상 mailbox와 재시도 |
-| `actions`, `projectiles`, `pose` | 실제 clip 명중 시각, fade 또는 취소 시 root carry, canonical clawR에서 출발하는 실제 비행 |
+| `player`, `combat`, `abilities` | 세 클래스의 13종 기술과 15개 slot, GCD와 자원, 시전과 채널, 이동과 재생성, 장비 공격과 방어 배율 |
+| `enemy`, `boss` | 일반 적 AI, Rust/Abyss/Eclipse/Dawn/Frost 다섯 profile, mechanic, add pool, reset과 freed 상태 |
+| `areas`, `outcomes`, `interactions` | 네 월드 배치, 25개 퀘스트, 개인 prop, 보스 재도전과 기여자별 전체 보상, 장비 구매와 강화 |
+| `features` | 순수 boat와 village 규칙, named NPC와 주민 controller. Area fixed-stage 연결은 진행 중 |
+| `transfer` | 입장 예약과 staging, 소유권 CAS, 시계 변환, 보상 mailbox와 재시도 |
+| `actions`, `projectiles`, `pose` | 실제 clip 명중 시각, fade와 취소 시 root carry, canonical clawR에서 시작하는 비행 |
+| `game/simUnitView`, `game/playerInput` | native Vector3 live facade, rig에 numeric pose 적용, held 입력과 once-only edge 축적 |
 
-월드 정의는 순수 `WorldQuery`와 명시적인 level 및 population 설정을 받는다. 테스트의 평면 지형과 level/count는 fixture 값이며 운영 밸런스가 아니다. 일반 적은 기존의 살아 있고 숨지 않은 플레이어가 22m 안에 없을 때 재생성하는 조건을 유지한다. 최종 운영용 근처 인원 대비 밀도와 재생성 속도 공식은 이 추출에서 새로 정하지 않는다.
+새 코어의 public 정원은 100명, party-encounter는 8명이며 actor와 유효한 입장 예약을 함께 센다. 실제 public 대기열, party admission과 Google 계정의 중복 접속 관리는 host 단계에서 연결한다. 현재 legacy 코드 방 정원 8명과 elected host protocol은 바꾸지 않는다.
 
-현 단계의 적 수는 정의에 명시한 spawn 개수다. `enemyPopulation`의 `desired`는 spawn 하나에 대해 `0 | 1`이며 최초 생성과 죽은 적의 재생성 여부만 정한다. `0`으로 바뀌었다고 살아 있는 적을 제거하지 않는다. `desired > 1`을 주어 추가 개체를 만들거나 근처 인원에 따라 새 spawn을 늘리는 기능은 아직 없다. 지원하지 않는 값과 유효하지 않은 재생성 시간은 오류로 거부한다.
+월드 정의는 순수 `WorldQuery`와 명시적인 level 및 population 설정을 받는다. 테스트와 내부 Chrome의 값은 fixture이며 운영 밸런스 승인값이 아니다. `enemyPopulation.desired`는 명시한 spawn 하나에 대한 `0 | 1`이다. 근처 인원에 따른 추가 spawn과 빠른 respawn은 아직 구현하지 않았고 정확한 운영 설정도 미정이다. 기존 22m 재생성 안전 조건은 유지한다.
 
-이동을 사용하는 host는 각 Area의 `characters` 옵션과 `InMemoryTransferCoordinator`에 같은 `CharacterRegistry`를 주입해야 한다. 이 registry는 새 캐릭터 부착, respawn의 life 변경과 소유권 이동에 함께 참여한다. 별도 registry를 만드는 host는 respawn 뒤 소유권을 보장하지 못한다. 현재 구현은 메모리 registry와 mailbox이며 영속 저장이 아니다.
+네 월드의 baked query를 Node에서 직접 읽는다. Dawn의 개인 prop 배치는 actor bounds wrapper를 통과하지 않는 raw collision provider로 계산한다. 실제 21개 원본 위치와 비교한다. named NPC와 freed 27종에 실제 주민 8종을 더한 35종 rig가 catalog에 있다. 주민 외형과 W1 위치는 실제 seed 1337 생성 순서를 따르고 W2 route, W3 z+3, W4 z+2 배치를 각각 유지한다.
 
-실패한 이동은 원래 actor, RNG, action, timer, event, context와 소유권을 복구한다. 이미 발급한 transaction token의 nonce는 소비한 채로 단조 증가한다. 이를 되감아 취소한 token을 재사용하면 예전 abort가 새 이동을 취소할 수 있다. rollback 검사는 이 nonce만 예외로 두며, 나머지 전체 상태와 stale token의 무효화를 검사한다.
+## 이동과 보상 소유권
 
-Mailbox에 준비 기록을 쓰고 CAS가 실패한 경우 그 idempotent 기록은 남을 수 있다. source의 미확인 grant는 성공한 이동 뒤에만 ACK한다. 목적지 staging에서 아직 공개하지 않은 actor ID도 소비할 수 있으며, 취소한 actor를 활성화하거나 그 ID를 재사용하지 않는다. 보상 전달은 이동 commit과 별도로 재시도한다.
+host는 Area의 `characters` 옵션과 `InMemoryTransferCoordinator`에 같은 `CharacterRegistry`를 주입해야 한다. registry는 fresh attach, respawn life 변경과 이동 CAS에 함께 참여한다. 현재 coordinator와 award mailbox는 메모리 구현이다.
 
-tick 도중 event 등의 한도를 넘으면 Area는 실패 상태로 들어가 다음 tick을 거부한다. host는 남은 grant를 mailbox에 기록하고 ACK한 뒤 Area를 폐기해야 한다. 이 경로를 위해 관측과 grant 조회/ACK는 실패 상태에서도 허용한다. 실패를 무시하고 같은 Area를 계속 실행하지 않는다.
+실패한 이동은 actor, RNG, action, timer, event, context와 소유권을 복구한다. 이미 발급한 transaction nonce와 비공개 staging ID는 소비한 채로 유지한다. 취소한 token을 새 이동에 재사용하지 않는다. source grant ACK는 이동 commit 뒤에 처리하고 보상 전달은 별도로 재시도한다.
 
-## 실제 모션 데이터
+다섯 보스는 재도전마다 fresh life를 받는다. 실제 피해 기여자 모두 매 승리 전체 XP와 coins를 받으며 개인 이야기 진행은 한 번만 완료한다. 이미 현재 owner에게 반영한 grant의 `appliedHere` 상태를 host journal이 보존해야 한다. 단순히 모든 grant를 다시 apply하면 안 된다.
 
-`tools/bake-sim-motion.mjs`는 Chrome의 실제 `MotionLibrary`, GLB와 rig factory로 44개 clip과 14개 archetype을 읽는다. `src/sim/data/pose-data.json`에는 float32 sample, root curve, socket chain, collider와 scale 및 원본 SHA256이 들어간다. 누락된 clip과 archetype은 오류이며 대체 pose를 만들지 않는다. locomotion과 적용 pose cache는 unit마다 별도로 소유한다.
+tick 도중 한도를 넘은 Area는 다음 tick을 거부한다. host가 내구성 있는 저장과 grant 기록을 완료하고 Area를 폐기해야 하며 실패한 Area를 계속 실행하지 않는다. `TransferDTO`는 정상 travel용이다. 죽음, 배 탑승, village 중 logout과 restart용 checkpoint 경계를 대신하지 않는다.
 
-`tools/qa-sim-motion-data.mjs`는 production sampling 및 실제 rig의 socket과 numeric provider를 비교한다. 부모의 별도 재실행 결과는 다음과 같다.
+## 실제 모션 데이터와 검사
 
-원본 수치는 [evidence/s2-motion-parity.json](evidence/s2-motion-parity.json)에 보존한다. 실행한 provider version은 `shipped-motion-v1-3cf3d0e63efc06ed1e2c`다.
+`tools/bake-sim-motion.mjs`는 실제 Chrome `MotionLibrary`, GLB와 rig factory를 읽는다. packed artifact에는 float32 sample, root curve, socket chain, collider, scale과 원본 SHA256이 있다. 누락 clip과 archetype은 오류이며 대체 pose를 만들지 않는다. pose cache는 unit마다 소유한다.
+
+현재 provider는 `shipped-motion-v1-c39860fe930e432f10ad`다. [35종 raw 비교 결과](evidence/s2-motion-parity-35rig.json)를 보존한다. 원본 기준은 `fa7c0ac`, Game과 Unit은 `9dbbb45`와 동일하며 실제 추출 checkpoint는 `405c8de`다.
 
 | 비교 | 표본 | 최대 차이 |
 | --- | ---: | ---: |
 | Clip sampling | 1,232 | 0 |
-| ClawR 위치, 14종 rig와 36종 race/sex/class 조합 | 15,000 | 7.105427357601002e-15 world unit |
-| 자연 종료, 취소와 중복 stop의 root carry | 91 | 0 |
+| ClawR 위치, 35종 rig와 36종 race/sex/class 조합 | 39,171 | 7.105427357601002e-15 world unit |
+| 자연 종료, 취소와 중복 stop의 root carry | 238 | 0 |
 
-기존 undead rig는 motion 갱신 후 시각 servo twitch에 `Math.random`을 쓴다. 숫자 authority는 이 시각 무작위를 제외한 canonical pose를 쓴다. 708개 pose씩 비교한 undead/eclipse의 최대 launch 위치 차이는 0.114521/0.515346 world unit, 비교한 target 구성에서 최대 도착 차이는 0.006708/0.030312초, 30Hz 기준 최대 1tick이었다. 원래 spawn collider는 twitch 갱신 전에 측정되므로 그 값은 유지한다. 이는 표본 결과이며 모든 연속 pose에 대한 수학적 상한은 아니다. 기존 view의 twitch를 바꾸지는 않는다.
+111개 source hash와 packed content hash를 검사한다. Game, Unit, motion 또는 rig 원본이 바뀌면 실제 bake와 독립 production rig/controller 비교를 다시 한다. hash 제외, 수동 정답 치환, 허용 오차 완화로 검사를 통과시키지 않는다.
 
-원본 SHA256과 packed artifact의 content hash를 테스트한다. 원본 motion, rig 또는 추출 근거 파일이 바뀌면 실제 bake와 parity 검사를 다시 수행한다. hash 목록을 빼거나 허용 오차를 늘려 stale 검사를 우회하지 않는다.
+undead 계열 view의 무작위 servo twitch는 canonical authority pose에서 제외한다. 비교한 각 계열 708개 pose의 target 구성에서 최대 도착 차이는 0.030312초, 30Hz 기준 최대 1tick이었다. 모든 연속 pose에 대한 상한이 아니다. 기존 view twitch는 유지한다. 이전 14종 결과도 [원래 근거](evidence/s2-motion-parity.json)로 남긴다.
 
-## 검증 명령
+## 실행한 검사
 
-Node 24와 pnpm 10.10.0을 사용한다.
+Node 24.22.0과 pnpm 10.10.0을 사용했다. aggregate `7403189`에서 core 227/227, view/input 12/12와 build가 통과했다. 이 숫자는 NPC/주민 Area 연결 전 checkpoint이며 새 연결 후 다시 검사한다.
 
 ```sh
-pnpm install --frozen-lockfile
 pnpm test:sim:core
+node --test tests/sim-view-input.test.mjs
 pnpm build
-pnpm build:server
-pnpm test:boss
-pnpm test:engine
-pnpm test:multiplayer
-pnpm test:server
 node tools/qa-sim-motion-data.mjs --output /tmp/s2-motion-parity.json
+node tools/qa-numeric-core.mjs --url http://127.0.0.1:5259
 ```
 
-마지막 명령은 로컬 Chrome과 비어 있는 5266 port가 필요하다. 전용 임시 페이지에서 실제 loader와 rig를 사용하고 종료 시 browser와 Vite를 닫는다. 일반 core 테스트에는 브라우저와 네트워크 서버가 필요하지 않다. `test:sim:core`는 `tests/core-*.test.mjs`를 이름 순서로 발견해 실행하며 테스트 파일이 없으면 실패한다. GitHub의 `Simulation core` workflow는 core와 기존 회귀 검사를 실행한다.
+parent의 별도 Vite/Chrome trace에서 실제 Digit1 입력부터 numeric 지연 명중, 사망, XP +20과 coins +5, HUD와 rig root 반영까지 확인했다. 지연은 0.2667초, 22개 관절, root와 numeric 좌표 동일, pageerror 0이었다. 적 HP 1, stun, rage 100과 god mode는 명시적 fixture다. 이 trace는 네 월드의 완전한 렌더 검증이나 서버 접속 증거가 아니다.
 
-부모의 최종 로컬 검사(`7006ad8495d48fc0b81cd984ec0f2e2b82de529e`, Node 24.22.0)는 core 131건 통과, 실패와 skip 0, `pnpm build` 통과다. 기존 browser 모듈을 바꾸지 않은 상태에서 boss 90, engine 4, multiplayer 40, server 16건과 `build:server`도 통과했다. 기존 검사는 회귀 근거이며 새 코어가 브라우저 실행 경로에 연결됐다는 뜻은 아니다.
+기존 boss, engine, multiplayer와 account server 검사는 core 테스트와 별도로 최종 PR head에서 실행해야 한다. motion QA는 로컬 Chrome과 비어 있는 전용 port를 쓰며 종료 시 browser와 자체 Vite를 닫는다. `test:sim:core`는 `tests/core-*.test.mjs`를 발견해 실행하고 파일이 없으면 실패한다.
 
-## 남은 연결
+## 남은 연결과 수용 검사
 
-전체 S2 완료에는 S1/S3 반영 후 live Vector3 facade, `PlayerInput`, authority/replica adapter, 단일 browser orchestration으로의 전환이 필요하다. 배 탑승과 마을 놀이의 권한 있는 상태 변경도 아직 기존 브라우저 경로에 있다. 실제 두 브라우저 방, 전투 효과와 명중 시각, 사망과 재생성, recall과 dance, 세 월드 왕복 렌더 검사는 전환 뒤 수행한다.
+- 실제 authenticated host, 새 gameplay wire의 life/catalog/명령/개인 진행, browser receiver와 reconnect를 연결한다. 기존 S4 fixture의 synthetic 이동은 실제 Area 실행을 대신하지 않는다.
+- Google 로그인 계정에 새 level-1 캐릭터를 만든다. browser save를 가져오지 않는다. 저장 codec, durable attach/detach, journal/receipt와 SIGTERM 저장을 연결한다.
+- 실제 서버에서 네 월드 이동, 다섯 보스와 party 8명, 25개 퀘스트와 개인 prop, 장비, boat와 village, 계정 채팅 보호를 검증한다. public 월드별 한 Area와 100명 초과 대기열을 검증한다.
+- 실제 gameplay 100 clients와 browser 2개, 끊김과 restart 복구, VM tick p99와 CPU를 측정한다. p99 10ms 또는 CPU 60% 기준을 적용한다.
 
-실제 WebSocket host, Google 계정과 캐릭터 저장, VM 성능은 이 준비의 검증 범위가 아니다. S4의 네트워크 측정과 이 코어의 Node 검사는 서로 다른 근거다. 기본 branch push, merge, VM 배포는 수행하지 않는다.
+production 서버 실패 시 offline Area나 legacy authority로 자동 전환하지 않는다. 현재 production legacy 경로는 새 경로 전환 전까지 회귀 호환을 유지한다. 구현 세션은 PR을 만들고, 지정된 별도 리뷰 세션이 merge와 dev 배포를 수행한다.

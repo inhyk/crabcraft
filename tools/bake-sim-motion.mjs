@@ -68,13 +68,17 @@ try {
   return {clips,archetypes,rigSources,windows,routine:ROUTINE,rates:SKILL_RATE,joints:JOINT_NAMES};
  });
  const index=JSON.parse(await readFile(new URL('../public/motions/index.json',import.meta.url),'utf8'));
- const sources=['src/motion/library.ts','src/motion/pose.ts','src/motion/controller.ts','src/motion/skills.ts','src/motion/skillClips.ts','src/motion/breakdance.ts','src/motion/breakClips.ts','tools/bake-sim-motion.mjs','src/crab/index.ts','src/crab/gear.ts','src/crab/rig.ts','src/crab/template.ts','src/crab/posture.ts','src/crab/pose.ts','src/crab/types.ts','src/crab/jellyfish.ts','src/data/races.ts','src/game/unit.ts','src/game/util.ts','src/game/game.ts','src/game/quests.ts','public/models/crab/jumper.glb','public/motions/index.json'];
+ const sources=['src/motion/library.ts','src/motion/pose.ts','src/motion/controller.ts','src/motion/skills.ts','src/motion/skillClips.ts','src/motion/breakdance.ts','src/motion/breakClips.ts','tools/bake-sim-motion.mjs','src/sim/data/rig-aliases.ts','src/crab/index.ts','src/crab/gear.ts','src/crab/rig.ts','src/crab/template.ts','src/crab/posture.ts','src/crab/pose.ts','src/crab/types.ts','src/crab/jellyfish.ts','src/data/races.ts','src/game/unit.ts','src/game/util.ts','src/game/game.ts','src/game/quests.ts','public/models/crab/jumper.glb','public/motions/index.json'];
  for(const c of index.clips){sources.push(`public/motions/${c.id}.json`);const h=JSON.parse(await readFile(root+`public/motions/${c.id}.json`,'utf8'));sources.push('public/motions/'+h.bin);}
  for(const c of Object.values(result.clips))for(const key of ['q','base','local'])if(c[key]){const values=c[key],bytes=Buffer.alloc(values.length*4);values.forEach((v,i)=>bytes.writeFloatLE(v,i*4));c[key]=bytes.toString('base64');}
  result.encoding='float32-le-base64';
  const sourceHashes={};for(const path of sources.sort())sourceHashes[path]=sha(await readFile(root+path));
  result.sourceHashes=sourceHashes;result.version='shipped-motion-v1-'+sha(JSON.stringify(result)).slice(0,20);
  await mkdir(root+'src/sim/data',{recursive:true});
+ const catalog={motionVersion:result.version,sourceHashes,rigs:Object.fromEntries(Object.entries(result.rigSources).map(([id,source])=>[id,{...source,rootScale:result.archetypes[id].rootScale,metersToUnits:result.archetypes[id].metersToUnits}]))};
+ catalog.version='shipped-rigs-v1-'+sha(JSON.stringify(catalog)).slice(0,20);
+ // Both products come from this same factory pass; the content/version guards reject mixed generations.
  await writeFile(root+'src/sim/data/pose-data.json',JSON.stringify(result)+'\n');
- console.log(JSON.stringify({version:result.version,clips:Object.keys(result.clips).length,archetypes:Object.keys(result.archetypes).length,bytes:JSON.stringify(result).length}));
+ await writeFile(root+'src/sim/data/rig-catalog.json',JSON.stringify(catalog)+'\n');
+ console.log(JSON.stringify({version:result.version,rigCatalogVersion:catalog.version,rigCatalogBytes:JSON.stringify(catalog).length,clips:Object.keys(result.clips).length,archetypes:Object.keys(result.archetypes).length,bytes:JSON.stringify(result).length}));
 }finally{await browser?.close();await server.close();}

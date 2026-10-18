@@ -109,7 +109,7 @@ test('healthz reports the database; other paths answer like the Worker', async (
   assert.equal((await http('GET', '//')).status, 400);
   assert.equal((await http('GET', '/healthz')).status, 200);
   const { rows } = await db.query('SELECT version FROM schema_migrations ORDER BY version');
-  assert.deepEqual(rows.map(r => r.version), ['001_accounts', '002_google_only', '003_chat_reports']);
+  assert.deepEqual(rows.map(r => r.version), ['001_accounts', '002_google_only', '003_chat_reports', '004_world_characters']);
   // 002 removed the password account, its session and its login counter.
   const counts = await db.query(`SELECT (SELECT count(*) FROM accounts)::int AS a, (SELECT count(*) FROM sessions)::int AS s, (SELECT count(*) FROM rate_limits WHERE id LIKE 'login:%')::int AS r`);
   assert.deepEqual(counts.rows[0], { a: 0, s: 0, r: 0 });
@@ -442,6 +442,19 @@ test('without GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, start answers 503 and t
     assert.deepEqual([callback.status, callback.headers.get('location')], [302, '/?account=error']);
     assert.match(log, /GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is not set/);
   } finally { bare.kill('SIGKILL'); await once(bare, 'exit'); }
+});
+
+test('bundled account HTTP issues same-origin world tickets without widening cookies or opening /world', async () => {
+  const signed = await googleSignIn({ sub: 'ticket-' + randomBytes(6).toString('hex'), host: 'crab.seonn.dev' });
+  assert.match(signed.session, /Path=\/api\/account; HttpOnly; SameSite=Strict; Secure;/);
+  const issued = await api('world-ticket', {}, { cookie: signed.cookie, Host: 'crab.seonn.dev' });
+  assert.equal(issued.status, 200); assert.match(issued.json.ticket, /^[A-Za-z0-9_-]{43}$/);
+  assert.deepEqual(Object.keys(issued.json).sort(), ['expiresAt', 'ticket']); assert.match(issued.headers['cache-control'], /no-store/);
+  assert.equal((await api('world-ticket', {}, { cookie: signed.cookie, Host: 'crab.seonn.dev', Origin: OTHER_ORIGIN })).status, 403);
+  assert.equal((await http('GET', '/world')).status, 404);
+  assert.equal((await api('logout', {}, { cookie: signed.cookie, Host: 'crab.seonn.dev' })).status, 200);
+  assert.equal((await api('world-ticket', {}, { cookie: signed.cookie, Host: 'crab.seonn.dev' })).status, 401);
+  assert.ok(!output.includes(issued.json.ticket), 'ticket leaked into server log');
 });
 
 test('the server log never holds the client secret, codes, tokens or session tokens', async () => {

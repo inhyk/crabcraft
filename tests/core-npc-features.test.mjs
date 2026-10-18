@@ -12,7 +12,7 @@ function fixture(seed=1){
  const query={heightAt:()=>0,resolveCollision:(x,z,r,o)=>o.set(x,z),raycastSolid:()=>null};
  const context={time:0,rng,query,authority:true,endingActive:false,players:()=>players,externallyOwned:r=>owned.has(r.id),hasAction:u=>!!actions.effective(u),playAction:(u,id)=>actions.play(u,actionRequest(realActionData,id)),emit:e=>events.push(structuredClone(e))};
  const unit=createUnit({area:'ambient',id:10,life:1},'npc:brinebeard','npc','friendly',realActionData);
- const resident=createUnit({area:'ambient',id:20,life:1},'human','townsfolk','friendly',realActionData);
+ const resident=createUnit({area:'ambient',id:20,life:1},'townsfolk:0','townsfolk','friendly',realActionData);
  const player=(id,x,z=0)=>{const p=createUnit({area:'ambient',id,life:1},'human','player','player',realActionData,{x,y:0,z});players.push(p);return p;};
  const npc=()=>new NumericNpc(context,unit,{npcId:'brinebeard',homeYaw:-1});
  const folk=(options={})=>new NumericTownsfolk(context,resident,{points:[{x:10,y:0,z:0}],wanderRadius:0,...options});
@@ -112,4 +112,40 @@ test('independent Areas replay the same seeded ambient trajectories and detached
  const run=()=>{const f=fixture(512),n=f.npc(),t=f.folk({points:[{x:3,y:0,z:2},{x:-4,y:0,z:6}],wanderRadius:2});f.player(1,5);for(let i=0;i<600;i++){f.context.time=(i+1)/30;n.step(1/30);t.step(1/30);f.actions.update(f.unit,1/30);f.actions.update(f.resident,1/30);}return {npc:n.debug(),folk:t.debug(),u:f.unit,r:f.resident,events:f.events,rng:f.context.rng.state()};};
  assert.deepEqual(run(),run());const f=fixture(),t=f.folk(),copy=t.debug();copy.dest.x=99;copy.points[0].x=42;assert.equal(t.debug().dest.x,0);assert.equal(t.debug().points[0].x,10);
  assert.throws(()=>f.folk({points:[]}),RangeError);assert.throws(()=>t.step(NaN),RangeError);
+});
+test('all eight real resident rigs walk and replay across all four baked world queries',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const {loadBakedWorld}=await import('../src/sim/world/baked.ts');
+ const {createTownsfolk,TOWNSFOLK_SPECS}=await import('../src/sim/data/townsfolk.ts');
+ const {advanceNumericPose}=await import('../src/sim/pose.ts');
+ const {teleport}=await import('../src/sim/unit.ts');
+ const summaries=[];
+ for(const world of ['w1','w2','w3','w4']){
+  const query=loadBakedWorld(JSON.parse(await readFile(new URL(`../public/world/collision-${world}.json`,import.meta.url),'utf8')));
+  const definitions=createTownsfolk(world,query);assert.equal(definitions.length,8);
+  const run=()=>{
+   const f=fixture(1337);f.context.query=query;
+   const residents=definitions.map((d,i)=>{
+    const u=createUnit({area:`ambient-${world}`,id:i+100,life:1},d.archetype,'townsfolk','friendly',realActionData,d.position);
+    teleport(u,query,d.position.x,d.position.z,d.yaw??0);
+    const start={x:u.x,z:u.z},controller=new NumericTownsfolk(f.context,u,{...d,relocated:world!=='w1'});
+    assert.equal(u.archetype,`townsfolk:${i}`);assert.ok(u.radius>0&&u.height>0);
+    return {u,controller,start,distance:0};
+   });
+   for(let i=0;i<300;i++){
+    f.context.time=(i+1)/30;
+    for(const r of residents){const x=r.u.x,z=r.u.z;r.controller.step(1/30);r.distance+=Math.hypot(r.u.x-x,r.u.z-z);f.actions.update(r.u,1/30);advanceNumericPose(r.u,1/30);}
+   }
+   return {rng:f.context.rng.state(),residents:residents.map(r=>({unit:r.u,state:r.controller.debug(),distance:r.distance,start:r.start}))};
+  };
+  const first=run();assert.deepEqual(first,run(),`${world} deterministic actual geometry`);
+  for(const [i,r]of first.residents.entries()){
+   assert.ok(r.distance>.01,`${world} resident ${i} actual movement`);
+   assert.ok([r.unit.x,r.unit.y,r.unit.z,r.unit.yaw,...r.unit.pose.appliedQ,...r.unit.pose.appliedPosition].every(Number.isFinite));
+   assert.equal(r.unit.pose.appliedQ.length,22);assert.equal(r.state.route!==null,world==='w2');
+  }
+  summaries.push({world,races:TOWNSFOLK_SPECS.map(s=>s.race),moving:first.residents.length});
+ }
+ assert.deepEqual(summaries.map(s=>s.moving),[8,8,8,8]);
+ assert.deepEqual(summaries[0].races,['human','orc','dwarf','undead','nightelf','tauren','nightelf','undead']);
 });
