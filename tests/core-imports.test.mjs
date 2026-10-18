@@ -9,6 +9,8 @@ function violations(source,file=resolve(sim,'fixture.ts')){
  const specifier=n=>{if(!n||!(ts.isStringLiteral(n)||n.kind===ts.SyntaxKind.NoSubstitutionTemplateLiteral)){errors.push('nonliteral module');return;}if(!n.text.startsWith('.')||!resolve(dirname(file),n.text).startsWith(sim+'/'))errors.push(`external module ${n.text}`);};
  function visit(n){
   if(ts.isImportDeclaration(n)||ts.isExportDeclaration(n)){if(n.moduleSpecifier)specifier(n.moduleSpecifier);}
+  if(ts.isImportTypeNode(n))specifier(n.argument?.literal);
+  if(ts.isExternalModuleReference(n))specifier(n.expression);
   if(ts.isCallExpression(n)&&n.expression.kind===ts.SyntaxKind.ImportKeyword)specifier(n.arguments[0]);
   if(ts.isCallExpression(n)&&ts.isIdentifier(n.expression)&&['require','eval','Function','setTimeout','setInterval','requestAnimationFrame'].includes(n.expression.text))errors.push(`ambient call ${n.expression.text}`);
   if(ts.isIdentifier(n)&&['Date','performance','document','window','process','globalThis','global','navigator','crypto'].includes(n.text)){
@@ -22,7 +24,7 @@ function violations(source,file=resolve(sim,'fixture.ts')){
  visit(ast);snapshot.dispose();return errors;
 }
 test('guard recognizes transitive import edges and executable globals, not comments or string text',()=>{
- for(const bad of ["import 'three';","export * from '../game/unit.ts';","import('../game/unit.ts')","import(variable)","import type {Unit} from '../game/unit.ts';",'Math.random()','Math["random"]()','Date.now()','window.innerWidth','globalThis.Math.random()'])assert.ok(violations(bad).length,bad);
+ for(const bad of ["import 'three';","export * from '../game/unit.ts';","import('../game/unit.ts')","import(variable)","import type {Unit} from '../game/unit.ts';","type X = import('../game/unit.ts').Unit;","import X = require('three');",'Math.random()','Math["random"]()','Date.now()','window.innerWidth','globalThis.Math.random()'])assert.ok(violations(bad).length,bad);
  assert.deepEqual(violations("const harmless='Invalid action window/rate/fade'; // Date.now()\nimport type {Vec3} from './types.ts';"),[]);
 });
 test('all simulation imports including type edges stay inside numeric core without ambient RNG or clocks',()=>{for(const file of files(sim))assert.deepEqual(violations(readFileSync(file,'utf8'),file),[],relative(root,file));});
