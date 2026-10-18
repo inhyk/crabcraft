@@ -271,7 +271,7 @@ export interface PlayerSim extends CombatController {
   interruptCast(reason?: string): void;
   cancelChannel(): void;
   startChannel(kind: ChannelKind, seconds: number, to: Readonly<Vec3>, targetId?: string): void;
-  gainXp(amount: number): void;
+  gainXp(amount: number, applyBlessing?: boolean): void;
   respawn(): void;
 }
 export type ProjectileStyle = 'bubble' | 'spark' | 'holy' | 'rust';
