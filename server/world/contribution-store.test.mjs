@@ -85,7 +85,7 @@ test('257 sequential contributors stage bounded pure-planner pages invisibly, re
   await assert.rejects(ledger.appendVictimPage(d.draftId,{...first.planned,grants:first.planned.grants.map((g,i)=>i?g:{...g,xp:1})}),error('conflict'));
   d=await ledger.appendVictimPage(d.draftId,first.planned);assert.equal(d.cursor.recipientCount,100);
   assert.deepEqual(await ledger.appendVictimPage(d.draftId,first.planned),d);
-  assert.equal((await pool.query('SELECT count(*)::int n FROM world_character_grants WHERE grant_id=$1',[firstId])).rows[0].n,1);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM world_character_grants_physical WHERE grant_id=$1',[firstId])).rows[0].n,1);
   assert(!(await store.pendingGrants(c.accountId,c.characterId)).some(g=>g.id===firstId));
   await assert.rejects(store.loadForRecovery(c.accountId,c.characterId,[firstId]),e=>e instanceof CharacterStoreError&&e.code==='not_found');
   await assert.rejects(store.saveCheckpoint(c.accountId,c.characterId,0,c.checkpoint,[firstId]),e=>e instanceof CharacterStoreError&&e.code==='not_found');
@@ -133,8 +133,8 @@ test('real Area101 lifetime contributors under100 concurrent match paged oracle 
 test('mid-page SQL failure rolls back every staged grant, mapping and cursor; independent append retry is idempotent',async()=>{
   const victim=ref('ledger-failed-page');await flush(writes(victim,characters.slice(0,5)));const d=await draft(victim),p=await page(d);
   await pool.query(`CREATE FUNCTION fail_ledger_page() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.character_id::text=TG_ARGV[0] THEN RAISE EXCEPTION 'ledger page midpoint'; END IF; RETURN NEW; END; $$;
-    CREATE TRIGGER fail_ledger_page BEFORE INSERT ON world_character_grants FOR EACH ROW EXECUTE FUNCTION fail_ledger_page('${characters[2].characterId}')`);
-  try{await assert.rejects(ledger.appendVictimPage(d.draftId,p.planned),/midpoint/);}finally{await pool.query('DROP TRIGGER fail_ledger_page ON world_character_grants;DROP FUNCTION fail_ledger_page()');}
+    CREATE TRIGGER fail_ledger_page BEFORE INSERT ON world_character_grants_physical FOR EACH ROW EXECUTE FUNCTION fail_ledger_page('${characters[2].characterId}')`);
+  try{await assert.rejects(ledger.appendVictimPage(d.draftId,p.planned),/midpoint/);}finally{await pool.query('DROP TRIGGER fail_ledger_page ON world_character_grants_physical;DROP FUNCTION fail_ledger_page()');}
   assert.deepEqual(await ledger.getVictimDraft(d.draftId),d);assert.equal((await pool.query('SELECT count(*)::int n FROM world_paged_grant_visibility WHERE draft_id=$1',[d.draftId])).rows[0].n,0);
   const secondPool=new pg.Pool({connectionString:cluster.url});try{const other=new DurableOutcomeStore(secondPool,codec,options);const results=await Promise.all([ledger.appendVictimPage(d.draftId,p.planned),other.appendVictimPage(d.draftId,p.planned)]);assert.deepEqual(results[0],results[1]);await assert.rejects(pool.query('UPDATE world_victim_pages SET planned_count=planned_count WHERE draft_id=$1',[d.draftId]),/immutable/);await assert.rejects(pool.query('DELETE FROM world_victim_pages WHERE draft_id=$1',[d.draftId]),/unsealed/);await ledger.sealVictimDraft(d.draftId);await assert.rejects(pool.query('UPDATE world_paged_outcome_seals SET recipient_count=recipient_count WHERE draft_id=$1',[d.draftId]),/immutable/);}finally{await secondPool.end();}
 });

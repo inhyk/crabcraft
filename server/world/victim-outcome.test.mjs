@@ -70,9 +70,9 @@ test('101 lifetime contributors with at most100 concurrent real Area owners all 
     // A mid-insert failure rolls back BOTH the seal and every recipient, without ACKing the source.
     const failId = entries.slice().sort((a, b) => a.id < b.id ? -1 : 1)[50].characterId;
     await pool.query(`CREATE FUNCTION fail_whole_victim() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.character_id::text=TG_ARGV[0] THEN RAISE EXCEPTION 'whole victim midpoint failure'; END IF; RETURN NEW; END; $$;
-      CREATE TRIGGER fail_whole_victim BEFORE INSERT ON world_character_grants FOR EACH ROW EXECUTE FUNCTION fail_whole_victim('${failId}')`);
+      CREATE TRIGGER fail_whole_victim BEFORE INSERT ON world_character_grants_physical FOR EACH ROW EXECUTE FUNCTION fail_whole_victim('${failId}')`);
     try { await assert.rejects(store.recordVictimOutcome(entries, resources), /midpoint failure/); }
-    finally { await pool.query('DROP TRIGGER fail_whole_victim ON world_character_grants; DROP FUNCTION fail_whole_victim()'); }
+    finally { await pool.query('DROP TRIGGER fail_whole_victim ON world_character_grants_physical; DROP FUNCTION fail_whole_victim()'); }
     assert.deepEqual(await count(outcome), { seals: 0, grants: 0 }); assert.equal(source.pendingGrants().length, 101);
     const grants = await store.recordVictimOutcome(entries, resources); assert.equal(grants.length, 101);
     assert.deepEqual(await count(outcome), { seals: 1, grants: 101 });
