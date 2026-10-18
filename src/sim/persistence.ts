@@ -12,7 +12,7 @@ export type CharacterIdentityV1 = { schema:'world-identity-v1'; classId:ClassId;
 export type LocationCheckpoint = { x:number; y:number; z:number; yaw:number };
 export type DurationCheckpoint = { startAge:number; endRemaining:number };
 export type AchievementCheckpoint = { earned:string[]; distance:number };
-export type QuestCheckpoint = { chapter:1|2|3|4; status:Record<string,'locked'|'available'|'active'|'ready'|'done'>; progress:Record<string,number>; cogs:number; tracked:Partial<Record<1|2|3|4,string>> };
+export type QuestCheckpoint = { chapter:1|2|3|4|5|6; status:Record<string,'locked'|'available'|'active'|'ready'|'done'>; progress:Record<string,number>; cogs:number; tracked:Partial<Record<1|2|3|4|5|6,string>> };
 export type InterruptedActivity = {
  seated:boolean; village:boolean; controlsLocked:boolean;
  cast:({ability:AbilityId}&DurationCheckpoint)|null;
@@ -84,12 +84,12 @@ function quests(value:unknown,world:WorldId):void {
  const objectives=new Map(Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>[o.id,o.count] as const)));objectives.set('patrol-kills',4);
  const progress=object(q.progress,'quests.progress');for(const [id,n]of Object.entries(progress)){if(!objectives.has(id))fail('quest.objective');integer(n,`quests.${id}`,0,objectives.get(id));}
  integer(q.cogs,'quests.cogs',0,4);if(q.cogs!==(progress['q1-cog']??0))fail('quests.cogs');
- const tracked=object(q.tracked,'quests.tracked');for(const [chapter,id]of Object.entries(tracked)){if(!['1','2','3','4'].includes(chapter)||typeof id!=='string'||!QUESTS[id]||QUESTS[id].chapter!==Number(chapter))fail('quests.tracked');}
+ const tracked=object(q.tracked,'quests.tracked');for(const [chapter,id]of Object.entries(tracked)){if(!['1','2','3','4','5','6'].includes(chapter)||typeof id!=='string'||!QUESTS[id]||QUESTS[id].chapter!==Number(chapter))fail('quests.tracked');}
  for(const id of QUEST_ORDER){const def=QUESTS[id];if(['ready','done'].includes(status[id] as string)&&!def.objectives.every(o=>(progress[o.id]??0)===o.count))fail(`quests.${id}.completion`);}
 }
 /** Strictly validates a detached snapshot; never repairs or clamps server data. */
 export function validateCheckpoint(value:unknown,context?:IdentityContext):CharacterCheckpointV1 {
- const c=fields(detached(value),['schema','character','classId','archetype','world','location','progress','survival','activity'],'root');member(c.schema,['world-character-v1'],'schema');text(c.character,'character');member(c.classId,Object.keys(CLASSES),'class');text(c.archetype,'archetype',256);member(c.world,['w1','w2','w3','w4'],'world');location(c.location);
+ const c=fields(detached(value),['schema','character','classId','archetype','world','location','progress','survival','activity'],'root');member(c.schema,['world-character-v1'],'schema');text(c.character,'character');member(c.classId,Object.keys(CLASSES),'class');text(c.archetype,'archetype',256);member(c.world,['w1','w2','w3','w4','w5','w6'],'world');location(c.location);
  if(context&&(c.character!==context.characterId||c.classId!==context.identity.classId||c.archetype!==context.identity.archetype))fail('identity-mismatch');
  const p=fields(c.progress,['xp','coins','baseMaxHp','attackRank','armorRank','weaponOwned','armorOwned','quests','flags','cogMisses','achievements','lighthouseSecretFound'],'progress');
  integer(p.xp,'xp');integer(p.coins,'coins');integer(p.attackRank,'attackRank',0,100);integer(p.armorRank,'armorRank',0,100);bool(p.weaponOwned,'weaponOwned');bool(p.armorOwned,'armorOwned');if((p.attackRank>0)!==p.weaponOwned||(p.armorRank>0)!==p.armorOwned)fail('gear-ownership');
@@ -97,7 +97,7 @@ export function validateCheckpoint(value:unknown,context?:IdentityContext):Chara
  const flags=object(p.flags,'flags');for(const [id,v]of Object.entries(flags)){member(id,PERSONAL_FLAG_IDS,'flags.key');bool(v,'flags.value');}
  const achievements=fields(p.achievements,['earned','distance'],'achievements');if(!Array.isArray(achievements.earned)||new Set(achievements.earned).size!==achievements.earned.length)fail('achievements.earned');for(const id of achievements.earned)member(id,ACHIEVEMENT_IDS,'achievement');finite(achievements.distance,'achievements.distance',0);
  const s=fields(c.survival,['alive','hp','maxHp','resource','maxResource','respawnRemaining','cooldowns','gcd','statuses','history'],'survival');bool(s.alive,'alive');const level=levelForXp(p.xp),maxHp=Math.round(cls.baseHp*(1+.15*(level-1))),maxResource=cls.resource==='rage'?100:120+20*(level-1);if(s.maxHp!==maxHp||s.maxResource!==maxResource)fail('derived-stats');integer(s.maxHp,'maxHp',1);finite(s.hp,'hp',0,maxHp);finite(s.resource,'resource',0,maxResource);if(s.alive&&s.hp<=0)fail('alive.hp');if(s.alive&&s.respawnRemaining!==null)fail('alive.respawn');if(s.respawnRemaining!==null)finite(s.respawnRemaining,'respawnRemaining',0);if(!s.alive&&s.respawnRemaining===null)fail('dead.respawn');
- const abilityIds=cls.abilities.map(a=>a.id);for(const [id,d]of Object.entries(object(s.cooldowns,'cooldowns'))){member(id,abilityIds,'cooldown.ability');duration(d,'cooldown');}duration(s.gcd,'gcd');
+ const abilityIds=cls.abilities.map(a=>a.id);for(const [id,d]of Object.entries(object(s.cooldowns,'cooldowns'))){member(id,[...abilityIds,'boss-xp-blessing'],'cooldown.ability');duration(d,'cooldown');}duration(s.gcd,'gcd');
  const st=fields(s.statuses,['stunRemaining','slowRemaining','slowPct','rustRemaining','rust','absorbRemaining','absorb','absorbMax','blessingRemaining','encounterBlessing','warded'],'statuses');for(const [k,n]of Object.entries(st))if(k==='encounterBlessing'||k==='warded')bool(n,k);else finite(n,k,0);finite(st.slowPct,'slowPct',0,1);integer(st.rust,'rust',0,5);finite(st.absorb,'absorb',0,st.absorbMax as number);
  const h=fields(s.history,['combatAge','spendAge','attackAge','nextSwingRemaining'],'history');for(const [k,n]of Object.entries(h))finite(n,k,0);
  const a=fields(c.activity,['seated','village','controlsLocked','cast','channel','dash','pendingHit','rootPending','motion'],'activity');for(const k of ['seated','village','controlsLocked','dash','pendingHit','rootPending'])bool(a[k],`activity.${k}`);

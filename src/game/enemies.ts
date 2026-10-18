@@ -43,6 +43,9 @@ export class Enemy {
   pack: Enemy[] = [];
   /** Boss adds never respawn. */
   isAdd = false;
+  isDungeonOnly = false;
+  dungeonLevel = 35;
+  dungeonCaptain = false;
   isEcho = false;
   /** Extra guardians stay dormant on the original shore. */
   islandSlot:number|null = null;
@@ -150,6 +153,8 @@ export class Enemy {
     const g = this.game;
     const u = this.unit;
     if(this.isEcho&&(g.world2?.chapter!==2||this.state==='gone'))return;
+    if(this.isDungeonOnly&&!g.dungeons?.active)return;
+    if(!this.isDungeonOnly&&g.dungeons?.active)return;
     const now = g.time;
     const p = g.combatTarget(u);
     if (this.state === 'gone') return;
@@ -350,10 +355,11 @@ export class Enemy {
 
   private fixedLevel():number {
     const base=ENEMY_STATS[this.kind];
+    if(this.isDungeonOnly)return this.dungeonLevel;
     if(this.isEcho)return 10;
     const chapter=this.game.world2?.chapter??1;
     if(this.isAdd||chapter===1)return base.level;
-    return (chapter===4?100:chapter===3?20:10)+(this.kind==='scavenger'?2:0);
+    return (chapter===6?400:chapter===5?300:chapter===4?100:chapter===3?20:10)+(this.kind==='scavenger'?2:0);
   }
 
   private scaleForJourney(): void {
@@ -365,13 +371,15 @@ export class Enemy {
 
   private applyStats(level:number): void {
     const base=ENEMY_STATS[this.kind],inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
+    if(this.isDungeonOnly){const captain=this.dungeonCaptain;Object.assign(this.stats,{level,hp:Math.round((180+level*8)*(captain?4:1)),xp:0,speed:captain?3.4:4.1,aggro:40,leash:45,swing:captain?2.8:2.4,dmg:[8+level*.18,(12+level*.23)*(captain?1.5:1)]});return;}
     const scale=1+.12*(level-base.level);
     if(this.isEcho){Object.assign(this.stats,{level,hp:Math.round(500*scale),xp:350+level*10,respawn:120,speed:2.8,aggro:10,leash:24,dmg:[14+level,18+level]});return;}
     Object.assign(this.stats,{level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:this.respawnDelay(),dmg:[base.dmg[0]*scale,base.dmg[1]*scale]});
   }
 
   refreshAppearance(): void {
-    this.unit.setBaseTint(this.game.world2?.chapter===4?'#a5eaff':(this.game.world2?.chapter??1)>=2 ? '#b08cff' : LED[this.kind]);
+    if(this.isDungeonOnly){this.unit.setBaseTint(this.dungeonCaptain?'#ffe8a6':'#a6e7ff');return;}
+    this.unit.setBaseTint(this.game.world2?.chapter===6?'#82ffbd':this.game.world2?.chapter===5?'#ffa05a':this.game.world2?.chapter===4?'#a5eaff':(this.game.world2?.chapter??1)>=2 ? '#b08cff' : LED[this.kind]);
   }
 
   /** No player near the home: the same rule for every player (there is no one camera to hide from). */

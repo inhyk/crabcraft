@@ -7,7 +7,7 @@ export const SNOW_FOUNTAIN = {x:-13,z:65,radius:3.1} as const;
 
 export function snowTrees() {
   const trees: {x:number;z:number;s:number}[] = [];
-  for(let i=0;i<280;i++){
+  for(let i=0;i<120;i++){
     const a=i*2.399963,r=55+i%7*6,x=Math.sin(a)*r,z=10+Math.cos(a)*108;
     if(Math.hypot(x/128,(z-2)/155)>.78||Math.abs(x)<19||Math.abs(x)<42&&z>23&&z<91||Math.hypot(x,z+78)<30)continue;
     trees.push({x,z,s:.8+i%5*.13});

@@ -43,7 +43,7 @@ test('invalid captured loot rolls fail before mutation and finished collection i
 test('distinct delayed boss victories grant XP and coins per life while personal story progress remains capped',()=>{
  const area=worldArea('boss-mailbox'),a=addActor(area),mailbox=new InMemoryAwardMailbox();questAccept(a.p,area.services,'q4');for(let i=0;i<2;i++)mailbox.record({id:`rust-clear-${i}`,victim:{area:`old-encounter-${i}`,id:3,life:1},recipient:'hero',xp:500,coins:150,objectives:[{kind:'boss',amount:1}],flags:['rustCleared']},false);for(const grant of mailbox.pending('hero')){assert.equal(area.receiveGrant(grant),'applied');mailbox.acknowledgeApplied('hero',grant.id);assert.equal(area.receiveGrant(grant),'duplicate');}assert.equal(a.p.state.xp,1000);assert.equal(a.p.state.coins,300);assert.equal(a.p.state.flags.rustCleared,true);assert.equal(a.p.state.quests.progress['q4-boss'],1);assert.equal(a.p.state.quests.status.q4,'ready');assert.equal(mailbox.pending('hero').length,0);
 });
-for(const[profile,world,expectedXp,expectedCoins]of[['rust','w1',500,150],['abyss','w1',1000,500],['eclipse','w2',1500,1200],['dawn','w3',3200,5000],['frost','w4',18000,15000]])test(`${profile}: three real fresh-life victories pay every contributor XP and coins exactly once`,async()=>{
+for(const[profile,world,expectedXp,expectedCoins]of[['rust','w1',500,150],['abyss','w1',1000,500],['eclipse','w2',5000,1200],['dawn','w3',100000,5000],['frost','w4',18000,15000]])test(`${profile}: three real fresh-life victories pay every contributor XP and coins exactly once`,async()=>{
  const{xpForLevel}=await import('../src/sim/data/progression.ts'),{intent}=await import('./core/worldHarness.mjs'),query={heightAt:(x,z)=>x>180&&z<-120?28.5:0,resolveCollision:(x,z,r,out)=>out.set(x,z),raycastSolid:()=>null},area=worldArea(`rematches-${profile}`,world,{query}),a=addActor(area,'a'),b=addActor(area,'b');for(const actor of[a,b]){actor.p.gainXp(xpForLevel(300));Object.assign(actor.p.state.flags,{rustCleared:true,abyssCleared:true,trueCleared:true,finalCleared:true});actor.u.invulnerable=true;}
  if(world==='w1'){a.p.state.quests.status.q3='done';Object.assign(a.u,area.services.definition.interactions.find(i=>i.id==='beacon').position);area.step(new Map([[a.ref.id,intent(1,[{kind:'channelStart',channel:'beacon',targetId:'beacon'}],{heldChannel:'beacon'})]]));tick(area,62);assert.equal(a.p.state.flags.beaconLit,true);}
  const boss=area.services.bossByProfile(profile),startXp=a.p.state.xp,secondXp=b.p.state.xp,baseCoins=a.p.state.coins,seen=[];
@@ -56,4 +56,14 @@ test('actual Frost victory completes active s2 automatically once while rematch 
 });
 test('actual Abyss victory pays its full reward without fabricating Rust q4 credit',()=>{
  const area=worldArea('abyss-objective'),actor=addActor(area),boss=area.services.bossByProfile('abyss'),guide=addActor(area,'guide');guide.p.gainXp(22000);guide.p.state.flags.rustCleared=true;questAccept(actor.p,area.services,'q4');area.worldRules.setSharedBeacon(true);boss.wake();tick(area,74);area.services.combat.damage(actor.ref,boss.unit,1e8);assert.equal(actor.p.state.xp,1000);assert.equal(actor.p.state.coins,500);assert.equal(actor.p.state.flags.abyssCleared,true);assert.equal(actor.p.state.flags.rustCleared,undefined);assert.equal(actor.p.state.quests.status.q4,'active');assert.equal(actor.p.state.quests.progress['q4-boss'],undefined);assert.equal(area.pendingGrants()[0].grant.objectives.some(o=>o.kind==='boss'),false);
+});
+
+test('Astra and Solarkan blessings multiply subsequent XP by 1.5, refresh without stacking and expire at ten minutes',async()=>{
+ const {xpForLevel}=await import('../src/sim/data/progression.ts');
+ for(const [profile,world]of [['eclipse','w2'],['dawn','w3']]){
+  const area=worldArea(`xp-blessing-${profile}`,world),a=addActor(area),boss=area.services.bossByProfile(profile);a.p.gainXp(xpForLevel(300));Object.assign(a.p.state.flags,{rustCleared:true,abyssCleared:true,trueCleared:true,finalCleared:true});a.u.invulnerable=true;boss.wake();tick(area,74);area.services.combat.damage(a.ref,boss.unit,1e8);
+  const expiry=a.p.state.cooldowns['boss-xp-blessing'].end;assert.equal(expiry,area.services.time+600);let before=a.p.state.xp;a.p.gainXp(100);assert.equal(a.p.state.xp-before,150);before=a.p.state.xp;a.p.gainXp(101);assert.equal(a.p.state.xp-before,151);assert.ok(Number.isSafeInteger(a.p.state.xp));
+  tick(area,10);area.services.onUnitDied(boss.unit,a.ref);assert.equal(a.p.state.cooldowns['boss-xp-blessing'].end,expiry);
+  a.p.state.cooldowns['boss-xp-blessing'].end=area.services.time;before=a.p.state.xp;a.p.gainXp(100);assert.equal(a.p.state.xp-before,100);
+ }
 });

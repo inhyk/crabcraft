@@ -25,6 +25,7 @@ export class BattleSync {
     if(this.authority){this.parties[this.ownId]=party;this.publish();}else this.event({kind:'party',target:'world',party});
   }
   setMode(mode:'coop'|'pvp'){
+    if(this.game.dungeons?.active)return;
     if(this.sharedArea)return;
     if(!this.active||!this.authority){this.game.hud.messages.info(t('방장이 협동 / 싸우기 모드를 선택해요.','The host chooses co-op or PvP mode.'));return;}
     if(this.game.encounter?.engaged){this.game.hud.messages.info(t('보스 전투가 끝난 뒤 모드를 바꿔 주세요.','Wait until the boss battle ends to change mode.'));return;}
@@ -98,7 +99,7 @@ export class BattleSync {
     }
     this.elapsed = 1;
   }
-  leave() { this.game.villageGames?.reset();this.game.boats?.disconnect();this.active = false; this.sharedArea=false;this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
+  leave() { if(this.active&&!this.sharedArea)this.game.dungeons?.leave(false);this.game.villageGames?.reset();this.game.boats?.disconnect();this.active = false; this.sharedArea=false;this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
   elect(host: string) {
     const was = this.authority; this.host = host;this.seaWarnings.clear();
     if (!was && this.authority) {
@@ -161,8 +162,16 @@ export class BattleSync {
     if(!this.active||this.authority)return false;
     this.event({kind:'environment',target:'world',environment:{beacon:lit,mood:lit?1:3}});return true;
   }
+  requestDungeonReturn(){
+    const state=this.game.dungeons?.state;
+    if(!state||!this.active||this.sharedArea)return false;
+    if(this.authority){this.publish();return false;}
+    if(state.phase==='clear'||state.phase==='failed')this.event({kind:'dungeon-return',target:'world',run:state.run});
+    else this.game.hud.messages.info(t('전투 중에는 방장이 원정을 종료할 수 있어요.','The host can end the expedition during combat.'));
+    return true;
+  }
   enterWorld2() {return this.travel(2);}
-  travel(chapter:1|2|3|4) {
+  travel(chapter:1|2|3|4|5|6) {
     if (this.sharedArea || !this.active || this.authority) return false;
     this.event({kind:'chapter',target:'world',chapter}); return true;
   }
@@ -176,6 +185,15 @@ export class BattleSync {
     const g = this.game, u = this.units.get(e.target);
     if (this.authority) {
       const src = this.peers().get(id)?.unit;
+      if(e.kind==='dungeon-return'){
+        const state=g.dungeons?.state;
+        // A defeated member must also be able to return after a party wipe.
+        if(!this.sharedArea&&src&&state&&e.target==='world'&&e.run===state.run&&
+          (state.phase==='clear'||state.phase==='failed')&&src.level>=state.level&&state.members.includes(src.name)){
+          this.publish();g.dungeons?.leave(false);this.publish();
+        }
+        return;
+      }
       if (!src || !src.alive) return;
       if(this.sharedArea&&['chapter','party','duel'].includes(e.kind))return;
       if(e.kind==='village'&&e.village){g.villageGames?.request(id,e.village);this.publish();return;}
@@ -242,7 +260,7 @@ export class BattleSync {
   }
   private snapshot(): WorldState {
     const g = this.game, now = g.time;
-    return {village:g.villageGames?.state??null,boat:g.boats?.networkState(),social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
+    return {dungeon:g.dungeons?.networkState()??null,village:g.villageGames?.state??null,boat:g.boats?.networkState(),social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
       const e = u.kind === 'scrapling' || u.kind === 'scavenger' || u.kind === 'jellyfish' ? u.ctrl as Enemy : null;
       const round = (n: number) => Math.round(n * 1000) / 1000;
       return { id, x: round(u.pos.x), y: round(u.pos.y), z: round(u.pos.z), yaw: round(u.yaw), hp: u.hp, maxHp: u.maxHp,
@@ -261,7 +279,8 @@ export class BattleSync {
     this.applying = true;
     try {
       if (!this.sharedArea && g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared;g.journey.finalCleared=!!world.finalCleared;g.journey.frostCleared=!!world.frostCleared; }
-      if(!this.sharedArea && world.chapter!==g.world2.chapter)g.world2.go(world.chapter,false);
+      if(!this.sharedArea && world.chapter!==g.world2.chapter){g.dungeons?.leave(false);g.world2.go(world.chapter,false);}
+      g.dungeons?.apply(world.dungeon??null);
       g.boats?.applyNetwork(world.boat);
       g.villageGames?.apply(world.village??null);
       if (world.weather) {

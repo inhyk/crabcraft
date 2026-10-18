@@ -1,3 +1,4 @@
+import {createWorld5Definition,createWorld6Definition} from '../sim/areas/frontier.ts';
 import * as THREE from 'three';
 import type { Game } from './game';
 import type { Unit } from './unit';
@@ -45,11 +46,11 @@ export class CoreGameBridge {
   get area(){return this.areas.get(this.active)!;}
   get player(){return this.corePlayer;}
   static async create(game:Game):Promise<CoreGameBridge>{
-    const ids:WorldId[]=['w1','w2','w3','w4'];
+    const ids:WorldId[]=['w1','w2','w3','w4','w5','w6'];
     const queries=await Promise.all(ids.map(async id=>{const response=await fetch(`${import.meta.env.BASE_URL}world/collision-${id}.json`);if(!response.ok)throw new Error(`Cannot load ${id} simulation geometry`);return loadBakedWorld(await response.json() as BakedCollision);}));
     const baseScraps=game.enemies.filter(e=>e.kind==='scrapling'&&!e.isAdd).length-3;
     const population={scrapling:Math.max(0,baseScraps),scavenger:game.enemies.filter(e=>e.kind==='scavenger'&&!e.isEcho).length,jellyfish:game.enemies.filter(e=>e.kind==='jellyfish').length,shallowPatrols:3};
-    const builders=[createWorld1Definition,createWorld2Definition,createWorld3Definition,createWorld4Definition];
+    const builders=[createWorld1Definition,createWorld2Definition,createWorld3Definition,createWorld4Definition,createWorld5Definition,createWorld6Definition];
     const definitions=queries.map((query,i)=>builders[i]!({query,personalProps:{heightAt:query.heightAt.bind(query),resolveCollision:(x,z,r,out)=>query.collision.resolve(x,z,r,out)},fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:i===0?{...population,scavenger:population.scavenger-game.enemies.filter(e=>e.isIslandOnly).length}:population}));
     const areas=new Map<WorldId,SimulationArea>();
     for(let i=0;i<ids.length;i++){const world=ids[i]!,definition=definitions[i]!;areas.set(world,createArea({id:`browser-${world}`,definition,query:queries[i]!,actionData:realActionData,seed:1337+i,context:{mode:'public',members:[],pvp:'disabled'},limits:{eventCount:10000,inputCommandsPerTick:32,timers:1000,projectiles:1000},policy:{enemyLevel:(spawn,ctx)=>canonicalEnemyLevel(spawn.kind,ctx.chapter,spawn.role),enemyPopulation:spawn=>({desired:1,respawnSeconds:canonicalEnemyRespawn(spawn.kind,i+1,spawn.role)}),damageAllowed:(_context,_source,target)=>!(target.kind==='player'&&game.god),canInteract:()=>true}}));}
@@ -91,7 +92,7 @@ export class CoreGameBridge {
     Object.defineProperty(p,'cast',{configurable:true,get:()=>{const c=this.corePlayer.state.cast;return c?{...c,ability:p.cls.abilities.find(a=>a.id===c.ability)!,target:this.unit(c.target)}:null;}});
     Object.defineProperty(p,'channel',{configurable:true,get:()=>{const c=this.corePlayer.state.channel;return c?{...c,label:c.kind,key:c.kind==='recall'?'KeyT':'KeyF',to:new THREE.Vector3(c.to.x,c.to.y,c.to.z),onDone:()=>{throw new Error('Core channel completion belongs to Area');}}:null;}});
     p.setTarget=view=>this.command({kind:'target',target:view?.ref??null});p.useAbility=slot=>this.command({kind:'ability',slot:slot as 1|2|3|4|5});p.toggleBreakdance=()=>this.command({kind:'dance'});
-    p.gainXp=amount=>this.corePlayer.gainXp(amount);p.restoreXp=xp=>this.corePlayer.restoreXp(xp);p.gainRage=amount=>this.corePlayer.gainRage(amount);
+    p.gainXp=(amount,applyBlessing)=>this.corePlayer.gainXp(amount,applyBlessing);p.restoreXp=xp=>this.corePlayer.restoreXp(xp);p.gainRage=amount=>this.corePlayer.gainRage(amount);
     p.interruptCast=reason=>this.corePlayer.interruptCast(reason);p.cancelChannel=()=>this.corePlayer.cancelChannel();p.respawn=()=>this.corePlayer.respawn();
     p.returnToSquare=()=>this.command({kind:'channelStart',channel:'recall'});
     p.startChannel=(_label,_seconds,key,to)=>{if(key==='KeyT'){this.command({kind:'channelStart',channel:'recall'});return;}const point=this.area.services.definition.interactions.filter(i=>i.kind==='beacon'||i.kind==='waystone').sort((a,b)=>Math.hypot(a.position.x-to.x,a.position.z-to.z)-Math.hypot(b.position.x-to.x,b.position.z-to.z))[0];if(point)this.command({kind:'interact',targetId:point.id});};
