@@ -7,6 +7,7 @@ import {t} from '../i18n';
 export class VoyageIsland {
  readonly root=new THREE.Group();readonly chest=new THREE.Vector3();private lid=new THREE.Group();
  private treasures:{id:AchievementId;position:THREE.Vector3;lid:THREE.Group;coins:number;ko:string;en:string}[]=[];
+ private observed=false;
  private resources:(THREE.BufferGeometry|THREE.Material)[]=[];
  constructor(private g:Game){
   this.root.name='Coralwind Isle';
@@ -54,7 +55,9 @@ export class VoyageIsland {
  private get nearbyTreasure(){const g=this.g;if(g.world2.chapter!==1||g.boats?.seated)return undefined;return this.treasures.find(c=>g.player.unit.pos.distanceTo(c.position)<3);}
  nearby(){return !!this.nearbyTreasure;}
  get treasurePrompt(){const c=this.nearbyTreasure;if(!c)return '';return this.g.achievements?.has(c.id)?t('보물상자 살펴보기','Inspect treasure chest'):t(`${c.ko} 열기 · ${c.coins} 코인`,`Open ${c.en} · ${c.coins} coins`);}
- interact(){const c=this.nearbyTreasure;if(!c||this.g.controlsLocked)return;const a=this.g.achievements;if(!a||a.has(c.id)){this.g.hud.messages.info(t('보물은 이미 챙겼어요. 섬의 추억은 남아 있어요!','You already found this treasure. The memory is yours!'));return;}a.unlock(c.id);this.g.player.coins=Math.min(Number.MAX_SAFE_INTEGER,this.g.player.coins+c.coins);this.g.journey?.save();this.g.audio.sfx('sfx-quest-complete');}
+ observe(earned:readonly string[],chapter:number):void {this.observed=true;this.root.visible=chapter===1;for(const c of this.treasures)c.lid.rotation.x=earned.includes(c.id)?-1.2:0;}
+ get interactionId():string|null{return this.nearbyTreasure?.id??null;}
+ interact(){if(this.observed)throw new Error('Server owns treasure interactions');const c=this.nearbyTreasure;if(!c||this.g.controlsLocked)return;const a=this.g.achievements;if(!a||a.has(c.id)){this.g.hud.messages.info(t('보물은 이미 챙겼어요. 섬의 추억은 남아 있어요!','You already found this treasure. The memory is yours!'));return;}a.unlock(c.id);this.g.player.coins=Math.min(Number.MAX_SAFE_INTEGER,this.g.player.coins+c.coins);this.g.journey?.save();this.g.audio.sfx('sfx-quest-complete');}
  update(){this.root.visible=this.g.world2.chapter===1;for(const c of this.treasures)c.lid.rotation.x=this.g.achievements?.has(c.id)?-1.2:0;}
  get currentIsland(){return this.g.world2.chapter===1?VOYAGE_ISLANDS.find(i=>islandDistance(this.g.player.unit.pos.x,this.g.player.unit.pos.z,i)>.25):undefined;}
  get onIsland(){return this.currentIsland?.id==='island';}

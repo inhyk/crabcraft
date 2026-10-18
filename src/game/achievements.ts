@@ -22,12 +22,13 @@ export const ACHIEVEMENTS=[
 export type AchievementId=typeof ACHIEVEMENTS[number][0];
 export class Achievements{
  private earned=new Set<AchievementId>();distance=0;private last:{x:number;z:number}|null=null;
- constructor(private g:Game){}
+ constructor(private g:Game,private observed=false){}
+ observe(value:{earned:readonly string[];distance:number}){if(!this.observed)throw new Error('Not an observed achievement view');if(!Number.isFinite(value.distance)||value.distance<0||value.earned.some(id=>!ACHIEVEMENTS.some(a=>a[0]===id)))throw new Error('Invalid achievement observation');this.earned=new Set(value.earned as readonly AchievementId[]);this.distance=value.distance;}
  has(id:AchievementId){return this.earned.has(id);}
- unlock(id:AchievementId){if(this.earned.has(id))return false;this.earned.add(id);const a=ACHIEVEMENTS.find(a=>a[0]===id)!;this.g.hud.messages.info(t(`🏆 업적 달성: ${a[1]}`,`🏆 Achievement: ${a[2]}`));this.g.journey?.save();return true;}
- restore(value:unknown){if(!value||typeof value!=='object')return;const v=value as {earned?:unknown;distance?:unknown};if(Array.isArray(v.earned))this.earned=new Set(v.earned.filter((id):id is AchievementId=>ACHIEVEMENTS.some(a=>a[0]===id)));if(typeof v.distance==='number'&&Number.isFinite(v.distance))this.distance=Math.max(0,Math.min(1e7,v.distance));}
+ unlock(id:AchievementId){if(this.observed)throw new Error('Server owns achievement awards');if(this.earned.has(id))return false;this.earned.add(id);const a=ACHIEVEMENTS.find(a=>a[0]===id)!;this.g.hud.messages.info(t(`🏆 업적 달성: ${a[1]}`,`🏆 Achievement: ${a[2]}`));this.g.journey?.save();return true;}
+ restore(value:unknown){if(this.observed)throw new Error('Server owns achievement restore');if(!value||typeof value!=='object')return;const v=value as {earned?:unknown;distance?:unknown};if(Array.isArray(v.earned))this.earned=new Set(v.earned.filter((id):id is AchievementId=>ACHIEVEMENTS.some(a=>a[0]===id)));if(typeof v.distance==='number'&&Number.isFinite(v.distance))this.distance=Math.max(0,Math.min(1e7,v.distance));}
  snapshot(){return {earned:[...this.earned],distance:Math.round(this.distance*100)/100};}
- update(dt:number){const g=this.g,s=g.boats?.state;if(g.boats?.seated&&s&&g.world2.chapter===1){if(this.last&&dt>0){const d=Math.hypot(s.x-this.last.x,s.z-this.last.z);if(d<Math.max(2,dt*12))this.distance+=d;}this.last={x:s.x,z:s.z};if(this.distance>=10)this.unlock('sail');if(s.seats.filter(Boolean).length===2)this.unlock('crew');}else this.last=null;
+ update(dt:number){if(this.observed)throw new Error('Server owns achievement progression');const g=this.g,s=g.boats?.state;if(g.boats?.seated&&s&&g.world2.chapter===1){if(this.last&&dt>0){const d=Math.hypot(s.x-this.last.x,s.z-this.last.z);if(d<Math.max(2,dt*12))this.distance+=d;}this.last={x:s.x,z:s.z};if(this.distance>=10)this.unlock('sail');if(s.seats.filter(Boolean).length===2)this.unlock('crew');}else this.last=null;
  const site=g.voyageIsland?.currentIsland;if(site&&!g.boats?.seated&&g.player.unit.alive)this.unlock(site.id);
  if(['island','moon','sunset'].every(id=>this.has(id as AchievementId)))this.unlock('archipelago');
  for(const [id,yes] of [['rust',g.journey?.rustCleared],['abyss',g.journey?.abyssCleared],['eclipse',g.journey?.trueCleared],['dawn',g.journey?.finalCleared],['secret',g.lighthouseSecret?.found]] as const)if(yes)this.unlock(id);
