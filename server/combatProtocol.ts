@@ -19,7 +19,8 @@ export type WorldState = { dungeon?:DungeonState|null; village?:VillageRound|nul
 export type CombatEvent = {
   village?:'hide'|'tag'|'stop';
   boat?:BoatCommand;
-  kind: 'village' | 'boat' | 'party' | 'duel' | 'chapter' | 'environment' | 'condition' | 'attack' | 'hit' | 'death' | 'animation' | 'challenge' | 'effect';
+  run?:string;
+  kind: 'dungeon-return' | 'village' | 'boat' | 'party' | 'duel' | 'chapter' | 'environment' | 'condition' | 'attack' | 'hit' | 'death' | 'animation' | 'challenge' | 'effect';
   target: string; chapter?:1|2|3|4; party?:number; serial?: number; source?: string; amount?: number; crit?: boolean; rage?: number; action?: string;
   environment?: { mood?: 0 | 1 | 2 | 3; beacon?: boolean };
   condition?: { stun: number; slow: number; slowPct: number; pushX: number; pushZ: number; pushTime: number };
@@ -68,6 +69,7 @@ export function worldOf(v: unknown): WorldState | null {
 export function eventOf(v: unknown, authority: boolean): CombatEvent | null {
   if (!record(v) || typeof v.target !== 'string' || v.target.length > 64) return null;
   if (!authority) {
+    if(v.kind==='dungeon-return'&&v.target==='world'&&typeof v.run==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.run))return {kind:'dungeon-return',target:'world',run:v.run};
     if(v.kind==='village'&&v.target==='world'&&['hide','tag','stop'].includes(v.village))return {kind:'village',target:'world',village:v.village};
     if(v.kind==='boat'&&v.target==='world'&&record(v.boat)&&['board','leave','drive','call'].includes(v.boat.action)&&Number.isInteger(v.boat.throttle)&&n(v.boat.throttle,-1,1)&&Number.isInteger(v.boat.steer)&&n(v.boat.steer,-1,1))return {kind:'boat',target:'world',boat:{action:v.boat.action,throttle:v.boat.throttle,steer:v.boat.steer}};
     if(v.kind==='party'&&Number.isInteger(v.party)&&n(v.party,0,4))return {kind:'party',target:'world',party:v.party};
