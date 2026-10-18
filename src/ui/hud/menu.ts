@@ -140,7 +140,8 @@ export class GameMenu {
       h('div', { class: 'row' }, t('말풍선','Chat bubbles'), seg([['on', t('켜기','On')], ['off', t('끄기','Off')]], g.hud.bubbles.enabled ? 'on' : 'off', (v) => {
         g.hud.bubbles.enabled = v === 'on';
       })),
-      h('div', { class: 'row' }, t('공개 채팅 보기','Show public chat'), seg([['on', t('켜기','On')], ['off', t('끄기','Off')]], publicChatOn() ? 'on' : 'off', (v) => {
+      h('div', { class: 'row' }, t('공개 채팅 보기','Show public chat'), seg([['on', t('켜기','On')], ['off', t('끄기','Off')]], (g.server?g.server.social.publicEnabled:publicChatOn()) ? 'on' : 'off', (v) => {
+        if(g.server){g.server.social.setPublicEnabled(v==='on');return;}
         setPublicChat(v === 'on');
         g.multiplayer?.setPublicChat(v === 'on');
       })),
