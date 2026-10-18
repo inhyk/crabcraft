@@ -5,8 +5,9 @@
 // her change in a violet burst, a run along the headland cliff and a leap across the moon, then a
 // cyan whoosh into darkness.
 // night-undead (93.0 to 111.0): Starhaven's Fallen Star Ruins, graded grave green; the undead's claws
-// creep over ground that splits into molten fissures, he rises and channels, boulders climb out of
-// the ground behind him, a burning rock falls out of the sky and the blast whites out the frame.
+// creep over the sand and it splits into molten fissures, he rises and channels under the observatory's
+// astrolabe, boulders climb out of the ground round him, a burning rock falls out of the sky behind him
+// and the blast whites out the frame.
 // night-explode (151.92 to 154.21): the same blast, close, the undead black against it.
 //
 // The run through the pines and the camera beside it were planned off-line from the forest's tree
@@ -41,7 +42,7 @@ const view = (o = {}) => ({
 /** The violet night forest: greens pulled to violet, blacks lifted a touch toward indigo. */
 const VIOLET = { kind: 'night-grade', t: -3, mul: '#b48cff', mulTop: '#9d8cff', gain: 1.7, lift: '#0b0420', liftK: 0.35 };
 /** Grave green under a sickly sky. */
-const GRAVE = { kind: 'night-grade', t: -3, mul: '#86a06a', mulTop: '#7cff5a', gain: 0.95, gainTop: 1.05, lift: '#020600', liftK: 0.3 };
+const GRAVE = { kind: 'night-grade', t: -3, mul: '#a8ba98', mulTop: '#b4d68e', gain: 1.0, gainTop: 1.05, lift: '#030600', liftK: 0.3 };
 
 // ------------------------------------------------------------------------------ the night elf
 
@@ -315,39 +316,89 @@ const elfShots = [
 
 // ------------------------------------------------------------------------------- the undead
 
-/** The undead's walk across the Fallen Star Ruins, toward the camera (south, +z). */
-const U_FROM = [80.2, -37.4];
-const U_AT = [80.0, -32.4];
-/** Where the burning rock lands, behind him. */
-const IMPACT = [84, -46];
-const undead = { id: 'u', spec: UNDEAD };
+// He stands on the open sand south-west of the Fallen Star Observatory (its astrolabe at (80, -40)
+// in a ring of pillars), clear of the paved path; the camera looks up at him from the south-south-east,
+// so the astrolabe hangs behind his right shoulder like the original's great wheel.
+const U = [76.0, -26.0];
+/** From him toward the camera (unit, x/z), the camera's view direction and its screen right. */
+const TO_CAM = [0.316, 0.949];
+const FWD = [-TO_CAM[0], -TO_CAM[1]];
+const RIGHT = [-FWD[1], FWD[0]];
+/** He faces the camera. */
+const U_YAW = Math.atan2(TO_CAM[0], TO_CAM[1]);
+/** A ground point `ahead` units beyond him (away from the camera) and `right` units to screen right. */
+const P = (ahead, right) => [U[0] + FWD[0] * ahead + RIGHT[0] * right, U[1] + FWD[1] * ahead + RIGHT[1] * right];
+/** The same, `h` above the ground. */
+const G = (ahead, right, h) => {
+  const [x, z] = P(ahead, right);
+  return { g: [x, h, z] };
+};
+/** Where the burning rock lands: behind him and right of him, in front of the observatory's pillars. */
+const IMPACT = P(6, 1.6);
+/** Where he starts his creep (ahead of his mark, away from the camera). */
+const U_FROM = P(4.2, -0.3);
+const UNDEAD_SCALE = 1.3;
+const undead = { id: 'u', spec: UNDEAD, scale: UNDEAD_SCALE };
+/** The staff head, in his frame (left, up, ahead), scaled with him. */
+const STAFF = [0.45 * UNDEAD_SCALE, 1.35 * UNDEAD_SCALE, 0.25 * UNDEAD_SCALE];
+/** The sky behind him, far along the view. */
+const SKY = [U[0] + FWD[0] * 70, 26, U[1] + FWD[1] * 70];
 
 /** Molten fissures opening under his claws as he creeps (every step, alternating sides). */
 function footfalls(from, to, t0, t1, every) {
   const out = [];
+  const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
+  const side = [-(to[1] - from[1]) / len, (to[0] - from[0]) / len];
   const n = Math.floor((t1 - t0) / every);
   for (let i = 0; i <= n; i++) {
     const t = t0 + i * every;
     const k = (t - t0) / (t1 - t0);
-    const side = i % 2 ? 0.42 : -0.42;
-    const x = from[0] + (to[0] - from[0]) * k + side;
-    const z = from[1] + (to[1] - from[1]) * k + 0.35;
-    out.push({ kind: 'night-cracks', t, at: [x, z], radius: 1.5, grow: 1.1, cells: 1.4, warp: 1.0, width: 0.04, keep: 0.4, gain: 1.6 });
+    const s = i % 2 ? 0.5 : -0.5;
+    const x = from[0] + (to[0] - from[0]) * k + side[0] * s;
+    const z = from[1] + (to[1] - from[1]) * k + side[1] * s;
+    out.push({ kind: 'night-cracks', t, at: [x, z], radius: 1.6, grow: 1.1, cells: 1.4, warp: 1.0, width: 0.045, keep: 0.4, gain: 1.7 });
   }
   return out;
 }
 
+/** The camera's bearing from him (radians, x = cos, z = sin), for the boulders' arc. */
+const CAM_ANGLE = Math.atan2(TO_CAM[1], TO_CAM[0]);
+/** Molten boulders climbing out of the ground all round him (not between him and the lens), then blown apart; `dt` shifts the clock. */
+const boulders = (dt) => ({
+  kind: 'night-rocks',
+  t: -9,
+  at: G(0.6, 0, 0),
+  n: 16,
+  radius: 4.2,
+  arc: [CAM_ANGLE + 1.0, CAM_ANGLE + Math.PI * 2 - 1.0],
+  size: [0.3, 1.0],
+  h: [0.2, 2.9],
+  rise: [1.8 + dt, 7.2 + dt],
+  riseDur: 1.6,
+  glow: [[2 + dt, 0.3], [7.5 + dt, 1.0], [8.5 + dt, 2.0]],
+  burst: 9.9 + dt,
+  burstAt: { g: [IMPACT[0], 1, IMPACT[1]] },
+  burstSpeed: 9,
+  heat: [[8.45 + dt, 0], [8.55 + dt, 40], [11.5 + dt, 12]],
+  heatAt: { g: [IMPACT[0], 3, IMPACT[1]] },
+  seed: 52,
+});
+
+/** The rock's fall: out of the sky at the top left of the cast shot's frame, across it onto the impact. */
+const METEOR_FROM = [IMPACT[0] - RIGHT[0] * 20 + FWD[0] * 40, 32, IMPACT[1] - RIGHT[1] * 20 + FWD[1] * 40];
+
 const undeadShots = [
-  // Low on the ground in the dark: his claws step in and the ground splits into molten fissures.
+  // Low on the ground in the dark: his claws creep in and the ground splits into molten fissures.
   cut('night-undead-ground', UNDEAD_IN, UNDEAD_CAST, 2, {
-    view: view({ exposure: 0.9, dof: true, bokeh: 4, vignette: { offset: 0.2, darkness: 0.85 } }),
-    anchor: U_AT,
-    actors: [{ ...undead, at: U_FROM, yaw: 0 }],
+    view: view({ exposure: 0.88, saturation: -0.1, contrast: 0.2, dof: true, bokeh: 4, vignette: { offset: 0.2, darkness: 0.9 } }),
+    anchor: U,
+    actors: [{ ...undead, at: U_FROM, yaw: U_YAW }],
     tracks: {
       u: {
         path: [
-          { t: 0, x: U_FROM[0], z: U_FROM[1], yaw: 0 },
-          { t: 6.5, x: U_AT[0], z: U_AT[1], yaw: 0 },
+          { t: 0, x: U_FROM[0], z: U_FROM[1] },
+          { t: 6.3, x: U[0], z: U[1] },
+          { t: 6.6, x: U[0], z: U[1], yaw: U_YAW },
         ],
         acts: [{ t: -2, clip: 'idle', loop: true }],
         faces: [{ t: -2, expr: 'angry' }],
@@ -358,27 +409,27 @@ const undeadShots = [
       focus: 'u',
       range: 1.6,
       keys: [
-        { t: 0, p: { g: [81.1, 0.14, -32.0] }, l: { g: [80.3, 0.2, -36.6] }, fov: 42 },
-        { t: 6.5, p: { g: [81.0, 0.2, -30.6] }, l: { a: 'u', o: [0, 0.25, 0.6] }, fov: 40 },
+        { t: 0, p: G(-2.7, 0.85, 0.13), l: G(1.6, -0.1, 0.14), fov: 38 },
+        { t: 6.5, p: G(-2.45, 0.7, 0.2), l: G(0.2, 0.0, 0.36), fov: 38 },
       ],
     },
     fx: [
       GRAVE,
-      ...footfalls(U_FROM, U_AT, 0.2, 6.4, 0.5),
-      { kind: 'night-cracks', t: 0.0, at: [80.2, -36.4], radius: 6, grow: 6.5, cells: 0.9, warp: 1.1, width: 0.05, keep: 0.5, gain: 1.0 },
-      { kind: 'night-rocks', t: -9, at: { g: [80.6, 0, -33.5] }, n: 34, radius: 3.6, size: [0.05, 0.24], h: [-0.1, 0.02], rise: [-9, -9], riseDur: 0.01, glow: 0.25, seed: 77 },
-      { kind: 'night-mist', t: -5, at: { g: [80.3, 0.35, -34] }, box: [14, 1.0, 14], count: 46, size: 2.0, color: '#0b1409', opacity: 0.55 },
-      { kind: 'embers', t: -1, at: { g: [80.3, 0.6, -34.5] }, count: 260, box: [7, 3, 7], drift: [0.15, 0.7, 0.05], size: 0.035, color: '#ffc85a', color2: '#ff7a1a' },
-      { kind: 'motes', t: -1, at: { g: [80.3, 1.2, -34.5] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
+      ...footfalls(U_FROM, U, 0.3, 6.2, 0.5),
+      { kind: 'night-cracks', t: 0.0, at: P(2.0, 0), radius: 6, grow: 6.5, cells: 0.9, warp: 1.1, width: 0.05, keep: 0.5, gain: 1.0 },
+      { kind: 'night-rocks', t: -9, at: { g: [U[0], 0, U[1]] }, n: 30, radius: 2.0, size: [0.05, 0.2], h: [-0.1, 0.02], rise: [-9, -9], riseDur: 0.01, glow: 0.25, seed: 77 },
+      { kind: 'night-mist', t: -5, at: { g: [U[0], 0.35, U[1] - 2] }, box: [14, 1.0, 14], count: 46, size: 2.0, color: '#0b1409', opacity: 0.55 },
+      { kind: 'embers', t: -1, at: { g: [U[0], 0.6, U[1] - 2] }, count: 260, box: [7, 3, 7], drift: [0.15, 0.7, 0.05], size: 0.035, color: '#ffc85a', color2: '#ff7a1a' },
+      { kind: 'motes', t: -1, at: { g: [U[0], 1.2, U[1] - 2] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
       { kind: 'light', t: -1, at: { a: 'u', o: [0, 0.12, 0.3] }, color: '#ffae3a', intensity: 3.2, distance: 4.5, flicker: 0.15 },
     ],
   }),
 
   // He rises into frame and channels; boulders climb out of the ground, a burning rock falls, blast.
   cut('night-undead-cast', UNDEAD_CAST, UNDEAD_OUT, 2, {
-    view: view({ exposure: 0.95, dof: true, bokeh: 3 }),
-    anchor: U_AT,
-    actors: [{ ...undead, at: U_AT, yaw: 0 }],
+    view: view({ exposure: 1.0, saturation: -0.1, contrast: 0.22, dof: true, bokeh: 2.5 }),
+    anchor: U,
+    actors: [{ ...undead, at: U, yaw: U_YAW }],
     tracks: {
       u: {
         acts: [{ t: -2, clip: 'idle', loop: true }, { t: 0.4, clip: 'cast', loop: true }],
@@ -388,31 +439,31 @@ const undeadShots = [
     cam: {
       ease: 'inout',
       focus: 'u',
-      range: 2.5,
+      range: 3,
       keys: [
-        { t: 0, p: { g: [U_AT[0] + 0.7, 0.28, U_AT[1] + 1.5] }, l: { g: [U_AT[0], 0.35, U_AT[1]] }, fov: 40 },
-        { t: 1.8, p: { g: [U_AT[0] + 1.0, 0.7, U_AT[1] + 3.2] }, l: { g: [U_AT[0] + 0.5, 1.1, U_AT[1] - 1] }, fov: 40 },
-        { t: 8.5, p: { g: [U_AT[0] + 1.3, 0.75, U_AT[1] + 3.9] }, l: { g: [U_AT[0] + 0.9, 1.5, U_AT[1] - 2] }, fov: 40 },
-        { t: 11.5, p: { g: [U_AT[0] + 1.4, 0.8, U_AT[1] + 4.2] }, l: { g: [U_AT[0] + 1.0, 1.7, U_AT[1] - 2] }, fov: 41 },
+        { t: 0, p: G(-2.6, 0.5, 0.22), l: G(0.3, 0.0, 0.4), fov: 40 },
+        { t: 2.4, p: G(-3.2, 0.6, 0.5), l: G(0, 0.35, 1.3), fov: 40 },
+        { t: 8.5, p: G(-3.6, 0.75, 0.6), l: G(0, 0.55, 1.5), fov: 42 },
+        { t: 11.5, p: G(-3.8, 0.8, 0.6), l: G(0, 0.6, 1.6), fov: 43 },
       ],
     },
     fx: [
       GRAVE,
-      { kind: 'night-cracks', t: -6, at: [80.2, -35.8], radius: 6, grow: 6.5, cells: 0.9, warp: 1.1, width: 0.05, keep: 0.5, gain: 1.0 },
-      { kind: 'night-cracks', t: 1.2, at: [U_AT[0], U_AT[1]], radius: 9, grow: 7, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
-      { kind: 'night-mist', t: -5, at: { g: [80.3, 0.4, -34] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
+      { kind: 'night-cracks', t: -6, at: P(2.0, 0), radius: 6, grow: 6.5, cells: 0.9, warp: 1.1, width: 0.05, keep: 0.5, gain: 1.0 },
+      { kind: 'night-cracks', t: 1.2, at: U, radius: 9, grow: 7, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
+      { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
       // The sky behind him sickens green and swells.
-      { kind: 'night-glow', t: -1, at: [80, 26, -100], size: 120, color: '#7dff3a', k: [[0, 0.2], [3, 0.45], [8.4, 0.9], [8.6, 1.8], [11.5, 2.2]] },
+      { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#7dff3a', k: [[0, 0.15], [3, 0.35], [8.4, 0.8], [8.6, 1.6], [11.5, 2.0]] },
       // The staff's gather.
-      { kind: 'swirl', t: 1.2, until: 8.4, at: { a: 'u', o: [0.45, 1.35, 0.25] }, radius: 1.6, rate: 60, size: 0.22, color: '#7dff6a' },
-      { kind: 'night-glow', t: 1.0, at: { a: 'u', o: [0.45, 1.35, 0.25] }, size: 1.2, color: '#8dff4a', k: [[1, 0], [2.2, 1.2], [8.4, 2.6]], pulse: 0.3 },
-      { kind: 'light', t: 0, at: { a: 'u', o: [0.45, 1.35, 0.6] }, color: '#7dff4a', curve: [[0, 0], [1.5, 0], [2.5, 6], [8.4, 12]], distance: 8, flicker: 0.1 },
-      { kind: 'motes', t: -1, at: { a: 'u', o: [0, 1.4, 0] }, count: 220, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
-      { kind: 'embers', t: -1, at: { g: [80.3, 0.6, -36] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
-      // Boulders climb out of the ground behind him, the burning rock falls, the blast.
-      { kind: 'night-rocks', t: 0, at: [81, -40.5], n: 13, radius: 8, arc: [-Math.PI * 0.95, -Math.PI * 0.05], size: [0.5, 1.6], h: [0.4, 5.5], rise: [3.0, 7.6], riseDur: 1.8, glow: [[3, 0.3], [7.5, 1.0], [8.5, 1.6]], burst: 8.55, burstAt: { g: [IMPACT[0], 1, IMPACT[1]] }, burstSpeed: 13, heat: [[8.45, 0], [8.55, 40], [11.5, 12]], heatAt: { g: [IMPACT[0], 3, IMPACT[1]] }, seed: 52 },
-      { kind: 'night-meteor', t: 5.7, from: [42, 92, -150], to: { g: [IMPACT[0], 0.5, IMPACT[1]] }, d: 2.8, size: 1.6, light: 500 },
-      { kind: 'night-impact', t: 8.5, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 7, toward: { g: [U_AT[0] + 1.3, 1, U_AT[1] + 4] }, light: 900 },
+      { kind: 'swirl', t: 1.2, until: 8.4, at: { a: 'u', o: STAFF }, radius: 1.8, rate: 60, size: 0.22, color: '#7dff6a' },
+      { kind: 'night-glow', t: 1.0, at: { a: 'u', o: STAFF }, size: 1.4, color: '#8dff4a', k: [[1, 0], [2.2, 1.2], [8.4, 2.6]], pulse: 0.3 },
+      { kind: 'light', t: 0, at: { a: 'u', o: [STAFF[0], STAFF[1], STAFF[2] + 0.4] }, color: '#7dff4a', curve: [[0, 0], [1.5, 0], [2.5, 6], [8.4, 12]], distance: 9, flicker: 0.1 },
+      { kind: 'motes', t: -1, at: { a: 'u', o: [0, 1.6, 0] }, count: 220, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
+      { kind: 'embers', t: -1, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
+      // Boulders climb out of the ground round him, the burning rock falls, the blast.
+      boulders(0),
+      { kind: 'night-meteor', t: 4.6, from: METEOR_FROM, to: { g: [IMPACT[0], 0.5, IMPACT[1]] }, d: 3.9, size: 1.6, light: 500 },
+      { kind: 'night-impact', t: 8.5, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 5.5, toward: G(-3.6, 0.8, 1), light: 900 },
       { kind: 'flash', t: 8.52, d: 0.35, rise: 0.03, a: 0.6, color: '#f4ffd0' },
       { kind: 'shake', t: 8.5, d: 1.6, amp: 0.22 },
       { kind: 'fade', t: 9, color: '#ffffff', curve: [[9.6, 0], [10.6, 0.55], [11.2, 1], [11.5, 1]] },
@@ -420,27 +471,30 @@ const undeadShots = [
   }),
 ];
 
+/** The blast shot's camera: low behind his left, looking past him into the fire. */
+const EX_CAM = G(-3.4, -2.6, 0.35);
+
 const explodeShots = [
   // The blast, close: boulders blown at the lens, the undead black against the fire.
   cut('night-explode', EXPLODE_IN, EXPLODE_OUT, 2, {
-    view: view({ exposure: 0.95 }),
-    anchor: U_AT,
-    actors: [{ ...undead, at: U_AT, yaw: 0 }],
+    view: view({ exposure: 0.95, saturation: -0.1, contrast: 0.22 }),
+    anchor: U,
+    actors: [{ ...undead, at: U, yaw: U_YAW + Math.PI - 0.4 }],
     tracks: { u: { acts: [{ t: -3, clip: 'cast', loop: true }], faces: [{ t: -2, expr: 'angry' }] } },
     cam: {
       ease: 'out',
       keys: [
-        { t: 0, p: { g: [77.6, 1.0, -28.6] }, l: { g: [IMPACT[0] - 1, 3.0, IMPACT[1]] }, fov: 46 },
-        { t: 2.29, p: { g: [77.4, 0.9, -28.0] }, l: { g: [IMPACT[0] - 1, 4.0, IMPACT[1]] }, fov: 44 },
+        { t: 0, p: EX_CAM, l: G(3.4, 0.4, 1.9), fov: 44 },
+        { t: 2.29, p: G(-3.1, -2.4, 0.32), l: G(3.4, 0.4, 2.5), fov: 41 },
       ],
     },
     fx: [
       GRAVE,
-      { kind: 'night-glow', t: -1, at: [80, 26, -100], size: 120, color: '#7dff3a', k: 1.8 },
-      { kind: 'night-cracks', t: -6, at: [U_AT[0], U_AT[1]], radius: 9, grow: 3, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
-      { kind: 'night-rocks', t: -6, at: [81, -40.5], n: 13, radius: 8, arc: [-Math.PI * 0.95, -Math.PI * 0.05], size: [0.5, 1.6], h: [0.4, 5.5], rise: [-6, -4.5], riseDur: 1.8, glow: 1.6, burst: 0.12, burstAt: { g: [IMPACT[0], 1, IMPACT[1]] }, burstSpeed: 15, heat: [[0.05, 0], [0.12, 40], [2.3, 15]], heatAt: { g: [IMPACT[0], 3, IMPACT[1]] }, seed: 52 },
-      { kind: 'night-impact', t: 0.05, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 7, toward: { g: [77.6, 1.0, -28.6] }, light: 900, flash: 0.6 },
-      { kind: 'embers', t: -1, at: { g: [80.3, 1.0, -34] }, count: 400, box: [12, 6, 12], drift: [0.2, 1.4, 0.4], size: 0.04, color: '#ffc85a', color2: '#9dff4a' },
+      { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#7dff3a', k: 1.6 },
+      { kind: 'night-cracks', t: -6, at: U, radius: 9, grow: 3, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
+      boulders(0.25 - 9.9),
+      { kind: 'night-impact', t: 0.05, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 5.5, toward: EX_CAM, light: 900, flash: 0.6 },
+      { kind: 'embers', t: -1, at: { g: [U[0], 1.0, U[1] - 3] }, count: 400, box: [12, 6, 12], drift: [0.2, 1.4, 0.4], size: 0.04, color: '#ffc85a', color2: '#9dff4a' },
       { kind: 'shake', t: 0.05, d: 1.5, amp: 0.2 },
       { kind: 'fade', t: 1, color: '#ffffff', curve: [[1.3, 0], [2.0, 0.7], [2.29, 1]] },
     ],
