@@ -125,3 +125,17 @@ test('host party commands remain ordered single-command frames and party view su
  const result=apply(f.receiver,f.codec.encodeControl(header(2),control));assert.deepEqual(result.control,control);
  assert.throws(()=>f.codec.encodeControl(header(3),{...control,state:{...control.state,members:[control.state.members[0],control.state.members[0]]}}),/membership/);
 });
+
+test('prepared commands preserve original frame correlation and never coalesce across host boundaries',()=>{
+ const s=new InputSession(binding,catalog),commands=[[{kind:'ability',slot:1}],[{kind:'partyCreate'}],[{kind:'jump'}],[{kind:'dance'}]];
+ commands.forEach((c,i)=>s.accept(encodeInput({binding,intent:input(i+1,c)},catalog),i*.01));
+ const first=s.prepareTick(.1);assert.deepEqual(first.sequences,[1]);assert.deepEqual(first.commandOrigins,[{inputSequence:1,commandIndex:0}]);s.commitConsumed(first.token);
+ const party=s.prepareTick(.1);assert.deepEqual(party.sequences,[2]);assert.deepEqual(party.intent.commands,[{kind:'partyCreate'}]);s.commitConsumed(party.token);
+ const rest=s.prepareTick(.1);assert.deepEqual(rest.sequences,[3,4]);assert.deepEqual(rest.commandOrigins,[{inputSequence:3,commandIndex:0},{inputSequence:4,commandIndex:0}]);assert.deepEqual(rest.intent.commands,[{kind:'jump'},{kind:'dance'}]);
+});
+test('delivered cross-Area entitlement preserves its original victim ref and remains recipient-only',()=>{
+ const f=fixture(2);apply(f.receiver,f.codec.encodeObservation(observation(f)));const grant={id:'["previous-area",77,3,"private-character-0"]',victim:{area:'previous-area',id:77,life:3},recipient:f.actors[0].p.state.character,xp:10,coins:5,objectives:[],flags:[]};
+ assert.equal(f.area.receiveGrant(grant),'applied');const events=f.area.drainEvents(),o=observation(f,2);o.events=events;o.eventWatermark=events.at(-1).order;const result=apply(f.receiver,f.codec.encodeObservation(o));
+ assert.ok(result.events.some(e=>e.event.type==='xp'&&e.event.amount===10));assert.equal(result.state.self.player.coins,5);assert.equal(result.state.self.player.xp,10);
+ const carried={tick:0,order:o.eventWatermark+1,event:{type:'reward',grant,appliedHere:true}},packet=encodeEvents(header(3),{baselineSequence:2,events:[carried],results:[]},catalog);assert.deepEqual(apply(f.receiver,packet).events[0].event.grant.victim,grant.victim);
+});
