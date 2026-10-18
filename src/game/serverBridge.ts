@@ -11,6 +11,9 @@ import type {EntityRef,EquipmentResult,EquipmentSlot} from '../sim/types.ts';
 import {CLASSES} from '../data/classes';
 import {QUESTS,NPCS} from './quests';
 import {t} from '../i18n';
+import {LighthouseSecret} from './lighthouseSecret';
+import {Achievements} from './achievements';
+import type {ChannelKind} from '../sim/types.ts';
 
 /** Authenticated observation/input integration. No Area, numeric controller or local save import. */
 export class ServerGameBridge {
@@ -22,6 +25,7 @@ export class ServerGameBridge {
  private units=new Map<string,Unit>();
  private self:Unit|null=null;
  private requestId=0;
+ private requestedChannel:ChannelKind|null=null;
  private transactions=new Map<number,{resolve:(r:EquipmentResult)=>void;reject:(e:Error)=>void}>();
  private status=document.createElement('div');
  private disposed=false;
@@ -45,16 +49,16 @@ export class ServerGameBridge {
  private constructor(private game:Game,character:string,catalog:GameplayCatalog){
   this.status.className='world-connection-status';this.status.style.cssText='position:absolute;inset:42% 20% auto;padding:20px;background:#152331;color:white;text-align:center;z-index:100;pointer-events:auto';game.app.ui.append(this.status);
   for(const unit of game.units){unit.rig.root.visible=false;unit.rig.root.removeFromParent();unit.dispose();}game.units=[];
-  game.voyageIsland?.dispose();game.voyageIsland=null;game.objective.group.visible=false;
-  this.presentation=new WorldPresentation({unit:ref=>this.unit(ref),self:()=>this.self,vfx:game.vfx,hud:game.hud,audio:game.audio,follow:game.follow,time:()=>game.time,say:(u,text,yell)=>game.say(u,text,yell),onEquipment:e=>{if(e.request){this.transactions.get(e.request)?.resolve(e.result);this.transactions.delete(e.request);}},onQuest:()=>game.hud.tracker.update(game.quests),onIncomplete:feature=>this.incomplete.add(feature)});
+  game.lighthouseSecret=new LighthouseSecret(game,true);game.achievements=new Achievements(game,true);game.objective.group.visible=false;
+  this.presentation=new WorldPresentation({unit:ref=>this.unit(ref),self:()=>this.self,vfx:game.vfx,hud:game.hud,audio:game.audio,follow:game.follow,time:()=>game.time,say:(u,text,yell)=>game.say(u,text,yell),onEquipment:e=>{if(e.request){this.transactions.get(e.request)?.resolve(e.result);this.transactions.delete(e.request);}},onQuest:()=>game.hud.tracker.update(game.quests),onExploration:state=>{game.lighthouseSecret?.observe(state.found,state.activeUntil);game.voyageIsland?.observe(state.earned,this.state?Number(this.state.world.slice(1)):1);},onIncomplete:feature=>this.incomplete.add(feature)});
   this.view=new WorldView({root:game.scene,onAdded:(actor,handle)=>{
    const npc=NPCS.find(n=>n.id===actor.npcId),name=actor.appearance?.name??npc?.name??actor.archetype;
    const unit=new Unit(name,actor.kind,actor.reaction,handle.rig,createMotionController(handle.rig));unit.npcId=actor.npcId??'';unit.bindWorldView(handle.readState);this.units.set(worldActorKey(actor.ref),unit);game.units.push(unit);
    if(this.state&&worldActorKey(this.state.selfRef)===worldActorKey(actor.ref))this.bindSelf(unit,actor);
   },onRemoved:ref=>{const key=worldActorKey(ref),u=this.units.get(key);if(u){game.units=game.units.filter(x=>x!==u);this.units.delete(key);if(this.self===u)this.self=null;}},onError:()=>this.notice('Cannot load server actor'),onEvents:records=>this.presentation.events(records)});
   this.client=new WorldClient({catalog,resetInput:()=>game.input.reset(),onState:(state)=>{this.status.hidden=state==='admitted'&&!!this.self;if(!this.status.hidden)this.status.textContent=state==='authRequired'?'Google login required':`Server: ${state}`;},onSnapshot:(state,events,results)=>{
-   this.state=state;game.time=state.time;game.beaconLit=state.features.environment.beacon;game.world.setBeaconLit(game.beaconLit);game.world2.observeChapter(Number(state.world.slice(1)) as 1|2|3|4);this.presentation.commit(state);this.view.commit(state,events,results);const unit=this.units.get(worldActorKey(state.selfRef));if(unit&&unit!==this.self)this.bindSelf(unit,state.actors.find(a=>worldActorKey(a.ref)===worldActorKey(state.selfRef))!);if(this.self){game.hud.targetFrame.setUnit(this.unit(state.self.player.target));game.hud.tracker.update(game.quests);game.hud.showDeath(!this.self.alive);}this.status.hidden=this.client.state==='admitted'&&!!this.self;
-  },onEvents:(events,results)=>this.view.events(events,results),onReset:()=>{this.state=null;this.self=null;this.presentation.reset();this.view.reset();game.hud.targetFrame.setUnit(null);game.hud.dialogue.close();for(const p of this.transactions.values())p.reject(new Error('Connection changed before confirmation'));this.transactions.clear();},onRejected:code=>this.notice(code)});
+   this.state=state;game.achievements?.observe(state.self.achievements);game.time=state.time;game.beaconLit=state.features.environment.beacon;game.world.setBeaconLit(game.beaconLit);game.world2.observeChapter(Number(state.world.slice(1)) as 1|2|3|4);this.presentation.commit(state);this.view.commit(state,events,results);const unit=this.units.get(worldActorKey(state.selfRef));if(unit&&unit!==this.self)this.bindSelf(unit,state.actors.find(a=>worldActorKey(a.ref)===worldActorKey(state.selfRef))!);if(this.self){game.hud.targetFrame.setUnit(this.unit(state.self.player.target));game.hud.tracker.update(game.quests);game.hud.showDeath(!this.self.alive);}this.status.hidden=this.client.state==='admitted'&&!!this.self;
+  },onEvents:(events,results)=>this.view.events(events,results),onReset:()=>{this.requestedChannel=null;this.state=null;this.self=null;this.presentation.reset();this.view.reset();game.hud.targetFrame.setUnit(null);game.hud.dialogue.close();for(const p of this.transactions.values())p.reject(new Error('Connection changed before confirmation'));this.transactions.clear();},onRejected:code=>this.notice(code)});
   game.hud.dialogue.onClose=()=>this.command({kind:'talkEnd'});
   void this.client.connect(character).catch(error=>this.notice(error instanceof Error?error.message:'Connection failed'));
  }
@@ -83,11 +87,19 @@ export class ServerGameBridge {
   if(this.disposed)return;const g=this.game;this.client.pump(performance.now());if(!this.ready)return;
   const input=g.input;
   if(input.wasPressed('Escape')){if(g.hud.dialogue.isOpen)g.hud.dialogue.close();else if(g.hud.menu.open)g.hud.menu.close();else if(g.player.cast||g.player.channel)this.command({kind:'cancel'});else if(g.player.target)this.command({kind:'target',target:null});else g.toggleMenu();}
-  if(!g.controlsLocked){if(input.wasPressed('Tab'))g.player.tabTarget();for(let slot=1;slot<=5;slot++)if(input.wasPressed(`Digit${slot}`)||input.wasPressed(`Numpad${slot}`))g.player.useAbility(slot);if(input.wasPressed('KeyT'))this.command({kind:'channelStart',channel:'recall'});if(input.wasPressed('KeyL'))g.hud.questLog.toggle();if(input.wasPressed('KeyF')){if(g.hud.dialogue.isOpen){if(g.hud.dialogue.typing)g.hud.dialogue.skipTyping();else g.hud.dialogue.choosePrimary();}else{const near=g.units.filter(u=>u.npcId&&u.alive&&!u.hidden&&this.self!.distTo(u)<7).sort((a,b)=>this.self!.distTo(a)-this.self!.distTo(b))[0];if(near)this.talk(near);}}
+  if(!g.controlsLocked){if(input.wasPressed('Tab'))g.player.tabTarget();for(let slot=1;slot<=5;slot++)if(input.wasPressed(`Digit${slot}`)||input.wasPressed(`Numpad${slot}`))g.player.useAbility(slot);if(input.wasPressed('KeyT'))this.command({kind:'channelStart',channel:'recall'});if(input.wasPressed('KeyL'))g.hud.questLog.toggle();if(input.wasPressed('KeyF')){if(g.hud.dialogue.isOpen){if(g.hud.dialogue.typing)g.hud.dialogue.skipTyping();else g.hud.dialogue.choosePrimary();}else this.interact();}
    for(const button of [0,2] as const)if(input.wasClicked(button)){const u=g.player.pick(input.mouseX,input.mouseY);if(u)g.player.setTarget(u);}}
-  this.client.capture(g,dt,this.state!.self.player.channel?.kind??null);this.client.pump(performance.now());this.view.render(performance.now(),dt);this.presentation.render(dt);
-  g.follow.update(dt,g.input,this.self!.pos);g.vfx.update(dt);g.world.update(dt,elapsed,g.camera);g.world2.update(dt,this.state!.time,{flags:this.state!.self.player.flags});g.hud.minimap.setZone(g.world2.chapter===1?'Clawhaven':g.world2.regionAt(this.self!.pos.x,this.self!.pos.z),false);g.hud.update(dt);
+  if(!input.isDown('KeyF'))this.requestedChannel=null;this.client.capture(g,dt,this.state!.self.player.channel?.kind??this.requestedChannel);this.client.pump(performance.now());this.view.render(performance.now(),dt);this.presentation.render(dt);
+  g.follow.update(dt,g.input,this.self!.pos);g.vfx.update(dt);g.world.update(dt,elapsed,g.camera);g.world2.update(dt,this.state!.time,{flags:this.state!.self.player.flags});g.hud.minimap.setZone(g.world2.chapter===1?'Clawhaven':g.world2.regionAt(this.self!.pos.x,this.self!.pos.z),false);g.lighthouseSecret?.update();g.voyageIsland?.observe(this.state!.self.achievements.earned,g.world2.chapter);g.hud.update(dt);
   for(const unit of g.units)unit.updateVisual(dt);
+ }
+ private interact():void {const g=this.game,p=this.self!,chapter=g.world2.chapter;
+  if(g.lighthouseSecret?.nearby()){this.requestedChannel='lighthouse-secret';this.command({kind:'interact',targetId:'lighthouse-secret'});return;}
+  const treasure=g.voyageIsland?.interactionId;if(treasure){this.command({kind:'interact',targetId:treasure});return;}
+  const node=g.world2.interactable();if(node){if(node.kind.startsWith('lamp')||node.kind.startsWith('dawn-lamp'))this.requestedChannel='waystone';this.command({kind:'interact',targetId:node.kind});return;}
+  if(chapter===1&&p.pos.distanceTo(g.world.pois.beacon.position)<3.5){this.requestedChannel='beacon';this.command({kind:'interact',targetId:'beacon'});return;}
+  const portal=g.world2.portalPosition;if(Math.hypot(p.pos.x-portal.x,p.pos.z-portal.z)<3.5){const destination=chapter===1?2:chapter===4?3:chapter===3?(Math.hypot(portal.x-14,portal.z-84)<1?4:2):Math.hypot(portal.x,portal.z+41)<1?3:1;this.command({kind:'travel',gateId:`gate:w${destination}`});return;}
+  const near=g.units.filter(u=>u.npcId&&u.alive&&!u.hidden&&p.distTo(u)<7).sort((a,b)=>p.distTo(a)-p.distTo(b))[0];if(near)this.talk(near);
  }
  talk(unit:Unit):void {
   const id=unit.npcId;if(!id)return;const g=this.game;this.command({kind:'interact',targetId:`npc:${id}`});

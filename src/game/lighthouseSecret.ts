@@ -9,14 +9,15 @@ const SAVE_KEY='cc.lighthouseSecret.v1';
 export class LighthouseSecret {
   readonly root=new THREE.Group();
   readonly position:THREE.Vector3;
-  found=localStorageGet(SAVE_KEY)==='found';
+  found=false;
   private until=0;
   private nextFirework=0;
   private dancers:THREE.Group[]=[];
   private materials:THREE.MeshStandardMaterial[]=[];
   private geometries:THREE.BufferGeometry[]=[];
   private ring:THREE.Mesh;
-  constructor(private game:Game){
+  constructor(private game:Game,private observed=false){
+    if(!observed)this.found=localStorageGet(SAVE_KEY)==='found';
     const x=LIGHTHOUSE.x,z=LIGHTHOUSE.z+12;
     this.position=new THREE.Vector3(x,game.world.heightAt(x,z),z);
     this.root.name='Lighthouse keeper’s secret dance';this.root.position.copy(this.position);
@@ -36,7 +37,9 @@ export class LighthouseSecret {
     const g=this.game,p=g.player.unit.pos;
     return g.world2.chapter===1&&Math.hypot(p.x-this.position.x,p.z-this.position.z)<3.3&&Math.abs(p.y-this.position.y)<2.5;
   }
+  observe(found:boolean,until:number):void {if(!this.observed)throw new Error('Not an observed discovery');if(typeof found!=='boolean'||!Number.isFinite(until))throw new Error('Invalid discovery view');this.found=found;this.until=until;}
   interact():void {
+    if(this.observed)throw new Error('Server owns discovery interactions');
     const g=this.game;
     if(!this.nearby()||g.player.channel||g.controlsLocked||this.until>g.time)return;
     g.player.setTarget(null);
