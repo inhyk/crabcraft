@@ -17,7 +17,7 @@ export interface EndingStage {
  dispose():void;
 }
 /** Festival at Clawhaven dusk: the W1 golden-hour palette, warm lanterns and a lit centre for the hero. */
-export const ENDING_DUSK={zenith:'#24488f',mid:'#d98e86',horizon:'#ffb768',ground:'#d79a6c',sun:'#fff0c0',glow:'#ff9c45',cloudLit:'#ffc68e',cloudShade:'#8a5f7f',fog:'#d99b74',key:'#ffb36b',hemiSky:'#93a8e6',hemiGround:'#5e3e24',lantern:'#ffb45e'} as const;
+export const ENDING_DUSK={zenith:'#24488f',mid:'#d98e86',horizon:'#ffb768',ground:'#d79a6c',sun:'#ffbf73',glow:'#ff9c45',cloudLit:'#ffc68e',cloudShade:'#8a5f7f',fog:'#d99b74',key:'#ffb36b',hemiSky:'#93a8e6',hemiGround:'#5e3e24',lantern:'#ffb45e'} as const;
 /** Low western sun shared by the sky and the key light, so shadows and the horizon glow agree. */
 export const ENDING_SUN=new THREE.Vector3(-.74,.44,-.52).normalize();
 /** Private scenery. Source GLTF textures remain cached; all geometry/material copies belong here. */

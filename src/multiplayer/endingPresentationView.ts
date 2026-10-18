@@ -218,7 +218,8 @@ export class EndingPresentationView {
    // A tall screen is too narrow for the spin from in there; it stands behind the ring gap at eye height,
    // where the narrow width keeps the neighbouring guests out of frame.
    const tall=camera.aspect<.95;view=station(.35,tall?2.7:.5,tall?-1:1.6);
-   fitCorners=heroCorners;frame={x:.8,top:.48,bottom:-.34,pitch:.07};lens=[30,90];
+   // On wide screens the hero sits a little low so the sky takes the top of the frame.
+   fitCorners=heroCorners;frame={x:.8,top:.48,bottom:-.34,pitch:tall?.07:-.04};lens=[30,90];
   }
   // Hero cuts never back out of the dancer ring: if the pose outgrows the lens, the lens stays at its widest.
   const {distance,fov,fits}=fitEndingCamera(camera,view.target,view.direction,fitCorners,view.distance,frame,lens,shot!=='close'&&shot!=='low');this.fits=fits;
