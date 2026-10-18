@@ -34,6 +34,8 @@ export class BossJourney {
   trueCleared = false;
   finalCleared = false;
   frostCleared = false;
+  emberCleared = false;
+  skyCleared = false;
   private world2Celebrated=false;
   private wallet=h('div',{class:'coin-wallet hud-i'});
   firstEndingSeen = false;
@@ -60,11 +62,11 @@ export class BossJourney {
     this.key = BossJourney.saveKey(spec);
     this.root = h('details', { class: 'boss-journey' }, h('summary', null, '⚔ 보스 여정'),
       h('div', { class: 'bj-heading' }, h('span', null, 'THE TIDELANDS'), h('strong', null, '세 왕관의 전설')), this.progress);
-    for (const boss of [game.boss, game.finalBoss, game.worldBoss,game.dawnBoss,game.frostBoss]) {
+    for (const boss of [game.boss, game.finalBoss, game.worldBoss,game.dawnBoss,game.frostBoss,game.emberBoss,game.skyBoss]) {
       const final = boss.profile.level >= 10;
       const status = h('span', { class: 'bj-status' });
       const button = h('button', { type: 'button', onclick: () => this.challenge(boss) }, '도전하기 →');
-      const card = h('article', { class: `bj-card ${boss.profile.level===300 ? 'frost' : boss.profile.level===100 ? 'dawn' : boss.profile.level===20 ? 'eclipse' : final ? 'abyss' : 'rust'}` },
+      const card = h('article', { class: `bj-card ${boss.profile.level===750?'sky':boss.profile.level===500?'ember':boss.profile.level===300 ? 'frost' : boss.profile.level===100 ? 'dawn' : boss.profile.level===20 ? 'eclipse' : final ? 'abyss' : 'rust'}` },
         h('div', { class: 'bj-badge' }, `LV ${boss.profile.level}`),
         h('div', null, h('h3', null, boss.profile.name), h('p', null, boss.profile.level === 20 ? '검은 일식 · 안쪽 안전지대 · 별빛 폭주' : final ? '심해 파동 · 끌어당기기 · 3단계 폭주' : '닻 내려찍기 · 녹 분사 · 하수인 소환'), status), button);
       this.root.append(card);
@@ -98,6 +100,7 @@ export class BossJourney {
       this.trueCleared = this.abyssCleared && data.trueCleared === true;
       this.finalCleared=this.trueCleared&&data.finalCleared===true;this.world2Celebrated=this.trueCleared;
       this.frostCleared=this.finalCleared&&data.frostCleared===true;
+      this.emberCleared=this.frostCleared&&data.emberCleared===true;this.skyCleared=this.frostCleared&&data.skyCleared===true;
       this.trueStarted = this.frostCleared;
       this.kills = Number.isInteger(data.kills) && data.kills >= 0 && data.kills < 5 ? data.kills : 0;
       for (const id of QUEST_ORDER) {
@@ -116,7 +119,7 @@ export class BossJourney {
       const legacyBlessing = !this.rustCleared && !this.abyssCleared && !this.trueCleared;
       this.game.player.unit.blessingUntil = this.game.quests.status.q3 === 'done' && (typeof data.moonwater === 'boolean' ? data.moonwater : legacyBlessing) ? Infinity : 0;
       if (this.abyssCleared && typeof data.beacon!=='boolean') this.game.world.setMood(2);
-      for (const [boss, cleared] of [[this.game.boss, this.rustCleared], [this.game.finalBoss, this.abyssCleared], [this.game.worldBoss, this.trueCleared],[this.game.dawnBoss,this.finalCleared],[this.game.frostBoss,this.frostCleared]] as const) {
+      for (const [boss, cleared] of [[this.game.boss, this.rustCleared], [this.game.finalBoss, this.abyssCleared], [this.game.worldBoss, this.trueCleared],[this.game.dawnBoss,this.finalCleared],[this.game.frostBoss,this.frostCleared],[this.game.emberBoss,this.emberCleared],[this.game.skyBoss,this.skyCleared]] as const) {
         if (cleared) { boss.state = 'dead'; boss.unit.alive = false; boss.unit.hidden = true; boss.unit.rig.root.visible = false; }
       }
       if (second&&this.abyssCleared) this.game.world2.go(data.chapter===6&&this.frostCleared?6:data.chapter===5&&this.frostCleared?5:data.chapter===4&&this.finalCleared?4:data.chapter>=3&&this.trueCleared?3:2);
@@ -124,7 +127,7 @@ export class BossJourney {
   }
 
   save() {
-    localStorageSet(this.key, JSON.stringify({ xpBlessingUntil:this.game.player.xpBlessingUntil,frostCleared:this.frostCleared,achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,armorRank:this.game.player.armorRank,weaponOwned:this.game.player.weaponOwned,armorOwned:this.game.player.armorOwned,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
+    localStorageSet(this.key, JSON.stringify({emberCleared:this.emberCleared,skyCleared:this.skyCleared, xpBlessingUntil:this.game.player.xpBlessingUntil,frostCleared:this.frostCleared,achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,armorRank:this.game.player.armorRank,weaponOwned:this.game.player.weaponOwned,armorOwned:this.game.player.armorOwned,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
       quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked }));
   }
 
@@ -156,7 +159,11 @@ export class BossJourney {
       this.game.hud.chat.system(t(`보스 처치! +${coins.toLocaleString()} 코인 · +${reward.toLocaleString()} XP`, `Boss defeated! +${coins.toLocaleString()} coins · +${reward.toLocaleString()} XP`));
       this.save();
     }
-    if (boss === this.game.boss) {
+    if(boss===this.game.emberBoss||boss===this.game.skyBoss){
+      const fire=boss===this.game.emberBoss;if(fire?this.emberCleared:this.skyCleared)return;
+      if(fire)this.emberCleared=true;else this.skyCleared=true;
+      this.game.hud.messages.banner(()=>fire?t('잿불 왕관을 되찾았어요!','The Ember Crown is reclaimed!'):t('하늘숲에 바람이 돌아왔어요!','The winds return to Skybloom!'),()=>t('보스 여정에서 다시 도전할 수 있어요','Challenge again from Boss Journey'),'quest');
+    } else if (boss === this.game.boss) {
       if (this.rustCleared) return;
       this.rustCleared = true;
       this.game.hud.chat.system(t('첫 왕관 획득! 해안 순찰로 10레벨을 달성하고 심해의 군주에게 도전하세요.','First crown reclaimed! Patrol the shore, reach level 10 and challenge the Lord of the Deep.'));
@@ -190,7 +197,7 @@ export class BossJourney {
     if (boss.profile.level<20&&!g.beaconLit){g.hud.messages.info(t('등대를 켜면 밤이 되고 보스가 깨어나요.','Light the lighthouse to summon night and awaken the boss.'));return;}
     if (boss.state === 'dying' || !canChallenge(g.player.level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter) || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining)) return;
     if (boss === g.finalBoss && g.boss.state !== 'dead') { g.hud.messages.info(t('첫 보스의 승리 연출이 끝난 뒤 도전해 주세요.','Wait until the first boss victory sequence ends.')); return; }
-    if (!joining && !g.multiplayer?.battle.challenge(boss===g.frostBoss?'b300':boss===g.dawnBoss?'b30':boss === g.boss ? 'b3' : boss === g.worldBoss ? 'b20' : 'b10')) boss.wake();
+    if (!joining && !g.multiplayer?.battle.challenge(boss===g.skyBoss?'b750':boss===g.emberBoss?'b500':boss===g.frostBoss?'b300':boss===g.dawnBoss?'b30':boss === g.boss ? 'b3' : boss === g.worldBoss ? 'b20' : 'b10')) boss.wake();
     const a = boss.arena;
     // Enter on the deck's walkable approach, facing the centre.
     const dx = Math.sin(a.yaw), dz = Math.cos(a.yaw);
@@ -221,7 +228,7 @@ export class BossJourney {
     if(this.trueCleared&&g.worldBoss.state==='dead'&&!this.world2Celebrated&&!g.ending.active&&g.world2.chapter===2){this.world2Celebrated=true;g.hud.messages.banner(()=>t('월드3의 항로가 열렸어요!','The route to World III is open!'),()=>t('북쪽 별길의 포탈을 타고 친구를 구하러 떠나요','Take the north Starroad portal to rescue your friend'),'quest');this.save();}
     this.render();
     if ((this.saveAt += dt) > 3) { this.saveAt = 0; this.save(); }
-    const crowned = g.world2.chapter===4?g.frostBoss:g.world2.chapter===3?g.dawnBoss:g.world2.chapter===2 ? g.worldBoss : g.finalBoss;
+    const crowned = g.world2.chapter===6?g.skyBoss:g.world2.chapter===5?g.emberBoss:g.world2.chapter===4?g.frostBoss:g.world2.chapter===3?g.dawnBoss:g.world2.chapter===2 ? g.worldBoss : g.finalBoss;
     const u = crowned.unit;
     this.aura.visible = !u.hidden && u.alive;
     this.aura.position.copy(u.pos);
@@ -236,28 +243,28 @@ export class BossJourney {
   private render(): void {
     const g = this.game, level = g.player.level;
     const remaining=Math.max(0,Math.ceil((g.player.xpBlessingUntil-Date.now())/1000));
-    const state = `${remaining}|${language()}|${g.beaconLit}|${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${this.canJoin(g.encounter)}|${g.finalBoss.state}|${g.boss.state}|${g.worldBoss.state}|${g.world2.chapter}|${this.firstEndingSeen}|${this.trueCleared}|${this.finalCleared}|${g.dawnBoss.state}|${g.player.coins}|${g.player.attackRank}|${g.player.armorRank}|${this.frostCleared}|${g.frostBoss.state}`;
+    const state = `${remaining}|${language()}|${g.beaconLit}|${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${this.canJoin(g.encounter)}|${g.finalBoss.state}|${g.boss.state}|${g.worldBoss.state}|${g.world2.chapter}|${this.firstEndingSeen}|${this.trueCleared}|${this.finalCleared}|${g.dawnBoss.state}|${g.player.coins}|${g.player.attackRank}|${g.player.armorRank}|${this.frostCleared}|${g.frostBoss.state}|${this.emberCleared}|${this.skyCleared}|${g.emberBoss.state}|${g.skyBoss.state}`;
     if (state !== this.last) {
       this.last = state;
       this.root.querySelector('summary')!.textContent=t('⚔ 보스 여정','⚔ Boss journey');
-      this.root.querySelector('.bj-heading strong')!.textContent=t('네 섬과 다섯 왕관의 전설','Four Islands, Five Crowns');
+      this.root.querySelector('.bj-heading strong')!.textContent=t('여섯 세계와 일곱 왕관의 전설','Six Worlds, Seven Crowns');
       this.portal.textContent=t('✧ 월드 2 바로가기 →','✧ Travel to World II →');this.victory.textContent=t('✨ 춤추는 엔딩 다시 보기','✨ Replay the dance ending');
       this.wallet.textContent=t(`🪙 ${g.player.coins} · 무기 +${g.player.attackRank} · 방어구 +${g.player.armorRank}`,`🪙 ${g.player.coins} · Weapon +${g.player.attackRank} · Armor +${g.player.armorRank}`);this.wallet.hidden=g.cinematic||g.ending.active;
       if(remaining)this.wallet.textContent+=t(` · ✦ XP 1.5배 ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`,` · ✦ XP ×1.5 ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`);
       const next = xpForLevel(level+1);
       this.progress.textContent = t(`LEVEL ${level} → ${level + 1} · ${next - g.player.xp} XP 남음`,`LEVEL ${level} → ${level+1} · ${next-g.player.xp} XP to go`);
       for (const { boss, status, button } of this.cards) {
-        const cleared = boss===g.frostBoss?this.frostCleared:boss === g.boss ? this.rustCleared : boss===g.dawnBoss?this.finalCleared:boss === g.worldBoss ? this.trueCleared : this.abyssCleared;
+        const cleared = boss===g.skyBoss?this.skyCleared:boss===g.emberBoss?this.emberCleared:boss===g.frostBoss?this.frostCleared:boss === g.boss ? this.rustCleared : boss===g.dawnBoss?this.finalCleared:boss === g.worldBoss ? this.trueCleared : this.abyssCleared;
         const unlocked = canChallenge(level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter);
         const needsBeacon=boss.profile.level<20&&!g.beaconLit;
         const joining=this.canJoin(boss);
-        status.textContent = cleared ? t('✓ 왕관 획득','✓ Crown reclaimed') : needsBeacon ? t('등대를 켜면 도전할 수 있어요.','Light the lighthouse to challenge this boss.') : unlocked ? (boss.engaged ? t('전투 중','In battle') : boss===g.frostBoss?t('도전 가능 · 얼음 왕좌','Ready · Frozen Throne'):boss===g.dawnBoss?t('도전 가능 · 황혼 성채','Ready · Twilight Citadel'):boss === g.worldBoss ? t('도전 가능 · 별의 왕좌','Ready · The Star Throne') : t('도전 가능 · 철의 난파선','Ready · The Iron Wreck')) : t(`🔒 ${boss.profile.level}레벨${boss.profile.level===300?' + 월드 4':boss.profile.level===100?' + 월드 3':boss.profile.level === 20 ? ' + 월드 2' : boss.profile.level === 10 ? ' + 첫 보스 승리' : ''} 필요`,`🔒 Requires level ${boss.profile.level}${boss.profile.level===300?' + World IV':boss.profile.level===100?' + World III':boss.profile.level===20?' + World II':boss.profile.level===10?' + first boss victory':''}`);
+        status.textContent = cleared ? t('✓ 왕관 획득','✓ Crown reclaimed') : needsBeacon ? t('등대를 켜면 도전할 수 있어요.','Light the lighthouse to challenge this boss.') : unlocked ? (boss.engaged ? t('전투 중','In battle') : boss===g.skyBoss?t('도전 가능 · 세계수 성역','Ready · Worldtree Sanctuary'):boss===g.emberBoss?t('도전 가능 · 잿불 성역','Ready · Ember Sanctuary'):boss===g.frostBoss?t('도전 가능 · 얼음 왕좌','Ready · Frozen Throne'):boss===g.dawnBoss?t('도전 가능 · 황혼 성채','Ready · Twilight Citadel'):boss === g.worldBoss ? t('도전 가능 · 별의 왕좌','Ready · The Star Throne') : t('도전 가능 · 철의 난파선','Ready · The Iron Wreck')) : t(`🔒 ${boss.profile.level}레벨${boss.profile.level===750?' + 월드 6':boss.profile.level===500?' + 월드 5':boss.profile.level===300?' + 월드 4':boss.profile.level===100?' + 월드 3':boss.profile.level === 20 ? ' + 월드 2' : boss.profile.level === 10 ? ' + 첫 보스 승리' : ''} 필요`,`🔒 Requires level ${boss.profile.level}${boss.profile.level===750?' + World VI':boss.profile.level===500?' + World V':boss.profile.level===300?' + World IV':boss.profile.level===100?' + World III':boss.profile.level===20?' + World II':boss.profile.level===10?' + first boss victory':''}`);
         if(boss===this.game.worldBoss||boss===this.game.dawnBoss)status.textContent+=t(' · 처치 시 모든 XP 1.5배 · 10분',' · On victory: all XP ×1.5 · 10 min');
         status.textContent += t(` · 처치 보상 ${boss.profile.coins.toLocaleString()} 코인 · ${boss.profile.reward.toLocaleString()} XP`, ` · Victory reward: ${boss.profile.coins.toLocaleString()} coins · ${boss.profile.reward.toLocaleString()} XP`);
         button.disabled = boss.state === 'dying' || needsBeacon || !unlocked || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining) || (boss === g.finalBoss && g.boss.state !== 'dead');
         button.textContent = boss.state === 'dead' ? t('다시 도전하기 →','Challenge again →') : boss.engaged ? joining?t('전투 합류 →','Join battle →'):t('전투 중','In battle') : t('도전하기 →','Challenge →');
         const card=button.closest('article')!;card.querySelector('h3')!.textContent=boss.profile.name;boss.unit.name=boss.profile.name;boss.unit.title=boss.profile.title;
-        card.querySelector('p')!.textContent=boss.profile.level===300?t('서리 감옥 · 7중 눈보라 · 빙결 파동 · 300레벨','Frost prison · Sevenfold blizzard · Glacial pulse · Level 300'):boss.profile.level===100?t('8방향 화염 · 5중 폭격 · 극한 폭주 · 100레벨','Eight fire rays · Five bombs · Extreme enrage · Level 100'):boss.profile.level===20?t('검은 일식 · 안쪽 안전지대 · 별빛 폭주','Black Eclipse · Inner sanctuary · Starfall enrage'):boss.profile.level===10?t('심해 파동 · 끌어당기기 · 3단계 폭주','Tidal Nova · Undertow · Phase III enrage'):t('닻 내려찍기 · 녹 분사 · 하수인 소환','Anchor Slam · Rust Spray · Rustling summons');
+        card.querySelector('p')!.textContent=boss.profile.level===750?t('바람 십자 · 별꽃 폭격 · 세계수의 안식처 · 750레벨','Windcross · Starflower barrage · Worldtree sanctuary · Level 750'):boss.profile.level===500?t('엇갈린 용암 폭격 · 화염 칼날 · 분화구 폭주 · 500레벨','Staggered magma · Furnace blades · Caldera enrage · Level 500'):boss.profile.level===300?t('서리 감옥 · 7중 눈보라 · 빙결 파동 · 300레벨','Frost prison · Sevenfold blizzard · Glacial pulse · Level 300'):boss.profile.level===100?t('8방향 화염 · 5중 폭격 · 극한 폭주 · 100레벨','Eight fire rays · Five bombs · Extreme enrage · Level 100'):boss.profile.level===20?t('검은 일식 · 안쪽 안전지대 · 별빛 폭주','Black Eclipse · Inner sanctuary · Starfall enrage'):boss.profile.level===10?t('심해 파동 · 끌어당기기 · 3단계 폭주','Tidal Nova · Undertow · Phase III enrage'):t('닻 내려찍기 · 녹 분사 · 하수인 소환','Anchor Slam · Rust Spray · Rustling summons');
       }
       this.portal.hidden = g.world2.chapter !== 1;this.portal.disabled=!this.abyssCleared;
       this.patrol.textContent = g.world2.chapter>=5?t(`WORLD ${g.world2.chapter===5?'V · 잿불 군도':'VI · 하늘숲'} · 마을 퀘스트 12개 · 순찰 ${this.kills}/5`,`WORLD ${g.world2.chapter===5?'V · Emberreach':'VI · Skybloom'} · 12 village quests · Patrol ${this.kills}/5`):g.world2.chapter===4?t(`WORLD IV · 서리빛 설원 · 목표 300레벨 · 순찰 ${this.kills}/5 · +${patrolReward(level)} XP`,`WORLD IV · Frostlight · Reach level 300 · Patrol ${this.kills}/5 · +${patrolReward(level)} XP`):g.world2.chapter===3?t(`WORLD III · 설원으로 가는 길 · 목표100레벨 · 순찰 ${this.kills}/5`,`WORLD III · The road to Frostlight · Reach level 100 · Patrol ${this.kills}/5`):this.trueCleared ? t('월드3가 열렸어요. 북쪽 별길의 포탈로 친구를 구하러 가세요.','World III is open. Take the north Starroad portal to rescue your friend.') : g.world2.chapter === 2 ? t(`WORLD II · 유적 순찰 ${this.kills}/5 · +${patrolReward(level)} XP · 목표 20레벨`,`WORLD II · Ruin patrol ${this.kills}/5 · +${patrolReward(level)} XP · Reach level 20`) : this.abyssCleared ? t('첫 엔딩 너머, 숨겨진 별의 섬으로…','Beyond the first ending, a hidden island awaits…') : this.rustCleared ? t(`해안 순찰 ${this.kills}/5 · 보너스 ${patrolReward(level)} XP`,`Shore patrol ${this.kills}/5 · Bonus ${patrolReward(level)} XP`) : t('마을 퀘스트와 해안 전투로 3레벨에 도달하세요.','Reach level 3 through village quests and shore battles.');
