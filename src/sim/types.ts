@@ -359,7 +359,7 @@ export interface AreaServices {
   cancelPendingHit(unit: EntityRef): void;
   launch(projectile: Omit<ProjectileState, 'id' | 'elapsed' | 'bornStep'>): number; // Area stamps birth stage; stage-start-list eligibility only
   spawnAdd(boss: EntityRef, x: number, z: number): EnemySim | null;
-  runCommand(player: EntityRef, command: PlayerCommand): boolean;
+  runCommand(player: EntityRef, command: PlayerCommand, commandIndex?:number): boolean;
   bossByProfile(profile: BossSim['profile']): BossSim | null;
   encounterActive(): boolean;
   bossAvailable(profile: BossSim['profile']): boolean;
@@ -380,7 +380,7 @@ export interface AreaSnapshot {
   readonly units: readonly Readonly<SimUnit>[];
   readonly players: readonly Readonly<PlayerState>[];
   readonly projectiles: readonly Readonly<ProjectileState>[];
-  readonly features: {readonly beaconLit:boolean;readonly exploration:readonly {unit:EntityRef;activeUntil:number}[];readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
+  readonly features: {readonly mode:AreaContext['mode'];readonly pvp:AreaContext['pvp'];readonly beaconLit:boolean;readonly exploration:readonly {unit:EntityRef;activeUntil:number}[];readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
   readonly recovery: {readonly bosses:readonly BossObservation[];readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
 } // Deep copied and stable sorted by ID; slowPct remains fraction0..1; S4 adapter scales to0..100.
 /** Complete canonical test/debug data, not a production persistence protocol. No functions or refs. */
@@ -394,6 +394,7 @@ export interface AreaDebugState {
   contributions: readonly Contribution[]; grants: readonly EarnedGrant[]; acknowledgedGrantIds: readonly string[];
   heldIntents: readonly { actor: EntityRef; intent: PlayerIntent; lastConsumedSeq: number }[];
   // Debug export only at between-tick boundary: no accepted commands remain pending after step().
+  features:DebugValue;
   lifecycle: DebugValue;
   interactions: DebugValue; context: AreaContext;
 }
@@ -449,6 +450,7 @@ export interface TransferCoordinator {
 
 export interface CapturedPlayer {readonly captureId:string;readonly ref:EntityRef;readonly checkpoint:CharacterCheckpointV1;readonly appliedGrantIds:readonly string[]}
 export interface PlayerRetirement {readonly token:string;readonly capture:CapturedPlayer}
+export interface CommandOutcome {readonly unit:EntityRef;readonly commandIndex:number;readonly success:boolean}
 export interface Area {
   readonly services: AreaServices;
   readonly units: ReadonlyMap<EntityId, SimUnit>;
@@ -464,7 +466,7 @@ export interface Area {
    * Projectiles iterate newest first from stage-start list; spawned-by-impact waits next update.
    * No renderer step, wall clock or20Hz snapshot call may advance any of these stages.
    */
-  step(inputs: ReadonlyMap<EntityId, PlayerIntent>): void;
+  step(inputs: ReadonlyMap<EntityId, PlayerIntent>):readonly CommandOutcome[];
   bootstrapEncounter(profile:BossProfileId,facts:{beaconLit:boolean}):void;
   beginDurabilityBarrier(reason:string):string;
   releaseDurabilityBarrier(token:string):void;
