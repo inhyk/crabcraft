@@ -22,6 +22,16 @@ function onceMessage(child, type, timeout = 10000) {
     child.on('message', message); child.on('exit', exit);
   });
 }
+/** Compare only after every socket closes and both processes have drained their streams. */
+export function assertClosedTotals(server, client) {
+  const pairs = [
+    ['server bytes sent', server.bytesSent, client.bytesReceived], ['server bytes received', server.bytesReceived, client.bytesSent],
+    ['server packets sent', server.sentPackets, client.receivedPackets], ['server packets received', server.receivedPackets, client.sentPackets],
+    ['snapshot packets', server.snapshotCount, client.totalSnapshots], ['event packets', server.eventPacketCount, client.totalEventPackets],
+    ['events', server.eventCount, client.totalEvents], ['action events', server.actionEventCount, client.totalActions],
+  ];
+  for (const [label, sent, received] of pairs) if (!Number.isSafeInteger(sent) || sent < 0 || sent !== received) throw new Error(`closed/drained ${label} mismatch: ${sent} != ${received}`);
+}
 export async function runLoad({ clients = 100, seconds = 10, idleSeconds = 1, warmupSeconds = 1 } = {}) {
   if (!Number.isInteger(clients) || clients < 1 || clients > 100) throw new Error('clients must be 1..100');
   for (const n of [seconds, idleSeconds, warmupSeconds]) if (!Number.isFinite(n) || n < 0 || n > 300) throw new Error('invalid duration');
@@ -32,7 +42,7 @@ export async function runLoad({ clients = 100, seconds = 10, idleSeconds = 1, wa
   const sendChild = message => new Promise((resolve, reject) => child.send(message, error => error ? reject(error) : resolve()));
   let diagnostics = ''; child.stdout.on('data', data => { diagnostics = (diagnostics + data).slice(-4096); }); child.stderr.on('data', data => { diagnostics = (diagnostics + data).slice(-4096); });
   const bots = []; let interval; let watchdog; let failure; let finalStats; let closing = false;
-  let invalidPackets = 0; let staleOrMissingStreams = 0; let bytesReceived = 0; let bytesSent = 0;
+  let invalidPackets = 0; let staleOrMissingStreams = 0; let bytesReceived = 0; let bytesSent = 0; let receivedPackets = 0; let sentPackets = 0; let forcedClientCloses = 0;
   child.on('error', error => { failure ??= error; });
   const fail = error => { invalidPackets++; failure ??= error; };
   const getStats = async () => { const response = onceMessage(child, 'stats'); await sendChild({ type: 'stats' }); return (await response).stats; };
@@ -40,7 +50,7 @@ export async function runLoad({ clients = 100, seconds = 10, idleSeconds = 1, wa
     closing = true;
     await Promise.all(bots.map(bot => new Promise(resolve => {
       if (bot.socket.readyState === WebSocket.CLOSED) return resolve();
-      const timer = setTimeout(() => { bot.socket.terminate(); resolve(); }, 1000);
+      const timer = setTimeout(() => { forcedClientCloses++; bot.socket.terminate(); resolve(); }, 1000);
       bot.socket.once('close', () => { clearTimeout(timer); resolve(); }); bot.socket.close(1000, 'load complete');
     })));
   };
@@ -48,15 +58,15 @@ export async function runLoad({ clients = 100, seconds = 10, idleSeconds = 1, wa
     const { url } = await onceMessage(child, 'ready');
     await Promise.all(Array.from({ length: clients }, (_, index) => new Promise((resolve, reject) => {
       const socket = new WebSocket(url, { perMessageDeflate: false, maxPayload: 131072 });
-      const bot = { socket, receiver: new SnapshotReceiver(), eventReceiver: new EventReceiver(), sent: 0, snapshots: 0, events: 0, actions: 0, lastEvent: 0, lastAction: 0, ackAdvances: 0, lastAck: 0, lastSnapshot: performance.now(), firstSnapshot: 0, index, initialized: false, previousSelf: undefined };
+      const bot = { socket, receiver: new SnapshotReceiver(), eventReceiver: new EventReceiver(), sent: 0, snapshots: 0, eventPackets: 0, events: 0, actions: 0, lastEvent: 0, lastAction: 0, ackAdvances: 0, lastAck: 0, lastSnapshot: performance.now(), firstSnapshot: 0, index, initialized: false, previousSelf: undefined };
       bots.push(bot);
       const timer = setTimeout(() => reject(new Error('first snapshot timeout')), 10000);
       socket.on('message', (data, binary) => {
         try {
           if (!binary) throw new Error('non-binary fixture packet');
-          bytesReceived += data.byteLength;
+          bytesReceived += data.byteLength; receivedPackets++;
           if (data[3] === 3) {
-            const packet = bot.eventReceiver.apply(data); bot.events += packet.events.length;
+            const packet = bot.eventReceiver.apply(data); bot.eventPackets++; bot.events += packet.events.length;
             const actions = packet.events.filter(event => event.kind === 'action').length; bot.actions += actions;
             if (packet.events.length) bot.lastEvent = performance.now(); if (actions) bot.lastAction = performance.now();
           } else {
@@ -72,9 +82,9 @@ export async function runLoad({ clients = 100, seconds = 10, idleSeconds = 1, wa
         } catch (error) { fail(error); clearTimeout(timer); reject(error); }
       });
       socket.on('error', error => { clearTimeout(timer); fail(error); reject(error); });
-      socket.on('close', () => { clearTimeout(timer); if (!closing) { const error = new Error('unexpected bot disconnect'); fail(error); reject(error); } });
+      socket.on('close', code => { bot.closeCode = code; clearTimeout(timer); if (!closing) { const error = new Error('unexpected bot disconnect'); fail(error); reject(error); } });
     })));
-    const send = (bot, intent) => { const bytes = encodeIntent({ ...intent, sequence: ++bot.sent }); bot.socket.send(bytes); bytesSent += bytes.byteLength; };
+    const send = (bot, intent) => { const bytes = encodeIntent({ ...intent, sequence: ++bot.sent }); bot.socket.send(bytes); bytesSent += bytes.byteLength; sentPackets++; };
     let frame = 0;
     interval = setInterval(() => {
       frame++;
@@ -109,15 +119,22 @@ export async function runLoad({ clients = 100, seconds = 10, idleSeconds = 1, wa
     const measuredCpuMs = serverAfter.serverCpuUserMs + serverAfter.serverCpuSystemMs - serverBefore.serverCpuUserMs - serverBefore.serverCpuSystemMs;
     const stats = await getStats();
     if (stats.activeClients !== clients || stats.peakClients !== clients || stats.invalidPackets || stats.rejectedPackets || stats.appliedIntents === 0 || stats.backpressureDisconnects) throw new Error('fixture counters failed');
-    await closeBots(); await delay(80);
+    clearInterval(watchdog); watchdog = undefined;
+    await closeBots();
+    if (forcedClientCloses || bots.some(bot => bot.closeCode !== 1000)) throw new Error('client sockets did not close gracefully');
+    await delay(80);
     const noClientsBefore = await getStats(); await delay(150); const noClientsAfter = await getStats();
     if (noClientsAfter.activeClients !== 0 || noClientsAfter.tickCount !== noClientsBefore.tickCount || noClientsAfter.snapshotCount !== noClientsBefore.snapshotCount) throw new Error('empty fixture did not idle');
     const final = onceMessage(child, 'final'); stopRequested = true; await sendChild({ type: 'stop' }); finalStats = (await final).stats;
     const exited = await exitWithin(childExit, 2000);
     if (!exited || exited.code !== 0 || exited.signal) throw new Error('fixture did not exit cleanly');
+    if (failure) throw failure;
+    const clientTotals = { totalSnapshots: bots.reduce((n, c) => n + c.snapshots, 0), totalEventPackets: bots.reduce((n, c) => n + c.eventPackets, 0), totalActions: bots.reduce((n, c) => n + c.actions, 0), totalEvents: bots.reduce((n, c) => n + c.events, 0), bytesSent, bytesReceived, sentPackets, receivedPackets };
+    assertClosedTotals(finalStats, clientTotals);
     return { label: 'S4 synthetic loopback networking fixture (not game combat or VM performance)', node: process.version, clients, seconds, measuredMs,
-      clientSummary: { minSnapshotHz: Math.min(...perClient.map(c => c.snapshotHz)), maxSnapshotHz: Math.max(...perClient.map(c => c.snapshotHz)), minSnapshots: Math.min(...perClient.map(c => c.snapshots)), minAckAdvances: Math.min(...perClient.map(c => c.ackAdvances)), totalActions: bots.reduce((n, c) => n + c.actions, 0), totalEvents: bots.reduce((n, c) => n + c.events, 0), invalidPackets, staleOrMissingStreams, bytesSent, bytesReceived },
-      server: { ...stats, measuredCpuMs, measuredCpuPercent: measuredCpuMs / measuredMs * 100 }, cleanup: { activeClients: finalStats.activeClients, idleTickDelta: noClientsAfter.tickCount - noClientsBefore.tickCount, childStopped: true, childExitCode: exitResult.code, childSignal: exitResult.signal }, perClient };
+      clientSummary: { minSnapshotHz: Math.min(...perClient.map(c => c.snapshotHz)), maxSnapshotHz: Math.max(...perClient.map(c => c.snapshotHz)), minSnapshots: Math.min(...perClient.map(c => c.snapshots)), minAckAdvances: Math.min(...perClient.map(c => c.ackAdvances)), ...clientTotals, invalidPackets, staleOrMissingStreams },
+      server: { ...finalStats, activeClientsBeforeClose: stats.activeClients, measuredCpuMs, measuredCpuPercent: measuredCpuMs / measuredMs * 100 }, windows: { totals: 'all connections opened through graceful socket closure and fixture shutdown', clientRates: 'after warmup through measurement end', measuredServerCpu: 'server stats after warmup through server stats after measurement', latencySamples: 'fixture lifetime including warmup and idle' },
+      cleanup: { activeClients: finalStats.activeClients, exactTotalsMatched: true, forcedClientCloses, idleTickDelta: noClientsAfter.tickCount - noClientsBefore.tickCount, childStopped: true, childExitCode: exitResult.code, childSignal: exitResult.signal }, perClient };
   } catch (error) { throw new Error(`${error.message}${diagnostics ? `\nfixture diagnostics: ${diagnostics}` : ''}`, { cause: error }); }
   finally {
     if (interval) clearInterval(interval); if (watchdog) clearInterval(watchdog);

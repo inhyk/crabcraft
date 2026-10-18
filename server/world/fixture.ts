@@ -30,14 +30,14 @@ export async function startFixture(options: FixtureOptions = {}) {
   const tickScheduler = new DeadlineScheduler(30, started, 4); const snapshotScheduler = new DeadlineScheduler(20, started, 1);
   const clients = new Map<number, Client>(); const grid = new AoiGrid();
   const batches: number[] = []; const ticks: number[] = []; const encodes: number[] = []; const remember = (values: number[], value: number) => { if (values.length < 100000) values.push(value); else values[metricCursor++ % values.length] = value; };
-  let metricCursor = 0; let nextId = 1; let tick = 0; let snapshots = 0; let eventsSent = 0; let receivedPackets = 0;
+  let metricCursor = 0; let nextId = 1; let tick = 0; let snapshots = 0; let eventsSent = 0; let eventPackets = 0; let actionEvents = 0; let sentPackets = 0; let receivedPackets = 0;
   let bytesSent = 0; let bytesReceived = 0; let acceptedIntents = 0; let appliedIntents = 0; let rejectedPackets = 0; let invalidPackets = 0;
   let rejectedClients = 0; let peakClients = 0; let backpressureDisconnects = 0; let closed = false; let idleWakeups = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const send = (client: Client, bytes: Uint8Array) => {
     if (client.socket.readyState !== WebSocket.OPEN) return false;
     if (client.socket.bufferedAmount > 1024 * 1024) { backpressureDisconnects++; client.socket.close(1013, 'fixture backpressure'); return false; }
-    client.socket.send(bytes, { binary: true }); bytesSent += bytes.byteLength; return true;
+    client.socket.send(bytes, { binary: true }); bytesSent += bytes.byteLength; sentPackets++; return true;
   };
   const simulate = () => {
     const begin = performance.now(); tick++;
@@ -56,7 +56,9 @@ export async function startFixture(options: FixtureOptions = {}) {
       }
       // An explicit synthetic pulse validates event delivery even while clients stand still.
       if (tick % 30 === 0) events.push({ kind: 'cast', source: c.entity.id, target: c.entity.id, code: 0 });
-      if (events.length) { if (send(c, encodeEvents({ epoch: c.stream.epoch, sequence: ++c.eventSequence, tick, events }))) eventsSent += events.length; }
+      if (events.length && send(c, encodeEvents({ epoch: c.stream.epoch, sequence: ++c.eventSequence, tick, events }))) {
+        eventsSent += events.length; eventPackets++; actionEvents += events.filter(event => event.kind === 'action').length;
+      }
     }
     remember(ticks, performance.now() - begin);
   };
@@ -100,7 +102,7 @@ export async function startFixture(options: FixtureOptions = {}) {
     const cpu = process.cpuUsage(cpuStart); const elapsedMs = performance.now() - started;
     return { fixture: 'synthetic-loopback-kinematics', actualGameSimulation: false, vmMeasurement: false, tickHz: 30, snapshotHz: 20,
       elapsedMs, serverCpuUserMs: cpu.user / 1000, serverCpuSystemMs: cpu.system / 1000, serverCpuPercent: (cpu.user + cpu.system) / 1000 / elapsedMs * 100,
-      tickCount: tick, snapshotCount: snapshots, eventCount: eventsSent, tickMs: { p50: percentile(ticks, .5), p99: percentile(ticks, .99), samples: ticks.length },
+      tickCount: tick, snapshotCount: snapshots, eventCount: eventsSent, eventPacketCount: eventPackets, actionEventCount: actionEvents, sentPackets, tickMs: { p50: percentile(ticks, .5), p99: percentile(ticks, .99), samples: ticks.length },
       snapshotBatchMs: { p50: percentile(batches, .5), p99: percentile(batches, .99), samples: batches.length },
       encodeMs: { p50: percentile(encodes, .5), p99: percentile(encodes, .99), samples: encodes.length },
       activeClients: clients.size, peakClients, rejectedClients, bytesSent, bytesReceived, receivedPackets, acceptedIntents, appliedIntents,

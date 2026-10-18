@@ -8,7 +8,7 @@ import { WebSocket } from 'ws';
 import { startFixture, fixtureSpawn } from './fixture.ts';
 import { SnapshotReceiver } from './protocol.ts';
 import { encodeIntent } from './intents.ts';
-import { runLoad } from '../../tools/load-world.mjs';
+import { runLoad, assertClosedTotals } from '../../tools/load-world.mjs';
 test('spawn positions remain bounded across reconnect IDs through u32 maximum', () => {
   for (const id of [1, 100, 101, 2611, 10000, 0xffffffff]) { const e = fixtureSpawn(id); assert(Math.abs(e.x) <= 36); assert(Math.abs(e.z) <= 36); assert.equal(e.id, id); }
   assert.deepEqual(fixtureSpawn(101), { ...fixtureSpawn(1), id: 101 });
@@ -37,6 +37,12 @@ test('100 real clients in a separate fixture process receive sustained binary sn
   assert(result.clientSummary.minSnapshots >= 28); assert(result.clientSummary.minAckAdvances >= 20);
   assert(result.clientSummary.totalActions >= 100); assert(result.clientSummary.totalEvents >= 100);
   assert(result.server.bytesSent > 0); assert(result.server.bytesReceived > 0); assert(result.server.snapshotBatchMs.samples > 0);
+  assert.equal(result.server.activeClients, 0); assert.equal(result.server.activeClientsBeforeClose, 100);
+  assert.equal(result.server.bytesSent, result.clientSummary.bytesReceived); assert.equal(result.server.bytesReceived, result.clientSummary.bytesSent);
+  assert.equal(result.server.sentPackets, result.clientSummary.receivedPackets); assert.equal(result.server.receivedPackets, result.clientSummary.sentPackets);
+  assert.equal(result.server.snapshotCount, result.clientSummary.totalSnapshots); assert.equal(result.server.eventPacketCount, result.clientSummary.totalEventPackets);
+  assert.equal(result.server.eventCount, result.clientSummary.totalEvents); assert.equal(result.server.actionEventCount, result.clientSummary.totalActions);
+  assert.equal(result.cleanup.exactTotalsMatched, true); assert.equal(result.cleanup.forcedClientCloses, 0);
   assert.equal(result.cleanup.activeClients, 0); assert.equal(result.cleanup.idleTickDelta, 0); assert.equal(result.cleanup.childExitCode, 0); assert.equal(result.cleanup.childSignal, null);
 });
 
@@ -55,4 +61,12 @@ test('events received only before measurement cannot produce a passing load resu
   };
   try { await assert.rejects(runLoad({ clients: 1, seconds: 2.1, idleSeconds: .3, warmupSeconds: 1.3 }), /measured action\/event delivery|stale event stream/); }
   finally { WebSocket.prototype.emit = original; }
+});
+
+test('closed/drained total reconciliation rejects every mismatch without tolerance', () => {
+  const server = { bytesSent: 10000, bytesReceived: 1300, sentPackets: 210, receivedPackets: 100, snapshotCount: 200, eventPacketCount: 10, eventCount: 11, actionEventCount: 5 };
+  const client = { bytesReceived: 10000, bytesSent: 1300, receivedPackets: 210, sentPackets: 100, totalSnapshots: 200, totalEventPackets: 10, totalEvents: 11, totalActions: 5 };
+  assert.doesNotThrow(() => assertClosedTotals(server, client));
+  for (const key of Object.keys(client)) assert.throws(() => assertClosedTotals(server, { ...client, [key]: client[key] + 1 }), /mismatch/);
+  assert.throws(() => assertClosedTotals(server, { ...client, bytesReceived: server.bytesSent + 3000 }), /bytes sent mismatch/);
 });
