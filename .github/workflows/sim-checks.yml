@@ -21,5 +21,7 @@ jobs:
       - run: pnpm test:sim
       - run: pnpm test:boss
       - run: pnpm test:engine
+      - run: pnpm test:paving
+      - run: pnpm test:arena
       - run: pnpm test:multiplayer
       - run: pnpm test:server

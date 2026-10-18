@@ -261,7 +261,7 @@ export class HiddenWorld {
     if(g.hud.questLog.open)g.hud.questLog.render();
     {
       const mobs=g.enemies.filter(e=>!e.isAdd);
-      mobs.forEach((e,i)=>{if(e.kind==='jellyfish'){e.despawn();return;}const side=e.kind==='scrapling'?-1:1;const x=i<3?[19,30,20][i]:side*(60+(i%4)*7),z=i<3?[-8,-22,-34][i]:28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority&&!e.isEcho)e.respawnAt(x,z);if(e.isEcho)e.despawn();e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.refreshAppearance();});
+      mobs.forEach((e,i)=>{if(e.kind==='jellyfish'){e.despawn();return;}const side=e.kind==='scrapling'?-1:1,slot=e.islandSlot;const x=slot!==null?66+(slot%3)*8:i<3?[19,30,20][i]:side*(60+(i%4)*7),z=slot!==null?20-Math.floor(slot/3)*32-(slot%3)*4:i<3?[-8,-22,-34][i]:28-Math.floor(i/4)*16-(i%3)*3;e.home.set(x,this.height(x,z),z);if(authority&&!e.isEcho)e.respawnAt(x,z);if(e.isEcho)e.despawn();e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');e.refreshAppearance();});
       for(const e of g.enemies.filter(e=>e.isAdd))e.despawn();
     }
     this.echoAt=g.time+45;
@@ -288,7 +288,7 @@ export class HiddenWorld {
     this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,4,26),new THREE.Vector3(0,9,-22),third.arena.position],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
     for(const b of [g.boss,g.finalBoss,g.worldBoss]){b.unit.hidden=true;b.freed.hidden=true;}g.dawnBoss.unit.hidden=['dormant','dead'].includes(g.dawnBoss.state);
     g.dawnBoss.freed.hidden=true;
-    g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const x=(i%2?1:-1)*(43+i%4*8),z=16-Math.floor(i/2)*10;e.home.set(x,third.height(x,z),z);if(authority)e.respawnAt(x,z);});
+    g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const slot=e.islandSlot;const x=slot!==null?(slot%2?1:-1)*(48+Math.floor(slot/2)*5):(i%2?1:-1)*(43+i%4*8),z=slot!==null?14-Math.floor(slot/2)*20:16-Math.floor(i/2)*10;e.home.set(x,third.height(x,z),z);if(authority)e.respawnAt(x,z);});
     g.quests.setChapter(3);g.hud.hints.setChapter(3);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
     g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
     g.hud.messages.banner(()=>t('WORLD III · 새벽을 잃은 섬','WORLD III · Isle of the Stolen Dawn'),()=>t('100레벨 황혼의 왕을 물리치고 설원으로 가는 길을 여세요','Defeat the level 100 Twilight King to open the route to Frostlight'),'zone');
@@ -315,7 +315,7 @@ export class HiddenWorld {
     this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,5,28),new THREE.Vector3(0,14,-24),island.arena.position],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
     for(const b of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss])b.unit.hidden=b.freed.hidden=true;
     g.frostBoss.unit.hidden=['dormant','dead'].includes(g.frostBoss.state);g.frostBoss.freed.hidden=!!g.journey?.frostCleared;g.frostBoss.freed.targetable=false;g.frostBoss.freed.teleport(w,13,-62);
-    g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const x=(i%2?1:-1)*(44+i%4*7),z=20-Math.floor(i/2)*12;e.home.set(x,island.height(x,z),z);if(authority)e.respawnAt(x,z);e.refreshAppearance();});
+    g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const slot=e.islandSlot;const x=slot!==null?(slot%2?1:-1)*(48+Math.floor(slot/2)*5):(i%2?1:-1)*(44+i%4*7),z=slot!==null?14-Math.floor(slot/2)*20:20-Math.floor(i/2)*12;e.home.set(x,island.height(x,z),z);if(authority)e.respawnAt(x,z);e.refreshAppearance();});
     g.enemies.filter(e=>e.isAdd).forEach(e=>e.despawn());
     g.quests.setChapter(4);g.hud.hints.setChapter(4);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
     g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
@@ -333,7 +333,7 @@ export class HiddenWorld {
     // World II has its own lighting. Restore the untouched shore atmosphere and fog.
     this.game.world.setMood(this.game.world.getEnvironment().mood,true);
     const g=this.game;
-    g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&!e.isEcho&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);e.refreshAppearance();if(e.isEcho)e.despawn();});
+    g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&!e.isEcho&&!e.isIslandOnly&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);e.refreshAppearance();if(e.isEcho||e.isIslandOnly)e.despawn();});
     for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}
     this.resetPortalArrival();
     g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;g.worldBoss.unit.hidden=true;g.dawnBoss.unit.hidden=g.dawnBoss.freed.hidden=true;
