@@ -3,8 +3,11 @@ import type { Pool } from 'pg';
 import type { MonitorSnapshot } from '../monitor.ts';
 import { resolveAccountSession } from './accounts.ts';
 
-/** Shares the existing /api/account cookie scope. Authorization is checked on every poll. */
-export function monitorHandler(db: Pool, accounts: ReadonlySet<string>, snapshot: () => MonitorSnapshot) {
+/** Shares the existing /api/account cookie scope. Authorization is checked on every poll.
+ * `places`: client addresses (MONITOR_IPS, e.g. a home network's public IP) whose screens, such as a TV
+ * that cannot sign in, see the monitor without an account. Everyone else still signs in. */
+export function monitorHandler(db: Pool, accounts: ReadonlySet<string>, snapshot: () => MonitorSnapshot,
+  places: ReadonlySet<string> = new Set(), clientIp: (req: IncomingMessage) => string = req => req.socket.remoteAddress ?? '') {
   return async (req: IncomingMessage, res: ServerResponse) => {
     const send = (status: number, body: unknown) => {
       res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff' });
@@ -16,6 +19,7 @@ export function monitorHandler(db: Pool, accounts: ReadonlySet<string>, snapshot
     let sameOrigin = !origin;
     try { if (origin) sameOrigin = new URL(origin).host === req.headers.host; } catch { /* reject malformed origins */ }
     if (req.headers['x-crabcraft-account'] !== '1' || !sameOrigin || req.headers['sec-fetch-site'] === 'cross-site') return send(403, { error: 'origin' });
+    if (places.has(clientIp(req))) return send(200, snapshot());
     if (!accounts.size) return send(503, { error: 'monitor_unconfigured' });
     try {
       const session = await resolveAccountSession(db, req);
