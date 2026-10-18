@@ -26,9 +26,6 @@
 	handle /multiplayer {
 		reverse_proxy 127.0.0.1:{args[1]}
 	}
-	handle /world {
-		reverse_proxy 127.0.0.1:{args[1]}
-	}
 	handle /api/account/* {
 		reverse_proxy 127.0.0.1:{args[1]}
 	}
@@ -55,6 +52,10 @@
 }
 
 crab-dev.seonn.dev {
+	# The server-world rollout is authorized for dev. Enable prod in its own release.
+	handle /world {
+		reverse_proxy 127.0.0.1:8081
+	}
 	import crabcraft dev 8081
 }
 
