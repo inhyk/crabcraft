@@ -42,15 +42,15 @@ export class PlayerController implements PlayerSim {
     // Validate every command before accepting any field, so malformed frames have no partial effect.
     if(!intent.commands.every(validCommand))return;
     this.lastConsumedSeq=intent.seq;this.held={...intent,commands:[]};
-    for(const command of intent.commands){
+    for(const [commandIndex,command] of intent.commands.entries()){
       switch(command.kind){
         case 'target':{if(command.target===null)this.setTarget(null);else{const target=this.services.getUnit(command.target);if(target&&!target.hidden&&target.targetable)this.setTarget(target);}break;}
         case 'ability':this.useAbility(command.slot);break;
         case 'jump':this.jump();break;
         case 'dance':this.toggleDance();break;
         case 'cancel':this.interruptCast();this.cancelChannel();this.cancelDance();this.state.queued=null;break;
-        case 'channelStart':if(command.channel==='recall')this.startRecall();else this.services.runCommand(this.unit.ref,command);break;
-        default:this.services.runCommand(this.unit.ref,command);break;
+        case 'channelStart':if(command.channel==='recall')this.startRecall();else this.services.runCommand(this.unit.ref,command,commandIndex);break;
+        default:this.services.runCommand(this.unit.ref,command,commandIndex);break;
       }
     }
   }
