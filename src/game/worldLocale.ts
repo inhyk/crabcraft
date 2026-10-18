@@ -53,7 +53,15 @@ const LOADING_LABELS:Record<string,string>={
   'Welcome to Starhaven':'별빛 항구에 다시 오신 걸 환영해요',
 };
 export const loadingLabel=(key:string)=>LOADING_LABELS[key]?t(LOADING_LABELS[key],key):key;
-export function loadingTips(chapter: 1 | 2 = 1){return chapter === 2 ? [
+export function loadingTips(chapter: 1 | 2 | 3 | 4 = 1){return chapter === 4 ? [
+  t('눈꽃 마을의 주민들에게 말을 걸어 설원 퀘스트를 받아 보세요.','Speak to the people of Snowfall Village to accept snowfield quests.'),
+  t('300레벨이 되면 얼음 왕좌의 보레아스에게 도전할 수 있어요.','Reach level 300 to challenge Boreas at the Frozen Throne.'),
+  t('기술 위에 마우스를 올리면 바닥에서 실제 공격 범위를 확인할 수 있어요.','Hover over a skill to see its actual range on the ground.'),
+] : chapter === 3 ? [
+  t('새벽 항구의 주민들에게 말을 걸어 월드 3 퀘스트를 받아 보세요.','Speak to the people of Dawnharbor to accept World III quests.'),
+  t('100레벨이 되면 황혼 성채의 솔라칸에게 도전할 수 있어요.','Reach level 100 to challenge Solarkan in the Twilight Citadel.'),
+  t('솔라칸을 물리치면 눈 월드로 가는 길이 열려요.','Defeat Solarkan to open the way to the snow world.'),
+] : chapter === 2 ? [
   t('별빛 항구로 이사 온 친구들에게 말을 걸어 월드 2 퀘스트를 받아 보세요.','Speak to the friends who moved to Starhaven to accept World II quests.'),
   t('보랏빛 포탈은 두 세계를 이어 줘요. 가까이 가서 F를 누르면 해안으로 돌아갈 수 있어요.','The violet portal joins both worlds. Approach it and press F to return to the shore.'),
   t('별 등불은 F를 누르고 있어야 켜져요. 등불 옆에서 잠시 멈춰 주세요.','Hold F beside a star lamp to light it. Stay close until its light awakens.'),
