@@ -43,6 +43,8 @@
 
 merge 후 각 환경의 `/etc/crabcraft/dev.env` 또는 `/etc/crabcraft/prod.env`에 개발자의 익명 계정 ID를 쉼표로 구분해 `MONITOR_ACCOUNTS`에 설정하고 해당 서버를 재시작한다. ID는 개발자가 로그인한 브라우저에서 기존 `/api/account/session` 응답의 `username`으로 확인한다. 이메일이나 Google subject, 세션 토큰을 이 변수에 넣지 않는다. 계정 목록과 실제 값은 레포나 PR에 기록하지 않는다.
 
+로그인하기 어려운 화면(집 TV 등)은 `MONITOR_IPS`에 그 네트워크의 공인 IP를 쉼표로 구분해 넣는다. 이 주소에서 온 요청은 로그인 없이 모니터를 본다. `X-Crabcraft-Account` 헤더와 같은 origin 검사는 그대로 한다. 서버는 Caddy가 붙인 `X-Forwarded-For`의 마지막 주소(`TRUST_PROXY=1`)로 판단하므로 요청자가 앞쪽 주소를 꾸며도 통과하지 못한다. 같은 공유기 뒤의 모든 기기가 모니터를 볼 수 있으니 집처럼 믿을 수 있는 네트워크만 넣는다. 공인 IP가 바뀌면 값을 고치고 서버를 다시 띄운다. 실제 IP 값은 레포나 PR에 기록하지 않는다.
+
 기존 Caddy `/api/account/*` 프록시와 정적 디렉터리 index를 사용한다. Caddy는 [기본 canonical URI 처리](https://caddyserver.com/docs/caddyfile/directives/file_server)에 따라 디렉터리에 trailing slash를 붙인다. Vite 개발 및 preview 서버에는 같은 redirect를 추가했다. Caddy 설정 변경과 DB migration은 없다. 서버와 프런트엔드를 함께 배포한다. 설정은 이 PR에서 운영 환경에 적용하지 않았다.
 
 ## 부하와 로컬 실행

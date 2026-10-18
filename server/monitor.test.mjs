@@ -11,7 +11,7 @@ const account = 'g' + 'a'.repeat(23), token = 'b'.repeat(64);
 const cookie = `cc_account=${account}.${token}`;
 const spec = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Observer QA' };
 const state = { x: 3, y: 4, z: 5, yaw: 1, hp: 80, maxHp: 100, alive: true, area: 1 };
-async function setup(t, allowed = [account]) {
+async function setup(t, allowed = [account], places = []) {
   let expires = Date.now() + 60000, fail = false;
   const db = { async query(_sql, [hash, username]) {
     if (fail) throw new Error('database unavailable');
@@ -19,7 +19,7 @@ async function setup(t, allowed = [account]) {
   } };
   const server = createServer((req, res) => void handler(req, res));
   const relay = attachRooms(server, { maxMembers: 64 });
-  const handler = monitorHandler(db, new Set(allowed), relay.monitorSnapshot);
+  const handler = monitorHandler(db, new Set(allowed), relay.monitorSnapshot, new Set(places), req => String(req.headers['x-test-ip'] ?? ''));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`, clients = [];
   t.after(async () => { for (const ws of clients) ws.terminate(); relay.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); });
@@ -112,4 +112,16 @@ test('frontier worlds V and VI keep their area; an unknown world number stays un
   assert.equal((await (await app.get()).json()).players[0].area, 6);
   p.send({ type: 'state', state: { ...state, area: 7 } }); await tick();
   assert.equal((await (await app.get()).json()).players[0].area, null);
+});
+
+test('a listed network address sees the monitor without signing in; other addresses still need an account', async t => {
+  const app = await setup(t, [], ['203.0.113.7']), p = await app.client();
+  p.send({ type: 'state', state }); await tick();
+  const home = await app.get({ Cookie: '', 'X-Test-IP': '203.0.113.7' });
+  assert.equal(home.status, 200); assert.equal((await home.json()).players.length, 1);
+  assert.equal((await app.get({ Cookie: '', 'X-Test-IP': '203.0.113.8' })).status, 503);
+  assert.equal((await app.get({ Cookie: '', 'X-Test-IP': '203.0.113.7', Origin: 'https://elsewhere.invalid' })).status, 403);
+  const both = await setup(t, [account], ['203.0.113.7']);
+  assert.equal((await both.get({ Cookie: '', 'X-Test-IP': '198.51.100.1' })).status, 401);
+  assert.equal((await both.get({ 'X-Test-IP': '198.51.100.1' })).status, 200);
 });

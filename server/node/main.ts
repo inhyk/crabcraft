@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { isIP } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { attachRooms } from '../rooms.ts';
 import { accountHandler, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, originAllowed } from './accounts.ts';
@@ -8,7 +9,8 @@ import { monitorHandler } from './monitor.ts';
 
 // Rooms and accounts for the browser client: what server/cloudflare/worker.ts served, on one VM behind Caddy.
 // Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy,
-// GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for sign-in (GOOGLE_AUTH_URL and GOOGLE_TOKEN_URL override Google's endpoints in tests).
+// GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for sign-in (GOOGLE_AUTH_URL and GOOGLE_TOKEN_URL override Google's endpoints in tests),
+// MONITOR_ACCOUNTS and MONITOR_IPS for /monitor (docs/features/developer-monitor.md).
 const env = process.env;
 const port = Number(env.PORT || 8080), host = env.HOST || '127.0.0.1';
 const origins = (env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
@@ -74,7 +76,8 @@ const relay = attachRooms(server, {
   // Read with server-dist/reports.mjs on the VM.
   report: r => storeReport(pool, r),
 });
-const monitor = monitorHandler(pool, new Set((env.MONITOR_ACCOUNTS ?? '').split(',').map(s => s.trim()).filter(s => /^g[a-f0-9]{23}$/.test(s))), relay.monitorSnapshot);
+const monitor = monitorHandler(pool, new Set((env.MONITOR_ACCOUNTS ?? '').split(',').map(s => s.trim()).filter(s => /^g[a-f0-9]{23}$/.test(s))), relay.monitorSnapshot,
+  new Set((env.MONITOR_IPS ?? '').split(',').map(s => s.trim()).filter(s => isIP(s))), clientIp);
 // attachRooms only answers /multiplayer upgrades; refuse the rest instead of leaving them open.
 server.on('upgrade', (req: IncomingMessage, socket: Duplex) => {
   if (req.url?.split('?')[0] !== '/multiplayer') socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
