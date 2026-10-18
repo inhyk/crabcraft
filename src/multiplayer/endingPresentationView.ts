@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import './endingPresentation.css';
 import { t } from '../i18n';
 import type { CrabRig } from '../crab/types';
 import { rigCatalog } from '../sim/data/rig-catalog.ts';
@@ -18,11 +19,16 @@ export class EndingPresentationView {
  readonly hud=document.createElement('section');
  private caption=document.createElement('h2');private status=document.createElement('p');private credits=document.createElement('div');private skip=document.createElement('button');private proceed=document.createElement('button');
  constructor(private readonly ports:Ports){
-  this.hud.className='ending-presentation';this.hud.style.cssText='position:absolute;inset:0;pointer-events:none;color:#f7e6bc;text-align:center;font:18px Georgia;background:transparent';
-  this.caption.style.cssText='position:absolute;bottom:18%;width:100%;text-shadow:0 2px 4px black';
-  this.status.style.cssText='background:#13202bcc;padding:12px;margin:0';this.credits.style.cssText='display:none;position:absolute;inset:12% 18%;padding:24px;background:#101f29f0;overflow:auto;pointer-events:auto';
-  const title=document.createElement('h1');title.textContent='Credits';this.credits.append(title);for(const row of parseNotice(notice)){const p=document.createElement('p');p.textContent=`${row.material} - ${row.license}`;this.credits.append(p);}
-  this.skip.textContent='Skip celebration';this.proceed.textContent='Continue adventure';for(const button of [this.skip,this.proceed])button.style.cssText='pointer-events:auto;position:absolute;bottom:6%;left:40%;width:20%;padding:12px';
+  this.hud.className='ending-presentation';
+  this.caption.className='ending-caption';this.status.className='ending-status';this.status.setAttribute('role','status');
+  this.credits.className='ending-credits';this.credits.tabIndex=0;this.credits.setAttribute('aria-label',t('크레딧','Credits'));
+  const brand=document.createElement('p');brand.className='ending-brand';brand.textContent='WORLD OF CRABCRAFT';
+  const title=document.createElement('h1');title.textContent=t('크레딧','Credits');
+  const intro=document.createElement('p');intro.className='ending-credits-intro';intro.textContent=t('함께해 주셔서 고마워요. 게들의 모험은 계속됩니다.','Thank you for playing. The adventure continues.');
+  this.credits.append(brand,title,intro);
+  for(const row of parseNotice(notice)){const section=document.createElement('section');section.className='ending-credits-row';const name=document.createElement('h2');name.textContent=row.material;const license=document.createElement('p');license.textContent=row.license;section.append(name,license);this.credits.append(section);}
+  this.skip.textContent=t('축하 장면 건너뛰기','Skip celebration');this.proceed.textContent=t('계속 모험하기','Continue adventure');
+  for(const button of [this.skip,this.proceed]){button.className='ending-control';button.type='button';button.setAttribute('aria-label',button.textContent??'');}
   this.skip.onclick=()=>{if(this.current)this.ports.command(this.current.id,'skip');};this.proceed.onclick=()=>{if(this.current)this.ports.command(this.current.id,'continue');};
   this.hud.append(this.status,this.caption,this.credits,this.skip,this.proceed);ports.parent.append(this.hud);this.hud.hidden=true;
  }
@@ -45,7 +51,7 @@ export class EndingPresentationView {
   this.hud.hidden=state.phase==='finished'||state.phase==='cancelled';this.status.textContent=state.phase==='blackout'?t('축하 장면을 준비하고 있어요.','Preparing the celebration.'):state.phase==='credits'?t('함께해 주셔서 고마워요.','Thank you for playing.'):['opening','routine','finale'].includes(state.phase)?t('영웅을 위한 축하','A celebration for the hero'):'';
   this.hud.style.background=state.phase==='blackout'?'#000':'transparent';this.credits.style.display=state.phase==='credits'?'block':'none';
   this.skip.hidden=!['opening','routine','finale'].includes(state.phase)||state.tick<state.skipAvailableTick;this.proceed.hidden=state.phase!=='credits';
-  this.caption.textContent=state.phase==='routine'?(BREAK_ROUTINE.find(s=>s.id===state.move)?.label??''):state.phase==='finale'?'The village celebrates its hero':state.phase==='opening'?'The hero returns':'';
+  this.caption.textContent=state.phase==='routine'?(BREAK_ROUTINE.find(s=>s.id===state.move)?.label??''):state.phase==='finale'?t('마을이 영웅을 축하합니다','The village celebrates its hero'):state.phase==='opening'?t('돌아온 영웅을 환영합니다','Welcome home, hero'):'';
   this.render();return true;
  }
  render():void {
@@ -53,7 +59,18 @@ export class EndingPresentationView {
   for(const actor of state.cast){const rig=this.rigs.get(actor.ref.slot);if(rig)applyNumericPose(rig,{...actor.position,yaw:actor.yaw,pose:evaluateRenderPoseRecipe(actor.recipe)});}
   const hero=state.cast[0];if(!hero)return;const seconds=Math.max(0,(state.tick-state.celebrationStartedTick)/30),linear=Math.min(1,seconds/12),k=linear*linear*(3-2*linear),r=11-7*k,h=6.5-4*k,a=seconds*.16+state.orbitYaw;
   const focusY=Math.max(.9,(this.rigs.get(hero.ref.slot)?.body.position.y??0)*.75);
-  this.ports.camera.position.set(hero.position.x+Math.sin(a)*r,hero.position.y+h+focusY-.9,hero.position.z+Math.cos(a)*r);this.ports.camera.lookAt(hero.position.x,hero.position.y+focusY+(1-k)*.6,hero.position.z);
+  const camera=this.ports.camera,target=new THREE.Vector3(hero.position.x,hero.position.y+focusY+(1-k)*.6,hero.position.z);
+  const offset=new THREE.Vector3(Math.sin(a)*r,h-.9-(1-k)*.6,Math.cos(a)*r),direction=offset.clone().normalize();
+  camera.position.copy(target).add(offset);camera.lookAt(target);camera.updateMatrixWorld();
+  // Fit the observed cast without changing the server-tick orbit direction, target or progression.
+  // Symmetric safe margins leave room for the letterbox, caption and ordered controls at both widths.
+  const right=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),up=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1);
+  const tanY=Math.tan(THREE.MathUtils.degToRad(camera.fov/2)),tanX=tanY*Math.max(.1,camera.aspect);
+  let distance=offset.length();const box=new THREE.Box3(),point=new THREE.Vector3();
+  for(const actor of state.cast){const rig=this.rigs.get(actor.ref.slot);if(rig){rig.root.updateMatrixWorld(true);box.setFromObject(rig.root);}else box.set(new THREE.Vector3(actor.position.x-2,actor.position.y-.5,actor.position.z-2),new THREE.Vector3(actor.position.x+2,actor.position.y+3.5,actor.position.z+2));
+   for(let i=0;i<8;i++){point.set(i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z).sub(target);distance=Math.max(distance,point.dot(direction)+Math.max(Math.abs(point.dot(right))/(tanX*.88),Math.abs(point.dot(up))/(tanY*.57)));}
+  }
+  camera.position.copy(target).addScaledVector(direction,distance);camera.lookAt(target);camera.updateMatrixWorld();
  }
  get readyCount():number{return this.rigs.size;}
  private clear():void {this.generation++;for(const rig of this.rigs.values()){rig.root.removeFromParent();rig.dispose();}this.rigs.clear();this.loading.clear();this.current=null;this.tick=-1;this.sequence=-1;this.cueOrdinal=0;this.hud.hidden=true;}
