@@ -76,9 +76,9 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     baseHp: 110,
     abilities: [
       { id: 'smite', slot: 1, name: 'Smite', description: 'Strike with holy light.', castTime: 1.5, cooldown: 3, cost: 8, range: 24, icon: icon('priest', 1) },
-      { id: 'mend-shell', slot: 2, name: 'Mend Shell', description: 'Heal 35% of your health.', castTime: 2, cooldown: 10, cost: 18, range: 0, icon: icon('priest', 2) },
+      { id: 'mend-shell', slot: 2, name: 'Mend Shell', description: 'Heal yourself and visible allies within 12 m for 35% of maximum health.', castTime: 2, cooldown: 10, cost: 18, range: 12, icon: icon('priest', 2) },
       { id: 'barnacle-ward', slot: 3, name: 'Barnacle Ward', description: 'Absorbs damage for 10 sec.', castTime: 0, cooldown: 20, cost: 16, range: 0, icon: icon('priest', 3) },
-      { id: 'holy-tide', slot: 4, name: 'Holy Tide', description: 'Damage nearby enemies and heal yourself.', castTime: 0, cooldown: 15, cost: 20, range: 6, icon: icon('priest', 4) },
+      { id: 'holy-tide', slot: 4, name: 'Holy Tide', description: 'Damage nearby enemies and heal yourself and visible allies within 6 m for 15% of maximum health.', castTime: 0, cooldown: 15, cost: 20, range: 6, icon: icon('priest', 4) },
       { ...ULTIMATE },
     ],
   },

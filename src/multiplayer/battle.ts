@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import {t} from '../i18n';
 import {C} from '../game/vfx/vfx';
 import type { Game } from '../game/game';
-import type { Unit } from '../game/unit';
+import { lineOfSight, type Unit } from '../game/unit';
+import {LANTERN_HEALS,type LanternHeal} from '../sim/data/healing';
 import type { HitOptions } from '../game/combat';
 import type { Enemy } from '../game/enemies';
 import type { Npc } from '../game/npcs';
@@ -17,6 +18,7 @@ export class BattleSync {
   applying = false;
   mode:'coop'|'pvp'='coop';
   parties:Record<string,number>={};
+  private healAt=new Map<string,number>();
   private duelAt=new Map<string,number>();
   partyOf(id:string){return this.parties[id]??(this.mode==='coop'?1:0);}
   sameParty(a:string,b:string){return this.partyOf(a)>0&&this.partyOf(a)===this.partyOf(b);}
@@ -45,6 +47,36 @@ export class BattleSync {
     src.lastCombat=dst.lastCombat=this.game.time;
     if(target===this.ownId){this.applying=true;try{this.game.combat.damage(src,dst,dmg,{crit});}finally{this.applying=false;}}
     else this.event({kind:'hit',target,amount:dmg,crit});
+  }
+
+  /** Only paid spell releases request healing; the host chooses eligible recipients and amounts. */
+  healAllies(ability:LanternHeal){
+    if(!this.active||this.applying)return;
+    if(this.authority)this.resolveHealing(this.ownId,ability);
+    else this.event({kind:'heal-cast',target:'world',ability});
+  }
+  private resolveHealing(id:string,ability:LanternHeal){
+    const g=this.game,src=id===this.ownId?g.player.unit:this.peers().get(id)?.unit,rule=LANTERN_HEALS[ability];
+    if(!rule||!src?.alive||src.hidden||src.rig.spec.classId!=='priest'||g.villageGames?.playing)return;
+    const key=`${id}:${ability}`;
+    if(g.time<(this.healAt.get(key)??-Infinity))return;
+    this.healAt.set(key,g.time+rule.cooldown);
+    for(const target of [this.ownId,...this.peers().keys()]){
+      if(target===id||this.mode==='pvp'&&!this.sameParty(id,target))continue;
+      const dst=target===this.ownId?g.player.unit:this.peers().get(target)?.unit;
+      if(!dst?.alive||dst.hidden||dst.hp>=dst.maxHp||src.distTo(dst)>rule.range||!lineOfSight(g.world,src,dst))continue;
+      const amount=Math.max(1,Math.round(dst.maxHp*rule.fraction));
+      this.applyHealing(target,id,amount);
+      this.event({kind:'heal',target,source:id,amount});
+    }
+  }
+  private applyHealing(target:string,source:string,amount:number){
+    const g=this.game,dst=target===this.ownId?g.player.unit:this.peers().get(target)?.unit;
+    const src=source===this.ownId?g.player.unit:this.peers().get(source)?.unit;
+    if(!dst?.alive||dst.hidden||!Number.isFinite(amount)||amount<=0)return;
+    if(target===this.ownId)g.combat.heal(src??null,dst,amount);
+    else g.events.emit({type:'heal',src:src??null,dst,amount:Math.min(amount,Math.max(0,dst.maxHp-dst.hp)),crit:false});
+    g.vfx.mendGlow?.(dst);
   }
 
   villageMembers(){return this.active?[this.ownId,...[...this.peers()].filter(([,p])=>p.unit?.alive&&!p.unit.hidden).map(([id])=>id)]:['solo'];}
@@ -100,7 +132,7 @@ export class BattleSync {
     }
     this.elapsed = 1;
   }
-  leave() { if(this.active&&!this.sharedArea)this.game.dungeons?.leave(false);this.game.villageGames?.reset();this.game.boats?.disconnect();this.active = false; this.sharedArea=false;this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
+  leave() { if(this.active&&!this.sharedArea)this.game.dungeons?.leave(false);this.game.villageGames?.reset();this.game.boats?.disconnect();this.active = false; this.sharedArea=false;this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.healAt.clear();this.remotePush.clear(); }
   elect(host: string) {
     const was = this.authority; this.host = host;this.seaWarnings.clear();
     if (!was && this.authority) {
@@ -184,7 +216,9 @@ export class BattleSync {
   }
   receive(id: string, e: CombatEvent) {
     const g = this.game, u = this.units.get(e.target);
+    if(e.kind==='heal'){if(id===this.host)this.applyHealing(e.target,e.source!,e.amount!);return;}
     if (this.authority) {
+      if(e.kind==='heal-cast'&&e.ability){this.resolveHealing(id,e.ability);return;}
       const src = this.peers().get(id)?.unit;
       if(e.kind==='dungeon-return'){
         const state=g.dungeons?.state;
