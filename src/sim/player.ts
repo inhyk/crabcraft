@@ -52,7 +52,6 @@ export class PlayerController implements PlayerSim {
   update(dt:number):void {
     const g=this.services,u=this.unit,s=this.state,now=g.time;
     if(!u.alive){if(s.deadUntil!==null&&now>=s.deadUntil)this.respawn();return;}
-    const before={x:u.x,z:u.z,yaw:u.yaw};
     const free=!this.locked(),stunned=now<u.stunUntil;
     let fwd=free?this.held.forward:0,strafe=free?this.held.strafe:0,turn=free?this.held.turn:0;
     if(stunned||s.dash)fwd=strafe=turn=0;
@@ -84,8 +83,6 @@ export class PlayerController implements PlayerSim {
     s.spinT=Math.max(0,s.spinT-dt);
     const velocity=Math.hypot(s.velX,s.velZ);
     if(velocity>1&&s.jumpT<=0){this.footstep-=dt*velocity/5;if(this.footstep<=0){this.footstep=.34;g.emit({type:'footstep',unit:u.ref});}}
-    // Numeric locomotion is driven only by authoritative displacement, independent of rendering.
-    if(dt>0){let dx=(u.x-before.x)/dt,dz=(u.z-before.z)/dt;const speed=Math.hypot(dx,dz);if(speed>14){dx*=14/speed;dz*=14/speed;}const sin=Math.sin(u.yaw),cos=Math.cos(u.yaw);u.pose.localVx=damp(u.pose.localVx,dx*cos-dz*sin,14,dt);u.pose.localVz=damp(u.pose.localVz,dx*sin+dz*cos,14,dt);let d=(u.yaw-before.yaw)%(Math.PI*2);if(d>Math.PI)d-=Math.PI*2;if(d< -Math.PI)d+=Math.PI*2;u.pose.yawRate=damp(u.pose.yawRate,Math.max(-6,Math.min(6,d/dt)),12,dt);u.pose.locomotionTime+=dt;}
     this.updateCombat();this.updateResources(dt);
   }
   private jump():void {

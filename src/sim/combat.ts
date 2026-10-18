@@ -12,6 +12,8 @@ export class Combat implements CombatRules {
     const g = this.services, dst = g.getUnit(target), src = source ? g.getUnit(source) : null;
     if (!dst || (source && !src) || !Number.isFinite(amount) || !dst.alive || dst.hidden) return 0;
     if (!g.policy.damageAllowed(g.context, src, dst)) return 0;
+    if ((g.controller(dst.ref)?.profile === 'dawn' && src?.kind === 'player' && src.level < 100) ||
+        (src && g.controller(src.ref)?.profile === 'dawn' && dst.kind === 'player' && dst.level < 100)) return 0;
     const involved = g.context.members.filter(m => m.villagePlaying && (m.unit.id === dst.ref.id || m.unit.id === src?.ref.id));
     if (involved.length) return 0;
     if (src) src.lastCombat = g.time;
