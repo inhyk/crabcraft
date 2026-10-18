@@ -101,7 +101,7 @@ export class SimulationArea implements AreaContract {
     for(const spawn of this.options.definition.enemies)validatePopulation(this.options.policy.enemyPopulation(spawn,0));
     this.populate();
   }
-  configureLegacy(config:LegacyConfig|null):void {this.boundary();const previous=this.legacy.mode;this.legacy.configure(config);if(previous==='legacy-follower'&&this.legacy.mode==='legacy-host'){for(const e of this.enemyMap.values())e.resumeAuthority();for(const b of this.bossMap.values())b.resumeAuthority();}for(const u of this.unitMap.values())if(!this.playerMap.has(u.ref.id))u.pendingHit=null;this.timers.removeWhere(a=>a.kind==='bossWake'||a.kind==='echoSpawn');}
+  configureLegacy(config:LegacyConfig|null):void {this.boundary();const previous=this.legacy.mode;if(config&&this.legacy.configuration&&config.room!==this.legacy.configuration.room)for(const id of [...this.replicaMap.keys()])this.detachReplica(this.unitMap.get(id)!.ref);this.legacy.configure(config);if(previous==='legacy-follower'&&this.legacy.mode==='legacy-host'){for(const e of this.enemyMap.values())e.resumeAuthority();for(const b of this.bossMap.values())b.resumeAuthority();}for(const u of this.unitMap.values())if(!this.playerMap.has(u.ref.id))u.pendingHit=null;this.timers.removeWhere(a=>a.kind==='bossWake'||a.kind==='echoSpawn');}
   bindLegacy(key:string,unit:EntityRef,owner='world'):void {this.boundary();this.legacy.bind(key,unit,owner);}
   enqueueLegacy(packet:LegacyEnvelope):boolean {this.boundary();return this.legacy.enqueue(packet);}
   drainLegacyRequests(){this.boundary(true);return this.legacy.drain();}

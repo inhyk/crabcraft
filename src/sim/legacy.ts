@@ -51,6 +51,7 @@ export class LegacyAuthority {
   private output:LegacyRequest[]=[];
   private sequences=new Map<string,number>();
   private receipts=new Set<string>();
+  private duelAt=new Map<string,number>();
   private nextRequest=1;
   private nextDeath=1;
   private applying=false;
@@ -59,12 +60,14 @@ export class LegacyAuthority {
   constructor(services:AreaServices,ports:LegacyPorts,limit:number){this.services=services;this.ports=ports;this.limit=limit;}
   get mode():'authoritative'|'legacy-host'|'legacy-follower'{return !this.config?'authoritative':this.config.role==='host'?'legacy-host':'legacy-follower';}
   get active():boolean{return this.config!==null;}
+  get configuration():Readonly<LegacyConfig>|null{return this.config;}
   configure(config:LegacyConfig|null):void {
     if(config&&(!config.room||!config.host||!config.self||!config.localCharacter||!Number.isSafeInteger(config.epoch)||config.epoch<0||(config.role==='host')!==(config.host===config.self)))throw new TypeError('Invalid legacy ownership');
+    if(config&&this.config&&config.room!==this.config.room){for(const [key,b]of this.bindings){if(b.owner==='world'){b.unit=this.ports.advanceLife(b.unit);b.wireLife=null;}else this.bindings.delete(key);}this.duelAt.clear();}
     this.config=config?immutable(config):null;this.inputs=[];this.output=[];this.sequences.clear();
     // Receipts intentionally survive role/epoch changes and reconnects, scoped by room below.
   }
-  bind(key:string,unit:EntityRef,owner='world'):void {const u=this.services.getUnit(unit);if(!key||!u)throw new Error('Invalid legacy binding');const old=this.bindings.get(key);if(old&&!sameRef(old.unit,unit))throw new Error('Legacy key already bound');this.bindings.set(key,{key,unit:immutable(unit),owner,wireLife:owner===this.config?.self||owner==='world'&&this.config?.role==='host'?unit.life:old?.wireLife??null,alive:u.alive});}
+  bind(key:string,unit:EntityRef,owner='world'):void {const u=this.services.getUnit(unit);if(!key||!u)throw new Error('Invalid legacy binding');const old=this.bindings.get(key);if(old&&!sameRef(old.unit,unit))throw new Error('Legacy key already bound');this.bindings.set(key,{key,unit:immutable(unit),owner,wireLife:old?old.wireLife:owner===this.config?.self||owner==='world'&&this.config?.role==='host'?unit.life:null,alive:u.alive});}
   unbind(key:string):void {this.bindings.delete(key);}
   key(ref:EntityRef):string|null {return [...this.bindings.values()].find(b=>sameRef(b.unit,ref))?.key??null;}
   life(key:string):number|undefined {return this.bindings.get(key)?.wireLife??undefined;}
@@ -86,7 +89,7 @@ export class LegacyAuthority {
     const s=this.services,src=source?s.getUnit(source):null,dst=s.getUnit(target),local=this.local();if(!dst)return 0;
     const from=this.binding(source),to=this.binding(target),damage=Math.max(1,Math.round(amount));
     if(src&&local&&sameRef(src.ref,local.state.unit)&&to&&to.owner!=='world'&&to.owner!==c.self&&dst.kind==='player'){
-      if(s.context.pvp==='disabled')return 0;this.request({kind:'duel',target:to.key,amount:damage,crit:options.crit,sourceLife:from?.wireLife??undefined,targetLife:to.wireLife??undefined});if(options.rage)local.gainRage?.(options.rage);src.lastCombat=s.time;return damage;
+      if(!this.duelEligible(src,dst))return 0;if(c.role==='host')return this.duel(src,dst,amount,options.crit);this.request({kind:'duel',target:to.key,amount:damage,crit:options.crit,sourceLife:from?.wireLife??undefined,targetLife:to.wireLife??undefined});if(options.rage)local.gainRage?.(options.rage);src.lastCombat=s.time;return damage;
     }
     if(c.role==='follower'&&dst.reaction==='hostile'){
       if(!src||!local||!sameRef(src.ref,local.state.unit)||!to||!dst.alive||dst.hidden||dst.invulnerable)return 0;
@@ -98,6 +101,8 @@ export class LegacyAuthority {
     }
     return null;
   }
+  private duelEligible(source:SimUnit,target:SimUnit):boolean {const s=this.services,from=s.context.members.find(m=>sameRef(m.unit,source.ref)),to=s.context.members.find(m=>sameRef(m.unit,target.ref));return s.context.pvp!=='disabled'&&!sameRef(source.ref,target.ref)&&source.alive&&target.alive&&!source.hidden&&!target.hidden&&!from?.villagePlaying&&!to?.villagePlaying&&!(from?.party&&from.party===to?.party)&&Math.hypot(source.x-target.x,source.z-target.z)<=38&&s.policy.damageAllowed(s.context,source,target);}
+  private duel(source:SimUnit,target:SimUnit,amount:number,crit=false):number {const from=this.binding(source.ref),to=this.binding(target.ref);if(!from||!to||!this.duelEligible(source,target)||!Number.isFinite(amount)||amount<=0||this.services.time<(this.duelAt.get(from.owner)??-1))return 0;this.duelAt.set(from.owner,this.services.time+.06);const damage=Math.min(Math.round(amount),Math.max(1,source.maxHp*2));source.lastCombat=target.lastCombat=this.services.time;if(to.owner===this.config?.self){this.applying=true;try{return this.services.combat.damage(source.ref,target.ref,damage,{crit});}finally{this.applying=false;}}this.request({kind:'hit',target:to.key,source:from.key,amount:damage,crit,sourceLife:from.wireLife??undefined,targetLife:to.wireLife??undefined});return damage;}
   reportDamage(source:EntityRef|null,target:EntityRef,amount:number,options:HitOptions):void {if(this.config?.role!=='host'||this.applying)return;const to=this.binding(target),from=this.binding(source);if(to?.owner==='world')this.request({kind:'hit',target:to.key,source:from?.key,amount,crit:options.crit,sourceLife:from?.wireLife??undefined,targetLife:to.wireLife??undefined});}
   onDeath(victim:EntityRef,killer:EntityRef|null):boolean {
     if(!this.config)return false;const binding=this.binding(victim),unit=this.services.getUnit(victim);if(!binding||binding.owner!=='world'||!unit||unit.reaction!=='hostile')return true;
@@ -109,20 +114,20 @@ export class LegacyAuthority {
   private grant(binding:Binding,serial:number,killer:EntityRef|null,receipt=this.receipt(binding,serial,binding.wireLife??undefined)):void {if(this.receipts.has(receipt))return;this.ports.grantDeath(binding.unit,killer);this.receipts.add(receipt);}
   requestBeacon(lit:boolean):boolean {if(this.config?.role!=='follower')return false;this.request({kind:'beacon',lit});return true;}
   requestChallenge(ref:EntityRef):boolean {if(this.config?.role!=='follower')return false;const key=this.key(ref);if(key)this.request({kind:'challenge',target:key});return true;}
-  private observe(value:LegacyUnitObservation):void {
-    const b=this.bindings.get(value.key),u=b?this.services.getUnit(b.unit):null;if(!b||!u)return;
-    if(![value.x,value.y,value.z,value.yaw,value.hp,value.maxHp,value.level,value.stun,value.slow,value.slowPct,value.rust,value.rustFor].every(Number.isFinite)||value.maxHp<=0||value.hp<0||value.hp>value.maxHp||value.level<1||value.life!==undefined&&!uint(value.life))return;
+  private observe(value:LegacyUnitObservation):boolean {
+    const b=this.bindings.get(value.key),u=b?this.services.getUnit(b.unit):null;if(!b||!u)return false;
+    if(![value.x,value.y,value.z,value.yaw,value.hp,value.maxHp,value.level,value.stun,value.slow,value.slowPct,value.rust,value.rustFor].every(Number.isFinite)||value.maxHp<=0||value.hp<0||value.hp>value.maxHp||value.level<1||value.life!==undefined&&!uint(value.life))return false;
     const reported=this.config?.relayLife?value.life:undefined;
-    if(reported!==undefined&&b.wireLife!==null&&reported<b.wireLife)return;
+    if(reported!==undefined&&b.wireLife!==null&&reported<b.wireLife)return false;
     if(reported!==undefined&&b.wireLife!==null&&reported>b.wireLife||reported===undefined&&!b.alive&&value.alive)b.unit=this.ports.advanceLife(b.unit);
     if(reported!==undefined)b.wireLife=reported;const died=b.alive&&!value.alive;b.alive=value.alive;
     Object.assign(u,{x:value.x,y:value.y,z:value.z,yaw:value.yaw,hp:value.hp,maxHp:value.maxHp,level:value.level,alive:value.alive,hidden:value.hidden,invulnerable:value.invulnerable,targetable:value.targetable,stunUntil:this.services.time+value.stun,slowUntil:this.services.time+value.slow,slowPct:value.slowPct,rust:value.rust,rustUntil:this.services.time+value.rustFor});
-    this.ports.observeEnemy(b.unit,value);if(died)this.ports.animate(b.unit,'death');
+    this.ports.observeEnemy(b.unit,value);if(died)this.ports.animate(b.unit,'death');return true;
   }
   private apply(packet:LegacyEnvelope):void {
     const c=this.config;if(!c||packet.room!==c.room||packet.epoch!==c.epoch)return;
     const op=packet.operation,host=packet.sender===c.host,s=this.services;
-    if(op.kind==='observe'){if(!host&&op.units.some(v=>this.bindings.get(v.key)?.owner!==packet.sender))return;for(const unit of op.units)this.observe(unit);if(host)for(const boss of op.bosses??[]){const ref=this.bindings.get(boss.key)?.unit;if(ref)this.ports.observeBoss(ref,boss);}return;}
+    if(op.kind==='observe'){if(!host&&op.units.some(v=>this.bindings.get(v.key)?.owner!==packet.sender))return;if(new Set(op.units.map(u=>u.key)).size!==op.units.length)return;const accepted=new Set<string>();for(const unit of op.units)if(this.observe(unit))accepted.add(unit.key);if(host)for(const boss of op.bosses??[]){const ref=this.bindings.get(boss.key)?.unit;if(ref&&accepted.has(boss.key))this.ports.observeBoss(ref,boss);}return;}
     const target='target'in op?this.actor(op.target):null,to='target'in op?this.bindings.get(op.target):undefined;
     if('targetLife'in op&&!this.lifetime(to,op.targetLife))return;
     if(op.kind==='death'){
@@ -133,9 +138,9 @@ export class LegacyAuthority {
     }
     if(op.kind==='attack'||op.kind==='condition'||op.kind==='duel'){
       if(c.role!=='host'||host)return;const from=[...this.bindings.values()].find(b=>b.owner===packet.sender),source=from?s.getUnit(from.unit):null;
-      if(!source?.alive||!target?.alive||target.hidden||target.invulnerable||Math.hypot(source.x-target.x,source.z-target.z)>=38||!this.lifetime(from,op.sourceLife))return;
+      if(!source?.alive||!target?.alive||target.hidden||target.invulnerable||op.kind!=='duel'&&Math.hypot(source.x-target.x,source.z-target.z)>=38||!this.lifetime(from,op.sourceLife))return;
       if(op.kind==='attack'){if(target.reaction==='hostile'&&bounded(op.amount,1,Number.MAX_SAFE_INTEGER))s.combat.damage(source.ref,target.ref,op.amount,{crit:op.crit});}
-      else if(op.kind==='duel'){if(s.context.pvp!=='disabled'&&bounded(op.amount,1,Number.MAX_SAFE_INTEGER)){if(to?.owner===c.self)s.combat.damage(source.ref,target.ref,op.amount,{crit:op.crit});else this.request({kind:'hit',target:to!.key,amount:Math.max(1,Math.round(op.amount)),crit:op.crit,targetLife:to?.wireLife??undefined});}}
+      else if(op.kind==='duel'){this.duel(source,target,op.amount,op.crit);}
       else if(op.kind==='condition'){const f=op.condition;if(![f.stun,f.slow,f.slowPct,f.pushX,f.pushZ,f.pushTime].every(Number.isFinite)||target.reaction!=='hostile')return;target.stunUntil=Math.max(target.stunUntil,s.time+Math.max(0,Math.min(2,f.stun)));if(f.stun>0)s.cancelPendingHit(target.ref);if(f.slow>0){target.slowUntil=Math.max(target.slowUntil,s.time+Math.min(4,f.slow));target.slowPct=Math.max(0,Math.min(.5,f.slowPct));}if(f.pushTime>0&&target.kind!=='boss'){target.pushX=f.pushX;target.pushZ=f.pushZ;target.pushTime=Math.min(.5,f.pushTime);}}return;
     }
     if(op.kind==='hit'){if(!host||!target||!bounded(op.amount,1,Number.MAX_SAFE_INTEGER))return;const from=op.source?this.bindings.get(op.source):undefined;if(!this.lifetime(from,op.sourceLife))return;if(to?.owner===c.self){this.applying=true;try{s.combat.damage(from?.unit??null,target.ref,op.amount,{crit:op.crit});}finally{this.applying=false;}}else s.emit({type:'damage',src:from?.unit??null,dst:target.ref,amount:op.amount,crit:!!op.crit});return;}
@@ -144,5 +149,5 @@ export class LegacyAuthority {
     if(op.kind==='beacon'){if(c.role==='host'&&!host)this.ports.setBeacon(op.lit);return;}
     if(op.kind==='challenge'&&c.role==='host'&&!host&&target){const source=[...this.bindings.values()].find(b=>b.owner===packet.sender),unit=source?s.getUnit(source.unit):null;if(unit?.alive&&unit.level>=target.level)this.ports.challenge(target.ref);}
   }
-  debugState(){return immutable({config:this.config,bindings:[...this.bindings.values()],inputs:this.inputs,requests:this.output,sequences:[...this.sequences],receipts:[...this.receipts],nextRequest:this.nextRequest,nextDeath:this.nextDeath});}
+  debugState(){return immutable({config:this.config,bindings:[...this.bindings.values()],inputs:this.inputs,requests:this.output,sequences:[...this.sequences],duelAt:[...this.duelAt],receipts:[...this.receipts],nextRequest:this.nextRequest,nextDeath:this.nextDeath});}
 }

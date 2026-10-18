@@ -1,6 +1,9 @@
 // A crab in the world: rig + motion controller + combat stats. Player, NPCs, townsfolk, enemies
 // and the boss are all Units; their behaviour lives in separate controllers.
 import * as THREE from 'three';
+import type { AreaServices, EntityRef, SimUnit } from '../sim/types.ts';
+import { actionRequest } from '../sim/data/actions.ts';
+import { teleport as numericTeleport, moveTo as numericMoveTo, feedLocomotion as numericFeed } from '../sim/unit.ts';
 import type { CrabRig, Expression } from '../crab/types';
 import { actionHitDelay, isSkill, skillWindow, type SkillPart } from '../motion/skills';
 import type { MotionController, MotionId } from '../motion/types';
@@ -55,6 +58,19 @@ export function lineOfSight(world: World, from: Unit, to: Unit): boolean {
 }
 
 export class Unit {
+  private simulation: { state:SimUnit; services:AreaServices } | null = null;
+  private numericPosition:THREE.Vector3|null=null;
+  get simState():SimUnit|null{return this.simulation?.state??null;}
+  get ref():EntityRef|null{return this.simulation?.state.ref??null;}
+  bindSimulation(state:SimUnit,services:AreaServices):void {
+    this.simulation={state,services};
+    if(!this.numericPosition){const owner=this;this.numericPosition=new THREE.Vector3();for(const key of ['x','y','z'] as const)Object.defineProperty(this.numericPosition,key,{configurable:true,enumerable:true,get:()=>owner.simulation!.state[key],set:(value:number)=>{owner.simulation!.state[key]=value;}});}
+    for(const key of ['level','yaw','radius','height','hp','maxHp','alive','stunUntil','slowUntil','slowPct','rust','rustUntil','absorb','absorbMax','absorbUntil','blessingUntil','lastCombat','pushX','pushZ','pushTime','lift','hidden','targetable','invulnerable'] as const)Object.defineProperty(this,key,{configurable:true,enumerable:true,get:()=>this.simulation!.state[key],set:value=>{(this.simulation!.state as unknown as Record<string,unknown>)[key]=value;}});
+    this.pendingHit=null;
+  }
+  /** Render only. The canonical pose clock and root carry have already advanced in Area. */
+  private applyNumericPose():void {const u=this.simulation!.state;this.rig.root.position.set(u.x,u.y,u.z);this.rig.root.rotation.y=u.yaw;this.rig.setPose(u.pose.appliedQ);const p=u.pose.appliedPosition,m=this.rig.metersToUnits;this.rig.body.position.set(p[0]*m,p[1]*m,p[2]*m);const q=u.pose.appliedRotation;this.rig.body.quaternion.set(q[0],q[1],q[2],q[3]);}
+
   private static nextId = 1;
   readonly id = Unit.nextId++;
   title = '';
@@ -128,7 +144,7 @@ export class Unit {
   }
 
   get pos(): THREE.Vector3 {
-    return this.rig.root.position;
+    return this.numericPosition??this.rig.root.position;
   }
 
   get hostile(): boolean {
@@ -137,6 +153,7 @@ export class Unit {
 
   /** Measure height and radius from the rig's head socket (contract: top of the upper shell). */
   measure(): void {
+    if(this.simulation)return;
     const root = this.rig.root;
     root.updateMatrixWorld(true);
     const head = this.rig.getSocket('head').getWorldPosition(tmpV);
@@ -152,6 +169,7 @@ export class Unit {
 
   /** Place without interpolation (spawn, respawn, teleport). */
   teleport(world: World, x: number, z: number, yaw?: number): void {
+    if(this.simulation){numericTeleport(this.simulation.state,this.simulation.services.query,x,z,yaw);return;}
     const p = world.resolveCollision(x, z, this.radius, tmp2);
     this.pos.set(p.x, world.heightAt(p.x, p.y), p.y);
     this.prevX = this.pos.x;
@@ -164,6 +182,7 @@ export class Unit {
 
   /** Move to x,z with collision and ground following. */
   moveTo(world: World, x: number, z: number, dt: number): void {
+    if(this.simulation){numericMoveTo(this.simulation.state,this.simulation.services.query,x,z,dt);return;}
     const p = world.resolveCollision(x, z, this.radius, tmp2);
     this.pos.x = p.x;
     this.pos.z = p.y;
@@ -216,6 +235,8 @@ export class Unit {
    * data, or after hitAt seconds; the clip's own events never land a blow.
    */
   act(id: MotionId, o: ActionOptions = {}): void {
+    if(this.simulation){if(o.onHit)throw new Error('Numeric actions require a typed impact plan');this.simulation.services.startAction(this.simulation.state.ref,actionRequest(this.simulation.services.actionData,id,{upper:o.upper,part:o.part,from:o.from,to:o.to,speed:o.speed,loop:o.loop,fade:o.fade,carryRoot:o.carryRoot}));return;}
+
     this.onAction?.(id);
     // A skill clip is the whole recorded rollout: play its move, at its rate, unless told otherwise.
     const w = isSkill(id) ? skillWindow(id, o.part ?? (o.loop ? 'channel' : 'move'), o.speed) : null;
@@ -276,6 +297,7 @@ export class Unit {
    * (vx toward its left, vz forward, yawRate positive = left).
    */
   feedLocomotion(dt: number): void {
+    if(this.simulation){numericFeed(this.simulation.state,dt);return;}
     if (dt <= 0) return;
     let dx = (this.pos.x - this.prevX) / dt;
     let dz = (this.pos.z - this.prevZ) / dt;
@@ -301,11 +323,13 @@ export class Unit {
   }
 
   get moveSpeed(): number {
+    if(this.simulation)return Math.hypot(this.simulation.state.pose.localVx,this.simulation.state.pose.localVz);
     return Math.hypot(this.locoX, this.locoZ);
   }
 
   /** Simulation step: a pending swing lands when its time comes, on screen or not. */
   updateHit(dt: number): void {
+    if(this.simulation)throw new Error('Numeric pending hits are stepped only by Area');
     if (!this.pendingHit) return;
     this.pendingHit.left -= dt;
     if (this.pendingHit.left <= 0) {
@@ -317,7 +341,7 @@ export class Unit {
 
   /** Seconds until the pending swing lands, or null. */
   get pendingHitIn(): number | null {
-    return this.pendingHit ? this.pendingHit.left : null;
+    return this.simulation?this.simulation.state.pendingHit?.left??null:this.pendingHit ? this.pendingHit.left : null;
   }
 
   /** Per-frame visuals: LED flash, motion and rig update. */
@@ -328,6 +352,7 @@ export class Unit {
     }
     if (this.exprHold > 0) this.exprHold -= dt;
     if (this.culled || this.hidden) return;
+    if(this.simulation){this.applyNumericPose();this.rig.update(dt);return;}
     if (!this.alive && this.deathT >= 0) {
       this.deathT += dt;
       // Some runtimes return to idle after a one-shot clip; a dead crab keeps its last pose.
@@ -341,6 +366,7 @@ export class Unit {
   }
 
   cancelPendingHit(): void {
+    if(this.simulation){this.simulation.services.cancelPendingHit(this.simulation.state.ref);return;}
     this.pendingHit = null;
   }
 
