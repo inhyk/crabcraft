@@ -47,3 +47,19 @@ test('real combat crit-scaled lethal damage invokes death only once, heals prese
 
 
 test('world and player commands run in supplied order, forge rank affects only later attacks',()=>{for(const forgeFirst of [true,false]){const {area,player,unit,target}=fixture('mage',query,{npcs:[{id:'pip',position:{x:0,y:0,z:0},yaw:0}]});player.state.coins=100;const r=new Random(area.services.random.state()),crit=r.next()<.12,damage=(95+r.next()*20)*(crit?1.75:1);const forge={kind:'forgeBuy',npcId:'pip'},ability={kind:'ability',slot:5};area.step(new Map([[unit.ref.id,{seq:1,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands:forgeFirst?[forge,ability]:[ability,forge]}]]));assert.equal(player.state.attackRank,1);assert.equal(player.state.coins,0);assert.equal(5000-target.hp,Math.round(damage*(forgeFirst?1.08:1)));}});
+
+// Exercise the real Area Combat so event, health cap and payment contracts stay coupled.
+test('steam blink heals10 after free or blocked travel, caps HP, and preserves cost/recovery',()=>{
+ for(const [blocked,missingHp,expectedGain] of [[false,25,10],[true,25,10],[true,2,2],[false,0,0]]){
+  const {area,player,unit}=fixture('mage',blocked?{...query,resolveCollision(x,z,r,out){return out.set(0,0);}}:query);
+  unit.hp=unit.maxHp-missingHp;
+  const hp=unit.hp,resource=player.state.resource;
+  area.drainEvents();player.useAbility(3);
+  assert.equal(unit.z,blocked?0:8);assert.equal(unit.hp-hp,expectedGain);
+  assert.equal(player.state.resource,resource-10);assert.equal(player.state.cooldowns['steam-blink'].end,15);
+  const events=area.drainEvents().map(r=>r.event),heals=events.filter(e=>e.type==='heal');
+  assert.equal(heals.length,1);assert.equal(heals[0].amount,10);assert.deepEqual(heals[0].src,unit.ref);assert.deepEqual(heals[0].dst,unit.ref);
+  assert.ok(events.findIndex(e=>e.type==='heal')<events.findIndex(e=>e.type==='ability'&&e.ability==='steam-blink'));
+  player.useAbility(3);assert.equal(unit.hp,hp+expectedGain);assert.equal(player.state.resource,resource-10);
+ }
+});
