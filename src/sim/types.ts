@@ -1,3 +1,4 @@
+import type {BoatCommand, BoatState, VillageRound, FeatureEvent, NpcFeatureEvent} from './features/types.ts';
 /** Shared contract for the implemented deterministic numeric simulation core.
  * Current gameplay refresh follows canonical dev 60df24f plus the merged S4 foundation.
  * Browser facade conversion, S1 event wiring and S3 baked query integration have separate gates.
@@ -165,6 +166,7 @@ export type ImpactShape =
  * Critical invariants: event consumption cannot perform damage, reward, teleport or respawn.
  */
 export type CoreEvent =
+  | { type:'feature'; event:FeatureEvent|NpcFeatureEvent }
   | { type: 'damage'; src: EntityRef | null; dst: EntityRef; amount: number; crit: boolean; school?: School }
   | { type: 'heal'; src: EntityRef | null; dst: EntityRef; amount: number; crit: boolean }
   | { type: 'blocked'; unit: EntityRef; reason: 'evade' | 'absorbed' }
@@ -213,7 +215,9 @@ export type PlayerCommand =
   | { kind: 'forgeBuy' | 'forgeUpgrade'; npcId: string; slot?: EquipmentSlot; request?: number }
   | { kind: 'travel'; gateId: string }
   | { kind: 'bossChallenge'; profile: BossSim['profile'] }
-  | { kind: 'endingReplay' };
+  | { kind: 'endingReplay' | 'talkEnd' }
+  | { kind:'boat'; command:BoatCommand }
+  | { kind:'village'; mode:'hide'|'tag'|'stop' };
 /** Input seq acknowledgment/transport validation is host work; no client position/HP/result.
  * Continuous held values replace previous values; commands execute once in supplied order.
  * Core retains continuous fields on missing input, but commands only run for seq>lastConsumedSeq.
@@ -247,6 +251,7 @@ export interface PlayerState {
   dash: { target: EntityRef; t: number } | null;
   deadUntil: number | null; role: 'authoritative'; controlsLocked: boolean; talkTarget: EntityRef | null;
   quests: QuestState; flags: Record<string, boolean>; cogMisses: number;
+  achievements: {earned:string[];distance:number}; lighthouseSecretFound:boolean;
 }
 export interface PlayerSim extends CombatController {
   readonly state: PlayerState;
@@ -295,7 +300,7 @@ export interface AreaDefinition {
   readonly townsfolk?: readonly AmbientSpawn[];
   readonly pois: Readonly<Record<string, Poi>>; readonly enemies: readonly EnemySpawn[];
   readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string; freedPosition?: Readonly<Vec3>; captiveBeforeVictory?: boolean }[];
-  readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string }[];
+  readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string; targetable?:boolean; personalVisibility?:{flag:'rustCleared'|'abyssCleared'|'trueCleared'|'finalCleared'|'frostCleared';value:boolean} }[];
   readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string; channelTo?: Readonly<Vec3> }[];
 }
 /** Required explicit host policy. Formula/levels are configuration, not newly decided balance.
@@ -312,7 +317,7 @@ export interface AreaPolicy {
 }
 export interface AreaContext {
   mode: 'public' | 'party-encounter' | 'legacy-room';
-  members: readonly { character: CharacterId; unit: EntityRef; party: string | null; villagePlaying: boolean; seatedBoat: string | null }[];
+  members: readonly { character: CharacterId; unit: EntityRef; party: string | null; villagePlaying: boolean; featureLocked?:boolean; seatedBoat: string | null }[];
   pvp: 'disabled' | 'party-only';
 }
 export interface EarnedGrant {
@@ -366,6 +371,8 @@ export interface AreaSnapshot {
   readonly units: readonly Readonly<SimUnit>[];
   readonly players: readonly Readonly<PlayerState>[];
   readonly projectiles: readonly Readonly<ProjectileState>[];
+  readonly features: {readonly beaconLit:boolean;readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
+  readonly recovery: {readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
 } // Deep copied and stable sorted by ID; slowPct remains fraction0..1; S4 adapter scales to0..100.
 /** Complete canonical test/debug data, not a production persistence protocol. No functions or refs. */
 export type DebugValue = null | boolean | number | string | readonly DebugValue[] | { readonly [key: string]: DebugValue };
@@ -400,6 +407,7 @@ export interface TransferDTO {
     absorbRemaining: number; absorb: number; absorbMax: number; blessingRemaining: number };
   history: { combatAge: number; spendAge: number; attackAge: number; nextSwingRemaining: number };
   quests: QuestState; flags: Readonly<Record<string, boolean>>; cogMisses: number;
+  achievements?: {earned:string[];distance:number}; lighthouseSecretFound?:boolean;
   appliedGrantIds: readonly string[];
 }
 export interface Admission { token: string; character: CharacterId; destination: AreaId; spawn: string; expiresAtHostTick: number }
