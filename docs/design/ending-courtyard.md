@@ -1,0 +1,19 @@
+# Personal ending courtyard
+
+The player watches their server-owned celebration and then uses Skip or Continue. The client owns scenery and display only. Phase timing, cast poses, rewards, network recovery and controls stay unchanged.
+
+Reference: `tmp/server-world-evidence-20261018/world-main-c71/production-create-reconnect.png`, inspected at1280x720. Adopt W1 red tile roofs, timber/stone modules, paving, planted edges, readable warm windows and gold HUD trim. The original1280x800 celebration had a plain tan disk, blue void and cropped front row. The original credits used an unstyled rectangular button and dense centered license copy. No reference interaction was inferred from a still image.
+
+Use existing `models/world/{village,nature,props}.glb`, W1 TownBuilder and Pincer Fountain, actual W1 Terrain splat/cobble/rock material and existing source lamp-post profile and `art/ui/divider-gold.webp`. No new external/generated artwork. Layering: textured open performance court in the foreground, low benches/market/flower edges in the middle, chapel bell tower and timber houses behind, tree silhouettes and mist beyond. Warm stone and terracotta stay subordinate to the cast. Keylight gold, lantern teal. Keep centre clear.
+
+HUD tokens reuse `--font-display` and `--font-body` from `src/ui/kit.css`. Gold `#edcd89`, dark teal `#102b30`, copy `#f6e9c9`. Status13px, caption22-36px, controls15px with48px narrow touch height. Credits width760px maximum, mobile width viewport minus32px; independent scroll region and visible focus. Full original NOTICE text remains available in the scroll region. CSS: `src/multiplayer/endingPresentation.css`.
+
+Camera preserves the server-tick orbit direction, focus and progress. A presentation-only frustum distance guard fits all observed cast bounds with space for letterboxing and HUD. No pose, phase or gameplay positions change. Capture desktop1280x800 and narrow390x844 with the same accepted observation/camera recipe for before/after comparisons. Trusted W4-clear integration fixtures must remain visibly labelled; they do not prove earned story completion.
+
+Verification includes actual Game/PG/binary WS, responsive credits/controls, cast bounds, recovery and disposal. Aesthetic scores are subjective review signals, not a measured world-quality ranking. Design Boost source reviewed2026-10-18, latest source update2026-10-07 02:35KST; W1 design-bar source reviewed2026-10-18. No timing/reward/host changes are part of this slice.
+
+The live integration and controlled before/after renders use the same requested graphics quality per run (`low` by default, explicit `high` run supported). The W1 reference quality is unconfirmed, so these comparisons do not establish a higher W1 rubric score. Root review owns the final design acceptance; self-review scores are iteration signals only.
+
+Verification checkpoint: Node24 focused ending client/schema/controller/integration18/18, `pnpm10.10.0 build` passes. Actual Game/PG/WS runs pass at1280x800 low,390x844 low and1280x800 high. Each covers19 real cast rigs, initial and tick500 late-orbit bounds, credits, ordered pointer controls, same-incarnation reconnect, stale listener rejection, chat/NPC continuation, unchanged gameplay progress, camera release and late asynchronous scenery disposal. Each owned QA host shut down durably with zero unresolved obligations. Same accepted observation and exact camera matrix are used for paired before/after renders at each setting. Original PNGs and reports are in `tmp/qa/world-ending-courtyard{,-narrow,-high}/`.
+
+Final self-review remains88/100, below90. The surrounding terrain is flatter than the W1 village reference; W1 reference graphics quality is unconfirmed. This is a reviewable implementation checkpoint, with root design acceptance pending. It is not a claim of earned progression, W1 superiority, deployment or final design approval.

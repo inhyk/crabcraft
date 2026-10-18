@@ -4,6 +4,7 @@ import type { GameplayState } from '../../server/world/gameplay/protocol.ts';
 import type { GameplayCommand } from '../../server/world/gameplay/intents.ts';
 import type { EndingObservation } from '../sim/features/endingPresentation.ts';
 import { EndingPresentationView } from './endingPresentationView.ts';
+import { createEndingStage, type EndingStage } from './endingStage.ts';
 
 /** These are accepted observation-header fields, never a second network envelope. */
 export type EndingPresentationFrame=Readonly<Pick<GameplayState,'selfRef'>&Pick<GameplayState['header'],'session'|'area'|'epoch'|'catalog'|'sequence'>>;
@@ -22,18 +23,19 @@ const same=(a:EntityRef,b:EntityRef)=>a.area===b.area&&a.id===b.id&&a.life===b.l
 /** Owns only a private display scene. It has no gameplay Unit, controller, clock or reward port. */
 export class WorldEndingPresentation {
  readonly scene=new THREE.Scene();
- readonly camera=new THREE.PerspectiveCamera(50,1,.1,100);
+ readonly camera=new THREE.PerspectiveCamera(50,1,.1,500);
  private readonly root=new THREE.Group();
- private readonly floor=new THREE.Mesh(new THREE.CircleGeometry(13,80),new THREE.MeshStandardMaterial({color:0x846947,roughness:.9}));
+ private readonly scenery=new THREE.Group();
+ private stage:EndingStage|null=null;
  private view:EndingPresentationView|null=null;
  private stream='';private frameSequence=-1;private generation=0;private disposed=false;
  private observed:{id:string;sequence:number;tick:number;terminal:boolean}|null=null;
  private current:EndingObservation|null=null;private pendingControl='';private ownsCamera=false;
  constructor(private readonly ports:Ports){
-  this.scene.background=new THREE.Color('#1b3042');this.scene.add(this.root);
-  this.scene.add(new THREE.HemisphereLight(0xd9f2ff,0x4b3d20,2.8));
-  const light=new THREE.DirectionalLight(0xffd8a0,3);light.position.set(5,12,5);this.scene.add(light);
-  this.floor.rotation.x=-Math.PI/2;this.floor.position.y=-.015;this.scene.add(this.floor);
+  this.scene.background=new THREE.Color('#acb9ae');this.scene.fog=new THREE.Fog('#c4c1ac',65,180);this.scene.add(this.root,this.scenery);
+  this.scene.add(new THREE.HemisphereLight(0xc6e7df,0x526045,2.1));
+  const light=new THREE.DirectionalLight(0xffd6a0,2.8);light.position.set(-18,28,18);light.castShadow=true;light.shadow.mapSize.set(2048,2048);light.shadow.camera.left=-40;light.shadow.camera.right=40;light.shadow.camera.top=40;light.shadow.camera.bottom=-40;light.shadow.camera.near=1;light.shadow.camera.far=100;light.shadow.bias=-.00015;light.shadow.normalBias=.035;this.scenery.add(light,light.target);
+  void createEndingStage().then(stage=>{if(this.disposed){stage.dispose();return;}this.stage=stage;this.scenery.add(stage.root);}).catch(error=>{if(!this.disposed)this.ports.error?.(error instanceof Error?error.message:'Ending scenery failed');});
   this.camera.position.set(0,6,12);this.camera.lookAt(0,1,0);
  }
  get active():boolean{return this.ownsCamera;}
@@ -64,7 +66,7 @@ export class WorldEndingPresentation {
    if(!this.view.commit(observation))return false;
    this.observed={id:observation.id,sequence:observation.sequence,tick:observation.tick,terminal:false};
    this.current=structuredClone(observation);this.pendingControl='';
-   const hero=observation.cast[0];if(hero)this.floor.position.set(hero.position.x,hero.position.y-.015,hero.position.z);
+   const hero=observation.cast[0];if(hero)this.scenery.position.set(hero.position.x,hero.position.y,hero.position.z);
    if(!this.ownsCamera){this.ports.activate(this.scene,this.camera);this.ports.cinematic(true);this.ownsCamera=true;}
    return true;
   }catch(error){this.clearView();this.ports.error?.(error instanceof Error?error.message:'Ending display failed');return false;}
@@ -83,5 +85,5 @@ export class WorldEndingPresentation {
   this.generation++;this.view?.dispose();this.view=null;this.current=null;this.pendingControl='';
   if(this.ownsCamera){this.ownsCamera=false;this.ports.cinematic(false);if(this.ports.alive())this.ports.restore();}
  }
- dispose():void {if(this.disposed)return;this.clearView();this.disposed=true;this.scene.visible=false;this.floor.geometry.dispose();this.floor.material.dispose();this.scene.clear();}
+ dispose():void {if(this.disposed)return;this.clearView();this.disposed=true;this.scene.visible=false;this.stage?.dispose();this.stage=null;this.scenery.traverse(object=>{if(object instanceof THREE.DirectionalLight)object.shadow.dispose();});this.scene.clear();}
 }
