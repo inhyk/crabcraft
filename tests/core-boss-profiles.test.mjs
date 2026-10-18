@@ -10,7 +10,7 @@ function fight(profile='rust',levels=[100,100]){
   b.wake();for(let i=0;i<74;i++)h.step([b]);assert.equal(b.state,'fight');return {...h,b,ps};
 }
 function advanceTo(h,kind,phase=1){
-  if(phase>1)h.b.actor.hp=h.b.actor.maxHp*(phase===2?(h.b.isDawn?.7:.5):(h.b.isDawn?.3:.2));
+  if(phase>1)h.b.actor.hp=h.b.actor.maxHp*(phase===2?(h.b.isEndgame?.7:.5):(h.b.isEndgame?.3:.2));
   for(let i=0;i<10000;i++){
     h.step([h.b]);const e=h.events.at(-1);const warning=h.events.findLast(e=>e.type==='telegraph'&&e.mech===kind);
     if(warning&&h.b.mechName===kind&&h.b.telegraphActive){
@@ -173,4 +173,69 @@ test('actual Area rust add pool stays three level1 attackers across resets with 
     area.step(new Map());boss.actor.hp=boss.actor.maxHp*.5;area.step(new Map());assert.equal(boss.adds.length,3);assert.equal(area.enemies.size,3);
     assert.deepEqual(boss.adds.map(e=>e.unit.id),first.map(r=>r.id));assert.ok(boss.adds.every((e,i)=>e.unit.life===old[i].life+1));assert.ok(old.every(r=>area.services.getUnit(r)===null));
   }
+});
+
+function actualFrost(){
+  const area=realCreatureArea('frost-real','w4','frost');
+  const low=area.attachFresh('frost-299','priest','human','spawn'),high=area.attachFresh('frost-300','priest','human','spawn');
+  const p299=area.services.player(low),p300=area.services.player(high),u299=area.services.getUnit(low),u300=area.services.getUnit(high);
+  u299.level=299;u300.level=300;u299.hp=u299.maxHp=u300.hp=u300.maxHp=10000;
+  p299.state.flags.abyssCleared=p300.state.flags.abyssCleared=true;
+  const boss=[...area.bosses.values()][0];boss.wake();for(let i=0;i<75;i++)area.step(new Map());
+  assert.equal(boss.state,'fight');return {area,boss,p299,p300,u299,u300};
+}
+function frostWarning(h,kind,phase){
+  if(phase>1)h.boss.actor.hp=h.boss.actor.maxHp*(phase===2?.7:.3);
+  h.area.drainEvents();
+  for(let i=0;i<10000;i++){
+    h.area.step(new Map());h.u300.hp=h.u300.maxHp;h.u299.hp=h.u299.maxHp;
+    const event=h.area.drainEvents().map(r=>r.event).find(e=>e.type==='telegraph'&&e.mech===kind);
+    if(event){h.area.services.cancelPendingHit(h.boss.unit);return event;}
+  }
+  throw Error(`No actual Frost ${kind}`);
+}
+test('five current profiles preserve independent HP, damage, tempo, coins and XP values',()=>{
+  const values={rust:[3,1300,1,1,150,500],abyss:[10,2600,2.1,.85,500,1000],eclipse:[20,6200,3.2,.78,1200,1500],dawn:[100,180000,32,.68,5000,3200],frost:[300,620000,65,.64,15000,18000]};
+  for(const [profile,want]of Object.entries(values)){const p=BOSS_PROFILES[profile];assert.deepEqual([p.level,p.hp,p.damage,p.tempo,p.coins,p.reward],want);assert.ok(Object.isFrozen(p));}
+});
+test('actual Frost excludes 299 from both combat directions, targeting and blessing alongside 300',()=>{
+  const h=actualFrost(),{area,boss,u299,u300}=h;assert.equal(u299.encounterBlessing,false);assert.equal(u300.encounterBlessing,true);
+  const hp=boss.actor.hp;assert.equal(area.services.combat.damage(u299.ref,boss.unit,100),0);assert.equal(boss.actor.hp,hp);
+  assert.equal(area.services.combat.damage(u300.ref,boss.unit,100),100);assert.equal(boss.actor.hp,hp-100);
+  const lowHp=u299.hp;assert.equal(area.services.combat.damage(boss.unit,u299.ref,100),0);assert.equal(u299.hp,lowHp);
+  assert.equal(area.services.combat.damage(boss.unit,u300.ref,100),100);
+  boss.actor.stunUntil=area.services.time+100;const warning=frostWarning(h,'eclipse',1);assert.equal(warning.level,300);assert.equal(boss.state,'fight');
+});
+test('actual Frost seven mechanics use exact warnings, fractions and three-axis/seven-circle shapes',()=>{
+  const cases=[['slam',1,.5,1.6],['spray',1,null,1.3],['undertow',1,.45,3],['cross',2,.48,2.6],['barrage',1,.42,2.6],['nova',2,.58,2.4],['eclipse',1,.62,2.8]];
+  for(const [kind,phase,fraction,seconds]of cases){
+    const h=actualFrost(),w=frostWarning(h,kind,phase),shape=w.shapes[0],at=shape.at;
+    assert.equal(w.seconds,seconds,kind);assert.equal(w.shapes.length,kind==='cross'?3:kind==='barrage'?7:kind==='eclipse'||kind==='undertow'?2:1,kind);
+    if(kind==='cross'){for(let i=0;i<3;i++){assert.ok(Math.abs(w.shapes[i].yaw-shape.yaw-i*Math.PI/3)<1e-12);assert.equal(w.shapes[i].color,'#75e9ff');assert.equal(w.shapes[i].halfLength,15);assert.equal(w.shapes[i].halfWidth,1.4);}}
+    if(kind==='barrage'){const yaw=h.boss.debugState().mech.yaw,offsets=[[0,0],[7,0],[-7,0],[3.5,6],[-3.5,6],[3.5,-6],[-3.5,-6]];for(let i=0;i<7;i++){const p=w.shapes[i],dx=p.at.x-at.x,dz=p.at.z-at.z;assert.ok(Math.abs(dx*Math.cos(yaw)-dz*Math.sin(yaw)-offsets[i][0])<1e-10);assert.ok(Math.abs(dx*Math.sin(yaw)+dz*Math.cos(yaw)-offsets[i][1])<1e-10);assert.equal(p.radius,3);}}
+    const x=at.x+(kind==='eclipse'?5:kind==='spray'?Math.sin(shape.yaw)*5:0),z=at.z+(kind==='spray'?Math.cos(shape.yaw)*5:0);
+    Object.assign(h.u299,{x,z});Object.assign(h.u300,{x,z});h.u299.hp=h.u300.hp=10000;
+    let hit;for(let i=0;i<200&&!hit;i++){h.area.step(new Map());const events=h.area.drainEvents().map(r=>r.event);assert.ok(!events.some(e=>e.type==='damage'&&e.src?.id===h.boss.unit.id&&e.dst.id===h.u299.ref.id),`${kind} never damages299`);hit=events.find(e=>e.type==='damage'&&e.src?.id===h.boss.unit.id&&e.dst.id===h.u300.ref.id);}
+    assert.ok(hit,kind);if(fraction===null){assert.ok(hit.amount>=390&&hit.amount<=585);assert.equal(h.u300.rust,1);}else assert.equal(hit.amount,10000*fraction,kind);
+  }
+});
+
+test('actual dead-to-rematch allocates one fresh boss life and invalidates old transient references',()=>{
+  const area=realCreatureArea('rematch-life','w3','dawn'),ref=area.attachFresh('hero','priest','human','spawn'),other=area.attachFresh('other','priest','human','spawn'),p=area.services.player(ref),q=area.services.player(other),u=area.services.getUnit(ref),boss=[...area.bosses.values()][0];
+  u.level=100;u.hp=u.maxHp=10000;p.state.flags.abyssCleared=true;p.state.nextSwing=q.state.nextSwing=1e6;
+  boss.wake();for(let i=0;i<75;i++)area.step(new Map());const initial=boss.unit;assert.equal(initial.life,1);
+  area.services.combat.damage(ref,boss.unit,boss.actor.hp+1);for(let i=0;i<320;i++)area.step(new Map());assert.equal(boss.state,'dead');assert.equal(area.pendingGrants().length,1);
+  const old={...boss.unit};p.state.target=old;p.state.cast={ability:'smite',start:area.services.time,end:area.services.time+100,target:old};
+  u.pendingHit={left:10,plan:{attack:'warrior-auto',source:ref,target:old}};
+  const unrelated={attack:'warrior-auto',source:other,target:ref};area.services.getUnit(other).pendingHit={left:20,plan:unrelated};
+  const flight=(source,target)=>area.services.launch({source,target,x:-100,y:1,z:-100,style:'holy',speed:1,hit:{attack:'ranged-auto',source,target,school:'holy'},anchorVersion:area.services.actionData.version});
+  flight(ref,old);flight(old,ref);const keep=flight(ref,other);
+  area.timers.schedule(area.services.time+100,{kind:'bossWake',boss:old});const keepTimer=area.timers.schedule(area.services.time+100,{kind:'echoSpawn',spawnId:'unrelated'});
+  boss.actor.stunUntil=boss.actor.slowUntil=boss.actor.rustUntil=boss.actor.absorbUntil=boss.actor.pushTime=100;
+  boss.actor.rust=4;boss.actor.absorb=200;boss.actor.pushX=3;boss.actor.pushZ=4;boss.phase=3;boss.enraged=true;
+  boss.wake();assert.equal(boss.state,'waking');assert.equal(boss.unit.id,old.id);assert.equal(boss.unit.life,old.life+1);assert.equal(area.services.getUnit(old),null);assert.equal(area.services.controller(boss.unit),boss);
+  assert.equal(p.state.target,null);assert.equal(p.state.cast,null);assert.equal(u.pendingHit,null);assert.deepEqual(area.services.getUnit(other).pendingHit.plan,unrelated);
+  assert.deepEqual([...area.projectiles.keys()],[keep]);assert.deepEqual(area.timers.snapshot().map(t=>t.id),[keepTimer]);assert.equal(boss.actor.actions.length,0);assert.equal(boss.actor.hp,180000);assert.equal(boss.actor.alive,true);assert.equal(boss.phase,1);assert.equal(boss.enraged,false);assert.deepEqual([boss.actor.stunUntil,boss.actor.slowUntil,boss.actor.rustUntil,boss.actor.rust,boss.actor.absorb,boss.actor.pushTime,boss.actor.pushX,boss.actor.pushZ],[0,0,0,0,0,0,0,0]);
+  const life=boss.unit.life;boss.wake();assert.equal(boss.unit.life,life,'repeated wake while waking cannot allocate another life');assert.equal(area.pendingGrants().length,1,'earned previous-life grant remains retained');assert.equal(p.state.flags.finalCleared,true);
+  const hp=u.hp;area.services.resolveHit({attack:'boss-claw',source:old,target:ref});assert.equal(u.hp,hp,'stale old-life attack cannot land');
 });
