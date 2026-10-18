@@ -20,7 +20,7 @@ const CONTROLS: [string, string][] = [
   ['Space', 'Jump'],
   ['B', 'Breakdance: six trained moves in a row (move to stop)'],
   ['Tab / Click', 'Target an enemy'],
-  ['1 2 3 4', 'Abilities'],
+  ['1 2 3 4 / 5', 'Abilities / Ultimate (60 sec cooldown)'],
   ['F', 'Talk, continue a conversation, hold at the beacon'],
   ['L', 'Quest log'],
   ['M', 'Music on / off'],
@@ -119,7 +119,9 @@ export class GameMenu {
       h('div',{class:'row'},t('언어','Language'),seg([['ko','한국어'],['en','English']],language(),v=>{
         setLanguage(v as Language);setQuestLanguage(v as Language);for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}g.hud.refreshLanguage();g.world2.refreshLanguage();g.multiplayer?.refreshLanguage();g.debug?.refreshLanguage();g.hud.dialogue.close();g.hud.tracker.update(g.quests);g.hud.questLog.render();this.settings();
       })),
-      g.world2.chapter===1?h('div',{class:'row'},t('월드 1 등대','World I lighthouse'),seg([['on',t('켜기 · 밤','On · night')],['off',t('끄기 · 아침','Off · morning')]],g.beaconLit?'on':'off',v=>g.setLighthouse(v==='on'))):h('div',{class:'res-note'},t('등대는 월드 1로 돌아가면 조절할 수 있어요.','Return to World I to control the lighthouse.')),
+      ...(g.world2.chapter===1?[h('div',{class:'row'},t('월드 1 등대','World I lighthouse'),
+        h('button',{class:'cc-btn small ghost',disabled:!g.beaconLit,onclick:()=>{g.setLighthouse(false);this.settings();}},t('끄기 · 아침','Off · morning')))]:[]),
+      h('div',{class:'res-note'},t('등대를 켜려면 월드 1의 등대에 직접 가서 F를 길게 누르세요.','To light the lighthouse, visit it in World I and hold F.')),
       h('div', { class: 'row' }, t('음악 음량','Music volume'), slider(audio.musicVolume, (v) => {
         audio.setMusicVolume(v);
         g.musicOn = v > 0;
@@ -162,7 +164,7 @@ export class GameMenu {
 
   controls(): void {
     const table = h('table');
-    const ko=['앞 / 뒤로 걷기','왼쪽 / 오른쪽으로 옆걸음','방향 돌리기','시점과 방향 조절','주변 둘러보기','앞으로 걷기','확대 / 축소','점프','브레이크댄스: 학습된 동작 여섯 개를 이어서 춰요 (움직이면 멈춰요)','적 선택','기술 사용','대화, 채집, 등대 켜기 / 끄기','퀘스트 기록','음악 켜기 / 끄기','말풍선 켜기 / 끄기','로봇 모드','대상 해제, 창 닫기, 메뉴'];
+    const ko=['앞 / 뒤로 걷기','왼쪽 / 오른쪽으로 옆걸음','방향 돌리기','시점과 방향 조절','주변 둘러보기','앞으로 걷기','확대 / 축소','점프','브레이크댄스: 학습된 동작 여섯 개를 이어서 춰요 (움직이면 멈춰요)','적 선택','기술 사용 / 5: 필살기 (재사용 60초)','대화, 채집, 등대 켜기 / 끄기','퀘스트 기록','음악 켜기 / 끄기','말풍선 켜기 / 끄기','로봇 모드','대상 해제, 창 닫기, 메뉴'];
     const mouseKeys:Record<string,string>={'Right mouse drag':'우클릭 드래그','Left mouse drag':'좌클릭 드래그','Both mouse buttons':'마우스 양쪽 버튼','Mouse wheel':'마우스 휠','Click':'클릭'};
     for (const [i,[k, what]] of CONTROLS.entries()) {
       const keys = h('td');
