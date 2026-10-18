@@ -4,7 +4,8 @@ import {readFileSync} from 'node:fs';
 import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession} from './intents.ts';
 import {encodeEvents} from './events.ts';
-import {worldArea,addActor,intent} from '../../../tests/core/worldHarness.mjs';
+import {worldArea,addActor,intent,tick} from '../../../tests/core/worldHarness.mjs';
+import {xpForLevel} from '../../../src/sim/data/progression.ts';
 import {QUESTS} from '../../../src/sim/data/quests.ts';
 import {RACES} from '../../../src/data/races.ts';
 const motion=JSON.parse(readFileSync(new URL('../../../src/sim/data/pose-data.json',import.meta.url),'utf8'));
@@ -16,6 +17,21 @@ const input=(seq=1,commands=[])=>({...intent(seq,commands),steeringYaw:.3});
 function fixture(count=1,options={}){const area=worldArea(binding.area,'w1',options),actors=Array.from({length:count},(_,i)=>addActor(area,`private-character-${i}`));const codec=createGameplayProtocol(catalog),receiver=new GameplayReceiver(binding,catalog);return {area,actors,codec,receiver};}
 function observation(f,sequence=1,full=false){const snapshot=f.area.snapshot();return {binding,sequence,tick:snapshot.tick,acceptedInput:0,consumedInput:0,selfRef:f.actors[0].p.state.unit,snapshot,events:[],visibleIds:new Set(snapshot.units.map(u=>u.ref.id)),full,eventWatermark:-1,...projectObservationExtras(snapshot,f.actors[0].p.state.character,new Set(snapshot.units.map(u=>u.ref.id))),appearances:Object.fromEntries(f.actors.map(a=>[`${a.u.ref.id}:${a.u.ref.life}`,appearance]))};}
 function apply(receiver,fragments){let result=null;for(const f of fragments)result=receiver.accept(f,0);return result;}
+test('actual Astra XP blessing survives private binary recovery without becoming a cast ability',()=>{
+ const area=worldArea(binding.area,'w2'),actors=[addActor(area,'blessed'),addActor(area,'other')],codec=createGameplayProtocol(catalog),receiver=new GameplayReceiver(binding,catalog),f={area,actors,codec,receiver};
+ try{
+  const actor=actors[0];actor.p.gainXp(xpForLevel(20));actor.p.state.flags.abyssCleared=true;
+  const boss=area.services.bossByProfile('eclipse');boss.wake();tick(area,74);area.services.combat.damage(actor.ref,boss.unit,1e8);
+  const expected={...actor.p.state.cooldowns['boss-xp-blessing']};assert.equal(expected.end-expected.start,600);
+  const result=apply(receiver,codec.encodeObservation(observation(f)));
+  assert.deepEqual(result.state.self.player.cooldowns['boss-xp-blessing'],expected);
+  const other=observation(f,1,true);other.selfRef=actors[1].ref;Object.assign(other,projectObservationExtras(area.snapshot(),actors[1].p.state.character,other.visibleIds));
+  const otherResult=apply(new GameplayReceiver(binding,catalog),createGameplayProtocol(catalog).encodeObservation(other));
+  assert.equal(otherResult.state.self.player.cooldowns['boss-xp-blessing'],undefined);
+  actor.p.state.cast={ability:'boss-xp-blessing',start:area.services.time,end:area.services.time+1,target:null};
+  assert.throws(()=>codec.encodeObservation(observation(f,2,true)));
+ }finally{for(const p of area.pendingGrants())area.acknowledgeGrant(p.grant.id);area.dispose();}
+});
 test('bounded binary values preserve safe integers and all finite numbers without growth clamps',()=>{
  const v={large:2**48+123,hp:2**40,amount:1000000001,values:[-1,.001,Math.PI],text:'한글🦀',nested:{a:null,b:true}};
  assert.deepEqual(decodeValue(encodeValue(v)),v);for(const bad of [NaN,Infinity,Number.MAX_SAFE_INTEGER+1,()=>{},new Set()])assert.throws(()=>encodeValue(bad));

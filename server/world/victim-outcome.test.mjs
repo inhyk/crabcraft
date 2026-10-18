@@ -11,13 +11,43 @@ import { acquireHostOwnership } from './ownership.ts';
 import { PersistenceCoordinator } from './persistence-coordinator.ts';
 import { createCoreCharacterCodec, prepareRestore } from '../../src/sim/persistence.ts';
 import { createWorld1Definition } from '../../src/sim/areas/world1.ts';
-import { worldArea, flatWorld, addActor } from '../../tests/core/worldHarness.mjs';
+import { worldArea, flatWorld, addActor, tick } from '../../tests/core/worldHarness.mjs';
+import { xpForLevel } from '../../src/sim/data/progression.ts';
 
 const identity = { schema: 'world-identity-v1', classId: 'warrior', archetype: 'human', appearance: { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'OutcomeFixture' } };
 const codec = createCoreCharacterCodec({ identities: [{ classId: 'warrior', archetype: 'human' }], freshLocation: { x: 0, y: 0, z: 0, yaw: 0 } });
 // Explicit test resource budgets, NOT an eligibility cap or approved deployment setting.
 const resources = { maxEntries: 1024, maxPayloadBytes: 4 * 1024 * 1024, timeoutMs: 5000 };
 const preserve = { version: 'test-explicit-preserve', restore: checkpoint => checkpoint };
+
+for (const [profile, world, level, rewardXp, rewardCoins] of [['eclipse', 'w2', 20, 3000, 1200], ['dawn', 'w3', 100, 6400, 5000]]) {
+  test(`actual ${profile} blessing grant and checkpoint survive PostgreSQL save and fresh Area restore`, async () => {
+    const record = await character(), source = worldArea(`durable-blessing-${profile}`, world), destination = worldArea(`restored-blessing-${profile}`, world);
+    try {
+      // Trusted level/story fixture isolates new canonical boss rewards and persistence composition.
+      const actor = addActor(source, record.characterId, 'warrior'); actor.p.gainXp(xpForLevel(level));
+      Object.assign(actor.p.state.flags, { rustCleared: true, abyssCleared: true, trueCleared: true });
+      const boss = source.services.bossByProfile(profile); boss.wake(); tick(source, 74);
+      const beforeXp = actor.p.state.xp; source.services.combat.damage(actor.ref, boss.unit, 1e8);
+      assert.equal(actor.p.state.xp - beforeXp, rewardXp); assert.equal(actor.p.state.coins, rewardCoins);
+      const pending = source.pendingGrants(); assert.equal(pending.length, 1);
+      assert(pending[0].grant.objectives.some(o => o.kind === 'boss-xp-blessing'));
+      const grant = pending[0].grant, payload = codec.grantToJson(grant);
+      await store.recordVictimOutcome([{ accountId: record.accountId, characterId: record.characterId, id: grant.id, payload }], resources);
+      const capture = source.capturePlayerCheckpoint(actor.ref);
+      assert.equal(capture.checkpoint.survival.cooldowns['boss-xp-blessing'].endRemaining, 600);
+      const saved = await store.saveCheckpoint(record.accountId, record.characterId, record.revision, capture.checkpoint, capture.appliedGrantIds);
+      source.markCheckpointDurable(capture.captureId, saved.revision, capture.appliedGrantIds); source.acknowledgeGrant(grant.id);
+      const recovered = await store.loadForRecovery(record.accountId, record.characterId, [grant.id]);
+      assert.equal(recovered.grants[0].appliedRevision, saved.revision);
+      const checkpoint = codec.toCore(recovered.character.checkpoint), admission = destination.reserveAdmission(record.characterId, 'spawn', 0);
+      const staged = destination.stageRestoredArrival(admission, checkpoint, prepareRestore(checkpoint, 0, preserve)), ref = destination.activateRestoredArrival(staged.token);
+      const restored = destination.services.player(ref); assert.equal(restored.state.xp, saved.checkpoint.progress.xp);
+      const restoredXp = restored.state.xp; restored.gainXp(100); assert.equal(restored.state.xp - restoredXp, 200);
+      assert.equal((await store.pendingGrants(record.accountId, record.characterId)).length, 0);
+    } finally { for (const pending of source.pendingGrants()) source.acknowledgeGrant(pending.grant.id); source.dispose(); destination.dispose(); }
+  });
+}
 const storeError = code => e => e instanceof CharacterStoreError && e.code === code;
 let cluster, pool, store, accountSequence = 1;
 before(async () => {
