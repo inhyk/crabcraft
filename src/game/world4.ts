@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import {Collision} from '../world/collision';
+import {snowHeight} from '../sim/world/ground';
+import {layoutFrostlight,snowTrees} from './world4Colliders';
 import type {Poi} from '../world/types';
 import {StarPortal} from './portal';
 import {islandPaths} from './islandPaths';
@@ -11,16 +12,13 @@ export class SnowIsland {
  readonly spawn=new THREE.Vector3(-12,5,90);
  readonly arena:Poi={id:'bossArena',position:new THREE.Vector3(0,19,-78),yaw:0,radius:22};
  readonly town:[number,number][]=[[-16,56],[16,56],[-16,38],[16,38],[-16,74],[16,80],[16,68]];
- readonly collision=new Collision({minX:-150,minZ:-175,step:2,nx:151,nz:176,h:new Float32Array(151*176),heightAt:(x,z)=>this.height(x,z)});
+ readonly collision=layoutFrostlight();
  readonly portal=new StarPortal(this.spawn,'서리빛 설원 → 새벽 항구');
  private sun=new THREE.DirectionalLight('#bedcff',2.1);
  private snow:THREE.ShaderMaterial;
  private aurora:THREE.ShaderMaterial;
  height(x:number,z:number){
-  const edge=Math.hypot(x/128,(z-2)/155);
-  const plateau=5+14*THREE.MathUtils.smoothstep(-z,5,55);
-  const hills=Math.sin(x*.052)*Math.sin(z*.037)*2.5*(1-Math.exp(-x*x/600));
-  return edge>.83?5-(edge-.83)*70:THREE.MathUtils.lerp(19,plateau+hills,THREE.MathUtils.smoothstep(Math.hypot(x,z+78),22,32));
+  return snowHeight(x,z);
  }
  constructor(){
   this.root.name='WORLD IV · Frostlight';this.root.visible=false;
@@ -49,21 +47,20 @@ export class SnowIsland {
    for(const dz of [-3,3]){const frame=add(new THREE.BoxGeometry(.25,2.3,2.2),dark,front,y+3,z+dz);frame.name='timber-window-frame';add(new THREE.BoxGeometry(.28,1.7,1.6),amber,front-side*.04,y+3,z+dz);add(new THREE.BoxGeometry(.32,1.8,.11),wood,front-side*.06,y+3,z+dz);}
    add(new THREE.BoxGeometry(.3,3.3,1.9),dark,front,y+1.65,z);
    add(new THREE.BoxGeometry(1.4,3.3,1.4),dark,x+2,y+9,z+2);add(new THREE.BoxGeometry(1.7,.25,1.7),snow,x+2,y+10.75,z+2);
-   this.collision.addBox(x,z,5.3,5.8,0,y,y+11);
+
   }
   // Frozen fountain and warm lanterns make the settlement easy to read at a distance.
   const fy=this.height(-10,56);add(new THREE.CylinderGeometry(2.6,3,.65,32),dark,-10,fy+.32,56);add(new THREE.ConeGeometry(1.9,4,8),ice,-10,fy+2.5,56);
-  this.collision.addCircle(-10,56,3.1,fy,fy+5);
+
   for(let z=82;z>-50;z-=12)for(const side of [-1,1]){const x=side*6,y=this.height(x,z);add(new THREE.CylinderGeometry(.13,.23,2.9,6),dark,x,y+1.45,z);add(new THREE.BoxGeometry(.65,.9,.65),amber,x,y+3,z);add(new THREE.ConeGeometry(.62,.5,4),snow,x,y+3.7,z);}
   // Layered evergreen boughs with thick snow caps, in four draw calls for the entire forest.
-  const trees:{x:number;z:number;s:number}[]=[];
-  for(let i=0;i<280;i++){const a=i*2.399963,r=55+i%7*6,x=Math.sin(a)*r,z=10+Math.cos(a)*108;if(Math.hypot(x/128,(z-2)/155)>.78||Math.abs(x)<19||Math.abs(x)<42&&z>23&&z<91||Math.hypot(x,z+78)<30)continue;trees.push({x,z,s:.8+i%5*.13});}
+  const trees=snowTrees();
   const green=new THREE.MeshStandardMaterial({color:'#235558',roughness:.95});
   const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(.3,.55,8,6),wood,trees.length);
   const bough=new THREE.InstancedMesh(new THREE.ConeGeometry(3.5,5.5,9),green,trees.length*3);
   const caps=new THREE.InstancedMesh(new THREE.ConeGeometry(3.45,4.5,9),snow,trees.length*3);const dummy=new THREE.Object3D();
   const put=(mesh:THREE.InstancedMesh,i:number,x:number,y:number,z:number,s:number)=>{dummy.position.set(x,y,z);dummy.scale.setScalar(s);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);};
-  trees.forEach(({x,z,s},i)=>{const y=this.height(x,z);put(trunk,i,x,y+4*s,z,s);for(let j=0;j<3;j++){const scale=s*(1-j*.23);put(bough,i*3+j,x,y+(3.4+j*2.1)*s,z,scale);put(caps,i*3+j,x,y+(4+j*2.1)*s,z,scale);}this.collision.addCircle(x,z,.6*s,y,y+10*s);});
+  trees.forEach(({x,z,s},i)=>{const y=this.height(x,z);put(trunk,i,x,y+4*s,z,s);for(let j=0;j<3;j++){const scale=s*(1-j*.23);put(bough,i*3+j,x,y+(3.4+j*2.1)*s,z,scale);put(caps,i*3+j,x,y+(4+j*2.1)*s,z,scale);}});
   for(const mesh of [trunk,bough,caps]){mesh.castShadow=true;mesh.receiveShadow=true;mesh.computeBoundingSphere();this.root.add(mesh);}this.root.userData.snowPines=trees.length;
   // Boreas keeps the missing friend in a luminous ice prison beside the throne.
   this.prison.name='mira-ice-prison';this.prison.position.set(13,this.height(13,-62),-62);
@@ -71,10 +68,10 @@ export class SnowIsland {
   for(const y of [.2,4.5]){const ring=new THREE.Mesh(new THREE.TorusGeometry(2.3,.14,6,40),glow);ring.rotation.x=Math.PI/2;ring.position.y=y;this.prison.add(ring);}
   this.root.add(this.prison);
   // Ice cliffs frame the north without obstructing the arena's broad southern entrance.
-  for(let i=0;i<42;i++){const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;if(Math.abs(x)<16&&z>-70)continue;const y=this.height(x,z),h=6+i%5*3;const peak=add(new THREE.ConeGeometry(4+i%3,h,5),ice,x,y+h/2,z);peak.rotation.y=a;this.collision.addCircle(x,z,3.5,y,y+h);}
+  for(let i=0;i<42;i++){const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;if(Math.abs(x)<16&&z>-70)continue;const y=this.height(x,z),h=6+i%5*3;const peak=add(new THREE.ConeGeometry(4+i%3,h,5),ice,x,y+h/2,z);peak.rotation.y=a;}
   add(new THREE.CylinderGeometry(22,23,.35,96),ice,0,18.92,-78);
   for(const r of [6,13,21.5]){const ring=add(new THREE.TorusGeometry(r,.065,5,96),glow,0,19.13,-78);ring.rotation.x=-Math.PI/2;}
-  for(let i=0;i<12;i++){const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=this.height(x,z);add(new THREE.CylinderGeometry(1,1.4,8,6),ice,x,y+4,z);add(new THREE.OctahedronGeometry(.8),glow,x,y+8.5,z);this.collision.addCircle(x,z,1.5,y,y+10);}
+  for(let i=0;i<12;i++){const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=this.height(x,z);add(new THREE.CylinderGeometry(1,1.4,8,6),ice,x,y+4,z);add(new THREE.OctahedronGeometry(.8),glow,x,y+8.5,z);}
   const sky=add(new THREE.SphereGeometry(850,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;void main(){float h=max(0.,normalize(v).y);gl_FragColor=vec4(mix(vec3(.32,.49,.65),vec3(.015,.045,.13),smoothstep(0.,.6,h)),1.);}'}),0,0,0);sky.renderOrder=-100;sky.castShadow=false;
   this.aurora=new THREE.ShaderMaterial({side:THREE.DoubleSide,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{time:{value:0}},vertexShader:'varying vec2 v;uniform float time;void main(){v=uv;vec3 p=position;p.z+=sin(p.x*.025+time*.15)*20.;gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);}',fragmentShader:'varying vec2 v;uniform float time;void main(){float rays=.5+.5*sin(v.x*75.+sin(v.x*12.+time*.2)*3.);float a=sin(v.y*3.14159)*(.1+.22*rays);gl_FragColor=vec4(mix(vec3(.1,.95,.65),vec3(.35,.32,.9),v.y),a);}'});
   add(new THREE.PlaneGeometry(650,90,64,1),this.aurora,0,135,-270).castShadow=false;
