@@ -197,6 +197,7 @@ export interface ObservationInput {
 }
 export type WorldControl=
  | {type:'inputAck'}
+ | {type:'party';state:null|{code:string;leader:string;members:readonly {id:string;name:string;ref:EntityRef|null;world:AreaSnapshot['world'];online:boolean}[];pvp:boolean}}
  | {type:'queued';world:'w1'|'w2'|'w3'|'w4';position:number}
  | {type:'error';code:string;retryable:boolean}
  | {type:'restarting';retryAfterSeconds:number}
@@ -204,6 +205,7 @@ export type WorldControl=
 export function validateControl(v:unknown):asserts v is WorldControl {
  if(!v||typeof v!=='object')fail('invalid control');const type=(v as WorldControl).type;
  if(type==='inputAck')object(v,{type:choice(type)});
+ else if(type==='party')object(v,{type:choice(type),state:nullable(s=>{object(s,{code:x=>{if(typeof x!=='string'||! /^[0-9A-F]{6}$/.test(x))fail('invalid party code');},leader:text,members:list(m=>object(m,{id:text,name:x=>text(x,64),ref:nullable(reference),world:choice('w1','w2','w3','w4'),online:bool}),8,1),pvp:bool});const members=s.members as {id:string}[];if(new Set(members.map(m=>m.id)).size!==members.length||!members.some(m=>m.id===s.leader))fail('invalid party membership');})});
  else if(type==='queued')object(v,{type:choice(type),world:choice('w1','w2','w3','w4'),position:x=>integer(x,1)});
  else if(type==='error')object(v,{type:choice(type),code:text,retryable:bool});
  else if(type==='restarting')object(v,{type:choice(type),retryAfterSeconds:number});
