@@ -7,7 +7,7 @@ export function levelForXp(xp:number):number { return xp<22000?LEVEL_XP.reduce((
 export const patrolReward=(level:number):number=>180+Math.max(1,level)*50;
 export const forgeCost=upgradeCost;
 export const canChallenge=(level:number,required:number,rustCleared:boolean,abyssCleared=false,chapter=1):boolean=>level>=required&&(required===300?chapter===4&&abyssCleared:required===100?chapter===3&&abyssCleared:required===20?chapter===2&&abyssCleared:chapter===1&&(required===3||rustCleared));
-export const canTravelTo=(chapter:Chapter, flags:Readonly<Record<string,boolean>>):boolean=>chapter===1||(chapter===4?!!flags.finalCleared:!!flags.abyssCleared&&(chapter===2||!!flags.trueCleared));
+export const canTravelTo=(chapter:Chapter, flags:Readonly<Record<string,boolean>>):boolean=>chapter===1||(chapter>=5?!!flags.frostCleared:chapter===4?!!flags.finalCleared:!!flags.abyssCleared&&(chapter===2||!!flags.trueCleared));
 
 /** Story unlock differs from replay: only the Frost victory opens the four-island ending. */
 export const canReplayFrostEnding=(chapter:Chapter,flags:Readonly<Record<string,boolean>>,bossState:string,controlsLocked=false):boolean=>chapter===4&&!!flags.frostCleared&&bossState==='dead'&&!controlsLocked;
