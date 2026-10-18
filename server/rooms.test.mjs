@@ -726,6 +726,50 @@ test('an authorized observer gets the room and every broadcast; players never se
   assert.equal(o.queue.some(m => m.type === 'combat' && m.event.kind === 'attack'), false);
 });
 
+test('a player\'s skill effects reach the rest of the room and its observer; malformed ones and an observer\'s are dropped', async t => {
+  const { client } = await setup(t, allowTicket);
+  const enter = { type: 'enter', area: 1, spec, combatVersion: 1, snowWorld: true, sharedWorld: 1 };
+  const a = await client(), b = await client(), o = await client();
+  a.send(enter); const ar = await a.next('welcome');
+  b.send({ ...enter, spec: { ...spec, name: 'Friend' } }); await b.next('welcome'); await a.next('joined');
+  o.send({ type: 'observe', room: ar.room, ticket: 'monitor-ok' }); await o.next('welcome');
+  const at = { x: 3, y: 0.5, z: 5 };
+  const skills = [
+    { fx: 'ability', ability: 'frost-spray', stage: 'start', at, yaw: 1.2, range: 8, half: 0.55 },
+    { fx: 'ability', ability: 'shell-bash', stage: 'hit', at, yaw: 0, target: 'e4', range: 2.2, stun: 2 },
+    { fx: 'ability', ability: 'steam-blink', stage: 'start', at, yaw: 0, from: { x: 0, y: 0.5, z: 0 }, range: 8 },
+    { fx: 'projectile', stage: 'spawn', id: 7, target: 'b20', from: at, style: 'bubble', speed: 18 },
+    { fx: 'projectile', stage: 'hit', id: 7 },
+    { fx: 'cast', ability: 'bubble-bolt', seconds: 1.5 },
+    { fx: 'cast', seconds: 0 },
+    { fx: 'ward', stage: 'up', seconds: 10 },
+  ];
+  const bad = [
+    { fx: 'ability', ability: 'nuke', stage: 'start', at, yaw: 0 },
+    { fx: 'ability', ability: 'smite', stage: 'start', yaw: 0 },
+    { fx: 'ability', ability: 'smite', stage: 'start', at, yaw: 0, target: '<script>' },
+    { fx: 'ability', ability: 'tidal-nova', stage: 'start', at, yaw: 0, range: 1e9 },
+    { fx: 'projectile', stage: 'spawn', id: 1, target: 'e0', from: at, style: 'laser', speed: 18 },
+    { fx: 'projectile', stage: 'hit', id: -1 },
+    { fx: 'cast', ability: 'nuke', seconds: 1 },
+    { fx: 'ward', stage: 'explode' },
+    { fx: 'damage', amount: 999 },
+    null,
+  ];
+  for (const skill of [...bad, ...skills]) a.send({ type: 'skill', skill });
+  for (const skill of skills) {
+    assert.deepEqual(await b.next('skill'), { type: 'skill', id: ar.id, skill });
+    assert.deepEqual(await o.next('skill'), { type: 'skill', id: ar.id, skill });
+  }
+  // Only the listed fields travel, and the sender does not hear itself.
+  a.send({ type: 'skill', skill: { fx: 'ward', stage: 'down', amount: 999, extra: 'x' } });
+  assert.deepEqual((await b.next('skill')).skill, { fx: 'ward', stage: 'down' });
+  await o.next('skill');
+  o.send({ type: 'skill', skill: skills[0] });
+  a.send({ type: 'state', state }); await b.next('state');
+  assert.equal([...a.queue, ...b.queue, ...o.queue].some(m => m.type === 'skill'), false);
+});
+
 test('an observer cannot play, send, chat, join or become the host, and leaving changes nothing', async t => {
   const { client, relay } = await setup(t, allowTicket);
   const a = await client(), b = await client(), o = await client();
