@@ -27,3 +27,11 @@ low와 high 각각 46,036점, 합계 92,072점에서 허용 오차 1e-6 이내�
 Node 검증은 boss 106건, engine 4건, multiplayer 50건(충돌 bake 6건 포함), server 16건을 통과했다. 빌드와 bake 최신 상태 검사도 통과했다. 잘못된 source 해시, Snow 지형 종류, 집 위치를 파일에 각각 주입한 `--check`는 세 경우 모두 종료 코드 1로 거부했고 원본 복구 후 통과했다. 독립 landmark 검사로 Snow 경기장 19m, 마을 5m, Dawn 마을 4m, Snow 분수의 높이별 ray 차단과 해안 경계를 확인한다.
 
 `tools/qa-snow300.mjs`는 이동 스킬, 설원 입장 잠금, NPC 퀘스트, 299레벨 도전 잠금, 저장과 재접속, III-IV 왕복, 300레벨 Boreas의 HP 620,000과 승리 저장을 확인했다. 화면은 `tmp/qa/snow-village.png`, `tmp/qa/snow-boss300.png`에 있다. 전체 playtest는 Solarkan 이후 설원으로 이동해 Boreas를 쓰러뜨린 다음 엔딩을 검사하도록 새 이야기 흐름에 맞췄다.
+
+최종 dev 갱신은 `7c9e120cf9244df63bd8abf98feea5985daa398e`까지 반영했다. 이 갱신은 지형 입력을 바꾸지 않았고 소스 해시를 유지했다. 갱신 후 빌드, world network 22건, bake 최신 상태 검사를 통과했다.
+
+Deploy workflow에도 의존성 설치 직후 `Verify collision bake before release` 단계를 둔다. stale bake는 release stage, 업로드, activate 이전에 배포를 중단한다. bake 도구가 아직 없는 예전 main에서는 `hashFiles` 조건으로 이 단계만 건너뛴다. Deploy의 pnpm도 10.10.0으로 고정했다. 위의 파일 주입 세 건이 배포 단계와 같은 checker의 실패 경로를 검증한다.
+
+추출 전 dev의 `SnowIsland`를 따로 실행한 비교에서도 271개 고체가 일치했고 높이, 이동, ray 10,542점의 오차는 모두 0이었다. 원본과 현재 SnowIsland의 260개 scene object를 geometry, material, transform으로 비교한 해시도 일치했다. 이 Node 비교에서는 양쪽의 `StarPortal`과 `islandPaths` 렌더 helper를 제외했으며 실제 브라우저 화면은 별도로 확인했다. 증거는 `tmp/qa/collision-current-dev/original-geometry-proof.json`이다.
+
+Dawn 퀘스트 오브젝트는 `BakedWorld.collision.resolve(x, z, 1, out)` 다음 `BakedWorld.heightAt(out.x, out.y)`로 배치한다. 실제 `DawnRequests.build()`의 21개 결과 좌표와 이 경로가 모두 일치했다. 섬 경계를 먼저 적용하는 `BakedWorld.resolveCollision`은 플레이어 이동용이므로 퀘스트 오브젝트 배치에 대신 사용하지 않는다. 같은 JSON에 21개 nominal 좌표와 resolved 좌표를 남겼다.

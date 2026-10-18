@@ -96,6 +96,10 @@ try {
     failed = true;
     console.log('page errors:', errors);
   }
+} catch (error) {
+  failed = true;
+  report.errors.push(String(error));
+  throw error;
 } finally {
   writeFileSync(resolve(out, `${quality}.json`), JSON.stringify({ ...report, passed: !failed && report.worlds.length === WORLDS.length, totalPoints: report.worlds.reduce((n, w) => n + w.points, 0) }, null, 2));
   await browser.close();
