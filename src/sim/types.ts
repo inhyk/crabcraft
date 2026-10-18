@@ -291,7 +291,7 @@ export interface AreaDefinition {
 export interface AreaPolicy {
   enemyLevel(spawn: EnemySpawn, legacyContext: { partyLevel: number; rustCleared: boolean; chapter: 1 | 2 | 3 }): number;
   // Final server policy returns spawn.fixedLevel. Legacy policy can retain actual S1 scaling.
-  enemyPopulation(spawn: EnemySpawn, nearbyPlayers: number): { desired: number; respawnSeconds: number };
+  enemyPopulation(spawn: EnemySpawn, nearbyPlayers: number): { desired: 0 | 1; respawnSeconds: number };
   damageAllowed(context: Readonly<AreaContext>, source: Readonly<SimUnit> | null, target: Readonly<SimUnit>): boolean;
   canInteract(context: Readonly<AreaContext>, player: Readonly<PlayerState>, interactionId: string): boolean;
   // Additional policy only: core still verifies known ID, same Area, alive, range and actual prerequisites.
