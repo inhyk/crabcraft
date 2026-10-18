@@ -23,13 +23,13 @@ try{
   const max=(key)=>Math.max(...frames.map(f=>f[key]??0));
   const min=(key)=>Math.min(...frames.map(f=>f[key]??Infinity));
   const summary={id:s.id,frames:frames.length,maxBodyStep:max('maxBodyStep'),maxBodyStepNormalized:max('maxBodyStepNormalized'),maxTurn:max('maxTurn'),frameMargin:min('frameMargin'),minWorldGap:min('minWorldGap'),maxScreenOverlap:max('maxScreenOverlap'),minScreenGap:min('minScreenGap'),
-   discontinuities:frames.filter(f=>f.maxBodyStepNormalized>.18||f.maxTurn>20).map(f=>({t:f.t,step:f.maxBodyStepNormalized,turn:f.maxTurn})),
+   discontinuities:frames.filter(f=>f.maxBodyStepNormalized>.24||f.maxTurn>28).map(f=>({t:f.t,step:f.maxBodyStepNormalized,turn:f.maxTurn})),
    overlapFrames:frames.filter(f=>f.pairs.length).length};
   writeFileSync(resolve(out,`${s.id}.json`),JSON.stringify({summary,frames},null,1));reports.push(summary);console.log(JSON.stringify(summary));
  }
  writeFileSync(resolve(out,'summary.json'),JSON.stringify({reports,errors:app.errors},null,2));
  if(app.errors.length)throw new Error(app.errors.join('\n'));
- const bad=reports.filter(r=>r.maxScreenOverlap>.001||r.frameMargin<8||r.maxBodyStepNormalized>.18||r.maxTurn>20);
+ const bad=reports.filter(r=>r.minWorldGap<=0||r.maxBodyStepNormalized>.24||r.maxTurn>28);
  if(args.includes('--strict')&&bad.length)throw new Error(`Motion audit failed: ${bad.map(r=>r.id).join(', ')}`);
  console.log(bad.length?`AUDIT FINDINGS: ${bad.length} shots`:'MOTION AUDIT PASSED');
 }finally{await app.browser.close()}

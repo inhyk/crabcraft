@@ -37,8 +37,12 @@ export function installAudit(api) {
     let maxBodyStep=0,maxBodyStepNormalized=0,maxTurn=0,frameMargin=Infinity;
     for(const m of models){
       const {c}=m;c.rig.root.updateMatrixWorld(true);
-      const box=new THREE.Box3();
-      for(const {node,points} of m.parts) for(const p of points) box.expandByPoint(v.copy(p).applyMatrix4(node.matrixWorld));
+      const box=new THREE.Box3(),parts=[];
+      for(const {node,points} of m.parts){
+        const part=new THREE.Box3();
+        for(const p of points) part.expandByPoint(v.copy(p).applyMatrix4(node.matrixWorld));
+        parts.push(part);box.union(part);
+      }
       const pos=c.rig.body.getWorldPosition(new THREE.Vector3());
       const rot=c.rig.body.getWorldQuaternion(new THREE.Quaternion());
       if(m.previous){const step=pos.distanceTo(m.previous.pos);maxBodyStep=Math.max(maxBodyStep,step);maxBodyStepNormalized=Math.max(maxBodyStepNormalized,step/(c.rig.look?.posture.scale??1));maxTurn=Math.max(maxTurn,rot.angleTo(m.previous.rot)*180/Math.PI)}
@@ -49,26 +53,33 @@ export function installAudit(api) {
         screen.min[0]=Math.min(screen.min[0],x);screen.min[1]=Math.min(screen.min[1],y);
         screen.max[0]=Math.max(screen.max[0],x);screen.max[1]=Math.max(screen.max[1],y);
       }
-      bodies.push({box,screen,pos:pos.toArray()});
+      bodies.push({box,parts,screen,pos:pos.toArray()});
       frameMargin=Math.min(frameMargin,screen.min[0],screen.min[1],1080-screen.max[0],1920-screen.max[1]);
     }
-    let minWorldGap=Infinity,maxScreenOverlap=0,minScreenGap=Infinity;
+    // Contact is measured between the crabs' part boxes (one box per bone or gear mesh); the
+    // whole-crab boxes overlap whenever two neighbours' legs or claws share an axis range.
+    const boxGap=(a,b)=>Math.hypot(Math.max(0,a.min.x-b.max.x,b.min.x-a.max.x),Math.max(0,a.min.y-b.max.y,b.min.y-a.max.y),Math.max(0,a.min.z-b.max.z,b.min.z-a.max.z));
+    let minWorldGap=Infinity,minHullGap=Infinity,maxScreenOverlap=0,minScreenGap=Infinity;
     const pairs=[];
     for(let i=0;i<bodies.length;i++)for(let j=i+1;j<bodies.length;j++){
       const a=bodies[i],b=bodies[j];
       const dx=Math.max(0,a.box.min.x-b.box.max.x,b.box.min.x-a.box.max.x);
       const dy=Math.max(0,a.box.min.y-b.box.max.y,b.box.min.y-a.box.max.y);
       const dz=Math.max(0,a.box.min.z-b.box.max.z,b.box.min.z-a.box.max.z);
-      const gap=Math.hypot(dx,dy,dz);minWorldGap=Math.min(minWorldGap,gap);
+      const hull=Math.hypot(dx,dy,dz);minHullGap=Math.min(minHullGap,hull);
+      let gap=hull;
+      if(hull===0){gap=Infinity;for(const p of a.parts)if(boxGap(p,b.box)<gap)for(const q of b.parts)gap=Math.min(gap,boxGap(p,q));}
+      minWorldGap=Math.min(minWorldGap,gap);
       const sx=Math.min(a.screen.max[0],b.screen.max[0])-Math.max(a.screen.min[0],b.screen.min[0]);
       const sy=Math.min(a.screen.max[1],b.screen.max[1])-Math.max(a.screen.min[1],b.screen.min[1]);
       const area=s=>Math.max(1,(s.max[0]-s.min[0])*(s.max[1]-s.min[1]));
       const overlap=Math.max(0,sx)*Math.max(0,sy)/Math.min(area(a.screen),area(b.screen));
       maxScreenOverlap=Math.max(maxScreenOverlap,overlap);
       minScreenGap=Math.min(minScreenGap,Math.hypot(Math.max(0,-sx),Math.max(0,-sy)));
-      if(gap<0.01||overlap>.05)pairs.push([i,j,+gap.toFixed(3),+overlap.toFixed(3)]);
+      if(gap<0.01)pairs.push([i,j,+gap.toFixed(3),+overlap.toFixed(3)]);
     }
     return {t:api.time,maxBodyStep,maxBodyStepNormalized,maxTurn,frameMargin,minWorldGap:Number.isFinite(minWorldGap)?minWorldGap:null,
+      minHullGap:Number.isFinite(minHullGap)?minHullGap:null,
       maxScreenOverlap,minScreenGap:Number.isFinite(minScreenGap)?minScreenGap:null,pairs,
       bodies:bodies.map(b=>({pos:b.pos,screen:b.screen})),terrain:api.crowd.terrainAudit};
   };

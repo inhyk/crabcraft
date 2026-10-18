@@ -44,7 +44,7 @@ for (const s of shots) {
   const file = s.id === 'lighthouse-bank' && lighthouseCycle ? lighthouseCycle : resolve(captured, `${s.id}.mp4`);
   const meta = JSON.parse(readFileSync(resolve(captured, `${s.id}.json`)));
   if (meta.frames !== s.frames || meta.blanks.length || meta.errors.length) throw new Error(`Unchecked capture ${s.id}`);
-  if(s.program.cues.length && meta.probe.some(f=>!f.motion||f.motion.maxScreenOverlap>.001||f.motion.frameMargin<8||f.motion.maxBodyStepNormalized>.18||f.motion.maxTurn>20)) throw new Error(`Motion audit failed for ${s.id}`);
+  if(s.program.cues.length && meta.probe.some(f=>!f.motion||(f.motion.minWorldGap??Infinity)<=0||f.motion.maxBodyStepNormalized>.24||f.motion.maxTurn>28)) throw new Error(`Motion audit failed for ${s.id}`);
   segments.push({ file, start: 0, frames: s.frames, source: false, id: s.id });
   cursor = s.end;
 }

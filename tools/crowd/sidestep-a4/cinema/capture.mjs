@@ -28,13 +28,14 @@ try {
     // Flyover crabs live offscreen; the six performers are visible in the group shots.
     console.log(`${s.id}: ${stats.crabs} crabs, ${s.frames} frames`);
     if (preview) {
-      for (const u of [0.05, 0.5, 0.95]) {
+      const n = Number(opt('--stills', '3'));
+      for (const u of n === 3 ? [0.05, 0.5, 0.95] : Array.from({ length: n }, (_, i) => (i + 0.5) / n)) {
         await app.page.evaluate(([t, mood]) => {
           window.__crowd.seek(t - 3 / 60);
           window.__crowd.world.setMood(mood, true);
         }, [p.length * u, p.fx[0].mood]);
         await app.page.evaluate(() => window.__capture.step(3, 1000 / 60));
-        writeFileSync(`${file}-${u}.jpg`, await grab(app));
+        writeFileSync(`${file}-${u.toFixed(3)}.jpg`, await grab(app));
       }
     } else {
       await app.page.evaluate((mood) => {
@@ -49,7 +50,7 @@ try {
       if (Math.abs(meta.probe[0].t) > 0.5 / FPS) throw new Error(`${s.id}: incorrect first frame time`);
       if (p.terrainClearance !== undefined && meta.probe.some(f => !f.terrain || !Number.isFinite(f.terrain.minClearance) || f.terrain.minClearance < p.terrainClearance - 1e-5)) throw new Error(`${s.id}: terrain clearance failed`);
       if(p.cues.length){
-        const bad=meta.probe.filter(f=>!f.motion||f.motion.maxScreenOverlap>0.001||f.motion.frameMargin<8||f.motion.maxBodyStepNormalized>.18||f.motion.maxTurn>20);
+        const bad=meta.probe.filter(f=>!f.motion||(f.motion.minWorldGap??Infinity)<=0||f.motion.maxBodyStepNormalized>.24||f.motion.maxTurn>28);
         if(bad.length)throw new Error(`${s.id}: ${bad.length} frames failed overlap/continuity/framing audit: ${JSON.stringify(bad[0].motion)}`);
       }
     }

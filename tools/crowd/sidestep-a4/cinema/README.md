@@ -15,25 +15,29 @@ hook is changed.
 | Song range | Insert |
 |---|---|
 | 0.00-6.50 s | Bank from the bay toward the village and fountain |
-| 19.30-25.70 s | Six crabs performing one continuous six-step recording |
-| 32.10-38.50 s | Iron Wreck reveal and Corrodius performing a jump spin |
-| 46.50-52.90 s | A complete group 720, from preparation through recovery |
-| 59.30-64.10 s | A continuous group spin by the fountain |
+| 19.30-25.70 s | Crew groove past a ground-level slide, then a crane over the six-step |
+| 32.10-38.50 s | Corrodius grooves on the Iron Wreck, crouches, jump-spins and lands on the bar |
+| 46.50-52.90 s | Lead close-up on the sand, then the crew's rippling 720 from a rising camera |
+| 59.30-64.10 s | Push-in on the lead by the claw fountain, then a turning top-down crew spin |
 | 70.50-76.90 s | Bank around the lighthouse over the water |
-| 97.70-104.10 s | A complete group backflip in the village |
+| 97.70-104.10 s | Lead close-up at the chapel, then the backflip ripple from a low 3/4 dolly |
 | 118.50-124.90 s | Night flight around the lit beacon |
-| 142.50-148.90 s | Continuous group spins in the village at night |
+| 142.50-148.90 s | Night lead close-up, then a half orbit around the spinning crew |
 
 The revised lighthouse insert alternates **day/off and night/on every 48 frames (0.8 seconds)**,
 four times each. Both lighting states use the same camera path. The short version moves this
 insert to 41.7-48.1 s and ends at 69.55 s with the original final chorus, hit and freeze.
 
-The shore formation is at (112.5, 76). The groups use two columns and three rows, with 4.8-unit
-column spacing and 5.8-unit row spacing. The higher camera keeps every performer separate.
-Each power move plays through preparation and recovery without looping non-seamless break clips
-or switching poses mid-spin. After recovery, a 0.9-second blend carries the performers into a
-continuous groove instead of leaving a long stationary tail. Opt-in `exactMotion` removes race stance biases and servo twitches
-while keeping the outfits and character scale, so the recorded joints retain their kinematics.
+The crew is the crowd video's lead crab with five dancers in a 1-2-3 wedge behind it
+(`formation.points` in `src/capture/crowd/program.ts`): 4.8 units across, 3.8 between rows, so
+no dancer stands straight behind another from the front. Every crew insert has two camera shots
+with a cut on the bar line: two bars of groove close on the lead (low, moving, shallow focus),
+then the whole crew through one power move that lands on a downbeat, from a crane, orbit or dolly.
+The groove (`dance_crab` at 1.1549x) puts its steps on the song's beats, so the move starts from a
+dance instead of a standstill. Power moves play at 0.8x-0.9x (the boss at 0.6x, its 3.5 scale) and
+are entered from their standing pre-roll with a 0.5-second blend. The boss faces the wreck's bow so
+the camera stays on the deck, clear of its posts. Opt-in `exactMotion` removes race stance biases
+and servo twitches while keeping the outfits and character scale.
 
 `terrainClearance` keeps foot tips and palm pads above the surface. `terrainLiftRate` precomputes
 the minimum speed-limited envelope above the required correction, looking ahead and behind at
@@ -42,9 +46,9 @@ is bounded to 2 world units/s for the groups and 7 for the 3.5-scale boss. Sampl
 and does not depend on the previous seek. Default crowd programs are unchanged.
 
 Positions are formation coordinates from `src/capture/crowd/program.ts`; the world layout is in
-`src/world/layout.ts`. Flight keys include camera roll. Group cameras keep six performers in a
-portrait composition. Flip playback uses 0.57x-0.65x for readability. Camera timing is linear through spline
-keys, and every inserted range is rounded to whole frames on the existing measured beat grid.
+`src/world/layout.ts`. Flight and crew keys include camera roll. `--stills N` in preview mode grabs
+N evenly spaced stills per shot. Every inserted range and every crew camera cut is rounded to whole
+frames on the existing measured beat grid.
 
 ## Reproduce
 
@@ -59,7 +63,7 @@ pnpm dev --port 5297 --strictPort
 In a second terminal, with a writable local `WORK` directory:
 
 ```sh
-node tools/crowd/sidestep-a4/cinema/capture.mjs --url http://localhost:5297 --out "$WORK/previews" --preview
+node tools/crowd/sidestep-a4/cinema/capture.mjs --url http://localhost:5297 --out "$WORK/previews" --preview --stills 8
 # Inspect the per-shot JPGs before the full capture.
 node tools/crowd/sidestep-a4/cinema/audit.mjs --out "$WORK/audit" --strict
 node tools/crowd/sidestep-a4/cinema/capture.mjs --url http://localhost:5297 --out "$WORK/captures"
@@ -75,11 +79,14 @@ blank-frame repairs or page errors. The editor checks each sidecar and encoded s
 count, the final frame count, unchanged audio packets, black runs and black frames, then writes
 `<output>-report.json` and prints `CHECKS PASSED`.
 
-Every frame of a performer shot also checks conservative animated geometry bounds (rigid skinning
-per bone plus gear), screen-space separation, frame margins and body continuity. The full render
-is rejected for overlapping projected bounds, margins below 8 px, body steps above 0.18 standing
-heights/frame or rotation steps above 20 degrees/frame. Bounds are deliberately conservative;
-the numerical checks supplement inspection of the actual rotation and landing frames.
+Every frame of a performer shot also checks contact and continuity. Contact is measured between
+the crabs' part boxes (each bone's rigidly skinned vertices and each gear mesh, transformed per
+frame); the full render is rejected if any two crabs' parts touch, if a body moves more than 0.24
+standing heights in a frame, or if it turns more than 28 degrees in a frame. Those bounds sit above
+a real 720 at 0.8x (peak 0.21 heights and 24 degrees per frame on landing and in the air) and below
+the 0.32-unit, 33-degree snaps the earlier transitions produced. On-screen occlusion and crabs
+leaving the frame are allowed: the low, moving cameras need depth. Bounds supplement inspection of
+the actual rotation and landing frames.
 
 For a final overview, run the existing `tools/trailer/contact_sheet.py` on the output and open
 the resulting image. Also inspect rotations and camera cuts in motion, including each insert's
@@ -133,3 +140,19 @@ Both v3 MP4s pass the full media checks at the original lengths (69.55 s and 163
 black frames. Fourteen final frame-alignment checks passed (minimum SSIM 0.986648). The full AAC
 packets match the source, and the short AAC packets match revision 2 exactly. Final contact sheets
 and the boss's takeoff, rotation, landing and recovered poses were opened and inspected.
+
+## Revision 4 (dynamic crew and boss), 2026-10-18
+
+Feedback on v3: the boss moved too suddenly and the six-crab cameras were too fixed; dance a
+little, then spin. The v3 high, nearly fixed group cameras came from the screen-space rule (no
+projected rectangles overlapping, every crab 8 px inside the frame); it is replaced by the
+part-contact rule above.
+
+- Captures: 9 shots, 3366 frames, 0 blank repairs, 0 page errors; the night lighthouse, 384 frames.
+- Crew and boss motion over 2208 frames: part contact 0 (minimum part gap 0.2586 units, in the
+  spins), maximum body step 0.212 standing heights/frame and turn 24.3 degrees/frame (720 and
+  backflip in the air), foot and palm clearance at least 0.045 units.
+- Full: `CHECKS PASSED`, 163.95 s, 9837 frames, source AAC packets unchanged, no black frames.
+  Short: `CHECKS PASSED`, 69.55 s, 4173 frames, -14.0 LUFS, -2.4 dBFS true peak, original ending.
+- Beat-spaced frame grids of every crew and boss shot and the prep, apex and landing frames of the
+  720 and the boss jump spin were opened and inspected.
