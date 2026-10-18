@@ -1,0 +1,111 @@
+{
+  "localOnly": true,
+  "notVmMeasurement": true,
+  "timingInterpretation": "Diagnostic wall times inside correctness run; not a controlled performance benchmark",
+  "seed": 15,
+  "configuredPopulation": {
+    "scrapling": 60,
+    "scavenger": 30,
+    "jellyfish": 10
+  },
+  "fixturePlayers": 40,
+  "viewers": 4,
+  "publications": 40,
+  "decodedCrossChecks": 120,
+  "actorPoseChecks": 4316,
+  "recipeChecks": 41882,
+  "fragments": 48,
+  "maxFragments": 2,
+  "bytes": {
+    "baseline": 429285,
+    "optimized": 429285
+  },
+  "encodeMs": {
+    "baseline": 18.75533300000035,
+    "optimized": 15.467374999999436
+  },
+  "scenarios": [
+    "full/delta fragmentation; exact recipes and actor refs; 80 enter/88 retain/88.001 exit/84 no reenter/79 enter; per-viewer self/private NPC/pins/events",
+    "same id/new life; retire then reinsert; full recovery; alternating viewer publication order; synchronous publication token release preserves next-frame delta baseline",
+    "different party control payloads and exact cross-area member refs remain recipient-private",
+    "publication input ACK monotonicity without actor-baseline advance",
+    "unconsumed result and513-event budget rejection preserve baseline/ACK; valid same-sequence retry",
+    "raw and prepared fallback paths decode identically for every private viewer",
+    "empty supplied AOI still includes exactly the distinct owning self in a shared prepared cache",
+    "128 distinct full groups exceed100 groups/2MB cache budgets; uncached output and earlier-group different-self reuse remain exact",
+    "513 other-owner events stay filtered and do not consume an unrelated recipient event budget",
+    "duplicate/checksum/timeout/stale-binding fragments reject without partial state or ACK",
+    "bad fragment publication preserves committed state/ACK and newer full recovery clears resync",
+    "Area/epoch reset with repeated entity IDs preserves new full refs and rejects stale old stream packets"
+  ],
+  "frameDigests": [
+    "7e9a741b101f7ece6feba1e8cb315599970c6eb118902bf0525792b0e84b1c8b",
+    "8aea37d12f388709219d9d0682c258a739ea4cc5485a37d423228b4f90affcd4",
+    "afb108e89a439548cb5e4ac6fd2aca77dcda8cbf5ccb064ae91ff157fb7c6d1f",
+    "a28a10129d762372f361bb0a25726f97cd0484b27913aac748400b7a3d1d84ed",
+    "e010ed81d3a8d4ebc76212d544894f41817829cf6e454731d16a2fcd10e052c1",
+    "d81cf773588cb3fb921e3c257611c21f39d597da2cb1c50cdfe5b579ea0f60eb",
+    "552be08b9712b262de7dbaabdd6698d9f804c820192b8f0bd36f1ddc47ee7346",
+    "642c58ef151675fff2d2aa96034382a620283749573d40d77e10029dd4ff6840",
+    "7551e246b8bf27d62789de588b198ef0677a714ec18c03238675ed9e147a451a",
+    "a7c932961cc93286afacd6939308c5e9487bcd1c0a9801af15b1430fdabdf333",
+    "7cf1f758319fb50eaa24dadae8d25da158fbd826ea1e31e596cdbfdc8e1e0483",
+    "dd432fd36b010d6c969ad29fc29ac62276c2719497db4de7bd84dbee81a074b6",
+    "3d0caf41b90804abc757cb610049c6a8b29d45fef7c9f8006eb56deee66c74c2",
+    "0ed9ade54a77eecf9b642a6fa35f0302f015fbbfcd01d3560ef7775859ad3ea1",
+    "09c3a89f28889b7b3149549aee63b7cb5bd49580e6ee1facd5a7d6028eed7586",
+    "db3616c17deb817384de6d58f6981ada17c119d737641c772db70888bb6af203",
+    "67adc204edf326ac5463dd0825247d9ba54ea6f3f038072873e600c59d45711d",
+    "21e213d59f22954295133bdc602e9f00d76b0af1e44c3800a88aaae2f8e9ad4c",
+    "e07e90cf7265bc1a046f5fa888bacae83bdce22170d7dcfbbd9d9b2085fcd8f3",
+    "cf110ac5646fd7e603d07bd3102253ed8aef0a842c292c9d783825e528847b7f",
+    "bbe551f58d7571158b76c13d6ed80d8224458a10e36263ac30eabb1eef6772bb",
+    "c701ba806426eb8b4f6cd96e858699f08d56d0a4f8cd5f900886fb889c2b506d",
+    "19de2d4c1a32d03b675d5e5006a7a54ef83001c8087f86e6d90332b771785a2b",
+    "b4f1dc9536e60eeed5b0a5f137a47454ba2a60dea8bb1fe9e49739d46d16b472",
+    "b932e415ca61353ccd2bc391893f827235e8a5984f7e4892bbd3969dec3f4eba",
+    "f133646084c88cdff4924840aeb80ec7e98b6b4b15cd759582c7f2ce29f32fff",
+    "a559fee2af6693151231e99d4c54c47ebaa04ab4bb312fc85520ba0e9bcf530b",
+    "ed62a06d6924557bdcca91e50adda44d0634da1d824a6f0e5df70855a1ae3470",
+    "6b2cceccfb4ec4f4eb12801e071b6f371565ce7a161181019cb1ee3c6984bc12",
+    "9e1c1b1117e40f06bef3f440ba089997557a611a8fbb55945bfe5febab9b778d",
+    "da3161197ec08824c12d3d79f0e19dd7f8a158bc9263a818c2c0e3cc41fc0cb2",
+    "3b5dd3cf281f8b97001306e1516853d072e0a98119e40f924bd836d7966f3ab4",
+    "56a3b608baae764e63f905564fecf7d3710518217d4c155ecc8d451eb95d9807",
+    "a787e6f2e461cac4dd5f5a3c2fd8c63b39a009f34a858a810a4fe9cade051d27",
+    "f0db90b47a8eccfafb5ffd528dc56889985ad069bd48326d4768a8161eac4bcf",
+    "6a65125ced58e3a79540bf2a3338b94e1767456d0bfe93d903c80bd76f92c03c",
+    "88905b3e43a7660efd5889f563299fe5d2e6f785db86e6f7c6eeb7804a70e272",
+    "ac6d5cb5b773c468f3278b2379e22a92b27993a9c0adb0861ba13b47ec466cec",
+    "3db1a1b734c90bef2b4db9d546556bb31fdbdda559aa42979ff4555881aed907",
+    "0cd4061942abff27bd987a8a826d295726d1bbd4936d8e322667701fdb5b5803"
+  ],
+  "actualConfiguredEnemies": 98,
+  "initialActors": 155,
+  "releasedTokenChecks": 10,
+  "cacheBudgetCoverage": {
+    "groups": 128,
+    "publicBytes": 7427223,
+    "totalBytes": {
+      "baseline": 7765227,
+      "optimized": 7765227
+    },
+    "afterSaturationSelfChecks": 2
+  },
+  "sourceDigests": {
+    "baseline": {
+      "server/world/gameplay/protocol.ts": "d52d736fbf677b7d83573ee5b793cd6def7db9c64f9a16dab7871480caeb0946",
+      "server/world/gameplay/events.ts": "c863867ca70b66c0f262f2198d2412c6a2b505ab62f44fa042c79bedba7d724e",
+      "server/world/host.ts": "56dcac1f91527f0826f8a5cad636ca1d666282247db7242fddf14b9c63e09973"
+    },
+    "optimized": {
+      "server/world/gameplay/protocol.ts": "6be61417833f74494474dd1b5a7a603e6d96fb241a4798fd630c6deba4b50f13",
+      "server/world/gameplay/events.ts": "c863867ca70b66c0f262f2198d2412c6a2b505ab62f44fa042c79bedba7d724e",
+      "server/world/host.ts": "663c8ddcec907b94e37eff4a26d1524fb1e6a403e3cee2344a63d700bf8585c2"
+    }
+  },
+  "retainedPacketImmutabilityChecks": 104,
+  "baselineHead": "5702ae9df9db1b5a80b60c81ada278b94730af37",
+  "optimizedHead": "57d063a347a7f6894b0531d7c605bf8ea225b726",
+  "success": true
+}

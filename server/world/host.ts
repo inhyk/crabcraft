@@ -22,7 +22,7 @@ import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator, readCertifiedGrantPage, AreaSourceDrain, PagedOutcomeRecovery, type Recovery } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, InputRateBudget, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
-import { prepareObservationSnapshot } from './gameplay/protocol.ts';
+import { prepareObservationSnapshot, releasePreparedObservation } from './gameplay/protocol.ts';
 import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
 import type { CommandResult } from './gameplay/events.ts';
 
@@ -773,24 +773,26 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
     const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog);
     observe('snapshotPrepare', deps.nowMonotonicMs() - start);
-    for (const actor of actors.values()) {
-      const c = actor.connection;
-      if (actor.slot !== slot || !c || c.closed || !c.stream || !c.input) continue;
-      if (c.ws.bufferedAmount > p.maxBufferedBytes) { close(c, 'slow-client', true); continue; }
-      try {
-        const encodeStart = deps.nowMonotonicMs(), wasFull = c.full;
-        c.visible = visible(slot, actor, c);
-        const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
-          acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c), selfRef: actor.ref,
-          snapshot, prepared, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark, appearances,
-          results: materializeResults(c),
-          ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
-        observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
-        for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
-        c.full = false; c.baselineSequence = c.sequence; c.results = []; metrics.snapshots++;
-        if (wasFull) { if (p.party) publishParty(c); if (c.chatPreferences) sendControl(c, { type: 'chatPreferences', ...c.chatPreferences }); }
-      } catch (error) { deps.onFailure?.('observation', error); close(c, 'observation-unavailable', true); }
-    }
+    try {
+      for (const actor of actors.values()) {
+        const c = actor.connection;
+        if (actor.slot !== slot || !c || c.closed || !c.stream || !c.input) continue;
+        if (c.ws.bufferedAmount > p.maxBufferedBytes) { close(c, 'slow-client', true); continue; }
+        try {
+          const encodeStart = deps.nowMonotonicMs(), wasFull = c.full;
+          c.visible = visible(slot, actor, c);
+          const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
+            acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c), selfRef: actor.ref,
+            snapshot, prepared, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark, appearances,
+            results: materializeResults(c),
+            ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
+          observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
+          for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
+          c.full = false; c.baselineSequence = c.sequence; c.results = []; metrics.snapshots++;
+          if (wasFull) { if (p.party) publishParty(c); if (c.chatPreferences) sendControl(c, { type: 'chatPreferences', ...c.chatPreferences }); }
+        } catch (error) { deps.onFailure?.('observation', error); close(c, 'observation-unavailable', true); }
+      }
+    } finally { releasePreparedObservation(prepared); }
     slot.events = []; metrics.snapshotBatchMs += deps.nowMonotonicMs() - start; observe('snapshotBatch', deps.nowMonotonicMs() - start);
   };
   const step = (slot: Slot) => {

@@ -1,0 +1,181 @@
+{
+  "runtimeHead": "57d063a347a7f6894b0531d7c605bf8ea225b726",
+  "toolHead": "1949393935c1b4f35ceebcd0dee54031176f0be9",
+  "deterministicBeforeRuntime": "5702ae9df9db1b5a80b60c81ada278b94730af37",
+  "deterministicAfterRuntime": "cc7cfcbc2c8c28d0e7c127f385a08f10520d4912",
+  "deterministic": [
+    {
+      "viewers": 25,
+      "before": {
+        "mean": 18.32518022499999,
+        "p50": 18.07462499999997,
+        "p99": 23.064500000000066,
+        "max": 23.64625000000001
+      },
+      "after": {
+        "mean": 13.05778852500001,
+        "p50": 12.623416000000134,
+        "p99": 18.657417000000123,
+        "max": 19.71133400000008
+      },
+      "p50ReductionPercent": 30.15945835667321,
+      "bytes": 48987560,
+      "packets": 4073,
+      "rssBefore": 384106496,
+      "rssAfter": 398753792
+    },
+    {
+      "viewers": 50,
+      "before": {
+        "mean": 38.92111252499997,
+        "p50": 38.39229099999989,
+        "p99": 48.237959000000046,
+        "max": 52.55291699999998
+      },
+      "after": {
+        "mean": 24.664526012500012,
+        "p50": 24.980374999999867,
+        "p99": 29.981207999999924,
+        "max": 37.77358400000003
+      },
+      "p50ReductionPercent": 34.93387774123732,
+      "bytes": 128790173,
+      "packets": 9850,
+      "rssBefore": 475938816,
+      "rssAfter": 515620864
+    },
+    {
+      "viewers": 100,
+      "before": {
+        "mean": 86.76450571250001,
+        "p50": 84.92541600000004,
+        "p99": 114.06662499999993,
+        "max": 123.64804099999992
+      },
+      "after": {
+        "mean": 43.364220837500035,
+        "p50": 42.586999999999534,
+        "p99": 59.15254099999993,
+        "max": 70.66224999999986
+      },
+      "p50ReductionPercent": 49.853645697773786,
+      "bytes": 325039161,
+      "packets": 23646,
+      "rssBefore": 462061568,
+      "rssAfter": 482656256
+    }
+  ],
+  "matchedP1Host": [
+    {
+      "viewers": 25,
+      "before": {
+        "cpuPercent": 75.29432648460842,
+        "batchP50": 20.849707999999737,
+        "batchP99": 30.66737500000022,
+        "tickP50": 1.9835829999992711,
+        "tickP99": 3.379707999999937,
+        "droppedTicks": 0,
+        "droppedSnapshots": 32,
+        "activeActors": 25,
+        "closes": 0
+      },
+      "after": {
+        "cpuPercent": 63.93009830985008,
+        "batchP50": 16.48620800000026,
+        "batchP99": 29.94537499999933,
+        "tickP50": 2.053542000001471,
+        "tickP99": 4.78216699999939,
+        "droppedTicks": 0,
+        "droppedSnapshots": 30,
+        "activeActors": 25,
+        "closes": 0
+      }
+    },
+    {
+      "viewers": 50,
+      "before": {
+        "cpuPercent": 86.68619435456361,
+        "batchP50": 32.76216700000032,
+        "batchP99": 90.95258400000057,
+        "tickP50": 2.274416000000201,
+        "tickP99": 13.493458999999348,
+        "droppedTicks": 7,
+        "droppedSnapshots": 66,
+        "activeActors": 50,
+        "closes": 0
+      },
+      "after": {
+        "cpuPercent": 71.2510890759525,
+        "batchP50": 19.309666000000107,
+        "batchP99": 64.19666700000016,
+        "tickP50": 2.2257919999992737,
+        "tickP99": 5.686082999998689,
+        "droppedTicks": 12,
+        "droppedSnapshots": 54,
+        "activeActors": 50,
+        "closes": 0
+      }
+    }
+  ],
+  "cpuWindow": "post-warm 15-second measurement interval",
+  "latencyWindow": "host lifetime including warmup (bounded stats history)",
+  "runtimeFiles": {
+    "server/world/gameplay/protocol.ts": "6be61417833f74494474dd1b5a7a603e6d96fb241a4798fd630c6deba4b50f13",
+    "server/world/host.ts": "663c8ddcec907b94e37eff4a26d1524fb1e6a403e3cee2344a63d700bf8585c2",
+    "server/world/gameplay/intents.ts": "86045ced8c3275fd6de7da2027b4d3f6fcc39d8feeb1f19c76577d41db8b763d",
+    "src/sim/data/pose-data.json": "ba64306d79f1e8515fc033465f07947e040191290048df00f8db6f67e5ef27a5",
+    "src/sim/data/rig-catalog.json": "02409800113fbaa006f85dbbea8e719c7ab965bcb30dfcfe71762c123fc719ed"
+  },
+  "historicalArtifacts": {
+    "/tmp/snapshot-before-final-25.json": "9000fa65cebe07e9eef20e6a55b0cb14f4da7db46ae9c1268cb91efba18169d3",
+    "/tmp/snapshot-before-final-50.json": "abda777d74f5cbefcce5a8d8b76cbbf096fe32f56868f86364475372aa7dd6b0",
+    "/tmp/snapshot-before-final-100.json": "5bc3c6231a3ae3de299b8d86ea268e43a868b36d611b19e404c064bd01e5b2fe",
+    "/tmp/snapshot-after-final-50.json": "c8b3d3a2fbf8383ea019d0e3522cf1a79953bea3e6a04509493aa9350dcaff47",
+    "/tmp/snapshot-after-final-25.json": "f09ca26c6f7c1ca4a0cb62a858fad8fc77e8603cd8042521bdbeee0fdc01e74b",
+    "/tmp/snapshot-after-final-100.json": "e17a9f984db69fc35f5c94e9f9f42082734159c7a021aad4e2122bd8f4f06397",
+    "/tmp/snapshot-p1-before-50-profile-summary.json": "530552425cead505c7a0fd6ea59baf810e4736f93991e030da554082a67beebb",
+    "/tmp/snapshot-p1-after-50.json": "a91cd73b778d247d19e48746748df1cb031217d83af221432d3e3ff3be83cd92",
+    "/tmp/snapshot-p1-before-25.json": "212b674cd14ab9e0614a91ce3b12ca581f6183f31ef94b22e18c66fabbeecdcd",
+    "/tmp/snapshot-p1-after-25.json": "76e646b15e9b52f534012c8694a5a8282613e96c51530d4d16c395ece537d029",
+    "/tmp/snapshot-p1-before-50.json": "f3f9252e26f3931c62c8a2ec589bb490591592c9ce582f6c1ceb494cfccab39d",
+    "/tmp/snapshot-p1-after-50-profile-summary.json": "6202d011997e69c4da45aa38cda9b3948907f36d1770065fef605f416affee53",
+    "/tmp/snapshot-p1-before-50.cpuprofile": "2c825be71967393e289181460685d32f52e6f5a6734804d8905c5e30d79b26e1",
+    "/tmp/snapshot-p1-after-25.cpuprofile": "57a7f98dea377bda16a108e75e6d22c7f3a29453e9cca7329332118f38401eaa",
+    "/tmp/snapshot-p1-after-50.cpuprofile": "ae59b11e1af79e1cec2589815206d436b4543717f9baff0871886505c0d89fa4",
+    "/tmp/snapshot-p1-before-25.cpuprofile": "ce07adbf27605339c9e443564acb92695063113839f2dba167d8dc77451d99ad",
+    "/tmp/crabcraft-snapshot-golden-result.json": "facfe7c11a7b55a5a7f22974eb681e4ff3ca02b0130a3870fd6f7653672d8aa3",
+    "/tmp/crabcraft-snapshot-p1-compositions/manifest.json": "60b74245d65921a4070670f7ec23fd4f4a724c3768aed83b0da902df9b22f835"
+  },
+  "checkedInArtifacts": {
+    "composed-build.txt": "2f204f0fdf1652357321c88c5b6100838a8cefdf1336f8677e297ff31771183b",
+    "composed-tests.txt": "42c9181e0be3c47ece1016eef27c31549eb06fa628e7de2363b584df23dcd3c4",
+    "encoder-after-100.json": "e17a9f984db69fc35f5c94e9f9f42082734159c7a021aad4e2122bd8f4f06397",
+    "encoder-after-25.json": "f09ca26c6f7c1ca4a0cb62a858fad8fc77e8603cd8042521bdbeee0fdc01e74b",
+    "encoder-after-50.json": "c8b3d3a2fbf8383ea019d0e3522cf1a79953bea3e6a04509493aa9350dcaff47",
+    "encoder-before-100.json": "5bc3c6231a3ae3de299b8d86ea268e43a868b36d611b19e404c064bd01e5b2fe",
+    "encoder-before-25.json": "9000fa65cebe07e9eef20e6a55b0cb14f4da7db46ae9c1268cb91efba18169d3",
+    "encoder-before-50.json": "abda777d74f5cbefcce5a8d8b76cbbf096fe32f56868f86364475372aa7dd6b0",
+    "encoder-before-profile.json": "9c6dcc55c9a8bc3282bb3906093e1f86276632f1a588147b9be06b35cda9d2a1",
+    "golden-57d063a.json": "facfe7c11a7b55a5a7f22974eb681e4ff3ca02b0130a3870fd6f7653672d8aa3",
+    "host-composition.json": "60b74245d65921a4070670f7ec23fd4f4a724c3768aed83b0da902df9b22f835",
+    "host-p1-after-25.json": "76e646b15e9b52f534012c8694a5a8282613e96c51530d4d16c395ece537d029",
+    "host-p1-after-50-profile.json": "6202d011997e69c4da45aa38cda9b3948907f36d1770065fef605f416affee53",
+    "host-p1-after-50.json": "a91cd73b778d247d19e48746748df1cb031217d83af221432d3e3ff3be83cd92",
+    "host-p1-before-25.json": "212b674cd14ab9e0614a91ce3b12ca581f6183f31ef94b22e18c66fabbeecdcd",
+    "host-p1-before-50-profile.json": "530552425cead505c7a0fd6ea59baf810e4736f93991e030da554082a67beebb",
+    "host-p1-before-50.json": "f3f9252e26f3931c62c8a2ec589bb490591592c9ce582f6c1ceb494cfccab39d"
+  },
+  "composedHead": "6514c62e7aca6599a432285623d1ac6ef23494fe",
+  "composedHeadPerformanceMeasured": false,
+  "goldenToolSha256": "f7564315984c0ad39f0385d9c960951f33ddeaef0b4f76aa5a96f8dc2e85cc24",
+  "composedVerification": {
+    "head": "6514c62e7aca6599a432285623d1ac6ef23494fe",
+    "command": "npx -y node@24 --test server/world/host.test.mjs server/world/gameplay/protocol.test.mjs",
+    "tests": 59,
+    "pass": 59,
+    "fail": 0,
+    "skipped": 0,
+    "build": "npx -y pnpm@10.10.0 build",
+    "buildExit": 0
+  }
+}
