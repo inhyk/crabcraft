@@ -29,7 +29,7 @@ const runtime = await startConfiguredWorld({
 
 레벨, spawn 수, respawn 시간의 생산 기본값은 없다. `fixed-slots`는 이미 선언된 각 slot의 `desired=1`을 사용하며 nearby-player 밀도 곡선을 구현하지 않는다. Spawn pool은 설정 수로 제한된다. `shallowPatrols`는 별도 source spawn 역할이고 scrapling 레벨/respawn 시간을 사용한다. Echo는 echo 레벨/respawn 설정과 기존 World II 45/120초 규칙을 함께 따른다. Party 보스 add의 실제 encounter 규칙은 별도다.
 
-`population` 합계와 실제 생성된 enemy 수 모두 `limits.maxMutationSourcesPerTick <= 256` 이하여야 한다. 원본 layout이 지형 조건에 따라 일부 jellyfish template을 찾지 못하면 실제 목록이 요청 수보다 적을 수 있다. 조용히 population을 늘리거나 다른 template으로 대체하지 않는다. 새로운 density 알고리즘 이름이나 알 수 없는 필드는 거부한다.
+`population` 합계와 실제 생성된 enemy 수 모두 `limits.maxMutationSourcesPerTick <= 256` 이하여야 한다. 원본 layout이 지형 조건에 따라 일부 jellyfish template을 찾지 못하면 실제 목록이 요청 수보다 적을 수 있다. 조용히 population을 늘리거나 다른 template으로 대체하지 않는다. 새로운 density 알고리즘 이름이나 알 수 없는 필드는 거부한다. 실제 enemyStats에서 계산한 HP/XP/damage 등 숫자가 finite-safe 범위를 벗어나면 ownership 획득 전에 시작을 거부한다. 임의의 level cap으로 정규화하지 않는다.
 
 Public은 실제 4개 world, world별 capacity100, PvP disabled다. 이 값들은 현재 host/core 계약에서 온다. Startup policy는 모든 player-to-player damage를 거부한다. `party`를 생략하거나 `{"enabled":false}`로 두면 party가 disabled다. 현재 startup checkpoint는 `enabled:true`를 거부한다. Party owner의 실제 host 지원, 명시적 maxParties/maxEncounters와 각 profile의 return POI 정책이 연결된 별도 checkpoint 전에는 활성화할 수 없다.
 

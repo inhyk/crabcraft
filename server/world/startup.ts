@@ -5,6 +5,8 @@ import type { IncomingMessage } from 'node:http';
 import type { Pool } from 'pg';
 import { createCoreCharacterCodec, type CharacterCheckpointV1, type RestorePolicy } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
+import { enemyStats } from '../../src/sim/data/enemies.ts';
+import { worldChapter } from '../../src/sim/math.ts';
 import { CLASSES } from '../../src/sim/data/classes.ts';
 import type { AreaPolicy, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { CharacterStore } from './character-store.ts';
@@ -89,7 +91,7 @@ async function loadCheckedCatalog(assets:URL,c:ValidatedWorldConfig):Promise<Rea
  const expected=new Map<WorldId,string>();for(const world of PUBLIC_WORLDS){const m=object(entries[world],['file','bytes','sha256'],[],`manifest.${world}`);if(m.file!==`collision-${world}.json`)fail(`manifest.${world}.file`);const size=integer(m.bytes,`manifest.${world}.bytes`,1,c.assets.maxBakeBytes);total+=size;if(total>c.assets.maxTotalBakeBytes)fail('asset total byte budget');const digest=hash(m.sha256,`manifest.${world}.sha256`),bytes=await checkedRead(new URL(m.file as string,assets),c.assets.maxBakeBytes);if(bytes.byteLength!==size||createHash('sha256').update(bytes).digest('hex')!==digest)fail(`asset integrity ${world}`);expected.set(world,digest);}
  const policies=Object.fromEntries(PUBLIC_WORLDS.map(world=>[world,createConfiguredAreaPolicy(c.worlds[world])])) as Record<WorldId,AreaPolicy>;
  const catalog=await loadWorldCatalog({directory:assets,expectedBakeSource:c.assets.source,maxBakeBytes:c.assets.maxBakeBytes,maxCells:c.assets.maxCells,configs:c.worlds,policies,seeds:Object.fromEntries(PUBLIC_WORLDS.map(w=>[w,c.worlds[w].seed])) as Record<WorldId,number>,variants:createWorldVariants});
- for(const [world,data]of catalog){if(data.artifactHash!==expected.get(world))fail(`asset changed while loading ${world}`);if(data.publicDefinition.enemies.length>c.limits.maxMutationSourcesPerTick)fail(`${world}.actual population exceeds receipt bound`);}return catalog;
+ for(const [world,data]of catalog){if(data.artifactHash!==expected.get(world))fail(`asset changed while loading ${world}`);if(data.publicDefinition.enemies.length>c.limits.maxMutationSourcesPerTick)fail(`${world}.actual population exceeds receipt bound`);for(const spawn of data.publicDefinition.enemies)for(const value of Object.values(enemyStats(spawn.kind,spawn.fixedLevel,worldChapter(world),spawn.role)))if(typeof value==='number'&&(!Number.isFinite(value)||Math.abs(value)>Number.MAX_SAFE_INTEGER))fail(`${world}.unsafe derived enemy stats`);}return catalog;
 }
 export interface ConfiguredWorldOptions {pool:Pool;admission:WorldTicketRegistry;assets:URL;config:unknown;originAllowed(origin:string,req:IncomingMessage):boolean;clientIp(req:IncomingMessage):string}
 export async function startConfiguredWorld(options:ConfiguredWorldOptions) {
