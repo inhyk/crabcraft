@@ -173,6 +173,9 @@ export class Multiplayer {
     switch (msg.type) {
       case 'welcome': {
         this.ownId = msg.id; this.offline = false;
+        // Only the visible label changes; the original spec still owns local saves.
+        if(typeof msg.displayName==='string')this.game.player.unit.name=displayName(msg.displayName);
+        if(msg.nameConflict===true)this.note(t(`이미 사용 중인 이름이라 ‘${this.game.player.unit.name}’로 표시해요.`,`That name is already in use, so you appear as “${this.game.player.unit.name}”.`),'mp-system');
         if (msg.public) {
           this.shard = msg.room; this.area = msg.area; this.room = '';
           if(msg.sharedWorld===1)this.battle.join(msg.id,msg.host,msg.world,true);
