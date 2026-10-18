@@ -166,7 +166,7 @@ export class ActionBar {
       const nores = p.resource < s.ab.cost;
       let oor = false;
       const t = p.target;
-      if (abilityNeedsTarget(s.ab) && t && t.alive && t.hostile) {
+      if (abilityNeedsTarget(s.ab) && t && t.alive && (g.server?g.server.attackable(t):t.hostile)) {
         oor = isMeleeAbility(s.ab) ? p.unit.gapTo(t) > 1.8 : p.unit.distTo(t) - t.radius > s.ab.range;
       }
       const state = `${nores ? 'n' : ''}${oor ? 'o' : ''}`;
