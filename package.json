@@ -9,6 +9,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build:server": "node server/node/build.mjs",
+    "test:world": "node --test server/world/*.test.mjs",
+    "load:world": "node tools/load-world.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "shot": "node tools/shot.mjs",
