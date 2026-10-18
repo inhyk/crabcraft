@@ -9,7 +9,7 @@ import { specOf, stateOf, actions, clean, type Spec, type State } from './protoc
 import { Moderation, Talk, CHAT, reasonOf, sessionOf, shownName, type Report } from './chat/safety.ts';
 
 /** `session`: the client's per-tab id (see chat/safety.ts); `lastRoom`: where a departed player was, for reports. */
-type Member = { id: string; ws: WebSocket; spec: Spec; state: State | null; room: string; pong: boolean; rateAt: number; messages: number; combat: boolean; session: string; talk: Talk; lastRoom: string };
+type Member = { id: string; ws: WebSocket; spec: Spec; state: State | null; room: string; pong: boolean; rateAt: number; messages: number; combat: boolean; snow: boolean; session: string; talk: Talk; lastRoom: string };
 
 export type RoomOptions = {
   /** Browser origins allowed to connect. By default only same-host origins may. */
@@ -24,8 +24,8 @@ export type RoomOptions = {
 
 /** Players per room or public shard. In a room, the elected host's browser simulates the world for all of them. */
 export const ROOM_CAP = 8;
-/** World areas a public shard can hold: World I, II and III. */
-const areaOf = (v: unknown) => v === 2 || v === 3 ? v : 1;
+/** Public presence is isolated by world area, including Frostlight. */
+const areaOf = (v: unknown) => v === 2 || v === 3 || v === 4 ? v : 1;
 
 const sameHost = (origin: string, req: IncomingMessage) => { try { return new URL(origin).host === req.headers.host; } catch { return false; } };
 const reject = (socket: Duplex, status: string) => { socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); };
@@ -47,9 +47,10 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   const moderation = new Moderation();
   const worlds = new Map<string, WorldState>();
   const alarms = new Map<string, number>();
+  const snowRooms=new Map<string,boolean>();
   /** Public shard code to its world area. Shard codes start with W, so they cannot be joined by code. */
   const publics = new Map<string, number>();
-  const drop = (code: string) => { rooms.delete(code); worlds.delete(code); alarms.delete(code); publics.delete(code); };
+  const drop = (code: string) => { rooms.delete(code); worlds.delete(code); alarms.delete(code); publics.delete(code);snowRooms.delete(code); };
   // Make room for a new one by forgetting the oldest room nobody is in.
   const evict = () => { for (const [code, room] of rooms) if (!room.size) { drop(code); return true; } return false; };
   const host = (room: string) => [...(rooms.get(room)?.values() ?? [])].find(m => m.combat)?.id ?? '';
@@ -98,7 +99,7 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   server.on('upgrade', upgrade);
   wss.on('connection', ws => {
     const id = randomUUID();
-    const m: Member = { id, ws, spec: { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Crab' }, state: null, room: '', pong: true, rateAt: Date.now(), messages: 0, combat: false, session: id, talk: new Talk(), lastRoom: '' };
+    const m: Member = { id, ws, spec: { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Crab' }, state: null, room: '', pong: true, rateAt: Date.now(), messages: 0, combat: false, snow: false, session: id, talk: new Talk(), lastRoom: '' };
     members.add(m);
     known.set(id, { member: m, gone: 0 });
     ws.on('error', () => ws.terminate());
@@ -137,12 +138,15 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
         if (msg.type === 'create') {
           if (rooms.size >= maxRooms && !evict()) { send(ws, { type: 'error', message: 'Server full. Try again later.' }); return; }
           do { code = randomBytes(3).toString('hex').toUpperCase(); } while (rooms.has(code));
+          snowRooms.set(code,msg.snowWorld===true);
           if (keepRooms) alarms.set(code, now + keepRooms);
         } else if (!/^[A-F0-9]{6}$/.test(code) || !rooms.has(code)) {
           send(ws, { type: 'error', message: 'Room not found. Check the six-character code.' }); return;
         }
         if ((rooms.get(code)?.size ?? 0) >= ROOM_CAP) { send(ws, { type: 'error', message: 'Room is full (8 players).' }); return; }
-        leave(m);
+        const snow=msg.snowWorld===true;
+        if(snowRooms.get(code)!==snow){send(ws,{type:'error',message:'Game versions differ. Everyone must refresh before joining.'});return;}
+        leave(m);m.snow=snow;
         admit(m, code, spec, msg.combatVersion === 1, msg.session);
       } else if (msg.type === 'leave') { leave(m); send(ws, { type: 'leftRoom' }); }
       else if (m.room && msg.type === 'state') {
@@ -154,11 +158,11 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
         broadcast(m.room, { type: 'action', id: m.id, action: msg.action }, m.id);
       } else if (m.room && m.combat && msg.type === 'world' && host(m.room) === m.id) {
         const world = worldOf(msg.world);
-        if (world) { worlds.set(m.room, world); broadcast(m.room, { type: 'world', world }, m.id); }
+        if (world && (m.snow || world.chapter!==4&&!world.bosses.some(b=>b.id==='b300'))) { worlds.set(m.room, world); broadcast(m.room, { type: 'world', world }, m.id); }
       } else if (m.room && m.combat && msg.type === 'combat') {
         const authority = host(m.room) === m.id;
         const event = eventOf(msg.event, authority);
-        if (event) {
+        if (event && (m.snow || event.chapter!==4&&![event.target,event.source].some(key=>key==='b300'||key==='f300'))) {
           const packet = { type: 'combat', id: m.id, event };
           if (authority) broadcast(m.room, packet, m.id);
           else { const h = rooms.get(m.room)?.get(host(m.room)); if (h) send(h.ws, packet); }

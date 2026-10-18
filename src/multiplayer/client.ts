@@ -17,7 +17,7 @@ import { Blocklist, REPORT_REASONS, chatSession, displayName, markSafetyNote, pu
 type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number };
 /** `dance`: the peer's breakdance, replayed here move by move as the peer announces them. */
 type Peer = { spec: CrabSpec; unit: Unit | null; state: State | null; dance: BreakRoutine | null };
-const ROMAN = ['', 'I', 'II', 'III'];
+const ROMAN = ['', 'I', 'II', 'III', 'IV'];
 
 /**
  * Entering the world joins a public shard of the current world area; travelling moves to that area's shard.
@@ -80,7 +80,7 @@ export class Multiplayer {
       hello: (mode, room) => {
         const spec = this.game.player.unit.rig.spec;
         const session = this.session;
-        return mode === 'enter' ? { type: mode, area: this.game.world2.chapter, spec, session } : { type: mode, room, combatVersion: 1, spec, session };
+        return mode === 'enter' ? { type: mode, area: this.game.world2.chapter, spec, session } : { type: mode, room, combatVersion: 1, snowWorld:true, spec, session };
       },
       message: msg => this.receive(msg),
       lost: info => this.lost(info),
@@ -438,7 +438,7 @@ export class Multiplayer {
   }
   private setStatus(ko:string,en:string){this.statusText=[ko,en];this.status.textContent=t(ko,en);}
   private serverError(message:string):[string,string]{
-    const errors:[string,string][]=[['캐릭터 정보를 확인해 주세요.','Invalid character.'],['서버가 가득 찼어요. 잠시 뒤 다시 시도하세요.','Server full. Try again later.'],['방을 찾을 수 없어요. 6자리 코드를 확인하세요.','Room not found. Check the six-character code.'],['방이 가득 찼어요. 최대 8명까지 참가할 수 있어요.','Room is full (8 players).']];
+    const errors:[string,string][]=[['게임 버전이 달라요. 모두 새로고침한 뒤 같은 방에 들어와 주세요.','Game versions differ. Everyone must refresh before joining.'],['캐릭터 정보를 확인해 주세요.','Invalid character.'],['서버가 가득 찼어요. 잠시 뒤 다시 시도하세요.','Server full. Try again later.'],['방을 찾을 수 없어요. 6자리 코드를 확인하세요.','Room not found. Check the six-character code.'],['방이 가득 찼어요. 최대 8명까지 참가할 수 있어요.','Room is full (8 players).']];
     return errors.find(pair=>pair.includes(message))??[message,message];
   }
   refreshLanguage(){

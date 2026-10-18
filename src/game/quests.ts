@@ -4,10 +4,10 @@ import { Emitter } from './util';
 import {language,t,type Language} from '../i18n';
 import {translatedQuest} from './questLocale';
 
-export type QuestId = 'q1' | 'q2' | 'q3' | 'q4' | 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6' | 'w7' | 'd1' | 'd2';
+export type QuestId = 'q1' | 'q2' | 'q3' | 'q4' | 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6' | 'w7' | 'd1' | 'd2' | 's1' | 's2';
 export type NpcId = 'brinebeard' | 'silvermoon' | 'coralline' | 'grukk' | 'hoofclaw' | 'rattlebolt' | 'pip';
 export type QuestStatus = 'locked' | 'available' | 'active' | 'ready' | 'done';
-export type ObjectiveKind = 'kill-scrapling' | 'kill-scavenger' | 'collect-cog' | 'deliver' | 'beacon' | 'boss' | 'crystal-a' | 'crystal-b' | 'crystal-c' | 'crystal-d' | 'lamp-a' | 'lamp-b' | 'lamp-c' | 'explore-west' | 'explore-east' | 'explore-north' | 'deliver-supplies' | 'eclipse-boss' | 'dawn-boss';
+export type ObjectiveKind = 'kill-scrapling' | 'kill-scavenger' | 'collect-cog' | 'deliver' | 'beacon' | 'boss' | 'crystal-a' | 'crystal-b' | 'crystal-c' | 'crystal-d' | 'lamp-a' | 'lamp-b' | 'lamp-c' | 'explore-west' | 'explore-east' | 'explore-north' | 'deliver-supplies' | 'eclipse-boss' | 'dawn-boss' | 'frost-boss';
 
 export interface ObjectiveDef {
   id: string;
@@ -19,7 +19,7 @@ export interface ObjectiveDef {
 
 export interface QuestDef {
   id: QuestId;
-  chapter?: 1 | 2 | 3;
+  chapter?: 1 | 2 | 3 | 4;
   title: string;
   giver: NpcId;
   /** null = completes by itself when the objectives are done. */
@@ -37,6 +37,8 @@ export interface QuestDef {
 }
 
 export const QUESTS: Record<QuestId, QuestDef> = {
+ s1:{id:'s1',chapter:4,title:'Patrol the Snowfields',giver:'grukk',turnIn:'grukk',offer:['Frost sentinels are gathering beneath the aurora. Keep the path to our warm village safe.','Defeat eight Glacial Sentinels, then return for your reward.'],progress:'Defeat eight Glacial Sentinels in the snowfields.',complete:['The trail is safe again! Keep patrolling to prepare for Boreas.'],summary:'Protect Snowfall Village from the glacial patrols.',readyHint:'Return to Grukk in Snowfall Village.',objectives:[{id:'s1-kill',kind:'kill-scavenger',label:'Glacial Sentinels defeated',count:8,poi:'wreck'}],xp:18000},
+ s2:{id:'s2',chapter:4,title:'The Eternal Winter',giver:'brinebeard',turnIn:null,offer:['Beyond the aurora lies a crown sealed in ice. Boreas will only face a hero who reaches level 300.','Take the lantern road north, reclaim the Frozen Crown and bring spring to Frostlight.'],progress:'Reach level 300 and defeat Boreas at the Frozen Throne.',complete:['The Frozen Crown is free. Your adventure continues beyond the snow!'],summary:'Challenge level 300 Boreas and end the eternal winter.',readyHint:'Your reward is granted automatically.',objectives:[{id:'s2-boss',kind:'frost-boss',label:'Boreas defeated',count:1,poi:'bossArena'}],xp:24000},
  d1:{id:'d1',chapter:3,title:'The Missing Friend',giver:'brinebeard',turnIn:'brinebeard',offer:['Mira was taken by Solarkan when the dawn went dark. She is imprisoned in the northern citadel.','Defeat six Twilight Sentinels along the ascent. Reach level 100, reclaim the crown and bring our friend home.'],progress:'Clear the sentinel patrols on the way to the citadel.',complete:['The ascent is safe! Follow the golden road north to Mira’s prison.'],summary:'Help the Dawnharbor captain by defeating six Twilight Sentinels.',readyHint:'Return to the captain in Dawnharbor.',objectives:[{id:'d1-kill',kind:'kill-scavenger',label:'Twilight Sentinels defeated',count:6,poi:'wreck'}],xp:2800},
  d2:{id:'d2',chapter:3,title:'Bring Mira Home',giver:'brinebeard',turnIn:'brinebeard',offer:['Mira’s light is still shining through the bars. Solarkan holds the prison key.','Challenge the level 100 king and we will all dance together again.'],progress:'Defeat Solarkan at level 100 and free Mira.',complete:['You brought Mira home. This dawn belongs to every friend on our three islands.'],summary:'Defeat Solarkan, free Mira, and celebrate with the whole village.',readyHint:'Return to the captain.',objectives:[{id:'d2-boss',kind:'dawn-boss',label:'Solarkan defeated and Mira freed',count:1,poi:'bossArena'}],xp:3500},
   q1: {
@@ -372,7 +374,7 @@ export const QUESTS: Record<QuestId, QuestDef> = {
 },
 };
 
-export const QUEST_ORDER: QuestId[] = ['q1', 'q2', 'q3', 'q4', 'w1','w2','w3','w4','w5','w6','w7','d1','d2'];
+export const QUEST_ORDER: QuestId[] = ['q1', 'q2', 'q3', 'q4', 'w1','w2','w3','w4','w5','w6','w7','d1','d2','s1','s2'];
 
 export interface NpcDef {
   id: NpcId;
@@ -569,16 +571,16 @@ export interface CurrentObjective {
 }
 
 export class QuestLog {
-  readonly status: Record<QuestId, QuestStatus> = { q1: 'available', q2: 'locked', q3: 'locked', q4: 'locked', w1:'locked',w2:'locked',w3:'locked',w4:'locked',w5:'locked',w6:'locked',w7:'locked',d1:'locked',d2:'locked' };
-  chapter:1|2|3=1;
+  readonly status: Record<QuestId, QuestStatus> = { q1: 'available', q2: 'locked', q3: 'locked', q4: 'locked', w1:'locked',w2:'locked',w3:'locked',w4:'locked',w5:'locked',w6:'locked',w7:'locked',d1:'locked',d2:'locked',s1:'locked',s2:'locked' };
+  chapter:1|2|3|4=1;
   inChapter(id: QuestId) { return (QUESTS[id].chapter ?? 1)===this.chapter; }
-  setChapter(chapter:1|2|3) {
+  setChapter(chapter:1|2|3|4) {
     this.chapter=chapter;
     if(chapter>=2)for(const id of QUEST_ORDER)if(this.inChapter(id) && this.status[id]==='locked')this.status[id]='available';
   }
   readonly progress = new Map<string, number>();
   /** Personal navigation choices stay separate for the two worlds. */
-  readonly tracked: Partial<Record<1 | 2 | 3, QuestId>> = {};
+  readonly tracked: Partial<Record<1 | 2 | 3 | 4, QuestId>> = {};
   readonly events = new Emitter<QuestEvents>();
   cogs = 0;
 
@@ -600,7 +602,7 @@ export class QuestLog {
 
   restoreTracking(value: unknown): void {
     if (!value || typeof value !== 'object') return;
-    for (const chapter of [1, 2, 3] as const) {
+    for (const chapter of [1, 2, 3, 4] as const) {
       const id = (value as Record<string, unknown>)[chapter];
       if (typeof id === 'string' && QUEST_ORDER.includes(id as QuestId) && this.canTrack(id as QuestId, chapter)) this.tracked[chapter] = id as QuestId;
     }

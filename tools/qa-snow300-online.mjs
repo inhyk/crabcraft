@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';
+const base=process.env.CC_QA_BASE??'http://127.0.0.1:5218',errors=[];
+const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const p=await browser.newPage({viewport:{width:1280,height:800}});
+async function load(page,name){page.setDefaultTimeout(30000);page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(name=>{localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name}));localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','high');if(location.hostname==='127.0.0.1'){const WS=window.WebSocket;window.WebSocket=class extends WS{constructor(url,protocols){const u=new URL(String(url));if(u.pathname==='/multiplayer'){u.host=location.host;u.protocol='ws:';}super(u.href,protocols);}};}},name);await page.goto(base+'/?screen=game');await page.locator('.launch-notice-start').click();await page.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await page.waitForFunction(()=>!document.querySelector('.loading'));}
+async function level(page,l){await page.evaluate(l=>{const g=window.app.current.game,n=l-20;g.player.restoreXp(22000+2200*n+100*n*(n-1));},l);}
+try{
+ await load(p,'Snow Host 299');await level(p,299);
+ await p.evaluate(()=>{const g=window.app.current.game;g.god=true;Object.assign(g.journey,{rustCleared:true,abyssCleared:true,trueCleared:true,finalCleared:true,firstEndingSeen:true,trueStarted:true,world2Celebrated:true});g.world2.go(4);});
+ const q=await browser.newPage({viewport:{width:1280,height:800}});await load(q,'Snow Friend 300');await level(q,300);
+ await p.locator('.mp-panel > summary').click();await p.getByRole('button',{name:/방 만들기|Create room/}).click();await p.waitForFunction(()=>window.app.current.game.multiplayer.battle.active);const room=await p.evaluate(()=>window.app.current.game.multiplayer.room);
+ await q.locator('.mp-panel > summary').click();await q.getByRole('textbox',{name:'방 코드',exact:true}).fill(room);await q.getByRole('button',{name:/참가|Join/,exact:true}).click();await q.waitForFunction(()=>window.app.current.game.world2.chapter===4&&window.app.current.game.multiplayer.battle.active);await p.waitForFunction(()=>window.app.current.game.partyLevel===300);
+ await p.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,0,-69);g.frostBoss.wake();});await p.waitForFunction(()=>window.app.current.game.frostBoss.state==='idle');await p.waitForTimeout(400);assert.equal(await p.evaluate(()=>window.app.current.game.frostBoss.state),'idle');
+ await q.evaluate(()=>{window.app.current.game.god=true;document.querySelector('.mp-panel').open=false;});await q.locator('.boss-journey:has(.bj-card.frost) > summary').click();await q.locator('.bj-card.frost button').click();await p.waitForFunction(()=>window.app.current.game.frostBoss.engaged);await q.waitForFunction(()=>window.app.current.game.frostBoss.engaged);
+ console.log('PASS actual online room joins World IV; level 299 host cannot engage; level 300 guest starts Boreas');
+ await p.evaluate(()=>{const g=window.app.current.game,b=g.frostBoss;b.clearMech();b.unit.hp=b.unit.maxHp*.39;});await p.waitForFunction(()=>window.app.current.game.frostBoss.phase===3);
+ await p.evaluate(()=>{const b=window.app.current.game.frostBoss;b.mechIndex=2;b.startMech();});await q.waitForFunction(()=>window.app.current.game.frostBoss.mechName==='barrage');
+ const a=await p.evaluate(()=>{const g=window.app.current.game,b=g.frostBoss;return {level:g.player.level,hp:b.unit.hp,points:b.barragePoints(b.mech.at,b.mech.yaw).map(p=>p.toArray())};});
+ const b=await q.evaluate(()=>{const g=window.app.current.game,b=g.frostBoss;return {level:g.player.level,hp:b.unit.hp,points:b.barragePoints(b.mech.at,b.mech.yaw).map(p=>p.toArray())};});assert.equal(a.level,299);assert.equal(b.level,300);assert.deepEqual(b.points,a.points);assert.equal(a.points.length,7);assert.equal(b.hp,a.hp);
+ await p.evaluate(()=>{const g=window.app.current.game;g.combat.damage(g.player.unit,g.frostBoss.unit,1000);});assert.equal(await p.evaluate(()=>window.app.current.game.frostBoss.unit.hp),a.hp);
+ await q.evaluate(()=>{const g=window.app.current.game;g.combat.damage(g.player.unit,g.frostBoss.unit,100);});await p.waitForFunction(hp=>window.app.current.game.frostBoss.unit.hp===hp-100,a.hp);await q.waitForFunction(hp=>window.app.current.game.frostBoss.unit.hp===hp-100,a.hp);
+ await q.screenshot({path:'tmp/qa/snow300-online.png'});assert.deepEqual(errors,[]);console.log('PASS synchronized phase III, seven-circle blizzard, HP; level 299 damage denied and level 300 accepted; zero browser errors');
+}finally{console.log('PAGE_ERRORS',errors);await browser.close();}

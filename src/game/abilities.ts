@@ -156,6 +156,7 @@ export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit 
         z = r.y;
       }
       u.teleport(g.world, x, z);
+      g.combat.heal(u, u, 10);
       g.vfx.steamPuff(u.pos);
       g.audio.sfx('sfx-servo-whir', { volume: 0.6 });
       break;
