@@ -201,14 +201,14 @@ export class BossJourney {
     const g = this.game;
     this.root.hidden = g.ending.active || g.cinematic;this.wallet.hidden=this.root.hidden;
     if (g.multiplayer?.battle.authority !== false && g.world2.chapter===1 && g.beaconLit && g.partyLevel >= 3 && !this.rustCleared && g.boss.state === 'dormant') g.boss.wake();
-    if (this.abyssCleared && !this.firstEndingSeen && g.finalBoss.state === 'dead' && !this.chapterEnding && !this.chapterCelebrating && !g.ending.active && g.world2.chapter === 1) this.showChapterEnding();
+    if (g.multiplayer?.battle.mode!=='pvp' && this.abyssCleared && !this.firstEndingSeen && g.finalBoss.state === 'dead' && !this.chapterEnding && !this.chapterCelebrating && !g.ending.active && g.world2.chapter === 1) this.showChapterEnding();
     if(this.chapterEnding) {
       this.endingTime+=dt;
       this.chapterEnding.classList.toggle('revealed',this.endingTime>4);
       const button=this.chapterEnding.querySelector('button')!; button.disabled=this.endingTime<5;
       if(this.endingTime>12 && g.multiplayer?.battle.authority !== false) this.finishChapterEnding();
     }
-    if(this.frostCleared && g.frostBoss.state==='dead' && g.world2.chapter===4 && !this.trueStarted && !g.ending.active) { this.trueStarted=true; this.save(); void g.ending.start(); }
+    if(g.multiplayer?.battle.mode!=='pvp' && this.frostCleared && g.frostBoss.state==='dead' && g.world2.chapter===4 && !this.trueStarted && !g.ending.active) { this.trueStarted=true; this.save(); void g.ending.start(); }
     if(this.trueCleared&&g.worldBoss.state==='dead'&&!this.world2Celebrated&&!g.ending.active&&g.world2.chapter===2){this.world2Celebrated=true;g.hud.messages.banner(()=>t('월드3의 항로가 열렸어요!','The route to World III is open!'),()=>t('북쪽 별길의 포탈을 타고 친구를 구하러 떠나요','Take the north Starroad portal to rescue your friend'),'quest');this.save();}
     this.render();
     if ((this.saveAt += dt) > 3) { this.saveAt = 0; this.save(); }

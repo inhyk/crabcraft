@@ -28,8 +28,11 @@ export class BattleSync {
     if(this.sharedArea)return;
     if(!this.active||!this.authority){this.game.hud.messages.info(t('방장이 협동 / 싸우기 모드를 선택해요.','The host chooses co-op or PvP mode.'));return;}
     if(this.game.encounter?.engaged){this.game.hud.messages.info(t('보스 전투가 끝난 뒤 모드를 바꿔 주세요.','Wait until the boss battle ends to change mode.'));return;}
+    if(this.mode===mode)return;
     // Explicit teams belong to the room, so changing its combat rules keeps friends together.
-    this.mode=mode;this.game.player.setTarget(null);this.publish();
+    this.mode=mode;this.game.player.setTarget(null);
+    if(mode==='pvp')this.game.resumeFriendAdventure?.(true);
+    this.publish();
   }
   private duel(id:string,target:string,amount:number,crit=false){
     if(this.game.villageGames?.playing||this.mode!=='pvp'||id===target||this.sameParty(id,target)||!Number.isFinite(amount)||amount<=0)return;
@@ -89,7 +92,7 @@ export class BattleSync {
   join(ownId: string, host: string, world: WorldState | null, sharedArea = false) {
     this.sharedArea=sharedArea;this.active = true; this.ownId = ownId; this.host = host;
     if (world) this.apply(world, true);
-    if (world && this.authority) {
+    if (this.authority) {
       for (const e of this.game.enemies) e.resumeAuthority();
       for (const b of [this.game.boss,this.game.finalBoss,this.game.worldBoss,this.game.dawnBoss,this.game.frostBoss]) b.resumeAuthority();
     }
@@ -253,6 +256,7 @@ export class BattleSync {
   apply(world: WorldState, instant = false) {
     if (!this.active || this.sharedArea && world.chapter!==this.game.world2.chapter) return;
     const g = this.game;
+    const previousMode=this.mode;
     this.mode=this.sharedArea?'coop':world.social?.mode??'coop';this.parties=this.sharedArea?{}:{...(world.social?.parties??{})};
     this.applying = true;
     try {
@@ -295,6 +299,7 @@ export class BattleSync {
         if(world.frostCleared&&world.bosses.some(b=>b.id==='b300'&&b.state==='dead'))g.journey.frostCleared=true;
       }
     } finally { this.applying = false; }
+    if(this.mode==='pvp'&&previousMode!=='pvp')g.resumeFriendAdventure?.(this.authority);
     // Shared environment satisfies each player's active beacon objective, including late accepts.
     if(g.world2.chapter===1&&g.beaconLit)g.quests.bump('beacon');
   }

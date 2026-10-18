@@ -4,7 +4,7 @@ import { immutable } from './events.ts';
 import { worldChapter, validatePopulation, angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
 import { gapTo as gap, moveTo, speedMul, lineOfSight as unitLineOfSight } from './unit.ts';
 export { angleDiff, turn, distance, gap, speedMul };
-import { enemyStats, RESPAWN_CLEAR, type EnemyStats } from './data/enemies.ts';
+import { enemyStats, enemyRespawnClearance, type EnemyStats } from './data/enemies.ts';
 
 export function moveCreature(s:AreaServices,u:SimUnit,x:number,z:number,dt:number):void{moveTo(u,s.query,x,z,dt);}
 export function creatureAction(s:AreaServices,u:SimUnit,id:ActionId,opts:Partial<ActionRequest>={},hit?:HitPlan):void{
@@ -61,9 +61,9 @@ export class Enemy {
     }
     if(this.state==='dead'){
       const t=now-this.deadAt;if(t>8&&!u.hidden){u.lift=-Math.min(1.4,(t-8)*.9)*u.height;u.y=s.query.heightAt(u.x,u.z)+u.lift;if(t>9.6)u.hidden=true;}
-      const nearby=s.players().filter(p=>p.alive&&!p.hidden&&distance(p,this.spawn.home)<RESPAWN_CLEAR).length;
+      const nearby=s.players().filter(p=>p.alive&&!p.hidden&&distance(p,this.spawn.home)<enemyRespawnClearance(this.kind,worldChapter(s.world),this.spawn.role)).length;
       const population=validatePopulation(s.policy.enemyPopulation(this.spawn,nearby));
-      if(!this.isAdd&&population.desired>0&&t>population.respawnSeconds&&nearby===0){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
+      if(!this.isAdd&&population.desired>0&&t>(this.isEcho?120:population.respawnSeconds)&&nearby===0){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
     }
     if(this.rise>0){this.rise=Math.max(0,this.rise-dt);u.lift=-this.rise*1.3*u.height;}
     if(this.leap){this.updateLeap(dt);return;}

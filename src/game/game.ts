@@ -1378,6 +1378,20 @@ export class Game {
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }
 
+  /** A duel keeps the adventure alive, even when entered from a shared victory celebration. */
+  resumeFriendAdventure(authority:boolean):void {
+    this.ending.cancel();this.journey?.closeChapterEnding();
+    this.world2.resumeAdventure(authority);
+    if(!authority)return;
+    for(const e of this.enemies){
+      if(e.state==='gone'&&!e.isAdd&&!e.isEcho&&(this.world2.chapter===1||e.kind!=='jellyfish')){e.respawnAt(e.home.x,e.home.z);e.resumeAuthority();}
+    }
+    const bosses=this.world2.chapter===1?[this.boss,this.finalBoss]:[this.encounter];
+    for(const b of bosses){
+      if(b.unit.hidden&&['waking','idle','fight'].includes(b.state)){b.unit.hidden=false;b.unit.rig.root.visible=true;b.resumeAuthority();}
+    }
+  }
+
   /** Celebration effects and direct music requests must not leak into the next adventure. */
   resumeAfterEnding(): void {
     this.engine.setView(this.scene, this.camera, GAME_VIEW);

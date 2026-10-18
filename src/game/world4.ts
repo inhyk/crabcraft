@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {snowHeight} from '../sim/world/ground';
-import {layoutFrostlight,snowTrees} from './world4Colliders';
+import {layoutFrostlight,snowTrees,SNOW_FOUNTAIN} from './world4Colliders';
 import type {Poi} from '../world/types';
 import {StarPortal} from './portal';
 import {islandPaths} from './islandPaths';
@@ -50,7 +50,9 @@ export class SnowIsland {
 
   }
   // Frozen fountain and warm lanterns make the settlement easy to read at a distance.
-  const fy=this.height(-10,56);add(new THREE.CylinderGeometry(2.6,3,.65,32),dark,-10,fy+.32,56);add(new THREE.ConeGeometry(1.9,4,8),ice,-10,fy+2.5,56);
+  const {x:fx,z:fz}=SNOW_FOUNTAIN,fy=this.height(fx,fz);
+  const basin=add(new THREE.CylinderGeometry(2.6,3,.65,32),dark,fx,fy+.32,fz);basin.name='snow-fountain-basin';
+  const sculpture=add(new THREE.ConeGeometry(1.9,4,8),ice,fx,fy+2.5,fz);sculpture.name='snow-fountain-sculpture';
 
   for(let z=82;z>-50;z-=12)for(const side of [-1,1]){const x=side*6,y=this.height(x,z);add(new THREE.CylinderGeometry(.13,.23,2.9,6),dark,x,y+1.45,z);add(new THREE.BoxGeometry(.65,.9,.65),amber,x,y+3,z);add(new THREE.ConeGeometry(.62,.5,4),snow,x,y+3.7,z);}
   // Layered evergreen boughs with thick snow caps, in four draw calls for the entire forest.

@@ -85,7 +85,7 @@ export class Boss {
     else if(!stunned){
       const g=gap(u,p),want=Math.atan2(p.x-u.x,p.z-u.z);u.yaw=turn(u.yaw,want,this.enraged?3:2.2,dt);
       if(g>1){const speed=this.isEndgame?(this.enraged?4.2:3.4):(this.enraged?2.8:2)*speedMul(u,now),d=distance(u,p)||1;moveCreature(s,u,u.x+(p.x-u.x)/d*speed*dt,u.z+(p.z-u.z)/d*speed*dt,dt);}
-      if(g<=1.6&&now>=this.nextSwing&&Math.abs(angleDiff(want,u.yaw))<.8){this.nextSwing=now+(this.isEndgame?(this.enraged?1.3:1.8):(this.enraged?1.8:2.6));creatureAction(s,u,'attack_swipe',{upper:true,speed:this.enraged?1.4:1},{attack:'boss-claw',source:this.unit,target:p.ref});}
+      if(g<=1.6&&now>=this.nextSwing&&Math.abs(angleDiff(want,u.yaw))<.8){this.nextSwing=now+(this.isEndgame?(this.enraged?2.2:2.8):(this.enraged?1.8:2.6));creatureAction(s,u,'attack_swipe',{upper:true,speed:this.enraged?1.4:1},{attack:'boss-claw',source:this.unit,target:p.ref});}
       if(now>=this.nextMech)this.startMech();
     }
   }
@@ -105,9 +105,9 @@ export class Boss {
     else if(kind==='cross'){m.dur=Math.max(2.6,3.1*speedUp);m.yaw=Math.atan2(p.x-u.x,p.z-u.z);}
     else if(kind==='barrage'){m.dur=Math.max(2.6,3*speedUp);m.at=pos(p);m.yaw=Math.atan2(p.x-u.x,p.z-u.z);}
     else{m.dur=2.6;this.yell('boss.undertow');}
-    if(this.isEndgame)m.dur=Math.max(m.dur,kind==='nova'?2.4:kind==='eclipse'?2.8:kind==='undertow'?3:kind==='slam'?1.6:1.3);
+    if(this.isEndgame)m.dur=Math.max(m.dur,kind==='nova'?2.4:kind==='eclipse'?2.8:kind==='undertow'?3:kind==='slam'?2:1.8);
     const shapes=this.telegraphShapes(kind,m.at,m.yaw);this.mech=m;s.emit({type:'telegraph',src:this.unit,mech:kind,level:this.stats.level,seconds:m.dur,shapes});
-    this.nextMech=s.time+m.dur+(this.isEndgame?(this.phase===3?.9:this.phase===2?1.2:1.8):(this.phase===3?4.2:this.phase===2?5.5:6));
+    this.nextMech=s.time+m.dur+(this.isEndgame?(this.phase===3?2.4:this.phase===2?2.8:3.2):(this.phase===3?4.2:this.phase===2?5.5:6));
   }
   private radius(kind:MechId){return mechanicRadius(this.isEndgame,kind);}
   private get laneLength(){return this.isEndgame?15:12;}private get laneWidth(){return this.isEndgame?1.4:1.8;}
