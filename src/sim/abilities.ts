@@ -1,3 +1,4 @@
+import {LANTERN_HEALS,type LanternHeal} from './data/healing.ts';
 import { weaponMultiplier } from './data/equipment.ts';
 /** Already-paid releases and per-attack impact rules, extracted from S1 28816e2. */
 import type { AbilityDef } from './data/classes.ts';
@@ -33,6 +34,17 @@ export function launchAt(g:AreaServices,u:SimUnit,t:SimUnit,style:'bubble'|'spar
   const from=g.actionData.launchAnchor(u,u.pose);
   g.launch({x:from.x,y:from.y,z:from.z,source:u.ref,target:t.ref,style,speed,hit:plan,anchorVersion:g.actionData.version});
 }
+/** Same-area living allies only. PvP opponents and village-game participants cannot receive support. */
+function healAllies(g:AreaServices,u:SimUnit,ability:LanternHeal):void {
+  const rule=LANTERN_HEALS[ability],source=g.context.members.find(m=>m.unit.id===u.ref.id);
+  if(source?.villagePlaying)return;
+  for(const dst of g.players()){
+    if(dst.ref.id===u.ref.id||!dst.alive||dst.hidden||Math.hypot(dst.x-u.x,dst.z-u.z)>rule.range||!lineOfSight(g.query,u,dst))continue;
+    const member=g.context.members.find(m=>m.unit.id===dst.ref.id);
+    if(member?.villagePlaying||g.context.pvp!=='disabled'&&(!source?.party||source.party!==member?.party))continue;
+    g.combat.heal(u.ref,dst.ref,dst.maxHp*rule.fraction);
+  }
+}
 export function executeAbility(g:AreaServices,p:PlayerController,ab:AbilityDef,target:SimUnit|null):void {
   const u=p.unit,now=g.time;
   const fx=(stage:'start'|'hit',more:Partial<{target:SimUnit['ref']|null;from:{x:number;y:number;z:number};amount:number;stun:number;half:number}>={})=>g.emit({type:'ability',caster:u.ref,ability:ab.id,stage,range:ab.range,...more});
@@ -47,7 +59,7 @@ export function executeAbility(g:AreaServices,p:PlayerController,ab:AbilityDef,t
     case 'steam-blink': {const from={x:u.x,y:u.y,z:u.z};let x=u.x,z=u.z;const out={x:0,y:0,set(a:number,b:number){this.x=a;this.y=b;return this;}};for(let d=.5;d<=ab.range+1e-6;d+=.5){const tx=from.x+Math.sin(u.yaw)*d,tz=from.z+Math.cos(u.yaw)*d,r=g.query.resolveCollision(tx,tz,u.radius,out);if(Math.hypot(r.x-tx,r.y-tz)>.25||Math.abs(g.query.heightAt(tx,tz)-g.query.heightAt(x,z))>2.5)break;x=r.x;z=r.y;}teleport(u,g.query,x,z);g.combat.heal(u.ref,u.ref,10);fx('start',{from});break;}
     case 'tidal-nova':playAction(g,u,'attack_slam',{upper:true});fx('start');for(const t of enemiesNear(g,u.x,u.z,ab.range,u)){hit(g,p,u,t,20,26,'water');knockback(t,u,5);t.stunUntil=Math.max(t.stunUntil,now+.6);}break;
     case 'smite':if(target){fx('start',{target:target.ref});const amount=hit(g,p,u,target,27,33,'holy');fx('hit',{target:target.ref,amount});}break;
-    case 'mend-shell':{const crit=rollCrit(g.random);g.combat.heal(u.ref,u.ref,u.maxHp*.35*(crit?1.5:1),crit);fx('start');break;}
+    case 'mend-shell':{const crit=rollCrit(g.random);g.combat.heal(u.ref,u.ref,u.maxHp*.35*(crit?1.5:1),crit);healAllies(g,u,'mend-shell');fx('start');break;}
     case 'barnacle-ward':u.absorbMax=u.absorb=Math.round(u.maxHp*.3);u.absorbUntil=now+10;p.state.warded=true;g.emit({type:'ward',unit:u.ref,stage:'up',seconds:10});fx('start');break;
     case 'holy-tide':playAction(g,u,'cast',{upper:true,part:'release',speed:1.5},{attack:'holy-tide',source:u.ref});break;
   }
@@ -58,7 +70,7 @@ export function resolvePlayerHit(g:AreaServices,plan:HitPlan):boolean {
   const u=g.getUnit(plan.source),p=g.player(plan.source);
   if(!u||!p)return true;
   if('target' in plan){const target=g.getUnit(plan.target);if(target&&!isAttackTarget(g,u,target))return true;}
-  if(plan.attack==='holy-tide') {if(!u.alive)return true;g.emit({type:'ability',caster:u.ref,ability:plan.attack,stage:'hit',range:6});for(const t of enemiesNear(g,u.x,u.z,6,u))hit(g,p,u,t,15,19,'holy');g.combat.heal(u.ref,u.ref,u.maxHp*.15);return true;}
+  if(plan.attack==='holy-tide') {if(!u.alive)return true;g.emit({type:'ability',caster:u.ref,ability:plan.attack,stage:'hit',range:6});for(const t of enemiesNear(g,u.x,u.z,6,u))hit(g,p,u,t,15,19,'holy');g.combat.heal(u.ref,u.ref,u.maxHp*.15);healAllies(g,u,'holy-tide');return true;}
   if(!('target'in plan))return true;
   const t=g.getUnit(plan.target);if(!t?.alive)return true;
   switch(plan.attack){

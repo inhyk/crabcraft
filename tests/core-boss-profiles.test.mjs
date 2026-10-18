@@ -195,7 +195,7 @@ function frostWarning(h,kind,phase){
   throw Error(`No actual Frost ${kind}`);
 }
 test('five current profiles preserve independent HP, damage, tempo, coins and XP values',()=>{
-  const values={rust:[3,1300,1,1,150,500],abyss:[10,2600,2.1,.85,500,1000],eclipse:[20,6200,3.2,.78,1200,1500],dawn:[100,24000,20,.95,5000,3200],frost:[300,90000,38,.9,15000,18000]};
+  const values={rust:[3,1300,1,1,150,500],abyss:[10,2600,2.1,.85,500,1000],eclipse:[20,6200,3.2,.78,1200,5000],dawn:[100,24000,20,.95,5000,100000],frost:[300,90000,38,.9,15000,18000]};
   for(const [profile,want]of Object.entries(values)){const p=BOSS_PROFILES[profile];assert.deepEqual([p.level,p.hp,p.damage,p.tempo,p.coins,p.reward],want);assert.ok(Object.isFrozen(p));}
 });
 test('actual Frost excludes 299 from both combat directions, targeting and blessing alongside 300',()=>{
@@ -245,4 +245,15 @@ test('actual Area baseline retains boss controller and frame observation after t
  const observed=area.snapshot().recovery.bosses[0];assert.equal(observed.profile,'frost');assert.equal(observed.state,'fight');assert.equal(observed.showFrame,true);assert.equal(observed.phase,1);assert.deepEqual(observed.freed,boss.freed.ref);assert.ok(Object.isFrozen(observed));
  boss.actor.hp=boss.actor.maxHp*.3;area.step(new Map());area.drainEvents();const phase=area.snapshot().recovery.bosses[0];assert.equal(phase.phase,3);assert.equal(phase.enraged,true);assert.equal(observed.phase,1);
  boss.reset();area.drainEvents();assert.equal(area.snapshot().recovery.bosses[0].showFrame,false);
+});
+
+for(const [profile,level,barrage,inner]of [['ember',500,4,3],['sky',750,5,5]])test(`${profile}: distinct marked mechanics match damage and keep underlevel spectators safe`,()=>{
+ for(const kind of ['cross','barrage','eclipse']){
+  const h=fight(profile,[level-1,level]),w=advanceTo(h,kind,kind==='eclipse'&&profile==='ember'||kind==='barrage'&&profile==='sky'?2:1),shape=w.shapes[0];
+  assert.ok(w.seconds>=2.8);assert.equal(w.shapes.length,kind==='cross'?2:kind==='barrage'?barrage:2);
+  if(kind==='eclipse')assert.equal(w.shapes[1].radius,inner);
+  const x=shape.at.x+(kind==='eclipse'?inner+1:0),z=shape.at.z;
+  for(const p of h.ps){p.x=x;p.z=z;}const delta=finish(h);assert.equal(delta[0],0);assert.equal(delta[1],Math.round(10000*(kind==='cross'?.24:kind==='barrage'?.22:.34)));
+ }
+ const h=fight(profile,[level]);h.ps[0].level=level-1;h.step([h.b]);assert.equal(h.b.state,'idle');
 });

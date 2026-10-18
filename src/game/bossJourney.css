@@ -25,3 +25,6 @@
 .bj-card.dawn{border-color:#efb15c99;background:radial-gradient(ellipse at top right,#ad5e2966,transparent 80%),#292027}.dawn .bj-badge{border-color:#ffd07c;background:#55351d;color:#ffe4ae}.dawn h3{color:#ffe1a3}.dawn button{background:linear-gradient(#7a4925,#392716);border-color:#dfac65;color:#ffe5b8}
 
 .bj-card.frost{border-color:#80d8ef;background:linear-gradient(125deg,#163d51,#162030)}.bj-card.frost .bj-badge{color:#c4f7ff;background:#244e60}
+
+.bj-card.ember{--boss-color:#ff9357;background:linear-gradient(115deg,#381c17,#16171e)}
+.bj-card.sky{--boss-color:#87f6c7;background:linear-gradient(115deg,#153b35,#16171e)}

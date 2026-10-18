@@ -18,7 +18,7 @@ import type { HostOwnership } from './ownership.ts';
 import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
-import { InputSession, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
+import { InputSession, InputRateBudget, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
 import { prepareObservationSnapshot } from './gameplay/protocol.ts';
 import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
 import type { CommandResult } from './gameplay/events.ts';
@@ -81,7 +81,7 @@ interface Party { code: string; leader: string; members: Map<string, string>; pv
 interface Connection {
   ws: WebSocket; ip: string; origin: string; generation: number; closed: boolean;
   phase: 'preauth' | 'authenticating' | 'loading' | 'queued' | 'admitted' | 'closed';
-  binding?: SessionBinding; actor?: Actor; protocol: GameplayProtocol; stream?: WireBinding; input?: InputSession;
+  binding?: SessionBinding; actor?: Actor; protocol: GameplayProtocol; stream?: WireBinding; input?: InputSession; revoked?: { binding: WireBinding; input: InputSession; protocol: GameplayProtocol }; inputBudget: InputRateBudget;
   sequence: number; epoch: number; full: boolean; lastInput: number; timedOut: boolean; nextValidation: number; validating: boolean; authTimer?: ReturnType<typeof setTimeout>;
   visible: Set<number>;
   queueKey?: string;
@@ -133,7 +133,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   let pausedDurability: { run: () => Promise<void>; ownership: HostOwnership } | null = null;
   let generation = 1; let unresolved = 0; let pendingChat = 0;
   const chatTargets = new Map<string, { participant: ChatParticipant; expires: number }>();
-  const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
+  const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, discardedRevokedFrames: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
     authFailures: 0, pendingSourceGrants: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
   const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
   const timings = new Map<string, { values: number[]; cursor: number }>();
@@ -339,13 +339,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     return events;
   };
   const bootstrap = (c: Connection, actor: Actor) => {
+    if (c.input && c.stream) {
+      c.input.revoke(); c.protocol.reset(c.stream); // Drop the old render baseline while retaining its strict control watermark.
+      c.revoked = { binding: c.stream, input: c.input, protocol: c.protocol }; c.protocol = deps.gameplay.create();
+    }
     if (++c.epoch > 0xffffffff) throw new Error('stream epoch exhausted');
     c.actor = actor; actor.connection = c; actor.detachedAt = null; actor.generation = generation++;
-    c.stream = { session: randomUUID(), area: actor.slot.area.services.id, epoch: c.epoch, catalog: deps.gameplay.catalog.version };
+    c.stream = { session: c.stream?.session ?? randomUUID(), area: actor.slot.area.services.id, epoch: c.epoch, catalog: deps.gameplay.catalog.version };
     c.sequence = 0; c.full = true; c.visible.clear(); c.protocol.reset(c.stream);
     c.baselineSequence = 0; c.results = []; c.discoveries = [];
     c.queueKey = undefined;
-    c.input = new InputSession(c.stream, deps.gameplay.catalog, { now: deps.nowMonotonicMs() / 1000, maxQueued: p.maxQueuedInputs, timeoutSeconds: p.inputTimeoutMs / 1000 });
+    c.input = new InputSession(c.stream, deps.gameplay.catalog, { now: deps.nowMonotonicMs() / 1000, maxQueued: p.maxQueuedInputs, timeoutSeconds: p.inputTimeoutMs / 1000, budget: c.inputBudget });
     actor.slot.area.resetInputSession(actor.ref); c.phase = 'admitted'; c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
     json(c, { type: 'world-bound', ...c.stream });
     if (p.party) publishParty(c);
@@ -808,7 +812,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (connections.size >= p.maxConnections || [...connections].filter(c => c.ip === ip).length >= p.maxConnectionsPerIp) { reject(socket, '503 Service Unavailable'); return; }
       wss.handleUpgrade(req, socket, head, ws => {
         const c: Connection = { ws, ip, origin, generation: generation++, closed: false, phase: 'preauth',
-          protocol: deps.gameplay.create(), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set(), baselineSequence: 0, results: [], discoveries: [], chatBusy: false, chatNeedsPreferences: false };
+          protocol: deps.gameplay.create(), inputBudget: new InputRateBudget(deps.nowMonotonicMs() / 1000), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set(), baselineSequence: 0, results: [], discoveries: [], chatBusy: false, chatNeedsPreferences: false };
         connections.add(c);
         c.authTimer = setTimeout(() => { if (c.phase === 'preauth' || c.phase === 'authenticating') close(c, 'auth-timeout'); }, p.authTimeoutMs);
         ws.on('error', () => ws.terminate());
@@ -837,9 +841,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           } else if (c.phase === 'admitted' && binary && c.input && c.stream) {
             try {
               const message = c.protocol.decodeClientMessage(bytes, c.stream);
-              if (message.kind === 'resync') { c.full = true; return; }
-              c.input.accept(bytes, deps.nowMonotonicMs() / 1000); c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
-            } catch { metrics.rejected++; close(c, 'invalid-input'); }
+              if (message.kind === 'resync') { c.inputBudget.consume(deps.nowMonotonicMs() / 1000); c.revoked = undefined; c.full = true; return; }
+              c.input.accept(bytes, deps.nowMonotonicMs() / 1000); c.revoked = undefined; c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
+            } catch {
+              try {
+                const prior = c.revoked; if (!prior) throw new Error('unknown input binding');
+                const stale = prior.protocol.decodeClientMessage(bytes, prior.binding), now = deps.nowMonotonicMs() / 1000;
+                if (stale.kind === 'input') prior.input.discardRevoked(bytes, now); else c.inputBudget.consume(now);
+                metrics.discardedRevokedFrames++;
+              }
+              catch { metrics.rejected++; close(c, 'invalid-input'); }
+            }
           } else { metrics.rejected++; close(c, 'unexpected-frame'); }
         });
       });

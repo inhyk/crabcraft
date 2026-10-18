@@ -298,7 +298,7 @@ test('every boss can be defeated repeatedly with fresh health, phases and one co
 
 test('higher level bosses award strictly more coins and rematches retain lighthouse and level gates',()=>{
  const sorted=Object.values(BOSS_PROFILES).sort((a,b)=>a.level-b.level);
- assert.deepEqual(sorted.map(p=>p.coins),[150,500,1200,5000,15000]);
+ assert.deepEqual(sorted.map(p=>p.coins),[150,500,1200,5000,15000,30000,50000]);
  for(const profile of sorted){
   const {boss,game}=setup(profile);boss.state='dead';boss.unit.alive=false;boss.unit.hp=0;
   if(profile.level<20)game.world.getEnvironment=()=>({beacon:false});
@@ -316,6 +316,6 @@ test('a follower grants one coin reward again after a new authoritative rematch 
 
 test('every boss pays positive, increasing experience alongside coins on repeat victories',()=>{
  const profiles=Object.values(BOSS_PROFILES).sort((a,b)=>a.level-b.level);
- assert.deepEqual(profiles.map(p=>p.reward),[500,1000,1500,3200,18000]);
+ assert.deepEqual(profiles.map(p=>p.reward),[500,1000,5000,100000,18000,350000,600000]);
  for(const profile of profiles)assert.ok(Number.isSafeInteger(profile.reward)&&profile.reward>0);
 });
