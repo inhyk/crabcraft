@@ -46,7 +46,7 @@ export class ActionBar {
         ab.cost ? h('div', { class: 'ab-cost' }, String(ab.cost)) : null,
       );
       el.addEventListener('click', () => game.player.useAbility(ab.slot));
-      el.addEventListener('mouseenter', () => this.showTip(ab, el));
+      el.addEventListener('mouseenter', () => this.showTip(this.slots[ab.slot-1]!.ab, el));
       el.addEventListener('mouseleave', () => this.hideTip());
       slotsEl.append(el);
       this.slots.push({ ab, el, cd, cdText, state: '', wasCooling: false });
@@ -74,6 +74,9 @@ export class ActionBar {
       this.xpLabel,
     );
   }
+
+  /** An authenticated character can differ from the local preview used while assets loaded. */
+  bindClass():void {this.hideTip();const cls=this.game.player.cls;for(let i=0;i<this.slots.length;i++){const slot=this.slots[i]!,ab=cls.abilities[i]!;slot.ab=ab;slot.state='';slot.wasCooling=false;slot.el.className=`ab-slot hud-i ${cls.resource}${ab.slot===5?' ultimate':''}`;slot.el.replaceChildren(iconEl(ab.id,ab.icon),slot.cd,slot.cdText,h('div',{class:'ab-key'},String(ab.slot)),...(ab.cost?[h('div',{class:'ab-cost'},String(ab.cost))]:[]));}}
 
   setMusicIcon(on: boolean): void {
     this.musicBtn.innerHTML = iconSvg(on ? 'music' : 'music-off');
