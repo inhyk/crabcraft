@@ -216,3 +216,19 @@ test('automatic retry obtains a fresh ticket and never resends a disconnected co
     assert.equal(f.client.inputWatermarks.pending, 0);
   } finally { f.client.dispose(); }
 });
+
+test('party host commands occupy exclusive frames while ordinary prefix and suffix preserve order and ACK distinctions', async () => {
+  const f = clientFixture();
+  try {
+    const socket = await f.admitted();
+    for (const command of [{ kind: 'jump' }, { kind: 'ability', slot: 2 }, { kind: 'partyCreate' }, { kind: 'partyPvp', enabled: true }, { kind: 'dance' }]) assert.equal(f.client.command(command), true);
+    const frames = [];
+    for (const now of [100, 200, 300, 400]) { f.client.pump(now); frames.push(decodeInput(socket.sent.at(-1), f.world.binding, catalog)); }
+    assert.deepEqual(frames.map(frame => frame.commands), [[{ kind: 'jump' }, { kind: 'ability', slot: 2 }], [{ kind: 'partyCreate' }], [{ kind: 'partyPvp', enabled: true }], [{ kind: 'dance' }]]);
+    deliver(socket, encodeControl({ ...f.world.binding, sequence: 2, tick: 0, acceptedInput: 4, consumedInput: 1 }, { type: 'inputAck' }));
+    assert.equal(f.client.inputWatermarks.unconsumed, 3);
+    deliver(socket, f.world.packets(4)); assert.equal(f.client.state, 'recovering');
+    deliver(socket, f.world.packets(5, { full: true, acceptedInput: 4, consumedInput: 4 })); assert.equal(f.client.state, 'admitted'); assert.equal(f.client.inputWatermarks.unconsumed, 0);
+    f.client.pump(500); assert.deepEqual(decodeInput(socket.sent.at(-1), f.world.binding, catalog).commands, []);
+  } finally { f.client.dispose(); }
+});

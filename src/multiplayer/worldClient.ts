@@ -3,9 +3,9 @@ import type { HeldInput } from '../sim/input.ts';
 import type { ChannelKind, PlayerCommand } from '../sim/types.ts';
 import {
   GameplayReceiver, LIMITS, binding as validateBinding, clone, encodeControl, sameBinding,
-  type GameplayCatalog, type GameplayState, type WireBinding, type WireHeader,
+  type GameplayCatalog, type GameplayState, type WireBinding, type WireHeader, type WorldControl,
 } from '../../server/world/gameplay/protocol.ts';
-import { encodeInput, validateCommand, type GameplayCommand, type GameplayInput } from '../../server/world/gameplay/intents.ts';
+import { HOST_COMMANDS, encodeInput, validateCommand, type GameplayCommand, type GameplayInput } from '../../server/world/gameplay/intents.ts';
 import type { CommandResult } from '../../server/world/gameplay/events.ts';
 import type { EventRecord } from '../sim/types.ts';
 
@@ -30,6 +30,7 @@ export interface WorldClientOptions {
   onState?: (state: WorldConnectionState, code?: string) => void;
   onSnapshot?: (state: GameplayState, events: readonly EventRecord[], results: readonly CommandResult[]) => void;
   onEvents?: (events: readonly EventRecord[], results: readonly CommandResult[]) => void;
+  onControl?: (control: WorldControl) => void;
   onReset?: (reason: string) => void;
   onRejected?: (code: string) => void;
   handshakeMs?: number;
@@ -190,6 +191,7 @@ export class WorldClient {
     } catch { this.clearFragmentTimer(); this.recover('gap'); return; }
     if (result.kind === 'control') {
       const control = result.control;
+      this.options.onControl?.(clone(control));
       if (control.type === 'error') this.fail(control.code, control.retryable);
       else if (control.type === 'restarting') this.fail('restarting', true);
       return;
@@ -257,7 +259,9 @@ export class WorldClient {
     if (this.socket.bufferedAmount >= MAX_BUFFERED) { this.recover('gap'); return; }
     if (this.ledger.size >= MAX_LEDGER) { this.fail('input-ack-timeout', true); return; }
     if (!Number.isSafeInteger(this.sequence + 1)) { this.fail('sequence', false); return; }
-    const intent: GameplayInput = { ...this.held, seq: this.sequence + 1, commands: this.pending.slice(0, 32) };
+    const hostIndex = this.pending.findIndex(command => HOST_COMMANDS.includes(command.kind));
+    const commandCount = hostIndex === 0 ? 1 : hostIndex > 0 ? Math.min(32, hostIndex) : 32;
+    const intent: GameplayInput = { ...this.held, seq: this.sequence + 1, commands: this.pending.slice(0, commandCount) };
     try {
       const bytes = encodeInput({ binding: this.binding, intent }, this.catalog);
       this.socket.send(new Uint8Array(bytes).buffer);
