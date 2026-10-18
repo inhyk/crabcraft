@@ -1,0 +1,29 @@
+window 60.2 s, bots 25, health samples 59 non-200 0
+host CPU one core 96.3%, VM busy 59.7%, ticks 1705, dropped ticks 50, dropped snapshots 308, snapshots/recipient Hz 14.88
+timer               n      sum ms  %wall    p50     p99     max
+tick                 1705     6115.2   10.2    3.16    8.34   13.88
+snapshotPrepare       896    12726.4   21.1   12.90   32.20   46.97
+recipientEncode     22400    12778.7   21.2    0.45    2.52   22.63
+snapshotBatch         896    26276.2   43.6   27.19   71.74  103.16
+persistenceBarrier    104    14411.7   23.9  131.61  224.40  278.55
+event-loop delay p50/p99/max 1.08 / 41.75 / 129.96 ms
+barriers started 104 (1.73/s), actors per barrier mean 25.0, reasons from tick: {"progression:death+xp":59,"progression:respawn":3,"interval":22,"progression:death+levelUp+xp":18,"progression:death":2}
+pg total 28049 queries (465.9/s, 269.7/barrier), wall sum 80114.1 ms, param bytes 7638849
+    5505 q   15433.0 ms  mean 2.80 max 20.61  params 60 B/q  SELECT * FROM world_characters WHERE character_id=$1 AND account_id=$2 F
+    2600 q   12706.4 ms  mean 4.89 max 30.16  params 60 B/q  SELECT * FROM world_characters WHERE character_id=$1 AND account_id=$2
+    5293 q   12659.8 ms  mean 2.39 max 20.91  params 0 B/q  BEGIN
+    2600 q   12332.1 ms  mean 4.74 max 44.98  params 40 B/q  SELECT g.* FROM world_replayable_grants g WHERE g.character_id=$1 AND g.
+    5293 q   12197.8 ms  mean 2.30 max 25.95  params 0 B/q  COMMIT
+    2600 q    9531.9 ms  mean 3.67 max 23.12  params 2535 B/q  UPDATE world_characters SET checkpoint_json=$1,revision=revision+1,updat
+     305 q    1134.3 ms  mean 3.72 max 18.71  params 147 B/q  SELECT * FROM world_replayable_grants WHERE grant_id=$1 AND character_id
+     305 q     932.2 ms  mean 3.06 max 13.02  params 87 B/q  SELECT 1 FROM world_character_grant_receipts WHERE grant_id=$1
+     305 q     850.9 ms  mean 2.79 max 9.74  params 126 B/q  INSERT INTO world_character_grant_receipts(grant_id,character_id,applied
+     305 q     662.0 ms  mean 2.17 max 8.15  params 147 B/q  SELECT g.*,r.applied_revision FROM world_replayable_grants g LEFT JOIN w
+      59 q     497.0 ms  mean 8.42 max 92.62  params 0 B/q  SELECT 1
+    1455 q     338.3 ms  mean 0.23 max 7.65  params 4 B/q  SELECT set_config('statement_timeout',$1,true)
+     305 q     187.9 ms  mean 0.62 max 8.40  params 36 B/q  SELECT account_id FROM world_characters WHERE character_id=$1
+      50 q     164.9 ms  mean 3.30 max 61.65  params 88 B/q  SELECT expires FROM sessions WHERE token_hash=$1 AND username=$2
+GC total 1366.3 ms (2.3% wall): scavenge 583x 986.2 ms max 7.25, incremental 29x 45.7 ms max 4.77, markSweepCompact 29x 334.4 ms max 22.01
+per snapshot (896): units mean 140.0 max 140, players 25.0, projectiles 1.8 max 12, events 11.6 p99 86
+per recipient (22400): visible mean 47.5 p50 47 max 104, bytes mean 13015 p99 27121, chunks mean 1.22
+bytes sent 291530329 (4.8 MB/s), profile {"file":"/tmp/crabcraft-load-20261018210332/prof/host-1-25c.cpuprofile","startTime":2613466509,"endTime":2673596051,"samples":52042}

@@ -1,0 +1,473 @@
+profile scratchpad/vm/host-3-100c.cpuprofile
+wall 60233 ms, samples 50577, mean interval 1.191 ms, busy (non-idle) 57813 ms = 96.0% of one core
+
+== buckets (first owner on the stack) ==
+   17682 ms  29.4% wall  30.6% busy  snapshot.publish
+   15141 ms  25.1% wall  26.2% busy  persistence
+   11944 ms  19.8% wall  20.7% busy  input.decode
+    6133 ms  10.2% wall  10.6% busy  tick.step
+    4586 ms   7.6% wall   7.9% busy  network(ws/http)
+    2420 ms   4.0% wall   4.2% busy  idle
+    1190 ms   2.0% wall   2.1% busy  gc
+     441 ms   0.7% wall   0.8% busy  program
+     314 ms   0.5% wall   0.5% busy  profiling-tool
+     179 ms   0.3% wall   0.3% busy  other
+      85 ms   0.1% wall   0.1% busy  pump.other
+
+== self time by module ==
+   24134 ms  40.1% wall  41.7% busy  server/world/gameplay/protocol.ts
+    5780 ms   9.6% wall  10.0% busy  server/world/character-store.ts
+    5648 ms   9.4% wall   9.8% busy  native
+    5627 ms   9.3% wall   9.7% busy  src/sim/persistence.ts
+    4108 ms   6.8% wall   7.1% busy  node:internal/encoding
+    2420 ms   4.0% wall   4.2% busy  (idle)
+    1688 ms   2.8% wall   2.9% busy  src/sim/pose.ts
+    1372 ms   2.3% wall   2.4% busy  src/sim/events.ts
+    1190 ms   2.0% wall   2.1% busy  (garbage collector)
+    1101 ms   1.8% wall   1.9% busy  src/sim/area.ts
+     507 ms   0.8% wall   0.9% busy  server/world/gameplay/events.ts
+     497 ms   0.8% wall   0.9% busy  node:internal/worker/js_transferable
+     476 ms   0.8% wall   0.8% busy  src/sim/player.ts
+     454 ms   0.8% wall   0.8% busy  server/world/host.ts
+     453 ms   0.8% wall   0.8% busy  src/sim/enemy.ts
+     441 ms   0.7% wall   0.8% busy  (program)
+     412 ms   0.7% wall   0.7% busy  tools/profile-world-entry.mjs
+     342 ms   0.6% wall   0.6% busy  server/world/gameplay/intents.ts
+     299 ms   0.5% wall   0.5% busy  npm:pg/lib/result.js
+     280 ms   0.5% wall   0.5% busy  npm:ws/lib/receiver.js
+     216 ms   0.4% wall   0.4% busy  src/sim/interactions.ts
+     212 ms   0.4% wall   0.4% busy  src/sim/math.ts
+     207 ms   0.3% wall   0.4% busy  src/sim/features/exploration.ts
+     205 ms   0.3% wall   0.4% busy  server/chat/filter.ts
+     156 ms   0.3% wall   0.3% busy  node:internal/buffer
+     148 ms   0.2% wall   0.3% busy  npm:pg/lib/client.js
+     117 ms   0.2% wall   0.2% busy  npm:pg-protocol/dist/parser.js
+     115 ms   0.2% wall   0.2% busy  src/sim/renderPose.ts
+     106 ms   0.2% wall   0.2% busy  node:buffer
+      93 ms   0.2% wall   0.2% busy  src/sim/features/village.ts
+      92 ms   0.2% wall   0.2% busy  npm:postgres-date/index.js
+      87 ms   0.1% wall   0.2% busy  npm:pg-pool/index.js
+      83 ms   0.1% wall   0.1% busy  server/world/persistence-coordinator.ts
+      74 ms   0.1% wall   0.1% busy  node:internal/streams/writable
+      68 ms   0.1% wall   0.1% busy  node:internal/process/task_queues
+      68 ms   0.1% wall   0.1% busy  node:events
+      64 ms   0.1% wall   0.1% busy  node:internal/streams/readable
+      57 ms   0.1% wall   0.1% busy  node:internal/stream_base_commons
+      56 ms   0.1% wall   0.1% busy  node:net
+      49 ms   0.1% wall   0.1% busy  src/sim/features/types.ts
+
+== self time by function ==
+    6068 ms  10.1% wall  10.5% busy  write server/world/gameplay/protocol.ts:15347
+    3989 ms   6.6% wall   6.9% busy  object2 server/world/gameplay/protocol.ts:15296
+    3257 ms   5.4% wall   5.6% busy  encode node:internal/encoding
+    2911 ms   4.8% wall   5.0% busy  read server/world/gameplay/protocol.ts:15425
+    2861 ms   4.8% wall   4.9% busy  decodeUTF8 native
+    2806 ms   4.7% wall   4.9% busy  visit src/sim/persistence.ts:11659
+    2420 ms   4.0% wall   4.2% busy  (idle) (idle)
+    2168 ms   3.6% wall   3.8% busy  json server/world/character-store.ts:10629
+    2076 ms   3.4% wall   3.6% busy  visit server/world/character-store.ts:10632
+    1515 ms   2.5% wall   2.6% busy  (anonymous) server/world/gameplay/protocol.ts:15898
+    1406 ms   2.3% wall   2.4% busy  parsed server/world/character-store.ts:10666
+    1190 ms   2.0% wall   2.1% busy  (garbage collector) (garbage collector)
+    1125 ms   1.9% wall   1.9% busy  writev native
+    1059 ms   1.8% wall   1.8% busy  preparedProjection server/world/gameplay/protocol.ts:15828
+    1026 ms   1.7% wall   1.8% busy  detached src/sim/persistence.ts:11656
+     947 ms   1.6% wall   1.6% busy  raw server/world/gameplay/protocol.ts:15994
+     898 ms   1.5% wall   1.6% busy  copyValue src/sim/events.ts:11943
+     851 ms   1.4% wall   1.5% busy  decode node:internal/encoding
+     790 ms   1.3% wall   1.4% busy  assertDeepFrozen server/world/gameplay/protocol.ts:15777
+     751 ms   1.2% wall   1.3% busy  quests src/sim/persistence.ts:11733
+     711 ms   1.2% wall   1.2% busy  encodeUtf8String native
+     699 ms   1.2% wall   1.2% busy  finish server/world/gameplay/protocol.ts:15948
+     530 ms   0.9% wall   0.9% busy  accept server/world/gameplay/protocol.ts:16027
+     505 ms   0.8% wall   0.9% busy  step src/sim/area.ts:20753
+     497 ms   0.8% wall   0.9% busy  structuredClone node:internal/worker/js_transferable
+     441 ms   0.7% wall   0.8% busy  (program) (program)
+     375 ms   0.6% wall   0.6% busy  (anonymous) native
+     315 ms   0.5% wall   0.5% busy  freezeValue src/sim/events.ts:11958
+     315 ms   0.5% wall   0.5% busy  advanceNumericPose src/sim/pose.ts:14051
+     314 ms   0.5% wall   0.5% busy  raw server/world/gameplay/protocol.ts:15937
+     308 ms   0.5% wall   0.5% busy  need server/world/gameplay/protocol.ts:15901
+     303 ms   0.5% wall   0.5% busy  save src/sim/pose.ts:14240
+     302 ms   0.5% wall   0.5% busy  string server/world/gameplay/protocol.ts:16000
+     294 ms   0.5% wall   0.5% busy  writeBuffer native
+     292 ms   0.5% wall   0.5% busy  Reader server/world/gameplay/protocol.ts:15956
+     286 ms   0.5% wall   0.5% busy  setHome src/sim/pose.ts:14137
+     265 ms   0.4% wall   0.5% busy  (anonymous) src/sim/pose.ts:14129
+     263 ms   0.4% wall   0.5% busy  update src/sim/enemy.ts:16774
+     257 ms   0.4% wall   0.4% busy  addFields npm:pg/lib/result.js:2008
+     252 ms   0.4% wall   0.4% busy  mapValues server/world/gameplay/protocol.ts:15306
+
+== inclusive time by function (all samples) ==
+   24655 ms  40.9% wall  42.6% busy  processTimers node:internal/timers
+   24654 ms  40.9% wall  42.6% busy  listOnTimeout node:internal/timers
+   24629 ms  40.9% wall  42.6% busy  pump server/world/host.ts:22847
+   23824 ms  39.6% wall  41.2% busy  run server/world/scheduler.ts:21250
+   18183 ms  30.2% wall  31.5% busy  emit node:events
+   18059 ms  30.0% wall  31.2% busy  onStreamRead node:internal/stream_base_commons
+   17990 ms  29.9% wall  31.1% busy  Readable.push node:internal/streams/readable
+   17965 ms  29.8% wall  31.1% busy  readableAddChunkPushByteMode node:internal/streams/readable
+   17950 ms  29.8% wall  31.0% busy  addChunk node:internal/streams/readable
+   17685 ms  29.4% wall  30.6% busy  (anonymous) server/world/host.ts:22891
+   17682 ms  29.4% wall  30.6% busy  publish server/world/host.ts:22671
+   16688 ms  27.7% wall  28.9% busy  Writable.write node:internal/streams/writable
+   16677 ms  27.7% wall  28.8% busy  _write node:internal/streams/writable
+   16654 ms  27.6% wall  28.8% busy  writeOrBuffer node:internal/streams/writable
+   16360 ms  27.2% wall  28.3% busy  socketOnData npm:ws/lib/websocket.js:8602
+   16328 ms  27.1% wall  28.2% busy  _write npm:ws/lib/receiver.js:6297
+   16283 ms  27.0% wall  28.2% busy  startLoop npm:ws/lib/receiver.js:6358
+   16182 ms  26.9% wall  28.0% busy  getData npm:ws/lib/receiver.js:6618
+   16029 ms  26.6% wall  27.7% busy  dataMessage npm:ws/lib/receiver.js:6692
+   16002 ms  26.6% wall  27.7% busy  receiverOnMessage npm:ws/lib/websocket.js:8549
+   15986 ms  26.5% wall  27.7% busy  (anonymous) server/world/host.ts:22993
+   14389 ms  23.9% wall  24.9% busy  encodeObservation server/world/gameplay/protocol.ts:15676
+   11928 ms  19.8% wall  20.6% busy  processTicksAndRejections node:internal/process/task_queues
+   11844 ms  19.7% wall  20.5% busy  runMicrotasks native
+   11120 ms  18.5% wall  19.2% busy  write server/world/gameplay/protocol.ts:15347
+   10234 ms  17.0% wall  17.7% busy  clone server/world/gameplay/protocol.ts:15340
+    8673 ms  14.4% wall  15.0% busy  decode server/world/character-store.ts:10710
+    8349 ms  13.9% wall  14.4% busy  accept server/world/gameplay/intents.ts:14960
+    8316 ms  13.8% wall  14.4% busy  decodeValue server/world/gameplay/protocol.ts:15422
+    7959 ms  13.2% wall  13.8% busy  read server/world/gameplay/protocol.ts:15425
+    7486 ms  12.4% wall  12.9% busy  decodeClientMessage server/world/gameplay/protocol.ts:15647
+    6974 ms  11.6% wall  12.1% busy  decodeInput server/world/gameplay/intents.ts:14886
+    6973 ms  11.6% wall  12.1% busy  field server/world/gameplay/protocol.ts:15407
+    6823 ms  11.3% wall  11.8% busy  saveCheckpoint server/world/character-store.ts:10943
+    6304 ms  10.5% wall  10.9% busy  encodeValue server/world/gameplay/protocol.ts:15417
+    6139 ms  10.2% wall  10.6% busy  (anonymous) server/world/host.ts:22890
+    6133 ms  10.2% wall  10.6% busy  step server/world/host.ts:22733
+    6115 ms  10.2% wall  10.6% busy  (anonymous) server/world/gameplay/protocol.ts:15386
+    5802 ms   9.6% wall  10.0% busy  accept server/world/gameplay/protocol.ts:16027
+    5410 ms   9.0% wall   9.4% busy  object2 server/world/gameplay/protocol.ts:15296
+
+== inclusive inside snapshot.publish (17682 ms) by function ==
+   17682 ms  29.4% wall  30.6% busy  publish server/world/host.ts:22671
+   17682 ms  29.4% wall  30.6% busy  (anonymous) server/world/host.ts:22891
+   17682 ms  29.4% wall  30.6% busy  run server/world/scheduler.ts:21250
+   17682 ms  29.4% wall  30.6% busy  pump server/world/host.ts:22847
+   17682 ms  29.4% wall  30.6% busy  listOnTimeout node:internal/timers
+   17682 ms  29.4% wall  30.6% busy  processTimers node:internal/timers
+   14389 ms  23.9% wall  24.9% busy  encodeObservation server/world/gameplay/protocol.ts:15676
+    7109 ms  11.8% wall  12.3% busy  write server/world/gameplay/protocol.ts:15347
+    6973 ms  11.6% wall  12.1% busy  field server/world/gameplay/protocol.ts:15407
+    6064 ms  10.1% wall  10.5% busy  (anonymous) server/world/gameplay/protocol.ts:15386
+    5152 ms   8.6% wall   8.9% busy  preparedProjection server/world/gameplay/protocol.ts:15828
+    4304 ms   7.1% wall   7.4% busy  object2 server/world/gameplay/protocol.ts:15296
+    4134 ms   6.9% wall   7.2% busy  checkSnapshot server/world/gameplay/protocol.ts:15555
+    4107 ms   6.8% wall   7.1% busy  encodePreparedSnapshot server/world/gameplay/protocol.ts:15871
+    3003 ms   5.0% wall   5.2% busy  (anonymous) server/world/gameplay/protocol.ts:15291
+    2701 ms   4.5% wall   4.7% busy  (anonymous) server/world/gameplay/protocol.ts:15293
+    2131 ms   3.5% wall   3.7% busy  (anonymous) server/world/gameplay/protocol.ts:15568
+    2105 ms   3.5% wall   3.6% busy  validateEvent server/world/gameplay/events.ts:15057
+    1608 ms   2.7% wall   2.8% busy  prepareObservationSnapshot server/world/gameplay/protocol.ts:15790
+    1569 ms   2.6% wall   2.7% busy  event server/world/gameplay/events.ts:15058
+    1459 ms   2.4% wall   2.5% busy  string server/world/gameplay/protocol.ts:15942
+    1282 ms   2.1% wall   2.2% busy  encode node:internal/encoding
+     790 ms   1.3% wall   1.4% busy  assertDeepFrozen server/world/gameplay/protocol.ts:15777
+     782 ms   1.3% wall   1.4% busy  copyValue src/sim/events.ts:11943
+     751 ms   1.2% wall   1.3% busy  player server/world/gameplay/protocol.ts:15538
+     733 ms   1.2% wall   1.3% busy  snapshot src/sim/area.ts:21024
+     728 ms   1.2% wall   1.3% busy  immutable src/sim/events.ts:11969
+     715 ms   1.2% wall   1.2% busy  self server/world/gameplay/protocol.ts:15565
+     714 ms   1.2% wall   1.2% busy  validateSelf server/world/gameplay/protocol.ts:15537
+     678 ms   1.1% wall   1.2% busy  (anonymous) src/sim/events.ts:11954
+     522 ms   0.9% wall   0.9% busy  (anonymous) server/world/gameplay/protocol.ts:15286
+     511 ms   0.8% wall   0.9% busy  frameMessage server/world/gameplay/protocol.ts:15481
+     477 ms   0.8% wall   0.8% busy  (anonymous) server/world/gameplay/protocol.ts:15559
+     451 ms   0.7% wall   0.8% busy  reference server/world/gameplay/protocol.ts:15320
+     404 ms   0.7% wall   0.7% busy  (anonymous) server/world/gameplay/events.ts:15145
+     402 ms   0.7% wall   0.7% busy  actionState server/world/gameplay/protocol.ts:15502
+     400 ms   0.7% wall   0.7% busy  clone server/world/gameplay/protocol.ts:15340
+     369 ms   0.6% wall   0.6% busy  (anonymous) server/world/gameplay/protocol.ts:15487
+     357 ms   0.6% wall   0.6% busy  ref2 server/world/gameplay/events.ts:15060
+     329 ms   0.5% wall   0.6% busy  encodeValue server/world/gameplay/protocol.ts:15417
+-- by module --
+   17682 ms  29.4% wall  30.6% busy  server/world/host.ts
+   17682 ms  29.4% wall  30.6% busy  server/world/scheduler.ts
+   17682 ms  29.4% wall  30.6% busy  node:internal/timers
+   16187 ms  26.9% wall  28.0% busy  server/world/gameplay/protocol.ts
+    2317 ms   3.8% wall   4.0% busy  server/world/gameplay/events.ts
+    1347 ms   2.2% wall   2.3% busy  node:internal/encoding
+    1038 ms   1.7% wall   1.8% busy  src/sim/events.ts
+     733 ms   1.2% wall   1.3% busy  src/sim/area.ts
+     557 ms   0.9% wall   1.0% busy  native
+     320 ms   0.5% wall   0.6% busy  npm:ws/lib/websocket.js
+     312 ms   0.5% wall   0.5% busy  npm:ws/lib/sender.js
+     291 ms   0.5% wall   0.5% busy  node:internal/streams/writable
+     278 ms   0.5% wall   0.5% busy  node:net
+     265 ms   0.4% wall   0.5% busy  node:internal/stream_base_commons
+     206 ms   0.3% wall   0.4% busy  server/chat/safety.ts
+
+== inclusive inside persistence (15141 ms) by function ==
+   11748 ms  19.5% wall  20.3% busy  processTicksAndRejections node:internal/process/task_queues
+   11717 ms  19.5% wall  20.3% busy  runMicrotasks native
+    8673 ms  14.4% wall  15.0% busy  decode server/world/character-store.ts:10710
+    6823 ms  11.3% wall  11.8% busy  saveCheckpoint server/world/character-store.ts:10943
+    4999 ms   8.3% wall   8.6% busy  validateCheckpoint src/sim/persistence.ts:11766
+    4580 ms   7.6% wall   7.9% busy  json server/world/character-store.ts:10629
+    4505 ms   7.5% wall   7.8% busy  validate src/sim/persistence.ts:11907
+    4369 ms   7.3% wall   7.6% busy  validateCheckpoint src/sim/persistence.ts:11915
+    4026 ms   6.7% wall   7.0% busy  detached src/sim/persistence.ts:11656
+    3535 ms   5.9% wall   6.1% busy  parsed server/world/character-store.ts:10666
+    2806 ms   4.7% wall   4.9% busy  visit src/sim/persistence.ts:11659
+    2598 ms   4.3% wall   4.5% busy  loadForRecovery server/world/character-store.ts:10912
+    2354 ms   3.9% wall   4.1% busy  visit server/world/character-store.ts:10632
+    2315 ms   3.8% wall   4.0% busy  getOwned server/world/character-store.ts:10768
+    1624 ms   2.7% wall   2.8% busy  esm_default.Client.query tools/profile-world-entry.mjs:23822
+    1548 ms   2.6% wall   2.7% busy  (anonymous) npm:pg-protocol/dist/index.js:3108
+    1548 ms   2.6% wall   2.7% busy  Readable.push node:internal/streams/readable
+    1548 ms   2.6% wall   2.7% busy  onStreamRead node:internal/stream_base_commons
+    1547 ms   2.6% wall   2.7% busy  emit node:events
+    1547 ms   2.6% wall   2.7% busy  addChunk node:internal/streams/readable
+    1547 ms   2.6% wall   2.7% busy  readableAddChunkPushByteMode node:internal/streams/readable
+    1529 ms   2.5% wall   2.6% busy  parse npm:pg-protocol/dist/parser.js:2807
+    1485 ms   2.5% wall   2.6% busy  query npm:pg/lib/client.js:4247
+    1399 ms   2.3% wall   2.4% busy  _pulseQueryQueue npm:pg/lib/client.js:4198
+    1364 ms   2.3% wall   2.4% busy  submit npm:pg/lib/query.js:2150
+    1278 ms   2.1% wall   2.2% busy  (anonymous) npm:pg/lib/connection.js:3300
+    1187 ms   2.0% wall   2.1% busy  Socket._writeGeneric node:net
+    1126 ms   1.9% wall   1.9% busy  quests src/sim/persistence.ts:11733
+     891 ms   1.5% wall   1.5% busy  clearBuffer node:internal/streams/writable
+     891 ms   1.5% wall   1.5% busy  Writable.uncork node:internal/streams/writable
+     886 ms   1.5% wall   1.5% busy  Socket._writev node:net
+     886 ms   1.5% wall   1.5% busy  doWrite node:internal/streams/writable
+     877 ms   1.5% wall   1.5% busy  writevGeneric node:internal/stream_base_commons
+     866 ms   1.4% wall   1.5% busy  validateIdentity src/sim/persistence.ts:11902
+     861 ms   1.4% wall   1.5% busy  writev native
+     835 ms   1.4% wall   1.4% busy  work server/world/host.ts:22372
+     815 ms   1.4% wall   1.4% busy  (anonymous) server/world/host.ts:22493
+     790 ms   1.3% wall   1.4% busy  identity src/sim/persistence.ts:11717
+     788 ms   1.3% wall   1.4% busy  _handleReadyForQuery npm:pg/lib/client.js:3997
+     775 ms   1.3% wall   1.3% busy  handleReadyForQuery npm:pg/lib/query.js:2135
+-- by module --
+   12401 ms  20.6% wall  21.5% busy  native
+   11951 ms  19.8% wall  20.7% busy  server/world/character-store.ts
+   11751 ms  19.5% wall  20.3% busy  node:internal/process/task_queues
+    5965 ms   9.9% wall  10.3% busy  src/sim/persistence.ts
+    2189 ms   3.6% wall   3.8% busy  node:internal/stream_base_commons
+    2103 ms   3.5% wall   3.6% busy  npm:pg/lib/client.js
+    1982 ms   3.3% wall   3.4% busy  npm:pg/lib/query.js
+    1710 ms   2.8% wall   3.0% busy  tools/profile-world-entry.mjs
+    1693 ms   2.8% wall   2.9% busy  npm:pg/lib/connection.js
+    1563 ms   2.6% wall   2.7% busy  server/world/host.ts
+    1558 ms   2.6% wall   2.7% busy  node:events
+    1548 ms   2.6% wall   2.7% busy  npm:pg-protocol/dist/index.js
+    1548 ms   2.6% wall   2.7% busy  node:internal/streams/readable
+    1530 ms   2.5% wall   2.6% busy  npm:pg-protocol/dist/parser.js
+    1220 ms   2.0% wall   2.1% busy  node:internal/streams/writable
+
+== inclusive inside tick.step (6133 ms) by function ==
+    6133 ms  10.2% wall  10.6% busy  step server/world/host.ts:22733
+    6133 ms  10.2% wall  10.6% busy  (anonymous) server/world/host.ts:22890
+    6133 ms  10.2% wall  10.6% busy  run server/world/scheduler.ts:21250
+    6133 ms  10.2% wall  10.6% busy  pump server/world/host.ts:22847
+    6133 ms  10.2% wall  10.6% busy  listOnTimeout node:internal/timers
+    6133 ms  10.2% wall  10.6% busy  processTimers node:internal/timers
+    5300 ms   8.8% wall   9.2% busy  step src/sim/area.ts:20753
+    1814 ms   3.0% wall   3.1% busy  advanceNumericPose src/sim/pose.ts:14051
+     915 ms   1.5% wall   1.6% busy  update src/sim/enemy.ts:16774
+     726 ms   1.2% wall   1.3% busy  update src/sim/outcomes.ts:18916
+     724 ms   1.2% wall   1.3% busy  prepareTick server/world/gameplay/intents.ts:14991
+     687 ms   1.1% wall   1.2% busy  clone server/world/gameplay/protocol.ts:15340
+     551 ms   0.9% wall   1.0% busy  Pose src/sim/pose.ts:14134
+     535 ms   0.9% wall   0.9% busy  update src/sim/player.ts:17624
+     524 ms   0.9% wall   0.9% busy  updateFeatures src/sim/area.ts:20625
+     503 ms   0.8% wall   0.9% busy  update src/sim/features/exploration.ts:12160
+     500 ms   0.8% wall   0.9% busy  observePlayer src/sim/features/exploration.ts:12094
+     495 ms   0.8% wall   0.9% busy  transaction src/sim/features/exploration.ts:12076
+     443 ms   0.7% wall   0.8% busy  syncMembership src/sim/area.ts:20600
+     392 ms   0.7% wall   0.7% busy  encodeValue server/world/gameplay/protocol.ts:15417
+     386 ms   0.6% wall   0.7% busy  locomotion src/sim/pose.ts:14251
+     378 ms   0.6% wall   0.7% busy  Locomotion src/sim/pose.ts:14231
+     376 ms   0.6% wall   0.6% busy  (anonymous) src/sim/pose.ts:14222
+     354 ms   0.6% wall   0.6% busy  blendRenderPoseLayers src/sim/renderPose.ts:13900
+     329 ms   0.5% wall   0.6% busy  structuredClone node:internal/worker/js_transferable
+     303 ms   0.5% wall   0.5% busy  save src/sim/pose.ts:14240
+     290 ms   0.5% wall   0.5% busy  decodeValue server/world/gameplay/protocol.ts:15422
+     286 ms   0.5% wall   0.5% busy  setHome src/sim/pose.ts:14137
+     286 ms   0.5% wall   0.5% busy  read server/world/gameplay/protocol.ts:15425
+     285 ms   0.5% wall   0.5% busy  write server/world/gameplay/protocol.ts:15347
+     279 ms   0.5% wall   0.5% busy  (anonymous) src/sim/area.ts:20601
+     265 ms   0.4% wall   0.5% busy  (anonymous) src/sim/pose.ts:14129
+     224 ms   0.4% wall   0.4% busy  targetFor src/sim/area.ts:20295
+     217 ms   0.4% wall   0.4% busy  update src/sim/interactions.ts:18410
+     213 ms   0.4% wall   0.4% busy  transaction src/sim/events.ts:11992
+     213 ms   0.4% wall   0.4% busy  outcomeTransaction src/sim/area.ts:20298
+     212 ms   0.4% wall   0.4% busy  (anonymous) src/sim/area.ts:20298
+     209 ms   0.3% wall   0.4% busy  sampleClip src/sim/pose.ts:13976
+     207 ms   0.3% wall   0.4% busy  distXZ src/sim/math.ts:11640
+     198 ms   0.3% wall   0.3% busy  (anonymous) src/sim/enemy.ts:16778
+-- by module --
+    6133 ms  10.2% wall  10.6% busy  server/world/host.ts
+    6133 ms  10.2% wall  10.6% busy  server/world/scheduler.ts
+    6133 ms  10.2% wall  10.6% busy  node:internal/timers
+    5337 ms   8.9% wall   9.2% busy  src/sim/area.ts
+    1816 ms   3.0% wall   3.1% busy  src/sim/pose.ts
+     918 ms   1.5% wall   1.6% busy  src/sim/enemy.ts
+     789 ms   1.3% wall   1.4% busy  src/sim/outcomes.ts
+     733 ms   1.2% wall   1.3% busy  server/world/gameplay/intents.ts
+     687 ms   1.1% wall   1.2% busy  server/world/gameplay/protocol.ts
+     608 ms   1.0% wall   1.1% busy  src/sim/player.ts
+     504 ms   0.8% wall   0.9% busy  src/sim/features/exploration.ts
+     420 ms   0.7% wall   0.7% busy  src/sim/renderPose.ts
+     414 ms   0.7% wall   0.7% busy  src/sim/events.ts
+     329 ms   0.5% wall   0.6% busy  node:internal/worker/js_transferable
+     287 ms   0.5% wall   0.5% busy  node:internal/encoding
+
+== inclusive inside network(ws/http) (4586 ms) by function ==
+    4566 ms   7.6% wall   7.9% busy  onStreamRead node:internal/stream_base_commons
+    4497 ms   7.5% wall   7.8% busy  Readable.push node:internal/streams/readable
+    4473 ms   7.4% wall   7.7% busy  readableAddChunkPushByteMode node:internal/streams/readable
+    4458 ms   7.4% wall   7.7% busy  addChunk node:internal/streams/readable
+    4417 ms   7.3% wall   7.6% busy  emit node:events
+    4416 ms   7.3% wall   7.6% busy  socketOnData npm:ws/lib/websocket.js:8602
+    4409 ms   7.3% wall   7.6% busy  Writable.write node:internal/streams/writable
+    4406 ms   7.3% wall   7.6% busy  _write node:internal/streams/writable
+    4396 ms   7.3% wall   7.6% busy  writeOrBuffer node:internal/streams/writable
+    4384 ms   7.3% wall   7.6% busy  _write npm:ws/lib/receiver.js:6297
+    4339 ms   7.2% wall   7.5% busy  startLoop npm:ws/lib/receiver.js:6358
+    4237 ms   7.0% wall   7.3% busy  getData npm:ws/lib/receiver.js:6618
+    4085 ms   6.8% wall   7.1% busy  dataMessage npm:ws/lib/receiver.js:6692
+    4058 ms   6.7% wall   7.0% busy  receiverOnMessage npm:ws/lib/websocket.js:8549
+    4043 ms   6.7% wall   7.0% busy  (anonymous) server/world/host.ts:22993
+    3891 ms   6.5% wall   6.7% busy  decodeClientMessage server/world/gameplay/protocol.ts:15647
+    2080 ms   3.5% wall   3.6% busy  accept server/world/gameplay/protocol.ts:16027
+    2048 ms   3.4% wall   3.5% busy  decodeValue server/world/gameplay/protocol.ts:15422
+    1956 ms   3.2% wall   3.4% busy  read server/world/gameplay/protocol.ts:15425
+    1797 ms   3.0% wall   3.1% busy  FragmentAssembler server/world/gameplay/protocol.ts:16012
+    1701 ms   2.8% wall   2.9% busy  clone server/world/gameplay/protocol.ts:15340
+    1257 ms   2.1% wall   2.2% busy  string server/world/gameplay/protocol.ts:16000
+    1170 ms   1.9% wall   2.0% busy  encodeValue server/world/gameplay/protocol.ts:15417
+     914 ms   1.5% wall   1.6% busy  decode node:internal/encoding
+     709 ms   1.2% wall   1.2% busy  decodeUTF8 native
+     622 ms   1.0% wall   1.1% busy  write server/world/gameplay/protocol.ts:15347
+     414 ms   0.7% wall   0.7% busy  valueEncoder server/world/gameplay/protocol.ts:15343
+     398 ms   0.7% wall   0.7% busy  string server/world/gameplay/protocol.ts:15942
+     386 ms   0.6% wall   0.7% busy  (anonymous) server/world/gameplay/protocol.ts:15898
+     386 ms   0.6% wall   0.7% busy  Writer server/world/gameplay/protocol.ts:15897
+     344 ms   0.6% wall   0.6% busy  encode node:internal/encoding
+     286 ms   0.5% wall   0.5% busy  raw server/world/gameplay/protocol.ts:15994
+     267 ms   0.4% wall   0.5% busy  object2 server/world/gameplay/protocol.ts:15296
+     243 ms   0.4% wall   0.4% busy  header server/world/gameplay/protocol.ts:15333
+     118 ms   0.2% wall   0.2% busy  finish server/world/gameplay/protocol.ts:15948
+      93 ms   0.2% wall   0.2% busy  binding server/world/gameplay/protocol.ts:15330
+      82 ms   0.1% wall   0.1% busy  consume npm:ws/lib/receiver.js:6322
+      76 ms   0.1% wall   0.1% busy  Reader server/world/gameplay/protocol.ts:15956
+      72 ms   0.1% wall   0.1% busy  FastBuffer node:internal/buffer
+      61 ms   0.1% wall   0.1% busy  encodeUtf8String native
+-- by module --
+    4567 ms   7.6% wall   7.9% busy  node:internal/stream_base_commons
+    4515 ms   7.5% wall   7.8% busy  node:internal/streams/readable
+    4417 ms   7.3% wall   7.6% busy  node:events
+    4416 ms   7.3% wall   7.6% busy  npm:ws/lib/websocket.js
+    4411 ms   7.3% wall   7.6% busy  node:internal/streams/writable
+    4384 ms   7.3% wall   7.6% busy  npm:ws/lib/receiver.js
+    4043 ms   6.7% wall   7.0% busy  server/world/host.ts
+    3891 ms   6.5% wall   6.7% busy  server/world/gameplay/protocol.ts
+    1258 ms   2.1% wall   2.2% busy  node:internal/encoding
+     791 ms   1.3% wall   1.4% busy  native
+      72 ms   0.1% wall   0.1% busy  node:internal/buffer
+      54 ms   0.1% wall   0.1% busy  server/world/startup.ts
+      53 ms   0.1% wall   0.1% busy  node:internal/process/task_queues
+      42 ms   0.1% wall   0.1% busy  node:buffer
+      30 ms   0.1% wall   0.1% busy  node:internal/perf/performance
+
+== inclusive inside pump.other (85 ms) by function ==
+      85 ms   0.1% wall   0.1% busy  pump server/world/host.ts:22847
+      85 ms   0.1% wall   0.1% busy  listOnTimeout node:internal/timers
+      85 ms   0.1% wall   0.1% busy  processTimers node:internal/timers
+      13 ms   0.0% wall   0.0% busy  now native
+      13 ms   0.0% wall   0.0% busy  now node:internal/perf/performance
+      13 ms   0.0% wall   0.0% busy  nowMonotonicMs server/world/startup.ts:23466
+       8 ms   0.0% wall   0.0% busy  run server/world/scheduler.ts:21250
+       5 ms   0.0% wall   0.0% busy  (anonymous) server/world/host.ts:22890
+       5 ms   0.0% wall   0.0% busy  setTimeout node:timers
+       3 ms   0.0% wall   0.0% busy  Timeout node:internal/timers
+       3 ms   0.0% wall   0.0% busy  get aborted node:internal/abort_controller
+       3 ms   0.0% wall   0.0% busy  (anonymous) server/world/host.ts:22891
+       1 ms   0.0% wall   0.0% busy  insert node:internal/timers
+       1 ms   0.0% wall   0.0% busy  (anonymous) server/world/host.ts:21782
+-- by module --
+      85 ms   0.1% wall   0.1% busy  server/world/host.ts
+      85 ms   0.1% wall   0.1% busy  node:internal/timers
+      13 ms   0.0% wall   0.0% busy  native
+      13 ms   0.0% wall   0.0% busy  node:internal/perf/performance
+      13 ms   0.0% wall   0.0% busy  server/world/startup.ts
+       8 ms   0.0% wall   0.0% busy  server/world/scheduler.ts
+       5 ms   0.0% wall   0.0% busy  node:timers
+       3 ms   0.0% wall   0.0% busy  node:internal/abort_controller
+
+== inclusive inside other (179 ms) by function ==
+     125 ms   0.2% wall   0.2% busy  processTicksAndRejections node:internal/process/task_queues
+      91 ms   0.2% wall   0.2% busy  runMicrotasks native
+      27 ms   0.0% wall   0.0% busy  observerCallback node:internal/perf/observe
+      20 ms   0.0% wall   0.0% busy  processTimers node:internal/timers
+      19 ms   0.0% wall   0.0% busy  listOnTimeout node:internal/timers
+      18 ms   0.0% wall   0.0% busy  deprecate node:internal/util
+       5 ms   0.0% wall   0.0% busy  PerformanceNodeEntry node:internal/perf/performance_entry
+       5 ms   0.0% wall   0.0% busy  createPerformanceNodeEntry node:internal/perf/performance_entry
+       3 ms   0.0% wall   0.0% busy  (anonymous) server/world/gameplay/protocol.ts:15389
+       2 ms   0.0% wall   0.0% busy  set natives native
+       1 ms   0.0% wall   0.0% busy  (anonymous) src/sim/features/exploration.ts:12096
+       1 ms   0.0% wall   0.0% busy  enqueue node:internal/perf/observe
+       1 ms   0.0% wall   0.0% busy  write server/world/gameplay/protocol.ts:15347
+       1 ms   0.0% wall   0.0% busy  get node:internal/bootstrap/node
+       1 ms   0.0% wall   0.0% busy  (anonymous) server/world/gameplay/protocol.ts:15385
+       1 ms   0.0% wall   0.0% busy  runNextTicks node:internal/process/task_queues
+-- by module --
+     126 ms   0.2% wall   0.2% busy  node:internal/process/task_queues
+      93 ms   0.2% wall   0.2% busy  native
+      27 ms   0.0% wall   0.0% busy  node:internal/perf/observe
+      20 ms   0.0% wall   0.0% busy  node:internal/timers
+      18 ms   0.0% wall   0.0% busy  node:internal/util
+       5 ms   0.0% wall   0.0% busy  node:internal/perf/performance_entry
+       5 ms   0.0% wall   0.0% busy  server/world/gameplay/protocol.ts
+       1 ms   0.0% wall   0.0% busy  src/sim/features/exploration.ts
+       1 ms   0.0% wall   0.0% busy  node:internal/bootstrap/node
+
+== focus "publish server/world/host.ts" 17682 ms  29.4% wall: callees ==
+   14389 ms  23.9% wall  24.9% busy  encodeObservation server/world/gameplay/protocol.ts:15676
+    1608 ms   2.7% wall   2.8% busy  prepareObservationSnapshot server/world/gameplay/protocol.ts:15790
+     733 ms   1.2% wall   1.3% busy  snapshot src/sim/area.ts:21024
+     320 ms   0.5% wall   0.6% busy  send npm:ws/lib/websocket.js:8097
+     206 ms   0.3% wall   0.4% busy  (anonymous) server/world/host.ts:22674
+     190 ms   0.3% wall   0.3% busy  projectObservationExtras server/world/gameplay/protocol.ts:15752
+     123 ms   0.2% wall   0.2% busy  (self)
+     103 ms   0.2% wall   0.2% busy  visible server/world/host.ts:22652
+       6 ms   0.0% wall   0.0% busy  nowMonotonicMs server/world/startup.ts:23466
+       3 ms   0.0% wall   0.0% busy  observe server/world/host.ts:21724
+       1 ms   0.0% wall   0.0% busy  freezeValue src/sim/events.ts:11958
+-- callers --
+   17682 ms  29.4% wall  30.6% busy  (anonymous) server/world/host.ts:22891
+
+== focus "encodeObservation " 14389 ms  23.9% wall: callees ==
+    5152 ms   8.6% wall   8.9% busy  preparedProjection server/world/gameplay/protocol.ts:15828
+    4134 ms   6.9% wall   7.2% busy  checkSnapshot server/world/gameplay/protocol.ts:15555
+    4107 ms   6.8% wall   7.1% busy  encodePreparedSnapshot server/world/gameplay/protocol.ts:15871
+     272 ms   0.5% wall   0.5% busy  preparedBaseline server/world/gameplay/protocol.ts:15821
+     210 ms   0.3% wall   0.4% busy  selectEvents server/world/gameplay/events.ts:15233
+     207 ms   0.3% wall   0.4% busy  projectSelf server/world/gameplay/protocol.ts:15594
+     161 ms   0.3% wall   0.3% busy  (self)
+     123 ms   0.2% wall   0.2% busy  clone server/world/gameplay/protocol.ts:15340
+      13 ms   0.0% wall   0.0% busy  (anonymous) server/world/gameplay/protocol.ts:15731
+       6 ms   0.0% wall   0.0% busy  header server/world/gameplay/protocol.ts:15333
+       2 ms   0.0% wall   0.0% busy  (anonymous) server/world/gameplay/protocol.ts:15681
+       1 ms   0.0% wall   0.0% busy  beginRecord server/world/gameplay/protocol.ts:15403
+-- callers --
+   14389 ms  23.9% wall  24.9% busy  publish server/world/host.ts:22671
+
+== focus "host.ts:22993" 15986 ms  26.5% wall: callees ==
+    8348 ms  13.9% wall  14.4% busy  accept server/world/gameplay/intents.ts:14960
+    7486 ms  12.4% wall  12.9% busy  decodeClientMessage server/world/gameplay/protocol.ts:15647
+      92 ms   0.2% wall   0.2% busy  (self)
+      54 ms   0.1% wall   0.1% busy  nowMonotonicMs server/world/startup.ts:23466
+       6 ms   0.0% wall   0.0% busy  buffer server/world/host.ts:23159
+-- callers --
+   15986 ms  26.5% wall  27.7% busy  emit node:events
+
+== focus "checkSnapshot " 4134 ms   6.9% wall: callees ==
+    4055 ms   6.7% wall   7.0% busy  object2 server/world/gameplay/protocol.ts:15296
+      78 ms   0.1% wall   0.1% busy  (self)
+       1 ms   0.0% wall   0.0% busy  features server/world/gameplay/protocol.ts:15565
+-- callers --
+    4134 ms   6.9% wall   7.2% busy  encodeObservation server/world/gameplay/protocol.ts:15676
