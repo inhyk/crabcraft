@@ -27,7 +27,7 @@ export type ValidatedWorldConfig = {
  assets:{source:string;manifest:'world-manifest.json';maxBakeBytes:number;maxTotalBakeBytes:number;maxManifestBytes:number;maxCells:number};
  worlds:Record<WorldId,ConfiguredRegion>;restore:ConfiguredRestore;
  limits:{[K in keyof typeof HOST_DEFAULTS]:number};areaLimits:{[K in keyof typeof AREA_DEFAULTS]:number};persistence:{[K in keyof typeof PERSISTENCE_DEFAULTS]:number};
- party:{enabled:false};
+ party:{enabled:false};characters?:{maxCharactersPerAccount?:number};
 };
 function fail(path:string):never {throw new Error(`world-config: ${path}`);}
 function detached(value:unknown):unknown {
@@ -48,7 +48,7 @@ function validateRestore(value:unknown):ConfiguredRestore {
  return freeze({cooldowns:choice(r.cooldowns,timing,'restore.cooldowns'),statuses:choice(r.statuses,timing,'restore.statuses'),death:choice(r.death,timing,'restore.death'),history:choice(r.history,timing,'restore.history'),hp:choice(r.hp,['preserve'],'restore.hp'),resource:choice(r.resource,['preserve'],'restore.resource'),location:choice(r.location,['saved','arrival'],'restore.location'),activity:choice(r.activity,['cancel'],'restore.activity')});
 }
 export function validateWorldConfig(value:unknown):ValidatedWorldConfig {
- const c=object(detached(value),['schema','ownership','assets','worlds','restore'],['limits','areaLimits','persistence','party'],'root');choice(c.schema,['world-startup-v1'],'schema');
+ const c=object(detached(value),['schema','ownership','assets','worlds','restore'],['limits','areaLimits','persistence','party','characters'],'root');choice(c.schema,['world-startup-v1'],'schema');
  const own=object(c.ownership,['key'],['heartbeatMs','queryTimeoutMs'],'ownership');if(typeof own.key!=='string'||!own.key.length||Buffer.byteLength(own.key)>128||/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(own.key))fail('ownership.key');
  const a=object(c.assets,['source','manifest'],['maxBakeBytes','maxTotalBakeBytes','maxManifestBytes','maxCells'],'assets');
  const assets={source:hash(a.source,'assets.source'),manifest:choice(a.manifest,['world-manifest.json'],'assets.manifest'),maxBakeBytes:integer(optional(a,'maxBakeBytes',16777216),'assets.maxBakeBytes',1,134217728),maxTotalBakeBytes:integer(optional(a,'maxTotalBakeBytes',67108864),'assets.maxTotalBakeBytes',1,268435456),maxManifestBytes:integer(optional(a,'maxManifestBytes',16384),'assets.maxManifestBytes',1,65536),maxCells:integer(optional(a,'maxCells',1000000),'assets.maxCells',4,4000000)};
@@ -58,8 +58,9 @@ export function validateWorldConfig(value:unknown):ValidatedWorldConfig {
  const limits=numericOverrides(c.limits,HOST_DEFAULTS,'limits',16777216),areaLimits=numericOverrides(c.areaLimits,AREA_DEFAULTS,'areaLimits',1048576),persistence=numericOverrides(c.persistence,PERSISTENCE_DEFAULTS,'persistence',60000);
  if(limits.maxMutationSourcesPerTick>256||limits.maxQueuedInputs>1024||limits.maxConnections>10000||limits.maxWaiting>10000||limits.maxConnectionsPerIp>limits.maxConnections||limits.maxAuthFrameBytes>limits.maxFrameBytes||limits.maxAuthFrameBytes>65536||limits.maxFrameBytes>2097152||limits.loopIntervalMs>1000||areaLimits.inputCommandsPerTick>32||persistence.maxQueuedPerCharacter>256||persistence.maxAttempts>100||persistence.maxRecoveryRounds>32)fail('unsupported operational bounds');
  for(const world of PUBLIC_WORLDS){const region=regions[world];if(Object.values(region.population).reduce((sum,n)=>sum+n,0)>limits.maxMutationSourcesPerTick)fail(`${world}.population exceeds receipt bound`);}
+ let characters:{maxCharactersPerAccount?:number}|undefined;if(c.characters!==undefined){const p=object(c.characters,[],['maxCharactersPerAccount'],'characters');characters=Object.hasOwn(p,'maxCharactersPerAccount')?{maxCharactersPerAccount:integer(p.maxCharactersPerAccount,'characters.maxCharactersPerAccount',1,Number.MAX_SAFE_INTEGER)}:{};}
  if(c.party!==undefined){const p=object(c.party,['enabled'],[],'party');if(p.enabled!==false)fail('party encounters require a supported host and explicit return/capacity policy');}
- return freeze({schema:'world-startup-v1',ownership:{key:own.key,heartbeatMs:integer(optional(own,'heartbeatMs',1000),'ownership.heartbeatMs',1,60000),queryTimeoutMs:integer(optional(own,'queryTimeoutMs',1000),'ownership.queryTimeoutMs',1,60000)},assets,worlds:regions,restore,limits,areaLimits,persistence,party:{enabled:false}});
+ return freeze({schema:'world-startup-v1',ownership:{key:own.key,heartbeatMs:integer(optional(own,'heartbeatMs',1000),'ownership.heartbeatMs',1,60000),queryTimeoutMs:integer(optional(own,'queryTimeoutMs',1000),'ownership.queryTimeoutMs',1,60000)},assets,worlds:regions,restore,limits,areaLimits,persistence,party:{enabled:false},...(characters===undefined?{}:{characters})});
 }
 export function createConfiguredAreaPolicy(region:ConfiguredRegion):AreaPolicy {
  return Object.freeze<AreaPolicy>({enemyLevel:spawn=>spawn.fixedLevel,enemyPopulation:spawn=>({desired:1,respawnSeconds:region.respawnSeconds[spawn.role==='echo'?'echo':spawn.kind]}),damageAllowed:(_context,source,target)=>!(source?.kind==='player'&&target.kind==='player'),canInteract:()=>true});

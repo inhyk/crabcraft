@@ -15,7 +15,7 @@ const runtime = await startConfiguredWorld({
 
 ## 필수 gameplay 설정
 
-최상위 schema는 `world-startup-v1`이다. `ownership`, `assets`, `worlds`, `restore`가 필수다. `worlds`에는 `w1`, `w2`, `w3`, `w4`가 모두 있어야 한다.
+최상위 schema는 `world-startup-v1`이다. `ownership`, `assets`, `worlds`, `restore`가 필수다. 선택 필드 `characters:{maxCharactersPerAccount:<positive safe integer>}`는 명시적 account별 생성 cap을 전달한다. 생략 또는 빈 객체는 생성 API의 503 disabled 상태다. Slot 기본값은 없다. Root main이 `runtime.config.characters ?? {}`를 `createCharacterHandler`의 `policy`로 전달한다. `worlds`에는 `w1`, `w2`, `w3`, `w4`가 모두 있어야 한다.
 
 각 world의 필수 필드:
 
