@@ -9,6 +9,7 @@ import { createPool, migrate } from '../node/db.ts';
 import { CharacterStore } from './character-store.ts';
 import { WorldTicketRegistry } from './admission.ts';
 import { acquireHostOwnership } from './ownership.ts';
+import { WorldChatService } from './chat.ts';
 import { loadWorldCatalog, createGameplayCatalog } from './catalog.ts';
 import { createActualWorldHost } from './host.ts';
 import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
@@ -59,12 +60,13 @@ async function runtime(options = {}) {
   // Vertical test relocates one actual W1 enemy template beside actual baked spawn, without altering its rules/stats.
   if (options.combat) worlds.set('w1', { ...base, publicDefinition: { ...base.publicDefinition, enemies: [{ ...base.publicDefinition.enemies[0], home: { x: spawn.x + 3, y: base.query.heightAt(spawn.x + 3, spawn.z), z: spawn.z }, wanderRadius: 0 }] } });
   const failures = [];
-  const host = createActualWorldHost({ admission, characters: store, worlds, codec, ownership,
+  const host = createActualWorldHost({ admission, characters: store, worlds, codec, ownership, chat: options.chat ? new WorldChatService(pool) : undefined,
     gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
     policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
       checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
-      maxMutationSourcesPerTick: 64, loopIntervalMs: 2,
+      maxMutationSourcesPerTick: 64, loopIntervalMs: 2, chat: options.chat ? { maxPending: 4 } : undefined,
+      victimOutcome: { maxEntries: options.victimMaxEntries ?? 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 },
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
       areaLimits: { eventCount: 4096, inputCommandsPerTick: 32, timers: 256, projectiles: 256 }, restore: explicitRestore,
       party: options.party ? { maxParties: 8, maxEncounters: 8, returnSpawn: () => 'bossArena' } : undefined,
@@ -83,7 +85,7 @@ async function runtime(options = {}) {
 }
 async function client(rt, c, auth = true) {
   const ws = new WebSocket(rt.url, { headers: { Origin: origin } });
-  const bot = { ws, state: null, receiver: null, binding: null, sequence: 0, events: [], errors: [], controls: [], packets: 0 };
+  const bot = { ws, state: null, receiver: null, binding: null, sequence: 0, events: [], results: [], errors: [], controls: [], packets: 0 };
   ws.on('message', (bytes, binary) => {
     try {
       if (!binary) {
@@ -91,7 +93,8 @@ async function client(rt, c, auth = true) {
         if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.receiver = new GameplayReceiver(binding, gameplayCatalog); }
       } else {
         bot.packets++; const result = bot.receiver.accept(bytes, performance.now() / 1000);
-        if (result?.kind === 'snapshot') { bot.state = result.state; bot.events.push(...result.events); }
+        if (result?.kind === 'snapshot') { bot.state = result.state; bot.events.push(...result.events); bot.results.push(...result.results); }
+        else if (result?.kind === 'events') { bot.events.push(...result.events); bot.results.push(...result.results); }
         else if (result?.kind === 'control') bot.controls.push(result.control);
       }
     } catch (error) { bot.errors.push(error.message); }
@@ -205,6 +208,7 @@ test('two actual combat contributors receive complete identical XP in one atomic
     await until(() => bots.every(bot => bot.state.self.player.xp > 0) || rt.failures.length, 10000);
     assert.deepEqual(rt.failures, []); assert.equal(bots[0].state.self.player.xp, 20); assert.equal(bots[1].state.self.player.xp, 20);
     const rows = await pool.query('SELECT g.character_id,r.applied_revision FROM world_character_grants g JOIN world_character_grant_receipts r USING(grant_id) WHERE g.character_id=ANY($1::uuid[])', [characters.map(c => c.record.characterId)]);
+    const seals = await pool.query('SELECT recipient_count FROM world_victim_outcomes WHERE outcome_key=$1', [JSON.stringify([bots[0].events.find(e=>e.event.type==="death").event.unit.area,bots[0].events.find(e=>e.event.type==="death").event.unit.id,bots[0].events.find(e=>e.event.type==="death").event.unit.life])]); assert.equal(Number(seals.rows[0].recipient_count),2);
     assert.equal(rows.rowCount, 2); assert.equal(new Set(rows.rows.map(r => r.character_id)).size, 2);
     for (const c of characters) assert.equal((await store.getOwned(c.binding.accountId, c.record.characterId)).checkpoint.progress.xp, 20);
   } finally { for (const timer of timers) clearInterval(timer); for (const bot of bots) bot.ws.close(); await rt.close(); }
@@ -261,6 +265,7 @@ test('100 actual authenticated sockets occupy one public Area; 101st queues, tak
     bots.push(...await Promise.all(records.map(c => client(rt, c))));
     await until(() => rt.host.stats().activeActors === 100 && rt.host.stats().waiting === 1 || rt.failures.length, 15000);
     assert.deepEqual(rt.failures, []); assert.equal(rt.host.stats().publicAreas, 4);
+    await until(() => bots.some(bot => !bot.binding && bot.controls.some(c => c.type === 'queued')));
     const queued = bots.find(bot => !bot.binding && bot.controls.some(c => c.type === 'queued'));
     assert.ok(queued); assert.equal(queued.controls.filter(c => c.type === 'queued').length, 1);
     const admitted = bots.find(bot => bot.binding); admitted.ws.close(); await once(admitted.ws, 'close');
@@ -315,4 +320,163 @@ test('all four real worlds round-trip through validated gate intents with unchan
     bot.ws.send(encodeInput({ binding: staleBinding, intent: { seq: 100, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, commands: [] } }, gameplayCatalog));
     await once(bot.ws, 'close'); assert.ok(bot.controls.some(control => control.code === 'invalid-input'));
   } finally { bot?.ws.close(); await rt.close(); }
+});
+
+test('economic results use actual delegated outcomes and original input origins only after a committed checkpoint', { timeout: 10000 }, async () => {
+  const rt = await runtime(); let bot;
+  try {
+    const c = await character('mage'); bot = await client(rt, c); await ready(rt, bot);
+    bot.send([{ kind: 'questAccept', questId: 'q1', npcId: 'brinebeard' }]);
+    bot.send([{ kind: 'questAccept', questId: 'q1', npcId: 'brinebeard' }]);
+    await until(() => bot.results.some(r => r.inputSequence === 1 && r.status === 'durable') && bot.results.some(r => r.inputSequence === 2 && r.status === 'failed') || rt.failures.length);
+    assert.deepEqual(rt.failures, []);
+    const accepted = bot.results.find(r => r.inputSequence === 1); assert.equal(accepted.commandIndex, 0); assert.equal(accepted.code, 'quest-accepted');
+    const savedQuest = await store.getOwned(c.binding.accountId, c.record.characterId);
+    assert.ok(accepted.revision <= savedQuest.revision); assert.equal(savedQuest.checkpoint.progress.quests.status.q1, 'active');
+    const oldSession = bot.binding.session, pip = loaded.get('w1').publicDefinition.npcs.find(n => n.id === 'pip');
+    // Trusted shop-readiness fixture only; the actual two purchases and failures run through core commands.
+    let written = false;
+    for (let attempt = 0; attempt < 10 && !written; attempt++) {
+      const current = await store.getOwned(c.binding.accountId, c.record.characterId), checkpoint = structuredClone(current.checkpoint);
+      checkpoint.location = { ...pip.position, yaw: 0 }; checkpoint.progress.coins = 200;
+      try { await store.saveCheckpoint(c.binding.accountId, c.record.characterId, current.revision, checkpoint, []); written = true; }
+      catch (error) { if (error.code !== 'conflict') throw error; }
+    }
+    assert.equal(written, true); await until(() => bot.binding.session !== oldSession || rt.failures.length); assert.deepEqual(rt.failures, []);
+    bot.results = [];
+    bot.send([{ kind: 'forgeBuy', npcId: 'pip', slot: 'weapon', request: 111 }, { kind: 'forgeBuy', npcId: 'pip', slot: 'armor', request: 112 }]);
+    await until(() => bot.results.filter(r => r.status === 'durable' && [111,112].includes(r.request)).length === 2 || rt.failures.length);
+    assert.deepEqual(rt.failures, []);
+    const bought = bot.results.filter(r => [111,112].includes(r.request)); assert.deepEqual(bought.map(r => [r.inputSequence,r.commandIndex,r.code]), [[1,0,'equipment-bought'],[1,1,'equipment-bought']]);
+    assert.equal(bought[0].revision, bought[1].revision);
+    const saved = await store.getOwned(c.binding.accountId, c.record.characterId);
+    assert.equal(saved.checkpoint.progress.coins, 0); assert.equal(saved.checkpoint.progress.attackRank, 1); assert.equal(saved.checkpoint.progress.armorRank, 1);
+    assert.ok(bought[0].revision <= saved.revision);
+    bot.send([{ kind: 'forgeUpgrade', npcId: 'pip', slot: 'weapon', request: 113 }]);
+    await until(() => bot.results.some(r => r.request === 113 && r.status === 'failed') || rt.failures.length);
+    assert.equal(bot.results.find(r => r.request === 113).code, 'equipment-coins'); assert.deepEqual(bot.errors, []);
+  } finally { bot?.ws.close(); await rt.close(); }
+});
+
+ test('unsafe persisted identity is masked only in public appearance and party controls', { timeout: 10000 }, async () => {
+  const c = await character();
+  await pool.query("UPDATE world_characters SET identity_json=jsonb_set(identity_json::jsonb,'{appearance,name}',$1::jsonb)::text WHERE character_id=$2", [JSON.stringify('call 01012345678'), c.record.characterId]);
+  const rt = await runtime({ party: true }); let bot;
+  try {
+    bot = await client(rt, c); await ready(rt, bot);
+    assert.equal(bot.state.actors.find(a => a.ref.id === bot.state.selfRef.id).appearance.name, '게 모험가');
+    bot.send([{ kind: 'partyCreate' }]);
+    await until(() => bot.controls.some(control => control.type === 'party' && control.state));
+    assert.equal(bot.controls.findLast(control => control.type === 'party' && control.state).state.members[0].name, '게 모험가');
+    assert.equal((await store.getOwned(c.binding.accountId, c.record.characterId)).identity.appearance.name, 'call 01012345678');
+    assert.deepEqual(bot.errors, []);
+  } finally { bot?.ws.close(); await rt.close(); }
+});
+
+ test('real account chat filters, persists local mute/preferences and isolates party delivery; three reports shadow-mute without leaking moderation state', { timeout: 15000 }, async () => {
+  const rt = await runtime({ party: true, chat: true }); const bots = [], records = [];
+  const controls = (b, type) => b.controls.filter(c => c.type === type);
+  const lines = b => controls(b, 'chatLine');
+  async function operation(bot, command) {
+    const n = controls(bot, 'chatResult').length; bot.send([command]);
+    await until(() => controls(bot, 'chatResult').length > n || rt.failures.length);
+    assert.deepEqual(rt.failures, []); return controls(bot, 'chatResult').at(-1);
+  }
+  try {
+    for (let i = 0; i < 4; i++) { const record = await character();
+      if(i===3){const {setQuestChapter}=await import('../../src/sim/data/quests.ts');const checkpoint=structuredClone(record.record.checkpoint),spawn=loaded.get('w2').publicDefinition.spawn;checkpoint.world='w2';checkpoint.location={...spawn.position,yaw:spawn.yaw};setQuestChapter(checkpoint.progress.quests,2);record.record=await store.saveCheckpoint(record.binding.accountId,record.record.characterId,record.record.revision,checkpoint,[]);}
+      const bot = await client(rt, record); records.push(record); bots.push(bot); await ready(rt, bot); }
+    await until(() => bots.every(b => controls(b, 'chatPreferences').length));
+    const [a,b,c,d] = bots;
+    assert.equal((await operation(a, { kind: 'chatSay', channel: 'area', text: 'call 01012345678' })).ok, true);
+    await until(() => bots.slice(0,3).every(bot => lines(bot).length === 1)); assert.equal(lines(d).length,0);
+    assert.ok(lines(b)[0].line.text.includes('***')); assert.ok(!JSON.stringify(lines(b)).includes('01012345678'));
+    assert.ok(!JSON.stringify(a.controls).includes(records[0].binding.accountId));
+    assert.equal((await operation(b, { kind: 'chatMute', target: a.state.selfRef, muted: true })).ok, true);
+    await delay(710); await operation(a, { kind: 'chatSay', channel: 'area', text: 'muted local check' });
+    await until(() => lines(c).length === 2); assert.equal(lines(b).length,1);
+    const bState = (await pool.query('SELECT muted FROM world_chat_targets WHERE owner_account=$1 AND target_account=$2', [records[1].binding.accountId, records[0].binding.accountId])).rows[0]; assert.equal(bState.muted,true);
+    a.send([{kind:'partyCreate'}]); await until(() => controls(a,'party').at(-1)?.state);
+    b.send([{kind:'partyJoin',code:controls(a,'party').at(-1).state.code}]); await until(() => controls(a,'party').at(-1)?.state?.members.length === 2);
+    await operation(b, {kind:'chatMute',target:a.state.selfRef,muted:false});
+    await delay(710); const outsiderLines=lines(c).length;
+    await operation(a, {kind:'chatSay',channel:'party',text:'party hello'}); await until(() => lines(b).at(-1)?.line.text === 'party hello'); assert.equal(lines(c).length,outsiderLines);
+    await operation(b, {kind:'chatPreferences',enabled:false,partyOnly:true});
+    assert.deepEqual(controls(b,'chatPreferences').at(-1), {type:'chatPreferences',enabled:false,partyOnly:true});
+    const preferenceCount=controls(b,'chatPreferences').length, partyCount=controls(b,'party').length;
+    const clientProtocol=createGameplayProtocol(gameplayCatalog);
+    for(const chunk of clientProtocol.encodeControl({...b.binding,sequence:1,tick:0,acceptedInput:0,consumedInput:0},{type:'resync',lastSequence:b.state.sequence,reason:'gap'})) b.ws.send(chunk);
+    await until(()=>controls(b,'chatPreferences').length>preferenceCount&&controls(b,'party').length>partyCount);
+    assert.equal(controls(b,'chatPreferences').at(-1).enabled,false);
+    b.ws.close(); await once(b.ws,'close'); const replacement=await client(rt,records[1]); bots.push(replacement); await ready(rt,replacement);
+    await until(() => controls(replacement,'chatPreferences').length); assert.equal(controls(replacement,'chatPreferences').at(-1).enabled,false);
+    for (const reporter of [replacement,c,d]) { const result=await operation(reporter,{kind:'chatReport',target:a.state.selfRef,reason:'personal'}); assert.equal(result.ok,true); assert.equal(Object.hasOwn(result,'muted'),false); }
+    await delay(710); const before=lines(c).length, ownBefore=lines(a).length;
+    await operation(a,{kind:'chatSay',channel:'area',text:'shadow muted own echo'}); await until(() => lines(a).length > ownBefore); assert.equal(lines(c).length,before);
+    const reports=await pool.query('SELECT target_lines FROM chat_reports WHERE target_account=$1',[records[0].binding.accountId]); assert.equal(reports.rows.length,3); assert.ok(!JSON.stringify(reports.rows).includes('01012345678'));
+    assert.deepEqual(bots.flatMap(bot=>bot.errors),[]);
+  } finally { for (const b of bots) b.ws.close(); await rt.close(); }
+});
+
+test('actual PG ownership backend loss during blocked checkpoint suppresses late snapshot and durable command publication although old SQL may commit', { timeout: 12000 }, async () => {
+  const c = await character(), rt = await runtime(); let bot, blocker; let oldResult;
+  try {
+    bot = await client(rt, c); await ready(rt, bot); await until(() => !rt.host.stats().durableBarrier);
+    const owner = (await pool.query("SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database())")).rows;
+    assert.equal(owner.length,1);
+    blocker = await pool.connect(); await blocker.query('BEGIN'); await blocker.query('SELECT 1 FROM world_characters WHERE character_id=$1 FOR UPDATE',[c.record.characterId]);
+    const before = await store.getOwned(c.binding.accountId,c.record.characterId);
+    bot.send([{kind:'questAccept',questId:'q1',npcId:'brinebeard'}]);
+    for(let i=0;;i++) { const waiting=(await pool.query("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%world_characters%FOR UPDATE%'" )).rowCount; if(waiting)break; if(i>200)throw new Error('checkpoint did not block'); await delay(10); }
+    const stateSequence=bot.state.sequence, resultsBefore=bot.results.length;
+    await pool.query('SELECT pg_terminate_backend($1)',[owner[0].pid]); await until(() => rt.ownership.closed.aborted);
+    await blocker.query('COMMIT'); blocker.release(); blocker=null;
+    await until(() => !rt.host.stats().durableBarrier); await delay(50);
+    assert.equal(bot.state.sequence,stateSequence); assert.equal(bot.results.length,resultsBefore); assert.equal(rt.host.stats().frozen,true);
+    const after=await store.getOwned(c.binding.accountId,c.record.characterId);
+    assert.equal(after.revision,before.revision+1); assert.equal(after.checkpoint.progress.quests.status.q1,'active');
+    assert.deepEqual(bot.errors,[]);
+  } finally { if(blocker){await blocker.query('ROLLBACK');blocker.release();}bot?.ws.close();oldResult=await rt.close(); }
+  assert.equal(oldResult.durable,false);
+  const next=await runtime();let resumed;
+  try {resumed=await client(next,c);await ready(next,resumed);assert.equal(resumed.state.self.player.quests.status.q1,'active');assert.deepEqual(resumed.errors,[]);}finally{resumed?.ws.close();await next.close();}
+});
+
+test('chat bounds pending DB work and discards a late committed line after authoritative party scope changes', { timeout: 10000 }, async () => {
+ const record=await character(), rt=await runtime({party:true,chat:true});let bot,blocker;
+ try {
+  bot=await client(rt,record);await ready(rt,bot);await until(()=>bot.controls.some(c=>c.type==='chatPreferences'));
+  blocker=await pool.connect();await blocker.query('BEGIN');await blocker.query('SELECT 1 FROM world_chat_accounts WHERE account_id=$1 FOR UPDATE',[record.binding.accountId]);
+  bot.send([{kind:'chatSay',channel:'area',text:'late obsolete scope'}]);await until(()=>rt.host.stats().pendingChat===1);
+  bot.send([{kind:'chatSay',channel:'area',text:'bounded overload'}]);await until(()=>bot.controls.some(c=>c.type==='chatResult'&&c.inputSequence===2));
+  assert.equal(bot.controls.find(c=>c.type==='chatResult'&&c.inputSequence===2).error,'unavailable');assert.equal(rt.host.stats().pendingChat,1);
+  bot.send([{kind:'partyCreate'}]);await until(()=>bot.controls.some(c=>c.type==='party'&&c.state));
+  await blocker.query('COMMIT');blocker.release();blocker=null;await until(()=>rt.host.stats().pendingChat===0);await delay(30);
+  assert.equal(bot.controls.some(c=>c.type==='chatLine'&&c.line.text==='late obsolete scope'),false);
+  assert.equal(bot.controls.some(c=>c.type==='chatResult'&&c.inputSequence===1),false);
+  assert.deepEqual(bot.errors,[]);assert.deepEqual(rt.failures,[]);
+ }finally{if(blocker){await blocker.query('ROLLBACK');blocker.release();}bot?.ws.close();await rt.close();}
+});
+
+test('257 trusted offline journal fixtures drain through committed bounded pages before the first public baseline without duplicate rewards', { timeout: 10000 }, async () => {
+ const c=await character();
+ for(let offset=0;offset<257;offset+=100){const entries=[];for(let i=offset;i<Math.min(257,offset+100);i++){const victim={area:'trusted-offline-fixture',id:i+1,life:1},id=JSON.stringify([victim.area,victim.id,victim.life,c.record.characterId]);entries.push({accountId:c.binding.accountId,characterId:c.record.characterId,id,payload:{id,victim,recipient:c.record.characterId,xp:0,coins:1,objectives:[],flags:[]}});}await store.recordGrantBatch(entries);}
+ const rt=await runtime();let bot;
+ try{bot=await client(rt,c);await ready(rt,bot);assert.equal(bot.state.self.player.coins,257);assert.equal(bot.state.self.player.xp,0);
+  const receipts=await pool.query('SELECT applied_revision,count(*)::int n FROM world_character_grant_receipts WHERE character_id=$1 GROUP BY applied_revision ORDER BY applied_revision',[c.record.characterId]);
+  assert.deepEqual(receipts.rows.map(r=>r.n),[100,100,57]);assert.equal((await store.pendingGrants(c.binding.accountId,c.record.characterId)).length,0);assert.deepEqual(bot.errors,[]);assert.deepEqual(rt.failures,[]);
+ }finally{bot?.ws.close();await rt.close();}
+ const resumed=await runtime();let next;try{next=await client(resumed,c);await ready(resumed,next);assert.equal(next.state.self.player.coins,257);}finally{next?.ws.close();await resumed.close();}
+});
+
+ test('insufficient whole outcome budget freezes complete two-contributor source with no journal or public reward', { timeout: 12000 }, async () => {
+  const rt=await runtime({combat:true,victimMaxEntries:1}),bots=[],records=[],timers=[];
+  try {
+    for(let i=0;i<2;i++){const record=await character('mage'),bot=await client(rt,record);records.push(record);bots.push(bot);await ready(rt,bot);}
+    for(const bot of bots){const target=bot.state.actors.find(a=>a.kind==='scrapling');bot.send([{kind:'target',target:target.ref},{kind:'ability',slot:1}]);timers.push(setInterval(()=>{if(bot.ws.readyState===WebSocket.OPEN)bot.send([]);},50));}
+    await until(()=>rt.host.stats().frozen,10000);assert.equal(rt.host.stats().pendingSourceGrants,2);
+    assert.ok(rt.failures.some(f=>f.stage==='durability'&&f.message.includes('complete source retained')));
+    assert.equal((await pool.query('SELECT 1 FROM world_character_grants WHERE character_id=ANY($1::uuid[])',[records.map(c=>c.record.characterId)])).rowCount,0);
+    for(const bot of bots){assert.equal(bot.state.self.player.xp,0);assert.deepEqual(bot.errors,[]);}
+  }finally{for(const t of timers)clearInterval(t);for(const b of bots)b.ws.close();const result=await rt.close();assert.equal(result.durable,false);}
 });

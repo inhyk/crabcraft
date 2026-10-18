@@ -27,3 +27,9 @@ test('real Area boat owns rider position, village permits runner movement and bl
  const old=u.ref;p.respawn();assert.notDeepEqual(u.ref,old);assert.equal(a.snapshot().features.village,null);
  assert.deepEqual(a.snapshot().features.boat.seats,[null,null]);
 });
+
+test('full-life talk intent reaches actual resident bark with personal bank and rejects cooldown stale life and distance',()=>{
+ const a=worldArea('bark','w2'),{u,p}=addActor(a),resident=[...a.units.values()].find(u=>u.kind==='townsfolk');Object.assign(u,{x:resident.x,y:resident.y,z:resident.z+2});p.state.flags.trueCleared=true;
+ const first=a.step(new Map([[u.ref.id,intent(1,[{kind:'talk',target:resident.ref}])]]));assert.equal(first[0].success,true);const bark=a.drainEvents().find(r=>r.event.type==='feature'&&r.event.event.type==='npcBark');assert.equal(bark.event.event.bank,'starVictory');assert.deepEqual(bark.event.event.player,u.ref);
+ assert.equal(a.step(new Map([[u.ref.id,intent(2,[{kind:'talk',target:resident.ref}])]]))[0].success,false);assert.equal(a.step(new Map([[u.ref.id,intent(3,[{kind:'talk',target:{...resident.ref,life:resident.ref.life+1}}])]]))[0].success,false);u.x+=100;assert.equal(a.step(new Map([[u.ref.id,intent(4,[{kind:'talk',target:resident.ref}])]]))[0].success,false);
+});
