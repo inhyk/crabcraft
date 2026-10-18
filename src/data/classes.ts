@@ -31,7 +31,7 @@ export interface ClassDef {
 
 const icon = (c: ClassId, s: number) => `art/icons/ability-${c}-${s}.webp`;
 
-export const ULTIMATE: AbilityDef = { id: 'crown-burst', slot: 5, name: 'Crown Burst', description: 'Ultimate: unleash a powerful blast against visible enemies within 10 m. Recovers in 60 seconds.', castTime: 0, cooldown: 60, cost: 0, range: 10, icon: '' };
+export const ULTIMATE: AbilityDef = { id: 'crown-burst', slot: 5, name: 'Crown Burst', description: 'Ultimate: unleash a powerful blast against visible enemies within 10 m. Recovers in 60 seconds.', castTime: 0, cooldown: 60, cost: 0, range: 10, icon: 'art/icons/ability-ultimate-burst.webp' };
 
 export const CLASSES: Record<ClassId, ClassDef> = {
   warrior: {
