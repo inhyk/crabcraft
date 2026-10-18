@@ -17,11 +17,13 @@ const appearance = { race: 'human', sex: 'female', classId: 'warrior', shell: 3,
 const races = ['human', 'orc', 'dwarf', 'undead', 'nightelf', 'tauren'];
 const codec = createCoreCharacterCodec({ identities: races.flatMap(archetype => Object.keys(CLASSES).map(classId => ({ classId, archetype }))), freshLocation: { x: 0, y: 0, z: 0, yaw: 0 } });
 let postgres, pool, characters;
+const liveClients=new Set();
+async function closePool(){const ended=[...liveClients].map(c=>once(c,'end'));await pool?.end();await Promise.all(ended);}
 before(async () => {
-  try { postgres = await startPostgres(); pool = new pg.Pool({ connectionString: postgres.url }); await migrate(pool); characters = new CharacterStore(pool, codec); }
-  catch (e) { await pool?.end(); postgres?.stop(); throw e; }
+  try { postgres = await startPostgres(); pool = new pg.Pool({ connectionString: postgres.url }); pool.on('connect',c=>{liveClients.add(c);c.once('end',()=>liveClients.delete(c));}); await migrate(pool); characters = new CharacterStore(pool, codec); }
+  catch (e) { await closePool(); postgres?.stop(); throw e; }
 });
-after(async () => { try { await pool?.end(); } finally { postgres?.stop(); } });
+after(async () => { try { await closePool(); } finally { postgres?.stop(); } });
 async function session() {
   const accountId = 'g' + randomBytes(12).toString('hex').slice(0, 23), token = randomBytes(32).toString('hex'), key = createHash('sha256').update(token).digest('hex');
   await pool.query('INSERT INTO accounts(username,save,revision,updated,created) VALUES($1,$2,47,123,100)', [accountId, '{"legacy-progress":{"xp":999999,"coins":999999}}']);

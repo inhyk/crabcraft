@@ -18,7 +18,7 @@ const main=new URL('../../server-dist/main.mjs',import.meta.url);
 const manifestURL=new URL('../../server-dist/world/world-manifest.json',import.meta.url);
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(check,ms=8000){const end=performance.now()+ms;while(!check()){if(performance.now()>end)throw Error('bundled world main timeout');await delay(10);}}
-function fixtureConfig(source){return {schema:'world-startup-v1',ownership:{key:'bundled-main-qa',heartbeatMs:100,queryTimeoutMs:1000},assets:{source,manifest:'world-manifest.json'},
+function fixtureConfig(source){return {schema:'world-startup-v1',victimOutcome:{maxEntries:1024,maxPayloadBytes:4194304,timeoutMs:3000},chat:{maxPending:16},ownership:{key:'bundled-main-qa',heartbeatMs:100,queryTimeoutMs:1000},assets:{source,manifest:'world-manifest.json'},
  worlds:Object.fromEntries(['w1','w2','w3','w4'].map((world,i)=>[world,{seed:i+1,populationMode:'fixed-slots',fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:1,scavenger:0,jellyfish:0,shallowPatrols:0},respawnSeconds:{scrapling:300,scavenger:300,jellyfish:300,echo:120}}])),
  restore:{cooldowns:'pause',statuses:'pause',death:'pause',history:'pause',hp:'preserve',resource:'preserve',location:'saved',activity:'cancel'},limits:{maxConnections:16,maxConnectionsPerIp:8,maxWaiting:16,checkpointIntervalMs:100},party:{enabled:false},characters:{maxCharactersPerAccount:2}};}
 function start(database,config){
@@ -38,7 +38,7 @@ test('bundled configured main packages real assets and multiplexes account, lega
  const manifest=JSON.parse(await readFile(manifestURL,'utf8'));
  assert.equal(manifest.format,'crabcraft-world-manifest');assert.equal(manifest.version,1);
  for(const world of ['w1','w2','w3','w4']){const entry=manifest.artifacts[world],bytes=await readFile(new URL(entry.file,manifestURL));assert.equal(bytes.byteLength,entry.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),entry.sha256);assert.deepEqual(bytes,await readFile(new URL(`../../public/world/${entry.file}`,import.meta.url)));}
- const cluster=await startPostgres(),pool=createPool(cluster.url);let processState,bot,legacy;
+ const cluster=await startPostgres(),pool=createPool(cluster.url),liveClients=new Set();pool.on('connect',client=>{liveClients.add(client);client.once('end',()=>liveClients.delete(client));});let processState,bot,legacy;
  try{
   await migrate(pool);const account='g'+'7'.repeat(23),token=randomBytes(32).toString('hex'),cookie=`cc_account=${account}.${token}`;
   const oldSave=JSON.stringify({'cc.journey.v1:old':JSON.stringify({xp:9999})});
@@ -70,7 +70,7 @@ test('bundled configured main packages real assets and multiplexes account, lega
   const saved=await store.getOwned(account,character.characterId);assert.ok(saved.revision>0);assert.equal(saved.checkpoint.progress.xp,0);assert.equal(saved.checkpoint.progress.coins,0);
   assert.deepEqual((await pool.query('SELECT save,revision,updated FROM accounts WHERE username=$1',[account])).rows[0],{save:oldSave,revision:'47',updated:'123'});
   assert.equal(processState.output.includes(token)||processState.errors.includes(token)||processState.output.includes(ticket)||processState.errors.includes(ticket),false);
- }finally{bot?.ws.terminate();legacy?.terminate();if(processState?.child.exitCode===null)await processState.stop();await pool.end();cluster.stop();}
+ }finally{bot?.ws.terminate();legacy?.terminate();if(processState?.child.exitCode===null)await processState.stop();const ended=[...liveClients].map(c=>once(c,'end'));await pool.end();await Promise.all(ended);cluster.stop();}
 });
 
 test('bundled main fails before listening when enabled world policy is missing or asset version is wrong',{timeout:15000},async()=>{

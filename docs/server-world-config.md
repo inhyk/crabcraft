@@ -147,6 +147,8 @@ Root build는 `server-dist/world/`에 실제 collision JSON 4개와 `world-manif
   "w3":{"seed":3,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":120}},
   "w4":{"seed":4,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":120}}
  },
+ "victimOutcome":{"maxEntries":1024,"maxPayloadBytes":4194304,"timeoutMs":3000},
+ "chat":{"maxPending":16},
  "restore":{"cooldowns":"pause","statuses":"pause","death":"pause","history":"pause","hp":"preserve","resource":"preserve","location":"saved","activity":"cancel"},
  "party":{"enabled":false}
 }
@@ -157,3 +159,8 @@ Root build는 `server-dist/world/`에 실제 collision JSON 4개와 `world-manif
 설정, manifest, 실제 artifact 4개, catalog, identity codec, gameplay protocol의 static loading에 성공한 뒤 전용 PG session의 advisory ownership을 획득한다. 조립 실패 시 guard를 release하고, release에서 발생한 오류도 보고한다. 새 admission registry를 만들지 않고 account HTTP와 같은 객체를 host에 전달한다.
 
 Main이 shutdown을 소유한다. `host.stopAdmission()`, `host.shutdown(deadlineMs)` 결과 확인, `ownership.release()`, pool 종료 순서를 따른다. Startup 자체는 pool을 종료하지 않는다. 공개 NPC visibility는 공유 `personalNpcVisible`, feature/achievement/recovery projection은 공유 `projectObservationExtras`를 사용하며, 테스트 전용 별도 구현을 사용하지 않는다.
+
+
+## 보상 저장과 계정 채팅
+
+`victimOutcome`의 `maxEntries`, `maxPayloadBytes`, `timeoutMs`와 `chat.maxPending`은 명시적으로 설정한다. 문서 예시는 QA 자원 예산이며 보상 대상 자격을 제한하지 않는다. outcome 예산 초과는 전체 source를 보존하고 실패를 닫으며 부분 ACK나 부분 저장을 허용하지 않는다. 계정 chat은 같은 PG pool의 WorldChatService로 연결하고 pending 수를 제한한다. 선택적 `victimOutcomeRetryCeiling`은 초기 예산 이상의 세 값을 모두 지정한다. 내부 재시도 상한이며 HTTP 조작 API는 제공하지 않는다.

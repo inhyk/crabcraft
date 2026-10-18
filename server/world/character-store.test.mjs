@@ -50,7 +50,7 @@ before(async () => {
     }
     await pool.query(`INSERT INTO accounts(username,save,revision,updated,created) VALUES($1,$3,47,123,100),($2,'{}',0,1,1)`, [A, B, '{"legacyXP":999999}']);
     const existingAccount = (await pool.query('SELECT * FROM accounts WHERE username=$1', [A])).rows[0];
-    assert.deepEqual(await migrate(pool), ['004_world_characters', '005_world_victim_outcomes']);
+    assert.deepEqual(await migrate(pool), ['004_world_characters', '005_world_victim_outcomes', '006_world_chat']);
     assert.deepEqual((await pool.query('SELECT * FROM accounts WHERE username=$1', [A])).rows[0], existingAccount);
     assert.deepEqual(await migrate(pool), []);
     assert.equal((await pool.query('SELECT save FROM accounts WHERE username=$1', [A])).rows[0].save, '{"legacyXP":999999}');
