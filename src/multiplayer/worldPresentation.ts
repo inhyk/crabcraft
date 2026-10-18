@@ -92,8 +92,7 @@ export class WorldPresentation {
     if (binding !== this.binding) { this.reset(); this.binding = binding; this.lastOrder = state.eventWatermark; }
     this.state = structuredClone(state); this.elapsed = 0;
     this.synchronize();
-    const recovery:GameplayState['recovery']&{endingPresentation?:EndingObservation|null}=state.recovery;
-    this.ports.onEndingPresentation?.(recovery.endingPresentation??null,{session:state.header.session,area:state.header.area,epoch:state.header.epoch,catalog:state.header.catalog,sequence:state.header.sequence,selfRef:{...state.selfRef}});
+    this.ports.onEndingPresentation?.(structuredClone(state.recovery.endingPresentation??null),{session:state.header.session,area:state.header.area,epoch:state.header.epoch,catalog:state.header.catalog,sequence:state.header.sequence,selfRef:{...state.selfRef}});
   }
 
   events(records: readonly EventRecord[]): void {
