@@ -1,0 +1,69 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {realActionData as data,actionRequest,actionHitDelay,BREAK_ROUTINE} from '../src/sim/data/actions.ts';
+import {initializeNumericPose,advanceNumericPose} from '../src/sim/pose.ts';
+import {createUnit,centre} from '../src/sim/unit.ts';
+import {Actions} from '../src/sim/actions.ts';
+import {Projectiles} from '../src/sim/projectiles.ts';
+function unit(id=1,archetype='human'){
+ const u=createUnit({area:'motion-test',id,life:1},archetype,'player','player',data);
+ u.pose=initializeNumericPose();return u;
+}
+const near=(actual,expected,tolerance=1e-12)=>assert.ok(Math.abs(actual-expected)<=tolerance,`${actual} != ${expected}`);
+test('every derivation source and packed payload still match content hashes',async()=>{
+ const {version,...payload}=JSON.parse(await readFile(new URL('../src/sim/data/pose-data.json',import.meta.url),'utf8'));
+ assert.equal(version,'shipped-motion-v1-'+createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0,20));
+ const results=await Promise.all(Object.entries(data.sourceHashes).map(async([path,expected])=>[path,createHash('sha256').update(await readFile(new URL('../'+path,import.meta.url))).digest('hex'),expected]));
+ for(const [path,actual,expected]of results)assert.equal(actual,expected,path);
+});
+test('real attack and channel windows match independent shipped policy moments',()=>{
+ near(actionHitDelay(data,actionRequest(data,'attack_swipe')),.28);
+ near(actionHitDelay(data,actionRequest(data,'attack_slam')),.46/1.2);
+ near(actionHitDelay(data,actionRequest(data,'cast',{part:'release'})),.04);
+ assert.deepEqual(actionRequest(data,'cast',{loop:true}),{id:'cast',part:'channel',upper:false,from:1.23,to:3.03,loopFrom:1.83,loop:true,speed:1.25,fade:.12,carryRoot:false});
+ near(actionHitDelay(data,actionRequest(data,'attack_slam',{speed:1.3})),.46/1.3);
+ assert.equal(actionHitDelay(data,actionRequest(data,'jump')),null);
+ assert.equal(data.clip('death').hold,true);
+ assert.deepEqual(BREAK_ROUTINE.map(x=>x.id),['break_toprock','break_sixstep','break_spin','break_jumpspin','break_backflip','break_oneclaw']);
+ assert.throws(()=>data.root('absent',1),/Unknown shipped/);assert.throws(()=>data.archetype('absent'),/Unknown shipped/);
+});
+test('all real routine roots carry exactly once on natural fade and cancellation',()=>{
+ for(const step of BREAK_ROUTINE)for(const cancel of [false,true]){
+  const u=unit(1,'orc'),events=[],actions=new Actions(data,e=>events.push(e),()=>{});u.yaw=.71;
+  actions.play(u,actionRequest(data,step.id,{...step,carryRoot:true}));
+  const count=cancel?9:Math.ceil((step.to-step.from-step.fade)*30);
+  for(let i=0;i<count;i++)actions.update(u,1/30);
+  if(cancel)actions.stop(u);
+  const a=u.actions[0],sample=data.root(step.id,a.root.committedClipTime),m=data.archetype('orc').metersToUnits;
+  near(u.x,(sample.x*Math.cos(.71)+sample.z*Math.sin(.71))*m);near(u.z,(-sample.x*Math.sin(.71)+sample.z*Math.cos(.71))*m);near(u.yaw,.71+sample.yaw);
+  const after=[u.x,u.z,u.yaw];actions.stop(u);actions.stop(u);for(let i=0;i<20;i++)actions.update(u,1/30);
+  assert.deepEqual([u.x,u.z,u.yaw],after);assert.equal(events.filter(e=>e.type==='rootRebase').length,1);
+  assert.ok(Math.abs(sample.x)+Math.abs(sample.z)+Math.abs(sample.yaw)>1e-5,`${step.id} must carry its recorded trajectory`);
+ }
+});
+test('canonical moving cast origin and flight deadline use numeric pose, never presentation callbacks',()=>{
+ const a=unit(),b=unit(2);b.x=10;b.z=3;
+ const actions=new Actions(data,()=>{},()=>{});
+ for(let i=0;i<35;i++){a.pose.localVx=.7;a.pose.localVz=2;a.pose.yawRate=.3;advanceNumericPose(a,1/30);}
+ actions.play(a,actionRequest(data,'cast',{part:'release',upper:true}));
+ for(let i=0;i<4;i++){actions.update(a,1/30);advanceNumericPose(a,1/30);}
+ const from=data.launchAnchor(a,a.pose),target=centre(b),distance=Math.hypot(target.x-from.x,target.y-from.y,target.z-from.z),ticks=Math.ceil(distance/17*30);let hits=0;
+ const projectiles=new Projectiles(10,ref=>ref.id===a.ref.id?a:b,()=>{},()=>hits++);
+ projectiles.launch({...from,source:a.ref,target:b.ref,style:'bubble',speed:17,anchorVersion:data.version,hit:{attack:'bubble-bolt',source:a.ref,target:b.ref}},0);
+ for(let tick=1;tick<ticks;tick++){projectiles.update(1/30);assert.equal(hits,0);}
+ projectiles.update(1/30);assert.equal(hits,1);assert.equal(projectiles.states.size,0);
+});
+test('interleaved units and extra anchor readers cannot advance pose or alter a replay',()=>{
+ function run(interleave){const a=unit(),b=unit(2,'tauren');for(let i=0;i<200;i++){
+  a.pose.localVx=Math.sin(i/10);a.pose.localVz=2;a.pose.yawRate=.4;advanceNumericPose(a,1/30);
+  if(interleave){b.pose.localVz=3;advanceNumericPose(b,1/60);const before=structuredClone(a);for(let j=0;j<3;j++)data.launchAnchor(a,a.pose);assert.deepEqual(a,before);}
+ }return {pose:a.pose,anchor:data.launchAnchor(a,a.pose)};}
+ assert.deepEqual(run(false),run(true));
+});
+test('immutable provider rejects mutation and never substitutes missing data',()=>{
+ assert.throws(()=>data.clip('cast').events.hit.push(99),TypeError);
+ assert.throws(()=>{data.archetype('human').height=99;},TypeError);
+ assert.throws(()=>data.launchAnchor({...unit(),pose:{}},{}),TypeError);
+});
