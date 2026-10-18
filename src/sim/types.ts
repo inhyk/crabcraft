@@ -380,7 +380,7 @@ export interface AreaSnapshot {
   readonly units: readonly Readonly<SimUnit>[];
   readonly players: readonly Readonly<PlayerState>[];
   readonly projectiles: readonly Readonly<ProjectileState>[];
-  readonly features: {readonly beaconLit:boolean;readonly exploration:readonly {unit:EntityRef;activeUntil:number}[];readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
+  readonly features: {readonly mode:AreaContext['mode'];readonly pvp:AreaContext['pvp'];readonly beaconLit:boolean;readonly exploration:readonly {unit:EntityRef;activeUntil:number}[];readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
   readonly recovery: {readonly bosses:readonly BossObservation[];readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
 } // Deep copied and stable sorted by ID; slowPct remains fraction0..1; S4 adapter scales to0..100.
 /** Complete canonical test/debug data, not a production persistence protocol. No functions or refs. */
