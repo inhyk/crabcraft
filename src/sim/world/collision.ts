@@ -89,7 +89,9 @@ export class Collision {
   blocked: Uint8Array;
   private bnx: number;
 
-  constructor(readonly terrain: CollisionTerrain) {
+  readonly terrain: CollisionTerrain;
+  constructor(terrain: CollisionTerrain) {
+    this.terrain = terrain;
     this.bnx = terrain.nx - 1;
     this.blocked = new Uint8Array((terrain.nx - 1) * (terrain.nz - 1));
   }
