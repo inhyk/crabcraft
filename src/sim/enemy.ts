@@ -1,4 +1,5 @@
 import type { ActionId, ActionRequest, AreaServices, DebugValue, EnemySpawn, EntityRef, HitPlan, SimUnit, Vec3 } from './types.ts';
+import { immutable } from './events.ts';
 import { angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
 import { gapTo as gap, moveTo, speedMul, lineOfSight as unitLineOfSight } from './unit.ts';
 export { angleDiff, turn, distance, gap, speedMul };
@@ -29,7 +30,7 @@ export class Enemy {
   private leapCd=0;private leap:{fromX:number;fromZ:number;toX:number;toZ:number;t:number}|null=null;
   private deadAt=0;private rise=0;private velX=0;private velZ=0;
   constructor(services:AreaServices,actor:SimUnit,spawn:EnemySpawn){
-    this.services=services;this.actor=actor;this.spawn=structuredClone(spawn);this.stats=this.scaledStats();
+    this.services=services;this.actor=actor;this.spawn=immutable(spawn);this.stats=this.scaledStats();
     actor.level=this.stats.level;actor.hp=actor.maxHp=this.stats.hp;
     this.wanderAt=services.time+this.rand(1,6);this.leapCd=services.time+2;
   }

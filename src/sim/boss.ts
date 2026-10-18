@@ -1,4 +1,5 @@
 import type { AreaServices, DebugValue, EnemySim, EntityRef, HitPlan, ImpactShape, MechId, Poi, SimUnit, TelegraphShape, Vec3 } from './types.ts';
+import { immutable } from './events.ts';
 import { BOSS_PROFILES, mechanicFraction, mechanicOrder, mechanicRadius, type BossProfileId } from './data/bosses.ts';
 import { angleDiff, creatureAction, creatureHitDelay, distance, eligible, gap, moveCreature, speedMul, turn } from './enemy.ts';
 export const BOSS_HP=1300;
@@ -11,7 +12,7 @@ export class Boss {
   private nextSwing=0;private nextMech=0;private mechIndex=0;private mech:ActiveMech|null=null;private stateT=0;
   private freedStarted=false;private outside=0;private freedT=-1;private freedYaw=0;
   constructor(services:AreaServices,actor:SimUnit,arena:Poi,freed:SimUnit,profile:BossProfileId='rust'){
-    this.services=services;this.actor=actor;this.arena=structuredClone(arena);this.freed=freed;this.profile=profile;
+    this.services=services;this.actor=actor;this.arena=immutable(arena);this.freed=freed;this.profile=profile;
     actor.level=this.stats.level;actor.hp=actor.maxHp=this.stats.hp;actor.invulnerable=true;actor.hidden=true;actor.targetable=false;
     freed.hidden=true;freed.targetable=false;
   }
