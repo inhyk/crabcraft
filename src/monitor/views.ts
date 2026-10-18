@@ -24,6 +24,7 @@ export class Views {
   private stopped = false;
   private last = 0;
   private frame = 0;
+  private turn = 0;
   private goal = new THREE.Vector3();
   private aim = new THREE.Vector3();
   paused = false;
@@ -109,7 +110,12 @@ export class Views {
       }
       actor.dance?.update(dt); u.updateVisual(dt);
     }
-    for (const [id, tile] of visible) {
+    // A wall of many feeds shares the frame budget: the biggest tile (an expanded one) every frame, the rest in turn.
+    const order = [...visible].sort(([, a], [, b]) => b.canvas.clientWidth * b.canvas.clientHeight - a.canvas.clientWidth * a.canvas.clientHeight);
+    const budget = 9, rest = order.slice(1), start = rest.length ? this.turn % rest.length : 0;
+    const drawn = order.length <= budget ? order : [order[0]!, ...[...rest.slice(start), ...rest.slice(0, start)].slice(0, budget - 1)];
+    this.turn += budget - 1;
+    for (const [id, tile] of drawn) {
       const actor = this.actors.get(id), p = actor?.player;
       if (!p?.state || !p.area) { tile.message.textContent = '위치 수신 대기'; continue; }
       const stage = this.stage(p.area);
@@ -121,7 +127,9 @@ export class Views {
       // Separate shards/rooms may occupy the same coordinates. Never mix their actors in a tile.
       for (const other of this.actors.values()) if (other.unit) other.unit.rig.root.visible = other.player.room === p.room && other.player.area === p.area && !!other.player.state;
       const u = actor.unit;
-      const width = Math.min(640, Math.max(240, Math.round(tile.canvas.clientWidth))), height = Math.round(width * 9 / 16);
+      // Cells on the wall are not all 16:9; the picture takes the cell's own shape.
+      const cw = tile.canvas.clientWidth || 480, ch = tile.canvas.clientHeight || 270;
+      const width = Math.min(800, Math.max(120, Math.round(cw))), height = Math.max(68, Math.round(width * ch / cw));
       if (tile.canvas.width !== width || tile.canvas.height !== height) { tile.canvas.width = width; tile.canvas.height = height; }
       this.renderer.setSize(width, height, false);
       this.aim.copy(u.pos).y += 1;

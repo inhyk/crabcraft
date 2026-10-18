@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { WIRE_SCHEMA_REVISION } from './gameplay/protocol.ts';
 import { createHash } from 'node:crypto';
 import { loadBakedWorld, type BakedCollision, type BakedWorld } from '../../src/sim/world/baked.ts';
 import { realActionData } from '../../src/sim/data/actions.ts';
@@ -85,6 +86,7 @@ export function createGameplayCatalog(worlds: ReadonlyMap<WorldId, LoadedWorldDe
   const unique = (values: readonly string[]) => Object.freeze([...new Set(values)].sort());
   const appearanceLimits = Object.fromEntries(Object.entries(RACES).map(([race, spec]) => [race, Object.freeze({ shell: spec.shellColors.length, crest: spec.crestStyles.length, led: spec.ledColors.length })]));
   const fields = {
+    wireSchemaRevision: WIRE_SCHEMA_REVISION,
     poseProviderVersion: realActionData.version,
     archetypes: unique([...Object.keys(motionData.archetypes), 'boss-rust', 'boss-abyss', 'boss-eclipse', 'boss-dawn', 'boss-frost']),
     actions: unique(Object.keys(motionData.clips)), abilities: unique(Object.values(CLASSES).flatMap(c => c.abilities.map(a => a.id))),
