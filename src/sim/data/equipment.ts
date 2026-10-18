@@ -14,7 +14,7 @@ export function ownsEquipment(state:Pick<EquipmentState,'attackRank'|'armorRank'
 export function restoreEquipment(value:{attackRank?:unknown;armorRank?:unknown;weaponOwned?:unknown;armorOwned?:unknown}):Omit<EquipmentState,'coins'> {const attackRank=equipmentRank(value.attackRank),armorRank=equipmentRank(value.armorRank);return {attackRank,armorRank,weaponOwned:value.weaponOwned===true||attackRank>0,armorOwned:value.armorOwned===true||armorRank>0};}
 /** Busy eligibility is supplied by authoritative rules before any inventory or coin check. */
 export function transactEquipment(state:EquipmentState,slot:EquipmentSlot,operation:EquipmentOperation,busy=false):EquipmentResult {
- if(busy)return 'busy';
+ if(busy||!['weapon','armor'].includes(slot)||!['buy','upgrade'].includes(operation))return 'busy';
  if(operation==='buy'){
   if(ownsEquipment(state,slot))return 'owned';
   if(!Number.isSafeInteger(state.coins)||state.coins<EQUIPMENT_PRICE)return 'coins';
