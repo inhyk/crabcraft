@@ -52,7 +52,7 @@ export class WorldRules {
   for(const flag of grant.flags)p.state.flags[flag]=true;
   for(const o of grant.objectives){if(o.kind==='clear-encounter-blessing'){const u=s.getUnit(p.state.unit);if(u){u.blessingUntil=0;u.encounterBlessing=false;}}else if(o.kind==='cog-reset')p.state.cogMisses=0;else if(o.kind==='cog-miss')p.state.cogMisses++;else if(o.kind==='patrol-kill'){const kills=(p.state.quests.progress['patrol-kills']??0)+o.amount;p.state.quests.progress['patrol-kills']=kills%5;if(kills>=5){const u=s.getUnit(p.state.unit);if(u)p.gainXp(patrolReward(u.level)*Math.floor(kills/5));}}else questBump(p,s,o.kind,o.amount,true);}
   });}catch(error){Object.assign(p.state,priorState);Object.assign(unit,priorUnit);throw error;}
-  ids.add(grant.id);return 'applied';
+  ids.add(grant.id);const retained=this.grants.get(grant.id);if(retained)retained.appliedHere=true;return 'applied';
  }
  pendingGrants():readonly {grant:EarnedGrant;appliedHere:boolean}[]{return [...this.grants.values()].filter(e=>!e.acknowledged).map(({grant,appliedHere})=>({grant:copy(grant),appliedHere}));}
  acknowledgeGrant(id:string):void {const entry=this.grants.get(id);if(!entry)throw new Error('unknown-grant');entry.acknowledged=true;}
@@ -62,7 +62,7 @@ export class WorldRules {
  command(player:EntityRef,command:PlayerCommand):boolean{return this.interactions.command(player,command);}
  interact(player:EntityRef,id:string):boolean{return this.interactions.interact(player,id);}
  completeChannel(player:PlayerSim,channel:ChannelState):void {this.interactions.completeChannel(player,channel);}
- update():void {this.interactions.update();}
+ update():void {this.interactions.update();const s=this.services,boss=s.bossByProfile('rust');if(s.world==='w1'&&this.beaconLit&&boss?.state==='dormant'&&s.players().some(u=>u.alive&&u.level>=3&&!s.player(u.ref)?.state.flags.rustCleared))boss.wake();}
  onTimer(action:TimerAction):void {const s=this.services;if(action.kind==='lootPresentation'){const p=s.playerByCharacter(action.recipient);if(p)s.emit({type:'loot',unit:action.corpse,recipient:p.state.unit,item:'cog'});}else if(action.kind==='victory'){const recipients=action.recipients.flatMap(c=>{const p=s.playerByCharacter(c);return p?[p.state.unit]:[];});s.emit({type:'victory',boss:action.boss,recipients,stage:action.stage});}}
  debugState():{contributions:Contribution[];grants:EarnedGrant[];acknowledgedGrantIds:string[];interactions:ReturnType<InteractionRules['debugState']>&{credits:readonly object[];settled:readonly string[];applied:readonly object[]}} {return {contributions:[...this.credits.values()].map(e=>({victim:copy(e.victim),contributors:[...e.contributors.keys()]})),grants:[...this.grants.values()].map(e=>copy(e.grant)),acknowledgedGrantIds:[...this.grants.values()].filter(e=>e.acknowledged).map(e=>e.grant.id),interactions:{...this.interactions.debugState(),credits:[...this.credits.values()].map(e=>({victim:copy(e.victim),contributors:copy([...e.contributors.values()])})),settled:[...this.settled],applied:[...this.applied].map(([character,ids])=>({character,ids:[...ids]}))}};}
 }

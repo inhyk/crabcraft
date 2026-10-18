@@ -4,6 +4,7 @@ import { deepFreeze, NPC_ORDER, poi, validateConfig, type WorldDefinitionConfig 
 export function createWorld2Definition(config:WorldDefinitionConfig):AreaDefinition {
  validateConfig(config);const p=(id:string,x:number,z:number,radius=1)=>poi(config,id,x,z,radius,Math.PI);
  const pois:Record<string,Poi>={};for(const [id,x,z,r] of [['spawn',0,86,6],['shore',-70,5,24],['wreck',70,-15,8],['grove',25,55,9],['forge',-25,36,5],['tavern',-20,58,5],['chapel',20,35,5],['lighthouse',0,-48,6],['beacon',0,-45,2],['bossArena',0,-75,17]] as const)pois[id]=p(id,x,z,r);
+ pois.bossArena={...pois.bossArena,yaw:0};
  const coords:readonly (readonly [number,number])[]=[[0,67],[25,55],[20,35],[0,20],[-20,58],[18,76],[-25,36]];
  const npcs=NPC_ORDER.map((id,i)=>{const[x,z]=coords[i],point=p(`npc:${id}`,x,z);pois[point.id]=point;return{id,position:point.position,yaw:point.yaw};});
  const enemies:EnemySpawn[]=[];for(const kind of ['scrapling','scavenger'] as const)for(let i=0;i<config.population[kind];i++){const index=kind==='scrapling'?i:config.population.scrapling+i,side=kind==='scrapling'?-1:1,x=index<3?[19,30,20][index]:side*(60+index%4*7),z=index<3?[-8,-22,-34][index]:28-Math.floor(index/4)*16-index%3*3;enemies.push({id:`w2:${kind}:${i}`,kind,home:p('',x,z).position,wanderRadius:kind==='scrapling'?6:3,pack:`w2:${kind}:pack:${Math.floor(i/2)}`,fixedLevel:config.fixedLevels[kind],role:'ordinary'});}
