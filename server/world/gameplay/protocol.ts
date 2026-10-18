@@ -6,8 +6,8 @@ import type {RenderPoseRecipe} from '../../../src/sim/renderPose.ts';
 import { ACHIEVEMENT_IDS } from '../../../src/sim/persistence.ts';
 import type { CommandResult } from './events.ts';
 import type { AreaSnapshot, BossObservation, EntityRef, EventRecord, PlayerState, ProjectileState, SimUnit, NumericPoseState } from '../../../src/sim/types.ts';
-import { encodeInput, decodeInput } from './intents.ts';
-import { encodeEvents, validateEvent, selectEvents, validateEventPayload, validateResult } from './events.ts';
+import { encodeInput, decodeInput, inputFromFrame } from './intents.ts';
+import { encodeEvents, validateEvent, selectEvents, validateEventPayload, validateResult, indexEvents, selectIndexedEvents, type EventIndex } from './events.ts';
 export const MAGIC=0x5747, VERSION=3;
 export const LIMITS=Object.freeze({fragmentBytes:16384,messageBytes:2097152,fragments:256,actors:2048,projectiles:4096,events:512,commands:32,depth:24,nodes:300000,stringBytes:4096,array:16384,object:256,assemblySeconds:5});
 export interface WireBinding {session:string;area:string;epoch:number;catalog:string}
@@ -105,6 +105,25 @@ function frameMessage(kind:1|2|16|17,h:WireHeader,body:Uint8Array,hash:number):U
  return Array.from({length:count},(_,i)=>{const w=new Writer();w.u16(MAGIC);w.u8(VERSION);w.u8(kind);w.u16(hbytes.length);w.raw(hbytes);w.u16(i);w.u16(count);w.u32(body.length);w.u32(hash);w.raw(body.slice(i*room,(i+1)*room));return w.finish();});
 }
 export interface DecodedMessage {kind:1|2|16|17;header:WireHeader;payload:Value;interrupted:boolean}
+/** Parse one fragment's envelope and header. The caller has already checked the fragment byte limit. */
+function readFragment(bytes:Uint8Array,expected:WireBinding){
+ const r=new Reader(bytes);if(r.u16()!==MAGIC||r.u8()!==VERSION)fail('unsupported protocol');const kind=r.u8();if(![1,2,16,17].includes(kind))fail('unknown packet kind');
+ const h=decodeValue(r.raw(r.u16()));header(h);if(!sameBinding(h,expected))fail('stale stream binding');
+ const index=r.u16(),count=r.u16(),total=r.u32(),hash=r.u32();integer(count,1,LIMITS.fragments);integer(index,0,count-1);integer(total,1,LIMITS.messageBytes);
+ const part=r.raw(bytes.length-r.offset);if(!part.length||part.length>total)fail('invalid fragment payload');
+ return {kind:kind as DecodedMessage['kind'],header:h,index,count,total,hash,part};
+}
+/**
+ * One client frame decoded exactly as `new FragmentAssembler(expected).accept(bytes,0)` would (same checks, same order,
+ * same errors), without building an assembler and copying the binding for every message. Null when the frame is only
+ * the first part of a group, which a fresh assembler would also return.
+ */
+export function decodeClientFrame(bytes:Uint8Array,expected:WireBinding):DecodedMessage|null {
+ binding(expected);if(bytes.length>LIMITS.fragmentBytes)fail('fragment size limit');
+ const f=readFragment(bytes,expected);if(f.count>1)return null;
+ if(f.part.length!==f.total)fail('fragment size mismatch');if(checksum(f.part)!==f.hash)fail('fragment checksum mismatch');
+ return {kind:f.kind,header:f.header,payload:decodeValue(f.part),interrupted:false};
+}
 /** One bounded in-flight group. No snapshot state changes until every fragment validates. */
 export class FragmentAssembler {
  private binding:WireBinding;
@@ -116,10 +135,7 @@ export class FragmentAssembler {
  accept(bytes:Uint8Array,now:number):DecodedMessage|null {
   number(now);if(bytes.length>LIMITS.fragmentBytes)fail('fragment size limit');
   if(this.pending&&now-this.pending.started>LIMITS.assemblySeconds){this.pending=null;fail('fragment timeout; resync required');}
-  const r=new Reader(bytes);if(r.u16()!==MAGIC||r.u8()!==VERSION)fail('unsupported protocol');const kind=r.u8();if(![1,2,16,17].includes(kind))fail('unknown packet kind');
-  const h=decodeValue(r.raw(r.u16()));header(h);if(!sameBinding(h,this.binding))fail('stale stream binding');
-  const index=r.u16(),count=r.u16(),total=r.u32(),hash=r.u32();integer(count,1,LIMITS.fragments);integer(index,0,count-1);integer(total,1,LIMITS.messageBytes);
-  const part=r.raw(bytes.length-r.offset);if(!part.length||part.length>total)fail('invalid fragment payload');
+  const {kind,header:h,index,count,total,hash,part}=readFragment(bytes,this.binding);
   let p=this.pending,interrupted=false;
   if(p&&(p.kind!==kind||p.header.sequence!==h.sequence)){if(kind===1&&h.sequence>p.header.sequence){p=null;this.pending=null;interrupted=true;}else fail('interleaved group; resync required');}
   if(p&&(JSON.stringify(p.header)!==JSON.stringify(h)||p.count!==count||p.total!==total||p.hash!==hash||now<p.started))fail('inconsistent fragment group');
@@ -200,6 +216,12 @@ function checkSnapshot(p:unknown,c:GameplayCatalog,area:string,ownedPublic=false
  const pids=new Set<number>();for(const r of snapshot.projectiles){if(pids.has(r.id))fail('duplicate projectile');pids.add(r.id);}
 }
 export function validateSnapshot(p:unknown,c:GameplayCatalog,area:string):asserts p is SnapshotPayload {checkSnapshot(p,c,area);}
+/** The O(1) part of checkSnapshot kept when a server-built payload is not re-validated: list bounds the encoder does not enforce and the baseline and self rules. */
+function checkSnapshotBounds(p:SnapshotPayload):void {
+ if(p.poses.length>LIMITS.actors||p.actors.length>LIMITS.actors||p.removed.length>LIMITS.actors||p.projectiles.length>LIMITS.projectiles||p.events.length>LIMITS.events||p.results.length>256||p.recovery.telegraphs.length>64||p.recovery.endings.length>1||(p.recovery.bosses?.length??0)>5)fail('invalid list');
+ if(p.full?(p.baseline!==0||p.removed.length>0):p.baseline<1)fail('invalid baseline');
+ if(p.self.player.unit.id!==p.selfRef.id||p.self.player.unit.life!==p.selfRef.life)fail('self reference mismatch');
+}
 export function projectActor(unit:Readonly<SimUnit>,appearance:Appearance|null):PublicActor {return copyValue(Object.fromEntries([['ref',unit.ref],...ACTOR_FIELDS.map(k=>[k,k==='appearance'?appearance:k==='pose'?{appliedQ:unit.pose.appliedQ,appliedPosition:unit.pose.appliedPosition,appliedRotation:unit.pose.appliedRotation,localVx:unit.pose.localVx,localVz:unit.pose.localVz}:unit[k]])])) as PublicActor;}
 export function projectSelf(player:Readonly<PlayerState>,achievements:AchievementView,inCombat:boolean):SelfView {const {character:_character,achievements:_achievements,...rest}=player as PlayerState&{achievements?:AchievementView};return copyValue({player:rest,achievements,inCombat});}
 export interface ObservationInput {
@@ -240,15 +262,24 @@ export interface GameplayProtocol {
  encodeControl:typeof encodeControl;
  reset(binding:WireBinding):void;
 }
+/**
+ * verify (default true) re-validates every payload this server builds before it is encoded: checkSnapshot per recipient
+ * here, and assertDeepFrozen plus validateActor per unit in prepareObservationSnapshot. Tests and development keep it on.
+ * The production host turns it off (startup.ts, NODE_ENV=production unless WORLD_VERIFY_OBSERVATIONS=1): the payloads are
+ * built from the host's own immutable Area.snapshot(), and every browser still validates what it receives. With verify
+ * off, encodeObservation still checks list bounds, the baseline rule and the self reference.
+ */
+export interface ObservationChecks {verify?:boolean}
 /** One instance per connection: binding, sequence and successful baseline advancement remain connection-owned. */
-export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol {
+export function createGameplayProtocol(catalog:GameplayCatalog,options:ObservationChecks={}):GameplayProtocol {
+ const verify=options.verify??true;
  catalog=clone(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes=new Map<number,RenderPoseSource>();let previous:readonly PublicActor[]=[],prior:WireHeader|null=null;let previousPublic:PublicBaseline|null=null;let controlBinding:WireBinding|null=null,controlSequence=0,resyncPending=false;
  return {
   catalog:clone(catalog),encodeEvents:(h,p)=>encodeEvents(h,p,catalog),encodeControl,
   encodeInput:p=>encodeInput(p,catalog),decodeInput:(b,e)=>decodeInput(b,e,catalog),
   decodeClientMessage(bytes,expected){
-   const m=new FragmentAssembler(expected).accept(bytes,0);if(!m)fail('client message must fit one frame');
-   if(m.kind===16)return {kind:'input',intent:decodeInput(bytes,expected,catalog)};
+   const m=decodeClientFrame(bytes,expected);if(!m)fail('client message must fit one frame');
+   if(m.kind===16)return {kind:'input',intent:inputFromFrame(m,expected,catalog)};
    if(m.kind!==17||m.header.tick||m.header.acceptedInput||m.header.consumedInput)fail('forged client control');validateControl(m.payload);
    if(m.payload.type!=='resync')fail('client cannot publish server control');
    if(!controlBinding||!sameBinding(controlBinding,expected)){controlBinding=clone(expected);controlSequence=0;resyncPending=false;}
@@ -285,8 +316,8 @@ export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol
    baseline=makePublicBaseline(actors,recipes);
    }
    const ownUnit=input.snapshot.units.find(u=>u.ref.id===input.selfRef.id&&u.ref.life===input.selfRef.life);if(!ownUnit)fail('missing owned actor');
-   const payload:SnapshotPayload={...publicFields,full,baseline:full?0:prior!.sequence,eventWatermark:input.eventWatermark,selfRef:input.selfRef,self:projectSelf(player,input.achievements,input.snapshot.time-ownUnit.lastCombat<5),features:input.features,recovery:input.recovery,events:selectEvents(input.events,input.selfRef,player.character,baseline.ids),results:input.results??[]};
-   checkSnapshot(payload,catalog,h.area,!!prepared,!!projection?.validated);if(projection)projection.validated=true;if(payload.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');const encoded=projection?encodePreparedSnapshot(h,payload,projection.prefix):encodeMessage(1,h,payload);previous=actors;previousRecipes=recipes;previousPublic=baseline;prior=clone(h);if(full)resyncPending=false;return encoded;
+   const payload:SnapshotPayload={...publicFields,full,baseline:full?0:prior!.sequence,eventWatermark:input.eventWatermark,selfRef:input.selfRef,self:projectSelf(player,input.achievements,input.snapshot.time-ownUnit.lastCombat<5),features:input.features,recovery:input.recovery,events:prepared?selectIndexedEvents(preparedEventIndex(prepared,input.events),input.selfRef,player.character,baseline.ids):selectEvents(input.events,input.selfRef,player.character,baseline.ids),results:input.results??[]};
+   if(verify){checkSnapshot(payload,catalog,h.area,!!prepared,!!projection?.validated);if(projection)projection.validated=true;}else checkSnapshotBounds(payload);if(payload.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');const encoded=projection?encodePreparedSnapshot(h,payload,projection.prefix):encodeMessage(1,h,payload);previous=actors;previousRecipes=recipes;previousPublic=baseline;prior=clone(h);if(full)resyncPending=false;return encoded;
   },
  };
 }
@@ -369,7 +400,7 @@ function equalValue(a:unknown,b:unknown):boolean {
 
 /** Unforgeable per-publication token. It exposes no personal state or actor payload. */
 export interface PreparedObservation {readonly kind:'gameplay-prepared-v1';readonly area:string;readonly tick:number}
-interface PreparedPublicData {baselines:Map<string,PublicBaseline>;full:Map<PublicBaseline,PreparedProjection>;changes:WeakMap<PublicBaseline,Map<PublicBaseline,PreparedProjection>>;cachedGroups:number;cachedBytes:number;source:AreaSnapshot;catalog:string;actors:ReadonlyMap<number,PublicActor>;recipes:ReadonlyMap<number,RenderPoseSource>;poseKeys:ReadonlyMap<number,string>;fullFields:ReadonlyMap<number,Partial<Omit<PublicActor,'ref'>>>;deltas:WeakMap<PublicActor,{actor:PublicActor;fields:Partial<Omit<PublicActor,'ref'>>}>}
+interface PreparedPublicData {baselines:Map<number,PublicBaseline[]>;baselineCount:number;positions:ReadonlyMap<number,number>;unitActors:readonly PublicActor[];events?:{records:readonly EventRecord[];source:readonly EventRecord[];index:EventIndex};full:Map<PublicBaseline,PreparedProjection>;changes:WeakMap<PublicBaseline,Map<PublicBaseline,PreparedProjection>>;cachedGroups:number;cachedBytes:number;source:AreaSnapshot;catalog:string;actors:ReadonlyMap<number,PublicActor>;recipes:ReadonlyMap<number,RenderPoseSource>;poseKeys:ReadonlyMap<number,string>;fullFields:ReadonlyMap<number,Partial<Omit<PublicActor,'ref'>>>;deltas:WeakMap<PublicActor,{actor:PublicActor;fields:Partial<Omit<PublicActor,'ref'>>}>}
 const preparedObservations=new WeakMap<PreparedObservation,PreparedPublicData>();
 function assertDeepFrozen(value:unknown,seen=new Set<object>(),depth=0):void {
  if(depth>LIMITS.depth)fail('prepared snapshot depth');if(value===null||typeof value!=='object')return;
@@ -377,19 +408,24 @@ function assertDeepFrozen(value:unknown,seen=new Set<object>(),depth=0):void {
  if(!Object.isFrozen(value)||!Array.isArray(value)&&![Object.prototype,null].includes(Object.getPrototypeOf(value)))fail('prepared snapshot requires deeply frozen plain values');
  for(const key of Reflect.ownKeys(value)){if(typeof key!=='string')fail('symbol in prepared snapshot');const descriptor=Object.getOwnPropertyDescriptor(value,key)!;if(!Object.hasOwn(descriptor,'value'))fail('accessor in prepared snapshot');assertDeepFrozen(descriptor.value,seen,depth+1);}
 }
-/** Host calls once for its owned immutable Area.snapshot(), before its per-viewer AOI loop. */
-export function prepareObservationSnapshot(snapshot:AreaSnapshot,appearances:ObservationInput['appearances'],catalog:GameplayCatalog):PreparedObservation {
- assertDeepFrozen(snapshot);integer(snapshot.units.length,0,LIMITS.actors);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');
+/** JSON.stringify(clone(catalog)), computed once per catalog object; catalogs are not changed after construction. */
+const catalogSignatures=new WeakMap<GameplayCatalog,string>();
+function catalogSignatureOf(catalog:GameplayCatalog):string {let signature=catalogSignatures.get(catalog);if(signature===undefined){signature=JSON.stringify(clone(catalog));catalogSignatures.set(catalog,signature);}return signature;}
+/** Host calls once for its owned immutable Area.snapshot(), before its per-viewer AOI loop. options.verify: see ObservationChecks. */
+export function prepareObservationSnapshot(snapshot:AreaSnapshot,appearances:ObservationInput['appearances'],catalog:GameplayCatalog,options:ObservationChecks={}):PreparedObservation {
+ const verify=options.verify??true;
+ if(verify)assertDeepFrozen(snapshot);integer(snapshot.units.length,0,LIMITS.actors);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');
  const actors=new Map<number,PublicActor>(),recipes=new Map<number,RenderPoseSource>(),poseKeys=new Map<number,string>(),fullFields=new Map<number,Partial<Omit<PublicActor,'ref'>>>();
+ const positions=new Map<number,number>(),unitActors:PublicActor[]=[];
  for(const unit of snapshot.units){
   if(actors.has(unit.ref.id))fail('duplicate prepared actor');
   const appearance=appearances[`${unit.ref.id}:${unit.ref.life}`]??null;if(unit.kind==='player'&&!appearance)fail('missing prepared player appearance');
-  const actor=Object.freeze(Object.fromEntries([['ref',unit.ref],...ACTOR_FIELDS.map(k=>[k,k==='appearance'?freezeValue(copyValue(appearance)):k==='pose'?Object.freeze({appliedQ:unit.pose.appliedQ,appliedPosition:unit.pose.appliedPosition,appliedRotation:unit.pose.appliedRotation,localVx:unit.pose.localVx,localVz:unit.pose.localVz}):unit[k]])])) as PublicActor;validateActor(actor,catalog,snapshot.area);
+  const actor=Object.freeze(Object.fromEntries([['ref',unit.ref],...ACTOR_FIELDS.map(k=>[k,k==='appearance'?freezeValue(copyValue(appearance)):k==='pose'?Object.freeze({appliedQ:unit.pose.appliedQ,appliedPosition:unit.pose.appliedPosition,appliedRotation:unit.pose.appliedRotation,localVx:unit.pose.localVx,localVz:unit.pose.localVz}):unit[k]])])) as PublicActor;if(verify)validateActor(actor,catalog,snapshot.area);
   const recipe={recipe:createRenderPoseRecipe(unit),localVx:actor.pose.localVx,localVz:actor.pose.localVz};renderSource(recipe);
-  actors.set(unit.ref.id,actor);recipes.set(unit.ref.id,freezeValue(copyValue(recipe)));poseKeys.set(unit.ref.id,recipeKey(recipe));fullFields.set(unit.ref.id,freezeValue(Object.fromEntries(ACTOR_FIELDS.filter(k=>k!=='pose').map(k=>[k,actor[k]]))));
+  positions.set(unit.ref.id,unitActors.length);unitActors.push(actor);actors.set(unit.ref.id,actor);recipes.set(unit.ref.id,freezeValue(copyValue(recipe)));poseKeys.set(unit.ref.id,recipeKey(recipe));fullFields.set(unit.ref.id,freezeValue(Object.fromEntries(ACTOR_FIELDS.filter(k=>k!=='pose').map(k=>[k,actor[k]]))));
  }
  const token:PreparedObservation=Object.freeze({kind:'gameplay-prepared-v1',area:snapshot.area,tick:snapshot.tick});
- preparedObservations.set(token,{source:snapshot,catalog:JSON.stringify(clone(catalog)),actors,recipes,poseKeys,fullFields,deltas:new WeakMap(),baselines:new Map(),full:new Map(),changes:new WeakMap(),cachedGroups:0,cachedBytes:0});return token;
+ preparedObservations.set(token,{source:snapshot,catalog:catalogSignatureOf(catalog),actors,recipes,poseKeys,fullFields,positions,unitActors,deltas:new WeakMap(),baselines:new Map(),baselineCount:0,full:new Map(),changes:new WeakMap(),cachedGroups:0,cachedBytes:0});return token;
 }
 
 /** End one synchronous publication; connection baselines contain only detached public values. */
@@ -405,9 +441,27 @@ type PublicSnapshotFields=Pick<SnapshotPayload,'world'|'time'|'poses'|'actors'|'
 interface PublicBaseline {actors:readonly PublicActor[];byId:ReadonlyMap<number,PublicActor>;ids:ReadonlySet<number>;recipes:Map<number,RenderPoseSource>;recipeKeys:ReadonlyMap<number,string>}
 interface PreparedProjection {fields:PublicSnapshotFields;prefix:ValuePrefix;validated:boolean}
 function makePublicBaseline(actors:readonly PublicActor[],recipes:Map<number,RenderPoseSource>,keys?:ReadonlyMap<number,string>):PublicBaseline {return{actors,byId:new Map(actors.map(a=>[a.ref.id,a])),ids:new Set(actors.map(a=>a.ref.id)),recipes,recipeKeys:keys??new Map([...recipes].map(([id,recipe])=>[id,recipeKey(recipe)]))};}
+/**
+ * The visible actors (and self) in snapshot unit order, as filtering snapshot.units would give, built from the visible
+ * ids instead of scanning every unit. Recipients with the same list share one baseline object, found by a numeric hash
+ * of the unit positions and confirmed element by element (the former key was the joined id string).
+ */
 function preparedBaseline(p:PreparedPublicData,visible:ReadonlySet<number>,self:number):PublicBaseline {
- const actors=p.source.units.filter(u=>visible.has(u.ref.id)||u.ref.id===self).map(u=>p.actors.get(u.ref.id)!),key=actors.map(a=>a.ref.id).join(','),cached=p.baselines.get(key);if(cached)return cached;
- const baseline=makePublicBaseline(Object.freeze(actors),new Map(actors.map(a=>[a.ref.id,p.recipes.get(a.ref.id)!])),new Map(actors.map(a=>[a.ref.id,p.poseKeys.get(a.ref.id)!])));if(p.baselines.size<MAX_PREPARED_GROUPS)p.baselines.set(key,baseline);return baseline;
+ const picked:number[]=[];let ordered=true,last=-1;
+ const pick=(id:number)=>{const position=p.positions.get(id);if(position===undefined)return;picked.push(position);if(position<last)ordered=false;last=position;};
+ for(const id of visible)pick(id);if(!visible.has(self))pick(self);if(!ordered)picked.sort((a,b)=>a-b);
+ let hash=2166136261;for(const position of picked)hash=Math.imul(hash^position,16777619);hash=Math.imul(hash^picked.length,16777619)>>>0;
+ const bucket=p.baselines.get(hash);
+ if(bucket)for(const cached of bucket)if(cached.actors.length===picked.length&&picked.every((position,i)=>cached.actors[i]===p.unitActors[position]))return cached;
+ const actors=picked.map(position=>p.unitActors[position]);
+ const baseline=makePublicBaseline(Object.freeze(actors),new Map(actors.map(a=>[a.ref.id,p.recipes.get(a.ref.id)!])),new Map(actors.map(a=>[a.ref.id,p.poseKeys.get(a.ref.id)!])));
+ if(p.baselineCount<MAX_PREPARED_GROUPS){if(bucket)bucket.push(baseline);else p.baselines.set(hash,[baseline]);p.baselineCount++;}return baseline;
+}
+/** One event index per publication, reused while every recipient is given the same event records. */
+function preparedEventIndex(p:PreparedPublicData,events:readonly EventRecord[]):EventIndex {
+ const cached=p.events;
+ if(cached&&cached.source===events&&cached.records.length===events.length&&events.every((record,i)=>cached.records[i]===record))return cached.index;
+ const records=[...events],index=indexEvents(records);p.events={records,source:events,index};return index;
 }
 function preparedProjection(p:PreparedPublicData,current:PublicBaseline,previous:PublicBaseline|null):PreparedProjection {
  const cache=previous?p.changes.get(previous):p.full,cached=cache?.get(current);if(cached)return cached;

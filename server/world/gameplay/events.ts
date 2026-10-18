@@ -104,3 +104,47 @@ export function selectEvents(events:readonly EventRecord[],self:EntityRef,charac
   return hasVisible(e);
  });
 }
+type IndexedEvent=
+ | {kind:'all'|'none'}
+ | {kind:'character';character:string}
+ | {kind:'self';ref:EntityRef}
+ | {kind:'actor';ref:EntityRef|undefined}
+ | {kind:'visible';refs:readonly EntityRef[]};
+/** selectEvents' per-record rule, worked out once per publication instead of once per recipient. */
+export interface EventIndex {readonly records:readonly EventRecord[];readonly entries:readonly IndexedEvent[]}
+export function indexEvents(events:readonly EventRecord[]):EventIndex {
+ // Same traversal as selectEvents' hasVisible: a value with area, id and life is a reference and is not descended into.
+ const collect=(value:unknown,out:EntityRef[]):void=>{
+  if(!value||typeof value!=='object')return;
+  if('area'in value&&'id'in value&&'life'in value){out.push(value as EntityRef);return;}
+  for(const x of Object.values(value)){if(Array.isArray(x)){for(const y of x)collect(y,out);}else collect(x,out);}
+ };
+ const entries=events.map((record):IndexedEvent=>{
+  const e=record.event as CoreEvent;
+  if(e.type==='reward')return {kind:'character',character:e.grant.recipient};
+  if(PERSONAL.has(e.type))return 'unit'in e?{kind:'self',ref:e.unit}:{kind:'none'};
+  if(e.type==='loot')return {kind:'self',ref:e.recipient};
+  const generic=e as unknown as {type:string;event?:{type:string;actor?:EntityRef}};
+  if(generic.type==='feature'&&generic.event?.type==='boatAchievement')return {kind:'actor',ref:generic.event.actor};
+  if(generic.type==='feature'&&generic.event?.type.startsWith('village'))return {kind:'all'};
+  const refs:EntityRef[]=[];collect(e,refs);return {kind:'visible',refs};
+ });
+ return {records:events,entries};
+}
+/** selectEvents(index.records, self, character, visible), from a prebuilt index. */
+export function selectIndexedEvents(index:EventIndex,self:EntityRef,character:string,visible:ReadonlySet<number>):EventRecord[] {
+ const same=(r:EntityRef)=>r.area===self.area&&r.id===self.id&&r.life===self.life,out:EventRecord[]=[];
+ for(let i=0;i<index.entries.length;i++){
+  const entry=index.entries[i];let keep:boolean;
+  switch(entry.kind){
+   case 'all':keep=true;break;
+   case 'none':keep=false;break;
+   case 'character':keep=entry.character===character;break;
+   case 'self':keep=same(entry.ref);break;
+   case 'actor':keep=!!entry.ref&&same(entry.ref);break;
+   default:keep=entry.refs.some(r=>r.area===self.area&&visible.has(r.id));
+  }
+  if(keep)out.push(index.records[i]);
+ }
+ return out;
+}
