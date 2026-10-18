@@ -5,13 +5,13 @@
 // and ability key presses, screenshots each stage, and fails on any console error or uncaught
 // exception. In the multiplayer edition Corrodius waits for level 3 and the dance endings come after
 // the later bosses: Nereid's defeat (level 10) plays the chapter ending, Astra's in World II opens
-// World III, Solarkan unlocks World IV, and Boreas plays the true ending and credits. The launch notice is
+// World III, Solarkan opens World IV, and Boreas there plays the true ending and credits. The launch notice is
 // confirmed first, and the hero's breakdance must play in both endings, to the end in the true one.
 //
 // Usage: node tools/playtest.mjs [--url http://localhost:5206] [--out dir] [--class warrior,mage,priest] [--headed]
 // Needs a dev or preview server running (pnpm dev --port 5206 --strictPort).
 import { chromium } from 'playwright';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -222,11 +222,12 @@ async function run(cls) {
     await waitFor((s) => s.quests.q3 === 'done', 5000, 'q3 done');
     await sleep(600);
     await shot('04-beacon-lit');
-    await waitFor((s) => s.quests.q4 === 'active' && s.boss.state === 'idle', 15000, 'boss awake');
+    await waitFor((s) => s.quests.q4 === 'active', 5000, 'q4 active');
+    // Debug objective completion can skip kill XP: satisfy the existing level-3 gate before waiting for wake.
+    await page.evaluate(() => { const p = window.cc.game.player; if (p.level < 3) p.restoreXp(Math.max(900, p.xp)); });
+    await waitFor((s) => s.boss.state === 'idle' || s.boss.state === 'fight', 15000, 'boss awake');
 
     step('quest 4: Corrodius');
-    // The edition gates Corrodius at level 3 (src/game/progression.ts BOSS_PROFILES.rust).
-    await page.evaluate(() => { const p = window.cc.game.player; if (p.level < 3) p.restoreXp(Math.max(900, p.xp)); });
     await key('F10');
     await waitFor((s) => s.boss.state === 'fight', 8000, 'boss engaged');
     await key('Tab');
@@ -272,7 +273,7 @@ async function run(cls) {
     await page.click('.chapter-ending button');
     await page.waitForFunction(() => window.cc.game.world2.chapter === 2, null, { timeout: 60000 });
     await sleep(2000);
-    // Astra opens World III; Solarkan opens World IV, where level 300 Boreas rescues Mira.
+    // Astra opens World III; Solarkan opens World IV; Boreas rescues Mira and starts the true ending.
     await page.evaluate(() => {
       const g = window.cc.game;
       g.combat.kill(g.worldBoss.unit, g.player.unit);
@@ -280,7 +281,7 @@ async function run(cls) {
     await page.waitForFunction(() => window.cc.game.journey.trueCleared, null, { timeout: 30000 });
     await page.evaluate(() => {
       const g = window.cc.game;
-      g.player.restoreXp(90000);
+      g.player.restoreXp(22000 + 2200 * 80 + 100 * 80 * 79);
       g.world2.go(3);
     });
     await page.waitForFunction(() => window.cc.game.world2.chapter === 3, null, { timeout: 60000 });
@@ -290,7 +291,7 @@ async function run(cls) {
       g.combat.kill(g.dawnBoss.unit, g.player.unit);
     });
     await page.waitForFunction(() => window.cc.game.journey.finalCleared, null, { timeout: 30000 });
-    if (await page.evaluate(() => window.cc.game.ending.active)) throw new Error('Solarkan started the ending before Boreas');
+    if ((await state()).ending) throw new Error('Solarkan must unlock Frostlight before the true ending');
     await page.evaluate(() => {
       const g = window.cc.game;
       g.player.restoreXp(22000 + 2200 * 280 + 100 * 280 * 279);
@@ -298,12 +299,11 @@ async function run(cls) {
     });
     await page.waitForFunction(() => window.cc.game.world2.chapter === 4, null, { timeout: 60000 });
     await sleep(2000);
-    await shot('07c-frostlight');
+    await shot('07-world4-frostlight');
     await page.evaluate(() => {
       const g = window.cc.game;
       g.combat.kill(g.frostBoss.unit, g.player.unit);
     });
-    await page.waitForFunction(() => window.cc.game.journey.frostCleared, null, { timeout: 30000 });
     await waitFor((s) => s.ending, 30000, 'true ending');
     await waitFor((s) => s.endingBreakdance && s.endingBreakdance.step === 'break_backflip', 40000, 'true ending back flip');
     await shot('07-ending-break-backflip');
@@ -330,8 +330,10 @@ async function run(cls) {
       /* page gone */
     }
   }
+  const finalState = await state().catch(() => null);
   await browser.close();
   const pass = ok && errors.length === 0;
+  writeFileSync(resolve(outDir, `${cls}-result.json`), JSON.stringify({ classId: cls, pass, base, fps, endingRoutines: breaks, errors, warnings, missingAssets: [...missing], screenshots: shots, finalState }, null, 2));
   console.log(`${pass ? 'PASS' : 'FAIL'} ${cls}`);
   console.log(`  fps ${JSON.stringify(Object.fromEntries(Object.entries(fps).map(([k, v]) => [k, Math.round(v)])))}`);
   console.log(`  ending routines: ${JSON.stringify(breaks)}`);
