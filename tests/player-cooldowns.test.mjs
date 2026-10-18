@@ -15,7 +15,7 @@ function setup(cls,ab){
  const game={time:100,controlsLocked:false,world:{raycastSolid(){return null;},heightAt(){return 0;},resolveCollision(x,z,_radius,out){return out.set(x,z);}},
   units:[target],input:{isDown(){return false;}},audio:{sfx(){}},follow:{shake(){}},
   hud:{actionBar:{press(){}},castBar:{start(){},finish(){},fail(){}},messages:{error(m){errors.push(m);}},floats:{spawn(){}}},
-  combat:{damage(_a,_b,n){effects.push('damage');return n;},heal(){effects.push('heal');}},
+  combat:{damage(_a,_b,n){effects.push('damage');return n;},heal(_src,dst,n){effects.push('heal');dst.hp=Math.min(dst.maxHp,dst.hp+n);}},
   vfx:new Proxy({projectile(_from,_to,_style,_speed,hit){hit();}},{get(o,k){return o[k]??(()=>({pop(){}}));}})};
  const player=new Player(game,unit,cls);game.player=player;player.target=target;player.resource=player.maxResource=10000;player.nextSwing=Infinity;
  return {game,player,effects,errors};
@@ -79,4 +79,14 @@ test('ultimate respects range, hidden enemies and line of sight',()=>{
  s.game.units.push({...near,pos:new THREE.Vector3(40,0,0)},{...near,hidden:true});
  s.game.world.raycastSolid=()=>0;s.player.useAbility(5);assert.equal(s.effects.length,0);
  s.game.world.raycastSolid=()=>null;s.game.time+=60;s.player.useAbility(5);assert.equal(s.effects.length,1);
+});
+
+
+test('mage slot 3 heals exactly 10 HP, blinks safely, and cannot repeat its heal during the 15-second cooldown',()=>{
+ const ab=CLASSES.mage.abilities[2],{game,player}=setup(CLASSES.mage,ab);const u=player.unit;
+ u.hp=50;u.maxHp=100;player.useAbility(3);assert.equal(u.hp,60);assert.equal(u.pos.z,8);
+ game.time+=2;player.useAbility(3);assert.equal(u.hp,60);assert.equal(u.pos.z,8);
+ game.time=player.cooldowns.get(ab.id).end;player.gcdEnd=game.time;u.hp=96;
+ game.world.resolveCollision=(x,z,r,out)=>out.set(x,z>10?z+2:z);player.useAbility(3);
+ assert.equal(u.hp,100);assert.equal(u.pos.z,10);assert.equal(player.cooldownLeft(ab),15);
 });

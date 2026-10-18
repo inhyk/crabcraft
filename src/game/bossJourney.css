@@ -23,3 +23,5 @@
 .coin-wallet{position:relative;align-self:flex-end;flex-shrink:0;max-width:100%;box-sizing:border-box;border:1px solid #ae8d49;border-radius:20px;background:#151e25e8;color:#ffe6a0;padding:7px 14px;font:600 12px var(--font-body);pointer-events:none}.coin-wallet[hidden]{display:none}@media(max-width:900px){.coin-wallet{font-size:10px;padding:5px 9px}}
 
 .bj-card.dawn{border-color:#efb15c99;background:radial-gradient(ellipse at top right,#ad5e2966,transparent 80%),#292027}.dawn .bj-badge{border-color:#ffd07c;background:#55351d;color:#ffe4ae}.dawn h3{color:#ffe1a3}.dawn button{background:linear-gradient(#7a4925,#392716);border-color:#dfac65;color:#ffe5b8}
+
+.bj-card.frost{border-color:#80d8ef;background:linear-gradient(125deg,#163d51,#162030)}.bj-card.frost .bj-badge{color:#c4f7ff;background:#244e60}

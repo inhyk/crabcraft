@@ -2,6 +2,10 @@ import {t} from '../i18n';
 
 // Stable region keys also drive music and travel logic. Translate only their presentation.
 const REGIONS:Record<string,readonly [string,string,string]>={
+  'Snowfall Village':['눈꽃 마을','따뜻한 창빛과 눈 쌓인 지붕 아래의 쉼터','Warm windows and snow-covered rooftops'],
+  'Frostpine Woods':['서리 소나무 숲','눈꽃이 내려앉은 침엽수 사이의 순찰길','Patrol beneath snow-laden evergreen boughs'],
+  'Aurora Snowfields':['오로라 설원','서리 파수병을 물리치며 300레벨을 향해','Defeat frost sentinels and grow toward level 300'],
+  'The Frozen Throne':['얼음 왕좌','300레벨 영원의 서리왕 보레아스가 기다립니다','Level 300 Boreas, King of Eternal Frost, awaits'],
   'Dawnharbor':['새벽 항구','돛과 등불 아래 다시 모인 친구들','Friends reunited beneath sails and lanterns'],
   'Twilight Citadel':['황혼 성채','성벽 너머, 빼앗긴 새벽과 친구를 되찾으세요','Reclaim your friend and the stolen dawn beyond the walls'],
   'The Dawn Ascent':['새벽으로 오르는 길','꽃이 핀 계단에서 황혼의 성문까지','From flowering terraces to the twilight gate'],
