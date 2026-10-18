@@ -213,6 +213,7 @@ export type ChannelKind = 'recall' | 'beacon' | 'waystone' | 'lighthouse-secret'
 export type PlayerCommand =
   | { kind: 'ability'; slot: 1 | 2 | 3 | 4 | 5 }
   | { kind: 'target'; target: EntityRef | null }
+  | { kind:'talk';target:EntityRef }
   | { kind: 'jump' | 'dance' | 'cancel' }
   | { kind: 'channelStart'; channel: ChannelKind; targetId?: string }
   | { kind: 'interact'; targetId: string }
