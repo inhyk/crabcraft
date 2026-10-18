@@ -41,6 +41,15 @@ W5/W6에도 위 표의 `seed`, `populationMode`, `fixedLevels`, `population`, `r
 
 `party.enabled:true`이면 활성화한 W5에는 `returns.ember:{world:"w5",spawn:<실제 public POI id>}`, W6에는 `returns.sky:{world:"w6",spawn:<실제 public POI id>}`를 추가한다. 각 `spawn`은 해당 canonical definition의 spawn, recall 또는 POI에 존재해야 한다. 비활성 월드의 profile을 return 정책에 추가하면 거부한다. 기존 4월드 설정은 기존 다섯 profile return만 요구한다. Party capacity8과 명시적 `maxParties`/`maxEncounters` 계약은 유지한다.
 
+현재 canonical helper(`src/sim/data/enemies.ts`, dev52 합성 기준)의 source 값은 다음과 같다. 이 값은 config의 자동 기본값이 아니며 운영 설정에서 명시해야 한다.
+
+| Region | scrapling / scavenger / jellyfish / echo 레벨 | ordinary respawn | echo respawn | respawn clearance |
+| --- | --- | --- | --- | --- |
+| W5 | 300 / 302 / 300 / 10 | 12초 | 120초 | 22m |
+| W6 | 400 / 402 / 400 / 10 | 12초 | 120초 | 22m |
+
+현재 Frontier definition은 scrapling, scavenger, shallow patrol template을 생성한다. Jellyfish와 echo template은 없지만 기존 region schema의 해당 필드는 필요하다. Return으로 검증되는 public POI id는 `spawn`, `forge`, `chapel`, `tavern`, `grove`, `shore`, `wreck`, `lighthouse`, `beacon`, `bossArena`, `npc:brinebeard`, `npc:silvermoon`, `npc:coralline`, `npc:grukk`, `npc:hoofclaw`, `npc:rattlebolt`, `npc:pip`이다. W5/W6의 spawn과 recall은 `(0, heightAt(0,82), 82)`이며 별도 `arrival` POI는 없다. 이 목록은 허용 위치를 설명하며 seed, population 또는 return 위치를 새로 선택하지 않는다.
+
 Catalog는 실제 활성 encounter에 대해서만 `boss-ember`/`boss-sky` alias를 광고한다. 비활성 destination의 gate는 public/encounter definition과 wire catalog에서 모두 제거한다. W4에서 W5로 가는 canonical `frostCleared` 조건, W5/W6의 캐릭터별 퀘스트와 보상, Ember500/Sky750 조건은 core 규칙을 그대로 사용한다. Startup에서 플래그, XP 또는 승리 상태를 만들어 넣지 않는다.
 
 패키지는 canonical collision bake6개와 공통 source/hash manifest를 생성한다. 현재 loader는 4개 또는 선택 artifact가 추가된 manifest를 허용하되 활성 world의 artifact 누락은 ownership 획득 전에 거부한다. Manifest에 선언한 artifact는 비활성 world여도 크기/hash budget 검사를 받는다. 6개 package에 4월드 config를 사용하면 Area는4개만 생성한다. 4월드 rollback은 해당 binary와 일치하는 기존 4개 manifest/package 및 source 설정을 함께 복원해야 한다. 이전 binary가 새6개 manifest를 읽는다고 가정하지 않는다. W5/W6에 저장된 캐릭터를 해당 world가 비활성인 host에 접속시키면 world-unavailable로 거부하며 다른 world로 옮기거나 저장 데이터를 지우지 않는다.

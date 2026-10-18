@@ -63,3 +63,5 @@ party-only PvP의 대전 상대는 `isAttackTarget`과 같은 판정으로 중�
 - `pnpm build`: 통과. 실행 환경은 Node24, pnpm10.10.0이다.
 
 테스트의 level/story/위치 fixture는 서버의 production 초기값이 아니다. Frontier 이동 전 unlock 거부와 level1 보스 입장 거부를 먼저 확인하고, 이후 명시적 trusted fixture로 해당 경계를 검사한다. 이 결과는 운영 population 값의 승인이나 VM 부하 통과를 뜻하지 않는다. 10개 dungeon 이전은 별도 core/host 작업이다.
+
+최신 dev52/A6 `ef29562`를 `46d8374`에서 충돌 없이 합성한 뒤 build와 다음55건을 재검사했다: `node --test server/world/catalog.test.mjs server/world/startup.test.mjs server/world/gameplay/frontier.test.mjs tests/core-motion-data.test.mjs`. 실제 PG/WS 이동과 보상, 기존 4월드 packet reference, 새 provider/source freshness가 모두 통과했다. 이 합성에서 catalog/startup/host/build의 B6 구현 diff는 추가로 생기지 않았다. 운영 설정과 VM은 변경하지 않았다.
