@@ -53,7 +53,7 @@ try{
  console.log('PASS existing patrol/boss progress and all new snow requests survive reload; 216 → 91 trees');
  // Exercise the actual journey payout with the same boss claim gate used by network deaths.
  const rewards=await p.evaluate(()=>{const g=window.app.current.game,result=[];for(const b of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss]){
-  const xp=g.player.xp,coins=g.player.coins;b.state='dying';b.unit.alive=false;b.coinsClaimed=false;
+  g.player.xpBlessingUntil=0;const xp=g.player.xp,coins=g.player.coins;b.state='dying';b.unit.alive=false;b.coinsClaimed=false;
   g.journey.onBossDefeated(b);g.journey.onBossDefeated(b);
   const first={xp:g.player.xp-xp,coins:g.player.coins-coins};
   b.coinsClaimed=false;g.journey.onBossDefeated(b);g.journey.onBossDefeated(b);

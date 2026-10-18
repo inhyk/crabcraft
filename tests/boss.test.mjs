@@ -316,6 +316,6 @@ test('a follower grants one coin reward again after a new authoritative rematch 
 
 test('every boss pays positive, increasing experience alongside coins on repeat victories',()=>{
  const profiles=Object.values(BOSS_PROFILES).sort((a,b)=>a.level-b.level);
- assert.deepEqual(profiles.map(p=>p.reward),[500,1000,3000,6400,18000]);
+ assert.deepEqual(profiles.map(p=>p.reward),[500,1000,1500,3200,18000]);
  for(const profile of profiles)assert.ok(Number.isSafeInteger(profile.reward)&&profile.reward>0);
 });

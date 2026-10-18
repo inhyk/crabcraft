@@ -55,7 +55,7 @@ try{
  console.log('PASS saved World III requests survive reload');
  // Exercise the actual journey payout with the same boss claim gate used by network deaths.
  const rewards=await p.evaluate(()=>{const g=window.app.current.game,result=[];for(const b of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss]){
-  const xp=g.player.xp,coins=g.player.coins;b.state='dying';b.unit.alive=false;b.coinsClaimed=false;
+  g.player.xpBlessingUntil=0;const xp=g.player.xp,coins=g.player.coins;b.state='dying';b.unit.alive=false;b.coinsClaimed=false;
   g.journey.onBossDefeated(b);g.journey.onBossDefeated(b);
   const first={xp:g.player.xp-xp,coins:g.player.coins-coins};
   b.coinsClaimed=false;g.journey.onBossDefeated(b);g.journey.onBossDefeated(b);

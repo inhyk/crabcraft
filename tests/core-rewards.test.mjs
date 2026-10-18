@@ -57,3 +57,13 @@ test('actual Frost victory completes active s2 automatically once while rematch 
 test('actual Abyss victory pays its full reward without fabricating Rust q4 credit',()=>{
  const area=worldArea('abyss-objective'),actor=addActor(area),boss=area.services.bossByProfile('abyss'),guide=addActor(area,'guide');guide.p.gainXp(22000);guide.p.state.flags.rustCleared=true;questAccept(actor.p,area.services,'q4');area.worldRules.setSharedBeacon(true);boss.wake();tick(area,74);area.services.combat.damage(actor.ref,boss.unit,1e8);assert.equal(actor.p.state.xp,1000);assert.equal(actor.p.state.coins,500);assert.equal(actor.p.state.flags.abyssCleared,true);assert.equal(actor.p.state.flags.rustCleared,undefined);assert.equal(actor.p.state.quests.status.q4,'active');assert.equal(actor.p.state.quests.progress['q4-boss'],undefined);assert.equal(area.pendingGrants()[0].grant.objectives.some(o=>o.kind==='boss'),false);
 });
+
+test('Astra and Solarkan blessings double subsequent XP, refresh without stacking and expire at ten minutes',async()=>{
+ const {xpForLevel}=await import('../src/sim/data/progression.ts');
+ for(const [profile,world]of [['eclipse','w2'],['dawn','w3']]){
+  const area=worldArea(`xp-blessing-${profile}`,world),a=addActor(area),boss=area.services.bossByProfile(profile);a.p.gainXp(xpForLevel(300));Object.assign(a.p.state.flags,{rustCleared:true,abyssCleared:true,trueCleared:true,finalCleared:true});a.u.invulnerable=true;boss.wake();tick(area,74);area.services.combat.damage(a.ref,boss.unit,1e8);
+  const expiry=a.p.state.cooldowns['boss-xp-blessing'].end;assert.equal(expiry,area.services.time+600);let before=a.p.state.xp;a.p.gainXp(100);assert.equal(a.p.state.xp-before,200);
+  tick(area,10);area.services.onUnitDied(boss.unit,a.ref);assert.equal(a.p.state.cooldowns['boss-xp-blessing'].end,expiry);
+  a.p.state.cooldowns['boss-xp-blessing'].end=area.services.time;before=a.p.state.xp;a.p.gainXp(100);assert.equal(a.p.state.xp-before,100);
+ }
+});
