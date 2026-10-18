@@ -631,3 +631,38 @@ test('dungeon return requests authenticate the guest and route only to its priva
  for(const chapter of [5,6]){assert.ok(worldOf({...expanded,chapter}));assert.deepEqual(eventOf({kind:'chapter',target:'world',chapter},false),{kind:'chapter',target:'world',chapter});assert.equal(worldOf({...expanded,chapter,bosses:world.bosses}),null);}
  for(const chapter of [0,7,5.5,'5']){assert.equal(worldOf({...expanded,chapter}),null);assert.equal(eventOf({kind:'chapter',target:'world',chapter},false),null);}
  });
+
+
+test('frontier bosses and ten expedition tiers coexist with legacy five-boss checkpoints',()=>{
+ const bosses=[...world.bosses,...['b30','b300','b500','b750'].map(id=>({id,state:'dormant',phase:1,enraged:false,mech:null}))];
+ const six={...world,chapter:6,bosses,emberCleared:true,skyCleared:false};
+ assert.ok(worldOf(six));assert.ok(worldOf({...six,bosses:bosses.slice(0,5),emberCleared:undefined}));
+ for(const target of ['b500','b750']){assert.ok(eventOf({kind:'challenge',target},false));assert.ok(eventOf({kind:'attack',target,amount:20},false));}
+ for(const [level,chapter]of [[350,5],[450,5],[550,6],[650,6]]){
+  const dungeon={level,run:`run-${level}`,stage:3,phase:'wave',left:0,clock:8,hazard:1,members:['crab']};
+  assert.ok(worldOf({...six,chapter,dungeon}));assert.equal(worldOf({...six,chapter:4,dungeon}),null);
+ }
+ assert.equal(worldOf({...six,skyCleared:'yes'}),null);
+ assert.equal(worldOf({...six,bosses:[...bosses.slice(0,6),bosses[5]]}),null);
+});
+
+
+test('lantern healing requests are bounded skill IDs and only authority can publish healing',()=>{
+ for(const authority of [false,true]){assert.deepEqual(eventOf({kind:'heal-cast',target:'world',ability:'mend-shell',amount:999999,source:'forged'},authority),{kind:'heal-cast',target:'world',ability:'mend-shell'});assert.equal(eventOf({kind:'heal-cast',target:'world',ability:'smite'},authority),null);}
+ assert.equal(eventOf({kind:'heal',target:'peer',source:'healer',amount:35},false),null);
+ assert.deepEqual(eventOf({kind:'heal',target:'peer',source:'healer',amount:35},true),{kind:'heal',target:'peer',source:'healer',amount:35});
+ for(const amount of [-1,0,NaN,Infinity])assert.equal(eventOf({kind:'heal',target:'peer',source:'healer',amount},true),null);
+});
+
+test('lantern relay authenticates priest requests, host results and room isolation',async t=>{
+ const {client}=await setup(t),host=await client(),healer=await client(),warrior=await client(),outside=await client();
+ host.send({type:'create',spec,combatVersion:1});const h=await host.next('welcome');
+ healer.send({type:'join',room:h.room,spec:{...spec,classId:'priest'},combatVersion:1});const priest=await healer.next('welcome');
+ warrior.send({type:'join',room:h.room,spec,combatVersion:1});await warrior.next('welcome');
+ outside.send({type:'create',spec,combatVersion:1});await outside.next('welcome');
+ healer.send({type:'combat',event:{kind:'heal-cast',target:'world',ability:'holy-tide'}});const cast=await host.next('combat');assert.equal(cast.id,priest.id);assert.equal(cast.event.ability,'holy-tide');
+ warrior.send({type:'combat',event:{kind:'heal-cast',target:'world',ability:'holy-tide'}});
+ healer.send({type:'combat',event:{kind:'heal',target:h.id,source:priest.id,amount:999}});
+ host.send({type:'combat',event:{kind:'heal',target:priest.id,source:h.id,amount:35}});assert.equal((await healer.next('combat')).event.kind,'heal');
+ await new Promise(r=>setTimeout(r,30));assert.equal(host.queue.filter(p=>p.type==='combat').length,0);assert.equal(outside.queue.filter(p=>p.type==='combat').length,0);
+});

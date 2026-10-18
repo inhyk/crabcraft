@@ -371,7 +371,7 @@ export class Enemy {
 
   private applyStats(level:number): void {
     const base=ENEMY_STATS[this.kind],inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
-    if(this.isDungeonOnly){const captain=this.dungeonCaptain;Object.assign(this.stats,{level,hp:Math.round((180+level*8)*(captain?4:1)),xp:0,speed:captain?3.4:4.1,aggro:40,leash:45,swing:captain?2.8:2.4,dmg:[8+level*.18,(12+level*.23)*(captain?1.5:1)]});return;}
+    if(this.isDungeonOnly){const captain=this.dungeonCaptain;Object.assign(this.stats,{level,hp:Math.round((180+level*8)*(captain?4:1)),xp:0,speed:captain?3.4:4.1,aggro:40,leash:45,swing:captain?2.8:2.4,dmg:[(8+level*.18)*1.25,(12+level*.23)*(captain?1.5:1)*1.25]});return;}
     const scale=1+.12*(level-base.level);
     if(this.isEcho){Object.assign(this.stats,{level,hp:Math.round(500*scale),xp:350+level*10,respawn:120,speed:2.8,aggro:10,leash:24,dmg:[14+level,18+level]});return;}
     Object.assign(this.stats,{level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:this.respawnDelay(),dmg:[base.dmg[0]*scale,base.dmg[1]*scale]});

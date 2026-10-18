@@ -86,3 +86,14 @@ test('World II and III quest guardians respawn twice as often without appearing 
   assert.equal(enemy.canRespawnUnseen(),false);
  }
 });
+
+
+test('dungeon attacks are stronger while fixed health and takeover damage stay stable',()=>{
+ for(const [level,normal,captain]of [[35,[17.875,25.0625],37.59375],[450,[111.25,144.375],216.5625],[650,[156.25,201.875],302.8125]])for(const isCaptain of [false,true]){
+  const {unit,enemy}=make();enemy.isDungeonOnly=true;enemy.dungeonLevel=level;enemy.dungeonCaptain=isCaptain;enemy.respawnAt(0,0);
+  assert.deepEqual(enemy.stats.dmg,[normal[0],isCaptain?captain:normal[1]]);
+  assert.equal(unit.maxHp,(180+level*8)*(isCaptain?4:1));
+  unit.hp=50;enemy.resumeAuthority();enemy.resumeAuthority();
+  assert.equal(unit.hp,50);assert.deepEqual(enemy.stats.dmg,[normal[0],isCaptain?captain:normal[1]]);
+ }
+});
