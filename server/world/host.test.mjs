@@ -13,7 +13,9 @@ import { WorldChatService } from './chat.ts';
 import { loadWorldCatalog, createGameplayCatalog } from './catalog.ts';
 import { createActualWorldHost } from './host.ts';
 import { createArea } from '../../src/sim/area.ts';
-import { deliverCertifiedAreaPage } from './persistence-coordinator.ts';
+import { deliverCertifiedAreaPage, PagedOutcomeRecovery, verifyPagedOutcomeSeal } from './persistence-coordinator.ts';
+import { DurableOutcomeStore } from './contribution-store.ts';
+import { planOutcomePage } from '../../src/sim/ledger.ts';
 
 import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
@@ -546,7 +548,7 @@ test('disconnect during a certified read discards the old connection lease and r
   let area,barrier;
   try {
   for(let offset=0;offset<257;offset+=100){const entries=[];for(let i=offset;i<Math.min(257,offset+100);i++){const victim={area:'adapter-offline',id:i+1,life:1},id=JSON.stringify([victim.area,victim.id,victim.life,c.record.characterId]);entries.push({accountId:c.binding.accountId,characterId:c.record.characterId,id,payload:{id,victim,recipient:c.record.characterId,xp:0,coins:1,objectives:[],flags:[]}});}await store.recordGrantBatch(entries);}
-  area=createArea({id:'actual-external-adapter',ledgerMode:'external-durable',limits:{eventCount:4096,inputCommandsPerTick:32,timers:256,projectiles:256},definition:world.publicDefinition,query:world.query,actionData:world.actionData,policy:world.policy,seed:1,context:{mode:'public',pvp:'disabled',members:[]}});
+  area=createArea({id:'actual-external-adapter',ledgerMode:'external-durable',ledgerLimits:{maxDirtyCreditEntries:10000,maxDirtyCreditBytes:16777216,maxPendingDeaths:32,maxStagedBytes:8388608},limits:{eventCount:4096,inputCommandsPerTick:32,timers:256,projectiles:256},definition:world.publicDefinition,query:world.query,actionData:world.actionData,policy:world.policy,seed:1,context:{mode:'public',pvp:'disabled',members:[]}});
   const ref=area.attachFresh(c.record.characterId,'warrior','human','spawn',0);barrier=area.beginDurabilityBarrier('certified-adapter');let record=c.record;const pageCounts=[];
    for(;;){const expectedRevision=record.revision,result=await deliverCertifiedAreaPage({area,ref,accountId:c.binding.accountId,characterId:c.record.characterId,expectedRevision,store,codec,ownership,boundary:async run=>run(),isCurrent:()=>record.revision===expectedRevision});
     assert.equal(result.kind,'applied');pageCounts.push(result.results.length);const capture=area.capturePlayerCheckpoint(ref);record=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,record.revision,codec.toJson(capture.checkpoint),capture.appliedGrantIds);area.markCheckpointDurable(capture.captureId,record.revision,capture.appliedGrantIds);
@@ -594,3 +596,34 @@ test('second authoritative party member joins fighting Rust without duplicate wa
   const fight=probe('fight');assert.equal(fight.result,false);assert.equal(fight.state,'fight');assert.equal(fight.hp,1);assert.equal(fight.resource,1);
   for(const denied of [probe('dying'),probe('dormant',2),probe('dormant',3,false)]){assert.equal(denied.result,false);assert.equal(denied.hp,1);assert.equal(denied.resource,1);assert.equal(denied.life,denied.bossLife);}
  });
+
+async function recoveryDraft(ledger,victim,records,eligible=true){const writes=records.map((c,i)=>({victim,character:c.record.characterId,version:i+1,credit:{character:c.record.characterId,cogEligible:eligible,cogMisses:0,flags:{}}}));await ledger.recordContributionBatch(writes);const summary=await ledger.readContributionSummary(victim,[]);return ledger.beginVictimDraft({fence:summary,recipe:{schema:'world-death-v1',victim,world:'w1',throughVersion:summary.throughVersion,expectedContributors:summary.totalContributors,expectedRandomDraws:summary.storedEligibleTotal,facts:{kind:'scrapling',level:1,role:'ordinary',profile:null,xp:20,coins:5},overrides:[],random:{algorithm:'mulberry32-v1',state:42}}});}
+
+test('actual PG recovery sweeps bound every slice, fairly advance large drafts, recover lost append/seal responses and revisit late drafts', {timeout:15000}, async()=>{
+ const ownership=await acquireHostOwnership(pool,'recovery-sweep-test');
+ try{
+  const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),records=[await character(),await character(),await character()];
+  const a=await recoveryDraft(ledger,{area:'recovery-large',id:1,life:1},records),b=await recoveryDraft(ledger,{area:'recovery-small',id:1,life:1},records.slice(0,1));let lostAppend=false,lostSeal=false;
+  const ambiguous=new Proxy(ledger,{get(target,key){if(key==='appendVictimPage')return async(...args)=>{const r=await target.appendVictimPage(...args);if(!lostAppend){lostAppend=true;throw new Error('lost append response');}return r;};if(key==='sealVictimDraft')return async(...args)=>{const r=await target.sealVictimDraft(...args);if(!lostSeal){lostSeal=true;throw new Error('lost seal response');}return r;};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+  const recovery=new PagedOutcomeRecovery(ambiguous,ownership,{draftsPerSlice:1,pageSize:1,codecVersion:codec.version});
+  const first=await recovery.sweep();assert.equal(first.visited,1);assert.equal(first.appended,1);assert.equal(first.sealed,0);assert.equal((await ledger.getVictimDraft(a.draftId)).cursor.recipientCount,1);
+  const second=await recovery.sweep();assert.equal(second.visited,1);assert.equal(second.sealed,1);assert.equal((await ledger.getVictimSeal(b.victim)).recipientCount,1);assert.equal((await ledger.getVictimDraft(a.draftId)).cursor.recipientCount,1);
+  for(let i=0;;i++){const slice=await recovery.sweep();assert.ok(slice.visited<=1&&slice.appended<=1&&slice.sealed<=1);if(slice.cycleComplete&&!slice.cycleHasPending)break;if(i>20)throw new Error('draft recovery failed to drain');}
+  const aSeal=await ledger.getVictimSeal(a.victim);assert.equal(verifyPagedOutcomeSeal(a.recipe,codec.version,aSeal).recipientCount,3);assert.throws(()=>verifyPagedOutcomeSeal({...a.recipe,victim:{...a.victim,life:2}},codec.version,aSeal),/proof mismatch/);assert.throws(()=>verifyPagedOutcomeSeal(a.recipe,codec.version,{...aSeal,finalCursor:{...aSeal.finalCursor,randomDraws:2}}),/proof mismatch/);assert.equal(lostAppend,true);assert.equal(lostSeal,true);assert.equal(recovery.metrics.maxPage,1);
+  const before=recovery.metrics.cycles,late=await recoveryDraft(ledger,{area:'recovery-late-after-empty',id:1,life:1},records.slice(1,2));
+  for(let i=0;!(await ledger.getVictimSeal(late.victim));i++){await recovery.sweep();if(i>10)throw new Error('late draft missed');}
+  assert.ok(recovery.metrics.cycles>=before);assert.equal((await ledger.getVictimSeal(late.victim)).recipientCount,1);
+ }finally{await ownership.release();}
+});
+
+test('active actual WS actor receives a late-sealed older journal row after a previous empty pending read', {timeout:12000}, async()=>{
+ const c=await character(),ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),draft=await recoveryDraft(ledger,{area:'late-sealed-old-sequence',id:1,life:1},[c],false),page=await ledger.readContributionPage(draft.draftId,null,100),planned=planOutcomePage(draft.recipe,draft.cursor,page.credits.map(w=>w.credit));await ledger.appendVictimPage(draft.draftId,planned);
+ const victim={area:'newer-already-visible',id:1,life:1},id=JSON.stringify([victim.area,1,1,c.record.characterId]);const newer=await store.recordGrant(c.binding.accountId,c.record.characterId,id,{id,victim,recipient:c.record.characterId,xp:1,coins:1,objectives:[],flags:[]});
+ const old=(await pool.query('SELECT journal_sequence FROM world_character_grants WHERE grant_id=$1',[planned.grants[0].id])).rows[0];assert.ok(BigInt(old.journal_sequence)<BigInt(newer.sequence));
+ const rt=await runtime();let bot;
+ try{
+  bot=await client(rt,c);await ready(rt,bot);assert.equal(bot.state.self.player.xp,1);await until(()=>!rt.host.stats().durableBarrier);assert.deepEqual(await store.pendingGrants(c.binding.accountId,c.record.characterId),[]);
+  const recovery=new PagedOutcomeRecovery(ledger,rt.ownership,{draftsPerSlice:10,pageSize:100,codecVersion:codec.version});const slice=await recovery.sweep();assert.ok(slice.sealed>=1);
+  await until(()=>bot.state.self.player.xp===21||rt.failures.length,5000);assert.deepEqual(rt.failures,[]);assert.equal(bot.state.self.player.coins,6);assert.deepEqual(bot.errors,[]);assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,21);
+ }finally{bot?.ws.close();await rt.close();}
+});

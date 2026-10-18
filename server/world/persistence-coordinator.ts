@@ -1,5 +1,10 @@
+import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { Character, EarnedGrant, Json } from './character-store.ts';
 import type { HostOwnership } from './ownership.ts';
+import { DurableOutcomeStore, DurableLedgerError, MAX_RECIPE_BYTES, type DraftHandle, type VictimSeal } from './contribution-store.ts';
+import { canonicalLedgerJson } from './character-store.ts';
+import { planOutcomePage, validateDeathRecipe, validatePlannerCursor, victimKey, type DeathRecipe, type PagedOutcomeSeal } from '../../src/sim/ledger.ts';
 import type { Area, EntityRef, GrantApplyResult } from '../../src/sim/types.ts';
 import type { IdentityJson, CheckpointJson, GrantJson, CoreCharacterCodec } from '../../src/sim/persistence.ts';
 
@@ -180,5 +185,108 @@ export async function deliverCertifiedAreaPage(input: {
     // Matching-token cancellation cannot remove a newer proof; a partially applied prefix is never blindly replayed.
     await boundary(() => area.cancelGrantRead(token));
     throw error;
+  }
+}
+
+/** Constant-size host proof for retiring one captured source recipe, never a client assertion. */
+export function verifyPagedOutcomeSeal(recipe: DeathRecipe, codecVersion: number, seal: VictimSeal | null): PagedOutcomeSeal {
+  const captured = validateDeathRecipe(recipe), digest = createHash('sha256').update(canonicalLedgerJson(captured, MAX_RECIPE_BYTES)).digest('hex');
+  if (!seal || seal.format !== 'paged-v1' || seal.key !== victimKey(captured.victim) || victimKey(seal.victim) !== seal.key || seal.codecVersion !== codecVersion || seal.recipeDigest !== digest || seal.digestScheme !== 'sha256-chain-v1' || !/^[a-f0-9]{64}$/.test(seal.contentDigest) || seal.recipientCount !== captured.expectedContributors || seal.finalCursor.recipientCount !== captured.expectedContributors || seal.finalCursor.randomDraws !== captured.expectedRandomDraws) throw new Error('source outcome completeness proof mismatch');
+  validatePlannerCursor(captured, seal.finalCursor);
+  return immutable(seal);
+}
+
+export interface RecoverySweep {
+  visited: number; appended: number; sealed: number;
+  cycleComplete: boolean; cycleHasPending: boolean;
+  afterSequence: string; throughSequence: string;
+}
+type RecoveryStore = Pick<DurableOutcomeStore, 'getDraftRecoveryHighWater' | 'listVictimDrafts' | 'getVictimDraft' | 'readContributionPage' | 'appendVictimPage' | 'sealVictimDraft' | 'getVictimSeal'>;
+
+/** One page per draft per sweep slice. Recurrence discovers late old-owner commits; this is not a writer fence. */
+export class PagedOutcomeRecovery {
+  private after = '0';
+  private through: string | null = null;
+  private cyclePending = false;
+  private running = false;
+  readonly metrics = { slices: 0, cycles: 0, visited: 0, appended: 0, sealed: 0, maxPage: 0 };
+  private readonly store: RecoveryStore;
+  private readonly ownership: HostOwnership;
+  private readonly limits: { draftsPerSlice: number; pageSize: number; codecVersion: number };
+  constructor(store: RecoveryStore, ownership: HostOwnership, limits: { draftsPerSlice: number; pageSize: number; codecVersion: number }) {
+    this.store = store; this.ownership = ownership; this.limits = { ...limits };
+    if (![limits.draftsPerSlice, limits.pageSize].every(n => Number.isSafeInteger(n) && n >= 1 && n <= 100) || !Number.isSafeInteger(limits.codecVersion) || limits.codecVersion < 1) throw new Error('explicit bounded recovery limits required');
+  }
+  private async io<T>(run: () => Promise<T>): Promise<T> {
+    this.ownership.assertOwned(); if (this.ownership.closed.aborted) throw this.ownership.closed.reason;
+    const result = await run();
+    this.ownership.assertOwned(); if (this.ownership.closed.aborted) throw this.ownership.closed.reason;
+    return result;
+  }
+  private draft(value: DraftHandle): DraftHandle {
+    const recipe = validateDeathRecipe(value.recipe), cursor = validatePlannerCursor(recipe, value.cursor);
+    const digest = createHash('sha256').update(canonicalLedgerJson(recipe, MAX_RECIPE_BYTES)).digest('hex');
+    if (digest !== value.recipeDigest || victimKey(recipe.victim) !== victimKey(value.victim) || value.contributorCount !== recipe.expectedContributors || cursor.recipientCount > value.contributorCount || cursor.randomDraws > recipe.expectedRandomDraws) throw new Error('recovery draft identity or reservation mismatch');
+    return value;
+  }
+  private seal(draft: DraftHandle, seal: VictimSeal | null): PagedOutcomeSeal {
+    const verified = verifyPagedOutcomeSeal(draft.recipe, this.limits.codecVersion, seal);
+    if (verified.contentDigest !== draft.contentChain || !isDeepStrictEqual(verified.finalCursor, draft.cursor)) throw new Error('recovery completeness seal mismatch');
+    return verified;
+  }
+  private async visit(draftId: string): Promise<{ appended: number; sealed: number; pending: boolean }> {
+    let draft = this.draft(await this.io(() => this.store.getVictimDraft(draftId))), appended = 0;
+    if (draft.cursor.recipientCount < draft.contributorCount) {
+      const read = await this.io(() => this.store.readContributionPage(draftId, draft.cursor.afterCharacter, this.limits.pageSize));
+      if (!read.credits.length || read.credits.length > this.limits.pageSize) throw new Error('recovery contribution page made no bounded progress');
+      const planned = planOutcomePage(draft.recipe, draft.cursor, read.credits.map(write => write.credit));
+      this.metrics.maxPage = Math.max(this.metrics.maxPage, planned.grants.length);
+      try { draft = this.draft(await this.io(() => this.store.appendVictimPage(draftId, planned))); }
+      catch (error) {
+        if (this.ownership.closed.aborted) throw error;
+        const recovered = this.draft(await this.io(() => this.store.getVictimDraft(draftId)));
+        if (recovered.recipeDigest !== draft.recipeDigest || recovered.cursor.pageSequence < planned.nextCursor.pageSequence || recovered.cursor.recipientCount < planned.nextCursor.recipientCount) throw error;
+        draft = recovered;
+      }
+      appended = 1;
+    }
+    if (draft.cursor.recipientCount < draft.contributorCount) return { appended, sealed: 0, pending: true };
+    let seal: PagedOutcomeSeal;
+    try { seal = await this.io(() => this.store.sealVictimDraft(draftId)); }
+    catch (error) {
+      if (this.ownership.closed.aborted) throw error;
+      const recovered = await this.io(() => this.store.getVictimSeal(draft.victim));
+      if (!recovered) throw error;
+      seal = this.seal(draft, recovered);
+    }
+    this.seal(draft, seal);
+    return { appended, sealed: 1, pending: false };
+  }
+  async sweep(): Promise<RecoverySweep> {
+    if (this.running) throw new Error('recovery slice already running');
+    this.running = true;
+    try {
+      if (this.through === null) this.through = await this.io(() => this.store.getDraftRecoveryHighWater());
+      const through = this.through, rows = await this.io(() => this.store.listVictimDrafts({ afterSequence: this.after, throughSequence: through, limit: this.limits.draftsPerSlice }));
+      if (rows.length > this.limits.draftsPerSlice) throw new Error('recovery scan capacity');
+      let appended = 0, sealed = 0;
+      for (const row of rows) {
+        let result: { appended: number; sealed: number; pending: boolean };
+        try { result = await this.visit(row.draftId); }
+        catch (error) {
+          if (this.ownership.closed.aborted || !(error instanceof DurableLedgerError) || !['closed', 'not_found'].includes(error.code)) throw error;
+          const completed = await this.io(() => this.store.getVictimSeal(row.victim));
+          if (!completed || completed.format !== 'paged-v1' || completed.key !== victimKey(row.victim) || completed.codecVersion !== this.limits.codecVersion || completed.recipientCount !== row.contributorCount || completed.finalCursor.recipientCount !== completed.recipientCount) throw error;
+          result = { appended: 0, sealed: 1, pending: false }; // Another valid finisher may seal/clean after our scan.
+        }
+        appended += result.appended; sealed += result.sealed; this.cyclePending ||= result.pending;
+        this.after = row.recoverySequence; // An unfinished large draft cannot monopolize its cycle.
+      }
+      const cycleComplete = rows.length < this.limits.draftsPerSlice || this.after === through;
+      const result = { visited: rows.length, appended, sealed, cycleComplete, cycleHasPending: this.cyclePending, afterSequence: this.after, throughSequence: through };
+      this.metrics.slices++; this.metrics.visited += rows.length; this.metrics.appended += appended; this.metrics.sealed += sealed;
+      if (cycleComplete) { this.metrics.cycles++; this.after = '0'; this.through = null; this.cyclePending = false; }
+      return result;
+    } finally { this.running = false; }
   }
 }
