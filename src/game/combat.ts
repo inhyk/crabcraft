@@ -3,7 +3,6 @@
 // events (src/game/events.ts); reactions belong to the controller of the unit involved.
 import type { Game } from './game';
 import type { Unit } from './unit';
-import {armorMultiplier} from './equipment';
 
 export type School = 'physical' | 'frost' | 'water' | 'holy' | 'rust';
 
@@ -27,6 +26,8 @@ export interface CombatController {
   /** The unit's absorb shield took a hit; `broken` when nothing is left of it. */
   onWardHit?(broken: boolean): void;
   onDeath?(killer: Unit | null): void;
+  /** Persistent equipment mitigation belongs to the unit's own controller. */
+  readonly damageTakenMultiplier?: number;
 }
 
 const ctrlOf = (u: Unit | null): CombatController | null => (u?.ctrl as CombatController | null) ?? null;
@@ -66,7 +67,7 @@ export class Combat {
       return 0;
     }
     // The owning client applies armor once, after routing and before temporary shields.
-    if(dst===g.player.unit)dmg=Math.max(1,Math.round(dmg*armorMultiplier(g.player.armorRank)));
+    dmg=Math.max(1,Math.round(dmg*(ctrl?.damageTakenMultiplier??1)));
     // Absorb shields soak first.
     if (dst.absorb > 0 && now < dst.absorbUntil) {
       const soaked = Math.min(dst.absorb, dmg);

@@ -3,7 +3,7 @@
 // player sees and hears of it (cast bar, errors, XP, effects) leaves as events (src/game/events.ts).
 // Keyboard, mouse and camera are still read here; S2 splits them off into an input layer.
 import * as THREE from 'three';
-import {equipmentRank,MAX_EQUIPMENT_RANK,upgradeCost,weaponMultiplier,EQUIPMENT_PRICE,type EquipmentSlot} from './equipment';
+import {equipmentRank,MAX_EQUIPMENT_RANK,upgradeCost,weaponMultiplier,armorMultiplier,EQUIPMENT_PRICE,type EquipmentSlot} from './equipment';
 import type { AbilityDef, ClassDef } from '../data/classes';
 import type { Game } from './game';
 import { lineOfSight, type Unit } from './unit';
@@ -99,6 +99,8 @@ export class Player implements CombatController {
   get dmgMul(): number {
     return (1 + 0.12 * (this.unit.level - 1)) * weaponMultiplier(this.attackRank);
   }
+
+  get damageTakenMultiplier():number { return armorMultiplier(this.armorRank); }
 
   ownsEquipment(slot:EquipmentSlot):boolean {
     return slot==='weapon'?this.weaponOwned||this.attackRank>0:this.armorOwned||this.armorRank>0;
