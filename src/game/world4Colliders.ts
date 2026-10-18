@@ -2,6 +2,9 @@
 import { snowHeight } from '../sim/world/ground';
 import { Collision } from '../world/collision';
 
+// Between the west-side lanes, clear of the road, homes and resident positions.
+export const SNOW_FOUNTAIN = {x:-13,z:65,radius:3.1} as const;
+
 export function snowTrees() {
   const trees: {x:number;z:number;s:number}[] = [];
   for(let i=0;i<280;i++){
@@ -19,7 +22,7 @@ export function layoutFrostlight(): Collision {
     const x=side*29,z=38+i*18,y=h(x,z);
     col.addBox(x,z,5.3,5.8,0,y,y+11);
   }
-  const fy=h(-10,56);col.addCircle(-10,56,3.1,fy,fy+5);
+  const {x:fx,z:fz,radius}=SNOW_FOUNTAIN,fy=h(fx,fz);col.addCircle(fx,fz,radius,fy,fy+5);
   for(const {x,z,s} of snowTrees()){const y=h(x,z);col.addCircle(x,z,.6*s,y,y+10*s);}
   for(let i=0;i<42;i++){
     const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;

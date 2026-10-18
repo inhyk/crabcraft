@@ -5,6 +5,7 @@ import type { Pool } from 'pg';
 import type { CoreCharacterCodec, IdentityJson, CheckpointJson, GrantJson } from '../../src/sim/persistence.ts';
 import { limit, localHost, originAllowed, resolveAccountSession } from '../node/accounts.ts';
 import { CharacterStore, CharacterStoreError, type Character } from './character-store.ts';
+import { nameAllowed } from '../chat/filter.ts';
 
 export interface CharacterHttpPolicy { maxCharactersPerAccount?: number }
 export interface CharacterHandlerOptions {
@@ -85,6 +86,7 @@ export function createCharacterHandler(options: CharacterHandlerOptions) {
       try {
         const selected = appearance as Record<string, unknown>;
         identity = codec.validateIdentity({ schema: 'world-identity-v1', classId: selected.classId, archetype: selected.race, appearance: selected });
+        if (!nameAllowed(identity.appearance.name)) throw new Error('identity');
       } catch { respond(400, { error: 'identity' }); return; }
       const created = await characters.createBounded(session.accountId, identity, maxCharacters!);
       respond(201, { character: summary(created) });
