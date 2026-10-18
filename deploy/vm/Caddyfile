@@ -26,6 +26,9 @@
 	handle /multiplayer {
 		reverse_proxy 127.0.0.1:{args[1]}
 	}
+	handle /world {
+		reverse_proxy 127.0.0.1:{args[1]}
+	}
 	handle /api/account/* {
 		reverse_proxy 127.0.0.1:{args[1]}
 	}

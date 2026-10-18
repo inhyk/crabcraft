@@ -23,4 +23,6 @@ const bundle = (entry, outfile) => build({
 await bundle('server/node/main.ts', 'main.mjs');
 await bundle('server/node/reports.mjs', 'reports.mjs');
 await cp(new URL('server/node/migrations/', root), new URL('migrations/', out), { recursive: true });
+// The real Area host loads the same four validated collision artifacts as the browser.
+await cp(new URL('public/world/', root), new URL('world/', out), { recursive: true });
 console.log('built server-dist/main.mjs and server-dist/reports.mjs');
