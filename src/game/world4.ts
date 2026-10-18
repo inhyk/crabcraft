@@ -7,6 +7,7 @@ import {islandPaths} from './islandPaths';
 import {SnowDeform} from './snowDeform';
 import {applySnowSurface,SnowFootfalls} from './snowSurface';
 import {crystalCluster,crystalGeometry,iceMaterial,type Crystal} from './iceCrystals';
+import {SnowSky} from './snowSky';
 import type {Unit} from './unit';
 
 /** Deterministic snow realm. Trees share instanced meshes; snowfall runs on the GPU. */
@@ -18,7 +19,9 @@ export class SnowIsland {
  readonly town:[number,number][]=[[-16,56],[16,56],[-16,38],[16,38],[-16,74],[16,80],[16,68]];
  readonly collision=layoutFrostlight();
  readonly portal=new StarPortal(this.spawn,'서리빛 설원 → 새벽 항구');
- private sun=new THREE.DirectionalLight('#bedcff',2.1);
+ private sun=new THREE.DirectionalLight();
+ /** SNOWFLOW's atmosphere: a low raking sun at polar twilight, so the aurora still reads. Sun, ambient, fog and ice all come from it. */
+ readonly sky=new SnowSky({azimuth:42,elevation:13,night:.55,exposure:.42});
  private snow:THREE.ShaderMaterial;
  private aurora:THREE.ShaderMaterial;
  /** Prints and berms the crabs leave in the snowfield (SNOWFLOW's deformation buffer). */
@@ -38,7 +41,7 @@ export class SnowIsland {
   const amber=new THREE.MeshStandardMaterial({color:'#ffdb8d',emissive:'#ff9b36',emissiveIntensity:1.8});
   const glow=new THREE.MeshStandardMaterial({color:'#c4ffff',emissive:'#52d8ff',emissiveIntensity:1.4,roughness:.25});
   // Grown ice (SNOWFLOW's crystal shape and shading). The seed fixes the formations for every player.
-  const {material:iceGlass,refresh:refreshIce}=iceMaterial({sun:this.sun});this.refreshIce=refreshIce;
+  const {material:iceGlass,refresh:refreshIce}=iceMaterial({sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.refreshIce=refreshIce;
   let seed=20261018;const rand=()=>(seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296;
   const iceMesh=(list:Crystal[],name:string)=>{const m=new THREE.Mesh(crystalGeometry(list),iceGlass);m.name=name;m.castShadow=true;this.root.add(m);return m;};
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
@@ -92,16 +95,17 @@ export class SnowIsland {
   const pillars:Crystal[]=[];
   for(let i=0;i<12;i++){const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=this.height(x,z);crystalCluster(x,y,z,8.6,2.6,3,rand,pillars);add(new THREE.OctahedronGeometry(.8),glow,x,y+8.5,z);}
   iceMesh(pillars,'frostlight-arena-crystals');
-  const sky=add(new THREE.SphereGeometry(850,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;void main(){float h=max(0.,normalize(v).y);gl_FragColor=vec4(mix(vec3(.32,.49,.65),vec3(.015,.045,.13),smoothstep(0.,.6,h)),1.);}'}),0,0,0);sky.renderOrder=-100;sky.castShadow=false;
-  this.aurora=new THREE.ShaderMaterial({side:THREE.DoubleSide,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{time:{value:0}},vertexShader:'varying vec2 v;uniform float time;void main(){v=uv;vec3 p=position;p.z+=sin(p.x*.025+time*.15)*20.;gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);}',fragmentShader:'varying vec2 v;uniform float time;void main(){float rays=.5+.5*sin(v.x*75.+sin(v.x*12.+time*.2)*3.);float a=sin(v.y*3.14159)*(.1+.22*rays);gl_FragColor=vec4(mix(vec3(.1,.95,.65),vec3(.35,.32,.9),v.y),a);}'});
+  this.root.add(this.sky.mesh);
+  // The scattered sky behind the aurora is brighter than the old gradient was, so the curtain glows 1.7x to keep reading.
+  this.aurora=new THREE.ShaderMaterial({side:THREE.DoubleSide,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{time:{value:0}},vertexShader:'varying vec2 v;uniform float time;void main(){v=uv;vec3 p=position;p.z+=sin(p.x*.025+time*.15)*20.;gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);}',fragmentShader:'varying vec2 v;uniform float time;void main(){float rays=.5+.5*sin(v.x*75.+sin(v.x*12.+time*.2)*3.);float a=sin(v.y*3.14159)*(.1+.22*rays);gl_FragColor=vec4(mix(vec3(.1,.95,.65),vec3(.35,.32,.9),v.y)*1.7,a);}'});
   add(new THREE.PlaneGeometry(650,90,64,1),this.aurora,0,135,-270).castShadow=false;
   const flakes=new THREE.BufferGeometry(),fp=new Float32Array(1800*3);for(let i=0;i<1800;i++)fp.set([Math.sin(i*127.1)*60,Math.sin(i*311.7)*30,Math.sin(i*74.7)*60],i*3);flakes.setAttribute('position',new THREE.BufferAttribute(fp,3));
   this.snow=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{time:{value:0},origin:{value:new THREE.Vector3()}},vertexShader:'uniform float time;uniform vec3 origin;void main(){vec3 p=position;p.x+=sin(time*.2+position.z)*1.6;p.y=mod(position.y-time*1.6+60.,60.)-15.;p+=origin;vec4 mv=modelViewMatrix*vec4(p,1.);gl_PointSize=clamp(65./max(1.,-mv.z),1.2,4.);gl_Position=projectionMatrix*mv;}',fragmentShader:'void main(){float a=1.-smoothstep(.2,.5,length(gl_PointCoord-.5));gl_FragColor=vec4(.9,.97,1.,a*.75);}'});
-  const fall=new THREE.Points(flakes,this.snow);fall.frustumCulled=false;fall.name='gpu-snowfall';this.root.add(fall,this.portal.root,new THREE.HemisphereLight('#d2eaff','#35506d',1.4));
-  this.sun.position.set(40,85,45);this.root.add(this.sun,this.sun.target);
+  const fall=new THREE.Points(flakes,this.snow);fall.frustumCulled=false;fall.name='gpu-snowfall';this.root.add(fall,this.portal.root,new THREE.HemisphereLight(this.sky.hemiSky,this.sky.hemiGround,1));
+  this.sky.attachSun(this.sun);this.root.add(this.sun,this.sun.target);
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
  updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z);this.deform.step(renderer,dt,x,z,quality);this.refreshSnow();this.refreshIce();}
  disposeSnow(){this.deform.dispose();}
- update(time:number,x:number,z:number,rescued=false){this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;}
+ update(time:number,x:number,z:number,rescued=false){this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
 }
