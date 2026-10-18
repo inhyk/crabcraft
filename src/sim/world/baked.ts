@@ -2,16 +2,16 @@
 // tools/bake-collision.mjs and loaded here by the server and the browser alike. Loading rebuilds the
 // same Collision the browser builds from its layout, so queries agree to the last bit.
 import { Collision, type Shape, type SurfaceSpec, surfaceFromSpec, type Vec2Out, type Vec3Like } from './collision.ts';
-import { dawnHeight, snowHeight, gridHeight, STAR_GRID, starSurfaceHeight } from './ground.ts';
+import { realmHeight, dawnHeight, snowHeight, gridHeight, STAR_GRID, starSurfaceHeight } from './ground.ts';
 import { type IslandBounds, type PushCircle, resolveOnIsland } from './queries.ts';
 
-export type WorldId = 'w1' | 'w2' | 'w3' | 'w4';
+export type WorldId = 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6';
 
 /** Ground height: World I's terrain triangles, World II's height samples, World III's formula. */
 export type BakedGround =
   | { kind: 'grid'; minX: number; minZ: number; step: number; nx: number; nz: number; h: string }
   | { kind: 'star'; h: string }
-  | { kind: 'dawn' } | { kind: 'snow' };
+  | { kind: 'dawn' } | { kind: 'snow' } | {kind:'frontier';chapter:5|6};
 
 export interface BakedCollision {
   format: 'crabcraft-collision';
@@ -91,7 +91,7 @@ export function base64ToBits(s: string, n: number): Uint8Array {
 export interface BakeOptions {
   world: WorldId;
   source: string;
-  ground: { kind: 'grid'; minX: number; minZ: number; step: number; nx: number; nz: number; h: Float32Array } | { kind: 'star'; h: Float32Array } | { kind: 'dawn' } | { kind: 'snow' };
+  ground: { kind: 'grid'; minX: number; minZ: number; step: number; nx: number; nz: number; h: Float32Array } | { kind: 'star'; h: Float32Array } | { kind: 'dawn' } | { kind: 'snow' } | {kind:'frontier';chapter:5|6};
   heightAt: 'collision' | 'ground';
   bounds?: IslandBounds | null;
   push?: readonly PushCircle[];
@@ -105,7 +105,7 @@ export function bakeCollision(col: Collision, o: BakeOptions): BakedCollision {
     version: 1,
     world: o.world,
     source: o.source,
-    ground: g.kind === 'grid' ? { ...g, h: floatsToBase64(g.h) } : g.kind === 'star' ? { kind: 'star', h: floatsToBase64(g.h) } : { kind: g.kind },
+    ground: g.kind === 'grid' ? { ...g, h: floatsToBase64(g.h) } : g.kind === 'star' ? { kind: 'star', h: floatsToBase64(g.h) } : g.kind==='frontier'?{kind:'frontier',chapter:g.chapter}:{ kind: g.kind },
     heightAt: o.heightAt,
     cells: { minX: t.minX, minZ: t.minZ, step: t.step, nx: t.nx, nz: t.nz, blocked: col.blocked.some((b) => b) ? bitsToBase64(col.blocked) : null },
     bounds: o.bounds ?? null,
@@ -128,6 +128,7 @@ export function groundOf(g: BakedGround): (x: number, z: number) => number {
     return (x, z) => starSurfaceHeight(h, x, z);
   }
   if (g.kind === 'dawn') return dawnHeight;
+  if (g.kind === 'frontier') return (x:number,z:number)=>realmHeight(g.chapter,x,z);
   if (g.kind === 'snow') return snowHeight;
   throw new Error(`unknown baked ground kind: ${String((g as {kind: string}).kind)}`);
 }

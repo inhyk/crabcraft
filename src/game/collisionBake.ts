@@ -1,3 +1,4 @@
+import {layoutFrontier,FRONTIER_BOUNDS} from './realmLayout';
 // Entry for tools/bake-collision.mjs (bundled for Node): every world's colliders from their layout
 // functions, the same calls the browser makes, baked to numbers for the server.
 import type { Vec2Out, Vec3Like } from '../sim/world/collision';
@@ -24,8 +25,10 @@ export function layoutWorlds(natureNames: readonly string[], quality: 'low' | 'h
   const w2 = layoutStarhaven(starHeight, natureNames);
   const w3 = layoutDawnreach();
   const w4 = layoutFrostlight();
+  const frontier=(chapter:5|6)=>{const col=layoutFrontier(chapter);return {col,ground:{kind:'frontier' as const,chapter},heightAt:(x:number,z:number)=>col.terrain.heightAt(x,z),resolveCollision:<T extends Vec2Out>(x:number,z:number,r:number,out:T)=>resolveOnIsland(col,FRONTIER_BOUNDS,[],x,z,r,out),raycastSolid:(from:Vec3Like,to:Vec3Like)=>col.raycast(from,to)};};
   const ray = (col: typeof w1) => (from: Vec3Like, to: Vec3Like) => col.raycast(from, to);
   return {
+    w5:frontier(5),w6:frontier(6),
     w1: {
       col: w1,
       ground: { kind: 'grid' as const, minX: terrain.minX, minZ: terrain.minZ, step: terrain.step, nx: terrain.nx, nz: terrain.nz, h: terrain.h },
@@ -58,9 +61,11 @@ export function layoutWorlds(natureNames: readonly string[], quality: 'low' | 'h
   };
 }
 
-export function bakeWorlds(natureNames: readonly string[], source: string, quality: 'low' | 'high' = 'high'): Record<'w1' | 'w2' | 'w3' | 'w4', BakedCollision> {
+export function bakeWorlds(natureNames: readonly string[], source: string, quality: 'low' | 'high' = 'high'): Record<'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6', BakedCollision> {
   const l = layoutWorlds(natureNames, quality);
   return {
+    w5:bakeCollision(l.w5.col,{world:'w5',source,heightAt:'ground',ground:l.w5.ground,bounds:FRONTIER_BOUNDS}),
+    w6:bakeCollision(l.w6.col,{world:'w6',source,heightAt:'ground',ground:l.w6.ground,bounds:FRONTIER_BOUNDS}),
     w1: bakeCollision(l.w1.col, { world: 'w1', source, heightAt: 'collision', ground: l.w1.ground }),
     w2: bakeCollision(l.w2.col, { world: 'w2', source, heightAt: 'ground', ground: l.w2.ground, bounds: STAR_BOUNDS, push: l.w2.obstacles }),
     w4: bakeCollision(l.w4.col, { world: 'w4', source, heightAt: 'ground', ground: l.w4.ground, bounds: SNOW_BOUNDS }),
