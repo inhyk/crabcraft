@@ -8,8 +8,9 @@ import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import { createArea } from '../../src/sim/area.ts';
 import { InMemoryCharacterRegistry, InMemoryTransferCoordinator } from '../../src/sim/transfer.ts';
 import { prepareRestore, type CoreCharacterCodec, type IdentityJson, type CheckpointJson, type GrantJson, type RestorePolicy } from '../../src/sim/persistence.ts';
-import type { Area, AreaSnapshot, BossProfileId, EntityRef, EventRecord, PlayerCommand, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
+import type { Area, AreaSnapshot, BossProfileId, EntityRef, GrantReadToken, EventRecord, PlayerCommand, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { canChallenge } from '../../src/sim/data/progression.ts';
+import type { LedgerMode } from '../../src/sim/ledger.ts';
 import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { TREASURES, LIGHTHOUSE_SECRET } from '../../src/sim/features/exploration.ts';
 import { CharacterStore, CharacterStoreError, type Character, type VictimOutcomeResources, type GrantBatchEntry } from './character-store.ts';
@@ -75,7 +76,7 @@ export interface ActualWorldHost {
   shutdown(deadlineMs: number): Promise<{ durable: boolean; unresolved: number }>;
   stats(): Readonly<Record<string, number | boolean>>;
 }
-interface Slot { kind: 'public' | 'party'; world: WorldId; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
+interface Slot { kind: 'public' | 'party'; ledgerMode: LedgerMode; world: WorldId; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
 interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; pendingReplay: boolean; returnTo?: { world: WorldId; spawn: string } }
 interface Party { code: string; leader: string; members: Map<string, string>; pvp: boolean; encounter?: Slot }
 interface Connection {
@@ -131,6 +132,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   let admissionRequested = true; let accepting = true; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
   let victimResources = { ...p.victimOutcome };
   let pausedDurability: { run: () => Promise<void>; ownership: HostOwnership } | null = null;
+  let grantProofsActive = false;
   let generation = 1; let unresolved = 0; let pendingChat = 0;
   const chatTargets = new Map<string, { participant: ChatParticipant; expires: number }>();
   const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
@@ -152,10 +154,12 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (!loaded || loaded.world !== world || loaded.publicDefinition.bosses.length) throw new Error(`missing safe public world: ${world}`);
     if (loaded.publicDefinition.enemies.length > p.maxMutationSourcesPerTick) throw new Error('population exceeds bounded checkpoint receipts');
     const now = deps.nowMonotonicMs();
-    const area = createArea({ id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
+    // Source summary/spill is not ready: no configuration surface can select external mode here.
+    const ledgerMode: LedgerMode = 'retained';
+    const area = createArea({ ledgerMode, id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
       actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed, characters: registry,
       context: { mode: 'public', pvp: 'disabled', members: [] }, limits: p.areaLimits });
-    const slot: Slot = { kind: 'public', world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
+    const slot: Slot = { kind: 'public', ledgerMode, world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
     slots.set(world, slot); allSlots.add(slot);
   }
   const enqueue = (fn: () => void) => {
@@ -319,6 +323,12 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   }
   function failClosed() {
     accepting = false; frozen = true;
+    if (grantProofsActive) {
+      grantProofsActive = false;
+      for (const actor of actors.values()) if (actor.slot.ledgerMode === 'external-durable') {
+        try { actor.slot.area.invalidateGrantRead(actor.ref); } catch (error) { deps.onFailure?.('ledger-invalidate', error); }
+      }
+    }
     for (const c of connections) close(c, 'host-unavailable', true);
   }
   const drain = (slot: Slot) => {
@@ -360,7 +370,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const checkpoint = deps.codec.toCore(request.record.checkpoint);
       const offline = p.offlineSeconds(request.record, deps.nowWallMs());
       if (!Number.isFinite(offline) || offline < 0) throw new Error('invalid offline interval');
-      stage = slot.area.stageRestoredArrival(admission, checkpoint, prepareRestore(checkpoint, offline, p.restore));
+      stage = slot.area.stageRestoredArrival(admission, checkpoint, prepareRestore(checkpoint, offline, p.restore), { revision: request.record.revision });
       if (!registry.compareAndSwap(request.record.characterId, null, stage.newRef)) throw new Error('character ownership conflict');
       const ref = slot.area.activateRestoredArrival(stage.token); slot.area.releaseAdmission(admission.token);
       const actor: Actor = { record: request.record, slot, ref, connection: null, detachedAt: null, generation: generation++, pendingReplay: true };
@@ -448,10 +458,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!destination) {
         if ([...allSlots].filter(s => s.kind === 'party').length >= p.party.maxEncounters) { controlError(c, 'encounter-capacity'); continue; }
         const loaded = deps.worlds.get(source.world)!, now = deps.nowMonotonicMs();
-        const area = createArea({ id: `party:${randomUUID()}`, definition, query: loaded.query, actionData: loaded.actionData,
+        const area = createArea({ ledgerMode: source.ledgerMode, id: `party:${randomUUID()}`, definition, query: loaded.query, actionData: loaded.actionData,
           policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'party-encounter', pvp: party.pvp ? 'party-only' : 'disabled', members: [] }, limits: p.areaLimits });
         area.bootstrapEncounter(profile, { beaconLit: beacon });
-        destination = { kind: 'party', world: source.world, area, party, profile, tick: new DeadlineScheduler(30, now),
+        destination = { kind: 'party', ledgerMode: source.ledgerMode, world: source.world, area, party, profile, tick: new DeadlineScheduler(30, now),
           snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
         party.encounter = destination; allSlots.add(destination);
       }
@@ -497,7 +507,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   function restoreDurableActor(actor: Actor, recovery: Recovery<IdentityJson, CheckpointJson, GrantJson>) {
     deps.ownership.assertOwned();
     const checkpoint = deps.codec.toCore(recovery.character.checkpoint), restored = prepareRestore(checkpoint, 0, p.restore);
-    const ref = actor.slot.area.restorePlayerCheckpoint(actor.ref, checkpoint, restored, recovery.grants.filter(grant => grant.appliedRevision !== null).map(grant => grant.id));
+    const ref = actor.slot.area.restorePlayerCheckpoint(actor.ref, checkpoint, restored, recovery.grants.filter(grant => grant.appliedRevision !== null).map(grant => grant.id), recovery.character.revision);
     actor.ref = ref; actor.record = recovery.character; actor.generation = generation++; actor.pendingReplay = true;
     if (actor.connection) bootstrap(actor.connection, actor);
   }
@@ -533,10 +543,14 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           return [...actors.values()].map(actor => {
             const room = 256 - actor.slot.area.appliedGrantIds(actor.record.characterId).length;
             if (room < 0) throw new Error('checkpoint receipt capacity');
-            const connection = actor.connection;
-            return { actor, ownerGeneration: actor.generation, slot: actor.slot, ref: { ...actor.ref },
-              revision: actor.record.revision, connection, connectionGeneration: connection?.generation, session: connection?.stream?.session,
-              limit: Math.min(100, room) };
+            const connection = actor.connection, limit = Math.min(100, room);
+            let token: GrantReadToken | null = null;
+            if (limit && actor.slot.ledgerMode === 'external-durable') {
+              actor.slot.area.bindDurableLedger(actor.ref, actor.record.revision);
+              token = actor.slot.area.beginGrantRead(actor.ref, actor.record.revision); grantProofsActive = true;
+            }
+            return { actor, ownerGeneration: actor.generation, slot: actor.slot, ref: { ...actor.ref }, token,
+              revision: actor.record.revision, connection, connectionGeneration: connection?.generation, session: connection?.stream?.session, limit };
           });
         });
         const pages = await Promise.all(leases.map(async lease => ({ lease, result: lease.limit ? await readCertifiedGrantPage(deps.characters, deps.ownership, {
@@ -548,13 +562,19 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
             const actor = lease.actor, connection = actor.connection;
             const current = actors.get(actor.record.characterId) === actor && actor.generation === lease.ownerGeneration && actor.slot === lease.slot &&
               sameRef(actor.ref, lease.ref) && actor.record.revision === lease.revision && connection === lease.connection && connection?.generation === lease.connectionGeneration && connection?.stream?.session === lease.session;
-            if (!current) { actor.pendingReplay = true; retry = true; continue; }
+            if (!current) { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); actor.pendingReplay = true; retry = true; continue; }
             if (!result) { actor.pendingReplay = true; continue; }
-            if (result.kind === 'unresolved') throw new Error('journal certification unresolved: ' + result.reason);
-            if (result.kind === 'recovery') { metrics.recoveries++; restoreDurableActor(actor, result.recovery); retry = true; continue; }
-            for (const grant of result.grants) actor.slot.area.receiveGrant(deps.codec.grantFromJson(grant.payload));
+            if (result.kind === 'unresolved') { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); throw new Error('journal certification unresolved: ' + result.reason); }
+            if (result.kind === 'recovery') { if (lease.token) lease.slot.area.cancelGrantRead(lease.token); metrics.recoveries++; restoreDurableActor(actor, result.recovery); retry = true; continue; }
+            const grants = result.grants.map(grant => deps.codec.grantFromJson(grant.payload));
+            if (lease.token) actor.slot.area.applyCertifiedGrants(lease.token, { revision: result.revision, grants });
+            else {
+              if (actor.slot.ledgerMode !== 'retained') throw new Error('external grant delivery requires an Area proof');
+              for (const grant of grants) actor.slot.area.receiveGrant(grant);
+            }
             actor.pendingReplay = result.more;
           }
+          grantProofsActive = false;
           for (const slot of allSlots) drain(slot);
           return retry;
         });
