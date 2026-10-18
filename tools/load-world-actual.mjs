@@ -80,7 +80,7 @@ async function worker() {
       if (!stopping && bot.ws === ws) setTimeout(() => { bot.m.reconnects++; connectOnce(bot).catch(e => count(bot.m.controlErrors, 'reconnect:' + e.message.slice(0, 50))); }, 300); });
     ws.on('error', e => count(bot.m.controlErrors, 'ws:' + e.message.slice(0, 40)));
     await new Promise((res, rej) => { ws.once('open', res); ws.once('error', rej); });
-    ws.send(JSON.stringify({ type: 'authenticate', ticket, characterId: bot.characterId }));
+    ws.send(JSON.stringify({ type: 'authenticate', ticket, characterId: bot.characterId, ...(opts.catalog.wireSchemaRevision === undefined ? {} : { schemaRevision: opts.catalog.wireSchemaRevision }) }));
     const end = Date.now() + 20000;
     while (!bot.view) { if (Date.now() > end || ws.readyState !== WebSocket.OPEN) throw new Error(`bot ${bot.i} not admitted: ${JSON.stringify(bot.m.controlErrors)} close=${bot.closeCode}`); await delay(20); }
   }
