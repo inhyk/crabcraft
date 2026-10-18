@@ -10,7 +10,7 @@ const key=(ref:EntityRef):string=>JSON.stringify([ref.area,ref.id,ref.life]);
 const copy=<T>(value:T):T=>structuredClone(value);
 interface Credit { character:CharacterId; cogEligible:boolean; cogMisses:number; flags:Record<string,boolean> }
 interface VictimCredit {victim:EntityRef;contributors:Map<CharacterId,Credit>}
-const FLAGS:Readonly<Record<BossSim['profile'],string>>=Object.freeze({rust:'rustCleared',abyss:'abyssCleared',eclipse:'trueCleared',dawn:'finalCleared',frost:'frostCleared'});
+const FLAGS:Readonly<Record<BossSim['profile'],string>>=Object.freeze({rust:'rustCleared',abyss:'abyssCleared',eclipse:'trueCleared',dawn:'finalCleared',frost:'frostCleared',ember:'emberCleared',sky:'skyCleared'});
 /** Lifetime contribution ownership and synchronous real progression. No visual callback grants. */
 export class WorldRules {
  readonly services:AreaServices;
@@ -39,7 +39,7 @@ export class WorldRules {
     if(u.kind==='scrapling'){objectives.push({kind:'kill-scrapling',amount:1});if(credit.cogEligible)objectives.push({kind:'cog-roll',amount:s.random.next()});}
     else if(u.kind==='scavenger')objectives.push({kind:'kill-scavenger',amount:1});
    }else if(u.kind==='boss'){
-    const controller=s.controller(victim),profile=controller&&'profile' in controller?controller.profile:null;if(typeof profile!=='string'||!(profile in BOSS_PROFILES))continue;const id=profile as BossSim['profile'];xp=BOSS_PROFILES[id].reward;coins=BOSS_PROFILES[id].coins;flags.push(FLAGS[id]);if(id==='eclipse'||id==='dawn')objectives.push({kind:'boss-xp-blessing',amount:1});if(id!=='abyss')objectives.push({kind:id==='eclipse'?'eclipse-boss':id==='dawn'?'dawn-boss':id==='frost'?'frost-boss':'boss',amount:1});objectives.push({kind:'clear-encounter-blessing',amount:1});
+    const controller=s.controller(victim),profile=controller&&'profile' in controller?controller.profile:null;if(typeof profile!=='string'||!(profile in BOSS_PROFILES))continue;const id=profile as BossSim['profile'];xp=BOSS_PROFILES[id].reward;coins=BOSS_PROFILES[id].coins;flags.push(FLAGS[id]);if(id==='eclipse'||id==='dawn')objectives.push({kind:'boss-xp-blessing',amount:1});if(id!=='abyss')objectives.push({kind:id==='eclipse'?'eclipse-boss':id==='dawn'?'dawn-boss':id==='frost'?'frost-boss':id==='ember'?'ember-boss':id==='sky'?'sky-boss':'boss',amount:1});objectives.push({kind:'clear-encounter-blessing',amount:1});
    }else continue;
    const grant:EarnedGrant={id:JSON.stringify([victim.area,victim.id,victim.life,credit.character]),victim:copy(victim),recipient:credit.character,xp,coins,objectives,flags};
    planned.push(grant);this.grants.set(grant.id,{grant:copy(grant),appliedHere:false,acknowledged:false});characters.push(credit.character);

@@ -87,3 +87,15 @@ test('only the exact released25 and35 v1 catalogs upgrade atomically to59 withou
  for(const count of[25,35]){const legacy=releasedCatalog(freshCheckpoint(context(),spawn),count),added=count===25?'s3':'r5q1',objective=count===25?'s3-1':'r5q1-a',chapter=count===25?4:5;for(const mutate of[c=>delete c.progress.quests.status.q1,c=>c.progress.quests.status.unknown='locked',c=>c.progress.quests.status[added]='locked',c=>c.progress.quests.progress[objective]=1,c=>c.progress.quests.tracked[chapter]=added,c=>{c.world='w5';c.progress.quests.chapter=5;}]){const bad=structuredClone(legacy);mutate(bad);assert.throws(()=>validateCheckpoint(bad),/quests/);}}
  const partial=structuredClone(freshCheckpoint(context(),spawn));delete partial.progress.quests.status.r6q12;assert.throws(()=>validateCheckpoint(partial),/quests.status/);
 });
+
+test('canonical Ember/Sky outcome grants survive strict persistence while nonreward flags and existing payload overflow reject',async()=>{
+ const {xpForLevel}=await import('../src/sim/data/progression.ts');
+ for(const [world,profile,level,xp,coins,flag,objective]of [['w5','ember',500,350000,30000,'emberCleared','ember-boss'],['w6','sky',750,600000,50000,'skyCleared','sky-boss']]){
+  const area=worldArea(`persist-${profile}`,world),actor=addActor(area,context().characterId),boss=area.services.bossByProfile(profile);actor.p.gainXp(xpForLevel(level));actor.p.state.flags.abyssCleared=true;boss.wake();for(let i=0;i<74;i++)area.step(new Map());
+  area.services.combat.damage(actor.p.state.unit,boss.unit,area.services.getUnit(boss.unit).hp);const grant=area.pendingGrants().find(x=>x.grant.victim.id===boss.unit.id).grant;
+  assert.equal(grant.xp,xp);assert.equal(grant.coins,coins);assert.deepEqual(grant.flags,[flag]);assert(grant.objectives.some(o=>o.kind===objective&&o.amount===1));assert.deepEqual(validateEarnedGrant(grant,actor.p.state.character),grant);assert.deepEqual(codec().grantFromJson(codec().grantToJson(grant),context()),grant);
+  for(const invalid of ['beaconLit','firstEndingSeen','frostEndingStarted','futureCleared'])assert.throws(()=>validateEarnedGrant({...grant,flags:[invalid]}),/grant.flag/);
+  assert.throws(()=>validateEarnedGrant({...grant,flags:[flag,flag]}),/grant.flags/);
+  assert.throws(()=>validateEarnedGrant({...grant,flags:['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared','emberCleared']}),/grant.payload/);
+ }
+});

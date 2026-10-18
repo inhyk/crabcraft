@@ -18,6 +18,8 @@ import type { GameplayCatalog } from './gameplay/protocol.ts';
 
 export const PUBLIC_WORLDS = Object.freeze(['w1', 'w2', 'w3', 'w4'] as const);
 export type HostedWorldId = typeof PUBLIC_WORLDS[number];
+export const HOSTED_BOSSES = Object.freeze(['rust', 'abyss', 'eclipse', 'dawn', 'frost'] as const);
+export type HostedBossProfileId = typeof HOSTED_BOSSES[number];
 export interface WorldVariants {
   readonly publicDefinition: AreaDefinition;
   readonly encounterDefinitions: ReadonlyMap<BossProfileId, AreaDefinition>;
@@ -69,7 +71,7 @@ export async function loadWorldCatalog(options: WorldCatalogOptions): Promise<Re
     const variants = options.variants(world, definition);
     if (variants.publicDefinition.world !== world || variants.publicDefinition.bosses.length) throw new Error(`public world contains story bosses: ${world}`);
     for (const [profile, encounter] of variants.encounterDefinitions) {
-      if (encounter.world !== world || encounter.bosses.length !== 1 || encounter.bosses[0].profile !== profile) throw new Error(`invalid encounter definition: ${world}`);
+      if (!HOSTED_BOSSES.some(id => id === profile) || encounter.world !== world || encounter.bosses.length !== 1 || encounter.bosses[0].profile !== profile) throw new Error(`invalid encounter definition: ${world}`);
     }
     worlds.set(world, Object.freeze({ ...variants, world, query, actionData: realActionData,
       policy: options.policies[world], seed, bakeSource: data.source, artifactHash: createHash('sha256').update(bytes).digest('hex') }));

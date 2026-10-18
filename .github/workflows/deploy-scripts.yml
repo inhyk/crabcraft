@@ -18,3 +18,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: bash deploy/vm/activate.test.sh
+      - run: bash deploy/vm/world-env.test.sh

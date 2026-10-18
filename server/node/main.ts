@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { isIP } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { attachRooms } from '../rooms.ts';
 import { accountHandler, createWorldAdmission, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, originAllowed } from './accounts.ts';
@@ -6,10 +7,12 @@ import { createPool, migrate } from './db.ts';
 import { storeReport } from './reports.ts';
 import { createCharacterHandler } from '../world/characters-http.ts';
 import { WorldConfigError, describeWorldStartupFailure } from '../world/startup-error.ts';
+import { monitorHandler } from './monitor.ts';
 
 // Rooms and accounts for the browser client: what server/cloudflare/worker.ts served, on one VM behind Caddy.
 // Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy,
-// GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for sign-in (GOOGLE_AUTH_URL and GOOGLE_TOKEN_URL override Google's endpoints in tests).
+// GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for sign-in (GOOGLE_AUTH_URL and GOOGLE_TOKEN_URL override Google's endpoints in tests),
+// MONITOR_ACCOUNTS and MONITOR_IPS for /monitor (docs/features/developer-monitor.md).
 const env = process.env;
 const port = Number(env.PORT || 8080), host = env.HOST || '127.0.0.1';
 const origins = (env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
@@ -87,6 +90,7 @@ const server = createServer((req, res) => {
     void worldCharacters(req, res); return;
   }
   if (stopping && path === '/api/account/world-ticket') { text(res, 503, 'Server restarting'); return; }
+  if (path === '/api/account/monitor') { void monitor(req, res); return; }
   if (path.startsWith('/api/account/')) { void accounts(req, res); return; }
   if (path === '/healthz') { void healthy().then(ok => text(res, ok ? 200 : 503, ok ? 'ok\n' : 'database unavailable\n')); return; }
   if (path === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, game: 'crabcraft-multiplayer' })); return; }
@@ -106,6 +110,8 @@ const relay = attachRooms(server, {
   // Read with server-dist/reports.mjs on the VM.
   report: r => storeReport(pool, r),
 });
+const monitor = monitorHandler(pool, new Set((env.MONITOR_ACCOUNTS ?? '').split(',').map(s => s.trim()).filter(s => /^g[a-f0-9]{23}$/.test(s))), relay.monitorSnapshot,
+  new Set((env.MONITOR_IPS ?? '').split(',').map(s => s.trim()).filter(s => isIP(s))), clientIp);
 // Each upgrade has exactly one route owner; the legacy relay ignores /world.
 server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
   const path = req.url?.split('?')[0];

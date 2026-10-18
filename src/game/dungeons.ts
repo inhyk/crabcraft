@@ -58,7 +58,7 @@ export class DungeonExpeditions {
       const tier=document.createElement('strong');tier.textContent=`Lv.${d.level} ${this.cleared.includes(d.level)?'✓':''}`;
       const name=document.createElement('h3');name.textContent=label(d);
       const desc=document.createElement('p');desc.textContent=t(d.subtitle[0],d.subtitle[1]);
-      const reward=document.createElement('small');reward.textContent=`${t(d.chapter===3?'3월드':'눈 월드',d.chapter===3?'World III':'Frostlight')} · ${d.coins.toLocaleString()} ${t('코인','coins')} · ${d.xp.toLocaleString()} XP`;
+      const reward=document.createElement('small');reward.textContent=`${t(d.chapter===3?'3월드':d.chapter===4?'눈 월드':d.chapter===5?'잿불 군도':'하늘숲',d.chapter===3?'World III':d.chapter===4?'Frostlight':d.chapter===5?'Emberreach':'Skybloom')} · ${d.coins.toLocaleString()} ${t('코인','coins')} · ${d.xp.toLocaleString()} XP`;
       const enter=button(this.active?t('원정 진행 중','Expedition active'):this.g.player.level<d.level?t(`${d.level}레벨 필요`,`Level ${d.level} required`):t('도전하기 →','Enter →'),()=>this.start(d.level));
       enter.disabled=this.active||this.g.player.level<d.level;card.append(tier,name,desc,reward,enter);cards.append(card);
     }
@@ -69,7 +69,7 @@ export class DungeonExpeditions {
     const g=this.g,d=dungeonFor(level),b=g.multiplayer?.battle;
     if(!d||this.active)return false;
     if(g.player.level<level){this.info(`${level}레벨부터 들어갈 수 있어요.`,`Reach level ${level} to enter.`);return false;}
-    if(g.world2.chapter!==d.chapter){this.info(`${d.chapter===3?'3월드':'눈 월드'}에서 던전 메뉴를 열어 주세요.`,`Open the dungeon menu in ${d.chapter===3?'World III':'Frostlight'}.`);return false;}
+    if(g.world2.chapter!==d.chapter){this.info(`${d.chapter===3?'3월드':d.chapter===4?'눈 월드':d.chapter===5?'잿불 군도':'하늘숲'}에서 던전 메뉴를 열어 주세요.`,`Open the dungeon menu in ${d.chapter===3?'World III':d.chapter===4?'Frostlight':d.chapter===5?'Emberreach':'Skybloom'}.`);return false;}
     if(g.player.inCombat||g.encounter.engaged||g.ending.active||g.boats?.seated||g.villageGames?.playing){this.info('전투와 다른 활동을 마친 뒤 입장해 주세요.','Finish combat and other activities before entering.');return false;}
     if(b?.active&&!b.sharedArea&&!b.authority){this.info('방장이 던전을 골라요.','The host chooses the dungeon.');return false;}
     if(!b?.sharedArea&&g.combatPlayers().some(p=>p.level<level)){this.info(`친구들도 ${level}레벨 이상이어야 해요.`,`All friends must be level ${level} or higher.`);return false;}
@@ -168,7 +168,7 @@ export class DungeonExpeditions {
   private disposeTree(group:THREE.Group){group.traverse(o=>{if(o instanceof THREE.Mesh){if(o instanceof THREE.InstancedMesh)o.dispose();o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});group.clear();}
   private build(d:DungeonConfig){
     this.root.remove(this.warning);this.disposeTree(this.root);this.root.add(this.warning);
-    const stone=new THREE.MeshStandardMaterial({color:d.chapter===4?0x253f56:0x343044,roughness:.82,metalness:.25});
+    const stone=new THREE.MeshStandardMaterial({color:d.chapter===6?0x234b42:d.chapter===5?0x49312c:d.chapter===4?0x253f56:0x343044,roughness:.82,metalness:.25});
     const trim=new THREE.MeshStandardMaterial({color:d.color,emissive:d.color,emissiveIntensity:.5,metalness:.65,roughness:.3});
     const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat.clone());m.position.set(X+x,Y+y,Z+z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
     const shellMaterial=new THREE.MeshBasicMaterial({color:new THREE.Color(d.color).multiplyScalar(.075),side:THREE.BackSide});
@@ -178,7 +178,7 @@ export class DungeonExpeditions {
     const cells:[number,number][]=[];
     for(let x=-7;x<=7;x++)for(let z=-7;z<=7;z++)if(Math.hypot(x*2.35,z*2.35)<R-1.7)cells.push([x,z]);
     const paving=new THREE.InstancedMesh(new THREE.BoxGeometry(2.28,.05,2.28),stone.clone(),cells.length),matrix=new THREE.Matrix4();
-    for(const [i,[x,z]]of cells.entries()){matrix.makeTranslation(X+x*2.35,Y,Z+z*2.35);paving.setMatrixAt(i,matrix);paving.setColorAt(i,new THREE.Color().setHSL(d.chapter===4?.57:.7,.12,.65+((x*17+z*13+1234)%7)*.025));}
+    for(const [i,[x,z]]of cells.entries()){matrix.makeTranslation(X+x*2.35,Y,Z+z*2.35);paving.setMatrixAt(i,matrix);paving.setColorAt(i,new THREE.Color().setHSL(d.chapter===6?.42:d.chapter===5?.06:d.chapter===4?.57:.7,.12,.65+((x*17+z*13+1234)%7)*.025));}
     paving.receiveShadow=true;this.root.add(paving);
     // Luminous radial inlays stay above the paving, with intentional grout between slabs.
     for(let i=0;i<12;i++){const a=i*Math.PI/6;const m=add(new THREE.BoxGeometry(.08,.035,R-1),trim,Math.sin(a)*(R-1)/2,.04,Math.cos(a)*(R-1)/2);m.rotation.y=a;}
