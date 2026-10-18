@@ -37,7 +37,8 @@ test('ticket POST, first auth frame and real Area baseline establish v3 without 
     assert.equal(socket.url, 'wss://game.example/world'); assert.equal(socket.binaryType, 'arraybuffer');
     assert.deepEqual(JSON.parse(socket.sent[0]), { type: 'authenticate', ticket: 'one-use-ticket', characterId: 'owned-character' });
     assert.equal(f.client.state, 'admitted');
-    assert.deepEqual(f.client.view.actors[0].pose, f.world.actors[0].u.pose);
+    for (const key of ['appliedQ', 'appliedPosition', 'appliedRotation', 'localVx', 'localVz']) assert.deepEqual(f.client.view.actors[0].pose[key], f.world.actors[0].u.pose[key]);
+    assert.deepEqual(Object.keys(f.client.view.actors[0].pose).sort(), ['appliedQ', 'appliedPosition', 'appliedRotation', 'localVx', 'localVz'].sort());
     assert.deepEqual(f.client.view.actors[0].appearance, f.world.observation().appearances[`${f.world.actors[0].ref.id}:1`]);
     assert.equal(f.client.command({ kind: 'ability', slot: 6 }), false);
   } finally { f.client.dispose(); }
@@ -172,5 +173,46 @@ test('queue and network backpressure are bounded and do not silently discard acc
     assert.equal(f.client.command({ kind: 'jump' }), false); assert.equal(f.client.inputWatermarks.pending, 128);
     f.client.pump(100); assert.equal(decodeInput(socket.sent.at(-1), f.world.binding, catalog).commands.length, 32); assert.equal(f.client.inputWatermarks.pending, 96);
     socket.bufferedAmount = 65536; f.client.pump(200); assert.equal(f.client.state, 'closed'); assert.ok(f.rejected.includes('command-capacity'));
+  } finally { f.client.dispose(); }
+});
+
+test('queue status has no gameplay actor and bounded ticket response/auth failures create no socket', async () => {
+  const queued = clientFixture();
+  try {
+    const pending = queued.client.connect('owned-character'); pending.catch(() => {}); await tickAsync();
+    const socket = queued.sockets[0]; socket.open(); socket.receive(JSON.stringify({ type: 'queued', world: 'w1', position: 101 }));
+    assert.equal(queued.client.state, 'queued'); assert.deepEqual(queued.client.queue, { world: 'w1', position: 101 });
+    assert.equal(queued.client.view, null); assert.equal(queued.client.command({ kind: 'jump' }), false);
+    queued.client.dispose(); await assert.rejects(pending, /disposed/);
+  } finally { queued.client.dispose(); }
+  for (const response of [new Response('unauthorized', { status: 401 }), new Response('x'.repeat(4097))]) {
+    const f = clientFixture(actualWorld(), { fetch: async () => response });
+    try { await assert.rejects(f.client.connect('owned-character')); assert.equal(f.sockets.length, 0); }
+    finally { f.client.dispose(); }
+  }
+});
+
+test('stalled partial fragments trigger bounded recovery even when the server sends nothing else', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = clientFixture(actualWorld(32));
+  try {
+    const socket = await f.admitted(), before = f.client.view;
+    f.world.area.step(new Map());
+    const packets = f.world.packets(2, { full: true }); assert.ok(packets.length > 1);
+    socket.receive(packets[0]); assert.equal(f.client.state, 'admitted');
+    t.mock.timers.tick(5001); assert.equal(f.client.state, 'recovering'); assert.deepEqual(f.client.view, before);
+    t.mock.timers.tick(5001); assert.equal(f.client.state, 'closed');
+  } finally { f.client.dispose(); }
+});
+
+test('automatic retry obtains a fresh ticket and never resends a disconnected command', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = clientFixture(actualWorld(), { maxReconnects: 1 });
+  try {
+    const socket = await f.admitted(); f.client.command({ kind: 'jump' }); socket.close();
+    assert.equal(f.client.state, 'reconnecting'); t.mock.timers.tick(1000); await tickAsync();
+    assert.equal(f.requests.length, 2); const next = f.sockets.at(-1); next.open();
+    assert.equal(next.sent.length, 1); assert.equal(JSON.parse(next.sent[0]).type, 'authenticate');
+    assert.equal(f.client.inputWatermarks.pending, 0);
   } finally { f.client.dispose(); }
 });
