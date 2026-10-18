@@ -102,6 +102,30 @@ integration 6514c62 also passed the same 59 tests and build. The command outputs
 checked in as `composed-tests.txt` and `composed-build.txt`; no timing run was
 repeated against its changed gameplay workload.
 
+## Local PR77 dependency composition
+
+Local merge `e6ee9da9e8841dec96fec65df66f65b31bc32102` combines snapshot parent
+`bdc9a8288fd0b7bba159b495fd6bc04f0953d69c` with reviewed PR77 source
+`55390293a95cd10c5778024c83fce308cb9bcaa0`. This is local integration evidence,
+not dependency merge approval or production activation.
+
+The only conflict was the `host.ts` publication recipient loop. It retains PR77's
+`publishedConsumed(c)` and `materializeResults(c)` within the snapshot batch's
+`try/finally releasePreparedObservation`. Relative to PR77, the entire host diff
+is the release import and that wrapper. One-use certified leases and the shared
+`InputRateBudget` remain unchanged. Protocol, events, and input codec source did
+not change in this merge, so the historical golden was not rerun against a new
+semantic implementation.
+
+The composed head passed build and 98 protocol, actual PG/WS host, client, and
+view tests with zero failures or skips. They include durable ACK withholding
+until death seal, certified replay/lease disconnect, 257-grant receipt pruning,
+retained/external public admission and party behavior, and P1 respawn input.
+`pr77-composition.json` pins hashes and commands; `pr77-composed-boundary.txt` and
+`pr77-composed-build.txt` retain outputs. There was no new performance run. The
+old measured workloads and the 50-client dropped-tick regression remain exactly
+as recorded above.
+
 ## Reproduction
 
 Use separate checkouts at the pinned revisions, with the repository's frozen
