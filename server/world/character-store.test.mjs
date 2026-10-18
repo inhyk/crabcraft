@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import { startPostgres } from '../node/local-postgres.mjs';
 import { migrate } from '../node/db.ts';
-import { CharacterStore, CharacterStoreError } from './character-store.ts';
+import { CharacterStore, CharacterStoreError, MAX_GRANT_BATCH_ENTRIES, MAX_CHECKPOINT_GRANT_RECEIPTS } from './character-store.ts';
 
 const A = 'g' + 'a'.repeat(23), B = 'g' + 'b'.repeat(23);
 const identity = { classId: 'test-warrior', appearance: { shell: 2 } };
@@ -58,6 +58,7 @@ test('requires explicit codec, valid appearance/class and existing Google accoun
   await assert.rejects(store.create('g' + 'c'.repeat(23), identity), /foreign key/);
   await assert.rejects(store.create(A, { ...identity, classId: 'unknown' }));
   const c = await fresh(); assert.match(c.characterId, /^[a-f0-9-]{36}$/); assert.equal(c.revision, 0);
+  assert(Number.isSafeInteger(c.updatedAt) && c.updatedAt > 0 && c.updatedAt <= Date.now());
   assert.deepEqual(c.checkpoint, { level: 1, xp: 0, coins: 0, mode: 'alive' });
   assert.equal((await pool.query('SELECT save FROM accounts WHERE username=$1', [A])).rows[0].save, '{"legacyXP":999999}');
 });
@@ -253,4 +254,71 @@ test('sparse arrays returned by checkpoint codec reject and roll back without ch
     assert.deepEqual((await pool.query('SELECT checkpoint_json,revision FROM world_characters WHERE character_id=$1', [c.characterId])).rows[0], before);
     assert.deepEqual(await store.getOwned(A, c.characterId), c);
   }
+});
+
+test('one complete 100-contributor death commits and retries atomically with owner lookup and input-ordered results', async () => {
+  assert.equal(MAX_GRANT_BATCH_ENTRIES, 100); assert.equal(MAX_CHECKPOINT_GRANT_RECEIPTS, 256);
+  const characters = await Promise.all(Array.from({ length: 100 }, (_, i) => store.create(i % 2 ? B : A, identity)));
+  const entries = characters.map(c => ({ accountId: c.accountId, characterId: c.characterId, id: JSON.stringify(['batch-death', 73, 1, c.characterId]), payload: { xp: 10, coins: 2 } })).reverse();
+  const first = await store.recordGrantBatch(entries), retry = await store.recordGrantBatch(entries.map(e => ({ ...e, payload: { coins: 2, xp: 10 } })));
+  assert.deepEqual(first.map(g => g.id), entries.map(e => e.id)); assert.deepEqual(retry, first);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM world_character_grants WHERE grant_id=ANY($1::text[])', [entries.map(e => e.id)])).rows[0].n, 100);
+  assert.equal(await store.getOwner(characters[0].characterId), A); assert.equal(await store.getOwner(characters[1].characterId), B);
+  await assert.rejects(store.getOwner('not-a-character'), error('invalid'));
+  await assert.rejects(store.getOwner('00000000-0000-4000-8000-000000000000'), error('not_found'));
+  assert.equal((await store.pendingGrants(first[0].accountId, first[0].characterId)).length, 1);
+  assert.equal((await store.getOwned(characters[0].accountId, characters[0].characterId)).checkpoint.xp, 0);
+});
+
+test('mid-batch PostgreSQL failure rolls back the complete death and preserves retryable input', async () => {
+  const a = await fresh(), b = await store.create(B, identity);
+  const entries = [a, b].map((c, i) => ({ accountId: c.accountId, characterId: c.characterId, id: `batch-rollback:${i}`, payload: { xp: 10, coins: 2 } }));
+  await pool.query(`CREATE FUNCTION test_batch_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+    IF NEW.grant_id='batch-rollback:1' THEN RAISE EXCEPTION 'injected batch failure'; END IF; RETURN NEW; END; $$;
+    CREATE TRIGGER test_batch_failure BEFORE INSERT ON world_character_grants FOR EACH ROW EXECUTE FUNCTION test_batch_failure()`);
+  try { await assert.rejects(store.recordGrantBatch(entries), /injected batch failure/); }
+  finally { await pool.query('DROP TRIGGER test_batch_failure ON world_character_grants; DROP FUNCTION test_batch_failure()'); }
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM world_character_grants WHERE grant_id LIKE 'batch-rollback:%'")).rows[0].n, 0);
+  assert.deepEqual(await store.getOwned(A, a.characterId), a); assert.deepEqual(await store.getOwned(B, b.characterId), b);
+  assert.equal((await store.recordGrantBatch(entries)).length, 2);
+});
+
+test('batch content conflicts, wrong owner and invalid codec result roll back earlier grant inserts', async () => {
+  const a = await fresh(), b = await fresh(); await grant(b, 'batch-conflict:z');
+  const first = { accountId: A, characterId: a.characterId, id: 'batch-conflict:a', payload: { xp: 10, coins: 2 } };
+  await assert.rejects(store.recordGrantBatch([first, { ...first, id: 'batch-conflict:z', characterId: b.characterId, payload: { xp: 11, coins: 2 } }]), error('grant_mismatch'));
+  await assert.rejects(store.recordGrantBatch([first, { ...first, id: 'batch-conflict:b', characterId: b.characterId, accountId: B }]), error('not_found'));
+  await assert.rejects(store.recordGrantBatch([first, { ...first, id: 'batch-conflict:b', characterId: b.characterId, payload: { xp: 'invalid', coins: 2 } }]));
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM world_character_grants WHERE grant_id IN ('batch-conflict:a','batch-conflict:b')")).rows[0].n, 0);
+  assert.equal((await store.pendingGrants(A, b.characterId))[0].payload.xp, 10);
+  for (const entries of [[], Array(1), [first, first], Array(101).fill(first), [first, { ...first, id: 'other', accountId: B }]]) await assert.rejects(store.recordGrantBatch(entries), error('invalid'));
+});
+
+test('oppositely ordered batches across independent pools converge without row-lock deadlock', { timeout: 5000 }, async () => {
+  const a = await fresh(), b = await fresh(), secondPool = new pg.Pool({ connectionString: postgres.url });
+  const entries = [a, b].map((c, i) => ({ accountId: A, characterId: c.characterId, id: `batch-race:${i}`, payload: { xp: 10, coins: 2 } }));
+  try {
+    const second = new CharacterStore(secondPool, testCodec());
+    const [first, reverse] = await Promise.all([store.recordGrantBatch(entries), second.recordGrantBatch([...entries].reverse())]);
+    assert.deepEqual(first, [...reverse].reverse());
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM world_character_grants WHERE grant_id LIKE 'batch-race:%'")).rows[0].n, 2);
+  } finally { await secondPool.end(); }
+});
+
+test('disjoint recipients racing colliding immutable IDs produce one whole batch and one conflict', { timeout: 5000 }, async () => {
+  const chars = await Promise.all(Array.from({ length: 4 }, fresh)), secondPool = new pg.Pool({ connectionString: postgres.url });
+  const entries = chars.map((c, i) => ({ accountId: A, characterId: c.characterId, id: `batch-id-race:${i % 2}`, payload: { xp: 10, coins: 2 } }));
+  try {
+    const second = new CharacterStore(secondPool, testCodec());
+    const results = await Promise.allSettled([store.recordGrantBatch(entries.slice(0, 2)), second.recordGrantBatch(entries.slice(2).reverse())]);
+    assert.equal(results.filter(r => r.status === 'fulfilled').length, 1); assert.equal(results.find(r => r.status === 'rejected').reason.code, 'grant_mismatch');
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM world_character_grants WHERE grant_id LIKE 'batch-id-race:%'")).rows[0].n, 2);
+  } finally { await secondPool.end(); }
+});
+
+test('receipt cap rejects a final capture containing more than 256 applied grant IDs without any commit', async () => {
+  const c = await fresh(), ids = Array.from({ length: MAX_CHECKPOINT_GRANT_RECEIPTS + 1 }, (_, i) => `receipt-overflow:${i}`);
+  await assert.rejects(store.saveCheckpoint(A, c.characterId, 0, { ...c.checkpoint, xp: ids.length }, ids), error('invalid'));
+  await assert.rejects(store.loadForRecovery(A, c.characterId, ids), error('invalid'));
+  assert.deepEqual(await store.getOwned(A, c.characterId), c);
 });

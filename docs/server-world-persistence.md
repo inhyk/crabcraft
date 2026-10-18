@@ -34,7 +34,9 @@ codec은 순수하고 결정적으로 동작하며 성공 시 독립된 JSON 값
 | --- | --- |
 | `create(accountId, identity)` | 기존 계정 FK 확인, 검증된 identity와 codec의 fresh 상태, revision 0 저장 |
 | `listOwned(accountId, {after?, limit?})` | character ID 기준 정렬, UUID cursor, 기본 100개와 최대 100개 |
-| `getOwned(accountId, characterId)` | 소유한 identity, checkpoint, revision 조회 |
+| `getOwned(accountId, characterId)` | 소유한 identity, checkpoint, revision과 검증된 updatedAt(ms) 조회 |
+| `getOwner(characterId)` | trusted offline core recipient의 account ID만 조회, client endpoint에 노출하지 않음 |
+| `recordGrantBatch(entries)` | 최대 100개 전체 entitlement를 단일 transaction으로 저장, 결과는 입력순 |
 | `recordGrant(accountId, characterId, id, payload)` | immutable journal 기록, 같은 ID와 같은 recipient/version/JSON 의미는 동일 결과, 다른 내용은 오류 |
 | `pendingGrants(accountId, characterId, {after?, limit?})` | receipt가 없는 journal을 sequence cursor로 조회, 기본 100개와 최대 100개 |
 | `saveCheckpoint(accountId, characterId, revision, checkpoint, appliedGrantIds)` | CAS revision 확인, checkpoint와 최대 256개 receipt를 하나의 transaction으로 저장 |
@@ -50,19 +52,33 @@ identity는 4 KiB, checkpoint는 256 KiB, grant payload는 16 KiB로 제한한�
 
 호스트의 정상 순서는 다음과 같다.
 
-1. source가 얻은 grant를 안정된 ID와 recipient로 `recordGrant`에 기록하고 commit을 기다린다.
-2. receipt가 없는 grant만 실제 core에서 수치로 적용한다.
+1. 한 death의 모든 entitlement를 안정된 ID와 trusted recipient로 모아 `recordGrantBatch`에 기록하고 commit을 기다린다. 최대 public 100명의 전체 집합을 한 호출에 넣으며 일부 성공을 earned outcome으로 발표하지 않는다.
+2. 실제 core가 이미 적용한 `appliedHere` grant는 receipt가 없다는 이유로 다시 적용하지 않는다. 현재 owner의 state에 해당 적용이 포함되는지 확인한다. 아직 적용되지 않은 offline/transferred grant만 between-tick owner boundary에서 실제 core의 receiveGrant로 적용한다.
 3. 같은 core 상태에서 checkpoint를 캡처한다.
 4. 그 checkpoint와 적용한 journal ID를 `saveCheckpoint`로 함께 commit한다.
 5. commit을 확인한 뒤 source에 ACK한다.
 
+batch는 모든 recipient character를 UUID순으로 먼저 잠그고 global grant ID순으로 삽입한다. JSON 의미가 같은 재시도는 기존 journal을 반환하며 recipient, version, payload 충돌이나 중간 SQL 실패 시 전체를 rollback한다. 기존 `recordGrant`도 같은 batch 경로에 entry 1개로 위임한다. 저장소는 전달된 집합의 원자성을 제공하며 실제 모든 기여자가 포함됐는지는 core와 host가 증명해야 한다.
+
+`MAX_GRANT_BATCH_ENTRIES=100`, `MAX_CHECKPOINT_GRANT_RECEIPTS=256`을 export한다. 한 checkpoint에는 그 state가 포함하는 모든 새 grant의 정확한 receipt가 함께 있어야 한다. 이미 256개를 넘게 적용한 최종 state를 여러 save에 반복해 넣으며 receipt만 나누면 안 된다. 첫 save 후 crash하면 나머지 grant가 중복 적용된다. host가 적용 전 또는 reward tick 경계에서 uncommitted grant 수를 제한하고 한도를 넘기기 전에 barrier를 걸어야 한다. 저장소는 checkpoint 수치만 보고 누락된 receipt를 추론하지 않는다.
+
 journal 기록만 끝나고 호스트가 죽으면 pending grant가 DB에 남는다. checkpoint 저장 중 하나의 receipt 삽입이 실패해도 checkpoint와 그 transaction의 모든 receipt는 rollback된다. 아직 ACK하지 않은 journal은 남으므로 재시도할 수 있다. 일시적인 DB 실패 후 같은 core 상태를 유지한 경우, 수치를 다시 적용하지 않고 **동일한 checkpoint와 grant ID**를 저장 재시도한다.
 
-CAS conflict가 나면 live 캐릭터의 진행을 멈추고 `loadForRecovery`로 durable checkpoint와 관련 grant receipt를 다시 읽는다. 그 checkpoint로 core를 복원한 후 receipt가 없는 grant만 다시 적용한다. 기존 live 상태에 pending 수치를 무조건 더하거나 stale checkpoint를 새 revision에 그대로 덮어쓰면 안 된다. 여러 host의 동일 캐릭터 접속을 막는 ownership/fencing과 freeze/reload 실행은 후속 host adapter의 책임이다. 저장 CAS만으로 in-memory simulation의 단일 소유권을 제공하지 않는다.
+CAS conflict가 나면 live 캐릭터의 진행을 멈추고 `loadForRecovery`로 durable checkpoint와 관련 grant receipt를 다시 읽는다. 그 checkpoint로 core를 복원한 후 receipt가 없는 grant만 다시 적용한다. 기존 live 상태에 pending 수치를 무조건 더하거나 stale checkpoint를 새 revision에 그대로 덮어쓰면 안 된다. 여러 host의 동일 캐릭터 접속을 막는 ownership 주입과 freeze/reload 실행은 host adapter의 책임이다. 저장 CAS만으로 in-memory simulation의 단일 소유권을 제공하지 않는다.
 
 DB commit 후 source ACK 전에 호스트가 죽어도 source가 같은 grant ID를 다시 내보낼 수 있다. `recordGrant`는 같은 내용을 확인하고 기존 journal을 반환한다. `loadForRecovery`의 receipt가 존재하면 durable checkpoint에 이미 반영된 것이므로 수치를 다시 적용하지 않고 source를 ACK한다. commit 응답을 잃어 성공 여부가 불확실할 때도 같은 복구 절차를 쓴다.
 
 모든 writer는 character row를 먼저 잠근다. 여러 프로세스의 journal retry는 grant ID PK와 내용 비교로 합쳐지고, checkpoint writer는 row lock과 revision CAS로 직렬화된다. receipt는 character의 새 revision을 기록한다. earned journal과 receipt의 UPDATE/DELETE는 DB trigger가 거부한다. receipt가 생겨도 journal은 보존한다. 자동 pruning, 조용한 eviction, unbounded client input log를 추가하지 않는다. 보존 비용과 운영 archive 정책은 추후 별도 설계가 필요하다.
+
+## Host 소유권 guard
+
+`server/world/ownership.ts`의 `await acquireHostOwnership(pool, key, options?)`가 전용 pool client를 잡아 session-level `pg_try_advisory_lock`을 획득한다. key는 모든 world host 프로세스가 일치시켜야 하는 서버 내부 scope 문자열(1..128 UTF-8 bytes)이며 SHA-256 앞 64 bits를 signed advisory key로 사용한다. 경합은 `HostOwnershipError('busy')`로 즉시 실패한다. main은 acquire 성공 후에만 guard를 host에 주입하고 입장을 열어야 한다.
+
+반환 `HostOwnership`은 `{key, closed: AbortSignal, assertOwned(), release(): Promise<void>}`다. 전용 client는 유지 중 pool에 반환하지 않으므로 일반 transaction이 이 연결을 빌리거나 rollback하지 않는다. heartbeat와 query timeout 기본값은 각각 1000 ms이며 options로 조정할 수 있다. backend error/end 또는 heartbeat 실패 시 `closed`가 `lost` reason으로 abort된다. 정상 release는 `released` reason으로 먼저 닫고 unlock 후에도 client를 destroy해 idle pool에 반환하지 않는다. 취득/해제 실패 경로도 client를 destroy한다.
+
+host는 closed signal을 구독하고 tick, 입장, 진행 commit 경계에서 assertOwned를 확인해야 한다. 연결 유실 검출은 error/end와 heartbeat deadline을 따르며 guard가 이미 열린 socket을 닫거나 저장 transaction에 별도 fencing token을 넣지는 않는다. 종료 시 host를 멈추고 guard를 release한 뒤 pool.end를 호출한다. 실제 host가 이 중단 순서를 지키는지는 별도 통합 검사 대상이다.
+
+기존 updated_at를 검증된 Character.updatedAt(ms)로 읽어 준다. offline elapsed 계산과 어떤 상태를 경과시키는지는 host의 명시적 restore policy가 결정한다. 저장소에서 새 offline clock 정책을 만들지 않는다.
 
 ## 실행 확인과 남은 연결
 
@@ -72,8 +88,8 @@ DB commit 후 source ACK 전에 호스트가 죽어도 source가 같은 grant ID
 node --test server/world/character-store.test.mjs
 ```
 
-Node 24.22.0, pnpm 10.10.0에서 실행한 결과는 DB 테스트 18개 통과, `pnpm test:world` 40개 통과, `pnpm test:server` 16개 통과, `pnpm build` 종료 코드 0이다. build에는 기존 browser externalization과 500 kB chunk 경고가 남아 있다. 새 migration 적용 전의 account save, revision, created, updated가 그대로 보존되는 것도 실제 migration framework로 검사했다.
+Node 24.22.0, pnpm 10.10.0에서 실행한 결과는 DB store 테스트 24개와 ownership 테스트 5개 통과, `pnpm test:world` 51개 통과, `pnpm test:server` 16개 통과, `pnpm build` 종료 코드 0이다. build에는 기존 browser externalization과 500 kB chunk 경고가 남아 있다. 새 migration 적용 전의 account save, revision, created, updated가 그대로 보존되는 것도 실제 migration framework로 검사했다.
 
 검증 항목은 기존 bundle과 새 level-1 분리, 계정 소유권, 재접속 후 journal, immutable 내용 충돌과 JSON 의미 비교, checkpoint/receipt transaction 실패 rollback, 다른 pool의 CAS 경쟁, 별도 Node 프로세스의 중복 journal 경쟁, 페이지 조회, JSON 크기와 버전/손상 행 거부, commit 후 ACK 유실 복구다.
 
-후속 작업은 실제 core codec과 persist/restore projection, 계정 세션 인증과 character 선택, 단일 host 소유권, non-dropping grant 작업 큐, ACK 연결, 재시작 복구와 shutdown flush다. Google-only 로그인, 25 quests, 반복 보스, dead reconnect, 배 2인, 마을 놀이의 실제 통합 동작은 이 준비 작업에서 검증하지 않았다.
+후속 작업은 실제 core codec과 persist/restore projection, 계정 세션 인증과 character 선택, 소유권 guard와 실제 host 연결, non-dropping grant 작업 큐, ACK 연결, 재시작 복구와 shutdown flush다. Google-only 로그인, 25 quests, 반복 보스, dead reconnect, 배 2인, 마을 놀이의 실제 통합 동작은 이 준비 작업에서 검증하지 않았다.
