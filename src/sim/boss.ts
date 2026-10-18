@@ -19,7 +19,7 @@ export class Boss {
   get unit():EntityRef{return this.actor.ref;}get stats(){return BOSS_PROFILES[this.profile];}get isDawn():boolean{return this.profile==='dawn';}
   get engaged():boolean{return this.state==='fight';}get telegraphActive():boolean{return !!this.mech&&!this.mech.fired;}
   get mechName():MechId|null{return this.mech?.kind??null;}get stateTime():number{return this.stateT;}get freedTime():number{return this.freedT;}
-  private participants():readonly SimUnit[]{return this.services.players().filter(p=>!this.isDawn||p.level>=100);}
+  private participants():readonly SimUnit[]{return this.services.players().filter(p=>p.alive&&!p.hidden&&(!this.isDawn||p.level>=100));}
   private target():SimUnit|null{
     if(!this.isDawn)return this.services.targetFor(this.unit);
     return this.participants().filter(p=>eligible(this.services,p)).slice().sort((a,b)=>distance(this.actor,a)-distance(this.actor,b)||a.ref.id-b.ref.id)[0]??null;

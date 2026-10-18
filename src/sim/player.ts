@@ -5,7 +5,7 @@ import { abilityNeedsTarget, executeAbility, isMeleeAbility, launchAt, playActio
 import { damp, turnToward, yawTo } from './math.ts';
 import { distTo, gapTo, lineOfSight, moveTo, speedMul, teleport } from './unit.ts';
 import { levelForXp, xpForLevel } from './data/progression.ts';
-import { activeObjective, freshQuests } from './data/quests.ts';
+import { freshQuests } from './data/quests.ts';
 import { BREAK_ROUTINE } from './data/actions.ts';
 export const GCD=1;
 export const JUMP_CLIP=Object.freeze({from:.8,to:1.56,speed:1.15});
@@ -23,6 +23,7 @@ function validCommand(command:unknown):boolean {
     case 'questAccept':case 'questTurnIn':return text(c.questId)&&text(c.npcId);
     case 'forgeBuy':return text(c.npcId);
     case 'travel':return text(c.gateId);
+    case 'bossChallenge':return ['rust','abyss','eclipse','dawn'].includes(c.profile as string);
     default:return false;
   }
 }
@@ -60,8 +61,8 @@ export class PlayerController implements PlayerSim {
         case 'jump':this.jump();break;
         case 'dance':this.toggleDance();break;
         case 'cancel':this.interruptCast();this.cancelChannel();this.cancelDance();this.state.queued=null;break;
-        case 'channelStart':this.startRequestedChannel(command.channel,command.targetId);break;
-        // Interaction/quest/travel commands are routed by Area's authoritative rule module.
+        case 'channelStart':if(command.channel==='recall')this.startRecall();else this.services.runCommand(this.unit.ref,command);break;
+        default:this.services.runCommand(this.unit.ref,command);break;
       }
     }
   }
@@ -160,8 +161,8 @@ export class PlayerController implements PlayerSim {
   interruptCast(reason='Interrupted'):void {if(!this.state.cast)return;this.state.cast=null;this.services.stopAction(this.unit.ref,'cast',.15);this.services.emit({type:'castEnd',unit:this.unit.ref,channel:false,result:'interrupted',reason});}
   cancelChannel():void {if(!this.state.channel)return;this.state.channel=null;this.services.stopAction(this.unit.ref,'cast',.2);this.services.emit({type:'castEnd',unit:this.unit.ref,channel:true,result:'interrupted',reason:'Interrupted'});}
   startChannel(kind:ChannelKind,seconds:number,to:Readonly<Vec3>,targetId:string|null=null):void {if(!this.unit.alive||this.locked()||this.services.time<this.unit.stunUntil)return;this.cancelDance();this.interruptCast();this.cancelChannel();const start=this.services.time,end=start+seconds;this.state.channel={kind,start,end,to:{...to},targetId};this.state.velX=this.state.velZ=0;playAction(this.services,this.unit,'cast',{upper:true,loop:true,fade:.2});this.services.emit({type:'castStart',unit:this.unit.ref,seconds,channel:{kind,to:{...to},start,end}});}
-  private startRequestedChannel(kind:ChannelKind,targetId?:string):void {const g=this.services;if(kind==='recall'){if(this.state.channel)return;this.startChannel(kind,2,{x:this.unit.x,y:this.unit.y+1,z:this.unit.z});return;}const item=g.definition.interactions.find(i=>i.id===targetId&&i.kind===kind);if(!item||Math.hypot(this.unit.x-item.position.x,this.unit.z-item.position.z)>item.range||!g.policy.canInteract(g.context,this.state,item.id))return;if(kind==='waystone'&&(!item.objective||!activeObjective(this.state.quests,item.objective)))return;if(kind==='beacon'&&!(this.state.quests.status.q3==='done'||this.state.flags.beaconLit||(this.state.quests.status.q3==='active'&&activeObjective(this.state.quests,'beacon'))))return;this.startChannel(kind,kind==='waystone'?1.5:2,item.position,item.id);}
-  private finishChannel(kind:ChannelKind,targetId:string|null,to:Readonly<Vec3>,start=0,end=0):void {if(kind==='recall'){this.state.velX=this.state.velZ=0;this.state.dash=null;this.state.queued=null;this.setTarget(null);teleport(this.unit,this.services.query,this.services.definition.recall.position.x,this.services.definition.recall.position.z,this.services.definition.recall.yaw);this.services.emit({type:'recall',unit:this.unit.ref});}else this.services.completeChannel(this.unit.ref,{kind,targetId,to:{...to},start,end});}
+  private startRecall():void {if(this.state.channel)return;this.startChannel('recall',2,{x:this.unit.x,y:this.unit.y+1,z:this.unit.z});}
+  private finishChannel(kind:ChannelKind,targetId:string|null,to:Readonly<Vec3>,start=0,end=0):void {if(kind==='recall'){if(this.locked())return;this.state.velX=this.state.velZ=0;this.state.dash=null;this.state.queued=null;this.setTarget(null);teleport(this.unit,this.services.query,this.services.definition.recall.position.x,this.services.definition.recall.position.z,this.services.definition.recall.yaw);this.services.emit({type:'recall',unit:this.unit.ref});}else this.services.completeChannel(this.unit.ref,{kind,targetId,to:{...to},start,end});}
   setTarget(target:SimUnit|null):void {if(sameRef(this.state.target,target?.ref??null))return;this.state.target=target?.ref??null;this.state.targetDeadAt=target&&!target.alive?this.services.time:0;this.services.emit({type:'target',unit:this.unit.ref,target:this.state.target});}
   startDash(target:SimUnit):void{this.state.dash={target:target.ref,t:0};this.state.velX=this.state.velZ=0;}
   private updateDash(dt:number):void {const g=this.services,s=this.state,u=this.unit,d=s.dash!,t=g.getUnit(d.target);if(!t){s.dash=null;u.lift=0;return;}d.t+=dt;const step=26*dt;u.yaw=yawTo(u.x,u.z,t.x,t.z);if(gapTo(u,t)<=.6+step||d.t>.9||!t.alive){s.dash=null;u.lift=0;g.emit({type:'ability',caster:u.ref,ability:'sideways-charge',stage:'hit',target:t.ref});s.nextSwing=Math.min(s.nextSwing,g.time+.1);return;}const k=step/Math.max(.001,distTo(u,t));u.x+=(t.x-u.x)*k;u.z+=(t.z-u.z)*k;u.lift=Math.sin(Math.min(1,d.t/.45)*Math.PI)*.25;}
