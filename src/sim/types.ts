@@ -359,6 +359,7 @@ export interface AreaServices {
   encounterActive(): boolean;
   bossAvailable(profile: BossSim['profile']): boolean;
   completeChannel(player: EntityRef, channel: ChannelState): void;
+  preflightEarnedGrants(grants:readonly EarnedGrant[]):void;
   recordContribution(victim: EntityRef, attacker: EntityRef, damage: number): void;
   onUnitDied(victim: EntityRef, killer: EntityRef | null): void;
 }

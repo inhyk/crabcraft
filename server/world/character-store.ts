@@ -11,7 +11,10 @@ export interface CharacterCodec<I extends Json, C extends Json, G extends Json> 
   validateCheckpoint(value: Json, context: CharacterContext<I>): C;
   validateGrant(value: Json, context: CharacterContext<I>): G;
 }
-export type Character<I, C> = CharacterContext<I> & { revision: number; checkpoint: C };
+export type Character<I, C> = CharacterContext<I> & { revision: number; checkpoint: C; updatedAt: number };
+export const MAX_GRANT_BATCH_ENTRIES = 100;
+export const MAX_CHECKPOINT_GRANT_RECEIPTS = 256;
+export type GrantBatchEntry<G> = { accountId: string; characterId: string; id: string; payload: G };
 export type EarnedGrant<G> = { id: string; sequence: string; accountId: string; characterId: string; payload: G };
 export class CharacterStoreError extends Error {
   readonly code: 'invalid' | 'not_found' | 'version' | 'conflict' | 'grant_mismatch' | 'already_applied';
@@ -66,7 +69,7 @@ function parsed(text: string, maxBytes: number): Json {
   try { return JSON.parse(json(JSON.parse(text), maxBytes)) as Json; }
   catch (e) { if (e instanceof CharacterStoreError) throw e; return fail('invalid', 'corrupt stored JSON'); }
 }
-interface Row { character_id: string; account_id: string; codec_version: number; identity_json: string; checkpoint_json: string; revision: string }
+interface Row { character_id: string; account_id: string; codec_version: number; identity_json: string; checkpoint_json: string; revision: string; updated_at: Date | string }
 interface GrantRow { grant_id: string; journal_sequence: string; character_id: string; account_id: string; codec_version: number; payload_json: string }
 
 /** Trusted host storage only. No HTTP handler and no legacy-save input. */
@@ -83,12 +86,14 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
     this.version(row.codec_version); account(row.account_id); character(row.character_id);
     const rev = Number(row.revision);
     if (!Number.isSafeInteger(rev) || rev < 0) fail('invalid', 'corrupt stored revision');
+    const updatedAt = row.updated_at instanceof Date ? row.updated_at.getTime() : Date.parse(row.updated_at);
+    if (!Number.isSafeInteger(updatedAt) || updatedAt < 0) fail('invalid', 'corrupt stored update timestamp');
     const identity = this.codec.validateIdentity(parsed(row.identity_json, 4096));
     json(identity, 4096);
     const context = { accountId: row.account_id, characterId: row.character_id, identity };
     const checkpoint = this.codec.validateCheckpoint(parsed(row.checkpoint_json, 262144), context);
     json(checkpoint, 262144);
-    return { ...context, revision: rev, checkpoint };
+    return { ...context, revision: rev, checkpoint, updatedAt };
   }
   private decodeGrant(row: GrantRow, context: CharacterContext<I>): EarnedGrant<G> {
     this.version(row.codec_version); grantId(row.grant_id);
@@ -116,20 +121,51 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
       ORDER BY character_id LIMIT $3`, [accountId, options.after ?? null, limit]);
     return result.rows.map(row => this.decode(row));
   }
-  async recordGrant(accountId: string, characterId: string, id: string, payloadInput: G): Promise<EarnedGrant<G>> {
-    account(accountId); character(characterId); grantId(id);
+  /** Trusted host lookup for offline core recipients; never expose this as an unauthenticated client endpoint. */
+  async getOwner(characterId: string): Promise<string> {
+    character(characterId);
+    const row = (await this.pool.query<{ account_id: string }>('SELECT account_id FROM world_characters WHERE character_id=$1', [characterId])).rows[0];
+    if (!row) fail('not_found', 'character not found'); account(row.account_id); return row.account_id;
+  }
+  async recordGrant(accountId: string, characterId: string, id: string, payload: G): Promise<EarnedGrant<G>> {
+    return (await this.recordGrantBatch([{ accountId, characterId, id, payload }]))[0];
+  }
+  /** Commit one complete death's full entitlement set atomically. Result order matches input order. */
+  async recordGrantBatch(entries: readonly GrantBatchEntry<G>[]): Promise<EarnedGrant<G>[]> {
+    if (!Array.isArray(entries) || entries.length < 1 || entries.length > MAX_GRANT_BATCH_ENTRIES) fail('invalid', 'expected 1..100 grant entries');
+    const prepared = Array.from(entries, entry => {
+      if (!entry || typeof entry !== 'object') fail('invalid', 'invalid grant entry');
+      account(entry.accountId); character(entry.characterId); grantId(entry.id);
+      return { ...entry, payloadJson: json(entry.payload, 16384) };
+    });
+    if (new Set(prepared.map(entry => entry.id)).size !== prepared.length) fail('invalid', 'grant IDs must be distinct within a batch');
+    const recipients = new Map<string, string>();
+    for (const entry of prepared) {
+      const owner = recipients.get(entry.characterId);
+      if (owner && owner !== entry.accountId) fail('invalid', 'conflicting batch recipient accounts');
+      recipients.set(entry.characterId, entry.accountId);
+    }
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      // All writers lock character first, avoiding save/journal lock inversions across processes.
-      const owned = await client.query<Row>('SELECT * FROM world_characters WHERE character_id=$1 AND account_id=$2 FOR UPDATE', [characterId, accountId]);
-      if (!owned.rowCount) fail('not_found', 'character not found'); const context = this.decode(owned.rows[0]);
-      const payload = json(this.codec.validateGrant(parsed(json(payloadInput, 16384), 16384), context), 16384);
-      await client.query(`INSERT INTO world_character_grants(grant_id,character_id,account_id,codec_version,payload_json)
-        VALUES($1,$2,$3,$4,$5) ON CONFLICT(grant_id) DO NOTHING`, [id, characterId, accountId, this.codec.version, payload]);
-      const row = (await client.query<GrantRow & { same_payload: boolean }>('SELECT *, payload_json::jsonb = $2::jsonb AS same_payload FROM world_character_grants WHERE grant_id=$1', [id, payload])).rows[0];
-      if (row.character_id !== characterId || row.account_id !== accountId || row.codec_version !== this.codec.version || !row.same_payload) fail('grant_mismatch', 'grant ID already has different contents or recipient');
-      const grant = this.decodeGrant(row, context); await client.query('COMMIT'); return grant;
+      // Lock ALL character recipients first, in byte-stable UUID order, before touching any journal ID.
+      const contexts = new Map<string, Character<I, C>>();
+      for (const characterId of [...recipients.keys()].sort()) {
+        const owned = await client.query<Row>('SELECT * FROM world_characters WHERE character_id=$1 AND account_id=$2 FOR UPDATE', [characterId, recipients.get(characterId)]);
+        if (!owned.rowCount) fail('not_found', 'character not found'); contexts.set(characterId, this.decode(owned.rows[0]));
+      }
+      const grants = new Map<string, EarnedGrant<G>>();
+      // Also sort global grant IDs: disjoint recipient sets may still collide on immutable IDs.
+      for (const entry of [...prepared].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) {
+        const context = contexts.get(entry.characterId)!;
+        const payload = json(this.codec.validateGrant(parsed(entry.payloadJson, 16384), context), 16384);
+        await client.query(`INSERT INTO world_character_grants(grant_id,character_id,account_id,codec_version,payload_json)
+          VALUES($1,$2,$3,$4,$5) ON CONFLICT(grant_id) DO NOTHING`, [entry.id, entry.characterId, entry.accountId, this.codec.version, payload]);
+        const row = (await client.query<GrantRow & { same_payload: boolean }>('SELECT *, payload_json::jsonb = $2::jsonb AS same_payload FROM world_character_grants WHERE grant_id=$1', [entry.id, payload])).rows[0];
+        if (row.character_id !== entry.characterId || row.account_id !== entry.accountId || row.codec_version !== this.codec.version || !row.same_payload) fail('grant_mismatch', 'grant ID already has different contents or recipient');
+        grants.set(entry.id, this.decodeGrant(row, context));
+      }
+      await client.query('COMMIT'); return prepared.map(entry => grants.get(entry.id)!);
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
   async pendingGrants(accountId: string, characterId: string, options: { after?: string; limit?: number } = {}): Promise<EarnedGrant<G>[]> {
@@ -144,7 +180,7 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
     character: Character<I, C>; grants: (EarnedGrant<G> & { appliedRevision: number | null })[];
   }> {
     account(accountId); character(characterId);
-    if (!Array.isArray(ids) || ids.length > 256 || new Set(ids).size !== ids.length) fail('invalid', 'expected at most 256 distinct grant IDs');
+    if (!Array.isArray(ids) || ids.length > MAX_CHECKPOINT_GRANT_RECEIPTS || new Set(ids).size !== ids.length) fail('invalid', 'expected at most 256 distinct grant IDs');
     ids.forEach(grantId);
     const client = await this.pool.connect();
     try {
@@ -167,7 +203,7 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
   /** Caller captures only trusted core state. Receipts and this checkpoint commit together or neither does. */
   async saveCheckpoint(accountId: string, characterId: string, expectedRevision: number, checkpointInput: C, appliedGrantIds: readonly string[] = []): Promise<Character<I, C>> {
     account(accountId); character(characterId); revision(expectedRevision);
-    if (!Array.isArray(appliedGrantIds) || appliedGrantIds.length > 256 || new Set(appliedGrantIds).size !== appliedGrantIds.length) fail('invalid', 'expected at most 256 distinct grant IDs');
+    if (!Array.isArray(appliedGrantIds) || appliedGrantIds.length > MAX_CHECKPOINT_GRANT_RECEIPTS || new Set(appliedGrantIds).size !== appliedGrantIds.length) fail('invalid', 'expected at most 256 distinct grant IDs');
     appliedGrantIds.forEach(grantId);
     const checkpointJson = json(checkpointInput, 262144), client = await this.pool.connect();
     try {
