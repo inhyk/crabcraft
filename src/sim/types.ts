@@ -200,12 +200,14 @@ export type CoreEvent =
   | { type: 'reward'; grant: EarnedGrant; appliedHere: boolean }
   | { type: 'respawn'; unit: EntityRef; position: Readonly<Vec3>; yaw: number }
   | { type: 'quest'; unit: EntityRef; quest: string; stage: 'accepted' | 'progress' | 'ready' | 'completed'; objective?: string; value?: number }
+  | {type:'achievement';unit:EntityRef;achievement:string}
+  | {type:'discovery';unit:EntityRef;discovery:'treasure'|'lighthouse-secret';id:string;first:boolean;coins:number;activeUntil:number|null}
   | { type: 'equipment'; unit: EntityRef; slot: EquipmentSlot; operation: 'buy' | 'upgrade'; result: EquipmentResult; request?: number }
   | { type: 'endingReady'; unit: EntityRef; chapter: 4; replay: boolean }
   | { type: 'travelReady'; unit: EntityRef; destination: WorldId; gate: string };
 export interface EventRecord { readonly tick: Tick; readonly order: number; readonly event: CoreEvent }
 
-export type ChannelKind = 'recall' | 'beacon' | 'waystone';
+export type ChannelKind = 'recall' | 'beacon' | 'waystone' | 'lighthouse-secret';
 export type PlayerCommand =
   | { kind: 'ability'; slot: 1 | 2 | 3 | 4 | 5 }
   | { kind: 'target'; target: EntityRef | null }
@@ -303,7 +305,7 @@ export interface AreaDefinition {
   readonly pois: Readonly<Record<string, Poi>>; readonly enemies: readonly EnemySpawn[];
   readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string; freedPosition?: Readonly<Vec3>; captiveBeforeVictory?: boolean }[];
   readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string; targetable?:boolean; personalVisibility?:{flag:'rustCleared'|'abyssCleared'|'trueCleared'|'finalCleared'|'frostCleared';value:boolean} }[];
-  readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string; channelTo?: Readonly<Vec3> }[];
+  readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore' | 'treasure' | 'secret'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string; channelTo?: Readonly<Vec3> }[];
 }
 /** Required explicit host policy. Formula/levels are configuration, not newly decided balance.
  * Must be deterministic and may depend only on inputs, never a clock/RNG outside Area.
@@ -374,7 +376,7 @@ export interface AreaSnapshot {
   readonly units: readonly Readonly<SimUnit>[];
   readonly players: readonly Readonly<PlayerState>[];
   readonly projectiles: readonly Readonly<ProjectileState>[];
-  readonly features: {readonly beaconLit:boolean;readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
+  readonly features: {readonly beaconLit:boolean;readonly exploration:readonly {unit:EntityRef;activeUntil:number}[];readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
   readonly recovery: {readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
 } // Deep copied and stable sorted by ID; slowPct remains fraction0..1; S4 adapter scales to0..100.
 /** Complete canonical test/debug data, not a production persistence protocol. No functions or refs. */
@@ -412,6 +414,7 @@ export interface TransferDTO {
   quests: QuestState; flags: Readonly<Record<string, boolean>>; cogMisses: number;
   achievements?: {earned:string[];distance:number}; lighthouseSecretFound?:boolean;
   appliedGrantIds: readonly string[];
+  durableGrantIds?:readonly string[]; // subset already committed with its checkpoint before travel
 }
 export interface Admission { token: string; character: CharacterId; destination: AreaId; spawn: string; expiresAtHostTick: number }
 export interface StagedDeparture { token: string; character: CharacterId; source: AreaId; sourceRef: EntityRef; dto: TransferDTO }
@@ -458,6 +461,7 @@ export interface Area {
    * No renderer step, wall clock or20Hz snapshot call may advance any of these stages.
    */
   step(inputs: ReadonlyMap<EntityId, PlayerIntent>): void;
+  bootstrapEncounter(profile:BossProfileId,facts:{beaconLit:boolean}):void;
   beginDurabilityBarrier(reason:string):string;
   releaseDurabilityBarrier(token:string):void;
   neutralizeInput(ref:EntityRef):void;

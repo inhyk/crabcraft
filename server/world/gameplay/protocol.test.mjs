@@ -8,7 +8,7 @@ import {worldArea,addActor,intent} from '../../../tests/core/worldHarness.mjs';
 import {QUESTS} from '../../../src/sim/data/quests.ts';
 import {RACES} from '../../../src/data/races.ts';
 const motion=JSON.parse(readFileSync(new URL('../../../src/sim/data/pose-data.json',import.meta.url),'utf8'));
-const catalog={version:motion.version,archetypes:[...Object.keys(motion.archetypes),'boss-rust','boss-abyss','boss-eclipse','boss-dawn','boss-frost'],actions:Object.keys(motion.clips),abilities:['pincer-strike','shell-bash','sideways-charge','whirlpool','bubble-bolt','frost-spray','steam-blink','tidal-nova','smite','mend-shell','barnacle-ward','holy-tide','crown-burst'],quests:Object.keys(QUESTS),npcs:['brinebeard','silvermoon','coralline','grukk','hoofclaw','rattlebolt','pip'],interactions:['npc:brinebeard','beacon','lamp-a'],gates:['gate:w2'],objectives:Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>o.id)),flags:['beaconLit','rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared'],jointCount:22,appearanceLimits:Object.fromEntries(Object.entries(RACES).map(([id,r])=>[id,{shell:r.shellColors.length,crest:r.crestStyles.length,led:r.ledColors.length}]))};
+const catalog={version:motion.version,archetypes:[...Object.keys(motion.archetypes),'boss-rust','boss-abyss','boss-eclipse','boss-dawn','boss-frost'],actions:Object.keys(motion.clips),abilities:['pincer-strike','shell-bash','sideways-charge','whirlpool','bubble-bolt','frost-spray','steam-blink','tidal-nova','smite','mend-shell','barnacle-ward','holy-tide','crown-burst'],quests:Object.keys(QUESTS),npcs:['brinebeard','silvermoon','coralline','grukk','hoofclaw','rattlebolt','pip'],interactions:['npc:brinebeard','beacon','lamp-a','lighthouse-secret','treasure','moonTreasure','sunsetTreasure'],gates:['gate:w2'],objectives:Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>o.id)),flags:['beaconLit','rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared'],jointCount:22,appearanceLimits:Object.fromEntries(Object.entries(RACES).map(([id,r])=>[id,{shell:r.shellColors.length,crest:r.crestStyles.length,led:r.ledColors.length}]))};
 const binding={session:'session-unique',area:'wire-area',epoch:1,catalog:catalog.version};
 const appearance={race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name:'Hero'};
 const header=(sequence=1)=>({...binding,sequence,tick:0,acceptedInput:0,consumedInput:0});
@@ -96,4 +96,32 @@ test('sparse pose patches reject cardinality and joint overflow without changing
  f.area.step(new Map([[f.actors[0].ref.id,intent(1,[],{forward:1})]]));const packets=f.codec.encodeObservation(observation(f,2)),a=new FragmentAssembler(binding);let m;for(const p of packets)m=a.accept(p,0);
  const actor=m.payload.actors.find(a=>a.ref.id===f.actors[0].ref.id);delete actor.fields.pose;actor.poseDelta={appliedQ:{mask:2**22,values:[1]}};
  assert.throws(()=>apply(f.receiver,encodeMessage(1,m.header,m.payload)),/integer/);assert.deepEqual(f.receiver.state,before);
+});
+
+test('lighthouse channel and private discovery/achievement events preserve actual new core contract',()=>{
+ const f=fixture(2),first=observation(f);apply(f.receiver,f.codec.encodeObservation(first));
+ const frame=input(1,[{kind:'channelStart',channel:'lighthouse-secret',targetId:'lighthouse-secret'}]);frame.heldChannel='lighthouse-secret';assert.deepEqual(decodeInput(encodeInput({binding,intent:frame},catalog),binding,catalog),frame);
+ const events=[{tick:0,order:0,event:{type:'achievement',unit:f.actors[0].ref,achievement:'secret'}},{tick:0,order:1,event:{type:'discovery',unit:f.actors[0].ref,discovery:'lighthouse-secret',id:'lighthouse-secret',first:true,coins:50,activeUntil:60}},{tick:0,order:2,event:{type:'discovery',unit:f.actors[1].ref,discovery:'treasure',id:'island',first:true,coins:75,activeUntil:null}}];
+ const next=observation(f,2);next.events=events;next.eventWatermark=2;const result=apply(f.receiver,f.codec.encodeObservation(next));assert.deepEqual(result.events,events.slice(0,2));
+ f.actors[0].u.lastCombat=-4.999;const combat=observation(f,3);combat.eventWatermark=2;assert.equal(apply(f.receiver,f.codec.encodeObservation(combat)).state.self.inCombat,true);
+});
+
+test('actual chest and held secret source outcomes roundtrip exact 75/100/125/50 coins and personal recovery',async()=>{
+ const {TREASURES}=await import('../../../src/sim/features/exploration.ts');const f=fixture(2),hero=f.actors[0];apply(f.receiver,f.codec.encodeObservation(observation(f)));let sequence=2,watermark=-1;const paid=[];
+ const publish=()=>{const events=f.area.drainEvents();if(events.length)watermark=events.at(-1).order;const o=observation(f,sequence++);o.events=events;o.eventWatermark=watermark;const r=apply(f.receiver,f.codec.encodeObservation(o));paid.push(...r.events.filter(e=>e.event.type==='discovery').map(e=>e.event.coins));return r;};
+ for(const [i,treasure]of TREASURES.entries()){const point=f.area.services.definition.interactions.find(p=>p.id===treasure.id);Object.assign(hero.u,point.position);f.area.step(new Map([[hero.ref.id,intent(i+1,[{kind:'interact',targetId:treasure.id}])]]));publish();}
+ Object.assign(hero.u,f.area.services.definition.interactions.find(p=>p.id==='lighthouse-secret').position);f.area.step(new Map([[hero.ref.id,intent(4,[{kind:'interact',targetId:'lighthouse-secret'}],{heldChannel:'lighthouse-secret'})]]));publish();
+ for(let i=0;i<47;i++)f.area.step(new Map());const completed=publish();assert.deepEqual(paid,[75,100,125,50]);assert.equal(completed.state.self.player.coins,350);assert.equal(completed.state.self.player.lighthouseSecretFound,true);assert.equal(completed.state.features.exploration.length,1);
+ const other=f.actors[1],otherInput=observation(f,1,true);otherInput.selfRef=other.ref;Object.assign(otherInput,projectObservationExtras(f.area.snapshot(),other.p.state.character,otherInput.visibleIds));otherInput.eventWatermark=watermark;
+ const otherView=apply(new GameplayReceiver(binding,catalog),createGameplayProtocol(catalog).encodeObservation(otherInput));assert.equal(otherView.state.self.player.coins,0);assert.deepEqual(otherView.state.self.achievements.earned,[]);assert.deepEqual(otherView.state.features.exploration,[]);
+});
+test('host party commands remain ordered single-command frames and party view supports cross-Area refs',()=>{
+ for(const command of [{kind:'partyCreate'},{kind:'partyJoin',code:'A1B2C3'},{kind:'partyLeave'},{kind:'partyPvp',enabled:true},{kind:'encounterLeave'}]){
+  const frame=input(1,[command]);assert.deepEqual(decodeInput(encodeInput({binding,intent:frame},catalog),binding,catalog),frame);
+  assert.throws(()=>encodeInput({binding,intent:input(1,[command,{kind:'jump'}])},catalog),/cannot mix/);
+ }
+ assert.throws(()=>encodeInput({binding,intent:input(1,[{kind:'partyJoin',code:'abcdef'}])},catalog),/party code/);
+ const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));const control={type:'party',state:{code:'A1B2C3',leader:'member-a',members:[{id:'member-a',name:'Alice',ref:f.actors[0].ref,world:'w1',online:true},{id:'member-b',name:'Bob',ref:{area:'other-area',id:4,life:2},world:'w2',online:true}],pvp:false}};
+ const result=apply(f.receiver,f.codec.encodeControl(header(2),control));assert.deepEqual(result.control,control);
+ assert.throws(()=>f.codec.encodeControl(header(3),{...control,state:{...control.state,members:[control.state.members[0],control.state.members[0]]}}),/membership/);
 });

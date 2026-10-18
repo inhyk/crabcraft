@@ -60,3 +60,22 @@ test('restore rejects unresolved interrupted motion and accepts semantically reo
  assert.equal(c.activity.motion.pushRemaining,.5);assert.throws(()=>a.restorePlayerCheckpoint(u.ref,c,c),/interrupted motion/);assert.equal(a.services.player(u.ref),p);
  const resolved=restore(c),reordered={...resolved,progress:Object.fromEntries(Object.entries(resolved.progress).reverse())};const next=a.restorePlayerCheckpoint(u.ref,c,reordered);assert.equal(a.services.getUnit(next).pushTime,0);a.releaseDurabilityBarrier(token);
 });
+
+test('a grant arriving after quiesced capture prevents stale durable retirement',()=>{
+ const registry=new InMemoryCharacterRegistry(),a=worldArea('late-retire','w1',{characters:registry}),{u}=addActor(a);const q=a.quiescePlayer(u.ref,'disconnect');a.markCheckpointDurable(q.capture.captureId,1,[]);
+ a.receiveGrant({id:JSON.stringify(['origin',1,1,'hero']),victim:{area:'origin',id:1,life:1},recipient:'hero',xp:10,coins:1,objectives:[],flags:[]});assert.throws(()=>a.commitPlayerRetirement(q.token),/changed/);assert.deepEqual(registry.owner('hero'),u.ref);assert.equal(a.players.size,1);
+ a.abortPlayerRetirement(q.token);const next=a.quiescePlayer(u.ref,'save-late');a.markCheckpointDurable(next.capture.captureId,2,next.capture.appliedGrantIds);a.commitPlayerRetirement(next.token);assert.equal(a.players.size,0);
+});
+
+test('travel preserves durable receipt partition and leaves room after 256 already saved grants',async()=>{
+ const {InMemoryTransferCoordinator}=await import('../src/sim/transfer.ts');const {atGate}=await import('./core/worldHarness.mjs');const registry=new InMemoryCharacterRegistry(),source=worldArea('travel-from','w1',{characters:registry}),dest=worldArea('travel-to','w2',{characters:registry}),actor=addActor(source);
+ const grant=i=>({id:JSON.stringify(['earned',i,1,'hero']),victim:{area:'earned',id:i,life:1},recipient:'hero',xp:0,coins:1,objectives:[],flags:[]});
+ for(let i=1;i<=256;i++)source.receiveGrant(grant(i));const c=source.capturePlayerCheckpoint(actor.u.ref);source.markCheckpointDurable(c.captureId,1,c.appliedGrantIds);atGate(source,actor);const result=new InMemoryTransferCoordinator(registry).transfer('hero',source,dest,'gate:w2',0);assert.equal(result.ok,true);
+ assert.deepEqual(dest.appliedGrantIds('hero'),[]);assert.equal(dest.receiveGrant(grant(256)),'duplicate');assert.equal(dest.receiveGrant(grant(257)),'applied');assert.equal(dest.services.player(result.ref).state.coins,257);assert.deepEqual(dest.appliedGrantIds('hero'),[grant(257).id]);
+});
+
+test('trusted encounter bootstrap is empty private matching encounter only and awards nothing',()=>{
+ const publicArea=worldArea('public');assert.throws(()=>publicArea.bootstrapEncounter('rust',{beaconLit:true}),/bootstrap/);
+ const definition={...publicArea.services.definition,bosses:publicArea.services.definition.bosses.filter(b=>b.profile==='rust')};const privateArea=worldArea('private','w1',{definition,context:{mode:'party-encounter',members:[],pvp:'disabled'}});
+ assert.throws(()=>privateArea.bootstrapEncounter('abyss',{beaconLit:true}),/bootstrap/);privateArea.bootstrapEncounter('rust',{beaconLit:true});assert.equal(privateArea.snapshot().features.beaconLit,true);assert.deepEqual(privateArea.drainEvents(),[]);const {p}=addActor(privateArea);assert.equal(p.state.xp,0);assert.deepEqual(p.state.flags,{});assert.throws(()=>privateArea.bootstrapEncounter('rust',{beaconLit:false}),/bootstrap/);
+});
