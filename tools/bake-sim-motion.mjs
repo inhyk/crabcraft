@@ -21,9 +21,10 @@ try {
   const {initAssets}=await import('/src/core/assets.ts');initAssets(new THREE.WebGLRenderer());
   const lib=new MotionLibrary('/motions/'); await lib.ready;
   const clips={}; for(const e of lib.list()){const c=await lib.load(e.id); clips[e.id]={...c,q:Array.from(c.q),base:Array.from(c.base),local:c.local?Array.from(c.local):null};}
-  const archetypes={};
+  const archetypes={},rigSources={};
   const specs=Object.fromEntries(['human','orc','dwarf','undead','nightelf','tauren'].map(race=>[race,{race,sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'numeric bake'}]));
-  const capture=(id,rig)=>{
+  const capture=(id,rig,source)=>{
+   rigSources[id]=source;
    rig.root.updateMatrixWorld(true);
    const height=rig.getSocket('head').getWorldPosition(new THREE.Vector3()).y;
    const chain=[]; for(let n=rig.getSocket('clawR');n&&n!==rig.body&&n!==rig.root;n=n.parent){
@@ -33,16 +34,22 @@ try {
    archetypes[id]={height:height>.2?height:1,radius:Math.min(2.6,Math.max(.35,(height>.2?height:1)*.58)),metersToUnits:rig.metersToUnits,rootScale:rig.root.scale.toArray(),bodySocket:rig.getSocket('clawR').parent!==rig.root,chain:chain.reverse()};
    rig.dispose();
   };
-  for(const [id,spec]of Object.entries(specs))capture(id,await createCrab(spec));
-  for(const id of ['scrapling','scavenger','corrodius'])capture(id,await createEnemyCrab(id));
-  capture('jellyfish',createJellyfishRig());
-  for(const [id,race,scale] of [['abyss','nightelf',3.5],['eclipse','undead',4.5],['dawn','orc',4]]){const rig=await createCrab(specs[race]);rig.root.scale.multiplyScalar(scale);capture(id,rig);}
-  {const rig=await createEnemyCrab('corrodius');rig.root.scale.multiplyScalar(.55);capture('echo',rig);}
+  for(const [id,spec]of Object.entries(specs))capture(id,await createCrab(spec),{factory:'createCrab',spec,rootMultiplier:1});
+  for(const id of ['scrapling','scavenger','corrodius'])capture(id,await createEnemyCrab(id),{factory:'createEnemyCrab',kind:id,rootMultiplier:1});
+  capture('jellyfish',createJellyfishRig(),{factory:'createJellyfishRig',rootMultiplier:1});
+  // Actual Game.init specs, not a race-only approximation of boss equipment.
+  for(const [id,spec,scale] of [
+   ['abyss',{race:'nightelf',sex:'female',classId:'mage',shell:2,crest:3,led:2,name:'Nereid'},3.5],
+   ['eclipse',{race:'undead',sex:'female',classId:'priest',shell:3,crest:3,led:2,name:'Astra'},4.5],
+   ['dawn',{race:'orc',sex:'male',classId:'warrior',shell:2,crest:3,led:1,name:'Solarkan'},4],
+   ['frost',{race:'undead',sex:'male',classId:'mage',shell:3,crest:1,led:2,name:'Boreas'},4.5],
+  ]){const rig=await createCrab(spec);rig.root.scale.multiplyScalar(scale);capture(id,rig,{factory:'createCrab',spec,rootMultiplier:scale});}
+  {const rig=await createEnemyCrab('corrodius');rig.root.scale.multiplyScalar(.55);capture('echo',rig,{factory:'createEnemyCrab',kind:'corrodius',rootMultiplier:.55});}
   const windows={}; for(const id of Object.keys(SKILL_CLIPS))windows[id]={move:skillWindow(id),channel:skillWindow(id,'channel'),release:skillWindow(id,'release')};
-  return {clips,archetypes,windows,routine:ROUTINE,rates:SKILL_RATE,joints:JOINT_NAMES};
+  return {clips,archetypes,rigSources,windows,routine:ROUTINE,rates:SKILL_RATE,joints:JOINT_NAMES};
  });
  const index=JSON.parse(await readFile(new URL('../public/motions/index.json',import.meta.url),'utf8'));
- const sources=['src/motion/library.ts','src/motion/pose.ts','src/motion/controller.ts','src/motion/skills.ts','src/motion/skillClips.ts','src/motion/breakdance.ts','src/motion/breakClips.ts','src/crab/index.ts','src/crab/rig.ts','src/crab/template.ts','src/crab/posture.ts','src/crab/pose.ts','src/crab/types.ts','src/crab/jellyfish.ts','src/data/races.ts','src/game/unit.ts','src/game/game.ts','public/models/crab/jumper.glb','public/motions/index.json'];
+ const sources=['src/motion/library.ts','src/motion/pose.ts','src/motion/controller.ts','src/motion/skills.ts','src/motion/skillClips.ts','src/motion/breakdance.ts','src/motion/breakClips.ts','tools/bake-sim-motion.mjs','src/crab/index.ts','src/crab/gear.ts','src/crab/rig.ts','src/crab/template.ts','src/crab/posture.ts','src/crab/pose.ts','src/crab/types.ts','src/crab/jellyfish.ts','src/data/races.ts','src/game/unit.ts','src/game/game.ts','public/models/crab/jumper.glb','public/motions/index.json'];
  for(const c of index.clips){sources.push(`public/motions/${c.id}.json`);const h=JSON.parse(await readFile(root+`public/motions/${c.id}.json`,'utf8'));sources.push('public/motions/'+h.bin);}
  for(const c of Object.values(result.clips))for(const key of ['q','base','local'])if(c[key]){const values=c[key],bytes=Buffer.alloc(values.length*4);values.forEach((v,i)=>bytes.writeFloatLE(v,i*4));c[key]=bytes.toString('base64');}
  result.encoding='float32-le-base64';
