@@ -1,4 +1,4 @@
-import type {CharacterId, DurableLedgerBinding, EntityRef, GrantReadToken} from './types.ts';
+import type {CharacterId, DurableLedgerBinding, EntityRef, GrantReadToken,FeatureAwardReadToken} from './types.ts';
 import {immutable, sameRef} from './events.ts';
 
 export function externalCharacter(value:unknown):asserts value is string {
@@ -30,18 +30,19 @@ export class DurableReceipts {
     if(old){if(!sameRef(old.actor,ref)||old.durableRevision!==revision)throw new Error('Ledger already bound');return;}
     this.activate(this.prepare(ref,character,revision));
   }
-  begin(ref:EntityRef,character:CharacterId,revision:number):GrantReadToken {
+  begin(ref:EntityRef,character:CharacterId,revision:number,purpose?:'dungeon-feature'):GrantReadToken {
     const current=this.current(ref,character);if(durableRevision(revision)!==current.durableRevision)throw new Error('Stale ledger revision');
-    const token=immutable({...current,area:ref.area,nonce:this.next()});this.reads.set(character,token);return token;
+    const token=immutable({...current,area:ref.area,nonce:this.next(),...(purpose?{purpose}:{})});this.reads.set(character,token);return token;
   }
-  consume(token:GrantReadToken):DurableLedgerBinding {
+  consume(token:GrantReadToken,purpose?:'dungeon-feature'):DurableLedgerBinding {
     const pending=this.reads.get(token.character);
-    if(!pending||pending.nonce!==token.nonce||pending.area!==token.area||!matches(pending,token))throw new Error('Stale grant read');
+    if(!pending||pending.purpose!==purpose||token.purpose!==purpose||pending.nonce!==token.nonce||pending.area!==token.area||!matches(pending,token))throw new Error('Stale grant read');
     this.reads.delete(token.character);
     const current=this.current(token.actor,token.character);if(!matches(current,token))throw new Error('Stale grant read');return current;
   }
+  beginFeature(ref:EntityRef,character:CharacterId,revision:number):FeatureAwardReadToken{return this.begin(ref,character,revision,'dungeon-feature') as FeatureAwardReadToken;}
   cancel(token:GrantReadToken):void {
-    const pending=this.reads.get(token.character);if(pending&&pending.nonce===token.nonce&&pending.area===token.area&&matches(pending,token))this.reads.delete(token.character);
+    const pending=this.reads.get(token.character);if(pending&&pending.purpose===token.purpose&&pending.nonce===token.nonce&&pending.area===token.area&&matches(pending,token))this.reads.delete(token.character);
   }
   invalidate(ref:EntityRef,character:CharacterId):void {
     const old=this.current(ref,character),generation=this.next();
