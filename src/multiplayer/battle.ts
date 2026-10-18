@@ -171,7 +171,7 @@ export class BattleSync {
     return true;
   }
   enterWorld2() {return this.travel(2);}
-  travel(chapter:1|2|3|4) {
+  travel(chapter:1|2|3|4|5|6) {
     if (this.sharedArea || !this.active || this.authority) return false;
     this.event({kind:'chapter',target:'world',chapter}); return true;
   }
@@ -205,7 +205,7 @@ export class BattleSync {
       if (e.kind === 'attack' && u?.hostile && u.alive && !u.hidden && !u.invulnerable && src.distTo(u) < 38) {
         g.combat.damage(src, u, e.amount!, { crit: e.crit }); this.publish();
       } else if (e.kind === 'chapter') {
-        if(!g.encounter.engaged&&e.chapter) { e.chapter<=4&&g.world2.go(e.chapter as 1|2|3|4); this.publish(); }
+        if(!g.encounter.engaged&&e.chapter) { g.world2.go(e.chapter); this.publish(); }
       } else if (e.kind === 'environment' && e.environment) {
         const env=e.environment;
         if(typeof env.beacon==='boolean'){if(g.setLighthouse)g.setLighthouse(env.beacon);else g.world.setBeaconLit(env.beacon);}
@@ -272,7 +272,6 @@ export class BattleSync {
   }
   private publish() { if (this.active && this.authority) this.send({ type: 'world', world: this.snapshot() }); }
   apply(world: WorldState, instant = false) {
-    if(world.chapter>4)return;
     if (!this.active || this.sharedArea && world.chapter!==this.game.world2.chapter) return;
     const g = this.game;
     const previousMode=this.mode;
@@ -280,7 +279,7 @@ export class BattleSync {
     this.applying = true;
     try {
       if (!this.sharedArea && g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared;g.journey.finalCleared=!!world.finalCleared;g.journey.frostCleared=!!world.frostCleared; }
-      if(!this.sharedArea && world.chapter!==g.world2.chapter){g.dungeons?.leave(false);g.world2.go(world.chapter as 1|2|3|4,false);}
+      if(!this.sharedArea && world.chapter!==g.world2.chapter){g.dungeons?.leave(false);g.world2.go(world.chapter,false);}
       g.dungeons?.apply(world.dungeon??null);
       g.boats?.applyNetwork(world.boat);
       g.villageGames?.apply(world.village??null);

@@ -151,7 +151,7 @@ export class Game {
   zone = '';
   musicOn = true;
   private music = '';
-  private musicChapter:1|2|3|4=1;
+  private musicChapter:1|2|3|4|5|6=1;
   private combatMusicUntil = 0;
   private zoneCandidate = '';
   private zoneSince = 0;
@@ -580,11 +580,13 @@ export class Game {
     return snapshotMap(this.engine.renderer, this.scene, { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad, topY: topY + 70 }, hide);
   }
 
-  private showLoading(chapter: 1 | 2 | 3 | 4): void {
+  private showLoading(chapter: 1 | 2 | 3 | 4 | 5 | 6): void {
     const entry = {
       1: {region:'Clawhaven',image:`art/loading-${1 + Math.floor(Math.random() * 2)}.webp`,subtitle:t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples')},
       2: {region:'Starhaven',image:'art/loading-starhaven.webp',subtitle:t('월드 II  |  별빛 아래 다시 만난 친구들','World II  |  Friends reunited beneath the stars')},
       3: {region:'Dawnharbor',image:'art/loading-dawnharbor.webp',subtitle:t('월드 III  |  빼앗긴 새벽을 되찾는 여정','World III  |  Reclaim the stolen dawn')},
+      5: {region:'Emberharbor',image:'art/loading-emberreach.svg',subtitle:t('월드 V | 잿불 군도의 새로운 원정','World V | A new expedition through Emberreach')},
+      6: {region:'Skyharbor',image:'art/loading-skybloom.svg',subtitle:t('월드 VI | 구름 위 하늘숲의 기억','World VI | Memories of the forest above the clouds')},
       4: {region:'Snowfall Village',image:'art/loading-frostlight.webp',subtitle:t('월드 IV  |  눈꽃 마을 너머 영원의 서리왕','World IV  |  The King of Eternal Frost awaits')},
     }[chapter];
     const tips=loadingTips(chapter);
@@ -629,7 +631,7 @@ export class Game {
   private intro(): void {
     if(this.world2.chapter>=2) {
       this.zone=this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z);this.zoneCandidate=this.zone;this.hud.minimap.setZone(regionName(this.zone),false);
-      this.hud.chat.system(this.world2.chapter===4?t('WORLD IV · 서리빛 설원에서 300레벨 영원의 서리왕에게 도전하세요.','WORLD IV · Challenge the level 300 King of Eternal Frost in Frostlight.'):this.world2.chapter===3?t('WORLD III · 100레벨 솔라칸을 물리치고 보레아스에게 잡힌 미라를 찾아 설원으로 가세요.','WORLD III · Defeat level 100 Solarkan and follow Mira’s trail to Boreas in Frostlight.'):t('WORLD II · 주민들의 이사를 돕고 유적을 탐험해 20레벨에 일식의 여왕에게 도전하세요.','WORLD II · Help the settlers, explore the ruins, and challenge the Eclipse Queen at level 20.'));
+      this.hud.chat.system(this.world2.chapter>=5?t('새로운 원정 월드에 오신 걸 환영해요. 주민들에게 퀘스트를 받아 모험을 이어가세요!','Welcome to the frontier! Speak to the villagers and continue your expedition.'):this.world2.chapter===4?t('WORLD IV · 서리빛 설원에서 300레벨 영원의 서리왕에게 도전하세요.','WORLD IV · Challenge the level 300 King of Eternal Frost in Frostlight.'):this.world2.chapter===3?t('WORLD III · 100레벨 솔라칸을 물리치고 보레아스에게 잡힌 미라를 찾아 설원으로 가세요.','WORLD III · Defeat level 100 Solarkan and follow Mira’s trail to Boreas in Frostlight.'):t('WORLD II · 주민들의 이사를 돕고 유적을 탐험해 20레벨에 일식의 여왕에게 도전하세요.','WORLD II · Help the settlers, explore the ruins, and challenge the Eclipse Queen at level 20.'));
       this.updateMusic(true);return;
     }
     const name = this.player.unit.name;
@@ -933,7 +935,7 @@ export class Game {
     else if(it.kind==='boat')this.hud.prompt.show('F',this.boats!.label());
     else if(it.kind==='secret')this.hud.prompt.show('F',t('길게 눌러 바위의 게 문양 살펴보기','Hold to inspect the crab carving'));
     else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.portalLabel());
-    else if(it.kind==='world2')this.hud.prompt.show('F',(it.node.kind.startsWith('dawn-')||it.node.kind.startsWith('snow-'))?it.node.kind.includes('-lamp-')?t('길게 눌러 길잡이 등불 켜기','Hold to light guide lantern'):t('퀘스트 물품 모으기','Gather quest item'):it.node.kind.startsWith('lamp')?t('길게 눌러 별빛 등불 켜기','Hold to light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
+    else if(it.kind==='world2')this.hud.prompt.show('F',(it.node.kind.startsWith('dawn-')||it.node.kind.startsWith('snow-')||it.node.kind.startsWith('ember-')||it.node.kind.startsWith('sky-'))?it.node.kind.includes('-lamp-')?t('길게 눌러 길잡이 등불 켜기','Hold to light guide lantern'):t('퀘스트 물품 모으기','Gather quest item'):it.node.kind.startsWith('lamp')?t('길게 눌러 별빛 등불 켜기','Hold to light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
     else if (it.kind === 'beacon') this.hud.prompt.show('F', this.beaconLit?t('등대 끄기','Turn off lighthouse'):t('등대 켜기','Light lighthouse'));
     else this.hud.prompt.show('F', t(`${it.unit.name}에게 말 걸기`,`${it.unit.kind === 'npc' ? 'Talk to' : 'Chat with'} ${it.unit.name}`));
   }
@@ -996,6 +998,7 @@ export class Game {
     u.setYaw(yawTo(u.pos.x, u.pos.z, this.player.unit.pos.x, this.player.unit.pos.z));
     if(this.world2.chapter===3&&id==='brinebeard')q.bump('dawn-letter');
     if(this.world2.chapter===4&&id==='brinebeard')q.bump('snow-letter');
+    if(this.world2.chapter>=5&&id==='brinebeard')q.bump(this.world2.chapter===5?'ember-letter':'sky-letter');
     if(this.world2.chapter===2&&id==='coralline'&&q.status.w6==='active')q.bump('deliver-supplies');
     if (this.world2.chapter===1 && id === 'silvermoon' && q.status.q2 === 'active') q.bump('deliver');
     const portrait = `art/npc/${id}.webp`;
@@ -1225,7 +1228,7 @@ export class Game {
     if (cur.step === 'objective' && cur.objective) {
       const k = cur.objective.kind;
       if(this.world2.chapter===4&&k==='frost-boss')return this.world2.fourth.arena.position;
-      if(this.world2.chapter===3||this.world2.chapter===4){const point=this.world2.objectivePoint(k);if(point)return point;}
+      if(this.world2.chapter>=3){const point=this.world2.objectivePoint(k);if(point)return point;}
       if(this.world2.chapter===3&&k==='dawn-boss')return this.world2.third.arena.position;
       if(this.world2.chapter===2){const point=this.world2.objectivePoint(k);if(point)return point;if(k==='eclipse-boss')return this.world2.arena.position;}
       const kind: EnemyKind | null = k === 'kill-scrapling' || k === 'collect-cog' ? 'scrapling' : k === 'kill-scavenger' ? 'scavenger' : null;
@@ -1353,7 +1356,7 @@ export class Game {
       this.respawning = false;
       await this.app.blackout(false, 900);
       this.vfx.mendGlow(p);
-      this.hud.messages.info(this.world2.chapter===4?t('껍질을 회복하고 눈꽃 마을로 돌아왔어요.','Shell mended, you return to Snowfall Village.'):this.world2.chapter===3?t('껍질을 회복하고 새벽 항구로 돌아왔어요.','Shell mended, you return to Dawnharbor.'):this.world2.chapter===2
+      this.hud.messages.info(this.world2.chapter>=5?t('껍질을 회복하고 원정 마을로 돌아왔어요.','Shell mended, you return to the expedition village.'):this.world2.chapter===4?t('껍질을 회복하고 눈꽃 마을로 돌아왔어요.','Shell mended, you return to Snowfall Village.'):this.world2.chapter===3?t('껍질을 회복하고 새벽 항구로 돌아왔어요.','Shell mended, you return to Dawnharbor.'):this.world2.chapter===2
         ?t('껍질을 회복하고 별빛 항구의 포탈 곁으로 돌아왔어요.','Shell mended, you return to the portal in Starhaven.')
         :t('껍질을 회복하고 클로헤이븐 광장으로 돌아왔어요.','Shell mended, you return to Clawhaven Square.'));
     })();

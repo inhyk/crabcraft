@@ -7,7 +7,7 @@ import {QUESTS,type ObjectiveDef,type ObjectiveKind} from './quests';
 export class DawnRequests {
  readonly root=new THREE.Group();
  readonly nodes:{kind:ObjectiveKind;objective:ObjectiveDef;position:THREE.Vector3;mesh:THREE.Mesh;lamp:boolean}[]=[];
- constructor(private g:Game,private island:{root:THREE.Group;collision:{resolve(x:number,z:number,r:number,out:THREE.Vector2):THREE.Vector2};height(x:number,z:number):number},private points:Partial<Record<ObjectiveKind,[number,number]>>=DAWN_POINTS){this.root.name='Island village requests';island.root.add(this.root);}
+ constructor(private g:Game,private island:{root:THREE.Group;collision:{resolve(x:number,z:number,r:number,out:THREE.Vector2):THREE.Vector2};height(x:number,z:number):number},private points:Partial<Record<ObjectiveKind,readonly[number,number]>>=DAWN_POINTS){this.root.name='Island village requests';island.root.add(this.root);}
  build(){
   const palette:Record<string,string>={crate:'#dca86c',herb:'#7de9a0',lamp:'#ffd77e',ore:'#ff935c',pearl:'#a6ecff',seal:'#d7bbff',visit:'#fff1bd'};
   const geometries:Record<string,THREE.BufferGeometry>={crate:new THREE.BoxGeometry(1.3,1.1,1.3),herb:new THREE.IcosahedronGeometry(.55,0),lamp:new THREE.OctahedronGeometry(.55),ore:new THREE.DodecahedronGeometry(.7,0),pearl:new THREE.SphereGeometry(.55,12,8),seal:new THREE.TorusGeometry(.6,.16,6,18),visit:new THREE.OctahedronGeometry(.55)};

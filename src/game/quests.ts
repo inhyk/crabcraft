@@ -1,3 +1,4 @@
+import {FRONTIER_QUESTS,type FrontierQuestId,type FrontierObjectiveKind} from './frontierQuests';
 // "The Rust Tide" quest chain (docs/design.md): data, dialogue and progress state.
 import type { PoiId } from '../world/types';
 import { Emitter } from './util';
@@ -6,10 +7,10 @@ import {translatedQuest} from './questLocale';
 import {SNOW_QUESTS,type SnowQuestId,type SnowObjectiveKind} from './snowQuests';
 import {DAWN_QUESTS,type DawnQuestId,type DawnObjectiveKind} from './dawnQuests';
 
-export type QuestId = SnowQuestId | DawnQuestId | 'q1' | 'q2' | 'q3' | 'q4' | 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6' | 'w7' | 'd1' | 'd2' | 's1' | 's2';
+export type QuestId = FrontierQuestId | SnowQuestId | DawnQuestId | 'q1' | 'q2' | 'q3' | 'q4' | 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6' | 'w7' | 'd1' | 'd2' | 's1' | 's2';
 export type NpcId = 'brinebeard' | 'silvermoon' | 'coralline' | 'grukk' | 'hoofclaw' | 'rattlebolt' | 'pip';
 export type QuestStatus = 'locked' | 'available' | 'active' | 'ready' | 'done';
-export type ObjectiveKind = SnowObjectiveKind | DawnObjectiveKind | 'kill-scrapling' | 'kill-scavenger' | 'collect-cog' | 'deliver' | 'beacon' | 'boss' | 'crystal-a' | 'crystal-b' | 'crystal-c' | 'crystal-d' | 'lamp-a' | 'lamp-b' | 'lamp-c' | 'explore-west' | 'explore-east' | 'explore-north' | 'deliver-supplies' | 'eclipse-boss' | 'dawn-boss' | 'frost-boss';
+export type ObjectiveKind = FrontierObjectiveKind | SnowObjectiveKind | DawnObjectiveKind | 'kill-scrapling' | 'kill-scavenger' | 'collect-cog' | 'deliver' | 'beacon' | 'boss' | 'crystal-a' | 'crystal-b' | 'crystal-c' | 'crystal-d' | 'lamp-a' | 'lamp-b' | 'lamp-c' | 'explore-west' | 'explore-east' | 'explore-north' | 'deliver-supplies' | 'eclipse-boss' | 'dawn-boss' | 'frost-boss';
 
 export interface ObjectiveDef {
   id: string;
@@ -21,7 +22,7 @@ export interface ObjectiveDef {
 
 export interface QuestDef {
   id: QuestId;
-  chapter?: 1 | 2 | 3 | 4;
+  chapter?: 1 | 2 | 3 | 4 | 5 | 6;
   title: string;
   giver: NpcId;
   /** null = completes by itself when the objectives are done. */
@@ -40,6 +41,7 @@ export interface QuestDef {
 
 export const QUESTS: Record<QuestId, QuestDef> = {
  ...DAWN_QUESTS,
+ ...FRONTIER_QUESTS,
  ...SNOW_QUESTS,
  s1:{id:'s1',chapter:4,title:'Patrol the Snowfields',giver:'grukk',turnIn:'grukk',offer:['Frost sentinels are gathering beneath the aurora. Keep the path to our warm village safe.','Defeat eight Glacial Sentinels, then return for your reward.'],progress:'Defeat eight Glacial Sentinels in the snowfields.',complete:['The trail is safe again! Keep patrolling to prepare for Boreas.'],summary:'Protect Snowfall Village from the glacial patrols.',readyHint:'Return to Grukk in Snowfall Village.',objectives:[{id:'s1-kill',kind:'kill-scavenger',label:'Glacial Sentinels defeated',count:8,poi:'wreck'}],xp:18000},
  s2:{id:'s2',chapter:4,title:'The Eternal Winter',giver:'brinebeard',turnIn:null,offer:['Boreas has taken your friend Mira to his ice prison beyond the aurora. He will only face a hero who reaches level 300.','Take the lantern road north, defeat Boreas, free Mira and reclaim the Frozen Crown.'],progress:'Reach level 300 and defeat Boreas at the Frozen Throne.',complete:['Mira is free and the Frozen Crown is reclaimed. All four islands will dance together!'],summary:'Defeat level 300 Boreas, rescue Mira and celebrate with all four islands.',readyHint:'Your reward is granted automatically.',objectives:[{id:'s2-boss',kind:'frost-boss',label:'Boreas defeated and Mira rescued',count:1,poi:'bossArena'}],xp:24000},
@@ -378,7 +380,7 @@ export const QUESTS: Record<QuestId, QuestDef> = {
 },
 };
 
-export const QUEST_ORDER: QuestId[] = ['q1', 'q2', 'q3', 'q4', 'w1','w2','w3','w4','w5','w6','w7','d1','d2','d3','d4','d5','d6','d7','d8','d9','d10','d11','d12','s1','s2','s3','s4','s5','s6','s7','s8','s9','s10','s11','s12'];
+export const QUEST_ORDER: QuestId[] = ['q1', 'q2', 'q3', 'q4', 'w1','w2','w3','w4','w5','w6','w7','d1','d2','d3','d4','d5','d6','d7','d8','d9','d10','d11','d12','s1','s2','s3','s4','s5','s6','s7','s8','s9','s10','s11','s12',...Object.keys(FRONTIER_QUESTS) as FrontierQuestId[]];
 
 export interface NpcDef {
   id: NpcId;
@@ -575,16 +577,16 @@ export interface CurrentObjective {
 }
 
 export class QuestLog {
-  readonly status: Record<QuestId, QuestStatus> = { q1: 'available', q2: 'locked', q3: 'locked', q4: 'locked', w1:'locked',w2:'locked',w3:'locked',w4:'locked',w5:'locked',w6:'locked',w7:'locked',d1:'locked',d2:'locked',d3:'locked',d4:'locked',d5:'locked',d6:'locked',d7:'locked',d8:'locked',d9:'locked',d10:'locked',d11:'locked',d12:'locked',s1:'locked',s2:'locked',s3:'locked',s4:'locked',s5:'locked',s6:'locked',s7:'locked',s8:'locked',s9:'locked',s10:'locked',s11:'locked',s12:'locked' };
-  chapter:1|2|3|4=1;
+  readonly status: Record<QuestId, QuestStatus> = { q1: 'available', q2: 'locked', q3: 'locked', q4: 'locked', w1:'locked',w2:'locked',w3:'locked',w4:'locked',w5:'locked',w6:'locked',w7:'locked',d1:'locked',d2:'locked',d3:'locked',d4:'locked',d5:'locked',d6:'locked',d7:'locked',d8:'locked',d9:'locked',d10:'locked',d11:'locked',d12:'locked',s1:'locked',s2:'locked',s3:'locked',s4:'locked',s5:'locked',s6:'locked',s7:'locked',s8:'locked',s9:'locked',s10:'locked',s11:'locked',s12:'locked',...Object.fromEntries(Object.keys(FRONTIER_QUESTS).map(id=>[id,'locked'])) as Record<FrontierQuestId,QuestStatus> };
+  chapter:1|2|3|4|5|6=1;
   inChapter(id: QuestId) { return (QUESTS[id].chapter ?? 1)===this.chapter; }
-  setChapter(chapter:1|2|3|4) {
+  setChapter(chapter:1|2|3|4|5|6) {
     this.chapter=chapter;
     if(chapter>=2)for(const id of QUEST_ORDER)if(this.inChapter(id) && this.status[id]==='locked')this.status[id]='available';
   }
   readonly progress = new Map<string, number>();
   /** Personal navigation choices stay separate for the two worlds. */
-  readonly tracked: Partial<Record<1 | 2 | 3 | 4, QuestId>> = {};
+  readonly tracked: Partial<Record<1 | 2 | 3 | 4 | 5 | 6, QuestId>> = {};
   readonly events = new Emitter<QuestEvents>();
   cogs = 0;
 
@@ -606,7 +608,7 @@ export class QuestLog {
 
   restoreTracking(value: unknown): void {
     if (!value || typeof value !== 'object') return;
-    for (const chapter of [1, 2, 3, 4] as const) {
+    for (const chapter of [1, 2, 3, 4, 5, 6] as const) {
       const id = (value as Record<string, unknown>)[chapter];
       if (typeof id === 'string' && QUEST_ORDER.includes(id as QuestId) && this.canTrack(id as QuestId, chapter)) this.tracked[chapter] = id as QuestId;
     }

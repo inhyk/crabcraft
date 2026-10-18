@@ -359,7 +359,7 @@ export class Enemy {
     if(this.isEcho)return 10;
     const chapter=this.game.world2?.chapter??1;
     if(this.isAdd||chapter===1)return base.level;
-    return (chapter===4?100:chapter===3?20:10)+(this.kind==='scavenger'?2:0);
+    return (chapter===6?400:chapter===5?300:chapter===4?100:chapter===3?20:10)+(this.kind==='scavenger'?2:0);
   }
 
   private scaleForJourney(): void {
@@ -379,7 +379,7 @@ export class Enemy {
 
   refreshAppearance(): void {
     if(this.isDungeonOnly){this.unit.setBaseTint(this.dungeonCaptain?'#ffe8a6':'#a6e7ff');return;}
-    this.unit.setBaseTint(this.game.world2?.chapter===4?'#a5eaff':(this.game.world2?.chapter??1)>=2 ? '#b08cff' : LED[this.kind]);
+    this.unit.setBaseTint(this.game.world2?.chapter===6?'#82ffbd':this.game.world2?.chapter===5?'#ffa05a':this.game.world2?.chapter===4?'#a5eaff':(this.game.world2?.chapter??1)>=2 ? '#b08cff' : LED[this.kind]);
   }
 
   /** No player near the home: the same rule for every player (there is no one camera to hide from). */

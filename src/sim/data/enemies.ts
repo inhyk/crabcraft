@@ -8,7 +8,7 @@ export const ENEMY_STATS: Readonly<Record<EnemyKind, Readonly<EnemyStats>>> = Ob
 });
 export const RESPAWN_CLEAR = 22;
 export function isQuestGuardian(kind:EnemyKind,chapter:number,role:'ordinary'|'add'|'echo'):boolean{return kind==='scavenger'&&role==='ordinary'&&(chapter===2||chapter===3);}
-export function canonicalEnemyLevel(kind:EnemyKind,chapter:number,role:'ordinary'|'add'|'echo'):number {if(role==='echo')return 10;if(role==='add'||chapter===1)return ENEMY_STATS[kind].level;return (chapter===4?100:chapter===3?20:10)+(kind==='scavenger'?2:0);}
+export function canonicalEnemyLevel(kind:EnemyKind,chapter:number,role:'ordinary'|'add'|'echo'):number {if(role==='echo')return 10;if(role==='add'||chapter===1)return ENEMY_STATS[kind].level;return (chapter===6?400:chapter===5?300:chapter===4?100:chapter===3?20:10)+(kind==='scavenger'?2:0);}
 export function canonicalEnemyRespawn(kind:EnemyKind,chapter:number,role:'ordinary'|'add'|'echo'):number {if(role==='echo')return 120;if(isQuestGuardian(kind,chapter,role))return 6;return chapter>=2&&role!=='add'?12:ENEMY_STATS[kind].respawn;}
 export function enemyRespawnClearance(kind:EnemyKind,chapter:number,role:'ordinary'|'add'|'echo'):number {return isQuestGuardian(kind,chapter,role)?8:RESPAWN_CLEAR;}
 export function enemyStats(kind:EnemyKind, level:number, chapter:number, role:'ordinary'|'add'|'echo'):EnemyStats {
