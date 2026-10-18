@@ -34,7 +34,8 @@ const logReport = (r: Report) => console.log(`chat report: ${JSON.stringify(r)}`
 /**
  * Room-scoped relay with an authenticated combat authority and world checkpoints.
  * `enter` puts a player in the least-full public shard of their world area. Shards relay presence and chat
- * only: nobody there is a combat authority, so strangers never take over each other's world or saves.
+ * only for legacy clients. Opt-in shared-world shards elect a combat authority within one area;
+ * their portal travel stays personal and cannot change the shard area.
  * Chat is filtered and rate limited, names with bad words are replaced, and reports can mute a player (chat/safety.ts).
  */
 export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
@@ -48,9 +49,10 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   const worlds = new Map<string, WorldState>();
   const alarms = new Map<string, number>();
   const snowRooms=new Map<string,boolean>();
+  const sharedAreas=new Set<string>();
   /** Public shard code to its world area. Shard codes start with W, so they cannot be joined by code. */
   const publics = new Map<string, number>();
-  const drop = (code: string) => { rooms.delete(code); worlds.delete(code); alarms.delete(code); publics.delete(code);snowRooms.delete(code); };
+  const drop = (code: string) => { rooms.delete(code); worlds.delete(code); alarms.delete(code); publics.delete(code);snowRooms.delete(code);sharedAreas.delete(code); };
   // Make room for a new one by forgetting the oldest room nobody is in.
   const evict = () => { for (const [code, room] of rooms) if (!room.size) { drop(code); return true; } return false; };
   const host = (room: string) => [...(rooms.get(room)?.values() ?? [])].find(m => m.combat)?.id ?? '';
@@ -69,7 +71,7 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     broadcast(m.room, { type: 'left', id: m.id });
     // An empty shard has nothing to keep; a private room may keep its checkpoint.
     if (!room?.size) { if (!keepRooms || publics.has(m.room)) drop(m.room); }
-    else if (!publics.has(m.room)) broadcast(m.room, { type: 'authority', host: host(m.room) });
+    else if (!publics.has(m.room)||sharedAreas.has(m.room)) broadcast(m.room, { type: 'authority', host: host(m.room) });
     m.lastRoom = m.room;
     m.room = '';
     m.state = null;
@@ -82,7 +84,7 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     m.room = code;
     if (!rooms.has(code)) rooms.set(code, new Map());
     const room = rooms.get(code)!, area = publics.get(code);
-    send(m.ws, { type: 'welcome', host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, ...(area ? { public: true, area } : {}), ...(renamed ? { renamed: name } : {}), players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
+    send(m.ws, { type: 'welcome', host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, ...(area ? { public: true, area, ...(sharedAreas.has(code)?{sharedWorld:1}:{}) } : {}), ...(renamed ? { renamed: name } : {}), players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
     room.set(m.id, m);
     broadcast(code, { type: 'joined', id: m.id, spec }, m.id);
     if (host(code)) broadcast(code, { type: 'authority', host: host(code) });
@@ -121,16 +123,17 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
       if (msg.type === 'enter') {
         const spec = specOf(msg.spec);
         if (!spec) { send(ws, { type: 'error', message: 'Invalid character.' }); return; }
-        const area = areaOf(msg.area);
+        const area = areaOf(msg.area), shared=msg.sharedWorld===1&&msg.snowWorld===true&&msg.combatVersion===1;
         leave(m);
         let code = '', least = ROOM_CAP;
-        for (const [c, a] of publics) { const size = rooms.get(c)?.size ?? 0; if (a === area && size < least) { code = c; least = size; } }
+        for (const [c, a] of publics) { const size = rooms.get(c)?.size ?? 0; if (a === area && sharedAreas.has(c)===shared && size < least) { code = c; least = size; } }
         if (!code) {
           if (rooms.size >= maxRooms && !evict()) { send(ws, { type: 'error', message: 'Server full. Try again later.' }); return; }
           do { code = `W${area}${randomBytes(2).toString('hex').toUpperCase()}`; } while (rooms.has(code));
           publics.set(code, area);
+          if(shared)sharedAreas.add(code);
         }
-        admit(m, code, spec, false, msg.session);
+        m.snow=shared;admit(m, code, spec, shared, msg.session);
       } else if (msg.type === 'create' || msg.type === 'join') {
         const spec = specOf(msg.spec);
         if (!spec) { send(ws, { type: 'error', message: 'Invalid character.' }); return; }
@@ -158,11 +161,11 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
         broadcast(m.room, { type: 'action', id: m.id, action: msg.action }, m.id);
       } else if (m.room && m.combat && msg.type === 'world' && host(m.room) === m.id) {
         const world = worldOf(msg.world);
-        if (world && (m.snow || world.chapter!==4&&!world.bosses.some(b=>b.id==='b300'))) { worlds.set(m.room, world); broadcast(m.room, { type: 'world', world }, m.id); }
+        if (world && (!publics.has(m.room)||sharedAreas.has(m.room)&&world.chapter===publics.get(m.room)) && (m.snow || world.chapter!==4&&!world.bosses.some(b=>b.id==='b300'))) { worlds.set(m.room, world); broadcast(m.room, { type: 'world', world }, m.id); }
       } else if (m.room && m.combat && msg.type === 'combat') {
         const authority = host(m.room) === m.id;
         const event = eventOf(msg.event, authority);
-        if (event && (m.snow || event.chapter!==4&&![event.target,event.source].some(key=>key==='b300'||key==='f300'))) {
+        if (event && (!publics.has(m.room)||!['chapter','party','duel'].includes(event.kind)) && (m.snow || event.chapter!==4&&![event.target,event.source].some(key=>key==='b300'||key==='f300'))) {
           const packet = { type: 'combat', id: m.id, event };
           if (authority) broadcast(m.room, packet, m.id);
           else { const h = rooms.get(m.room)?.get(host(m.room)); if (h) send(h.ws, packet); }
