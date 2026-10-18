@@ -82,13 +82,20 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   }
   function admit(m: Member, code: string, spec: Spec, combat: boolean, session: unknown) {
     // Strangers see a neutral name instead of one with a bad word or contact details; the player is told.
-    const name = shownName(spec.name), renamed = name !== spec.name;
+    const safeName = shownName(spec.name), renamed = safeName !== spec.name;
+    const nameKey = (value:string) => value.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+    const used = new Set([...members].filter(p=>p!==m && p.room && p.ws.readyState===WebSocket.OPEN).map(p=>nameKey(p.spec.name)));
+    let name = safeName, suffix = 2;
+    while(used.has(nameKey(name))){
+      const tag = ` #${suffix++}`;
+      name = safeName.slice(0,24-tag.length).replace(/[\uD800-\uDBFF]$/,'') + tag;
+    }
     m.spec = { ...spec, name }; m.combat = combat; spec = m.spec;
     m.session = sessionOf(session, m.session);
     m.room = code;
     if (!rooms.has(code)) rooms.set(code, new Map());
     const room = rooms.get(code)!, area = publics.get(code);
-    send(m.ws, { type: 'welcome', host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, ...(area ? { public: true, area, ...(sharedAreas.has(code)?{sharedWorld:1}:{}) } : {}), ...(renamed ? { renamed: name } : {}), players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
+    send(m.ws, { type: 'welcome', host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, displayName:name, ...(name!==safeName?{nameConflict:true}:{}), ...(area ? { public: true, area, ...(sharedAreas.has(code)?{sharedWorld:1}:{}) } : {}), ...(renamed ? { renamed: name } : {}), players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
     room.set(m.id, m);
     broadcast(code, { type: 'joined', id: m.id, spec }, m.id);
     if (host(code)) broadcast(code, { type: 'authority', host: host(code) });

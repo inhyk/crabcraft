@@ -457,7 +457,7 @@ test('relayed chat is masked before anyone sees it, and a name with a bad word o
   assert.equal((await a.next('joined')).spec.name, '게 모험가');
   c.send({ type: 'enter', area: 3, spec: { ...spec, name: 'kakao kid_99' } });
   assert.deepEqual((await c.next('welcome')).players.map(p => p.spec.name).sort(), ['Test crab', '게 모험가']);
-  assert.equal((await a.next('joined')).spec.name, '게 모험가');
+  assert.equal((await a.next('joined')).spec.name, '게 모험가 #2');
   b.send({ type: 'chat', text: '시발 내 번호 010-1234-5678 이야' });
   const line = await a.next('chat');
   assert.deepEqual([line.id, line.name, line.text], [br.id, '게 모험가', '** 내 번호 ************* 이야']);
@@ -586,4 +586,19 @@ test('shared public worlds reject guest checkpoints, cross-area travel and room-
  for(const e of [{kind:'chapter',target:'world',chapter:2},{kind:'party',target:'world',party:2},{kind:'duel',target:'other',amount:20}])b.send({type:'combat',event:e});
  b.send({type:'state',state});await a.next('state');a.send({type:'state',state});await b.next('state');
  assert.equal(a.queue.some(m=>m.type==='world'||m.type==='combat'),false);assert.equal(b.queue.some(m=>m.type==='world'),false);
+});
+
+test('online display names are unique across private rooms and worlds without changing character identity',async t=>{
+ const {client}=await setup(t);const a=await client(),b=await client(),c=await client();
+ a.send({type:'create',spec});const first=await a.next('welcome');assert.equal(first.displayName,'Test crab');
+ b.send({type:'create',spec});const second=await b.next('welcome');assert.equal(second.displayName,'Test crab #2');assert.equal(second.nameConflict,true);assert.equal(second.renamed,undefined);
+ c.send({type:'enter',area:3,spec:{...spec,name:'Ｔｅｓｔ crab'}});const third=await c.next('welcome');assert.equal(third.nameConflict,true);assert.match(third.displayName,/#3$/);
+ b.send({type:'join',room:first.room,spec});const moved=await b.next('welcome');assert.equal(moved.displayName,second.displayName);assert.equal((await a.next('joined')).spec.name,second.displayName);
+ b.send({type:'chat',text:'Hello there'});assert.equal((await a.next('chat')).name,second.displayName);
+ b.ws.close();await a.next('left');const d=await client();d.send({type:'join',room:first.room,spec});assert.equal((await d.next('welcome')).displayName,'Test crab #2');
+});
+test('long, manually suffixed and filtered names cannot collide after suffixing',async t=>{
+ const {client}=await setup(t);const names=[];
+ for(const name of ['A'.repeat(24),'A'.repeat(24),'A'.repeat(21)+' #2','게 모험가','게 모험가','🦀'.repeat(12),'🦀'.repeat(12)]){const c=await client();c.send({type:'create',spec:{...spec,name}});const w=await c.next('welcome');assert.ok(w.displayName.length<=24);names.push(w.displayName);}
+ assert.equal(new Set(names.map(n=>n.toLowerCase())).size,names.length);
 });
