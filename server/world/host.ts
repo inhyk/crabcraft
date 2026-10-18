@@ -16,7 +16,8 @@ import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, type PreparedInput } from './gameplay/intents.ts';
-import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding } from './gameplay/protocol.ts';
+import { prepareObservationSnapshot } from './gameplay/protocol.ts';
+import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
 
 type StoredCharacter = Character<IdentityJson, CheckpointJson>;
 export interface HostPolicies {
@@ -110,7 +111,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
   let accepting = true; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
   let generation = 1; let unresolved = 0;
-  const metrics = { ticks: 0, snapshots: 0, packets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
+  const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
     authFailures: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
   const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
   const timings = new Map<string, { values: number[]; cursor: number }>();
@@ -143,21 +144,29 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const boundary = <T>(fn: () => T): Promise<T> => new Promise((resolve, rejectPromise) => enqueue(() => { try { resolve(fn()); } catch (error) { rejectPromise(error); } }));
   const json = (c: Connection, value: unknown) => {
-    if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(value));
+    if (c.ws.readyState === WebSocket.OPEN) { const data = JSON.stringify(value); c.ws.send(data); metrics.packets++; metrics.bytesSent += Buffer.byteLength(data); }
   };
   const queueNotice = (c: Connection, world: WorldId, position: number) => {
     const key = `${world}:${position}`;
     if (c.queueKey === key) return;
-    c.queueKey = key; json(c, { type: 'queued', world, position });
+    c.queueKey = key;
+    if (!sendControl(c, { type: 'queued', world, position })) json(c, { type: 'queued', world, position });
   };
   const close = (c: Connection, code: string, retryable = false) => {
     if (c.closed) return;
-    json(c, { type: 'error', code, retryable }); c.ws.close(1008, code.slice(0, 80));
+    if (!sendControl(c, { type: 'error', code, retryable })) json(c, { type: 'error', code, retryable });
+    c.ws.close(1008, code.slice(0, 80));
   };
-  const controlError = (c: Connection, code: string) => {
-    if (!c.stream || !c.input || !c.actor || c.ws.readyState !== WebSocket.OPEN) return;
+  function sendControl(c: Connection, value: WorldControl): boolean {
+    if (!c.stream || !c.input || !c.actor || c.stream.area !== c.actor.slot.area.services.id || c.closed || c.ws.readyState !== WebSocket.OPEN) return false;
     for (const chunk of c.protocol.encodeControl({ ...c.stream, sequence: ++c.sequence, tick: c.actor.slot.area.services.tick,
-      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, { type: 'error', code, retryable: false })) c.ws.send(chunk, { binary: true });
+      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, value)) {
+      c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength;
+    }
+    return true;
+  }
+  const controlError = (c: Connection, code: string) => {
+    sendControl(c, { type: 'error', code, retryable: false });
   };
   function partyState(party: Party | undefined) {
     if (!party) return null;
@@ -171,8 +180,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   function publishParty(c: Connection) {
     if (!c.stream || !c.input || !c.actor || c.stream.area !== c.actor.slot.area.services.id || c.closed || c.ws.readyState !== WebSocket.OPEN) return;
     const state = partyState(memberParty.get(c.actor.record.characterId));
-    for (const chunk of c.protocol.encodeControl({ ...c.stream, sequence: ++c.sequence, tick: c.actor.slot.area.services.tick,
-      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, { type: 'party', state })) c.ws.send(chunk, { binary: true });
+    sendControl(c, { type: 'party', state });
   }
   function syncPartyContexts() {
     for (const slot of allSlots) if (slot.area.players.size) {
@@ -291,7 +299,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (result.reason === 'destination-full') {
         queueNotice(actor.connection, request.destination, [...travels.values()].filter(r => r.destination === request.destination).findIndex(r => r.actor === actor) + 1);
       } else {
-        json(actor.connection, { type: 'error', code: 'travel-unavailable', retryable: true }); travels.delete(character);
+        controlError(actor.connection, 'travel-unavailable'); travels.delete(character);
       }
     }
   };
@@ -524,6 +532,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const publish = (slot: Slot) => {
     if (barrier || frozen) return;
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
+    const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, a.record.identity.appearance]));
+    const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog);
+    observe('snapshotPrepare', deps.nowMonotonicMs() - start);
     for (const actor of actors.values()) {
       const c = actor.connection;
       if (actor.slot !== slot || !c || c.closed || !c.stream || !c.input) continue;
@@ -533,8 +544,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         c.visible = visible(slot, actor, c);
         const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
           acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput, selfRef: actor.ref,
-          snapshot, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark,
-          appearances: Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, a.record.identity.appearance])),
+          snapshot, prepared, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark, appearances,
           ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
         observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
         for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
@@ -596,7 +606,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           }), () => enqueue(() => { if (!c.closed && c.generation === attempt) close(c, 'session-unavailable', true); }));
         }
       }
-      if (!barrier && !frozen) {
+      if (!barrier && !frozen && !draining) {
         admitWaiting(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
         for (const slot of allSlots) {
           if (!slot.area.players.size || barrier) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
@@ -633,7 +643,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         });
         ws.on('message', (raw, binary) => {
           if (c.closed || frozen || draining) return;
-          const bytes = buffer(raw); metrics.bytesReceived += bytes.byteLength;
+          const bytes = buffer(raw); metrics.bytesReceived += bytes.byteLength; metrics.receivedPackets++;
           if (c.phase === 'preauth') {
             if (binary || bytes.byteLength > p.maxAuthFrameBytes) { close(c, 'auth-frame'); return; }
             let value: { type?: unknown; ticket?: unknown; characterId?: unknown };
@@ -659,7 +669,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     async shutdown(deadlineMs) {
       accepting = false; draining = true;
       const end = deps.nowMonotonicMs() + deadlineMs;
-      for (const c of connections) { json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor) c.actor.slot.area.neutralizeInput(c.actor.ref); }
+      for (const c of connections) { if (!sendControl(c, { type: 'restarting', retryAfterSeconds: 1 })) json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor) c.actor.slot.area.neutralizeInput(c.actor.ref); }
       if (!barrier && !frozen) startDurability();
       while (barrier && deps.nowMonotonicMs() < end) await new Promise(resolve => setTimeout(resolve, p.loopIntervalMs));
       const persisted = await persistence.shutdown(Math.max(0, end - deps.nowMonotonicMs()));
@@ -675,7 +685,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     stats: () => ({ ...metrics, ...timingStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
       processCpuSystemMs: process.cpuUsage(processCpuStart).system / 1000, processElapsedMs: deps.nowMonotonicMs() - processStarted,
       activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
-      publicAreas: slots.size, frozen, durableBarrier: barrier !== null, unresolved,
+      publicAreas: slots.size, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
       partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length,
       droppedTicks: [...allSlots].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...allSlots].reduce((n, s) => n + s.snapshot.dropped, 0) }),
   };

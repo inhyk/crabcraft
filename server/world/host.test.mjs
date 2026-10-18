@@ -61,8 +61,8 @@ async function runtime(options = {}) {
   const failures = [];
   const host = createActualWorldHost({ admission, characters: store, worlds, codec, ownership,
     gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
-    policies: { authTimeoutMs: 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
-      checkpointIntervalMs: 1000, maxConnections: 16, maxConnectionsPerIp: 16, maxWaiting: 16,
+    policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
+      checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
       maxMutationSourcesPerTick: 64, loopIntervalMs: 2,
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
@@ -71,7 +71,7 @@ async function runtime(options = {}) {
       offlineSeconds: (record, now) => Math.max(0, now - record.updatedAt) / 1000,
       visible: (unit, viewer) => personalNpcVisible(worlds.get(viewer.quests.chapter === 1 ? 'w1' : 'w' + viewer.quests.chapter).publicDefinition, unit.npcId, viewer.flags),
       observationExtras: projectObservationExtras },
-    originAllowed: value => value === origin, clientIp: () => '127.0.0.1', nowMonotonicMs: () => performance.now(), nowWallMs: Date.now,
+    originAllowed: value => value === origin, clientIp: () => '127.0.0.1', nowMonotonicMs: () => options.capacity ? 0 : performance.now(), nowWallMs: Date.now,
     onFailure: (stage, error) => { failures.push({ stage, message: error.message }); },
   });
   const server = createServer(); server.on('upgrade', host.handleUpgrade); server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -251,4 +251,68 @@ test('private encounter admission uses actual beacon channel and trusted readine
     assert.deepEqual(rt.failures, []); assert.deepEqual(bot.errors, []); assert.equal(bot.state.self.player.xp, 900);
     assert.notEqual(bot.state.self.player.flags.rustCleared, true);
   } finally { if (heartbeat) clearInterval(heartbeat); bot?.ws.close(); await rt.close(); }
+});
+
+test('100 actual authenticated sockets occupy one public Area; 101st queues, takes a released seat and cancels cleanly (paused simulation clock)', { timeout: 30000 }, async () => {
+  const rt = await runtime({ capacity: true, grace: 0 }); const bots = [];
+  try {
+    const records = [];
+    for (let i = 0; i < 101; i++) records.push(await character());
+    bots.push(...await Promise.all(records.map(c => client(rt, c))));
+    await until(() => rt.host.stats().activeActors === 100 && rt.host.stats().waiting === 1 || rt.failures.length, 15000);
+    assert.deepEqual(rt.failures, []); assert.equal(rt.host.stats().publicAreas, 4);
+    const queued = bots.find(bot => !bot.binding && bot.controls.some(c => c.type === 'queued'));
+    assert.ok(queued); assert.equal(queued.controls.filter(c => c.type === 'queued').length, 1);
+    const admitted = bots.find(bot => bot.binding); admitted.ws.close(); await once(admitted.ws, 'close');
+    await until(() => queued.binding && rt.host.stats().waiting === 0, 15000);
+    assert.equal(rt.host.stats().activeActors, 100); assert.equal(rt.host.stats().publicAreas, 4);
+    const cancelled = await client(rt, await character()); bots.push(cancelled);
+    await until(() => cancelled.controls.some(c => c.type === 'queued'));
+    cancelled.ws.close(); await once(cancelled.ws, 'close'); await until(() => rt.host.stats().waiting === 0);
+    assert.equal(rt.host.stats().activeActors, 100); assert.equal(rt.host.stats().ticks, 0);
+    // This is admission/cancellation evidence with a paused injected clock, explicitly not a 100-player load result.
+    assert.deepEqual(rt.failures, []);
+  } finally { for (const bot of bots) bot.ws.close(); await rt.close(); }
+});
+
+test('all four real worlds round-trip through validated gate intents with unchanged XP and retained ultimate cooldown', { timeout: 25000 }, async () => {
+  const rt = await runtime(); let bot;
+  try {
+    const c = await character('mage'), first = loaded.get('w1'), initialGate = first.publicDefinition.interactions.find(i => i.id === 'gate:w2');
+    const initial = structuredClone(c.record.checkpoint); initial.location = { ...initialGate.position, yaw: 0 };
+    c.record = await store.saveCheckpoint(c.binding.accountId, c.record.characterId, c.record.revision, initial, []);
+    bot = await client(rt, c); await ready(rt, bot);
+    bot.send([{ kind: 'ability', slot: 5 }]); await until(() => bot.receiver.header.consumedInput === 1);
+    bot.send([{ kind: 'travel', gateId: 'gate:w2' }]); await until(() => bot.receiver.header.consumedInput === 2);
+    assert.equal(bot.state.world, 'w1'); assert.equal(rt.host.stats().activeActors, 1);
+    const staleBinding = { ...bot.binding };
+    const hops = [['w1','w2'], ['w2','w3'], ['w3','w4'], ['w4','w3'], ['w3','w2'], ['w2','w1']];
+    for (const [from, to] of hops) {
+      const world = loaded.get(from), gate = world.publicDefinition.interactions.find(i => i.id === `gate:${to}`), oldSession = bot.binding.session;
+      let written = false;
+      for (let attempt = 0; attempt < 10 && !written; attempt++) {
+        const current = await store.getOwned(c.binding.accountId, c.record.characterId), checkpoint = structuredClone(current.checkpoint);
+        // Trusted navigation/unlock test fixture, not earned progression or client position input.
+        checkpoint.progress.flags = { ...checkpoint.progress.flags, abyssCleared: true, trueCleared: true, finalCleared: true };
+        const out = { x: 0, y: 0, set(x, y) { this.x = x; this.y = y; return this; } };
+        world.query.resolveCollision(gate.position.x, gate.position.z, world.actionData.archetype('human').radius, out);
+        checkpoint.location = { x: out.x, y: world.query.heightAt(out.x, out.y), z: out.y, yaw: 0 };
+        try { await store.saveCheckpoint(c.binding.accountId, c.record.characterId, current.revision, checkpoint, []); written = true; }
+        catch (error) { if (error.code !== 'conflict') throw error; }
+      }
+      assert.equal(written, true);
+      await until(() => bot.binding.session !== oldSession && bot.state.world === from || rt.failures.length, 5000);
+      assert.deepEqual(rt.failures, []); const before = bot.binding.area;
+      bot.send([{ kind: 'travel', gateId: `gate:${to}` }]);
+      await until(() => bot.binding.area !== before && bot.state.world === to || rt.failures.length, 5000);
+      assert.deepEqual(rt.failures, []); assert.deepEqual(bot.errors, []);
+      assert.equal(bot.state.self.player.xp, 0); assert.equal(bot.state.self.player.coins, 0);
+      assert.equal(bot.state.self.player.quests.chapter, Number(to.slice(1)));
+      assert.ok(bot.state.self.player.cooldowns['crown-burst'].end - bot.state.time > 30);
+      assert.equal(rt.host.stats().activeActors, 1); assert.equal(rt.host.stats().publicAreas, 4);
+    }
+    const saved = await store.getOwned(c.binding.accountId, c.record.characterId); assert.equal(saved.checkpoint.world, 'w1'); assert.equal(saved.checkpoint.progress.xp, 0);
+    bot.ws.send(encodeInput({ binding: staleBinding, intent: { seq: 100, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, commands: [] } }, gameplayCatalog));
+    await once(bot.ws, 'close'); assert.ok(bot.controls.some(control => control.code === 'invalid-input'));
+  } finally { bot?.ws.close(); await rt.close(); }
 });
