@@ -113,6 +113,9 @@ async function client(rt, c, auth = true) {
   bot.send = (commands, held = {}) => ws.send(encodeInput({ binding: bot.binding, intent: { seq: ++bot.sequence, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, ...held, commands } }, gameplayCatalog));
   return bot;
 }
+// Retained saves are batched once per checkpointIntervalMs while the world keeps running, so progress a client already sees
+// is in PG once the next save round that starts after it has finished (persistenceBarriers counts started rounds).
+async function afterSave(rt, ms = 5000) { const next = rt.host.stats().persistenceBarriers + 1; await until(() => rt.host.stats().persistenceBarriers >= next && !rt.host.stats().durableBarrier || rt.failures.length, ms); }
 async function ready(rt, bot) { await until(() => bot.state || bot.controls.some(v => v.type === 'error') || rt.failures.length); assert.deepEqual(rt.failures, []); assert.deepEqual(bot.errors, []); assert.ok(bot.state, JSON.stringify(bot.controls)); }
 
 for(const ledger of [false,true])test(ledger?'external delayed ability has full reward/save and live reconnect':'real PG+WS login, level1 ability hit/death/full reward, durable save and authenticated live reconnect', { timeout: 20000 }, async () => {
@@ -125,7 +128,7 @@ for(const ledger of [false,true])test(ledger?'external delayed ability has full 
     const heartbeat = setInterval(() => { if (bot.ws.readyState === WebSocket.OPEN) bot.send([]); }, 50);
     try { await until(() => bot.state.self.player.xp > 0 || rt.failures.length || bot.controls.some(v => v.type === 'error'), 10000); }
     catch { throw new Error(JSON.stringify({ self: bot.state.self.player, target: bot.state.actors.find(a => a.ref.id === target.ref.id), selfActor: bot.state.actors.find(a => a.ref.id === bot.state.selfRef.id), events: bot.events.map(e => e.event), controls: bot.controls, errors: bot.errors, stats: rt.host.stats() })); }
-    clearInterval(heartbeat);
+    clearInterval(heartbeat); await afterSave(rt);
     assert.deepEqual(rt.failures, []); assert.deepEqual(bot.errors, []); assert.ok(bot.state.self.player.xp > 0, JSON.stringify(bot.controls));
     assert.ok(bot.events.some(e => e.event.type === 'damage')); assert.ok(bot.events.some(e => e.event.type === 'death'));
     assert.ok(bot.events.some(e => e.event.type === 'projectile' && e.event.stage === 'spawn'));
@@ -216,6 +219,7 @@ test('two actual combat contributors receive complete identical XP in one atomic
     }
     await until(() => bots.every(bot => bot.state.self.player.xp > 0) || rt.failures.length, 10000);
     assert.deepEqual(rt.failures, []); assert.equal(bots[0].state.self.player.xp, 20); assert.equal(bots[1].state.self.player.xp, 20);
+    await afterSave(rt); assert.deepEqual(rt.failures, []);
     const rows = await pool.query('SELECT g.character_id,r.applied_revision FROM world_character_grants g JOIN world_character_grant_receipts r USING(grant_id) WHERE g.character_id=ANY($1::uuid[])', [characters.map(c => c.record.characterId)]);
     const seals = await pool.query('SELECT recipient_count FROM world_victim_outcomes WHERE outcome_key=$1', [JSON.stringify([bots[0].events.find(e=>e.event.type==="death").event.unit.area,bots[0].events.find(e=>e.event.type==="death").event.unit.id,bots[0].events.find(e=>e.event.type==="death").event.unit.life])]); assert.equal(Number(seals.rows[0].recipient_count),2);
     assert.equal(rows.rowCount, 2); assert.equal(new Set(rows.rows.map(r => r.character_id)).size, 2);
@@ -303,6 +307,7 @@ for(const ledger of [false,true])test(ledger?'external four real worlds round-tr
     const hops = [['w1','w2'], ['w2','w3'], ['w3','w4'], ['w4','w3'], ['w3','w2'], ['w2','w1']];
     for (const [from, to] of hops) {
       const world = loaded.get(from), gate = world.publicDefinition.interactions.find(i => i.id === `gate:${to}`), oldEpoch = bot.binding.epoch;
+      await afterSave(rt); // The fixture below rewrites the stored checkpoint; it must contain the progress shown so far.
       let written = false;
       for (let attempt = 0; attempt < 10 && !written; attempt++) {
         const current = await store.getOwned(c.binding.accountId, c.record.characterId), checkpoint = structuredClone(current.checkpoint);
@@ -480,7 +485,7 @@ for(const ledger of [false,true])test(ledger?'external 257 offline pages commit 
  const resumed=await runtime({ledger});let next;try{next=await client(resumed,c);await ready(resumed,next);assert.equal(next.state.self.player.coins,257);}finally{next?.ws.close();await resumed.close();}
 });
 
- test('insufficient whole outcome budget freezes complete two-contributor source with no journal or public reward', { timeout: 12000 }, async () => {
+ test('insufficient whole outcome budget freezes complete two-contributor source with no journal or saved reward', { timeout: 12000 }, async () => {
   const rt=await runtime({combat:true,victimMaxEntries:1}),bots=[],records=[],timers=[];
   try {
     for(let i=0;i<2;i++){const record=await character('mage'),bot=await client(rt,record);records.push(record);bots.push(bot);await ready(rt,bot);}
@@ -488,7 +493,9 @@ for(const ledger of [false,true])test(ledger?'external 257 offline pages commit 
     await until(()=>rt.host.stats().frozen,10000);assert.equal(rt.host.stats().pendingSourceGrants,2);
     assert.ok(rt.failures.some(f=>f.stage==='durability'&&f.message.includes('complete source retained')));
     assert.equal((await pool.query('SELECT 1 FROM world_character_grants WHERE character_id=ANY($1::uuid[])',[records.map(c=>c.record.characterId)])).rowCount,0);
-    for(const bot of bots){assert.equal(bot.state.self.player.xp,0);assert.deepEqual(bot.errors,[]);}
+    // The kill's reward is applied in the Area and may be shown before the save round; nothing of it is durable.
+    for(const c of records)assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,0);
+    for(const bot of bots)assert.deepEqual(bot.errors,[]);
   }finally{for(const t of timers)clearInterval(t);for(const b of bots)b.ws.close();const result=await rt.close();assert.equal(result.durable,false);}
 });
 
@@ -545,12 +552,15 @@ test('retained barriers read grant pages only for actors with something to read,
   const victim={area:'unread-row-writer',id:1,life:1},id=JSON.stringify([victim.area,victim.id,victim.life,b.record.characterId]);
   await store.recordGrant(b.binding.accountId,b.record.characterId,id,{id,victim,recipient:b.record.characterId,xp:1,coins:1,objectives:[],flags:[]});
   await until(()=>second.state.self.player.xp===1||rt.failures.length,6000);assert.ok(count(b.record.characterId)>=1);assert.equal(count(a.record.characterId),0);
-  // This host's own kill reward: the recipient is read in that barrier, the other actor is not.
+  // This host's own kill reward is applied in the Area and its receipt commits with the recipient's next checkpoint, so the
+  // save round reads no page for the recipient or the other actor.
   reads.clear();const target=first.state.actors.find(actor=>actor.kind==='scrapling');assert.ok(target);
   first.send([{kind:'target',target:target.ref},{kind:'ability',slot:1}]);const heartbeat=setInterval(()=>{if(first.ws.readyState===WebSocket.OPEN)first.send([]);},50);
   try{await until(()=>first.state.self.player.xp>0||rt.failures.length,10000);}finally{clearInterval(heartbeat);}
-  await until(()=>!rt.host.stats().durableBarrier);assert.ok(count(a.record.characterId)>=1);assert.equal(count(b.record.characterId),0);
+  await afterSave(rt);assert.equal(count(a.record.characterId),0);assert.equal(count(b.record.characterId),0);
   assert.equal((await store.getOwned(a.binding.accountId,a.record.characterId)).checkpoint.progress.xp,first.state.self.player.xp);
+  assert.equal((await store.pendingGrants(a.binding.accountId,a.record.characterId)).length,0);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM world_character_grant_receipts WHERE character_id=$1',[a.record.characterId])).rows[0].n,1);
   assert.deepEqual(rt.failures,[]);assert.deepEqual(first.errors,[]);assert.deepEqual(second.errors,[]);
  }finally{first?.ws.close();second?.ws.close();await rt.close();}
 });

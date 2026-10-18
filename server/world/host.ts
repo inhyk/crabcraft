@@ -94,7 +94,10 @@ interface Connection {
   queueKey?: string;
   publishedConsumed: number;
   baselineSequence: number;
+  /** Results of applied commands whose effects are not yet in a committed checkpoint. */
   results: CommandResult[];
+  /** Results whose save committed, waiting for a baseline to be sent on; awaiting counts those in the save in flight. */
+  ready: CommandResult[]; awaiting: number;
   chatBusy: boolean; chatPreferences?: ChatPreferences; chatNeedsPreferences: boolean;
   discoveries: { unit: EntityRef; id: string; startOrder: number; inputSequence: number; commandIndex: number }[];
 }
@@ -138,19 +141,24 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const completion: (() => void)[] = [];
   const persistence = new PersistenceCoordinator(deps.characters, deps.ownership, { ...p.persistence, now: deps.nowMonotonicMs });
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
-  let admissionRequested = true; let accepting = !external; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
+  let admissionRequested = true; let accepting = !external; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let barrierHalts = false; let timer: ReturnType<typeof setTimeout> | undefined;
   const failedSources = new Set<Slot>(), drainedFailedSources = new Set<Slot>(), attemptedFailedSources = new Set<Slot>();
-  let startupRecovery = external, nextRecovery = deps.nowMonotonicMs();
+  let startupRecovery = external, nextRecovery = deps.nowMonotonicMs(), lastSave = deps.nowMonotonicMs();
+  /** A barrier that holds the world: no tick and no snapshot until it ends. A retained save round does not hold it. */
+  const halted = () => barrier !== null && barrierHalts;
   let readyDone = !external, resolveReady!: () => void, rejectReady!: (error: unknown) => void;
   const readiness = external ? new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; }) : Promise.resolve();
   void readiness.catch(() => {});
   const outcomeRecovery = deps.outcomes && p.ledger ? new PagedOutcomeRecovery(deps.outcomes, deps.ownership, { ...p.ledger.recoveryLimits, codecVersion: deps.codec.version }) : null;
   let victimResources = { ...p.victimOutcome };
-  let pausedDurability: { run: () => Promise<void>; ownership: HostOwnership } | null = null;
+  let pausedDurability: { run: () => Promise<void>; ownership: HostOwnership; halting: boolean } | null = null;
   let grantProofsActive = false;
   let generation = 1; let unresolved = 0; let pendingChat = 0;
   const chatTargets = new Map<string, { participant: ChatParticipant; expires: number }>();
+  // persistenceBarriers counts every save round. haltingBarriers and haltedMs count those that held the world (persistenceMs is
+  // the wall time of startDurability rounds); saveRounds and saveMs the retained rounds that let it run. aoi*: actor slots.
   const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, discardedRevokedFrames: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
+    haltingBarriers: 0, haltedMs: 0, saveRounds: 0, saveMs: 0, aoiNear: 0, aoiFar: 0, aoiFarSent: 0,
     authFailures: 0, pendingSourceGrants: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
   const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
   const timings = new Map<string, { values: number[]; cursor: number }>();
@@ -226,16 +234,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const controlError = (c: Connection, code: string) => {
     sendControl(c, { type: 'error', code, retryable: false });
   };
+  /** Only results whose save committed (c.ready) are ever sent, in a snapshot or on their own. */
   function materializeResults(c: Connection): CommandResult[] {
-    return c.results.map(result => result.status === 'durable' ? { ...result, revision: c.actor!.record.revision } : result);
+    return c.ready.map(result => result.status === 'durable' ? { ...result, revision: c.actor!.record.revision } : result);
   }
   function sendResults(c: Connection) {
-    if (!c.results.length || !c.baselineSequence || !c.stream || !c.input || !c.actor || c.closed || c.ws.readyState !== WebSocket.OPEN) return;
+    if (!c.ready.length || !c.baselineSequence || !c.stream || !c.input || !c.actor || c.closed || c.ws.readyState !== WebSocket.OPEN) return;
     if (c.ws.bufferedAmount > p.maxBufferedBytes) { close(c, 'result-backpressure', true); return; }
     const chunks = c.protocol.encodeEvents({ ...c.stream, sequence: ++c.sequence, tick: c.actor.slot.area.services.tick,
       acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c) }, { baselineSequence: c.baselineSequence, events: [], results: materializeResults(c) });
     for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
-    c.results = [];
+    c.ready = [];
   }
   function partyState(party: Party | undefined) {
     if (!party) return null;
@@ -388,7 +397,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     c.actor = actor; actor.connection = c; actor.detachedAt = null; actor.generation = generation++;
     c.stream = { session: c.stream?.session ?? randomUUID(), area: actor.slot.area.services.id, epoch: c.epoch, catalog: deps.gameplay.catalog.version };
     c.sequence = 0; c.full = true; c.visible.clear(); c.protocol.reset(c.stream);
-    c.publishedConsumed = 0; c.baselineSequence = 0; c.results = []; c.discoveries = [];
+    c.publishedConsumed = 0; c.baselineSequence = 0; c.results = []; c.ready = []; c.discoveries = [];
     c.queueKey = undefined;
     c.input = new InputSession(c.stream, deps.gameplay.catalog, { now: deps.nowMonotonicMs() / 1000, maxQueued: p.maxQueuedInputs, timeoutSeconds: p.inputTimeoutMs / 1000, budget: c.inputBudget });
     actor.slot.area.resetInputSession(actor.ref); c.phase = 'admitted'; c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
@@ -567,12 +576,34 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const usage = slot.area.resourceUsage();
     return !!usage.dirtyCreditEntries || !!usage.pendingDeaths || !!slot.area.contributionSummariesNeeded().length;
   };
+  type SourceGrant = { slot: Slot } & ReturnType<Area['pendingGrants']>[number];
+  const retainedSources = (): SourceGrant[] => [...allSlots].filter(slot => slot.ledgerMode === 'retained').flatMap(slot => slot.area.pendingGrants().map(entry => ({ slot, ...entry })));
+  /** Journal retained source grants: an entire death's recipients in one transaction. No recipient is ACKed individually. */
+  async function journalSources(sources: readonly SourceGrant[]) {
+    const groups = new Map<string, SourceGrant[]>();
+    const unique = new Map<string, string>();
+    for (const source of sources) {
+      const signature = JSON.stringify(source.grant), prior = unique.get(source.grant.id);
+      if (prior && prior !== signature) throw new Error('grant identity content conflict');
+      if (prior) continue;
+      unique.set(source.grant.id, signature);
+      const key = JSON.stringify(source.grant.victim), group = groups.get(key) ?? []; group.push(source); groups.set(key, group);
+    }
+    for (const group of groups.values()) {
+      if (group.length > victimResources.maxEntries) throw new OutcomeResourcePause('victim outcome resource budget; complete source retained');
+      const entries: GrantBatchEntry<GrantJson>[] = [];
+      for (const { grant } of group) entries.push({ accountId: await deps.characters.getOwner(grant.recipient), characterId: grant.recipient, id: grant.id, payload: deps.codec.grantToJson(grant) });
+      const recorded = await deps.characters.recordVictimOutcome(entries, victimResources);
+      if (recorded.length !== entries.length || recorded.some((entry, index) => entry.id !== entries[index].id)) throw new Error('incomplete victim outcome journal');
+    }
+  }
+  /** Halting save round: the world is held (no tick, no snapshot) from its start to its end. See startSave() for the other kind. */
   function startDurability() {
     if (barrier || frozen || !actors.size && !external) return;
-    metrics.persistenceBarriers++; const began = deps.nowMonotonicMs();
+    metrics.persistenceBarriers++; metrics.haltingBarriers++; const began = deps.nowMonotonicMs(); lastSave = began;
     const tokens = new Map<Slot, string>();
     for (const slot of allSlots) if (slot.area.players.size || slot.ledgerMode === 'external-durable') tokens.set(slot, slot.area.beginDurabilityBarrier('checkpoint'));
-    const sources = [...allSlots].filter(slot => slot.ledgerMode === 'retained').flatMap(slot => slot.area.pendingGrants().map(entry => ({ slot, ...entry })));
+    const sources = retainedSources();
     metrics.pendingSourceGrants = sources.length;
     // Retained mode: the certified page read (about five queries and two checkpoint decodes per actor) is skipped for an
     // actor with nothing to read: not a recipient of this barrier's grants, not pendingReplay, and no unreceipted journal
@@ -581,23 +612,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const grantRecipients = external ? null : new Set(sources.map(source => source.grant.recipient));
     const work = async () => {
       let startupDrained = false;
-      // Group an entire death's recipients in one transaction. No recipient is ACKed individually.
-      const groups = new Map<string, typeof sources>();
-      const unique = new Map<string, string>();
-      for (const source of sources) {
-        const signature = JSON.stringify(source.grant), prior = unique.get(source.grant.id);
-        if (prior && prior !== signature) throw new Error('grant identity content conflict');
-        if (prior) continue;
-        unique.set(source.grant.id, signature);
-        const key = JSON.stringify(source.grant.victim), group = groups.get(key) ?? []; group.push(source); groups.set(key, group);
-      }
-      for (const group of groups.values()) {
-        if (group.length > victimResources.maxEntries) throw new OutcomeResourcePause('victim outcome resource budget; complete source retained');
-        const entries: GrantBatchEntry<GrantJson>[] = [];
-        for (const { grant } of group) entries.push({ accountId: await deps.characters.getOwner(grant.recipient), characterId: grant.recipient, id: grant.id, payload: deps.codec.grantToJson(grant) });
-        const recorded = await deps.characters.recordVictimOutcome(entries, victimResources);
-        if (recorded.length !== entries.length || recorded.some((entry, index) => entry.id !== entries[index].id)) throw new Error('incomplete victim outcome journal');
-      }
+      await journalSources(sources);
       for (const slot of allSlots) if (slot.source) {
         for (;;) { const progress = await slot.source.drain({ refreshSummaries: true }); if (!progress.more) break; }
       }
@@ -658,7 +673,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         });
         if (reread) { if (round === p.persistence.maxRecoveryRounds) throw new Error('journal certification recovery capacity'); continue; }
         const captures = await boundary(() => { deps.ownership.assertOwned(); return [...actors.values()].map(actor => ({ actor, generation: actor.generation, capture: actor.slot.area.capturePlayerCheckpoint(actor.ref) })); });
-        const results = await Promise.all(captures.map(({ actor, capture }) => persistence.commit({ captureId: capture.captureId,
+        const results = await persistence.commitBatch(captures.map(({ actor, capture }) => ({ captureId: capture.captureId,
           accountId: actor.record.accountId, characterId: actor.record.characterId, expectedRevision: actor.record.revision,
           checkpoint: deps.codec.toJson(capture.checkpoint), appliedGrantIds: capture.appliedGrantIds })));
         const recovered = await boundary(() => {
@@ -691,26 +706,98 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         for (const [slot, token] of tokens) { drain(slot); slot.area.releaseDurabilityBarrier(token); slot.lastCheckpoint = deps.nowMonotonicMs(); }
         for (const c of connections) if (c.input) c.publishedConsumed = c.input.consumedInput;
         if (startupDrained && startupRecovery) { startupRecovery = false; accepting = admissionRequested && !draining; readyDone = true; resolveReady(); }
+        // The world was held since this round began, so every pending result is in a checkpoint this round committed.
+        for (const c of connections) if (c.results.length) { c.ready.push(...c.results); c.results = []; }
         for (const actor of actors.values()) if (actor.connection) sendResults(actor.connection);
         if (p.party) syncPartyContexts();
         metrics.persistenceMs += deps.nowMonotonicMs() - began;
         observe('persistenceBarrier', deps.nowMonotonicMs() - began);
       });
     };
-    runDurability(work);
+    runDurability(work, true);
   }
-  function runDurability(work: () => Promise<void>) {
-    barrier = work().then(() => {
+  /** One durability task at a time; halting ones hold the world until they end (metrics.haltedMs). */
+  function holdBarrier(task: Promise<void>, halting: boolean) {
+    const started = deps.nowMonotonicMs(); barrierHalts = halting;
+    barrier = task.finally(() => { barrier = null; barrierHalts = false; if (halting) metrics.haltedMs += deps.nowMonotonicMs() - started; });
+  }
+  function runDurability(work: () => Promise<void>, halting: boolean) {
+    holdBarrier(work().then(() => {
       if (pausedDurability?.run === work) { pausedDurability = null; unresolved--; frozen = false; accepting = admissionRequested && !draining; }
     }).catch(error => {
       deps.onFailure?.('durability', error);
       const resourceOnly = error instanceof OutcomeResourcePause || error instanceof CharacterStoreError && error.code === 'resource_limit';
       if (resourceOnly && !deps.ownership.closed.aborted && !draining) {
         if (!pausedDurability) unresolved++;
-        pausedDurability = { run: work, ownership: deps.ownership };
+        pausedDurability = { run: work, ownership: deps.ownership, halting };
       } else { if (!pausedDurability) unresolved++; pausedDurability = null; }
       failClosed();
-    }).finally(() => { barrier = null; });
+    }), halting);
+  }
+
+  /**
+   * Retained-mode save round, at most one per checkpointIntervalMs ("1초마다 묶어 저장, 저장 중에도 세계는 계속").
+   * At one tick boundary it takes every unacknowledged source grant, a checkpoint capture of every actor and the command
+   * results those captures contain. Then, while ticks and snapshots go on, it journals those grants (so every receipt a
+   * capture names has its journal row) and commits all captures in one transaction. Only at a boundary after that commit
+   * are the captures marked durable, the grants acknowledged and the captured results released to their streams. A crash
+   * loses at most the progress after the last committed round; nothing sent as durable can be lost. Rows other writers
+   * journaled, and recovery after a conflict, go to the halting round that pendingReplay starts, as before. External
+   * ledger mode, admission, travel, encounters, retirement and shutdown keep the halting barrier.
+   */
+  function startSave() {
+    if (barrier || frozen || draining || external || !actors.size) return;
+    deps.ownership.assertOwned();
+    const began = deps.nowMonotonicMs(); lastSave = began; metrics.persistenceBarriers++; metrics.saveRounds++;
+    const sources = retainedSources();
+    metrics.pendingSourceGrants = sources.length;
+    const captures = [...actors.values()].map(actor => ({ actor, slot: actor.slot, revision: actor.record.revision, capture: actor.slot.area.capturePlayerCheckpoint(actor.ref) }));
+    const acks: { c: Connection; actor: Actor; epoch: number; session: string | undefined; results: CommandResult[] }[] = [];
+    for (const c of connections) if (c.actor && c.results.length) {
+      acks.push({ c, actor: c.actor, epoch: c.epoch, session: c.stream?.session, results: c.results });
+      c.awaiting += c.results.length; c.results = [];
+    }
+    const work = async () => {
+      await journalSources(sources);
+      const results = await persistence.commitBatch(captures.map(({ actor, revision, capture }) => ({ captureId: capture.captureId,
+        accountId: actor.record.accountId, characterId: actor.record.characterId, expectedRevision: revision,
+        checkpoint: deps.codec.toJson(capture.checkpoint), appliedGrantIds: capture.appliedGrantIds })));
+      // After the commit this round's own receipts exist, so only rows from other writers remain unread.
+      const unread = await deps.characters.charactersWithPendingGrants(captures.map(({ actor }) => actor.record.characterId));
+      await boundary(() => {
+        deps.ownership.assertOwned();
+        for (const [index, result] of results.entries()) {
+          const { actor, slot, revision, capture } = captures[index];
+          // Admission, travel, encounters and retirement wait for this round, so the actor keeps its Area; a respawn may change its ref.
+          if (actors.get(actor.record.characterId) !== actor || actor.slot !== slot || actor.record.revision !== revision) throw new Error('capture owner changed during save');
+          if (result.kind === 'unresolved') throw new Error('checkpoint unresolved');
+          if (result.kind === 'saved') { actor.record = result.character; slot.area.markCheckpointDurable(capture.captureId, result.character.revision, capture.appliedGrantIds); continue; }
+          metrics.recoveries++; const recovery = result.recovery;
+          const exact = isDeepStrictEqual(recovery.character.checkpoint, deps.codec.toJson(capture.checkpoint)) && recovery.grants.every(g => g.appliedRevision !== null);
+          actor.record = recovery.character;
+          if (exact) slot.area.markCheckpointDurable(capture.captureId, recovery.character.revision, capture.appliedGrantIds);
+          else {
+            // The same restore as in a halting round, under a barrier held for this boundary only; pendingReplay then makes
+            // the next pump replay the journal for it under a halting round.
+            const token = slot.area.beginDurabilityBarrier('recovery');
+            try { restoreDurableActor(actor, recovery); } finally { slot.area.releaseDurabilityBarrier(token); }
+          }
+        }
+        for (const source of sources) source.slot.area.acknowledgeGrant(source.grant.id);
+        metrics.pendingSourceGrants = retainedSources().length;
+        for (const actor of actors.values()) if (unread.has(actor.record.characterId)) actor.pendingReplay = true;
+        for (const { c, actor, epoch, session, results: captured } of acks) {
+          c.awaiting -= captured.length;
+          // Released only on the stream that produced them; a rebind (respawn, recovery) drops them as bootstrap always has.
+          if (!c.closed && c.actor === actor && actor.connection === c && c.epoch === epoch && c.stream?.session === session) c.ready.push(...captured);
+        }
+        for (const slot of allSlots) drain(slot);
+        for (const c of connections) sendResults(c);
+        metrics.saveMs += deps.nowMonotonicMs() - began;
+        observe('persistenceSave', deps.nowMonotonicMs() - began);
+      });
+    };
+    runDurability(work, false);
   }
 
   function startFailedSourceDrain() {
@@ -725,13 +812,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         await boundary(() => { deps.ownership.assertOwned(); failedSources.delete(slot); drainedFailedSources.add(slot); });
       }
     };
-    barrier = work().catch(error => { deps.onFailure?.('failed-source-drain', error); unresolved++; failClosed(); }).finally(() => { barrier = null; });
+    holdBarrier(work().catch(error => { deps.onFailure?.('failed-source-drain', error); unresolved++; failClosed(); }), true);
   }
   const retireDetached = (now: number) => {
     if (barrier || frozen) return;
     const actor = [...actors.values()].find(a => !a.connection && a.detachedAt !== null && now - a.detachedAt >= p.reconnectGraceMs);
     if (!actor) return;
-    if ([...allSlots].some(slot => slot.area.pendingGrants().length) || actor.slot.area.appliedGrantIds(actor.record.characterId).length) { startDurability(); return; }
+    const character = actor.record.characterId;
+    if (external) { if ([...allSlots].some(slot => slot.area.pendingGrants().length) || actor.slot.area.appliedGrantIds(character).length) { startDurability(); return; } }
+    // Retained: retire once nothing earned for this character is only in memory (no unjournaled grant names it, its applied
+    // grants are durable). The next save round settles that; other characters' grants no longer hold the retirement.
+    else if ([...allSlots].some(slot => slot.area.pendingGrants().some(entry => entry.grant.recipient === character)) || actor.slot.area.appliedGrantIds(character).length) return;
     const retirement = actor.slot.area.quiescePlayer(actor.ref, 'disconnect');
     const capturedGeneration = actor.generation;
     const task = async () => {
@@ -758,7 +849,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         }
       });
     };
-    barrier = task().catch(error => { deps.onFailure?.('retirement', error); unresolved++; failClosed(); }).finally(() => { barrier = null; });
+    holdBarrier(task().catch(error => { deps.onFailure?.('retirement', error); unresolved++; failClosed(); }), true);
   };
 
   const visible = (slot: Slot, actor: Actor, c: Connection): Set<number> => {
@@ -778,7 +869,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     ids.add(self.ref.id); return ids;
   };
   const publish = (slot: Slot) => {
-    if (barrier || frozen || [...actors.values()].some(actor => actor.pendingReplay)) return;
+    if (halted() || frozen || [...actors.values()].some(actor => actor.pendingReplay)) return;
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
     const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
     const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog, { verify: deps.gameplay.verifyObservations ?? true });
@@ -798,7 +889,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
             ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
           observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
           for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
-          c.full = false; c.baselineSequence = c.sequence; c.results = []; metrics.snapshots++;
+          c.full = false; c.baselineSequence = c.sequence; c.ready = []; metrics.snapshots++;
           if (wasFull) { if (p.party) publishParty(c); if (c.chatPreferences) sendControl(c, { type: 'chatPreferences', ...c.chatPreferences }); }
         } catch (error) { deps.onFailure?.('observation', error); close(c, 'observation-unavailable', true); }
       }
@@ -806,7 +897,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     slot.events = []; metrics.snapshotBatchMs += deps.nowMonotonicMs() - start; observe('snapshotBatch', deps.nowMonotonicMs() - start);
   };
   const step = (slot: Slot) => {
-    if (barrier || frozen || draining) return;
+    if (halted() || frozen || draining) return;
     if (slot.ledgerMode === 'external-durable' && !slot.area.prepareLedgerStep().ready) { startDurability(); return; }
     const inputs = new Map<number, PlayerIntent>(), prepared: { c: Connection; frame: PreparedInput; unit: EntityRef }[] = [];
     const hostCommands: { c: Connection; command: HostCommand | Extract<PlayerCommand, {kind:'bossChallenge'}>; inputSequence: number }[] = [];
@@ -816,7 +907,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!c || !c.input || c.closed) continue;
       const frame = c.input.prepareTick(now / 1000, p.areaLimits.inputCommandsPerTick);
       if (frame) {
-        if (c.results.length + c.discoveries.length + frame.intent.commands.length > 256) { close(c, 'result-backpressure', true); continue; }
+        if (c.results.length + c.ready.length + c.awaiting + c.discoveries.length + frame.intent.commands.length > 256) { close(c, 'result-backpressure', true); continue; }
         const host = frame.intent.commands.filter(command => HOST_COMMAND_KINDS.has(command.kind) || slot.kind === 'public' && command.kind === 'bossChallenge');
         if (host.length && frame.intent.commands.length !== 1) { close(c, 'host-command-boundary'); continue; }
         const commands = frame.intent.commands.filter((command): command is PlayerCommand => !HOST_COMMAND_KINDS.has(command.kind) && !(slot.kind === 'public' && command.kind === 'bossChallenge'));
@@ -878,6 +969,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       }
     }
     for (const actor of changedLives) if (actor.connection) bootstrap(actor.connection, actor);
+    // Retained mode saves in the pump's save round (startSave), at most once per checkpointIntervalMs, never from a tick.
+    if (!external) return;
     progression ||= slot.area.pendingGrants().length > 0 || emitted.some(({ event }) =>
       ['quest', 'xp', 'levelUp', 'equipment', 'achievement', 'discovery', 'endingReady', 'death', 'respawn'].includes(event.type));
     if (progression || sourceNeedsIO(slot) || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
@@ -901,13 +994,18 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         }
       }
       if (!frozen && !draining && !deps.ownership.closed.aborted) for (const c of connections) if (c.phase === 'admitted' && c.chatNeedsPreferences && !c.chatBusy && pendingChat < p.chat!.maxPending) chatCommand(c, { kind: 'chatPreferences' });
-      if (!barrier && !frozen && !draining) {
-        if (external && (startupRecovery || now >= nextRecovery || [...allSlots].some(sourceNeedsIO))) startDurability();
-        admitWaiting(); if (!barrier && [...actors.values()].some(actor => actor.pendingReplay)) startDurability(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
-        for (const slot of allSlots) {
-          if (!slot.area.players.size || barrier) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
+      if (!frozen && !draining) {
+        if (!barrier) {
+          if (external && (startupRecovery || now >= nextRecovery || [...allSlots].some(sourceNeedsIO))) startDurability();
+          admitWaiting(); if (!barrier && [...actors.values()].some(actor => actor.pendingReplay)) startDurability(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
+          if (!barrier && !external && now - lastSave >= p.checkpointIntervalMs) startSave();
+        }
+        // A retained save round in flight does not hold the world; every other barrier does. While held, the schedulers are
+        // left alone (not idled), so the first pump after the barrier catches up as before.
+        if (!halted()) for (const slot of allSlots) {
+          if (!slot.area.players.size || halted()) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
           slot.tick.run(now, () => step(slot));
-          if (!barrier) slot.snapshot.run(now, () => publish(slot));
+          if (!halted()) slot.snapshot.run(now, () => publish(slot));
         }
       }
     } catch (error) { deps.onFailure?.('pump', error); unresolved++; failClosed(); }
@@ -939,7 +1037,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (connections.size >= p.maxConnections || [...connections].filter(c => c.ip === ip).length >= p.maxConnectionsPerIp) { reject(socket, '503 Service Unavailable'); return; }
       wss.handleUpgrade(req, socket, head, ws => {
         const c: Connection = { ws, ip, origin, generation: generation++, closed: false, phase: 'preauth',
-          protocol: deps.gameplay.create(), inputBudget: new InputRateBudget(deps.nowMonotonicMs() / 1000), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set(), publishedConsumed: 0, baselineSequence: 0, results: [], discoveries: [], chatBusy: false, chatNeedsPreferences: false };
+          protocol: deps.gameplay.create(), inputBudget: new InputRateBudget(deps.nowMonotonicMs() / 1000), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set(), publishedConsumed: 0, baselineSequence: 0, results: [], ready: [], awaiting: 0, discoveries: [], chatBusy: false, chatNeedsPreferences: false };
         connections.add(c);
         c.authTimer = setTimeout(() => { if (c.phase === 'preauth' || c.phase === 'authenticating') close(c, 'auth-timeout'); }, p.authTimeoutMs);
         ws.on('error', () => ws.terminate());
@@ -989,7 +1087,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!pause || !ceiling || barrier || !frozen || draining || stopped || pause.ownership !== deps.ownership || deps.ownership.closed.aborted) return false;
       const keys = ['maxEntries', 'maxPayloadBytes', 'timeoutMs'] as const;
       if (!resources || keys.some(key => !Number.isSafeInteger(resources[key]) || resources[key] < victimResources[key] || resources[key] > ceiling[key]) || !keys.some(key => resources[key] > victimResources[key])) throw new Error('retry requires increased explicit budgets within ceiling');
-      deps.ownership.assertOwned(); victimResources = { ...resources }; runDurability(pause.run);
+      deps.ownership.assertOwned(); victimResources = { ...resources }; runDurability(pause.run, pause.halting);
       await barrier; return pausedDurability === null && !frozen && !deps.ownership.closed.aborted;
     },
     async shutdown(deadlineMs) {
@@ -997,6 +1095,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const end = deps.nowMonotonicMs() + deadlineMs;
       for (const c of connections) { if (!sendControl(c, { type: 'restarting', retryAfterSeconds: 1 })) json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor && !sourceFailed(c.actor.slot)) c.actor.slot.area.neutralizeInput(c.actor.ref); }
       if (external && failedSources.size) startFailedSourceDrain();
+      // A save round already in flight ends first; the final round then captures the last ticks with the world held.
+      while (barrier && deps.nowMonotonicMs() < end) await new Promise(resolve => setTimeout(resolve, p.loopIntervalMs));
       if (!barrier && !frozen) startDurability();
       while (barrier && deps.nowMonotonicMs() < end) await new Promise(resolve => setTimeout(resolve, p.loopIntervalMs));
       const persisted = await persistence.shutdown(Math.max(0, end - deps.nowMonotonicMs()));
@@ -1009,10 +1109,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const count = unresolved + persisted.unresolved + (barrier ? 1 : 0);
       return { durable: persisted.durable && count === 0, unresolved: count };
     },
-    stats: () => ({ ...metrics, ...timingStats(), ...ledgerStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
+    stats: () => ({ ...metrics, checkpointBatches: persistence.metrics.batches, checkpointBatchFallbacks: persistence.metrics.batchFallbacks, ...timingStats(), ...ledgerStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
       processCpuSystemMs: process.cpuUsage(processCpuStart).system / 1000, processElapsedMs: deps.nowMonotonicMs() - processStarted,
       activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
-      publicAreas: slots.size, ready: readyDone && !startupRecovery && !frozen && !deps.ownership.closed.aborted, failedSources: failedSources.size, resourcePaused: pausedDurability !== null, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
+      publicAreas: slots.size, ready: readyDone && !startupRecovery && !frozen && !deps.ownership.closed.aborted, failedSources: failedSources.size, resourcePaused: pausedDurability !== null, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, haltingBarrier: halted(), unresolved,
       pendingChat, partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length,
       droppedTicks: [...allSlots].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...allSlots].reduce((n, s) => n + s.snapshot.dropped, 0) }),
   };

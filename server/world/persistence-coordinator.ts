@@ -22,6 +22,8 @@ export interface Recovery<I extends Json, C extends Json, G extends Json> {
 }
 export interface CheckpointStore<I extends Json, C extends Json, G extends Json> {
   saveCheckpoint(account: string, character: string, revision: number, checkpoint: C, ids: readonly string[]): Promise<Character<I, C>>;
+  /** Optional: all writes in one transaction, all or nothing (CharacterStore.saveCheckpoints). */
+  saveCheckpoints?(writes: readonly { accountId: string; characterId: string; expectedRevision: number; checkpoint: C; appliedGrantIds: readonly string[] }[]): Promise<Character<I, C>[]>;
   loadForRecovery(account: string, character: string, ids: readonly string[]): Promise<Recovery<I, C, G>>;
 }
 export type CommitResult<I extends Json, C extends Json, G extends Json> =
@@ -45,16 +47,19 @@ export class PersistenceCoordinator<I extends Json, C extends Json, G extends Js
   private readonly store: CheckpointStore<I, C, G>;
   private readonly ownership: HostOwnership;
   private readonly options: { maxQueuedPerCharacter: number; maxAttempts: number; retryMs: number; now: () => number };
-  readonly metrics = { captures: 0, saved: 0, recoveries: 0, retries: 0, failed: 0, commitMs: 0 };
+  readonly metrics = { captures: 0, saved: 0, recoveries: 0, retries: 0, failed: 0, commitMs: 0, batches: 0, batchFallbacks: 0 };
   constructor(store: CheckpointStore<I, C, G>, ownership: HostOwnership,
     options: { maxQueuedPerCharacter: number; maxAttempts: number; retryMs: number; now: () => number }) {
     if (!Number.isSafeInteger(options.maxQueuedPerCharacter) || options.maxQueuedPerCharacter < 1 || options.maxQueuedPerCharacter > 256 ||
       !Number.isSafeInteger(options.maxAttempts) || options.maxAttempts < 1 || options.maxAttempts > 100 || !Number.isFinite(options.retryMs) || options.retryMs < 0) throw new Error('invalid persistence limits');
     this.store = store; this.ownership = ownership; this.options = options;
   }
+  private check(input: PlayerCommit<C>): void {
+    if (!input.captureId || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || input.appliedGrantIds.length > 256 || new Set(input.appliedGrantIds).size !== input.appliedGrantIds.length) throw new Error('invalid checkpoint capture');
+  }
   commit(input: PlayerCommit<C>): Promise<CommitResult<I, C, G>> {
     if (this.stopped || this.ownership.closed.aborted) return Promise.resolve({ kind: 'unresolved', captureId: input.captureId, reason: 'ownership' });
-    if (!input.captureId || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || input.appliedGrantIds.length > 256 || new Set(input.appliedGrantIds).size !== input.appliedGrantIds.length) throw new Error('invalid checkpoint capture');
+    this.check(input);
     const key = input.characterId;
     if ((this.counts.get(key) ?? 0) >= this.options.maxQueuedPerCharacter) throw new Error('checkpoint queue full');
     const capture = immutable(input); this.metrics.captures++;
@@ -67,6 +72,51 @@ export class PersistenceCoordinator<I extends Json, C extends Json, G extends Js
       if (this.tails.get(key) === task) { this.tails.delete(key); this.counts.delete(key); }
     });
     return task;
+  }
+  /**
+   * Several captures (distinct characters) in one store transaction, ordered after any earlier commit of the same characters.
+   * A batch that does not certainly commit (an error, a conflict of one entry, a lost COMMIT response) sends every capture
+   * through the same per-capture save() as commit(): retry, and recovery that inspects receipts and revision after a lost ACK.
+   * One capture, or a store without saveCheckpoints, uses commit() unchanged.
+   */
+  commitBatch(inputs: readonly PlayerCommit<C>[]): Promise<CommitResult<I, C, G>[]> {
+    if (!inputs.length) return Promise.resolve([]);
+    if (inputs.length === 1 || typeof this.store.saveCheckpoints !== 'function') return Promise.all(inputs.map(input => this.commit(input)));
+    if (this.stopped || this.ownership.closed.aborted) return Promise.resolve(inputs.map(input => ({ kind: 'unresolved' as const, captureId: input.captureId, reason: 'ownership' as const })));
+    for (const input of inputs) this.check(input);
+    const keys = inputs.map(input => input.characterId);
+    if (new Set(keys).size !== keys.length) throw new Error('checkpoint batch repeats a character');
+    if (keys.some(key => (this.counts.get(key) ?? 0) >= this.options.maxQueuedPerCharacter)) throw new Error('checkpoint queue full');
+    const captures = inputs.map(input => immutable(input)); this.metrics.captures += captures.length;
+    const previous = Promise.all(keys.map(key => this.tails.get(key) ?? Promise.resolve()));
+    const task = previous.then(() => this.saveBatch(captures));
+    for (const key of keys) { this.counts.set(key, (this.counts.get(key) ?? 0) + 1); this.tails.set(key, task); }
+    this.pending.add(task);
+    void task.finally(() => {
+      this.pending.delete(task);
+      for (const key of keys) {
+        this.counts.set(key, (this.counts.get(key) ?? 1) - 1);
+        if (this.tails.get(key) === task) { this.tails.delete(key); this.counts.delete(key); }
+      }
+    });
+    return task;
+  }
+  private async saveBatch(captures: readonly PlayerCommit<C>[]): Promise<CommitResult<I, C, G>[]> {
+    const start = this.options.now();
+    if (this.ownership.closed.aborted) { this.unresolved += captures.length; return captures.map(capture => ({ kind: 'unresolved', captureId: capture.captureId, reason: 'ownership' })); }
+    try {
+      const saved = await this.store.saveCheckpoints!(captures.map(capture => ({ accountId: capture.accountId, characterId: capture.characterId,
+        expectedRevision: capture.expectedRevision, checkpoint: capture.checkpoint, appliedGrantIds: capture.appliedGrantIds })));
+      if (saved.length !== captures.length || saved.some((character, index) => character.characterId !== captures[index].characterId || character.revision !== captures[index].expectedRevision + 1)) throw new Error('incomplete checkpoint batch');
+      // A successful write cannot authorize publication after the ownership session was lost.
+      if (this.ownership.closed.aborted) { this.unresolved += captures.length; return captures.map(capture => ({ kind: 'unresolved', captureId: capture.captureId, reason: 'ownership' })); }
+      this.metrics.saved += captures.length; this.metrics.batches++; this.metrics.commitMs += this.options.now() - start;
+      return captures.map((capture, index) => ({ kind: 'saved', captureId: capture.captureId, character: saved[index] }));
+    } catch {
+      // The batch may have committed before its response was lost: per-capture save() inspects revision and receipts first.
+      this.metrics.batchFallbacks++;
+      return Promise.all(captures.map(capture => this.save(capture)));
+    }
   }
   private async save(capture: PlayerCommit<C>): Promise<CommitResult<I, C, G>> {
     const start = this.options.now();

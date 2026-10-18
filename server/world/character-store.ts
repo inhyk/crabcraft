@@ -14,6 +14,9 @@ export interface CharacterCodec<I extends Json, C extends Json, G extends Json> 
 export type Character<I, C> = CharacterContext<I> & { revision: number; checkpoint: C; updatedAt: number };
 export const MAX_GRANT_BATCH_ENTRIES = 100;
 export const MAX_CHECKPOINT_GRANT_RECEIPTS = 256;
+/** saveCheckpoints() limit: one host save round writes at most this many characters in one transaction. */
+export const MAX_CHECKPOINT_BATCH = 512;
+export type CheckpointWrite<C> = { accountId: string; characterId: string; expectedRevision: number; checkpoint: C; appliedGrantIds: readonly string[] };
 export type VictimOutcomeResources = { maxEntries: number; maxPayloadBytes: number; timeoutMs: number };
 export type GrantBatchEntry<G> = { accountId: string; characterId: string; id: string; payload: G };
 export type EarnedGrant<G> = { id: string; sequence: string; accountId: string; characterId: string; payload: G };
@@ -339,6 +342,70 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
       // The stored row is storedJson = json(checkpoint) under the identity locked above, so it is not read back and re-decoded.
       const { revision: savedRevision, updatedAt } = this.stamp(result.rows[0]);
       const saved: Character<I, C> = { ...current, revision: savedRevision, checkpoint, updatedAt }; await client.query('COMMIT'); return saved;
+    } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  }
+  /**
+   * saveCheckpoint() for several characters in ONE transaction: the same validation, row lock, revision check and receipt
+   * checks for every entry, then one UPDATE and one receipt INSERT. Every checkpoint and receipt commits together or none
+   * does; any failure (including one entry's revision conflict) fails the whole batch, and the caller retries per entry.
+   */
+  async saveCheckpoints(entries: readonly CheckpointWrite<C>[]): Promise<Character<I, C>[]> {
+    if (!Array.isArray(entries) || entries.length < 1 || entries.length > MAX_CHECKPOINT_BATCH) fail('invalid', `expected 1..${MAX_CHECKPOINT_BATCH} checkpoint writes`);
+    const grants = new Map<string, number>();
+    const prepared = entries.map((entry, index) => {
+      if (!entry || typeof entry !== 'object') fail('invalid', 'invalid checkpoint write');
+      account(entry.accountId); character(entry.characterId); revision(entry.expectedRevision);
+      const ids = entry.appliedGrantIds;
+      if (!Array.isArray(ids) || ids.length > MAX_CHECKPOINT_GRANT_RECEIPTS || new Set(ids).size !== ids.length) fail('invalid', 'expected at most 256 distinct grant IDs');
+      ids.forEach(grantId);
+      for (const id of ids) { if (grants.has(id)) fail('invalid', 'a grant ID can be applied by one checkpoint only'); grants.set(id, index); }
+      return { accountId: entry.accountId, characterId: entry.characterId, expectedRevision: entry.expectedRevision, ids: [...ids], checkpointJson: json(entry.checkpoint, 262144) };
+    });
+    if (new Set(prepared.map(entry => entry.characterId)).size !== prepared.length) fail('invalid', 'expected distinct characters');
+    const order = [...prepared].sort((a, b) => a.characterId < b.characterId ? -1 : a.characterId > b.characterId ? 1 : 0);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Rows are locked in character order, like any other multi-row writer, and only the owner context and revision are read.
+      const locked = await client.query<HeadRow>(`SELECT ${HEAD_COLUMNS} FROM world_characters WHERE character_id=ANY($1::uuid[]) ORDER BY character_id FOR UPDATE`, [order.map(entry => entry.characterId)]);
+      const rows = new Map(locked.rows.map(row => [row.character_id, row]));
+      const contexts = new Map<string, CharacterContext<I>>(), checkpoints = new Map<string, C>();
+      for (const entry of order) {
+        const row = rows.get(entry.characterId);
+        if (!row || row.account_id !== entry.accountId) fail('not_found', 'character not found');
+        const { revision: currentRevision, updatedAt: _updatedAt, ...current } = this.head(row);
+        if (currentRevision !== entry.expectedRevision) fail('conflict', 'checkpoint revision conflict; reload before retry');
+        contexts.set(entry.characterId, current);
+        checkpoints.set(entry.characterId, this.codec.validateCheckpoint(JSON.parse(entry.checkpointJson) as Json, current));
+      }
+      if (grants.size) {
+        const ids = [...grants.keys()];
+        const found = new Map((await client.query<GrantRow>('SELECT * FROM world_replayable_grants WHERE grant_id=ANY($1::text[])', [ids])).rows.map(row => [row.grant_id, row]));
+        for (const [id, index] of grants) {
+          const entry = prepared[index], grant = found.get(id);
+          if (!grant || grant.character_id !== entry.characterId || grant.account_id !== entry.accountId) fail('not_found', 'earned grant not found for character');
+          this.decodeGrant(grant, contexts.get(entry.characterId)!);
+        }
+        if ((await client.query('SELECT 1 FROM world_character_grant_receipts WHERE grant_id=ANY($1::text[]) LIMIT 1', [ids])).rowCount) fail('already_applied', 'grant already applied; reload before retry');
+      }
+      const result = await client.query<{ character_id: string; revision: string; updated_at: Date | string }>(`UPDATE world_characters AS w
+        SET checkpoint_json=v.checkpoint_json,revision=w.revision+1,updated_at=now()
+        FROM unnest($1::uuid[],$2::text[],$3::text[],$4::bigint[]) AS v(character_id,account_id,checkpoint_json,revision)
+        WHERE w.character_id=v.character_id AND w.account_id=v.account_id AND w.revision=v.revision RETURNING w.character_id,w.revision,w.updated_at`,
+      [order.map(entry => entry.characterId), order.map(entry => entry.accountId), order.map(entry => json(checkpoints.get(entry.characterId), 262144)), order.map(entry => entry.expectedRevision)]);
+      if (result.rowCount !== order.length) fail('conflict', 'checkpoint revision conflict');
+      const stamps = new Map(result.rows.map(row => [row.character_id, this.stamp(row)]));
+      if (grants.size) {
+        const receipts = [...grants].map(([id, index]) => [id, prepared[index].characterId, prepared[index].expectedRevision + 1] as const);
+        await client.query('INSERT INTO world_character_grant_receipts(grant_id,character_id,applied_revision) SELECT * FROM unnest($1::text[],$2::uuid[],$3::bigint[])',
+          [receipts.map(r => r[0]), receipts.map(r => r[1]), receipts.map(r => r[2])]);
+      }
+      const saved = prepared.map(entry => {
+        const stamp = stamps.get(entry.characterId);
+        if (!stamp || stamp.revision !== entry.expectedRevision + 1) fail('conflict', 'checkpoint revision conflict');
+        return { ...contexts.get(entry.characterId)!, revision: stamp.revision, checkpoint: checkpoints.get(entry.characterId)!, updatedAt: stamp.updatedAt };
+      });
+      await client.query('COMMIT'); return saved;
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
 }
