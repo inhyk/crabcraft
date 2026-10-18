@@ -319,6 +319,7 @@ export interface AreaServices {
   controller(ref: EntityRef): CombatController | null;
   respawnUnit(ref: EntityRef): EntityRef; // atomically advances life and remaps owned controller/player/context refs
   player(ref: EntityRef): PlayerSim | null;
+  npcById(id: string): SimUnit | null;
   playerByCharacter(character: CharacterId): PlayerSim | null;
   applyEarnedGrant(grant: EarnedGrant): 'applied' | 'duplicate' | 'not-owner'; // real gainXp/coin/quest/flag effects
   players(): readonly SimUnit[]; // stable order, no required singleton local player
@@ -341,6 +342,7 @@ export interface AreaServices {
   onUnitDied(victim: EntityRef, killer: EntityRef | null): void;
 }
 export interface AreaOptions {
+  readonly characters?: CharacterRegistry; // host injects same registry into all Areas and coordinator
   readonly id: AreaId; readonly definition: AreaDefinition; readonly query: WorldQuery;
   readonly seed: number; readonly policy: AreaPolicy; readonly actionData: ActionData; readonly context: AreaContext;
   readonly limits: { eventCount: number; inputCommandsPerTick: number; timers: number; projectiles: number };
