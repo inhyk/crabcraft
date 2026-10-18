@@ -1,4 +1,5 @@
 import './dungeons.css';
+import {renderDungeonMenu} from './dungeonMenu';
 import * as THREE from 'three';
 import type {Game} from './game';
 import type {Enemy} from './enemies';
@@ -22,6 +23,7 @@ export class DungeonExpeditions {
   private readonly ui=document.createElement('div');
   private readonly panel=document.createElement('div');
   private readonly status=document.createElement('div');
+  private readonly backdrop=document.createElement('div');
   private readonly menu:HTMLButtonElement;
   private readonly pool:Enemy[];
   private saved:{height:Game['world']['heightAt'];collision:Game['world']['resolveCollision'];ray:Game['world']['raycastSolid'];spawn:THREE.Vector3;back:THREE.Vector3;yaw:number}|null=null;
@@ -41,7 +43,9 @@ export class DungeonExpeditions {
     this.ui.className='dungeon-ui';this.panel.className='dungeon-panel';this.panel.setAttribute('role','dialog');this.panel.setAttribute('aria-modal','true');this.panel.hidden=true;
     this.status.className='dungeon-status';this.status.hidden=true;
     this.menu=button(t('⚔ 던전','⚔ Dungeons'),()=>this.open());this.menu.className='dungeon-menu';
-    this.ui.append(this.menu,this.status,this.panel);g.app.ui.append(this.ui);
+    this.backdrop.className='dg-backdrop';this.backdrop.hidden=true;this.backdrop.onclick=()=>this.close();
+    this.panel.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();this.close();}if(e.key==='Tab'){const buttons=[...this.panel.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')].filter(b=>b.getClientRects().length>0),first=buttons[0],last=buttons[buttons.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
+    this.ui.append(this.menu,this.status,this.backdrop,this.panel);g.app.ui.append(this.ui);
   }
   get active(){return this.state!==null;}
   contains(u:Unit){return !this.state||(u.level>=this.state.level&&Math.abs(u.pos.y-Y)<4&&Math.hypot(u.pos.x-X,u.pos.z-Z)<R+6);}
@@ -50,21 +54,10 @@ export class DungeonExpeditions {
   open(){
     if(this.active)return;
     this.panelOpen=true;this.panel.hidden=false;this.panel.replaceChildren();
-    const title=document.createElement('h2');title.textContent=t('심연 원정 · 던전','Depth Expeditions · Dungeons');
-    const intro=document.createElement('p');intro.textContent=t('세 번의 전투, 마지막 수문장, 반복 도전 보상. 친구와는 비공개 방에서 함께 도전해요.','Three waves, a final warden, repeatable rewards. Play together in a private room.');
-    const cards=document.createElement('div');cards.className='dungeon-cards';
-    for(const d of DUNGEONS){
-      const card=document.createElement('article');card.style.setProperty('--dungeon-color',`#${d.color.toString(16).padStart(6,'0')}`);
-      const tier=document.createElement('strong');tier.textContent=`Lv.${d.level} ${this.cleared.includes(d.level)?'✓':''}`;
-      const name=document.createElement('h3');name.textContent=label(d);
-      const desc=document.createElement('p');desc.textContent=t(d.subtitle[0],d.subtitle[1]);
-      const reward=document.createElement('small');reward.textContent=`${t(d.chapter===3?'3월드':d.chapter===4?'눈 월드':d.chapter===5?'잿불 군도':'하늘숲',d.chapter===3?'World III':d.chapter===4?'Frostlight':d.chapter===5?'Emberreach':'Skybloom')} · ${d.coins.toLocaleString()} ${t('코인','coins')} · ${d.xp.toLocaleString()} XP`;
-      const enter=button(this.active?t('원정 진행 중','Expedition active'):this.g.player.level<d.level?t(`${d.level}레벨 필요`,`Level ${d.level} required`):t('도전하기 →','Enter →'),()=>this.start(d.level));
-      enter.disabled=this.active||this.g.player.level<d.level;card.append(tier,name,desc,reward,enter);cards.append(card);
-    }
-    const close=button(t('닫기','Close'),()=>this.close());close.className='dungeon-close';this.panel.append(title,intro,cards,close);
+    this.backdrop.hidden=false;
+    renderDungeonMenu(this.panel,{chapter:this.g.world2.chapter,level:this.g.player.level,cleared:this.cleared,start:level=>this.start(level),close:()=>this.close()});
   }
-  close(){this.panelOpen=false;this.panel.hidden=true;}
+  close(){this.panelOpen=false;this.panel.hidden=true;this.backdrop.hidden=true;this.menu.focus({preventScroll:true});}
   start(level:number){
     const g=this.g,d=dungeonFor(level),b=g.multiplayer?.battle;
     if(!d||this.active)return false;
@@ -137,7 +130,7 @@ export class DungeonExpeditions {
   private strike(){
     const s=this.state!,index=DUNGEONS.findIndex(d=>d.level===s.level),src=this.pool.find(e=>e.unit.alive)?.unit;
     if(!src)return;
-    for(const p of this.g.combatPlayers())if(p.alive&&dungeonDanger(index,s.hazard,p.pos.x-X,p.pos.z-Z))this.g.combat.damage(src,p,Math.round(18+s.level*.42));
+    for(const p of this.g.combatPlayers())if(p.alive&&dungeonDanger(index,s.hazard,p.pos.x-X,p.pos.z-Z))this.g.combat.damage(src,p,Math.round((18+s.level*.42)*1.25));
     this.g.vfx.ring(new THREE.Vector3(X,Y+.18,Z),new THREE.Color(0xffb978),1,17,.5,.8,0);
   }
   private reward(){
@@ -163,7 +156,7 @@ export class DungeonExpeditions {
     const key=JSON.stringify([s.level,s.stage,s.phase,Math.ceil(s.left),alive,t('ko','en')]);if(key===this.uiKey)return;this.uiKey=key;
     this.status.hidden=false;const title=document.createElement('strong');title.textContent=`Lv.${s.level} ${label(d)}`;
     const text=document.createElement('span');text.textContent=s.phase==='clear'?t('원정 성공 · 보상 획득','Expedition complete · Rewards earned'):s.phase==='failed'?t('원정 실패 · 다시 도전해 보세요','Expedition failed · Try again'):s.phase==='rest'?t(`${s.stage}/3 전투 · ${Math.ceil(s.left)}초 뒤 시작`,`Wave ${s.stage}/3 · Starts in ${Math.ceil(s.left)}s`):t(`${s.stage}/3 전투 · 적 ${alive}마리 · 붉은 바닥을 피하세요`, `Wave ${s.stage}/3 · ${alive} enemies · Avoid the red floor`);
-    const exit=button(t('밖으로 나가기','Leave'),()=>this.leave());this.status.replaceChildren(title,text,exit);
+    const exit=button(t('밖으로 나가기','Leave'),()=>this.leave());const stages=document.createElement('div');stages.className='dg-stages';stages.setAttribute('aria-label',t(`${s.stage}/3 전투 진행`,`Wave ${s.stage} of 3`));for(let i=1;i<=3;i++){const step=document.createElement('i');step.className=s.phase==='clear'||i<s.stage?'done':i===s.stage?'current':'';step.textContent=s.phase==='clear'||i<s.stage?'✓':String(i);stages.append(step);}this.status.dataset.phase=s.phase;this.status.replaceChildren(stages,title,text,exit);
   }
   private disposeTree(group:THREE.Group){group.traverse(o=>{if(o instanceof THREE.Mesh){if(o instanceof THREE.InstancedMesh)o.dispose();o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});group.clear();}
   private build(d:DungeonConfig){
