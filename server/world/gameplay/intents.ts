@@ -60,27 +60,38 @@ export function decodeInput(bytes:Uint8Array,expected:WireBinding,catalog:Gamepl
  if(h.sequence!==message.payload.seq)fail('input sequence mismatch');return message.payload;
 }
 export interface PreparedInput {readonly token:number;readonly intent:GameplayInput;readonly sequences:readonly number[];readonly commandOrigins:readonly {inputSequence:number;commandIndex:number}[]}
+/** One WebSocket budget survives stream resets and also charges revoked in-flight inputs. */
+export class InputRateBudget {
+ private tokens=120;private time:number;
+ constructor(now=0){number(now);this.time=now;}
+ consume(now:number):void {number(now);if(now<this.time)fail('input clock regression');const tokens=Math.min(120,this.tokens+(now-this.time)*60);if(tokens<1)fail('input rate limit');this.tokens=tokens-1;this.time=now;}
+}
 /** Acceptance never claims simulation success. Prepare is replayable until commit after Area.step. */
 export class InputSession {
  private binding:WireBinding;private catalog:GameplayCatalog;
  private queue:GameplayInput[]=[];private prepared:PreparedInput|null=null;private nextToken=1;
  private accepted=0;private consumed=0;private time:number;private lastReceived:number;
- private tokens=120;private limit:number;private timeout:number;
+ private readonly budget:InputRateBudget;private revoked=false;private limit:number;private timeout:number;
  private held:Omit<GameplayInput,'seq'|'commands'>={forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null};
- constructor(binding:WireBinding,catalog:GameplayCatalog,options:{now?:number;maxQueued?:number;timeoutSeconds?:number}={}){
-  this.binding=clone(binding);this.catalog=clone(catalog);this.time=options.now??0;this.lastReceived=this.time;number(this.time);
+ constructor(binding:WireBinding,catalog:GameplayCatalog,options:{now?:number;maxQueued?:number;timeoutSeconds?:number;budget?:InputRateBudget}={}){
+  this.binding=clone(binding);this.catalog=clone(catalog);this.time=options.now??0;this.lastReceived=this.time;number(this.time);this.budget=options.budget??new InputRateBudget(this.time);
   this.limit=options.maxQueued??128;integer(this.limit,1,1024);this.timeout=options.timeoutSeconds??.4;number(this.timeout);if(this.timeout<=0)fail('invalid timeout');
  }
  get acceptedInput(){return this.accepted;}get consumedInput(){return this.consumed;}get pendingCount(){return this.queue.length;}
  accept(bytes:Uint8Array,now:number):GameplayInput {
-  number(now);if(now<this.time)fail('input clock regression');const intent=decodeInput(bytes,this.binding,this.catalog);
+  if(this.revoked)fail('revoked input session');number(now);if(now<this.time)fail('input clock regression');const intent=decodeInput(bytes,this.binding,this.catalog);
   if(intent.seq<=this.accepted)fail('stale input sequence');if(this.queue.length>=this.limit)fail('input queue capacity');
-  const tokens=Math.min(120,this.tokens+(now-this.time)*60);if(tokens<1)fail('input rate limit');
-  this.tokens=tokens-1;this.time=now;this.lastReceived=now;this.accepted=intent.seq;this.queue.push(clone(intent));return clone(intent);
+  this.budget.consume(now);this.time=now;this.lastReceived=now;this.accepted=intent.seq;this.queue.push(clone(intent));return clone(intent);
+ }
+ /** Retain only the exact prior binding/sequence. Its pending commands and held controls are discarded. */
+ revoke():void {this.revoked=true;this.queue=[];this.prepared=null;this.held={forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null};}
+ discardRevoked(bytes:Uint8Array,now:number):void {
+  if(!this.revoked)fail('input session is not revoked');number(now);if(now<this.time)fail('input clock regression');const intent=decodeInput(bytes,this.binding,this.catalog);
+  if(intent.seq<=this.accepted)fail('stale input sequence');this.budget.consume(now);this.time=now;this.accepted=intent.seq;
  }
  prepareTick(now:number,maxCommands:number=LIMITS.commands):PreparedInput|null {
   number(now);if(now<this.time)fail('input clock regression');integer(maxCommands,1,LIMITS.commands);
-  if(this.prepared)return clone(this.prepared);if(!this.queue.length)return null;
+  if(this.revoked)return null;if(this.prepared)return clone(this.prepared);if(!this.queue.length)return null;
   let count=0,n=0;for(const frame of this.queue){const host=frame.commands.some(c=>HOST_COMMANDS.includes(c.kind));if(n&&(host||this.queue[0].commands.some(c=>HOST_COMMANDS.includes(c.kind))))break;if(n&&count+frame.commands.length>maxCommands)break;if(frame.commands.length>maxCommands)fail('frame exceeds step command capacity');count+=frame.commands.length;n++;}
   const frames=this.queue.slice(0,n),last=frames.at(-1)!;
   const intent={...last,commands:frames.flatMap(f=>f.commands)};
@@ -99,7 +110,7 @@ export class InputSession {
   return now-this.lastReceived>=this.timeout?{forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null}:clone(this.held);
  }
  reset(next:WireBinding,now:number):void {
-  if(sameBinding(next,this.binding))fail('reset requires new stream');number(now);this.binding=clone(next);this.queue=[];this.prepared=null;this.accepted=this.consumed=0;this.time=this.lastReceived=now;this.tokens=120;
+  if(sameBinding(next,this.binding))fail('reset requires new stream');number(now);this.binding=clone(next);this.queue=[];this.prepared=null;this.accepted=this.consumed=0;this.time=this.lastReceived=now;this.revoked=false;
   this.held={forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null};
  }
 }

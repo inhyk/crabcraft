@@ -19,7 +19,8 @@ import { planOutcomePage } from '../../src/sim/ledger.ts';
 
 import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
-import { createGameplayProtocol, GameplayReceiver, FragmentAssembler, projectObservationExtras } from './gameplay/protocol.ts';
+import { createGameplayProtocol, GameplayReceiver, FragmentAssembler, encodeMessage, projectObservationExtras } from './gameplay/protocol.ts';
+import { WorldClient } from '../../src/multiplayer/worldClient.ts';
 import { encodeInput } from './gameplay/intents.ts';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -241,7 +242,7 @@ test('private encounter admission uses actual beacon channel and trusted readine
     await until(() => bot.state.features.environment.beacon || rt.failures.length, 5000); clearInterval(heartbeat); heartbeat = undefined;
     assert.deepEqual(rt.failures, []); assert.equal(bot.state.features.environment.beacon, true);
     bot.send([{ kind: 'partyCreate' }]); await until(() => bot.controls.some(control => control.type === 'party' && control.state));
-    const original = bot.binding.session, entry = base.encounterDefinitions.get('rust').pois['encounter:entry'];
+    const original = bot.binding.epoch, entry = base.encounterDefinitions.get('rust').pois['encounter:entry'];
     // A genuine external revision forces the host's freeze/load/restore path, then validates the real entrance.
     let written = false;
     for (let attempt = 0; attempt < 10 && !written; attempt++) {
@@ -251,7 +252,7 @@ test('private encounter admission uses actual beacon channel and trusted readine
       catch (error) { if (error.code !== 'conflict') throw error; }
     }
     assert.equal(written, true);
-    await until(() => bot.binding.session !== original && Math.abs(bot.state.actors.find(a => a.ref.id === bot.state.selfRef.id).x - entry.position.x) < .5 || rt.failures.length, 5000);
+    await until(() => bot.binding.epoch > original && Math.abs(bot.state.actors.find(a => a.ref.id === bot.state.selfRef.id).x - entry.position.x) < .5 || rt.failures.length, 5000);
     assert.deepEqual(rt.failures, []); bot.send([{ kind: 'bossChallenge', profile: 'rust' }]);
     await until(() => bot.binding.area.startsWith('party:') && bot.state.actors.some(a => a.kind === 'boss') || rt.failures.length, 5000);
     assert.deepEqual(rt.failures, []); assert.deepEqual(bot.errors, []);
@@ -301,7 +302,7 @@ for(const ledger of [false,true])test(ledger?'external four real worlds round-tr
     const staleBinding = { ...bot.binding };
     const hops = [['w1','w2'], ['w2','w3'], ['w3','w4'], ['w4','w3'], ['w3','w2'], ['w2','w1']];
     for (const [from, to] of hops) {
-      const world = loaded.get(from), gate = world.publicDefinition.interactions.find(i => i.id === `gate:${to}`), oldSession = bot.binding.session;
+      const world = loaded.get(from), gate = world.publicDefinition.interactions.find(i => i.id === `gate:${to}`), oldEpoch = bot.binding.epoch;
       let written = false;
       for (let attempt = 0; attempt < 10 && !written; attempt++) {
         const current = await store.getOwned(c.binding.accountId, c.record.characterId), checkpoint = structuredClone(current.checkpoint);
@@ -314,7 +315,7 @@ for(const ledger of [false,true])test(ledger?'external four real worlds round-tr
         catch (error) { if (error.code !== 'conflict') throw error; }
       }
       assert.equal(written, true);
-      await until(() => bot.binding.session !== oldSession && bot.state.world === from || rt.failures.length, 5000);
+      await until(() => bot.binding.epoch > oldEpoch && bot.state.world === from || rt.failures.length, 5000);
       assert.deepEqual(rt.failures, []); const before = bot.binding.area;
       bot.send([{ kind: 'travel', gateId: `gate:${to}` }]);
       await until(() => bot.binding.area !== before && bot.state.world === to || rt.failures.length, 5000);
@@ -341,7 +342,7 @@ test('economic results use actual delegated outcomes and original input origins 
     const accepted = bot.results.find(r => r.inputSequence === 1); assert.equal(accepted.commandIndex, 0); assert.equal(accepted.code, 'quest-accepted');
     const savedQuest = await store.getOwned(c.binding.accountId, c.record.characterId);
     assert.ok(accepted.revision <= savedQuest.revision); assert.equal(savedQuest.checkpoint.progress.quests.status.q1, 'active');
-    const oldSession = bot.binding.session, pip = loaded.get('w1').publicDefinition.npcs.find(n => n.id === 'pip');
+    const oldEpoch = bot.binding.epoch, pip = loaded.get('w1').publicDefinition.npcs.find(n => n.id === 'pip');
     // Trusted shop-readiness fixture only; the actual two purchases and failures run through core commands.
     let written = false;
     for (let attempt = 0; attempt < 10 && !written; attempt++) {
@@ -350,7 +351,7 @@ test('economic results use actual delegated outcomes and original input origins 
       try { await store.saveCheckpoint(c.binding.accountId, c.record.characterId, current.revision, checkpoint, []); written = true; }
       catch (error) { if (error.code !== 'conflict') throw error; }
     }
-    assert.equal(written, true); await until(() => bot.binding.session !== oldSession || rt.failures.length); assert.deepEqual(rt.failures, []);
+    assert.equal(written, true); await until(() => bot.binding.epoch > oldEpoch || rt.failures.length); assert.deepEqual(rt.failures, []);
     bot.results = [];
     bot.send([{ kind: 'forgeBuy', npcId: 'pip', slot: 'weapon', request: 111 }, { kind: 'forgeBuy', npcId: 'pip', slot: 'armor', request: 112 }]);
     await until(() => bot.results.filter(r => r.status === 'durable' && [111,112].includes(r.request)).length === 2 || rt.failures.length);
@@ -576,8 +577,8 @@ for(const ledger of [false,true])test(ledger?'external private party second memb
   // The qualified member at the entrance is still denied while the real shared beacon is unlit.
   const publicRef=member.state.selfRef;member.send([{kind:'bossChallenge',profile:'rust'}]);await until(()=>member.controls.some(c=>c.code==='encounter-prerequisites'));assert.deepEqual(member.state.selfRef,publicRef);
   leader.send([{kind:'interact',targetId:'beacon'}],{heldChannel:'beacon'});heartbeat=setInterval(()=>{if(leader.ws.readyState===WebSocket.OPEN)leader.send([],{heldChannel:'beacon'});},50);await until(()=>leader.state.features.environment.beacon,5000);clearInterval(heartbeat);heartbeat=undefined;
-  const oldSession=leader.binding.session;let written=false;for(let i=0;i<10&&!written;i++){const current=await store.getOwned(records[0].binding.accountId,records[0].record.characterId),checkpoint=structuredClone(current.checkpoint);checkpoint.location={...entry.position,yaw:entry.yaw};try{await store.saveCheckpoint(records[0].binding.accountId,current.characterId,current.revision,checkpoint,[]);written=true;}catch(e){if(e.code!=='conflict')throw e;}}
-  assert.equal(written,true);await until(()=>leader.binding.session!==oldSession,5000);leader.send([{kind:'bossChallenge',profile:'rust'}]);
+  const oldEpoch=leader.binding.epoch;let written=false;for(let i=0;i<10&&!written;i++){const current=await store.getOwned(records[0].binding.accountId,records[0].record.characterId),checkpoint=structuredClone(current.checkpoint);checkpoint.location={...entry.position,yaw:entry.yaw};try{await store.saveCheckpoint(records[0].binding.accountId,current.characterId,current.revision,checkpoint,[]);written=true;}catch(e){if(e.code!=='conflict')throw e;}}
+  assert.equal(written,true);await until(()=>leader.binding.epoch>oldEpoch,5000);leader.send([{kind:'bossChallenge',profile:'rust'}]);
   const boss=b=>b.state?.recovery.bosses?.find(b=>b.profile==='rust');await until(()=>leader.binding.area.startsWith('party:')&&boss(leader)?.state==='waking'||rt.failures.length,5000);assert.deepEqual(rt.failures,[]);
   heartbeat=setInterval(()=>{if(leader.ws.readyState===WebSocket.OPEN)leader.send([]);},50);
   await until(()=>boss(leader)?.state==='fight'||rt.failures.length,6000);assert.deepEqual(rt.failures,[]);const originalBoss={...boss(leader).unit},originalSession=leader.binding.session;
@@ -723,4 +724,48 @@ test('external optional pair and full-roster capacity reject before admission wh
  await assert.rejects(runtime({outcomes:new DurableOutcomeStore(pool,codec,{planOutcomePage})}),/must be paired/);
  await assert.rejects(runtime({ledger:true,ledgerSourceLimits:{...sourceLimits,maxDirtyCreditEntries:1}}),/unsupported-step-capacity/);
  const rt=await runtime();try{await rt.host.ready();assert.equal(rt.host.stats().ready,true);assert.equal('ledgerDirtyCreditEntries' in rt.host.stats(),false);}finally{await rt.close();}
+});
+
+
+const rawIntent=(seq,commands=[],held={})=>({seq,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands,...held});
+const clientControl=(binding,sequence=1)=>createGameplayProtocol(gameplayCatalog).encodeControl({...binding,sequence,tick:0,acceptedInput:0,consumedInput:0},{type:'resync',lastSequence:0,reason:'baseline'})[0];
+
+test('actual WorldClient survives real enemy death/respawn with delayed revoked input and resync before current input, while a public peer stays live', {timeout:15000},async()=>{
+ const c=await character('mage'),checkpoint=structuredClone(c.record.checkpoint);checkpoint.survival.hp=1;c.record=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,c.record.revision,checkpoint,[]);
+ const rt=await runtime({combat:true}),states=[],frames=[];let socket,peer,tap,live;
+ try{
+  live=new WorldClient({catalog:gameplayCatalog,origin,windowTarget:null,documentTarget:null,hidden:()=>false,maxReconnects:0,
+   fetch:async()=>new Response(JSON.stringify(rt.admission.issue(c.binding,origin))),
+   socket:()=>{socket=new WebSocket(rt.url,{headers:{Origin:origin}});socket.addEventListener('message',event=>{if(typeof event.data==='string'){const v=JSON.parse(event.data);if(v.type==='world-bound'){const {type,...binding}=v;tap=new FragmentAssembler(binding);}}else if(tap){const m=tap.accept(new Uint8Array(event.data),performance.now()/1000);if(m?.kind===1)frames.push({header:m.header,full:m.payload.full});}});return socket;},onState:(state,code)=>states.push({state,code})});
+  await live.connect(c.record.characterId);peer=await client(rt,await character());await ready(rt,peer);const {session,area,epoch,catalog}=live.view.header,old={session,area,epoch,catalog},life=live.view.selfRef.life;
+  live.command({kind:'jump'});live.pump(performance.now());await until(()=>live.inputWatermarks.consumed===1);await until(()=>live.view?.actors.find(a=>a.ref.id===live.view.selfRef.id)?.alive===false,5000);
+  const oldInput=encodeInput({binding:old,intent:rawIntent(2,[{kind:'ability',slot:5}],{forward:1})},gameplayCatalog),oldResync=clientControl(old);
+  await until(()=>live.view?.selfRef.life>life||rt.failures.length,7000);assert.deepEqual(rt.failures,[]);assert.equal(live.state,'admitted');assert.equal(live.view.header.session,old.session);assert.ok(live.view.header.epoch>old.epoch);assert.equal(live.inputWatermarks.consumed,0);const start=live.view,priorFrames=frames.length;
+  socket.send(oldInput);socket.send(oldResync);await until(()=>rt.host.stats().discardedRevokedFrames===2&&frames.length>priorFrames);assert.equal(socket.readyState,WebSocket.OPEN);assert.equal(live.inputWatermarks.accepted,0);assert.equal(live.inputWatermarks.consumed,0);assert.equal(live.view.self.player.resource,start.self.player.resource);assert.ok(frames.slice(priorFrames).every(f=>!f.full));
+  const keys=new Set(['KeyW']);live.capture({controlsLocked:false,input:{isDown:key=>keys.has(key),isButtonDown:()=>false,wasPressed:()=>false},follow:{yaw:0,steering:false}},.04);live.pump(performance.now());await until(()=>live.inputWatermarks.consumed===1);assert.equal(live.state,'admitted');assert.equal(socket.readyState,WebSocket.OPEN);
+  peer.send([]);await until(()=>peer.receiver.header.consumedInput===1);assert.equal(peer.ws.readyState,WebSocket.OPEN);assert.equal(states.some(s=>s.code==='bootstrap'||s.code==='invalid-input'),false);
+  // TCP orders all legitimately old messages before the first valid new-epoch frame.
+  socket.send(encodeInput({binding:old,intent:rawIntent(3)},gameplayCatalog));await once(socket,'close');assert.ok(states.some(s=>s.code==='invalid-input'));peer.send([]);await until(()=>peer.receiver.header.consumedInput===2);assert.equal(peer.ws.readyState,WebSocket.OPEN);assert.deepEqual(rt.failures,[]);
+ }finally{live?.dispose();peer?.ws.close();await rt.close();}
+});
+
+async function respawnFixture(rt){const c=await character(),checkpoint=structuredClone(c.record.checkpoint);checkpoint.survival.alive=false;checkpoint.survival.hp=0;checkpoint.survival.respawnRemaining=.2;c.record=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,c.record.revision,checkpoint,[]);const bot=await client(rt,c);await until(()=>bot.binding);const old={...bot.binding};await until(()=>bot.binding.epoch>old.epoch&&bot.state?.selfRef.life>1);assert.equal(bot.binding.session,old.session);return{c,bot,old};}
+
+test('revoked grace still rejects malformed, unknown session/area, duplicate recovery, and closes grace on current resync', {timeout:15000},async()=>{
+ const rt=await runtime({grace:20}),bots=[];
+ try{
+  for(const kind of ['malformed','session','area','duplicate-resync','current-resync','two-old']){
+   const {c,bot,old}=await respawnFixture(rt);bots.push(bot);let packet;
+   if(kind==='two-old'){
+    const previous={...bot.binding},epoch=bot.binding.epoch,current=await store.getOwned(c.binding.accountId,c.record.characterId),checkpoint=structuredClone(current.checkpoint);
+    // A genuine newer orientation checkpoint forces a second bootstrap without modifying HP/XP/rewards.
+    checkpoint.location.yaw=Math.atan2(Math.sin(checkpoint.location.yaw+.1),Math.cos(checkpoint.location.yaw+.1));await store.saveCheckpoint(c.binding.accountId,c.record.characterId,current.revision,checkpoint,[]);await until(()=>bot.binding.epoch>epoch,5000);
+    const count=rt.host.stats().discardedRevokedFrames;bot.ws.send(encodeInput({binding:previous,intent:rawIntent(1)},gameplayCatalog));await until(()=>rt.host.stats().discardedRevokedFrames===count+1);packet=encodeInput({binding:old,intent:rawIntent(1)},gameplayCatalog);
+   }
+   else if(kind==='malformed')packet=encodeMessage(16,{...old,sequence:1,tick:0,acceptedInput:0,consumedInput:0},{...rawIntent(1),hp:999})[0];
+   else if(kind==='session'||kind==='area')packet=encodeInput({binding:{...old,[kind]:old[kind]+'-forged'},intent:rawIntent(1)},gameplayCatalog);
+   else{if(kind==='duplicate-resync'){bot.ws.send(clientControl(old));await until(()=>rt.host.stats().discardedRevokedFrames>0);packet=clientControl(old);}else{bot.ws.send(clientControl(bot.binding));packet=encodeInput({binding:old,intent:rawIntent(1)},gameplayCatalog);}}
+   bot.ws.send(packet);await once(bot.ws,'close');assert.ok(bot.controls.some(c=>c.code==='invalid-input'),kind);assert.deepEqual(rt.failures,[]);
+  }
+ }finally{for(const bot of bots)bot.ws.close();await rt.close();}
 });

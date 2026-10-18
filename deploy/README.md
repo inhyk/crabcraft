@@ -40,6 +40,20 @@ cat /srv/crabcraft/prod/history                    # 활성화 기록
 - Caddy 설정은 `/etc/caddy/Caddyfile`, 서버 유닛은 `crabcraft-server@.service` 다.
 - 영상은 버킷 `gs://crabcraft-seonn-media/media/` 에 올린다. VM 이 10분마다 `/srv/crabcraft/media/` 로 받아 와(`crabcraft-media-sync.timer`) `/media/` 로 내보낸다. 버킷은 공개할 수 없어서 이렇게 한다.
 
+## 서버 세계 켜고 끄기
+
+서버가 계산하는 세계(`/world`, `docs/server-world.md`)는 `/etc/crabcraft/<env>-world.json` 이 있을 때만 켜진다. 서버가 시작할 때마다 `world-env.sh` 가 이 파일을 읽고, `assets.source` 를 그 릴리스 안의 충돌 데이터(`server-dist/world/world-manifest.json`)에 맞춰 바꾼 뒤 `/run/crabcraft/<env>-world.env` 에 `WORLD_ENABLED=1` 과 `WORLD_CONFIG_JSON` 으로 쓴다. 그래서 지형이 바뀌어 충돌 데이터가 다시 만들어진 배포에서도 세계가 그대로 뜬다. 파일이 없거나 읽을 수 없으면 세계 없이 방과 계정만 돈다(`journalctl -t crabcraft-world-env` 에 이유가 남는다).
+
+```bash
+# 켜기 (dev): 레포의 deploy/vm/world-dev.json 이 아빠가 정한 dev 수치(지금 게임과 같은 몬스터 수, #52 레벨과 재생성 시간)다
+sudo install -o root -g crabcraft -m 0640 /tmp/vm/world-dev.json /etc/crabcraft/dev-world.json
+sudo systemctl restart crabcraft-server@dev
+# 끄기
+sudo rm /etc/crabcraft/dev-world.json && sudo systemctl restart crabcraft-server@dev
+```
+
+설정을 고쳤으면 직접 `systemctl restart` 한다. 배포는 `server-dist/` 가 같으면 서버를 다시 띄우지 않는다. 설정 항목은 `docs/server-world-config.md` 에 있다.
+
 ## 채팅 신고 보기
 
 플레이어가 채팅에서 신고하면 서버가 `chat_reports` 표에 남긴다(신고한 사람과 신고된 사람의 이름, 신고된 사람의 최근 채팅 20줄(이미 가려진 글), 방 코드, 이유, 시각. IP 주소는 남기지 않는다). 10분 안에 서로 다른 세 사람이 같은 사람을 신고하면 그 사람의 채팅은 30분 동안 본인에게만 보인다. 90일이 지난 신고는 매시간 정리할 때 지운다. VM 에서 읽기만 하는 명령으로 본다.

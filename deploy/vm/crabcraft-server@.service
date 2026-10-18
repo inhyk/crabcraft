@@ -15,6 +15,12 @@ Type=simple
 User=crabcraft
 Group=crabcraft
 EnvironmentFile=/etc/crabcraft/%i.env
+# Server world switch and config, rebuilt by world-env.sh from /etc/crabcraft/%i-world.json on every
+# start (empty or missing file: no world). "+" runs as root, outside the hardening below; "-" keeps a
+# failure there from stopping the rest of the server, and the old file is removed first.
+ExecStartPre=-+/bin/rm -f /run/crabcraft/%i-world.env
+ExecStartPre=-+/srv/crabcraft/bin/world-env.sh %i
+EnvironmentFile=-/run/crabcraft/%i-world.env
 Environment=NODE_ENV=production
 WorkingDirectory=/srv/crabcraft/%i/current
 ExecStart=/usr/bin/node /srv/crabcraft/%i/current/server-dist/main.mjs

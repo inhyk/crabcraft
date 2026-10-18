@@ -6,7 +6,8 @@ import { levelForXp } from './data/progression.ts';
 import { worldChapter } from './math.ts';
 
 export const ACHIEVEMENT_IDS = Object.freeze(['sail','crew','landfall','island','treasure','moon','sunset','moonTreasure','sunsetTreasure','archipelago','rust','abyss','eclipse','dawn','secret']);
-export const PERSONAL_FLAG_IDS = Object.freeze(['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared','firstEndingSeen','frostEndingStarted','beaconLit']);
+export const EARNED_BOSS_FLAG_IDS = Object.freeze(['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared','emberCleared','skyCleared']);
+export const PERSONAL_FLAG_IDS = Object.freeze([...EARNED_BOSS_FLAG_IDS,'firstEndingSeen','frostEndingStarted','beaconLit']);
 export type CharacterAppearance = { race:'human'|'orc'|'dwarf'|'undead'|'nightelf'|'tauren'; sex:'male'|'female'; classId:ClassId; shell:number; crest:number; led:number; name:string };
 export type CharacterIdentityV1 = { schema:'world-identity-v1'; classId:ClassId; archetype:string; appearance:CharacterAppearance };
 export type LocationCheckpoint = { x:number; y:number; z:number; yaw:number };
@@ -138,11 +139,11 @@ export function prepareRestore(checkpoint:CharacterCheckpointV1,offlineSeconds:n
  const source=validateCheckpoint(checkpoint),result=validateCheckpoint(policy.restore(source,offlineSeconds));if(result.character!==source.character||result.classId!==source.classId||result.archetype!==source.archetype)fail('restorePolicy.identity');
  if(canonical(result.progress)!==canonical(source.progress))fail('restorePolicy.progress');return result;
 }
-const GRANT_OBJECTIVES=Object.freeze(['kill-scrapling','kill-scavenger','patrol-kill','cog-roll','cog-reset','cog-miss','boss','eclipse-boss','dawn-boss','frost-boss','clear-encounter-blessing','boss-xp-blessing']);
+const GRANT_OBJECTIVES=Object.freeze(['kill-scrapling','kill-scavenger','patrol-kill','cog-roll','cog-reset','cog-miss','boss','eclipse-boss','dawn-boss','frost-boss','ember-boss','sky-boss','clear-encounter-blessing','boss-xp-blessing']);
 export function validateEarnedGrant(value:unknown,recipient?:string):GrantJson {
  const g=fields(detached(value,16384),['id','victim','recipient','xp','coins','objectives','flags'],'grant'),v=fields(g.victim,['area','id','life'],'grant.victim');text(v.area,'victim.area',256);integer(v.id,'victim.id',1,0xffffffff);integer(v.life,'victim.life',1,0xffffffff);text(g.id,'grant.id');text(g.recipient,'grant.recipient');if(g.id!==JSON.stringify([v.area,v.id,v.life,g.recipient])||recipient!==undefined&&g.recipient!==recipient)fail('grant.identity');integer(g.xp,'grant.xp');integer(g.coins,'grant.coins');
  if(!Array.isArray(g.objectives)||g.objectives.length>16||!Array.isArray(g.flags)||g.flags.length>5)fail('grant.payload');const kinds=new Set<string>();for(const value of g.objectives){const o=fields(value,['kind','amount'],'grant.objective');member(o.kind,GRANT_OBJECTIVES,'grant.objective.kind');if(kinds.has(o.kind as string))fail('grant.objective.duplicate');kinds.add(o.kind as string);if(o.kind==='cog-roll'){finite(o.amount,'cog-roll',0,1);if(o.amount===1)fail('cog-roll');}else integer(o.amount,'grant.objective.amount',o.kind==='cog-reset'?0:1);}
- if(new Set(g.flags).size!==g.flags.length)fail('grant.flags');for(const flag of g.flags)member(flag,PERSONAL_FLAG_IDS.slice(0,5),'grant.flag');return freeze(g as GrantJson);
+ if(new Set(g.flags).size!==g.flags.length)fail('grant.flags');for(const flag of g.flags)member(flag,EARNED_BOSS_FLAG_IDS,'grant.flag');return freeze(g as GrantJson);
 }
 export function createCoreCharacterCodec(config:{identities:readonly {classId:ClassId;archetype:string}[];freshLocation:LocationCheckpoint}):CoreCharacterCodec {
  const allowed=new Set(config.identities.map(i=>{member(i.classId,Object.keys(CLASSES),'identity.catalog.class');member(i.archetype,['human','orc','dwarf','undead','nightelf','tauren'],'identity.catalog.archetype');return JSON.stringify([i.classId,i.archetype]);})),spawn=detached(config.freshLocation);if(!allowed.size)fail('identity.catalog');location(spawn);
