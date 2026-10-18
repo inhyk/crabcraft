@@ -149,7 +149,7 @@ export type SelfPlayer=Omit<PlayerState,'character'|'achievements'>&{lighthouseS
 export interface AchievementView {distance:number;earned:readonly string[]}
 export interface SelfView {player:SelfPlayer;achievements:AchievementView;inCombat:boolean}
 export interface FeatureView {
- environment:{beacon:boolean;clock:number};
+ environment:{beacon:boolean;clock:number;mode:AreaSnapshot['features']['mode'];pvp:AreaSnapshot['features']['pvp']};
  exploration?:readonly {unit:EntityRef;activeUntil:number}[];
  boat:null|{x:number;z:number;yaw:number;speed:number;seats:readonly(EntityRef|null)[]};
  village:null|{id:string;mode:'hide'|'tag';phase:'ready'|'play'|'done';left:number;starter:EntityRef;seeker:EntityRef;members:readonly EntityRef[];caught:readonly EntityRef[];result:string};
@@ -179,7 +179,7 @@ function validateSelf(value:unknown,c:GameplayCatalog,area:string):void {
 }
 function validateFeatures(v:unknown,area:string):void {
  const ref=(x:unknown)=>reference(x,area);
- object(v,{environment:x=>object(x,{beacon:bool,clock:number}),boat:nullable(x=>{object(x,{x:number,z:number,yaw:number,speed:number,seats:list(nullable(ref),2,2)});const seats=x.seats as (EntityRef|null)[];if(seats[0]&&seats[1]&&seats[0].id===seats[1].id)fail('duplicate boat seat');}),village:nullable(x=>object(x,{id:text,mode:choice('hide','tag'),phase:choice('ready','play','done'),left:number,starter:ref,seeker:ref,members:list(ref,100),caught:list(ref,100),result:choice('','seekers','runners','cancelled')}))},{exploration:list(x=>object(x,{unit:ref,activeUntil:number}),1)});
+ object(v,{environment:x=>object(x,{beacon:bool,clock:number,mode:choice('public','party-encounter','legacy-room'),pvp:choice('disabled','party-only')}),boat:nullable(x=>{object(x,{x:number,z:number,yaw:number,speed:number,seats:list(nullable(ref),2,2)});const seats=x.seats as (EntityRef|null)[];if(seats[0]&&seats[1]&&seats[0].id===seats[1].id)fail('duplicate boat seat');}),village:nullable(x=>object(x,{id:text,mode:choice('hide','tag'),phase:choice('ready','play','done'),left:number,starter:ref,seeker:ref,members:list(ref,100),caught:list(ref,100),result:choice('','seekers','runners','cancelled')}))},{exploration:list(x=>object(x,{unit:ref,activeUntil:number}),1)});
 }
 function validateProjectile(v:unknown,area:string):void {object(v,{id:x=>integer(x,1,0xffffffff),source:x=>reference(x,area),target:x=>reference(x,area),style:choice('bubble','spark','holy','rust'),x:number,y:number,z:number,speed:number,elapsed:number,bornStep:integer});}
 function checkSnapshot(p:unknown,c:GameplayCatalog,area:string,ownedPublic=false):asserts p is SnapshotPayload {
@@ -335,7 +335,7 @@ export function projectObservationExtras(snapshot:AreaSnapshot,character:string,
  const self=snapshot.players.find(p=>p.character===character);if(!self)fail('missing feature owner');
  const bindings=snapshot.features.bindings,resolve=(id:string):EntityRef=>{const ref=bindings[id];if(!ref)fail('missing exact feature binding');reference(ref,snapshot.area);return ref;};
  const boat=snapshot.features.boat,village=snapshot.features.village;
- const features:FeatureView={environment:{beacon:snapshot.features.beaconLit,clock:snapshot.time},boat:{x:boat.x,z:boat.z,yaw:boat.yaw,speed:boat.speed,seats:boat.seats.map(id=>id===null?null:resolve(id))},village:village?{id:village.id,mode:village.mode,phase:village.phase,left:village.left,starter:resolve(village.starter),seeker:resolve(village.seeker),members:village.members.map(resolve),caught:village.caught.map(resolve),result:village.result}:null};
+ const features:FeatureView={environment:{beacon:snapshot.features.beaconLit,clock:snapshot.time,mode:snapshot.features.mode,pvp:snapshot.features.pvp},boat:{x:boat.x,z:boat.z,yaw:boat.yaw,speed:boat.speed,seats:boat.seats.map(id=>id===null?null:resolve(id))},village:village?{id:village.id,mode:village.mode,phase:village.phase,left:village.left,starter:resolve(village.starter),seeker:resolve(village.seeker),members:village.members.map(resolve),caught:village.caught.map(resolve),result:village.result}:null};
  const telegraphs=snapshot.recovery.telegraphs.filter(e=>e.event.type==='telegraph'&&visibleIds.has(e.event.src.id));
  const endings=snapshot.recovery.endings.filter(e=>e.unit.id===self.unit.id&&e.unit.life===self.unit.life);
  const exploration=(snapshot.features as AreaSnapshot['features']&{exploration?:readonly {unit:EntityRef;activeUntil:number}[]}).exploration;

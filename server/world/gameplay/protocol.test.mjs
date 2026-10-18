@@ -227,3 +227,9 @@ test('shared codec browser graph contains no Area, player controller, DOM or Nod
  const paths=Object.keys(result.metafile.inputs);assert.equal(paths.some(p=>/src\/game\/|src\/sim\/(area|player|combat|boss|enemy)\.ts$|server\/node\//.test(p)),false);
  assert.ok(paths.some(p=>p.endsWith('src/sim/renderPose.ts')));assert.ok(result.outputFiles[0].contents.length>0);
 });
+
+test('public and private PvP presentation uses explicit authority context rather than area names',()=>{
+ const f=fixture(),publicState=apply(f.receiver,f.codec.encodeObservation(observation(f))).state;assert.equal(publicState.features.environment.mode,'public');assert.equal(publicState.features.environment.pvp,'disabled');
+ f.area.applyContext({...f.area.services.context,mode:'party-encounter',pvp:'party-only'});const privateState=apply(f.receiver,f.codec.encodeObservation(observation(f,2))).state;assert.equal(privateState.header.area,'wire-area');assert.equal(privateState.features.environment.mode,'party-encounter');assert.equal(privateState.features.environment.pvp,'party-only');
+ const missing=observation(f,3);delete missing.features.environment.mode;assert.throws(()=>f.codec.encodeObservation(missing),/missing mode/);
+});
