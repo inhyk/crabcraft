@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { createArea } from '../src/sim/area.ts';
 import { Enemy } from '../src/sim/enemy.ts';
 import { enemyStats } from '../src/sim/data/enemies.ts';
 import { Combat } from '../src/sim/combat.ts';
@@ -23,6 +24,15 @@ export function creatureHarness(seed=7,height=0){
   function step(actors,dt=1/30){s.time+=dt;s.tick++;for(const a of actors)a.update(dt);for(const u of units.values())actions.updateHit(u,dt);for(const u of units.values())actions.update(u,dt);}
   return {s,unit,enemy,step,units,controllers,events,players,contributions,deaths,actions};
 }
+
+export function realCreatureArea(id='real-creatures',world='w1',profile=null,enemyKind=null){
+  const position={x:0,y:0,z:0},spawn={id:'spawn',position,yaw:0,radius:20};
+  const definition={world,spawn,recall:spawn,pois:{wreck:{id:'wreck',position:{x:0,y:0,z:100},yaw:0,radius:10}},npcs:[],interactions:[{id:'beacon',kind:'beacon',position,range:4}],enemies:enemyKind?[{id:'test-enemy',kind:enemyKind,home:{x:0,y:0,z:1.5},wanderRadius:1,pack:'one',fixedLevel:1,role:'ordinary'}]:[],bosses:profile?[{profile,arena:{id:'arena',position,yaw:0,radius:17},freedNpcId:'mira'}]:[]};
+  const query={heightAt:()=>0,resolveCollision:(x,z,r,out)=>out.set(x,z),raycastSolid:()=>null};
+  const policy={enemyLevel:s=>s.fixedLevel,enemyPopulation:()=>({desired:1,respawnSeconds:30}),damageAllowed:()=>true,canInteract:()=>true};
+  return createArea({id,definition,query,policy,actionData:realActionData,context:{mode:'public',members:[],pvp:'disabled'},seed:19,limits:{eventCount:100000,inputCommandsPerTick:32,timers:1000,projectiles:1000}});
+}
+const input=(seq,commands=[],heldChannel=null)=>({seq,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel,commands});
 
 if(fileURLToPath(import.meta.url)===process.argv[1]){
   test('enemy claw uses real delayed Actions and Combat HP, .28s hit crossing',()=>{const h=creatureHarness(),p=h.unit('player',{x:0,y:0,z:1}),e=h.enemy();e.aggro(false);for(let i=0;i<17;i++)h.step([e]);assert.equal(p.hp,100);h.step([e]);const created=h.s.time;assert.ok(e.actor.pendingHit);for(let i=0;i<7;i++)h.step([e]);assert.equal(p.hp,100);h.step([e]);assert.ok(p.hp>=94&&p.hp<=96);assert.ok(h.s.time-created>=.28-1/30&&h.s.time-created<=.28+1/30);assert.equal(h.contributions.length,1);});
@@ -53,6 +63,23 @@ if(fileURLToPath(import.meta.url)===process.argv[1]){
   test('explicit host population zero suppresses ordinary respawn',()=>{
     const h=creatureHarness(),e=h.enemy();h.s.policy.enemyPopulation=()=>({desired:0,respawnSeconds:0});h.s.combat.kill(e.unit,null);
     for(let i=0;i<300;i++)h.step([e]);assert.equal(e.state,'dead');h.s.policy.enemyPopulation=()=>({desired:1,respawnSeconds:0});h.step([e]);assert.equal(e.state,'idle');
+  });
+
+  test('actual Area intent to real enemy HP, death and full rewards uses canonical motion data',()=>{
+    const area=realCreatureArea('trace','w1',null,'scrapling'),ref=area.attachFresh('hero','warrior','human','spawn'),p=area.services.player(ref),e=[...area.enemies.values()][0];
+    p.state.resource=100;const target=e.unit;area.step(new Map([[ref.id,input(1,[{kind:'target',target}])]]));
+    assert.equal(area.services.getUnit(target).hp,42);
+    for(let i=0;i<400&&e.state!=='dead';i++)area.step(new Map());
+    assert.equal(e.state,'dead');assert.equal(p.state.xp,20);assert.equal(p.state.coins,5);const events=area.drainEvents();assert.ok(events.some(r=>r.event.type==='damage'));assert.ok(events.some(r=>r.event.type==='death'));assert.ok(events.some(r=>r.event.type==='reward'));assert.equal(area.pendingGrants().length,1);
+  });
+  test('actual Areas interleave seeded AI with read-only debug and independent empty populations',()=>{
+    const a=realCreatureArea('independent','w1',null,'scavenger'),b=realCreatureArea('independent','w1',null,'scavenger'),noise=realCreatureArea('noise','w1',null,'scrapling');
+    for(let i=0;i<200;i++){a.step(new Map());a.snapshot();a.debugState();noise.step(new Map());b.step(new Map());}
+    assert.deepEqual(a.debugState(),b.debugState());assert.deepEqual(a.drainEvents(),b.drainEvents());
+  });
+
+  test('dead or hidden nearby players do not block unseen respawn',()=>{
+    for(const mode of ['dead','hidden']){const h=creatureHarness(),p=h.unit(),e=h.enemy();h.s.combat.kill(e.unit,null);if(mode==='dead')p.alive=false;else p.hidden=true;h.s.time=31;h.step([e]);assert.equal(e.state,'idle',mode);}
   });
 
 }

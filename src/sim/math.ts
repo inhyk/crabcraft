@@ -11,3 +11,6 @@ export const distXZ = (a: Readonly<Vec3>, b: Readonly<Vec3>): number => Math.hyp
 export const smoothstep = (e0: number, e1: number, x: number): number => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
 export const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3;
 export const easeInOut = (t: number): number => t < .5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+
+/** Explicit definition spawns set total capacity; policy only enables each spawn. */
+export function validatePopulation(value:{desired:number;respawnSeconds:number}):{desired:0|1;respawnSeconds:number} {if((value.desired!==0&&value.desired!==1)||!Number.isFinite(value.respawnSeconds)||value.respawnSeconds<0)throw new RangeError('Population policy requires desired 0 or 1 and finite nonnegative respawnSeconds');return {desired:value.desired,respawnSeconds:value.respawnSeconds};}

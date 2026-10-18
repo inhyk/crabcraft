@@ -8,17 +8,17 @@ const JOINT_NAMES = motionData.joints;
 export const NJ = JOINT_NAMES.length;
 
 /** Joints the upper-body layer owns: both claws (LF_*, RF_*). */
-export const CLAW_JOINTS: number[] = JOINT_NAMES.flatMap((n, i) => (n.startsWith('LF_') || n.startsWith('RF_') ? [i] : []));
+export const CLAW_JOINTS: readonly number[] = Object.freeze(JOINT_NAMES.flatMap((n, i) => (n.startsWith('LF_') || n.startsWith('RF_') ? [i] : [])));
 
 /** The calibrated standing pose (bundle contracts' default_joint_pos), MuJoCo qpos convention. */
-export const HOME_Q: Float32Array = Float32Array.from([
+export const HOME_Q: readonly number[] = Object.freeze(Array.from(Float32Array.from([
   -0.5507, -1.0658, -0.4408, -1.374, 0.0,
   0.5524, -1.066, 0.4414, 1.4173, 0.0,
   0.0012, 0.5356, -1.8271,
   -0.0012, -0.5376, 1.8313,
   0.6313, 0.5534, -1.8648,
   -0.6326, -0.5548, 1.8678,
-]);
+])));
 /** Base height of the standing robot, metres (upstream STAND_Z). */
 export const STAND_HEIGHT = 0.10647;
 
@@ -51,7 +51,7 @@ export class Pose {
   }
 
   /** this = lerp(this, o, w); joints restricted to `joints` when given (body untouched then). */
-  blend(o: Pose, w: number, joints?: number[]): this {
+  blend(o: Pose, w: number, joints?: readonly number[]): this {
     if (w <= 0) return this;
     if (w >= 1 && !joints) return this.copy(o);
     const q = this.q;
