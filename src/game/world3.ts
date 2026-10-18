@@ -9,6 +9,7 @@ import {loadKit,StaticBatch,trs} from '../world/kit';
 import {TownBuilder} from '../world/buildings';
 import type {Lot} from '../world/layout';
 import {Collision} from '../world/collision';
+import {dawnHeight} from '../sim/world/ground';
 import type {Poi} from '../world/types';
 
 const DAWN_PATHS:IslandPath[]=[
@@ -32,11 +33,7 @@ export class DawnIsland {
  private rotating:THREE.Object3D[]=[];
  private cage=new THREE.Group();
  height(x:number,z:number){
-  const radial=Math.hypot(x/122,(z-3)/149);
-  const shore=4-Math.max(0,radial-.83)*65;
-  const upland=13*THREE.MathUtils.smoothstep(-z,5,55);
-  const hills=(Math.sin(x*.045)*Math.sin(z*.04)*2)*(1-Math.exp(-x*x/400));
-  return radial>.86?shore:4+upland+hills;
+  return dawnHeight(x,z);
  }
  constructor(){
   this.root.name='WORLD III · Dawnreach';this.root.visible=false;
