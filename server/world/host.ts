@@ -455,12 +455,20 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
         party.encounter = destination; allSlots.add(destination);
       }
+      // A public request starts a dormant/rematch boss or joins an already running encounter.
+      // Transfer places joins inside the arena, so the local outside-arena bossChallenge heuristic does not apply.
+      const targetBoss = destination.area.services.bossByProfile(profile);
+      const starting = targetBoss?.state === 'dormant' || targetBoss?.state === 'dead';
+      const joining = targetBoss?.state === 'waking' || targetBoss?.state === 'idle' || targetBoss?.state === 'fight';
+      if (!targetBoss || !starting && !joining) { controlError(c, 'encounter-unavailable'); continue; }
       if (!moveActor(actor, destination, 'encounter:entry')) { controlError(c, 'encounter-full'); continue; }
       actor.returnTo = { world: source.world, spawn: returnSpawn };
       syncPartyContexts();
-      if (!destination.area.services.runCommand(actor.ref, { kind: 'bossChallenge', profile })) throw new Error('validated encounter start rejected');
+      const started = !starting || destination.area.services.runCommand(actor.ref, { kind: 'bossChallenge', profile });
       actor.ref = destination.area.services.playerByCharacter(character)!.state.unit;
-      bootstrap(c, actor); drain(destination); startDurability(); break;
+      bootstrap(c, actor);
+      if (!started) controlError(c, 'encounter-start-unavailable');
+      drain(destination); startDurability(); break;
     }
     if (barrier) return;
     for (const [character, request] of returnRequests) {

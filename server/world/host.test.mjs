@@ -14,6 +14,7 @@ import { loadWorldCatalog, createGameplayCatalog } from './catalog.ts';
 import { createActualWorldHost } from './host.ts';
 import { createArea } from '../../src/sim/area.ts';
 import { deliverCertifiedAreaPage } from './persistence-coordinator.ts';
+
 import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
 import { createGameplayProtocol, GameplayReceiver, projectObservationExtras } from './gameplay/protocol.ts';
@@ -560,3 +561,36 @@ test('disconnect during a certified read discards the old connection lease and r
 
   }finally{try{if(area){if(barrier)area.releaseDurabilityBarrier(barrier);area.dispose();}}finally{await ownership.release();}}
 });
+
+test('second authoritative party member joins fighting Rust without duplicate wake, respawn refill or closing an unrelated public client', { timeout: 20000 }, async () => {
+ const rt=await runtime({party:true}),bots=[];let heartbeat;
+ try{
+  const base=loaded.get('w1'),entry=base.encounterDefinitions.get('rust').pois['encounter:entry'],beacon=base.publicDefinition.interactions.find(i=>i.id==='beacon'),records=[];
+  for(let i=0;i<2;i++){const c=await character('mage'),checkpoint=structuredClone(c.record.checkpoint);checkpoint.progress.xp=900;checkpoint.survival.maxHp=Math.round(checkpoint.progress.baseMaxHp*1.3);checkpoint.survival.hp=i?Math.floor(checkpoint.survival.maxHp/2):checkpoint.survival.maxHp;checkpoint.survival.maxResource=160;checkpoint.survival.resource=i?60:160;checkpoint.progress.quests.status.q1=checkpoint.progress.quests.status.q2='done';checkpoint.progress.quests.status.q3='active';checkpoint.progress.quests.progress['q1-kill']=6;checkpoint.progress.quests.progress['q1-cog']=4;checkpoint.progress.quests.progress['q2-deliver']=1;checkpoint.progress.quests.cogs=4;checkpoint.location={...(i?entry.position:beacon.position),yaw:0};c.record=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,c.record.revision,checkpoint,[]);records.push(c);const b=await client(rt,c);bots.push(b);await ready(rt,b);}
+  const [leader,member]=bots,observer=await client(rt,await character());bots.push(observer);await ready(rt,observer);
+  leader.send([{kind:'partyCreate'}]);await until(()=>leader.controls.some(c=>c.type==='party'&&c.state));const code=leader.controls.findLast(c=>c.type==='party'&&c.state).state.code;member.send([{kind:'partyJoin',code}]);await until(()=>leader.controls.findLast(c=>c.type==='party')?.state?.members.length===2);
+  // The qualified member at the entrance is still denied while the real shared beacon is unlit.
+  const publicRef=member.state.selfRef;member.send([{kind:'bossChallenge',profile:'rust'}]);await until(()=>member.controls.some(c=>c.code==='encounter-prerequisites'));assert.deepEqual(member.state.selfRef,publicRef);
+  leader.send([{kind:'interact',targetId:'beacon'}],{heldChannel:'beacon'});heartbeat=setInterval(()=>{if(leader.ws.readyState===WebSocket.OPEN)leader.send([],{heldChannel:'beacon'});},50);await until(()=>leader.state.features.environment.beacon,5000);clearInterval(heartbeat);heartbeat=undefined;
+  const oldSession=leader.binding.session;let written=false;for(let i=0;i<10&&!written;i++){const current=await store.getOwned(records[0].binding.accountId,records[0].record.characterId),checkpoint=structuredClone(current.checkpoint);checkpoint.location={...entry.position,yaw:entry.yaw};try{await store.saveCheckpoint(records[0].binding.accountId,current.characterId,current.revision,checkpoint,[]);written=true;}catch(e){if(e.code!=='conflict')throw e;}}
+  assert.equal(written,true);await until(()=>leader.binding.session!==oldSession,5000);leader.send([{kind:'bossChallenge',profile:'rust'}]);
+  const boss=b=>b.state?.recovery.bosses?.find(b=>b.profile==='rust');await until(()=>leader.binding.area.startsWith('party:')&&boss(leader)?.state==='waking'||rt.failures.length,5000);assert.deepEqual(rt.failures,[]);
+  heartbeat=setInterval(()=>{if(leader.ws.readyState===WebSocket.OPEN)leader.send([]);},50);
+  await until(()=>boss(leader)?.state==='fight'||rt.failures.length,6000);assert.deepEqual(rt.failures,[]);const originalBoss={...boss(leader).unit},originalSession=leader.binding.session;
+  const sourceHp=member.state.actors.find(a=>a.ref.id===member.state.selfRef.id).hp,sourceResource=member.state.self.player.resource;
+  member.send([{kind:'bossChallenge',profile:'rust'}]);await until(()=>member.binding.area===leader.binding.area&&boss(member)?.state==='fight'||rt.failures.length,5000);
+  assert.deepEqual(rt.failures,[]);assert.deepEqual(boss(member).unit,originalBoss);assert.equal(leader.binding.session,originalSession);const joined=member.state.actors.find(a=>a.ref.id===member.state.selfRef.id);assert.ok(joined.hp>=sourceHp&&joined.hp<joined.maxHp);assert.ok(joined.hp-sourceHp<joined.maxHp*.05*.25);assert.ok(member.state.self.player.resource<member.state.self.player.maxResource);assert.ok(member.state.self.player.resource>=sourceResource);
+  assert.equal(member.state.selfRef.life,1); // Joining preserves HP/resource and never invokes respawn.
+  member.send([{kind:'bossChallenge',profile:'rust'}]);const duplicateSequence=member.sequence;await until(()=>member.state.header.consumedInput>=duplicateSequence);assert.deepEqual(boss(member).unit,originalBoss);assert.equal(boss(member).state,'fight');
+  const observerSequence=observer.sequence+1;observer.send([]);await until(()=>observer.state.header.consumedInput>=observerSequence);assert.equal(observer.ws.readyState,WebSocket.OPEN);assert.ok(observer.binding.area.startsWith('w1:'));assert.equal(rt.host.stats().frozen,false);assert.equal(rt.host.stats().encounterAreas,1);assert.deepEqual(bots.flatMap(b=>b.errors),[]);
+ }finally{if(heartbeat)clearInterval(heartbeat);for(const b of bots)b.ws.close();await rt.close();}
+});
+
+ test('real Rust core predicates distinguish start, active local challenge, dying refusal and level/beacon gates', () => {
+  const base=loaded.get('w1');
+  function probe(state,level=3,lit=true){const area=createArea({id:'predicate-'+state+'-'+level+'-'+lit,definition:base.encounterDefinitions.get('rust'),query:base.query,actionData:base.actionData,policy:base.policy,seed:1,context:{mode:'party-encounter',pvp:'disabled',members:[]},limits:{eventCount:4096,inputCommandsPerTick:32,timers:256,projectiles:256}});area.bootstrapEncounter('rust',{beaconLit:lit});const ref=area.attachFresh('predicate-hero','mage','human','encounter:entry'),player=area.services.player(ref);player.restoreXp(level===3?900:300);const unit=area.services.getUnit(ref),boss=area.services.bossByProfile('rust');unit.hp=1;player.state.resource=1;boss.state=state;const bossLife=boss.unit.life;try{const result=area.services.runCommand(ref,{kind:'bossChallenge',profile:'rust'});return{result,state:boss.state,life:boss.unit.life,bossLife,hp:area.services.getUnit(player.state.unit).hp,resource:player.state.resource};}finally{area.dispose();}}
+  for(const state of ['dormant','dead']){const result=probe(state);assert.equal(result.result,true);assert.equal(result.state,'waking');assert.ok(result.hp>1);if(state==='dead')assert.ok(result.life>result.bossLife);}
+  for(const state of ['waking','idle']){const result=probe(state);assert.equal(result.result,true);assert.equal(result.state,state);assert.ok(result.hp>1);}// A local re-challenge refills, so host joins must never call it.
+  const fight=probe('fight');assert.equal(fight.result,false);assert.equal(fight.state,'fight');assert.equal(fight.hp,1);assert.equal(fight.resource,1);
+  for(const denied of [probe('dying'),probe('dormant',2),probe('dormant',3,false)]){assert.equal(denied.result,false);assert.equal(denied.hp,1);assert.equal(denied.resource,1);assert.equal(denied.life,denied.bossLife);}
+ });

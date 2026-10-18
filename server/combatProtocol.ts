@@ -14,7 +14,8 @@ export type BossState = {
   timeline?: { state: number; freed: number; freedYaw: number; released: boolean };
   mech: null | { id: number; kind: 'slam' | 'spray' | 'undertow' | 'nova' | 'eclipse' | 'cross' | 'barrage'; at: number[]; yaw: number; left: number };
 };
-export type WorldState = { village?:VillageRound|null; boat?:BoatState; weather: { mood: 0 | 1 | 2 | 3; beacon: boolean; clock: number }; entities: EntityState[]; bosses: BossState[]; rust: boolean; abyss: boolean; chapter: 1 | 2 | 3 | 4; frostCleared?: boolean; finalCleared?: boolean; firstEnding: boolean; trueCleared: boolean; social?:{mode:'coop'|'pvp';parties:Record<string,number>} };
+import type {DungeonState} from '../src/game/dungeonData.ts';
+export type WorldState = { dungeon?:DungeonState|null; village?:VillageRound|null; boat?:BoatState; weather: { mood: 0 | 1 | 2 | 3; beacon: boolean; clock: number }; entities: EntityState[]; bosses: BossState[]; rust: boolean; abyss: boolean; chapter: 1 | 2 | 3 | 4; frostCleared?: boolean; finalCleared?: boolean; firstEnding: boolean; trueCleared: boolean; social?:{mode:'coop'|'pvp';parties:Record<string,number>} };
 export type CombatEvent = {
   village?:'hide'|'tag'|'stop';
   boat?:BoatCommand;
@@ -30,6 +31,9 @@ const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'ob
 export function worldOf(v: unknown): WorldState | null {
   if (!record(v) || !Array.isArray(v.entities) || v.entities.length > 128 || !Array.isArray(v.bosses) || ![3,4,5].includes(v.bosses.length) || typeof v.rust !== 'boolean' || typeof v.abyss !== 'boolean' || ![1,2,3,4].includes(v.chapter) || (v.frostCleared!==undefined&&typeof v.frostCleared!=='boolean') || (v.finalCleared!==undefined&&typeof v.finalCleared!=='boolean') || typeof v.firstEnding !== 'boolean' || typeof v.trueCleared !== 'boolean') return null;
   if (!record(v.weather) || ![0,1,2,3].includes(v.weather.mood) || typeof v.weather.beacon !== 'boolean' || !n(v.weather.clock,0,10000000)) return null;
+  if(v.dungeon!==undefined&&v.dungeon!==null){const d=v.dungeon;
+    if(!record(d)||(d.level<100?v.chapter!==3:v.chapter!==4)||![35,50,75,150,200,250].includes(d.level)||typeof d.run!=='string'||!/^[a-zA-Z0-9-]{1,64}$/.test(d.run)||!Number.isInteger(d.stage)||!n(d.stage,1,3)||!['wave','rest','clear','failed'].includes(d.phase)||!n(d.left,0,10)||!n(d.clock,0,10000000)||!Number.isSafeInteger(d.hazard)||!n(d.hazard,0,10000000)||!Array.isArray(d.members)||d.members.length>8||d.members.some((m:unknown)=>typeof m!=='string'||m.length>64)||new Set(d.members).size!==d.members.length)return null;
+  }
   if(v.village!==undefined&&v.village!==null){
     const r=v.village,member=(id:unknown)=>typeof id==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(id);
     if(!record(r)||!member(r.id)||!member(r.starter)||!member(r.seeker)||!['hide','tag'].includes(r.mode)||!['ready','play','done'].includes(r.phase)||!n(r.left,0,180)||!['','seekers','runners','cancelled'].includes(r.result)||!Array.isArray(r.members)||r.members.length<1||r.members.length>8||r.members.some((id:unknown)=>!member(id))||new Set(r.members).size!==r.members.length||!r.members.includes(r.starter)||(!r.members.includes(r.seeker)&&!/^npc[0-9]{1,3}$/.test(r.seeker))||!Array.isArray(r.caught)||new Set(r.caught).size!==r.caught.length||r.caught.some((id:unknown)=>!r.members.includes(id)||id===r.seeker))return null;
