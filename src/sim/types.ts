@@ -1,10 +1,7 @@
-/** S2 CONTRACT PROPOSAL ONLY. No implementation or claim of completed gameplay.
- * Dependencies: unmerged S1 PR #26 (reviewed 298baf1, includes 45745c4 + dev23f3a75),
- * S3 PR #25 (reviewed 305dc60, includes dev23f3a75). New modules start from fresh canonical dev;
- * do not copy dependency commits into the S2 diff. Browser switch/bake wiring waits for dependencies.
- * Main chooses implementation branch/base after resolving those dependencies.
- * No runtime imports, renderer objects, UI callbacks, process globals or I/O here.
- * Split this review artifact into the file ownership sets in the companion plan.
+/** Shared contract for the implemented deterministic numeric simulation core.
+ * Current gameplay refresh follows canonical dev 60df24f and S4 foundation d480e24.
+ * Browser facade conversion, S1 event wiring and S3 baked query integration have separate gates.
+ * Core state and events contain numeric/value data, never renderer objects, browser callbacks or I/O.
  */
 export type WorldId = 'w1' | 'w2' | 'w3' | 'w4';
 export type Chapter = 1 | 2 | 3 | 4;
@@ -196,6 +193,7 @@ export type CoreEvent =
   | { type: 'reward'; grant: EarnedGrant; appliedHere: boolean }
   | { type: 'respawn'; unit: EntityRef; position: Readonly<Vec3>; yaw: number }
   | { type: 'quest'; unit: EntityRef; quest: string; stage: 'accepted' | 'progress' | 'ready' | 'completed'; objective?: string; value?: number }
+  | { type: 'endingReady'; unit: EntityRef; chapter: 4; replay: boolean }
   | { type: 'travelReady'; unit: EntityRef; destination: WorldId; gate: string };
 export interface EventRecord { readonly tick: Tick; readonly order: number; readonly event: CoreEvent }
 
@@ -209,7 +207,8 @@ export type PlayerCommand =
   | { kind: 'questAccept' | 'questTurnIn'; questId: string; npcId: string }
   | { kind: 'forgeBuy'; npcId: string }
   | { kind: 'travel'; gateId: string }
-  | { kind: 'bossChallenge'; profile: BossSim['profile'] };
+  | { kind: 'bossChallenge'; profile: BossSim['profile'] }
+  | { kind: 'endingReplay' };
 /** Input seq acknowledgment/transport validation is host work; no client position/HP/result.
  * Continuous held values replace previous values; commands execute once in supplied order.
  * Core retains continuous fields on missing input, but commands only run for seq>lastConsumedSeq.

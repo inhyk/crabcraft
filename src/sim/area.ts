@@ -11,7 +11,7 @@ import { Projectiles } from './projectiles.ts';
 import { Ids, Random } from './random.ts';
 import { Timers } from './timers.ts';
 import { createUnit, feedLocomotion, teleport } from './unit.ts';
-import { advanceNumericPose } from './pose.ts';
+import { advanceNumericPose, initializeNumericPose } from './pose.ts';
 import { WorldRules } from './outcomes.ts';
 import { captureTransfer, restoreTransfer } from './transfer.ts';
 import { freshQuests, setQuestChapter } from './data/quests.ts';
@@ -106,7 +106,7 @@ export class SimulationArea implements AreaContract {
     if(!e){if(pool.length>=3)return null;const u=this.makeUnit('scrapling','scrapling','hostile',{x,y:this.options.query.heightAt(x,z),z});const spawn={id:`${boss.id}:add:${pool.length}`,kind:'scrapling' as const,home:{x,y:u.y,z},wanderRadius:1,pack:`boss:${boss.id}`,fixedLevel:1,role:'add' as const};this.unitMap.set(u.ref.id,u);e=new Enemy(this.services,u,spawn);this.enemyMap.set(u.ref.id,e);this.controllerMap.set(u.ref.id,e);}
     e.respawnAt(x,z);e.aggro(false);return e;
   }
-  private respawnUnit(ref:EntityRef):EntityRef {const u=this.getUnit(ref);if(!u)throw new Error('Stale respawn');if(ref.life>=0xffffffff)throw new RangeError('Life exhausted');const next=immutable({...ref,life:ref.life+1});const p=this.playerMap.get(ref.id);if(p&&this.options.characters&&!this.options.characters.compareAndSwap(p.state.character,ref,next))throw new Error('Character registry mismatch');this.purgeReferences(ref);u.ref=next;if(p)p.state.unit=u.ref;this.context=immutable({...this.context,members:this.context.members.map(m=>sameRef(m.unit,ref)?{...m,unit:u.ref}:m)});return u.ref;}
+  private respawnUnit(ref:EntityRef):EntityRef {const u=this.getUnit(ref);if(!u)throw new Error('Stale respawn');if(ref.life>=0xffffffff)throw new RangeError('Life exhausted');const next=immutable({...ref,life:ref.life+1});const p=this.playerMap.get(ref.id);this.events.assertRoom(u.actions.length+this.playerMap.size*2+2);if(p&&this.options.characters&&!this.options.characters.compareAndSwap(p.state.character,ref,next))throw new Error('Character registry mismatch');if(u.actions.length)this.actions.stop(u,undefined,0);u.actions=[];u.pendingHit=null;this.purgeReferences(ref);u.ref=next;u.pose={...initializeNumericPose(),previousX:u.x,previousZ:u.z,previousYaw:u.yaw};if(p)p.state.unit=u.ref;this.context=immutable({...this.context,members:this.context.members.map(m=>sameRef(m.unit,ref)?{...m,unit:u.ref}:m)});return u.ref;}
   private purgeReferences(ref:EntityRef):void {
     for(const p of this.playerMap.values()){const s=p.state;if(s.target&&sameRef(s.target,ref))s.target=null;if(s.talkTarget&&sameRef(s.talkTarget,ref))s.talkTarget=null;if(s.cast?.target&&sameRef(s.cast.target,ref))p.interruptCast();if(s.dash&&sameRef(s.dash.target,ref))s.dash=null;}
     for(const u of this.unitMap.values()){const plan=u.pendingHit?.plan;if(plan&&(sameRef(plan.source,ref)||'target' in plan&&sameRef(plan.target,ref)))u.pendingHit=null;}

@@ -16,20 +16,33 @@ export class Boss {
     actor.level=this.stats.level;actor.hp=actor.maxHp=this.stats.hp;actor.invulnerable=true;actor.hidden=true;actor.targetable=false;
     freed.hidden=true;freed.targetable=false;
   }
-  get unit():EntityRef{return this.actor.ref;}get stats(){return BOSS_PROFILES[this.profile];}get isDawn():boolean{return this.profile==='dawn';}
+  get unit():EntityRef{return this.actor.ref;}get stats(){return BOSS_PROFILES[this.profile];}get isEndgame():boolean{return this.stats.level>=100;}get isFrost():boolean{return this.profile==='frost';}
   get engaged():boolean{return this.state==='fight';}get telegraphActive():boolean{return !!this.mech&&!this.mech.fired;}
   get mechName():MechId|null{return this.mech?.kind??null;}get stateTime():number{return this.stateT;}get freedTime():number{return this.freedT;}
-  private participants():readonly SimUnit[]{return this.services.players().filter(p=>p.alive&&!p.hidden&&(!this.isDawn||p.level>=100));}
+  private participants():readonly SimUnit[]{return this.services.players().filter(p=>p.alive&&!p.hidden&&(!this.isEndgame||p.level>=this.stats.level));}
   private target():SimUnit|null{
-    if(!this.isDawn)return this.services.targetFor(this.unit);
+    if(!this.isEndgame)return this.services.targetFor(this.unit);
     return this.participants().filter(p=>eligible(this.services,p)).slice().sort((a,b)=>distance(this.actor,a)-distance(this.actor,b)||a.ref.id-b.ref.id)[0]??null;
   }
-  private unlocked():boolean{return (this.isDawn?this.participants():this.services.players()).some(p=>p.level>=this.stats.level);}
+  private unlocked():boolean{return (this.isEndgame?this.participants():this.services.players()).some(p=>p.level>=this.stats.level);}
   private available():boolean{return this.services.bossAvailable(this.profile);}
   private yell(key:string,unit=this.unit,yell=true):void{this.services.emit({type:'say',unit,textKey:key,yell});}
   wake():void{
-    if(this.state!=='dormant'||!this.available()||(this.isDawn&&!this.unlocked()))return;
+    if((this.state!=='dormant'&&this.state!=='dead')||!this.available()||(this.isEndgame&&!this.unlocked()))return;
+    if(this.state==='dead')this.beginRematch();
     const u=this.actor,s=this.services;this.state='waking';this.stateT=0;u.hidden=false;u.x=this.arena.position.x;u.z=this.arena.position.z;u.y=s.query.heightAt(u.x,u.z);u.yaw=this.arena.yaw;u.lift=-u.height;
+  }
+  /** Authority creates a new victim life before any rematch effects or rewards. */
+  private beginRematch():void {
+    const s=this.services,u=this.actor;
+    s.respawnUnit(u.ref);
+    this.clearMech();for(const add of this.adds)add.despawn();this.adds.length=0;
+    u.hp=u.maxHp;u.alive=true;u.targetable=false;u.invulnerable=true;
+    u.stunUntil=u.slowUntil=u.slowPct=u.rustUntil=u.rust=u.absorb=u.absorbMax=u.absorbUntil=u.pushTime=u.pushX=u.pushZ=u.lift=0;
+    u.blessingUntil=0;u.encounterBlessing=false;u.lastCombat=-1e9;
+    this.phase=1;this.enraged=false;this.outside=this.mechIndex=this.nextSwing=this.nextMech=0;
+    this.freedStarted=this.freedBowed=false;this.freedT=-1;this.freedYaw=0;
+    s.stopAction(this.freed.ref,undefined,.2);this.freed.hidden=true;this.freed.lift=0;
   }
   onDamaged(source:EntityRef|null):void{if(this.state==='idle'&&source&&this.services.getUnit(source)&&this.unlocked())this.engage();}
   private engage():void{
@@ -65,13 +78,13 @@ export class Boss {
     if(!p||!eligible(s,p)){this.reset();return;}
     const fromArena=distance(p,this.arena.position);this.outside=fromArena>this.arena.radius+30?this.outside+dt:0;
     if(this.outside>4){this.yell('boss.leash');this.reset();return;}
-    const frac=u.hp/u.maxHp;if(this.phase===1&&frac<(this.isDawn?.75:.6))this.enterPhase2();if(this.phase===2&&frac<(this.isDawn?.4:.25))this.enterPhase3();
-    const stunned=!this.isDawn&&now<u.stunUntil;
+    const frac=u.hp/u.maxHp;if(this.phase===1&&frac<(this.isEndgame?.75:.6))this.enterPhase2();if(this.phase===2&&frac<(this.isEndgame?.4:.25))this.enterPhase3();
+    const stunned=!this.isEndgame&&now<u.stunUntil;
     if(this.mech)this.updateMech(dt);
     else if(!stunned){
       const g=gap(u,p),want=Math.atan2(p.x-u.x,p.z-u.z);u.yaw=turn(u.yaw,want,this.enraged?3:2.2,dt);
-      if(g>1){const speed=this.isDawn?(this.enraged?4.2:3.4):(this.enraged?2.8:2)*speedMul(u,now),d=distance(u,p)||1;moveCreature(s,u,u.x+(p.x-u.x)/d*speed*dt,u.z+(p.z-u.z)/d*speed*dt,dt);}
-      if(g<=1.6&&now>=this.nextSwing&&Math.abs(angleDiff(want,u.yaw))<.8){this.nextSwing=now+(this.isDawn?(this.enraged?1.3:1.8):(this.enraged?1.8:2.6));creatureAction(s,u,'attack_swipe',{upper:true,speed:this.enraged?1.4:1},{attack:'boss-claw',source:this.unit,target:p.ref});}
+      if(g>1){const speed=this.isEndgame?(this.enraged?4.2:3.4):(this.enraged?2.8:2)*speedMul(u,now),d=distance(u,p)||1;moveCreature(s,u,u.x+(p.x-u.x)/d*speed*dt,u.z+(p.z-u.z)/d*speed*dt,dt);}
+      if(g<=1.6&&now>=this.nextSwing&&Math.abs(angleDiff(want,u.yaw))<.8){this.nextSwing=now+(this.isEndgame?(this.enraged?1.3:1.8):(this.enraged?1.8:2.6));creatureAction(s,u,'attack_swipe',{upper:true,speed:this.enraged?1.4:1},{attack:'boss-claw',source:this.unit,target:p.ref});}
       if(now>=this.nextMech)this.startMech();
     }
   }
@@ -91,17 +104,17 @@ export class Boss {
     else if(kind==='cross'){m.dur=Math.max(2.6,3.1*speedUp);m.yaw=Math.atan2(p.x-u.x,p.z-u.z);}
     else if(kind==='barrage'){m.dur=Math.max(2.6,3*speedUp);m.at=pos(p);m.yaw=Math.atan2(p.x-u.x,p.z-u.z);}
     else{m.dur=2.6;this.yell('boss.undertow');}
-    if(this.isDawn)m.dur=Math.max(m.dur,kind==='nova'?2.4:kind==='eclipse'?2.8:kind==='undertow'?3:kind==='slam'?1.6:1.3);
+    if(this.isEndgame)m.dur=Math.max(m.dur,kind==='nova'?2.4:kind==='eclipse'?2.8:kind==='undertow'?3:kind==='slam'?1.6:1.3);
     const shapes=this.telegraphShapes(kind,m.at,m.yaw);this.mech=m;s.emit({type:'telegraph',src:this.unit,mech:kind,level:this.stats.level,seconds:m.dur,shapes});
-    this.nextMech=s.time+m.dur+(this.isDawn?(this.phase===3?.9:this.phase===2?1.2:1.8):(this.phase===3?4.2:this.phase===2?5.5:6));
+    this.nextMech=s.time+m.dur+(this.isEndgame?(this.phase===3?.9:this.phase===2?1.2:1.8):(this.phase===3?4.2:this.phase===2?5.5:6));
   }
-  private radius(kind:MechId){return mechanicRadius(this.isDawn,kind);}
-  private get laneLength(){return this.isDawn?15:12;}private get laneWidth(){return this.isDawn?1.4:1.8;}
-  private get barrageRadius(){return this.isDawn?3:2.6;}private get innerRadius(){return this.isDawn?3:4.5;}
-  private crossAngles(yaw:number):number[]{return this.isDawn?[yaw,yaw+Math.PI/4,yaw+Math.PI/2,yaw+3*Math.PI/4]:[yaw,yaw+Math.PI/2];}
-  private barragePoints(at:Vec3,yaw:number):Vec3[]{const points=this.isDawn?[[0,0],[6,0],[-6,0],[0,6],[0,-6]]:[[-6,0],[0,0],[6,0]];return points.map(([x,z])=>({x:at.x+x*Math.cos(yaw)+z*Math.sin(yaw),y:at.y,z:at.z-x*Math.sin(yaw)+z*Math.cos(yaw)}));}
+  private radius(kind:MechId){return mechanicRadius(this.isEndgame,kind);}
+  private get laneLength(){return this.isEndgame?15:12;}private get laneWidth(){return this.isEndgame?1.4:1.8;}
+  private get barrageRadius(){return this.isEndgame?3:2.6;}private get innerRadius(){return this.isEndgame?3:4.5;}
+  private crossAngles(yaw:number):number[]{return this.isFrost?[yaw,yaw+Math.PI/3,yaw+2*Math.PI/3]:this.isEndgame?[yaw,yaw+Math.PI/4,yaw+Math.PI/2,yaw+3*Math.PI/4]:[yaw,yaw+Math.PI/2];}
+  private barragePoints(at:Vec3,yaw:number):Vec3[]{const points=this.isFrost?[[0,0],[7,0],[-7,0],[3.5,6],[-3.5,6],[3.5,-6],[-3.5,-6]]:this.isEndgame?[[0,0],[6,0],[-6,0],[0,6],[0,-6]]:[[-6,0],[0,0],[6,0]];return points.map(([x,z])=>({x:at.x+x*Math.cos(yaw)+z*Math.sin(yaw),y:at.y,z:at.z-x*Math.sin(yaw)+z*Math.cos(yaw)}));}
   private telegraphShapes(kind:MechId,at:Vec3,yaw:number):TelegraphShape[]{
-    if(kind==='cross')return this.crossAngles(yaw).map(a=>({shape:'lane',at:pos(at),yaw:a,halfLength:this.laneLength,halfWidth:this.laneWidth,color:'#ffb64d'}));
+    if(kind==='cross')return this.crossAngles(yaw).map(a=>({shape:'lane',at:pos(at),yaw:a,halfLength:this.laneLength,halfWidth:this.laneWidth,color:this.isFrost?'#75e9ff':'#ffb64d'}));
     if(kind==='barrage')return this.barragePoints(at,yaw).map(p=>{const ground=this.deckUnder(p,this.barrageRadius,0,Math.PI);return {shape:'circle',at:pos(p),radius:this.barrageRadius,color:'#cf8aff',ground};});
     if(kind==='spray'){const ground=this.deckUnder(at,11,yaw,.55);return [{shape:'cone',at:pos(at),yaw,range:11,half:.55,ground}];}
     const radius=this.radius(kind),color=kind==='eclipse'?'#a050ff':kind==='nova'?this.stats.color:undefined,ground=this.deckUnder(at,radius,0,Math.PI);
@@ -134,7 +147,7 @@ export class Boss {
       else if(m.kind==='barrage')hit=points.some(at=>distance(p,at)<this.barrageRadius+p.radius*.5);
       else hit=(m.kind==='undertow'?distance(u,p):d)<this.radius(m.kind)+p.radius*.5;
       if(!hit)continue;
-      const damage=m.kind==='spray'?(6+3*s.random.next())*this.stats.damage:p.maxHp*mechanicFraction(this.isDawn,m.kind);
+      const damage=m.kind==='spray'?(6+3*s.random.next())*this.stats.damage:p.maxHp*mechanicFraction(this.isEndgame,m.kind);
       s.combat.damage(this.unit,p.ref,damage);
       if(m.kind==='slam')p.stunUntil=Math.max(p.stunUntil,s.time+.5);
       if(m.kind==='spray'){p.rust=Math.min(5,(s.time<p.rustUntil?p.rust:0)+1);p.rustUntil=s.time+10;s.emit({type:'buff',unit:p.ref,buff:'rust',stacks:p.rust});}
@@ -151,7 +164,7 @@ export class Boss {
   private clearMech():void{this.mech=null;this.services.emit({type:'telegraphEnd',src:this.unit,cancelled:true});}
   resolveHit(plan:HitPlan):boolean{
     if(plan.attack!=='boss-claw')return false;const s=this.services,u=s.getUnit(plan.source),p=s.getUnit(plan.target);
-    if(u===this.actor&&u.alive&&p?.alive&&(!this.isDawn||p.level>=100)&&gap(u,p)<=2.4){s.combat.damage(this.unit,p.ref,(7+3*s.random.next())*this.stats.damage*(this.enraged?1.25:1));s.emit({type:'attack',src:this.unit,attack:'boss-claw',stage:'hit',target:p.ref});}return true;
+    if(u===this.actor&&u.alive&&p?.alive&&(!this.isEndgame||p.level>=this.stats.level)&&gap(u,p)<=2.4){s.combat.damage(this.unit,p.ref,(7+3*s.random.next())*this.stats.damage*(this.enraged?1.25:1));s.emit({type:'attack',src:this.unit,attack:'boss-claw',stage:'hit',target:p.ref});}return true;
   }
   private updateDeath(dt:number):void{
     const t=this.stateT,u=this.actor,s=this.services;if(t>2.2&&!this.freedStarted){this.freedStarted=true;this.releaseFreed();}
