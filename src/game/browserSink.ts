@@ -306,6 +306,13 @@ export class BrowserSink {
     const tg = e.target ?? null;
     const range = e.range ?? 0;
     switch (`${e.ability}:${e.stage}`) {
+      case 'crown-burst:start':
+        vfx.tidalNova(u.pos, range);
+        vfx.ring(u.pos, N.gold, 0.5, range, 0.8, 0.9);
+        vfx.impact(u.centre(v), C.gold, 2);
+        audio.sfx('sfx-crit', { volume: 0.7 });
+        follow.shake(0.22, 0.4);
+        return;
       case 'pincer-strike:hit':
         vfx.slash(u, tg!, C.gold, 1.25);
         follow.shake(0.06, 0.15);
