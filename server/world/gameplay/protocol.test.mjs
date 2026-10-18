@@ -253,3 +253,8 @@ test('account-free chat controls carry only filtered lines, preferences and expl
  assert.throws(()=>f.codec.encodeControl(header(7),{type:'chatLine',channel:'party',line:{...line,accountId:'private'}}),/unknown/);assert.throws(()=>f.codec.encodeControl(header(7),{type:'chatResult',inputSequence:1,operation:'mute',ok:true,target:sender}),/missing state/);
  assert.throws(()=>f.codec.decodeClientMessage(f.codec.encodeControl(header(1),{type:'chatLine',channel:'party',line})[0],binding),/client cannot/);
 });
+
+test('report acknowledgments never expose internal global moderation decisions',()=>{
+ const f=fixture(),target={area:binding.area,id:22,life:1},ack={type:'chatResult',inputSequence:1,operation:'report',ok:true,target};
+ assert.doesNotThrow(()=>f.codec.encodeControl(header(1),ack));for(const muted of [true,false])assert.throws(()=>f.codec.encodeControl(header(1),{...ack,muted}),/moderation/);
+});
