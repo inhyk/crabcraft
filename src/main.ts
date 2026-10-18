@@ -4,6 +4,7 @@ import './ui/kit.css';
 import { App } from './app';
 import { returningFromGoogle } from './account';
 import { showLaunchNotice } from './ui/launchNotice';
+import { SPECTATE, spectateChrome } from './spectate';
 
 const root = document.getElementById('app')!;
 async function startApp(): Promise<void> {
@@ -17,6 +18,14 @@ async function startApp(): Promise<void> {
     (window as unknown as { app: App }).app = app;
     const crowd = await import('./capture/crowd/index');
     await crowd.startCrowdScene(app);
+    return;
+  }
+  // The developer monitor's spectator view: no notice, no account, no saves, only the game canvas.
+  if (SPECTATE) {
+    spectateChrome();
+    const app = new App(root);
+    (window as unknown as { app: App }).app = app;
+    await app.go('game');
     return;
   }
   // Back from Google sign-in: the player confirmed the notice before leaving.

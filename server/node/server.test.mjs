@@ -16,11 +16,12 @@ import { Link } from '../../src/multiplayer/link.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const ORIGIN = 'https://crab.seonn.dev', OTHER_ORIGIN = 'https://crab-dev.seonn.dev';
+const MONITOR_IP = '203.0.113.77';
 const CLIENT_ID = 'qa-client.apps.googleusercontent.com', CLIENT_SECRET = 'GOCSPX-' + randomBytes(18).toString('base64url');
 
 let postgres, db, server, base, port, google, DATABASE_URL, output = '';
 const serverEnv = () => ({ PATH: process.env.PATH, PORT: String(port), HOST: '127.0.0.1', DATABASE_URL, ALLOWED_ORIGINS: `${ORIGIN}, ${OTHER_ORIGIN}`, TRUST_PROXY: '1',
-  GOOGLE_CLIENT_ID: CLIENT_ID, GOOGLE_CLIENT_SECRET: CLIENT_SECRET, GOOGLE_AUTH_URL: google.authUrl, GOOGLE_TOKEN_URL: google.tokenUrl });
+  GOOGLE_CLIENT_ID: CLIENT_ID, GOOGLE_CLIENT_SECRET: CLIENT_SECRET, GOOGLE_AUTH_URL: google.authUrl, GOOGLE_TOKEN_URL: google.tokenUrl, MONITOR_IPS: MONITOR_IP });
 async function startServer() {
   server = spawn(process.execPath, [join(root, 'server-dist/main.mjs')], { env: serverEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
   const started = output.length;
@@ -140,6 +141,36 @@ test('two clients share a room: join, state, action, chat, combat world and depa
   assert.equal((await a.next('combat')).id, joined.id);
   b.ws.close();
   assert.equal((await a.next('left')).id, joined.id);
+});
+
+test('the monitor spectator observes a room from a listed address or with a monitor ticket; players never see it', async () => {
+  const a = await client('create'), r = await a.next('welcome');
+  async function observer(headers = {}, ticket) {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/multiplayer`, { origin: ORIGIN, headers });
+    sockets.push(ws);
+    const queue = [], closed = new Promise(res => ws.on('close', code => res(code)));
+    ws.on('message', raw => queue.push(JSON.parse(raw.toString())));
+    await once(ws, 'open');
+    ws.send(JSON.stringify({ type: 'observe', room: r.room, ...(ticket ? { ticket } : {}) }));
+    for (const until = Date.now() + 3000; !queue.length && Date.now() < until;) await new Promise(res => setTimeout(res, 10));
+    return { queue, closed };
+  }
+  const stranger = await observer({ 'X-Forwarded-For': `${MONITOR_IP}, 198.51.100.200` });
+  assert.deepEqual(stranger.queue[0], { type: 'error', message: 'Monitor access required.' });
+  assert.equal(await stranger.closed, 1008);
+  const home = await observer({ 'X-Forwarded-For': `198.51.100.200, ${MONITOR_IP}` });
+  assert.equal(home.queue[0].observer, true); assert.deepEqual(home.queue[0].players.map(p => p.id), [r.id]);
+  const ticketAt = ip => http('GET', '/api/account/monitor-ticket', { headers: { 'X-Crabcraft-Account': '1', 'X-Forwarded-For': `198.51.100.201, ${ip}` } });
+  assert.deepEqual((await ticketAt('198.51.100.202')).json, { error: 'monitor_unconfigured' });
+  const issued = await ticketAt(MONITOR_IP);
+  assert.equal(issued.status, 200); assert.match(issued.headers['cache-control'], /no-store/);
+  const page = await observer({}, issued.json.ticket);
+  assert.equal(page.queue[0].observer, true);
+  a.send({ type: 'state', state });
+  for (const until = Date.now() + 3000; !page.queue.some(m => m.type === 'state') && Date.now() < until;) await new Promise(res => setTimeout(res, 10));
+  assert.deepEqual(page.queue.find(m => m.type === 'state').state, state);
+  assert.equal(a.queue.some(m => m.type === 'joined'), false);
+  a.ws.close(); await once(a.ws, 'close');
 });
 
 test('a room and its checkpoint outlive its last player, as Worker rooms did', async () => {
