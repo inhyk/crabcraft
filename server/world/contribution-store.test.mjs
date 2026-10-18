@@ -202,7 +202,7 @@ test('007 migration is additive over preexisting005/006 data and framework rerun
     await legacy.query('INSERT INTO world_chat_accounts(account_id,enabled,party_only,mute_until) VALUES($1,false,true,1234)',[accountId]);
     const tables=['world_chat_accounts','accounts','world_characters','world_character_grants','world_character_grant_receipts','world_victim_outcomes'];
     const before=await Promise.all(tables.map(t=>legacy.query(`SELECT * FROM ${t}`)));
-    assert.deepEqual(await migrate(legacy),['007_world_paged_ledger']);assert.deepEqual(await migrate(legacy),[]);assert.deepEqual((await Promise.all(tables.map(t=>legacy.query(`SELECT * FROM ${t}`)))).map(r=>r.rows),before.map(r=>r.rows));
+    assert.deepEqual(await migrate(legacy),['007_world_paged_ledger','008_world_dungeon_awards']);assert.deepEqual(await migrate(legacy),[]);assert.deepEqual((await Promise.all(tables.map(t=>legacy.query(`SELECT * FROM ${t}`)))).map(r=>r.rows),before.map(r=>r.rows));
     assert.equal((await legacy.query('SELECT count(*)::int n FROM world_replayable_grants')).rows[0].n,1);
   }finally{await legacy.end();await pool.query('DROP DATABASE ledger_pre007');}
 });
