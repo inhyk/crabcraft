@@ -39,42 +39,50 @@ grace) before starting.
 | B1 | 2aa6a51 | 25 | 90 | 2075 / 2700 | 5.69 / 12.38 / 25.5 | 93 / 0 | 469 | 670, 53.7 / 102.1 / 150.9 | 7.46 | 105.3% / 52.7% | 65.7% | 333-404 | 101k / 113k | 112/1 | 0 | 96.8 / 201.5 |
 | B2 | 2aa6a51 | 50 | 90 | 1027 / 2700 | 8.95 / 24.73 / 56.8 | 258 / 4 | 1498 | 212, 125.0 / 191.1 / 226.3 | 2.37 | 104.6% / 52.3% | 69.7% | 408-430 | 65k / 71k | 73/2 | 0 | 202.8 / 373.6 |
 | B3 | 2aa6a51 | 100 | 60 | 165 / 1800 | 18.41 / 47.32 / 65.2 | 165 / 32 | 1595 | 36, 317.6 / 371.8 / 372.2 | 0.60 | 111.2% / 55.6% | 74.5% | 443-466 | 20k / 21k | 0/0 | 0 | 498.1 / 966.8 |
+| B1b | 2aa6a51 | 25 | 90 | 1999 / 2700 | 5.74 / 12.90 / 30.8 | 91 / 0 | 526 | 604, 57.6 / 128.6 / 143.6 | 6.72 | 105.7% / 52.9% | 66.5% | 324-327 | 102k / 115k | 125/5 | 0 | 97.3 / 211.0 |
 | C1 | fa740ec | 25 | 90 | 2428 / 2700 | 5.57 / 12.16 / 29.3 | 86 / 0 | 77 | 725, 62.8 / 134.6 / 176.8 | 8.05 | 105.7% / 52.9% | 64.1% | 362-402 | 98k / 117k | 112/8 | 6 (1008 invalid-input) | 117.7 / 272.1 |
 
 B3 was shortened to 60 s because B2 already failed. In B3 the host neutralized 69 inputs (`neutralizations`), no bot
 pressed an ability (bots act on a 0.6 Hz view) and no damage was dealt, so B3 measures the host's ceiling, not play.
-Steal time was 0.03-0.13% in every run. Health of prod/dev: 200/200 in all 89 + 90 + 58 + 90 samples.
+Steal time was 0.03-0.13% in every run. Health of prod/dev: 200/200 in all 89 + 90 + 58 + 90 + 90 samples.
+
+Dev restarts: the dev server (8081) restarted at 19:33:10 KST for PR #104 (merged 10:32:23Z). B1 started 27 s later
+(19:33:37, measurement from about 19:34:07), so its warm-up overlapped the dev startup minute although no health sample
+failed; B1b repeats it at 19:49:39 with dev unchanged since 19:33:10 and agrees with B1. B2 (19:36:16), B3 (19:38:49),
+C1 (19:43:03) and B1b started more than 3 minutes after that restart. The dev push 08b1ce2 (deploy run 10:44:57Z to
+10:45:51Z) did not restart the dev process; it may have touched the VM in the last seconds of C1 (ended 19:45:03).
 
 ### Before/after
 
-| | A r1 fa740ec e2-medium | C1 fa740ec e2-standard-2 | B1 2aa6a51 e2-standard-2 | A r2 fa740ec e2-medium | B2 2aa6a51 e2-standard-2 | B3 2aa6a51 e2-standard-2 |
+| | A r1 fa740ec e2-medium | C1 fa740ec e2-standard-2 | B1 / B1b 2aa6a51 e2-standard-2 | A r2 fa740ec e2-medium | B2 2aa6a51 e2-standard-2 | B3 2aa6a51 e2-standard-2 |
 |---|---|---|---|---|---|---|
 | bots | 25 | 25 | 25 | 50 | 50 | 100 |
-| ticks run (of 2700 in 90 s) | 2658 | 2428 | 2075 | 1609 | 1027 | 165 of 1800 in 60 s |
-| tick p50/p99 ms | 4.00 / 9.91 | 5.57 / 12.16 | 5.69 / 12.38 | 5.43 / 131.7 | 8.95 / 24.73 | 18.41 / 47.32 |
-| droppedTicks | 0 | 77 | 469 | 863 | 1498 | 1595 |
-| snapshotBatch p50/p99 ms | 30.1 / 62.8 | 62.8 / 134.6 | 53.7 / 102.1 | 84.8 / 234.4 | 125.0 / 191.1 | 317.6 / 371.8 |
-| snapshot Hz | 13.7 | 8.05 | 7.46 | 4.2 | 2.37 | 0.60 |
-| host CPU 1 core | 99.5% | 105.7% | 105.3% | 110.6% | 104.6% | 111.2% |
-| VM busy | 56.8% | 64.1% | 65.7% | 61.3% | 69.7% | 74.5% |
-| 1008 invalid-input closes | 8 (11 deaths) | 6 (8 deaths) | 0 (1 death) | 2 | 0 (2 deaths) | 0 (0 deaths) |
+| ticks run (of 2700 in 90 s) | 2658 | 2428 | 2075 / 1999 | 1609 | 1027 | 165 of 1800 in 60 s |
+| tick p50/p99 ms | 4.00 / 9.91 | 5.57 / 12.16 | 5.69 / 12.38, 5.74 / 12.90 | 5.43 / 131.7 | 8.95 / 24.73 | 18.41 / 47.32 |
+| droppedTicks | 0 | 77 | 469 / 526 | 863 | 1498 | 1595 |
+| snapshotBatch p50/p99 ms | 30.1 / 62.8 | 62.8 / 134.6 | 53.7 / 102.1, 57.6 / 128.6 | 84.8 / 234.4 | 125.0 / 191.1 | 317.6 / 371.8 |
+| snapshot Hz | 13.7 | 8.05 | 7.46 / 6.72 | 4.2 | 2.37 | 0.60 |
+| host CPU 1 core | 99.5% | 105.7% | 105.3% / 105.7% | 110.6% | 104.6% | 111.2% |
+| VM busy | 56.8% | 64.1% | 65.7% / 66.5% | 61.3% | 69.7% | 74.5% |
+| 1008 invalid-input closes | 8 (11 deaths) | 6 (8 deaths) | 0 (1 death) / 0 (5 deaths) | 2 | 0 (2 deaths) | 0 (0 deaths) |
 
 Reading:
 - The same fa740ec bundle is about twice as slow per snapshot batch on today's e2-standard-2 (C1 65.0 ms mean, 47.1 s over
   725 batches) as on the morning e2-medium (A r1 32.4 ms mean, 50.4 s over 1553 batches). The host is single-threaded, so a
   second vCPU does not help it; per-thread speed of this Broadwell instance decides. The morning platform is unknown.
-- Same VM, 25 bots, new against old code: snapshotBatch p50 -14% (62.8 to 53.7 ms), p99 -24% (134.6 to 102.1 ms), mean per
-  batch 65.0 to 56.6 ms. #98 helps per batch, but B1 ran fewer ticks (2075 against 2428) and fewer batches (670 against
-  725) at the same CPU: tick plus snapshotBatch took 50.9 s of the 90 s against 61.9 s for C1, so about 11 s more of the
+- Same VM, 25 bots, new against old code: snapshotBatch p50 -14% / -8% (62.8 to 53.7 / 57.6 ms in B1 / B1b), p99 -24% / -4%
+  (134.6 to 102.1 / 128.6 ms), mean per batch 65.0 to 56.6 / 60.1 ms. #98 helps per batch, but B1 ran fewer ticks (2075
+  and 1999 against 2428) and fewer batches (670 and 604 against 725) at the same CPU: tick plus snapshotBatch took 50.9 s of the 90 s against 61.9 s for C1, so about 11 s more of the
   main thread goes to work outside those two timers (not profiled; persistence wall time per run was 29.8 s against 16.7 s).
-- Respawn rebinding: C1 reproduced the old 6 closes `1008 invalid-input` on 8 deaths. Dev had 3 deaths over B1 and B2, 0
-  closes, and `discardedRevokedFrames` 2 + 2, so the in-flight old-binding frame is now discarded instead of closing the
-  socket. Three deaths is a small sample.
+- Respawn rebinding: C1 reproduced the old 6 closes `1008 invalid-input` on 8 deaths. Dev had 8 deaths over B1, B2 and
+  B1b, 0 closes, and `discardedRevokedFrames` 2 + 2 + 7: the in-flight frame on the revoked binding is now discarded
+  (`host.ts` revoked-binding branch) instead of closing the socket.
 - tick p99 only covers ticks that ran; dropped ticks are not in it.
 
 Verdict against decision 10 (tick p99 under 10 ms and CPU under 60% on the VM): fails at 25, 50 and 100 bots. tick p99
-12.4 / 24.7 / 47.3 ms, VM busy 65.7 / 69.7 / 74.5%, and from 25 bots the single host thread is saturated (CPU 105% of one
-core, 469 dropped ticks, 7.5 Hz snapshots against the 20 Hz target). The 2-vCPU resize does not lift the per-thread limit.
+12.4-12.9 / 24.7 / 47.3 ms, VM busy 65.7-66.5 / 69.7 / 74.5%, and from 25 bots the single host thread is saturated (CPU
+105% of one core, 469-526 dropped ticks, 6.7-7.5 Hz snapshots against the 20 Hz target). The 2-vCPU resize does not lift the per-thread limit.
 
-Raw results: `r1-25bots.*`, `r2-50bots.*`, `r3-100bots.*`, `c1-fa740ec-25bots.*`, `host.log`, `host-fa740ec.log` in the
+Raw results: `r1-25bots.*`, `r1b-25bots.*`, `r2-50bots.*`, `r3-100bots.*`, `c1-fa740ec-25bots.*`, `host.log`,
+`host-r1b.log`, `host-fa740ec.log` in the
 measuring session's scratchpad `vm/` directory (not committed).
