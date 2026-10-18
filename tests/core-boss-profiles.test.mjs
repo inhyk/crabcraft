@@ -10,7 +10,7 @@ function fight(profile='rust',levels=[100,100]){
   b.wake();for(let i=0;i<74;i++)h.step([b]);assert.equal(b.state,'fight');return {...h,b,ps};
 }
 function advanceTo(h,kind,phase=1){
-  if(phase>1)h.b.actor.hp=h.b.actor.maxHp*(phase===2?(h.b.isDawn?.7:.5):(h.b.isDawn?.3:.2));
+  if(phase>1)h.b.actor.hp=h.b.actor.maxHp*(phase===2?(h.b.isEndgame?.7:.5):(h.b.isEndgame?.3:.2));
   for(let i=0;i<10000;i++){
     h.step([h.b]);const e=h.events.at(-1);const warning=h.events.findLast(e=>e.type==='telegraph'&&e.mech===kind);
     if(warning&&h.b.mechName===kind&&h.b.telegraphActive){

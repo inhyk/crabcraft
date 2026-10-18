@@ -17,13 +17,13 @@ function validCommand(command:unknown):boolean {
   switch(c.kind){
     case 'ability':return [1,2,3,4,5].includes(c.slot as number);
     case 'target':{if(c.target===null)return true;if(!c.target||typeof c.target!=='object')return false;const r=c.target as Record<string,unknown>;return text(r.area)&&Number.isSafeInteger(r.id)&&Number(r.id)>0&&Number(r.id)<=0xffffffff&&Number.isSafeInteger(r.life)&&Number(r.life)>0&&Number(r.life)<=0xffffffff;}
-    case 'jump':case 'dance':case 'cancel':return true;
+    case 'jump':case 'dance':case 'cancel':case 'endingReplay':return true;
     case 'channelStart':return ['recall','beacon','waystone'].includes(c.channel as string)&&(c.targetId===undefined||text(c.targetId));
     case 'interact':return text(c.targetId);
     case 'questAccept':case 'questTurnIn':return text(c.questId)&&text(c.npcId);
     case 'forgeBuy':return text(c.npcId);
     case 'travel':return text(c.gateId);
-    case 'bossChallenge':return ['rust','abyss','eclipse','dawn'].includes(c.profile as string);
+    case 'bossChallenge':return ['rust','abyss','eclipse','dawn','frost'].includes(c.profile as string);
     default:return false;
   }
 }
