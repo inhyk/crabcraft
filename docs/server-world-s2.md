@@ -21,7 +21,7 @@
 | `player`, `combat`, `abilities` | 세 클래스의 13종 기술과 15개 slot, GCD와 자원, 시전과 채널, 이동과 재생성, 장비 공격과 방어 배율 |
 | `enemy`, `boss` | 일반 적 AI, Rust/Abyss/Eclipse/Dawn/Frost 다섯 profile, mechanic, add pool, reset과 freed 상태 |
 | `areas`, `outcomes`, `interactions` | 네 월드 배치, 25개 퀘스트, 개인 prop, 보스 재도전과 기여자별 전체 보상, 장비 구매와 강화 |
-| `features` | 순수 boat와 village 규칙, named NPC와 주민 controller. Area fixed-stage 연결은 진행 중 |
+| `features` | 순수 boat와 village 규칙, named NPC와 주민 controller. Area fixed stage에서 한 번씩 실행 |
 | `transfer` | 입장 예약과 staging, 소유권 CAS, 시계 변환, 보상 mailbox와 재시도 |
 | `actions`, `projectiles`, `pose` | 실제 clip 명중 시각, fade와 취소 시 root carry, canonical clawR에서 시작하는 비행 |
 | `game/simUnitView`, `game/playerInput` | native Vector3 live facade, rig에 numeric pose 적용, held 입력과 once-only edge 축적 |
@@ -42,11 +42,15 @@ host는 Area의 `characters` 옵션과 `InMemoryTransferCoordinator`에 같은 `
 
 tick 도중 한도를 넘은 Area는 다음 tick을 거부한다. host가 내구성 있는 저장과 grant 기록을 완료하고 Area를 폐기해야 하며 실패한 Area를 계속 실행하지 않는다. `TransferDTO`는 정상 travel용이다. 죽음, 배 탑승, village 중 logout과 restart용 checkpoint 경계를 대신하지 않는다.
 
+개인 checkpoint는 실제 appearance 전체, 25개 퀘스트, 장비, 15개 업적과 별도 secret 상태, 생존 상태, cooldown/status/history duration과 중단된 동작을 포획한다. 순수 `RestorePolicy`가 명시적으로 필요한 복원 규칙을 결정한다. 죽음, 배와 village 상태에서도 읽기 전용 포획이 가능하다. `stageRestoredArrival`은 비활성 actor를 준비하고 소유권 CAS 뒤 활성화한다. quiesce/capture, 저장된 정확한 receipt의 mark, durable retirement와 실패 복구 경계가 있다. 아직 실제 host DB 연결 검증을 뜻하지 않는다.
+
+미저장 receipt는 캐릭터당 256개까지다. 전체 기여자 집합이 한도를 넘으면 첫 진행 변경 전에 거부한다. 일반 travel에서도 이미 저장한 receipt와 미저장 receipt의 구분을 보존한다. 256개를 저장하고 W1에서 W2로 이동한 후 예전 보상은 중복 처리하고 새 257번째 보상 하나만 미저장으로 남는 회귀를 포함한다.
+
 ## 실제 모션 데이터와 검사
 
 `tools/bake-sim-motion.mjs`는 실제 Chrome `MotionLibrary`, GLB와 rig factory를 읽는다. packed artifact에는 float32 sample, root curve, socket chain, collider, scale과 원본 SHA256이 있다. 누락 clip과 archetype은 오류이며 대체 pose를 만들지 않는다. pose cache는 unit마다 소유한다.
 
-현재 provider는 `shipped-motion-v1-c39860fe930e432f10ad`다. [35종 raw 비교 결과](evidence/s2-motion-parity-35rig.json)를 보존한다. 원본 기준은 `fa7c0ac`, Game과 Unit은 `9dbbb45`와 동일하며 실제 추출 checkpoint는 `405c8de`다.
+현재 provider는 `shipped-motion-v1-8240fb40fe64b2d6968a`다. [현재 35종 raw 비교 결과](evidence/s2-rig-catalog-parity-unit5644568.json)를 보존한다. 실제 추출 checkpoint는 `18df9de`이며 Game은 `9dbbb45`, Unit은 readonly observation을 추가한 `5644568`이다. 공유 rig catalog `shipped-rigs-v1-ebaae7f29b7855b604c6`는 18,522 bytes이며 motion version에 묶인다. clip 전체를 포함하지 않는다.
 
 | 비교 | 표본 | 최대 차이 |
 | --- | ---: | ---: |
@@ -54,13 +58,13 @@ tick 도중 한도를 넘은 Area는 다음 tick을 거부한다. host가 내구
 | ClawR 위치, 35종 rig와 36종 race/sex/class 조합 | 39,171 | 7.105427357601002e-15 world unit |
 | 자연 종료, 취소와 중복 stop의 root carry | 238 | 0 |
 
-111개 source hash와 packed content hash를 검사한다. Game, Unit, motion 또는 rig 원본이 바뀌면 실제 bake와 독립 production rig/controller 비교를 다시 한다. hash 제외, 수동 정답 치환, 허용 오차 완화로 검사를 통과시키지 않는다.
+112개 source hash와 packed content hash를 검사한다. Game, Unit, motion 또는 rig 원본이 바뀌면 실제 bake와 독립 production rig/controller 비교를 다시 한다. hash 제외, 수동 정답 치환, 허용 오차 완화로 검사를 통과시키지 않는다.
 
 undead 계열 view의 무작위 servo twitch는 canonical authority pose에서 제외한다. 비교한 각 계열 708개 pose의 target 구성에서 최대 도착 차이는 0.030312초, 30Hz 기준 최대 1tick이었다. 모든 연속 pose에 대한 상한이 아니다. 기존 view twitch는 유지한다. 이전 14종 결과도 [원래 근거](evidence/s2-motion-parity.json)로 남긴다.
 
 ## 실행한 검사
 
-Node 24.22.0과 pnpm 10.10.0을 사용했다. aggregate `7403189`에서 core 227/227, view/input 12/12와 build가 통과했다. 이 숫자는 NPC/주민 Area 연결 전 checkpoint이며 새 연결 후 다시 검사한다.
+Node 24.22.0과 pnpm 10.10.0을 사용했다. aggregate `293b124`에서 core 265/265, view/input 14/14와 build가 통과했다. 이 checkpoint는 boat/village/NPC Area 연결, strict full-appearance checkpoint codec, durable lifecycle과 readonly server Unit binding을 포함한다.
 
 ```sh
 pnpm test:sim:core
@@ -77,7 +81,7 @@ parent의 별도 Vite/Chrome trace에서 실제 Digit1 입력부터 numeric 지�
 ## 남은 연결과 수용 검사
 
 - 실제 authenticated host, 새 gameplay wire의 life/catalog/명령/개인 진행, browser receiver와 reconnect를 연결한다. 기존 S4 fixture의 synthetic 이동은 실제 Area 실행을 대신하지 않는다.
-- Google 로그인 계정에 새 level-1 캐릭터를 만든다. browser save를 가져오지 않는다. 저장 codec, durable attach/detach, journal/receipt와 SIGTERM 저장을 연결한다.
+- Google 로그인 계정에 새 level-1 캐릭터를 만든다. browser save를 가져오지 않는다. 구현된 pure 저장 codec과 durable attach/detach를 실제 host, journal/receipt와 SIGTERM 저장에 연결한다.
 - 실제 서버에서 네 월드 이동, 다섯 보스와 party 8명, 25개 퀘스트와 개인 prop, 장비, boat와 village, 계정 채팅 보호를 검증한다. public 월드별 한 Area와 100명 초과 대기열을 검증한다.
 - 실제 gameplay 100 clients와 browser 2개, 끊김과 restart 복구, VM tick p99와 CPU를 측정한다. p99 10ms 또는 CPU 60% 기준을 적용한다.
 
