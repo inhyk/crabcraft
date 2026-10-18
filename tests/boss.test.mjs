@@ -275,3 +275,38 @@ test('Boreas requires level 300 in World IV and uses an ice prison opener and se
  ready.boss.startMech();assert.equal(ready.boss.mechName,'eclipse');assert.equal(ready.boss.barragePoints(new THREE.Vector3(),0).length,7);assert.equal(ready.boss.crossAngles(0).length,3);
  const peer=setup(BOSS_PROFILES.frost,300);peer.boss.applyNetwork(ready.boss.networkState('b300'));assert.equal(peer.boss.mechName,'eclipse');assert.equal(peer.boss.unit.hp,620000);
 });
+
+
+test('every boss can be defeated repeatedly with fresh health, phases and one coin reward per victory',()=>{
+ for(const profile of Object.values(BOSS_PROFILES)){
+  const {boss,game,player}=setup(profile);
+  for(let round=0;round<3;round++){
+   boss.wake();assert.equal(boss.state,'waking');assert.equal(boss.unit.hp,profile.hp);assert.equal(boss.unit.alive,true);
+   assert.equal(boss.phase,1);assert.equal(boss.enraged,false);assert.equal(boss.claimVictoryCoins(),0);
+   boss.update(2.5);player.pos.set(0,0,8);boss.update(.1);assert.equal(boss.state,'fight');
+   boss.unit.hp=0;boss.unit.alive=false;boss.onDeath();
+   assert.equal(boss.claimVictoryCoins(),profile.coins);assert.equal(boss.claimVictoryCoins(),0);
+   boss.wake();assert.equal(boss.state,'dying');
+   boss.update(11);assert.equal(boss.state,'dead');assert.equal(boss.claimVictoryCoins(),0);
+   boss.unit.stunUntil=game.time+99;boss.unit.slowUntil=game.time+99;
+  }
+ }
+});
+
+test('higher level bosses award strictly more coins and rematches retain lighthouse and level gates',()=>{
+ const sorted=Object.values(BOSS_PROFILES).sort((a,b)=>a.level-b.level);
+ assert.deepEqual(sorted.map(p=>p.coins),[150,500,1200,5000,15000]);
+ for(const profile of sorted){
+  const {boss,game}=setup(profile);boss.state='dead';boss.unit.alive=false;boss.unit.hp=0;
+  if(profile.level<20)game.world.getEnvironment=()=>({beacon:false});
+  else game.partyLevel=profile.level-1;
+  if(profile.level<20||profile.level>=100){boss.wake();assert.equal(boss.state,'dead');assert.equal(boss.unit.hp,0);}
+ }
+});
+
+test('a follower grants one coin reward again after a new authoritative rematch checkpoint',()=>{
+ const {boss}=setup();boss.state='dying';boss.unit.alive=false;
+ assert.equal(boss.claimVictoryCoins(),150);assert.equal(boss.claimVictoryCoins(),0);
+ boss.applyNetwork({id:'b3',state:'waking',phase:1,enraged:false,mech:null});
+ boss.state='dying';assert.equal(boss.claimVictoryCoins(),150);assert.equal(boss.claimVictoryCoins(),0);
+});
