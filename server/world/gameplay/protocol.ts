@@ -1,4 +1,8 @@
+import {copyValue} from '../../../src/sim/events.ts';
+import {createRenderPoseRecipe,evaluateRenderPoseRecipe,isRenderPoseRecipe,renderPoseProviderVersion} from '../../../src/sim/renderPose.ts';
+import type {RenderPoseRecipe} from '../../../src/sim/renderPose.ts';
 /** Gameplay v3. Pure bounded binary values shared by server and browser; v2 is untouched. */
+import { ACHIEVEMENT_IDS } from '../../../src/sim/persistence.ts';
 import type { CommandResult } from './events.ts';
 import type { AreaSnapshot, EntityRef, EventRecord, PlayerState, ProjectileState, SimUnit, NumericPoseState } from '../../../src/sim/types.ts';
 import { encodeInput, decodeInput } from './intents.ts';
@@ -7,7 +11,7 @@ export const MAGIC=0x5747, VERSION=3;
 export const LIMITS=Object.freeze({fragmentBytes:16384,messageBytes:2097152,fragments:256,actors:2048,projectiles:4096,events:512,commands:32,depth:24,nodes:300000,stringBytes:4096,array:16384,object:256,assemblySeconds:5});
 export interface WireBinding {session:string;area:string;epoch:number;catalog:string}
 export interface WireHeader extends WireBinding {sequence:number;tick:number;acceptedInput:number;consumedInput:number}
-export interface GameplayCatalog {version:string;archetypes:readonly string[];actions:readonly string[];abilities:readonly string[];quests:readonly string[];npcs:readonly string[];interactions:readonly string[];gates:readonly string[];objectives:readonly string[];flags:readonly string[];jointCount:number;appearanceLimits:Readonly<Record<string,{shell:number;crest:number;led:number}>>}
+export interface GameplayCatalog {version:string;poseProviderVersion:string;archetypes:readonly string[];actions:readonly string[];abilities:readonly string[];quests:readonly string[];npcs:readonly string[];interactions:readonly string[];gates:readonly string[];objectives:readonly string[];flags:readonly string[];jointCount:number;appearanceLimits:Readonly<Record<string,{shell:number;crest:number;led:number}>>}
 export type Value=null|boolean|number|string|Value[]|{[key:string]:Value};
 export type Validator=(value:unknown)=>void;
 export function fail(message:string):never {throw new Error(`gameplay-v3: ${message}`);}
@@ -33,7 +37,7 @@ export function binding(value:unknown):asserts value is WireBinding {object(valu
 export function header(value:unknown):asserts value is WireHeader {object(value,{session:text,area:text,epoch:v=>integer(v,1),catalog:text,sequence:v=>integer(v,1),tick:integer,acceptedInput:integer,consumedInput:integer});if(Number(value.consumedInput)>Number(value.acceptedInput))fail('consumed input exceeds accepted');}
 export function sameBinding(a:WireBinding,b:WireBinding):boolean {return a.session===b.session&&a.area===b.area&&a.epoch===b.epoch&&a.catalog===b.catalog;}
 export function clone<T>(value:T):T{return decodeValue(encodeValue(value)) as T;}
-const KEYS=('ref area id life archetype kind reaction level x y z yaw radius height hp maxHp alive hidden targetable invulnerable stunUntil slowUntil slowPct rust rustUntil absorb absorbMax absorbUntil blessingUntil encounterBlessing pushX pushZ pushTime lift npcId pose actions locomotionTime localVx localVz yawRate previousX previousZ previousYaw appliedQ appliedPosition appliedRotation gaitPhase controllerVx controllerVz controllerYaw locomotionQ locomotionPosition locomotionRotation locomotionWeights part upper from to loopFrom loop speed fade carryRoot generation start clipTime fadeIn fadeOut weight targetWeight ended interrupted root curve dataVersion metersToUnits committed committedClipTime rebase character unit classId resource maxResource xp coins attackRank armorRank weaponOwned armorOwned baseMaxHp gcdStart gcdEnd cooldowns cast channel target warded nextSwing lastAttack queued velX velZ jumpT spinT lastSpend targetDeadAt dash t deadUntil role controlsLocked talkTarget quests flags cogMisses chapter status progress cogs tracked ability end targetId source style elapsed bornStep hit anchorVersion type src dst amount crit school reason stage seconds caster range half stun landed slot moment move oldMaxHp jump attack at mech shapes cancelled boss phase show textKey yell recipient item recipients grant appliedHere position quest objective value operation result request destination gate header sequence tick acceptedInput consumedInput session epoch catalog full baseline eventWatermark selfRef actors removed projectiles self features recovery events results world time state weapon armor boat village environment telegraphs ending order inputSequence commandIndex revision durable poseDelta mask values fields appearance shell crest led name race sex lighthouseSecretFound endings replay').split(' ');
+const KEYS=('ref area id life archetype kind reaction level x y z yaw radius height hp maxHp alive hidden targetable invulnerable stunUntil slowUntil slowPct rust rustUntil absorb absorbMax absorbUntil blessingUntil encounterBlessing pushX pushZ pushTime lift npcId pose actions locomotionTime localVx localVz yawRate previousX previousZ previousYaw appliedQ appliedPosition appliedRotation gaitPhase controllerVx controllerVz controllerYaw locomotionQ locomotionPosition locomotionRotation locomotionWeights part upper from to loopFrom loop speed fade carryRoot generation start clipTime fadeIn fadeOut weight targetWeight ended interrupted root curve dataVersion metersToUnits committed committedClipTime rebase character unit classId resource maxResource xp coins attackRank armorRank weaponOwned armorOwned baseMaxHp gcdStart gcdEnd cooldowns cast channel target warded nextSwing lastAttack queued velX velZ jumpT spinT lastSpend targetDeadAt dash t deadUntil role controlsLocked talkTarget quests flags cogMisses chapter status progress cogs tracked ability end targetId source style elapsed bornStep hit anchorVersion type src dst amount crit school reason stage seconds caster range half stun landed slot moment move oldMaxHp jump attack at mech shapes cancelled boss phase show textKey yell recipient item recipients grant appliedHere position quest objective value operation result request destination gate header sequence tick acceptedInput consumedInput session epoch catalog full baseline eventWatermark selfRef actors removed projectiles self features recovery events results world time state weapon armor boat village environment telegraphs ending order inputSequence commandIndex revision durable poseDelta mask values fields appearance shell crest led name race sex lighthouseSecretFound endings replay poses poseRecipe recipe locomotion layers version').split(' ');
 const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
 class Writer {
  bytes=new Uint8Array(1024);view=new DataView(this.bytes.buffer);offset=0;
@@ -132,10 +136,6 @@ function poseDelta(value:unknown,c:GameplayCatalog):void {
  const patch=(length:number)=>(v:unknown)=>{object(v,{mask:x=>integer(x,1,2**length-1),values:list(number,length,1)});let count=0;for(let i=0;i<length;i++)if(Number(v.mask)&2**i)count++;if((v.values as number[]).length!==count)fail('pose patch cardinality');};
  object(value,{}, {appliedQ:patch(c.jointCount),appliedPosition:patch(3),appliedRotation:patch(4),localVx:number,localVz:number});
 }
-function diffPose(previous:PublicPose,next:PublicPose):PoseDelta {
- const result:PoseDelta={};for(const key of ['appliedQ','appliedPosition','appliedRotation']as const){let mask=0;const values:number[]=[];next[key].forEach((v,i)=>{if(!Object.is(v,previous[key][i])){mask+=2**i;values.push(v);}});if(mask)result[key]={mask,values};}
- for(const key of ['localVx','localVz']as const)if(!Object.is(next[key],previous[key]))result[key]=next[key];return result;
-}
 function applyPoseDelta(previous:PublicPose,delta:PoseDelta):PublicPose {
  const pose=clone(previous);for(const key of ['appliedQ','appliedPosition','appliedRotation']as const){const change=delta[key];if(!change)continue;let index=0;for(let i=0;i<pose[key].length;i++)if(change.mask&2**i)pose[key][i]=change.values[index++];}
  if(delta.localVx!==undefined)pose.localVx=delta.localVx;if(delta.localVz!==undefined)pose.localVz=delta.localVz;return pose;
@@ -149,45 +149,49 @@ export interface AchievementView {distance:number;earned:readonly string[]}
 export interface SelfView {player:SelfPlayer;achievements:AchievementView;inCombat:boolean}
 export interface FeatureView {
  environment:{beacon:boolean;clock:number};
+ exploration?:readonly {unit:EntityRef;activeUntil:number}[];
  boat:null|{x:number;z:number;yaw:number;speed:number;seats:readonly(EntityRef|null)[]};
  village:null|{id:string;mode:'hide'|'tag';phase:'ready'|'play'|'done';left:number;starter:EntityRef;seeker:EntityRef;members:readonly EntityRef[];caught:readonly EntityRef[];result:string};
 }
 export interface RecoveryView {telegraphs:readonly EventRecord[];endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]}
-export interface ActorUpdate {ref:EntityRef;fields:Partial<Omit<PublicActor,'ref'>>;poseDelta?:PoseDelta}
+export interface RenderPoseSource {recipe:RenderPoseRecipe;localVx:number;localVz:number}
+export interface ActorUpdate {ref:EntityRef;fields:Partial<Omit<PublicActor,'ref'>>;poseDelta?:PoseDelta;poseRecipe?:number}
 export interface SnapshotPayload {
  full:boolean;baseline:number;eventWatermark:number;world:AreaSnapshot['world'];time:number;selfRef:EntityRef;
- actors:readonly ActorUpdate[];removed:readonly EntityRef[];projectiles:readonly PublicProjectile[];
+ poses:readonly RenderPoseSource[];actors:readonly ActorUpdate[];removed:readonly EntityRef[];projectiles:readonly PublicProjectile[];
  self:SelfView;features:FeatureView;recovery:RecoveryView;events:readonly EventRecord[];results:readonly CommandResult[];
 }
 const ACTOR_FIELDS=['archetype','kind','reaction','level','x','y','z','yaw','radius','height','hp','maxHp','alive','hidden','targetable','invulnerable','stunUntil','slowUntil','slowPct','rust','rustUntil','absorb','absorbMax','absorbUntil','blessingUntil','encounterBlessing','pushX','pushZ','pushTime','lift','npcId','pose','actions','appearance'] as const;
-export function validateActor(value:unknown,c:GameplayCatalog,area:string):asserts value is PublicActor {
+function actorShape(value:unknown,c:GameplayCatalog,area:string,withPose:boolean):void {
  const numeric=['x','y','z','yaw','radius','height','hp','maxHp','stunUntil','slowUntil','slowPct','rust','rustUntil','absorb','absorbMax','absorbUntil','blessingUntil','pushX','pushZ','pushTime','lift'];
- object(value,{appearance:nullable(v=>validateAppearance(v,c)),ref:v=>reference(v,area),archetype:catalogValue(c.archetypes),kind:choice('player','npc','townsfolk','scrapling','scavenger','jellyfish','boss','freed'),reaction:choice('hostile','friendly','neutral','player'),level:v=>integer(v,1),...Object.fromEntries(numeric.map(k=>[k,number])),...Object.fromEntries(['alive','hidden','targetable','invulnerable','encounterBlessing'].map(k=>[k,bool])),npcId:nullable(text),pose:v=>poseState(v,c),actions:list(v=>actionState(v,c),64)});
+ object(value,{appearance:nullable(v=>validateAppearance(v,c)),ref:v=>reference(v,area),archetype:catalogValue(c.archetypes),kind:choice('player','npc','townsfolk','scrapling','scavenger','jellyfish','boss','freed'),reaction:choice('hostile','friendly','neutral','player'),level:v=>integer(v,1),...Object.fromEntries(numeric.map(k=>[k,number])),...Object.fromEntries(['alive','hidden','targetable','invulnerable','encounterBlessing'].map(k=>[k,bool])),npcId:nullable(text),...(withPose?{pose:(v:unknown)=>poseState(v,c)}:{}),actions:list(v=>actionState(v,c),64)});
  if(Number(value.hp)<0||Number(value.hp)>Number(value.maxHp)||Number(value.maxHp)<=0||Number(value.radius)<=0||Number(value.height)<=0||Number(value.slowPct)<0||Number(value.slowPct)>1)fail('invalid actor relationship');
 }
+export function validateActor(value:unknown,c:GameplayCatalog,area:string):asserts value is PublicActor {actorShape(value,c,area,true);}
+function renderSource(value:unknown):void {object(value,{recipe:v=>{if(!isRenderPoseRecipe(v)||v.layers.length>64)fail('invalid render recipe');},localVx:number,localVz:number});}
 function validateSelf(value:unknown,c:GameplayCatalog,area:string):void {
  object(value,{inCombat:bool,player:v=>{
   const numeric=['resource','maxResource','xp','coins','baseMaxHp','gcdStart','gcdEnd','nextSwing','lastAttack','velX','velZ','jumpT','spinT','lastSpend','targetDeadAt'];
-  object(v,{unit:x=>reference(x,area),classId:choice('warrior','mage','priest'),...Object.fromEntries(numeric.map(k=>[k,number])),attackRank:integer,armorRank:integer,weaponOwned:bool,armorOwned:bool,cooldowns:x=>mapValues(x,y=>object(y,{start:number,end:number}),c.abilities),cast:nullable(x=>object(x,{ability:catalogValue(c.abilities),start:number,end:number,target:nullable(r=>reference(r,area))})),channel:nullable(x=>object(x,{kind:choice('recall','beacon','waystone'),start:number,end:number,targetId:nullable(text),to:vector})),target:nullable(x=>reference(x,area)),warded:bool,queued:nullable(catalogValue(c.abilities)),dash:nullable(x=>object(x,{target:r=>reference(r,area),t:number})),deadUntil:nullable(number),role:choice('authoritative'),controlsLocked:bool,talkTarget:nullable(x=>reference(x,area)),quests:x=>object(x,{chapter:v=>integer(v,1,4),status:v=>mapValues(v,choice('locked','available','active','ready','done'),c.quests),progress:v=>mapValues(v,number,c.objectives),cogs:integer,tracked:v=>mapValues(v,catalogValue(c.quests),['1','2','3','4'])}),flags:x=>mapValues(x,bool,c.flags),cogMisses:integer},{lighthouseSecretFound:bool});
+  object(v,{unit:x=>reference(x,area),classId:choice('warrior','mage','priest'),...Object.fromEntries(numeric.map(k=>[k,number])),attackRank:integer,armorRank:integer,weaponOwned:bool,armorOwned:bool,cooldowns:x=>mapValues(x,y=>object(y,{start:number,end:number}),c.abilities),cast:nullable(x=>object(x,{ability:catalogValue(c.abilities),start:number,end:number,target:nullable(r=>reference(r,area))})),channel:nullable(x=>object(x,{kind:choice('recall','beacon','waystone','lighthouse-secret'),start:number,end:number,targetId:nullable(text),to:vector})),target:nullable(x=>reference(x,area)),warded:bool,queued:nullable(catalogValue(c.abilities)),dash:nullable(x=>object(x,{target:r=>reference(r,area),t:number})),deadUntil:nullable(number),role:choice('authoritative'),controlsLocked:bool,talkTarget:nullable(x=>reference(x,area)),quests:x=>object(x,{chapter:v=>integer(v,1,4),status:v=>mapValues(v,choice('locked','available','active','ready','done'),c.quests),progress:v=>mapValues(v,number,c.objectives),cogs:integer,tracked:v=>mapValues(v,catalogValue(c.quests),['1','2','3','4'])}),flags:x=>mapValues(x,bool,c.flags),cogMisses:integer,lighthouseSecretFound:bool,xp:integer,coins:integer});
   if(Number(v.xp)<0||Number(v.coins)<0||Number(v.resource)<0||Number(v.resource)>Number(v.maxResource))fail('invalid self progress');
- },achievements:v=>object(v,{distance:number,earned:list(text,128)})});
+ },achievements:v=>object(v,{distance:number,earned:list(catalogValue(ACHIEVEMENT_IDS),ACHIEVEMENT_IDS.length)})});
 }
 function validateFeatures(v:unknown,area:string):void {
  const ref=(x:unknown)=>reference(x,area);
- object(v,{environment:x=>object(x,{beacon:bool,clock:number}),boat:nullable(x=>{object(x,{x:number,z:number,yaw:number,speed:number,seats:list(nullable(ref),2,2)});const seats=x.seats as (EntityRef|null)[];if(seats[0]&&seats[1]&&seats[0].id===seats[1].id)fail('duplicate boat seat');}),village:nullable(x=>object(x,{id:text,mode:choice('hide','tag'),phase:choice('ready','play','done'),left:number,starter:ref,seeker:ref,members:list(ref,100),caught:list(ref,100),result:choice('','seekers','runners','cancelled')}))});
+ object(v,{environment:x=>object(x,{beacon:bool,clock:number}),boat:nullable(x=>{object(x,{x:number,z:number,yaw:number,speed:number,seats:list(nullable(ref),2,2)});const seats=x.seats as (EntityRef|null)[];if(seats[0]&&seats[1]&&seats[0].id===seats[1].id)fail('duplicate boat seat');}),village:nullable(x=>object(x,{id:text,mode:choice('hide','tag'),phase:choice('ready','play','done'),left:number,starter:ref,seeker:ref,members:list(ref,100),caught:list(ref,100),result:choice('','seekers','runners','cancelled')}))},{exploration:list(x=>object(x,{unit:ref,activeUntil:number}),1)});
 }
 function validateProjectile(v:unknown,area:string):void {object(v,{id:x=>integer(x,1,0xffffffff),source:x=>reference(x,area),target:x=>reference(x,area),style:choice('bubble','spark','holy','rust'),x:number,y:number,z:number,speed:number,elapsed:number,bornStep:integer});}
 export function validateSnapshot(p:unknown,c:GameplayCatalog,area:string):asserts p is SnapshotPayload {
- object(p,{full:bool,baseline:integer,eventWatermark:v=>integer(v,-1),world:choice('w1','w2','w3','w4'),time:number,selfRef:v=>reference(v,area),actors:list(v=>{object(v,{ref:x=>reference(x,area),fields:x=>{if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).some(k=>!ACTOR_FIELDS.includes(k as typeof ACTOR_FIELDS[number])))fail('unknown actor field');}},{poseDelta:x=>poseDelta(x,c)});},LIMITS.actors),removed:list(v=>reference(v,area),LIMITS.actors),projectiles:list(v=>validateProjectile(v,area),LIMITS.projectiles),self:v=>validateSelf(v,c,area),features:v=>validateFeatures(v,area),recovery:v=>object(v,{telegraphs:list(x=>{validateEvent(x,c,area);if((x as EventRecord).event.type!=='telegraph')fail('non-telegraph recovery');},64),endings:list(x=>object(x,{unit:v=>reference(v,area),chapter:choice(4),replay:bool}),1)}),events:list(v=>validateEvent(v,c,area),LIMITS.events),results:list(validateResult,256)});
+ object(p,{full:bool,baseline:integer,eventWatermark:v=>integer(v,-1),world:choice('w1','w2','w3','w4'),time:number,selfRef:v=>reference(v,area),poses:list(renderSource,LIMITS.actors),actors:list(v=>{object(v,{ref:x=>reference(x,area),fields:x=>{if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).some(k=>!ACTOR_FIELDS.includes(k as typeof ACTOR_FIELDS[number])))fail('unknown actor field');}},{poseDelta:x=>poseDelta(x,c),poseRecipe:x=>integer(x,0,LIMITS.actors-1)});},LIMITS.actors),removed:list(v=>reference(v,area),LIMITS.actors),projectiles:list(v=>validateProjectile(v,area),LIMITS.projectiles),self:v=>validateSelf(v,c,area),features:v=>validateFeatures(v,area),recovery:v=>object(v,{telegraphs:list(x=>{validateEvent(x,c,area);if((x as EventRecord).event.type!=='telegraph')fail('non-telegraph recovery');},64),endings:list(x=>object(x,{unit:v=>reference(v,area),chapter:choice(4),replay:bool}),1)}),events:list(v=>validateEvent(v,c,area),LIMITS.events),results:list(validateResult,256)});
  const snapshot=p as unknown as SnapshotPayload;
  if(snapshot.full?(snapshot.baseline!==0||snapshot.removed.length>0):snapshot.baseline<1)fail('invalid baseline');
  if(snapshot.self.player.unit.id!==snapshot.selfRef.id||snapshot.self.player.unit.life!==snapshot.selfRef.life)fail('self reference mismatch');
- const ids=new Set<number>();for(const r of snapshot.actors){if(ids.has(r.ref.id))fail('duplicate actor update');ids.add(r.ref.id);if(r.poseDelta&&(snapshot.full||r.fields.pose))fail('ambiguous pose patch');if(snapshot.full)validateActor({ref:r.ref,...r.fields},c,area);}
+ const ids=new Set<number>();for(const r of snapshot.actors){if(ids.has(r.ref.id))fail('duplicate actor update');ids.add(r.ref.id);if(r.poseRecipe!==undefined&&(r.poseRecipe>=snapshot.poses.length||r.fields.pose||r.poseDelta))fail('invalid/ambiguous recipe index');if(r.poseDelta&&(snapshot.full||r.fields.pose))fail('ambiguous pose patch');if(snapshot.full)actorShape({ref:r.ref,...r.fields},c,area,r.poseRecipe===undefined);}
  for(const r of snapshot.removed){if(ids.has(r.id))fail('duplicate actor removal');ids.add(r.id);}
  const pids=new Set<number>();for(const r of snapshot.projectiles){if(pids.has(r.id))fail('duplicate projectile');pids.add(r.id);}
 }
-export function projectActor(unit:Readonly<SimUnit>,appearance:Appearance|null):PublicActor {return clone(Object.fromEntries([['ref',unit.ref],...ACTOR_FIELDS.map(k=>[k,k==='appearance'?appearance:k==='pose'?{appliedQ:unit.pose.appliedQ,appliedPosition:unit.pose.appliedPosition,appliedRotation:unit.pose.appliedRotation,localVx:unit.pose.localVx,localVz:unit.pose.localVz}:unit[k]])])) as PublicActor;}
-export function projectSelf(player:Readonly<PlayerState>,achievements:AchievementView,inCombat:boolean):SelfView {const {character:_character,achievements:_achievements,...rest}=player as PlayerState&{achievements?:AchievementView};return clone({player:rest,achievements,inCombat});}
+export function projectActor(unit:Readonly<SimUnit>,appearance:Appearance|null):PublicActor {return copyValue(Object.fromEntries([['ref',unit.ref],...ACTOR_FIELDS.map(k=>[k,k==='appearance'?appearance:k==='pose'?{appliedQ:unit.pose.appliedQ,appliedPosition:unit.pose.appliedPosition,appliedRotation:unit.pose.appliedRotation,localVx:unit.pose.localVx,localVz:unit.pose.localVz}:unit[k]])])) as PublicActor;}
+export function projectSelf(player:Readonly<PlayerState>,achievements:AchievementView,inCombat:boolean):SelfView {const {character:_character,achievements:_achievements,...rest}=player as PlayerState&{achievements?:AchievementView};return copyValue({player:rest,achievements,inCombat});}
 export interface ObservationInput {
  binding:WireBinding;sequence:number;tick:number;acceptedInput:number;consumedInput:number;selfRef:EntityRef;
  snapshot:AreaSnapshot;events:readonly EventRecord[];visibleIds:ReadonlySet<number>;full:boolean;eventWatermark:number;
@@ -195,6 +199,7 @@ export interface ObservationInput {
 }
 export type WorldControl=
  | {type:'inputAck'}
+ | {type:'party';state:null|{code:string;leader:string;members:readonly {id:string;name:string;ref:EntityRef|null;world:AreaSnapshot['world'];online:boolean}[];pvp:boolean}}
  | {type:'queued';world:'w1'|'w2'|'w3'|'w4';position:number}
  | {type:'error';code:string;retryable:boolean}
  | {type:'restarting';retryAfterSeconds:number}
@@ -202,6 +207,7 @@ export type WorldControl=
 export function validateControl(v:unknown):asserts v is WorldControl {
  if(!v||typeof v!=='object')fail('invalid control');const type=(v as WorldControl).type;
  if(type==='inputAck')object(v,{type:choice(type)});
+ else if(type==='party')object(v,{type:choice(type),state:nullable(s=>{object(s,{code:x=>{if(typeof x!=='string'||! /^[0-9A-F]{6}$/.test(x))fail('invalid party code');},leader:text,members:list(m=>object(m,{id:text,name:x=>text(x,64),ref:nullable(reference),world:choice('w1','w2','w3','w4'),online:bool}),8,1),pvp:bool});const members=s.members as {id:string}[];if(new Set(members.map(m=>m.id)).size!==members.length||!members.some(m=>m.id===s.leader))fail('invalid party membership');})});
  else if(type==='queued')object(v,{type:choice(type),world:choice('w1','w2','w3','w4'),position:x=>integer(x,1)});
  else if(type==='error')object(v,{type:choice(type),code:text,retryable:bool});
  else if(type==='restarting')object(v,{type:choice(type),retryAfterSeconds:number});
@@ -220,7 +226,7 @@ export interface GameplayProtocol {
 }
 /** One instance per connection: its delta baseline is never shared among viewers. */
 export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol {
- catalog=clone(catalog);text(catalog.version);integer(catalog.jointCount,1,30);let previous:PublicActor[]=[],prior:WireHeader|null=null;
+ catalog=clone(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');let previousRecipes=new Map<number,RenderPoseSource>();let previous:PublicActor[]=[],prior:WireHeader|null=null;
  return {
   catalog:clone(catalog),encodeEvents:(h,p)=>encodeEvents(h,p,catalog),encodeControl,
   encodeInput:p=>encodeInput(p,catalog),decodeInput:(b,e)=>decodeInput(b,e,catalog),
@@ -230,7 +236,7 @@ export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol
    if(m.kind!==17||m.header.tick||m.header.acceptedInput||m.header.consumedInput)fail('forged client control');validateControl(m.payload);
    if(m.payload.type!=='resync')fail('client cannot publish server control');return {kind:'resync',lastSequence:m.payload.lastSequence,reason:m.payload.reason};
   },
-  reset(next){binding(next);previous=[];prior=null;},
+  reset(next){binding(next);previous=[];previousRecipes.clear();prior=null;},
   encodeObservation(input){
    const h:WireHeader={...input.binding,sequence:input.sequence,tick:input.tick,acceptedInput:input.acceptedInput,consumedInput:input.consumedInput};header(h);
    if(h.catalog!==catalog.version||input.snapshot.area!==h.area||input.snapshot.tick!==h.tick)fail('snapshot identity mismatch');
@@ -238,10 +244,18 @@ export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol
    const player=input.snapshot.players.find(p=>p.unit.id===input.selfRef.id&&p.unit.life===input.selfRef.life);if(!player)fail('missing owned self');
    const actors=input.snapshot.units.filter(u=>input.visibleIds.has(u.ref.id)||u.ref.id===input.selfRef.id).map(u=>{const appearance=input.appearances[`${u.ref.id}:${u.ref.life}`]??null;if(u.kind==='player'&&!appearance)fail('missing player appearance');return projectActor(u,appearance);});
    const old=new Map(previous.map(a=>[a.ref.id,a])),full=input.full||!prior,updates:ActorUpdate[]=[],ids=new Set(actors.map(a=>a.ref.id));
-   for(const a of actors){validateActor(a,catalog,h.area);const prev=full?null:old.get(a.ref.id),sameLife=!!prev&&prev.ref.life===a.ref.life;const fields:Partial<Omit<PublicActor,'ref'>>={};for(const k of ACTOR_FIELDS){if(k==='pose'&&sameLife)continue;if(!sameLife||!equalValue(prev![k],a[k]))(fields as Record<string,unknown>)[k]=a[k];}const patch=sameLife?diffPose(prev!.pose,a.pose):null;if(Object.keys(fields).length||patch&&Object.keys(patch).length)updates.push({ref:a.ref,fields,...(patch&&Object.keys(patch).length?{poseDelta:patch}:{})});}
+   const poses:RenderPoseSource[]=[],posePool=new Map<string,number>(),recipes=new Map<number,RenderPoseSource>();
+   const units=new Map(input.snapshot.units.map(u=>[u.ref.id,u]));
+   for(const a of actors){
+    validateActor(a,catalog,h.area);const prev=full?null:old.get(a.ref.id),sameLife=!!prev&&prev.ref.life===a.ref.life;
+    const fields:Partial<Omit<PublicActor,'ref'>>={};for(const k of ACTOR_FIELDS){if(k==='pose')continue;if(!sameLife||!equalValue(prev![k],a[k]))(fields as Record<string,unknown>)[k]=a[k];}
+    const recipe={recipe:createRenderPoseRecipe(units.get(a.ref.id)!),localVx:a.pose.localVx,localVz:a.pose.localVz};renderSource(recipe);recipes.set(a.ref.id,recipe);
+    let index:number|undefined;if(!sameLife||!equalValue(previousRecipes.get(a.ref.id),recipe)){const key=JSON.stringify(recipe,(_key,value)=>typeof value==='number'&&Object.is(value,-0)?'negative-zero':value);index=posePool.get(key);if(index===undefined){index=poses.length;posePool.set(key,index);poses.push(recipe);}}
+    if(Object.keys(fields).length||index!==undefined)updates.push({ref:a.ref,fields,...(index===undefined?{}:{poseRecipe:index})});
+   }
    const projectiles=input.snapshot.projectiles.filter(p=>ids.has(p.source.id)||ids.has(p.target.id)).map(({hit:_hit,anchorVersion:_anchor,...p})=>p);
-   const payload:SnapshotPayload={full,baseline:full?0:prior!.sequence,eventWatermark:input.eventWatermark,world:input.snapshot.world,time:input.snapshot.time,selfRef:input.selfRef,actors:updates,removed:full?[]:previous.filter(a=>!ids.has(a.ref.id)).map(a=>a.ref),projectiles,self:projectSelf(player,input.achievements,input.snapshot.time-input.snapshot.units.find(u=>u.ref.id===input.selfRef.id&&u.ref.life===input.selfRef.life)!.lastCombat<5),features:input.features,recovery:input.recovery,events:selectEvents(input.events,input.selfRef,player.character,ids),results:input.results??[]};
-   validateSnapshot(payload,catalog,h.area);const encoded=encodeMessage(1,h,payload);previous=clone(actors);prior=clone(h);return encoded;
+   const payload:SnapshotPayload={full,baseline:full?0:prior!.sequence,eventWatermark:input.eventWatermark,world:input.snapshot.world,time:input.snapshot.time,selfRef:input.selfRef,poses,actors:updates,removed:full?[]:previous.filter(a=>!ids.has(a.ref.id)).map(a=>a.ref),projectiles,self:projectSelf(player,input.achievements,input.snapshot.time-input.snapshot.units.find(u=>u.ref.id===input.selfRef.id&&u.ref.life===input.selfRef.life)!.lastCombat<5),features:input.features,recovery:input.recovery,events:selectEvents(input.events,input.selfRef,player.character,ids),results:input.results??[]};
+   validateSnapshot(payload,catalog,h.area);const encoded=encodeMessage(1,h,payload);previous=actors;previousRecipes=recipes;prior=clone(h);return encoded;
   },
  };
 }
@@ -261,7 +275,7 @@ export class GameplayReceiver {
  private binding:WireBinding;private catalog:GameplayCatalog;private assembler:FragmentAssembler;
  private current:GameplayState|null=null;private last:WireHeader|null=null;private eventOrder=-1;
  needsResync=false;
- constructor(expected:WireBinding,catalog:GameplayCatalog){binding(expected);if(expected.catalog!==catalog.version)fail('catalog mismatch');this.binding=clone(expected);this.catalog=clone(catalog);this.assembler=new FragmentAssembler(expected);}
+ constructor(expected:WireBinding,catalog:GameplayCatalog){binding(expected);if(expected.catalog!==catalog.version)fail('catalog mismatch');if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');this.binding=clone(expected);this.catalog=clone(catalog);this.assembler=new FragmentAssembler(expected);}
  get state():GameplayState|null{return this.current?clone(this.current):null;}
  get header():WireHeader|null{return this.last?clone(this.last):null;}
  get retainedBytes():number{return this.assembler.retainedBytes;}
@@ -276,12 +290,12 @@ export class GameplayReceiver {
     if(!p.full&&(this.needsResync||!this.current||p.baseline!==this.current.sequence||h.sequence!==(this.last?.sequence??0)+1))fail('missing baseline or sequence gap');
     if(this.current&&(p.selfRef.id!==this.current.selfRef.id||p.selfRef.life!==this.current.selfRef.life))fail('self life changed without epoch reset');
     if(p.eventWatermark<this.eventOrder||p.events.some(e=>e.tick>h.tick||e.order>p.eventWatermark))fail('invalid event watermark');
-    const actors=new Map<number,PublicActor>(p.full?[]:this.current!.actors.map(a=>[a.ref.id,clone(a)]));
+    const actors=new Map<number,PublicActor>(p.full?[]:this.current!.actors.map(a=>[a.ref.id,clone(a)])),poses=new Map<number,PublicPose>();
     for(const r of p.removed){const old=actors.get(r.id);if(!old||old.ref.life!==r.life)fail('unknown/stale removal');actors.delete(r.id);}
     for(const r of p.actors){
      const old=actors.get(r.ref.id);if(old&&r.ref.life<old.ref.life)fail('stale actor life');
-     if(!old||old.ref.life!==r.ref.life)for(const key of ACTOR_FIELDS)if(!Object.hasOwn(r.fields,key))fail('partial new actor life');
-     const actor={...old,...r.fields,ref:r.ref};if(r.poseDelta){if(!old)fail('pose delta without actor');actor.pose=applyPoseDelta(old.pose,r.poseDelta);}validateActor(actor,this.catalog,h.area);actors.set(actor.ref.id,actor);
+     if(!old||old.ref.life!==r.ref.life)for(const key of ACTOR_FIELDS)if(!(key==='pose'&&r.poseRecipe!==undefined)&&!Object.hasOwn(r.fields,key))fail('partial new actor life');
+     const actor={...old,...r.fields,ref:r.ref};if(r.poseRecipe!==undefined){let pose=poses.get(r.poseRecipe);if(!pose){const source=p.poses[r.poseRecipe];pose={...evaluateRenderPoseRecipe(source.recipe),localVx:source.localVx,localVz:source.localVz};poses.set(r.poseRecipe,pose);}actor.pose=clone(pose);}if(r.poseDelta){if(!old)fail('pose delta without actor');actor.pose=applyPoseDelta(old.pose,r.poseDelta);}validateActor(actor,this.catalog,h.area);actors.set(actor.ref.id,actor);
     }
     if(actors.size>LIMITS.actors)fail('actor capacity');const self=actors.get(p.selfRef.id);if(!self||self.ref.life!==p.selfRef.life||self.kind!=='player')fail('missing exact self actor');
     let order=p.full?-1:this.eventOrder;for(const e of p.events){if(e.order<=order)fail('replayed/unordered event');order=e.order;}
@@ -310,6 +324,8 @@ export function projectObservationExtras(snapshot:AreaSnapshot,character:string,
  const features:FeatureView={environment:{beacon:snapshot.features.beaconLit,clock:snapshot.time},boat:{x:boat.x,z:boat.z,yaw:boat.yaw,speed:boat.speed,seats:boat.seats.map(id=>id===null?null:resolve(id))},village:village?{id:village.id,mode:village.mode,phase:village.phase,left:village.left,starter:resolve(village.starter),seeker:resolve(village.seeker),members:village.members.map(resolve),caught:village.caught.map(resolve),result:village.result}:null};
  const telegraphs=snapshot.recovery.telegraphs.filter(e=>e.event.type==='telegraph'&&visibleIds.has(e.event.src.id));
  const endings=snapshot.recovery.endings.filter(e=>e.unit.id===self.unit.id&&e.unit.life===self.unit.life);
+ const exploration=(snapshot.features as AreaSnapshot['features']&{exploration?:readonly {unit:EntityRef;activeUntil:number}[]}).exploration;
+ if(exploration)features.exploration=exploration.filter(e=>e.unit.id===self.unit.id&&e.unit.life===self.unit.life);
  return clone({features,recovery:{telegraphs,endings},achievements:self.achievements});
 }
 

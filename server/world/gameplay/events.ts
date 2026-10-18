@@ -1,3 +1,4 @@
+import { ACHIEVEMENT_IDS } from '../../../src/sim/persistence.ts';
 import type { CoreEvent, EntityRef, EventRecord } from '../../../src/sim/types.ts';
 import { actionState, bool, catalogValue, choice, encodeMessage, fail, integer, list, nullable, number, object, reference, text, vector } from './protocol.ts';
 import type { GameplayCatalog, WireHeader } from './protocol.ts';
@@ -23,7 +24,7 @@ export function validateEvent(value:unknown,c:GameplayCatalog,area:string):asser
    case 'death':object(e,{type,unit:ref,killer:nref});break;
    case 'buff':object(e,{type,unit:ref,buff:choice('rust'),stacks:number});break;
    case 'ward':object(e,{type,unit:ref,stage:choice('up','hit','down')},{seconds:number});break;
-   case 'castStart':object(e,{type,unit:ref,seconds:number},{ability,channel:x=>object(x,{kind:choice('recall','beacon','waystone'),to:vector,start:number,end:number})});break;
+   case 'castStart':object(e,{type,unit:ref,seconds:number},{ability,channel:x=>object(x,{kind:choice('recall','beacon','waystone','lighthouse-secret'),to:vector,start:number,end:number})});break;
    case 'castEnd':object(e,{type,unit:ref,channel:bool,result:choice('done','interrupted')},{reason:text});break;
    case 'ability':object(e,{type,caster:ref,ability,stage:choice('start','hit')},{target:nref,from:vector,yaw:number,range:number,half:number,amount:number,stun:number});break;
    case 'projectile':if(e.stage==='spawn')object(e,{type,stage:choice('spawn'),id:x=>integer(x,1,0xffffffff),src:ref,target:ref,from:vector,style,speed:number});else object(e,{type,stage:choice('hit'),id:x=>integer(x,1,0xffffffff),src:ref,target:ref,style,landed:bool});break;
@@ -44,10 +45,12 @@ export function validateEvent(value:unknown,c:GameplayCatalog,area:string):asser
    case 'victory':object(e,{type,boss:ref,recipients:list(ref,100),stage:choice('banner','end')});break;
    case 'action':object(e,{type,unit:ref,action:nullable(x=>actionState(x,c))});break;
    case 'rootRebase':object(e,{type,unit:ref,generation:x=>integer(x,1),root:x=>object(x,{x:number,z:number,yaw:number}),position:vector,yaw:number});break;
-   case 'reward':object(e,{type,grant:x=>object(x,{id:v=>text(v,1024),victim:ref,recipient:text,xp:number,coins:number,objectives:list(y=>object(y,{kind:text,amount:number}),64),flags:list(catalogValue(c.flags),64)}),appliedHere:bool});break;
+   case 'reward':object(e,{type,grant:x=>object(x,{id:v=>text(v,1024),victim:reference,recipient:text,xp:number,coins:number,objectives:list(y=>object(y,{kind:text,amount:number}),64),flags:list(catalogValue(c.flags),64)}),appliedHere:bool});break;
    case 'respawn':object(e,{type,unit:ref,position:vector,yaw:number});break;
    case 'quest':object(e,{type,unit:ref,quest:catalogValue(c.quests),stage:choice('accepted','progress','ready','completed')},{objective:catalogValue(c.objectives),value:number});break;
    case 'equipment':object(e,{type,unit:ref,slot:choice('weapon','armor'),operation:choice('buy','upgrade'),result:choice('bought','owned','busy','coins','upgraded','unowned','max')},{request:x=>integer(x,1)});break;
+   case 'achievement':object(e,{type,unit:ref,achievement:catalogValue(ACHIEVEMENT_IDS)});break;
+   case 'discovery':object(e,{type,unit:ref,discovery:choice('treasure','lighthouse-secret'),id:text,first:bool,coins:integer,activeUntil:nullable(number)});break;
    case 'endingReady':object(e,{type,unit:ref,chapter:choice(4),replay:bool});break;
    case 'travelReady':object(e,{type,unit:ref,destination:choice('w1','w2','w3','w4'),gate:catalogValue(c.gates)});break;
    case 'feature':object(e,{type,event:x=>validateFeatureEvent(x,area)});break;
@@ -80,7 +83,7 @@ export function validateEventPayload(p:unknown,c:GameplayCatalog,area:string):as
 export function encodeEvents(header:WireHeader,payload:EventPayload,catalog:GameplayCatalog):Uint8Array[] {
  if(header.catalog!==catalog.version)fail('catalog mismatch');validateEventPayload(payload,catalog,header.area);return encodeMessage(2,header,payload);
 }
-const PERSONAL=new Set(['xp','quest','equipment','error','press','target','endingReady','travelReady']);
+const PERSONAL=new Set(['xp','quest','equipment','error','press','target','endingReady','travelReady','achievement','discovery']);
 /** Privacy filtering precedes encoding. Actual source tick/order are retained, never resequenced. */
 export function selectEvents(events:readonly EventRecord[],self:EntityRef,character:string,visible:ReadonlySet<number>):EventRecord[] {
  const same=(r:EntityRef)=>r.area===self.area&&r.id===self.id&&r.life===self.life;

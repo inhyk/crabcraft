@@ -88,12 +88,12 @@ test('missing publication keeps the last complete view, sends one resync, and fu
 });
 
 test('fragmented actual Area observations do not commit partial actor or HUD state', async () => {
-  const f = clientFixture(actualWorld(32));
+  const f = clientFixture(actualWorld(100));
   try {
     const pending = f.client.connect('owned-character'); pending.catch(() => {}); await tickAsync(); const socket = f.sockets[0]; socket.open(); socket.receive(JSON.stringify({ type: 'world-bound', ...f.world.binding }));
     const packets = f.world.packets(); assert.ok(packets.length > 1);
     deliver(socket, packets.slice(0, -1)); assert.equal(f.client.view, null); assert.equal(f.snapshots.length, 0);
-    socket.receive(packets.at(-1)); await pending; assert.equal(f.client.view.actors.length, 32); assert.equal(f.snapshots.length, 1);
+    socket.receive(packets.at(-1)); await pending; assert.equal(f.client.view.actors.length, 100); assert.equal(f.snapshots.length, 1);
   } finally { f.client.dispose(); }
 });
 
@@ -194,7 +194,7 @@ test('queue status has no gameplay actor and bounded ticket response/auth failur
 
 test('stalled partial fragments trigger bounded recovery even when the server sends nothing else', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const f = clientFixture(actualWorld(32));
+  const f = clientFixture(actualWorld(100));
   try {
     const socket = await f.admitted(), before = f.client.view;
     f.world.area.step(new Map());
@@ -214,5 +214,21 @@ test('automatic retry obtains a fresh ticket and never resends a disconnected co
     assert.equal(f.requests.length, 2); const next = f.sockets.at(-1); next.open();
     assert.equal(next.sent.length, 1); assert.equal(JSON.parse(next.sent[0]).type, 'authenticate');
     assert.equal(f.client.inputWatermarks.pending, 0);
+  } finally { f.client.dispose(); }
+});
+
+test('party host commands occupy exclusive frames while ordinary prefix and suffix preserve order and ACK distinctions', async () => {
+  const f = clientFixture();
+  try {
+    const socket = await f.admitted();
+    for (const command of [{ kind: 'jump' }, { kind: 'ability', slot: 2 }, { kind: 'partyCreate' }, { kind: 'partyPvp', enabled: true }, { kind: 'dance' }]) assert.equal(f.client.command(command), true);
+    const frames = [];
+    for (const now of [100, 200, 300, 400]) { f.client.pump(now); frames.push(decodeInput(socket.sent.at(-1), f.world.binding, catalog)); }
+    assert.deepEqual(frames.map(frame => frame.commands), [[{ kind: 'jump' }, { kind: 'ability', slot: 2 }], [{ kind: 'partyCreate' }], [{ kind: 'partyPvp', enabled: true }], [{ kind: 'dance' }]]);
+    deliver(socket, encodeControl({ ...f.world.binding, sequence: 2, tick: 0, acceptedInput: 4, consumedInput: 1 }, { type: 'inputAck' }));
+    assert.equal(f.client.inputWatermarks.unconsumed, 3);
+    deliver(socket, f.world.packets(4)); assert.equal(f.client.state, 'recovering');
+    deliver(socket, f.world.packets(5, { full: true, acceptedInput: 4, consumedInput: 4 })); assert.equal(f.client.state, 'admitted'); assert.equal(f.client.inputWatermarks.unconsumed, 0);
+    f.client.pump(500); assert.deepEqual(decodeInput(socket.sent.at(-1), f.world.binding, catalog).commands, []);
   } finally { f.client.dispose(); }
 });

@@ -1,5 +1,5 @@
 // Real Chrome -> authenticated loopback host -> actual Area -> production rig observation.
-// This exercises the isolated adapter page, not the final Game route or production VM.
+// This exercises the actual Game route against disposable local PG, never the production VM.
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -51,7 +51,7 @@ try {
   await page.keyboard.down('KeyW');await page.waitForFunction(p=>window.cc.game.player.unit.pos.distanceTo({x:p[0],y:p[1],z:p[2]})>.3,before.position,{timeout:10000});await page.keyboard.up('KeyW');
   await page.keyboard.press('Space',{delay:5});
   await page.waitForFunction(()=>window.cc.game.server.client.inputWatermarks.consumed>1,undefined,{timeout:10000});
-  await page.evaluate(()=>{const g=window.cc.game,forbidden=()=>{throw new Error('Legacy gameplay executed in server mode');};g.player.update=forbidden;g.timers.update=forbidden;g.projectiles.update=forbidden;g.combat.damage=forbidden;for(const enemy of g.enemies)enemy.update=forbidden;for(const boss of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss])boss.update=forbidden;const records=[];const sink=g.events.sink;g.events.sink=e=>{if(['press','castStart','damage','death','xp','error'].includes(e.type))records.push({type:e.type,time:g.time,amount:e.amount,reason:e.reason,unit:e.unit?.ref??e.dst?.ref});sink(e);};window.serverTrace={records,xp:g.player.xp,coins:g.player.coins};});
+  await page.evaluate(()=>{const g=window.cc.game,forbidden=()=>{throw new Error('Legacy gameplay executed in server mode');};g.player.update=forbidden;g.timers.update=forbidden;g.projectiles.update=forbidden;g.combat.damage=forbidden;for(const enemy of g.enemies)enemy.update=forbidden;for(const boss of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss])boss.update=forbidden;const records=[];const present=g.server.presentation.events.bind(g.server.presentation);g.server.presentation.events=batch=>{for(const {event:e}of batch)if(['press','castStart','damage','death','xp','error'].includes(e.type))records.push({type:e.type,time:g.time,amount:e.amount,reason:e.reason,unit:e.unit??e.dst});present(batch);};window.serverTrace={records,xp:g.player.xp,coins:g.player.coins};});
   await page.mouse.move(640,360);await page.mouse.down({button:'right'});await page.keyboard.down('ShiftLeft');await page.keyboard.down('KeyW');
   for(const point of [[18,0],[60,0],[90,-8],[96,-8]]){
     await page.evaluate(([x,z])=>{const g=window.cc.game;g.follow.yaw=Math.atan2(x-g.player.unit.pos.x,z-g.player.unit.pos.z)-Math.PI;},point);

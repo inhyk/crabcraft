@@ -3,6 +3,7 @@
 import { motionData, numericClip, type NumericClip as LoadedClip } from './data/pose.ts';
 import { numericArchetype } from './data/archetypes.ts';
 import type { NumericPoseState, SimUnit, Vec3 } from './types.ts';
+import { blendRenderPoseLayers, captureRenderPoseRecipe, homeRenderPoseRecipe, type LocomotionPoseRecipe } from './renderPose.ts';
 const JOINT_NAMES = motionData.joints;
 
 export const NJ = JOINT_NAMES.length;
@@ -262,28 +263,26 @@ class Locomotion {
  loco = new Pose();
  private tmp = new Pose();
  private sum = new PoseSum();
- constructor(unit:Readonly<SimUnit>){
-  const p=unit.pose,m=numericArchetype(unit.archetype).metersToUnits;
-  this.vel={x:p.controllerVx,z:p.controllerVz,yaw:p.controllerYaw};
-  const tiny=Math.abs(p.localVx)<.05&&Math.abs(p.localVz)<.05&&Math.abs(p.yawRate)<.05;
-  this.want={x:tiny?0:p.localVx/m,z:tiny?0:p.localVz/m,yaw:tiny?0:p.yawRate};
-  this.phase=p.gaitPhase;this.idleT=p.locomotionTime;
-  this.loco.q.set(p.locomotionQ);this.loco.pos.set(p.locomotionPosition);this.loco.rot.set(p.locomotionRotation);
+ constructor(vel:{x:number;z:number;yaw:number},want:{x:number;z:number;yaw:number},phase:number,idleT:number){
+  this.vel={...vel};this.want={...want};this.phase=phase;this.idleT=idleT;
  }
+ recipe():LocomotionPoseRecipe{return [this.vel.x,this.vel.z,this.vel.yaw,this.phase,this.idleT];}
  save(p:NumericPoseState):void{
   p.controllerVx=this.vel.x;p.controllerVz=this.vel.z;p.controllerYaw=this.vel.yaw;
   p.gaitPhase=this.phase;p.locomotionTime=this.idleT;p.locomotionWeights=Object.fromEntries(this.weights);
   p.locomotionQ=Array.from(this.loco.q);p.locomotionPosition=Array.from(this.loco.pos) as [number,number,number];p.locomotionRotation=Array.from(this.loco.rot) as [number,number,number,number];
  }
-  locomotion(dt: number, needed: boolean): void {
+  locomotion(dt: number, needed: boolean, advanceClocks = true): void {
     const lib = this.lib;
     // smooth the request: gameplay's input is a step, a gait change is not
-    const k = 1 - Math.exp(-dt / 0.12);
-    this.vel.x += (this.want.x - this.vel.x) * k;
-    this.vel.z += (this.want.z - this.vel.z) * k;
-    this.vel.yaw += (this.want.yaw - this.vel.yaw) * k;
+    if(advanceClocks){
+      const k = 1 - Math.exp(-dt / 0.12);
+      this.vel.x += (this.want.x - this.vel.x) * k;
+      this.vel.z += (this.want.z - this.vel.z) * k;
+      this.vel.yaw += (this.want.yaw - this.vel.yaw) * k;
+      this.idleT += dt;
+    }
     this.weights.clear();
-    this.idleT += dt;
     if (!needed) return;
 
     const sum = this.sum;
@@ -338,7 +337,7 @@ class Locomotion {
 
     // 3. one shared gait phase for everything that steps
     const stepW = moving + turnAmount;
-    if (stepW > 0) {
+    if (advanceClocks && stepW > 0) {
       const f = (moving * natFreq * rate + turnAmount * turnFreq * turnRate) / stepW;
       this.phase += f * dt;
     }
@@ -392,10 +391,17 @@ class Locomotion {
 
 }
 
+/** Read-only resampling of the last actual locomotion inputs. No clocks or RNG advance. */
+export function sampleLocomotionPose(recipe:LocomotionPoseRecipe|null,out=new Pose()):Pose {
+ if(recipe===null)return out.setHome();
+ const [x,z,yaw,phase,idleT]=recipe,loco=new Locomotion({x,z,yaw},{x,z,yaw},phase,idleT);
+ loco.locomotion(0,true,false);return out.copy(loco.loco);
+}
+
 /** Fresh authoritative pose clocks, independent for each unit. */
 export function initializeNumericPose():NumericPoseState {
  const p=new Pose();
- return {previousX:0,previousZ:0,previousYaw:0,locomotionTime:0,localVx:0,localVz:0,yawRate:0,gaitPhase:0,controllerVx:0,controllerVz:0,controllerYaw:0,locomotionWeights:{},
+ return {renderRecipe:homeRenderPoseRecipe(),previousX:0,previousZ:0,previousYaw:0,locomotionTime:0,localVx:0,localVz:0,yawRate:0,gaitPhase:0,controllerVx:0,controllerVz:0,controllerYaw:0,locomotionWeights:{},
  locomotionQ:Array.from(p.q),locomotionPosition:Array.from(p.pos) as [number,number,number],locomotionRotation:Array.from(p.rot) as [number,number,number,number],
  appliedQ:Array.from(p.q),appliedPosition:Array.from(p.pos) as [number,number,number],appliedRotation:Array.from(p.rot) as [number,number,number,number]};
 }
@@ -403,16 +409,16 @@ export function initializeNumericPose():NumericPoseState {
 /** At the former motion-update stage, AFTER core action clocks and projectile launches. */
 export function advanceNumericPose(unit:SimUnit,dt:number):void {
  if(!Number.isFinite(dt)||dt<0)throw new Error('Invalid numeric pose dt');
- const loco=new Locomotion(unit);
+ const p=unit.pose,m=numericArchetype(unit.archetype).metersToUnits;
+ const tiny=Math.abs(p.localVx)<.05&&Math.abs(p.localVz)<.05&&Math.abs(p.yawRate)<.05;
+ const loco=new Locomotion({x:p.controllerVx,z:p.controllerVz,yaw:p.controllerYaw},{x:tiny?0:p.localVx/m,z:tiny?0:p.localVz/m,yaw:tiny?0:p.yawRate},p.gaitPhase,p.locomotionTime);
+ loco.loco.q.set(p.locomotionQ);loco.loco.pos.set(p.locomotionPosition);loco.loco.rot.set(p.locomotionRotation);
  let cover=0;for(const a of unit.actions)if(!a.upper)cover=Math.min(1,cover+a.weight);
- loco.locomotion(Math.min(dt,.1),cover<.999);loco.save(unit.pose);
- const out=new Pose().copy(loco.loco),tmp=new Pose();
- for(const a of unit.actions){
-  if(a.weight<=0)continue;
-  sampleClip(numericClip(a.id),a.clipTime,a.loop&&a.to===null,tmp,a.carryRoot);
-  const r=a.root?.rebase;if(r)rebaseRoot(tmp,r.x,r.z,r.yaw);
-  out.blend(tmp,a.weight,a.upper?CLAW_JOINTS:undefined);
- }
+ const needed=cover<.999;
+ loco.locomotion(Math.min(dt,.1),needed);loco.save(p);
+ // A full-body cover retains the previous locomotion sample, including its old clocks.
+ p.renderRecipe=captureRenderPoseRecipe(needed?loco.recipe():p.renderRecipe.locomotion,unit.actions);
+ const out=blendRenderPoseLayers(loco.loco,p.renderRecipe.layers);
  unit.pose.appliedQ=Array.from(out.q);unit.pose.appliedPosition=Array.from(out.pos) as [number,number,number];unit.pose.appliedRotation=Array.from(out.rot) as [number,number,number,number];
 }
 
