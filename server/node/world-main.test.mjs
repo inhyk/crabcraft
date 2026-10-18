@@ -19,8 +19,8 @@ const manifestURL=new URL('../../server-dist/world/world-manifest.json',import.m
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(check,ms=8000){const end=performance.now()+ms;while(!check()){if(performance.now()>end)throw Error('bundled world main timeout');await delay(10);}}
 function fixtureConfig(source){return {schema:'world-startup-v1',ownership:{key:'bundled-main-qa',heartbeatMs:100,queryTimeoutMs:1000},assets:{source,manifest:'world-manifest.json'},
- worlds:Object.fromEntries(['w1','w2','w3','w4'].map((world,i)=>[world,{seed:i+1,populationMode:'fixed-slots',fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:1,scavenger:0,jellyfish:0,shallowPatrols:0},respawnSeconds:{scrapling:300,scavenger:300,jellyfish:300,echo:300}}])),
- restore:{cooldowns:'pause',statuses:'pause',death:'pause',history:'pause',hp:'preserve',resource:'preserve',location:'saved',activity:'cancel'},limits:{maxConnections:16,maxConnectionsPerIp:8,maxWaiting:16,checkpointIntervalMs:100},party:{enabled:false}};}
+ worlds:Object.fromEntries(['w1','w2','w3','w4'].map((world,i)=>[world,{seed:i+1,populationMode:'fixed-slots',fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:1,scavenger:0,jellyfish:0,shallowPatrols:0},respawnSeconds:{scrapling:300,scavenger:300,jellyfish:300,echo:120}}])),
+ restore:{cooldowns:'pause',statuses:'pause',death:'pause',history:'pause',hp:'preserve',resource:'preserve',location:'saved',activity:'cancel'},limits:{maxConnections:16,maxConnectionsPerIp:8,maxWaiting:16,checkpointIntervalMs:100},party:{enabled:false},characters:{maxCharactersPerAccount:2}};}
 function start(database,config){
  const child=spawn(process.execPath,[main.pathname],{env:{...process.env,DATABASE_URL:database,HOST:'127.0.0.1',PORT:'0',ALLOWED_ORIGINS:'http://localhost',WORLD_ENABLED:'1',WORLD_CONFIG_JSON:config},stdio:['ignore','pipe','pipe']});
  let output='',errors='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>errors+=b);
@@ -45,12 +45,18 @@ test('bundled configured main packages real assets and multiplexes account, lega
   await pool.query('INSERT INTO accounts(username,save,revision,updated,created) VALUES($1,$2,47,123,100)',[account,oldSave]);
   await pool.query('INSERT INTO sessions(token_hash,username,expires) VALUES($1,$2,$3)',[createHash('sha256').update(token).digest('hex'),account,Date.now()+60000]);
   const data=JSON.parse(await readFile(new URL('../../public/world/collision-w1.json',import.meta.url),'utf8')),query=loadBakedWorld(data),definition=createWorld1Definition({query,personalProps:{heightAt:query.heightAt,resolveCollision:(x,z,r,out)=>query.collision.resolve(x,z,r,out)},fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:1,scavenger:0,jellyfish:0,shallowPatrols:0}});
-  const codec=createCoreCharacterCodec({identities:[{classId:'mage',archetype:'human'}],freshLocation:{...definition.spawn.position,yaw:definition.spawn.yaw}}),store=new CharacterStore(pool,codec);
+  const codec=createCoreCharacterCodec({identities:[{classId:'mage',archetype:'human'},{classId:'priest',archetype:'human'}],freshLocation:{...definition.spawn.position,yaw:definition.spawn.yaw}}),store=new CharacterStore(pool,codec);
   const identity={schema:'world-identity-v1',classId:'mage',archetype:'human',appearance:{race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:2,name:'Main QA'}};
   const character=await store.create(account,identity);
   processState=start(cluster.url,JSON.stringify(fixtureConfig(manifest.source)));const origin=await processState.ready();
   assert.equal((await fetch(origin+'/healthz')).status,200);assert.equal((await fetch(origin+'/world')).status,426);
   const catalogResponse=await fetch(origin+'/api/account/world-catalog');assert.equal(catalogResponse.status,200);assert.equal(catalogResponse.headers.get('cache-control'),'no-store');const catalog=await catalogResponse.json();
+  const characterHeaders={Origin:origin,'X-Crabcraft-Account':'1',Cookie:cookie,'Content-Type':'application/json'};
+  const listed=await fetch(origin+'/api/account/world-characters',{headers:characterHeaders});assert.equal(listed.status,200);assert.deepEqual((await listed.json()).characters.map(c=>c.characterId),[character.characterId]);
+  const appearance={...identity.appearance,classId:'priest',name:'Created Main QA'};
+  const created=await fetch(origin+'/api/account/world-characters',{method:'POST',headers:characterHeaders,body:JSON.stringify({appearance})});assert.equal(created.status,201);const createdCharacter=(await created.json()).character;
+  assert.deepEqual(createdCharacter.identity.appearance,appearance);assert.equal((await store.getOwned(account,createdCharacter.characterId)).checkpoint.progress.xp,0);
+  const overLimit=await fetch(origin+'/api/account/world-characters',{method:'POST',headers:characterHeaders,body:JSON.stringify({appearance})});assert.equal(overLimit.status,409);
   assert.equal((await fetch(origin+'/api/account/world-ticket',{method:'POST',headers:{Origin:origin,'X-Crabcraft-Account':'1'}})).status,401);
   const issued=await fetch(origin+'/api/account/world-ticket',{method:'POST',headers:{Origin:origin,'X-Crabcraft-Account':'1',Cookie:cookie}});assert.equal(issued.status,200);const {ticket}=await issued.json();
   bot=await connect(origin,origin,catalog,ticket,character.characterId);

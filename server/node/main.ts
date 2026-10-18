@@ -4,6 +4,7 @@ import { attachRooms } from '../rooms.ts';
 import { accountHandler, createWorldAdmission, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, originAllowed } from './accounts.ts';
 import { createPool, migrate } from './db.ts';
 import { storeReport } from './reports.ts';
+import { createCharacterHandler } from '../world/characters-http.ts';
 
 // Rooms and accounts for the browser client: what server/cloudflare/worker.ts served, on one VM behind Caddy.
 // Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy,
@@ -59,6 +60,8 @@ if (env.WORLD_ENABLED === '1') {
   }
 }
 const accounts = accountHandler(pool, origins, clientIp, google, admission);
+const worldCharacters = world ? createCharacterHandler({ pool, characters: world.characters, codec: world.codec,
+  origins, clientIp, policy: world.config.characters ?? {} }) : null;
 const text = (res: ServerResponse, status: number, body: string) => { res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(body); };
 async function healthy() {
   if (stopping || world?.ownership.closed.aborted || world?.host.stats().frozen) return false;
@@ -73,6 +76,10 @@ const server = createServer((req, res) => {
     if (req.method !== 'GET') { text(res, 405, 'Expected GET'); return; }
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(world.gameplayCatalog)); return;
+  }
+  if (path === '/api/account/world-characters' && worldCharacters) {
+    if (stopping) { text(res, 503, 'Server restarting'); return; }
+    void worldCharacters(req, res); return;
   }
   if (stopping && path === '/api/account/world-ticket') { text(res, 503, 'Server restarting'); return; }
   if (path.startsWith('/api/account/')) { void accounts(req, res); return; }
