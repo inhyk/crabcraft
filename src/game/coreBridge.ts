@@ -92,7 +92,7 @@ export class CoreGameBridge {
     Object.defineProperty(p,'cast',{configurable:true,get:()=>{const c=this.corePlayer.state.cast;return c?{...c,ability:p.cls.abilities.find(a=>a.id===c.ability)!,target:this.unit(c.target)}:null;}});
     Object.defineProperty(p,'channel',{configurable:true,get:()=>{const c=this.corePlayer.state.channel;return c?{...c,label:c.kind,key:c.kind==='recall'?'KeyT':'KeyF',to:new THREE.Vector3(c.to.x,c.to.y,c.to.z),onDone:()=>{throw new Error('Core channel completion belongs to Area');}}:null;}});
     p.setTarget=view=>this.command({kind:'target',target:view?.ref??null});p.useAbility=slot=>this.command({kind:'ability',slot:slot as 1|2|3|4|5});p.toggleBreakdance=()=>this.command({kind:'dance'});
-    p.gainXp=amount=>this.corePlayer.gainXp(amount);p.restoreXp=xp=>this.corePlayer.restoreXp(xp);p.gainRage=amount=>this.corePlayer.gainRage(amount);
+    p.gainXp=(amount,applyBlessing)=>this.corePlayer.gainXp(amount,applyBlessing);p.restoreXp=xp=>this.corePlayer.restoreXp(xp);p.gainRage=amount=>this.corePlayer.gainRage(amount);
     p.interruptCast=reason=>this.corePlayer.interruptCast(reason);p.cancelChannel=()=>this.corePlayer.cancelChannel();p.respawn=()=>this.corePlayer.respawn();
     p.returnToSquare=()=>this.command({kind:'channelStart',channel:'recall'});
     p.startChannel=(_label,_seconds,key,to)=>{if(key==='KeyT'){this.command({kind:'channelStart',channel:'recall'});return;}const point=this.area.services.definition.interactions.filter(i=>i.kind==='beacon'||i.kind==='waystone').sort((a,b)=>Math.hypot(a.position.x-to.x,a.position.z-to.z)-Math.hypot(b.position.x-to.x,b.position.z-to.z))[0];if(point)this.command({kind:'interact',targetId:point.id});};
