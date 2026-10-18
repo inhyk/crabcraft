@@ -625,3 +625,9 @@ test('dungeon return requests authenticate the guest and route only to its priva
  for(const bad of [{...event,target:'e0'},{...event,run:''},{...event,run:'x'.repeat(65)},{...event,run:123},{...event,run:'<script>'}])assert.equal(eventOf(bad,false),null);
  assert.ok(eventOf({kind:'attack',target:'e0',amount:10},false));
 });
+
+ test('world five and six checkpoints and travel retain five bosses and reject invalid chapters',()=>{
+ const expanded={...world,finalCleared:true,frostCleared:true,bosses:[...world.bosses,...['b30','b300'].map(id=>({id,state:'dead',phase:1,enraged:false,mech:null}))]};
+ for(const chapter of [5,6]){assert.ok(worldOf({...expanded,chapter}));assert.deepEqual(eventOf({kind:'chapter',target:'world',chapter},false),{kind:'chapter',target:'world',chapter});assert.equal(worldOf({...expanded,chapter,bosses:world.bosses}),null);}
+ for(const chapter of [0,7,5.5,'5']){assert.equal(worldOf({...expanded,chapter}),null);assert.equal(eventOf({kind:'chapter',target:'world',chapter},false),null);}
+ });
