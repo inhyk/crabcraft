@@ -33,8 +33,9 @@ export class WorldEndingPresentation {
  private current:EndingObservation|null=null;private pendingControl='';private ownsCamera=false;
  constructor(private readonly ports:Ports){
   this.scene.background=new THREE.Color('#acb9ae');this.scene.fog=new THREE.Fog('#c4c1ac',65,180);this.scene.add(this.root,this.scenery);
-  this.scene.add(new THREE.HemisphereLight(0xc6e7df,0x526045,2.1));
-  const light=new THREE.DirectionalLight(0xffd6a0,2.8);light.position.set(-18,28,18);light.castShadow=true;light.shadow.mapSize.set(2048,2048);light.shadow.camera.left=-40;light.shadow.camera.right=40;light.shadow.camera.top=40;light.shadow.camera.bottom=-40;light.shadow.camera.near=1;light.shadow.camera.far=100;light.shadow.bias=-.00015;light.shadow.normalBias=.035;this.scenery.add(light,light.target);
+  this.scene.add(new THREE.HemisphereLight(0xc6e7df,0x526045,1.35));
+  let low=false;try{low=localStorage.getItem('cc.quality')==='low';}catch{/* Match the existing default auto/high graphics tier. */}
+  const light=new THREE.DirectionalLight(0xffd6a0,2.8);light.position.set(-18,28,18);light.castShadow=!low;light.shadow.mapSize.set(low?512:2048,low?512:2048);light.shadow.camera.left=-32;light.shadow.camera.right=32;light.shadow.camera.top=32;light.shadow.camera.bottom=-32;light.shadow.camera.near=1;light.shadow.camera.far=100;light.shadow.bias=-.00015;light.shadow.normalBias=.012;light.shadow.radius=low?1:2.5;this.scenery.add(light,light.target);
   void createEndingStage().then(stage=>{if(this.disposed){stage.dispose();return;}this.stage=stage;this.scenery.add(stage.root);}).catch(error=>{if(!this.disposed)this.ports.error?.(error instanceof Error?error.message:'Ending scenery failed');});
   this.camera.position.set(0,6,12);this.camera.lookAt(0,1,0);
  }
