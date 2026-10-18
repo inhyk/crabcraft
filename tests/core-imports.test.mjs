@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {readdirSync,readFileSync} from 'node:fs';import {resolve,dirname,relative} from 'node:path';import {fileURLToPath,pathToFileURL} from 'node:url';
+const root=fileURLToPath(new URL('../',import.meta.url)),sim=resolve(root,'src/sim');
+function files(dir){return readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?files(resolve(dir,e.name)):e.name.endsWith('.ts')?[resolve(dir,e.name)]:[]);}
+test('every simulation import including type edges stays inside numeric core, with no ambient RNG/clock/browser access',()=>{for(const file of files(sim)){const source=readFileSync(file,'utf8').replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/[^\n]*/g,'');assert.doesNotMatch(source,/\b(?:Math\s*\.\s*random|Date|performance|document|window|requestAnimationFrame|setTimeout|setInterval|process)\b/,relative(root,file));for(const match of source.matchAll(/(?:from\s*|import\s*\()(['"])([^'"]+)\1/g)){const spec=match[2];assert.ok(spec.startsWith('.'),`${file}: external ${spec}`);assert.ok(resolve(dirname(file),spec).startsWith(sim+'/'),`${file}: escaping ${spec}`);}}});
+test('entire production simulation graph imports directly under Node',async()=>{for(const file of files(sim))await import(pathToFileURL(file).href);});
