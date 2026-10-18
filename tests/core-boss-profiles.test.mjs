@@ -138,3 +138,26 @@ test('actual Dawn Area mixed99/100 combat, death grants and freed bow use all re
   assert.equal(p100.state.flags.finalCleared,true);assert.equal(p99.state.flags.finalCleared,undefined);assert.equal(area.pendingGrants().length,1);
   for(let i=0;i<120;i++)area.step(new Map());assert.equal(boss.freed.npcId,'bowed');assert.ok(area.drainEvents().some(r=>r.event.type==='say'&&r.event.textKey==='boss.freed.thanks'));
 });
+
+test('actual assembled Area applies all seven mechanic damages with canonical clocks and player updates',()=>{
+  for(const [kind,profile,world,phase,fraction] of [['slam','rust','w1',1,.26],['spray','rust','w1',1,null],['undertow','rust','w1',2,.24],['cross','rust','w1',2,.28],['barrage','rust','w1',3,.24],['nova','abyss','w1',1,.32],['eclipse','eclipse','w2',1,.38]]){
+    const area=realCreatureArea(`mechanic-${kind}`,world,profile),ref=area.attachFresh('fighter','priest','human','spawn'),p=area.services.player(ref),u=area.services.getUnit(ref),boss=[...area.bosses.values()][0];
+    u.level=100;u.hp=u.maxHp=10000;p.state.flags.abyssCleared=p.state.flags.rustCleared=true;p.state.quests.status.q3='active';
+    if(world==='w1'){
+      const input={seq:1,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:'beacon',commands:[{kind:'channelStart',channel:'beacon',targetId:'beacon'}]};
+      area.step(new Map([[ref.id,input]]));for(let i=0;i<65;i++)area.step(new Map());assert.equal(p.state.flags.beaconLit,true);
+    }
+    boss.wake();for(let i=0;i<75;i++)area.step(new Map());assert.equal(boss.state,'fight');
+    if(phase>1)boss.actor.hp=boss.actor.maxHp*(phase===2?.5:.2);
+    area.drainEvents();let warning;
+    for(let i=0;i<10000&&!warning;i++){
+      area.step(new Map());warning=area.drainEvents().map(r=>r.event).find(e=>e.type==='telegraph'&&e.mech===kind);u.hp=u.maxHp;
+    }
+    assert.ok(warning,kind);area.services.cancelPendingHit(boss.unit);
+    const shape=warning.shapes[0],at=shape.at;u.x=at.x+(kind==='eclipse'?6:kind==='spray'?Math.sin(shape.yaw)*5:0);u.z=at.z+(kind==='spray'?Math.cos(shape.yaw)*5:0);u.hp=u.maxHp;
+    let damage;
+    for(let i=0;i<200&&!damage;i++){area.step(new Map());damage=area.drainEvents().map(r=>r.event).find(e=>e.type==='damage'&&e.src?.id===boss.unit.id&&e.dst.id===u.ref.id);}
+    assert.ok(damage,kind);if(fraction!==null)assert.equal(damage.amount,Math.round(u.maxHp*fraction),kind);else assert.ok(damage.amount>=6&&damage.amount<=9);
+    assert.equal(u.hp,u.maxHp-damage.amount,`${kind} HP changed through real Combat`);
+  }
+});
