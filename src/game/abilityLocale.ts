@@ -2,6 +2,7 @@ import type {AbilityDef} from '../data/classes';
 import {t} from '../i18n';
 
 const korean:Record<string,readonly [string,string]>={
+  'crown-burst':['필살기 · 왕관 폭발','주변 10m 안에 보이는 적들에게 강력한 폭발을 가합니다. 재사용 대기시간 60초.'],
   'pincer-strike':['집게 강타','묵직한 집게 공격을 가합니다.'],
   'shell-bash':['껍질 방패치기','대상을 2초 동안 기절시킵니다.'],
   'sideways-charge':['옆걸음 돌진','대상에게 돌진하고 분노를 15 얻습니다.'],
