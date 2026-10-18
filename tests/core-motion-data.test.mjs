@@ -6,6 +6,7 @@ import {realActionData as data,actionRequest,actionHitDelay,BREAK_ROUTINE} from 
 import {initializeNumericPose,advanceNumericPose} from '../src/sim/pose.ts';
 import {createUnit,centre} from '../src/sim/unit.ts';
 import {Actions} from '../src/sim/actions.ts';
+import {rigCatalog,rigCatalogIds,rigCatalogVersion,rigCatalogMotionVersion} from '../src/sim/data/rig-catalog.ts';
 import {Projectiles} from '../src/sim/projectiles.ts';
 function unit(id=1,archetype='human'){
  const u=createUnit({area:'motion-test',id,life:1},archetype,'player','player',data);
@@ -111,4 +112,29 @@ test('eight townsfolk specs preserve Game seed1337 draw order and varied identit
   assert.equal(source.seed,1337);assert.equal(source.drawOffset,i*4);assert.equal(source.rootMultiplier,1);
   assert.equal(data.archetype(id).height,raw.archetypes[id].height);
  }
+});
+
+test('small presentation catalog shares the exact factory pass, content hashes and motion version',async()=>{
+ const raw=JSON.parse(await readFile(new URL('../src/sim/data/pose-data.json',import.meta.url),'utf8'));
+ const text=await readFile(new URL('../src/sim/data/rig-catalog.json',import.meta.url),'utf8'),{version,...catalog}=JSON.parse(text);
+ assert.equal(version,'shipped-rigs-v1-'+createHash('sha256').update(JSON.stringify(catalog)).digest('hex').slice(0,20));
+ assert.equal(version,rigCatalogVersion);assert.equal(catalog.motionVersion,raw.version);assert.equal(rigCatalogMotionVersion,data.version);
+ assert.deepEqual(catalog.sourceHashes,raw.sourceHashes);assert.deepEqual(rigCatalogIds,Object.keys(raw.archetypes));
+ assert.ok(Buffer.byteLength(text)<50000,'presentation metadata must not embed motion clips');
+ for(const id of rigCatalogIds){
+  assert.deepEqual(catalog.rigs[id],{...raw.rigSources[id],rootScale:raw.archetypes[id].rootScale,metersToUnits:raw.archetypes[id].metersToUnits});
+  assert.deepEqual(rigCatalog(id),catalog.rigs[id]);assert.ok(Object.isFrozen(rigCatalog(id).rootScale));
+ }
+ assert.equal(rigCatalog('boss-frost'),rigCatalog('frost'));assert.throws(()=>rigCatalog('missing'),/Unknown shipped rig/);
+ assert.throws(()=>{rigCatalog('npc:brinebeard').spec.crest=0;},TypeError);
+ assert.throws(()=>{rigCatalog('npc:brinebeard').extras.push('invented');},TypeError);
+});
+
+test('presentation accessor bundles without the packed clips or numeric pose runtime',async()=>{
+ const {build}=await import('esbuild');
+ const result=await build({entryPoints:[new URL('../src/sim/data/rig-catalog.ts',import.meta.url).pathname],bundle:true,platform:'browser',format:'esm',minify:true,write:false,metafile:true});
+ const inputs=Object.keys(result.metafile.inputs);
+ assert.ok(inputs.some(p=>p.endsWith('rig-catalog.json')));
+ assert.ok(inputs.every(p=>!p.endsWith('pose-data.json')&&!p.endsWith('/pose.ts')),inputs.join('\n'));
+ assert.ok(result.outputFiles[0].contents.length<30000);
 });

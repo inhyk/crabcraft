@@ -26,10 +26,10 @@ export default defineConfig({
     configurePreviewServer(server) { attachRooms(server.httpServer); },
   }],
   // The account server sees the page's own Host, so Google sign-in returns through this proxy.
-  preview:{proxy:{'/api/account':{target:'http://127.0.0.1:8795'}}},
+  preview:{proxy:{'/api/account':{target:'http://127.0.0.1:8795'},'/world':{target:'http://127.0.0.1:8795',ws:true}}},
   server: {
     // Videos and posters live on the game server, not in public/ (VITE_MEDIA_BASE, default /media).
-    proxy:{'/api/account':{target:'http://127.0.0.1:8795'},'/media/':{target:'https://crab-dev.seonn.dev',changeOrigin:true}},
+    proxy:{'/api/account':{target:'http://127.0.0.1:8795'},'/world':{target:'http://127.0.0.1:8795',ws:true},'/media/':{target:'https://crab-dev.seonn.dev',changeOrigin:true}},
     headers: {
       // SharedArrayBuffer for MuJoCo WASM threads and onnxruntime-web.
       'Cross-Origin-Opener-Policy': 'same-origin',
