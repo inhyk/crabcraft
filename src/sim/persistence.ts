@@ -6,13 +6,14 @@ import { levelForXp } from './data/progression.ts';
 import { worldChapter } from './math.ts';
 
 export const ACHIEVEMENT_IDS = Object.freeze(['sail','crew','landfall','island','treasure','moon','sunset','moonTreasure','sunsetTreasure','archipelago','rust','abyss','eclipse','dawn','secret']);
-export const PERSONAL_FLAG_IDS = Object.freeze(['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared','firstEndingSeen','frostEndingStarted','beaconLit']);
+export const EARNED_BOSS_FLAG_IDS = Object.freeze(['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared','emberCleared','skyCleared']);
+export const PERSONAL_FLAG_IDS = Object.freeze([...EARNED_BOSS_FLAG_IDS,'firstEndingSeen','frostEndingStarted','beaconLit']);
 export type CharacterAppearance = { race:'human'|'orc'|'dwarf'|'undead'|'nightelf'|'tauren'; sex:'male'|'female'; classId:ClassId; shell:number; crest:number; led:number; name:string };
 export type CharacterIdentityV1 = { schema:'world-identity-v1'; classId:ClassId; archetype:string; appearance:CharacterAppearance };
 export type LocationCheckpoint = { x:number; y:number; z:number; yaw:number };
 export type DurationCheckpoint = { startAge:number; endRemaining:number };
 export type AchievementCheckpoint = { earned:string[]; distance:number };
-export type QuestCheckpoint = { chapter:1|2|3|4; status:Record<string,'locked'|'available'|'active'|'ready'|'done'>; progress:Record<string,number>; cogs:number; tracked:Partial<Record<1|2|3|4,string>> };
+export type QuestCheckpoint = { chapter:1|2|3|4|5|6; status:Record<string,'locked'|'available'|'active'|'ready'|'done'>; progress:Record<string,number>; cogs:number; tracked:Partial<Record<1|2|3|4|5|6,string>> };
 export type InterruptedActivity = {
  seated:boolean; village:boolean; controlsLocked:boolean;
  cast:({ability:AbilityId}&DurationCheckpoint)|null;
@@ -78,18 +79,32 @@ function identity(value:unknown):CharacterIdentityV1 {
  const v=fields(detached(value,4096),['schema','classId','archetype','appearance'],'identity');member(v.schema,['world-identity-v1'],'identity.schema');member(v.classId,Object.keys(CLASSES),'class');text(v.archetype,'archetype',256);
  const a=fields(v.appearance,['race','sex','classId','shell','crest','led','name'],'appearance');member(a.race,['human','orc','dwarf','undead','nightelf','tauren'],'appearance.race');member(a.sex,['male','female'],'appearance.sex');if(a.classId!==v.classId||a.race!==v.archetype)fail('appearance.identity');integer(a.shell,'appearance.shell',0,3);integer(a.crest,'appearance.crest',0,3);integer(a.led,'appearance.led',0,2);text(a.name,'appearance.name',96);if(a.name.length>24||a.name.trim()!==a.name)fail('appearance.name');return v as CharacterIdentityV1;
 }
+const PRE_SNOW_QUEST_IDS=Object.freeze(['q1','q2','q3','q4','w1','w2','w3','w4','w5','w6','w7','d1','d2','d3','d4','d5','d6','d7','d8','d9','d10','d11','d12','s1','s2']);
+const ADDED_SNOW_QUEST_IDS=Object.freeze(['s3','s4','s5','s6','s7','s8','s9','s10','s11','s12']);
+const PRE_FRONTIER_QUEST_IDS=Object.freeze([...PRE_SNOW_QUEST_IDS,...ADDED_SNOW_QUEST_IDS]);
+const ADDED_FRONTIER_QUEST_IDS=Object.freeze([5,6].flatMap(chapter=>Array.from({length:12},(_,i)=>`r${chapter}q${i+1}`)));
 function quests(value:unknown,world:WorldId):void {
  const q=fields(value,['chapter','status','progress','cogs','tracked'],'quests');if(q.chapter!==worldChapter(world))fail('quests.chapter');
+ const rawStatus=object(q.status,'quests.status');
+ // Released v1 catalogs contained exactly25 or35 entries. Never infer a partial catalog.
+ const previous=[PRE_SNOW_QUEST_IDS,PRE_FRONTIER_QUEST_IDS].find(ids=>Object.keys(rawStatus).length===ids.length&&ids.every(id=>Object.hasOwn(rawStatus,id)));
+ if(previous){
+  if(worldChapter(world)>4)fail('quests.previous-catalog.world');
+  const added=previous===PRE_SNOW_QUEST_IDS?[...ADDED_SNOW_QUEST_IDS,...ADDED_FRONTIER_QUEST_IDS]:ADDED_FRONTIER_QUEST_IDS;
+  const progress=object(q.progress,'quests.progress'),tracked=object(q.tracked,'quests.tracked');
+  if(added.some(id=>QUESTS[id].objectives.some(o=>Object.hasOwn(progress,o.id)))||Object.values(tracked).some(id=>added.includes(id as string)))fail('quests.previous-catalog.references');
+  const defaults=freshQuests(worldChapter(world));for(const id of added)rawStatus[id]=defaults.status[id];
+ }
  const status=fields(q.status,QUEST_ORDER,'quests.status');for(const v of Object.values(status))member(v,['locked','available','active','ready','done'],'quest.status');
  const objectives=new Map(Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>[o.id,o.count] as const)));objectives.set('patrol-kills',4);
  const progress=object(q.progress,'quests.progress');for(const [id,n]of Object.entries(progress)){if(!objectives.has(id))fail('quest.objective');integer(n,`quests.${id}`,0,objectives.get(id));}
  integer(q.cogs,'quests.cogs',0,4);if(q.cogs!==(progress['q1-cog']??0))fail('quests.cogs');
- const tracked=object(q.tracked,'quests.tracked');for(const [chapter,id]of Object.entries(tracked)){if(!['1','2','3','4'].includes(chapter)||typeof id!=='string'||!QUESTS[id]||QUESTS[id].chapter!==Number(chapter))fail('quests.tracked');}
+ const tracked=object(q.tracked,'quests.tracked');for(const [chapter,id]of Object.entries(tracked)){if(!['1','2','3','4','5','6'].includes(chapter)||typeof id!=='string'||!QUESTS[id]||QUESTS[id].chapter!==Number(chapter))fail('quests.tracked');}
  for(const id of QUEST_ORDER){const def=QUESTS[id];if(['ready','done'].includes(status[id] as string)&&!def.objectives.every(o=>(progress[o.id]??0)===o.count))fail(`quests.${id}.completion`);}
 }
-/** Strictly validates a detached snapshot; never repairs or clamps server data. */
+/** Strict detached validation, with only the complete released25/35-quest v1 catalog upgrades. No clamping or partial-shape repair. */
 export function validateCheckpoint(value:unknown,context?:IdentityContext):CharacterCheckpointV1 {
- const c=fields(detached(value),['schema','character','classId','archetype','world','location','progress','survival','activity'],'root');member(c.schema,['world-character-v1'],'schema');text(c.character,'character');member(c.classId,Object.keys(CLASSES),'class');text(c.archetype,'archetype',256);member(c.world,['w1','w2','w3','w4'],'world');location(c.location);
+ const c=fields(detached(value),['schema','character','classId','archetype','world','location','progress','survival','activity'],'root');member(c.schema,['world-character-v1'],'schema');text(c.character,'character');member(c.classId,Object.keys(CLASSES),'class');text(c.archetype,'archetype',256);member(c.world,['w1','w2','w3','w4','w5','w6'],'world');location(c.location);
  if(context&&(c.character!==context.characterId||c.classId!==context.identity.classId||c.archetype!==context.identity.archetype))fail('identity-mismatch');
  const p=fields(c.progress,['xp','coins','baseMaxHp','attackRank','armorRank','weaponOwned','armorOwned','quests','flags','cogMisses','achievements','lighthouseSecretFound'],'progress');
  integer(p.xp,'xp');integer(p.coins,'coins');integer(p.attackRank,'attackRank',0,100);integer(p.armorRank,'armorRank',0,100);bool(p.weaponOwned,'weaponOwned');bool(p.armorOwned,'armorOwned');if((p.attackRank>0)!==p.weaponOwned||(p.armorRank>0)!==p.armorOwned)fail('gear-ownership');
@@ -97,7 +112,7 @@ export function validateCheckpoint(value:unknown,context?:IdentityContext):Chara
  const flags=object(p.flags,'flags');for(const [id,v]of Object.entries(flags)){member(id,PERSONAL_FLAG_IDS,'flags.key');bool(v,'flags.value');}
  const achievements=fields(p.achievements,['earned','distance'],'achievements');if(!Array.isArray(achievements.earned)||new Set(achievements.earned).size!==achievements.earned.length)fail('achievements.earned');for(const id of achievements.earned)member(id,ACHIEVEMENT_IDS,'achievement');finite(achievements.distance,'achievements.distance',0);
  const s=fields(c.survival,['alive','hp','maxHp','resource','maxResource','respawnRemaining','cooldowns','gcd','statuses','history'],'survival');bool(s.alive,'alive');const level=levelForXp(p.xp),maxHp=Math.round(cls.baseHp*(1+.15*(level-1))),maxResource=cls.resource==='rage'?100:120+20*(level-1);if(s.maxHp!==maxHp||s.maxResource!==maxResource)fail('derived-stats');integer(s.maxHp,'maxHp',1);finite(s.hp,'hp',0,maxHp);finite(s.resource,'resource',0,maxResource);if(s.alive&&s.hp<=0)fail('alive.hp');if(s.alive&&s.respawnRemaining!==null)fail('alive.respawn');if(s.respawnRemaining!==null)finite(s.respawnRemaining,'respawnRemaining',0);if(!s.alive&&s.respawnRemaining===null)fail('dead.respawn');
- const abilityIds=cls.abilities.map(a=>a.id);for(const [id,d]of Object.entries(object(s.cooldowns,'cooldowns'))){member(id,abilityIds,'cooldown.ability');duration(d,'cooldown');}duration(s.gcd,'gcd');
+ const abilityIds=cls.abilities.map(a=>a.id);for(const [id,d]of Object.entries(object(s.cooldowns,'cooldowns'))){member(id,[...abilityIds,'boss-xp-blessing'],'cooldown.ability');duration(d,'cooldown');}duration(s.gcd,'gcd');
  const st=fields(s.statuses,['stunRemaining','slowRemaining','slowPct','rustRemaining','rust','absorbRemaining','absorb','absorbMax','blessingRemaining','encounterBlessing','warded'],'statuses');for(const [k,n]of Object.entries(st))if(k==='encounterBlessing'||k==='warded')bool(n,k);else finite(n,k,0);finite(st.slowPct,'slowPct',0,1);integer(st.rust,'rust',0,5);finite(st.absorb,'absorb',0,st.absorbMax as number);
  const h=fields(s.history,['combatAge','spendAge','attackAge','nextSwingRemaining'],'history');for(const [k,n]of Object.entries(h))finite(n,k,0);
  const a=fields(c.activity,['seated','village','controlsLocked','cast','channel','dash','pendingHit','rootPending','motion'],'activity');for(const k of ['seated','village','controlsLocked','dash','pendingHit','rootPending'])bool(a[k],`activity.${k}`);
@@ -124,11 +139,11 @@ export function prepareRestore(checkpoint:CharacterCheckpointV1,offlineSeconds:n
  const source=validateCheckpoint(checkpoint),result=validateCheckpoint(policy.restore(source,offlineSeconds));if(result.character!==source.character||result.classId!==source.classId||result.archetype!==source.archetype)fail('restorePolicy.identity');
  if(canonical(result.progress)!==canonical(source.progress))fail('restorePolicy.progress');return result;
 }
-const GRANT_OBJECTIVES=Object.freeze(['kill-scrapling','kill-scavenger','patrol-kill','cog-roll','cog-reset','cog-miss','boss','eclipse-boss','dawn-boss','frost-boss','clear-encounter-blessing']);
+const GRANT_OBJECTIVES=Object.freeze(['kill-scrapling','kill-scavenger','patrol-kill','cog-roll','cog-reset','cog-miss','boss','eclipse-boss','dawn-boss','frost-boss','ember-boss','sky-boss','clear-encounter-blessing','boss-xp-blessing']);
 export function validateEarnedGrant(value:unknown,recipient?:string):GrantJson {
  const g=fields(detached(value,16384),['id','victim','recipient','xp','coins','objectives','flags'],'grant'),v=fields(g.victim,['area','id','life'],'grant.victim');text(v.area,'victim.area',256);integer(v.id,'victim.id',1,0xffffffff);integer(v.life,'victim.life',1,0xffffffff);text(g.id,'grant.id');text(g.recipient,'grant.recipient');if(g.id!==JSON.stringify([v.area,v.id,v.life,g.recipient])||recipient!==undefined&&g.recipient!==recipient)fail('grant.identity');integer(g.xp,'grant.xp');integer(g.coins,'grant.coins');
  if(!Array.isArray(g.objectives)||g.objectives.length>16||!Array.isArray(g.flags)||g.flags.length>5)fail('grant.payload');const kinds=new Set<string>();for(const value of g.objectives){const o=fields(value,['kind','amount'],'grant.objective');member(o.kind,GRANT_OBJECTIVES,'grant.objective.kind');if(kinds.has(o.kind as string))fail('grant.objective.duplicate');kinds.add(o.kind as string);if(o.kind==='cog-roll'){finite(o.amount,'cog-roll',0,1);if(o.amount===1)fail('cog-roll');}else integer(o.amount,'grant.objective.amount',o.kind==='cog-reset'?0:1);}
- if(new Set(g.flags).size!==g.flags.length)fail('grant.flags');for(const flag of g.flags)member(flag,PERSONAL_FLAG_IDS.slice(0,5),'grant.flag');return freeze(g as GrantJson);
+ if(new Set(g.flags).size!==g.flags.length)fail('grant.flags');for(const flag of g.flags)member(flag,EARNED_BOSS_FLAG_IDS,'grant.flag');return freeze(g as GrantJson);
 }
 export function createCoreCharacterCodec(config:{identities:readonly {classId:ClassId;archetype:string}[];freshLocation:LocationCheckpoint}):CoreCharacterCodec {
  const allowed=new Set(config.identities.map(i=>{member(i.classId,Object.keys(CLASSES),'identity.catalog.class');member(i.archetype,['human','orc','dwarf','undead','nightelf','tauren'],'identity.catalog.archetype');return JSON.stringify([i.classId,i.archetype]);})),spawn=detached(config.freshLocation);if(!allowed.size)fail('identity.catalog');location(spawn);

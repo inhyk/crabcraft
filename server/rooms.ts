@@ -6,6 +6,7 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import { specOf, stateOf, actions, clean, type Spec, type State } from './protocol.ts';
+import type { MonitorSnapshot, MonitorPlayer } from './monitor.ts';
 import { Moderation, Talk, CHAT, reasonOf, sessionOf, shownName, type Report } from './chat/safety.ts';
 
 /** `session`: the client's per-tab id (see chat/safety.ts); `lastRoom`: where a departed player was, for reports. */
@@ -25,7 +26,7 @@ export type RoomOptions = {
 /** Players per room or public shard. In a room, the elected host's browser simulates the world for all of them. */
 export const ROOM_CAP = 8;
 /** Public presence is isolated by world area, including Frostlight. */
-const areaOf = (v: unknown) => v === 2 || v === 3 || v === 4 ? v : 1;
+const areaOf = (v: unknown) => v === 2 || v === 3 || v === 4 || v === 5 || v === 6 ? v : 1;
 
 const sameHost = (origin: string, req: IncomingMessage) => { try { return new URL(origin).host === req.headers.host; } catch { return false; } };
 const reject = (socket: Duplex, status: string) => { socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); };
@@ -50,6 +51,8 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   const alarms = new Map<string, number>();
   const snowRooms=new Map<string,boolean>();
   const sharedAreas=new Set<string>();
+  const observed = new Map<string, { updatedAt: number | null; action: MonitorPlayer['action'] }>();
+  let actionSeq = 0;
   /** Public shard code to its world area. Shard codes start with W, so they cannot be joined by code. */
   const publics = new Map<string, number>();
   const drop = (code: string) => { rooms.delete(code); worlds.delete(code); alarms.delete(code); publics.delete(code);snowRooms.delete(code);sharedAreas.delete(code); };
@@ -75,6 +78,7 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     m.lastRoom = m.room;
     m.room = '';
     m.state = null;
+    observed.delete(m.id);
   }
   function admit(m: Member, code: string, spec: Spec, combat: boolean, session: unknown) {
     // Strangers see a neutral name instead of one with a bad word or contact details; the player is told.
@@ -163,16 +167,20 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
         const state = stateOf(msg.state);
         if (!state) return;
         m.state = state;
+        const old = observed.get(m.id);
+        observed.set(m.id, { updatedAt: now, action: old?.action ?? null });
         broadcast(m.room, { type: 'state', id: m.id, state }, m.id);
       } else if (m.room && msg.type === 'action' && actions.has(msg.action)) {
+        const old = observed.get(m.id);
+        observed.set(m.id, { updatedAt: old?.updatedAt ?? null, action: { name: msg.action, seq: ++actionSeq, at: now } });
         broadcast(m.room, { type: 'action', id: m.id, action: msg.action }, m.id);
       } else if (m.room && m.combat && msg.type === 'world' && host(m.room) === m.id) {
         const world = worldOf(msg.world);
-        if (world && (!publics.has(m.room)||sharedAreas.has(m.room)&&world.chapter===publics.get(m.room)) && (m.snow || world.chapter!==4&&!world.bosses.some(b=>b.id==='b300'))) { worlds.set(m.room, world); broadcast(m.room, { type: 'world', world }, m.id); }
+        if (world && (!publics.has(m.room)||sharedAreas.has(m.room)&&world.chapter===publics.get(m.room)) && (m.snow || world.chapter<4&&!world.bosses.some(b=>b.id==='b300'))) { worlds.set(m.room, world); broadcast(m.room, { type: 'world', world }, m.id); }
       } else if (m.room && m.combat && msg.type === 'combat') {
         const authority = host(m.room) === m.id;
         const event = eventOf(msg.event, authority);
-        if (event && (!publics.has(m.room)||!['chapter','party','duel'].includes(event.kind)) && (m.snow || event.chapter!==4&&![event.target,event.source].some(key=>key==='b300'||key==='f300'))) {
+        if (event && (event.kind!=='heal-cast'||m.spec.classId==='priest') && (!publics.has(m.room)||!['chapter','party','duel','dungeon-return'].includes(event.kind)) && (m.snow || (event.chapter??1)<4&&![event.target,event.source].some(key=>key==='b300'||key==='f300'))) {
           const packet = { type: 'combat', id: m.id, event };
           if (authority) broadcast(m.room, packet, m.id);
           else { const h = rooms.get(m.room)?.get(host(m.room)); if (h) send(h.ws, packet); }
@@ -231,5 +239,15 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     for (const m of members) m.ws.terminate();
   };
   server.once('close', close);
-  return { close, restart, rooms, publics, moderation };
+  const monitorSnapshot = (): MonitorSnapshot => ({
+    at: Date.now(),
+    players: [...members].filter(m => m.room).map(m => ({
+      id: m.id, room: m.room, public: publics.has(m.room),
+      area: publics.get(m.room) ?? m.state?.area ?? worlds.get(m.room)?.chapter ?? null,
+      spec: { ...m.spec }, state: m.state ? { ...m.state } : null,
+      updatedAt: observed.get(m.id)?.updatedAt ?? null,
+      action: observed.get(m.id)?.action ? { ...observed.get(m.id)!.action! } : null,
+    })),
+  });
+  return { close, restart, rooms, publics, moderation, monitorSnapshot };
 }

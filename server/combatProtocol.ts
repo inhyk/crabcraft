@@ -1,3 +1,4 @@
+import {dungeonFor} from '../src/game/dungeonData.ts';
 export type VillageRound={id:string;mode:'hide'|'tag';phase:'ready'|'play'|'done';left:number;starter:string;seeker:string;members:string[];caught:string[];result:'seekers'|'runners'|'cancelled'|''};
 export type BoatState={exits?:Record<string,{x:number;z:number;shore:boolean}>;x:number;z:number;yaw:number;speed:number;seats:[string|null,string|null]};
 export type BoatCommand={action:'board'|'leave'|'drive'|'call';throttle:number;steer:number};
@@ -10,29 +11,32 @@ export type EntityState = {
   enemyState?: 'idle' | 'chase' | 'leash' | 'dead' | 'gone'; xp?: number;
 };
 export type BossState = {
-  id: 'b3' | 'b10' | 'b20' | 'b30' | 'b300'; state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; phase: number; enraged: boolean;
+  id: 'b3' | 'b10' | 'b20' | 'b30' | 'b300' | 'b500' | 'b750'; state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; phase: number; enraged: boolean;
   timeline?: { state: number; freed: number; freedYaw: number; released: boolean };
   mech: null | { id: number; kind: 'slam' | 'spray' | 'undertow' | 'nova' | 'eclipse' | 'cross' | 'barrage'; at: number[]; yaw: number; left: number };
 };
 import type {DungeonState} from '../src/game/dungeonData.ts';
-export type WorldState = { dungeon?:DungeonState|null; village?:VillageRound|null; boat?:BoatState; weather: { mood: 0 | 1 | 2 | 3; beacon: boolean; clock: number }; entities: EntityState[]; bosses: BossState[]; rust: boolean; abyss: boolean; chapter: 1 | 2 | 3 | 4; frostCleared?: boolean; finalCleared?: boolean; firstEnding: boolean; trueCleared: boolean; social?:{mode:'coop'|'pvp';parties:Record<string,number>} };
+export type WorldState = { dungeon?:DungeonState|null; village?:VillageRound|null; boat?:BoatState; weather: { mood: 0 | 1 | 2 | 3; beacon: boolean; clock: number }; entities: EntityState[]; bosses: BossState[]; rust: boolean; abyss: boolean; chapter: 1 | 2 | 3 | 4 | 5 | 6; emberCleared?: boolean; skyCleared?: boolean; frostCleared?: boolean; finalCleared?: boolean; firstEnding: boolean; trueCleared: boolean; social?:{mode:'coop'|'pvp';parties:Record<string,number>} };
 export type CombatEvent = {
   village?:'hide'|'tag'|'stop';
   boat?:BoatCommand;
-  kind: 'village' | 'boat' | 'party' | 'duel' | 'chapter' | 'environment' | 'condition' | 'attack' | 'hit' | 'death' | 'animation' | 'challenge' | 'effect';
-  target: string; chapter?:1|2|3|4; party?:number; serial?: number; source?: string; amount?: number; crit?: boolean; rage?: number; action?: string;
+  run?:string;
+  ability?:'mend-shell'|'holy-tide';
+  kind: 'heal-cast' | 'heal' | 'dungeon-return' | 'village' | 'boat' | 'party' | 'duel' | 'chapter' | 'environment' | 'condition' | 'attack' | 'hit' | 'death' | 'animation' | 'challenge' | 'effect';
+  target: string; chapter?:1|2|3|4|5|6; party?:number; serial?: number; source?: string; amount?: number; crit?: boolean; rage?: number; action?: string;
   environment?: { mood?: 0 | 1 | 2 | 3; beacon?: boolean };
   condition?: { stun: number; slow: number; slowPct: number; pushX: number; pushZ: number; pushTime: number };
   effect?: { stun: number; rust: number; rustFor: number; pushX: number; pushZ: number; pushTime: number };
 };
 const n = (v: unknown, lo = 0, hi = Number.MAX_SAFE_INTEGER): v is number => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
-const key = (v: unknown): v is string => typeof v === 'string' && /^([ent]\d{1,3}|b3|b10|b20|b30|b300|f3|f10|f20|f30|f300)$/.test(v);
+const key = (v: unknown): v is string => typeof v === 'string' && /^([ent]\d{1,3}|b3|b10|b20|b30|b300|b500|b750|f3|f10|f20|f30|f300|f500|f750)$/.test(v);
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
 export function worldOf(v: unknown): WorldState | null {
-  if (!record(v) || !Array.isArray(v.entities) || v.entities.length > 128 || !Array.isArray(v.bosses) || ![3,4,5].includes(v.bosses.length) || typeof v.rust !== 'boolean' || typeof v.abyss !== 'boolean' || ![1,2,3,4].includes(v.chapter) || (v.frostCleared!==undefined&&typeof v.frostCleared!=='boolean') || (v.finalCleared!==undefined&&typeof v.finalCleared!=='boolean') || typeof v.firstEnding !== 'boolean' || typeof v.trueCleared !== 'boolean') return null;
+  if (!record(v) || !Array.isArray(v.entities) || v.entities.length > 128 || !Array.isArray(v.bosses) || ![3,4,5,6,7].includes(v.bosses.length) || typeof v.rust !== 'boolean' || typeof v.abyss !== 'boolean' || ![1,2,3,4,5,6].includes(v.chapter) || (v.emberCleared!==undefined&&typeof v.emberCleared!=='boolean') || (v.skyCleared!==undefined&&typeof v.skyCleared!=='boolean') || (v.frostCleared!==undefined&&typeof v.frostCleared!=='boolean') || (v.finalCleared!==undefined&&typeof v.finalCleared!=='boolean') || typeof v.firstEnding !== 'boolean' || typeof v.trueCleared !== 'boolean') return null;
   if (!record(v.weather) || ![0,1,2,3].includes(v.weather.mood) || typeof v.weather.beacon !== 'boolean' || !n(v.weather.clock,0,10000000)) return null;
+  // Let already-running legacy expeditions finish while old clients roll over to the new catalog.
   if(v.dungeon!==undefined&&v.dungeon!==null){const d=v.dungeon;
-    if(!record(d)||(d.level<100?v.chapter!==3:v.chapter!==4)||![35,50,75,150,200,250].includes(d.level)||typeof d.run!=='string'||!/^[a-zA-Z0-9-]{1,64}$/.test(d.run)||!Number.isInteger(d.stage)||!n(d.stage,1,3)||!['wave','rest','clear','failed'].includes(d.phase)||!n(d.left,0,10)||!n(d.clock,0,10000000)||!Number.isSafeInteger(d.hazard)||!n(d.hazard,0,10000000)||!Array.isArray(d.members)||d.members.length>8||d.members.some((m:unknown)=>typeof m!=='string'||m.length>64)||new Set(d.members).size!==d.members.length)return null;
+    if(!record(d)||(dungeonFor(d.level)?.chapter??({425:5,500:5,750:6} as Record<number,number>)[d.level])!==v.chapter||typeof d.run!=='string'||!/^[a-zA-Z0-9-]{1,64}$/.test(d.run)||!Number.isInteger(d.stage)||!n(d.stage,1,3)||!['wave','rest','clear','failed'].includes(d.phase)||!n(d.left,0,10)||!n(d.clock,0,10000000)||!Number.isSafeInteger(d.hazard)||!n(d.hazard,0,10000000)||!Array.isArray(d.members)||d.members.length>8||d.members.some((m:unknown)=>typeof m!=='string'||m.length>64)||new Set(d.members).size!==d.members.length)return null;
   }
   if(v.village!==undefined&&v.village!==null){
     const r=v.village,member=(id:unknown)=>typeof id==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(id);
@@ -55,31 +59,34 @@ export function worldOf(v: unknown): WorldState | null {
   }
   const bossIds = new Set<string>();
   for (const b of v.bosses) {
-    if (!record(b) || !['b3','b10','b20','b30','b300'].includes(b.id) || bossIds.has(b.id) || !['dormant','waking','idle','fight','dying','dead'].includes(b.state) || !n(b.phase,1,3) || typeof b.enraged !== 'boolean') return null;
+    if (!record(b) || !['b3','b10','b20','b30','b300','b500','b750'].includes(b.id) || bossIds.has(b.id) || !['dormant','waking','idle','fight','dying','dead'].includes(b.state) || !n(b.phase,1,3) || typeof b.enraged !== 'boolean') return null;
     bossIds.add(b.id);
     const timeline=b.timeline;
     if(timeline!==undefined&&(!record(timeline)||!n(timeline.state,0,60)||!n(timeline.freed,-1,13)||!n(timeline.freedYaw,-10000,10000)||typeof timeline.released!=='boolean'))return null;
     const m = b.mech;
     if (m !== null && (!record(m) || !n(m.id) || !['slam','spray','undertow','nova','eclipse','cross','barrage'].includes(m.kind) || !Array.isArray(m.at) || m.at.length !== 3 || !m.at.every((x: unknown) => n(x,-2000,2000)) || !n(m.yaw,-10000,10000) || !n(m.left,0,10))) return null;
   }
-  if(!['b3','b10','b20'].every(id=>bossIds.has(id))||(v.chapter>=3&&!bossIds.has('b30'))||(v.chapter===4&&!bossIds.has('b300'))||(v.frostCleared===true&&!bossIds.has('b300'))||(v.finalCleared===true&&!bossIds.has('b30')))return null;
+  if(!['b3','b10','b20'].every(id=>bossIds.has(id))||(v.chapter>=3&&!bossIds.has('b30'))||(v.chapter>=4&&!bossIds.has('b300'))||(v.emberCleared===true&&!bossIds.has('b500'))||(v.skyCleared===true&&!bossIds.has('b750'))||(v.frostCleared===true&&!bossIds.has('b300'))||(v.finalCleared===true&&!bossIds.has('b30')))return null;
   return v as WorldState;
 }
 export function eventOf(v: unknown, authority: boolean): CombatEvent | null {
   if (!record(v) || typeof v.target !== 'string' || v.target.length > 64) return null;
+  if(v.kind==='heal-cast'&&v.target==='world'&&['mend-shell','holy-tide'].includes(v.ability))return {kind:'heal-cast',target:'world',ability:v.ability};
   if (!authority) {
+    if(v.kind==='dungeon-return'&&v.target==='world'&&typeof v.run==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.run))return {kind:'dungeon-return',target:'world',run:v.run};
     if(v.kind==='village'&&v.target==='world'&&['hide','tag','stop'].includes(v.village))return {kind:'village',target:'world',village:v.village};
     if(v.kind==='boat'&&v.target==='world'&&record(v.boat)&&['board','leave','drive','call'].includes(v.boat.action)&&Number.isInteger(v.boat.throttle)&&n(v.boat.throttle,-1,1)&&Number.isInteger(v.boat.steer)&&n(v.boat.steer,-1,1))return {kind:'boat',target:'world',boat:{action:v.boat.action,throttle:v.boat.throttle,steer:v.boat.steer}};
     if(v.kind==='party'&&Number.isInteger(v.party)&&n(v.party,0,4))return {kind:'party',target:'world',party:v.party};
     if(v.kind==='duel'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.target)&&n(v.amount,1,Number.MAX_SAFE_INTEGER))return {kind:'duel',target:v.target,amount:v.amount,crit:v.crit===true};
-    if (v.kind === 'chapter' && v.target === 'world' && [1,2,3,4].includes(v.chapter)) return {kind:'chapter',target:'world',chapter:v.chapter};
+    if (v.kind === 'chapter' && v.target === 'world' && [1,2,3,4,5,6].includes(v.chapter)) return {kind:'chapter',target:'world',chapter:v.chapter};
     if (v.kind === 'environment' && record(v.environment) && ([0,1,2,3].includes(v.environment.mood) || typeof v.environment.beacon === 'boolean')) return {kind:'environment',target:'world',environment:{...([0,1,2,3].includes(v.environment.mood)?{mood:v.environment.mood}:{}),...(typeof v.environment.beacon==='boolean'?{beacon:v.environment.beacon}:{})}};
     const f=v.condition;
     if (v.kind === 'condition' && key(v.target) && record(f) && n(f.stun,0,2) && n(f.slow,0,4) && n(f.slowPct,0,0.5) && n(f.pushX,-30,30) && n(f.pushZ,-30,30) && n(f.pushTime,0,0.5)) return { kind:'condition',target:v.target,condition:f as CombatEvent['condition'] };
-    if (v.kind === 'challenge' && ['b3','b10','b20','b30','b300'].includes(v.target)) return { kind: 'challenge', target: v.target };
+    if (v.kind === 'challenge' && ['b3','b10','b20','b30','b300','b500','b750'].includes(v.target)) return { kind: 'challenge', target: v.target };
     if (v.kind === 'attack' && key(v.target) && n(v.amount,1,Number.MAX_SAFE_INTEGER)) return { kind: 'attack', target: v.target, amount: v.amount, crit: v.crit === true, rage: n(v.rage,0,100) ? v.rage : 0 };
     return null;
   }
+  if(v.kind==='heal'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.target)&&typeof v.source==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.source)&&n(v.amount,1,Number.MAX_SAFE_INTEGER))return {kind:'heal',target:v.target,source:v.source,amount:v.amount};
   if (v.kind === 'hit' && n(v.amount,1,Number.MAX_SAFE_INTEGER)) return { kind: 'hit', target: v.target, source: key(v.source) ? v.source : undefined, amount: v.amount, crit: v.crit === true };
   if (v.kind === 'death' && key(v.target) && n(v.serial,1,1000000)) return { kind: 'death', target: v.target, serial: v.serial };
   if (v.kind === 'animation' && key(v.target) && typeof v.action === 'string' && /^[a-z_]{1,40}$/.test(v.action)) return { kind: 'animation', target: v.target, action: v.action };

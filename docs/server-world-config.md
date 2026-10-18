@@ -2,6 +2,8 @@
 
 `server/world/startup.ts`는 환경변수를 읽거나 HTTP listener를 열지 않는다. Root main이 `WORLD_ENABLED=1`일 때 필수 `WORLD_CONFIG_JSON`을 JSON으로 파싱해 전달한다. 설정 누락, 알 수 없는 필드, 잘못된 값, 명시적 `null`, 지원하지 않는 정책은 시작 실패로 처리한다. `WORLD_ENABLED`를 생략한 상태에서 legacy 서비스의 동작은 바꾸지 않는다.
 
+세계 시작만 실패한 경우 main은 비밀값을 포함하지 않는 검증 경로, ownership 상태 또는 알려진 오류 code를 로그에 남기고 legacy 계정/방을 계속 띄운다. `/world`와 world 관련 API는503이며 정상 DB의 `/healthz`는200이다. 세계 기동 확인에는 별도로 `/world`의426 및 catalog의200을 검사해야 한다. 일반 오류의 임의 message, JSON 원문과 credential은 로그에 넣지 않는다. 새 필수 설정 필드는 추가하지 않는다.
+
 ```ts
 const runtime = await startConfiguredWorld({
   pool, admission, // accountHandler와 같은 WorldTicketRegistry 인스턴스

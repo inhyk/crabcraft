@@ -1,6 +1,7 @@
 // Real Area lifetime contributors + actual PostgreSQL, not a synthetic contributor array alone.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import pg from 'pg';
@@ -11,20 +12,64 @@ import { acquireHostOwnership } from './ownership.ts';
 import { PersistenceCoordinator } from './persistence-coordinator.ts';
 import { createCoreCharacterCodec, prepareRestore } from '../../src/sim/persistence.ts';
 import { createWorld1Definition } from '../../src/sim/areas/world1.ts';
-import { worldArea, flatWorld, addActor } from '../../tests/core/worldHarness.mjs';
+import { worldArea, flatWorld, addActor, tick } from '../../tests/core/worldHarness.mjs';
+import { xpForLevel } from '../../src/sim/data/progression.ts';
 
 const identity = { schema: 'world-identity-v1', classId: 'warrior', archetype: 'human', appearance: { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'OutcomeFixture' } };
 const codec = createCoreCharacterCodec({ identities: [{ classId: 'warrior', archetype: 'human' }], freshLocation: { x: 0, y: 0, z: 0, yaw: 0 } });
 // Explicit test resource budgets, NOT an eligibility cap or approved deployment setting.
 const resources = { maxEntries: 1024, maxPayloadBytes: 4 * 1024 * 1024, timeoutMs: 5000 };
 const preserve = { version: 'test-explicit-preserve', restore: checkpoint => checkpoint };
+
+for (const [profile, world, level, rewardXp, rewardCoins] of [['eclipse', 'w2', 20, 5000, 1200], ['dawn', 'w3', 100, 100000, 5000]]) {
+  test(`actual ${profile} blessing grant and checkpoint survive PostgreSQL save and fresh Area restore`, async () => {
+    const record = await character(), source = worldArea(`durable-blessing-${profile}`, world), destination = worldArea(`restored-blessing-${profile}`, world);
+    try {
+      // Trusted level/story fixture isolates new canonical boss rewards and persistence composition.
+      const actor = addActor(source, record.characterId, 'warrior'); actor.p.gainXp(xpForLevel(level));
+      Object.assign(actor.p.state.flags, { rustCleared: true, abyssCleared: true, trueCleared: true });
+      const boss = source.services.bossByProfile(profile); boss.wake(); tick(source, 74);
+      const beforeXp = actor.p.state.xp; source.services.combat.damage(actor.ref, boss.unit, 1e8);
+      assert.equal(actor.p.state.xp - beforeXp, rewardXp); assert.equal(actor.p.state.coins, rewardCoins);
+      const pending = source.pendingGrants(); assert.equal(pending.length, 1);
+      assert(pending[0].grant.objectives.some(o => o.kind === 'boss-xp-blessing'));
+      const grant = pending[0].grant, payload = codec.grantToJson(grant);
+      await store.recordVictimOutcome([{ accountId: record.accountId, characterId: record.characterId, id: grant.id, payload }], resources);
+      const capture = source.capturePlayerCheckpoint(actor.ref);
+      assert.equal(capture.checkpoint.survival.cooldowns['boss-xp-blessing'].endRemaining, 600);
+      const saved = await store.saveCheckpoint(record.accountId, record.characterId, record.revision, capture.checkpoint, capture.appliedGrantIds);
+      source.markCheckpointDurable(capture.captureId, saved.revision, capture.appliedGrantIds); source.acknowledgeGrant(grant.id);
+      const recovered = await store.loadForRecovery(record.accountId, record.characterId, [grant.id]);
+      assert.equal(recovered.grants[0].appliedRevision, saved.revision);
+      const checkpoint = codec.toCore(recovered.character.checkpoint), admission = destination.reserveAdmission(record.characterId, 'spawn', 0);
+      const staged = destination.stageRestoredArrival(admission, checkpoint, prepareRestore(checkpoint, 0, preserve)), ref = destination.activateRestoredArrival(staged.token);
+      const restored = destination.services.player(ref); assert.equal(restored.state.xp, saved.checkpoint.progress.xp);
+      const restoredXp = restored.state.xp; restored.gainXp(100); assert.equal(restored.state.xp - restoredXp, 150);
+      assert.equal((await store.pendingGrants(record.accountId, record.characterId)).length, 0);
+    } finally { for (const pending of source.pendingGrants()) source.acknowledgeGrant(pending.grant.id); source.dispose(); destination.dispose(); }
+  });
+}
+// Pool.end() can resolve before its clients emit end; PG must remain alive through both boundaries.
+const poolState = new WeakMap();
+function testPool(connectionString) {
+  const result = new pg.Pool({ connectionString }), state = { clients: new Set(), closing: null };
+  poolState.set(result, state);
+  result.on('connect', client => { state.clients.add(client); client.once('end', () => state.clients.delete(client)); });
+  return result;
+}
+function closePool(result) {
+  if (!result) return Promise.resolve();
+  const state = poolState.get(result);
+  if (!state.closing) { const disconnected = [...state.clients].map(client => once(client, 'end')); state.closing = Promise.all([result.end(), ...disconnected]); }
+  return state.closing;
+}
 const storeError = code => e => e instanceof CharacterStoreError && e.code === code;
 let cluster, pool, store, accountSequence = 1;
 before(async () => {
-  try { cluster = await startPostgres(); pool = new pg.Pool({ connectionString: cluster.url }); await migrate(pool); store = new CharacterStore(pool, codec); }
-  catch (e) { await pool?.end(); cluster?.stop(); throw e; }
+  try { cluster = await startPostgres(); pool = testPool(cluster.url); await migrate(pool); store = new CharacterStore(pool, codec); }
+  catch (e) { await closePool(pool); cluster?.stop(); throw e; }
 });
-after(async () => { try { await pool?.end(); } finally { cluster?.stop(); } });
+after(async () => { try { await closePool(pool); } finally { cluster?.stop(); } });
 async function character() {
   const accountId = 'g' + (accountSequence++).toString(16).padStart(23, '0');
   await pool.query("INSERT INTO accounts(username,save,updated,created) VALUES($1,'{}',1,1)", [accountId]);
@@ -95,7 +140,7 @@ test('101 lifetime contributors with at most100 concurrent real Area owners all 
     const capture = destination.capturePlayerCheckpoint(ref), saved = await store.saveCheckpoint(record.accountId, record.characterId, record.revision, capture.checkpoint, capture.appliedGrantIds);
     destination.markCheckpointDurable(capture.captureId, saved.revision, capture.appliedGrantIds);
     // New store/pool after a simulated lost ACK reads101 complete receipts; no XP/coin reapplication.
-    const reconnectPool = new pg.Pool({ connectionString: cluster.url });
+    const reconnectPool = testPool(cluster.url);
     try {
       const reconnect = new CharacterStore(reconnectPool, codec);
       for (const e of entries) {
@@ -104,7 +149,7 @@ test('101 lifetime contributors with at most100 concurrent real Area owners all 
         assert.deepEqual(await reconnect.pendingGrants(e.accountId, e.characterId), []);
       }
       assert.equal((await reconnect.recordVictimOutcome(entries, resources)).length, 101);
-    } finally { await reconnectPool.end(); }
+    } finally { await closePool(reconnectPool); }
     assert.equal((await pool.query('SELECT count(*)::int n FROM world_character_grant_receipts WHERE grant_id=ANY($1::text[])', [entries.map(e => e.id)])).rows[0].n, 101);
     for (const p of pending) source.acknowledgeGrant(p.grant.id);
     source.releaseDurabilityBarrier(barrier); barrier = undefined; assert.equal(source.pendingGrants().length, 0);
@@ -172,7 +217,7 @@ test('actual guard loss during an actual blocked PG write suppresses publication
 });
 
 test('migration005 preserves existing account/save and all004 character/grant/receipt rows and reruns cleanly', async () => {
-  await pool.query('CREATE DATABASE victim_pre005'); const url = new URL(cluster.url); url.pathname = '/victim_pre005'; const legacy = new pg.Pool({ connectionString: url.href });
+  await pool.query('CREATE DATABASE victim_pre005'); const url = new URL(cluster.url); url.pathname = '/victim_pre005'; const legacy = testPool(url.href);
   try {
     await legacy.query('CREATE TABLE schema_migrations(version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
     for (const version of ['001_accounts', '002_google_only', '003_chat_reports', '004_world_characters']) {
@@ -185,11 +230,11 @@ test('migration005 preserves existing account/save and all004 character/grant/re
     const tables = ['accounts', 'world_characters', 'world_character_grants', 'world_character_grant_receipts'], before = await Promise.all(tables.map(t => legacy.query(`SELECT * FROM ${t}`)));
     assert.deepEqual(await migrate(legacy), ['005_world_victim_outcomes', '006_world_chat', '007_world_paged_ledger']); assert.deepEqual(await migrate(legacy), []);
     const after = await Promise.all(tables.map(t => legacy.query(`SELECT * FROM ${t}`))); assert.deepEqual(after.map(r => r.rows), before.map(r => r.rows));
-  } finally { await legacy.end(); await pool.query('DROP DATABASE victim_pre005'); }
+  } finally { await closePool(legacy); await pool.query('DROP DATABASE victim_pre005'); }
 });
 
 test('independent pools serialize equal whole outcomes and concurrent legacy writes never seal a partial set', async () => {
-  const a = await character(), b = await character(), secondPool = new pg.Pool({ connectionString: cluster.url });
+  const a = await character(), b = await character(), secondPool = testPool(cluster.url);
   try {
     const second = new CharacterStore(secondPool, codec), entries = [entry(a, 'outcome-race'), entry(b, 'outcome-race')];
     const [forward, reverse] = await Promise.all([store.recordVictimOutcome(entries, resources), second.recordVictimOutcome([...entries].reverse(), resources)]);
@@ -199,5 +244,5 @@ test('independent pools serialize equal whole outcomes and concurrent legacy wri
     assert.equal(legacy.status, 'fulfilled');
     if (whole.status === 'fulfilled') assert.deepEqual(await count(keyOf(mixed[0])), { seals: 1, grants: 2 });
     else { assert.equal(whole.reason.code, 'outcome_conflict'); assert.deepEqual(await count(keyOf(mixed[0])), { seals: 0, grants: 1 }); }
-  } finally { await secondPool.end(); }
+  } finally { await closePool(secondPool); }
 });

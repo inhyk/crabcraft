@@ -30,6 +30,8 @@ export class AbilityRange {
     const g=this.game,ab=this.ability;
     this.root.visible=!!ab&&!g.controlsLocked;
     if(!this.root.visible||!ab)return;
+    const healing=ab.id==='mend-shell'||ab.id==='holy-tide';
+    this.lineMaterial.color.set(healing?'#9affbd':'#9af5ff');this.fillMaterial.color.set(healing?'#4cf49c':'#36d9ef');
     const u=g.player.unit,r=isMeleeAbility(ab)?u.radius+1.8:ab.range;
     this.root.userData.radius=r;this.root.userData.ability=ab.id;
     if(r<=0){this.root.visible=false;return;}

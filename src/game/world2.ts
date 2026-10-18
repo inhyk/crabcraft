@@ -1,5 +1,9 @@
+import {FrontierIsland} from './frontierIsland';
+import {FRONTIER_POINTS} from './frontierQuests';
+import {FRONTIER_BOUNDS} from './realmLayout';
 import * as THREE from 'three';
 import {DawnIsland} from './world3';
+import {SNOW_POINTS} from './snowQuests';
 import {DawnRequests} from './dawnRequests';
 import {SnowIsland} from './world4';
 import {t} from '../i18n';
@@ -34,10 +38,16 @@ export class HiddenWorld {
   readonly root = new THREE.Group();
   private readonly sun=new StarSun();
   readonly trails=STAR_TRAILS;
-  chapter: 1 | 2 | 3 | 4 = 1;
+  chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();
   readonly fourth=new SnowIsland();
+  readonly fifth=new FrontierIsland(5);
+  readonly sixth=new FrontierIsland(6);
+  readonly emberRequests:DawnRequests;
+  readonly skyRequests:DawnRequests;
+  private emberGate:StarPortal;
   readonly dawnRequests:DawnRequests;
+  readonly snowRequests:DawnRequests;
   private snowGate:StarPortal;
   private thirdGate:StarPortal;
   private echoAt=0;
@@ -61,13 +71,13 @@ export class HiddenWorld {
   /** Arrival (including respawn) must not immediately trigger the return gateway. */
   resetPortalArrival(){this.travelArmed=false;this.travelAt=this.game.time+3;}
   private baseNames:string[]=[];
-  get portalPosition(){if(this.chapter===4)return this.fourth.spawn;if(this.chapter===3)return this.game.player.unit.pos.distanceTo(this.snowGate.root.position)<7?this.snowGate.root.position:this.third.spawn;if(this.chapter===2&&this.game.player.unit.pos.distanceTo(this.thirdGate.root.position)<6)return this.thirdGate.root.position;return this.chapter===2?this.spawn:this.shorePortal.root.position;}
-  portalLabel(){return this.chapter===4?t('월드 3으로 돌아가기','Return to World III'):this.chapter===3&&this.portalPosition===this.snowGate.root.position?t('월드 4 · 서리빛 설원으로 (100레벨 왕 승리 필요)','World IV · Frostlight (defeat Solarkan first)'):this.chapter===3?t('월드 2로 돌아가기','Return to World II'):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?t('월드 3 · 새벽의 섬으로','World III · Sail to Dawnreach'):this.chapter===2?t('월드 1로 돌아가기','Return to World I'):t('월드 2로 이동','Travel to World II');}
-  canTravel(chapter:1|2|3|4){return chapter===1||this.game.creatorTravel||this.game.multiplayer?.battle.applying||(chapter===4?!!this.game.journey?.finalCleared:chapter===2?!!this.game.journey?.abyssCleared:!!this.game.journey?.abyssCleared&&!!this.game.journey?.trueCleared);}
-  go(chapter:1|2|3|4,authority=true){if(this.game.dungeons?.active)return false;if(!this.canTravel(chapter)){this.game.hud.messages.info(chapter===4?t('100레벨 솔라칸을 이겨야 눈 월드가 열려요.','Defeat level 100 Solarkan to unlock Frostlight.'):chapter===2?t('10레벨 심해의 군주를 이겨야 월드2가 열려요.','Defeat the level 10 Lord of the Deep to unlock World II.'):t('월드2의 20레벨 일식 여왕을 이겨야 월드3가 열려요.','Defeat the level 20 Eclipse Queen to unlock World III.'));return false;}if(chapter===1)this.returnToShore();else if(chapter===4)this.enterSnow(authority);else if(chapter===3)this.enterThird(authority);else this.enter(authority);return true;}
+  get portalPosition(){if(this.chapter===6)return this.sixth.spawn;if(this.chapter===5)return this.game.player.unit.pos.distanceTo(this.fifth.next!.root.position)<7?this.fifth.next!.root.position:this.fifth.spawn;if(this.chapter===4&&this.game.player.unit.pos.distanceTo(this.emberGate.root.position)<7)return this.emberGate.root.position;if(this.chapter===4)return this.fourth.spawn;if(this.chapter===3)return this.game.player.unit.pos.distanceTo(this.snowGate.root.position)<7?this.snowGate.root.position:this.third.spawn;if(this.chapter===2&&this.game.player.unit.pos.distanceTo(this.thirdGate.root.position)<6)return this.thirdGate.root.position;return this.chapter===2?this.spawn:this.shorePortal.root.position;}
+  portalLabel(){if(this.chapter===6)return t('월드 5 · 잿불 군도로 돌아가기','Return to World V · Emberreach');if(this.chapter===5)return this.portalPosition===this.fifth.spawn?t('월드 4 · 설원으로 돌아가기','Return to World IV · Frostlight'):t('월드 6 · 하늘숲으로','Travel to World VI · Skybloom');if(this.chapter===4&&this.portalPosition===this.emberGate.root.position)return t('월드 5 · 잿불 군도로 (보레아스 승리 필요)','World V · Emberreach (defeat Boreas first)');return this.chapter===4?t('월드 3으로 돌아가기','Return to World III'):this.chapter===3&&this.portalPosition===this.snowGate.root.position?t('월드 4 · 서리빛 설원으로 (100레벨 왕 승리 필요)','World IV · Frostlight (defeat Solarkan first)'):this.chapter===3?t('월드 2로 돌아가기','Return to World II'):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?t('월드 3 · 새벽의 섬으로','World III · Sail to Dawnreach'):this.chapter===2?t('월드 1로 돌아가기','Return to World I'):t('월드 2로 이동','Travel to World II');}
+  canTravel(chapter:1|2|3|4|5|6){return chapter===1||this.game.creatorTravel||this.game.multiplayer?.battle.applying||(chapter>=5?!!this.game.journey?.frostCleared:chapter===4?!!this.game.journey?.finalCleared:chapter===2?!!this.game.journey?.abyssCleared:!!this.game.journey?.abyssCleared&&!!this.game.journey?.trueCleared);}
+  go(chapter:1|2|3|4|5|6,authority=true){if(this.game.dungeons?.active)return false;if(!this.canTravel(chapter)){this.game.hud.messages.info(chapter>=5?t('보레아스를 물리치면 새로운 원정 월드가 열려요.','Defeat Boreas to unlock the frontier worlds.'):chapter===4?t('100레벨 솔라칸을 이겨야 눈 월드가 열려요.','Defeat level 100 Solarkan to unlock Frostlight.'):chapter===2?t('10레벨 심해의 군주를 이겨야 월드2가 열려요.','Defeat the level 10 Lord of the Deep to unlock World II.'):t('월드2의 20레벨 일식 여왕을 이겨야 월드3가 열려요.','Defeat the level 20 Eclipse Queen to unlock World III.'));return false;}if(chapter===1)this.returnToShore();else if(chapter===5||chapter===6)this.enterFrontier(chapter,authority);else if(chapter===4)this.enterSnow(authority);else if(chapter===3)this.enterThird(authority);else this.enter(authority);return true;}
   travel(){
     const g=this.game;if(g.controlsLocked||g.player.inCombat||g.encounter.engaged){g.hud.messages.info(t('전투가 끝나면 포탈을 이용할 수 있어요.','You can travel through the portal after combat.'));return;}
-    const chapter=this.chapter===4?3:this.chapter===3?(this.portalPosition===this.snowGate.root.position?4:2):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?3:this.chapter===2?1:2;
+    const chapter=this.chapter===6?5:this.chapter===5?(this.portalPosition===this.fifth.spawn?4:6):this.chapter===4?(this.portalPosition===this.emberGate.root.position?5:3):this.chapter===3?(this.portalPosition===this.snowGate.root.position?4:2):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?3:this.chapter===2?1:2;
     if(!this.canTravel(chapter)){this.go(chapter);return;}
     if(!g.multiplayer?.battle.travel(chapter))this.go(chapter);
   }
@@ -91,7 +101,7 @@ export class HiddenWorld {
 
   async buildSettlement() {
     await this.third.buildSettlement();
-    this.dawnRequests.build();
+    this.dawnRequests.build();this.snowRequests.build();this.emberRequests.build();this.skyRequests.build();
     const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
     // Every World II collider, without meshes: the same registration the server bakes.
     this.collision=layoutStarhaven((x,z)=>this.height(x,z),settlement.natureNames).col;this.root.add(settlement.root);
@@ -125,28 +135,37 @@ export class HiddenWorld {
     }
   }
   objectivePoint(kind:ObjectiveKind) {
+    if(this.chapter>=5)return (this.chapter===5?this.emberRequests:this.skyRequests).point(kind);
     if(this.chapter===3)return this.dawnRequests.point(kind);
+    if(this.chapter===4)return this.snowRequests.point(kind);
     const p=STAR_OBJECTIVES[kind];return p?new THREE.Vector3(p[0],this.height(...p),p[1]):null;
   }
   interactable() {
+    if(this.chapter>=5)return (this.chapter===5?this.emberRequests:this.skyRequests).interactable();
     if(this.chapter===3)return this.dawnRequests.interactable();
+    if(this.chapter===4)return this.snowRequests.interactable();
     if(this.chapter!==2)return null;
     const active=this.game.quests.active();
     return this.nodes.find(n=>this.game.player.unit.pos.distanceTo(n.position)<3.5&&active.some(id=>QUESTS[id].objectives.some(o=>o.kind===n.kind&&!this.game.quests.objectiveDone(o))))??null;
   }
   collect(kind:ObjectiveKind) {
+    if(this.chapter>=5){(this.chapter===5?this.emberRequests:this.skyRequests).collect(kind);return;}
     if(this.chapter===3){this.dawnRequests.collect(kind);return;}
+    if(this.chapter===4){this.snowRequests.collect(kind);return;}
     this.game.quests.bump(kind);this.game.audio.sfx('sfx-quest-accept');this.game.vfx.mendGlow(this.game.player.unit);this.game.journey?.save();
   }
 
 
   constructor(private game: Game) {
     this.dawnRequests=new DawnRequests(game,this.third);
+    this.snowRequests=new DawnRequests(game,this.fourth,SNOW_POINTS);
+    this.emberRequests=new DawnRequests(game,this.fifth,FRONTIER_POINTS[5]);this.skyRequests=new DawnRequests(game,this.sixth,FRONTIER_POINTS[6]);
+    this.emberGate=new StarPortal(new THREE.Vector3(14,this.fourth.height(14,84),84),'설원 → 잿불 군도');this.fourth.root.add(this.emberGate.root);
     this.ambience=new StarAmbience(game.audio);
     const w=game.world;
     this.baseRoot=w.root;
     this.originalHeight=w.heightAt.bind(w);this.originalCollision=w.resolveCollision.bind(w);this.originalRay=w.raycastSolid.bind(w);
-    this.root.visible=false;game.scene.add(this.root,this.third.root,this.fourth.root);
+    this.root.visible=false;game.scene.add(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);
     this.snowGate=new StarPortal(new THREE.Vector3(14,this.third.height(14,84),84),'새벽 항구 → 서리빛 설원');this.third.root.add(this.snowGate.root);
     this.sky=new StarSky();this.root.add(this.sky.root);
     const land=new THREE.PlaneGeometry(280,320,140,160);land.rotateX(-Math.PI/2);
@@ -195,12 +214,16 @@ export class HiddenWorld {
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
   }
   refreshLanguage(){
+    if(this.chapter>=5){const fire=this.chapter===5;this.game.npcs.forEach(n=>{n.unit.name=n.def.name;n.unit.title=fire?t('잿불 원정대 주민','Emberreach Expedition Resident'):t('하늘숲 원정대 주민','Skybloom Expedition Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=fire?(e.kind==='scrapling'?t('잿불 껍질 약탈자','Ember-shell Raider'):t('흑요석 유적 파수병','Obsidian Sentinel')):(e.kind==='scrapling'?t('가시덩굴 약탈자','Thornvine Raider'):t('하늘숲 유적 수호자','Skybloom Guardian'));return;}
+
     if(this.chapter===4){this.game.frostBoss.freed.name=t('미라 · 사라진 친구','Mira · The Missing Friend');this.game.npcs.forEach(n=>{n.unit.name=n.def.name;n.unit.title=t('눈꽃 마을의 주민','Snowfall Village Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('서리 껍질 약탈자','Frost-shell Raider'):t('빙하 성채 파수병','Glacial Sentinel');return;}
     if(this.chapter===3){this.game.dawnBoss.freed.name=t('새벽 성채의 수호자','Dawnkeeper');const names=[['새벽 항구의 로안 선장','Captain Roan'],['새벽의 사제 셀레네','Selene of Dawn'],['의무관 산호','Medic Coral'],['성문 수비대장 바론','Gatewarden Baron'],['여관주인 메리','Innkeeper Merry'],['항해사 루멘','Navigator Lumen'],['대장장이 플린','Smith Flynn']];this.game.npcs.forEach((n,i)=>{n.unit.name=t(names[i][0],names[i][1]);n.unit.title=t('새벽 항구의 주민','Dawnharbor Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('잿빛 해안 약탈자','Ash Coast Raider'):t('황혼 성채 파수병','Twilight Sentinel');return;}
     if(this.chapter!==2)return;
     for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');
   }
   regionAt(x:number,z:number){
+    if(this.chapter===5)return z<-48?'Ember Sanctuary':Math.abs(x)>40||z<24?'Obsidian Wilds':'Emberharbor';
+    if(this.chapter===6)return z<-48?'Worldtree Sanctuary':Math.abs(x)>40||z<24?'Whisperleaf Woods':'Skyharbor';
     if(this.chapter===4)return z<-48?'The Frozen Throne':z<20?'Aurora Snowfields':Math.abs(x)>42?'Frostpine Woods':'Snowfall Village';
     if(this.chapter===3)return z<-45?'Twilight Citadel':z<12?'The Dawn Ascent':x>52&&z>52?'Dawnwatch Lighthouse':x< -45&&z>25?'Seabreeze Gardens':Math.abs(x)>45?'Ashen Palm Coast':'Dawnharbor';
     if(Math.hypot(x,z+75)<24)return 'The Star Throne';
@@ -219,7 +242,7 @@ export class HiddenWorld {
     if(this.chapter===2&&this.rendered)return;
     if(this.chapter>=3)this.returnToShore();
     const g=this.game,w=g.world;
-    g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;
+    g.emberBoss.unit.hidden=g.emberBoss.freed.hidden=g.skyBoss.unit.hidden=g.skyBoss.freed.hidden=true;g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;
     g.ending.cancel();
     g.hud.dialogue.close();
     g.hud.messages.closeDiscovery();
@@ -276,7 +299,7 @@ export class HiddenWorld {
     if(this.chapter!==1)this.returnToShore();
     // Capture the original homes/POIs once using the same restoration path as World II.
     if(!this.baseHomes.length){this.enter(authority);this.returnToShore();}
-    g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;
+    g.emberBoss.unit.hidden=g.emberBoss.freed.hidden=g.skyBoss.unit.hidden=g.skyBoss.freed.hidden=true;g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;
     g.ending.cancel();g.hud.dialogue.close();g.hud.messages.closeDiscovery();
     this.chapter=3;this.rendered=true;this.baseRoot.visible=false;this.root.visible=false;this.third.root.visible=true;this.resetPortalArrival();
     const w=g.world,third=this.third;w.heightAt=(x,z)=>third.height(x,z);
@@ -324,19 +347,42 @@ export class HiddenWorld {
     g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-145,maxX:145,minZ:-165,maxZ:165,topY:100},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));g.journey?.save();
   }
 
+  private enterFrontier(chapter:5|6,authority=true){
+    if(this.chapter===chapter&&this.rendered)return;
+    const g=this.game;if(this.chapter!==1)this.returnToShore();
+    if(!this.baseHomes.length){this.enter(authority);this.returnToShore();}
+    g.ending.cancel();g.hud.dialogue.close();g.hud.messages.closeDiscovery();
+    const island=chapter===5?this.fifth:this.sixth,w=g.world;this.chapter=chapter;this.rendered=true;
+    for(const root of [this.baseRoot,this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root])root.visible=root===island.root;
+    this.resetPortalArrival();w.heightAt=(x,z)=>island.height(x,z);w.resolveCollision=(x,z,r,out)=>resolveOnIsland(island.collision,FRONTIER_BOUNDS,[],x,z,r,out);w.raycastSolid=(a,b)=>island.collision.raycast(a,b);
+    w.pois.spawn.position.set(0,island.height(0,82),82);w.pois.spawn.yaw=Math.PI;
+    for(const[id,x,z]of [['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-50,26],['shore',61,22],['wreck',44,-6],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-72]]as const)w.pois[id].position.set(x,island.height(x,z),z);
+    g.npcs.forEach((n,i)=>{const[x,z]=island.town[i];n.poi.position.set(x,island.height(x,z),z);n.unit.hidden=false;n.unit.teleport(w,x,z,Math.PI);});
+    const walks=island.town.map(([x,z])=>new THREE.Vector3(x,island.height(x,z),z));g.townsfolk.forEach((f,i)=>{const p=walks[i%walks.length];f.unit.hidden=false;f.unit.teleport(w,p.x,p.z+2);f.relocate(walks,1.5);});
+    this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,island.height(0,26),26),new THREE.Vector3(0,island.height(0,-24),-24),new THREE.Vector3(0,island.height(0,-72),-72)],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
+    for(const b of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss,g.emberBoss,g.skyBoss])b.unit.hidden=b.freed.hidden=true;
+    const frontierBoss=chapter===5?g.emberBoss:g.skyBoss;frontierBoss.unit.hidden=['dormant','dead'].includes(frontierBoss.state);
+    g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const slot=e.islandSlot,index=slot===null?i:slot,x=(index%2?1:-1)*(44+index%4*7),z=20-Math.floor(index/2)*12;e.home.set(x,island.height(x,z),z);if(authority)e.respawnAt(x,z);e.refreshAppearance();});
+    g.enemies.filter(e=>e.isAdd).forEach(e=>e.despawn());g.quests.setChapter(chapter);g.hud.hints.setChapter(chapter);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
+    g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
+    g.hud.messages.banner(()=>chapter===5?t('WORLD V · 잿불 군도','WORLD V · Emberreach'):t('WORLD VI · 하늘숲','WORLD VI · Skybloom'),()=>t('새로운 마을 · 주민 퀘스트 12개 · 끝없이 이어지는 원정','A new village · Twelve villager quests · The expedition continues'),'zone');
+    g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-145,maxX:145,minZ:-165,maxZ:165,topY:160},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));g.journey?.save();
+  }
+
   returnToShore() {
     if(this.chapter===1)return;
     this.game.ending.cancel();
     this.game.hud.dialogue.close();
     this.game.hud.messages.closeDiscovery();
-    this.showEpilogue();this.third.root.visible=this.fourth.root.visible=false;this.chapter=1;this.game.hud.hints.setChapter(1);this.game.quests.setChapter(1);
+    this.showEpilogue();this.third.root.visible=this.fourth.root.visible=this.fifth.root.visible=this.sixth.root.visible=false;this.chapter=1;this.game.hud.hints.setChapter(1);this.game.quests.setChapter(1);
     // World II has its own lighting. Restore the untouched shore atmosphere and fog.
     this.game.world.setMood(this.game.world.getEnvironment().mood,true);
     const g=this.game;
+    g.emberBoss.unit.hidden=g.emberBoss.freed.hidden=g.skyBoss.unit.hidden=g.skyBoss.freed.hidden=true;
     g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&!e.isEcho&&!e.isIslandOnly&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);e.refreshAppearance();if(e.isEcho||e.isIslandOnly)e.despawn();});
     for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}
     this.resetPortalArrival();
-    g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;g.worldBoss.unit.hidden=true;g.dawnBoss.unit.hidden=g.dawnBoss.freed.hidden=true;
+    g.emberBoss.unit.hidden=g.emberBoss.freed.hidden=g.skyBoss.unit.hidden=g.skyBoss.freed.hidden=true;g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;g.worldBoss.unit.hidden=true;g.dawnBoss.unit.hidden=g.dawnBoss.freed.hidden=true;
     for(const b of [g.boss,g.finalBoss])b.unit.hidden=b.state==='dormant'||b.state==='dead';
     for(const u of [...g.npcs.map(n=>n.unit),...g.townsfolk.map(t=>t.unit)])u.hidden=false;
     g.player.respawn();g.player.unit.teleport(g.world,this.shorePortal.root.position.x,this.shorePortal.root.position.z+5,Math.PI);g.follow.cut();
@@ -349,7 +395,7 @@ export class HiddenWorld {
     if(this.chapter>=2&&!this.rendered)this.go(this.chapter,authority);
   }
   showEpilogue() {
-    this.ambience.stop();this.third.root.visible=this.fourth.root.visible=false;
+    this.ambience.stop();this.third.root.visible=this.fourth.root.visible=this.fifth.root.visible=this.sixth.root.visible=false;
     if(!this.rendered)return;this.rendered=false;this.root.visible=false;this.baseRoot.visible=true;
     const w=this.game.world;w.heightAt=this.originalHeight;w.resolveCollision=this.originalCollision;w.raycastSolid=this.originalRay;
     for(const [id,old] of this.basePois){const poi=w.pois[id as keyof typeof w.pois];poi.position.copy(old.position);poi.yaw=old.yaw;}
@@ -357,10 +403,11 @@ export class HiddenWorld {
     const town=w.spawns.find(s=>s.id==='townsfolk');if(town)for(const t of this.game.townsfolk)t.relocate(town.points,town.radius);
   }
   /** Static world/camera presentation for a committed server world; never moves an actor. */
-  observeChapter(chapter:1|2|3|4):void {
+  observeChapter(chapter:1|2|3|4|5|6):void {
+    if(chapter===5||chapter===6)throw new Error('This server does not host that world');
     const g=this.game,w=g.world;if(this.chapter===chapter)return;
     if(!this.basePois.size)for(const [id,poi]of Object.entries(w.pois))this.basePois.set(id,{position:poi.position.clone(),yaw:poi.yaw});
-    this.chapter=chapter;this.rendered=chapter!==1;this.baseRoot.visible=chapter===1;this.root.visible=chapter===2;this.third.root.visible=chapter===3;this.fourth.root.visible=chapter===4;
+    this.chapter=chapter;this.rendered=chapter!==1;this.baseRoot.visible=chapter===1;this.root.visible=chapter===2;this.third.root.visible=chapter===3;this.fourth.root.visible=chapter===4;this.fifth.root.visible=false;this.sixth.root.visible=false;
     if(chapter===1){w.heightAt=this.originalHeight;w.resolveCollision=this.originalCollision;w.raycastSolid=this.originalRay;for(const[id,old]of this.basePois){const poi=w.pois[id as keyof typeof w.pois];poi.position.copy(old.position);poi.yaw=old.yaw;}this.ambience.stop();}
     else {
       const island=chapter===3?this.third:chapter===4?this.fourth:null;w.heightAt=island?(x,z)=>island.height(x,z):(x,z)=>this.height(x,z);
@@ -376,8 +423,9 @@ export class HiddenWorld {
   }
   update(dt:number,time:number,observation?:{flags:Readonly<Record<string,boolean>>}) {
     const flags=observation?.flags??this.game.journey;
-    this.snowGate.update(time);
-    if(this.chapter===4)this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);
+    this.snowGate.update(time);this.emberGate.update(time);
+    if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
+    if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);this.snowRequests.update(time,!!observation);}
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
     this.thirdGate.root.visible=!!flags?.trueCleared||this.game.creatorTravel;
     if(this.chapter===3){this.third.update(time,!!flags?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);this.dawnRequests.update(time,!!observation);}
@@ -387,6 +435,7 @@ export class HiddenWorld {
       if(this.travelArmed&&distance<1.7&&this.game.time>this.travelAt){this.travelArmed=false;this.travelAt=this.game.time+3;this.travel();}
     }
     if(!this.rendered)return;
+    if(this.chapter>=5){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set(this.chapter===5?'#a07b70':'#b6dcce');fog.density=.0023;}return;}
     if(this.chapter===4){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#96b6d3');fog.density=.0035;}return;}
     if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#a4b5c4');fog.density=.0025;}return;}
     const echo=this.game.enemies.find(e=>e.isEcho);
@@ -437,9 +486,9 @@ export class HiddenWorld {
   }
   dispose(){
     this.ambience.dispose();
-    this.showEpilogue();this.game.scene.remove(this.root,this.third.root,this.fourth.root);this.baseRoot.remove(this.shorePortal.root);
+    this.showEpilogue();this.game.scene.remove(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
-    for(const root of [this.root,this.shorePortal.root,this.third.root,this.fourth.root])root.traverse(o=>{
+    for(const root of [this.root,this.shorePortal.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root])root.traverse(o=>{
       if(o instanceof THREE.DirectionalLight||o instanceof THREE.PointLight||o instanceof THREE.SpotLight)o.shadow.dispose();
       if(o instanceof THREE.Mesh||o instanceof THREE.Points){
         // BatchedMesh owns matrix/indirection textures as well as its private geometry.

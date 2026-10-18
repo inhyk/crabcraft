@@ -158,7 +158,7 @@ export class Minimap {
     // POIs
     c.font = `600 ${10 * d}px Georgia, serif`;
     c.textAlign = 'center';
-    const icons:ReturnType<typeof shorePoiIcons>=g.world2?.chapter===3?{forge:{label:t('대장간','Forge'),color:'#ffb36b'},tavern:{label:t('항구 광장','Harbor Square'),color:'#ffc995'},shore:{label:t('야자 해안','Palm Coast'),color:'#90e6d4'},wreck:{label:t('파수병 주둔지','Sentinel Camp'),color:'#e4a181'},bossArena:{label:t('황혼 성채','Twilight Citadel'),color:'#ffd58a'}}:g.world2?.chapter===2?{
+    const icons:ReturnType<typeof shorePoiIcons>=g.world2?.chapter>=5?{forge:{label:t('대장간','Forge'),color:'#ffb36b'},chapel:{label:t('치유소','Infirmary'),color:'#b4ffdc'},tavern:{label:t('원정 광장','Expedition Square'),color:'#ffc995'},grove:{label:g.world2.chapter===5?t('흑요석 들판','Obsidian Wilds'):t('속삭임 숲','Whisperleaf Woods'),color:'#94deb1'},bossArena:{label:g.world2.chapter===5?t('잿불 성역 · 이그니스','Ember Sanctuary · Ignis'):t('세계수 성역','Worldtree Sanctuary'),color:'#d3a6ff'}}:g.world2?.chapter===3?{forge:{label:t('대장간','Forge'),color:'#ffb36b'},tavern:{label:t('항구 광장','Harbor Square'),color:'#ffc995'},shore:{label:t('야자 해안','Palm Coast'),color:'#90e6d4'},wreck:{label:t('파수병 주둔지','Sentinel Camp'),color:'#e4a181'},bossArena:{label:t('황혼 성채','Twilight Citadel'),color:'#ffd58a'}}:g.world2?.chapter===2?{
       forge:{label:t('대장간','Forge'),color:'#ffb36b'},chapel:{label:t('성소','Chapel'),color:'#f6e0a1'},tavern:{label:t('주점','Tavern'),color:'#ffc995'},grove:{label:t('연못','Moonpool'),color:'#bbadff'},shore:{label:t('수정 숲','Crystalwood'),color:'#90e6d4'},wreck:{label:t('유적','Ruins'),color:'#a49eda'},bossArena:{label:t('왕좌','Throne'),color:'#d3a6ff'}
     }:shorePoiIcons();
     for (const [id, info] of Object.entries(icons)) {
@@ -195,6 +195,10 @@ export class Minimap {
     // The two-way portal remains visible while quest and party markers change.
     const portal=g.world2.portalPosition,[portalX,portalY]=toScreen(portal.x,portal.z);
     if(Math.hypot(portalX-half,portalY-half)<half-8*d){c.strokeStyle='#c7b1ff';c.lineWidth=2*d;c.beginPath();c.ellipse(portalX,portalY,4*d,6*d,0,0,Math.PI*2);c.stroke();}
+    if(g.world2.chapter===4||g.world2.chapter===5){
+      const next=g.world2.chapter===4?{x:14,z:84}:{x:0,z:-72},[x,y]=toScreen(next.x,next.z);
+      if(Math.hypot(x-half,y-half)<half-22*d){c.strokeStyle='#a6f5e1';c.fillStyle='#c6ffef';c.lineWidth=2*d;c.beginPath();c.ellipse(x,y,5*d,7*d,0,0,Math.PI*2);c.stroke();const label=g.world2.chapter===4?t('월드 5 포탈','World V Portal'):t('월드 6 포탈','World VI Portal');c.strokeText(label,x,y-11*d);c.fillText(label,x,y-11*d);}
+    }
     // Units
     for (const u of g.units) {
       if ((g.server?.concealMap(u)??g.villageGames?.concealMap(u)) || u === g.player.unit || u.hidden || !u.alive) continue;
