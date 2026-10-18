@@ -208,3 +208,17 @@ test('clearing on area/ownership change removes old actor edges and held state',
     assert.deepEqual(accumulator.next().commands, []);
   } finally { keys.close(); }
 });
+
+test('reset clears same-frame keyboard and button edges before ownership/focus sampling',()=>{
+ const k=keyboard();try{k.key('keydown','Space');k.pointer('pointerdown',0);k.input.reset();assert.equal(k.input.wasPressed('Space'),false);assert.equal(k.input.wasButtonPressed(0),false);assert.equal(k.input.isDown('Space'),false);const q=new InputAccumulator();captureEdges(gameFor(k.input),q);assert.deepEqual(q.next().commands,[]);}finally{k.close();}
+});
+
+test('server Unit observation reads live immutable snapshots and rejects every numeric authority entry point',async()=>{
+ const {build}=await import('esbuild');const bundled=await build({entryPoints:[new URL('../src/game/unit.ts',import.meta.url).pathname],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'});const {Unit}=await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
+ let renders=0,actions=0;const rig={root:new THREE.Group(),update(){renders++;}},motion={update(){actions++;}};
+ let state={ref:{area:'world',id:3,life:1},x:1,y:2,z:3,kind:'player',reaction:'player',archetype:'human',hp:100,maxHp:100,level:1,yaw:0,radius:1,height:2,alive:true,hidden:false,targetable:true,invulnerable:false,stunUntil:0,slowUntil:0,slowPct:0,rust:0,rustUntil:0,absorb:0,absorbMax:0,absorbUntil:0,blessingUntil:0,pushX:0,pushZ:0,pushTime:0,lift:0,pose:{appliedQ:[],appliedPosition:[0,0,0],appliedRotation:[0,0,0,1],localVx:3,localVz:4}};
+ const unit=new Unit('observed','remote','player',rig,motion);unit.bindWorldView(()=>state);const pos=unit.pos,clone=pos.clone();state={...state,x:8,hp:75,ref:{...state.ref,life:2}};
+ assert.equal(pos.x,8);assert.equal(unit.hp,75);assert.equal(unit.ref.life,2);assert.equal(unit.moveSpeed,5);assert.equal(clone.x,1);
+ for(const write of [()=>pos.set(0,0,0),()=>unit.hp=0,()=>unit.setYaw(1),()=>unit.act('idle'),()=>unit.moveTo({},0,0,.1),()=>unit.teleport({},0,0),()=>unit.feedLocomotion(.1),()=>unit.updateHit(.1),()=>unit.cancelPendingHit()])assert.throws(write,/readonly|server state/);
+ unit.updateVisual(.1);assert.equal(renders,0);assert.equal(actions,0);assert.equal(state.hp,75);
+});
