@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {readFileSync} from 'node:fs';
 import {actualWorld,catalog as fourCatalog,appearance} from '../../../tests/world-client-fixture.mjs';
 import {worldArea,addActor,intent} from '../../../tests/core/worldHarness.mjs';
 import {createGameplayProtocol,GameplayReceiver,encodeControl,validateControl,projectObservationExtras} from './protocol.ts';
@@ -8,9 +9,17 @@ import {encodeInput,decodeInput} from './intents.ts';
 import {encodeEvents} from './events.ts';
 const catalog={...fourCatalog,archetypes:[...fourCatalog.archetypes,'boss-ember','boss-sky'],flags:[...fourCatalog.flags,'emberCleared','skyCleared'],gates:['gate:w4','gate:w5','gate:w6']};
 const digest=packets=>createHash('sha256').update(Buffer.concat(packets)).digest('hex');
-test('the four-world full snapshot bytes match the exact pre-capability 2aa6a51 fixture',()=>{
- const expected={w1:'5514acfcb49020806147faf19fedfc13428492bd213a246418184297bb452481',w2:'f7b6733da2d161a5f0fe129b22ed27459083a372f1b758b7bae3c678159351e3',w3:'823c711b0ec5ccd699f1a37a83a78c71be953f5a537a50d545f0f58810e0414d',w4:'69b9f3817af3250c6aaac1335ef86ab3c052b8924633b670260ce822d419c87e'};
- for(const world of Object.keys(expected)){const f=actualWorld();try{const o=f.observation(1,{full:true});o.snapshot={...o.snapshot,world};assert.equal(digest(f.codec.encodeObservation(o)),expected[world],world);}finally{f.area.dispose();}}
+// Canonical references were generated independently before comparing A's packets.
+// Provider/data refreshes require a new reference; unknown providers never silently rebaseline.
+const fourWorldReferences=[
+ {head:'2aa6a51184ee56fac1527337ceb06c515f73110d',provider:'shipped-motion-v1-955f765ff4d2d10c448b',poseSha256:'eb2054c606851bc6c35f42ae55bd70e128e508e008ff78ae7c2692ae91cc9a73',expected:{w1:'5514acfcb49020806147faf19fedfc13428492bd213a246418184297bb452481',w2:'f7b6733da2d161a5f0fe129b22ed27459083a372f1b758b7bae3c678159351e3',w3:'823c711b0ec5ccd699f1a37a83a78c71be953f5a537a50d545f0f58810e0414d',w4:'69b9f3817af3250c6aaac1335ef86ab3c052b8924633b670260ce822d419c87e'}},
+ {head:'52a748c628b844cbb1f936944f914e8b17512f1b',provider:'shipped-motion-v1-0843c9ac1ef19c400a9f',poseSha256:'d0326aeaa725c165ffbe34572f40a3622d3446704eb2143df3a849c0728c2c6a',expected:{w1:'3bfdc873a4db5c6a5933cc9cb1d6756237c5d2fb96544b00602a4c5580f67ffb',w2:'64b73fec6966ba8dff511639969f60f5ded1ad199ef7e2e9239e6c9f73ea6f60',w3:'8ba4160e7a696f96ec5f744cb6220321836a0cb244863b455c9da9bcc9e91cad',w4:'0c2c6302013a765152a8b6d83814903f49e6d32899da637aa54b37136dff8247'}},
+];
+test('four-world full snapshot bytes match the independently pinned canonical provider reference',()=>{
+ const reference=fourWorldReferences.find(r=>r.provider===fourCatalog.poseProviderVersion);assert(reference,'Generate an independent canonical reference for this provider before updating golden bytes');
+ assert.equal(createHash('sha256').update(readFileSync(new URL('../../../src/sim/data/pose-data.json',import.meta.url))).digest('hex'),reference.poseSha256,reference.head);
+ assert.equal(createHash('sha256').update(readFileSync(new URL('../../../tests/world-client-fixture.mjs',import.meta.url))).digest('hex'),'0aa40b38e99c13f56d68b7d92dd28770e1475f5c405ba277f188ffe8918a9263','canonical fixture provenance');
+ for(const world of Object.keys(reference.expected)){const f=actualWorld();try{const o=f.observation(1,{full:true});o.snapshot={...o.snapshot,world};assert.equal(digest(f.codec.encodeObservation(o)),reference.expected[world],`${reference.head} ${world}`);}finally{f.area.dispose();}}
 });
 for(const [world,profile,chapter]of [['w5','ember',5],['w6','sky',6]])test(`${world} actual Area full/fragments/delta and boss recovery preserve private six-chapter state`,()=>{
  const area=worldArea(`wire-${world}`,world),hero=addActor(area,'hero'),other=addActor(area,'other'),binding={session:'six-session',area:`wire-${world}`,epoch:1,catalog:catalog.version},codec=createGameplayProtocol(catalog),receiver=new GameplayReceiver(binding,catalog);
