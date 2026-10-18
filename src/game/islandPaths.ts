@@ -48,5 +48,18 @@ export function islandPaths(height:(x:number,z:number)=>number,paths:IslandPath[
  // Main paving owns junctions before any curb is placed across a connecting street.
  for(const {x,z,w,l,yaw} of trimStones)stone(x,z,w,l,yaw,edges);
  for(const [i,pool] of [...pools,edges].entries()){if(!pool.length)continue;const geo=mergeGeometries(pool,false)!;pool.forEach(g=>g.dispose());const mesh=new THREE.Mesh(geo,i===pools.length?edgeMaterial:materials[i]);mesh.name='weathered-bevelled-paving';mesh.receiveShadow=true;root.add(mesh);}
- root.userData.pavers=pools.reduce((n,p)=>n+p.length,0);root.userData.clippedJunctionStones=clipped;return root;
+ root.userData.pavers=pools.reduce((n,p)=>n+p.length,0);root.userData.clippedJunctionStones=clipped;root.userData.covers=(x:number,z:number)=>onIslandPath(paths,x,z);return root;
+}
+
+/** Whether (x,z) is on a path's paving, curbs included. Clearances cut around fountains and boss floors are ignored. */
+export function onIslandPath(paths:readonly IslandPath[],x:number,z:number):boolean{
+ for(const path of paths){
+  const half=path.width/2+(path.trim?.3:0);
+  for(let k=1;k<path.points.length;k++){
+   const [ax,az]=path.points[k-1],[bx,bz]=path.points[k],dx=bx-ax,dz=bz-az,l2=dx*dx+dz*dz;if(l2<1e-6)continue;
+   const t=((x-ax)*dx+(z-az)*dz)/l2;if(t<0||t>1)continue;
+   const ex=ax+dx*t-x,ez=az+dz*t-z;if(ex*ex+ez*ez<=half*half)return true;
+  }
+ }
+ return false;
 }

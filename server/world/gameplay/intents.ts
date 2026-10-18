@@ -1,7 +1,8 @@
 import {REASONS} from '../../chat/safety.ts';
 import type { PlayerCommand, PlayerIntent } from '../../../src/sim/types.ts';
-import { FragmentAssembler, LIMITS, bool, catalogValue, choice, clone, encodeMessage, fail, integer, number, object, reference, sameBinding, text } from './protocol.ts';
-import type { GameplayCatalog, WireBinding, WireHeader } from './protocol.ts';
+import { copyValue } from '../../../src/sim/events.ts';
+import { LIMITS, bool, catalogValue, choice, clone, decodeClientFrame, encodeMessage, fail, integer, number, object, reference, sameBinding, text } from './protocol.ts';
+import type { DecodedMessage, GameplayCatalog, WireBinding, WireHeader } from './protocol.ts';
 /** Feature commands are distinct ordered intents; Area validates their gameplay authorization. */
 export type HostCommand=
  | {kind:'partyCreate'|'partyLeave'|'encounterLeave'}
@@ -55,11 +56,21 @@ export function encodeInput(packet:InputPacket,catalog:GameplayCatalog):Uint8Arr
  if(packet.binding.catalog!==catalog.version)fail('catalog mismatch');const h:WireHeader={...packet.binding,sequence:packet.intent.seq,tick:0,acceptedInput:0,consumedInput:0};
  const chunks=encodeMessage(16,h,packet.intent);if(chunks.length!==1)fail('input exceeds frame capacity');return chunks[0];
 }
+/** Catalog content key, computed once per catalog object (catalogs are not mutated after construction). */
+const catalogKeys=new WeakMap<GameplayCatalog,string>();
+function catalogKey(catalog:GameplayCatalog):string {let key=catalogKeys.get(catalog);if(key===undefined){key=JSON.stringify(catalog);catalogKeys.set(catalog,key);}return key;}
+/** Intents that inputFromFrame decoded and validated, with the binding and catalog they were validated against. */
+const decodedInputs=new WeakMap<GameplayInput,{binding:WireBinding;catalog:string}>();
 export function decodeInput(bytes:Uint8Array,expected:WireBinding,catalog:GameplayCatalog):GameplayInput {
- if(expected.catalog!==catalog.version)fail('catalog mismatch');const message=new FragmentAssembler(expected).accept(bytes,0);
+ if(expected.catalog!==catalog.version)fail('catalog mismatch');return inputFromFrame(decodeClientFrame(bytes,expected),expected,catalog);
+}
+/** The input checks of decodeInput on a frame already decoded by decodeClientFrame(bytes, expected). */
+export function inputFromFrame(message:DecodedMessage|null,expected:WireBinding,catalog:GameplayCatalog):GameplayInput {
+ if(expected.catalog!==catalog.version)fail('catalog mismatch');
  if(!message||message.kind!==16)fail('input must be one complete frame');const h=message.header;
  if(h.tick!==0||h.acceptedInput!==0||h.consumedInput!==0)fail('forged input header');validateInput(message.payload,catalog,expected.area);
- if(h.sequence!==message.payload.seq)fail('input sequence mismatch');return message.payload;
+ if(h.sequence!==message.payload.seq)fail('input sequence mismatch');
+ decodedInputs.set(message.payload,{binding:{session:expected.session,area:expected.area,epoch:expected.epoch,catalog:expected.catalog},catalog:catalogKey(catalog)});return message.payload;
 }
 export interface PreparedInput {readonly token:number;readonly intent:GameplayInput;readonly sequences:readonly number[];readonly commandOrigins:readonly {inputSequence:number;commandIndex:number}[]}
 /** One WebSocket budget survives stream resets and also charges revoked in-flight inputs. */
@@ -82,8 +93,22 @@ export class InputSession {
  get acceptedInput(){return this.accepted;}get consumedInput(){return this.consumed;}get pendingCount(){return this.queue.length;}
  accept(bytes:Uint8Array,now:number):GameplayInput {
   if(this.revoked)fail('revoked input session');number(now);if(now<this.time)fail('input clock regression');const intent=decodeInput(bytes,this.binding,this.catalog);
+  // The freshly decoded intent is owned here; the caller gets its own copy.
+  this.enqueue(intent,now);return copyValue(intent);
+ }
+ /**
+  * accept() for an intent that decodeClientMessage(bytes, binding) already decoded and validated against this session's
+  * binding and catalog, so the same bytes are not decoded a second time. The intent is handed over: the caller must not
+  * keep or change it.
+  */
+ acceptDecoded(intent:GameplayInput,now:number):void {
+  if(this.revoked)fail('revoked input session');number(now);if(now<this.time)fail('input clock regression');
+  const proof=decodedInputs.get(intent);if(this.binding.catalog!==this.catalog.version||!proof||!sameBinding(proof.binding,this.binding)||proof.catalog!==catalogKey(this.catalog))fail('input was not decoded for this session');
+  decodedInputs.delete(intent);this.enqueue(intent,now);
+ }
+ private enqueue(intent:GameplayInput,now:number):void {
   if(intent.seq<=this.accepted)fail('stale input sequence');if(this.queue.length>=this.limit)fail('input queue capacity');
-  this.budget.consume(now);this.time=now;this.lastReceived=now;this.accepted=intent.seq;this.queue.push(clone(intent));return clone(intent);
+  this.budget.consume(now);this.time=now;this.lastReceived=now;this.accepted=intent.seq;this.queue.push(intent);
  }
  /** Retain only the exact prior binding/sequence. Its pending commands and held controls are discarded. */
  revoke():void {this.revoked=true;this.queue=[];this.prepared=null;this.held={forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null};}
@@ -93,13 +118,14 @@ export class InputSession {
  }
  prepareTick(now:number,maxCommands:number=LIMITS.commands):PreparedInput|null {
   number(now);if(now<this.time)fail('input clock regression');integer(maxCommands,1,LIMITS.commands);
-  if(this.revoked)return null;if(this.prepared)return clone(this.prepared);if(!this.queue.length)return null;
+  if(this.revoked)return null;if(this.prepared)return copyValue(this.prepared);if(!this.queue.length)return null;
   let count=0,n=0;for(const frame of this.queue){const host=frame.commands.some(c=>HOST_COMMANDS.includes(c.kind));if(n&&(host||this.queue[0].commands.some(c=>HOST_COMMANDS.includes(c.kind))))break;if(n&&count+frame.commands.length>maxCommands)break;if(frame.commands.length>maxCommands)fail('frame exceeds step command capacity');count+=frame.commands.length;n++;}
   const frames=this.queue.slice(0,n),last=frames.at(-1)!;
   const intent={...last,commands:frames.flatMap(f=>f.commands)};
   // Commands retain order even when later movement frames supersede held input.
   if(now-this.lastReceived>=this.timeout)Object.assign(intent,{forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null});
-  integer(this.nextToken,1);this.prepared={token:this.nextToken++,intent:clone(intent),sequences:frames.map(f=>f.seq),commandOrigins:frames.flatMap(f=>f.commands.map((_,commandIndex)=>({inputSequence:f.seq,commandIndex})))};return clone(this.prepared);
+  // Queued frames are private and never changed, so the stored preparation may share their commands; the caller gets a copy.
+  integer(this.nextToken,1);this.prepared={token:this.nextToken++,intent,sequences:frames.map(f=>f.seq),commandOrigins:frames.flatMap(f=>f.commands.map((_,commandIndex)=>({inputSequence:f.seq,commandIndex})))};return copyValue(this.prepared);
  }
  commitConsumed(token:number):void {
   if(!this.prepared||this.prepared.token!==token)fail('unknown prepared input');
