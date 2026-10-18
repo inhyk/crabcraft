@@ -244,6 +244,7 @@ export interface PlayerSim extends CombatController {
   useAbility(slot: number): void;
   interruptCast(reason?: string): void;
   cancelChannel(): void;
+  startChannel(kind: ChannelKind, seconds: number, to: Readonly<Vec3>, targetId?: string): void;
   gainXp(amount: number): void;
   respawn(): void;
 }
