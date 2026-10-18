@@ -65,12 +65,13 @@ export class SimulationArea implements AreaContract {
       player:ref=>this.getUnit(ref)?this.playerMap.get(ref.id)??null:null,
       playerByCharacter:character=>[...this.playerMap.values()].find(p=>p.state.character===character)??null,
       players:()=>[...this.playerMap.values()].map(p=>this.unitMap.get(p.state.unit.id)!),
-      targetFor:ref=>this.targetFor(ref),hostilesNear:(x,z,r)=>[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&u.targetable&&u.reaction==='hostile'&&Math.hypot(u.x-x,u.z-z)<=r),
+      targetFor:ref=>this.targetFor(ref),hostilesNear:(x,z,r)=>[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&u.reaction==='hostile'&&Math.hypot(u.x-x,u.z-z)-u.radius<=r),
       emit:event=>this.events.emit(this.stepId,event),outcomeTransaction:run=>this.events.transaction(run),
       startAction:(ref,action,hit)=>this.startAction(ref,action,hit),stopAction:(ref,id,fade)=>this.stopAction(ref,id,fade),
       cancelPendingHit:ref=>{const u=this.getUnit(ref);if(u)u.pendingHit=null;},resolveHit:plan=>this.resolveHit(plan),
       launch:input=>this.flights.launch(input,this.stepId),spawnAdd:(boss,x,z)=>this.spawnAdd(boss,x,z),
       respawnUnit:ref=>this.respawnUnit(ref),bossAvailable:profile=>this.worldRules.encounterAvailable(profile),
+      runCommand:(ref,command)=>this.worldRules.command(ref,command),bossByProfile:profile=>[...this.bossMap.values()].find(b=>b.profile===profile)??null,
       encounterActive:()=>[...this.bossMap.values()].some(b=>b.engaged),
       completeChannel:(ref,ch)=>{const p=this.services.player(ref);if(p)this.worldRules.completeChannel(p,ch);},
       recordContribution:(victim,attacker,damage)=>this.worldRules.recordContribution(victim,attacker,damage),
@@ -94,7 +95,13 @@ export class SimulationArea implements AreaContract {
   private startAction(ref:EntityRef,request:ActionRequest,hit?:PendingHit):void {const u=this.getUnit(ref);if(u)this.actions.play(u,request,hit);}
   private stopAction(ref:EntityRef,id?:ActionId,fade?:number):void {const u=this.getUnit(ref);if(u)this.actions.stop(u,id,fade);}
   private resolveHit(plan:HitPlan):void {if(!this.getUnit(plan.source))return;if('target' in plan&&!this.getUnit(plan.target))return;const e=this.enemyMap.get(plan.source.id),b=this.bossMap.get(plan.source.id);if(e?.resolveHit(plan)||b?.resolveHit(plan))return;if(!resolvePlayerHit(this.services,plan))throw new Error(`Unhandled hit ${plan.attack}`);}
-  private spawnAdd(boss:EntityRef,x:number,z:number):EnemySim|null {if(!this.bossMap.has(boss.id)||!this.getUnit(boss))return null;const owner=this.getUnit(boss)!;const u=this.makeUnit('scrapling','scrapling','hostile',{x,y:this.options.query.heightAt(x,z),z});const spawn={id:`${boss.id}:add:${u.ref.id}`,kind:'scrapling' as const,home:{x,y:u.y,z},wanderRadius:1,pack:`boss:${boss.id}`,fixedLevel:owner.level,role:'add' as const};this.unitMap.set(u.ref.id,u);const e=new Enemy(this.services,u,spawn);this.enemyMap.set(u.ref.id,e);this.controllerMap.set(u.ref.id,e);return e;}
+  private spawnAdd(boss:EntityRef,x:number,z:number):EnemySim|null {
+    if(!this.bossMap.has(boss.id)||!this.getUnit(boss))return null;
+    const pool=[...this.enemyMap.values()].filter(e=>e.spawn.pack===`boss:${boss.id}`);
+    let e=pool.find(e=>e.state==='gone'||e.state==='dead');
+    if(!e){if(pool.length>=3)return null;const u=this.makeUnit('scrapling','scrapling','hostile',{x,y:this.options.query.heightAt(x,z),z});const spawn={id:`${boss.id}:add:${pool.length}`,kind:'scrapling' as const,home:{x,y:u.y,z},wanderRadius:1,pack:`boss:${boss.id}`,fixedLevel:1,role:'add' as const};this.unitMap.set(u.ref.id,u);e=new Enemy(this.services,u,spawn);this.enemyMap.set(u.ref.id,e);this.controllerMap.set(u.ref.id,e);}
+    e.respawnAt(x,z);e.aggro(false);return e;
+  }
   private respawnUnit(ref:EntityRef):EntityRef {const u=this.getUnit(ref);if(!u)throw new Error('Stale respawn');if(ref.life>=0xffffffff)throw new RangeError('Life exhausted');this.purgeReferences(ref);u.ref=immutable({...ref,life:ref.life+1});const p=this.playerMap.get(ref.id);if(p)p.state.unit=u.ref;this.context=immutable({...this.context,members:this.context.members.map(m=>sameRef(m.unit,ref)?{...m,unit:u.ref}:m)});return u.ref;}
   private purgeReferences(ref:EntityRef):void {
     for(const p of this.playerMap.values()){const s=p.state;if(s.target&&sameRef(s.target,ref))s.target=null;if(s.talkTarget&&sameRef(s.talkTarget,ref))s.talkTarget=null;if(s.cast?.target&&sameRef(s.cast.target,ref))p.interruptCast();if(s.dash&&sameRef(s.dash.target,ref))s.dash=null;}
@@ -110,7 +117,7 @@ export class SimulationArea implements AreaContract {
     for(const [id,input] of inputs)if(!this.playerMap.has(id)||!Array.isArray(input.commands)||input.commands.length>this.options.limits.inputCommandsPerTick)throw new RangeError('Invalid/oversized actor input');
     this.running=true;
     try {
-      for(const [id,p] of this.playerMap){const input=inputs.get(id);if(!input)continue;const before=p.lastConsumedSeq;p.applyIntent(input);if(p.lastConsumedSeq!==before)for(const command of input.commands)this.worldRules.command(p.state.unit,command);}
+      for(const [id,p] of this.playerMap){const input=inputs.get(id);if(!input)continue;p.applyIntent(input);}
       this.clock+=DT;this.stepId++;
       this.timers.update(this.clock,a=>this.timer(a));
       for(const p of this.playerMap.values()){p.update(DT);feedLocomotion(p.unit,DT);}
@@ -125,7 +132,7 @@ export class SimulationArea implements AreaContract {
   }
   private separate():void {const list=[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&(u.reaction==='hostile'||u.kind==='player'));for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){const a=list[i]!,b=list[j]!,dx=b.x-a.x,dz=b.z-a.z,min=(a.radius+b.radius)*.85,d2=dx*dx+dz*dz;if(d2>=min*min||d2<1e-6)continue;const d=Math.sqrt(d2),push=(min-d)/d,wa=a.kind==='boss'?0:a.kind==='player'?.2:.5,wb=b.kind==='boss'?0:b.kind==='player'?.2:.5,sum=wa+wb||1;a.x-=dx*push*wa/sum;a.z-=dz*push*wa/sum;b.x+=dx*push*wb/sum;b.z+=dz*push*wb/sum;}}
   snapshot():AreaSnapshot {this.boundary();return immutable({area:this.services.id,world:this.services.world,tick:this.stepId,time:this.clock,units:[...this.unitMap.values()].sort((a,b)=>a.ref.id-b.ref.id),players:[...this.playerMap.values()].map(p=>p.state).sort((a,b)=>a.unit.id-b.unit.id),projectiles:[...this.flights.states.values()].sort((a,b)=>a.id-b.id)});}
-  debugState():AreaDebugState {this.boundary();const w=this.worldRules.debugState();return immutable({schema:'s2-debug-v1',definitionVersion:JSON.stringify(this.options.definition),actionDataVersion:this.options.actionData.version,snapshot:this.snapshot(),rng:{algorithm:this.rng.algorithm,state:this.rng.state()},allocators:{entity:this.ids.nextValue,action:this.actions.nextGeneration,projectile:this.flights.nextId,timer:this.timers.nextId,event:this.events.nextOrder},playerControllers:[...this.playerMap.values()].map(p=>p.debugState()) as DebugValue[],enemies:[...this.enemyMap.values()].map(e=>e.debugState()) as DebugValue[],bosses:[...this.bossMap.values()].map(b=>b.debugState()) as DebugValue[],timers:this.timers.snapshot(),contributions:w.contributions,grants:w.grants,acknowledgedGrantIds:w.acknowledgedGrantIds,heldIntents:[...this.playerMap.values()].map(p=>({actor:p.state.unit,intent:p.heldIntent,lastConsumedSeq:p.lastConsumedSeq})),interactions:w.interactions as unknown as DebugValue,context:this.context});}
+  debugState():AreaDebugState {this.boundary();const w=this.worldRules.debugState();return immutable({schema:'s2-debug-v1',definitionVersion:JSON.stringify(this.options.definition),actionDataVersion:this.options.actionData.version,snapshot:this.snapshot(),rng:{algorithm:this.rng.algorithm,state:this.rng.state()},allocators:{entity:this.ids.nextValue,action:this.actions.nextGeneration,projectile:this.flights.nextId,timer:this.timers.nextId,event:this.events.nextOrder},playerControllers:[...this.playerMap.values()].map(p=>p.debugState()) as DebugValue[],enemies:[...this.enemyMap.values()].map(e=>e.debugState()) as DebugValue[],bosses:[...this.bossMap.values()].map(b=>b.debugState()) as DebugValue[],timers:this.timers.snapshot(),contributions:w.contributions,grants:w.grants,acknowledgedGrantIds:w.acknowledgedGrantIds,heldIntents:[...this.playerMap.values()].map(p=>({actor:p.state.unit,intent:p.heldIntent,lastConsumedSeq:p.lastConsumedSeq})),lifecycle:{nextToken:this.tokenIds.nextValue,reservations:[...this.reservations.values()],departures:[...this.departures.values()],arrivals:[...this.arrivals.values()].map(a=>({token:a.token,admission:a.admission,unit:a.unit,state:a.player.state,dto:a.dto}))} as unknown as DebugValue,interactions:w.interactions as unknown as DebugValue,context:this.context});}
   drainEvents(){this.boundary();return this.events.drain();}
   applyContext(context:AreaContext):void {this.boundary();const ids=new Set<number>(),characters=new Set<string>();for(const m of context.members){const p=this.services.player(m.unit);if(!p||p.state.character!==m.character||ids.has(m.unit.id)||characters.has(m.character))throw new Error('Invalid membership');ids.add(m.unit.id);characters.add(m.character);}if(ids.size!==this.playerMap.size)throw new Error('Missing membership');this.context=immutable(context);}
   private spawn(id:string){const d=this.options.definition;const p=id===d.spawn.id?d.spawn:id===d.recall.id?d.recall:d.pois[id]??Object.values(d.pois).find(p=>p.id===id);if(!p)throw new Error('Unknown spawn');return p;}
