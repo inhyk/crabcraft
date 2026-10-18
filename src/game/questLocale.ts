@@ -1,9 +1,13 @@
+import {FRONTIER_KOREAN} from './frontierQuests';
 import type { QuestDef, QuestId } from './quests';
 import type { Language } from '../i18n';
+import {SNOW_KOREAN} from './snowQuests';
 import {DAWN_KOREAN} from './dawnQuests';
 type Text={title:string;offer:string[];progress:string;complete:string[];readyHint:string;labels:string[]};
 const korean:Partial<Record<QuestId,Text>>={
  ...DAWN_KOREAN,
+ ...SNOW_KOREAN,
+ ...FRONTIER_KOREAN,
  s1:{title:'오로라 설원 순찰',offer:['그룩 눈꽃 마을 지킨다. 따뜻한 수프도 지킨다!','설원의 빙하 파수병 여덟을 물리치고 돌아와 줘.'],progress:'오로라 설원의 빙하 파수병 여덟을 처치하세요.',complete:['눈꽃 마을 안전하다! 계속 순찰해서 서리왕을 이길 힘을 모아.'],readyHint:'눈꽃 마을의 그룩에게 돌아가세요.',labels:['빙하 파수병 처치']},
  s2:{title:'영원한 겨울의 왕관',offer:['보레아스가 미라를 오로라 너머 얼음 감옥에 가뒀네.','300레벨이 되면 북쪽 얼음 왕좌의 보레아스를 물리치고 미라를 구해 주게.'],progress:'300레벨을 달성하고 얼음 왕좌의 보레아스를 물리치세요.',complete:['미라가 돌아왔네! 네 섬의 친구들과 함께 춤추며 축하하자!'],readyHint:'보상이 자동으로 지급됩니다.',labels:['보레아스 처치와 미라 구출']},
  d1:{title:'사라진 친구',offer:['보레아스가 친구 미라를 설원의 얼음 감옥으로 데려갔네. 솔라칸이 그 길을 막고 있어.','오르막길의 황혼 파수병 여섯을 물리쳐 주게. 함께 미라를 데려오자!'],progress:'성채로 오르는 길의 황혼 파수병 여섯을 물리쳐 주세요.',complete:['길이 안전해졌군! 이제100레벨이 되면 북쪽 왕에게 도전하자.'],readyHint:'새벽 항구의 선장에게 돌아가세요.',labels:['황혼 파수병 처치']},

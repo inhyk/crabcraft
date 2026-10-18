@@ -25,6 +25,7 @@ export class BattleSync {
     if(this.authority){this.parties[this.ownId]=party;this.publish();}else this.event({kind:'party',target:'world',party});
   }
   setMode(mode:'coop'|'pvp'){
+    if(this.game.dungeons?.active)return;
     if(this.sharedArea)return;
     if(!this.active||!this.authority){this.game.hud.messages.info(t('방장이 협동 / 싸우기 모드를 선택해요.','The host chooses co-op or PvP mode.'));return;}
     if(this.game.encounter?.engaged){this.game.hud.messages.info(t('보스 전투가 끝난 뒤 모드를 바꿔 주세요.','Wait until the boss battle ends to change mode.'));return;}
@@ -78,6 +79,7 @@ export class BattleSync {
     game.npcs?.forEach((n,i)=>this.register(`n${i}`,n.unit));
     game.townsfolk?.forEach((t,i)=>this.register(`t${i}`,t.unit));
     this.register('b3', game.boss.unit); this.register('b10', game.finalBoss.unit);
+    this.register('b500',game.emberBoss.unit);this.register('f500',game.emberBoss.freed);this.register('b750',game.skyBoss.unit);this.register('f750',game.skyBoss.freed);
     this.register('b300',game.frostBoss.unit);this.register('f300',game.frostBoss.freed);
     this.register('b30',game.dawnBoss.unit);this.register('f30',game.dawnBoss.freed);
     this.register('b20', game.worldBoss.unit); this.register('f20', game.worldBoss.freed);
@@ -94,18 +96,18 @@ export class BattleSync {
     if (world) this.apply(world, true);
     if (this.authority) {
       for (const e of this.game.enemies) e.resumeAuthority();
-      for (const b of [this.game.boss,this.game.finalBoss,this.game.worldBoss,this.game.dawnBoss,this.game.frostBoss]) b.resumeAuthority();
+      for (const b of [this.game.boss,this.game.finalBoss,this.game.worldBoss,this.game.dawnBoss,this.game.frostBoss,this.game.emberBoss,this.game.skyBoss]) b.resumeAuthority();
     }
     this.elapsed = 1;
   }
-  leave() { this.game.villageGames?.reset();this.game.boats?.disconnect();this.active = false; this.sharedArea=false;this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
+  leave() { if(this.active&&!this.sharedArea)this.game.dungeons?.leave(false);this.game.villageGames?.reset();this.game.boats?.disconnect();this.active = false; this.sharedArea=false;this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
   elect(host: string) {
     const was = this.authority; this.host = host;this.seaWarnings.clear();
     if (!was && this.authority) {
       // The former follower has the latest checkpoint. Discard any delayed local swings.
       for (const u of this.units.values()) u.cancelPendingHit();
       for (const e of this.game.enemies) e.resumeAuthority();
-      for (const b of [this.game.boss, this.game.finalBoss, this.game.worldBoss,this.game.dawnBoss,this.game.frostBoss]) b.resumeAuthority();
+      for (const b of [this.game.boss, this.game.finalBoss, this.game.worldBoss,this.game.dawnBoss,this.game.frostBoss,this.game.emberBoss,this.game.skyBoss]) b.resumeAuthority();
       this.goals.clear(); this.remotePush.clear(); this.elapsed = 1;
       this.game.hud.messages.info(t('친구가 나가서 내가 전투를 이어받았어요.','Your friend left. You are now hosting the battle.'));
     }
@@ -153,7 +155,7 @@ export class BattleSync {
     const target = this.keys.get(dst);
     if (target) { this.event({ kind: 'death', target, serial: ++this.serial }); this.publish(); }
   }
-  challenge(target: 'b3' | 'b10' | 'b20' | 'b30' | 'b300') {
+  challenge(target: 'b3' | 'b10' | 'b20' | 'b30' | 'b300' | 'b500' | 'b750') {
     if (!this.active || this.authority) return false;
     this.event({ kind: 'challenge', target }); return true;
   }
@@ -161,8 +163,16 @@ export class BattleSync {
     if(!this.active||this.authority)return false;
     this.event({kind:'environment',target:'world',environment:{beacon:lit,mood:lit?1:3}});return true;
   }
+  requestDungeonReturn(){
+    const state=this.game.dungeons?.state;
+    if(!state||!this.active||this.sharedArea)return false;
+    if(this.authority){this.publish();return false;}
+    if(state.phase==='clear'||state.phase==='failed')this.event({kind:'dungeon-return',target:'world',run:state.run});
+    else this.game.hud.messages.info(t('전투 중에는 방장이 원정을 종료할 수 있어요.','The host can end the expedition during combat.'));
+    return true;
+  }
   enterWorld2() {return this.travel(2);}
-  travel(chapter:1|2|3|4) {
+  travel(chapter:1|2|3|4|5|6) {
     if (this.sharedArea || !this.active || this.authority) return false;
     this.event({kind:'chapter',target:'world',chapter}); return true;
   }
@@ -176,11 +186,20 @@ export class BattleSync {
     const g = this.game, u = this.units.get(e.target);
     if (this.authority) {
       const src = this.peers().get(id)?.unit;
+      if(e.kind==='dungeon-return'){
+        const state=g.dungeons?.state;
+        // A defeated member must also be able to return after a party wipe.
+        if(!this.sharedArea&&src&&state&&e.target==='world'&&e.run===state.run&&
+          (state.phase==='clear'||state.phase==='failed')&&src.level>=state.level&&state.members.includes(src.name)){
+          this.publish();g.dungeons?.leave(false);this.publish();
+        }
+        return;
+      }
       if (!src || !src.alive) return;
       if(this.sharedArea&&['chapter','party','duel'].includes(e.kind))return;
       if(e.kind==='village'&&e.village){g.villageGames?.request(id,e.village);this.publish();return;}
       if(g.villageGames?.playing&&['attack','duel','condition','challenge'].includes(e.kind))return;
-      if(e.target==='b30'&&src.level<100||e.target==='b300'&&src.level<300)return;
+      if(e.target==='b30'&&src.level<100||e.target==='b300'&&src.level<300||e.target==='b500'&&src.level<500||e.target==='b750'&&src.level<750)return;
       if(e.kind==='boat'&&e.boat){g.boats?.request(id,e.boat);if(e.boat.action!=='drive')this.publish();return;}
       if(e.kind==='party'){this.parties[id]=e.party!;this.publish();return;}
       if(e.kind==='duel'){this.duel(id,e.target,e.amount!,!!e.crit);return;}
@@ -202,8 +221,8 @@ export class BattleSync {
         if (f.slow>0) { u.slowUntil=Math.max(u.slowUntil,g.time+f.slow); u.slowPct=f.slowPct; }
         if (f.pushTime>0 && u.kind !== 'boss') { u.pushX=f.pushX; u.pushZ=f.pushZ; u.pushTime=f.pushTime; }
       } else if (e.kind === 'challenge') {
-        const b = e.target==='b300'?g.frostBoss:e.target==='b30'?g.dawnBoss:e.target === 'b3' ? g.boss : e.target === 'b20' ? g.worldBoss : g.finalBoss;
-        const chapter=b===g.frostBoss?4:b===g.dawnBoss?3:b===g.worldBoss?2:1;
+        const b = e.target==='b750'?g.skyBoss:e.target==='b500'?g.emberBoss:e.target==='b300'?g.frostBoss:e.target==='b30'?g.dawnBoss:e.target === 'b3' ? g.boss : e.target === 'b20' ? g.worldBoss : g.finalBoss;
+        const chapter=b===g.skyBoss?6:b===g.emberBoss?5:b===g.frostBoss?4:b===g.dawnBoss?3:b===g.worldBoss?2:1;
         if (src.level >= b.profile.level && g.world2.chapter===chapter && (chapter===1?(b===g.boss||g.journey?.rustCleared):g.world2.canTravel(chapter)) && !g.encounter.engaged) b.wake();
       }
       return;
@@ -242,7 +261,7 @@ export class BattleSync {
   }
   private snapshot(): WorldState {
     const g = this.game, now = g.time;
-    return {village:g.villageGames?.state??null,boat:g.boats?.networkState(),social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
+    return {dungeon:g.dungeons?.networkState()??null,village:g.villageGames?.state??null,boat:g.boats?.networkState(),social:{mode:this.mode,parties:Object.fromEntries(Object.entries(this.parties).filter(([id])=>id===this.ownId||this.peers().has(id)))}, weather: {...g.world.getEnvironment(),clock:this.sceneClock}, entities: [...this.units].map(([id,u]) => {
       const e = u.kind === 'scrapling' || u.kind === 'scavenger' || u.kind === 'jellyfish' ? u.ctrl as Enemy : null;
       const round = (n: number) => Math.round(n * 1000) / 1000;
       return { id, x: round(u.pos.x), y: round(u.pos.y), z: round(u.pos.z), yaw: round(u.yaw), hp: u.hp, maxHp: u.maxHp,
@@ -250,7 +269,7 @@ export class BattleSync {
         stun: Math.min(60,Math.max(0,u.stunUntil-now)), slow: Math.min(60,Math.max(0,u.slowUntil-now)), slowPct: u.slowPct,
         rust: u.rust, rustFor: Math.min(60,Math.max(0,u.rustUntil-now)), ...(e ? { enemyState: e.state, xp: e.stats.xp } : {}),
         ...(e?.kind==='jellyfish'&&e.seaCast&&e.seaCast.until>now&&u.alive&&!u.stunned(now)?{seaCast:{id:e.seaCast.id,x:e.seaCast.x,y:e.seaCast.y,z:e.seaCast.z,left:Math.min(.9,e.seaCast.until-now)}}:{}) };
-    }), bosses: [g.boss.networkState('b3'),g.finalBoss.networkState('b10'),g.worldBoss.networkState('b20'),g.dawnBoss.networkState('b30'),g.frostBoss.networkState('b300')], chapter:g.world2.chapter,frostCleared:!!g.journey?.frostCleared,finalCleared:!!g.journey?.finalCleared, firstEnding:!!g.journey?.firstEndingSeen, trueCleared:!!g.journey?.trueCleared, rust: !!g.journey?.rustCleared, abyss: !!g.journey?.abyssCleared };
+    }), bosses: [g.boss.networkState('b3'),g.finalBoss.networkState('b10'),g.worldBoss.networkState('b20'),g.dawnBoss.networkState('b30'),g.frostBoss.networkState('b300'),g.emberBoss.networkState('b500'),g.skyBoss.networkState('b750')], chapter:g.world2.chapter,emberCleared:!!g.journey?.emberCleared,skyCleared:!!g.journey?.skyCleared,frostCleared:!!g.journey?.frostCleared,finalCleared:!!g.journey?.finalCleared, firstEnding:!!g.journey?.firstEndingSeen, trueCleared:!!g.journey?.trueCleared, rust: !!g.journey?.rustCleared, abyss: !!g.journey?.abyssCleared };
   }
   private publish() { if (this.active && this.authority) this.send({ type: 'world', world: this.snapshot() }); }
   apply(world: WorldState, instant = false) {
@@ -260,8 +279,9 @@ export class BattleSync {
     this.mode=this.sharedArea?'coop':world.social?.mode??'coop';this.parties=this.sharedArea?{}:{...(world.social?.parties??{})};
     this.applying = true;
     try {
-      if (!this.sharedArea && g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared;g.journey.finalCleared=!!world.finalCleared;g.journey.frostCleared=!!world.frostCleared; }
-      if(!this.sharedArea && world.chapter!==g.world2.chapter)g.world2.go(world.chapter,false);
+      if (!this.sharedArea && g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared;g.journey.finalCleared=!!world.finalCleared;g.journey.frostCleared=!!world.frostCleared;g.journey.emberCleared=!!world.emberCleared;g.journey.skyCleared=!!world.skyCleared; }
+      if(!this.sharedArea && world.chapter!==g.world2.chapter){g.dungeons?.leave(false);g.world2.go(world.chapter,false);}
+      g.dungeons?.apply(world.dungeon??null);
       g.boats?.applyNetwork(world.boat);
       g.villageGames?.apply(world.village??null);
       if (world.weather) {
@@ -287,7 +307,7 @@ export class BattleSync {
         }
         this.goals.set(u,s);
       }
-      for (const s of world.bosses) (s.id==='b300'?g.frostBoss:s.id==='b30'?g.dawnBoss:s.id === 'b3' ? g.boss : s.id === 'b20' ? g.worldBoss : g.finalBoss).applyNetwork(s);
+      for (const s of world.bosses) (s.id==='b750'?g.skyBoss:s.id==='b500'?g.emberBoss:s.id==='b300'?g.frostBoss:s.id==='b30'?g.dawnBoss:s.id === 'b3' ? g.boss : s.id === 'b20' ? g.worldBoss : g.finalBoss).applyNetwork(s);
       if (!this.sharedArea && g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; }
       if(this.sharedArea&&g.journey){
         // A late arrival must not be stranded behind an already defeated shared boss.
@@ -296,6 +316,8 @@ export class BattleSync {
         if(world.abyss&&world.bosses.some(b=>b.id==='b10'&&b.state==='dead'))g.journey.abyssCleared=true;
         if(world.trueCleared&&world.bosses.some(b=>b.id==='b20'&&b.state==='dead'))g.journey.trueCleared=true;
         if(world.finalCleared&&world.bosses.some(b=>b.id==='b30'&&b.state==='dead'))g.journey.finalCleared=true;
+        if(world.emberCleared&&world.bosses.some(b=>b.id==='b500'&&b.state==='dead'))g.journey.emberCleared=true;
+        if(world.skyCleared&&world.bosses.some(b=>b.id==='b750'&&b.state==='dead'))g.journey.skyCleared=true;
         if(world.frostCleared&&world.bosses.some(b=>b.id==='b300'&&b.state==='dead'))g.journey.frostCleared=true;
       }
     } finally { this.applying = false; }

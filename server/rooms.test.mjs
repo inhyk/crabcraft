@@ -543,7 +543,7 @@ test('reports keep the target\'s last lines; three reporters mute them, and a mu
 test('Frostlight validates five bosses, b300/f300 keys and chapter4 while retaining legacy checkpoints',()=>{
  const fourth={...world,chapter:4,finalCleared:true,frostCleared:false,bosses:[...world.bosses,...['b30','b300'].map(id=>({id,state:'dormant',phase:1,enraged:false,mech:null}))]};
  assert.ok(worldOf(world));assert.ok(worldOf(fourth));assert.equal(worldOf({...fourth,bosses:fourth.bosses.filter(b=>b.id!=='b300')}),null);
- assert.equal(worldOf({...fourth,frostCleared:'yes'}),null);assert.equal(worldOf({...fourth,chapter:5}),null);
+ assert.equal(worldOf({...fourth,frostCleared:'yes'}),null);assert.equal(worldOf({...fourth,chapter:7}),null);
  assert.deepEqual(eventOf({kind:'chapter',target:'world',chapter:4},false),{kind:'chapter',target:'world',chapter:4});
  assert.ok(eventOf({kind:'challenge',target:'b300'},false));assert.ok(eventOf({kind:'attack',target:'b300',amount:100},false));assert.ok(eventOf({kind:'animation',target:'f300',action:'walk'},true));
 });
@@ -583,7 +583,7 @@ test('shared public worlds reject guest checkpoints, cross-area travel and room-
  const {client}=await setup(t);const a=await client(),b=await client();const enter={type:'enter',area:1,spec,combatVersion:1,snowWorld:true,sharedWorld:1};
  a.send(enter);await a.next('welcome');b.send(enter);await b.next('welcome');
  a.send({type:'world',world:{...world,chapter:2}});b.send({type:'world',world});
- for(const e of [{kind:'chapter',target:'world',chapter:2},{kind:'party',target:'world',party:2},{kind:'duel',target:'other',amount:20}])b.send({type:'combat',event:e});
+ for(const e of [{kind:'dungeon-return',target:'world',run:'public-run'},{kind:'chapter',target:'world',chapter:2},{kind:'party',target:'world',party:2},{kind:'duel',target:'other',amount:20}])b.send({type:'combat',event:e});
  b.send({type:'state',state});await a.next('state');a.send({type:'state',state});await b.next('state');
  assert.equal(a.queue.some(m=>m.type==='world'||m.type==='combat'),false);assert.equal(b.queue.some(m=>m.type==='world'),false);
 });
@@ -601,4 +601,47 @@ test('long, manually suffixed and filtered names cannot collide after suffixing'
  const {client}=await setup(t);const names=[];
  for(const name of ['A'.repeat(24),'A'.repeat(24),'A'.repeat(21)+' #2','게 모험가','게 모험가','🦀'.repeat(12),'🦀'.repeat(12)]){const c=await client();c.send({type:'create',spec:{...spec,name}});const w=await c.next('welcome');assert.ok(w.displayName.length<=24);names.push(w.displayName);}
  assert.equal(new Set(names.map(n=>n.toLowerCase())).size,names.length);
+});
+
+test('dungeon checkpoints preserve old clients and reject invalid expedition state',()=>{
+ const third={...world,chapter:3,bosses:[...world.bosses,{id:'b30',state:'dormant',phase:1,enraged:false,mech:null}]};
+ const dungeon={level:35,run:'run-35',stage:1,phase:'wave',left:0,clock:2,hazard:0,members:['Test crab']};
+ assert.ok(worldOf(third));assert.ok(worldOf({...third,dungeon:null}));assert.ok(worldOf({...third,dungeon}));
+ for(const patch of [{level:36},{level:150},{run:'bad run'},{stage:0},{stage:4},{phase:'unknown'},{left:Infinity},{clock:-1},{hazard:.5},{members:Array(9).fill('a')},{members:['same','same']}])assert.equal(worldOf({...third,dungeon:{...dungeon,...patch}}),null);
+});
+
+
+test('dungeon return requests authenticate the guest and route only to its private host',async t=>{
+ const {client}=await setup(t),a=await client(),b=await client(),c=await client();
+ a.send({type:'create',spec,combatVersion:1});const host=await a.next('welcome');
+ b.send({type:'join',room:host.room,spec,combatVersion:1});const guest=await b.next('welcome');
+ c.send({type:'join',room:host.room,spec,combatVersion:1});await c.next('welcome');
+ const event={kind:'dungeon-return',target:'world',run:'run-123'};
+ b.send({type:'combat',id:'forged-host',event:{...event,source:'forged'}});
+ const packet=await a.next('combat');assert.equal(packet.id,guest.id);assert.deepEqual(packet.event,event);
+ a.send({type:'world',world});await c.next('world');
+ assert.equal(c.queue.some(p=>p.type==='combat'),false);
+ assert.equal(eventOf(event,true),null);
+ for(const bad of [{...event,target:'e0'},{...event,run:''},{...event,run:'x'.repeat(65)},{...event,run:123},{...event,run:'<script>'}])assert.equal(eventOf(bad,false),null);
+ assert.ok(eventOf({kind:'attack',target:'e0',amount:10},false));
+});
+
+ test('world five and six checkpoints and travel retain five bosses and reject invalid chapters',()=>{
+ const expanded={...world,finalCleared:true,frostCleared:true,bosses:[...world.bosses,...['b30','b300'].map(id=>({id,state:'dead',phase:1,enraged:false,mech:null}))]};
+ for(const chapter of [5,6]){assert.ok(worldOf({...expanded,chapter}));assert.deepEqual(eventOf({kind:'chapter',target:'world',chapter},false),{kind:'chapter',target:'world',chapter});assert.equal(worldOf({...expanded,chapter,bosses:world.bosses}),null);}
+ for(const chapter of [0,7,5.5,'5']){assert.equal(worldOf({...expanded,chapter}),null);assert.equal(eventOf({kind:'chapter',target:'world',chapter},false),null);}
+ });
+
+
+test('frontier bosses and twelve expedition tiers coexist with legacy five-boss checkpoints',()=>{
+ const bosses=[...world.bosses,...['b30','b300','b500','b750'].map(id=>({id,state:'dormant',phase:1,enraged:false,mech:null}))];
+ const six={...world,chapter:6,bosses,emberCleared:true,skyCleared:false};
+ assert.ok(worldOf(six));assert.ok(worldOf({...six,bosses:bosses.slice(0,5),emberCleared:undefined}));
+ for(const target of ['b500','b750']){assert.ok(eventOf({kind:'challenge',target},false));assert.ok(eventOf({kind:'attack',target,amount:20},false));}
+ for(const [level,chapter]of [[350,5],[425,5],[500,5],[550,6],[650,6],[750,6]]){
+  const dungeon={level,run:`run-${level}`,stage:3,phase:'wave',left:0,clock:8,hazard:1,members:['crab']};
+  assert.ok(worldOf({...six,chapter,dungeon}));assert.equal(worldOf({...six,chapter:4,dungeon}),null);
+ }
+ assert.equal(worldOf({...six,skyCleared:'yes'}),null);
+ assert.equal(worldOf({...six,bosses:[...bosses.slice(0,6),bosses[5]]}),null);
 });

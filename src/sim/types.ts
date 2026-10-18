@@ -6,11 +6,11 @@ import type {BoatCommand, BoatState, VillageRound, FeatureEvent, NpcFeatureEvent
  * Browser facade conversion, S1 event wiring and S3 baked query integration have separate gates.
  * Core state and events contain numeric/value data, never renderer objects, browser callbacks or I/O.
  */
-export type WorldId = 'w1' | 'w2' | 'w3' | 'w4';
-export type Chapter = 1 | 2 | 3 | 4;
+export type WorldId = 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6';
+export type Chapter = 1 | 2 | 3 | 4 | 5 | 6;
 export type EquipmentSlot = 'weapon' | 'armor';
 export type EquipmentResult = 'bought' | 'owned' | 'busy' | 'coins' | 'upgraded' | 'unowned' | 'max';
-export type BossProfileId = 'rust' | 'abyss' | 'eclipse' | 'dawn' | 'frost';
+export type BossProfileId = 'rust' | 'abyss' | 'eclipse' | 'dawn' | 'frost' | 'ember' | 'sky';
 export type AreaId = string; // host-assigned unique INSTANCE/incarnation, never reused after recreation
 export type EntityKey = string; // canonical encoding of full [area-instance,id,life], not EntityId alone
 export type CharacterId = string; // opaque stable host identity, never EntityId or a guest token
@@ -265,7 +265,7 @@ export interface PlayerSim extends CombatController {
   interruptCast(reason?: string): void;
   cancelChannel(): void;
   startChannel(kind: ChannelKind, seconds: number, to: Readonly<Vec3>, targetId?: string): void;
-  gainXp(amount: number): void;
+  gainXp(amount: number, applyBlessing?: boolean): void;
   respawn(): void;
 }
 export type ProjectileStyle = 'bubble' | 'spark' | 'holy' | 'rust';
@@ -304,7 +304,7 @@ export interface AreaDefinition {
   readonly townsfolk?: readonly AmbientSpawn[];
   readonly pois: Readonly<Record<string, Poi>>; readonly enemies: readonly EnemySpawn[];
   readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string; freedPosition?: Readonly<Vec3>; captiveBeforeVictory?: boolean }[];
-  readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string; targetable?:boolean; personalVisibility?:{flag:'rustCleared'|'abyssCleared'|'trueCleared'|'finalCleared'|'frostCleared';value:boolean} }[];
+  readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string; targetable?:boolean; personalVisibility?:{flag:'rustCleared'|'abyssCleared'|'trueCleared'|'finalCleared'|'frostCleared'|'emberCleared'|'skyCleared';value:boolean} }[];
   readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore' | 'treasure' | 'secret'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string; channelTo?: Readonly<Vec3> }[];
 }
 /** Required explicit host policy. Formula/levels are configuration, not newly decided balance.

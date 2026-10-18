@@ -49,7 +49,7 @@ export class PavingLayout {
 }
 
 /** Match the rendered terrain triangles so a hill cannot poke through a flagstone. */
-export function pavingGround(height:(x:number,z:number)=>number,x:number,z:number,realm:2|3|4):number {
+export function pavingGround(height:(x:number,z:number)=>number,x:number,z:number,realm:2|3|4|5|6):number {
   const step=realm===2?2:2.5,minX=realm===2?-140:-150,minZ=realm===2?-160:-175;
   const ax=minX+Math.floor((x-minX)/step)*step,az=minZ+Math.floor((z-minZ)/step)*step,u=(x-ax)/step,v=(z-az)/step;
   const a=height(ax,az),b=height(ax+step,az),c=height(ax,az+step),d=height(ax+step,az+step);

@@ -6,8 +6,8 @@ export function xpForLevel(level:number):number { const n=Math.max(0,Math.floor(
 export function levelForXp(xp:number):number { return xp<22000?LEVEL_XP.reduce((level,threshold,i)=>xp>=threshold?i+1:level,1):20+Math.floor((-2100+Math.sqrt(4410000+400*(xp-22000)))/200); }
 export const patrolReward=(level:number):number=>180+Math.max(1,level)*50;
 export const forgeCost=upgradeCost;
-export const canChallenge=(level:number,required:number,rustCleared:boolean,abyssCleared=false,chapter=1):boolean=>level>=required&&(required===300?chapter===4&&abyssCleared:required===100?chapter===3&&abyssCleared:required===20?chapter===2&&abyssCleared:chapter===1&&(required===3||rustCleared));
-export const canTravelTo=(chapter:Chapter, flags:Readonly<Record<string,boolean>>):boolean=>chapter===1||(chapter===4?!!flags.finalCleared:!!flags.abyssCleared&&(chapter===2||!!flags.trueCleared));
+export const canChallenge=(level:number,required:number,rustCleared:boolean,abyssCleared=false,chapter=1):boolean=>level>=required&&(required===750?chapter===6&&abyssCleared:required===500?chapter===5&&abyssCleared:required===300?chapter===4&&abyssCleared:required===100?chapter===3&&abyssCleared:required===20?chapter===2&&abyssCleared:chapter===1&&(required===3||rustCleared));
+export const canTravelTo=(chapter:Chapter, flags:Readonly<Record<string,boolean>>):boolean=>chapter===1||(chapter>=5?!!flags.frostCleared:chapter===4?!!flags.finalCleared:!!flags.abyssCleared&&(chapter===2||!!flags.trueCleared));
 
 /** Story unlock differs from replay: only the Frost victory opens the four-island ending. */
 export const canReplayFrostEnding=(chapter:Chapter,flags:Readonly<Record<string,boolean>>,bossState:string,controlsLocked=false):boolean=>chapter===4&&!!flags.frostCleared&&bossState==='dead'&&!controlsLocked;

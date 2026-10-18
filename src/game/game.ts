@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import {starMemory} from './starMemories';
 import {Achievements} from './achievements';
 import {VoyageIsland} from './voyageIsland';
+import {DungeonExpeditions} from './dungeons';
 import {worldMusic,type MusicMood} from './worldMusic';
 import {VOYAGE_ISLANDS} from '../world/voyage';
 import {ShoreBoat} from './shoreBoat';
@@ -113,6 +114,8 @@ export class Game {
   worldBoss!: Boss;
   dawnBoss!: Boss;
   frostBoss!: Boss;
+  emberBoss!: Boss;
+  skyBoss!: Boss;
   creatorTravel = false;
   world2!: HiddenWorld;
   journey: BossJourney | null = null;
@@ -121,8 +124,11 @@ export class Game {
   villageGames:VillageGames|null=null;
   achievements:Achievements|null=null;
   voyageIsland:VoyageIsland|null=null;
+  dungeons:DungeonExpeditions|null=null;
 
   get encounter(): Boss {
+    if(this.world2?.chapter===6&&this.skyBoss)return this.skyBoss;
+    if(this.world2?.chapter===5&&this.emberBoss)return this.emberBoss;
     if(this.world2?.chapter===4&&this.frostBoss)return this.frostBoss;
     if (this.world2?.chapter===3 && this.dawnBoss) return this.dawnBoss;
     if (this.world2?.chapter===2 && this.worldBoss) return this.worldBoss;
@@ -149,7 +155,7 @@ export class Game {
   zone = '';
   musicOn = true;
   private music = '';
-  private musicChapter:1|2|3|4=1;
+  private musicChapter:1|2|3|4|5|6=1;
   private combatMusicUntil = 0;
   private zoneCandidate = '';
   private zoneSince = 0;
@@ -187,7 +193,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
+    return !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -404,7 +410,18 @@ export class Game {
     if(!this.alive)return;
     const frostFriend=this.addUnit(t('미라 · 사라진 친구','Mira · The Missing Friend'),'freed','friendly',frostFriendRig);
     this.frostBoss=new Boss(this,frostUnit,this.world2.fourth.arena,frostFriend,BOSS_PROFILES.frost);
+    for(const [field,profile,race,sex,classId,shell,crest,led,island]of [
+      ['emberBoss','ember','orc','male','warrior',3,3,1,this.world2.fifth],
+      ['skyBoss','sky','nightelf','female','priest',2,2,2,this.world2.sixth],
+    ]as const){
+      const rig=await loadCrab({race,sex,classId,shell,crest,led,name:profile});if(!this.alive)return;rig.root.scale.multiplyScalar(profile==='ember'?4.7:4.5);
+      const unit=this.addUnit(BOSS_PROFILES[profile].name,'boss','hostile',rig);
+      const freedRig=await loadCrab({race:'human',sex:'female',classId:'priest',shell:1,crest:2,led:2,name:profile+'keeper'});if(!this.alive)return;
+      const freed=this.addUnit(profile==='ember'?t('잿불의 수호자','Emberkeeper'):t('바람의 수호자','Windkeeper'),'freed','friendly',freedRig);
+      this[field]=new Boss(this,unit,island.arena,freed,BOSS_PROFILES[profile]);
+    }
     this.director = new CameraDirector(this);
+    this.director.bossSee.apply(this.emberBoss.unit.rig.root);this.director.bossSee.apply(this.skyBoss.unit.rig.root);
     this.director.bossSee.apply(frostRig.root);
     this.director.bossSee.apply(dawnRig.root);
     this.director.bossSee.apply(eclipseRig.root);
@@ -431,6 +448,15 @@ export class Game {
       enemy.islandSlot=slot;enemy.pack=[enemy];enemy.despawn();this.enemies.push(enemy);
     }
 
+    // Dedicated slots are appended to keep every existing multiplayer entity ID stable.
+    const dungeonRigs=await Promise.all(Array.from({length:6},()=>loadEnemy('scavenger')));
+    if(!this.alive)return;
+    for(const rig of dungeonRigs){
+      const unit=this.addUnit('Dungeon Sentinel','scavenger','hostile',rig);
+      const enemy=new Enemy(this,unit,'scavenger',new THREE.Vector3(),0);
+      enemy.isAdd=true;enemy.isDungeonOnly=true;enemy.despawn();this.enemies.push(enemy);
+    }
+
     // Player start
     const spawn = pois.spawn;
     pu.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
@@ -449,6 +475,7 @@ export class Game {
     this.voyageIsland=new VoyageIsland(this);
     this.hud = new Hud(this);
     this.app.ui.append(this.hud.root);
+    this.dungeons=new DungeonExpeditions(this);
     this.hud.root.style.visibility = 'hidden';
     this.hud.dialogue.onClose = () => {
       for (const n of this.npcs) n.talking = false;
@@ -568,11 +595,13 @@ export class Game {
     return snapshotMap(this.engine.renderer, this.scene, { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad, topY: topY + 70 }, hide);
   }
 
-  private showLoading(chapter: 1 | 2 | 3 | 4): void {
+  private showLoading(chapter: 1 | 2 | 3 | 4 | 5 | 6): void {
     const entry = {
       1: {region:'Clawhaven',image:`art/loading-${1 + Math.floor(Math.random() * 2)}.webp`,subtitle:t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples')},
       2: {region:'Starhaven',image:'art/loading-starhaven.webp',subtitle:t('월드 II  |  별빛 아래 다시 만난 친구들','World II  |  Friends reunited beneath the stars')},
       3: {region:'Dawnharbor',image:'art/loading-dawnharbor.webp',subtitle:t('월드 III  |  빼앗긴 새벽을 되찾는 여정','World III  |  Reclaim the stolen dawn')},
+      5: {region:'Emberharbor',image:'art/loading-emberreach.webp',subtitle:t('월드 V | 잿불 군도의 새로운 원정','World V | A new expedition through Emberreach')},
+      6: {region:'Skyharbor',image:'art/loading-skybloom.webp',subtitle:t('월드 VI | 구름 위 하늘숲의 기억','World VI | Memories of the forest above the clouds')},
       4: {region:'Snowfall Village',image:'art/loading-frostlight.webp',subtitle:t('월드 IV  |  눈꽃 마을 너머 영원의 서리왕','World IV  |  The King of Eternal Frost awaits')},
     }[chapter];
     const tips=loadingTips(chapter);
@@ -617,7 +646,7 @@ export class Game {
   private intro(): void {
     if(this.world2.chapter>=2) {
       this.zone=this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z);this.zoneCandidate=this.zone;this.hud.minimap.setZone(regionName(this.zone),false);
-      this.hud.chat.system(this.world2.chapter===4?t('WORLD IV · 서리빛 설원에서 300레벨 영원의 서리왕에게 도전하세요.','WORLD IV · Challenge the level 300 King of Eternal Frost in Frostlight.'):this.world2.chapter===3?t('WORLD III · 100레벨 솔라칸을 물리치고 보레아스에게 잡힌 미라를 찾아 설원으로 가세요.','WORLD III · Defeat level 100 Solarkan and follow Mira’s trail to Boreas in Frostlight.'):t('WORLD II · 주민들의 이사를 돕고 유적을 탐험해 20레벨에 일식의 여왕에게 도전하세요.','WORLD II · Help the settlers, explore the ruins, and challenge the Eclipse Queen at level 20.'));
+      this.hud.chat.system(this.world2.chapter>=5?t('새로운 원정 월드에 오신 걸 환영해요. 주민들에게 퀘스트를 받아 모험을 이어가세요!','Welcome to the frontier! Speak to the villagers and continue your expedition.'):this.world2.chapter===4?t('WORLD IV · 서리빛 설원에서 300레벨 영원의 서리왕에게 도전하세요.','WORLD IV · Challenge the level 300 King of Eternal Frost in Frostlight.'):this.world2.chapter===3?t('WORLD III · 100레벨 솔라칸을 물리치고 보레아스에게 잡힌 미라를 찾아 설원으로 가세요.','WORLD III · Defeat level 100 Solarkan and follow Mira’s trail to Boreas in Frostlight.'):t('WORLD II · 주민들의 이사를 돕고 유적을 탐험해 20레벨에 일식의 여왕에게 도전하세요.','WORLD II · Help the settlers, explore the ruins, and challenge the Eclipse Queen at level 20.'));
       this.updateMusic(true);return;
     }
     const name = this.player.unit.name;
@@ -652,12 +681,12 @@ export class Game {
       this.time += dt;
       this.timers.update(this.time);
       this.player.update(dt);
-      const bosses = this.world2.chapter===1 ? [this.boss,this.finalBoss] : this.world2.chapter===2 ? [this.worldBoss] : this.world2.chapter===3 ? [this.dawnBoss] : [this.frostBoss];
+      const bosses = this.world2.chapter===1 ? [this.boss,this.finalBoss] : this.world2.chapter===2 ? [this.worldBoss] : this.world2.chapter===3 ? [this.dawnBoss] : [this.encounter];
       if (authority) {
         for (const e of this.enemies) e.update(dt);
-        for (const b of bosses) b.update(dt);
+        if(!this.dungeons?.active)for (const b of bosses) b.update(dt);
       }
-      this.journey?.update(dt);
+      if(!this.dungeons?.active)this.journey?.update(dt);
       for (const n of this.npcs) n.update(dt); if(this.multiplayer?.battle.authority!==false)for (const t of this.townsfolk) if(!this.villageGames?.ownsNpc(t.unit))t.update(dt);
       if (this.multiplayer?.battle.authority !== false) this.separate();
       this.ending.update(dt);
@@ -665,6 +694,7 @@ export class Game {
       this.updateStatuses();
       this.sink.drawState(bosses, authority);
     }
+    this.dungeons?.update(paused?0:dt);
     this.multiplayer?.update(dt);
     this.villageGames?.update(paused?0:dt);
     this.boats?.update(paused?0:dt);
@@ -693,7 +723,7 @@ export class Game {
     }
     if (!paused) this.vfx.update(dt);
     this.updateSelection();
-    const goal = this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
+    const goal = this.dungeons?.active || this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
     this.hintVia = goal ? this.world2.chapter>=2 ? this.world2.waypoint(this.player.unit.pos, goal, this.time) : this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
     this.objective.update(this.time, this.world, this.player.unit.pos, goal, this.hintVia, this.player.inCombat);
     if (!this.ending.active) this.director.update(dt);
@@ -920,7 +950,7 @@ export class Game {
     else if(it.kind==='boat')this.hud.prompt.show('F',this.boats!.label());
     else if(it.kind==='secret')this.hud.prompt.show('F',t('길게 눌러 바위의 게 문양 살펴보기','Hold to inspect the crab carving'));
     else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.portalLabel());
-    else if(it.kind==='world2')this.hud.prompt.show('F',it.node.kind.startsWith('dawn-')?it.node.kind.startsWith('dawn-lamp-')?t('길게 눌러 오르막 등불 켜기','Hold to light ascent lantern'):t('퀘스트 물품 모으기','Gather quest item'):it.node.kind.startsWith('lamp')?t('길게 눌러 별빛 등불 켜기','Hold to light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
+    else if(it.kind==='world2')this.hud.prompt.show('F',(it.node.kind.startsWith('dawn-')||it.node.kind.startsWith('snow-')||it.node.kind.startsWith('ember-')||it.node.kind.startsWith('sky-'))?it.node.kind.includes('-lamp-')?t('길게 눌러 길잡이 등불 켜기','Hold to light guide lantern'):t('퀘스트 물품 모으기','Gather quest item'):it.node.kind.startsWith('lamp')?t('길게 눌러 별빛 등불 켜기','Hold to light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
     else if (it.kind === 'beacon') this.hud.prompt.show('F', this.beaconLit?t('등대 끄기','Turn off lighthouse'):t('등대 켜기','Light lighthouse'));
     else this.hud.prompt.show('F', t(`${it.unit.name}에게 말 걸기`,`${it.unit.kind === 'npc' ? 'Talk to' : 'Chat with'} ${it.unit.name}`));
   }
@@ -935,10 +965,10 @@ export class Game {
     if(it.kind==='world2'){
       this.player.setTarget(null);
       const node=it.node;
-      if(node.kind.startsWith('lamp')||node.kind.startsWith('dawn-lamp-')){
+      if(node.kind.startsWith('lamp')||node.kind.includes('-lamp-')){
         const chapter=this.world2.chapter;
         this.player.unit.setYaw(yawTo(this.player.unit.pos.x,this.player.unit.pos.z,node.position.x,node.position.z));
-        this.player.startChannel(node.kind.startsWith('dawn-')?t('오르막 등불 켜는 중','Lighting ascent lantern'):t('별빛 등불 켜는 중','Lighting waystone'),1.5,'KeyF',node.mesh.position.clone(),()=>{
+        this.player.startChannel(node.kind.includes('-lamp-')?t('길잡이 등불 켜는 중','Lighting guide lantern'):t('별빛 등불 켜는 중','Lighting waystone'),1.5,'KeyF',node.mesh.position.clone(),()=>{
           if(this.world2.chapter===chapter&&this.player.unit.pos.distanceTo(node.position)<3.5)this.world2.collect(node.kind);
         });
       }else this.world2.collect(node.kind);
@@ -982,6 +1012,8 @@ export class Game {
     npc.talking = true;
     u.setYaw(yawTo(u.pos.x, u.pos.z, this.player.unit.pos.x, this.player.unit.pos.z));
     if(this.world2.chapter===3&&id==='brinebeard')q.bump('dawn-letter');
+    if(this.world2.chapter===4&&id==='brinebeard')q.bump('snow-letter');
+    if(this.world2.chapter>=5&&id==='brinebeard')q.bump(this.world2.chapter===5?'ember-letter':'sky-letter');
     if(this.world2.chapter===2&&id==='coralline'&&q.status.w6==='active')q.bump('deliver-supplies');
     if (this.world2.chapter===1 && id === 'silvermoon' && q.status.q2 === 'active') q.bump('deliver');
     const portrait = `art/npc/${id}.webp`;
@@ -1211,7 +1243,7 @@ export class Game {
     if (cur.step === 'objective' && cur.objective) {
       const k = cur.objective.kind;
       if(this.world2.chapter===4&&k==='frost-boss')return this.world2.fourth.arena.position;
-      if(this.world2.chapter===3){const point=this.world2.objectivePoint(k);if(point)return point;}
+      if(this.world2.chapter>=3){const point=this.world2.objectivePoint(k);if(point)return point;}
       if(this.world2.chapter===3&&k==='dawn-boss')return this.world2.third.arena.position;
       if(this.world2.chapter===2){const point=this.world2.objectivePoint(k);if(point)return point;if(k==='eclipse-boss')return this.world2.arena.position;}
       const kind: EnemyKind | null = k === 'kill-scrapling' || k === 'collect-cog' ? 'scrapling' : k === 'kill-scavenger' ? 'scavenger' : null;
@@ -1248,10 +1280,10 @@ export class Game {
     return Math.max(this.player.level, ...this.allies().map(u => u.level));
   }
   combatTarget(from: Unit): Unit {
-    const targets = [this.player.unit, ...this.allies()].filter(u => u.alive);
+    const targets = this.dungeons?.active?this.combatPlayers():[this.player.unit, ...this.allies()].filter(u => u.alive);
     return targets.sort((a,b) => from.distTo(a)-from.distTo(b))[0] ?? this.player.unit;
   }
-  combatPlayers(): Unit[] { return [this.player.unit, ...this.allies()].filter(u => u.alive && !u.hidden); }
+  combatPlayers(): Unit[] { return [this.player.unit, ...this.allies()].filter(u => u.alive && !u.hidden && (!this.dungeons?.active||this.dungeons.contains(u))); }
 
   // ================================================================ combat outcomes
 
@@ -1263,6 +1295,7 @@ export class Game {
     const byPlayer = killer?.kind === 'player' || killer?.kind === 'remote';
     if (u.kind === 'scrapling' || u.kind === 'scavenger' || u.kind==='jellyfish') {
       const e = u.ctrl as Enemy;
+      if(e.isDungeonOnly)return;
       if (byPlayer) {
         if (!e.isAdd) { this.player.coins=Math.min(Number.MAX_SAFE_INTEGER,this.player.coins+Math.max(5,Math.round(e.stats.xp/4))); this.player.gainXp(e.stats.xp); this.journey?.onKill(); }
         if (u.kind === 'scrapling') {
@@ -1331,14 +1364,14 @@ export class Game {
       const p = this.player.unit;
       p.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
       this.follow.yaw = p.yaw + Math.PI;
-      if (!this.multiplayer?.battle.active) { this.boss.reset(); this.finalBoss.reset(); this.worldBoss.reset(); this.dawnBoss.reset(); this.frostBoss.reset(); }
+      if (!this.multiplayer?.battle.active) { this.boss.reset(); this.finalBoss.reset(); this.worldBoss.reset(); this.dawnBoss.reset(); this.frostBoss.reset(); this.emberBoss.reset(); this.skyBoss.reset(); }
       this.engine.canvas.style.transition = '';
       this.engine.canvas.style.filter = '';
       this.hud.showDeath(false);
       this.respawning = false;
       await this.app.blackout(false, 900);
       this.vfx.mendGlow(p);
-      this.hud.messages.info(this.world2.chapter===4?t('껍질을 회복하고 눈꽃 마을로 돌아왔어요.','Shell mended, you return to Snowfall Village.'):this.world2.chapter===3?t('껍질을 회복하고 새벽 항구로 돌아왔어요.','Shell mended, you return to Dawnharbor.'):this.world2.chapter===2
+      this.hud.messages.info(this.world2.chapter>=5?t('껍질을 회복하고 원정 마을로 돌아왔어요.','Shell mended, you return to the expedition village.'):this.world2.chapter===4?t('껍질을 회복하고 눈꽃 마을로 돌아왔어요.','Shell mended, you return to Snowfall Village.'):this.world2.chapter===3?t('껍질을 회복하고 새벽 항구로 돌아왔어요.','Shell mended, you return to Dawnharbor.'):this.world2.chapter===2
         ?t('껍질을 회복하고 별빛 항구의 포탈 곁으로 돌아왔어요.','Shell mended, you return to the portal in Starhaven.')
         :t('껍질을 회복하고 클로헤이븐 광장으로 돌아왔어요.','Shell mended, you return to Clawhaven Square.'));
     })();
@@ -1380,6 +1413,7 @@ export class Game {
   }
 
   private updateZone(): void {
+    if(this.dungeons?.active)return;
     const z = this.world2.chapter>=2 ? this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z) : this.voyageIsland?.currentIsland?this.voyageIsland.currentIsland.name:this.zoneAt(this.player.unit.pos);
     if (z !== this.zoneCandidate) {
       this.zoneCandidate = z;
@@ -1453,6 +1487,7 @@ export class Game {
   private releaseResources(): void {
     if (this.resourcesReleased) return;
     this.resourcesReleased = true;
+    this.dungeons?.dispose();this.dungeons=null;
     this.journey?.dispose();
     this.voyageIsland?.dispose();this.voyageIsland=null;
     this.boats?.dispose();this.boats=null;
