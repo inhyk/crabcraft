@@ -8,6 +8,7 @@ import { createWorld1Definition, type WorldDefinitionConfig } from '../../src/si
 import { createWorld2Definition } from '../../src/sim/areas/world2.ts';
 import { createWorld3Definition } from '../../src/sim/areas/world3.ts';
 import { createWorld4Definition } from '../../src/sim/areas/world4.ts';
+import { createWorld5Definition, createWorld6Definition } from '../../src/sim/areas/frontier.ts';
 import type { ActionData, AreaDefinition, AreaPolicy, BossProfileId, WorldId } from '../../src/sim/types.ts';
 import { CLASSES } from '../../src/sim/data/classes.ts';
 import { QUESTS } from '../../src/sim/data/quests.ts';
@@ -17,9 +18,18 @@ import { RACES } from '../../src/data/races.ts';
 import type { GameplayCatalog } from './gameplay/protocol.ts';
 
 export const PUBLIC_WORLDS = Object.freeze(['w1', 'w2', 'w3', 'w4'] as const);
-export type HostedWorldId = typeof PUBLIC_WORLDS[number];
-export const HOSTED_BOSSES = Object.freeze(['rust', 'abyss', 'eclipse', 'dawn', 'frost'] as const);
+export const OPTIONAL_WORLDS = Object.freeze(['w5', 'w6'] as const);
+export const HOSTABLE_WORLDS = Object.freeze([...PUBLIC_WORLDS, ...OPTIONAL_WORLDS] as const);
+export type HostedWorldId = typeof HOSTABLE_WORLDS[number];
+export type WorldConfiguration<T> = Record<typeof PUBLIC_WORLDS[number], T> & Partial<Record<typeof OPTIONAL_WORLDS[number], T>>;
+/** Four worlds remain required; optional worlds exist only with explicit complete configuration. */
+export function configuredWorldIds(configs: WorldConfiguration<unknown>): HostedWorldId[] {
+  if (PUBLIC_WORLDS.some(id => !Object.hasOwn(configs, id)) || Object.keys(configs).some(id => !HOSTABLE_WORLDS.some(w => w === id))) throw new Error('invalid configured worlds');
+  return HOSTABLE_WORLDS.filter(id => Object.hasOwn(configs, id));
+}
+export const HOSTED_BOSSES = Object.freeze(['rust', 'abyss', 'eclipse', 'dawn', 'frost', 'ember', 'sky'] as const);
 export type HostedBossProfileId = typeof HOSTED_BOSSES[number];
+export const BOSS_WORLDS: Readonly<Record<HostedBossProfileId, HostedWorldId>> = Object.freeze({rust:'w1', abyss:'w1', eclipse:'w2', dawn:'w3', frost:'w4', ember:'w5', sky:'w6'});
 export interface WorldVariants {
   readonly publicDefinition: AreaDefinition;
   readonly encounterDefinitions: ReadonlyMap<BossProfileId, AreaDefinition>;
@@ -38,9 +48,9 @@ export interface WorldCatalogOptions {
   expectedBakeSource: string;
   maxBakeBytes: number;
   maxCells: number;
-  configs: Readonly<Record<HostedWorldId, Pick<WorldDefinitionConfig, 'fixedLevels' | 'population'>>>;
-  policies: Readonly<Record<HostedWorldId, AreaPolicy>>;
-  seeds: Readonly<Record<HostedWorldId, number>>;
+  configs: Readonly<WorldConfiguration<Pick<WorldDefinitionConfig, 'fixedLevels' | 'population'>>>;
+  policies: Readonly<WorldConfiguration<AreaPolicy>>;
+  seeds: Readonly<WorldConfiguration<number>>;
   /** Pure world/rules owner supplies public presentation and private encounter variants. */
   variants(world: HostedWorldId, definition: AreaDefinition): WorldVariants;
 }
@@ -50,9 +60,12 @@ export async function loadWorldCatalog(options: WorldCatalogOptions): Promise<Re
   if (!/^[a-f0-9]{64}$/.test(options.expectedBakeSource) || !Number.isSafeInteger(options.maxBakeBytes) || options.maxBakeBytes < 1 ||
     !Number.isSafeInteger(options.maxCells) || options.maxCells < 1) throw new Error('invalid world catalog bounds');
   const directory = options.directory instanceof URL ? options.directory : pathToFileURL(resolve(options.directory) + '/');
-  const constructors = { w1: createWorld1Definition, w2: createWorld2Definition, w3: createWorld3Definition, w4: createWorld4Definition };
+  const constructors = { w1: createWorld1Definition, w2: createWorld2Definition, w3: createWorld3Definition, w4: createWorld4Definition, w5: createWorld5Definition, w6: createWorld6Definition };
   const worlds = new Map<WorldId, LoadedWorldDefinition>();
-  for (const world of PUBLIC_WORLDS) {
+  const enabled = configuredWorldIds(options.configs);
+  for (const values of [options.policies, options.seeds]) if (JSON.stringify(configuredWorldIds(values)) !== JSON.stringify(enabled)) throw new Error('world configuration sets differ');
+  for (const world of enabled) {
+    if (!options.configs[world]) throw new Error(`missing world configuration: ${world}`);
     const file = new URL(`collision-${world}.json`, directory);
     if ((await stat(file)).size > options.maxBakeBytes) throw new Error(`collision artifact too large: ${world}`);
     const bytes = await readFile(file);
@@ -61,20 +74,20 @@ export async function loadWorldCatalog(options: WorldCatalogOptions): Promise<Re
     if (data.format !== 'crabcraft-collision' || data.version !== 1 || data.world !== world || data.source !== options.expectedBakeSource) throw new Error(`collision artifact version mismatch: ${world}`);
     const c = data.cells;
     if (!c || !Number.isSafeInteger(c.nx) || !Number.isSafeInteger(c.nz) || c.nx < 2 || c.nz < 2 || c.nx * c.nz > options.maxCells) throw new Error(`collision artifact cell bounds: ${world}`);
-    const seed = options.seeds[world];
+    const seed = options.seeds[world]!;
     if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff || !options.policies[world]) throw new Error(`missing world configuration: ${world}`);
     const query = loadBakedWorld(data);
     const config: WorldDefinitionConfig = { ...options.configs[world], query,
       personalProps: { heightAt: query.heightAt, resolveCollision: (x, z, r, out) => query.collision.resolve(x, z, r, out) } };
     const canonical = constructors[world](config);
-    const definition = { ...canonical, interactions: canonical.interactions.filter(point => point.kind !== 'gate' || PUBLIC_WORLDS.some(id => id === point.destination)) };
+    const definition = { ...canonical, interactions: canonical.interactions.filter(point => point.kind !== 'gate' || enabled.some(id => id === point.destination)) };
     const variants = options.variants(world, definition);
     if (variants.publicDefinition.world !== world || variants.publicDefinition.bosses.length) throw new Error(`public world contains story bosses: ${world}`);
     for (const [profile, encounter] of variants.encounterDefinitions) {
       if (!HOSTED_BOSSES.some(id => id === profile) || encounter.world !== world || encounter.bosses.length !== 1 || encounter.bosses[0].profile !== profile) throw new Error(`invalid encounter definition: ${world}`);
     }
     worlds.set(world, Object.freeze({ ...variants, world, query, actionData: realActionData,
-      policy: options.policies[world], seed, bakeSource: data.source, artifactHash: createHash('sha256').update(bytes).digest('hex') }));
+      policy: options.policies[world]!, seed, bakeSource: data.source, artifactHash: createHash('sha256').update(bytes).digest('hex') }));
   }
   return worlds;
 }
@@ -86,7 +99,7 @@ export function createGameplayCatalog(worlds: ReadonlyMap<WorldId, LoadedWorldDe
   const appearanceLimits = Object.fromEntries(Object.entries(RACES).map(([race, spec]) => [race, Object.freeze({ shell: spec.shellColors.length, crest: spec.crestStyles.length, led: spec.ledColors.length })]));
   const fields = {
     poseProviderVersion: realActionData.version,
-    archetypes: unique([...Object.keys(motionData.archetypes), 'boss-rust', 'boss-abyss', 'boss-eclipse', 'boss-dawn', 'boss-frost']),
+    archetypes: unique([...Object.keys(motionData.archetypes), ...definitions.flatMap(d => d.bosses.map(b => `boss-${b.profile}`))]),
     actions: unique(Object.keys(motionData.clips)), abilities: unique(Object.values(CLASSES).flatMap(c => c.abilities.map(a => a.id))),
     quests: unique(Object.keys(QUESTS)), npcs: unique(definitions.flatMap(d => d.npcs.map(n => n.id))),
     interactions: unique(definitions.flatMap(d => [...d.interactions.map(i => i.id), ...d.npcs.map(n => `npc:${n.id}`)])),

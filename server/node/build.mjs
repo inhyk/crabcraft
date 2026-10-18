@@ -24,11 +24,11 @@ const bundle = (entry, outfile) => build({
 await bundle('server/node/main.ts', 'main.mjs');
 await bundle('server/node/reports.mjs', 'reports.mjs');
 await cp(new URL('server/node/migrations/', root), new URL('migrations/', out), { recursive: true });
-// The real Area host loads the same four validated collision artifacts as the browser.
+// The real Area host loads the same six validated collision artifacts as the browser.
 await cp(new URL('public/world/', root), new URL('world/', out), { recursive: true });
 const artifacts = {};
 let source;
-for (const world of ['w1', 'w2', 'w3', 'w4']) {
+for (const world of ['w1', 'w2', 'w3', 'w4', 'w5', 'w6']) {
   const file = `collision-${world}.json`;
   const bytes = await readFile(new URL(`world/${file}`, out));
   const data = JSON.parse(bytes.toString('utf8'));

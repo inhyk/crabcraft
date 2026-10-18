@@ -1,0 +1,200 @@
+{
+  "schema": "world-startup-v1",
+  "ownership": {
+    "key": "crabcraft-dev-world"
+  },
+  "assets": {
+    "source": "set-by-world-env.sh-from-the-release-manifest",
+    "manifest": "world-manifest.json"
+  },
+  "worlds": {
+    "w1": {
+      "seed": 1001,
+      "populationMode": "fixed-slots",
+      "fixedLevels": {
+        "scrapling": 1,
+        "scavenger": 2,
+        "jellyfish": 2,
+        "echo": 10
+      },
+      "population": {
+        "scrapling": 12,
+        "scavenger": 4,
+        "jellyfish": 6,
+        "shallowPatrols": 3
+      },
+      "respawnSeconds": {
+        "scrapling": 30,
+        "scavenger": 45,
+        "jellyfish": 40,
+        "echo": 120
+      }
+    },
+    "w2": {
+      "seed": 1002,
+      "populationMode": "fixed-slots",
+      "fixedLevels": {
+        "scrapling": 10,
+        "scavenger": 12,
+        "jellyfish": 10,
+        "echo": 10
+      },
+      "population": {
+        "scrapling": 12,
+        "scavenger": 4,
+        "jellyfish": 6,
+        "shallowPatrols": 3
+      },
+      "respawnSeconds": {
+        "scrapling": 12,
+        "scavenger": 6,
+        "jellyfish": 12,
+        "echo": 120
+      }
+    },
+    "w3": {
+      "seed": 1003,
+      "populationMode": "fixed-slots",
+      "fixedLevels": {
+        "scrapling": 20,
+        "scavenger": 22,
+        "jellyfish": 20,
+        "echo": 10
+      },
+      "population": {
+        "scrapling": 12,
+        "scavenger": 4,
+        "jellyfish": 6,
+        "shallowPatrols": 3
+      },
+      "respawnSeconds": {
+        "scrapling": 12,
+        "scavenger": 6,
+        "jellyfish": 12,
+        "echo": 120
+      }
+    },
+    "w4": {
+      "seed": 1004,
+      "populationMode": "fixed-slots",
+      "fixedLevels": {
+        "scrapling": 100,
+        "scavenger": 102,
+        "jellyfish": 100,
+        "echo": 10
+      },
+      "population": {
+        "scrapling": 12,
+        "scavenger": 4,
+        "jellyfish": 6,
+        "shallowPatrols": 3
+      },
+      "respawnSeconds": {
+        "scrapling": 12,
+        "scavenger": 12,
+        "jellyfish": 12,
+        "echo": 120
+      }
+    },
+    "w5": {
+      "seed": 1005,
+      "populationMode": "fixed-slots",
+      "fixedLevels": {
+        "scrapling": 300,
+        "scavenger": 302,
+        "jellyfish": 300,
+        "echo": 10
+      },
+      "population": {
+        "scrapling": 12,
+        "scavenger": 4,
+        "jellyfish": 6,
+        "shallowPatrols": 3
+      },
+      "respawnSeconds": {
+        "scrapling": 12,
+        "scavenger": 12,
+        "jellyfish": 12,
+        "echo": 120
+      }
+    },
+    "w6": {
+      "seed": 1006,
+      "populationMode": "fixed-slots",
+      "fixedLevels": {
+        "scrapling": 400,
+        "scavenger": 402,
+        "jellyfish": 400,
+        "echo": 10
+      },
+      "population": {
+        "scrapling": 12,
+        "scavenger": 4,
+        "jellyfish": 6,
+        "shallowPatrols": 3
+      },
+      "respawnSeconds": {
+        "scrapling": 12,
+        "scavenger": 12,
+        "jellyfish": 12,
+        "echo": 120
+      }
+    }
+  },
+  "victimOutcome": {
+    "maxEntries": 1024,
+    "maxPayloadBytes": 4194304,
+    "timeoutMs": 3000
+  },
+  "chat": {
+    "maxPending": 16
+  },
+  "restore": {
+    "cooldowns": "pause",
+    "statuses": "pause",
+    "death": "pause",
+    "history": "pause",
+    "hp": "preserve",
+    "resource": "preserve",
+    "location": "saved",
+    "activity": "cancel"
+  },
+  "party": {
+    "enabled": true,
+    "maxParties": 50,
+    "maxEncounters": 10,
+    "returns": {
+      "rust": {
+        "world": "w1",
+        "spawn": "spawn"
+      },
+      "abyss": {
+        "world": "w1",
+        "spawn": "spawn"
+      },
+      "eclipse": {
+        "world": "w2",
+        "spawn": "spawn"
+      },
+      "dawn": {
+        "world": "w3",
+        "spawn": "arrival"
+      },
+      "frost": {
+        "world": "w4",
+        "spawn": "arrival"
+      },
+      "ember": {
+        "world": "w5",
+        "spawn": "spawn"
+      },
+      "sky": {
+        "world": "w6",
+        "spawn": "spawn"
+      }
+    }
+  },
+  "characters": {
+    "maxCharactersPerAccount": 3
+  }
+}
