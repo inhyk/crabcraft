@@ -44,6 +44,9 @@ export class Enemy {
   /** Boss adds never respawn. */
   isAdd = false;
   isEcho = false;
+  /** Extra guardians stay dormant on the original shore. */
+  islandSlot:number|null = null;
+  get isIslandOnly(){return this.islandSlot!==null;}
   seaCast: { id:number; x:number; y:number; z:number; until:number } | null = null;
   private nextSwing = 0;
   private wanderAt = 0;
