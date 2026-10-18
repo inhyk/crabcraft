@@ -27,7 +27,7 @@ const runtime = await startConfiguredWorld({
 | `population` | `scrapling`, `scavenger`, `jellyfish`, `shallowPatrols`의 명시적 0 이상 정수 slot 수 |
 | `respawnSeconds` | 위 4개 enemy kind/echo별 명시적 양의 유한 초 |
 
-레벨, spawn 수, respawn 시간의 생산 기본값은 없다. `fixed-slots`는 이미 선언된 각 slot의 `desired=1`을 사용하며 nearby-player 밀도 곡선을 구현하지 않는다. Spawn pool은 설정 수로 제한된다. `shallowPatrols`는 별도 source spawn 역할이고 scrapling 레벨/respawn 시간을 사용한다. Echo는 echo 레벨/respawn 설정과 기존 World II 45/120초 규칙을 함께 따른다. Party 보스 add의 실제 encounter 규칙은 별도다.
+레벨, spawn 수, respawn 시간의 생산 기본값은 없다. `fixed-slots`는 이미 선언된 각 slot의 `desired=1`을 사용하며 nearby-player 밀도 곡선을 구현하지 않는다. Spawn pool은 설정 수로 제한된다. `shallowPatrols`는 별도 source spawn 역할이고 scrapling 레벨/respawn 시간을 사용한다. Echo의 명시적 respawnSeconds 값은 canonical helper가 반환하는 120과 같아야 한다. 다른 값을 받아 놓고 무시하는 설정은 거부한다. 최초 World II 45초 출현과 사망 후 120초 respawn을 구별한다. Party 보스 add의 실제 encounter 규칙은 별도다.
 
 `population` 합계와 실제 생성된 enemy 수 모두 `limits.maxMutationSourcesPerTick <= 256` 이하여야 한다. 원본 layout이 지형 조건에 따라 일부 jellyfish template을 찾지 못하면 실제 목록이 요청 수보다 적을 수 있다. 조용히 population을 늘리거나 다른 template으로 대체하지 않는다. 아래에 정의한 이름 외의 density 알고리즘이나 알 수 없는 필드는 거부한다. 실제 enemyStats에서 계산한 HP/XP/damage 등 숫자가 finite-safe 범위를 벗어나면 ownership 획득 전에 시작을 거부한다. 임의의 level cap으로 정규화하지 않는다.
 
@@ -40,13 +40,25 @@ Public은 실제 4개 world, world별 capacity100, PvP disabled다. 이 값들�
 - `radius`: spawn home 주변 생존하고 숨겨지지 않은 player를 세는 반경.
 - `base`, `max`: 0 이상 정수. `base <= max`. 일반 그룹 `max`는 같은 `population`의 미리 만든 pool 크기와 정확히 같아야 한다. Echo는 실제 1개 slot이므로 `max <= 1`이다.
 - `scale`: player 1명당 추가 slot 수, 0 이상 유한 수. 활성 목표는 `min(max, base + floor(nearbyPlayers * scale))`이다.
-- 반응형 증가가 있는 그룹(`scale > 0`, `max > base`)은 `radius > 22`가 필요하다. 22m 밖에서 근처 player를 셀 수 없는 조합은 시작을 거부한다.
+- 반응형 증가가 있는 그룹(`scale > 0`, `max > base`)은 `radius > enemyRespawnClearance(kind,chapter,role)`가 필요하다. 현재 PR52 source에서 일반 scavenger의 World II/III clearance는 8m, 그 외는 22m다. 보호 반경 밖에서 근처 player를 셀 수 없는 조합은 시작을 거부한다.
 
-실제 활성 여부는 불변 `legacySlot`의 그룹/번호로 결정하며 Area 배열 순서나 legacy eN wire 번호로 추측하지 않는다. Pool은 `max`개만 만들고 runtime actor를 무제한 생성하지 않는다. Gone 일반 slot은 목표가 활성이고 모든 player가 원본 22m 보호 반경 밖에 있을 때만 나타난다. Dead slot도 별도 respawn 시간, 목표 활성, 22m clearance를 모두 검사한다. 목표가 감소했을 때 full-HP idle이고 5초 이상 전투 밖이며 22m 안에 player가 없는 초과 slot만 숨긴다. Chasing/leashing/injured actor를 즉시 없애지 않는다.
+실제 활성 여부는 불변 `legacySlot`의 그룹/번호로 결정하며 Area 배열 순서나 legacy eN wire 번호로 추측하지 않는다. Pool은 `max`개만 만들고 runtime actor를 무제한 생성하지 않는다. Gone 일반 slot은 목표가 활성이고 모든 player가 해당 kind/chapter/role의 canonical 보호 반경 밖에 있을 때만 나타난다. Dead slot도 별도 respawn 시간, 목표 활성, 같은 clearance를 모두 검사한다. 목표가 감소했을 때 full-HP idle이고 5초 이상 전투 밖이며 해당 보호 반경 안에 player가 없는 초과 slot만 숨긴다. Chasing/leashing/injured actor를 즉시 없애지 않는다.
 
-Echo는 실제 World II 45초 최초/120초 후속 schedule을 유지하고, 해당 시점에 목표 density와 22m clearance도 검사한다. 일반 적 respawn 시간으로 Echo schedule을 대체하지 않는다. Source terrain에서 못 만든 slot을 다른 위치로 조용히 복제하지 않는다.
+Echo는 실제 World II 45초 최초 출현을 유지하고 목표 density와 22m clearance도 검사한다. 사망한 Echo는 corpse/dead 상태를 거쳐 사망 시각부터 120초를 기다리며, 이전 spawn 시각의 deadline 때문에 일찍 나오지 않는다. 일반 적 respawn 시간으로 Echo 규칙을 대체하지 않는다. Source terrain에서 못 만든 slot을 다른 위치로 조용히 복제하지 않는다.
 
 QA용 한 그룹 예는 `population.scrapling:3`, `nearby.scrapling:{"radius":50,"base":1,"max":3,"scale":1}`이다. 50/1/3/1은 검사 fixture 수치이며 생산 tuning 권고가 아니다. 나머지 네 그룹도 명시해야 한다.
+
+## PR52 source의 balance 참조
+
+기준은 canonical commit `b051b47`의 `src/game/enemies.ts`, `src/game/progression.ts`, `src/game/boss.ts`다. Pure core의 `canonicalEnemyLevel`, `canonicalEnemyRespawn`, `enemyRespawnClearance`가 이 규칙을 제공한다. Startup은 clearance와 Echo timer를 그 helper에서 읽는다. 일반 monster의 레벨/respawn JSON은 계속 명시적 operator 설정이며 아래 표를 조용한 기본값으로 채우지 않는다.
+
+| 일반 kind | World I level/respawn/clearance | World II | World III | World IV |
+| --- | --- | --- | --- | --- |
+| scrapling | 1 / 30s / 22m | 10 / 12s / 22m | 20 / 12s / 22m | 100 / 12s / 22m |
+| scavenger | 2 / 45s / 22m | 12 / 6s / 8m | 22 / 6s / 8m | 102 / 12s / 22m |
+| jellyfish | 2 / 40s / 22m | 10 / 12s / 22m | 20 / 12s / 22m | 100 / 12s / 22m |
+
+해당 world definition에 없는 kind는 표 때문에 새로 생성되지 않는다. Echo는 level10, 사망 후120초, clearance22m다. Boss-owned add는 별도 역할이며 일반 pool로 자동 재생성하지 않는다. Dawn/Frost의 HP/damage/tempo와 telegraph는 PR52로 갱신한 pure boss data/controller를 사용하며 startup JSON의 임의 boss override는 없다. 아래 전체 JSON 예제의 소수 enemy와 300초 계열 시간은 startup QA용 선택이고 이 source balance 표를 대체하지 않는다.
 
 ## 명시적 private party 설정
 
@@ -130,10 +142,10 @@ Root build는 `server-dist/world/`에 실제 collision JSON 4개와 `world-manif
  "ownership":{"key":"local-qa-world"},
  "assets":{"source":"<SOURCE_SHA>","manifest":"world-manifest.json"},
  "worlds":{
-  "w1":{"seed":1,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":303}},
-  "w2":{"seed":2,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":303}},
-  "w3":{"seed":3,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":303}},
-  "w4":{"seed":4,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":303}}
+  "w1":{"seed":1,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":120}},
+  "w2":{"seed":2,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":120}},
+  "w3":{"seed":3,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":120}},
+  "w4":{"seed":4,"populationMode":"fixed-slots","fixedLevels":{"scrapling":1,"scavenger":2,"jellyfish":2,"echo":10},"population":{"scrapling":1,"scavenger":0,"jellyfish":0,"shallowPatrols":0},"respawnSeconds":{"scrapling":300,"scavenger":301,"jellyfish":302,"echo":120}}
  },
  "restore":{"cooldowns":"pause","statuses":"pause","death":"pause","history":"pause","hp":"preserve","resource":"preserve","location":"saved","activity":"cancel"},
  "party":{"enabled":false}
