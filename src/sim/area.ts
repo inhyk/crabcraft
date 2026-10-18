@@ -104,7 +104,7 @@ export class SimulationArea implements AreaContract {
       playerByCharacter:character=>[...this.playerMap.values()].find(p=>p.state.character===character)??null,
       players:()=>[...this.playerMap.values()].map(p=>this.unitMap.get(p.state.unit.id)!),
       targetFor:ref=>this.targetFor(ref),hostilesNear:(x,z,r,source)=>[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&(source?!!this.getUnit(source)&&isAttackTarget(this.services,this.getUnit(source)!,u):u.reaction==='hostile')&&Math.hypot(u.x-x,u.z-z)-u.radius<=r),
-      emit:event=>this.events.emit(this.stepId,event),outcomeTransaction:run=>this.events.transaction(run),
+      emit:event=>this.events.emit(this.stepId,event),outcomeTransaction:run=>this.events.transaction(()=>this.externalLedger?this.timers.transaction(run,()=>this.events.assertPendingRoom()):run()),
       startAction:(ref,action,hit)=>this.startAction(ref,action,hit),stopAction:(ref,id,fade)=>this.stopAction(ref,id,fade),
       cancelPendingHit:ref=>{const u=this.getUnit(ref);if(u)u.pendingHit=null;},resolveHit:plan=>this.resolveHit(plan),
       launch:input=>this.flights.launch(input,this.stepId),spawnAdd:(boss,x,z)=>this.spawnAdd(boss,x,z),
