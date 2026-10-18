@@ -4,7 +4,7 @@ import { immutable } from './events.ts';
 import { worldChapter, populationRadius, validatePopulation, angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
 import { gapTo as gap, moveTo, speedMul, lineOfSight as unitLineOfSight } from './unit.ts';
 export { angleDiff, turn, distance, gap, speedMul };
-import { enemyStats, RESPAWN_CLEAR, type EnemyStats } from './data/enemies.ts';
+import { enemyStats, enemyRespawnClearance, type EnemyStats } from './data/enemies.ts';
 
 export function moveCreature(s:AreaServices,u:SimUnit,x:number,z:number,dt:number):void{moveTo(u,s.query,x,z,dt);}
 export function creatureAction(s:AreaServices,u:SimUnit,id:ActionId,opts:Partial<ActionRequest>={},hit?:HitPlan):void{
@@ -56,8 +56,8 @@ export class Enemy {
   update(dt:number):void{
     const s=this.services,u=this.actor,now=s.time,p=s.targetFor(this.unit);
     if(this.isEcho&&s.world!=='w2')return;
-    const dynamic=!this.isAdd&&s.policy.populationRadius!==undefined,radius=dynamic?populationRadius(s.policy.populationRadius!(this.spawn)):RESPAWN_CLEAR;
-    const players=s.players().filter(p=>p.alive&&!p.hidden),density=players.filter(p=>distance(p,this.spawn.home)<radius).length,clear=players.every(p=>distance(p,this.spawn.home)>=RESPAWN_CLEAR);
+    const dynamic=!this.isAdd&&s.policy.populationRadius!==undefined,clearance=enemyRespawnClearance(this.kind,worldChapter(s.world),this.spawn.role),radius=dynamic?populationRadius(s.policy.populationRadius!(this.spawn)):clearance;
+    const players=s.players().filter(p=>p.alive&&!p.hidden),density=players.filter(p=>distance(p,this.spawn.home)<radius).length,clear=players.every(p=>distance(p,this.spawn.home)>=clearance);
     if(!this.isAdd&&!this.isEcho&&dynamic){const desired=validatePopulation(s.policy.enemyPopulation(this.spawn,density)).desired;if(this.state==='gone'){if(desired&&clear)this.respawnAt(this.spawn.home.x,this.spawn.home.z);return;}if(this.state==='idle'&&!desired&&clear&&u.hp>=u.maxHp&&now-u.lastCombat>=5){this.despawn();return;}}
     if(this.state==='gone')return;
     if(this.state==='idle'&&u.hp>=u.maxHp&&(!p||distance(u,p)>20)){
@@ -65,9 +65,9 @@ export class Enemy {
     }
     if(this.state==='dead'){
       const t=now-this.deadAt;if(t>8&&!u.hidden){u.lift=-Math.min(1.4,(t-8)*.9)*u.height;u.y=s.query.heightAt(u.x,u.z)+u.lift;if(t>9.6)u.hidden=true;}
-      if(this.isAdd)return;if(this.isEcho){if(t>9.6)this.despawn();return;}
+      if(this.isAdd)return;
       const population=validatePopulation(s.policy.enemyPopulation(this.spawn,density));
-      if(population.desired>0&&t>population.respawnSeconds&&clear){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
+      if(population.desired>0&&t>(this.isEcho?120:population.respawnSeconds)&&clear){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
     }
     if(this.rise>0){this.rise=Math.max(0,this.rise-dt);u.lift=-this.rise*1.3*u.height;}
     if(this.leap){this.updateLeap(dt);return;}

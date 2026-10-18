@@ -98,9 +98,11 @@ export class Enemy {
 
   resumeAuthority(): void {
     this.unit.cancelPendingHit(); this.leap=null;
-    // Followers mirror HP and level, but do not run the host's spawn logic. Rebuild the combat
-    // coefficients from that exact level without healing or rescaling an encounter in progress.
-    this.applyStats(this.unit.level);
+    // A new host uses the world's fixed enemy tier, including old scaled checkpoints.
+    const hp=this.unit.hp,maxHp=this.unit.maxHp;
+    this.applyStats(this.fixedLevel());
+    this.unit.level=this.stats.level;this.unit.maxHp=this.stats.hp;
+    this.unit.hp=maxHp===this.stats.hp?hp:Math.min(this.stats.hp,Math.ceil(hp/Math.max(1,maxHp)*this.stats.hp));
     this.refreshAppearance();
     this.nextSwing=this.game.time+0.8;
     if (this.state === 'dead') this.deadAt=this.game.time;
@@ -332,23 +334,37 @@ export class Enemy {
     }
   }
 
+  private isQuestGuardian(): boolean {
+    const chapter=this.game.world2?.chapter??1;
+    return this.kind==='scavenger'&&!this.isAdd&&!this.isEcho&&(chapter===2||chapter===3);
+  }
+
+  private respawnDelay(): number {
+    if(this.isEcho)return 120;
+    if(this.isQuestGuardian())return 6;
+    return (this.game.world2?.chapter??1)>=2&&!this.isAdd?12:ENEMY_STATS[this.kind].respawn;
+  }
+
+  private fixedLevel():number {
+    const base=ENEMY_STATS[this.kind];
+    if(this.isEcho)return 10;
+    const chapter=this.game.world2?.chapter??1;
+    if(this.isAdd||chapter===1)return base.level;
+    return (chapter===4?100:chapter===3?20:10)+(this.kind==='scavenger'?2:0);
+  }
+
   private scaleForJourney(): void {
-    const base = ENEMY_STATS[this.kind];
-    if(this.isEcho){this.applyStats(Math.max(10,this.game.partyLevel));this.unit.level=this.stats.level;this.unit.maxHp=this.unit.hp=this.stats.hp;return;}
-    const inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
-    const scaling=!this.isAdd&&(inWorld2||this.game.journey?.rustCleared);
-    const level = scaling ? Math.max(inWorld2 ? (this.game.world2.chapter===4?100:this.game.world2.chapter===3?20:10) : base.level, this.game.partyLevel - (this.kind === 'scrapling' ? 1 : 0)) : base.level;
-    if (this.stats.level === level && this.stats.respawn === (inWorld2 ? 12 : base.respawn)) return;
-    this.applyStats(level);
-    this.unit.level=level;
-    this.unit.maxHp = this.unit.hp = this.stats.hp;
+    const level=this.fixedLevel();
+    if(this.stats.level===level&&this.unit.level===level&&this.stats.respawn===this.respawnDelay())return;
+    this.applyStats(level);this.unit.level=level;
+    this.unit.maxHp=this.unit.hp=this.stats.hp;
   }
 
   private applyStats(level:number): void {
     const base=ENEMY_STATS[this.kind],inWorld2=(this.game.world2?.chapter??1)>=2&&!this.isAdd;
     const scale=1+.12*(level-base.level);
     if(this.isEcho){Object.assign(this.stats,{level,hp:Math.round(500*scale),xp:350+level*10,respawn:120,speed:2.8,aggro:10,leash:24,dmg:[14+level,18+level]});return;}
-    Object.assign(this.stats,{level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:inWorld2?12:base.respawn,dmg:[base.dmg[0]*scale,base.dmg[1]*scale]});
+    Object.assign(this.stats,{level,hp:Math.round(base.hp*scale),xp:base.xp+12*(level-base.level)+(inWorld2?90:0),respawn:this.respawnDelay(),dmg:[base.dmg[0]*scale,base.dmg[1]*scale]});
   }
 
   refreshAppearance(): void {
@@ -357,6 +373,6 @@ export class Enemy {
 
   /** No player near the home: the same rule for every player (there is no one camera to hide from). */
   private canRespawnUnseen(): boolean {
-    return !this.game.combatPlayers().some(p => Math.hypot(p.pos.x-this.home.x,p.pos.z-this.home.z)<RESPAWN_CLEAR);
+    return !this.game.combatPlayers().some(p => Math.hypot(p.pos.x-this.home.x,p.pos.z-this.home.z)<(this.isQuestGuardian()?8:RESPAWN_CLEAR));
   }
 }
