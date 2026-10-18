@@ -89,6 +89,9 @@ export interface ClipRule {
  */
 export interface NumericPoseState {
   locomotionTime: number; localVx: number; localVz: number; yawRate: number;
+  previousX: number; previousZ: number; previousYaw: number;
+  appliedQ: number[]; appliedPosition: [number, number, number];
+  appliedRotation: [number, number, number, number];
   gaitPhase: number; controllerVx: number; controllerVz: number; controllerYaw: number;
   locomotionQ: number[]; locomotionPosition: [number, number, number];
   locomotionRotation: [number, number, number, number];
@@ -132,6 +135,7 @@ export interface PendingHit { left: number; plan: HitPlan } // countdown, decrem
 export type School = 'physical' | 'frost' | 'water' | 'holy' | 'rust';
 export interface HitOptions { crit?: boolean; school?: School; noReact?: boolean; rage?: number }
 export interface CombatController {
+  readonly profile?: 'rust' | 'abyss' | 'eclipse' | 'dawn';
   onDamaged?(source: EntityRef | null, damage: number): void;
   onHurt?(damage: number): void;
   gainRage?(amount: number): void;
@@ -244,6 +248,7 @@ export interface PlayerSim extends CombatController {
   useAbility(slot: number): void;
   interruptCast(reason?: string): void;
   cancelChannel(): void;
+  startChannel(kind: ChannelKind, seconds: number, to: Readonly<Vec3>, targetId?: string): void;
   gainXp(amount: number): void;
   respawn(): void;
 }
@@ -325,6 +330,7 @@ export interface AreaServices {
   cancelPendingHit(unit: EntityRef): void;
   launch(projectile: Omit<ProjectileState, 'id' | 'elapsed' | 'bornStep'>): number; // Area stamps birth stage; stage-start-list eligibility only
   spawnAdd(boss: EntityRef, x: number, z: number): EnemySim | null;
+  encounterActive(): boolean;
   bossAvailable(profile: BossSim['profile']): boolean;
   completeChannel(player: EntityRef, channel: ChannelState): void;
   recordContribution(victim: EntityRef, attacker: EntityRef, damage: number): void;
@@ -347,6 +353,7 @@ export interface AreaDebugState {
   schema: 's2-debug-v1'; definitionVersion: string; actionDataVersion: string;
   snapshot: AreaSnapshot; rng: { algorithm: 'mulberry32-v1'; state: number };
   allocators: { entity: number; action: number; projectile: number; timer: number; event: number };
+  playerControllers: readonly DebugValue[];
   enemies: readonly DebugValue[]; bosses: readonly DebugValue[]; timers: readonly TimerState[];
   contributions: readonly Contribution[]; grants: readonly EarnedGrant[]; acknowledgedGrantIds: readonly string[];
   heldIntents: readonly { actor: EntityRef; intent: PlayerIntent; lastConsumedSeq: number }[];

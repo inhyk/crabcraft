@@ -1,6 +1,7 @@
 import type { ActionData, ActionId, ActionRequest, ActionState, CoreEvent, HitPlan, PendingHit, SimUnit } from './types.ts';
 import { copyValue } from './events.ts';
 import { Ids } from './random.ts';
+import { resetLocomotionOrigin } from './unit.ts';
 export class Actions {
   private ids = new Ids();
   private data: ActionData;
@@ -22,7 +23,7 @@ export class Actions {
   }
   stop(unit:SimUnit,id?:ActionId,fade?:number):void { for(const a of unit.actions)if(!id||a.id===id)this.interrupt(unit,a,fade===undefined?a.fadeOut:Math.max(.0001,fade));this.emit({type:'action',unit:unit.ref,action:this.effective(unit)}); }
   private end(a:ActionState):number {const clip=this.data.clip(a.id);return Math.min(clip.length,a.to??clip.length,clip.hold?(clip.holdAt??clip.length):clip.length);}
-  private fade(unit:SimUnit,a:ActionState):void {if(a.targetWeight<=0)return;a.targetWeight=0;if(!a.root||a.root.committed)return;const t=Math.min(a.clipTime,this.end(a));const root=this.data.root(a.root.curve,t);const c=Math.cos(unit.yaw),s=Math.sin(unit.yaw),m=a.root.metersToUnits;unit.x+=(root.x*c+root.z*s)*m;unit.z+=(-root.x*s+root.z*c)*m;unit.yaw+=root.yaw;a.root.committed=true;a.root.committedClipTime=t;a.root.rebase={...root};this.emit({type:'rootRebase',unit:unit.ref,generation:a.generation,root:{...root},position:{x:unit.x,y:unit.y,z:unit.z},yaw:unit.yaw});}
+  private fade(unit:SimUnit,a:ActionState):void {if(a.targetWeight<=0)return;a.targetWeight=0;if(!a.root||a.root.committed)return;const t=Math.min(a.clipTime,this.end(a));const root=this.data.root(a.root.curve,t);const c=Math.cos(unit.yaw),s=Math.sin(unit.yaw),m=a.root.metersToUnits;unit.x+=(root.x*c+root.z*s)*m;unit.z+=(-root.x*s+root.z*c)*m;unit.yaw+=root.yaw;resetLocomotionOrigin(unit);a.root.committed=true;a.root.committedClipTime=t;a.root.rebase={...root};this.emit({type:'rootRebase',unit:unit.ref,generation:a.generation,root:{...root},position:{x:unit.x,y:unit.y,z:unit.z},yaw:unit.yaw});}
   private interrupt(unit:SimUnit,a:ActionState,fade:number):void {this.fade(unit,a);a.fadeOut=fade;if(!a.ended){a.interrupted=true;a.ended=true;}}
   update(unit:SimUnit,dt:number):void {if(!Number.isFinite(dt)||dt<0)throw new RangeError('Invalid action dt');for(const a of unit.actions){const clip=this.data.clip(a.id),end=this.end(a);a.weight=a.targetWeight>a.weight?Math.min(1,a.weight+dt/a.fadeIn):Math.max(a.targetWeight,a.weight-dt/a.fadeOut);if(dt===0)continue;a.clipTime+=dt*a.speed;if(a.loop&&a.to!==null){const from=Math.max(a.start,a.loopFrom??a.start),span=end-from;if(span>.001&&a.clipTime>=end)a.clipTime=from+((a.clipTime-end)%span);else if(a.clipTime>end)a.clipTime=end;continue;}if(!a.loop&&!clip.hold&&a.targetWeight>0&&a.clipTime>=end-a.fadeOut*a.speed)this.fade(unit,a);if(!a.loop&&a.clipTime>=end){a.ended=true;a.clipTime=end;}}unit.actions=unit.actions.filter(a=>!(a.targetWeight===0&&a.weight<=0));}
   updateHit(unit:SimUnit,dt:number):void {if(!unit.pendingHit)return;unit.pendingHit.left-=dt;if(unit.pendingHit.left<=0){const plan=unit.pendingHit.plan;unit.pendingHit=null;this.resolve(plan);}}
