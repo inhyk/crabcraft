@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {worldArea,addActor,intent} from './core/worldHarness.mjs';
 import {InMemoryCharacterRegistry} from '../src/sim/transfer.ts';
 import {prepareRestore} from '../src/sim/persistence.ts';
-const restore=(c)=>prepareRestore(c,0,{version:'test-explicit-pause-and-cancel',restore:c=>({...c,activity:{seated:false,village:false,controlsLocked:false,cast:null,channel:null,dash:false,pendingHit:false,rootPending:false}})});
+const restore=(c)=>prepareRestore(c,0,{version:'test-explicit-pause-and-cancel',restore:c=>({...c,activity:{seated:false,village:false,controlsLocked:false,cast:null,channel:null,dash:false,pendingHit:false,rootPending:false,motion:{velocityX:0,velocityZ:0,jumpRemaining:0,spinRemaining:0,pushX:0,pushZ:0,pushRemaining:0,lift:0,dashElapsed:null}}})});
 
 test('durability barrier freezes complete Area and input neutralization never manufactures an ack',()=>{
  const a=worldArea('barrier'),{u,p}=addActor(a);a.step(new Map([[u.ref.id,intent(42,[],{forward:1})]]));
@@ -52,4 +52,11 @@ test('failed recovery CAS preserves actor, progression, events and ownership',()
  a.drainEvents();const token=a.beginDurabilityBarrier('conflict');const saved=registry.compareAndSwap.bind(registry);registry.compareAndSwap=()=>false;
  assert.throws(()=>a.restorePlayerCheckpoint(u.ref,c,restore(c)),/registry/);assert.equal(a.services.player(u.ref),p);assert.equal(a.players.size,1);assert.deepEqual(a.drainEvents(),[]);assert.deepEqual(registry.owner('hero'),u.ref);
  registry.compareAndSwap=saved;a.releaseDurabilityBarrier(token);
+});
+
+test('restore rejects unresolved interrupted motion and accepts semantically reordered progress',()=>{
+ const a=worldArea('motion'),{u,p}=addActor(a);u.pushTime=.5;u.pushX=3;p.state.velX=2;
+ const c=a.capturePlayerCheckpoint(u.ref).checkpoint,token=a.beginDurabilityBarrier('recovery');
+ assert.equal(c.activity.motion.pushRemaining,.5);assert.throws(()=>a.restorePlayerCheckpoint(u.ref,c,c),/interrupted motion/);assert.equal(a.services.player(u.ref),p);
+ const resolved=restore(c),reordered={...resolved,progress:Object.fromEntries(Object.entries(resolved.progress).reverse())};const next=a.restorePlayerCheckpoint(u.ref,c,reordered);assert.equal(a.services.getUnit(next).pushTime,0);a.releaseDurabilityBarrier(token);
 });
