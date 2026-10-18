@@ -46,12 +46,12 @@ export class InMemoryTransferCoordinator implements TransferCoordinator {
   if(!point||point.destination!==destination.services.world||Math.hypot(unit.x-point.position.x,unit.y-point.position.y,unit.z-point.position.z)>point.range||!source.services.policy.canInteract(source.services.context,player.state,gate))return {ok:false,reason:'invalid-gate'};
   const chapter=destination.services.world==='w1'?1:destination.services.world==='w2'?2:3;
   if(chapter>=2&&(!player.state.flags.abyssCleared||chapter===3&&!player.state.flags.trueCleared))return {ok:false,reason:'locked-world'};
-  if(source.services.time-unit.lastCombat<5)return {ok:false,reason:'in-combat'};
+  if(source.services.encounterActive()||source.services.time-unit.lastCombat<5)return {ok:false,reason:'in-combat'};
   let admission:ReturnType<Area['reserveAdmission']>=null,departure:ReturnType<Area['stageDeparture']>|null=null,arrival:ReturnType<Area['stageArrival']>|null=null;
   try {admission=destination.reserveAdmission(character,destination.services.definition.spawn.id,hostTick);if(!admission)return {ok:false,reason:'destination-full'};departure=source.stageDeparture(unit.ref);arrival=destination.stageArrival(admission,departure.dto);this.journal(source);
    if(!this.characters.compareAndSwap(character,owner,arrival.newRef))throw new Error('registry-conflict');
   }catch(error){if(arrival)destination.abortArrival(arrival.token);if(departure)source.abortDeparture(departure.token);if(admission)destination.releaseAdmission(admission.token);return {ok:false,reason:error instanceof Error?error.message:'transfer-failed'};}
   // Contract: no observer/tick/I/O here, these operations cannot fail after registry CAS.
-  source.commitDeparture(departure!.token);const ref=destination.activateArrival(arrival!.token);destination.releaseAdmission(admission!.token);this.deliver(destination,character);return {ok:true,ref};
+  source.commitDeparture(departure!.token);const ref=destination.activateArrival(arrival!.token);destination.releaseAdmission(admission!.token);return {ok:true,ref};
  }
 }
