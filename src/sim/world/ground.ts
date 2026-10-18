@@ -53,13 +53,16 @@ export function starSurfaceHeight(heights: ArrayLike<number>, x: number, z: numb
   return u + v <= 1 ? a + (d - a) * u + (b - a) * v : c + (b - c) * (1 - u) + (d - c) * (1 - v);
 }
 
+export const DAWN_ARENA_HEIGHT=19;
 /** World III: an analytic island, a warm coast rising to the citadel. */
 export function dawnHeight(x: number, z: number): number {
   const radial = Math.hypot(x / 122, (z - 3) / 149);
   const shore = 4 - Math.max(0, radial - 0.83) * 65;
   const upland = 13 * smoothstep(-z, 5, 55);
   const hills = Math.sin(x * 0.045) * Math.sin(z * 0.04) * 2 * (1 - Math.exp((-x * x) / 400));
-  return radial > 0.86 ? shore : 4 + upland + hills;
+  const natural=radial > 0.86 ? shore : 4 + upland + hills;
+  const arena=1-smoothstep(Math.hypot(x,z+72),21,31);
+  return natural+(DAWN_ARENA_HEIGHT-natural)*arena;
 }
 
 /** World IV: Frostlight's shore, rising trail and flat Boreas arena. */

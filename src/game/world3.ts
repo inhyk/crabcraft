@@ -7,7 +7,7 @@ import {DawnScenery} from './dawnScenery';
 import {StarPortal} from './portal';
 import {loadKit,StaticBatch,trs} from '../world/kit';
 import {TownBuilder} from '../world/buildings';
-import {dawnHeight} from '../sim/world/ground';
+import {dawnHeight,DAWN_ARENA_HEIGHT} from '../sim/world/ground';
 import type {Poi} from '../world/types';
 import {DAWN_PATHS,dawnForest,dawnGrove,dawnLots,dawnRocks,layoutDawnreach,roadClearance} from './world3Colliders';
 
@@ -15,7 +15,7 @@ import {DAWN_PATHS,dawnForest,dawnGrove,dawnLots,dawnRocks,layoutDawnreach,roadC
 export class DawnIsland {
  readonly root=new THREE.Group();
  readonly spawn=new THREE.Vector3(-12,4,84);
- readonly arena:Poi={id:'bossArena',position:new THREE.Vector3(0,17,-72),yaw:0,radius:20};
+ readonly arena:Poi={id:'bossArena',position:new THREE.Vector3(0,DAWN_ARENA_HEIGHT,-72),yaw:0,radius:20};
  /** Every World III collider, without meshes: the same registration the server bakes. */
  readonly collision=layoutDawnreach();
  readonly portal=new StarPortal(this.spawn,'새벽 항구 → 별빛 항구');
@@ -44,8 +44,8 @@ export class DawnIsland {
    if(i%5===0)for(const side of [-1,1]){add(new THREE.CylinderGeometry(.14,.22,2.4,6),stone,side*5.1,y+1.2,z);add(new THREE.OctahedronGeometry(.42),gold,side*5.1,y+2.6,z);}
   }
   for(const side of [-1,1]){const tower=add(new THREE.CylinderGeometry(3.6,4.4,15,10),stone,side*27,this.height(side*27,-56)+7.5,-56);add(new THREE.ConeGeometry(4.6,6,10),roof,tower.position.x,tower.position.y+10.5,-56);}
-  add(new THREE.CylinderGeometry(21,22,.4,64),stone,0,16.85,-72);
-  for(const r of [6,13,20]){const ring=add(new THREE.TorusGeometry(r,.07,5,96),gold,0,17.12,-72);ring.rotation.x=Math.PI/2;}
+  const floor=add(new THREE.CylinderGeometry(21,22,1.3,64),stone,0,DAWN_ARENA_HEIGHT-.6,-72);floor.name='dawn-boss-platform';
+  for(const r of [6,13,20]){const ring=add(new THREE.TorusGeometry(r,.07,5,96),gold,0,DAWN_ARENA_HEIGHT+.12,-72);ring.rotation.x=Math.PI/2;}
   for(const {i,x,z,r} of dawnRocks()){const y=this.height(x,z);const rock=add(new THREE.DodecahedronGeometry(r,0),stone,x,y+r*.65,z);rock.scale.y=1.5;if(i%3===0){const core=add(new THREE.OctahedronGeometry(.8),lava,x,y+3,z);this.rotating.push(core);}}
   this.root.add(islandPaths((x,z)=>this.height(x,z),DAWN_PATHS,3));
   this.scenery=new DawnScenery((x,z)=>this.height(x,z));this.root.add(this.scenery.root);
