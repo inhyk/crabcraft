@@ -42,13 +42,14 @@ export class WorldRules {
    const grant:EarnedGrant={id:JSON.stringify([victim.area,victim.id,victim.life,credit.character]),victim:copy(victim),recipient:credit.character,xp,coins,objectives,flags};
    planned.push(grant);this.grants.set(grant.id,{grant:copy(grant),appliedHere:false,acknowledged:false});characters.push(credit.character);
   }
-  // All entitlements exist before mutating the first recipient. A failed recipient remains queued.
+  // All entitlements exist before mutating the first recipient. Capacity failure retains the full batch.
+  s.preflightEarnedGrants(planned);
   for(const grant of planned){const appliedHere=this.applyGrant(grant)!=='not-owner';this.grants.get(grant.id)!.appliedHere=appliedHere;s.emit({type:'reward',grant,appliedHere});}
   if(u.kind==='boss'&&characters.length){s.timers.schedule(s.time+1.8,{kind:'victory',boss:copy(victim),recipients:characters,stage:'banner'});s.timers.schedule(s.time+5,{kind:'victory',boss:copy(victim),recipients:characters,stage:'end'});}
  }
  applyGrant(grant:EarnedGrant):'applied'|'duplicate'|'not-owner' {
   for(const o of grant.objectives)if(o.kind==='cog-roll'&&(!Number.isFinite(o.amount)||o.amount<0||o.amount>=1))throw new Error('invalid-cog-roll');
-  const s=this.services,p=s.playerByCharacter(grant.recipient);if(!p)return 'not-owner';let ids=this.applied.get(grant.recipient);if(ids?.has(grant.id))return 'duplicate';if(!ids){ids=new Set();this.applied.set(grant.recipient,ids);}
+  const s=this.services,p=s.playerByCharacter(grant.recipient);if(!p)return 'not-owner';let ids=this.applied.get(grant.recipient);if(ids?.has(grant.id))return 'duplicate';s.preflightEarnedGrants([grant]);if(!ids){ids=new Set();this.applied.set(grant.recipient,ids);}
   const unit=s.getUnit(p.state.unit);if(!unit)return 'not-owner';const priorState=copy(p.state),priorUnit=copy(unit);let cogPresentation=false;
   try{s.outcomeTransaction(()=>{p.gainXp(grant.xp);p.state.coins=Math.min(Number.MAX_SAFE_INTEGER,p.state.coins+grant.coins);
   for(const flag of grant.flags)p.state.flags[flag]=true;
