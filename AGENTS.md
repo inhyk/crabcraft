@@ -58,7 +58,7 @@ PR 전에 최소 `pnpm build`(타입 검사 포함)를 통과시키고, 바꾼 �
   1. dev 에서 `node tools/release-version.mjs --bump` 로 `package.json` 을 다음 버전으로 바꾸고 PR 로 dev 에 넣는다. 기능 PR 에 같이 넣어도 된다. 다음 버전만 보려면 `--next`.
   2. dev 에서 main 으로 릴리스 PR 을 연다. 제목에 버전을 쓴다(예: `릴리스 v1.1.0: 눈 월드 퀘스트`). `Release version` 검사가 버전을 안 올린 릴리스를 막는다.
   3. main 배포가 성공하면 `v<버전>` 태그가 자동으로 찍힌다(`deploy.yml` 의 `tag-release`).
-- 릴리스 노트는 위키 `프로젝트` 콜렉션의 「Crabcraft 업데이트 안내 모음」에 버전마다 쓴다.
+- 릴리스 노트는 위키 `프로젝트` 콜렉션의 「Crabcraft 업데이트 안내 모음」에 버전마다 쓴다. 같은 내용을 `public/release-notes.json` 의 `notes` 맨 앞에 넣으면 시작 화면 버전 옆 "업데이트 소식" 에 나온다(`{version, date, wiki, sections:[{title, items:[{head, body}]}]}`, `src/ui/news.ts`). 노트가 하나도 없으면 링크가 숨는다.
 
 ## 머지된 뒤 정리
 
