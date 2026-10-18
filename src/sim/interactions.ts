@@ -12,7 +12,7 @@ export class InteractionRules {
  private validate(player:PlayerSim,id:string):Interaction|null {const s=this.services,point=s.definition.interactions.find(i=>i.id===id);if(!point||!this.player(player.state.unit)||!this.near(player,point.position,point.range)||!s.policy.canInteract(s.context,player.state,id))return null;
   if(point.kind==='beacon'&&!(player.state.quests.status.q3==='done'||player.state.flags.beaconLit||activeObjective(player.state.quests,'beacon')))return null;
   if((point.kind==='crystal'||point.kind==='waystone'||point.kind==='explore')&&(!point.objective||!activeObjective(player.state.quests,point.objective)))return null;
-  if(point.kind==='gate'){const chapter=point.destination==='w1'?1:point.destination==='w2'?2:3;if(!canTravelTo(chapter,player.state.flags))return null;const u=s.getUnit(player.state.unit)!;if(s.time-u.lastCombat<5)return null;}
+  if(point.kind==='gate'){const chapter=point.destination==='w1'?1:point.destination==='w2'?2:3;if(!canTravelTo(chapter,player.state.flags))return null;const u=s.getUnit(player.state.unit)!;if(s.encounterActive()||s.time-u.lastCombat<5)return null;}
   return point;
  }
  private npc(player:PlayerSim,id:string):boolean {const s=this.services,npc=s.definition.npcs.find(n=>n.id===id);return !!npc&&this.near(player,npc.position,8)&&s.policy.canInteract(s.context,player.state,`npc:${id}`);}

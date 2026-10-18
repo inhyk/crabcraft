@@ -25,7 +25,7 @@ export class WorldRules {
   // A kill source also contributes if direct kill() bypassed damage(), as in debug/trusted combat.
   if(killer&&!this.credits.get(k)?.contributors.size)this.recordContribution(victim,killer,1);
   this.settled.add(k);const entry=this.credits.get(k);if(!entry)return;
-  const characters:CharacterId[]=[];
+  const characters:CharacterId[]=[],planned:EarnedGrant[]=[];
   for(const original of [...entry.contributors.values()].sort((a,b)=>a.character<b.character?-1:a.character>b.character?1:0)){
    const player=s.playerByCharacter(original.character),credit:Credit=player?{character:original.character,cogEligible:activeObjective(player.state.quests,'collect-cog'),cogMisses:player.state.cogMisses,flags:player.state.flags}:original;
    let xp=0,coins=0;const objectives:{kind:string;amount:number}[]=[],flags:string[]=[];
@@ -39,15 +39,19 @@ export class WorldRules {
     const controller=s.controller(victim),profile=controller&&'profile' in controller?controller.profile:null;if(typeof profile!=='string'||!(profile in BOSS_PROFILES))continue;const id=profile as BossSim['profile'];if(!credit.flags[FLAGS[id]])xp=BOSS_PROFILES[id].reward;flags.push(FLAGS[id]);objectives.push({kind:id==='eclipse'?'eclipse-boss':id==='dawn'?'dawn-boss':'boss',amount:1},{kind:'clear-encounter-blessing',amount:1});
    }else continue;
    const grant:EarnedGrant={id:JSON.stringify([victim.area,victim.id,victim.life,credit.character]),victim:copy(victim),recipient:credit.character,xp,coins,objectives,flags};
-   const appliedHere=this.applyGrant(grant)!=='not-owner';this.grants.set(grant.id,{grant:copy(grant),appliedHere,acknowledged:false});s.emit({type:'reward',grant,appliedHere});characters.push(credit.character);
-   if(objectives.some(o=>o.kind==='collect-cog'))s.timers.schedule(s.time+.45,{kind:'lootPresentation',grantId:grant.id,corpse:copy(victim),recipient:credit.character,item:'cog'});
+   planned.push(grant);this.grants.set(grant.id,{grant:copy(grant),appliedHere:false,acknowledged:false});characters.push(credit.character);
   }
+  // All entitlements exist before mutating the first recipient. A failed recipient remains queued.
+  for(const grant of planned){const appliedHere=this.applyGrant(grant)!=='not-owner';this.grants.get(grant.id)!.appliedHere=appliedHere;s.emit({type:'reward',grant,appliedHere});if(grant.objectives.some(o=>o.kind==='collect-cog'))s.timers.schedule(s.time+.45,{kind:'lootPresentation',grantId:grant.id,corpse:copy(victim),recipient:grant.recipient,item:'cog'});}
   if(u.kind==='boss'&&characters.length){s.timers.schedule(s.time+1.8,{kind:'victory',boss:copy(victim),recipients:characters,stage:'banner'});s.timers.schedule(s.time+5,{kind:'victory',boss:copy(victim),recipients:characters,stage:'end'});}
  }
  applyGrant(grant:EarnedGrant):'applied'|'duplicate'|'not-owner' {
-  const s=this.services,p=s.playerByCharacter(grant.recipient);if(!p)return 'not-owner';let ids=this.applied.get(grant.recipient);if(ids?.has(grant.id))return 'duplicate';if(!ids){ids=new Set();this.applied.set(grant.recipient,ids);}p.gainXp(grant.xp);p.state.coins=Math.min(Number.MAX_SAFE_INTEGER,p.state.coins+grant.coins);
+  const s=this.services,p=s.playerByCharacter(grant.recipient);if(!p)return 'not-owner';let ids=this.applied.get(grant.recipient);if(ids?.has(grant.id))return 'duplicate';if(!ids){ids=new Set();this.applied.set(grant.recipient,ids);}
+  const unit=s.getUnit(p.state.unit);if(!unit)return 'not-owner';const priorState=copy(p.state),priorUnit=copy(unit);
+  try{s.outcomeTransaction(()=>{p.gainXp(grant.xp);p.state.coins=Math.min(Number.MAX_SAFE_INTEGER,p.state.coins+grant.coins);
   for(const flag of grant.flags)p.state.flags[flag]=true;
   for(const o of grant.objectives){if(o.kind==='clear-encounter-blessing'){const u=s.getUnit(p.state.unit);if(u){u.blessingUntil=0;u.encounterBlessing=false;}}else if(o.kind==='cog-reset')p.state.cogMisses=0;else if(o.kind==='cog-miss')p.state.cogMisses++;else if(o.kind==='patrol-kill'){const kills=(p.state.quests.progress['patrol-kills']??0)+o.amount;p.state.quests.progress['patrol-kills']=kills%5;if(kills>=5){const u=s.getUnit(p.state.unit);if(u)p.gainXp(patrolReward(u.level)*Math.floor(kills/5));}}else questBump(p,s,o.kind,o.amount,true);}
+  });}catch(error){Object.assign(p.state,priorState);Object.assign(unit,priorUnit);throw error;}
   ids.add(grant.id);return 'applied';
  }
  pendingGrants():readonly {grant:EarnedGrant;appliedHere:boolean}[]{return [...this.grants.values()].filter(e=>!e.acknowledged).map(({grant,appliedHere})=>({grant:copy(grant),appliedHere}));}
@@ -60,5 +64,5 @@ export class WorldRules {
  completeChannel(player:PlayerSim,channel:ChannelState):void {this.interactions.completeChannel(player,channel);}
  update():void {this.interactions.update();}
  onTimer(action:TimerAction):void {const s=this.services;if(action.kind==='lootPresentation'){const p=s.playerByCharacter(action.recipient);if(p)s.emit({type:'loot',unit:action.corpse,recipient:p.state.unit,item:'cog'});}else if(action.kind==='victory'){const recipients=action.recipients.flatMap(c=>{const p=s.playerByCharacter(c);return p?[p.state.unit]:[];});s.emit({type:'victory',boss:action.boss,recipients,stage:action.stage});}}
- debugState():{contributions:Contribution[];grants:EarnedGrant[];acknowledgedGrantIds:string[];interactions:ReturnType<InteractionRules['debugState']>} {return {contributions:[...this.credits.values()].map(e=>({victim:copy(e.victim),contributors:[...e.contributors.keys()]})),grants:[...this.grants.values()].map(e=>copy(e.grant)),acknowledgedGrantIds:[...this.grants.values()].filter(e=>e.acknowledged).map(e=>e.grant.id),interactions:this.interactions.debugState()};}
+ debugState():{contributions:Contribution[];grants:EarnedGrant[];acknowledgedGrantIds:string[];interactions:ReturnType<InteractionRules['debugState']>&{credits:readonly object[];settled:readonly string[];applied:readonly object[]}} {return {contributions:[...this.credits.values()].map(e=>({victim:copy(e.victim),contributors:[...e.contributors.keys()]})),grants:[...this.grants.values()].map(e=>copy(e.grant)),acknowledgedGrantIds:[...this.grants.values()].filter(e=>e.acknowledged).map(e=>e.grant.id),interactions:{...this.interactions.debugState(),credits:[...this.credits.values()].map(e=>({victim:copy(e.victim),contributors:copy([...e.contributors.values()])})),settled:[...this.settled],applied:[...this.applied].map(([character,ids])=>({character,ids:[...ids]}))}};}
 }
