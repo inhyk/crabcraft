@@ -21,7 +21,8 @@ export type CombatEvent = {
   village?:'hide'|'tag'|'stop';
   boat?:BoatCommand;
   run?:string;
-  kind: 'dungeon-return' | 'village' | 'boat' | 'party' | 'duel' | 'chapter' | 'environment' | 'condition' | 'attack' | 'hit' | 'death' | 'animation' | 'challenge' | 'effect';
+  ability?:'mend-shell'|'holy-tide';
+  kind: 'heal-cast' | 'heal' | 'dungeon-return' | 'village' | 'boat' | 'party' | 'duel' | 'chapter' | 'environment' | 'condition' | 'attack' | 'hit' | 'death' | 'animation' | 'challenge' | 'effect';
   target: string; chapter?:1|2|3|4|5|6; party?:number; serial?: number; source?: string; amount?: number; crit?: boolean; rage?: number; action?: string;
   environment?: { mood?: 0 | 1 | 2 | 3; beacon?: boolean };
   condition?: { stun: number; slow: number; slowPct: number; pushX: number; pushZ: number; pushTime: number };
@@ -69,6 +70,7 @@ export function worldOf(v: unknown): WorldState | null {
 }
 export function eventOf(v: unknown, authority: boolean): CombatEvent | null {
   if (!record(v) || typeof v.target !== 'string' || v.target.length > 64) return null;
+  if(v.kind==='heal-cast'&&v.target==='world'&&['mend-shell','holy-tide'].includes(v.ability))return {kind:'heal-cast',target:'world',ability:v.ability};
   if (!authority) {
     if(v.kind==='dungeon-return'&&v.target==='world'&&typeof v.run==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.run))return {kind:'dungeon-return',target:'world',run:v.run};
     if(v.kind==='village'&&v.target==='world'&&['hide','tag','stop'].includes(v.village))return {kind:'village',target:'world',village:v.village};
@@ -83,6 +85,7 @@ export function eventOf(v: unknown, authority: boolean): CombatEvent | null {
     if (v.kind === 'attack' && key(v.target) && n(v.amount,1,Number.MAX_SAFE_INTEGER)) return { kind: 'attack', target: v.target, amount: v.amount, crit: v.crit === true, rage: n(v.rage,0,100) ? v.rage : 0 };
     return null;
   }
+  if(v.kind==='heal'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.target)&&typeof v.source==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(v.source)&&n(v.amount,1,Number.MAX_SAFE_INTEGER))return {kind:'heal',target:v.target,source:v.source,amount:v.amount};
   if (v.kind === 'hit' && n(v.amount,1,Number.MAX_SAFE_INTEGER)) return { kind: 'hit', target: v.target, source: key(v.source) ? v.source : undefined, amount: v.amount, crit: v.crit === true };
   if (v.kind === 'death' && key(v.target) && n(v.serial,1,1000000)) return { kind: 'death', target: v.target, serial: v.serial };
   if (v.kind === 'animation' && key(v.target) && typeof v.action === 'string' && /^[a-z_]{1,40}$/.test(v.action)) return { kind: 'animation', target: v.target, action: v.action };

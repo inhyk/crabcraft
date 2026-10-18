@@ -645,3 +645,24 @@ test('frontier bosses and twelve expedition tiers coexist with legacy five-boss 
  assert.equal(worldOf({...six,skyCleared:'yes'}),null);
  assert.equal(worldOf({...six,bosses:[...bosses.slice(0,6),bosses[5]]}),null);
 });
+
+
+test('lantern healing requests are bounded skill IDs and only authority can publish healing',()=>{
+ for(const authority of [false,true]){assert.deepEqual(eventOf({kind:'heal-cast',target:'world',ability:'mend-shell',amount:999999,source:'forged'},authority),{kind:'heal-cast',target:'world',ability:'mend-shell'});assert.equal(eventOf({kind:'heal-cast',target:'world',ability:'smite'},authority),null);}
+ assert.equal(eventOf({kind:'heal',target:'peer',source:'healer',amount:35},false),null);
+ assert.deepEqual(eventOf({kind:'heal',target:'peer',source:'healer',amount:35},true),{kind:'heal',target:'peer',source:'healer',amount:35});
+ for(const amount of [-1,0,NaN,Infinity])assert.equal(eventOf({kind:'heal',target:'peer',source:'healer',amount},true),null);
+});
+
+test('lantern relay authenticates priest requests, host results and room isolation',async t=>{
+ const {client}=await setup(t),host=await client(),healer=await client(),warrior=await client(),outside=await client();
+ host.send({type:'create',spec,combatVersion:1});const h=await host.next('welcome');
+ healer.send({type:'join',room:h.room,spec:{...spec,classId:'priest'},combatVersion:1});const priest=await healer.next('welcome');
+ warrior.send({type:'join',room:h.room,spec,combatVersion:1});await warrior.next('welcome');
+ outside.send({type:'create',spec,combatVersion:1});await outside.next('welcome');
+ healer.send({type:'combat',event:{kind:'heal-cast',target:'world',ability:'holy-tide'}});const cast=await host.next('combat');assert.equal(cast.id,priest.id);assert.equal(cast.event.ability,'holy-tide');
+ warrior.send({type:'combat',event:{kind:'heal-cast',target:'world',ability:'holy-tide'}});
+ healer.send({type:'combat',event:{kind:'heal',target:h.id,source:priest.id,amount:999}});
+ host.send({type:'combat',event:{kind:'heal',target:priest.id,source:h.id,amount:35}});assert.equal((await healer.next('combat')).event.kind,'heal');
+ await new Promise(r=>setTimeout(r,30));assert.equal(host.queue.filter(p=>p.type==='combat').length,0);assert.equal(outside.queue.filter(p=>p.type==='combat').length,0);
+});

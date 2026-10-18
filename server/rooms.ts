@@ -180,7 +180,7 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
       } else if (m.room && m.combat && msg.type === 'combat') {
         const authority = host(m.room) === m.id;
         const event = eventOf(msg.event, authority);
-        if (event && (!publics.has(m.room)||!['chapter','party','duel','dungeon-return'].includes(event.kind)) && (m.snow || (event.chapter??1)<4&&![event.target,event.source].some(key=>key==='b300'||key==='f300'))) {
+        if (event && (event.kind!=='heal-cast'||m.spec.classId==='priest') && (!publics.has(m.room)||!['chapter','party','duel','dungeon-return'].includes(event.kind)) && (m.snow || (event.chapter??1)<4&&![event.target,event.source].some(key=>key==='b300'||key==='f300'))) {
           const packet = { type: 'combat', id: m.id, event };
           if (authority) broadcast(m.room, packet, m.id);
           else { const h = rooms.get(m.room)?.get(host(m.room)); if (h) send(h.ws, packet); }
