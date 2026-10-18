@@ -1,3 +1,4 @@
+import type { LegacyConfig, LegacyEnvelope, LegacyRequest } from './legacy.ts';
 /** Shared contract for the implemented deterministic numeric simulation core.
  * Current gameplay refresh follows canonical dev 60df24f plus the merged S4 foundation.
  * Browser facade conversion, S1 event wiring and S3 baked query integration have separate gates.
@@ -5,6 +6,8 @@
  */
 export type WorldId = 'w1' | 'w2' | 'w3' | 'w4';
 export type Chapter = 1 | 2 | 3 | 4;
+export type EquipmentSlot = 'weapon' | 'armor';
+export type EquipmentResult = 'bought' | 'owned' | 'busy' | 'coins' | 'upgraded' | 'unowned' | 'max';
 export type BossProfileId = 'rust' | 'abyss' | 'eclipse' | 'dawn' | 'frost';
 export type AreaId = string; // host-assigned unique INSTANCE/incarnation, never reused after recreation
 export type EntityKey = string; // canonical encoding of full [area-instance,id,life], not EntityId alone
@@ -134,6 +137,7 @@ export interface PendingHit { left: number; plan: HitPlan } // countdown, decrem
 export type School = 'physical' | 'frost' | 'water' | 'holy' | 'rust';
 export interface HitOptions { crit?: boolean; school?: School; noReact?: boolean; rage?: number }
 export interface CombatController {
+  readonly damageTakenMultiplier?: number;
   readonly profile?: BossProfileId;
   onDamaged?(source: EntityRef | null, damage: number): void;
   onHurt?(damage: number): void;
@@ -193,6 +197,7 @@ export type CoreEvent =
   | { type: 'reward'; grant: EarnedGrant; appliedHere: boolean }
   | { type: 'respawn'; unit: EntityRef; position: Readonly<Vec3>; yaw: number }
   | { type: 'quest'; unit: EntityRef; quest: string; stage: 'accepted' | 'progress' | 'ready' | 'completed'; objective?: string; value?: number }
+  | { type: 'equipment'; unit: EntityRef; slot: EquipmentSlot; operation: 'buy' | 'upgrade'; result: EquipmentResult; request?: number }
   | { type: 'endingReady'; unit: EntityRef; chapter: 4; replay: boolean }
   | { type: 'travelReady'; unit: EntityRef; destination: WorldId; gate: string };
 export interface EventRecord { readonly tick: Tick; readonly order: number; readonly event: CoreEvent }
@@ -206,7 +211,7 @@ export type PlayerCommand =
   | { kind: 'interact'; targetId: string }
   | { kind: 'questAccept' | 'questTurnIn'; questId: string; npcId: string }
   | { kind: 'questTrack'; questId: string }
-  | { kind: 'forgeBuy'; npcId: string }
+  | { kind: 'forgeBuy' | 'forgeUpgrade'; npcId: string; slot?: EquipmentSlot; request?: number }
   | { kind: 'travel'; gateId: string }
   | { kind: 'bossChallenge'; profile: BossSim['profile'] }
   | { kind: 'endingReplay' };
@@ -235,7 +240,7 @@ export interface QuestState {
 }
 export interface PlayerState {
   character: CharacterId; unit: EntityRef; classId: ClassId; resource: number; maxResource: number;
-  xp: number; coins: number; attackRank: number; baseMaxHp: number;
+  xp: number; coins: number; attackRank: number; armorRank: number; weaponOwned: boolean; armorOwned: boolean; baseMaxHp: number;
   gcdStart: number; gcdEnd: number; cooldowns: Record<string, { start: number; end: number }>;
   cast: CastState | null; channel: ChannelState | null; target: EntityRef | null;
   warded: boolean; nextSwing: number; lastAttack: number; queued: AbilityId | null;
@@ -315,6 +320,10 @@ export interface Contribution { victim: EntityRef; contributors: readonly Charac
  * Subsystem controllers receive these services, not Game or server/WS/DOM objects.
  */
 export interface AreaServices {
+  readonly execution?: 'authoritative' | 'legacy-host' | 'legacy-follower';
+  routeDamage?(source:EntityRef|null,target:EntityRef,amount:number,options:HitOptions):number|null;
+  requestBossWake?(boss:EntityRef):boolean;
+  reportDamage?(source:EntityRef|null,target:EntityRef,amount:number,options:HitOptions):void;
   readonly id: AreaId; readonly world: WorldId; readonly time: number; readonly tick: Tick;
   readonly query: WorldQuery; readonly actionData: ActionData; readonly context: AreaContext; readonly definition: AreaDefinition; readonly policy: AreaPolicy;
   readonly random: RandomSource; readonly ids: IdSource; readonly combat: CombatRules; readonly timers: AreaTimers;
@@ -382,7 +391,7 @@ export interface AreaDebugState {
  */
 export interface TransferDTO {
   version: 's2-transfer-v1'; character: CharacterId; classId: ClassId; archetype: string;
-  hp: number; maxHp: number; resource: number; maxResource: number; xp: number; coins: number; attackRank: number; baseMaxHp: number;
+  hp: number; maxHp: number; resource: number; maxResource: number; xp: number; coins: number; attackRank: number; armorRank: number; weaponOwned: boolean; armorOwned: boolean; baseMaxHp: number;
   cooldowns: Readonly<Record<string, { startAge: number; endRemaining: number }>>;
   gcd: { startAge: number; endRemaining: number };
   status: { stunRemaining: number; slowRemaining: number; slowPct: number; rustRemaining: number; rust: number;
@@ -419,6 +428,12 @@ export interface TransferCoordinator {
 }
 
 export interface Area {
+  configureLegacy(config:LegacyConfig|null):void;
+  bindLegacy(key:string,unit:EntityRef,owner?:string):void;
+  enqueueLegacy(packet:LegacyEnvelope):boolean;
+  drainLegacyRequests():readonly LegacyRequest[];
+  attachReplica(character:CharacterId,peer:string,archetype:string):EntityRef;
+  detachReplica(ref:EntityRef):void;
   readonly services: AreaServices;
   readonly units: ReadonlyMap<EntityId, SimUnit>;
   readonly players: ReadonlyMap<EntityId, PlayerSim>;
