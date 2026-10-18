@@ -183,7 +183,7 @@ test('migration005 preserves existing account/save and all004 character/grant/re
     await legacy.query('INSERT INTO world_character_grants(grant_id,character_id,account_id,codec_version,payload_json) VALUES($1,$2,$3,1,$4)', [e.id, c.characterId, accountId, JSON.stringify(e.payload)]);
     await legacy.query('INSERT INTO world_character_grant_receipts(grant_id,character_id,applied_revision) VALUES($1,$2,1)', [e.id, c.characterId]);
     const tables = ['accounts', 'world_characters', 'world_character_grants', 'world_character_grant_receipts'], before = await Promise.all(tables.map(t => legacy.query(`SELECT * FROM ${t}`)));
-    assert.deepEqual(await migrate(legacy), ['005_world_victim_outcomes']); assert.deepEqual(await migrate(legacy), []);
+    assert.deepEqual(await migrate(legacy), ['005_world_victim_outcomes', '006_world_chat', '007_world_paged_ledger']); assert.deepEqual(await migrate(legacy), []);
     const after = await Promise.all(tables.map(t => legacy.query(`SELECT * FROM ${t}`))); assert.deepEqual(after.map(r => r.rows), before.map(r => r.rows));
   } finally { await legacy.end(); await pool.query('DROP DATABASE victim_pre005'); }
 });
