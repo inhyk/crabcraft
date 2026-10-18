@@ -322,9 +322,11 @@ export function buildLighthouse(kit: Kit, glass: THREE.Material): Lighthouse {
       varying vec3 vLP;
       void main() {
         vec3 v = normalize(-vVP);
-        float facing = abs(dot(normalize(vN), v));
+        // Interpolated UVs can stray below zero at cone edges. Fractional pow of a negative
+        // value produces NaN, which spreads across the image through the bloom pass.
+        float facing = clamp(abs(dot(normalize(vN), v)), 0.0, 1.0);
         float core = pow(facing, 2.2);
-        float along = pow(1.0 - vT, 1.8) * smoothstep(0.0, 0.04, vT);
+        float along = pow(max(0.0, 1.0 - vT), 1.8) * smoothstep(0.0, 0.04, vT);
         float dust = 0.7 + 0.3 * cc_fbm(vec2(vLP.y * 0.05 - uTime * 0.4, atan(vLP.x, vLP.z) * 2.0));
         float nearFade = smoothstep(2.0, 14.0, -vVP.z);
         float a = core * along * dust * nearFade * uLit;
