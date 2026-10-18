@@ -17,7 +17,7 @@ import {encodeInput} from './gameplay/intents.ts';
 import {prepareRestore} from '../../src/sim/persistence.ts';
 import {setQuestChapter} from '../../src/sim/data/quests.ts';
 import {createArea} from '../../src/sim/area.ts';
-import {startConfiguredWorld,validateWorldConfig,createConfiguredRestorePolicy,createConfiguredVisibility,createConfiguredAreaPolicy,createConfiguredPartyPolicy} from './startup.ts';
+import {startConfiguredWorld,validateWorldConfig,validateLedgerConfig,createConfiguredRestorePolicy,createConfiguredVisibility,createConfiguredAreaPolicy,createConfiguredPartyPolicy} from './startup.ts';
 const worlds=['w1','w2','w3','w4'];
 let cluster,pool,assets,source,configured,admission,directory;
 const liveClients=new Set();
@@ -102,4 +102,13 @@ test('PR52 guardian clearance is8m only in WorldII/III and startup derives the p
 });
 test('echo configuration explicitly acknowledges canonical120 and a delayed death cannot reuse the earlier spawn deadline',async()=>{
  const c=nearbyConfig();c.worlds.w2.respawnSeconds.echo=.01;assert.throws(()=>validateWorldConfig(c),/echo respawn must match canonical/);const area=await dynamicArea('w2',r=>{r.population.scrapling=0;r.nearby.scrapling={radius:50,base:0,max:0,scale:0};}),echo=[...area.enemies.values()].find(e=>e.isEcho),home=echo.spawn.home,actor=await actorAt(area,'delayed-echo',home.x-35,home.z);step(area,1352);assert.equal(echo.state,'idle');step(area,450);const old={...echo.unit};area.services.combat.damage(actor.ref,echo.unit,1e7);const deathTime=area.services.time;step(area,3560);assert.ok(area.services.time-deathTime>118);assert.equal(echo.state,'dead');assert.equal(echo.unit.life,old.life);step(area,45);assert.equal(echo.state,'idle');assert.equal(echo.unit.life,old.life+1);assert.equal(area.services.getUnit(old),null);
+});
+
+// Explicit test resources, not approved production sizing or an activation request.
+function ledgerConfig(){return{schema:'world-ledger-v1',queryTimeoutMs:3000,sourceLimits:{maxDirtyCreditEntries:102400,maxDirtyCreditBytes:67108864,maxPendingDeaths:512,maxStagedBytes:67108864},drainLimits:{pageSize:100,creditBatchesPerSlice:4,outcomesPerSlice:4,summaryVictimsPerSlice:4,writeAttempts:3},recoveryLimits:{draftsPerSlice:4,pageSize:100},recoveryIntervalMs:100};}
+test('separate ledger composition requires all explicit bounded resources and preserves the legacy world envelope',()=>{
+ const input=ledgerConfig(),validated=validateLedgerConfig(input);assert.deepEqual(validated,input);assert(Object.isFrozen(validated.sourceLimits));
+ for(const mutate of [c=>delete c.schema,c=>delete c.queryTimeoutMs,c=>c.queryTimeoutMs=2147483648,c=>c.recoveryIntervalMs=0,c=>c.recoveryIntervalMs=2147483648,c=>c.drainLimits.pageSize=101,c=>delete c.sourceLimits.maxStagedBytes,c=>c.sourceLimits.maxDirtyCreditEntries=NaN,c=>c.recoveryLimits.extra=1,c=>c.extra=true]){const c=ledgerConfig();mutate(c);assert.throws(()=>validateLedgerConfig(c),/world-config/);}
+ let invoked=false;assert.throws(()=>validateLedgerConfig({get schema(){invoked=true;return'world-ledger-v1';}}));assert.equal(invoked,false);
+ const world=config();world.ledger=ledgerConfig();assert.throws(()=>validateWorldConfig(world),/world-config/);assert.deepEqual(validateWorldConfig(config()).victimOutcome,config().victimOutcome);
 });
