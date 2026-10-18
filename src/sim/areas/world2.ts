@@ -1,3 +1,4 @@
+import { createTownsfolk } from '../data/townsfolk.ts';
 import type { AreaDefinition, EnemySpawn, Poi } from '../types.ts';
 import { deepFreeze, NPC_ORDER, poi, validateConfig, type WorldDefinitionConfig } from './world1.ts';
 /** Independent Starhaven population, extracted homes/landmarks from S1 world2.ts. */
@@ -13,5 +14,5 @@ export function createWorld2Definition(config:WorldDefinitionConfig):AreaDefinit
  const objectives:readonly (readonly [string,number,number])[]=[['crystal-a',-65,26],['crystal-b',-84,-10],['crystal-c',65,16],['crystal-d',84,-20],['lamp-a',-7.4,15],['lamp-b',29,-15],['lamp-c',-7.4,-41],['explore-west',-75,-35],['explore-east',80,-40],['explore-north',0,-48]];
  const interactions:AreaDefinition['interactions'][number][]=objectives.map(([id,x,z])=>{const position=p('',x,z).position;return {id,kind:id.startsWith('explore')?'explore':id.startsWith('lamp')?'waystone':'crystal',position,...(id.startsWith('lamp')?{channelTo:{...position,y:position.y+1.46}}:{}),range:id.startsWith('explore')?5:3.5,objective:id};});
  interactions.push({id:'gate:w1',kind:'gate',position:pois.spawn.position,range:3.5,destination:'w1'},{id:'gate:w3',kind:'gate',position:p('',0,-41).position,range:3.5,destination:'w3'});
- return deepFreeze({world:'w2',spawn:pois.spawn,recall:pois.spawn,pois,enemies,bosses:[{profile:'eclipse',arena:pois.bossArena,freedNpcId:'star',freedArchetype:'freed-eclipse'}],npcs,interactions});
+ return deepFreeze({world:'w2',townsfolk:createTownsfolk('w2',config.query),spawn:pois.spawn,recall:pois.spawn,pois,enemies,bosses:[{profile:'eclipse',arena:pois.bossArena,freedNpcId:'star',freedArchetype:'freed-eclipse'}],npcs,interactions});
 }
