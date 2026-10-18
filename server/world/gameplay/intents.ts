@@ -1,3 +1,4 @@
+import {REASONS} from '../../chat/safety.ts';
 import type { PlayerCommand, PlayerIntent } from '../../../src/sim/types.ts';
 import { FragmentAssembler, LIMITS, bool, catalogValue, choice, clone, encodeMessage, fail, integer, number, object, reference, sameBinding, text } from './protocol.ts';
 import type { GameplayCatalog, WireBinding, WireHeader } from './protocol.ts';
@@ -5,9 +6,14 @@ import type { GameplayCatalog, WireBinding, WireHeader } from './protocol.ts';
 export type HostCommand=
  | {kind:'partyCreate'|'partyLeave'|'encounterLeave'}
  | {kind:'partyJoin';code:string}
- | {kind:'partyPvp';enabled:boolean};
+ | {kind:'partyPvp';enabled:boolean}
+ | {kind:'chatSay';channel:'area'|'party';text:string}
+ | {kind:'chatPreferences';enabled?:boolean;partyOnly?:boolean}
+ | {kind:'chatBlock';target:import('../../../src/sim/types.ts').EntityRef;blocked:boolean}
+ | {kind:'chatMute';target:import('../../../src/sim/types.ts').EntityRef;muted:boolean}
+ | {kind:'chatReport';target:import('../../../src/sim/types.ts').EntityRef;reason:typeof REASONS[number]};
 export type GameplayCommand=PlayerCommand|HostCommand;
-export const HOST_COMMANDS:readonly string[]=['partyCreate','partyJoin','partyLeave','partyPvp','encounterLeave'];
+export const HOST_COMMANDS:readonly string[]=['partyCreate','partyJoin','partyLeave','partyPvp','encounterLeave','chatSay','chatPreferences','chatBlock','chatMute','chatReport'];
 export interface GameplayInput extends Omit<PlayerIntent,'commands'> {readonly commands:readonly GameplayCommand[]}
 export interface InputPacket {binding:WireBinding;intent:GameplayInput}
 const axis=(v:unknown)=>{number(v);if(v< -1||v>1)fail('axis out of range');};
@@ -16,6 +22,7 @@ export function validateCommand(value:unknown,catalog:GameplayCatalog,area:strin
  const kind=choice(c.kind),npc=catalogValue(catalog.npcs),quest=catalogValue(catalog.quests);
  switch(c.kind){
   case 'ability':object(c,{kind,slot:v=>integer(v,1,5)});break;
+  case 'talk':object(c,{kind,target:v=>reference(v,area)});break;
   case 'target':object(c,{kind,target:v=>{if(v!==null)reference(v,area);}});break;
   case 'partyCreate':case 'partyLeave':case 'encounterLeave':
   case 'jump':case 'dance':case 'cancel':case 'endingReplay':case 'talkEnd':object(c,{kind});break;
@@ -26,6 +33,11 @@ export function validateCommand(value:unknown,catalog:GameplayCatalog,area:strin
   case 'forgeBuy':case 'forgeUpgrade':object(c,{kind,npcId:npc},{slot:choice('weapon','armor'),request:v=>integer(v,1)});break;
   case 'travel':object(c,{kind,gateId:catalogValue(catalog.gates)});break;
   case 'bossChallenge':object(c,{kind,profile:choice('rust','abyss','eclipse','dawn','frost')});break;
+  case 'chatSay':object(c,{kind,channel:choice('area','party'),text:v=>{if(typeof v!=='string'||v.length>LIMITS.stringBytes)fail('invalid chat text');}});break;
+  case 'chatPreferences':object(c,{kind},{enabled:bool,partyOnly:bool});break;
+  case 'chatBlock':object(c,{kind,target:reference,blocked:bool});break;
+  case 'chatMute':object(c,{kind,target:reference,muted:bool});break;
+  case 'chatReport':object(c,{kind,target:reference,reason:choice(...REASONS)});break;
   case 'partyJoin':object(c,{kind,code:v=>{if(typeof v!=='string'||! /^[0-9A-F]{6}$/.test(v))fail('invalid party code');}});break;
   case 'partyPvp':object(c,{kind,enabled:bool});break;
   case 'boat':object(c,{kind,command:v=>object(v,{action:choice('board','leave','call','drive'),throttle:axis,steer:axis})});break;

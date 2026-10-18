@@ -13,7 +13,7 @@ const binding={session:'session-unique',area:'wire-area',epoch:1,catalog:catalog
 const appearance={race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name:'Hero'};
 const header=(sequence=1)=>({...binding,sequence,tick:0,acceptedInput:0,consumedInput:0});
 const input=(seq=1,commands=[])=>({...intent(seq,commands),steeringYaw:.3});
-function fixture(count=1){const area=worldArea(binding.area),actors=Array.from({length:count},(_,i)=>addActor(area,`private-character-${i}`));const codec=createGameplayProtocol(catalog),receiver=new GameplayReceiver(binding,catalog);return {area,actors,codec,receiver};}
+function fixture(count=1,options={}){const area=worldArea(binding.area,'w1',options),actors=Array.from({length:count},(_,i)=>addActor(area,`private-character-${i}`));const codec=createGameplayProtocol(catalog),receiver=new GameplayReceiver(binding,catalog);return {area,actors,codec,receiver};}
 function observation(f,sequence=1,full=false){const snapshot=f.area.snapshot();return {binding,sequence,tick:snapshot.tick,acceptedInput:0,consumedInput:0,selfRef:f.actors[0].p.state.unit,snapshot,events:[],visibleIds:new Set(snapshot.units.map(u=>u.ref.id)),full,eventWatermark:-1,...projectObservationExtras(snapshot,f.actors[0].p.state.character,new Set(snapshot.units.map(u=>u.ref.id))),appearances:Object.fromEntries(f.actors.map(a=>[`${a.u.ref.id}:${a.u.ref.life}`,appearance]))};}
 function apply(receiver,fragments){let result=null;for(const f of fragments)result=receiver.accept(f,0);return result;}
 test('bounded binary values preserve safe integers and all finite numbers without growth clamps',()=>{
@@ -206,4 +206,50 @@ test('resync controls are monotonic and one outstanding request never advances i
  const first=f.codec.decodeClientMessage(request(1),binding);assert.equal(first.sequence,1);assert.throws(()=>f.codec.decodeClientMessage(request(1),binding),/recovery/);assert.throws(()=>f.codec.decodeClientMessage(request(2),binding),/recovery/);
  f.codec.encodeObservation(observation(f));assert.throws(()=>f.codec.decodeClientMessage(request(1),binding),/recovery/);assert.equal(f.codec.decodeClientMessage(request(2),binding).kind,'resync');
  const result={inputSequence:1,commandIndex:0,status:'durable',code:'saved',revision:1};assert.throws(()=>encodeEvents(header(2),{baselineSequence:1,events:[],results:[result]},catalog),/consumption/);
+});
+
+test('measure mixed 100-player inputs on actual baked public World I with 80/88m AOI',async t=>{
+ const {loadBakedWorld}=await import('../../../src/sim/world/baked.ts');const {createWorld1Definition}=await import('../../../src/sim/areas/world1.ts');const {createPublicDefinition,personalNpcVisible}=await import('../../../src/sim/areas/variants.ts');
+ const query=loadBakedWorld(JSON.parse(readFileSync(new URL('../../../public/world/collision-w1.json',import.meta.url),'utf8')));
+ const definition=createPublicDefinition(createWorld1Definition({query,fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:1,scavenger:0,jellyfish:0}}));
+ const f=fixture(100,{query,definition});let previous=new Set(),sequence=1,total=0,frames=0,baseline=0,maxVisible=0;
+ const publish=()=>{const o=observation(f,sequence++),self=f.actors[0].u;const visible=new Set(o.snapshot.units.filter(u=>u.ref.id===self.ref.id||!u.hidden&&(!u.npcId||personalNpcVisible(definition,u.npcId,f.actors[0].p.state.flags))&&Math.hypot(u.x-self.x,u.z-self.z)<=(previous.has(u.ref.id)?88:80)).map(u=>u.ref.id));previous=visible;maxVisible=Math.max(maxVisible,visible.size);o.visibleIds=visible;Object.assign(o,projectObservationExtras(o.snapshot,f.actors[0].p.state.character,visible));o.prepared=prepareObservationSnapshot(o.snapshot,o.appearances,catalog);return f.codec.encodeObservation(o).reduce((n,b)=>n+b.length,0);};
+ baseline=publish();
+ for(let tick=1;tick<=30;tick++){
+  f.area.step(new Map(f.actors.map((a,i)=>{const angle=i*.17+tick*.003*(i%9+1);return[a.u.ref.id,intent(tick,[],{forward:Math.sin(i*.63+tick*.02),strafe:Math.cos(i*.63),sprint:i%4===0,steeringYaw:Math.atan2(Math.sin(angle),Math.cos(angle))})];})));f.area.drainEvents();
+  if(Math.floor(tick*2/3)!==Math.floor((tick-1)*2/3)){total+=publish();frames++;}
+ }
+ assert.equal(frames,20);assert.equal(definition.bosses.length,0);assert.ok(maxVisible>=100);
+ t.diagnostic(JSON.stringify({measurement:'actual-baked-public-w1-mixed-inputs-AOI80-88',actualPlayers:100,totalActors:f.area.snapshot().units.length,maxVisibleActors:maxVisible,populationPolicy:'test-one-scrapling',baselineBytes:baseline,movingBytesPerClientSecond:total,meanDeltaBytes:total/20,estimated100ViewersBytesPerSecond:total*100}));
+});
+test('shared codec browser graph contains no Area, player controller, DOM or Node adapter runtime',async()=>{
+ const {build}=await import('esbuild');const result=await build({entryPoints:[new URL('./protocol.ts',import.meta.url).pathname],bundle:true,platform:'browser',format:'esm',write:false,metafile:true,logLevel:'silent'});
+ const paths=Object.keys(result.metafile.inputs);assert.equal(paths.some(p=>/src\/game\/|src\/sim\/(area|player|combat|boss|enemy)\.ts$|server\/node\//.test(p)),false);
+ assert.ok(paths.some(p=>p.endsWith('src/sim/renderPose.ts')));assert.ok(result.outputFiles[0].contents.length>0);
+});
+
+test('public and private PvP presentation uses explicit authority context rather than area names',()=>{
+ const f=fixture(),publicState=apply(f.receiver,f.codec.encodeObservation(observation(f))).state;assert.equal(publicState.features.environment.mode,'public');assert.equal(publicState.features.environment.pvp,'disabled');
+ f.area.applyContext({...f.area.services.context,mode:'party-encounter',pvp:'party-only'});const privateState=apply(f.receiver,f.codec.encodeObservation(observation(f,2))).state;assert.equal(privateState.header.area,'wire-area');assert.equal(privateState.features.environment.mode,'party-encounter');assert.equal(privateState.features.environment.pvp,'party-only');
+ const missing=observation(f,3);delete missing.features.environment.mode;assert.throws(()=>f.codec.encodeObservation(missing),/missing mode/);
+});
+
+test('typed full-life talk reaches actual resident bark and rejects null or forged account targets',()=>{
+ const f=fixture(),hero=f.actors[0],resident=[...f.area.units.values()].find(u=>u.kind==='townsfolk');Object.assign(hero.u,{x:resident.x,y:resident.y,z:resident.z+2});
+ const frame=input(1,[{kind:'talk',target:resident.ref}]),session=new InputSession(binding,catalog);session.accept(encodeInput({binding,intent:frame},catalog),0);const prepared=session.prepareTick(0);const result=f.area.step(new Map([[hero.ref.id,prepared.intent]]));session.commitConsumed(prepared.token);assert.equal(result[0].success,true);
+ const events=f.area.drainEvents();assert.ok(events.some(e=>e.event.type==='feature'&&e.event.event.type==='npcBark'));
+ assert.throws(()=>encodeInput({binding,intent:input(2,[{kind:'talk',target:null}])},catalog));assert.throws(()=>encodeInput({binding,intent:input(2,[{kind:'talk',target:{...resident.ref,accountId:'forged'}}])},catalog),/unknown/);
+});
+test('chat commands preserve server-filter input while disallowing client account and delivery claims',()=>{
+ const target={area:'other-party-world',id:42,life:3};const commands=[{kind:'chatSay',channel:'area',text:'x'.repeat(300)},{kind:'chatPreferences'},{kind:'chatPreferences',enabled:true,partyOnly:true},{kind:'chatBlock',target,blocked:true},{kind:'chatMute',target,muted:false},{kind:'chatReport',target,reason:'harassment'}];
+ for(const command of commands){const frame=input(1,[command]);assert.deepEqual(decodeInput(encodeInput({binding,intent:frame},catalog),binding,catalog),frame);assert.throws(()=>encodeInput({binding,intent:input(1,[command,{kind:'jump'}])},catalog),/cannot mix/);}
+ for(const command of [{kind:'chatSay',channel:'area',text:'hello',accountId:'forged'},{kind:'chatReport',target,reason:'forged'},{kind:'chatBlock',target:{...target,life:0},blocked:true},{kind:'chatMute',target,muted:true,ok:true}])assert.throws(()=>encodeInput({binding,intent:input(1,[command])},catalog));
+});
+test('account-free chat controls carry only filtered lines, preferences and explicit moderation outcomes',async()=>{
+ const {filterText}=await import('../../chat/filter.ts');const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));const sender={area:'party-other',id:7,life:2};
+ const line={sender,name:'Crab',text:filterText('hello '+ 'x'.repeat(300)).text,at:1800000000000};assert.equal([...line.text].length,200);
+ const controls=[{type:'chatLine',channel:'party',line},{type:'chatPreferences',enabled:true,partyOnly:false},{type:'chatResult',inputSequence:1,operation:'block',ok:true,target:sender,blocked:true},{type:'chatResult',inputSequence:2,operation:'report',ok:false,error:'target'}];
+ controls.forEach((control,i)=>assert.deepEqual(apply(f.receiver,f.codec.encodeControl(header(i+2),control)).control,control));
+ assert.throws(()=>f.codec.encodeControl(header(7),{type:'chatLine',channel:'party',line:{...line,accountId:'private'}}),/unknown/);assert.throws(()=>f.codec.encodeControl(header(7),{type:'chatResult',inputSequence:1,operation:'mute',ok:true,target:sender}),/missing state/);
+ assert.throws(()=>f.codec.decodeClientMessage(f.codec.encodeControl(header(1),{type:'chatLine',channel:'party',line})[0],binding),/client cannot/);
 });
