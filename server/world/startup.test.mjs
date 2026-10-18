@@ -112,3 +112,8 @@ test('separate ledger composition requires all explicit bounded resources and pr
  let invoked=false;assert.throws(()=>validateLedgerConfig({get schema(){invoked=true;return'world-ledger-v1';}}));assert.equal(invoked,false);
  const world=config();world.ledger=ledgerConfig();assert.throws(()=>validateWorldConfig(world),/world-config/);assert.deepEqual(validateWorldConfig(config()).victimOutcome,config().victimOutcome);
 });
+
+test('explicit separate ledger composition starts the real factory and waits for durable readiness',async()=>{
+ const configValue=config();configValue.ownership.key='external-startup-smoke';const runtime=await startConfiguredWorld(options({config:configValue,ledgerConfig:ledgerConfig()}));
+ try{await runtime.host.ready();assert.equal(runtime.ledgerConfig.schema,'world-ledger-v1');assert.equal(runtime.host.stats().frozen,false);assert.equal(runtime.catalog.size,4);assert.equal(runtime.config.characters,undefined);}finally{assert.equal((await runtime.host.shutdown(3000)).durable,true);await runtime.ownership.release();}
+});

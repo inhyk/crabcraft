@@ -9,9 +9,11 @@ import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { canonicalEnemyRespawn, enemyRespawnClearance, enemyStats } from '../../src/sim/data/enemies.ts';
 import { worldChapter } from '../../src/sim/math.ts';
 import { CLASSES } from '../../src/sim/data/classes.ts';
-import type { AreaOptions, AreaPolicy, BossProfileId, EnemySpawn, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
+import type { AreaPolicy, BossProfileId, EnemySpawn, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { WorldChatService } from './chat.ts';
 import { CharacterStore } from './character-store.ts';
+import { DurableOutcomeStore } from './contribution-store.ts';
+import { planOutcomePage } from '../../src/sim/ledger.ts';
 import { type WorldTicketRegistry } from './admission.ts';
 import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { createGameplayProtocol, projectObservationExtras } from './gameplay/protocol.ts';
@@ -83,12 +85,7 @@ export function validateWorldConfig(value:unknown):ValidatedWorldConfig {
  return freeze({schema:'world-startup-v1',ownership:{key:own.key,heartbeatMs:integer(optional(own,'heartbeatMs',1000),'ownership.heartbeatMs',1,60000),queryTimeoutMs:integer(optional(own,'queryTimeoutMs',1000),'ownership.queryTimeoutMs',1,60000)},assets,worlds:regions,restore,limits,areaLimits,persistence,victimOutcome,chat,...(retry?{victimOutcomeRetryCeiling:retry}:{}),party,...(characters===undefined?{}:{characters})});
 }
 /** Separate composition envelope: old WORLD_CONFIG_JSON remains valid across a binary rollback. */
-export interface ConfiguredLedgerConfig {
- schema:'world-ledger-v1';queryTimeoutMs:number;
- sourceLimits:NonNullable<AreaOptions['ledgerLimits']>;
- drainLimits:{pageSize:number;creditBatchesPerSlice:number;outcomesPerSlice:number;summaryVictimsPerSlice:number;writeAttempts:number};
- recoveryLimits:{draftsPerSlice:number;pageSize:number};recoveryIntervalMs:number;
-}
+export type ConfiguredLedgerConfig = NonNullable<HostPolicies['ledger']>&{schema:'world-ledger-v1';queryTimeoutMs:number};
 export function validateLedgerConfig(value:unknown):ConfiguredLedgerConfig {
  const c=object(detached(value),['schema','queryTimeoutMs','sourceLimits','drainLimits','recoveryLimits','recoveryIntervalMs'],[],'ledger');
  const group=<K extends string>(raw:unknown,keys:readonly K[],path:string,max:number):Record<K,number>=>{const fields=object(raw,keys,[],path);return Object.fromEntries(keys.map(k=>[k,integer(fields[k],`${path}.${k}`,1,max)])) as Record<K,number>;};
@@ -134,16 +131,19 @@ async function loadCheckedCatalog(assets:URL,c:ValidatedWorldConfig):Promise<Rea
  const catalog=await loadWorldCatalog({directory:assets,expectedBakeSource:c.assets.source,maxBakeBytes:c.assets.maxBakeBytes,maxCells:c.assets.maxCells,configs:c.worlds,policies,seeds:Object.fromEntries(PUBLIC_WORLDS.map(w=>[w,c.worlds[w].seed])) as Record<WorldId,number>,variants:createWorldVariants});
  for(const [world,data]of catalog){if(data.artifactHash!==expected.get(world))fail(`asset changed while loading ${world}`);if(data.publicDefinition.enemies.length>c.limits.maxMutationSourcesPerTick)fail(`${world}.actual population exceeds receipt bound`);for(const spawn of data.publicDefinition.enemies){data.policy.enemyPopulation(spawn,0);for(const value of Object.values(enemyStats(spawn.kind,spawn.fixedLevel,worldChapter(world),spawn.role)))if(typeof value==='number'&&(!Number.isFinite(value)||Math.abs(value)>Number.MAX_SAFE_INTEGER))fail(`${world}.unsafe derived enemy stats`);}}return catalog;
 }
-export interface ConfiguredWorldOptions {pool:Pool;admission:WorldTicketRegistry;assets:URL;config:unknown;originAllowed(origin:string,req:IncomingMessage):boolean;clientIp(req:IncomingMessage):string}
+export interface ConfiguredWorldOptions {pool:Pool;admission:WorldTicketRegistry;assets:URL;config:unknown;ledgerConfig?:unknown;originAllowed(origin:string,req:IncomingMessage):boolean;clientIp(req:IncomingMessage):string}
 export async function startConfiguredWorld(options:ConfiguredWorldOptions) {
- const config=validateWorldConfig(options.config);if(typeof options.originAllowed!=='function'||typeof options.clientIp!=='function')fail('HTTP callbacks');
+ const config=validateWorldConfig(options.config),ledgerConfig=options.ledgerConfig===undefined?undefined:validateLedgerConfig(options.ledgerConfig);if(typeof options.originAllowed!=='function'||typeof options.clientIp!=='function')fail('HTTP callbacks');
  const catalog=await loadCheckedCatalog(options.assets,config),party=createConfiguredPartyPolicy(config.party,catalog),spawn=catalog.get('w1')!.publicDefinition.spawn;
  const codec=createCoreCharacterCodec({identities:['human','orc','dwarf','undead','nightelf','tauren'].flatMap(archetype=>Object.keys(CLASSES).map(classId=>({classId:classId as keyof typeof CLASSES,archetype}))),freshLocation:{...spawn.position,yaw:spawn.yaw}}),characters=new CharacterStore(options.pool,codec),gameplayCatalog=createGameplayCatalog(catalog),restore=createConfiguredRestorePolicy(config.restore,catalog);
  // Construct/validate the concrete protocol before retaining a database ownership session.
  createGameplayProtocol(gameplayCatalog);
+ const outcomes=ledgerConfig?new DurableOutcomeStore(options.pool,codec,{planOutcomePage,queryTimeoutMs:ledgerConfig.queryTimeoutMs}):undefined;
  const ownership=await acquireHostOwnership(options.pool,config.ownership.key,config.ownership);
- try{const policies:HostPolicies={...config.limits,victimOutcome:config.victimOutcome,...(config.victimOutcomeRetryCeiling?{victimOutcomeRetryCeiling:config.victimOutcomeRetryCeiling}:{}),chat:config.chat,...(party?{party}:{}),persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
-  const host=createActualWorldHost({chat:new WorldChatService(options.pool),admission:options.admission,characters,worlds:catalog,codec,gameplay:{catalog:gameplayCatalog,create:()=>createGameplayProtocol(gameplayCatalog)},ownership,policies,originAllowed:options.originAllowed,clientIp:options.clientIp,nowMonotonicMs:()=>performance.now(),nowWallMs:Date.now});
-  return {host,catalog,ownership,characters,codec,gameplayCatalog,config};
- }catch(error){try{await ownership.release();}catch(releaseError){throw new AggregateError([error,releaseError],'World assembly failed and ownership release reported an error');}throw error;}
+ let host:ReturnType<typeof createActualWorldHost>|undefined;
+ try{const policies:HostPolicies={...config.limits,...(ledgerConfig?{ledger:{sourceLimits:ledgerConfig.sourceLimits,drainLimits:ledgerConfig.drainLimits,recoveryLimits:ledgerConfig.recoveryLimits,recoveryIntervalMs:ledgerConfig.recoveryIntervalMs}}:{}),victimOutcome:config.victimOutcome,...(config.victimOutcomeRetryCeiling?{victimOutcomeRetryCeiling:config.victimOutcomeRetryCeiling}:{}),chat:config.chat,...(party?{party}:{}),persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
+  host=createActualWorldHost({...(outcomes?{outcomes}:{}),chat:new WorldChatService(options.pool),admission:options.admission,characters,worlds:catalog,codec,gameplay:{catalog:gameplayCatalog,create:()=>createGameplayProtocol(gameplayCatalog)},ownership,policies,originAllowed:options.originAllowed,clientIp:options.clientIp,nowMonotonicMs:()=>performance.now(),nowWallMs:Date.now});
+  await host.ready();
+  return {host,catalog,ownership,characters,codec,gameplayCatalog,config,ledgerConfig};
+ }catch(error){const errors=[error];if(host){try{host.stopAdmission();await host.shutdown(7000);}catch(shutdownError){errors.push(shutdownError);}}try{await ownership.release();}catch(releaseError){errors.push(releaseError);}if(errors.length>1)throw new AggregateError(errors,'World assembly cleanup reported errors');throw error;}
 }
