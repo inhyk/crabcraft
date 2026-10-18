@@ -260,11 +260,14 @@ export function layoutWreck(col: Collision) {
     col.addCircle(p.x, p.z, 0.75);
     return { p, y };
   });
-  return { group, ship, stern, pivotX, ax, toWorld, deckHeight: deckY, sternWorld, gangway: { deckEdge, foot, topY, glen, gyaw, gmid, gslope, nx, nz }, debris, braziers };
+  const ground = (x: number, z: number) => col.terrain.heightAt(x, z);
+  return { group, ship, stern, pivotX, ax, toWorld, deckHeight: deckY, sternWorld, ground, gangway: { deckEdge, foot, topY, glen, gyaw, gmid, gslope, nx, nz }, debris, braziers };
 }
 
-export function buildWreck(col: Collision, batch: StaticBatch, propBatch: StaticBatch): Wreck {
-  const { group, ship, stern, pivotX, ax, toWorld, deckHeight, sternWorld, gangway: gw, debris, braziers } = layoutWreck(col);
+export type WreckLayout = ReturnType<typeof layoutWreck>;
+
+export function buildWreck(layout: WreckLayout, batch: StaticBatch, propBatch: StaticBatch): Wreck {
+  const { group, ship, stern, pivotX, ax, toWorld, deckHeight, sternWorld, gangway: gw, debris, braziers, ground } = layout;
   const { deckEdge, foot, topY, glen, gyaw, gmid, gslope, nx, nz } = gw;
 
   const hullMat = rustMaterial({ axis: ax, base: '#36312f', rust: '#9c4a20' });
@@ -372,7 +375,7 @@ export function buildWreck(col: Collision, batch: StaticBatch, propBatch: Static
   // Anchor chain from the hawse pipe down to the sand.
   const hawse = toWorld(25.5, -halfBeam(25.5) + 0.4, 0.4 + sheerAt(25.5));
   const sandEnd = toWorld(36, -14);
-  sandEnd.y = col.terrain.heightAt(sandEnd.x, sandEnd.z) - 0.1;
+  sandEnd.y = ground(sandEnd.x, sandEnd.z) - 0.1;
   const chainPts: THREE.Vector3[] = [];
   for (let i = 0; i <= 24; i++) {
     const t = i / 24;
@@ -397,7 +400,7 @@ export function buildWreck(col: Collision, batch: StaticBatch, propBatch: Static
   ];
   for (const [lx, lz, rot, tilt] of plates) {
     const p = toWorld(lx, lz);
-    const y = col.terrain.heightAt(p.x, p.z);
+    const y = ground(p.x, p.z);
     plateParts.push(worldBox(3.4, 0.18, 2.4, 0.4).rotateX(tilt).rotateY(WRECK.rotY + rot).translate(p.x, y + 0.25, p.z));
   }
   const plateMesh = new THREE.Mesh(mergeAll(plateParts), hullMat);
