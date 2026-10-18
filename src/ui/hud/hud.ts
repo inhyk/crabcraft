@@ -11,6 +11,7 @@ import { GameMenu } from './menu';
 import { Bubbles, FloatingText, Nameplates } from './plates';
 import { DialogueWindow, QuestLogPanel, QuestTracker } from './questui';
 import { ControlHints } from './hints';
+import {ForgePanel} from './forge';
 
 export class Hud {
   readonly root: HTMLElement;
@@ -31,6 +32,7 @@ export class Hud {
   readonly chat: ChatLog;
   readonly menu: GameMenu;
   readonly hints: ControlHints;
+  readonly forge:ForgePanel;
   readonly sidePanels: HTMLElement;
   private bossBottom = -1;
   private dmgFlash: HTMLElement;
@@ -63,6 +65,7 @@ export class Hud {
     this.chat = new ChatLog();
     this.menu = new GameMenu(game);
     this.hints = new ControlHints();
+    this.forge=new ForgePanel(game);
     this.dmgFlash = h('div', { class: 'dmg-flash hud-keep' });
     this.lowHp = h('div', { class: 'low-hp' });
     this.letterTop = h('div', { class: 'letterbox top hud-keep' });
@@ -96,6 +99,7 @@ export class Hud {
       this.caption,
       this.skipHint,
       this.menu.el,
+      this.forge.el,
     );
   }
 
@@ -107,6 +111,7 @@ export class Hud {
     this.hints.refreshLanguage();
     this.minimap.refreshLanguage();
     for(const boss of [this.game.boss,this.game.finalBoss,this.game.worldBoss,this.game.dawnBoss])boss.refreshLanguage();
+    this.game.sink.refreshLanguage();
     this.skipHint.textContent=t('Space를 눌러 계속하기','Press Space to continue');
     if(this.deathEl)this.showDeath(true);
   }
@@ -133,6 +138,7 @@ export class Hud {
     this.minimap.update(dt);
     this.dialogue.update(dt);
     this.hints.update(dt);
+    this.forge.update();
     const p = g.player.unit;
     const low = p.alive && p.hp / p.maxHp < 0.3 && !g.cinematic;
     this.lowHp.style.opacity = low ? '1' : '0';
@@ -181,6 +187,7 @@ export class Hud {
   }
 
   dispose(): void {
+    this.forge.close();
     this.actionBar.hideTip();
     this.chat.dispose();
     this.messages.dispose();
