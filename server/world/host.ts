@@ -12,7 +12,7 @@ import type { Area, AreaSnapshot, BossProfileId, EntityRef, EventRecord, PlayerC
 import { canChallenge } from '../../src/sim/data/progression.ts';
 import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { TREASURES, LIGHTHOUSE_SECRET } from '../../src/sim/features/exploration.ts';
-import { CharacterStore, type Character, type VictimOutcomeResources } from './character-store.ts';
+import { CharacterStore, type Character, type VictimOutcomeResources, type GrantBatchEntry } from './character-store.ts';
 import { WorldTicketRegistry, type SessionBinding } from './admission.ts';
 import type { HostOwnership } from './ownership.ts';
 import { DeadlineScheduler } from './scheduler.ts';
@@ -507,7 +507,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       }
       for (const group of groups.values()) {
         if (group.length > p.victimOutcome.maxEntries) throw new Error('victim outcome resource budget; complete source retained');
-        const entries = [];
+        const entries: GrantBatchEntry<GrantJson>[] = [];
         for (const { grant } of group) entries.push({ accountId: await deps.characters.getOwner(grant.recipient), characterId: grant.recipient, id: grant.id, payload: deps.codec.grantToJson(grant) });
         const recorded = await deps.characters.recordVictimOutcome(entries, p.victimOutcome);
         if (recorded.length !== entries.length || recorded.some((entry, index) => entry.id !== entries[index].id)) throw new Error('incomplete victim outcome journal');
