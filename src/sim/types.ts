@@ -269,8 +269,8 @@ export interface TimerState { id: number; due: number; insertion: number; action
  * Entries added during firing cannot join that selected batch; cancelled entries are removed eagerly.
  */
 export interface AreaTimers { schedule(due: number, action: TimerAction): number; cancel(id: number): void }
-export interface EnemySim extends CombatController { readonly unit: EntityRef; readonly spawnId: string; update(dt: number): void; despawn(): void }
-export interface BossSim extends CombatController { readonly unit: EntityRef; readonly profile: 'rust' | 'abyss' | 'eclipse' | 'dawn'; update(dt: number): void; wake(): void; reset(): void }
+export interface EnemySim extends CombatController { readonly unit: EntityRef; readonly spawnId: string; readonly state: 'idle' | 'chase' | 'leash' | 'dead' | 'gone'; update(dt: number): void; despawn(): void; respawnAt(x: number, z: number): void; resolveHit(plan: HitPlan): boolean; debugState(): object }
+export interface BossSim extends CombatController { readonly unit: EntityRef; readonly profile: 'rust' | 'abyss' | 'eclipse' | 'dawn'; update(dt: number): void; wake(): void; reset(): void; resolveHit(plan: HitPlan): boolean; debugState(): object }
 export interface EnemySpawn {
   readonly id: string; readonly kind: 'scrapling' | 'scavenger' | 'jellyfish';
   readonly home: Readonly<Vec3>; readonly wanderRadius: number; readonly pack: string;
