@@ -3,6 +3,7 @@ import type { App, Screen } from '../app';
 import { h, art } from '../ui/dom';
 import {t} from '../i18n';
 import { openVideos } from '../ui/videos';
+import { buildInfo, versionLabel } from '../version';
 import './title.css';
 
 export default class TitleScreen implements Screen {
@@ -35,6 +36,7 @@ export default class TitleScreen implements Screen {
       h('footer', { class: 'title-footer cc-passive' },
         h('div', null, t('이 세계의 모든 게는 점퍼 로봇이에요. 걷기와 인사, 춤은 실제 로봇 동작 정책으로 만들어졌어요.','Every crab in this world is a Jumper robot. Every walk, wave and dance is a real policy rollout.')),
         h('div', { class: 'cc-small' }, 'Crab Robot Open-source Challenge 2026 | Apache-2.0'),
+        h('div', { class: 'cc-small title-version', 'data-env': buildInfo.env }, versionLabel()),
       ),
     );
     app.ui.append(this.root);
