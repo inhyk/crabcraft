@@ -652,6 +652,8 @@ export class Vfx {
       f.mesh.scale.set(r, 1, r);
       f.u.uAlpha.value = 1 - k;
     };
+    const halo=this.ring(unit.pos,N.heal,.25,unit.radius*1.5,.65,.45);
+    halo.anim=(f,_dt,k)=>{const r=unit.radius*(.75+k*.8);f.mesh.position.set(unit.pos.x,unit.pos.y+.18+k*unit.height*.7,unit.pos.z);f.mesh.scale.set(r,1,r);f.u.uAlpha.value=Math.sin(k*Math.PI)*.7;};
     this.glow(unit.centre(v1), C.heal, 2.6, 0.4);
     this.attach(0.9, (_dt, t) => {
       for (let i = 0; i < this.n(4); i++) {
