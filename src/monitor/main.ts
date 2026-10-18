@@ -131,7 +131,7 @@ function render() {
   empty.textContent = players.length ? '검색 조건에 맞는 유저가 없습니다' : '접속 중인 유저가 없습니다';
   layout(order.length);
   const tiles = new Map([...cards].filter(([, c]) => !c.root.hidden).map(([id, c]) => [id, { canvas: c.canvas, message: c.message }]));
-  views?.sync(players, tiles);
+  views?.sync(players, tiles, snapshot.at);
   if (players.length && !views && !viewsLoading) {
     viewsLoading = true;
     void import('./views').then(({ Views }) => {
@@ -173,7 +173,8 @@ async function poll() {
       showError(data.error ?? 'unavailable', res.status);
       retryDelay = res.status === 401 || res.status === 403 || data.error === 'monitor_unconfigured' ? 10000 : 3000;
     } else {
-      snapshot = data as MonitorSnapshot; receipt = Date.now(); fresh = true; retryDelay = 500;
+      // Positions arrive every 200 ms; views.ts moves each feed smoothly between them.
+      snapshot = data as MonitorSnapshot; receipt = Date.now(); fresh = true; retryDelay = 200;
       connection.textContent = '실시간'; connection.dataset.state = 'live'; notice.hidden = true;
       updated.textContent = new Date(receipt).toLocaleTimeString('ko-KR', { hour12: false });
       if (views) views.paused = false;
