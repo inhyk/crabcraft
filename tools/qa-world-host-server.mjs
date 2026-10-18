@@ -11,6 +11,8 @@ import { startPostgres } from '../server/node/local-postgres.mjs';
 import { createPool, migrate } from '../server/node/db.ts';
 import { accountHandler, createWorldAdmission, originAllowed } from '../server/node/accounts.ts';
 import { CharacterStore } from '../server/world/character-store.ts';
+import { DurableOutcomeStore } from '../server/world/contribution-store.ts';
+import { planOutcomePage } from '../src/sim/ledger.ts';
 import { createCharacterHandler } from '../server/world/characters-http.ts';
 import { acquireHostOwnership } from '../server/world/ownership.ts';
 import { loadWorldCatalog, createGameplayCatalog } from '../server/world/catalog.ts';
@@ -24,9 +26,9 @@ import { RACES } from '../src/data/races.ts';
 import { createWorldVariants, personalNpcVisible } from '../src/sim/areas/variants.ts';
 import { createGameplayProtocol, projectObservationExtras } from '../server/world/gameplay/protocol.ts';
 
-const args = { port: 5287, clientOrigin: 'http://127.0.0.1:5276', metadata: '', world: 'w1', party: '0' };
+const args = { port: 5287, clientOrigin: 'http://127.0.0.1:5276', metadata: '', world: 'w1', party: '0', ledger: '0' };
 for (let i = 2; i < process.argv.length; i += 2) {
-  const key = { '--port': 'port', '--client-origin': 'clientOrigin', '--metadata': 'metadata', '--world': 'world', '--party': 'party' }[process.argv[i]];
+  const key = { '--port': 'port', '--client-origin': 'clientOrigin', '--metadata': 'metadata', '--world': 'world', '--party': 'party', '--ledger': 'ledger' }[process.argv[i]];
   if (!key || process.argv[i + 1] === undefined) throw new Error('expected --port N --client-origin URL --metadata ABSOLUTE_TMP_PATH');
   args[key] = key === 'port' ? Number(process.argv[i + 1]) : process.argv[i + 1];
 }
@@ -35,6 +37,7 @@ if (!['127.0.0.1', 'localhost'].includes(clientURL.hostname) || clientURL.protoc
 if (!isAbsolute(args.metadata) || !['/tmp/', '/private/tmp/'].some(prefix => resolve(args.metadata).startsWith(prefix))) throw new Error('metadata must be an absolute temporary path');
 if (!['w1', 'w2', 'w3', 'w4'].includes(args.world)) throw new Error('QA world must be w1..w4');
 if (!['0', '1'].includes(args.party)) throw new Error('QA party must be 0 or 1');
+if (!['0', '1'].includes(args.ledger)) throw new Error('QA ledger must be 0 or 1');
 
 let cluster, pool, ownership, host, server, metadataWritten = false, closing;
 async function cleanup() {
@@ -89,10 +92,17 @@ try {
   const characterPolicy = { maxCharactersPerAccount: 16 }; // Explicit QA bound, not a deployment slot policy.
   const characterHttp = createCharacterHandler({ pool, characters, codec, origins: allowed, clientIp: ip, policy: characterPolicy });
   host = createActualWorldHost({ admission, characters, worlds, codec, ownership, chat: new WorldChatService(pool),
+    outcomes: args.ledger === '1' ? new DurableOutcomeStore(pool, codec, { planOutcomePage, queryTimeoutMs: 5000 }) : undefined,
     gameplay: { catalog, create: () => createGameplayProtocol(catalog) },
     policies: { authTimeoutMs: 2000, inputTimeoutMs: 300, reconnectGraceMs: 3000, sessionRevalidateMs: 1000, checkpointIntervalMs: 2000,
       maxConnections: 16, maxConnectionsPerIp: 16, maxWaiting: 16, maxAuthFrameBytes: 2048, maxFrameBytes: 65536,
       maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128, maxMutationSourcesPerTick: 64, loopIntervalMs: 2, chat: { maxPending: 16 },
+      // Explicit QA-only source/page budgets. They do not define production capacity or eligibility.
+      ledger: args.ledger === '1' ? {
+        sourceLimits: { maxDirtyCreditEntries: 10000, maxDirtyCreditBytes: 16 * 1024 * 1024, maxPendingDeaths: 32, maxStagedBytes: 8 * 1024 * 1024 },
+        drainLimits: { pageSize: 100, creditBatchesPerSlice: 1, outcomesPerSlice: 1, summaryVictimsPerSlice: 10, writeAttempts: 3 },
+        recoveryLimits: { draftsPerSlice: 10, pageSize: 100 }, recoveryIntervalMs: 1000,
+      } : undefined,
       victimOutcome: { maxEntries: 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 }, // Explicit QA backpressure, not an eligibility cut.
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 3, retryMs: 20, maxRecoveryRounds: 2 },
       areaLimits: { eventCount: 4096, inputCommandsPerTick: 32, timers: 512, projectiles: 512 },
@@ -107,6 +117,7 @@ try {
     nowMonotonicMs: () => performance.now(), nowWallMs: Date.now,
     onFailure: stage => process.stderr.write(`world QA host failed at ${stage}\n`),
   });
+  await host.ready();
   server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://localhost').pathname;
     if (path === '/api/account/world-catalog' && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(catalog)); return; }
@@ -120,7 +131,7 @@ try {
   await writeFile(args.metadata, JSON.stringify({ origin: baseURL, clientOrigin: args.clientOrigin, characterId: character.characterId,
     cookie: { name: 'cc_account', value: `${accountId}.${rawToken}`, path: '/api/account' }, catalog, appearance: character.identity.appearance, initialWorld: args.world,
     earnedTravel: false, renderFixture: args.world !== 'w1', world: args.world, chapter: character.checkpoint.progress.quests.chapter, spawn: character.checkpoint.location,
-    partyEnabled: args.party === '1', characterPolicy,
+    partyEnabled: args.party === '1', ledgerMode: args.ledger === '1' ? 'external-durable' : 'retained', characterPolicy,
     fixture: 'Seeded Google-shaped QA session and new level-1 mage. No OAuth/provider call. Actual Node Area/bakes; QA population and explicit restore policy. Non-W1 selection is a trusted saved-world render fixture with zero XP and no earned unlock claims.' }), { flag: 'wx', mode: 0o600 });
   metadataWritten = true;
   process.stdout.write(JSON.stringify({ ready: true, baseURL, metadataPath: args.metadata }) + '\n');
