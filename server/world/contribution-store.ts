@@ -85,8 +85,9 @@ export class DurableOutcomeStore {
     }
     const writes = [...latest.values()], keys = [...new Set(writes.map(w => victimKey(w.victim)))].sort();
     await this.tx(async query => {
+      // Acquire the complete sorted victim lock set before creating source rows or locking characters.
+      for (const key of keys) await this.lock(query, key);
       for (const key of keys) {
-        await this.lock(query, key);
         if ((await query('SELECT 1 FROM world_paged_outcome_seals WHERE victim_key=$1 UNION ALL SELECT 1 FROM world_victim_outcomes WHERE outcome_key=$1 LIMIT 1', [key])).rowCount) fail('closed', 'victim already sealed');
         const ref = writes.find(w => victimKey(w.victim) === key)!.victim;
         await query('INSERT INTO world_contribution_sources(victim_key,victim_json) VALUES($1,$2) ON CONFLICT DO NOTHING', [key, json(ref, 512)]);
@@ -224,8 +225,8 @@ export class DurableOutcomeStore {
         if (!owner) fail('not_found', 'contribution owner missing'); if (owner.codec_version !== this.codec.version) fail('version', 'contribution owner codec mismatch');
         const identity: IdentityJson = this.codec.validateIdentity(parse(owner.identity_json, 4096));
         const payload = json(this.codec.validateGrant(this.codec.grantToJson(grant), { characterId: recipient, identity }), 16384);
-        await query('INSERT INTO world_character_grants(grant_id,character_id,account_id,codec_version,payload_json) VALUES($1,$2,$3,$4,$5)', [grant.id, recipient, owner.account_id, this.codec.version, payload]);
         await query('INSERT INTO world_paged_grant_visibility(grant_id,draft_id,victim_key,character_id) VALUES($1,$2,$3,$4)', [grant.id, draftId, row.victim_key, recipient]);
+        await query('INSERT INTO world_character_grants_physical(grant_id,character_id,account_id,codec_version,payload_json) VALUES($1,$2,$3,$4,$5)', [grant.id, recipient, owner.account_id, this.codec.version, payload]);
         chain = hash(json(['paged-ledger-row-v1', chain, grant.id, owner.account_id, recipient, payload], 20000));
       }
       const cursor = validatePlannerCursor(draft.recipe, submitted.nextCursor), cursorJson = json(cursor, MAX_CURSOR_BYTES);

@@ -287,9 +287,9 @@ test('mid-batch PostgreSQL failure rolls back the complete death and preserves r
   const entries = [a, b].map((c, i) => ({ accountId: c.accountId, characterId: c.characterId, id: `batch-rollback:${i}`, payload: { xp: 10, coins: 2 } }));
   await pool.query(`CREATE FUNCTION test_batch_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
     IF NEW.grant_id='batch-rollback:1' THEN RAISE EXCEPTION 'injected batch failure'; END IF; RETURN NEW; END; $$;
-    CREATE TRIGGER test_batch_failure BEFORE INSERT ON world_character_grants FOR EACH ROW EXECUTE FUNCTION test_batch_failure()`);
+    CREATE TRIGGER test_batch_failure BEFORE INSERT ON world_character_grants_physical FOR EACH ROW EXECUTE FUNCTION test_batch_failure()`);
   try { await assert.rejects(store.recordGrantBatch(entries), /injected batch failure/); }
-  finally { await pool.query('DROP TRIGGER test_batch_failure ON world_character_grants; DROP FUNCTION test_batch_failure()'); }
+  finally { await pool.query('DROP TRIGGER test_batch_failure ON world_character_grants_physical; DROP FUNCTION test_batch_failure()'); }
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM world_character_grants WHERE grant_id LIKE 'batch-rollback:%'")).rows[0].n, 0);
   assert.deepEqual(await store.getOwned(A, a.characterId), a); assert.deepEqual(await store.getOwned(B, b.characterId), b);
   assert.equal((await store.recordGrantBatch(entries)).length, 2);
