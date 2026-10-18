@@ -61,7 +61,7 @@ export class InputSession {
   const tokens=Math.min(120,this.tokens+(now-this.time)*60);if(tokens<1)fail('input rate limit');
   this.tokens=tokens-1;this.time=now;this.lastReceived=now;this.accepted=intent.seq;this.queue.push(clone(intent));return clone(intent);
  }
- prepareTick(now:number,maxCommands=LIMITS.commands):PreparedInput|null {
+ prepareTick(now:number,maxCommands:number=LIMITS.commands):PreparedInput|null {
   number(now);if(now<this.time)fail('input clock regression');integer(maxCommands,1,LIMITS.commands);
   if(this.prepared)return clone(this.prepared);if(!this.queue.length)return null;
   let count=0,n=0;for(const frame of this.queue){if(n&&count+frame.commands.length>maxCommands)break;if(frame.commands.length>maxCommands)fail('frame exceeds step command capacity');count+=frame.commands.length;n++;}

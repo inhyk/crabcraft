@@ -5,7 +5,7 @@ export interface CommandResult {inputSequence:number;commandIndex:number;status:
 export interface EventPayload {baselineSequence:number;events:readonly EventRecord[];results:readonly CommandResult[]}
 function shape(value:unknown,impact=false):void {
  if(!value||typeof value!=='object')fail('invalid effect shape');const s=value as Record<string,unknown>,tag=impact?'fx':'shape',kind=s[tag],base={[tag]:choice(kind),at:vector};
- if(!impact&&kind==='circle')object(s,{...base,radius:number},{color:text});
+ if(!impact&&kind==='circle')object(s,{...base,radius:number,ground:vector},{color:text});
  else if(!impact&&kind==='cone')object(s,{...base,yaw:number,range:number,half:number,ground:vector},{color:text});
  else if(!impact&&kind==='undertow')object(s,{...base,radius:number});
  else if(kind==='lane')object(s,{...base,yaw:number,halfLength:number,halfWidth:number,color:text,...(impact?{seconds:number}:{})});
