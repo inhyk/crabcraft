@@ -66,7 +66,7 @@ export class Boss {
   private get laneWidth(){return this.isEndgame?1.4:1.8;}
   private get barrageRadius(){return this.isEndgame?3:2.6;}
   private get innerRadius(){return this.isEndgame?3:4.5;}
-  private fraction(kind:Mech){return this.isEndgame?({slam:.5,nova:.58,eclipse:.62,cross:.48,barrage:.42,undertow:.45,spray:.4})[kind]:({slam:.26,nova:.32,eclipse:.38,cross:.28,barrage:.24,undertow:.24,spray:.2})[kind];}
+  private fraction(kind:Mech){return this.isEndgame?({slam:.26,nova:.30,eclipse:.34,cross:.24,barrage:.22,undertow:.24,spray:.2})[kind]:({slam:.26,nova:.32,eclipse:.38,cross:.28,barrage:.24,undertow:.24,spray:.2})[kind];}
 
   constructor(private readonly game: Game, readonly unit: Unit, readonly arena: Poi, readonly freed: Unit, readonly profile: BossProfile = BOSS_PROFILES.rust) {
     unit.ctrl = this;
@@ -349,7 +349,7 @@ export class Boss {
         u.moveTo(g.world, u.pos.x + ((p.pos.x - u.pos.x) / d) * sp * dt, u.pos.z + ((p.pos.z - u.pos.z) / d) * sp * dt, dt);
       }
       if (gap <= 1.6 && now >= this.nextSwing && Math.abs(angleDiff(want, u.yaw)) < 0.8) {
-        this.nextSwing = now + (this.isEndgame?(this.enraged?1.3:1.8):(this.enraged ? 1.8 : 2.6));
+        this.nextSwing = now + (this.isEndgame?(this.enraged?2.2:2.8):(this.enraged ? 1.8 : 2.6));
         u.act('attack_swipe', {
           upper: true,
           speed: this.enraged ? 1.4 : 1,
@@ -422,12 +422,12 @@ export class Boss {
     }
     if(this.isEndgame){
       // Larger warnings retain time to walk out; difficulty comes from pressure and mistakes.
-      m.dur=Math.max(m.dur,kind==='nova'?2.4:kind==='eclipse'?2.8:kind==='undertow'?3:kind==='slam'?1.6:1.3);
+      m.dur=Math.max(m.dur,kind==='nova'?2.4:kind==='eclipse'?2.8:kind==='undertow'?3:kind==='slam'?2:1.8);
     }
     const shapes = this.telegraphShapes(kind,m.at,m.yaw);
     this.mech = m;
     g.events.emit({ type: 'telegraph', src: u, mech: kind, level: this.profile.level, seconds: m.dur, shapes });
-    this.nextMech = g.time + m.dur + (this.isEndgame?(this.phase===3?.9:this.phase===2?1.2:1.8):(this.phase === 3 ? 4.2 : this.phase === 2 ? 5.5 : 6));
+    this.nextMech = g.time + m.dur + (this.isEndgame?(this.phase===3?2.4:this.phase===2?2.8:3.2):(this.phase === 3 ? 4.2 : this.phase === 2 ? 5.5 : 6));
   }
 
   private barragePoints(at: THREE.Vector3, yaw: number): THREE.Vector3[] {

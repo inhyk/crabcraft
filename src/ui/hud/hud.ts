@@ -188,7 +188,7 @@ export class Hud {
 
   dispose(): void {
     this.forge.close();
-    this.actionBar.hideTip();
+    this.actionBar.dispose();
     this.chat.dispose();
     this.messages.dispose();
     this.root.remove();
