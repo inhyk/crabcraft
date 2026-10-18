@@ -8,7 +8,7 @@ export function validCommand(command:unknown):boolean {
   const c=command as Record<string,unknown>,text=(v:unknown)=>typeof v==='string'&&v.length>0&&v.length<=128;
   switch(c.kind){
     case 'ability':return [1,2,3,4,5].includes(c.slot as number);
-    case 'target':{if(c.target===null)return true;if(!c.target||typeof c.target!=='object')return false;const r=c.target as Record<string,unknown>;return text(r.area)&&Number.isSafeInteger(r.id)&&Number(r.id)>0&&Number(r.id)<=0xffffffff&&Number.isSafeInteger(r.life)&&Number(r.life)>0&&Number(r.life)<=0xffffffff;}
+    case 'talk':case 'target':{if(c.target===null)return c.kind==='target';if(!c.target||typeof c.target!=='object')return false;const r=c.target as Record<string,unknown>;return text(r.area)&&Number.isSafeInteger(r.id)&&Number(r.id)>0&&Number(r.id)<=0xffffffff&&Number.isSafeInteger(r.life)&&Number(r.life)>0&&Number(r.life)<=0xffffffff;}
     case 'jump':case 'dance':case 'cancel':case 'endingReplay':case 'talkEnd':return true;
     case 'village':return ['hide','tag','stop'].includes(c.mode as string);
     case 'boat':{const b=c.command as Record<string,unknown>;return !!b&&['call','board','leave','drive'].includes(b.action as string)&&[b.throttle,b.steer].every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=-1&&n<=1);}

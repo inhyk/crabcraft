@@ -41,10 +41,10 @@ export class DawnRequests {
   if(!n||n.kind!==kind)return false;
   this.g.quests.bump(kind);this.g.audio.sfx('sfx-quest-accept');this.g.vfx.mendGlow(this.g.player.unit);this.g.journey?.save();return true;
  }
- update(time:number){
+ update(time:number,observed=false){
   for(const n of this.nodes){
    const active=this.pending(n),done=this.g.quests.objectiveDone(n.objective),ring=n.mesh.userData.ring as THREE.Mesh;
-   if(n.kind.includes('-visit-')&&active&&this.g.player.unit.pos.distanceTo(n.position)<4){this.g.quests.bump(n.kind);this.g.audio.sfx('sfx-quest-accept');this.g.journey?.save();}
+   if(!observed&&n.kind.includes('-visit-')&&active&&this.g.player.unit.pos.distanceTo(n.position)<4){this.g.quests.bump(n.kind);this.g.audio.sfx('sfx-quest-accept');this.g.journey?.save();}
    n.mesh.visible=n.lamp||active;ring.visible=active;
    const mat=n.mesh.material as THREE.MeshStandardMaterial;mat.emissiveIntensity=n.lamp&&done?1.5:active?.5+Math.sin(time*2)*.2:.05;
    if(!n.lamp){n.mesh.rotation.y=time*.4;n.mesh.position.y=n.position.y+1+Math.sin(time*2+n.position.x)*.12;}

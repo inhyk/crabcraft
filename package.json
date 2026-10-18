@@ -1,6 +1,6 @@
 {
   "name": "crabcraft",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "World of Crabcraft: a browser fantasy RPG where every character is a Jumper crab robot.",
@@ -16,7 +16,7 @@
     "shot": "node tools/shot.mjs",
     "multiplayer": "vite preview --host 0.0.0.0 --port 5174 --strictPort",
     "test:multiplayer": "node --experimental-strip-types --test server/rooms.test.mjs server/chat/filter.test.mjs server/chat/safety.test.mjs tests/chat-blocklist.test.mjs tests/collision-bake.test.mjs",
-    "test:server": "node server/node/build.mjs && node --test server/node/server.test.mjs",
+    "test:server": "node server/node/build.mjs && node --test server/node/server.test.mjs server/node/world-main.test.mjs",
     "test:monitor": "node --experimental-strip-types --test server/monitor.test.mjs",
     "test:boss": "node tests/run-boss.mjs",
     "test:engine": "node tests/run-engine.mjs",

@@ -4,6 +4,7 @@ import { h, art } from '../ui/dom';
 import {t} from '../i18n';
 import { openVideos } from '../ui/videos';
 import { buildInfo, versionLabel } from '../version';
+import { hasUnseenNews, loadNews, openNews } from '../ui/news';
 import './title.css';
 
 export default class TitleScreen implements Screen {
@@ -13,6 +14,10 @@ export default class TitleScreen implements Screen {
     const play = () => void app.audio.playMusic('music-title');
     const btn = (label: string, onClick: () => void, cls = 'cc-btn') =>
       h('button', { class: cls, onclick: () => { app.audio.sfx('sfx-click'); onClick(); }, onmouseenter: () => app.audio.sfx('sfx-hover', { volume: 0.4 }) }, label);
+    // Next to the version: shown once public/release-notes.json has a note; a dot marks a version
+    // not opened on this device yet.
+    const news = h('button', { type: 'button', class: 'title-news', hidden: true, onclick: () => { app.audio.sfx('sfx-click'); void loadNews().then((list) => { openNews(list); news.classList.remove('news-unseen'); }); } }, t('업데이트 소식', 'Update news'));
+    void loadNews().then((list) => { news.hidden = !list.length; news.classList.toggle('news-unseen', hasUnseenNews(list)); });
 
     this.root = h(
       'div',
@@ -36,7 +41,7 @@ export default class TitleScreen implements Screen {
       h('footer', { class: 'title-footer cc-passive' },
         h('div', null, t('이 세계의 모든 게는 점퍼 로봇이에요. 걷기와 인사, 춤은 실제 로봇 동작 정책으로 만들어졌어요.','Every crab in this world is a Jumper robot. Every walk, wave and dance is a real policy rollout.')),
         h('div', { class: 'cc-small' }, 'Crab Robot Open-source Challenge 2026 | Apache-2.0'),
-        h('div', { class: 'cc-small title-version', 'data-env': buildInfo.env }, versionLabel()),
+        h('div', { class: 'cc-small title-version', 'data-env': buildInfo.env }, versionLabel(), news),
       ),
     );
     app.ui.append(this.root);

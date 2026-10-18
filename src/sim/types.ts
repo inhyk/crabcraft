@@ -1,3 +1,4 @@
+import type {RenderPoseRecipe} from './renderPose.ts';
 import type {CharacterCheckpointV1,RestoredPlayerData} from './persistence.ts';
 export type {CharacterCheckpointV1,RestoredPlayerData,RestorePolicy} from './persistence.ts';
 import type {BoatCommand, BoatState, VillageRound, FeatureEvent, NpcFeatureEvent} from './features/types.ts';
@@ -92,6 +93,7 @@ export interface ClipRule {
  * Actions start immediately in core whether or not browser assets have loaded.
  */
 export interface NumericPoseState {
+  renderRecipe: RenderPoseRecipe;
   locomotionTime: number; localVx: number; localVz: number; yawRate: number;
   previousX: number; previousZ: number; previousYaw: number;
   appliedQ: number[]; appliedPosition: [number, number, number];
@@ -211,6 +213,7 @@ export type ChannelKind = 'recall' | 'beacon' | 'waystone' | 'lighthouse-secret'
 export type PlayerCommand =
   | { kind: 'ability'; slot: 1 | 2 | 3 | 4 | 5 }
   | { kind: 'target'; target: EntityRef | null }
+  | { kind:'talk';target:EntityRef }
   | { kind: 'jump' | 'dance' | 'cancel' }
   | { kind: 'channelStart'; channel: ChannelKind; targetId?: string }
   | { kind: 'interact'; targetId: string }
@@ -314,6 +317,7 @@ export interface AreaDefinition {
 export interface AreaPolicy {
   enemyLevel(spawn: EnemySpawn, legacyContext: { partyLevel: number; rustCleared: boolean; chapter: Chapter }): number;
   // Final server policy returns spawn.fixedLevel. Legacy policy can retain actual S1 scaling.
+  populationRadius?(spawn:EnemySpawn):number; // explicit nearby-slots policy; clearance remains22m
   enemyPopulation(spawn: EnemySpawn, nearbyPlayers: number): { desired: 0 | 1; respawnSeconds: number };
   damageAllowed(context: Readonly<AreaContext>, source: Readonly<SimUnit> | null, target: Readonly<SimUnit>): boolean;
   canInteract(context: Readonly<AreaContext>, player: Readonly<PlayerState>, interactionId: string): boolean;
@@ -347,7 +351,7 @@ export interface AreaServices {
   applyEarnedGrant(grant: EarnedGrant): 'applied' | 'duplicate' | 'not-owner'; // real gainXp/coin/quest/flag effects
   players(): readonly SimUnit[]; // stable order, no required singleton local player
   targetFor(source: EntityRef): SimUnit | null; // empty area is valid
-  hostilesNear(x: number, z: number, radius: number): readonly SimUnit[];
+  hostilesNear(x: number, z: number, radius: number, source?:EntityRef): readonly SimUnit[];
   outcomeTransaction(run: () => void): void; // sim-owned state operation, buffered event commit
   emit(event: CoreEvent): void; // enqueue copied data, no reentrant browser sink
   startAction(unit: EntityRef, action: ActionRequest, hit?: PendingHit): void;
@@ -356,7 +360,7 @@ export interface AreaServices {
   cancelPendingHit(unit: EntityRef): void;
   launch(projectile: Omit<ProjectileState, 'id' | 'elapsed' | 'bornStep'>): number; // Area stamps birth stage; stage-start-list eligibility only
   spawnAdd(boss: EntityRef, x: number, z: number): EnemySim | null;
-  runCommand(player: EntityRef, command: PlayerCommand): boolean;
+  runCommand(player: EntityRef, command: PlayerCommand, commandIndex?:number): boolean;
   bossByProfile(profile: BossSim['profile']): BossSim | null;
   encounterActive(): boolean;
   bossAvailable(profile: BossSim['profile']): boolean;
@@ -371,13 +375,14 @@ export interface AreaOptions {
   readonly seed: number; readonly policy: AreaPolicy; readonly actionData: ActionData; readonly context: AreaContext;
   readonly limits: { eventCount: number; inputCommandsPerTick: number; timers: number; projectiles: number };
 }
+export interface BossObservation {readonly unit:EntityRef;readonly profile:BossProfileId;readonly state:BossSim['state'];readonly phase:number;readonly enraged:boolean;readonly stateTime:number;readonly freed:EntityRef;readonly freedTime:number;readonly showFrame:boolean}
 export interface AreaSnapshot {
   readonly area: AreaId; readonly world: WorldId; readonly tick: Tick; readonly time: number;
   readonly units: readonly Readonly<SimUnit>[];
   readonly players: readonly Readonly<PlayerState>[];
   readonly projectiles: readonly Readonly<ProjectileState>[];
-  readonly features: {readonly beaconLit:boolean;readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
-  readonly recovery: {readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
+  readonly features: {readonly mode:AreaContext['mode'];readonly pvp:AreaContext['pvp'];readonly beaconLit:boolean;readonly exploration:readonly {unit:EntityRef;activeUntil:number}[];readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
+  readonly recovery: {readonly bosses:readonly BossObservation[];readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
 } // Deep copied and stable sorted by ID; slowPct remains fraction0..1; S4 adapter scales to0..100.
 /** Complete canonical test/debug data, not a production persistence protocol. No functions or refs. */
 export type DebugValue = null | boolean | number | string | readonly DebugValue[] | { readonly [key: string]: DebugValue };
@@ -390,6 +395,7 @@ export interface AreaDebugState {
   contributions: readonly Contribution[]; grants: readonly EarnedGrant[]; acknowledgedGrantIds: readonly string[];
   heldIntents: readonly { actor: EntityRef; intent: PlayerIntent; lastConsumedSeq: number }[];
   // Debug export only at between-tick boundary: no accepted commands remain pending after step().
+  features:DebugValue;
   lifecycle: DebugValue;
   interactions: DebugValue; context: AreaContext;
 }
@@ -445,6 +451,7 @@ export interface TransferCoordinator {
 
 export interface CapturedPlayer {readonly captureId:string;readonly ref:EntityRef;readonly checkpoint:CharacterCheckpointV1;readonly appliedGrantIds:readonly string[]}
 export interface PlayerRetirement {readonly token:string;readonly capture:CapturedPlayer}
+export interface CommandOutcome {readonly unit:EntityRef;readonly commandIndex:number;readonly success:boolean}
 export interface Area {
   readonly services: AreaServices;
   readonly units: ReadonlyMap<EntityId, SimUnit>;
@@ -460,7 +467,8 @@ export interface Area {
    * Projectiles iterate newest first from stage-start list; spawned-by-impact waits next update.
    * No renderer step, wall clock or20Hz snapshot call may advance any of these stages.
    */
-  step(inputs: ReadonlyMap<EntityId, PlayerIntent>): void;
+  step(inputs: ReadonlyMap<EntityId, PlayerIntent>):readonly CommandOutcome[];
+  bootstrapEncounter(profile:BossProfileId,facts:{beaconLit:boolean}):void;
   beginDurabilityBarrier(reason:string):string;
   releaseDurabilityBarrier(token:string):void;
   neutralizeInput(ref:EntityRef):void;

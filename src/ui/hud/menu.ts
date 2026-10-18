@@ -69,7 +69,7 @@ export class GameMenu {
       h('h2', { class: 'cc-title' }, t('게임 메뉴','Game Menu')),
       this.btn(t('계속하기','Resume'), () => this.close()),
       this.btn(g.app.account.label,()=>g.app.account.show(),true),
-      this.btn(t('👥 친구와 방 만들기','👥 Room with friends'),()=>{this.close();g.multiplayer?.showFriends();},true),
+      this.btn(t('👥 친구와 방 만들기','👥 Room with friends'),()=>{this.close();if(g.server)g.server.showFriends();else g.multiplayer?.showFriends();},true),
       this.btn(t('🏆 업적 · J','🏆 Achievements · J'),()=>this.achievements(),true),
       this.btn(t('🙈 마을 놀이','🙈 Village games'),()=>this.villageGames(),true),
       this.btn(t('설정','Settings'), () => this.settings(), true),
@@ -81,13 +81,13 @@ export class GameMenu {
   }
 
   villageGames():void {
-    const g=this.game,start=(mode:'hide'|'tag')=>{if(g.world2.chapter!==1){g.hud.messages.info(t('월드 1 마을에서 시작할 수 있어요.','Start in the World I village.'));return;}g.villageGames?.command(mode);this.close();};
+    const g=this.game,start=(mode:'hide'|'tag')=>{if(g.world2.chapter!==1){g.hud.messages.info(t('월드 1 마을에서 시작할 수 있어요.','Start in the World I village.'));return;}if(g.server)g.server.command({kind:'village',mode});else g.villageGames?.command(mode);this.close();};
     this.panel.className='menu cc-panel hud-i';
     this.panel.replaceChildren(h('h2',{class:'cc-title'},t('마을 놀이','Village games')),
       h('p',{class:'village-games-guide'},t('혼자라면 마을 주민이 술래! 친구와 함께라면 시작한 사람이 술래예요. 모두 광장으로 모여요. 숨바꼭질은 15초 동안 숨고 2분 동안 찾아요. 술래잡기는 5초 준비 후 90초 동안 도망가요. 가까이 닿으면 잡히고 광장에서 60m를 벗어나면 탈락해요. 놀이 중에는 전투 피해를 받지 않아요.','Solo: a villager seeks. With friends: whoever starts is the seeker. Everyone gathers at the square. Hide & Seek: hide for 15 seconds, then search for 2 minutes. Tag: 5 seconds to prepare, then run for 90 seconds. Contact catches a runner; leaving the 60m town area counts as caught. Combat damage is disabled during the round.')),
       this.btn(t('🙈 숨바꼭질 시작','🙈 Start Hide & Seek'),()=>start('hide')),
       this.btn(t('🏃 술래잡기 시작','🏃 Start Tag'),()=>start('tag')),
-      this.btn(t('놀이 끝내기','End round'),()=>{g.villageGames?.command('stop');this.close();},true),
+      this.btn(t('놀이 끝내기','End round'),()=>{if(g.server)g.server.command({kind:'village',mode:'stop'});else g.villageGames?.command('stop');this.close();},true),
       this.btn(t('뒤로','Back'),()=>this.main(),true));
   }
 
@@ -117,7 +117,7 @@ export class GameMenu {
     this.panel.replaceChildren(
       h('h2', { class: 'cc-title' }, t('설정','Settings')),
       h('div',{class:'row'},t('언어','Language'),seg([['ko','한국어'],['en','English']],language(),v=>{
-        setLanguage(v as Language);setQuestLanguage(v as Language);for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}g.hud.refreshLanguage();g.world2.refreshLanguage();g.multiplayer?.refreshLanguage();g.debug?.refreshLanguage();g.hud.dialogue.close();g.hud.tracker.update(g.quests);g.hud.questLog.render();this.settings();
+        setLanguage(v as Language);setQuestLanguage(v as Language);for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}g.hud.refreshLanguage();g.world2.refreshLanguage();g.server?.refreshLanguage();g.multiplayer?.refreshLanguage();g.debug?.refreshLanguage();g.hud.dialogue.close();g.hud.tracker.update(g.quests);g.hud.questLog.render();this.settings();
       })),
       ...(g.world2.chapter===1?[h('div',{class:'row'},t('월드 1 등대','World I lighthouse'),
         h('button',{class:'cc-btn small ghost',disabled:!g.beaconLit,onclick:()=>{g.setLighthouse(false);this.settings();}},t('끄기 · 아침','Off · morning')))]:[]),
@@ -140,7 +140,8 @@ export class GameMenu {
       h('div', { class: 'row' }, t('말풍선','Chat bubbles'), seg([['on', t('켜기','On')], ['off', t('끄기','Off')]], g.hud.bubbles.enabled ? 'on' : 'off', (v) => {
         g.hud.bubbles.enabled = v === 'on';
       })),
-      h('div', { class: 'row' }, t('공개 채팅 보기','Show public chat'), seg([['on', t('켜기','On')], ['off', t('끄기','Off')]], publicChatOn() ? 'on' : 'off', (v) => {
+      h('div', { class: 'row' }, t('공개 채팅 보기','Show public chat'), seg([['on', t('켜기','On')], ['off', t('끄기','Off')]], (g.server?g.server.social.publicEnabled:publicChatOn()) ? 'on' : 'off', (v) => {
+        if(g.server){g.server.social.setPublicEnabled(v==='on');return;}
         setPublicChat(v === 'on');
         g.multiplayer?.setPublicChat(v === 'on');
       })),
