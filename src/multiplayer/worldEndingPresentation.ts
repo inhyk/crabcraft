@@ -86,7 +86,7 @@ export class WorldEndingPresentation {
  render():void {
   if(this.disposed||!this.ownsCamera)return;this.view?.render();
   // Particle and sky time follow the accepted server tick, so frames never run ahead of the ending.
-  const state=this.current;if(state)this.stage?.update(state.tick/30,state.phase==='finale'?1:state.phase==='routine'?.55:.25);
+  const state=this.current;if(state)this.stage?.update(state.tick/30);
  }
  reset():void {this.clearView();this.stream='';this.frameSequence=-1;this.observed=null;}
  private clearView():void {

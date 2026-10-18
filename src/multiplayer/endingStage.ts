@@ -12,7 +12,7 @@ import { radialSprite } from '../screens/create/textures';
 export interface EndingStage {
  root:THREE.Group;
  /** Display-only clock from the accepted server tick; it never advances the ending. */
- update(seconds:number,festive:number):void;
+ update(seconds:number):void;
  dispose():void;
 }
 /** Festival at Clawhaven dusk: the W1 golden-hour palette, warm lanterns and a lit centre for the hero. */
@@ -99,14 +99,15 @@ export async function createEndingStage():Promise<EndingStage> {
   sky.uGlow.value.set(ENDING_DUSK.glow);sky.uSunVis.value=1;sky.uCloudCover.value=.5;sky.uSunDir.value.copy(ENDING_SUN);root.add(createSky(sky));
   const fountain=buildFountain(18,-.1+height(18,-18),-18,stone,sky);fountain.group.scale.setScalar(.6);fountain.group.rotation.y=-Math.PI/2;root.add(fountain.group);
   fountain.group.updateMatrixWorld(true);const spouts=fountain.spouts.map(p=>p.clone().sub(fountain.group.position).applyMatrix4(fountain.group.matrixWorld));
-  // Existing W1 particles: lamp halos, fountain jets, fireflies, dust in the low sun and fireworks.
+  // Existing W1 particles: lamp halos, fountain jets, fireflies and dust in the low sun. Fireworks stay off:
+  // from these camera heights only the climbing rockets enter the frame, never the bursts.
   const fxTime={value:0};
   const fx=buildFx({glows,forgeSparks:new THREE.Vector3(0,-400,0),chimneys:[],fountainSpouts:spouts,fountainWaterY:fountain.group.position.y+.62*.6,fountainCentre:fountain.group.position.clone(),spray:[],embers:[],
    fireflyZones:[{centre:new THREE.Vector3(0,1.2,0),extent:new THREE.Vector3(22,3,22),count:low?40:70,color:new THREE.Color('#ffe08a')}],dustCentre:new THREE.Vector3(0,3,0),fireworksCentre:new THREE.Vector3(0,30,-46)},low?'low':'high',fxTime);
-  const fxUniforms:FxUniforms=fx.uniforms;fxUniforms.uLamps.value=1;fxUniforms.uNight.value=.35;fxUniforms.uFireflies.value=.8;fxUniforms.uDust.value=.7;
+  const fxUniforms:FxUniforms=fx.uniforms;fxUniforms.uLamps.value=1;fxUniforms.uFireworks.value=0;fxUniforms.uNight.value=.35;fxUniforms.uFireflies.value=.8;fxUniforms.uDust.value=.7;
   for(const points of fx.group.children)points.onBeforeRender=(renderer,_scene,camera)=>{fxUniforms.uPixel.value=renderer.domElement.height/(2*Math.tan(THREE.MathUtils.degToRad(((camera as THREE.PerspectiveCamera).fov??50)/2)));};
   root.add(fx.group);
   root.userData.assets=['village.glb','nature.glb','props.glb'];
-  return {root,dispose,update(seconds:number,festive:number){if(!Number.isFinite(seconds))return;fxTime.value=seconds;skyTime.value=seconds;fxUniforms.uFireworks.value=THREE.MathUtils.clamp(festive,0,1);}};
+  return {root,dispose,update(seconds:number){if(!Number.isFinite(seconds))return;fxTime.value=seconds;skyTime.value=seconds;}};
  }catch(error){dispose();throw error;}finally{for(const kit of kits)for(const piece of kit.pieces.values())for(const part of piece.parts)part.geometry.dispose();}
 }
