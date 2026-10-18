@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import type { EndingObservation } from '../sim/features/endingPresentation.ts';
+import type { EndingPresentationFrame } from './worldEndingPresentation.ts';
 import { t } from '../i18n.ts';
 import { CLASSES } from '../data/classes';
 import { abilityName } from '../game/abilityLocale';
@@ -35,6 +37,7 @@ export interface WorldPresentationPorts {
   onEquipment?: (event: EquipmentEvent) => void;
   onQuest?: (event: QuestEvent) => void;
   onEnding?: (event: EndingEvent) => void;
+  onEndingPresentation?: (observation:EndingObservation|null,frame:EndingPresentationFrame|null)=>void;
   onExploration?: (state: { found: boolean; activeUntil: number; earned: readonly string[] }) => void;
   onIncomplete?: (feature: 'ending-choreography' | 'unknown-text') => void;
 }
@@ -89,6 +92,8 @@ export class WorldPresentation {
     if (binding !== this.binding) { this.reset(); this.binding = binding; this.lastOrder = state.eventWatermark; }
     this.state = structuredClone(state); this.elapsed = 0;
     this.synchronize();
+    const recovery:GameplayState['recovery']&{endingPresentation?:EndingObservation|null}=state.recovery;
+    this.ports.onEndingPresentation?.(recovery.endingPresentation??null,{session:state.header.session,area:state.header.area,epoch:state.header.epoch,catalog:state.header.catalog,sequence:state.header.sequence,selfRef:{...state.selfRef}});
   }
 
   events(records: readonly EventRecord[]): void {
@@ -173,8 +178,8 @@ export class WorldPresentation {
   private ending(event: EndingEvent): void {
     if (!this.local(event.unit)) return;
     this.ports.onEnding?.(event);
-    this.ports.onIncomplete?.('ending-choreography');
-    // The core does not yet publish a celebration pose recipe. No local action/movement is started.
+    if(!this.ports.onEndingPresentation||!Object.hasOwn(this.state?.recovery??{},'endingPresentation'))this.ports.onIncomplete?.('ending-choreography');
+    // Readiness alone never starts local actions; the private recovery observation owns the display.
   }
 
   /** false means a known, still-loading rig is required; absent AOI/life references are dropped. */
@@ -331,6 +336,7 @@ export class WorldPresentation {
   }
 
   reset(): void {
+    this.ports.onEndingPresentation?.(null,null);
     for (const projectile of this.projectiles.values()) projectile.effect.dispose(); this.projectiles.clear();
     for (const [id] of this.warnings) this.clearWarning(id);
     for (const ward of this.wards.values()) ward.pop(); this.wards.clear();
