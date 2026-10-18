@@ -33,7 +33,7 @@ function pair() {
  a.multiplayer={battle:aa};b.multiplayer={battle:bb};aa.join('a','a',null);bb.join('b','a',null);
  const flush=()=>{let guard=0;while(queue.length){assert.ok(++guard<100);const {id,packet:p}=queue.shift(),dst=id==='a'?bb:aa;
   if(p.type==='world')dst.apply(p.world);if(p.type==='combat')dst.receive(id,p.event);}};
- aa.update(.1);flush();return {a,b,aa,bb,ar,flush};
+ aa.update(.1);flush();return {a,b,aa,bb,ar,br,flush};
 }
 
 test('guest and host damage reduce the same enemy HP; death grants exactly one reward per player',()=>{
@@ -328,4 +328,31 @@ for(const [field,key,chapter,level]of [['emberBoss','b500',5,500],['skyBoss','b7
  ar.level=level-1;aa.receive('b',{kind:'challenge',target:key});aa.receive('b',{kind:'attack',target:key,amount:10});assert.equal(boss.state,'dormant');assert.equal(boss.unit.hp,100);
  ar.level=level;aa.receive('b',{kind:'challenge',target:key});assert.equal(boss.state,'waking');aa.receive('b',{kind:'attack',target:key,amount:10});flush();assert.equal(b[field].unit.hp,90);
  a.journey[chapter===5?'emberCleared':'skyCleared']=true;boss.state='dead';aa.publish();flush();bb.elect('b');assert.equal(b[field].state,'dead');assert.equal(b.journey[chapter===5?'emberCleared':'skyCleared'],true);
+});
+
+
+test('lantern host and guest heal the owning friend HP once, capped at max, without mutating remote replicas',()=>{
+ const {a,b,aa,bb,ar,br,flush}=pair();a.world.raycastSolid=b.world.raycastSolid=()=>null;
+ a.player.unit.rig.spec=ar.rig.spec=b.player.unit.rig.spec=br.rig.spec={classId:'priest'};
+ a.player.unit.hp=b.player.unit.hp=ar.hp=br.hp=20;
+ aa.healAllies('mend-shell');assert.equal(ar.hp,20);flush();assert.equal(b.player.unit.hp,55);assert.equal(a.player.unit.hp,20);
+ aa.healAllies('mend-shell');flush();assert.equal(b.player.unit.hp,55);
+ bb.healAllies('holy-tide');flush();assert.equal(a.player.unit.hp,35);
+ bb.healAllies('holy-tide');flush();assert.equal(a.player.unit.hp,35);
+ a.time=25;b.player.unit.hp=ar.hp=95;aa.healAllies('mend-shell');flush();assert.equal(b.player.unit.hp,100);
+});
+
+test('lantern healing rejects wrong class, blocked, far, dead, hidden, PvP enemies and forged results',()=>{
+ for(const blocked of ['class','wall','far','dead','hidden','enemy','village']){
+  const {a,b,aa,ar,flush}=pair();a.player.unit.rig.spec={classId:blocked==='class'?'mage':'priest'};a.world.raycastSolid=()=>blocked==='wall'?0:null;
+  ar.hp=b.player.unit.hp=20;
+  if(blocked==='far')ar.pos.z=12.01;
+  if(blocked==='dead')ar.alive=false;
+  if(blocked==='hidden')ar.hidden=true;
+  if(blocked==='enemy'){aa.mode='pvp';aa.parties={a:1,b:2};}
+  if(blocked==='village')a.villageGames={playing:true};
+  aa.healAllies('mend-shell');flush();assert.equal(b.player.unit.hp,20,blocked);
+ }
+ const {a,b,aa,ar,flush}=pair();a.world.raycastSolid=()=>null;a.player.unit.rig.spec={classId:'priest'};aa.mode='pvp';aa.parties={a:2,b:2};b.player.unit.hp=ar.hp=20;aa.healAllies('mend-shell');flush();assert.equal(b.player.unit.hp,55);
+ aa.receive('b',{kind:'heal',target:'a',source:'b',amount:999});assert.equal(a.player.unit.hp,100);
 });

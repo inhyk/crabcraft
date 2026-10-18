@@ -173,6 +173,7 @@ export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit 
     case 'mend-shell': {
       const crit = rollCrit();
       g.combat.heal(u, u, u.maxHp * 0.35 * (crit ? 1.5 : 1), crit);
+      g.multiplayer?.battle.healAllies('mend-shell');
       fx('start');
       u.express('happy', 1);
       break;
@@ -196,6 +197,7 @@ export function executeAbility(g: Game, p: Player, ab: AbilityDef, target: Unit 
           fx('hit');
           for (const t of enemiesNear(g, u.pos.x, u.pos.z, ab.range)) hit(g, p, t, 15, 19, 'holy');
           g.combat.heal(u, u, u.maxHp * 0.15);
+          g.multiplayer?.battle.healAllies('holy-tide');
         },
       });
       break;

@@ -97,7 +97,7 @@ for env in "${ENVS[@]}"; do
 done
 install -d -o crabcraft -g crabcraft -m 0755 "$ROOT/media"
 install -o root -g root -m 0755 "$HERE/activate.sh" "$HERE/rollback.sh" "$HERE/media-sync.sh" \
-	"$HERE/deploy-ssh-gate.sh" "$ROOT/bin/"
+	"$HERE/deploy-ssh-gate.sh" "$HERE/world-env.sh" "$ROOT/bin/"
 
 step "sudoers: deploy may run activate.sh only"
 cat >/etc/sudoers.d/.crabcraft-deploy.new <<EOF
