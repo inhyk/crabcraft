@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS} from './protocol.ts';
+import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent} from '../../../tests/core/worldHarness.mjs';
@@ -14,7 +14,7 @@ const appearance={race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,n
 const header=(sequence=1)=>({...binding,sequence,tick:0,acceptedInput:0,consumedInput:0});
 const input=(seq=1,commands=[])=>({...intent(seq,commands),steeringYaw:.3});
 function fixture(count=1){const area=worldArea(binding.area),actors=Array.from({length:count},(_,i)=>addActor(area,`private-character-${i}`));const codec=createGameplayProtocol(catalog),receiver=new GameplayReceiver(binding,catalog);return {area,actors,codec,receiver};}
-function observation(f,sequence=1,full=false){const snapshot=f.area.snapshot();return {binding,sequence,tick:snapshot.tick,acceptedInput:0,consumedInput:0,selfRef:f.actors[0].p.state.unit,snapshot,events:[],visibleIds:new Set(snapshot.units.map(u=>u.ref.id)),full,eventWatermark:-1,features:{environment:{beacon:false,clock:snapshot.time},boat:null,village:null},recovery:{telegraphs:[],endings:[]},achievements:{distance:0,earned:[]},appearances:Object.fromEntries(f.actors.map(a=>[`${a.u.ref.id}:${a.u.ref.life}`,appearance]))};}
+function observation(f,sequence=1,full=false){const snapshot=f.area.snapshot();return {binding,sequence,tick:snapshot.tick,acceptedInput:0,consumedInput:0,selfRef:f.actors[0].p.state.unit,snapshot,events:[],visibleIds:new Set(snapshot.units.map(u=>u.ref.id)),full,eventWatermark:-1,...projectObservationExtras(snapshot,f.actors[0].p.state.character,new Set(snapshot.units.map(u=>u.ref.id))),appearances:Object.fromEntries(f.actors.map(a=>[`${a.u.ref.id}:${a.u.ref.life}`,appearance]))};}
 function apply(receiver,fragments){let result=null;for(const f of fragments)result=receiver.accept(f,0);return result;}
 test('bounded binary values preserve safe integers and all finite numbers without growth clamps',()=>{
  const v={large:2**48+123,hp:2**40,amount:1000000001,values:[-1,.001,Math.PI],text:'한글🦀',nested:{a:null,b:true}};
@@ -71,4 +71,17 @@ test('numeric widths exceed v2 without truncation and rejected growth leaves sen
  const f=fixture();const view=observation(f);const wide=structuredClone(view.snapshot);wide.units.find(u=>u.ref.id===f.actors[0].ref.id).hp=2**40;wide.units.find(u=>u.ref.id===f.actors[0].ref.id).maxHp=2**41;wide.players[0].coins=2**48;view.snapshot=wide;
  const result=apply(f.receiver,f.codec.encodeObservation(view));assert.equal(result.state.self.player.coins,2**48);assert.equal(result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id).hp,2**40);
  const bad=observation(f,2);bad.snapshot=structuredClone(wide);bad.snapshot.players[0].coins=Number.MAX_SAFE_INTEGER+1;assert.throws(()=>f.codec.encodeObservation(bad),/numeric/);
+});
+
+test('measure initial lossless pose bandwidth with one real 100-player Area at 20 snapshots per second',t=>{
+ const f=fixture(100);const bytes=p=>p.reduce((n,b)=>n+b.byteLength,0);let sequence=1;
+ const baseline=bytes(f.codec.encodeObservation(observation(f,sequence++)));let total=0,count=0,ms=0;
+ for(let tick=1;tick<=30;tick++){
+  f.area.step(new Map(f.actors.map(a=>[a.u.ref.id,intent(tick,[],{forward:1,steeringYaw:Math.PI/2})])));
+  f.area.drainEvents();
+  if(Math.floor(tick*2/3)===Math.floor((tick-1)*2/3))continue;
+  const started=performance.now(),chunks=f.codec.encodeObservation(observation(f,sequence++));ms+=performance.now()-started;total+=bytes(chunks);count++;
+ }
+ assert.equal(count,20);assert.ok(baseline<LIMITS.messageBytes);assert.ok(total>0);
+ t.diagnostic(JSON.stringify({representation:'initial-lossless-full-pose-object-delta',actualPlayers:100,totalActors:f.area.snapshot().units.length,baselineBytes:baseline,movingBytesPerClientSecond:total,meanDeltaBytes:total/count,estimated100ViewersBytesPerSecond:total*100,encodeMsPerSnapshot:ms/count}));
 });
