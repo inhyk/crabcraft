@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {Player} from '../tmp/test-modules/player.js';
 import {CLASSES} from '../src/data/classes.ts';
+import {equipmentRank,armorMultiplier} from '../src/game/equipment.ts';
 
 // Real Player/useAbility/commit/executeAbility; only rendering, world and animation are stubbed.
 function setup(cls,ab){
@@ -88,4 +89,39 @@ test('mage slot 3 heals exactly 10 HP, blinks safely, and cannot repeat its heal
  game.time=player.cooldowns.get(ab.id).end;player.gcdEnd=game.time;u.hp=96;
  game.world.resolveCollision=(x,z,r,out)=>out.set(x,z>10?z+2:z);player.useAbility(3);
  assert.equal(u.hp,100);assert.equal(u.pos.z,10);assert.equal(player.cooldownLeft(ab),15);
+});
+
+test('weapon and armor purchases charge their own increasing costs and save once per success',()=>{
+ const {game,player}=setup(CLASSES.warrior,CLASSES.warrior.abilities[0]);game.time+=6;let saved=0;game.journey={save(){saved++}};
+ player.coins=500;const base=player.dmgMul;
+ assert.equal(player.upgradeEquipment('weapon'),'unowned');assert.equal(player.coins,500);
+ assert.equal(player.buyEquipment('weapon'),'bought');assert.equal(player.coins,400);assert.equal(player.attackRank,1);assert.equal(player.armorRank,0);assert.equal(player.dmgMul,base*1.08);
+ assert.equal(player.buyEquipment('armor'),'bought');assert.equal(player.coins,300);assert.equal(player.armorRank,1);assert.equal(player.buyEquipment('armor'),'owned');
+ assert.equal(player.upgradeEquipment('armor'),'upgraded');assert.equal(player.coins,100);assert.equal(player.armorRank,2);
+ assert.equal(player.upgradeEquipment('weapon'),'coins');assert.equal(player.coins,100);assert.equal(player.attackRank,1);assert.equal(saved,3);
+});
+
+test('equipment purchases reject combat, death, cutscenes and max ranks without spending or saving',()=>{
+ const {game,player}=setup(CLASSES.warrior,CLASSES.warrior.abilities[0]);let saved=0;game.journey={save(){saved++}};player.coins=100000;
+ assert.equal(player.upgradeEquipment('armor'),'busy');game.time+=6;
+ player.unit.alive=false;assert.equal(player.upgradeEquipment('weapon'),'busy');player.unit.alive=true;
+ game.cinematic=true;assert.equal(player.upgradeEquipment('armor'),'busy');game.cinematic=false;
+ player.attackRank=100;player.armorRank=100;
+ assert.equal(player.upgradeEquipment('weapon'),'max');assert.equal(player.upgradeEquipment('armor'),'max');assert.equal(player.coins,100000);assert.equal(saved,0);
+});
+
+
+test('legacy and malformed equipment values are bounded without making armor invulnerable',()=>{
+ for(const value of [undefined,null,'25',1.5,NaN,Infinity])assert.equal(equipmentRank(value),0);
+ assert.equal(equipmentRank(-3),0);assert.equal(equipmentRank(4),4);assert.equal(equipmentRank(999),100);
+ assert.equal(armorMultiplier(0),1);assert.equal(armorMultiplier(25),.5);assert.equal(armorMultiplier(100),.2);
+});
+
+test('shop requires ownership before upgrading and never charges failed or repeated purchases',()=>{
+ const {game,player}=setup(CLASSES.warrior,CLASSES.warrior.abilities[0]);let saved=0;game.journey={save(){saved++}};player.coins=200;
+ assert.equal(player.buyEquipment('weapon'),'busy');game.time+=6;
+ assert.equal(player.upgradeEquipment('weapon'),'unowned');
+ assert.equal(player.buyEquipment('weapon'),'bought');assert.equal(player.weaponOwned,true);assert.equal(player.attackRank,1);assert.equal(player.coins,100);
+ assert.equal(player.buyEquipment('weapon'),'owned');assert.equal(player.upgradeEquipment('weapon'),'coins');
+ assert.equal(player.buyEquipment('armor'),'bought');assert.equal(player.armorOwned,true);assert.equal(player.armorRank,1);assert.equal(player.coins,0);assert.equal(saved,2);
 });
