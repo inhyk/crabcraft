@@ -65,6 +65,14 @@ const B2 = 2 * BAR, B4 = 4 * BAR;
 
 // Each crew insert: two bars of groove close on the lead, a cut on the bar line, then the whole
 // crew from a moving camera through one power move that lands on a downbeat, and back to the groove.
+// The crew faces the boss on an arc 12 units out, centred 1.2 toward the side the boss drifts to in
+// its jump spin, beyond the sweep of its big claw on landing.
+const bossArc = [15, 35, 55].flatMap((d) => [-1, 1].map((k) => {
+  const a = k * d * Math.PI / 180;
+  return [+(1.2 + 12 * Math.sin(a)).toFixed(2), +(12 * Math.cos(a)).toFixed(2)];
+}));
+const atBoss = { who: 'crowd', faceTo: [0, 0] };
+
 const definitions = {
   'island-dive': [0, 4, (L) => flight(L, [
     K(0, [215, 54, 105], [92, 7, -5], 70, -0.13),
@@ -84,22 +92,32 @@ const definitions = {
       K(1, [-2, 11, 7.5], [0, 0.3, -0.6], 58, 0.05),
     ], { ease: 'sine' }),
   ], [groove(), move('break_sixstep', 1.0, 0.6, 3.0, { fade: 0.6 })])],
-  // The boss feels the beat first, crouches, launches, lands on the bar and grooves on.
+  // A dance battle: the crew faces the boss, seen over a dancer's shoulder at crab height so the boss
+  // towers over it, then over another dancer's shoulder as the boss crouches, jump-spins and lands
+  // on the bar; the deck shakes and the crew hop, centre first. The bow's mast stands at about
+  // (1, 17), behind both cameras.
   'boss-reveal': [20, 24, (L) => ({
     ...program(L, { x: 154, z: 117, yaw: 1.27 + Math.PI }, [
       shot(0, B2, [
-        K(0, [2.3, 1.1, 16.5], lead(1.8), 52, 0.05),
-        K(1, [-1.5, 1.5, 14], lead(1.9), 52, 0.02),
+        K(0, [-1.9, 1.5, 15.2], lead(1.2), 58, 0.03),
+        K(1, [-1.2, 1.6, 14.4], lead(1.4), 58, -0.01),
       ], { focus: 'hero', focusRange: 30, ease: 'out' }),
       shot(B2, B4, [
-        K(0, [7, 2.4, 11], lead(1.4), 60, -0.04),
-        K(0.5, [0, 4.4, 14], lead(1.4), 62, 0),
-        K(1, [-4, 4.6, 13], lead(1.3), 62, 0.04),
-      ], { focus: 'hero', focusRange: 40, ease: 'linear', rise: 0.8 }),
-    ], [groove(), power('break_jumpspin', 'land', 3 * BAR, 0.6), groove(3 * BAR + 1.2, { fade: 0.8 })]),
+        K(0, [6.6, 1.5, 15.2], lead(1.0), 60, -0.03),
+        K(0.5, [5.1, 1.8, 15.6], lead(1.2), 60, 0),
+        K(1, [3.6, 2.1, 15.2], lead(1.0), 60, 0.03),
+      ], { focus: 'hero', focusRange: 50, ease: 'linear', rise: 0.8 }),
+    ], [
+      groove(-0.8, { who: 'hero' }), power('break_jumpspin', 'land', 3 * BAR, 0.6, { who: 'hero' }), groove(3 * BAR + 1.2, { who: 'hero', fade: 0.8 }),
+      groove(-0.8, atBoss),
+      move('jump', 1, 0.95, 3 * BAR + 0.06, { ...atBoss, sync: event('jump', 'takeoff'), fade: 0.15, wave: { by: 'side', step: 0.05 } }),
+      groove(3 * BAR + 0.8, atBoss),
+    ]),
     actor: 'corrodius', terrainLiftRate: 7,
-    formation: { rows: 0, cols: 0, dx: 1, dz: 1, hero: 0, weapons: 1 },
-    faces: [{ at: -10, who: 'all', expr: 'angry' }],
+    formation: { rows: 3, cols: 3, dx: 2.4, dz: 4, hero: -bossArc[0][1], seed: 23, weapons: 0, points: bossArc },
+    faces: [{ at: -10, who: 'hero', expr: 'angry' }, { at: -10, who: 'crowd', expr: 'happy' },
+      { at: 3 * BAR, who: 'crowd', expr: 'surprised', wave: { by: 'side', step: 0.05 } },
+      { at: 3 * BAR + 1.2, who: 'crowd', expr: 'happy' }],
   })],
   // A group 720 on the sand: close arc on the lead, then a low front that cranes with the jump.
   'shore-720': [29, 33, (L) => program(L, beach, [

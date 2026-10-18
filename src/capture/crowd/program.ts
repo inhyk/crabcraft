@@ -167,7 +167,7 @@ export interface CrowdProgram {
   formation: FormationSpec;
   /** Optional cinematic terrain fit: minimum clearance of feet/palm pads above the terrain. */
   terrainClearance?: number;
-  /** A single cinematic performer using the actual first-world boss appearance. */
+  /** The hero is played by the actual first-world boss (Corrodius); the crowd stays dancers. */
   actor?: 'corrodius';
   /** Preserve recorded joint kinematics without race stance/hunch bias or servo twitches. */
   exactMotion?: boolean;

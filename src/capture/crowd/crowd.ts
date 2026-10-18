@@ -181,7 +181,7 @@ export class Crowd {
     let done = 0;
     const make = async (s: Slot): Promise<void> => {
       const spec = s.hero ? HERO_SPEC : specs[s.index];
-      const rig = (await (p.actor ? createEnemyCrab(p.actor) : createCrab(spec))) as RigX;
+      const rig = (await (p.actor && s.hero ? createEnemyCrab(p.actor) : createCrab(spec))) as RigX;
       if (p.exactMotion) rig.applyLook({ ...rig.look,
         posture: { scale: rig.look.posture.scale, bodyHeight: 1, stanceWidth: 1, hunch: 0 }, twitch: false,
       });

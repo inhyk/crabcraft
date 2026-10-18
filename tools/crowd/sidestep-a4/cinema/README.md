@@ -16,7 +16,7 @@ hook is changed.
 |---|---|
 | 0.00-6.50 s | Bank from the bay toward the village and fountain |
 | 19.30-25.70 s | Crew groove past a ground-level slide, then a crane over the six-step |
-| 32.10-38.50 s | Corrodius grooves on the Iron Wreck, crouches, jump-spins and lands on the bar |
+| 32.10-38.50 s | Dance battle on the Iron Wreck: Corrodius over a dancer's shoulder, then its jump spin; the crew hop as it lands |
 | 46.50-52.90 s | Lead close-up on the sand, then the crew's rippling 720 from a rising camera |
 | 59.30-64.10 s | Push-in on the lead by the claw fountain, then a turning top-down crew spin |
 | 70.50-76.90 s | Bank around the lighthouse over the water |
@@ -35,8 +35,10 @@ with a cut on the bar line: two bars of groove close on the lead (low, moving, s
 then the whole crew through one power move that lands on a downbeat, from a crane, orbit or dolly.
 The groove (`dance_crab` at 1.1549x) puts its steps on the song's beats, so the move starts from a
 dance instead of a standstill. Power moves play at 0.8x-0.9x (the boss at 0.6x, its 3.5 scale) and
-are entered from their standing pre-roll with a 0.5-second blend. The boss faces the wreck's bow so
-the camera stays on the deck, clear of its posts. Opt-in `exactMotion` removes race stance biases
+are entered from their standing pre-roll with a 0.5-second blend. The boss (`actor` plays the hero
+only) faces the wreck's bow with the crew on an arc 12 units out facing it, outside the sweep of its
+big claw on landing. Both boss shots look over a normal-size dancer's shoulder at crab height, so
+the 3.5-scale boss reads against it; the deck "shakes" on the landing and the crew hop, centre first. Opt-in `exactMotion` removes race stance biases
 and servo twitches while keeping the outfits and character scale.
 
 `terrainClearance` keeps foot tips and palm pads above the surface. `terrainLiftRate` precomputes
@@ -80,8 +82,8 @@ count, the final frame count, unchanged audio packets, black runs and black fram
 `<output>-report.json` and prints `CHECKS PASSED`.
 
 Every frame of a performer shot also checks contact and continuity. Contact is measured between
-the crabs' part boxes (each bone's rigidly skinned vertices and each gear mesh, transformed per
-frame); the full render is rejected if any two crabs' parts touch, if a body moves more than 0.24
+the crabs' part boxes (each bone's rigidly skinned vertices and each gear mesh, split into a 4x4x4
+grid of vertex boxes, transformed per frame; a touching pair records the two part names); the full render is rejected if any two crabs' parts touch, if a body moves more than 0.24
 standing heights in a frame, or if it turns more than 28 degrees in a frame. Those bounds sit above
 a real 720 at 0.8x (peak 0.21 heights and 24 degrees per frame on landing and in the air) and below
 the 0.32-unit, 33-degree snaps the earlier transitions produced. On-screen occlusion and crabs
@@ -149,9 +151,11 @@ projected rectangles overlapping, every crab 8 px inside the frame); it is repla
 part-contact rule above.
 
 - Captures: 9 shots, 3366 frames, 0 blank repairs, 0 page errors; the night lighthouse, 384 frames.
-- Crew and boss motion over 2208 frames: part contact 0 (minimum part gap 0.2586 units, in the
-  spins), maximum body step 0.212 standing heights/frame and turn 24.3 degrees/frame (720 and
-  backflip in the air), foot and palm clearance at least 0.045 units.
+- Crew and boss motion over 2208 frames: part contact 0 (minimum part gap 0.2605 units, the boss's
+  claw on landing), maximum body step 0.212 standing heights/frame and turn 24.3 degrees/frame (720
+  and backflip in the air), foot and palm clearance at least 0.045 units.
+- The boss shot first had the boss alone, so its size did not read. Six dancers now face it; with
+  the crew 8 to 10 units out the claw touched them on landing; at 12 units the smallest gap is 0.26.
 - Full: `CHECKS PASSED`, 163.95 s, 9837 frames, source AAC packets unchanged, no black frames.
   Short: `CHECKS PASSED`, 69.55 s, 4173 frames, -14.0 LUFS, -2.4 dBFS true peak, original ending.
 - Beat-spaced frame grids of every crew and boss shot and the prep, apex and landing frames of the

@@ -1,28 +1,42 @@
 // Conservative animated geometry bounds, built from rigid one-bone skinning and gear meshes.
-// Each bone's local vertex AABB is transformed every frame; this encloses every skinned vertex.
+// Each bone's (or rigid mesh's) local vertices are split into a 4x4x4 grid of boxes, transformed
+// every frame; together they enclose every vertex without the empty corners a single box of a
+// long claw or a wide shell sweeps once it turns.
 import * as THREE from 'three';
+
+function gridBoxes(points) {
+  const bb = new THREE.Box3().setFromPoints(points), size = new THREE.Vector3().subVectors(bb.max, bb.min), cells = new Map();
+  const cell = (x, lo, s) => Math.min(3, Math.floor(4 * (x - lo) / Math.max(s, 1e-9)));
+  for (const p of points) {
+    const key = cell(p.x, bb.min.x, size.x) * 16 + cell(p.y, bb.min.y, size.y) * 4 + cell(p.z, bb.min.z, size.z);
+    if (!cells.has(key)) cells.set(key, new THREE.Box3());
+    cells.get(key).expandByPoint(p);
+  }
+  return [...cells.values()];
+}
 
 export function installAudit(api) {
   const v = new THREE.Vector3();
   const models = api.crowd.crabs.map(c => {
-    const bones = new Map(), rigid = [];
+    const clouds = new Map();
+    const add = (node, p) => { if (!clouds.has(node)) clouds.set(node, []); clouds.get(node).push(p); };
     c.rig.root.updateMatrixWorld(true);
     c.rig.root.traverse(mesh => {
       if (!mesh.isMesh || !mesh.geometry || /-lod|shadow/.test(mesh.name)) return;
+      const pos = mesh.geometry.attributes.position;
       if (mesh.isSkinnedMesh) {
-        const pos = mesh.geometry.attributes.position, skin = mesh.geometry.attributes.skinIndex;
+        const skin = mesh.geometry.attributes.skinIndex;
         for (let i=0; i<pos.count; i++) {
-          const bi = skin.getX(i), bone = mesh.skeleton.bones[bi];
-          if (!bones.has(bone)) bones.set(bone, new THREE.Box3());
-          v.fromBufferAttribute(pos,i).applyMatrix4(mesh.bindMatrix).applyMatrix4(mesh.skeleton.boneInverses[bi]);
-          bones.get(bone).expandByPoint(v);
+          const bi = skin.getX(i);
+          add(mesh.skeleton.bones[bi], new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(mesh.bindMatrix).applyMatrix4(mesh.skeleton.boneInverses[bi]));
         }
       } else {
-        mesh.geometry.computeBoundingBox();
-        rigid.push([mesh,mesh.geometry.boundingBox.clone()]);
+        for (let i=0; i<pos.count; i++) add(mesh, new THREE.Vector3().fromBufferAttribute(pos,i));
       }
     });
-    return {c,parts:[...bones.entries(),...rigid],previous:null};
+    const parts = [];
+    for (const [node, points] of clouds) for (const box of gridBoxes(points)) parts.push([node, box]);
+    return {c,parts,previous:null};
   });
   const corners = box => {
     const a=[];
@@ -41,7 +55,7 @@ export function installAudit(api) {
       for(const {node,points} of m.parts){
         const part=new THREE.Box3();
         for(const p of points) part.expandByPoint(v.copy(p).applyMatrix4(node.matrixWorld));
-        parts.push(part);box.union(part);
+        part.node=node;parts.push(part);box.union(part);
       }
       const pos=c.rig.body.getWorldPosition(new THREE.Vector3());
       const rot=c.rig.body.getWorldQuaternion(new THREE.Quaternion());
@@ -68,7 +82,8 @@ export function installAudit(api) {
       const dz=Math.max(0,a.box.min.z-b.box.max.z,b.box.min.z-a.box.max.z);
       const hull=Math.hypot(dx,dy,dz);minHullGap=Math.min(minHullGap,hull);
       let gap=hull;
-      if(hull===0){gap=Infinity;for(const p of a.parts)if(boxGap(p,b.box)<gap)for(const q of b.parts)gap=Math.min(gap,boxGap(p,q));}
+      let touch=null;
+      if(hull===0){gap=Infinity;for(const p of a.parts)if(boxGap(p,b.box)<gap)for(const q of b.parts){const g=boxGap(p,q);if(g<gap){gap=g;touch=[p.node.name,q.node.name]}}}
       minWorldGap=Math.min(minWorldGap,gap);
       const sx=Math.min(a.screen.max[0],b.screen.max[0])-Math.max(a.screen.min[0],b.screen.min[0]);
       const sy=Math.min(a.screen.max[1],b.screen.max[1])-Math.max(a.screen.min[1],b.screen.min[1]);
@@ -76,7 +91,7 @@ export function installAudit(api) {
       const overlap=Math.max(0,sx)*Math.max(0,sy)/Math.min(area(a.screen),area(b.screen));
       maxScreenOverlap=Math.max(maxScreenOverlap,overlap);
       minScreenGap=Math.min(minScreenGap,Math.hypot(Math.max(0,-sx),Math.max(0,-sy)));
-      if(gap<0.01)pairs.push([i,j,+gap.toFixed(3),+overlap.toFixed(3)]);
+      if(gap<0.01)pairs.push([i,j,+gap.toFixed(3),+overlap.toFixed(3),touch]);
     }
     return {t:api.time,maxBodyStep,maxBodyStepNormalized,maxTurn,frameMargin,minWorldGap:Number.isFinite(minWorldGap)?minWorldGap:null,
       minHullGap:Number.isFinite(minHullGap)?minHullGap:null,
