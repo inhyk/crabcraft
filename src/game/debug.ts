@@ -102,12 +102,12 @@ export class DebugTools {
         break;
       case 'eclipse-boss':
         if(g.multiplayer?.battle.authority===false){g.hud.messages.info(t('보스 테스트는 방장이 진행해요.','Only the host can advance boss tests.'));return;}
-        if(g.worldBoss.state==='dormant')g.worldBoss.wake();else g.worldBoss.debugAdvance();
+        if(g.worldBoss.state==='dormant')g.worldBoss.wake();else g.worldBoss.debugAdvance(g.player.unit);
         break;
       case 'boss':
         if(g.multiplayer?.battle.authority===false){g.hud.messages.info(t('보스 테스트는 방장이 진행해요.','Only the host can advance boss tests.'));return;}
         if (g.boss.state === 'dormant') g.boss.wake();
-        else g.boss.debugAdvance();
+        else g.boss.debugAdvance(g.player.unit);
         break;
       default:g.quests.completeObjective(o);g.journey?.save();break;
     }

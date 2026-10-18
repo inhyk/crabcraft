@@ -91,8 +91,8 @@ export type SimEvent =
   | { type: 'spawn'; unit: Unit }
   /** The unit gave up the chase and runs home, untouchable. */
   | { type: 'leash'; unit: Unit }
-  /** An enemy's or boss's own attack: started (wind-up, warning, leap), or landed. */
-  | { type: 'attack'; src: Unit; attack: 'claw' | 'seaCast' | 'leap' | 'bossClaw'; stage: 'start' | 'hit'; target?: Unit; at?: Vec3 }
+  /** A plain attack (a warrior's auto-attack, an enemy's or boss's own): started (warning, leap), or landed. */
+  | { type: 'attack'; src: Unit; attack: 'auto' | 'claw' | 'seaCast' | 'leap' | 'bossClaw'; stage: 'start' | 'hit'; target?: Unit; at?: Vec3 }
   /** A boss mechanic's warning goes up; it fires `seconds` later. */
   | { type: 'telegraph'; src: Unit; mech: MechKind; level: number; seconds: number; shapes: TelegraphShape[] }
   /** The warning comes down: fired (its marks fade out on their own) or cancelled (marks removed). */
