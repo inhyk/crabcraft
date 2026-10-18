@@ -26,6 +26,8 @@ export interface CombatController {
   /** The unit's absorb shield took a hit; `broken` when nothing is left of it. */
   onWardHit?(broken: boolean): void;
   onDeath?(killer: Unit | null): void;
+  /** Persistent equipment mitigation belongs to the unit's own controller. */
+  readonly damageTakenMultiplier?: number;
 }
 
 const ctrlOf = (u: Unit | null): CombatController | null => (u?.ctrl as CombatController | null) ?? null;
@@ -64,6 +66,8 @@ export class Combat {
       ctrl?.onHurt?.(dmg);
       return 0;
     }
+    // The owning client applies armor once, after routing and before temporary shields.
+    dmg=Math.max(1,Math.round(dmg*(ctrl?.damageTakenMultiplier??1)));
     // Absorb shields soak first.
     if (dst.absorb > 0 && now < dst.absorbUntil) {
       const soaked = Math.min(dst.absorb, dmg);

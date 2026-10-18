@@ -72,7 +72,7 @@ test('Boreas numeric rig is derived from the actual shipped mage and resolves bo
  const raw=JSON.parse(await readFile(new URL('../src/sim/data/pose-data.json',import.meta.url),'utf8'));
  assert.deepEqual(raw.rigSources.frost,{factory:'createCrab',spec:{race:'undead',sex:'male',classId:'mage',shell:3,crest:1,led:2,name:'Boreas'},rootMultiplier:4.5});
  assert.equal(data.archetype('boss-frost'),data.archetype('frost'));
- assert.equal(Object.keys(raw.archetypes).length,27);
+ assert.equal(Object.keys(raw.archetypes).length,35);
  for(let axis=0;axis<3;axis++)near(data.archetype('frost').rootScale[axis],data.archetype('undead').rootScale[axis]*4.5);
 });
 
@@ -95,4 +95,20 @@ test('named NPC and rescue rigs retain their shipped identities and equipment pr
  assert.deepEqual(raw.rigSources['npc:brinebeard'].extras,['captain-hat']);
  assert.notEqual(data.archetype('npc:brinebeard').height,data.archetype('human').height);
  assert.notEqual(data.archetype('freed-abyss').height,data.archetype('human').height);
+});
+
+test('eight townsfolk specs preserve Game seed1337 draw order and varied identities',async()=>{
+ const raw=JSON.parse(await readFile(new URL('../src/sim/data/pose-data.json',import.meta.url),'utf8'));
+ const expected=[
+  ['human','male','warrior',0,3,1,'Clawdia'],['orc','female','mage',1,2,1,'Shelldon'],
+  ['dwarf','male','mage',2,2,0,'Pinchy'],['undead','female','mage',1,0,2,'Barnaby'],
+  ['nightelf','male','mage',3,2,0,'Coral'],['tauren','female','warrior',0,1,0,'Sandy'],
+  ['nightelf','male','mage',2,2,0,'Scuttles'],['undead','female','warrior',2,0,2,'Nippy'],
+ ];
+ for(const [i,fields] of expected.entries()){
+  const id=`townsfolk:${i}`,source=raw.rigSources[id];
+  assert.deepEqual(['race','sex','classId','shell','crest','led','name'].map(k=>source.spec[k]),fields,id);
+  assert.equal(source.seed,1337);assert.equal(source.drawOffset,i*4);assert.equal(source.rootMultiplier,1);
+  assert.equal(data.archetype(id).height,raw.archetypes[id].height);
+ }
 });

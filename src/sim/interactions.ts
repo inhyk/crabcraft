@@ -1,8 +1,9 @@
 import type { AreaDefinition, AreaServices, ChannelState, EntityRef, PlayerCommand, PlayerSim } from './types.ts';
 import { activeObjective, QUESTS, questAccept, questBump, questComplete, questTrack } from './data/quests.ts';
 import { worldChapter } from './math.ts';
-import { canChallenge, canReplayFrostEnding, canTravelTo, forgeCost } from './data/progression.ts';
+import { canChallenge, canReplayFrostEnding, canTravelTo } from './data/progression.ts';
 import { teleport } from './unit.ts';
+import { transactEquipment, type EquipmentOperation, type EquipmentResult, type EquipmentSlot } from './data/equipment.ts';
 import { BOSS_PROFILES } from './data/bosses.ts';
 export interface WorldInteractionState {beaconLit:boolean}
 type Interaction=AreaDefinition['interactions'][number];
@@ -16,7 +17,7 @@ export class InteractionRules {
  private near(player:PlayerSim,position:{x:number;y:number;z:number},range:number):boolean {const u=this.services.getUnit(player.state.unit);return !!u&&Math.hypot(u.x-position.x,u.y-position.y,u.z-position.z)<=range;}
  private validate(player:PlayerSim,id:string):Interaction|null {const s=this.services,point=s.definition.interactions.find(i=>i.id===id);if(!point||!this.player(player.state.unit)||!this.near(player,point.position,point.range)||!s.policy.canInteract(s.context,player.state,id))return null;
   if(point.objective?.startsWith('dawn-')){const u=s.getUnit(player.state.unit)!;if(s.world!=='w3'||Math.hypot(u.x-point.position.x,u.y-point.position.y,u.z-point.position.z)>=point.range)return null;}
-  if(point.kind==='beacon'&&!(player.state.quests.status.q3==='done'||player.state.flags.beaconLit||activeObjective(player.state.quests,'beacon')))return null;
+  if(point.kind==='beacon'&&!(player.state.quests.status.q3==='done'||this.world.beaconLit||activeObjective(player.state.quests,'beacon')))return null;
   if((point.kind==='crystal'||point.kind==='waystone'||point.kind==='explore')&&(!point.objective||!activeObjective(player.state.quests,point.objective)))return null;
   if(point.kind==='gate'){const chapter=worldChapter(point.destination!);if(!canTravelTo(chapter,player.state.flags))return null;const u=s.getUnit(player.state.unit)!;if(s.encounterActive()||s.time-u.lastCombat<5)return null;}
   return point;
@@ -30,7 +31,20 @@ export class InteractionRules {
   if(point.kind==='gate'&&point.destination){s.emit({type:'travelReady',unit:ref,destination:point.destination,gate:point.id});return true;}
   return false;
  }
- command(ref:EntityRef,command:PlayerCommand):boolean {const p=this.player(ref);if(!p)return false;const s=this.services;
+ forge(ref:EntityRef,npcId:string,slot:EquipmentSlot,operation:EquipmentOperation):EquipmentResult {
+  const s=this.services,p=s.player(ref),u=s.getUnit(ref),member=p?s.context.members.find(m=>m.character===p.state.character):null;
+  if(!p||!u?.alive||u.hidden||p.state.controlsLocked||s.time-u.lastCombat<5||member?.villagePlaying||member?.seatedBoat)return 'busy';
+  if(!['weapon','armor'].includes(slot)||!['buy','upgrade'].includes(operation)||npcId!=='pip'||!this.npc(p,npcId))return 'busy';
+  return transactEquipment(p.state,slot,operation);
+ }
+ command(ref:EntityRef,command:PlayerCommand):boolean {
+  const s=this.services;if(command.kind==='forgeBuy'||command.kind==='forgeUpgrade'){
+   if(command.slot!==undefined&&!['weapon','armor'].includes(command.slot)||command.request!==undefined&&(!Number.isSafeInteger(command.request)||command.request<=0))return false;
+   const p=s.player(ref);if(!p)return false;const before={coins:p.state.coins,attackRank:p.state.attackRank,armorRank:p.state.armorRank,weaponOwned:p.state.weaponOwned,armorOwned:p.state.armorOwned},slot=command.slot??'weapon',operation=command.kind==='forgeBuy'?'buy':'upgrade';const outcome:{result:EquipmentResult}={result:'busy'};
+   try{s.outcomeTransaction(()=>{outcome.result=this.forge(ref,command.npcId,slot,operation);s.emit({type:'equipment',unit:p.state.unit,slot,operation,result:outcome.result,...(command.request===undefined?{}:{request:command.request})});});}catch(error){Object.assign(p.state,before);throw error;}
+   return outcome.result==='bought'||outcome.result==='upgraded';
+  }
+  const p=this.player(ref);if(!p)return false;
   if(command.kind==='questTrack')return questTrack(p.state.quests,command.questId);
   if(command.kind==='endingReplay'){if(!canReplayFrostEnding(worldChapter(s.world),p.state.flags,s.bossByProfile('frost')?.state??'dormant',p.state.controlsLocked))return false;p.state.flags.frostEndingStarted=true;s.emit({type:'endingReady',unit:p.state.unit,chapter:4,replay:true});return true;}
   if(command.kind==='bossChallenge'){
@@ -45,7 +59,6 @@ export class InteractionRules {
   if(command.kind==='channelStart'){if(command.channel==='recall'||!command.targetId)return false;const point=s.definition.interactions.find(i=>i.id===command.targetId);return !!point&&point.kind===command.channel&&this.interact(ref,point.id);}
   if(command.kind==='interact')return this.interact(ref,command.targetId);
   if(command.kind==='travel')return this.interact(ref,command.gateId);
-  if(command.kind==='forgeBuy'){if(command.npcId!=='pip'||!this.npc(p,'pip')||p.state.attackRank>=100||p.state.coins<forgeCost(p.state.attackRank))return false;p.state.coins-=forgeCost(p.state.attackRank);p.state.attackRank++;return true;}
   if(command.kind==='questAccept'||command.kind==='questTurnIn'){const def=QUESTS[command.questId];if(!def||def.chapter!==p.state.quests.chapter||!this.npc(p,command.npcId))return false;
    if(command.kind==='questAccept'){if(def.giver!==command.npcId||p.state.quests.status[def.id]!=='available'||def.id==='q4')return false;if(def.id==='q3')p.state.flags.beaconLit=this.world.beaconLit;return questAccept(p,s,def.id);}
    if(def.turnIn!==command.npcId||p.state.quests.status[def.id]!=='ready')return false;return questComplete(p,s,def.id);
@@ -53,9 +66,13 @@ export class InteractionRules {
  }
  completeChannel(player:PlayerSim,channel:ChannelState):void {if(channel.kind==='recall')return;const point=channel.targetId?this.validate(player,channel.targetId):null;if(!point||point.kind!==channel.kind)return;
   if(point.kind==='waystone'){questBump(player,this.services,point.objective!);return;}
-  this.world.beaconLit=!this.world.beaconLit;
-  if(!this.world.beaconLit){this.services.bossByProfile('rust')?.sleep();this.services.bossByProfile('abyss')?.sleep();this.clearTarget(player);}
-  for(const unit of this.services.players()){const p=this.services.player(unit.ref);if(!p)continue;p.state.flags.beaconLit=this.world.beaconLit;if(this.world.beaconLit)questBump(p,this.services,'beacon');}
+  this.setSharedBeacon(!this.world.beaconLit);
+ }
+ /** Trusted Area weather updates retain real personal quest effects without visual callbacks. */
+ setSharedBeacon(lit:boolean):void {
+  this.world.beaconLit=lit;
+  if(!lit){this.services.bossByProfile('rust')?.sleep();this.services.bossByProfile('abyss')?.sleep();}
+  for(const unit of this.services.players()){const p=this.services.player(unit.ref);if(!p)continue;p.state.flags.beaconLit=lit;if(lit)questBump(p,this.services,'beacon');else this.clearTarget(p);}
  }
  purgeActor(ref:EntityRef):void {for(const [character,p]of this.portals)if(p.ref.area===ref.area&&p.ref.id===ref.id&&p.ref.life===ref.life)this.portals.delete(character);}
  update():void {

@@ -14,7 +14,7 @@ export function validCommand(command:unknown):boolean {
     case 'interact':return text(c.targetId);
     case 'questTrack':return text(c.questId);
     case 'questAccept':case 'questTurnIn':return text(c.questId)&&text(c.npcId);
-    case 'forgeBuy':return text(c.npcId);
+    case 'forgeBuy':case 'forgeUpgrade':return text(c.npcId)&&(c.slot===undefined||c.slot==='weapon'||c.slot==='armor')&&(c.request===undefined||Number.isSafeInteger(c.request)&&Number(c.request)>0);
     case 'travel':return text(c.gateId);
     case 'bossChallenge':return ['rust','abyss','eclipse','dawn','frost'].includes(c.profile as string);
     default:return false;
