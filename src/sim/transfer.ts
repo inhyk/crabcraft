@@ -52,6 +52,6 @@ export class InMemoryTransferCoordinator implements TransferCoordinator {
    if(!this.characters.compareAndSwap(character,owner,arrival.newRef))throw new Error('registry-conflict');
   }catch(error){if(arrival)destination.abortArrival(arrival.token);if(departure)source.abortDeparture(departure.token);if(admission)destination.releaseAdmission(admission.token);return {ok:false,reason:error instanceof Error?error.message:'transfer-failed'};}
   // Contract: no observer/tick/I/O here, these operations cannot fail after registry CAS.
-  source.commitDeparture(departure!.token);const ref=destination.activateArrival(arrival!.token);destination.releaseAdmission(admission!.token);this.deliver(destination,character);return {ok:true,ref};
+  source.commitDeparture(departure!.token);const ref=destination.activateArrival(arrival!.token);destination.releaseAdmission(admission!.token);return {ok:true,ref};
  }
 }
