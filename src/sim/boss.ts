@@ -1,4 +1,5 @@
 import type { AreaServices, DebugValue, EnemySim, EntityRef, HitPlan, ImpactShape, MechId, Poi, SimUnit, TelegraphShape, Vec3 } from './types.ts';
+import { immutable } from './events.ts';
 import { BOSS_PROFILES, mechanicFraction, mechanicOrder, mechanicRadius, type BossProfileId } from './data/bosses.ts';
 import { angleDiff, creatureAction, creatureHitDelay, distance, eligible, gap, moveCreature, speedMul, turn } from './enemy.ts';
 export const BOSS_HP=1300;
@@ -11,14 +12,14 @@ export class Boss {
   private nextSwing=0;private nextMech=0;private mechIndex=0;private mech:ActiveMech|null=null;private stateT=0;
   private freedStarted=false;private outside=0;private freedT=-1;private freedYaw=0;
   constructor(services:AreaServices,actor:SimUnit,arena:Poi,freed:SimUnit,profile:BossProfileId='rust'){
-    this.services=services;this.actor=actor;this.arena=structuredClone(arena);this.freed=freed;this.profile=profile;
+    this.services=services;this.actor=actor;this.arena=immutable(arena);this.freed=freed;this.profile=profile;
     actor.level=this.stats.level;actor.hp=actor.maxHp=this.stats.hp;actor.invulnerable=true;actor.hidden=true;actor.targetable=false;
     freed.hidden=true;freed.targetable=false;
   }
   get unit():EntityRef{return this.actor.ref;}get stats(){return BOSS_PROFILES[this.profile];}get isDawn():boolean{return this.profile==='dawn';}
   get engaged():boolean{return this.state==='fight';}get telegraphActive():boolean{return !!this.mech&&!this.mech.fired;}
   get mechName():MechId|null{return this.mech?.kind??null;}get stateTime():number{return this.stateT;}get freedTime():number{return this.freedT;}
-  private participants():readonly SimUnit[]{return this.services.players().filter(p=>!this.isDawn||p.level>=100);}
+  private participants():readonly SimUnit[]{return this.services.players().filter(p=>p.alive&&!p.hidden&&(!this.isDawn||p.level>=100));}
   private target():SimUnit|null{
     if(!this.isDawn)return this.services.targetFor(this.unit);
     return this.participants().filter(p=>eligible(this.services,p)).slice().sort((a,b)=>distance(this.actor,a)-distance(this.actor,b)||a.ref.id-b.ref.id)[0]??null;
