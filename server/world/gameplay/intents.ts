@@ -47,7 +47,7 @@ export function decodeInput(bytes:Uint8Array,expected:WireBinding,catalog:Gamepl
  if(h.tick!==0||h.acceptedInput!==0||h.consumedInput!==0)fail('forged input header');validateInput(message.payload,catalog,expected.area);
  if(h.sequence!==message.payload.seq)fail('input sequence mismatch');return message.payload;
 }
-export interface PreparedInput {readonly token:number;readonly intent:GameplayInput;readonly sequences:readonly number[]}
+export interface PreparedInput {readonly token:number;readonly intent:GameplayInput;readonly sequences:readonly number[];readonly commandOrigins:readonly {inputSequence:number;commandIndex:number}[]}
 /** Acceptance never claims simulation success. Prepare is replayable until commit after Area.step. */
 export class InputSession {
  private binding:WireBinding;private catalog:GameplayCatalog;
@@ -69,12 +69,12 @@ export class InputSession {
  prepareTick(now:number,maxCommands:number=LIMITS.commands):PreparedInput|null {
   number(now);if(now<this.time)fail('input clock regression');integer(maxCommands,1,LIMITS.commands);
   if(this.prepared)return clone(this.prepared);if(!this.queue.length)return null;
-  let count=0,n=0;for(const frame of this.queue){if(n&&count+frame.commands.length>maxCommands)break;if(frame.commands.length>maxCommands)fail('frame exceeds step command capacity');count+=frame.commands.length;n++;}
+  let count=0,n=0;for(const frame of this.queue){const host=frame.commands.some(c=>HOST_COMMANDS.includes(c.kind));if(n&&(host||this.queue[0].commands.some(c=>HOST_COMMANDS.includes(c.kind))))break;if(n&&count+frame.commands.length>maxCommands)break;if(frame.commands.length>maxCommands)fail('frame exceeds step command capacity');count+=frame.commands.length;n++;}
   const frames=this.queue.slice(0,n),last=frames.at(-1)!;
   const intent={...last,commands:frames.flatMap(f=>f.commands)};
   // Commands retain order even when later movement frames supersede held input.
   if(now-this.lastReceived>=this.timeout)Object.assign(intent,{forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null});
-  integer(this.nextToken,1);this.prepared={token:this.nextToken++,intent:clone(intent),sequences:frames.map(f=>f.seq)};return clone(this.prepared);
+  integer(this.nextToken,1);this.prepared={token:this.nextToken++,intent:clone(intent),sequences:frames.map(f=>f.seq),commandOrigins:frames.flatMap(f=>f.commands.map((_,commandIndex)=>({inputSequence:f.seq,commandIndex})))};return clone(this.prepared);
  }
  commitConsumed(token:number):void {
   if(!this.prepared||this.prepared.token!==token)fail('unknown prepared input');
