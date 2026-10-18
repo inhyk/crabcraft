@@ -72,6 +72,7 @@ try{
   let arenaDev=0;for(let rr=0;rr<=21.5;rr+=3.5)for(let i=0;i<16;i++){const a=i/16*Math.PI*2;arenaDev=Math.max(arenaDev,Math.abs(H(Math.sin(a)*rr,-78+Math.cos(a)*rr)-19));}
   return {old,torus,discs,pavMeshes,on,off,minLift,maxLift,stats:pav.userData.stats,arenaDev,
    ice:ice&&{type:ice.geometry.type,radius:ice.geometry.parameters.radius,pos:ice.position.toArray(),shadow:ice.receiveShadow},rim:rim&&{blocks:root.getObjectByName("frostlight-arena-floor").userData.stats.rimBlocks,gate:root.getObjectByName("frostlight-arena-floor").userData.stats.gateBlocks,cast:rim.castShadow},
+   floor:root.getObjectByName('frostlight-arena-floor').userData.stats,
    materials:[surf.material.name,ice?.material.name,rim?.material.name]};
  });
  assert.deepEqual(r.old,[],'old tile paving is gone');assert.equal(r.torus,0,'no torus rings left on the arena');assert.equal(r.discs,0,'no flat cylinder arena floor');
@@ -81,9 +82,10 @@ try{
  assert.ok(r.minLift>=.029&&r.maxLift<.3,`paving sits on the ground: ${r.minLift} .. ${r.maxLift}`);
  assert.ok(r.arenaDev<1e-9,`arena floor height unchanged: ${r.arenaDev}`);
  assert.equal(r.ice.type,'CircleGeometry');assert.ok(Math.abs(r.ice.radius-22.05)<1e-6);assert.deepEqual(r.ice.pos.map(v=>+v.toFixed(3)),[0,19.035,-78]);assert.equal(r.ice.shadow,true);
- assert.equal(r.rim.blocks,38);assert.equal(r.rim.gate,2);assert.equal(r.rim.cast,true);
+ assert.equal(r.rim.blocks,38);assert.equal(r.rim.gate,2);
+ assert.ok(r.floor.cracks>60&&r.floor.fine>0&&r.floor.dropped<r.floor.gridCells*.01,`the ice holds a crack web, baked for lookup: ${JSON.stringify(r.floor)}`);assert.equal(r.rim.cast,true);
  assert.deepEqual(r.materials,['frostlight-snow-paving','frostlight-arena-ice','frostlight-arena-rim']);
- console.log('PASS ground structure: one cobble surface on the old layout, ice disc and carved rim, no placeholder left',JSON.stringify({stats:r.stats,lift:[+r.minLift.toFixed(3),+r.maxLift.toFixed(3)]}));
+ console.log('PASS ground structure: one cobble surface on the old layout, ice disc and carved rim, no placeholder left',JSON.stringify({stats:r.stats,lift:[+r.minLift.toFixed(3),+r.maxLift.toFixed(3)],floor:r.floor}));
  await play(p,0,50,Math.PI,0);await p.screenshot({path:'tmp/qa/snow-ground-road.png'});
  await play(p,0,40,SUN+Math.PI,SUN);await p.screenshot({path:'tmp/qa/snow-ground-road-sun.png'});
  await play(p,0,-66,Math.PI,0);await p.screenshot({path:'tmp/qa/snow-ground-arena.png'});

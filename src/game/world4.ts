@@ -60,7 +60,7 @@ export class SnowIsland {
   const groundMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.93});this.refreshSnow=applySnowSurface(groundMat,this.deform,{sun:this.sun});
   const ground=add(terrain,groundMat,0,0,0);ground.name='snowdrift-terrain';
   const sea=add(new THREE.PlaneGeometry(1800,1800),new THREE.MeshStandardMaterial({color:'#244c6a',roughness:.28,metalness:.45}),0,.2,0);sea.rotation.x=-Math.PI/2;
-  // Snowed-in flagstone streets (frostPaving.ts) on the same layout as before, so walking and covers() are unchanged.
+  // Snowed-in cobbled streets (frostPaving.ts) on the same layout as before, so walking and covers() are unchanged.
   const paths:IslandPath[]=[{points:[[0,94],[0,28],[0,-53]],width:8,trim:true},...[38,56,74].map(z=>({points:[[-22,z],[22,z]] as [number,number][],width:4,trim:true}))];
   this.paving=frostPaving((x,z)=>this.height(x,z),paths,{skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,sunDir:this.sky.sunDir,deform:this.deform});this.root.add(this.paving.root);
   for(const side of [-1,1])for(let i=0;i<3;i++){
