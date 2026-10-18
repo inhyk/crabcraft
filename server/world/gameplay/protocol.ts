@@ -2,6 +2,7 @@ import {CHAT_MAX} from '../../chat/filter.ts';
 import {copyValue,freezeValue} from '../../../src/sim/events.ts';
 import {createRenderPoseRecipe,evaluateRenderPoseRecipe,isRenderPoseRecipe,renderPoseProviderVersion} from '../../../src/sim/renderPose.ts';
 import type {RenderPoseRecipe} from '../../../src/sim/renderPose.ts';
+import type {EndingObservation} from '../../../src/sim/features/endingPresentation.ts';
 /** Gameplay v3. Pure bounded binary values shared by server and browser; v2 is untouched. */
 import { ACHIEVEMENT_IDS } from '../../../src/sim/persistence.ts';
 import type { CommandResult } from './events.ts';
@@ -155,7 +156,7 @@ export interface FeatureView {
  boat:null|{x:number;z:number;yaw:number;speed:number;seats:readonly(EntityRef|null)[]};
  village:null|{id:string;mode:'hide'|'tag';phase:'ready'|'play'|'done';left:number;starter:EntityRef;seeker:EntityRef;members:readonly EntityRef[];caught:readonly EntityRef[];result:string};
 }
-export interface RecoveryView {bosses?:readonly BossObservation[];telegraphs:readonly EventRecord[];endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]}
+export interface RecoveryView {endingPresentation?:Readonly<EndingObservation>|null;bosses?:readonly BossObservation[];telegraphs:readonly EventRecord[];endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]}
 export interface RenderPoseSource {recipe:RenderPoseRecipe;localVx:number;localVz:number}
 export interface ActorUpdate {ref:EntityRef;fields:Partial<Omit<PublicActor,'ref'>>;poseDelta?:PoseDelta;poseRecipe?:number}
 export interface SnapshotPayload {
@@ -184,8 +185,9 @@ function validateFeatures(v:unknown,area:string):void {
 }
 function validateProjectile(v:unknown,area:string):void {object(v,{id:x=>integer(x,1,0xffffffff),source:x=>reference(x,area),target:x=>reference(x,area),style:choice('bubble','spark','holy','rust'),x:number,y:number,z:number,speed:number,elapsed:number,bornStep:integer});}
 function checkSnapshot(p:unknown,c:GameplayCatalog,area:string,ownedPublic=false):asserts p is SnapshotPayload {
- object(p,{full:bool,baseline:integer,eventWatermark:v=>integer(v,-1),world:choice('w1','w2','w3','w4'),time:number,selfRef:v=>reference(v,area),poses:list(ownedPublic?()=>{}:renderSource,LIMITS.actors),actors:list(v=>{object(v,{ref:x=>reference(x,area),fields:x=>{if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).some(k=>!ACTOR_FIELDS.includes(k as typeof ACTOR_FIELDS[number])))fail('unknown actor field');}},{poseDelta:x=>poseDelta(x,c),poseRecipe:x=>integer(x,0,LIMITS.actors-1)});},LIMITS.actors),removed:list(v=>reference(v,area),LIMITS.actors),projectiles:list(v=>validateProjectile(v,area),LIMITS.projectiles),self:v=>validateSelf(v,c,area),features:v=>validateFeatures(v,area),recovery:v=>object(v,{telegraphs:list(x=>{validateEvent(x,c,area);if((x as EventRecord).event.type!=='telegraph')fail('non-telegraph recovery');},64),endings:list(x=>object(x,{unit:v=>reference(v,area),chapter:choice(4),replay:bool}),1)},{bosses:list(x=>object(x,{unit:v=>reference(v,area),profile:choice('rust','abyss','eclipse','dawn','frost'),state:choice('dormant','waking','idle','fight','dying','dead'),phase:integer,enraged:bool,stateTime:number,freed:v=>reference(v,area),freedTime:number,showFrame:bool}),5)}),events:list(v=>validateEvent(v,c,area),LIMITS.events),results:list(validateResult,256)});
+ object(p,{full:bool,baseline:integer,eventWatermark:v=>integer(v,-1),world:choice('w1','w2','w3','w4'),time:number,selfRef:v=>reference(v,area),poses:list(ownedPublic?()=>{}:renderSource,LIMITS.actors),actors:list(v=>{object(v,{ref:x=>reference(x,area),fields:x=>{if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).some(k=>!ACTOR_FIELDS.includes(k as typeof ACTOR_FIELDS[number])))fail('unknown actor field');}},{poseDelta:x=>poseDelta(x,c),poseRecipe:x=>integer(x,0,LIMITS.actors-1)});},LIMITS.actors),removed:list(v=>reference(v,area),LIMITS.actors),projectiles:list(v=>validateProjectile(v,area),LIMITS.projectiles),self:v=>validateSelf(v,c,area),features:v=>validateFeatures(v,area),recovery:v=>object(v,{telegraphs:list(x=>{validateEvent(x,c,area);if((x as EventRecord).event.type!=='telegraph')fail('non-telegraph recovery');},64),endings:list(x=>object(x,{unit:v=>reference(v,area),chapter:choice(4),replay:bool}),1)},{endingPresentation:nullable(v=>validateEndingObservation(v,c,area)),bosses:list(x=>object(x,{unit:v=>reference(v,area),profile:choice('rust','abyss','eclipse','dawn','frost'),state:choice('dormant','waking','idle','fight','dying','dead'),phase:integer,enraged:bool,stateTime:number,freed:v=>reference(v,area),freedTime:number,showFrame:bool}),5)}),events:list(v=>validateEvent(v,c,area),LIMITS.events),results:list(validateResult,256)});
  const snapshot=p as unknown as SnapshotPayload;
+ const ending=snapshot.recovery.endingPresentation;if(ending&&(ending.owner.id!==snapshot.selfRef.id||ending.owner.life!==snapshot.selfRef.life||ending.owner.area!==snapshot.selfRef.area))fail('foreign ending owner');
  if(snapshot.full?(snapshot.baseline!==0||snapshot.removed.length>0):snapshot.baseline<1)fail('invalid baseline');
  if(snapshot.self.player.unit.id!==snapshot.selfRef.id||snapshot.self.player.unit.life!==snapshot.selfRef.life)fail('self reference mismatch');
  const ids=new Set<number>();for(const r of snapshot.actors){if(ids.has(r.ref.id))fail('duplicate actor update');ids.add(r.ref.id);if(r.poseRecipe!==undefined&&(r.poseRecipe>=snapshot.poses.length||r.fields.pose||r.poseDelta))fail('invalid/ambiguous recipe index');if(r.poseDelta&&(snapshot.full||r.fields.pose))fail('ambiguous pose patch');if(snapshot.full&&!ownedPublic)actorShape({ref:r.ref,...r.fields},c,area,r.poseRecipe===undefined);}
@@ -283,6 +285,24 @@ export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol
 function validateAppearance(v:unknown,c:GameplayCatalog):void {
  object(v,{race:catalogValue(Object.keys(c.appearanceLimits)),sex:choice('male','female'),classId:choice('warrior','mage','priest'),shell:integer,crest:integer,led:integer,name:x=>text(x,64)});
  const limits=c.appearanceLimits[v.race as string];for(const k of ['shell','crest','led'] as const)integer(v[k],0,limits[k]-1);
+}
+/** Personal presentation is carried as a complete private view, never AOI actors. */
+export function validateEndingObservation(value:unknown,c:GameplayCatalog,area:string):asserts value is EndingObservation {
+ const phases=['blackout','opening','routine','finale','credits','finished','cancelled'] as const;
+ object(value,{id:text,owner:v=>reference(v,area),tick:integer,sequence:integer,phase:choice(...phases),phaseStartedTick:integer,
+  orbitYaw:number,celebrationStartedTick:integer,skipAvailableTick:integer,provider:v=>{if(v!==c.poseProviderVersion)fail('ending pose provider mismatch');},move:nullable(catalogValue(c.actions)),
+  cast:list(v=>object(v,{ref:r=>object(r,{endingId:text,slot:n=>integer(n,0,23)}),archetype:catalogValue(c.archetypes),position:vector,yaw:number,recipe:r=>{
+   if(!isRenderPoseRecipe(r)||r.layers.length>64)fail('invalid ending render recipe');
+   for(const layer of r.layers){catalogValue(c.actions)(layer.id);number(layer.time);number(layer.weight);if(layer.rebase){number(layer.rebase.x);number(layer.rebase.z);number(layer.rebase.yaw);}}
+   r.locomotion?.forEach(number);
+  }},{appearance:v=>validateAppearance(v,c)}),24),
+  cues:list(v=>object(v,{ordinal:n=>integer(n,1),tick:integer,kind:choice('phase','step','moment'),value:v=>{if(typeof v!=='string'||v.length>128)fail('invalid ending cue');}}),64),
+  reason:nullable(choice('skip','complete','retired','restored','combat','damage','death','transferred'))});
+ const ending=value as unknown as EndingObservation;
+ if(ending.phaseStartedTick>ending.tick||ending.skipAvailableTick<ending.celebrationStartedTick)fail('invalid ending clock');
+ if(['credits','finished','cancelled'].includes(ending.phase)?ending.cast.length!==0:ending.cast.length<1)fail('invalid ending phase cast');
+ const slots=new Set<number>();for(const actor of ending.cast){if(actor.ref.endingId!==ending.id||slots.has(actor.ref.slot))fail('duplicate or foreign ending cast');slots.add(actor.ref.slot);}
+ let ordinal=0,tick=0;for(const cue of ending.cues){if(cue.ordinal<=ordinal||cue.tick<tick||cue.tick>ending.tick)fail('unordered ending cue');ordinal=cue.ordinal;tick=cue.tick;}
 }
 export interface GameplayState {
  header:WireHeader;sequence:number;world:AreaSnapshot['world'];time:number;eventWatermark:number;selfRef:EntityRef;
