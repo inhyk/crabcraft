@@ -16,3 +16,15 @@ test('resource limit rejects oversized frame before clock/actor mutation and rea
 test('failed step retains earned grants for host journal, acknowledgment and safe disposal',()=>{const {a,p,ref,enemy}=fixture(42,{limits:{eventCount:6,inputCommandsPerTick:32,timers:100,projectiles:100}});const second=a.attachFresh('second','warrior','human','spawn');a.services.recordContribution(enemy.ref,ref,1);a.services.recordContribution(enemy.ref,second,1);enemy.hp=1;enemy.stunUntil=100;p.state.nextSwing=100;a.players.get(second.id).state.nextSwing=100;p.unit.pendingHit={left:0,plan:{attack:'warrior-auto',source:ref,target:enemy.ref}};assert.throws(()=>a.step(new Map()),/capacity/);assert.throws(()=>a.step(new Map()),/failed/);assert.equal(a.pendingGrants().length,2);const host=new InMemoryTransferCoordinator();host.journal(a);assert.equal(a.pendingGrants().length,0);assert.equal(host.awards.debugState().length,2);a.drainEvents();a.dispose();});
 
 test('explicit spawn population rejects unsupported multiplicity and nonfinite recovery',()=>{for(const population of [{desired:2,respawnSeconds:10},{desired:1,respawnSeconds:NaN},{desired:0,respawnSeconds:-1}])assert.throws(()=>fixture(1,{policy:{...policy,enemyPopulation:()=>population}}),/Population policy/);const off=fixture(1,{policy:{...policy,enemyPopulation:()=>({desired:0,respawnSeconds:10})}});assert.equal(off.enemy.alive,false);assert.equal(off.enemy.hidden,true);let nextPopulation={desired:1,respawnSeconds:1};const on=fixture(1,{policy:{...policy,enemyPopulation:()=>nextPopulation}});on.enemy.hp=1;on.a.services.combat.kill(on.enemy.ref,on.ref);nextPopulation={desired:1,respawnSeconds:NaN};assert.throws(()=>on.a.step(new Map()),/Population policy/);});
+test('one hundred actor capacity counts reservations and releases exactly one slot',()=>{
+ const {a}=fixture(42,{definition:{...definition,enemies:[]}});
+ for(let i=1;i<99;i++)a.attachFresh(`capacity-${i}`,'warrior','human','spawn');
+ assert.equal(a.players.size,99);
+ const reservation=a.reserveAdmission('hundredth','spawn',0);assert.ok(reservation);
+ const reserved=a.debugState();assert.throws(()=>a.attachFresh('blocked','warrior','human','spawn'),/admission/);assert.equal(a.reserveAdmission('another','spawn',0),null);assert.deepEqual(a.debugState(),reserved);
+ a.releaseAdmission(reservation.token);const replacement=a.reserveAdmission('replacement','spawn',0);assert.ok(replacement);assert.equal(a.reserveAdmission('blocked-again','spawn',0),null);
+ const afterExpiry=a.reserveAdmission('after-expiry','spawn',31);assert.ok(afterExpiry);assert.notEqual(afterExpiry.token,replacement.token);assert.equal(a.reserveAdmission('still-full','spawn',31),null);
+ a.releaseAdmission(replacement.token);assert.equal(a.reserveAdmission('stale-release-does-not-free','spawn',31),null);
+ a.releaseAdmission(afterExpiry.token);a.attachFresh('hundredth','warrior','human','spawn');assert.equal(a.players.size,100);
+ const full=a.debugState();assert.throws(()=>a.attachFresh('one-hundred-one','warrior','human','spawn'),/admission/);assert.equal(a.reserveAdmission('one-hundred-one','spawn',32),null);assert.deepEqual(a.debugState(),full);
+});
