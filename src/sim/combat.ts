@@ -1,6 +1,7 @@
 /** Numeric damage authority. Events are copied observations, never effect callbacks. */
 import type { AreaServices, CombatRules, EntityRef, HitOptions, RandomSource } from './types.ts';
 import { playAction } from './abilities.ts';
+import {isAttackTarget} from './unit.ts';
 import { BOSS_PROFILES } from './data/bosses.ts';
 export const CRIT_CHANCE = 0.12;
 export const CRIT_MULT = 1.75;
@@ -12,6 +13,7 @@ export class Combat implements CombatRules {
   damage(source: EntityRef | null, target: EntityRef, amount: number, options: HitOptions = {}): number {
     const g = this.services, dst = g.getUnit(target), src = source ? g.getUnit(source) : null;
     if (!dst || (source && !src) || !Number.isFinite(amount) || !dst.alive || dst.hidden) return 0;
+    if(src?.kind==='player'&&dst.kind==='player'&&!isAttackTarget(g,src,dst))return 0;
     if (!g.policy.damageAllowed(g.context, src, dst)) return 0;
     const targetProfile=g.controller(dst.ref)?.profile,sourceProfile=src?g.controller(src.ref)?.profile:undefined;
     const targetGate=targetProfile?BOSS_PROFILES[targetProfile].level:0,sourceGate=sourceProfile?BOSS_PROFILES[sourceProfile].level:0;

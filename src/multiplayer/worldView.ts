@@ -117,11 +117,16 @@ export class WorldView {
       return;
     }
     if (this.disposed || entry.generation !== this.generation || this.actors.get(key) !== entry) { rig.dispose(); return; }
-    entry.rig = rig;
-    applyNumericPose(rig, entry.actor);
-    rig.root.visible = !entry.actor.hidden;
-    this.options.root.add(rig.root);
-    this.options.onAdded?.(entry.actor, { rig, readState: () => entry.actor });
+    try {
+      entry.rig = rig;
+      applyNumericPose(rig, entry.actor);
+      rig.root.visible = !entry.actor.hidden;
+      this.options.root.add(rig.root);
+      this.options.onAdded?.(entry.actor, { rig, readState: () => entry.actor });
+    } catch {
+      entry.rig = null; rig.root.removeFromParent(); rig.dispose();
+      this.options.onError?.(entry.actor.ref, 'rig-bind');
+    }
   }
 
   /** Presentation events do not call Unit.act, Player.useAbility, damage or progression code. */

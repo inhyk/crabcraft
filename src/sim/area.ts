@@ -10,7 +10,7 @@ import { PlayerController, createPlayer, createPlayerState } from './player.ts';
 import { Projectiles } from './projectiles.ts';
 import { Ids, Random } from './random.ts';
 import { Timers } from './timers.ts';
-import { createUnit, feedLocomotion, teleport } from './unit.ts';
+import { createUnit, feedLocomotion, teleport, isAttackTarget } from './unit.ts';
 import { advanceNumericPose, initializeNumericPose } from './pose.ts';
 import { WorldRules } from './outcomes.ts';
 import { captureTransfer, restoreTransfer } from './transfer.ts';
@@ -89,7 +89,7 @@ export class SimulationArea implements AreaContract {
       npcById:id=>[...this.unitMap.values()].find(u=>u.npcId===id)??null,
       playerByCharacter:character=>[...this.playerMap.values()].find(p=>p.state.character===character)??null,
       players:()=>[...this.playerMap.values()].map(p=>this.unitMap.get(p.state.unit.id)!),
-      targetFor:ref=>this.targetFor(ref),hostilesNear:(x,z,r)=>[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&u.reaction==='hostile'&&Math.hypot(u.x-x,u.z-z)-u.radius<=r),
+      targetFor:ref=>this.targetFor(ref),hostilesNear:(x,z,r,source)=>[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&(source?!!this.getUnit(source)&&isAttackTarget(this.services,this.getUnit(source)!,u):u.reaction==='hostile')&&Math.hypot(u.x-x,u.z-z)-u.radius<=r),
       emit:event=>this.events.emit(this.stepId,event),outcomeTransaction:run=>this.events.transaction(run),
       startAction:(ref,action,hit)=>this.startAction(ref,action,hit),stopAction:(ref,id,fade)=>this.stopAction(ref,id,fade),
       cancelPendingHit:ref=>{const u=this.getUnit(ref);if(u)u.pendingHit=null;},resolveHit:plan=>this.resolveHit(plan),
