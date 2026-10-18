@@ -171,6 +171,65 @@ try {
     }
     assert.equal((await sample()).held, false);
     pass('ten native game camera drags ending over HUD release cleanly');
+
+    // The confirmed report ends over the right-hand quest tracker, not the chat panel.
+    await page.evaluate(() => {
+      const g = window.app.current.game;
+      g.quests.accept('q1');
+      window.questMenus = [];
+      window.addEventListener('contextmenu', (e) => questMenus.push(e.defaultPrevented));
+    });
+    for (const selector of ['.qt-head', '.qt-title', '.qt-obj']) {
+      const questPart = page.locator(selector).first();
+      await questPart.waitFor({ state: 'visible' });
+      // Wait out the tracker's entry animation and check the real hit target.
+      await page.waitForTimeout(700);
+      const rect = await questPart.boundingBox();
+      assert.ok(rect);
+      const point = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      assert.equal(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.qt'), point), true);
+      for (let i = 0; i < 10; i++) {
+        await page.mouse.move(400, 380);
+        await page.mouse.down({ button: 'right' });
+        await page.mouse.move(point.x, point.y, { steps: 5 });
+        await page.mouse.up({ button: 'right' });
+        assert.equal((await sample()).held, false);
+      }
+      assert.equal(await page.evaluate(() => window.app.current.game.hud.questLog.open), false);
+      pass(`ten native camera drags ending over ${selector} release without opening the quest log`);
+
+      assert.equal(await page.evaluate((selector) => {
+        const canvas = window.app.engine.canvas;
+        const questPart = document.querySelector(selector);
+        const rect = questPart.getBoundingClientRect();
+        const event = (type, target, buttons, x, y) => target.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, pointerId: 99, pointerType: 'mouse', button: 2, buttons,
+          clientX: x, clientY: y,
+        }));
+        // Windows menu-after-release sequence delivered to the actual quest DOM.
+        event('pointerdown', canvas, 2, 400, 380);
+        event('pointermove', questPart, 2, rect.x + rect.width / 2, rect.y + rect.height / 2);
+        event('pointerup', questPart, 0, rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return questPart.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+      }, selector), false);
+      pass(`Windows release-before-contextmenu on actual ${selector} is blocked`);
+    }
+    assert.ok(await page.evaluate(() => questMenus.length >= 33 && questMenus.every(Boolean)));
+    await page.waitForTimeout(100);
+    const questStopped = await sample();
+    await page.mouse.move(400, 400, { steps: 5 });
+    await page.waitForTimeout(200);
+    const questAfter = await sample();
+    assert.equal(questAfter.held, false);
+    assert.equal(questAfter.walking, false);
+    assert.ok(Math.abs(questAfter.yaw - questStopped.yaw) < 0.001);
+    pass('quest releases leave no stuck input or camera rotation');
+    await page.screenshot({ path: `${out}/quest-after-drag.png` });
+    await page.locator('.qt-title').first().click();
+    assert.equal(await page.evaluate(() => window.app.current.game.hud.questLog.open), true);
+    await page.locator('.qlog .dlg-x').click();
+    assert.equal(await page.evaluate(() => window.app.current.game.hud.questLog.open), false);
+    pass('a fresh left click on the quest still opens its log');
     await page.screenshot({ path: `${out}/game-after-drag.png` });
     console.log('GAME_STATE', JSON.stringify(await sample()));
   }
