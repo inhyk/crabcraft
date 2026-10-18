@@ -16,13 +16,14 @@ import { PERSONAL_FLAG_IDS } from '../../src/sim/persistence.ts';
 import { RACES } from '../../src/data/races.ts';
 import type { GameplayCatalog } from './gameplay/protocol.ts';
 
-export const PUBLIC_WORLDS: readonly WorldId[] = Object.freeze(['w1', 'w2', 'w3', 'w4']);
+export const PUBLIC_WORLDS = Object.freeze(['w1', 'w2', 'w3', 'w4'] as const);
+export type HostedWorldId = typeof PUBLIC_WORLDS[number];
 export interface WorldVariants {
   readonly publicDefinition: AreaDefinition;
   readonly encounterDefinitions: ReadonlyMap<BossProfileId, AreaDefinition>;
 }
 export interface LoadedWorldDefinition extends WorldVariants {
-  readonly world: WorldId;
+  readonly world: HostedWorldId;
   readonly query: BakedWorld;
   readonly actionData: ActionData;
   readonly policy: AreaPolicy;
@@ -35,11 +36,11 @@ export interface WorldCatalogOptions {
   expectedBakeSource: string;
   maxBakeBytes: number;
   maxCells: number;
-  configs: Readonly<Record<WorldId, Pick<WorldDefinitionConfig, 'fixedLevels' | 'population'>>>;
-  policies: Readonly<Record<WorldId, AreaPolicy>>;
-  seeds: Readonly<Record<WorldId, number>>;
+  configs: Readonly<Record<HostedWorldId, Pick<WorldDefinitionConfig, 'fixedLevels' | 'population'>>>;
+  policies: Readonly<Record<HostedWorldId, AreaPolicy>>;
+  seeds: Readonly<Record<HostedWorldId, number>>;
   /** Pure world/rules owner supplies public presentation and private encounter variants. */
-  variants(world: WorldId, definition: AreaDefinition): WorldVariants;
+  variants(world: HostedWorldId, definition: AreaDefinition): WorldVariants;
 }
 
 /** Reads packaged, version-bound real collision artifacts. No balancing values are supplied here. */
@@ -63,7 +64,8 @@ export async function loadWorldCatalog(options: WorldCatalogOptions): Promise<Re
     const query = loadBakedWorld(data);
     const config: WorldDefinitionConfig = { ...options.configs[world], query,
       personalProps: { heightAt: query.heightAt, resolveCollision: (x, z, r, out) => query.collision.resolve(x, z, r, out) } };
-    const definition = constructors[world](config);
+    const canonical = constructors[world](config);
+    const definition = { ...canonical, interactions: canonical.interactions.filter(point => point.kind !== 'gate' || PUBLIC_WORLDS.some(id => id === point.destination)) };
     const variants = options.variants(world, definition);
     if (variants.publicDefinition.world !== world || variants.publicDefinition.bosses.length) throw new Error(`public world contains story bosses: ${world}`);
     for (const [profile, encounter] of variants.encounterDefinitions) {

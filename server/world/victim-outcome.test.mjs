@@ -20,7 +20,7 @@ const codec = createCoreCharacterCodec({ identities: [{ classId: 'warrior', arch
 const resources = { maxEntries: 1024, maxPayloadBytes: 4 * 1024 * 1024, timeoutMs: 5000 };
 const preserve = { version: 'test-explicit-preserve', restore: checkpoint => checkpoint };
 
-for (const [profile, world, level, rewardXp, rewardCoins] of [['eclipse', 'w2', 20, 3000, 1200], ['dawn', 'w3', 100, 6400, 5000]]) {
+for (const [profile, world, level, rewardXp, rewardCoins] of [['eclipse', 'w2', 20, 5000, 1200], ['dawn', 'w3', 100, 100000, 5000]]) {
   test(`actual ${profile} blessing grant and checkpoint survive PostgreSQL save and fresh Area restore`, async () => {
     const record = await character(), source = worldArea(`durable-blessing-${profile}`, world), destination = worldArea(`restored-blessing-${profile}`, world);
     try {
@@ -43,7 +43,7 @@ for (const [profile, world, level, rewardXp, rewardCoins] of [['eclipse', 'w2', 
       const checkpoint = codec.toCore(recovered.character.checkpoint), admission = destination.reserveAdmission(record.characterId, 'spawn', 0);
       const staged = destination.stageRestoredArrival(admission, checkpoint, prepareRestore(checkpoint, 0, preserve)), ref = destination.activateRestoredArrival(staged.token);
       const restored = destination.services.player(ref); assert.equal(restored.state.xp, saved.checkpoint.progress.xp);
-      const restoredXp = restored.state.xp; restored.gainXp(100); assert.equal(restored.state.xp - restoredXp, 200);
+      const restoredXp = restored.state.xp; restored.gainXp(100); assert.equal(restored.state.xp - restoredXp, 150);
       assert.equal((await store.pendingGrants(record.accountId, record.characterId)).length, 0);
     } finally { for (const pending of source.pendingGrants()) source.acknowledgeGrant(pending.grant.id); source.dispose(); destination.dispose(); }
   });

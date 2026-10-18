@@ -15,7 +15,7 @@ import { CharacterStore } from './character-store.ts';
 import { DurableOutcomeStore } from './contribution-store.ts';
 import { planOutcomePage } from '../../src/sim/ledger.ts';
 import { type WorldTicketRegistry } from './admission.ts';
-import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
+import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, type LoadedWorldDefinition, type HostedWorldId } from './catalog.ts';
 import { createGameplayProtocol, projectObservationExtras } from './gameplay/protocol.ts';
 import { acquireHostOwnership } from './ownership.ts';
 import { createActualWorldHost, type HostPolicies } from './host.ts';
@@ -34,7 +34,7 @@ export type ValidatedWorldConfig = {
  schema:'world-startup-v1';
  ownership:{key:string;heartbeatMs:number;queryTimeoutMs:number};
  assets:{source:string;manifest:'world-manifest.json';maxBakeBytes:number;maxTotalBakeBytes:number;maxManifestBytes:number;maxCells:number};
- worlds:Record<WorldId,ConfiguredRegion>;restore:ConfiguredRestore;
+ worlds:Record<HostedWorldId,ConfiguredRegion>;restore:ConfiguredRestore;
  limits:{[K in keyof typeof HOST_DEFAULTS]:number};areaLimits:{[K in keyof typeof AREA_DEFAULTS]:number};persistence:{[K in keyof typeof PERSISTENCE_DEFAULTS]:number};
  victimOutcome:HostPolicies['victimOutcome'];victimOutcomeRetryCeiling?:HostPolicies['victimOutcome'];chat:{maxPending:number};
  party:ConfiguredParty;characters?:{maxCharactersPerAccount?:number};
@@ -70,7 +70,7 @@ export function validateWorldConfig(value:unknown):ValidatedWorldConfig {
    const groups=[...populations,'echo'] as const,rules=object(w.nearby,groups,[],`${world}.nearby`);nearby=Object.fromEntries(groups.map(group=>{const rule=object(rules[group],['radius','base','max','scale'],[],`${world}.nearby.${group}`),radius=seconds(rule.radius,`${world}.${group}.radius`),max=integer(rule.max,`${world}.${group}.max`,0,group==='echo'?1:256),base=integer(rule.base,`${world}.${group}.base`,0,max),scale=rule.scale;if(typeof scale!=='number'||!Number.isFinite(scale)||scale<0||scale>Number.MAX_SAFE_INTEGER)fail(`${world}.${group}.scale`);if(group!=='echo'&&max!==population[group])fail(`${world}.${group}.max must match pool population`);const clearance=enemyRespawnClearance(group==='shallowPatrols'||group==='echo'?'scrapling':group,worldChapter(world),group==='echo'?'echo':'ordinary');if(scale>0&&max>base&&radius<=clearance)fail(`${world}.${group}.radius has no safe scaling annulus`);return[group,{radius,base,max,scale}];})) as Record<PopulationGroup,NearbySlotRule>;
   }else if(w.nearby!==undefined)fail(`${world}.nearby requires nearby-slots-v1`);
   const respawnSeconds=Object.fromEntries(kinds.map(k=>[k,seconds(respawn[k],`${world}.respawnSeconds.${k}`)]));if(respawnSeconds.echo!==canonicalEnemyRespawn('scrapling',worldChapter(world),'echo'))fail(`${world}.echo respawn must match canonical timer`);return[world,{seed:integer(w.seed,`${world}.seed`,0,0xffffffff),populationMode:mode,fixedLevels:Object.fromEntries(kinds.map(k=>[k,integer(levels[k],`${world}.fixedLevels.${k}`,1,Number.MAX_SAFE_INTEGER)])),population,respawnSeconds,...(nearby?{nearby}:{})}];
- })) as Record<WorldId,ConfiguredRegion>;
+ })) as Record<HostedWorldId,ConfiguredRegion>;
  const restore=validateRestore(c.restore);
  const resources=(raw:unknown,path:string)=>{const r=object(raw,['maxEntries','maxPayloadBytes','timeoutMs'],[],path);return{maxEntries:integer(r.maxEntries,`${path}.maxEntries`,1,Number.MAX_SAFE_INTEGER),maxPayloadBytes:integer(r.maxPayloadBytes,`${path}.maxPayloadBytes`,1,Number.MAX_SAFE_INTEGER),timeoutMs:integer(r.timeoutMs,`${path}.timeoutMs`,1,2147483647)};};
  const victimOutcome=resources(c.victimOutcome,'victimOutcome'),retry=c.victimOutcomeRetryCeiling===undefined?undefined:resources(c.victimOutcomeRetryCeiling,'victimOutcomeRetryCeiling');
@@ -127,8 +127,8 @@ async function loadCheckedCatalog(assets:URL,c:ValidatedWorldConfig):Promise<Rea
  const manifest=object(detached(JSON.parse((await checkedRead(new URL(c.assets.manifest,assets),c.assets.maxManifestBytes)).toString('utf8'))),['format','version','source','artifacts'],[],'asset manifest');
  if(manifest.format!=='crabcraft-world-manifest'||manifest.version!==1||manifest.source!==c.assets.source)fail('asset manifest version/source');const entries=object(manifest.artifacts,PUBLIC_WORLDS,[],'asset manifest artifacts');let total=0;
  const expected=new Map<WorldId,string>();for(const world of PUBLIC_WORLDS){const m=object(entries[world],['file','bytes','sha256'],[],`manifest.${world}`);if(m.file!==`collision-${world}.json`)fail(`manifest.${world}.file`);const size=integer(m.bytes,`manifest.${world}.bytes`,1,c.assets.maxBakeBytes);total+=size;if(total>c.assets.maxTotalBakeBytes)fail('asset total byte budget');const digest=hash(m.sha256,`manifest.${world}.sha256`),bytes=await checkedRead(new URL(m.file as string,assets),c.assets.maxBakeBytes);if(bytes.byteLength!==size||createHash('sha256').update(bytes).digest('hex')!==digest)fail(`asset integrity ${world}`);expected.set(world,digest);}
- const policies=Object.fromEntries(PUBLIC_WORLDS.map(world=>[world,createConfiguredAreaPolicy(c.worlds[world])])) as Record<WorldId,AreaPolicy>;
- const catalog=await loadWorldCatalog({directory:assets,expectedBakeSource:c.assets.source,maxBakeBytes:c.assets.maxBakeBytes,maxCells:c.assets.maxCells,configs:c.worlds,policies,seeds:Object.fromEntries(PUBLIC_WORLDS.map(w=>[w,c.worlds[w].seed])) as Record<WorldId,number>,variants:createWorldVariants});
+ const policies=Object.fromEntries(PUBLIC_WORLDS.map(world=>[world,createConfiguredAreaPolicy(c.worlds[world])])) as Record<HostedWorldId,AreaPolicy>;
+ const catalog=await loadWorldCatalog({directory:assets,expectedBakeSource:c.assets.source,maxBakeBytes:c.assets.maxBakeBytes,maxCells:c.assets.maxCells,configs:c.worlds,policies,seeds:Object.fromEntries(PUBLIC_WORLDS.map(w=>[w,c.worlds[w].seed])) as Record<HostedWorldId,number>,variants:createWorldVariants});
  for(const [world,data]of catalog){if(data.artifactHash!==expected.get(world))fail(`asset changed while loading ${world}`);if(data.publicDefinition.enemies.length>c.limits.maxMutationSourcesPerTick)fail(`${world}.actual population exceeds receipt bound`);for(const spawn of data.publicDefinition.enemies){data.policy.enemyPopulation(spawn,0);for(const value of Object.values(enemyStats(spawn.kind,spawn.fixedLevel,worldChapter(world),spawn.role)))if(typeof value==='number'&&(!Number.isFinite(value)||Math.abs(value)>Number.MAX_SAFE_INTEGER))fail(`${world}.unsafe derived enemy stats`);}}return catalog;
 }
 export interface ConfiguredWorldOptions {pool:Pool;admission:WorldTicketRegistry;assets:URL;config:unknown;ledgerConfig?:unknown;originAllowed(origin:string,req:IncomingMessage):boolean;clientIp(req:IncomingMessage):string}

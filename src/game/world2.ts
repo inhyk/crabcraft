@@ -401,7 +401,8 @@ export class HiddenWorld {
     const town=w.spawns.find(s=>s.id==='townsfolk');if(town)for(const t of this.game.townsfolk)t.relocate(town.points,town.radius);
   }
   /** Static world/camera presentation for a committed server world; never moves an actor. */
-  observeChapter(chapter:1|2|3|4):void {
+  observeChapter(chapter:1|2|3|4|5|6):void {
+    if(chapter===5||chapter===6)throw new Error('This server does not host that world');
     const g=this.game,w=g.world;if(this.chapter===chapter)return;
     if(!this.basePois.size)for(const [id,poi]of Object.entries(w.pois))this.basePois.set(id,{position:poi.position.clone(),yaw:poi.yaw});
     this.chapter=chapter;this.rendered=chapter!==1;this.baseRoot.visible=chapter===1;this.root.visible=chapter===2;this.third.root.visible=chapter===3;this.fourth.root.visible=chapter===4;this.fifth.root.visible=false;this.sixth.root.visible=false;
