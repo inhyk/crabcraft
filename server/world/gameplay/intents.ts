@@ -51,7 +51,7 @@ export class InputSession {
  private tokens=120;private limit:number;private timeout:number;
  private held:Omit<GameplayInput,'seq'|'commands'>={forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null};
  constructor(binding:WireBinding,catalog:GameplayCatalog,options:{now?:number;maxQueued?:number;timeoutSeconds?:number}={}){
-  this.binding=clone(binding);this.catalog=catalog;this.time=options.now??0;this.lastReceived=this.time;number(this.time);
+  this.binding=clone(binding);this.catalog=clone(catalog);this.time=options.now??0;this.lastReceived=this.time;number(this.time);
   this.limit=options.maxQueued??128;integer(this.limit,1,1024);this.timeout=options.timeoutSeconds??.4;number(this.timeout);if(this.timeout<=0)fail('invalid timeout');
  }
  get acceptedInput(){return this.accepted;}get consumedInput(){return this.consumed;}get pendingCount(){return this.queue.length;}

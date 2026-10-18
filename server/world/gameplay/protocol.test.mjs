@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras} from './protocol.ts';
+import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent} from '../../../tests/core/worldHarness.mjs';
@@ -23,7 +23,7 @@ test('bounded binary values preserve safe integers and all finite numbers withou
 });
 test('actual Area public baseline is detached, exact life and appearance complete; other personal state never leaks',()=>{
  const f=fixture(2);f.actors[1].p.state.coins=777;f.actors[1].p.state.flags.frostCleared=true;const source=observation(f),packets=f.codec.encodeObservation(source),result=apply(f.receiver,packets);
- assert.equal(result.kind,'snapshot');assert.equal(result.state.actors.length,source.snapshot.units.length);assert.deepEqual(result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id).pose,f.actors[0].u.pose);
+ assert.equal(result.kind,'snapshot');assert.equal(result.state.actors.length,source.snapshot.units.length);assert.deepEqual(result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id).pose,projectActor(f.actors[0].u,appearance).pose);
  assert.deepEqual(result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id).appearance,appearance);assert.equal(result.state.self.player.coins,0);
  const serialized=JSON.stringify(result.state);assert.equal(serialized.includes('private-character-'),false);assert.equal(serialized.includes('pendingHit'),false);assert.equal(serialized.includes('"frostCleared":true'),false);
  result.state.actors[0].hp=999;assert.notEqual(f.receiver.state.actors[0].hp,999);
@@ -31,7 +31,7 @@ test('actual Area public baseline is detached, exact life and appearance complet
 test('real movement/action produces lossless delta and complete recovery state with full target life',()=>{
  const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));
  f.area.step(new Map([[f.actors[0].ref.id,intent(1,[{kind:'jump'}],{forward:1})]]));const next=observation(f,2),packets=f.codec.encodeObservation(next),result=apply(f.receiver,packets);
- const self=result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id);assert.equal(self.x,f.actors[0].u.x);assert.deepEqual(self.pose,f.actors[0].u.pose);assert.deepEqual(self.actions,f.actors[0].u.actions);assert.equal(result.state.sequence,2);
+ const self=result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id);assert.equal(self.x,f.actors[0].u.x);assert.deepEqual(self.pose,projectActor(f.actors[0].u,appearance).pose);assert.deepEqual(self.actions,f.actors[0].u.actions);assert.equal(result.state.sequence,2);
 });
 test('fragment groups are bounded and atomic on truncation, duplicate, loss, checksum and stale incarnation',()=>{
  const h=header(),value={content:'x'.repeat(4000),list:Array.from({length:10},()=>Array(500).fill(1))},chunks=encodeMessage(17,h,value);assert.ok(chunks.length>1);
@@ -79,9 +79,21 @@ test('measure initial lossless pose bandwidth with one real 100-player Area at 2
  for(let tick=1;tick<=30;tick++){
   f.area.step(new Map(f.actors.map(a=>[a.u.ref.id,intent(tick,[],{forward:1,steeringYaw:Math.PI/2})])));
   f.area.drainEvents();
+  for(const u of f.area.snapshot().units)for(const key of ['appliedQ','appliedPosition','appliedRotation'])assert.ok(u.pose[key].every(v=>Object.is(Math.fround(v),v)));
   if(Math.floor(tick*2/3)===Math.floor((tick-1)*2/3))continue;
   const started=performance.now(),chunks=f.codec.encodeObservation(observation(f,sequence++));ms+=performance.now()-started;total+=bytes(chunks);count++;
  }
  assert.equal(count,20);assert.ok(baseline<LIMITS.messageBytes);assert.ok(total>0);
- t.diagnostic(JSON.stringify({representation:'initial-lossless-full-pose-object-delta',actualPlayers:100,totalActors:f.area.snapshot().units.length,baselineBytes:baseline,movingBytesPerClientSecond:total,meanDeltaBytes:total/count,estimated100ViewersBytesPerSecond:total*100,encodeMsPerSnapshot:ms/count}));
+ t.diagnostic(JSON.stringify({representation:'minimal-render-pose-exact-f32-sparse-delta',actualPlayers:100,totalActors:f.area.snapshot().units.length,baselineBytes:baseline,movingBytesPerClientSecond:total,meanDeltaBytes:total/count,estimated100ViewersBytesPerSecond:total*100,encodeMsPerSnapshot:ms/count}));
+});
+
+test('float32 vector encoding is selected only when every source component is bit-exact',()=>{
+ const exact=Array.from(new Float32Array([.1,-0,Math.PI,1e-20]));const bytes=encodeValue(exact);assert.equal(bytes[0],8);assert.deepEqual(decodeValue(bytes),exact);
+ const wide=[.1,2**48+123];const preserved=encodeValue(wide);assert.equal(preserved[0],7);assert.deepEqual(decodeValue(preserved),wide);
+});
+test('sparse pose patches reject cardinality and joint overflow without changing the committed actor',()=>{
+ const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));const before=f.receiver.state;
+ f.area.step(new Map([[f.actors[0].ref.id,intent(1,[],{forward:1})]]));const packets=f.codec.encodeObservation(observation(f,2)),a=new FragmentAssembler(binding);let m;for(const p of packets)m=a.accept(p,0);
+ const actor=m.payload.actors.find(a=>a.ref.id===f.actors[0].ref.id);delete actor.fields.pose;actor.poseDelta={appliedQ:{mask:2**22,values:[1]}};
+ assert.throws(()=>apply(f.receiver,encodeMessage(1,m.header,m.payload)),/integer/);assert.deepEqual(f.receiver.state,before);
 });
