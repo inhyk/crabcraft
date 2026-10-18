@@ -64,7 +64,7 @@ test('input acceptance differs from successful consumption; coalescing retains e
 test('event codec preserves real CoreEvent ordering and distinguishes durable command outcome from input ACK',()=>{
  const f=fixture(),initial=observation(f);apply(f.receiver,f.codec.encodeObservation(initial));const source=f.actors[0],target=[...f.area.enemies.values()][0].unit;
  f.area.services.combat.damage(source.ref,target,5,{noReact:true});const events=f.area.drainEvents(),next=observation(f,2);next.events=events;next.eventWatermark=Math.max(...events.map(e=>e.order));const result=apply(f.receiver,f.codec.encodeObservation(next));assert.ok(result.events.some(e=>e.event.type==='damage'));assert.equal(f.receiver.header.consumedInput,0);
- const p={baselineSequence:2,events:[],results:[{inputSequence:4,commandIndex:0,status:'durable',code:'equipment-bought',request:8,revision:2}]};const response=apply(f.receiver,encodeEvents({...header(3),tick:f.area.snapshot().tick},p,catalog));assert.deepEqual(response.results,p.results);assert.equal(f.receiver.header.consumedInput,0);
+ const p={baselineSequence:2,events:[],results:[{inputSequence:4,commandIndex:0,status:'durable',code:'equipment-bought',request:8,revision:2}]};const response=apply(f.receiver,encodeEvents({...header(3),tick:f.area.snapshot().tick,acceptedInput:4,consumedInput:4},p,catalog));assert.deepEqual(response.results,p.results);assert.equal(f.receiver.header.consumedInput,4);
  assert.throws(()=>encodeEvents(header(4),{...p,results:[{inputSequence:4,commandIndex:0,status:'durable',code:'x'}]},catalog),/revision/);
 });
 test('numeric widths exceed v2 without truncation and rejected growth leaves sender baseline intact',()=>{
@@ -195,4 +195,15 @@ test('actual private boss frame, phase and freed recovery survive drained events
  area.services.combat.damage(actor.ref,boss.unit,Math.round(boss.actor.maxHp*.8),{noReact:true});area.step(new Map());area.drainEvents();const phase=apply(f.receiver,f.codec.encodeObservation(observation(f,2))).state.recovery.bosses[0];assert.equal(phase.phase,3);assert.equal(phase.enraged,true);
  boss.reset();area.drainEvents();const reset=apply(f.receiver,f.codec.encodeObservation(observation(f,3))).state.recovery.bosses[0];assert.equal(reset.showFrame,false);
  const hidden=projectObservationExtras(area.snapshot(),actor.p.state.character,new Set([actor.ref.id]));assert.deepEqual(hidden.recovery.bosses,[]);
+});
+
+test('a newer full recovery replaces an incomplete older fragment group atomically',()=>{
+ const f=fixture(40),initial=f.codec.encodeObservation(observation(f));assert.ok(initial.length>1);assert.equal(f.receiver.accept(initial[0],0),null);
+ const recovery=f.codec.encodeObservation(observation(f,2,true));let result;for(const p of recovery)result=f.receiver.accept(p,.1);assert.equal(result.kind,'snapshot');assert.equal(result.state.sequence,2);assert.equal(f.receiver.needsResync,false);assert.equal(f.receiver.retainedBytes,0);
+});
+test('resync controls are monotonic and one outstanding request never advances input ACK',()=>{
+ const f=fixture(),request=(seq)=>f.codec.encodeControl(header(seq),{type:'resync',lastSequence:0,reason:'fragment'})[0];
+ const first=f.codec.decodeClientMessage(request(1),binding);assert.equal(first.sequence,1);assert.throws(()=>f.codec.decodeClientMessage(request(1),binding),/recovery/);assert.throws(()=>f.codec.decodeClientMessage(request(2),binding),/recovery/);
+ f.codec.encodeObservation(observation(f));assert.throws(()=>f.codec.decodeClientMessage(request(1),binding),/recovery/);assert.equal(f.codec.decodeClientMessage(request(2),binding).kind,'resync');
+ const result={inputSequence:1,commandIndex:0,status:'durable',code:'saved',revision:1};assert.throws(()=>encodeEvents(header(2),{baselineSequence:1,events:[],results:[result]},catalog),/consumption/);
 });

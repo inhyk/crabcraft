@@ -81,7 +81,7 @@ export function validateEventPayload(p:unknown,c:GameplayCatalog,area:string):as
  let order=-1;for(const e of p.events as EventRecord[]){if(e.order<=order)fail('unordered events');order=e.order;}
 }
 export function encodeEvents(header:WireHeader,payload:EventPayload,catalog:GameplayCatalog):Uint8Array[] {
- if(header.catalog!==catalog.version)fail('catalog mismatch');validateEventPayload(payload,catalog,header.area);return encodeMessage(2,header,payload);
+ if(header.catalog!==catalog.version)fail('catalog mismatch');validateEventPayload(payload,catalog,header.area);if(payload.results.some(r=>r.inputSequence>header.consumedInput))fail('result precedes input consumption');return encodeMessage(2,header,payload);
 }
 const PERSONAL=new Set(['xp','quest','equipment','error','press','target','endingReady','travelReady','achievement','discovery']);
 /** Privacy filtering precedes encoding. Actual source tick/order are retained, never resequenced. */
