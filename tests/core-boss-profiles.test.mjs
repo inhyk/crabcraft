@@ -161,3 +161,16 @@ test('actual assembled Area applies all seven mechanic damages with canonical cl
     assert.equal(u.hp,u.maxHp-damage.amount,`${kind} HP changed through real Combat`);
   }
 });
+
+test('actual Area rust add pool stays three level1 attackers across resets with fresh lives',()=>{
+  const area=realCreatureArea('real-add-pool','w1','rust'),ref=area.attachFresh('fighter','priest','human','spawn'),p=area.services.player(ref),u=area.services.getUnit(ref),boss=[...area.bosses.values()][0];
+  u.level=3;u.hp=u.maxHp=10000;p.state.quests.status.q3='done';
+  area.services.completeChannel(ref,{kind:'beacon',start:0,end:2,targetId:'beacon',to:{x:0,y:0,z:0}});
+  boss.wake();for(let i=0;i<75;i++)area.step(new Map());boss.actor.hp=boss.actor.maxHp*.5;area.step(new Map());
+  const first=boss.adds.map(e=>({...e.unit}));assert.equal(first.length,3);assert.ok(boss.adds.every(e=>e.state==='chase'&&area.services.getUnit(e.unit).level===1));assert.equal(area.enemies.size,3);
+  for(let round=0;round<3;round++){
+    const old=boss.adds.map(e=>({...e.unit}));boss.reset();assert.ok([...area.enemies.values()].every(e=>e.state==='gone'));
+    area.step(new Map());boss.actor.hp=boss.actor.maxHp*.5;area.step(new Map());assert.equal(boss.adds.length,3);assert.equal(area.enemies.size,3);
+    assert.deepEqual(boss.adds.map(e=>e.unit.id),first.map(r=>r.id));assert.ok(boss.adds.every((e,i)=>e.unit.life===old[i].life+1));assert.ok(old.every(r=>area.services.getUnit(r)===null));
+  }
+});
