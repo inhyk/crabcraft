@@ -9,6 +9,7 @@ type Interaction=AreaDefinition['interactions'][number];
 /** Per-player NPC/objective/channel rules. Renderer events are observations only. */
 export class InteractionRules {
  readonly services:AreaServices;readonly world:WorldInteractionState;
+ private readonly portals=new Map<string,{ref:EntityRef;armed:boolean;readyAt:number}>();
  constructor(services:AreaServices,world:WorldInteractionState){this.services=services;this.world=world;}
  private player(ref:EntityRef):PlayerSim|null {const s=this.services,p=s.player(ref),u=s.getUnit(ref);if(!p||!u?.alive||u.hidden||p.state.controlsLocked)return null;const member=s.context.members.find(m=>m.character===p.state.character);if(member?.villagePlaying||member?.seatedBoat)return null;return p;}
  private near(player:PlayerSim,position:{x:number;y:number;z:number},range:number):boolean {const u=this.services.getUnit(player.state.unit);return !!u&&Math.hypot(u.x-position.x,u.y-position.y,u.z-position.z)<=range;}
@@ -54,6 +55,13 @@ export class InteractionRules {
   if(!this.world.beaconLit){this.services.bossByProfile('rust')?.sleep();this.services.bossByProfile('abyss')?.sleep();player.state.target=null;}
   for(const unit of this.services.players()){const p=this.services.player(unit.ref);if(!p)continue;p.state.flags.beaconLit=this.world.beaconLit;if(this.world.beaconLit)questBump(p,this.services,'beacon');}
  }
- update():void {for(const unit of this.services.players()){const p=this.player(unit.ref);if(!p)continue;for(const point of this.services.definition.interactions)if(point.kind==='explore'&&this.validate(p,point.id))questBump(p,this.services,point.objective!);}}
- debugState():{beaconLit:boolean}{return {beaconLit:this.world.beaconLit};}
+ purgeActor(ref:EntityRef):void {for(const [character,p]of this.portals)if(p.ref.area===ref.area&&p.ref.id===ref.id&&p.ref.life===ref.life)this.portals.delete(character);}
+ update():void {
+  const s=this.services,characters=new Set<string>();for(const unit of s.players()){const p=this.player(unit.ref);if(!p)continue;characters.add(p.state.character);for(const point of s.definition.interactions)if(point.kind==='explore'&&this.validate(p,point.id))questBump(p,s,point.objective!);
+   let portal=this.portals.get(p.state.character);if(!portal||portal.ref.id!==unit.ref.id||portal.ref.life!==unit.ref.life){portal={ref:{...unit.ref},armed:false,readyAt:s.time+3};this.portals.set(p.state.character,portal);}
+   const gates=s.definition.interactions.filter(i=>i.kind==='gate'),base=gates[0],special=gates[1];let gate=base;if(special&&Math.hypot(unit.x-special.position.x,unit.y-special.position.y,unit.z-special.position.z)<(s.world==='w3'?7:6))gate=special;if(!gate)continue;
+   const distance=Math.hypot(unit.x-gate.position.x,unit.z-gate.position.z);if(distance>4.5)portal.armed=true;if(portal.armed&&distance<1.7&&s.time>portal.readyAt){portal.armed=false;portal.readyAt=s.time+3;this.interact(unit.ref,gate.id);}
+  }for(const character of this.portals.keys())if(!characters.has(character))this.portals.delete(character);
+ }
+ debugState():{beaconLit:boolean;portals:readonly {character:string;ref:EntityRef;armed:boolean;readyAt:number}[]}{return {beaconLit:this.world.beaconLit,portals:[...this.portals].map(([character,p])=>({character,...p,ref:{...p.ref}}))};} 
 }
