@@ -239,3 +239,10 @@ test('actual dead-to-rematch allocates one fresh boss life and invalidates old t
   const life=boss.unit.life;boss.wake();assert.equal(boss.unit.life,life,'repeated wake while waking cannot allocate another life');assert.equal(area.pendingGrants().length,1,'earned previous-life grant remains retained');assert.equal(p.state.flags.finalCleared,true);
   const hp=u.hp;area.services.resolveHit({attack:'boss-claw',source:old,target:ref});assert.equal(u.hp,hp,'stale old-life attack cannot land');
 });
+
+test('actual Area baseline retains boss controller and frame observation after transient events drain',()=>{
+ const {area,boss}=actualFrost();const events=area.drainEvents();assert.ok(events.some(r=>r.event.type==='boss'&&r.event.stage==='engage'));
+ const observed=area.snapshot().recovery.bosses[0];assert.equal(observed.profile,'frost');assert.equal(observed.state,'fight');assert.equal(observed.showFrame,true);assert.equal(observed.phase,1);assert.deepEqual(observed.freed,boss.freed.ref);assert.ok(Object.isFrozen(observed));
+ boss.actor.hp=boss.actor.maxHp*.3;area.step(new Map());area.drainEvents();const phase=area.snapshot().recovery.bosses[0];assert.equal(phase.phase,3);assert.equal(phase.enraged,true);assert.equal(observed.phase,1);
+ boss.reset();area.drainEvents();assert.equal(area.snapshot().recovery.bosses[0].showFrame,false);
+});
