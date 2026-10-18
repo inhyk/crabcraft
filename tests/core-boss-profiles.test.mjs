@@ -246,4 +246,3 @@ test('actual Area baseline retains boss controller and frame observation after t
  boss.actor.hp=boss.actor.maxHp*.3;area.step(new Map());area.drainEvents();const phase=area.snapshot().recovery.bosses[0];assert.equal(phase.phase,3);assert.equal(phase.enraged,true);assert.equal(observed.phase,1);
  boss.reset();area.drainEvents();assert.equal(area.snapshot().recovery.bosses[0].showFrame,false);
 });
-
