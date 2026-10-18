@@ -1,4 +1,5 @@
 import { randomUUID, randomBytes } from 'node:crypto';
+import { shownName } from '../chat/safety.ts';
 import { isDeepStrictEqual } from 'node:util';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -9,6 +10,7 @@ import { prepareRestore, type CoreCharacterCodec, type IdentityJson, type Checkp
 import type { Area, AreaSnapshot, BossProfileId, EntityRef, EventRecord, PlayerCommand, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { canChallenge } from '../../src/sim/data/progression.ts';
 import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
+import { TREASURES, LIGHTHOUSE_SECRET } from '../../src/sim/features/exploration.ts';
 import { CharacterStore, type Character } from './character-store.ts';
 import { WorldTicketRegistry, type SessionBinding } from './admission.ts';
 import type { HostOwnership } from './ownership.ts';
@@ -16,7 +18,9 @@ import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, type PreparedInput } from './gameplay/intents.ts';
-import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding } from './gameplay/protocol.ts';
+import { prepareObservationSnapshot } from './gameplay/protocol.ts';
+import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
+import type { CommandResult } from './gameplay/events.ts';
 
 type StoredCharacter = Character<IdentityJson, CheckpointJson>;
 export interface HostPolicies {
@@ -74,10 +78,14 @@ interface Connection {
   sequence: number; epoch: number; full: boolean; lastInput: number; timedOut: boolean; nextValidation: number; validating: boolean; authTimer?: ReturnType<typeof setTimeout>;
   visible: Set<number>;
   queueKey?: string;
+  baselineSequence: number;
+  results: CommandResult[];
+  discoveries: { unit: EntityRef; id: string; startOrder: number; inputSequence: number; commandIndex: number }[];
 }
 interface Waiting { connection: Connection; record: StoredCharacter; replay: GrantJson[]; world: WorldId }
 interface PendingTravel { actor: Actor; source: Slot; ref: EntityRef; gate: string; destination: WorldId }
 const HOST_PARTY_COMMANDS = new Set(['partyCreate', 'partyJoin', 'partyLeave', 'partyPvp', 'encounterLeave']);
+const ECONOMIC_INTERACTIONS = new Set<string>([...TREASURES.map(t => t.id), LIGHTHOUSE_SECRET.id]);
 const sameRef = (a: EntityRef, b: EntityRef) => a.area === b.area && a.id === b.id && a.life === b.life;
 const buffer = (raw: RawData) => Buffer.isBuffer(raw) ? raw : raw instanceof ArrayBuffer ? Buffer.from(raw) : Buffer.concat(raw);
 const reject = (socket: Duplex, status: string) => socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
@@ -110,7 +118,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
   let accepting = true; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
   let generation = 1; let unresolved = 0;
-  const metrics = { ticks: 0, snapshots: 0, packets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
+  const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
     authFailures: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
   const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
   const timings = new Map<string, { values: number[]; cursor: number }>();
@@ -143,36 +151,54 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const boundary = <T>(fn: () => T): Promise<T> => new Promise((resolve, rejectPromise) => enqueue(() => { try { resolve(fn()); } catch (error) { rejectPromise(error); } }));
   const json = (c: Connection, value: unknown) => {
-    if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(value));
+    if (c.ws.readyState === WebSocket.OPEN) { const data = JSON.stringify(value); c.ws.send(data); metrics.packets++; metrics.bytesSent += Buffer.byteLength(data); }
   };
   const queueNotice = (c: Connection, world: WorldId, position: number) => {
     const key = `${world}:${position}`;
     if (c.queueKey === key) return;
-    c.queueKey = key; json(c, { type: 'queued', world, position });
+    c.queueKey = key;
+    if (!sendControl(c, { type: 'queued', world, position })) json(c, { type: 'queued', world, position });
   };
   const close = (c: Connection, code: string, retryable = false) => {
     if (c.closed) return;
-    json(c, { type: 'error', code, retryable }); c.ws.close(1008, code.slice(0, 80));
+    if (!sendControl(c, { type: 'error', code, retryable })) json(c, { type: 'error', code, retryable });
+    c.ws.close(1008, code.slice(0, 80));
   };
-  const controlError = (c: Connection, code: string) => {
-    if (!c.stream || !c.input || !c.actor || c.ws.readyState !== WebSocket.OPEN) return;
+  function sendControl(c: Connection, value: WorldControl): boolean {
+    if (!c.stream || !c.input || !c.actor || c.stream.area !== c.actor.slot.area.services.id || c.closed || c.ws.readyState !== WebSocket.OPEN) return false;
     for (const chunk of c.protocol.encodeControl({ ...c.stream, sequence: ++c.sequence, tick: c.actor.slot.area.services.tick,
-      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, { type: 'error', code, retryable: false })) c.ws.send(chunk, { binary: true });
+      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, value)) {
+      c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength;
+    }
+    return true;
+  }
+  const controlError = (c: Connection, code: string) => {
+    sendControl(c, { type: 'error', code, retryable: false });
   };
+  function materializeResults(c: Connection): CommandResult[] {
+    return c.results.map(result => result.status === 'durable' ? { ...result, revision: c.actor!.record.revision } : result);
+  }
+  function sendResults(c: Connection) {
+    if (!c.results.length || !c.baselineSequence || !c.stream || !c.input || !c.actor || c.closed || c.ws.readyState !== WebSocket.OPEN) return;
+    if (c.ws.bufferedAmount > p.maxBufferedBytes) { close(c, 'result-backpressure', true); return; }
+    const chunks = c.protocol.encodeEvents({ ...c.stream, sequence: ++c.sequence, tick: c.actor.slot.area.services.tick,
+      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, { baselineSequence: c.baselineSequence, events: [], results: materializeResults(c) });
+    for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
+    c.results = [];
+  }
   function partyState(party: Party | undefined) {
     if (!party) return null;
     return { code: party.code, leader: party.members.get(party.leader)!, pvp: party.pvp,
       members: [...party.members].map(([character, id]) => {
         const actor = actors.get(character);
         if (!actor) throw new Error('party references retired actor');
-        return { id, name: actor.record.identity.appearance.name, ref: actor.ref, world: actor.slot.world, online: !!actor.connection };
+        return { id, name: shownName(actor.record.identity.appearance.name), ref: actor.ref, world: actor.slot.world, online: !!actor.connection };
       }) };
   }
   function publishParty(c: Connection) {
     if (!c.stream || !c.input || !c.actor || c.stream.area !== c.actor.slot.area.services.id || c.closed || c.ws.readyState !== WebSocket.OPEN) return;
     const state = partyState(memberParty.get(c.actor.record.characterId));
-    for (const chunk of c.protocol.encodeControl({ ...c.stream, sequence: ++c.sequence, tick: c.actor.slot.area.services.tick,
-      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, { type: 'party', state })) c.ws.send(chunk, { binary: true });
+    sendControl(c, { type: 'party', state });
   }
   function syncPartyContexts() {
     for (const slot of allSlots) if (slot.area.players.size) {
@@ -235,6 +261,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     c.actor = actor; actor.connection = c; actor.detachedAt = null; actor.generation = generation++;
     c.stream = { session: randomUUID(), area: actor.slot.area.services.id, epoch: c.epoch, catalog: deps.gameplay.catalog.version };
     c.sequence = 0; c.full = true; c.visible.clear(); c.protocol.reset(c.stream);
+    c.baselineSequence = 0; c.results = []; c.discoveries = [];
     c.queueKey = undefined;
     c.input = new InputSession(c.stream, deps.gameplay.catalog, { now: deps.nowMonotonicMs() / 1000, maxQueued: p.maxQueuedInputs, timeoutSeconds: p.inputTimeoutMs / 1000 });
     actor.slot.area.resetInputSession(actor.ref); c.phase = 'admitted'; c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
@@ -291,7 +318,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (result.reason === 'destination-full') {
         queueNotice(actor.connection, request.destination, [...travels.values()].filter(r => r.destination === request.destination).findIndex(r => r.actor === actor) + 1);
       } else {
-        json(actor.connection, { type: 'error', code: 'travel-unavailable', retryable: true }); travels.delete(character);
+        controlError(actor.connection, 'travel-unavailable'); travels.delete(character);
       }
     }
   };
@@ -460,6 +487,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       await boundary(() => {
         for (const source of sources) source.slot.area.acknowledgeGrant(source.grant.id);
         for (const [slot, token] of tokens) { drain(slot); slot.area.releaseDurabilityBarrier(token); slot.lastCheckpoint = deps.nowMonotonicMs(); }
+        for (const actor of actors.values()) if (actor.connection) sendResults(actor.connection);
         if (p.party) syncPartyContexts();
         metrics.persistenceMs += deps.nowMonotonicMs() - began;
         observe('persistenceBarrier', deps.nowMonotonicMs() - began);
@@ -524,28 +552,32 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const publish = (slot: Slot) => {
     if (barrier || frozen) return;
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
+    const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
+    const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog);
+    observe('snapshotPrepare', deps.nowMonotonicMs() - start);
     for (const actor of actors.values()) {
       const c = actor.connection;
       if (actor.slot !== slot || !c || c.closed || !c.stream || !c.input) continue;
       if (c.ws.bufferedAmount > p.maxBufferedBytes) { close(c, 'slow-client', true); continue; }
       try {
-        const encodeStart = deps.nowMonotonicMs();
+        const encodeStart = deps.nowMonotonicMs(), wasFull = c.full;
         c.visible = visible(slot, actor, c);
         const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
           acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput, selfRef: actor.ref,
-          snapshot, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark,
-          appearances: Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, a.record.identity.appearance])),
+          snapshot, prepared, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark, appearances,
+          results: materializeResults(c),
           ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
         observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
         for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
-        c.full = false; metrics.snapshots++;
+        c.full = false; c.baselineSequence = c.sequence; c.results = []; metrics.snapshots++;
+        if (wasFull && p.party) publishParty(c);
       } catch (error) { deps.onFailure?.('observation', error); close(c, 'observation-unavailable', true); }
     }
     slot.events = []; metrics.snapshotBatchMs += deps.nowMonotonicMs() - start; observe('snapshotBatch', deps.nowMonotonicMs() - start);
   };
   const step = (slot: Slot) => {
     if (barrier || frozen || draining) return;
-    const inputs = new Map<number, PlayerIntent>(), prepared: { c: Connection; frame: PreparedInput }[] = [];
+    const inputs = new Map<number, PlayerIntent>(), prepared: { c: Connection; frame: PreparedInput; unit: EntityRef }[] = [];
     const hostCommands: { c: Connection; command: { kind: string; code?: string; enabled?: boolean; profile?: BossProfileId } }[] = [];
     const now = deps.nowMonotonicMs(); let progression = false;
     for (const actor of actors.values()) if (actor.slot === slot) {
@@ -553,15 +585,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!c || !c.input || c.closed) continue;
       const frame = c.input.prepareTick(now / 1000, p.areaLimits.inputCommandsPerTick);
       if (frame) {
+        if (c.results.length + c.discoveries.length + frame.intent.commands.length > 256) { close(c, 'result-backpressure', true); continue; }
         const host = frame.intent.commands.filter(command => HOST_PARTY_COMMANDS.has(command.kind) || slot.kind === 'public' && command.kind === 'bossChallenge');
         if (host.length && frame.intent.commands.length !== 1) { close(c, 'host-command-boundary'); continue; }
         const commands = frame.intent.commands.filter((command): command is PlayerCommand => !HOST_PARTY_COMMANDS.has(command.kind) && !(slot.kind === 'public' && command.kind === 'bossChallenge'));
-        inputs.set(actor.ref.id, { ...frame.intent, commands }); prepared.push({ c, frame });
+        inputs.set(actor.ref.id, { ...frame.intent, commands }); prepared.push({ c, frame, unit: actor.ref });
         if (host[0]) hostCommands.push({ c, command: host[0] });
         progression ||= frame.intent.commands.some(command => !['target', 'jump', 'dance', 'cancel', 'ability'].includes(command.kind));
       } else if (!c.timedOut && now - c.lastInput >= p.inputTimeoutMs) { slot.area.neutralizeInput(actor.ref); c.timedOut = true; metrics.neutralizations++; }
     }
-    const started = deps.nowMonotonicMs(); slot.area.step(inputs); metrics.ticks++; metrics.tickMs += deps.nowMonotonicMs() - started; observe('tick', deps.nowMonotonicMs() - started);
+    const inputTick = slot.area.services.tick;
+    const started = deps.nowMonotonicMs(), outcomes = slot.area.step(inputs); metrics.ticks++; metrics.tickMs += deps.nowMonotonicMs() - started; observe('tick', deps.nowMonotonicMs() - started);
     const changedLives: Actor[] = [];
     for (const actor of actors.values()) if (actor.slot === slot) {
       const current = slot.area.services.playerByCharacter(actor.record.characterId)?.state.unit;
@@ -574,8 +608,41 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         else encounterRequests.set(c.actor!.record.characterId, { actor: c.actor!, profile: command.profile });
       } else partyCommand(c, command);
     }
-    for (const actor of changedLives) if (actor.connection) bootstrap(actor.connection, actor);
     const emitted = drain(slot);
+    const used = new Set<EventRecord>();
+    for (const { c, frame, unit } of prepared) for (const [index, command] of frame.intent.commands.entries()) {
+      const origin = frame.commandOrigins[index];
+      if (!origin) throw new Error('missing command origin');
+      const outcome = outcomes.find(result => result.commandIndex === index && sameRef(result.unit, unit));
+      if (command.kind === 'forgeBuy' || command.kind === 'forgeUpgrade') {
+        const record = emitted.find(record => !used.has(record) && record.tick === inputTick && record.event.type === 'equipment' && sameRef(record.event.unit, unit) && record.event.operation === (command.kind === 'forgeBuy' ? 'buy' : 'upgrade') && record.event.slot === (command.slot ?? 'weapon') && record.event.request === command.request);
+        if (record?.event.type === 'equipment') {
+          used.add(record); c.results.push({ ...origin, status: outcome?.success ? 'durable' : 'failed', code: `equipment-${record.event.result}`, ...(command.request === undefined ? {} : { request: command.request }) });
+        } else c.results.push({ ...origin, status: 'failed', code: 'equipment-unavailable', ...(command.request === undefined ? {} : { request: command.request }) });
+      } else if (command.kind === 'questAccept' || command.kind === 'questTurnIn' || command.kind === 'questTrack') {
+        c.results.push({ ...origin, status: outcome?.success ? 'durable' : 'failed', code: outcome?.success ? command.kind === 'questAccept' ? 'quest-accepted' : command.kind === 'questTurnIn' ? 'quest-completed' : 'quest-tracked' : 'quest-unavailable' });
+      } else if ((command.kind === 'interact' || command.kind === 'channelStart') && ECONOMIC_INTERACTIONS.has(command.targetId ?? '')) {
+        if (!outcome?.success) { c.results.push({ ...origin, status: 'failed', code: 'discovery-unavailable' }); continue; }
+        const record = emitted.find(record => !used.has(record) && record.tick === inputTick && record.event.type === 'discovery' && sameRef(record.event.unit, unit) && record.event.id === command.targetId);
+        if (record?.event.type === 'discovery') { used.add(record); c.results.push({ ...origin, status: 'durable', code: `discovery-${record.event.discovery}` }); }
+        else {
+          const start = emitted.find(record => record.tick === inputTick && record.event.type === 'castStart' && sameRef(record.event.unit, unit) && record.event.channel?.kind === 'lighthouse-secret');
+          if (!start) throw new Error('accepted discovery has no authoritative outcome');
+          c.discoveries.push({ ...origin, unit, id: command.targetId!, startOrder: start.order });
+        }
+      }
+    }
+    for (const c of connections) if (c.actor?.slot === slot) for (let i = c.discoveries.length - 1; i >= 0; i--) {
+      const pending = c.discoveries[i];
+      const record = emitted.find(record => !used.has(record) && record.order > pending.startOrder && record.event.type === 'discovery' && sameRef(record.event.unit, pending.unit) && record.event.id === pending.id);
+      const interrupted = emitted.some(record => record.order > pending.startOrder && record.event.type === 'castEnd' && record.event.channel && record.event.result === 'interrupted' && sameRef(record.event.unit, pending.unit));
+      if (record || interrupted) {
+        if (record) used.add(record);
+        c.discoveries.splice(i, 1);
+        c.results.push({ inputSequence: pending.inputSequence, commandIndex: pending.commandIndex, status: record ? 'durable' : 'failed', code: record ? 'discovery-lighthouse-secret' : 'discovery-interrupted' });
+      }
+    }
+    for (const actor of changedLives) if (actor.connection) bootstrap(actor.connection, actor);
     progression ||= slot.area.pendingGrants().length > 0 || emitted.some(({ event }) =>
       ['quest', 'xp', 'levelUp', 'equipment', 'achievement', 'discovery', 'endingReady', 'death', 'respawn'].includes(event.type));
     if (progression || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
@@ -596,7 +663,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           }), () => enqueue(() => { if (!c.closed && c.generation === attempt) close(c, 'session-unavailable', true); }));
         }
       }
-      if (!barrier && !frozen) {
+      if (!barrier && !frozen && !draining) {
         admitWaiting(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
         for (const slot of allSlots) {
           if (!slot.area.players.size || barrier) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
@@ -619,7 +686,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (connections.size >= p.maxConnections || [...connections].filter(c => c.ip === ip).length >= p.maxConnectionsPerIp) { reject(socket, '503 Service Unavailable'); return; }
       wss.handleUpgrade(req, socket, head, ws => {
         const c: Connection = { ws, ip, origin, generation: generation++, closed: false, phase: 'preauth',
-          protocol: deps.gameplay.create(), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set() };
+          protocol: deps.gameplay.create(), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set(), baselineSequence: 0, results: [], discoveries: [] };
         connections.add(c);
         c.authTimer = setTimeout(() => { if (c.phase === 'preauth' || c.phase === 'authenticating') close(c, 'auth-timeout'); }, p.authTimeoutMs);
         ws.on('error', () => ws.terminate());
@@ -633,7 +700,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         });
         ws.on('message', (raw, binary) => {
           if (c.closed || frozen || draining) return;
-          const bytes = buffer(raw); metrics.bytesReceived += bytes.byteLength;
+          const bytes = buffer(raw); metrics.bytesReceived += bytes.byteLength; metrics.receivedPackets++;
           if (c.phase === 'preauth') {
             if (binary || bytes.byteLength > p.maxAuthFrameBytes) { close(c, 'auth-frame'); return; }
             let value: { type?: unknown; ticket?: unknown; characterId?: unknown };
@@ -659,7 +726,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     async shutdown(deadlineMs) {
       accepting = false; draining = true;
       const end = deps.nowMonotonicMs() + deadlineMs;
-      for (const c of connections) { json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor) c.actor.slot.area.neutralizeInput(c.actor.ref); }
+      for (const c of connections) { if (!sendControl(c, { type: 'restarting', retryAfterSeconds: 1 })) json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor) c.actor.slot.area.neutralizeInput(c.actor.ref); }
       if (!barrier && !frozen) startDurability();
       while (barrier && deps.nowMonotonicMs() < end) await new Promise(resolve => setTimeout(resolve, p.loopIntervalMs));
       const persisted = await persistence.shutdown(Math.max(0, end - deps.nowMonotonicMs()));
@@ -675,7 +742,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     stats: () => ({ ...metrics, ...timingStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
       processCpuSystemMs: process.cpuUsage(processCpuStart).system / 1000, processElapsedMs: deps.nowMonotonicMs() - processStarted,
       activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
-      publicAreas: slots.size, frozen, durableBarrier: barrier !== null, unresolved,
+      publicAreas: slots.size, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
       partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length,
       droppedTicks: [...allSlots].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...allSlots].reduce((n, s) => n + s.snapshot.dropped, 0) }),
   };

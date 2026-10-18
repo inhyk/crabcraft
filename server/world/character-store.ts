@@ -17,7 +17,7 @@ export const MAX_CHECKPOINT_GRANT_RECEIPTS = 256;
 export type GrantBatchEntry<G> = { accountId: string; characterId: string; id: string; payload: G };
 export type EarnedGrant<G> = { id: string; sequence: string; accountId: string; characterId: string; payload: G };
 export class CharacterStoreError extends Error {
-  readonly code: 'invalid' | 'not_found' | 'version' | 'conflict' | 'grant_mismatch' | 'already_applied';
+  readonly code: 'invalid' | 'not_found' | 'version' | 'conflict' | 'grant_mismatch' | 'already_applied' | 'character_limit';
   constructor(code: CharacterStoreError['code'], message: string) { super(message); this.name = 'CharacterStoreError'; this.code = code; }
 }
 function fail(code: CharacterStoreError['code'], message: string): never { throw new CharacterStoreError(code, message); }
@@ -109,6 +109,25 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
     const result = await this.pool.query<Row>(`INSERT INTO world_characters(character_id,account_id,codec_version,identity_json,checkpoint_json)
       VALUES ($1,$2,$3,$4,$5) RETURNING *`, [context.characterId, accountId, this.codec.version, json(identity, 4096), json(checkpoint, 262144)]);
     return this.decode(result.rows[0]);
+  }
+  /** Public creation policy: account lock, count, fresh insertion and validation share ONE transaction/client. */
+  async createBounded(accountId: string, identityInput: I, maxCharactersPerAccount: number): Promise<Character<I, C>> {
+    account(accountId);
+    if (!Number.isSafeInteger(maxCharactersPerAccount) || maxCharactersPerAccount < 1) fail('invalid', 'explicit positive character limit required');
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const owner = await client.query('SELECT 1 FROM accounts WHERE username=$1 FOR UPDATE', [accountId]);
+      if (!owner.rowCount) fail('not_found', 'account not found');
+      const count = (await client.query<{ count: string }>('SELECT count(*) FROM world_characters WHERE account_id=$1', [accountId])).rows[0].count;
+      if (BigInt(count) >= BigInt(maxCharactersPerAccount)) fail('character_limit', 'account character limit reached');
+      const identity = this.codec.validateIdentity(parsed(json(identityInput, 4096), 4096));
+      const context = { accountId, characterId: randomUUID(), identity };
+      const checkpoint = this.codec.validateCheckpoint(this.codec.fresh(context), context);
+      const row = (await client.query<Row>(`INSERT INTO world_characters(character_id,account_id,codec_version,identity_json,checkpoint_json)
+        VALUES($1,$2,$3,$4,$5) RETURNING *`, [context.characterId, accountId, this.codec.version, json(identity, 4096), json(checkpoint, 262144)])).rows[0];
+      const created = this.decode(row); await client.query('COMMIT'); return created;
+    } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
   async getOwned(accountId: string, characterId: string): Promise<Character<I, C>> {
     account(accountId); character(characterId);

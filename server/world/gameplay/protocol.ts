@@ -1,10 +1,10 @@
-import {copyValue} from '../../../src/sim/events.ts';
+import {copyValue,freezeValue} from '../../../src/sim/events.ts';
 import {createRenderPoseRecipe,evaluateRenderPoseRecipe,isRenderPoseRecipe,renderPoseProviderVersion} from '../../../src/sim/renderPose.ts';
 import type {RenderPoseRecipe} from '../../../src/sim/renderPose.ts';
 /** Gameplay v3. Pure bounded binary values shared by server and browser; v2 is untouched. */
 import { ACHIEVEMENT_IDS } from '../../../src/sim/persistence.ts';
 import type { CommandResult } from './events.ts';
-import type { AreaSnapshot, EntityRef, EventRecord, PlayerState, ProjectileState, SimUnit, NumericPoseState } from '../../../src/sim/types.ts';
+import type { AreaSnapshot, BossObservation, EntityRef, EventRecord, PlayerState, ProjectileState, SimUnit, NumericPoseState } from '../../../src/sim/types.ts';
 import { encodeInput, decodeInput } from './intents.ts';
 import { encodeEvents, validateEvent, selectEvents, validateEventPayload, validateResult } from './events.ts';
 export const MAGIC=0x5747, VERSION=3;
@@ -37,7 +37,8 @@ export function binding(value:unknown):asserts value is WireBinding {object(valu
 export function header(value:unknown):asserts value is WireHeader {object(value,{session:text,area:text,epoch:v=>integer(v,1),catalog:text,sequence:v=>integer(v,1),tick:integer,acceptedInput:integer,consumedInput:integer});if(Number(value.consumedInput)>Number(value.acceptedInput))fail('consumed input exceeds accepted');}
 export function sameBinding(a:WireBinding,b:WireBinding):boolean {return a.session===b.session&&a.area===b.area&&a.epoch===b.epoch&&a.catalog===b.catalog;}
 export function clone<T>(value:T):T{return decodeValue(encodeValue(value)) as T;}
-const KEYS=('ref area id life archetype kind reaction level x y z yaw radius height hp maxHp alive hidden targetable invulnerable stunUntil slowUntil slowPct rust rustUntil absorb absorbMax absorbUntil blessingUntil encounterBlessing pushX pushZ pushTime lift npcId pose actions locomotionTime localVx localVz yawRate previousX previousZ previousYaw appliedQ appliedPosition appliedRotation gaitPhase controllerVx controllerVz controllerYaw locomotionQ locomotionPosition locomotionRotation locomotionWeights part upper from to loopFrom loop speed fade carryRoot generation start clipTime fadeIn fadeOut weight targetWeight ended interrupted root curve dataVersion metersToUnits committed committedClipTime rebase character unit classId resource maxResource xp coins attackRank armorRank weaponOwned armorOwned baseMaxHp gcdStart gcdEnd cooldowns cast channel target warded nextSwing lastAttack queued velX velZ jumpT spinT lastSpend targetDeadAt dash t deadUntil role controlsLocked talkTarget quests flags cogMisses chapter status progress cogs tracked ability end targetId source style elapsed bornStep hit anchorVersion type src dst amount crit school reason stage seconds caster range half stun landed slot moment move oldMaxHp jump attack at mech shapes cancelled boss phase show textKey yell recipient item recipients grant appliedHere position quest objective value operation result request destination gate header sequence tick acceptedInput consumedInput session epoch catalog full baseline eventWatermark selfRef actors removed projectiles self features recovery events results world time state weapon armor boat village environment telegraphs ending order inputSequence commandIndex revision durable poseDelta mask values fields appearance shell crest led name race sex lighthouseSecretFound endings replay poses poseRecipe recipe locomotion layers version').split(' ');
+const KEYS=('ref area id life archetype kind reaction level x y z yaw radius height hp maxHp alive hidden targetable invulnerable stunUntil slowUntil slowPct rust rustUntil absorb absorbMax absorbUntil blessingUntil encounterBlessing pushX pushZ pushTime lift npcId pose actions locomotionTime localVx localVz yawRate previousX previousZ previousYaw appliedQ appliedPosition appliedRotation gaitPhase controllerVx controllerVz controllerYaw locomotionQ locomotionPosition locomotionRotation locomotionWeights part upper from to loopFrom loop speed fade carryRoot generation start clipTime fadeIn fadeOut weight targetWeight ended interrupted root curve dataVersion metersToUnits committed committedClipTime rebase character unit classId resource maxResource xp coins attackRank armorRank weaponOwned armorOwned baseMaxHp gcdStart gcdEnd cooldowns cast channel target warded nextSwing lastAttack queued velX velZ jumpT spinT lastSpend targetDeadAt dash t deadUntil role controlsLocked talkTarget quests flags cogMisses chapter status progress cogs tracked ability end targetId source style elapsed bornStep hit anchorVersion type src dst amount crit school reason stage seconds caster range half stun landed slot moment move oldMaxHp jump attack at mech shapes cancelled boss phase show textKey yell recipient item recipients grant appliedHere position quest objective value operation result request destination gate header sequence tick acceptedInput consumedInput session epoch catalog full baseline eventWatermark selfRef actors removed projectiles self features recovery events results world time state weapon armor boat village environment telegraphs ending order inputSequence commandIndex revision durable poseDelta mask values fields appearance shell crest led name race sex lighthouseSecretFound endings replay poses poseRecipe recipe locomotion layers version bosses profile enraged stateTime freedTime showFrame').split(' ');
+const KEY_INDEX=new Map<string,number>();KEYS.forEach((key,index)=>{if(!KEY_INDEX.has(key))KEY_INDEX.set(key,index);});
 const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
 class Writer {
  bytes=new Uint8Array(1024);view=new DataView(this.bytes.buffer);offset=0;
@@ -76,7 +77,7 @@ export function encodeValue(value:unknown):Uint8Array {
   }else{
    if(![Object.prototype,null].includes(Object.getPrototypeOf(v)))fail('non-plain data');const entries=Object.entries(v).filter(([,x])=>x!==undefined);
    if(entries.length>LIMITS.object)fail('object size limit');w.u8(6);w.u16(entries.length);
-   for(const[k,x]of entries){if(['__proto__','constructor','prototype'].includes(k))fail('unsafe map key');const i=KEYS.indexOf(k);w.u16(i+1);if(i<0)w.string(k);write(x,depth+1);}
+   for(const[k,x]of entries){if(['__proto__','constructor','prototype'].includes(k))fail('unsafe map key');const i=KEY_INDEX.get(k)??-1;w.u16(i+1);if(i<0)w.string(k);write(x,depth+1);}
   }seen.delete(v);
  };write(value,0);return w.finish();
 }
@@ -96,11 +97,11 @@ export function encodeMessage(kind:1|2|16|17,h:WireHeader,payload:unknown):Uint8
  const room=LIMITS.fragmentBytes-overhead;if(room<1)fail('oversized header');const count=Math.max(1,Math.ceil(body.length/room));if(count>LIMITS.fragments)fail('fragment count limit');
  return Array.from({length:count},(_,i)=>{const w=new Writer();w.u16(MAGIC);w.u8(VERSION);w.u8(kind);w.u16(hbytes.length);w.raw(hbytes);w.u16(i);w.u16(count);w.u32(body.length);w.u32(hash);w.raw(body.slice(i*room,(i+1)*room));return w.finish();});
 }
-export interface DecodedMessage {kind:1|2|16|17;header:WireHeader;payload:Value}
+export interface DecodedMessage {kind:1|2|16|17;header:WireHeader;payload:Value;interrupted:boolean}
 /** One bounded in-flight group. No snapshot state changes until every fragment validates. */
 export class FragmentAssembler {
  private binding:WireBinding;
- private pending:{kind:DecodedMessage['kind'];header:WireHeader;count:number;total:number;hash:number;started:number;parts:Map<number,Uint8Array>;size:number}|null=null;
+ private pending:{kind:DecodedMessage['kind'];header:WireHeader;count:number;total:number;hash:number;started:number;parts:Map<number,Uint8Array>;size:number;interrupted:boolean}|null=null;
  constructor(expected:WireBinding){binding(expected);this.binding=clone(expected);}
  reset(expected:WireBinding){binding(expected);this.binding=clone(expected);this.pending=null;}
  clear(){this.pending=null;}
@@ -112,15 +113,15 @@ export class FragmentAssembler {
   const h=decodeValue(r.raw(r.u16()));header(h);if(!sameBinding(h,this.binding))fail('stale stream binding');
   const index=r.u16(),count=r.u16(),total=r.u32(),hash=r.u32();integer(count,1,LIMITS.fragments);integer(index,0,count-1);integer(total,1,LIMITS.messageBytes);
   const part=r.raw(bytes.length-r.offset);if(!part.length||part.length>total)fail('invalid fragment payload');
-  let p=this.pending;
-  if(p&&(p.kind!==kind||p.header.sequence!==h.sequence))fail('interleaved group; resync required');
+  let p=this.pending,interrupted=false;
+  if(p&&(p.kind!==kind||p.header.sequence!==h.sequence)){if(kind===1&&h.sequence>p.header.sequence){p=null;this.pending=null;interrupted=true;}else fail('interleaved group; resync required');}
   if(p&&(JSON.stringify(p.header)!==JSON.stringify(h)||p.count!==count||p.total!==total||p.hash!==hash||now<p.started))fail('inconsistent fragment group');
-  if(!p)p={kind:kind as DecodedMessage['kind'],header:h,count,total,hash,started:now,parts:new Map(),size:0};
+  if(!p)p={kind:kind as DecodedMessage['kind'],header:h,count,total,hash,started:now,parts:new Map(),size:0,interrupted};
   if(p.parts.has(index))fail('duplicate fragment');if(p.size+part.length>total)fail('fragment total exceeded');
   p.parts.set(index,part);p.size+=part.length;this.pending=p;if(p.parts.size<count)return null;
   this.pending=null;if(p.size!==total)fail('fragment size mismatch');const merged=new Uint8Array(total);let offset=0;
   for(let i=0;i<count;i++){const b=p.parts.get(i)!;merged.set(b,offset);offset+=b.length;}if(checksum(merged)!==hash)fail('fragment checksum mismatch');
-  return {kind:p.kind,header:p.header,payload:decodeValue(merged)};
+  return {kind:p.kind,header:p.header,payload:decodeValue(merged),interrupted:p.interrupted};
  }
 }
 export function actionState(value:unknown,c:GameplayCatalog):void {
@@ -153,7 +154,7 @@ export interface FeatureView {
  boat:null|{x:number;z:number;yaw:number;speed:number;seats:readonly(EntityRef|null)[]};
  village:null|{id:string;mode:'hide'|'tag';phase:'ready'|'play'|'done';left:number;starter:EntityRef;seeker:EntityRef;members:readonly EntityRef[];caught:readonly EntityRef[];result:string};
 }
-export interface RecoveryView {telegraphs:readonly EventRecord[];endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]}
+export interface RecoveryView {bosses?:readonly BossObservation[];telegraphs:readonly EventRecord[];endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]}
 export interface RenderPoseSource {recipe:RenderPoseRecipe;localVx:number;localVz:number}
 export interface ActorUpdate {ref:EntityRef;fields:Partial<Omit<PublicActor,'ref'>>;poseDelta?:PoseDelta;poseRecipe?:number}
 export interface SnapshotPayload {
@@ -181,20 +182,21 @@ function validateFeatures(v:unknown,area:string):void {
  object(v,{environment:x=>object(x,{beacon:bool,clock:number}),boat:nullable(x=>{object(x,{x:number,z:number,yaw:number,speed:number,seats:list(nullable(ref),2,2)});const seats=x.seats as (EntityRef|null)[];if(seats[0]&&seats[1]&&seats[0].id===seats[1].id)fail('duplicate boat seat');}),village:nullable(x=>object(x,{id:text,mode:choice('hide','tag'),phase:choice('ready','play','done'),left:number,starter:ref,seeker:ref,members:list(ref,100),caught:list(ref,100),result:choice('','seekers','runners','cancelled')}))},{exploration:list(x=>object(x,{unit:ref,activeUntil:number}),1)});
 }
 function validateProjectile(v:unknown,area:string):void {object(v,{id:x=>integer(x,1,0xffffffff),source:x=>reference(x,area),target:x=>reference(x,area),style:choice('bubble','spark','holy','rust'),x:number,y:number,z:number,speed:number,elapsed:number,bornStep:integer});}
-export function validateSnapshot(p:unknown,c:GameplayCatalog,area:string):asserts p is SnapshotPayload {
- object(p,{full:bool,baseline:integer,eventWatermark:v=>integer(v,-1),world:choice('w1','w2','w3','w4'),time:number,selfRef:v=>reference(v,area),poses:list(renderSource,LIMITS.actors),actors:list(v=>{object(v,{ref:x=>reference(x,area),fields:x=>{if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).some(k=>!ACTOR_FIELDS.includes(k as typeof ACTOR_FIELDS[number])))fail('unknown actor field');}},{poseDelta:x=>poseDelta(x,c),poseRecipe:x=>integer(x,0,LIMITS.actors-1)});},LIMITS.actors),removed:list(v=>reference(v,area),LIMITS.actors),projectiles:list(v=>validateProjectile(v,area),LIMITS.projectiles),self:v=>validateSelf(v,c,area),features:v=>validateFeatures(v,area),recovery:v=>object(v,{telegraphs:list(x=>{validateEvent(x,c,area);if((x as EventRecord).event.type!=='telegraph')fail('non-telegraph recovery');},64),endings:list(x=>object(x,{unit:v=>reference(v,area),chapter:choice(4),replay:bool}),1)}),events:list(v=>validateEvent(v,c,area),LIMITS.events),results:list(validateResult,256)});
+function checkSnapshot(p:unknown,c:GameplayCatalog,area:string,ownedPublic=false):asserts p is SnapshotPayload {
+ object(p,{full:bool,baseline:integer,eventWatermark:v=>integer(v,-1),world:choice('w1','w2','w3','w4'),time:number,selfRef:v=>reference(v,area),poses:list(ownedPublic?()=>{}:renderSource,LIMITS.actors),actors:list(v=>{object(v,{ref:x=>reference(x,area),fields:x=>{if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).some(k=>!ACTOR_FIELDS.includes(k as typeof ACTOR_FIELDS[number])))fail('unknown actor field');}},{poseDelta:x=>poseDelta(x,c),poseRecipe:x=>integer(x,0,LIMITS.actors-1)});},LIMITS.actors),removed:list(v=>reference(v,area),LIMITS.actors),projectiles:list(v=>validateProjectile(v,area),LIMITS.projectiles),self:v=>validateSelf(v,c,area),features:v=>validateFeatures(v,area),recovery:v=>object(v,{telegraphs:list(x=>{validateEvent(x,c,area);if((x as EventRecord).event.type!=='telegraph')fail('non-telegraph recovery');},64),endings:list(x=>object(x,{unit:v=>reference(v,area),chapter:choice(4),replay:bool}),1)},{bosses:list(x=>object(x,{unit:v=>reference(v,area),profile:choice('rust','abyss','eclipse','dawn','frost'),state:choice('dormant','waking','idle','fight','dying','dead'),phase:integer,enraged:bool,stateTime:number,freed:v=>reference(v,area),freedTime:number,showFrame:bool}),5)}),events:list(v=>validateEvent(v,c,area),LIMITS.events),results:list(validateResult,256)});
  const snapshot=p as unknown as SnapshotPayload;
  if(snapshot.full?(snapshot.baseline!==0||snapshot.removed.length>0):snapshot.baseline<1)fail('invalid baseline');
  if(snapshot.self.player.unit.id!==snapshot.selfRef.id||snapshot.self.player.unit.life!==snapshot.selfRef.life)fail('self reference mismatch');
- const ids=new Set<number>();for(const r of snapshot.actors){if(ids.has(r.ref.id))fail('duplicate actor update');ids.add(r.ref.id);if(r.poseRecipe!==undefined&&(r.poseRecipe>=snapshot.poses.length||r.fields.pose||r.poseDelta))fail('invalid/ambiguous recipe index');if(r.poseDelta&&(snapshot.full||r.fields.pose))fail('ambiguous pose patch');if(snapshot.full)actorShape({ref:r.ref,...r.fields},c,area,r.poseRecipe===undefined);}
+ const ids=new Set<number>();for(const r of snapshot.actors){if(ids.has(r.ref.id))fail('duplicate actor update');ids.add(r.ref.id);if(r.poseRecipe!==undefined&&(r.poseRecipe>=snapshot.poses.length||r.fields.pose||r.poseDelta))fail('invalid/ambiguous recipe index');if(r.poseDelta&&(snapshot.full||r.fields.pose))fail('ambiguous pose patch');if(snapshot.full&&!ownedPublic)actorShape({ref:r.ref,...r.fields},c,area,r.poseRecipe===undefined);}
  for(const r of snapshot.removed){if(ids.has(r.id))fail('duplicate actor removal');ids.add(r.id);}
  const pids=new Set<number>();for(const r of snapshot.projectiles){if(pids.has(r.id))fail('duplicate projectile');pids.add(r.id);}
 }
+export function validateSnapshot(p:unknown,c:GameplayCatalog,area:string):asserts p is SnapshotPayload {checkSnapshot(p,c,area);}
 export function projectActor(unit:Readonly<SimUnit>,appearance:Appearance|null):PublicActor {return copyValue(Object.fromEntries([['ref',unit.ref],...ACTOR_FIELDS.map(k=>[k,k==='appearance'?appearance:k==='pose'?{appliedQ:unit.pose.appliedQ,appliedPosition:unit.pose.appliedPosition,appliedRotation:unit.pose.appliedRotation,localVx:unit.pose.localVx,localVz:unit.pose.localVz}:unit[k]])])) as PublicActor;}
 export function projectSelf(player:Readonly<PlayerState>,achievements:AchievementView,inCombat:boolean):SelfView {const {character:_character,achievements:_achievements,...rest}=player as PlayerState&{achievements?:AchievementView};return copyValue({player:rest,achievements,inCombat});}
 export interface ObservationInput {
  binding:WireBinding;sequence:number;tick:number;acceptedInput:number;consumedInput:number;selfRef:EntityRef;
- snapshot:AreaSnapshot;events:readonly EventRecord[];visibleIds:ReadonlySet<number>;full:boolean;eventWatermark:number;
+ snapshot:AreaSnapshot;prepared?:PreparedObservation;events:readonly EventRecord[];visibleIds:ReadonlySet<number>;full:boolean;eventWatermark:number;
  features:FeatureView;recovery:RecoveryView;achievements:AchievementView;appearances:Readonly<Record<string,Appearance>>;results?:readonly CommandResult[];
 }
 export type WorldControl=
@@ -220,13 +222,13 @@ export interface GameplayProtocol {
  encodeEvents(header:WireHeader,payload:import('./events.ts').EventPayload):Uint8Array[];
  encodeInput(packet:import('./intents.ts').InputPacket):Uint8Array;
  decodeInput(bytes:Uint8Array,expected:WireBinding):import('./intents.ts').GameplayInput;
- decodeClientMessage(bytes:Uint8Array,expected:WireBinding):{kind:'input';intent:import('./intents.ts').GameplayInput}|{kind:'resync';lastSequence:number;reason:string};
+ decodeClientMessage(bytes:Uint8Array,expected:WireBinding):{kind:'input';intent:import('./intents.ts').GameplayInput}|{kind:'resync';sequence:number;lastSequence:number;reason:string};
  encodeControl:typeof encodeControl;
  reset(binding:WireBinding):void;
 }
 /** One instance per connection: its delta baseline is never shared among viewers. */
 export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol {
- catalog=clone(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');let previousRecipes=new Map<number,RenderPoseSource>();let previous:PublicActor[]=[],prior:WireHeader|null=null;
+ catalog=clone(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes=new Map<number,RenderPoseSource>();let previous:PublicActor[]=[],prior:WireHeader|null=null;let controlBinding:WireBinding|null=null,controlSequence=0,resyncPending=false;
  return {
   catalog:clone(catalog),encodeEvents:(h,p)=>encodeEvents(h,p,catalog),encodeControl,
   encodeInput:p=>encodeInput(p,catalog),decodeInput:(b,e)=>decodeInput(b,e,catalog),
@@ -234,28 +236,40 @@ export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol
    const m=new FragmentAssembler(expected).accept(bytes,0);if(!m)fail('client message must fit one frame');
    if(m.kind===16)return {kind:'input',intent:decodeInput(bytes,expected,catalog)};
    if(m.kind!==17||m.header.tick||m.header.acceptedInput||m.header.consumedInput)fail('forged client control');validateControl(m.payload);
-   if(m.payload.type!=='resync')fail('client cannot publish server control');return {kind:'resync',lastSequence:m.payload.lastSequence,reason:m.payload.reason};
+   if(m.payload.type!=='resync')fail('client cannot publish server control');
+   if(!controlBinding||!sameBinding(controlBinding,expected)){controlBinding=clone(expected);controlSequence=0;resyncPending=false;}
+   if(m.header.sequence<=controlSequence||resyncPending)fail('stale or outstanding recovery request');controlSequence=m.header.sequence;resyncPending=true;
+   return {kind:'resync',sequence:m.header.sequence,lastSequence:m.payload.lastSequence,reason:m.payload.reason};
   },
-  reset(next){binding(next);previous=[];previousRecipes.clear();prior=null;},
+  reset(next){binding(next);previous=[];previousRecipes.clear();prior=null;if(!controlBinding||!sameBinding(controlBinding,next)){controlBinding=clone(next);controlSequence=0;resyncPending=false;}},
   encodeObservation(input){
    const h:WireHeader={...input.binding,sequence:input.sequence,tick:input.tick,acceptedInput:input.acceptedInput,consumedInput:input.consumedInput};header(h);
    if(h.catalog!==catalog.version||input.snapshot.area!==h.area||input.snapshot.tick!==h.tick)fail('snapshot identity mismatch');
    if(prior&&(!sameBinding(prior,h)||h.sequence<=prior.sequence||h.tick<prior.tick||h.acceptedInput<prior.acceptedInput||h.consumedInput<prior.consumedInput))fail('snapshot stream regression; reset required');
    const player=input.snapshot.players.find(p=>p.unit.id===input.selfRef.id&&p.unit.life===input.selfRef.life);if(!player)fail('missing owned self');
-   const actors=input.snapshot.units.filter(u=>input.visibleIds.has(u.ref.id)||u.ref.id===input.selfRef.id).map(u=>{const appearance=input.appearances[`${u.ref.id}:${u.ref.life}`]??null;if(u.kind==='player'&&!appearance)fail('missing player appearance');return projectActor(u,appearance);});
+   const prepared=input.prepared?preparedObservations.get(input.prepared):undefined;
+   if(input.prepared&&(!prepared||prepared.source!==input.snapshot||prepared.catalog!==catalogSignature))fail('forged/stale prepared observation');
+   const actors=input.snapshot.units.filter(u=>input.visibleIds.has(u.ref.id)||u.ref.id===input.selfRef.id).map(u=>{
+    if(prepared)return prepared.actors.get(u.ref.id)!;
+    const appearance=input.appearances[`${u.ref.id}:${u.ref.life}`]??null;if(u.kind==='player'&&!appearance)fail('missing player appearance');return projectActor(u,appearance);
+   });
    const old=new Map(previous.map(a=>[a.ref.id,a])),full=input.full||!prior,updates:ActorUpdate[]=[],ids=new Set(actors.map(a=>a.ref.id));
    const poses:RenderPoseSource[]=[],posePool=new Map<string,number>(),recipes=new Map<number,RenderPoseSource>();
    const units=new Map(input.snapshot.units.map(u=>[u.ref.id,u]));
    for(const a of actors){
-    validateActor(a,catalog,h.area);const prev=full?null:old.get(a.ref.id),sameLife=!!prev&&prev.ref.life===a.ref.life;
-    const fields:Partial<Omit<PublicActor,'ref'>>={};for(const k of ACTOR_FIELDS){if(k==='pose')continue;if(!sameLife||!equalValue(prev![k],a[k]))(fields as Record<string,unknown>)[k]=a[k];}
-    const recipe={recipe:createRenderPoseRecipe(units.get(a.ref.id)!),localVx:a.pose.localVx,localVz:a.pose.localVz};renderSource(recipe);recipes.set(a.ref.id,recipe);
-    let index:number|undefined;if(!sameLife||!equalValue(previousRecipes.get(a.ref.id),recipe)){const key=JSON.stringify(recipe,(_key,value)=>typeof value==='number'&&Object.is(value,-0)?'negative-zero':value);index=posePool.get(key);if(index===undefined){index=poses.length;posePool.set(key,index);poses.push(recipe);}}
+    if(!prepared)validateActor(a,catalog,h.area);const prev=full?null:old.get(a.ref.id),sameLife=!!prev&&prev.ref.life===a.ref.life;
+    let fields:Partial<Omit<PublicActor,'ref'>>;
+    const cached=prepared&&sameLife?prepared.deltas.get(prev!):undefined;
+    if(prepared&&!sameLife)fields=prepared.fullFields.get(a.ref.id)!;
+    else if(cached?.actor===a)fields=cached.fields;
+    else {fields={};for(const k of ACTOR_FIELDS){if(k==='pose')continue;if(!sameLife||!equalValue(prev![k],a[k]))(fields as Record<string,unknown>)[k]=a[k];}if(prepared&&sameLife)prepared.deltas.set(prev!,{actor:a,fields:freezeValue(fields)});}
+    const recipe=prepared?.recipes.get(a.ref.id)??{recipe:createRenderPoseRecipe(units.get(a.ref.id)!),localVx:a.pose.localVx,localVz:a.pose.localVz};if(!prepared)renderSource(recipe);recipes.set(a.ref.id,recipe);
+    let index:number|undefined;if(!sameLife||!equalValue(previousRecipes.get(a.ref.id),recipe)){const key=prepared?.poseKeys.get(a.ref.id)??recipeKey(recipe);index=posePool.get(key);if(index===undefined){index=poses.length;posePool.set(key,index);poses.push(recipe);}}
     if(Object.keys(fields).length||index!==undefined)updates.push({ref:a.ref,fields,...(index===undefined?{}:{poseRecipe:index})});
    }
    const projectiles=input.snapshot.projectiles.filter(p=>ids.has(p.source.id)||ids.has(p.target.id)).map(({hit:_hit,anchorVersion:_anchor,...p})=>p);
    const payload:SnapshotPayload={full,baseline:full?0:prior!.sequence,eventWatermark:input.eventWatermark,world:input.snapshot.world,time:input.snapshot.time,selfRef:input.selfRef,poses,actors:updates,removed:full?[]:previous.filter(a=>!ids.has(a.ref.id)).map(a=>a.ref),projectiles,self:projectSelf(player,input.achievements,input.snapshot.time-input.snapshot.units.find(u=>u.ref.id===input.selfRef.id&&u.ref.life===input.selfRef.life)!.lastCombat<5),features:input.features,recovery:input.recovery,events:selectEvents(input.events,input.selfRef,player.character,ids),results:input.results??[]};
-   validateSnapshot(payload,catalog,h.area);const encoded=encodeMessage(1,h,payload);previous=actors;previousRecipes=recipes;prior=clone(h);return encoded;
+   checkSnapshot(payload,catalog,h.area,!!prepared);if(payload.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');const encoded=encodeMessage(1,h,payload);previous=actors;previousRecipes=recipes;prior=clone(h);if(full)resyncPending=false;return encoded;
   },
  };
 }
@@ -283,10 +297,10 @@ export class GameplayReceiver {
  accept(bytes:Uint8Array,now:number):ReceivedGameplay|null {
   try{
    const message=this.assembler.accept(bytes,now);if(!message)return null;
-   const h=message.header;
+   const h=message.header;if(message.interrupted)this.needsResync=true;
    if(this.last&&(h.sequence<=this.last.sequence||h.tick<this.last.tick||h.acceptedInput<this.last.acceptedInput||h.consumedInput<this.last.consumedInput))fail('stale observation');
    if(message.kind===1){
-    validateSnapshot(message.payload,this.catalog,h.area);const p=message.payload;
+    validateSnapshot(message.payload,this.catalog,h.area);const p=message.payload;if(p.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');
     if(!p.full&&(this.needsResync||!this.current||p.baseline!==this.current.sequence||h.sequence!==(this.last?.sequence??0)+1))fail('missing baseline or sequence gap');
     if(this.current&&(p.selfRef.id!==this.current.selfRef.id||p.selfRef.life!==this.current.selfRef.life))fail('self life changed without epoch reset');
     if(p.eventWatermark<this.eventOrder||p.events.some(e=>e.tick>h.tick||e.order>p.eventWatermark))fail('invalid event watermark');
@@ -306,7 +320,7 @@ export class GameplayReceiver {
    }
    if(this.needsResync||h.sequence!==(this.last?.sequence??0)+1)fail('missing publication sequence');
    if(message.kind===2){
-    validateEventPayload(message.payload,this.catalog,h.area);const p=message.payload;
+    validateEventPayload(message.payload,this.catalog,h.area);const p=message.payload;if(p.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');
     if(!this.current||p.baselineSequence!==this.current.sequence)fail('events before actor baseline');
     let order=this.eventOrder;for(const e of p.events){if(e.order<=order||e.tick>h.tick)fail('replayed/unordered event');order=e.order;}
     this.last=clone(h);this.eventOrder=order;return {kind:'events',events:clone(p.events),results:clone(p.results)};
@@ -326,7 +340,8 @@ export function projectObservationExtras(snapshot:AreaSnapshot,character:string,
  const endings=snapshot.recovery.endings.filter(e=>e.unit.id===self.unit.id&&e.unit.life===self.unit.life);
  const exploration=(snapshot.features as AreaSnapshot['features']&{exploration?:readonly {unit:EntityRef;activeUntil:number}[]}).exploration;
  if(exploration)features.exploration=exploration.filter(e=>e.unit.id===self.unit.id&&e.unit.life===self.unit.life);
- return clone({features,recovery:{telegraphs,endings},achievements:self.achievements});
+ const bosses=snapshot.recovery.bosses.filter(b=>visibleIds.has(b.unit.id));
+ return clone({features,recovery:{telegraphs,endings,bosses},achievements:self.achievements});
 }
 
 function equalValue(a:unknown,b:unknown):boolean {
@@ -334,3 +349,30 @@ function equalValue(a:unknown,b:unknown):boolean {
  if(Array.isArray(a)||Array.isArray(b))return Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((v,i)=>equalValue(v,b[i]));
  const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&equalValue((a as Record<string,unknown>)[k],(b as Record<string,unknown>)[k]));
 }
+
+/** Unforgeable per-publication token. It exposes no personal state or actor payload. */
+export interface PreparedObservation {readonly kind:'gameplay-prepared-v1';readonly area:string;readonly tick:number}
+interface PreparedPublicData {source:AreaSnapshot;catalog:string;actors:ReadonlyMap<number,PublicActor>;recipes:ReadonlyMap<number,RenderPoseSource>;poseKeys:ReadonlyMap<number,string>;fullFields:ReadonlyMap<number,Partial<Omit<PublicActor,'ref'>>>;deltas:WeakMap<PublicActor,{actor:PublicActor;fields:Partial<Omit<PublicActor,'ref'>>}>}
+const preparedObservations=new WeakMap<PreparedObservation,PreparedPublicData>();
+function assertDeepFrozen(value:unknown,seen=new Set<object>(),depth=0):void {
+ if(depth>LIMITS.depth)fail('prepared snapshot depth');if(value===null||typeof value!=='object')return;
+ if(seen.has(value))return;seen.add(value);
+ if(!Object.isFrozen(value)||!Array.isArray(value)&&![Object.prototype,null].includes(Object.getPrototypeOf(value)))fail('prepared snapshot requires deeply frozen plain values');
+ for(const key of Reflect.ownKeys(value)){if(typeof key!=='string')fail('symbol in prepared snapshot');const descriptor=Object.getOwnPropertyDescriptor(value,key)!;if(!Object.hasOwn(descriptor,'value'))fail('accessor in prepared snapshot');assertDeepFrozen(descriptor.value,seen,depth+1);}
+}
+/** Host calls once for its owned immutable Area.snapshot(), before its per-viewer AOI loop. */
+export function prepareObservationSnapshot(snapshot:AreaSnapshot,appearances:ObservationInput['appearances'],catalog:GameplayCatalog):PreparedObservation {
+ assertDeepFrozen(snapshot);integer(snapshot.units.length,0,LIMITS.actors);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');
+ const actors=new Map<number,PublicActor>(),recipes=new Map<number,RenderPoseSource>(),poseKeys=new Map<number,string>(),fullFields=new Map<number,Partial<Omit<PublicActor,'ref'>>>();
+ for(const unit of snapshot.units){
+  if(actors.has(unit.ref.id))fail('duplicate prepared actor');
+  const appearance=appearances[`${unit.ref.id}:${unit.ref.life}`]??null;if(unit.kind==='player'&&!appearance)fail('missing prepared player appearance');
+  const actor=projectActor(unit,appearance);validateActor(actor,catalog,snapshot.area);
+  const recipe={recipe:createRenderPoseRecipe(unit),localVx:actor.pose.localVx,localVz:actor.pose.localVz};renderSource(recipe);
+  actors.set(unit.ref.id,freezeValue(actor));recipes.set(unit.ref.id,freezeValue(copyValue(recipe)));poseKeys.set(unit.ref.id,recipeKey(recipe));fullFields.set(unit.ref.id,freezeValue(Object.fromEntries(ACTOR_FIELDS.filter(k=>k!=='pose').map(k=>[k,actor[k]]))));
+ }
+ const token:PreparedObservation=Object.freeze({kind:'gameplay-prepared-v1',area:snapshot.area,tick:snapshot.tick});
+ preparedObservations.set(token,{source:snapshot,catalog:JSON.stringify(clone(catalog)),actors,recipes,poseKeys,fullFields,deltas:new WeakMap()});return token;
+}
+
+function recipeKey(recipe:RenderPoseSource):string {return JSON.stringify(recipe,(_key,value)=>typeof value==='number'&&Object.is(value,-0)?'negative-zero':value);}

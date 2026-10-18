@@ -61,8 +61,8 @@ async function runtime(options = {}) {
   const failures = [];
   const host = createActualWorldHost({ admission, characters: store, worlds, codec, ownership,
     gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
-    policies: { authTimeoutMs: 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
-      checkpointIntervalMs: 1000, maxConnections: 16, maxConnectionsPerIp: 16, maxWaiting: 16,
+    policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
+      checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
       maxMutationSourcesPerTick: 64, loopIntervalMs: 2,
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
@@ -71,7 +71,7 @@ async function runtime(options = {}) {
       offlineSeconds: (record, now) => Math.max(0, now - record.updatedAt) / 1000,
       visible: (unit, viewer) => personalNpcVisible(worlds.get(viewer.quests.chapter === 1 ? 'w1' : 'w' + viewer.quests.chapter).publicDefinition, unit.npcId, viewer.flags),
       observationExtras: projectObservationExtras },
-    originAllowed: value => value === origin, clientIp: () => '127.0.0.1', nowMonotonicMs: () => performance.now(), nowWallMs: Date.now,
+    originAllowed: value => value === origin, clientIp: () => '127.0.0.1', nowMonotonicMs: () => options.capacity ? 0 : performance.now(), nowWallMs: Date.now,
     onFailure: (stage, error) => { failures.push({ stage, message: error.message }); },
   });
   const server = createServer(); server.on('upgrade', host.handleUpgrade); server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -83,7 +83,7 @@ async function runtime(options = {}) {
 }
 async function client(rt, c, auth = true) {
   const ws = new WebSocket(rt.url, { headers: { Origin: origin } });
-  const bot = { ws, state: null, receiver: null, binding: null, sequence: 0, events: [], errors: [], controls: [], packets: 0 };
+  const bot = { ws, state: null, receiver: null, binding: null, sequence: 0, events: [], results: [], errors: [], controls: [], packets: 0 };
   ws.on('message', (bytes, binary) => {
     try {
       if (!binary) {
@@ -91,7 +91,8 @@ async function client(rt, c, auth = true) {
         if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.receiver = new GameplayReceiver(binding, gameplayCatalog); }
       } else {
         bot.packets++; const result = bot.receiver.accept(bytes, performance.now() / 1000);
-        if (result?.kind === 'snapshot') { bot.state = result.state; bot.events.push(...result.events); }
+        if (result?.kind === 'snapshot') { bot.state = result.state; bot.events.push(...result.events); bot.results.push(...result.results); }
+        else if (result?.kind === 'events') { bot.events.push(...result.events); bot.results.push(...result.results); }
         else if (result?.kind === 'control') bot.controls.push(result.control);
       }
     } catch (error) { bot.errors.push(error.message); }
@@ -251,4 +252,120 @@ test('private encounter admission uses actual beacon channel and trusted readine
     assert.deepEqual(rt.failures, []); assert.deepEqual(bot.errors, []); assert.equal(bot.state.self.player.xp, 900);
     assert.notEqual(bot.state.self.player.flags.rustCleared, true);
   } finally { if (heartbeat) clearInterval(heartbeat); bot?.ws.close(); await rt.close(); }
+});
+
+test('100 actual authenticated sockets occupy one public Area; 101st queues, takes a released seat and cancels cleanly (paused simulation clock)', { timeout: 30000 }, async () => {
+  const rt = await runtime({ capacity: true, grace: 0 }); const bots = [];
+  try {
+    const records = [];
+    for (let i = 0; i < 101; i++) records.push(await character());
+    bots.push(...await Promise.all(records.map(c => client(rt, c))));
+    await until(() => rt.host.stats().activeActors === 100 && rt.host.stats().waiting === 1 || rt.failures.length, 15000);
+    assert.deepEqual(rt.failures, []); assert.equal(rt.host.stats().publicAreas, 4);
+    await until(() => bots.some(bot => !bot.binding && bot.controls.some(c => c.type === 'queued')));
+    const queued = bots.find(bot => !bot.binding && bot.controls.some(c => c.type === 'queued'));
+    assert.ok(queued); assert.equal(queued.controls.filter(c => c.type === 'queued').length, 1);
+    const admitted = bots.find(bot => bot.binding); admitted.ws.close(); await once(admitted.ws, 'close');
+    await until(() => queued.binding && rt.host.stats().waiting === 0, 15000);
+    assert.equal(rt.host.stats().activeActors, 100); assert.equal(rt.host.stats().publicAreas, 4);
+    const cancelled = await client(rt, await character()); bots.push(cancelled);
+    await until(() => cancelled.controls.some(c => c.type === 'queued'));
+    cancelled.ws.close(); await once(cancelled.ws, 'close'); await until(() => rt.host.stats().waiting === 0);
+    assert.equal(rt.host.stats().activeActors, 100); assert.equal(rt.host.stats().ticks, 0);
+    // This is admission/cancellation evidence with a paused injected clock, explicitly not a 100-player load result.
+    assert.deepEqual(rt.failures, []);
+  } finally { for (const bot of bots) bot.ws.close(); await rt.close(); }
+});
+
+test('all four real worlds round-trip through validated gate intents with unchanged XP and retained ultimate cooldown', { timeout: 25000 }, async () => {
+  const rt = await runtime(); let bot;
+  try {
+    const c = await character('mage'), first = loaded.get('w1'), initialGate = first.publicDefinition.interactions.find(i => i.id === 'gate:w2');
+    const initial = structuredClone(c.record.checkpoint); initial.location = { ...initialGate.position, yaw: 0 };
+    c.record = await store.saveCheckpoint(c.binding.accountId, c.record.characterId, c.record.revision, initial, []);
+    bot = await client(rt, c); await ready(rt, bot);
+    bot.send([{ kind: 'ability', slot: 5 }]); await until(() => bot.receiver.header.consumedInput === 1);
+    bot.send([{ kind: 'travel', gateId: 'gate:w2' }]); await until(() => bot.receiver.header.consumedInput === 2);
+    assert.equal(bot.state.world, 'w1'); assert.equal(rt.host.stats().activeActors, 1);
+    const staleBinding = { ...bot.binding };
+    const hops = [['w1','w2'], ['w2','w3'], ['w3','w4'], ['w4','w3'], ['w3','w2'], ['w2','w1']];
+    for (const [from, to] of hops) {
+      const world = loaded.get(from), gate = world.publicDefinition.interactions.find(i => i.id === `gate:${to}`), oldSession = bot.binding.session;
+      let written = false;
+      for (let attempt = 0; attempt < 10 && !written; attempt++) {
+        const current = await store.getOwned(c.binding.accountId, c.record.characterId), checkpoint = structuredClone(current.checkpoint);
+        // Trusted navigation/unlock test fixture, not earned progression or client position input.
+        checkpoint.progress.flags = { ...checkpoint.progress.flags, abyssCleared: true, trueCleared: true, finalCleared: true };
+        const out = { x: 0, y: 0, set(x, y) { this.x = x; this.y = y; return this; } };
+        world.query.resolveCollision(gate.position.x, gate.position.z, world.actionData.archetype('human').radius, out);
+        checkpoint.location = { x: out.x, y: world.query.heightAt(out.x, out.y), z: out.y, yaw: 0 };
+        try { await store.saveCheckpoint(c.binding.accountId, c.record.characterId, current.revision, checkpoint, []); written = true; }
+        catch (error) { if (error.code !== 'conflict') throw error; }
+      }
+      assert.equal(written, true);
+      await until(() => bot.binding.session !== oldSession && bot.state.world === from || rt.failures.length, 5000);
+      assert.deepEqual(rt.failures, []); const before = bot.binding.area;
+      bot.send([{ kind: 'travel', gateId: `gate:${to}` }]);
+      await until(() => bot.binding.area !== before && bot.state.world === to || rt.failures.length, 5000);
+      assert.deepEqual(rt.failures, []); assert.deepEqual(bot.errors, []);
+      assert.equal(bot.state.self.player.xp, 0); assert.equal(bot.state.self.player.coins, 0);
+      assert.equal(bot.state.self.player.quests.chapter, Number(to.slice(1)));
+      assert.ok(bot.state.self.player.cooldowns['crown-burst'].end - bot.state.time > 30);
+      assert.equal(rt.host.stats().activeActors, 1); assert.equal(rt.host.stats().publicAreas, 4);
+    }
+    const saved = await store.getOwned(c.binding.accountId, c.record.characterId); assert.equal(saved.checkpoint.world, 'w1'); assert.equal(saved.checkpoint.progress.xp, 0);
+    bot.ws.send(encodeInput({ binding: staleBinding, intent: { seq: 100, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, commands: [] } }, gameplayCatalog));
+    await once(bot.ws, 'close'); assert.ok(bot.controls.some(control => control.code === 'invalid-input'));
+  } finally { bot?.ws.close(); await rt.close(); }
+});
+
+test('economic results use actual delegated outcomes and original input origins only after a committed checkpoint', { timeout: 10000 }, async () => {
+  const rt = await runtime(); let bot;
+  try {
+    const c = await character('mage'); bot = await client(rt, c); await ready(rt, bot);
+    bot.send([{ kind: 'questAccept', questId: 'q1', npcId: 'brinebeard' }]);
+    bot.send([{ kind: 'questAccept', questId: 'q1', npcId: 'brinebeard' }]);
+    await until(() => bot.results.some(r => r.inputSequence === 1 && r.status === 'durable') && bot.results.some(r => r.inputSequence === 2 && r.status === 'failed') || rt.failures.length);
+    assert.deepEqual(rt.failures, []);
+    const accepted = bot.results.find(r => r.inputSequence === 1); assert.equal(accepted.commandIndex, 0); assert.equal(accepted.code, 'quest-accepted');
+    const savedQuest = await store.getOwned(c.binding.accountId, c.record.characterId);
+    assert.ok(accepted.revision <= savedQuest.revision); assert.equal(savedQuest.checkpoint.progress.quests.status.q1, 'active');
+    const oldSession = bot.binding.session, pip = loaded.get('w1').publicDefinition.npcs.find(n => n.id === 'pip');
+    // Trusted shop-readiness fixture only; the actual two purchases and failures run through core commands.
+    let written = false;
+    for (let attempt = 0; attempt < 10 && !written; attempt++) {
+      const current = await store.getOwned(c.binding.accountId, c.record.characterId), checkpoint = structuredClone(current.checkpoint);
+      checkpoint.location = { ...pip.position, yaw: 0 }; checkpoint.progress.coins = 200;
+      try { await store.saveCheckpoint(c.binding.accountId, c.record.characterId, current.revision, checkpoint, []); written = true; }
+      catch (error) { if (error.code !== 'conflict') throw error; }
+    }
+    assert.equal(written, true); await until(() => bot.binding.session !== oldSession || rt.failures.length); assert.deepEqual(rt.failures, []);
+    bot.results = [];
+    bot.send([{ kind: 'forgeBuy', npcId: 'pip', slot: 'weapon', request: 111 }, { kind: 'forgeBuy', npcId: 'pip', slot: 'armor', request: 112 }]);
+    await until(() => bot.results.filter(r => r.status === 'durable' && [111,112].includes(r.request)).length === 2 || rt.failures.length);
+    assert.deepEqual(rt.failures, []);
+    const bought = bot.results.filter(r => [111,112].includes(r.request)); assert.deepEqual(bought.map(r => [r.inputSequence,r.commandIndex,r.code]), [[1,0,'equipment-bought'],[1,1,'equipment-bought']]);
+    assert.equal(bought[0].revision, bought[1].revision);
+    const saved = await store.getOwned(c.binding.accountId, c.record.characterId);
+    assert.equal(saved.checkpoint.progress.coins, 0); assert.equal(saved.checkpoint.progress.attackRank, 1); assert.equal(saved.checkpoint.progress.armorRank, 1);
+    assert.ok(bought[0].revision <= saved.revision);
+    bot.send([{ kind: 'forgeUpgrade', npcId: 'pip', slot: 'weapon', request: 113 }]);
+    await until(() => bot.results.some(r => r.request === 113 && r.status === 'failed') || rt.failures.length);
+    assert.equal(bot.results.find(r => r.request === 113).code, 'equipment-coins'); assert.deepEqual(bot.errors, []);
+  } finally { bot?.ws.close(); await rt.close(); }
+});
+
+ test('unsafe persisted identity is masked only in public appearance and party controls', { timeout: 10000 }, async () => {
+  const c = await character();
+  await pool.query("UPDATE world_characters SET identity_json=jsonb_set(identity_json::jsonb,'{appearance,name}',$1::jsonb)::text WHERE character_id=$2", [JSON.stringify('call 01012345678'), c.record.characterId]);
+  const rt = await runtime({ party: true }); let bot;
+  try {
+    bot = await client(rt, c); await ready(rt, bot);
+    assert.equal(bot.state.actors.find(a => a.ref.id === bot.state.selfRef.id).appearance.name, '게 모험가');
+    bot.send([{ kind: 'partyCreate' }]);
+    await until(() => bot.controls.some(control => control.type === 'party' && control.state));
+    assert.equal(bot.controls.findLast(control => control.type === 'party' && control.state).state.members[0].name, '게 모험가');
+    assert.equal((await store.getOwned(c.binding.accountId, c.record.characterId)).identity.appearance.name, 'call 01012345678');
+    assert.deepEqual(bot.errors, []);
+  } finally { bot?.ws.close(); await rt.close(); }
 });

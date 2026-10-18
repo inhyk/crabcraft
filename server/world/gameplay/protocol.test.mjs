@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor} from './protocol.ts';
+import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent} from '../../../tests/core/worldHarness.mjs';
@@ -64,7 +64,7 @@ test('input acceptance differs from successful consumption; coalescing retains e
 test('event codec preserves real CoreEvent ordering and distinguishes durable command outcome from input ACK',()=>{
  const f=fixture(),initial=observation(f);apply(f.receiver,f.codec.encodeObservation(initial));const source=f.actors[0],target=[...f.area.enemies.values()][0].unit;
  f.area.services.combat.damage(source.ref,target,5,{noReact:true});const events=f.area.drainEvents(),next=observation(f,2);next.events=events;next.eventWatermark=Math.max(...events.map(e=>e.order));const result=apply(f.receiver,f.codec.encodeObservation(next));assert.ok(result.events.some(e=>e.event.type==='damage'));assert.equal(f.receiver.header.consumedInput,0);
- const p={baselineSequence:2,events:[],results:[{inputSequence:4,commandIndex:0,status:'durable',code:'equipment-bought',request:8,revision:2}]};const response=apply(f.receiver,encodeEvents({...header(3),tick:f.area.snapshot().tick},p,catalog));assert.deepEqual(response.results,p.results);assert.equal(f.receiver.header.consumedInput,0);
+ const p={baselineSequence:2,events:[],results:[{inputSequence:4,commandIndex:0,status:'durable',code:'equipment-bought',request:8,revision:2}]};const response=apply(f.receiver,encodeEvents({...header(3),tick:f.area.snapshot().tick,acceptedInput:4,consumedInput:4},p,catalog));assert.deepEqual(response.results,p.results);assert.equal(f.receiver.header.consumedInput,4);
  assert.throws(()=>encodeEvents(header(4),{...p,results:[{inputSequence:4,commandIndex:0,status:'durable',code:'x'}]},catalog),/revision/);
 });
 test('numeric widths exceed v2 without truncation and rejected growth leaves sender baseline intact',()=>{
@@ -158,4 +158,52 @@ test('stale pose provider and malformed recipe versions fail before client basel
 test('recipe pooling preserves negative zero in the owning actor locomotion fields',()=>{
  const f=fixture(2);f.actors[1].u.pose.localVx=-0;const state=apply(f.receiver,f.codec.encodeObservation(observation(f))).state;
  assert.equal(Object.is(state.actors.find(a=>a.ref.id===f.actors[0].ref.id).pose.localVx,0),true);assert.equal(Object.is(state.actors.find(a=>a.ref.id===f.actors[1].ref.id).pose.localVx,-0),true);
+});
+
+test('owned prepared snapshots are byte-identical, private per viewer, deeply immutable and unforgeable',()=>{
+ const f=fixture(2);f.actors[1].p.state.coins=321;const source=observation(f);source.prepared=prepareObservationSnapshot(source.snapshot,source.appearances,catalog);
+ assert.deepEqual(createGameplayProtocol(catalog).encodeObservation(source),createGameplayProtocol(catalog).encodeObservation({...source,prepared:undefined}));
+ assert.deepEqual(Object.keys(source.prepared).sort(),['area','kind','tick']);assert.equal(JSON.stringify(source.prepared).includes('private-character'),false);
+ const other={...source,selfRef:f.actors[1].ref,...projectObservationExtras(source.snapshot,f.actors[1].p.state.character,source.visibleIds)};
+ assert.equal(apply(new GameplayReceiver(binding,catalog),createGameplayProtocol(catalog).encodeObservation(source)).state.self.player.coins,0);
+ assert.equal(apply(new GameplayReceiver(binding,catalog),createGameplayProtocol(catalog).encodeObservation(other)).state.self.player.coins,321);
+ assert.throws(()=>createGameplayProtocol(catalog).encodeObservation({...source,prepared:{...source.prepared}}),/prepared/);
+ assert.throws(()=>createGameplayProtocol(catalog).encodeObservation({...source,snapshot:f.area.snapshot()}),/prepared/);
+ assert.throws(()=>prepareObservationSnapshot(Object.freeze(structuredClone(source.snapshot)),source.appearances,catalog),/deeply frozen/);
+ const bad=Object.freeze({...source.snapshot,get players(){return source.snapshot.players;}});assert.throws(()=>prepareObservationSnapshot(bad,source.appearances,catalog),/accessor/);
+});
+test('measure actual 100-viewer publication batch with and without owned shared preparation',t=>{
+ const f=fixture(100),raw=Array.from({length:100},()=>createGameplayProtocol(catalog)),prepared=Array.from({length:100},()=>createGameplayProtocol(catalog));
+ const inputFor=(common,i)=>({...common,selfRef:f.actors[i].ref,...projectObservationExtras(common.snapshot,f.actors[i].p.state.character,common.visibleIds)});
+ const base=observation(f),first=prepareObservationSnapshot(base.snapshot,base.appearances,catalog);
+ for(let i=0;i<100;i++){raw[i].encodeObservation(inputFor(base,i));prepared[i].encodeObservation({...inputFor(base,i),prepared:first});}
+ let rawMs=0,preparedMs=0,preparationMs=0,rawBytes=0,preparedBytes=0;
+ for(let tick=1;tick<=3;tick++){
+  f.area.step(new Map(f.actors.map(a=>[a.u.ref.id,intent(tick,[],{forward:1,steeringYaw:Math.PI/2})])));f.area.drainEvents();const common=observation(f,tick+1);
+  let started=performance.now();for(let i=0;i<100;i++)rawBytes+=raw[i].encodeObservation(inputFor(common,i)).reduce((n,b)=>n+b.length,0);rawMs+=performance.now()-started;
+  started=performance.now();const token=prepareObservationSnapshot(common.snapshot,common.appearances,catalog);preparationMs+=performance.now()-started;
+  started=performance.now();for(let i=0;i<100;i++)preparedBytes+=prepared[i].encodeObservation({...inputFor(common,i),prepared:token}).reduce((n,b)=>n+b.length,0);preparedMs+=performance.now()-started;
+ }
+ assert.equal(rawBytes,preparedBytes);t.diagnostic(JSON.stringify({measurement:'100-viewer-batch-3-moving-publications',viewers:100,actors:f.area.snapshot().units.length,rawMsPerBatch:rawMs/3,prepareMsPerBatch:preparationMs/3,preparedEncodeMsPerBatch:preparedMs/3,totalPreparedMsPerBatch:(preparationMs+preparedMs)/3,bytesPerBatch:preparedBytes/3}));
+});
+test('actual private boss frame, phase and freed recovery survive drained events and respect AOI',async()=>{
+ const {createEncounterDefinition}=await import('../../../src/sim/areas/variants.ts');const {createWorld1Definition}=await import('../../../src/sim/areas/world1.ts');const {flatWorld}=await import('../../../tests/core/worldHarness.mjs');
+ const definition=createEncounterDefinition(createWorld1Definition({query:flatWorld,fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:0,scavenger:0,jellyfish:0}}),'rust');
+ const area=worldArea(binding.area,'w1',{definition,context:{mode:'party-encounter',members:[],pvp:'disabled'}});area.bootstrapEncounter('rust',{beaconLit:true});const ref=area.attachFresh('hero','mage','human','encounter:entry'),actor={ref,p:area.services.player(ref),u:area.services.getUnit(ref)},boss=area.services.bossByProfile('rust');actor.p.gainXp(900);boss.wake();for(let i=0;i<75;i++)area.step(new Map());area.drainEvents();
+ const f={area,actors:[actor],codec:createGameplayProtocol(catalog),receiver:new GameplayReceiver(binding,catalog)},live=apply(f.receiver,f.codec.encodeObservation(observation(f))).state;
+ const observed=live.recovery.bosses[0];assert.equal(observed.profile,'rust');assert.equal(observed.state,'fight');assert.equal(observed.showFrame,true);assert.deepEqual(observed,area.snapshot().recovery.bosses[0]);
+ area.services.combat.damage(actor.ref,boss.unit,Math.round(boss.actor.maxHp*.8),{noReact:true});area.step(new Map());area.drainEvents();const phase=apply(f.receiver,f.codec.encodeObservation(observation(f,2))).state.recovery.bosses[0];assert.equal(phase.phase,3);assert.equal(phase.enraged,true);
+ boss.reset();area.drainEvents();const reset=apply(f.receiver,f.codec.encodeObservation(observation(f,3))).state.recovery.bosses[0];assert.equal(reset.showFrame,false);
+ const hidden=projectObservationExtras(area.snapshot(),actor.p.state.character,new Set([actor.ref.id]));assert.deepEqual(hidden.recovery.bosses,[]);
+});
+
+test('a newer full recovery replaces an incomplete older fragment group atomically',()=>{
+ const f=fixture(40),initial=f.codec.encodeObservation(observation(f));assert.ok(initial.length>1);assert.equal(f.receiver.accept(initial[0],0),null);
+ const recovery=f.codec.encodeObservation(observation(f,2,true));let result;for(const p of recovery)result=f.receiver.accept(p,.1);assert.equal(result.kind,'snapshot');assert.equal(result.state.sequence,2);assert.equal(f.receiver.needsResync,false);assert.equal(f.receiver.retainedBytes,0);
+});
+test('resync controls are monotonic and one outstanding request never advances input ACK',()=>{
+ const f=fixture(),request=(seq)=>f.codec.encodeControl(header(seq),{type:'resync',lastSequence:0,reason:'fragment'})[0];
+ const first=f.codec.decodeClientMessage(request(1),binding);assert.equal(first.sequence,1);assert.throws(()=>f.codec.decodeClientMessage(request(1),binding),/recovery/);assert.throws(()=>f.codec.decodeClientMessage(request(2),binding),/recovery/);
+ f.codec.encodeObservation(observation(f));assert.throws(()=>f.codec.decodeClientMessage(request(1),binding),/recovery/);assert.equal(f.codec.decodeClientMessage(request(2),binding).kind,'resync');
+ const result={inputSequence:1,commandIndex:0,status:'durable',code:'saved',revision:1};assert.throws(()=>encodeEvents(header(2),{baselineSequence:1,events:[],results:[result]},catalog),/consumption/);
 });
