@@ -50,7 +50,8 @@ try{
  assert.ok(after.emitted-before.emitted>20,`monster feet kick spray: ${after.emitted-before.emitted}`);
  console.log('PASS monster footfalls kick spray',after.emitted-before.emitted);
  const lit=await p.evaluate(()=>{const g=window.app.current.game,s=g.world2.fourth.spray,u=s.mesh.material.uniforms;return {sun:u.spraySunColor.value.toArray().map(v=>+v.toFixed(3)),dir:u.spraySunDir.value.toArray().map(v=>+v.toFixed(3)),lights:s.mesh.material.lights,draws:s.mesh.isMesh&&s.mesh.geometry.isInstancedBufferGeometry};});
- assert.ok(lit.sun.some(v=>v>.5)&&lit.dir[1]>.3&&lit.lights&&lit.draws,`one instanced draw lit by the island sun: ${JSON.stringify(lit)}`);
+ // The sun only has to be above the horizon: the snow-sky sun sits low (13 degrees).
+ assert.ok(lit.sun.some(v=>v>.5)&&lit.dir[1]>.05&&lit.lights&&lit.draws,`one instanced draw lit by the island sun: ${JSON.stringify(lit)}`);
  await p.close();
  const low=await load('low');
  await place(low,30,6,Math.PI/2);await low.waitForTimeout(800);
