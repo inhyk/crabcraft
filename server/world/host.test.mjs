@@ -68,7 +68,7 @@ async function runtime(options = {}) {
   const failures = [];
   let host;
   try { host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, outcomes: options.withoutOutcomes ? undefined : options.ledger ? options.outcomes ?? new DurableOutcomeStore(pool,codec,{planOutcomePage}) : options.outcomes, chat: options.chat ? new WorldChatService(pool) : undefined,
-    gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
+    gameplay: { catalog: options.catalog??gameplayCatalog, create: () => createGameplayProtocol(options.catalog??gameplayCatalog) },
     policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
       checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
@@ -747,6 +747,7 @@ test('actual ending host gates private start and credits on real PG writes, keep
 
 
 test('ending schema handshake rejects missing or mismatched peers before consuming the reusable ticket or attaching a character', {timeout:10000},async()=>{
+ await assert.rejects(runtime({catalog:{...gameplayCatalog,wireSchemaRevision:2}}),/schema revision/);
  const c=await character(),rt=await runtime({ledger:true,ending:true}),bots=[];let consumes=0;const consume=rt.admission.consume.bind(rt.admission);rt.admission.consume=(...args)=>{consumes++;return consume(...args);};const ticket=rt.admission.issue(c.binding,origin).ticket;
  try{
   for(const revision of [undefined,null,2]){const bot=await client(rt,c,false);bots.push(bot);bot.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,...(revision===undefined?{}:{schemaRevision:revision})}));await until(()=>bot.controls.some(v=>v.code==='protocol-schema'));await until(()=>bot.ws.readyState===WebSocket.CLOSED);assert.equal(consumes,0);assert.equal(rt.host.stats().activeActors,0);}

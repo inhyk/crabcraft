@@ -23,7 +23,7 @@ import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator, readCertifiedGrantPage, AreaSourceDrain, PagedOutcomeRecovery, type Recovery } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
-import { prepareObservationSnapshot, WIRE_SCHEMA_REVISION } from './gameplay/protocol.ts';
+import { prepareObservationSnapshot, WIRE_SCHEMA_REVISION, validateWireSchema } from './gameplay/protocol.ts';
 import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
 import type { CommandResult } from './gameplay/events.ts';
 
@@ -111,6 +111,7 @@ const reject = (socket: Duplex, status: string) => socket.end(`HTTP/1.1 ${status
 /** Actual numeric simulation host. The synthetic v2 fixture is intentionally not imported. */
 export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHost {
   const p = deps.policies, external = !!p.ledger;
+  validateWireSchema(deps.gameplay.catalog);
   if (p.endingPresentation && deps.gameplay.catalog.wireSchemaRevision !== WIRE_SCHEMA_REVISION) throw new Error('ending requires the compiled wire schema catalog');
   if (!!deps.outcomes !== external) throw new Error('outcomes service and explicit ledger policy must be paired');
   if (p.ledger && (!Number.isSafeInteger(p.ledger.recoveryIntervalMs) || p.ledger.recoveryIntervalMs < 1)) throw new Error('explicit recovery interval required');
