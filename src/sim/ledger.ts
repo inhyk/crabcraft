@@ -1,7 +1,7 @@
 /** Value-only contribution spill and deterministic reward planning. No storage, clocks or global RNG. */
 import type { BossProfileId, EarnedGrant, EntityRef, WorldId } from './types.ts';
 import { immutable } from './events.ts';
-import { validateEarnedGrant } from './persistence.ts';
+import { PERSONAL_FLAG_IDS, validateEarnedGrant } from './persistence.ts';
 import { Random, advanceRandomState } from './random.ts';
 export type LedgerMode = 'retained'|'external-durable';
 export type ContributionSnapshot = {character:string;cogEligible:boolean;cogMisses:number;flags:Record<string,boolean>};
@@ -85,3 +85,21 @@ export function reserveDeathOutcome(seed:DeathRecipeSeed,summary:ContributionSum
 }
 /** Post-flush DB summary must reproduce the at-death reservation before a draft is frozen. */
 export function verifyDeathRecipeSummary(recipe:DeathRecipe,summary:ContributionSummary):DeathReservation {const r=validateDeathRecipe(recipe),{expectedContributors,expectedRandomDraws,...seed}=r,reservation=reserveDeathOutcome(seed,summary,[]);if(reservation.recipe.expectedContributors!==expectedContributors||reservation.recipe.expectedRandomDraws!==expectedRandomDraws)fail('death reservation mismatch');return reservation;}
+
+export type SourceStepRequirements={maxDirtyCreditEntries:number;maxDirtyCreditBytes:number;maxPendingDeaths:number;maxStagedBytes:number;receiptsPerResident:number};
+/** Bounded data charge for the complete staged envelope, including worst-width page progress. */
+export function stagedSourceBytes(area:string,recipe:DeathRecipe,grants:readonly EarnedGrant[]):number {const max=Number.MAX_SAFE_INTEGER,cursor={schema:'world-planner-v1',pageSequence:max,afterCharacter:'"'.repeat(512),recipientCount:max,randomDraws:max,randomState:0xffffffff};return utf8({capture:{token:JSON.stringify([area,'death',max]),generation:max,victim:recipe.victim,recipe,initialCursor:cursor},reservation:{random:{startState:0xffffffff,finalState:0xffffffff,drawCount:max},residentGrants:grants},cursor,verifiedResidents:recipe.overrides.map(c=>c.character)});}
+/** Pure config/admission fit calculation. Supplied residents can represent the configured maximum roster. */
+export function sourceStepRequirements(area:string,world:WorldId,maxVictimLives:number,residents:readonly ContributionSnapshot[]):SourceStepRequirements {
+ text(area,256);if(!['w1','w2','w3','w4'].includes(world))fail('invalid world');int(maxVictimLives);if(!Array.isArray(residents)||residents.length>100)fail('resident bounds');let previous:string|null=null;
+ const worst=residents.map(raw=>{const c=validateContributionSnapshot(raw);if(previous!==null&&c.character<=previous)fail('resident order');previous=c.character;return validateContributionSnapshot({...c,cogEligible:false,cogMisses:2,flags:Object.fromEntries([...new Set([...Object.keys(c.flags),...PERSONAL_FLAG_IDS])].map(k=>[k,false]))});}),victim={area,id:0xffffffff,life:0xffffffff},max=Number.MAX_SAFE_INTEGER;
+ const synthetic:DeathRecipe={schema:'world-death-v1',victim,world,throughVersion:max,expectedContributors:max,expectedRandomDraws:max,facts:{kind:'boss',level:max,role:'ordinary',profile:'eclipse',xp:max,coins:max},overrides:worst,random:{algorithm:'mulberry32-v1',state:0xffffffff}};
+ const grants=worst.map(c=>({id:JSON.stringify([victim.area,victim.id,victim.life,c.character]),victim,recipient:c.character,xp:max,coins:max,objectives:[{kind:'clear-encounter-blessing',amount:1},{kind:'patrol-kill',amount:1},{kind:'kill-scrapling',amount:1},{kind:'kill-scavenger',amount:1},{kind:'cog-roll',amount:.0000012345678901234567},{kind:'eclipse-boss',amount:1}],flags:['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared']}));
+ const result={maxDirtyCreditEntries:maxVictimLives*worst.length,maxDirtyCreditBytes:worst.reduce((n,c)=>n+utf8({victim,character:c.character,version:max,credit:c}),0)*maxVictimLives,maxPendingDeaths:maxVictimLives,maxStagedBytes:stagedSourceBytes(area,synthetic,grants)*maxVictimLives,receiptsPerResident:maxVictimLives};for(const n of Object.values(result))if(!Number.isSafeInteger(n))fail('unsupported-step-capacity');return immutable(result);
+}
+/** Enforce production schema fit at construction, before accepting any resident ownership. */
+export function validateSourceLedgerCapacity(area:string,world:WorldId,limits:{maxDirtyCreditEntries:number;maxDirtyCreditBytes:number;maxPendingDeaths:number;maxStagedBytes:number},maxVictimLives:number,maxResidents:number):SourceStepRequirements {
+ const names=['maxDirtyCreditEntries','maxDirtyCreditBytes','maxPendingDeaths','maxStagedBytes'] as const,raw=fields(limits,names);for(const name of names)int(raw[name],1);int(maxResidents,0,100);
+ const residents=Array.from({length:maxResidents},(_,i)=>({character:`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`,cogEligible:false,cogMisses:2,flags:Object.fromEntries(PERSONAL_FLAG_IDS.map(k=>[k,false]))}));
+ const required=sourceStepRequirements(area,world,maxVictimLives,residents);if(required.receiptsPerResident>256||names.some(name=>required[name]>limits[name]))fail('unsupported-step-capacity');return required;
+}
