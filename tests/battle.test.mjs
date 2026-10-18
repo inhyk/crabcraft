@@ -292,3 +292,32 @@ test('a fresh private room restarts AI schedules even without a saved world chec
  b.setMode('pvp');assert.equal(restored,1);assert.equal(b.authority,true);
  b.setMode('coop');assert.equal(restored,1);
 });
+
+function expeditionPair(phase='clear'){
+ const p=pair(),{a,b,aa,bb,ar,flush}=p;
+ ar.level=50;ar.name='guest';b.player.unit.name='guest';b.player.unit.level=50;
+ const state={level:50,run:'original-run',stage:3,phase,left:0,clock:5,hazard:0,members:['guest']};
+ const dungeon=()=>({state:structuredClone(state),networkState(){return this.state;},leave(){this.state=null;},apply(state){this.state=structuredClone(state);}});
+ a.dungeons=dungeon();b.dungeons=dungeon();aa.setParty(2);bb.setParty(2);flush();return p;
+}
+test('guest dungeon return preserves connections and explicit parties for the next expedition',()=>{
+ const {a,b,aa,bb,flush}=expeditionPair();
+ assert.equal(bb.requestDungeonReturn(),true);flush();
+ assert.equal(a.dungeons.state,null);assert.equal(b.dungeons.state,null);
+ for(const battle of[aa,bb]){assert.equal(battle.active,true);assert.equal(battle.sharedArea,false);assert.equal(battle.partyOf('a'),2);assert.equal(battle.partyOf('b'),2);assert.equal(battle.host,'a');}
+ a.dungeons.state={level:50,run:'second-run',stage:1,phase:'rest',left:2,clock:0,hazard:0,members:['guest']};aa.update(.1);flush();assert.equal(b.dungeons.state.run,'second-run');
+ aa.receive('b',{kind:'dungeon-return',target:'world',run:'original-run'});assert.equal(a.dungeons.state.run,'second-run');
+});
+test('a defeated guest can return after a wipe; requests cannot end an active fight',()=>{
+ const {a,b,aa,bb,ar,flush}=expeditionPair('wave');
+ bb.requestDungeonReturn();flush();assert.equal(a.dungeons.state.phase,'wave');
+ a.dungeons.state.phase='failed';aa.update(.1);flush();ar.alive=false;b.player.unit.alive=false;
+ bb.requestDungeonReturn();flush();assert.equal(a.dungeons.state,null);assert.equal(b.dungeons.state,null);assert.equal(bb.partyOf('b'),2);
+});
+test('dungeon returns reject strangers, public shards and stale run IDs',()=>{
+ const {a,aa,ar}=expeditionPair();const request={kind:'dungeon-return',target:'world',run:'original-run'};
+ aa.receive('stranger',request);assert.ok(a.dungeons.state);
+ aa.receive('b',{...request,run:'stale-run'});assert.ok(a.dungeons.state);
+ ar.name='non-member';aa.receive('b',request);assert.ok(a.dungeons.state);
+ ar.name='guest';aa.sharedArea=true;aa.receive('b',request);assert.ok(a.dungeons.state);
+});
