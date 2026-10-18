@@ -20,7 +20,10 @@ export class CharacterStoreError extends Error {
 function fail(code: CharacterStoreError['code'], message: string): never { throw new CharacterStoreError(code, message); }
 function account(value: string) { if (!/^g[a-f0-9]{23}$/.test(value)) fail('invalid', 'invalid account ID'); }
 function character(value: string) { if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value)) fail('invalid', 'invalid character ID'); }
-function grantId(value: string) { if (!/^[A-Za-z0-9][A-Za-z0-9:_.-]{0,127}$/.test(value)) fail('invalid', 'invalid grant ID'); }
+function grantId(value: string) {
+  if (typeof value !== 'string' || Buffer.byteLength(value) < 1 || Buffer.byteLength(value) > 512 ||
+      /[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(value)) fail('invalid', 'grant ID must be 1..512 UTF-8 bytes without controls or unpaired surrogates');
+}
 function revision(value: number) { if (!Number.isSafeInteger(value) || value < 0 || value >= Number.MAX_SAFE_INTEGER) fail('invalid', 'invalid revision'); }
 function pageSize(value: number) { if (!Number.isSafeInteger(value) || value < 1 || value > 100) fail('invalid', 'page size must be 1..100'); }
 

@@ -192,3 +192,34 @@ test('same grant retry compares JSON semantics even when original server journal
     VALUES('semantic:grant',$1,$2,1,'{ "xp": 10.0, "coins": 2 }')`, [c.characterId, A]);
   assert.equal((await grant(c, 'semantic:grant')).payload.xp, 10);
 });
+
+test('exact core JSON-tuple grant IDs support retry, ownership/content conflict and lost-ACK recovery', async () => {
+  const c = await fresh();
+  // Actual WorldRules ID format, with synthetic fixture values and no production core import.
+  const id = JSON.stringify(['fixture:새벽-area', 17, 3, c.characterId]);
+  const earned = await grant(c, id); assert.equal(earned.id, id);
+  assert.deepEqual(await grant(c, id), earned);
+  await assert.rejects(grant(c, id, 11), error('grant_mismatch'));
+  const other = await fresh(); await assert.rejects(grant(other, id), error('grant_mismatch'));
+  await assert.rejects(store.recordGrant(B, c.characterId, id, { xp: 10, coins: 2 }), error('not_found'));
+  const b = await store.create(B, identity); await assert.rejects(store.recordGrant(B, b.characterId, id, { xp: 10, coins: 2 }), error('grant_mismatch'));
+  assert.deepEqual((await store.loadForRecovery(A, c.characterId, [id])).grants.map(g => g.appliedRevision), [null]);
+  await store.saveCheckpoint(A, c.characterId, 0, { ...c.checkpoint, xp: 10, coins: 2 }, [id]);
+  await grant(c, id); const recovery = await store.loadForRecovery(A, c.characterId, [id]);
+  assert.equal(recovery.grants[0].id, id); assert.equal(recovery.grants[0].appliedRevision, 1);
+  assert.equal(recovery.character.checkpoint.xp, 10); assert.deepEqual(await store.pendingGrants(A, c.characterId), []);
+});
+
+test('UTF-8 grant ID bounds and C0/C1 controls agree across API and SQL constraints', async () => {
+  const c = await fresh(), maxId = '🦀'.repeat(128); assert.equal(Buffer.byteLength(maxId), 512);
+  assert.equal((await grant(c, maxId)).id, maxId);
+  const rawInsert = id => pool.query(`INSERT INTO world_character_grants(grant_id,character_id,account_id,codec_version,payload_json)
+    VALUES($1,$2,$3,1,'{"xp":10,"coins":2}')`, [id, c.characterId, A]);
+  for (const id of ['', 'x'.repeat(513), '🦀'.repeat(129), 'newline\n', 'nul\0', 'tab\t', 'del\x7f', 'c1\u0085', 'c1last\u009f']) {
+    await assert.rejects(grant(c, id), error('invalid'));
+    await assert.rejects(rawInsert(id), /check constraint|invalid byte sequence/);
+  }
+  await assert.rejects(grant(c, '\ud800'), error('invalid'));
+  const quoted = `SQL 'quotes'; $1 and \\backslash`;
+  assert.equal((await grant(c, quoted)).id, quoted);
+});

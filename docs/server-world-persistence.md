@@ -42,6 +42,8 @@ codec은 순수하고 결정적으로 동작하며 성공 시 독립된 JSON 값
 
 `appliedGrantIds`는 중복 없이 해당 recipient에게 이미 journal된 ID여야 한다. 이미 적용된 ID를 다시 저장하려 하면 `already_applied` 오류가 난다. CAS 실패는 `conflict`이며 grant ID를 새로 만들어 우회하지 않는다. journal cursor는 PostgreSQL bigint의 문자열이다. pending 마지막 페이지를 읽었다고 이후 journal 기록이 없다는 뜻은 아니다. 더 오래된 ID부터 다시 조회해도 적용된 것은 receipt로 제외된다.
 
+grant ID는 1..512 UTF-8 bytes로 제한하고 NUL, C0/C1 제어 문자, 단독 surrogate를 거부한다. 괄호와 따옴표를 포함하는 core의 `JSON.stringify([area,id,life,character])` 문자열을 변환 없이 보존한다. Unicode 문자도 허용하며 SQL parameter로 전달한다.
+
 identity는 4 KiB, checkpoint는 256 KiB, grant payload는 16 KiB로 제한한다. JSON은 최대 깊이 32와 노드 32,768개를 허용하며 finite number, plain object, dense array만 받는다. undefined, BigInt, NaN, Infinity, 순환 참조, accessor, 비 JSON 객체를 거부한다. 저장된 행도 조회 시 같은 검증과 codec을 거치며 schema version이 다르거나 손상되면 실패한다. 지원하지 않는 version을 자동 변환하지 않는다.
 
 ## 보상 transaction과 실패 복구
@@ -70,7 +72,7 @@ DB commit 후 source ACK 전에 호스트가 죽어도 source가 같은 grant ID
 node --test server/world/character-store.test.mjs
 ```
 
-Node 24.22.0, pnpm 10.10.0에서 실행한 결과는 DB 테스트 14개 통과, `pnpm test:world` 36개 통과, `pnpm test:server` 16개 통과, `pnpm build` 종료 코드 0이다. build에는 기존 browser externalization과 500 kB chunk 경고가 남아 있다. 새 migration 적용 전의 account save, revision, created, updated가 그대로 보존되는 것도 실제 migration framework로 검사했다.
+Node 24.22.0, pnpm 10.10.0에서 실행한 결과는 DB 테스트 16개 통과, `pnpm test:world` 38개 통과, `pnpm test:server` 16개 통과, `pnpm build` 종료 코드 0이다. build에는 기존 browser externalization과 500 kB chunk 경고가 남아 있다. 새 migration 적용 전의 account save, revision, created, updated가 그대로 보존되는 것도 실제 migration framework로 검사했다.
 
 검증 항목은 기존 bundle과 새 level-1 분리, 계정 소유권, 재접속 후 journal, immutable 내용 충돌과 JSON 의미 비교, checkpoint/receipt transaction 실패 rollback, 다른 pool의 CAS 경쟁, 별도 Node 프로세스의 중복 journal 경쟁, 페이지 조회, JSON 크기와 버전/손상 행 거부, commit 후 ACK 유실 복구다.
 

@@ -14,7 +14,9 @@ CREATE INDEX world_characters_account ON world_characters(account_id, character_
 
 -- Earned grants are retained even after a checkpoint acknowledges them.
 CREATE TABLE world_character_grants (
-  grant_id text PRIMARY KEY CHECK (grant_id ~ '^[A-Za-z0-9][A-Za-z0-9:_.-]{0,127}$'),
+  -- Preserve the core's exact JSON.stringify([area,id,life,character]) ID, including quotes/brackets.
+  -- Postgres UTF-8 text rejects NUL and invalid Unicode; explicitly reject remaining C0/C1 controls.
+  grant_id text PRIMARY KEY CHECK (octet_length(grant_id) BETWEEN 1 AND 512 AND grant_id !~ U&'[\0001-\001F\007F-\009F]'),
   journal_sequence bigserial UNIQUE NOT NULL,
   character_id uuid NOT NULL,
   account_id text NOT NULL,
