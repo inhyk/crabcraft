@@ -86,6 +86,7 @@ export class WorldClient {
   private characterId = '';
   private status: WorldConnectionState = 'idle';
   private current: GameplayState | null = null;
+  private queueInfo: { world: string; position: number } | null = null;
   private resolveConnect: (() => void) | null = null;
   private rejectConnect: ((error: Error) => void) | null = null;
 
@@ -104,6 +105,7 @@ export class WorldClient {
 
   get state(): WorldConnectionState { return this.status; }
   get view(): GameplayState | null { return this.current ? clone(this.current) : null; }
+  get queue() { return this.queueInfo ? { ...this.queueInfo } : null; }
   get inputWatermarks() { return { sent: this.sequence, accepted: this.accepted, consumed: this.consumed, pending: this.pending.length, unconsumed: this.ledger.size }; }
 
   /** Resolves only after a complete admitted baseline; each new socket obtains a fresh ticket. */
@@ -211,14 +213,14 @@ export class WorldClient {
         validateBinding(binding);
         if (binding.catalog !== this.catalog.version) { this.fail('catalog', false); return; }
         if (this.binding && (binding.session !== this.binding.session || binding.epoch <= this.binding.epoch)) throw new Error('invalid stream reset');
-        this.clearFragmentTimer(); this.clearInput(); this.current = null; this.options.onReset?.('binding');
+        this.clearFragmentTimer(); this.clearInput(); this.current = null; this.queueInfo = null; this.options.onReset?.('binding');
         this.binding = clone(binding);
         this.receiver = new GameplayReceiver(binding, this.catalog);
         this.nextSend = this.now(); this.setState('loading');
         this.deadline(this.options.recoveryMs ?? 5000, this.generation, 'baseline-timeout');
       } else if (message.type === 'queued') {
         if (this.binding || !ownKeys(message, ['type', 'world', 'position']) || !['w1', 'w2', 'w3', 'w4'].includes(String(message.world)) || !Number.isSafeInteger(message.position) || Number(message.position) < 1) throw new Error('invalid queue');
-        this.clearTimer(); this.setState('queued');
+        this.clearTimer(); this.queueInfo = { world: String(message.world), position: Number(message.position) }; this.setState('queued');
       } else if (message.type === 'error') {
         if (!ownKeys(message, ['type', 'code', 'retryable']) || typeof message.code !== 'string' || message.code.length > 128 || typeof message.retryable !== 'boolean') throw new Error('invalid error');
         this.fail(message.code, message.retryable);
@@ -253,7 +255,7 @@ export class WorldClient {
     if (!Number.isFinite(nowMs)) throw new TypeError('Invalid client clock');
     if (this.status !== 'admitted' || !this.binding || !this.socket || this.socket.readyState !== 1 || nowMs < this.nextSend) return;
     if (this.socket.bufferedAmount >= MAX_BUFFERED) { this.recover('gap'); return; }
-    if (this.ledger.size >= MAX_LEDGER) { this.recover('gap'); return; }
+    if (this.ledger.size >= MAX_LEDGER) { this.fail('input-ack-timeout', true); return; }
     if (!Number.isSafeInteger(this.sequence + 1)) { this.fail('sequence', false); return; }
     const intent: GameplayInput = { ...this.held, seq: this.sequence + 1, commands: this.pending.slice(0, 32) };
     try {
@@ -284,7 +286,7 @@ export class WorldClient {
     this.generation++; this.clearTimer(); this.clearFragmentTimer(); this.abort?.abort(); this.abort = null;
     const socket = this.socket; this.socket = null; socket?.close();
     this.rejectConnect?.(new Error(reason)); this.resolveConnect = this.rejectConnect = null;
-    this.binding = null; this.receiver = null; this.current = null; this.clearInput(); this.options.onReset?.(reason);
+    this.binding = null; this.receiver = null; this.current = null; this.queueInfo = null; this.clearInput(); this.options.onReset?.(reason);
   }
   private fail(code: string, retryable: boolean): void {
     this.stopAttempt(code);
