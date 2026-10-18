@@ -1,6 +1,6 @@
 import type { CapturedPlayer, PlayerRetirement, CharacterCheckpointV1, RestoredPlayerData, EventRecord, PlayerCommand, ActionId, ActionRequest, Admission, Area as AreaContract, AreaContext, AreaDebugState, AreaOptions, AreaServices, AreaSnapshot, BossSim, CharacterId, ClassId, CombatController, DebugValue, EarnedGrant, EnemySim, EntityId, EntityRef, HitPlan, PendingHit, PlayerIntent, PlayerSim, ProjectileState, SimUnit, StagedArrival, StagedDeparture, TimerAction, TransferDTO } from './types.ts';
 import { Actions } from './actions.ts';
-import { validatePopulation, worldChapter } from './math.ts';
+import { populationRadius, validatePopulation, worldChapter } from './math.ts';
 import { Combat } from './combat.ts';
 import { playAction, resolvePlayerHit } from './abilities.ts';
 import { Enemy } from './enemy.ts';
@@ -105,7 +105,7 @@ export class SimulationArea implements AreaContract {
     this.combat=new Combat(this.services);this.worldRules=new WorldRules(this.services);
     this.actions=new Actions(options.actionData,e=>this.services.emit(e),p=>this.resolveHit(p));
     this.flights=new Projectiles(options.limits.projectiles,r=>this.getUnit(r),e=>this.services.emit(e),p=>this.resolveHit(p));
-    for(const spawn of this.options.definition.enemies)validatePopulation(this.options.policy.enemyPopulation(spawn,0));
+    for(const spawn of this.options.definition.enemies){validatePopulation(this.options.policy.enemyPopulation(spawn,0));if(this.options.policy.populationRadius)populationRadius(this.options.policy.populationRadius(spawn));}
     const feature:FeatureContext={areaId:options.id,chapter:worldChapter(this.services.world),authority:true,authorityEpoch:1,rng:this.rng,query:options.query,
       get time(){return self.clock;},get encounterEngaged(){return self.services.encounterActive();},get endingActive(){return self.endings.size>0;},authorityId:null,
       actors:()=>[...this.playerMap.values()].map(p=>({id:`actor:${p.unit.ref.id}`,unit:p.unit})),
@@ -177,7 +177,7 @@ export class SimulationArea implements AreaContract {
       for(const e of [...this.enemyMap.values()]){e.update(DT);const u=this.getUnit(e.unit);if(u)feedLocomotion(u,DT);}
       for(const b of this.bossMap.values()){b.update(DT);const u=this.getUnit(b.unit);if(u)feedLocomotion(u,DT);}
       this.worldRules.update();this.separate();
-      if(this.services.world==='w2'&&this.clock>=this.nextEcho&&!this.services.encounterActive()){for(const e of this.enemyMap.values())if(e.isEcho&&e.state==='gone'){e.respawnAt(e.spawn.home.x,e.spawn.home.z);this.nextEcho=this.clock+120;}}
+      if(this.services.world==='w2'&&this.clock>=this.nextEcho&&!this.services.encounterActive()){for(const e of this.enemyMap.values())if(e.isEcho&&e.state==='gone'&&validatePopulation(this.options.policy.enemyPopulation(e.spawn,this.services.players().filter(p=>p.alive&&!p.hidden&&Math.hypot(p.x-e.spawn.home.x,p.z-e.spawn.home.z)<(this.options.policy.populationRadius?populationRadius(this.options.policy.populationRadius(e.spawn)):22)).length)).desired===1){e.respawnAt(e.spawn.home.x,e.spawn.home.z);this.nextEcho=this.clock+120;}}
       for(const u of this.unitMap.values())if(u.alive&&!u.hidden&&u.rustUntil&&this.clock>=u.rustUntil){u.rust=0;u.rustUntil=0;}
       this.updateFeatures();
       for(const u of this.unitMap.values())this.actions.updateHit(u,DT);
