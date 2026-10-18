@@ -1,3 +1,4 @@
+import { createTownsfolk } from '../data/townsfolk.ts';
 import type { AreaDefinition, EnemySpawn, Poi, WorldQuery } from '../types.ts';
 export interface WorldDefinitionConfig {
  readonly query:WorldQuery;
@@ -31,5 +32,5 @@ export function createWorld1Definition(config:WorldDefinitionConfig):AreaDefinit
  for(let i=0;i<config.population.jellyfish;i++){const [ax,az]=anchors[i%anchors.length];let best:{x:number;z:number;score:number}|null=null;for(let dx=-28;dx<=28;dx+=2)for(let dz=-24;dz<=24;dz+=2){const x=ax+dx,z=az+dz,y=config.query.heightAt(x,z),out={x:0,y:0,set(x:number,y:number){this.x=x;this.y=y;return this;}};if(y>-.15||y<-.9||enemies.some(e=>e.kind==='jellyfish'&&Math.hypot(e.home.x-x,e.home.z-z)<10))continue;config.query.resolveCollision(x,z,1.3,out);if(Math.hypot(out.x-x,out.y-z)>.15)continue;const score=Math.abs(y+.55)+Math.hypot(dx,dz)*.008;if(!best||score<best.score)best={x,z,score};}if(best)enemies.push(spawn(config,'jellyfish',i,best.x,best.z,`w1:jelly:${i}`,3));}
  const beacon=pois.beacon.position,ground=config.query.heightAt(beacon.x,beacon.z),channelTo={x:beacon.x,y:Math.max(beacon.y,ground)+(beacon.y>ground+1?0:3),z:beacon.z};
  const gate=p('gate:w2',pois.wreck.position.x-7,pois.wreck.position.z+7,3.5);
- return deepFreeze({world:'w1',spawn:pois.spawn,recall:pois.spawn,pois,enemies,bosses:[{profile:'rust',arena:pois.bossArena,freedNpcId:'corrodius',freedArchetype:'freed-rust'},{profile:'abyss',arena:pois.bossArena,freedNpcId:'pearl',freedArchetype:'freed-abyss'}],npcs,interactions:[{id:'beacon',kind:'beacon',position:pois.beacon.position,channelTo,range:3.5,objective:'beacon'},{id:'gate:w2',kind:'gate',position:gate.position,range:3.5,destination:'w2'}]});
+ return deepFreeze({world:'w1',townsfolk:createTownsfolk('w1',config.query),spawn:pois.spawn,recall:pois.spawn,pois,enemies,bosses:[{profile:'rust',arena:pois.bossArena,freedNpcId:'corrodius',freedArchetype:'freed-rust'},{profile:'abyss',arena:pois.bossArena,freedNpcId:'pearl',freedArchetype:'freed-abyss'}],npcs,interactions:[{id:'beacon',kind:'beacon',position:pois.beacon.position,channelTo,range:3.5,objective:'beacon'},{id:'gate:w2',kind:'gate',position:gate.position,range:3.5,destination:'w2'}]});
 }

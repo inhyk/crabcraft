@@ -1,3 +1,4 @@
+import type { CoreGameBridge } from './coreBridge';
 import {VillageGames} from './villageGames';
 import {t} from '../i18n';
 import {loadingLabel,loadingTips,regionName,regionSubtitle} from './worldLocale';
@@ -89,6 +90,7 @@ const v1 = new THREE.Vector3();
 const v2 = new THREE.Vector3();
 
 export class Game {
+  core:CoreGameBridge|null=null;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
   /** Everything the simulation shows or plays goes out here; `sink` turns it into HUD, effects and sound. */
@@ -185,7 +187,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || this.hud.minimap.expanded;
+    return !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -520,6 +522,7 @@ export class Game {
     this.boats=new ShoreBoat(this);
     this.achievements=new Achievements(this);
     this.journey.restore();
+    if(import.meta.env.DEV&&new URLSearchParams(location.search).get('simCore')==='1'){this.loaded=false;const {CoreGameBridge}=await import('./coreBridge');this.core=await CoreGameBridge.create(this);this.loaded=true;}
     this.intro();
     this.villageGames=new VillageGames(this);
     this.multiplayer = new Multiplayer(this);
@@ -630,7 +633,8 @@ export class Game {
     const paused = (this.hud.menu.open||this.app.account.open) && !this.multiplayer?.battle.active;
     this.handleInput();
     const authority = this.multiplayer?.battle.authority !== false;
-    if (!paused) {
+    if (!paused&&this.core) {this.core.update(dt);this.journey?.update(dt);this.sink.drawState([this.encounter],authority);}
+    if (!paused&&!this.core) {
       this.time += dt;
       this.timers.update(this.time);
       this.player.update(dt);
@@ -652,7 +656,7 @@ export class Game {
     this.boats?.update(paused?0:dt);
     this.achievements?.update(paused?0:dt);
     this.voyageIsland?.update();
-    if (!paused) {
+    if (!paused&&!this.core) {
       // The game clock lands pending swings and flies projectiles, on screen or not.
       for (const u of this.units) u.updateHit(dt);
       this.projectiles.update(dt);
@@ -754,6 +758,7 @@ export class Game {
     const inp = this.input;
     const hud = this.hud;
     if (this.ending.active) return;
+    if (hud.forge.open) return;
     if (inp.wasPressed('Escape')) {
       if (hud.minimap.expanded) hud.minimap.toggle(false);
       else if (hud.menu.open) hud.menu.close();
@@ -1020,8 +1025,9 @@ export class Game {
   }
 
   private openForge(npc:Npc):void {
-    const p=this.player,cost=100*(p.attackRank+1);
-    this.hud.dialogue.open({unit:npc.unit,portraitArt:'art/npc/pip.webp',questTitle:t('대장간 · 집게 강화','Forge · Claw upgrades'),paragraphs:[t(`보유 코인 ${p.coins} · 공격 강화 +${p.attackRank} (${p.attackRank*8}%)`,`Coins ${p.coins} · Attack rank +${p.attackRank} (${p.attackRank*8}%)`),t('적을 처치해 코인을 모으고 집게를 강화하세요. 강화는 자동 저장됩니다.','Earn coins from enemies and forge stronger claws. Upgrades save automatically.')],buttons:[{label:t(`공격 +8% · ${cost} 코인`,`Attack +8% · ${cost} coins`),primary:true,onClick:()=>{if(p.attackRank>=100){this.hud.messages.info(t('최고 강화 단계입니다.','Maximum forge rank reached.'));return;}if(p.coins<cost){this.hud.messages.info(t('코인이 부족해요. 적을 처치해 모아 주세요.','Not enough coins. Defeat enemies to earn more.'));return;}p.coins-=cost;p.attackRank++;this.audio.sfx('sfx-levelup');this.vfx.levelUp(p.unit);this.journey?.save();this.openForge(npc);}},{label:t('주민의 부탁 듣기','Hear villager requests'),onClick:()=>this.openNpc(npc,true)},{label:t('닫기','Close'),onClick:()=>this.hud.dialogue.close()}]});
+    this.hud.dialogue.close();
+    this.player.setTarget(null);this.player.interruptCast();this.player.cancelChannel();
+    this.hud.forge.show(npc,()=>this.openNpc(npc,true));
   }
 
   acceptQuest(id: QuestId): void {
@@ -1119,7 +1125,7 @@ export class Game {
       this.audio.sfx('sfx-quest-complete');
       this.hud.messages.banner(() => (t('퀘스트 완료','Quest Complete')),() => (def.title), 'quest');
       this.hud.chat.quest(t(`${def.title} 완료!`,`${def.title} completed.`));
-      this.player.gainXp(def.xp);
+      if(!this.core)this.player.gainXp(def.xp);
       this.hud.tracker.update(this.quests);
       this.refreshQuestViews(id, def.turnIn === null);
       if (id === 'q3') this.onBeaconQuestDone();

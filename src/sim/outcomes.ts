@@ -61,6 +61,7 @@ export class WorldRules {
  appliedGrantIds(character:CharacterId):readonly string[]{return [...(this.applied.get(character)??[])];}
  restoreAppliedGrantIds(character:CharacterId,ids:readonly string[]):void {const known=this.applied.get(character)??new Set<string>();for(const id of ids)known.add(id);this.applied.set(character,known);}
  encounterAvailable(profile:BossSim['profile']):boolean {if((profile==='rust'||profile==='abyss')&&(!this.beaconLit||this.services.world!=='w1'))return false;return this.services.players().some(u=>{const p=this.services.player(u.ref);return !!p&&u.alive&&!u.hidden&&canChallenge(u.level,BOSS_PROFILES[profile].level,!!p.state.flags.rustCleared,!!p.state.flags.abyssCleared,worldChapter(this.services.world));});}
+ setSharedBeacon(lit:boolean):void {this.interactions.setSharedBeacon(lit);}
  command(player:EntityRef,command:PlayerCommand):boolean{return this.interactions.command(player,command);}
  interact(player:EntityRef,id:string):boolean{return this.interactions.interact(player,id);}
  completeChannel(player:PlayerSim,channel:ChannelState):void {this.interactions.completeChannel(player,channel);}

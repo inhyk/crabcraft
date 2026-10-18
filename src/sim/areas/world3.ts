@@ -1,3 +1,4 @@
+import { createTownsfolk } from '../data/townsfolk.ts';
 import type { AreaDefinition, EnemySpawn, Poi } from '../types.ts';
 import { DAWN_POINTS } from '../data/quests.ts';
 import { deepFreeze, NPC_ORDER, poi, validateConfig, type WorldDefinitionConfig } from './world1.ts';
@@ -11,5 +12,5 @@ export function createWorld3Definition(config:WorldDefinitionConfig):AreaDefinit
  for(let i=0;i<(config.population.shallowPatrols??0);i++){const index=config.population.scrapling+config.population.scavenger+i,x=(index%2?1:-1)*(43+index%4*8),z=16-Math.floor(index/2)*10;enemies.push({id:`w3:shallow:${i}`,kind:'scrapling',home:p('',x,z).position,wanderRadius:2,pack:`w3:shallow:pack:${i}`,fixedLevel:config.fixedLevels.scrapling,role:'ordinary',legacySlot:`shallow:${i}`});}
  const interactions:AreaDefinition['interactions'][number][]=Object.entries(DAWN_POINTS).map(([id,[x,z]])=>{const out={x:0,y:0,set(x:number,y:number){this.x=x;this.y=y;return this;}};props.resolveCollision(x,z,1,out);const position={x:out.x,y:props.heightAt(out.x,out.y),z:out.y};return{id,kind:id.startsWith('dawn-visit-')?'explore':id.startsWith('dawn-lamp-')?'waystone':'crystal',position,...(id.startsWith('dawn-lamp-')?{channelTo:{...position,y:position.y+2.2}}:{}),range:id.startsWith('dawn-visit-')?4:3.5,objective:id};});
  interactions.push({id:'gate:w2',kind:'gate',position:p('',-12,84).position,range:3.5,destination:'w2'},{id:'gate:w4',kind:'gate',position:p('',14,84).position,range:3.5,destination:'w4'});
- return deepFreeze({world:'w3',spawn:pois.spawn,recall:pois.spawn,pois,enemies,bosses:[{profile:'dawn',arena:pois.bossArena,freedNpcId:'dawnkeeper',freedArchetype:'freed-dawn'}],npcs,interactions});
+ return deepFreeze({world:'w3',townsfolk:createTownsfolk('w3',config.query),spawn:pois.spawn,recall:pois.spawn,pois,enemies,bosses:[{profile:'dawn',arena:pois.bossArena,freedNpcId:'dawnkeeper',freedArchetype:'freed-dawn'}],npcs,interactions});
 }

@@ -6,6 +6,7 @@ import type { CrabSpec } from '../crab/types';
 import { localStorageGet, localStorageSet } from '../app';
 import { h } from '../ui/dom';
 import { xpForLevel, canChallenge, patrolReward } from './progression';
+import {equipmentRank} from './equipment';
 import { QUEST_ORDER, QUESTS, type QuestStatus } from './quests';
 import './bossJourney.css';
 
@@ -86,7 +87,10 @@ export class BossJourney {
       const second = data.chapter === 2 || data.chapter===3 || data.chapter===4;
       this.game.player.restoreXp(data.xp);
       this.game.player.coins=Number.isSafeInteger(data.coins)&&data.coins>=0?data.coins:0;
-      this.game.player.attackRank=Number.isInteger(data.attackRank)?Math.max(0,Math.min(100,data.attackRank)):0;
+      this.game.player.attackRank=equipmentRank(data.attackRank);
+      this.game.player.armorRank=equipmentRank(data.armorRank);
+      this.game.player.weaponOwned=data.weaponOwned===true||this.game.player.attackRank>0;
+      this.game.player.armorOwned=data.armorOwned===true||this.game.player.armorRank>0;
       this.rustCleared = data.rust === true;
       this.abyssCleared = this.rustCleared && data.abyss === true;
       this.firstEndingSeen = this.abyssCleared && data.firstEnding === true;
@@ -119,7 +123,7 @@ export class BossJourney {
   }
 
   save() {
-    localStorageSet(this.key, JSON.stringify({ frostCleared:this.frostCleared,achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
+    localStorageSet(this.key, JSON.stringify({ frostCleared:this.frostCleared,achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,armorRank:this.game.player.armorRank,weaponOwned:this.game.player.weaponOwned,armorOwned:this.game.player.armorOwned,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
       quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked }));
   }
 
@@ -222,13 +226,13 @@ export class BossJourney {
 
   private render(): void {
     const g = this.game, level = g.player.level;
-    const state = `${language()}|${g.beaconLit}|${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${this.canJoin(g.encounter)}|${g.finalBoss.state}|${g.boss.state}|${g.worldBoss.state}|${g.world2.chapter}|${this.firstEndingSeen}|${this.trueCleared}|${this.finalCleared}|${g.dawnBoss.state}|${g.player.coins}|${g.player.attackRank}|${this.frostCleared}|${g.frostBoss.state}`;
+    const state = `${language()}|${g.beaconLit}|${level}|${g.player.xp}|${this.kills}|${this.rustCleared}|${this.abyssCleared}|${g.player.inCombat}|${g.controlsLocked}|${this.canJoin(g.encounter)}|${g.finalBoss.state}|${g.boss.state}|${g.worldBoss.state}|${g.world2.chapter}|${this.firstEndingSeen}|${this.trueCleared}|${this.finalCleared}|${g.dawnBoss.state}|${g.player.coins}|${g.player.attackRank}|${g.player.armorRank}|${this.frostCleared}|${g.frostBoss.state}`;
     if (state !== this.last) {
       this.last = state;
       this.root.querySelector('summary')!.textContent=t('⚔ 보스 여정','⚔ Boss journey');
       this.root.querySelector('.bj-heading strong')!.textContent=t('네 섬과 다섯 왕관의 전설','Four Islands, Five Crowns');
       this.portal.textContent=t('✧ 월드 2 바로가기 →','✧ Travel to World II →');this.victory.textContent=t('✨ 춤추는 엔딩 다시 보기','✨ Replay the dance ending');
-      this.wallet.textContent=t(`🪙 ${g.player.coins} · 공격 강화 +${g.player.attackRank}`,`🪙 ${g.player.coins} · Attack rank +${g.player.attackRank}`);this.wallet.hidden=g.cinematic||g.ending.active;
+      this.wallet.textContent=t(`🪙 ${g.player.coins} · 무기 +${g.player.attackRank} · 방어구 +${g.player.armorRank}`,`🪙 ${g.player.coins} · Weapon +${g.player.attackRank} · Armor +${g.player.armorRank}`);this.wallet.hidden=g.cinematic||g.ending.active;
       const next = xpForLevel(level+1);
       this.progress.textContent = t(`LEVEL ${level} → ${level + 1} · ${next - g.player.xp} XP 남음`,`LEVEL ${level} → ${level+1} · ${next-g.player.xp} XP to go`);
       for (const { boss, status, button } of this.cards) {

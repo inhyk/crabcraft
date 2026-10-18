@@ -1,3 +1,4 @@
+import { weaponMultiplier } from './data/equipment.ts';
 /** Already-paid releases and per-attack impact rules, extracted from S1 28816e2. */
 import type { AbilityDef } from './data/classes.ts';
 import type { ActionId, ActionRequest, AreaServices, HitPlan, PlayerSim, School, SimUnit } from './types.ts';
@@ -18,7 +19,7 @@ export function playAction(g: AreaServices,u:SimUnit,id:ActionId,o:Partial<Actio
   g.startAction(u.ref,request,hit?{left:delay??.3,plan:hit}:undefined);
 }
 export function enemiesNear(g:AreaServices,x:number,z:number,radius:number):readonly SimUnit[] { return g.hostilesNear(x,z,radius).filter(t=>t.reaction==='hostile' && t.alive && !t.hidden && Math.hypot(t.x-x,t.z-z)-t.radius<=radius); }
-export function damageMultiplier(p:PlayerSim,u:SimUnit):number { return (1+.12*(u.level-1))*(1+p.state.attackRank*.08); }
+export function damageMultiplier(p:PlayerSim,u:SimUnit):number { return (1+.12*(u.level-1))*weaponMultiplier(p.state.attackRank); }
 function hit(g:AreaServices,p:PlayerSim,u:SimUnit,t:SimUnit,min:number,max:number,school:School,bonus=0):number {
   const crit=rollCrit(g.random,.12+bonus);
   return g.combat.damage(u.ref,t.ref,(min+g.random.next()*(max-min))*damageMultiplier(p,u)*(crit?CRIT_MULT:1),{crit,school});
