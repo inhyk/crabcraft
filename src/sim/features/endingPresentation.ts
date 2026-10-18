@@ -37,6 +37,8 @@ export class EndingPresentationController {
    u.yaw=i===0?options.yaw:angle+Math.PI;return u;
   });
  }
+ get phaseName():EndingPhase{return this.phase;}
+ get id():string{return this.options.id;}
  private cue(kind:EndingCue['kind'],value:string):void {this.cues.push({ordinal:++this.ordinal,tick:this.tick,kind,value});if(this.cues.length>64)this.cues.shift();}
  private actionEvent(event:CoreEvent):void {if(event.type==='dance'&&event.stage==='moment')this.cue('moment',event.moment??'');}
  private enter(phase:EndingPhase):void {this.phase=phase;this.phaseStart=this.tick;this.sequence++;this.cue('phase',phase);
@@ -63,5 +65,6 @@ export class EndingPresentationController {
  }
  /** Restore activity=cancel, retirement and existing combat/damage/death interruption use this seam. */
  cancel(reason:'retired'|'restored'|'combat'|'damage'|'death'|'transferred'):void {if(this.phase==='finished'||this.phase==='cancelled')return;this.reason=reason;this.enter('cancelled');}
+ debug(){return frozen(structuredClone({options:this.options,actors:this.actors,actionGeneration:this.actions.nextGeneration,phase:this.phase,tick:this.tick,sequence:this.sequence,phaseStart:this.phaseStart,ordinal:this.ordinal,cues:this.cues,stepIndex:this.stepIndex,stepTime:this.stepTime,reason:this.reason}));}
  snapshot():EndingObservation {return frozen({id:this.options.id,owner:{...this.options.owner},tick:this.tick,sequence:this.sequence,phase:this.phase,phaseStartedTick:this.phaseStart,orbitYaw:this.options.yaw+Math.PI*.85,celebrationStartedTick:BLACKOUT,skipAvailableTick:BLACKOUT+120,provider:renderPoseProviderVersion,reason:this.reason,move:this.phase==='routine'?BREAK_ROUTINE[this.stepIndex].id:null,cast:['credits','finished','cancelled'].includes(this.phase)?[]:this.actors.map((u,i)=>({...structuredClone(this.options.cast[i]),ref:{endingId:this.options.id,slot:i},position:{x:u.x,y:u.y,z:u.z},yaw:u.yaw,recipe:createRenderPoseRecipe(u)})),cues:this.cues.map(c=>({...c}))});}
 }
