@@ -8,6 +8,7 @@ import {SnowDeform} from './snowDeform';
 import {applySnowSurface,SnowFootfalls} from './snowSurface';
 import {SnowSpray} from './snowSpray';
 import {crystalCluster,crystalGeometry,iceMaterial,type Crystal} from './iceCrystals';
+import {snowPines} from './snowPines';
 import type {Unit} from './unit';
 
 /** Deterministic snow realm. Trees share instanced meshes; snowfall runs on the GPU. */
@@ -72,15 +73,8 @@ export class SnowIsland {
   iceMesh(crystalCluster(0,0,0,4.4,1.9,6,rand),'snow-fountain-sculpture').position.set(fx,fy+.62,fz);
 
   for(let z=82;z>-50;z-=12)for(const side of [-1,1]){const x=side*6,y=this.height(x,z);add(new THREE.CylinderGeometry(.13,.23,2.9,6),dark,x,y+1.45,z);add(new THREE.BoxGeometry(.65,.9,.65),amber,x,y+3,z);add(new THREE.ConeGeometry(.62,.5,4),snow,x,y+3.7,z);}
-  // Layered evergreen boughs with thick snow caps, in four draw calls for the entire forest.
-  const trees=snowTrees();
-  const green=new THREE.MeshStandardMaterial({color:'#235558',roughness:.95});
-  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(.3,.55,8,6),wood,trees.length);
-  const bough=new THREE.InstancedMesh(new THREE.ConeGeometry(3.5,5.5,9),green,trees.length*3);
-  const caps=new THREE.InstancedMesh(new THREE.ConeGeometry(3.45,4.5,9),snow,trees.length*3);const dummy=new THREE.Object3D();
-  const put=(mesh:THREE.InstancedMesh,i:number,x:number,y:number,z:number,s:number)=>{dummy.position.set(x,y,z);dummy.scale.setScalar(s);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);};
-  trees.forEach(({x,z,s},i)=>{const y=this.height(x,z);put(trunk,i,x,y+4*s,z,s);for(let j=0;j<3;j++){const scale=s*(1-j*.23);put(bough,i*3+j,x,y+(3.4+j*2.1)*s,z,scale);put(caps,i*3+j,x,y+(4+j*2.1)*s,z,scale);}});
-  for(const mesh of [trunk,bough,caps]){mesh.castShadow=true;mesh.receiveShadow=true;mesh.computeBoundingSphere();this.root.add(mesh);}this.root.userData.snowPines=trees.length;
+  // Snow-laden kit pines (snowPines.ts) stand on these trunks once buildSettlement() has loaded the kit.
+  this.root.userData.snowPines=snowTrees().length;
   // Boreas keeps the missing friend in a luminous ice prison beside the throne.
   this.prison.name='mira-ice-prison';this.prison.position.set(13,this.height(13,-62),-62);
   for(let i=0;i<12;i++){const a=i/12*Math.PI*2,bar=new THREE.Mesh(new THREE.CylinderGeometry(.11,.16,4.5,6),ice);bar.position.set(Math.sin(a)*2.3,2.25,Math.cos(a)*2.3);this.prison.add(bar);}
@@ -103,6 +97,8 @@ export class SnowIsland {
   const fall=new THREE.Points(flakes,this.snow);fall.frustumCulled=false;fall.name='gpu-snowfall';this.root.add(fall,this.portal.root,new THREE.HemisphereLight('#d2eaff','#35506d',1.4));
   this.sun.position.set(40,85,45);this.root.add(this.sun,this.sun.target);
  }
+ /** The forest needs the nature kit, so it loads after construction like DawnIsland's settlement. */
+ async buildSettlement(){const forest=await snowPines(snowTrees(),(x,z)=>this.height(x,z));this.root.add(forest);}
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
  updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSnow();this.refreshIce();}
  disposeSnow(){this.deform.dispose();this.spray.dispose();}
