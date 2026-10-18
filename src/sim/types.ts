@@ -284,8 +284,15 @@ export interface EnemySpawn {
   readonly home: Readonly<Vec3>; readonly wanderRadius: number; readonly pack: string;
   readonly fixedLevel: number; readonly role: 'ordinary' | 'add' | 'echo';
 }
+export interface AmbientSpawn {
+  readonly id: string; readonly ambientSlot: string; readonly archetype: string;
+  readonly position: Readonly<Vec3>; readonly yaw?: number;
+  readonly points: readonly Readonly<Vec3>[]; readonly wanderRadius: number;
+  readonly route?: { readonly points: readonly Readonly<Vec3>[]; readonly radiusPadding: number; readonly step: number };
+}
 export interface AreaDefinition {
   readonly world: WorldId; readonly spawn: Poi; readonly recall: Poi;
+  readonly townsfolk?: readonly AmbientSpawn[];
   readonly pois: Readonly<Record<string, Poi>>; readonly enemies: readonly EnemySpawn[];
   readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string; freedPosition?: Readonly<Vec3>; captiveBeforeVictory?: boolean }[];
   readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string }[];
