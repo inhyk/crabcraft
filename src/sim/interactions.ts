@@ -21,7 +21,7 @@ export class InteractionRules {
   if(point.kind==='gate'){const chapter=worldChapter(point.destination!);if(!canTravelTo(chapter,player.state.flags))return null;const u=s.getUnit(player.state.unit)!;if(s.encounterActive()||s.time-u.lastCombat<5)return null;}
   return point;
  }
- private npc(player:PlayerSim,id:string):boolean {const s=this.services,npc=s.definition.npcs.find(n=>n.id===id);return !!npc&&this.near(player,npc.position,8)&&s.policy.canInteract(s.context,player.state,`npc:${id}`);}
+ private npc(player:PlayerSim,id:string):boolean {const s=this.services,npc=s.definition.npcs.find(n=>n.id===id),unit=s.npcById(id);return !!npc&&!!unit&&unit.alive&&!unit.hidden&&this.near(player,unit,8)&&s.policy.canInteract(s.context,player.state,`npc:${id}`);}
  interact(ref:EntityRef,id:string):boolean {const player=this.player(ref);if(!player)return false;const s=this.services;
   if(id.startsWith('npc:')){const npc=id.slice(4);if(!this.npc(player,npc))return false;const unit=s.npcById(npc);player.state.talkTarget=unit?.ref??null;if(unit){const target=player.state.target;if(!target||target.area!==unit.ref.area||target.id!==unit.ref.id||target.life!==unit.ref.life){player.state.target=unit.ref;player.state.targetDeadAt=0;s.emit({type:'target',unit:player.state.unit,target:unit.ref});}const actor=s.getUnit(player.state.unit)!;unit.yaw=Math.atan2(actor.x-unit.x,actor.z-unit.z);}if(npc==='brinebeard'&&s.world==='w3')questBump(player,s,'dawn-letter');if(npc==='silvermoon')questBump(player,s,'deliver');if(npc==='coralline')questBump(player,s,'deliver-supplies');return true;}
   const point=this.validate(player,id);if(!point)return false;
