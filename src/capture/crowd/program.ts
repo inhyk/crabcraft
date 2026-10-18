@@ -36,6 +36,12 @@ export interface FormationSpec {
   seed?: number;
   /** Share of the crowd that keeps its class weapons in its claws (default 1); race gear always stays. */
   weapons?: number;
+  /**
+   * Explicit crowd places [x, z] in formation coordinates instead of the rows x cols grid (a small
+   * crew in a wedge, an arc). Rows count the distinct z from the front; `dx` and `dz` stay the
+   * spacing units for the waves' distances.
+   */
+  points?: [number, number][];
 }
 
 /** Which crabs a cue moves. */
@@ -159,6 +165,14 @@ export interface CrowdProgram {
   /** A dance deck under the formation (on the bay), instead of the bare ground. */
   deck?: DeckSpec;
   formation: FormationSpec;
+  /** Optional cinematic terrain fit: minimum clearance of feet/palm pads above the terrain. */
+  terrainClearance?: number;
+  /** The hero is played by the actual first-world boss (Corrodius); the crowd stays dancers. */
+  actor?: 'corrodius';
+  /** Preserve recorded joint kinematics without race stance/hunch bias or servo twitches. */
+  exactMotion?: boolean;
+  /** Bound terrain correction speed (world units/sec) using a precomputed clearance envelope. */
+  terrainLiftRate?: number;
   /** Choreography; for one crab, the cue that started last is the one playing. */
   cues: Cue[];
   faces?: FaceCue[];
@@ -217,6 +231,18 @@ export function formationSlots(f: FormationSpec): Slot[] {
   const depth = (f.rows - 1) * f.dz;
   const cx = (f.cols - 1) / 2;
   const cr = (f.rows - 1) / 2;
+  if (f.points) {
+    const zs = [...new Set(f.points.map((p) => p[1]))].sort((a, b) => b - a);
+    const front = zs[0] ?? 0;
+    if (f.hero !== null && f.hero !== undefined) {
+      out.push({ index: 0, hero: true, row: -1, col: 0, x: 0, z: front + f.hero, out: 0, side: 0, rnd: rnd() });
+    }
+    for (const [i, [x, z]] of f.points.entries()) {
+      out.push({ index: out.length, hero: false, row: zs.indexOf(z), col: i, x, z,
+        out: Math.hypot(x / f.dx, z / f.dz), side: Math.abs(x) / f.dx, rnd: rnd() });
+    }
+    return out;
+  }
   if (f.hero !== null && f.hero !== undefined) {
     out.push({ index: 0, hero: true, row: -1, col: cx, x: 0, z: depth / 2 + f.hero, out: 0, side: 0, rnd: rnd() });
   }
