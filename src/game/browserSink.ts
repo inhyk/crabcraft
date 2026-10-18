@@ -2,8 +2,9 @@
 // effects, audio and camera calls the combat code used to make itself. It also draws, frame by
 // frame, the effects that follow simulation state rather than a moment: the motes at a casting
 // claw, the beacon channel's stream, a waking boss's dust, an enraged boss's heat and the foam
-// behind the crab it set free.
+// behind the crab it set free. Other players' skills arrive through remote() and draw the same.
 import * as THREE from 'three';
+import type { Skill } from '../../server/protocol';
 import { t } from '../i18n';
 import { abilityName } from './abilityLocale';
 import type { Boss } from './boss';
@@ -59,6 +60,9 @@ export class BrowserSink {
   private readonly telegraphs = new Map<Unit, Telegraph>();
   private readonly wards = new Map<Unit, WardHandle>();
   private readonly projectiles = new Map<number, ProjectileFx>();
+  /** Other players' projectiles by `<player id>:<their projectile id>`, and the casts they are in. */
+  private readonly peerProjectiles = new Map<string, ProjectileFx>();
+  private readonly peerCasts = new Map<Unit, { id: string; until: number }>();
 
   constructor(private readonly g: Game) {}
 
@@ -120,17 +124,9 @@ export class BrowserSink {
       case 'buff':
         hud.floats.spawn(e.unit, t(`녹 ${e.stacks}중첩`, `Rust x${e.stacks}`), 'info');
         return;
-      case 'ward': {
-        const old = this.wards.get(e.unit);
-        if (e.stage === 'hit') {
-          old?.hit();
-          return;
-        }
-        old?.pop();
-        this.wards.delete(e.unit);
-        if (e.stage === 'up') this.wards.set(e.unit, vfx.ward(e.unit, e.seconds ?? 10));
+      case 'ward':
+        this.ward(e.unit, e.stage, e.seconds);
         return;
-      }
       case 'castStart': {
         const local = e.unit === g.player.unit;
         if (e.channel) {
@@ -300,79 +296,141 @@ export class BrowserSink {
     }
   };
 
-  private ability(e: Extract<SimEvent, { type: 'ability' }>): void {
+  /**
+   * An ability's effects. `remote` is another player's (see remote()): drawn where and facing where it
+   * went off, without this player's camera kick, sound or floating text.
+   */
+  private ability(e: Extract<SimEvent, { type: 'ability' }>, remote?: { at: THREE.Vector3; yaw: number }): void {
     const { vfx, audio, follow, hud } = this.g;
     const u = e.caster;
     const tg = e.target ?? null;
     const range = e.range ?? 0;
+    const local = !remote;
+    const pos = remote?.at ?? u.pos;
+    const yaw = remote?.yaw ?? u.yaw;
     switch (`${e.ability}:${e.stage}`) {
       case 'crown-burst:start':
-        vfx.tidalNova(u.pos, range);
-        vfx.ring(u.pos, N.gold, 0.5, range, 0.8, 0.9);
+        vfx.tidalNova(pos, range);
+        vfx.ring(pos, N.gold, 0.5, range, 0.8, 0.9);
         vfx.impact(u.centre(v), C.gold, 2);
+        if (!local) return;
         audio.sfx('sfx-crit', { volume: 0.7 });
         follow.shake(0.22, 0.4);
         return;
       case 'pincer-strike:hit':
-        vfx.slash(u, tg!, C.gold, 1.25);
-        follow.shake(0.06, 0.15);
+        if (!tg) return;
+        vfx.slash(u, tg, C.gold, 1.25);
+        if (local) follow.shake(0.06, 0.15);
         return;
       case 'shell-bash:hit':
-        vfx.impact(tg!.centre(v), C.white, 1.3);
-        vfx.ring(tg!.pos, N.gold, 0.3, 2.4, 0.4, 0.75);
-        vfx.stunStars(tg!, e.stun ?? 0);
+        if (!tg) return;
+        vfx.impact(tg.centre(v), C.white, 1.3);
+        vfx.ring(tg.pos, N.gold, 0.3, 2.4, 0.4, 0.75);
+        vfx.stunStars(tg, e.stun ?? 0);
+        if (!local) return;
         follow.shake(0.14, 0.22);
-        hud.floats.spawn(tg!, 'Stunned', 'info');
+        hud.floats.spawn(tg, 'Stunned', 'info');
         return;
       case 'sideways-charge:start':
         vfx.dashTrail(u, 0.5);
+        if (!local) return;
         audio.sfx('sfx-servo-whir', { volume: 0.7 });
         hud.floats.spawn(u, '+15 Rage', 'info');
         return;
       case 'sideways-charge:hit':
-        vfx.impact(tg!.centre(v), C.steel, 1.2);
-        vfx.ring(tg!.pos, N.gold, 0.3, 2.2, 0.35, 0.8);
+        if (!tg) return;
+        vfx.impact(tg.centre(v), C.steel, 1.2);
+        vfx.ring(tg.pos, N.gold, 0.3, 2.2, 0.35, 0.8);
+        if (!local) return;
         follow.shake(0.12, 0.2);
         audio.sfx('sfx-hit', { volume: 0.8 });
         return;
       case 'whirlpool:start':
         vfx.whirlpool(u, range);
+        if (!local) return;
         audio.sfx('sfx-hit', { volume: 0.7 });
         follow.shake(0.1, 0.3);
         return;
       case 'frost-spray:start':
-        vfx.frostSpray(u.pos, u.yaw, range, e.half ?? 0.55);
-        audio.sfx('sfx-cast', { volume: 0.5 });
+        vfx.frostSpray(pos, yaw, range, e.half ?? 0.55);
+        if (local) audio.sfx('sfx-cast', { volume: 0.5 });
         return;
       case 'steam-blink:start':
         if (e.from) vfx.steamPuff(vec(e.from));
-        vfx.steamPuff(u.pos);
-        audio.sfx('sfx-servo-whir', { volume: 0.6 });
+        vfx.steamPuff(pos);
+        if (local) audio.sfx('sfx-servo-whir', { volume: 0.6 });
         return;
       case 'tidal-nova:start':
-        vfx.tidalNova(u.pos, range);
+        vfx.tidalNova(pos, range);
+        if (!local) return;
         follow.shake(0.15, 0.3);
         audio.sfx('sfx-crit', { volume: 0.5 });
         return;
       case 'smite:start':
-        vfx.smite(tg!);
-        audio.sfx('sfx-cast', { volume: 0.4 });
+        if (!tg) return;
+        vfx.smite(tg);
+        if (local) audio.sfx('sfx-cast', { volume: 0.4 });
         return;
       case 'smite:hit':
-        if ((e.amount ?? 0) > 32) follow.shake(0.08, 0.15);
+        if (local && (e.amount ?? 0) > 32) follow.shake(0.08, 0.15);
         return;
       case 'mend-shell:start':
         vfx.mendGlow(u);
         return;
       case 'barnacle-ward:start':
+        if (!local) return;
         audio.sfx('sfx-heal', { volume: 0.4 });
         hud.floats.spawn(u, 'Barnacle Ward', 'info');
         return;
       case 'holy-tide:hit':
-        vfx.holyTide(u.pos, range);
-        follow.shake(0.1, 0.25);
+        vfx.holyTide(pos, range);
+        if (local) follow.shake(0.1, 0.25);
         return;
     }
+  }
+
+  /**
+   * Another player's skill effects, relayed by the room (src/multiplayer/client.ts, server/protocol.ts Skill)
+   * with its units found in this browser: `caster` is that player's copy here, `target` the unit it named.
+   * Only looks; their damage and healing arrive through combat.
+   */
+  remote(peer: string, caster: Unit, s: Skill, target: Unit | null): void {
+    switch (s.fx) {
+      case 'ability':
+        this.ability({ type: 'ability', caster, ability: s.ability, stage: s.stage, target, from: s.from, range: s.range, half: s.half, stun: s.stun }, { at: vec(s.at), yaw: s.yaw });
+        return;
+      case 'projectile': {
+        const key = `${peer}:${s.id}`;
+        if (s.stage === 'hit') {
+          this.peerProjectiles.get(key)?.land();
+          this.peerProjectiles.delete(key);
+          return;
+        }
+        if (!target) return;
+        // A lost landing (the peer left) must not keep its entry: the flight ends on its own after six seconds.
+        if (this.peerProjectiles.size >= 64) this.peerProjectiles.delete(this.peerProjectiles.keys().next().value!);
+        this.peerProjectiles.set(key, this.g.vfx.projectile(vec(s.from), target, s.style, s.speed));
+        return;
+      }
+      case 'cast':
+        if (s.seconds > 0 && s.ability) this.peerCasts.set(caster, { id: s.ability, until: this.g.time + s.seconds });
+        else this.peerCasts.delete(caster);
+        return;
+      case 'ward':
+        this.ward(caster, s.stage, s.seconds);
+        return;
+    }
+  }
+
+  private ward(unit: Unit, stage: 'up' | 'hit' | 'down', seconds?: number): void {
+    const old = this.wards.get(unit);
+    if (stage === 'hit') {
+      old?.hit();
+      return;
+    }
+    old?.pop();
+    this.wards.delete(unit);
+    if (stage === 'up') this.wards.set(unit, this.g.vfx.ward(unit, seconds ?? 10));
   }
 
   private attack(e: Extract<SimEvent, { type: 'attack' }>): void {
@@ -458,10 +516,10 @@ export class BrowserSink {
     const vfx = g.vfx;
     const p = g.player;
     const u = p.unit;
-    if (p.cast) {
-      const id = p.cast.ability.id;
-      const col = id === 'smite' || id === 'mend-shell' ? (id === 'smite' ? C.holy : C.heal) : C.water;
-      vfx.castMotes(u.socketPos('clawR', v), col, id === 'mend-shell' ? Sprite.Star : Sprite.Glow);
+    if (p.cast) this.castMotes(u, p.cast.ability.id);
+    for (const [cu, cast] of this.peerCasts) {
+      if (g.time >= cast.until || !cu.alive || !g.units.includes(cu)) this.peerCasts.delete(cu);
+      else if (!cu.hidden) this.castMotes(cu, cast.id);
     }
     const ch = p.channel;
     if (ch) vfx.beaconStream(u.socketPos('clawR', v), ch.to, (g.time - ch.start) / (ch.end - ch.start));
@@ -476,6 +534,11 @@ export class BrowserSink {
       const ft = b.freedTime;
       if (ft >= 4.6 && ft < 12 && Math.random() < 0.3) vfx.smoke(b.freed.pos, C.foam, 1, 0.5, 0.6, 0.3, 0.6);
     }
+  }
+
+  private castMotes(u: Unit, id: string): void {
+    const col = id === 'smite' || id === 'mend-shell' ? (id === 'smite' ? C.holy : C.heal) : C.water;
+    this.g.vfx.castMotes(u.socketPos('clawR', v), col, id === 'mend-shell' ? Sprite.Star : Sprite.Glow);
   }
 
   /** The language changed: raise the open warnings again in the new language. */

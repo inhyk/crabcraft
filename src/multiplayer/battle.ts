@@ -123,6 +123,9 @@ export class BattleSync {
   /** A spectator view never simulates; it only follows the room's host. */
   get authority() { return !this.game.spectator && (!this.active || (!!this.host && this.host === this.ownId)); }
   private register(id: string, u: Unit) { this.units.set(id, u); this.keys.set(u, id); }
+  /** A shared world unit's combat key and back, while combat is shared (otherwise each browser has its own). */
+  keyOf(u: Unit) { return this.active ? this.keys.get(u) : undefined; }
+  unitOf(key: string) { return this.active ? this.units.get(key) : undefined; }
   private event(event: CombatEvent) { this.send({ type: 'combat', event }); }
   join(ownId: string, host: string, world: WorldState | null, sharedArea = false) {
     this.sharedArea=sharedArea;this.active = true; this.ownId = ownId; this.host = host;
