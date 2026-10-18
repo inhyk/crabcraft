@@ -96,7 +96,7 @@ export class DungeonExpeditions {
   apply(state:DungeonState|null){
     if(!state){if(this.active)this.leave(false);return;}
     const d=dungeonFor(state.level);if(!d||d.chapter!==this.g.world2.chapter)return;
-    if(this.g.player.level<state.level){this.info(`${state.level}레벨 던전이 진행 중이에요. 레벨을 올린 뒤 다시 참가해 주세요.`,`A level ${state.level} expedition is running. Level up before rejoining.`);queueMicrotask(()=>this.g.multiplayer?.leaveDungeonRoom());return;}
+    if(!this.g.spectator&&this.g.player.level<state.level){this.info(`${state.level}레벨 던전이 진행 중이에요. 레벨을 올린 뒤 다시 참가해 주세요.`,`A level ${state.level} expedition is running. Level up before rejoining.`);queueMicrotask(()=>this.g.multiplayer?.leaveDungeonRoom());return;}
     if(!this.state||this.state.run!==state.run){if(this.active)this.leave(false);this.enter(state);}
     const stage=this.state!.stage;this.state=structuredClone(state);
     if(stage!==state.stage)this.configure();

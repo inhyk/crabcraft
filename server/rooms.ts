@@ -9,8 +9,9 @@ import { specOf, stateOf, actions, clean, type Spec, type State } from './protoc
 import type { MonitorSnapshot, MonitorPlayer } from './monitor.ts';
 import { Moderation, Talk, CHAT, reasonOf, sessionOf, shownName, type Report } from './chat/safety.ts';
 
-/** `session`: the client's per-tab id (see chat/safety.ts); `lastRoom`: where a departed player was, for reports. */
-type Member = { id: string; ws: WebSocket; spec: Spec; state: State | null; room: string; pong: boolean; rateAt: number; messages: number; combat: boolean; snow: boolean; session: string; talk: Talk; lastRoom: string };
+/** `session`: the client's per-tab id (see chat/safety.ts); `lastRoom`: where a departed player was, for reports.
+ * `watch`: the room an observer (the developer monitor) sees; an observer never has a `room`, so every player path ignores it. */
+type Member = { id: string; ws: WebSocket; spec: Spec; state: State | null; room: string; pong: boolean; rateAt: number; messages: number; combat: boolean; snow: boolean; session: string; talk: Talk; lastRoom: string; observer: boolean; watch: string; checking: boolean };
 
 export type RoomOptions = {
   /** Browser origins allowed to connect. By default only same-host origins may. */
@@ -21,6 +22,8 @@ export type RoomOptions = {
   maxMembers?: number;
   /** Stores a chat report. Without it (the Vite relay) reports are only logged. */
   report?: (report: Report) => void | Promise<void>;
+  /** Whether a socket may `observe` a room: its upgrade request and the ticket it sent. Without it nobody may. */
+  observe?: (req: IncomingMessage, ticket: unknown) => boolean | Promise<boolean>;
 };
 
 /** Players per room or public shard. In a room, the elected host's browser simulates the world for all of them. */
@@ -40,7 +43,7 @@ const logReport = (r: Report) => console.log(`chat report: ${JSON.stringify(r)}`
  * Chat is filtered and rate limited, names with bad words are replaced, and reports can mute a player (chat/safety.ts).
  */
 export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
-  const { allowOrigin = sameHost, keepRooms = 0, maxRooms = 64, maxMembers = 128, report = logReport } = options;
+  const { allowOrigin = sameHost, keepRooms = 0, maxRooms = 64, maxMembers = 128, report = logReport, observe } = options;
   const wss = new WebSocketServer({ noServer: true, maxPayload: 65536, perMessageDeflate: false });
   const rooms = new Map<string, Map<string, Member>>();
   const members = new Set<Member>();
@@ -52,6 +55,8 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   const snowRooms=new Map<string,boolean>();
   const sharedAreas=new Set<string>();
   const observed = new Map<string, { updatedAt: number | null; action: MonitorPlayer['action'] }>();
+  /** Observers by watched room. They get every broadcast and are in no room, list, election or count. */
+  const watchers = new Map<string, Set<Member>>();
   let actionSeq = 0;
   /** Public shard code to its world area. Shard codes start with W, so they cannot be joined by code. */
   const publics = new Map<string, number>();
@@ -66,6 +71,22 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
   }
   function broadcast(room: string, data: unknown, except?: string) {
     for (const m of rooms.get(room)?.values() ?? []) if (m.id !== except) send(m.ws, data);
+    for (const w of watchers.get(room) ?? []) send(w.ws, data);
+  }
+  function unwatch(m: Member) {
+    const set = watchers.get(m.watch);
+    set?.delete(m);
+    if (set && !set.size) watchers.delete(m.watch);
+    m.watch = '';
+  }
+  /** What a member gets on joining, without adding anyone: the room's players, host, world and area. */
+  function watch(m: Member, code: string) {
+    unwatch(m);
+    m.observer = true; m.watch = code;
+    if (!watchers.has(code)) watchers.set(code, new Set());
+    watchers.get(code)!.add(m);
+    const area = publics.get(code);
+    send(m.ws, { type: 'welcome', observer: true, host: host(code), world: worlds.get(code) ?? null, id: m.id, room: code, ...(area ? { public: true, area, ...(sharedAreas.has(code) ? { sharedWorld: 1 } : {}) } : {}), players: [...(rooms.get(code)?.values() ?? [])].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
   }
   function leave(m: Member) {
     if (!m.room) return;
@@ -107,18 +128,18 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     // No cross-site websocket access. Non-browser clients have no Origin header.
     if (req.headers.origin && !allowOrigin(req.headers.origin, req)) { reject(socket, '403 Forbidden'); return; }
     if (members.size >= maxMembers) { reject(socket, '503 Service Unavailable'); return; }
-    wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws));
+    wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
   };
   server.on('upgrade', upgrade);
-  wss.on('connection', ws => {
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const id = randomUUID();
-    const m: Member = { id, ws, spec: { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Crab' }, state: null, room: '', pong: true, rateAt: Date.now(), messages: 0, combat: false, snow: false, session: id, talk: new Talk(), lastRoom: '' };
+    const m: Member = { id, ws, spec: { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Crab' }, state: null, room: '', pong: true, rateAt: Date.now(), messages: 0, combat: false, snow: false, session: id, talk: new Talk(), lastRoom: '', observer: false, watch: '', checking: false };
     members.add(m);
     known.set(id, { member: m, gone: 0 });
     ws.on('error', () => ws.terminate());
     ws.on('pong', () => { m.pong = true; });
     ws.on('close', () => {
-      leave(m); members.delete(m);
+      leave(m); unwatch(m); members.delete(m);
       // Moved to the end, so under a flood of short connections the oldest departures go first.
       known.delete(m.id); known.set(m.id, { member: m, gone: Date.now() });
       for (const [old, k] of known) { if (known.size <= maxMembers * 8) break; if (k.gone) known.delete(old); }
@@ -131,6 +152,23 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
       if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'observe') {
+        // Only a socket that never joined as a player; an observer may switch rooms. Checked on every observe.
+        if (m.room || m.checking) return;
+        const code = clean(msg.room, 6).toUpperCase(), ticket = msg.ticket;
+        if (!observe) { send(ws, { type: 'error', message: 'Monitor access required.' }); ws.close(1008, 'Forbidden'); return; }
+        m.checking = true;
+        void Promise.resolve().then(() => observe(req, ticket)).catch(() => false).then(ok => {
+          m.checking = false;
+          if (ws.readyState !== WebSocket.OPEN) return;
+          if (!ok) { unwatch(m); send(ws, { type: 'error', message: 'Monitor access required.' }); ws.close(1008, 'Forbidden'); return; }
+          if (!rooms.has(code)) { unwatch(m); send(ws, { type: 'error', message: 'Room not found. Check the six-character code.' }); ws.close(1000, 'Room not found'); return; }
+          watch(m, code);
+        });
+        return;
+      }
+      // An observer (or a socket being checked for it) sends nothing else that counts.
+      if (m.observer || m.checking) { if (m.observer && msg.type === 'leave') { unwatch(m); send(ws, { type: 'leftRoom' }); } return; }
       if (msg.type === 'enter') {
         const spec = specOf(msg.spec);
         if (!spec) { send(ws, { type: 'error', message: 'Invalid character.' }); return; }

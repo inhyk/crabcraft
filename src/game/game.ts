@@ -19,6 +19,8 @@ import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
 import { HiddenWorld } from './world2';
 import { Multiplayer } from '../multiplayer/client';
+import { Spectator } from './spectator';
+import { SPECTATE } from '../spectate';
 import type { App } from '../app';
 import { localStorageGet, localStorageSet } from '../app';
 import type { FrameInfo, QualitySetting, ViewOptions } from '../core/engine';
@@ -112,6 +114,8 @@ export class Game {
     this.serverEnding.commit(observation,frame);
   }
   readonly serverMode=new URLSearchParams(location.search).get('world')==='server';
+  /** The developer monitor's invisible view of a relay room (src/spectate.ts); null in a player's game. */
+  spectator:Spectator|null=null;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
   /** Everything the simulation shows or plays goes out here; `sink` turns it into HUD, effects and sound. */
@@ -213,7 +217,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return this.serverEndingActive || !!this.server?.locked || !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
+    return !!this.spectator || this.serverEndingActive || !!this.server?.locked || !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -580,7 +584,7 @@ export class Game {
     this.achievements=new Achievements(this);
     this.journey.restore();
     if(import.meta.env.DEV&&new URLSearchParams(location.search).get('simCore')==='1'){this.loaded=false;const {CoreGameBridge}=await import('./coreBridge');this.core=await CoreGameBridge.create(this);this.loaded=true;}
-    this.intro();
+    if(SPECTATE)this.spectator=new Spectator(this,SPECTATE);else this.intro();
     this.villageGames=new VillageGames(this);
     this.multiplayer = new Multiplayer(this);
   }
@@ -696,13 +700,13 @@ export class Game {
     const dt = f.dt;
     if(this.serverMode){this.server?.frame(dt,f.elapsed);this.serverEnding?.render();return;}
     const paused = (this.hud.menu.open||this.app.account.open) && !this.multiplayer?.battle.active;
-    this.handleInput();
+    if(!this.spectator)this.handleInput();
     const authority = this.multiplayer?.battle.authority !== false;
     if (!paused&&this.core) {this.core.update(dt);this.journey?.update(dt);this.sink.drawState([this.encounter],authority);}
     if (!paused&&!this.core) {
       this.time += dt;
       this.timers.update(this.time);
-      this.player.update(dt);
+      if(!this.spectator)this.player.update(dt);
       const bosses = this.world2.chapter===1 ? [this.boss,this.finalBoss] : this.world2.chapter===2 ? [this.worldBoss] : this.world2.chapter===3 ? [this.dawnBoss] : [this.encounter];
       if (authority) {
         for (const e of this.enemies) e.update(dt);
@@ -718,6 +722,7 @@ export class Game {
     }
     this.dungeons?.update(paused?0:dt);
     this.multiplayer?.update(dt);
+    this.spectator?.update(dt);
     this.villageGames?.update(paused?0:dt);
     this.boats?.update(paused?0:dt);
     this.achievements?.update(paused?0:dt);
@@ -745,7 +750,7 @@ export class Game {
     }
     if (!paused) this.vfx.update(dt);
     this.updateSelection();
-    const goal = this.dungeons?.active || this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
+    const goal = this.spectator || this.dungeons?.active || this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
     this.hintVia = goal ? this.world2.chapter>=2 ? this.world2.waypoint(this.player.unit.pos, goal, this.time) : this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
     this.objective.update(this.time, this.world, this.player.unit.pos, goal, this.hintVia, this.player.inCombat);
     if (!this.ending.active) this.director.update(dt);
@@ -753,10 +758,13 @@ export class Game {
     this.world.update(dt, worldTime, this.camera);
     this.world2.update(dt,worldTime);
     this.lighthouseSecret?.update();
-    this.updateZone();
-    this.updateInteractPrompt();
-    this.updateMusic();
-    this.hud.update(dt);
+    // A spectator view shows no HUD and plays no music.
+    if(!this.spectator){
+      this.updateZone();
+      this.updateInteractPrompt();
+      this.updateMusic();
+      this.hud.update(dt);
+    }
     this.debug?.update(dt);
   };
 
@@ -1523,6 +1531,7 @@ export class Game {
     this.villageGames?.dispose();this.villageGames=null;
     this.multiplayer?.dispose();
     this.multiplayer = null;
+    this.spectator?.dispose();this.spectator=null;
     this.debug?.dispose();
     this.hud?.dispose();
     for (const rig of this.loadingRigs) rig.dispose();
