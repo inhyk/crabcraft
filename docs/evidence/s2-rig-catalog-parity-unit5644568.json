@@ -1,0 +1,115 @@
+{
+  "version": "shipped-motion-v1-8240fb40fe64b2d6968a",
+  "clips": 44,
+  "rigs": 35,
+  "specVariants": 36,
+  "samples": 1232,
+  "anchors": 39171,
+  "roots": 238,
+  "maxSampleDelta": 0,
+  "maxAnchorDelta": 7.105427357601002e-15,
+  "maxRootDelta": 0,
+  "catalogVersion": "shipped-rigs-v1-ebaae7f29b7855b604c6",
+  "catalogAnchors": 12038,
+  "maxCatalogAnchorDelta": 0,
+  "twitch": [
+    {
+      "archetype": "undead",
+      "checks": 708,
+      "maxOrigin": 0.11452125898627802,
+      "maxHead": 0.003476983428084335,
+      "maxSpawnRadiusDelta": 0.0006459041183007885,
+      "maxFlightSeconds": 0.006708253824376453,
+      "maxArrivalTicks": 1,
+      "worst": {
+        "clip": "break_spin@1.0914000000000001",
+        "axis": 1,
+        "amount": -0.075
+      }
+    },
+    {
+      "archetype": "eclipse",
+      "checks": 708,
+      "maxOrigin": 0.5153456654382536,
+      "maxHead": 0.015646425426377952,
+      "maxSpawnRadiusDelta": 0.002906568532353937,
+      "maxFlightSeconds": 0.03031228559063104,
+      "maxArrivalTicks": 1,
+      "worst": {
+        "clip": "break_spin@1.0914000000000001",
+        "axis": 1,
+        "amount": -0.075
+      }
+    },
+    {
+      "archetype": "frost",
+      "checks": 708,
+      "maxOrigin": 0.5153456654382536,
+      "maxHead": 0.015646425426377952,
+      "maxSpawnRadiusDelta": 0.002906568532353937,
+      "maxFlightSeconds": 0.03031228559063104,
+      "maxArrivalTicks": 1,
+      "worst": {
+        "clip": "break_spin@1.0914000000000001",
+        "axis": 1,
+        "amount": -0.075
+      }
+    },
+    {
+      "archetype": "npc:rattlebolt",
+      "checks": 708,
+      "maxOrigin": 0.11452125898627802,
+      "maxHead": 0.003476983428084335,
+      "maxSpawnRadiusDelta": 0.0006459041183007885,
+      "maxFlightSeconds": 0.006708253824376453,
+      "maxArrivalTicks": 1,
+      "worst": {
+        "clip": "break_spin@1.0914000000000001",
+        "axis": 1,
+        "amount": -0.075
+      }
+    },
+    {
+      "archetype": "freed-eclipse",
+      "checks": 708,
+      "maxOrigin": 0.11452125898627802,
+      "maxHead": 0.003476983428084335,
+      "maxSpawnRadiusDelta": 0.0006459041183007885,
+      "maxFlightSeconds": 0.006708253824376453,
+      "maxArrivalTicks": 1,
+      "worst": {
+        "clip": "break_spin@1.0914000000000001",
+        "axis": 1,
+        "amount": -0.075
+      }
+    },
+    {
+      "archetype": "townsfolk:3",
+      "checks": 708,
+      "maxOrigin": 0.11452125898627802,
+      "maxHead": 0.003476983428084335,
+      "maxSpawnRadiusDelta": 0.0006459041183007885,
+      "maxFlightSeconds": 0.006708253824376453,
+      "maxArrivalTicks": 1,
+      "worst": {
+        "clip": "break_spin@1.0914000000000001",
+        "axis": 1,
+        "amount": -0.075
+      }
+    },
+    {
+      "archetype": "townsfolk:7",
+      "checks": 708,
+      "maxOrigin": 0.11452125898627802,
+      "maxHead": 0.003476983428084335,
+      "maxSpawnRadiusDelta": 0.0006459041183007885,
+      "maxFlightSeconds": 0.006708253824376453,
+      "maxArrivalTicks": 1,
+      "worst": {
+        "clip": "break_spin@1.0914000000000001",
+        "axis": 1,
+        "amount": -0.075
+      }
+    }
+  ]
+}

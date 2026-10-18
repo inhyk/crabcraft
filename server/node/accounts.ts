@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Pool } from 'pg';
 import { specOf } from '../protocol.ts';
+import { WorldAdmissionError, WorldTicketRegistry, type SessionBinding, type WorldAdmissionOptions } from '../world/admission.ts';
 
 // Session, save and logout keep the contract of server/cloudflare/accounts.ts; sign-in is Google only.
 const random = () => randomBytes(32).toString('hex');
@@ -64,13 +65,26 @@ async function signIn(db: Pool, username: string): Promise<string> {
   return fresh;
 }
 
-async function handle(db: Pool, action: string, username: string, token: string, body: Body): Promise<Result> {
-  const now = Date.now();
+const ACCOUNT_COOKIE = /(?:^|;\s*)cc_account=([a-z0-9_]{3,24})\.([a-f0-9]{64})(?:;|$)/;
+/** Shared read-only DB check; accepts only a server-internal hash binding, never client account assertions. */
+export async function resolveAccountBinding(db: Pool, binding: Pick<SessionBinding, 'accountId' | 'sessionKey'>): Promise<SessionBinding | null> {
+  if (!/^g[a-f0-9]{23}$/.test(binding.accountId) || !/^[a-f0-9]{64}$/.test(binding.sessionKey)) return null;
+  const row = (await db.query<{ expires: string }>('SELECT expires FROM sessions WHERE token_hash=$1 AND username=$2', [binding.sessionKey, binding.accountId])).rows[0];
+  const expiresAt = Number(row?.expires);
+  return Number.isSafeInteger(expiresAt) && expiresAt > Date.now() ? { accountId: binding.accountId, sessionKey: binding.sessionKey, expiresAt } : null;
+}
+/** Reads the unchanged scoped account cookie and resolves its current DB session. Does not write or refresh it. */
+export async function resolveAccountSession(db: Pool, req: Pick<IncomingMessage, 'headers'>): Promise<SessionBinding | null> {
+  const cookie = req.headers.cookie?.match(ACCOUNT_COOKIE);
+  return cookie ? resolveAccountBinding(db, { accountId: cookie[1], sessionKey: digest(cookie[2]) }) : null;
+}
+export const createWorldAdmission = (db: Pool, options: WorldAdmissionOptions = {}) =>
+  new WorldTicketRegistry(binding => resolveAccountBinding(db, binding), options);
+
+async function handle(db: Pool, action: string, session: SessionBinding, body: Body): Promise<Result> {
+  const now = Date.now(), username = session.accountId;
   const fail = (status: number, error: string): Result => ({ status, body: { error } });
-  if (!/^[a-f0-9]{64}$/.test(token)) return fail(401, 'session');
-  const key = digest(token), session = (await db.query<{ expires: string }>('SELECT expires FROM sessions WHERE token_hash = $1 AND username = $2', [key, username])).rows[0];
-  if (!session || Number(session.expires) <= now) return fail(401, 'session');
-  if (action === 'logout') { await db.query('DELETE FROM sessions WHERE token_hash = $1', [key]); return { status: 200, clear: true, body: { ok: true } }; }
+  if (action === 'logout') { await db.query('DELETE FROM sessions WHERE token_hash = $1', [session.sessionKey]); return { status: 200, clear: true, body: { ok: true } }; }
   if (action === 'save') {
     if (!await limit(db, 'save:' + username, 60, 60)) return fail(429, 'rate');
     const save = bundleOf(body.save); if (!save || !Number.isSafeInteger(body.revision)) return fail(400, 'save');
@@ -82,12 +96,12 @@ async function handle(db: Pool, action: string, username: string, token: string,
   return { status: 200, body: { username, revision: row.revision, save: row.save, updated: row.updated } };
 }
 
-function boundedBody(req: IncomingMessage): Promise<Body> {
+function boundedBody(req: IncomingMessage, maxBytes = 65536): Promise<Body> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []; let size = 0, done = false;
     const finish = (error: Error | null, value?: Body) => { if (done) return; done = true; if (error) reject(error); else resolve(value!); };
-    if (Number(req.headers['content-length']) > 65536) { finish(new Error('large')); req.resume(); return; }
-    req.on('data', (chunk: Buffer) => { if (done) return; size += chunk.length; if (size > 65536) finish(new Error('large')); else chunks.push(chunk); });
+    if (Number(req.headers['content-length']) > maxBytes) { finish(new Error('large')); req.resume(); return; }
+    req.on('data', (chunk: Buffer) => { if (done) return; size += chunk.length; if (size > maxBytes) finish(new Error('large')); else chunks.push(chunk); });
     req.on('error', e => finish(e));
     req.on('end', () => {
       if (!size) { finish(null, {}); return; }
@@ -196,7 +210,7 @@ function googleHandler(db: Pool, origins: readonly string[], clientIp: (req: Inc
   };
 }
 
-export function accountHandler(db: Pool, origins: readonly string[], clientIp: (req: IncomingMessage) => string, google: GoogleConfig | null) {
+export function accountHandler(db: Pool, origins: readonly string[], clientIp: (req: IncomingMessage) => string, google: GoogleConfig | null, admission: WorldTicketRegistry = createWorldAdmission(db)) {
   const googleRoute = googleHandler(db, origins, clientIp, google);
   return async (req: IncomingMessage, res: ServerResponse) => {
     const path = new URL(req.url ?? '/', 'http://localhost').pathname;
@@ -206,22 +220,31 @@ export function accountHandler(db: Pool, origins: readonly string[], clientIp: (
     const origin = req.headers.origin, local = localHost(req.headers.host);
     if (req.headers['x-crabcraft-account'] !== '1' || (origin && !originAllowed(origin, origins, req.headers.host))) return respond(403, { error: 'origin' });
     const action = path.split('/').pop()!;
-    if (!['session', 'save', 'logout'].includes(action) || path !== '/api/account/' + action) return respond(404, { error: 'route' });
+    if (!['session', 'save', 'logout', 'world-ticket'].includes(action) || path !== '/api/account/' + action) return respond(404, { error: 'route' });
+    if (action === 'world-ticket' && (!origin || origin !== hostOrigin(req.headers.host, origins))) return respond(403, { error: 'origin' });
     if (action === 'session' ? req.method !== 'GET' : req.method !== 'POST') return respond(405, { error: 'method' });
     let body: Body;
-    try { body = req.method === 'POST' ? await boundedBody(req) : {}; }
+    try { body = req.method === 'POST' ? await boundedBody(req, action === 'world-ticket' ? 256 : 65536) : {}; }
     catch { headers.Connection = 'close'; return respond(400, { error: 'request' }); }
-    const cookie = req.headers.cookie?.match(/(?:^|;\s*)cc_account=([a-z0-9_]{3,24})\.([a-f0-9]{64})(?:;|$)/);
     // A guest has no session cookie: that is an answer, not an error the browser should log. A cookie that is there but bad stays 401.
-    if (!cookie && action === 'session' && !/(?:^|;\s*)cc_account=/.test(req.headers.cookie ?? '')) return respond(200, { signedIn: false });
-    if (!cookie) return respond(401, { error: 'session' });
+    if (action === 'session' && !/(?:^|;\s*)cc_account=/.test(req.headers.cookie ?? '')) return respond(200, { signedIn: false });
     try {
-      const result = await handle(db, action, cookie[1], cookie[2], body);
+      if (action === 'world-ticket' && !await limit(db, 'world-ticket:ip:' + digest(clientIp(req)), 100, 900)) return respond(429, { error: 'rate' });
+      const session = await resolveAccountSession(db, req);
+      if (!session) return respond(401, { error: 'session' });
+      if (action === 'world-ticket') {
+        if (Object.keys(body).length) return respond(400, { error: 'request' });
+        if (!await limit(db, 'world-ticket:account:' + session.accountId, 20, 60)) return respond(429, { error: 'rate' });
+        return respond(200, admission.issue(session, origin!));
+      }
+      const result = await handle(db, action, session, body);
       if (result.clear) headers['Set-Cookie'] = sessionCookie('', local, 0);
       respond(result.status, result.body);
     } catch (e) {
-      // Only the database can fail here; its messages never contain tokens.
-      console.error(`account ${action}: ${e instanceof Error ? e.message : String(e)}`);
+      if (e instanceof WorldAdmissionError) return respond(e.code === 'capacity' ? 503 : 401, { error: e.code });
+      // Do not log request bodies, cookies or tickets, including on DB failure.
+      const code = (e as { code?: string }).code;
+      console.error(`account ${action}: database (${code && /^[A-Z0-9]{5}$/.test(code) ? code : 'error'})`);
       respond(503, { error: 'unavailable' });
     }
   };

@@ -1,6 +1,6 @@
 // World-level queries the islands add on top of their collision: an elliptic shore that keeps
 // everyone on the island, and (World II) the throne's columns pushed out first.
-import type { Collision, Vec2Out } from './collision';
+import type { Collision, Vec2Out } from './collision.ts';
 
 /** An ellipse centred on x = 0: |(x / rx, (z - cz) / rz)| <= max. */
 export interface IslandBounds {
