@@ -24,3 +24,9 @@ test('summary IO is fenced to full resident refs and exact requested victim set'
 test('unsupported atomic capacity rejects before clock, input acknowledgment or gameplay mutation',()=>{
  const{area:a,ref,player:p}=fixture('small',{ledgerLimits:{...limits,maxDirtyCreditEntries:1}}),before=a.snapshot();assert.throws(()=>a.step(new Map([[ref.id,intent(1,[{kind:'ability',slot:5}])]])),/unsupported-step-capacity/);assert.deepEqual(a.snapshot(),before);assert.equal(p.lastConsumedSeq,-1);assert.deepEqual(a.pendingDeathRecipes(1),[]);
 });
+
+test('event overflow at a real pending hit retains the complete death recipe and drains a failed Area',()=>{
+ const registry=new InMemoryCharacterRegistry(),{area:a,ref,unit,player:p,victim}=fixture('event-fault',{characters:registry,limits:{eventCount:1,inputCommandsPerTick:32,timers:100,projectiles:100}});victim.hp=1;unit.pendingHit={left:0,plan:{attack:'warrior-auto',source:ref,target:victim.ref}};
+ assert.throws(()=>a.step(new Map()),/capacity/);assert.equal(victim.alive,false);assert.equal(p.state.xp,20);assert.equal(p.state.coins,5);assert.equal(a.pendingDeathRecipes(1).length,1);assert.throws(()=>a.step(new Map()),/failed/);assert.deepEqual(a.drainEvents().map(e=>e.event.type),['aggro']);
+ const batch=a.captureDirtyCredits(100),[capture]=a.pendingDeathRecipes(1);assert.equal(batch.writes.length,1);a.markCreditsDurable(batch.token);const credits=batch.writes.map(w=>w.credit),page=a.planStagedOutcomePage(capture,credits);a.acceptStagedOutcomePage(capture,page,credits);a.retireJournaledOutcome(capture,seal(capture,page.nextCursor));assert.equal(a.resourceUsage().pendingDeaths,0);a.dispose();assert.equal(registry.owner(hero),null);
+});
