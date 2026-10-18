@@ -1,0 +1,25 @@
+{
+  "head": "57d063a347a7f6894b0531d7c605bf8ea225b726",
+  "baseline": "5702ae9df9db1b5a80b60c81ada278b94730af37",
+  "p1": "5a7abc9971cb99c13da7fe2ee075c7e27e097b46",
+  "node": "v24.22.0",
+  "files": {
+    "server/world/host.ts": "663c8ddcec907b94e37eff4a26d1524fb1e6a403e3cee2344a63d700bf8585c2",
+    "server/world/gameplay/intents.ts": "86045ced8c3275fd6de7da2027b4d3f6fcc39d8feeb1f19c76577d41db8b763d",
+    "tools/bench-snapshot-host.mjs": "09082ee2d8bca1f49ac915c29cae336ab99fa05dab67cd610240cef427c291b8",
+    "tools/snapshot-batch-fixture.mjs": "ca28ff9b70db321133aff78e57fef4a103d99dd6f9d5991acba1f1ece48fd046"
+  },
+  "before": {
+    "protocol": "e6ed18e03d19a8da1d23c5e36d3a03d62257743718a183e2646b30ba3c59162e",
+    "shim": "\nexport function releasePreparedObservation(token: PreparedObservation): void { preparedObservations.delete(token); }\n",
+    "composed": "bdf17e80a1708bea532d2c290944944a71f050b45ed6b42af35eb816dc47ddae"
+  },
+  "after": {
+    "protocol": "6be61417833f74494474dd1b5a7a603e6d96fb241a4798fd630c6deba4b50f13"
+  },
+  "assets": "file:///Users/inkeun/projects/crabcraft/.worktrees/work-world-snapshot-batch/public/world/",
+  "bundles": {
+    "before": "d1d7fd05e43f30ff6bc1beef9d4e596b40224c6d5385b958ccd3869037351519",
+    "after": "391a76369f30431cdf540048280b5105084536e1a561479764291e6a39cfe58f"
+  }
+}

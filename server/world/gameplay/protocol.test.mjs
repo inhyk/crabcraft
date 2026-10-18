@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot} from './protocol.ts';
+import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot,releasePreparedObservation} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession,InputRateBudget} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent,tick} from '../../../tests/core/worldHarness.mjs';
@@ -275,9 +275,25 @@ test('report acknowledgments never expose internal global moderation decisions',
  assert.doesNotThrow(()=>f.codec.encodeControl(header(1),ack));for(const muted of [true,false])assert.throws(()=>f.codec.encodeControl(header(1),{...ack,muted}),/moderation/);
 });
 
+test('shared public prefix preserves private event budgets and only advances successful recipient baselines',()=>{
+ const f=fixture(2),a=createGameplayProtocol(catalog),b=createGameplayProtocol(catalog),first=observation(f),prepared=prepareObservationSnapshot(first.snapshot,first.appearances,catalog),receiverA=new GameplayReceiver(binding,catalog),receiverB=new GameplayReceiver(binding,catalog);
+ apply(receiverA,a.encodeObservation({...first,prepared}));apply(receiverB,b.encodeObservation({...first,prepared,selfRef:f.actors[1].ref,...projectObservationExtras(first.snapshot,f.actors[1].p.state.character,first.visibleIds)}));
+ const source={...first,sequence:2},events=Array.from({length:513},(_,order)=>({tick:source.tick,order,event:{type:'xp',unit:f.actors[0].ref,amount:1}}));assert.throws(()=>a.encodeObservation({...source,prepared,events,eventWatermark:512}),/list/);
+ const other={...source,prepared,selfRef:f.actors[1].ref,...projectObservationExtras(source.snapshot,f.actors[1].p.state.character,source.visibleIds),events,eventWatermark:512},chunks=b.encodeObservation(other),preserved=chunks.map(c=>c.slice()),received=apply(receiverB,chunks);assert.deepEqual(received.events,[]);assert.equal(received.state.selfRef.id,f.actors[1].ref.id);
+ const retry=a.encodeObservation({...source,prepared,events:events.slice(0,1),eventWatermark:512}),self=apply(receiverA,retry);assert.equal(self.state.sequence,2);assert.equal(self.events.length,1);assert.equal(self.events[0].event.unit.id,f.actors[0].ref.id);assert.deepEqual(chunks,preserved);
+});
+test('resetting one recipient cannot mutate another recipient shared public baseline or already returned packets',()=>{
+ const f=fixture(2),a=createGameplayProtocol(catalog),b=createGameplayProtocol(catalog),source=observation(f),prepared=prepareObservationSnapshot(source.snapshot,source.appearances,catalog),receiver=new GameplayReceiver(binding,catalog),initial=b.encodeObservation({...source,prepared}),saved=initial.map(c=>c.slice());apply(receiver,initial);a.encodeObservation({...source,prepared});const rebound={...binding,epoch:2};a.reset(rebound);a.encodeObservation({...source,prepared,binding:rebound,full:true});const update=b.encodeObservation({...source,prepared,sequence:2});const state=apply(receiver,update).state;assert.deepEqual(state.actors,source.snapshot.units.map(u=>projectActor(u,source.appearances[`${u.ref.id}:${u.ref.life}`]??null)));assert.deepEqual(initial,saved);
+});
 
 test('revoked input is strictly decoded without apply/ACK and one rate budget survives resets and mixed epochs',()=>{
  const budget=new InputRateBudget(0),prior=new InputSession(binding,catalog,{now:0,budget});prior.accept(encodeInput({binding,intent:input(1,[{kind:'ability',slot:1}])},catalog),0);const prepared=prior.prepareTick(0);assert.ok(prepared);prior.revoke();assert.equal(prior.pendingCount,0);assert.equal(prior.prepareTick(0),null);assert.throws(()=>prior.commitConsumed(prepared.token));assert.throws(()=>prior.accept(encodeInput({binding,intent:input(2)},catalog),0),/revoked/);
  prior.discardRevoked(encodeInput({binding,intent:input(2,[{kind:'jump'}])},catalog),0);assert.equal(prior.acceptedInput,2);assert.equal(prior.consumedInput,0);assert.equal(prior.pendingCount,0);assert.equal(prior.heldState(0).forward,0);assert.throws(()=>prior.discardRevoked(encodeInput({binding:{...binding,area:'forged'},intent:input(3)},catalog),0),/binding/);assert.throws(()=>prior.discardRevoked(encodeInput({binding,intent:input(2)},catalog),0),/stale/);
  const next={...binding,epoch:2},current=new InputSession(next,catalog,{now:0,budget});for(let i=1;i<=118;i++)current.accept(encodeInput({binding:next,intent:input(i)},catalog),0);current.reset({...next,epoch:3},0);assert.throws(()=>current.accept(encodeInput({binding:{...next,epoch:3},intent:input(1)},catalog),0),/rate/);assert.throws(()=>prior.discardRevoked(encodeInput({binding,intent:input(3)},catalog),0),/rate/);assert.equal(prior.acceptedInput,2);assert.equal(current.acceptedInput,0);current.accept(encodeInput({binding:{...next,epoch:3},intent:input(1)},catalog),1/60);assert.equal(current.acceptedInput,1);
+
+});
+
+
+test('publication release invalidates only its prepared token without losing committed connection baselines',()=>{
+ const f=fixture(2),source=observation(f),prepared=prepareObservationSnapshot(source.snapshot,source.appearances,catalog);const first=f.codec.encodeObservation({...source,prepared});apply(f.receiver,first);releasePreparedObservation(prepared);releasePreparedObservation(prepared);assert.throws(()=>f.codec.encodeObservation({...source,prepared,sequence:2}),/prepared/);const next=prepareObservationSnapshot(source.snapshot,source.appearances,catalog),chunks=f.codec.encodeObservation({...source,prepared:next,sequence:2});assert.equal(apply(f.receiver,chunks).state.sequence,2);releasePreparedObservation(next);
 });

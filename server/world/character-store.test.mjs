@@ -50,7 +50,7 @@ before(async () => {
     }
     await pool.query(`INSERT INTO accounts(username,save,revision,updated,created) VALUES($1,$3,47,123,100),($2,'{}',0,1,1)`, [A, B, '{"legacyXP":999999}']);
     const existingAccount = (await pool.query('SELECT * FROM accounts WHERE username=$1', [A])).rows[0];
-    assert.deepEqual(await migrate(pool), ['004_world_characters', '005_world_victim_outcomes', '006_world_chat']);
+    assert.deepEqual(await migrate(pool), ['004_world_characters', '005_world_victim_outcomes', '006_world_chat', '007_world_paged_ledger']);
     assert.deepEqual((await pool.query('SELECT * FROM accounts WHERE username=$1', [A])).rows[0], existingAccount);
     assert.deepEqual(await migrate(pool), []);
     assert.equal((await pool.query('SELECT save FROM accounts WHERE username=$1', [A])).rows[0].save, '{"legacyXP":999999}');
@@ -287,9 +287,9 @@ test('mid-batch PostgreSQL failure rolls back the complete death and preserves r
   const entries = [a, b].map((c, i) => ({ accountId: c.accountId, characterId: c.characterId, id: `batch-rollback:${i}`, payload: { xp: 10, coins: 2 } }));
   await pool.query(`CREATE FUNCTION test_batch_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
     IF NEW.grant_id='batch-rollback:1' THEN RAISE EXCEPTION 'injected batch failure'; END IF; RETURN NEW; END; $$;
-    CREATE TRIGGER test_batch_failure BEFORE INSERT ON world_character_grants FOR EACH ROW EXECUTE FUNCTION test_batch_failure()`);
+    CREATE TRIGGER test_batch_failure BEFORE INSERT ON world_character_grants_physical FOR EACH ROW EXECUTE FUNCTION test_batch_failure()`);
   try { await assert.rejects(store.recordGrantBatch(entries), /injected batch failure/); }
-  finally { await pool.query('DROP TRIGGER test_batch_failure ON world_character_grants; DROP FUNCTION test_batch_failure()'); }
+  finally { await pool.query('DROP TRIGGER test_batch_failure ON world_character_grants_physical; DROP FUNCTION test_batch_failure()'); }
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM world_character_grants WHERE grant_id LIKE 'batch-rollback:%'")).rows[0].n, 0);
   assert.deepEqual(await store.getOwned(A, a.characterId), a); assert.deepEqual(await store.getOwned(B, b.characterId), b);
   assert.equal((await store.recordGrantBatch(entries)).length, 2);
