@@ -51,6 +51,7 @@ export class DurableReceipts {
   }
   hasRead(character:CharacterId):boolean {return this.reads.has(character);}
   remove(character:CharacterId):void {this.owners.delete(character);this.reads.delete(character);}
+  cancelAll():void {this.reads.clear();}
   clear():void {this.owners.clear();this.reads.clear();}
   usage(){return{ledgerOwners:this.owners.size,replayTokens:this.reads.size};}
   debug(){return immutable({owners:[...this.owners.values()],reads:[...this.reads.values()],nextGeneration:this.serial+1});}

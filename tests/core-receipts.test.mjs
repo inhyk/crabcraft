@@ -85,3 +85,8 @@ test('a real event-capacity fault retains only the applied prefix and requires f
  assert.throws(()=>a.applyCertifiedGrants(proof,{revision:0,grants}),/capacity/);assert.equal(p.state.xp,1);assert.equal(p.state.coins,1);assert.deepEqual(a.appliedGrantIds('hero'),[grant(1).id]);assert.equal(a.resourceUsage().replayTokens,0);assert.throws(()=>a.applyCertifiedGrants(proof,{revision:0,grants}),/Stale/);
  a.drainEvents();assert.deepEqual(a.applyCertifiedGrants(a.beginGrantRead(ref,0),{revision:0,grants}),[{id:grant(1).id,result:'duplicate'},{id:grant(2).id,result:'applied'}]);assert.equal(p.state.xp,2);assert.equal(p.state.coins,2);
 });
+
+
+test('a read cannot cross the last durability-barrier release and later reacquisition',()=>{
+ const a=area('barrier-scope'),{ref,p}=actor(a),barrier=a.beginDurabilityBarrier('first'),proof=a.beginGrantRead(ref,0);a.releaseDurabilityBarrier(barrier);assert.equal(a.resourceUsage().replayTokens,0);a.beginDurabilityBarrier('second');assert.throws(()=>a.applyCertifiedGrants(proof,{revision:0,grants:[grant(1)]}),/Stale/);assert.equal(p.state.coins,0);
+});
