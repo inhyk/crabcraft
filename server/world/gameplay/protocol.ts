@@ -392,6 +392,9 @@ export function prepareObservationSnapshot(snapshot:AreaSnapshot,appearances:Obs
  preparedObservations.set(token,{source:snapshot,catalog:JSON.stringify(clone(catalog)),actors,recipes,poseKeys,fullFields,deltas:new WeakMap(),baselines:new Map(),full:new Map(),changes:new WeakMap(),cachedGroups:0,cachedBytes:0});return token;
 }
 
+/** End one synchronous publication; connection baselines contain only detached public values. */
+export function releasePreparedObservation(token:PreparedObservation):void {preparedObservations.delete(token);}
+
 function recipeKey(recipe:RenderPoseSource):string {return JSON.stringify(recipe,(_key,value)=>typeof value==='number'&&Object.is(value,-0)?'negative-zero':value);}
 
 // A cache bound is a reuse limit, never a packet/actor/AOI acceptance limit. Excess groups take the same uncached path.

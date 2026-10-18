@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot} from './protocol.ts';
+import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot,releasePreparedObservation} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession,InputRateBudget} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent,tick} from '../../../tests/core/worldHarness.mjs';
@@ -291,4 +291,9 @@ test('revoked input is strictly decoded without apply/ACK and one rate budget su
  prior.discardRevoked(encodeInput({binding,intent:input(2,[{kind:'jump'}])},catalog),0);assert.equal(prior.acceptedInput,2);assert.equal(prior.consumedInput,0);assert.equal(prior.pendingCount,0);assert.equal(prior.heldState(0).forward,0);assert.throws(()=>prior.discardRevoked(encodeInput({binding:{...binding,area:'forged'},intent:input(3)},catalog),0),/binding/);assert.throws(()=>prior.discardRevoked(encodeInput({binding,intent:input(2)},catalog),0),/stale/);
  const next={...binding,epoch:2},current=new InputSession(next,catalog,{now:0,budget});for(let i=1;i<=118;i++)current.accept(encodeInput({binding:next,intent:input(i)},catalog),0);current.reset({...next,epoch:3},0);assert.throws(()=>current.accept(encodeInput({binding:{...next,epoch:3},intent:input(1)},catalog),0),/rate/);assert.throws(()=>prior.discardRevoked(encodeInput({binding,intent:input(3)},catalog),0),/rate/);assert.equal(prior.acceptedInput,2);assert.equal(current.acceptedInput,0);current.accept(encodeInput({binding:{...next,epoch:3},intent:input(1)},catalog),1/60);assert.equal(current.acceptedInput,1);
 
+});
+
+
+test('publication release invalidates only its prepared token without losing committed connection baselines',()=>{
+ const f=fixture(2),source=observation(f),prepared=prepareObservationSnapshot(source.snapshot,source.appearances,catalog);const first=f.codec.encodeObservation({...source,prepared});apply(f.receiver,first);releasePreparedObservation(prepared);releasePreparedObservation(prepared);assert.throws(()=>f.codec.encodeObservation({...source,prepared,sequence:2}),/prepared/);const next=prepareObservationSnapshot(source.snapshot,source.appearances,catalog),chunks=f.codec.encodeObservation({...source,prepared:next,sequence:2});assert.equal(apply(f.receiver,chunks).state.sequence,2);releasePreparedObservation(next);
 });
