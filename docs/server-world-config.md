@@ -41,6 +41,8 @@ W5/W6에도 위 표의 `seed`, `populationMode`, `fixedLevels`, `population`, `r
 
 `party.enabled:true`이면 활성화한 W5에는 `returns.ember:{world:"w5",spawn:<실제 public POI id>}`, W6에는 `returns.sky:{world:"w6",spawn:<실제 public POI id>}`를 추가한다. 각 `spawn`은 해당 canonical definition의 spawn, recall 또는 POI에 존재해야 한다. 비활성 월드의 profile을 return 정책에 추가하면 거부한다. 기존 4월드 설정은 기존 다섯 profile return만 요구한다. Party capacity8과 명시적 `maxParties`/`maxEncounters` 계약은 유지한다.
 
+`deploy/vm/world-dev-6.json`은 `deploy/vm/world-dev.json`에 W5(seed 1005)와 W6(seed 1006), 아래 표의 레벨과 respawn, population 12/4/6/3, `returns.ember`/`returns.sky`의 `spawn`을 더한 6월드 dev 설정이다. 이 파일로 실제 package를 기동해 `/healthz` 200, `/world` 426, catalog의 `gate:w5`/`gate:w6`와 `boss-ember`/`boss-sky`를 확인했다. VM의 `/etc/crabcraft/dev-world.json`은 이 PR이 바꾸지 않는다.
+
 현재 canonical helper(`src/sim/data/enemies.ts`, dev52 합성 기준)의 source 값은 다음과 같다. 이 값은 config의 자동 기본값이 아니며 운영 설정에서 명시해야 한다.
 
 | Region | scrapling / scavenger / jellyfish / echo 레벨 | ordinary respawn | echo respawn | respawn clearance |
