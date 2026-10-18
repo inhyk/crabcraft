@@ -42,6 +42,8 @@ try {
    ['abyss',{race:'nightelf',sex:'female',classId:'mage',shell:2,crest:3,led:2,name:'Nereid'},3.5],
    ['eclipse',{race:'undead',sex:'female',classId:'priest',shell:3,crest:3,led:2,name:'Astra'},4.5],
    ['dawn',{race:'orc',sex:'male',classId:'warrior',shell:2,crest:3,led:1,name:'Solarkan'},4],
+   ['ember',{race:'orc',sex:'male',classId:'warrior',shell:3,crest:3,led:1,name:'ember'},4.7],
+   ['sky',{race:'nightelf',sex:'female',classId:'priest',shell:2,crest:2,led:2,name:'sky'},4.5],
    ['frost',{race:'undead',sex:'male',classId:'mage',shell:3,crest:1,led:2,name:'Boreas'},4.5],
   ]){const rig=await createCrab(spec);rig.root.scale.multiplyScalar(scale);capture(id,rig,{factory:'createCrab',spec,rootMultiplier:scale});}
   {const rig=await createEnemyCrab('corrodius');rig.root.scale.multiplyScalar(.55);capture('echo',rig,{factory:'createEnemyCrab',kind:'corrodius',rootMultiplier:.55});}
@@ -62,6 +64,8 @@ try {
    ['freed-abyss',{race:'nightelf',sex:'female',classId:'priest',shell:2,crest:1,led:2,name:'Pearl'}],
    ['freed-eclipse',{race:'undead',sex:'female',classId:'priest',shell:2,crest:2,led:2,name:'Star'}],
    ['freed-dawn',{race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:1,name:'Dawnkeeper'}],
+   ['freed-ember',{race:'human',sex:'female',classId:'priest',shell:1,crest:2,led:2,name:'emberkeeper'}],
+   ['freed-sky',{race:'human',sex:'female',classId:'priest',shell:1,crest:2,led:2,name:'skykeeper'}],
    ['freed-frost',{race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:1,name:'Mira'}],
   ])capture(id,await createCrab(spec),{factory:'createCrab',spec,rootMultiplier:1});
   const windows={}; for(const id of Object.keys(SKILL_CLIPS))windows[id]={move:skillWindow(id),channel:skillWindow(id,'channel'),release:skillWindow(id,'release')};
