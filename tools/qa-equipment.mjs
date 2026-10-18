@@ -16,7 +16,8 @@ try{
  assert.deepEqual(await p.evaluate(()=>{const p=window.app.current.game.player;return [p.attackRank,p.armorRank,p.coins]}),[3,0,1000]);
  await forge();assert.equal(await p.locator('.forge-card').count(),2);
  await p.screenshot({path:'tmp/qa/forge-before.png'});
- await p.getByRole('button',{name:'방어구 강화 · 100 코인',exact:true}).click();
+ await p.getByRole('button',{name:'방어구 구매 · 100 코인',exact:true}).click();
+ assert.match(await p.locator('.forge-notice').innerText(),/구매 완료/);
  await p.getByRole('button',{name:'무기 강화 · 400 코인',exact:true}).click();
  await p.getByRole('button',{name:'방어구 강화 · 200 코인',exact:true}).click();
  assert.deepEqual(await p.evaluate(()=>{const p=window.app.current.game.player;return [p.attackRank,p.armorRank,p.coins]}),[4,2,300]);
@@ -31,7 +32,7 @@ try{
  console.log('PASS legacy weapon save migration, actual NPC/F opening, independent purchases/costs, insufficient coins, input blocking, Escape, armor damage and reload');
  await forge();await p.getByRole('button',{name:'주민의 부탁 듣기',exact:true}).click();assert.equal(await p.locator('.forge-panel').isVisible(),false);assert.equal(await p.evaluate(()=>window.app.current.game.hud.dialogue.isOpen),true);
  await p.keyboard.press('Escape');await p.waitForTimeout(100);await p.evaluate(()=>{const g=window.app.current.game;g.hud.menu.show();g.hud.menu.settings();});await p.getByRole('button',{name:'English',exact:true}).click();await p.evaluate(()=>window.app.current.game.hud.menu.close());
- await forge();assert.match(await p.locator('.forge-panel').innerText(),/Weapon & Armor Forge/);assert.match(await p.locator('.forge-panel').innerText(),/7.4%/);
+ await forge();assert.match(await p.locator('.forge-panel').innerText(),/Equipment Shop & Forge/);assert.match(await p.locator('.forge-panel').innerText(),/7.4%/);
  await p.setViewportSize({width:800,height:600});await p.screenshot({path:'tmp/qa/forge-english.png'});
  assert.equal(await p.evaluate(()=>{const el=document.querySelector('.forge-panel'),r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}),true);
  await p.evaluate(()=>{const g=window.app.current.game;g.player.attackRank=g.player.armorRank=100;g.hud.forge.update();});

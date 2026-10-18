@@ -1,5 +1,6 @@
 /** Keep legacy weapon ranks, bound save data, and never turn armor into invulnerability. */
 export const MAX_EQUIPMENT_RANK = 100;
+export const EQUIPMENT_PRICE = 100;
 export type EquipmentSlot = 'weapon' | 'armor';
 export function equipmentRank(value: unknown): number {
  return typeof value==='number'&&Number.isSafeInteger(value)?Math.max(0,Math.min(MAX_EQUIPMENT_RANK,value)):0;
