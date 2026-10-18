@@ -1,5 +1,6 @@
 /** Strict new-character persistence. No legacy save normalization or offline policy defaults. */
 import type { AbilityId, ChannelKind, ClassId, EarnedGrant, PlayerState, SimUnit, WorldId } from './types.ts';
+import {DUNGEONS} from './data/dungeons.ts';
 import { CLASSES } from './data/classes.ts';
 import { freshQuests, QUEST_ORDER, QUESTS } from './data/quests.ts';
 import { levelForXp } from './data/progression.ts';
@@ -7,7 +8,8 @@ import { worldChapter } from './math.ts';
 
 export const ACHIEVEMENT_IDS = Object.freeze(['sail','crew','landfall','island','treasure','moon','sunset','moonTreasure','sunsetTreasure','archipelago','rust','abyss','eclipse','dawn','secret']);
 export const EARNED_BOSS_FLAG_IDS = Object.freeze(['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared','emberCleared','skyCleared']);
-export const PERSONAL_FLAG_IDS = Object.freeze([...EARNED_BOSS_FLAG_IDS,'firstEndingSeen','frostEndingStarted','beaconLit']);
+export const DUNGEON_CLEAR_FLAG_IDS=Object.freeze(DUNGEONS.map(d=>`dungeonCleared${d.level}`));
+export const PERSONAL_FLAG_IDS = Object.freeze([...EARNED_BOSS_FLAG_IDS,...DUNGEON_CLEAR_FLAG_IDS,'firstEndingSeen','frostEndingStarted','beaconLit']);
 export type CharacterAppearance = { race:'human'|'orc'|'dwarf'|'undead'|'nightelf'|'tauren'; sex:'male'|'female'; classId:ClassId; shell:number; crest:number; led:number; name:string };
 export type CharacterIdentityV1 = { schema:'world-identity-v1'; classId:ClassId; archetype:string; appearance:CharacterAppearance };
 export type LocationCheckpoint = { x:number; y:number; z:number; yaw:number };
