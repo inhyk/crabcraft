@@ -33,14 +33,19 @@ try{
   const makeRig=async id=>{
    if(id==='jellyfish')return createJellyfishRig();
    if(['scrapling','scavenger','corrodius','echo'].includes(id)){const r=await createEnemyCrab(id==='echo'?'corrodius':id);if(id==='echo')r.root.scale.multiplyScalar(.55);return r;}
-   const scaled={abyss:['nightelf',3.5],eclipse:['undead',4.5],dawn:['orc',4]}[id];const r=await createCrab(spec(scaled?.[0]??id));if(scaled)r.root.scale.multiplyScalar(scaled[1]);return r;
+   const scaled={
+    abyss:[{race:'nightelf',sex:'female',classId:'mage',shell:2,crest:3,led:2,name:'Nereid'},3.5],
+    eclipse:[{race:'undead',sex:'female',classId:'priest',shell:3,crest:3,led:2,name:'Astra'},4.5],
+    dawn:[{race:'orc',sex:'male',classId:'warrior',shell:2,crest:3,led:1,name:'Solarkan'},4],
+    frost:[{race:'undead',sex:'male',classId:'mage',shell:3,crest:1,led:2,name:'Boreas'},4.5],
+   }[id];const r=await createCrab(scaled?.[0]??spec(id));if(scaled)r.root.scale.multiplyScalar(scaled[1]);return r;
   };
   const newUnit=id=>({ref:{area:'parity',id:1,life:1},archetype:id,x:7,y:2,z:-3,yaw:.63,pose:numeric.initializeNumericPose(),actions:[],pendingHit:null});
   const checkAnchor=(u,r)=>{
    r.root.updateMatrixWorld(true);const expected=r.getSocket('clawR').getWorldPosition(new THREE.Vector3()),got=realActionData.launchAnchor(u,u.pose);
    for(const key of ['x','y','z'])maxAnchorDelta=Math.max(maxAnchorDelta,near(expected[key],got[key],`${u.archetype} ${key}`));anchors++;
   };
-  const rigs=['human','orc','dwarf','undead','nightelf','tauren','scrapling','scavenger','corrodius','jellyfish','abyss','eclipse','dawn','echo'];
+  const rigs=['human','orc','dwarf','undead','nightelf','tauren','scrapling','scavenger','corrodius','jellyfish','abyss','eclipse','dawn','frost','echo'];
   for(const id of rigs){
    const rig=await makeRig(id),u=newUnit(id);rig.root.position.set(u.x,u.y,u.z);rig.root.rotation.y=u.yaw;
    const height=rig.getSocket('head').getWorldPosition(new THREE.Vector3()).y-u.y;
@@ -68,7 +73,7 @@ try{
   }
   // Deterministic envelope of the view-only random twitch: source maximum amplitude is .075.
   const twitch=[];
-  for(const id of ['undead','eclipse']){
+  for(const id of ['undead','eclipse','frost']){
    const rig=await makeRig(id),u=newUnit(id),basePitch=rig.posture.rotation.x;
    rig.root.position.set(u.x,u.y,u.z);rig.root.rotation.y=u.yaw;
    let maxOrigin=0,maxHead=0,maxRadius=0,maxFlightSeconds=0,maxArrivalTicks=0,worst=null,checks=0;
