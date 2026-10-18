@@ -1,7 +1,7 @@
 import type { AreaDefinition, AreaServices, ChannelState, EntityRef, PlayerCommand, PlayerSim } from './types.ts';
 import { activeObjective, QUESTS, questAccept, questBump, questComplete } from './data/quests.ts';
 import { worldChapter } from './math.ts';
-import { canChallenge, canTravelTo, forgeCost } from './data/progression.ts';
+import { canChallenge, canReplayFrostEnding, canTravelTo, forgeCost } from './data/progression.ts';
 import { teleport } from './unit.ts';
 import { BOSS_PROFILES } from './data/bosses.ts';
 export interface WorldInteractionState {beaconLit:boolean}
@@ -29,6 +29,7 @@ export class InteractionRules {
   return false;
  }
  command(ref:EntityRef,command:PlayerCommand):boolean {const p=this.player(ref);if(!p)return false;const s=this.services;
+  if(command.kind==='endingReplay'){if(!canReplayFrostEnding(worldChapter(s.world),p.state.flags,s.bossByProfile('frost')?.state??'dormant',p.state.controlsLocked))return false;s.emit({type:'endingReady',unit:p.state.unit,chapter:4,replay:true});return true;}
   if(command.kind==='bossChallenge'){
    const boss=s.bossByProfile(command.profile),definition=s.definition.bosses.find(b=>b.profile===command.profile),u=s.getUnit(ref)!;if(!boss||!definition)return false;
    const stats=BOSS_PROFILES[command.profile],chapter=worldChapter(s.world);

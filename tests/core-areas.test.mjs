@@ -4,7 +4,7 @@ import {createWorld1Definition} from '../src/sim/areas/world1.ts';
 import {createWorld2Definition} from '../src/sim/areas/world2.ts';
 import {createWorld3Definition} from '../src/sim/areas/world3.ts';
 const query={heightAt:(x,z)=>2+Math.sin(x/20)+Math.cos(z/20),resolveCollision:(x,z,r,out)=>out.set(x,z),raycastSolid:()=>null};
-const config={query,fixedLevels:{scrapling:3,scavenger:5,jellyfish:4,echo:11},population:{scrapling:12,scavenger:4,jellyfish:0}};
+const config={query,personalProps:query,fixedLevels:{scrapling:3,scavenger:5,jellyfish:4,echo:11},population:{scrapling:12,scavenger:4,jellyfish:0}};
 test('three worlds have independent immutable spawn, NPC, arena and interaction definitions',()=>{
  const [w1,w2,w3]=[createWorld1Definition(config),createWorld2Definition(config),createWorld3Definition(config)];
  assert.deepEqual([w1.world,w2.world,w3.world],['w1','w2','w3']);assert.deepEqual([w1.spawn.position.x,w2.spawn.position.x,w3.spawn.position.z],[-.5,0,84]);
