@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import {PavingLayout,pavingGround,type PavingPolygon} from './pavingLayout';
 export type IslandPath={points:readonly (readonly [number,number])[];width:number;trim?:boolean};
 
 /** Weathered bevelled flagstones drape onto the exact gameplay surface, including hills. */
@@ -16,15 +17,20 @@ export function islandPaths(height:(x:number,z:number)=>number,paths:IslandPath[
  const materials=palette.map(color=>new THREE.MeshStandardMaterial({color,map:texture,bumpMap:texture,bumpScale:.055,roughness:.94}));
  const edgeMaterial=new THREE.MeshStandardMaterial({color:realm===2?'#9eafad':'#d7c39c',map:texture,bumpMap:texture,bumpScale:.035,roughness:.9});
  const pools:THREE.BufferGeometry[][]=materials.map(()=>[]),edges:THREE.BufferGeometry[]=[];
+ const layout=new PavingLayout(),trimStones:{x:number;z:number;w:number;l:number;yaw:number}[]=[];
+ let clipped=0;
  const stone=(x:number,z:number,w:number,l:number,yaw:number,pool:THREE.BufferGeometry[])=>{
-  const shape=new THREE.Shape(),b=.055;
-  shape.moveTo(-w/2+b,-l/2);shape.lineTo(w/2-b,-l/2);shape.lineTo(w/2,-l/2+b);shape.lineTo(w/2,l/2-b);shape.lineTo(w/2-b,l/2);shape.lineTo(-w/2+b,l/2);shape.lineTo(-w/2,l/2-b);shape.lineTo(-w/2,-l/2+b);shape.closePath();
-  const g=new THREE.ExtrudeGeometry(shape,{depth:.035,bevelEnabled:true,bevelThickness:.025,bevelSize:.025,bevelSegments:1,steps:1});g.rotateX(-Math.PI/2);g.rotateY(yaw);g.translate(x,0,z);
-  const p=g.getAttribute('position'),uv=g.getAttribute('uv');for(let i=0;i<p.count;i++){const px=p.getX(i),pz=p.getZ(i);p.setY(i,p.getY(i)+height(px,pz)+.045);uv.setXY(i,(px-x)/w+.5,(pz-z)/l+.5);}g.computeVertexNormals();pool.push(g);
+  const c=Math.cos(yaw),s=Math.sin(yaw),footprint:PavingPolygon=[[-w/2,-l/2],[w/2,-l/2],[w/2,l/2],[-w/2,l/2]].map(([a,b])=>[x+a*c+b*s,z-a*s+b*c]);
+  const pieces=layout.reserve(footprint);if(pieces.length!==1||pieces[0].length!==4)clipped++;
+  for(const piece of pieces){
+   const shape=new THREE.Shape();piece.forEach(([px,pz],i)=>{if(i===0)shape.moveTo(px,-pz);else shape.lineTo(px,-pz);});shape.closePath();
+   const g=new THREE.ExtrudeGeometry(shape,{depth:.035,bevelEnabled:true,bevelThickness:.02,bevelSize:.018,bevelSegments:1,steps:1});g.rotateX(-Math.PI/2);
+   const p=g.getAttribute('position'),uv=g.getAttribute('uv');for(let i=0;i<p.count;i++){const px=p.getX(i),pz=p.getZ(i);p.setY(i,p.getY(i)+pavingGround(height,px,pz,realm)+.065);uv.setXY(i,(px-x)/w+.5,(pz-z)/l+.5);}g.computeVertexNormals();pool.push(g);
+  }
  };
  for(const path of paths){
   for(let k=1;k<path.points.length;k++){
-   const [ax,az]=path.points[k-1],[bx,bz]=path.points[k],dx=bx-ax,dz=bz-az,d=Math.hypot(dx,dz),yaw=Math.atan2(dx,dz),nx=dz/d,nz=-dx/d;
+   const [ax,az]=path.points[k-1],[bx,bz]=path.points[k],dx=bx-ax,dz=bz-az,d=Math.hypot(dx,dz);if(d<.001)continue;const yaw=Math.atan2(dx,dz),nx=dz/d,nz=-dx/d;
    const rows=Math.ceil(d/1.35),step=d/rows,columns=Math.max(2,Math.round(path.width/1.25)),cw=path.width/columns;
    for(let j=0;j<rows;j++){
     const t=(j+.5)/rows,cx=ax+dx*t,cz=az+dz*t;
@@ -35,10 +41,12 @@ export function islandPaths(height:(x:number,z:number)=>number,paths:IslandPath[
      if(realm===3&&Math.hypot(x,z+72)<22)continue;
      stone(x,z,cw-.065-random()*.03,step-.065-random()*.03,yaw+(random()-.5)*.028,pools[Math.floor(random()*materials.length)]);
     }
-    if(path.trim)for(const side of [-1,1]){const across=side*(path.width/2+.17);const x=cx+nx*across,z=cz+nz*across;if(realm===2&&Math.hypot(x,z-55)<4)continue;stone(x,z,.24,step-.04,yaw,edges);}
+    if(path.trim)for(const side of [-1,1]){const across=side*(path.width/2+.17);const x=cx+nx*across,z=cz+nz*across;if(realm===2&&Math.hypot(x,z-55)<4)continue;trimStones.push({x,z,w:.24,l:step-.04,yaw});}
    }
   }
  }
+ // Main paving owns junctions before any curb is placed across a connecting street.
+ for(const {x,z,w,l,yaw} of trimStones)stone(x,z,w,l,yaw,edges);
  for(const [i,pool] of [...pools,edges].entries()){if(!pool.length)continue;const geo=mergeGeometries(pool,false)!;pool.forEach(g=>g.dispose());const mesh=new THREE.Mesh(geo,i===pools.length?edgeMaterial:materials[i]);mesh.name='weathered-bevelled-paving';mesh.receiveShadow=true;root.add(mesh);}
- root.userData.pavers=pools.reduce((n,p)=>n+p.length,0);return root;
+ root.userData.pavers=pools.reduce((n,p)=>n+p.length,0);root.userData.clippedJunctionStones=clipped;return root;
 }

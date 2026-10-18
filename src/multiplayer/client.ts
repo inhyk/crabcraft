@@ -41,6 +41,7 @@ export class Multiplayer {
   private elapsed = 0;
   private partyElapsed=0;
   private partyKey='';
+  private partySize:ResizeObserver;
   private socialKey='';
   private readonly peerGoal=new THREE.Vector3();
   private rejoinParty: number | null = null;
@@ -65,7 +66,7 @@ export class Multiplayer {
   private share = h('button', { type: 'button', onclick: () => void this.copyInvite() }, '초대 링크 복사');
   private invite = h('input', { readonly: true, class: 'mp-invite', 'aria-label': '초대 링크', onclick: (e: Event) => (e.target as HTMLInputElement).select() });
   private sendButton = h('button', { type: 'submit' }, '전송');
-  private partyPanel=h('div',{class:'mp-party'});
+  private partyPanel=h('section',{class:'mp-party mp-party-hud',hidden:true,'aria-label':t('파티원 목록','Party roster')});
   private statusText:[string,string]=['연결 중…','Connecting…'];
   private readonly blocked = new Blocklist();
   private readonly session = chatSession();
@@ -115,12 +116,15 @@ export class Multiplayer {
         // The B emote. The button gives the keyboard back so moving can end the routine.
         h('button', { type: 'button', 'data-emote':'breakdance', onclick: (e: Event) => { (e.currentTarget as HTMLElement).blur(); this.game.player.toggleBreakdance(); } }, '🕺 브레이크댄스')),
       this.modeRow, this.duelHelp, this.partyRow,
-      this.partyPanel,this.actions,this.log, chatForm,
+      this.actions,this.log, chatForm,
     );
     // Opening a form clears held movement keys. Typing never controls the crab.
     this.root.addEventListener('focusin', () => window.dispatchEvent(new Event('blur')));
     this.root.addEventListener('keydown', e => e.stopPropagation());
     game.hud.tracker.el.after(this.root);
+    game.hud.root.append(this.partyPanel);
+    this.partySize=new ResizeObserver(()=>game.app.ui.style.setProperty('--party-roster-height',`${this.partyPanel.offsetHeight}px`));
+    this.partySize.observe(this.partyPanel);
     game.player.unit.onAction = action => this.send({ type: 'action', action });
     game.player.unit.onBreakdanceStop = () => this.send({ type: 'action', action: 'breakdance_stop' });
     this.refreshLanguage();
@@ -169,6 +173,9 @@ export class Multiplayer {
     switch (msg.type) {
       case 'welcome': {
         this.ownId = msg.id; this.offline = false;
+        // Only the visible label changes; the original spec still owns local saves.
+        if(typeof msg.displayName==='string')this.game.player.unit.name=displayName(msg.displayName);
+        if(msg.nameConflict===true)this.note(t(`이미 사용 중인 이름이라 ‘${this.game.player.unit.name}’로 표시해요.`,`That name is already in use, so you appear as “${this.game.player.unit.name}”.`),'mp-system');
         if (msg.public) {
           this.shard = msg.room; this.area = msg.area; this.room = '';
           if(msg.sharedWorld===1)this.battle.join(msg.id,msg.host,msg.world,true);
@@ -320,7 +327,8 @@ export class Multiplayer {
     const key=JSON.stringify([heading,partyLabel,soloLabel,members]);
     if(key===this.partyKey)return;
     this.partyKey=key;
-    this.partyPanel.replaceChildren(h('strong',null,heading),...members.map(p=>
+    this.partyPanel.setAttribute('aria-label',t('파티원 목록','Party roster'));
+    this.partyPanel.replaceChildren(h('h3',null,t('파티원','Party members')),h('strong',null,heading),...members.map(p=>
       h('div',{class:`mp-member party-${p.party}`},h('span',null,`${p.party?`${partyLabel} ${p.party}`:soloLabel} · ${p.name}`),h('meter',{min:0,max:p.max,value:p.hp}),h('small',null,`${Math.ceil(p.hp)} / ${Math.ceil(p.max)}`))));
   }
 
@@ -505,9 +513,11 @@ export class Multiplayer {
   private disconnect() { this.connect('enter'); }
   dispose() {
     this.disposed = true;
+    this.partySize.disconnect();
+    this.game.app.ui.style.removeProperty('--party-roster-height');
     if (this.timer) clearTimeout(this.timer);
     this.game.player.unit.onAction = null;
     this.game.player.unit.onBreakdanceStop = null;
-    this.battle.dispose(); this.closeSocket(); this.link.dispose(); this.root.remove();
+    this.battle.dispose(); this.closeSocket(); this.link.dispose(); this.root.remove(); this.partyPanel.remove();
   }
 }
