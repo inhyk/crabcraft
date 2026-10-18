@@ -24,8 +24,8 @@ export class BossJourney {
   }
 
   /** Preview the same character save that restore() will accept, before models are loaded. */
-  static savedChapter(spec: CrabSpec): 1 | 2 | 3 | 4 {
-    const data=readJourneySave(this.saveKey(spec));return data?.chapter===4&&data.abyss&&data.trueCleared&&data.finalCleared?4:data?.chapter===3&&data.abyss&&data.trueCleared?3:data?.chapter===2&&data.abyss?2:1;
+  static savedChapter(spec: CrabSpec): 1 | 2 | 3 | 4 | 5 | 6 {
+    const data=readJourneySave(this.saveKey(spec));return data?.chapter===6&&data.frostCleared?6:data?.chapter===5&&data.frostCleared?5:data?.chapter===4&&data.abyss&&data.trueCleared&&data.finalCleared?4:data?.chapter===3&&data.abyss&&data.trueCleared?3:data?.chapter===2&&data.abyss?2:1;
   }
 
   readonly root: HTMLDetailsElement;
@@ -84,7 +84,7 @@ export class BossJourney {
       const data = readJourneySave(this.key);
       if (!data) return;
       this.game.achievements?.restore(data.achievements);
-      const second = data.chapter === 2 || data.chapter===3 || data.chapter===4;
+      const second = Number.isInteger(data.chapter)&&data.chapter>=2&&data.chapter<=6;
       this.game.player.restoreXp(data.xp);
       this.game.player.xpBlessingUntil = Number.isFinite(data.xpBlessingUntil) ? Math.max(0, Math.min(Date.now()+600000, data.xpBlessingUntil)) : 0;
       this.game.player.coins=Number.isSafeInteger(data.coins)&&data.coins>=0?data.coins:0;
@@ -119,7 +119,7 @@ export class BossJourney {
       for (const [boss, cleared] of [[this.game.boss, this.rustCleared], [this.game.finalBoss, this.abyssCleared], [this.game.worldBoss, this.trueCleared],[this.game.dawnBoss,this.finalCleared],[this.game.frostBoss,this.frostCleared]] as const) {
         if (cleared) { boss.state = 'dead'; boss.unit.alive = false; boss.unit.hidden = true; boss.unit.rig.root.visible = false; }
       }
-      if (second&&this.abyssCleared) this.game.world2.go(data.chapter===4&&this.finalCleared?4:data.chapter>=3&&this.trueCleared?3:2);
+      if (second&&this.abyssCleared) this.game.world2.go(data.chapter===6&&this.frostCleared?6:data.chapter===5&&this.frostCleared?5:data.chapter===4&&this.finalCleared?4:data.chapter>=3&&this.trueCleared?3:2);
     } catch { /* A missing or damaged local save starts a fresh journey. */ }
   }
 
@@ -258,7 +258,7 @@ export class BossJourney {
         card.querySelector('p')!.textContent=boss.profile.level===300?t('서리 감옥 · 7중 눈보라 · 빙결 파동 · 300레벨','Frost prison · Sevenfold blizzard · Glacial pulse · Level 300'):boss.profile.level===100?t('8방향 화염 · 5중 폭격 · 극한 폭주 · 100레벨','Eight fire rays · Five bombs · Extreme enrage · Level 100'):boss.profile.level===20?t('검은 일식 · 안쪽 안전지대 · 별빛 폭주','Black Eclipse · Inner sanctuary · Starfall enrage'):boss.profile.level===10?t('심해 파동 · 끌어당기기 · 3단계 폭주','Tidal Nova · Undertow · Phase III enrage'):t('닻 내려찍기 · 녹 분사 · 하수인 소환','Anchor Slam · Rust Spray · Rustling summons');
       }
       this.portal.hidden = g.world2.chapter !== 1;this.portal.disabled=!this.abyssCleared;
-      this.patrol.textContent = g.world2.chapter===4?t(`WORLD IV · 서리빛 설원 · 목표 300레벨 · 순찰 ${this.kills}/5 · +${patrolReward(level)} XP`,`WORLD IV · Frostlight · Reach level 300 · Patrol ${this.kills}/5 · +${patrolReward(level)} XP`):g.world2.chapter===3?t(`WORLD III · 설원으로 가는 길 · 목표100레벨 · 순찰 ${this.kills}/5`,`WORLD III · The road to Frostlight · Reach level 100 · Patrol ${this.kills}/5`):this.trueCleared ? t('월드3가 열렸어요. 북쪽 별길의 포탈로 친구를 구하러 가세요.','World III is open. Take the north Starroad portal to rescue your friend.') : g.world2.chapter === 2 ? t(`WORLD II · 유적 순찰 ${this.kills}/5 · +${patrolReward(level)} XP · 목표 20레벨`,`WORLD II · Ruin patrol ${this.kills}/5 · +${patrolReward(level)} XP · Reach level 20`) : this.abyssCleared ? t('첫 엔딩 너머, 숨겨진 별의 섬으로…','Beyond the first ending, a hidden island awaits…') : this.rustCleared ? t(`해안 순찰 ${this.kills}/5 · 보너스 ${patrolReward(level)} XP`,`Shore patrol ${this.kills}/5 · Bonus ${patrolReward(level)} XP`) : t('마을 퀘스트와 해안 전투로 3레벨에 도달하세요.','Reach level 3 through village quests and shore battles.');
+      this.patrol.textContent = g.world2.chapter>=5?t(`WORLD ${g.world2.chapter===5?'V · 잿불 군도':'VI · 하늘숲'} · 마을 퀘스트 12개 · 순찰 ${this.kills}/5`,`WORLD ${g.world2.chapter===5?'V · Emberreach':'VI · Skybloom'} · 12 village quests · Patrol ${this.kills}/5`):g.world2.chapter===4?t(`WORLD IV · 서리빛 설원 · 목표 300레벨 · 순찰 ${this.kills}/5 · +${patrolReward(level)} XP`,`WORLD IV · Frostlight · Reach level 300 · Patrol ${this.kills}/5 · +${patrolReward(level)} XP`):g.world2.chapter===3?t(`WORLD III · 설원으로 가는 길 · 목표100레벨 · 순찰 ${this.kills}/5`,`WORLD III · The road to Frostlight · Reach level 100 · Patrol ${this.kills}/5`):this.trueCleared ? t('월드3가 열렸어요. 북쪽 별길의 포탈로 친구를 구하러 가세요.','World III is open. Take the north Starroad portal to rescue your friend.') : g.world2.chapter === 2 ? t(`WORLD II · 유적 순찰 ${this.kills}/5 · +${patrolReward(level)} XP · 목표 20레벨`,`WORLD II · Ruin patrol ${this.kills}/5 · +${patrolReward(level)} XP · Reach level 20`) : this.abyssCleared ? t('첫 엔딩 너머, 숨겨진 별의 섬으로…','Beyond the first ending, a hidden island awaits…') : this.rustCleared ? t(`해안 순찰 ${this.kills}/5 · 보너스 ${patrolReward(level)} XP`,`Shore patrol ${this.kills}/5 · Bonus ${patrolReward(level)} XP`) : t('마을 퀘스트와 해안 전투로 3레벨에 도달하세요.','Reach level 3 through village quests and shore battles.');
       this.root.querySelector('small')!.textContent=t('적을 처치하고 퀘스트를 완료하면 성장해요. 로그인하면 계정에도 모험이 자동 저장돼요.','Grow by defeating enemies and completing quests. Sign in to save your adventure to your account too.');
       this.victory.hidden = !this.frostCleared;
       this.victory.disabled = g.frostBoss.state !== 'dead' || g.controlsLocked;
