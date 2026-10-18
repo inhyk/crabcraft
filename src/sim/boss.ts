@@ -24,7 +24,7 @@ export class Boss {
     if(!this.isDawn)return this.services.targetFor(this.unit);
     return this.participants().filter(p=>eligible(this.services,p)).slice().sort((a,b)=>distance(this.actor,a)-distance(this.actor,b)||a.ref.id-b.ref.id)[0]??null;
   }
-  private unlocked():boolean{return this.participants().some(p=>p.level>=this.stats.level);}
+  private unlocked():boolean{return (this.isDawn?this.participants():this.services.players()).some(p=>p.level>=this.stats.level);}
   private available():boolean{return this.services.bossAvailable(this.profile);}
   private yell(key:string,unit=this.unit,yell=true):void{this.services.emit({type:'say',unit,textKey:key,yell});}
   wake():void{
@@ -166,7 +166,7 @@ export class Boss {
     if(this.freedT<0)return;const s=this.services,f=this.freed,u=this.actor,p=this.target();this.freedT+=dt;const t=this.freedT;
     if(t<1.2){const k=t/1.2,out=u.radius+1.6;moveCreature(s,f,u.x+Math.sin(this.freedYaw)*out*k,u.z+Math.cos(this.freedYaw)*out*k,dt);}
     else if(t<1.6){if(p)f.yaw=turn(f.yaw,Math.atan2(p.x-f.x,p.z-f.z),6,dt);}
-    else if(t<4.6){if(!f.npcId){f.npcId='bowed';creatureAction(s,f,'gesture_bow');this.yell('boss.freed.thanks',f.ref,false);}}
+    else if(t<4.6){if(f.npcId!=='bowed'){f.npcId='bowed';creatureAction(s,f,'gesture_bow');this.yell('boss.freed.thanks',f.ref,false);}}
     else if(t<12){const spawn=s.definition.spawn.position,wreck=s.definition.pois.wreck?.position??spawn,dx=wreck.x-spawn.x,dz=wreck.z-spawn.z,d=Math.hypot(dx,dz),x=d?dx/d:0,z=d?dz/d:0;f.yaw=turn(f.yaw,Math.atan2(x,z)+Math.PI/2,4,dt);moveCreature(s,f,f.x+x*3.4*dt,f.z+z*3.4*dt,dt);if(t>10.5)f.lift=-(t-10.5)*.8;}
     else{f.hidden=true;f.alive=false;this.freedT=-1;}
   }

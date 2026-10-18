@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Boss } from '../src/sim/boss.ts';
 import { BOSS_PROFILES } from '../src/sim/data/bosses.ts';
-import { creatureHarness } from './core-enemy.test.mjs';
+import { creatureHarness, realCreatureArea } from './core-enemy.test.mjs';
 
 function fight(profile='rust',levels=[100,100]){
   const h=creatureHarness(),ps=levels.map(level=>{const p=h.unit('player',{x:0,y:0,z:3});p.level=level;p.maxHp=p.hp=10000;return p;}),u=h.unit('boss',{x:0,y:0,z:0},profile),f=h.unit('freed');
@@ -127,4 +127,14 @@ test('hidden live players receive no encounter blessing, pull, rust or damage',(
   const h=fight(),hidden=h.unit();hidden.hidden=true;hidden.level=100;hidden.hp=hidden.maxHp=10000;
   const w=advanceTo(h,'undertow',2),at=w.shapes[0].at;hidden.x=at.x+4;hidden.z=at.z;
   h.step([h.b]);assert.equal(hidden.pushTime,0);assert.equal(hidden.encounterBlessing,false);finish(h);assert.equal(hidden.hp,10000);
+});
+
+
+test('actual Dawn Area mixed99/100 combat, death grants and freed bow use all real rules',()=>{
+  const area=realCreatureArea('real-dawn','w3','dawn'),a=area.attachFresh('underlevel','priest','human','spawn'),b=area.attachFresh('eligible','priest','human','spawn');
+  const p99=area.services.player(a),p100=area.services.player(b),u99=area.services.getUnit(a),u100=area.services.getUnit(b);u99.level=99;u100.level=100;p99.state.flags.abyssCleared=p100.state.flags.abyssCleared=true;
+  const boss=[...area.bosses.values()][0];boss.wake();for(let i=0;i<74;i++)area.step(new Map());assert.equal(boss.state,'fight');assert.equal(u99.encounterBlessing,false);assert.equal(u100.encounterBlessing,true);
+  const hp=boss.actor.hp;area.services.combat.damage(a,boss.unit,100);assert.equal(boss.actor.hp,hp);area.services.combat.damage(b,boss.unit,hp+1);assert.equal(boss.state,'dying');
+  assert.equal(p100.state.flags.finalCleared,true);assert.equal(p99.state.flags.finalCleared,undefined);assert.equal(area.pendingGrants().length,1);
+  for(let i=0;i<120;i++)area.step(new Map());assert.equal(boss.freed.npcId,'bowed');assert.ok(area.drainEvents().some(r=>r.event.type==='say'&&r.event.textKey==='boss.freed.thanks'));
 });
