@@ -450,6 +450,16 @@ export class Vfx {
     };
   }
 
+  /** Snapshot-owned cosmetic flight. Position and impact come only from the server observation. */
+  observedProjectile(at:THREE.Vector3,style:'bubble'|'spark'|'holy'|'rust'):{setPosition(at:THREE.Vector3):void;finish(at:THREE.Vector3|null):void;dispose():void} {
+    const pos=at.clone(),orb=style==='bubble'?this.fx.spawn('orb',Infinity):null;
+    if(orb){(orb.u.uColor.value as THREE.Color).copy(C.water);(orb.u.uColor2.value as THREE.Color).set(2.2,2.2,2.6);orb.mesh.scale.setScalar(.32);orb.mesh.position.copy(pos);}
+    const color=style==='bubble'?C.water:style==='holy'?C.holy:style==='rust'?C.ember:C.frost;let closed=false,wobble=0;
+    const attachment=this.attach(Infinity,dt=>{wobble+=dt*18;if(orb){orb.mesh.position.copy(pos);orb.mesh.scale.set(.32+Math.sin(wobble)*.03,.32-Math.sin(wobble)*.03,.32);}this.add.emit({x:pos.x,y:pos.y,z:pos.z,life:.12,size:style==='bubble'?.9:.55,color,sprite:Sprite.Glow,alpha:.7,fadeIn:0});for(let i=0;i<this.n(2);i++)this.add.emit({x:pos.x+rand(-.12,.12),y:pos.y+rand(-.12,.12),z:pos.z+rand(-.12,.12),vx:rand(-.6,.6),vy:rand(-.2,.8),vz:rand(-.6,.6),life:rand(.3,.55),size:style==='bubble'?rand(.06,.14):rand(.05,.1),sizeEnd:.02,color:style==='bubble'?C.foam:color,sprite:style==='bubble'?Sprite.Bubble:style==='holy'?Sprite.Star:Sprite.Glow});});
+    const finish=(point:THREE.Vector3|null)=>{if(closed)return;closed=true;this.detach(attachment);if(orb)this.fx.release(orb);if(point){if(style==='bubble')this.bubbleSplash(point);else this.impact(point,color,.6);}};
+    return {setPosition:point=>{if(!closed){pos.copy(point);if(orb)orb.mesh.position.copy(pos);}},finish,dispose:()=>finish(null)};
+  }
+
   bubbleSplash(at: THREE.Vector3): void {
     this.glow(at, C.water, 2.4, 0.22);
     for (let i = 0; i < this.n(26); i++) {
@@ -927,7 +937,7 @@ export class Vfx {
     });
   }
 
-  undertow(at: THREE.Vector3, radius: number, dur: number): void {
+  undertow(at: THREE.Vector3, radius: number, dur: number): {dispose():void} {
     const disk = this.fx.spawn('swirl', dur, (f, _dt, k) => {
       f.mesh.scale.set(radius * 2.2, 1, radius * 2.2);
       f.u.uAlpha.value = Math.min(1, k * 5) * (k > 0.85 ? (1 - k) / 0.15 : 1);
@@ -936,7 +946,7 @@ export class Vfx {
     (disk.u.uColor.value as THREE.Color).copy(N.waterDeep);
     (disk.u.uColor2.value as THREE.Color).copy(N.water);
     (disk.u.uParam.value as THREE.Vector4).x = -1;
-    this.attach(dur, () => {
+    const attachment=this.attach(dur, () => {
       for (let i = 0; i < this.n(6); i++) {
         const a = Math.random() * TAU;
         const r = radius * rand(1.4, 2.3);
@@ -956,6 +966,8 @@ export class Vfx {
         });
       }
     });
+    let closed=false;disk.onDone=()=>{closed=true;};
+    return {dispose:()=>{if(closed)return;closed=true;this.detach(attachment);this.fx.release(disk);}};
   }
 
   rustPeel(unit: Unit, dur: number): void {

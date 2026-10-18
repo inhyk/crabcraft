@@ -67,6 +67,8 @@ sudo -u crabcraft node --env-file=/etc/crabcraft/dev.env /srv/crabcraft/dev/curr
 
 `deploy/vm/` 의 파일(Caddyfile, 유닛, 스크립트)은 워크플로가 올리지 않는다. 바꿨으면 merge 한 뒤 VM 에서 `setup.sh` 를 다시 실행한다. 여러 번 실행해도 같은 결과가 나오고, 기존 DB 비밀번호와 env 파일 값은 그대로 둔다.
 
+서버 세계의 `/world` proxy는 현재 `crab-dev.seonn.dev`에만 추가한다. 이 변경은 browser/server build 배포만으로 설치되지 않으므로 리뷰 세션이 dev host를 검증할 때 Caddy 설정 설치도 확인해야 한다. production의 `/world` 경로는 별도 release 범위에서 연다. Node release는 네 collision JSON을 `server-dist/world/`에 함께 포장하며 실제 host는 이 파일들을 읽는다.
+
 ```bash
 gcloud compute scp --recurse deploy/vm crabcraft-1:/tmp/ --zone asia-northeast3-a --project crabcraft-seonn
 gcloud compute ssh crabcraft-1 --zone asia-northeast3-a --project crabcraft-seonn --command 'sudo bash /tmp/vm/setup.sh'

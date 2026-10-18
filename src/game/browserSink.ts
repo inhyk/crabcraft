@@ -103,9 +103,9 @@ export class BrowserSink {
       }
       case 'death': {
         const dst = e.unit;
-        if(!dst.simState)dst.motion.stop(undefined, 0.1);
+        if(!dst.simState&&!dst.observed)dst.motion.stop(undefined, 0.1);
         // The power-down: the legs give way and the shell settles on the floor, where it stays.
-        if(!dst.simState)dst.act('death', {
+        if(!dst.simState&&!dst.observed)dst.act('death', {
           fade: 0.1,
           onEvent: (name) => {
             if (name !== 'settled' || dst.hidden || dst.culled) return;
@@ -178,7 +178,7 @@ export class BrowserSink {
         return;
       }
       case 'jump':
-        if(!e.unit.simState)e.unit.act('jump', {
+        if(!e.unit.simState&&!e.unit.observed)e.unit.act('jump', {
           fade: 0.06,
           from: JUMP_CLIP.from,
           to: JUMP_CLIP.to,

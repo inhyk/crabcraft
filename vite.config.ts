@@ -8,7 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 const root = fileURLToPath(new URL('.', import.meta.url));
 // Run the local page against one Node process for accounts, presence and monitor snapshots.
 const nodeServer = process.env.CC_SERVER_URL;
-const apiProxy = { '/api/account': { target: nodeServer || 'http://127.0.0.1:8795' }, ...(nodeServer ? { '/multiplayer': { target: nodeServer, ws: true } } : {}) };
+const apiProxy = { '/world': { target: nodeServer || 'http://127.0.0.1:8795', ws: true }, '/api/account': { target: nodeServer || 'http://127.0.0.1:8795' }, ...(nodeServer ? { '/multiplayer': { target: nodeServer, ws: true } } : {}) };
 const monitorRoute = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
   const [path, query] = (req.url ?? '').split('?');
   if (path !== '/monitor') { next(); return; }

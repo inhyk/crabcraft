@@ -402,14 +402,34 @@ export class HiddenWorld {
     [...this.game.npcs.map(n=>n.unit),...this.game.townsfolk.map(t=>t.unit)].forEach((u,i)=>{const p=this.basePeople[i];if(p){u.hidden=false;u.teleport(w,p.x,p.z,u.yaw);}});
     const town=w.spawns.find(s=>s.id==='townsfolk');if(town)for(const t of this.game.townsfolk)t.relocate(town.points,town.radius);
   }
-  update(dt:number,time:number) {
+  /** Static world/camera presentation for a committed server world; never moves an actor. */
+  observeChapter(chapter:1|2|3|4|5|6):void {
+    if(chapter===5||chapter===6)throw new Error('This server does not host that world');
+    const g=this.game,w=g.world;if(this.chapter===chapter)return;
+    if(!this.basePois.size)for(const [id,poi]of Object.entries(w.pois))this.basePois.set(id,{position:poi.position.clone(),yaw:poi.yaw});
+    this.chapter=chapter;this.rendered=chapter!==1;this.baseRoot.visible=chapter===1;this.root.visible=chapter===2;this.third.root.visible=chapter===3;this.fourth.root.visible=chapter===4;this.fifth.root.visible=false;this.sixth.root.visible=false;
+    if(chapter===1){w.heightAt=this.originalHeight;w.resolveCollision=this.originalCollision;w.raycastSolid=this.originalRay;for(const[id,old]of this.basePois){const poi=w.pois[id as keyof typeof w.pois];poi.position.copy(old.position);poi.yaw=old.yaw;}this.ambience.stop();}
+    else {
+      const island=chapter===3?this.third:chapter===4?this.fourth:null;w.heightAt=island?(x,z)=>island.height(x,z):(x,z)=>this.height(x,z);
+      w.resolveCollision=(x,z,r,out)=>resolveOnIsland(island?.collision??this.collision,chapter===2?STAR_BOUNDS:chapter===3?DAWN_BOUNDS:SNOW_BOUNDS,chapter===2?this.obstacles:[],x,z,r,out);
+      w.raycastSolid=(a,b)=>(island?.collision??this.collision)?.raycast(a,b)??null;
+      w.pois.spawn.position.copy(island?.spawn??this.spawn);w.pois.spawn.yaw=Math.PI;
+      const points=chapter===2?[['shore',-70,5],['wreck',70,-15],['grove',25,55],['forge',-25,36],['tavern',-20,58],['chapel',20,35],['lighthouse',0,-48],['beacon',0,-45],['bossArena',0,-75]] as const:chapter===3?[['forge',20,64],['chapel',16,48],['tavern',-20,64],['grove',-55,36],['shore',55,36],['wreck',55,-25],['lighthouse',0,-40],['beacon',0,-44],['bossArena',0,-72]] as const:[['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-55,25],['shore',55,25],['wreck',48,-15],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-78]] as const;
+      for(const[id,x,z]of points)w.pois[id].position.set(x,w.heightAt(x,z),z);if(chapter===2)this.ambience.start(g.time);else this.ambience.stop();
+    }
+    this.nav=null;g.hud.hints.setChapter(chapter);g.follow.cut();g.hud.dialogue.close();g.hud.messages.closeDiscovery();
+    const bounds=chapter===2?{minX:-140,maxX:140,minZ:-150,maxZ:170,topY:90}:chapter===3?{minX:-150,maxX:150,minZ:-175,maxZ:175,topY:110}:{minX:-145,maxX:145,minZ:-165,maxZ:165,topY:100};
+    g.hud.minimap.setSnapshot(chapter===1?g.takeMapSnapshot():snapshotMap(g.engine.renderer,g.scene,bounds,[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));
+  }
+  update(dt:number,time:number,observation?:{flags:Readonly<Record<string,boolean>>}) {
+    const flags=observation?.flags??this.game.journey;
     this.snowGate.update(time);this.emberGate.update(time);
-    if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time);}
-    if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!this.game.journey?.frostCleared);this.snowRequests.update(time);}
+    if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
+    if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);this.snowRequests.update(time,!!observation);}
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
-    this.thirdGate.root.visible=!!this.game.journey?.trueCleared||this.game.creatorTravel;
-    if(this.chapter===3){this.third.update(time,!!this.game.journey?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);this.dawnRequests.update(time);}
-    if(!this.game.ending.active&&!this.game.controlsLocked){
+    this.thirdGate.root.visible=!!flags?.trueCleared||this.game.creatorTravel;
+    if(this.chapter===3){this.third.update(time,!!flags?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);this.dawnRequests.update(time,!!observation);}
+    if(!observation&&!this.game.ending.active&&!this.game.controlsLocked){
       const distance=Math.hypot(this.game.player.unit.pos.x-this.portalPosition.x,this.game.player.unit.pos.z-this.portalPosition.z);
       if(distance>4.5)this.travelArmed=true;
       if(this.travelArmed&&distance<1.7&&this.game.time>this.travelAt){this.travelArmed=false;this.travelAt=this.game.time+3;this.travel();}
@@ -419,7 +439,7 @@ export class HiddenWorld {
     if(this.chapter===4){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#96b6d3');fog.density=.0035;}return;}
     if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#a4b5c4');fog.density=.0025;}return;}
     const echo=this.game.enemies.find(e=>e.isEcho);
-    if(echo&&this.game.multiplayer?.battle.authority!==false&&echo.state==='gone'&&time>this.echoAt&&!this.game.encounter.engaged){echo.home.set(0,this.height(0,-22),-22);echo.respawnAt(0,-22);this.echoAt=time+120;this.game.hud.messages.info(t('녹의 폭군의 잔영이 별길에 나타났어요!','An echo of the Rust Tyrant has appeared on the Starroad!'));}
+    if(!observation&&echo&&this.game.multiplayer?.battle.authority!==false&&echo.state==='gone'&&time>this.echoAt&&!this.game.encounter.engaged){echo.home.set(0,this.height(0,-22),-22);echo.respawnAt(0,-22);this.echoAt=time+120;this.game.hud.messages.info(t('녹의 폭군의 잔영이 별길에 나타났어요!','An echo of the Rust Tyrant has appeared on the Starroad!'));}
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
     this.sun.update(position.x,position.z);
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
@@ -428,7 +448,7 @@ export class HiddenWorld {
     this.sea.update(time);
     this.armour?.update(time);this.throne.update(time);
     this.wind?.update(time);
-    for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
+    if(!observation)for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
     for(const memory of this.memories){
       const objective=QUESTS.w5.objectives.find(o=>o.kind===memory.kind)!;
       const done=this.game.quests.objectiveDone(objective),active=this.game.quests.status.w5==='active';

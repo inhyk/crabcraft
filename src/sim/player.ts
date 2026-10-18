@@ -4,7 +4,7 @@ import { armorMultiplier } from './data/equipment.ts';
 import { CLASSES, type AbilityDef } from './data/classes.ts';
 import { abilityNeedsTarget, executeAbility, isMeleeAbility, launchAt, playAction } from './abilities.ts';
 import { damp, turnToward, yawTo } from './math.ts';
-import { distTo, gapTo, lineOfSight, moveTo, speedMul, teleport } from './unit.ts';
+import { isAttackTarget, distTo, gapTo, lineOfSight, moveTo, speedMul, teleport } from './unit.ts';
 import { levelForXp, xpForLevel } from './data/progression.ts';
 import { freshQuests } from './data/quests.ts';
 import { BREAK_ROUTINE } from './data/actions.ts';
@@ -42,15 +42,15 @@ export class PlayerController implements PlayerSim {
     // Validate every command before accepting any field, so malformed frames have no partial effect.
     if(!intent.commands.every(validCommand))return;
     this.lastConsumedSeq=intent.seq;this.held={...intent,commands:[]};
-    for(const command of intent.commands){
+    for(const [commandIndex,command] of intent.commands.entries()){
       switch(command.kind){
         case 'target':{if(command.target===null)this.setTarget(null);else{const target=this.services.getUnit(command.target);if(target&&!target.hidden&&target.targetable)this.setTarget(target);}break;}
         case 'ability':this.useAbility(command.slot);break;
         case 'jump':this.jump();break;
         case 'dance':this.toggleDance();break;
         case 'cancel':this.interruptCast();this.cancelChannel();this.cancelDance();this.state.queued=null;break;
-        case 'channelStart':if(command.channel==='recall')this.startRecall();else this.services.runCommand(this.unit.ref,command);break;
-        default:this.services.runCommand(this.unit.ref,command);break;
+        case 'channelStart':if(command.channel==='recall')this.startRecall();else this.services.runCommand(this.unit.ref,command,commandIndex);break;
+        default:this.services.runCommand(this.unit.ref,command,commandIndex);break;
       }
     }
   }
@@ -111,7 +111,7 @@ export class PlayerController implements PlayerSim {
     if(s.channel){const ch=s.channel;if(this.held.heldChannel!==ch.kind)this.cancelChannel();else if(now>=ch.end){s.channel=null;playAction(g,u,'cast',{upper:true,part:'release',fade:.1});g.emit({type:'castEnd',unit:u.ref,channel:true,result:'done'});this.finishChannel(ch.kind,ch.targetId,ch.to,ch.start,ch.end);}}
     if(s.queued&&now>=s.gcdEnd&&!s.cast){const queued=s.queued;s.queued=null;const a=CLASSES[s.classId].abilities.find(a=>a.id===queued);if(a)this.useAbility(a.slot);}
     t=s.target?g.getUnit(s.target):null;
-    if(!this.villagePlaying()&&t?.alive&&t.reaction==='hostile'&&!t.hidden&&!s.cast&&!s.channel&&!s.dash&&now>=s.nextSwing&&u.alive&&now>=u.stunUntil){
+    if(!this.villagePlaying()&&t?.alive&&isAttackTarget(g,u,t)&&!t.hidden&&!s.cast&&!s.channel&&!s.dash&&now>=s.nextSwing&&u.alive&&now>=u.stunUntil){
       if(this.isRage){if(gapTo(u,t)<=1.5){s.nextSwing=now+2;s.lastAttack=now;this.cancelDance();playAction(g,u,'attack_swipe',{upper:true},{attack:'warrior-auto',source:u.ref,target:t.ref});}}
       else if(distTo(u,t)<=20&&lineOfSight(g.query,u,t)){s.nextSwing=now+1.8;s.lastAttack=now;this.cancelDance();const holy=s.classId==='priest';launchAt(g,u,t,holy?'holy':'spark',22,{attack:'ranged-auto',source:u.ref,target:t.ref,school:holy?'holy':'frost'});}
     }
@@ -133,7 +133,7 @@ export class PlayerController implements PlayerSim {
     const cooldown=s.cooldowns[ab.id],left=cooldown?Math.max(0,cooldown.end-now):0,wait=Math.max(s.gcdEnd-now,left);
     if(wait>0){if(wait<.4&&left<.4)s.queued=ab.id;else this.error('Ability is not ready yet.');return;}
     if(s.resource<ab.cost)return this.error(this.isRage?'Not enough rage.':'Not enough mana.');
-    let target:SimUnit|null=null;if(abilityNeedsTarget(ab)){target=s.target?g.getUnit(s.target):null;if(!target)return this.error('You have no target.');if(!target.alive||target.reaction!=='hostile'||target.hidden)return this.error('Invalid target.');if(!this.checkReach(ab,target))return;}
+    let target:SimUnit|null=null;if(abilityNeedsTarget(ab)){target=s.target?g.getUnit(s.target):null;if(!target)return this.error('You have no target.');if(!target.alive||!isAttackTarget(g,u,target)||target.hidden)return this.error('Invalid target.');if(!this.checkReach(ab,target))return;}
     s.gcdStart=now;s.gcdEnd=now+GCD;s.lastAttack=now;
     if(ab.castTime>0){s.cast={ability:ab.id,start:now,end:now+ab.castTime,target:target?.ref??null};playAction(g,u,'cast',{upper:true,loop:true,fade:.15});g.emit({type:'castStart',unit:u.ref,seconds:ab.castTime,ability:ab.id});}
     else this.commit(ab,target);

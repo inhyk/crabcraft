@@ -240,6 +240,13 @@ test('actual dead-to-rematch allocates one fresh boss life and invalidates old t
   const hp=u.hp;area.services.resolveHit({attack:'boss-claw',source:old,target:ref});assert.equal(u.hp,hp,'stale old-life attack cannot land');
 });
 
+test('actual Area baseline retains boss controller and frame observation after transient events drain',()=>{
+ const {area,boss}=actualFrost();const events=area.drainEvents();assert.ok(events.some(r=>r.event.type==='boss'&&r.event.stage==='engage'));
+ const observed=area.snapshot().recovery.bosses[0];assert.equal(observed.profile,'frost');assert.equal(observed.state,'fight');assert.equal(observed.showFrame,true);assert.equal(observed.phase,1);assert.deepEqual(observed.freed,boss.freed.ref);assert.ok(Object.isFrozen(observed));
+ boss.actor.hp=boss.actor.maxHp*.3;area.step(new Map());area.drainEvents();const phase=area.snapshot().recovery.bosses[0];assert.equal(phase.phase,3);assert.equal(phase.enraged,true);assert.equal(observed.phase,1);
+ boss.reset();area.drainEvents();assert.equal(area.snapshot().recovery.bosses[0].showFrame,false);
+});
+
 for(const [profile,level,barrage,inner]of [['ember',500,4,3],['sky',750,5,5]])test(`${profile}: distinct marked mechanics match damage and keep underlevel spectators safe`,()=>{
  for(const kind of ['cross','barrage','eclipse']){
   const h=fight(profile,[level-1,level]),w=advanceTo(h,kind,kind==='eclipse'&&profile==='ember'||kind==='barrage'&&profile==='sky'?2:1),shape=w.shapes[0];

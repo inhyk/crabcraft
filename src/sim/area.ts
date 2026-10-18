@@ -1,6 +1,6 @@
-import type { CapturedPlayer, PlayerRetirement, CharacterCheckpointV1, RestoredPlayerData, EventRecord, PlayerCommand, ActionId, ActionRequest, Admission, Area as AreaContract, AreaContext, AreaDebugState, AreaOptions, AreaServices, AreaSnapshot, BossSim, CharacterId, ClassId, CombatController, DebugValue, EarnedGrant, EnemySim, EntityId, EntityRef, HitPlan, PendingHit, PlayerIntent, PlayerSim, ProjectileState, SimUnit, StagedArrival, StagedDeparture, TimerAction, TransferDTO } from './types.ts';
+import type { CommandOutcome, CapturedPlayer, PlayerRetirement, CharacterCheckpointV1, RestoredPlayerData, EventRecord, PlayerCommand, ActionId, ActionRequest, Admission, Area as AreaContract, AreaContext, AreaDebugState, AreaOptions, AreaServices, AreaSnapshot, BossSim, CharacterId, ClassId, CombatController, DebugValue, EarnedGrant, EnemySim, EntityId, EntityRef, HitPlan, PendingHit, PlayerIntent, PlayerSim, ProjectileState, SimUnit, StagedArrival, StagedDeparture, TimerAction, TransferDTO } from './types.ts';
 import { Actions } from './actions.ts';
-import { validatePopulation, worldChapter } from './math.ts';
+import { populationRadius, validatePopulation, worldChapter } from './math.ts';
 import { Combat } from './combat.ts';
 import { playAction, resolvePlayerHit } from './abilities.ts';
 import { Enemy } from './enemy.ts';
@@ -10,7 +10,7 @@ import { PlayerController, createPlayer, createPlayerState } from './player.ts';
 import { Projectiles } from './projectiles.ts';
 import { Ids, Random } from './random.ts';
 import { Timers } from './timers.ts';
-import { createUnit, feedLocomotion, teleport } from './unit.ts';
+import { createUnit, feedLocomotion, teleport, isAttackTarget } from './unit.ts';
 import { advanceNumericPose, initializeNumericPose } from './pose.ts';
 import { WorldRules } from './outcomes.ts';
 import { captureTransfer, restoreTransfer } from './transfer.ts';
@@ -39,6 +39,7 @@ export class SimulationArea implements AreaContract {
   private npcMap=new Map<EntityId,NumericNpc>();
   private boat:NumericBoat;
   private village:NumericVillageGames;
+  private bossFrames=new Map<string,boolean>();
   private telegraphs=new Map<string,EventRecord>();
   private endings=new Map<EntityId,{unit:EntityRef;chapter:4;replay:boolean}>();
   private recoveryOrder=-1;
@@ -61,6 +62,8 @@ export class SimulationArea implements AreaContract {
   private durableIds=new Map<CharacterId,Set<string>>();
   private revisions=new Map<CharacterId,number>();
   private restoredArrivals=new Map<string,RestoredArrival>();
+  private commandOutcomes:CommandOutcome[]=[];
+  private inputStage=false;
   private running=false;
   private disposed=false;
   private failed=false;
@@ -89,13 +92,13 @@ export class SimulationArea implements AreaContract {
       npcById:id=>[...this.unitMap.values()].find(u=>u.npcId===id)??null,
       playerByCharacter:character=>[...this.playerMap.values()].find(p=>p.state.character===character)??null,
       players:()=>[...this.playerMap.values()].map(p=>this.unitMap.get(p.state.unit.id)!),
-      targetFor:ref=>this.targetFor(ref),hostilesNear:(x,z,r)=>[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&u.reaction==='hostile'&&Math.hypot(u.x-x,u.z-z)-u.radius<=r),
+      targetFor:ref=>this.targetFor(ref),hostilesNear:(x,z,r,source)=>[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&(source?!!this.getUnit(source)&&isAttackTarget(this.services,this.getUnit(source)!,u):u.reaction==='hostile')&&Math.hypot(u.x-x,u.z-z)-u.radius<=r),
       emit:event=>this.events.emit(this.stepId,event),outcomeTransaction:run=>this.events.transaction(run),
       startAction:(ref,action,hit)=>this.startAction(ref,action,hit),stopAction:(ref,id,fade)=>this.stopAction(ref,id,fade),
       cancelPendingHit:ref=>{const u=this.getUnit(ref);if(u)u.pendingHit=null;},resolveHit:plan=>this.resolveHit(plan),
       launch:input=>this.flights.launch(input,this.stepId),spawnAdd:(boss,x,z)=>this.spawnAdd(boss,x,z),
       respawnUnit:ref=>this.respawnUnit(ref),bossAvailable:profile=>this.worldRules.encounterAvailable(profile),
-      runCommand:(ref,command)=>this.command(ref,command),bossByProfile:profile=>[...this.bossMap.values()].find(b=>b.profile===profile)??null,
+      runCommand:(ref,command,commandIndex)=>{const success=this.command(ref,command);if(this.inputStage&&commandIndex!==undefined)this.commandOutcomes.push(immutable({unit:ref,commandIndex,success}));return success;},bossByProfile:profile=>[...this.bossMap.values()].find(b=>b.profile===profile)??null,
       encounterActive:()=>[...this.bossMap.values()].some(b=>b.engaged),
       completeChannel:(ref,ch)=>{const p=this.services.player(ref);if(p)this.worldRules.completeChannel(p,ch);},
       preflightEarnedGrants:grants=>{const counts=new Map<string,Set<string>>();for(const g of grants){if(!this.services.playerByCharacter(g.recipient))continue;const ids=counts.get(g.recipient)??new Set(this.worldRules.appliedGrantIds(g.recipient).filter(id=>!this.durableIds.get(g.recipient)?.has(id)));if(!this.worldRules.appliedGrantIds(g.recipient).includes(g.id))ids.add(g.id);if(ids.size>256)throw new Error('Checkpoint receipt capacity exceeded');counts.set(g.recipient,ids);}},
@@ -105,9 +108,10 @@ export class SimulationArea implements AreaContract {
     this.combat=new Combat(this.services);this.worldRules=new WorldRules(this.services);
     this.actions=new Actions(options.actionData,e=>this.services.emit(e),p=>this.resolveHit(p));
     this.flights=new Projectiles(options.limits.projectiles,r=>this.getUnit(r),e=>this.services.emit(e),p=>this.resolveHit(p));
-    for(const spawn of this.options.definition.enemies)validatePopulation(this.options.policy.enemyPopulation(spawn,0));
+    for(const spawn of this.options.definition.enemies){validatePopulation(this.options.policy.enemyPopulation(spawn,0));if(this.options.policy.populationRadius)populationRadius(this.options.policy.populationRadius(spawn));}
+    // Personal ending recovery never pauses shared NPCs or village features.
     const feature:FeatureContext={areaId:options.id,chapter:worldChapter(this.services.world),authority:true,authorityEpoch:1,rng:this.rng,query:options.query,
-      get time(){return self.clock;},get encounterEngaged(){return self.services.encounterActive();},get endingActive(){return self.endings.size>0;},authorityId:null,
+      get time(){return self.clock;},get encounterEngaged(){return self.services.encounterActive();},endingActive:false,authorityId:null,
       actors:()=>[...this.playerMap.values()].map(p=>({id:`actor:${p.unit.ref.id}`,unit:p.unit})),
       townsfolk:()=>[...this.ambientMap.values()].map(n=>({id:`actor:${n.unit.ref.id}`,unit:n.unit})),
       resolve:id=>{const match=/^actor:(\d+)$/.exec(id);return match?this.unitMap.get(Number(match[1]))??null:null;},
@@ -121,7 +125,7 @@ export class SimulationArea implements AreaContract {
   private boundary(observe=false,allowBarrier=false):void {if(this.disposed)throw new Error('Area disposed');if(this.failed&&!observe)throw new Error('Area failed; host must retire it');if(this.running)throw new Error('Requires between-tick boundary');if(!observe&&!allowBarrier&&this.barriers.size)throw new Error('Durability barrier active');}
   private getUnit(ref:EntityRef):SimUnit|null {if(!ref||ref.area!==this.services.id)return null;const u=this.unitMap.get(ref.id);return u&&sameRef(u.ref,ref)?u:null;}
   private makeUnit(archetype:string,kind:SimUnit['kind'],reaction:SimUnit['reaction'],position:{x:number;y:number;z:number}):SimUnit {const unit=createUnit({area:this.services.id,id:this.ids.next(),life:1},archetype,kind,reaction,this.options.actionData,position);teleport(unit,this.options.query,position.x,position.z);return unit;}
-  private npcContext():NpcFeatureContext {const self=this;return {get time(){return self.clock;},rng:this.rng,query:this.options.query,authority:true,get endingActive(){return self.endings.size>0;},players:()=>this.services.players(),externallyOwned:r=>this.village.ownsNpc(r)||this.getUnit(r)?.kind==='freed',hasAction:u=>u.actions.some(a=>a.targetWeight>0),playAction:(u,id)=>playAction(this.services,u,id),emit:e=>this.services.emit({type:'feature',event:e})};}
+  private npcContext():NpcFeatureContext {const self=this;return {get time(){return self.clock;},rng:this.rng,query:this.options.query,authority:true,endingActive:false,players:()=>this.services.players(),externallyOwned:r=>this.village.ownsNpc(r)||this.getUnit(r)?.kind==='freed',hasAction:u=>u.actions.some(a=>a.targetWeight>0),playAction:(u,id)=>playAction(this.services,u,id),emit:e=>this.services.emit({type:'feature',event:e})};}
   private populate():void {
     for(const n of this.options.definition.npcs){const u=this.makeUnit(n.archetype??'human','npc','friendly',n.position);u.npcId=n.id;u.targetable=n.targetable??true;teleport(u,this.options.query,u.x,u.z,n.yaw);this.unitMap.set(u.ref.id,u);if(['brinebeard','silvermoon','coralline','grukk','hoofclaw','rattlebolt','pip'].includes(n.id))this.npcMap.set(u.ref.id,new NumericNpc(this.npcContext(),u,{npcId:n.id,homeYaw:n.yaw}));}
     for(const n of this.options.definition.townsfolk??[]){const u=this.makeUnit(n.archetype,'townsfolk','friendly',n.position);teleport(u,this.options.query,u.x,u.z,n.yaw??0);this.unitMap.set(u.ref.id,u);this.ambientMap.set(u.ref.id,new NumericTownsfolk(this.npcContext(),u,{...n,relocated:this.services.world!=='w1'}));}
@@ -133,6 +137,7 @@ export class SimulationArea implements AreaContract {
   private featureEvent(e:FeatureEvent):void {if(e.type==='boatAchievement'){const p=this.playerMap.get(e.actor.id);if(p&&sameRef(p.unit.ref,e.actor)){p.state.achievements.distance=Math.max(p.state.achievements.distance,e.distance);if(!p.state.achievements.earned.includes(e.achievement))p.state.achievements.earned.push(e.achievement);else return;}}this.services.emit({type:'feature',event:e});}
   private syncMembership():void {this.context=immutable({...this.context,members:this.context.members.map(m=>({...m,villagePlaying:this.village.playing,featureLocked:this.village.locked(m.unit),seatedBoat:this.boat.seated(m.unit)?'shore':null}))});}
   private command(ref:EntityRef,c:PlayerCommand):boolean {const p=this.playerMap.get(ref.id);if(!p||!sameRef(p.unit.ref,ref))return false;
+    if(c.kind==='talk'){const target=this.getUnit(c.target),m=this.context.members.find(m=>sameRef(m.unit,ref));if(!p.unit.alive||p.state.controlsLocked||m?.seatedBoat||m?.villagePlaying||!target?.alive||target.hidden||!target.targetable||Math.hypot(target.x-p.unit.x,target.y-p.unit.y,target.z-p.unit.z)>=7||!this.services.policy.canInteract(this.context,p.state,`actor:${target.ref.id}`))return false;if(target.npcId)return this.worldRules.command(ref,{kind:'interact',targetId:`npc:${target.npcId}`});const resident=this.ambientMap.get(target.ref.id);if(!resident)return false;return resident.bark(ref,this.services.world==='w2'?(p.state.flags.trueCleared?'starVictory':'star'):'shore');}
     if(c.kind==='talkEnd'){p.state.talkTarget=null;return true;}
     if(c.kind==='boat'||c.kind==='village'){const result=c.kind==='boat'?this.boat.request(ref,c.command):this.village.request(ref,c.mode);this.syncMembership();return result;}
     return this.worldRules.command(ref,c);
@@ -142,7 +147,17 @@ export class SimulationArea implements AreaContract {
     for(const n of this.npcMap.values()){const speaker=[...this.playerMap.values()].find(p=>p.state.talkTarget&&sameRef(p.state.talkTarget,n.unit.ref));n.setConversation(speaker?.unit.ref??null);n.step(DT);feedLocomotion(n.unit,DT);}
     for(const n of this.ambientMap.values())n.step(DT);
   }
-  private updateRecovery():void {for(const r of this.events.peek()){if(r.order<=this.recoveryOrder)continue;const e=r.event;if(e.type==='telegraph')this.telegraphs.set(JSON.stringify(e.src),r);else if(e.type==='telegraphEnd')this.telegraphs.delete(JSON.stringify(e.src));else if(e.type==='endingReady')this.endings.set(e.unit.id,{unit:e.unit,chapter:e.chapter,replay:e.replay});this.recoveryOrder=r.order;}}
+  private updateRecovery():void {
+    for(const record of this.events.peek()){
+      if(record.order<=this.recoveryOrder)continue;this.recoveryOrder=record.order;const event=record.event;
+      if(event.type==='boss'&&this.getUnit(event.boss)){const key=JSON.stringify(event.boss);if(event.stage==='engage')this.bossFrames.set(key,true);else if(event.stage==='reset')this.bossFrames.set(key,false);else if(event.stage==='frame')this.bossFrames.set(key,!!event.show);}
+      else if(event.type==='victory'&&event.stage==='end'&&this.getUnit(event.boss))this.bossFrames.set(JSON.stringify(event.boss),false);
+      if(event.type==='telegraph'&&this.getUnit(event.src))this.telegraphs.set(JSON.stringify(event.src),record);
+      else if(event.type==='telegraphEnd')this.telegraphs.delete(JSON.stringify(event.src));
+      else if(event.type==='endingReady'&&this.getUnit(event.unit))this.endings.set(event.unit.id,{unit:event.unit,chapter:event.chapter,replay:event.replay});
+    }
+  }
+
   private targetFor(ref:EntityRef):SimUnit|null {const source=this.getUnit(ref);if(!source)return null;let best:SimUnit|null=null,distance=Infinity;for(const p of this.playerMap.values()){const u=this.getUnit(p.state.unit)!;if(!u.alive||u.hidden||!u.targetable)continue;const d=Math.hypot(source.x-u.x,source.z-u.z);if(d<distance){best=u;distance=d;}}return best;}
   private startAction(ref:EntityRef,request:ActionRequest,hit?:PendingHit):void {const u=this.getUnit(ref);if(u)this.actions.play(u,request,hit);}
   private stopAction(ref:EntityRef,id?:ActionId,fade?:number):void {const u=this.getUnit(ref);if(u)this.actions.stop(u,id,fade);}
@@ -156,36 +171,37 @@ export class SimulationArea implements AreaContract {
   }
   private respawnUnit(ref:EntityRef):EntityRef {const u=this.getUnit(ref);if(!u)throw new Error('Stale respawn');if(ref.life>=0xffffffff)throw new RangeError('Life exhausted');const next=immutable({...ref,life:ref.life+1});const p=this.playerMap.get(ref.id);this.events.assertRoom(u.actions.length+this.playerMap.size*2+2);if(p&&this.options.characters&&!this.options.characters.compareAndSwap(p.state.character,ref,next))throw new Error('Character registry mismatch');if(u.actions.length)this.actions.stop(u,undefined,0);u.actions=[];u.pendingHit=null;this.purgeReferences(ref);u.ref=next;u.pose={...initializeNumericPose(),previousX:u.x,previousZ:u.z,previousYaw:u.yaw};if(p)p.state.unit=u.ref;this.context=immutable({...this.context,members:this.context.members.map(m=>sameRef(m.unit,ref)?{...m,unit:u.ref}:m)});this.syncMembership();return u.ref;}
   private purgeReferences(ref:EntityRef):void {
-    this.worldRules.purgeActor(ref);this.boat.detach(ref);this.village.detach(ref);this.endings.delete(ref.id);this.telegraphs.delete(JSON.stringify(ref));
+    this.worldRules.purgeActor(ref);this.boat.detach(ref);this.village.detach(ref);this.endings.delete(ref.id);this.telegraphs.delete(JSON.stringify(ref));this.bossFrames.delete(JSON.stringify(ref));
     for(const p of this.playerMap.values()){const s=p.state;if(s.target&&sameRef(s.target,ref))s.target=null;if(s.talkTarget&&sameRef(s.talkTarget,ref))s.talkTarget=null;if(s.cast?.target&&sameRef(s.cast.target,ref))p.interruptCast();if(s.dash&&sameRef(s.dash.target,ref))s.dash=null;}
     for(const u of this.unitMap.values()){const plan=u.pendingHit?.plan;if(plan&&(sameRef(plan.source,ref)||'target' in plan&&sameRef(plan.target,ref)))u.pendingHit=null;}
     this.flights.purge(ref);
     this.timers.removeWhere(a=>a.kind==='respawn'?sameRef(a.player,ref):a.kind==='bossWake'?sameRef(a.boss,ref):false);
   }
   private timer(action:TimerAction):void {if(action.kind==='respawn'){const p=this.services.player(action.player);if(p&&!this.getUnit(action.player)?.alive)p.respawn();}else if(action.kind==='bossWake'){if(this.getUnit(action.boss))this.bossMap.get(action.boss.id)?.wake();}else if(action.kind==='echoSpawn'){const e=[...this.enemyMap.values()].find(e=>e.spawnId===action.spawnId),spawn=this.options.definition.enemies.find(s=>s.id===action.spawnId);if(e&&spawn)e.respawnAt(spawn.home.x,spawn.home.z);}else this.worldRules.onTimer(action);}
-  step(inputs:ReadonlyMap<EntityId,PlayerIntent>):void {
+  step(inputs:ReadonlyMap<EntityId,PlayerIntent>):readonly CommandOutcome[] {
     this.boundary();if(this.departures.size||this.arrivals.size||this.restoredArrivals.size)throw new Error('Transfer transaction active');
     // Fail before actor work when undrained history leaves no room for even the first observation.
     this.events.assertRoom(1);
     for(const [id,input] of inputs)if(!this.playerMap.has(id)||!Array.isArray(input.commands)||input.commands.length>this.options.limits.inputCommandsPerTick)throw new RangeError('Invalid/oversized actor input');
-    this.running=true;
+    this.running=true;this.inputStage=true;this.commandOutcomes=[];
     try {
       for(const [id,p] of this.playerMap){const input=inputs.get(id);if(!input)continue;p.applyIntent(input);}
-      this.clock+=DT;this.stepId++;
+      this.inputStage=false;this.clock+=DT;this.stepId++;
       this.timers.update(this.clock,a=>this.timer(a));
       for(const p of this.playerMap.values()){p.update(DT);feedLocomotion(p.unit,DT);}
       for(const e of [...this.enemyMap.values()]){e.update(DT);const u=this.getUnit(e.unit);if(u)feedLocomotion(u,DT);}
       for(const b of this.bossMap.values()){b.update(DT);const u=this.getUnit(b.unit);if(u)feedLocomotion(u,DT);}
       this.worldRules.update();this.separate();
-      if(this.services.world==='w2'&&this.clock>=this.nextEcho&&!this.services.encounterActive()){for(const e of this.enemyMap.values())if(e.isEcho&&e.state==='gone'){e.respawnAt(e.spawn.home.x,e.spawn.home.z);this.nextEcho=this.clock+120;}}
+      if(this.services.world==='w2'&&this.clock>=this.nextEcho&&!this.services.encounterActive()){for(const e of this.enemyMap.values())if(e.isEcho&&e.state==='gone'&&(!this.options.policy.populationRadius||this.services.players().every(p=>!p.alive||p.hidden||Math.hypot(p.x-e.spawn.home.x,p.z-e.spawn.home.z)>=22))&&validatePopulation(this.options.policy.enemyPopulation(e.spawn,this.services.players().filter(p=>p.alive&&!p.hidden&&Math.hypot(p.x-e.spawn.home.x,p.z-e.spawn.home.z)<(this.options.policy.populationRadius?populationRadius(this.options.policy.populationRadius(e.spawn)):22)).length)).desired===1){e.respawnAt(e.spawn.home.x,e.spawn.home.z);this.nextEcho=this.clock+120;}}
       for(const u of this.unitMap.values())if(u.alive&&!u.hidden&&u.rustUntil&&this.clock>=u.rustUntil){u.rust=0;u.rustUntil=0;}
       this.updateFeatures();
       for(const u of this.unitMap.values())this.actions.updateHit(u,DT);
       this.flights.update(DT);
       for(const u of this.unitMap.values()){this.actions.update(u,DT);advanceNumericPose(u,DT);}
-    }catch(error){this.failed=true;throw error;}finally{this.running=false;}
+    }catch(error){this.failed=true;throw error;}finally{this.running=false;this.inputStage=false;}return immutable(this.commandOutcomes);
   }
   private separate():void {const list=[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&(u.reaction==='hostile'||u.kind==='player'));for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){const a=list[i]!,b=list[j]!,dx=b.x-a.x,dz=b.z-a.z,min=(a.radius+b.radius)*.85,d2=dx*dx+dz*dz;if(d2>=min*min||d2<1e-6)continue;const d=Math.sqrt(d2),push=(min-d)/d,wa=a.kind==='boss'?0:a.kind==='player'?.2:.5,wb=b.kind==='boss'?0:b.kind==='player'?.2:.5,sum=wa+wb||1;a.x-=dx*push*wa/sum;a.z-=dz*push*wa/sum;b.x+=dx*push*wb/sum;b.z+=dz*push*wb/sum;}}
+  bootstrapEncounter(profile:BossSim['profile'],facts:{beaconLit:boolean}):void {this.boundary();if(this.context.mode!=='party-encounter'||this.playerMap.size||this.reservations.size||this.options.definition.bosses.length!==1||this.options.definition.bosses[0].profile!==profile||typeof facts.beaconLit!=='boolean')throw new Error('Invalid encounter bootstrap');this.worldRules.beaconLit=facts.beaconLit;}
   beginDurabilityBarrier(reason:string):string {this.boundary(false,true);if(!reason||reason.length>256)throw new Error('Invalid barrier reason');if(this.departures.size||this.arrivals.size||this.restoredArrivals.size)throw new Error('Transfer transaction active');if(this.barriers.size>=128)throw new Error('Barrier capacity exceeded');const token=JSON.stringify([this.services.id,'durability',this.tokenIds.next()]);this.barriers.set(token,reason);return token;}
   releaseDurabilityBarrier(token:string):void {this.boundary(false,true);if(this.retirements.has(token))throw new Error('Retirement owns barrier');this.barriers.delete(token);}
   neutralizeInput(ref:EntityRef):void {this.boundary(false,true);const p=this.playerMap.get(ref.id);if(!p||!sameRef(p.unit.ref,ref))throw new Error('Stale player');this.events.assertRoom(p.unit.actions.length+4);p.neutralizeInput();}
@@ -206,8 +222,8 @@ export class SimulationArea implements AreaContract {
   stageRestoredArrival(admission:Admission,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData):StagedArrival {this.boundary(false,true);const a=this.reservations.get(admission.token);if(!a||JSON.stringify(a)!==JSON.stringify(admission)||a.character!==checkpoint.character||this.arrivals.has(a.token)||this.restoredArrivals.has(a.token)||this.services.playerByCharacter(a.character))throw new Error('Invalid restored arrival');const created=this.buildRestored(checkpoint,restored);this.restoredArrivals.set(a.token,{token:a.token,admission:a,...created});return immutable({token:a.token,admission:a,newRef:created.unit.ref});}
   activateRestoredArrival(token:string):EntityRef {this.boundary(false,true);const a=this.restoredArrivals.get(token);if(!a)throw new Error('Unknown restored arrival');this.activate(a.unit,a.player);this.restoredArrivals.delete(token);this.reservations.delete(token);return a.unit.ref;}
   restorePlayerCheckpoint(ref:EntityRef,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData,receiptIds:readonly string[]=[]):EntityRef {this.boundary(false,true);if(!this.barriers.size)throw new Error('Recovery requires durability barrier');const p=this.playerMap.get(ref.id);if(!p||!sameRef(p.unit.ref,ref)||p.state.character!==checkpoint.character)throw new Error('Invalid recovery owner');if(receiptIds.some(id=>typeof id!=='string'||!id)||new Set(receiptIds).size!==receiptIds.length)throw new Error('Invalid recovery receipts');const created=this.buildRestored(checkpoint,restored);this.events.assertRoom(p.unit.actions.length+this.playerMap.size*3+4);if(this.options.characters&&!this.options.characters.compareAndSwap(p.state.character,ref,created.unit.ref))throw new Error('Character registry mismatch');this.removePlayer(ref);this.activate(created.unit,created.player);this.worldRules.replaceAppliedGrantIds(checkpoint.character,receiptIds);this.durableIds.set(checkpoint.character,new Set(receiptIds));for(const [id,c]of this.captures)if(c.checkpoint.character===checkpoint.character)this.captures.delete(id);for(const [id,r]of this.retirements)if(r.capture.checkpoint.character===checkpoint.character){this.retirements.delete(id);this.barriers.delete(id);}return created.unit.ref;}
-  snapshot():AreaSnapshot {this.boundary(true);this.updateRecovery();return immutable({area:this.services.id,world:this.services.world,tick:this.stepId,time:this.clock,units:[...this.unitMap.values()].sort((a,b)=>a.ref.id-b.ref.id),players:[...this.playerMap.values()].map(p=>p.state).sort((a,b)=>a.unit.id-b.unit.id),projectiles:[...this.flights.states.values()].sort((a,b)=>a.id-b.id),features:{beaconLit:this.worldRules.beaconLit,boat:this.boat.snapshot(),village:this.village.snapshot(),bindings:Object.fromEntries([...this.unitMap.values()].filter(u=>u.kind==='player'||u.kind==='townsfolk').map(u=>[`actor:${u.ref.id}`,u.ref]))},recovery:{telegraphs:[...this.telegraphs.values()],endings:[...this.endings.values()]}});}
-  debugState():AreaDebugState {this.boundary(true);const w=this.worldRules.debugState();return immutable({schema:'s2-debug-v1',definitionVersion:JSON.stringify(this.options.definition),actionDataVersion:this.options.actionData.version,snapshot:this.snapshot(),rng:{algorithm:this.rng.algorithm,state:this.rng.state()},allocators:{entity:this.ids.nextValue,action:this.actions.nextGeneration,projectile:this.flights.nextId,timer:this.timers.nextId,event:this.events.nextOrder},playerControllers:[...this.playerMap.values()].map(p=>p.debugState()) as DebugValue[],enemies:[...this.enemyMap.values()].map(e=>e.debugState()) as DebugValue[],bosses:[...this.bossMap.values()].map(b=>b.debugState()) as DebugValue[],timers:this.timers.snapshot(),contributions:w.contributions,grants:w.grants,acknowledgedGrantIds:w.acknowledgedGrantIds,heldIntents:[...this.playerMap.values()].map(p=>({actor:p.state.unit,intent:p.heldIntent,lastConsumedSeq:p.lastConsumedSeq})),lifecycle:{nextEcho:this.nextEcho,nextToken:this.tokenIds.nextValue,reservations:[...this.reservations.values()],departures:[...this.departures.values()],arrivals:[...this.arrivals.values()].map(a=>({token:a.token,admission:a.admission,unit:a.unit,state:a.player.state,dto:a.dto}))} as unknown as DebugValue,interactions:w.interactions as unknown as DebugValue,context:this.context});}
+  snapshot():AreaSnapshot {this.boundary(true);this.updateRecovery();return immutable({area:this.services.id,world:this.services.world,tick:this.stepId,time:this.clock,units:[...this.unitMap.values()].sort((a,b)=>a.ref.id-b.ref.id),players:[...this.playerMap.values()].map(p=>p.state).sort((a,b)=>a.unit.id-b.unit.id),projectiles:[...this.flights.states.values()].sort((a,b)=>a.id-b.id),features:{mode:this.context.mode,pvp:this.context.pvp,beaconLit:this.worldRules.beaconLit,exploration:this.worldRules.explorationSnapshot(),boat:this.boat.snapshot(),village:this.village.snapshot(),bindings:Object.fromEntries([...this.unitMap.values()].filter(u=>u.kind==='player'||u.kind==='townsfolk').map(u=>[`actor:${u.ref.id}`,u.ref]))},recovery:{bosses:[...this.bossMap.values()].map(b=>({unit:b.unit,profile:b.profile,state:b.state,phase:b.phase,enraged:b.enraged,stateTime:b.stateTime,freed:b.freed.ref,freedTime:b.freedTime,showFrame:this.bossFrames.get(JSON.stringify(b.unit))??false})),telegraphs:[...this.telegraphs.values()],endings:[...this.endings.values()]}});}
+  debugState():AreaDebugState {this.boundary(true);const w=this.worldRules.debugState();return immutable({schema:'s2-debug-v1',definitionVersion:JSON.stringify(this.options.definition),actionDataVersion:this.options.actionData.version,snapshot:this.snapshot(),rng:{algorithm:this.rng.algorithm,state:this.rng.state()},allocators:{entity:this.ids.nextValue,action:this.actions.nextGeneration,projectile:this.flights.nextId,timer:this.timers.nextId,event:this.events.nextOrder},playerControllers:[...this.playerMap.values()].map(p=>p.debugState()) as DebugValue[],enemies:[...this.enemyMap.values()].map(e=>e.debugState()) as DebugValue[],bosses:[...this.bossMap.values()].map(b=>b.debugState()) as DebugValue[],timers:this.timers.snapshot(),contributions:w.contributions,grants:w.grants,acknowledgedGrantIds:w.acknowledgedGrantIds,heldIntents:[...this.playerMap.values()].map(p=>({actor:p.state.unit,intent:p.heldIntent,lastConsumedSeq:p.lastConsumedSeq})),features:{boat:this.boat.debug(),village:this.village.debug(),npcs:[...this.npcMap.values()].map(n=>n.debug()),townsfolk:[...this.ambientMap.values()].map(n=>n.debug())} as unknown as DebugValue,lifecycle:{barriers:[...this.barriers],captures:[...this.captures.values()],retirements:[...this.retirements.values()],durableIds:[...this.durableIds].map(([character,ids])=>({character,ids:[...ids]})),revisions:[...this.revisions],restoredArrivals:[...this.restoredArrivals.values()].map(a=>({token:a.token,admission:a.admission,unit:a.unit,state:a.player.state})),nextEcho:this.nextEcho,nextToken:this.tokenIds.nextValue,reservations:[...this.reservations.values()],departures:[...this.departures.values()],arrivals:[...this.arrivals.values()].map(a=>({token:a.token,admission:a.admission,unit:a.unit,state:a.player.state,dto:a.dto}))} as unknown as DebugValue,interactions:w.interactions as unknown as DebugValue,context:this.context});}
   drainEvents(){this.boundary(true);this.updateRecovery();return this.events.drain();}
   applyContext(context:AreaContext):void {this.boundary();if(this.playerMap.size+this.reservations.size>capacity(context))throw new Error('Membership exceeds area capacity');const ids=new Set<number>(),characters=new Set<string>();for(const m of context.members){const p=this.services.player(m.unit);if(!p||p.state.character!==m.character||ids.has(m.unit.id)||characters.has(m.character))throw new Error('Invalid membership');ids.add(m.unit.id);characters.add(m.character);}if(ids.size!==this.playerMap.size)throw new Error('Missing membership');this.context=immutable(context);}
   private spawn(id:string){const d=this.options.definition;const p=id===d.spawn.id?d.spawn:id===d.recall.id?d.recall:d.pois[id]??Object.values(d.pois).find(p=>p.id===id);if(!p)throw new Error('Unknown spawn');return p;}
