@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { t } from '../i18n';
 import type { CrabRig } from '../crab/types';
 import { rigCatalog } from '../sim/data/rig-catalog.ts';
 import { evaluateRenderPoseRecipe, isRenderPoseRecipe, renderPoseProviderVersion } from '../sim/renderPose.ts';
@@ -37,11 +38,11 @@ export class EndingPresentationView {
   for(const actor of state.cast)if(actor.ref.endingId!==state.id)throw new Error('Cast incarnation mismatch');
   const visible=new Set(state.cast.map(a=>a.ref.slot));for(const [slot,rig]of this.rigs)if(!visible.has(slot)){rig.root.removeFromParent();rig.dispose();this.rigs.delete(slot);}
   for(const actor of state.cast){if(this.rigs.has(actor.ref.slot)||this.loading.has(actor.ref.slot))continue;const generation=this.generation;this.loading.add(actor.ref.slot);
-   void (this.ports.createRig??loadRig)(actor).then(rig=>{if(this.disposed||generation!==this.generation||!this.current?.cast.some(a=>a.ref.slot===actor.ref.slot)){rig.dispose();return;}this.loading.delete(actor.ref.slot);this.rigs.set(actor.ref.slot,rig);this.ports.root.add(rig.root);this.render();}).catch(error=>{if(generation===this.generation){this.ports.error?.(error instanceof Error?error.message:'Cast load failed');this.loading.delete(actor.ref.slot);this.status.textContent='Cast loading failed';}});
+   void (this.ports.createRig??loadRig)(actor).then(rig=>{if(this.disposed||generation!==this.generation||!this.current?.cast.some(a=>a.ref.slot===actor.ref.slot)){rig.dispose();return;}this.loading.delete(actor.ref.slot);this.rigs.set(actor.ref.slot,rig);this.ports.root.add(rig.root);this.render();}).catch(error=>{if(generation===this.generation){this.ports.error?.(error instanceof Error?error.message:'Cast load failed');this.loading.delete(actor.ref.slot);this.status.textContent=t('축하 장면을 불러오지 못했습니다.','The celebration could not be loaded.');}});
   }
   // On reconnect the full baseline restores visuals, without playing old audio/FX again.
   for(const cue of state.cues){if(!first&&cue.ordinal>this.cueOrdinal)this.ports.cue?.(cue.value);this.cueOrdinal=Math.max(this.cueOrdinal,cue.ordinal);}
-  this.hud.hidden=state.phase==='finished'||state.phase==='cancelled';this.status.textContent=`${state.phase} | server tick ${state.tick}`;
+  this.hud.hidden=state.phase==='finished'||state.phase==='cancelled';this.status.textContent=state.phase==='blackout'?t('축하 장면을 준비하고 있어요.','Preparing the celebration.'):state.phase==='credits'?t('함께해 주셔서 고마워요.','Thank you for playing.'):['opening','routine','finale'].includes(state.phase)?t('영웅을 위한 축하','A celebration for the hero'):'';
   this.hud.style.background=state.phase==='blackout'?'#000':'transparent';this.credits.style.display=state.phase==='credits'?'block':'none';
   this.skip.hidden=!['opening','routine','finale'].includes(state.phase)||state.tick<state.skipAvailableTick;this.proceed.hidden=state.phase!=='credits';
   this.caption.textContent=state.phase==='routine'?(BREAK_ROUTINE.find(s=>s.id===state.move)?.label??''):state.phase==='finale'?'The village celebrates its hero':state.phase==='opening'?'The hero returns':'';
