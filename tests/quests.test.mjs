@@ -103,3 +103,36 @@ test('World III Korean and English copy retain objective progress and tracked re
  setQuestLanguage('ko');assert.match(QUESTS.d5.title,/등불/);assert.deepEqual(shape(),before);
  assert.equal(q.value(QUESTS.d5.objectives[0]),1);assert.equal(q.current().quest,'d5');
 });
+
+
+test('existing snow saves gain ten requests without losing patrol or boss progress',()=>{
+ const q=new QuestLog();q.status.s1='done';q.status.s2='active';q.progress.set('s2-boss',0);q.setChapter(4);
+ const ids=QUEST_ORDER.filter(id=>q.inChapter(id));assert.equal(ids.length,12);
+ assert.equal(q.status.s1,'done');assert.equal(q.status.s2,'active');
+ for(const id of ids.slice(2))assert.equal(q.status[id],'available');
+ assert.equal(q.track('s3'),true);assert.equal(q.current().step,'accept');assert.equal(q.current().poi,'npc:brinebeard');
+});
+test('all ten snow requests can be completed and award their reward only once',()=>{
+ const q=new QuestLog();q.setChapter(4);let rewards=0;q.events.on('completed',()=>rewards++);
+ for(const id of QUEST_ORDER.filter(id=>/^s(?:[3-9]|1[0-2])$/.test(id))){
+  q.accept(id);q.track(id);const def=QUESTS[id];assert.equal(q.current().quest,id);
+  for(const o of def.objectives){q.bump(o.kind,o.count);q.bump(o.kind,o.count);assert.equal(q.value(o),o.count);}
+  assert.equal(q.status[id],'ready');assert.equal(q.current().step,'turnin');assert.equal(q.current().poi,`npc:${def.turnIn}`);
+  q.complete(id);q.complete(id);assert.equal(q.status[id],'done');
+ }
+ assert.equal(rewards,10);
+});
+test('snow items remain personal and do not advance in another world; navigation resumes each saved item',()=>{
+ const a=new QuestLog(),b=new QuestLog();a.setChapter(4);b.setChapter(4);a.accept('s3');b.accept('s3');a.track('s3');
+ a.bump('snow-crate-a');assert.equal(a.value(QUESTS.s3.objectives[0]),1);assert.equal(b.value(QUESTS.s3.objectives[0]),0);
+ a.setChapter(3);a.bump('snow-crate-b');assert.equal(a.value(QUESTS.s3.objectives[1]),0);
+ a.setChapter(4);assert.equal(a.current().objective.kind,'snow-crate-b');
+ const restored=new QuestLog();Object.assign(restored.status,a.status);for(const [id,n]of a.progress)restored.progress.set(id,n);restored.restoreTracking(a.tracked);restored.setChapter(4);
+ assert.equal(restored.current().objective.kind,'snow-crate-b');
+});
+test('snow request localization preserves objectives, rewards and tracked progress',()=>{
+ const q=new QuestLog();q.setChapter(4);q.accept('s5');q.bump('snow-lamp-a');q.track('s5');
+ const shape=()=>QUEST_ORDER.filter(id=>QUESTS[id].chapter===4).map(id=>({id,xp:QUESTS[id].xp,objectives:QUESTS[id].objectives.map(({id,kind,count,poi})=>({id,kind,count,poi}))}));
+ const before=shape();setQuestLanguage('en');assert.match(QUESTS.s5.title,/Blizzard/);assert.match(QUESTS.s5.offer[0],/Hold F/);
+ setQuestLanguage('ko');assert.match(QUESTS.s5.title,/귀갓길/);assert.equal(q.value(QUESTS.s5.objectives[0]),1);assert.equal(q.current().quest,'s5');assert.deepEqual(shape(),before);
+});

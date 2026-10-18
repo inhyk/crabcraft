@@ -1,3 +1,4 @@
+import {SNOW_POINTS} from '../data/quests.ts';
 import { createTownsfolk } from '../data/townsfolk.ts';
 import type { AreaDefinition, EnemySpawn, Poi } from '../types.ts';
 import { deepFreeze, NPC_ORDER, poi, validateConfig, type WorldDefinitionConfig } from './world1.ts';
@@ -9,5 +10,8 @@ export function createWorld4Definition(config:WorldDefinitionConfig):AreaDefinit
  const coords:readonly(readonly[number,number])[]=[[-16,56],[16,56],[-16,38],[16,38],[-16,74],[16,80],[16,68]],npcs=NPC_ORDER.map((id,i)=>{const[x,z]=coords[i],point=p(`npc:${id}`,x,z);pois[point.id]=point;return{id,position:point.position,yaw:point.yaw,archetype:`npc:${id}`};});
  const enemies:EnemySpawn[]=[];for(const kind of ['scrapling','scavenger']as const)for(let i=0;i<config.population[kind];i++){const index=kind==='scrapling'?i:config.population.scrapling+i,x=(index%2?1:-1)*(44+index%4*7),z=20-Math.floor(index/2)*12;enemies.push({id:`w4:${kind}:${i}`,kind,home:p('',x,z).position,wanderRadius:kind==='scrapling'?6:3,pack:`w4:${kind}:pack:${Math.floor(i/2)}`,fixedLevel:config.fixedLevels[kind],role:'ordinary',legacySlot:`${kind}:${i}`});}
  for(let i=0;i<(config.population.shallowPatrols??0);i++){const index=config.population.scrapling+config.population.scavenger+i,x=(index%2?1:-1)*(44+index%4*7),z=20-Math.floor(index/2)*12;enemies.push({id:`w4:shallow:${i}`,kind:'scrapling',home:p('',x,z).position,wanderRadius:2,pack:`w4:shallow:pack:${i}`,fixedLevel:config.fixedLevels.scrapling,role:'ordinary',legacySlot:`shallow:${i}`});}
- return deepFreeze({world:'w4',townsfolk:createTownsfolk('w4',config.query),spawn:pois.spawn,recall:pois.spawn,pois,enemies,bosses:[{profile:'frost',arena:pois.bossArena,freedNpcId:'mira',freedArchetype:'freed-frost',freedPosition:pois['mira-prison'].position,captiveBeforeVictory:true}],npcs,interactions:[{id:'gate:w3',kind:'gate',position:pois.spawn.position,range:3.5,destination:'w3'}]});
+ const interactions:AreaDefinition['interactions'][number][]=[{id:'gate:w3',kind:'gate',position:pois.spawn.position,range:3.5,destination:'w3'}];
+ const props=config.personalProps??config.query;
+ for(const [id,[x,z]]of Object.entries(SNOW_POINTS)){const out={x:0,y:0,set(x:number,y:number){this.x=x;this.y=y;return this;}};props.resolveCollision(x,z,1,out);const position={x:out.x,y:props.heightAt(out.x,out.y),z:out.y};interactions.push({id,kind:id.includes('-visit-')?'explore':id.includes('-lamp-')?'waystone':'crystal',position,...(id.includes('-lamp-')?{channelTo:{...position,y:position.y+2.2}}:{}),range:id.includes('-visit-')?4:3.5,objective:id});}
+ return deepFreeze({world:'w4',townsfolk:createTownsfolk('w4',config.query),spawn:pois.spawn,recall:pois.spawn,pois,enemies,bosses:[{profile:'frost',arena:pois.bossArena,freedNpcId:'mira',freedArchetype:'freed-frost',freedPosition:pois['mira-prison'].position,captiveBeforeVictory:true}],npcs,interactions});
 }
