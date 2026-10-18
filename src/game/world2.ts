@@ -100,7 +100,7 @@ export class HiddenWorld {
   private sightOffset=new THREE.Vector3();
 
   async buildSettlement() {
-    await this.third.buildSettlement();
+    await this.third.buildSettlement();await this.fourth.buildSettlement();
     this.dawnRequests.build();this.snowRequests.build();this.emberRequests.build();this.skyRequests.build();
     const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
     // Every World II collider, without meshes: the same registration the server bakes.
