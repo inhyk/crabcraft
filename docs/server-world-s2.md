@@ -12,7 +12,7 @@
 
 `snapshot()`과 `debugState()`는 복사한 불변 값을 반환한다. `drainEvents()`는 순서가 붙은 ID와 값으로 된 관측을 소비한다. 렌더러나 event sink가 피해와 진행을 계산하지 않는다. `AreaId / EntityId / life` 전체가 수명 참조이며, 재생성 후 예전 참조는 무효다. 전역 RNG, 실제 시계, DOM, THREE와 기존 browser game 모듈은 코어에서 금지한다. import guard와 Node 직접 import 검사가 이를 확인한다.
 
-`public`과 기존 방의 정원은 100명, `party-encounter`는 8명이다. 부착된 플레이어와 아직 살아 있는 입장 예약을 합쳐 검사한다. `applyContext`로 정원을 줄일 때도 같은 조건을 확인한다. 대기열, party 생성 UI와 계정별 중복 접속 차단은 이후 host 연결 단계다.
+새 코어의 `public` 정원은 100명, `party-encounter`는 8명이다. 부착된 플레이어와 아직 살아 있는 입장 예약을 합쳐 검사한다. `applyContext`로 정원을 줄일 때도 같은 조건을 확인한다. 기존 코드 방 서버의 정원은 8명으로 유지하며 새 코어에 연결하지 않는다. 코어의 `legacy-room` context는 아직 adapter가 없는 준비 경로이며 현재 100명 상한을 기존 방의 정원으로 사용하지 않는다. 그 adapter와 정원 연결, 대기열, party 생성 UI와 계정별 중복 접속 차단은 이후 host 연결 단계다.
 
 | 모듈 | 실제 동작 |
 | --- | --- |
