@@ -1,6 +1,6 @@
 {
   "name": "crabcraft",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "description": "World of Crabcraft: a browser fantasy RPG where every character is a Jumper crab robot.",
