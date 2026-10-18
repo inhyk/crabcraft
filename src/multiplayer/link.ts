@@ -1,8 +1,9 @@
 // The multiplayer socket and how it comes back. No DOM or game imports, so server/rooms.test.mjs drives
 // it against the real relay with Node's WebSocket.
 
-/** `enter`: a public shard of the current world area. `create` and `join`: a code room with friends. */
-export type Mode = 'enter' | 'create' | 'join';
+/** `enter`: a public shard of the current world area. `create` and `join`: a code room with friends.
+ * `observe`: the developer monitor's invisible view of one room or shard (src/spectate.ts). */
+export type Mode = 'enter' | 'create' | 'join' | 'observe';
 export type Message = { type: string; [key: string]: any };
 export type Lost = {
   mode: Mode;
@@ -101,8 +102,9 @@ export class Link {
       if (msg.type === 'welcome') {
         clearTimeout(timeout);
         const gap = this.lostAt ? Date.now() - this.lostAt : 0, restart = this.restarted;
-        // Later retries rejoin what the server put us in: a created room is joined by its code.
-        if (msg.public) { this.mode = 'enter'; this.room = ''; } else { this.mode = 'join'; this.room = String(msg.room); }
+        // Later retries rejoin what the server put us in: a created room is joined by its code. An observer stays one.
+        if (this.mode === 'observe') this.room = String(msg.room);
+        else if (msg.public) { this.mode = 'enter'; this.room = ''; } else { this.mode = 'join'; this.room = String(msg.room); }
         this.attempt = this.step = 0; this.welcomed = true; this.lostAt = 0; this.restarted = false;
         this.handlers.message(msg);
         if (gap) this.handlers.back?.({ gap, restart });
@@ -121,7 +123,7 @@ export class Link {
       if (restart) this.restarted = true;
       const attempt = ++this.attempt;
       let delay: number | null;
-      if (this.mode === 'enter') delay = restart ? restartDelay(this.random) : backoff(this.step++, this.random);
+      if (this.mode === 'enter' || this.mode === 'observe') delay = restart ? restartDelay(this.random) : backoff(this.step++, this.random);
       // A code room retries only a connection it once had, as before.
       else delay = this.welcomed && attempt <= ROOM_RETRIES ? (restart ? restartDelay(this.random) : ROOM_RETRY_MS) : null;
       if (delay !== null) this.retry = setTimeout(() => { this.retry = null; if (!this.disposed) this.dial(); }, delay);

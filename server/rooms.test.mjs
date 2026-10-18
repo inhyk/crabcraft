@@ -757,3 +757,28 @@ test('an observer cannot play, send, chat, join or become the host, and leaving 
   assert.equal(b.queue.some(m => m.type === 'left' && m.id === ow.id), false);
   assert.equal(relay.rooms.get(r.room).size, 7);
 });
+
+test('a spectator link stays an observer: a dropped socket comes back observing the same room, with the public backoff', async t => {
+  const relay = await relayAt(0, { ...allowTicket, keepRooms: 60000 }), upgraded = [];
+  relay.server.on('upgrade', (_req, socket) => upgraded.push(socket));
+  t.after(() => relay.stop());
+  const host = crab(t, relay.port, 'Watched');
+  host.link.connect('create'); await host.welcomed(1);
+  const room = host.seen.welcomes[0].room;
+  const seen = { welcomes: [], lost: [] };
+  const link = new Link(() => `ws://127.0.0.1:${relay.port}/multiplayer`, {
+    hello: (mode, code) => ({ type: mode, room: code, ticket: 'monitor-ok' }),
+    message: msg => { if (msg.type === 'welcome') seen.welcomes.push(msg); },
+    lost: info => seen.lost.push(info),
+  }, { random: () => 0 });
+  t.after(() => link.dispose());
+  link.connect('observe', room);
+  await eventually(() => seen.welcomes.length === 1 && link.open, 'the observer welcome');
+  assert.equal(seen.welcomes[0].observer, true); assert.equal(link.mode, 'observe');
+  upgraded[1].destroy();
+  await eventually(() => seen.welcomes.length === 2 && link.open, 'the observer back');
+  assert.deepEqual(seen.lost.map(l => [l.mode, l.attempt, l.delay]), [['observe', 1, 750]]);
+  assert.equal(seen.welcomes[1].observer, true); assert.equal(seen.welcomes[1].room, room); assert.equal(link.mode, 'observe');
+  assert.equal(relay.relay.rooms.get(room).size, 1);
+  assert.equal(host.seen.lost.length, 0);
+});
