@@ -933,7 +933,7 @@ export class Game {
     else if(it.kind==='boat')this.hud.prompt.show('F',this.boats!.label());
     else if(it.kind==='secret')this.hud.prompt.show('F',t('길게 눌러 바위의 게 문양 살펴보기','Hold to inspect the crab carving'));
     else if(it.kind==='portal')this.hud.prompt.show('F',this.world2.portalLabel());
-    else if(it.kind==='world2')this.hud.prompt.show('F',it.node.kind.startsWith('dawn-')?it.node.kind.startsWith('dawn-lamp-')?t('길게 눌러 오르막 등불 켜기','Hold to light ascent lantern'):t('퀘스트 물품 모으기','Gather quest item'):it.node.kind.startsWith('lamp')?t('길게 눌러 별빛 등불 켜기','Hold to light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
+    else if(it.kind==='world2')this.hud.prompt.show('F',(it.node.kind.startsWith('dawn-')||it.node.kind.startsWith('snow-'))?it.node.kind.includes('-lamp-')?t('길게 눌러 길잡이 등불 켜기','Hold to light guide lantern'):t('퀘스트 물품 모으기','Gather quest item'):it.node.kind.startsWith('lamp')?t('길게 눌러 별빛 등불 켜기','Hold to light waystone'):t('별빛 수정 채집하기','Gather star crystal'));
     else if (it.kind === 'beacon') this.hud.prompt.show('F', this.beaconLit?t('등대 끄기','Turn off lighthouse'):t('등대 켜기','Light lighthouse'));
     else this.hud.prompt.show('F', t(`${it.unit.name}에게 말 걸기`,`${it.unit.kind === 'npc' ? 'Talk to' : 'Chat with'} ${it.unit.name}`));
   }
@@ -948,10 +948,10 @@ export class Game {
     if(it.kind==='world2'){
       this.player.setTarget(null);
       const node=it.node;
-      if(node.kind.startsWith('lamp')||node.kind.startsWith('dawn-lamp-')){
+      if(node.kind.startsWith('lamp')||node.kind.includes('-lamp-')){
         const chapter=this.world2.chapter;
         this.player.unit.setYaw(yawTo(this.player.unit.pos.x,this.player.unit.pos.z,node.position.x,node.position.z));
-        this.player.startChannel(node.kind.startsWith('dawn-')?t('오르막 등불 켜는 중','Lighting ascent lantern'):t('별빛 등불 켜는 중','Lighting waystone'),1.5,'KeyF',node.mesh.position.clone(),()=>{
+        this.player.startChannel(node.kind.includes('-lamp-')?t('길잡이 등불 켜는 중','Lighting guide lantern'):t('별빛 등불 켜는 중','Lighting waystone'),1.5,'KeyF',node.mesh.position.clone(),()=>{
           if(this.world2.chapter===chapter&&this.player.unit.pos.distanceTo(node.position)<3.5)this.world2.collect(node.kind);
         });
       }else this.world2.collect(node.kind);
@@ -995,6 +995,7 @@ export class Game {
     npc.talking = true;
     u.setYaw(yawTo(u.pos.x, u.pos.z, this.player.unit.pos.x, this.player.unit.pos.z));
     if(this.world2.chapter===3&&id==='brinebeard')q.bump('dawn-letter');
+    if(this.world2.chapter===4&&id==='brinebeard')q.bump('snow-letter');
     if(this.world2.chapter===2&&id==='coralline'&&q.status.w6==='active')q.bump('deliver-supplies');
     if (this.world2.chapter===1 && id === 'silvermoon' && q.status.q2 === 'active') q.bump('deliver');
     const portrait = `art/npc/${id}.webp`;
@@ -1224,7 +1225,7 @@ export class Game {
     if (cur.step === 'objective' && cur.objective) {
       const k = cur.objective.kind;
       if(this.world2.chapter===4&&k==='frost-boss')return this.world2.fourth.arena.position;
-      if(this.world2.chapter===3){const point=this.world2.objectivePoint(k);if(point)return point;}
+      if(this.world2.chapter===3||this.world2.chapter===4){const point=this.world2.objectivePoint(k);if(point)return point;}
       if(this.world2.chapter===3&&k==='dawn-boss')return this.world2.third.arena.position;
       if(this.world2.chapter===2){const point=this.world2.objectivePoint(k);if(point)return point;if(k==='eclipse-boss')return this.world2.arena.position;}
       const kind: EnemyKind | null = k === 'kill-scrapling' || k === 'collect-cog' ? 'scrapling' : k === 'kill-scavenger' ? 'scavenger' : null;
