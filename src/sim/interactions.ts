@@ -1,7 +1,7 @@
 import type { AreaDefinition, AreaServices, ChannelState, EntityRef, PlayerCommand, PlayerSim } from './types.ts';
 import { activeObjective, QUESTS, questAccept, questBump, questComplete, questTrack } from './data/quests.ts';
 import { worldChapter } from './math.ts';
-import { canChallenge, canReplayFrostEnding, canTravelTo } from './data/progression.ts';
+import { canChallenge, canPresentFrostEnding, canTravelTo } from './data/progression.ts';
 import { teleport } from './unit.ts';
 import { transactEquipment, type EquipmentOperation, type EquipmentResult, type EquipmentSlot } from './data/equipment.ts';
 import { BOSS_PROFILES } from './data/bosses.ts';
@@ -46,7 +46,7 @@ export class InteractionRules {
   }
   const p=this.player(ref);if(!p)return false;
   if(command.kind==='questTrack')return questTrack(p.state.quests,command.questId);
-  if(command.kind==='endingReplay'){if(!canReplayFrostEnding(worldChapter(s.world),p.state.flags,s.bossByProfile('frost')?.state??'dormant',p.state.controlsLocked))return false;p.state.flags.frostEndingStarted=true;s.emit({type:'endingReady',unit:p.state.unit,chapter:4,replay:true});return true;}
+  if(command.kind==='endingReplay'){if(!canPresentFrostEnding(s.context.mode,worldChapter(s.world),p.state.flags,s.bossByProfile('frost')?.state??null,p.state.controlsLocked))return false;p.state.flags.frostEndingStarted=true;s.emit({type:'endingReady',unit:p.state.unit,chapter:4,replay:true});return true;}
   if(command.kind==='bossChallenge'){
    const boss=s.bossByProfile(command.profile),definition=s.definition.bosses.find(b=>b.profile===command.profile),u=s.getUnit(ref)!;if(!boss||!definition)return false;
    const stats=BOSS_PROFILES[command.profile],chapter=worldChapter(s.world);
