@@ -100,3 +100,35 @@ export class PersistenceCoordinator<I extends Json, C extends Json, G extends Js
     return { durable: unresolved === 0 && !this.ownership.closed.aborted, unresolved };
   }
 }
+
+export interface PendingGrantStore<I extends Json, C extends Json, G extends Json> {
+  pendingGrants(account: string, character: string, options: { limit: number }): Promise<EarnedGrant<G>[]>;
+  loadForRecovery(account: string, character: string, ids: readonly string[]): Promise<Recovery<I, C, G>>;
+}
+export type CertifiedPageRead<I extends Json, C extends Json, G extends Json> =
+  | { kind: 'page'; revision: number; grants: (EarnedGrant<G> & { appliedRevision: number | null })[]; more: boolean }
+  | { kind: 'recovery'; recovery: Recovery<I, C, G> }
+  | { kind: 'unresolved'; reason: 'ownership' | 'storage' };
+
+/** Candidate selection is not proof. The consistent second read certifies revision and exact receipts. */
+export async function readCertifiedGrantPage<I extends Json, C extends Json, G extends Json>(
+  store: PendingGrantStore<I, C, G>, ownership: HostOwnership,
+  context: { accountId: string; characterId: string; expectedRevision: number; limit: number },
+): Promise<CertifiedPageRead<I, C, G>> {
+  if (!Number.isSafeInteger(context.expectedRevision) || context.expectedRevision < 0 || !Number.isSafeInteger(context.limit) || context.limit < 1 || context.limit > 100) throw new Error('invalid certified page read');
+  const read = { ...context };
+  if (ownership.closed.aborted) return { kind: 'unresolved', reason: 'ownership' };
+  try {
+    ownership.assertOwned();
+    const candidates = await store.pendingGrants(read.accountId, read.characterId, { limit: read.limit });
+    if (ownership.closed.aborted) return { kind: 'unresolved', reason: 'ownership' };
+    if (candidates.length > read.limit || new Set(candidates.map(grant => grant.id)).size !== candidates.length) throw new Error('invalid journal candidates');
+    const candidateIds = Object.freeze(candidates.map(grant => grant.id));
+    const recovery = await store.loadForRecovery(read.accountId, read.characterId, candidateIds);
+    if (ownership.closed.aborted) return { kind: 'unresolved', reason: 'ownership' };
+    ownership.assertOwned();
+    if (recovery.character.revision !== read.expectedRevision) return { kind: 'recovery', recovery };
+    if (recovery.grants.length !== candidates.length || recovery.grants.some(grant => !candidateIds.includes(grant.id))) throw new Error('incomplete receipt certification');
+    return { kind: 'page', revision: recovery.character.revision, grants: recovery.grants.filter(grant => grant.appliedRevision === null), more: candidateIds.length === read.limit };
+  } catch { return { kind: 'unresolved', reason: ownership.closed.aborted ? 'ownership' : 'storage' }; }
+}
