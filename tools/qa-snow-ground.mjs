@@ -30,6 +30,14 @@ async function play(p,x,z,face,camYaw,pitch=.3){
  await p.evaluate(([x,z,face,camYaw,pitch])=>{const g=window.app.current.game;g.player.unit.teleport(g.world,x,z,face);g.follow.yaw=camYaw;g.follow.pitch=pitch;g.follow.distance=7.5;g.follow.cut();},[x,z,face,camYaw,pitch]);
  await p.waitForTimeout(1500);
 }
+// A fixed camera (eye and target, metres above the ground at each).
+async function fixed(p,[cx,cyo,cz],[tx,tz]){
+ await p.evaluate(([cx,cyo,cz,tx,tz])=>{const g=window.app.current.game,H=(x,z)=>g.world.heightAt(x,z);
+  g.player.unit.teleport(g.world,cx-2,cz-3,0);
+  if(!g.follow.__qa){g.follow.__qa=g.follow.update;g.follow.update=function(){const s=window.__qaCam;if(!s)return this.__qa.apply(this,arguments);this.camera.position.set(s[0],s[1],s[2]);this.camera.lookAt(s[3],s[4],s[5]);};}
+  window.__qaCam=[cx,H(cx,cz)+cyo,cz,tx,H(tx,tz),tz];},[cx,cyo,cz,tx,tz]);
+ await p.waitForTimeout(1500);
+}
 // Share of blown-out pixels (every channel above 240) in the lower part of a screenshot, where the floor is.
 async function blown(p,buf,top=.45){
  return p.evaluate(async([b64,top])=>{const img=new Image();img.src='data:image/png;base64,'+b64;await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const x=c.getContext('2d');x.drawImage(img,0,0);
@@ -42,12 +50,15 @@ try{
   const g=window.app.current.game,w=g.world2.fourth,root=w.root,H=(x,z)=>g.world.heightAt(x,z);
   const pav=root.getObjectByName('world4-snow-paving'),surf=root.getObjectByName('frostlight-paving-surface');
   const ice=root.getObjectByName('frostlight-arena-ice'),rim=root.getObjectByName('frostlight-arena-rim');
-  // Nothing of the old placeholder ground may remain: tile paving, a wide cylinder floor, torus rings outside the prison.
+  // Nothing of the old placeholder ground may remain: tile paving, a wide cylinder floor, torus rings lying on the
+  // arena floor (the prison's rings stand on it and stay).
   const old=[];let torus=0,discs=0,pavMeshes=0;
+  root.updateMatrixWorld(true);
   root.traverse(o=>{
    if(o.name==='weathered-bevelled-paving'||o.name==='world4-flagstone-paths')old.push(o.name);
    if(!o.isMesh)return;let prison=false;for(let a=o;a;a=a.parent)if(a.name==='mira-ice-prison')prison=true;
-   if(!prison&&o.geometry.type==='TorusGeometry')torus++;
+   const e=o.matrixWorld.elements,x=e[12],y=e[13],z=e[14];
+   if(!prison&&o.geometry.type==='TorusGeometry'&&Math.hypot(x,z+78)<23&&Math.abs(y-19.1)<.5)torus++;
    if(o.geometry.type==='CylinderGeometry'&&o.geometry.parameters.radiusTop>=15)discs++;
   });
   pav.traverse(o=>{if(o.isMesh)pavMeshes++;});
@@ -66,7 +77,7 @@ try{
  assert.deepEqual(r.old,[],'old tile paving is gone');assert.equal(r.torus,0,'no torus rings left on the arena');assert.equal(r.discs,0,'no flat cylinder arena floor');
  assert.equal(r.pavMeshes,1,'the street network is one surface mesh');
  assert.ok(r.on.every(Boolean),`covers() holds on the paths: ${JSON.stringify(r.on)}`);assert.ok(!r.off.some(Boolean),`covers() is false off them: ${JSON.stringify(r.off)}`);
- assert.equal(r.stats.segments,5);assert.equal(r.stats.freeEnds,8);
+ assert.equal(r.stats.segments,5);assert.equal(r.stats.freeEnds,8);assert.equal(r.stats.plazas,3);
  assert.ok(r.minLift>=.029&&r.maxLift<.3,`paving sits on the ground: ${r.minLift} .. ${r.maxLift}`);
  assert.ok(r.arenaDev<1e-9,`arena floor height unchanged: ${r.arenaDev}`);
  assert.equal(r.ice.type,'CircleGeometry');assert.ok(Math.abs(r.ice.radius-22.05)<1e-6);assert.deepEqual(r.ice.pos.map(v=>+v.toFixed(3)),[0,19.035,-78]);assert.equal(r.ice.shadow,true);
@@ -76,9 +87,11 @@ try{
  await play(p,0,50,Math.PI,0);await p.screenshot({path:'tmp/qa/snow-ground-road.png'});
  await play(p,0,40,SUN+Math.PI,SUN);await p.screenshot({path:'tmp/qa/snow-ground-road-sun.png'});
  await play(p,0,-66,Math.PI,0);await p.screenshot({path:'tmp/qa/snow-ground-arena.png'});
- await play(p,-4,-90,SUN+Math.PI,SUN);const sunShot=await p.screenshot({path:'tmp/qa/snow-ground-arena-sun.png'});
- const glare=await blown(p,sunShot);
- assert.ok(glare<.01,`ice into the low sun keeps detail: ${(glare*100).toFixed(2)}% blown`);
+ await play(p,-4,-90,SUN+Math.PI,SUN);await p.screenshot({path:'tmp/qa/snow-ground-arena-sun.png'});
+ // Low across the ice into the sun, where the old glossy disc blew 4.5% of the floor out to white.
+ await fixed(p,[-6,2.2,-94],[8,-66]);const sunShot=await p.screenshot({path:'tmp/qa/snow-ground-arena-glare.png'});
+ const glare=await blown(p,sunShot);await p.evaluate(()=>{window.__qaCam=null;});
+ assert.ok(glare<.005,`ice into the low sun keeps detail: ${(glare*100).toFixed(2)}% blown`);
  console.log('PASS the arena into the sun is not blown out',JSON.stringify({blownPercent:+(glare*100).toFixed(3)}));
  const compiled=await p.evaluate(()=>{const g=window.app.current.game,ren=window.app.engine.renderer,root=g.world2.fourth.root;
   return ['frostlight-paving-surface','frostlight-arena-ice','frostlight-arena-rim'].map(n=>!!ren.properties.get(root.getObjectByName(n).material).currentProgram);});

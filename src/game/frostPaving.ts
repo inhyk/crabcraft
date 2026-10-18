@@ -15,6 +15,7 @@ import {SNOW_DEFORM_READ,type SnowDeform} from './snowDeform';
  */
 
 const MAX_SEG = 8;
+const MAX_PLAZA = 4;
 /** Grid step of the surface mesh, metres. */
 const CELL = .5;
 /** Above the rendered terrain, so the snowfield never pokes through. */
@@ -54,6 +55,10 @@ uniform vec4 fpSeg[FP_MAX_SEG];
 uniform vec4 fpSegInfo[FP_MAX_SEG];
 uniform vec2 fpSegEnd[FP_MAX_SEG];
 uniform int fpSegCount;
+// Where a street crosses the main road: a swept square (xz, radius).
+#define FP_MAX_PLAZA ${MAX_PLAZA}
+uniform vec3 fpPlaza[FP_MAX_PLAZA];
+uniform int fpPlazaCount;
 uniform float fpDetail;
 uniform vec3 fpSkyH;
 uniform vec3 fpSkyZ;
@@ -140,6 +145,7 @@ for(int i=0;i<FP_MAX_SEG;i++){
   fpEnd=max(fpEnd,buried*(1.-smoothstep(-.2,.4,bd.x)));
 }
 float fpN1=fpFbm(fpP*.3+1.7),fpN2=fpNoise(fpP*1.6+4.);
+for(int i=0;i<FP_MAX_PLAZA;i++){if(i>=fpPlazaCount)break;vec3 q=fpPlaza[i];fpWear=max(fpWear,1.-smoothstep(q.z*.55,q.z,length(fpP-q.xy)+fpN1*1.4+fpN2*.3));}
 // Stones. The courses bend a little along their length and every outline is chipped.
 vec2 fpQ=fpP+vec2(fpNoise(fpP*2.3),fpNoise(fpP*2.3+7.))*.016;
 fpQ.y+=fpNoise(vec2(fpP.x*.19,fpP.y*.03+5.))*.13;
@@ -346,6 +352,14 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
   };
   const free = (s: Seg, x: number, z: number) => !segs.some(o => o.path !== s.path && boxDist(o, x, z) < .5);
   const sdNet = (x: number, z: number) => segs.reduce((d, s) => Math.min(d, boxDist(s, x, z)), Infinity);
+  // Junctions of a street with the main road, swept into small squares.
+  const plazas: THREE.Vector3[] = [];
+  for (const m of segs.filter(s => s.main)) for (const s of segs.filter(s => !s.main)) {
+    const dx = m.bx - m.ax, dz = m.bz - m.az, ex = s.bx - s.ax, ez = s.bz - s.az, den = dx * ez - dz * ex;
+    if (Math.abs(den) < 1e-6) continue;
+    const t = ((s.ax - m.ax) * ez - (s.az - m.az) * ex) / den, u = ((s.ax - m.ax) * dz - (s.az - m.az) * dx) / den;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1 && plazas.length < MAX_PLAZA) plazas.push(new THREE.Vector3(m.ax + dx * t, m.az + dz * t, m.half * 1.25));
+  }
   const ground = (x: number, z: number) => pavingGround(height, x, z, 4);
 
   // Surface: grid cells over the network, one vertex per grid point, so overlapping paths never double up.
@@ -377,6 +391,8 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
     fpSegInfo: {value: Array.from({length: MAX_SEG}, (_, i) => segs[i] ? new THREE.Vector4(segs[i].half, segs[i].main ? 1 : 0, segs[i].along0, segs[i].seed) : new THREE.Vector4())},
     fpSegEnd: {value: Array.from({length: MAX_SEG}, (_, i) => { const s = segs[i]; return s ? new THREE.Vector2(s.first && free(s, s.ax, s.az) ? 1 : 0, s.last && free(s, s.bx, s.bz) ? 1 : 0) : new THREE.Vector2(); })},
     fpSegCount: {value: segs.length},
+    fpPlaza: {value: Array.from({length: MAX_PLAZA}, (_, i) => plazas[i] ?? new THREE.Vector3())},
+    fpPlazaCount: {value: plazas.length},
     fpDetail: {value: 1},
     fpSkyH: {value: opts.skyHorizon},
     fpSkyZ: {value: opts.skyZenith},
@@ -404,6 +420,6 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
   root.add(surface);
 
   root.userData.covers = (x: number, z: number) => onIslandPath(paths, x, z);
-  root.userData.stats = {segments: segs.length, freeEnds: uniforms.fpSegEnd.value.reduce((n, v) => n + v.x + v.y, 0), cells: index.length / 6, vertices: pos.length / 3};
+  root.userData.stats = {segments: segs.length, plazas: plazas.length, freeEnds: uniforms.fpSegEnd.value.reduce((n, v) => n + v.x + v.y, 0), cells: index.length / 6, vertices: pos.length / 3};
   return {root, setQuality(q) { uniforms.fpDetail.value = q === 'low' ? 0 : 1; }};
 }
