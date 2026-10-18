@@ -1,6 +1,9 @@
 import type {CharacterId, DurableLedgerBinding, EntityRef, GrantReadToken} from './types.ts';
 import {immutable, sameRef} from './events.ts';
 
+export function externalCharacter(value:unknown):asserts value is string {
+  if(typeof value!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value))throw new Error('External ledger requires canonical UUID character');
+}
 export function durableRevision(value:unknown):number {
   if(typeof value!=='number'||!Number.isSafeInteger(value)||value<0)throw new Error('Invalid durable revision');
   return value;
@@ -15,7 +18,7 @@ export class DurableReceipts {
   private serial=0;
   private next():number {if(this.serial===Number.MAX_SAFE_INTEGER)throw new Error('Ledger generation exhausted');return ++this.serial;}
   prepare(actor:EntityRef,character:CharacterId,revision:unknown):DurableLedgerBinding {
-    const r=durableRevision(revision),generation=this.next();
+    externalCharacter(character);const r=durableRevision(revision),generation=this.next();
     return immutable({actor,character,ownerGeneration:generation,ledgerGeneration:generation,durableRevision:r});
   }
   activate(binding:DurableLedgerBinding):void {this.owners.set(binding.character,binding);this.reads.delete(binding.character);}
@@ -51,6 +54,7 @@ export class DurableReceipts {
   }
   hasRead(character:CharacterId):boolean {return this.reads.has(character);}
   remove(character:CharacterId):void {this.owners.delete(character);this.reads.delete(character);}
+  cancelAll():void {this.reads.clear();}
   clear():void {this.owners.clear();this.reads.clear();}
   usage(){return{ledgerOwners:this.owners.size,replayTokens:this.reads.size};}
   debug(){return immutable({owners:[...this.owners.values()],reads:[...this.reads.values()],nextGeneration:this.serial+1});}

@@ -372,6 +372,7 @@ export interface AreaServices {
 }
 export interface AreaOptions {
   readonly ledgerMode?: 'retained' | 'external-durable';
+  readonly ledgerLimits?:{readonly maxDirtyCreditEntries:number;readonly maxDirtyCreditBytes:number;readonly maxPendingDeaths:number;readonly maxStagedBytes:number};
   readonly characters?: CharacterRegistry; // host injects same registry into all Areas and coordinator
   readonly id: AreaId; readonly definition: AreaDefinition; readonly query: WorldQuery;
   readonly seed: number; readonly policy: AreaPolicy; readonly actionData: ActionData; readonly context: AreaContext;
