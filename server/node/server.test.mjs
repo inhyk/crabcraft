@@ -132,7 +132,8 @@ test('two clients share a room: join, state, action, chat, combat world and depa
   assert.equal((await a.next('action')).action, 'jump');
   b.send({ type: 'chat', text: 'hello over the VM' });
   assert.equal((await a.next('chat')).text, 'hello over the VM');
-  assert.equal((await b.next('chat')).name, 'Test crab');
+  assert.equal((await b.next('chat')).name, joined.displayName);
+  assert.notEqual(joined.displayName, r.displayName);
   a.send({ type: 'world', world });
   assert.deepEqual((await b.next('world')).world, world);
   b.send({ type: 'combat', event: { kind: 'attack', target: 'e0', amount: 23 } });

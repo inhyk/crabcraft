@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type {Game} from './game';
 import {Unit} from './unit';
 import {createMotionController} from '../motion/provider';
+import {ServerSocial} from './serverSocial';
 import {WorldClient} from '../multiplayer/worldClient.ts';
 import {WorldPresentation} from '../multiplayer/worldPresentation.ts';
 import {WorldView,worldActorKey} from '../multiplayer/worldView.ts';
@@ -21,6 +22,7 @@ import type {ChannelKind} from '../sim/types.ts';
 /** Authenticated observation/input integration. No Area, numeric controller or local save import. */
 export class ServerGameBridge {
  readonly client:WorldClient;
+ readonly social:ServerSocial;
  readonly view:WorldView;
  readonly presentation:WorldPresentation;
  private incomplete=new Set<string>();
@@ -56,6 +58,7 @@ export class ServerGameBridge {
   this.status.className='world-connection-status';this.status.style.cssText='position:absolute;inset:42% 20% auto;padding:20px;background:#152331;color:white;text-align:center;z-index:100;pointer-events:auto';game.app.ui.append(this.status);
   for(const unit of game.units){unit.rig.root.visible=false;unit.rig.root.removeFromParent();unit.dispose();}game.units=[];
   game.boats=new ShoreBoat(game,true);game.lighthouseSecret=new LighthouseSecret(game,true);game.achievements=new Achievements(game,true);game.objective.group.visible=false;
+  this.social=new ServerSocial({parent:game.app.ui,command:command=>this.command(command),resetInput:()=>game.input.reset(),line:control=>{game.hud.chat.say(control.channel==='party'?t(`[파티] ${control.line.name}`,`[Party] ${control.line.name}`):control.line.name,control.line.text);const unit=this.unit(control.line.sender);if(unit)game.hud.bubbles.say(game,unit,control.line.text);}});
   this.presentation=new WorldPresentation({unit:ref=>this.unit(ref),self:()=>this.self,vfx:game.vfx,hud:game.hud,audio:game.audio,follow:game.follow,time:()=>game.time,say:(u,text,yell)=>game.say(u,text,yell),onEquipment:e=>{if(e.request){this.transactions.get(e.request)?.resolve(e.result);this.transactions.delete(e.request);}},onQuest:()=>game.hud.tracker.update(game.quests),onExploration:state=>{game.lighthouseSecret?.observe(state.found,state.activeUntil);game.voyageIsland?.observe(state.earned,this.state?Number(this.state.world.slice(1)):1);},onIncomplete:feature=>this.incomplete.add(feature)});
   this.view=new WorldView({root:game.scene,onAdded:(actor,handle)=>{
    const npc=NPCS.find(n=>n.id===actor.npcId),name=actor.appearance?.name??npc?.name??actor.archetype;
@@ -64,12 +67,12 @@ export class ServerGameBridge {
   },onRemoved:ref=>{const key=worldActorKey(ref),u=this.units.get(key);if(u){game.units=game.units.filter(x=>x!==u);this.units.delete(key);if(this.self===u)this.self=null;}},onError:()=>this.notice('Cannot load server actor'),onEvents:records=>this.presentation.events(records)});
   this.client=new WorldClient({catalog,resetInput:()=>game.input.reset(),onState:(state)=>{this.status.hidden=state==='admitted'&&!!this.self;if(!this.status.hidden)this.status.textContent=state==='authRequired'?'Google login required':`Server: ${state}`;},onSnapshot:(state,events,results)=>{
    this.state=state;game.achievements?.observe(state.self.achievements);game.boats?.observe(state.features.boat,state.selfRef);game.time=state.time;game.beaconLit=state.features.environment.beacon;game.world.setBeaconLit(game.beaconLit);game.world2.observeChapter(Number(state.world.slice(1)) as 1|2|3|4);this.presentation.commit(state);this.view.commit(state,events,results);const unit=this.units.get(worldActorKey(state.selfRef));if(unit&&unit!==this.self)this.bindSelf(unit,state.actors.find(a=>worldActorKey(a.ref)===worldActorKey(state.selfRef))!);if(this.self){game.hud.targetFrame.setUnit(this.unit(state.self.player.target));game.hud.tracker.update(game.quests);game.hud.showDeath(!this.self.alive);}this.status.hidden=this.client.state==='admitted'&&!!this.self;
-  },onEvents:(events,results)=>this.view.events(events,results),onReset:()=>{this.party=null;this.requestedChannel=null;this.state=null;this.self=null;this.presentation.reset();this.view.reset();game.hud.targetFrame.setUnit(null);game.hud.dialogue.close();for(const p of this.transactions.values())p.reject(new Error('Connection changed before confirmation'));this.transactions.clear();},onControl:control=>{if(control.type==='party'){this.party=control.state;if(this.partyPanel?.open)this.renderParty();}},onRejected:code=>game.hud.messages.error(code)});
+  },onEvents:(events,results)=>this.view.events(events,results),onReset:()=>{this.social.reset();this.party=null;this.requestedChannel=null;this.state=null;this.self=null;this.presentation.reset();this.view.reset();game.hud.targetFrame.setUnit(null);game.hud.dialogue.close();for(const p of this.transactions.values())p.reject(new Error('Connection changed before confirmation'));this.transactions.clear();},onControl:control=>{this.social.observe(control);if(control.type==='party'){this.party=control.state;if(this.partyPanel?.open)this.renderParty();}},onRejected:code=>game.hud.messages.error(code)});
   game.hud.dialogue.onClose=()=>this.command({kind:'talkEnd'});
   void this.client.connect(character).catch(error=>this.notice(error instanceof Error?error.message:'Connection failed'));
  }
  get ready():boolean{return !!this.self&&!!this.state;}
- get locked():boolean {const round=this.state?.features.village,ref=this.state?.selfRef,same=(r:EntityRef|null)=>!!r&&!!ref&&worldActorKey(r)===worldActorKey(ref);return !this.ready||this.client.state!=='admitted'||!!this.partyPanel?.open||!!this.state?.self.player.controlsLocked||this.seated||!!round&&round.phase!=='done'&&(round.caught.some(same)||round.phase==='ready'&&same(round.seeker));}
+ get locked():boolean {const round=this.state?.features.village,ref=this.state?.selfRef,same=(r:EntityRef|null)=>!!r&&!!ref&&worldActorKey(r)===worldActorKey(ref);return !this.ready||this.client.state!=='admitted'||this.social.open||!!this.partyPanel?.open||!!this.state?.self.player.controlsLocked||this.seated||!!round&&round.phase!=='done'&&(round.caught.some(same)||round.phase==='ready'&&same(round.seeker));}
  get seated():boolean{return !!this.state?.features.boat?.seats.some(ref=>ref&&worldActorKey(ref)===worldActorKey(this.state!.selfRef));}
  get villagePlaying():boolean{return !!this.state?.features.village&&this.state.features.village.phase!=='done';}
  concealMap(unit:Unit):boolean{return this.villagePlaying&&this.state?.features.village?.mode==='hide'&&(unit.kind==='townsfolk'||unit.kind==='player'&&unit!==this.self);}
@@ -142,5 +145,5 @@ export class ServerGameBridge {
  }
  forge(slot:EquipmentSlot,operation:'buy'|'upgrade',npcId='pip'):Promise<EquipmentResult>{const request=++this.requestId;return new Promise((resolve,reject)=>{if(this.transactions.size>=32||!this.command({kind:operation==='buy'?'forgeBuy':'forgeUpgrade',npcId,slot,request})){reject(new Error('Server command unavailable'));return;}this.transactions.set(request,{resolve,reject});});}
  diagnostics(){return {state:this.client.state,header:this.state?.header,world:this.state?.world,self:this.state?.self,actorCount:this.units.size,incomplete:[...this.incomplete],input:this.client.inputWatermarks,position:this.self?.pos.toArray()};}
- dispose():void {if(this.disposed)return;this.disposed=true;this.client.dispose();this.presentation.dispose();this.view.dispose();this.status.remove();this.partyPanel?.remove();for(const p of this.transactions.values())p.reject(new Error('World view disposed'));this.transactions.clear();}
+ dispose():void {if(this.disposed)return;this.disposed=true;this.client.dispose();this.presentation.dispose();this.view.dispose();this.status.remove();this.social.dispose();this.partyPanel?.remove();for(const p of this.transactions.values())p.reject(new Error('World view disposed'));this.transactions.clear();}
 }

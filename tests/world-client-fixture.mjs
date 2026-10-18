@@ -23,7 +23,7 @@ export function actualWorld(count = 1, areaId = 'client-test-world') {
     return {
       binding, sequence, tick: snapshot.tick, acceptedInput: 0, consumedInput: 0, selfRef: actors[0].p.state.unit,
       snapshot, events: [], visibleIds: new Set(actors.map(a => a.u.ref.id)), full: false, eventWatermark: -1,
-      features: { environment: { beacon: false, clock: snapshot.time }, boat: null, village: null },
+      features: { environment: { beacon: false, clock: snapshot.time, mode: snapshot.features.mode, pvp: snapshot.features.pvp }, boat: null, village: null },
       recovery: { telegraphs: [], endings: [] }, achievements: { distance: 0, earned: [] },
       appearances: Object.fromEntries(actors.map(a => [`${a.u.ref.id}:${a.u.ref.life}`, appearance])), ...options,
     };

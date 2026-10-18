@@ -425,6 +425,15 @@ export class Game {
       this.enemies.push(e);
     }
 
+    // Append after all existing enemy slots so old multiplayer IDs keep their meaning.
+    const islandRigs=await Promise.all(Array.from({length:6},()=>loadEnemy('scavenger')));
+    if(!this.alive)return;
+    for(const [slot,rig] of islandRigs.entries()){
+      const unit=this.addUnit(ENEMY_STATS.scavenger.name,'scavenger','hostile',rig);
+      const enemy=new Enemy(this,unit,'scavenger',new THREE.Vector3(),3);
+      enemy.islandSlot=slot;enemy.pack=[enemy];enemy.despawn();this.enemies.push(enemy);
+    }
+
     // Player start
     const spawn = pois.spawn;
     pu.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
@@ -564,16 +573,21 @@ export class Game {
   }
 
   private showLoading(chapter: 1 | 2 | 3 | 4): void {
-    const second = chapter >= 2;
-    const tips=loadingTips(chapter>=2?2:1);
+    const entry = {
+      1: {region:'Clawhaven',image:`art/loading-${1 + Math.floor(Math.random() * 2)}.webp`,subtitle:t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples')},
+      2: {region:'Starhaven',image:'art/loading-starhaven.webp',subtitle:t('월드 II  |  별빛 아래 다시 만난 친구들','World II  |  Friends reunited beneath the stars')},
+      3: {region:'Dawnharbor',image:'art/loading-dawnharbor.webp',subtitle:t('월드 III  |  빼앗긴 새벽을 되찾는 여정','World III  |  Reclaim the stolen dawn')},
+      4: {region:'Snowfall Village',image:'art/loading-frostlight.webp',subtitle:t('월드 IV  |  눈꽃 마을 너머 영원의 서리왕','World IV  |  The King of Eternal Frost awaits')},
+    }[chapter];
+    const tips=loadingTips(chapter);
     const tip = tips[Math.floor(Math.random() * tips.length)];
-    const img = second ? 'art/loading-starhaven.webp' : `art/loading-${1 + Math.floor(Math.random() * 2)}.webp`;
+    const img = entry.image;
     const el = h(
       'div',
-      { class: second ? 'loading starhaven' : 'loading' },
+      { class: chapter >= 2 ? 'loading starhaven' : 'loading', 'data-chapter':String(chapter) },
       h('div', { class: 'ld-art', style: `background-image:url("${art(img)}")` }),
       h('div', { class: 'ld-shade' }),
-      h('div', { class: 'ld-zone' }, h('div', { class: 'ld-title cc-title' }, regionName(second ? 'Starhaven' : 'Clawhaven')), h('div', { class: 'ld-sub' }, second ? t('월드 II  |  별빛 아래 다시 만난 친구들','World II  |  Friends reunited beneath the stars') : t('해안 지대  |  여섯 종족이 함께 사는 항구 마을','The Tidelands  |  Harbour town of six peoples'))),
+      h('div', { class: 'ld-zone' }, h('div', { class: 'ld-title cc-title' }, regionName(entry.region)), h('div', { class: 'ld-sub' }, entry.subtitle)),
       h(
         'div',
         { class: 'ld-foot' },
@@ -1391,7 +1405,7 @@ export class Game {
     this.world2.resumeAdventure(authority);
     if(!authority)return;
     for(const e of this.enemies){
-      if(e.state==='gone'&&!e.isAdd&&!e.isEcho&&(this.world2.chapter===1||e.kind!=='jellyfish')){e.respawnAt(e.home.x,e.home.z);e.resumeAuthority();}
+      if(e.state==='gone'&&!e.isAdd&&!e.isEcho&&(!e.isIslandOnly||this.world2.chapter>=2)&&(this.world2.chapter===1||e.kind!=='jellyfish')){e.respawnAt(e.home.x,e.home.z);e.resumeAuthority();}
     }
     const bosses=this.world2.chapter===1?[this.boss,this.finalBoss]:[this.encounter];
     for(const b of bosses){

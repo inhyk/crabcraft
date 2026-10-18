@@ -1,0 +1,12 @@
+.world-chat-panel{width:min(580px,calc(100vw - 32px))}
+.world-chat-panel label{display:inline-flex;align-items:center;gap:8px;margin:0 18px 16px 0}
+.world-chat-panel form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.world-chat-panel input:not([type=checkbox]){flex:1;min-width:120px}
+.world-chat-panel input:not([type=checkbox]),.world-chat-panel select,.world-chat-panel button{font:inherit;font-size:14px;color:#f5e6bf;border:1px solid #69818a;border-radius:6px;padding:7px;background:#203944;box-sizing:border-box}
+.world-chat-panel button{cursor:pointer;margin:3px}
+.world-chat-panel button:hover:not(:disabled){background:#345461}
+.world-chat-panel button:disabled{opacity:.45;cursor:default}
+.world-chat-panel [role=log]{border-top:1px solid #52636a;border-bottom:1px solid #52636a;margin-bottom:12px;overflow-wrap:anywhere}
+.world-chat-panel [role=log]:empty{display:none}
+.world-chat-panel [role=log] p{margin:5px 0}
+.world-chat-panel [role=status]{min-height:24px;color:#93e2cf}
