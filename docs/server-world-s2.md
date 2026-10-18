@@ -6,9 +6,13 @@
 
 ## 코어 경계
 
+![현재 숫자 코어와 남은 연결 단계](images/s2-core.png)
+
 `SimulationArea`는 입력, 시계, RNG, ID, timer, 전투, NPC와 적, 보스, 보상, action과 projectile을 소유한다. 고정 간격은 `1 / 30`초다. 한 tick은 입력 명령, 시계 증가와 due timer, 플레이어와 적 및 보스, 월드 규칙과 분리, pending hit와 projectile, action clock과 numeric pose 순으로 실행한다. 한 입력의 명령 순서를 보존하며 같은 seq를 다시 실행하지 않는다.
 
 `snapshot()`과 `debugState()`는 복사한 불변 값을 반환한다. `drainEvents()`는 순서가 붙은 ID와 값으로 된 관측을 소비한다. 렌더러나 event sink가 피해와 진행을 계산하지 않는다. `AreaId / EntityId / life` 전체가 수명 참조이며, 재생성 후 예전 참조는 무효다. 전역 RNG, 실제 시계, DOM, THREE와 기존 browser game 모듈은 코어에서 금지한다. import guard와 Node 직접 import 검사가 이를 확인한다.
+
+`public`과 기존 방의 정원은 100명, `party-encounter`는 8명이다. 부착된 플레이어와 아직 살아 있는 입장 예약을 합쳐 검사한다. `applyContext`로 정원을 줄일 때도 같은 조건을 확인한다. 대기열, party 생성 UI와 계정별 중복 접속 차단은 이후 host 연결 단계다.
 
 | 모듈 | 실제 동작 |
 | --- | --- |
@@ -20,9 +24,15 @@
 
 월드 정의는 순수 `WorldQuery`와 명시적인 level 및 population 설정을 받는다. 테스트의 평면 지형과 level/count는 fixture 값이며 운영 밸런스가 아니다. 일반 적은 기존의 살아 있고 숨지 않은 플레이어가 22m 안에 없을 때 재생성하는 조건을 유지한다. 최종 운영용 근처 인원 대비 밀도와 재생성 속도 공식은 이 추출에서 새로 정하지 않는다.
 
+현 단계의 적 수는 정의에 명시한 spawn 개수다. `enemyPopulation`의 `desired`는 spawn 하나에 대해 `0 | 1`이며 최초 생성과 죽은 적의 재생성 여부만 정한다. `0`으로 바뀌었다고 살아 있는 적을 제거하지 않는다. `desired > 1`을 주어 추가 개체를 만들거나 근처 인원에 따라 새 spawn을 늘리는 기능은 아직 없다. 지원하지 않는 값과 유효하지 않은 재생성 시간은 오류로 거부한다.
+
 이동을 사용하는 host는 각 Area의 `characters` 옵션과 `InMemoryTransferCoordinator`에 같은 `CharacterRegistry`를 주입해야 한다. 이 registry는 새 캐릭터 부착, respawn의 life 변경과 소유권 이동에 함께 참여한다. 별도 registry를 만드는 host는 respawn 뒤 소유권을 보장하지 못한다. 현재 구현은 메모리 registry와 mailbox이며 영속 저장이 아니다.
 
 실패한 이동은 원래 actor, RNG, action, timer, event, context와 소유권을 복구한다. 이미 발급한 transaction token의 nonce는 소비한 채로 단조 증가한다. 이를 되감아 취소한 token을 재사용하면 예전 abort가 새 이동을 취소할 수 있다. rollback 검사는 이 nonce만 예외로 두며, 나머지 전체 상태와 stale token의 무효화를 검사한다.
+
+Mailbox에 준비 기록을 쓰고 CAS가 실패한 경우 그 idempotent 기록은 남을 수 있다. source의 미확인 grant는 성공한 이동 뒤에만 ACK한다. 목적지 staging에서 아직 공개하지 않은 actor ID도 소비할 수 있으며, 취소한 actor를 활성화하거나 그 ID를 재사용하지 않는다. 보상 전달은 이동 commit과 별도로 재시도한다.
+
+tick 도중 event 등의 한도를 넘으면 Area는 실패 상태로 들어가 다음 tick을 거부한다. host는 남은 grant를 mailbox에 기록하고 ACK한 뒤 Area를 폐기해야 한다. 이 경로를 위해 관측과 grant 조회/ACK는 실패 상태에서도 허용한다. 실패를 무시하고 같은 Area를 계속 실행하지 않는다.
 
 ## 실제 모션 데이터
 
@@ -59,6 +69,8 @@ node tools/qa-sim-motion-data.mjs --output /tmp/s2-motion-parity.json
 ```
 
 마지막 명령은 로컬 Chrome과 비어 있는 5266 port가 필요하다. 전용 임시 페이지에서 실제 loader와 rig를 사용하고 종료 시 browser와 Vite를 닫는다. 일반 core 테스트에는 브라우저와 네트워크 서버가 필요하지 않다. `test:sim:core`는 `tests/core-*.test.mjs`를 이름 순서로 발견해 실행하며 테스트 파일이 없으면 실패한다. GitHub의 `Simulation core` workflow는 core와 기존 회귀 검사를 실행한다.
+
+부모의 최종 로컬 검사(`7006ad8495d48fc0b81cd984ec0f2e2b82de529e`, Node 24.22.0)는 core 131건 통과, 실패와 skip 0, `pnpm build` 통과다. 기존 browser 모듈을 바꾸지 않은 상태에서 boss 90, engine 4, multiplayer 40, server 16건과 `build:server`도 통과했다. 기존 검사는 회귀 근거이며 새 코어가 브라우저 실행 경로에 연결됐다는 뜻은 아니다.
 
 ## 남은 연결
 
