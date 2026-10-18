@@ -233,3 +233,23 @@ test('public and private PvP presentation uses explicit authority context rather
  f.area.applyContext({...f.area.services.context,mode:'party-encounter',pvp:'party-only'});const privateState=apply(f.receiver,f.codec.encodeObservation(observation(f,2))).state;assert.equal(privateState.header.area,'wire-area');assert.equal(privateState.features.environment.mode,'party-encounter');assert.equal(privateState.features.environment.pvp,'party-only');
  const missing=observation(f,3);delete missing.features.environment.mode;assert.throws(()=>f.codec.encodeObservation(missing),/missing mode/);
 });
+
+test('typed full-life talk reaches actual resident bark and rejects null or forged account targets',()=>{
+ const f=fixture(),hero=f.actors[0],resident=[...f.area.units.values()].find(u=>u.kind==='townsfolk');Object.assign(hero.u,{x:resident.x,y:resident.y,z:resident.z+2});
+ const frame=input(1,[{kind:'talk',target:resident.ref}]),session=new InputSession(binding,catalog);session.accept(encodeInput({binding,intent:frame},catalog),0);const prepared=session.prepareTick(0);const result=f.area.step(new Map([[hero.ref.id,prepared.intent]]));session.commitConsumed(prepared.token);assert.equal(result[0].success,true);
+ const events=f.area.drainEvents();assert.ok(events.some(e=>e.event.type==='feature'&&e.event.event.type==='npcBark'));
+ assert.throws(()=>encodeInput({binding,intent:input(2,[{kind:'talk',target:null}])},catalog));assert.throws(()=>encodeInput({binding,intent:input(2,[{kind:'talk',target:{...resident.ref,accountId:'forged'}}])},catalog),/unknown/);
+});
+test('chat commands preserve server-filter input while disallowing client account and delivery claims',()=>{
+ const target={area:'other-party-world',id:42,life:3};const commands=[{kind:'chatSay',channel:'area',text:'x'.repeat(300)},{kind:'chatPreferences'},{kind:'chatPreferences',enabled:true,partyOnly:true},{kind:'chatBlock',target,blocked:true},{kind:'chatMute',target,muted:false},{kind:'chatReport',target,reason:'harassment'}];
+ for(const command of commands){const frame=input(1,[command]);assert.deepEqual(decodeInput(encodeInput({binding,intent:frame},catalog),binding,catalog),frame);assert.throws(()=>encodeInput({binding,intent:input(1,[command,{kind:'jump'}])},catalog),/cannot mix/);}
+ for(const command of [{kind:'chatSay',channel:'area',text:'hello',accountId:'forged'},{kind:'chatReport',target,reason:'forged'},{kind:'chatBlock',target:{...target,life:0},blocked:true},{kind:'chatMute',target,muted:true,ok:true}])assert.throws(()=>encodeInput({binding,intent:input(1,[command])},catalog));
+});
+test('account-free chat controls carry only filtered lines, preferences and explicit moderation outcomes',async()=>{
+ const {filterText}=await import('../../chat/filter.ts');const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));const sender={area:'party-other',id:7,life:2};
+ const line={sender,name:'Crab',text:filterText('hello '+ 'x'.repeat(300)).text,at:1800000000000};assert.equal([...line.text].length,200);
+ const controls=[{type:'chatLine',channel:'party',line},{type:'chatPreferences',enabled:true,partyOnly:false},{type:'chatResult',inputSequence:1,operation:'block',ok:true,target:sender,blocked:true},{type:'chatResult',inputSequence:2,operation:'report',ok:false,error:'target'}];
+ controls.forEach((control,i)=>assert.deepEqual(apply(f.receiver,f.codec.encodeControl(header(i+2),control)).control,control));
+ assert.throws(()=>f.codec.encodeControl(header(7),{type:'chatLine',channel:'party',line:{...line,accountId:'private'}}),/unknown/);assert.throws(()=>f.codec.encodeControl(header(7),{type:'chatResult',inputSequence:1,operation:'mute',ok:true,target:sender}),/missing state/);
+ assert.throws(()=>f.codec.decodeClientMessage(f.codec.encodeControl(header(1),{type:'chatLine',channel:'party',line})[0],binding),/client cannot/);
+});
