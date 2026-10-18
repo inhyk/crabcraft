@@ -444,6 +444,19 @@ test('without GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, start answers 503 and t
   } finally { bare.kill('SIGKILL'); await once(bare, 'exit'); }
 });
 
+test('bundled account HTTP issues same-origin world tickets without widening cookies or opening /world', async () => {
+  const signed = await googleSignIn({ sub: 'ticket-' + randomBytes(6).toString('hex'), host: 'crab.seonn.dev' });
+  assert.match(signed.session, /Path=\/api\/account; HttpOnly; SameSite=Strict; Secure;/);
+  const issued = await api('world-ticket', {}, { cookie: signed.cookie, Host: 'crab.seonn.dev' });
+  assert.equal(issued.status, 200); assert.match(issued.json.ticket, /^[A-Za-z0-9_-]{43}$/);
+  assert.deepEqual(Object.keys(issued.json).sort(), ['expiresAt', 'ticket']); assert.match(issued.headers['cache-control'], /no-store/);
+  assert.equal((await api('world-ticket', {}, { cookie: signed.cookie, Host: 'crab.seonn.dev', Origin: OTHER_ORIGIN })).status, 403);
+  assert.equal((await http('GET', '/world')).status, 404);
+  assert.equal((await api('logout', {}, { cookie: signed.cookie, Host: 'crab.seonn.dev' })).status, 200);
+  assert.equal((await api('world-ticket', {}, { cookie: signed.cookie, Host: 'crab.seonn.dev' })).status, 401);
+  assert.ok(!output.includes(issued.json.ticket), 'ticket leaked into server log');
+});
+
 test('the server log never holds the client secret, codes, tokens or session tokens', async () => {
   assert.ok(google.issued.length > 20 && tokens.length > 10);
   assert.match(output, /account google callback: (state|aud|exp|iss|token-400)/);
