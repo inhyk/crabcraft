@@ -52,7 +52,7 @@ export async function createEndingStage():Promise<EndingStage> {
   const poolMesh=new THREE.Mesh(new THREE.PlaneGeometry(7.5,7.5).rotateX(-Math.PI/2),poolMaterial);poolMesh.position.y=-.035;poolMesh.renderOrder=1;root.add(poolMesh);
   const spot=new THREE.SpotLight('#ffd9a0',low?110:130,32,THREE.MathUtils.degToRad(17),.6,1.6);spot.position.set(0,15,1.5);spot.target.position.set(0,0,0);root.add(spot,spot.target);
   const homes=new StaticBatch(village,'ending-village'),builder=new TownBuilder(village,homes,null,{});
-  for(const lot of [
+  const houses=[
    {id:'ending-chapel',kind:'chapel' as const,x:0,z:-31,yaw:0,sx:4,sz:5,floors:2,style:0,h:-.1},
    {id:'ending-tavern',kind:'tavern' as const,x:-26,z:-17,yaw:.65,sx:4,sz:4,floors:2,style:0,h:-.1},
    {id:'ending-home-a',kind:'house' as const,x:25,z:-20,yaw:-.65,sx:3,sz:4,floors:2,style:1,h:-.1},
@@ -68,16 +68,20 @@ export async function createEndingStage():Promise<EndingStage> {
    {id:'ending-row-f',kind:'cottage' as const,x:46,z:2,yaw:-1.55,sx:3,sz:3,floors:1,style:2,h:-.1},
    {id:'ending-row-g',kind:'house' as const,x:-22,z:42,yaw:2.65,sx:3,sz:3,floors:2,style:0,h:-.1},
    {id:'ending-row-h',kind:'house' as const,x:24,z:41,yaw:-2.6,sx:3,sz:3,floors:2,style:2,h:-.1},
-  ])builder.build({...lot,h:lot.h+height(lot.x,lot.z)});
+  ];
+  for(const lot of houses)builder.build({...lot,h:lot.h+height(lot.x,lot.z)});
   root.add(homes.build());
   const dressing=new StaticBatch(props,'ending-festival'),garden=new StaticBatch(nature,'ending-gardens');
   const put=(kit:Kit,batch:StaticBatch,name:string,x:number,z:number,yaw=0,scale=1,y=-.08)=>{if(!kit.has(name))throw Error(`Ending scenery missing ${name}`);batch.add(name,trs(x,y+height(x,z),z,yaw,scale));};
   const top=(name:string,scale=1)=>props.get(name).box.max.y*scale;
+  // Nothing grows on the chapel path or inside a house lot.
+  const clear=(x:number,z:number,margin=0)=>(Math.abs(x)<4.5+margin&&z<-12&&z>-27)||houses.some(lot=>Math.hypot(x-lot.x,z-lot.z)<(lot.kind==='chapel'?10:Math.hypot(lot.sx,lot.sz)+1.5)+margin);
   const glows:GlowSpot[]=[],warm=new THREE.Color(ENDING_DUSK.lantern);
   const iron=new THREE.MeshStandardMaterial({color:'#2b2622',roughness:.5,metalness:.75});owned.add(iron);
   const stone=village.material('MI_UnevenBrick')!.clone();owned.add(stone);stone.color.set('#c2b69a');
   const postTop=3.3,posts:THREE.Vector3[]=[];
-  for(let i=0;i<8;i++){const angle=i*Math.PI/4,x=Math.sin(angle)*16,z=Math.cos(angle)*16;put(props,dressing,'Bench',x,z,angle+Math.PI,.85);put(props,dressing,i%2?'Banner_2':'Banner_1',x*1.08,z*1.08,angle,.95);const px=x*1.1,pz=z*1.1,py=-.08+height(px,pz);const pole=new THREE.Mesh(lathe([[.32,0],[.32,.25],[.16,.4],[.1,.5],[.09,3.3],[.14,3.4],[0,3.55]],8),iron);pole.position.set(px,py,pz);pole.castShadow=true;root.add(pole);posts.push(new THREE.Vector3(px,py+postTop,pz));put(props,dressing,'Lantern_Wall',px,pz,angle,.9,2.17);glows.push({pos:new THREE.Vector3(px*.985,py+2.45,pz*.985),color:warm,size:1.3,kind:'lamp'});const light=new THREE.PointLight(ENDING_DUSK.lantern,low?12:14,12,2);light.position.set(x,3,z);root.add(light);}
+  // Half a step round, so two lamp posts flank the chapel path instead of one standing on it.
+  for(let i=0;i<8;i++){const angle=(i+.5)*Math.PI/4,x=Math.sin(angle)*16,z=Math.cos(angle)*16;put(props,dressing,'Bench',x,z,angle+Math.PI,.85);put(props,dressing,i%2?'Banner_2':'Banner_1',x*1.08,z*1.08,angle,.95);const px=x*1.1,pz=z*1.1,py=-.08+height(px,pz);const pole=new THREE.Mesh(lathe([[.32,0],[.32,.25],[.16,.4],[.1,.5],[.09,3.3],[.14,3.4],[0,3.55]],8),iron);pole.position.set(px,py,pz);pole.castShadow=true;root.add(pole);posts.push(new THREE.Vector3(px,py+postTop,pz));put(props,dressing,'Lantern_Wall',px,pz,angle,.9,2.17);glows.push({pos:new THREE.Vector3(px*.985,py+2.45,pz*.985),color:warm,size:1.3,kind:'lamp'});const light=new THREE.PointLight(ENDING_DUSK.lantern,low?12:14,12,2);light.position.set(x,3,z);root.add(light);}
   // Festoon lights strung post to post around the court: thin dark cord, warm bulbs, a few rose and teal.
   const cord=new THREE.LineBasicMaterial({color:'#2a211c'});owned.add(cord);
   const bulbPalette=['#ffd690','#ffb45e','#ffd690','#ff9a7c','#ffd690','#9fe6d6'].map(c=>new THREE.Color(c));
@@ -114,11 +118,11 @@ export async function createEndingStage():Promise<EndingStage> {
   const frostLight=new THREE.PointLight('#9fdcff',low?7:9,6,1.8);frostLight.position.set(0,plinth.position.y+2.3,-15.4);root.add(frostLight);glows.push({pos:new THREE.Vector3(0,plinth.position.y+2,-15.4),color:new THREE.Color('#a8e6ff'),size:1.6,kind:'lamp'});
   for(let i=0;i<10;i++){const a=i*Math.PI/5+.3,r=1.1+(i%2)*.25;put(nature,garden,i%2?'Flower_3_Group':'Flower_4_Group',Math.sin(a)*r,-15.4+Math.cos(a)*r,a,.3,-.06);}
   put(props,dressing,'WeaponStand',-18.5,-13.5,.9);put(props,dressing,'Shield_Wooden',-17.6,-12.4,.6);put(props,dressing,'Chest_Wood',-16.4,-14.6,.4);put(props,dressing,'Coin_Pile',-15.6,-13.6,0);put(props,dressing,'Bag',-16.9,-15.6,1.2);
-  for(let i=0;i<42;i++){const a=i*2.399963,r=23+(i%4)*5;put(nature,garden,`CommonTree_${i%5+1}`,Math.sin(a)*r,Math.cos(a)*r,a,.7+(i%3)*.12);}
+  for(let i=0;i<42;i++){const a=i*2.399963,r=23+(i%4)*5,x=Math.sin(a)*r,z=Math.cos(a)*r;if(clear(x,z,1))continue;put(nature,garden,`CommonTree_${i%5+1}`,x,z,a,.7+(i%3)*.12);}
   // Clawhaven's pine woods behind the houses, rising up the hills to the horizon.
-  for(let i=0,count=low?60:90;i<count;i++){const a=i*2.399963+.7,r=52+(i*7.31%1)*36,x=Math.sin(a)*r,z=Math.cos(a)*r;put(nature,garden,`Pine_${i%3===0?5:i%5+1}`,x,z,a,.95+(i%4)*.14,-.2);}
+  for(let i=0,count=low?60:90;i<count;i++){const a=i*2.399963+.7,r=52+(i*7.31%1)*36,x=Math.sin(a)*r,z=Math.cos(a)*r;if(clear(x,z,2))continue;put(nature,garden,`Pine_${i%3===0?5:i%5+1}`,x,z,a,.95+(i%4)*.14,-.2);}
   for(let i=0;i<820;i++){const a=i*2.399963,r=13.2+(i%37)*.34,x=Math.sin(a)*r,z=Math.cos(a)*r;if(Math.abs(x)<4&&z<0)continue;put(nature,garden,i%7===0?'Bush_Common_Flowers':i%5===0?'Flower_4_Group':i%3===0?'Flower_3_Group':i%2===0?'Clover_2':'Clover_1',x,z,a,.24+(i%4)*.06);}
-  for(let i=0;i<18;i++){const a=i*2.399963,r=14.5+i%3*3;put(nature,garden,`Rock_Medium_${i%3+1}`,Math.sin(a)*r,Math.cos(a)*r,a,.5+i%3*.2);}
+  for(let i=0;i<18;i++){const a=i*2.399963,r=14.5+i%3*3,x=Math.sin(a)*r,z=Math.cos(a)*r;if(clear(x,z,1))continue;put(nature,garden,`Rock_Medium_${i%3+1}`,x,z,a,.5+i%3*.2);}
   // Petals thrown by the crowd: dense near the dancers, thinning towards the benches.
   for(let i=0,count=low?220:360;i<count;i++){const a=i*2.399963+Math.sin(i*12.9898)*.4,r=2.7+Math.pow(((i*.618034)%1),.8)*12.2,x=Math.sin(a)*r,z=Math.cos(a)*r;put(nature,garden,`Petal_${i%5+1}`,x,z,a*3.1,.42+(i%4)*.07,-.03);}
   // A second drift of petals where the crowd stood, between the guests and the candelabra, and posies at each candelabrum.
