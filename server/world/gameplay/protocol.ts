@@ -125,7 +125,8 @@ function poseState(value:unknown,c:GameplayCatalog):void {
  const scalar=['locomotionTime','localVx','localVz','yawRate','previousX','previousZ','previousYaw','gaitPhase','controllerVx','controllerVz','controllerYaw'];
  object(value,{...Object.fromEntries(scalar.map(k=>[k,number])),appliedQ:v=>tuple(v,c.jointCount),appliedPosition:v=>tuple(v,3),appliedRotation:v=>tuple(v,4),locomotionQ:v=>tuple(v,c.jointCount),locomotionPosition:v=>tuple(v,3),locomotionRotation:v=>tuple(v,4),locomotionWeights:v=>mapValues(v,number,c.actions)});
 }
-export interface Appearance {race:string;sex:'male'|'female';classId:'warrior'|'mage'|'priest';shell:number;crest:number;led:number;name:string}
+export interface Appearance {race:'human'|'orc'|'dwarf'|'undead'|'nightelf'|'tauren';sex:'male'|'female';classId:'warrior'|'mage'|'priest';shell:number;crest:number;led:number;name:string}
+export type WireAppearance=Appearance;
 export type PublicActor=Omit<SimUnit,'pendingHit'|'lastCombat'>&{appearance:Appearance|null};
 export type PublicProjectile=Omit<ProjectileState,'hit'|'anchorVersion'>;
 export type SelfPlayer=Omit<PlayerState,'character'|'achievements'>&{lighthouseSecretFound?:boolean};
@@ -285,4 +286,14 @@ export class GameplayReceiver {
    this.last=clone(h);return {kind:'control',control:clone(message.payload)};
   }catch(error){this.needsResync=true;this.assembler.clear();throw error;}
  }
+}
+/** Project only the owning character's feature/progression recovery from the real Area snapshot. */
+export function projectObservationExtras(snapshot:AreaSnapshot,character:string,visibleIds:ReadonlySet<number>):Pick<ObservationInput,'features'|'recovery'|'achievements'> {
+ const self=snapshot.players.find(p=>p.character===character);if(!self)fail('missing feature owner');
+ const bindings=snapshot.features.bindings,resolve=(id:string):EntityRef=>{const ref=bindings[id];if(!ref)fail('missing exact feature binding');reference(ref,snapshot.area);return ref;};
+ const boat=snapshot.features.boat,village=snapshot.features.village;
+ const features:FeatureView={environment:{beacon:snapshot.features.beaconLit,clock:snapshot.time},boat:{x:boat.x,z:boat.z,yaw:boat.yaw,speed:boat.speed,seats:boat.seats.map(id=>id===null?null:resolve(id))},village:village?{id:village.id,mode:village.mode,phase:village.phase,left:village.left,starter:resolve(village.starter),seeker:resolve(village.seeker),members:village.members.map(resolve),caught:village.caught.map(resolve),result:village.result}:null};
+ const telegraphs=snapshot.recovery.telegraphs.filter(e=>e.event.type==='telegraph'&&visibleIds.has(e.event.src.id));
+ const endings=snapshot.recovery.endings.filter(e=>e.unit.id===self.unit.id&&e.unit.life===self.unit.life);
+ return clone({features,recovery:{telegraphs,endings},achievements:self.achievements});
 }
