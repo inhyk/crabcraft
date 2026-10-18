@@ -15,6 +15,7 @@ import {LighthouseSecret} from './lighthouseSecret';
 import {Achievements} from './achievements';
 import {BOSS_PROFILES} from './progression';
 import {ShoreBoat} from './shoreBoat';
+import {ENEMY_STATS} from './enemies';
 import type {ChannelKind} from '../sim/types.ts';
 
 /** Authenticated observation/input integration. No Area, numeric controller or local save import. */
@@ -58,7 +59,7 @@ export class ServerGameBridge {
   this.presentation=new WorldPresentation({unit:ref=>this.unit(ref),self:()=>this.self,vfx:game.vfx,hud:game.hud,audio:game.audio,follow:game.follow,time:()=>game.time,say:(u,text,yell)=>game.say(u,text,yell),onEquipment:e=>{if(e.request){this.transactions.get(e.request)?.resolve(e.result);this.transactions.delete(e.request);}},onQuest:()=>game.hud.tracker.update(game.quests),onExploration:state=>{game.lighthouseSecret?.observe(state.found,state.activeUntil);game.voyageIsland?.observe(state.earned,this.state?Number(this.state.world.slice(1)):1);},onIncomplete:feature=>this.incomplete.add(feature)});
   this.view=new WorldView({root:game.scene,onAdded:(actor,handle)=>{
    const npc=NPCS.find(n=>n.id===actor.npcId),name=actor.appearance?.name??npc?.name??actor.archetype;
-   const unit=new Unit(name,actor.kind,actor.reaction,handle.rig,createMotionController(handle.rig));unit.npcId=actor.npcId??'';unit.bindWorldView(handle.readState);this.units.set(worldActorKey(actor.ref),unit);game.units.push(unit);
+   const unit=new Unit(name,actor.kind,actor.reaction,handle.rig,createMotionController(handle.rig));unit.npcId=actor.npcId??'';unit.bindWorldView(handle.readState);this.labelUnit(unit,actor);this.units.set(worldActorKey(actor.ref),unit);game.units.push(unit);
    if(this.state&&worldActorKey(this.state.selfRef)===worldActorKey(actor.ref))this.bindSelf(unit,actor);
   },onRemoved:ref=>{const key=worldActorKey(ref),u=this.units.get(key);if(u){game.units=game.units.filter(x=>x!==u);this.units.delete(key);if(this.self===u)this.self=null;}},onError:()=>this.notice('Cannot load server actor'),onEvents:records=>this.presentation.events(records)});
   this.client=new WorldClient({catalog,resetInput:()=>game.input.reset(),onState:(state)=>{this.status.hidden=state==='admitted'&&!!this.self;if(!this.status.hidden)this.status.textContent=state==='authRequired'?'Google login required':`Server: ${state}`;},onSnapshot:(state,events,results)=>{
@@ -81,6 +82,16 @@ export class ServerGameBridge {
   if(this.state){const profiles=this.state.world==='w1'?['rust','abyss'] as const:this.state.world==='w2'?['eclipse'] as const:this.state.world==='w3'?['dawn'] as const:['frost'] as const;for(const profile of profiles){const boss=BOSS_PROFILES[profile];button(`${boss.name} (${boss.level})`,()=>this.command({kind:'bossChallenge',profile}),!this.party);}if(this.state.self.player.flags.frostCleared)button(t('엔딩 다시 보기','Replay ending'),()=>this.command({kind:'endingReplay'}));}
   button(t('닫기','Close'),()=>panel.close());
  }
+ private labelUnit(unit:Unit,actor:Readonly<PublicActor>):void {
+  if(actor.appearance){unit.name=actor.appearance.name;return;}
+  const chapter=this.state?Number(this.state.world.slice(1)):1,npc=NPCS.find(n=>n.id===actor.npcId);
+  if(npc){unit.name=npc.name;unit.title=npc.title;if(chapter===3){const names=[['새벽 항구의 로안 선장','Captain Roan'],['새벽의 사제 셀레네','Selene of Dawn'],['의무관 산호','Medic Coral'],['성문 수비대장 바론','Gatewarden Baron'],['여관주인 메리','Innkeeper Merry'],['항해사 루멘','Navigator Lumen'],['대장장이 플린','Smith Flynn']];const name=names[NPCS.indexOf(npc)]!;unit.name=t(name[0]!,name[1]!);unit.title=t('새벽 항구의 주민','Dawnharbor Resident');}else if(chapter===4)unit.title=t('눈꽃 마을의 주민','Snowfall Village Resident');return;}
+  const profile=actor.archetype.replace(/^boss-/,'');if(actor.kind==='boss'&&profile in BOSS_PROFILES){const boss=BOSS_PROFILES[profile as keyof typeof BOSS_PROFILES];unit.name=boss.name;unit.title=boss.title;return;}
+  if(actor.archetype==='freed-frost'){unit.name=t('미라 · 사라진 친구','Mira · The Missing Friend');return;}if(actor.archetype==='freed-dawn'){unit.name=t('새벽 성채의 수호자','Dawnkeeper');return;}if(actor.archetype==='freed-eclipse'){unit.name='돌아온 별빛';return;}
+  if(actor.kind==='scrapling'||actor.kind==='scavenger'||actor.kind==='jellyfish'){unit.name=ENEMY_STATS[actor.kind].name;if(chapter===2)unit.name=actor.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');else if(chapter===3)unit.name=actor.kind==='scrapling'?t('잿빛 해안 약탈자','Ash Coast Raider'):t('황혼 성채 파수병','Twilight Sentinel');else if(chapter===4)unit.name=actor.kind==='scrapling'?t('서리 껍질 약탈자','Frost-shell Raider'):t('빙하 성채 파수병','Glacial Sentinel');return;}
+  unit.name=unit.rig.spec.name;
+ }
+ refreshLanguage():void {for(const unit of this.units.values()){const actor=unit.ref&&this.view.actor(unit.ref)?.readState();if(actor)this.labelUnit(unit,actor);}if(this.partyPanel?.open)this.renderParty();}
  private notice(text:string):void{this.status.hidden=false;this.status.textContent=text;}
  command(command:GameplayCommand):boolean{return this.client.command(command);}
  private unit(ref:EntityRef|null|undefined):Unit|null{return ref?this.units.get(worldActorKey(ref))??null:null;}

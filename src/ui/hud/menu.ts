@@ -117,7 +117,7 @@ export class GameMenu {
     this.panel.replaceChildren(
       h('h2', { class: 'cc-title' }, t('설정','Settings')),
       h('div',{class:'row'},t('언어','Language'),seg([['ko','한국어'],['en','English']],language(),v=>{
-        setLanguage(v as Language);setQuestLanguage(v as Language);for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}g.hud.refreshLanguage();g.world2.refreshLanguage();g.multiplayer?.refreshLanguage();g.debug?.refreshLanguage();g.hud.dialogue.close();g.hud.tracker.update(g.quests);g.hud.questLog.render();this.settings();
+        setLanguage(v as Language);setQuestLanguage(v as Language);for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}g.hud.refreshLanguage();g.world2.refreshLanguage();g.server?.refreshLanguage();g.multiplayer?.refreshLanguage();g.debug?.refreshLanguage();g.hud.dialogue.close();g.hud.tracker.update(g.quests);g.hud.questLog.render();this.settings();
       })),
       ...(g.world2.chapter===1?[h('div',{class:'row'},t('월드 1 등대','World I lighthouse'),
         h('button',{class:'cc-btn small ghost',disabled:!g.beaconLit,onclick:()=>{g.setLighthouse(false);this.settings();}},t('끄기 · 아침','Off · morning')))]:[]),
