@@ -47,11 +47,12 @@ export class InMemoryTransferCoordinator implements TransferCoordinator {
   const chapter=destination.services.world==='w1'?1:destination.services.world==='w2'?2:3;
   if(chapter>=2&&(!player.state.flags.abyssCleared||chapter===3&&!player.state.flags.trueCleared))return {ok:false,reason:'locked-world'};
   if(source.services.encounterActive()||source.services.time-unit.lastCombat<5)return {ok:false,reason:'in-combat'};
+  let preparedGrants:readonly {grant:EarnedGrant;appliedHere:boolean}[]=[];
   let admission:ReturnType<Area['reserveAdmission']>=null,departure:ReturnType<Area['stageDeparture']>|null=null,arrival:ReturnType<Area['stageArrival']>|null=null;
-  try {admission=destination.reserveAdmission(character,destination.services.definition.spawn.id,hostTick);if(!admission)return {ok:false,reason:'destination-full'};departure=source.stageDeparture(unit.ref);arrival=destination.stageArrival(admission,departure.dto);this.journal(source);
+  try {admission=destination.reserveAdmission(character,destination.services.definition.spawn.id,hostTick);if(!admission)return {ok:false,reason:'destination-full'};departure=source.stageDeparture(unit.ref);arrival=destination.stageArrival(admission,departure.dto);preparedGrants=source.pendingGrants();for(const entry of preparedGrants)this.awards.record(entry.grant,entry.appliedHere);
    if(!this.characters.compareAndSwap(character,owner,arrival.newRef))throw new Error('registry-conflict');
   }catch(error){if(arrival)destination.abortArrival(arrival.token);if(departure)source.abortDeparture(departure.token);if(admission)destination.releaseAdmission(admission.token);return {ok:false,reason:error instanceof Error?error.message:'transfer-failed'};}
   // Contract: no observer/tick/I/O here, these operations cannot fail after registry CAS.
-  source.commitDeparture(departure!.token);const ref=destination.activateArrival(arrival!.token);destination.releaseAdmission(admission!.token);return {ok:true,ref};
+  source.commitDeparture(departure!.token);const ref=destination.activateArrival(arrival!.token);destination.releaseAdmission(admission!.token);for(const entry of preparedGrants)source.acknowledgeGrant(entry.grant.id);return {ok:true,ref};
  }
 }
