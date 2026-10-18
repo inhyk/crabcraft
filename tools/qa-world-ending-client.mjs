@@ -106,7 +106,7 @@ try{
  const resumed=await page.evaluate(()=>{const g=window.app.current.game,s=g.serverEnding.current;return{id:s.id,tick:s.tick};});assert.equal(resumed.id,reconnectBefore.id);assert.ok(resumed.tick>=reconnectBefore.tick);
  const priorCommands=commands.length;await page.evaluate(()=>window.oldEndingButton.click());await pause(150);assert.equal(commands.length,priorCommands,'Retired view listener sent a control');
  await cut('landmark-trusted-fixture.png',{phase:'finale',local:24,until:200});
- await cut('farewell-trusted-fixture.png',{phase:'finale',local:270,until:360});
+ await cut('farewell-trusted-fixture.png',{phase:'finale',local:290,until:345});
  await page.getByRole('button',{name:'Skip celebration',exact:true}).waitFor({state:'visible',timeout:15000});
  const clickControl=async name=>{const button=page.getByRole('button',{name,exact:true});await button.evaluate(el=>{el.addEventListener('click',()=>window.endingClickBefore=structuredClone(window.app.current.game.serverEnding.current),{capture:true,once:true});el.addEventListener('click',()=>window.endingClickAfter=structuredClone(window.app.current.game.serverEnding.current),{once:true});});await button.click();return page.evaluate(()=>({before:window.endingClickBefore,after:window.endingClickAfter}));};
  const skip=await clickControl('Skip celebration');assert.deepEqual(skip.after,skip.before,'Click advanced the browser ending clock');

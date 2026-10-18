@@ -191,7 +191,7 @@ export class EndingPresentationView {
    // sits against the lens. It rises slowly through the landmark; the farewell keeps rising from there, over the
    // crowd, until the Frost shard, the path and the chapel line up below it.
    const local=(state.tick-state.phaseStartedTick)/30,landmarkEnd=ENDING_LANDMARK_TICKS/30,start=THREE.MathUtils.lerp(5,20,portrait)+Math.min(local,landmarkEnd)*.35;
-   const linear=THREE.MathUtils.clamp((local-landmarkEnd)/5,0,1),k=linear*linear*(3-2*linear);
+   const linear=THREE.MathUtils.clamp((local-landmarkEnd)/4,0,1),k=linear*linear*(3-2*linear);
    const heading=yaw+.16,elevation=THREE.MathUtils.degToRad(THREE.MathUtils.lerp(start,THREE.MathUtils.lerp(30,40,portrait),k));
    const tower=new THREE.Vector3(ENDING_BELL_TOWER.x,ENDING_BELL_TOWER.y,ENDING_BELL_TOWER.z).applyAxisAngle(new THREE.Vector3(0,1,0),yaw).add(centre);
    view={target:centre.clone().setY(centre.y+1),direction:new THREE.Vector3(Math.sin(heading)*Math.cos(elevation),Math.sin(elevation),Math.cos(heading)*Math.cos(elevation)),distance:THREE.MathUtils.lerp(15.5,21.5,portrait)/Math.cos(elevation)};
