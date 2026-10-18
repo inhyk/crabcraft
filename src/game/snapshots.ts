@@ -124,7 +124,7 @@ export function snapshotMap(
   // geometry only; keep ambient spray, lamp halos and light shafts in the playable world.
   const hidden = new Set(hide);
   scene.traverse(o => {
-    if (o instanceof THREE.Points || o instanceof THREE.Sprite) hidden.add(o);
+    if (o.userData.mapHidden || o instanceof THREE.Points || o instanceof THREE.Sprite) hidden.add(o);
     if (o instanceof THREE.Mesh) {
       const materials = Array.isArray(o.material) ? o.material : [o.material];
       if (materials.every(m => m.blending === THREE.AdditiveBlending)) hidden.add(o);
