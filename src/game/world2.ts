@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {DawnIsland} from './world3';
+import {SNOW_POINTS} from './snowQuests';
 import {DawnRequests} from './dawnRequests';
 import {SnowIsland} from './world4';
 import {t} from '../i18n';
@@ -38,6 +39,7 @@ export class HiddenWorld {
   readonly third=new DawnIsland();
   readonly fourth=new SnowIsland();
   readonly dawnRequests:DawnRequests;
+  readonly snowRequests:DawnRequests;
   private snowGate:StarPortal;
   private thirdGate:StarPortal;
   private echoAt=0;
@@ -91,7 +93,7 @@ export class HiddenWorld {
 
   async buildSettlement() {
     await this.third.buildSettlement();
-    this.dawnRequests.build();
+    this.dawnRequests.build();this.snowRequests.build();
     const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
     // Every World II collider, without meshes: the same registration the server bakes.
     this.collision=layoutStarhaven((x,z)=>this.height(x,z),settlement.natureNames).col;this.root.add(settlement.root);
@@ -126,22 +128,26 @@ export class HiddenWorld {
   }
   objectivePoint(kind:ObjectiveKind) {
     if(this.chapter===3)return this.dawnRequests.point(kind);
+    if(this.chapter===4)return this.snowRequests.point(kind);
     const p=STAR_OBJECTIVES[kind];return p?new THREE.Vector3(p[0],this.height(...p),p[1]):null;
   }
   interactable() {
     if(this.chapter===3)return this.dawnRequests.interactable();
+    if(this.chapter===4)return this.snowRequests.interactable();
     if(this.chapter!==2)return null;
     const active=this.game.quests.active();
     return this.nodes.find(n=>this.game.player.unit.pos.distanceTo(n.position)<3.5&&active.some(id=>QUESTS[id].objectives.some(o=>o.kind===n.kind&&!this.game.quests.objectiveDone(o))))??null;
   }
   collect(kind:ObjectiveKind) {
     if(this.chapter===3){this.dawnRequests.collect(kind);return;}
+    if(this.chapter===4){this.snowRequests.collect(kind);return;}
     this.game.quests.bump(kind);this.game.audio.sfx('sfx-quest-accept');this.game.vfx.mendGlow(this.game.player.unit);this.game.journey?.save();
   }
 
 
   constructor(private game: Game) {
     this.dawnRequests=new DawnRequests(game,this.third);
+    this.snowRequests=new DawnRequests(game,this.fourth,SNOW_POINTS);
     this.ambience=new StarAmbience(game.audio);
     const w=game.world;
     this.baseRoot=w.root;
@@ -377,7 +383,7 @@ export class HiddenWorld {
   update(dt:number,time:number,observation?:{flags:Readonly<Record<string,boolean>>}) {
     const flags=observation?.flags??this.game.journey;
     this.snowGate.update(time);
-    if(this.chapter===4)this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);
+    if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);this.snowRequests.update(time,!!observation);}
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
     this.thirdGate.root.visible=!!flags?.trueCleared||this.game.creatorTravel;
     if(this.chapter===3){this.third.update(time,!!flags?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);this.dawnRequests.update(time,!!observation);}

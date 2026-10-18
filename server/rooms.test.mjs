@@ -583,7 +583,7 @@ test('shared public worlds reject guest checkpoints, cross-area travel and room-
  const {client}=await setup(t);const a=await client(),b=await client();const enter={type:'enter',area:1,spec,combatVersion:1,snowWorld:true,sharedWorld:1};
  a.send(enter);await a.next('welcome');b.send(enter);await b.next('welcome');
  a.send({type:'world',world:{...world,chapter:2}});b.send({type:'world',world});
- for(const e of [{kind:'chapter',target:'world',chapter:2},{kind:'party',target:'world',party:2},{kind:'duel',target:'other',amount:20}])b.send({type:'combat',event:e});
+ for(const e of [{kind:'dungeon-return',target:'world',run:'public-run'},{kind:'chapter',target:'world',chapter:2},{kind:'party',target:'world',party:2},{kind:'duel',target:'other',amount:20}])b.send({type:'combat',event:e});
  b.send({type:'state',state});await a.next('state');a.send({type:'state',state});await b.next('state');
  assert.equal(a.queue.some(m=>m.type==='world'||m.type==='combat'),false);assert.equal(b.queue.some(m=>m.type==='world'),false);
 });
@@ -608,4 +608,20 @@ test('dungeon checkpoints preserve old clients and reject invalid expedition sta
  const dungeon={level:35,run:'run-35',stage:1,phase:'wave',left:0,clock:2,hazard:0,members:['Test crab']};
  assert.ok(worldOf(third));assert.ok(worldOf({...third,dungeon:null}));assert.ok(worldOf({...third,dungeon}));
  for(const patch of [{level:36},{level:150},{run:'bad run'},{stage:0},{stage:4},{phase:'unknown'},{left:Infinity},{clock:-1},{hazard:.5},{members:Array(9).fill('a')},{members:['same','same']}])assert.equal(worldOf({...third,dungeon:{...dungeon,...patch}}),null);
+});
+
+
+test('dungeon return requests authenticate the guest and route only to its private host',async t=>{
+ const {client}=await setup(t),a=await client(),b=await client(),c=await client();
+ a.send({type:'create',spec,combatVersion:1});const host=await a.next('welcome');
+ b.send({type:'join',room:host.room,spec,combatVersion:1});const guest=await b.next('welcome');
+ c.send({type:'join',room:host.room,spec,combatVersion:1});await c.next('welcome');
+ const event={kind:'dungeon-return',target:'world',run:'run-123'};
+ b.send({type:'combat',id:'forged-host',event:{...event,source:'forged'}});
+ const packet=await a.next('combat');assert.equal(packet.id,guest.id);assert.deepEqual(packet.event,event);
+ a.send({type:'world',world});await c.next('world');
+ assert.equal(c.queue.some(p=>p.type==='combat'),false);
+ assert.equal(eventOf(event,true),null);
+ for(const bad of [{...event,target:'e0'},{...event,run:''},{...event,run:'x'.repeat(65)},{...event,run:123},{...event,run:'<script>'}])assert.equal(eventOf(bad,false),null);
+ assert.ok(eventOf({kind:'attack',target:'e0',amount:10},false));
 });

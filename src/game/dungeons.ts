@@ -149,12 +149,14 @@ export class DungeonExpeditions {
     this.info(`원정 성공! +${d.coins.toLocaleString()} 코인 · +${d.xp.toLocaleString()} XP`,`Expedition complete! +${d.coins.toLocaleString()} coins · +${d.xp.toLocaleString()} XP`);
   }
   leave(disconnect=true){
+    // Returning from an expedition keeps the private room and its party intact.
+    if(disconnect&&this.state&&this.g.multiplayer?.battle.requestDungeonReturn())return;
     this.close();this.pending=null;if(!this.state)return;
     const held=this.offlineHeld;this.offlineHeld=false;
     const g=this.g,saved=this.saved;this.state=null;this.saved=null;this.eligible=false;this.root.visible=false;this.menu.hidden=false;this.status.hidden=true;this.uiKey='';this.warningKey='';
     for(const e of this.pool)e.despawn();
     if(saved){g.world.heightAt=saved.height;g.world.resolveCollision=saved.collision;g.world.raycastSolid=saved.ray;g.world.pois.spawn.position.copy(saved.spawn);g.player.setTarget(null);g.player.unit.teleport(g.world,saved.back.x,saved.back.z,saved.yaw);g.follow?.cut();}
-    if(disconnect&&g.multiplayer&&(held||g.multiplayer.battle.active&&!g.multiplayer.battle.authority))g.multiplayer.leaveDungeonRoom();
+    if(disconnect&&held)g.multiplayer?.leaveDungeonRoom();
   }
   private renderStatus(){
     const s=this.state!,d=dungeonFor(s.level)!,alive=this.pool.filter(e=>e.unit.alive).length;
