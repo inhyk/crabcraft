@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -6,7 +6,9 @@ import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import { createArea } from '../../src/sim/area.ts';
 import { InMemoryCharacterRegistry, InMemoryTransferCoordinator } from '../../src/sim/transfer.ts';
 import { prepareRestore, type CoreCharacterCodec, type IdentityJson, type CheckpointJson, type GrantJson, type RestorePolicy } from '../../src/sim/persistence.ts';
-import type { Area, AreaSnapshot, EntityRef, EventRecord, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
+import type { Area, AreaSnapshot, BossProfileId, EntityRef, EventRecord, PlayerCommand, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
+import { canChallenge } from '../../src/sim/data/progression.ts';
+import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { CharacterStore, type Character } from './character-store.ts';
 import { WorldTicketRegistry, type SessionBinding } from './admission.ts';
 import type { HostOwnership } from './ownership.ts';
@@ -14,7 +16,8 @@ import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, type PreparedInput } from './gameplay/intents.ts';
-import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding } from './gameplay/protocol.ts';
+import { prepareObservationSnapshot } from './gameplay/protocol.ts';
+import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
 
 type StoredCharacter = Character<IdentityJson, CheckpointJson>;
 export interface HostPolicies {
@@ -35,6 +38,7 @@ export interface HostPolicies {
   readonly persistence: { maxQueuedPerCharacter: number; maxAttempts: number; retryMs: number; maxRecoveryRounds: number };
   readonly areaLimits: { eventCount: number; inputCommandsPerTick: number; timers: number; projectiles: number };
   readonly restore: RestorePolicy;
+  readonly party?: { maxParties: number; maxEncounters: number; returnSpawn(world: WorldId, profile: BossProfileId): string };
   /** A clock anomaly is an explicit restore failure, never a hidden offline-policy choice. */
   offlineSeconds(character: StoredCharacter, nowWallMs: number): number;
   visible(unit: Readonly<SimUnit>, viewer: Readonly<PlayerState>): boolean;
@@ -61,17 +65,20 @@ export interface ActualWorldHost {
   shutdown(deadlineMs: number): Promise<{ durable: boolean; unresolved: number }>;
   stats(): Readonly<Record<string, number | boolean>>;
 }
-interface Slot { world: WorldId; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number }
-interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; replay: GrantJson[] }
+interface Slot { kind: 'public' | 'party'; world: WorldId; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
+interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; replay: GrantJson[]; returnTo?: { world: WorldId; spawn: string } }
+interface Party { code: string; leader: string; members: Map<string, string>; pvp: boolean; encounter?: Slot }
 interface Connection {
   ws: WebSocket; ip: string; origin: string; generation: number; closed: boolean;
   phase: 'preauth' | 'authenticating' | 'loading' | 'queued' | 'admitted' | 'closed';
   binding?: SessionBinding; actor?: Actor; protocol: GameplayProtocol; stream?: WireBinding; input?: InputSession;
   sequence: number; epoch: number; full: boolean; lastInput: number; timedOut: boolean; nextValidation: number; validating: boolean; authTimer?: ReturnType<typeof setTimeout>;
   visible: Set<number>;
+  queueKey?: string;
 }
 interface Waiting { connection: Connection; record: StoredCharacter; replay: GrantJson[]; world: WorldId }
 interface PendingTravel { actor: Actor; source: Slot; ref: EntityRef; gate: string; destination: WorldId }
+const HOST_PARTY_COMMANDS = new Set(['partyCreate', 'partyJoin', 'partyLeave', 'partyPvp', 'encounterLeave']);
 const sameRef = (a: EntityRef, b: EntityRef) => a.area === b.area && a.id === b.id && a.life === b.life;
 const buffer = (raw: RawData) => Buffer.isBuffer(raw) ? raw : raw instanceof ArrayBuffer ? Buffer.from(raw) : Buffer.concat(raw);
 const reject = (socket: Duplex, status: string) => socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
@@ -85,21 +92,39 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   if (!Number.isFinite(p.reconnectGraceMs) || p.reconnectGraceMs < 0 || p.maxMutationSourcesPerTick > 256 || p.areaLimits.inputCommandsPerTick > 32) throw new Error('unsupported host durability/input bounds');
   if (!Number.isSafeInteger(p.persistence.maxRecoveryRounds) || p.persistence.maxRecoveryRounds < 0 || p.persistence.maxRecoveryRounds > 32 ||
     p.maxAuthFrameBytes > p.maxFrameBytes || p.maxConnectionsPerIp > p.maxConnections) throw new Error('invalid host recovery/frame limits');
+  if (p.party && (!Number.isSafeInteger(p.party.maxParties) || p.party.maxParties < 1 || !Number.isSafeInteger(p.party.maxEncounters) || p.party.maxEncounters < 1)) throw new Error('invalid party capacity');
   deps.ownership.assertOwned();
   const registry = new InMemoryCharacterRegistry();
   const transfers = new InMemoryTransferCoordinator(registry);
   const slots = new Map<WorldId, Slot>();
+  const allSlots = new Set<Slot>();
+  const parties = new Map<string, Party>();
+  const memberParty = new Map<string, Party>();
   const actors = new Map<string, Actor>();
   const connections = new Set<Connection>();
   const waiting: Waiting[] = [];
   const travels = new Map<string, PendingTravel>();
+  const encounterRequests = new Map<string, { actor: Actor; profile: BossProfileId }>();
+  const returnRequests = new Map<string, { actor: Actor; leaveParty: boolean }>();
   const completion: (() => void)[] = [];
   const persistence = new PersistenceCoordinator(deps.characters, deps.ownership, { ...p.persistence, now: deps.nowMonotonicMs });
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
   let accepting = true; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
   let generation = 1; let unresolved = 0;
-  const metrics = { ticks: 0, snapshots: 0, packets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
+  const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
     authFailures: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
+  const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
+  const timings = new Map<string, { values: number[]; cursor: number }>();
+  const observe = (name: string, ms: number) => {
+    const timing = timings.get(name) ?? { values: [], cursor: 0 };
+    if (timing.values.length < 4096) timing.values.push(ms); else timing.values[timing.cursor++ % timing.values.length] = ms;
+    timings.set(name, timing);
+  };
+  const timingStats = () => Object.fromEntries([...timings].flatMap(([name, timing]) => {
+    const values = [...timing.values].sort((a, b) => a - b);
+    const at = (p: number) => values[Math.floor((values.length - 1) * p)] ?? 0;
+    return [[`${name}P50Ms`, at(.5)], [`${name}P99Ms`, at(.99)], [`${name}Samples`, values.length]];
+  }));
   for (const world of PUBLIC_WORLDS) {
     const loaded = deps.worlds.get(world);
     if (!loaded || loaded.world !== world || loaded.publicDefinition.bosses.length) throw new Error(`missing safe public world: ${world}`);
@@ -108,7 +133,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const area = createArea({ id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
       actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed, characters: registry,
       context: { mode: 'public', pvp: 'disabled', members: [] }, limits: p.areaLimits });
-    slots.set(world, { world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now });
+    const slot: Slot = { kind: 'public', world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
+    slots.set(world, slot); allSlots.add(slot);
   }
   const enqueue = (fn: () => void) => {
     if (stopped) return;
@@ -118,12 +144,86 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const boundary = <T>(fn: () => T): Promise<T> => new Promise((resolve, rejectPromise) => enqueue(() => { try { resolve(fn()); } catch (error) { rejectPromise(error); } }));
   const json = (c: Connection, value: unknown) => {
-    if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(value));
+    if (c.ws.readyState === WebSocket.OPEN) { const data = JSON.stringify(value); c.ws.send(data); metrics.packets++; metrics.bytesSent += Buffer.byteLength(data); }
+  };
+  const queueNotice = (c: Connection, world: WorldId, position: number) => {
+    const key = `${world}:${position}`;
+    if (c.queueKey === key) return;
+    c.queueKey = key;
+    if (!sendControl(c, { type: 'queued', world, position })) json(c, { type: 'queued', world, position });
   };
   const close = (c: Connection, code: string, retryable = false) => {
     if (c.closed) return;
-    json(c, { type: 'error', code, retryable }); c.ws.close(1008, code.slice(0, 80));
+    if (!sendControl(c, { type: 'error', code, retryable })) json(c, { type: 'error', code, retryable });
+    c.ws.close(1008, code.slice(0, 80));
   };
+  function sendControl(c: Connection, value: WorldControl): boolean {
+    if (!c.stream || !c.input || !c.actor || c.stream.area !== c.actor.slot.area.services.id || c.closed || c.ws.readyState !== WebSocket.OPEN) return false;
+    for (const chunk of c.protocol.encodeControl({ ...c.stream, sequence: ++c.sequence, tick: c.actor.slot.area.services.tick,
+      acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput }, value)) {
+      c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength;
+    }
+    return true;
+  }
+  const controlError = (c: Connection, code: string) => {
+    sendControl(c, { type: 'error', code, retryable: false });
+  };
+  function partyState(party: Party | undefined) {
+    if (!party) return null;
+    return { code: party.code, leader: party.members.get(party.leader)!, pvp: party.pvp,
+      members: [...party.members].map(([character, id]) => {
+        const actor = actors.get(character);
+        if (!actor) throw new Error('party references retired actor');
+        return { id, name: actor.record.identity.appearance.name, ref: actor.ref, world: actor.slot.world, online: !!actor.connection };
+      }) };
+  }
+  function publishParty(c: Connection) {
+    if (!c.stream || !c.input || !c.actor || c.stream.area !== c.actor.slot.area.services.id || c.closed || c.ws.readyState !== WebSocket.OPEN) return;
+    const state = partyState(memberParty.get(c.actor.record.characterId));
+    sendControl(c, { type: 'party', state });
+  }
+  function syncPartyContexts() {
+    for (const slot of allSlots) if (slot.area.players.size) {
+      const context = slot.area.services.context;
+      slot.area.applyContext({ ...context, pvp: slot.kind === 'party' && slot.party?.pvp ? 'party-only' : 'disabled',
+        members: context.members.map(member => ({ ...member, party: memberParty.get(member.character)?.code ?? null })) });
+    }
+    for (const c of connections) if (c.actor && !c.closed) publishParty(c);
+  }
+  function leaveParty(character: string) {
+    const party = memberParty.get(character);
+    if (!party) return;
+    party.members.delete(character); memberParty.delete(character);
+    if (!party.members.size) parties.delete(party.code);
+    else if (party.leader === character) party.leader = party.members.keys().next().value!;
+    syncPartyContexts();
+  }
+  function partyCommand(c: Connection, command: { kind: string; code?: string; enabled?: boolean }) {
+    const actor = c.actor!, character = actor.record.characterId, party = memberParty.get(character);
+    if (!p.party) { controlError(c, 'party-unavailable'); return; }
+    if (command.kind === 'partyCreate') {
+      if (party || actor.slot.kind !== 'public' || parties.size >= p.party.maxParties) { controlError(c, 'party-unavailable'); return; }
+      let code = '';
+      for (let attempt = 0; attempt < 16; attempt++) { code = randomBytes(3).toString('hex').toUpperCase(); if (!parties.has(code)) break; }
+      if (parties.has(code)) throw new Error('party code capacity');
+      const created: Party = { code, leader: character, members: new Map([[character, randomUUID()]]), pvp: false };
+      parties.set(code, created); memberParty.set(character, created); syncPartyContexts();
+    } else if (command.kind === 'partyJoin') {
+      const target = parties.get(command.code ?? ''), leader = target && actors.get(target.leader);
+      const unit = actor.slot.area.services.getUnit(actor.ref), member = actor.slot.area.services.context.members.find(m => m.character === character);
+      if (party || !target || !leader || target.encounter || target.members.size >= 8 || actor.slot.kind !== 'public' || actor.slot !== leader.slot ||
+        !unit?.alive || member?.seatedBoat || member?.villagePlaying) { controlError(c, 'party-join-unavailable'); return; }
+      target.members.set(character, randomUUID()); memberParty.set(character, target); syncPartyContexts();
+    } else if (command.kind === 'partyLeave') {
+      if (actor.slot.kind === 'party') returnRequests.set(character, { actor, leaveParty: true }); else leaveParty(character);
+    } else if (command.kind === 'partyPvp') {
+      if (!party || party.leader !== character || typeof command.enabled !== 'boolean') { controlError(c, 'party-leader-required'); return; }
+      party.pvp = command.enabled; syncPartyContexts();
+    } else if (command.kind === 'encounterLeave') {
+      if (actor.slot.kind !== 'party') { controlError(c, 'encounter-unavailable'); return; }
+      returnRequests.set(character, { actor, leaveParty: false });
+    }
+  }
   function failClosed() {
     accepting = false; frozen = true;
     for (const c of connections) close(c, 'host-unavailable', true);
@@ -136,15 +236,18 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const actor = [...actors.values()].find(a => sameRef(a.ref, event.unit));
       if (actor && !travels.has(actor.record.characterId)) travels.set(actor.record.characterId, { actor, source: slot, ref: event.unit, gate: event.gate, destination: event.destination });
     }
+    return events;
   };
   const bootstrap = (c: Connection, actor: Actor) => {
     if (++c.epoch > 0xffffffff) throw new Error('stream epoch exhausted');
     c.actor = actor; actor.connection = c; actor.detachedAt = null; actor.generation = generation++;
     c.stream = { session: randomUUID(), area: actor.slot.area.services.id, epoch: c.epoch, catalog: deps.gameplay.catalog.version };
     c.sequence = 0; c.full = true; c.visible.clear(); c.protocol.reset(c.stream);
+    c.queueKey = undefined;
     c.input = new InputSession(c.stream, deps.gameplay.catalog, { now: deps.nowMonotonicMs() / 1000, maxQueued: p.maxQueuedInputs, timeoutSeconds: p.inputTimeoutMs / 1000 });
     actor.slot.area.resetInputSession(actor.ref); c.phase = 'admitted'; c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
     json(c, { type: 'world-bound', ...c.stream });
+    if (p.party) publishParty(c);
   };
   const attach = (request: Waiting): boolean => {
     const c = request.connection;
@@ -174,11 +277,13 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const admitWaiting = () => {
     if (barrier || frozen) return;
+    let attached = false;
     for (let i = 0; i < waiting.length;) {
       const request = waiting[i];
-      if (attach(request)) { waiting.splice(i, 1); if (request.connection.actor) startDurability(); if (barrier) break; }
-      else { json(request.connection, { type: 'queued', world: request.world, position: i + 1 }); i++; }
+      if (attach(request)) { waiting.splice(i, 1); attached ||= !!request.connection.actor; }
+      else { queueNotice(request.connection, request.world, waiting.slice(0, i + 1).filter(r => r.world === request.world).length); i++; }
     }
+    if (attached) startDurability();
   };
   const advanceTravel = () => {
     if (barrier || frozen) return;
@@ -188,19 +293,105 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const result = transfers.transfer(character, source.area, destination.area, request.gate, metrics.ticks);
       if (result.ok) {
         actor.ref = result.ref; actor.slot = destination; actor.generation = generation++;
+        if (p.party) syncPartyContexts();
         bootstrap(actor.connection, actor); travels.delete(character); startDurability(); break;
       }
       if (result.reason === 'destination-full') {
-        json(actor.connection, { type: 'queued', world: request.destination, position: [...travels.keys()].indexOf(character) + 1 });
+        queueNotice(actor.connection, request.destination, [...travels.values()].filter(r => r.destination === request.destination).findIndex(r => r.actor === actor) + 1);
       } else {
-        json(actor.connection, { type: 'error', code: 'travel-unavailable', retryable: true }); travels.delete(character);
+        controlError(actor.connection, 'travel-unavailable'); travels.delete(character);
       }
+    }
+  };
+  const moveActor = (actor: Actor, destination: Slot, spawn: string): boolean => {
+    const source = actor.slot, ref = actor.ref;
+    const admission = destination.area.reserveAdmission(actor.record.characterId, spawn, metrics.ticks);
+    if (!admission) return false;
+    let departure: ReturnType<Area['stageDeparture']> | undefined;
+    let arrival: ReturnType<Area['stageArrival']> | undefined;
+    let committed = false;
+    try {
+      departure = source.area.stageDeparture(ref);
+      arrival = destination.area.stageArrival(admission, departure.dto);
+      if (!registry.compareAndSwap(actor.record.characterId, ref, arrival.newRef)) throw new Error('encounter ownership conflict');
+      committed = true;
+      source.area.commitDeparture(departure.token);
+      actor.ref = destination.area.activateArrival(arrival.token); actor.slot = destination; actor.generation = generation++;
+      destination.area.releaseAdmission(admission.token); drain(source); return true;
+    } catch (error) {
+      if (committed) throw error; // CAS is the commit boundary; never pretend a partial commit rolled back.
+      if (arrival) destination.area.abortArrival(arrival.token);
+      if (departure) source.area.abortDeparture(departure.token);
+      destination.area.releaseAdmission(admission.token); return false;
+    }
+  };
+  const available = (actor: Actor) => {
+    const area = actor.slot.area, unit = area.services.getUnit(actor.ref), player = area.services.playerByCharacter(actor.record.characterId);
+    const member = area.services.context.members.find(m => m.character === actor.record.characterId);
+    return !!unit?.alive && !unit.hidden && !!player && !player.state.controlsLocked && !member?.seatedBoat && !member?.villagePlaying &&
+      !area.services.encounterActive() && area.services.time - unit.lastCombat >= 5;
+  };
+  const advanceEncounters = () => {
+    if (barrier || frozen || !p.party) return;
+    for (const [character, request] of encounterRequests) {
+      encounterRequests.delete(character);
+      const { actor, profile } = request, c = actor.connection, source = actor.slot, party = memberParty.get(character);
+      const definition = deps.worlds.get(source.world)?.encounterDefinitions.get(profile), boss = definition?.bosses[0];
+      const unit = source.area.services.getUnit(actor.ref), player = source.area.services.playerByCharacter(character);
+      const beacon = source.area.snapshot().features.beaconLit;
+      if (!c || !party || !party.members.has(character) || source.kind !== 'public' || !definition || !boss || !unit || !player || !available(actor) ||
+        !canChallenge(unit.level, BOSS_PROFILES[profile].level, !!player.state.flags.rustCleared, !!player.state.flags.abyssCleared, player.state.quests.chapter) ||
+        (profile === 'rust' || profile === 'abyss') && !beacon ||
+        Math.hypot(unit.x - boss.arena.position.x, unit.y - boss.arena.position.y, unit.z - boss.arena.position.z) > boss.arena.radius + 3) {
+        if (c) controlError(c, 'encounter-prerequisites'); continue;
+      }
+      if (party.encounter && (party.encounter.profile !== profile || party.encounter.world !== source.world)) { controlError(c, 'party-encounter-active'); continue; }
+      const returnSpawn = p.party.returnSpawn(source.world, profile);
+      const publicDefinition = source.area.services.definition;
+      if (![publicDefinition.spawn.id, publicDefinition.recall.id, ...Object.values(publicDefinition.pois).map(poi => poi.id)].includes(returnSpawn)) { controlError(c, 'encounter-return-unconfigured'); continue; }
+      let destination = party.encounter;
+      if (!destination) {
+        if ([...allSlots].filter(s => s.kind === 'party').length >= p.party.maxEncounters) { controlError(c, 'encounter-capacity'); continue; }
+        const loaded = deps.worlds.get(source.world)!, now = deps.nowMonotonicMs();
+        const area = createArea({ id: `party:${randomUUID()}`, definition, query: loaded.query, actionData: loaded.actionData,
+          policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'party-encounter', pvp: party.pvp ? 'party-only' : 'disabled', members: [] }, limits: p.areaLimits });
+        area.bootstrapEncounter(profile, { beaconLit: beacon });
+        destination = { kind: 'party', world: source.world, area, party, profile, tick: new DeadlineScheduler(30, now),
+          snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
+        party.encounter = destination; allSlots.add(destination);
+      }
+      if (!moveActor(actor, destination, 'encounter:entry')) { controlError(c, 'encounter-full'); continue; }
+      actor.returnTo = { world: source.world, spawn: returnSpawn };
+      syncPartyContexts();
+      if (!destination.area.services.runCommand(actor.ref, { kind: 'bossChallenge', profile })) throw new Error('validated encounter start rejected');
+      actor.ref = destination.area.services.playerByCharacter(character)!.state.unit;
+      bootstrap(c, actor); drain(destination); startDurability(); break;
+    }
+    if (barrier) return;
+    for (const [character, request] of returnRequests) {
+      returnRequests.delete(character);
+      const { actor } = request, c = actor.connection;
+      if (!c || actor.slot.kind !== 'party' || !actor.returnTo || !available(actor)) { if (c) controlError(c, 'encounter-return-unavailable'); continue; }
+      const destination = slots.get(actor.returnTo.world)!;
+      if (!moveActor(actor, destination, actor.returnTo.spawn)) {
+        returnRequests.set(character, request); queueNotice(c, destination.world, 1); continue;
+      }
+      actor.returnTo = undefined;
+      if (request.leaveParty) leaveParty(character); else syncPartyContexts();
+      bootstrap(c, actor); startDurability(); break;
+    }
+  };
+  const cleanupEncounters = () => {
+    if (barrier || frozen) return;
+    for (const slot of allSlots) if (slot.kind === 'party' && slot.area.players.size === 0 && slot.area.pendingGrants().length === 0) {
+      slot.area.dispose(); allSlots.delete(slot); if (slot.party?.encounter === slot) slot.party.encounter = undefined;
     }
   };
   const load = (c: Connection, characterId: string) => {
     const attempt = c.generation, binding = c.binding!; c.phase = 'loading';
     void Promise.all([deps.characters.getOwned(binding.accountId, characterId), deps.characters.pendingGrants(binding.accountId, characterId, { limit: 100 })]).then(([record, grants]) => enqueue(() => {
       if (c.closed || c.generation !== attempt || !accepting || deps.ownership.closed.aborted) return;
+      if (actors.get(record.characterId)?.connection || waiting.some(request => request.record.characterId === record.characterId && request.connection !== c)) { close(c, 'character-active'); return; }
       const world = deps.codec.toCore(record.checkpoint).world;
       if (!slots.has(world)) { close(c, 'world-unavailable'); return; }
       if (waiting.length >= p.maxWaiting) { close(c, 'queue-full', true); return; }
@@ -212,8 +403,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (barrier || frozen || !actors.size) return;
     metrics.persistenceBarriers++; const began = deps.nowMonotonicMs();
     const tokens = new Map<Slot, string>();
-    for (const slot of slots.values()) if (slot.area.players.size) tokens.set(slot, slot.area.beginDurabilityBarrier('checkpoint'));
-    const sources = [...slots.values()].flatMap(slot => slot.area.pendingGrants().map(entry => ({ slot, ...entry })));
+    for (const slot of allSlots) if (slot.area.players.size) tokens.set(slot, slot.area.beginDurabilityBarrier('checkpoint'));
+    const sources = [...allSlots].flatMap(slot => slot.area.pendingGrants().map(entry => ({ slot, ...entry })));
     const work = async () => {
       // Group an entire death's recipients in one transaction. No recipient is ACKed individually.
       const groups = new Map<string, typeof sources>();
@@ -241,7 +432,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           for (const grant of actor.replay) actor.slot.area.receiveGrant(deps.codec.grantFromJson(grant));
           actor.replay = [];
         }
-        for (const slot of slots.values()) drain(slot);
+        for (const slot of allSlots) drain(slot);
       });
       for (let round = 0; round <= p.persistence.maxRecoveryRounds; round++) {
         const captures = await boundary(() => [...actors.values()].map(actor => ({ actor, generation: actor.generation, capture: actor.slot.area.capturePlayerCheckpoint(actor.ref) })));
@@ -277,7 +468,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       await boundary(() => {
         for (const source of sources) source.slot.area.acknowledgeGrant(source.grant.id);
         for (const [slot, token] of tokens) { drain(slot); slot.area.releaseDurabilityBarrier(token); slot.lastCheckpoint = deps.nowMonotonicMs(); }
+        if (p.party) syncPartyContexts();
         metrics.persistenceMs += deps.nowMonotonicMs() - began;
+        observe('persistenceBarrier', deps.nowMonotonicMs() - began);
       });
     };
     barrier = work().catch(error => { deps.onFailure?.('durability', error); unresolved++; failClosed(); }).finally(() => { barrier = null; });
@@ -287,7 +480,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (barrier || frozen) return;
     const actor = [...actors.values()].find(a => !a.connection && a.detachedAt !== null && now - a.detachedAt >= p.reconnectGraceMs);
     if (!actor) return;
-    if ([...slots.values()].some(slot => slot.area.pendingGrants().length) || actor.slot.area.appliedGrantIds(actor.record.characterId).length) { startDurability(); return; }
+    if ([...allSlots].some(slot => slot.area.pendingGrants().length) || actor.slot.area.appliedGrantIds(actor.record.characterId).length) { startDurability(); return; }
     const retirement = actor.slot.area.quiescePlayer(actor.ref, 'disconnect');
     const capturedGeneration = actor.generation;
     const task = async () => {
@@ -309,7 +502,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         actor.record = result.character;
         actor.slot.area.markCheckpointDurable(retirement.capture.captureId, result.character.revision, retirement.capture.appliedGrantIds);
         actor.slot.area.commitPlayerRetirement(retirement.token);
-        actors.delete(actor.record.characterId); travels.delete(actor.record.characterId); drain(actor.slot);
+        actors.delete(actor.record.characterId); travels.delete(actor.record.characterId); encounterRequests.delete(actor.record.characterId); returnRequests.delete(actor.record.characterId);
+        leaveParty(actor.record.characterId); drain(actor.slot);
         // A load that raced this save must not reattach its older checkpoint or pending receipt list.
         for (let i = waiting.length - 1; i >= 0; i--) if (waiting[i].record.characterId === actor.record.characterId) {
           const request = waiting.splice(i, 1)[0]; load(request.connection, actor.record.characterId);
@@ -338,46 +532,62 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const publish = (slot: Slot) => {
     if (barrier || frozen) return;
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
+    const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, a.record.identity.appearance]));
+    const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog);
+    observe('snapshotPrepare', deps.nowMonotonicMs() - start);
     for (const actor of actors.values()) {
       const c = actor.connection;
       if (actor.slot !== slot || !c || c.closed || !c.stream || !c.input) continue;
       if (c.ws.bufferedAmount > p.maxBufferedBytes) { close(c, 'slow-client', true); continue; }
       try {
+        const encodeStart = deps.nowMonotonicMs();
         c.visible = visible(slot, actor, c);
         const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
           acceptedInput: c.input.acceptedInput, consumedInput: c.input.consumedInput, selfRef: actor.ref,
-          snapshot, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark,
-          appearances: Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, a.record.identity.appearance])),
+          snapshot, prepared, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark, appearances,
           ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
+        observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
         for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
         c.full = false; metrics.snapshots++;
       } catch (error) { deps.onFailure?.('observation', error); close(c, 'observation-unavailable', true); }
     }
-    slot.events = []; metrics.snapshotBatchMs += deps.nowMonotonicMs() - start;
+    slot.events = []; metrics.snapshotBatchMs += deps.nowMonotonicMs() - start; observe('snapshotBatch', deps.nowMonotonicMs() - start);
   };
   const step = (slot: Slot) => {
     if (barrier || frozen || draining) return;
     const inputs = new Map<number, PlayerIntent>(), prepared: { c: Connection; frame: PreparedInput }[] = [];
+    const hostCommands: { c: Connection; command: { kind: string; code?: string; enabled?: boolean; profile?: BossProfileId } }[] = [];
     const now = deps.nowMonotonicMs(); let progression = false;
     for (const actor of actors.values()) if (actor.slot === slot) {
       const c = actor.connection;
       if (!c || !c.input || c.closed) continue;
       const frame = c.input.prepareTick(now / 1000, p.areaLimits.inputCommandsPerTick);
       if (frame) {
-        inputs.set(actor.ref.id, frame.intent); prepared.push({ c, frame });
+        const host = frame.intent.commands.filter(command => HOST_PARTY_COMMANDS.has(command.kind) || slot.kind === 'public' && command.kind === 'bossChallenge');
+        if (host.length && frame.intent.commands.length !== 1) { close(c, 'host-command-boundary'); continue; }
+        const commands = frame.intent.commands.filter((command): command is PlayerCommand => !HOST_PARTY_COMMANDS.has(command.kind) && !(slot.kind === 'public' && command.kind === 'bossChallenge'));
+        inputs.set(actor.ref.id, { ...frame.intent, commands }); prepared.push({ c, frame });
+        if (host[0]) hostCommands.push({ c, command: host[0] });
         progression ||= frame.intent.commands.some(command => !['target', 'jump', 'dance', 'cancel', 'ability'].includes(command.kind));
       } else if (!c.timedOut && now - c.lastInput >= p.inputTimeoutMs) { slot.area.neutralizeInput(actor.ref); c.timedOut = true; metrics.neutralizations++; }
     }
-    const started = deps.nowMonotonicMs(); slot.area.step(inputs); metrics.ticks++; metrics.tickMs += deps.nowMonotonicMs() - started;
+    const started = deps.nowMonotonicMs(); slot.area.step(inputs); metrics.ticks++; metrics.tickMs += deps.nowMonotonicMs() - started; observe('tick', deps.nowMonotonicMs() - started);
     const changedLives: Actor[] = [];
     for (const actor of actors.values()) if (actor.slot === slot) {
       const current = slot.area.services.playerByCharacter(actor.record.characterId)?.state.unit;
       if (current && !sameRef(actor.ref, current)) { actor.ref = current; actor.generation = generation++; changedLives.push(actor); }
     }
     for (const { c, frame } of prepared) c.input!.commitConsumed(frame.token);
+    for (const { c, command } of hostCommands) {
+      if (command.kind === 'bossChallenge') {
+        if (!p.party || !command.profile) controlError(c, 'party-unavailable');
+        else encounterRequests.set(c.actor!.record.characterId, { actor: c.actor!, profile: command.profile });
+      } else partyCommand(c, command);
+    }
     for (const actor of changedLives) if (actor.connection) bootstrap(actor.connection, actor);
-    drain(slot);
-    progression ||= slot.area.pendingGrants().length > 0;
+    const emitted = drain(slot);
+    progression ||= slot.area.pendingGrants().length > 0 || emitted.some(({ event }) =>
+      ['quest', 'xp', 'levelUp', 'equipment', 'achievement', 'discovery', 'endingReady', 'death', 'respawn'].includes(event.type));
     if (progression || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
   };
   const pump = () => {
@@ -396,9 +606,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           }), () => enqueue(() => { if (!c.closed && c.generation === attempt) close(c, 'session-unavailable', true); }));
         }
       }
-      if (!barrier && !frozen) {
-        admitWaiting(); advanceTravel(); retireDetached(now);
-        for (const slot of slots.values()) {
+      if (!barrier && !frozen && !draining) {
+        admitWaiting(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
+        for (const slot of allSlots) {
           if (!slot.area.players.size || barrier) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
           slot.tick.run(now, () => step(slot));
           if (!barrier) slot.snapshot.run(now, () => publish(slot));
@@ -433,7 +643,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         });
         ws.on('message', (raw, binary) => {
           if (c.closed || frozen || draining) return;
-          const bytes = buffer(raw); metrics.bytesReceived += bytes.byteLength;
+          const bytes = buffer(raw); metrics.bytesReceived += bytes.byteLength; metrics.receivedPackets++;
           if (c.phase === 'preauth') {
             if (binary || bytes.byteLength > p.maxAuthFrameBytes) { close(c, 'auth-frame'); return; }
             let value: { type?: unknown; ticket?: unknown; characterId?: unknown };
@@ -459,7 +669,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     async shutdown(deadlineMs) {
       accepting = false; draining = true;
       const end = deps.nowMonotonicMs() + deadlineMs;
-      for (const c of connections) { json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor) c.actor.slot.area.neutralizeInput(c.actor.ref); }
+      for (const c of connections) { if (!sendControl(c, { type: 'restarting', retryAfterSeconds: 1 })) json(c, { type: 'restarting', retryAfterSeconds: 1 }); if (c.actor) c.actor.slot.area.neutralizeInput(c.actor.ref); }
       if (!barrier && !frozen) startDurability();
       while (barrier && deps.nowMonotonicMs() < end) await new Promise(resolve => setTimeout(resolve, p.loopIntervalMs));
       const persisted = await persistence.shutdown(Math.max(0, end - deps.nowMonotonicMs()));
@@ -472,8 +682,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const count = unresolved + persisted.unresolved + (barrier ? 1 : 0);
       return { durable: persisted.durable && count === 0, unresolved: count };
     },
-    stats: () => ({ ...metrics, activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
-      publicAreas: slots.size, frozen, durableBarrier: barrier !== null, unresolved,
-      droppedTicks: [...slots.values()].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...slots.values()].reduce((n, s) => n + s.snapshot.dropped, 0) }),
+    stats: () => ({ ...metrics, ...timingStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
+      processCpuSystemMs: process.cpuUsage(processCpuStart).system / 1000, processElapsedMs: deps.nowMonotonicMs() - processStarted,
+      activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
+      publicAreas: slots.size, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
+      partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length,
+      droppedTicks: [...allSlots].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...allSlots].reduce((n, s) => n + s.snapshot.dropped, 0) }),
   };
 }

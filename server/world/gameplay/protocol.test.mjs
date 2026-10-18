@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras} from './protocol.ts';
+import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent} from '../../../tests/core/worldHarness.mjs';
 import {QUESTS} from '../../../src/sim/data/quests.ts';
 import {RACES} from '../../../src/data/races.ts';
 const motion=JSON.parse(readFileSync(new URL('../../../src/sim/data/pose-data.json',import.meta.url),'utf8'));
-const catalog={version:motion.version,archetypes:[...Object.keys(motion.archetypes),'boss-rust','boss-abyss','boss-eclipse','boss-dawn','boss-frost'],actions:Object.keys(motion.clips),abilities:['pincer-strike','shell-bash','sideways-charge','whirlpool','bubble-bolt','frost-spray','steam-blink','tidal-nova','smite','mend-shell','barnacle-ward','holy-tide','crown-burst'],quests:Object.keys(QUESTS),npcs:['brinebeard','silvermoon','coralline','grukk','hoofclaw','rattlebolt','pip'],interactions:['npc:brinebeard','beacon','lamp-a'],gates:['gate:w2'],objectives:Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>o.id)),flags:['beaconLit','rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared'],jointCount:22,appearanceLimits:Object.fromEntries(Object.entries(RACES).map(([id,r])=>[id,{shell:r.shellColors.length,crest:r.crestStyles.length,led:r.ledColors.length}]))};
+const catalog={version:motion.version,poseProviderVersion:motion.version,archetypes:[...Object.keys(motion.archetypes),'boss-rust','boss-abyss','boss-eclipse','boss-dawn','boss-frost'],actions:Object.keys(motion.clips),abilities:['pincer-strike','shell-bash','sideways-charge','whirlpool','bubble-bolt','frost-spray','steam-blink','tidal-nova','smite','mend-shell','barnacle-ward','holy-tide','crown-burst'],quests:Object.keys(QUESTS),npcs:['brinebeard','silvermoon','coralline','grukk','hoofclaw','rattlebolt','pip'],interactions:['npc:brinebeard','beacon','lamp-a','lighthouse-secret','treasure','moonTreasure','sunsetTreasure'],gates:['gate:w2'],objectives:Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>o.id)),flags:['beaconLit','rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared'],jointCount:22,appearanceLimits:Object.fromEntries(Object.entries(RACES).map(([id,r])=>[id,{shell:r.shellColors.length,crest:r.crestStyles.length,led:r.ledColors.length}]))};
 const binding={session:'session-unique',area:'wire-area',epoch:1,catalog:catalog.version};
 const appearance={race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name:'Hero'};
 const header=(sequence=1)=>({...binding,sequence,tick:0,acceptedInput:0,consumedInput:0});
@@ -23,7 +23,7 @@ test('bounded binary values preserve safe integers and all finite numbers withou
 });
 test('actual Area public baseline is detached, exact life and appearance complete; other personal state never leaks',()=>{
  const f=fixture(2);f.actors[1].p.state.coins=777;f.actors[1].p.state.flags.frostCleared=true;const source=observation(f),packets=f.codec.encodeObservation(source),result=apply(f.receiver,packets);
- assert.equal(result.kind,'snapshot');assert.equal(result.state.actors.length,source.snapshot.units.length);assert.deepEqual(result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id).pose,f.actors[0].u.pose);
+ assert.equal(result.kind,'snapshot');assert.equal(result.state.actors.length,source.snapshot.units.length);assert.deepEqual(result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id).pose,projectActor(f.actors[0].u,appearance).pose);
  assert.deepEqual(result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id).appearance,appearance);assert.equal(result.state.self.player.coins,0);
  const serialized=JSON.stringify(result.state);assert.equal(serialized.includes('private-character-'),false);assert.equal(serialized.includes('pendingHit'),false);assert.equal(serialized.includes('"frostCleared":true'),false);
  result.state.actors[0].hp=999;assert.notEqual(f.receiver.state.actors[0].hp,999);
@@ -31,7 +31,7 @@ test('actual Area public baseline is detached, exact life and appearance complet
 test('real movement/action produces lossless delta and complete recovery state with full target life',()=>{
  const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));
  f.area.step(new Map([[f.actors[0].ref.id,intent(1,[{kind:'jump'}],{forward:1})]]));const next=observation(f,2),packets=f.codec.encodeObservation(next),result=apply(f.receiver,packets);
- const self=result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id);assert.equal(self.x,f.actors[0].u.x);assert.deepEqual(self.pose,f.actors[0].u.pose);assert.deepEqual(self.actions,f.actors[0].u.actions);assert.equal(result.state.sequence,2);
+ const self=result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id);assert.equal(self.x,f.actors[0].u.x);assert.deepEqual(self.pose,projectActor(f.actors[0].u,appearance).pose);assert.deepEqual(self.actions,f.actors[0].u.actions);assert.equal(result.state.sequence,2);
 });
 test('fragment groups are bounded and atomic on truncation, duplicate, loss, checksum and stale incarnation',()=>{
  const h=header(),value={content:'x'.repeat(4000),list:Array.from({length:10},()=>Array(500).fill(1))},chunks=encodeMessage(17,h,value);assert.ok(chunks.length>1);
@@ -70,7 +70,7 @@ test('event codec preserves real CoreEvent ordering and distinguishes durable co
 test('numeric widths exceed v2 without truncation and rejected growth leaves sender baseline intact',()=>{
  const f=fixture();const view=observation(f);const wide=structuredClone(view.snapshot);wide.units.find(u=>u.ref.id===f.actors[0].ref.id).hp=2**40;wide.units.find(u=>u.ref.id===f.actors[0].ref.id).maxHp=2**41;wide.players[0].coins=2**48;view.snapshot=wide;
  const result=apply(f.receiver,f.codec.encodeObservation(view));assert.equal(result.state.self.player.coins,2**48);assert.equal(result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id).hp,2**40);
- const bad=observation(f,2);bad.snapshot=structuredClone(wide);bad.snapshot.players[0].coins=Number.MAX_SAFE_INTEGER+1;assert.throws(()=>f.codec.encodeObservation(bad),/numeric/);
+ const bad=observation(f,2);bad.snapshot=structuredClone(wide);bad.snapshot.players[0].coins=Number.MAX_SAFE_INTEGER+1;assert.throws(()=>f.codec.encodeObservation(bad),/invalid (numeric|integer)/);
 });
 
 test('measure initial lossless pose bandwidth with one real 100-player Area at 20 snapshots per second',t=>{
@@ -79,9 +79,120 @@ test('measure initial lossless pose bandwidth with one real 100-player Area at 2
  for(let tick=1;tick<=30;tick++){
   f.area.step(new Map(f.actors.map(a=>[a.u.ref.id,intent(tick,[],{forward:1,steeringYaw:Math.PI/2})])));
   f.area.drainEvents();
+  for(const u of f.area.snapshot().units)for(const key of ['appliedQ','appliedPosition','appliedRotation'])assert.ok(u.pose[key].every(v=>Object.is(Math.fround(v),v)));
   if(Math.floor(tick*2/3)===Math.floor((tick-1)*2/3))continue;
   const started=performance.now(),chunks=f.codec.encodeObservation(observation(f,sequence++));ms+=performance.now()-started;total+=bytes(chunks);count++;
  }
  assert.equal(count,20);assert.ok(baseline<LIMITS.messageBytes);assert.ok(total>0);
- t.diagnostic(JSON.stringify({representation:'initial-lossless-full-pose-object-delta',actualPlayers:100,totalActors:f.area.snapshot().units.length,baselineBytes:baseline,movingBytesPerClientSecond:total,meanDeltaBytes:total/count,estimated100ViewersBytesPerSecond:total*100,encodeMsPerSnapshot:ms/count}));
+ t.diagnostic(JSON.stringify({representation:'shared-exact-render-recipe-pooled-per-snapshot',actualPlayers:100,totalActors:f.area.snapshot().units.length,baselineBytes:baseline,movingBytesPerClientSecond:total,meanDeltaBytes:total/count,estimated100ViewersBytesPerSecond:total*100,encodeMsPerSnapshot:ms/count}));
+});
+
+test('float32 vector encoding is selected only when every source component is bit-exact',()=>{
+ const exact=Array.from(new Float32Array([.1,-0,Math.PI,1e-20]));const bytes=encodeValue(exact);assert.equal(bytes[0],8);assert.deepEqual(decodeValue(bytes),exact);
+ const wide=[.1,2**48+123];const preserved=encodeValue(wide);assert.equal(preserved[0],7);assert.deepEqual(decodeValue(preserved),wide);
+});
+test('sparse pose patches reject cardinality and joint overflow without changing the committed actor',()=>{
+ const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));const before=f.receiver.state;
+ f.area.step(new Map([[f.actors[0].ref.id,intent(1,[],{forward:1})]]));const packets=f.codec.encodeObservation(observation(f,2)),a=new FragmentAssembler(binding);let m;for(const p of packets)m=a.accept(p,0);
+ const actor=m.payload.actors.find(a=>a.ref.id===f.actors[0].ref.id);delete actor.fields.pose;delete actor.poseRecipe;actor.poseDelta={appliedQ:{mask:2**22,values:[1]}};
+ assert.throws(()=>apply(f.receiver,encodeMessage(1,m.header,m.payload)),/integer/);assert.deepEqual(f.receiver.state,before);
+});
+
+test('lighthouse channel and private discovery/achievement events preserve actual new core contract',()=>{
+ const f=fixture(2),first=observation(f);apply(f.receiver,f.codec.encodeObservation(first));
+ const frame=input(1,[{kind:'channelStart',channel:'lighthouse-secret',targetId:'lighthouse-secret'}]);frame.heldChannel='lighthouse-secret';assert.deepEqual(decodeInput(encodeInput({binding,intent:frame},catalog),binding,catalog),frame);
+ const events=[{tick:0,order:0,event:{type:'achievement',unit:f.actors[0].ref,achievement:'secret'}},{tick:0,order:1,event:{type:'discovery',unit:f.actors[0].ref,discovery:'lighthouse-secret',id:'lighthouse-secret',first:true,coins:50,activeUntil:60}},{tick:0,order:2,event:{type:'discovery',unit:f.actors[1].ref,discovery:'treasure',id:'island',first:true,coins:75,activeUntil:null}}];
+ const next=observation(f,2);next.events=events;next.eventWatermark=2;const result=apply(f.receiver,f.codec.encodeObservation(next));assert.deepEqual(result.events,events.slice(0,2));
+ f.actors[0].u.lastCombat=-4.999;const combat=observation(f,3);combat.eventWatermark=2;assert.equal(apply(f.receiver,f.codec.encodeObservation(combat)).state.self.inCombat,true);
+});
+
+test('actual chest and held secret source outcomes roundtrip exact 75/100/125/50 coins and personal recovery',async()=>{
+ const {TREASURES}=await import('../../../src/sim/features/exploration.ts');const f=fixture(2),hero=f.actors[0];apply(f.receiver,f.codec.encodeObservation(observation(f)));let sequence=2,watermark=-1;const paid=[];
+ const publish=()=>{const events=f.area.drainEvents();if(events.length)watermark=events.at(-1).order;const o=observation(f,sequence++);o.events=events;o.eventWatermark=watermark;const r=apply(f.receiver,f.codec.encodeObservation(o));paid.push(...r.events.filter(e=>e.event.type==='discovery').map(e=>e.event.coins));return r;};
+ for(const [i,treasure]of TREASURES.entries()){const point=f.area.services.definition.interactions.find(p=>p.id===treasure.id);Object.assign(hero.u,point.position);f.area.step(new Map([[hero.ref.id,intent(i+1,[{kind:'interact',targetId:treasure.id}])]]));publish();}
+ Object.assign(hero.u,f.area.services.definition.interactions.find(p=>p.id==='lighthouse-secret').position);f.area.step(new Map([[hero.ref.id,intent(4,[{kind:'interact',targetId:'lighthouse-secret'}],{heldChannel:'lighthouse-secret'})]]));publish();
+ for(let i=0;i<47;i++)f.area.step(new Map());const completed=publish();assert.deepEqual(paid,[75,100,125,50]);assert.equal(completed.state.self.player.coins,350);assert.equal(completed.state.self.player.lighthouseSecretFound,true);assert.equal(completed.state.features.exploration.length,1);
+ const other=f.actors[1],otherInput=observation(f,1,true);otherInput.selfRef=other.ref;Object.assign(otherInput,projectObservationExtras(f.area.snapshot(),other.p.state.character,otherInput.visibleIds));otherInput.eventWatermark=watermark;
+ const otherView=apply(new GameplayReceiver(binding,catalog),createGameplayProtocol(catalog).encodeObservation(otherInput));assert.equal(otherView.state.self.player.coins,0);assert.deepEqual(otherView.state.self.achievements.earned,[]);assert.deepEqual(otherView.state.features.exploration,[]);
+});
+test('host party commands remain ordered single-command frames and party view supports cross-Area refs',()=>{
+ for(const command of [{kind:'partyCreate'},{kind:'partyJoin',code:'A1B2C3'},{kind:'partyLeave'},{kind:'partyPvp',enabled:true},{kind:'encounterLeave'}]){
+  const frame=input(1,[command]);assert.deepEqual(decodeInput(encodeInput({binding,intent:frame},catalog),binding,catalog),frame);
+  assert.throws(()=>encodeInput({binding,intent:input(1,[command,{kind:'jump'}])},catalog),/cannot mix/);
+ }
+ assert.throws(()=>encodeInput({binding,intent:input(1,[{kind:'partyJoin',code:'abcdef'}])},catalog),/party code/);
+ const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));const control={type:'party',state:{code:'A1B2C3',leader:'member-a',members:[{id:'member-a',name:'Alice',ref:f.actors[0].ref,world:'w1',online:true},{id:'member-b',name:'Bob',ref:{area:'other-area',id:4,life:2},world:'w2',online:true}],pvp:false}};
+ const result=apply(f.receiver,f.codec.encodeControl(header(2),control));assert.deepEqual(result.control,control);
+ assert.throws(()=>f.codec.encodeControl(header(3),{...control,state:{...control.state,members:[control.state.members[0],control.state.members[0]]}}),/membership/);
+});
+
+test('prepared commands preserve original frame correlation and never coalesce across host boundaries',()=>{
+ const s=new InputSession(binding,catalog),commands=[[{kind:'ability',slot:1}],[{kind:'partyCreate'}],[{kind:'jump'}],[{kind:'dance'}]];
+ commands.forEach((c,i)=>s.accept(encodeInput({binding,intent:input(i+1,c)},catalog),i*.01));
+ const first=s.prepareTick(.1);assert.deepEqual(first.sequences,[1]);assert.deepEqual(first.commandOrigins,[{inputSequence:1,commandIndex:0}]);s.commitConsumed(first.token);
+ const party=s.prepareTick(.1);assert.deepEqual(party.sequences,[2]);assert.deepEqual(party.intent.commands,[{kind:'partyCreate'}]);s.commitConsumed(party.token);
+ const rest=s.prepareTick(.1);assert.deepEqual(rest.sequences,[3,4]);assert.deepEqual(rest.commandOrigins,[{inputSequence:3,commandIndex:0},{inputSequence:4,commandIndex:0}]);assert.deepEqual(rest.intent.commands,[{kind:'jump'},{kind:'dance'}]);
+});
+test('delivered cross-Area entitlement preserves its original victim ref and remains recipient-only',()=>{
+ const f=fixture(2);apply(f.receiver,f.codec.encodeObservation(observation(f)));const grant={id:'["previous-area",77,3,"private-character-0"]',victim:{area:'previous-area',id:77,life:3},recipient:f.actors[0].p.state.character,xp:10,coins:5,objectives:[],flags:[]};
+ assert.equal(f.area.receiveGrant(grant),'applied');const events=f.area.drainEvents(),o=observation(f,2);o.events=events;o.eventWatermark=events.at(-1).order;const result=apply(f.receiver,f.codec.encodeObservation(o));
+ assert.ok(result.events.some(e=>e.event.type==='xp'&&e.event.amount===10));assert.equal(result.state.self.player.coins,5);assert.equal(result.state.self.player.xp,10);
+ const carried={tick:0,order:o.eventWatermark+1,event:{type:'reward',grant,appliedHere:true}},packet=encodeEvents(header(3),{baselineSequence:2,events:[carried],results:[]},catalog);assert.deepEqual(apply(f.receiver,packet).events[0].event.grant.victim,grant.victim);
+});
+test('wire recipe reconstruction is component-exact for real movement, jump, dance and interrupted actions',()=>{
+ const f=fixture(5);apply(f.receiver,f.codec.encodeObservation(observation(f)));let seq=2,observed=0;
+ for(let tick=1;tick<=180;tick++){
+  const inputs=new Map(f.actors.map((a,i)=>[a.u.ref.id,intent(tick,tick===1?(i===2?[{kind:'jump'}]:i===3?[{kind:'dance'}]:[]):tick===80&&i===3?[{kind:'cancel'}]:[],i===0?{forward:1,turn:.3}:i===1?{strafe:-1,sprint:true}:{} )]));
+  f.area.step(inputs);f.area.drainEvents();if(tick%3===1)continue;
+  const source=observation(f,seq++),state=apply(f.receiver,f.codec.encodeObservation(source)).state;
+  for(const actor of state.actors){const unit=source.snapshot.units.find(u=>u.ref.id===actor.ref.id);assert.deepEqual(actor.pose,projectActor(unit,actor.appearance).pose);observed++;}
+ }
+ assert.ok(observed>=2500);
+});
+test('stale pose provider and malformed recipe versions fail before client baseline mutation',()=>{
+ assert.throws(()=>createGameplayProtocol({...catalog,poseProviderVersion:'stale-motion'}),/provider mismatch/);
+ assert.throws(()=>new GameplayReceiver(binding,{...catalog,poseProviderVersion:'stale-motion'}),/provider mismatch/);
+ const f=fixture(),packets=f.codec.encodeObservation(observation(f)),assembler=new FragmentAssembler(binding);let m;for(const p of packets)m=assembler.accept(p,0);m.payload.poses[0].recipe.version=99;
+ assert.throws(()=>apply(f.receiver,encodeMessage(1,m.header,m.payload)),/recipe/);assert.equal(f.receiver.state,null);
+});
+test('recipe pooling preserves negative zero in the owning actor locomotion fields',()=>{
+ const f=fixture(2);f.actors[1].u.pose.localVx=-0;const state=apply(f.receiver,f.codec.encodeObservation(observation(f))).state;
+ assert.equal(Object.is(state.actors.find(a=>a.ref.id===f.actors[0].ref.id).pose.localVx,0),true);assert.equal(Object.is(state.actors.find(a=>a.ref.id===f.actors[1].ref.id).pose.localVx,-0),true);
+});
+
+test('owned prepared snapshots are byte-identical, private per viewer, deeply immutable and unforgeable',()=>{
+ const f=fixture(2);f.actors[1].p.state.coins=321;const source=observation(f);source.prepared=prepareObservationSnapshot(source.snapshot,source.appearances,catalog);
+ assert.deepEqual(createGameplayProtocol(catalog).encodeObservation(source),createGameplayProtocol(catalog).encodeObservation({...source,prepared:undefined}));
+ assert.deepEqual(Object.keys(source.prepared).sort(),['area','kind','tick']);assert.equal(JSON.stringify(source.prepared).includes('private-character'),false);
+ const other={...source,selfRef:f.actors[1].ref,...projectObservationExtras(source.snapshot,f.actors[1].p.state.character,source.visibleIds)};
+ assert.equal(apply(new GameplayReceiver(binding,catalog),createGameplayProtocol(catalog).encodeObservation(source)).state.self.player.coins,0);
+ assert.equal(apply(new GameplayReceiver(binding,catalog),createGameplayProtocol(catalog).encodeObservation(other)).state.self.player.coins,321);
+ assert.throws(()=>createGameplayProtocol(catalog).encodeObservation({...source,prepared:{...source.prepared}}),/prepared/);
+ assert.throws(()=>createGameplayProtocol(catalog).encodeObservation({...source,snapshot:f.area.snapshot()}),/prepared/);
+ assert.throws(()=>prepareObservationSnapshot(Object.freeze(structuredClone(source.snapshot)),source.appearances,catalog),/deeply frozen/);
+ const bad=Object.freeze({...source.snapshot,get players(){return source.snapshot.players;}});assert.throws(()=>prepareObservationSnapshot(bad,source.appearances,catalog),/accessor/);
+});
+test('measure actual 100-viewer publication batch with and without owned shared preparation',t=>{
+ const f=fixture(100),raw=Array.from({length:100},()=>createGameplayProtocol(catalog)),prepared=Array.from({length:100},()=>createGameplayProtocol(catalog));
+ const inputFor=(common,i)=>({...common,selfRef:f.actors[i].ref,...projectObservationExtras(common.snapshot,f.actors[i].p.state.character,common.visibleIds)});
+ const base=observation(f),first=prepareObservationSnapshot(base.snapshot,base.appearances,catalog);
+ for(let i=0;i<100;i++){raw[i].encodeObservation(inputFor(base,i));prepared[i].encodeObservation({...inputFor(base,i),prepared:first});}
+ let rawMs=0,preparedMs=0,preparationMs=0,rawBytes=0,preparedBytes=0;
+ for(let tick=1;tick<=3;tick++){
+  f.area.step(new Map(f.actors.map(a=>[a.u.ref.id,intent(tick,[],{forward:1,steeringYaw:Math.PI/2})])));f.area.drainEvents();const common=observation(f,tick+1);
+  let started=performance.now();for(let i=0;i<100;i++)rawBytes+=raw[i].encodeObservation(inputFor(common,i)).reduce((n,b)=>n+b.length,0);rawMs+=performance.now()-started;
+  started=performance.now();const token=prepareObservationSnapshot(common.snapshot,common.appearances,catalog);preparationMs+=performance.now()-started;
+  started=performance.now();for(let i=0;i<100;i++)preparedBytes+=prepared[i].encodeObservation({...inputFor(common,i),prepared:token}).reduce((n,b)=>n+b.length,0);preparedMs+=performance.now()-started;
+ }
+ assert.equal(rawBytes,preparedBytes);t.diagnostic(JSON.stringify({measurement:'100-viewer-batch-3-moving-publications',viewers:100,actors:f.area.snapshot().units.length,rawMsPerBatch:rawMs/3,prepareMsPerBatch:preparationMs/3,preparedEncodeMsPerBatch:preparedMs/3,totalPreparedMsPerBatch:(preparationMs+preparedMs)/3,bytesPerBatch:preparedBytes/3}));
+});
+test('actual private boss frame, phase and freed recovery survive drained events and respect AOI',async()=>{
+ const {createEncounterDefinition}=await import('../../../src/sim/areas/variants.ts');const {createWorld1Definition}=await import('../../../src/sim/areas/world1.ts');const {flatWorld}=await import('../../../tests/core/worldHarness.mjs');
+ const definition=createEncounterDefinition(createWorld1Definition({query:flatWorld,fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:0,scavenger:0,jellyfish:0}}),'rust');
+ const area=worldArea(binding.area,'w1',{definition,context:{mode:'party-encounter',members:[],pvp:'disabled'}});area.bootstrapEncounter('rust',{beaconLit:true});const ref=area.attachFresh('hero','mage','human','encounter:entry'),actor={ref,p:area.services.player(ref),u:area.services.getUnit(ref)},boss=area.services.bossByProfile('rust');actor.p.gainXp(900);boss.wake();for(let i=0;i<75;i++)area.step(new Map());area.drainEvents();
+ const f={area,actors:[actor],codec:createGameplayProtocol(catalog),receiver:new GameplayReceiver(binding,catalog)},live=apply(f.receiver,f.codec.encodeObservation(observation(f))).state;
+ const observed=live.recovery.bosses[0];assert.equal(observed.profile,'rust');assert.equal(observed.state,'fight');assert.equal(observed.showFrame,true);assert.deepEqual(observed,area.snapshot().recovery.bosses[0]);
+ area.services.combat.damage(actor.ref,boss.unit,Math.round(boss.actor.maxHp*.8),{noReact:true});area.step(new Map());area.drainEvents();const phase=apply(f.receiver,f.codec.encodeObservation(observation(f,2))).state.recovery.bosses[0];assert.equal(phase.phase,3);assert.equal(phase.enraged,true);
+ boss.reset();area.drainEvents();const reset=apply(f.receiver,f.codec.encodeObservation(observation(f,3))).state.recovery.bosses[0];assert.equal(reset.showFrame,false);
+ const hidden=projectObservationExtras(area.snapshot(),actor.p.state.character,new Set([actor.ref.id]));assert.deepEqual(hidden.recovery.bosses,[]);
 });

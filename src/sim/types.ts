@@ -1,3 +1,4 @@
+import type {RenderPoseRecipe} from './renderPose.ts';
 import type {CharacterCheckpointV1,RestoredPlayerData} from './persistence.ts';
 export type {CharacterCheckpointV1,RestoredPlayerData,RestorePolicy} from './persistence.ts';
 import type {BoatCommand, BoatState, VillageRound, FeatureEvent, NpcFeatureEvent} from './features/types.ts';
@@ -92,6 +93,7 @@ export interface ClipRule {
  * Actions start immediately in core whether or not browser assets have loaded.
  */
 export interface NumericPoseState {
+  renderRecipe: RenderPoseRecipe;
   locomotionTime: number; localVx: number; localVz: number; yawRate: number;
   previousX: number; previousZ: number; previousYaw: number;
   appliedQ: number[]; appliedPosition: [number, number, number];
@@ -314,6 +316,7 @@ export interface AreaDefinition {
 export interface AreaPolicy {
   enemyLevel(spawn: EnemySpawn, legacyContext: { partyLevel: number; rustCleared: boolean; chapter: Chapter }): number;
   // Final server policy returns spawn.fixedLevel. Legacy policy can retain actual S1 scaling.
+  populationRadius?(spawn:EnemySpawn):number; // explicit nearby-slots policy; clearance remains22m
   enemyPopulation(spawn: EnemySpawn, nearbyPlayers: number): { desired: 0 | 1; respawnSeconds: number };
   damageAllowed(context: Readonly<AreaContext>, source: Readonly<SimUnit> | null, target: Readonly<SimUnit>): boolean;
   canInteract(context: Readonly<AreaContext>, player: Readonly<PlayerState>, interactionId: string): boolean;
@@ -347,7 +350,7 @@ export interface AreaServices {
   applyEarnedGrant(grant: EarnedGrant): 'applied' | 'duplicate' | 'not-owner'; // real gainXp/coin/quest/flag effects
   players(): readonly SimUnit[]; // stable order, no required singleton local player
   targetFor(source: EntityRef): SimUnit | null; // empty area is valid
-  hostilesNear(x: number, z: number, radius: number): readonly SimUnit[];
+  hostilesNear(x: number, z: number, radius: number, source?:EntityRef): readonly SimUnit[];
   outcomeTransaction(run: () => void): void; // sim-owned state operation, buffered event commit
   emit(event: CoreEvent): void; // enqueue copied data, no reentrant browser sink
   startAction(unit: EntityRef, action: ActionRequest, hit?: PendingHit): void;
@@ -371,13 +374,14 @@ export interface AreaOptions {
   readonly seed: number; readonly policy: AreaPolicy; readonly actionData: ActionData; readonly context: AreaContext;
   readonly limits: { eventCount: number; inputCommandsPerTick: number; timers: number; projectiles: number };
 }
+export interface BossObservation {readonly unit:EntityRef;readonly profile:BossProfileId;readonly state:BossSim['state'];readonly phase:number;readonly enraged:boolean;readonly stateTime:number;readonly freed:EntityRef;readonly freedTime:number;readonly showFrame:boolean}
 export interface AreaSnapshot {
   readonly area: AreaId; readonly world: WorldId; readonly tick: Tick; readonly time: number;
   readonly units: readonly Readonly<SimUnit>[];
   readonly players: readonly Readonly<PlayerState>[];
   readonly projectiles: readonly Readonly<ProjectileState>[];
-  readonly features: {readonly beaconLit:boolean;readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
-  readonly recovery: {readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
+  readonly features: {readonly beaconLit:boolean;readonly exploration:readonly {unit:EntityRef;activeUntil:number}[];readonly boat:Readonly<BoatState>;readonly village:Readonly<VillageRound>|null;readonly bindings:Readonly<Record<string,EntityRef>>};
+  readonly recovery: {readonly bosses:readonly BossObservation[];readonly telegraphs:readonly EventRecord[];readonly endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]};
 } // Deep copied and stable sorted by ID; slowPct remains fraction0..1; S4 adapter scales to0..100.
 /** Complete canonical test/debug data, not a production persistence protocol. No functions or refs. */
 export type DebugValue = null | boolean | number | string | readonly DebugValue[] | { readonly [key: string]: DebugValue };
@@ -461,6 +465,7 @@ export interface Area {
    * No renderer step, wall clock or20Hz snapshot call may advance any of these stages.
    */
   step(inputs: ReadonlyMap<EntityId, PlayerIntent>): void;
+  bootstrapEncounter(profile:BossProfileId,facts:{beaconLit:boolean}):void;
   beginDurabilityBarrier(reason:string):string;
   releaseDurabilityBarrier(token:string):void;
   neutralizeInput(ref:EntityRef):void;

@@ -1,5 +1,5 @@
 import { upgradeCost } from './equipment.ts';
-import type { Chapter } from '../types.ts';
+import type { AreaContext, Chapter } from '../types.ts';
 /** Numeric rules extracted from S1 progression.ts, reviewed 28816e2. */
 export const LEVEL_XP: readonly number[] = Object.freeze([0,300,900,1400,2000,2700,3500,4400,5400,6500,7600,8800,10100,11500,13000,14600,16300,18100,20000,22000]);
 export function xpForLevel(level:number):number { const n=Math.max(0,Math.floor(level)-20);return level<=20?LEVEL_XP[Math.max(0,Math.floor(level)-1)]:22000+2200*n+100*n*(n-1); }
@@ -11,3 +11,6 @@ export const canTravelTo=(chapter:Chapter, flags:Readonly<Record<string,boolean>
 
 /** Story unlock differs from replay: only the Frost victory opens the four-island ending. */
 export const canReplayFrostEnding=(chapter:Chapter,flags:Readonly<Record<string,boolean>>,bossState:string,controlsLocked=false):boolean=>chapter===4&&!!flags.frostCleared&&bossState==='dead'&&!controlsLocked;
+
+/** Public areas have no story controller; only trusted personal completion can authorize their ending. */
+export function canPresentFrostEnding(mode:AreaContext['mode'],chapter:Chapter,flags:Readonly<Record<string,boolean>>,bossState:string|null,controlsLocked=false):boolean {if(mode==='public'&&bossState===null)return chapter===4&&!!flags.frostCleared&&!controlsLocked;return canReplayFrostEnding(chapter,flags,bossState??'dormant',controlsLocked);}

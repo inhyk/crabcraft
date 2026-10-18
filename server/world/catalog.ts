@@ -81,6 +81,7 @@ export function createGameplayCatalog(worlds: ReadonlyMap<WorldId, LoadedWorldDe
   const unique = (values: readonly string[]) => Object.freeze([...new Set(values)].sort());
   const appearanceLimits = Object.fromEntries(Object.entries(RACES).map(([race, spec]) => [race, Object.freeze({ shell: spec.shellColors.length, crest: spec.crestStyles.length, led: spec.ledColors.length })]));
   const fields = {
+    poseProviderVersion: realActionData.version,
     archetypes: unique([...Object.keys(motionData.archetypes), 'boss-rust', 'boss-abyss', 'boss-eclipse', 'boss-dawn', 'boss-frost']),
     actions: unique(Object.keys(motionData.clips)), abilities: unique(Object.values(CLASSES).flatMap(c => c.abilities.map(a => a.id))),
     quests: unique(Object.keys(QUESTS)), npcs: unique(definitions.flatMap(d => d.npcs.map(n => n.id))),

@@ -103,7 +103,7 @@ export function validateCheckpoint(value:unknown,context?:IdentityContext):Chara
  const a=fields(c.activity,['seated','village','controlsLocked','cast','channel','dash','pendingHit','rootPending','motion'],'activity');for(const k of ['seated','village','controlsLocked','dash','pendingHit','rootPending'])bool(a[k],`activity.${k}`);
  const motion=fields(a.motion,['velocityX','velocityZ','jumpRemaining','spinRemaining','pushX','pushZ','pushRemaining','lift','dashElapsed'],'activity.motion');for(const [id,n]of Object.entries(motion)){if(id==='dashElapsed'&&n===null)continue;finite(n,`activity.motion.${id}`,['velocityX','velocityZ','pushX','pushZ','lift'].includes(id)?-Number.MAX_SAFE_INTEGER:0);}if((motion.dashElapsed!==null)!==a.dash)fail('activity.motion.dash');
  if(a.cast!==null){const cast=fields(a.cast,['ability','startAge','endRemaining'],'cast');member(cast.ability,abilityIds,'cast.ability');duration({startAge:cast.startAge,endRemaining:cast.endRemaining},'cast');}
- if(a.channel!==null){const channel=fields(a.channel,['kind','startAge','endRemaining'],'channel');member(channel.kind,['recall','beacon','waystone'],'channel.kind');duration({startAge:channel.startAge,endRemaining:channel.endRemaining},'channel');}
+ if(a.channel!==null){const channel=fields(a.channel,['kind','startAge','endRemaining'],'channel');member(channel.kind,['recall','beacon','waystone','lighthouse-secret'],'channel.kind');duration({startAge:channel.startAge,endRemaining:channel.endRemaining},'channel');}
  return freeze(c as CharacterCheckpointV1);
 }
 export type CheckpointCaptureInput = {unit:SimUnit;state:PlayerState;world:WorldId;time:number;activity:{seated:boolean;village:boolean;rootPending?:boolean}};
