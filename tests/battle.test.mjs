@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {BattleSync} from '../tmp/test-modules/battle.js';
 import {Combat} from '../tmp/test-modules/combat.js';
+import {armorMultiplier} from '../src/game/equipment.ts';
 import {QuestLog} from '../tmp/test-modules/quests.js';
 
 function unit(kind='scrapling') {
@@ -21,6 +22,7 @@ function game() {
  const g={quests:new QuestLog(),world:{setMood(m){mood=m},setBeaconLit(b){beacon=b},getEnvironment(){return {mood,beacon}}},time:10,god:false,rewards:0,units:[p,enemy],enemies:[{unit:enemy,resumeAuthority(){}}],boss:boss('b3'),finalBoss:boss('b10'),worldBoss:boss('b20'),dawnBoss:boss('b30'),frostBoss:boss('b300'),encounter:{engaged:false},world2:{chapter:1,canTravel(ch){return ch===1||!!g.journey.abyssCleared&&(ch===2||!!g.journey.trueCleared&&(ch!==4||!!g.journey.finalCleared))},go(ch){if(!this.canTravel(ch))return false;this.chapter=ch;return true;},enter(){this.chapter=2},returnToShore(){this.chapter=1}},journey:{rustCleared:false,abyssCleared:false},
   player:{unit:p,setTarget:noop,gainRage:noop,onDamaged:noop,onWardHit:noop},hud:{floats:{spawn:noop},damageFlash:noop,messages:{info:noop}},
   follow:{shake:noop},audio:{sfx:noop},vfx:{deathPoof:noop,smoke:noop,stunStars:noop},events:{emit:noop},onUnitDied(u){if(u.kind==='scrapling')this.rewards++}};
+ Object.defineProperty(g.player,'damageTakenMultiplier',{get:()=>armorMultiplier(g.player.armorRank)});p.ctrl=g.player;
  g.combat=new Combat(g);return g;
 }
 function pair() {
@@ -265,4 +267,18 @@ test('late public arrivals can pass defeated shared bosses without losing person
  a.journey.abyssCleared=true;a.finalBoss.state='dead';a.finalBoss.unit.alive=false;aa.update(.1);flush();
  assert.equal(b.journey.rustCleared,true);assert.equal(b.journey.abyssCleared,true);assert.deepEqual(b.quests.status,status);
  a.journey.abyssCleared=false;aa.update(.1);flush();assert.equal(b.journey.abyssCleared,true);
+});
+
+test('armor reduces solo incoming damage before temporary shields and never grants invulnerability',()=>{
+ const g=game();g.player.armorRank=25;g.player.unit.absorb=10;g.player.unit.absorbUntil=20;
+ assert.equal(g.combat.damage(g.enemies[0].unit,g.player.unit,40),10);assert.equal(g.player.unit.hp,90);assert.equal(g.player.unit.absorb,0);
+ g.player.armorRank=100;assert.equal(g.combat.damage(null,g.player.unit,1),1);assert.equal(g.player.unit.hp,89);
+ g.player.armorRank=0;assert.equal(g.combat.damage(null,g.player.unit,20),20);
+});
+
+test('multiplayer armor is applied once by the damage recipient in both directions and PvP',()=>{
+ const {a,b,aa,ar,flush}=pair();a.player.armorRank=100;b.player.armorRank=25;
+ a.combat.damage(a.enemies[0].unit,ar,40);flush();assert.equal(b.player.unit.hp,80);assert.equal(a.player.unit.hp,100);
+ a.combat.damage(a.enemies[0].unit,a.player.unit,40);flush();assert.equal(a.player.unit.hp,92);assert.equal(b.player.unit.hp,80);
+ aa.setMode('pvp');flush();a.time+=1;a.combat.damage(a.player.unit,ar,40);flush();assert.equal(b.player.unit.hp,60);
 });

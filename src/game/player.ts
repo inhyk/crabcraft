@@ -3,6 +3,7 @@
 // player sees and hears of it (cast bar, errors, XP, effects) leaves as events (src/game/events.ts).
 // Keyboard, mouse and camera are still read here; S2 splits them off into an input layer.
 import * as THREE from 'three';
+import {equipmentRank,MAX_EQUIPMENT_RANK,upgradeCost,weaponMultiplier,armorMultiplier,EQUIPMENT_PRICE,type EquipmentSlot} from './equipment';
 import type { AbilityDef, ClassDef } from '../data/classes';
 import type { Game } from './game';
 import { lineOfSight, type Unit } from './unit';
@@ -49,6 +50,9 @@ export class Player implements CombatController {
   xp = 0;
   coins = 0;
   attackRank = 0;
+  armorRank = 0;
+  weaponOwned = false;
+  armorOwned = false;
   gcdStart = 0;
   gcdEnd = 0;
   readonly cooldowns = new Map<string, { start: number; end: number }>();
@@ -93,7 +97,34 @@ export class Player implements CombatController {
   }
 
   get dmgMul(): number {
-    return (1 + 0.12 * (this.unit.level - 1)) * (1 + this.attackRank * .08);
+    return (1 + 0.12 * (this.unit.level - 1)) * weaponMultiplier(this.attackRank);
+  }
+
+  get damageTakenMultiplier():number { return armorMultiplier(this.armorRank); }
+
+  ownsEquipment(slot:EquipmentSlot):boolean {
+    return slot==='weapon'?this.weaponOwned||this.attackRank>0:this.armorOwned||this.armorRank>0;
+  }
+
+  buyEquipment(slot:EquipmentSlot):'bought'|'owned'|'busy'|'coins' {
+    if(!this.unit.alive||this.inCombat||this.game.cinematic||this.game.ending?.active||this.game.villageGames?.playing)return 'busy';
+    if(this.ownsEquipment(slot))return 'owned';
+    if(!Number.isSafeInteger(this.coins)||this.coins<EQUIPMENT_PRICE)return 'coins';
+    this.coins-=EQUIPMENT_PRICE;
+    if(slot==='weapon'){this.weaponOwned=true;this.attackRank=1;}else{this.armorOwned=true;this.armorRank=1;}
+    this.game.journey?.save();return 'bought';
+  }
+
+  upgradeEquipment(slot:EquipmentSlot):'upgraded'|'unowned'|'busy'|'max'|'coins' {
+    if(!this.unit.alive||this.inCombat||this.game.cinematic||this.game.ending?.active||this.game.villageGames?.playing)return 'busy';
+    if(!this.ownsEquipment(slot))return 'unowned';
+    const key=slot==='weapon'?'attackRank':'armorRank',rank=equipmentRank(this[key]);
+    if(rank>=MAX_EQUIPMENT_RANK)return 'max';
+    const cost=upgradeCost(rank);
+    if(!Number.isSafeInteger(this.coins)||this.coins<cost)return 'coins';
+    this.coins-=cost;this[key]=rank+1;
+    this.game.journey?.save();
+    return 'upgraded';
   }
 
   get inCombat(): boolean {
