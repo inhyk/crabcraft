@@ -45,11 +45,23 @@ try {
    ['frost',{race:'undead',sex:'male',classId:'mage',shell:3,crest:1,led:2,name:'Boreas'},4.5],
   ]){const rig=await createCrab(spec);rig.root.scale.multiplyScalar(scale);capture(id,rig,{factory:'createCrab',spec,rootMultiplier:scale});}
   {const rig=await createEnemyCrab('corrodius');rig.root.scale.multiplyScalar(.55);capture('echo',rig,{factory:'createEnemyCrab',kind:'corrodius',rootMultiplier:.55});}
+  const {NPCS}=await import('/src/game/quests.ts');
+  for(const n of NPCS){
+   const spec={race:n.race,sex:n.sex,classId:n.classId,shell:n.shell,crest:n.crest,led:n.led,name:n.name};
+   capture(`npc:${n.id}`,await createCrab(spec,n.extras),{factory:'createCrab',spec,extras:n.extras,rootMultiplier:1});
+  }
+  for(const [id,spec] of [
+   ['freed-rust',{race:'human',sex:'male',classId:'warrior',shell:0,crest:1,led:0,name:'Little Red'}],
+   ['freed-abyss',{race:'nightelf',sex:'female',classId:'priest',shell:2,crest:1,led:2,name:'Pearl'}],
+   ['freed-eclipse',{race:'undead',sex:'female',classId:'priest',shell:2,crest:2,led:2,name:'Star'}],
+   ['freed-dawn',{race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:1,name:'Dawnkeeper'}],
+   ['freed-frost',{race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:1,name:'Mira'}],
+  ])capture(id,await createCrab(spec),{factory:'createCrab',spec,rootMultiplier:1});
   const windows={}; for(const id of Object.keys(SKILL_CLIPS))windows[id]={move:skillWindow(id),channel:skillWindow(id,'channel'),release:skillWindow(id,'release')};
   return {clips,archetypes,rigSources,windows,routine:ROUTINE,rates:SKILL_RATE,joints:JOINT_NAMES};
  });
  const index=JSON.parse(await readFile(new URL('../public/motions/index.json',import.meta.url),'utf8'));
- const sources=['src/motion/library.ts','src/motion/pose.ts','src/motion/controller.ts','src/motion/skills.ts','src/motion/skillClips.ts','src/motion/breakdance.ts','src/motion/breakClips.ts','tools/bake-sim-motion.mjs','src/crab/index.ts','src/crab/gear.ts','src/crab/rig.ts','src/crab/template.ts','src/crab/posture.ts','src/crab/pose.ts','src/crab/types.ts','src/crab/jellyfish.ts','src/data/races.ts','src/game/unit.ts','src/game/game.ts','public/models/crab/jumper.glb','public/motions/index.json'];
+ const sources=['src/motion/library.ts','src/motion/pose.ts','src/motion/controller.ts','src/motion/skills.ts','src/motion/skillClips.ts','src/motion/breakdance.ts','src/motion/breakClips.ts','tools/bake-sim-motion.mjs','src/crab/index.ts','src/crab/gear.ts','src/crab/rig.ts','src/crab/template.ts','src/crab/posture.ts','src/crab/pose.ts','src/crab/types.ts','src/crab/jellyfish.ts','src/data/races.ts','src/game/unit.ts','src/game/game.ts','src/game/quests.ts','public/models/crab/jumper.glb','public/motions/index.json'];
  for(const c of index.clips){sources.push(`public/motions/${c.id}.json`);const h=JSON.parse(await readFile(root+`public/motions/${c.id}.json`,'utf8'));sources.push('public/motions/'+h.bin);}
  for(const c of Object.values(result.clips))for(const key of ['q','base','local'])if(c[key]){const values=c[key],bytes=Buffer.alloc(values.length*4);values.forEach((v,i)=>bytes.writeFloatLE(v,i*4));c[key]=bytes.toString('base64');}
  result.encoding='float32-le-base64';

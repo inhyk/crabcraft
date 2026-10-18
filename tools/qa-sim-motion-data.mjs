@@ -30,7 +30,17 @@ try{
    }
   }
   const spec=race=>({race,sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'parity'});
+  const {NPCS}=await import('/src/game/quests.ts');
+  const freedSpecs={
+   'freed-rust':{race:'human',sex:'male',classId:'warrior',shell:0,crest:1,led:0,name:'Little Red'},
+   'freed-abyss':{race:'nightelf',sex:'female',classId:'priest',shell:2,crest:1,led:2,name:'Pearl'},
+   'freed-eclipse':{race:'undead',sex:'female',classId:'priest',shell:2,crest:2,led:2,name:'Star'},
+   'freed-dawn':{race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:1,name:'Dawnkeeper'},
+   'freed-frost':{race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:1,name:'Mira'},
+  };
   const makeRig=async id=>{
+   if(id.startsWith('npc:')){const n=NPCS.find(n=>id===`npc:${n.id}`);if(!n)throw new Error(`Unknown named NPC ${id}`);return createCrab({race:n.race,sex:n.sex,classId:n.classId,shell:n.shell,crest:n.crest,led:n.led,name:n.name},n.extras);}
+   if(freedSpecs[id])return createCrab(freedSpecs[id]);
    if(id==='jellyfish')return createJellyfishRig();
    if(['scrapling','scavenger','corrodius','echo'].includes(id)){const r=await createEnemyCrab(id==='echo'?'corrodius':id);if(id==='echo')r.root.scale.multiplyScalar(.55);return r;}
    const scaled={
@@ -45,7 +55,7 @@ try{
    r.root.updateMatrixWorld(true);const expected=r.getSocket('clawR').getWorldPosition(new THREE.Vector3()),got=realActionData.launchAnchor(u,u.pose);
    for(const key of ['x','y','z'])maxAnchorDelta=Math.max(maxAnchorDelta,near(expected[key],got[key],`${u.archetype} ${key}`));anchors++;
   };
-  const rigs=['human','orc','dwarf','undead','nightelf','tauren','scrapling','scavenger','corrodius','jellyfish','abyss','eclipse','dawn','frost','echo'];
+  const rigs=['human','orc','dwarf','undead','nightelf','tauren','scrapling','scavenger','corrodius','jellyfish','abyss','eclipse','dawn','frost','echo',...NPCS.map(n=>`npc:${n.id}`),...Object.keys(freedSpecs)];
   for(const id of rigs){
    const rig=await makeRig(id),u=newUnit(id);rig.root.position.set(u.x,u.y,u.z);rig.root.rotation.y=u.yaw;
    const height=rig.getSocket('head').getWorldPosition(new THREE.Vector3()).y-u.y;
@@ -73,7 +83,7 @@ try{
   }
   // Deterministic envelope of the view-only random twitch: source maximum amplitude is .075.
   const twitch=[];
-  for(const id of ['undead','eclipse','frost']){
+  for(const id of ['undead','eclipse','frost','npc:rattlebolt','freed-eclipse']){
    const rig=await makeRig(id),u=newUnit(id),basePitch=rig.posture.rotation.x;
    rig.root.position.set(u.x,u.y,u.z);rig.root.rotation.y=u.yaw;
    let maxOrigin=0,maxHead=0,maxRadius=0,maxFlightSeconds=0,maxArrivalTicks=0,worst=null,checks=0;
