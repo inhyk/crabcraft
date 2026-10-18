@@ -78,10 +78,14 @@ export class Multiplayer {
   private rosterKey = '';
   private renamedNoted = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** A spectator view's proof of monitor access for its socket, renewed before it expires (server/node/monitor.ts). */
+  private ticket = '';
+  private ticketTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private game: Game) {
     this.link = new Link((mode, room) => this.socketUrl(mode, room), {
       hello: (mode, room) => {
+        if (mode === 'observe') return { type: 'observe', room, ticket: this.ticket };
         const spec = this.game.player.unit.rig.spec;
         const session = this.session;
         return mode === 'enter' ? { type: mode, area: this.game.world2.chapter, combatVersion:1, snowWorld:true, sharedWorld:1, spec, session } : { type: mode, room, combatVersion: 1, snowWorld:true, spec, session };
@@ -128,6 +132,7 @@ export class Multiplayer {
     game.player.unit.onAction = action => this.send({ type: 'action', action });
     game.player.unit.onBreakdanceStop = () => this.send({ type: 'action', action: 'breakdance_stop' });
     this.refreshLanguage();
+    if (game.spectator) { void this.observe(game.spectator.room); return; }
     // An invite link joins its room; otherwise the player goes online with everyone in this world area.
     const room = params.get('room');
     if (room) { this.input.value = room; this.timer = setTimeout(() => /^[A-F0-9]{6}$/i.test(room.trim()) ? this.connect('join', room) : this.connect('enter'), 500); }
@@ -145,10 +150,35 @@ export class Multiplayer {
     if (!this.room) this.create.focus();
   }
 
-  private send(msg: unknown) { this.link.send(msg); }
+  /** A spectator view sends nothing: no state, actions, combat, world, chat or reports. */
+  private send(msg: unknown) { if (!this.game.spectator) this.link.send(msg); }
+
+  /** The spectator view's room; also how it moves to another. */
+  async observe(room: string) {
+    if (this.disposed || !this.game.spectator) return;
+    this.battle.leave(); this.link.stop(); this.clearPeers();
+    this.room = ''; this.shard = ''; this.area = 0;
+    if (!this.ticketTimer) {
+      await this.renewTicket();
+      if (this.disposed) return;
+      this.ticketTimer = setInterval(() => void this.renewTicket(), 60000);
+    }
+    if (this.game.spectator?.room !== room) return;
+    this.game.spectator.arrive(this.game.spectator.area);
+    this.link.connect('observe', room);
+  }
+  private async renewTicket() {
+    try {
+      const res = await fetch('/api/account/monitor-ticket', { headers: { 'X-Crabcraft-Account': '1' }, cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.timeout(8000) });
+      if (res.ok) this.ticket = String((await res.json()).ticket ?? '');
+    } catch { /* The relay may still accept the address; the link keeps retrying. */ }
+  }
+  /** For the spectator view: in a room now, and the followed player's crab once it has a position. */
+  get welcomed() { return this.link.open && !!(this.room || this.shard); }
+  peerUnit(id: string): Unit | null { const p = this.peers.get(id); return p?.state && p.unit ? p.unit : null; }
 
   private connect(type: Mode, room = '', duel = false) {
-    if (this.disposed) return;
+    if (this.disposed || this.game.spectator) return;
     const code = room.trim().toUpperCase();
     if (type === 'join' && !/^[A-F0-9]{6}$/.test(code)) { this.setStatus('방 코드 6자리를 확인해 주세요.','Check the six-character room code.'); return; }
     this.pendingDuel=type==='create'&&duel;
@@ -172,6 +202,16 @@ export class Multiplayer {
     if (this.disposed) return;
     switch (msg.type) {
       case 'welcome': {
+        if (msg.observer === true) {
+          // In no list and never the host: the room's world, then its players.
+          this.ownId = msg.id; this.offline = false;
+          if (msg.public) { this.shard = msg.room; this.area = msg.area; this.room = ''; } else { this.room = msg.room; this.shard = ''; this.area = 0; }
+          this.game.spectator?.arrive(msg.public ? msg.area : msg.world?.chapter);
+          this.battle.join(msg.id, msg.host, msg.world, !!msg.public);
+          for (const p of msg.players) this.addPeer(p.id, p.spec, p.state);
+          this.updateUi();
+          break;
+        }
         this.ownId = msg.id; this.offline = false;
         // Only the visible label changes; the original spec still owns local saves.
         if(typeof msg.displayName==='string')this.game.player.unit.name=displayName(msg.displayName);
@@ -221,6 +261,8 @@ export class Multiplayer {
         this.note(msg.ok ? t('신고를 보냈어요. 알려 줘서 고마워요.','Report sent. Thank you for telling us.') : t('신고를 보내지 못했어요. 이미 신고했거나 잠시 뒤에 다시 할 수 있어요.','Could not send the report. You may have reported them already; try again later.'), 'mp-system');
         break;
       case 'error': {
+        // Refused or gone: the relay closes the socket and the link tries again later.
+        if (this.game.spectator) { this.room = ''; this.shard = ''; this.area = 0; this.battle.leave(); this.clearPeers(); this.setStatus(String(msg.message), String(msg.message)); break; }
         const error = this.serverError(String(msg.message)), tried = this.link.mode;
         this.room = ''; this.shard = ''; this.area = 0; this.battle.leave(); this.closeSocket();
         // A room that cannot be made or joined leaves the player in the public world.
@@ -236,6 +278,7 @@ export class Multiplayer {
   private lost({ mode, attempt, delay, welcomed }: Lost) {
     if (this.disposed) return;
     this.clearPeers();
+    if (this.game.spectator) { this.battle.leave(); this.room = ''; this.shard = ''; this.area = 0; return; }
     if (mode !== 'enter') {
       if (delay === null) {
         // Instead of going offline, back to the public world.
@@ -288,7 +331,7 @@ export class Multiplayer {
     this.elapsed += dt;
     // Each world area has its own shards: travelling leaves this one for one where you arrive.
     if (this.shard && this.area !== this.game.world2.chapter && this.link.open) this.connect('enter');
-    if ((this.room || this.shard) && this.elapsed >= 0.05) {
+    if ((this.room || this.shard) && this.elapsed >= 0.05 && !this.game.spectator) {
       this.elapsed = 0;
       const u = this.game.player.unit;
       this.send({ type: 'state', state: { x: u.pos.x, y: u.pos.y, z: u.pos.z, yaw: u.yaw, hp: u.hp, maxHp: u.maxHp, alive: u.alive, level: u.level, area: this.game.world2.chapter } });
@@ -510,7 +553,7 @@ export class Multiplayer {
     this.link.stop(); this.clearPeers();
   }
   /** Leaving a room with friends goes back to the public world. */
-  pauseDungeonConnection(){this.closeSocket();}
+  pauseDungeonConnection(){if(!this.game.spectator)this.closeSocket();}
   createDungeonRoom(){this.connect('create');}
   leaveDungeonRoom(){this.disconnect();}
   private disconnect() { this.connect('enter'); }
@@ -519,6 +562,7 @@ export class Multiplayer {
     this.partySize.disconnect();
     this.game.app.ui.style.removeProperty('--party-roster-height');
     if (this.timer) clearTimeout(this.timer);
+    if (this.ticketTimer) clearInterval(this.ticketTimer);
     this.game.player.unit.onAction = null;
     this.game.player.unit.onBreakdanceStop = null;
     this.battle.dispose(); this.closeSocket(); this.link.dispose(); this.root.remove(); this.partyPanel.remove();

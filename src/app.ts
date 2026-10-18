@@ -7,6 +7,7 @@ import { AudioManager } from './core/audio';
 import { initAssets } from './core/assets';
 import type { CrabSpec } from './crab/types';
 import { h, sleep } from './ui/dom';
+import { SPECTATE } from './spectate';
 
 export type ScreenId = 'title' | 'create' | 'game' | 'ending' | 'robot' | 'credits';
 
@@ -42,7 +43,8 @@ export class App {
   constructor(root: HTMLElement) {
     // 'auto' (the default) is the high tier with dynamic resolution; the player can pin a tier.
     const q = localStorageGet('cc.quality');
-    const quality: QualitySetting = q === 'low' || q === 'high' || q === 'auto' ? q : 'auto';
+    // A spectator view on the monitor is one of several on a weak screen.
+    const quality: QualitySetting = SPECTATE ? 'low' : q === 'low' || q === 'high' || q === 'auto' ? q : 'auto';
     this.engine = new Engine(root, quality);
     initAssets(this.engine.renderer);
     this.ui = h('div', { class: 'cc-layer', id: 'cc-ui' });
@@ -52,6 +54,7 @@ export class App {
     root.append(this.ui, this.overlay);
     this.input = new Input(this.engine.canvas);
     this.audio = new AudioManager();
+    if (SPECTATE) this.audio.toggleMute();
     this.engine.onAfterFrame(() => this.input.endFrame());
     this.engine.start();
     this.account=new Account(this);
@@ -96,7 +99,9 @@ export class App {
   }
 }
 
+// A spectator view starts as nobody and keeps nothing: it must never read or overwrite this browser's saves and settings.
 export function localStorageGet(key: string): string | null {
+  if (SPECTATE) return null;
   try {
     return localStorage.getItem(storageKey(key));
   } catch {
@@ -105,6 +110,7 @@ export function localStorageGet(key: string): string | null {
 }
 
 export function localStorageSet(key: string, value: string): void {
+  if (SPECTATE) return;
   try {
     const resolved=storageKey(key),changed=localStorage.getItem(resolved)!==value;
     localStorage.setItem(resolved, value);

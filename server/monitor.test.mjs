@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { createHash } from 'node:crypto';
 import WebSocket from 'ws';
 import { attachRooms } from './rooms.ts';
-import { monitorHandler } from './node/monitor.ts';
+import { monitorAccess, monitorHandler, observeTickets } from './node/monitor.ts';
 
 const account = 'g' + 'a'.repeat(23), token = 'b'.repeat(64);
 const cookie = `cc_account=${account}.${token}`;
@@ -17,9 +17,13 @@ async function setup(t, allowed = [account], places = []) {
     if (fail) throw new Error('database unavailable');
     return { rows: hash === createHash('sha256').update(token).digest('hex') && username === account ? [{ expires: String(expires) }] : [] };
   } };
-  const server = createServer((req, res) => void handler(req, res));
-  const relay = attachRooms(server, { maxMembers: 64 });
-  const handler = monitorHandler(db, new Set(allowed), relay.monitorSnapshot, new Set(places), req => String(req.headers['x-test-ip'] ?? ''));
+  const ip = req => String(req.headers['x-test-ip'] ?? '');
+  const server = createServer((req, res) => void (req.url === '/api/account/monitor-ticket' ? ticketHandler : handler)(req, res));
+  // Observers are wired as server/node/main.ts wires them: the monitor rule, or a ticket from it.
+  const tickets = observeTickets(), access = monitorAccess(db, new Set(allowed), new Set(places), ip);
+  const relay = attachRooms(server, { maxMembers: 64, observe: async (req, ticket) => tickets.valid(ticket) || await access(req) === 'ok' });
+  const handler = monitorHandler(db, new Set(allowed), relay.monitorSnapshot, new Set(places), ip);
+  const ticketHandler = monitorHandler(db, new Set(allowed), () => tickets.issue(), new Set(places), ip);
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`, clients = [];
   t.after(async () => { for (const ws of clients) ws.terminate(); relay.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); });
@@ -31,7 +35,16 @@ async function setup(t, allowed = [account], places = []) {
     return { ws, welcome, send: data => ws.send(JSON.stringify(data)) };
   }
   const get = (headers = {}, options = {}) => fetch(base + '/api/account/monitor', { headers: { 'X-Crabcraft-Account': '1', Cookie: cookie, ...headers }, ...options });
-  return { base, relay, client, get, expire: () => { expires = 0; }, fail: () => { fail = true; } };
+  const ticket = (headers = {}) => fetch(base + '/api/account/monitor-ticket', { headers: { 'X-Crabcraft-Account': '1', Cookie: cookie, ...headers } });
+  /** An observer socket: its upgrade headers (cookie, address) and what it sends; resolves with the first answer and the close code. */
+  async function observe(room, { headers = {}, ticket: proof } = {}) {
+    const ws = new WebSocket(base.replace('http:', 'ws:') + '/multiplayer', { headers });
+    clients.push(ws); await once(ws, 'open');
+    const closed = new Promise(resolve => ws.on('close', code => resolve(code)));
+    const received = once(ws, 'message'); ws.send(JSON.stringify({ type: 'observe', room, ...(proof === undefined ? {} : { ticket: proof }) }));
+    return { ws, first: JSON.parse(String((await received)[0])), closed };
+  }
+  return { base, relay, client, get, ticket, observe, expire: () => { expires = 0; }, fail: () => { fail = true; } };
 }
 const tick = () => new Promise(r => setTimeout(r, 25));
 
@@ -124,4 +137,48 @@ test('a listed network address sees the monitor without signing in; other addres
   const both = await setup(t, [account], ['203.0.113.7']);
   assert.equal((await both.get({ Cookie: '', 'X-Test-IP': '198.51.100.1' })).status, 401);
   assert.equal((await both.get({ 'X-Test-IP': '198.51.100.1' })).status, 200);
+});
+
+test('observer sockets follow the monitor rule: listed address, allowed account session, or a ticket from the monitor', async t => {
+  const app = await setup(t, [account], ['203.0.113.7']), p = await app.client();
+  p.send({ type: 'state', state }); await tick();
+  const room = p.welcome.room;
+  const denied = async (options, why) => {
+    const o = await app.observe(room, options);
+    assert.deepEqual(o.first, { type: 'error', message: 'Monitor access required.' }, why);
+    assert.equal(await o.closed, 1008, why);
+  };
+  await denied({}, 'no cookie, unlisted address');
+  await denied({ headers: { Cookie: `cc_account=${account}.${'c'.repeat(64)}` } }, 'stale session');
+  await denied({ ticket: `${Date.now() + 60000}.forged` }, 'forged ticket');
+  const home = await app.observe(room, { headers: { 'X-Test-IP': '203.0.113.7' } });
+  assert.equal(home.first.type, 'welcome'); assert.equal(home.first.observer, true); assert.equal(home.first.players[0].id, p.welcome.id);
+  const developer = await app.observe(room, { headers: { Cookie: cookie } });
+  assert.equal(developer.first.observer, true);
+  // A browser's account cookie stays on /api/account, so the spectator page brings a ticket instead.
+  const res = await app.ticket(), body = await res.json();
+  assert.equal(res.status, 200); assert.match(res.headers.get('cache-control'), /no-store/); assert.ok(body.expires > Date.now());
+  const page = await app.observe(room, { ticket: body.ticket });
+  assert.equal(page.first.observer, true);
+  // Observers are not players: the monitor still lists one, and the player is told about none of them.
+  p.send({ type: 'action', action: 'jump' });
+  assert.equal(JSON.parse(String((await once(page.ws, 'message'))[0])).action, 'jump');
+  assert.deepEqual((await (await app.get()).json()).players.map(x => x.id), [p.welcome.id]);
+  assert.equal(app.relay.rooms.get(room).size, 1);
+});
+
+test('the ticket endpoint answers exactly like the monitor; tickets expire and cannot be forged', async t => {
+  const app = await setup(t);
+  assert.equal((await app.ticket({ Cookie: '' })).status, 401);
+  assert.equal((await app.ticket({ 'X-Crabcraft-Account': '' })).status, 403);
+  assert.equal((await app.ticket({ Origin: 'https://elsewhere.invalid' })).status, 403);
+  assert.equal((await (await setup(t, ['g' + 'd'.repeat(23)])).ticket()).status, 403);
+  assert.equal((await (await setup(t, [])).ticket()).status, 503);
+  let now = 1_800_000_000_000;
+  const tickets = observeTickets(1000, Buffer.alloc(32, 7), () => now), other = observeTickets(1000, Buffer.alloc(32, 8), () => now);
+  const { ticket } = tickets.issue();
+  assert.equal(tickets.valid(ticket), true);
+  assert.equal(other.valid(ticket), false);
+  for (const bad of [null, 7, '', 'x'.repeat(200), ticket + '.x', ticket.replace(/^\d/, '9'), ticket.slice(0, -2)]) assert.equal(tickets.valid(bad), false, String(bad));
+  now += 1001; assert.equal(tickets.valid(ticket), false);
 });
