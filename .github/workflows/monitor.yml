@@ -1,0 +1,22 @@
+name: Monitor
+on:
+  pull_request:
+    paths: ['src/monitor/**', 'monitor/**', 'server/monitor*', 'server/node/monitor*', 'server/node/main.ts', 'server/rooms.ts', 'server/protocol.ts', 'src/multiplayer/client.ts', 'vite.config.ts', '.github/workflows/monitor.yml']
+permissions:
+  contents: read
+jobs:
+  monitor:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.10.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:monitor
+      - run: pnpm test:multiplayer
+      - run: pnpm build
+      - run: pnpm build:server

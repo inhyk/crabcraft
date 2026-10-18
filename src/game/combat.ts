@@ -46,6 +46,8 @@ export class Combat {
     const g = this.game;
     if(g.villageGames?.playing&&(dst.kind==='player'||dst.kind==='remote'||src?.kind==='player'||src?.kind==='remote'))return 0;
     // Endgame locks apply per character, even beside an eligible friend.
+    const frontierBoss=[g.emberBoss,g.skyBoss].find(b=>b&&(dst===b.unit||src===b.unit));
+    if(frontierBoss&&((src?.kind==='player'||src?.kind==='remote')&&src.level<frontierBoss.profile.level||(dst.kind==='player'||dst.kind==='remote')&&dst.level<frontierBoss.profile.level))return 0;
     if(dst===g.frostBoss?.unit&&(src?.kind==='player'||src?.kind==='remote')&&src.level<300)return 0;
     if(src===g.frostBoss?.unit&&(dst.kind==='player'||dst.kind==='remote')&&dst.level<300)return 0;
     if(dst===g.dawnBoss?.unit&&(src?.kind==='player'||src?.kind==='remote')&&src.level<100)return 0;

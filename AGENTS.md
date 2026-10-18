@@ -50,6 +50,16 @@ PR 전에 최소 `pnpm build`(타입 검사 포함)를 통과시키고, 바꾼 �
 - 기능 PR 은 squash, 릴리스 PR(`dev` 에서 `main`)은 merge commit 으로 머지한다.
 - 다른 사람이 올린 PR 의 브랜치는 고치지 않는다. 고칠 것이 보이면 PR 댓글로 남긴다.
 
+## 버전과 릴리스
+
+- 버전은 `package.json` 의 `version` 이다. 시작 화면 맨 아래에 보인다. crab.seonn.dev 는 `v1.0.0`, crab-dev.seonn.dev 는 주황색 `DEV v1.0.0 · 9c06f54`(버전과 커밋). 배포된 버전은 `/version.json` 으로도 본다.
+- 규칙: 그날(한국 시간) 첫 릴리스는 minor 를 올리고(`1.0.0` → `1.1.0`), 같은 날 다음 릴리스는 patch 를 올린다(`1.1.0` → `1.1.1`). major 는 아빠가 정할 때만. 첫 버전은 `1.0.0` 이다.
+- 릴리스 순서:
+  1. dev 에서 `node tools/release-version.mjs --bump` 로 `package.json` 을 다음 버전으로 바꾸고 PR 로 dev 에 넣는다. 기능 PR 에 같이 넣어도 된다. 다음 버전만 보려면 `--next`.
+  2. dev 에서 main 으로 릴리스 PR 을 연다. 제목에 버전을 쓴다(예: `릴리스 v1.1.0: 눈 월드 퀘스트`). `Release version` 검사가 버전을 안 올린 릴리스를 막는다.
+  3. main 배포가 성공하면 `v<버전>` 태그가 자동으로 찍힌다(`deploy.yml` 의 `tag-release`).
+- 릴리스 노트는 위키 `프로젝트` 콜렉션의 「Crabcraft 업데이트 안내 모음」에 버전마다 쓴다. 같은 내용을 `public/release-notes.json` 의 `notes` 맨 앞에 넣으면 시작 화면 버전 옆 "업데이트 소식" 에 나온다(`{version, date, wiki, sections:[{title, items:[{head, body}]}]}`, `src/ui/news.ts`). 노트가 하나도 없으면 링크가 숨는다.
+
 ## 머지된 뒤 정리
 
 ```sh

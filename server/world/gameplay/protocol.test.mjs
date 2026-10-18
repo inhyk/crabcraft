@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot} from './protocol.ts';
-import {encodeInput,decodeInput,InputSession} from './intents.ts';
+import {encodeInput,decodeInput,InputSession,InputRateBudget} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent,tick} from '../../../tests/core/worldHarness.mjs';
 import {xpForLevel} from '../../../src/sim/data/progression.ts';
@@ -273,4 +273,11 @@ test('account-free chat controls carry only filtered lines, preferences and expl
 test('report acknowledgments never expose internal global moderation decisions',()=>{
  const f=fixture(),target={area:binding.area,id:22,life:1},ack={type:'chatResult',inputSequence:1,operation:'report',ok:true,target};
  assert.doesNotThrow(()=>f.codec.encodeControl(header(1),ack));for(const muted of [true,false])assert.throws(()=>f.codec.encodeControl(header(1),{...ack,muted}),/moderation/);
+});
+
+
+test('revoked input is strictly decoded without apply/ACK and one rate budget survives resets and mixed epochs',()=>{
+ const budget=new InputRateBudget(0),prior=new InputSession(binding,catalog,{now:0,budget});prior.accept(encodeInput({binding,intent:input(1,[{kind:'ability',slot:1}])},catalog),0);const prepared=prior.prepareTick(0);assert.ok(prepared);prior.revoke();assert.equal(prior.pendingCount,0);assert.equal(prior.prepareTick(0),null);assert.throws(()=>prior.commitConsumed(prepared.token));assert.throws(()=>prior.accept(encodeInput({binding,intent:input(2)},catalog),0),/revoked/);
+ prior.discardRevoked(encodeInput({binding,intent:input(2,[{kind:'jump'}])},catalog),0);assert.equal(prior.acceptedInput,2);assert.equal(prior.consumedInput,0);assert.equal(prior.pendingCount,0);assert.equal(prior.heldState(0).forward,0);assert.throws(()=>prior.discardRevoked(encodeInput({binding:{...binding,area:'forged'},intent:input(3)},catalog),0),/binding/);assert.throws(()=>prior.discardRevoked(encodeInput({binding,intent:input(2)},catalog),0),/stale/);
+ const next={...binding,epoch:2},current=new InputSession(next,catalog,{now:0,budget});for(let i=1;i<=118;i++)current.accept(encodeInput({binding:next,intent:input(i)},catalog),0);current.reset({...next,epoch:3},0);assert.throws(()=>current.accept(encodeInput({binding:{...next,epoch:3},intent:input(1)},catalog),0),/rate/);assert.throws(()=>prior.discardRevoked(encodeInput({binding,intent:input(3)},catalog),0),/rate/);assert.equal(prior.acceptedInput,2);assert.equal(current.acceptedInput,0);current.accept(encodeInput({binding:{...next,epoch:3},intent:input(1)},catalog),1/60);assert.equal(current.acceptedInput,1);
 });

@@ -13,6 +13,8 @@ import {loadBakedWorld} from '../../src/sim/world/baked.ts';
 import {createWorld1Definition} from '../../src/sim/areas/world1.ts';
 import {GameplayReceiver} from '../world/gameplay/protocol.ts';
 import {encodeInput} from '../world/gameplay/intents.ts';
+import {acquireHostOwnership,HostOwnershipError} from '../world/ownership.ts';
+import {WorldConfigError,describeWorldStartupFailure} from '../world/startup-error.ts';
 
 const main=new URL('../../server-dist/main.mjs',import.meta.url);
 const manifestURL=new URL('../../server-dist/world/world-manifest.json',import.meta.url);
@@ -73,6 +75,29 @@ for(const externalLedger of [false,true]) test(`bundled ${externalLedger?'extern
  }finally{bot?.ws.terminate();legacy?.terminate();if(processState?.child.exitCode===null)await processState.stop();const ended=[...liveClients].map(c=>once(c,'end'));await pool.end();await Promise.all(ended);cluster.stop();}
 });
 
-test('bundled main fails before listening when enabled world policy is missing or asset version is wrong',{timeout:15000},async()=>{
- const cluster=await startPostgres();try{const manifest=JSON.parse(await readFile(manifestURL,'utf8'));for(const value of ['',JSON.stringify(fixtureConfig('0'.repeat(64)))]){const p=start(cluster.url,value);const [code,signal]=await p.exit;assert.equal(code,1);assert.equal(signal,null);assert.equal(p.output.includes('server listening'),false);assert.match(p.errors,/world startup failed/);}}finally{cluster.stop();}
+test('world diagnostics retain trusted paths and codes without logging arbitrary messages or JSON contents',()=>{
+ assert.equal(describeWorldStartupFailure(new WorldConfigError('worlds.w1.populationMode')),'world-config: worlds.w1.populationMode');
+ assert.equal(describeWorldStartupFailure(new HostOwnershipError('busy')),'world host ownership busy');
+ const secret='synthetic-secret-marker',error=Object.assign(new Error(`postgres://user:${secret}@host/db`),{code:'ECONNREFUSED'});
+ assert.equal(describeWorldStartupFailure(error),'world-startup: ECONNREFUSED');assert(!describeWorldStartupFailure(new SyntaxError(secret)).includes(secret));assert(!describeWorldStartupFailure(new Error(secret)).includes(secret));
+});
+
+test('bundled world startup failure keeps legacy account and rooms healthy while world HTTP and WS return503',{timeout:30000},async()=>{
+ const cluster=await startPostgres(),pool=createPool(cluster.url);let processState,legacy,guard;
+ try{
+  await migrate(pool);const manifest=JSON.parse(await readFile(manifestURL,'utf8')),invalid=fixtureConfig(manifest.source);invalid.worlds.w1.populationMode='invalid';
+  const cases=[['',/world-config: WORLD_CONFIG_JSON is required/],['{"synthetic-secret-marker":',/world-config: invalid JSON/],[JSON.stringify(invalid),/world-config: w1.populationMode/],[JSON.stringify(fixtureConfig('0'.repeat(64))),/world-config: asset manifest version\/source/]];
+  guard=await acquireHostOwnership(pool,'bundled-main-qa',{heartbeatMs:100,queryTimeoutMs:1000});
+  cases.push([JSON.stringify(fixtureConfig(manifest.source)),/world host ownership busy/]);
+  for(const [value,reason] of cases){
+   processState=start(cluster.url,value);const origin=await processState.ready();assert.match(processState.errors,reason);assert(!processState.errors.includes('synthetic-secret-marker'));
+   assert.equal((await fetch(origin+'/healthz')).status,200);
+   const session=await fetch(origin+'/api/account/session',{headers:{Origin:origin,'X-Crabcraft-Account':'1'}});assert.equal(session.status,200);assert.deepEqual(await session.json(),{signedIn:false});
+   for(const path of ['/world','/api/account/world-catalog','/api/account/world-characters','/api/account/world-ticket'])assert.equal((await fetch(origin+path,{method:path.endsWith('world-ticket')?'POST':'GET'})).status,503,path);
+   const unavailable=new WebSocket(origin.replace('http:','ws:')+'/world',{headers:{Origin:origin}});unavailable.on('error',()=>{});
+   const rejected=new Promise(resolve=>unavailable.once('unexpected-response',(_request,response)=>{response.resume();resolve(response.statusCode);}));assert.equal(await rejected,503);unavailable.terminate();
+   legacy=new WebSocket(origin.replace('http:','ws:')+'/multiplayer',{headers:{Origin:origin}});const welcome=once(legacy,'message');await once(legacy,'open');legacy.send(JSON.stringify({type:'create',spec:{race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'Legacy fallback'}}));assert.equal(JSON.parse((await welcome)[0].toString()).type,'welcome');legacy.close();await once(legacy,'close');legacy=null;
+   const [code,signal]=await processState.stop();assert.equal(code,0);assert.equal(signal,null);processState=null;
+  }
+ }finally{legacy?.terminate();if(processState?.child.exitCode===null)await processState.stop();await guard?.release();await pool.end();cluster.stop();}
 });

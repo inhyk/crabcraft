@@ -5,7 +5,6 @@ import type { IncomingMessage } from 'node:http';
 import type { Pool } from 'pg';
 import { createCoreCharacterCodec, type CharacterCheckpointV1, type RestorePolicy } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
-import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { canonicalEnemyRespawn, enemyRespawnClearance, enemyStats } from '../../src/sim/data/enemies.ts';
 import { worldChapter } from '../../src/sim/math.ts';
 import { CLASSES } from '../../src/sim/data/classes.ts';
@@ -15,10 +14,11 @@ import { CharacterStore } from './character-store.ts';
 import { DurableOutcomeStore } from './contribution-store.ts';
 import { planOutcomePage } from '../../src/sim/ledger.ts';
 import { type WorldTicketRegistry } from './admission.ts';
-import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
+import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, HOSTED_BOSSES, type LoadedWorldDefinition, type HostedWorldId, type HostedBossProfileId } from './catalog.ts';
 import { createGameplayProtocol, projectObservationExtras } from './gameplay/protocol.ts';
 import { acquireHostOwnership } from './ownership.ts';
 import { createActualWorldHost, type HostPolicies } from './host.ts';
+import { WorldConfigError } from './startup-error.ts';
 
 type TimingMode = 'pause' | 'elapse';
 export type ConfiguredRestore = { cooldowns:TimingMode; statuses:TimingMode; death:TimingMode; history:TimingMode; hp:'preserve'; resource:'preserve'; location:'saved'|'arrival'; activity:'cancel' };
@@ -29,17 +29,17 @@ export type ConfiguredRegion = {seed:number;populationMode:'fixed-slots'|'nearby
 const HOST_DEFAULTS = Object.freeze({authTimeoutMs:5000,inputTimeoutMs:400,reconnectGraceMs:30000,sessionRevalidateMs:30000,checkpointIntervalMs:1000,maxConnections:2000,maxConnectionsPerIp:16,maxWaiting:1000,maxAuthFrameBytes:1024,maxFrameBytes:65536,maxBufferedBytes:4194304,maxQueuedInputs:128,maxMutationSourcesPerTick:128,loopIntervalMs:5});
 const AREA_DEFAULTS = Object.freeze({eventCount:16384,inputCommandsPerTick:32,timers:4096,projectiles:4096});
 const PERSISTENCE_DEFAULTS = Object.freeze({maxQueuedPerCharacter:1,maxAttempts:3,retryMs:100,maxRecoveryRounds:2});
-export type ConfiguredParty = {enabled:false}|{enabled:true;maxParties:number;maxEncounters:number;returns:Record<BossProfileId,{world:WorldId;spawn:string}>};
+export type ConfiguredParty = {enabled:false}|{enabled:true;maxParties:number;maxEncounters:number;returns:Record<HostedBossProfileId,{world:WorldId;spawn:string}>};
 export type ValidatedWorldConfig = {
  schema:'world-startup-v1';
  ownership:{key:string;heartbeatMs:number;queryTimeoutMs:number};
  assets:{source:string;manifest:'world-manifest.json';maxBakeBytes:number;maxTotalBakeBytes:number;maxManifestBytes:number;maxCells:number};
- worlds:Record<WorldId,ConfiguredRegion>;restore:ConfiguredRestore;
+ worlds:Record<HostedWorldId,ConfiguredRegion>;restore:ConfiguredRestore;
  limits:{[K in keyof typeof HOST_DEFAULTS]:number};areaLimits:{[K in keyof typeof AREA_DEFAULTS]:number};persistence:{[K in keyof typeof PERSISTENCE_DEFAULTS]:number};
  victimOutcome:HostPolicies['victimOutcome'];victimOutcomeRetryCeiling?:HostPolicies['victimOutcome'];chat:{maxPending:number};
  party:ConfiguredParty;characters?:{maxCharactersPerAccount?:number};
 };
-function fail(path:string):never {throw new Error(`world-config: ${path}`);}
+function fail(path:string):never {throw new WorldConfigError(path);}
 function detached(value:unknown):unknown {
  let nodes=0;const active=new Set<object>();
  const visit=(v:unknown,depth:number):unknown=>{if(++nodes>4096||depth>16)fail('JSON complexity');if(v===null||typeof v==='boolean'||typeof v==='string')return v;if(typeof v==='number'&&Number.isFinite(v))return v;if(!v||typeof v!=='object'||active.has(v))fail('finite acyclic JSON required');const array=Array.isArray(v);if(!array&&![Object.prototype,null].includes(Object.getPrototypeOf(v)))fail('plain JSON required');if(Object.getOwnPropertySymbols(v).length)fail('symbol keys');active.add(v);const keys=Object.keys(v);if(array&&(keys.length!==v.length||keys.some(k=>String(Number(k))!==k||Number(k)<0||Number(k)>=v.length)))fail('dense arrays required');const out:Record<string,unknown>|unknown[]=array?[]:{};for(const k of keys){const d=Object.getOwnPropertyDescriptor(v,k)!;if(!('value'in d)||k==='__proto__')fail('data fields required');Object.defineProperty(out,k,{value:visit(d.value,depth+1),enumerable:true,writable:true,configurable:true});}active.delete(v);return out;};
@@ -70,7 +70,7 @@ export function validateWorldConfig(value:unknown):ValidatedWorldConfig {
    const groups=[...populations,'echo'] as const,rules=object(w.nearby,groups,[],`${world}.nearby`);nearby=Object.fromEntries(groups.map(group=>{const rule=object(rules[group],['radius','base','max','scale'],[],`${world}.nearby.${group}`),radius=seconds(rule.radius,`${world}.${group}.radius`),max=integer(rule.max,`${world}.${group}.max`,0,group==='echo'?1:256),base=integer(rule.base,`${world}.${group}.base`,0,max),scale=rule.scale;if(typeof scale!=='number'||!Number.isFinite(scale)||scale<0||scale>Number.MAX_SAFE_INTEGER)fail(`${world}.${group}.scale`);if(group!=='echo'&&max!==population[group])fail(`${world}.${group}.max must match pool population`);const clearance=enemyRespawnClearance(group==='shallowPatrols'||group==='echo'?'scrapling':group,worldChapter(world),group==='echo'?'echo':'ordinary');if(scale>0&&max>base&&radius<=clearance)fail(`${world}.${group}.radius has no safe scaling annulus`);return[group,{radius,base,max,scale}];})) as Record<PopulationGroup,NearbySlotRule>;
   }else if(w.nearby!==undefined)fail(`${world}.nearby requires nearby-slots-v1`);
   const respawnSeconds=Object.fromEntries(kinds.map(k=>[k,seconds(respawn[k],`${world}.respawnSeconds.${k}`)]));if(respawnSeconds.echo!==canonicalEnemyRespawn('scrapling',worldChapter(world),'echo'))fail(`${world}.echo respawn must match canonical timer`);return[world,{seed:integer(w.seed,`${world}.seed`,0,0xffffffff),populationMode:mode,fixedLevels:Object.fromEntries(kinds.map(k=>[k,integer(levels[k],`${world}.fixedLevels.${k}`,1,Number.MAX_SAFE_INTEGER)])),population,respawnSeconds,...(nearby?{nearby}:{})}];
- })) as Record<WorldId,ConfiguredRegion>;
+ })) as Record<HostedWorldId,ConfiguredRegion>;
  const restore=validateRestore(c.restore);
  const resources=(raw:unknown,path:string)=>{const r=object(raw,['maxEntries','maxPayloadBytes','timeoutMs'],[],path);return{maxEntries:integer(r.maxEntries,`${path}.maxEntries`,1,Number.MAX_SAFE_INTEGER),maxPayloadBytes:integer(r.maxPayloadBytes,`${path}.maxPayloadBytes`,1,Number.MAX_SAFE_INTEGER),timeoutMs:integer(r.timeoutMs,`${path}.timeoutMs`,1,2147483647)};};
  const victimOutcome=resources(c.victimOutcome,'victimOutcome'),retry=c.victimOutcomeRetryCeiling===undefined?undefined:resources(c.victimOutcomeRetryCeiling,'victimOutcomeRetryCeiling');
@@ -80,7 +80,7 @@ export function validateWorldConfig(value:unknown):ValidatedWorldConfig {
  if(limits.maxMutationSourcesPerTick>256||limits.maxQueuedInputs>1024||limits.maxConnections>10000||limits.maxWaiting>10000||limits.maxConnectionsPerIp>limits.maxConnections||limits.maxAuthFrameBytes>limits.maxFrameBytes||limits.maxAuthFrameBytes>65536||limits.maxFrameBytes>2097152||limits.loopIntervalMs>1000||areaLimits.inputCommandsPerTick>32||persistence.maxQueuedPerCharacter>256||persistence.maxAttempts>100||persistence.maxRecoveryRounds>32)fail('unsupported operational bounds');
  for(const world of PUBLIC_WORLDS){const region=regions[world];if(Object.values(region.population).reduce((sum,n)=>sum+n,0)>limits.maxMutationSourcesPerTick)fail(`${world}.population exceeds receipt bound`);}
  let characters:{maxCharactersPerAccount?:number}|undefined;if(c.characters!==undefined){const p=object(c.characters,[],['maxCharactersPerAccount'],'characters');characters=Object.hasOwn(p,'maxCharactersPerAccount')?{maxCharactersPerAccount:integer(p.maxCharactersPerAccount,'characters.maxCharactersPerAccount',1,Number.MAX_SAFE_INTEGER)}:{};}
- let party:ConfiguredParty={enabled:false};if(c.party!==undefined){const p=object(c.party,['enabled'],['maxParties','maxEncounters','returns'],'party');if(p.enabled===false){object(p,['enabled'],[],'party disabled');}else if(p.enabled===true){const profiles=Object.keys(BOSS_PROFILES) as BossProfileId[],returns=object(p.returns,profiles,[],'party.returns'),maxParties=integer(p.maxParties,'party.maxParties',1,10000),maxEncounters=integer(p.maxEncounters,'party.maxEncounters',1,1024);if(maxEncounters>maxParties)fail('party encounter/party bounds');const destinations=Object.fromEntries(profiles.map(profile=>{const r=object(returns[profile],['world','spawn'],[],`party.returns.${profile}`);if(typeof r.spawn!=='string'||!r.spawn.length||r.spawn.length>128)fail(`party.returns.${profile}.spawn`);return[profile,{world:choice(r.world,PUBLIC_WORLDS,`party.returns.${profile}.world`),spawn:r.spawn}];})) as Extract<ConfiguredParty,{enabled:true}>['returns'];party={enabled:true,maxParties,maxEncounters,returns:destinations};}else fail('party.enabled');}
+ let party:ConfiguredParty={enabled:false};if(c.party!==undefined){const p=object(c.party,['enabled'],['maxParties','maxEncounters','returns'],'party');if(p.enabled===false){object(p,['enabled'],[],'party disabled');}else if(p.enabled===true){const profiles=HOSTED_BOSSES,returns=object(p.returns,profiles,[],'party.returns'),maxParties=integer(p.maxParties,'party.maxParties',1,10000),maxEncounters=integer(p.maxEncounters,'party.maxEncounters',1,1024);if(maxEncounters>maxParties)fail('party encounter/party bounds');const destinations=Object.fromEntries(profiles.map(profile=>{const r=object(returns[profile],['world','spawn'],[],`party.returns.${profile}`);if(typeof r.spawn!=='string'||!r.spawn.length||r.spawn.length>128)fail(`party.returns.${profile}.spawn`);return[profile,{world:choice(r.world,PUBLIC_WORLDS,`party.returns.${profile}.world`),spawn:r.spawn}];})) as Extract<ConfiguredParty,{enabled:true}>['returns'];party={enabled:true,maxParties,maxEncounters,returns:destinations};}else fail('party.enabled');}
 
  return freeze({schema:'world-startup-v1',ownership:{key:own.key,heartbeatMs:integer(optional(own,'heartbeatMs',1000),'ownership.heartbeatMs',1,60000),queryTimeoutMs:integer(optional(own,'queryTimeoutMs',1000),'ownership.queryTimeoutMs',1,60000)},assets,worlds:regions,restore,limits,areaLimits,persistence,victimOutcome,chat,...(retry?{victimOutcomeRetryCeiling:retry}:{}),party,...(characters===undefined?{}:{characters})});
 }
@@ -118,8 +118,8 @@ export function createConfiguredVisibility(catalog:ReadonlyMap<WorldId,LoadedWor
 }
 export function createConfiguredPartyPolicy(config:ConfiguredParty,catalog:ReadonlyMap<WorldId,LoadedWorldDefinition>):HostPolicies['party'] {
  if(!config.enabled)return undefined;
- for(const profile of Object.keys(BOSS_PROFILES) as BossProfileId[]){const r=config.returns[profile],world=catalog.get(r.world);if(!world||!world.encounterDefinitions.has(profile))fail(`party return world ${profile}`);const d=world.publicDefinition;if(![d.spawn.id,d.recall.id,...Object.values(d.pois).map(p=>p.id)].includes(r.spawn))fail(`party return POI ${profile}`);}
- return Object.freeze({maxParties:config.maxParties,maxEncounters:config.maxEncounters,returnSpawn:(world:WorldId,profile:BossProfileId)=>{const r=config.returns[profile];if(r.world!==world)fail('party return world mismatch');return r.spawn;}});
+ for(const profile of HOSTED_BOSSES){const r=config.returns[profile],world=catalog.get(r.world);if(!world||!world.encounterDefinitions.has(profile))fail(`party return world ${profile}`);const d=world.publicDefinition;if(![d.spawn.id,d.recall.id,...Object.values(d.pois).map(p=>p.id)].includes(r.spawn))fail(`party return POI ${profile}`);}
+ return Object.freeze({maxParties:config.maxParties,maxEncounters:config.maxEncounters,returnSpawn:(world:WorldId,profile:BossProfileId)=>{const hosted=HOSTED_BOSSES.find(id=>id===profile);if(!hosted)fail('party profile unavailable');const r=config.returns[hosted];if(r.world!==world)fail('party return world mismatch');return r.spawn;}});
 }
 async function checkedRead(file:URL,maxBytes:number):Promise<Buffer> {const info=await stat(file);if(!info.isFile()||info.size>maxBytes)fail('asset byte budget');const bytes=await readFile(file);if(bytes.byteLength>maxBytes)fail('asset byte budget');return bytes;}
 async function loadCheckedCatalog(assets:URL,c:ValidatedWorldConfig):Promise<ReadonlyMap<WorldId,LoadedWorldDefinition>> {
@@ -127,8 +127,8 @@ async function loadCheckedCatalog(assets:URL,c:ValidatedWorldConfig):Promise<Rea
  const manifest=object(detached(JSON.parse((await checkedRead(new URL(c.assets.manifest,assets),c.assets.maxManifestBytes)).toString('utf8'))),['format','version','source','artifacts'],[],'asset manifest');
  if(manifest.format!=='crabcraft-world-manifest'||manifest.version!==1||manifest.source!==c.assets.source)fail('asset manifest version/source');const entries=object(manifest.artifacts,PUBLIC_WORLDS,[],'asset manifest artifacts');let total=0;
  const expected=new Map<WorldId,string>();for(const world of PUBLIC_WORLDS){const m=object(entries[world],['file','bytes','sha256'],[],`manifest.${world}`);if(m.file!==`collision-${world}.json`)fail(`manifest.${world}.file`);const size=integer(m.bytes,`manifest.${world}.bytes`,1,c.assets.maxBakeBytes);total+=size;if(total>c.assets.maxTotalBakeBytes)fail('asset total byte budget');const digest=hash(m.sha256,`manifest.${world}.sha256`),bytes=await checkedRead(new URL(m.file as string,assets),c.assets.maxBakeBytes);if(bytes.byteLength!==size||createHash('sha256').update(bytes).digest('hex')!==digest)fail(`asset integrity ${world}`);expected.set(world,digest);}
- const policies=Object.fromEntries(PUBLIC_WORLDS.map(world=>[world,createConfiguredAreaPolicy(c.worlds[world])])) as Record<WorldId,AreaPolicy>;
- const catalog=await loadWorldCatalog({directory:assets,expectedBakeSource:c.assets.source,maxBakeBytes:c.assets.maxBakeBytes,maxCells:c.assets.maxCells,configs:c.worlds,policies,seeds:Object.fromEntries(PUBLIC_WORLDS.map(w=>[w,c.worlds[w].seed])) as Record<WorldId,number>,variants:createWorldVariants});
+ const policies=Object.fromEntries(PUBLIC_WORLDS.map(world=>[world,createConfiguredAreaPolicy(c.worlds[world])])) as Record<HostedWorldId,AreaPolicy>;
+ const catalog=await loadWorldCatalog({directory:assets,expectedBakeSource:c.assets.source,maxBakeBytes:c.assets.maxBakeBytes,maxCells:c.assets.maxCells,configs:c.worlds,policies,seeds:Object.fromEntries(PUBLIC_WORLDS.map(w=>[w,c.worlds[w].seed])) as Record<HostedWorldId,number>,variants:createWorldVariants});
  for(const [world,data]of catalog){if(data.artifactHash!==expected.get(world))fail(`asset changed while loading ${world}`);if(data.publicDefinition.enemies.length>c.limits.maxMutationSourcesPerTick)fail(`${world}.actual population exceeds receipt bound`);for(const spawn of data.publicDefinition.enemies){data.policy.enemyPopulation(spawn,0);for(const value of Object.values(enemyStats(spawn.kind,spawn.fixedLevel,worldChapter(world),spawn.role)))if(typeof value==='number'&&(!Number.isFinite(value)||Math.abs(value)>Number.MAX_SAFE_INTEGER))fail(`${world}.unsafe derived enemy stats`);}}return catalog;
 }
 export interface ConfiguredWorldOptions {pool:Pool;admission:WorldTicketRegistry;assets:URL;config:unknown;ledgerConfig?:unknown;originAllowed(origin:string,req:IncomingMessage):boolean;clientIp(req:IncomingMessage):string}

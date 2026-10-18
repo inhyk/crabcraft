@@ -1,0 +1,26 @@
+# A release PR (dev -> main) must carry a package.json version above the last v<version> tag,
+# so every release gets its own version on the title screen and its own tag (AGENTS.md 버전과 릴리스).
+name: Release version
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: node tools/release-version.mjs --check
+      - run: node --test tests/release-version.test.mjs

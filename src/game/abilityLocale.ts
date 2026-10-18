@@ -12,9 +12,9 @@ const korean:Record<string,readonly [string,string]>={
   'steam-blink':['증기 점멸','HP 10을 회복하고 앞으로 최대 8m 순간이동합니다.'],
   'tidal-nova':['해일 폭발','주변에 물결을 터뜨려 적을 밀쳐냅니다.'],
   smite:['성스러운 일격','성스러운 빛으로 대상을 공격합니다.'],
-  'mend-shell':['껍질 치유','최대 체력의 35%를 회복합니다.'],
+  'mend-shell':['껍질 치유','자신과 12m 안에 보이는 아군의 최대 체력을 35%씩 회복합니다.'],
   'barnacle-ward':['따개비 보호막','10초 동안 피해를 흡수하는 보호막을 얻습니다.'],
-  'holy-tide':['성스러운 파도','주변 적에게 피해를 주고 자신의 체력을 회복합니다.'],
+  'holy-tide':['성스러운 파도','주변 적에게 피해를 주고 자신과 6m 안에 보이는 아군의 최대 체력을 15%씩 회복합니다.'],
 };
 export const abilityName=(ab:AbilityDef)=>t(korean[ab.id]?.[0]??ab.name,ab.name);
 export const abilityDescription=(ab:AbilityDef)=>t(korean[ab.id]?.[1]??ab.description,ab.description);

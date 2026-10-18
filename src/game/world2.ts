@@ -242,7 +242,7 @@ export class HiddenWorld {
     if(this.chapter===2&&this.rendered)return;
     if(this.chapter>=3)this.returnToShore();
     const g=this.game,w=g.world;
-    g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;
+    g.emberBoss.unit.hidden=g.emberBoss.freed.hidden=g.skyBoss.unit.hidden=g.skyBoss.freed.hidden=true;g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;
     g.ending.cancel();
     g.hud.dialogue.close();
     g.hud.messages.closeDiscovery();
@@ -299,7 +299,7 @@ export class HiddenWorld {
     if(this.chapter!==1)this.returnToShore();
     // Capture the original homes/POIs once using the same restoration path as World II.
     if(!this.baseHomes.length){this.enter(authority);this.returnToShore();}
-    g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;
+    g.emberBoss.unit.hidden=g.emberBoss.freed.hidden=g.skyBoss.unit.hidden=g.skyBoss.freed.hidden=true;g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;
     g.ending.cancel();g.hud.dialogue.close();g.hud.messages.closeDiscovery();
     this.chapter=3;this.rendered=true;this.baseRoot.visible=false;this.root.visible=false;this.third.root.visible=true;this.resetPortalArrival();
     const w=g.world,third=this.third;w.heightAt=(x,z)=>third.height(x,z);
@@ -360,7 +360,8 @@ export class HiddenWorld {
     g.npcs.forEach((n,i)=>{const[x,z]=island.town[i];n.poi.position.set(x,island.height(x,z),z);n.unit.hidden=false;n.unit.teleport(w,x,z,Math.PI);});
     const walks=island.town.map(([x,z])=>new THREE.Vector3(x,island.height(x,z),z));g.townsfolk.forEach((f,i)=>{const p=walks[i%walks.length];f.unit.hidden=false;f.unit.teleport(w,p.x,p.z+2);f.relocate(walks,1.5);});
     this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,island.height(0,26),26),new THREE.Vector3(0,island.height(0,-24),-24),new THREE.Vector3(0,island.height(0,-72),-72)],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
-    for(const b of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss])b.unit.hidden=b.freed.hidden=true;
+    for(const b of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss,g.emberBoss,g.skyBoss])b.unit.hidden=b.freed.hidden=true;
+    const frontierBoss=chapter===5?g.emberBoss:g.skyBoss;frontierBoss.unit.hidden=['dormant','dead'].includes(frontierBoss.state);
     g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const slot=e.islandSlot,index=slot===null?i:slot,x=(index%2?1:-1)*(44+index%4*7),z=20-Math.floor(index/2)*12;e.home.set(x,island.height(x,z),z);if(authority)e.respawnAt(x,z);e.refreshAppearance();});
     g.enemies.filter(e=>e.isAdd).forEach(e=>e.despawn());g.quests.setChapter(chapter);g.hud.hints.setChapter(chapter);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
     g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
@@ -377,10 +378,11 @@ export class HiddenWorld {
     // World II has its own lighting. Restore the untouched shore atmosphere and fog.
     this.game.world.setMood(this.game.world.getEnvironment().mood,true);
     const g=this.game;
+    g.emberBoss.unit.hidden=g.emberBoss.freed.hidden=g.skyBoss.unit.hidden=g.skyBoss.freed.hidden=true;
     g.enemies.forEach((e,i)=>{if(this.baseHomes[i])e.home.copy(this.baseHomes[i]);if(this.baseNames[i])e.unit.name=this.baseNames[i];if(!e.isAdd&&!e.isEcho&&!e.isIslandOnly&&g.multiplayer?.battle.authority!==false)e.respawnAt(e.home.x,e.home.z);e.refreshAppearance();if(e.isEcho||e.isIslandOnly)e.despawn();});
     for(const n of g.npcs){n.unit.name=n.def.name;n.unit.title=n.def.title;}
     this.resetPortalArrival();
-    g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;g.worldBoss.unit.hidden=true;g.dawnBoss.unit.hidden=g.dawnBoss.freed.hidden=true;
+    g.emberBoss.unit.hidden=g.emberBoss.freed.hidden=g.skyBoss.unit.hidden=g.skyBoss.freed.hidden=true;g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;g.worldBoss.unit.hidden=true;g.dawnBoss.unit.hidden=g.dawnBoss.freed.hidden=true;
     for(const b of [g.boss,g.finalBoss])b.unit.hidden=b.state==='dormant'||b.state==='dead';
     for(const u of [...g.npcs.map(n=>n.unit),...g.townsfolk.map(t=>t.unit)])u.hidden=false;
     g.player.respawn();g.player.unit.teleport(g.world,this.shorePortal.root.position.x,this.shorePortal.root.position.z+5,Math.PI);g.follow.cut();
@@ -401,7 +403,8 @@ export class HiddenWorld {
     const town=w.spawns.find(s=>s.id==='townsfolk');if(town)for(const t of this.game.townsfolk)t.relocate(town.points,town.radius);
   }
   /** Static world/camera presentation for a committed server world; never moves an actor. */
-  observeChapter(chapter:1|2|3|4):void {
+  observeChapter(chapter:1|2|3|4|5|6):void {
+    if(chapter===5||chapter===6)throw new Error('This server does not host that world');
     const g=this.game,w=g.world;if(this.chapter===chapter)return;
     if(!this.basePois.size)for(const [id,poi]of Object.entries(w.pois))this.basePois.set(id,{position:poi.position.clone(),yaw:poi.yaw});
     this.chapter=chapter;this.rendered=chapter!==1;this.baseRoot.visible=chapter===1;this.root.visible=chapter===2;this.third.root.visible=chapter===3;this.fourth.root.visible=chapter===4;this.fifth.root.visible=false;this.sixth.root.visible=false;

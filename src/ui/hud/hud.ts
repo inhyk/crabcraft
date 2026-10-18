@@ -110,7 +110,7 @@ export class Hud {
     this.game.journey?.refreshLanguage();
     this.hints.refreshLanguage();
     this.minimap.refreshLanguage();
-    for(const boss of [this.game.boss,this.game.finalBoss,this.game.worldBoss,this.game.dawnBoss])boss.refreshLanguage();
+    for(const boss of [this.game.boss,this.game.finalBoss,this.game.worldBoss,this.game.dawnBoss,this.game.frostBoss,this.game.emberBoss,this.game.skyBoss])boss.refreshLanguage();
     this.game.sink.refreshLanguage();
     this.skipHint.textContent=t('Space를 눌러 계속하기','Press Space to continue');
     if(this.deathEl)this.showDeath(true);
