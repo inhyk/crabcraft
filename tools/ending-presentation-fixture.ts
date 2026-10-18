@@ -9,7 +9,7 @@ scene.add(new THREE.HemisphereLight(0xd9f2ff,0x4b3d20,2.8));const light=new THRE
 const floor=new THREE.Mesh(new THREE.CircleGeometry(13,80),new THREE.MeshStandardMaterial({color:0x846947,roughness:.9}));floor.rotation.x=-Math.PI/2;floor.position.y=-.015;scene.add(floor);
 const castRoot=new THREE.Group();scene.add(castRoot);
 const liveSentinel=new THREE.Group();liveSentinel.position.set(101,202,303);liveSentinel.userData=Object.freeze({hp:100,xp:123,coins:45,world:'w4'});scene.add(liveSentinel);
-const watermark=document.createElement('div');watermark.textContent='PRESENTATION-ONLY FIXTURE - NOT EARNED STORY COMPLETION';watermark.style.cssText='position:fixed;bottom:0;background:#722;color:white;padding:8px;width:100%;text-align:center;font:14px sans-serif;z-index:100';document.body.append(watermark);
+const watermark=document.createElement('div');watermark.textContent='PRESENTATION-ONLY FIXTURE - NOT EARNED STORY COMPLETION';watermark.style.cssText='position:fixed;bottom:0;background:#722;color:white;padding:8px;width:100%;text-align:center;font:14px sans-serif;z-index:100;pointer-events:none';document.body.append(watermark);
 const commands:unknown[]=[],cues:string[]=[];
 const view=new EndingPresentationView({root:castRoot,camera,parent:document.body,command:(id,kind)=>commands.push({id,kind}),cue:value=>cues.push(value),error:message=>console.error(message)});
 let running=true;function draw(){if(!running)return;view.render();renderer.render(scene,camera);requestAnimationFrame(draw);}draw();
