@@ -42,6 +42,9 @@ BEGIN
   IF expected IS NULL OR actual<>expected OR jsonb_array_length(m->'recipients')<>expected THEN
     RAISE EXCEPTION 'incomplete dungeon completion manifest';
   END IF;
+  IF m->>'kind' IS DISTINCT FROM 'dungeon-clear-v1' OR m->'candidate'->'run' IS DISTINCT FROM jsonb_build_object('area',a,'runId',r::text) THEN
+    RAISE EXCEPTION 'dungeon manifest run does not match its row';
+  END IF;
   IF EXISTS(SELECT 1 FROM world_dungeon_awards w WHERE w.area_id=a AND w.run_id=r AND (
     NOT EXISTS(SELECT 1 FROM jsonb_array_elements(m->'recipients') e WHERE e->>'characterId'=w.character_id::text AND e->>'accountId'=w.account_id)
     OR w.payload_json::jsonb<>jsonb_build_object('schema','dungeon-award-v1','id',w.award_id,'run',m->'candidate'->'run','tier',m->'candidate'->'tier','recipient',w.character_id::text,'baseXp',m->'candidate'->'baseXp','coins',m->'candidate'->'coins')
