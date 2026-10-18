@@ -16,7 +16,7 @@ interface Credit { character:CharacterId; cogEligible:boolean; cogMisses:number;
 export type SourceLedgerLimits={maxDirtyCreditEntries:number;maxDirtyCreditBytes:number;maxPendingDeaths:number;maxStagedBytes:number};
 export type OutcomeCapture={token:string;generation:number;victim:EntityRef;recipe:DeathRecipe;initialCursor:PlannerCursor};
 type LiveCredit={victim:EntityRef;throughVersion:number;summary:ContributionSummary|null};
-type StagedDeath={capture:OutcomeCapture;reservation:DeathReservation;cursor:PlannerCursor;verifiedResidents:Set<string>;bytes:number};
+type StagedDeath={capture:OutcomeCapture;reservation:Pick<DeathReservation,'random'|'residentGrants'>;cursor:PlannerCursor;verifiedResidents:Set<string>;bytes:number};
 const bytes=(value:unknown):number=>new TextEncoder().encode(JSON.stringify(value)).length;
 const compare=(a:string,b:string):number=>a<b?-1:a>b?1:0;
 interface VictimCredit {victim:EntityRef;contributors:Map<CharacterId,Credit>}
@@ -47,7 +47,7 @@ export class WorldRules {
  private readonly preparedVictims=new Set<string>();
  private readonly interactions:InteractionRules;
  private readonly exploration:NumericExploration;
- constructor(services:AreaServices,options?:{mode:'external-durable';limits:SourceLedgerLimits}){this.services=services;this.ledgerMode=options?.mode??'retained';this.sourceLimits=options?copy(options.limits):null;if(this.sourceLimits)for(const n of Object.values(this.sourceLimits))if(!Number.isSafeInteger(n)||n<=0)throw new Error('ledger-invalid-limits');this.dirty=this.sourceLimits?new DirtyContributionLedger(services.id,{maxEntries:this.sourceLimits.maxDirtyCreditEntries,maxBytes:this.sourceLimits.maxDirtyCreditBytes}):null;this.interactions=new InteractionRules(services,this);this.exploration=new NumericExploration(services);}
+ constructor(services:AreaServices,options?:{mode:'external-durable';limits:SourceLedgerLimits}){if(options&&(options.mode!=='external-durable'||new TextEncoder().encode(services.id).length>256))throw new Error('ledger-invalid-source-options');this.services=services;this.ledgerMode=options?.mode??'retained';this.sourceLimits=options?copy(options.limits):null;if(this.sourceLimits)for(const n of Object.values(this.sourceLimits))if(!Number.isSafeInteger(n)||n<=0)throw new Error('ledger-invalid-limits');this.dirty=this.sourceLimits?new DirtyContributionLedger(services.id,{maxEntries:this.sourceLimits.maxDirtyCreditEntries,maxBytes:this.sourceLimits.maxDirtyCreditBytes}):null;this.interactions=new InteractionRules(services,this);this.exploration=new NumericExploration(services);}
  recordContribution(victim:EntityRef,attacker:EntityRef,damage:number):void {if(this.dirty){this.recordExternalContribution(victim,attacker,damage);return;}if(!Number.isFinite(damage)||damage<=0||victim.area!==this.services.id)return;const player=this.services.player(attacker),unit=this.services.getUnit(victim);if(!player||!unit||unit.reaction!=='hostile')return;const k=key(victim);if(this.settled.has(k))return;let entry=this.credits.get(k);if(!entry){entry={victim:copy(victim),contributors:new Map()};this.credits.set(k,entry);}const p=player.state;if(!entry.contributors.has(p.character))this.contributionCount++;entry.contributors.set(p.character,{character:p.character,cogEligible:activeObjective(p.quests,'collect-cog'),cogMisses:p.cogMisses,flags:copy(p.flags)});}
  onUnitDied(victim:EntityRef,killer:EntityRef|null):void {
   if(this.dirty){this.onExternalDeath(victim,killer);return;}
@@ -106,7 +106,7 @@ export class WorldRules {
  private requireExternal():DirtyContributionLedger {if(!this.dirty)throw new Error('ledger-external-mode-required');return this.dirty;}
  private assertPrepared():void {if(this.preparedRoster===null||this.preparedRoster!==this.rosterKey())throw new Error('ledger-step-not-prepared');}
  /** Conservative UTF8 data budget. Scalar/token/cursor allowance includes maximum safe integer widths. */
- private stageCharge(recipe:DeathRecipe,grants:readonly EarnedGrant[]):number {return bytes(recipe)+bytes(grants)+bytes(recipe.overrides.map(c=>c.character))+bytes(this.services.id)+2048;}
+ private stageCharge(recipe:DeathRecipe,grants:readonly EarnedGrant[]):number {const max=Number.MAX_SAFE_INTEGER,cursor={schema:'world-planner-v1',pageSequence:max,afterCharacter:'\"'.repeat(512),recipientCount:max,randomDraws:max,randomState:0xffffffff};return bytes({capture:{token:JSON.stringify([this.services.id,'death',max]),generation:max,victim:recipe.victim,recipe,initialCursor:cursor},reservation:{random:{startState:0xffffffff,finalState:0xffffffff,drawCount:max},residentGrants:grants},cursor,verifiedResidents:recipe.overrides.map(c=>c.character)});}
  /** Called outside the Area running/fail-stop block before any accepted input or damage. */
  preflightCreditCapacity(maxVictimLives:number,residents:readonly ContributionSnapshot[]):void {
   const dirty=this.requireExternal(),limits=this.sourceLimits!;this.preparedRoster=null;
@@ -118,7 +118,7 @@ export class WorldRules {
   dirty.assertCapacity(maxVictimLives*worst.length,creditBytes);
   // All local entitlements and stages must fit before the first accepted hit. IO wait is recoverable.
   const synthetic:DeathRecipe={schema:'world-death-v1',victim,world:this.services.world,throughVersion:max,expectedContributors:max,expectedRandomDraws:max,facts:{kind:'boss',level:max,role:'ordinary',profile:'eclipse',xp:max,coins:max},overrides:worst,random:{algorithm:'mulberry32-v1',state:0xffffffff}};
-  const worstGrants=worst.map(c=>({id:JSON.stringify([victim.area,victim.id,victim.life,c.character]),victim,recipient:c.character,xp:max,coins:max,objectives:[{kind:'clear-encounter-blessing',amount:1},{kind:'patrol-kill',amount:1},{kind:'kill-scrapling',amount:1},{kind:'kill-scavenger',amount:1},{kind:'cog-roll',amount:.12345678901234568},{kind:'eclipse-boss',amount:1}],flags:['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared']}));
+  const worstGrants=worst.map(c=>({id:JSON.stringify([victim.area,victim.id,victim.life,c.character]),victim,recipient:c.character,xp:max,coins:max,objectives:[{kind:'clear-encounter-blessing',amount:1},{kind:'patrol-kill',amount:1},{kind:'kill-scrapling',amount:1},{kind:'kill-scavenger',amount:1},{kind:'cog-roll',amount:.0000012345678901234567},{kind:'eclipse-boss',amount:1}],flags:['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared']}));
   const stagedBound=this.stageCharge(synthetic,worstGrants)*maxVictimLives;
   if(!Number.isSafeInteger(creditBytes)||!Number.isSafeInteger(stagedBound)||maxVictimLives>limits.maxPendingDeaths||stagedBound>limits.maxStagedBytes||maxVictimLives>256)throw new Error('ledger-unsupported-step-capacity');
   if(this.stagedDeaths.size)throw new Error('ledger-outcomes-pending');
@@ -150,7 +150,7 @@ export class WorldRules {
   e=this.newLiveCredit(victim);const reservation=reserveDeathOutcome({schema:'world-death-v1',victim:copy(victim),world:s.world,throughVersion:e.throughVersion,facts,overrides:[...this.residentCreditSnapshots()],random:{algorithm:s.random.algorithm,state:s.random.state()}},e.summary!,this.dirty!.writesForVictim(victim));
   const recipe=reservation.recipe,initialCursor=initialPlannerCursor(recipe),token=JSON.stringify([s.id,'death',this.nextOutcomeToken]),capture=immutable({token,generation:this.nextOutcomeToken,victim:copy(victim),recipe,initialCursor}),charge=this.stageCharge(recipe,reservation.residentGrants);
   if(this.stagedDeaths.size>=this.sourceLimits!.maxPendingDeaths||this.stagedBytes+charge>this.sourceLimits!.maxStagedBytes)throw new Error('ledger-atomic-stage-bound-exceeded');
-  s.preflightEarnedGrants(reservation.residentGrants);this.nextOutcomeToken++;this.stagedDeaths.set(token,{capture,reservation,cursor:initialCursor,verifiedResidents:new Set(),bytes:charge});this.stagedBytes+=charge;
+  s.preflightEarnedGrants(reservation.residentGrants);this.nextOutcomeToken++;this.stagedDeaths.set(token,{capture,reservation:{random:reservation.random,residentGrants:reservation.residentGrants},cursor:initialCursor,verifiedResidents:new Set(),bytes:charge});this.stagedBytes+=charge;
   // Stage first so fail-stop recovery retains every entitlement even if an event buffer faults.
   this.currentSettled.set(victim.id,victim.life);s.reserveOutcomeRandom(reservation.random.startState,reservation.random.drawCount,reservation.random.finalState);
   for(const grant of reservation.residentGrants)this.applyOwnedGrant(grant);
