@@ -1,6 +1,8 @@
 import type { AreaDefinition, EnemySpawn, Poi, WorldQuery } from '../types.ts';
 export interface WorldDefinitionConfig {
  readonly query:WorldQuery;
+ /** Dawn prop anchors use raw collision, without the actor island-boundary wrapper. */
+ readonly personalProps?:Pick<WorldQuery,'heightAt'|'resolveCollision'>;
  /** Explicit host balance configuration; no production level/density defaults. */
  readonly fixedLevels:Readonly<Record<'scrapling'|'scavenger'|'jellyfish'|'echo',number>>;
  readonly population:Readonly<Record<'scrapling'|'scavenger'|'jellyfish',number>>&{readonly shallowPatrols?:number};
