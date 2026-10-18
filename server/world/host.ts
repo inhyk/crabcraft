@@ -1,5 +1,6 @@
 import { randomUUID, randomBytes } from 'node:crypto';
-import { shownName } from '../chat/safety.ts';
+import { CHAT, shownName } from '../chat/safety.ts';
+import type { WorldChatService, ChatParticipant, ChatPreferences, ChatResult } from './chat.ts';
 import { isDeepStrictEqual } from 'node:util';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -17,7 +18,7 @@ import type { HostOwnership } from './ownership.ts';
 import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
-import { InputSession, type PreparedInput } from './gameplay/intents.ts';
+import { InputSession, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
 import { prepareObservationSnapshot } from './gameplay/protocol.ts';
 import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
 import type { CommandResult } from './gameplay/events.ts';
@@ -41,6 +42,7 @@ export interface HostPolicies {
   readonly persistence: { maxQueuedPerCharacter: number; maxAttempts: number; retryMs: number; maxRecoveryRounds: number };
   readonly areaLimits: { eventCount: number; inputCommandsPerTick: number; timers: number; projectiles: number };
   readonly restore: RestorePolicy;
+  readonly chat?: { maxPending: number };
   readonly party?: { maxParties: number; maxEncounters: number; returnSpawn(world: WorldId, profile: BossProfileId): string };
   /** A clock anomaly is an explicit restore failure, never a hidden offline-policy choice. */
   offlineSeconds(character: StoredCharacter, nowWallMs: number): number;
@@ -54,6 +56,7 @@ export interface ActualWorldHostDeps {
   codec: CoreCharacterCodec;
   gameplay: { catalog: GameplayCatalog; create(): GameplayProtocol };
   ownership: HostOwnership;
+  chat?: WorldChatService;
   policies: HostPolicies;
   originAllowed(origin: string, req: IncomingMessage): boolean;
   clientIp(req: IncomingMessage): string;
@@ -69,7 +72,7 @@ export interface ActualWorldHost {
   stats(): Readonly<Record<string, number | boolean>>;
 }
 interface Slot { kind: 'public' | 'party'; world: WorldId; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
-interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; replay: GrantJson[]; returnTo?: { world: WorldId; spawn: string } }
+interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; replay: GrantJson[]; pendingReplay: boolean; returnTo?: { world: WorldId; spawn: string } }
 interface Party { code: string; leader: string; members: Map<string, string>; pvp: boolean; encounter?: Slot }
 interface Connection {
   ws: WebSocket; ip: string; origin: string; generation: number; closed: boolean;
@@ -80,11 +83,12 @@ interface Connection {
   queueKey?: string;
   baselineSequence: number;
   results: CommandResult[];
+  chatBusy: boolean; chatPreferences?: ChatPreferences; chatNeedsPreferences: boolean;
   discoveries: { unit: EntityRef; id: string; startOrder: number; inputSequence: number; commandIndex: number }[];
 }
 interface Waiting { connection: Connection; record: StoredCharacter; replay: GrantJson[]; world: WorldId }
 interface PendingTravel { actor: Actor; source: Slot; ref: EntityRef; gate: string; destination: WorldId }
-const HOST_PARTY_COMMANDS = new Set(['partyCreate', 'partyJoin', 'partyLeave', 'partyPvp', 'encounterLeave']);
+const HOST_COMMAND_KINDS = new Set(HOST_COMMANDS);
 const ECONOMIC_INTERACTIONS = new Set<string>([...TREASURES.map(t => t.id), LIGHTHOUSE_SECRET.id]);
 const sameRef = (a: EntityRef, b: EntityRef) => a.area === b.area && a.id === b.id && a.life === b.life;
 const buffer = (raw: RawData) => Buffer.isBuffer(raw) ? raw : raw instanceof ArrayBuffer ? Buffer.from(raw) : Buffer.concat(raw);
@@ -100,6 +104,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   if (!Number.isSafeInteger(p.persistence.maxRecoveryRounds) || p.persistence.maxRecoveryRounds < 0 || p.persistence.maxRecoveryRounds > 32 ||
     p.maxAuthFrameBytes > p.maxFrameBytes || p.maxConnectionsPerIp > p.maxConnections) throw new Error('invalid host recovery/frame limits');
   if (p.party && (!Number.isSafeInteger(p.party.maxParties) || p.party.maxParties < 1 || !Number.isSafeInteger(p.party.maxEncounters) || p.party.maxEncounters < 1)) throw new Error('invalid party capacity');
+  if (!!deps.chat !== !!p.chat || p.chat && (!Number.isSafeInteger(p.chat.maxPending) || p.chat.maxPending < 1)) throw new Error('explicit chat pending limit required');
   deps.ownership.assertOwned();
   const registry = new InMemoryCharacterRegistry();
   const transfers = new InMemoryTransferCoordinator(registry);
@@ -117,7 +122,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const persistence = new PersistenceCoordinator(deps.characters, deps.ownership, { ...p.persistence, now: deps.nowMonotonicMs });
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
   let accepting = true; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let timer: ReturnType<typeof setTimeout> | undefined;
-  let generation = 1; let unresolved = 0;
+  let generation = 1; let unresolved = 0; let pendingChat = 0;
+  const chatTargets = new Map<string, { participant: ChatParticipant; expires: number }>();
   const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
     authFailures: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
   const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
@@ -242,6 +248,66 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       returnRequests.set(character, { actor, leaveParty: false });
     }
   }
+  function participantOf(actor: Actor): ChatParticipant {
+    return { accountId: actor.record.accountId, ref: { ...actor.ref }, name: shownName(actor.record.identity.appearance.name), partyId: memberParty.get(actor.record.characterId)?.code ?? null };
+  }
+  const refKey = (ref: EntityRef) => JSON.stringify([ref.area, ref.id, ref.life]);
+  function rememberChatTarget(actor: Actor) {
+    if (!deps.chat) return;
+    const now = deps.nowMonotonicMs();
+    for (const [key, item] of chatTargets) if (item.expires <= now) chatTargets.delete(key);
+    const participant = participantOf(actor), key = refKey(actor.ref);
+    chatTargets.delete(key); chatTargets.set(key, { participant, expires: now + CHAT.reportMs });
+    while (chatTargets.size > p.maxConnections * 8) chatTargets.delete(chatTargets.keys().next().value!);
+  }
+  function chatScope(c: Connection): string {
+    const actor = c.actor!, party = memberParty.get(actor.record.characterId);
+    return JSON.stringify([c.generation, actor.generation, c.stream, actor.ref, party?.code ?? null, party ? [...party.members.keys()] : [], party?.pvp ?? false]);
+  }
+  function chatCommand(c: Connection, command: Extract<HostCommand, { kind: `chat${string}` }>, inputSequence?: number) {
+    const operation = command.kind === 'chatSay' ? 'say' : command.kind === 'chatPreferences' ? 'preferences' : command.kind === 'chatBlock' ? 'block' : command.kind === 'chatMute' ? 'mute' : 'report';
+    const reply = (value: Omit<Extract<WorldControl, { type: 'chatResult' }>, 'type' | 'inputSequence' | 'operation'>) => {
+      if (inputSequence !== undefined) sendControl(c, { type: 'chatResult', inputSequence, operation, ...value });
+    };
+    if (!deps.chat || !p.chat || c.chatBusy || pendingChat >= p.chat.maxPending || !c.actor || !c.stream || frozen || draining || deps.ownership.closed.aborted) { reply({ ok: false, error: 'unavailable' }); return; }
+    const actor = c.actor, scope = chatScope(c), sender = participantOf(actor);
+    const recipients = [...actors.values()].filter(a => a.connection && !a.connection.closed && (command.kind === 'chatSay' && command.channel === 'party' ? sender.partyId && memberParty.get(a.record.characterId)?.code === sender.partyId : a.slot === actor.slot))
+      .map(a => ({ actor: a, connection: a.connection!, scope: chatScope(a.connection!), participant: participantOf(a) }));
+    let target: ChatParticipant | undefined;
+    if ('target' in command) {
+      const current = [...actors.values()].find(a => sameRef(a.ref, command.target));
+      const remembered = chatTargets.get(refKey(command.target));
+      target = current ? participantOf(current) : remembered && remembered.expires > deps.nowMonotonicMs() ? remembered.participant : undefined;
+      if (!target) { reply({ ok: false, error: 'invalid' }); return; }
+    }
+    c.chatBusy = true; pendingChat++; if (inputSequence === undefined) c.chatNeedsPreferences = false;
+    let task: Promise<ChatResult<object>>;
+    if (command.kind === 'chatSay') task = deps.chat.say(sender, command.text, recipients.map(r => r.participant), command.channel);
+    else if (command.kind === 'chatPreferences') {
+      const { kind: _kind, ...change } = command;
+      task = Object.keys(change).length ? deps.chat.setPreferences(sender.accountId, change) : deps.chat.preferences(sender.accountId);
+    } else if (command.kind === 'chatBlock') task = deps.chat.block(sender.accountId, target!, command.blocked);
+    else if (command.kind === 'chatMute') task = deps.chat.mute(sender.accountId, target!, command.muted);
+    else task = deps.chat.report(sender, target!, sender.ref.area, command.reason);
+    void task.catch(() => ({ ok: false as const, error: 'unavailable' as const })).then(result => enqueue(() => {
+      pendingChat--; c.chatBusy = false;
+      if (c.closed || c.actor !== actor || !c.stream || chatScope(c) !== scope || deps.ownership.closed.aborted || frozen || draining) return;
+      deps.ownership.assertOwned();
+      if (!result.ok) { reply(result); return; }
+      if (command.kind === 'chatPreferences') {
+        const preference = result as ChatResult<ChatPreferences> & { ok: true };
+        c.chatPreferences = { enabled: preference.enabled, partyOnly: preference.partyOnly }; c.chatNeedsPreferences = false;
+        sendControl(c, { type: 'chatPreferences', ...c.chatPreferences }); reply({ ok: true });
+      } else if (command.kind === 'chatSay') {
+        const said = result as Awaited<ReturnType<WorldChatService['say']>> & { ok: true };
+        for (const recipient of recipients) if (!recipient.connection.closed && recipient.connection.actor === recipient.actor && chatScope(recipient.connection) === recipient.scope && said.recipients.some(ref => sameRef(ref, recipient.participant.ref)))
+          sendControl(recipient.connection, { type: 'chatLine', channel: command.channel, line: said.line });
+        reply({ ok: true });
+      } else if (command.kind === 'chatBlock') reply({ ok: true, target: command.target, blocked: command.blocked });
+      else if (command.kind === 'chatMute') reply({ ok: true, target: command.target, muted: command.muted });
+      else reply({ ok: true, target: command.target }); // Global moderation state remains internal.
+    }));
+  }
   function failClosed() {
     accepting = false; frozen = true;
     for (const c of connections) close(c, 'host-unavailable', true);
@@ -267,6 +333,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     actor.slot.area.resetInputSession(actor.ref); c.phase = 'admitted'; c.lastInput = deps.nowMonotonicMs(); c.timedOut = false;
     json(c, { type: 'world-bound', ...c.stream });
     if (p.party) publishParty(c);
+    rememberChatTarget(actor); c.chatNeedsPreferences = !!deps.chat;
   };
   const attach = (request: Waiting): boolean => {
     const c = request.connection;
@@ -287,7 +354,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       stage = slot.area.stageRestoredArrival(admission, checkpoint, prepareRestore(checkpoint, offline, p.restore));
       if (!registry.compareAndSwap(request.record.characterId, null, stage.newRef)) throw new Error('character ownership conflict');
       const ref = slot.area.activateRestoredArrival(stage.token); slot.area.releaseAdmission(admission.token);
-      const actor: Actor = { record: request.record, slot, ref, connection: null, detachedAt: null, generation: generation++, replay: request.replay };
+      const actor: Actor = { record: request.record, slot, ref, connection: null, detachedAt: null, generation: generation++, replay: request.replay, pendingReplay: true };
       actors.set(request.record.characterId, actor); bootstrap(c, actor); return true;
     } catch {
       if (stage) slot.area.abortArrival(stage.token);
@@ -408,13 +475,13 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const load = (c: Connection, characterId: string) => {
     const attempt = c.generation, binding = c.binding!; c.phase = 'loading';
-    void Promise.all([deps.characters.getOwned(binding.accountId, characterId), deps.characters.pendingGrants(binding.accountId, characterId, { limit: 100 })]).then(([record, grants]) => enqueue(() => {
+    void deps.characters.getOwned(binding.accountId, characterId).then(record => enqueue(() => {
       if (c.closed || c.generation !== attempt || !accepting || deps.ownership.closed.aborted) return;
       if (actors.get(record.characterId)?.connection || waiting.some(request => request.record.characterId === record.characterId && request.connection !== c)) { close(c, 'character-active'); return; }
       const world = deps.codec.toCore(record.checkpoint).world;
       if (!slots.has(world)) { close(c, 'world-unavailable'); return; }
       if (waiting.length >= p.maxWaiting) { close(c, 'queue-full', true); return; }
-      c.phase = 'queued'; waiting.push({ connection: c, record, replay: grants.map(g => g.payload), world }); metrics.queued++; admitWaiting();
+      c.phase = 'queued'; waiting.push({ connection: c, record, replay: [], world }); metrics.queued++; admitWaiting();
     }), () => enqueue(() => { if (!c.closed && c.generation === attempt) close(c, 'character-unavailable'); }));
   };
 
@@ -447,14 +514,25 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           // appliedHere is a historical fact; absent receipt never authorizes applying it twice.
           if (actor && !appliedHere && !actor.slot.area.appliedGrantIds(grant.recipient).includes(grant.id)) actor.slot.area.receiveGrant(grant);
         }
-        for (const actor of actors.values()) {
-          for (const grant of actor.replay) actor.slot.area.receiveGrant(deps.codec.grantFromJson(grant));
-          actor.replay = [];
-        }
+
         for (const slot of allSlots) drain(slot);
       });
+      // Read only the remaining receipt capacity. Commit this exact state before reading another page.
+      const pages = await Promise.all([...actors.values()].map(async actor => {
+        const room = 256 - actor.slot.area.appliedGrantIds(actor.record.characterId).length;
+        if (room < 0) throw new Error('checkpoint receipt capacity');
+        const limit = Math.min(100, room);
+        return { actor, limit, grants: limit ? await deps.characters.pendingGrants(actor.record.accountId, actor.record.characterId, { limit }) : [] };
+      }));
+      await boundary(() => {
+        deps.ownership.assertOwned();
+        for (const { actor, limit, grants } of pages) {
+          for (const grant of grants) actor.slot.area.receiveGrant(deps.codec.grantFromJson(grant.payload));
+          actor.replay = []; actor.pendingReplay = !limit || grants.length === limit;
+        }
+      });
       for (let round = 0; round <= p.persistence.maxRecoveryRounds; round++) {
-        const captures = await boundary(() => [...actors.values()].map(actor => ({ actor, generation: actor.generation, capture: actor.slot.area.capturePlayerCheckpoint(actor.ref) })));
+        const captures = await boundary(() => { deps.ownership.assertOwned(); return [...actors.values()].map(actor => ({ actor, generation: actor.generation, capture: actor.slot.area.capturePlayerCheckpoint(actor.ref) })); });
         const results = await Promise.all(captures.map(({ actor, capture }) => persistence.commit({ captureId: capture.captureId,
           accountId: actor.record.accountId, characterId: actor.record.characterId, expectedRevision: actor.record.revision,
           checkpoint: deps.codec.toJson(capture.checkpoint), appliedGrantIds: capture.appliedGrantIds })));
@@ -485,6 +563,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         if (round === p.persistence.maxRecoveryRounds) throw new Error('checkpoint recovery capacity');
       }
       await boundary(() => {
+        deps.ownership.assertOwned();
         for (const source of sources) source.slot.area.acknowledgeGrant(source.grant.id);
         for (const [slot, token] of tokens) { drain(slot); slot.area.releaseDurabilityBarrier(token); slot.lastCheckpoint = deps.nowMonotonicMs(); }
         for (const actor of actors.values()) if (actor.connection) sendResults(actor.connection);
@@ -550,7 +629,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     ids.add(self.ref.id); return ids;
   };
   const publish = (slot: Slot) => {
-    if (barrier || frozen) return;
+    if (barrier || frozen || [...actors.values()].some(actor => actor.pendingReplay)) return;
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
     const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
     const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog);
@@ -570,7 +649,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
         for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
         c.full = false; c.baselineSequence = c.sequence; c.results = []; metrics.snapshots++;
-        if (wasFull && p.party) publishParty(c);
+        if (wasFull) { if (p.party) publishParty(c); if (c.chatPreferences) sendControl(c, { type: 'chatPreferences', ...c.chatPreferences }); }
       } catch (error) { deps.onFailure?.('observation', error); close(c, 'observation-unavailable', true); }
     }
     slot.events = []; metrics.snapshotBatchMs += deps.nowMonotonicMs() - start; observe('snapshotBatch', deps.nowMonotonicMs() - start);
@@ -578,7 +657,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const step = (slot: Slot) => {
     if (barrier || frozen || draining) return;
     const inputs = new Map<number, PlayerIntent>(), prepared: { c: Connection; frame: PreparedInput; unit: EntityRef }[] = [];
-    const hostCommands: { c: Connection; command: { kind: string; code?: string; enabled?: boolean; profile?: BossProfileId } }[] = [];
+    const hostCommands: { c: Connection; command: HostCommand | Extract<PlayerCommand, {kind:'bossChallenge'}>; inputSequence: number }[] = [];
     const now = deps.nowMonotonicMs(); let progression = false;
     for (const actor of actors.values()) if (actor.slot === slot) {
       const c = actor.connection;
@@ -586,12 +665,12 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const frame = c.input.prepareTick(now / 1000, p.areaLimits.inputCommandsPerTick);
       if (frame) {
         if (c.results.length + c.discoveries.length + frame.intent.commands.length > 256) { close(c, 'result-backpressure', true); continue; }
-        const host = frame.intent.commands.filter(command => HOST_PARTY_COMMANDS.has(command.kind) || slot.kind === 'public' && command.kind === 'bossChallenge');
+        const host = frame.intent.commands.filter(command => HOST_COMMAND_KINDS.has(command.kind) || slot.kind === 'public' && command.kind === 'bossChallenge');
         if (host.length && frame.intent.commands.length !== 1) { close(c, 'host-command-boundary'); continue; }
-        const commands = frame.intent.commands.filter((command): command is PlayerCommand => !HOST_PARTY_COMMANDS.has(command.kind) && !(slot.kind === 'public' && command.kind === 'bossChallenge'));
+        const commands = frame.intent.commands.filter((command): command is PlayerCommand => !HOST_COMMAND_KINDS.has(command.kind) && !(slot.kind === 'public' && command.kind === 'bossChallenge'));
         inputs.set(actor.ref.id, { ...frame.intent, commands }); prepared.push({ c, frame, unit: actor.ref });
-        if (host[0]) hostCommands.push({ c, command: host[0] });
-        progression ||= frame.intent.commands.some(command => !['target', 'jump', 'dance', 'cancel', 'ability'].includes(command.kind));
+        if (host[0]) hostCommands.push({ c, command: host[0] as HostCommand | Extract<PlayerCommand, {kind:'bossChallenge'}>, inputSequence: frame.commandOrigins[0].inputSequence });
+        progression ||= frame.intent.commands.some(command => !HOST_COMMAND_KINDS.has(command.kind) && !['target', 'jump', 'dance', 'cancel', 'ability'].includes(command.kind));
       } else if (!c.timedOut && now - c.lastInput >= p.inputTimeoutMs) { slot.area.neutralizeInput(actor.ref); c.timedOut = true; metrics.neutralizations++; }
     }
     const inputTick = slot.area.services.tick;
@@ -602,7 +681,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (current && !sameRef(actor.ref, current)) { actor.ref = current; actor.generation = generation++; changedLives.push(actor); }
     }
     for (const { c, frame } of prepared) c.input!.commitConsumed(frame.token);
-    for (const { c, command } of hostCommands) {
+    for (const { c, command, inputSequence } of hostCommands) {
+      if (command.kind.startsWith('chat')) { chatCommand(c, command as Extract<HostCommand, {kind:`chat${string}`}>, inputSequence); continue; }
       if (command.kind === 'bossChallenge') {
         if (!p.party || !command.profile) controlError(c, 'party-unavailable');
         else encounterRequests.set(c.actor!.record.characterId, { actor: c.actor!, profile: command.profile });
@@ -663,8 +743,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           }), () => enqueue(() => { if (!c.closed && c.generation === attempt) close(c, 'session-unavailable', true); }));
         }
       }
+      if (!frozen && !draining && !deps.ownership.closed.aborted) for (const c of connections) if (c.phase === 'admitted' && c.chatNeedsPreferences && !c.chatBusy && pendingChat < p.chat!.maxPending) chatCommand(c, { kind: 'chatPreferences' });
       if (!barrier && !frozen && !draining) {
-        admitWaiting(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
+        admitWaiting(); if (!barrier && [...actors.values()].some(actor => actor.pendingReplay)) startDurability(); advanceTravel(); advanceEncounters(); cleanupEncounters(); retireDetached(now);
         for (const slot of allSlots) {
           if (!slot.area.players.size || barrier) { slot.tick.idle(now); slot.snapshot.idle(now); continue; }
           slot.tick.run(now, () => step(slot));
@@ -686,7 +767,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (connections.size >= p.maxConnections || [...connections].filter(c => c.ip === ip).length >= p.maxConnectionsPerIp) { reject(socket, '503 Service Unavailable'); return; }
       wss.handleUpgrade(req, socket, head, ws => {
         const c: Connection = { ws, ip, origin, generation: generation++, closed: false, phase: 'preauth',
-          protocol: deps.gameplay.create(), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set(), baselineSequence: 0, results: [], discoveries: [] };
+          protocol: deps.gameplay.create(), sequence: 0, epoch: 0, full: true, lastInput: 0, timedOut: false, nextValidation: Infinity, validating: false, visible: new Set(), baselineSequence: 0, results: [], discoveries: [], chatBusy: false, chatNeedsPreferences: false };
         connections.add(c);
         c.authTimer = setTimeout(() => { if (c.phase === 'preauth' || c.phase === 'authenticating') close(c, 'auth-timeout'); }, p.authTimeoutMs);
         ws.on('error', () => ws.terminate());
@@ -743,7 +824,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       processCpuSystemMs: process.cpuUsage(processCpuStart).system / 1000, processElapsedMs: deps.nowMonotonicMs() - processStarted,
       activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
       publicAreas: slots.size, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, unresolved,
-      partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length,
+      pendingChat, partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length,
       droppedTicks: [...allSlots].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...allSlots].reduce((n, s) => n + s.snapshot.dropped, 0) }),
   };
 }

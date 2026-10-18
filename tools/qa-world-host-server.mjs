@@ -15,6 +15,7 @@ import { createCharacterHandler } from '../server/world/characters-http.ts';
 import { acquireHostOwnership } from '../server/world/ownership.ts';
 import { loadWorldCatalog, createGameplayCatalog } from '../server/world/catalog.ts';
 import { createActualWorldHost } from '../server/world/host.ts';
+import { WorldChatService } from '../server/world/chat.ts';
 import { createCoreCharacterCodec } from '../src/sim/persistence.ts';
 import { setQuestChapter } from '../src/sim/data/quests.ts';
 import { canonicalEnemyLevel, canonicalEnemyRespawn } from '../src/sim/data/enemies.ts';
@@ -87,11 +88,11 @@ try {
   const accounts = accountHandler(pool, allowed, ip, null, admission);
   const characterPolicy = { maxCharactersPerAccount: 16 }; // Explicit QA bound, not a deployment slot policy.
   const characterHttp = createCharacterHandler({ pool, characters, codec, origins: allowed, clientIp: ip, policy: characterPolicy });
-  host = createActualWorldHost({ admission, characters, worlds, codec, ownership,
+  host = createActualWorldHost({ admission, characters, worlds, codec, ownership, chat: new WorldChatService(pool),
     gameplay: { catalog, create: () => createGameplayProtocol(catalog) },
     policies: { authTimeoutMs: 2000, inputTimeoutMs: 300, reconnectGraceMs: 3000, sessionRevalidateMs: 1000, checkpointIntervalMs: 2000,
       maxConnections: 16, maxConnectionsPerIp: 16, maxWaiting: 16, maxAuthFrameBytes: 2048, maxFrameBytes: 65536,
-      maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128, maxMutationSourcesPerTick: 64, loopIntervalMs: 2,
+      maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128, maxMutationSourcesPerTick: 64, loopIntervalMs: 2, chat: { maxPending: 16 },
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 3, retryMs: 20, maxRecoveryRounds: 2 },
       areaLimits: { eventCount: 4096, inputCommandsPerTick: 32, timers: 512, projectiles: 512 },
       party: args.party === '1' ? { maxParties: 8, maxEncounters: 8, returnSpawn: () => 'spawn' } : undefined,

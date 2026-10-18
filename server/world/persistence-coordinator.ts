@@ -75,6 +75,7 @@ export class PersistenceCoordinator<I extends Json, C extends Json, G extends Js
         // A failed response can follow a committed transaction. Inspect consistent receipts before retrying.
         try {
           const recovery = await this.store.loadForRecovery(capture.accountId, capture.characterId, capture.appliedGrantIds);
+          if (this.ownership.closed.aborted) { this.unresolved++; return { kind: 'unresolved', captureId: capture.captureId, reason: 'ownership' }; }
           if (recovery.character.revision !== capture.expectedRevision || recovery.grants.some(g => g.appliedRevision !== null)) {
             this.metrics.recoveries++; return { kind: 'recovery', captureId: capture.captureId, recovery };
           }
