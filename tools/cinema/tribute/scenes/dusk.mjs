@@ -229,9 +229,12 @@ const orc = {
   actors: [{ id: 'o', spec: ORC, at: O0, yaw: Math.PI }],
   tracks: {
     o: {
-      path: [{ t: 0, x: O0[0], z: O0[1] }, { t: 4.4, x: O1[0], z: O1[1] }, { t: 8.25, x: O1[0], z: O1[1], yaw: Math.PI }],
+      // He slows into his last steps (the key at 4.0 keeps the spline from overshooting and walking
+      // him back), then stands facing the lens.
+      path: [{ t: 0, x: O0[0], z: O0[1] }, { t: 4.0, x: O1[0] - 0.042, z: O1[1] + 0.62 }, { t: 4.4, x: O1[0], z: O1[1], yaw: Math.PI }, { t: 8.25, x: O1[0], z: O1[1], yaw: Math.PI }],
       ease: 'linear',
-      acts: [{ t: 4.55, clip: 'cast', loop: true, fade: 0.25 }],
+      // The cast's gather, slowed: claws up and spread, a roar held until the fire takes him.
+      acts: [{ t: 4.55, clip: 'cast', from: 1.23, to: 2.6, speed: 0.6, fade: 0.25 }],
       faces: [{ t: -2, expr: 'angry' }],
     },
   },
@@ -254,7 +257,8 @@ const orc = {
     // The wall of fire between the lens and him.
     { t: 6.9, kind: 'dusk-fire', spots: [[-2.2, 21.9, 1], [-0.9, 22.1, 1.1], [0.3, 22.0, 0.9], [-1.5, 21.7, 0.8], [-0.2, 21.6, 0.85], [-3.3, 22.2, 1], [1.4, 22.3, 1]], height: 3.0, gain: 1.1, glow: 0.6, seed: 77, smoke: 0, grow: [[6.9, 0], [7.5, 0.7], [8.0, 1.5], [8.25, 1.8]] },
     { t: 7.0, kind: 'dusk-haze', additive: true, alpha: [[7.0, 0], [7.7, 0.25], [8.25, 0.55]], cover: [[7, 0.35], [8.25, 0.65]], back: 0.3, color: '#3a0802', color2: '#ff5a10', color3: '#ffb040', flow: [0, 0.6], scale: 1.4 },
-    { t: 7.8, kind: 'fade', color: '#ffe0b0', curve: [[7.8, 0], [8.25, 0.3]] },
+    // 135.5 to 136.5: the fire fills the frame and burns to white.
+    { t: 7.2, kind: 'fade', color: '#fff0d8', curve: [[7.3, 0], [7.8, 0.3], [8.1, 0.75], [8.25, 0.88]] },
   ],
 };
 
@@ -264,20 +268,23 @@ const orc = {
 const LH = [190, -132];
 /** Quest props around the lighthouse that glow on their own. */
 const LH_HIDE = ['Lighthouse keeper’s secret dance', 'Two-seat shore skiff'];
-const LH_HIT = [191.6, 23.5, -129.7];
+/** A world point at a bearing and distance from the lighthouse axis, y high. */
+const LHP = (b, r, y) => { const [x, z] = flat(LH, b, r); return [x, y, z]; };
+/** Where the fireball strikes: under the gallery, on the side facing the lens. */
+const LH_HIT = LHP(100, 2.7, 23.5);
 const TOWER_FOG = { color: '#1c0a08', density: 0.01 };
 const TOWER_VIEW = { exposure: 1.3, saturation: 0.12, contrast: 0.15, bloom: { intensity: 1.4, threshold: 0.72, radius: 0.85 }, vignette: { offset: 0.2, darkness: 0.7 } };
 const TOWER_SKY = (t0) => [
   { t: t0, kind: 'dusk-hide', names: LH_HIDE },
   { t: t0, kind: 'dusk-haze', alpha: [[t0, 0.38]], cover: [[t0, 0.42]], back: 0.0, color: '#2a0e08', color2: '#7a2a10', color3: '#c8541a', flow: [-0.05, 0.02], scale: 1.2 },
-  { t: t0, kind: 'dusk-plume', at: { g: [176, 0, -112] }, rate: 1.5, life: 14, rise: 2.2, spread: 6, size0: 6, size1: 18, prewarm: 14, opacity: 0.5, wind: [2, -1.5], color: '#2a1a16', glow: '#8a2a0a', glowH: 6, seed: 8 },
+  { t: t0, kind: 'dusk-plume', at: { g: [176, 0, -112] }, rate: 1.5, life: 14, rise: 2.2, spread: 6, size0: 6, size1: 18, prewarm: 14, opacity: 0.5, wind: [2, 1.5], color: '#2a1a16', glow: '#8a2a0a', glowH: 6, seed: 8 },
   { t: t0, kind: 'embers', at: { g: [192, 16, -128] }, box: [30, 30, 30], count: 1200, drift: [1.2, 2.2, -0.4], size: 0.09 },
   { t: t0, kind: 'light', at: [200, 10, -118], color: '#ff6a2a', intensity: 25, distance: 40, flicker: 0.2 },
-  { t: t0, kind: 'dusk-grade', color: '#ffd8c0' },
+  { t: t0, kind: 'dusk-grade', color: '#ffc8a8' },
 ];
 const TOWER_FIRE = (t0) => [
-  { t: t0, kind: 'dusk-fire', spots: [{ at: [191.7, 23.0, -129.4], s: 1.2 }, { at: [192.4, 24.4, -130.6], s: 0.9 }, { at: [190.9, 22.4, -129.2], s: 0.8 }, { at: [192.6, 28.6, -128.9], s: 1.4 }, { at: [190.6, 28.6, -128.0], s: 1.1 }, { at: [193.8, 28.6, -131.0], s: 1.0 }], height: 2.6, seed: 31, smoke: 0.85, wind: [1.4, -0.8], fadeIn: 0.4 },
-  { t: t0, kind: 'light', at: [193.5, 25, -127.5], color: '#ff6a1a', intensity: 80, distance: 32, flicker: 0.35, fadeIn: 0.3 },
+  { t: t0, kind: 'dusk-fire', spots: [[100, 2.8, 23, 1.2], [85, 2.8, 24.4, 0.9], [115, 2.8, 22.4, 0.8], [95, 3.9, 28.6, 1.4], [130, 3.9, 28.6, 1.1], [60, 3.9, 28.6, 1.0]].map(([b, r, y, k]) => ({ at: LHP(b, r, y), s: k })), height: 2.6, seed: 31, smoke: 0.85, wind: [1.4, 0.8], fadeIn: 0.4 },
+  { t: t0, kind: 'light', at: LHP(105, 6, 25), color: '#ff6a1a', intensity: 80, distance: 32, flicker: 0.35, fadeIn: 0.3 },
 ];
 const tower = {
   id: 'dusk-tower',
@@ -291,23 +298,33 @@ const tower = {
   actors: [],
   cam: {
     keys: [
-      { t: 0, p: [204.5, 1.6, -111.5], l: [190, 9, -132], fov: 48 },
-      { t: 4.5, p: [204, 2.2, -112.5], l: [190, 25, -132], fov: 46 },
+      { t: 0, p: LHP(122, 37, 2.6), l: [189, 10.5, -131], fov: 50 },
+      { t: 4.5, p: LHP(118, 35, 4.6), l: [189.5, 19, -131.5], fov: 45 },
     ],
     ease: 'sine',
   },
   fx: [
     ...TOWER_SKY(-6),
-    { t: 0.45, kind: 'dusk-fireball', from: [150, 22, -128], to: LH_HIT, d: 0.42, size: 1.3, trail: 70, light: 900, distance: 70, accel: 1.2 },
-    { t: 0.87, kind: 'dusk-blast', at: LH_HIT, r: 3.2, column: 3.5, light: 700, distance: 30, flashA: 0.6, flashD: 0.2, flashColor: '#ffd8a0', shake: 0.08, puffs: 40, debris: 40, gravity: 9.8 },
-    ...TOWER_FIRE(0.9),
+    // 137.0: the fireball comes in from the left of the frame and strikes the tower.
+    { t: 0.06, kind: 'dusk-fireball', from: [LH_HIT[0] + 9, LH_HIT[1] + 13, LH_HIT[2] + 30], to: LH_HIT, d: 0.44, size: 1.6, trail: 80, light: 1400, distance: 22, accel: 1.2 },
+    { t: 0.5, kind: 'dusk-blast', at: LH_HIT, r: 3.2, column: 3.5, light: 700, distance: 14, flashA: 0.6, flashD: 0.2, flashColor: '#ffd8a0', shake: 0.08, puffs: 40, debris: 40, gravity: 9.8 },
+    ...TOWER_FIRE(0.52),
   ],
 };
 
-// The giant on the east side of the stack, smashing the tower; then a warrior on the gallery leaps
-// out through the fire over the giant.
-const G = [198.5, -130];
-const GIANT_ACTOR = { id: 'g', ...GIANT, at: G, yaw: deg(-90) };
+// The giant has waded out of the sea on the east side of the stack and climbs the tower, smashing
+// it; the camera looks up from the water to the south, the tower on the left and the giant on its
+// right in profile, lit by its own sickly yellow-green glow and the fire. The stack top is 3 to 4
+// high out to 6 from the axis; the sea floor falls away beyond 8.
+const G = flat(LH, 22, 6.4);
+const GIANT_YAW = deg(22 + 180);
+const GIANT_ACTOR = { id: 'g', ...GIANT, at: G, yaw: GIANT_YAW };
+/** The giant's glow: a fel light on its chest and a hot one at its claws. */
+const GIANT_GLOW = (t0) => [
+  { t: t0, kind: 'light', at: { a: 'g', o: [0, 4, 3.5] }, color: '#b8e04a', intensity: 160, distance: 22, flicker: 0.25 },
+  { t: t0, kind: 'light', at: { a: 'g', o: [-3, 2, 5] }, color: '#ff8a2a', intensity: 120, distance: 18, flicker: 0.4 },
+  { t: t0, kind: 'dusk-fire', spots: [{ at: { a: 'g', o: [2.2, 5.5, 1] }, s: 1.0 }, { at: { a: 'g', o: [-2.4, 4.5, 0.5] }, s: 0.9 }, { at: { a: 'g', o: [0, 7.5, -1] }, s: 1.2 }], height: 2.4, seed: 61, smoke: 0.5, glow: 0.7, wind: [1.4, 0.8] },
+];
 const giant = {
   id: 'dusk-giant',
   ...span(C.giant, C.leap),
@@ -318,28 +335,29 @@ const giant = {
   view: TOWER_VIEW,
   fog: TOWER_FOG,
   actors: [GIANT_ACTOR],
-  tracks: { g: { path: [{ t: 0, x: G[0], z: G[1], yaw: deg(-90) }], acts: [{ t: -0.15, clip: 'attack_slam' }] } },
+  tracks: { g: { path: [{ t: 0, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 7 }, { t: 1, x: G[0] - 0.3, z: G[1] - 0.1, yaw: GIANT_YAW, lift: 7.6 }], acts: [{ t: -0.35, clip: 'attack_slam', speed: 0.8 }] } },
   cam: {
     keys: [
-      { t: 0, p: [214, 2.5, -112], l: [193, 13, -130], fov: 50 },
-      { t: 1, p: [213.2, 2.4, -113], l: [193, 14, -130], fov: 48 },
+      { t: 0, p: LHP(105, 40, 5), l: LHP(50, 3, 17), fov: 46 },
+      { t: 1, p: LHP(104, 38.5, 5.6), l: LHP(50, 3, 17.6), fov: 45 },
     ],
     ease: 'linear',
-    shake: 0.02,
+    shake: 0.03,
   },
   fx: [
     ...TOWER_SKY(-6),
     ...TOWER_FIRE(-6),
-    { t: 0.22, kind: 'dusk-blast', at: [192.4, 13, -130], r: 2.6, column: 0, light: 1400, distance: 50, flashA: 0.35, flashD: 0.15, shake: 0.12, puffs: 30, debris: 30 },
-    { t: 0.6, kind: 'dusk-blast', at: [192.0, 17, -128.5], r: 2.0, column: 0, light: 900, distance: 40, flashA: 0.2, flashD: 0.12, shake: 0.06, puffs: 24, debris: 20, seed: 9 },
+    ...GIANT_GLOW(-6),
+    { t: 0.18, kind: 'dusk-blast', at: LHP(35, 2.8, 16), r: 3.4, column: 0, light: 2400, distance: 16, flashA: 0.45, flashD: 0.16, flashColor: '#f4ffb0', shake: 0.14, puffs: 34, debris: 46 },
+    { t: 0.55, kind: 'dusk-blast', at: LHP(45, 2.8, 20), r: 2.4, column: 0, light: 1200, distance: 12, flashA: 0.22, flashD: 0.12, shake: 0.06, puffs: 24, debris: 26, seed: 9 },
   ],
 };
 
-// He leaps round the gallery ring (3.7 from the axis) through the flames on its near side.
+// A warrior on the gallery leaps round its ring (3.7 from the axis, floor 28.5) through the flames,
+// over the lens, the giant behind the tower.
 const RING = (b) => flat(LH, b, 3.7);
-const W0 = RING(100);
-const LEAP = [[0, 100, 0], [0.55, 100, 0], [0.85, 76, 1.2], [1.12, 52, 1.9], [1.4, 28, 1.2], [1.7, 4, 0], [1.96, -4, 0]];
-const G2 = flat(LH, 95, 8);
+const W0 = RING(205);
+const LEAP = [[0, 205, 0], [0.5, 200, 0], [0.8, 178, 1.0], [1.08, 152, 1.8], [1.36, 130, 1.0], [1.58, 118, 0.15], [1.96, 100, 1.3]];
 const leap = {
   id: 'dusk-leap',
   ...span(C.leap, C.black),
@@ -349,39 +367,53 @@ const leap = {
   hide: LH_HIDE,
   view: { ...TOWER_VIEW, dof: true, bokeh: 2 },
   fog: TOWER_FOG,
-  actors: [{ id: 'w', spec: ORC, at: W0, yaw: deg(10) }, { ...GIANT_ACTOR, at: G2 }],
+  actors: [{ id: 'w', spec: ORC, at: W0, yaw: deg(115) }, GIANT_ACTOR],
   tracks: {
     w: {
       path: LEAP.map(([t, b, lift], i) => ({ t, x: RING(b)[0], z: RING(b)[1], lift, ...(i < 2 ? { yaw: deg(b - 90) } : {}) })),
-      acts: [{ t: -0.15, clip: 'jump', from: 0.8, speed: 0.35 }],
+      acts: [{ t: 0.3, clip: 'jump', from: 0.6, speed: 0.55 }, { t: 1.5, clip: 'jump', from: 0.6, speed: 0.8 }],
       faces: [{ t: -2, expr: 'angry' }],
     },
-    g: { path: [{ t: 0, x: G2[0], z: G2[1], yaw: deg(-75), lift: 10 }], acts: [{ t: -0.4, clip: 'attack_slam', from: 2.0, speed: 0.6 }] },
+    g: { path: [{ t: 0, x: G[0] - 0.3, z: G[1] - 0.1, yaw: GIANT_YAW, lift: 7.6 }, { t: 1.96, x: G[0] - 0.5, z: G[1] - 0.2, yaw: GIANT_YAW, lift: 8.2 }], acts: [{ t: -0.4, clip: 'attack_slam', from: 1.0, speed: 0.7 }] },
   },
   cam: {
     keys: [
-      { t: 0, p: [202.5, 25, -121], l: [191.5, 29.5, -130.5], fov: 40 },
-      { t: 1.96, p: [203, 24.5, -120.5], l: [192, 30, -130], fov: 44 },
+      // Fixed look points that run ahead of him round the ring (a camera tied to the actor goes
+      // black on the frame his jump starts).
+      ...[[0, 200, 29.3], [0.8, 176, 29.9], [1.08, 152, 30.4], [1.36, 130, 30.0], [1.96, 104, 30.1]].map(([t, b, y]) => ({
+        t,
+        p: LHP(160 - (20 * t) / 1.96, 8.2 - (0.6 * t) / 1.96, 28.5 - (0.3 * t) / 1.96),
+        l: LHP(b, 3.7, y),
+        fov: 40 + (4 * t) / 1.96,
+      })),
     ],
     ease: 'linear',
     focus: 'w',
-    range: 6,
+    range: 5,
   },
   fx: [
     ...TOWER_SKY(-6),
     ...TOWER_FIRE(-6),
-    { t: -6, kind: 'dusk-fire', spots: [{ at: [188.8, 28.6, -135.2], s: 1.3 }, { at: [186.6, 28.6, -133.2], s: 1.2 }, { at: [186.8, 28.6, -130.0], s: 1.0 }, { at: [RING(55)[0], 28.6, RING(55)[1]], s: 0.55 }, { at: [RING(35)[0], 28.6, RING(35)[1]], s: 0.45 }], height: 2.4, seed: 51, smoke: 0.6, glow: 0.5 },
+    ...GIANT_GLOW(-6),
+    // Flames on the far side of the ring, behind him, and low on the near rail he leaps over.
+    { t: -6, kind: 'dusk-fire', spots: [[240, 1.3], [275, 1.4], [330, 1.2], [20, 1.0], [70, 1.2]].map(([b, k]) => ({ at: LHP(b, 3.7, 28.6), s: k })), height: 2.6, seed: 51, smoke: 0.6, glow: 0.6 },
+    { t: -6, kind: 'dusk-fire', spots: [{ at: LHP(170, 4.4, 28.4), s: 0.45 }, { at: LHP(135, 4.4, 28.4), s: 0.4 }], height: 2.0, seed: 52, smoke: 0, glow: 0.4 },
     { t: -6, kind: 'light', at: { a: 'w', o: [-1.2, 1.2, -1.5] }, color: '#ff7a2a', intensity: 10, distance: 6, flicker: 0.4 },
-    { t: 0.4, kind: 'dusk-blast', at: [188.6, 27.5, -133.0], r: 1.8, column: 0, light: 700, distance: 30, flashA: 0.15, flashD: 0.1, puffs: 26, debris: 18, seed: 13 },
+    { t: 0.9, kind: 'dusk-blast', at: LHP(300, 3.6, 29.2), r: 1.6, column: 0, light: 800, distance: 10, flashA: 0.15, flashD: 0.1, puffs: 26, debris: 18, seed: 13 },
   ],
 };
 
 // -------------------------------------------------------------------------------- 3. dusk-clash
-// On the grass above the beach, the sun low behind them: she leaps at him, he swings.
+// On the grass above the beach, the sun low behind them (bearing 42): she comes in from his right
+// and leaps at him, he swings; the camera sits low facing the sun so they cross the frame.
 const CO = [99.5, 6.5];
-const CE0 = flat(CO, 70, 4.2);
-const CE1 = flat(CO, 70, 1.1);
-const CLASH_VIEW = { ...DUSK_VIEW, dof: true, bokeh: 3, saturation: 0.25, bloom: { intensity: 1.6, threshold: 0.7, radius: 0.85 } };
+const EB = 132;
+const CE0 = flat(CO, EB, 4.4);
+const CE1 = flat(CO, EB, 1.15);
+const CE2 = flat(CO, EB - 12, 0.9);
+const CLASH_VIEW = { exposure: 0.92, saturation: 0.28, contrast: 0.14, bloom: { intensity: 1.25, threshold: 0.78, radius: 0.8 }, vignette: { offset: 0.22, darkness: 0.7 }, dof: true, bokeh: 2.2 };
+const CLASH_MOTES = { t: -5, kind: 'motes', color: '#ffd28a', color2: '#ffb36b', count: 300, box: [14, 6, 14], drift: [0.25, 0.12, 0.1], size: 0.04, opacity: 0.8 };
+const HIT = { a: 'o', o: [0, 0.75, 0.8] };
 const clashA = {
   id: 'dusk-clash-a',
   ...span(C.clashA, C.clashB),
@@ -389,34 +421,36 @@ const clashA = {
   mood: 0,
   hide: [PORTAL],
   view: CLASH_VIEW,
-  actors: [{ id: 'o', spec: ORC, at: CO, yaw: deg(70) }, { id: 'e', spec: ELF, at: CE0, yaw: deg(250) }],
+  actors: [{ id: 'o', spec: ORC, at: CO, yaw: deg(EB) }, { id: 'e', spec: ELF, at: CE0, yaw: deg(EB + 180) }],
   tracks: {
-    o: { path: [{ t: 0, x: CO[0], z: CO[1], yaw: deg(70) }], acts: [{ t: 0.55, clip: 'attack_swipe' }], faces: [{ t: -2, expr: 'angry' }] },
+    o: { path: [{ t: 0, x: CO[0], z: CO[1], yaw: deg(EB) }], acts: [{ t: 0.5, clip: 'attack_swipe' }], faces: [{ t: -2, expr: 'angry' }] },
     e: {
       path: [
-        { t: 0, x: CE0[0], z: CE0[1], yaw: deg(250) },
-        { t: 0.45, x: CE0[0], z: CE0[1], yaw: deg(250) },
-        { t: 0.68, x: (CE0[0] + CE1[0]) / 2, z: (CE0[1] + CE1[1]) / 2, yaw: deg(250), lift: 1.5 },
-        { t: 0.95, x: CE1[0], z: CE1[1], yaw: deg(250), lift: 0.35 },
-        { t: 1.54, x: CE1[0] - 0.3, z: CE1[1] + 0.4, yaw: deg(250), lift: 0 },
+        { t: 0, x: CE0[0], z: CE0[1], yaw: deg(EB + 180) },
+        { t: 0.38, x: flat(CO, EB, 3.6)[0], z: flat(CO, EB, 3.6)[1], yaw: deg(EB + 180) },
+        { t: 0.66, x: flat(CO, EB, 2.3)[0], z: flat(CO, EB, 2.3)[1], yaw: deg(EB + 180), lift: 1.6 },
+        { t: 0.92, x: CE1[0], z: CE1[1], yaw: deg(EB + 180), lift: 0.55 },
+        { t: 1.54, x: CE2[0], z: CE2[1], yaw: deg(EB + 180), lift: 0 },
       ],
-      acts: [{ t: 0.15, clip: 'jump', from: 0.75 }],
+      acts: [{ t: 0.2, clip: 'jump', from: 0.7, speed: 0.9 }, { t: 0.86, clip: 'attack_swipe' }],
       faces: [{ t: -2, expr: 'focused' }],
     },
   },
   cam: {
     keys: [
-      { t: 0, p: polar(CO, 205, 4.4, 0.35), l: polar(CO, 60, 1.6, 0.9), fov: 40 },
-      { t: 1.54, p: polar(CO, 190, 3.6, 0.3), l: polar(CO, 60, 1.4, 1.0), fov: 38 },
+      { t: 0, p: polar(CO, 228, 3.6, 0.28), l: polar(CO, 60, 1.2, 0.85), fov: 42 },
+      { t: 1.54, p: polar(CO, 214, 3.0, 0.24), l: polar(CO, 70, 1.0, 0.95), fov: 40 },
     ],
     ease: 'linear',
     focus: 'o',
     range: 4,
   },
   fx: [
-    { t: 0.92, kind: 'vfx', recipe: 'sparks', args: [{ pt: { a: 'o', o: [0, 0.7, 0.8] } }, { color: '#ffd27a', k: 5 }, 60, 9, { life: 0.5 }] },
-    { t: 0.92, kind: 'dusk-blast', at: { a: 'o', o: [0, 0.7, 0.8] }, r: 0.35, column: 0, light: 120, distance: 8, flashA: 0.25, flashD: 0.1, flashColor: '#fff0d0', puffs: 14, debris: 24, ring: 0 },
-    { t: -5, kind: 'motes', color: '#ffd28a', color2: '#ffb36b', count: 300, box: [14, 6, 14], drift: [0.25, 0.12, 0.1], size: 0.04, opacity: 0.8 },
+    { t: 0.9, kind: 'vfx', recipe: 'sparks', args: [{ pt: HIT }, { color: '#ffd27a', k: 6 }, 70, 10, { life: 0.5 }] },
+    { t: 0.9, kind: 'flash', d: 0.12, a: 0.35, color: '#fff2d8' },
+    { t: 0.9, kind: 'light', at: HIT, color: '#ffd8a0', curve: [[0.88, 0], [0.92, 60], [1.15, 0]], distance: 6 },
+    { t: 0.9, kind: 'shake', d: 0.3, amp: 0.04 },
+    CLASH_MOTES,
   ],
 };
 
@@ -427,26 +461,28 @@ const clashB = {
   mood: 0,
   hide: [PORTAL],
   view: CLASH_VIEW,
-  actors: [{ id: 'o', spec: ORC, at: CO, yaw: deg(70) }, { id: 'e', spec: ELF, at: CE1, yaw: deg(250) }],
+  actors: [{ id: 'o', spec: ORC, at: CO, yaw: deg(EB) }, { id: 'e', spec: ELF, at: CE2, yaw: deg(EB + 168) }],
   tracks: {
-    o: { path: [{ t: 0, x: CO[0], z: CO[1], yaw: deg(70) }, { t: 1.96, x: CO[0] - 0.4, z: CO[1] - 0.2, yaw: deg(80) }], acts: [{ t: 0.1, clip: 'hit_react' }, { t: 0.75, clip: 'attack_swipe' }], faces: [{ t: -2, expr: 'angry' }] },
-    e: { path: [{ t: 0, x: CE1[0] - 0.3, z: CE1[1] + 0.4, yaw: deg(250) }], acts: [{ t: -0.05, clip: 'attack_swipe' }, { t: 0.9, clip: 'claw_right' }], faces: [{ t: -2, expr: 'focused' }] },
+    o: { path: [{ t: 0, x: CO[0], z: CO[1], yaw: deg(EB) }, { t: 1.96, x: flat(CO, EB + 180, 0.6)[0], z: flat(CO, EB + 180, 0.6)[1], yaw: deg(EB + 10) }], acts: [{ t: 0.05, clip: 'hit_react' }, { t: 0.7, clip: 'attack_swipe' }], faces: [{ t: -2, expr: 'angry' }] },
+    e: { path: [{ t: 0, x: CE2[0], z: CE2[1], yaw: deg(EB + 168) }], acts: [{ t: -0.1, clip: 'claw_left' }, { t: 0.85, clip: 'claw_right' }], faces: [{ t: -2, expr: 'focused' }] },
   },
   cam: {
     keys: [
-      { t: 0, p: polar(CO, 335, 3.4, 0.4), l: polar(CO, 65, 0.9, 0.7), fov: 36 },
-      { t: 1.96, p: polar(CO, 350, 3.0, 0.5), l: polar(CO, 65, 0.9, 0.75), fov: 34 },
+      { t: 0, p: polar(CO, EB + 95, 2.4, 0.2), l: polar(CO, EB, 0.5, 0.7), fov: 38 },
+      { t: 1.96, p: polar(CO, EB + 105, 2.1, 0.26), l: polar(CO, EB, 0.45, 0.78), fov: 36 },
     ],
     ease: 'linear',
-    focus: 'o',
+    focus: 'e',
     range: 3,
   },
   fx: [
-    { t: 0.12, kind: 'vfx', recipe: 'sparks', args: [{ pt: { a: 'o', o: [0, 0.7, 0.6] } }, { color: '#ffd27a', k: 5 }, 50, 8, { life: 0.45 }] },
-    { t: 0.95, kind: 'vfx', recipe: 'sparks', args: [{ pt: { a: 'o', o: [0, 0.7, 0.7] } }, { color: '#ffb0e0', k: 5 }, 60, 9, { life: 0.45 }] },
-    { t: -5, kind: 'motes', color: '#ffd28a', color2: '#ffb36b', count: 300, box: [14, 6, 14], drift: [0.25, 0.12, 0.1], size: 0.04, opacity: 0.8 },
-    { t: 1.0, kind: 'leaves', color: '#ffc4e8', color2: '#ffffff', count: 500, box: [10, 6, 10], drift: [1.2, 0.6, 0.5], size: 0.07, fadeIn: 0.3 },
-    { t: 0, kind: 'fade', color: '#ffe8f2', curve: [[1.08, 0], [1.3, 0.35], [1.5, 0.8], [1.6, 1], [1.96, 1]] },
+    { t: 0.1, kind: 'vfx', recipe: 'sparks', args: [{ pt: HIT }, { color: '#ffd27a', k: 5 }, 50, 8, { life: 0.45 }] },
+    { t: 0.95, kind: 'vfx', recipe: 'sparks', args: [{ pt: { a: 'o', o: [0, 0.7, 0.7] } }, { color: '#ffb0e0', k: 6 }, 70, 10, { life: 0.45 }] },
+    { t: 0.95, kind: 'flash', d: 0.1, a: 0.25, color: '#ffe8f4' },
+    CLASH_MOTES,
+    { t: 1.2, kind: 'leaves', color: '#ffc4e8', color2: '#ffffff', count: 500, box: [10, 6, 10], drift: [1.2, 0.6, 0.5], size: 0.07, fadeIn: 0.3 },
+    // 157.29 to 157.71: a pink-white flash fills the frame.
+    { t: 0, kind: 'fade', color: '#ffe8f2', curve: [[1.54, 0], [1.68, 0.4], [1.84, 0.85], [1.93, 1], [1.96, 1]] },
   ],
 };
 
