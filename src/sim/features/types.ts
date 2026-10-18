@@ -75,3 +75,29 @@ export function validBindings(context:FeatureContext, ids:readonly string[], bin
     const unit=context.resolve(id);return !unit||sameRef(ref,unit.ref);
   });
 }
+
+/** Numeric social movement context. Area supplies exact ownership before this phase runs. */
+export interface NpcFeatureContext {
+  readonly time: number;
+  readonly rng: RandomSource;
+  readonly query: WorldQuery;
+  readonly authority: boolean;
+  readonly endingActive: boolean;
+  players(): readonly SimUnit[];
+  externallyOwned(ref: EntityRef): boolean;
+  hasAction(unit: SimUnit): boolean;
+  playAction(unit: SimUnit, action: import('../types.ts').ActionId): void;
+  emit(event: NpcFeatureEvent): void;
+}
+export type NpcBarkBank = 'shore' | 'star' | 'starVictory';
+export type NpcFeatureEvent =
+  | { type:'npcGreeting'; unit:EntityRef; player:EntityRef; expression:'happy'; seconds:1.5 }
+  | { type:'npcBark'; unit:EntityRef; player:EntityRef; bank:NpcBarkBank; index:number };
+/** Structural subset of AreaDefinition AmbientSpawn, owned by the world metadata provider. */
+export interface NumericTownsfolkOptions {
+  readonly points: readonly Readonly<Vec3>[];
+  readonly wanderRadius: number;
+  readonly route?: { readonly points:readonly Readonly<Vec3>[]; readonly radiusPadding:number; readonly step:number };
+  /** World II/III/IV source calls relocate(), replacing the random initial pause with one second. */
+  readonly relocated?: boolean;
+}
