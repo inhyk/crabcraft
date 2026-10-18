@@ -76,3 +76,11 @@ test('feature omission preserves default captures and refuses feature reads with
 test('future receipt revision and conflicting pending immutable contents reject the entire page before mutation',()=>{
  const f=fixture(),b=f.a.beginDurabilityBarrier('proof');readApply(f,[award(1001)]);f.a.drainEvents();const before=f.a.snapshot();assert.throws(()=>f.a.applyCertifiedFeatureAwards(f.a.beginFeatureAwardRead(f.u.ref,0),{revision:0,awards:[{award:award(1002),appliedRevision:null},{award:award(1003),appliedRevision:1}]}),/proof/);assert.throws(()=>readApply(f,[award(1002),{...award(1001),coins:99}]),/conflict/);assert.deepEqual(f.a.snapshot(),before);assert.deepEqual(f.a.drainEvents(),[]);assert.deepEqual(f.a.appliedFeatureAwardIds(character),[award(1001).id]);save(f);f.a.releaseDurabilityBarrier(b);f.a.dispose();
 });
+test('recovery eviction discards a dungeon resident only inside a barrier, releasing registry ownership, pending receipts and its retirement',()=>{
+ const registry=new InMemoryCharacterRegistry(),f=fixture({dungeon:true,registry});bindReturn(f);assert.throws(()=>f.a.evictForRecovery(f.u.ref),/barrier/);
+ const plain=fixture(),pb=plain.a.beginDurabilityBarrier('plain');assert.throws(()=>plain.a.evictForRecovery(plain.u.ref),/dungeon/);plain.a.releaseDurabilityBarrier(pb);plain.a.dispose();
+ const b=f.a.beginDurabilityBarrier('award');readApply(f,[award(801)]);assert.equal(f.a.appliedFeatureAwardIds(character).length,1);f.a.releaseDurabilityBarrier(b);
+ const q=f.a.quiescePlayer(f.u.ref,'retire'),ref=f.u.ref;assert.throws(()=>f.a.dispose(),/feature/);f.a.evictForRecovery(ref);
+ assert.equal(f.a.players.size,0);assert.equal(registry.owner(character),null);assert.deepEqual(f.a.appliedFeatureAwardIds(character),[]);assert.deepEqual(f.a.debugState().lifecycle.retirements,[]);assert.deepEqual(f.a.debugState().lifecycle.barriers,[]);
+ assert.throws(()=>f.a.evictForRecovery(ref));f.a.commitPlayerRetirement(q.token);assert.equal(f.a.dungeonObservation().run.runId.startsWith('run-'),true);f.a.dispose();
+});
