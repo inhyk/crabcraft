@@ -197,10 +197,11 @@ export function verifyPagedOutcomeSeal(recipe: DeathRecipe, codecVersion: number
 }
 
 export interface RecoverySweep {
-  visited: number; appended: number; sealed: number;
+  visited: number; appended: number; sealed: number; skippedLive: number;
   cycleComplete: boolean; cycleHasPending: boolean;
   afterSequence: string; throughSequence: string;
 }
+type RecoveryVisit = { appended: number; sealed: number; pending: boolean; skippedLive?: boolean };
 type RecoveryStore = Pick<DurableOutcomeStore, 'getDraftRecoveryHighWater' | 'listVictimDrafts' | 'getVictimDraft' | 'readContributionPage' | 'appendVictimPage' | 'sealVictimDraft' | 'getVictimSeal'>;
 
 /** One page per draft per sweep slice. Recurrence discovers late old-owner commits; this is not a writer fence. */
@@ -209,7 +210,7 @@ export class PagedOutcomeRecovery {
   private through: string | null = null;
   private cyclePending = false;
   private running = false;
-  readonly metrics = { slices: 0, cycles: 0, visited: 0, appended: 0, sealed: 0, maxPage: 0 };
+  readonly metrics = { slices: 0, cycles: 0, visited: 0, appended: 0, sealed: 0, skippedLive: 0, maxPage: 0 };
   private readonly store: RecoveryStore;
   private readonly ownership: HostOwnership;
   private readonly limits: { draftsPerSlice: number; pageSize: number; codecVersion: number };
@@ -234,10 +235,14 @@ export class PagedOutcomeRecovery {
     if (verified.contentDigest !== draft.contentChain || !isDeepStrictEqual(verified.finalCursor, draft.cursor)) throw new Error('recovery completeness seal mismatch');
     return verified;
   }
-  private async visit(draftId: string): Promise<{ appended: number; sealed: number; pending: boolean }> {
+  private async visit(draftId: string, isLiveArea?: (areaId: string) => boolean): Promise<RecoveryVisit> {
     let draft = this.draft(await this.io(() => this.store.getVictimDraft(draftId))), appended = 0;
+    const live = () => isLiveArea?.(draft.victim.area) ?? false;
+    const skipped = (): RecoveryVisit => ({ appended, sealed: 0, pending: false, skippedLive: true });
+    if (live()) return skipped();
     if (draft.cursor.recipientCount < draft.contributorCount) {
       const read = await this.io(() => this.store.readContributionPage(draftId, draft.cursor.afterCharacter, this.limits.pageSize));
+      if (live()) return skipped();
       if (!read.credits.length || read.credits.length > this.limits.pageSize) throw new Error('recovery contribution page made no bounded progress');
       const planned = planOutcomePage(draft.recipe, draft.cursor, read.credits.map(write => write.credit));
       this.metrics.maxPage = Math.max(this.metrics.maxPage, planned.grants.length);
@@ -250,6 +255,7 @@ export class PagedOutcomeRecovery {
       }
       appended = 1;
     }
+    if (live()) return skipped();
     if (draft.cursor.recipientCount < draft.contributorCount) return { appended, sealed: 0, pending: true };
     let seal: PagedOutcomeSeal;
     try { seal = await this.io(() => this.store.sealVictimDraft(draftId)); }
@@ -259,33 +265,124 @@ export class PagedOutcomeRecovery {
       if (!recovered) throw error;
       seal = this.seal(draft, recovered);
     }
+    if (live()) throw new Error('recovery Area ownership changed during seal');
     this.seal(draft, seal);
     return { appended, sealed: 1, pending: false };
   }
-  async sweep(): Promise<RecoverySweep> {
+  async sweep(options: { isLiveArea?(areaId: string): boolean } = {}): Promise<RecoverySweep> {
     if (this.running) throw new Error('recovery slice already running');
     this.running = true;
     try {
       if (this.through === null) this.through = await this.io(() => this.store.getDraftRecoveryHighWater());
       const through = this.through, rows = await this.io(() => this.store.listVictimDrafts({ afterSequence: this.after, throughSequence: through, limit: this.limits.draftsPerSlice }));
       if (rows.length > this.limits.draftsPerSlice) throw new Error('recovery scan capacity');
-      let appended = 0, sealed = 0;
+      let appended = 0, sealed = 0, skippedLive = 0;
       for (const row of rows) {
-        let result: { appended: number; sealed: number; pending: boolean };
-        try { result = await this.visit(row.draftId); }
+        if (options.isLiveArea?.(row.victim.area)) { this.after = row.recoverySequence; skippedLive++; continue; }
+        let result: RecoveryVisit;
+        try { result = await this.visit(row.draftId, options.isLiveArea); }
         catch (error) {
           if (this.ownership.closed.aborted || !(error instanceof DurableLedgerError) || !['closed', 'not_found'].includes(error.code)) throw error;
           const completed = await this.io(() => this.store.getVictimSeal(row.victim));
           if (!completed || completed.format !== 'paged-v1' || completed.key !== victimKey(row.victim) || completed.codecVersion !== this.limits.codecVersion || completed.recipientCount !== row.contributorCount || completed.finalCursor.recipientCount !== completed.recipientCount) throw error;
           result = { appended: 0, sealed: 1, pending: false }; // Another valid finisher may seal/clean after our scan.
         }
-        appended += result.appended; sealed += result.sealed; this.cyclePending ||= result.pending;
+        appended += result.appended; sealed += result.sealed; this.cyclePending ||= result.pending; if (result.skippedLive) skippedLive++;
         this.after = row.recoverySequence; // An unfinished large draft cannot monopolize its cycle.
       }
       const cycleComplete = rows.length < this.limits.draftsPerSlice || this.after === through;
-      const result = { visited: rows.length, appended, sealed, cycleComplete, cycleHasPending: this.cyclePending, afterSequence: this.after, throughSequence: through };
-      this.metrics.slices++; this.metrics.visited += rows.length; this.metrics.appended += appended; this.metrics.sealed += sealed;
+      const result = { visited: rows.length, appended, sealed, skippedLive, cycleComplete, cycleHasPending: this.cyclePending, afterSequence: this.after, throughSequence: through };
+      this.metrics.slices++; this.metrics.visited += rows.length; this.metrics.appended += appended; this.metrics.sealed += sealed; this.metrics.skippedLive += skippedLive;
       if (cycleComplete) { this.metrics.cycles++; this.after = '0'; this.through = null; this.cyclePending = false; }
+      return result;
+    } finally { this.running = false; }
+  }
+}
+
+export interface SourceDrainProgress { credits: number; pages: number; retired: number; summaries: number; more: boolean }
+type SourceStore = Pick<DurableOutcomeStore, 'recordContributionBatch' | 'readContributionSummary' | 'beginVictimDraft' | 'readContributionPage' | 'appendVictimPage' | 'sealVictimDraft' | 'getVictimSeal'>;
+/** Explicit source IO phase, including zero-resident and failed-source drain. It never advances simulation. */
+export class AreaSourceDrain {
+  private running = false;
+  private nextOutcome = 0;
+  private readonly limits: { pageSize: number; creditBatchesPerSlice: number; outcomesPerSlice: number; summaryVictimsPerSlice: number; writeAttempts: number; codecVersion: number };
+  constructor(privateArea: Area, privateStore: SourceStore, privateOwnership: HostOwnership,
+    limits: { pageSize: number; creditBatchesPerSlice: number; outcomesPerSlice: number; summaryVictimsPerSlice: number; writeAttempts: number; codecVersion: number },
+    privateBoundary: <T>(run: () => T) => Promise<T>, privateCurrent: () => boolean) {
+    const keys = ['pageSize', 'creditBatchesPerSlice', 'outcomesPerSlice', 'summaryVictimsPerSlice', 'writeAttempts', 'codecVersion'] as const;
+    if (!limits || Object.keys(limits).length !== keys.length || !keys.every(key => Number.isSafeInteger(limits[key]) && limits[key] >= 1) || keys.filter(key => key !== 'codecVersion').some(key => limits[key] > 100)) throw new Error('explicit bounded source drain limits required');
+    this.area = privateArea; this.store = privateStore; this.ownership = privateOwnership; this.boundary = privateBoundary; this.isCurrent = privateCurrent; this.limits = { ...limits };
+  }
+  private readonly area: Area;
+  private readonly store: SourceStore;
+  private readonly ownership: HostOwnership;
+  private readonly boundary: <T>(run: () => T) => Promise<T>;
+  private readonly isCurrent: () => boolean;
+  private check() { this.ownership.assertOwned(); if (this.ownership.closed.aborted || !this.isCurrent()) throw new Error('source drain owner changed'); }
+  private async at<T>(run: () => T): Promise<T> { return this.boundary(() => { this.check(); return run(); }); }
+  private async io<T>(run: () => Promise<T>): Promise<T> { this.check(); const value = await run(); this.check(); return value; }
+  private async write<T>(run: () => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try { return await this.io(run); }
+      catch (error) { if (attempt >= this.limits.writeAttempts || this.ownership.closed.aborted || !this.isCurrent()) throw error; }
+    }
+  }
+  async drain(options: { refreshSummaries: boolean }): Promise<SourceDrainProgress> {
+    if (this.running) throw new Error('source drain already running');
+    this.running = true;
+    try {
+      const result = { credits: 0, pages: 0, retired: 0, summaries: 0, more: false };
+      for (let index = 0; index < this.limits.creditBatchesPerSlice; index++) {
+        const batch = await this.at(() => this.area.captureDirtyCredits(this.limits.pageSize));
+        if (!batch) break;
+        await this.write(() => this.store.recordContributionBatch(batch.writes));
+        await this.at(() => { if (this.area.markCreditsDurable(batch.token) !== 'acknowledged') throw new Error('source credit capture changed'); });
+        result.credits += batch.writes.length;
+      }
+      if ((await this.at(() => this.area.resourceUsage())).dirtyCreditEntries) return { ...result, more: true };
+      const captures = await this.at(() => this.area.pendingDeathRecipes(100));
+      const count = Math.min(captures.length, this.limits.outcomesPerSlice);
+      for (let index = 0; index < count; index++) {
+        const capture = captures[(this.nextOutcome + index) % captures.length];
+        let sealed = await this.io(() => this.store.getVictimSeal(capture.victim));
+        if (!sealed) {
+          const fence = await this.io(() => this.store.readContributionSummary(capture.victim, capture.recipe.overrides.map(credit => credit.character)));
+          const draft = await this.write(() => this.store.beginVictimDraft({ recipe: capture.recipe, initialCursor: capture.initialCursor, fence }));
+          const current = await this.at(() => this.area.stagedOutcomeResult(capture));
+          if (current.cursor.recipientCount < capture.recipe.expectedContributors) {
+            const read = await this.io(() => this.store.readContributionPage(draft.draftId, current.cursor.afterCharacter, this.limits.pageSize));
+            if (!read.credits.length || read.credits.length > this.limits.pageSize) throw new Error('source outcome page made no bounded progress');
+            const credits = read.credits.map(write => write.credit), planned = await this.at(() => this.area.planStagedOutcomePage(capture, credits));
+            // Exact immutable append retry proves this page even if the first COMMIT response was lost.
+            await this.write(() => this.store.appendVictimPage(draft.draftId, planned));
+            await this.at(() => this.area.acceptStagedOutcomePage(capture, planned, credits));
+            result.pages++;
+          }
+          const progress = await this.at(() => this.area.stagedOutcomeResult(capture));
+          if (progress.cursor.recipientCount === capture.recipe.expectedContributors) {
+            try { sealed = await this.write(() => this.store.sealVictimDraft(draft.draftId)); }
+            catch (error) { if (this.ownership.closed.aborted) throw error; sealed = await this.io(() => this.store.getVictimSeal(capture.victim)); if (!sealed) throw error; }
+          }
+        }
+        if (sealed) {
+          const proof = verifyPagedOutcomeSeal(capture.recipe, this.limits.codecVersion, sealed);
+          await this.at(() => this.area.retireJournaledOutcome(capture, proof)); result.retired++;
+        }
+      }
+      if (captures.length) this.nextOutcome = (this.nextOutcome + count) % captures.length;
+      const usage = await this.at(() => this.area.resourceUsage());
+      if (usage.dirtyCreditEntries || usage.pendingDeaths) return { ...result, more: true };
+      if (options.refreshSummaries) {
+        const read = await this.at(() => this.area.beginContributionSummaryRead(this.limits.summaryVictimsPerSlice));
+        if (read) {
+          try {
+            const summaries: Awaited<ReturnType<DurableOutcomeStore['readContributionSummary']>>[] = [];
+            for (const victim of read.victims) summaries.push(await this.io(() => this.store.readContributionSummary(victim, read.residents.map(resident => resident.character))));
+            await this.at(() => this.area.installContributionSummaries(read, summaries)); result.summaries += summaries.length;
+          } catch (error) { await this.boundary(() => this.area.cancelContributionSummaryRead(read)); throw error; }
+        }
+        result.more = (await this.at(() => this.area.contributionSummariesNeeded())).length > 0;
+      }
       return result;
     } finally { this.running = false; }
   }

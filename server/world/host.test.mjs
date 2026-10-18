@@ -13,13 +13,13 @@ import { WorldChatService } from './chat.ts';
 import { loadWorldCatalog, createGameplayCatalog } from './catalog.ts';
 import { createActualWorldHost } from './host.ts';
 import { createArea } from '../../src/sim/area.ts';
-import { deliverCertifiedAreaPage, PagedOutcomeRecovery, verifyPagedOutcomeSeal } from './persistence-coordinator.ts';
+import { deliverCertifiedAreaPage, PagedOutcomeRecovery, verifyPagedOutcomeSeal, AreaSourceDrain } from './persistence-coordinator.ts';
 import { DurableOutcomeStore } from './contribution-store.ts';
 import { planOutcomePage } from '../../src/sim/ledger.ts';
 
 import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
-import { createGameplayProtocol, GameplayReceiver, projectObservationExtras } from './gameplay/protocol.ts';
+import { createGameplayProtocol, GameplayReceiver, FragmentAssembler, projectObservationExtras } from './gameplay/protocol.ts';
 import { encodeInput } from './gameplay/intents.ts';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -65,12 +65,13 @@ async function runtime(options = {}) {
   // Vertical test relocates one actual W1 enemy template beside actual baked spawn, without altering its rules/stats.
   if (options.combat) worlds.set('w1', { ...base, publicDefinition: { ...base.publicDefinition, enemies: [{ ...base.publicDefinition.enemies[0], home: { x: spawn.x + 3, y: base.query.heightAt(spawn.x + 3, spawn.z), z: spawn.z }, wanderRadius: 0 }] } });
   const failures = [];
-  const host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, chat: options.chat ? new WorldChatService(pool) : undefined,
+  let host;
+  try { host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, outcomes: options.withoutOutcomes ? undefined : options.ledger ? options.outcomes ?? new DurableOutcomeStore(pool,codec,{planOutcomePage}) : options.outcomes, chat: options.chat ? new WorldChatService(pool) : undefined,
     gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
     policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
       checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
-      maxMutationSourcesPerTick: 64, loopIntervalMs: 2, chat: options.chat ? { maxPending: 4 } : undefined,
+      maxMutationSourcesPerTick: 64, loopIntervalMs: 2, ledger: options.ledger ? {sourceLimits:options.ledgerSourceLimits??sourceLimits,drainLimits:{pageSize:100,creditBatchesPerSlice:1,outcomesPerSlice:1,summaryVictimsPerSlice:10,writeAttempts:2},recoveryLimits:{draftsPerSlice:10,pageSize:100},recoveryIntervalMs:options.recoveryIntervalMs??100} : undefined, chat: options.chat ? { maxPending: 4 } : undefined,
       victimOutcome: { maxEntries: options.victimMaxEntries ?? 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 },
       victimOutcomeRetryCeiling: options.victimRetry ? { maxEntries: 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 } : undefined,
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
@@ -81,9 +82,10 @@ async function runtime(options = {}) {
       observationExtras: projectObservationExtras },
     originAllowed: value => value === origin, clientIp: () => '127.0.0.1', nowMonotonicMs: () => options.capacity ? 0 : performance.now(), nowWallMs: Date.now,
     onFailure: (stage, error) => { failures.push({ stage, message: error.message }); },
-  });
+  }); } catch(error) { await ownership.release(); throw error; }
   const server = createServer(); server.on('upgrade', host.handleUpgrade); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const url = `ws://127.0.0.1:${server.address().port}/world`;
+  if(!options.deferReady)try{await host.ready();}catch(error){await host.shutdown(1000);server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await ownership.release();throw error;}
   return { host, admission, ownership, url, failures, async close() {
     const result = await host.shutdown(3000); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await ownership.release();
     return result;
@@ -91,14 +93,14 @@ async function runtime(options = {}) {
 }
 async function client(rt, c, auth = true) {
   const ws = new WebSocket(rt.url, { headers: { Origin: origin } });
-  const bot = { ws, state: null, receiver: null, binding: null, sequence: 0, events: [], results: [], errors: [], controls: [], packets: 0 };
+  const bot = { ws, state: null, receiver: null, binding: null, sequence: 0, events: [], results: [], errors: [], controls: [], messages: [], packets: 0 };
   ws.on('message', (bytes, binary) => {
     try {
       if (!binary) {
         const value = JSON.parse(bytes.toString()); bot.controls.push(value);
-        if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.receiver = new GameplayReceiver(binding, gameplayCatalog); }
+        if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.receiver = new GameplayReceiver(binding, gameplayCatalog); bot.tap = new FragmentAssembler(binding); }
       } else {
-        bot.packets++; const result = bot.receiver.accept(bytes, performance.now() / 1000);
+        bot.packets++; const captured=bot.tap.accept(bytes,performance.now()/1000);if(captured)bot.messages.push({kind:captured.kind,header:captured.header,control:captured.kind===17?captured.payload:null});const result = bot.receiver.accept(bytes, performance.now() / 1000);
         if (result?.kind === 'snapshot') { bot.state = result.state; bot.events.push(...result.events); bot.results.push(...result.results); }
         else if (result?.kind === 'events') { bot.events.push(...result.events); bot.results.push(...result.results); }
         else if (result?.kind === 'control') bot.controls.push(result.control);
@@ -112,8 +114,8 @@ async function client(rt, c, auth = true) {
 }
 async function ready(rt, bot) { await until(() => bot.state || bot.controls.some(v => v.type === 'error') || rt.failures.length); assert.deepEqual(rt.failures, []); assert.deepEqual(bot.errors, []); assert.ok(bot.state, JSON.stringify(bot.controls)); }
 
-test('real PG+WS login, level1 ability hit/death/full reward, durable save and authenticated live reconnect', { timeout: 20000 }, async () => {
-  const rt = await runtime({ combat: true });
+for(const ledger of [false,true])test(ledger?'external delayed ability has full reward/save and live reconnect':'real PG+WS login, level1 ability hit/death/full reward, durable save and authenticated live reconnect', { timeout: 20000 }, async () => {
+  const rt = await runtime({ combat: true, ledger });
   try {
     const c = await character('mage'), bot = await client(rt, c); await ready(rt, bot);
     assert.equal(bot.state.self.player.xp, 0); assert.equal(bot.state.actors.find(a => a.ref.id === bot.state.selfRef.id).level, 1);
@@ -286,8 +288,8 @@ test('100 actual authenticated sockets occupy one public Area; 101st queues, tak
   } finally { for (const bot of bots) bot.ws.close(); await rt.close(); }
 });
 
-test('all four real worlds round-trip through validated gate intents with unchanged XP and retained ultimate cooldown', { timeout: 25000 }, async () => {
-  const rt = await runtime(); let bot;
+for(const ledger of [false,true])test(ledger?'external four real worlds round-trip through validated gate intents with unchanged XP and retained ultimate cooldown':'all four real worlds round-trip through validated gate intents with unchanged XP and retained ultimate cooldown', { timeout: 25000 }, async () => {
+  const rt = await runtime({ledger}); let bot;
   try {
     const c = await character('mage'), first = loaded.get('w1'), initialGate = first.publicDefinition.interactions.find(i => i.id === 'gate:w2');
     const initial = structuredClone(c.record.checkpoint); initial.location = { ...initialGate.position, yaw: 0 };
@@ -466,15 +468,15 @@ test('chat bounds pending DB work and discards a late committed line after autho
  }finally{if(blocker){await blocker.query('ROLLBACK');blocker.release();}bot?.ws.close();await rt.close();}
 });
 
-test('257 trusted offline journal fixtures drain through committed bounded pages before the first public baseline without duplicate rewards', { timeout: 10000 }, async () => {
+for(const ledger of [false,true])test(ledger?'external 257 offline pages commit and prune before first baseline without duplicate rewards':'257 trusted offline journal fixtures drain through committed bounded pages before the first public baseline without duplicate rewards', { timeout: 10000 }, async () => {
  const c=await character();
  for(let offset=0;offset<257;offset+=100){const entries=[];for(let i=offset;i<Math.min(257,offset+100);i++){const victim={area:'trusted-offline-fixture',id:i+1,life:1},id=JSON.stringify([victim.area,victim.id,victim.life,c.record.characterId]);entries.push({accountId:c.binding.accountId,characterId:c.record.characterId,id,payload:{id,victim,recipient:c.record.characterId,xp:0,coins:1,objectives:[],flags:[]}});}await store.recordGrantBatch(entries);}
- const rt=await runtime();let bot;
+ const rt=await runtime({ledger});let bot;
  try{bot=await client(rt,c);await ready(rt,bot);assert.equal(bot.state.self.player.coins,257);assert.equal(bot.state.self.player.xp,0);
   const receipts=await pool.query('SELECT applied_revision,count(*)::int n FROM world_character_grant_receipts WHERE character_id=$1 GROUP BY applied_revision ORDER BY applied_revision',[c.record.characterId]);
   assert.deepEqual(receipts.rows.map(r=>r.n),[100,100,57]);assert.equal((await store.pendingGrants(c.binding.accountId,c.record.characterId)).length,0);assert.deepEqual(bot.errors,[]);assert.deepEqual(rt.failures,[]);
  }finally{bot?.ws.close();await rt.close();}
- const resumed=await runtime();let next;try{next=await client(resumed,c);await ready(resumed,next);assert.equal(next.state.self.player.coins,257);}finally{next?.ws.close();await resumed.close();}
+ const resumed=await runtime({ledger});let next;try{next=await client(resumed,c);await ready(resumed,next);assert.equal(next.state.self.player.coins,257);}finally{next?.ws.close();await resumed.close();}
 });
 
  test('insufficient whole outcome budget freezes complete two-contributor source with no journal or public reward', { timeout: 12000 }, async () => {
@@ -564,8 +566,8 @@ test('disconnect during a certified read discards the old connection lease and r
   }finally{try{if(area){if(barrier)area.releaseDurabilityBarrier(barrier);area.dispose();}}finally{await ownership.release();}}
 });
 
-test('second authoritative party member joins fighting Rust without duplicate wake, respawn refill or closing an unrelated public client', { timeout: 20000 }, async () => {
- const rt=await runtime({party:true}),bots=[];let heartbeat;
+for(const ledger of [false,true])test(ledger?'external private party second member joins fighting Rust without wake/refill/global close':'second authoritative party member joins fighting Rust without duplicate wake, respawn refill or closing an unrelated public client', { timeout: 20000 }, async () => {
+ const rt=await runtime({party:true,ledger}),bots=[];let heartbeat;
  try{
   const base=loaded.get('w1'),entry=base.encounterDefinitions.get('rust').pois['encounter:entry'],beacon=base.publicDefinition.interactions.find(i=>i.id==='beacon'),records=[];
   for(let i=0;i<2;i++){const c=await character('mage'),checkpoint=structuredClone(c.record.checkpoint);checkpoint.progress.xp=900;checkpoint.survival.maxHp=Math.round(checkpoint.progress.baseMaxHp*1.3);checkpoint.survival.hp=i?Math.floor(checkpoint.survival.maxHp/2):checkpoint.survival.maxHp;checkpoint.survival.maxResource=160;checkpoint.survival.resource=i?60:160;checkpoint.progress.quests.status.q1=checkpoint.progress.quests.status.q2='done';checkpoint.progress.quests.status.q3='active';checkpoint.progress.quests.progress['q1-kill']=6;checkpoint.progress.quests.progress['q1-cog']=4;checkpoint.progress.quests.progress['q2-deliver']=1;checkpoint.progress.quests.cogs=4;checkpoint.location={...(i?entry.position:beacon.position),yaw:0};c.record=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,c.record.revision,checkpoint,[]);records.push(c);const b=await client(rt,c);bots.push(b);await ready(rt,b);}
@@ -611,6 +613,7 @@ test('actual PG recovery sweeps bound every slice, fairly advance large drafts, 
   for(let i=0;;i++){const slice=await recovery.sweep();assert.ok(slice.visited<=1&&slice.appended<=1&&slice.sealed<=1);if(slice.cycleComplete&&!slice.cycleHasPending)break;if(i>20)throw new Error('draft recovery failed to drain');}
   const aSeal=await ledger.getVictimSeal(a.victim);assert.equal(verifyPagedOutcomeSeal(a.recipe,codec.version,aSeal).recipientCount,3);assert.throws(()=>verifyPagedOutcomeSeal({...a.recipe,victim:{...a.victim,life:2}},codec.version,aSeal),/proof mismatch/);assert.throws(()=>verifyPagedOutcomeSeal(a.recipe,codec.version,{...aSeal,finalCursor:{...aSeal.finalCursor,randomDraws:2}}),/proof mismatch/);assert.equal(lostAppend,true);assert.equal(lostSeal,true);assert.equal(recovery.metrics.maxPage,1);
   const before=recovery.metrics.cycles,late=await recoveryDraft(ledger,{area:'recovery-late-after-empty',id:1,life:1},records.slice(1,2));
+  const protectedSlice=await recovery.sweep({isLiveArea:areaId=>areaId===late.victim.area});assert.equal(protectedSlice.skippedLive,1);assert.equal(await ledger.getVictimSeal(late.victim),null);
   for(let i=0;!(await ledger.getVictimSeal(late.victim));i++){await recovery.sweep();if(i>10)throw new Error('late draft missed');}
   assert.ok(recovery.metrics.cycles>=before);assert.equal((await ledger.getVictimSeal(late.victim)).recipientCount,1);
  }finally{await ownership.release();}
@@ -619,11 +622,84 @@ test('actual PG recovery sweeps bound every slice, fairly advance large drafts, 
 test('active actual WS actor receives a late-sealed older journal row after a previous empty pending read', {timeout:12000}, async()=>{
  const c=await character(),ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),draft=await recoveryDraft(ledger,{area:'late-sealed-old-sequence',id:1,life:1},[c],false),page=await ledger.readContributionPage(draft.draftId,null,100),planned=planOutcomePage(draft.recipe,draft.cursor,page.credits.map(w=>w.credit));await ledger.appendVictimPage(draft.draftId,planned);
  const victim={area:'newer-already-visible',id:1,life:1},id=JSON.stringify([victim.area,1,1,c.record.characterId]);const newer=await store.recordGrant(c.binding.accountId,c.record.characterId,id,{id,victim,recipient:c.record.characterId,xp:1,coins:1,objectives:[],flags:[]});
- const old=(await pool.query('SELECT journal_sequence FROM world_character_grants WHERE grant_id=$1',[planned.grants[0].id])).rows[0];assert.ok(BigInt(old.journal_sequence)<BigInt(newer.sequence));
+
  const rt=await runtime();let bot;
  try{
   bot=await client(rt,c);await ready(rt,bot);assert.equal(bot.state.self.player.xp,1);await until(()=>!rt.host.stats().durableBarrier);assert.deepEqual(await store.pendingGrants(c.binding.accountId,c.record.characterId),[]);
   const recovery=new PagedOutcomeRecovery(ledger,rt.ownership,{draftsPerSlice:10,pageSize:100,codecVersion:codec.version});const slice=await recovery.sweep();assert.ok(slice.sealed>=1);
-  await until(()=>bot.state.self.player.xp===21||rt.failures.length,5000);assert.deepEqual(rt.failures,[]);assert.equal(bot.state.self.player.coins,6);assert.deepEqual(bot.errors,[]);assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,21);
+  await until(()=>bot.state.self.player.xp===21||rt.failures.length,5000);assert.deepEqual(rt.failures,[]);assert.equal(bot.state.self.player.coins,6);assert.deepEqual(bot.errors,[]);assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,21);const oldProof=await store.loadForRecovery(c.binding.accountId,c.record.characterId,[planned.grants[0].id]);assert.ok(BigInt(oldProof.grants[0].sequence)<BigInt(newer.sequence));
  }finally{bot?.ws.close();await rt.close();}
+});
+
+test('external factory recurring recovery catches a late old-owner draft after an empty startup scan and an actor pending read', {timeout:12000}, async()=>{
+ const c=await character(),ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),rt=await runtime({ledger:true,recoveryIntervalMs:2000});let bot;
+ try{
+  bot=await client(rt,c);await ready(rt,bot);await until(()=>!rt.host.stats().durableBarrier);assert.deepEqual(await store.pendingGrants(c.binding.accountId,c.record.characterId),[]);
+  // A late old-owner draft has a different Area UUID and is discoverable in a later bounded cycle.
+  const draft=await recoveryDraft(ledger,{area:'late-old-owner-after-ready',id:1,life:1},[c],false),page=await ledger.readContributionPage(draft.draftId,null,100),planned=planOutcomePage(draft.recipe,draft.cursor,page.credits.map(w=>w.credit));await ledger.appendVictimPage(draft.draftId,planned);
+  await until(()=>bot.state.self.player.xp===20||rt.failures.length,7000);assert.deepEqual(rt.failures,[]);assert.equal(bot.state.self.player.coins,5);assert.equal((await ledger.getVictimSeal(draft.victim)).recipientCount,1);assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,20);assert.deepEqual(await store.pendingGrants(c.binding.accountId,c.record.characterId),[]);assert.deepEqual(bot.errors,[]);
+ }finally{bot?.ws.close();await rt.close();}
+});
+
+const sourceLimits={maxDirtyCreditEntries:10000,maxDirtyCreditBytes:16777216,maxPendingDeaths:32,maxStagedBytes:8388608};
+const sourceDrainLimits={pageSize:100,creditBatchesPerSlice:1,outcomesPerSlice:1,summaryVictimsPerSlice:10,writeAttempts:2,codecVersion:1};
+function actualExternalSource(id,options={}){const base=loaded.get('w1'),spawn=base.publicDefinition.spawn.position,definition={...base.publicDefinition,...(options.bare?{npcs:[],townsfolk:[],interactions:[]}:{}),enemies:[{...base.publicDefinition.enemies[0],home:{x:spawn.x+3,y:base.query.heightAt(spawn.x+3,spawn.z),z:spawn.z},wanderRadius:0}]};return createArea({id,ledgerMode:'external-durable',ledgerLimits:sourceLimits,definition,query:base.query,actionData:base.actionData,policy:base.policy,seed:1,context:{mode:'public',pvp:'disabled',members:[]},limits:{eventCount:options.eventCount??4096,inputCommandsPerTick:32,timers:256,projectiles:256}});}
+const neutralIntent=(seq,commands=[])=>({seq,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands});
+
+test('actual baked Area ability death spills credits, seals exact source outcome, certifies local duplicate and saves/prunes once through PG', {timeout:15000}, async()=>{
+ const c=await character(),ownership=await acquireHostOwnership(pool,'actual-source-drain');let area,barrier;
+ try{area=actualExternalSource('actual-source-drain');
+  const ref=area.attachFresh(c.record.characterId,'warrior','human','spawn',0);area.step(new Map([[ref.id,neutralIntent(1,[{kind:'ability',slot:5}])]]));assert.equal(area.services.player(ref).state.xp,20);assert.equal(area.resourceUsage().dirtyCreditEntries,1);assert.equal(area.resourceUsage().pendingDeaths,1);
+  barrier=area.beginDurabilityBarrier('actual-source-journal');const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),background=new PagedOutcomeRecovery(ledger,ownership,{draftsPerSlice:10,pageSize:100,codecVersion:codec.version});let lostCredit=false,lostAppend=false,lostSeal=false,skippedLive=0;
+  const ambiguous=new Proxy(ledger,{get(target,key){if(key==='beginVictimDraft')return async(...args)=>{const draft=await target.beginVictimDraft(...args),sweep=await background.sweep({isLiveArea:areaId=>areaId===area.services.id});skippedLive+=sweep.skippedLive;assert.equal(sweep.appended,0);assert.equal(sweep.sealed,0);return draft;};if(['recordContributionBatch','appendVictimPage','sealVictimDraft'].includes(key))return async(...args)=>{const value=await target[key](...args);const lose=key==='recordContributionBatch'?!lostCredit:key==='appendVictimPage'?!lostAppend:!lostSeal;if(lose){if(key==='recordContributionBatch')lostCredit=true;else if(key==='appendVictimPage')lostAppend=true;else lostSeal=true;throw new Error('lost committed source IO response');}return value;};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+  const drain=new AreaSourceDrain(area,ambiguous,ownership,sourceDrainLimits,async run=>run(),()=>true),progress=await drain.drain({refreshSummaries:true});assert.equal(progress.more,false);assert.equal(progress.credits,1);assert.equal(progress.pages,1);assert.equal(progress.retired,1);assert.equal(area.resourceUsage().pendingDeaths,0);assert.equal(area.resourceUsage().dirtyCreditEntries,0);assert.equal(lostCredit&&lostAppend&&lostSeal,true);assert.equal(skippedLive,1);
+  const certified=await deliverCertifiedAreaPage({area,ref,accountId:c.binding.accountId,characterId:c.record.characterId,expectedRevision:0,store,codec,ownership,boundary:async run=>run(),isCurrent:()=>true});assert.equal(certified.kind,'applied');assert.equal(certified.results[0].result,'duplicate');assert.equal(area.services.player(ref).state.xp,20);
+  const capture=area.capturePlayerCheckpoint(ref),saved=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,0,codec.toJson(capture.checkpoint),capture.appliedGrantIds);area.markCheckpointDurable(capture.captureId,saved.revision,capture.appliedGrantIds);assert.equal(saved.checkpoint.progress.xp,20);assert.equal(area.resourceUsage().appliedGrantIds,0);assert.deepEqual(await store.pendingGrants(c.binding.accountId,c.record.characterId),[]);assert.deepEqual(area.prepareLedgerStep(),{ready:true});const oldRecord=await character(),old=await recoveryDraft(ledger,{area:'old-source-after-restart-fixture',id:1,life:1},[oldRecord],false);await background.sweep({isLiveArea:areaId=>areaId===area.services.id});assert.equal((await ledger.getVictimSeal(old.victim)).recipientCount,1);
+ }finally{try{if(barrier)area.releaseDurabilityBarrier(barrier);area?.dispose();}finally{await ownership.release();}}
+});
+
+test('zero-resident actual Area still flushes accepted hit eligibility and refreshes its empty-roster summary', {timeout:10000}, async()=>{
+ const c=await character(),ownership=await acquireHostOwnership(pool,'empty-source-drain');let area,barrier;
+ try{area=actualExternalSource('empty-source-drain');
+  const ref=area.attachFresh(c.record.characterId,'warrior','human','spawn',0),victim=[...area.enemies.values()][0].unit;area.services.getUnit(victim).hp=area.services.getUnit(victim).maxHp=1000;area.step(new Map([[ref.id,neutralIntent(1,[{kind:'ability',slot:5}])]]));assert.equal(area.resourceUsage().dirtyCreditEntries,1);
+  const retirement=area.quiescePlayer(ref,'source-test-disconnect'),saved=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,0,codec.toJson(retirement.capture.checkpoint),retirement.capture.appliedGrantIds);area.markCheckpointDurable(retirement.capture.captureId,saved.revision,retirement.capture.appliedGrantIds);area.commitPlayerRetirement(retirement.token);assert.equal(area.players.size,0);
+  barrier=area.beginDurabilityBarrier('empty-source');const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),drain=new AreaSourceDrain(area,ledger,ownership,sourceDrainLimits,async run=>run(),()=>true),progress=await drain.drain({refreshSummaries:true});assert.equal(progress.credits,1);assert.equal(progress.more,false);assert.equal(progress.summaries,1);assert.equal(area.resourceUsage().dirtyCreditEntries,0);assert.equal((await ledger.readContributionSummary(victim,[])).totalContributors,1);assert.equal(area.resourceUsage().ledgerOwners,0);
+ }finally{try{if(barrier)area.releaseDurabilityBarrier(barrier);area?.dispose();}finally{await ownership.release();}}
+});
+
+test('actual failed Area drains only preserved source obligations to PG without checkpointing its failed actor prefix', {timeout:10000}, async()=>{
+ const c=await character(),ownership=await acquireHostOwnership(pool,'failed-source-drain');let area;
+ try{area=actualExternalSource('failed-source-drain',{eventCount:1,bare:true});
+  const ref=area.attachFresh(c.record.characterId,'warrior','human','spawn',0),victim=[...area.enemies.values()][0].unit;area.services.getUnit(victim).hp=1;Object.assign(area.services.getUnit(ref),{x:area.services.getUnit(victim).x,y:area.services.getUnit(victim).y,z:area.services.getUnit(victim).z});area.services.getUnit(victim).stunUntil=100;area.services.player(ref).state.nextSwing=100;area.drainEvents();area.services.getUnit(ref).pendingHit={left:0,plan:{attack:'warrior-auto',source:ref,target:victim}};assert.throws(()=>area.step(new Map()),/capacity/);assert.equal(area.pendingDeathRecipes(1).length,1);assert.throws(()=>area.step(new Map()),/failed/);
+  const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),drain=new AreaSourceDrain(area,ledger,ownership,sourceDrainLimits,async run=>run(),()=>true),progress=await drain.drain({refreshSummaries:false});assert.equal(progress.more,false);assert.equal(progress.retired,1);assert.equal(area.resourceUsage().pendingDeaths,0);assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,0);assert.equal((await store.pendingGrants(c.binding.accountId,c.record.characterId))[0].payload.xp,20);
+ }finally{try{area?.dispose();}finally{await ownership.release();}}
+});
+
+for(const controlPath of ['invalid-input','restarting'])test('actual external factory withholds published ACK on '+controlPath+' until a real death seal and reconnects with one reward', {timeout:15000},async()=>{
+ let release;const gate=new Promise(resolve=>{release=resolve;});let entered=false;const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),blocked=new Proxy(ledger,{get(target,key){if(key==='recordContributionBatch')return async(...args)=>{entered=true;await gate;return target.recordContributionBatch(...args);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+ const c=await character(),rt=await runtime({ledger:true,combat:true,outcomes:blocked});let bot,resumed,next,closed=false;
+ try{
+  assert.equal(rt.host.stats().ready,true);bot=await client(rt,c);await ready(rt,bot);assert.equal(bot.state.header.consumedInput,0);bot.send([{kind:'ability',slot:5}]);await until(()=>entered||rt.failures.length,5000);assert.deepEqual(rt.failures,[]);assert.equal(bot.state.self.player.xp,0);
+  if(controlPath==='invalid-input'){
+   bot.ws.send(Buffer.from([0,1,2]));await until(()=>bot.messages.some(m=>m.control?.type==='error'&&m.control.code==='invalid-input'));const rejected=bot.messages.find(m=>m.control?.type==='error'&&m.control.code==='invalid-input');assert.equal(rejected.header.consumedInput,0);await until(()=>bot.ws.readyState===WebSocket.CLOSED);release();await until(()=>!rt.host.stats().durableBarrier);
+   resumed=await client(rt,c);await ready(rt,resumed);assert.equal(resumed.state.self.player.xp,20);assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,20);assert.equal(rt.host.stats().frozen,false);
+  }else{
+   const ending=rt.close();await until(()=>bot.messages.some(m=>m.control?.type==='restarting'));assert.equal(bot.messages.find(m=>m.control?.type==='restarting').header.consumedInput,0);release();assert.equal((await ending).durable,true);closed=true;next=await runtime({ledger:true});resumed=await client(next,c);await ready(next,resumed);assert.equal(resumed.state.self.player.xp,20);
+  }
+  assert.deepEqual(bot.errors,[]);assert.deepEqual(resumed.errors,[]);assert.deepEqual(rt.failures,[]);
+ }finally{release();bot?.ws.close();resumed?.ws.close();if(next)await next.close();if(!closed)await rt.close();}
+});
+
+test('actual external factory.ready holds admission until currently discoverable draft recovery completes', {timeout:10000},async()=>{
+ const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage});let release,entered=false;const gate=new Promise(resolve=>{release=resolve;}),blocked=new Proxy(ledger,{get(target,key){if(key==='getDraftRecoveryHighWater')return async()=>{entered=true;await gate;return target.getDraftRecoveryHighWater();};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}}),rt=await runtime({ledger:true,deferReady:true,outcomes:blocked});let ws;
+ try{
+  await until(()=>entered);assert.equal(rt.host.stats().ready,false);assert.equal(rt.host.stats().accepting,false);ws=new WebSocket(rt.url,{headers:{Origin:origin}});ws.on('error',()=>{});const status=await new Promise(resolve=>ws.on('unexpected-response',(_req,res)=>{resolve(res.statusCode);res.resume();}));assert.equal(status,503);ws.terminate();release();await rt.host.ready();assert.equal(rt.host.stats().ready,true);assert.equal(rt.host.stats().accepting,true);assert.deepEqual(rt.failures,[]);
+ }finally{release();ws?.terminate();await rt.close();}
+});
+
+test('external optional pair and full-roster capacity reject before admission while absent pair stays retained',async()=>{
+ await assert.rejects(runtime({ledger:true,withoutOutcomes:true}),/must be paired/);
+ await assert.rejects(runtime({outcomes:new DurableOutcomeStore(pool,codec,{planOutcomePage})}),/must be paired/);
+ await assert.rejects(runtime({ledger:true,ledgerSourceLimits:{...sourceLimits,maxDirtyCreditEntries:1}}),/unsupported-step-capacity/);
+ const rt=await runtime();try{await rt.host.ready();assert.equal(rt.host.stats().ready,true);assert.equal('ledgerDirtyCreditEntries' in rt.host.stats(),false);}finally{await rt.close();}
 });
