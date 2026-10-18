@@ -1,3 +1,4 @@
+import type { CoreGameBridge } from './coreBridge';
 import {VillageGames} from './villageGames';
 import {t} from '../i18n';
 import {loadingLabel,loadingTips,regionName,regionSubtitle} from './worldLocale';
@@ -89,6 +90,7 @@ const v1 = new THREE.Vector3();
 const v2 = new THREE.Vector3();
 
 export class Game {
+  core:CoreGameBridge|null=null;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
   /** Everything the simulation shows or plays goes out here; `sink` turns it into HUD, effects and sound. */
@@ -520,6 +522,7 @@ export class Game {
     this.boats=new ShoreBoat(this);
     this.achievements=new Achievements(this);
     this.journey.restore();
+    if(import.meta.env.DEV&&new URLSearchParams(location.search).get('simCore')==='1'){this.loaded=false;const {CoreGameBridge}=await import('./coreBridge');this.core=await CoreGameBridge.create(this);this.loaded=true;}
     this.intro();
     this.villageGames=new VillageGames(this);
     this.multiplayer = new Multiplayer(this);
@@ -630,7 +633,8 @@ export class Game {
     const paused = (this.hud.menu.open||this.app.account.open) && !this.multiplayer?.battle.active;
     this.handleInput();
     const authority = this.multiplayer?.battle.authority !== false;
-    if (!paused) {
+    if (!paused&&this.core) {this.core.update(dt);this.journey?.update(dt);this.sink.drawState([this.encounter],authority);}
+    if (!paused&&!this.core) {
       this.time += dt;
       this.timers.update(this.time);
       this.player.update(dt);
@@ -652,7 +656,7 @@ export class Game {
     this.boats?.update(paused?0:dt);
     this.achievements?.update(paused?0:dt);
     this.voyageIsland?.update();
-    if (!paused) {
+    if (!paused&&!this.core) {
       // The game clock lands pending swings and flies projectiles, on screen or not.
       for (const u of this.units) u.updateHit(dt);
       this.projectiles.update(dt);
@@ -1121,7 +1125,7 @@ export class Game {
       this.audio.sfx('sfx-quest-complete');
       this.hud.messages.banner(() => (t('퀘스트 완료','Quest Complete')),() => (def.title), 'quest');
       this.hud.chat.quest(t(`${def.title} 완료!`,`${def.title} completed.`));
-      this.player.gainXp(def.xp);
+      if(!this.core)this.player.gainXp(def.xp);
       this.hud.tracker.update(this.quests);
       this.refreshQuestViews(id, def.turnIn === null);
       if (id === 'q3') this.onBeaconQuestDone();

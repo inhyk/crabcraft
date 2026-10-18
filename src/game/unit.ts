@@ -2,8 +2,7 @@
 // and the boss are all Units; their behaviour lives in separate controllers.
 import * as THREE from 'three';
 import type { AreaServices, EntityRef, SimUnit } from '../sim/types.ts';
-import { actionRequest } from '../sim/data/actions.ts';
-import { teleport as numericTeleport, moveTo as numericMoveTo, feedLocomotion as numericFeed } from '../sim/unit.ts';
+import { createLivePosition, applyNumericPose } from './simUnitView';
 import type { CrabRig, Expression } from '../crab/types';
 import { actionHitDelay, isSkill, skillWindow, type SkillPart } from '../motion/skills';
 import type { MotionController, MotionId } from '../motion/types';
@@ -57,19 +56,25 @@ export function lineOfSight(world: World, from: Unit, to: Unit): boolean {
   return hit === null || hit >= eye.distanceTo(at) - to.radius - 0.3;
 }
 
+export interface NumericUnitPorts {
+  action(id:MotionId,options:ActionOptions):void;
+  teleport(x:number,z:number,yaw?:number):void;
+  moveTo(x:number,z:number,dt:number):void;
+  feed(dt:number):void;
+}
 export class Unit {
-  private simulation: { state:SimUnit; services:AreaServices } | null = null;
+  private simulation: { state:SimUnit; services:AreaServices; ports:NumericUnitPorts } | null = null;
   private numericPosition:THREE.Vector3|null=null;
   get simState():SimUnit|null{return this.simulation?.state??null;}
   get ref():EntityRef|null{return this.simulation?.state.ref??null;}
-  bindSimulation(state:SimUnit,services:AreaServices):void {
-    this.simulation={state,services};
-    if(!this.numericPosition){const owner=this;this.numericPosition=new THREE.Vector3();for(const key of ['x','y','z'] as const)Object.defineProperty(this.numericPosition,key,{configurable:true,enumerable:true,get:()=>owner.simulation!.state[key],set:(value:number)=>{owner.simulation!.state[key]=value;}});}
+  bindSimulation(state:SimUnit,services:AreaServices,ports:NumericUnitPorts):void {
+    this.simulation={state,services,ports};
+    if(!this.numericPosition)this.numericPosition=createLivePosition(()=>this.simulation!.state);
     for(const key of ['level','yaw','radius','height','hp','maxHp','alive','stunUntil','slowUntil','slowPct','rust','rustUntil','absorb','absorbMax','absorbUntil','blessingUntil','lastCombat','pushX','pushZ','pushTime','lift','hidden','targetable','invulnerable'] as const)Object.defineProperty(this,key,{configurable:true,enumerable:true,get:()=>this.simulation!.state[key],set:value=>{(this.simulation!.state as unknown as Record<string,unknown>)[key]=value;}});
     this.pendingHit=null;
   }
   /** Render only. The canonical pose clock and root carry have already advanced in Area. */
-  private applyNumericPose():void {const u=this.simulation!.state;this.rig.root.position.set(u.x,u.y,u.z);this.rig.root.rotation.y=u.yaw;this.rig.setPose(u.pose.appliedQ);const p=u.pose.appliedPosition,m=this.rig.metersToUnits;this.rig.body.position.set(p[0]*m,p[1]*m,p[2]*m);const q=u.pose.appliedRotation;this.rig.body.quaternion.set(q[0],q[1],q[2],q[3]);}
+  private applyNumericPose():void {applyNumericPose(this.rig,this.simulation!.state);}
 
   private static nextId = 1;
   readonly id = Unit.nextId++;
@@ -169,7 +174,7 @@ export class Unit {
 
   /** Place without interpolation (spawn, respawn, teleport). */
   teleport(world: World, x: number, z: number, yaw?: number): void {
-    if(this.simulation){numericTeleport(this.simulation.state,this.simulation.services.query,x,z,yaw);return;}
+    if(this.simulation){this.simulation.ports.teleport(x,z,yaw);return;}
     const p = world.resolveCollision(x, z, this.radius, tmp2);
     this.pos.set(p.x, world.heightAt(p.x, p.y), p.y);
     this.prevX = this.pos.x;
@@ -182,7 +187,7 @@ export class Unit {
 
   /** Move to x,z with collision and ground following. */
   moveTo(world: World, x: number, z: number, dt: number): void {
-    if(this.simulation){numericMoveTo(this.simulation.state,this.simulation.services.query,x,z,dt);return;}
+    if(this.simulation){this.simulation.ports.moveTo(x,z,dt);return;}
     const p = world.resolveCollision(x, z, this.radius, tmp2);
     this.pos.x = p.x;
     this.pos.z = p.y;
@@ -235,7 +240,7 @@ export class Unit {
    * data, or after hitAt seconds; the clip's own events never land a blow.
    */
   act(id: MotionId, o: ActionOptions = {}): void {
-    if(this.simulation){if(o.onHit)throw new Error('Numeric actions require a typed impact plan');this.simulation.services.startAction(this.simulation.state.ref,actionRequest(this.simulation.services.actionData,id,{upper:o.upper,part:o.part,from:o.from,to:o.to,speed:o.speed,loop:o.loop,fade:o.fade,carryRoot:o.carryRoot}));return;}
+    if(this.simulation){if(o.onHit)throw new Error('Numeric actions require a typed impact plan');this.simulation.ports.action(id,o);return;}
 
     this.onAction?.(id);
     // A skill clip is the whole recorded rollout: play its move, at its rate, unless told otherwise.
@@ -297,7 +302,7 @@ export class Unit {
    * (vx toward its left, vz forward, yawRate positive = left).
    */
   feedLocomotion(dt: number): void {
-    if(this.simulation){numericFeed(this.simulation.state,dt);return;}
+    if(this.simulation){this.simulation.ports.feed(dt);return;}
     if (dt <= 0) return;
     let dx = (this.pos.x - this.prevX) / dt;
     let dz = (this.pos.z - this.prevZ) / dt;
