@@ -1,5 +1,6 @@
 import type { ActionId, ActionRequest, Admission, Area as AreaContract, AreaContext, AreaDebugState, AreaOptions, AreaServices, AreaSnapshot, BossSim, CharacterId, ClassId, CombatController, DebugValue, EarnedGrant, EnemySim, EntityId, EntityRef, HitPlan, PendingHit, PlayerIntent, PlayerSim, ProjectileState, SimUnit, StagedArrival, StagedDeparture, TimerAction, TransferDTO } from './types.ts';
 import { Actions } from './actions.ts';
+import { validatePopulation } from './math.ts';
 import { Combat } from './combat.ts';
 import { resolvePlayerHit } from './abilities.ts';
 import { Enemy } from './enemy.ts';
@@ -54,13 +55,13 @@ export class SimulationArea implements AreaContract {
   constructor(options:AreaOptions){
     if(!options.id)throw new Error('Area instance ID required');
     for(const n of Object.values(options.limits))if(!Number.isSafeInteger(n)||n<0)throw new RangeError('Invalid area limit');
-    this.options={...options,definition:immutable(options.definition),limits:immutable(options.limits)};
+    this.options={...options,definition:immutable(options.definition),limits:immutable(options.limits),policy:Object.freeze({...options.policy})};
     this.context=immutable({...options.context,members:[]});
     if(options.context.members.length)throw new Error('Attach actors before supplying membership');
     this.rng=new Random(options.seed);this.events=new Events(options.limits.eventCount);this.timers=new Timers(options.limits.timers);
     const self=this;
     this.services={
-      id:options.id,world:options.definition.world,query:options.query,actionData:options.actionData,definition:this.options.definition,policy:options.policy,random:this.rng,ids:this.ids,timers:this.timers,
+      id:options.id,world:options.definition.world,query:options.query,actionData:options.actionData,definition:this.options.definition,policy:this.options.policy,random:this.rng,ids:this.ids,timers:this.timers,
       get time(){return self.clock;},get tick(){return self.stepId;},get context(){return self.context;},get combat(){return self.combat;},
       getUnit:ref=>this.getUnit(ref),controller:ref=>this.getUnit(ref)?this.controllerMap.get(ref.id)??null:null,
       player:ref=>this.getUnit(ref)?this.playerMap.get(ref.id)??null:null,
@@ -82,6 +83,7 @@ export class SimulationArea implements AreaContract {
     this.combat=new Combat(this.services);this.worldRules=new WorldRules(this.services);
     this.actions=new Actions(options.actionData,e=>this.services.emit(e),p=>this.resolveHit(p));
     this.flights=new Projectiles(options.limits.projectiles,r=>this.getUnit(r),e=>this.services.emit(e),p=>this.resolveHit(p));
+    for(const spawn of this.options.definition.enemies)validatePopulation(this.options.policy.enemyPopulation(spawn,0));
     this.populate();
   }
   private boundary(observe=false):void {if(this.disposed)throw new Error('Area disposed');if(this.failed&&!observe)throw new Error('Area failed; host must retire it');if(this.running)throw new Error('Requires between-tick boundary');}
@@ -89,7 +91,7 @@ export class SimulationArea implements AreaContract {
   private makeUnit(archetype:string,kind:SimUnit['kind'],reaction:SimUnit['reaction'],position:{x:number;y:number;z:number}):SimUnit {const unit=createUnit({area:this.services.id,id:this.ids.next(),life:1},archetype,kind,reaction,this.options.actionData,position);teleport(unit,this.options.query,position.x,position.z);return unit;}
   private populate():void {
     for(const n of this.options.definition.npcs){const u=this.makeUnit('human','npc','friendly',n.position);u.npcId=n.id;u.yaw=n.yaw;this.unitMap.set(u.ref.id,u);}
-    for(const spawn of this.options.definition.enemies){const u=this.makeUnit(spawn.role==='echo'?'echo':spawn.kind,spawn.kind,'hostile',spawn.home);this.unitMap.set(u.ref.id,u);const e=new Enemy(this.services,u,spawn);this.enemyMap.set(u.ref.id,e);this.controllerMap.set(u.ref.id,e);if(spawn.role!=='ordinary'||this.options.policy.enemyPopulation(spawn,0).desired===0)e.despawn();}
+    for(const spawn of this.options.definition.enemies){const u=this.makeUnit(spawn.role==='echo'?'echo':spawn.kind,spawn.kind,'hostile',spawn.home);this.unitMap.set(u.ref.id,u);const e=new Enemy(this.services,u,spawn);this.enemyMap.set(u.ref.id,e);this.controllerMap.set(u.ref.id,e);if(spawn.role!=='ordinary'||validatePopulation(this.options.policy.enemyPopulation(spawn,0)).desired===0)e.despawn();}
     for(const e of this.enemyMap.values())e.pack=[...this.enemyMap.values()].filter(other=>this.options.definition.enemies.find(s=>s.id===other.spawnId)?.pack===this.options.definition.enemies.find(s=>s.id===e.spawnId)?.pack);
     for(const config of this.options.definition.bosses){const freed=this.makeUnit('human','freed','friendly',config.arena.position);freed.npcId=config.freedNpcId;freed.hidden=true;freed.targetable=false;this.unitMap.set(freed.ref.id,freed);const u=this.makeUnit(`boss-${config.profile}`,'boss','hostile',config.arena.position);u.yaw=config.arena.yaw;this.unitMap.set(u.ref.id,u);const b=new Boss(this.services,u,config.arena,freed,config.profile);this.bossMap.set(u.ref.id,b);this.controllerMap.set(u.ref.id,b);}
   }
