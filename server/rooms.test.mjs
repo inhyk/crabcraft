@@ -5,8 +5,6 @@ import { once } from 'node:events';
 import WebSocket from 'ws';
 import { attachRooms } from './rooms.ts';
 import {worldOf,eventOf} from './combatProtocol.ts';
-import {stateOf} from './protocol.ts';
-import {worldOf as oldWorldOf,eventOf as oldEventOf} from '../tests/fixtures/legacy-combat-before-life.ts';
 import { Link, ROOM_RETRIES, backoff, restartDelay } from '../src/multiplayer/link.ts';
 
 const spec = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Test crab' };
@@ -589,29 +587,3 @@ test('shared public worlds reject guest checkpoints, cross-area travel and room-
  b.send({type:'state',state});await a.next('state');a.send({type:'state',state});await b.next('state');
  assert.equal(a.queue.some(m=>m.type==='world'||m.type==='combat'),false);assert.equal(b.queue.some(m=>m.type==='world'),false);
 });
-
-test('optional entity lifetimes remain backward compatible and reject invalid uint32 fields',()=>{
-  assert.ok(worldOf(world));assert.deepEqual(eventOf({kind:'death',target:'e0',serial:1},true),{kind:'death',target:'e0',serial:1});
-  const fresh={...world,entities:world.entities.map(e=>({...e,life:7}))};assert.equal(worldOf(fresh).entities[0].life,7);
-  for(const bad of [0,-1,1.5,0x100000000,NaN,Infinity,'1',null]){
-    assert.equal(worldOf({...world,entities:world.entities.map(e=>({...e,life:bad}))}),null);
-    for(const field of ['life','sourceLife','targetLife'])assert.equal(eventOf({kind:'death',target:'e0',serial:1,[field]:bad},true),null);
-  }
-  assert.deepEqual(eventOf({kind:'death',target:'e0',serial:2,life:0xffffffff},true),{kind:'death',target:'e0',serial:2,life:0xffffffff});
-  assert.equal(eventOf({kind:'attack',target:'e0',amount:5,sourceLife:2,targetLife:3},false).targetLife,3);
-  assert.equal(eventOf({kind:'hit',target:'peer',source:'e0',amount:5,sourceLife:3,targetLife:2},true).sourceLife,3);
-  const condition={stun:1,slow:0,slowPct:0,pushX:0,pushZ:0,pushTime:0};assert.equal(eventOf({kind:'condition',target:'e0',condition,sourceLife:2,targetLife:3},false).targetLife,3);
-});
-test('relay advertises lifetime support and preserves lifetimes in checkpoints and combat traffic',async t=>{
-  const{client}=await setup(t),host=await client(),guest=await client();host.send({type:'create',spec,combatVersion:1,snowWorld:true});const welcome=await host.next('welcome');assert.equal(welcome.entityLife,1);
-  guest.send({type:'join',room:welcome.room,spec,combatVersion:1,snowWorld:true});assert.equal((await guest.next('welcome')).entityLife,1);
-  host.send({type:'world',world:{...world,entities:world.entities.map(e=>({...e,life:4}))}});assert.equal((await guest.next('world')).world.entities[0].life,4);
-  host.send({type:'combat',event:{kind:'death',target:'e0',serial:8,life:4}});assert.equal((await guest.next('combat')).event.life,4);
-  guest.send({type:'combat',event:{kind:'attack',target:'e0',amount:8,sourceLife:2,targetLife:4}});const attack=(await host.next('combat')).event;assert.equal(attack.sourceLife,2);assert.equal(attack.targetLife,4);
-  host.send({type:'combat',event:{kind:'hit',target:'peer',source:'e0',amount:8,sourceLife:4,targetLife:2}});const hit=(await guest.next('combat')).event;assert.equal(hit.sourceLife,4);assert.equal(hit.targetLife,2);
-});
-
-test('pre-lifetime parser forwards snapshot extensions but strips death lifetime, so capability is required',()=>{const snapshot={...world,entities:world.entities.map(e=>({...e,life:9}))};assert.equal(oldWorldOf(snapshot).entities[0].life,9);assert.deepEqual(oldEventOf({kind:'death',target:'e0',serial:3,life:9},true),{kind:'death',target:'e0',serial:3});assert.equal(oldEventOf({kind:'attack',target:'e0',amount:5,sourceLife:2,targetLife:9},false).targetLife,undefined);});
-test('player presence optional lifetime validates and survives relay-owned state normalization',()=>{assert.deepEqual(stateOf(state),state);assert.equal(stateOf({...state,life:0xffffffff}).life,0xffffffff);for(const life of [0,-1,1.5,0x100000000,NaN,'1',null])assert.equal(stateOf({...state,life}),null);});
-
-test('owner effects and party duel retain lifetime guards through normalization',()=>{const effect={stun:1,rust:2,rustFor:4,pushX:3,pushZ:0,pushTime:.2};assert.equal(eventOf({kind:'effect',target:'peer',effect,targetLife:6},true).targetLife,6);assert.equal(eventOf({kind:'duel',target:'peer',amount:8,sourceLife:5,targetLife:6},false).sourceLife,5);assert.equal(eventOf({kind:'animation',target:'e0',action:'jump',targetLife:6},true).targetLife,6);});

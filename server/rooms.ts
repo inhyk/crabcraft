@@ -84,7 +84,7 @@ export function attachRooms(server: EventEmitter, options: RoomOptions = {}) {
     m.room = code;
     if (!rooms.has(code)) rooms.set(code, new Map());
     const room = rooms.get(code)!, area = publics.get(code);
-    send(m.ws, { type: 'welcome', entityLife: 1, host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, ...(area ? { public: true, area, ...(sharedAreas.has(code)?{sharedWorld:1}:{}) } : {}), ...(renamed ? { renamed: name } : {}), players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
+    send(m.ws, { type: 'welcome', host: host(code) || (m.combat ? m.id : ''), world: worlds.get(code) ?? null, id: m.id, room: code, ...(area ? { public: true, area, ...(sharedAreas.has(code)?{sharedWorld:1}:{}) } : {}), ...(renamed ? { renamed: name } : {}), players: [...room.values()].map(p => ({ id: p.id, spec: p.spec, state: p.state })) });
     room.set(m.id, m);
     broadcast(code, { type: 'joined', id: m.id, spec }, m.id);
     if (host(code)) broadcast(code, { type: 'authority', host: host(code) });

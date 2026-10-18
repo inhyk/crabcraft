@@ -18,7 +18,6 @@ export class Combat implements CombatRules {
     if ((targetGate>=100&&src?.kind==='player'&&src.level<targetGate)||(sourceGate>=100&&dst.kind==='player'&&dst.level<sourceGate))return 0;
     const involved = g.context.members.filter(m => m.villagePlaying && (m.unit.id === dst.ref.id || m.unit.id === src?.ref.id));
     if (involved.length) return 0;
-    const routed=g.routeDamage?.(source,target,amount,options);if(routed!==undefined&&routed!==null)return routed;
     if (src) src.lastCombat = g.time;
     dst.lastCombat = g.time;
     if (dst.invulnerable) { g.emit({ type:'blocked', unit:dst.ref, reason:'evade' }); return 0; }
@@ -32,7 +31,6 @@ export class Combat implements CombatRules {
     }
     dst.hp = Math.max(0, dst.hp - damage);
     g.emit({type:'damage',src:src?.ref ?? null,dst:dst.ref,amount:damage,crit:!!options.crit,school:options.school});
-    g.reportDamage?.(src?.ref??null,dst.ref,damage,options);
     if (src) g.recordContribution(dst.ref, src.ref, damage);
     if (dst.kind === 'player') controller?.onHurt?.(damage);
     if (src?.kind === 'player' && options.rage) g.controller(src.ref)?.gainRage?.(options.rage);

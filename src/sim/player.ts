@@ -1,5 +1,6 @@
 /** Input-driven authoritative player. Contains no camera, renderer, keyboard or socket state. */
 import type { AreaServices, ChannelKind, CharacterId, ClassId, EntityRef, PlayerIntent, PlayerSim, PlayerState, SimUnit, Vec3 } from './types.ts';
+import { armorMultiplier } from './data/equipment.ts';
 import { CLASSES, type AbilityDef } from './data/classes.ts';
 import { abilityNeedsTarget, executeAbility, isMeleeAbility, launchAt, playAction } from './abilities.ts';
 import { damp, turnToward, yawTo } from './math.ts';
@@ -28,7 +29,7 @@ export class PlayerController implements PlayerSim {
   private danceIndex=-1;
   private danceTime=0;
   constructor(services:AreaServices,unit:SimUnit,state:PlayerState) { this.services=services;this.unit=unit;this.state=state; }
-  get damageTakenMultiplier():number{return 1/(1+.04*(Number.isSafeInteger(this.state.armorRank)?Math.max(0,Math.min(100,this.state.armorRank)):0));}
+  get damageTakenMultiplier():number{return armorMultiplier(this.state.armorRank);}
   get isRage():boolean{return CLASSES[this.state.classId].resource==='rage';}
   get inCombat():boolean{return this.services.time-this.unit.lastCombat<5;}
   get heldIntent():PlayerIntent{return {...this.held,commands:[]};}

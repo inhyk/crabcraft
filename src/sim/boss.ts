@@ -1,6 +1,5 @@
 import type { AreaServices, DebugValue, EnemySim, EntityRef, HitPlan, ImpactShape, MechId, Poi, SimUnit, TelegraphShape, Vec3 } from './types.ts';
 import { immutable } from './events.ts';
-import type { LegacyBossObservation } from './legacy.ts';
 import { teleport } from './unit.ts';
 import { BOSS_PROFILES, mechanicFraction, mechanicOrder, mechanicRadius, type BossProfileId } from './data/bosses.ts';
 import { angleDiff, creatureAction, creatureHitDelay, distance, eligible, gap, moveCreature, speedMul, turn } from './enemy.ts';
@@ -30,21 +29,10 @@ export class Boss {
   private available():boolean{return this.services.bossAvailable(this.profile);}
   private yell(key:string,unit=this.unit,yell=true):void{this.services.emit({type:'say',unit,textKey:key,yell});}
   wake():void{
-    if(this.services.requestBossWake?.(this.unit))return;
     if((this.state!=='dormant'&&this.state!=='dead')||!this.available()||(this.isEndgame&&!this.unlocked()))return;
     if(this.state==='dead')this.beginRematch();
     const u=this.actor,s=this.services;this.state='waking';this.stateT=0;u.hidden=false;teleport(u,s.query,this.arena.position.x,this.arena.position.z,this.arena.yaw);u.lift=-u.height;
   }
-  applyObservation(value:LegacyBossObservation):void {
-    if(!['dormant','waking','idle','fight','dying','dead'].includes(value.state)||!Number.isInteger(value.phase)||value.phase<1||value.phase>3)return;
-    this.state=value.state;this.phase=value.phase;this.enraged=value.enraged;
-    if(value.timeline){this.stateT=value.timeline.state;this.freedT=value.timeline.freed;this.freedYaw=value.timeline.freedYaw;this.freedStarted=value.timeline.released;this.freedBowed=this.freedT>=1.6;}
-    const m=value.mech;if(!m){if(this.mech)this.clearMech();return;}
-    const changed=this.mechIndex!==m.id||this.mech?.kind!==m.kind;this.mechIndex=m.id;this.mech={kind:m.kind,t:0,dur:m.left,at:{x:m.at[0]!,y:m.at[1]!,z:m.at[2]!},yaw:m.yaw,fired:false,swung:false};
-    if(changed)this.services.emit({type:'telegraph',src:this.unit,mech:m.kind,level:this.stats.level,seconds:m.left,shapes:this.telegraphShapes(m.kind,this.mech.at,m.yaw)});
-  }
-  /** Legacy checkpoints omit RNG and scheduler state; restart only the old unsent schedules. */
-  resumeAuthority():void {this.nextSwing=this.services.time+1;this.nextMech=this.services.time+3;this.outside=0;this.services.cancelPendingHit(this.unit);}
   /** Authority creates a new victim life before any rematch effects or rewards. */
   private beginRematch():void {
     const s=this.services,u=this.actor;
