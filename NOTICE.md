@@ -15,7 +15,7 @@ World of Crabcraft is licensed under the Apache License 2.0 (see `LICENSE`).
 | Medieval Village MegaKit (Standard), Quaternius | https://quaternius.com/packs/medievalvillagemegakit.html (https://quaternius.itch.io/medieval-village-megakit) | CC0 1.0 | Clawhaven buildings, pier planks, fences, wagon, cobble and brick textures (`public/models/world/village.glb`) |
 | Stylized Nature MegaKit (Standard), Quaternius | https://quaternius.com/packs/stylizednaturemegakit.html (https://quaternius.itch.io/stylized-nature-megakit) | CC0 1.0 | Pines, trees, bushes, ferns, flowers, mushrooms, rocks, cliff rock texture (`public/models/world/nature.glb`) |
 | Fantasy Props MegaKit (Standard), Quaternius | https://quaternius.com/packs/fantasypropsmegakit.html (https://quaternius.itch.io/fantasy-props-megakit) | CC0 1.0 | Market stalls, forge tools, barrels, crates, lanterns, candles, tavern furniture (`public/models/world/props.glb`) |
-| SNOWFLOW by Maksymilian Dendura (Noniv): snow deformation, foot contact, glints, back-scatter and ice crystal shaders, ported from WGSL to GLSL (`src/game/snowDeform.ts`, `snowSurface.ts`, `iceCrystals.ts`) | https://github.com/Noniv/snowflow_demo | MIT, Copyright (c) 2026 Maksymilian Dendura (license text below) | Frostlight footprints and berms, snow sparkle, ice formations |
+| SNOWFLOW by Maksymilian Dendura (Noniv): snow deformation, foot contact, glints, back-scatter, ice crystal and spray shaders, ported from WGSL to GLSL (`src/game/snowDeform.ts`, `snowSurface.ts`, `iceCrystals.ts`, `snowSpray.ts`) | https://github.com/Noniv/snowflow_demo | MIT, Copyright (c) 2026 Maksymilian Dendura (license text below) | Frostlight footprints and berms, snow sparkle, ice formations, powder kicked up by feet |
 
 ## Art, fonts and audio
 
