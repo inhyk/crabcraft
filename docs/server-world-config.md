@@ -17,7 +17,7 @@ const runtime = await startConfiguredWorld({
 
 ## 필수 gameplay 설정
 
-최상위 schema는 `world-startup-v1`이다. `ownership`, `assets`, `worlds`, `restore`가 필수다. 선택 필드 `characters:{maxCharactersPerAccount:<positive safe integer>}`는 명시적 account별 생성 cap을 전달한다. 생략 또는 빈 객체는 생성 API의 503 disabled 상태다. Slot 기본값은 없다. Root main이 `runtime.config.characters ?? {}`를 `createCharacterHandler`의 `policy`로 전달한다. `worlds`에는 `w1`, `w2`, `w3`, `w4`가 모두 있어야 한다.
+최상위 schema는 `world-startup-v1`이다. `ownership`, `assets`, `worlds`, `restore`가 필수다. 선택 필드 `characters:{maxCharactersPerAccount:<positive safe integer>}`는 명시적 account별 생성 cap을 전달한다. 생략 또는 빈 객체는 생성 API의 503 disabled 상태다. Slot 기본값은 없다. Root main이 `runtime.config.characters ?? {}`를 `createCharacterHandler`의 `policy`로 전달한다. `worlds`에는 `w1`, `w2`, `w3`, `w4`가 모두 있어야 한다. `w5`와 `w6`는 각각 완전한 region 설정을 명시한 경우에만 활성화한다. 기존 4월드 JSON에 새 필수 필드는 없다. 선택 region의 `null`이나 일부 필드만 지정한 값은 거부한다.
 
 각 world의 필수 필드:
 
@@ -33,7 +33,17 @@ const runtime = await startConfiguredWorld({
 
 `population` 합계와 실제 생성된 enemy 수 모두 `limits.maxMutationSourcesPerTick <= 256` 이하여야 한다. 원본 layout이 지형 조건에 따라 일부 jellyfish template을 찾지 못하면 실제 목록이 요청 수보다 적을 수 있다. 조용히 population을 늘리거나 다른 template으로 대체하지 않는다. 아래에 정의한 이름 외의 density 알고리즘이나 알 수 없는 필드는 거부한다. 실제 enemyStats에서 계산한 HP/XP/damage 등 숫자가 finite-safe 범위를 벗어나면 ownership 획득 전에 시작을 거부한다. 임의의 level cap으로 정규화하지 않는다.
 
-Public은 실제 4개 world, world별 capacity100, PvP disabled다. 이 값들은 현재 host/core 계약에서 온다. Startup policy는 public player-to-player damage를 거부한다. Private party에서만 `pvp:party-only`이고 source/target의 exact full ref가 같은 non-null party membership에 속할 때 허용한다. Self damage, stale life, 다른 party, public toggle은 허용하지 않는다. `party`를 생략하거나 `{"enabled":false}`로 두면 party가 disabled다. Party 활성화는 아래의 모든 명시적 capacity/return 정책이 있을 때만 지원한다. 누락한 설정을 임의의 return 위치로 채우지 않는다.
+Public은 필수 4개 world와 명시적으로 설정한 W5/W6만 생성하며, world별 capacity100, PvP disabled다. 이 값들은 현재 host/core 계약에서 온다. Startup policy는 public player-to-player damage를 거부한다. Private party에서만 `pvp:party-only`이고 source/target의 exact full ref가 같은 non-null party membership에 속할 때 허용한다. Self damage, stale life, 다른 party, public toggle은 허용하지 않는다. `party`를 생략하거나 `{"enabled":false}`로 두면 party가 disabled다. Party 활성화는 아래의 모든 명시적 capacity/return 정책이 있을 때만 지원한다. 누락한 설정을 임의의 return 위치로 채우지 않는다.
+
+## 선택적 W5/W6 활성화
+
+W5/W6에도 위 표의 `seed`, `populationMode`, `fixedLevels`, `population`, `respawnSeconds` 전체를 지정한다. `nearby-slots-v1`이면 아래의 다섯 group별 `radius`, `base`, `max`, `scale`도 모두 필요하다. 이 문서는 운영 레벨, 밀도, seed 또는 respawn 값을 새로 선택하지 않는다.
+
+`party.enabled:true`이면 활성화한 W5에는 `returns.ember:{world:"w5",spawn:<실제 public POI id>}`, W6에는 `returns.sky:{world:"w6",spawn:<실제 public POI id>}`를 추가한다. 각 `spawn`은 해당 canonical definition의 spawn, recall 또는 POI에 존재해야 한다. 비활성 월드의 profile을 return 정책에 추가하면 거부한다. 기존 4월드 설정은 기존 다섯 profile return만 요구한다. Party capacity8과 명시적 `maxParties`/`maxEncounters` 계약은 유지한다.
+
+Catalog는 실제 활성 encounter에 대해서만 `boss-ember`/`boss-sky` alias를 광고한다. 비활성 destination의 gate는 public/encounter definition과 wire catalog에서 모두 제거한다. W4에서 W5로 가는 canonical `frostCleared` 조건, W5/W6의 캐릭터별 퀘스트와 보상, Ember500/Sky750 조건은 core 규칙을 그대로 사용한다. Startup에서 플래그, XP 또는 승리 상태를 만들어 넣지 않는다.
+
+패키지는 canonical collision bake6개와 공통 source/hash manifest를 생성한다. 현재 loader는 4개 또는 선택 artifact가 추가된 manifest를 허용하되 활성 world의 artifact 누락은 ownership 획득 전에 거부한다. Manifest에 선언한 artifact는 비활성 world여도 크기/hash budget 검사를 받는다. 6개 package에 4월드 config를 사용하면 Area는4개만 생성한다. 4월드 rollback은 해당 binary와 일치하는 기존 4개 manifest/package 및 source 설정을 함께 복원해야 한다. 이전 binary가 새6개 manifest를 읽는다고 가정하지 않는다.
 
 ## 반응형 bounded slot pool
 

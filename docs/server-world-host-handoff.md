@@ -43,7 +43,7 @@ dev `fd222a8`의 설원/잿불/하늘숲 퀘스트와 Astra/Solarkan 10분 XP �
 
 ## 서버4월드와 기존6월드 경계
 
-이 PR의 실제 host/config/queue/party/wire는 W1~W4를 제공한다. PR79의 기존 W5/W6, 렌더와 퀘스트59개는 보존하며 서버의 새 캐릭터에 기존 browser 저장을 가져오지 않는다. host catalog를 구성할 때 미지원 destination gate를 core definition과 advertised catalog에서 제외한다. W4의 기존 Ember gate는 서버 UI에서 이동 prompt/입력으로 쓰지 않는다. 예상 밖 미지원 internal travelReady는 개인 world-unavailable 응답으로 처리한다. W5/W6의 실제 host, 저장/이동과 관측은 후속 이전 범위다.
+Host는 기존 W1~W4를 기본으로 유지하며 완전한 region 설정이 있는 W5/W6를 선택적으로 연다. 퀘스트59개와 canonical Ember/Sky 규칙을 사용하고 새 캐릭터에 browser 저장을 가져오지 않는다. 비활성 destination gate는 core definition과 advertised catalog에서 제외하며 예상 밖 travelReady는 개인 world-unavailable로 처리한다. W5/W6 활성화에 필요한 명시적 region/party return 및 bake 계약은 `docs/server-world-config.md`의 선택적 W5/W6 절에 있다. 실제 운영 JSON과 VM 활성화는 이 소스 변경에서 수행하지 않는다.
 
 ## 부활과 이동의 입력 stream
 

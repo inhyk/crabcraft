@@ -39,7 +39,8 @@ async function connect(url,origin,catalog,ticket,characterId){
 for(const externalLedger of [false,true]) test(`bundled ${externalLedger?'external':'retained'} main packages real assets and multiplexes account, legacy and authenticated Area routes`,{timeout:30000},async()=>{
  const manifest=JSON.parse(await readFile(manifestURL,'utf8'));
  assert.equal(manifest.format,'crabcraft-world-manifest');assert.equal(manifest.version,1);
- for(const world of ['w1','w2','w3','w4']){const entry=manifest.artifacts[world],bytes=await readFile(new URL(entry.file,manifestURL));assert.equal(bytes.byteLength,entry.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),entry.sha256);assert.deepEqual(bytes,await readFile(new URL(`../../public/world/${entry.file}`,import.meta.url)));}
+ assert.deepEqual(Object.keys(manifest.artifacts),['w1','w2','w3','w4','w5','w6']);
+ for(const world of ['w1','w2','w3','w4','w5','w6']){const entry=manifest.artifacts[world],bytes=await readFile(new URL(entry.file,manifestURL));assert.equal(bytes.byteLength,entry.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),entry.sha256);assert.deepEqual(bytes,await readFile(new URL(`../../public/world/${entry.file}`,import.meta.url)));}
  const cluster=await startPostgres(),pool=createPool(cluster.url),liveClients=new Set();pool.on('connect',client=>{liveClients.add(client);client.once('end',()=>liveClients.delete(client));});let processState,bot,legacy;
  try{
   await migrate(pool);const account='g'+'7'.repeat(23),token=randomBytes(32).toString('hex'),cookie=`cc_account=${account}.${token}`;
