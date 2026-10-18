@@ -1,14 +1,13 @@
 import * as THREE from 'three';
 import type { EntityRef } from '../sim/types.ts';
+import type { GameplayState } from '../../server/world/gameplay/protocol.ts';
+import type { GameplayCommand } from '../../server/world/gameplay/intents.ts';
 import type { EndingObservation } from '../sim/features/endingPresentation.ts';
 import { EndingPresentationView } from './endingPresentationView.ts';
 
 /** These are accepted observation-header fields, never a second network envelope. */
-export interface EndingPresentationFrame {
- readonly session:string;readonly area:string;readonly epoch:number;readonly catalog:string;
- readonly sequence:number;readonly selfRef:EntityRef;
-}
-export interface EndingControlCommand {readonly kind:'endingControl';readonly id:string;readonly action:'skip'|'continue'}
+export type EndingPresentationFrame=Readonly<Pick<GameplayState,'selfRef'>&Pick<GameplayState['header'],'session'|'area'|'epoch'|'catalog'|'sequence'>>;
+export type EndingControlCommand=Extract<GameplayCommand,{kind:'endingControl'}>;
 interface Ports {
  readonly parent:HTMLElement;
  activate(scene:THREE.Scene,camera:THREE.PerspectiveCamera):void;

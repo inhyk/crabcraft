@@ -10,7 +10,7 @@ import {chromium} from 'playwright';
 import {freePort} from '../server/node/local-postgres.mjs';
 import {GameplayReceiver} from '../server/world/gameplay/protocol.ts';
 import {decodeInput} from '../server/world/gameplay/intents.ts';
-const root=fileURLToPath(new URL('../',import.meta.url)),output=join(root,'output/playwright/world-ending-client');
+const root=fileURLToPath(new URL('../',import.meta.url)),output=join(root,'tmp/qa/world-ending-client');
 const provided=process.env.WORLD_QA_METADATA,scratch=provided?null:await mkdtemp('/private/tmp/crabcraft-ending-client-'),metadataPath=provided??join(scratch,'host.json');
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(fn,timeout=15000){const end=performance.now()+timeout;while(!await fn()){if(performance.now()>end)throw Error('Ending client QA timed out');await pause(25);}}
@@ -33,6 +33,17 @@ try{
  await page.goto(`${origin.origin}/?screen=game&world=server&character=${encodeURIComponent(metadata.characterId)}`);await page.locator('.launch-notice-start').click();
  await page.waitForFunction(()=>window.app?.current?.game?.server?.ready&&!document.querySelector('.loading'),null,{timeout:120000});
  await page.evaluate(()=>{const mark=document.createElement('div');mark.className='ending-client-fixture-watermark';mark.textContent='INTEGRATION FIXTURE - TRUSTED W4 CLEAR FLAG - NOT EARNED STORY COMPLETION';mark.style.cssText='position:fixed;bottom:0;left:0;right:0;padding:8px;background:#722;color:white;text-align:center;font:13px sans-serif;z-index:1000;pointer-events:none';document.body.append(mark);});
+ // A previous aborted QA run may have retired the actor. Restore cancels activity;
+ // use the real earned manual-replay command instead of editing flags or client phases.
+ await pause(1000);
+ const phase=await page.evaluate(()=>window.app.current.game.serverEnding?.current?.phase??null);
+ if(phase==='credits'){
+  await page.getByRole('button',{name:'Continue adventure',exact:true}).click();
+  await page.waitForFunction(()=>window.app.current.game.server.state.recovery.endingPresentation?.phase==='finished',null,{timeout:15000});
+ }
+ if(phase==='credits'||!await page.evaluate(()=>window.app.current.game.serverEndingActive)){
+  assert.equal(await page.evaluate(()=>window.app.current.game.server.command({kind:'endingReplay'})),true);
+ }
  await page.waitForFunction(()=>window.app.current.game.serverEndingActive,null,{timeout:45000});
  const progress=()=>page.evaluate(()=>{const g=window.app.current.game,p=g.player;return{hp:p.unit.hp,maxHp:p.unit.maxHp,xp:p.xp,coins:p.coins,flags:{...g.server.state.self.player.flags}};});
  const before=await progress();assert.equal(before.xp,0);assert.equal(before.coins,0);
@@ -41,7 +52,7 @@ try{
  await page.screenshot({path:join(output,'game-celebration.png')});
  const camera=await page.evaluate(()=>window.app.current.game.serverEnding.camera.position.toArray());assert.ok(camera.every(Number.isFinite));
  const npc=()=>streams.at(-1)?.state?.actors.filter(a=>a.kind==='townsfolk').map(a=>({id:a.ref.id,x:a.x,z:a.z}))??[];const initialNpc=npc();
- await page.evaluate(()=>window.app.current.game.server.command({kind:'chatSay',channel:'area',text:'Ending integration chat remains active'}));await page.getByText('Ending integration chat remains active',{exact:false}).waitFor({timeout:15000});
+ await page.evaluate(()=>window.app.current.game.server.command({kind:'chatSay',channel:'area',text:'Ending integration chat remains active'}));await page.locator('.hud .chat .line.say').filter({hasText:'Ending integration chat remains active'}).last().waitFor({timeout:15000});
  assert.equal(await page.evaluate(()=>{const el=window.app.current.game.hud.chat.el;return el.classList.contains('hud-keep')&&getComputedStyle(el).opacity!=='0';}),true);
  await until(()=>{const next=npc();return initialNpc.some(a=>next.some(b=>a.id===b.id&&Math.hypot(a.x-b.x,a.z-b.z)>.03));},15000);
  // Retain an old DOM listener while the transport generation changes. It must never send a command.
@@ -57,7 +68,7 @@ try{
  await page.waitForFunction(()=>!window.app.current.game.serverEndingActive,null,{timeout:15000});assert.equal(commands.filter(c=>c.id===resumed.id&&c.action==='continue').length,1);
  assert.equal(await page.evaluate(()=>{const g=window.app.current.game;return window.app.engine.scene===g.scene&&!g.hud.root.classList.contains('cinematic')&&!g.hud.chat.el.classList.contains('hud-keep');}),true);
  const after=await progress();assert.deepEqual(after,before);assert.deepEqual(wireErrors,[]);assert.deepEqual(errors,[]);
- await page.evaluate(async()=>{window.oldEndingGame=window.app.current.game;await window.app.go('title');});await pause(250);assert.equal(await page.evaluate(()=>{const g=window.oldEndingGame;return !g.alive&&!g.serverEnding&&document.querySelectorAll('.ending-presentation').length===0&&window.app.engine.scene!==g.scene;}),true);
+ await page.evaluate(async()=>{window.oldEndingGame=window.app.current.game;window.oldEndingScene=window.oldEndingGame.serverEnding.scene;await window.app.go('title');});await pause(250);assert.deepEqual(await page.evaluate(()=>{const g=window.oldEndingGame;return{alive:g.alive,endingCleared:g.serverEnding===null,hudCount:document.querySelectorAll('.ending-presentation').length,worldHidden:!g.scene.visible,endingHidden:!window.oldEndingScene.visible,cameraReleased:window.app.engine.scene!==window.oldEndingScene};}),{alive:false,endingCleared:true,hudCount:0,worldHidden:true,endingHidden:true,cameraReleased:true});
  const report={scope:'Actual Game route, real typed binary WS and actual local PG host. Trusted W4 frostCleared checkpoint fixture, not earned story completion.',checks:{separateScene:true,actualCast:presentation.cast,orderedSkipAndContinue:true,clickDoesNotAdvance:true,fullReconnectSameId:true,oldListenerInert:true,chatContinues:true,otherActorsContinue:true,gameplayProgressUnchanged:true,cameraReturned:true,disposeClears:true},commands:commands.map(({seq,action})=>({seq,action})),errors,wireErrors};await writeFile(join(output,'report.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));
 }finally{
  await browser?.close();await server?.close();if(host?.exitCode===null){host.kill('SIGTERM');const timer=setTimeout(()=>host.kill('SIGKILL'),10000);await hostExited;clearTimeout(timer);}if(scratch)await rm(scratch,{recursive:true,force:true});
