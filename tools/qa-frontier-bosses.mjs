@@ -32,9 +32,9 @@ try{
   const seen=await p.evaluate(()=>window.__loadingArt);const art='art/'+(chapter===5?'loading-emberreach.webp':'loading-skybloom.webp');assert.ok(seen.includes(art));const img=await p.request.get(base+'/'+art);assert.equal(img.status(),200);assert.match(img.headers()['content-type'],/webp/);
   console.log(`PASS W${chapter}: Lv${level} admission, real ${pattern.kind} warning, exact ${xp} XP/${coins} coins, duplicate prevention, fresh rematch, save/reload and correct WebP loading art`);
  }
- for(const [chapter,level]of [[5,350],[5,425],[5,500],[6,550],[6,650],[6,750]]){
+ for(const [chapter,level]of [[5,350],[5,450],[6,550],[6,650]]){
   const result=await p.evaluate(({chapter,level})=>{const g=window.app.current.game,n=750-20;g.world2.go(chapter);g.player.restoreXp(22000+2200*n+100*n*(n-1));g.player.unit.lastCombat=-100;g.player.xpBlessingUntil=0;g.dungeons.open();const count=document.querySelectorAll('.dungeon-cards article').length;g.dungeons.close();const before=[g.player.xp,g.player.coins];if(!g.dungeons.start(level))throw Error('entry failed '+level);const d=g.dungeons;for(let wave=0;wave<3;wave++){d.update(4);for(const e of g.enemies.filter(e=>e.isDungeonOnly&&e.unit.alive))g.combat.damage(g.player.unit,e.unit,e.unit.maxHp*10);d.update(.01);}const state=d.state.phase,reward=[g.player.xp-before[0],g.player.coins-before[1]];d.update(.1);const duplicate=[g.player.xp-before[0],g.player.coins-before[1]];d.leave();return {count,state,reward,duplicate,left:!d.active};},{chapter,level});
-  assert.equal(result.count,12);assert.equal(result.state,'clear');assert.equal(result.left,true);assert.ok(result.reward[0]>0&&result.reward[1]>0);assert.deepEqual(result.reward,result.duplicate);console.log(`PASS Lv${level} dungeon: actual three waves, clear reward once and return`);
+  assert.equal(result.count,10);assert.equal(result.state,'clear');assert.equal(result.left,true);assert.ok(result.reward[0]>0&&result.reward[1]>0);assert.deepEqual(result.reward,result.duplicate);console.log(`PASS Lv${level} dungeon: actual three waves, clear reward once and return`);
  }
  assert.deepEqual(errors,[]);console.log('PASS zero native Chrome errors');
 }finally{await browser.close();}

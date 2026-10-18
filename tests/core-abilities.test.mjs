@@ -71,3 +71,13 @@ test('steam blink heals10 after free or blocked travel, caps HP, and preserves c
   player.useAbility(3);assert.equal(unit.hp,hp+expectedGain);assert.equal(player.state.resource,resource-10);
  }
 });
+
+
+for(const [slot,range,fraction,ticks]of [[2,12,.35,61],[4,6,.15,2]])test(`lantern skill ${slot} heals nearby living players, excludes range/LOS/dead/hidden, preserves cooldown`,()=>{
+ const {area,player,unit}=fixture('priest');const allies=[];
+ for(const [name,z]of [['near',range],['far',range+.1],['hidden',1],['dead',2]]){const ref=area.attachFresh(name,'warrior','human','spawn'),p=area.players.get(ref.id),u=area.services.getUnit(ref);p.state.nextSwing=Infinity;u.z=z;u.hp=10;u.lastCombat=1e6;u.hidden=name==='hidden';u.alive=name!=='dead';allies.push(u);}
+ player.useAbility(slot);step(area,ticks);
+ assert.equal(allies[0].hp,10+Math.round(allies[0].maxHp*fraction));for(const u of allies.slice(1))assert.equal(u.hp,10);
+ const hp=allies[0].hp;player.useAbility(slot);step(area,2);assert.equal(allies[0].hp,hp);assert.ok(player.state.cooldowns[slot===2?'mend-shell':'holy-tide'].end>area.services.time);
+ const w=fixture('priest',{...query,raycastSolid:()=>0});const r=w.area.attachFresh('behind-wall','warrior','human','spawn'),u=w.area.services.getUnit(r);u.z=3;u.hp=10;u.lastCombat=1e6;w.area.players.get(r.id).state.nextSwing=Infinity;w.player.useAbility(slot);step(w.area,ticks);assert.equal(u.hp,10);
+});

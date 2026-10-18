@@ -15,3 +15,5 @@ test('each telegraphed hazard has matching safe ground and a distinct footprint'
 });
 
 test('removed and renamed dungeon entries cannot be selected for a new run',()=>{for(const level of [425,500,750])assert.equal(dungeonFor(level),undefined);assert.equal(dungeonFor(450).chapter,5);});
+
+test('dungeon XP is reduced to one tenth across every tier',()=>{assert.deepEqual(DUNGEONS.map(d=>d.xp),[1800,3000,6000,22000,40000,65000,100000,150000,280000,380000]);});
