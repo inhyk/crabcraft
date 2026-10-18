@@ -10,7 +10,7 @@
 
 생성되는 character ID는 UUID v4이며 DB 전체에서 유일하다. 소유권 검사는 모든 API에서 account ID와 character ID를 함께 사용한다. 인증은 호출 전에 host가 수행해야 한다. 이 모듈에는 HTTP endpoint, session resolver, browser 진행 입력이 없다. 이 클래스는 신뢰된 서버 내부 코드에서만 호출한다.
 
-캐릭터 슬롯 수, 생성 재설정이나 삭제 정책을 새로 정하지 않는다. schema는 여러 identity를 저장할 수 있고 목록은 페이지로 조회한다. 입장 제한과 슬롯 정책은 후속 host 작업에서 정한다. character와 grant를 지우는 API가 없으며 정리 작업도 추가하지 않았다.
+캐릭터 슬롯 수, 생성 재설정이나 삭제 정책을 새로 정하지 않는다. 공개 생성 HTTP는 명시된 policy.maxCharactersPerAccount를 createBounded에 전달하며 policy 없이는 닫는다. 자세한 경로와 DTO는 [서버 캐릭터 HTTP](server-world-characters-http.md)에 적었다. schema는 여러 identity를 저장할 수 있고 목록은 페이지로 조회한다. 입장 제한과 슬롯 정책은 후속 host 작업에서 정한다. character와 grant를 지우는 API가 없으며 정리 작업도 추가하지 않았다.
 
 ## 필수 codec
 
@@ -32,6 +32,7 @@ codec은 순수하고 결정적으로 동작하며 성공 시 독립된 JSON 값
 
 | 호출 | 결과와 제약 |
 | --- | --- |
+| `createBounded(accountId, identity, maxCharactersPerAccount)` | 명시 public policy에 따른 계정 잠금/count/생성을 같은 client transaction에서 수행 |
 | `create(accountId, identity)` | 기존 계정 FK 확인, 검증된 identity와 codec의 fresh 상태, revision 0 저장 |
 | `listOwned(accountId, {after?, limit?})` | character ID 기준 정렬, UUID cursor, 기본 100개와 최대 100개 |
 | `getOwned(accountId, characterId)` | 소유한 identity, checkpoint, revision과 검증된 updatedAt(ms) 조회 |
