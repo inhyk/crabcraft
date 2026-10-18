@@ -45,6 +45,7 @@ try{
  await page.locator('.world-character-select').waitFor({timeout:120000});
  await page.getByRole('button',{name:'Create a new character with this appearance',exact:true}).click();
  await until(()=>streams.at(-1)?.view,120000);await page.locator('.world-character-select').waitFor({state:'detached'});await page.locator('.world-connection-status').waitFor({state:'hidden'});await page.locator('.loading').waitFor({state:'detached'});await page.waitForFunction(()=>{const hud=document.querySelector('.hud');return hud&&getComputedStyle(hud).opacity==='1';});
+ assert.equal(await page.locator('.dungeon-menu').count(),0,'Server mode must not expose the browser-authoritative dungeon entrance');
  const character=new URL(page.url()).searchParams.get('character');assert(character,'selection updates current URL');assert.equal(characterPosts,1);
  const first=streams.at(-1),start=first.view.actors.find(a=>a.ref.id===first.view.selfRef.id),position={x:start.x,z:start.z};
  assert.equal(first.view.self.player.xp,0);assert.equal(first.view.self.player.coins,0);

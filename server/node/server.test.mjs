@@ -109,7 +109,7 @@ test('healthz reports the database; other paths answer like the Worker', async (
   assert.equal((await http('GET', '//')).status, 400);
   assert.equal((await http('GET', '/healthz')).status, 200);
   const { rows } = await db.query('SELECT version FROM schema_migrations ORDER BY version');
-  assert.deepEqual(rows.map(r => r.version), ['001_accounts', '002_google_only', '003_chat_reports', '004_world_characters', '005_world_victim_outcomes', '006_world_chat']);
+  assert.deepEqual(rows.map(r => r.version), ['001_accounts', '002_google_only', '003_chat_reports', '004_world_characters', '005_world_victim_outcomes', '006_world_chat', '007_world_paged_ledger']);
   // 002 removed the password account, its session and its login counter.
   const counts = await db.query(`SELECT (SELECT count(*) FROM accounts)::int AS a, (SELECT count(*) FROM sessions)::int AS s, (SELECT count(*) FROM rate_limits WHERE id LIKE 'login:%')::int AS r`);
   assert.deepEqual(counts.rows[0], { a: 0, s: 0, r: 0 });

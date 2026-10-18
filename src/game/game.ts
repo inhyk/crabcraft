@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import {starMemory} from './starMemories';
 import {Achievements} from './achievements';
 import {VoyageIsland} from './voyageIsland';
+import {DungeonExpeditions} from './dungeons';
 import {worldMusic,type MusicMood} from './worldMusic';
 import {VOYAGE_ISLANDS} from '../world/voyage';
 import {ShoreBoat} from './shoreBoat';
@@ -124,6 +125,7 @@ export class Game {
   villageGames:VillageGames|null=null;
   achievements:Achievements|null=null;
   voyageIsland:VoyageIsland|null=null;
+  dungeons:DungeonExpeditions|null=null;
 
   get encounter(): Boss {
     if(this.world2?.chapter===4&&this.frostBoss)return this.frostBoss;
@@ -190,7 +192,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return !!this.server?.locked || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
+    return !!this.server?.locked || !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -434,6 +436,15 @@ export class Game {
       enemy.islandSlot=slot;enemy.pack=[enemy];enemy.despawn();this.enemies.push(enemy);
     }
 
+    // Dedicated slots are appended to keep every existing multiplayer entity ID stable.
+    const dungeonRigs=await Promise.all(Array.from({length:6},()=>loadEnemy('scavenger')));
+    if(!this.alive)return;
+    for(const rig of dungeonRigs){
+      const unit=this.addUnit('Dungeon Sentinel','scavenger','hostile',rig);
+      const enemy=new Enemy(this,unit,'scavenger',new THREE.Vector3(),0);
+      enemy.isAdd=true;enemy.isDungeonOnly=true;enemy.despawn();this.enemies.push(enemy);
+    }
+
     // Player start
     const spawn = pois.spawn;
     pu.teleport(this.world, spawn.position.x, spawn.position.z, spawn.yaw);
@@ -452,6 +463,7 @@ export class Game {
     this.voyageIsland=new VoyageIsland(this);
     this.hud = new Hud(this);
     this.app.ui.append(this.hud.root);
+    if(!this.serverMode)this.dungeons=new DungeonExpeditions(this);
     this.hud.root.style.visibility = 'hidden';
     this.hud.dialogue.onClose = () => {
       for (const n of this.npcs) n.talking = false;
@@ -660,9 +672,9 @@ export class Game {
       const bosses = this.world2.chapter===1 ? [this.boss,this.finalBoss] : this.world2.chapter===2 ? [this.worldBoss] : this.world2.chapter===3 ? [this.dawnBoss] : [this.frostBoss];
       if (authority) {
         for (const e of this.enemies) e.update(dt);
-        for (const b of bosses) b.update(dt);
+        if(!this.dungeons?.active)for (const b of bosses) b.update(dt);
       }
-      this.journey?.update(dt);
+      if(!this.dungeons?.active)this.journey?.update(dt);
       for (const n of this.npcs) n.update(dt); if(this.multiplayer?.battle.authority!==false)for (const t of this.townsfolk) if(!this.villageGames?.ownsNpc(t.unit))t.update(dt);
       if (this.multiplayer?.battle.authority !== false) this.separate();
       this.ending.update(dt);
@@ -670,6 +682,7 @@ export class Game {
       this.updateStatuses();
       this.sink.drawState(bosses, authority);
     }
+    this.dungeons?.update(paused?0:dt);
     this.multiplayer?.update(dt);
     this.villageGames?.update(paused?0:dt);
     this.boats?.update(paused?0:dt);
@@ -698,7 +711,7 @@ export class Game {
     }
     if (!paused) this.vfx.update(dt);
     this.updateSelection();
-    const goal = this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
+    const goal = this.dungeons?.active || this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
     this.hintVia = goal ? this.world2.chapter>=2 ? this.world2.waypoint(this.player.unit.pos, goal, this.time) : this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
     this.objective.update(this.time, this.world, this.player.unit.pos, goal, this.hintVia, this.player.inCombat);
     if (!this.ending.active) this.director.update(dt);
@@ -1255,10 +1268,10 @@ export class Game {
     return Math.max(this.player.level, ...this.allies().map(u => u.level));
   }
   combatTarget(from: Unit): Unit {
-    const targets = [this.player.unit, ...this.allies()].filter(u => u.alive);
+    const targets = this.dungeons?.active?this.combatPlayers():[this.player.unit, ...this.allies()].filter(u => u.alive);
     return targets.sort((a,b) => from.distTo(a)-from.distTo(b))[0] ?? this.player.unit;
   }
-  combatPlayers(): Unit[] { return [this.player.unit, ...this.allies()].filter(u => u.alive && !u.hidden); }
+  combatPlayers(): Unit[] { return [this.player.unit, ...this.allies()].filter(u => u.alive && !u.hidden && (!this.dungeons?.active||this.dungeons.contains(u))); }
 
   // ================================================================ combat outcomes
 
@@ -1270,6 +1283,7 @@ export class Game {
     const byPlayer = killer?.kind === 'player' || killer?.kind === 'remote';
     if (u.kind === 'scrapling' || u.kind === 'scavenger' || u.kind==='jellyfish') {
       const e = u.ctrl as Enemy;
+      if(e.isDungeonOnly)return;
       if (byPlayer) {
         if (!e.isAdd) { this.player.coins=Math.min(Number.MAX_SAFE_INTEGER,this.player.coins+Math.max(5,Math.round(e.stats.xp/4))); this.player.gainXp(e.stats.xp); this.journey?.onKill(); }
         if (u.kind === 'scrapling') {
@@ -1387,6 +1401,7 @@ export class Game {
   }
 
   private updateZone(): void {
+    if(this.dungeons?.active)return;
     const z = this.world2.chapter>=2 ? this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z) : this.voyageIsland?.currentIsland?this.voyageIsland.currentIsland.name:this.zoneAt(this.player.unit.pos);
     if (z !== this.zoneCandidate) {
       this.zoneCandidate = z;
@@ -1461,6 +1476,7 @@ export class Game {
     if (this.resourcesReleased) return;
     this.resourcesReleased = true;
     this.server?.dispose();this.server=null;
+    this.dungeons?.dispose();this.dungeons=null;
     this.journey?.dispose();
     this.voyageIsland?.dispose();this.voyageIsland=null;
     this.boats?.dispose();this.boats=null;
