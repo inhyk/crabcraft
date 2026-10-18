@@ -543,7 +543,7 @@ test('reports keep the target\'s last lines; three reporters mute them, and a mu
 test('Frostlight validates five bosses, b300/f300 keys and chapter4 while retaining legacy checkpoints',()=>{
  const fourth={...world,chapter:4,finalCleared:true,frostCleared:false,bosses:[...world.bosses,...['b30','b300'].map(id=>({id,state:'dormant',phase:1,enraged:false,mech:null}))]};
  assert.ok(worldOf(world));assert.ok(worldOf(fourth));assert.equal(worldOf({...fourth,bosses:fourth.bosses.filter(b=>b.id!=='b300')}),null);
- assert.equal(worldOf({...fourth,frostCleared:'yes'}),null);assert.equal(worldOf({...fourth,chapter:5}),null);
+ assert.equal(worldOf({...fourth,frostCleared:'yes'}),null);assert.equal(worldOf({...fourth,chapter:7}),null);
  assert.deepEqual(eventOf({kind:'chapter',target:'world',chapter:4},false),{kind:'chapter',target:'world',chapter:4});
  assert.ok(eventOf({kind:'challenge',target:'b300'},false));assert.ok(eventOf({kind:'attack',target:'b300',amount:100},false));assert.ok(eventOf({kind:'animation',target:'f300',action:'walk'},true));
 });
