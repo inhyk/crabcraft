@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {worldArea} from './core/worldHarness.mjs';
 import {InMemoryCharacterRegistry} from '../src/sim/transfer.ts';
 import {prepareRestore} from '../src/sim/persistence.ts';
-const area=(id,options={})=>worldArea(id,'w1',{ledgerMode:'external-durable',...options});
+const area=(id,options={})=>worldArea(id,'w1',{ledgerMode:'external-durable',ledgerLimits:{maxDirtyCreditEntries:100000,maxDirtyCreditBytes:64000000,maxPendingDeaths:256,maxStagedBytes:64000000},...options});
 const actor=a=>{const ref=a.attachFresh('00000000-0000-4000-8000-000000000001','mage','human','spawn',0);return {ref,p:a.services.player(ref),u:a.services.getUnit(ref)};};
 const grant=(id,recipient='00000000-0000-4000-8000-000000000001')=>({id:JSON.stringify(['earned',id,1,recipient]),victim:{area:'earned',id,life:1},recipient,xp:0,coins:1,objectives:[],flags:[]});
 const restore=c=>prepareRestore(c,0,{version:'cancel-for-test',restore:c=>({...c,activity:{seated:false,village:false,controlsLocked:false,cast:null,channel:null,dash:false,pendingHit:false,rootPending:false,motion:{velocityX:0,velocityZ:0,jumpRemaining:0,spinRemaining:0,pushX:0,pushZ:0,pushRemaining:0,lift:0,dashElapsed:null}}})});
