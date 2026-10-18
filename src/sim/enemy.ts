@@ -1,7 +1,7 @@
 import type { ActionId, ActionRequest, AreaServices, DebugValue, EnemySpawn, EntityRef, HitPlan, SimUnit, Vec3 } from './types.ts';
 import { actionRequest, actionHitDelay } from './data/actions.ts';
 import { immutable } from './events.ts';
-import { validatePopulation, angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
+import { worldChapter, validatePopulation, angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
 import { gapTo as gap, moveTo, speedMul, lineOfSight as unitLineOfSight } from './unit.ts';
 export { angleDiff, turn, distance, gap, speedMul };
 import { enemyStats, RESPAWN_CLEAR, type EnemyStats } from './data/enemies.ts';
@@ -35,7 +35,7 @@ export class Enemy {
   get kind(){return this.spawn.kind;}get isAdd():boolean{return this.spawn.role==='add';}get isEcho():boolean{return this.spawn.role==='echo';}
   private rand(a:number,b:number){return a+(b-a)*this.services.random.next();}
   private scaledStats():EnemyStats{
-    const s=this.services,players=s.players(),partyLevel=Math.max(1,...players.map(p=>p.level)),chapter=s.world==='w1'?1:s.world==='w2'?2:3;
+    const s=this.services,players=s.players(),partyLevel=Math.max(1,...players.map(p=>p.level)),chapter=worldChapter(s.world);
     const rustCleared=players.some(p=>s.player(p.ref)?.state.flags.rustCleared===true);
     return enemyStats(this.kind,s.policy.enemyLevel(this.spawn,{partyLevel,rustCleared,chapter}),chapter,this.spawn.role);
   }

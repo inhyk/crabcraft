@@ -1,5 +1,6 @@
 import type { AreaServices, DebugValue, EnemySim, EntityRef, HitPlan, ImpactShape, MechId, Poi, SimUnit, TelegraphShape, Vec3 } from './types.ts';
 import { immutable } from './events.ts';
+import { teleport } from './unit.ts';
 import { BOSS_PROFILES, mechanicFraction, mechanicOrder, mechanicRadius, type BossProfileId } from './data/bosses.ts';
 import { angleDiff, creatureAction, creatureHitDelay, distance, eligible, gap, moveCreature, speedMul, turn } from './enemy.ts';
 export const BOSS_HP=1300;
@@ -30,7 +31,7 @@ export class Boss {
   wake():void{
     if((this.state!=='dormant'&&this.state!=='dead')||!this.available()||(this.isEndgame&&!this.unlocked()))return;
     if(this.state==='dead')this.beginRematch();
-    const u=this.actor,s=this.services;this.state='waking';this.stateT=0;u.hidden=false;u.x=this.arena.position.x;u.z=this.arena.position.z;u.y=s.query.heightAt(u.x,u.z);u.yaw=this.arena.yaw;u.lift=-u.height;
+    const u=this.actor,s=this.services;this.state='waking';this.stateT=0;u.hidden=false;teleport(u,s.query,this.arena.position.x,this.arena.position.z,this.arena.yaw);u.lift=-u.height;
   }
   /** Authority creates a new victim life before any rematch effects or rewards. */
   private beginRematch():void {
@@ -54,7 +55,7 @@ export class Boss {
     if(this.state==='dormant'||this.state==='dead'||this.state==='dying')return;const s=this.services,u=this.actor;
     this.clearMech();for(const a of this.adds)a.despawn();this.adds.length=0;
     u.hp=u.maxHp;u.alive=true;u.stunUntil=u.slowUntil=0;this.phase=1;this.enraged=false;s.stopAction(this.unit,undefined,.2);
-    u.x=this.arena.position.x;u.z=this.arena.position.z;u.y=s.query.heightAt(u.x,u.z);u.yaw=this.arena.yaw;u.lift=0;
+    u.lift=0;teleport(u,s.query,this.arena.position.x,this.arena.position.z,this.arena.yaw);
     this.state='idle';this.outside=0;this.mechIndex=0;s.cancelPendingHit(this.unit);s.emit({type:'boss',boss:this.unit,stage:'reset'});
   }
   onDeath():void{
