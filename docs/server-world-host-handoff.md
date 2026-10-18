@@ -27,3 +27,8 @@ Node build는 collision JSON 네 개와 source/bytes/SHA256 manifest를 `server-
 현재 retained ledger는 전체 N명 outcome을 원자 저장하고 예산 초과 시 source와 미확정 보상을 보존한다. 누적 기여자101명과 동접최대100명의 정확한 지급은 검사했지만 살아 있는 적의 장기 기여 기록 및 receipt의 일반적인 heap 상한은 아직 없다. certified replay/pruning, contribution spill과 paged outcome007은 별도 worktree의 후속 구현이며 이번 runtime에 활성화하지 않는다.
 
 엔딩 군무/카메라/credits, earned private encounter의 최종 HUD와 정상 진행 전체 흐름, 교차계정 moderation의 실제 Chrome 검사, 실제100명 지속 부하/VM 측정, production 정책과 기본 전환이 남아 있다. `endingReady`를 엔딩 연출 완료로 해석하지 않는다. 공개 전환 승인은 이 미완료 항목과 로제의 S8 결과를 함께 검토한다.
+
+
+## 최신 dev 던전 원정 보존
+
+PR69의 dev `9c06f54`를 반영했다. 기존 경로의 여섯 던전과 pointer capture, 월드 layout은 유지한다. 새 서버 경로에서는 browser가 좌표/충돌/보상/적을 직접 바꾸는 기존 DungeonExpeditions를 생성하지 않는다. 여섯 던전의 서버 권한 이전은 S7 후속 범위다. 이 경계를 production browser QA에서 확인한다.

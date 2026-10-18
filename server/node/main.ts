@@ -52,7 +52,8 @@ if (env.WORLD_ENABLED === '1') {
     if (!env.WORLD_CONFIG_JSON) throw new Error('WORLD_CONFIG_JSON is required');
     const { startConfiguredWorld } = await import('../world/startup.ts');
     world = await startConfiguredWorld({ pool, admission, assets: new URL('./world/', import.meta.url),
-      config: JSON.parse(env.WORLD_CONFIG_JSON), clientIp,
+      config: JSON.parse(env.WORLD_CONFIG_JSON),
+      ledgerConfig: env.WORLD_LEDGER_CONFIG_JSON === undefined ? undefined : JSON.parse(env.WORLD_LEDGER_CONFIG_JSON), clientIp,
       originAllowed: (origin, req) => originAllowed(origin, origins, req.headers.host) });
   } catch {
     console.error('world startup failed: check explicit policy configuration and packaged collision assets');

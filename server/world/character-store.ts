@@ -79,6 +79,7 @@ function victimTuple(id: string): [string, number, number, string] | null {
 }
 const victimKey = (tuple: readonly unknown[]) => JSON.stringify(tuple.slice(0, 3));
 const victimLock = (key: string) => createHash('sha256').update('world-victim-outcome:' + key).digest().readBigInt64BE().toString();
+export { json as canonicalLedgerJson, victimLock as victimAdvisoryLock };
 interface Row { character_id: string; account_id: string; codec_version: number; identity_json: string; checkpoint_json: string; revision: string; updated_at: Date | string }
 interface GrantRow { grant_id: string; journal_sequence: string; character_id: string; account_id: string; codec_version: number; payload_json: string }
 
@@ -205,6 +206,9 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
       await raw('BEGIN', [], resources?.timeoutMs);
       // Serialize seal/legacy writers for every relevant victim BEFORE taking character row locks.
       for (const key of outcomeKeys) await query('SELECT pg_advisory_xact_lock($1::bigint)', [victimLock(key)]);
+      for (const key of outcomeKeys) {
+        if ((await query('SELECT 1 FROM world_contribution_sources WHERE victim_key=$1 UNION ALL SELECT 1 FROM world_paged_outcome_seals WHERE victim_key=$1 LIMIT 1', [key])).rowCount) fail('outcome_conflict', 'victim belongs to the paged ledger');
+      }
       const seals = new Map<string, { codec_version: number; recipient_count: string; content_digest: string }>();
       for (const key of outcomeKeys) {
         const row = (await query<{ codec_version: number; recipient_count: string; content_digest: string }>('SELECT * FROM world_victim_outcomes WHERE outcome_key=$1', [key])).rows[0];
@@ -253,7 +257,7 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
   async pendingGrants(accountId: string, characterId: string, options: { after?: string; limit?: number } = {}): Promise<EarnedGrant<G>[]> {
     const context = await this.getOwned(accountId, characterId), limit = options.limit ?? 100; pageSize(limit);
     const after = options.after ?? '0'; if (!/^(0|[1-9][0-9]{0,18})$/.test(after) || BigInt(after) > 9223372036854775807n) fail('invalid', 'invalid journal cursor');
-    const result = await this.pool.query<GrantRow>(`SELECT g.* FROM world_character_grants g WHERE g.character_id=$1 AND g.journal_sequence>$2::bigint
+    const result = await this.pool.query<GrantRow>(`SELECT g.* FROM world_replayable_grants g WHERE g.character_id=$1 AND g.journal_sequence>$2::bigint
       AND NOT EXISTS(SELECT 1 FROM world_character_grant_receipts r WHERE r.grant_id=g.grant_id) ORDER BY g.journal_sequence LIMIT $3`, [characterId, after, limit]);
     return result.rows.map(row => this.decodeGrant(row, context));
   }
@@ -271,7 +275,7 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
       if (!owned.rowCount) fail('not_found', 'character not found'); const current = this.decode(owned.rows[0]);
       const grants: (EarnedGrant<G> & { appliedRevision: number | null })[] = [];
       for (const id of ids) {
-        const row = (await client.query<GrantRow & { applied_revision: string | null }>(`SELECT g.*,r.applied_revision FROM world_character_grants g
+        const row = (await client.query<GrantRow & { applied_revision: string | null }>(`SELECT g.*,r.applied_revision FROM world_replayable_grants g
           LEFT JOIN world_character_grant_receipts r ON r.grant_id=g.grant_id
           WHERE g.grant_id=$1 AND g.character_id=$2 AND g.account_id=$3`, [id, characterId, accountId])).rows[0];
         if (!row) fail('not_found', 'earned grant not found for character');
@@ -295,7 +299,7 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
       if (current.revision !== expectedRevision) fail('conflict', 'checkpoint revision conflict; reload before retry');
       const checkpoint = this.codec.validateCheckpoint(parsed(checkpointJson, 262144), current);
       for (const id of appliedGrantIds) {
-        const grant = (await client.query<GrantRow>('SELECT * FROM world_character_grants WHERE grant_id=$1 AND character_id=$2 AND account_id=$3', [id, characterId, accountId])).rows[0];
+        const grant = (await client.query<GrantRow>('SELECT * FROM world_replayable_grants WHERE grant_id=$1 AND character_id=$2 AND account_id=$3', [id, characterId, accountId])).rows[0];
         if (!grant) fail('not_found', 'earned grant not found for character'); this.decodeGrant(grant, current);
         const receipt = await client.query('SELECT 1 FROM world_character_grant_receipts WHERE grant_id=$1', [id]);
         if (receipt.rowCount) fail('already_applied', 'grant already applied; reload before retry');

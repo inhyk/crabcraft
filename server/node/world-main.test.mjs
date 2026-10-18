@@ -21,8 +21,8 @@ async function until(check,ms=8000){const end=performance.now()+ms;while(!check(
 function fixtureConfig(source){return {schema:'world-startup-v1',victimOutcome:{maxEntries:1024,maxPayloadBytes:4194304,timeoutMs:3000},chat:{maxPending:16},ownership:{key:'bundled-main-qa',heartbeatMs:100,queryTimeoutMs:1000},assets:{source,manifest:'world-manifest.json'},
  worlds:Object.fromEntries(['w1','w2','w3','w4'].map((world,i)=>[world,{seed:i+1,populationMode:'fixed-slots',fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:1,scavenger:0,jellyfish:0,shallowPatrols:0},respawnSeconds:{scrapling:300,scavenger:300,jellyfish:300,echo:120}}])),
  restore:{cooldowns:'pause',statuses:'pause',death:'pause',history:'pause',hp:'preserve',resource:'preserve',location:'saved',activity:'cancel'},limits:{maxConnections:16,maxConnectionsPerIp:8,maxWaiting:16,checkpointIntervalMs:100},party:{enabled:false},characters:{maxCharactersPerAccount:2}};}
-function start(database,config){
- const child=spawn(process.execPath,[main.pathname],{env:{...process.env,DATABASE_URL:database,HOST:'127.0.0.1',PORT:'0',ALLOWED_ORIGINS:'http://localhost',WORLD_ENABLED:'1',WORLD_CONFIG_JSON:config},stdio:['ignore','pipe','pipe']});
+function start(database,config,ledgerConfig){
+ const child=spawn(process.execPath,[main.pathname],{env:{...process.env,DATABASE_URL:database,HOST:'127.0.0.1',PORT:'0',ALLOWED_ORIGINS:'http://localhost',WORLD_ENABLED:'1',WORLD_CONFIG_JSON:config,WORLD_LEDGER_CONFIG_JSON:ledgerConfig===undefined?undefined:JSON.stringify(ledgerConfig)},stdio:['ignore','pipe','pipe']});
  let output='',errors='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>errors+=b);
  const exit=once(child,'exit');
  return {child,exit,get output(){return output;},get errors(){return errors;},async ready(){await until(()=>/crabcraft server listening on 127\.0\.0\.1:\d+/.test(output)||child.exitCode!==null);assert.equal(child.exitCode,null,'configured main must remain alive');return 'http://'+output.match(/listening on (127\.0\.0\.1:\d+)/)[1];},async stop(){if(child.exitCode===null)child.kill('SIGTERM');const timer=setTimeout(()=>child.kill('SIGKILL'),9000);try{return await exit;}finally{clearTimeout(timer);}}};
@@ -34,7 +34,7 @@ async function connect(url,origin,catalog,ticket,characterId){
  await once(ws,'open');ws.send(JSON.stringify({type:'authenticate',ticket,characterId}));await until(()=>bot.view||bot.errors.length);assert.deepEqual(bot.errors,[]);assert.ok(bot.view);return bot;
 }
 
-test('bundled configured main packages real assets and multiplexes account, legacy and authenticated Area routes',{timeout:30000},async()=>{
+for(const externalLedger of [false,true]) test(`bundled ${externalLedger?'external':'retained'} main packages real assets and multiplexes account, legacy and authenticated Area routes`,{timeout:30000},async()=>{
  const manifest=JSON.parse(await readFile(manifestURL,'utf8'));
  assert.equal(manifest.format,'crabcraft-world-manifest');assert.equal(manifest.version,1);
  for(const world of ['w1','w2','w3','w4']){const entry=manifest.artifacts[world],bytes=await readFile(new URL(entry.file,manifestURL));assert.equal(bytes.byteLength,entry.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),entry.sha256);assert.deepEqual(bytes,await readFile(new URL(`../../public/world/${entry.file}`,import.meta.url)));}
@@ -48,7 +48,7 @@ test('bundled configured main packages real assets and multiplexes account, lega
   const codec=createCoreCharacterCodec({identities:[{classId:'mage',archetype:'human'},{classId:'priest',archetype:'human'}],freshLocation:{...definition.spawn.position,yaw:definition.spawn.yaw}}),store=new CharacterStore(pool,codec);
   const identity={schema:'world-identity-v1',classId:'mage',archetype:'human',appearance:{race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:2,name:'Main QA'}};
   const character=await store.create(account,identity);
-  processState=start(cluster.url,JSON.stringify(fixtureConfig(manifest.source)));const origin=await processState.ready();
+  processState=start(cluster.url,JSON.stringify(fixtureConfig(manifest.source)),externalLedger?{schema:'world-ledger-v1',queryTimeoutMs:3000,sourceLimits:{maxDirtyCreditEntries:102400,maxDirtyCreditBytes:67108864,maxPendingDeaths:512,maxStagedBytes:67108864},drainLimits:{pageSize:100,creditBatchesPerSlice:4,outcomesPerSlice:4,summaryVictimsPerSlice:4,writeAttempts:3},recoveryLimits:{draftsPerSlice:4,pageSize:100},recoveryIntervalMs:100}:undefined);const origin=await processState.ready();
   assert.equal((await fetch(origin+'/healthz')).status,200);assert.equal((await fetch(origin+'/world')).status,426);
   const catalogResponse=await fetch(origin+'/api/account/world-catalog');assert.equal(catalogResponse.status,200);assert.equal(catalogResponse.headers.get('cache-control'),'no-store');const catalog=await catalogResponse.json();
   const characterHeaders={Origin:origin,'X-Crabcraft-Account':'1',Cookie:cookie,'Content-Type':'application/json'};

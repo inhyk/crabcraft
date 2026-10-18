@@ -602,3 +602,10 @@ test('long, manually suffixed and filtered names cannot collide after suffixing'
  for(const name of ['A'.repeat(24),'A'.repeat(24),'A'.repeat(21)+' #2','게 모험가','게 모험가','🦀'.repeat(12),'🦀'.repeat(12)]){const c=await client();c.send({type:'create',spec:{...spec,name}});const w=await c.next('welcome');assert.ok(w.displayName.length<=24);names.push(w.displayName);}
  assert.equal(new Set(names.map(n=>n.toLowerCase())).size,names.length);
 });
+
+test('dungeon checkpoints preserve old clients and reject invalid expedition state',()=>{
+ const third={...world,chapter:3,bosses:[...world.bosses,{id:'b30',state:'dormant',phase:1,enraged:false,mech:null}]};
+ const dungeon={level:35,run:'run-35',stage:1,phase:'wave',left:0,clock:2,hazard:0,members:['Test crab']};
+ assert.ok(worldOf(third));assert.ok(worldOf({...third,dungeon:null}));assert.ok(worldOf({...third,dungeon}));
+ for(const patch of [{level:36},{level:150},{run:'bad run'},{stage:0},{stage:4},{phase:'unknown'},{left:Infinity},{clock:-1},{hazard:.5},{members:Array(9).fill('a')},{members:['same','same']}])assert.equal(worldOf({...third,dungeon:{...dungeon,...patch}}),null);
+});
