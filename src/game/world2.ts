@@ -195,8 +195,8 @@ export class HiddenWorld {
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
   }
   refreshLanguage(){
-    if(this.chapter===4){this.game.npcs.forEach(n=>{n.unit.name=n.def.name;n.unit.title=t('눈꽃 마을의 주민','Snowfall Village Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('서리 껍질 약탈자','Frost-shell Raider'):t('빙하 성채 파수병','Glacial Sentinel');return;}
-    if(this.chapter===3){this.game.dawnBoss.freed.name=t('미라 · 사라진 친구','Mira · The Missing Friend');const names=[['새벽 항구의 로안 선장','Captain Roan'],['새벽의 사제 셀레네','Selene of Dawn'],['의무관 산호','Medic Coral'],['성문 수비대장 바론','Gatewarden Baron'],['여관주인 메리','Innkeeper Merry'],['항해사 루멘','Navigator Lumen'],['대장장이 플린','Smith Flynn']];this.game.npcs.forEach((n,i)=>{n.unit.name=t(names[i][0],names[i][1]);n.unit.title=t('새벽 항구의 주민','Dawnharbor Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('잿빛 해안 약탈자','Ash Coast Raider'):t('황혼 성채 파수병','Twilight Sentinel');return;}
+    if(this.chapter===4){this.game.frostBoss.freed.name=t('미라 · 사라진 친구','Mira · The Missing Friend');this.game.npcs.forEach(n=>{n.unit.name=n.def.name;n.unit.title=t('눈꽃 마을의 주민','Snowfall Village Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('서리 껍질 약탈자','Frost-shell Raider'):t('빙하 성채 파수병','Glacial Sentinel');return;}
+    if(this.chapter===3){this.game.dawnBoss.freed.name=t('새벽 성채의 수호자','Dawnkeeper');const names=[['새벽 항구의 로안 선장','Captain Roan'],['새벽의 사제 셀레네','Selene of Dawn'],['의무관 산호','Medic Coral'],['성문 수비대장 바론','Gatewarden Baron'],['여관주인 메리','Innkeeper Merry'],['항해사 루멘','Navigator Lumen'],['대장장이 플린','Smith Flynn']];this.game.npcs.forEach((n,i)=>{n.unit.name=t(names[i][0],names[i][1]);n.unit.title=t('새벽 항구의 주민','Dawnharbor Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('잿빛 해안 약탈자','Ash Coast Raider'):t('황혼 성채 파수병','Twilight Sentinel');return;}
     if(this.chapter!==2)return;
     for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');
   }
@@ -291,12 +291,12 @@ export class HiddenWorld {
     const walks=third.town.map(([x,z])=>new THREE.Vector3(x,third.height(x,z),z));g.townsfolk.forEach((f,i)=>{const p=walks[i%walks.length];f.unit.hidden=false;f.unit.teleport(w,p.x,p.z+3);f.relocate(walks,1.8);});
     this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,4,26),new THREE.Vector3(0,9,-22),third.arena.position],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
     for(const b of [g.boss,g.finalBoss,g.worldBoss]){b.unit.hidden=true;b.freed.hidden=true;}g.dawnBoss.unit.hidden=['dormant','dead'].includes(g.dawnBoss.state);
-    {const f=g.dawnBoss.freed;f.hidden=false;f.targetable=false;if(g.journey?.finalCleared)f.teleport(w,14,60);else f.teleport(w,13,-57);}
+    g.dawnBoss.freed.hidden=true;
     g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const x=(i%2?1:-1)*(43+i%4*8),z=16-Math.floor(i/2)*10;e.home.set(x,third.height(x,z),z);if(authority)e.respawnAt(x,z);});
     g.quests.setChapter(3);g.hud.hints.setChapter(3);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
     g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
-    g.hud.messages.banner(()=>t('WORLD III · 새벽을 잃은 섬','WORLD III · Isle of the Stolen Dawn'),()=>t('친구 미라를 구하고 100레벨 황혼의 왕에게 도전하세요','Rescue Mira and challenge the Twilight King at level 100'),'zone');
-    g.hud.chat.system(t('친구 미라는 황혼 성채에 갇혀 있어요. 항구의 선장에게 구조 의뢰를 받으세요.','Mira is imprisoned in the Twilight Citadel. Speak to the captain in Dawnharbor.'));
+    g.hud.messages.banner(()=>t('WORLD III · 새벽을 잃은 섬','WORLD III · Isle of the Stolen Dawn'),()=>t('100레벨 황혼의 왕을 물리치고 설원으로 가는 길을 여세요','Defeat the level 100 Twilight King to open the route to Frostlight'),'zone');
+    g.hud.chat.system(t('보레아스가 미라를 설원으로 데려갔어요. 솔라칸을 이겨 설원으로 가는 길을 여세요.','Boreas has taken Mira to Frostlight. Defeat Solarkan to open the route to the snowfields.'));
     g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-150,maxX:150,minZ:-175,maxZ:175,topY:110},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));g.journey?.save();
   }
 
@@ -318,13 +318,13 @@ export class HiddenWorld {
     g.townsfolk.forEach((f,i)=>{const p=walks[i%walks.length];f.unit.hidden=false;f.unit.teleport(w,p.x,p.z+2);f.relocate(walks,1.5);});
     this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,5,28),new THREE.Vector3(0,14,-24),island.arena.position],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
     for(const b of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss])b.unit.hidden=b.freed.hidden=true;
-    g.frostBoss.unit.hidden=['dormant','dead'].includes(g.frostBoss.state);g.frostBoss.freed.hidden=true;
+    g.frostBoss.unit.hidden=['dormant','dead'].includes(g.frostBoss.state);g.frostBoss.freed.hidden=!!g.journey?.frostCleared;g.frostBoss.freed.targetable=false;g.frostBoss.freed.teleport(w,13,-62);
     g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const x=(i%2?1:-1)*(44+i%4*7),z=20-Math.floor(i/2)*12;e.home.set(x,island.height(x,z),z);if(authority)e.respawnAt(x,z);e.refreshAppearance();});
     g.enemies.filter(e=>e.isAdd).forEach(e=>e.despawn());
     g.quests.setChapter(4);g.hud.hints.setChapter(4);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
     g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
     g.hud.messages.banner(()=>t('WORLD IV · 서리빛 설원','WORLD IV · Frostlight'),()=>t('눈꽃 마을 · 오로라 숲 · 300레벨 영원의 서리왕','Snowfall village · Aurora woods · Level 300 King of Eternal Frost'),'zone');
-    g.hud.chat.system(t('서리빛 설원에 도착했어요! 설원 순찰로 성장하고, 300레벨에 북쪽 얼음 왕좌에서 서리왕에게 도전하세요.','Welcome to Frostlight! Patrol the snowfields, reach level 300 and challenge Boreas at the northern Frozen Throne.'));
+    g.hud.chat.system(t('보레아스가 친구 미라를 얼음 감옥에 가뒀어요! 300레벨에 북쪽 얼음 왕좌에서 미라를 구하세요.','Boreas has imprisoned Mira in ice! Reach level 300 and rescue her at the northern Frozen Throne.'));
     g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-145,maxX:145,minZ:-165,maxZ:165,topY:100},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));g.journey?.save();
   }
 
@@ -358,7 +358,7 @@ export class HiddenWorld {
   }
   update(dt:number,time:number) {
     this.snowGate.update(time);
-    if(this.chapter===4)this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z);
+    if(this.chapter===4)this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!this.game.journey?.frostCleared);
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
     this.thirdGate.root.visible=!!this.game.journey?.trueCleared||this.game.creatorTravel;
     if(this.chapter===3)this.third.update(time,!!this.game.journey?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);

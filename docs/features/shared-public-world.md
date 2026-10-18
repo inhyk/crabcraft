@@ -14,9 +14,15 @@ All five bosses expose “Challenge again” after their defeat animation ends. 
 
 Each actual defeat awards every connected player coins once: level 3 → 150; level 10 → 500; level 20 → 1,200; level 100 → 5,000; level 300 → 15,000. Rewards are shown on boss cards and saved immediately. A per-encounter claim prevents duplicate death events from awarding extra coins; a new local wake or authoritative rematch resets the claim. Late arrival at an already cleared boss grants no coins.
 
+## Boreas and the missing friend
+
+Boreas now holds Mira in a visible ice prison in World IV. Solarkan guards the route to Frostlight; defeating him unlocks that route without freeing Mira or starting the true ending. The World III quest IDs and completion progress remain compatible. The World IV boss quest now explicitly rescues Mira. Defeating level 300 Boreas releases her, hides the prison and starts the dance ending with Mira in the crowd. Both languages, NPC hints, boss dialogue and ending replay use this progression. Existing saved Solarkan victories still unlock Frostlight; saved Boreas victories retain the rescue.
+
+`node tools/qa-boreas-rescue.mjs` exercises the real challenge buttons with accelerated defeat fixtures: Solarkan does not start the true ending, Mira is visibly captive in World IV, level 299 is locked, level 300 Boreas grants 15,000 coins, completes the rescue quest and starts the ending with Mira.
+
 ## Rollout
 
-Merge and deploy server PR #39 first. Then retarget the game PR to `dev` and merge/deploy it. No database migration or new service is needed.
+Server PR #39 was merged and deployed to dev; server production release #41 also passed deployment. Game PR #40 is retargeted to `dev` and must deploy after that prerequisite. No database migration or new service is needed.
 
 ## Validation
 

@@ -376,16 +376,16 @@ export class Game {
     const dawnRig=await loadCrab({race:'orc',sex:'male',classId:'warrior',shell:2,crest:3,led:1,name:'Solarkan'});
     if(!this.alive)return; dawnRig.root.scale.multiplyScalar(4);
     const dawnUnit=this.addUnit(BOSS_PROFILES.dawn.name,'boss','hostile',dawnRig);
-    const friendRig=await loadCrab({race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:1,name:'Mira'});
+    const friendRig=await loadCrab({race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:1,name:'Dawnkeeper'});
     if(!this.alive)return;
-    const friend=this.addUnit('미라 · 사라진 친구','freed','friendly',friendRig);
+    const friend=this.addUnit(t('새벽 성채의 수호자','Dawnkeeper'),'freed','friendly',friendRig);
     this.dawnBoss=new Boss(this,dawnUnit,this.world2.third.arena,friend,BOSS_PROFILES.dawn);
     const frostRig=await loadCrab({race:'undead',sex:'male',classId:'mage',shell:3,crest:1,led:2,name:'Boreas'});
     if(!this.alive)return;frostRig.root.scale.multiplyScalar(4.5);
     const frostUnit=this.addUnit(BOSS_PROFILES.frost.name,'boss','hostile',frostRig);
-    const frostFriendRig=await loadCrab({race:'human',sex:'female',classId:'priest',shell:1,crest:0,led:2,name:'Snowblossom'});
+    const frostFriendRig=await loadCrab({race:'human',sex:'female',classId:'mage',shell:1,crest:2,led:1,name:'Mira'});
     if(!this.alive)return;
-    const frostFriend=this.addUnit(t('눈꽃 정령','Snowblossom Spirit'),'freed','friendly',frostFriendRig);
+    const frostFriend=this.addUnit(t('미라 · 사라진 친구','Mira · The Missing Friend'),'freed','friendly',frostFriendRig);
     this.frostBoss=new Boss(this,frostUnit,this.world2.fourth.arena,frostFriend,BOSS_PROFILES.frost);
     this.director = new CameraDirector(this);
     this.director.bossSee.apply(frostRig.root);
@@ -585,7 +585,7 @@ export class Game {
   private intro(): void {
     if(this.world2.chapter>=2) {
       this.zone=this.world2.regionAt(this.player.unit.pos.x,this.player.unit.pos.z);this.zoneCandidate=this.zone;this.hud.minimap.setZone(regionName(this.zone),false);
-      this.hud.chat.system(this.world2.chapter===4?t('WORLD IV · 서리빛 설원에서 300레벨 영원의 서리왕에게 도전하세요.','WORLD IV · Challenge the level 300 King of Eternal Frost in Frostlight.'):this.world2.chapter===3?t('WORLD III · 친구 미라를 구하고100레벨 솔라칸에게 도전하세요.','WORLD III · Rescue Mira and face Solarkan at level 100.'):t('WORLD II · 주민들의 이사를 돕고 유적을 탐험해 20레벨에 일식의 여왕에게 도전하세요.','WORLD II · Help the settlers, explore the ruins, and challenge the Eclipse Queen at level 20.'));
+      this.hud.chat.system(this.world2.chapter===4?t('WORLD IV · 서리빛 설원에서 300레벨 영원의 서리왕에게 도전하세요.','WORLD IV · Challenge the level 300 King of Eternal Frost in Frostlight.'):this.world2.chapter===3?t('WORLD III · 100레벨 솔라칸을 물리치고 보레아스에게 잡힌 미라를 찾아 설원으로 가세요.','WORLD III · Defeat level 100 Solarkan and follow Mira’s trail to Boreas in Frostlight.'):t('WORLD II · 주민들의 이사를 돕고 유적을 탐험해 20레벨에 일식의 여왕에게 도전하세요.','WORLD II · Help the settlers, explore the ruins, and challenge the Eclipse Queen at level 20.'));
       this.updateMusic(true);return;
     }
     const name = this.player.unit.name;

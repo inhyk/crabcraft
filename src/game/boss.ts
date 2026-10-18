@@ -215,7 +215,7 @@ export class Boss {
     this.nextSwing = g.time + 1.2;
     this.nextMech = g.time + 4;
     this.unit.express('angry', 3);
-    g.say(this.unit, this.isFrost ? t('영원한 겨울 속에 잠들어라!','Sleep beneath the eternal winter!') : this.profile.level === 100 ? t('너희의 새벽도, 친구도 내 것이다!','Your dawn and your friend belong to me!') : this.profile.level === 20 ? t('별의 문을 연 자여, 일식의 시험을 받아라!','You who opened the star gate, face the trial of the eclipse!') : this.profile.level >= 10 ? t('심해의 빛을 피할 수 있겠느냐!','Can you escape the light of the deep?') : BOSS_YELLS.engage, true);
+    g.say(this.unit, this.isFrost ? t('너희 친구도 영원한 겨울 속에 갇힐 것이다!','Your friend shall remain imprisoned in eternal winter!') : this.profile.level === 100 ? t('서리왕에게 가는 길은 내가 막겠다!','I guard the road to the Frost King!') : this.profile.level === 20 ? t('별의 문을 연 자여, 일식의 시험을 받아라!','You who opened the star gate, face the trial of the eclipse!') : this.profile.level >= 10 ? t('심해의 빛을 피할 수 있겠느냐!','Can you escape the light of the deep?') : BOSS_YELLS.engage, true);
     g.audio.sfx('sfx-boss-roar');
     g.hud.bossFrame.show(this.unit);
     g.follow.shake(0.25, 0.6);
