@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { startPostgres } from '../node/local-postgres.mjs';
 import { createPool, migrate } from '../node/db.ts';
 import { CharacterStore } from './character-store.ts';
-import { PersistenceCoordinator } from './persistence-coordinator.ts';
+import { PersistenceCoordinator, readCertifiedGrantPage } from './persistence-coordinator.ts';
 
 let cluster, pool, store;
 const account = 'g' + '9'.repeat(23);
@@ -81,4 +81,15 @@ test('queue, receipt and deadline bounds retain unresolved work without permitti
   assert.equal((await denied.commit(capture(character))).kind, 'unresolved');
   const bounded = new PersistenceCoordinator(store, ownership, options);
   assert.throws(() => bounded.commit(capture(character, { appliedGrantIds: Array.from({ length: 257 }, (_, i) => String(i)) })), /invalid checkpoint/);
+});
+
+ test('candidate journal read is revision-certified against actual PG receipts and discards stale or ownership-lost responses', async () => {
+  const character=await store.create(account,{classId:'mage'}), id=JSON.stringify(['certified',1,1,character.characterId]);
+  await store.recordGrant(account,character.characterId,id,{xp:25});
+  const context={accountId:account,characterId:character.characterId,expectedRevision:0,limit:100};
+  const stale={async pendingGrants(...args){const candidates=await store.pendingGrants(...args);await store.saveCheckpoint(account,character.characterId,0,{xp:25,coins:2},[id]);return candidates;},loadForRecovery:(...args)=>store.loadForRecovery(...args)};
+  const result=await readCertifiedGrantPage(stale,ownership,context);assert.equal(result.kind,'recovery');assert.equal(result.recovery.character.revision,1);assert.equal(result.recovery.grants[0].appliedRevision,1);
+  const fresh=await readCertifiedGrantPage(store,ownership,{...context,expectedRevision:1});assert.equal(fresh.kind,'page');assert.deepEqual(fresh.grants,[]);
+  const closed=new AbortController();const losesDuringRead={pendingGrants:(...args)=>store.pendingGrants(...args),async loadForRecovery(...args){const r=await store.loadForRecovery(...args);closed.abort();return r;}};
+  assert.deepEqual(await readCertifiedGrantPage(losesDuringRead,{...ownership,closed:closed.signal},{...context,expectedRevision:1}),{kind:'unresolved',reason:'ownership'});
 });

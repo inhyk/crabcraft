@@ -166,3 +166,12 @@ Main이 shutdown을 소유한다. `host.stopAdmission()`, `host.shutdown(deadlin
 ## 보상 저장과 계정 채팅
 
 `victimOutcome`의 `maxEntries`, `maxPayloadBytes`, `timeoutMs`와 `chat.maxPending`은 명시적으로 설정한다. 문서 예시는 QA 자원 예산이며 보상 대상 자격을 제한하지 않는다. outcome 예산 초과는 전체 source를 보존하고 실패를 닫으며 부분 ACK나 부분 저장을 허용하지 않는다. 계정 chat은 같은 PG pool의 WorldChatService로 연결하고 pending 수를 제한한다. 선택적 `victimOutcomeRetryCeiling`은 초기 예산 이상의 세 값을 모두 지정한다. 내부 재시도 상한이며 HTTP 조작 API는 제공하지 않는다.
+
+
+## 별도 ledger 환경변수
+
+후속 host는 선택적 `WORLD_LEDGER_CONFIG_JSON`을 받는다. 기존 `WORLD_CONFIG_JSON`은 그대로 두어 구버전 strict parser의 rollback 호환성을 유지한다. 새 변수를 생략하면 retained 경로를 보존하며, 외부 ledger 운영 전환을 자동으로 승인하거나 실행하지 않는다. 명시한 경우 `schema:world-ledger-v1`, `queryTimeoutMs`, `sourceLimits`, `drainLimits`, `recoveryLimits`, `recoveryIntervalMs`를 모두 검증한다. 런타임은 실제 `DurableOutcomeStore`와 canonical `planOutcomePage`를 주입하고 `host.ready()`가 현재 발견된 startup draft를 복구한 뒤에 반환한다. 늦은 옛 writer의 commit은 반복 bounded recovery로 처리하며 fencing으로 설명하지 않는다.
+
+`sourceLimits`는 `maxDirtyCreditEntries`, `maxDirtyCreditBytes`, `maxPendingDeaths`, `maxStagedBytes`를 요구한다. 실제 Area constructor가 public100/private8과 모든 설정된 private variant의 최대 roster 용량을 입장 전에 검사한다. `drainLimits`는 `pageSize`, `creditBatchesPerSlice`, `outcomesPerSlice`, `summaryVictimsPerSlice`, `writeAttempts`, `recoveryLimits`는 `draftsPerSlice`, `pageSize`를 요구한다. 페이지/작업 수는1~100이다. query timeout과 recovery interval은 Node timer 범위 안의 양수 정수다. 수치는 운영 승인값을 추정하지 않고 명시적으로 제공한다.
+
+007 migration 전체 commit이 끝나기 전에는 staging을 켜지 않는다. 이 환경변수와 VM 설정은 구현 세션이 직접 설치하지 않는다.
