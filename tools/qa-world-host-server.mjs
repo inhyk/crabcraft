@@ -19,6 +19,7 @@ import { loadWorldCatalog, createGameplayCatalog } from '../server/world/catalog
 import { createActualWorldHost } from '../server/world/host.ts';
 import { WorldChatService } from '../server/world/chat.ts';
 import { createCoreCharacterCodec } from '../src/sim/persistence.ts';
+import { createEndingStage } from '../src/sim/features/worldRules.ts';
 import { setQuestChapter } from '../src/sim/data/quests.ts';
 import { canonicalEnemyLevel, canonicalEnemyRespawn } from '../src/sim/data/enemies.ts';
 import { CLASSES } from '../src/sim/data/classes.ts';
@@ -26,9 +27,9 @@ import { RACES } from '../src/data/races.ts';
 import { createWorldVariants, personalNpcVisible } from '../src/sim/areas/variants.ts';
 import { createGameplayProtocol, projectObservationExtras } from '../server/world/gameplay/protocol.ts';
 
-const args = { port: 5287, clientOrigin: 'http://127.0.0.1:5276', metadata: '', world: 'w1', party: '0', ledger: '0' };
+const args = { port: 5287, clientOrigin: 'http://127.0.0.1:5276', metadata: '', world: 'w1', party: '0', ledger: '0', ending: '0' };
 for (let i = 2; i < process.argv.length; i += 2) {
-  const key = { '--port': 'port', '--client-origin': 'clientOrigin', '--metadata': 'metadata', '--world': 'world', '--party': 'party', '--ledger': 'ledger' }[process.argv[i]];
+  const key = { '--port': 'port', '--client-origin': 'clientOrigin', '--metadata': 'metadata', '--world': 'world', '--party': 'party', '--ledger': 'ledger', '--ending': 'ending' }[process.argv[i]];
   if (!key || process.argv[i + 1] === undefined) throw new Error('expected --port N --client-origin URL --metadata ABSOLUTE_TMP_PATH');
   args[key] = key === 'port' ? Number(process.argv[i + 1]) : process.argv[i + 1];
 }
@@ -38,6 +39,7 @@ if (!isAbsolute(args.metadata) || !['/tmp/', '/private/tmp/'].some(prefix => res
 if (!['w1', 'w2', 'w3', 'w4'].includes(args.world)) throw new Error('QA world must be w1..w4');
 if (!['0', '1'].includes(args.party)) throw new Error('QA party must be 0 or 1');
 if (!['0', '1'].includes(args.ledger)) throw new Error('QA ledger must be 0 or 1');
+if (!['0', '1'].includes(args.ending) || args.ending === '1' && args.world !== 'w4') throw new Error('QA ending must be 0 or explicit 1 with --world w4');
 
 let cluster, pool, ownership, host, server, metadataWritten = false, closing;
 async function cleanup() {
@@ -84,8 +86,11 @@ try {
     loaded.query.resolveCollision(destination.position.x, destination.position.z, loaded.actionData.archetype('human').radius, out);
     checkpoint.world = args.world; checkpoint.location = { x: out.x, y: loaded.query.heightAt(out.x, out.y), z: out.y, yaw: destination.yaw };
     setQuestChapter(checkpoint.progress.quests, Number(args.world.slice(1)));
+    // Earned-gate integration fixture only: no boss fight, XP, coins or HP is fabricated.
+    if (args.ending === '1') checkpoint.progress.flags.frostCleared = true;
     character = await characters.saveCheckpoint(accountId, character.characterId, character.revision, checkpoint, []);
   }
+  const endingStage = args.ending === '1' ? createEndingStage(worlds.get('w1').publicDefinition, worlds.get('w4').encounterDefinitions.get('frost')) : undefined;
   const allowed = [args.clientOrigin];
   const ip = req => req.socket.remoteAddress ?? 'unknown';
   const accounts = accountHandler(pool, allowed, ip, null, admission);
@@ -97,6 +102,7 @@ try {
     policies: { authTimeoutMs: 2000, inputTimeoutMs: 300, reconnectGraceMs: 3000, sessionRevalidateMs: 1000, checkpointIntervalMs: 2000,
       maxConnections: 16, maxConnectionsPerIp: 16, maxWaiting: 16, maxAuthFrameBytes: 2048, maxFrameBytes: 65536,
       maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128, maxMutationSourcesPerTick: 64, loopIntervalMs: 2, chat: { maxPending: 16 },
+      endingPresentation: args.ending === '1' ? { stage: endingStage } : undefined,
       // Explicit QA-only source/page budgets. They do not define production capacity or eligibility.
       ledger: args.ledger === '1' ? {
         sourceLimits: { maxDirtyCreditEntries: 10000, maxDirtyCreditBytes: 16 * 1024 * 1024, maxPendingDeaths: 32, maxStagedBytes: 8 * 1024 * 1024 },
@@ -131,10 +137,10 @@ try {
   await writeFile(args.metadata, JSON.stringify({ origin: baseURL, clientOrigin: args.clientOrigin, characterId: character.characterId,
     cookie: { name: 'cc_account', value: `${accountId}.${rawToken}`, path: '/api/account' }, catalog, appearance: character.identity.appearance, initialWorld: args.world,
     earnedTravel: false, renderFixture: args.world !== 'w1', world: args.world, chapter: character.checkpoint.progress.quests.chapter, spawn: character.checkpoint.location,
-    partyEnabled: args.party === '1', ledgerMode: args.ledger === '1' ? 'external-durable' : 'retained', characterPolicy,
-    fixture: 'Seeded Google-shaped QA session and new level-1 mage. No OAuth/provider call. Actual Node Area/bakes; QA population and explicit restore policy. Non-W1 selection is a trusted saved-world render fixture with zero XP and no earned unlock claims.' }), { flag: 'wx', mode: 0o600 });
+    endingIntegrationFixture: args.ending === '1', earnedEnding: false, partyEnabled: args.party === '1', ledgerMode: args.ledger === '1' ? 'external-durable' : 'retained', characterPolicy,
+    fixture: (args.ending === '1' ? 'TRUSTED W4 FROST-CLEARED ENDING INTEGRATION FIXTURE. Not earned storyline completion. ' : '') + 'Seeded Google-shaped QA session and new level-1 mage. No OAuth/provider call. Actual Node Area/bakes; QA population and explicit restore policy. Non-W1 selection is a trusted saved-world render fixture with zero XP and no earned unlock claims.' }), { flag: 'wx', mode: 0o600 });
   metadataWritten = true;
-  process.stdout.write(JSON.stringify({ ready: true, baseURL, metadataPath: args.metadata }) + '\n');
+  process.stdout.write(JSON.stringify({ ready: true, baseURL, metadataPath: args.metadata, endingIntegrationFixture: args.ending === '1', earnedEnding: false }) + '\n');
 } catch {
   process.stderr.write('world QA launcher failed; no credentials were logged\n'); await cleanup(); process.exit(1);
 }

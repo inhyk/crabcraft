@@ -12,8 +12,8 @@ export type HostCommand=
  | {kind:'chatBlock';target:import('../../../src/sim/types.ts').EntityRef;blocked:boolean}
  | {kind:'chatMute';target:import('../../../src/sim/types.ts').EntityRef;muted:boolean}
  | {kind:'chatReport';target:import('../../../src/sim/types.ts').EntityRef;reason:typeof REASONS[number]};
-export type EndingControlCommand={kind:'endingControl';id:string;action:'skip'|'continue'};
-export type GameplayCommand=PlayerCommand|HostCommand|EndingControlCommand;
+export type EndingControlCommand=Extract<PlayerCommand,{kind:'endingControl'}>;
+export type GameplayCommand=PlayerCommand|HostCommand;
 export const HOST_COMMANDS:readonly string[]=['partyCreate','partyJoin','partyLeave','partyPvp','encounterLeave','chatSay','chatPreferences','chatBlock','chatMute','chatReport'];
 export interface GameplayInput extends Omit<PlayerIntent,'commands'> {readonly commands:readonly GameplayCommand[]}
 export interface InputPacket {binding:WireBinding;intent:GameplayInput}

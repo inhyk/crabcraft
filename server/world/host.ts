@@ -11,6 +11,7 @@ import { prepareRestore, type CoreCharacterCodec, type IdentityJson, type Checkp
 import type { Area, AreaSnapshot, BossProfileId, EntityRef, GrantReadToken, EventRecord, PlayerCommand, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { canChallenge } from '../../src/sim/data/progression.ts';
 import type { LedgerMode } from '../../src/sim/ledger.ts';
+import type { EndingIntegrationOptions } from '../../src/sim/features/worldRules.ts';
 import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { TREASURES, LIGHTHOUSE_SECRET } from '../../src/sim/features/exploration.ts';
 import { CharacterStore, CharacterStoreError, type Character, type VictimOutcomeResources, type GrantBatchEntry } from './character-store.ts';
@@ -42,6 +43,7 @@ export interface HostPolicies {
   readonly maxQueuedInputs: number;
   readonly maxMutationSourcesPerTick: number;
   readonly loopIntervalMs: number;
+  readonly endingPresentation?: { readonly stage: EndingIntegrationOptions['stage'] };
   readonly ledger?: { sourceLimits: SourceLedgerLimits; drainLimits: Omit<ConstructorParameters<typeof AreaSourceDrain>[3], 'codecVersion'>; recoveryLimits: Omit<ConstructorParameters<typeof PagedOutcomeRecovery>[2], 'codecVersion'>; recoveryIntervalMs: number };
   readonly victimOutcome: VictimOutcomeResources;
   readonly victimOutcomeRetryCeiling?: VictimOutcomeResources;
@@ -163,20 +165,29 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const at = (p: number) => values[Math.floor((values.length - 1) * p)] ?? 0;
     return [[`${name}P50Ms`, at(.5)], [`${name}P99Ms`, at(.99)], [`${name}Samples`, values.length]];
   }));
+  const endingOptions = (incarnation: string): EndingIntegrationOptions | undefined => p.endingPresentation ? {
+    incarnation, stage: p.endingPresentation.stage,
+    appearance: owner => {
+      const actor = [...actors.values()].find(actor => sameRef(actor.ref, owner));
+      return actor ? { ...actor.record.identity.appearance, name: shownName(actor.record.identity.appearance.name) } : null;
+    },
+  } : undefined;
   for (const world of PUBLIC_WORLDS) {
     const loaded = deps.worlds.get(world);
     if (!loaded || loaded.world !== world || loaded.publicDefinition.bosses.length) throw new Error(`missing safe public world: ${world}`);
     if (loaded.publicDefinition.enemies.length > p.maxMutationSourcesPerTick) throw new Error('population exceeds bounded checkpoint receipts');
     const now = deps.nowMonotonicMs();
     const ledgerMode: LedgerMode = external ? 'external-durable' : 'retained';
-    const area = createArea({ ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
+    const id = `${world}:${randomUUID()}`;
+    const area = createArea({ endingPresentation: endingOptions(id), ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id, definition: loaded.publicDefinition, query: loaded.query,
       actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed, characters: registry,
       context: { mode: 'public', pvp: 'disabled', members: [] }, limits: p.areaLimits });
     const slot: Slot = { kind: 'public', ledgerMode, world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
     slots.set(world, slot); allSlots.add(slot);
   }
   if (external && p.party) for (const loaded of deps.worlds.values()) for (const definition of loaded.encounterDefinitions.values()) {
-    const validation = createArea({ id: `party:${randomUUID()}`, ledgerMode: 'external-durable', ledgerLimits: p.ledger!.sourceLimits, definition,
+    const id = `party:${randomUUID()}`;
+    const validation = createArea({ endingPresentation: endingOptions(id), id, ledgerMode: 'external-durable', ledgerLimits: p.ledger!.sourceLimits, definition,
       query: loaded.query, actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed,
       context: { mode: 'party-encounter', pvp: 'disabled', members: [] }, limits: p.areaLimits });
     validation.dispose();
@@ -195,7 +206,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       () => !stopped && allSlots.has(slot) && slot.area === area && deps.ownership === ownership && !drainedFailedSources.has(slot));
   }
   for (const slot of allSlots) slot.source = sourceAdapter(slot);
-  const publishedConsumed = (c: Connection) => external ? c.publishedConsumed : c.input!.consumedInput;
+  const publishedConsumed = (c: Connection) => external || p.endingPresentation ? c.publishedConsumed : c.input!.consumedInput;
   const sourceFailed = (slot: Slot) => failedSources.has(slot) || drainedFailedSources.has(slot);
   const json = (c: Connection, value: unknown) => {
     if (c.ws.readyState === WebSocket.OPEN) { const data = JSON.stringify(value); c.ws.send(data); metrics.packets++; metrics.bytesSent += Buffer.byteLength(data); }
@@ -487,7 +498,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!destination) {
         if ([...allSlots].filter(s => s.kind === 'party').length >= p.party.maxEncounters) { controlError(c, 'encounter-capacity'); continue; }
         const loaded = deps.worlds.get(source.world)!, now = deps.nowMonotonicMs();
-        const area = createArea({ ledgerMode: source.ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `party:${randomUUID()}`, definition, query: loaded.query, actionData: loaded.actionData,
+        const id = `party:${randomUUID()}`;
+        const area = createArea({ endingPresentation: endingOptions(id), ledgerMode: source.ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id, definition, query: loaded.query, actionData: loaded.actionData,
           policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'party-encounter', pvp: party.pvp ? 'party-only' : 'disabled', members: [] }, limits: p.areaLimits });
         area.bootstrapEncounter(profile, { beaconLit: beacon });
         destination = { kind: 'party', ledgerMode: source.ledgerMode, world: source.world, area, party, profile, tick: new DeadlineScheduler(30, now),
@@ -769,11 +781,13 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       try {
         const encodeStart = deps.nowMonotonicMs(), wasFull = c.full;
         c.visible = visible(slot, actor, c);
+        const extras = p.observationExtras(snapshot, actor.record.characterId, c.visible);
+        const recovery = p.endingPresentation ? { ...extras.recovery, endingPresentation: slot.area.endingObservation(actor.ref) } : extras.recovery;
         const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
           acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c), selfRef: actor.ref,
           snapshot, prepared, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark, appearances,
           results: materializeResults(c),
-          ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
+          ...extras, recovery });
         observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
         for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
         c.full = false; c.baselineSequence = c.sequence; c.results = []; metrics.snapshots++;
@@ -826,7 +840,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const origin = frame.commandOrigins[index];
       if (!origin) throw new Error('missing command origin');
       const outcome = outcomes.find(result => result.commandIndex === index && sameRef(result.unit, unit));
-      if (command.kind === 'forgeBuy' || command.kind === 'forgeUpgrade') {
+      if (command.kind === 'endingControl') {
+        c.results.push({ ...origin, status: outcome?.success ? 'succeeded' : 'failed', code: outcome?.success ? 'ending-control-accepted' : 'ending-control-rejected' });
+      } else if (command.kind === 'forgeBuy' || command.kind === 'forgeUpgrade') {
         const record = emitted.find(record => !used.has(record) && record.tick === inputTick && record.event.type === 'equipment' && sameRef(record.event.unit, unit) && record.event.operation === (command.kind === 'forgeBuy' ? 'buy' : 'upgrade') && record.event.slot === (command.slot ?? 'weapon') && record.event.request === command.request);
         if (record?.event.type === 'equipment') {
           used.add(record); c.results.push({ ...origin, status: outcome?.success ? 'durable' : 'failed', code: `equipment-${record.event.result}`, ...(command.request === undefined ? {} : { request: command.request }) });
@@ -857,7 +873,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     for (const actor of changedLives) if (actor.connection) bootstrap(actor.connection, actor);
     progression ||= slot.area.pendingGrants().length > 0 || emitted.some(({ event }) =>
       ['quest', 'xp', 'levelUp', 'equipment', 'achievement', 'discovery', 'endingReady', 'death', 'respawn'].includes(event.type));
-    if (progression || sourceNeedsIO(slot) || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
+    if (progression || p.endingPresentation && slot.area.hasPendingEndingTransitions() || sourceNeedsIO(slot) || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
     else for (const { c } of prepared) c.publishedConsumed = c.input!.consumedInput;
   };
   const pump = () => {

@@ -43,6 +43,7 @@ export class PlayerController implements PlayerSim {
     if(!intent.commands.every(validCommand))return;
     this.lastConsumedSeq=intent.seq;this.held={...intent,commands:[]};
     for(const [commandIndex,command] of intent.commands.entries()){
+      if(this.services.inputCommandAllowed?.(this.unit.ref,command)===false){this.services.runCommand(this.unit.ref,command,commandIndex);continue;}
       switch(command.kind){
         case 'target':{if(command.target===null)this.setTarget(null);else{const target=this.services.getUnit(command.target);if(target&&!target.hidden&&target.targetable)this.setTarget(target);}break;}
         case 'ability':this.useAbility(command.slot);break;
