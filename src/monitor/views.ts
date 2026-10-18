@@ -14,6 +14,8 @@ type Sample = { t: number; x: number; y: number; z: number; yaw: number };
 type Actor = { player: MonitorPlayer; unit: Unit | null; dance: BreakRoutine | null; seq: number; loading: boolean; failed: boolean; samples: Sample[] };
 /** Feeds show where a player was this long ago, so there are always two received positions to move between. */
 const DELAY = 300;
+/** The empty-server view circles Clawhaven's plaza: radius and height in metres, one turn in this many seconds. */
+const TOWN_VIEW = { x: 8, z: 0, radius: 88, height: 36, turn: 240 };
 type Tile = { canvas: HTMLCanvasElement; message: HTMLElement };
 type Stage = { value?: Scenery; error?: boolean };
 
@@ -34,6 +36,8 @@ export class Views {
   private goal = new THREE.Vector3();
   private aim = new THREE.Vector3();
   paused = false;
+  /** Drawn only while there are no tiles: the World I town from a slowly circling camera. */
+  panorama: HTMLCanvasElement | null = null;
 
   constructor() {
     this.renderer.setPixelRatio(1);
@@ -98,6 +102,7 @@ export class Views {
     const fps = this.tiles.size <= 4 ? 30 : this.tiles.size <= 9 ? 20 : 12;
     if (document.hidden || this.paused || time - this.last < 1000 / fps - 2) return;
     const dt = Math.min(.12, (time - this.last) / 1000); this.last = time;
+    if (this.panorama && !this.tiles.size) { this.drawTown(this.panorama, dt, time); return; }
     const visible = [...this.tiles].filter(([, tile]) => {
       const r = tile.canvas.getBoundingClientRect();
       return r.width > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
@@ -159,6 +164,23 @@ export class Views {
       this.renderer.render(stage.value.scene, this.camera);
       tile.canvas.getContext('2d')?.drawImage(this.renderer.domElement, 0, 0);
     }
+  }
+
+  private drawTown(canvas: HTMLCanvasElement, dt: number, time: number) {
+    const stage = this.stage(1).value;
+    if (!stage) return;
+    const cw = canvas.clientWidth || 1280, ch = canvas.clientHeight || 720;
+    const width = Math.min(1280, Math.max(320, Math.round(cw))), height = Math.max(180, Math.round(width * ch / cw));
+    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+    this.renderer.setSize(width, height, false);
+    const v = TOWN_VIEW, angle = time / 1000 / v.turn * Math.PI * 2;
+    this.aim.set(v.x, stage.height(v.x, v.z) + 2, v.z);
+    const x = v.x + Math.sin(angle) * v.radius, z = v.z + Math.cos(angle) * v.radius;
+    this.camera.position.set(x, Math.max(this.aim.y + v.height, stage.height(x, z) + 12), z);
+    this.camera.aspect = width / height; this.camera.lookAt(this.aim); this.camera.updateProjectionMatrix();
+    stage.update(dt, time / 1000, this.camera, this.aim);
+    this.renderer.render(stage.scene, this.camera);
+    canvas.getContext('2d')?.drawImage(this.renderer.domElement, 0, 0);
   }
 
   /** Position between the two received samples around (now - DELAY) on the server clock; holds the newest when late. */
