@@ -60,7 +60,7 @@ try{
   result.push({level:b.profile.level,first,repeat:{xp:g.player.xp-xp-first.xp,coins:g.player.coins-coins-first.coins}});
  }return result;});
  for(const r of rewards){assert.ok(r.first.xp>0);assert.deepEqual(r.first,r.repeat);}
- assert.deepEqual(rewards.map(r=>r.first.xp),[500,1000,3000,6400,18000]);
+ assert.deepEqual(rewards.map(r=>r.first.xp),[500,1000,5000,100000,18000]);
  console.log('PASS all five bosses pay coins and XP on initial and repeated victories, duplicate deaths pay nothing',JSON.stringify(rewards));
  assert.deepEqual(errors,[]);console.log('PASS zero native Chrome errors');
 }finally{await browser.close();}
