@@ -527,6 +527,8 @@ export interface Area {
   stageInstanceArrival(admission:Admission,exit:StagedInstanceExit):StagedArrival;
   validateInstanceArrival(token:string):void;
   activateInstanceArrival(token:string):EntityRef;
+  /** Host recovery only: a dungeon resident's durable safe checkpoint must restore in a public Area, so this local life is discarded. */
+  evictForRecovery(ref:EntityRef):void;
   bindDurableLedger(ref:EntityRef,revision:number):void;
   beginGrantRead(ref:EntityRef,expectedRevision:number):GrantReadToken;
   applyCertifiedGrants(token:GrantReadToken,page:CertifiedGrantPage):readonly GrantApplyResult[];
