@@ -8,7 +8,7 @@ import {worldArea,addActor,intent} from '../../../tests/core/worldHarness.mjs';
 import {QUESTS} from '../../../src/sim/data/quests.ts';
 import {RACES} from '../../../src/data/races.ts';
 const motion=JSON.parse(readFileSync(new URL('../../../src/sim/data/pose-data.json',import.meta.url),'utf8'));
-const catalog={version:motion.version,archetypes:[...Object.keys(motion.archetypes),'boss-rust','boss-abyss','boss-eclipse','boss-dawn','boss-frost'],actions:Object.keys(motion.clips),abilities:['pincer-strike','shell-bash','sideways-charge','whirlpool','bubble-bolt','frost-spray','steam-blink','tidal-nova','smite','mend-shell','barnacle-ward','holy-tide','crown-burst'],quests:Object.keys(QUESTS),npcs:['brinebeard','silvermoon','coralline','grukk','hoofclaw','rattlebolt','pip'],interactions:['npc:brinebeard','beacon','lamp-a','lighthouse-secret','treasure','moonTreasure','sunsetTreasure'],gates:['gate:w2'],objectives:Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>o.id)),flags:['beaconLit','rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared'],jointCount:22,appearanceLimits:Object.fromEntries(Object.entries(RACES).map(([id,r])=>[id,{shell:r.shellColors.length,crest:r.crestStyles.length,led:r.ledColors.length}]))};
+const catalog={version:motion.version,poseProviderVersion:motion.version,archetypes:[...Object.keys(motion.archetypes),'boss-rust','boss-abyss','boss-eclipse','boss-dawn','boss-frost'],actions:Object.keys(motion.clips),abilities:['pincer-strike','shell-bash','sideways-charge','whirlpool','bubble-bolt','frost-spray','steam-blink','tidal-nova','smite','mend-shell','barnacle-ward','holy-tide','crown-burst'],quests:Object.keys(QUESTS),npcs:['brinebeard','silvermoon','coralline','grukk','hoofclaw','rattlebolt','pip'],interactions:['npc:brinebeard','beacon','lamp-a','lighthouse-secret','treasure','moonTreasure','sunsetTreasure'],gates:['gate:w2'],objectives:Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>o.id)),flags:['beaconLit','rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared'],jointCount:22,appearanceLimits:Object.fromEntries(Object.entries(RACES).map(([id,r])=>[id,{shell:r.shellColors.length,crest:r.crestStyles.length,led:r.ledColors.length}]))};
 const binding={session:'session-unique',area:'wire-area',epoch:1,catalog:catalog.version};
 const appearance={race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name:'Hero'};
 const header=(sequence=1)=>({...binding,sequence,tick:0,acceptedInput:0,consumedInput:0});
@@ -70,7 +70,7 @@ test('event codec preserves real CoreEvent ordering and distinguishes durable co
 test('numeric widths exceed v2 without truncation and rejected growth leaves sender baseline intact',()=>{
  const f=fixture();const view=observation(f);const wide=structuredClone(view.snapshot);wide.units.find(u=>u.ref.id===f.actors[0].ref.id).hp=2**40;wide.units.find(u=>u.ref.id===f.actors[0].ref.id).maxHp=2**41;wide.players[0].coins=2**48;view.snapshot=wide;
  const result=apply(f.receiver,f.codec.encodeObservation(view));assert.equal(result.state.self.player.coins,2**48);assert.equal(result.state.actors.find(a=>a.ref.id===f.actors[0].ref.id).hp,2**40);
- const bad=observation(f,2);bad.snapshot=structuredClone(wide);bad.snapshot.players[0].coins=Number.MAX_SAFE_INTEGER+1;assert.throws(()=>f.codec.encodeObservation(bad),/numeric/);
+ const bad=observation(f,2);bad.snapshot=structuredClone(wide);bad.snapshot.players[0].coins=Number.MAX_SAFE_INTEGER+1;assert.throws(()=>f.codec.encodeObservation(bad),/invalid (numeric|integer)/);
 });
 
 test('measure initial lossless pose bandwidth with one real 100-player Area at 20 snapshots per second',t=>{
@@ -84,7 +84,7 @@ test('measure initial lossless pose bandwidth with one real 100-player Area at 2
   const started=performance.now(),chunks=f.codec.encodeObservation(observation(f,sequence++));ms+=performance.now()-started;total+=bytes(chunks);count++;
  }
  assert.equal(count,20);assert.ok(baseline<LIMITS.messageBytes);assert.ok(total>0);
- t.diagnostic(JSON.stringify({representation:'minimal-render-pose-exact-f32-sparse-delta',actualPlayers:100,totalActors:f.area.snapshot().units.length,baselineBytes:baseline,movingBytesPerClientSecond:total,meanDeltaBytes:total/count,estimated100ViewersBytesPerSecond:total*100,encodeMsPerSnapshot:ms/count}));
+ t.diagnostic(JSON.stringify({representation:'shared-exact-render-recipe-pooled-per-snapshot',actualPlayers:100,totalActors:f.area.snapshot().units.length,baselineBytes:baseline,movingBytesPerClientSecond:total,meanDeltaBytes:total/count,estimated100ViewersBytesPerSecond:total*100,encodeMsPerSnapshot:ms/count}));
 });
 
 test('float32 vector encoding is selected only when every source component is bit-exact',()=>{
@@ -94,7 +94,7 @@ test('float32 vector encoding is selected only when every source component is bi
 test('sparse pose patches reject cardinality and joint overflow without changing the committed actor',()=>{
  const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));const before=f.receiver.state;
  f.area.step(new Map([[f.actors[0].ref.id,intent(1,[],{forward:1})]]));const packets=f.codec.encodeObservation(observation(f,2)),a=new FragmentAssembler(binding);let m;for(const p of packets)m=a.accept(p,0);
- const actor=m.payload.actors.find(a=>a.ref.id===f.actors[0].ref.id);delete actor.fields.pose;actor.poseDelta={appliedQ:{mask:2**22,values:[1]}};
+ const actor=m.payload.actors.find(a=>a.ref.id===f.actors[0].ref.id);delete actor.fields.pose;delete actor.poseRecipe;actor.poseDelta={appliedQ:{mask:2**22,values:[1]}};
  assert.throws(()=>apply(f.receiver,encodeMessage(1,m.header,m.payload)),/integer/);assert.deepEqual(f.receiver.state,before);
 });
 
@@ -138,4 +138,24 @@ test('delivered cross-Area entitlement preserves its original victim ref and rem
  assert.equal(f.area.receiveGrant(grant),'applied');const events=f.area.drainEvents(),o=observation(f,2);o.events=events;o.eventWatermark=events.at(-1).order;const result=apply(f.receiver,f.codec.encodeObservation(o));
  assert.ok(result.events.some(e=>e.event.type==='xp'&&e.event.amount===10));assert.equal(result.state.self.player.coins,5);assert.equal(result.state.self.player.xp,10);
  const carried={tick:0,order:o.eventWatermark+1,event:{type:'reward',grant,appliedHere:true}},packet=encodeEvents(header(3),{baselineSequence:2,events:[carried],results:[]},catalog);assert.deepEqual(apply(f.receiver,packet).events[0].event.grant.victim,grant.victim);
+});
+test('wire recipe reconstruction is component-exact for real movement, jump, dance and interrupted actions',()=>{
+ const f=fixture(5);apply(f.receiver,f.codec.encodeObservation(observation(f)));let seq=2,observed=0;
+ for(let tick=1;tick<=180;tick++){
+  const inputs=new Map(f.actors.map((a,i)=>[a.u.ref.id,intent(tick,tick===1?(i===2?[{kind:'jump'}]:i===3?[{kind:'dance'}]:[]):tick===80&&i===3?[{kind:'cancel'}]:[],i===0?{forward:1,turn:.3}:i===1?{strafe:-1,sprint:true}:{} )]));
+  f.area.step(inputs);f.area.drainEvents();if(tick%3===1)continue;
+  const source=observation(f,seq++),state=apply(f.receiver,f.codec.encodeObservation(source)).state;
+  for(const actor of state.actors){const unit=source.snapshot.units.find(u=>u.ref.id===actor.ref.id);assert.deepEqual(actor.pose,projectActor(unit,actor.appearance).pose);observed++;}
+ }
+ assert.ok(observed>=2500);
+});
+test('stale pose provider and malformed recipe versions fail before client baseline mutation',()=>{
+ assert.throws(()=>createGameplayProtocol({...catalog,poseProviderVersion:'stale-motion'}),/provider mismatch/);
+ assert.throws(()=>new GameplayReceiver(binding,{...catalog,poseProviderVersion:'stale-motion'}),/provider mismatch/);
+ const f=fixture(),packets=f.codec.encodeObservation(observation(f)),assembler=new FragmentAssembler(binding);let m;for(const p of packets)m=assembler.accept(p,0);m.payload.poses[0].recipe.version=99;
+ assert.throws(()=>apply(f.receiver,encodeMessage(1,m.header,m.payload)),/recipe/);assert.equal(f.receiver.state,null);
+});
+test('recipe pooling preserves negative zero in the owning actor locomotion fields',()=>{
+ const f=fixture(2);f.actors[1].u.pose.localVx=-0;const state=apply(f.receiver,f.codec.encodeObservation(observation(f))).state;
+ assert.equal(Object.is(state.actors.find(a=>a.ref.id===f.actors[0].ref.id).pose.localVx,0),true);assert.equal(Object.is(state.actors.find(a=>a.ref.id===f.actors[1].ref.id).pose.localVx,-0),true);
 });
