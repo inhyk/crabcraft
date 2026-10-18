@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot} from './protocol.ts';
+import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,WIRE_SCHEMA_REVISION,projectObservationExtras,projectActor,prepareObservationSnapshot} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent} from '../../../tests/core/worldHarness.mjs';
@@ -280,4 +280,9 @@ test('maximum admitted personal cast and cue shape fits existing binary limits w
  const ending=structuredClone(controller.snapshot()),layer=ending.cast[0].recipe.layers[0];assert.ok(layer);for(const actor of ending.cast)actor.recipe.layers=Array.from({length:64},()=>structuredClone(layer));ending.cues=Array.from({length:64},(_,i)=>({ordinal:i+1,tick:i,kind:'moment',value:'x'.repeat(128)}));
  apply(f.receiver,f.codec.encodeObservation(observation(f)));const view=observation(f,2,true);view.recovery.endingPresentation=ending;const chunks=f.codec.encodeObservation(view),bytes=chunks.reduce((n,c)=>n+c.length,0);assert.ok(chunks.length>1&&chunks.length<=LIMITS.fragments);assert.ok(chunks.every(c=>c.length<=LIMITS.fragmentBytes));assert.ok(bytes<LIMITS.messageBytes);for(const chunk of chunks.slice(0,-1))assert.equal(f.receiver.accept(chunk,0),null);assert.equal('endingPresentation' in f.receiver.state.recovery,false);const result=f.receiver.accept(chunks.at(-1),0);assert.deepEqual(result.state.recovery.endingPresentation,ending);assert.equal(result.state.actors.length,view.snapshot.units.length);
  t.diagnostic(JSON.stringify({scope:'wire-bound shape, not gameplay/load performance',actualPlayers:100,totalActors:view.snapshot.units.length,cast:24,layersPerCast:64,cues:64,bytes,fragments:chunks.length,messageLimit:LIMITS.messageBytes,fragmentLimit:LIMITS.fragmentBytes}));
+});
+
+
+test('compiled schema revision is explicit while a legacy catalog with absent revision remains decodable',()=>{
+ const current={...catalog,wireSchemaRevision:WIRE_SCHEMA_REVISION};assert.doesNotThrow(()=>createGameplayProtocol(current));assert.doesNotThrow(()=>new GameplayReceiver(binding,current));assert.doesNotThrow(()=>createGameplayProtocol(catalog));assert.doesNotThrow(()=>new GameplayReceiver(binding,catalog));for(const revision of [0,2,null,'1']){assert.throws(()=>createGameplayProtocol({...catalog,wireSchemaRevision:revision}),/schema revision/);assert.throws(()=>new GameplayReceiver(binding,{...catalog,wireSchemaRevision:revision}),/schema revision/);}
 });

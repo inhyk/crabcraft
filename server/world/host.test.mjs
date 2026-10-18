@@ -110,7 +110,7 @@ async function client(rt, c, auth = true) {
     } catch (error) { bot.errors.push(error.message); }
   });
   await once(ws, 'open');
-  if (auth) ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.record.characterId }));
+  if (auth) ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.record.characterId, ...(gameplayCatalog.wireSchemaRevision===undefined?{}:{schemaRevision:gameplayCatalog.wireSchemaRevision}) }));
   bot.send = (commands, held = {}) => ws.send(encodeInput({ binding: bot.binding, intent: { seq: ++bot.sequence, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, ...held, commands } }, gameplayCatalog));
   return bot;
 }
@@ -743,4 +743,15 @@ test('actual ending host gates private start and credits on real PG writes, keep
   bot.ws.close();await once(bot.ws,'close');resumed=await client(rt,owner);await ready(rt,resumed);assert.notEqual(resumed.binding.session,bot.binding.session);assert.equal(resumed.state.recovery.endingPresentation.id,id);assert.equal(resumed.state.recovery.endingPresentation.phase,'credits');resumed.send([{kind:'endingControl',id,action:'continue'}]);await until(()=>resumed.state.recovery.endingPresentation.phase==='finished');const saved=await store.getOwned(owner.binding.accountId,owner.record.characterId);assert.equal(saved.checkpoint.progress.xp,0);assert.equal(saved.checkpoint.progress.coins,0);assert.equal(saved.checkpoint.progress.flags.frostCleared,true);assert.equal(saved.checkpoint.activity.controlsLocked,false);assert.equal(JSON.stringify(other.state).includes(id),false);assert.deepEqual(rt.failures,[]);assert.deepEqual(resumed.errors,[]);
   bot.ws.close();other.ws.close();resumed.ws.close();await rt.close();originalClosed=true;next=await runtime({ledger:true,ending:true});nextBot=await client(next,owner);await ready(next,nextBot);assert.equal(nextBot.state.recovery.endingPresentation,null);assert.equal(nextBot.state.self.player.flags.frostCleared,true);assert.equal(nextBot.state.self.player.controlsLocked,false);nextBot.send([{kind:'endingReplay'}]);await until(()=>nextBot.state.recovery.endingPresentation);assert.notEqual(nextBot.state.recovery.endingPresentation.id,id);assert.equal(nextBot.state.self.player.xp,0);assert.equal(nextBot.state.self.player.coins,0);assert.deepEqual(next.failures,[]);
  }finally{await release();bot?.ws.close();other?.ws.close();resumed?.ws.close();nextBot?.ws.close();if(next)await next.close();if(!originalClosed)await rt.close();}
+});
+
+
+test('ending schema handshake rejects missing or mismatched peers before consuming the reusable ticket or attaching a character', {timeout:10000},async()=>{
+ const c=await character(),rt=await runtime({ledger:true,ending:true}),bots=[];let consumes=0;const consume=rt.admission.consume.bind(rt.admission);rt.admission.consume=(...args)=>{consumes++;return consume(...args);};const ticket=rt.admission.issue(c.binding,origin).ticket;
+ try{
+  for(const revision of [undefined,null,2]){const bot=await client(rt,c,false);bots.push(bot);bot.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,...(revision===undefined?{}:{schemaRevision:revision})}));await until(()=>bot.controls.some(v=>v.code==='protocol-schema'));await until(()=>bot.ws.readyState===WebSocket.CLOSED);assert.equal(consumes,0);assert.equal(rt.host.stats().activeActors,0);}
+  const unknown=await client(rt,c,false);bots.push(unknown);unknown.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,schemaRevision:1,accountId:c.binding.accountId}));await until(()=>unknown.controls.some(v=>v.code==='auth-frame'));assert.equal(consumes,0);
+  const matching=await client(rt,c,false);bots.push(matching);matching.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,schemaRevision:1}));await ready(rt,matching);assert.equal(consumes,1);assert.equal(rt.host.stats().activeActors,1);assert.deepEqual(rt.failures,[]);
+ }finally{for(const bot of bots)bot.ws.close();await rt.close();}
+ const off=await runtime();let legacy;try{legacy=await client(off,c,false);legacy.ws.send(JSON.stringify({type:'authenticate',ticket:off.admission.issue(c.binding,origin).ticket,characterId:c.record.characterId}));await ready(off,legacy);assert.deepEqual(off.failures,[]);}finally{legacy?.ws.close();await off.close();}
 });

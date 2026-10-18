@@ -23,7 +23,7 @@ import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator, readCertifiedGrantPage, AreaSourceDrain, PagedOutcomeRecovery, type Recovery } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
-import { prepareObservationSnapshot } from './gameplay/protocol.ts';
+import { prepareObservationSnapshot, WIRE_SCHEMA_REVISION } from './gameplay/protocol.ts';
 import type { GameplayCatalog, GameplayProtocol, ObservationInput, WireBinding, WorldControl } from './gameplay/protocol.ts';
 import type { CommandResult } from './gameplay/events.ts';
 
@@ -111,6 +111,7 @@ const reject = (socket: Duplex, status: string) => socket.end(`HTTP/1.1 ${status
 /** Actual numeric simulation host. The synthetic v2 fixture is intentionally not imported. */
 export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHost {
   const p = deps.policies, external = !!p.ledger;
+  if (p.endingPresentation && deps.gameplay.catalog.wireSchemaRevision !== WIRE_SCHEMA_REVISION) throw new Error('ending requires the compiled wire schema catalog');
   if (!!deps.outcomes !== external) throw new Error('outcomes service and explicit ledger policy must be paired');
   if (p.ledger && (!Number.isSafeInteger(p.ledger.recoveryIntervalMs) || p.ledger.recoveryIntervalMs < 1)) throw new Error('explicit recovery interval required');
   for (const key of ['authTimeoutMs', 'inputTimeoutMs', 'sessionRevalidateMs', 'checkpointIntervalMs', 'maxConnections', 'maxConnectionsPerIp', 'maxWaiting', 'maxAuthFrameBytes', 'maxFrameBytes', 'maxBufferedBytes', 'maxQueuedInputs', 'maxMutationSourcesPerTick', 'loopIntervalMs'] as const) {
@@ -949,9 +950,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           const bytes = buffer(raw); metrics.bytesReceived += bytes.byteLength; metrics.receivedPackets++;
           if (c.phase === 'preauth') {
             if (binary || bytes.byteLength > p.maxAuthFrameBytes) { close(c, 'auth-frame'); return; }
-            let value: { type?: unknown; ticket?: unknown; characterId?: unknown };
+            let value: { type?: unknown; ticket?: unknown; characterId?: unknown; schemaRevision?: unknown };
             try { value = JSON.parse(bytes.toString('utf8')); } catch { close(c, 'auth-frame'); return; }
-            if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'characterId,ticket,type' || value.type !== 'authenticate' || typeof value.characterId !== 'string') { close(c, 'auth-frame'); return; }
+            if (!value || typeof value !== 'object' || Array.isArray(value) || !['characterId,ticket,type', 'characterId,schemaRevision,ticket,type'].includes(Object.keys(value).sort().join(',')) || value.type !== 'authenticate' || typeof value.characterId !== 'string') { close(c, 'auth-frame'); return; }
+            if (Object.hasOwn(value, 'schemaRevision') && (value.schemaRevision !== WIRE_SCHEMA_REVISION || value.schemaRevision !== deps.gameplay.catalog.wireSchemaRevision) || p.endingPresentation && value.schemaRevision !== WIRE_SCHEMA_REVISION) { close(c, 'protocol-schema'); return; }
             c.phase = 'authenticating'; const attempt = c.generation;
             void deps.admission.consume(value.ticket, origin).then(binding => enqueue(() => {
               if (c.closed || c.generation !== attempt || !accepting || deps.ownership.closed.aborted) return;

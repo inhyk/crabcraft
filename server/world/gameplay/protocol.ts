@@ -10,10 +10,13 @@ import type { AreaSnapshot, BossObservation, EntityRef, EventRecord, PlayerState
 import { encodeInput, decodeInput } from './intents.ts';
 import { encodeEvents, validateEvent, selectEvents, validateEventPayload, validateResult } from './events.ts';
 export const MAGIC=0x5747, VERSION=3;
+export const WIRE_SCHEMA_REVISION=1 as const;
 export const LIMITS=Object.freeze({fragmentBytes:16384,messageBytes:2097152,fragments:256,actors:2048,projectiles:4096,events:512,commands:32,depth:24,nodes:300000,stringBytes:4096,array:16384,object:256,assemblySeconds:5});
 export interface WireBinding {session:string;area:string;epoch:number;catalog:string}
 export interface WireHeader extends WireBinding {sequence:number;tick:number;acceptedInput:number;consumedInput:number}
-export interface GameplayCatalog {version:string;poseProviderVersion:string;archetypes:readonly string[];actions:readonly string[];abilities:readonly string[];quests:readonly string[];npcs:readonly string[];interactions:readonly string[];gates:readonly string[];objectives:readonly string[];flags:readonly string[];jointCount:number;appearanceLimits:Readonly<Record<string,{shell:number;crest:number;led:number}>>}
+export interface GameplayCatalog {wireSchemaRevision?:number;version:string;poseProviderVersion:string;archetypes:readonly string[];actions:readonly string[];abilities:readonly string[];quests:readonly string[];npcs:readonly string[];interactions:readonly string[];gates:readonly string[];objectives:readonly string[];flags:readonly string[];jointCount:number;appearanceLimits:Readonly<Record<string,{shell:number;crest:number;led:number}>>}
+/** Missing revision is the original v3 catalog, whose optional ending field is never advertised. */
+export function validateWireSchema(catalog:Pick<GameplayCatalog,'wireSchemaRevision'>):void {if(catalog.wireSchemaRevision!==undefined&&catalog.wireSchemaRevision!==WIRE_SCHEMA_REVISION)fail('unsupported wire schema revision');}
 export type Value=null|boolean|number|string|Value[]|{[key:string]:Value};
 export type Validator=(value:unknown)=>void;
 export function fail(message:string):never {throw new Error(`gameplay-v3: ${message}`);}
@@ -237,7 +240,7 @@ export interface GameplayProtocol {
 }
 /** One instance per connection: its delta baseline is never shared among viewers. */
 export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol {
- catalog=clone(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes=new Map<number,RenderPoseSource>();let previous:PublicActor[]=[],prior:WireHeader|null=null;let controlBinding:WireBinding|null=null,controlSequence=0,resyncPending=false;
+ catalog=clone(catalog);validateWireSchema(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes=new Map<number,RenderPoseSource>();let previous:PublicActor[]=[],prior:WireHeader|null=null;let controlBinding:WireBinding|null=null,controlSequence=0,resyncPending=false;
  return {
   catalog:clone(catalog),encodeEvents:(h,p)=>encodeEvents(h,p,catalog),encodeControl,
   encodeInput:p=>encodeInput(p,catalog),decodeInput:(b,e)=>decodeInput(b,e,catalog),
@@ -316,7 +319,7 @@ export class GameplayReceiver {
  private binding:WireBinding;private catalog:GameplayCatalog;private assembler:FragmentAssembler;
  private current:GameplayState|null=null;private last:WireHeader|null=null;private eventOrder=-1;
  needsResync=false;
- constructor(expected:WireBinding,catalog:GameplayCatalog){binding(expected);if(expected.catalog!==catalog.version)fail('catalog mismatch');if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');this.binding=clone(expected);this.catalog=clone(catalog);this.assembler=new FragmentAssembler(expected);}
+ constructor(expected:WireBinding,catalog:GameplayCatalog){validateWireSchema(catalog);binding(expected);if(expected.catalog!==catalog.version)fail('catalog mismatch');if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');this.binding=clone(expected);this.catalog=clone(catalog);this.assembler=new FragmentAssembler(expected);}
  get state():GameplayState|null{return this.current?clone(this.current):null;}
  get header():WireHeader|null{return this.last?clone(this.last):null;}
  get retainedBytes():number{return this.assembler.retainedBytes;}
