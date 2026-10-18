@@ -266,3 +266,12 @@ test('all Solarkan patterns match the follower layout and continue after host mi
   guest.boss.updateMech(.09);assert.ok(guest.boss.mech);guest.boss.updateMech(.02);assert.equal(guest.boss.mech,null);
  }
 });
+
+
+test('Boreas requires level 300 in World IV and uses an ice prison opener and sevenfold blizzard',()=>{
+ assert.equal(canChallenge(299,300,true,true,4),false);assert.equal(canChallenge(300,300,true,true,3),false);assert.equal(canChallenge(300,300,true,true,4),true);
+ const low=setup(BOSS_PROFILES.frost,299);low.boss.wake();assert.equal(low.boss.state,'dormant');
+ const ready=setup(BOSS_PROFILES.frost,300);ready.boss.wake();ready.boss.update(2.5);ready.player.pos.set(0,0,8);ready.boss.update(.1);assert.equal(ready.boss.state,'fight');
+ ready.boss.startMech();assert.equal(ready.boss.mechName,'eclipse');assert.equal(ready.boss.barragePoints(new THREE.Vector3(),0).length,7);assert.equal(ready.boss.crossAngles(0).length,3);
+ const peer=setup(BOSS_PROFILES.frost,300);peer.boss.applyNetwork(ready.boss.networkState('b300'));assert.equal(peer.boss.mechName,'eclipse');assert.equal(peer.boss.unit.hp,620000);
+});
