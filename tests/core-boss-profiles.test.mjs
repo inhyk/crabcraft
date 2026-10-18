@@ -72,7 +72,7 @@ test('real Combat death kills living adds, frees crab at2.2s, bows and leaves by
   const h=fight(),add=h.enemy('scrapling',{x:0,y:0,z:0},'add');h.b.adds.push(add);
   h.s.combat.damage(h.ps[0].ref,h.b.unit,h.b.actor.hp+1);assert.equal(h.b.state,'dying');assert.equal(add.state,'dead');
   for(let i=0;i<65;i++)h.step([h.b]);assert.equal(h.b.freedStarted,false);h.step([h.b]);h.step([h.b]);assert.equal(h.b.freed.hidden,false);assert.ok(h.events.some(e=>e.type==='freed'));
-  for(let i=0;i<60;i++)h.step([h.b]);assert.equal(h.b.freed.npcId,'bowed');for(let i=0;i<400;i++)h.step([h.b]);assert.equal(h.b.state,'dead');assert.equal(h.b.actor.hidden,true);assert.equal(h.b.freed.hidden,true);assert.equal(h.b.freed.alive,false);
+  for(let i=0;i<60;i++)h.step([h.b]);assert.equal(h.b.debugState().freedBowed,true);assert.ok(h.b.freed.actions.some(a=>a.id==='gesture_bow'));for(let i=0;i<400;i++)h.step([h.b]);assert.equal(h.b.state,'dead');assert.equal(h.b.actor.hidden,true);assert.equal(h.b.freed.hidden,true);assert.equal(h.b.freed.alive,false);
 });
 test('empty and ineligible encounters never fabricate targets or crash',()=>{
   const h=creatureHarness(),u=h.unit('boss',{x:0,y:0,z:0},'dawn'),f=h.unit('freed'),b=new Boss(h.s,u,{id:'arena',position:{x:0,y:0,z:0},yaw:0,radius:17},f,'dawn');b.wake();for(let i=0;i<200;i++)h.step([b]);assert.equal(b.state,'dormant');assert.equal(u.hidden,true);
@@ -136,7 +136,7 @@ test('actual Dawn Area mixed99/100 combat, death grants and freed bow use all re
   const boss=[...area.bosses.values()][0];boss.wake();for(let i=0;i<74;i++)area.step(new Map());assert.equal(boss.state,'fight');assert.equal(u99.encounterBlessing,false);assert.equal(u100.encounterBlessing,true);
   const hp=boss.actor.hp;area.services.combat.damage(a,boss.unit,100);assert.equal(boss.actor.hp,hp);area.services.combat.damage(b,boss.unit,hp+1);assert.equal(boss.state,'dying');
   assert.equal(p100.state.flags.finalCleared,true);assert.equal(p99.state.flags.finalCleared,undefined);assert.equal(area.pendingGrants().length,1);
-  for(let i=0;i<120;i++)area.step(new Map());assert.equal(boss.freed.npcId,'bowed');assert.ok(area.drainEvents().some(r=>r.event.type==='say'&&r.event.textKey==='boss.freed.thanks'));
+  for(let i=0;i<120;i++)area.step(new Map());assert.equal(boss.freed.npcId,'mira');assert.equal(boss.debugState().freedBowed,true);assert.ok(area.drainEvents().some(r=>r.event.type==='say'&&r.event.textKey==='boss.freed.thanks'));
 });
 
 test('actual assembled Area applies all seven mechanic damages with canonical clocks and player updates',()=>{
@@ -159,5 +159,18 @@ test('actual assembled Area applies all seven mechanic damages with canonical cl
     for(let i=0;i<200&&!damage;i++){area.step(new Map());damage=area.drainEvents().map(r=>r.event).find(e=>e.type==='damage'&&e.src?.id===boss.unit.id&&e.dst.id===u.ref.id);}
     assert.ok(damage,kind);if(fraction!==null)assert.equal(damage.amount,Math.round(u.maxHp*fraction),kind);else assert.ok(damage.amount>=6&&damage.amount<=9);
     assert.equal(u.hp,u.maxHp-damage.amount,`${kind} HP changed through real Combat`);
+  }
+});
+
+test('actual Area rust add pool stays three level1 attackers across resets with fresh lives',()=>{
+  const area=realCreatureArea('real-add-pool','w1','rust'),ref=area.attachFresh('fighter','priest','human','spawn'),p=area.services.player(ref),u=area.services.getUnit(ref),boss=[...area.bosses.values()][0];
+  u.level=3;u.hp=u.maxHp=10000;p.state.quests.status.q3='done';
+  area.services.completeChannel(ref,{kind:'beacon',start:0,end:2,targetId:'beacon',to:{x:0,y:0,z:0}});
+  boss.wake();for(let i=0;i<75;i++)area.step(new Map());boss.actor.hp=boss.actor.maxHp*.5;area.step(new Map());
+  const first=boss.adds.map(e=>({...e.unit}));assert.equal(first.length,3);assert.ok(boss.adds.every(e=>e.state==='chase'&&area.services.getUnit(e.unit).level===1));assert.equal(area.enemies.size,3);
+  for(let round=0;round<3;round++){
+    const old=boss.adds.map(e=>({...e.unit}));boss.reset();assert.ok([...area.enemies.values()].every(e=>e.state==='gone'));
+    area.step(new Map());boss.actor.hp=boss.actor.maxHp*.5;area.step(new Map());assert.equal(boss.adds.length,3);assert.equal(area.enemies.size,3);
+    assert.deepEqual(boss.adds.map(e=>e.unit.id),first.map(r=>r.id));assert.ok(boss.adds.every((e,i)=>e.unit.life===old[i].life+1));assert.ok(old.every(r=>area.services.getUnit(r)===null));
   }
 });

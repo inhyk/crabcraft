@@ -78,4 +78,8 @@ if(fileURLToPath(import.meta.url)===process.argv[1]){
     assert.deepEqual(a.debugState(),b.debugState());assert.deepEqual(a.drainEvents(),b.drainEvents());
   });
 
+  test('dead or hidden nearby players do not block unseen respawn',()=>{
+    for(const mode of ['dead','hidden']){const h=creatureHarness(),p=h.unit(),e=h.enemy();h.s.combat.kill(e.unit,null);if(mode==='dead')p.alive=false;else p.hidden=true;h.s.time=31;h.step([e]);assert.equal(e.state,'idle',mode);}
+  });
+
 }

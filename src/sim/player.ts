@@ -185,6 +185,6 @@ export class PlayerController implements PlayerSim {
   private updateDance(dt:number):void {if(this.danceIndex<0)return;const step=BREAK_ROUTINE[this.danceIndex],action=[...this.unit.actions].reverse().find(a=>a.targetWeight>0&&!a.ended);if(action&&action.id!==step.id){this.cancelDance();return;}const next=BREAK_ROUTINE[this.danceIndex+1],length=step.to-step.from;this.danceTime+=dt;if(this.danceTime>=length-(next?.fade??0)){this.danceIndex++;this.danceTime=dt;if(this.danceIndex>=BREAK_ROUTINE.length){this.danceIndex=-1;return;}this.startDanceStep();}}
   private cancelDance(fade=.25):void {if(this.danceIndex<0)return;this.services.stopAction(this.unit.ref,BREAK_ROUTINE[this.danceIndex].id,fade);this.danceIndex=-1;this.services.emit({type:'dance',unit:this.unit.ref,stage:'stop'});}
   error(reason:string):void{this.services.emit({type:'error',unit:this.unit.ref,reason});}
-  debugState():object{return {held:this.held,lastConsumedSeq:this.lastConsumedSeq,footstep:this.footstep,danceIndex:this.danceIndex,danceTime:this.danceTime};}
+  debugState():object{return {held:this.heldIntent,lastConsumedSeq:this.lastConsumedSeq,footstep:this.footstep,danceIndex:this.danceIndex,danceTime:this.danceTime};}
 }
 export function createPlayer(services:AreaServices,unit:SimUnit,state:PlayerState):PlayerController{return new PlayerController(services,unit,state);}
