@@ -1,4 +1,4 @@
-import { filterText, maskSplitPhone, nameAllowed, NEUTRAL_NAME } from './filter.ts';
+import { CHAT_MAX, filterText, maskSplitPhone, nameAllowed, NEUTRAL_NAME } from './filter.ts';
 
 // Spam limits, recent lines, reports and mutes for the relay's chat. Children play in public shards with
 // strangers, so every line is filtered (./filter.ts) and players can block (in the browser) and report (here).
@@ -6,6 +6,7 @@ import { filterText, maskSplitPhone, nameAllowed, NEUTRAL_NAME } from './filter.
 export const REASONS = ['abuse', 'personal', 'harassment', 'other'] as const;
 export type Reason = typeof REASONS[number];
 export type Line = { at: number; text: string };
+export type TalkState = { sent: number[]; lines: Line[] };
 export type Refusal = 'fast' | 'burst' | 'repeat';
 /** One report as the relay hands it to storage. Never an IP address. */
 export type Report = {
@@ -45,6 +46,40 @@ export const reasonOf = (value: unknown): Reason | null => REASONS.find(r => r =
 export class Talk {
   private sent: number[] = [];
   lines: Line[] = [];
+
+  /** Restores server-owned storage only. Descriptor reads reject accessors without invoking them. */
+  constructor(state?: TalkState) {
+    if (state === undefined) return;
+    const invalid = () => { throw new Error('invalid talk state'); };
+    const fields = (value: unknown, keys: string[]) => {
+      if (!value || typeof value !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return invalid();
+      const all = Object.getOwnPropertyDescriptors(value);
+      if (Reflect.ownKeys(all).length !== keys.length || keys.some(key => !all[key] || !('value' in all[key]))) return invalid();
+      return keys.map(key => all[key].value as unknown);
+    };
+    const array = (value: unknown, max: number): unknown[] => {
+      if (!Array.isArray(value) || value.length > max) return invalid();
+      const all = Object.getOwnPropertyDescriptors(value);
+      if (Reflect.ownKeys(all).length !== value.length + 1) return invalid();
+      return Array.from({ length: value.length }, (_, i) => {
+        const field = all[String(i)]; return field && 'value' in field ? field.value : invalid();
+      });
+    };
+    const time = (value: unknown): number => Number.isSafeInteger(value) && (value as number) >= 0 ? value as number : invalid();
+    const [sent, lines] = fields(state, ['sent', 'lines']);
+    this.sent = array(sent, CHAT.burst).map(time);
+    this.lines = array(lines, CHAT.lines).map(value => {
+      const [at, text] = fields(value, ['at', 'text']);
+      if (typeof text !== 'string' || !text || text.length > CHAT_MAX || filterText(text).text !== text) return invalid();
+      return { at: time(at), text };
+    });
+    for (const list of [this.sent, this.lines.map(line => line.at)]) {
+      if (list.some((at, i) => i > 0 && at < list[i - 1])) invalid();
+    }
+  }
+
+  /** Independent copies keep caller mutation out of the next rate-limit decision. */
+  snapshot(): TalkState { return { sent: [...this.sent], lines: this.lines.map(line => ({ ...line })) }; }
 
   /** Filters a line and applies the limits: the text to send, a refusal to tell the sender, or null for nothing to send. */
   say(raw: unknown, now: number): { text: string } | { refused: Refusal } | null {
