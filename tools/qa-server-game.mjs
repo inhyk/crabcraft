@@ -8,6 +8,8 @@ import { createServer } from 'vite';
 import { chromium } from 'playwright';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const browserPort=Number(process.env.WORLD_QA_BROWSER_PORT??5277),hostPort=Number(process.env.WORLD_QA_HOST_PORT??5288),clientOrigin=`http://127.0.0.1:${browserPort}`;
+if(![browserPort,hostPort].every(p=>Number.isInteger(p)&&p>0&&p<65536))throw new Error('Invalid loopback QA port');
 const qaWorld=process.env.WORLD_QA_WORLD??'w1';if(!['w1','w2','w3','w4'].includes(qaWorld))throw new Error('Invalid QA world');
 const providedMetadata = process.env.WORLD_QA_METADATA;
 const scratch = providedMetadata ? null : await mkdtemp('/private/tmp/crabcraft-browser-world-');
@@ -18,7 +20,7 @@ const handshakeStatuses = [];
 const websocketErrors = [];
 try {
   if (!providedMetadata) {
-    host = spawn(process.execPath, ['tools/qa-world-host-server.mjs', '--port', '5288', '--metadata', metadataPath, '--client-origin', 'http://127.0.0.1:5277','--world',qaWorld], { cwd: root, stdio: ['ignore', 'ignore', 'pipe'] });
+    host = spawn(process.execPath, ['tools/qa-world-host-server.mjs', '--port', String(hostPort), '--metadata', metadataPath, '--client-origin', clientOrigin,'--world',qaWorld], { cwd: root, stdio: ['ignore', 'ignore', 'pipe'] });
     // Launcher errors may include driver configuration; print no launcher output or credentials.
     host.stderr.on('data', () => {});
   }
@@ -29,12 +31,12 @@ try {
   }
   if (!metadata) throw new Error('QA host readiness timed out');
   const origin = new URL(metadata.origin);
-  if (origin.hostname !== '127.0.0.1' || origin.protocol !== 'http:' || metadata.clientOrigin !== 'http://127.0.0.1:5277') throw new Error('QA host must use the expected loopback origins');
-  server = await createServer({ root, configFile: false, server: { host: '127.0.0.1', port: 5277, strictPort: true, proxy: { '/world': { target: origin.origin, ws: true }, '/api/account': { target: origin.origin } } }, logLevel: 'error' });
+  if (origin.hostname !== '127.0.0.1' || origin.protocol !== 'http:' || metadata.clientOrigin !== clientOrigin) throw new Error('QA host must use the expected loopback origins');
+  server = await createServer({ root, configFile: false, server: { host: '127.0.0.1', port: browserPort, strictPort: true, proxy: { '/world': { target: origin.origin, ws: true }, '/api/account': { target: origin.origin } } }, logLevel: 'error' });
   await server.listen();
   browser = await chromium.launch({ headless: true, channel: 'chrome' });
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  await context.grantPermissions(['local-network-access'], { origin: 'http://127.0.0.1:5277' });
+  await context.grantPermissions(['local-network-access'], { origin: clientOrigin });
   await context.addCookies([{ name: metadata.cookie.name, value: metadata.cookie.value, domain: '127.0.0.1', path: metadata.cookie.path, httpOnly: true, sameSite: 'Strict', secure: false }]);
   const page = await context.newPage(), errors = [];
   const network = await context.newCDPSession(page);
@@ -43,7 +45,7 @@ try {
   network.on('Network.webSocketFrameError', event => websocketErrors.push(event.errorMessage));
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(()=>localStorage.setItem('cc.language','en'));
-  await page.goto(`http://127.0.0.1:5277/?screen=game&world=server&character=${encodeURIComponent(metadata.characterId)}`,{waitUntil:'load'});
+  await page.goto(`${clientOrigin}/?screen=game&world=server&character=${encodeURIComponent(metadata.characterId)}`,{waitUntil:'load'});
   await page.locator('.launch-notice-start').click();
   await page.waitForFunction(()=>window.__ready&&window.cc?.game?.server?.ready,undefined,{timeout:120000});
   await page.locator('.loading').waitFor({state:'detached'});
@@ -78,7 +80,7 @@ try {
   if(errors.length||result.core!==null||result.legacy||!result.observed||result.rootError>1e-8)throw new Error(JSON.stringify({errors,result}));
   if(result.diagnostics.world!==qaWorld||result.scenes.chapter!==Number(qaWorld.slice(1))||Object.values(result.scenes).filter(v=>v===true).length!==1)throw new Error('Wrong observed world scene');
   const screenshot=join(root,'output','playwright','server-game',`trace-${qaWorld}.png`);await page.screenshot({path:screenshot});
-  console.log(JSON.stringify({before,result,combat,recovered,skillRange,errors,screenshot,renderFixture:metadata.renderFixture,earnedTravel:metadata.earnedTravel,scope:'Actual Game route with local PG/auth/Node Area; normal move/cast/projectile/hit/death/XP/coins, no modified combat state'},null,2));
+  console.log(JSON.stringify({before,result,combat,recovered,skillRange,errors,screenshot,renderFixture:metadata.renderFixture,earnedTravel:metadata.earnedTravel,scope:qaWorld==='w1'?'Actual Game with local PG/auth/Node Area; normal combat, rewards and reconnect without combat-state modification':'Actual Game with local PG/auth/Node Area; trusted world render fixture, movement and reconnect only; no earned travel claim'},null,2));
 } catch(error) {
   const pages=browser?.contexts()[0]?.pages()??[];const page=pages[0];if(page){await page.screenshot({path:join(root,'output','playwright','server-game','failure.png')}).catch(()=>{});console.error(await page.evaluate(()=>({ready:window.__ready,loaded:window.cc?.game?.loaded,server:window.cc?.game?.server?.diagnostics?.(),status:document.querySelector('.world-connection-status')?.textContent})).catch(()=>null));}throw error;
 } finally {
