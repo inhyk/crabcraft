@@ -5,10 +5,11 @@ import type { IncomingMessage } from 'node:http';
 import type { Pool } from 'pg';
 import { createCoreCharacterCodec, type CharacterCheckpointV1, type RestorePolicy } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
+import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { enemyStats } from '../../src/sim/data/enemies.ts';
 import { worldChapter } from '../../src/sim/math.ts';
 import { CLASSES } from '../../src/sim/data/classes.ts';
-import type { AreaPolicy, EnemySpawn, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
+import type { AreaPolicy, BossProfileId, EnemySpawn, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { CharacterStore } from './character-store.ts';
 import { type WorldTicketRegistry } from './admission.ts';
 import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
@@ -25,13 +26,14 @@ export type ConfiguredRegion = {seed:number;populationMode:'fixed-slots'|'nearby
 const HOST_DEFAULTS = Object.freeze({authTimeoutMs:5000,inputTimeoutMs:400,reconnectGraceMs:30000,sessionRevalidateMs:30000,checkpointIntervalMs:1000,maxConnections:2000,maxConnectionsPerIp:16,maxWaiting:1000,maxAuthFrameBytes:1024,maxFrameBytes:65536,maxBufferedBytes:4194304,maxQueuedInputs:128,maxMutationSourcesPerTick:128,loopIntervalMs:5});
 const AREA_DEFAULTS = Object.freeze({eventCount:16384,inputCommandsPerTick:32,timers:4096,projectiles:4096});
 const PERSISTENCE_DEFAULTS = Object.freeze({maxQueuedPerCharacter:1,maxAttempts:3,retryMs:100,maxRecoveryRounds:2});
+export type ConfiguredParty = {enabled:false}|{enabled:true;maxParties:number;maxEncounters:number;returns:Record<BossProfileId,{world:WorldId;spawn:string}>};
 export type ValidatedWorldConfig = {
  schema:'world-startup-v1';
  ownership:{key:string;heartbeatMs:number;queryTimeoutMs:number};
  assets:{source:string;manifest:'world-manifest.json';maxBakeBytes:number;maxTotalBakeBytes:number;maxManifestBytes:number;maxCells:number};
  worlds:Record<WorldId,ConfiguredRegion>;restore:ConfiguredRestore;
  limits:{[K in keyof typeof HOST_DEFAULTS]:number};areaLimits:{[K in keyof typeof AREA_DEFAULTS]:number};persistence:{[K in keyof typeof PERSISTENCE_DEFAULTS]:number};
- party:{enabled:false};characters?:{maxCharactersPerAccount?:number};
+ party:ConfiguredParty;characters?:{maxCharactersPerAccount?:number};
 };
 function fail(path:string):never {throw new Error(`world-config: ${path}`);}
 function detached(value:unknown):unknown {
@@ -70,8 +72,9 @@ export function validateWorldConfig(value:unknown):ValidatedWorldConfig {
  if(limits.maxMutationSourcesPerTick>256||limits.maxQueuedInputs>1024||limits.maxConnections>10000||limits.maxWaiting>10000||limits.maxConnectionsPerIp>limits.maxConnections||limits.maxAuthFrameBytes>limits.maxFrameBytes||limits.maxAuthFrameBytes>65536||limits.maxFrameBytes>2097152||limits.loopIntervalMs>1000||areaLimits.inputCommandsPerTick>32||persistence.maxQueuedPerCharacter>256||persistence.maxAttempts>100||persistence.maxRecoveryRounds>32)fail('unsupported operational bounds');
  for(const world of PUBLIC_WORLDS){const region=regions[world];if(Object.values(region.population).reduce((sum,n)=>sum+n,0)>limits.maxMutationSourcesPerTick)fail(`${world}.population exceeds receipt bound`);}
  let characters:{maxCharactersPerAccount?:number}|undefined;if(c.characters!==undefined){const p=object(c.characters,[],['maxCharactersPerAccount'],'characters');characters=Object.hasOwn(p,'maxCharactersPerAccount')?{maxCharactersPerAccount:integer(p.maxCharactersPerAccount,'characters.maxCharactersPerAccount',1,Number.MAX_SAFE_INTEGER)}:{};}
- if(c.party!==undefined){const p=object(c.party,['enabled'],[],'party');if(p.enabled!==false)fail('party encounters require a supported host and explicit return/capacity policy');}
- return freeze({schema:'world-startup-v1',ownership:{key:own.key,heartbeatMs:integer(optional(own,'heartbeatMs',1000),'ownership.heartbeatMs',1,60000),queryTimeoutMs:integer(optional(own,'queryTimeoutMs',1000),'ownership.queryTimeoutMs',1,60000)},assets,worlds:regions,restore,limits,areaLimits,persistence,party:{enabled:false},...(characters===undefined?{}:{characters})});
+ let party:ConfiguredParty={enabled:false};if(c.party!==undefined){const p=object(c.party,['enabled'],['maxParties','maxEncounters','returns'],'party');if(p.enabled===false){object(p,['enabled'],[],'party disabled');}else if(p.enabled===true){const profiles=Object.keys(BOSS_PROFILES) as BossProfileId[],returns=object(p.returns,profiles,[],'party.returns'),maxParties=integer(p.maxParties,'party.maxParties',1,10000),maxEncounters=integer(p.maxEncounters,'party.maxEncounters',1,1024);if(maxEncounters>maxParties)fail('party encounter/party bounds');const destinations=Object.fromEntries(profiles.map(profile=>{const r=object(returns[profile],['world','spawn'],[],`party.returns.${profile}`);if(typeof r.spawn!=='string'||!r.spawn.length||r.spawn.length>128)fail(`party.returns.${profile}.spawn`);return[profile,{world:choice(r.world,PUBLIC_WORLDS,`party.returns.${profile}.world`),spawn:r.spawn}];})) as Extract<ConfiguredParty,{enabled:true}>['returns'];party={enabled:true,maxParties,maxEncounters,returns:destinations};}else fail('party.enabled');}
+
+ return freeze({schema:'world-startup-v1',ownership:{key:own.key,heartbeatMs:integer(optional(own,'heartbeatMs',1000),'ownership.heartbeatMs',1,60000),queryTimeoutMs:integer(optional(own,'queryTimeoutMs',1000),'ownership.queryTimeoutMs',1,60000)},assets,worlds:regions,restore,limits,areaLimits,persistence,party,...(characters===undefined?{}:{characters})});
 }
 export function createConfiguredAreaPolicy(region:ConfiguredRegion):AreaPolicy&{populationRadius?:(spawn:EnemySpawn)=>number} {
  const policy:AreaPolicy={enemyLevel:spawn=>spawn.fixedLevel,enemyPopulation:spawn=>({desired:1,respawnSeconds:region.respawnSeconds[spawn.role==='echo'?'echo':spawn.kind]}),damageAllowed:(context,source,target)=>{if(source?.kind!=='player'||target.kind!=='player')return true;if(context.mode!=='party-encounter'||context.pvp!=='party-only')return false;const same=(a:SimUnit['ref'],b:SimUnit['ref'])=>a.area===b.area&&a.id===b.id&&a.life===b.life;if(same(source.ref,target.ref))return false;const a=context.members.find(m=>same(m.unit,source.ref)),b=context.members.find(m=>same(m.unit,target.ref));return !!a?.party&&a.party===b?.party;},canInteract:()=>true};
@@ -95,6 +98,11 @@ export function createConfiguredRestorePolicy(input:ConfiguredRestore,catalog:Re
 export function createConfiguredVisibility(catalog:ReadonlyMap<WorldId,LoadedWorldDefinition>):HostPolicies['visible'] {
  return (unit:Readonly<SimUnit>,viewer:Readonly<PlayerState>)=>{if(unit.kind!=='npc'||unit.npcId===null)return true;const world=catalog.get(`w${viewer.quests.chapter}` as WorldId);return !!world&&personalNpcVisible(world.publicDefinition,unit.npcId,viewer.flags);};
 }
+export function createConfiguredPartyPolicy(config:ConfiguredParty,catalog:ReadonlyMap<WorldId,LoadedWorldDefinition>):HostPolicies['party'] {
+ if(!config.enabled)return undefined;
+ for(const profile of Object.keys(BOSS_PROFILES) as BossProfileId[]){const r=config.returns[profile],world=catalog.get(r.world);if(!world||!world.encounterDefinitions.has(profile))fail(`party return world ${profile}`);const d=world.publicDefinition;if(![d.spawn.id,d.recall.id,...Object.values(d.pois).map(p=>p.id)].includes(r.spawn))fail(`party return POI ${profile}`);}
+ return Object.freeze({maxParties:config.maxParties,maxEncounters:config.maxEncounters,returnSpawn:(world:WorldId,profile:BossProfileId)=>{const r=config.returns[profile];if(r.world!==world)fail('party return world mismatch');return r.spawn;}});
+}
 async function checkedRead(file:URL,maxBytes:number):Promise<Buffer> {const info=await stat(file);if(!info.isFile()||info.size>maxBytes)fail('asset byte budget');const bytes=await readFile(file);if(bytes.byteLength>maxBytes)fail('asset byte budget');return bytes;}
 async function loadCheckedCatalog(assets:URL,c:ValidatedWorldConfig):Promise<ReadonlyMap<WorldId,LoadedWorldDefinition>> {
  if(!(assets instanceof URL)||assets.protocol!=='file:'||assets.search||assets.hash||!assets.pathname.endsWith('/'))fail('assets directory URL');
@@ -108,12 +116,12 @@ async function loadCheckedCatalog(assets:URL,c:ValidatedWorldConfig):Promise<Rea
 export interface ConfiguredWorldOptions {pool:Pool;admission:WorldTicketRegistry;assets:URL;config:unknown;originAllowed(origin:string,req:IncomingMessage):boolean;clientIp(req:IncomingMessage):string}
 export async function startConfiguredWorld(options:ConfiguredWorldOptions) {
  const config=validateWorldConfig(options.config);if(typeof options.originAllowed!=='function'||typeof options.clientIp!=='function')fail('HTTP callbacks');
- const catalog=await loadCheckedCatalog(options.assets,config),spawn=catalog.get('w1')!.publicDefinition.spawn;
+ const catalog=await loadCheckedCatalog(options.assets,config),party=createConfiguredPartyPolicy(config.party,catalog),spawn=catalog.get('w1')!.publicDefinition.spawn;
  const codec=createCoreCharacterCodec({identities:['human','orc','dwarf','undead','nightelf','tauren'].flatMap(archetype=>Object.keys(CLASSES).map(classId=>({classId:classId as keyof typeof CLASSES,archetype}))),freshLocation:{...spawn.position,yaw:spawn.yaw}}),characters=new CharacterStore(options.pool,codec),gameplayCatalog=createGameplayCatalog(catalog),restore=createConfiguredRestorePolicy(config.restore,catalog);
  // Construct/validate the concrete protocol before retaining a database ownership session.
  createGameplayProtocol(gameplayCatalog);
  const ownership=await acquireHostOwnership(options.pool,config.ownership.key,config.ownership);
- try{const policies:HostPolicies={...config.limits,persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
+ try{const policies:HostPolicies={...config.limits,...(party?{party}:{}),persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
   const host=createActualWorldHost({admission:options.admission,characters,worlds:catalog,codec,gameplay:{catalog:gameplayCatalog,create:()=>createGameplayProtocol(gameplayCatalog)},ownership,policies,originAllowed:options.originAllowed,clientIp:options.clientIp,nowMonotonicMs:()=>performance.now(),nowWallMs:Date.now});
   return {host,catalog,ownership,characters,codec,gameplayCatalog,config};
  }catch(error){try{await ownership.release();}catch(releaseError){throw new AggregateError([error,releaseError],'World assembly failed and ownership release reported an error');}throw error;}

@@ -31,7 +31,7 @@ const runtime = await startConfiguredWorld({
 
 `population` 합계와 실제 생성된 enemy 수 모두 `limits.maxMutationSourcesPerTick <= 256` 이하여야 한다. 원본 layout이 지형 조건에 따라 일부 jellyfish template을 찾지 못하면 실제 목록이 요청 수보다 적을 수 있다. 조용히 population을 늘리거나 다른 template으로 대체하지 않는다. 아래에 정의한 이름 외의 density 알고리즘이나 알 수 없는 필드는 거부한다. 실제 enemyStats에서 계산한 HP/XP/damage 등 숫자가 finite-safe 범위를 벗어나면 ownership 획득 전에 시작을 거부한다. 임의의 level cap으로 정규화하지 않는다.
 
-Public은 실제 4개 world, world별 capacity100, PvP disabled다. 이 값들은 현재 host/core 계약에서 온다. Startup policy는 public player-to-player damage를 거부한다. Private party에서만 `pvp:party-only`이고 source/target의 exact full ref가 같은 non-null party membership에 속할 때 허용한다. Self damage, stale life, 다른 party, public toggle은 허용하지 않는다. `party`를 생략하거나 `{"enabled":false}`로 두면 party가 disabled다. 현재 startup checkpoint는 `enabled:true`를 거부한다. Party owner의 실제 host 지원, 명시적 maxParties/maxEncounters와 각 profile의 return POI 정책이 연결된 별도 checkpoint 전에는 활성화할 수 없다.
+Public은 실제 4개 world, world별 capacity100, PvP disabled다. 이 값들은 현재 host/core 계약에서 온다. Startup policy는 public player-to-player damage를 거부한다. Private party에서만 `pvp:party-only`이고 source/target의 exact full ref가 같은 non-null party membership에 속할 때 허용한다. Self damage, stale life, 다른 party, public toggle은 허용하지 않는다. `party`를 생략하거나 `{"enabled":false}`로 두면 party가 disabled다. Party 활성화는 아래의 모든 명시적 capacity/return 정책이 있을 때만 지원한다. 누락한 설정을 임의의 return 위치로 채우지 않는다.
 
 ## 반응형 bounded slot pool
 
@@ -47,6 +47,22 @@ Public은 실제 4개 world, world별 capacity100, PvP disabled다. 이 값들�
 Echo는 실제 World II 45초 최초/120초 후속 schedule을 유지하고, 해당 시점에 목표 density와 22m clearance도 검사한다. 일반 적 respawn 시간으로 Echo schedule을 대체하지 않는다. Source terrain에서 못 만든 slot을 다른 위치로 조용히 복제하지 않는다.
 
 QA용 한 그룹 예는 `population.scrapling:3`, `nearby.scrapling:{"radius":50,"base":1,"max":3,"scale":1}`이다. 50/1/3/1은 검사 fixture 수치이며 생산 tuning 권고가 아니다. 나머지 네 그룹도 명시해야 한다.
+
+## 명시적 private party 설정
+
+`party`를 생략하거나 `{"enabled":false}`로 두면 실제 host가 party 명령을 `party-unavailable`로 거부한다. 활성화에는 아래 필드가 모두 필요하다. `maxParties`는 1..10000, `maxEncounters`는 1..1024이며 `maxEncounters <= maxParties`여야 한다. 이들은 명시적 process 자원 한도이고 기본값이 없다. 실제 private member cap8은 host/core 계약을 유지한다.
+
+```json
+{"enabled":true,"maxParties":2,"maxEncounters":1,"returns":{
+ "rust":{"world":"w1","spawn":"spawn"},
+ "abyss":{"world":"w1","spawn":"spawn"},
+ "eclipse":{"world":"w2","spawn":"spawn"},
+ "dawn":{"world":"w3","spawn":"arrival"},
+ "frost":{"world":"w4","spawn":"arrival"}
+}}
+```
+
+위 2/1과 return 위치는 QA fixture의 명시 선택이다. 생산 기본값이 아니다. 다섯 profile의 return entry가 모두 있어야 한다. 각 world에 실제 해당 encounter 정의가 있는지, spawn 값이 실제 public spawn/recall/POI id인지 static loading에서 검사한 뒤 ownership을 획득한다. 잘못된 world나 존재하지 않는 POI, 빠진 profile은 시작을 거부한다. Host가 party leader, 참여자, 레벨/거리/전투/스토리 조건, trusted beacon bootstrap, stage/ownership CAS/return queue를 계속 검증한다. Startup은 이 권한 검사를 client boolean으로 대체하지 않는다.
 
 ## 복원 정책의 정확한 범위
 
