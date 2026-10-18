@@ -10,6 +10,9 @@ import {SnowSpray} from './snowSpray';
 import {crystalCluster,crystalGeometry,iceMaterial,type Crystal} from './iceCrystals';
 import {SnowSky} from './snowSky';
 import {snowPines} from './snowPines';
+import {buildSnowVillage,type SnowVillage} from './snowVillage';
+import {frozenPond} from './snowVillageDressing';
+import {lathe} from '../world/geom';
 import type {Unit} from './unit';
 
 /** Deterministic snow realm. Trees share instanced meshes; snowfall runs on the GPU. */
@@ -32,20 +35,21 @@ export class SnowIsland {
  /** Powder the same footfalls kick up; the arena's ice floor is not snow. */
  readonly spray=new SnowSpray(this.root,{sun:this.sun,bare:(x,z)=>Math.hypot(x-this.arena.position.x,z-this.arena.position.z)<this.arena.radius+1});
  private refreshSnow:()=>void;
+ private iceGlass:THREE.Material;
+ private basin:THREE.Mesh;
+ /** Kit houses, lamps and props; null until buildSettlement() has loaded the kits. */
+ village:SnowVillage|null=null;
  private refreshIce:()=>void;
  height(x:number,z:number){
   return snowHeight(x,z);
  }
  constructor(){
   this.root.name='WORLD IV · Frostlight';this.root.visible=false;
-  const snow=new THREE.MeshStandardMaterial({color:'#effaff',roughness:.86});
   const ice=new THREE.MeshStandardMaterial({color:'#72bedb',metalness:.32,roughness:.22});
   const dark=new THREE.MeshStandardMaterial({color:'#344959',roughness:.9});
-  const wood=new THREE.MeshStandardMaterial({color:'#5e3d30',roughness:.92});
-  const amber=new THREE.MeshStandardMaterial({color:'#ffdb8d',emissive:'#ff9b36',emissiveIntensity:1.8});
   const glow=new THREE.MeshStandardMaterial({color:'#c4ffff',emissive:'#52d8ff',emissiveIntensity:1.4,roughness:.25});
   // Grown ice (SNOWFLOW's crystal shape and shading). The seed fixes the formations for every player.
-  const {material:iceGlass,refresh:refreshIce}=iceMaterial({sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.refreshIce=refreshIce;
+  const {material:iceGlass,refresh:refreshIce}=iceMaterial({sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.refreshIce=refreshIce;this.iceGlass=iceGlass;
   let seed=20261018;const rand=()=>(seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296;
   const iceMesh=(list:Crystal[],name:string)=>{const m=new THREE.Mesh(crystalGeometry(list),iceGlass);m.name=name;m.castShadow=true;this.root.add(m);return m;};
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
@@ -58,24 +62,12 @@ export class SnowIsland {
   const sea=add(new THREE.PlaneGeometry(1800,1800),new THREE.MeshStandardMaterial({color:'#244c6a',roughness:.28,metalness:.45}),0,.2,0);sea.rotation.x=-Math.PI/2;
   // Paved, gently rising trails remain clear of every building and tree trunk.
   this.root.add(islandPaths((x,z)=>this.height(x,z),[{points:[[0,94],[0,28],[0,-53]],width:8,trim:true},... [38,56,74].map(z=>({points:[[-22,z],[22,z]] as [number,number][],width:4,trim:true}))],4));
-  for(const side of [-1,1])for(let i=0;i<3;i++){
-   const x=side*29,z=38+i*18,y=this.height(x,z);
-   add(new THREE.BoxGeometry(10,6,11),wood,x,y+3,z);
-   for(const dy of [.4,1.8,3.2,4.6,5.8])add(new THREE.BoxGeometry(10.3,.2,11.3),dark,x,y+dy,z);
-   const roof=add(new THREE.ConeGeometry(8.3,5,4),dark,x,y+8,z);roof.rotation.y=Math.PI/4;
-   const cap=add(new THREE.ConeGeometry(8.4,4.8,4),snow,x,y+8.4,z);cap.rotation.y=Math.PI/4;
-   const front=x-side*5.08;
-   for(const dz of [-3,3]){const frame=add(new THREE.BoxGeometry(.25,2.3,2.2),dark,front,y+3,z+dz);frame.name='timber-window-frame';add(new THREE.BoxGeometry(.28,1.7,1.6),amber,front-side*.04,y+3,z+dz);add(new THREE.BoxGeometry(.32,1.8,.11),wood,front-side*.06,y+3,z+dz);}
-   add(new THREE.BoxGeometry(.3,3.3,1.9),dark,front,y+1.65,z);
-   add(new THREE.BoxGeometry(1.4,3.3,1.4),dark,x+2,y+9,z+2);add(new THREE.BoxGeometry(1.7,.25,1.7),snow,x+2,y+10.75,z+2);
-
-  }
-  // Frozen fountain and warm lanterns make the settlement easy to read at a distance.
+  // Frozen fountain: a turned stone basin (the kit's stone once buildSettlement() has it) round a pond of ice.
   const {x:fx,z:fz}=SNOW_FOUNTAIN,fy=this.height(fx,fz);
-  const basin=add(new THREE.CylinderGeometry(2.6,3,.65,32),dark,fx,fy+.32,fz);basin.name='snow-fountain-basin';
+  this.basin=add(lathe([[2.42,.36],[2.46,.62],[2.6,.75],[2.92,.75],[3.06,.6],[3.06,.12],[3.14,0],[3.14,-.6]],56,.5),dark,fx,fy,fz);this.basin.name='snow-fountain-basin';
+  const pond=add(new THREE.CircleGeometry(2.46,48).rotateX(-Math.PI/2),frozenPond(2.46),fx,fy+.44,fz);pond.name='snow-fountain-ice';pond.castShadow=false;
   iceMesh(crystalCluster(0,0,0,4.4,1.9,6,rand),'snow-fountain-sculpture').position.set(fx,fy+.62,fz);
-
-  for(let z=82;z>-50;z-=12)for(const side of [-1,1]){const x=side*6,y=this.height(x,z);add(new THREE.CylinderGeometry(.13,.23,2.9,6),dark,x,y+1.45,z);add(new THREE.BoxGeometry(.65,.9,.65),amber,x,y+3,z);add(new THREE.ConeGeometry(.62,.5,4),snow,x,y+3.7,z);}
+  // Houses, lamp posts and the rest of the village are kit pieces, raised in buildSettlement() (snowVillage.ts).
   // Snow-laden kit pines (snowPines.ts) stand on these trunks once buildSettlement() has loaded the kit.
   this.root.userData.snowPines=snowTrees().length;
   // Boreas keeps the missing friend in a luminous ice prison beside the throne.
@@ -101,10 +93,14 @@ export class SnowIsland {
   const fall=new THREE.Points(flakes,this.snow);fall.frustumCulled=false;fall.name='gpu-snowfall';this.root.add(fall,this.portal.root,new THREE.HemisphereLight(this.sky.hemiSky,this.sky.hemiGround,1));
   this.sky.attachSun(this.sun);this.root.add(this.sun,this.sun.target);
  }
- /** The forest needs the nature kit, so it loads after construction like DawnIsland's settlement. */
- async buildSettlement(){const forest=await snowPines(snowTrees(),(x,z)=>this.height(x,z));this.root.add(forest);}
+ /** The forest and the village need the kits, so they load after construction like DawnIsland's settlement. */
+ async buildSettlement(){
+  const height=(x:number,z:number)=>this.height(x,z);
+  const [forest,village]=await Promise.all([snowPines(snowTrees(),height),buildSnowVillage({height,ice:this.iceGlass})]);
+  this.root.add(forest,village.group);this.village=village;this.basin.material=village.stone;
+ }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
- updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSnow();this.refreshIce();}
+ updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
  disposeSnow(){this.deform.dispose();this.spray.dispose();}
- update(time:number,x:number,z:number,rescued=false){this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
+ update(time:number,x:number,z:number,rescued=false){this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.village?.update(time,x,z);this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
 }
