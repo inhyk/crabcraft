@@ -274,3 +274,14 @@ test('report acknowledgments never expose internal global moderation decisions',
  const f=fixture(),target={area:binding.area,id:22,life:1},ack={type:'chatResult',inputSequence:1,operation:'report',ok:true,target};
  assert.doesNotThrow(()=>f.codec.encodeControl(header(1),ack));for(const muted of [true,false])assert.throws(()=>f.codec.encodeControl(header(1),{...ack,muted}),/moderation/);
 });
+
+test('shared public prefix preserves private event budgets and only advances successful recipient baselines',()=>{
+ const f=fixture(2),a=createGameplayProtocol(catalog),b=createGameplayProtocol(catalog),first=observation(f),prepared=prepareObservationSnapshot(first.snapshot,first.appearances,catalog),receiverA=new GameplayReceiver(binding,catalog),receiverB=new GameplayReceiver(binding,catalog);
+ apply(receiverA,a.encodeObservation({...first,prepared}));apply(receiverB,b.encodeObservation({...first,prepared,selfRef:f.actors[1].ref,...projectObservationExtras(first.snapshot,f.actors[1].p.state.character,first.visibleIds)}));
+ const source={...first,sequence:2},events=Array.from({length:513},(_,order)=>({tick:source.tick,order,event:{type:'xp',unit:f.actors[0].ref,amount:1}}));assert.throws(()=>a.encodeObservation({...source,prepared,events,eventWatermark:512}),/list/);
+ const other={...source,prepared,selfRef:f.actors[1].ref,...projectObservationExtras(source.snapshot,f.actors[1].p.state.character,source.visibleIds),events,eventWatermark:512},chunks=b.encodeObservation(other),preserved=chunks.map(c=>c.slice()),received=apply(receiverB,chunks);assert.deepEqual(received.events,[]);assert.equal(received.state.selfRef.id,f.actors[1].ref.id);
+ const retry=a.encodeObservation({...source,prepared,events:events.slice(0,1),eventWatermark:512}),self=apply(receiverA,retry);assert.equal(self.state.sequence,2);assert.equal(self.events.length,1);assert.equal(self.events[0].event.unit.id,f.actors[0].ref.id);assert.deepEqual(chunks,preserved);
+});
+test('resetting one recipient cannot mutate another recipient shared public baseline or already returned packets',()=>{
+ const f=fixture(2),a=createGameplayProtocol(catalog),b=createGameplayProtocol(catalog),source=observation(f),prepared=prepareObservationSnapshot(source.snapshot,source.appearances,catalog),receiver=new GameplayReceiver(binding,catalog),initial=b.encodeObservation({...source,prepared}),saved=initial.map(c=>c.slice());apply(receiver,initial);a.encodeObservation({...source,prepared});const rebound={...binding,epoch:2};a.reset(rebound);a.encodeObservation({...source,prepared,binding:rebound,full:true});const update=b.encodeObservation({...source,prepared,sequence:2});const state=apply(receiver,update).state;assert.deepEqual(state.actors,source.snapshot.units.map(u=>projectActor(u,source.appearances[`${u.ref.id}:${u.ref.life}`]??null)));assert.deepEqual(initial,saved);
+});
