@@ -50,7 +50,7 @@ tick 도중 한도를 넘은 Area는 다음 tick을 거부한다. host가 내구
 
 `tools/bake-sim-motion.mjs`는 실제 Chrome `MotionLibrary`, GLB와 rig factory를 읽는다. packed artifact에는 float32 sample, root curve, socket chain, collider, scale과 원본 SHA256이 있다. 누락 clip과 archetype은 오류이며 대체 pose를 만들지 않는다. pose cache는 unit마다 소유한다.
 
-현재 provider는 `shipped-motion-v1-8240fb40fe64b2d6968a`다. [현재 35종 raw 비교 결과](evidence/s2-rig-catalog-parity-unit5644568.json)를 보존한다. 실제 추출 checkpoint는 `18df9de`이며 Game은 `9dbbb45`, Unit은 readonly observation을 추가한 `5644568`이다. 공유 rig catalog `shipped-rigs-v1-ebaae7f29b7855b604c6`는 18,522 bytes이며 motion version에 묶인다. clip 전체를 포함하지 않는다.
+이전 검증 checkpoint의 provider는 `shipped-motion-v1-8240fb40fe64b2d6968a`다. [현재 35종 raw 비교 결과](evidence/s2-rig-catalog-parity-unit5644568.json)를 보존한다. 실제 추출 checkpoint는 `18df9de`이며 Game은 `9dbbb45`, Unit은 readonly observation을 추가한 `5644568`이다. 공유 rig catalog `shipped-rigs-v1-ebaae7f29b7855b604c6`는 18,522 bytes이며 motion version에 묶인다. clip 전체를 포함하지 않는다.
 
 | 비교 | 표본 | 최대 차이 |
 | --- | ---: | ---: |
@@ -86,3 +86,11 @@ parent의 별도 Vite/Chrome trace에서 실제 Digit1 입력부터 numeric 지�
 - 실제 gameplay 100 clients와 browser 2개, 끊김과 restart 복구, VM tick p99와 CPU를 측정한다. p99 10ms 또는 CPU 60% 기준을 적용한다.
 
 production 서버 실패 시 offline Area나 legacy authority로 자동 전환하지 않는다. 현재 production legacy 경로는 새 경로 전환 전까지 회귀 호환을 유지한다. 구현 세션은 PR을 만들고, 지정된 별도 리뷰 세션이 merge와 dev 배포를 수행한다.
+
+## PR52 반영 후 foundation 재검증
+
+최신 dev `b051b47`의 Dawn HP24000/damage20/tempo0.95, Frost HP90000/damage38/tempo0.9와 endgame mechanic 피해/경고/간격을 numeric에 반영했다. 월드별 고정 적 레벨, W2/W3 scavenger guardian의6초 respawn과8m clearance, echo120초를 보존한다. 후속 host의 dynamic population/recovery API는 이 갱신에 포함하지 않았다.
+
+motion과 catalog는 실제 추출 도구로 다시 생성했다. provider는 `shipped-motion-v1-ba88643928a0d7d99cf1`, catalog는 `shipped-rigs-v1-4dbbf3d590588988ab79`다. [새 raw 비교 결과](evidence/s2-pr52-motion-parity.json)는 source112,35rig,39171anchors,238roots,12038catalog anchors를 기록하며 maxAnchorDelta7.105427357601002e-15, root/catalog delta0이다. 이전 checkpoint 증거도 보존한다.
+
+리뷰 worktree에서 Node24.22/pnpm10.10으로 core269/269, view/input14/14, boss116/116, engine4/4, sim47/47, multiplayer50/50, world61/61, server17/17과 build를 통과했다. 새 base의 DEV W1 Chrome fixture trace도 지연 명중, 죽음, XP20/coins5,22관절/root 동기화와 pageerror0을 확인했다. 실제 host/v3/client/production 전환과 네 월드 전체 렌더 수용은 여전히 후속 범위다.
