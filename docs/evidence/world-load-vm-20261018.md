@@ -92,8 +92,8 @@ measuring session's scratchpad `vm/` directory (not committed).
 
 VM: `c2d-standard-2`, cpu-platform `AMD Milan` (`AMD EPYC 7B13`, 2 threads on 1 core), 7.9 GB, Node 24.22.0, throwaway
 PG 16 under `/tmp/crabcraft-load-20261018202325/`, host on 127.0.0.1:18734, stats on 127.0.0.1:18735. The VM had booted
-at about 20:21 KST after the switch (dev process started 20:21:03, prod 20:22:29 for the main deploy c163124 that
-finished 11:22:54Z). Neither process restarted during the runs (start times checked at 20:31, 20:33 and 20:41); the first
+at about 20:21 KST after the switch (dev process started 20:21:03, prod 20:22:29 for the main deploy c163124, v1.0.2
+with migration 007, Deploy run 39122772503 attempt 2, finished 11:22:54Z; prod `/version.json` read 1.0.2 at 20:44). Neither process restarted during the runs (start times checked at 20:31, 20:33 and 20:41); the first
 run started at 20:24:06. Health of prod/dev: 200/200 in all 89 + 87 + 60 + 90 + 87 + 90 + 90 samples.
 
 Same bundles as Run B, not rebuilt: dev `load-bundle.tgz` (2aa6a51 with the tools of b060ee4) sha256
