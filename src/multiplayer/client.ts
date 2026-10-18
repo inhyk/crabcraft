@@ -56,6 +56,9 @@ export class Multiplayer {
   private log = h('div', { class: 'mp-log', role: 'log', 'aria-label': '방 채팅' });
   private input = h('input', { maxlength: 6, placeholder: '방 코드 6자리', 'aria-label': '방 코드', autocomplete: 'off' });
   private chat = h('input', { maxlength: 200, placeholder: '친구에게 말하기', 'aria-label': '채팅 메시지', autocomplete: 'off' });
+  private pendingDuel = false;
+  private duelCreate = h('button', { type:'button', class:'mp-duel-create', onclick:()=>this.connect('create','',true) }, '⚔ 친구랑 싸우기');
+  private duelHelp = h('p', {class:'mp-duel-help'});
   private create = h('button', { type: 'button', onclick: () => this.connect('create') }, '방 만들기');
   private join = h('button', { type: 'submit' }, '참가');
   private leave = h('button', { type: 'button', onclick: () => this.disconnect() }, '나가기');
@@ -107,11 +110,11 @@ export class Multiplayer {
     const params = new URLSearchParams(location.search);
     this.root = h('details', { class: 'mp-panel', open: params.has('multiplayer') || params.has('room') },
       this.summary, this.status, this.intro, this.roster, this.blockedList, this.reconnect,
-      this.friends, this.code, h('div', { class: 'mp-row' }, this.create, this.share, this.leave), form, this.invite,
+      this.friends, this.code, h('div', { class: 'mp-row' }, this.create, this.duelCreate, this.share, this.leave), form, this.invite,
       h('div', { class: 'mp-row' }, h('button', { type: 'button', 'data-emote':'hello', onclick: () => this.emote('gesture_hello') }, '👋 인사'), h('button', { type: 'button', 'data-emote':'dance', onclick: () => this.emote('dance_crab') }, '💃 춤'),
         // The B emote. The button gives the keyboard back so moving can end the routine.
         h('button', { type: 'button', 'data-emote':'breakdance', onclick: (e: Event) => { (e.currentTarget as HTMLElement).blur(); this.game.player.toggleBreakdance(); } }, '🕺 브레이크댄스')),
-      this.modeRow, this.partyRow,
+      this.modeRow, this.duelHelp, this.partyRow,
       this.partyPanel,this.actions,this.log, chatForm,
     );
     // Opening a form clears held movement keys. Typing never controls the crab.
@@ -140,10 +143,11 @@ export class Multiplayer {
 
   private send(msg: unknown) { this.link.send(msg); }
 
-  private connect(type: Mode, room = '') {
+  private connect(type: Mode, room = '', duel = false) {
     if (this.disposed) return;
     const code = room.trim().toUpperCase();
     if (type === 'join' && !/^[A-F0-9]{6}$/.test(code)) { this.setStatus('방 코드 6자리를 확인해 주세요.','Check the six-character room code.'); return; }
+    this.pendingDuel=type==='create'&&duel;
     this.battle.leave(); this.closeSocket();
     this.room = ''; this.shard = ''; this.area = 0;
     this.setStatus('연결 중…','Connecting…');
@@ -172,6 +176,7 @@ export class Multiplayer {
         } else {
           this.room = msg.room; this.shard = ''; this.area = 0;
           this.battle.join(msg.id, msg.host, msg.world);
+          if(this.pendingDuel){this.pendingDuel=false;this.battle.setMode('pvp');}
           // A transport retry receives a new ID; restore only its explicit team choice.
           const party=this.rejoinParty;this.rejoinParty=null;
           if(party!==null)this.battle.setParty(party);
@@ -417,7 +422,7 @@ export class Multiplayer {
     const connected = !!this.room && open, online = connected || (!!this.shard && open);
     const connecting = this.link.connecting;
     const count = this.peers.size + 1;
-    this.create.disabled = !!connecting || !!connected;
+    this.create.disabled = this.duelCreate.disabled = !!connecting || !!connected;
     this.join.disabled = !!connecting || !!connected;
     this.share.disabled = !connected;
     this.leave.disabled = !this.room; this.leave.hidden = !this.room;
@@ -430,6 +435,7 @@ export class Multiplayer {
     this.invite.value = this.inviteUrl();
     // Offline, the link still retries on its own; the button tries now.
     this.reconnect.hidden = !this.offline || !!connecting || open;
+    this.duelHelp.hidden=!this.room;
     this.modeRow.hidden = this.partyRow.hidden = this.partyPanel.hidden = !this.room;
     if (online && !this.room) this.setStatus(`온라인 · 월드 ${ROMAN[this.area]} · ${count}명이 함께 있어요`,`Online · World ${ROMAN[this.area]} · ${count} here`);
     this.summary.textContent = this.room ? t(`🦀 친구와 방 · ${count}명`,`🦀 Room with friends · ${count}`) : online ? t(`🦀 온라인 · ${count}명`,`🦀 Online · ${count}`) : this.offline ? t('🦀 오프라인','🦀 Offline') : t('🦀 연결 중…','🦀 Connecting…');
@@ -443,6 +449,8 @@ export class Multiplayer {
     return errors.find(pair=>pair.includes(message))??[message,message];
   }
   refreshLanguage(){
+    this.duelCreate.textContent=t('⚔ 친구랑 싸우기','⚔ Battle a friend');
+    this.duelHelp.textContent=t('대전 방법: 방 코드나 초대 링크를 친구에게 보내세요. 서로 가까이에서 친구를 클릭하거나 Tab으로 선택하고 공격 기술을 사용하세요. 같은 파티끼리는 피해를 주지 않아요. 방장은 협동 모드로 돌아갈 수 있어요.','How to duel: share the room code or invite link. Meet nearby, click your friend or select them with Tab, then use attack skills. Teammates are protected. The host can return to Co-op.');
     this.friends.textContent=t('친구와 방 만들기','Room with friends');
     for(const [button,ko,en] of [[this.create,'방 만들기','Create room'],[this.join,'참가','Join'],[this.leave,'나가기','Leave'],[this.share,'초대 링크 복사','Copy invite link'],[this.sendButton,'전송','Send'],[this.reconnect,'다시 연결','Reconnect']] as const)button.textContent=t(ko,en);
     this.input.placeholder=t('방 코드 6자리','Six-character room code');this.input.setAttribute('aria-label',t('방 코드','Room code'));

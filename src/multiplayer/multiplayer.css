@@ -40,3 +40,4 @@
 .mp-blocked summary{cursor:pointer;font-weight:400;color:#c9c3b3}
 .mp-blocked-row{align-items:center;justify-content:space-between;margin-top:4px}
 .mp-blocked-row button{font-size:11px!important;padding:4px 6px!important}
+.mp-panel .mp-duel-create{border-color:#e5a47b;background:linear-gradient(135deg,#713b30,#422b35);color:#ffe5c9;font-weight:700}.mp-panel .mp-duel-help{padding:10px;border-left:3px solid #e5a47b;background:#e5a47b0b;color:#ead8bf}.mp-panel .mp-row{flex-wrap:wrap}
