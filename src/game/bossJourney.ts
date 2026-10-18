@@ -144,13 +144,15 @@ export class BossJourney {
     const coins = boss.claimVictoryCoins();
     if (coins > 0) {
       this.game.player.coins = Math.min(Number.MAX_SAFE_INTEGER, this.game.player.coins + coins);
-      if(boss===this.game.worldBoss||boss===this.game.dawnBoss){
+      const grantsBlessing=boss===this.game.worldBoss||boss===this.game.dawnBoss;
+      if(grantsBlessing){
         this.game.player.xpBlessingUntil=Date.now()+600000;
-        this.game.hud.messages.info(t('성장의 축복! 10분 동안 모든 경험치 2배','Growth blessing! All XP ×2 for 10 minutes'));
+        this.game.hud.messages.info(t('성장의 축복! 10분 동안 모든 경험치 1.5배','Growth blessing! All XP ×1.5 for 10 minutes'));
         this.game.vfx.mendGlow(this.game.player.unit);
       }
-      const reward= boss.profile.reward * (Date.now()<this.game.player.xpBlessingUntil?2:1);
-      this.game.player.gainXp(boss.profile.reward);
+      const beforeXp=this.game.player.xp;
+      this.game.player.gainXp(boss.profile.reward,!grantsBlessing);
+      const reward=this.game.player.xp-beforeXp;
       this.game.hud.chat.system(t(`보스 처치! +${coins.toLocaleString()} 코인 · +${reward.toLocaleString()} XP`, `Boss defeated! +${coins.toLocaleString()} coins · +${reward.toLocaleString()} XP`));
       this.save();
     }
@@ -241,7 +243,7 @@ export class BossJourney {
       this.root.querySelector('.bj-heading strong')!.textContent=t('네 섬과 다섯 왕관의 전설','Four Islands, Five Crowns');
       this.portal.textContent=t('✧ 월드 2 바로가기 →','✧ Travel to World II →');this.victory.textContent=t('✨ 춤추는 엔딩 다시 보기','✨ Replay the dance ending');
       this.wallet.textContent=t(`🪙 ${g.player.coins} · 무기 +${g.player.attackRank} · 방어구 +${g.player.armorRank}`,`🪙 ${g.player.coins} · Weapon +${g.player.attackRank} · Armor +${g.player.armorRank}`);this.wallet.hidden=g.cinematic||g.ending.active;
-      if(remaining)this.wallet.textContent+=t(` · ✦ XP 2배 ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`,` · ✦ XP ×2 ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`);
+      if(remaining)this.wallet.textContent+=t(` · ✦ XP 1.5배 ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`,` · ✦ XP ×1.5 ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`);
       const next = xpForLevel(level+1);
       this.progress.textContent = t(`LEVEL ${level} → ${level + 1} · ${next - g.player.xp} XP 남음`,`LEVEL ${level} → ${level+1} · ${next-g.player.xp} XP to go`);
       for (const { boss, status, button } of this.cards) {
@@ -250,7 +252,7 @@ export class BossJourney {
         const needsBeacon=boss.profile.level<20&&!g.beaconLit;
         const joining=this.canJoin(boss);
         status.textContent = cleared ? t('✓ 왕관 획득','✓ Crown reclaimed') : needsBeacon ? t('등대를 켜면 도전할 수 있어요.','Light the lighthouse to challenge this boss.') : unlocked ? (boss.engaged ? t('전투 중','In battle') : boss===g.frostBoss?t('도전 가능 · 얼음 왕좌','Ready · Frozen Throne'):boss===g.dawnBoss?t('도전 가능 · 황혼 성채','Ready · Twilight Citadel'):boss === g.worldBoss ? t('도전 가능 · 별의 왕좌','Ready · The Star Throne') : t('도전 가능 · 철의 난파선','Ready · The Iron Wreck')) : t(`🔒 ${boss.profile.level}레벨${boss.profile.level===300?' + 월드 4':boss.profile.level===100?' + 월드 3':boss.profile.level === 20 ? ' + 월드 2' : boss.profile.level === 10 ? ' + 첫 보스 승리' : ''} 필요`,`🔒 Requires level ${boss.profile.level}${boss.profile.level===300?' + World IV':boss.profile.level===100?' + World III':boss.profile.level===20?' + World II':boss.profile.level===10?' + first boss victory':''}`);
-        if(boss===this.game.worldBoss||boss===this.game.dawnBoss)status.textContent+=t(' · 처치 시 모든 XP 2배 · 10분',' · On victory: all XP ×2 · 10 min');
+        if(boss===this.game.worldBoss||boss===this.game.dawnBoss)status.textContent+=t(' · 처치 시 모든 XP 1.5배 · 10분',' · On victory: all XP ×1.5 · 10 min');
         status.textContent += t(` · 처치 보상 ${boss.profile.coins.toLocaleString()} 코인 · ${boss.profile.reward.toLocaleString()} XP`, ` · Victory reward: ${boss.profile.coins.toLocaleString()} coins · ${boss.profile.reward.toLocaleString()} XP`);
         button.disabled = boss.state === 'dying' || needsBeacon || !unlocked || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining) || (boss === g.finalBoss && g.boss.state !== 'dead');
         button.textContent = boss.state === 'dead' ? t('다시 도전하기 →','Challenge again →') : boss.engaged ? joining?t('전투 합류 →','Join battle →'):t('전투 중','In battle') : t('도전하기 →','Challenge →');

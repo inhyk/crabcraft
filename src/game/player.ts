@@ -604,10 +604,10 @@ export class Player implements CombatController {
 
   // ---------------------------------------------------------------- progression
 
-  gainXp(n: number): void {
+  gainXp(n: number, applyBlessing = true): void {
     const g = this.game;
     if(!Number.isFinite(n) || n<=0)return;
-    if (Date.now() < this.xpBlessingUntil) n *= 2;
+    if (applyBlessing && Date.now() < this.xpBlessingUntil) n = Math.floor(n * 1.5);
     this.xp = Math.min(Number.MAX_SAFE_INTEGER,this.xp+n);
     g.events.emit({ type: 'xp', unit: this.unit, amount: n });
     const targetLevel=levelForXp(this.xp);

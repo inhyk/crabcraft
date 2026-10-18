@@ -4,8 +4,8 @@ export interface BossProfile { level:number; hp:number; damage:number; tempo:num
 export const BOSS_PROFILES: Readonly<Record<BossProfileId, Readonly<BossProfile>>> = Object.freeze({
   rust:Object.freeze({level:3,hp:1300,damage:1,tempo:1,color:'#ff672e',reward:500,coins:150}),
   abyss:Object.freeze({level:10,hp:2600,damage:2.1,tempo:.85,color:'#58e5ff',reward:1000,coins:500}),
-  eclipse:Object.freeze({level:20,hp:6200,damage:3.2,tempo:.78,color:'#bf8aff',reward:1500,coins:1200}),
-  dawn:Object.freeze({level:100,hp:24000,damage:20,tempo:.95,color:'#ffb44f',reward:3200,coins:5000}),
+  eclipse:Object.freeze({level:20,hp:6200,damage:3.2,tempo:.78,color:'#bf8aff',reward:5000,coins:1200}),
+  dawn:Object.freeze({level:100,hp:24000,damage:20,tempo:.95,color:'#ffb44f',reward:100000,coins:5000}),
   frost:Object.freeze({level:300,hp:90000,damage:38,tempo:.9,color:'#8feaff',reward:18000,coins:15000}),
 });
 export function mechanicOrder(profile:BossProfileId,phase:number):readonly MechId[]{
