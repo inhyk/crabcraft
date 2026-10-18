@@ -1,0 +1,16 @@
+{
+  "kind": "actual production factory bake plus independent controller parity",
+  "sourceBase": "c53dba9c8fd151e98c45396f84f2a9011cff1ed5",
+  "motionVersion": "shipped-motion-v1-fe795cda92fafa424d42",
+  "rigVersion": "shipped-rigs-v1-abecf1a6deeed0ad6fa6",
+  "sources": 114,
+  "changedSources": [
+    "src/game/game.ts"
+  ],
+  "removedSources": [],
+  "numericPayloadUnchanged": true,
+  "sha256": {
+    "src/sim/data/pose-data.json": "7ace5d134eb6cded53c068ae7619e1a7422394f286286e570549b05ef0b00959",
+    "src/sim/data/rig-catalog.json": "2af587408397dc0c0040e379ae2a2e070675021ec275c98f788caa54107de98a"
+  }
+}
