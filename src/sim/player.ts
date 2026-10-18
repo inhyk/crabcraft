@@ -20,6 +20,7 @@ function validCommand(command:unknown):boolean {
     case 'jump':case 'dance':case 'cancel':case 'endingReplay':return true;
     case 'channelStart':return ['recall','beacon','waystone'].includes(c.channel as string)&&(c.targetId===undefined||text(c.targetId));
     case 'interact':return text(c.targetId);
+    case 'questTrack':return text(c.questId);
     case 'questAccept':case 'questTurnIn':return text(c.questId)&&text(c.npcId);
     case 'forgeBuy':return text(c.npcId);
     case 'travel':return text(c.gateId);

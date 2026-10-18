@@ -1,5 +1,5 @@
 /** Shared contract for the implemented deterministic numeric simulation core.
- * Current gameplay refresh follows canonical dev 60df24f and S4 foundation d480e24.
+ * Current gameplay refresh follows canonical dev 60df24f plus the merged S4 foundation.
  * Browser facade conversion, S1 event wiring and S3 baked query integration have separate gates.
  * Core state and events contain numeric/value data, never renderer objects, browser callbacks or I/O.
  */
@@ -205,6 +205,7 @@ export type PlayerCommand =
   | { kind: 'channelStart'; channel: ChannelKind; targetId?: string }
   | { kind: 'interact'; targetId: string }
   | { kind: 'questAccept' | 'questTurnIn'; questId: string; npcId: string }
+  | { kind: 'questTrack'; questId: string }
   | { kind: 'forgeBuy'; npcId: string }
   | { kind: 'travel'; gateId: string }
   | { kind: 'bossChallenge'; profile: BossSim['profile'] }
@@ -281,7 +282,7 @@ export interface EnemySpawn {
 export interface AreaDefinition {
   readonly world: WorldId; readonly spawn: Poi; readonly recall: Poi;
   readonly pois: Readonly<Record<string, Poi>>; readonly enemies: readonly EnemySpawn[];
-  readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string }[];
+  readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string; freedPosition?: Readonly<Vec3>; captiveBeforeVictory?: boolean }[];
   readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string }[];
   readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string }[];
 }
