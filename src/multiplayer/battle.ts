@@ -162,6 +162,14 @@ export class BattleSync {
     if(!this.active||this.authority)return false;
     this.event({kind:'environment',target:'world',environment:{beacon:lit,mood:lit?1:3}});return true;
   }
+  requestDungeonReturn(){
+    const state=this.game.dungeons?.state;
+    if(!state||!this.active||this.sharedArea)return false;
+    if(this.authority){this.publish();return false;}
+    if(state.phase==='clear'||state.phase==='failed')this.event({kind:'dungeon-return',target:'world',run:state.run});
+    else this.game.hud.messages.info(t('전투 중에는 방장이 원정을 종료할 수 있어요.','The host can end the expedition during combat.'));
+    return true;
+  }
   enterWorld2() {return this.travel(2);}
   travel(chapter:1|2|3|4) {
     if (this.sharedArea || !this.active || this.authority) return false;
@@ -177,6 +185,15 @@ export class BattleSync {
     const g = this.game, u = this.units.get(e.target);
     if (this.authority) {
       const src = this.peers().get(id)?.unit;
+      if(e.kind==='dungeon-return'){
+        const state=g.dungeons?.state;
+        // A defeated member must also be able to return after a party wipe.
+        if(!this.sharedArea&&src&&state&&e.target==='world'&&e.run===state.run&&
+          (state.phase==='clear'||state.phase==='failed')&&src.level>=state.level&&state.members.includes(src.name)){
+          this.publish();g.dungeons?.leave(false);this.publish();
+        }
+        return;
+      }
       if (!src || !src.alive) return;
       if(this.sharedArea&&['chapter','party','duel'].includes(e.kind))return;
       if(e.kind==='village'&&e.village){g.villageGames?.request(id,e.village);this.publish();return;}
