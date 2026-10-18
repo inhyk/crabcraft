@@ -97,11 +97,11 @@ export function encodeMessage(kind:1|2|16|17,h:WireHeader,payload:unknown):Uint8
  const room=LIMITS.fragmentBytes-overhead;if(room<1)fail('oversized header');const count=Math.max(1,Math.ceil(body.length/room));if(count>LIMITS.fragments)fail('fragment count limit');
  return Array.from({length:count},(_,i)=>{const w=new Writer();w.u16(MAGIC);w.u8(VERSION);w.u8(kind);w.u16(hbytes.length);w.raw(hbytes);w.u16(i);w.u16(count);w.u32(body.length);w.u32(hash);w.raw(body.slice(i*room,(i+1)*room));return w.finish();});
 }
-export interface DecodedMessage {kind:1|2|16|17;header:WireHeader;payload:Value}
+export interface DecodedMessage {kind:1|2|16|17;header:WireHeader;payload:Value;interrupted:boolean}
 /** One bounded in-flight group. No snapshot state changes until every fragment validates. */
 export class FragmentAssembler {
  private binding:WireBinding;
- private pending:{kind:DecodedMessage['kind'];header:WireHeader;count:number;total:number;hash:number;started:number;parts:Map<number,Uint8Array>;size:number}|null=null;
+ private pending:{kind:DecodedMessage['kind'];header:WireHeader;count:number;total:number;hash:number;started:number;parts:Map<number,Uint8Array>;size:number;interrupted:boolean}|null=null;
  constructor(expected:WireBinding){binding(expected);this.binding=clone(expected);}
  reset(expected:WireBinding){binding(expected);this.binding=clone(expected);this.pending=null;}
  clear(){this.pending=null;}
@@ -113,15 +113,15 @@ export class FragmentAssembler {
   const h=decodeValue(r.raw(r.u16()));header(h);if(!sameBinding(h,this.binding))fail('stale stream binding');
   const index=r.u16(),count=r.u16(),total=r.u32(),hash=r.u32();integer(count,1,LIMITS.fragments);integer(index,0,count-1);integer(total,1,LIMITS.messageBytes);
   const part=r.raw(bytes.length-r.offset);if(!part.length||part.length>total)fail('invalid fragment payload');
-  let p=this.pending;
-  if(p&&(p.kind!==kind||p.header.sequence!==h.sequence))fail('interleaved group; resync required');
+  let p=this.pending,interrupted=false;
+  if(p&&(p.kind!==kind||p.header.sequence!==h.sequence)){if(kind===1&&h.sequence>p.header.sequence){p=null;this.pending=null;interrupted=true;}else fail('interleaved group; resync required');}
   if(p&&(JSON.stringify(p.header)!==JSON.stringify(h)||p.count!==count||p.total!==total||p.hash!==hash||now<p.started))fail('inconsistent fragment group');
-  if(!p)p={kind:kind as DecodedMessage['kind'],header:h,count,total,hash,started:now,parts:new Map(),size:0};
+  if(!p)p={kind:kind as DecodedMessage['kind'],header:h,count,total,hash,started:now,parts:new Map(),size:0,interrupted};
   if(p.parts.has(index))fail('duplicate fragment');if(p.size+part.length>total)fail('fragment total exceeded');
   p.parts.set(index,part);p.size+=part.length;this.pending=p;if(p.parts.size<count)return null;
   this.pending=null;if(p.size!==total)fail('fragment size mismatch');const merged=new Uint8Array(total);let offset=0;
   for(let i=0;i<count;i++){const b=p.parts.get(i)!;merged.set(b,offset);offset+=b.length;}if(checksum(merged)!==hash)fail('fragment checksum mismatch');
-  return {kind:p.kind,header:p.header,payload:decodeValue(merged)};
+  return {kind:p.kind,header:p.header,payload:decodeValue(merged),interrupted:p.interrupted};
  }
 }
 export function actionState(value:unknown,c:GameplayCatalog):void {
@@ -222,13 +222,13 @@ export interface GameplayProtocol {
  encodeEvents(header:WireHeader,payload:import('./events.ts').EventPayload):Uint8Array[];
  encodeInput(packet:import('./intents.ts').InputPacket):Uint8Array;
  decodeInput(bytes:Uint8Array,expected:WireBinding):import('./intents.ts').GameplayInput;
- decodeClientMessage(bytes:Uint8Array,expected:WireBinding):{kind:'input';intent:import('./intents.ts').GameplayInput}|{kind:'resync';lastSequence:number;reason:string};
+ decodeClientMessage(bytes:Uint8Array,expected:WireBinding):{kind:'input';intent:import('./intents.ts').GameplayInput}|{kind:'resync';sequence:number;lastSequence:number;reason:string};
  encodeControl:typeof encodeControl;
  reset(binding:WireBinding):void;
 }
 /** One instance per connection: its delta baseline is never shared among viewers. */
 export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol {
- catalog=clone(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes=new Map<number,RenderPoseSource>();let previous:PublicActor[]=[],prior:WireHeader|null=null;
+ catalog=clone(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes=new Map<number,RenderPoseSource>();let previous:PublicActor[]=[],prior:WireHeader|null=null;let controlBinding:WireBinding|null=null,controlSequence=0,resyncPending=false;
  return {
   catalog:clone(catalog),encodeEvents:(h,p)=>encodeEvents(h,p,catalog),encodeControl,
   encodeInput:p=>encodeInput(p,catalog),decodeInput:(b,e)=>decodeInput(b,e,catalog),
@@ -236,9 +236,12 @@ export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol
    const m=new FragmentAssembler(expected).accept(bytes,0);if(!m)fail('client message must fit one frame');
    if(m.kind===16)return {kind:'input',intent:decodeInput(bytes,expected,catalog)};
    if(m.kind!==17||m.header.tick||m.header.acceptedInput||m.header.consumedInput)fail('forged client control');validateControl(m.payload);
-   if(m.payload.type!=='resync')fail('client cannot publish server control');return {kind:'resync',lastSequence:m.payload.lastSequence,reason:m.payload.reason};
+   if(m.payload.type!=='resync')fail('client cannot publish server control');
+   if(!controlBinding||!sameBinding(controlBinding,expected)){controlBinding=clone(expected);controlSequence=0;resyncPending=false;}
+   if(m.header.sequence<=controlSequence||resyncPending)fail('stale or outstanding recovery request');controlSequence=m.header.sequence;resyncPending=true;
+   return {kind:'resync',sequence:m.header.sequence,lastSequence:m.payload.lastSequence,reason:m.payload.reason};
   },
-  reset(next){binding(next);previous=[];previousRecipes.clear();prior=null;},
+  reset(next){binding(next);previous=[];previousRecipes.clear();prior=null;if(!controlBinding||!sameBinding(controlBinding,next)){controlBinding=clone(next);controlSequence=0;resyncPending=false;}},
   encodeObservation(input){
    const h:WireHeader={...input.binding,sequence:input.sequence,tick:input.tick,acceptedInput:input.acceptedInput,consumedInput:input.consumedInput};header(h);
    if(h.catalog!==catalog.version||input.snapshot.area!==h.area||input.snapshot.tick!==h.tick)fail('snapshot identity mismatch');
@@ -266,7 +269,7 @@ export function createGameplayProtocol(catalog:GameplayCatalog):GameplayProtocol
    }
    const projectiles=input.snapshot.projectiles.filter(p=>ids.has(p.source.id)||ids.has(p.target.id)).map(({hit:_hit,anchorVersion:_anchor,...p})=>p);
    const payload:SnapshotPayload={full,baseline:full?0:prior!.sequence,eventWatermark:input.eventWatermark,world:input.snapshot.world,time:input.snapshot.time,selfRef:input.selfRef,poses,actors:updates,removed:full?[]:previous.filter(a=>!ids.has(a.ref.id)).map(a=>a.ref),projectiles,self:projectSelf(player,input.achievements,input.snapshot.time-input.snapshot.units.find(u=>u.ref.id===input.selfRef.id&&u.ref.life===input.selfRef.life)!.lastCombat<5),features:input.features,recovery:input.recovery,events:selectEvents(input.events,input.selfRef,player.character,ids),results:input.results??[]};
-   checkSnapshot(payload,catalog,h.area,!!prepared);const encoded=encodeMessage(1,h,payload);previous=actors;previousRecipes=recipes;prior=clone(h);return encoded;
+   checkSnapshot(payload,catalog,h.area,!!prepared);if(payload.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');const encoded=encodeMessage(1,h,payload);previous=actors;previousRecipes=recipes;prior=clone(h);if(full)resyncPending=false;return encoded;
   },
  };
 }
@@ -294,10 +297,10 @@ export class GameplayReceiver {
  accept(bytes:Uint8Array,now:number):ReceivedGameplay|null {
   try{
    const message=this.assembler.accept(bytes,now);if(!message)return null;
-   const h=message.header;
+   const h=message.header;if(message.interrupted)this.needsResync=true;
    if(this.last&&(h.sequence<=this.last.sequence||h.tick<this.last.tick||h.acceptedInput<this.last.acceptedInput||h.consumedInput<this.last.consumedInput))fail('stale observation');
    if(message.kind===1){
-    validateSnapshot(message.payload,this.catalog,h.area);const p=message.payload;
+    validateSnapshot(message.payload,this.catalog,h.area);const p=message.payload;if(p.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');
     if(!p.full&&(this.needsResync||!this.current||p.baseline!==this.current.sequence||h.sequence!==(this.last?.sequence??0)+1))fail('missing baseline or sequence gap');
     if(this.current&&(p.selfRef.id!==this.current.selfRef.id||p.selfRef.life!==this.current.selfRef.life))fail('self life changed without epoch reset');
     if(p.eventWatermark<this.eventOrder||p.events.some(e=>e.tick>h.tick||e.order>p.eventWatermark))fail('invalid event watermark');
@@ -317,7 +320,7 @@ export class GameplayReceiver {
    }
    if(this.needsResync||h.sequence!==(this.last?.sequence??0)+1)fail('missing publication sequence');
    if(message.kind===2){
-    validateEventPayload(message.payload,this.catalog,h.area);const p=message.payload;
+    validateEventPayload(message.payload,this.catalog,h.area);const p=message.payload;if(p.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');
     if(!this.current||p.baselineSequence!==this.current.sequence)fail('events before actor baseline');
     let order=this.eventOrder;for(const e of p.events){if(e.order<=order||e.tick>h.tick)fail('replayed/unordered event');order=e.order;}
     this.last=clone(h);this.eventOrder=order;return {kind:'events',events:clone(p.events),results:clone(p.results)};
