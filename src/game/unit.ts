@@ -62,17 +62,30 @@ export interface NumericUnitPorts {
   moveTo(x:number,z:number,dt:number):void;
   feed(dt:number):void;
 }
+export type WorldActorView = Readonly<Pick<SimUnit,'ref'|'x'|'y'|'z'|'archetype'|'kind'|'reaction'|'level'|'yaw'|'radius'|'height'|'hp'|'maxHp'|'alive'|'hidden'|'targetable'|'invulnerable'|'stunUntil'|'slowUntil'|'slowPct'|'rust'|'rustUntil'|'absorb'|'absorbMax'|'absorbUntil'|'blessingUntil'|'pushX'|'pushZ'|'pushTime'|'lift'>> & {readonly pose:{readonly appliedQ:readonly number[];readonly appliedPosition:readonly [number,number,number];readonly appliedRotation:readonly [number,number,number,number];readonly localVx:number;readonly localVz:number}};
 export class Unit {
+  private worldView:(()=>WorldActorView)|null=null;
+  get observed():boolean{return this.worldView!==null;}
   private simulation: { state:SimUnit; services:AreaServices; ports:NumericUnitPorts } | null = null;
   private numericPosition:THREE.Vector3|null=null;
   get simState():SimUnit|null{return this.simulation?.state??null;}
-  get ref():EntityRef|null{return this.simulation?.state.ref??null;}
+  get ref():EntityRef|null{return this.worldView?.().ref??this.simulation?.state.ref??null;}
   bindSimulation(state:SimUnit,services:AreaServices,ports:NumericUnitPorts):void {
+    if(this.worldView)throw new Error('Observed units cannot bind simulation');
     this.simulation={state,services,ports};
     if(!this.numericPosition)this.numericPosition=createLivePosition(()=>this.simulation!.state);
     for(const key of ['level','yaw','radius','height','hp','maxHp','alive','stunUntil','slowUntil','slowPct','rust','rustUntil','absorb','absorbMax','absorbUntil','blessingUntil','lastCombat','pushX','pushZ','pushTime','lift','hidden','targetable','invulnerable'] as const)Object.defineProperty(this,key,{configurable:true,enumerable:true,get:()=>this.simulation!.state[key],set:value=>{(this.simulation!.state as unknown as Record<string,unknown>)[key]=value;}});
     this.pendingHit=null;
   }
+  /** Readonly server observation. WorldView owns pose application and rig.update once per frame. */
+  bindWorldView(readState:()=>WorldActorView):void {
+    if(this.simulation)throw new Error('Simulation units cannot bind observations');
+    this.worldView=readState;
+    if(!this.numericPosition){this.numericPosition=new THREE.Vector3();for(const key of ['x','y','z'] as const)Object.defineProperty(this.numericPosition,key,{configurable:true,enumerable:true,get:()=>this.worldView!()[key],set:()=>{throw new Error('World observation is readonly');}});}
+    for(const key of ['kind','reaction','level','yaw','radius','height','hp','maxHp','alive','stunUntil','slowUntil','slowPct','rust','rustUntil','absorb','absorbMax','absorbUntil','blessingUntil','pushX','pushZ','pushTime','lift','hidden','targetable','invulnerable'] as const)Object.defineProperty(this,key,{configurable:true,enumerable:true,get:()=>this.worldView!()[key],set:()=>{throw new Error('World observation is readonly');}});
+    this.pendingHit=null;
+  }
+  private requireLocalRules():void {if(this.worldView)throw new Error('Observed units accept server state only');}
   /** Render only. The canonical pose clock and root carry have already advanced in Area. */
   private applyNumericPose():void {applyNumericPose(this.rig,this.simulation!.state);}
 
@@ -158,7 +171,7 @@ export class Unit {
 
   /** Measure height and radius from the rig's head socket (contract: top of the upper shell). */
   measure(): void {
-    if(this.simulation)return;
+    if(this.simulation||this.worldView)return;
     const root = this.rig.root;
     root.updateMatrixWorld(true);
     const head = this.rig.getSocket('head').getWorldPosition(tmpV);
@@ -168,12 +181,14 @@ export class Unit {
   }
 
   setYaw(y: number): void {
+    this.requireLocalRules();
     this.yaw = y;
     this.rig.root.rotation.y = y;
   }
 
   /** Place without interpolation (spawn, respawn, teleport). */
   teleport(world: World, x: number, z: number, yaw?: number): void {
+    this.requireLocalRules();
     if(this.simulation){this.simulation.ports.teleport(x,z,yaw);return;}
     const p = world.resolveCollision(x, z, this.radius, tmp2);
     this.pos.set(p.x, world.heightAt(p.x, p.y), p.y);
@@ -187,6 +202,7 @@ export class Unit {
 
   /** Move to x,z with collision and ground following. */
   moveTo(world: World, x: number, z: number, dt: number): void {
+    this.requireLocalRules();
     if(this.simulation){this.simulation.ports.moveTo(x,z,dt);return;}
     const p = world.resolveCollision(x, z, this.radius, tmp2);
     this.pos.x = p.x;
@@ -240,6 +256,7 @@ export class Unit {
    * data, or after hitAt seconds; the clip's own events never land a blow.
    */
   act(id: MotionId, o: ActionOptions = {}): void {
+    this.requireLocalRules();
     if(this.simulation){if(o.onHit)throw new Error('Numeric actions require a typed impact plan');this.simulation.ports.action(id,o);return;}
 
     this.onAction?.(id);
@@ -302,6 +319,7 @@ export class Unit {
    * (vx toward its left, vz forward, yawRate positive = left).
    */
   feedLocomotion(dt: number): void {
+    this.requireLocalRules();
     if(this.simulation){this.simulation.ports.feed(dt);return;}
     if (dt <= 0) return;
     let dx = (this.pos.x - this.prevX) / dt;
@@ -328,12 +346,14 @@ export class Unit {
   }
 
   get moveSpeed(): number {
+    if(this.worldView)return Math.hypot(this.worldView().pose.localVx,this.worldView().pose.localVz);
     if(this.simulation)return Math.hypot(this.simulation.state.pose.localVx,this.simulation.state.pose.localVz);
     return Math.hypot(this.locoX, this.locoZ);
   }
 
   /** Simulation step: a pending swing lands when its time comes, on screen or not. */
   updateHit(dt: number): void {
+    this.requireLocalRules();
     if(this.simulation)throw new Error('Numeric pending hits are stepped only by Area');
     if (!this.pendingHit) return;
     this.pendingHit.left -= dt;
@@ -346,6 +366,7 @@ export class Unit {
 
   /** Seconds until the pending swing lands, or null. */
   get pendingHitIn(): number | null {
+    if(this.worldView)return null;
     return this.simulation?this.simulation.state.pendingHit?.left??null:this.pendingHit ? this.pendingHit.left : null;
   }
 
@@ -356,6 +377,7 @@ export class Unit {
       if (this.flashT <= 0) this.rig.face.setTint(this.baseTint);
     }
     if (this.exprHold > 0) this.exprHold -= dt;
+    if(this.worldView)return;
     if (this.culled || this.hidden) return;
     if(this.simulation){this.applyNumericPose();this.rig.update(dt);return;}
     if (!this.alive && this.deathT >= 0) {
@@ -371,6 +393,7 @@ export class Unit {
   }
 
   cancelPendingHit(): void {
+    this.requireLocalRules();
     if(this.simulation){this.simulation.services.cancelPendingHit(this.simulation.state.ref);return;}
     this.pendingHit = null;
   }
