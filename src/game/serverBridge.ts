@@ -86,7 +86,7 @@ export class ServerGameBridge {
   if(!g.controlsLocked){if(input.wasPressed('Tab'))g.player.tabTarget();for(let slot=1;slot<=5;slot++)if(input.wasPressed(`Digit${slot}`)||input.wasPressed(`Numpad${slot}`))g.player.useAbility(slot);if(input.wasPressed('KeyT'))this.command({kind:'channelStart',channel:'recall'});if(input.wasPressed('KeyL'))g.hud.questLog.toggle();if(input.wasPressed('KeyF')){if(g.hud.dialogue.isOpen){if(g.hud.dialogue.typing)g.hud.dialogue.skipTyping();else g.hud.dialogue.choosePrimary();}else{const near=g.units.filter(u=>u.npcId&&u.alive&&!u.hidden&&this.self!.distTo(u)<7).sort((a,b)=>this.self!.distTo(a)-this.self!.distTo(b))[0];if(near)this.talk(near);}}
    for(const button of [0,2] as const)if(input.wasClicked(button)){const u=g.player.pick(input.mouseX,input.mouseY);if(u)g.player.setTarget(u);}}
   this.client.capture(g,dt,this.state!.self.player.channel?.kind??null);this.client.pump(performance.now());this.view.render(performance.now(),dt);this.presentation.render(dt);
-  g.follow.update(dt,g.input,this.self!.pos);g.vfx.update(dt);g.world.update(dt,elapsed,g.camera);g.world2.update(dt,this.state!.time,{flags:this.state!.self.player.flags});g.hud.minimap.setZone(g.world2.chapter===1?'Clawhaven':g.world2.regionAt(this.self!.pos.x,this.self!.pos.z),false);g.hud.update(dt);g.hud.bossFrame.el.classList.remove('on');
+  g.follow.update(dt,g.input,this.self!.pos);g.vfx.update(dt);g.world.update(dt,elapsed,g.camera);g.world2.update(dt,this.state!.time,{flags:this.state!.self.player.flags});g.hud.minimap.setZone(g.world2.chapter===1?'Clawhaven':g.world2.regionAt(this.self!.pos.x,this.self!.pos.z),false);g.hud.update(dt);
   for(const unit of g.units)unit.updateVisual(dt);
  }
  talk(unit:Unit):void {
