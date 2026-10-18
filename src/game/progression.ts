@@ -13,11 +13,11 @@ export const levelForXp = (xp: number): number => {
 };
 export const patrolReward = (level: number) => 180 + Math.max(1,level)*50;
 export const BOSS_PROFILES = {
-  rust: { level: 3, hp: 1300, damage: 1, tempo: 1, color: '#ff672e', get name(){return t('코로디우스 · 녹의 폭군','Corrodius · Tyrant of Rust');}, get title(){return t('철의 난파선 수호자','Guardian of the Iron Wreck');}, reward: 500 },
-  abyss: { level: 10, hp: 2600, damage: 2.1, tempo: 0.85, color: '#58e5ff', get name(){return t('네레이드 · 심해의 군주','Nereid · Lord of the Deep');}, get title(){return t('깨어난 심해의 왕관','The Awakened Crown of the Deep');}, reward: 0 },
-  eclipse: { level: 20, hp: 6200, damage: 3.2, tempo: 0.78, color: '#bf8aff', get name(){return t('아스트라 · 일식의 여왕','Astra · Queen of the Eclipse');}, get title(){return t('잊힌 별의 섬의 마지막 수호자','Last Guardian of the Forgotten Isle');}, reward: 1500 },
-  frost: { level: 300, hp: 620000, damage: 65, tempo: .64, color: '#8feaff', get name(){return t('보레아스 · 영원의 서리왕','Boreas · King of Eternal Frost');}, get title(){return t('서리빛 설원의 얼어붙은 왕관','The Frozen Crown of Frostlight');}, reward: 18000 },
-  dawn: { level: 100, hp: 180000, damage: 32, tempo: .68, color: '#ffb44f', get name(){return t('솔라칸 · 새벽을 삼킨 왕','Solarkan · King of the Stolen Dawn');}, get title(){return t('친구를 가둔 황혼 성채의 지배자','Jailer of the Twilight Citadel');}, reward: 3200 },
+  rust: { level: 3, hp: 1300, damage: 1, tempo: 1, color: '#ff672e', get name(){return t('코로디우스 · 녹의 폭군','Corrodius · Tyrant of Rust');}, get title(){return t('철의 난파선 수호자','Guardian of the Iron Wreck');}, coins: 150, reward: 500 },
+  abyss: { level: 10, hp: 2600, damage: 2.1, tempo: 0.85, color: '#58e5ff', get name(){return t('네레이드 · 심해의 군주','Nereid · Lord of the Deep');}, get title(){return t('깨어난 심해의 왕관','The Awakened Crown of the Deep');}, coins: 500, reward: 0 },
+  eclipse: { level: 20, hp: 6200, damage: 3.2, tempo: 0.78, color: '#bf8aff', get name(){return t('아스트라 · 일식의 여왕','Astra · Queen of the Eclipse');}, get title(){return t('잊힌 별의 섬의 마지막 수호자','Last Guardian of the Forgotten Isle');}, coins: 1200, reward: 1500 },
+  frost: { level: 300, hp: 620000, damage: 65, tempo: .64, color: '#8feaff', get name(){return t('보레아스 · 영원의 서리왕','Boreas · King of Eternal Frost');}, get title(){return t('서리빛 설원의 얼어붙은 왕관','The Frozen Crown of Frostlight');}, coins: 15000, reward: 18000 },
+  dawn: { level: 100, hp: 180000, damage: 32, tempo: .68, color: '#ffb44f', get name(){return t('솔라칸 · 새벽을 삼킨 왕','Solarkan · King of the Stolen Dawn');}, get title(){return t('친구를 가둔 황혼 성채의 지배자','Jailer of the Twilight Citadel');}, coins: 5000, reward: 3200 },
 } as const;
 export type BossProfile = typeof BOSS_PROFILES[keyof typeof BOSS_PROFILES];
 export const canEnterWorld2 = (abyssCleared: boolean, _firstEndingSeen = false) => abyssCleared;

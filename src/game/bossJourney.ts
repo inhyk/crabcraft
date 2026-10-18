@@ -135,6 +135,12 @@ export class BossJourney {
   }
 
   onBossDefeated(boss: Boss) {
+    const coins = boss.claimVictoryCoins();
+    if (coins > 0) {
+      this.game.player.coins = Math.min(Number.MAX_SAFE_INTEGER, this.game.player.coins + coins);
+      this.game.hud.chat.system(t(`보스 처치! +${coins.toLocaleString()} 코인`, `Boss defeated! +${coins.toLocaleString()} coins`));
+      this.save();
+    }
     if (boss === this.game.boss) {
       if (this.rustCleared) return;
       this.rustCleared = true;
@@ -167,10 +173,9 @@ export class BossJourney {
 
   private challenge(boss: Boss) {
     const g = this.game;
-    const cleared = boss===g.frostBoss?this.frostCleared:boss === g.boss ? this.rustCleared : boss===g.dawnBoss?this.finalCleared:boss === g.worldBoss ? this.trueCleared : this.abyssCleared;
     const joining=this.canJoin(boss);
     if (boss.profile.level<20&&!g.beaconLit){g.hud.messages.info(t('등대를 켜면 밤이 되고 보스가 깨어나요.','Light the lighthouse to summon night and awaken the boss.'));return;}
-    if (cleared || !canChallenge(g.player.level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter) || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining)) return;
+    if (boss.state === 'dying' || !canChallenge(g.player.level, boss.profile.level, this.rustCleared, this.abyssCleared, g.world2.chapter) || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining)) return;
     if (boss === g.finalBoss && g.boss.state !== 'dead') { g.hud.messages.info(t('첫 보스의 승리 연출이 끝난 뒤 도전해 주세요.','Wait until the first boss victory sequence ends.')); return; }
     if (!joining && !g.multiplayer?.battle.challenge(boss===g.frostBoss?'b300':boss===g.dawnBoss?'b30':boss === g.boss ? 'b3' : boss === g.worldBoss ? 'b20' : 'b10')) boss.wake();
     const a = boss.arena;
@@ -232,8 +237,9 @@ export class BossJourney {
         const needsBeacon=boss.profile.level<20&&!g.beaconLit;
         const joining=this.canJoin(boss);
         status.textContent = cleared ? t('✓ 왕관 획득','✓ Crown reclaimed') : needsBeacon ? t('등대를 켜면 도전할 수 있어요.','Light the lighthouse to challenge this boss.') : unlocked ? (boss.engaged ? t('전투 중','In battle') : boss===g.frostBoss?t('도전 가능 · 얼음 왕좌','Ready · Frozen Throne'):boss===g.dawnBoss?t('도전 가능 · 황혼 성채','Ready · Twilight Citadel'):boss === g.worldBoss ? t('도전 가능 · 별의 왕좌','Ready · The Star Throne') : t('도전 가능 · 철의 난파선','Ready · The Iron Wreck')) : t(`🔒 ${boss.profile.level}레벨${boss.profile.level===300?' + 월드 4':boss.profile.level===100?' + 월드 3':boss.profile.level === 20 ? ' + 월드 2' : boss.profile.level === 10 ? ' + 첫 보스 승리' : ''} 필요`,`🔒 Requires level ${boss.profile.level}${boss.profile.level===300?' + World IV':boss.profile.level===100?' + World III':boss.profile.level===20?' + World II':boss.profile.level===10?' + first boss victory':''}`);
-        button.disabled = cleared || needsBeacon || !unlocked || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining) || (boss === g.finalBoss && g.boss.state !== 'dead');
-        button.textContent = cleared ? t('정복 완료','Conquered') : boss.engaged ? joining?t('전투 합류 →','Join battle →'):t('전투 중','In battle') : t('도전하기 →','Challenge →');
+        status.textContent += t(` · 처치 보상 ${boss.profile.coins.toLocaleString()} 코인`, ` · Victory reward: ${boss.profile.coins.toLocaleString()} coins`);
+        button.disabled = boss.state === 'dying' || needsBeacon || !unlocked || g.controlsLocked || g.player.inCombat || (g.encounter.engaged&&!joining) || (boss === g.finalBoss && g.boss.state !== 'dead');
+        button.textContent = boss.state === 'dead' ? t('다시 도전하기 →','Challenge again →') : boss.engaged ? joining?t('전투 합류 →','Join battle →'):t('전투 중','In battle') : t('도전하기 →','Challenge →');
         const card=button.closest('article')!;card.querySelector('h3')!.textContent=boss.profile.name;boss.unit.name=boss.profile.name;boss.unit.title=boss.profile.title;
         card.querySelector('p')!.textContent=boss.profile.level===300?t('서리 감옥 · 7중 눈보라 · 빙결 파동 · 300레벨','Frost prison · Sevenfold blizzard · Glacial pulse · Level 300'):boss.profile.level===100?t('8방향 화염 · 5중 폭격 · 극한 폭주 · 100레벨','Eight fire rays · Five bombs · Extreme enrage · Level 100'):boss.profile.level===20?t('검은 일식 · 안쪽 안전지대 · 별빛 폭주','Black Eclipse · Inner sanctuary · Starfall enrage'):boss.profile.level===10?t('심해 파동 · 끌어당기기 · 3단계 폭주','Tidal Nova · Undertow · Phase III enrage'):t('닻 내려찍기 · 녹 분사 · 하수인 소환','Anchor Slam · Rust Spray · Rustling summons');
       }
@@ -263,7 +269,7 @@ export class BossJourney {
   private finishChapterEnding() {
     this.firstEndingSeen=true; this.closeChapterEnding(); this.save();
     this.root.open=true;
-    if(this.game.multiplayer?.battle.authority === false) {
+    if(this.game.multiplayer?.battle.authority === false&&!this.game.multiplayer.battle.sharedArea) {
       this.game.hud.messages.info(t('방장이 차원문을 열면 모두 함께 월드 2로 이동해요.','When the host opens the portal, everyone will travel to World II together.'));
     } else this.enterWorld2();
   }
