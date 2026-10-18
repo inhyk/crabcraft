@@ -13,7 +13,7 @@ import { WorldChatService } from './chat.ts';
 import { loadWorldCatalog, createGameplayCatalog } from './catalog.ts';
 import { createActualWorldHost } from './host.ts';
 import { createArea } from '../../src/sim/area.ts';
-import { deliverCertifiedAreaPage, PagedOutcomeRecovery, verifyPagedOutcomeSeal } from './persistence-coordinator.ts';
+import { deliverCertifiedAreaPage, PagedOutcomeRecovery, verifyPagedOutcomeSeal, AreaSourceDrain } from './persistence-coordinator.ts';
 import { DurableOutcomeStore } from './contribution-store.ts';
 import { planOutcomePage } from '../../src/sim/ledger.ts';
 
@@ -611,6 +611,7 @@ test('actual PG recovery sweeps bound every slice, fairly advance large drafts, 
   for(let i=0;;i++){const slice=await recovery.sweep();assert.ok(slice.visited<=1&&slice.appended<=1&&slice.sealed<=1);if(slice.cycleComplete&&!slice.cycleHasPending)break;if(i>20)throw new Error('draft recovery failed to drain');}
   const aSeal=await ledger.getVictimSeal(a.victim);assert.equal(verifyPagedOutcomeSeal(a.recipe,codec.version,aSeal).recipientCount,3);assert.throws(()=>verifyPagedOutcomeSeal({...a.recipe,victim:{...a.victim,life:2}},codec.version,aSeal),/proof mismatch/);assert.throws(()=>verifyPagedOutcomeSeal(a.recipe,codec.version,{...aSeal,finalCursor:{...aSeal.finalCursor,randomDraws:2}}),/proof mismatch/);assert.equal(lostAppend,true);assert.equal(lostSeal,true);assert.equal(recovery.metrics.maxPage,1);
   const before=recovery.metrics.cycles,late=await recoveryDraft(ledger,{area:'recovery-late-after-empty',id:1,life:1},records.slice(1,2));
+  const protectedSlice=await recovery.sweep({isLiveArea:areaId=>areaId===late.victim.area});assert.equal(protectedSlice.skippedLive,1);assert.equal(await ledger.getVictimSeal(late.victim),null);
   for(let i=0;!(await ledger.getVictimSeal(late.victim));i++){await recovery.sweep();if(i>10)throw new Error('late draft missed');}
   assert.ok(recovery.metrics.cycles>=before);assert.equal((await ledger.getVictimSeal(late.victim)).recipientCount,1);
  }finally{await ownership.release();}
@@ -626,4 +627,38 @@ test('active actual WS actor receives a late-sealed older journal row after a pr
   const recovery=new PagedOutcomeRecovery(ledger,rt.ownership,{draftsPerSlice:10,pageSize:100,codecVersion:codec.version});const slice=await recovery.sweep();assert.ok(slice.sealed>=1);
   await until(()=>bot.state.self.player.xp===21||rt.failures.length,5000);assert.deepEqual(rt.failures,[]);assert.equal(bot.state.self.player.coins,6);assert.deepEqual(bot.errors,[]);assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,21);
  }finally{bot?.ws.close();await rt.close();}
+});
+
+const sourceLimits={maxDirtyCreditEntries:10000,maxDirtyCreditBytes:16777216,maxPendingDeaths:32,maxStagedBytes:8388608};
+const sourceDrainLimits={pageSize:100,creditBatchesPerSlice:1,outcomesPerSlice:1,summaryVictimsPerSlice:10,writeAttempts:2,codecVersion:1};
+function actualExternalSource(id,options={}){const base=loaded.get('w1'),spawn=base.publicDefinition.spawn.position,definition={...base.publicDefinition,...(options.bare?{npcs:[],townsfolk:[],interactions:[]}:{}),enemies:[{...base.publicDefinition.enemies[0],home:{x:spawn.x+3,y:base.query.heightAt(spawn.x+3,spawn.z),z:spawn.z},wanderRadius:0}]};return createArea({id,ledgerMode:'external-durable',ledgerLimits:sourceLimits,definition,query:base.query,actionData:base.actionData,policy:base.policy,seed:1,context:{mode:'public',pvp:'disabled',members:[]},limits:{eventCount:options.eventCount??4096,inputCommandsPerTick:32,timers:256,projectiles:256}});}
+const neutralIntent=(seq,commands=[])=>({seq,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands});
+
+test('actual baked Area ability death spills credits, seals exact source outcome, certifies local duplicate and saves/prunes once through PG', {timeout:15000}, async()=>{
+ const c=await character(),ownership=await acquireHostOwnership(pool,'actual-source-drain');let area,barrier;
+ try{area=actualExternalSource('actual-source-drain');
+  const ref=area.attachFresh(c.record.characterId,'warrior','human','spawn',0);area.step(new Map([[ref.id,neutralIntent(1,[{kind:'ability',slot:5}])]]));assert.equal(area.services.player(ref).state.xp,20);assert.equal(area.resourceUsage().dirtyCreditEntries,1);assert.equal(area.resourceUsage().pendingDeaths,1);
+  barrier=area.beginDurabilityBarrier('actual-source-journal');const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),background=new PagedOutcomeRecovery(ledger,ownership,{draftsPerSlice:10,pageSize:100,codecVersion:codec.version});let lostCredit=false,lostAppend=false,lostSeal=false,skippedLive=0;
+  const ambiguous=new Proxy(ledger,{get(target,key){if(key==='beginVictimDraft')return async(...args)=>{const draft=await target.beginVictimDraft(...args),sweep=await background.sweep({isLiveArea:areaId=>areaId===area.services.id});skippedLive+=sweep.skippedLive;assert.equal(sweep.appended,0);assert.equal(sweep.sealed,0);return draft;};if(['recordContributionBatch','appendVictimPage','sealVictimDraft'].includes(key))return async(...args)=>{const value=await target[key](...args);const lose=key==='recordContributionBatch'?!lostCredit:key==='appendVictimPage'?!lostAppend:!lostSeal;if(lose){if(key==='recordContributionBatch')lostCredit=true;else if(key==='appendVictimPage')lostAppend=true;else lostSeal=true;throw new Error('lost committed source IO response');}return value;};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+  const drain=new AreaSourceDrain(area,ambiguous,ownership,sourceDrainLimits,async run=>run(),()=>true),progress=await drain.drain({refreshSummaries:true});assert.equal(progress.more,false);assert.equal(progress.credits,1);assert.equal(progress.pages,1);assert.equal(progress.retired,1);assert.equal(area.resourceUsage().pendingDeaths,0);assert.equal(area.resourceUsage().dirtyCreditEntries,0);assert.equal(lostCredit&&lostAppend&&lostSeal,true);assert.equal(skippedLive,1);
+  const certified=await deliverCertifiedAreaPage({area,ref,accountId:c.binding.accountId,characterId:c.record.characterId,expectedRevision:0,store,codec,ownership,boundary:async run=>run(),isCurrent:()=>true});assert.equal(certified.kind,'applied');assert.equal(certified.results[0].result,'duplicate');assert.equal(area.services.player(ref).state.xp,20);
+  const capture=area.capturePlayerCheckpoint(ref),saved=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,0,codec.toJson(capture.checkpoint),capture.appliedGrantIds);area.markCheckpointDurable(capture.captureId,saved.revision,capture.appliedGrantIds);assert.equal(saved.checkpoint.progress.xp,20);assert.equal(area.resourceUsage().appliedGrantIds,0);assert.deepEqual(await store.pendingGrants(c.binding.accountId,c.record.characterId),[]);assert.deepEqual(area.prepareLedgerStep(),{ready:true});const oldRecord=await character(),old=await recoveryDraft(ledger,{area:'old-source-after-restart-fixture',id:1,life:1},[oldRecord],false);await background.sweep({isLiveArea:areaId=>areaId===area.services.id});assert.equal((await ledger.getVictimSeal(old.victim)).recipientCount,1);
+ }finally{try{if(barrier)area.releaseDurabilityBarrier(barrier);area?.dispose();}finally{await ownership.release();}}
+});
+
+test('zero-resident actual Area still flushes accepted hit eligibility and refreshes its empty-roster summary', {timeout:10000}, async()=>{
+ const c=await character(),ownership=await acquireHostOwnership(pool,'empty-source-drain');let area,barrier;
+ try{area=actualExternalSource('empty-source-drain');
+  const ref=area.attachFresh(c.record.characterId,'warrior','human','spawn',0),victim=[...area.enemies.values()][0].unit;area.services.getUnit(victim).hp=area.services.getUnit(victim).maxHp=1000;area.step(new Map([[ref.id,neutralIntent(1,[{kind:'ability',slot:5}])]]));assert.equal(area.resourceUsage().dirtyCreditEntries,1);
+  const retirement=area.quiescePlayer(ref,'source-test-disconnect'),saved=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,0,codec.toJson(retirement.capture.checkpoint),retirement.capture.appliedGrantIds);area.markCheckpointDurable(retirement.capture.captureId,saved.revision,retirement.capture.appliedGrantIds);area.commitPlayerRetirement(retirement.token);assert.equal(area.players.size,0);
+  barrier=area.beginDurabilityBarrier('empty-source');const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),drain=new AreaSourceDrain(area,ledger,ownership,sourceDrainLimits,async run=>run(),()=>true),progress=await drain.drain({refreshSummaries:true});assert.equal(progress.credits,1);assert.equal(progress.more,false);assert.equal(progress.summaries,1);assert.equal(area.resourceUsage().dirtyCreditEntries,0);assert.equal((await ledger.readContributionSummary(victim,[])).totalContributors,1);assert.equal(area.resourceUsage().ledgerOwners,0);
+ }finally{try{if(barrier)area.releaseDurabilityBarrier(barrier);area?.dispose();}finally{await ownership.release();}}
+});
+
+test('actual failed Area drains only preserved source obligations to PG without checkpointing its failed actor prefix', {timeout:10000}, async()=>{
+ const c=await character(),ownership=await acquireHostOwnership(pool,'failed-source-drain');let area;
+ try{area=actualExternalSource('failed-source-drain',{eventCount:1,bare:true});
+  const ref=area.attachFresh(c.record.characterId,'warrior','human','spawn',0),victim=[...area.enemies.values()][0].unit;area.services.getUnit(victim).hp=1;Object.assign(area.services.getUnit(ref),{x:area.services.getUnit(victim).x,y:area.services.getUnit(victim).y,z:area.services.getUnit(victim).z});area.services.getUnit(victim).stunUntil=100;area.services.player(ref).state.nextSwing=100;area.drainEvents();area.services.getUnit(ref).pendingHit={left:0,plan:{attack:'warrior-auto',source:ref,target:victim}};assert.throws(()=>area.step(new Map()),/capacity/);assert.equal(area.pendingDeathRecipes(1).length,1);assert.throws(()=>area.step(new Map()),/failed/);
+  const ledger=new DurableOutcomeStore(pool,codec,{planOutcomePage}),drain=new AreaSourceDrain(area,ledger,ownership,sourceDrainLimits,async run=>run(),()=>true),progress=await drain.drain({refreshSummaries:false});assert.equal(progress.more,false);assert.equal(progress.retired,1);assert.equal(area.resourceUsage().pendingDeaths,0);assert.equal((await store.getOwned(c.binding.accountId,c.record.characterId)).checkpoint.progress.xp,0);assert.equal((await store.pendingGrants(c.binding.accountId,c.record.characterId))[0].payload.xp,20);
+ }finally{try{area?.dispose();}finally{await ownership.release();}}
 });
