@@ -37,18 +37,19 @@ export class WorldRules {
     if(u.kind==='scrapling'){objectives.push({kind:'kill-scrapling',amount:1});if(credit.cogEligible)objectives.push({kind:'cog-roll',amount:s.random.next()});}
     else if(u.kind==='scavenger')objectives.push({kind:'kill-scavenger',amount:1});
    }else if(u.kind==='boss'){
-    const controller=s.controller(victim),profile=controller&&'profile' in controller?controller.profile:null;if(typeof profile!=='string'||!(profile in BOSS_PROFILES))continue;const id=profile as BossSim['profile'];xp=BOSS_PROFILES[id].reward;coins=BOSS_PROFILES[id].coins;flags.push(FLAGS[id]);objectives.push({kind:id==='eclipse'?'eclipse-boss':id==='dawn'?'dawn-boss':id==='frost'?'frost-boss':'boss',amount:1},{kind:'clear-encounter-blessing',amount:1});
+    const controller=s.controller(victim),profile=controller&&'profile' in controller?controller.profile:null;if(typeof profile!=='string'||!(profile in BOSS_PROFILES))continue;const id=profile as BossSim['profile'];xp=BOSS_PROFILES[id].reward;coins=BOSS_PROFILES[id].coins;flags.push(FLAGS[id]);if(id!=='abyss')objectives.push({kind:id==='eclipse'?'eclipse-boss':id==='dawn'?'dawn-boss':id==='frost'?'frost-boss':'boss',amount:1});objectives.push({kind:'clear-encounter-blessing',amount:1});
    }else continue;
    const grant:EarnedGrant={id:JSON.stringify([victim.area,victim.id,victim.life,credit.character]),victim:copy(victim),recipient:credit.character,xp,coins,objectives,flags};
    planned.push(grant);this.grants.set(grant.id,{grant:copy(grant),appliedHere:false,acknowledged:false});characters.push(credit.character);
   }
-  // All entitlements exist before mutating the first recipient. A failed recipient remains queued.
+  // All entitlements exist before mutating the first recipient. Capacity failure retains the full batch.
+  s.preflightEarnedGrants(planned);
   for(const grant of planned){const appliedHere=this.applyGrant(grant)!=='not-owner';this.grants.get(grant.id)!.appliedHere=appliedHere;s.emit({type:'reward',grant,appliedHere});}
   if(u.kind==='boss'&&characters.length){s.timers.schedule(s.time+1.8,{kind:'victory',boss:copy(victim),recipients:characters,stage:'banner'});s.timers.schedule(s.time+5,{kind:'victory',boss:copy(victim),recipients:characters,stage:'end'});}
  }
  applyGrant(grant:EarnedGrant):'applied'|'duplicate'|'not-owner' {
   for(const o of grant.objectives)if(o.kind==='cog-roll'&&(!Number.isFinite(o.amount)||o.amount<0||o.amount>=1))throw new Error('invalid-cog-roll');
-  const s=this.services,p=s.playerByCharacter(grant.recipient);if(!p)return 'not-owner';let ids=this.applied.get(grant.recipient);if(ids?.has(grant.id))return 'duplicate';if(!ids){ids=new Set();this.applied.set(grant.recipient,ids);}
+  const s=this.services,p=s.playerByCharacter(grant.recipient);if(!p)return 'not-owner';let ids=this.applied.get(grant.recipient);if(ids?.has(grant.id))return 'duplicate';s.preflightEarnedGrants([grant]);if(!ids){ids=new Set();this.applied.set(grant.recipient,ids);}
   const unit=s.getUnit(p.state.unit);if(!unit)return 'not-owner';const priorState=copy(p.state),priorUnit=copy(unit);let cogPresentation=false;
   try{s.outcomeTransaction(()=>{p.gainXp(grant.xp);p.state.coins=Math.min(Number.MAX_SAFE_INTEGER,p.state.coins+grant.coins);
   for(const flag of grant.flags)p.state.flags[flag]=true;
@@ -60,6 +61,8 @@ export class WorldRules {
  acknowledgeGrant(id:string):void {const entry=this.grants.get(id);if(!entry)throw new Error('unknown-grant');entry.acknowledged=true;}
  appliedGrantIds(character:CharacterId):readonly string[]{return [...(this.applied.get(character)??[])];}
  restoreAppliedGrantIds(character:CharacterId,ids:readonly string[]):void {const known=this.applied.get(character)??new Set<string>();for(const id of ids)known.add(id);this.applied.set(character,known);}
+ /** Recovery-only replacement after restoring the matching durable state; outbox history is retained. */
+ replaceAppliedGrantIds(character:CharacterId,ids:readonly string[]):void {if(!Array.isArray(ids)||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||id.length===0||new TextEncoder().encode(id).length>512))throw new Error('invalid-applied-grant-ids');this.applied.set(character,new Set(ids));}
  encounterAvailable(profile:BossSim['profile']):boolean {if((profile==='rust'||profile==='abyss')&&(!this.beaconLit||this.services.world!=='w1'))return false;return this.services.players().some(u=>{const p=this.services.player(u.ref);return !!p&&u.alive&&!u.hidden&&canChallenge(u.level,BOSS_PROFILES[profile].level,!!p.state.flags.rustCleared,!!p.state.flags.abyssCleared,worldChapter(this.services.world));});}
  setSharedBeacon(lit:boolean):void {this.interactions.setSharedBeacon(lit);}
  command(player:EntityRef,command:PlayerCommand):boolean{return this.interactions.command(player,command);}

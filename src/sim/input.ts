@@ -2,7 +2,7 @@ import type { PlayerCommand, PlayerIntent } from './types.ts';
 import { immutable } from './events.ts';
 export type HeldInput = Omit<PlayerIntent,'seq'|'commands'>;
 const NEUTRAL:HeldInput={forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null};
-function validHeld(value:HeldInput):boolean {return !!value&&[value.forward,value.strafe,value.turn].every(n=>Number.isFinite(n)&&n>=-1&&n<=1)&&typeof value.sprint==='boolean'&&(value.steeringYaw===null||Number.isFinite(value.steeringYaw))&&[null,'recall','beacon','waystone'].includes(value.heldChannel);}
+function validHeld(value:HeldInput):boolean {return !!value&&[value.forward,value.strafe,value.turn].every(n=>Number.isFinite(n)&&n>=-1&&n<=1)&&typeof value.sprint==='boolean'&&(value.steeringYaw===null||Number.isFinite(value.steeringYaw))&&[null,'recall','beacon','waystone','lighthouse-secret'].includes(value.heldChannel);}
 export function validCommand(command:unknown):boolean {
   if(!command||typeof command!=='object')return false;
   const c=command as Record<string,unknown>,text=(v:unknown)=>typeof v==='string'&&v.length>0&&v.length<=128;
@@ -12,7 +12,7 @@ export function validCommand(command:unknown):boolean {
     case 'jump':case 'dance':case 'cancel':case 'endingReplay':case 'talkEnd':return true;
     case 'village':return ['hide','tag','stop'].includes(c.mode as string);
     case 'boat':{const b=c.command as Record<string,unknown>;return !!b&&['call','board','leave','drive'].includes(b.action as string)&&[b.throttle,b.steer].every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=-1&&n<=1);}
-    case 'channelStart':return ['recall','beacon','waystone'].includes(c.channel as string)&&(c.targetId===undefined||text(c.targetId));
+    case 'channelStart':return ['recall','beacon','waystone','lighthouse-secret'].includes(c.channel as string)&&(c.targetId===undefined||text(c.targetId));
     case 'interact':return text(c.targetId);
     case 'questTrack':return text(c.questId);
     case 'questAccept':case 'questTurnIn':return text(c.questId)&&text(c.npcId);

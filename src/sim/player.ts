@@ -38,7 +38,7 @@ export class PlayerController implements PlayerSim {
   applyIntent(intent:PlayerIntent):void {
     if(!intent||typeof intent!=='object')return;
     if(!Number.isSafeInteger(intent.seq)||intent.seq<0||intent.seq<=this.lastConsumedSeq)return;
-    if(![intent.forward,intent.strafe,intent.turn].every(n=>Number.isFinite(n)&&n>=-1&&n<=1)||typeof intent.sprint!=='boolean'||(intent.steeringYaw!==null&&!Number.isFinite(intent.steeringYaw))||!Array.isArray(intent.commands)||intent.commands.length>32||![null,'recall','beacon','waystone'].includes(intent.heldChannel))return;
+    if(![intent.forward,intent.strafe,intent.turn].every(n=>Number.isFinite(n)&&n>=-1&&n<=1)||typeof intent.sprint!=='boolean'||(intent.steeringYaw!==null&&!Number.isFinite(intent.steeringYaw))||!Array.isArray(intent.commands)||intent.commands.length>32||![null,'recall','beacon','waystone','lighthouse-secret'].includes(intent.heldChannel))return;
     // Validate every command before accepting any field, so malformed frames have no partial effect.
     if(!intent.commands.every(validCommand))return;
     this.lastConsumedSeq=intent.seq;this.held={...intent,commands:[]};
@@ -125,7 +125,7 @@ export class PlayerController implements PlayerSim {
     if(u.absorb>0&&now>=u.absorbUntil){u.absorb=0;this.dropWard();}
   }
   useAbility(slot:number):void {
-    const g=this.services,s=this.state,u=this.unit,ab=CLASSES[s.classId].abilities[slot-1];if(!ab||!u.alive||this.locked())return;
+    const g=this.services,s=this.state,u=this.unit,ab=CLASSES[s.classId].abilities[slot-1];if(!ab||!u.alive||this.locked()||this.villagePlaying())return;
     this.cancelDance(.12);g.emit({type:'press',unit:u.ref,slot});const now=g.time;
     if(now<u.stunUntil)return this.error('You are stunned.');
     if(s.channel)return this.error('Another action is in progress.');
