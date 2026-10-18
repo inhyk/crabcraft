@@ -2,6 +2,7 @@
 // chat bubbles. Elements are pooled and moved with transforms only.
 import * as THREE from 'three';
 import { h } from '../dom';
+import { t } from '../../i18n';
 import type { Game } from '../../game/game';
 import type { Unit } from '../../game/unit';
 
@@ -56,7 +57,8 @@ export class Nameplates {
       if (u.kind === 'boss' && g.hud.bossFrame.visible) continue;
       const d = cam.position.distanceTo(u.pos);
       const mark = g.questMark(u);
-      const range = u.hostile ? 40 : u.kind === 'npc' ? (mark ? 90 : 45) : u.kind === 'townsfolk' ? 18 : 30;
+      const remote = u.kind === 'remote';
+      const range = remote ? 60 : u.hostile ? 40 : u.kind === 'npc' ? (mark ? 90 : 45) : u.kind === 'townsfolk' ? 18 : 30;
       if (d > range && u !== target) continue;
       if (g.cinematic) continue;
       const scr = project(cam, u.nameplatePos(v));
@@ -67,12 +69,14 @@ export class Nameplates {
         p = this.make();
         this.plates.set(u.id, p);
       }
-      const showHp = u.hostile && u.alive && (u === target || u.hp < u.maxHp || g.time - u.lastCombat < 6);
-      const key = `${u.name}|${u.title}|${mark}|${u.reaction}|${u.alive}|${u === target}|${showHp}|${u.level}`;
+      const showHp = u.alive && (remote || u.hostile && (u === target || u.hp < u.maxHp || g.time - u.lastCombat < 6));
+      const badge = remote ? t('플레이어','Player') : '';
+      const key = `${badge}|${u.name}|${u.title}|${mark}|${u.reaction}|${u.alive}|${u === target}|${showHp}|${u.level}`;
       if (key !== p.key) {
         p.key = key;
         p.name.className = `name ${u.reaction}`;
         p.name.replaceChildren();
+        if (remote) p.name.append(h('span',{class:'player-badge'},`◆ ${badge}`));
         if (u.hostile) p.name.append(h('span', { class: 'lvl' }, String(u.level)));
         p.name.append(u.name);
         p.title.textContent = u.title && !u.hostile ? `<${u.title}>` : '';
@@ -81,6 +85,7 @@ export class Nameplates {
         p.qm.textContent = mark === '!' ? '!' : '?';
         p.qm.className = `qm${mark === '?' ? ' grey' : mark === '?ready' ? ' ready' : ''}`;
         p.hp.style.display = showHp ? '' : 'none';
+        p.el.classList.toggle('remote-player', remote);
         p.el.classList.toggle('targeted', u === target);
         p.el.classList.toggle('dead', !u.alive);
       }
