@@ -89,6 +89,9 @@ export interface ClipRule {
  */
 export interface NumericPoseState {
   locomotionTime: number; localVx: number; localVz: number; yawRate: number;
+  gaitPhase: number; controllerVx: number; controllerVz: number; controllerYaw: number;
+  locomotionQ: number[]; locomotionPosition: [number, number, number];
+  locomotionRotation: [number, number, number, number];
   locomotionWeights: Readonly<Record<string, number>>;
   // Actual canonical evaluator derives joint/base pose from these clocks, actions and versioned clips.
 }
@@ -308,6 +311,7 @@ export interface AreaServices {
   readonly random: RandomSource; readonly ids: IdSource; readonly combat: CombatRules; readonly timers: AreaTimers;
   getUnit(ref: EntityRef): SimUnit | null; // rejects wrong Area, removed IDs and stale lives
   controller(ref: EntityRef): CombatController | null;
+  respawnUnit(ref: EntityRef): EntityRef; // atomically advances life and remaps owned controller/player/context refs
   player(ref: EntityRef): PlayerSim | null;
   playerByCharacter(character: CharacterId): PlayerSim | null;
   applyEarnedGrant(grant: EarnedGrant): 'applied' | 'duplicate' | 'not-owner'; // real gainXp/coin/quest/flag effects
@@ -321,6 +325,8 @@ export interface AreaServices {
   cancelPendingHit(unit: EntityRef): void;
   launch(projectile: Omit<ProjectileState, 'id' | 'elapsed' | 'bornStep'>): number; // Area stamps birth stage; stage-start-list eligibility only
   spawnAdd(boss: EntityRef, x: number, z: number): EnemySim | null;
+  bossAvailable(profile: BossSim['profile']): boolean;
+  completeChannel(player: EntityRef, channel: ChannelState): void;
   recordContribution(victim: EntityRef, attacker: EntityRef, damage: number): void;
   onUnitDied(victim: EntityRef, killer: EntityRef | null): void;
 }
