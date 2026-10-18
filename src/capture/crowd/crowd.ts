@@ -29,7 +29,7 @@ const DEFAULT_FADE = 0.25;
 /** A one-shot window that ends eases back to standing over this long (clip seconds at speed 1). */
 const RELEASE = 0.35;
 
-type RigX = CrabRig & { useShadowProxy?: (on: boolean) => void; setLod?: (l: number) => void };
+type RigX = CrabRig & { links?: THREE.Object3D[]; useShadowProxy?: (on: boolean) => void; setLod?: (l: number) => void };
 
 interface Entry {
   cue: Cue;
@@ -58,6 +58,7 @@ export interface CrowdCrab {
   lod: number;
   /** Idle phase offset, seconds. */
   idlePhase: number;
+  supports: THREE.Object3D[];
 }
 
 /** Joint index each joint mirrors to, and the sign of the mirrored angle. */
@@ -123,6 +124,9 @@ export class Crowd {
   groundAt: (x: number, z: number) => number;
   private cos = 1;
   private sin = 0;
+  private supportPoint = new THREE.Vector3();
+  /** Per-frame audit of the opt-in cinematic terrain fit, in world units. */
+  terrainAudit: { minClearance: number; maxLift: number } | null = null;
 
   constructor(
     readonly program: CrowdProgram,
@@ -199,6 +203,7 @@ export class Crowd {
         ground,
         lod: 0,
         idlePhase: s.rnd * 2.5,
+        supports: (rig.links ?? []).filter((o) => /^(LM|RM|LR|RR)_foot_tip_link$|^(LF|RF)_palm_pad_b_link$/.test(o.name)),
       };
       this.crabs[s.index] = c;
       if (s.hero) {
@@ -238,6 +243,7 @@ export class Crowd {
   /** Pose every crab for song time `t`. `dt` drives the faces; `pxPerUnit` picks the LOD. */
   update(t: number, dt: number, camera: THREE.PerspectiveCamera, pxPerUnit: number): void {
     const cam = camera.position;
+    this.terrainAudit = this.program.terrainClearance === undefined ? null : { minClearance: Infinity, maxLift: 0 };
     for (const c of this.crabs) {
       this.poseCrab(c, t);
       // Faces: the latest face cue that has started.
@@ -370,6 +376,27 @@ export class Crowd {
     rig.body.position.set(p.pos[0] * m, p.pos[1] * m, p.pos[2] * m);
     rig.body.quaternion.set(p.rot[0], p.rot[1], p.rot[2], p.rot[3]);
     rig.root.rotation.y = this.site.yaw + turn;
+    if (this.program.terrainClearance !== undefined) {
+      // Each recorded pose starts at its uncorrected slot height, so seeking is deterministic.
+      // Fit the actual animated support points, not just the terrain under the body's centre.
+      rig.root.position.y = c.ground;
+      rig.root.updateMatrixWorld(true);
+      let lift = 0;
+      let minGap = Infinity;
+      for (const node of c.supports) {
+        const w = node.getWorldPosition(this.supportPoint);
+        const dx = w.x - this.site.x, dz = w.z - this.site.z;
+        const ground = this.groundAt(this.cos * dx - this.sin * dz, this.sin * dx + this.cos * dz);
+        const gap = w.y - ground;
+        minGap = Math.min(minGap, gap);
+        lift = Math.max(lift, this.program.terrainClearance - gap);
+      }
+      rig.root.position.y += lift;
+      if (this.terrainAudit) {
+        this.terrainAudit.minClearance = Math.min(this.terrainAudit.minClearance, minGap + lift);
+        this.terrainAudit.maxLift = Math.max(this.terrainAudit.maxLift, lift);
+      }
+    }
   }
 
   dispose(): void {

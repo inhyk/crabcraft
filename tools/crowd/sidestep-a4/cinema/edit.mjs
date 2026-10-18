@@ -5,13 +5,14 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { shots, FPS } from './plan.mjs';
+import { shots, FPS, lighthousePulseSeconds } from './plan.mjs';
 const args = process.argv.slice(2);
 const need = (k) => {
   if (!args.includes(k) || !args[args.indexOf(k) + 1]) throw new Error(`${k} required`);
   return resolve(args[args.indexOf(k) + 1]);
 };
 const source = need('--source'), captured = need('--shots'), output = need('--out');
+const night = args.includes('--night-lighthouse') ? need('--night-lighthouse') : null;
 if (source === output) throw new Error('Output must differ from source');
 const work = resolve(captured, 'edit');
 mkdirSync(work, { recursive: true });
@@ -25,11 +26,22 @@ const probe = (f) => JSON.parse(run('ffprobe', ['-v','error','-show_streams','-s
 const original = probe(source), video = original.streams.find(s => s.codec_type === 'video');
 if (video.width !== 1080 || video.height !== 1920 || video.r_frame_rate !== '60/1') throw new Error('Source must be the a4 portrait 1080x1920/60 video');
 const total = Number(video.nb_frames), segments = [];
+const pulseFrames = Math.round(lighthousePulseSeconds * FPS);
+let lighthouseCycle = null;
+if (night) {
+  const meta = JSON.parse(readFileSync(night.replace(/\.mp4$/, '.json')));
+  const s = shots.find(s => s.id === 'lighthouse-bank');
+  if (meta.frames !== s.frames || meta.blanks.length || meta.errors.length) throw new Error('Unchecked night lighthouse capture');
+  lighthouseCycle = resolve(work, 'lighthouse-cycle.mp4');
+  run('ffmpeg', ['-hide_banner','-v','error','-y','-i',resolve(captured,'lighthouse-bank.mp4'),'-i',night,
+    '-filter_complex',`[0:v][1:v]blend=all_expr='if(mod(floor((T*${FPS}+0.01)/${pulseFrames}),2),B,A)',format=yuv420p[v]`,
+    '-map','[v]','-an','-frames:v',String(s.frames),'-r',String(FPS),'-c:v','libx264','-preset','medium','-crf','14',lighthouseCycle]);
+}
 let cursor = 0;
 for (const s of shots) {
   if (s.start < cursor || s.end > total) throw new Error(`Invalid insert ${s.id}`);
   if (s.start > cursor) segments.push({ file: source, start: cursor, frames: s.start - cursor, source: true });
-  const file = resolve(captured, `${s.id}.mp4`);
+  const file = s.id === 'lighthouse-bank' && lighthouseCycle ? lighthouseCycle : resolve(captured, `${s.id}.mp4`);
   const meta = JSON.parse(readFileSync(resolve(captured, `${s.id}.json`)));
   if (meta.frames !== s.frames || meta.blanks.length || meta.errors.length) throw new Error(`Unchecked capture ${s.id}`);
   segments.push({ file, start: 0, frames: s.frames, source: false, id: s.id });
@@ -70,6 +82,7 @@ const report = { file: output, source, sourceSHA256: createHash('sha256').update
   frames: total, fps: v.r_frame_rate, width: v.width, height: v.height, duration: Number(result.format.duration),
   sizeBytes: Number(result.format.size), audioIdentical: true, audioSHA256: a1,
   insertSeconds: shots.reduce((n,s)=>n+s.frames,0)/FPS,
+  lighthouseCycle: night ? { periodFrames: pulseFrames, states: ['day-off','night-on'], duration: 6.4 } : null,
   shots: shots.map(({program,...s})=>s), blackRuns, blackFrames, captureBlankFrames: 0, pageErrors: 0 };
 writeFileSync(output.replace(/\.mp4$/, '-report.json'), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));

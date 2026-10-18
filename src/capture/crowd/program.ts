@@ -159,6 +159,8 @@ export interface CrowdProgram {
   /** A dance deck under the formation (on the bay), instead of the bare ground. */
   deck?: DeckSpec;
   formation: FormationSpec;
+  /** Optional cinematic terrain fit: minimum clearance of feet/palm pads above the terrain. */
+  terrainClearance?: number;
   /** Choreography; for one crab, the cue that started last is the one playing. */
   cues: Cue[];
   faces?: FaceCue[];

@@ -32,7 +32,7 @@ const flip = (clip, landing, who = 'all', extra = {}) => ({
   to: event(clip, 'settled') + 0.2, sync: event(clip, 'land'), speed: 0.45, fade: 0.12, ...extra,
 });
 const plaza = { x: 32, z: 0, yaw: 0 };
-const beach = { x: 111, z: 40, yaw: -0.35 };
+const beach = { x: 114.8, z: 43, yaw: 0 };
 const fountain = { x: 0, z: 14, yaw: 0 };
 const groupCam = [K(0, [-3, 3.4, 10], [0, 0.8, 0], 55, -0.04), K(0.5, [0, 2.5, 10.5], [0, 0.8, 0], 55), K(1, [3, 3.7, 10], [0, 0.8, 0], 55, 0.04)];
 const nightCam = [K(0, [-2.6, 3.6, 10.3], [0.1, 0.8, 0], 56, -0.03), K(0.5, [0.2, 2.8, 10.8], [0.1, 0.8, 0], 56), K(1, [3.3, 3.9, 10.2], [0.1, 0.8, 0], 56, 0.03)];
@@ -84,5 +84,11 @@ const definitions = [
 export const shots = definitions.map(([id, a, b, site, keys, cues, mood]) => {
   const start = a === 0 ? 0 : bar(a), end = bar(b);
   return { id, start, end, from: start / FPS, to: end / FPS, frames: end - start,
-    program: program((end - start) / FPS, site, keys, cues, mood) };
+    program: { ...program((end - start) / FPS, site, keys, cues, mood),
+      ...(id === 'shore-720' ? { terrainClearance: 0.045, formation: { rows: 2, cols: 3, dx: 1.8, dz: 2.5, hero: null, seed: 23, weapons: 0 } } : {}),
+    } };
 });
+
+// The same moving lighthouse camera in alternating full daylight and lit night, every two beats.
+// Capture each lighting state separately so the cut changes instantly without an environment fade.
+export const lighthousePulseSeconds = 2 * grid.beat;

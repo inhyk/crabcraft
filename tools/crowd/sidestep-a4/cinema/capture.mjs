@@ -9,6 +9,7 @@ const opt = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] 
 const dir = resolve(opt('--out', 'scratch/sidestep-cinema'));
 const only = opt('--shots', '').split(',').filter(Boolean);
 const preview = args.includes('--preview');
+const nightLighthouse = args.includes('--night-lighthouse');
 mkdirSync(dir, { recursive: true });
 const app = await openApp({ base: opt('--url', 'http://localhost:5297'), query: 'screen=crowd', size: [1080, 1920], dsf: Number(opt('--dsf', '1')) });
 try {
@@ -16,7 +17,10 @@ try {
   await app.page.evaluate(() => window.__capture.begin());
   for (const s of shots.filter((s) => !only.length || only.includes(s.id))) {
     const file = resolve(dir, s.id);
-    const stats = await app.page.evaluate((p) => window.__crowd.load(p, { layout: 'port' }), s.program);
+    const p = nightLighthouse && s.id === 'lighthouse-bank' ? {
+      ...s.program, fx: [{ at: -10, kind: 'mood', mood: 2 }, { at: -10, kind: 'beacon', on: true }],
+    } : s.program;
+    const stats = await app.page.evaluate((p) => window.__crowd.load(p, { layout: 'port' }), p);
     // Flyover crabs live offscreen; the six performers are visible in the group shots.
     console.log(`${s.id}: ${stats.crabs} crabs, ${s.frames} frames`);
     if (preview) {
@@ -24,7 +28,7 @@ try {
         await app.page.evaluate(([t, mood]) => {
           window.__crowd.seek(t - 3 / 60);
           window.__crowd.world.setMood(mood, true);
-        }, [s.program.length * u, s.program.fx[0].mood]);
+        }, [p.length * u, p.fx[0].mood]);
         await app.page.evaluate(() => window.__capture.step(3, 1000 / 60));
         writeFileSync(`${file}-${u}.jpg`, await grab(app));
       }
@@ -32,11 +36,12 @@ try {
       await app.page.evaluate((mood) => {
         window.__crowd.seek(-2 - 3 / 60);
         window.__crowd.world.setMood(mood, true);
-      }, s.program.fx[0].mood);
+      }, p.fx[0].mood);
       await advance(app, 2, FPS);
-      const meta = await record(app, file, { duration: s.frames / FPS, fps: FPS, stills: [0, Math.floor(s.frames / 2)], probe: () => window.__crowd.probe() });
+      const meta = await record(app, file, { duration: s.frames / FPS, fps: FPS, stills: [0, Math.floor(s.frames / 2)], probe: () => ({ ...window.__crowd.probe(), terrain: window.__crowd.crowd.terrainAudit }) });
       if (meta.frames !== s.frames || meta.errors.length || meta.blanks.length) throw new Error(`${s.id}: capture failed: ${JSON.stringify({frames: meta.frames, errors: meta.errors, blanks: meta.blanks})}`);
       if (Math.abs(meta.probe[0].t) > 0.5 / FPS) throw new Error(`${s.id}: incorrect first frame time`);
+      if (p.terrainClearance !== undefined && meta.probe.some(f => !f.terrain || !Number.isFinite(f.terrain.minClearance) || f.terrain.minClearance < p.terrainClearance - 1e-5)) throw new Error(`${s.id}: terrain clearance failed`);
     }
   }
   writeFileSync(resolve(dir, 'shots.json'), JSON.stringify(shots.map(({program, ...s}) => s), null, 2));
