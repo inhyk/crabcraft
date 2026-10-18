@@ -3,11 +3,11 @@ import type {Game} from './game';
 import {Unit} from './unit';
 import {createMotionController} from '../motion/provider';
 import {WorldClient} from '../multiplayer/worldClient.ts';
+import {WorldPresentation} from '../multiplayer/worldPresentation.ts';
 import {WorldView,worldActorKey} from '../multiplayer/worldView.ts';
 import type {GameplayCatalog,GameplayState,PublicActor} from '../../server/world/gameplay/protocol.ts';
 import type {GameplayCommand} from '../../server/world/gameplay/intents.ts';
-import type {EventRecord,EntityRef,EquipmentResult,EquipmentSlot} from '../sim/types.ts';
-import type {SimEvent} from './events';
+import type {EntityRef,EquipmentResult,EquipmentSlot} from '../sim/types.ts';
 import {CLASSES} from '../data/classes';
 import {QUESTS,NPCS} from './quests';
 import {t} from '../i18n';
@@ -16,6 +16,8 @@ import {t} from '../i18n';
 export class ServerGameBridge {
  readonly client:WorldClient;
  readonly view:WorldView;
+ readonly presentation:WorldPresentation;
+ private incomplete=new Set<string>();
  private state:GameplayState|null=null;
  private units=new Map<string,Unit>();
  private self:Unit|null=null;
@@ -36,7 +38,7 @@ export class ServerGameBridge {
    const choose=(id:string)=>{cleanup();const url=new URL(location.href);url.searchParams.set('character',id);history.replaceState(null,'',url);resolve(id);};
    const failure=(status:number)=>{message.textContent=status===401?t('Google 로그인이 필요합니다.','Google login is required.'):status===409?t('계정의 캐릭터 생성 한도에 도달했습니다.','The character limit for this account has been reached.'):status===503?t('서버 캐릭터 생성이 아직 활성화되지 않았습니다.','Server character creation is not enabled.'):t('요청을 처리하지 못했습니다. 다시 시도해 주세요.','The request failed. Try again.');};
    const load=async()=>{if(busy)return;busy=true;try{const response=await fetch('/api/account/world-characters?limit=100',{headers:{'X-Crabcraft-Account':'1'},credentials:'same-origin',cache:'no-store',signal:abort.signal});if(!response.ok){failure(response.status);return;}const data=await response.json();if(!Array.isArray(data.characters))throw new Error('Invalid character list');list.replaceChildren();for(const record of data.characters){if(typeof record.characterId!=='string'||!record.identity?.appearance)throw new Error('Invalid character entry');const button=document.createElement('button');button.textContent=`${record.identity.appearance.name} (${record.identity.appearance.classId})`;button.onclick=()=>choose(record.characterId);list.append(button);}message.textContent=data.characters.length?'':t('서버 캐릭터가 없습니다. 새 캐릭터를 만들어 주세요.','No server character yet. Create a new character.');}catch(error){if(!abort.signal.aborted)failure(500);}finally{busy=false;}};
-   create.onclick=async()=>{if(busy)return;busy=true;create.disabled=true;try{const s=game.app.spec??game.player.unit.rig.spec,appearance={race:s.race,sex:s.sex,classId:s.classId,shell:s.shell,crest:s.crest,led:s.led,name:s.name};const response=await fetch('/api/account/world-characters',{method:'POST',headers:{'Content-Type':'application/json','X-Crabcraft-Account':'1'},credentials:'same-origin',cache:'no-store',signal:abort.signal,body:JSON.stringify({appearance})});if(!response.ok){failure(response.status);return;}const data=await response.json();if(typeof data.character?.characterId!=='string')throw new Error('Invalid created character');choose(data.character.characterId);}catch{if(!abort.signal.aborted)failure(500);}finally{busy=false;create.disabled=false;}};
+   create.onclick=async()=>{if(busy)return;busy=true;create.disabled=true;try{const s=game.app.spec??game.player.unit.rig.spec,appearance={race:s.race,sex:s.sex,classId:s.classId,shell:s.shell,crest:s.crest,led:s.led,name:s.name};const response=await fetch('/api/account/world-characters',{method:'POST',headers:{'Content-Type':'application/json','X-Crabcraft-Account':'1'},credentials:'same-origin',cache:'no-store',signal:abort.signal,body:JSON.stringify({appearance})});if(!response.ok){failure(response.status);return;}const data=await response.json();if(typeof data.character?.characterId!=='string')throw new Error('Invalid created character');choose(data.character.characterId);}catch{if(!abort.signal.aborted)message.textContent=t('응답을 확인하지 못했습니다. 목록을 새로고침한 뒤 다시 시도해 주세요.','The response was not confirmed. Refresh the list before trying again.');}finally{busy=false;create.disabled=false;}};
    refresh.onclick=()=>void load();login.onclick=()=>game.app.account.show();const watch=setInterval(()=>{if(!game.alive){cleanup();reject(new Error('Game closed during character selection'));}},100);void load();
   });
  }
@@ -44,14 +46,15 @@ export class ServerGameBridge {
   this.status.className='world-connection-status';this.status.style.cssText='position:absolute;inset:42% 20% auto;padding:20px;background:#152331;color:white;text-align:center;z-index:100;pointer-events:auto';game.app.ui.append(this.status);
   for(const unit of game.units){unit.rig.root.visible=false;unit.rig.root.removeFromParent();unit.dispose();}game.units=[];
   game.voyageIsland?.dispose();game.voyageIsland=null;game.objective.group.visible=false;
+  this.presentation=new WorldPresentation({unit:ref=>this.unit(ref),self:()=>this.self,vfx:game.vfx,hud:game.hud,audio:game.audio,follow:game.follow,time:()=>game.time,say:(u,text,yell)=>game.say(u,text,yell),onEquipment:e=>{if(e.request){this.transactions.get(e.request)?.resolve(e.result);this.transactions.delete(e.request);}},onQuest:()=>game.hud.tracker.update(game.quests),onIncomplete:feature=>this.incomplete.add(feature)});
   this.view=new WorldView({root:game.scene,onAdded:(actor,handle)=>{
    const npc=NPCS.find(n=>n.id===actor.npcId),name=actor.appearance?.name??npc?.name??actor.archetype;
    const unit=new Unit(name,actor.kind,actor.reaction,handle.rig,createMotionController(handle.rig));unit.npcId=actor.npcId??'';unit.bindWorldView(handle.readState);this.units.set(worldActorKey(actor.ref),unit);game.units.push(unit);
    if(this.state&&worldActorKey(this.state.selfRef)===worldActorKey(actor.ref))this.bindSelf(unit,actor);
-  },onRemoved:ref=>{const key=worldActorKey(ref),u=this.units.get(key);if(u){game.units=game.units.filter(x=>x!==u);this.units.delete(key);if(this.self===u)this.self=null;}},onError:()=>this.notice('Cannot load server actor'),onEvents:records=>this.events(records)});
+  },onRemoved:ref=>{const key=worldActorKey(ref),u=this.units.get(key);if(u){game.units=game.units.filter(x=>x!==u);this.units.delete(key);if(this.self===u)this.self=null;}},onError:()=>this.notice('Cannot load server actor'),onEvents:records=>this.presentation.events(records)});
   this.client=new WorldClient({catalog,resetInput:()=>game.input.reset(),onState:(state)=>{this.status.hidden=state==='admitted'&&!!this.self;if(!this.status.hidden)this.status.textContent=state==='authRequired'?'Google login required':`Server: ${state}`;},onSnapshot:(state,events,results)=>{
-   this.state=state;game.time=state.time;game.beaconLit=state.features.environment.beacon;game.world.setBeaconLit(game.beaconLit);game.world2.observeChapter(Number(state.world.slice(1)) as 1|2|3|4);this.view.commit(state,events,results);const unit=this.units.get(worldActorKey(state.selfRef));if(unit&&unit!==this.self)this.bindSelf(unit,state.actors.find(a=>worldActorKey(a.ref)===worldActorKey(state.selfRef))!);if(this.self){game.hud.targetFrame.setUnit(this.unit(state.self.player.target));game.hud.tracker.update(game.quests);game.hud.showDeath(!this.self.alive);}this.status.hidden=this.client.state==='admitted'&&!!this.self;
-  },onEvents:(events,results)=>this.view.events(events,results),onReset:()=>{this.state=null;this.self=null;this.view.reset();game.hud.targetFrame.setUnit(null);game.hud.dialogue.close();for(const p of this.transactions.values())p.reject(new Error('Connection changed before confirmation'));this.transactions.clear();},onRejected:code=>this.notice(code)});
+   this.state=state;game.time=state.time;game.beaconLit=state.features.environment.beacon;game.world.setBeaconLit(game.beaconLit);game.world2.observeChapter(Number(state.world.slice(1)) as 1|2|3|4);this.presentation.commit(state);this.view.commit(state,events,results);const unit=this.units.get(worldActorKey(state.selfRef));if(unit&&unit!==this.self)this.bindSelf(unit,state.actors.find(a=>worldActorKey(a.ref)===worldActorKey(state.selfRef))!);if(this.self){game.hud.targetFrame.setUnit(this.unit(state.self.player.target));game.hud.tracker.update(game.quests);game.hud.showDeath(!this.self.alive);}this.status.hidden=this.client.state==='admitted'&&!!this.self;
+  },onEvents:(events,results)=>this.view.events(events,results),onReset:()=>{this.state=null;this.self=null;this.presentation.reset();this.view.reset();game.hud.targetFrame.setUnit(null);game.hud.dialogue.close();for(const p of this.transactions.values())p.reject(new Error('Connection changed before confirmation'));this.transactions.clear();},onRejected:code=>this.notice(code)});
   game.hud.dialogue.onClose=()=>this.command({kind:'talkEnd'});
   void this.client.connect(character).catch(error=>this.notice(error instanceof Error?error.message:'Connection failed'));
  }
@@ -82,7 +85,7 @@ export class ServerGameBridge {
   if(input.wasPressed('Escape')){if(g.hud.dialogue.isOpen)g.hud.dialogue.close();else if(g.hud.menu.open)g.hud.menu.close();else if(g.player.cast||g.player.channel)this.command({kind:'cancel'});else if(g.player.target)this.command({kind:'target',target:null});else g.toggleMenu();}
   if(!g.controlsLocked){if(input.wasPressed('Tab'))g.player.tabTarget();for(let slot=1;slot<=5;slot++)if(input.wasPressed(`Digit${slot}`)||input.wasPressed(`Numpad${slot}`))g.player.useAbility(slot);if(input.wasPressed('KeyT'))this.command({kind:'channelStart',channel:'recall'});if(input.wasPressed('KeyL'))g.hud.questLog.toggle();if(input.wasPressed('KeyF')){if(g.hud.dialogue.isOpen){if(g.hud.dialogue.typing)g.hud.dialogue.skipTyping();else g.hud.dialogue.choosePrimary();}else{const near=g.units.filter(u=>u.npcId&&u.alive&&!u.hidden&&this.self!.distTo(u)<7).sort((a,b)=>this.self!.distTo(a)-this.self!.distTo(b))[0];if(near)this.talk(near);}}
    for(const button of [0,2] as const)if(input.wasClicked(button)){const u=g.player.pick(input.mouseX,input.mouseY);if(u)g.player.setTarget(u);}}
-  this.client.capture(g,dt,this.state!.self.player.channel?.kind??null);this.client.pump(performance.now());this.view.render(performance.now(),dt);
+  this.client.capture(g,dt,this.state!.self.player.channel?.kind??null);this.client.pump(performance.now());this.view.render(performance.now(),dt);this.presentation.render(dt);
   g.follow.update(dt,g.input,this.self!.pos);g.vfx.update(dt);g.world.update(dt,elapsed,g.camera);g.world2.update(dt,this.state!.time,{flags:this.state!.self.player.flags});g.hud.minimap.setZone(g.world2.chapter===1?'Clawhaven':g.world2.regionAt(this.self!.pos.x,this.self!.pos.z),false);g.hud.update(dt);g.hud.bossFrame.el.classList.remove('on');
   for(const unit of g.units)unit.updateVisual(dt);
  }
@@ -96,12 +99,6 @@ export class ServerGameBridge {
   const def=QUESTS[quest];g.hud.dialogue.open({unit,portraitArt:`art/npc/${id}.webp`,questId:quest,questTitle:def.title,paragraphs:ready?def.complete:def.offer,rewardXp:def.xp,buttons:[{label:ready?t('보상 받기','Complete Quest'):t('퀘스트 받기','Accept quest'),primary:true,onClick:()=>{this.command({kind:ready?'questTurnIn':'questAccept',questId:quest,npcId:id});g.hud.dialogue.close();}}]});
  }
  forge(slot:EquipmentSlot,operation:'buy'|'upgrade',npcId='pip'):Promise<EquipmentResult>{const request=++this.requestId;return new Promise((resolve,reject)=>{if(this.transactions.size>=32||!this.command({kind:operation==='buy'?'forgeBuy':'forgeUpgrade',npcId,slot,request})){reject(new Error('Server command unavailable'));return;}this.transactions.set(request,{resolve,reject});});}
- private events(records:readonly EventRecord[]):void {for(const record of records){const e=record.event;if(e.type==='equipment'){if(e.request){this.transactions.get(e.request)?.resolve(e.result);this.transactions.delete(e.request);}continue;}if(e.type==='quest'){this.game.hud.tracker.update(this.game.quests);continue;}
-   if(!['damage','heal','blocked','death','jump','footstep','xp','levelUp','error','target','castStart','castEnd','press','recall','ward','buff'].includes(e.type))continue;
-   const mapped:Record<string,unknown>={...e};let missing=false;for(const key of ['unit','src','dst','target','killer'])if(key in mapped){const ref=mapped[key] as EntityRef|null;const unit=this.unit(ref);if(ref&&!unit)missing=true;mapped[key]=unit;}if(missing)continue;
-   if(e.type==='castStart'&&e.ability)mapped.ability=CLASSES[this.state!.self.player.classId].abilities.find(a=>a.id===e.ability);
-   this.game.events.emit(mapped as unknown as SimEvent);
-  }}
- diagnostics(){return {state:this.client.state,header:this.state?.header,world:this.state?.world,self:this.state?.self,actorCount:this.units.size,input:this.client.inputWatermarks,position:this.self?.pos.toArray()};}
- dispose():void {if(this.disposed)return;this.disposed=true;this.client.dispose();this.view.dispose();this.status.remove();for(const p of this.transactions.values())p.reject(new Error('World view disposed'));this.transactions.clear();}
+ diagnostics(){return {state:this.client.state,header:this.state?.header,world:this.state?.world,self:this.state?.self,actorCount:this.units.size,incomplete:[...this.incomplete],input:this.client.inputWatermarks,position:this.self?.pos.toArray()};}
+ dispose():void {if(this.disposed)return;this.disposed=true;this.client.dispose();this.presentation.dispose();this.view.dispose();this.status.remove();for(const p of this.transactions.values())p.reject(new Error('World view disposed'));this.transactions.clear();}
 }
