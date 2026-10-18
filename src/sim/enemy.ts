@@ -1,4 +1,5 @@
 import type { ActionId, ActionRequest, AreaServices, DebugValue, EnemySpawn, EntityRef, HitPlan, SimUnit, Vec3 } from './types.ts';
+import { actionRequest, actionHitDelay } from './data/actions.ts';
 import { immutable } from './events.ts';
 import { angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
 import { gapTo as gap, moveTo, speedMul, lineOfSight as unitLineOfSight } from './unit.ts';
@@ -7,18 +8,14 @@ import { enemyStats, RESPAWN_CLEAR, type EnemyStats } from './data/enemies.ts';
 
 export function moveCreature(s:AreaServices,u:SimUnit,x:number,z:number,dt:number):void{moveTo(u,s.query,x,z,dt);}
 export function creatureAction(s:AreaServices,u:SimUnit,id:ActionId,opts:Partial<ActionRequest>={},hit?:HitPlan):void{
-  const c=s.actionData.clip(id),skill=id==='attack_swipe'||id==='attack_slam';
-  const from=skill?(c.events.window_from?.[0]??0)+.25:0;
-  const to=c.events.window_to?.[0]??c.length;
-  const request:ActionRequest={id,part:'move',upper:false,from,to,loopFrom:null,loop:false,speed:id==='attack_swipe'?1.25:id==='attack_slam'?1.2:1,fade:.12,carryRoot:false,...opts};
-  const at=c.events.hit?.[0];
-  s.startAction(u.ref,request,hit?{left:at===undefined?.3:Math.max(0,(at-request.from)/request.speed),plan:hit}:undefined);
+  const request=actionRequest(s.actionData,id,opts);
+  s.startAction(u.ref,request,hit?{left:actionHitDelay(s.actionData,request)??.3,plan:hit}:undefined);
 }
 export function creatureHitDelay(s:AreaServices,id:'attack_swipe'|'attack_slam',speed=id==='attack_swipe'?1.25:1.2):number{
-  const hit=s.actionData.clip(id).events.hit?.[0];
-  if(hit===undefined)throw new Error(`Missing canonical hit event: ${id}`);
-  return Math.max(0,(hit-(s.actionData.clip(id).events.window_from?.[0]??0)-.25)/speed);
+  const delay=actionHitDelay(s.actionData,actionRequest(s.actionData,id,{speed}));
+  if(delay===null)throw new Error(`Missing canonical hit event: ${id}`);return delay;
 }
+
 export const eligible=(s:AreaServices,p:SimUnit):boolean=>p.alive&&!p.hidden&&!s.player(p.ref)?.state.controlsLocked;
 export function lineOfSight(s:AreaServices,a:SimUnit,b:SimUnit):boolean{return unitLineOfSight(s.query,a,b);}
 export type EnemyState='idle'|'chase'|'leash'|'dead'|'gone';
@@ -64,9 +61,9 @@ export class Enemy {
     }
     if(this.state==='dead'){
       const t=now-this.deadAt;if(t>8&&!u.hidden){u.lift=-Math.min(1.4,(t-8)*.9)*u.height;u.y=s.query.heightAt(u.x,u.z)+u.lift;if(t>9.6)u.hidden=true;}
-      const nearby=s.players().filter(p=>distance(p,this.spawn.home)<RESPAWN_CLEAR).length;
-      const respawn=s.policy.enemyPopulation(this.spawn,nearby).respawnSeconds;
-      if(!this.isAdd&&t>respawn&&nearby===0){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
+      const nearby=s.players().filter(p=>p.alive&&!p.hidden&&distance(p,this.spawn.home)<RESPAWN_CLEAR).length;
+      const population=s.policy.enemyPopulation(this.spawn,nearby);
+      if(!this.isAdd&&population.desired>0&&t>population.respawnSeconds&&nearby===0){const a=this.rand(0,Math.PI*2),r=this.kind==='jellyfish'?0:this.rand(0,this.spawn.wanderRadius*.7);this.respawnAt(this.spawn.home.x+Math.cos(a)*r,this.spawn.home.z+Math.sin(a)*r);}return;
     }
     if(this.rise>0){this.rise=Math.max(0,this.rise-dt);u.lift=-this.rise*1.3*u.height;}
     if(this.leap){this.updateLeap(dt);return;}

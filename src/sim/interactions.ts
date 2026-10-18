@@ -1,6 +1,8 @@
 import type { AreaDefinition, AreaServices, ChannelState, EntityRef, PlayerCommand, PlayerSim } from './types.ts';
 import { activeObjective, QUESTS, questAccept, questBump, questComplete } from './data/quests.ts';
-import { canTravelTo, forgeCost } from './data/progression.ts';
+import { canChallenge, canTravelTo, forgeCost } from './data/progression.ts';
+import { teleport } from './unit.ts';
+import { BOSS_PROFILES } from './data/bosses.ts';
 export interface WorldInteractionState {beaconLit:boolean}
 type Interaction=AreaDefinition['interactions'][number];
 /** Per-player NPC/objective/channel rules. Renderer events are observations only. */
@@ -25,6 +27,16 @@ export class InteractionRules {
   return false;
  }
  command(ref:EntityRef,command:PlayerCommand):boolean {const p=this.player(ref);if(!p)return false;const s=this.services;
+  if(command.kind==='bossChallenge'){
+   const boss=s.bossByProfile(command.profile),definition=s.definition.bosses.find(b=>b.profile===command.profile),u=s.getUnit(ref)!;if(!boss||!definition)return false;
+   const flag=command.profile==='rust'?'rustCleared':command.profile==='abyss'?'abyssCleared':command.profile==='eclipse'?'trueCleared':'finalCleared',stats=BOSS_PROFILES[command.profile],chapter=s.world==='w1'?1:s.world==='w2'?2:3;
+   const joining=boss.engaged&&Math.hypot(u.x-definition.arena.position.x,u.z-definition.arena.position.z)>definition.arena.radius+3;
+   if(p.state.flags[flag]||stats.level<20&&!this.world.beaconLit||!canChallenge(u.level,stats.level,!!p.state.flags.rustCleared,!!p.state.flags.abyssCleared,chapter)||s.time-u.lastCombat<5||s.encounterActive()&&!joining)return false;
+   if(command.profile==='abyss'&&s.bossByProfile('rust')?.state!=='dead')return false;
+   if(!joining){boss.wake();p.respawn();}else{p.cancelChannel();p.interruptCast();p.state.target=null;}
+   const unit=s.getUnit(p.state.unit)!;const distance=Math.min(9,definition.arena.radius*.85);teleport(unit,s.query,definition.arena.position.x+Math.sin(definition.arena.yaw)*distance,definition.arena.position.z+Math.cos(definition.arena.yaw)*distance,definition.arena.yaw+Math.PI);return true;
+  }
+  if(command.kind==='channelStart'){if(command.channel==='recall'||!command.targetId)return false;const point=s.definition.interactions.find(i=>i.id===command.targetId);return !!point&&point.kind===command.channel&&this.interact(ref,point.id);}
   if(command.kind==='interact')return this.interact(ref,command.targetId);
   if(command.kind==='travel')return this.interact(ref,command.gateId);
   if(command.kind==='forgeBuy'){if(command.npcId!=='pip'||!this.npc(p,'pip')||p.state.attackRank>=100||p.state.coins<forgeCost(p.state.attackRank))return false;p.state.coins-=forgeCost(p.state.attackRank);p.state.attackRank++;return true;}
@@ -36,6 +48,7 @@ export class InteractionRules {
  completeChannel(player:PlayerSim,channel:ChannelState):void {if(channel.kind==='recall')return;const point=channel.targetId?this.validate(player,channel.targetId):null;if(!point||point.kind!==channel.kind)return;
   if(point.kind==='waystone'){questBump(player,this.services,point.objective!);return;}
   this.world.beaconLit=!this.world.beaconLit;
+  if(!this.world.beaconLit){this.services.bossByProfile('rust')?.sleep();this.services.bossByProfile('abyss')?.sleep();player.state.target=null;}
   for(const unit of this.services.players()){const p=this.services.player(unit.ref);if(!p)continue;p.state.flags.beaconLit=this.world.beaconLit;if(this.world.beaconLit)questBump(p,this.services,'beacon');}
  }
  update():void {for(const unit of this.services.players()){const p=this.player(unit.ref);if(!p)continue;for(const point of this.services.definition.interactions)if(point.kind==='explore'&&this.validate(p,point.id))questBump(p,this.services,point.objective!);}}

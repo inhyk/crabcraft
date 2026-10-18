@@ -10,7 +10,7 @@ export class Boss {
   readonly services:AreaServices;readonly actor:SimUnit;readonly arena:Poi;readonly freed:SimUnit;readonly profile:BossProfileId;
   state:BossState='dormant';phase=1;enraged=false;readonly adds:EnemySim[]=[];
   private nextSwing=0;private nextMech=0;private mechIndex=0;private mech:ActiveMech|null=null;private stateT=0;
-  private freedStarted=false;private outside=0;private freedT=-1;private freedYaw=0;
+  private freedStarted=false;private freedBowed=false;private outside=0;private freedT=-1;private freedYaw=0;
   constructor(services:AreaServices,actor:SimUnit,arena:Poi,freed:SimUnit,profile:BossProfileId='rust'){
     this.services=services;this.actor=actor;this.arena=immutable(arena);this.freed=freed;this.profile=profile;
     actor.level=this.stats.level;actor.hp=actor.maxHp=this.stats.hp;actor.invulnerable=true;actor.hidden=true;actor.targetable=false;
@@ -19,12 +19,12 @@ export class Boss {
   get unit():EntityRef{return this.actor.ref;}get stats(){return BOSS_PROFILES[this.profile];}get isDawn():boolean{return this.profile==='dawn';}
   get engaged():boolean{return this.state==='fight';}get telegraphActive():boolean{return !!this.mech&&!this.mech.fired;}
   get mechName():MechId|null{return this.mech?.kind??null;}get stateTime():number{return this.stateT;}get freedTime():number{return this.freedT;}
-  private participants():readonly SimUnit[]{return this.services.players().filter(p=>!this.isDawn||p.level>=100);}
+  private participants():readonly SimUnit[]{return this.services.players().filter(p=>p.alive&&!p.hidden&&(!this.isDawn||p.level>=100));}
   private target():SimUnit|null{
     if(!this.isDawn)return this.services.targetFor(this.unit);
     return this.participants().filter(p=>eligible(this.services,p)).slice().sort((a,b)=>distance(this.actor,a)-distance(this.actor,b)||a.ref.id-b.ref.id)[0]??null;
   }
-  private unlocked():boolean{return this.participants().some(p=>p.level>=this.stats.level);}
+  private unlocked():boolean{return (this.isDawn?this.participants():this.services.players()).some(p=>p.level>=this.stats.level);}
   private available():boolean{return this.services.bossAvailable(this.profile);}
   private yell(key:string,unit=this.unit,yell=true):void{this.services.emit({type:'say',unit,textKey:key,yell});}
   wake():void{
@@ -160,15 +160,15 @@ export class Boss {
   }
   private releaseFreed():void{
     const s=this.services,f=this.freed,u=this.actor,p=this.target(),toward=p?Math.atan2(p.x-u.x,p.z-u.z):u.yaw;
-    f.hidden=false;f.alive=true;f.x=u.x;f.z=u.z;f.y=s.query.heightAt(f.x,f.z);f.yaw=toward;this.freedT=0;this.freedYaw=toward;s.emit({type:'freed',unit:f.ref});
+    f.hidden=false;f.alive=true;f.x=u.x;f.z=u.z;f.y=s.query.heightAt(f.x,f.z);f.yaw=toward;this.freedT=0;this.freedYaw=toward;this.freedBowed=false;s.emit({type:'freed',unit:f.ref});
   }
   private updateFreed(dt:number):void{
     if(this.freedT<0)return;const s=this.services,f=this.freed,u=this.actor,p=this.target();this.freedT+=dt;const t=this.freedT;
     if(t<1.2){const k=t/1.2,out=u.radius+1.6;moveCreature(s,f,u.x+Math.sin(this.freedYaw)*out*k,u.z+Math.cos(this.freedYaw)*out*k,dt);}
     else if(t<1.6){if(p)f.yaw=turn(f.yaw,Math.atan2(p.x-f.x,p.z-f.z),6,dt);}
-    else if(t<4.6){if(!f.npcId){f.npcId='bowed';creatureAction(s,f,'gesture_bow');this.yell('boss.freed.thanks',f.ref,false);}}
+    else if(t<4.6){if(!this.freedBowed){this.freedBowed=true;creatureAction(s,f,'gesture_bow');this.yell('boss.freed.thanks',f.ref,false);}}
     else if(t<12){const spawn=s.definition.spawn.position,wreck=s.definition.pois.wreck?.position??spawn,dx=wreck.x-spawn.x,dz=wreck.z-spawn.z,d=Math.hypot(dx,dz),x=d?dx/d:0,z=d?dz/d:0;f.yaw=turn(f.yaw,Math.atan2(x,z)+Math.PI/2,4,dt);moveCreature(s,f,f.x+x*3.4*dt,f.z+z*3.4*dt,dt);if(t>10.5)f.lift=-(t-10.5)*.8;}
     else{f.hidden=true;f.alive=false;this.freedT=-1;}
   }
-  debugState():DebugValue{return structuredClone({unit:this.unit,profile:this.profile,state:this.state,phase:this.phase,enraged:this.enraged,adds:this.adds.map(a=>a.unit),nextSwing:this.nextSwing,nextMech:this.nextMech,mechIndex:this.mechIndex,mech:this.mech,stateT:this.stateT,freedStarted:this.freedStarted,outside:this.outside,freedT:this.freedT,freedYaw:this.freedYaw}) as unknown as DebugValue;}
+  debugState():DebugValue{return structuredClone({unit:this.unit,profile:this.profile,state:this.state,phase:this.phase,enraged:this.enraged,adds:this.adds.map(a=>a.unit),nextSwing:this.nextSwing,nextMech:this.nextMech,mechIndex:this.mechIndex,mech:this.mech,stateT:this.stateT,freedStarted:this.freedStarted,freedBowed:this.freedBowed,outside:this.outside,freedT:this.freedT,freedYaw:this.freedYaw}) as unknown as DebugValue;}
 }
