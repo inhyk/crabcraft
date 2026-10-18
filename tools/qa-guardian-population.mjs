@@ -24,7 +24,8 @@ try{
   const names={2:'별빛 유적 수호자',3:'황혼 성채 파수병',4:'빙하 성채 파수병'};
   for(const chapter of [2,3,4]){
     await host.evaluate(chapter=>window.app.current.game.world2.go(chapter),chapter);
-    await guest.waitForFunction(chapter=>{const g=window.app.current.game;return g.world2.chapter===chapter&&g.enemies.filter(e=>e.isIslandOnly&&e.unit.alive&&!e.unit.hidden).length===6;},chapter,{timeout:30000});
+    try{await guest.waitForFunction(chapter=>{const g=window.app.current.game;return g.world2.chapter===chapter&&g.enemies.filter(e=>e.isIslandOnly&&e.unit.alive&&!e.unit.hidden).length===6;},chapter,{timeout:30000});}
+    catch(error){for(const [label,p] of [['host',host],['guest',guest]]){console.log(label,await p.evaluate(()=>{const g=window.app.current.game,b=g.multiplayer.battle;return{chapter:g.world2.chapter,active:b.active,authority:b.authority,room:g.multiplayer.room,enemies:g.enemies.length,extra:g.enemies.filter(e=>e.isIslandOnly).map(e=>({alive:e.unit.alive,hidden:e.unit.hidden,state:e.state})),messages:g.multiplayer.root.textContent};}));await p.screenshot({path:`tmp/qa/guardian-${label}-failure.png`});}throw error;}
     for(const p of [host,guest]){
       const data=await p.evaluate(()=>window.app.current.game.enemies.filter(e=>e.kind==='scavenger'&&!e.isEcho&&!e.isAdd).map(e=>({name:e.unit.name,alive:e.unit.alive,hidden:e.unit.hidden,level:e.unit.level})));
       assert.equal(data.length,shore+6);assert.ok(data.every(e=>e.alive&&!e.hidden&&e.name===names[chapter]));
