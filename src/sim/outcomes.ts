@@ -60,6 +60,8 @@ export class WorldRules {
  acknowledgeGrant(id:string):void {const entry=this.grants.get(id);if(!entry)throw new Error('unknown-grant');entry.acknowledged=true;}
  appliedGrantIds(character:CharacterId):readonly string[]{return [...(this.applied.get(character)??[])];}
  restoreAppliedGrantIds(character:CharacterId,ids:readonly string[]):void {const known=this.applied.get(character)??new Set<string>();for(const id of ids)known.add(id);this.applied.set(character,known);}
+ /** Recovery-only replacement after restoring the matching durable state; outbox history is retained. */
+ replaceAppliedGrantIds(character:CharacterId,ids:readonly string[]):void {if(!Array.isArray(ids)||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||id.length===0||new TextEncoder().encode(id).length>512))throw new Error('invalid-applied-grant-ids');this.applied.set(character,new Set(ids));}
  encounterAvailable(profile:BossSim['profile']):boolean {if((profile==='rust'||profile==='abyss')&&(!this.beaconLit||this.services.world!=='w1'))return false;return this.services.players().some(u=>{const p=this.services.player(u.ref);return !!p&&u.alive&&!u.hidden&&canChallenge(u.level,BOSS_PROFILES[profile].level,!!p.state.flags.rustCleared,!!p.state.flags.abyssCleared,worldChapter(this.services.world));});}
  setSharedBeacon(lit:boolean):void {this.interactions.setSharedBeacon(lit);}
  command(player:EntityRef,command:PlayerCommand):boolean{return this.interactions.command(player,command);}
