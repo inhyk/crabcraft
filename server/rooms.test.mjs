@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import WebSocket from 'ws';
 import { attachRooms } from './rooms.ts';
-import {worldOf} from './combatProtocol.ts';
+import {worldOf,eventOf} from './combatProtocol.ts';
 import { Link, ROOM_RETRIES, backoff, restartDelay } from '../src/multiplayer/link.ts';
 
 const spec = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'Test crab' };
@@ -537,4 +537,26 @@ test('reports keep the target\'s last lines; three reporters mute them, and a mu
   ones[0].send({ type: 'report', id: ids[1], reason: 'other' }); assert.equal((await ones[0].next('reported')).ok, true);
   await until(() => reports.length === 4, 'a report on a player who left');
   assert.deepEqual(reports[3].target.name, 'Kid 1');
+});
+
+
+test('Frostlight validates five bosses, b300/f300 keys and chapter4 while retaining legacy checkpoints',()=>{
+ const fourth={...world,chapter:4,finalCleared:true,frostCleared:false,bosses:[...world.bosses,...['b30','b300'].map(id=>({id,state:'dormant',phase:1,enraged:false,mech:null}))]};
+ assert.ok(worldOf(world));assert.ok(worldOf(fourth));assert.equal(worldOf({...fourth,bosses:fourth.bosses.filter(b=>b.id!=='b300')}),null);
+ assert.equal(worldOf({...fourth,frostCleared:'yes'}),null);assert.equal(worldOf({...fourth,chapter:5}),null);
+ assert.deepEqual(eventOf({kind:'chapter',target:'world',chapter:4},false),{kind:'chapter',target:'world',chapter:4});
+ assert.ok(eventOf({kind:'challenge',target:'b300'},false));assert.ok(eventOf({kind:'attack',target:'b300',amount:100},false));assert.ok(eventOf({kind:'animation',target:'f300',action:'walk'},true));
+});
+
+test('snow-capable rooms cannot mix old screens, including empty retained rooms; old rooms still work',async t=>{
+ const {client}=await setup(t,{keepRooms:60000});const a=await client(),b=await client(),c=await client();
+ a.send({type:'create',spec,combatVersion:1,snowWorld:true});const r=await a.next('welcome');
+ b.send({type:'join',room:r.room,spec,combatVersion:1});assert.match((await b.next('error')).message,/refresh/);
+ a.send({type:'leave'});await a.next('leftRoom');
+ b.send({type:'join',room:r.room,spec,combatVersion:1});assert.match((await b.next('error')).message,/refresh/);
+ c.send({type:'join',room:r.room,spec,combatVersion:1,snowWorld:true});await c.next('welcome');
+ a.send({type:'create',spec,combatVersion:1});const old=await a.next('welcome');
+ b.send({type:'join',room:old.room,spec,combatVersion:1});await b.next('welcome');
+ c.send({type:'join',room:old.room,spec,combatVersion:1,snowWorld:true});assert.match((await c.next('error')).message,/refresh/);
+ b.send({type:'combat',event:{kind:'challenge',target:'b300'}});b.send({type:'combat',event:{kind:'attack',target:'e0',amount:20}});assert.equal((await a.next('combat')).event.target,'e0');
 });

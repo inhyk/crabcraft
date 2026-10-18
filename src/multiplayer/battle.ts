@@ -180,7 +180,7 @@ export class BattleSync {
       if (e.kind === 'attack' && u?.hostile && u.alive && !u.hidden && !u.invulnerable && src.distTo(u) < 38) {
         g.combat.damage(src, u, e.amount!, { crit: e.crit }); this.publish();
       } else if (e.kind === 'chapter') {
-        if(!g.encounter.engaged&&e.chapter) { g.world2.go(e.chapter); this.publish(); }
+        if(!g.encounter.engaged&&e.chapter&&e.chapter!==4) { g.world2.go(e.chapter); this.publish(); }
       } else if (e.kind === 'environment' && e.environment) {
         const env=e.environment;
         if(typeof env.beacon==='boolean'){if(g.setLighthouse)g.setLighthouse(env.beacon);else g.world.setBeaconLit(env.beacon);}
@@ -247,6 +247,8 @@ export class BattleSync {
   }
   private publish() { if (this.active && this.authority) this.send({ type: 'world', world: this.snapshot() }); }
   apply(world: WorldState, instant = false) {
+    // This screen supports Worlds I–III; the snow client will opt into its own room capability.
+    if(world.chapter===4)return;
     if (!this.active) return;
     const g = this.game;
     this.mode=world.social?.mode??'coop';this.parties={...(world.social?.parties??{})};
@@ -279,7 +281,7 @@ export class BattleSync {
         }
         this.goals.set(u,s);
       }
-      for (const s of world.bosses) (s.id==='b30'?g.dawnBoss:s.id === 'b3' ? g.boss : s.id === 'b20' ? g.worldBoss : g.finalBoss).applyNetwork(s);
+      for (const s of world.bosses.filter(s=>s.id!=='b300')) (s.id==='b30'?g.dawnBoss:s.id === 'b3' ? g.boss : s.id === 'b20' ? g.worldBoss : g.finalBoss).applyNetwork(s);
       if (g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; }
     } finally { this.applying = false; }
     // Shared environment satisfies each player's active beacon objective, including late accepts.
