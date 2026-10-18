@@ -51,12 +51,8 @@ export class DawnIsland {
   const sky=new THREE.Mesh(new THREE.SphereGeometry(850,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;void main(){float h=clamp(normalize(v).y,0.,1.);vec3 c=mix(vec3(.93,.59,.32),vec3(.12,.32,.62),smoothstep(0.,.12,h));c=mix(c,vec3(.035,.12,.36),smoothstep(.12,.8,h));gl_FragColor=vec4(c,1.);}'}));sky.renderOrder=-100;this.root.add(sky);
   const sea=new THREE.Mesh(new THREE.PlaneGeometry(1800,1800),new THREE.MeshStandardMaterial({color:'#245e74',roughness:.3,metalness:.4,transparent:true,opacity:.94}));sea.rotation.x=-Math.PI/2;sea.position.y=.2;this.root.add(sea);
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
-  // Ring town: a generous square, fountain, homes and people on both sides of the avenue.
+  // Ring town: a generous walkable square and homes and people on both sides of the avenue.
   add(new THREE.CylinderGeometry(13,13,.07,64),new THREE.MeshStandardMaterial({color:'#a99f87',roughness:.94}),0,3.98,53);
-  add(new THREE.CylinderGeometry(3.1,3.6,.8,32),stone,-11,4.6,53);
-  add(new THREE.CylinderGeometry(2.9,2.9,.08,32),new THREE.MeshStandardMaterial({color:'#69cbd2',emissive:'#246771',emissiveIntensity:.4}),-11,5.05,53);
-  add(new THREE.CylinderGeometry(.4,.7,3.2,12),gold,-11,6,53);add(new THREE.OctahedronGeometry(.9),gold,-11,8.2,53);
-  this.collision.addCircle(-11,53,3.7,4,9);
   // A walkable, lit ascent to the fortress, built directly over the analytic surface.
   for(let i=0;i<72;i++){const z=83-i*2.12,y=this.height(0,z);
    if(i%5===0)for(const side of [-1,1]){add(new THREE.CylinderGeometry(.14,.22,2.4,6),stone,side*5.1,y+1.2,z);add(new THREE.OctahedronGeometry(.42),gold,side*5.1,y+2.6,z);}

@@ -8,12 +8,15 @@ Boreas requires **each participating character to be level 300**. His 620,000 HP
 
 Mage slot 3, Steam Blink, now restores a flat **10 HP**, capped at maximum HP, and teleports up to 8 m forward using the existing collision and slope checks. Its 15-second cooldown and 10-mana cost remain. Repeated keys and action-bar clicks cannot repeat its heal during recovery.
 
+The World III harbour fountain and its circular blocker are removed. Flagstones now continue through its former location.
+
 ## Deployment order
 
-Merge and deploy the backward-compatible snow protocol server PR first. It accepts existing three/four-boss snapshots plus chapter IV/five-boss snapshots, supports area IV public presence, and isolates private room capabilities with `snowWorld: true`. A saved empty room retains its version requirement; mixed screens receive a refresh instruction. Old rooms reject new chapter/boss events. Then merge the game PR. No migrations or new services are required.
+Merge and deploy the backward-compatible snow protocol server PR #33 first. It accepts existing three/four-boss snapshots plus chapter IV/five-boss snapshots, supports area IV public presence, and isolates private room capabilities with `snowWorld: true`. A saved empty room retains its version requirement; mixed screens receive a refresh instruction. Old rooms reject new chapter/boss events. Then merge the game PR. No migrations or new services are required.
 
 ## Validation
 
+- World III fountain removal: browser screenshot inspected; 13 samples across the former basin remain unobstructed, with zero browser errors.
 - `pnpm build`
 - `pnpm test:boss`: 95 passed (300 gate, low-level damage/condition denial, seven-circle layout, host transfer and healing blink recovery included).
 - `pnpm test:engine`: 4 passed.

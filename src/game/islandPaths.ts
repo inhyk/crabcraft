@@ -32,7 +32,7 @@ export function islandPaths(height:(x:number,z:number)=>number,paths:IslandPath[
      const across=(c+.5-columns/2)*cw,x=cx+nx*across,z=cz+nz*across;
      // Preserve fountain clearance in Starhaven and avoid repaving the existing boss floors.
      if(realm===2&&(Math.hypot(x,z-55)<3.8||Math.hypot(x,z+75)<19))continue;
-     if(realm===3&&(Math.hypot(x+11,z-53)<3.8||Math.hypot(x,z+72)<22))continue;
+     if(realm===3&&Math.hypot(x,z+72)<22)continue;
      stone(x,z,cw-.065-random()*.03,step-.065-random()*.03,yaw+(random()-.5)*.028,pools[Math.floor(random()*materials.length)]);
     }
     if(path.trim)for(const side of [-1,1]){const across=side*(path.width/2+.17);const x=cx+nx*across,z=cz+nz*across;if(realm===2&&Math.hypot(x,z-55)<4)continue;stone(x,z,.24,step-.04,yaw,edges);}
