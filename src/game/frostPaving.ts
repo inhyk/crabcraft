@@ -4,13 +4,15 @@ import {pavingGround} from './pavingLayout';
 import {SNOW_DEFORM_READ,type SnowDeform} from './snowDeform';
 
 /*
- * Frostlight's streets: hand-laid granite flags in random courses, half buried in packed snow. One mesh hugs the
- * terrain under the whole network and its shader lays the stones (rows of varying depth, stones of varying
- * length, rounded and chipped corners: no grid, no tiling). Snow settles by height, so it fills the joints
- * first and the low stones next; traffic wears two cart ruts and a beaten line down to wet stone and black
- * ice, and the sweepings bank up at the kerbs. Where a drift crosses an edge or buries a road's end the surface
- * fades out and the snowfield itself shows, prints and glints included, so the two never meet at a seam. The kerbs
- * lie under the banked snow, as they would.
+ * Frostlight's streets: worn granite setts in random courses, half buried in snow. One mesh hugs the terrain under
+ * the whole network and its shader lays the stones (rows of varying depth, stones of varying length, each a little
+ * skew, with a rounded arris and a domed top: no grid, no tiling). Snow settles by height, so it fills the joints
+ * first and the low stones next. Traffic keeps the middle bare: two cart ruts with black ice in them and a packed
+ * crown down the main road, a beaten line down each street, a swept square where they cross; the sweepings bank
+ * up at the sides and drifts cross the edges and bury the free ends. The low sun is shadowed by the stones it
+ * skims (three taps along the light), and crabs print the road's snow from the snowfield's own deformation field.
+ * Deep snow and the outer edge fade out so the snowfield itself shows, ripples and glints included, and the two
+ * never meet at a seam. The kerbs lie under the banked snow, as they would.
  * Everything visible stays inside onIslandPath(), so prints, spray and covers() agree with what is drawn.
  */
 
@@ -31,7 +33,7 @@ function vnoise(x: number, z: number): number {
   const a = hash(ix, iz), b = hash(ix + 1, iz), c = hash(ix, iz + 1), d = hash(ix + 1, iz + 1);
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
-/** 0 clear, 1 a drift has buried the edge: no kerb, and snow reaches well into the road. */
+/** 0 clear, 1 a drift has crossed the edge and reaches well into the road. */
 export function frostDrift(x: number, z: number): number {
   return smooth(.5, .74, vnoise(x * .15 + 3.1, z * .15 - 7.3) * .65 + vnoise(x * .41 - 1.7, z * .41 + 5.2) * .35);
 }
@@ -126,6 +128,7 @@ for(int i=0;i<FP_MAX_SEG;i++){
   float t=dot(ap,dir),across=dot(ap,vec2(dir.y,-dir.x));
   vec2 bd=vec2(abs(across)-info.x,max(-t,t-L));
   fpSd=fpSmin(fpSd,length(max(bd,0.))+min(max(bd.x,bd.y),0.),.3);
+  if(max(bd.x,bd.y)>1.5)continue;
   float along=t+info.z,inside=1.-smoothstep(-.3,.4,bd.y);
   float c=fpNoise(vec2(along*.045,info.w))*.9+fpNoise(vec2(along*.17,info.w+3.))*.16;
   if(info.y>.5){
@@ -146,6 +149,29 @@ for(int i=0;i<FP_MAX_SEG;i++){
 }
 float fpN1=fpFbm(fpP*.3+1.7),fpN2=fpNoise(fpP*1.6+4.);
 for(int i=0;i<FP_MAX_PLAZA;i++){if(i>=fpPlazaCount)break;vec3 q=fpPlaza[i];fpWear=max(fpWear,1.-smoothstep(q.z*.55,q.z,length(fpP-q.xy)+fpN1*1.4+fpN2*.3));}
+// Snow level, same units: bare in the worn middle, banked white at the sides with a narrow ragged band between,
+// here and there a shovelled clump on the stones, swept up against the kerbs, drifted in across the edges and over
+// the free ends.
+float fpS=1.5-fpWear*1.7+fpN1*.55+fpN2*.18;
+fpS+=smoothstep(.62,.86,fpNoise(fpP*.55+11.)*.5+.5+fpN2*.06)*1.6;
+fpS-=fpTrod*(.45+fpN2*.25);
+fpS+=smoothstep(-1.3,-.05,fpSd)*.45;
+// The last hand's width under the kerb is always snow, so the surface never fades out over bare stone.
+float fpLip=smoothstep(-.42+fpN2*.12,.06,fpSd)*1.9;
+fpS+=fpLip;
+fpS+=smoothstep(.25,1.,vFpDrift)*smoothstep(-3.6-fpN1*1.5,-.2,fpSd)*2.2;
+fpS+=fpEnd*(2.+fpN1*.6);
+// Deep snow hands over to the snowfield itself (its prints, ripples and glints), as does the edge.
+float fpAlpha=(1.-smoothstep(1.6,2.3,fpS))*(1.-smoothstep(.04,${REACH.toFixed(2)},fpSd+fpNoise(fpP*1.9)*.05));
+// The snow surface's slope from screen derivatives of its smooth level (much deeper in the drifts), taken
+// before any neighbour can be discarded.
+vec2 fpGSnow;
+{
+  vec2 dpx=dFdx(fpP),dpy=dFdy(fpP);
+  float sN=fpS-fpLip*.85,h=min(sN,1.)*FP_RELIEF+max(sN-1.,0.)*.07,dsx=dFdx(h),dsy=dFdy(h),det=dpx.x*dpy.y-dpx.y*dpy.x;
+  fpGSnow=abs(det)>1e-12?clamp(vec2(dsx*dpy.y-dsy*dpx.y,dpx.x*dsy-dpy.x*dsx)/det,-.6,.6):vec2(0.);
+}
+if(fpAlpha<.004)discard;
 // Stones. The courses bend a little along their length and every outline is chipped.
 vec2 fpQ=fpP+vec2(fpNoise(fpP*2.3),fpNoise(fpP*2.3+7.))*.016;
 fpQ.y+=fpNoise(vec2(fpP.x*.19,fpP.y*.03+5.))*.13;
@@ -159,21 +185,8 @@ float fpFar=smoothstep(.008,.035,fpFoot);
 float fpTop=.84+.16*fract(fpId*5.3);
 vec2 fpGS=(-fpG*fpSlope+fpCG)*FP_RELIEF*(1.-fpFar);
 fpH=mix(fpH,.62,fpFar);fpBev=mix(fpBev,.8,fpFar);
-// Snow level, same units: a patchy film, worn off where wheels and feet go, swept up against the kerbs, drifted in
-// across the edges and over the free ends.
-// Bare in the worn middle, banked white at the sides, with a narrow ragged band between; here and there a
-// shovelled clump on the stones.
-float fpS=1.5-fpWear*1.7+fpN1*.55+fpN2*.18;
-fpS+=smoothstep(.62,.86,fpNoise(fpP*.55+11.)*.5+.5+fpN2*.06)*1.6;
-fpS-=fpTrod*(.45+fpN2*.25);
-fpS+=smoothstep(-1.3,-.05,fpSd)*.45;
-// The last hand's width under the kerb is always snow, so the surface never fades out over bare stone.
-float fpLip=smoothstep(-.42+fpN2*.12,.06,fpSd)*1.9;
-fpS+=fpLip;
-// Meltwater keeps some joints open.
-fpS-=(1.-fpBev)*(.2+.4*(fpNoise(fpP*3.3+fpId)*.5+.5))*(1.-fpFar)*(1.-smoothstep(.55,1.05,fpS));
-fpS+=smoothstep(.25,1.,vFpDrift)*smoothstep(-3.6-fpN1*1.5,-.2,fpSd)*2.2;
-fpS+=fpEnd*(2.+fpN1*.6);
+// Meltwater keeps some joints open (only where the snow is thin enough for it to matter).
+if(fpS<1.05)fpS-=(1.-fpBev)*(.2+.4*(fpNoise(fpP*3.3+fpId)*.5+.5))*(1.-fpFar)*(1.-smoothstep(.55,1.05,fpS));
 float fpSnow=smoothstep(-.05,.05,fpS-fpH+fpNoise(fpP*7.3)*.06-.04);
 float fpFresh=smoothstep(1.,1.9,fpS);
 float fpPack=clamp(fpWear*.8+fpTrod*.5,0.,1.)*(1.-fpFresh);
@@ -188,13 +201,14 @@ fpStone=mix(fpStone,vec3(.31,.235,.17),step(.86,fpV)*.75);
 fpStone=mix(fpStone,vec3(.13,.145,.17),step(fpV,.12)*.8);
 fpStone*=.82+.36*(fpNoise(fpP*4.7+fpId*13.)*.5+.5);
 float fpNear=1.-smoothstep(.006,.03,fpFoot);
-fpStone*=1.+(fpNoise(fpP*41.)*.22+fpNoise(fpP*97.)*.16)*fpNear;
+if(fpNear>0.)fpStone*=1.+(fpNoise(fpP*41.)*.22+fpNoise(fpP*97.)*.16)*fpNear;
 float fpWet=smoothstep(.35,.9,fpTrod)*(1.-fpSnow);
 fpStone*=mix(1.,.66,fpWet);
 // Rime on stone that lies close under the snow line.
 fpStone=mix(fpStone,vec3(.5,.56,.64),smoothstep(-.25,0.,fpS-fpH)*(1.-fpWet)*.35);
 // Black ice where meltwater froze in the ruts.
-float fpIce=fpRut*smoothstep(.6,.8,fpNoise(fpP*.45+2.)*.5+.5+fpNoise(fpP*2.1)*.08)*(1.-fpSnow);
+float fpIce=0.;
+if(fpRut>0.)fpIce=fpRut*smoothstep(.6,.8,fpNoise(fpP*.45+2.)*.5+.5+fpNoise(fpP*2.1)*.08)*(1.-fpSnow);
 vec3 fpJoint=mix(vec3(.045,.045,.05),vec3(.085,.08,.075),fpN1*.5+.5);
 vec3 fpRock=mix(fpJoint,fpStone,smoothstep(0.,.35,fpBev));
 // Snow: fresh in the drifts (the snowfield's own albedo), packed and greyer on the road, dirtied in the ruts.
@@ -209,11 +223,10 @@ vec3 fpCol=mix(fpRock,fpSnowC,fpSnow);
 fpCol*=1.-fpRecess*.45;
 fpCol=mix(fpCol,vec3(.05,.065,.085),fpIce*.8);
 diffuseColor.rgb*=fpCol;
-// Deep snow hands over to the snowfield itself (its prints, ripples and glints), as does the edge.
-diffuseColor.a*=(1.-smoothstep(1.6,2.3,fpS))*(1.-smoothstep(.04,${REACH.toFixed(2)},fpSd+fpNoise(fpP*1.9)*.05));
+diffuseColor.a*=fpAlpha;
 // Low sun: the stone (or snow) between here and the sun blocks it.
 float fpShade=1.;
-if(fpDetail>.5){
+if(fpDetail>.5&&fpSnow<.99&&fpFar<.99){
   float sl=max(length(fpSun.xz),1e-3);vec2 sd=fpSun.xz/sl;float tanE=fpSun.y/sl,h0=max(fpH,fpS*fpSnow),occ=0.;
   for(int k=1;k<=3;k++){float d=float(k*k)*.013,hk=fpStoneAt(fpQ+sd*d);occ=max(occ,clamp(((hk-h0)*FP_RELIEF-d*tanE)/.005,0.,1.));}
   fpShade=1.-occ*.8;
@@ -226,21 +239,24 @@ roughnessFactor=mix(mix(mix(.8,.42,fpWet),.14,fpIce),mix(.95,.66,fpPack),fpSnow*
 
 const PAVING_NORMAL = /* glsl */ `
 {
-  // Snow from screen derivatives of its (smooth) level, much deeper in the drifts; stones from their analytic
-  // bevel and tilt, softened under thin snow; prints; ripples on fresh snow continue the snowfield's.
-  vec2 dpx=dFdx(fpP),dpy=dFdy(fpP);
-  float sN=fpS-fpLip*.85,h=min(sN,1.)*FP_RELIEF+max(sN-1.,0.)*.07,dsx=dFdx(h),dsy=dFdy(h),det=dpx.x*dpy.y-dpx.y*dpy.x;
-  vec2 gS=abs(det)>1e-12?clamp(vec2(dsx*dpy.y-dsy*dpx.y,dpx.x*dsy-dpy.x*dsx)/det,-.6,.6):vec2(0.);
-  gS+=fpGS*.14*fpThin*fpThin;
+  // Snow from its smooth level (fpGSnow); stones from their analytic arris and crown, softened under thin snow;
+  // prints; ripples on fresh snow continue the snowfield's.
+  vec2 gS=fpGSnow+fpGS*.14*fpThin*fpThin;
   vec2 gSt=fpGS*(1.-fpIce*.8);
-  vec2 wd=vec2(.8,.6);float ph=dot(fpP,wd)*2.4+sdNoise2(fpP*.31)*2.6,amp=.03*(.55+.45*sdNoise2(fpP*.11+3.7));
-  gS+=wd*cos(ph)*2.4*amp*smoothstep(1.,.25,fpFoot)*fpFresh;
+  if(fpFresh>0.){
+    vec2 wd=vec2(.8,.6);float ph=dot(fpP,wd)*2.4+sdNoise2(fpP*.31)*2.6,amp=.03*(.55+.45*sdNoise2(fpP*.11+3.7));
+    gS+=wd*cos(ph)*2.4*amp*smoothstep(1.,.25,fpFoot)*fpFresh;
+  }
   if(fpDetail>.5){
-    float e=snowDeformSize/snowDeformRes,fall=snowDeformFalloff(fpP)*1.15*(1.-fpPack*.55);
-    gS+=vec2(snowDeformHeight(fpP+vec2(e,0.))-snowDeformHeight(fpP-vec2(e,0.)),snowDeformHeight(fpP+vec2(0.,e))-snowDeformHeight(fpP-vec2(0.,e)))/(2.*e)*fall;
-    float q=.02,n0=fpNoise(fpP*9.),nx=fpNoise((fpP+vec2(q,0.))*9.),nz=fpNoise((fpP+vec2(0.,q))*9.);
-    vec2 gn=vec2(nx-n0,nz-n0)/q;
-    gSt+=gn*.004*fpBev;gS+=gn*.0025*(1.-fpFresh);
+    if(fpSnow>0.){
+      float e=snowDeformSize/snowDeformRes,fall=snowDeformFalloff(fpP)*1.15*(1.-fpPack*.55);
+      gS+=vec2(snowDeformHeight(fpP+vec2(e,0.))-snowDeformHeight(fpP-vec2(e,0.)),snowDeformHeight(fpP+vec2(0.,e))-snowDeformHeight(fpP-vec2(0.,e)))/(2.*e)*fall;
+    }
+    if(fpNear>0.){
+      float q=.02,n0=fpNoise(fpP*9.),nx=fpNoise((fpP+vec2(q,0.))*9.),nz=fpNoise((fpP+vec2(0.,q))*9.);
+      vec2 gn=vec2(nx-n0,nz-n0)/q*fpNear;
+      gSt+=gn*.004*fpBev;gS+=gn*.0025*(1.-fpFresh);
+    }
   }
   vec2 g=mix(gSt,gS,fpSnow);
   vec3 nW=inverseTransformDirection(normal,viewMatrix);
