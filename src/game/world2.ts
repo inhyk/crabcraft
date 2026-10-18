@@ -216,7 +216,7 @@ export class HiddenWorld {
 
   enter(authority=true) {
     if(!this.canTravel(2)){this.go(2);return;}
-    if(this.chapter===2)return;
+    if(this.chapter===2&&this.rendered)return;
     if(this.chapter>=3)this.returnToShore();
     const g=this.game,w=g.world;
     g.frostBoss.unit.hidden=g.frostBoss.freed.hidden=true;
@@ -271,7 +271,7 @@ export class HiddenWorld {
     g.journey?.save();
   }
   private enterThird(authority=true){
-    if(this.chapter===3)return;
+    if(this.chapter===3&&this.rendered)return;
     const g=this.game;
     if(this.chapter!==1)this.returnToShore();
     // Capture the original homes/POIs once using the same restoration path as World II.
@@ -297,7 +297,7 @@ export class HiddenWorld {
   }
 
   private enterSnow(authority=true){
-    if(this.chapter===4)return;
+    if(this.chapter===4&&this.rendered)return;
     const g=this.game;
     if(this.chapter!==1)this.returnToShore();
     if(!this.baseHomes.length){this.enter(authority);this.returnToShore();}
@@ -343,6 +343,10 @@ export class HiddenWorld {
     g.hud.tracker.update(g.quests);
     if(g.hud.questLog.open)g.hud.questLog.render();
     g.hud.minimap.setSnapshot(g.takeMapSnapshot());g.journey?.save();
+  }
+  /** Endings temporarily render the shore; a duel restores the current island first. */
+  resumeAdventure(authority:boolean):void {
+    if(this.chapter>=2&&!this.rendered)this.go(this.chapter,authority);
   }
   showEpilogue() {
     this.ambience.stop();this.third.root.visible=this.fourth.root.visible=false;
