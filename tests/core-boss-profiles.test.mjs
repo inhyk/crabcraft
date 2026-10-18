@@ -195,7 +195,7 @@ function frostWarning(h,kind,phase){
   throw Error(`No actual Frost ${kind}`);
 }
 test('five current profiles preserve independent HP, damage, tempo, coins and XP values',()=>{
-  const values={rust:[3,1300,1,1,150,500],abyss:[10,2600,2.1,.85,500,1000],eclipse:[20,6200,3.2,.78,1200,1500],dawn:[100,24000,20,.95,5000,3200],frost:[300,90000,38,.9,15000,18000]};
+  const values={rust:[3,1300,1,1,150,500],abyss:[10,2600,2.1,.85,500,1000],eclipse:[20,6200,3.2,.78,1200,5000],dawn:[100,24000,20,.95,5000,100000],frost:[300,90000,38,.9,15000,18000]};
   for(const [profile,want]of Object.entries(values)){const p=BOSS_PROFILES[profile];assert.deepEqual([p.level,p.hp,p.damage,p.tempo,p.coins,p.reward],want);assert.ok(Object.isFrozen(p));}
 });
 test('actual Frost excludes 299 from both combat directions, targeting and blessing alongside 300',()=>{
