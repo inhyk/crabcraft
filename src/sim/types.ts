@@ -394,6 +394,7 @@ export interface AreaDebugState {
   contributions: readonly Contribution[]; grants: readonly EarnedGrant[]; acknowledgedGrantIds: readonly string[];
   heldIntents: readonly { actor: EntityRef; intent: PlayerIntent; lastConsumedSeq: number }[];
   // Debug export only at between-tick boundary: no accepted commands remain pending after step().
+  features:DebugValue;
   lifecycle: DebugValue;
   interactions: DebugValue; context: AreaContext;
 }
