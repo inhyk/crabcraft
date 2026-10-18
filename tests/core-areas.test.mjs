@@ -21,3 +21,8 @@ test('host supplies balance explicitly and invalid level/population fails before
  assert.throws(()=>createWorld3Definition({...config,population:{...config.population,scrapling:1.5}}),/population/);
  const world=createWorld2Definition({...config,population:{scrapling:0,scavenger:0,jellyfish:0}});assert.equal(world.enemies.length,1);assert.equal(world.enemies[0].role,'echo');
 });
+test('W1 retains shipped pack layout and terrain-selected shallow patrol templates under explicit config',()=>{
+ const query={heightAt:(x,z)=>Math.abs(x-115)<3?.4:1,resolveCollision:(x,z,r,out)=>out.set(x,z),raycastSolid:()=>null};
+ const world=createWorld1Definition({...config,query,population:{...config.population,shallowPatrols:3}}),normal=world.enemies.filter(e=>e.id.startsWith('w1:scrapling:')),patrols=world.enemies.filter(e=>e.id.startsWith('w1:shallow:'));
+ assert.deepEqual([...new Set(normal.map(e=>e.pack))].map(pack=>normal.filter(e=>e.pack===pack).length),[3,2,2,3,2]);assert.equal(patrols.length,3);for(const p of patrols){assert.equal(p.home.y,.4);assert.equal(p.wanderRadius,2);assert.equal(p.fixedLevel,3);assert.ok(Math.hypot(p.home.x-world.pois.shore.position.x,p.home.z-world.pois.shore.position.z)>6);}
+});
