@@ -22,16 +22,31 @@ const runtime = await startConfiguredWorld({
 | 필드 | 의미와 검증 |
 | --- | --- |
 | `seed` | Area별 명시적 uint32 seed |
-| `populationMode` | 현재 지원값 `fixed-slots`만 허용 |
+| `populationMode` | `nearby-slots-v1` 반응형 pool 또는 명시적 QA용 `fixed-slots` |
 | `fixedLevels` | `scrapling`, `scavenger`, `jellyfish`, `echo`의 명시적 양의 safe integer 레벨 |
 | `population` | `scrapling`, `scavenger`, `jellyfish`, `shallowPatrols`의 명시적 0 이상 정수 slot 수 |
 | `respawnSeconds` | 위 4개 enemy kind/echo별 명시적 양의 유한 초 |
 
 레벨, spawn 수, respawn 시간의 생산 기본값은 없다. `fixed-slots`는 이미 선언된 각 slot의 `desired=1`을 사용하며 nearby-player 밀도 곡선을 구현하지 않는다. Spawn pool은 설정 수로 제한된다. `shallowPatrols`는 별도 source spawn 역할이고 scrapling 레벨/respawn 시간을 사용한다. Echo는 echo 레벨/respawn 설정과 기존 World II 45/120초 규칙을 함께 따른다. Party 보스 add의 실제 encounter 규칙은 별도다.
 
-`population` 합계와 실제 생성된 enemy 수 모두 `limits.maxMutationSourcesPerTick <= 256` 이하여야 한다. 원본 layout이 지형 조건에 따라 일부 jellyfish template을 찾지 못하면 실제 목록이 요청 수보다 적을 수 있다. 조용히 population을 늘리거나 다른 template으로 대체하지 않는다. 새로운 density 알고리즘 이름이나 알 수 없는 필드는 거부한다. 실제 enemyStats에서 계산한 HP/XP/damage 등 숫자가 finite-safe 범위를 벗어나면 ownership 획득 전에 시작을 거부한다. 임의의 level cap으로 정규화하지 않는다.
+`population` 합계와 실제 생성된 enemy 수 모두 `limits.maxMutationSourcesPerTick <= 256` 이하여야 한다. 원본 layout이 지형 조건에 따라 일부 jellyfish template을 찾지 못하면 실제 목록이 요청 수보다 적을 수 있다. 조용히 population을 늘리거나 다른 template으로 대체하지 않는다. 아래에 정의한 이름 외의 density 알고리즘이나 알 수 없는 필드는 거부한다. 실제 enemyStats에서 계산한 HP/XP/damage 등 숫자가 finite-safe 범위를 벗어나면 ownership 획득 전에 시작을 거부한다. 임의의 level cap으로 정규화하지 않는다.
 
-Public은 실제 4개 world, world별 capacity100, PvP disabled다. 이 값들은 현재 host/core 계약에서 온다. Startup policy는 모든 player-to-player damage를 거부한다. `party`를 생략하거나 `{"enabled":false}`로 두면 party가 disabled다. 현재 startup checkpoint는 `enabled:true`를 거부한다. Party owner의 실제 host 지원, 명시적 maxParties/maxEncounters와 각 profile의 return POI 정책이 연결된 별도 checkpoint 전에는 활성화할 수 없다.
+Public은 실제 4개 world, world별 capacity100, PvP disabled다. 이 값들은 현재 host/core 계약에서 온다. Startup policy는 public player-to-player damage를 거부한다. Private party에서만 `pvp:party-only`이고 source/target의 exact full ref가 같은 non-null party membership에 속할 때 허용한다. Self damage, stale life, 다른 party, public toggle은 허용하지 않는다. `party`를 생략하거나 `{"enabled":false}`로 두면 party가 disabled다. 현재 startup checkpoint는 `enabled:true`를 거부한다. Party owner의 실제 host 지원, 명시적 maxParties/maxEncounters와 각 profile의 return POI 정책이 연결된 별도 checkpoint 전에는 활성화할 수 없다.
+
+## 반응형 bounded slot pool
+
+`populationMode:"nearby-slots-v1"`은 `nearby`를 필수로 받는다. `scrapling`, `scavenger`, `jellyfish`, `shallowPatrols`, `echo` 다섯 그룹 모두 `{radius,base,max,scale}`을 명시해야 한다. 레벨과 respawn 시간도 앞의 필수 설정을 사용한다. 수치 기본값은 없다.
+
+- `radius`: spawn home 주변 생존하고 숨겨지지 않은 player를 세는 반경.
+- `base`, `max`: 0 이상 정수. `base <= max`. 일반 그룹 `max`는 같은 `population`의 미리 만든 pool 크기와 정확히 같아야 한다. Echo는 실제 1개 slot이므로 `max <= 1`이다.
+- `scale`: player 1명당 추가 slot 수, 0 이상 유한 수. 활성 목표는 `min(max, base + floor(nearbyPlayers * scale))`이다.
+- 반응형 증가가 있는 그룹(`scale > 0`, `max > base`)은 `radius > 22`가 필요하다. 22m 밖에서 근처 player를 셀 수 없는 조합은 시작을 거부한다.
+
+실제 활성 여부는 불변 `legacySlot`의 그룹/번호로 결정하며 Area 배열 순서나 legacy eN wire 번호로 추측하지 않는다. Pool은 `max`개만 만들고 runtime actor를 무제한 생성하지 않는다. Gone 일반 slot은 목표가 활성이고 모든 player가 원본 22m 보호 반경 밖에 있을 때만 나타난다. Dead slot도 별도 respawn 시간, 목표 활성, 22m clearance를 모두 검사한다. 목표가 감소했을 때 full-HP idle이고 5초 이상 전투 밖이며 22m 안에 player가 없는 초과 slot만 숨긴다. Chasing/leashing/injured actor를 즉시 없애지 않는다.
+
+Echo는 실제 World II 45초 최초/120초 후속 schedule을 유지하고, 해당 시점에 목표 density와 22m clearance도 검사한다. 일반 적 respawn 시간으로 Echo schedule을 대체하지 않는다. Source terrain에서 못 만든 slot을 다른 위치로 조용히 복제하지 않는다.
+
+QA용 한 그룹 예는 `population.scrapling:3`, `nearby.scrapling:{"radius":50,"base":1,"max":3,"scale":1}`이다. 50/1/3/1은 검사 fixture 수치이며 생산 tuning 권고가 아니다. 나머지 네 그룹도 명시해야 한다.
 
 ## 복원 정책의 정확한 범위
 
