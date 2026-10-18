@@ -18,7 +18,7 @@ Node build는 collision JSON 네 개와 source/bytes/SHA256 manifest를 `server-
 - `node tools/qa-world-main-browser.mjs`: production dist와 actual bundled main, 실제 임시 PG에서 캐릭터를 미리 만들지 않고 UI로 생성, 이동, 재접속한다. HTTP 로그인 세션만 fixture로 제공한다.
 - `node tools/qa-server-game.mjs`: 실제 Game/host의 정상 level-1 mage 전투, 보상과 재접속을 검사한다. `WORLD_QA_BROWSER_PORT`와 `WORLD_QA_HOST_PORT`로 격리한다.
 - `node tools/qa-world-social.mjs`: 실제 Game에서 채팅, native party와 계정 설정 복구를 검사한다. 현재 두 캐릭터는 같은 QA 계정이므로 교차계정 Chrome 증거로 쓰지 않는다.
-- `docs/evidence/world-motion-devfd222a8-{parity,provenance}.json`: 최신 dev79 source114개와 실제 controller parity 근거다. 이전 검증 파일도 보존한다.
+- `docs/evidence/world-motion-devfa92f7f-{parity,provenance}.json`: 실제39rig, source114개와 controller1,268,402개 parity 근거다. 이전 검증 파일도 보존한다.
 
 실행 환경은 Node24.22.0, pnpm10.10.0이다. 로컬 임시 PG는 기능 검증용이며 fsync-off이므로 DB 운영 성능 근거가 아니다.
 
@@ -48,3 +48,7 @@ dev `fd222a8`의 설원/잿불/하늘숲 퀘스트와 Astra/Solarkan 10분 XP �
 ## 부활과 이동의 입력 stream
 
 동일 WebSocket의 부활/지역 이동은 session을 유지하고 epoch를 증가시킨다. 이전 binding 하나의 유효한 in-flight input/resync만 실행과 ACK 없이 폐기하며, 첫 current frame을 받으면 이전 binding도 즉시 거부한다. 이전/현재 epoch와 resync는 같은120 burst/60 refill rate budget을 사용한다. 실제 WorldClient의 사망/부활과 후속 입력, 관찰자 연결을 검사했다.
+
+## 파티 대전 치유
+
+party-only PvP의 대전 상대는 `isAttackTarget`과 같은 판정으로 중앙 `Combat.heal`과 ally-heal 후보에서 제외한다. 상대 피해와 자기 치료, 대전 상대가 아닌 파티원의 기존 치료는 유지한다. 공개 PvP는 disabled다. 기존 브라우저 `BattleSync.resolveHealing`도 PvP 적을 제외하므로 브라우저 소스는 변경하지 않았다.
