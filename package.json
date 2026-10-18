@@ -20,6 +20,7 @@
     "test:boss": "node tests/run-boss.mjs",
     "test:engine": "node tests/run-engine.mjs",
     "test:paving": "node --experimental-strip-types --test tests/paving-layout.test.mjs",
+    "test:arena": "node --experimental-strip-types --test tests/dawn-arena-ground.test.mjs",
     "test:sim:core": "node tools/test-sim-core.mjs",
     "test:sim": "node tests/run-sim.mjs"
   },
