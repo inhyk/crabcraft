@@ -288,7 +288,7 @@ export class Multiplayer {
     if ((this.room || this.shard) && this.elapsed >= 0.05) {
       this.elapsed = 0;
       const u = this.game.player.unit;
-      this.send({ type: 'state', state: { x: u.pos.x, y: u.pos.y, z: u.pos.z, yaw: u.yaw, hp: u.hp, maxHp: u.maxHp, alive: u.alive, level: u.level } });
+      this.send({ type: 'state', state: { x: u.pos.x, y: u.pos.y, z: u.pos.z, yaw: u.yaw, hp: u.hp, maxHp: u.maxHp, alive: u.alive, level: u.level, area: this.game.world2.chapter } });
     }
     for (const [id,p] of this.peers) {
       const u = p.unit, s = p.state;

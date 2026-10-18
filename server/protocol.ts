@@ -8,7 +8,7 @@ const finite = (n: unknown, max: number) => typeof n === 'number' && Number.isFi
 export const clean = (s: unknown, max: number) => typeof s === 'string' ? s.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max) : '';
 
 export type Spec = { race: string; sex: string; classId: string; shell: number; crest: number; led: number; name: string };
-export type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number };
+export type State = { x: number; y: number; z: number; yaw: number; hp: number; maxHp: number; alive: boolean; level?: number; area?: number };
 
 
 export function specOf(value: unknown): Spec | null {
@@ -20,6 +20,6 @@ export function specOf(value: unknown): Spec | null {
 }
 export function stateOf(s: State): State | null {
   if (!s || !finite(s.x, 2000) || !finite(s.z, 2000) || !finite(s.y, 200) || !finite(s.yaw, 10000) || !finite(s.hp, Number.MAX_SAFE_INTEGER) || !finite(s.maxHp, Number.MAX_SAFE_INTEGER) || s.maxHp <= 0 || typeof s.alive !== 'boolean') return null;
-  return { x: s.x, y: s.y, z: s.z, yaw: s.yaw, hp: Math.max(0, Math.min(s.hp, s.maxHp)), maxHp: s.maxHp, alive: s.alive, ...(Number.isInteger(s.level) && s.level! >= 1 && s.level! <= Number.MAX_SAFE_INTEGER ? { level: s.level } : {}) };
+  return { x: s.x, y: s.y, z: s.z, yaw: s.yaw, hp: Math.max(0, Math.min(s.hp, s.maxHp)), maxHp: s.maxHp, alive: s.alive, ...(Number.isInteger(s.level) && s.level! >= 1 && s.level! <= Number.MAX_SAFE_INTEGER ? { level: s.level } : {}), ...([1, 2, 3, 4].includes(s.area!) ? { area: s.area } : {}) };
 }
 
