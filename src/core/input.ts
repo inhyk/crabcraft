@@ -68,6 +68,9 @@ export class Input {
     this.wheel = 0;
   }
 
+  /** Clear all accepted browser edges when focus or authenticated ownership changes. */
+  reset():void {this.down.clear();this.buttons.clear();this.endFrame();this.dragDistance=0;}
+
   dispose(): void {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
@@ -99,8 +102,7 @@ export class Input {
     this.released.add(e.code);
   };
   private readonly onBlur = (): void => {
-    this.down.clear();
-    this.buttons.clear();
+    this.reset();
   };
   private readonly onPointerDown = (e: PointerEvent): void => {
     this.buttons.add(e.button);
