@@ -10,7 +10,7 @@ function fixture(classId='warrior',extra={}){const area=createArea({id:`player-$
 const intent=(seq,more={})=>({seq,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands:[],...more});
 const step=(area,n=1,inputs=new Map())=>{for(let i=0;i<n;i++)area.step(inputs);};
 
-test('movement retains held input without replaying once-only commands',()=>{const {area,player,unit}=fixture();area.step(new Map([[unit.ref.id,intent(1,{forward:1,commands:[{kind:'ability',slot:5}]})]]));const end=player.state.cooldowns['crown-burst'].end;step(area,59);assert.ok(unit.z>4.5&&unit.z<5);assert.equal(player.lastConsumedSeq,1);assert.equal(player.state.cooldowns['crown-burst'].end,end);const presses=area.drainEvents().filter(e=>e.event.type==='press');assert.equal(presses.length,1);});
+test('movement retains held input without replaying once-only commands',()=>{const {area,player,unit}=fixture();area.step(new Map([[unit.ref.id,intent(1,{forward:1,commands:[{kind:'ability',slot:5}]})]]));const end=player.state.cooldowns['crown-burst'].end;step(area,59);assert.ok(unit.z>9.5&&unit.z<10);assert.equal(player.lastConsumedSeq,1);assert.equal(player.state.cooldowns['crown-burst'].end,end);const presses=area.drainEvents().filter(e=>e.event.type==='press');assert.equal(presses.length,1);});
 
 test('walking, backpedal and sprint reach shipped steady speeds with exponential damping',()=>{for(const [forward,sprint,expected]of [[1,false,5],[-1,false,-3.1],[1,true,8.25]]){const {area,player,unit}=fixture();area.step(new Map([[unit.ref.id,intent(1,{forward,sprint})]]));step(area,89);assert.ok(Math.abs(player.state.velZ-expected)<1e-10);assert.equal(player.state.velX,0);assert.equal(unit.y,0);}});
 
