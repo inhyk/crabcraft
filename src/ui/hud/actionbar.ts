@@ -212,6 +212,13 @@ export class CastBar {
     this.el.className = `castbar on${channel ? ' channel' : ''}`;
   }
 
+  /** Restore the original cast fraction after reconnect, without starting a gameplay cast. */
+  observe(name:string|(()=>string)|null,start:number,end:number,channel=false):void {
+    if(name===null){this.active=false;this.hideAt=0;this.el.classList.remove('on');this.time.textContent='';return;}
+    if(!Number.isFinite(start)||!Number.isFinite(end)||end<start)throw new Error('Invalid observed cast clock');
+    this.t0=start;this.dur=Math.max(.000001,end-start);this.channel=channel;this.active=true;this.hideAt=0;this.labelSource=name;this.refreshLanguage();this.el.className=`castbar on${channel?' channel':''}`;this.update();
+  }
+
   finish(): void {
     if (!this.active) return;
     this.active = false;
