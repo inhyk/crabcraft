@@ -1,3 +1,4 @@
+import type {RenderPoseRecipe} from './renderPose.ts';
 import type {CharacterCheckpointV1,RestoredPlayerData} from './persistence.ts';
 export type {CharacterCheckpointV1,RestoredPlayerData,RestorePolicy} from './persistence.ts';
 import type {BoatCommand, BoatState, VillageRound, FeatureEvent, NpcFeatureEvent} from './features/types.ts';
@@ -92,6 +93,7 @@ export interface ClipRule {
  * Actions start immediately in core whether or not browser assets have loaded.
  */
 export interface NumericPoseState {
+  renderRecipe: RenderPoseRecipe;
   locomotionTime: number; localVx: number; localVz: number; yawRate: number;
   previousX: number; previousZ: number; previousYaw: number;
   appliedQ: number[]; appliedPosition: [number, number, number];

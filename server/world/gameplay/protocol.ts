@@ -1,4 +1,5 @@
 /** Gameplay v3. Pure bounded binary values shared by server and browser; v2 is untouched. */
+import { ACHIEVEMENT_IDS } from '../../../src/sim/persistence.ts';
 import type { CommandResult } from './events.ts';
 import type { AreaSnapshot, EntityRef, EventRecord, PlayerState, ProjectileState, SimUnit, NumericPoseState } from '../../../src/sim/types.ts';
 import { encodeInput, decodeInput } from './intents.ts';
@@ -149,6 +150,7 @@ export interface AchievementView {distance:number;earned:readonly string[]}
 export interface SelfView {player:SelfPlayer;achievements:AchievementView;inCombat:boolean}
 export interface FeatureView {
  environment:{beacon:boolean;clock:number};
+ exploration?:readonly {unit:EntityRef;activeUntil:number}[];
  boat:null|{x:number;z:number;yaw:number;speed:number;seats:readonly(EntityRef|null)[]};
  village:null|{id:string;mode:'hide'|'tag';phase:'ready'|'play'|'done';left:number;starter:EntityRef;seeker:EntityRef;members:readonly EntityRef[];caught:readonly EntityRef[];result:string};
 }
@@ -168,13 +170,13 @@ export function validateActor(value:unknown,c:GameplayCatalog,area:string):asser
 function validateSelf(value:unknown,c:GameplayCatalog,area:string):void {
  object(value,{inCombat:bool,player:v=>{
   const numeric=['resource','maxResource','xp','coins','baseMaxHp','gcdStart','gcdEnd','nextSwing','lastAttack','velX','velZ','jumpT','spinT','lastSpend','targetDeadAt'];
-  object(v,{unit:x=>reference(x,area),classId:choice('warrior','mage','priest'),...Object.fromEntries(numeric.map(k=>[k,number])),attackRank:integer,armorRank:integer,weaponOwned:bool,armorOwned:bool,cooldowns:x=>mapValues(x,y=>object(y,{start:number,end:number}),c.abilities),cast:nullable(x=>object(x,{ability:catalogValue(c.abilities),start:number,end:number,target:nullable(r=>reference(r,area))})),channel:nullable(x=>object(x,{kind:choice('recall','beacon','waystone'),start:number,end:number,targetId:nullable(text),to:vector})),target:nullable(x=>reference(x,area)),warded:bool,queued:nullable(catalogValue(c.abilities)),dash:nullable(x=>object(x,{target:r=>reference(r,area),t:number})),deadUntil:nullable(number),role:choice('authoritative'),controlsLocked:bool,talkTarget:nullable(x=>reference(x,area)),quests:x=>object(x,{chapter:v=>integer(v,1,4),status:v=>mapValues(v,choice('locked','available','active','ready','done'),c.quests),progress:v=>mapValues(v,number,c.objectives),cogs:integer,tracked:v=>mapValues(v,catalogValue(c.quests),['1','2','3','4'])}),flags:x=>mapValues(x,bool,c.flags),cogMisses:integer},{lighthouseSecretFound:bool});
+  object(v,{unit:x=>reference(x,area),classId:choice('warrior','mage','priest'),...Object.fromEntries(numeric.map(k=>[k,number])),attackRank:integer,armorRank:integer,weaponOwned:bool,armorOwned:bool,cooldowns:x=>mapValues(x,y=>object(y,{start:number,end:number}),c.abilities),cast:nullable(x=>object(x,{ability:catalogValue(c.abilities),start:number,end:number,target:nullable(r=>reference(r,area))})),channel:nullable(x=>object(x,{kind:choice('recall','beacon','waystone','lighthouse-secret'),start:number,end:number,targetId:nullable(text),to:vector})),target:nullable(x=>reference(x,area)),warded:bool,queued:nullable(catalogValue(c.abilities)),dash:nullable(x=>object(x,{target:r=>reference(r,area),t:number})),deadUntil:nullable(number),role:choice('authoritative'),controlsLocked:bool,talkTarget:nullable(x=>reference(x,area)),quests:x=>object(x,{chapter:v=>integer(v,1,4),status:v=>mapValues(v,choice('locked','available','active','ready','done'),c.quests),progress:v=>mapValues(v,number,c.objectives),cogs:integer,tracked:v=>mapValues(v,catalogValue(c.quests),['1','2','3','4'])}),flags:x=>mapValues(x,bool,c.flags),cogMisses:integer,lighthouseSecretFound:bool,xp:integer,coins:integer});
   if(Number(v.xp)<0||Number(v.coins)<0||Number(v.resource)<0||Number(v.resource)>Number(v.maxResource))fail('invalid self progress');
- },achievements:v=>object(v,{distance:number,earned:list(text,128)})});
+ },achievements:v=>object(v,{distance:number,earned:list(catalogValue(ACHIEVEMENT_IDS),ACHIEVEMENT_IDS.length)})});
 }
 function validateFeatures(v:unknown,area:string):void {
  const ref=(x:unknown)=>reference(x,area);
- object(v,{environment:x=>object(x,{beacon:bool,clock:number}),boat:nullable(x=>{object(x,{x:number,z:number,yaw:number,speed:number,seats:list(nullable(ref),2,2)});const seats=x.seats as (EntityRef|null)[];if(seats[0]&&seats[1]&&seats[0].id===seats[1].id)fail('duplicate boat seat');}),village:nullable(x=>object(x,{id:text,mode:choice('hide','tag'),phase:choice('ready','play','done'),left:number,starter:ref,seeker:ref,members:list(ref,100),caught:list(ref,100),result:choice('','seekers','runners','cancelled')}))});
+ object(v,{environment:x=>object(x,{beacon:bool,clock:number}),boat:nullable(x=>{object(x,{x:number,z:number,yaw:number,speed:number,seats:list(nullable(ref),2,2)});const seats=x.seats as (EntityRef|null)[];if(seats[0]&&seats[1]&&seats[0].id===seats[1].id)fail('duplicate boat seat');}),village:nullable(x=>object(x,{id:text,mode:choice('hide','tag'),phase:choice('ready','play','done'),left:number,starter:ref,seeker:ref,members:list(ref,100),caught:list(ref,100),result:choice('','seekers','runners','cancelled')}))},{exploration:list(x=>object(x,{unit:ref,activeUntil:number}),1)});
 }
 function validateProjectile(v:unknown,area:string):void {object(v,{id:x=>integer(x,1,0xffffffff),source:x=>reference(x,area),target:x=>reference(x,area),style:choice('bubble','spark','holy','rust'),x:number,y:number,z:number,speed:number,elapsed:number,bornStep:integer});}
 export function validateSnapshot(p:unknown,c:GameplayCatalog,area:string):asserts p is SnapshotPayload {
@@ -195,6 +197,7 @@ export interface ObservationInput {
 }
 export type WorldControl=
  | {type:'inputAck'}
+ | {type:'party';state:null|{code:string;leader:string;members:readonly {id:string;name:string;ref:EntityRef|null;world:AreaSnapshot['world'];online:boolean}[];pvp:boolean}}
  | {type:'queued';world:'w1'|'w2'|'w3'|'w4';position:number}
  | {type:'error';code:string;retryable:boolean}
  | {type:'restarting';retryAfterSeconds:number}
@@ -202,6 +205,7 @@ export type WorldControl=
 export function validateControl(v:unknown):asserts v is WorldControl {
  if(!v||typeof v!=='object')fail('invalid control');const type=(v as WorldControl).type;
  if(type==='inputAck')object(v,{type:choice(type)});
+ else if(type==='party')object(v,{type:choice(type),state:nullable(s=>{object(s,{code:x=>{if(typeof x!=='string'||! /^[0-9A-F]{6}$/.test(x))fail('invalid party code');},leader:text,members:list(m=>object(m,{id:text,name:x=>text(x,64),ref:nullable(reference),world:choice('w1','w2','w3','w4'),online:bool}),8,1),pvp:bool});const members=s.members as {id:string}[];if(new Set(members.map(m=>m.id)).size!==members.length||!members.some(m=>m.id===s.leader))fail('invalid party membership');})});
  else if(type==='queued')object(v,{type:choice(type),world:choice('w1','w2','w3','w4'),position:x=>integer(x,1)});
  else if(type==='error')object(v,{type:choice(type),code:text,retryable:bool});
  else if(type==='restarting')object(v,{type:choice(type),retryAfterSeconds:number});
@@ -310,6 +314,8 @@ export function projectObservationExtras(snapshot:AreaSnapshot,character:string,
  const features:FeatureView={environment:{beacon:snapshot.features.beaconLit,clock:snapshot.time},boat:{x:boat.x,z:boat.z,yaw:boat.yaw,speed:boat.speed,seats:boat.seats.map(id=>id===null?null:resolve(id))},village:village?{id:village.id,mode:village.mode,phase:village.phase,left:village.left,starter:resolve(village.starter),seeker:resolve(village.seeker),members:village.members.map(resolve),caught:village.caught.map(resolve),result:village.result}:null};
  const telegraphs=snapshot.recovery.telegraphs.filter(e=>e.event.type==='telegraph'&&visibleIds.has(e.event.src.id));
  const endings=snapshot.recovery.endings.filter(e=>e.unit.id===self.unit.id&&e.unit.life===self.unit.life);
+ const exploration=(snapshot.features as AreaSnapshot['features']&{exploration?:readonly {unit:EntityRef;activeUntil:number}[]}).exploration;
+ if(exploration)features.exploration=exploration.filter(e=>e.unit.id===self.unit.id&&e.unit.life===self.unit.life);
  return clone({features,recovery:{telegraphs,endings},achievements:self.achievements});
 }
 
