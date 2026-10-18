@@ -36,7 +36,7 @@ export class WorldRules {
     if(u.kind==='scrapling'){objectives.push({kind:'kill-scrapling',amount:1});if(credit.cogEligible)objectives.push({kind:'cog-roll',amount:s.random.next()});}
     else if(u.kind==='scavenger')objectives.push({kind:'kill-scavenger',amount:1});
    }else if(u.kind==='boss'){
-    const controller=s.controller(victim),profile=controller&&'profile' in controller?controller.profile:null;if(typeof profile!=='string'||!(profile in BOSS_PROFILES))continue;const id=profile as BossSim['profile'];if(!credit.flags[FLAGS[id]])xp=BOSS_PROFILES[id].reward;flags.push(FLAGS[id]);objectives.push({kind:id==='eclipse'?'eclipse-boss':id==='dawn'?'dawn-boss':'boss',amount:1},{kind:'clear-encounter-blessing',amount:1});
+    const controller=s.controller(victim),profile=controller&&'profile' in controller?controller.profile:null;if(typeof profile!=='string'||!(profile in BOSS_PROFILES))continue;const id=profile as BossSim['profile'];xp=BOSS_PROFILES[id].reward;flags.push(FLAGS[id]);objectives.push({kind:id==='eclipse'?'eclipse-boss':id==='dawn'?'dawn-boss':'boss',amount:1},{kind:'clear-encounter-blessing',amount:1});
    }else continue;
    const grant:EarnedGrant={id:JSON.stringify([victim.area,victim.id,victim.life,credit.character]),victim:copy(victim),recipient:credit.character,xp,coins,objectives,flags};
    planned.push(grant);this.grants.set(grant.id,{grant:copy(grant),appliedHere:false,acknowledged:false});characters.push(credit.character);
@@ -49,7 +49,7 @@ export class WorldRules {
   for(const o of grant.objectives)if(o.kind==='cog-roll'&&(!Number.isFinite(o.amount)||o.amount<0||o.amount>=1))throw new Error('invalid-cog-roll');
   const s=this.services,p=s.playerByCharacter(grant.recipient);if(!p)return 'not-owner';let ids=this.applied.get(grant.recipient);if(ids?.has(grant.id))return 'duplicate';if(!ids){ids=new Set();this.applied.set(grant.recipient,ids);}
   const unit=s.getUnit(p.state.unit);if(!unit)return 'not-owner';const priorState=copy(p.state),priorUnit=copy(unit);let cogPresentation=false;
-  try{s.outcomeTransaction(()=>{p.gainXp(grant.xp);p.state.coins=Math.min(Number.MAX_SAFE_INTEGER,p.state.coins+grant.coins);
+  try{s.outcomeTransaction(()=>{const firstClearFlags=grant.flags.filter(flag=>Object.values(FLAGS).includes(flag));const firstClearAlreadyEarned=firstClearFlags.length>0&&firstClearFlags.every(flag=>p.state.flags[flag]);if(!firstClearAlreadyEarned)p.gainXp(grant.xp);p.state.coins=Math.min(Number.MAX_SAFE_INTEGER,p.state.coins+grant.coins);
   for(const flag of grant.flags)p.state.flags[flag]=true;
   for(const o of grant.objectives){if(o.kind==='clear-encounter-blessing'){const u=s.getUnit(p.state.unit);if(u){u.blessingUntil=0;u.encounterBlessing=false;}}else if(o.kind==='cog-roll'){const objective=QUESTS.q1.objectives.find(o=>o.kind==='collect-cog')!;if(p.state.quests.status.q1!=='active'||(p.state.quests.progress[objective.id]??0)>=objective.count)continue;if(o.amount<.7||p.state.cogMisses>=2){p.state.cogMisses=0;questBump(p,s,'collect-cog',1,true);cogPresentation=true;}else p.state.cogMisses++;}else if(o.kind==='cog-reset')p.state.cogMisses=0;else if(o.kind==='cog-miss')p.state.cogMisses++;else if(o.kind==='patrol-kill'){const kills=(p.state.quests.progress['patrol-kills']??0)+o.amount;p.state.quests.progress['patrol-kills']=kills%5;if(kills>=5){const u=s.getUnit(p.state.unit);if(u)p.gainXp(patrolReward(u.level)*Math.floor(kills/5));}}else questBump(p,s,o.kind,o.amount,true);}
   });}catch(error){Object.assign(p.state,priorState);Object.assign(unit,priorUnit);throw error;}
