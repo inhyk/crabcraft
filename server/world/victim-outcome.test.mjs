@@ -1,6 +1,7 @@
 // Real Area lifetime contributors + actual PostgreSQL, not a synthetic contributor array alone.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import pg from 'pg';
@@ -48,13 +49,27 @@ for (const [profile, world, level, rewardXp, rewardCoins] of [['eclipse', 'w2', 
     } finally { for (const pending of source.pendingGrants()) source.acknowledgeGrant(pending.grant.id); source.dispose(); destination.dispose(); }
   });
 }
+// Pool.end() can resolve before its clients emit end; PG must remain alive through both boundaries.
+const poolState = new WeakMap();
+function testPool(connectionString) {
+  const result = new pg.Pool({ connectionString }), state = { clients: new Set(), closing: null };
+  poolState.set(result, state);
+  result.on('connect', client => { state.clients.add(client); client.once('end', () => state.clients.delete(client)); });
+  return result;
+}
+function closePool(result) {
+  if (!result) return Promise.resolve();
+  const state = poolState.get(result);
+  if (!state.closing) { const disconnected = [...state.clients].map(client => once(client, 'end')); state.closing = Promise.all([result.end(), ...disconnected]); }
+  return state.closing;
+}
 const storeError = code => e => e instanceof CharacterStoreError && e.code === code;
 let cluster, pool, store, accountSequence = 1;
 before(async () => {
-  try { cluster = await startPostgres(); pool = new pg.Pool({ connectionString: cluster.url }); await migrate(pool); store = new CharacterStore(pool, codec); }
-  catch (e) { await pool?.end(); cluster?.stop(); throw e; }
+  try { cluster = await startPostgres(); pool = testPool(cluster.url); await migrate(pool); store = new CharacterStore(pool, codec); }
+  catch (e) { await closePool(pool); cluster?.stop(); throw e; }
 });
-after(async () => { try { await pool?.end(); } finally { cluster?.stop(); } });
+after(async () => { try { await closePool(pool); } finally { cluster?.stop(); } });
 async function character() {
   const accountId = 'g' + (accountSequence++).toString(16).padStart(23, '0');
   await pool.query("INSERT INTO accounts(username,save,updated,created) VALUES($1,'{}',1,1)", [accountId]);
@@ -125,7 +140,7 @@ test('101 lifetime contributors with at most100 concurrent real Area owners all 
     const capture = destination.capturePlayerCheckpoint(ref), saved = await store.saveCheckpoint(record.accountId, record.characterId, record.revision, capture.checkpoint, capture.appliedGrantIds);
     destination.markCheckpointDurable(capture.captureId, saved.revision, capture.appliedGrantIds);
     // New store/pool after a simulated lost ACK reads101 complete receipts; no XP/coin reapplication.
-    const reconnectPool = new pg.Pool({ connectionString: cluster.url });
+    const reconnectPool = testPool(cluster.url);
     try {
       const reconnect = new CharacterStore(reconnectPool, codec);
       for (const e of entries) {
@@ -134,7 +149,7 @@ test('101 lifetime contributors with at most100 concurrent real Area owners all 
         assert.deepEqual(await reconnect.pendingGrants(e.accountId, e.characterId), []);
       }
       assert.equal((await reconnect.recordVictimOutcome(entries, resources)).length, 101);
-    } finally { await reconnectPool.end(); }
+    } finally { await closePool(reconnectPool); }
     assert.equal((await pool.query('SELECT count(*)::int n FROM world_character_grant_receipts WHERE grant_id=ANY($1::text[])', [entries.map(e => e.id)])).rows[0].n, 101);
     for (const p of pending) source.acknowledgeGrant(p.grant.id);
     source.releaseDurabilityBarrier(barrier); barrier = undefined; assert.equal(source.pendingGrants().length, 0);
@@ -202,7 +217,7 @@ test('actual guard loss during an actual blocked PG write suppresses publication
 });
 
 test('migration005 preserves existing account/save and all004 character/grant/receipt rows and reruns cleanly', async () => {
-  await pool.query('CREATE DATABASE victim_pre005'); const url = new URL(cluster.url); url.pathname = '/victim_pre005'; const legacy = new pg.Pool({ connectionString: url.href });
+  await pool.query('CREATE DATABASE victim_pre005'); const url = new URL(cluster.url); url.pathname = '/victim_pre005'; const legacy = testPool(url.href);
   try {
     await legacy.query('CREATE TABLE schema_migrations(version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
     for (const version of ['001_accounts', '002_google_only', '003_chat_reports', '004_world_characters']) {
@@ -215,11 +230,11 @@ test('migration005 preserves existing account/save and all004 character/grant/re
     const tables = ['accounts', 'world_characters', 'world_character_grants', 'world_character_grant_receipts'], before = await Promise.all(tables.map(t => legacy.query(`SELECT * FROM ${t}`)));
     assert.deepEqual(await migrate(legacy), ['005_world_victim_outcomes', '006_world_chat', '007_world_paged_ledger']); assert.deepEqual(await migrate(legacy), []);
     const after = await Promise.all(tables.map(t => legacy.query(`SELECT * FROM ${t}`))); assert.deepEqual(after.map(r => r.rows), before.map(r => r.rows));
-  } finally { await legacy.end(); await pool.query('DROP DATABASE victim_pre005'); }
+  } finally { await closePool(legacy); await pool.query('DROP DATABASE victim_pre005'); }
 });
 
 test('independent pools serialize equal whole outcomes and concurrent legacy writes never seal a partial set', async () => {
-  const a = await character(), b = await character(), secondPool = new pg.Pool({ connectionString: cluster.url });
+  const a = await character(), b = await character(), secondPool = testPool(cluster.url);
   try {
     const second = new CharacterStore(secondPool, codec), entries = [entry(a, 'outcome-race'), entry(b, 'outcome-race')];
     const [forward, reverse] = await Promise.all([store.recordVictimOutcome(entries, resources), second.recordVictimOutcome([...entries].reverse(), resources)]);
@@ -229,5 +244,5 @@ test('independent pools serialize equal whole outcomes and concurrent legacy wri
     assert.equal(legacy.status, 'fulfilled');
     if (whole.status === 'fulfilled') assert.deepEqual(await count(keyOf(mixed[0])), { seals: 1, grants: 2 });
     else { assert.equal(whole.reason.code, 'outcome_conflict'); assert.deepEqual(await count(keyOf(mixed[0])), { seals: 0, grants: 1 }); }
-  } finally { await secondPool.end(); }
+  } finally { await closePool(secondPool); }
 });
