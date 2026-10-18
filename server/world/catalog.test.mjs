@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { WIRE_SCHEMA_REVISION } from './gameplay/protocol.ts';
 import { readFile } from 'node:fs/promises';
-import { loadWorldCatalog } from './catalog.ts';
+import { loadWorldCatalog, createGameplayCatalog } from './catalog.ts';
 const directory = new URL('../../public/world/', import.meta.url);
 const source = JSON.parse(await readFile(new URL('collision-w1.json', directory), 'utf8')).source;
 const ids = ['w1', 'w2', 'w3', 'w4'];
@@ -31,4 +32,9 @@ test('catalog rejects changed bake versions and bounds before constructing the w
 test('public catalog cannot accidentally host story bosses or substitute mismatched encounters', async () => {
   await assert.rejects(loadWorldCatalog({ ...options(), variants: (_world, definition) => ({ publicDefinition: definition, encounterDefinitions: new Map() }) }), /story bosses/);
   await assert.rejects(loadWorldCatalog({ ...options(), variants: (_world, definition) => ({ publicDefinition: { ...definition, bosses: [] }, encounterDefinitions: new Map([['frost', { ...definition, bosses: [] }]]) }) }), /encounter/);
+});
+
+
+test('public decoding catalog explicitly advertises the compiled binary schema without account or presentation state',async()=>{
+ const worlds=await loadWorldCatalog(options()),catalog=createGameplayCatalog(worlds);assert.equal(catalog.wireSchemaRevision,WIRE_SCHEMA_REVISION);assert.equal(Object.isFrozen(catalog),true);assert.match(catalog.version,/^world-v3-[a-f0-9]{64}$/);for(const key of ['accountId','characterId','endingPresentation','schemaRevision'])assert.equal(key in catalog,false);
 });
