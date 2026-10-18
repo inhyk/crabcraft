@@ -1,8 +1,8 @@
-import type { ActionId, ActionRequest, Admission, Area as AreaContract, AreaContext, AreaDebugState, AreaOptions, AreaServices, AreaSnapshot, BossSim, CharacterId, ClassId, CombatController, DebugValue, EarnedGrant, EnemySim, EntityId, EntityRef, HitPlan, PendingHit, PlayerIntent, PlayerSim, ProjectileState, SimUnit, StagedArrival, StagedDeparture, TimerAction, TransferDTO } from './types.ts';
+import type { EventRecord, PlayerCommand, ActionId, ActionRequest, Admission, Area as AreaContract, AreaContext, AreaDebugState, AreaOptions, AreaServices, AreaSnapshot, BossSim, CharacterId, ClassId, CombatController, DebugValue, EarnedGrant, EnemySim, EntityId, EntityRef, HitPlan, PendingHit, PlayerIntent, PlayerSim, ProjectileState, SimUnit, StagedArrival, StagedDeparture, TimerAction, TransferDTO } from './types.ts';
 import { Actions } from './actions.ts';
 import { validatePopulation, worldChapter } from './math.ts';
 import { Combat } from './combat.ts';
-import { resolvePlayerHit } from './abilities.ts';
+import { playAction, resolvePlayerHit } from './abilities.ts';
 import { Enemy } from './enemy.ts';
 import { Boss } from './boss.ts';
 import { copyValue, Events, immutable, sameRef } from './events.ts';
@@ -14,6 +14,10 @@ import { createUnit, feedLocomotion, teleport } from './unit.ts';
 import { advanceNumericPose, initializeNumericPose } from './pose.ts';
 import { WorldRules } from './outcomes.ts';
 import { captureTransfer, restoreTransfer } from './transfer.ts';
+import { NumericBoat } from './features/boat.ts';
+import { NumericVillageGames } from './features/village.ts';
+import { NumericNpc, NumericTownsfolk } from './features/npc.ts';
+import type {FeatureContext, NpcFeatureContext, FeatureEvent} from './features/types.ts';
 import { freshQuests, setQuestChapter } from './data/quests.ts';
 
 const DT = 1 / 30;
@@ -27,6 +31,13 @@ export class SimulationArea implements AreaContract {
   private enemyMap=new Map<EntityId,Enemy>();
   private bossMap=new Map<EntityId,Boss>();
   private controllerMap=new Map<EntityId,CombatController>();
+  private ambientMap=new Map<EntityId,NumericTownsfolk>();
+  private npcMap=new Map<EntityId,NumericNpc>();
+  private boat:NumericBoat;
+  private village:NumericVillageGames;
+  private telegraphs=new Map<string,EventRecord>();
+  private endings=new Map<EntityId,{unit:EntityRef;chapter:4;replay:boolean}>();
+  private recoveryOrder=-1;
   private clock=0;
   private stepId=0;
   private context:AreaContext;
@@ -74,7 +85,7 @@ export class SimulationArea implements AreaContract {
       cancelPendingHit:ref=>{const u=this.getUnit(ref);if(u)u.pendingHit=null;},resolveHit:plan=>this.resolveHit(plan),
       launch:input=>this.flights.launch(input,this.stepId),spawnAdd:(boss,x,z)=>this.spawnAdd(boss,x,z),
       respawnUnit:ref=>this.respawnUnit(ref),bossAvailable:profile=>this.worldRules.encounterAvailable(profile),
-      runCommand:(ref,command)=>this.worldRules.command(ref,command),bossByProfile:profile=>[...this.bossMap.values()].find(b=>b.profile===profile)??null,
+      runCommand:(ref,command)=>this.command(ref,command),bossByProfile:profile=>[...this.bossMap.values()].find(b=>b.profile===profile)??null,
       encounterActive:()=>[...this.bossMap.values()].some(b=>b.engaged),
       completeChannel:(ref,ch)=>{const p=this.services.player(ref);if(p)this.worldRules.completeChannel(p,ch);},
       recordContribution:(victim,attacker,damage)=>this.worldRules.recordContribution(victim,attacker,damage),
@@ -84,17 +95,43 @@ export class SimulationArea implements AreaContract {
     this.actions=new Actions(options.actionData,e=>this.services.emit(e),p=>this.resolveHit(p));
     this.flights=new Projectiles(options.limits.projectiles,r=>this.getUnit(r),e=>this.services.emit(e),p=>this.resolveHit(p));
     for(const spawn of this.options.definition.enemies)validatePopulation(this.options.policy.enemyPopulation(spawn,0));
+    const feature:FeatureContext={areaId:options.id,chapter:worldChapter(this.services.world),authority:true,authorityEpoch:1,rng:this.rng,query:options.query,
+      get time(){return self.clock;},get encounterEngaged(){return self.services.encounterActive();},get endingActive(){return self.endings.size>0;},authorityId:null,
+      actors:()=>[...this.playerMap.values()].map(p=>({id:`actor:${p.unit.ref.id}`,unit:p.unit})),
+      townsfolk:()=>[...this.ambientMap.values()].map(n=>({id:`actor:${n.unit.ref.id}`,unit:n.unit})),
+      resolve:id=>{const match=/^actor:(\d+)$/.exec(id);return match?this.unitMap.get(Number(match[1]))??null:null;},
+      ownsProgression:id=>{const match=/^actor:(\d+)$/.exec(id);return !!match&&this.playerMap.has(Number(match[1]));},
+      navPoints:Object.values(this.options.definition.pois).map(p=>p.position),
+      clearControls:u=>this.clearControls(u),stopActions:u=>{if(u.actions.some(a=>a.targetWeight>0))this.actions.stop(u,undefined,0);},emit:e=>this.featureEvent(e)};
+    this.boat=new NumericBoat(feature,{villagePlaying:()=>this.village.playing});
+    this.village=new NumericVillageGames(feature,{boatOccupied:()=>this.boat.snapshot().seats.some(Boolean)});
     this.populate();
   }
   private boundary(observe=false):void {if(this.disposed)throw new Error('Area disposed');if(this.failed&&!observe)throw new Error('Area failed; host must retire it');if(this.running)throw new Error('Requires between-tick boundary');}
   private getUnit(ref:EntityRef):SimUnit|null {if(!ref||ref.area!==this.services.id)return null;const u=this.unitMap.get(ref.id);return u&&sameRef(u.ref,ref)?u:null;}
   private makeUnit(archetype:string,kind:SimUnit['kind'],reaction:SimUnit['reaction'],position:{x:number;y:number;z:number}):SimUnit {const unit=createUnit({area:this.services.id,id:this.ids.next(),life:1},archetype,kind,reaction,this.options.actionData,position);teleport(unit,this.options.query,position.x,position.z);return unit;}
+  private npcContext():NpcFeatureContext {const self=this;return {get time(){return self.clock;},rng:this.rng,query:this.options.query,authority:true,get endingActive(){return self.endings.size>0;},players:()=>this.services.players(),externallyOwned:r=>this.village.ownsNpc(r)||this.getUnit(r)?.kind==='freed',hasAction:u=>u.actions.some(a=>a.targetWeight>0),playAction:(u,id)=>playAction(this.services,u,id),emit:e=>this.services.emit({type:'feature',event:e})};}
   private populate():void {
-    for(const n of this.options.definition.npcs){const u=this.makeUnit(n.archetype??'human','npc','friendly',n.position);u.npcId=n.id;u.yaw=n.yaw;this.unitMap.set(u.ref.id,u);}
+    for(const n of this.options.definition.npcs){const u=this.makeUnit(n.archetype??'human','npc','friendly',n.position);u.npcId=n.id;u.targetable=n.targetable??true;teleport(u,this.options.query,u.x,u.z,n.yaw);this.unitMap.set(u.ref.id,u);if(['brinebeard','silvermoon','coralline','grukk','hoofclaw','rattlebolt','pip'].includes(n.id))this.npcMap.set(u.ref.id,new NumericNpc(this.npcContext(),u,{npcId:n.id,homeYaw:n.yaw}));}
+    for(const n of this.options.definition.townsfolk??[]){const u=this.makeUnit(n.archetype,'townsfolk','friendly',n.position);teleport(u,this.options.query,u.x,u.z,n.yaw??0);this.unitMap.set(u.ref.id,u);this.ambientMap.set(u.ref.id,new NumericTownsfolk(this.npcContext(),u,{...n,relocated:this.services.world!=='w1'}));}
     for(const spawn of this.options.definition.enemies){const u=this.makeUnit(spawn.role==='echo'?'echo':spawn.kind,spawn.kind,'hostile',spawn.home);this.unitMap.set(u.ref.id,u);const e=new Enemy(this.services,u,spawn);this.enemyMap.set(u.ref.id,e);this.controllerMap.set(u.ref.id,e);if(spawn.role!=='ordinary'||validatePopulation(this.options.policy.enemyPopulation(spawn,0)).desired===0)e.despawn();}
     for(const e of this.enemyMap.values())e.pack=[...this.enemyMap.values()].filter(other=>this.options.definition.enemies.find(s=>s.id===other.spawnId)?.pack===this.options.definition.enemies.find(s=>s.id===e.spawnId)?.pack);
     for(const config of this.options.definition.bosses){const freed=this.makeUnit(config.freedArchetype??'human','freed','friendly',config.freedPosition??config.arena.position);freed.npcId=config.freedNpcId;freed.hidden=true;freed.targetable=false;this.unitMap.set(freed.ref.id,freed);const u=this.makeUnit(`boss-${config.profile}`,'boss','hostile',config.arena.position);u.yaw=config.arena.yaw;this.unitMap.set(u.ref.id,u);const b=new Boss(this.services,u,config.arena,freed,config.profile);if(config.captiveBeforeVictory)freed.hidden=false;this.bossMap.set(u.ref.id,b);this.controllerMap.set(u.ref.id,b);}
   }
+  private clearControls(u:SimUnit):void {const p=this.playerMap.get(u.ref.id);p?.neutralizeInput();if(p){p.state.target=null;p.state.talkTarget=null;}u.pendingHit=null;u.pushTime=0;if(u.actions.some(a=>a.targetWeight>0))this.actions.stop(u,undefined,0);}
+  private featureEvent(e:FeatureEvent):void {if(e.type==='boatAchievement'){const p=this.playerMap.get(e.actor.id);if(p&&sameRef(p.unit.ref,e.actor)){p.state.achievements.distance=Math.max(p.state.achievements.distance,e.distance);if(!p.state.achievements.earned.includes(e.achievement))p.state.achievements.earned.push(e.achievement);else return;}}this.services.emit({type:'feature',event:e});}
+  private syncMembership():void {this.context=immutable({...this.context,members:this.context.members.map(m=>({...m,villagePlaying:this.village.playing,featureLocked:this.village.locked(m.unit),seatedBoat:this.boat.seated(m.unit)?'shore':null}))});}
+  private command(ref:EntityRef,c:PlayerCommand):boolean {const p=this.playerMap.get(ref.id);if(!p||!sameRef(p.unit.ref,ref))return false;
+    if(c.kind==='talkEnd'){p.state.talkTarget=null;return true;}
+    if(c.kind==='boat'||c.kind==='village'){const result=c.kind==='boat'?this.boat.request(ref,c.command):this.village.request(ref,c.mode);this.syncMembership();return result;}
+    return this.worldRules.command(ref,c);
+  }
+  private updateFeatures():void {
+    this.boat.step(DT);this.village.step(DT);this.syncMembership();
+    for(const n of this.npcMap.values()){const speaker=[...this.playerMap.values()].find(p=>p.state.talkTarget&&sameRef(p.state.talkTarget,n.unit.ref));n.setConversation(speaker?.unit.ref??null);n.step(DT);feedLocomotion(n.unit,DT);}
+    for(const n of this.ambientMap.values())n.step(DT);
+  }
+  private updateRecovery():void {for(const r of this.events.peek()){if(r.order<=this.recoveryOrder)continue;const e=r.event;if(e.type==='telegraph')this.telegraphs.set(JSON.stringify(e.src),r);else if(e.type==='telegraphEnd')this.telegraphs.delete(JSON.stringify(e.src));else if(e.type==='endingReady')this.endings.set(e.unit.id,{unit:e.unit,chapter:e.chapter,replay:e.replay});this.recoveryOrder=r.order;}}
   private targetFor(ref:EntityRef):SimUnit|null {const source=this.getUnit(ref);if(!source)return null;let best:SimUnit|null=null,distance=Infinity;for(const p of this.playerMap.values()){const u=this.getUnit(p.state.unit)!;if(!u.alive||u.hidden||!u.targetable)continue;const d=Math.hypot(source.x-u.x,source.z-u.z);if(d<distance){best=u;distance=d;}}return best;}
   private startAction(ref:EntityRef,request:ActionRequest,hit?:PendingHit):void {const u=this.getUnit(ref);if(u)this.actions.play(u,request,hit);}
   private stopAction(ref:EntityRef,id?:ActionId,fade?:number):void {const u=this.getUnit(ref);if(u)this.actions.stop(u,id,fade);}
@@ -108,7 +145,7 @@ export class SimulationArea implements AreaContract {
   }
   private respawnUnit(ref:EntityRef):EntityRef {const u=this.getUnit(ref);if(!u)throw new Error('Stale respawn');if(ref.life>=0xffffffff)throw new RangeError('Life exhausted');const next=immutable({...ref,life:ref.life+1});const p=this.playerMap.get(ref.id);this.events.assertRoom(u.actions.length+this.playerMap.size*2+2);if(p&&this.options.characters&&!this.options.characters.compareAndSwap(p.state.character,ref,next))throw new Error('Character registry mismatch');if(u.actions.length)this.actions.stop(u,undefined,0);u.actions=[];u.pendingHit=null;this.purgeReferences(ref);u.ref=next;u.pose={...initializeNumericPose(),previousX:u.x,previousZ:u.z,previousYaw:u.yaw};if(p)p.state.unit=u.ref;this.context=immutable({...this.context,members:this.context.members.map(m=>sameRef(m.unit,ref)?{...m,unit:u.ref}:m)});return u.ref;}
   private purgeReferences(ref:EntityRef):void {
-    this.worldRules.purgeActor(ref);
+    this.worldRules.purgeActor(ref);this.boat.detach(ref);this.village.detach(ref);this.endings.delete(ref.id);this.telegraphs.delete(JSON.stringify(ref));
     for(const p of this.playerMap.values()){const s=p.state;if(s.target&&sameRef(s.target,ref))s.target=null;if(s.talkTarget&&sameRef(s.talkTarget,ref))s.talkTarget=null;if(s.cast?.target&&sameRef(s.cast.target,ref))p.interruptCast();if(s.dash&&sameRef(s.dash.target,ref))s.dash=null;}
     for(const u of this.unitMap.values()){const plan=u.pendingHit?.plan;if(plan&&(sameRef(plan.source,ref)||'target' in plan&&sameRef(plan.target,ref)))u.pendingHit=null;}
     this.flights.purge(ref);
@@ -131,19 +168,20 @@ export class SimulationArea implements AreaContract {
       this.worldRules.update();this.separate();
       if(this.services.world==='w2'&&this.clock>=this.nextEcho&&!this.services.encounterActive()){for(const e of this.enemyMap.values())if(e.isEcho&&e.state==='gone'){e.respawnAt(e.spawn.home.x,e.spawn.home.z);this.nextEcho=this.clock+120;}}
       for(const u of this.unitMap.values())if(u.alive&&!u.hidden&&u.rustUntil&&this.clock>=u.rustUntil){u.rust=0;u.rustUntil=0;}
+      this.updateFeatures();
       for(const u of this.unitMap.values())this.actions.updateHit(u,DT);
       this.flights.update(DT);
       for(const u of this.unitMap.values()){this.actions.update(u,DT);advanceNumericPose(u,DT);}
     }catch(error){this.failed=true;throw error;}finally{this.running=false;}
   }
   private separate():void {const list=[...this.unitMap.values()].filter(u=>u.alive&&!u.hidden&&(u.reaction==='hostile'||u.kind==='player'));for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){const a=list[i]!,b=list[j]!,dx=b.x-a.x,dz=b.z-a.z,min=(a.radius+b.radius)*.85,d2=dx*dx+dz*dz;if(d2>=min*min||d2<1e-6)continue;const d=Math.sqrt(d2),push=(min-d)/d,wa=a.kind==='boss'?0:a.kind==='player'?.2:.5,wb=b.kind==='boss'?0:b.kind==='player'?.2:.5,sum=wa+wb||1;a.x-=dx*push*wa/sum;a.z-=dz*push*wa/sum;b.x+=dx*push*wb/sum;b.z+=dz*push*wb/sum;}}
-  snapshot():AreaSnapshot {this.boundary(true);return immutable({area:this.services.id,world:this.services.world,tick:this.stepId,time:this.clock,units:[...this.unitMap.values()].sort((a,b)=>a.ref.id-b.ref.id),players:[...this.playerMap.values()].map(p=>p.state).sort((a,b)=>a.unit.id-b.unit.id),projectiles:[...this.flights.states.values()].sort((a,b)=>a.id-b.id)});}
+  snapshot():AreaSnapshot {this.boundary(true);this.updateRecovery();return immutable({area:this.services.id,world:this.services.world,tick:this.stepId,time:this.clock,units:[...this.unitMap.values()].sort((a,b)=>a.ref.id-b.ref.id),players:[...this.playerMap.values()].map(p=>p.state).sort((a,b)=>a.unit.id-b.unit.id),projectiles:[...this.flights.states.values()].sort((a,b)=>a.id-b.id),features:{beaconLit:this.worldRules.beaconLit,boat:this.boat.snapshot(),village:this.village.snapshot(),bindings:Object.fromEntries([...this.unitMap.values()].filter(u=>u.kind==='player'||u.kind==='townsfolk').map(u=>[`actor:${u.ref.id}`,u.ref]))},recovery:{telegraphs:[...this.telegraphs.values()],endings:[...this.endings.values()]}});}
   debugState():AreaDebugState {this.boundary(true);const w=this.worldRules.debugState();return immutable({schema:'s2-debug-v1',definitionVersion:JSON.stringify(this.options.definition),actionDataVersion:this.options.actionData.version,snapshot:this.snapshot(),rng:{algorithm:this.rng.algorithm,state:this.rng.state()},allocators:{entity:this.ids.nextValue,action:this.actions.nextGeneration,projectile:this.flights.nextId,timer:this.timers.nextId,event:this.events.nextOrder},playerControllers:[...this.playerMap.values()].map(p=>p.debugState()) as DebugValue[],enemies:[...this.enemyMap.values()].map(e=>e.debugState()) as DebugValue[],bosses:[...this.bossMap.values()].map(b=>b.debugState()) as DebugValue[],timers:this.timers.snapshot(),contributions:w.contributions,grants:w.grants,acknowledgedGrantIds:w.acknowledgedGrantIds,heldIntents:[...this.playerMap.values()].map(p=>({actor:p.state.unit,intent:p.heldIntent,lastConsumedSeq:p.lastConsumedSeq})),lifecycle:{nextEcho:this.nextEcho,nextToken:this.tokenIds.nextValue,reservations:[...this.reservations.values()],departures:[...this.departures.values()],arrivals:[...this.arrivals.values()].map(a=>({token:a.token,admission:a.admission,unit:a.unit,state:a.player.state,dto:a.dto}))} as unknown as DebugValue,interactions:w.interactions as unknown as DebugValue,context:this.context});}
-  drainEvents(){this.boundary(true);return this.events.drain();}
+  drainEvents(){this.boundary(true);this.updateRecovery();return this.events.drain();}
   applyContext(context:AreaContext):void {this.boundary();if(this.playerMap.size+this.reservations.size>capacity(context))throw new Error('Membership exceeds area capacity');const ids=new Set<number>(),characters=new Set<string>();for(const m of context.members){const p=this.services.player(m.unit);if(!p||p.state.character!==m.character||ids.has(m.unit.id)||characters.has(m.character))throw new Error('Invalid membership');ids.add(m.unit.id);characters.add(m.character);}if(ids.size!==this.playerMap.size)throw new Error('Missing membership');this.context=immutable(context);}
   private spawn(id:string){const d=this.options.definition;const p=id===d.spawn.id?d.spawn:id===d.recall.id?d.recall:d.pois[id]??Object.values(d.pois).find(p=>p.id===id);if(!p)throw new Error('Unknown spawn');return p;}
   private createCharacter(character:CharacterId,classId:ClassId,archetype:string,spawnId:string){const spawn=this.spawn(spawnId),u=this.makeUnit(archetype,'player','player',spawn.position);teleport(u,this.options.query,spawn.position.x,spawn.position.z,spawn.yaw);const state=createPlayerState(character,u,classId,this.clock);state.quests=freshQuests();setQuestChapter(state.quests,worldChapter(this.services.world));return {unit:u,player:createPlayer(this.services,u,state)};}
-  private activate(unit:SimUnit,player:PlayerController):void {this.unitMap.set(unit.ref.id,unit);this.playerMap.set(unit.ref.id,player);this.controllerMap.set(unit.ref.id,player);this.context=immutable({...this.context,members:[...this.context.members,{character:player.state.character,unit:unit.ref,party:null,villagePlaying:false,seatedBoat:null}]});}
+  private activate(unit:SimUnit,player:PlayerController):void {this.unitMap.set(unit.ref.id,unit);this.playerMap.set(unit.ref.id,player);this.controllerMap.set(unit.ref.id,player);this.context=immutable({...this.context,members:[...this.context.members,{character:player.state.character,unit:unit.ref,party:null,villagePlaying:false,seatedBoat:null}]});this.boat.restoreProgress(`actor:${unit.ref.id}`,player.state.achievements);}
   attachFresh(character:CharacterId,classId:ClassId,archetype:string,spawn:string):EntityRef {this.boundary();if(!character||this.services.playerByCharacter(character)||this.playerMap.size+this.reservations.size>=capacity(this.context))throw new Error('Character admission rejected');if(this.options.characters?.owner(character))throw new Error('Character already owned');const created=this.createCharacter(character,classId,archetype,spawn);if(this.options.characters&&!this.options.characters.compareAndSwap(character,null,created.unit.ref))throw new Error('Character registry mismatch');this.activate(created.unit,created.player);return created.unit.ref;}
   reserveAdmission(character:CharacterId,spawn:string,hostTick:number):Admission|null {this.boundary();if(!Number.isSafeInteger(hostTick)||hostTick<0)throw new Error('Invalid host tick');for(const a of this.reservations.values())if(a.expiresAtHostTick<hostTick)this.releaseAdmission(a.token);this.spawn(spawn);if(this.services.playerByCharacter(character)||[...this.reservations.values()].some(a=>a.character===character)||this.playerMap.size+this.reservations.size>=capacity(this.context))return null;const a=immutable({token:JSON.stringify([this.services.id,'admission',this.tokenIds.next()]),character,destination:this.services.id,spawn,expiresAtHostTick:hostTick+30});this.reservations.set(a.token,a);return a;}
   releaseAdmission(token:string):void {this.boundary();this.arrivals.delete(token);this.reservations.delete(token);}
