@@ -163,9 +163,24 @@ test('third-report database failure rolls back its report, mute and watermark at
   assert.deepEqual(await service.report(d, a, a.ref.area, 'abuse'), { ok: true, muted: true });
 });
 
+test('stored lines from an older filter policy are re-filtered for reports and future speech', async () => {
+  await service.preferences(A);
+  // Previously accepted text has become sensitive under the current filter policy.
+  const state = {sent: [now - 500], lines: [{at: now - 500, text: '01012345678'}]};
+  await pool.query('UPDATE world_chat_accounts SET talk=$2::jsonb WHERE account_id=$1', [A, JSON.stringify(state)]);
+  assert.deepEqual(await service.report(b, a, a.ref.area, 'personal'), {ok: true, muted: false});
+  assert.deepEqual((await pool.query('SELECT target_lines FROM chat_reports')).rows[0].target_lines, [{at: now - 500, text: '***********'}]);
+  assert.deepEqual(await service.say(a, 'next line', [a, b]), {ok: false, error: 'fast'});
+  now += 500;
+  assert.deepEqual(await service.say(a, '01012345678', [a, b]), {ok: false, error: 'repeat'});
+  assert.equal((await service.say(a, 'next line', [a, b])).ok, true);
+  const stored = (await pool.query('SELECT talk FROM world_chat_accounts WHERE account_id=$1', [A])).rows[0].talk;
+  assert.deepEqual(stored.lines, [{at: state.lines[0].at, text: '***********'}, {at: now, text: 'next line'}]);
+});
+
 test('corrupt persisted Talk, closed database and oversized audience fail closed without throwing', async () => {
   await service.preferences(A);
-  await pool.query(`UPDATE world_chat_accounts SET talk='{"sent":[],"lines":[{"at":1,"text":"01012345678"}]}' WHERE account_id=$1`, [A]);
+  await pool.query(`UPDATE world_chat_accounts SET talk='{"sent":[],"lines":[{"at":1,"text":42}]}' WHERE account_id=$1`, [A]);
   assert.deepEqual(await service.say(a, 'must not send', [a, b]), { ok: false, error: 'unavailable' });
   assert.deepEqual(await service.report(b, a, a.ref.area, 'other'), { ok: false, error: 'unavailable' });
   assert.equal((await pool.query('SELECT count(*)::int n FROM chat_reports')).rows[0].n, 0);

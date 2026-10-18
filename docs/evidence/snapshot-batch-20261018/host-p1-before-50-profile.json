@@ -1,0 +1,257 @@
+{
+  "totalMs": 15105.416,
+  "self": [
+    {
+      "frame": "(idle) :0",
+      "ms": 3174.015,
+      "pct": 21.01243024356297
+    },
+    {
+      "frame": "write tmp/crabcraft-snapshot-p1-compositions/before.mjs:17280",
+      "ms": 1457.594,
+      "pct": 9.649479365546767
+    },
+    {
+      "frame": "checksum tmp/crabcraft-snapshot-p1-compositions/before.mjs:17388",
+      "ms": 715.457,
+      "pct": 4.736426987512294
+    },
+    {
+      "frame": "object2 tmp/crabcraft-snapshot-p1-compositions/before.mjs:17111",
+      "ms": 708.757,
+      "pct": 4.6920720356195424
+    },
+    {
+      "frame": "copyValue tmp/crabcraft-snapshot-p1-compositions/before.mjs:10111",
+      "ms": 668.711,
+      "pct": 4.4269618261423584
+    },
+    {
+      "frame": "encodeObservation tmp/crabcraft-snapshot-p1-compositions/before.mjs:17665",
+      "ms": 596.788,
+      "pct": 3.9508213477867806
+    },
+    {
+      "frame": "(garbage collector) :0",
+      "ms": 457.793,
+      "pct": 3.0306547002743915
+    },
+    {
+      "frame": "assertDeepFrozen tmp/crabcraft-snapshot-p1-compositions/before.mjs:17879",
+      "ms": 455.5,
+      "pct": 3.015474714499753
+    },
+    {
+      "frame": "(program) :0",
+      "ms": 399.95,
+      "pct": 2.6477258223143276
+    },
+    {
+      "frame": "encode node:internal/encoding:355",
+      "ms": 390.781,
+      "pct": 2.587025739641993
+    },
+    {
+      "frame": "visit tmp/crabcraft-snapshot-p1-compositions/before.mjs:10877",
+      "ms": 257.421,
+      "pct": 1.7041635927140306
+    },
+    {
+      "frame": "freezeValue tmp/crabcraft-snapshot-p1-compositions/before.mjs:10126",
+      "ms": 243.339,
+      "pct": 1.6109387520343696
+    },
+    {
+      "frame": "writev :0",
+      "ms": 213.664,
+      "pct": 1.4144860360019214
+    },
+    {
+      "frame": "visit tmp/crabcraft-snapshot-p1-compositions/before.mjs:15834",
+      "ms": 186.079,
+      "pct": 1.2318694169031823
+    },
+    {
+      "frame": "read tmp/crabcraft-snapshot-p1-compositions/before.mjs:17342",
+      "ms": 185.831,
+      "pct": 1.2302276216689432
+    },
+    {
+      "frame": "encodeMessage tmp/crabcraft-snapshot-p1-compositions/before.mjs:17393",
+      "ms": 181.047,
+      "pct": 1.1985568619891038
+    },
+    {
+      "frame": "publish tmp/crabcraft-snapshot-p1-compositions/before.mjs:19021",
+      "ms": 179.754,
+      "pct": 1.18999701828801
+    },
+    {
+      "frame": "equalValue tmp/crabcraft-snapshot-p1-compositions/before.mjs:17871",
+      "ms": 168.579,
+      "pct": 1.1160169306161445
+    },
+    {
+      "frame": "decodeUTF8 :0",
+      "ms": 160.46,
+      "pct": 1.0622679971210327
+    },
+    {
+      "frame": "json tmp/crabcraft-snapshot-p1-compositions/before.mjs:15831",
+      "ms": 139.249,
+      "pct": 0.9218481635990694
+    },
+    {
+      "frame": "(anonymous) tmp/crabcraft-snapshot-p1-compositions/before.mjs:10122",
+      "ms": 124.331,
+      "pct": 0.8230888841459248
+    },
+    {
+      "frame": "prepareObservationSnapshot tmp/crabcraft-snapshot-p1-compositions/before.mjs:17892",
+      "ms": 122.712,
+      "pct": 0.8123708741288556
+    },
+    {
+      "frame": "advanceNumericPose tmp/crabcraft-snapshot-p1-compositions/before.mjs:10029",
+      "ms": 116.412,
+      "pct": 0.770663979065522
+    },
+    {
+      "frame": "need tmp/crabcraft-snapshot-p1-compositions/before.mjs:17169",
+      "ms": 102.169,
+      "pct": 0.6763732955120203
+    },
+    {
+      "frame": "parsed tmp/crabcraft-snapshot-p1-compositions/before.mjs:15868",
+      "ms": 92.75,
+      "pct": 0.6140181773212998
+    }
+  ],
+  "inclusive": [
+    {
+      "frame": "(root) :0",
+      "ms": 15105.416,
+      "pct": 100
+    },
+    {
+      "frame": "processTimers node:internal/timers:603",
+      "ms": 9096.461,
+      "pct": 60.21986418646133
+    },
+    {
+      "frame": "listOnTimeout node:internal/timers:623",
+      "ms": 9041.17,
+      "pct": 59.85382991107296
+    },
+    {
+      "frame": "pump tmp/crabcraft-snapshot-p1-compositions/before.mjs:19181",
+      "ms": 9007.168,
+      "pct": 59.628731840288275
+    },
+    {
+      "frame": "run tmp/crabcraft-snapshot-p1-compositions/before.mjs:16742",
+      "ms": 8865.373,
+      "pct": 58.69002879496996
+    },
+    {
+      "frame": "(anonymous) tmp/crabcraft-snapshot-p1-compositions/before.mjs:19223",
+      "ms": 7430.136,
+      "pct": 49.18855594576144
+    },
+    {
+      "frame": "publish tmp/crabcraft-snapshot-p1-compositions/before.mjs:19021",
+      "ms": 7428.886,
+      "pct": 49.18028076816951
+    },
+    {
+      "frame": "encodeObservation tmp/crabcraft-snapshot-p1-compositions/before.mjs:17665",
+      "ms": 4690.796,
+      "pct": 31.05373595801665
+    },
+    {
+      "frame": "(idle) :0",
+      "ms": 3174.015,
+      "pct": 21.01243024356297
+    },
+    {
+      "frame": "encodeMessage tmp/crabcraft-snapshot-p1-compositions/before.mjs:17393",
+      "ms": 2840.385,
+      "pct": 18.803752243566148
+    },
+    {
+      "frame": "encodeValue tmp/crabcraft-snapshot-p1-compositions/before.mjs:17277",
+      "ms": 2401.536,
+      "pct": 15.898509514732993
+    },
+    {
+      "frame": "write tmp/crabcraft-snapshot-p1-compositions/before.mjs:17280",
+      "ms": 2252.082,
+      "pct": 14.909102801273397
+    },
+    {
+      "frame": "(anonymous) tmp/crabcraft-snapshot-p1-compositions/before.mjs:17319",
+      "ms": 1593.009,
+      "pct": 10.545945904435866
+    },
+    {
+      "frame": "step tmp/crabcraft-snapshot-p1-compositions/before.mjs:19081",
+      "ms": 1435.237,
+      "pct": 9.501472849208522
+    },
+    {
+      "frame": "(anonymous) tmp/crabcraft-snapshot-p1-compositions/before.mjs:19222",
+      "ms": 1435.237,
+      "pct": 9.501472849208522
+    },
+    {
+      "frame": "prepareObservationSnapshot tmp/crabcraft-snapshot-p1-compositions/before.mjs:17892",
+      "ms": 1381.663,
+      "pct": 9.146805357760423
+    },
+    {
+      "frame": "step tmp/crabcraft-snapshot-p1-compositions/before.mjs:15294",
+      "ms": 1175.157,
+      "pct": 7.779706298720936
+    },
+    {
+      "frame": "object2 tmp/crabcraft-snapshot-p1-compositions/before.mjs:17111",
+      "ms": 1001.547,
+      "pct": 6.630383433332786
+    },
+    {
+      "frame": "processTicksAndRejections node:internal/process/task_queues:72",
+      "ms": 878.874,
+      "pct": 5.818270744744799
+    },
+    {
+      "frame": "runMicrotasks :0",
+      "ms": 863.5,
+      "pct": 5.716492680506118
+    },
+    {
+      "frame": "clone tmp/crabcraft-snapshot-p1-compositions/before.mjs:17155",
+      "ms": 833.201,
+      "pct": 5.515908995819777
+    },
+    {
+      "frame": "onStreamRead node:internal/stream_base_commons:171",
+      "ms": 808.493,
+      "pct": 5.352338525466627
+    },
+    {
+      "frame": "Readable.push node:internal/streams/readable:395",
+      "ms": 803.994,
+      "pct": 5.322554506277748
+    },
+    {
+      "frame": "addChunk node:internal/streams/readable:558",
+      "ms": 802.744,
+      "pct": 5.314279328685817
+    },
+    {
+      "frame": "readableAddChunkPushByteMode node:internal/streams/readable:471",
+      "ms": 802.744,
+      "pct": 5.314279328685817
+    }
+  ]
+}

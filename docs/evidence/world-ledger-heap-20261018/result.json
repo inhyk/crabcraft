@@ -1,0 +1,395 @@
+{
+  "label": "Local pinned external Area source+realPG adapter heap experiment; trusted damage/heal fixture, not earned gameplay or actual WS host proof",
+  "node": "v24.22.0",
+  "platform": "darwin",
+  "sourceHead": "b1c42d048737068ef6f16feed4fea031bd7e977b",
+  "targets": [
+    100,
+    500,
+    2000
+  ],
+  "batchSize": 100,
+  "liveResidentCeiling": 100,
+  "sourceLimits": {
+    "maxDirtyCreditEntries": 10000,
+    "maxDirtyCreditBytes": 16777216,
+    "maxPendingDeaths": 32,
+    "maxStagedBytes": 8388608
+  },
+  "forcedGc": "three explicit global.gc calls with setImmediate between at named checkpoints; peak sampling is separate",
+  "peakSampling": "process.memoryUsage every20ms plus batch/high-tide samples; may miss shorter peaks",
+  "points": [
+    {
+      "lifetimeContributors": 100,
+      "liveResidents": 100,
+      "source": {
+        "contributionEntries": 0,
+        "settledVictims": 0,
+        "pendingGrants": 0,
+        "acknowledgedGrantIds": 0,
+        "appliedGrantIds": 0,
+        "dirtyCreditEntries": 0,
+        "dirtyCreditBytes": 0,
+        "creditCaptures": 0,
+        "liveVictims": 1,
+        "summaries": 1,
+        "pendingDeaths": 0,
+        "stagedBytes": 0,
+        "settledCurrentLives": 0,
+        "summaryReads": 0,
+        "ledgerOwners": 100,
+        "replayTokens": 0,
+        "captures": 0,
+        "durableCharacters": 0,
+        "retirements": 0
+      },
+      "db": {
+        "characters": 100,
+        "credits": 100,
+        "sources": 1,
+        "grants": 0,
+        "receipts": 0,
+        "seals": 0
+      },
+      "ordinaryHeap": {
+        "rss": 187727872,
+        "heapTotal": 96583680,
+        "heapUsed": 49352840,
+        "external": 6968598,
+        "arrayBuffers": 810678
+      },
+      "afterForcedGc": {
+        "rss": 187695104,
+        "heapTotal": 95797248,
+        "heapUsed": 27388880,
+        "external": 6432799,
+        "arrayBuffers": 274879,
+        "gcMilliseconds": 12.815167000000088
+      },
+      "observedPeakSoFar": {
+        "heapUsed": 60394968,
+        "heapTotal": 96583680,
+        "rss": 187793408,
+        "external": 7018773,
+        "arrayBuffers": 860853,
+        "samples": 215
+      },
+      "elapsedMs": 792.908375
+    },
+    {
+      "lifetimeContributors": 500,
+      "liveResidents": 100,
+      "source": {
+        "contributionEntries": 0,
+        "settledVictims": 0,
+        "pendingGrants": 0,
+        "acknowledgedGrantIds": 0,
+        "appliedGrantIds": 0,
+        "dirtyCreditEntries": 0,
+        "dirtyCreditBytes": 0,
+        "creditCaptures": 0,
+        "liveVictims": 1,
+        "summaries": 1,
+        "pendingDeaths": 0,
+        "stagedBytes": 0,
+        "settledCurrentLives": 0,
+        "summaryReads": 0,
+        "ledgerOwners": 100,
+        "replayTokens": 0,
+        "captures": 0,
+        "durableCharacters": 0,
+        "retirements": 0
+      },
+      "db": {
+        "characters": 500,
+        "credits": 500,
+        "sources": 1,
+        "grants": 0,
+        "receipts": 0,
+        "seals": 0
+      },
+      "ordinaryHeap": {
+        "rss": 194953216,
+        "heapTotal": 104595456,
+        "heapUsed": 34637976,
+        "external": 6611014,
+        "arrayBuffers": 453094
+      },
+      "afterForcedGc": {
+        "rss": 195280896,
+        "heapTotal": 97255424,
+        "heapUsed": 28437896,
+        "external": 6432799,
+        "arrayBuffers": 274879,
+        "gcMilliseconds": 12.972708000000011
+      },
+      "observedPeakSoFar": {
+        "heapUsed": 68033888,
+        "heapTotal": 104595456,
+        "rss": 195280896,
+        "external": 7401002,
+        "arrayBuffers": 1243082,
+        "samples": 1479
+      },
+      "elapsedMs": 1886.917375
+    },
+    {
+      "lifetimeContributors": 2000,
+      "liveResidents": 100,
+      "source": {
+        "contributionEntries": 0,
+        "settledVictims": 0,
+        "pendingGrants": 0,
+        "acknowledgedGrantIds": 0,
+        "appliedGrantIds": 0,
+        "dirtyCreditEntries": 0,
+        "dirtyCreditBytes": 0,
+        "creditCaptures": 0,
+        "liveVictims": 1,
+        "summaries": 1,
+        "pendingDeaths": 0,
+        "stagedBytes": 0,
+        "settledCurrentLives": 0,
+        "summaryReads": 0,
+        "ledgerOwners": 100,
+        "replayTokens": 0,
+        "captures": 0,
+        "durableCharacters": 0,
+        "retirements": 0
+      },
+      "db": {
+        "characters": 2000,
+        "credits": 2000,
+        "sources": 1,
+        "grants": 0,
+        "receipts": 0,
+        "seals": 0
+      },
+      "ordinaryHeap": {
+        "rss": 268451840,
+        "heapTotal": 173015040,
+        "heapUsed": 72930632,
+        "external": 7306249,
+        "arrayBuffers": 1153526
+      },
+      "afterForcedGc": {
+        "rss": 268468224,
+        "heapTotal": 165675008,
+        "heapUsed": 28573496,
+        "external": 6427602,
+        "arrayBuffers": 274879,
+        "gcMilliseconds": 14.320459000000483
+      },
+      "observedPeakSoFar": {
+        "heapUsed": 101551856,
+        "heapTotal": 173801472,
+        "rss": 268468224,
+        "external": 8021995,
+        "arrayBuffers": 1865315,
+        "samples": 6207
+      },
+      "elapsedMs": 5797.110125
+    }
+  ],
+  "phases": [
+    {
+      "phase": "death-before-drain",
+      "source": {
+        "contributionEntries": 0,
+        "settledVictims": 1,
+        "pendingGrants": 0,
+        "acknowledgedGrantIds": 0,
+        "appliedGrantIds": 100,
+        "dirtyCreditEntries": 0,
+        "dirtyCreditBytes": 0,
+        "creditCaptures": 0,
+        "liveVictims": 1,
+        "summaries": 1,
+        "pendingDeaths": 1,
+        "stagedBytes": 48499,
+        "settledCurrentLives": 1,
+        "summaryReads": 0,
+        "ledgerOwners": 100,
+        "replayTokens": 0,
+        "captures": 0,
+        "durableCharacters": 0,
+        "retirements": 0
+      },
+      "heap": {
+        "rss": 268681216,
+        "heapTotal": 165675008,
+        "heapUsed": 43077080,
+        "external": 6693010,
+        "arrayBuffers": 540287
+      },
+      "afterForcedGc": {
+        "rss": 268681216,
+        "heapTotal": 165937152,
+        "heapUsed": 28704176,
+        "external": 6427602,
+        "arrayBuffers": 274879,
+        "gcMilliseconds": 12.996958000000632
+      },
+      "db": {
+        "characters": 2000,
+        "credits": 2000,
+        "sources": 1,
+        "grants": 0,
+        "receipts": 0,
+        "seals": 0
+      }
+    },
+    {
+      "phase": "all-pages-sealed-source-retired",
+      "drainSlices": 20,
+      "source": {
+        "contributionEntries": 0,
+        "settledVictims": 1,
+        "pendingGrants": 0,
+        "acknowledgedGrantIds": 0,
+        "appliedGrantIds": 100,
+        "dirtyCreditEntries": 0,
+        "dirtyCreditBytes": 0,
+        "creditCaptures": 0,
+        "liveVictims": 0,
+        "summaries": 0,
+        "pendingDeaths": 0,
+        "stagedBytes": 0,
+        "settledCurrentLives": 1,
+        "summaryReads": 0,
+        "ledgerOwners": 100,
+        "replayTokens": 0,
+        "captures": 0,
+        "durableCharacters": 0,
+        "retirements": 0
+      },
+      "db": {
+        "characters": 2000,
+        "credits": 2000,
+        "sources": 1,
+        "grants": 2000,
+        "receipts": 0,
+        "seals": 1
+      },
+      "heap": {
+        "rss": 269549568,
+        "heapTotal": 170655744,
+        "heapUsed": 78342256,
+        "external": 7399025,
+        "arrayBuffers": 1246302
+      },
+      "afterForcedGc": {
+        "rss": 269549568,
+        "heapTotal": 166199296,
+        "heapUsed": 28816760,
+        "external": 6427602,
+        "arrayBuffers": 274879,
+        "gcMilliseconds": 14.128541000000041
+      }
+    },
+    {
+      "phase": "resident-checkpoints-receipted",
+      "source": {
+        "contributionEntries": 0,
+        "settledVictims": 1,
+        "pendingGrants": 0,
+        "acknowledgedGrantIds": 0,
+        "appliedGrantIds": 0,
+        "dirtyCreditEntries": 0,
+        "dirtyCreditBytes": 0,
+        "creditCaptures": 0,
+        "liveVictims": 0,
+        "summaries": 0,
+        "pendingDeaths": 0,
+        "stagedBytes": 0,
+        "settledCurrentLives": 1,
+        "summaryReads": 0,
+        "ledgerOwners": 100,
+        "replayTokens": 0,
+        "captures": 0,
+        "durableCharacters": 0,
+        "retirements": 0
+      },
+      "db": {
+        "characters": 2000,
+        "credits": 2000,
+        "sources": 1,
+        "grants": 2000,
+        "receipts": 100,
+        "seals": 1
+      },
+      "heap": {
+        "rss": 269729792,
+        "heapTotal": 166461440,
+        "heapUsed": 81976512,
+        "external": 7766205,
+        "arrayBuffers": 1613482
+      },
+      "afterForcedGc": {
+        "rss": 270041088,
+        "heapTotal": 166723584,
+        "heapUsed": 28838808,
+        "external": 6427602,
+        "arrayBuffers": 274879,
+        "gcMilliseconds": 14.094583999999486
+      }
+    }
+  ],
+  "postgres": "14.20 (Homebrew)",
+  "initialAfterGc": {
+    "rss": 143360000,
+    "heapTotal": 94224384,
+    "heapUsed": 25328248,
+    "external": 6365175,
+    "arrayBuffers": 209343,
+    "gcMilliseconds": 13.563084000000003
+  },
+  "finalPendingOffline": 1900,
+  "maxResidents": 100,
+  "lifetimeContributors": 2000,
+  "peakObserved": {
+    "heapUsed": 101551856,
+    "heapTotal": 173801472,
+    "rss": 270041088,
+    "external": 8021995,
+    "arrayBuffers": 1865315,
+    "samples": 6405
+  },
+  "v8HeapStatistics": {
+    "total_heap_size": 166723584,
+    "total_heap_size_executable": 2506752,
+    "total_physical_size": 166903808,
+    "total_available_size": 4465389192,
+    "used_heap_size": 28871176,
+    "heap_size_limit": 4496293888,
+    "malloced_memory": 278576,
+    "peak_malloced_memory": 7327744,
+    "does_zap_garbage": 0,
+    "number_of_native_contexts": 1,
+    "number_of_detached_contexts": 0,
+    "total_global_handles_size": 16384,
+    "used_global_handles_size": 3616,
+    "external_memory": 6427745
+  },
+  "processResourceUsage": {
+    "userCPUTime": 5290445,
+    "systemCPUTime": 515804,
+    "maxRSS": 263728,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 17585,
+    "majorPageFault": 163,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 39562,
+    "ipcReceived": 39600,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 36,
+    "involuntaryContextSwitches": 89710
+  },
+  "elapsedMs": 7235.341334,
+  "completed": true,
+  "dbCleanupBeforeFinalMeasurement": false
+}

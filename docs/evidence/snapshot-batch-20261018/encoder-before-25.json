@@ -1,0 +1,55 @@
+{
+  "label": "local actual BakedWorld/Area deterministic snapshot publication, not VM or network",
+  "node": "v24.22.0",
+  "viewers": 25,
+  "frames": 80,
+  "warmup": 20,
+  "layout": "spread",
+  "actors": 140,
+  "actualEnemies": 98,
+  "population": {
+    "scrapling": 60,
+    "scavenger": 30,
+    "jellyfish": 10
+  },
+  "tickMs": {
+    "mean": 2.540747312500014,
+    "p50": 2.6522910000001048,
+    "p99": 5.068457999999964,
+    "max": 5.0725419999999986
+  },
+  "snapshotBatchMs": {
+    "mean": 18.32518022499999,
+    "p50": 18.07462499999997,
+    "p99": 23.064500000000066,
+    "max": 23.64625000000001
+  },
+  "prepareMs": {
+    "mean": 6.097575512500015,
+    "p50": 6.058125000000018,
+    "p99": 7.48700000000008,
+    "max": 8.837875000000054
+  },
+  "recipientTotalMs": {
+    "mean": 12.227604712499978,
+    "p50": 11.867792000000009,
+    "p99": 16.68095799999992,
+    "max": 17.22612499999991
+  },
+  "visibleActors": {
+    "mean": 83.13,
+    "p50": 88,
+    "p99": 108,
+    "max": 108
+  },
+  "exactVisibilityGroups": {
+    "mean": 10.35,
+    "p50": 10,
+    "p99": 12,
+    "max": 12
+  },
+  "bytes": 48987560,
+  "packets": 4073,
+  "packetDigest": "ab1065237cdccfd8f7f3193001dfceb22cc9c79b32c836fc5faaaa99f23af3ce",
+  "rss": 384106496
+}

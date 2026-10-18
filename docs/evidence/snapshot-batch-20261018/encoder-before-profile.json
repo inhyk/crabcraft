@@ -1,0 +1,257 @@
+{
+  "totalMs": 3785.792,
+  "self": [
+    {
+      "frame": "write world/gameplay/protocol.ts:71",
+      "ms": 757.126,
+      "pct": 19.999144168512164
+    },
+    {
+      "frame": "checksum world/gameplay/protocol.ts:95",
+      "ms": 565.155,
+      "pct": 14.928316188528054
+    },
+    {
+      "frame": "object world/gameplay/protocol.ts:26",
+      "ms": 282.463,
+      "pct": 7.4611336280492955
+    },
+    {
+      "frame": "encodeObservation world/gameplay/protocol.ts:252",
+      "ms": 209.458,
+      "pct": 5.532739252447044
+    },
+    {
+      "frame": "copyValue src/sim/events.ts:3",
+      "ms": 199.08,
+      "pct": 5.258609030818386
+    },
+    {
+      "frame": "assertDeepFrozen world/gameplay/protocol.ts:364",
+      "ms": 169.202,
+      "pct": 4.469395043362129
+    },
+    {
+      "frame": "equalValue world/gameplay/protocol.ts:354",
+      "ms": 87.463,
+      "pct": 2.3102959697733
+    },
+    {
+      "frame": "freezeValue src/sim/events.ts:14",
+      "ms": 80.376,
+      "pct": 2.1230960390850844
+    },
+    {
+      "frame": "encode node:internal/encoding:355",
+      "ms": 75.373,
+      "pct": 1.990944034960188
+    },
+    {
+      "frame": "(garbage collector) :0",
+      "ms": 72.002,
+      "pct": 1.9019005798522475
+    },
+    {
+      "frame": "(program) :0",
+      "ms": 59.418,
+      "pct": 1.5694998563048366
+    },
+    {
+      "frame": "(anonymous) world/gameplay/protocol.ts:77",
+      "ms": 57.122,
+      "pct": 1.5088520446976486
+    },
+    {
+      "frame": "prepareObservationSnapshot world/gameplay/protocol.ts:371",
+      "ms": 54.455,
+      "pct": 1.438404434263689
+    },
+    {
+      "frame": "post node:inspector:115",
+      "ms": 49.625,
+      "pct": 1.3108221476510067
+    },
+    {
+      "frame": "update :0",
+      "ms": 48.504,
+      "pct": 1.2812114347539432
+    },
+    {
+      "frame": "(anonymous) work-world-snapshot-batch/tools/bench-snapshot-batch.mjs:0",
+      "ms": 46.751,
+      "pct": 1.2349067249336467
+    },
+    {
+      "frame": "(anonymous) src/sim/events.ts:11",
+      "ms": 46.381,
+      "pct": 1.225133340658969
+    },
+    {
+      "frame": "projectActor world/gameplay/protocol.ts:196",
+      "ms": 37.503,
+      "pct": 0.9906249471708958
+    },
+    {
+      "frame": "need world/gameplay/protocol.ts:46",
+      "ms": 35.08,
+      "pct": 0.9266224874478048
+    },
+    {
+      "frame": "advanceNumericPose src/sim/pose.ts:410",
+      "ms": 32.332,
+      "pct": 0.8540352982942538
+    },
+    {
+      "frame": "visibility work-world-snapshot-batch/tools/snapshot-batch-fixture.mjs:12",
+      "ms": 30.793,
+      "pct": 0.8133833026220141
+    },
+    {
+      "frame": "checkSnapshot world/gameplay/protocol.ts:186",
+      "ms": 30.376,
+      "pct": 0.8023684343989316
+    },
+    {
+      "frame": "(anonymous) world/gameplay/protocol.ts:357",
+      "ms": 26.624,
+      "pct": 0.7032610349432826
+    },
+    {
+      "frame": "actorShape world/gameplay/protocol.ts:167",
+      "ms": 24.669,
+      "pct": 0.6516205856000541
+    },
+    {
+      "frame": "save src/sim/pose.ts:270",
+      "ms": 24.083,
+      "pct": 0.6361416580731324
+    }
+  ],
+  "inclusive": [
+    {
+      "frame": "(root) :0",
+      "ms": 3785.792,
+      "pct": 100
+    },
+    {
+      "frame": "(anonymous) work-world-snapshot-batch/tools/bench-snapshot-batch.mjs:0",
+      "ms": 3628.122,
+      "pct": 95.83521757138269
+    },
+    {
+      "frame": "encodeObservation world/gameplay/protocol.ts:252",
+      "ms": 2389.033,
+      "pct": 63.10523663212348
+    },
+    {
+      "frame": "encodeMessage world/gameplay/protocol.ts:96",
+      "ms": 1588.98,
+      "pct": 41.972194985884066
+    },
+    {
+      "frame": "encodeValue world/gameplay/protocol.ts:69",
+      "ms": 1013.659,
+      "pct": 26.77534846077122
+    },
+    {
+      "frame": "write world/gameplay/protocol.ts:71",
+      "ms": 991.201,
+      "pct": 26.182130449850387
+    },
+    {
+      "frame": "(anonymous) world/gameplay/protocol.ts:77",
+      "ms": 853.33,
+      "pct": 22.540329738136695
+    },
+    {
+      "frame": "checksum world/gameplay/protocol.ts:95",
+      "ms": 565.155,
+      "pct": 14.928316188528054
+    },
+    {
+      "frame": "prepareObservationSnapshot world/gameplay/protocol.ts:371",
+      "ms": 470.619,
+      "pct": 12.431190091795852
+    },
+    {
+      "frame": "object world/gameplay/protocol.ts:26",
+      "ms": 391.17,
+      "pct": 10.332580342501648
+    },
+    {
+      "frame": "checkSnapshot world/gameplay/protocol.ts:186",
+      "ms": 355.088,
+      "pct": 9.379490473855933
+    },
+    {
+      "frame": "advance work-world-snapshot-batch/tools/snapshot-batch-fixture.mjs:14",
+      "ms": 338.716,
+      "pct": 8.9470314269775
+    },
+    {
+      "frame": "step src/sim/area.ts:181",
+      "ms": 321.591,
+      "pct": 8.494682222372491
+    },
+    {
+      "frame": "(anonymous) world/gameplay/protocol.ts:25",
+      "ms": 269.92,
+      "pct": 7.129815901137728
+    },
+    {
+      "frame": "(anonymous) world/gameplay/protocol.ts:187",
+      "ms": 253.88,
+      "pct": 6.706126485554409
+    },
+    {
+      "frame": "copyValue src/sim/events.ts:3",
+      "ms": 245.461,
+      "pct": 6.483742371477355
+    },
+    {
+      "frame": "(anonymous) src/sim/events.ts:11",
+      "ms": 228.962,
+      "pct": 6.047928676483019
+    },
+    {
+      "frame": "immutable src/sim/events.ts:15",
+      "ms": 198.376,
+      "pct": 5.240013186144405
+    },
+    {
+      "frame": "snapshot src/sim/area.ts:225",
+      "ms": 189.459,
+      "pct": 5.004474625124677
+    },
+    {
+      "frame": "assertDeepFrozen world/gameplay/protocol.ts:364",
+      "ms": 169.202,
+      "pct": 4.469395043362129
+    },
+    {
+      "frame": "advanceNumericPose src/sim/pose.ts:410",
+      "ms": 130.71,
+      "pct": 3.4526461041705407
+    },
+    {
+      "frame": "equalValue world/gameplay/protocol.ts:354",
+      "ms": 121.753,
+      "pct": 3.2160509610670633
+    },
+    {
+      "frame": "(anonymous) world/gameplay/protocol.ts:357",
+      "ms": 102.919,
+      "pct": 2.7185592869338833
+    },
+    {
+      "frame": "string world/gameplay/protocol.ts:53",
+      "ms": 101.456,
+      "pct": 2.6799147972207664
+    },
+    {
+      "frame": "encode node:internal/encoding:355",
+      "ms": 89.039,
+      "pct": 2.3519253038730072
+    }
+  ]
+}
