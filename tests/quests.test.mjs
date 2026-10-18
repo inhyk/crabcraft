@@ -67,3 +67,39 @@ test('an unaccepted island request can guide to its giver, persist, then guide i
  for(const kind of ['crystal-a','crystal-b','crystal-c','crystal-d'])restored.bump(kind);assert.equal(restored.current().step,'turnin');assert.equal(restored.current().poi,'npc:pip');restored.complete('w2');assert.equal(restored.current().quest,'w1');
  restored.setChapter(1);assert.equal(restored.track('q1'),false);assert.equal(restored.track('q4'),false);assert.equal(restored.track('w3'),false);
 });
+
+test('existing World III saves gain ten requests without resetting earlier progress',()=>{
+ const q=new QuestLog();q.status.d1='done';q.status.d2='active';q.setChapter(3);
+ const ids=QUEST_ORDER.filter(id=>q.inChapter(id));assert.equal(ids.length,12);
+ assert.equal(q.status.d1,'done');assert.equal(q.status.d2,'active');
+ for(const id of ids.slice(2))assert.equal(q.status[id],'available');
+ q.accept('w1');assert.equal(q.status.w1,'locked');
+});
+
+test('all ten new requests have attainable objectives, distinct items and exactly one reward',()=>{
+ const q=new QuestLog();q.setChapter(3);let rewards=0;q.events.on('completed',()=>rewards++);
+ for(const id of QUEST_ORDER.filter(id=>/^d(?:[3-9]|1[0-2])$/.test(id))){
+  const def=QUESTS[id];q.accept(id);q.track(id);assert.equal(q.current().quest,id);
+  for(const o of def.objectives){q.bump(o.kind,o.count);q.bump(o.kind,o.count);assert.equal(q.value(o),o.count);}
+  assert.equal(q.status[id],'ready');assert.equal(q.current().step,'turnin');
+  q.complete(id);q.complete(id);assert.equal(q.status[id],'done');
+ }
+ assert.equal(rewards,10);
+});
+
+test('World III collections are personal, chapter-filtered and guide each remaining landmark',()=>{
+ const a=new QuestLog(),b=new QuestLog();a.setChapter(3);b.setChapter(3);a.accept('d3');b.accept('d3');
+ a.bump('dawn-crate-a');assert.equal(a.value(QUESTS.d3.objectives[0]),1);assert.equal(b.value(QUESTS.d3.objectives[0]),0);
+ a.setChapter(2);a.bump('dawn-crate-b');assert.equal(a.value(QUESTS.d3.objectives[1]),0);
+ a.setChapter(3);a.accept('d6');a.track('d6');
+ for(const o of QUESTS.d6.objectives){assert.equal(a.current().objective.kind,o.kind);a.bump(o.kind);}
+ assert.equal(a.current().step,'turnin');
+});
+
+test('World III Korean and English copy retain objective progress and tracked requests',()=>{
+ const q=new QuestLog();q.setChapter(3);q.accept('d5');q.bump('dawn-lamp-a');q.track('d5');
+ const shape=()=>QUESTS.d5.objectives.map(({id,kind,count})=>({id,kind,count}));const before=shape();
+ setQuestLanguage('en');assert.match(QUESTS.d5.title,/Lanterns/);assert.match(QUESTS.d5.offer.join(' '),/hold F/i);
+ setQuestLanguage('ko');assert.match(QUESTS.d5.title,/등불/);assert.deepEqual(shape(),before);
+ assert.equal(q.value(QUESTS.d5.objectives[0]),1);assert.equal(q.current().quest,'d5');
+});

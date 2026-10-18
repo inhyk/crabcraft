@@ -310,3 +310,9 @@ test('a follower grants one coin reward again after a new authoritative rematch 
  boss.applyNetwork({id:'b3',state:'waking',phase:1,enraged:false,mech:null});
  boss.state='dying';assert.equal(boss.claimVictoryCoins(),150);assert.equal(boss.claimVictoryCoins(),0);
 });
+
+test('every boss pays positive, increasing experience alongside coins on repeat victories',()=>{
+ const profiles=Object.values(BOSS_PROFILES).sort((a,b)=>a.level-b.level);
+ assert.deepEqual(profiles.map(p=>p.reward),[500,1000,1500,3200,18000]);
+ for(const profile of profiles)assert.ok(Number.isSafeInteger(profile.reward)&&profile.reward>0);
+});
