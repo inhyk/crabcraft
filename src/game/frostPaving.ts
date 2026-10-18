@@ -1,15 +1,17 @@
 import * as THREE from 'three';
-import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import {RoundedBoxGeometry} from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {onIslandPath,type IslandPath} from './islandPaths';
 import {pavingGround} from './pavingLayout';
+import {SNOW_DEFORM_READ,type SnowDeform} from './snowDeform';
 
 /*
- * Frostlight's streets: irregular hand-laid flagstones half buried in packed, trodden snow. One mesh hugs the
- * terrain under the whole network and its shader lays the stones (Voronoi cells, so no grid and no tiling),
- * packs snow into the joints, scrapes a cart's ruts down the main road and a beaten line along each street,
- * and drifts snow over the edges before fading into the snowfield. Kerb stones are geometry, missing where a
- * drift buries them. `frostDrift` is shared by both, so a drift always swallows its kerb.
+ * Frostlight's streets: hand-laid granite flags in random courses, half buried in packed snow. One mesh hugs the
+ * terrain under the whole network and its shader lays the stones (rows of varying depth, stones of varying
+ * length, rounded and chipped corners: no grid, no tiling). Snow settles by height, so it fills the joints
+ * first and the low stones next; traffic wears two cart ruts and a beaten line down to wet stone and black
+ * ice, and the sweepings bank up at the kerbs. Where a drift crosses an edge or buries a road's end the surface
+ * fades out and the snowfield itself shows, prints and glints included, so the two never meet at a seam. The kerbs
+ * lie under the banked snow, as they would.
+ * Everything visible stays inside onIslandPath(), so prints, spray and covers() agree with what is drawn.
  */
 
 const MAX_SEG = 8;
@@ -17,8 +19,8 @@ const MAX_SEG = 8;
 const CELL = .5;
 /** Above the rendered terrain, so the snowfield never pokes through. */
 const LIFT = .03;
-/** The surface fades into the snowfield over this band past a path's edge: onIslandPath's trim margin. */
-const FADE = .3;
+/** Visible paving ends this far past a path's edge: inside onIslandPath's trim margin (.3). */
+const REACH = .27;
 
 const fract = (v: number) => v - Math.floor(v);
 const smooth = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -50,120 +52,216 @@ const PAVING_HEAD = /* glsl */ `
 #define FP_MAX_SEG ${MAX_SEG}
 uniform vec4 fpSeg[FP_MAX_SEG];
 uniform vec4 fpSegInfo[FP_MAX_SEG];
+uniform vec2 fpSegEnd[FP_MAX_SEG];
 uniform int fpSegCount;
 uniform float fpDetail;
+uniform vec3 fpSkyH;
+uniform vec3 fpSkyZ;
+uniform vec3 fpSun;
 varying float vFpDrift;
 varying vec3 vFpWorld;
+${SNOW_DEFORM_READ}
 ${FROST_NOISE}
+#define FP_RELIEF .03
 float fpSmin(float a,float b,float k){float h=clamp(.5+.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
-// Flagstones (two-pass Voronoi): distance to the nearest joint, the stone's id, the joint's outward normal and
-// the offset from here to the stone's centre, all in cell units.
-float fpStones(vec2 x,out float id,out vec2 edgeN,out vec2 toSeed){
-  vec2 n=floor(x),f=fract(x),mg=vec2(0.),mr=vec2(0.);float md=8.;
-  for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 g=vec2(float(i),float(j)),r=g+.12+.76*fpHash22(n+g)-f;float d=dot(r,r);if(d<md){md=d;mr=r;mg=g;}}
-  md=8.;edgeN=vec2(1.,0.);
-  for(int j=-2;j<=2;j++)for(int i=-2;i<=2;i++){vec2 g=mg+vec2(float(i),float(j)),r=g+.12+.76*fpHash22(n+g)-f,dr=r-mr;
-    if(dot(dr,dr)>1e-5){vec2 nn=normalize(dr);float d=dot(.5*(mr+r),nn);if(d<md){md=d;edgeN=nn;}}}
-  id=fpHash12(n+mg);toSeed=mr;return md;
+float fpEdgeAt(float k,float salt,float jit){return k+jit*(fpHash12(vec2(k,salt))-.5);}
+// Random-course flags: rows of varying depth across the road, stones of varying length along each row, rounded
+// corners. Signed distance to the stone's outline (m, negative inside), its id, offset from its centre, half
+// size, and the outline's outward gradient.
+float fpCourse(vec2 q,out float id,out vec2 local,out vec2 halfSz,out vec2 grad){
+  const float RH=.31;
+  float k=floor(q.y/RH),b0=fpEdgeAt(k,3.1,.4)*RH,b1=fpEdgeAt(k+1.,3.1,.4)*RH,row=k;
+  if(q.y<b0){row=k-1.;b1=b0;b0=fpEdgeAt(k-1.,3.1,.4)*RH;}
+  else if(q.y>=b1){row=k+1.;b0=b1;b1=fpEdgeAt(k+2.,3.1,.4)*RH;}
+  float SL=mix(.3,.62,fpHash12(vec2(row,7.7))),off=fpHash12(vec2(row,1.3))*SL,xs=q.x-off,salt=row*1.618+.5;
+  float j=floor(xs/SL),e0=fpEdgeAt(j,salt,.46)*SL,e1=fpEdgeAt(j+1.,salt,.46)*SL,col=j;
+  if(xs<e0){col=j-1.;e1=e0;e0=fpEdgeAt(j-1.,salt,.46)*SL;}
+  else if(xs>=e1){col=j+1.;e0=e1;e1=fpEdgeAt(j+2.,salt,.46)*SL;}
+  id=fpHash12(vec2(col+row*57.31,row-col*.731));
+  halfSz=vec2(e1-e0,b1-b0)*.5;
+  local=vec2(xs-(e0+e1)*.5,q.y-(b0+b1)*.5);
+  // Each stone sits a little skew and short of its neighbours, so no two joints run the same width.
+  vec2 r=fpHash22(vec2(id*71.3,col-row)),r2=fpHash22(vec2(row*3.3+col,id*19.1));
+  float a=(r.x-.5)*.08,ca=cos(a),sa=sin(a);
+  local-=(r2-.5)*vec2(.018,.012);
+  local=vec2(ca*local.x-sa*local.y,sa*local.x+ca*local.y);
+  halfSz-=vec2(.003+.012*r.y,.003+.009*r2.x);
+  float rc=mix(.03,.08,fract(id*7.31)),jw=.005+.007*fract(id*3.17);
+  vec2 s=sign(local),dq=abs(local)-(halfSz-jw-rc),dp=max(dq,0.);
+  float ol=length(dp);
+  vec2 g=ol>0.?dp/ol*s:(dq.x>dq.y?vec2(s.x,0.):vec2(0.,s.y));
+  grad=vec2(ca*g.x+sa*g.y,-sa*g.x+ca*g.y);
+  return ol+min(max(dq.x,dq.y),0.)-rc;
 }
+// A worn cobble's height (stone units, 0 in the joint) from its outline distance: a crisp arris, then a dome.
+// dh/d(depth) comes back in slope.
+float fpDome(float de,float id,vec2 l,vec2 h,out float slope){
+  float R=clamp(min(h.x,h.y)*.9,.05,.17),x=clamp(de/R,0.,1.),c=smoothstep(0.,.007,de);
+  vec2 tilt=(fpHash22(vec2(id*91.7,3.1))-.5)*.16;
+  float top=.84+.16*fract(id*5.3)+dot(l,tilt);
+  slope=c*2.*(1.-x)/R*top;
+  return c*(1.-(1.-x)*(1.-x))*top;
+}
+// Stone height alone (no chipping), for the shadow taps.
+float fpStoneAt(vec2 q){float id,sl;vec2 l,h,g;float o=fpCourse(q,id,l,h,g);return fpDome(-o,id,l,h,sl);}
 `;
 
 const PAVING_COLOR = /* glsl */ `
 vec2 fpP=vFpWorld.xz;
-// The network: a rounded union of the paths, the cart's ruts and the beaten street lines.
-float fpSd=1e3,fpTrod=0.,fpBerm=0.,fpZone=0.;
+float fpFoot=length(fwidth(fpP));
+// The network: a filleted union of the paths; two cart ruts with a packed crown between them down the main road,
+// a beaten line down each street; how far a free end lies buried.
+float fpSd=1e3,fpTrod=0.,fpRut=0.,fpWear=0.,fpEnd=0.;
 for(int i=0;i<FP_MAX_SEG;i++){
   if(i>=fpSegCount)break;
-  vec4 s=fpSeg[i],info=fpSegInfo[i];
+  vec4 s=fpSeg[i],info=fpSegInfo[i];vec2 ends=fpSegEnd[i];
   vec2 ab=s.zw-s.xy;float L=length(ab);vec2 dir=ab/L,ap=fpP-s.xy;
   float t=dot(ap,dir),across=dot(ap,vec2(dir.y,-dir.x));
-  float d=length(ap-dir*clamp(t,0.,L))-info.x;
-  fpSd=fpSmin(fpSd,d,1.2);
-  float along=t+info.z,inside=1.-smoothstep(-.6,.9,max(-t,t-L));
-  float w=fpNoise(vec2(along*.045,info.w))*.9+fpNoise(vec2(along*.17,info.w+3.))*.16;
+  vec2 bd=vec2(abs(across)-info.x,max(-t,t-L));
+  fpSd=fpSmin(fpSd,length(max(bd,0.))+min(max(bd.x,bd.y),0.),.3);
+  float along=t+info.z,inside=1.-smoothstep(-.3,.4,bd.y);
+  float c=fpNoise(vec2(along*.045,info.w))*.9+fpNoise(vec2(along*.17,info.w+3.))*.16;
   if(info.y>.5){
-    float r=abs(abs(across-w*.5)-1.05);
-    fpTrod=max(fpTrod,(1.-smoothstep(.12,.3,r))*inside);
-    fpBerm=max(fpBerm,smoothstep(.2,.32,r)*(1.-smoothstep(.32,.58,r))*inside);
-    float c=abs(across-w*.5);
-    fpZone=max(fpZone,((1.-smoothstep(.45,.8,c))*.14+smoothstep(1.5,3.4,c)*.22)*inside);
+    float x=across-c*.45,r=abs(abs(x)-.82)+fpNoise(vec2(along*.9,info.w))*.05;
+    float rut=1.-smoothstep(.1,.3,r);
+    fpRut=max(fpRut,rut*inside);
+    float crown=(1.-smoothstep(.25,.55,abs(x)))*.5,verge=(1.-smoothstep(1.1,2.5,abs(x)))*.32;
+    fpTrod=max(fpTrod,max(rut,max(crown,verge))*inside);
+    fpWear=max(fpWear,(1.-smoothstep(1.5,2.7,abs(x)+fpNoise(vec2(along*.11,info.w+9.))*.7))*inside);
   }else{
-    float x=abs(across-w*.6);
-    fpTrod=max(fpTrod,(1.-smoothstep(.28,.8,x))*inside*.85);
-    fpZone=max(fpZone,smoothstep(.9,1.8,x)*.16*inside);
+    float x=across-c*.3;
+    fpTrod=max(fpTrod,(1.-smoothstep(.25,1.05,abs(x)))*.82*inside);
+    fpWear=max(fpWear,(1.-smoothstep(.8,1.6,abs(x)+fpNoise(vec2(along*.13,info.w+9.))*.45))*inside);
   }
+  float buried=max(ends.x*smoothstep(2.2,-.3,t),ends.y*smoothstep(L-2.2,L+.3,t));
+  fpEnd=max(fpEnd,buried*(1.-smoothstep(-.2,.4,bd.x)));
 }
-float fpN1=fpFbm(fpP*.55);
-// Positive under the drift that buries the edge; without a drift the stones run up to the kerb.
-float fpEdge=fpSd+.04+smoothstep(.3,1.,vFpDrift)*1.9+fpN1*.16+fpNoise(fpP*2.7)*.06;
-float fpCover=smoothstep(-.32,-.02,fpEdge);
-fpTrod*=1.-fpCover;
-// Stones: narrow joints of varying width, a short bevel, a per-stone tilt; some stones are split in two.
-vec2 fpQ=fpP*1.45;fpQ+=vec2(fpNoise(fpQ*2.3),fpNoise(fpQ*2.3+9.))*.05;
-float fpId;vec2 fpEN,fpTS;
-float fpJ=fpStones(fpQ,fpId,fpEN,fpTS)/1.45;
-vec2 fpLocal=-fpTS/1.45;
-float fpId2=fpId;
-{
-  vec2 sp=fpHash22(vec2(fpId*31.7,8.3));
-  if(sp.x>.6){float a=sp.y*3.1415927;vec2 nn=vec2(-sin(a),cos(a));float l=dot(fpLocal-(fpHash22(vec2(fpId*7.,2.))-.5)*.16,nn);
-    if(abs(l)<fpJ){fpJ=abs(l);fpEN=-sign(l)*nn;}fpId2=fract(fpId*13.7+step(0.,l)*.37);}
-}
-float fpJw=.006+.009*(fpNoise(fpP*3.7)*.5+.5);
-float fpBt=clamp((fpJ-fpJw)/.035,0.,1.),fpBev=fpBt*fpBt*(3.-2.*fpBt);
-vec2 fpTilt=(fpHash22(vec2(fpId2*91.7,3.1))-.5)*.9;
-float fpHn=clamp(fpBev*(.72+.28*fpId2+dot(fpLocal,fpTilt)*.35),0.,1.);
-vec2 fpGStone=(-fpEN*(6.*fpBt*(1.-fpBt)/.035)*.03+fpTilt*.035*fpBev);
-// Packed snow lying on the stones: patchy, scraped off where wheels and feet go, drifted at the edges.
-float fpFilm=clamp(.47+fpZone+fpN1*.6+fpNoise(fpP*1.9+4.)*.28,0.,1.);
-fpFilm=max(mix(fpFilm,-.05,fpTrod),fpCover*1.2);
-float fpShow=fpHn*.72+(fpNoise(fpP*6.3)*.5+.5)*.28;
-float fpStoneMask=smoothstep(.0,.3,fpBev);
-float fpVis=fpStoneMask*smoothstep(fpFilm-.05,fpFilm+.05,fpShow);
-// Snow height for the normal: the film, berms beside the ruts, the drifts.
-float fpS=clamp(fpFilm,0.,1.)*.03+fpBerm*.02*(1.-fpCover)+fpCover*.08;
-vec3 fpStone=mix(vec3(.14,.145,.155),vec3(.29,.285,.28),fpId2);
-fpStone=mix(fpStone,vec3(.25,.205,.165),step(.8,fract(fpId2*7.13))*.75);
-fpStone*=.84+.32*(fpNoise(fpP*13.+fpId2*17.)*.5+.5);
-fpStone*=1.+(fpNoise(fpP*47.)*.16+fpNoise(fpP*103.)*.1)*(1.-smoothstep(.006,.025,length(fwidth(fpP))));
-{
-  vec2 cr=fpHash22(vec2(fpId2*53.1,1.7));
-  if(cr.x>.55){float a=cr.y*6.2831853;vec2 cd=vec2(cos(a),sin(a));float cl=abs(dot(fpLocal+(cr-.5)*.12,vec2(-cd.y,cd.x)))+fpNoise(fpP*21.)*.004;fpStone*=mix(.55,1.,smoothstep(.0015,.005,cl));}
-}
-fpStone*=mix(.7,1.,fpBev);
-fpStone*=mix(1.,.74,fpTrod);
-float fpIce=smoothstep(.5,.8,fpTrod*(fpNoise(fpP*.7+2.)*.5+.5)*1.7);
-float fpFill=smoothstep(-.3,.3,fpNoise(fpP*1.7+11.)+.35-fpTrod*.45);
-vec3 fpJoint=mix(vec3(.075,.085,.1),mix(vec3(.6,.67,.77),vec3(.42,.47,.55),fpTrod*.6),fpFill);
-vec3 fpSnow=mix(mix(vec3(.62,.68,.77),vec3(.8,.86,.94),smoothstep(.2,.9,fpFilm)),vec3(.84,.92,.99),fpCover);
-vec3 fpCol=mix(mix(fpJoint,fpSnow,max(fpStoneMask*(1.-fpTrod*.5),smoothstep(.35,.75,fpFilm)*.93)),fpStone,fpVis);
-fpCol=mix(fpCol,vec3(.1,.135,.19),fpIce*.45*fpVis);
+float fpN1=fpFbm(fpP*.3+1.7),fpN2=fpNoise(fpP*1.6+4.);
+// Stones. The courses bend a little along their length and every outline is chipped.
+vec2 fpQ=fpP+vec2(fpNoise(fpP*2.3),fpNoise(fpP*2.3+7.))*.016;
+fpQ.y+=fpNoise(vec2(fpP.x*.19,fpP.y*.03+5.))*.13;
+float fpId;vec2 fpLoc,fpHalf,fpG;
+float fpOut=fpCourse(fpQ,fpId,fpLoc,fpHalf,fpG)+fpNoise(fpP*13.+fpId*9.)*.006;
+// Height in stone units (1 = FP_RELIEF m) and its gradient in metres per metre. Far away the joints are finer
+// than a pixel, so the pattern settles to its average instead of shimmering.
+float fpSlope,fpH=fpDome(-fpOut,fpId,fpLoc,fpHalf,fpSlope);
+float fpBev=smoothstep(0.,.02,-fpOut);
+float fpFar=smoothstep(.008,.035,fpFoot);
+float fpTop=.84+.16*fract(fpId*5.3);
+vec2 fpGS=(-fpG*fpSlope+(fpHash22(vec2(fpId*91.7,3.1))-.5)*.16*smoothstep(0.,.007,-fpOut))*FP_RELIEF*(1.-fpFar);
+fpH=mix(fpH,.62,fpFar);fpBev=mix(fpBev,.8,fpFar);
+// Snow level, same units: a patchy film, worn off where wheels and feet go, swept up against the kerbs, drifted in
+// across the edges and over the free ends.
+// Bare in the worn middle, banked white at the sides, with a narrow ragged band between; here and there a
+// shovelled clump on the stones.
+float fpS=1.5-fpWear*1.7+fpN1*.55+fpN2*.18;
+fpS+=smoothstep(.62,.86,fpNoise(fpP*.55+11.)*.5+.5+fpN2*.06)*1.6;
+fpS-=fpTrod*(.45+fpN2*.25);
+fpS+=smoothstep(-1.3,-.05,fpSd)*.45;
+// The last hand's width under the kerb is always snow, so the surface never fades out over bare stone.
+float fpLip=smoothstep(-.42+fpN2*.12,.06,fpSd)*1.9;
+fpS+=fpLip;
+// Meltwater keeps some joints open.
+fpS-=(1.-fpBev)*(.2+.4*(fpNoise(fpP*3.3+fpId)*.5+.5))*(1.-fpFar)*(1.-smoothstep(.55,1.05,fpS));
+fpS+=smoothstep(.25,1.,vFpDrift)*smoothstep(-3.6-fpN1*1.5,-.2,fpSd)*2.2;
+fpS+=fpEnd*(2.+fpN1*.6);
+float fpSnow=smoothstep(-.05,.05,fpS-fpH+fpNoise(fpP*7.3)*.06-.04);
+float fpFresh=smoothstep(1.,1.9,fpS);
+float fpPack=clamp(fpWear*.8+fpTrod*.5,0.,1.)*(1.-fpFresh);
+// Thin snow keeps the shape of the stones under it.
+float fpThin=1.-smoothstep(0.,.7,fpS-fpH);
+// How far the visible surface sits below the stone tops around it: joints and hollows see less sky.
+float fpRecess=clamp((fpTop*.92-max(fpS,fpH))/.55,0.,1.)*(1.-fpFar*.6)*(1.-fpSnow*.8);
+// Granite from several quarries, a few warm and slate flags; dark where the shoulder meets the joint.
+float fpV=fract(fpId*17.13);
+vec3 fpStone=mix(vec3(.13,.125,.12),vec3(.3,.285,.265),fract(fpId*3.7));
+fpStone=mix(fpStone,vec3(.31,.235,.17),step(.86,fpV)*.75);
+fpStone=mix(fpStone,vec3(.13,.145,.17),step(fpV,.12)*.8);
+fpStone*=.82+.36*(fpNoise(fpP*4.7+fpId*13.)*.5+.5);
+float fpNear=1.-smoothstep(.006,.03,fpFoot);
+fpStone*=1.+(fpNoise(fpP*41.)*.22+fpNoise(fpP*97.)*.16)*fpNear;
+float fpWet=smoothstep(.35,.9,fpTrod)*(1.-fpSnow);
+fpStone*=mix(1.,.66,fpWet);
+// Rime on stone that lies close under the snow line.
+fpStone=mix(fpStone,vec3(.5,.56,.64),smoothstep(-.25,0.,fpS-fpH)*(1.-fpWet)*.35);
+// Black ice where meltwater froze in the ruts.
+float fpIce=fpRut*smoothstep(.6,.8,fpNoise(fpP*.45+2.)*.5+.5+fpNoise(fpP*2.1)*.08)*(1.-fpSnow);
+vec3 fpJoint=mix(vec3(.045,.045,.05),vec3(.085,.08,.075),fpN1*.5+.5);
+vec3 fpRock=mix(fpJoint,fpStone,smoothstep(0.,.35,fpBev));
+// Snow: fresh in the drifts (the snowfield's own albedo), packed and greyer on the road, dirtied in the ruts.
+vec3 fpSnowC=mix(vec3(.84,.93,1.)*.97,vec3(.6,.655,.74),smoothstep(.2,1.,fpPack));
+fpSnowC=mix(fpSnowC,vec3(.43,.43,.44),fpRut*.5*(1.-fpFresh));
+// Prints: the snowfield's deformation field, shallower in packed snow, none in stone.
+vec4 fpD=snowDeformAt(fpP)*snowDeformFalloff(fpP);
+float fpPrint=fpSnow*(1.-fpPack*.55);
+float fpPit=clamp(fpD.r/.12,0.,1.)*fpPrint;
+fpSnowC*=mix(vec3(1.),vec3(.78,.86,1.),fpPit*.8+fpD.b*.1*fpPrint);
+vec3 fpCol=mix(fpRock,fpSnowC,fpSnow);
+fpCol*=1.-fpRecess*.45;
+fpCol=mix(fpCol,vec3(.05,.065,.085),fpIce*.8);
 diffuseColor.rgb*=fpCol;
-diffuseColor.a*=1.-smoothstep(-.05,${FADE.toFixed(2)},fpSd+fpNoise(fpP*1.3)*.08);
+// Deep snow hands over to the snowfield itself (its prints, ripples and glints), as does the edge.
+diffuseColor.a*=(1.-smoothstep(1.6,2.3,fpS))*(1.-smoothstep(.04,${REACH.toFixed(2)},fpSd+fpNoise(fpP*1.9)*.05));
+// Low sun: the stone (or snow) between here and the sun blocks it.
+float fpShade=1.;
+if(fpDetail>.5){
+  float sl=max(length(fpSun.xz),1e-3);vec2 sd=fpSun.xz/sl;float tanE=fpSun.y/sl,h0=max(fpH,fpS*fpSnow),occ=0.;
+  for(int k=1;k<=3;k++){float d=float(k*k)*.013,hk=fpStoneAt(fpQ+sd*d);occ=max(occ,clamp(((hk-h0)*FP_RELIEF-d*tanE)/.005,0.,1.));}
+  fpShade=1.-occ*.8;
+}
 `;
 
 const PAVING_ROUGH = /* glsl */ `
-roughnessFactor=mix(mix(.74,.9,fpCover),mix(.8,.52,fpTrod),fpVis);
-roughnessFactor=mix(roughnessFactor,.3,fpIce*fpVis);
+roughnessFactor=mix(mix(mix(.8,.42,fpWet),.14,fpIce),mix(.95,.66,fpPack),fpSnow*(1.-fpIce));
 `;
 
 const PAVING_NORMAL = /* glsl */ `
 {
-  vec2 dpx=dFdx(fpP),dpy=dFdy(fpP);float dsx=dFdx(fpS),dsy=dFdy(fpS),det=dpx.x*dpy.y-dpx.y*dpy.x;
-  vec2 gS=abs(det)>1e-12?vec2(dsx*dpy.y-dsy*dpx.y,dpx.x*dsy-dpy.x*dsx)/det:vec2(0.);
-  gS=clamp(gS,-.5,.5);
-  vec2 gSt=fpGStone;
-  if(fpDetail>.5){float e=.02,n0=fpNoise(fpP*9.),nx=fpNoise((fpP+vec2(e,0.))*9.),nz=fpNoise((fpP+vec2(0.,e))*9.);gSt+=vec2(nx-n0,nz-n0)/e*.004;}
-  vec2 g=mix(gS,gSt,fpVis);
+  // Snow from screen derivatives of its (smooth) level, much deeper in the drifts; stones from their analytic
+  // bevel and tilt, softened under thin snow; prints; ripples on fresh snow continue the snowfield's.
+  vec2 dpx=dFdx(fpP),dpy=dFdy(fpP);
+  float sN=fpS-fpLip*.85,h=min(sN,1.)*FP_RELIEF+max(sN-1.,0.)*.07,dsx=dFdx(h),dsy=dFdy(h),det=dpx.x*dpy.y-dpx.y*dpy.x;
+  vec2 gS=abs(det)>1e-12?clamp(vec2(dsx*dpy.y-dsy*dpx.y,dpx.x*dsy-dpy.x*dsx)/det,-.6,.6):vec2(0.);
+  gS+=fpGS*.14*fpThin*fpThin;
+  vec2 gSt=fpGS*(1.-fpIce*.8);
+  vec2 wd=vec2(.8,.6);float ph=dot(fpP,wd)*2.4+sdNoise2(fpP*.31)*2.6,amp=.03*(.55+.45*sdNoise2(fpP*.11+3.7));
+  gS+=wd*cos(ph)*2.4*amp*smoothstep(1.,.25,fpFoot)*fpFresh;
+  if(fpDetail>.5){
+    float e=snowDeformSize/snowDeformRes,fall=snowDeformFalloff(fpP)*1.15*(1.-fpPack*.55);
+    gS+=vec2(snowDeformHeight(fpP+vec2(e,0.))-snowDeformHeight(fpP-vec2(e,0.)),snowDeformHeight(fpP+vec2(0.,e))-snowDeformHeight(fpP-vec2(0.,e)))/(2.*e)*fall;
+    float q=.02,n0=fpNoise(fpP*9.),nx=fpNoise((fpP+vec2(q,0.))*9.),nz=fpNoise((fpP+vec2(0.,q))*9.);
+    vec2 gn=vec2(nx-n0,nz-n0)/q;
+    gSt+=gn*.004*fpBev;gS+=gn*.0025*(1.-fpFresh);
+  }
+  vec2 g=mix(gSt,gS,fpSnow);
   vec3 nW=inverseTransformDirection(normal,viewMatrix);
   nW=normalize(nW+vec3(-g.x,0.,-g.y));
   normal=normalize((viewMatrix*vec4(nW,0.)).xyz);
 }
 `;
 
-/** A low sun skimming wet stone and ice must not bloom out. */
-const SPEC_CLAMP = /* glsl */ `#include <lights_fragment_end>
-reflectedLight.directSpecular=min(reflectedLight.directSpecular,vec3(.35));`;
+/** A low sun skimming wet stone and ice must not bloom out; the sky comes back through Fresnel instead. */
+const PAVING_LIGHT = /* glsl */ `#include <lights_fragment_end>
+reflectedLight.directDiffuse*=fpShade;
+reflectedLight.directSpecular=min(reflectedLight.directSpecular*fpShade,vec3(.3));`;
+
+const PAVING_OUT = /* glsl */ `{
+  vec3 nW=inverseTransformDirection(normal,viewMatrix),V=normalize(cameraPosition-vFpWorld),R=reflect(-V,nW);
+  float F=.04+.96*pow(1.-clamp(dot(nW,V),0.,1.),5.);
+  outgoingLight+=mix(fpSkyH,fpSkyZ,smoothstep(0.,.6,R.y))*F*(fpIce*.5+fpWet*.25)*(1.-fpSnow)*.5;
+  // Snow crystals catch the sun when looking across the snow towards it (as the snowfield's do).
+  if(fpDetail>.5&&fpSnow>.01){
+    vec2 id=floor(fpP/.12),r=sdHash22(id),r2=sdHash22(id+vec2(19.73,7.31));
+    vec2 c=(id+.5+(r-.5)*.72)*.12;float dd=length(fpP-c)/.0264,disc=clamp(1.-dd*dd,0.,1.)*step(r2.x,.62);
+    if(disc>0.){
+      vec3 L=normalize(fpSun),H=normalize(V+L),T=normalize(cross(vec3(0.,0.,1.),nW)),B=cross(nW,T);
+      float a=r.y*6.2831853;vec3 f=normalize(nW+(T*cos(a)+B*sin(a))*(.1+r2.y*.26));
+      float gl=disc*pow(clamp(dot(f,H),0.,1.),420.)*pow(1.-clamp(dot(nW,V),0.,1.),2.2)*(1.-smoothstep(.066,.26,fpFoot));
+      outgoingLight+=reflectedLight.directDiffuse/max(diffuseColor.rgb,vec3(.05))*gl*fpSnow*14.;
+    }
+  }
+}
+#include <opaque_fragment>`;
 
 /**
  * Rough-cut granite with snow caps and frost where it meets the drift. Geometry needs vertex colours (the
@@ -182,15 +280,16 @@ export function graniteMaterial(name: string): THREE.MeshStandardMaterial {
         vec3 kNW=normalize(vKN),kA=abs(kNW)/(abs(kNW.x)+abs(kNW.y)+abs(kNW.z));
         #define K3(f,o) (fpNoise(vKW.zy*f+o)*kA.x+fpNoise(vKW.xz*f+o)*kA.y+fpNoise(vKW.xy*f+o)*kA.z)
         float kN=K3(3.1,0.);
-        float kSnow=smoothstep(.7,.8,kNW.y+kN*.3)*smoothstep(-.08,.08,fpNoise(vKW.xz*1.3+7.)+vKS*.8-.3);
-        float kFrost=1.-smoothstep(.0,.05+kN*.02,vKW.y-vKG);
-        // Broad mottling, dark and light grains.
+        // Snow lies in patches on the flat tops only; frost creeps a finger's width up from the snow line.
+        float kSnow=smoothstep(.85,.95,kNW.y+kN*.1)*smoothstep(.1,.25,fpNoise(vKW.xz*2.3+7.)*.9+vKS-.75+kN*.25);
+        float kFrost=(1.-smoothstep(.0,.018+kN*.01,vKW.y-vKG))*.8;
+        // Broad mottling, dark and light grains, lichen-dark streaks down the faces.
         float kGrain=K3(38.,5.)*.5+.5,kGrain2=K3(91.,9.)*.5+.5,kNear=1.-smoothstep(.004,.02,length(fwidth(vKW)));
-        diffuseColor.rgb*=.72+.36*(K3(6.,2.)*.5+.5);
+        diffuseColor.rgb*=.66+.42*(K3(6.,2.)*.5+.5);
         diffuseColor.rgb*=mix(1.,mix(1.,.55,smoothstep(.62,.8,kGrain))*mix(1.,1.35,smoothstep(.66,.84,kGrain2)),kNear);
-        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.84,.92,.99),max(kSnow,kFrost*.9));
+        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.84,.93,1.),max(kSnow,kFrost));
         float kWhite=max(kSnow,kFrost);`)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(.82,.9,kWhite);')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(.8,.92,kWhite);')
       .replace('#include <normal_fragment_maps>', /* glsl */ `#include <normal_fragment_maps>
         {
           // Chisel marks: a small world-space bump, weaker under snow.
@@ -198,7 +297,7 @@ export function graniteMaterial(name: string): THREE.MeshStandardMaterial {
           float e=.012,f0=KF(vKW);
           vec3 g=vec3(KF(vKW+vec3(e,0.,0.))-f0,KF(vKW+vec3(0.,e,0.))-f0,KF(vKW+vec3(0.,0.,e))-f0)/e;
           vec3 nW=inverseTransformDirection(normal,viewMatrix);
-          g=(g-dot(g,nW)*nW)*.01*(1.-kWhite*.7);
+          g=(g-dot(g,nW)*nW)*.012*(1.-kWhite*.7);
           nW=normalize(nW-g);
           normal=normalize((viewMatrix*vec4(nW,0.)).xyz);
         }`);
@@ -207,14 +306,23 @@ export function graniteMaterial(name: string): THREE.MeshStandardMaterial {
   return material;
 }
 
+export interface FrostPavingOptions {
+  /** Sky colours the wet stone and black ice reflect, and the direction to the sun (SnowSky's). */
+  skyHorizon: THREE.Color;
+  skyZenith: THREE.Color;
+  sunDir: THREE.Vector3;
+  /** Prints in the road's snow come from the snowfield's own deformation field. */
+  deform: SnowDeform;
+}
+
 export interface FrostPaving {
   root: THREE.Group;
-  /** 'low' drops the stones' micro relief. */
+  /** 'low' drops the micro relief. */
   setQuality(q: 'high' | 'low'): void;
 }
 
 /** Frostlight's paths (same layout and `covers` contract as islandPaths), dressed as a snowed-in village street. */
-export function frostPaving(height: (x: number, z: number) => number, paths: IslandPath[]): FrostPaving {
+export function frostPaving(height: (x: number, z: number) => number, paths: IslandPath[], opts: FrostPavingOptions): FrostPaving {
   const root = new THREE.Group(); root.name = 'world4-snow-paving';
   const segs: Seg[] = [];
   paths.forEach((path, pi) => {
@@ -227,19 +335,21 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
     }
   });
   if (segs.length > MAX_SEG) throw new Error(`frostPaving: ${segs.length} segments, max ${MAX_SEG}`);
-  const segDist = (s: Seg, x: number, z: number) => {
-    const dx = s.bx - s.ax, dz = s.bz - s.az, l2 = dx * dx + dz * dz, t = Math.min(1, Math.max(0, ((x - s.ax) * dx + (z - s.az) * dz) / l2));
-    return Math.hypot(s.ax + dx * t - x, s.az + dz * t - z);
+  // A free end is a path's first or last point that no other path's paving reaches.
+  const boxDist = (s: Seg, x: number, z: number) => {
+    const dx = s.bx - s.ax, dz = s.bz - s.az, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L, px = x - s.ax, pz = z - s.az;
+    const t = px * ux + pz * uz, across = Math.abs(px * uz - pz * ux), bx = across - s.half, by = Math.max(-t, t - L);
+    return Math.hypot(Math.max(bx, 0), Math.max(by, 0)) + Math.min(Math.max(bx, by), 0);
   };
-  const sdNet = (x: number, z: number) => segs.reduce((d, s) => Math.min(d, segDist(s, x, z) - s.half), Infinity);
+  const free = (s: Seg, x: number, z: number) => !segs.some(o => o.path !== s.path && boxDist(o, x, z) < .5);
+  const sdNet = (x: number, z: number) => segs.reduce((d, s) => Math.min(d, boxDist(s, x, z)), Infinity);
   const ground = (x: number, z: number) => pavingGround(height, x, z, 4);
 
-  // Surface: grid cells near the network, one vertex per grid point, so overlapping paths never double up.
-  const reach = FADE + .2 + CELL;
+  // Surface: grid cells over the network, one vertex per grid point, so overlapping paths never double up.
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
   for (const s of segs) {
-    minX = Math.min(minX, s.ax - s.half - reach, s.bx - s.half - reach); maxX = Math.max(maxX, s.ax + s.half + reach, s.bx + s.half + reach);
-    minZ = Math.min(minZ, s.az - s.half - reach, s.bz - s.half - reach); maxZ = Math.max(maxZ, s.az + s.half + reach, s.bz + s.half + reach);
+    minX = Math.min(minX, s.ax - s.half - 1, s.bx - s.half - 1); maxX = Math.max(maxX, s.ax + s.half + 1, s.bx + s.half + 1);
+    minZ = Math.min(minZ, s.az - s.half - 1, s.bz - s.half - 1); maxZ = Math.max(maxZ, s.az + s.half + 1, s.bz + s.half + 1);
   }
   minX = Math.floor(minX / CELL) * CELL; minZ = Math.floor(minZ / CELL) * CELL;
   const nx = Math.ceil((maxX - minX) / CELL), nz = Math.ceil((maxZ - minZ) / CELL);
@@ -250,7 +360,7 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
     return vid[k];
   };
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    if (sdNet(minX + (i + .5) * CELL, minZ + (j + .5) * CELL) > FADE + .15 + CELL * .75) continue;
+    if (sdNet(minX + (i + .5) * CELL, minZ + (j + .5) * CELL) > REACH + CELL * .72) continue;
     const a = vert(i, j), b = vert(i + 1, j), c = vert(i, j + 1), d = vert(i + 1, j + 1);
     index.push(a, c, b, b, c, d);
   }
@@ -262,10 +372,15 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
   const uniforms = {
     fpSeg: {value: Array.from({length: MAX_SEG}, (_, i) => segs[i] ? new THREE.Vector4(segs[i].ax, segs[i].az, segs[i].bx, segs[i].bz) : new THREE.Vector4())},
     fpSegInfo: {value: Array.from({length: MAX_SEG}, (_, i) => segs[i] ? new THREE.Vector4(segs[i].half, segs[i].main ? 1 : 0, segs[i].along0, segs[i].seed) : new THREE.Vector4())},
+    fpSegEnd: {value: Array.from({length: MAX_SEG}, (_, i) => { const s = segs[i]; return s ? new THREE.Vector2(s.first && free(s, s.ax, s.az) ? 1 : 0, s.last && free(s, s.bx, s.bz) ? 1 : 0) : new THREE.Vector2(); })},
     fpSegCount: {value: segs.length},
     fpDetail: {value: 1},
+    fpSkyH: {value: opts.skyHorizon},
+    fpSkyZ: {value: opts.skyZenith},
+    fpSun: {value: opts.sunDir},
+    ...opts.deform.uniforms,
   };
-  const material = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .85, transparent: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
+  const material = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .85, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
   material.name = 'frostlight-snow-paving';
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -277,63 +392,15 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
       .replace('#include <color_fragment>', `#include <color_fragment>\n${PAVING_COLOR}`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${PAVING_ROUGH}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${PAVING_NORMAL}`)
-      .replace('#include <lights_fragment_end>', SPEC_CLAMP);
+      .replace('#include <lights_fragment_end>', PAVING_LIGHT)
+      .replace('#include <opaque_fragment>', PAVING_OUT);
   };
   material.customProgramCacheKey = () => 'frostlight-snow-paving';
   const surface = new THREE.Mesh(geo, material);
   surface.name = 'frostlight-paving-surface'; surface.receiveShadow = true; surface.renderOrder = -1;
   root.add(surface);
 
-  // Kerbs: rough-cut granite along both edges, broken where a drift or a crossing street takes the edge.
-  let seed = 4127;
-  const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
-  const kerbs: THREE.BufferGeometry[] = [];
-  let buried = 0, junction = 0;
-  const spots: [number, number][] = [];
-  const tint = new THREE.Color();
-  for (const s of segs) {
-    const dx = s.bx - s.ax, dz = s.bz - s.az, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L, yaw = Math.atan2(ux, uz);
-    for (const side of [-1, 1]) {
-      // The paving's rounded end runs out before the kerb would, so kerbs stop short of a path's ends.
-      let t = (s.first ? 1.1 : .3) + rand() * .3;
-      while (t < L - (s.last ? 1.4 : .3)) {
-        const len = (s.main ? .5 : .42) + rand() * .34, tc = t + len / 2, off = side * (s.half + .17 + (rand() - .5) * .06);
-        t += len + .025 + rand() * .06;
-        const x = s.ax + ux * tc + uz * off, z = s.az + uz * tc - ux * off;
-        if (segs.some(o => o !== s && o.path !== s.path && segDist(o, x, z) < o.half + 1.1)) { junction++; continue; }
-        if (frostDrift(x, z) > .35 || rand() < .1) { buried++; continue; }
-        const w = .28 + rand() * .12, h = .26, y0 = ground(x, z), top = .03 + rand() * .085;
-        const slope = (ground(x + ux * .3, z + uz * .3) - ground(x - ux * .3, z - uz * .3)) / .6;
-        const g = new RoundedBoxGeometry(w, h, len, 2, .06);
-        g.rotateZ((rand() - .5) * .22); g.rotateX(-Math.atan(slope) + (rand() - .5) * .05);
-        g.rotateY(yaw + (rand() - .5) * .16); g.translate(x, y0 + top - h / 2, z);
-        const p = g.getAttribute('position') as THREE.BufferAttribute;
-        for (let i = 0; i < p.count; i++) {
-          const px = p.getX(i), py = p.getY(i), pz = p.getZ(i), n = vnoise(px * 6 + py * 4, pz * 6) - .5, m = vnoise(pz * 6 + 3, px * 6 - py * 4) - .5;
-          p.setXYZ(i, px + n * .045, py + (vnoise(pz * 5, px * 5) - .5) * .03, pz + m * .045);
-        }
-        g.computeVertexNormals();
-        tint.setRGB(.2 + rand() * .08, .2 + rand() * .07, .205 + rand() * .06);
-        const col = new Float32Array(p.count * 3), base = new Float32Array(p.count);
-        for (let i = 0; i < p.count; i++) { col.set([tint.r, tint.g, tint.b], i * 3); base[i] = y0; }
-        g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-        g.setAttribute('aGround', new THREE.BufferAttribute(base, 1));
-        g.setAttribute('aSnow', new THREE.BufferAttribute(new Float32Array(p.count).fill(.5), 1));
-        g.deleteAttribute('uv');
-        kerbs.push(g); spots.push([+x.toFixed(2), +z.toFixed(2)]);
-      }
-    }
-  }
-  if (kerbs.length) {
-    const kerbGeo = mergeGeometries(kerbs, false)!;
-    kerbs.forEach(g => g.dispose());
-    const kerbMat = graniteMaterial('frostlight-kerb-granite');
-    const kerbMesh = new THREE.Mesh(kerbGeo, kerbMat);
-    kerbMesh.name = 'frostlight-kerb-stones'; kerbMesh.castShadow = true; kerbMesh.receiveShadow = true;
-    root.add(kerbMesh);
-  }
   root.userData.covers = (x: number, z: number) => onIslandPath(paths, x, z);
-  root.userData.stats = {segments: segs.length, cells: index.length / 6, vertices: pos.length / 3, kerbs: kerbs.length, buriedKerbs: buried, junctionGaps: junction};
-  root.userData.kerbSpots = spots;
+  root.userData.stats = {segments: segs.length, freeEnds: uniforms.fpSegEnd.value.reduce((n, v) => n + v.x + v.y, 0), cells: index.length / 6, vertices: pos.length / 3};
   return {root, setQuality(q) { uniforms.fpDetail.value = q === 'low' ? 0 : 1; }};
 }

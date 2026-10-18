@@ -62,7 +62,7 @@ export class SnowIsland {
   const sea=add(new THREE.PlaneGeometry(1800,1800),new THREE.MeshStandardMaterial({color:'#244c6a',roughness:.28,metalness:.45}),0,.2,0);sea.rotation.x=-Math.PI/2;
   // Snowed-in flagstone streets (frostPaving.ts) on the same layout as before, so walking and covers() are unchanged.
   const paths:IslandPath[]=[{points:[[0,94],[0,28],[0,-53]],width:8,trim:true},...[38,56,74].map(z=>({points:[[-22,z],[22,z]] as [number,number][],width:4,trim:true}))];
-  this.paving=frostPaving((x,z)=>this.height(x,z),paths);this.root.add(this.paving.root);
+  this.paving=frostPaving((x,z)=>this.height(x,z),paths,{skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,sunDir:this.sky.sunDir,deform:this.deform});this.root.add(this.paving.root);
   for(const side of [-1,1])for(let i=0;i<3;i++){
    const x=side*29,z=38+i*18,y=this.height(x,z);
    add(new THREE.BoxGeometry(10,6,11),wood,x,y+3,z);
