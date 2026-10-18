@@ -3,11 +3,12 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {FROST_NOISE,graniteMaterial} from './frostPaving';
 
 /*
- * Boreas's throne floor: a disc of old, thick ice ringed by carved granite. The ice is lit as a surface (so
- * crabs and pillars shadow it) whose albedo looks into its depth: fracture sheets and trapped bubbles are
- * sampled along the refracted view ray, so they slide past each other as the camera moves. The three combat
- * rings are runes cut into the ice with light in the cuts. The sun's highlight is clamped and the sky comes
- * back through Fresnel instead, so the low sun no longer blows the floor out to white.
+ * Boreas's throne floor: a disc of old lake ice a metre thick, ringed by carved granite. It is lit as a surface (so
+ * crabs and pillars shadow it) whose albedo looks down into its depth: the crack field is sampled along the
+ * refracted view ray, so every fracture is a vertical sheet that opens and slides as the camera moves, and
+ * columns of trapped bubbles stack under each other. The three combat rings are runes cut into the ice with
+ * light in the cuts. The sun's highlight is clamped and the sky comes back through Fresnel instead, so the low
+ * sun no longer blows the floor out to white.
  */
 
 export interface FrostArenaOptions {
@@ -23,7 +24,7 @@ export interface FrostArenaOptions {
 
 export interface FrostArena {
   root: THREE.Group;
-  /** Once a frame while Frostlight shows; 'low' halves the depth samples and drops the bubbles. */
+  /** Once a frame while Frostlight shows; 'low' takes fewer depth samples and drops the bubbles and fine cracks. */
   update(time: number, quality: 'high' | 'low'): void;
 }
 
@@ -44,26 +45,56 @@ vec3 faEnv(vec3 d){
   if(d.y<0.)return faBounce*(.55+.45*smoothstep(-1.,0.,d.y));
   return mix(faSkyH,faSkyZ,smoothstep(0.,.6,d.y));
 }
-// Plates of lake ice: distance to the nearest crack (Voronoi border, metres in cell units) and its outward normal.
-float faPlates(vec2 x,out vec2 edgeN){
-  vec2 n=floor(x),f=fract(x),mg=vec2(0.),mr=vec2(0.);float md=8.;
-  for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 g=vec2(float(i),float(j)),r=g+.1+.8*fpHash22(n+g)-f;float d=dot(r,r);if(d<md){md=d;mr=r;mg=g;}}
-  md=8.;edgeN=vec2(1.,0.);
-  for(int j=-2;j<=2;j++)for(int i=-2;i<=2;i++){vec2 g=mg+vec2(float(i),float(j)),r=g+.1+.8*fpHash22(n+g)-f,dr=r-mr;
-    if(dot(dr,dr)>1e-5){vec2 nn=normalize(dr);float d=dot(.5*(mr+r),nn);if(d<md){md=d;edgeN=nn;}}}
-  return md;
+// One fracture: a vertical sheet standing on segment a-b, reaching depth D. The refracted ray from p moves by st
+// per metre of depth, so it meets the sheet's plane at one depth, analytically: the sheet is continuous and slides
+// with the view. trace is the hairline where the sheet breaks the surface.
+void faSheet(vec2 p,vec2 a,vec2 b,float D,float w,vec2 st,float foot,inout float sheet,inout float trace){
+  vec2 ab=b-a;float L=length(ab);vec2 dir=ab/L,n=vec2(-dir.y,dir.x),ap=p-a;
+  float s=dot(ap,n),t=dot(ap,dir);
+  trace=max(trace,(1.-smoothstep(foot*.6,foot*1.6+.003,length(ap-dir*clamp(t,0.,L))))*w*(.55+.45*fpNoise(vec2(t*.7,w*31.))));
+  float sn=dot(st,n);
+  if(abs(sn)<1e-4)return;
+  float d=-s/sn;
+  if(d<=0.||d>D)return;
+  float th=t+dot(st,dir)*d;
+  if(th<0.||th>L)return;
+  float f=exp(-d*1.7)*(1.-smoothstep(D*.5,D,d))*smoothstep(0.,.3,th)*smoothstep(0.,.3,L-th);
+  // Hackles on the fracture face.
+  f*=clamp(.5+.6*fpNoise(vec2(th*2.3,d*9.)+a),0.,1.);
+  sheet+=f*w*(1.-sheet);
 }
-// A vertical fracture sheet seen along the refracted ray: where the ray meets the sheet, how deep, how bright.
-float faSheet(vec2 p,vec2 stepD,float scale,float depth,float seed,float foot){
-  vec2 q=p*scale+seed;q+=vec2(fpNoise(q*.7),fpNoise(q*.7+5.))*.22;
-  vec2 eN;float J=faPlates(q,eN)/scale;
-  float toward=dot(stepD,eN);
-  float hit=toward>1e-3?J/toward:(J<.004?0.:1e3);
-  float w=max(.006,foot*.7);
-  float line=1.-smoothstep(w*.5,w,J);
-  float sheet=hit<depth?exp(-hit*2.4/depth)*(.55+.45*fpNoise(vec2(dot(p,vec2(-eN.y,eN.x))*3.,hit*9.)+seed)):0.;
-  float k=.35+.65*smoothstep(-.4,.4,fpNoise(p*.23+seed*3.));
-  return max(line*(.5+.5*k),sheet*.62*k);
+// Nodes of a crack web: one jittered point per cell.
+vec2 faNode(vec2 c,float size,float salt){return (c+.15+.7*fpHash22(c*1.31+salt))*size;}
+// The crack network around p: a web of straight fractures joining jittered nodes (some links missing, so it never
+// closes into tiles), the star struck out from the sigil, and in patches a finer, shallower web (high quality).
+void faCrackField(vec2 p,vec2 st,float foot,float detail,vec2 c0,out float sheet,out float trace){
+  sheet=0.;trace=0.;
+  const float S=5.4;
+  vec2 base=floor(p/S);
+  for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
+    vec2 c=base+vec2(float(i),float(j)),a=faNode(c,S,0.);
+    vec3 h=vec3(fpHash22(c+.37),fpHash12(c+9.1));
+    float D=.3+.8*h.z,w=.45+.55*fract(h.z*13.7);
+    if(h.x<.42)faSheet(p,a,faNode(c+vec2(1.,0.),S,0.),D,w,st,foot,sheet,trace);
+    if(h.y<.42)faSheet(p,a,faNode(c+vec2(0.,1.),S,0.),D*.8,1.45-w,st,foot,sheet,trace);
+    if(fract(h.z*7.3)<.15)faSheet(p,a,faNode(c+vec2(1.,1.),S,0.),D*.6,.7,st,foot,sheet,trace);
+  }
+  for(int i=0;i<7;i++){
+    float fi=float(i),a=(fi+fpHash12(vec2(fi,4.))*.6)/7.*6.2831853,r1=4.6+5.5*fpHash12(vec2(fi,9.)),k=(fpHash12(vec2(fi,2.))-.5)*.6;
+    vec2 d=vec2(cos(a),sin(a)),d2=vec2(cos(a+k),sin(a+k)),q=c0+d*(2.75+r1)*.5;
+    faSheet(p,c0+d*2.75,q,.6,1.,st,foot,sheet,trace);
+    faSheet(p,q,q+d2*(r1-2.75)*.5,.4,.8,st,foot,sheet,trace);
+  }
+  if(detail>.5&&fpNoise(p*.11+8.)>.2){
+    const float F=1.3;
+    vec2 fb=floor(p/F);float sh=0.,tr=0.;
+    for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
+      vec2 c=fb+vec2(float(i),float(j)),a=faNode(c,F,5.);vec2 h=fpHash22(c+3.7);
+      if(h.x<.3)faSheet(p,a,faNode(c+vec2(1.,0.),F,5.),.12,1.,st,foot,sh,tr);
+      if(h.y<.3)faSheet(p,a,faNode(c+vec2(0.,1.),F,5.),.1,1.,st,foot,sh,tr);
+    }
+    sheet+=sh*.6*(1.-sheet);trace=max(trace,tr*.6);
+  }
 }
 float faSeg(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;return length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.,1.));}
 // One rune, in band units (y spans -1..1): a stave and up to four twigs picked by the id.
@@ -84,33 +115,33 @@ const ICE_COLOR = /* glsl */ `
 vec2 aP=vFaW.xz-faCenter.xz;
 float aR=length(aP),aAng=atan(aP.y,aP.x);
 vec3 aV=normalize(cameraPosition-vFaW);
-float aNV=clamp(aV.y,0.,1.);
 float aFoot=length(fwidth(vFaW.xz));
-// Depth: fracture sheets of two sizes meet the refracted ray; a deep layer slides under them.
+// The view ray bends into the ice; at depth d it has reached vFaW.xz+aStep*d.
 vec3 aRf=refract(-aV,vec3(0.,1.,0.),.763);
-vec2 aStep=aRf.xz/max(-aRf.y,.25);
-float aCr=faSheet(vFaW.xz,aStep,.27,.9,0.,aFoot);
-float aFine=smoothstep(.2,.55,fpNoise(vFaW.xz*.13+7.));
-if(faDetail>.5&&aFine>0.)aCr=max(aCr,faSheet(vFaW.xz,aStep,.85,.3,11.,aFoot)*aFine*.55);
-float aDeep=fpFbm((vFaW.xz+aStep*1.6)*.35);
-// Bubbles caught in the ice in clusters, at two depths.
+vec2 aStep=aRf.xz/max(-aRf.y,.2);
+// Thickness: black-green and clear where it is deep, milky where air froze in; the milk lies half a metre down,
+// so it drifts against the cracks as the camera moves.
+float aMilk=smoothstep(-.25,.7,fpFbm((vFaW.xz+aStep*.5)*.075+2.));
+vec3 aIce=mix(vec3(.004,.022,.036),vec3(.045,.12,.155),aMilk*.7);
+float aSheet,aTrace;
+faCrackField(vFaW.xz,aStep,aFoot,faDetail,faCenter.xz,aSheet,aTrace);
+aIce+=mix(vec3(.2,.45,.58),vec3(.55,.8,.9),aSheet)*aSheet*.6+vec3(.5,.62,.68)*aTrace*.3;
+// Bubbles caught as they rose: columns of small flat discs stacked under each other, in clusters.
 float aBub=0.;
-float aCluster=smoothstep(.15,.5,fpFbm(vFaW.xz*.2+9.));
-if(faDetail>.5&&aCluster>0.){
-  for(int k=0;k<2;k++){
-    float d=.06+float(k)*.2;
-    vec2 q=(vFaW.xz+aStep*d)*5.+float(k)*13.7;
-    vec2 id=floor(q),f=fract(q)-.5,h=fpHash22(id);
-    if(h.x>.55){vec2 o=(fpHash22(id+5.3)-.5)*.5;float r=.04+.12*h.y*h.y,dd=length(f-o);
-      aBub+=(smoothstep(r,r*.4,dd)*.3+smoothstep(r*.75,r,dd)*smoothstep(r*1.15,r,dd)*.7)*exp(-d*2.5);}
+if(faDetail>.5){
+  float cl=smoothstep(.05,.45,fpNoise(vFaW.xz*.09+4.));
+  if(cl>0.)for(int k=0;k<4;k++){
+    float d=.06+float(k)*.12;
+    vec2 q=(vFaW.xz+aStep*d)/.42,id=floor(q),h=fpHash22(id+31.);
+    if(h.x>.9){
+      vec2 o=(fpHash22(id+5.3)-.5)*.4;float r=(.035+.05*h.y)*(1.-float(k)*.18),dd=length(fract(q)-.5-o);
+      aBub+=(smoothstep(r,r*.5,dd)*.4+smoothstep(r*.72,r,dd)*smoothstep(r*1.1,r,dd)*.4)*exp(-d*2.6);
+    }
   }
-  aBub*=aCluster*(1.-smoothstep(.012,.04,aFoot));
+  aBub*=cl*(1.-smoothstep(.012,.04,aFoot));
 }
-// Thickness varies: dark blue where it is deep, milky where air froze in.
-float aMilk=smoothstep(-.2,.6,fpFbm(vFaW.xz*.09+2.));
-vec3 aIce=mix(vec3(.012,.05,.085),vec3(.05,.15,.2),aMilk*.7+.15*(1.-aNV)+aDeep*.25);
-aIce+=vec3(.36,.56,.66)*aCr+vec3(.5,.7,.8)*aBub*.5;
-// Rune rings: two cut grooves either side of a band of runes, and a faint halo so they read from afar.
+aIce+=vec3(.6,.78,.86)*aBub*.5;
+// Rune rings: two cut grooves either side of a band of runes, and a faint halo in the ice so they read from afar.
 float aGlow=0.,aCut=0.;
 for(int i=0;i<3;i++){
   float R=faRings[i],dR=aR-R,bw=R>20.?.3:.26;
@@ -124,7 +155,7 @@ for(int i=0;i<3;i++){
   float cut=max(groove,g);
   float pulse=.75+.25*sin(faTime*1.3-aAng*2.-R*.7);
   aCut=max(aCut,cut);
-  aGlow+=cut*pulse*mix(1.,.55,smoothstep(.03,.12,aFoot))+exp(-dR*dR/.35)*.07;
+  aGlow+=cut*pulse*mix(1.,.55,smoothstep(.03,.12,aFoot))+exp(-dR*dR/.3)*.09;
 }
 // The sigil at the centre: a six-armed frost star cut into the ice.
 {
@@ -137,32 +168,32 @@ for(int i=0;i<3;i++){
   d=min(d,abs(aR-.3));
   float sw=max(.022,aFoot*.6);
   float cut=1.-smoothstep(sw*.5,sw,d);
-  aCut=max(aCut,cut);aGlow+=cut*(.6+.2*sin(faTime*.9));
+  aCut=max(aCut,cut);aGlow+=cut*(.6+.2*sin(faTime*.9))+exp(-aR*aR/1.2)*.05;
 }
-// Frost flowers on the surface, powder blown in from the rim in wind streaks.
-float aFrost=smoothstep(.42,.78,fpFbm(vFaW.xz*.42+3.))*.5;
+// Frost flowers on the surface; powder blown in from the rim in wind streaks, piled against the rim stones.
+float aFrost=smoothstep(.45,.8,fpFbm(vFaW.xz*.42+3.))*.45+smoothstep(17.,21.6,aR+fpFbm(aP*.3)*2.)*.35;
 float aStreak=fpNoise(vec2(dot(aP,vec2(.8,.6))*.32,dot(aP,vec2(-.6,.8))*2.1))*.5+.5;
-float aDust=smoothstep(18.,22.4,aR+fpFbm(aP*.22)*3.)*.85+aStreak*.4*smoothstep(9.,20.,aR);
+float aDust=smoothstep(18.4,21.7,aR+fpFbm(aP*.22)*2.6)*1.05+aStreak*.4*smoothstep(10.,20.,aR);
 float aSnow=smoothstep(.5,.72,aDust+fpNoise(aP*2.9)*.12);
 // The runes are warm enough to keep their band clear.
 for(int i=0;i<3;i++){float dR=aR-faRings[i];aSnow*=smoothstep(.3,.75,abs(dR));}
-vec3 aCol=mix(aIce,vec3(.62,.72,.8),aFrost);
+vec3 aCol=mix(aIce,vec3(.6,.7,.78),aFrost);
 aCol*=mix(1.,.55,aCut);
-aCol=mix(aCol,vec3(.84,.92,.99),aSnow*(1.-aCut*.6));
+aCol=mix(aCol,vec3(.84,.93,1.),aSnow*(1.-aCut*.6));
 diffuseColor.rgb*=aCol;
 float aGlowK=aGlow*(1.-aSnow*.35);
 `;
 
 const ICE_ROUGH = /* glsl */ `
-roughnessFactor=mix(mix(.36,.5,fpNoise(vFaW.xz*.6)*.5+.5),.72,aFrost);
-roughnessFactor=mix(roughnessFactor,.9,aSnow);
-roughnessFactor=mix(roughnessFactor,.65,aCut);
+roughnessFactor=mix(mix(.2,.36,fpNoise(vFaW.xz*.6)*.5+.5),.72,aFrost);
+roughnessFactor=mix(roughnessFactor,.92,aSnow);
+roughnessFactor=mix(roughnessFactor,.6,aCut);
 `;
 
 const ICE_NORMAL = /* glsl */ `
 {
-  // Snow drifts carry a little height; the ice itself undulates gently.
-  float h=aSnow*.02+fpFbm(vFaW.xz*.35)*.012;
+  // Snow carries a little height; the ice itself undulates gently.
+  float h=aSnow*.02+fpFbm(vFaW.xz*.35)*.01;
   vec2 dpx=dFdx(vFaW.xz),dpy=dFdy(vFaW.xz);float dsx=dFdx(h),dsy=dFdy(h),det=dpx.x*dpy.y-dpx.y*dpy.x;
   vec2 g=abs(det)>1e-12?clamp(vec2(dsx*dpy.y-dsy*dpx.y,dpx.x*dsy-dpy.x*dsx)/det,-.4,.4):vec2(0.);
   vec3 nW=inverseTransformDirection(normal,viewMatrix);
@@ -172,7 +203,7 @@ const ICE_NORMAL = /* glsl */ `
 `;
 
 const ICE_LIGHT = /* glsl */ `#include <lights_fragment_end>
-reflectedLight.directSpecular=min(reflectedLight.directSpecular,vec3(.22));`;
+reflectedLight.directSpecular=min(reflectedLight.directSpecular,vec3(.2));`;
 
 const ICE_EMISSIVE = /* glsl */ `#include <emissivemap_fragment>
 totalEmissiveRadiance+=vec3(.22,.8,1.)*aGlowK*1.15;`;
@@ -181,7 +212,7 @@ const ICE_OUT = /* glsl */ `{
   // The sky in the ice, by Fresnel: strong across the floor, gone under snow and frost.
   vec3 nW=inverseTransformDirection(normal,viewMatrix);
   float F=.02+.98*pow(1.-clamp(dot(nW,aV),0.,1.),5.);
-  outgoingLight+=faEnv(reflect(-aV,nW))*F*(1.-aSnow)*(1.-aFrost*.7)*(1.-aCut*.5)*.85;
+  outgoingLight+=faEnv(reflect(-aV,nW))*F*(1.-aSnow)*(1.-aFrost*.7)*(1.-aCut*.5)*.8;
 }
 #include <opaque_fragment>`;
 
@@ -198,7 +229,7 @@ export function frostArena(opts: FrostArenaOptions): FrostArena {
     faDetail: {value: 1},
   };
   const iceGeo = new THREE.CircleGeometry(radius + .05, 160); iceGeo.rotateX(-Math.PI / 2);
-  const ice = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .4, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1});
+  const ice = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .3, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1});
   ice.name = 'frostlight-arena-ice';
   ice.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -219,32 +250,36 @@ export function frostArena(opts: FrostArenaOptions): FrostArena {
   floor.name = 'frostlight-arena-ice'; floor.position.set(center.x, center.y + ICE_LIFT, center.z); floor.receiveShadow = true;
   root.add(floor);
 
-  // Rim: carved granite blocks with a groove along the top, sunk into the snow outside.
+  // Rim: carved granite blocks with a groove along the top, sunk into the snow outside. The main road arrives from
+  // the south (angle 0), where two blocks are left out as the way in.
   // Profile across the rim (metres out from the ice edge, metres above the floor): an inner face, a chamfer, a
   // groove along the top, and an outer face that runs down into the snow.
-  const profile: [number, number][] = [[-.14, -.02], [-.12, .1], [-.07, .13], [.58, .135], [.64, .11], [.7, .1], [.76, .11], [.82, .135], [1.32, .13], [1.4, .09], [1.6, -.02], [1.9, -.2]];
+  const profile: [number, number][] = [[-.14, -.02], [-.12, .12], [-.07, .15], [.58, .155], [.64, .13], [.7, .12], [.76, .13], [.82, .155], [1.32, .15], [1.4, .1], [1.6, -.02], [1.9, -.22]];
   const blocks: THREE.BufferGeometry[] = [];
   let seed = 9173;
   const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
-  const count = 40, gap = .0028, steps = 8;
+  const count = 40, gap = .0028, steps = 16, gate = [count - 1, 0];
+  // Chisel irregularity: a displacement that depends only on position, so shared edges stay closed.
+  const chisel = (x: number, y: number, z: number) => {
+    const h = (u: number) => { const v = Math.sin(u) * 43758.5453; return v - Math.floor(v) - .5; };
+    return [h(x * 12.9898 + z * 78.233 + y * 3.7) * .012, h(x * 39.346 + z * 11.135 + y * 7.1) * .008, h(x * 73.156 + z * 52.235 + y * 1.9) * .012];
+  };
   const tint = new THREE.Color();
-  for (let b = 0; b < count; b++) {
-    const a0 = b / count * Math.PI * 2 + gap, a1 = (b + 1) / count * Math.PI * 2 - gap;
-    const lift = (rand() - .5) * .022, tiltR = (rand() - .5) * .02, r0 = radius - .1 + (rand() - .5) * .03;
-    tint.setRGB(.19 + rand() * .07, .195 + rand() * .06, .21 + rand() * .05);
+  const piece = (a0: number, a1: number, prof: [number, number][], r0: number, lift: number, tiltR: number, snow: number) => {
     const pos: number[] = [];
     const at = (a: number, [dr, dy]: [number, number]) => {
-      const r = r0 + dr, y = center.y + dy + (dy > 0 ? lift + tiltR * dr : 0);
-      return [center.x + Math.sin(a) * r, y, center.z + Math.cos(a) * r];
+      const r = r0 + dr, y = center.y + dy + (dy > 0 ? lift + tiltR * dr : 0), x = center.x + Math.sin(a) * r, z = center.z + Math.cos(a) * r;
+      const [cx, cy, cz] = chisel(x, y, z);
+      return [x + cx, y + (dy > 0 ? cy : 0), z + cz];
     };
     // Each profile facet is its own strip so the carved edges stay crisp.
-    for (let k = 0; k + 1 < profile.length; k++) for (let i = 0; i < steps; i++) {
+    for (let k = 0; k + 1 < prof.length; k++) for (let i = 0; i < steps; i++) {
       const u0 = a0 + (a1 - a0) * i / steps, u1 = a0 + (a1 - a0) * (i + 1) / steps;
-      const p00 = at(u0, profile[k]), p01 = at(u0, profile[k + 1]), p10 = at(u1, profile[k]), p11 = at(u1, profile[k + 1]);
+      const p00 = at(u0, prof[k]), p01 = at(u0, prof[k + 1]), p10 = at(u1, prof[k]), p11 = at(u1, prof[k + 1]);
       pos.push(...p00, ...p01, ...p10, ...p01, ...p11, ...p10);
     }
     // End faces show the joint between blocks.
-    const shape = [...profile, [profile[profile.length - 1][0], -.3], [profile[0][0], -.3]] as [number, number][];
+    const shape = [...prof, [prof[prof.length - 1][0], -.3], [prof[0][0], -.3]] as [number, number][];
     const tris = THREE.ShapeUtils.triangulateShape(shape.map(([x, y]) => new THREE.Vector2(x, y)), []);
     for (const [a, side] of [[a0, -1], [a1, 1]] as const) for (const t of tris) {
       const [p, q, r] = t.map(id => new THREE.Vector3(...at(a, shape[id])));
@@ -258,14 +293,20 @@ export function frostArena(opts: FrostArenaOptions): FrostArena {
     const n = pos.length / 3;
     g.setAttribute('color', new THREE.Float32BufferAttribute(new Array(n).fill(0).flatMap(() => [tint.r, tint.g, tint.b]), 3));
     g.setAttribute('aGround', new THREE.Float32BufferAttribute(new Array(n).fill(center.y), 1));
-    g.setAttribute('aSnow', new THREE.Float32BufferAttribute(new Array(n).fill(.15), 1));
+    g.setAttribute('aSnow', new THREE.Float32BufferAttribute(new Array(n).fill(snow), 1));
     blocks.push(g);
+  };
+  for (let b = 0; b < count; b++) {
+    const a0 = b / count * Math.PI * 2 + gap, a1 = (b + 1) / count * Math.PI * 2 - gap;
+    const lift = (rand() - .5) * .022, tiltR = (rand() - .5) * .02, r0 = radius - .1 + (rand() - .5) * .03;
+    tint.setRGB(.13 + rand() * .05, .14 + rand() * .045, .155 + rand() * .045);
+    if (!gate.includes(b)) piece(a0, a1, profile, r0, lift, tiltR, .15);
   }
   const rimGeo = mergeGeometries(blocks, false)!;
   blocks.forEach(g => g.dispose());
   const rim = new THREE.Mesh(rimGeo, graniteMaterial('frostlight-arena-rim'));
   rim.name = 'frostlight-arena-rim'; rim.castShadow = true; rim.receiveShadow = true;
   root.add(rim);
-  root.userData.stats = {rimBlocks: count, rings: [...opts.rings]};
+  root.userData.stats = {rimBlocks: count - gate.length, gateBlocks: gate.length, rings: [...opts.rings]};
   return {root, update(time, quality) { uniforms.faTime.value = time; uniforms.faDetail.value = quality === 'low' ? 0 : 1; }};
 }

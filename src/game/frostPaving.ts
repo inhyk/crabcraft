@@ -93,17 +93,19 @@ float fpCourse(vec2 q,out float id,out vec2 local,out vec2 halfSz,out vec2 grad)
   grad=vec2(ca*g.x+sa*g.y,-sa*g.x+ca*g.y);
   return ol+min(max(dq.x,dq.y),0.)-rc;
 }
-// A worn cobble's height (stone units, 0 in the joint) from its outline distance: a crisp arris, then a dome.
-// dh/d(depth) comes back in slope.
-float fpDome(float de,float id,vec2 l,vec2 h,out float slope){
-  float R=clamp(min(h.x,h.y)*.9,.05,.17),x=clamp(de/R,0.,1.),c=smoothstep(0.,.007,de);
-  vec2 tilt=(fpHash22(vec2(id*91.7,3.1))-.5)*.16;
-  float top=.84+.16*fract(id*5.3)+dot(l,tilt);
-  slope=c*2.*(1.-x)/R*top;
-  return c*(1.-(1.-x)*(1.-x))*top;
+// A worn cobble's height (stone units, 0 in the joint) from its outline distance: a short rounded arris, then a
+// smooth elliptic crown (no crease along the stone's medial axis). Returns the arris slope and crown gradient.
+float fpDome(float de,float id,vec2 l,vec2 h,out float slope,out vec2 crownG){
+  const float R=.045;
+  float x=clamp(de/R,0.,1.),e=1.-(1.-x)*(1.-x);
+  vec2 tilt=(fpHash22(vec2(id*91.7,3.1))-.5)*.16,u=l/max(h,vec2(.05));
+  float top=.84+.16*fract(id*5.3)+dot(l,tilt)-dot(u,u)*.3;
+  slope=2.*(1.-x)/R*top;
+  crownG=(tilt-.6*u/max(h,vec2(.05)))*e;
+  return e*top;
 }
 // Stone height alone (no chipping), for the shadow taps.
-float fpStoneAt(vec2 q){float id,sl;vec2 l,h,g;float o=fpCourse(q,id,l,h,g);return fpDome(-o,id,l,h,sl);}
+float fpStoneAt(vec2 q){float id,sl;vec2 l,h,g,cg;float o=fpCourse(q,id,l,h,g);return fpDome(-o,id,l,h,sl,cg);}
 `;
 
 const PAVING_COLOR = /* glsl */ `
@@ -133,7 +135,8 @@ for(int i=0;i<FP_MAX_SEG;i++){
     fpTrod=max(fpTrod,(1.-smoothstep(.25,1.05,abs(x)))*.82*inside);
     fpWear=max(fpWear,(1.-smoothstep(.8,1.6,abs(x)+fpNoise(vec2(along*.13,info.w+9.))*.45))*inside);
   }
-  float buried=max(ends.x*smoothstep(2.2,-.3,t),ends.y*smoothstep(L-2.2,L+.3,t));
+  float tn=t+fpNoise(vec2(across*.8,info.w+5.))*.9+fpNoise(vec2(across*2.6,info.w))*.25;
+  float buried=max(ends.x*smoothstep(2.4,-.3,tn),ends.y*smoothstep(L-2.4,L+.3,tn));
   fpEnd=max(fpEnd,buried*(1.-smoothstep(-.2,.4,bd.x)));
 }
 float fpN1=fpFbm(fpP*.3+1.7),fpN2=fpNoise(fpP*1.6+4.);
@@ -144,11 +147,11 @@ float fpId;vec2 fpLoc,fpHalf,fpG;
 float fpOut=fpCourse(fpQ,fpId,fpLoc,fpHalf,fpG)+fpNoise(fpP*13.+fpId*9.)*.006;
 // Height in stone units (1 = FP_RELIEF m) and its gradient in metres per metre. Far away the joints are finer
 // than a pixel, so the pattern settles to its average instead of shimmering.
-float fpSlope,fpH=fpDome(-fpOut,fpId,fpLoc,fpHalf,fpSlope);
+float fpSlope;vec2 fpCG;float fpH=fpDome(-fpOut,fpId,fpLoc,fpHalf,fpSlope,fpCG);
 float fpBev=smoothstep(0.,.02,-fpOut);
 float fpFar=smoothstep(.008,.035,fpFoot);
 float fpTop=.84+.16*fract(fpId*5.3);
-vec2 fpGS=(-fpG*fpSlope+(fpHash22(vec2(fpId*91.7,3.1))-.5)*.16*smoothstep(0.,.007,-fpOut))*FP_RELIEF*(1.-fpFar);
+vec2 fpGS=(-fpG*fpSlope+fpCG)*FP_RELIEF*(1.-fpFar);
 fpH=mix(fpH,.62,fpFar);fpBev=mix(fpBev,.8,fpFar);
 // Snow level, same units: a patchy film, worn off where wheels and feet go, swept up against the kerbs, drifted in
 // across the edges and over the free ends.
