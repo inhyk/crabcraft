@@ -1,0 +1,20 @@
+# Checks the VM deploy scripts in deploy/vm/ against a scratch /srv/crabcraft.
+name: Deploy scripts
+
+on:
+  pull_request:
+    paths: ['deploy/vm/**', '.github/workflows/deploy-scripts.yml']
+  push:
+    branches: [dev, main]
+    paths: ['deploy/vm/**', '.github/workflows/deploy-scripts.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  activate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash deploy/vm/activate.test.sh

@@ -4,8 +4,11 @@
 # Points /srv/crabcraft/<env>/current at releases/<git-sha> (an atomic rename), restarts
 # crabcraft-server@<env> when that release ships server-dist/main.mjs (stops it when not),
 # waits for GET /healthz, and switches back to the previous release if the check fails.
-# Keeps the last 5 activated releases plus current and previous; older ones are deleted
-# (a never-activated upload is left alone for its first hour).
+# When the new server-dist/ is byte for byte the one the running server started from (a
+# browser-only change), the server keeps running, so players stay connected. The `server`
+# link names the release the server last started from.
+# Keeps the last 5 activated releases plus current, previous and server; older ones are
+# deleted (a never-activated upload is left alone for its first hour).
 #
 # The deploy user may run exactly this script through sudo (/etc/sudoers.d/crabcraft-deploy),
 # so every argument is validated before use.
@@ -53,6 +56,25 @@ check_release() {
 
 has_server() { [ -f "$RELEASES/$1/server-dist/main.mjs" ]; }
 
+# Digest of a release's server-dist/: every entry's type, path and link target, then every
+# regular file's sha256. The build is deterministic, so equal digests mean the same server.
+server_digest() {
+	(
+		cd "$RELEASES/$1/server-dist"
+		find . -mindepth 1 -printf '%y %p %l\n' | LC_ALL=C sort
+		find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum
+	) | sha256sum | cut -d' ' -f1
+}
+
+# True when the running server started from a release whose server-dist/ equals $1's.
+same_server_running() {
+	local running
+	running=$(link_sha server)
+	[ -n "$running" ] && systemctl is-active --quiet "$UNIT" || return 1
+	check_release "$running" && has_server "$running" || return 1
+	[ "$(server_digest "$running")" = "$(server_digest "$1")" ]
+}
+
 link_sha() { # prints the sha a symlink in $BASE points at, or nothing
 	local target
 	target=$(readlink "$BASE/$1" 2>/dev/null) || return 0
@@ -83,14 +105,23 @@ healthy() {
 run_server_for() {
 	if has_server "$1"; then
 		systemctl enable --quiet "$UNIT"
+		if same_server_running "$1"; then
+			if healthy; then
+				log "server-dist of $1 equals the running server's ($(link_sha server)); $UNIT keeps running"
+				return 0
+			fi
+			log "$UNIT runs the same server-dist but is not healthy; restarting it"
+		fi
 		systemctl reset-failed "$UNIT" 2>/dev/null || true
 		systemctl restart "$UNIT"
+		point server "$1"
 		healthy
 	else
 		if systemctl is-enabled --quiet "$UNIT" 2>/dev/null || systemctl is-active --quiet "$UNIT"; then
 			log "release $1 has no server-dist; stopping $UNIT"
 		fi
 		systemctl disable --now --quiet "$UNIT" 2>/dev/null || true
+		rm -f "$BASE/server"
 		return 0
 	fi
 }
@@ -124,7 +155,8 @@ if [ -n "$PREV" ] && [ "$PREV" != "$SHA" ]; then
 fi
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $SHA" >>"$BASE/history"
 
-# Prune: keep the last $KEEP activated releases plus current and previous.
+# Prune: keep the last $KEEP activated releases plus current, previous and the release the
+# running server started from (its working directory).
 declare -A keep=()
 while read -r s; do
 	[ -n "$s" ] && keep[$s]=1
@@ -132,6 +164,8 @@ done < <(awk '{print $2}' "$BASE/history" | tac | awk '!seen[$0]++' | head -n "$
 keep[$SHA]=1
 cur_prev=$(link_sha previous)
 [ -n "$cur_prev" ] && keep[$cur_prev]=1
+cur_server=$(link_sha server)
+[ -n "$cur_server" ] && keep[$cur_server]=1
 
 for dir in "$RELEASES"/*; do
 	[ -e "$dir" ] || continue
