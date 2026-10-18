@@ -9,8 +9,10 @@ export function rollCrit(random: RandomSource, chance = CRIT_CHANCE): boolean { 
 
 export class Combat implements CombatRules {
   readonly services: AreaServices;
+  private outcomeDepth=0;
   constructor(services: AreaServices) { this.services = services; }
   damage(source: EntityRef | null, target: EntityRef, amount: number, options: HitOptions = {}): number {
+    if(this.services.ledgerMode==='external-durable'&&this.outcomeDepth===0){let result=0;this.services.outcomeTransaction(()=>{this.outcomeDepth++;try{result=this.damage(source,target,amount,options);}finally{this.outcomeDepth--;}});return result;}
     const g = this.services, dst = g.getUnit(target), src = source ? g.getUnit(source) : null;
     if (!dst || (source && !src) || !Number.isFinite(amount) || !dst.alive || dst.hidden) return 0;
     if(src?.kind==='player'&&dst.kind==='player'&&!isAttackTarget(g,src,dst))return 0;
@@ -53,6 +55,8 @@ export class Combat implements CombatRules {
     return dst.hp - before;
   }
   kill(target: EntityRef, source: EntityRef | null): void {
+    // Publish only after the complete nested death chain has staged its durable obligations.
+    if(this.services.ledgerMode==='external-durable'&&this.outcomeDepth===0){this.services.outcomeTransaction(()=>{this.outcomeDepth++;try{this.kill(target,source);}finally{this.outcomeDepth--;}});return;}
     const g=this.services, dst=g.getUnit(target);
     if (!dst?.alive) return;
     dst.alive=false; dst.hp=0; g.cancelPendingHit(dst.ref);
