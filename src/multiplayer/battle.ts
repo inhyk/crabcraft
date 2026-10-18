@@ -12,6 +12,7 @@ import type { BoatCommand, CombatEvent, EntityState, WorldState } from '../../se
 export class BattleSync {
   active = false;
   host = '';
+  sharedArea = false;
   ownId = '';
   applying = false;
   mode:'coop'|'pvp'='coop';
@@ -20,10 +21,11 @@ export class BattleSync {
   partyOf(id:string){return this.parties[id]??(this.mode==='coop'?1:0);}
   sameParty(a:string,b:string){return this.partyOf(a)>0&&this.partyOf(a)===this.partyOf(b);}
   setParty(party:number){
-    if(!this.active||!Number.isInteger(party)||party<0||party>4)return;
+    if(this.sharedArea||!this.active||!Number.isInteger(party)||party<0||party>4)return;
     if(this.authority){this.parties[this.ownId]=party;this.publish();}else this.event({kind:'party',target:'world',party});
   }
   setMode(mode:'coop'|'pvp'){
+    if(this.sharedArea)return;
     if(!this.active||!this.authority){this.game.hud.messages.info(t('방장이 협동 / 싸우기 모드를 선택해요.','The host chooses co-op or PvP mode.'));return;}
     if(this.game.encounter?.engaged){this.game.hud.messages.info(t('보스 전투가 끝난 뒤 모드를 바꿔 주세요.','Wait until the boss battle ends to change mode.'));return;}
     // Explicit teams belong to the room, so changing its combat rules keeps friends together.
@@ -84,8 +86,8 @@ export class BattleSync {
   get authority() { return !this.active || (!!this.host && this.host === this.ownId); }
   private register(id: string, u: Unit) { this.units.set(id, u); this.keys.set(u, id); }
   private event(event: CombatEvent) { this.send({ type: 'combat', event }); }
-  join(ownId: string, host: string, world: WorldState | null) {
-    this.active = true; this.ownId = ownId; this.host = host;
+  join(ownId: string, host: string, world: WorldState | null, sharedArea = false) {
+    this.sharedArea=sharedArea;this.active = true; this.ownId = ownId; this.host = host;
     if (world) this.apply(world, true);
     if (world && this.authority) {
       for (const e of this.game.enemies) e.resumeAuthority();
@@ -93,7 +95,7 @@ export class BattleSync {
     }
     this.elapsed = 1;
   }
-  leave() { this.game.villageGames?.reset();this.game.boats?.disconnect();this.active = false; this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
+  leave() { this.game.villageGames?.reset();this.game.boats?.disconnect();this.active = false; this.sharedArea=false;this.host = ''; this.goals.clear();this.seaWarnings.clear();this.mode='coop';this.parties={};this.duelAt.clear();this.remotePush.clear(); }
   elect(host: string) {
     const was = this.authority; this.host = host;this.seaWarnings.clear();
     if (!was && this.authority) {
@@ -158,7 +160,7 @@ export class BattleSync {
   }
   enterWorld2() {return this.travel(2);}
   travel(chapter:1|2|3|4) {
-    if (!this.active || this.authority) return false;
+    if (this.sharedArea || !this.active || this.authority) return false;
     this.event({kind:'chapter',target:'world',chapter}); return true;
   }
   condition(u: Unit) {
@@ -172,6 +174,7 @@ export class BattleSync {
     if (this.authority) {
       const src = this.peers().get(id)?.unit;
       if (!src || !src.alive) return;
+      if(this.sharedArea&&['chapter','party','duel'].includes(e.kind))return;
       if(e.kind==='village'&&e.village){g.villageGames?.request(id,e.village);this.publish();return;}
       if(g.villageGames?.playing&&['attack','duel','condition','challenge'].includes(e.kind))return;
       if(e.target==='b30'&&src.level<100||e.target==='b300'&&src.level<300)return;
@@ -248,13 +251,13 @@ export class BattleSync {
   }
   private publish() { if (this.active && this.authority) this.send({ type: 'world', world: this.snapshot() }); }
   apply(world: WorldState, instant = false) {
-    if (!this.active) return;
+    if (!this.active || this.sharedArea && world.chapter!==this.game.world2.chapter) return;
     const g = this.game;
-    this.mode=world.social?.mode??'coop';this.parties={...(world.social?.parties??{})};
+    this.mode=this.sharedArea?'coop':world.social?.mode??'coop';this.parties=this.sharedArea?{}:{...(world.social?.parties??{})};
     this.applying = true;
     try {
-      if (g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared;g.journey.finalCleared=!!world.finalCleared;g.journey.frostCleared=!!world.frostCleared; }
-      if(world.chapter!==g.world2.chapter)g.world2.go(world.chapter,false);
+      if (!this.sharedArea && g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; g.journey.firstEndingSeen=world.firstEnding; g.journey.trueCleared=world.trueCleared;g.journey.finalCleared=!!world.finalCleared;g.journey.frostCleared=!!world.frostCleared; }
+      if(!this.sharedArea && world.chapter!==g.world2.chapter)g.world2.go(world.chapter,false);
       g.boats?.applyNetwork(world.boat);
       g.villageGames?.apply(world.village??null);
       if (world.weather) {
@@ -281,7 +284,16 @@ export class BattleSync {
         this.goals.set(u,s);
       }
       for (const s of world.bosses) (s.id==='b300'?g.frostBoss:s.id==='b30'?g.dawnBoss:s.id === 'b3' ? g.boss : s.id === 'b20' ? g.worldBoss : g.finalBoss).applyNetwork(s);
-      if (g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; }
+      if (!this.sharedArea && g.journey) { g.journey.rustCleared=world.rust; g.journey.abyssCleared=world.abyss; }
+      if(this.sharedArea&&g.journey){
+        // A late arrival must not be stranded behind an already defeated shared boss.
+        // Keep earned crowns; never copy another player's quest log or ending-view flags.
+        if(world.rust&&world.bosses.some(b=>b.id==='b3'&&b.state==='dead'))g.journey.rustCleared=true;
+        if(world.abyss&&world.bosses.some(b=>b.id==='b10'&&b.state==='dead'))g.journey.abyssCleared=true;
+        if(world.trueCleared&&world.bosses.some(b=>b.id==='b20'&&b.state==='dead'))g.journey.trueCleared=true;
+        if(world.finalCleared&&world.bosses.some(b=>b.id==='b30'&&b.state==='dead'))g.journey.finalCleared=true;
+        if(world.frostCleared&&world.bosses.some(b=>b.id==='b300'&&b.state==='dead'))g.journey.frostCleared=true;
+      }
     } finally { this.applying = false; }
     // Shared environment satisfies each player's active beacon objective, including late accepts.
     if(g.world2.chapter===1&&g.beaconLit)g.quests.bump('beacon');

@@ -7,6 +7,7 @@ import {islandPaths} from './islandPaths';
 /** Deterministic snow realm. Trees share instanced meshes; snowfall runs on the GPU. */
 export class SnowIsland {
  readonly root=new THREE.Group();
+ readonly prison=new THREE.Group();
  readonly spawn=new THREE.Vector3(-12,5,90);
  readonly arena:Poi={id:'bossArena',position:new THREE.Vector3(0,19,-78),yaw:0,radius:22};
  readonly town:[number,number][]=[[-16,56],[16,56],[-16,38],[16,38],[-16,74],[16,80],[16,68]];
@@ -64,6 +65,11 @@ export class SnowIsland {
   const put=(mesh:THREE.InstancedMesh,i:number,x:number,y:number,z:number,s:number)=>{dummy.position.set(x,y,z);dummy.scale.setScalar(s);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);};
   trees.forEach(({x,z,s},i)=>{const y=this.height(x,z);put(trunk,i,x,y+4*s,z,s);for(let j=0;j<3;j++){const scale=s*(1-j*.23);put(bough,i*3+j,x,y+(3.4+j*2.1)*s,z,scale);put(caps,i*3+j,x,y+(4+j*2.1)*s,z,scale);}this.collision.addCircle(x,z,.6*s,y,y+10*s);});
   for(const mesh of [trunk,bough,caps]){mesh.castShadow=true;mesh.receiveShadow=true;mesh.computeBoundingSphere();this.root.add(mesh);}this.root.userData.snowPines=trees.length;
+  // Boreas keeps the missing friend in a luminous ice prison beside the throne.
+  this.prison.name='mira-ice-prison';this.prison.position.set(13,this.height(13,-62),-62);
+  for(let i=0;i<12;i++){const a=i/12*Math.PI*2,bar=new THREE.Mesh(new THREE.CylinderGeometry(.11,.16,4.5,6),ice);bar.position.set(Math.sin(a)*2.3,2.25,Math.cos(a)*2.3);this.prison.add(bar);}
+  for(const y of [.2,4.5]){const ring=new THREE.Mesh(new THREE.TorusGeometry(2.3,.14,6,40),glow);ring.rotation.x=Math.PI/2;ring.position.y=y;this.prison.add(ring);}
+  this.root.add(this.prison);
   // Ice cliffs frame the north without obstructing the arena's broad southern entrance.
   for(let i=0;i<42;i++){const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;if(Math.abs(x)<16&&z>-70)continue;const y=this.height(x,z),h=6+i%5*3;const peak=add(new THREE.ConeGeometry(4+i%3,h,5),ice,x,y+h/2,z);peak.rotation.y=a;this.collision.addCircle(x,z,3.5,y,y+h);}
   add(new THREE.CylinderGeometry(22,23,.35,96),ice,0,18.92,-78);
@@ -77,5 +83,5 @@ export class SnowIsland {
   const fall=new THREE.Points(flakes,this.snow);fall.frustumCulled=false;fall.name='gpu-snowfall';this.root.add(fall,this.portal.root,new THREE.HemisphereLight('#d2eaff','#35506d',1.4));
   this.sun.position.set(40,85,45);this.root.add(this.sun,this.sun.target);
  }
- update(time:number,x:number,z:number){this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;}
+ update(time:number,x:number,z:number,rescued=false){this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;}
 }
