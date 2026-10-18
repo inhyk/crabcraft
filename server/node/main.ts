@@ -7,7 +7,7 @@ import { createPool, migrate } from './db.ts';
 import { storeReport } from './reports.ts';
 import { createCharacterHandler } from '../world/characters-http.ts';
 import { WorldConfigError, describeWorldStartupFailure } from '../world/startup-error.ts';
-import { monitorHandler } from './monitor.ts';
+import { monitorAccess, monitorHandler, observeTickets } from './monitor.ts';
 
 // Rooms and accounts for the browser client: what server/cloudflare/worker.ts served, on one VM behind Caddy.
 // Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy,
@@ -91,6 +91,7 @@ const server = createServer((req, res) => {
   }
   if (stopping && path === '/api/account/world-ticket') { text(res, 503, 'Server restarting'); return; }
   if (path === '/api/account/monitor') { void monitor(req, res); return; }
+  if (path === '/api/account/monitor-ticket') { void monitorTicket(req, res); return; }
   if (path.startsWith('/api/account/')) { void accounts(req, res); return; }
   if (path === '/healthz') { void healthy().then(ok => text(res, ok ? 200 : 503, ok ? 'ok\n' : 'database unavailable\n')); return; }
   if (path === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, game: 'crabcraft-multiplayer' })); return; }
@@ -101,6 +102,10 @@ const server = createServer((req, res) => {
 server.requestTimeout = 30000;
 server.headersTimeout = 20000;
 
+const monitorAccounts = new Set((env.MONITOR_ACCOUNTS ?? '').split(',').map(s => s.trim()).filter(s => /^g[a-f0-9]{23}$/.test(s)));
+const monitorPlaces = new Set((env.MONITOR_IPS ?? '').split(',').map(s => s.trim()).filter(s => isIP(s)));
+// The monitor's spectator views observe rooms on /multiplayer: by the same rule as /api/account/monitor, or with a ticket from it.
+const tickets = observeTickets(), monitorAllowed = monitorAccess(pool, monitorAccounts, monitorPlaces, clientIp);
 const relay = attachRooms(server, {
   allowOrigin: (origin, req) => originAllowed(origin, origins, req.headers.host),
   // A created room and its world checkpoint outlive its players for a day, as the Worker's rooms did.
@@ -109,9 +114,10 @@ const relay = attachRooms(server, {
   maxMembers: 512,
   // Read with server-dist/reports.mjs on the VM.
   report: r => storeReport(pool, r),
+  observe: async (req, ticket) => tickets.valid(ticket) || await monitorAllowed(req) === 'ok',
 });
-const monitor = monitorHandler(pool, new Set((env.MONITOR_ACCOUNTS ?? '').split(',').map(s => s.trim()).filter(s => /^g[a-f0-9]{23}$/.test(s))), relay.monitorSnapshot,
-  new Set((env.MONITOR_IPS ?? '').split(',').map(s => s.trim()).filter(s => isIP(s))), clientIp);
+const monitor = monitorHandler(pool, monitorAccounts, relay.monitorSnapshot, monitorPlaces, clientIp);
+const monitorTicket = monitorHandler(pool, monitorAccounts, () => tickets.issue(), monitorPlaces, clientIp);
 // Each upgrade has exactly one route owner; the legacy relay ignores /world.
 server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
   const path = req.url?.split('?')[0];
