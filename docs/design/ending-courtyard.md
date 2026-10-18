@@ -29,3 +29,15 @@ The court stays flat within13m. Only the outer planting/backdrop surface gains s
 Actual Game/PG/WS runs pass at HIGH1280x800 and LOW390x844, including initial and tick500 cast bounds, credits, reconnect, controls, unchanged progress and disposal. Both owned hosts shut down `durable:true, unresolved:0`. Node24 ending tests18/18 and build pass. Controlled before/after baseline is39de09f with the same accepted observation, camera, quality and GAME_VIEW. Reports and original PNGs: `tmp/qa/world-ending-grounded-{high,narrow}/`.
 
 Performance qualification: the sampled headless HIGH opening/routine frames reported843/838 total render calls and about4.74M triangles; LOW reported459/456 calls and about2.38M triangles at a different viewport. These are diagnostic samples, not matched-resolution performance benchmarks. GPU timing was unavailable. Opening/routine FPS samples were about60, but one LOW credits sample was31.7, so no blanket60fps or mobile-device claim is made. Final self-review is89 and root visual acceptance remains pending; W1 superiority is unproven.
+
+## Festival polish after554c1a1
+
+Root review asked for polish before merge: a front roof crossed the 390x844 orbit, and a chat line overlapped the credits card. The courtyard also read as midday with no focal point.
+
+- Mood: the W1 golden-hour palette (`ENDING_DUSK` in `endingStage.ts`) drives sky, fog, hemisphere and key light; one low western sun (`ENDING_SUN`) feeds both sky and shadow. A warm fill from the opposite side keeps dark shells readable. Lantern point lights are warm instead of teal.
+- Focus: a brass medallion, an additive light pool and a narrow spotlight mark the hero's floor; the cast stays where the server put it.
+- Dressing from the existing kits only: festoon bulbs strung post to post, a ring of twelve floor candelabra between the slate bands, petals on the court, feast tables with mugs and candles at both stalls, torch stands on the chapel path, the hero's gear by the tavern. Existing W1 particles (`buildFx`) add lamp halos, fountain jets, fireflies and dust; their clock is the accepted server tick.
+- Camera: orbit direction and progress are unchanged. It cranes from a high establishing view to an 18 degree festival view at 20 m on wide screens and stays at 36 degrees, 22 m on portrait screens, above roofs and trees. Distance is fixed inside the courtyard ring; the lens (24 to 90 degrees) widens to fit the whole cast inside an NDC window of x 0.88, y -0.40 to 0.56, so the cast sits above the caption.
+- HUD: during the ending the account chat moves into its own strip, inside the bottom letterbox beside the centred control on wide screens and one row above the letterbox below 900 px. The control sits inside the letterbox. No `game.ts` change, so the motion data hashes stay as baked.
+
+Same-camera and same-tick before/after captures at 1280x800 and 390x844 (low quality, trusted W4 fixture): `docs/qa/frost-ending-polish-before-after.jpg`, originals in `tmp/qa/ending-polish-{before,final}-{desktop,narrow}/` and `tmp/qa/ending-polish-final-desktop-high/`. Self-review 78/100 against W1 85; not approved, root design review owns acceptance.

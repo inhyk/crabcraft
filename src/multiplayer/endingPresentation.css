@@ -17,7 +17,7 @@
 }
 .ending-caption::before {content:'';display:block;width:140px;height:12px;margin:0 auto 10px;
  background:url('/art/ui/divider-gold.webp') center/contain no-repeat;}
-.ending-control {pointer-events:auto;position:absolute;bottom:max(5.5%,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+.ending-control {pointer-events:auto;position:absolute;bottom:max(calc(5.5vh - 22px),env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
  min-width:240px;max-width:calc(100% - 40px);padding:13px 30px;border:1px solid #b08b48;border-radius:3px;
  color:#ffedb6;background:linear-gradient(#275258,#17383d 52%,#10282e);box-shadow:inset 0 0 0 2px #edcd891a,0 4px 18px #0009;
  font:700 15px/1.2 var(--font-display,Georgia,serif);letter-spacing:.055em;cursor:pointer;
@@ -45,7 +45,7 @@
 @media(max-width:600px) {
  .ending-status {top:12px;max-width:calc(100% - 48px);padding:7px 12px;font-size:10px;letter-spacing:.07em;}
  .ending-caption {bottom:20%;font-size:24px;}
- .ending-control {bottom:7%;min-height:48px;font-size:13px;}
+ .ending-control {bottom:max(calc(5.5vh - 24px),env(safe-area-inset-bottom));min-height:48px;font-size:13px;}
  .ending-credits {top:20%;bottom:19%;width:calc(100% - 32px);padding:20px;}
  .ending-credits-intro {font-size:15px;margin-bottom:8px;padding-bottom:14px;}
  .ending-credits-row h2 {font-size:14px;}
@@ -54,5 +54,19 @@
 @media(max-height:540px) {
  .ending-credits {top:22%;bottom:23%;padding:14px 24px;}
  .ending-caption {bottom:20%;font-size:22px;}
- .ending-control {bottom:6%;padding:10px 24px;}
+ .ending-control {bottom:max(calc(5.5vh - 20px),4px);padding:10px 24px;}
+}
+/* Account chat stays live during the ending, in its own strip: inside the bottom letterbox beside
+   the centred control on wide screens, one row above the letterbox on narrow ones. Credits, caption
+   and the cast frame never share that space. */
+body:has(.ending-presentation:not([hidden])) .hud.cinematic .chat.hud-keep {
+ left:132px;right:auto;top:auto;bottom:max(6px,calc(5.5vh - 26px));width:min(380px,calc(50% - 280px));max-height:52px;
+ z-index:6;padding:4px 10px;font-size:13px;
+}
+body:has(.ending-presentation:not([hidden])) .hud.cinematic .chat.hud-keep .line {-webkit-line-clamp:1;}
+body:has(.ending-presentation:not([hidden])) .hud.cinematic .chat.hud-keep .line:nth-last-child(n+3) {display:none;}
+body:has(.ending-presentation:not([hidden])) .world-chat-open {bottom:max(8px,calc(5.5vh - 16px)) !important;}
+@media(max-width:899px) {
+ body:has(.ending-presentation:not([hidden])) .hud.cinematic .chat.hud-keep {bottom:calc(11vh + 6px);width:calc(100% - 148px);max-height:40px;font-size:12px;}
+ body:has(.ending-presentation:not([hidden])) .world-chat-open {bottom:calc(11vh + 6px) !important;}
 }

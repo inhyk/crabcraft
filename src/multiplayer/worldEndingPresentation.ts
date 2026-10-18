@@ -4,7 +4,7 @@ import type { GameplayState } from '../../server/world/gameplay/protocol.ts';
 import type { GameplayCommand } from '../../server/world/gameplay/intents.ts';
 import type { EndingObservation } from '../sim/features/endingPresentation.ts';
 import { EndingPresentationView } from './endingPresentationView.ts';
-import { createEndingStage, type EndingStage } from './endingStage.ts';
+import { createEndingStage, ENDING_DUSK, ENDING_SUN, type EndingStage } from './endingStage.ts';
 
 /** These are accepted observation-header fields, never a second network envelope. */
 export type EndingPresentationFrame=Readonly<Pick<GameplayState,'selfRef'>&Pick<GameplayState['header'],'session'|'area'|'epoch'|'catalog'|'sequence'>>;
@@ -32,10 +32,13 @@ export class WorldEndingPresentation {
  private observed:{id:string;sequence:number;tick:number;terminal:boolean}|null=null;
  private current:EndingObservation|null=null;private pendingControl='';private ownsCamera=false;
  constructor(private readonly ports:Ports){
-  this.scene.background=new THREE.Color('#acb9ae');this.scene.fog=new THREE.Fog('#c4c1ac',65,180);this.scene.add(this.root,this.scenery);
-  this.scene.add(new THREE.HemisphereLight(0xc6e7df,0x526045,1.35));
+  // Clawhaven golden hour (W1 dusk mood): amber key from the low sun, cool sky fill, warm haze.
+  this.scene.background=new THREE.Color(ENDING_DUSK.fog);this.scene.fog=new THREE.Fog(ENDING_DUSK.fog,55,175);this.scene.add(this.root,this.scenery);
+  this.scene.add(new THREE.HemisphereLight(ENDING_DUSK.hemiSky,ENDING_DUSK.hemiGround,1.55));
   let low=false;try{low=localStorage.getItem('cc.quality')==='low';}catch{/* Match the existing default auto/high graphics tier. */}
-  const light=new THREE.DirectionalLight(0xffd6a0,2.8);light.position.set(-18,28,18);light.castShadow=!low;light.shadow.mapSize.set(low?512:2048,low?512:2048);light.shadow.camera.left=-32;light.shadow.camera.right=32;light.shadow.camera.top=32;light.shadow.camera.bottom=-32;light.shadow.camera.near=1;light.shadow.camera.far=100;light.shadow.bias=-.00015;light.shadow.normalBias=.012;light.shadow.radius=low?1:2.5;this.scenery.add(light,light.target);
+  const light=new THREE.DirectionalLight(ENDING_DUSK.key,3.7);light.position.copy(ENDING_SUN).multiplyScalar(40);light.castShadow=!low;light.shadow.mapSize.set(low?512:2048,low?512:2048);light.shadow.camera.left=-32;light.shadow.camera.right=32;light.shadow.camera.top=32;light.shadow.camera.bottom=-32;light.shadow.camera.near=1;light.shadow.camera.far=100;light.shadow.bias=-.00015;light.shadow.normalBias=.012;light.shadow.radius=low?1:2.5;this.scenery.add(light,light.target);
+  // Soft warm bounce from the opposite side keeps dark shells and shaded cobbles readable.
+  const fill=new THREE.DirectionalLight('#ffd8b0',1.1);fill.position.set(-ENDING_SUN.x*30,14,-ENDING_SUN.z*30);this.scenery.add(fill,fill.target);
   void createEndingStage().then(stage=>{if(this.disposed){stage.dispose();return;}this.stage=stage;this.scenery.add(stage.root);}).catch(error=>{if(!this.disposed)this.ports.error?.(error instanceof Error?error.message:'Ending scenery failed');});
   this.camera.position.set(0,6,12);this.camera.lookAt(0,1,0);
  }
@@ -80,7 +83,11 @@ export class WorldEndingPresentation {
   else this.ports.error?.('Ending command could not be queued');
  }
  /** Rendering applies the last server recipes; dt and wall time cannot advance the ending. */
- render():void {if(!this.disposed&&this.ownsCamera)this.view?.render();}
+ render():void {
+  if(this.disposed||!this.ownsCamera)return;this.view?.render();
+  // Particle and sky time follow the accepted server tick, so frames never run ahead of the ending.
+  const state=this.current;if(state)this.stage?.update(state.tick/30,state.phase==='finale'?1:state.phase==='routine'?.55:.25);
+ }
  reset():void {this.clearView();this.stream='';this.frameSequence=-1;this.observed=null;}
  private clearView():void {
   this.generation++;this.view?.dispose();this.view=null;this.current=null;this.pendingControl='';

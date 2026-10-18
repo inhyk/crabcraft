@@ -13,11 +13,30 @@ import { parseNotice } from '../game/creditsRoll';
 
 interface Ports {root:THREE.Group;camera:THREE.PerspectiveCamera;parent:HTMLElement;command(id:string,kind:'skip'|'continue'):void;cue?(value:string):void;error?(message:string):void;createRig?(actor:EndingCast):Promise<CrabRig>}
 async function loadRig(actor:EndingCast):Promise<CrabRig>{const meta=rigCatalog(actor.archetype);if(meta.factory!=='createCrab')throw new Error('Ending cast requires a character rig');const {createCrab}=await import('../crab/provider');const rig=await createCrab({...actor.appearance??meta.spec},meta.extras?[...meta.extras]:[]);rig.root.scale.multiplyScalar(meta.rootMultiplier);return rig;}
+/** Horizontal camera radius around the hero: outside the lamp ring (17.6 m), short of the trees (23 m) and houses (31 m). */
+export const ENDING_REACH=20;
+/** Safe window in NDC: clear of the letterbox and status above, the caption and controls below. */
+export const ENDING_FRAME={x:.88,top:.56,bottom:-.4,pitch:.12} as const;
+const MIN_FOV=24,MAX_FOV=90;
+/** Positions the camera on the orbit ray and pitches it so the cast sits in the upper part of the frame. */
+export function placeEndingCamera(camera:THREE.PerspectiveCamera,target:THREE.Vector3,direction:THREE.Vector3,distance:number,fov:number):void {
+ camera.fov=fov;camera.updateProjectionMatrix();camera.position.copy(target).addScaledVector(direction,distance);camera.lookAt(target);
+ camera.rotateX(-Math.atan(ENDING_FRAME.pitch*Math.tan(THREE.MathUtils.degToRad(fov/2))));camera.updateMatrixWorld();
+}
+/** Narrowest lens at the given distance that keeps every cast corner inside ENDING_FRAME; backs out only if no lens fits. */
+export function fitEndingCamera(camera:THREE.PerspectiveCamera,target:THREE.Vector3,direction:THREE.Vector3,corners:readonly THREE.Vector3[],distance:number):{distance:number;fov:number} {
+ const point=new THREE.Vector3();
+ const fits=(distance:number,fov:number)=>{placeEndingCamera(camera,target,direction,distance,fov);for(const corner of corners){point.copy(corner).applyMatrix4(camera.matrixWorldInverse);if(point.z>-.5)return false;point.applyMatrix4(camera.projectionMatrix);if(Math.abs(point.x)>ENDING_FRAME.x||point.y>ENDING_FRAME.top||point.y<ENDING_FRAME.bottom)return false;}return true;};
+ for(let i=0;i<12&&!fits(distance,MAX_FOV);i++)distance*=1.15;
+ let narrow=MIN_FOV,wide=MAX_FOV;if(fits(distance,narrow))return {distance,fov:narrow};
+ for(let i=0;i<12;i++){const mid=(narrow+wide)/2;if(fits(distance,mid))wide=mid;else narrow=mid;}
+ return {distance,fov:wide};
+}
 /** No local phase clock: commit copies a server observation; render cannot progress the sequence. */
 export class EndingPresentationView {
  private id:string|null=null;private tick=-1;private sequence=-1;private generation=0;private disposed=false;private current:EndingObservation|null=null;private cueOrdinal=0;
  private readonly contacts=new EndingContactShadows();
- private rigs=new Map<number,CrabRig>();private loading=new Set<number>();
+ private rigs=new Map<number,CrabRig>();private loading=new Set<number>();private fit:{distance:number;fov:number;tick:number}|null=null;
  readonly hud=document.createElement('section');
  private caption=document.createElement('h2');private status=document.createElement('p');private credits=document.createElement('div');private skip=document.createElement('button');private proceed=document.createElement('button');
  constructor(private readonly ports:Ports){
@@ -60,23 +79,33 @@ export class EndingPresentationView {
  render():void {
   const state=this.current;if(!state||this.disposed)return;
   for(const actor of state.cast){const rig=this.rigs.get(actor.ref.slot);if(rig)applyNumericPose(rig,{...actor.position,yaw:actor.yaw,pose:evaluateRenderPoseRecipe(actor.recipe)});}
-  const hero=state.cast[0];if(!hero)return;const seconds=Math.max(0,(state.tick-state.celebrationStartedTick)/30),linear=Math.min(1,seconds/12),k=linear*linear*(3-2*linear),r=11-7*k,h=6.5-4*k,a=seconds*.16+state.orbitYaw;
-  const focusY=Math.max(.9,(this.rigs.get(hero.ref.slot)?.body.position.y??0)*.75);
-  const camera=this.ports.camera,target=new THREE.Vector3(hero.position.x,hero.position.y+focusY+(1-k)*.6,hero.position.z);
-  const offset=new THREE.Vector3(Math.sin(a)*r,h-.9-(1-k)*.6,Math.cos(a)*r),direction=offset.clone().normalize();
-  camera.position.copy(target).add(offset);camera.lookAt(target);camera.updateMatrixWorld();
-  // Fit the observed cast without changing the server-tick orbit direction, target or progression.
-  // Symmetric safe margins leave room for the letterbox, caption and ordered controls at both widths.
-  const right=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),up=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1);
-  const tanY=Math.tan(THREE.MathUtils.degToRad(camera.fov/2)),tanX=tanY*Math.max(.1,camera.aspect);
-  let distance=offset.length();const box=new THREE.Box3(),point=new THREE.Vector3();
-  for(const actor of state.cast){const rig=this.rigs.get(actor.ref.slot);if(rig){rig.root.updateMatrixWorld(true);box.setFromObject(rig.root);}else box.set(new THREE.Vector3(actor.position.x-2,actor.position.y-.5,actor.position.z-2),new THREE.Vector3(actor.position.x+2,actor.position.y+3.5,actor.position.z+2));
-   if(rig){const body=rig.body.getWorldPosition(new THREE.Vector3()),height=Math.max(0,box.min.y-(actor.position.y-.08)),scale=rig.root.scale.x,size=(1.6+height*.5)*scale;this.contacts.set(actor.ref.slot,body.x,actor.position.y-.066,body.z,size*1.1,size*.85,.62/(1+height*1.5));}
-   for(let i=0;i<8;i++){point.set(i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z).sub(target);distance=Math.max(distance,point.dot(direction)+Math.max(Math.abs(point.dot(right))/(tanX*.88),Math.abs(point.dot(up))/(tanY*.57)));}
+  const hero=state.cast[0];if(!hero)return;
+  // Orbit direction and progress come only from the accepted server tick. The camera cranes down
+  // from a high establishing view, staying inside the courtyard ring so no house roof or tree
+  // crosses the lens; the lens, not the distance, adapts to the screen shape.
+  const seconds=Math.max(0,(state.tick-state.celebrationStartedTick)/30),linear=Math.min(1,seconds/12),k=linear*linear*(3-2*linear),a=seconds*.16+state.orbitYaw;
+  // Wide screens settle into a low festival view; portrait screens stay above the roofs and trees
+  // (about 16 m) so the whole ring fits a moderate lens without anything crossing the foreground.
+  const portrait=1-THREE.MathUtils.smoothstep(this.ports.camera.aspect,.6,1.3),late=THREE.MathUtils.lerp(18,36,portrait),reach=THREE.MathUtils.lerp(ENDING_REACH,22,portrait);
+  const elevation=THREE.MathUtils.degToRad(THREE.MathUtils.lerp(late+16,late,k)),focusY=Math.max(.8,(this.rigs.get(hero.ref.slot)?.body.position.y??0)*.75);
+  const target=new THREE.Vector3(hero.position.x,hero.position.y+focusY,hero.position.z);
+  const direction=new THREE.Vector3(Math.sin(a)*Math.cos(elevation),Math.sin(elevation),Math.cos(a)*Math.cos(elevation));
+  const corners:THREE.Vector3[]=[],box=new THREE.Box3();
+  for(const actor of state.cast){const rig=this.rigs.get(actor.ref.slot),p=actor.position;
+   // Stable envelope around each server position, unioned with the live rig, keeps the fit calm.
+   box.set(new THREE.Vector3(p.x-1.25,p.y-.1,p.z-1.25),new THREE.Vector3(p.x+1.25,p.y+1.8,p.z+1.25));
+   if(rig){rig.root.updateMatrixWorld(true);const live=new THREE.Box3().setFromObject(rig.root);box.union(live);const body=rig.body.getWorldPosition(new THREE.Vector3()),height=Math.max(0,live.min.y-(p.y-.08)),scale=rig.root.scale.x,size=(1.6+height*.5)*scale;this.contacts.set(actor.ref.slot,body.x,p.y-.066,body.z,size*1.1,size*.85,.62/(1+height*1.5));}
+   else box.expandByVector(new THREE.Vector3(.6,1.6,.6));
+   for(let i=0;i<8;i++)corners.push(new THREE.Vector3(i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z));
   }
-  camera.position.copy(target).addScaledVector(direction,distance);camera.lookAt(target);camera.updateMatrixWorld();
+  const camera=this.ports.camera,{distance,fov}=fitEndingCamera(camera,target,direction,corners,reach/Math.cos(elevation));
+  // Widen at once when the cast needs it; narrow back gently, per accepted tick, so dance steps do
+  // not pump the lens and rendering alone never moves the camera.
+  const ticks=this.fit?Math.max(0,state.tick-this.fit.tick):0;
+  this.fit=this.fit&&this.fit.distance===distance&&this.fit.fov>=fov?{distance,fov:Math.max(fov,this.fit.fov-.12*Math.min(ticks,30)),tick:state.tick}:{distance,fov,tick:state.tick};
+  placeEndingCamera(camera,target,direction,this.fit.distance,this.fit.fov);
  }
  get readyCount():number{return this.rigs.size;}
- private clear():void {this.generation++;for(const rig of this.rigs.values()){rig.root.removeFromParent();rig.dispose();}this.rigs.clear();this.contacts.retain(new Set());this.loading.clear();this.current=null;this.tick=-1;this.sequence=-1;this.cueOrdinal=0;this.hud.hidden=true;}
+ private clear():void {this.generation++;for(const rig of this.rigs.values()){rig.root.removeFromParent();rig.dispose();}this.rigs.clear();this.contacts.retain(new Set());this.loading.clear();this.fit=null;this.current=null;this.tick=-1;this.sequence=-1;this.cueOrdinal=0;this.hud.hidden=true;}
  dispose():void {if(this.disposed)return;this.clear();this.disposed=true;this.contacts.dispose();this.contacts.root.removeFromParent();this.hud.remove();}
 }
