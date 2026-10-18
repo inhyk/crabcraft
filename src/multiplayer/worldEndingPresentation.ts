@@ -3,7 +3,7 @@ import type { EntityRef } from '../sim/types.ts';
 import type { GameplayState } from '../../server/world/gameplay/protocol.ts';
 import type { GameplayCommand } from '../../server/world/gameplay/intents.ts';
 import type { EndingObservation } from '../sim/features/endingPresentation.ts';
-import { EndingPresentationView } from './endingPresentationView.ts';
+import { EndingPresentationView, endingStageFrame } from './endingPresentationView.ts';
 import { createEndingStage, ENDING_DUSK, ENDING_SUN, type EndingStage } from './endingStage.ts';
 
 /** These are accepted observation-header fields, never a second network envelope. */
@@ -70,7 +70,9 @@ export class WorldEndingPresentation {
    if(!this.view.commit(observation))return false;
    this.observed={id:observation.id,sequence:observation.sequence,tick:observation.tick,terminal:false};
    this.current=structuredClone(observation);this.pendingControl='';
-   const hero=observation.cast[0];if(hero)this.scenery.position.set(hero.position.x,hero.position.y,hero.position.z);
+   // The courtyard stays on the stage centre facing the hero's opening direction, so the floor does not
+   // slide when the hero's routine carries him across it; the chapel stands behind the hero.
+   if(observation.cast.length){const {centre,yaw}=endingStageFrame(observation.cast);this.scenery.position.copy(centre);this.scenery.rotation.y=yaw;}
    if(!this.ownsCamera){this.ports.activate(this.scene,this.camera);this.ports.cinematic(true);this.ownsCamera=true;}
    return true;
   }catch(error){this.clearView();this.ports.error?.(error instanceof Error?error.message:'Ending display failed');return false;}

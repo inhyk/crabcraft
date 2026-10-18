@@ -10,6 +10,7 @@ import type { EndingCast, EndingObservation } from '../sim/features/endingPresen
 import { BREAK_ROUTINE } from '../sim/data/actions.ts';
 import notice from '../../NOTICE.md?raw';
 import { parseNotice } from '../game/creditsRoll';
+import { ENDING_BELL_TOWER } from './endingLayout';
 
 interface Ports {root:THREE.Group;camera:THREE.PerspectiveCamera;parent:HTMLElement;command(id:string,kind:'skip'|'continue'):void;cue?(value:string):void;error?(message:string):void;createRig?(actor:EndingCast):Promise<CrabRig>}
 async function loadRig(actor:EndingCast):Promise<CrabRig>{const meta=rigCatalog(actor.archetype);if(meta.factory!=='createCrab')throw new Error('Ending cast requires a character rig');const {createCrab}=await import('../crab/provider');const rig=await createCrab({...actor.appearance??meta.spec},meta.extras?[...meta.extras]:[]);rig.root.scale.multiplyScalar(meta.rootMultiplier);return rig;}
@@ -17,26 +18,89 @@ async function loadRig(actor:EndingCast):Promise<CrabRig>{const meta=rigCatalog(
 export const ENDING_REACH=20;
 /** Safe window in NDC: clear of the letterbox and status above, the caption and controls below. */
 export const ENDING_FRAME={x:.88,top:.56,bottom:-.4,pitch:.12} as const;
+type Frame={readonly x:number;readonly top:number;readonly bottom:number;readonly pitch:number};
 const MIN_FOV=24,MAX_FOV=90;
-/** Positions the camera on the orbit ray and pitches it so the cast sits in the upper part of the frame. */
-export function placeEndingCamera(camera:THREE.PerspectiveCamera,target:THREE.Vector3,direction:THREE.Vector3,distance:number,fov:number):void {
- camera.fov=fov;camera.updateProjectionMatrix();camera.position.copy(target).addScaledVector(direction,distance);camera.lookAt(target);
- camera.rotateX(-Math.atan(ENDING_FRAME.pitch*Math.tan(THREE.MathUtils.degToRad(fov/2))));camera.updateMatrixWorld();
+/**
+ * Cuts of the celebration. Each is chosen from the accepted observation alone (phase, move, ticks):
+ * - crane: opening and toprock, the high establishing view settling into the festival orbit;
+ * - close: six-step and one-claw freeze, a chest-high hero close-up from inside the dancer ring;
+ * - low: spin, 720 and back flip, a ground-level view up at the hero against the dusk sky;
+ * - landmark: the first part of the finale, the crowd in front of the chapel bell tower;
+ * - farewell: the rest of the finale, a rising wide view of the whole court.
+ * Wide cuts (crane, landmark, farewell) keep every cast member in frame; close and low cuts keep the hero in frame.
+ */
+export type EndingShot='crane'|'close'|'low'|'landmark'|'farewell';
+export const ENDING_WIDE_SHOTS:readonly EndingShot[]=['crane','landmark','farewell'];
+/** Finale ticks that hold the chapel landmark before the farewell rise (the finale lasts 375 ticks). */
+export const ENDING_LANDMARK_TICKS=210;
+export function endingShot(state:Pick<EndingObservation,'phase'|'move'|'tick'|'phaseStartedTick'>):EndingShot|null {
+ if(state.phase==='opening')return 'crane';
+ if(state.phase==='finale')return state.tick-state.phaseStartedTick<ENDING_LANDMARK_TICKS?'landmark':'farewell';
+ if(state.phase!=='routine')return null;
+ if(state.move==='break_sixstep'||state.move==='break_oneclaw')return 'close';
+ if(state.move==='break_spin'||state.move==='break_jumpspin'||state.move==='break_backflip')return 'low';
+ return 'crane';
 }
-/** Narrowest lens at the given distance that keeps every cast corner inside ENDING_FRAME; backs out only if no lens fits. */
-export function fitEndingCamera(camera:THREE.PerspectiveCamera,target:THREE.Vector3,direction:THREE.Vector3,corners:readonly THREE.Vector3[],distance:number):{distance:number;fov:number} {
+/**
+ * Stage frame from the observed cast: the server rings the guests evenly around the stage centre and
+ * puts slot 1 straight ahead of the hero, so their mean is the centre and slot 1 gives the facing.
+ * The guests never move during the ending, so this frame is the same for every observation.
+ */
+export function endingStageFrame(cast:readonly Pick<EndingCast,'position'>[]):{centre:THREE.Vector3;yaw:number} {
+ const hero=cast[0]?.position??{x:0,y:0,z:0};if(cast.length<3)return {centre:new THREE.Vector3(hero.x,hero.y,hero.z),yaw:0};
+ const centre=new THREE.Vector3();for(const actor of cast.slice(1))centre.add(new THREE.Vector3(actor.position.x,actor.position.y,actor.position.z));centre.divideScalar(cast.length-1);
+ return {centre,yaw:Math.atan2(cast[1].position.x-centre.x,cast[1].position.z-centre.z)};
+}
+/** Positions the camera on the orbit ray and pitches it so the target sits at NDC height `pitch`. */
+export function placeEndingCamera(camera:THREE.PerspectiveCamera,target:THREE.Vector3,direction:THREE.Vector3,distance:number,fov:number,pitch:number=ENDING_FRAME.pitch):void {
+ camera.fov=fov;camera.updateProjectionMatrix();camera.position.copy(target).addScaledVector(direction,distance);camera.lookAt(target);
+ camera.rotateX(-Math.atan(pitch*Math.tan(THREE.MathUtils.degToRad(fov/2))));camera.updateMatrixWorld();
+}
+/** Narrowest lens at the given distance that keeps every corner inside the frame window; backs out only if no lens fits. */
+export function fitEndingCamera(camera:THREE.PerspectiveCamera,target:THREE.Vector3,direction:THREE.Vector3,corners:readonly THREE.Vector3[],distance:number,frame:Frame=ENDING_FRAME,lens:readonly [number,number]=[MIN_FOV,MAX_FOV],backOut=true):{distance:number;fov:number;fits:boolean} {
  const point=new THREE.Vector3();
- const fits=(distance:number,fov:number)=>{placeEndingCamera(camera,target,direction,distance,fov);for(const corner of corners){point.copy(corner).applyMatrix4(camera.matrixWorldInverse);if(point.z>-.5)return false;point.applyMatrix4(camera.projectionMatrix);if(Math.abs(point.x)>ENDING_FRAME.x||point.y>ENDING_FRAME.top||point.y<ENDING_FRAME.bottom)return false;}return true;};
- for(let i=0;i<12&&!fits(distance,MAX_FOV);i++)distance*=1.15;
- let narrow=MIN_FOV,wide=MAX_FOV;if(fits(distance,narrow))return {distance,fov:narrow};
+ const fits=(distance:number,fov:number)=>{placeEndingCamera(camera,target,direction,distance,fov,frame.pitch);for(const corner of corners){point.copy(corner).applyMatrix4(camera.matrixWorldInverse);if(point.z>-.5)return false;point.applyMatrix4(camera.projectionMatrix);if(Math.abs(point.x)>frame.x||point.y>frame.top||point.y<frame.bottom)return false;}return true;};
+ for(let i=0;backOut&&i<12&&!fits(distance,lens[1]);i++)distance*=1.15;
+ let narrow=lens[0],wide=lens[1];if(fits(distance,narrow))return {distance,fov:narrow,fits:true};
+ if(!fits(distance,wide))return {distance,fov:wide,fits:false};
  for(let i=0;i<12;i++){const mid=(narrow+wide)/2;if(fits(distance,mid))wide=mid;else narrow=mid;}
- return {distance,fov:wide};
+ return {distance,fov:wide,fits:true};
+}
+/**
+ * Camera stations for the hero cuts: midway between neighbouring guests of the inner dancer ring and
+ * just outside it, from the observed (fixed) guest positions. A station never stands inside a guest.
+ */
+export function endingRingStations(cast:readonly Pick<EndingCast,'position'>[],centre:THREE.Vector3):{angle:number;radius:number}[] {
+ const guests=cast.slice(1).map(g=>({angle:Math.atan2(g.position.x-centre.x,g.position.z-centre.z),radius:Math.hypot(g.position.x-centre.x,g.position.z-centre.z)}));
+ if(guests.length<3)return [];
+ const near=Math.min(...guests.map(g=>g.radius)),far=Math.max(...guests.map(g=>g.radius)),inner=guests.filter(g=>g.radius<=(near+far)/2+1e-6).sort((a,b)=>a.angle-b.angle);
+ return inner.map((g,i)=>{const next=inner[(i+1)%inner.length],span=i+1<inner.length?next.angle-g.angle:next.angle+Math.PI*2-g.angle;return {angle:g.angle+span/2,radius:near+.35};});
+}
+const wrap=(angle:number)=>Math.atan2(Math.sin(angle),Math.cos(angle));
+type BonePiece={mesh:THREE.SkinnedMesh;bone:THREE.Bone;box:THREE.Box3};
+const bonePieces=new WeakMap<CrabRig,BonePiece[]>();
+/** Bind-space box of the vertices each bone mostly carries, computed once per rig. */
+function piecesOf(rig:CrabRig):BonePiece[] {
+ const known=bonePieces.get(rig);if(known)return known;
+ const pieces=new Map<string,BonePiece>(),v=new THREE.Vector3();
+ rig.root.traverse(object=>{const mesh=object as THREE.SkinnedMesh;if(!mesh.isSkinnedMesh)return;const geometry=mesh.geometry,position=geometry.attributes.position,index=geometry.attributes.skinIndex,weight=geometry.attributes.skinWeight;if(!position||!index||!weight)return;
+  for(let i=0;i<position.count;i++){let lead=0;for(let k=1;k<4;k++)if(weight.getComponent(i,k)>weight.getComponent(i,lead))lead=k;const b=index.getComponent(i,lead),bone=mesh.skeleton.bones[b];if(!bone)continue;
+   const key=mesh.uuid+':'+b;let piece=pieces.get(key);if(!piece){piece={mesh,bone,box:new THREE.Box3()};pieces.set(key,piece);}
+   piece.box.expandByPoint(v.fromBufferAttribute(position,i).applyMatrix4(mesh.bindMatrix).applyMatrix4(mesh.skeleton.boneInverses[b]));}
+ });
+ const list=[...pieces.values()];bonePieces.set(rig,list);return list;
+}
+/** Corners of the posed rig's per-bone boxes: a tight hull of the silhouette the shader skins this tick. */
+function posedCorners(rig:CrabRig):THREE.Vector3[] {
+ const out:THREE.Vector3[]=[],matrix=new THREE.Matrix4();
+ for(const {mesh,bone,box}of piecesOf(rig)){matrix.multiplyMatrices(mesh.matrixWorld,mesh.bindMatrixInverse).multiply(bone.matrixWorld);for(let i=0;i<8;i++)out.push(new THREE.Vector3(i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z).applyMatrix4(matrix));}
+ return out;
 }
 /** No local phase clock: commit copies a server observation; render cannot progress the sequence. */
 export class EndingPresentationView {
  private id:string|null=null;private tick=-1;private sequence=-1;private generation=0;private disposed=false;private current:EndingObservation|null=null;private cueOrdinal=0;
  private readonly contacts=new EndingContactShadows();
- private rigs=new Map<number,CrabRig>();private loading=new Set<number>();private fit:{distance:number;fov:number;tick:number}|null=null;
+ private rigs=new Map<number,CrabRig>();private loading=new Set<number>();private fit:{shot:EndingShot;distance:number;fov:number;tick:number}|null=null;private cut:EndingShot|null=null;private fits=true;private placed:{key:string;target:THREE.Vector3;direction:THREE.Vector3;distance:number;fov:number;pitch:number}|null=null;
  readonly hud=document.createElement('section');
  private caption=document.createElement('h2');private status=document.createElement('p');private credits=document.createElement('div');private skip=document.createElement('button');private proceed=document.createElement('button');
  constructor(private readonly ports:Ports){
@@ -80,32 +144,96 @@ export class EndingPresentationView {
   const state=this.current;if(!state||this.disposed)return;
   for(const actor of state.cast){const rig=this.rigs.get(actor.ref.slot);if(rig)applyNumericPose(rig,{...actor.position,yaw:actor.yaw,pose:evaluateRenderPoseRecipe(actor.recipe)});}
   const hero=state.cast[0];if(!hero)return;
-  // Orbit direction and progress come only from the accepted server tick. The camera cranes down
-  // from a high establishing view, staying inside the courtyard ring so no house roof or tree
-  // crosses the lens; the lens, not the distance, adapts to the screen shape.
-  const seconds=Math.max(0,(state.tick-state.celebrationStartedTick)/30),linear=Math.min(1,seconds/12),k=linear*linear*(3-2*linear),a=seconds*.16+state.orbitYaw;
-  // Wide screens settle into a low festival view; portrait screens stay above the roofs and trees
-  // (about 16 m) so the whole ring fits a moderate lens without anything crossing the foreground.
-  const portrait=1-THREE.MathUtils.smoothstep(this.ports.camera.aspect,.6,1.3),late=THREE.MathUtils.lerp(18,36,portrait),reach=THREE.MathUtils.lerp(ENDING_REACH,22,portrait);
-  const elevation=THREE.MathUtils.degToRad(THREE.MathUtils.lerp(late+16,late,k)),focusY=Math.max(.8,(this.rigs.get(hero.ref.slot)?.body.position.y??0)*.75);
-  const target=new THREE.Vector3(hero.position.x,hero.position.y+focusY,hero.position.z);
-  const direction=new THREE.Vector3(Math.sin(a)*Math.cos(elevation),Math.sin(elevation),Math.cos(a)*Math.cos(elevation));
-  const corners:THREE.Vector3[]=[],box=new THREE.Box3();
+  const shot=endingShot(state);this.cut=shot;if(!shot)return;
+  // The framing is a function of the accepted observation, the loaded rigs and the screen shape; frames
+  // between two observations reuse it.
+  const camera=this.ports.camera,key=`${state.sequence}|${this.rigs.size}|${camera.aspect}`;
+  if(this.placed?.key===key){placeEndingCamera(camera,this.placed.target,this.placed.direction,this.placed.distance,this.placed.fov,this.placed.pitch);return;}
+  const corners:THREE.Vector3[]=[],box=new THREE.Box3();let heroCorners:THREE.Vector3[]=[];
   for(const actor of state.cast){const rig=this.rigs.get(actor.ref.slot),p=actor.position;
    // Stable envelope around each server position, unioned with the live rig, keeps the fit calm.
    box.set(new THREE.Vector3(p.x-1.25,p.y-.1,p.z-1.25),new THREE.Vector3(p.x+1.25,p.y+1.8,p.z+1.25));
    if(rig){rig.root.updateMatrixWorld(true);const live=new THREE.Box3().setFromObject(rig.root);box.union(live);const body=rig.body.getWorldPosition(new THREE.Vector3()),height=Math.max(0,live.min.y-(p.y-.08)),scale=rig.root.scale.x,size=(1.6+height*.5)*scale;this.contacts.set(actor.ref.slot,body.x,p.y-.066,body.z,size*1.1,size*.85,.62/(1+height*1.5));}
    else box.expandByVector(new THREE.Vector3(.6,1.6,.6));
-   for(let i=0;i<8;i++)corners.push(new THREE.Vector3(i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z));
+   const own=Array.from({length:8},(_,i)=>new THREE.Vector3(i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z));corners.push(...own);
+   // Hero cuts fit the posed rig itself (the calm envelope is wider than a close lens can hold).
+   if(actor===hero)heroCorners=rig?posedCorners(rig):own;
   }
-  const camera=this.ports.camera,{distance,fov}=fitEndingCamera(camera,target,direction,corners,reach/Math.cos(elevation));
-  // Widen at once when the cast needs it; narrow back gently, per accepted tick, so dance steps do
-  // not pump the lens and rendering alone never moves the camera.
+  // Every cut is a function of the accepted observation: phase, move, server ticks and the observed cast.
+  const {centre,yaw}=endingStageFrame(state.cast);
+  const seconds=Math.max(0,(state.tick-state.celebrationStartedTick)/30),a=seconds*.16+state.orbitYaw;
+  const portrait=1-THREE.MathUtils.smoothstep(camera.aspect,.6,1.3),late=THREE.MathUtils.lerp(18,36,portrait);
+  const focusY=Math.max(.8,(this.rigs.get(hero.ref.slot)?.body.position.y??0)*.75),heroAt=new THREE.Vector3(hero.position.x,hero.position.y,hero.position.z);
+  const orbit=(elevationDeg:number,reach:number)=>{const elevation=THREE.MathUtils.degToRad(elevationDeg);return {target:heroAt.clone().setY(heroAt.y+focusY),direction:new THREE.Vector3(Math.sin(a)*Math.cos(elevation),Math.sin(elevation),Math.cos(a)*Math.cos(elevation)),distance:reach/Math.cos(elevation)};};
+  // Hero cuts stand at a gap of the inner dancer ring, the one nearest a stage bearing (0 = in front of
+  // the hero) that keeps a sensible distance to the hero, wherever the routine has carried him.
+  // Camera stations for the hero cuts stand at a gap of the inner dancer ring (`inset` metres in from just
+  // outside it), the gap nearest a stage bearing (0 = in front of the hero) at a sensible distance from him.
+  // The station depends only on the screen shape and the fixed guest ring, so it holds still through a move;
+  // the aim (the middle of the posed hero) and the lens follow the pose.
+  const station=(bearing:number,height:number,inset:number)=>{
+   const target=new THREE.Box3().setFromPoints(heroCorners).getCenter(new THREE.Vector3()),want=yaw+bearing;
+   const stations=endingRingStations(state.cast,centre).map(s=>({angle:s.angle,radius:s.radius-inset}));
+   const reach=(s:{angle:number;radius:number})=>Math.hypot(centre.x+Math.sin(s.angle)*s.radius-heroAt.x,centre.z+Math.cos(s.angle)*s.radius-heroAt.z);
+   const pick=stations.filter(s=>reach(s)>=2.2&&reach(s)<=7.5).sort((p,q)=>Math.abs(wrap(p.angle-want))-Math.abs(wrap(q.angle-want)))[0]??{angle:want,radius:4.5};
+   const offset=new THREE.Vector3(centre.x+Math.sin(pick.angle)*pick.radius,centre.y+height,centre.z+Math.cos(pick.angle)*pick.radius).sub(target);
+   return {target,direction:offset.clone().normalize(),distance:offset.length()};
+  };
+  let view!:{target:THREE.Vector3;direction:THREE.Vector3;distance:number};let frame:Frame=ENDING_FRAME,lens:[number,number]=[MIN_FOV,MAX_FOV],fitCorners=corners;
+  if(shot==='crane'){
+   // Cranes down from a high establishing view, staying inside the courtyard ring so no roof or tree
+   // crosses the lens. Wide screens settle into a low festival view; portrait screens stay above the
+   // roofs and trees (about 16 m) so the whole ring fits a moderate lens.
+   const linear=Math.min(1,seconds/12),k=linear*linear*(3-2*linear);
+   view=orbit(THREE.MathUtils.lerp(late+16,late,k),THREE.MathUtils.lerp(ENDING_REACH,22,portrait));
+  }else if(shot==='farewell'){
+   // The finale ends by rising back over the court, the whole village dancing below.
+   const linear=THREE.MathUtils.clamp((state.tick-state.phaseStartedTick-ENDING_LANDMARK_TICKS)/30/5,0,1),k=linear*linear*(3-2*linear);
+   view=orbit(THREE.MathUtils.lerp(late,late+14,k),THREE.MathUtils.lerp(ENDING_REACH,22,portrait));
+  }else if(shot==='landmark'){
+   // In front of the hero, looking back over the crowd to the chapel bell tower at the end of the torch path.
+   // The camera stands between the candelabra (10.6 m) and the lamp posts (17.6 m), so no lamp halo sits
+   // against the lens, and rises slowly through the shot.
+   const heading=yaw+.16,elevation=THREE.MathUtils.degToRad(THREE.MathUtils.lerp(5,20,portrait)+(state.tick-state.phaseStartedTick)/30*.35);
+   const tower=new THREE.Vector3(ENDING_BELL_TOWER.x,ENDING_BELL_TOWER.y,ENDING_BELL_TOWER.z).applyAxisAngle(new THREE.Vector3(0,1,0),yaw).add(centre);
+   view={target:centre.clone().setY(centre.y+1),direction:new THREE.Vector3(Math.sin(heading)*Math.cos(elevation),Math.sin(elevation),Math.cos(heading)*Math.cos(elevation)),distance:THREE.MathUtils.lerp(15.5,19,portrait)/Math.cos(elevation)};
+   // Tilt and lens together: the narrowest lens over a few tilts that holds the crowd and the bell
+   // tower; a tall narrow screen that cannot also hold the tower frames the crowd low instead.
+   let best:{pitch:number;fov:number}|null=null;
+   for(const subject of [[...corners,tower],corners]){
+    for(let pitch=-.6;pitch<=.31;pitch+=.15){const fit=fitEndingCamera(camera,view.target,view.direction,subject,view.distance,{...frame,pitch},lens,false);if(fit.fits&&(!best||fit.fov<best.fov-1e-6))best={pitch,fov:fit.fov};}
+    if(best){fitCorners=subject;break;}
+   }
+   frame={...frame,pitch:best?.pitch??frame.pitch};
+  }
+  if(shot==='close'){
+   // Six-step footwork is filmed from above the circle of guests, as a cypher is. The one-claw freeze
+   // holds still, so the camera steps inside the ring to chest height with the neighbouring guests behind
+   // it; a tall screen is too narrow for that and looks on from above the ring gap instead.
+   const tall=camera.aspect<.95;
+   view=state.move==='break_oneclaw'?(tall?station(-1.05,3.2,-.35):station(-1.05,1.7,1.4)):station(-1.75,THREE.MathUtils.lerp(5.4,5.8,portrait),THREE.MathUtils.lerp(-.35,-.9,portrait));
+   fitCorners=heroCorners;frame={x:.78,top:.5,bottom:-.34,pitch:.08};lens=[18,76];
+  }else if(shot==='low'){
+   // Ground level inside the ring, looking up: the hero against the dusk sky with the bell tower beside him.
+   // A tall screen is too narrow for the spin from in there; it stands behind the ring gap at eye height,
+   // where the narrow width keeps the neighbouring guests out of frame.
+   const tall=camera.aspect<.95;view=station(.35,tall?2.7:.5,tall?-1:1.6);
+   fitCorners=heroCorners;frame={x:.8,top:.48,bottom:-.34,pitch:.07};lens=[30,90];
+  }
+  // Hero cuts never back out of the dancer ring: if the pose outgrows the lens, the lens stays at its widest.
+  const {distance,fov,fits}=fitEndingCamera(camera,view.target,view.direction,fitCorners,view.distance,frame,lens,shot!=='close'&&shot!=='low');this.fits=fits;
+  // A new cut snaps; within a cut the lens widens at once when needed and narrows back gently, per
+  // accepted tick, so dance steps do not pump it and rendering alone never moves the camera.
   const ticks=this.fit?Math.max(0,state.tick-this.fit.tick):0;
-  this.fit=this.fit&&this.fit.distance===distance&&this.fit.fov>=fov?{distance,fov:Math.max(fov,this.fit.fov-.12*Math.min(ticks,30)),tick:state.tick}:{distance,fov,tick:state.tick};
-  placeEndingCamera(camera,target,direction,this.fit.distance,this.fit.fov);
+  this.fit=this.fit&&this.fit.shot===shot&&this.fit.distance===distance&&this.fit.fov>=fov?{shot,distance,fov:Math.max(fov,this.fit.fov-.12*Math.min(ticks,30)),tick:state.tick}:{shot,distance,fov,tick:state.tick};
+  placeEndingCamera(camera,view.target,view.direction,this.fit.distance,this.fit.fov,frame.pitch);
+  this.placed={key,target:view.target,direction:view.direction,distance:this.fit.distance,fov:this.fit.fov,pitch:frame.pitch};
  }
+ /** Current cut, for QA and the HUD; null outside the cast phases. */
+ get shot():EndingShot|null{return this.cut;}
+ /** Whether the current cut's subject fitted its frame window at the chosen lens (QA diagnostics). */
+ get framed():boolean{return this.fits;}
  get readyCount():number{return this.rigs.size;}
- private clear():void {this.generation++;for(const rig of this.rigs.values()){rig.root.removeFromParent();rig.dispose();}this.rigs.clear();this.contacts.retain(new Set());this.loading.clear();this.fit=null;this.current=null;this.tick=-1;this.sequence=-1;this.cueOrdinal=0;this.hud.hidden=true;}
+ private clear():void {this.generation++;for(const rig of this.rigs.values()){rig.root.removeFromParent();rig.dispose();}this.rigs.clear();this.contacts.retain(new Set());this.loading.clear();this.fit=null;this.cut=null;this.placed=null;this.current=null;this.tick=-1;this.sequence=-1;this.cueOrdinal=0;this.hud.hidden=true;}
  dispose():void {if(this.disposed)return;this.clear();this.disposed=true;this.contacts.dispose();this.contacts.root.removeFromParent();this.hud.remove();}
 }
