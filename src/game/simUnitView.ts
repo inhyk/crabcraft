@@ -16,8 +16,10 @@ export function createLivePosition(getState: () => Pick<SimUnit, 'x' | 'y' | 'z'
   return position;
 }
 
+export type NumericPoseView = Readonly<Pick<SimUnit,'x'|'y'|'z'|'yaw'>> & {readonly pose:{readonly appliedQ:ArrayLike<number>;readonly appliedPosition:readonly [number,number,number];readonly appliedRotation:readonly [number,number,number,number]}};
+
 /** The Area already advanced root carry, lift and pose. Rendering only copies the result. */
-export function applyNumericPose(rig: CrabRig, state: Readonly<SimUnit>): void {
+export function applyNumericPose(rig: CrabRig, state: NumericPoseView): void {
   rig.root.position.set(state.x, state.y, state.z);
   rig.root.rotation.y = state.yaw;
   rig.setPose(state.pose.appliedQ);

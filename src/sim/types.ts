@@ -1,3 +1,5 @@
+import type {CharacterCheckpointV1,RestoredPlayerData} from './persistence.ts';
+export type {CharacterCheckpointV1,RestoredPlayerData,RestorePolicy} from './persistence.ts';
 import type {BoatCommand, BoatState, VillageRound, FeatureEvent, NpcFeatureEvent} from './features/types.ts';
 /** Shared contract for the implemented deterministic numeric simulation core.
  * Current gameplay refresh follows canonical dev 60df24f plus the merged S4 foundation.
@@ -437,6 +439,8 @@ export interface TransferCoordinator {
   transfer(character: CharacterId, source: Area, destination: Area, gate: string, hostTick: number): { ok: true; ref: EntityRef } | { ok: false; reason: string };
 }
 
+export interface CapturedPlayer {readonly captureId:string;readonly ref:EntityRef;readonly checkpoint:CharacterCheckpointV1;readonly appliedGrantIds:readonly string[]}
+export interface PlayerRetirement {readonly token:string;readonly capture:CapturedPlayer}
 export interface Area {
   readonly services: AreaServices;
   readonly units: ReadonlyMap<EntityId, SimUnit>;
@@ -453,6 +457,19 @@ export interface Area {
    * No renderer step, wall clock or20Hz snapshot call may advance any of these stages.
    */
   step(inputs: ReadonlyMap<EntityId, PlayerIntent>): void;
+  beginDurabilityBarrier(reason:string):string;
+  releaseDurabilityBarrier(token:string):void;
+  neutralizeInput(ref:EntityRef):void;
+  resetInputSession(ref:EntityRef):void;
+  capturePlayerCheckpoint(ref:EntityRef):CapturedPlayer;
+  appliedGrantIds(character:CharacterId):readonly string[];
+  markCheckpointDurable(captureId:string,revision:number,ids:readonly string[]):void;
+  quiescePlayer(ref:EntityRef,reason:string):PlayerRetirement;
+  abortPlayerRetirement(token:string):void;
+  commitPlayerRetirement(token:string):void;
+  stageRestoredArrival(admission:Admission,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData):StagedArrival;
+  activateRestoredArrival(token:string):EntityRef;
+  restorePlayerCheckpoint(ref:EntityRef,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData,receiptIds?:readonly string[]):EntityRef;
   snapshot(): AreaSnapshot;
   debugState(): AreaDebugState;
   drainEvents(): readonly EventRecord[]; // overflow fails actor/step preflight; fail-stop on unforeseen overflow, no silent loss/continued partial tick
