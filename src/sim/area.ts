@@ -97,6 +97,7 @@ export class SimulationArea implements AreaContract {
       runCommand:(ref,command)=>this.command(ref,command),bossByProfile:profile=>[...this.bossMap.values()].find(b=>b.profile===profile)??null,
       encounterActive:()=>[...this.bossMap.values()].some(b=>b.engaged),
       completeChannel:(ref,ch)=>{const p=this.services.player(ref);if(p)this.worldRules.completeChannel(p,ch);},
+      preflightEarnedGrants:grants=>{const counts=new Map<string,Set<string>>();for(const g of grants){if(!this.services.playerByCharacter(g.recipient))continue;const ids=counts.get(g.recipient)??new Set(this.worldRules.appliedGrantIds(g.recipient).filter(id=>!this.durableIds.get(g.recipient)?.has(id)));if(!this.worldRules.appliedGrantIds(g.recipient).includes(g.id))ids.add(g.id);if(ids.size>256)throw new Error('Checkpoint receipt capacity exceeded');counts.set(g.recipient,ids);}},
       recordContribution:(victim,attacker,damage)=>this.worldRules.recordContribution(victim,attacker,damage),
       onUnitDied:(victim,killer)=>this.worldRules.onUnitDied(victim,killer),applyEarnedGrant:grant=>this.worldRules.applyGrant(grant),
     };
