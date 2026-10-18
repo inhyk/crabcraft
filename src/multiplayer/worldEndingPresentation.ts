@@ -56,6 +56,8 @@ export class WorldEndingPresentation {
   if(!this.view){
    const generation=++this.generation;
    this.view=new EndingPresentationView({root:this.root,camera:this.camera,parent:this.ports.parent,command:(id,action)=>this.control(id,action,generation),cue:value=>this.ports.cue?.(value),error:message=>this.ports.error?.(message)});
+   // Above the gameplay HUD letterbox; connection/account overlays still own their layers.
+   this.view.hud.style.zIndex='40';
    this.view.bind(observation.id);
   }
   try{
