@@ -26,7 +26,7 @@ const MIN_FOV=24,MAX_FOV=90;
  * - close: six-step and one-claw freeze, a chest-high hero close-up from inside the dancer ring;
  * - low: spin, 720 and back flip, a ground-level view up at the hero against the dusk sky;
  * - landmark: the first part of the finale, the crowd in front of the chapel bell tower;
- * - farewell: the rest of the finale, a rising wide view of the whole court.
+ * - farewell: the rest of the finale, the landmark camera craning up until the path to the chapel shows.
  * Wide cuts (crane, landmark, farewell) keep every cast member in frame; close and low cuts keep the hero in frame.
  */
 export type EndingShot='crane'|'close'|'low'|'landmark'|'farewell';
@@ -185,21 +185,22 @@ export class EndingPresentationView {
    // roofs and trees (about 16 m) so the whole ring fits a moderate lens.
    const linear=Math.min(1,seconds/12),k=linear*linear*(3-2*linear);
    view=orbit(THREE.MathUtils.lerp(late+16,late,k),THREE.MathUtils.lerp(ENDING_REACH,22,portrait));
-  }else if(shot==='farewell'){
-   // The finale ends by rising back over the court, the whole village dancing below.
-   const linear=THREE.MathUtils.clamp((state.tick-state.phaseStartedTick-ENDING_LANDMARK_TICKS)/30/5,0,1),k=linear*linear*(3-2*linear);
-   view=orbit(THREE.MathUtils.lerp(late,late+14,k),THREE.MathUtils.lerp(ENDING_REACH,22,portrait));
-  }else if(shot==='landmark'){
+  }else if(shot==='landmark'||shot==='farewell'){
    // In front of the hero, looking back over the crowd to the chapel bell tower at the end of the torch path.
-   // The camera stands between the candelabra (10.6 m) and the lamp posts (17.6 m), so no lamp halo sits
-   // against the lens, and rises slowly through the shot.
-   const heading=yaw+.16,elevation=THREE.MathUtils.degToRad(THREE.MathUtils.lerp(5,20,portrait)+(state.tick-state.phaseStartedTick)/30*.35);
+   // The camera stands between the candelabra (10.6 m) and the lamp posts (17.6 m), so no lamp halo or festoon
+   // sits against the lens. It rises slowly through the landmark; the farewell keeps rising from there, over the
+   // crowd, until the Frost shard, the path and the chapel line up below it.
+   const local=(state.tick-state.phaseStartedTick)/30,landmarkEnd=ENDING_LANDMARK_TICKS/30,start=THREE.MathUtils.lerp(5,20,portrait)+Math.min(local,landmarkEnd)*.35;
+   const linear=THREE.MathUtils.clamp((local-landmarkEnd)/5,0,1),k=linear*linear*(3-2*linear);
+   const heading=yaw+.16,elevation=THREE.MathUtils.degToRad(THREE.MathUtils.lerp(start,THREE.MathUtils.lerp(30,40,portrait),k));
    const tower=new THREE.Vector3(ENDING_BELL_TOWER.x,ENDING_BELL_TOWER.y,ENDING_BELL_TOWER.z).applyAxisAngle(new THREE.Vector3(0,1,0),yaw).add(centre);
-   view={target:centre.clone().setY(centre.y+1),direction:new THREE.Vector3(Math.sin(heading)*Math.cos(elevation),Math.sin(elevation),Math.cos(heading)*Math.cos(elevation)),distance:THREE.MathUtils.lerp(15.5,19,portrait)/Math.cos(elevation)};
-   // Tilt and lens together: the narrowest lens over a few tilts that holds the crowd and the bell
-   // tower; a tall narrow screen that cannot also hold the tower frames the crowd low instead.
+   view={target:centre.clone().setY(centre.y+1),direction:new THREE.Vector3(Math.sin(heading)*Math.cos(elevation),Math.sin(elevation),Math.cos(heading)*Math.cos(elevation)),distance:THREE.MathUtils.lerp(15.5,21.5,portrait)/Math.cos(elevation)};
+   // Landmark: tilt and lens together, the narrowest lens over a few tilts that holds the crowd and the bell
+   // tower; a tall narrow screen that cannot also hold the tower frames the crowd low instead. Farewell: the
+   // crowd stays in the lower part at a fixed tilt, so the path and the chapel fill the top as it rises.
    let best:{pitch:number;fov:number}|null=null;
-   for(const subject of [[...corners,tower],corners]){
+   if(shot==='farewell')frame=ENDING_FRAME;
+   else for(const subject of [[...corners,tower],corners]){
     for(let pitch=-.6;pitch<=.31;pitch+=.15){const fit=fitEndingCamera(camera,view.target,view.direction,subject,view.distance,{...frame,pitch},lens,false);if(fit.fits&&(!best||fit.fov<best.fov-1e-6))best={pitch,fov:fit.fov};}
     if(best){fitCorners=subject;break;}
    }

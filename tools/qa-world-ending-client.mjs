@@ -19,7 +19,7 @@ assert.ok(Number.isSafeInteger(width)&&width>=320&&Number.isSafeInteger(height)&
 const provided=process.env.WORLD_QA_METADATA,scratch=provided?null:await mkdtemp('/private/tmp/crabcraft-ending-client-'),metadataPath=provided??join(scratch,'host.json');
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Cut contract (src/multiplayer/endingPresentationView.ts endingShot): wide cuts and the routine moves that may use each hero cut.
-const CAPTURE_COUNT=6,WIDE_CUTS=['crane','landmark','farewell'],HERO_CUTS={close:['break_sixstep','break_oneclaw'],low:['break_spin','break_jumpspin','break_backflip']};
+const CAPTURE_COUNT=7,WIDE_CUTS=['crane','landmark','farewell'],HERO_CUTS={close:['break_sixstep','break_oneclaw'],low:['break_spin','break_jumpspin','break_backflip']};
 async function until(fn,timeout=15000){const end=performance.now()+timeout;while(!await fn()){if(performance.now()>end)throw Error('Ending client QA timed out');await pause(25);}}
 let host,server,browser,hostExited,debugTimer,cleanupProof;
 const wireErrors=[],commands=[],streams=[],authRevisions=[],captures=[];
@@ -90,7 +90,8 @@ try{
  const npc=()=>streams.at(-1)?.state?.actors.filter(a=>a.kind==='townsfolk').map(a=>({id:a.ref.id,x:a.x,z:a.z}))??[];const initialNpc=npc();
  await page.evaluate(()=>window.app.current.game.server.command({kind:'chatSay',channel:'area',text:'Ending integration chat remains active'}));await page.locator('.hud .chat .line.say').filter({hasText:'Ending integration chat remains active'}).last().waitFor({timeout:15000});
  assert.equal(await page.evaluate(()=>{const el=window.app.current.game.hud.chat.el;return el.classList.contains('hud-keep')&&getComputedStyle(el).opacity!=='0';}),true);
- // One capture per cut, each inside its server-tick window: six-step cypher, spin low sky, one-claw close-up, finale landmark.
+ // One capture per cut, each inside its server-tick window: six-step cypher, spin low sky, one-claw close-up,
+ // finale landmark and the farewell crane.
  const cut=async(name,range)=>{await page.waitForFunction(w=>{const e=window.app.current.game.serverEnding,s=e?.current;if(!s||!e.view||e.readyCount!==s.cast.length||e.stage===null)return false;const local=s.tick-s.phaseStartedTick;return s.phase===w.phase&&(w.move===undefined||s.move===w.move)&&s.tick>=(w.from??0)&&local>=(w.local??0)&&local<(w.until??Infinity);},range,{timeout:45000});await capture(name);};
  await cut('cypher-trusted-fixture.png',{phase:'routine',move:'break_sixstep',from:306});
  await cut('low-sky-trusted-fixture.png',{phase:'routine',move:'break_spin',from:480});
@@ -105,6 +106,7 @@ try{
  const resumed=await page.evaluate(()=>{const g=window.app.current.game,s=g.serverEnding.current;return{id:s.id,tick:s.tick};});assert.equal(resumed.id,reconnectBefore.id);assert.ok(resumed.tick>=reconnectBefore.tick);
  const priorCommands=commands.length;await page.evaluate(()=>window.oldEndingButton.click());await pause(150);assert.equal(commands.length,priorCommands,'Retired view listener sent a control');
  await cut('landmark-trusted-fixture.png',{phase:'finale',local:24,until:200});
+ await cut('farewell-trusted-fixture.png',{phase:'finale',local:270,until:360});
  await page.getByRole('button',{name:'Skip celebration',exact:true}).waitFor({state:'visible',timeout:15000});
  const clickControl=async name=>{const button=page.getByRole('button',{name,exact:true});await button.evaluate(el=>{el.addEventListener('click',()=>window.endingClickBefore=structuredClone(window.app.current.game.serverEnding.current),{capture:true,once:true});el.addEventListener('click',()=>window.endingClickAfter=structuredClone(window.app.current.game.serverEnding.current),{once:true});});await button.click();return page.evaluate(()=>({before:window.endingClickBefore,after:window.endingClickAfter}));};
  const skip=await clickControl('Skip celebration');assert.deepEqual(skip.after,skip.before,'Click advanced the browser ending clock');
