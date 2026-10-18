@@ -369,3 +369,37 @@ test('charactersWithPendingGrants lists exactly the characters pendingGrants has
   for (const ids of [['not-a-character'], [d.characterId, d.characterId]]) await assert.rejects(store.charactersWithPendingGrants(ids), error('invalid'));
   await assert.rejects(store.pendingGrants(B, d.characterId), error('not_found'));
 });
+
+test('saveCheckpoints commits every checkpoint and receipt in one transaction, as saveCheckpoint would, or nothing', async () => {
+  const [c, d, e] = [await fresh(), await fresh(), await fresh()];
+  const gc = await grant(c, `batch:${c.characterId}`, 7), gd = await grant(d, `batch:${d.characterId}`, 9);
+  const writes = [
+    { accountId: A, characterId: c.characterId, expectedRevision: 0, checkpoint: { ...c.checkpoint, xp: 7, coins: 2 }, appliedGrantIds: [gc.id] },
+    { accountId: A, characterId: d.characterId, expectedRevision: 0, checkpoint: { ...d.checkpoint, xp: 9, coins: 2 }, appliedGrantIds: [gd.id] },
+    { accountId: A, characterId: e.characterId, expectedRevision: 0, checkpoint: { ...e.checkpoint, level: 2 }, appliedGrantIds: [] },
+  ];
+  const saved = await store.saveCheckpoints(writes);
+  assert.deepEqual(saved.map(s => [s.characterId, s.revision]), writes.map(w => [w.characterId, 1]));
+  for (const s of saved) assert.deepEqual(await store.getOwned(A, s.characterId), s);
+  const receipts = await pool.query('SELECT grant_id,character_id,applied_revision FROM world_character_grant_receipts WHERE grant_id=ANY($1::text[]) ORDER BY grant_id', [[gc.id, gd.id]]);
+  assert.deepEqual(receipts.rows.map(r => [r.grant_id, r.character_id, Number(r.applied_revision)]).sort(), [[gc.id, c.characterId, 1], [gd.id, d.characterId, 1]].sort());
+  assert.deepEqual(await store.charactersWithPendingGrants([c.characterId, d.characterId, e.characterId]), new Set());
+  // One stale entry, an applied receipt, a foreign grant or a missing row fails the batch with nothing written.
+  const next = saved.map(s => ({ accountId: A, characterId: s.characterId, expectedRevision: 1, checkpoint: { ...s.checkpoint, coins: 50 }, appliedGrantIds: [] }));
+  const gn = await grant(e, `batch-next:${e.characterId}`, 3);
+  for (const [bad, code] of [
+    [[...next.slice(0, 2), { ...next[2], expectedRevision: 0 }], 'conflict'],
+    [[next[0], { ...next[1], appliedGrantIds: [gd.id] }, next[2]], 'already_applied'],
+    [[{ ...next[0], appliedGrantIds: [gn.id] }, next[1], next[2]], 'not_found'],
+    [[next[0], { ...next[1], accountId: B }, next[2]], 'not_found'],
+  ]) {
+    await assert.rejects(store.saveCheckpoints(bad), error(code));
+    for (const s of saved) assert.deepEqual(await store.getOwned(A, s.characterId), s);
+    assert.equal((await pool.query('SELECT count(*)::int n FROM world_character_grant_receipts WHERE grant_id=$1', [gn.id])).rows[0].n, 0);
+  }
+  for (const bad of [[], [next[0], next[0]], [next[0], { ...next[1], appliedGrantIds: [gn.id] }, { ...next[2], appliedGrantIds: [gn.id] }], [{ ...next[0], checkpoint: { ...next[0].checkpoint, xp: Infinity } }]])
+    await assert.rejects(store.saveCheckpoints(bad), error('invalid'));
+  const final = await store.saveCheckpoints([...next.slice(0, 2), { ...next[2], appliedGrantIds: [gn.id], checkpoint: { ...next[2].checkpoint, xp: 3 } }]);
+  assert.deepEqual(final.map(s => s.revision), [2, 2, 2]);
+  assert.equal((await store.loadForRecovery(A, e.characterId, [gn.id])).grants[0].appliedRevision, 2);
+});

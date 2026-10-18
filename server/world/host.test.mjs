@@ -64,7 +64,11 @@ async function runtime(options = {}) {
   const ownership = await acquireHostOwnership(pool, 'world-host-test');
   const worlds = new Map(loaded), base = loaded.get('w1'), spawn = base.publicDefinition.spawn.position;
   // Vertical test relocates one actual W1 enemy template beside actual baked spawn, without altering its rules/stats.
-  if (options.combat) worlds.set('w1', { ...base, publicDefinition: { ...base.publicDefinition, enemies: [{ ...base.publicDefinition.enemies[0], home: { x: spawn.x + 3, y: base.query.heightAt(spawn.x + 3, spawn.z), z: spawn.z }, wanderRadius: 0 }] } });
+  // options.enemies (default 1) places that many copies of it in a small grid there, for steady kills.
+  if (options.combat) worlds.set('w1', { ...base, publicDefinition: { ...base.publicDefinition, enemies: Array.from({ length: options.enemies ?? 1 }, (_, k) => {
+    const x = spawn.x + 3 + (k % 3) * 1.5, z = spawn.z + Math.floor(k / 3) * 1.5;
+    return { ...base.publicDefinition.enemies[0], ...(k ? { id: base.publicDefinition.enemies[0].id.replace(/:\d+$/, `:${k}`) } : {}), home: { x, y: base.query.heightAt(x, z), z }, wanderRadius: 0 };
+  }) } });
   const failures = [];
   let host;
   try { host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, outcomes: options.withoutOutcomes ? undefined : options.ledger ? options.outcomes ?? new DurableOutcomeStore(pool,codec,{planOutcomePage}) : options.outcomes, chat: options.chat ? new WorldChatService(pool) : undefined,
@@ -803,3 +807,190 @@ test('revoked grace still rejects malformed, unknown session/area, duplicate rec
   }
  }finally{for(const bot of bots)bot.ws.close();await rt.close();}
 });
+
+// Retained saves (decision "1초마다 묶어 저장, 저장 중에도 세계는 계속"), on the actual PG+WS host.
+const gatedStore = () => {
+  const gate = { armed: null, entered: 0 };
+  const characters = new Proxy(store, { get(target, key) {
+    if (key === 'saveCheckpoint' || key === 'saveCheckpoints') return async (...args) => { const armed = gate.armed; if (armed) { gate.entered++; await armed(); } return target[key](...args); };
+    const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  return { gate, characters };
+};
+const attackLoop = bot => setInterval(() => {
+  if (bot.ws.readyState !== WebSocket.OPEN || !bot.state) return;
+  const self = bot.state.actors.find(a => a.ref.id === bot.state.selfRef.id);
+  const target = bot.state.actors.filter(a => a.kind === 'scrapling' && a.alive).sort((a, b) => Math.hypot(a.x - self.x, a.z - self.z) - Math.hypot(b.x - self.x, b.z - self.z))[0];
+  bot.send(target ? [{ kind: 'target', target: target.ref }, { kind: 'ability', slot: 1 }] : []);
+}, 100);
+const kills = bots => new Set(bots.flatMap(b => b.events.filter(e => e.event.type === 'death' && e.event.unit.id !== b.state.selfRef.id).map(e => JSON.stringify(e.event.unit)))).size;
+async function grantLedger(c) {
+  const grants = (await pool.query('SELECT grant_id,payload_json FROM world_character_grants WHERE character_id=$1 ORDER BY grant_id', [c.record.characterId])).rows;
+  const receipts = (await pool.query('SELECT grant_id FROM world_character_grant_receipts WHERE character_id=$1 ORDER BY grant_id', [c.record.characterId])).rows;
+  return { ids: grants.map(g => g.grant_id), xp: grants.reduce((n, g) => n + JSON.parse(g.payload_json).xp, 0), receipts: receipts.map(r => r.grant_id) };
+}
+
+test('retained saves run at most once per second under constant kills without holding the world, and every reward is journaled and receipted once', { timeout: 30000 }, async () => {
+  const rt = await runtime({ combat: true, enemies: 6 }), bots = [], records = [], timers = [];
+  try {
+    for (let i = 0; i < 2; i++) { const c = await character('mage'), bot = await client(rt, c); records.push(c); bots.push(bot); await ready(rt, bot); }
+    await until(() => !rt.host.stats().durableBarrier);
+    const start = rt.host.stats(), t0 = performance.now();
+    for (const bot of bots) timers.push(attackLoop(bot));
+    await until(() => kills(bots) >= 4 || rt.failures.length, 20000);
+    const end = rt.host.stats(), seconds = (performance.now() - t0) / 1000;
+    for (const t of timers) clearInterval(t); timers.length = 0;
+    assert.deepEqual(rt.failures, []);
+    // Kills no longer start rounds: at most one per checkpointIntervalMs (1000 ms here), and none of them holds the world.
+    const rounds = end.persistenceBarriers - start.persistenceBarriers;
+    assert.ok(rounds >= 1 && rounds <= Math.floor(seconds) + 1, JSON.stringify({ rounds, seconds }));
+    assert.equal(end.haltingBarriers, start.haltingBarriers); assert.equal(end.saveRounds - start.saveRounds, rounds);
+    assert.ok(end.ticks - start.ticks >= seconds * 30 * .6, JSON.stringify({ ticks: end.ticks - start.ticks, seconds }));
+    assert.ok(end.checkpointBatches > start.checkpointBatches); assert.equal(end.checkpointBatchFallbacks, 0);
+    await afterSave(rt); assert.deepEqual(rt.failures, []);
+    let rewarded = 0;
+    for (const [i, c] of records.entries()) {
+      const ledger = await grantLedger(c), saved = await store.getOwned(c.binding.accountId, c.record.characterId);
+      assert.deepEqual(ledger.receipts, ledger.ids, 'every journaled reward has exactly one receipt');
+      assert.equal(saved.checkpoint.progress.xp, ledger.xp); assert.equal(bots[i].state.self.player.xp, ledger.xp);
+      assert.deepEqual(await store.pendingGrants(c.binding.accountId, c.record.characterId), []);
+      rewarded += ledger.ids.length;
+    }
+    assert.ok(rewarded >= 4, `rewards ${rewarded}`);
+    for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { for (const t of timers) clearInterval(t); for (const b of bots) b.ws.close(); await rt.close(); }
+});
+
+test('ticks and snapshots go on while a save is in flight, and a result is sent only after the save that contains it commits', { timeout: 20000 }, async () => {
+  const { gate, characters } = gatedStore(), rt = await runtime({ characters }); let bot;
+  try {
+    const c = await character('mage'); bot = await client(rt, c); await ready(rt, bot); await until(() => !rt.host.stats().durableBarrier);
+    let release; const blocked = new Promise(resolve => { release = resolve; }); gate.armed = () => blocked;
+    bot.send([{ kind: 'questAccept', questId: 'q1', npcId: 'brinebeard' }]); const accepted = bot.sequence;
+    await until(() => gate.entered > 0 || rt.failures.length); gate.armed = null;
+    const held = rt.host.stats(), sequence = bot.state.sequence;
+    assert.equal(held.durableBarrier, true); assert.equal(held.haltingBarrier, false);
+    const heartbeat = setInterval(() => { if (bot.ws.readyState === WebSocket.OPEN) bot.send([], { turn: 1 }); }, 50);
+    try { await delay(500); } finally { clearInterval(heartbeat); }
+    const during = rt.host.stats();
+    assert.equal(during.durableBarrier, true); assert.equal(during.persistenceBarriers, held.persistenceBarriers);
+    assert.ok(during.ticks - held.ticks >= 8, JSON.stringify({ ticks: during.ticks - held.ticks }));
+    assert.ok(bot.state.sequence - sequence >= 4, JSON.stringify({ snapshots: bot.state.sequence - sequence }));
+    // The accepted quest is in the world and in snapshots, but not acknowledged and not in PG yet.
+    assert.equal(bot.state.self.player.quests.status.q1, 'active');
+    assert.equal(bot.results.some(r => r.inputSequence === accepted), false);
+    assert.equal((await store.getOwned(c.binding.accountId, c.record.characterId)).checkpoint.progress.quests.status.q1, 'available');
+    release();
+    await until(() => bot.results.some(r => r.inputSequence === accepted) || rt.failures.length);
+    assert.deepEqual(rt.failures, []);
+    const result = bot.results.find(r => r.inputSequence === accepted), saved = await store.getOwned(c.binding.accountId, c.record.characterId);
+    assert.equal(result.status, 'durable'); assert.equal(result.code, 'quest-accepted'); assert.equal(saved.checkpoint.progress.quests.status.q1, 'active'); assert.ok(result.revision <= saved.revision);
+    assert.deepEqual(bot.errors, []);
+  } finally { bot?.ws.close(); await rt.close(); }
+});
+
+test('a crash between save rounds loses only progress after the last committed round, never an acknowledged result', { timeout: 20000 }, async () => {
+  const { gate, characters } = gatedStore(), rt = await runtime({ characters }); let bot, resumed, next, acked;
+  const c = await character('mage');
+  try {
+    bot = await client(rt, c); await ready(rt, bot);
+    bot.send([{ kind: 'questAccept', questId: 'q1', npcId: 'brinebeard' }]); const accepted = bot.sequence;
+    await until(() => bot.results.some(r => r.inputSequence === accepted && r.status === 'durable') || rt.failures.length); assert.deepEqual(rt.failures, []);
+    // From here every save attempt hangs until the "crash", then fails: nothing after the acknowledged round commits.
+    let crash; const crashed = new Promise(resolve => { crash = resolve; }); gate.armed = async () => { await crashed; throw new Error('host crashed before COMMIT'); };
+    acked = await store.getOwned(c.binding.accountId, c.record.characterId);
+    const moving = setInterval(() => { if (bot.ws.readyState === WebSocket.OPEN) bot.send([], { forward: 1, steeringYaw: 1 }); }, 50);
+    try { await until(() => gate.entered > 0 || rt.failures.length); await delay(300); } finally { clearInterval(moving); }
+    bot.send([{ kind: 'questTrack', questId: 'q1' }]); const tracked = bot.sequence; await until(() => bot.receiver.header.consumedInput >= tracked);
+    const moved = bot.state.actors.find(a => a.ref.id === bot.state.selfRef.id);
+    assert.ok(Math.hypot(moved.x - acked.checkpoint.location.x, moved.z - acked.checkpoint.location.z) > 1, 'the unsaved window has visible progress');
+    await rt.ownership.release(); await until(() => rt.host.stats().frozen); crash();
+    await delay(50);
+    assert.equal(bot.results.some(r => r.inputSequence === tracked), false, 'no result for unsaved progress');
+  } finally { bot?.ws.close(); next = await rt.close(); }
+  assert.equal(next.durable, false);
+  const after = await store.getOwned(c.binding.accountId, c.record.characterId);
+  assert.equal(after.revision, acked.revision, 'nothing committed after the acknowledged round'); assert.deepEqual(after.checkpoint, acked.checkpoint);
+  const restarted = await runtime();
+  try {
+    resumed = await client(restarted, c); await ready(restarted, resumed);
+    const self = resumed.state.actors.find(a => a.ref.id === resumed.state.selfRef.id);
+    assert.equal(resumed.state.self.player.quests.status.q1, 'active', 'the acknowledged result survived');
+    assert.ok(Math.hypot(self.x - after.checkpoint.location.x, self.z - after.checkpoint.location.z) < .5, 'the new host resumes from the last committed round');
+    assert.deepEqual(resumed.errors, []);
+  } finally { resumed?.ws.close(); await restarted.close(); }
+});
+
+test('rewards earned while a save is in flight are journaled and applied exactly once, also after a restart', { timeout: 30000 }, async () => {
+  const { gate, characters } = gatedStore(), rt = await runtime({ combat: true, enemies: 6, characters }), bots = [], records = [], timers = [];
+  try {
+    for (let i = 0; i < 2; i++) { const c = await character('mage'), bot = await client(rt, c); records.push(c); bots.push(bot); await ready(rt, bot); }
+    await until(() => !rt.host.stats().durableBarrier);
+    // Hold the next save in its PG IO until a kill happens during it.
+    let release; const blocked = new Promise(resolve => { release = resolve; }); gate.armed = () => blocked;
+    for (const bot of bots) timers.push(attackLoop(bot));
+    await until(() => gate.entered > 0 || rt.failures.length, 5000); gate.armed = null;
+    const before = kills(bots); await until(() => kills(bots) > before || rt.failures.length, 15000);
+    assert.equal(rt.host.stats().durableBarrier, true, 'the kill happened while the save was in flight'); release();
+    await until(() => kills(bots) >= before + 3 || rt.failures.length, 20000);
+    for (const t of timers) clearInterval(t); timers.length = 0;
+    await afterSave(rt); await afterSave(rt); assert.deepEqual(rt.failures, []);
+    for (const [i, c] of records.entries()) {
+      const ledger = await grantLedger(c);
+      assert.deepEqual(ledger.receipts, ledger.ids); assert.equal(bots[i].state.self.player.xp, ledger.xp);
+      assert.equal((await store.getOwned(c.binding.accountId, c.record.characterId)).checkpoint.progress.xp, ledger.xp);
+    }
+  } finally { for (const t of timers) clearInterval(t); for (const b of bots) b.ws.close(); assert.deepEqual(await rt.close(), { durable: true, unresolved: 0 }); }
+  const restarted = await runtime(), again = [];
+  try {
+    for (const c of records) { const bot = await client(restarted, c); again.push(bot); await ready(restarted, bot); }
+    for (const [i, c] of records.entries()) {
+      const ledger = await grantLedger(c);
+      assert.equal(again[i].state.self.player.xp, ledger.xp, 'no reward is applied a second time'); assert.deepEqual(ledger.receipts, ledger.ids);
+      assert.deepEqual(await store.pendingGrants(c.binding.accountId, c.record.characterId), []);
+    }
+  } finally { for (const b of again) b.ws.close(); await restarted.close(); }
+});
+
+test('a far actor (40 to 80 m) is refreshed every 4th snapshot and never removed on the client, near ones every snapshot', { timeout: 20000 }, async () => {
+  const rt = await runtime(); let viewer, mover;
+  try {
+    const w1 = loaded.get('w1'), spawn = w1.publicDefinition.spawn.position, a = await character('mage'), b = await character('warrior');
+    const out = { x: 0, y: 0, set(x, y) { this.x = x; this.y = y; return this; } };
+    w1.query.resolveCollision(spawn.x + 58, spawn.z, w1.actionData.archetype('human').radius, out);
+    const checkpoint = structuredClone(b.record.checkpoint); checkpoint.location = { x: out.x, y: w1.query.heightAt(out.x, out.y), z: out.y, yaw: 0 };
+    b.record = await store.saveCheckpoint(b.binding.accountId, b.record.characterId, b.record.revision, checkpoint, []); // Trusted placement fixture.
+    viewer = await client(rt, a); await ready(rt, viewer); mover = await client(rt, b); await ready(rt, mover);
+    await until(() => viewer.state.actors.some(x => x.ref.id === mover.state.selfRef.id));
+    const id = mover.state.selfRef.id, me = viewer.state.selfRef.id;
+    const distance = () => { const v = viewer.state.actors.find(x => x.ref.id === me), m = mover.state.actors.find(x => x.ref.id === id); return Math.hypot(v.x - m.x, v.z - m.z); };
+    assert.ok(distance() > 42 && distance() < 78, `fixture distance ${distance()}`);
+    // Both turn in place every tick, so both yaws change in every snapshot of the Area.
+    const seen = [];
+    const turning = setInterval(() => { for (const bot of [viewer, mover]) if (bot.ws.readyState === WebSocket.OPEN) bot.send([], { turn: 1 }); }, 30);
+    const own = new Map(); let last = null;
+    const onMessage = () => {
+      const state = viewer.state; if (!state || state.sequence === last) return; last = state.sequence;
+      const far = state.actors.find(x => x.ref.id === id), self = state.actors.find(x => x.ref.id === me);
+      seen.push({ sequence: state.sequence, tick: state.header.tick, present: !!far, yaw: far?.yaw, self: self.yaw });
+    };
+    const ownTrack = () => { if (mover.state) own.set(mover.state.header.tick, mover.state.actors.find(x => x.ref.id === id).yaw); };
+    viewer.ws.on('message', onMessage); mover.ws.on('message', ownTrack);
+    const startStats = rt.host.stats();
+    try { await delay(2500); } finally { clearInterval(turning); viewer.ws.off('message', onMessage); mover.ws.off('message', ownTrack); }
+    const endStats = rt.host.stats();
+    assert.ok(seen.length >= 20, `snapshots ${seen.length}`); assert.ok(seen.every(s => s.present), 'the far actor is in every snapshot');
+    let changes = 0, consecutive = 0, gaps = [];
+    for (let i = 1; i < seen.length; i++) {
+      if (seen[i].sequence !== seen[i - 1].sequence + 1) continue; consecutive++;
+      assert.notEqual(seen[i].self, seen[i - 1].self, 'the viewer itself (near) changes in every snapshot');
+      if (seen[i].yaw !== seen[i - 1].yaw) { changes++; gaps.push(seen[i].sequence); if (own.has(seen[i].tick)) assert.equal(seen[i].yaw, own.get(seen[i].tick), 'a refresh carries the current value'); }
+    }
+    const spacing = gaps.slice(1).map((s, i) => s - gaps[i]);
+    assert.ok(spacing.length >= 3 && spacing.every(gap => gap % 4 === 0), JSON.stringify({ spacing, changes, consecutive }));
+    assert.ok(changes >= Math.floor(consecutive / 4) - 1 && changes <= Math.ceil(consecutive / 4) + 1, JSON.stringify({ changes, consecutive }));
+    assert.ok(endStats.aoiFar > startStats.aoiFar && endStats.aoiFarHeld > startStats.aoiFarHeld);
+    assert.deepEqual(viewer.errors, []); assert.deepEqual(mover.errors, []); assert.deepEqual(rt.failures, []);
+  } finally { viewer?.ws.close(); mover?.ws.close(); await rt.close(); }
+});
+

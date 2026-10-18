@@ -93,3 +93,27 @@ test('queue, receipt and deadline bounds retain unresolved work without permitti
   const closed=new AbortController();const losesDuringRead={pendingGrants:(...args)=>store.pendingGrants(...args),async loadForRecovery(...args){const r=await store.loadForRecovery(...args);closed.abort();return r;}};
   assert.deepEqual(await readCertifiedGrantPage(losesDuringRead,{...ownership,closed:closed.signal},{...context,expectedRevision:1}),{kind:'unresolved',reason:'ownership'});
 });
+
+test('batched commit saves together, and after a lost batch response every capture recovers without a second reward', async () => {
+  const characters = [await store.create(account, { classId: 'mage' }), await store.create(account, { classId: 'warrior' })];
+  const ids = characters.map((c, i) => JSON.stringify(['batch-area', i + 1, 1, c.characterId]));
+  for (const [i, c] of characters.entries()) await store.recordGrant(account, c.characterId, ids[i], { xp: 25 });
+  const plain = new PersistenceCoordinator(store, ownership, options);
+  const first = await plain.commitBatch(characters.map((c, i) => ({ ...capture(c, { appliedGrantIds: [ids[i]] }), captureId: `${c.characterId}:batch` })));
+  assert.deepEqual(first.map(r => [r.kind, r.character.revision]), [['saved', 1], ['saved', 1]]);
+  assert.deepEqual([plain.metrics.batches, plain.metrics.batchFallbacks], [1, 0]);
+  let batchCalls = 0, singleCalls = 0;
+  const ambiguous = {
+    async saveCheckpoints(writes) { batchCalls++; await store.saveCheckpoints(writes); throw new Error('lost batch response'); },
+    async saveCheckpoint(...args) { singleCalls++; return store.saveCheckpoint(...args); },
+    loadForRecovery: (...args) => store.loadForRecovery(...args),
+  };
+  const coordinator = new PersistenceCoordinator(ambiguous, ownership, options);
+  const again = await coordinator.commitBatch(first.map(r => ({ ...capture(r.character, { checkpoint: { xp: 30, coins: 2 } }), captureId: `${r.character.characterId}:again` })));
+  // The batch committed; each fallback save meets its own advanced revision and returns recovery, never a second write.
+  assert.equal(batchCalls, 1); assert.equal(singleCalls, 2); assert.deepEqual(again.map(r => r.kind), ['recovery', 'recovery']);
+  for (const result of again) { assert.equal(result.recovery.character.revision, 2); assert.equal(result.recovery.character.checkpoint.xp, 30); }
+  for (const [i, c] of characters.entries()) assert.equal((await store.loadForRecovery(account, c.characterId, [ids[i]])).grants[0].appliedRevision, 1);
+  assert.equal(coordinator.metrics.batchFallbacks, 1);
+  assert.deepEqual(await coordinator.shutdown(100), { durable: true, unresolved: 0 });
+});

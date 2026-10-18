@@ -228,6 +228,13 @@ export interface ObservationInput {
  binding:WireBinding;sequence:number;tick:number;acceptedInput:number;consumedInput:number;selfRef:EntityRef;
  snapshot:AreaSnapshot;prepared?:PreparedObservation;events:readonly EventRecord[];visibleIds:ReadonlySet<number>;full:boolean;eventWatermark:number;
  features:FeatureView;recovery:RecoveryView;achievements:AchievementView;appearances:Readonly<Record<string,Appearance>>;results?:readonly CommandResult[];
+ /**
+  * Interest tier (optional): visible actors whose public state this snapshot holds at what the recipient last received.
+  * A held actor that the previous baseline has in the same life stays in the baseline (not removed, events and projectiles
+  * still selected) with its last sent fields and pose, so it gets no update; its accumulated change goes out when it is no
+  * longer held. A held actor new to the recipient, or in a new life, is sent as usual. Ignored for a full snapshot.
+  */
+ heldIds?:ReadonlySet<number>;
 }
 export type WorldControl=
  | {type:'inputAck'}
@@ -295,19 +302,21 @@ export function createGameplayProtocol(catalog:GameplayCatalog,options:Observati
    const prepared=input.prepared?preparedObservations.get(input.prepared):undefined;
    if(input.prepared&&(!prepared||prepared.source!==input.snapshot||prepared.catalog!==catalogSignature))fail('forged/stale prepared observation');
    const full=input.full||!prior;let actors:readonly PublicActor[],recipes:Map<number,RenderPoseSource>,baseline:PublicBaseline,publicFields:PublicSnapshotFields,projection:PreparedProjection|undefined;
-   if(prepared){baseline=preparedBaseline(prepared,input.visibleIds,input.selfRef.id);projection=preparedProjection(prepared,baseline,full?null:previousPublic!);publicFields=projection.fields;actors=baseline.actors;recipes=baseline.recipes;}
+   if(prepared){baseline=preparedBaseline(prepared,input.visibleIds,input.selfRef.id);if(!full&&input.heldIds?.size)baseline=heldBaseline(baseline,previousPublic!,input.heldIds);projection=preparedProjection(prepared,baseline,full?null:previousPublic!);publicFields=projection.fields;actors=baseline.actors;recipes=baseline.recipes;}
    else {
+   const old=new Map(previous.map(a=>[a.ref.id,a])),held=new Set<number>();
    actors=input.snapshot.units.filter(u=>input.visibleIds.has(u.ref.id)||u.ref.id===input.selfRef.id).map(u=>{
+    const kept=full||!input.heldIds?.has(u.ref.id)?undefined:old.get(u.ref.id);if(kept&&kept.ref.life===u.ref.life&&previousRecipes.has(u.ref.id)){held.add(u.ref.id);return kept;}
     const appearance=input.appearances[`${u.ref.id}:${u.ref.life}`]??null;if(u.kind==='player'&&!appearance)fail('missing player appearance');return projectActor(u,appearance);
    });
-   const old=new Map(previous.map(a=>[a.ref.id,a])),updates:ActorUpdate[]=[],ids=new Set(actors.map(a=>a.ref.id));
+   const updates:ActorUpdate[]=[],ids=new Set(actors.map(a=>a.ref.id));
    const poses:RenderPoseSource[]=[],posePool=new Map<string,number>();recipes=new Map<number,RenderPoseSource>();
    const units=new Map(input.snapshot.units.map(u=>[u.ref.id,u]));
    for(const a of actors){
     validateActor(a,catalog,h.area);const prev=full?null:old.get(a.ref.id),sameLife=!!prev&&prev.ref.life===a.ref.life;
     let fields:Partial<Omit<PublicActor,'ref'>>;
     fields={};for(const k of ACTOR_FIELDS){if(k==='pose')continue;if(!sameLife||!equalValue(prev![k],a[k]))(fields as Record<string,unknown>)[k]=a[k];}
-    const recipe={recipe:createRenderPoseRecipe(units.get(a.ref.id)!),localVx:a.pose.localVx,localVz:a.pose.localVz};renderSource(recipe);recipes.set(a.ref.id,recipe);
+    const recipe=held.has(a.ref.id)?previousRecipes.get(a.ref.id)!:{recipe:createRenderPoseRecipe(units.get(a.ref.id)!),localVx:a.pose.localVx,localVz:a.pose.localVz};renderSource(recipe);recipes.set(a.ref.id,recipe);
     let index:number|undefined;if(!sameLife||!equalValue(previousRecipes.get(a.ref.id),recipe)){const key=recipeKey(recipe);index=posePool.get(key);if(index===undefined){index=poses.length;posePool.set(key,index);poses.push(recipe);}}
     if(Object.keys(fields).length||index!==undefined)updates.push({ref:a.ref,fields,...(index===undefined?{}:{poseRecipe:index})});
    }
@@ -433,6 +442,7 @@ export function releasePreparedObservation(token:PreparedObservation):void {prep
 
 function recipeKey(recipe:RenderPoseSource):string {return JSON.stringify(recipe,(_key,value)=>typeof value==='number'&&Object.is(value,-0)?'negative-zero':value);}
 
+const NO_FIELDS:Partial<Omit<PublicActor,'ref'>>=Object.freeze({});
 // A cache bound is a reuse limit, never a packet/actor/AOI acceptance limit. Excess groups take the same uncached path.
 const MAX_PREPARED_GROUPS=100,MAX_PREPARED_PREFIX_BYTES=LIMITS.messageBytes;
 const PUBLIC_SNAPSHOT_FIELDS=['world','time','poses','actors','removed','projectiles'] as const;
@@ -457,6 +467,14 @@ function preparedBaseline(p:PreparedPublicData,visible:ReadonlySet<number>,self:
  const baseline=makePublicBaseline(Object.freeze(actors),new Map(actors.map(a=>[a.ref.id,p.recipes.get(a.ref.id)!])),new Map(actors.map(a=>[a.ref.id,p.poseKeys.get(a.ref.id)!])));
  if(p.baselineCount<MAX_PREPARED_GROUPS){if(bucket)bucket.push(baseline);else p.baselines.set(hash,[baseline]);p.baselineCount++;}return baseline;
 }
+/** The baseline with each held actor (ObservationInput.heldIds) that previous has in the same life replaced by its last sent value. */
+function heldBaseline(current:PublicBaseline,previous:PublicBaseline,held:ReadonlySet<number>):PublicBaseline {
+ let kept=0;const actors=current.actors.map(actor=>{if(!held.has(actor.ref.id))return actor;const prior=previous.byId.get(actor.ref.id);if(!prior||prior.ref.life!==actor.ref.life||prior===actor)return actor;kept++;return prior;});
+ if(!kept)return current;
+ const recipes=new Map(current.recipes),keys=new Map(current.recipeKeys);
+ for(const actor of actors)if(previous.byId.get(actor.ref.id)===actor&&held.has(actor.ref.id)){recipes.set(actor.ref.id,previous.recipes.get(actor.ref.id)!);keys.set(actor.ref.id,previous.recipeKeys.get(actor.ref.id)!);}
+ return makePublicBaseline(Object.freeze(actors),recipes,keys);
+}
 /** One event index per publication, reused while every recipient is given the same event records. */
 function preparedEventIndex(p:PreparedPublicData,events:readonly EventRecord[]):EventIndex {
  const cached=p.events;
@@ -468,6 +486,7 @@ function preparedProjection(p:PreparedPublicData,current:PublicBaseline,previous
  const poses:RenderPoseSource[]=[],pool=new Map<string,number>(),updates:ActorUpdate[]=[];
  for(const actor of current.actors){const prev=previous?.byId.get(actor.ref.id),sameLife=!!prev&&prev.ref.life===actor.ref.life,cachedFields=prev?p.deltas.get(prev):undefined;let fields:Partial<Omit<PublicActor,'ref'>>;
   if(!sameLife)fields=p.fullFields.get(actor.ref.id)!;
+  else if(prev===actor)fields=NO_FIELDS; // a held actor: the recipient already has exactly this value
   else if(cachedFields?.actor===actor)fields=cachedFields.fields;
   else{fields={};for(const k of ACTOR_FIELDS)if(k!=='pose'&&!equalValue(prev![k],actor[k]))(fields as Record<string,unknown>)[k]=actor[k];p.deltas.set(prev!,{actor,fields:freezeValue(fields)});}
   let index:number|undefined;const key=current.recipeKeys.get(actor.ref.id)!;if(!sameLife||previous!.recipeKeys.get(actor.ref.id)!==key){index=pool.get(key);if(index===undefined){index=poses.length;pool.set(key,index);poses.push(current.recipes.get(actor.ref.id)!);}}

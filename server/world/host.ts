@@ -82,7 +82,7 @@ export interface ActualWorldHost {
   shutdown(deadlineMs: number): Promise<{ durable: boolean; unresolved: number }>;
   stats(): Readonly<Record<string, number | boolean>>;
 }
-interface Slot { kind: 'public' | 'party'; ledgerMode: LedgerMode; source?: AreaSourceDrain; world: LoadedWorldDefinition['world']; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; party?: Party; profile?: BossProfileId }
+interface Slot { kind: 'public' | 'party'; ledgerMode: LedgerMode; source?: AreaSourceDrain; world: LoadedWorldDefinition['world']; area: Area; tick: DeadlineScheduler; snapshot: DeadlineScheduler; events: EventRecord[]; watermark: number; lastCheckpoint: number; publishes: number; party?: Party; profile?: BossProfileId }
 interface Actor { record: StoredCharacter; slot: Slot; ref: EntityRef; connection: Connection | null; detachedAt: number | null; generation: number; pendingReplay: boolean; grantRead?: GrantReadToken; returnTo?: { world: WorldId; spawn: string } }
 interface Party { code: string; leader: string; members: Map<string, string>; pvp: boolean; encounter?: Slot }
 interface Connection {
@@ -158,7 +158,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   // persistenceBarriers counts every save round. haltingBarriers and haltedMs count those that held the world (persistenceMs is
   // the wall time of startDurability rounds); saveRounds and saveMs the retained rounds that let it run. aoi*: actor slots.
   const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, discardedRevokedFrames: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
-    haltingBarriers: 0, haltedMs: 0, saveRounds: 0, saveMs: 0, aoiNear: 0, aoiFar: 0, aoiFarSent: 0,
+    haltingBarriers: 0, haltedMs: 0, saveRounds: 0, saveMs: 0, aoiNear: 0, aoiFar: 0, aoiFarHeld: 0,
     authFailures: 0, pendingSourceGrants: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
   const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
   const timings = new Map<string, { values: number[]; cursor: number }>();
@@ -182,7 +182,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const area = createArea({ ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
       actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed, characters: registry,
       context: { mode: 'public', pvp: 'disabled', members: [] }, limits: p.areaLimits });
-    const slot: Slot = { kind: 'public', ledgerMode, world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
+    const slot: Slot = { kind: 'public', ledgerMode, world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now, publishes: 0 };
     slots.set(world, slot); allSlots.add(slot);
   }
   if (external && p.party) for (const loaded of deps.worlds.values()) for (const definition of loaded.encounterDefinitions.values()) {
@@ -513,7 +513,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'party-encounter', pvp: party.pvp ? 'party-only' : 'disabled', members: [] }, limits: p.areaLimits });
         area.bootstrapEncounter(profile, { beaconLit: beacon });
         destination = { kind: 'party', ledgerMode: source.ledgerMode, world: source.world, area, party, profile, tick: new DeadlineScheduler(30, now),
-          snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now };
+          snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now, publishes: 0 };
         party.encounter = destination; allSlots.add(destination); destination.source = sourceAdapter(destination);
       }
       // A public request starts a dormant/rematch boss or joins an already running encounter.
@@ -852,7 +852,13 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     holdBarrier(task().catch(error => { deps.onFailure?.('retirement', error); unresolved++; failClosed(); }), true);
   };
 
-  const visible = (slot: Slot, actor: Actor, c: Connection): Set<number> => {
+  /**
+   * Interest management ("가까운 40 m 안은 20번, 그 밖은 5번"): of the visible units (80 m, kept to 88 m), those within
+   * NEAR_METERS of the viewer and every pin (self, party, target, engaged boss) are updated in every snapshot; the others
+   * are refreshed every FAR_PERIOD-th snapshot of the Area, staggered by unit id, and held (heldIds) in between.
+   */
+  const NEAR_METERS = 40, FAR_PERIOD = 4;
+  const visible = (slot: Slot, actor: Actor, c: Connection, beat: number, held: Set<number>): Set<number> => {
     const viewer = slot.area.services.playerByCharacter(actor.record.characterId)!;
     const self = slot.area.services.getUnit(actor.ref)!;
     const pins = new Set<number>([self.ref.id]);
@@ -861,12 +867,19 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (viewer.state.target && slot.area.services.getUnit(viewer.state.target)) pins.add(viewer.state.target.id);
     for (const b of slot.area.bosses.values()) if (b.engaged) pins.add(b.unit.id);
     const ids = new Set<number>();
+    let near = 0, far = 0;
     for (const unit of slot.area.units.values()) {
       if (!p.visible(unit, viewer.state)) continue;
-      const radius = c.visible.has(unit.ref.id) ? 88 : 80;
-      if (pins.has(unit.ref.id) || !unit.hidden && (unit.x - self.x) ** 2 + (unit.z - self.z) ** 2 <= radius ** 2) ids.add(unit.ref.id);
+      const id = unit.ref.id, radius = c.visible.has(id) ? 88 : 80, distance2 = (unit.x - self.x) ** 2 + (unit.z - self.z) ** 2;
+      if (pins.has(id)) { ids.add(id); near++; }
+      else if (!unit.hidden && distance2 <= radius ** 2) {
+        ids.add(id);
+        if (distance2 <= NEAR_METERS ** 2) near++;
+        else { far++; if ((beat + id) % FAR_PERIOD) held.add(id); }
+      }
     }
-    ids.add(self.ref.id); return ids;
+    if (!ids.has(self.ref.id)) { ids.add(self.ref.id); near++; }
+    metrics.aoiNear += near; metrics.aoiFar += far; return ids;
   };
   const publish = (slot: Slot) => {
     if (halted() || frozen || [...actors.values()].some(actor => actor.pendingReplay)) return;
@@ -874,17 +887,19 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
     const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog, { verify: deps.gameplay.verifyObservations ?? true });
     observe('snapshotPrepare', deps.nowMonotonicMs() - start);
+    const beat = slot.publishes++;
     try {
       for (const actor of actors.values()) {
         const c = actor.connection;
         if (actor.slot !== slot || !c || c.closed || !c.stream || !c.input) continue;
         if (c.ws.bufferedAmount > p.maxBufferedBytes) { close(c, 'slow-client', true); continue; }
         try {
-          const encodeStart = deps.nowMonotonicMs(), wasFull = c.full;
-          c.visible = visible(slot, actor, c);
+          const encodeStart = deps.nowMonotonicMs(), wasFull = c.full, held = new Set<number>();
+          c.visible = visible(slot, actor, c, beat, held);
+          if (!c.full) metrics.aoiFarHeld += held.size;
           const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
             acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c), selfRef: actor.ref,
-            snapshot, prepared, events: slot.events, visibleIds: c.visible, full: c.full, eventWatermark: slot.watermark, appearances,
+            snapshot, prepared, events: slot.events, visibleIds: c.visible, heldIds: c.full ? undefined : held, full: c.full, eventWatermark: slot.watermark, appearances,
             results: materializeResults(c),
             ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
           observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
