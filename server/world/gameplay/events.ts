@@ -52,7 +52,7 @@ export function validateEvent(value:unknown,c:GameplayCatalog,area:string):asser
    case 'achievement':object(e,{type,unit:ref,achievement:catalogValue(ACHIEVEMENT_IDS)});break;
    case 'discovery':object(e,{type,unit:ref,discovery:choice('treasure','lighthouse-secret'),id:text,first:bool,coins:integer,activeUntil:nullable(number)});break;
    case 'endingReady':object(e,{type,unit:ref,chapter:choice(4),replay:bool});break;
-   case 'travelReady':object(e,{type,unit:ref,destination:choice('w1','w2','w3','w4'),gate:catalogValue(c.gates)});break;
+   case 'travelReady':object(e,{type,unit:ref,destination:choice('w1','w2','w3','w4','w5','w6'),gate:catalogValue(c.gates)});break;
    case 'feature':object(e,{type,event:x=>validateFeatureEvent(x,area)});break;
    default:fail('unknown event');
   }
