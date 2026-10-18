@@ -29,7 +29,7 @@ test('stale cancellation, owner/session changes and durable mark cannot authoriz
 test('exact capture pruning keeps later uncommitted effects and invalidates overlapping older captures',()=>{
  const a=area('exact'),{ref,p}=actor(a);a.beginDurabilityBarrier('save');a.applyCertifiedGrants(a.beginGrantRead(ref,0),{revision:0,grants:[grant(1)]});const older=a.capturePlayerCheckpoint(ref),same=a.capturePlayerCheckpoint(ref);
  a.applyCertifiedGrants(a.beginGrantRead(ref,0),{revision:0,grants:[grant(2)]});assert.throws(()=>a.markCheckpointDurable(older.captureId,1,[grant(2).id]),/mismatch/);
- a.markCheckpointDurable(older.captureId,1,older.appliedGrantIds);assert.deepEqual(a.appliedGrantIds('hero'),[grant(2).id]);assert.throws(()=>a.markCheckpointDurable(same.captureId,2,same.appliedGrantIds),/Stale/);assert.equal(p.state.coins,2);
+ assert.throws(()=>a.markCheckpointDurable(older.captureId,0,older.appliedGrantIds),/advancing/);a.markCheckpointDurable(older.captureId,1,older.appliedGrantIds);assert.deepEqual(a.appliedGrantIds('hero'),[grant(2).id]);assert.throws(()=>a.markCheckpointDurable(same.captureId,2,same.appliedGrantIds),/Stale/);assert.equal(p.state.coins,2);
 });
 
 test('thousands of certified grants drain with bounded active receipts and no saved history in RAM',()=>{
@@ -78,4 +78,10 @@ test('reserved Mulberry block preserves sequential rolls and same-stack subseque
  const big=new Random(123);assert.equal(advanceRandomState(123,2**32),123);assert.equal(advanceRandomState(123,Number.MAX_SAFE_INTEGER),(123-0x6d2b79f5)>>>0);big.reserve(123,Number.MAX_SAFE_INTEGER,advanceRandomState(123,Number.MAX_SAFE_INTEGER));
  const state=big.state();assert.throws(()=>big.reserve(state,Number.MAX_SAFE_INTEGER+1,state));assert.throws(()=>big.reserve(state,1,state));assert.throws(()=>big.reserve(0,1,advanceRandomState(0,1)));assert.equal(big.state(),state);
  const a=area('reserve'),start=a.debugState().rng.state;a.services.reserveOutcomeRandom(start,2**32,start);assert.equal(a.debugState().rng.state,start);assert.throws(()=>worldArea('retained-rng').services.reserveOutcomeRandom(0,0,0),/External/);
+});
+
+test('a real event-capacity fault retains only the applied prefix and requires fresh certification',()=>{
+ const a=area('partial',{limits:{eventCount:1,inputCommandsPerTick:32,timers:1000,projectiles:1000}}),{ref,p}=actor(a);a.beginDurabilityBarrier('apply');const grants=[{...grant(1),xp:1},{...grant(2),xp:1}],proof=a.beginGrantRead(ref,0);
+ assert.throws(()=>a.applyCertifiedGrants(proof,{revision:0,grants}),/capacity/);assert.equal(p.state.xp,1);assert.equal(p.state.coins,1);assert.deepEqual(a.appliedGrantIds('hero'),[grant(1).id]);assert.equal(a.resourceUsage().replayTokens,0);assert.throws(()=>a.applyCertifiedGrants(proof,{revision:0,grants}),/Stale/);
+ a.drainEvents();assert.deepEqual(a.applyCertifiedGrants(a.beginGrantRead(ref,0),{revision:0,grants}),[{id:grant(1).id,result:'duplicate'},{id:grant(2).id,result:'applied'}]);assert.equal(p.state.xp,2);assert.equal(p.state.coins,2);
 });
