@@ -17,6 +17,7 @@ import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, type LoadedWorl
 import { createGameplayProtocol, projectObservationExtras } from './gameplay/protocol.ts';
 import { acquireHostOwnership } from './ownership.ts';
 import { createActualWorldHost, type HostPolicies } from './host.ts';
+import { WorldConfigError } from './startup-error.ts';
 
 type TimingMode = 'pause' | 'elapse';
 export type ConfiguredRestore = { cooldowns:TimingMode; statuses:TimingMode; death:TimingMode; history:TimingMode; hp:'preserve'; resource:'preserve'; location:'saved'|'arrival'; activity:'cancel' };
@@ -37,7 +38,7 @@ export type ValidatedWorldConfig = {
  victimOutcome:HostPolicies['victimOutcome'];victimOutcomeRetryCeiling?:HostPolicies['victimOutcome'];chat:{maxPending:number};
  party:ConfiguredParty;characters?:{maxCharactersPerAccount?:number};
 };
-function fail(path:string):never {throw new Error(`world-config: ${path}`);}
+function fail(path:string):never {throw new WorldConfigError(path);}
 function detached(value:unknown):unknown {
  let nodes=0;const active=new Set<object>();
  const visit=(v:unknown,depth:number):unknown=>{if(++nodes>4096||depth>16)fail('JSON complexity');if(v===null||typeof v==='boolean'||typeof v==='string')return v;if(typeof v==='number'&&Number.isFinite(v))return v;if(!v||typeof v!=='object'||active.has(v))fail('finite acyclic JSON required');const array=Array.isArray(v);if(!array&&![Object.prototype,null].includes(Object.getPrototypeOf(v)))fail('plain JSON required');if(Object.getOwnPropertySymbols(v).length)fail('symbol keys');active.add(v);const keys=Object.keys(v);if(array&&(keys.length!==v.length||keys.some(k=>String(Number(k))!==k||Number(k)<0||Number(k)>=v.length)))fail('dense arrays required');const out:Record<string,unknown>|unknown[]=array?[]:{};for(const k of keys){const d=Object.getOwnPropertyDescriptor(v,k)!;if(!('value'in d)||k==='__proto__')fail('data fields required');Object.defineProperty(out,k,{value:visit(d.value,depth+1),enumerable:true,writable:true,configurable:true});}active.delete(v);return out;};

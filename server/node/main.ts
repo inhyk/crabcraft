@@ -5,6 +5,7 @@ import { accountHandler, createWorldAdmission, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL
 import { createPool, migrate } from './db.ts';
 import { storeReport } from './reports.ts';
 import { createCharacterHandler } from '../world/characters-http.ts';
+import { WorldConfigError, describeWorldStartupFailure } from '../world/startup-error.ts';
 
 // Rooms and accounts for the browser client: what server/cloudflare/worker.ts served, on one VM behind Caddy.
 // Env: PORT (8080), HOST (127.0.0.1), DATABASE_URL, ALLOWED_ORIGINS (comma separated, e.g. https://crab.seonn.dev,https://crab-dev.seonn.dev), TRUST_PROXY=1 behind Caddy,
@@ -47,16 +48,17 @@ function clientIp(req: IncomingMessage) {
 
 const admission = createWorldAdmission(pool);
 let world: Awaited<ReturnType<typeof import('../world/startup.ts').startConfiguredWorld>> | null = null;
+let worldStartupFailed = false;
 if (env.WORLD_ENABLED === '1') {
   try {
-    if (!env.WORLD_CONFIG_JSON) throw new Error('WORLD_CONFIG_JSON is required');
+    if (!env.WORLD_CONFIG_JSON) throw new WorldConfigError('WORLD_CONFIG_JSON is required');
     const { startConfiguredWorld } = await import('../world/startup.ts');
     world = await startConfiguredWorld({ pool, admission, assets: new URL('./world/', import.meta.url),
       config: JSON.parse(env.WORLD_CONFIG_JSON), clientIp,
       originAllowed: (origin, req) => originAllowed(origin, origins, req.headers.host) });
-  } catch {
-    console.error('world startup failed: check explicit policy configuration and packaged collision assets');
-    await pool.end(); process.exit(1);
+  } catch (error) {
+    worldStartupFailed = true;
+    console.error(`world startup failed: ${describeWorldStartupFailure(error)}; legacy routes remain active`);
   }
 }
 const accounts = accountHandler(pool, origins, clientIp, google, admission);
@@ -72,6 +74,9 @@ const server = createServer((req, res) => {
   let path: string;
   // A request target such as '//' is no URL; throwing here would take the whole process down.
   try { path = new URL(req.url ?? '/', 'http://localhost').pathname; } catch { text(res, 400, 'Bad request'); return; }
+  if (worldStartupFailed && ['/world', '/api/account/world-catalog', '/api/account/world-characters', '/api/account/world-ticket'].includes(path)) {
+    text(res, 503, 'World unavailable'); return;
+  }
   if (path === '/api/account/world-catalog' && world) {
     if (req.method !== 'GET') { text(res, 405, 'Expected GET'); return; }
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -106,6 +111,7 @@ server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
   const path = req.url?.split('?')[0];
   if (path === '/multiplayer') return;
   if (path === '/world' && world) { world.host.handleUpgrade(req, socket, head); return; }
+  if (path === '/world' && worldStartupFailed) { socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); return; }
   socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
 });
 
