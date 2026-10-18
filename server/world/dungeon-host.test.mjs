@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { startPostgres } from '../node/local-postgres.mjs';
 import { createPool, migrate } from '../node/db.ts';
@@ -49,7 +50,7 @@ before(async () => {
 after(async () => { await pool?.end(); cluster?.stop(); });
 
 /** Seal writes can be held failing to prove the frozen roster is retried unchanged. */
-function sealGate() { const gate = { failing: false, attempts: 0 }; gate.store = { recordDungeonCompletion: async m => { gate.attempts++; if (gate.failing) throw new Error('db down'); return dungeonStore.recordDungeonCompletion(m); }, readPendingDungeonAwards: (...args) => dungeonStore.readPendingDungeonAwards(...args) }; return gate; }
+function sealGate() { const gate = { failing: false, attempts: 0 }; gate.store = { recordDungeonCompletion: async m => { gate.attempts++; if (gate.failing) throw new Error('db down'); return dungeonStore.recordDungeonCompletion(m); }, readPendingDungeonAwards: (...args) => dungeonStore.readPendingDungeonAwards(...args), charactersWithPendingDungeonAwards: ids => dungeonStore.charactersWithPendingDungeonAwards(ids) }; return gate; }
 async function runtime(options = {}) {
   const admission = new WorldTicketRegistry(async binding => {
     const r = await pool.query('SELECT expires FROM sessions WHERE username=$1 AND token_hash=$2', [binding.accountId, binding.sessionKey]);
@@ -58,7 +59,7 @@ async function runtime(options = {}) {
   const ownership = await acquireHostOwnership(pool, 'world-dungeon-host-test'), failures = [];
   let host;
   try {
-    host = createActualWorldHost({ admission, characters: store, worlds: loaded, codec, ownership, dungeonCompletions: options.dungeonStore ?? dungeonStore,
+    host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds: loaded, codec, ownership, dungeonCompletions: options.dungeonStore ?? dungeonStore,
       ...(options.ledger ? { outcomes: new DurableOutcomeStore(pool, codec, { planOutcomePage }) } : {}),
       gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
       policies: { authTimeoutMs: 1000, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 3000, sessionRevalidateMs: 1000, checkpointIntervalMs: 200,
@@ -353,4 +354,82 @@ for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}a 
     await until(() => B.inPublic() && rt.host.stats().dungeonAreas === 0, 5000, 'run ended');
     assert.deepEqual(rt.failures, []); assert.deepEqual(A.errors, []); assert.deepEqual(B.errors, []);
   } finally { clearInterval(beat); await closeBot(A); await closeBot(B); await rt.close(); }
+});
+
+/**
+ * Holds the next barrier at its round-start journal queries until the test's own writes have committed, and counts certified
+ * grant page reads per character.
+ */
+function held() {
+  const w = { reads: new Map(), armed: false }; let parked, release;
+  w.arm = () => { w.armed = true; w.parked = new Promise(resolve => { parked = resolve; }); w.released = new Promise(resolve => { release = resolve; }); };
+  w.open = () => { w.armed = false; release(); };
+  const hold = run => async (...args) => { if (w.armed) { parked(); await w.released; } return run(...args); };
+  w.characters = new Proxy(store, { get(target, key) {
+    if (key === 'pendingGrants') return async (...args) => { w.reads.set(args[1], (w.reads.get(args[1]) ?? 0) + 1); return target.pendingGrants(...args); };
+    if (key === 'charactersWithPendingGrants') return hold(ids => target.charactersWithPendingGrants(ids));
+    const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  w.dungeons = { recordDungeonCompletion: m => dungeonStore.recordDungeonCompletion(m), readPendingDungeonAwards: (...args) => dungeonStore.readPendingDungeonAwards(...args),
+    charactersWithPendingDungeonAwards: hold(ids => dungeonStore.charactersWithPendingDungeonAwards(ids)) };
+  return w;
+}
+/** A clear sealed outside this host's own run, as a late seal from a previous owner would be. */
+function sealedElsewhere(people, baseXp, coins) {
+  const runId = randomUUID(), area = `dungeon:${runId}`;
+  return { kind: 'dungeon-clear-v1', candidate: { run: { area, runId }, tier: 35, completedTick: 1, finalWave: [1, 2, 3].map(id => ({ area, id, life: 1 })), baseXp, coins },
+    recipients: people.map(p => ({ characterId: p.id, accountId: p.binding.accountId })) };
+}
+const barriers = rt => rt.host.stats().persistenceBarriers;
+async function idleBarriers(rt, n = 2) { const start = barriers(rt); await until(() => barriers(rt) >= start + n && !rt.host.stats().durableBarrier, 6000, 'interval barriers'); }
+const receipts = async id => (await pool.query('SELECT count(*)::int AS n FROM world_dungeon_award_receipts WHERE award_id=$1', [id])).rows[0].n;
+
+for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}an award sealed elsewhere for an online character${ledger ? '' : ' whose grant pages are skipped'} is paid by the next barrier, exactly once`, { timeout: 30000 }, async () => {
+  const w = held(), rt = await runtime({ ledger, characters: w.characters, dungeonStore: w.dungeons }); let A, beat;
+  try {
+    const a = await character({ level: 40 }); A = await client(rt, a); beat = heartbeat([A]);
+    await idleBarriers(rt);
+    // Not a grant recipient, not pendingReplay, nothing journaled: retained interval barriers read no page for it.
+    w.reads.clear(); await idleBarriers(rt);
+    if (!ledger) assert.equal(w.reads.get(a.id), undefined);
+    const before = await store.getOwned(a.binding.accountId, a.id);
+    w.arm(); await w.parked; const held = barriers(rt);
+    const seal = await dungeonStore.recordDungeonCompletion(sealedElsewhere([a], 700, 300)), award = seal.awardIds[0];
+    w.reads.clear(); w.open();
+    await until(() => barriers(rt) > held || !rt.host.stats().durableBarrier, 6000, 'held barrier');
+    assert.deepEqual(rt.failures, []);
+    assert.equal(await receipts(award), 1, 'paid by the first barrier that read after the seal committed');
+    if (!ledger) assert.ok(w.reads.get(a.id) >= 1, 'the page read certifies the revision before the award read');
+    // Paid once: later barriers find nothing, and the retained skip applies again.
+    w.reads.clear(); await idleBarriers(rt, 3);
+    if (!ledger) assert.equal(w.reads.get(a.id), undefined);
+    const paid = await store.getOwned(a.binding.accountId, a.id);
+    assert.equal(paid.checkpoint.progress.xp, before.checkpoint.progress.xp + 700); assert.equal(paid.checkpoint.progress.coins, before.checkpoint.progress.coins + 300);
+    assert.equal(paid.checkpoint.progress.flags.dungeonCleared35, true); assert.equal(await receipts(award), 1);
+    assert.deepEqual(await dungeonStore.readPendingDungeonAwards(a.binding.accountId, a.id, paid.revision, 10), { kind: 'page', page: { revision: paid.revision, awards: [] }, more: false });
+    await until(() => A.state?.self.player.flags.dungeonCleared35 === true && A.state.self.player.xp === paid.checkpoint.progress.xp, 3000, 'award visible to the client');
+    assert.deepEqual(rt.failures, []); assert.deepEqual(A.errors, []);
+  } finally { clearInterval(beat); await closeBot(A); await rt.close(); }
+});
+
+test('a skipped retained character whose award lands with a moved PG revision is recovered by its page read and paid once, without failing closed', { timeout: 30000 }, async () => {
+  const w = held(), rt = await runtime({ characters: w.characters, dungeonStore: w.dungeons }); let A, beat;
+  try {
+    const a = await character({ level: 40 }); A = await client(rt, a); beat = heartbeat([A]);
+    await idleBarriers(rt); w.reads.clear(); await idleBarriers(rt); assert.equal(w.reads.get(a.id), undefined);
+    const before = await store.getOwned(a.binding.accountId, a.id), recoveries = rt.host.stats().recoveries;
+    // Both outside writes commit while the next barrier waits before its first read.
+    w.arm(); await w.parked; const held = barriers(rt);
+    await relevel(a, 45); const award = (await dungeonStore.recordDungeonCompletion(sealedElsewhere([a], 700, 300))).awardIds[0];
+    w.open();
+    await until(() => barriers(rt) > held || !rt.host.stats().durableBarrier, 6000, 'held barrier');
+    assert.deepEqual(rt.failures, [], 'the award read never retries a stale revision until recovery capacity');
+    assert.equal(await receipts(award), 1); assert.ok(rt.host.stats().recoveries > recoveries);
+    await idleBarriers(rt, 3);
+    const paid = await store.getOwned(a.binding.accountId, a.id);
+    assert.equal(paid.checkpoint.progress.xp, xpForLevel(45) + 700, 'the recovered durable level plus the award');
+    assert.equal(paid.checkpoint.progress.coins, before.checkpoint.progress.coins + 300); assert.equal(await receipts(award), 1);
+    await until(() => A.state?.self.player.xp === paid.checkpoint.progress.xp && A.state.self.player.flags.dungeonCleared35 === true, 3000, 'recovered award visible');
+    assert.deepEqual(rt.failures, []); assert.deepEqual(A.errors, []);
+  } finally { clearInterval(beat); await closeBot(A); await rt.close(); }
 });

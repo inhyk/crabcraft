@@ -167,3 +167,26 @@ test('two pools racing the same clear commit one manifest; the SQL triggers refu
   assert.equal((await sealDungeonCompletion({ area: run.area, frozen, store: dungeons, ownership, boundary, isCurrent: () => true })).kind, 'sealed');
   run.area.dispose();
 });
+
+test('charactersWithPendingDungeonAwards lists exactly the characters with an unreceipted award; a head-row save that writes the receipt drops them', async () => {
+  const fresh = [];
+  for (const [i, a] of accounts.entries()) fresh.push(await characters.create(a, identity(`Pending${i}`)));
+  const [c, d] = fresh, ids = fresh.map(x => x.characterId);
+  assert.deepEqual(await dungeons.charactersWithPendingDungeonAwards([]), new Set());
+  assert.deepEqual(await dungeons.charactersWithPendingDungeonAwards(ids), new Set());
+  const runId = randomUUID(), area = `dungeon:${runId}`;
+  const seal = await dungeons.recordDungeonCompletion(validateDungeonCompletionManifest({ kind: 'dungeon-clear-v1',
+    candidate: { run: { area, runId }, tier: 35, completedTick: 1, finalWave: [1, 2, 3].map(id => ({ area, id, life: 1 })), baseXp: 10, coins: 2 },
+    recipients: [c, d].map(x => ({ characterId: x.characterId, accountId: x.accountId })) }));
+  const awardFor = x => seal.awardIds.find(id => JSON.parse(id)[3] === x.characterId);
+  assert.deepEqual(await dungeons.charactersWithPendingDungeonAwards(ids), new Set([c.characterId, d.characterId]));
+  assert.deepEqual(await dungeons.charactersWithPendingDungeonAwards([fresh[2].characterId, d.characterId]), new Set([d.characterId]));
+  await assert.rejects(characters.saveCheckpoint(c.accountId, c.characterId, c.revision, c.checkpoint, [], [awardFor(d)]), code('not_found'));
+  const saved = await characters.saveCheckpoint(c.accountId, c.characterId, c.revision, { ...c.checkpoint, progress: { ...c.checkpoint.progress, xp: 10, coins: 2 } }, [], [awardFor(c)]);
+  assert.deepEqual(await characters.getOwned(c.accountId, c.characterId), saved);
+  assert.deepEqual((await pool.query('SELECT applied_revision::int AS r FROM world_dungeon_award_receipts WHERE award_id=$1', [awardFor(c)])).rows, [{ r: saved.revision }]);
+  assert.deepEqual(await dungeons.charactersWithPendingDungeonAwards(ids), new Set([d.characterId]));
+  await assert.rejects(characters.saveCheckpoint(c.accountId, c.characterId, saved.revision, saved.checkpoint, [], [awardFor(c)]), code('already_applied'));
+  assert.equal((await characters.getOwned(c.accountId, c.characterId)).revision, saved.revision);
+  for (const bad of [['not-a-character'], [d.characterId, d.characterId]]) await assert.rejects(dungeons.charactersWithPendingDungeonAwards(bad), code('invalid'));
+});

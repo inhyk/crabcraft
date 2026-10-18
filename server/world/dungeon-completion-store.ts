@@ -142,4 +142,13 @@ export class DungeonCompletionStore {
       return Object.freeze({ kind: 'page', page: Object.freeze({ revision, awards: Object.freeze(awards) }), more: rows.length === limit });
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
+  /** The given characters with at least one award readPendingDungeonAwards() would return: sealed and without a receipt. */
+  async charactersWithPendingDungeonAwards(characterIds: readonly string[]): Promise<Set<string>> {
+    if (!Array.isArray(characterIds) || characterIds.length > 10000 || new Set(characterIds).size !== characterIds.length ||
+      characterIds.some(id => typeof id !== 'string' || !CHARACTER.test(id))) fail('invalid', 'expected at most 10000 distinct character IDs');
+    if (!characterIds.length) return new Set();
+    const result = await this.pool.query<{ character_id: string }>(`SELECT DISTINCT a.character_id FROM world_dungeon_awards a WHERE a.character_id=ANY($1::uuid[])
+      AND NOT EXISTS(SELECT 1 FROM world_dungeon_award_receipts r WHERE r.award_id=a.award_id)`, [characterIds]);
+    return new Set(result.rows.map(row => row.character_id));
+  }
 }

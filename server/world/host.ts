@@ -72,7 +72,7 @@ export interface ActualWorldHostDeps {
   ownership: HostOwnership;
   chat?: WorldChatService;
   outcomes?: DurableOutcomeStore;
-  dungeonCompletions?: Pick<DungeonCompletionStore, 'recordDungeonCompletion' | 'readPendingDungeonAwards'>;
+  dungeonCompletions?: Pick<DungeonCompletionStore, 'recordDungeonCompletion' | 'readPendingDungeonAwards' | 'charactersWithPendingDungeonAwards'>;
   policies: HostPolicies;
   originAllowed(origin: string, req: IncomingMessage): boolean;
   clientIp(req: IncomingMessage): string;
@@ -803,6 +803,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     // actor with nothing to read: not a recipient of this barrier's grants, not pendingReplay, and no unreceipted journal
     // row at the start of the round (charactersWithPendingGrants, which also sees rows that other writers such as a late
     // old-owner seal committed). A skipped actor's revision is still checked by its checkpoint commit in the same round.
+    // An actor with dungeon awards to deliver is never skipped: the award read only reports a moved revision, and this
+    // page read is what recovers it before that read; skipping it would retry the stale revision until recovery capacity.
     const grantRecipients = external ? null : new Set(sources.map(source => source.grant.recipient));
     const work = async () => {
       let startupDrained = false;
@@ -838,7 +840,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       }
       await sealDungeonRuns();
       for (let round = 0; round <= p.persistence.maxRecoveryRounds; round++) {
-        const unread = grantRecipients ? await deps.characters.charactersWithPendingGrants([...actors.keys()]) : null;
+        const ids = [...actors.keys()];
+        const [unread, unpaid] = await Promise.all([grantRecipients ? deps.characters.charactersWithPendingGrants(ids) : null,
+          deps.dungeonCompletions ? deps.dungeonCompletions.charactersWithPendingDungeonAwards(ids) : null]);
         // Retained-mode host fence. Area-owned one-use tokens are still required before pruning is enabled.
         const leases = await boundary(() => {
           deps.ownership.assertOwned();
@@ -851,7 +855,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
               actor.slot.area.bindDurableLedger(actor.ref, actor.record.revision);
               token = actor.slot.area.beginGrantRead(actor.ref, actor.record.revision); actor.grantRead = token; grantProofsActive = true;
             }
-            const skip = !!unread && limit > 0 && !actor.pendingReplay && !grantRecipients!.has(actor.record.characterId) && !unread.has(actor.record.characterId);
+            // An award row another writer committed (such as a late old-owner seal) flags its online recipient like a local seal does.
+            if (unpaid?.has(actor.record.characterId)) actor.dungeonAwards = true;
+            const skip = !!unread && limit > 0 && !actor.pendingReplay && !actor.dungeonAwards && !grantRecipients!.has(actor.record.characterId) && !unread.has(actor.record.characterId);
             return { actor, ownerGeneration: actor.generation, slot: actor.slot, ref: { ...actor.ref }, token,
               revision: actor.record.revision, connection, connectionGeneration: connection?.generation, session: connection?.stream?.session, limit, skip };
           });
