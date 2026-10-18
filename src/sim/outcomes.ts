@@ -1,6 +1,5 @@
 import { immutable } from './events.ts';
-import { PERSONAL_FLAG_IDS } from './persistence.ts';
-import { DirtyContributionLedger, canonicalLedgerValue, initialPlannerCursor, planOutcomePage, residentOutcomePage, reserveDeathOutcome, validateContributionSummary, validateContributionSnapshot, validatePlannerCursor } from './ledger.ts';
+import { DirtyContributionLedger, canonicalLedgerValue, initialPlannerCursor, planOutcomePage, residentOutcomePage, reserveDeathOutcome, sourceStepRequirements, stagedSourceBytes, validateContributionSummary, validateContributionSnapshot, validatePlannerCursor } from './ledger.ts';
 import type { ContributionSnapshot, ContributionSummary, CreditBatch, DeathRecipe, DeathReservation, LedgerMode, PagedOutcomeSeal, PlannedPage, PlannerCursor, VictimRewardFacts } from './ledger.ts';
 import { NumericExploration } from './features/exploration.ts';
 import type { AreaServices, BossSim, CharacterId, Contribution, EarnedGrant, EntityRef, PlayerCommand, PlayerSim, ChannelState, TimerAction } from './types.ts';
@@ -17,7 +16,6 @@ export type SourceLedgerLimits={maxDirtyCreditEntries:number;maxDirtyCreditBytes
 export type OutcomeCapture={token:string;generation:number;victim:EntityRef;recipe:DeathRecipe;initialCursor:PlannerCursor};
 type LiveCredit={victim:EntityRef;throughVersion:number;summary:ContributionSummary|null};
 type StagedDeath={capture:OutcomeCapture;reservation:Pick<DeathReservation,'random'|'residentGrants'>;cursor:PlannerCursor;verifiedResidents:Set<string>;bytes:number};
-const bytes=(value:unknown):number=>new TextEncoder().encode(JSON.stringify(value)).length;
 const compare=(a:string,b:string):number=>a<b?-1:a>b?1:0;
 interface VictimCredit {victim:EntityRef;contributors:Map<CharacterId,Credit>}
 const FLAGS:Readonly<Record<BossSim['profile'],string>>=Object.freeze({rust:'rustCleared',abyss:'abyssCleared',eclipse:'trueCleared',dawn:'finalCleared',frost:'frostCleared'});
@@ -105,22 +103,14 @@ export class WorldRules {
  private rosterKey():string {return canonicalLedgerValue(this.residentCreditSnapshots().map(c=>c.character));}
  private requireExternal():DirtyContributionLedger {if(!this.dirty)throw new Error('ledger-external-mode-required');return this.dirty;}
  private assertPrepared():void {if(this.preparedRoster===null||this.preparedRoster!==this.rosterKey())throw new Error('ledger-step-not-prepared');}
- /** Conservative UTF8 data budget. Scalar/token/cursor allowance includes maximum safe integer widths. */
- private stageCharge(recipe:DeathRecipe,grants:readonly EarnedGrant[]):number {const max=Number.MAX_SAFE_INTEGER,cursor={schema:'world-planner-v1',pageSequence:max,afterCharacter:'\"'.repeat(512),recipientCount:max,randomDraws:max,randomState:0xffffffff};return bytes({capture:{token:JSON.stringify([this.services.id,'death',max]),generation:max,victim:recipe.victim,recipe,initialCursor:cursor},reservation:{random:{startState:0xffffffff,finalState:0xffffffff,drawCount:max},residentGrants:grants},cursor,verifiedResidents:recipe.overrides.map(c=>c.character)});}
  /** Called outside the Area running/fail-stop block before any accepted input or damage. */
  preflightCreditCapacity(maxVictimLives:number,residents:readonly ContributionSnapshot[]):void {
   const dirty=this.requireExternal(),limits=this.sourceLimits!;this.preparedRoster=null;
   if(!Number.isSafeInteger(maxVictimLives)||maxVictimLives<0||!Array.isArray(residents)||residents.length>100)throw new Error('ledger-invalid-step-bound');
   const actual=this.residentCreditSnapshots();if(canonicalLedgerValue(residents)!==canonicalLedgerValue(actual))throw new Error('ledger-resident-snapshot-mismatch');
-  const worst=actual.map(c=>validateContributionSnapshot({...c,cogEligible:false,cogMisses:2,flags:Object.fromEntries([...new Set([...Object.keys(c.flags),...PERSONAL_FLAG_IDS])].map(k=>[k,false]))}));
-  const victim={area:this.services.id,id:0xffffffff,life:0xffffffff},max=Number.MAX_SAFE_INTEGER;
-  const creditBytes=worst.reduce((n,c)=>n+bytes({victim,character:c.character,version:max,credit:c}),0)*maxVictimLives;
-  dirty.assertCapacity(maxVictimLives*worst.length,creditBytes);
-  // All local entitlements and stages must fit before the first accepted hit. IO wait is recoverable.
-  const synthetic:DeathRecipe={schema:'world-death-v1',victim,world:this.services.world,throughVersion:max,expectedContributors:max,expectedRandomDraws:max,facts:{kind:'boss',level:max,role:'ordinary',profile:'eclipse',xp:max,coins:max},overrides:worst,random:{algorithm:'mulberry32-v1',state:0xffffffff}};
-  const worstGrants=worst.map(c=>({id:JSON.stringify([victim.area,victim.id,victim.life,c.character]),victim,recipient:c.character,xp:max,coins:max,objectives:[{kind:'clear-encounter-blessing',amount:1},{kind:'patrol-kill',amount:1},{kind:'kill-scrapling',amount:1},{kind:'kill-scavenger',amount:1},{kind:'cog-roll',amount:.0000012345678901234567},{kind:'eclipse-boss',amount:1}],flags:['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared']}));
-  const stagedBound=this.stageCharge(synthetic,worstGrants)*maxVictimLives;
-  if(!Number.isSafeInteger(creditBytes)||!Number.isSafeInteger(stagedBound)||maxVictimLives>limits.maxPendingDeaths||stagedBound>limits.maxStagedBytes||maxVictimLives>256)throw new Error('ledger-unsupported-step-capacity');
+  const required=sourceStepRequirements(this.services.id,this.services.world,maxVictimLives,actual),max=Number.MAX_SAFE_INTEGER;
+  dirty.assertCapacity(required.maxDirtyCreditEntries,required.maxDirtyCreditBytes);
+  if(required.maxPendingDeaths>limits.maxPendingDeaths||required.maxStagedBytes>limits.maxStagedBytes||required.receiptsPerResident>256)throw new Error('ledger-unsupported-step-capacity');
   if(this.stagedDeaths.size)throw new Error('ledger-outcomes-pending');
   for(const c of actual)if((this.applied.get(c.character)?.size??0)+maxVictimLives>256)throw new Error('ledger-receipts-flush-required');
   this.pruneObsoleteLives();if(this.contributionSummariesNeeded().length)throw new Error('ledger-summary-required');
@@ -148,7 +138,7 @@ export class WorldRules {
   // The DB total, not the RAM dirty cache, decides direct-kill fallback eligibility.
   if(killer&&e.summary.totalContributors===0&&!this.dirty!.writesForVictim(victim).length)this.recordExternalContribution(victim,killer,1);
   e=this.newLiveCredit(victim);const reservation=reserveDeathOutcome({schema:'world-death-v1',victim:copy(victim),world:s.world,throughVersion:e.throughVersion,facts,overrides:[...this.residentCreditSnapshots()],random:{algorithm:s.random.algorithm,state:s.random.state()}},e.summary!,this.dirty!.writesForVictim(victim));
-  const recipe=reservation.recipe,initialCursor=initialPlannerCursor(recipe),token=JSON.stringify([s.id,'death',this.nextOutcomeToken]),capture=immutable({token,generation:this.nextOutcomeToken,victim:copy(victim),recipe,initialCursor}),charge=this.stageCharge(recipe,reservation.residentGrants);
+  const recipe=reservation.recipe,initialCursor=initialPlannerCursor(recipe),token=JSON.stringify([s.id,'death',this.nextOutcomeToken]),capture=immutable({token,generation:this.nextOutcomeToken,victim:copy(victim),recipe,initialCursor}),charge=stagedSourceBytes(s.id,recipe,reservation.residentGrants);
   if(this.stagedDeaths.size>=this.sourceLimits!.maxPendingDeaths||this.stagedBytes+charge>this.sourceLimits!.maxStagedBytes)throw new Error('ledger-atomic-stage-bound-exceeded');
   s.preflightEarnedGrants(reservation.residentGrants);this.nextOutcomeToken++;this.stagedDeaths.set(token,{capture,reservation:{random:reservation.random,residentGrants:reservation.residentGrants},cursor:initialCursor,verifiedResidents:new Set(),bytes:charge});this.stagedBytes+=charge;
   // Stage first so fail-stop recovery retains every entitlement even if an event buffer faults.
