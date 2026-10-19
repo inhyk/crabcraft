@@ -47,6 +47,8 @@ export class DungeonExpeditions {
     this.ui.append(this.menu,this.status,this.backdrop,this.panel);g.app.ui.append(this.ui);
   }
   get active(){return this.state!==null;}
+  /** The drawn hazard warning, kept on this object for tools that inspect it. */
+  get warning(){return this.chamber.warning;}
   contains(u:Unit){return !this.state||(u.level>=this.state.level&&Math.abs(u.pos.y-Y)<4&&Math.hypot(u.pos.x-X,u.pos.z-Z)<R+6);}
   networkState():DungeonState|null{return this.state?{...this.state,members:[...this.state.members]}:null;}
   private info(ko:string,en:string){this.g.hud.messages.info(t(ko,en));}
