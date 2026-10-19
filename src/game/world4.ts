@@ -24,6 +24,7 @@ import {SnowFarShadow,applyFarShadow} from './snowFarShadow';
 import {SnowSpindrift} from './snowSpindrift';
 import {snowPines} from './snowPines';
 import {buildSnowVillage,type SnowVillage} from './snowVillage';
+import {buildSnowFields,type SnowFields} from './snowFields';
 import {frozenPond} from './snowVillageDressing';
 import {lathe} from '../world/geom';
 import type {Unit} from './unit';
@@ -56,6 +57,8 @@ export class SnowIsland {
  private basin:THREE.Mesh;
  /** Kit houses, lamps and props; null until buildSettlement() has loaded the kits. */
  village:SnowVillage|null=null;
+ /** Groves, boulders, dead trees, ponds, trails and sea ice of the open fields (snowFields.ts); null until buildSettlement(). */
+ fields:SnowFields|null=null;
  private paving:FrostPaving;
  private arenaFloor:FrostArena;
  private refreshIce:()=>void;
@@ -134,12 +137,12 @@ export class SnowIsland {
  /** The forest and the village need the kits, so they load after construction like DawnIsland's settlement. */
  async buildSettlement(){
   const height=(x:number,z:number)=>this.height(x,z);
-  const [forest,village,,camps]=await Promise.all([snowPines(snowTrees(),height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass})]);
-  this.root.add(forest,village.group,camps.group);this.camps=camps;this.village=village;this.basin.material=village.stone;
+  const [forest,village,,camps,fields]=await Promise.all([snowPines(snowTrees(),height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass}),buildSnowFields({height,ground:this.terrain.uniforms,sunDir:this.sky.sunDir})]);
+  this.root.add(forest,village.group,camps.group,fields.group);this.camps=camps;this.fields=fields;this.village=village;this.basin.material=village.stone;
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
  updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.terrain.setQuality(quality);this.terrain.prepare(renderer);
-  if(this.village&&!this.farShadow.baked)this.farShadow.bake(renderer,this.root,{tex:this.terrain.uniforms.snowGroundTex.value!,rect:this.terrain.uniforms.snowGroundRect.value},[this.terrain.mesh,this.prison,this.portal.root],quality);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.spindrift.setQuality(quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
+  if(this.village&&!this.farShadow.baked)this.farShadow.bake(renderer,this.root,{tex:this.terrain.uniforms.snowGroundTex.value!,rect:this.terrain.uniforms.snowGroundRect.value},[this.terrain.mesh,this.prison,this.portal.root],quality);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.spindrift.setQuality(quality);this.village?.setQuality(quality);this.fields?.setQuality(quality);this.refreshSnow();this.refreshIce();}
  disposeSnow(){this.farShadow.dispose();this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
- update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;if(!rescued)this.prisonFx.update(time);this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.throne.update(time);this.camps?.update(time);this.village?.update(time,x,z);this.sky.update(time);this.spindrift.update(time,x,z);this.sky.followSun(x,this.height(x,z),z);}
+ update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;if(!rescued)this.prisonFx.update(time);this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.throne.update(time);this.camps?.update(time);this.village?.update(time,x,z);this.fields?.update(time,x,z);this.sky.update(time);this.spindrift.update(time,x,z);this.sky.followSun(x,this.height(x,z),z);}
 }

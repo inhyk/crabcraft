@@ -5,6 +5,7 @@ import { Collision } from '../world/collision';
 import { arenaPillars, citadelClears, registerFrostThrone } from './frostThroneLayout';
 import { registerSnowVillage } from './snowVillageLayout';
 import { registerFrostProps } from './frostPropsLayout';
+import { registerSnowFields } from './snowFieldsLayout';
 
 // Between the west-side lanes, clear of the road, homes and resident positions.
 export const SNOW_FOUNTAIN = {x:-13,z:65,radius:3.1} as const;
@@ -42,5 +43,7 @@ export function layoutFrostlight(): Collision {
     col.addBox(k.x,k.z,.62*k.r,.5*k.r,k.yaw,y-1,top);
     for(const f of [-.6,.6])col.addCircle(k.x+Math.cos(k.yaw)*f*k.r,k.z-Math.sin(k.yaw)*f*k.r,.32*k.r,y-1,top);
   }
+  // The open fields: groves, boulders, dead trees, logs, stumps and the abandoned props (snowFieldsLayout.ts).
+  registerSnowFields(col,h);
   return col;
 }
