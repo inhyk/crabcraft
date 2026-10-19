@@ -110,8 +110,8 @@ const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vign
 /** Frostlight's own grade while it is shown: cool lifted shadows, warm lamp light, snow that reads white (grade.ts). */
 // Bloom keys above the brightest sunlit snow, so lamps and windows glow and the snow does not haze over.
 const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
-/** Tidecrown's late afternoon: a touch brighter and richer, violet lifted shade, a soft glow on sunlit stone. */
-const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.1, agxLook: { saturation: 1.28, power: 1.1 }, bloom: { intensity: 1.1, threshold: 0.78, smoothing: 0.3, radius: 0.8 }, grade: { lift: [0.014, 0.006, 0.03], warm: 0.35, white: 0.1 } };
+/** Tidecrown's late afternoon: rich and warm, sunlit stone golden and shade lilac; bloom keys above the stone, on lamps and windows. */
+const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.14, agxLook: { saturation: 1.34, power: 1.15 }, bloom: { intensity: 0.85, threshold: 1.45, smoothing: 0.3, radius: 0.75 }, grade: { lift: [0.013, 0.006, 0.032], warm: 0.48, white: 0.02, split: { shadow: [0.96, 0.975, 1.045], highlight: [1.085, 1.0, 0.84] } } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },

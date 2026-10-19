@@ -10,6 +10,7 @@ import { WORLD_UNIFORMS } from '../../world/materials';
 import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, type TidecrownAtmosphere } from './atmosphere';
 import { buildHorizon } from './horizon';
 import { buildGulls } from './gulls';
+import { type GroundLight, paintGroundLight } from './groundLight';
 import type { MapSnapshot } from '../snapshots';
 import { paintTidecrownMap } from './minimap';
 import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
@@ -37,6 +38,7 @@ export class TidecrownIsland {
   /** How long each build step took (ms) and how much nature was scattered. */
   readonly info: { steps: Record<string, number>; nature: Record<string, number>; city: Record<string, number> } = { steps: {}, nature: {}, city: {} };
   private foliage: FoliageResult | null = null;
+  private groundLight: GroundLight | null = null;
   private lanternGlow: THREE.MeshStandardMaterial | null = null;
   private built = false;
 
@@ -79,7 +81,8 @@ export class TidecrownIsland {
 
     t0 = performance.now();
     const terrain = new TidecrownTerrain(this.layout.heights);
-    const ground = terrain.buildMeshes(tidecrownTerrainMaterial(terrain, village, nature, WORLD_UNIFORMS.uTime));
+    this.groundLight = paintGroundLight(this.layout.city);
+    const ground = terrain.buildMeshes(tidecrownTerrainMaterial(terrain, village, nature, WORLD_UNIFORMS.uTime, this.groundLight));
     this.root.add(ground);
     const pines: [number, number][] = [];
     for (const [name, list] of this.layout.nature.trees.items) if (name.startsWith('Pine_')) for (const m of list) pines.push([m.elements[12], m.elements[14]]);
@@ -97,8 +100,16 @@ export class TidecrownIsland {
     onProgress?.(0.7);
     await tick();
 
+    // The sky before the city: its canals reflect it.
     t0 = performance.now();
-    this.city = buildTidecrownCity({ tide, city: cityKit, harbour: harbourKit }, mats, this.layout.city, (x, z) => this.layout.heightAt(x, z), renderer, quality);
+    this.atmosphere = buildTidecrownAtmosphere(terrain, quality, WORLD_UNIFORMS.uTime, this.structures.lanternAt);
+    this.root.add(this.atmosphere.group, buildHorizon(), buildGulls(WORLD_UNIFORMS.uTime));
+    this.atmosphere.environment(renderer);
+    step('atmosphere', t0);
+    await tick();
+
+    t0 = performance.now();
+    this.city = buildTidecrownCity({ tide, city: cityKit, harbour: harbourKit }, mats, this.atmosphere.skyU, this.layout.city, (x, z) => this.layout.heightAt(x, z), renderer, quality);
     this.root.add(this.city.group);
     this.info.city = { ...this.city.stats.ms, plan: this.layout.city.ms };
     step('city', t0);
@@ -120,11 +131,6 @@ export class TidecrownIsland {
     onProgress?.(0.9);
     await tick();
 
-    t0 = performance.now();
-    this.atmosphere = buildTidecrownAtmosphere(terrain, quality, WORLD_UNIFORMS.uTime, this.structures.lanternAt);
-    this.root.add(this.atmosphere.group, buildHorizon(), buildGulls(WORLD_UNIFORMS.uTime));
-    this.atmosphere.environment(renderer);
-    step('atmosphere', t0);
     this.built = true;
     onProgress?.(1);
   }
@@ -192,5 +198,6 @@ export class TidecrownIsland {
       m.dispose();
     }
     for (const t of textures) t.dispose();
+    this.groundLight?.texture.dispose();
   }
 }

@@ -152,7 +152,7 @@ function bannerMaterial(): THREE.MeshStandardMaterial {
 }
 
 function glassMaterial(decal = false): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ name: decal ? 'tidecrown-far-glass' : 'tidecrown-glass', color: '#3a4656', emissive: '#ffb066', emissiveIntensity: 1.6, roughness: 0.12, metalness: 0.55, vertexColors: true });
+  const m = new THREE.MeshStandardMaterial({ name: decal ? 'tidecrown-far-glass' : 'tidecrown-glass', color: '#3a4656', emissive: '#ffb066', emissiveIntensity: 2.3, roughness: 0.12, metalness: 0.55, vertexColors: true });
   // Vertex colour red is the light inside each window (0 dark .. 1 lamp-lit); the pane itself stays dark glass.
   // Far windows (vertex alpha 0) are decals on an uncut wall: uv counts panes from the glass corner, colour green
   // and blue carry columns / 8 and rows / 8, and the shader paints the glazing bars and the frame around them.
@@ -215,7 +215,7 @@ export function loadTidecrownKit(): Promise<TidecrownKit> {
     const paint = kitClone(vm('MI_WoodTrim'), 'tidecrown-paint');
     grade(paint, 'paint', 0.05, 0.4, '#8f8f8f', '#ffffff');
     const tiles = kitClone(vm('MI_RoundTiles'), 'tidecrown-tiles');
-    grade(tiles, 'tiles', 0.11, 0.27, '#5c5c5c', '#ffffff');
+    grade(tiles, 'tiles', 0.11, 0.27, '#454545', '#ececec');
     tiles.roughness = 0.62;
     const iron = kitClone(vm('MI_MetalOrnaments'), 'tidecrown-iron', false);
     iron.color.set('#5a5e66');
@@ -785,7 +785,7 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   const boxOdds = 0.12 + r() * 0.3;
   const glassLit = () => {
     const q = r();
-    return new THREE.Color(q < 0.14 ? 0.55 + r() * 0.45 : 0.04 + r() * 0.08, 1, 1);
+    return new THREE.Color(q < 0.24 ? 0.55 + r() * 0.45 : 0.04 + r() * 0.08, 1, 1);
   };
   const glassTint = (t: Tint) => new Map(t).set(mat.glass, glassLit());
 

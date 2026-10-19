@@ -6,6 +6,7 @@ import type { Kit } from '../../world/kit';
 import { addPatch } from '../../world/materials';
 import { Simplex, smoothstep } from '../../world/noise';
 import { createTerrainMaterial, type Terrain } from '../../world/terrain';
+import type { GroundLight } from './groundLight';
 import { tcPaving } from './paving';
 
 export class TidecrownTerrain {
@@ -173,17 +174,21 @@ const TC_ROCK = `if (ccRock > 0.003) {
  * warm brown like the city's paving stone, and the setts stay off steep faces (their normal map would light a cliff
  * as if it were flat).
  */
-export function tidecrownTerrainMaterial(terrain: TidecrownTerrain, village: Kit, nature: Kit, uTime: { value: number }): THREE.MeshStandardMaterial {
+export function tidecrownTerrainMaterial(terrain: TidecrownTerrain, village: Kit, nature: Kit, uTime: { value: number }, light: GroundLight): THREE.MeshStandardMaterial {
   const mat = createTerrainMaterial(
     terrain as unknown as Terrain,
     { cobble: village.material('MI_UnevenBrick')?.map ?? null, cobbleNormal: village.material('MI_UnevenBrick')?.normalMap ?? null, rock: nature.material('Rocks')?.map ?? null },
     { uTime },
   );
   addPatch(mat, 'tidecrown-limestone', (shader) => {
+    Object.assign(shader.uniforms, { uTcLight: { value: light.texture }, uTcLightO: { value: light.origin }, uTcLightS: { value: light.size } });
     const fs = shader.fragmentShader;
     if (!W1_ROCK.test(fs)) console.error('tidecrown terrain: World I rock block not found, limestone not applied');
     shader.fragmentShader = fs
-      .replace('float ccRock;', 'float ccRock;\nfloat tcTilt = 0.0;')
+      .replace('float ccRock;', 'float ccRock;\nfloat tcTilt = 0.0;\nuniform sampler2D uTcLight;\nuniform vec2 uTcLightO;\nuniform vec2 uTcLightS;\nvec4 tcL;')
+      // The streets' light (groundLight.ts): darker along the house fronts and in the lanes, warm under the lamps.
+      .replace('diffuseColor.rgb *= col;', 'tcL = texture2D(uTcLight, (ccXZ - uTcLightO) / uTcLightS);\ndiffuseColor.rgb *= col * mix(0.38, 1.0, tcL.r);')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.6, 0.28) * (tcL.g * tcL.g * 0.42) + vec3(1.0, 0.38, 0.1) * (tcL.b * tcL.b * 0.7);')
       // Slope from the triangle itself as well: on a cliff two grid cells wide the vertex normals lean at its foot and
       // brow, and grass, sand or setts would show there in spikes.
       .replace('float slope = 1.0 - nW.y;', 'float slope = max(1.0 - nW.y, 1.0 - abs(normalize(cross(dFdx(vCcWorld), dFdy(vCcWorld))).y));')
