@@ -50,7 +50,7 @@ before(async () => {
     }
     await pool.query(`INSERT INTO accounts(username,save,revision,updated,created) VALUES($1,$3,47,123,100),($2,'{}',0,1,1)`, [A, B, '{"legacyXP":999999}']);
     const existingAccount = (await pool.query('SELECT * FROM accounts WHERE username=$1', [A])).rows[0];
-    assert.deepEqual(await migrate(pool), ['004_world_characters', '005_world_victim_outcomes', '006_world_chat', '007_world_paged_ledger']);
+    assert.deepEqual(await migrate(pool), ['004_world_characters', '005_world_victim_outcomes', '006_world_chat', '007_world_paged_ledger', '008_world_dungeon_awards']);
     assert.deepEqual((await pool.query('SELECT * FROM accounts WHERE username=$1', [A])).rows[0], existingAccount);
     assert.deepEqual(await migrate(pool), []);
     assert.equal((await pool.query('SELECT save FROM accounts WHERE username=$1', [A])).rows[0].save, '{"legacyXP":999999}');
@@ -354,4 +354,18 @@ test('bounded creation rolls back codec failure even after the INSERT returned a
   await assert.rejects(badDecode.createBounded(owner, identity, 1), /post-insert decode/);
   assert.deepEqual(await store.listOwned(owner), []);
   assert.equal((await store.createBounded(owner, identity, 1)).revision, 0);
+});
+
+test('charactersWithPendingGrants lists exactly the characters pendingGrants has rows for; saveCheckpoint returns what getOwned reads', async () => {
+  const [c, d, e] = [await fresh(), await fresh(), await fresh()];
+  assert.deepEqual(await store.charactersWithPendingGrants([]), new Set());
+  assert.deepEqual(await store.charactersWithPendingGrants([c.characterId, d.characterId, e.characterId]), new Set());
+  const earned = await grant(c, `pending-index:${c.characterId}`); await grant(d, `pending-index:${d.characterId}`);
+  assert.deepEqual(await store.charactersWithPendingGrants([c.characterId, d.characterId, e.characterId]), new Set([c.characterId, d.characterId]));
+  assert.deepEqual(await store.charactersWithPendingGrants([e.characterId, c.characterId]), new Set([c.characterId]));
+  const saved = await store.saveCheckpoint(A, c.characterId, 0, { ...c.checkpoint, xp: 10, coins: 2 }, [earned.id]);
+  assert.deepEqual(await store.getOwned(A, c.characterId), saved); assert.deepEqual(await store.pendingGrants(A, c.characterId), []);
+  assert.deepEqual(await store.charactersWithPendingGrants([c.characterId, d.characterId, e.characterId]), new Set([d.characterId]));
+  for (const ids of [['not-a-character'], [d.characterId, d.characterId]]) await assert.rejects(store.charactersWithPendingGrants(ids), error('invalid'));
+  await assert.rejects(store.pendingGrants(B, d.characterId), error('not_found'));
 });

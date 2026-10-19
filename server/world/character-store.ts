@@ -29,6 +29,10 @@ function grantId(value: string) {
       /[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(value)) fail('invalid', 'grant ID must be 1..512 UTF-8 bytes without controls or unpaired surrogates');
 }
 function revision(value: number) { if (!Number.isSafeInteger(value) || value < 0 || value >= Number.MAX_SAFE_INTEGER) fail('invalid', 'invalid revision'); }
+function featureIds(ids: readonly string[]) {
+  if (!Array.isArray(ids) || ids.length > MAX_CHECKPOINT_GRANT_RECEIPTS || new Set(ids).size !== ids.length) fail('invalid', 'expected at most 256 distinct dungeon award IDs');
+  for (const id of ids) if (typeof id !== 'string' || Buffer.byteLength(id) < 1 || Buffer.byteLength(id) > 2048) fail('invalid', 'invalid dungeon award ID');
+}
 function pageSize(value: number) { if (!Number.isSafeInteger(value) || value < 1 || value > 100) fail('invalid', 'page size must be 1..100'); }
 
 /** Canonical bounded JSON, including rejection of values JSON.stringify would silently discard/coerce. */
@@ -81,6 +85,9 @@ const victimKey = (tuple: readonly unknown[]) => JSON.stringify(tuple.slice(0, 3
 const victimLock = (key: string) => createHash('sha256').update('world-victim-outcome:' + key).digest().readBigInt64BE().toString();
 export { json as canonicalLedgerJson, victimLock as victimAdvisoryLock };
 interface Row { character_id: string; account_id: string; codec_version: number; identity_json: string; checkpoint_json: string; revision: string; updated_at: Date | string }
+/** Every column of world_characters except checkpoint_json, for reads that need the owner context and revision only. */
+type HeadRow = Omit<Row, 'checkpoint_json'>;
+const HEAD_COLUMNS = 'character_id,account_id,codec_version,identity_json,revision,updated_at';
 interface GrantRow { grant_id: string; journal_sequence: string; character_id: string; account_id: string; codec_version: number; payload_json: string }
 
 /** Trusted host storage only. No HTTP handler and no legacy-save input. */
@@ -93,15 +100,23 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
     this.pool = pool; this.codec = codec;
   }
   private version(version: number) { if (version !== this.codec.version) fail('version', 'unsupported character codec version'); }
-  private decode(row: Row): Character<I, C> {
-    this.version(row.codec_version); account(row.account_id); character(row.character_id);
+  private stamp(row: Pick<Row, 'revision' | 'updated_at'>): { revision: number; updatedAt: number } {
     const rev = Number(row.revision);
     if (!Number.isSafeInteger(rev) || rev < 0) fail('invalid', 'corrupt stored revision');
     const updatedAt = row.updated_at instanceof Date ? row.updated_at.getTime() : Date.parse(row.updated_at);
     if (!Number.isSafeInteger(updatedAt) || updatedAt < 0) fail('invalid', 'corrupt stored update timestamp');
+    return { revision: rev, updatedAt };
+  }
+  /** decode() without the stored checkpoint: owner context, revision and timestamp, validated in the same order. */
+  private head(row: HeadRow): CharacterContext<I> & { revision: number; updatedAt: number } {
+    this.version(row.codec_version); account(row.account_id); character(row.character_id);
+    const { revision: rev, updatedAt } = this.stamp(row);
     const identity = this.codec.validateIdentity(parsed(row.identity_json, 4096));
     json(identity, 4096);
-    const context = { accountId: row.account_id, characterId: row.character_id, identity };
+    return { accountId: row.account_id, characterId: row.character_id, identity, revision: rev, updatedAt };
+  }
+  private decode(row: Row): Character<I, C> {
+    const { revision: rev, updatedAt, ...context } = this.head(row);
     const checkpoint = this.codec.validateCheckpoint(parsed(row.checkpoint_json, 262144), context);
     json(checkpoint, 262144);
     return { ...context, revision: rev, checkpoint, updatedAt };
@@ -219,10 +234,11 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
         const prefix = outcomeKeys[0].slice(0, -1) + ',';
         if ((await query('SELECT 1 FROM world_character_grants WHERE left(grant_id,length($1))=$1 LIMIT 1', [prefix])).rowCount) fail('outcome_conflict', 'unsealed legacy victim journal requires explicit recovery');
       }
-      const contexts = new Map<string, Character<I, C>>();
+      // Recipient rows are locked for their owner context; grants never read the stored checkpoint.
+      const contexts = new Map<string, CharacterContext<I>>();
       for (const characterId of [...recipients.keys()].sort()) {
-        const owned = await query<Row>('SELECT * FROM world_characters WHERE character_id=$1 AND account_id=$2 FOR UPDATE', [characterId, recipients.get(characterId)]);
-        if (!owned.rowCount) fail('not_found', 'character not found'); contexts.set(characterId, this.decode(owned.rows[0]));
+        const owned = await query<HeadRow>(`SELECT ${HEAD_COLUMNS} FROM world_characters WHERE character_id=$1 AND account_id=$2 FOR UPDATE`, [characterId, recipients.get(characterId)]);
+        if (!owned.rowCount) fail('not_found', 'character not found'); const { revision: _revision, updatedAt: _updatedAt, ...context } = this.head(owned.rows[0]); contexts.set(characterId, context);
       }
       const ordered = [...prepared].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
       let validatedBytes = 0;
@@ -255,19 +271,33 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
     } finally { client.release(!reusable); }
   }
   async pendingGrants(accountId: string, characterId: string, options: { after?: string; limit?: number } = {}): Promise<EarnedGrant<G>[]> {
-    const context = await this.getOwned(accountId, characterId), limit = options.limit ?? 100; pageSize(limit);
+    // Grants are validated against the owner's identity only; the stored checkpoint is not read here.
+    account(accountId); character(characterId);
+    const owned = await this.pool.query<HeadRow>(`SELECT ${HEAD_COLUMNS} FROM world_characters WHERE character_id=$1 AND account_id=$2`, [characterId, accountId]);
+    if (!owned.rowCount) fail('not_found', 'character not found');
+    const { revision: _revision, updatedAt: _updatedAt, ...context } = this.head(owned.rows[0]), limit = options.limit ?? 100; pageSize(limit);
     const after = options.after ?? '0'; if (!/^(0|[1-9][0-9]{0,18})$/.test(after) || BigInt(after) > 9223372036854775807n) fail('invalid', 'invalid journal cursor');
     const result = await this.pool.query<GrantRow>(`SELECT g.* FROM world_replayable_grants g WHERE g.character_id=$1 AND g.journal_sequence>$2::bigint
       AND NOT EXISTS(SELECT 1 FROM world_character_grant_receipts r WHERE r.grant_id=g.grant_id) ORDER BY g.journal_sequence LIMIT $3`, [characterId, after, limit]);
     return result.rows.map(row => this.decodeGrant(row, context));
   }
+  /** The given characters that have at least one row pendingGrants() would return: replayable and without a receipt. */
+  async charactersWithPendingGrants(characterIds: readonly string[]): Promise<Set<string>> {
+    if (!Array.isArray(characterIds) || characterIds.length > 10000 || new Set(characterIds).size !== characterIds.length) fail('invalid', 'expected at most 10000 distinct character IDs');
+    characterIds.forEach(character);
+    if (!characterIds.length) return new Set();
+    const result = await this.pool.query<{ character_id: string }>(`SELECT DISTINCT g.character_id FROM world_replayable_grants g WHERE g.character_id=ANY($1::uuid[])
+      AND NOT EXISTS(SELECT 1 FROM world_character_grant_receipts r WHERE r.grant_id=g.grant_id)`, [characterIds]);
+    return new Set(result.rows.map(row => row.character_id));
+  }
   /** A consistent checkpoint + bounded receipt ledger for freeze/reload recovery after a conflict or lost ACK. */
-  async loadForRecovery(accountId: string, characterId: string, ids: readonly string[]): Promise<{
+  async loadForRecovery(accountId: string, characterId: string, ids: readonly string[], dungeonAwardIds?: readonly string[]): Promise<{
     character: Character<I, C>; grants: (EarnedGrant<G> & { appliedRevision: number | null })[];
+    dungeonAwards?: { id: string; appliedRevision: number | null }[];
   }> {
     account(accountId); character(characterId);
     if (!Array.isArray(ids) || ids.length > MAX_CHECKPOINT_GRANT_RECEIPTS || new Set(ids).size !== ids.length) fail('invalid', 'expected at most 256 distinct grant IDs');
-    ids.forEach(grantId);
+    ids.forEach(grantId); if (dungeonAwardIds !== undefined) featureIds(dungeonAwardIds);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -283,32 +313,54 @@ export class CharacterStore<I extends Json, C extends Json, G extends Json> {
         if (appliedRevision !== null && (!Number.isSafeInteger(appliedRevision) || appliedRevision < 1 || appliedRevision > current.revision)) fail('invalid', 'corrupt grant receipt revision');
         grants.push({ ...this.decodeGrant(row, current), appliedRevision });
       }
-      await client.query('COMMIT'); return { character: current, grants };
+      if (dungeonAwardIds === undefined) { await client.query('COMMIT'); return { character: current, grants }; }
+      const dungeonAwards: { id: string; appliedRevision: number | null }[] = [];
+      for (const id of dungeonAwardIds) {
+        const row = (await client.query<{ applied_revision: string | null }>(`SELECT r.applied_revision FROM world_dungeon_awards a
+          LEFT JOIN world_dungeon_award_receipts r ON r.award_id=a.award_id WHERE a.award_id=$1 AND a.character_id=$2 AND a.account_id=$3`, [id, characterId, accountId])).rows[0];
+        if (!row) fail('not_found', 'dungeon award not found for character');
+        const appliedRevision = row.applied_revision === null ? null : Number(row.applied_revision);
+        if (appliedRevision !== null && (!Number.isSafeInteger(appliedRevision) || appliedRevision < 1 || appliedRevision > current.revision)) fail('invalid', 'corrupt dungeon award receipt revision');
+        dungeonAwards.push({ id, appliedRevision });
+      }
+      await client.query('COMMIT'); return { character: current, grants, dungeonAwards };
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
   /** Caller captures only trusted core state. Receipts and this checkpoint commit together or neither does. */
-  async saveCheckpoint(accountId: string, characterId: string, expectedRevision: number, checkpointInput: C, appliedGrantIds: readonly string[] = []): Promise<Character<I, C>> {
+  async saveCheckpoint(accountId: string, characterId: string, expectedRevision: number, checkpointInput: C, appliedGrantIds: readonly string[] = [], appliedDungeonAwardIds: readonly string[] = []): Promise<Character<I, C>> {
     account(accountId); character(characterId); revision(expectedRevision);
     if (!Array.isArray(appliedGrantIds) || appliedGrantIds.length > MAX_CHECKPOINT_GRANT_RECEIPTS || new Set(appliedGrantIds).size !== appliedGrantIds.length) fail('invalid', 'expected at most 256 distinct grant IDs');
-    appliedGrantIds.forEach(grantId);
+    appliedGrantIds.forEach(grantId); featureIds(appliedDungeonAwardIds);
     const checkpointJson = json(checkpointInput, 262144), client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const owned = await client.query<Row>('SELECT * FROM world_characters WHERE character_id=$1 AND account_id=$2 FOR UPDATE', [characterId, accountId]);
-      if (!owned.rowCount) fail('not_found', 'character not found'); const current = this.decode(owned.rows[0]);
-      if (current.revision !== expectedRevision) fail('conflict', 'checkpoint revision conflict; reload before retry');
-      const checkpoint = this.codec.validateCheckpoint(parsed(checkpointJson, 262144), current);
+      // The row lock and revision check need the owner context only; the stored checkpoint is about to be replaced.
+      const owned = await client.query<HeadRow>(`SELECT ${HEAD_COLUMNS} FROM world_characters WHERE character_id=$1 AND account_id=$2 FOR UPDATE`, [characterId, accountId]);
+      if (!owned.rowCount) fail('not_found', 'character not found'); const { revision: currentRevision, updatedAt: _updatedAt, ...current } = this.head(owned.rows[0]);
+      if (currentRevision !== expectedRevision) fail('conflict', 'checkpoint revision conflict; reload before retry');
+      // checkpointJson is json() output from above, so parsed() of it is JSON.parse of it.
+      const checkpoint = this.codec.validateCheckpoint(JSON.parse(checkpointJson) as Json, current);
       for (const id of appliedGrantIds) {
         const grant = (await client.query<GrantRow>('SELECT * FROM world_replayable_grants WHERE grant_id=$1 AND character_id=$2 AND account_id=$3', [id, characterId, accountId])).rows[0];
         if (!grant) fail('not_found', 'earned grant not found for character'); this.decodeGrant(grant, current);
         const receipt = await client.query('SELECT 1 FROM world_character_grant_receipts WHERE grant_id=$1', [id]);
         if (receipt.rowCount) fail('already_applied', 'grant already applied; reload before retry');
       }
-      const result = await client.query<Row>(`UPDATE world_characters SET checkpoint_json=$1,revision=revision+1,updated_at=now()
-        WHERE character_id=$2 AND account_id=$3 AND revision=$4 RETURNING *`, [json(checkpoint, 262144), characterId, accountId, expectedRevision]);
+      // Dungeon clear awards (migration 008) only enter when the capture carries them; old callers never touch those tables.
+      // Ownership, receipt and revision are checked against award rows and the locked head row; the stored checkpoint is not needed.
+      for (const id of appliedDungeonAwardIds) {
+        if (!(await client.query('SELECT 1 FROM world_dungeon_awards WHERE award_id=$1 AND character_id=$2 AND account_id=$3', [id, characterId, accountId])).rowCount) fail('not_found', 'dungeon award not found for character');
+        if ((await client.query('SELECT 1 FROM world_dungeon_award_receipts WHERE award_id=$1', [id])).rowCount) fail('already_applied', 'dungeon award already applied; reload before retry');
+      }
+      const storedJson = json(checkpoint, 262144);
+      const result = await client.query<Pick<Row, 'revision' | 'updated_at'>>(`UPDATE world_characters SET checkpoint_json=$1,revision=revision+1,updated_at=now()
+        WHERE character_id=$2 AND account_id=$3 AND revision=$4 RETURNING revision,updated_at`, [storedJson, characterId, accountId, expectedRevision]);
       if (!result.rowCount) fail('conflict', 'checkpoint revision conflict');
       for (const id of appliedGrantIds) await client.query('INSERT INTO world_character_grant_receipts(grant_id,character_id,applied_revision) VALUES($1,$2,$3)', [id, characterId, expectedRevision + 1]);
-      const saved = this.decode(result.rows[0]); await client.query('COMMIT'); return saved;
+      for (const id of appliedDungeonAwardIds) await client.query('INSERT INTO world_dungeon_award_receipts(award_id,character_id,applied_revision) VALUES($1,$2,$3)', [id, characterId, expectedRevision + 1]);
+      // The stored row is storedJson = json(checkpoint) under the identity locked above, so it is not read back and re-decoded.
+      const { revision: savedRevision, updatedAt } = this.stamp(result.rows[0]);
+      const saved: Character<I, C> = { ...current, revision: savedRevision, checkpoint, updatedAt }; await client.query('COMMIT'); return saved;
     } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
 }

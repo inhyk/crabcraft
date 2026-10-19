@@ -1,3 +1,10 @@
+import type {DungeonFeatureAward} from './features/dungeon-awards.ts';
+export type {DungeonFeatureAward} from './features/dungeon-awards.ts';
+import type {DungeonReturnBinding,DungeonCaptureBinding,StagedInstanceExit} from './features/dungeon-persistence.ts';
+export type {DungeonReturnBinding,DungeonCaptureBinding,StagedInstanceExit} from './features/dungeon-persistence.ts';
+import type {DungeonTier} from './data/dungeons.ts';
+import type {DungeonOptions,DungeonObservation,CapturedDungeonCompletion} from './features/dungeon.ts';
+export type {DungeonOptions,DungeonObservation,DungeonCompletionCandidate,CapturedDungeonCompletion,DungeonRunKey} from './features/dungeon.ts';
 import type {OutcomeCapture} from './outcomes.ts';
 import type {ContributionSummary,ContributionSnapshot,CreditBatch,PlannedPage,PagedOutcomeSeal,PlannerCursor} from './ledger.ts';
 export type {OutcomeCapture} from './outcomes.ts';
@@ -293,12 +300,13 @@ export interface TimerState { id: number; due: number; insertion: number; action
 export interface AreaTimers { schedule(due: number, action: TimerAction): number; cancel(id: number): void }
 export interface EnemySim extends CombatController { readonly unit: EntityRef; readonly spawnId: string; readonly state: 'idle' | 'chase' | 'leash' | 'dead' | 'gone'; update(dt: number): void; despawn(): void; respawnAt(x: number, z: number): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
 export interface BossSim extends CombatController { readonly state: 'dormant' | 'waking' | 'idle' | 'fight' | 'dying' | 'dead'; readonly engaged: boolean; readonly arena: Poi; sleep(): void; readonly unit: EntityRef; readonly profile: BossProfileId; update(dt: number): void; wake(): void; reset(): void; resolveHit(plan: HitPlan): boolean; debugState(): DebugValue }
-export interface EnemySpawn {
+interface EnemySpawnBase {
   readonly id: string; readonly kind: 'scrapling' | 'scavenger' | 'jellyfish';
   readonly legacySlot?: string; // explicit original spawn-job identity, never inferred from Area iteration order
   readonly home: Readonly<Vec3>; readonly wanderRadius: number; readonly pack: string;
-  readonly fixedLevel: number; readonly role: 'ordinary' | 'add' | 'echo';
+  readonly fixedLevel: number;
 }
+export type EnemySpawn=EnemySpawnBase&({readonly role:'ordinary'|'add'|'echo'}|{readonly role:'dungeon';readonly dungeonTier:DungeonTier;readonly dungeonSlot:number});
 export interface AmbientSpawn {
   readonly id: string; readonly ambientSlot: string; readonly archetype: string;
   readonly position: Readonly<Vec3>; readonly yaw?: number;
@@ -327,7 +335,7 @@ export interface AreaPolicy {
   // Additional policy only: core still verifies known ID, same Area, alive, range and actual prerequisites.
 }
 export interface AreaContext {
-  mode: 'public' | 'party-encounter' | 'legacy-room';
+  mode: 'public' | 'party-encounter' | 'legacy-room' | 'dungeon';
   members: readonly { character: CharacterId; unit: EntityRef; party: string | null; villagePlaying: boolean; featureLocked?:boolean; seatedBoat: string | null }[];
   pvp: 'disabled' | 'party-only';
 }
@@ -375,6 +383,8 @@ export interface AreaServices {
   onUnitDied(victim: EntityRef, killer: EntityRef | null): void;
 }
 export interface AreaOptions {
+  readonly dungeon?:DungeonOptions;
+  readonly featureAwards?:{readonly maxPending:number};
   readonly ledgerMode?: 'retained' | 'external-durable';
   readonly ledgerLimits?:{readonly maxDirtyCreditEntries:number;readonly maxDirtyCreditBytes:number;readonly maxPendingDeaths:number;readonly maxStagedBytes:number};
   readonly characters?: CharacterRegistry; // host injects same registry into all Areas and coordinator
@@ -417,6 +427,7 @@ export interface AreaDebugState {
  * World chapter/quest tracking changes through actual travel rules, never discard quest progress.
  */
 export interface TransferDTO {
+ readonly featureLedger?:{readonly revision:number};
   version: 's2-transfer-v1'; character: CharacterId; classId: ClassId; archetype: string;
   hp: number; maxHp: number; resource: number; maxResource: number; xp: number; coins: number; attackRank: number; armorRank?: number; weaponOwned?: boolean; armorOwned?: boolean; baseMaxHp: number;
   cooldowns: Readonly<Record<string, { startAge: number; endRemaining: number }>>;
@@ -461,10 +472,13 @@ export type LedgerStepReadiness={readonly ready:true}|{readonly ready:false;read
 export interface ContributionSummaryRead {readonly token:string;readonly area:AreaId;readonly tick:Tick;readonly victims:readonly EntityRef[];readonly residents:readonly {character:CharacterId;unit:EntityRef}[]}
 export interface StagedOutcomeResult {readonly cursor:PlannerCursor;readonly residentGrants:readonly EarnedGrant[];readonly random:{readonly startState:number;readonly finalState:number;readonly drawCount:number}}
 export interface DurableLedgerBinding {readonly actor:EntityRef;readonly character:CharacterId;readonly ownerGeneration:number;readonly ledgerGeneration:number;readonly durableRevision:number}
-export interface GrantReadToken extends DurableLedgerBinding {readonly area:AreaId;readonly nonce:number}
+export interface GrantReadToken extends DurableLedgerBinding {readonly area:AreaId;readonly nonce:number;readonly purpose?:'dungeon-feature'}
+export interface FeatureAwardReadToken extends GrantReadToken {readonly purpose:'dungeon-feature'}
+export interface CertifiedFeatureAwardPage {readonly revision:number;readonly awards:readonly {readonly award:DungeonFeatureAward;readonly appliedRevision:number|null}[]}
+export interface FeatureAwardApplyResult {readonly id:string;readonly result:'applied'|'duplicate'}
 export interface CertifiedGrantPage {readonly revision:number;readonly grants:readonly EarnedGrant[]}
 export interface GrantApplyResult {readonly id:string;readonly result:'applied'|'duplicate'}
-export interface CapturedPlayer {readonly ledger?:DurableLedgerBinding;readonly captureId:string;readonly ref:EntityRef;readonly checkpoint:CharacterCheckpointV1;readonly appliedGrantIds:readonly string[]}
+export interface CapturedPlayer {readonly ledger?:DurableLedgerBinding;readonly captureId:string;readonly ref:EntityRef;readonly checkpoint:CharacterCheckpointV1;readonly appliedGrantIds:readonly string[];readonly appliedFeatureAwardIds?:readonly string[];readonly dungeonCapture?:DungeonCaptureBinding}
 export interface PlayerRetirement {readonly token:string;readonly capture:CapturedPlayer}
 export interface CommandOutcome {readonly unit:EntityRef;readonly commandIndex:number;readonly success:boolean}
 export interface Area {
@@ -500,6 +514,21 @@ export interface Area {
   acceptStagedOutcomePage(capture:OutcomeCapture,page:PlannedPage,credits:readonly ContributionSnapshot[]):void;
   stagedOutcomeResult(capture:OutcomeCapture):StagedOutcomeResult;
   retireJournaledOutcome(capture:OutcomeCapture,seal:PagedOutcomeSeal):void;
+  bindFeatureLedger(ref:EntityRef,revision:number):void;
+  beginFeatureAwardRead(ref:EntityRef,expectedRevision:number):FeatureAwardReadToken;
+  applyCertifiedFeatureAwards(token:FeatureAwardReadToken,page:CertifiedFeatureAwardPage):readonly FeatureAwardApplyResult[];
+  cancelFeatureAwardRead(token:FeatureAwardReadToken):void;
+  appliedFeatureAwardIds(character:CharacterId):readonly string[];
+  bindDungeonReturn(ref:EntityRef,binding:DungeonReturnBinding,parentQuery:WorldQuery):void;
+  stageInstanceExit(ref:EntityRef):StagedInstanceExit;
+  abortInstanceExit(token:string):void;
+  validateInstanceExit(token:string):void;
+  commitInstanceExit(token:string,destination:EntityRef):void;
+  stageInstanceArrival(admission:Admission,exit:StagedInstanceExit):StagedArrival;
+  validateInstanceArrival(token:string):void;
+  activateInstanceArrival(token:string):EntityRef;
+  /** Host recovery only: a dungeon resident's durable safe checkpoint must restore in a public Area, so this local life is discarded. */
+  evictForRecovery(ref:EntityRef):void;
   bindDurableLedger(ref:EntityRef,revision:number):void;
   beginGrantRead(ref:EntityRef,expectedRevision:number):GrantReadToken;
   applyCertifiedGrants(token:GrantReadToken,page:CertifiedGrantPage):readonly GrantApplyResult[];
@@ -508,7 +537,7 @@ export interface Area {
   resourceUsage():Readonly<Record<string,number>>;
   capturePlayerCheckpoint(ref:EntityRef):CapturedPlayer;
   appliedGrantIds(character:CharacterId):readonly string[];
-  markCheckpointDurable(captureId:string,revision:number,ids:readonly string[]):void;
+  markCheckpointDurable(captureId:string,revision:number,ids:readonly string[],featureIds?:readonly string[]):void;
   quiescePlayer(ref:EntityRef,reason:string):PlayerRetirement;
   abortPlayerRetirement(token:string):void;
   commitPlayerRetirement(token:string):void;
@@ -532,6 +561,10 @@ export interface Area {
    */
   commitDeparture(token: string): void;
   activateArrival(token: string): EntityRef;
+  /** One-run dungeon observations and a trusted exact-token durable completion boundary. */
+  dungeonObservation():Readonly<DungeonObservation>|null;
+  pendingDungeonCompletion():Readonly<CapturedDungeonCompletion>|null;
+  acknowledgeDungeonCompletion(token:string):void;
   /** Earned grants are synchronously determined/applied at death, once per victim life/recipient.
    * Already-earned eligibility of all valid damage contributors survives disconnect/transfer;
    * do not introduce additional time/range/party cutoffs while extracting the decided reward rule.

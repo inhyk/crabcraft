@@ -68,7 +68,7 @@ async function runtime(options = {}) {
   const failures = [];
   let host;
   try { host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, outcomes: options.withoutOutcomes ? undefined : options.ledger ? options.outcomes ?? new DurableOutcomeStore(pool,codec,{planOutcomePage}) : options.outcomes, chat: options.chat ? new WorldChatService(pool) : undefined,
-    gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
+    gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog, { verify: options.verify ?? true }), verifyObservations: options.verify ?? true },
     policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
       checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
@@ -529,6 +529,30 @@ test('resource-only outcome pause retries the same retained Area within explicit
   const rt=await runtime({characters:racing});let bot;
   try{bot=await client(rt,c);await ready(rt,bot);assert.equal(raced,true);assert.equal(bot.state.self.player.xp,25);assert.equal(bot.state.self.player.coins,1);assert.equal(rt.host.stats().recoveries,1);assert.equal((await store.loadForRecovery(c.binding.accountId,c.record.characterId,[id])).grants[0].appliedRevision,1);assert.deepEqual(rt.failures,[]);assert.deepEqual(bot.errors,[]);}
   finally{bot?.ws.close();await rt.close();}
+});
+
+test('retained barriers read grant pages only for actors with something to read, under production observation checks', { timeout: 20000 }, async () => {
+ const reads=new Map(),count=id=>reads.get(id)??0;
+ const counted=new Proxy(store,{get(target,key){if(key==='pendingGrants')return async(...args)=>{reads.set(args[1],count(args[1])+1);return target.pendingGrants(...args);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+ const rt=await runtime({characters:counted,verify:false,combat:true});let first,second;
+ try{
+  const a=await character('mage'),b=await character();first=await client(rt,a);await ready(rt,first);second=await client(rt,b);await ready(rt,second);
+  await until(()=>!rt.host.stats().durableBarrier);assert.ok(count(a.record.characterId)>=1&&count(b.record.characterId)>=1,'admission replays its pages');
+  // Interval barriers with nothing journaled read no page.
+  reads.clear();const barriers=rt.host.stats().persistenceBarriers;await until(()=>rt.host.stats().persistenceBarriers>=barriers+2&&!rt.host.stats().durableBarrier,6000);
+  assert.equal(reads.size,0,JSON.stringify([...reads]));
+  // A row another writer journals for one actor is read and delivered for that actor only.
+  const victim={area:'unread-row-writer',id:1,life:1},id=JSON.stringify([victim.area,victim.id,victim.life,b.record.characterId]);
+  await store.recordGrant(b.binding.accountId,b.record.characterId,id,{id,victim,recipient:b.record.characterId,xp:1,coins:1,objectives:[],flags:[]});
+  await until(()=>second.state.self.player.xp===1||rt.failures.length,6000);assert.ok(count(b.record.characterId)>=1);assert.equal(count(a.record.characterId),0);
+  // This host's own kill reward: the recipient is read in that barrier, the other actor is not.
+  reads.clear();const target=first.state.actors.find(actor=>actor.kind==='scrapling');assert.ok(target);
+  first.send([{kind:'target',target:target.ref},{kind:'ability',slot:1}]);const heartbeat=setInterval(()=>{if(first.ws.readyState===WebSocket.OPEN)first.send([]);},50);
+  try{await until(()=>first.state.self.player.xp>0||rt.failures.length,10000);}finally{clearInterval(heartbeat);}
+  await until(()=>!rt.host.stats().durableBarrier);assert.ok(count(a.record.characterId)>=1);assert.equal(count(b.record.characterId),0);
+  assert.equal((await store.getOwned(a.binding.accountId,a.record.characterId)).checkpoint.progress.xp,first.state.self.player.xp);
+  assert.deepEqual(rt.failures,[]);assert.deepEqual(first.errors,[]);assert.deepEqual(second.errors,[]);
+ }finally{first?.ws.close();second?.ws.close();await rt.close();}
 });
 
 test('disconnect during a certified read discards the old connection lease and recertifies before reconnect delivery', { timeout: 10000 }, async () => {
