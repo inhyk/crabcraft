@@ -243,16 +243,6 @@ export function snowFieldPieces(): FieldPiece[] {
     add({ kit: 'props', piece: 'Bag', x: x + 1.4, z: z + 1.6, yaw: 2.8, s: 0.9, sink: 0.12, fine: true });
     add({ kit: 'props', piece: 'Bucket_Wooden_1', x: x - 1.6, z: z + 1.0, yaw: 0.3, s: 1, sink: 0.08, roll: 1.4, fine: true });
   }
-  // A supply sled's load half buried on the western slope: crates and a barrel, the sled itself long gone under.
-  {
-    const at = fieldSettle(-56, -2, 2, true, 6);
-    if (at) {
-      const [x, z] = at;
-      add({ kit: 'village', piece: 'Prop_Crate', x, z, yaw: 0.4, s: 1, sink: 0.5, roll: 0.12, solid: { hx: 0.6, hz: 0.6, h: 0.7 } });
-      add({ kit: 'props', piece: 'Crate_Metal', x: x + 1.3, z: z + 0.6, yaw: 1.1, s: 0.9, sink: 0.42, pitch: 0.2, solid: { hx: 0.45, hz: 0.45, h: 0.5 } });
-      add({ kit: 'props', piece: 'Barrel', x: x - 0.9, z: z + 1.4, yaw: 0.2, s: 1, sink: 0.35, pitch: 0.4, solid: { r: 0.45, h: 0.6 } });
-    }
-  }
   // Undergrowth: bushes and ferns break the snow at grove margins, round boulders and dead trees.
   const R = fieldStream(9090);
   // [x, z, ring radius, shaded]: ferns only grow in the shade of trees.
