@@ -113,12 +113,15 @@ float ccMassH(vec3 p, float fine) {
 }
 ${carve?`// Wind ripples, metres: crests across the wind ~0.7 m apart that wander and break into tongues, each rising
 // slowly upwind and dropping steeply in its lee; patches scoured smooth between. .y is the trough (0 at a crest).
-vec2 ccMassCarve(vec3 p, float fade) {
+vec2 ccMassCarve(vec3 p, float fade, float foot) {
  const vec2 W = vec2(${SNOW_WIND[0].toFixed(4)}, ${SNOW_WIND[1].toFixed(4)});
  vec2 q = vec2(dot(p.xz, W), dot(p.xz, vec2(-W.y, W.x)));
  float c = q.x * 1.45 + ccVNoise3(vec3(q.y * 0.42, p.y * 0.3, q.x * 0.2)) * 2.2 + ccVNoise3(vec3(q.x * 0.23, q.y * 0.11, p.y * 0.2) + 4.3) * 2.6 + ccVNoise3(p * 1.3 + 3.7) * 0.45;
  float f = fract(c), k = floor(c);
- float prof = pow(1.0 - abs(2.0 * f - 1.0), 1.6);
+ // The lee face is a fifth of a ripple, never under about three pixels, so its edge cannot crawl in motion.
+ float lee = clamp(foot * 4.3, 0.2, 0.5);
+ float prof = f < 1.0 - lee ? f / (1.0 - lee) : (1.0 - f) / lee;
+ prof = pow(prof, 1.25);
  float tongue = 0.35 + 0.65 * smoothstep(0.2, 0.7, ccVNoise3(vec3(q.y * 0.8, k * 1.7, 0.5)));
  float scour = 0.1 + 0.9 * smoothstep(0.35, 0.65, ccVNoise3(p * 0.33 + 9.1));
  return vec2(prof * tongue * scour * fade, (1.0 - prof) * tongue * scour * fade);
@@ -134,17 +137,18 @@ float ccMassGlint(vec2 p, vec3 N, vec3 H) {
  return clamp(1.0 - d * d, 0.0, 1.0) * pow(clamp(dot(facet, H), 0.0, 1.0), 500.0);
 }`)
    .replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
-    vec3 massN;
+    vec3 massN, massN0;
     vec2 massCarve = vec2(0.0);
     {
      // One evaluation, bumped through its screen-space derivatives (three.js's perturbNormalArb, in world space).
      vec3 n = inverseTransformDirection(normal, viewMatrix);
+     massN0 = n;
      vec3 dpx = dFdx(vMassW), dpy = dFdy(vMassW);
      float foot = length(fwidth(vMassW)), fine = 1.0 - smoothstep(0.02, 0.09, foot);
      float hm = ccMassH(vMassW, fine) * ${(0.2*0.55*lumps).toFixed(4)} * (1.0 - smoothstep(0.15, 0.6, foot));
      ${carve?`// Broad pillows a few metres across turn each slope a little toward and away from the sun.
      hm += ccVNoise3(vMassW * vec3(0.34, 0.4, 0.3) + 1.9) * ${(0.3*carve).toFixed(4)} * (1.0 - smoothstep(0.4, 1.6, foot));
-     massCarve = ccMassCarve(vMassW, 1.0 - smoothstep(0.1, 0.3, foot));
+     massCarve = ccMassCarve(vMassW, 1.0 - smoothstep(0.1, 0.3, foot), foot);
      hm += massCarve.x * ${(0.1*carve).toFixed(4)};`:''}
      vec3 r1 = cross(dpy, n), r2 = cross(n, dpx);
      float det = dot(dpx, r1);
@@ -169,6 +173,13 @@ float ccMassGlint(vec2 p, vec3 N, vec3 H) {
      ${white?`// A low sun is orange; snow turned square to it would go cream. Keep its light, lose part of its hue.
      vec3 sunW = mix(sunC, vec3(dot(sunC, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.02, 1.0, 0.97), ${white.toFixed(3)});
      outgoingLight += BRDF_Lambert(diffuseColor.rgb) * (sunW - sunC) * nl * vis;`:''}
+     ${carve?`// A slope square to the sun sits on the tone curve's shoulder, where the relief's few percent of sunlight
+     // cannot show: there the relief's turn to or from the sun is exaggerated (the slope's mean stays put) and the
+     // faces turned from it take the sky's blue, as wind-cut snow does in a low sun.
+     float nl0 = max(dot(massN0, Lw), 0.0), nlw = max(dot(massN, Lw), 0.0);
+     float massSun = smoothstep(0.3, 0.75, nl0) * vis;
+     outgoingLight += reflectedLight.directDiffuse * clamp((nlw - nl0) * ${(3.4*carve).toFixed(3)} * massSun / max(nlw, 0.05), -0.8, 1.0);
+     outgoingLight *= mix(vec3(1.0), vec3(0.82, 0.91, 1.05), clamp((nl0 - nlw) * 3.0, 0.0, 1.0) * massSun);`:''}
      // Shaded snow takes the sky's blue; packed snow in the sun keeps a warm hint of the low sun.
      outgoingLight *= mix(vec3(0.9, 0.95, 1.06), vec3(1.0), vis);
      ${carve?`// Ripple troughs and the occluded roll under an eave hold a little blue shade, as hollows in snow do.

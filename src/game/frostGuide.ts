@@ -2,8 +2,9 @@
 // shown (ObjectiveMarker.frost). Over the objective a lantern shaft: warm at the snow, paling to ice
 // as it rises and gone well below the sky, soft at its edges, with the falling snow glinting in it;
 // under it a pool of lantern light laid on the ground's own height. Along the way small lantern motes
-// hover a hand above the snow, each with its warm patch on the snow beneath, flowing toward the next
-// waypoint. Premultiplied light that covers part of what is behind it: on white snow it tints warm
+// hover a hand above the snow, flowing toward the next waypoint, each a candle-flame core in a round halo and a
+// faint warm patch on the snow beneath that shows only from above (seen low, a lit disc on the snow foreshortens
+// to a bright horizontal line beside the mote, which reads as a lens flare). Premultiplied light that covers part of what is behind it: on white snow it tints warm
 // (and blooms in the grade), on dark ice it adds light instead of going brown.
 import * as THREE from 'three';
 import type { World } from '../world/types';
@@ -13,6 +14,7 @@ const SPACING = 2.2;
 const SHAFT = 34;
 const POOL = 3.2;
 const POOL_GRID = 12;
+const PATCH = 0.6;
 
 const fogPars = /* glsl */ `
 #ifdef USE_FOG
@@ -109,6 +111,40 @@ void main() {
   gl_Position = projectionMatrix * mv;
 }`;
 
+// A mote's light on the snow under it: the falloff of a point a hand above the ground, faded where the view
+// grazes the snow (there the disc would be a thin bright streak) and lost under the sunlit snow's own light.
+const patchVert = /* glsl */ `
+varying vec2 vXY;
+varying float vDepth;
+varying float vInst;
+varying float vDown;
+void main() {
+  vXY = position.xz;
+  vInst = instanceColor.r;
+  vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+  vec3 toCam = cameraPosition - wp.xyz;
+  vDown = toCam.y / max(length(toCam), 0.001);
+  vec4 mv = viewMatrix * wp;
+  vDepth = -mv.z;
+  gl_Position = projectionMatrix * mv;
+}`;
+
+const patchFrag = /* glsl */ `
+uniform float uAlpha;
+uniform float uLift;
+varying vec2 vXY;
+varying float vDepth;
+varying float vInst;
+varying float vDown;
+${fogPars}
+void main() {
+  float r = length(vXY);
+  float e = pow(1.0 / (1.0 + r * r * uLift), 1.5);
+  float a = e * smoothstep(1.0, 0.6, r) * smoothstep(0.22, 0.55, vDown) * uAlpha * vInst * fogKeep(vDepth);
+  if (a < 0.002) discard;
+  gl_FragColor = vec4(vec3(1.5, 0.92, 0.42) * a, a * 0.5);
+}`;
+
 // Warm light on the snow: a soft round falloff and, for the shaft's pool, a slow ring going out.
 const poolFrag = /* glsl */ `
 uniform float uTime;
@@ -142,6 +178,8 @@ void main() {
   gl_Position = projectionMatrix * mv;
 }`;
 
+// A tiny lantern: a candle-flame core, taller than wide and narrowing to its tip, in a round amber halo that
+// fades to nothing at the sprite's edge. gl_PointCoord.y runs down the sprite.
 const moteFrag = /* glsl */ `
 varying float vBright;
 varying float vDepth;
@@ -150,11 +188,12 @@ void main() {
   vec2 q = gl_PointCoord * 2.0 - 1.0;
   float d2 = dot(q, q);
   if (d2 > 1.0) discard;
-  float core = exp(-d2 * 20.0);
-  float halo = exp(-d2 * 3.5) * 0.5;
-  float a = min(1.0, core * 1.1 + halo) * vBright * fogKeep(vDepth);
+  vec2 c = vec2(q.x * (1.5 + 1.1 * max(0.0, -q.y - 0.05)), q.y * 0.95 + 0.06);
+  float core = exp(-dot(c, c) * 30.0);
+  float halo = exp(-d2 * 4.5) * 0.42 * (1.0 - d2);
+  float a = min(1.0, core * 1.15 + halo) * vBright * fogKeep(vDepth);
   if (a < 0.003) discard;
-  gl_FragColor = vec4(mix(vec3(1.6, 0.9, 0.32), vec3(2.4, 1.8, 1.0), core) * a, a * 0.7);
+  gl_FragColor = vec4(mix(vec3(1.5, 0.78, 0.26), vec3(2.4, 1.85, 1.05), core) * a, a * 0.7);
 }`;
 
 function material(vertexShader: string, fragmentShader: string, uniforms: Record<string, THREE.IUniform>, side: THREE.Side = THREE.FrontSide): THREE.ShaderMaterial {
@@ -229,7 +268,8 @@ export class FrostGuide {
     this.motes.renderOrder = 7;
     this.motes.onBeforeRender = moteScale;
 
-    this.patchMat = material(poolVert, poolFrag, { uTime: { value: 0 }, uAlpha: { value: 0.6 }, uRing: { value: 0 } });
+    // Patch radius PATCH metres (the 2 m plane scaled); uLift is (radius / mote height)^2 for that falloff.
+    this.patchMat = material(patchVert, patchFrag, { uAlpha: { value: 0.42 }, uLift: { value: (PATCH / 0.42) ** 2 } });
     this.patches = new THREE.InstancedMesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), this.patchMat, MOTES);
     this.patches.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MOTES * 3), 3);
     this.patches.name = 'frost-guide-patches';
@@ -290,8 +330,9 @@ export class FrostGuide {
       const b = k * fadeIn * (0.85 + 0.15 * Math.sin(time * 5.3 + i * 1.7));
       pos.setXYZ(i, x, gy + 0.42 + 0.07 * Math.sin(time * 2.3 + i * 0.9), z);
       this.moteBright.setX(i, b);
-      const sc = i < n ? 0.42 : 0.0001;
-      this.m.compose(this.v.set(x, gy + 0.03, z), this.q, this.s.set(sc, 1, sc));
+      const sc = i < n ? PATCH : 0.0001;
+      // A few cm up: the drawn snow rises over heightAt in drifts and prints, and would cut the disc's edge.
+      this.m.compose(this.v.set(x, gy + 0.07, z), this.q, this.s.set(sc, 1, sc));
       this.patches.setMatrixAt(i, this.m);
       this.patches.instanceColor!.setX(i, b);
     }
