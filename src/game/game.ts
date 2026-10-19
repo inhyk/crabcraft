@@ -18,6 +18,7 @@ import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
 import { HiddenWorld } from './world2';
+import { ZoneLines } from './zoneLine';
 import { Multiplayer } from '../multiplayer/client';
 import { Spectator } from './spectator';
 import { SPECTATE } from '../spectate';
@@ -147,6 +148,8 @@ export class Game {
   skyBoss!: Boss;
   creatorTravel = false;
   world2!: HiddenWorld;
+  /** World I's zone lines (the King's Road to Tidecrown); local play only. */
+  zoneLines: ZoneLines | null = null;
   journey: BossJourney | null = null;
   lighthouseSecret: LighthouseSecret | null = null;
   boats:ShoreBoat|null=null;
@@ -588,6 +591,7 @@ export class Game {
     this.boats=new ShoreBoat(this);
     this.achievements=new Achievements(this);
     this.journey.restore();
+    this.zoneLines = new ZoneLines(this);
     if(import.meta.env.DEV&&new URLSearchParams(location.search).get('simCore')==='1'){this.loaded=false;const {CoreGameBridge}=await import('./coreBridge');this.core=await CoreGameBridge.create(this);this.loaded=true;}
     if(SPECTATE)this.spectator=new Spectator(this,SPECTATE);else this.intro();
     this.villageGames=new VillageGames(this);
@@ -764,6 +768,7 @@ export class Game {
     this.world2.update(dt,worldTime);
     // The game's own views follow the world shown; endings and captures that set their own are left alone.
     const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW||view===TIDECROWN_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
+    if (!paused) this.zoneLines?.update();
     this.lighthouseSecret?.update();
     // A spectator view shows no HUD and plays no music.
     if(!this.spectator){
