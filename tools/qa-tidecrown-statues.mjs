@@ -1,6 +1,6 @@
 // Tidecrown hero statues: each of the six is 16 to 20 tall, stands on y = 0 with every foot down and
-// within an 8 x 8 plinth top, draws in at most 3 calls and 60k triangles; the six together draw in
-// at most 18. Writes the preview shots (wide row, crab eye level, one per statue, black
+// within an 8 x 8 plinth top, draws in at most 3 calls and 60k triangles, and no held piece runs
+// through the body (at most 1 % of its vertices inside it); the six together draw in at most 18. Writes the preview shots (wide row, crab eye level, one per statue, black
 // silhouettes) to --out (default tmp/qa/tidecrown-statues).
 //   pnpm dev --port 5242 --strictPort &   node tools/qa-tidecrown-statues.mjs [--base URL] [--out DIR] [--no-shots]
 import assert from 'node:assert/strict';
@@ -22,6 +22,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true, args:
 const errors = [];
 async function open(query) {
   const p = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+  p.setDefaultTimeout(180000);
   p.on('pageerror', (e) => errors.push(e.message));
   p.on('console', (m) => m.type() === 'error' && errors.push(m.text().slice(0, 300)));
   await p.goto(`${base}/dev/crab.html?view=statues&clean${query}`);
@@ -42,6 +43,8 @@ try {
     footprint: s.footprint ? `x ${s.footprint[0]}..${s.footprint[1]}, z ${s.footprint[2]}..${s.footprint[3]}` : '-',
     'foot gap': s.footGap,
     scale: s.scale,
+    'visor deg': s.visor,
+    buried: Object.entries(s.buried ?? {}).map(([k, v]) => `${k} ${v}`).join(', '),
     'LOD legs': s.lodLegs.join(',') || '-',
     calls: s.calls,
     tris: s.tris,
@@ -70,9 +73,11 @@ try {
     assert.ok(s.footprint && s.footprint.every((v) => Math.abs(v) <= 4), `${s.race} feet ${JSON.stringify(s.footprint)} reach past an 8 x 8 plinth top`);
     assert.ok(s.calls <= 3, `${s.race} draws in ${s.calls} calls`);
     assert.ok(s.tris <= 60000, `${s.race} has ${s.tris} triangles`);
+    assert.ok(s.buried, `${s.race} has no buried check (dev server only)`);
+    for (const [piece, share] of Object.entries(s.buried)) assert.ok(share <= 0.01, `${s.race} ${piece}: ${share} of it inside the body`);
   }
   assert.ok(r.together.calls <= 18, `six statues draw in ${r.together.calls} calls`);
-  console.log('PASS six statues: height 16..20, lowest point at 0, all feet planted on an 8 x 8 top, <= 3 calls and <= 60k triangles each');
+  console.log('PASS six statues: height 16..20, lowest point at 0, all feet planted on an 8 x 8 top, <= 3 calls and <= 60k triangles each, no held piece through the body');
 
   assert.deepEqual(errors, []);
   console.log('PASS no page errors');
