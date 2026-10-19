@@ -19,7 +19,7 @@ class Clear implements Effect {
   private skip: RegExp;
   private prev: THREE.Scene['onBeforeRender'];
   constructor(
-    private cue: FxCue,
+    cue: FxCue,
     private scene: THREE.Scene,
   ) {
     this.cut = (cue.cut as [number, number, number][]) ?? [];

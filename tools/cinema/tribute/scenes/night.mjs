@@ -544,19 +544,19 @@ const explodeShots = [
       NO_ASTROLABE,
       { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: 1.0 },
       { kind: 'night-cracks', t: -6, at: U, radius: 9, grow: 3, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
-      boulders(0.25 - 9.9, 4.5),
+      boulders(0.42 - 9.9, 4.5),
       // Molten rocks between him and the blast, thrown at the lens through the whole shot.
-      { kind: 'night-rocks', t: -9, at: G(4.5, -1.2, 0), n: 12, radius: 3.2, size: [0.25, 0.75], h: [0.4, 2.6], rise: [-9, -9], riseDur: 0.01, glow: [[0, 1.2], [0.3, 2.2], [2.3, 1.4]], burst: 0.12, burstAt: { g: [IMPACT[0], 0.2, IMPACT[1]] }, burstSpeed: 4.2, seed: 61 },
+      { kind: 'night-rocks', t: -9, at: G(4.5, -1.2, 0), n: 12, radius: 3.2, size: [0.25, 0.75], h: [0.4, 2.6], rise: [-9, -9], riseDur: 0.01, glow: [[0, 1.2], [0.3, 2.2], [2.3, 1.4]], burst: 0.4, burstAt: { g: [IMPACT[0], 0.2, IMPACT[1]] }, burstSpeed: 4.2, seed: 61 },
       // Two more waves out of the blast itself, so rocks keep coming at the lens to the cut.
-      ...[[0.75, 71, 3.6], [1.35, 81, 3.2]].map(([at, seed, speed]) => ({
+      ...[[0.9, 71, 3.6], [1.45, 81, 3.2]].map(([at, seed, speed]) => ({
         kind: 'night-rocks', t: -9, at: G(8.6, -3.4, 0), n: 9, radius: 1.8, size: [0.3, 0.85], h: [0.6, 2.6], rise: [at, at], riseDur: 0.01,
         glow: 2.0, burst: at + 0.01, burstAt: G(12.5, -4.6, 0.5), burstSpeed: speed, seed,
       })),
-      { kind: 'night-impact', t: -0.15, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 4.0, toward: EX_CAM, light: 900, flash: 0.5, gain: 0.4, dust: 0.15, dome: 0, haze: 0.25, puffs: 35, chunks: 46, chunkSize: 1.4, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
+      { kind: 'night-impact', t: 0.05, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 4.0, toward: EX_CAM, light: 900, flash: 0.5, gain: 0.4, dust: 0.15, dome: 0, haze: 0.25, puffs: 35, chunks: 46, chunkSize: 1.4, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
       { kind: 'embers', t: -1, at: { g: [U[0], 1.0, U[1] - 3] }, count: 400, box: [12, 6, 12], drift: [0.2, 1.4, 0.4], size: 0.04, color: '#ffc85a', color2: '#9dff4a' },
-      { kind: 'shake', t: 0.05, d: 1.5, amp: 0.2 },
-      // The original's white flash on the cut (152.0 s), then the blast's own glare at the end.
-      { kind: 'fade', t: -1, color: '#ffffff', curve: [[0, 1], [0.1, 1], [0.35, 0]] },
+      { kind: 'shake', t: 0.42, d: 1.5, amp: 0.2 },
+      // The original's white flash: white from the cut to 152.33 s, then straight into the blast.
+      { kind: 'fade', t: -1, color: '#ffffff', curve: [[0, 0.85], [0.12, 1], [0.4, 1], [0.43, 0]] },
       { kind: 'fade', t: 1, color: '#efffc0', curve: [[1.85, 0], [2.29, 0.45]] },
     ],
   }),
