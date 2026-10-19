@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import {DawnIsland} from './world3';
 import {SNOW_POINTS} from './snowQuests';
 import {DawnRequests} from './dawnRequests';
-import {SnowIsland} from './world4';
+import {SnowIsland,SNOW_POI_POINTS} from './world4';
 import type {FrostPortal} from './frostPortal';
 import {t} from '../i18n';
 import type { Game } from './game';
@@ -345,11 +345,11 @@ export class HiddenWorld {
     w.resolveCollision=(x,z,r,out)=>resolveOnIsland(island.collision,SNOW_BOUNDS,[],x,z,r,out);
     w.raycastSolid=(a,b)=>island.collision.raycast(a,b);
     w.pois.spawn.position.copy(island.spawn);w.pois.spawn.yaw=Math.PI;
-    for(const [id,x,z] of [['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-55,25],['shore',55,25],['wreck',48,-15],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-78]] as const)w.pois[id].position.set(x,island.height(x,z),z);
-    g.npcs.forEach((n,i)=>{const [x,z]=island.town[i];n.poi.position.set(x,island.height(x,z),z);n.unit.hidden=false;n.unit.teleport(w,x,z,Math.PI);});
-    const walks=island.town.map(([x,z])=>new THREE.Vector3(x,island.height(x,z),z));
+    for(const [id,x,z] of SNOW_POI_POINTS)w.pois[id].position.set(x,island.height(x,z),z);
+    g.npcs.forEach((n,i)=>{const [x,z]=island.town[i];n.poi.position.set(x,island.height(x,z),z);n.unit.hidden=false;n.unit.teleport(w,x,z,island.townYaw[i]);});
+    const walks=island.walks.map(([x,z])=>new THREE.Vector3(x,island.height(x,z),z));
     g.townsfolk.forEach((f,i)=>{const p=walks[i%walks.length];f.unit.hidden=false;f.unit.teleport(w,p.x,p.z+2);f.relocate(walks,1.5);});
-    this.nav=new NavHints(w,{points:[...walks,new THREE.Vector3(0,5,28),new THREE.Vector3(0,14,-24),island.arena.position],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
+    this.nav=new NavHints(w,{points:[...walks,...island.town.map(([x,z])=>new THREE.Vector3(x,island.height(x,z),z)),...island.roadHints.map(([x,z])=>new THREE.Vector3(x,island.height(x,z),z)),island.arena.position],includeWorldPoints:false,radius:g.player.unit.radius+.15,step:.5});
     for(const b of [g.boss,g.finalBoss,g.worldBoss,g.dawnBoss])b.unit.hidden=b.freed.hidden=true;
     g.frostBoss.unit.hidden=['dormant','dead'].includes(g.frostBoss.state);g.frostBoss.freed.hidden=!!g.journey?.frostCleared;g.frostBoss.freed.targetable=false;g.frostBoss.freed.teleport(w,13,-62);
     g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const slot=e.islandSlot;const x=slot!==null?(slot%2?1:-1)*(48+Math.floor(slot/2)*5):(i%2?1:-1)*(44+i%4*7),z=slot!==null?14-Math.floor(slot/2)*20:20-Math.floor(i/2)*12;e.home.set(x,island.height(x,z),z);if(authority)e.respawnAt(x,z);e.refreshAppearance();});
@@ -430,7 +430,7 @@ export class HiddenWorld {
       w.resolveCollision=(x,z,r,out)=>resolveOnIsland(island?.collision??this.collision,chapter===2?STAR_BOUNDS:chapter===3?DAWN_BOUNDS:chapter>=5?FRONTIER_BOUNDS:SNOW_BOUNDS,chapter===2?this.obstacles:[],x,z,r,out);
       w.raycastSolid=(a,b)=>(island?.collision??this.collision)?.raycast(a,b)??null;
       if(chapter>=5)w.pois.spawn.position.set(0,w.heightAt(0,82),82);else w.pois.spawn.position.copy(island?.spawn??this.spawn);w.pois.spawn.yaw=Math.PI;
-      const points=chapter===2?[['shore',-70,5],['wreck',70,-15],['grove',25,55],['forge',-25,36],['tavern',-20,58],['chapel',20,35],['lighthouse',0,-48],['beacon',0,-45],['bossArena',0,-75]] as const:chapter===3?[['forge',20,64],['chapel',16,48],['tavern',-20,64],['grove',-55,36],['shore',55,36],['wreck',55,-25],['lighthouse',0,-40],['beacon',0,-44],['bossArena',0,-72]] as const:chapter>=5?[['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-50,26],['shore',61,22],['wreck',44,-6],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-72]] as const:[['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-55,25],['shore',55,25],['wreck',48,-15],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-78]] as const;
+      const points=chapter===2?[['shore',-70,5],['wreck',70,-15],['grove',25,55],['forge',-25,36],['tavern',-20,58],['chapel',20,35],['lighthouse',0,-48],['beacon',0,-45],['bossArena',0,-75]] as const:chapter===3?[['forge',20,64],['chapel',16,48],['tavern',-20,64],['grove',-55,36],['shore',55,36],['wreck',55,-25],['lighthouse',0,-40],['beacon',0,-44],['bossArena',0,-72]] as const:chapter>=5?[['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-50,26],['shore',61,22],['wreck',44,-6],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-72]] as const:SNOW_POI_POINTS;
       for(const[id,x,z]of points)w.pois[id].position.set(x,w.heightAt(x,z),z);if(chapter===2)this.ambience.start(g.time);else this.ambience.stop();
     }
     this.nav=null;g.hud.hints.setChapter(chapter);g.follow.cut();g.hud.dialogue.close();g.hud.messages.closeDiscovery();

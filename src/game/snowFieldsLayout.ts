@@ -5,6 +5,7 @@
 import { snowHeight } from '../sim/world/ground';
 import { SNOW_POINTS } from '../sim/data/quests';
 import { SNOW_ROCKS } from '../sim/world/snowGround';
+import { frostRoadEdgeDist } from '../sim/world/snowLayout';
 import type { Collision } from '../world/collision';
 import { snowTrees } from './world4Colliders';
 
@@ -30,7 +31,8 @@ export const fieldEdge = (x: number, z: number) => Math.hypot(x / 128, (z - 2) /
 const near = (list: readonly XZ[], x: number, z: number, r: number) => list.some(([px, pz]) => (px - x) ** 2 + (pz - z) ** 2 < r * r);
 
 /**
- * Whether a piece of footprint radius `r` may stand at (x, z). Everything keeps clear of the village, the roads,
+ * Whether a piece of footprint radius `r` may stand at (x, z). Everything keeps clear of the village, the roads
+ * (4 m past the paved edge of the north road and the processional way, snowLayout.ts),
  * the arena, quest points (4 m), the throne sites (10 m) and the north beyond z = -90; solids also keep 6 m from
  * monster homes and clear of the pines, ice cliffs and crags.
  */
@@ -42,8 +44,7 @@ export function fieldBlock(x: number, z: number, r: number, solid: boolean): str
   if (fieldEdge(x, z) > 0.78) return 'coast';
   if (z - r < -90) return 'north';
   if (Math.abs(x) - r <= 47 && z + r >= 23 && z - r <= 98) return 'village';
-  const dz = Math.max(-53 - z, z - 94, 0);
-  if (Math.hypot(x, dz) - r < 8) return 'road';
+  if (frostRoadEdgeDist(x, z) - r < 4) return 'road';
   if (Math.hypot(x, z + 78) - r < 36) return 'arena';
   if (near(QUEST, x, z, 4 + r)) return 'quest';
   if (near(FIELD_SITES, x, z, 10 + r)) return 'site';
