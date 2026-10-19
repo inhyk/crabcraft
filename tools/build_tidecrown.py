@@ -19,6 +19,7 @@ Everything is deterministic: no randomness without a fixed seed, Cycles AO on th
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import math
 import random
@@ -38,6 +39,7 @@ ap.add_argument("--only", default="", help="comma list of pieces to build (itera
 ap.add_argument("--samples", type=int, default=96, help="Cycles AO samples per vertex")
 ap.add_argument("--render", default="", help="directory for EEVEE preview renders")
 ap.add_argument("--kit-tex", default="", help="directory with MI_*__base.png kit textures for a textured preview")
+ap.add_argument("--views", default="", help="comma list of preview names to render (e.g. TC_Keep_front,lineup); default all")
 args = ap.parse_args(argv)
 
 PI = math.pi
@@ -148,6 +150,7 @@ class Geo:
         self.v: list[Vector] = []
         self.f: list[list] = []
         self.nt = 0  # >0: faces added now are not tessellated (thin trims)
+        self.shade: dict[int, float] = {}  # vertex -> cavity factor multiplied into the baked AO (carapace grooves)
 
     def vert(self, p) -> int:
         self.v.append(Vector(p))
@@ -985,6 +988,7 @@ class Piece:
             v = max(0.3, min(1.0, v ** 1.1))
             if i in glow_verts:
                 v = 1.0
+            v *= self.g.shade.get(i, 1.0)
             d.color = (v, v, v, 1.0)
         for ob in sc.objects:
             ob.hide_render = False
@@ -1544,152 +1548,348 @@ def post(g, x, z):
 
 
 # ---------------------------------------------------------------------------------------------
-# The keep
+# The keep: the fossil carapace of a giant crab lies on the great hall as its roof
 # ---------------------------------------------------------------------------------------------
-DOME_Y0 = 22.0  # hall roof line: the rolled rim bead sits on it
-DOME_TOP = 56.5
-DOME_A, DOME_B = 30.0, 25.0
-BEAD_R = 0.85
-EDGE_Y = DOME_Y0 + 2 * BEAD_R * 0.9  # where the shell meets the rim bead
-SPIKES = [  # (angle from the front towards +x, length, base radius, kind)
-    (0.22, 5.2, 1.15, "s"), (-0.22, 5.2, 1.15, "s"), (0.52, 6.6, 1.45, "s"), (-0.52, 6.6, 1.45, "s"),
-    (0.9, 12.5, 2.8, "h"), (-0.9, 12.5, 2.8, "h"),
-]
-for k, deg in enumerate((70, 89, 108, 127, 147)):
-    SPIKES.append((math.radians(deg), 9.4 - 0.7 * k, 2.2 - 0.12 * k, "m"))
-    SPIKES.append((-math.radians(deg), 9.4 - 0.7 * k, 2.2 - 0.12 * k, "m"))
-SPIKES.append((PI, 6.4, 1.6, "m"))
-RIDGE_ANGLES = sorted(((a + PI) % TAU) - PI for a, *_ in SPIKES)
+DOME_Y0 = 22.0  # hall roof line: the carapace's underside rests on it
+RIM_Y = 23.4  # the margin stands a little proud of the roof so the lip throws a shadow line
+BEAD_R = 0.55
+EDGE_Y = RIM_Y + BEAD_R * 0.75  # where the dorsal surface meets the rim bead
+DOME_TOP = 48.0  # crest of the carapace on the spire axis (under the spire stage)
+STAGE_A = 7.4  # half width of the square spire stage; the shell starts under its plinth
+SHELL_IN = 7.9  # half width of the square inner edge of the shell (inside the plinth)
+SHOULDER, FLANGE_H = 0.94, 0.045  # the dorsal surface creases at rho 0.94 into a thin marginal flange
+SHAFT_Y0 = 61.4  # the octagonal shaft starts above the stage
+
+# right half of the outline (x, z) from the front centre round to the back centre: broad front with
+# the orbits, anterolateral arc out to the lateral horn (widest point), posterolateral margin
+# converging to a narrower rounded back
+CARAPACE = [(0.0, 26.4), (4.5, 26.2), (8.5, 25.6), (11.0, 24.8), (12.6, 23.4), (14.6, 23.7), (17.5, 22.4), (21.6, 19.4),
+            (25.4, 15.0), (28.3, 10.2), (30.0, 5.5), (29.8, 0.5), (28.4, -5.0), (25.6, -10.6), (21.4, -15.8), (16.2, -19.9),
+            (10.6, -22.4), (5.2, -23.4), (0.0, -23.6)]
+# carapace regions as relief, right half (mirrored): grooves (polyline, half width, depth) and lobes
+GROOVES = [  # the H round the spire stage: its uprights beside the stage and the curve behind it. The stage stands
+    # where the bar would be (a bar in front of it read as a cleft between two lobes from three-quarter views), and no
+    # line runs down the slope to the margin.
+    ([(12.9, 7.5), (12.9, 6.0), (12.6, 1.0), (11.8, -4.0), (10.4, -9.0), (8.2, -13.6), (5.0, -16.9), (1.8, -18.1)], 0.62, 0.1),
+    ([(0.0, -8.8), (3.5, -9.4), (6.4, -10.8)], 0.55, 0.08),  # behind the cardiac region
+]  # (polyline, half width, depth), right half, mirrored; the first line is the upright between cardiac and branchial regions
+LOBES = [(0.0, 16.4, 8.0, 4.2, 0.15), (19.5, 6.5, 4.5, 4.5, 0.12), (18.0, -7.0, 6.0, 7.5, 0.25)]  # (x, z, sx, sz, h)
+GROWTH = (0.72, 0.86)  # faint, broad growth ridges (rho)
 
 
-def dome_foot(th):
-    """Carapace outline: squarish superellipse, broadest just ahead of the middle."""
-    s, c = math.sin(th), math.cos(th)
-    e = 2 / 2.6
-    X = DOME_A * math.copysign(abs(s) ** e, s) * (1 + 0.1 * c)
-    Z = DOME_B * math.copysign(abs(c) ** e, c)
-    return X, Z
+def _catmull_closed(pts, n):
+    """Closed centripetal Catmull-Rom through 2D pts, n samples per span."""
+    P = [Vector(p) for p in pts]
+    m = len(P)
+    out = []
+    for i in range(m):
+        p0, p1, p2, p3 = P[i - 1], P[i], P[(i + 1) % m], P[(i + 2) % m]
+        t1 = (p1 - p0).length ** 0.5
+        t2 = t1 + (p2 - p1).length ** 0.5
+        t3 = t2 + (p3 - p2).length ** 0.5
+        for s in range(n):
+            t = t1 + (t2 - t1) * s / n
+            a1 = p0 * ((t1 - t) / t1) + p1 * (t / t1)
+            a2 = p1 * ((t2 - t) / (t2 - t1)) + p2 * ((t - t1) / (t2 - t1))
+            a3 = p2 * ((t3 - t) / (t3 - t2)) + p3 * ((t - t2) / (t3 - t2))
+            b1 = a1 * ((t2 - t) / t2) + a2 * (t / t2)
+            b2 = a2 * ((t3 - t) / (t3 - t1)) + a3 * ((t - t1) / (t3 - t1))
+            out.append(b1 * ((t2 - t) / (t2 - t1)) + b2 * ((t - t1) / (t2 - t1)))
+    return out
 
 
-def seg_info(th, A):
-    """Angular distance to the nearest division in A and the fraction across the current segment."""
+def _outline_table():
+    full = CARAPACE + [(-x, z) for x, z in reversed(CARAPACE[1:-1])]
+    tab = sorted((math.atan2(p.x, p.y), p.length) for p in _catmull_closed(full, 40))
+    return [t for t, _ in tab], [r for _, r in tab]
+
+
+OUT_TH, OUT_R = _outline_table()
+
+
+def out_r(th):
+    """Outline radius about the spire axis at angle th (from the front towards +x)."""
     th = ((th + PI) % TAU) - PI
-    best = min(abs(((th - a + PI) % TAU) - PI) for a in A)
-    after = [a for a in A if a >= th]
-    nxt = after[0] if after else A[0] + TAU
-    before = [a for a in A if a <= th]
-    prv = before[-1] if before else A[-1] - TAU
-    return best, (th - prv) / max(1e-6, nxt - prv)
+    n = len(OUT_TH)
+    i = bisect.bisect_right(OUT_TH, th)
+    t0 = OUT_TH[i - 1] if i > 0 else OUT_TH[-1] - TAU
+    t1 = OUT_TH[i] if i < n else OUT_TH[0] + TAU
+    return lerp(OUT_R[(i - 1) % n], OUT_R[i % n], (th - t0) / max(1e-9, t1 - t0))
 
 
-DOME_RINGS = (0.24, 0.52, 0.79, 1.0)  # plate rows: inner, middle, outer
-DOME_DIVS = (RIDGE_ANGLES[::4], RIDGE_ANGLES[::2], RIDGE_ANGLES)
+def _smooth_outline(k=3, n=720):
+    """Cosine coefficients of the outline radius up to harmonic k (a low-pass carapace envelope)."""
+    ths = [TAU * i / n - PI for i in range(n)]
+    return [sum(out_r(t) * math.cos(j * t) for t in ths) * (1 if j == 0 else 2) / n for j in range(k + 1)]
 
 
-def dome_xz(th, rho):
-    X, Z = dome_foot(th)
-    _, f = seg_info(th, RIDGE_ANGLES)
-    sc = 1 + 0.04 * math.sin(PI * f) ** 0.7 * smooth(0.6, 1.0, rho)  # scalloped rim between spikes
-    return X * rho * sc, Z * rho * sc
+OUT_LP = _smooth_outline()
 
 
-def dome_point(th, rho):
-    """Carapace surface: a smooth dome tiled with puffed plates whose seams are the segment lines."""
-    x, z = dome_xz(th, rho)
-    y = EDGE_Y + (DOME_TOP - EDGE_Y) * (1 - rho ** 2.3) ** 0.56
-    puff = 0.0
-    for b in range(3):
-        r0, r1 = DOME_RINGS[b], DOME_RINGS[b + 1]
-        if r0 <= rho <= r1 or (b == 0 and rho < r0):
-            u = min(1.0, max(0.0, (rho - r0) / (r1 - r0)))
-            _, v = seg_info(th, DOME_DIVS[b])
-            ue = math.sin(PI * u) ** 0.45 if b < 2 else math.sin(PI * min(1.0, u * 0.62)) ** 0.45
-            puff = (0.38 + 0.16 * b) * ue * math.sin(PI * v) ** 0.45
-            break
-    up = 0.82 + 0.18 * (1 - rho)
-    side = math.sqrt(max(0.0, 1 - up * up))
-    rl = math.hypot(x, z) or 1.0
-    return Vector((x + x / rl * side * puff, y + up * puff, z + z / rl * side * puff))
+def out_r_smooth(th):
+    return sum(a * math.cos(j * th) for j, a in enumerate(OUT_LP))
 
 
-def bead_frame(th):
-    """Rim bead centre and outward unit vector at angle th."""
-    p = dome_point(th, 1.0)
-    out = Vector((p.x, 0.0, p.z)).normalized()
-    c = Vector((p.x, DOME_Y0 + BEAD_R, p.z)) + out * 0.35 * BEAD_R
-    return c, out
+def rim_xz(th):
+    r = out_r(th)
+    return Vector((r * math.sin(th), 0.0, r * math.cos(th)))
+
+
+def rim_normal(th, e=0.004):
+    t = rim_xz(th + e) - rim_xz(th - e)
+    return Vector((-t.z, 0.0, t.x)).normalized()
+
+
+def shell_base(th, rho):
+    """Dorsal surface: height from the smooth envelope inside, from the true outline near the margin (so
+    the orbit notches and the frontal projection do not crease the whole shell radially)."""
+    p = rim_xz(th) * rho
+    rs = rho * out_r(th) / out_r_smooth(th)
+    rho = min(1.0, rs + (rho - rs) * smooth(0.8, 0.96, rho))
+    body = 1 - min(1.0, rho / SHOULDER) ** 2.2
+    p.y = EDGE_Y + (DOME_TOP - EDGE_Y) * ((1 - FLANGE_H) * body + FLANGE_H * min(1.0, (1 - rho) / (1 - SHOULDER)))
+    return p
+
+
+def _seg_dist(px, pz, a, b):
+    dx, dz = b[0] - a[0], b[1] - a[1]
+    t = max(0.0, min(1.0, ((px - a[0]) * dx + (pz - a[1]) * dz) / (dx * dx + dz * dz)))
+    return math.hypot(px - a[0] - t * dx, pz - a[1] - t * dz)
+
+
+def relief(th, rho, x, z):
+    """Offset along the normal (swollen regions, shallow grooves, growth ridges) and groove amount 0..1."""
+    ax = abs(x)
+    d = sum(h * math.exp(-((ax - cx) / sx) ** 2 - ((z - cz) / sz) ** 2) for cx, cz, sx, sz, h in LOBES)
+    cut, cav = 0.0, 0.0
+    for pts, w, depth in GROOVES:
+        dist = min(_seg_dist(ax, z, pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+        e = math.exp(-(dist / w) ** 2)
+        cut = max(cut, depth * e)
+        cav = max(cav, e * min(1.0, depth / 0.1))
+    fade = 1 - smooth(0.8, 0.94, rho)
+    d = (d - cut) * fade
+    front = smooth(0.35, 0.95, abs(th))  # ridges fade out towards the granular front
+    d += sum(0.08 * front * math.exp(-((rho - r) / 0.017) ** 2) for r in GROWTH)
+    return d, cav * fade
+
+
+def rho_in(th):
+    """Inner edge of the shell: a square of half SHELL_IN about the spire axis."""
+    return SHELL_IN / max(abs(math.sin(th)), abs(math.cos(th))) / out_r(th)
+
+
+def shell_point(th, rho):
+    p = shell_base(th, rho)
+    e = 1e-3
+    n = (shell_base(th + e, rho) - shell_base(th - e, rho)).cross(shell_base(th, rho + e) - shell_base(th, rho - e))
+    if n.y < 0:
+        n = -n
+    n.normalize()
+    d, cav = relief(th, rho, p.x, p.z)
+    return p + n * d, n, cav
+
+
+def _arc_columns(nh):
+    """Angles for 2*nh columns at equal arc length round the rim, mirror symmetric."""
+    k = 2000
+    ts = [PI * i / k for i in range(k + 1)]
+    s = [0.0]
+    for i in range(1, k + 1):
+        s.append(s[-1] + (rim_xz(ts[i]) - rim_xz(ts[i - 1])).length)
+    right = []
+    j = 0
+    for c in range(nh + 1):
+        target = s[-1] * c / nh
+        while j < k - 1 and s[j + 1] < target:
+            j += 1
+        right.append(lerp(ts[j], ts[j + 1], (target - s[j]) / max(1e-9, s[j + 1] - s[j])))
+    right[0], right[-1] = 0.0, PI
+    return [-t for t in reversed(right[1:-1])] + right, s[-1] * 2
+
+
+def _u_rows(n):
+    """Rows u in [0, 1] (inner edge to the shoulder) at roughly equal spacing along the side meridian."""
+    k = 600
+    r0 = rho_in(PI / 2)
+    us = [i / k for i in range(k + 1)]
+    s = [0.0]
+    for i in range(1, k + 1):
+        a, b = r0 + (SHOULDER - r0) * us[i - 1], r0 + (SHOULDER - r0) * us[i]
+        s.append(s[-1] + (shell_base(PI / 2, b) - shell_base(PI / 2, a)).length)
+    rows = []
+    j = 0
+    for c in range(n + 1):
+        target = s[-1] * c / n
+        while j < k - 1 and s[j + 1] < target:
+            j += 1
+        rows.append(lerp(us[j], us[j + 1], (target - s[j]) / max(1e-9, s[j + 1] - s[j])))
+    return rows
+
+
+def lens_tooth(g, base, d, length, width, thick, curl=0.0, gold=0.22, K=10, back=1.8):
+    """Flat crab-margin tooth: lens section in the plane of the margin, tapering to a gold tip."""
+    up = Vector((0, 1, 0))
+    fwd = Vector((0, 0, 1))
+    ctrl = [base - Vector((d.x, 0, d.z)).normalized() * back, base + d * length * 0.35,
+            base + d * length * 0.72 + fwd * curl * 0.5, base + d * length + fwd * curl]
+    path = resample(bezier(ctrl, 40), K)
+    i0 = 1  # path index nearest the rim, where the taper starts
+    frames = []
+    for k in range(K):
+        t = (path[min(k + 1, K - 1)] - path[max(k - 1, 0)]).normalized()
+        N = up.cross(t).normalized()
+        frames.append((N, t.cross(N).normalized()))
+    sec = ((1.0, 0.0), (0.62, 0.72), (0.0, 1.0), (-0.62, 0.72), (-1.0, 0.0), (-0.62, -0.72), (0.0, -1.0), (0.62, -0.72))
+
+    def section(k, m):
+        s = max(0.0, (k - i0) / (K - 1 - i0))
+        hw = width / 2 * (1 - s)
+        ht = thick / 2 * (1 - s) ** 0.8
+        return sec[m][0] * hw, sec[m][1] * ht
+
+    sweep(g, path, frames, section, 8, lambda k, m: GOLD if (k + 0.5) / (K - 1) > 1 - gold else NACRE, tip=True)
 
 
 def build_dome(g: Geo):
-    """The carapace: ribbed nacre shell, rolled scalloped rim bead, soffit, rim spikes."""
-    A = RIDGE_ANGLES + [RIDGE_ANGLES[0] + TAU]
-    ths = []
-    for i in range(len(A) - 1):
-        a0, a1 = A[i], A[i + 1]
-        near = [0.0, 0.022, 0.048, 0.085]
-        mid_n = max(2, round((a1 - a0 - 0.17) / 0.06))
-        mid = [a0 + 0.085 + (a1 - a0 - 0.17) * k / mid_n for k in range(1, mid_n)]
-        pts = [a0 + o for o in near] + mid + [a1 - o for o in near[1:]]
-        ths += sorted(set(round(t, 6) for t in pts if a0 <= t < a1))
-    ths = sorted(ths)
+    """The carapace: nacre shell with its regions, rolled margin, flat underside, teeth and horns."""
+    ths, perim = _arc_columns(120)
     NT = len(ths)
-    rhos = [0.2 + 0.8 * (1 - (1 - k / 26) ** 1.5) for k in range(27)]
-    for rs in DOME_RINGS[1:3]:
-        rhos += [rs + o for o in (-0.03, -0.012, 0.0, 0.012, 0.03)]
-    rhos = sorted(set(round(r, 4) for r in rhos))
-    rows = [[g.vert(dome_point(th, r)) for th in ths] for r in rhos]
-    beads = [bead_frame(th) for th in ths]
-    for adeg in (95, 60, 25, 0, -30, -62, -90):
+    r0s = [rho_in(th) for th in ths]
+    rows = []
+    specs = [(u, None) for u in _u_rows(38)] + [(None, r) for r in (0.962, 0.981, 1.0)]  # body to the shoulder, then the flange
+    for u, fixed in specs:
+        row = []
+        for th, r0 in zip(ths, r0s):
+            p, _, cav = shell_point(th, fixed if fixed is not None else r0 + (SHOULDER - r0) * u)
+            row.append(g.vert(p))
+            if cav > 0.02:
+                g.shade[row[-1]] = 1 - 0.24 * min(1.0, cav)  # grooves: a gentle cavity darkening in the AO
+        rows.append(row)
+    rims = [(rim_xz(th), rim_normal(th)) for th in ths]
+    for adeg in (95, 45, 0, -45, -90):
         a = math.radians(adeg)
-        rows.append([g.vert(c + out * BEAD_R * math.cos(a) + Vector((0, BEAD_R * math.sin(a), 0))) for c, out in beads])
-    rows.append([g.vert(Vector((c.x, DOME_Y0, c.z)) - out * 2.2) for c, out in beads])
-    rows.append([g.vert(Vector((c.x * 0.55, DOME_Y0, c.z * 0.55))) for c, out in beads])
-    # explicit UVs: u around (wall density at the mean radius), v along the meridian
-    wrap = round(TAU * 27.5 * WALL_U)
+        rows.append([g.vert(p + n * (0.3 * BEAD_R + BEAD_R * math.cos(a)) + Vector((0, RIM_Y + BEAD_R * math.sin(a), 0)))
+                     for p, n in rims])
+    rows.append([g.vert(p - n * 1.3 + Vector((0, RIM_Y - BEAD_R - 0.5, 0))) for p, n in rims])
+    rows.append([g.vert(p - n * 3.0 + Vector((0, DOME_Y0, 0))) for p, n in rims])
+    # explicit UVs: u along the rim (wall density at 70% of the rim), v along the meridian
+    wrap = round(perim * 0.7 * WALL_U)
+    cum = [0.0]
+    for j in range(1, NT):
+        cum.append(cum[-1] + (rims[j][0] - rims[j - 1][0]).length)
+    th_u = [c / perim * wrap for c in cum] + [float(wrap)]
     acc = [[0.0] * NT]
     for r in range(1, len(rows)):
         acc.append([acc[-1][j] + (g.v[rows[r][j]] - g.v[rows[r - 1][j]]).length for j in range(NT)])
-    th_u = [(t - ths[0]) / TAU * wrap for t in ths] + [wrap * 1.0]
     f0 = len(g.f)
+    lip = range(len(specs) + 1, len(specs) + 3)  # bead rows 45 -> 0 -> -45 degrees: the gold outer lip
     for r in range(len(rows) - 1):
         for j in range(NT):
             j2 = (j + 1) % NT
             q = [rows[r][j], rows[r][j2], rows[r + 1][j2], rows[r + 1][j]]
             uv = [(th_u[j], acc[r][j] * WALL_V), (th_u[j + 1], acc[r][j2] * WALL_V),
                   (th_u[j + 1], acc[r + 1][j2] * WALL_V), (th_u[j], acc[r + 1][j] * WALL_V)]
-            g.face(q, NACRE, EXPLICIT, None, uv)
-    # the grid runs rho outwards and theta towards +x: make the top surface face up
+            g.face(q, GOLD if r in lip else NACRE, EXPLICIT, None, uv)
     n = newell([g.v[i] for i in g.f[f0][0]])
-    if n.y < 0:
+    if n.y < 0:  # make the dorsal surface face up
         for f in g.f[f0:]:
             f[0] = list(reversed(f[0]))
             f[4] = list(reversed(f[4]))
     g.face_dir(rows[0], NACRE, (0, 1, 0), mode=EXPLICIT, uv=[(0.0, 0.0)] * NT)
     g.face_dir(rows[-1], NACRE, (0, -1, 0), mode=EXPLICIT, uv=[(0.0, 0.0)] * NT)
-    # spikes rising from the bead at the rib ends; the two front horns are the carapace's big spines
-    up = Vector((0, 1, 0))
-    for th, length, rb, kind in SPIKES:
-        c, out = bead_frame(th)
-        base = c + out * 0.2 * BEAD_R + up * 0.25 * BEAD_R
-        if kind == "h":
-            d0 = (out * math.cos(0.98) + up * math.sin(0.98) + Vector((0, 0, 0.3))).normalized()
-            curl = up * 0.6 - out * 0.25 + Vector((0, 0, 0.12))
-        elif kind == "s":
-            d0 = (out * math.cos(1.1) + up * math.sin(1.1)).normalized()
-            curl = up * 0.3
+    # margin teeth: rostrum pair, inner orbital teeth, five anterolateral teeth growing to the horn
+    rim_y = Vector((0, RIM_Y, 0))
+    for s in (-1, 1):
+        th = s * math.atan2(1.75, 26.4)
+        lens_tooth(g, rim_xz(th) + rim_y, Vector((s * 0.16, -0.04, 1.0)).normalized(), 2.4, 1.9, 0.7, back=1.2)
+        th = s * math.atan2(11.0, 24.8)
+        lens_tooth(g, rim_xz(th) + rim_y, Vector((s * 0.3, 0.05, 1.0)).normalized(), 1.6, 1.8, 0.65, back=1.2)
+        # arc length from the outer orbital corner to the widest point
+        ta, tb = math.atan2(14.6, 23.7), math.atan2(30.0, 5.5)
+        k = 400
+        ts = [ta + (tb - ta) * i / k for i in range(k + 1)]
+        acc_s = [0.0]
+        for i in range(1, k + 1):
+            acc_s.append(acc_s[-1] + (rim_xz(ts[i]) - rim_xz(ts[i - 1])).length)
+        teeth = [(0.03, 2.6, 2.7, 0.8, 22), (0.21, 3.2, 3.2, 0.9, 24), (0.4, 3.8, 3.6, 1.0, 24), (0.59, 4.4, 3.9, 1.1, 22),
+                 (0.78, 5.0, 4.2, 1.25, 20), (1.0, 7.0, 4.4, 3.0, 10)]  # (arc fraction, length, base width, thickness, lean)
+        for frac, length, width, thick, lean in teeth:
+            i = min(k, bisect.bisect_left(acc_s, acc_s[-1] * frac))
+            th = s * ts[i]
+            nrm = rim_normal(th)
+            phi = math.atan2(nrm.x, nrm.z) - s * math.radians(lean)  # lean forward of the margin normal
+            d = Vector((math.sin(phi), 0.21 if length < 5 else 0.27, math.cos(phi))).normalized()
+            lens_tooth(g, rim_xz(th) + rim_y + nrm * 0.15 + Vector((0, 0.15, 0)), d, length, width, thick,
+                       curl=0.5 if length > 5 else 0.18 * length, gold=0.2 if length > 5 else 0.24, K=14 if length > 5 else 10)
+    # granules scattered along the frontal and hepatic margin, thinning out inwards
+    rng = random.Random(7)
+    placed = []
+    tries = 0
+    while len(placed) < 96 and tries < 6000:
+        tries += 1
+        th = rng.uniform(-0.98, 0.98)
+        rho = 0.966 - 0.11 * rng.random() ** 1.4 * (0.7 + 0.3 * abs(th))
+        p, nrm, _ = shell_point(th, rho)
+        if any((p - q).length < 0.95 for q in placed):
+            continue
+        placed.append(p)
+        rg = rng.uniform(0.24, 0.4) * (0.7 + 3.0 * (rho - 0.86))
+        M = T(*p) @ Vector((0, 1, 0)).rotation_difference(nrm).to_matrix().to_4x4()
+        lathe(g, [(rg, -0.2), (rg * 0.72, 0.07), (0.0, 0.17)], 5, NACRE, a0=rng.uniform(0, 1), M=M)
+
+
+def spire_stage(g):
+    """Square stage on the carapace crest broaching to an octagon; corner pinnacles over stepped buttresses."""
+    A = STAGE_A
+    c = 0.1
+    sq = [(1 - c, 1), (1, 1 - c), (1, -(1 - c)), (1 - c, -1), (-(1 - c), -1), (-1, -(1 - c)), (-1, 1 - c), (-(1 - c), 1)]
+    lathe(g, [(0, 39.5), (A + 0.9, 39.5), (A + 0.9, 46.4), (A + 0.35, 47.2), (A + 0.35, 47.6), (0, 47.6)], 8, DARK, ring=sq,
+          mode=PLANAR)
+    lathe(g, [(0, 47.5), (A, 47.5), (A, 55.0), (0, 55.0)], 8, LIME, ring=sq, mode=PLANAR)
+    lathe(g, [(A - 0.3, 54.3), (A + 0.18, 54.3), (A + 0.18, 54.62), (A - 0.3, 54.62)], 8, GOLD, ring=sq, loop=True, mode=PLANAR)
+    lathe(g, [(A - 0.3, 55.0), (A + 0.35, 55.0), (A + 0.75, 55.45), (A + 0.75, 55.9), (A - 0.3, 55.9)], 8, DARK, ring=sq, loop=True,
+          mode=PLANAR)
+    for k in range(4):  # a lancet on each face, the claw shield on the front
+        a = TAU * k / 4
+        M = T(*polar(0, 0, A, a, 0.0)) @ RY(a)
+        if k == 0:
+            shield_panel(g, M @ T(0, 51.0, 0), w=3.2, h=4.0, depth=0.3)
         else:
-            d0 = (out * math.cos(1.02) + up * math.sin(1.02)).normalized()
-            curl = up * 0.35
-        ctrl = [base - d0 * 1.5, base + d0 * length * 0.35, base + d0 * length * 0.7 + curl * length * 0.12,
-                base + d0 * length + curl * length * 0.3]
-        K = 16 if kind == "h" else 12
-        path = resample(bezier(ctrl, 40), K)
-        side = out.cross(up).normalized()
-        fr = plane_frames(path, side)
-        sweep(g, path, fr, lambda k, m, _rb=rb, _K=K: (
-            math.cos(TAU * m / 10) * _rb * (1 - k / (_K - 1)) ** 0.8,
-            math.sin(TAU * m / 10) * _rb * (1 - k / (_K - 1)) ** 0.8), 10,
-              lambda k, m: NACRE, tip=True)
+            window(g, M @ T(0, 48.8, 0), w=2.2, h=4.8, frame=0.38, depth=0.45)
+        for sx in (-1, 1):  # corner quoin strips
+            box(g, (sx * (A - 0.45), 51.3, 0.06), (0.95, 7.6, 0.24), DARK, ch=0.06, M=M)
+    # broach: square (half A - 0.3) at 55.9 to an octagon (apothem 5.6) at 59.2
+    y0, y1, ap = 55.9, 59.2, 5.6
+    ro = ap / math.cos(PI / 8)
+    O = [g.vert(polar(0, 0, ro, PI / 8 + k * PI / 4, y1)) for k in range(8)]
+    a = A - 0.3
+    C = [g.vert(Vector((sx * a, y0, sz * a))) for sx, sz in ((1, 1), (1, -1), (-1, -1), (-1, 1))]
+    ctr = (0, (y0 + y1) / 2, 0)
+    for k in range(4):  # side k between corners k-1 and k; octagon flat 2k-1..2k; corner triangle at C[k]
+        g.face_out([C[k - 1], C[k], O[2 * k], O[2 * k - 1]], LIME, ctr)
+        g.face_out([C[k], O[2 * k + 1], O[2 * k]], DARK, ctr)
+    oct8 = poly_ring(8, 1, a0=PI / 8)
+    lathe(g, [(ro, 59.2), (ro, 61.4), (0, 61.4)], 8, LIME, ring=oct8, mode=PLANAR)
+    lathe(g, chamfer_poly([(ro - 0.4, 60.6), (ro + 0.55, 60.6), (ro + 0.55, 61.9), (ro - 0.4, 61.9)], 0.15), 8, GOLD, ring=oct8,
+          loop=True, mode=PLANAR)
+    for k in range(4):  # slits on the diagonal faces of the drum
+        a = PI / 4 + k * PI / 2
+        slit(g, T(*polar(0, 0, ap - 0.02, a, 59.8)) @ RY(a), h=1.0, w=0.3, frame=False, cross=False)
+    # corner pinnacles over stepped diagonal buttresses that run down onto the shell
+    for sx, sz in ((1, 1), (1, -1), (-1, -1), (-1, 1)):
+        cx, cz = sx * (A - 0.55), sz * (A - 0.55)
+        lathe(g, [(0, 55.9), (1.25, 55.9), (1.25, 59.6), (0, 59.6)], 4, LIME, cx, cz, a0=PI / 4, mode=PLANAR)
+        lathe(g, chamfer_poly([(1.0, 59.6), (1.5, 59.6), (1.5, 60.0), (1.0, 60.0)], 0.08), 4, DARK, cx, cz, a0=PI / 4, loop=True,
+              mode=PLANAR)
+        lathe(g, [(1.3, 60.0), (0.0, 63.4)], 4, SLATE, cx, cz, a0=PI / 4, mode=PLANAR)
+        finial(g, cx, cz, 63.1, s=0.42, socket=False, n=8)
+        a = math.atan2(sx, sz)
+        foot = shell_point(a, (A * math.sqrt(2) + 4.6) / out_r(a))[0]
+        buttress(g, T(sx * (A - 0.2), 0, sz * (A - 0.2)) @ RY(a), 1.7,
+                 [(4.6, foot.y - 2.0, 46.6), (3.0, 46.6, 50.8), (1.5, 50.8, 54.4)], mat=LIME)
+        lathe(g, [(0, 46.6 + 0.0), (0.55, 46.6), (0.42, 47.4), (0.0, 48.2)], 6, GOLD, mode=PLANAR,
+              M=T(sx * (A - 0.2), 0, sz * (A - 0.2)) @ RY(a) @ T(0, 0, 4.15))
 
 
 def wall_run(g, M, x0, x1, *, merlons=False, cornice=True, corbel_step=1.6):
@@ -1795,13 +1995,14 @@ def build_keep() -> Piece:
             a = math.atan2(sx, sz)
             buttress(g, T(sx * 25.0, 0, sz * 12.0) @ RY(a), 2.2, [(2.6, 1.6, 9.0), (1.8, 9.0, 15.5), (1.1, 15.5, 20.2)])
             quoins(g, sx * 25.0, sz * 12.0, sx, sz, 1.6, 20.4, rng)
-    # terraces between the facades and the dome, with crenellated parapets on the nave sides
+    # terraces between the facades and the carapace, with crenellated parapets on the nave sides (the
+    # front ones start clear of the carapace's anterolateral teeth)
     for sz in (-1, 1):
         z0, z1 = sorted((sz * 19.0, sz * 34.3))
         box(g, (0, 22.08, (z0 + z1) / 2), (33.0, 0.16, z1 - z0), DARK)
         for s in (-1, 1):
             M = T(s * 17.0, 0, 0) @ RY(s * PI / 2)
-            xa, xb = sorted((-s * sz * 23.2, -s * sz * 33.8))
+            xa, xb = sorted((-s * sz * (27.6 if sz > 0 else 23.2), -s * sz * 33.8))
             prism(g, chamfer_poly([(-0.6, 22.0), (0.55, 22.0), (0.55, 23.15), (-0.6, 23.15)], 0.08), xa, xb, "x", LIME, M=M)
             merlon_row(g, xa, xb, 23.15, 1.35, 1.0, M=M @ T(0, 0, 0.05), w=1.4, gap=1.0)
     # --- west front (z = +35) and east end (z = -35)
@@ -1903,13 +2104,11 @@ def build_keep() -> Piece:
             for side in (-1, 1):
                 buttress(g, Mf @ T(side * 9.2, 0, 0), 1.8, [(2.8, 1.6, 10.0), (1.9, 10.0, 17.5), (1.1, 17.5, 20.2)])
                 window(g, Mf @ T(side * 12.6, 6.5, 0), w=2.4, h=9.0, frame=0.4, depth=0.5)
-    # --- the carapace dome
+    # --- the carapace and the spire stage on its cardiac region
     build_dome(g)
-    # --- spire: collar, octagonal shaft with gold bands, balconies, slits, crown cup and claws
-    lathe(g, [(5.0, 54.2), (7.7, 54.2), (7.95, 55.0), (7.35, 55.8), (7.55, 57.1), (6.5, 58.7), (5.9, 59.4), (5.0, 59.4)], 32, GOLD,
-          loop=True, mode=PLANAR)
-    lathe(g, [(5.5, 59.3), (6.45, 59.3), (6.45, 59.9), (5.5, 59.9)], 32, DARK, loop=True, mode=PLANAR)
-    prof = [(0.0, 54.0)] + [(spire_r(y), y) for y in (54.0, 140.0)] + [(0.0, 140.0)]
+    spire_stage(g)
+    # --- spire: octagonal shaft with gold bands, balconies, slits, crown cup and claws
+    prof = [(0.0, SHAFT_Y0 - 0.6)] + [(spire_r(y), y) for y in (SHAFT_Y0 - 0.6, 140.0)] + [(0.0, 140.0)]
     with notess(g):
         lathe(g, prof, 8, LIME, mode=PLANAR, ring=poly_ring(8, 2, a0=PI / 8), seg_len=2.6)
     for y in (78.0, 98.0, 118.0):
@@ -1918,7 +2117,7 @@ def build_keep() -> Piece:
               loop=True, mode=PLANAR)
         lathe(g, chamfer_poly([(r - 0.4, y - 0.45), (r + 0.18, y - 0.45), (r + 0.18, y), (r - 0.4, y)], 0.08), 8, DARK, a0=PI / 8,
               loop=True, mode=PLANAR)
-    for y0 in (60.0, 80.0, 100.0, 120.0):
+    for y0 in (SHAFT_Y0 + 0.6, 80.0, 100.0, 120.0):
         for k in range(8):  # corner ribs
             a = PI / 8 + TAU * k / 8
             y1 = min(y0 + 17.4, 129.0)
@@ -2115,7 +2314,7 @@ def main():
         spec = importlib.util.spec_from_file_location("tc_render", Path(__file__).with_name("render_tidecrown.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
-        mod.render_all(pieces, Path(args.render), args.kit_tex)
+        mod.render_all(pieces, Path(args.render), args.kit_tex, args.views)
 
 
 main()
