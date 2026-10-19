@@ -15,6 +15,7 @@ import {
   ToneMappingMode,
   VignetteEffect,
 } from 'postprocessing';
+import { GradeEffect, type GradeOptions } from './grade';
 
 /** Content tier: foliage density, shadow map size, particle counts. */
 export type Quality = 'low' | 'high';
@@ -44,6 +45,8 @@ export interface ViewOptions {
   toneMapping?: ToneMappingMode;
   /** The AgX look when toneMapping is left out. */
   agxLook?: { saturation?: number; power?: number };
+  /** A colour grade on display values (grade.ts); views without one render exactly as before. */
+  grade?: GradeOptions;
 }
 
 type Updater = (f: FrameInfo) => void;
@@ -243,6 +246,7 @@ export class Engine {
     // Grading runs on display values after tone mapping; before it, HDR highlights invert.
     if (opts.saturation !== undefined) effects.push(new HueSaturationEffect({ saturation: opts.saturation }));
     if (opts.contrast !== undefined) effects.push(new BrightnessContrastEffect({ contrast: opts.contrast }));
+    if (opts.grade) effects.push(new GradeEffect(opts.grade));
     if (opts.vignette !== null) {
       effects.push(
         new VignetteEffect({ offset: opts.vignette?.offset ?? 0.32, darkness: opts.vignette?.darkness ?? 0.55 }),

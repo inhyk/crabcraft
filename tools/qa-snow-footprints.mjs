@@ -22,7 +22,8 @@ try{
   // Search a strip along the walked line for the deepest print and the tallest berm.
   let dep=0,berm=0;for(let x=36;x<=48;x+=.06)for(let z=4.6;z<=7.4;z+=.06){const v=d.sample(ren,x,z);dep=Math.max(dep,v[0]);berm=Math.max(berm,v[1]);}
   const far=d.sample(ren,40,-8);
-  const names=['frostlight-ice-cliffs','frostlight-arena-crystals','snow-fountain-sculpture'].map(n=>!!g.scene.getObjectByName(n));
+  // The arena's crystal pillars are grown with the citadel's ice since the Frozen Throne (frostThrone.ts).
+  const names=['frostlight-ice-cliffs','frostlight-citadel-ice','snow-fountain-sculpture'].map(n=>!!g.scene.getObjectByName(n));
   const spike=g.scene.getObjectByName('snow-fountain-sculpture').position;
   return {supported:d.supported,res:d.res,stamps:d.stats.stamps,dep,berm,far,names,spike:[spike.x,spike.z],pines:w.root.userData.snowPines};});
  assert.equal(r.supported,true);assert.equal(r.res,1024);
