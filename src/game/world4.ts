@@ -4,7 +4,9 @@ import {SNOW_WIND} from '../sim/world/snowGround';
 import {layoutFrostlight,snowTrees,SNOW_FOUNTAIN} from './world4Colliders';
 import type {Poi} from '../world/types';
 import {StarPortal} from './portal';
-import {islandPaths} from './islandPaths';
+import type {IslandPath} from './islandPaths';
+import {frostPaving,type FrostPaving} from './frostPaving';
+import {frostArena,type FrostArena} from './frostArena';
 import {SnowDeform} from './snowDeform';
 import {applySnowSurface,SnowFootfalls} from './snowSurface';
 import {SnowTerrain} from './snowTerrain';
@@ -47,6 +49,8 @@ export class SnowIsland {
  private basin:THREE.Mesh;
  /** Kit houses, lamps and props; null until buildSettlement() has loaded the kits. */
  village:SnowVillage|null=null;
+ private paving:FrostPaving;
+ private arenaFloor:FrostArena;
  private refreshIce:()=>void;
  height(x:number,z:number){
   return snowHeight(x,z);
@@ -68,8 +72,9 @@ export class SnowIsland {
   this.terrain.mesh.name='snowdrift-terrain';this.root.add(this.terrain.mesh);
   // Crags breaking through the drifts, for scale and the horizon (snowRocks.ts).
   this.root.add(snowRocks((x,z)=>this.height(x,z),this.terrain.uniforms));
-  // Paved, gently rising trails remain clear of every building and tree trunk.
-  this.root.add(islandPaths((x,z)=>this.height(x,z),[{points:[[0,94],[0,28],[0,-53]],width:8,trim:true},... [38,56,74].map(z=>({points:[[-22,z],[22,z]] as [number,number][],width:4,trim:true}))],4));
+  // Snowed-in cobbled streets (frostPaving.ts) on the same layout as before, so walking and covers() are unchanged.
+  const paths:IslandPath[]=[{points:[[0,94],[0,28],[0,-53]],width:8,trim:true},...[38,56,74].map(z=>({points:[[-22,z],[22,z]] as [number,number][],width:4,trim:true}))];
+  this.paving=frostPaving((x,z)=>this.height(x,z),paths,{skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,sunDir:this.sky.sunDir,deform:this.deform});this.root.add(this.paving.root);
   // Frozen fountain: a turned stone basin (the kit's stone once buildSettlement() has it) round a pond of ice.
   const {x:fx,z:fz}=SNOW_FOUNTAIN,fy=this.height(fx,fz);
   this.basin=add(lathe([[2.42,.36],[2.46,.62],[2.6,.75],[2.92,.75],[3.06,.6],[3.06,.12],[3.14,0],[3.14,-.6]],56,.5),dark,fx,fy,fz);this.basin.name='snow-fountain-basin';
@@ -87,8 +92,8 @@ export class SnowIsland {
   const cliffs:Crystal[]=[];
   for(let i=0;i<42;i++){const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;if(Math.abs(x)<16&&z>-70)continue;const y=this.height(x,z),h=6+i%5*3;crystalCluster(x,y,z,h*1.1,4+i%3,5+i%3,rand,cliffs);}
   iceMesh(cliffs,'frostlight-ice-cliffs');
-  add(new THREE.CylinderGeometry(22,23,.35,96),ice,0,18.92,-78);
-  for(const r of [6,13,21.5]){const ring=add(new THREE.TorusGeometry(r,.065,5,96),glow,0,19.13,-78);ring.rotation.x=-Math.PI/2;}
+  // Carved ice floor with the three combat rings cut in as runes (frostArena.ts).
+  this.arenaFloor=frostArena({center:this.arena.position,radius:this.arena.radius,rings:[6,13,21.5],skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.root.add(this.arenaFloor.root);
   const pillars:Crystal[]=[];
   for(let i=0;i<12;i++){const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=this.height(x,z);crystalCluster(x,y,z,8.6,2.6,3,rand,pillars);add(new THREE.OctahedronGeometry(.8),glow,x,y+8.5,z);}
   iceMesh(pillars,'frostlight-arena-crystals');
@@ -111,7 +116,7 @@ export class SnowIsland {
   this.root.add(forest,village.group);this.village=village;this.basin.material=village.stone;
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
- updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.terrain.setQuality(quality);this.terrain.prepare(renderer);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
+ updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.terrain.setQuality(quality);this.terrain.prepare(renderer);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
  disposeSnow(){this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
  update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.village?.update(time,x,z);this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
 }
