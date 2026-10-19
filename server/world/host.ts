@@ -121,6 +121,7 @@ const HOST_COMMAND_KINDS = new Set(HOST_COMMANDS);
 const JOURNAL_CONCURRENCY = 4;
 const ECONOMIC_INTERACTIONS = new Set<string>([...TREASURES.map(t => t.id), LIGHTHOUSE_SECRET.id]);
 class OutcomeResourcePause extends Error {}
+const isResourceOnly = (error: unknown) => error instanceof OutcomeResourcePause || error instanceof CharacterStoreError && error.code === 'resource_limit';
 const sameRef = (a: EntityRef, b: EntityRef) => a.area === b.area && a.id === b.id && a.life === b.life;
 const buffer = (raw: RawData) => Buffer.isBuffer(raw) ? raw : raw instanceof ArrayBuffer ? Buffer.from(raw) : Buffer.concat(raw);
 const reject = (socket: Duplex, status: string) => socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
@@ -166,7 +167,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const wss = new WebSocketServer({ noServer: true, maxPayload: p.maxFrameBytes, perMessageDeflate: false });
   let admissionRequested = true; let accepting = !external; let stopped = false; let frozen = false; let draining = false; let barrier: Promise<void> | null = null; let barrierHalts = false; let timer: ReturnType<typeof setTimeout> | undefined; let slice: ReturnType<typeof setImmediate> | undefined;
   const failedSources = new Set<Slot>(), drainedFailedSources = new Set<Slot>(), attemptedFailedSources = new Set<Slot>();
-  let startupRecovery = external, nextRecovery = deps.nowMonotonicMs(), lastSave = deps.nowMonotonicMs();
+  let startupRecovery = external, nextRecovery = deps.nowMonotonicMs(), lastSave = deps.nowMonotonicMs(), haltNextSave = false;
   /** A barrier that holds the world: no tick and no snapshot until it ends. A retained save round does not hold it. */
   const halted = () => barrier !== null && barrierHalts;
   let readyDone = !external, resolveReady!: () => void, rejectReady!: (error: unknown) => void;
@@ -179,9 +180,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   let generation = 1; let unresolved = 0; let pendingChat = 0;
   const chatTargets = new Map<string, { participant: ChatParticipant; expires: number }>();
   // persistenceBarriers counts every save round. haltingBarriers and haltedMs count those that held the world (persistenceMs is
-  // the wall time of startDurability rounds); saveRounds and saveMs the retained rounds that let it run. aoi*: actor slots.
+  // the wall time of startDurability rounds); saveRounds and saveMs the retained rounds that let it run, saveRetries those of
+  // them given up after a journal failure (the next round then holds the world). aoi*: actor slots.
   const metrics = { ticks: 0, snapshots: 0, packets: 0, receivedPackets: 0, discardedRevokedFrames: 0, bytesSent: 0, bytesReceived: 0, rejected: 0, queued: 0,
-    haltingBarriers: 0, haltedMs: 0, saveRounds: 0, saveMs: 0, aoiNear: 0, aoiFar: 0, aoiFarHeld: 0, dungeonClears: 0, dungeonSealRetries: 0,
+    haltingBarriers: 0, haltedMs: 0, saveRounds: 0, saveMs: 0, saveRetries: 0, aoiNear: 0, aoiFar: 0, aoiFarHeld: 0, dungeonClears: 0, dungeonSealRetries: 0,
     authFailures: 0, pendingSourceGrants: 0, persistenceBarriers: 0, persistenceMs: 0, tickMs: 0, snapshotBatchMs: 0, neutralizations: 0, recoveries: 0 };
   const processStarted = deps.nowMonotonicMs(), processCpuStart = process.cpuUsage();
   const timings = new Map<string, { values: number[]; cursor: number }>();
@@ -981,8 +983,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (pausedDurability?.run === work) { pausedDurability = null; unresolved--; frozen = false; accepting = admissionRequested && !draining; }
     }).catch(error => {
       deps.onFailure?.('durability', error);
-      const resourceOnly = error instanceof OutcomeResourcePause || error instanceof CharacterStoreError && error.code === 'resource_limit';
-      if (resourceOnly && !deps.ownership.closed.aborted && !draining) {
+      if (isResourceOnly(error) && !deps.ownership.closed.aborted && !draining) {
         if (!pausedDurability) unresolved++;
         pausedDurability = { run: work, ownership: deps.ownership, halting };
       } else { if (!pausedDurability) unresolved++; pausedDurability = null; }
@@ -1003,7 +1004,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
    * respawn rebinds that ledger), so the same once-per-interval round is a halting one there.
    */
   function startSave() {
-    if (featureAwards) { startDurability(); return; }
+    if (featureAwards || haltNextSave) { if (!barrier && !frozen) { haltNextSave = false; startDurability(); } return; }
     if (barrier || frozen || draining || external || !actors.size) return;
     deps.ownership.assertOwned();
     const began = deps.nowMonotonicMs(); lastSave = began; metrics.persistenceBarriers++; metrics.saveRounds++;
@@ -1016,7 +1017,25 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       c.awaiting += c.results.length; c.results = [];
     }
     const work = async () => {
-      await journalSources(sources);
+      try { await journalSources(sources); }
+      catch (error) {
+        // A resource-only failure pauses as in a halting round. Any other journal failure (such as a victim outcome
+        // transaction that ran out of its deadline while the running world kept the event loop busy) gives this round up
+        // before anything was written for its captures: they are discarded, their results wait again, no grant is
+        // acknowledged (journaling is idempotent), and the next round, started right away, holds the world as before.
+        if (isResourceOnly(error) || deps.ownership.closed.aborted) throw error;
+        deps.onFailure?.('save-journal-retry', error);
+        await boundary(() => {
+          deps.ownership.assertOwned();
+          for (const { slot, capture } of captures) slot.area.discardCheckpointCapture(capture.captureId);
+          for (const { c, actor, epoch, session, results: captured } of acks) {
+            c.awaiting -= captured.length;
+            if (!c.closed && c.actor === actor && actor.connection === c && c.epoch === epoch && c.stream?.session === session) c.results.unshift(...captured);
+          }
+          metrics.saveRetries++; haltNextSave = true; lastSave = -Infinity;
+        });
+        return;
+      }
       const results = await persistence.commitBatch(captures.map(({ actor, revision, capture }) => ({ captureId: capture.captureId,
         accountId: actor.record.accountId, characterId: actor.record.characterId, expectedRevision: revision,
         checkpoint: deps.codec.toJson(capture.checkpoint), appliedGrantIds: capture.appliedGrantIds,
@@ -1452,7 +1471,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     stats: () => ({ ...metrics, checkpointBatches: persistence.metrics.batches, checkpointBatchFallbacks: persistence.metrics.batchFallbacks, ...timingStats(), ...ledgerStats(), processCpuUserMs: process.cpuUsage(processCpuStart).user / 1000,
       processCpuSystemMs: process.cpuUsage(processCpuStart).system / 1000, processElapsedMs: deps.nowMonotonicMs() - processStarted,
       activeConnections: connections.size, activeActors: actors.size, waiting: waiting.length,
-      publicAreas: slots.size, ready: readyDone && !startupRecovery && !frozen && !deps.ownership.closed.aborted, failedSources: failedSources.size, resourcePaused: pausedDurability !== null, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, haltingBarrier: halted(), unresolved,
+      publicAreas: slots.size, ready: readyDone && !startupRecovery && !frozen && !deps.ownership.closed.aborted, failedSources: failedSources.size, resourcePaused: pausedDurability !== null, frozen, accepting, draining, stopped, ownershipHeld: !deps.ownership.closed.aborted, durableBarrier: barrier !== null, haltingBarrier: halted(), checkpointCaptures: [...allSlots].reduce((n, s) => n + s.area.resourceUsage().captures, 0), unresolved,
       pendingChat, partyCount: parties.size, encounterAreas: [...allSlots].filter(slot => slot.kind === 'party').length, dungeonAreas: [...allSlots].filter(slot => slot.kind === 'dungeon').length,
       droppedTicks: [...allSlots].reduce((n, s) => n + s.tick.dropped, 0), droppedSnapshots: [...allSlots].reduce((n, s) => n + s.snapshot.dropped, 0) }),
   };

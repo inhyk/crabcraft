@@ -994,3 +994,43 @@ test('a far actor (40 to 80 m) is refreshed every 4th snapshot and never removed
   } finally { viewer?.ws.close(); mover?.ws.close(); await rt.close(); }
 });
 
+
+test('a save round whose journal write fails is given up without acknowledging or leaking anything, and the next round holds the world and pays every reward once', { timeout: 30000 }, async () => {
+  let failNext = 0, failed = 0;
+  // The first victim outcome write of the armed round fails as a client-side query deadline would, after nothing committed.
+  const characters = new Proxy(store, { get(target, key) {
+    if (key === 'recordVictimOutcome') return async (...args) => { if (failNext > 0) { failNext--; failed++; throw new Error('Query read timeout'); } return target.recordVictimOutcome(...args); };
+    const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  const rt = await runtime({ combat: true, enemies: 6, characters }), bots = [], records = [], timers = [];
+  try {
+    for (let i = 0; i < 2; i++) { const c = await character('mage'), bot = await client(rt, c); records.push(c); bots.push(bot); await ready(rt, bot); }
+    await until(() => !rt.host.stats().durableBarrier);
+    const start = rt.host.stats(); failNext = 1;
+    for (const bot of bots) timers.push(attackLoop(bot));
+    await until(() => failed === 1 || rt.failures.length, 20000);
+    await until(() => rt.host.stats().saveRetries > start.saveRetries || rt.failures.some(f => f.stage !== 'save-journal-retry'), 10000);
+    const retried = rt.host.stats();
+    assert.equal(retried.frozen, false); assert.equal(retried.saveRetries - start.saveRetries, 1);
+    // The retry is a halting round (the world held while it journals), started right after the failure.
+    await until(() => rt.host.stats().haltingBarriers > start.haltingBarriers && !rt.host.stats().durableBarrier || rt.failures.some(f => f.stage !== 'save-journal-retry'), 10000);
+    const before = kills(bots); await until(() => kills(bots) >= before + 2 || rt.failures.some(f => f.stage !== 'save-journal-retry'), 20000);
+    for (const t of timers) clearInterval(t); timers.length = 0;
+    bots[0].send([{ kind: 'questAccept', questId: 'q1', npcId: 'brinebeard' }]); const accepted = bots[0].sequence;
+    await until(() => bots[0].results.some(r => r.inputSequence === accepted) || rt.failures.some(f => f.stage !== 'save-journal-retry'), 10000);
+    await afterSave(rt); await afterSave(rt);
+    assert.deepEqual(rt.failures.map(f => [f.stage, f.message]), [['save-journal-retry', 'Query read timeout']]);
+    const end = rt.host.stats();
+    assert.equal(end.frozen, false); assert.equal(end.checkpointCaptures, 0, 'the given-up captures are not left behind'); assert.equal(end.pendingSourceGrants, 0);
+    assert.ok(end.saveRounds - start.saveRounds >= 2, 'the non-halting rounds resume after the retry');
+    for (const [i, c] of records.entries()) {
+      const ledger = await grantLedger(c), saved = await store.getOwned(c.binding.accountId, c.record.characterId);
+      assert.deepEqual(ledger.receipts, ledger.ids, 'every journaled reward has exactly one receipt');
+      assert.equal(saved.checkpoint.progress.xp, ledger.xp); assert.equal(bots[i].state.self.player.xp, ledger.xp);
+      assert.deepEqual(await store.pendingGrants(c.binding.accountId, c.record.characterId), []);
+    }
+    const result = bots[0].results.find(r => r.inputSequence === accepted);
+    assert.equal(result.status, 'durable'); assert.equal((await store.getOwned(records[0].binding.accountId, records[0].record.characterId)).checkpoint.progress.quests.status.q1, 'active');
+    for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { for (const t of timers) clearInterval(t); for (const b of bots) b.ws.close(); assert.deepEqual(await rt.close(), { durable: true, unresolved: 0 }); }
+});
