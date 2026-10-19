@@ -2,7 +2,7 @@ import { captureEdges, sampleHeld, type PlayerInputGame } from '../game/playerIn
 import type { HeldInput } from '../sim/input.ts';
 import type { ChannelKind, PlayerCommand } from '../sim/types.ts';
 import {
-  GameplayReceiver, LIMITS, binding as validateBinding, clone, encodeControl, sameBinding,
+  GameplayReceiver, LIMITS, WIRE_SCHEMA_REVISION, validateWireSchema, binding as validateBinding, clone, encodeControl, sameBinding,
   type GameplayCatalog, type GameplayState, type WireBinding, type WireHeader, type WorldControl,
 } from '../../server/world/gameplay/protocol.ts';
 import { HOST_COMMANDS, encodeInput, validateCommand, type GameplayCommand, type GameplayInput } from '../../server/world/gameplay/intents.ts';
@@ -88,6 +88,11 @@ export class WorldClient {
   private status: WorldConnectionState = 'idle';
   private current: GameplayState | null = null;
   private queueInfo: { world: string; position: number } | null = null;
+  /**
+   * The last error control on this socket. The host closes the socket right after an error that ends the session, so the
+   * close reports it; a denied command (party, encounter, travel, dungeon) leaves the socket open and the next message clears it.
+   */
+  private closing: { code: string; retryable: boolean } | null = null;
   private resolveConnect: (() => void) | null = null;
   private rejectConnect: ((error: Error) => void) | null = null;
 
@@ -118,6 +123,7 @@ export class WorldClient {
   }
 
   private begin(characterId: string): Promise<void> {
+    try { validateWireSchema(this.catalog); } catch { this.stopAttempt('protocol-schema'); this.setState('closed', 'protocol-schema'); return Promise.reject(new Error('protocol-schema')); }
     this.stopAttempt('replaced');
     this.characterId = characterId;
     const generation = this.generation;
@@ -152,12 +158,12 @@ export class WorldClient {
       socket.addEventListener('open', () => {
         if (!this.active(generation, socket)) return;
         this.setState('authenticating');
-        socket.send(JSON.stringify({ type: 'authenticate', ticket: result.ticket, characterId }));
+        socket.send(JSON.stringify({ type: 'authenticate', ticket: result.ticket, characterId, ...(this.catalog.wireSchemaRevision === undefined ? {} : { schemaRevision: WIRE_SCHEMA_REVISION }) }));
       });
       socket.addEventListener('message', event => {
         if (this.active(generation, socket)) this.receive((event as MessageEvent).data);
       });
-      socket.addEventListener('close', () => { if (this.active(generation, socket)) this.fail('disconnected', true); });
+      socket.addEventListener('close', () => { if (this.active(generation, socket)) { const closing = this.closing; this.fail(closing?.code ?? 'disconnected', closing?.retryable ?? true); } });
       socket.addEventListener('error', () => { if (this.active(generation, socket)) this.fail('transport', true); });
     } catch {
       if (this.active(generation)) this.fail('connection', true);
@@ -189,10 +195,11 @@ export class WorldClient {
       const header = this.receiver.header;
       if (header) this.acknowledge(header);
     } catch { this.clearFragmentTimer(); this.recover('gap'); return; }
+    this.closing = null;
     if (result.kind === 'control') {
       const control = result.control;
       this.options.onControl?.(clone(control));
-      if (control.type === 'error') this.fail(control.code, control.retryable);
+      if (control.type === 'error') this.closing = { code: control.code, retryable: control.retryable };
       else if (control.type === 'restarting') this.fail('restarting', true);
       return;
     }
@@ -287,7 +294,7 @@ export class WorldClient {
     this.options.resetInput?.();
   }
   private stopAttempt(reason: string): void {
-    this.generation++; this.clearTimer(); this.clearFragmentTimer(); this.abort?.abort(); this.abort = null;
+    this.generation++; this.clearTimer(); this.clearFragmentTimer(); this.abort?.abort(); this.abort = null; this.closing = null;
     const socket = this.socket; this.socket = null; socket?.close();
     this.rejectConnect?.(new Error(reason)); this.resolveConnect = this.rejectConnect = null;
     this.binding = null; this.receiver = null; this.current = null; this.queueInfo = null; this.clearInput(); this.options.onReset?.(reason);

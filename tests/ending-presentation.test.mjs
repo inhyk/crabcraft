@@ -1,0 +1,16 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {EndingPresentationController} from '../src/sim/features/endingPresentation.ts';
+import {evaluateRenderPoseRecipe} from '../src/sim/renderPose.ts';
+import {BREAK_ROUTINE} from '../src/sim/data/actions.ts';
+const options=()=>({id:'ending-a',owner:{area:'w4-live',id:1,life:2},centre:{x:0,y:0,z:0},yaw:0,cast:[{archetype:'human'},...Array.from({length:8},(_,i)=>({archetype:`townsfolk:${i}`}))]});
+function tick(c,n){for(let i=0;i<n;i++)c.step();return c.snapshot();}
+test('authoritative phases use actual routine, cast rigs and finite exact recipes without mutating input',()=>{
+ const opts=options(),before=structuredClone(opts),c=new EndingPresentationController(opts),states=[],moves=new Set();assert.equal(c.snapshot().phase,'blackout');
+ assert.equal(tick(c,32).phase,'blackout');assert.equal(tick(c,1).phase,'opening');assert.equal(tick(c,95).phase,'opening');assert.equal(tick(c,1).phase,'routine');
+ for(let i=0;i<1500;i++){const s=c.snapshot();states.push(s.phase);if(s.move)moves.add(s.move);for(const actor of s.cast){assert.equal(actor.ref.endingId,'ending-a');assert(!('area' in actor.ref));const p=evaluateRenderPoseRecipe(actor.recipe);assert.equal(p.appliedQ.length,22);assert([...p.appliedQ,...p.appliedPosition,...p.appliedRotation].every(Number.isFinite));}if(s.phase==='credits')break;c.step();}
+ assert.equal(c.snapshot().phase,'credits');assert(states.includes('finale'));assert.deepEqual([...moves],BREAK_ROUTINE.map(s=>s.id));assert.deepEqual(opts,before);
+ const observed=c.snapshot();assert(Object.isFrozen(observed.owner));assert.equal(c.command('ending-old','continue'),false);assert.equal(c.command('ending-a','continue'),true);assert.equal(c.command('ending-a','continue'),false);assert.equal(c.snapshot().phase,'finished');
+});
+test('skip is server-authorized at four seconds and increments observation sequence even in the same tick',()=>{const c=new EndingPresentationController(options());tick(c,152);assert.equal(c.command('ending-a','skip'),false);tick(c,1);const s=c.snapshot();assert.equal(c.command('old','skip'),false);assert.equal(c.command('ending-a','skip'),true);assert.equal(c.snapshot().tick,s.tick);assert(c.snapshot().sequence>s.sequence);assert.equal(c.snapshot().phase,'credits');assert.equal(c.command('ending-a','skip'),false);});
+test('restore and combat interruptions cancel once; manual replay needs a distinct caller-authorized incarnation',()=>{for(const reason of ['restored','retired','combat','damage','death','transferred']){const c=new EndingPresentationController(options());tick(c,200);c.cancel(reason);const state=c.snapshot();c.cancel(reason);tick(c,50);assert.deepEqual(c.snapshot(),state);assert.equal(state.cast.length,0);assert.equal(state.phase,'cancelled');assert.equal(c.command(state.id,'skip'),false);}const a=new EndingPresentationController(options()),b=new EndingPresentationController({...options(),id:'ending-b'});assert.equal(b.command(a.snapshot().id,'skip'),false);});
+test('same inputs yield identical snapshots including root carry and bounded cues',()=>{const a=new EndingPresentationController(options()),b=new EndingPresentationController(options());for(let i=0;i<1300;i++){a.step();b.step();assert.deepEqual(a.snapshot(),b.snapshot());assert(a.snapshot().cues.length<=64);}});

@@ -11,6 +11,7 @@ import { prepareRestore, type CoreCharacterCodec, type IdentityJson, type Checkp
 import type { Area, AreaSnapshot, BossProfileId, EntityRef, GrantReadToken, EventRecord, PlayerCommand, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { canChallenge } from '../../src/sim/data/progression.ts';
 import type { LedgerMode } from '../../src/sim/ledger.ts';
+import type { EndingIntegrationOptions } from '../../src/sim/features/worldRules.ts';
 import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { TREASURES, LIGHTHOUSE_SECRET } from '../../src/sim/features/exploration.ts';
 import { CharacterStore, CharacterStoreError, type Character, type VictimOutcomeResources, type GrantBatchEntry } from './character-store.ts';
@@ -22,7 +23,7 @@ import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator, readCertifiedGrantPage, AreaSourceDrain, PagedOutcomeRecovery, type Recovery } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, HOSTABLE_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, InputRateBudget, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
-import { prepareObservationSnapshot, releasePreparedObservation } from './gameplay/protocol.ts';
+import { prepareObservationSnapshot, releasePreparedObservation, WIRE_SCHEMA_REVISION, validateWireSchema } from './gameplay/protocol.ts';
 import type { GameplayCatalog, GameplayProtocol, ObservationInput, PreparedObservation, WireBinding, WorldControl } from './gameplay/protocol.ts';
 import type { CommandResult } from './gameplay/events.ts';
 import { createDungeonDefinition, createDungeonQuery } from '../../src/sim/areas/dungeon.ts';
@@ -47,6 +48,7 @@ export interface HostPolicies {
   readonly maxQueuedInputs: number;
   readonly maxMutationSourcesPerTick: number;
   readonly loopIntervalMs: number;
+  readonly endingPresentation?: { readonly stage: EndingIntegrationOptions['stage'] };
   readonly ledger?: { sourceLimits: SourceLedgerLimits; drainLimits: Omit<ConstructorParameters<typeof AreaSourceDrain>[3], 'codecVersion'>; recoveryLimits: Omit<ConstructorParameters<typeof PagedOutcomeRecovery>[2], 'codecVersion'>; recoveryIntervalMs: number };
   readonly victimOutcome: VictimOutcomeResources;
   readonly victimOutcomeRetryCeiling?: VictimOutcomeResources;
@@ -89,7 +91,7 @@ export interface ActualWorldHost {
   retryDurability(resources: VictimOutcomeResources): Promise<boolean>;
   shutdown(deadlineMs: number): Promise<{ durable: boolean; unresolved: number }>;
   stats(): Readonly<Record<string, number | boolean>>;
-  /** Trusted typed dungeon commands for a connected, authenticated character. The wire decoder for them is D3. */
+  /** Trusted typed dungeon commands for a connected, authenticated character; the wire commands share its queue. */
   dungeon(characterId: string, command: DungeonCommand): Promise<DungeonCommandResult>;
   /** Read-only view of the character's current run, or null outside a dungeon. */
   dungeonObservation(characterId: string): Readonly<DungeonObservation> | null;
@@ -129,6 +131,12 @@ const reject = (socket: Duplex, status: string) => socket.end(`HTTP/1.1 ${status
 /** Actual numeric simulation host. The synthetic v2 fixture is intentionally not imported. */
 export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHost {
   const p = deps.policies, external = !!p.ledger;
+  validateWireSchema(deps.gameplay.catalog);
+  if (p.endingPresentation && deps.gameplay.catalog.wireSchemaRevision !== WIRE_SCHEMA_REVISION) throw new Error('ending requires the compiled wire schema catalog');
+  // The browser offers exactly the advertised tiers, and the dungeon view needs the compiled schema on both ends.
+  if (p.dungeons && deps.gameplay.catalog.wireSchemaRevision !== WIRE_SCHEMA_REVISION) throw new Error('dungeons require the compiled wire schema catalog');
+  { const advertised = deps.gameplay.catalog.dungeons ?? [], tiers = p.dungeons?.tiers ?? [];
+    if (advertised.length !== tiers.length || tiers.some(tier => !advertised.includes(tier))) throw new Error('catalog dungeon tiers must match the dungeon policy'); }
   if (!!deps.outcomes !== external) throw new Error('outcomes service and explicit ledger policy must be paired');
   if (p.ledger && (!Number.isSafeInteger(p.ledger.recoveryIntervalMs) || p.ledger.recoveryIntervalMs < 1)) throw new Error('explicit recovery interval required');
   for (const key of ['authTimeoutMs', 'inputTimeoutMs', 'sessionRevalidateMs', 'checkpointIntervalMs', 'maxConnections', 'maxConnectionsPerIp', 'maxWaiting', 'maxAuthFrameBytes', 'maxFrameBytes', 'maxBufferedBytes', 'maxQueuedInputs', 'maxMutationSourcesPerTick', 'loopIntervalMs'] as const) {
@@ -197,6 +205,13 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const at = (p: number) => values[Math.floor((values.length - 1) * p)] ?? 0;
     return [[`${name}P50Ms`, at(.5)], [`${name}P99Ms`, at(.99)], [`${name}Samples`, values.length]];
   }));
+  const endingOptions = (incarnation: string): EndingIntegrationOptions | undefined => p.endingPresentation ? {
+    incarnation, stage: p.endingPresentation.stage,
+    appearance: owner => {
+      const actor = [...actors.values()].find(actor => sameRef(actor.ref, owner));
+      return actor ? { ...actor.record.identity.appearance, name: shownName(actor.record.identity.appearance.name) } : null;
+    },
+  } : undefined;
   if (PUBLIC_WORLDS.some(world => !deps.worlds.has(world)) || [...deps.worlds.keys()].some(world => !HOSTABLE_WORLDS.some(id => id === world))) throw new Error('missing safe public world configuration');
   for (const world of HOSTABLE_WORLDS.filter(id => deps.worlds.has(id))) {
     const loaded = deps.worlds.get(world);
@@ -204,14 +219,16 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (loaded.publicDefinition.enemies.length > p.maxMutationSourcesPerTick) throw new Error('population exceeds bounded checkpoint receipts');
     const now = deps.nowMonotonicMs();
     const ledgerMode: LedgerMode = external ? 'external-durable' : 'retained';
-    const area = createArea({ ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
+    const id = `${world}:${randomUUID()}`;
+    const area = createArea({ endingPresentation: endingOptions(id), ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id, definition: loaded.publicDefinition, query: loaded.query,
       actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed, characters: registry,
       context: { mode: 'public', pvp: 'disabled', members: [] }, limits: p.areaLimits, ...(featureAwards ? { featureAwards } : {}) });
     const slot: Slot = { kind: 'public', ledgerMode, world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now, publishes: 0 };
     slots.set(world, slot); allSlots.add(slot);
   }
   if (external && p.party) for (const loaded of deps.worlds.values()) for (const definition of loaded.encounterDefinitions.values()) {
-    const validation = createArea({ id: `party:${randomUUID()}`, ledgerMode: 'external-durable', ledgerLimits: p.ledger!.sourceLimits, definition,
+    const id = `party:${randomUUID()}`;
+    const validation = createArea({ endingPresentation: endingOptions(id), id, ledgerMode: 'external-durable', ledgerLimits: p.ledger!.sourceLimits, definition,
       query: loaded.query, actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed,
       context: { mode: 'party-encounter', pvp: 'disabled', members: [] }, limits: p.areaLimits, ...(featureAwards ? { featureAwards } : {}) });
     validation.dispose();
@@ -231,6 +248,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       () => !stopped && allSlots.has(slot) && slot.area === area && deps.ownership === ownership && !drainedFailedSources.has(slot));
   }
   for (const slot of allSlots) slot.source = sourceAdapter(slot);
+  // Retained results wait in c.results until the save round that contains them commits, and ending transitions are held
+  // by their capture binding, so the retained input watermark is the live one; only external rounds hold it back.
   const publishedConsumed = (c: Connection) => external ? c.publishedConsumed : c.input!.consumedInput;
   const sourceFailed = (slot: Slot) => failedSources.has(slot) || drainedFailedSources.has(slot);
   const json = (c: Connection, value: unknown) => {
@@ -274,12 +293,15 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   }
   function partyState(party: Party | undefined) {
     if (!party) return null;
+    const run = party.dungeon?.dungeon;
     return { code: party.code, leader: party.members.get(party.leader)!, pvp: party.pvp,
       members: [...party.members].map(([character, id]) => {
         const actor = actors.get(character);
         if (!actor) throw new Error('party references retired actor');
         return { id, name: shownName(actor.record.identity.appearance.name), ref: actor.ref, world: actor.slot.world, online: !!actor.connection };
-      }) };
+      }),
+      // Members learn the running run here to join it; absent without dungeons so the older shape is unchanged.
+      ...(p.dungeons ? { dungeon: run ? { runId: run.runId, tier: run.tier } : null } : {}) };
   }
   function publishParty(c: Connection) {
     if (!c.stream || !c.input || !c.actor || c.stream.area !== c.actor.slot.area.services.id || c.closed || c.ws.readyState !== WebSocket.OPEN) return;
@@ -330,6 +352,15 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (actor.slot.kind !== 'party') { controlError(c, 'encounter-unavailable'); return; }
       returnRequests.set(character, { actor, leaveParty: false });
     }
+  }
+  /** A dungeon command from the wire joins the same ordered queue as host.dungeon(); a denial arrives as a control error. */
+  function requestDungeon(c: Connection, command: Extract<HostCommand, { kind: `dungeon${string}` }>) {
+    const actor = c.actor!, character = actor.record.characterId;
+    if (!p.dungeons) { controlError(c, 'dungeon-unavailable'); return; }
+    let owned: DungeonCommand;
+    try { owned = validateDungeonCommand({ ...command }); } catch { controlError(c, 'invalid-command'); return; }
+    if (dungeonRequests.has(character)) { controlError(c, 'dungeon-busy'); return; }
+    dungeonRequests.set(character, { actor, command: owned, resolve: () => {} });
   }
   function participantOf(actor: Actor): ChatParticipant {
     return { accountId: actor.record.accountId, ref: { ...actor.ref }, name: shownName(actor.record.identity.appearance.name), partyId: memberParty.get(actor.record.characterId)?.code ?? null };
@@ -543,7 +574,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!destination) {
         if ([...allSlots].filter(s => s.kind !== 'public').length >= p.party.maxEncounters) { controlError(c, 'encounter-capacity'); continue; }
         const loaded = deps.worlds.get(source.world)!, now = deps.nowMonotonicMs();
-        const area = createArea({ ledgerMode: source.ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `party:${randomUUID()}`, definition, query: loaded.query, actionData: loaded.actionData,
+        const id = `party:${randomUUID()}`;
+        const area = createArea({ endingPresentation: endingOptions(id), ledgerMode: source.ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id, definition, query: loaded.query, actionData: loaded.actionData,
           policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'party-encounter', pvp: party.pvp ? 'party-only' : 'disabled', members: [] }, limits: p.areaLimits, ...(featureAwards ? { featureAwards } : {}) });
         area.bootstrapEncounter(profile, { beaconLit: beacon });
         destination = { kind: 'party', ledgerMode: source.ledgerMode, world: source.world, area, party, profile, tick: new DeadlineScheduler(30, now),
@@ -730,11 +762,14 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const cleanupDungeons = () => {
     if (barrier || frozen) return;
+    let ended = false;
     for (const slot of allSlots) if (slot.kind === 'dungeon' && slot.area.players.size === 0 && !slot.dungeon!.frozen && !slot.area.pendingDungeonCompletion() &&
       (!slot.source || !slot.area.resourceUsage().dirtyCreditEntries && !slot.area.resourceUsage().pendingDeaths)) {
       slot.area.dispose(); allSlots.delete(slot); failedSources.delete(slot); drainedFailedSources.delete(slot); attemptedFailedSources.delete(slot);
-      if (slot.party?.dungeon === slot) slot.party.dungeon = undefined;
+      if (slot.party?.dungeon === slot) { slot.party.dungeon = undefined; ended = true; }
     }
+    // The party control stops advertising the disposed run.
+    if (ended) syncPartyContexts();
   };
   /** A safe public checkpoint cannot restore in the chamber: discard the local life and readmit the durable one publicly. */
   function evictDungeonResident(actor: Actor, recovery: Recovery<IdentityJson, CheckpointJson, GrantJson>) {
@@ -1006,11 +1041,19 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
    * journaled, and recovery after a conflict, go to the halting round that pendingReplay starts, as before. External
    * ledger mode, admission, travel, encounters, retirement and shutdown keep the halting barrier; a gate travel whose
    * source Area holds grants not journaled yet first journals them in one (advanceTravel).
-   * With dungeons enabled every Area keeps a durable feature award ledger, whose capture and mark need the world held (a
-   * respawn rebinds that ledger), so the same once-per-interval round is a halting one there.
+   * With dungeons enabled every Area also keeps a durable feature award ledger, and this round lets the world run there too.
+   * Exactly-once rests on two facts per character: the ledger owner's durable revision is the PG revision its next award read
+   * is fenced by (beginFeatureAwardRead, applyCertifiedFeatureAwards), and appliedFeatureAwardIds are the paid awards no
+   * committed checkpoint names yet. A capture records both; its mark, after the commit, advances that revision and drops the
+   * IDs the commit receipted. Award pages are applied only under a barrier, in the halting round pendingReplay starts, so the
+   * paid IDs cannot change while this round is in flight; the owner can: a respawn re-prepares it on the next life and a
+   * stream rebind (bootstrap) invalidates it, both keeping its revision, and a dungeon resident moves. Holding the world kept
+   * capture and mark on the same owner and pose. Here the mark instead re-validates at the post-commit boundary
+   * (Area.markCheckpointDurable without a barrier): same unit, same captured revision (one save round at a time), same run
+   * return binding, and the current owner advances. Seals, award delivery, dungeon entry and exit stay in halting rounds.
    */
   function startSave() {
-    if (featureAwards || haltNextSave) { if (!barrier && !frozen) { haltNextSave = false; startDurability(); } return; }
+    if (haltNextSave) { if (!barrier && !frozen) { haltNextSave = false; startDurability(); } return; }
     if (barrier || frozen || draining || external || !actors.size) return;
     deps.ownership.assertOwned();
     const began = deps.nowMonotonicMs(); lastSave = began; metrics.persistenceBarriers++; metrics.saveRounds++;
@@ -1050,7 +1093,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const ids = captures.map(({ actor }) => actor.record.characterId);
       const [unread, unpaid] = await Promise.all([deps.characters.charactersWithPendingGrants(ids), deps.dungeonCompletions ? deps.dungeonCompletions.charactersWithPendingDungeonAwards(ids) : null]);
       await boundary(() => {
-        deps.ownership.assertOwned();
+        deps.ownership.assertOwned(); let restored = false;
         for (const [index, result] of results.entries()) {
           const { actor, slot, revision, capture } = captures[index];
           // Admission, travel, encounters and retirement wait for this round, so the actor keeps its Area; a respawn may change its ref.
@@ -1067,8 +1110,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
             // the next pump replay the journal for it under a halting round.
             const token = slot.area.beginDurabilityBarrier('recovery');
             try { restoreDurableActor(actor, recovery); } finally { slot.area.releaseDurabilityBarrier(token); }
+            restored = true;
           }
         }
+        // A restore leaves its party (a dungeon resident is evicted); a halting round resyncs at its end, so this one does too.
+        if (restored && p.party) syncPartyContexts();
         for (const source of sources) source.slot.area.acknowledgeGrant(source.grant.id);
         metrics.pendingSourceGrants = retainedSources().length;
         // Journal rows and dungeon awards are read and applied only by the halting round that pendingReplay starts.
@@ -1183,17 +1229,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
    */
   const PUBLISH_SLICE_MS = 4;
   let publication: { slot: Slot; snapshot: AreaSnapshot; prepared: PreparedObservation; appearances: ObservationInput['appearances']; beat: number;
-    events: EventRecord[]; watermark: number; recipients: Actor[]; index: number; started: number; busy: number } | null = null;
+    events: EventRecord[]; watermark: number; recipients: Actor[]; index: number; started: number; busy: number; dungeon: Readonly<DungeonObservation> | null } | null = null;
   const publish = (slot: Slot) => {
     if (halted() || frozen || publication || [...actors.values()].some(actor => actor.pendingReplay)) return;
-    // The current observation schema has no dungeon mode; D3 adds a typed run view. Events stay bounded meanwhile.
-    if (slot.kind === 'dungeon') { slot.events = []; return; }
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
     const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
     const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog, { verify: deps.gameplay.verifyObservations ?? true });
     observe('snapshotPrepare', deps.nowMonotonicMs() - start);
+    // A run Area's typed view is read at the same boundary as its snapshot and shared by every recipient.
     publication = { slot, snapshot, prepared, appearances, beat: slot.publishes++, events: slot.events, watermark: slot.watermark,
-      recipients: [...actors.values()].filter(actor => actor.slot === slot), index: 0, started: start, busy: deps.nowMonotonicMs() - start };
+      recipients: [...actors.values()].filter(actor => actor.slot === slot), index: 0, started: start, busy: deps.nowMonotonicMs() - start,
+      dungeon: slot.kind === 'dungeon' ? slot.area.dungeonObservation() : null };
     slot.events = [];
     continuePublication();
   };
@@ -1215,11 +1261,14 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           const encodeStart = deps.nowMonotonicMs(), wasFull = c.full, held = new Set<number>();
           c.visible = visible(slot, actor, c, job.beat, held);
           if (!c.full) metrics.aoiFarHeld += held.size;
+          const extras = p.observationExtras(snapshot, actor.record.characterId, c.visible);
+          const recovery = p.endingPresentation ? { ...extras.recovery, endingPresentation: slot.area.endingObservation(actor.ref) } : extras.recovery;
+          const features = job.dungeon ? { ...extras.features, dungeon: job.dungeon } : extras.features;
           const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
             acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c), selfRef: actor.ref,
             snapshot, prepared, events: job.events, visibleIds: c.visible, heldIds: c.full ? undefined : held, full: c.full, eventWatermark: job.watermark, appearances: job.appearances,
             results: materializeResults(c),
-            ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
+            ...extras, features, recovery });
           observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
           for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
           c.full = false; c.baselineSequence = c.sequence; c.ready = []; metrics.snapshots++;
@@ -1268,6 +1317,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     for (const { c, frame } of prepared) c.input!.commitConsumed(frame.token);
     for (const { c, command, inputSequence } of hostCommands) {
       if (command.kind.startsWith('chat')) { chatCommand(c, command as Extract<HostCommand, {kind:`chat${string}`}>, inputSequence); continue; }
+      if (command.kind.startsWith('dungeon')) { requestDungeon(c, command as Extract<HostCommand, {kind:`dungeon${string}`}>); continue; }
       if (command.kind === 'bossChallenge') {
         if (!p.party || !command.profile) controlError(c, 'party-unavailable');
         else encounterRequests.set(c.actor!.record.characterId, { actor: c.actor!, profile: command.profile });
@@ -1279,7 +1329,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const origin = frame.commandOrigins[index];
       if (!origin) throw new Error('missing command origin');
       const outcome = outcomes.find(result => result.commandIndex === index && sameRef(result.unit, unit));
-      if (command.kind === 'forgeBuy' || command.kind === 'forgeUpgrade') {
+      if (command.kind === 'endingControl') {
+        c.results.push({ ...origin, status: outcome?.success ? 'succeeded' : 'failed', code: outcome?.success ? 'ending-control-accepted' : 'ending-control-rejected' });
+      } else if (command.kind === 'forgeBuy' || command.kind === 'forgeUpgrade') {
         const record = emitted.find(record => !used.has(record) && record.tick === inputTick && record.event.type === 'equipment' && sameRef(record.event.unit, unit) && record.event.operation === (command.kind === 'forgeBuy' ? 'buy' : 'upgrade') && record.event.slot === (command.slot ?? 'weapon') && record.event.request === command.request);
         if (record?.event.type === 'equipment') {
           used.add(record); c.results.push({ ...origin, status: outcome?.success ? 'durable' : 'failed', code: `equipment-${record.event.result}`, ...(command.request === undefined ? {} : { request: command.request }) });
@@ -1312,7 +1364,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (!external) return;
     progression ||= slot.area.pendingGrants().length > 0 || emitted.some(({ event }) =>
       ['quest', 'xp', 'levelUp', 'equipment', 'achievement', 'discovery', 'endingReady', 'death', 'respawn'].includes(event.type));
-    if (progression || sourceNeedsIO(slot) || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
+    if (progression || p.endingPresentation && slot.area.hasPendingEndingTransitions() || sourceNeedsIO(slot) || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
     else for (const { c } of prepared) c.publishedConsumed = c.input!.consumedInput;
   };
   const pump = () => {
@@ -1409,9 +1461,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           const bytes = buffer(raw); metrics.bytesReceived += bytes.byteLength; metrics.receivedPackets++;
           if (c.phase === 'preauth') {
             if (binary || bytes.byteLength > p.maxAuthFrameBytes) { close(c, 'auth-frame'); return; }
-            let value: { type?: unknown; ticket?: unknown; characterId?: unknown };
+            let value: { type?: unknown; ticket?: unknown; characterId?: unknown; schemaRevision?: unknown };
             try { value = JSON.parse(bytes.toString('utf8')); } catch { close(c, 'auth-frame'); return; }
-            if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'characterId,ticket,type' || value.type !== 'authenticate' || typeof value.characterId !== 'string') { close(c, 'auth-frame'); return; }
+            if (!value || typeof value !== 'object' || Array.isArray(value) || !['characterId,ticket,type', 'characterId,schemaRevision,ticket,type'].includes(Object.keys(value).sort().join(',')) || value.type !== 'authenticate' || typeof value.characterId !== 'string') { close(c, 'auth-frame'); return; }
+            if (Object.hasOwn(value, 'schemaRevision') && (value.schemaRevision !== WIRE_SCHEMA_REVISION || value.schemaRevision !== deps.gameplay.catalog.wireSchemaRevision) || (p.endingPresentation || p.dungeons) && value.schemaRevision !== WIRE_SCHEMA_REVISION) { close(c, 'protocol-schema'); return; }
             c.phase = 'authenticating'; const attempt = c.generation;
             void deps.admission.consume(value.ticket, origin).then(binding => enqueue(() => {
               if (c.closed || c.generation !== attempt || !accepting || deps.ownership.closed.aborted) return;

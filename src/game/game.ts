@@ -1,4 +1,6 @@
 import type {ServerGameBridge} from './serverBridge';
+import { WorldEndingPresentation, type EndingPresentationFrame } from '../multiplayer/worldEndingPresentation.ts';
+import type { EndingObservation } from '../sim/features/endingPresentation.ts';
 import type { CoreGameBridge } from './coreBridge';
 import {VillageGames} from './villageGames';
 import {t} from '../i18n';
@@ -74,6 +76,8 @@ const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vign
 /** Frostlight's own grade while it is shown: cool lifted shadows, warm lamp light, snow that reads white (grade.ts). */
 // Bloom keys above the brightest sunlit snow, so lamps and windows glow and the snow does not haze over.
 const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
+/** Tidecrown's late afternoon: a touch brighter and richer, violet lifted shade, a soft glow on sunlit stone. */
+const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.1, agxLook: { saturation: 1.28, power: 1.1 }, bloom: { intensity: 1.1, threshold: 0.78, smoothing: 0.3, radius: 0.8 }, grade: { lift: [0.014, 0.006, 0.03], warm: 0.35, white: 0.1 } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },
@@ -99,6 +103,21 @@ const v2 = new THREE.Vector3();
 export class Game {
   core:CoreGameBridge|null=null;
   server:ServerGameBridge|null=null;
+  private serverEnding:WorldEndingPresentation|null=null;
+  private serverEndingHud:{cinematic:boolean;chatKeep:boolean}|null=null;
+  get serverEndingActive():boolean{return this.serverEnding?.active??false;}
+  /** The trusted observation owns choreography; this adapter owns only a private display. */
+  observeServerEnding(observation:EndingObservation|null,frame:EndingPresentationFrame|null):void {
+    if(!this.alive||!this.serverMode||!observation&&!this.serverEnding)return;
+    if(!this.serverEnding)this.serverEnding=new WorldEndingPresentation({parent:this.app.ui,alive:()=>this.alive,
+      activate:(scene,camera)=>this.engine.setView(scene,camera,GAME_VIEW),
+      restore:()=>{this.engine.setView(this.scene,this.camera,GAME_VIEW);this.follow.cut();},
+      cinematic:on=>{if(on&&!this.serverEndingHud){this.serverEndingHud={cinematic:this.hud.root.classList.contains('cinematic'),chatKeep:this.hud.chat.el.classList.contains('hud-keep')};this.hud.chat.el.classList.add('hud-keep');this.hud.setCinematic(true);}else if(!on&&this.serverEndingHud){const prior=this.serverEndingHud;this.serverEndingHud=null;this.hud.setCinematic(prior.cinematic);if(!prior.chatKeep)this.hud.chat.el.classList.remove('hud-keep');}},
+      command:command=>this.server?.command(command)??false,
+      cue:value=>{if(value==='takeoff'||value==='spin_from')this.audio.sfx('sfx-servo-whir',{volume:.4});},
+      error:message=>this.hud.messages.error(message)});
+    this.serverEnding.commit(observation,frame);
+  }
   readonly serverMode=new URLSearchParams(location.search).get('world')==='server';
   /** The developer monitor's invisible view of a relay room (src/spectate.ts); null in a player's game. */
   spectator:Spectator|null=null;
@@ -203,7 +222,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return !!this.spectator || !!this.server?.locked || !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
+    return !!this.spectator || this.serverEndingActive || !!this.server?.locked || !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -684,7 +703,7 @@ export class Game {
   private readonly frame = (f: FrameInfo): void => {
     if (!this.loaded) return;
     const dt = f.dt;
-    if(this.serverMode){this.server?.frame(dt,f.elapsed);return;}
+    if(this.serverMode){this.server?.frame(dt,f.elapsed);this.serverEnding?.render();return;}
     const paused = (this.hud.menu.open||this.app.account.open) && !this.multiplayer?.battle.active;
     if(!this.spectator)this.handleInput();
     const authority = this.multiplayer?.battle.authority !== false;
@@ -744,7 +763,7 @@ export class Game {
     this.world.update(dt, worldTime, this.camera);
     this.world2.update(dt,worldTime);
     // The game's own views follow the world shown; endings and captures that set their own are left alone.
-    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
+    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW||view===TIDECROWN_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
     this.lighthouseSecret?.update();
     // A spectator view shows no HUD and plays no music.
     if(!this.spectator){
@@ -1446,7 +1465,7 @@ export class Game {
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }
 
-  private gameView(): ViewOptions { return this.world2?.fourth.root.visible ? FROST_VIEW : GAME_VIEW; }
+  private gameView(): ViewOptions { return this.world2?.inTidecrown ? TIDECROWN_VIEW : this.world2?.fourth.root.visible ? FROST_VIEW : GAME_VIEW; }
 
   /** A duel keeps the adventure alive, even when entered from a shared victory celebration. */
   resumeFriendAdventure(authority:boolean):void {
@@ -1509,6 +1528,7 @@ export class Game {
   private releaseResources(): void {
     if (this.resourcesReleased) return;
     this.resourcesReleased = true;
+    this.serverEnding?.dispose();this.serverEnding=null;
     this.server?.dispose();this.server=null;
     this.dungeons?.dispose();this.dungeons=null;
     this.journey?.dispose();
