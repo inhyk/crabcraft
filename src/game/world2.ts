@@ -6,6 +6,7 @@ import {DawnIsland} from './world3';
 import {SNOW_POINTS} from './snowQuests';
 import {DawnRequests} from './dawnRequests';
 import {SnowIsland} from './world4';
+import type {FrostPortal} from './frostPortal';
 import {t} from '../i18n';
 import type { Game } from './game';
 import type { Poi } from '../world/types';
@@ -45,7 +46,7 @@ export class HiddenWorld {
   readonly sixth=new FrontierIsland(6);
   readonly emberRequests:DawnRequests;
   readonly skyRequests:DawnRequests;
-  private emberGate:StarPortal;
+  private emberGate:FrostPortal;
   readonly dawnRequests:DawnRequests;
   readonly snowRequests:DawnRequests;
   private snowGate:StarPortal;
@@ -158,9 +159,9 @@ export class HiddenWorld {
 
   constructor(private game: Game) {
     this.dawnRequests=new DawnRequests(game,this.third);
-    this.snowRequests=new DawnRequests(game,this.fourth,SNOW_POINTS);
+    this.snowRequests=new DawnRequests(game,this.fourth,SNOW_POINTS,this.fourth.questProps());
     this.emberRequests=new DawnRequests(game,this.fifth,FRONTIER_POINTS[5]);this.skyRequests=new DawnRequests(game,this.sixth,FRONTIER_POINTS[6]);
-    this.emberGate=new StarPortal(new THREE.Vector3(14,this.fourth.height(14,84),84),'설원 → 잿불 군도');this.fourth.root.add(this.emberGate.root);
+    this.emberGate=this.fourth.gate(new THREE.Vector3(14,this.fourth.height(14,84),84),'설원 → 잿불 군도');this.fourth.root.add(this.emberGate.root);
     this.ambience=new StarAmbience(game.audio);
     const w=game.world;
     this.baseRoot=w.root;
