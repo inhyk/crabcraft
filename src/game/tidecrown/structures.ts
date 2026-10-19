@@ -2,7 +2,7 @@
 // each, culled as a unit), the King's Stair, the bridge abutments, the lantern in the claw crown and the statues.
 import * as THREE from 'three';
 import { type Kit, StaticBatch, trs } from '../../world/kit';
-import { lanternSpot, statueSpots, type TcPlacement, TC_LEVEL, TC_PIECES, TC_T, TC_YAW, tcAxis } from './layout';
+import { lanternSpot, statueSpots, TC_FOOTPRINTS, type TcPlacement, TC_LEVEL, TC_PIECES, TC_T, TC_YAW, tcAxis } from './layout';
 import { STATUE_HEIGHT } from './statues';
 import type { TidecrownMaterials } from './materials';
 import { buildBanners } from './banners';
@@ -10,20 +10,81 @@ import { buildBanners } from './banners';
 type Height = (x: number, z: number) => number;
 
 /** World-unit UVs (box projection) and a white vertex colour, so procedural stone matches the kit's texel density. */
-function worldUV(g: THREE.BufferGeometry, density = 0.5): THREE.BufferGeometry {
+function worldUV(g: THREE.BufferGeometry, density = 0.5, up = density): THREE.BufferGeometry {
   const geo = g.index ? g.toNonIndexed() : g;
   const p = geo.getAttribute('position'), n = geo.getAttribute('normal');
   const uv = new Float32Array(p.count * 2), col = new Float32Array(p.count * 4);
   for (let i = 0; i < p.count; i++) {
     const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i)), az = Math.abs(n.getZ(i));
     const [u, v] = ay > ax && ay > az ? [p.getX(i), p.getZ(i)] : ax > az ? [p.getZ(i), p.getY(i)] : [p.getX(i), p.getY(i)];
-    uv.set([u * density, v * density], i * 2);
+    uv.set([u * density, v * (ay > ax && ay > az ? density : up)], i * 2);
     const occ = n.getY(i) < -0.5 ? 0.7 : 1;
     col.set([occ, occ, occ, 1], i * 4);
   }
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 4));
   return geo;
+}
+
+/**
+ * The battered foundation under a placement (layout.ts decides which need one): a tapered block, or a drum under a
+ * tower, from its bottom up to the piece's base, with a projecting plinth course where the kit piece sits on it and
+ * offset courses every 7 down a tall one. Dark limestone at the kit's texel density (0.5 along, 0.475 up), darker
+ * toward the foot.
+ */
+function foundationGeometry(p: TcPlacement): THREE.BufferGeometry[] {
+  const f = TC_FOOTPRINTS[p.piece], fd = p.foundation;
+  if (!f || !fd) return [];
+  const top = p.y + 0.05, H = top - fd.y, out: THREE.BufferGeometry[] = [];
+  const course = Math.min(0.7, H * 0.3);
+  const shade = (g: THREE.BufferGeometry, y0: number, y1: number) => {
+    const pos = g.getAttribute('position'), col = new Float32Array(pos.count * 4);
+    for (let i = 0; i < pos.count; i++) {
+      const k = 0.8 + 0.2 * THREE.MathUtils.smoothstep(pos.getY(i), y0, y1);
+      col.set([k, k, k, 1], i * 4);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    return g;
+  };
+  if ('r' in f) {
+    // Drum: the cylinder's own u runs round it, so the coursing has no seam.
+    const drum = (r0: number, r1: number, y0: number, y1: number) => {
+      const g = new THREE.CylinderGeometry(r1, r0, y1 - y0, 28, 1, true).toNonIndexed();
+      const pos = g.getAttribute('position'), uv = g.getAttribute('uv');
+      for (let i = 0; i < pos.count; i++) uv.setXY(i, uv.getX(i) * Math.PI * (r0 + r1) * 0.5, (pos.getY(i) + (y0 + y1) / 2) * 0.475);
+      g.translate(p.x, (y0 + y1) / 2, p.z);
+      return shade(g, fd.y, fd.y + 3);
+    };
+    const r = f.r * p.sx;
+    out.push(drum(r + fd.toe, r, fd.y, top));
+    if (H > 2.5) out.push(drum(r + 0.35, r + 0.35, top - course, top), drum(r + 0.05, r + 0.35, top - course - 0.3, top - course));
+    for (let y = top - 7.5; y > fd.y + 3; y -= 7) {
+      const off = (fd.toe * (top - y)) / H;
+      out.push(drum(r + off + 0.3, r + off + 0.3, y - 0.45, y), drum(r + off, r + off + 0.3, y - 0.7, y - 0.45));
+    }
+    return out;
+  }
+  // Block: a box whose foot spreads by the toe, turned and placed like the piece.
+  const block = (hx: number, hz: number, toe: number, y0: number, y1: number) => {
+    const g = new THREE.BoxGeometry(2 * hx, y1 - y0, 2 * hz);
+    const pos = g.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) > 0) continue;
+      pos.setX(i, pos.getX(i) + Math.sign(pos.getX(i)) * toe);
+      pos.setZ(i, pos.getZ(i) + Math.sign(pos.getZ(i)) * toe);
+    }
+    g.computeVertexNormals();
+    g.applyMatrix4(trs(p.x, (y0 + y1) / 2, p.z, p.yaw));
+    return shade(worldUV(g, 0.5, 0.475), fd.y, fd.y + 3);
+  };
+  const hx = f.hx * p.sx, hz = f.hz * p.sz;
+  out.push(block(hx, hz, fd.toe, fd.y, top));
+  if (H > 2.5) out.push(block(hx + 0.35, hz + 0.35, 0, top - course, top), block(hx + 0.35, hz + 0.35, -0.3, top - course - 0.3, top - course));
+  for (let y = top - 7.5; y > fd.y + 3; y -= 7) {
+    const off = (fd.toe * (top - y)) / H;
+    out.push(block(hx + off + 0.3, hz + off + 0.3, 0, y - 0.45, y), block(hx + off + 0.3, hz + off + 0.3, -0.3, y - 0.7, y - 0.45));
+  }
+  return out;
 }
 
 /** A box in axis coordinates (t along the axis, s across), base at y, in world space. */
@@ -104,6 +165,7 @@ export function buildTidecrownStructures(kit: Kit, village: Kit, mats: Tidecrown
     let b = batches.get(p.batch);
     if (!b) batches.set(p.batch, (b = new StaticBatch(kit, p.batch)));
     b.add(p.piece, trs(p.x, p.y, p.z, p.yaw, new THREE.Vector3(p.sx, p.sy, p.sz)), { override });
+    for (const g of foundationGeometry(p)) b.addGeometry(g, mats.TC_LimestoneDark, null);
     count[p.batch] = (count[p.batch] ?? 0) + 1;
   }
   group.add(overlookFences(village, height));
