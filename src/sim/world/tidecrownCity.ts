@@ -16,7 +16,8 @@ export const TC_CANAL = { water: 4.0, bed: 2.2, street: 6, wall: 2 } as const;
 /** The Grand Canal from just outside the market's ring to the east wall, and its branch north to the terrace wall. */
 export const TC_CANALS: readonly TcCanal[] = [
   { points: [[94.2, 98.2], [110, 103.5], [140, 102], [178, 94], [214, 81.5]], width: 7 },
-  { points: [[159.2, 96], [158, 57]], width: 5 },
+  // Its last reach turns square to the terrace wall, which it meets under the cascade.
+  { points: [[159.2, 96], [158.4, 60], [155.6, 55.66]], width: 5 },
 ];
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));

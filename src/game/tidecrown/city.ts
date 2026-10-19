@@ -10,7 +10,7 @@ import { GLSL_NOISE } from '../../world/noise';
 import { TC_CANAL, TC_CANALS } from '../../sim/world/tidecrownCity';
 import type { CityLayout } from './cityLayout';
 import {
-  type DistrictId, TC_FORGE, TC_GRAND_STAIRS, TC_HARBOUR_LEVEL, TC_LANDMARKS, TC_RETAINING, TC_WATERWHEEL,
+  cascadeSpot, type DistrictId, TC_FORGE, TC_GRAND_STAIRS, TC_HARBOUR_LEVEL, TC_LANDMARKS, TC_RETAINING, TC_WATERWHEEL,
 } from './cityPlan';
 import { cityLod, type District, fillDistrict, type TidecrownCollider, type TidecrownKit } from './houses';
 import type { TidecrownLod } from './lod';
@@ -350,7 +350,7 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   }
   // Canal walls: 2 thick from the bed, their tops flagged flush with the quay, a raised kerb along the water's edge
   // overhanging it a little, a dark wet band at the waterline, mooring rings every few metres.
-  const flush = TC_CANAL.street - 0.02, bed = TC_CANAL.bed - 0.4;
+  const bed = TC_CANAL.bed - 0.4;
   const darken = (g: THREE.BufferGeometry, k: number) => {
     const c = g.getAttribute('color');
     for (let i = 0; i < c.count; i++) c.setXYZ(i, k, k * 1.02, k * 1.04);
@@ -359,8 +359,11 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   for (const w of plan.canalWalls) {
     const dx = w.bx - w.ax, dz = w.bz - w.az, len = Math.hypot(dx, dz), yaw = Math.atan2(-dz, dx);
     const mx = (w.ax + w.bx) / 2, mz = (w.az + w.bz) / 2, b = sector(mx);
-    // Local +Z toward the water (n).
+    // Local +Z toward the water (n). The flags sit just over the quay's own ground along the wall's back.
     const lz = Math.sign(Math.sin(yaw) * w.nx + Math.cos(yaw) * w.nz) || 1;
+    let flush = TC_CANAL.street - 0.02;
+    for (let u = -len / 2; u <= len / 2 + 0.01; u += 1.5) { const [qx, qz] = local(mx, mz, yaw, Math.min(u, len / 2), -lz * 2.3); flush = Math.max(flush, height(qx, qz) + 0.03); }
+    flush = Math.min(flush, TC_CANAL.street + 0.4);
     b.addGeometry(frameBox(mx, mz, yaw, 0, (flush + bed) / 2, -lz * 1.0, len + 0.04, flush - bed, 2.0), D, null);
     b.addGeometry(frameBox(mx, mz, yaw, 0, flush + 0.09, -lz * 0.3, len + 0.04, 0.22, 0.84), L, null);
     b.addGeometry(darken(frameBox(mx, mz, yaw, 0, TC_CANAL.water + 0.12, lz * 0.02, len + 0.02, 0.5, 0.06), 0.5), D, null);
@@ -433,6 +436,13 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   const pipe = new THREE.CylinderGeometry(0.32, 0.38, 1.4, 12).rotateX(Math.PI / 2);
   pipe.translate(chx, spoutY, wallZ - 0.2);
   ch.addGeometry(worldUV(pipe), G, null);
+  // The branch canal's cascade: a gold spout on a corbel in the terrace wall above the canal's head.
+  const cas = cascadeSpot(), cy = cas.y, cb = sector(cas.x);
+  const casYaw = Math.atan2(cas.nx, cas.nz);
+  cb.addGeometry(frameBox(cas.x, cas.z, casYaw, 0, cy - 0.7, 0.35, 1.6, 1.1, 0.9), L, null);
+  const [spx, spz] = local(cas.x, cas.z, casYaw, 0, 0.6);
+  const spout = new THREE.CylinderGeometry(0.42, 0.5, 1.5, 12).rotateX(Math.PI / 2).applyMatrix4(trs(spx, cy, spz, casYaw));
+  cb.addGeometry(worldUV(spout), G, null);
   for (const b of stone) group.add(b.build());
   lap('stone');
 
@@ -472,6 +482,12 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   const run: THREE.Vector3[] = [];
   const [rx1, rz1] = local(TC_FORGE.x, TC_FORGE.z, TC_FORGE.yaw, rx, race.z[1]);
   for (let i = 0; i <= 8; i++) { const f = i / 8; run.push(new THREE.Vector3(chx + (rx1 - chx) * f, fy + race.water + 0.02, wallZ + 1.4 + (rz1 - wallZ - 1.4) * f)); }
+  // The cascade's fall into the canal.
+  const cfall: THREE.Vector3[] = [];
+  for (let i = 0; i <= 12; i++) { const f = i / 12; cfall.push(new THREE.Vector3(cas.x + cas.nx * (1.3 + 1.6 * f), cy - (cy - TC_CANAL.water) * f * f, cas.z + cas.nz * (1.3 + 1.6 * f))); }
+  const cascade = new THREE.Mesh(waterRibbon(cfall, 0.9, new THREE.Vector3(-cas.nz, 0, cas.nx)), falls);
+  cascade.name = 'tc-canal-cascade';
+  group.add(cascade);
   const flowMesh = new THREE.Mesh(waterRibbon(fall, 0.55, new THREE.Vector3(1, 0, 0)), falls);
   flowMesh.name = 'tc-forge-fall';
   const raceMesh = new THREE.Mesh(waterRibbon(run, 2.3, new THREE.Vector3(1, 0, 0)), race2);
@@ -591,6 +607,8 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
     return new THREE.Vector3(x, fy + ly, z);
   });
   group.add(smoke(chimneys));
+  // The cathedral's candles burn by its doors.
+  for (const [x, z] of plan.dressing.candles) group.add(glow('#ffc070', new THREE.Vector3(x, height(x, z) + 2.25, z), 1.6, 'tc-candle-glow'));
   const [gx, gz] = local(TC_FORGE.x, TC_FORGE.z, TC_FORGE.yaw, 0, 7.4);
   const forgeGlow = glow('#ff9a4a', new THREE.Vector3(gx, fy + 1.6, gz), 4.5, 'tc-forge-glow');
   group.add(forgeGlow);

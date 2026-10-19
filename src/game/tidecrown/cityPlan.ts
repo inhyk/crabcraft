@@ -22,8 +22,8 @@ export const facing = (dx: number, dz: number) => Math.atan2(dx, dz);
 /** Yaw that lays a piece's local +X along (dx, dz). */
 export const along = (dx: number, dz: number) => Math.atan2(-dz, dx);
 /** Toward the keep along the axis, and its opposite (the gate and the ridge). */
-export const TC_UP_YAW = facing(TC_AXIS.ux, TC_AXIS.uz);
-export const TC_DOWN_YAW = facing(-TC_AXIS.ux, -TC_AXIS.uz);
+const TC_UP_YAW = facing(TC_AXIS.ux, TC_AXIS.uz);
+const TC_DOWN_YAW = facing(-TC_AXIS.ux, -TC_AXIS.uz);
 
 /** The market square on the King's Way: centre and paved radius (the ground is flat to 30). */
 export const TC_MARKET = { centre: A(TC_T.market), r: 30 } as const;
@@ -81,7 +81,6 @@ export const TC_LANDMARKS: Landmark[] = [
 /** The forge's waterwheel on its race (TC_Forge anchors, piece frame). */
 export const TC_WATERWHEEL = { x: FORGE.x + 14.85, y: 5.4, z: FORGE.z - 1, yaw: FORGE.yaw, race: { x: [13.65, 16.05], z: [-7.25, 5.25], water: 0.6 } } as const;
 export const TC_FORGE = FORGE;
-export const TC_CATHEDRAL = CATHEDRAL;
 
 // ------------------------------------------------------------------------------------------------
 // Streets: carriageways (cobbled, kept clear) that the townhouses line, plus the canals they face
@@ -120,7 +119,7 @@ export const TC_CITY_STREETS: CityStreet[] = [
   { id: 'pearl-street', points: [A(TC_T.market, 31), [128, 75.5], [168, 58], [192, 40], [203, 25], [207.5, 20.5]], width: 7, district: 'canal', main: true },
   // It bends in past the sea gate's north tower and the corner tower.
   { id: 'quay-street', points: [[200.5, 51], [206, 23], [201, 4], [198.5, -6], [200, -18], [203, -28]], width: 6, district: 'harbour', main: true },
-  { id: 'salt-street', points: [[163.5, 73], [190, 69], [217, 65.5]], width: 5, district: 'canal' },
+  { id: 'salt-street', points: [[163.5, 73], [190, 69], [217, 65.5]], width: 5, district: 'harbour' },
   // The canals, lined by their quays (fondamenta) and houses.
   { id: 'grand-canal', points: TC_CANALS[0].points.map(([x, z]) => [x, z] as V2), width: TC_CANALS[0].width + 2 * (TC_CANAL.wall + 3), district: 'canal', unpaved: true },
   { id: 'north-canal', points: TC_CANALS[1].points.map(([x, z]) => [x, z] as V2), width: TC_CANALS[1].width + 2 * (TC_CANAL.wall + 2.5), district: 'canal', unpaved: true },
@@ -176,7 +175,9 @@ export const TC_ZONES: Zone[] = [
   { district: 'works', seed: 102, polygon: [[-136, 116], [-40, 128], [-40, 9], [-62, 10], [-118, -4], [-136, 0]] },
   { district: 'cathedral', seed: 103, floors: [2, 4], polygon: [[-124, -76], [-118, -6], [-62, 8], [16.8, 4.8], A(104, -14), A(152, -14), [47.5, -28.8], [-6, -60], [-14, -76]] },
   { district: 'seaglass', seed: 104, floors: [3, 4], polygon: [[-124, -76], [-14, -76], [-18, -100], [6, -150], [60, -188], [60, -199], [-28, -177], [-92, -137]] },
-  { district: 'canal', seed: 105, polygon: [[112, 46], [145.4, 60.1], [186, 34], [200, 44], [226, 58], [250, 80], [236, 106], [176, 122], [120, 124], [96, 130], [96, 92], [112, 75]] },
+  // The lower east wedge, split along the branch canal: the canals' homes west of it, the harbour quarter east.
+  { district: 'canal', seed: 105, polygon: [[112, 46], [145.4, 60.1], [158.6, 51.8], [160.3, 123], [120, 124], [96, 130], [96, 92], [112, 75]] },
+  { district: 'harbour', seed: 109, floors: [2, 4], polygon: [[158.6, 51.8], [186, 34], [200, 44], [226, 58], [250, 80], [236, 106], [176, 122], [160.3, 123]] },
   { district: 'canal', seed: 106, floors: [2, 4], polygon: [A(104, 14), [145.4, 60.1], [186, 34], [192, -20], [196, -36], [148.6, 14.6], A(152, 14)] },
   { district: 'harbour', seed: 107, floors: [2, 3], polygon: [[186, 34], [200, 44], [222, 52], [208, -5], [222, -60], [206, -62], [192, -20]] },
   { district: 'upper', seed: 108, floors: [3, 4], polygon: [[-6, -60], [-18, -100], [6, -150], [60, -188], [72, -184], [64.6, -167.2], [58.6, -149.6], [56.3, -131], [59.2, -112.5], [67.4, -95.8], [79.1, -82], [92.7, -71.1], [106.7, -62.7], [120.6, -55.8], [134.4, -49.8], [148.7, -44.1], [164, -39.3], [180.7, -36], [198.7, -35.6], [196, -36], [148.6, 14.6], [47.5, -28.8]] },
@@ -253,8 +254,8 @@ export interface RetainingWall {
 
 /**
  * Walls along each terrace edge inside the city: the front face a little below the edge's foot, stretched runs between
- * the outline's corners, piers at the corners. Gaps for the King's Way ramps, the grand stairs, the canal cascade, and
- * wherever the keep rock, the city wall or the sea comes too close.
+ * the outline's corners, piers at the corners (over the branch canal's head the wall goes down into the water). Gaps
+ * for the King's Way ramps and the grand stairs, and wherever the keep rock, the city wall or the sea comes too close.
  */
 export function retainingWalls(height: (x: number, z: number) => number): { runs: RetainingWall[]; piers: { x: number; z: number; y: number; top: number }[] } {
   const runs: RetainingWall[] = [], piers: { x: number; z: number; y: number; top: number }[] = [];
@@ -275,11 +276,11 @@ export function retainingWalls(height: (x: number, z: number) => number): { runs
         const [t, s] = tcAxisCoords(x, z);
         if (Math.abs(s) < 16 && (Math.abs(t - TC_T.middleRamp) < 18 || Math.abs(t - TC_T.upperRamp) < 18)) return false;
         if (gaps.some((g) => Math.hypot(x - g.x, z - g.z) < g.r)) return false;
-        if (canalDistance(x, z) < 3) return false;
         if (polyDistance(x, z, TC_CITY_WALL) < 9) return false;
-        // The keep rock: stop where the terrace's upper side is already the plateau or its cliff.
+        // The keep rock: stop where the terrace's upper side is already the plateau or its cliff (a canal may lie below).
         const up = height(x - ox * 4, z - oz * 4), down = height(x + ox * 4, z + oz * 4);
-        if (up > hi + 2 || up < hi - 1.5 || down > lo + 1.5 || down < lo - 1.5) return false;
+        const wet = canalDistance(x + ox * 4, z + oz * 4) < TC_CANAL.wall + 0.2;
+        if (up > hi + 2 || up < hi - 1.5 || down > lo + 1.5 || (down < lo - 1.5 && !wet)) return false;
         return true;
       };
       // Sample the edge every metre; keep runs of good samples.
@@ -493,6 +494,12 @@ export interface CanalBridge {
   /** Clear span between the wall faces. */
   span: number;
 }
+/** The branch canal's head: the spout in the terrace wall above it (front face point, outward normal) and its height. */
+export function cascadeSpot(): { x: number; z: number; nx: number; nz: number; y: number } {
+  const pts = TC_CANALS[1].points, [ex, ez] = pts[pts.length - 1], [px, pz] = pts[pts.length - 2], l = Math.hypot(ex - px, ez - pz);
+  return { x: ex, z: ez, nx: -(ex - px) / l, nz: -(ez - pz) / l, y: 11.2 };
+}
+
 /** Footbridges: where Pearl Street crosses the branch canal, and three along the Grand Canal. */
 export function canalBridges(): CanalBridge[] {
   const out: CanalBridge[] = [];
@@ -509,12 +516,12 @@ export function canalBridges(): CanalBridge[] {
   across(TC_CANALS[0], 3, 0.55, 2.4);
   // The Grand Canal's north quay over the branch canal's mouth (where the quay's walk, 7 off the canal's line, meets it).
   {
-    const [[ax, az], [bx, bz]] = TC_CANALS[1].points, L = Math.hypot(bx - ax, bz - az), along = 5.3;
+    const [[ax, az], [bx, bz]] = TC_CANALS[1].points.slice(0, 2), L = Math.hypot(bx - ax, bz - az), along = 5.3;
     const hl = TC_CANALS[1].width / 2 + TC_CANAL.wall + 1.2;
     out.push({ x: ax + ((bx - ax) / L) * along, z: az + ((bz - az) / L) * along, yaw: facing((bz - az) / L, -(bx - ax) / L), hw: 2.2, hl, crown: 1.2, ramp: hl - TC_CANALS[1].width / 2 - 0.3, span: TC_CANALS[1].width });
   }
   // Pearl Street over the branch canal (square to the canal, wide enough for the street's skew).
-  const [[ax, az], [bx, bz]] = TC_CANALS[1].points, cz = 62.6, f = (cz - az) / (bz - az), L = Math.hypot(bx - ax, bz - az);
+  const [[ax, az], [bx, bz]] = TC_CANALS[1].points.slice(0, 2), cz = 62.6, f = (cz - az) / (bz - az), L = Math.hypot(bx - ax, bz - az);
   const hl = TC_CANALS[1].width / 2 + TC_CANAL.wall + 1.2;
   out.push({ x: ax + (bx - ax) * f, z: cz, yaw: facing((bz - az) / L, -(bx - ax) / L), hw: 4.6, hl, crown: 0.9, ramp: hl - TC_CANALS[1].width / 2 - 0.3, span: TC_CANALS[1].width });
   return out;
@@ -567,7 +574,7 @@ export interface Planter {
  * the foot of the King's Way's ramp, the forge yard's anvils, benches and stock, the quays' barrels, crates, rope and
  * chain.
  */
-export function dressingPlan(): { props: Prop[]; planters: Planter[] } {
+export function dressingPlan(): { props: Prop[]; planters: Planter[]; candles: [number, number][] } {
   const props: Prop[] = [], planters: Planter[] = [];
   const prop = (kit: Prop['kit'], piece: string, x: number, z: number, yaw: number, s = 1, solid = 0) => props.push({ kit, piece, x, z, yaw, s, solid });
   const frame = (x: number, z: number, yaw: number) => (lx: number, lz: number): [number, number] => [x + Math.cos(yaw) * lx + Math.sin(yaw) * lz, z - Math.sin(yaw) * lx + Math.cos(yaw) * lz];
@@ -577,6 +584,9 @@ export function dressingPlan(): { props: Prop[]; planters: Planter[] } {
     prop('props', 'Bench', -10.5, z, -Math.PI / 2, 1, 0.55);
   }
   for (const x of [-42, -20]) planters.push({ x, z: 3.4, yaw: 0, hx: 1.6, hz: 1.6, plant: 'Bush_Common_Flowers', s: 1.1 });
+  // Candles either side of the cathedral's doors, on its steps' landing.
+  const cat = frame(CATHEDRAL.x, CATHEDRAL.z, CATHEDRAL.yaw);
+  for (const sd of [-1, 1]) { const [x, z] = cat(sd * 3.6, 28.9); prop('props', 'CandleStick_Stand', x, z, CATHEDRAL.yaw, 1.6, 0.35); }
   // Glass plaza: four benches round the tower, facing it.
   for (let k = 0; k < 4; k++) {
     const a = (k / 4) * Math.PI * 2 + 0.95, x = SEAGLASS.x + Math.cos(a) * 11.6, z = SEAGLASS.z + Math.sin(a) * 11.6;
@@ -588,7 +598,8 @@ export function dressingPlan(): { props: Prop[]; planters: Planter[] } {
     planters.push({ x, z, yaw: TC_UP_YAW, hx: 2.2, hz: 2.2, plant: 'CommonTree_4', s: 0.8 });
   }
   // The foot of the King's Way's ramp up from the market.
-  for (const sd of [-1, 1]) { const [x, z] = A(101, sd * 9.4); planters.push({ x, z, yaw: TC_UP_YAW, hx: 1.4, hz: 1.4, plant: 'Bush_Common_Flowers', s: 1.0 }); }
+  // (Outside the banner poles there, in the ramp's house-free margin.)
+  for (const sd of [-1, 1]) { const [x, z] = A(101, sd * 13.4); planters.push({ x, z, yaw: TC_UP_YAW, hx: 1.4, hz: 1.4, plant: 'Bush_Common_Flowers', s: 1.0 }); }
   // Forge yard: anvils before the arch, a bench and racks along the front, stock in the corners.
   const f = frame(FORGE.x, FORGE.z, FORGE.yaw);
   for (const [lx, lz, piece, s, yaw, solid] of [
@@ -611,7 +622,7 @@ export function dressingPlan(): { props: Prop[]; planters: Planter[] } {
       prop('props', piece, x, z, c.yaw + yaw, 1.1, solid);
     }
   });
-  return { props, planters };
+  return { props, planters, candles: props.filter((p) => p.piece === 'CandleStick_Stand').map((p) => [p.x, p.z]) };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -665,4 +676,3 @@ function polylineDist(x: number, z: number, pts: readonly (readonly number[])[])
   }
   return d;
 }
-export { polylineDist };
