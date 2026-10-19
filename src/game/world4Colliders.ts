@@ -2,6 +2,7 @@
 import { snowHeight } from '../sim/world/ground';
 import { SNOW_ROCKS } from '../sim/world/snowGround';
 import { Collision } from '../world/collision';
+import { arenaPillars, citadelClears, registerFrostThrone } from './frostThroneLayout';
 import { registerSnowVillage } from './snowVillageLayout';
 import { registerFrostProps } from './frostPropsLayout';
 
@@ -29,13 +30,12 @@ export function layoutFrostlight(): Collision {
   for(const {x,z,s} of snowTrees()){const y=h(x,z);col.addCircle(x,z,.6*s,y,y+10*s);}
   for(let i=0;i<42;i++){
     const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;
-    if(Math.abs(x)<16&&z>-70)continue;
+    if(Math.abs(x)<16&&z>-70||citadelClears(x,z))continue;
     const y=h(x,z),height=6+i%5*3;col.addCircle(x,z,3.5,y,y+height);
   }
-  for(let i=0;i<12;i++){
-    const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;
-    const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=h(x,z);col.addCircle(x,z,1.5,y,y+10);
-  }
+  // The arena's crystal pillars on their granite collars, the throne and the citadel (frostThroneLayout.ts).
+  for(const {x,z} of arenaPillars()){const y=h(x,z);col.addCircle(x,z,1.9,y,y+10);}
+  registerFrostThrone(col,h);
   // Rock outcrops (snowRocks.ts): a box for the crag's body and a circle at each rounded end of its long axis.
   for(const k of SNOW_ROCKS){
     const y=h(k.x,k.z),top=y+1.3*k.h;

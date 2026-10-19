@@ -15,6 +15,10 @@ import {SnowRidges} from './snowRidges';
 import {snowRocks} from './snowRocks';
 import {SnowSpray} from './snowSpray';
 import {crystalCluster,crystalGeometry,iceMaterial,type Crystal} from './iceCrystals';
+import {frostThrone,type FrostThrone} from './frostThrone';
+import {citadelClears} from './frostThroneLayout';
+import {miraPrison,type MiraPrison} from './frostPrison';
+import {frostCamps,type FrostCamps} from './frostCamps';
 import {SnowSky} from './snowSky';
 import {SnowFarShadow,applyFarShadow} from './snowFarShadow';
 import {SnowSpindrift} from './snowSpindrift';
@@ -59,14 +63,17 @@ export class SnowIsland {
  readonly farShadow:SnowFarShadow;
  /** Streamers of snow the wind lifts off the crests (snowSpindrift.ts). */
  readonly spindrift:SnowSpindrift;
+ /** Boreas's throne, the glacial citadel and the arena's crowned pillars (frostThrone.ts). */
+ private throne:FrostThrone;
+ private prisonFx:MiraPrison;
+ /** The lean-to, the overlook, the ridge stones and the processional way (frostCamps.ts); null until the kits load. */
+ private camps:FrostCamps|null=null;
  height(x:number,z:number){
   return snowHeight(x,z);
  }
  constructor(){
   this.root.name='WORLD IV · Frostlight';this.root.visible=false;
-  const ice=new THREE.MeshStandardMaterial({color:'#72bedb',metalness:.32,roughness:.22});
   const dark=new THREE.MeshStandardMaterial({color:'#344959',roughness:.9});
-  const glow=new THREE.MeshStandardMaterial({color:'#c4ffff',emissive:'#52d8ff',emissiveIntensity:1.4,roughness:.25});
   // Grown ice (SNOWFLOW's crystal shape and shading). The seed fixes the formations for every player.
   const {material:iceGlass,refresh:refreshIce}=iceMaterial({sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.refreshIce=refreshIce;this.iceGlass=iceGlass;
   this.portal=this.gate(this.spawn,'서리빛 설원 → 새벽 항구');
@@ -93,20 +100,19 @@ export class SnowIsland {
   this.root.userData.snowPines=snowTrees().length;
   // Boreas keeps the missing friend in a luminous ice prison beside the throne.
   this.prison.name='mira-ice-prison';this.prison.position.set(13,this.height(13,-62),-62);
-  for(let i=0;i<12;i++){const a=i/12*Math.PI*2,bar=new THREE.Mesh(new THREE.CylinderGeometry(.11,.16,4.5,6),ice);bar.position.set(Math.sin(a)*2.3,2.25,Math.cos(a)*2.3);this.prison.add(bar);}
-  for(const y of [.2,4.5]){const ring=new THREE.Mesh(new THREE.TorusGeometry(2.3,.14,6,40),glow);ring.rotation.x=Math.PI/2;ring.position.y=y;this.prison.add(ring);}
+  // Grown-ice bars on a carved ring, meeting overhead like claws (frostPrison.ts).
+  this.prisonFx=miraPrison(this.prison,iceGlass);
   this.root.add(this.prison);
   // Ice cliffs frame the north without obstructing the arena's broad southern entrance.
   const cliffs:Crystal[]=[];
-  for(let i=0;i<42;i++){const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;if(Math.abs(x)<16&&z>-70)continue;const y=this.height(x,z),h=6+i%5*3;crystalCluster(x,y,z,h*1.1,4+i%3,5+i%3,rand,cliffs);}
+  for(let i=0;i<42;i++){const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;if(Math.abs(x)<16&&z>-70||citadelClears(x,z))continue;const y=this.height(x,z),h=6+i%5*3;crystalCluster(x,y,z,h*1.1,4+i%3,5+i%3,rand,cliffs);}
   iceMesh(cliffs,'frostlight-ice-cliffs');
   // Carved ice floor with the three combat rings cut in as runes (frostArena.ts).
   this.arenaFloor=frostArena({center:this.arena.position,radius:this.arena.radius,rings:[6,13,21.5],skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.root.add(this.arenaFloor.root);
   // The floors take the far sun shadow past the live box too, so they never stay lit beside shaded snow.
   for(const o of [this.paving.root.getObjectByName('frostlight-paving-surface'),this.arenaFloor.root.getObjectByName('frostlight-arena-ice')])if(o instanceof THREE.Mesh)applyFarShadow(o.material,this.farShadow);
-  const pillars:Crystal[]=[];
-  for(let i=0;i<12;i++){const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=this.height(x,z);crystalCluster(x,y,z,8.6,2.6,3,rand,pillars);add(new THREE.OctahedronGeometry(.8),glow,x,y+8.5,z);}
-  iceMesh(pillars,'frostlight-arena-crystals');
+  // The throne, the citadel behind it and the arena's crowned crystal pillars (frostThrone.ts).
+  this.throne=frostThrone({height:(x,z)=>this.height(x,z),ice:iceGlass});this.root.add(this.throne.root);
   this.spindrift=new SnowSpindrift({sunDir:this.sky.sunDir,sunLight:this.sky.sunLight,sky:this.sky.hemiSky,bounce:this.sky.hemiGround,ground:this.terrain.uniforms,far:this.farShadow});this.root.add(this.spindrift.mesh);
   this.root.add(this.sky.mesh);
   // Ranges across the frozen sea, hazed toward the dome's own colour.
@@ -128,12 +134,12 @@ export class SnowIsland {
  /** The forest and the village need the kits, so they load after construction like DawnIsland's settlement. */
  async buildSettlement(){
   const height=(x:number,z:number)=>this.height(x,z);
-  const [forest,village]=await Promise.all([snowPines(snowTrees(),height),buildSnowVillage({height,ice:this.iceGlass})]);
-  this.root.add(forest,village.group);this.village=village;this.basin.material=village.stone;
+  const [forest,village,,camps]=await Promise.all([snowPines(snowTrees(),height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass})]);
+  this.root.add(forest,village.group,camps.group);this.camps=camps;this.village=village;this.basin.material=village.stone;
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
  updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.terrain.setQuality(quality);this.terrain.prepare(renderer);
   if(this.village&&!this.farShadow.baked)this.farShadow.bake(renderer,this.root,{tex:this.terrain.uniforms.snowGroundTex.value!,rect:this.terrain.uniforms.snowGroundRect.value},[this.terrain.mesh,this.prison,this.portal.root],quality);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.spindrift.setQuality(quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
  disposeSnow(){this.farShadow.dispose();this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
- update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.village?.update(time,x,z);this.sky.update(time);this.spindrift.update(time,x,z);this.sky.followSun(x,this.height(x,z),z);}
+ update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;if(!rescued)this.prisonFx.update(time);this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.throne.update(time);this.camps?.update(time);this.village?.update(time,x,z);this.sky.update(time);this.spindrift.update(time,x,z);this.sky.followSun(x,this.height(x,z),z);}
 }
