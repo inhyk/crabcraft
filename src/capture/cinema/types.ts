@@ -55,6 +55,13 @@ export interface ActorSpec {
   yaw?: number;
   /** LED tint. */
   tint?: string;
+  /**
+   * Tilt the body toward the slope under it, 0 (upright, the default) to 1 (square to the ground):
+   * a big crab on a hillside otherwise stands level, its downhill legs in the air.
+   */
+  align?: number;
+  /** Lower the body by this much, units (into deep snow). */
+  sink?: number;
 }
 
 export interface PathKey {

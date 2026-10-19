@@ -47,6 +47,7 @@ const EASE: Record<Ease, (x: number) => number> = {
   sine: (x) => -(Math.cos(Math.PI * x) - 1) / 2,
 };
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const UP = new THREE.Vector3(0, 1, 0);
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** Uniform Catmull-Rom between b and c with neighbours a and d. */
@@ -336,12 +337,31 @@ class CinemaStage {
       u.pos.set(pos.x, g.world.heightAt(pos.x, pos.z) + pos.lift, pos.z);
       u.setYaw(yaw);
     }
+    if (a.spec.align || a.spec.sink) this.settle(a, !tr.path?.length);
     u.feedLocomotion(dt);
     for (const c of tr.acts ?? []) {
       if (!crossed(c.t)) continue;
       u.act(c.clip as never, { loop: c.loop, speed: c.speed, from: c.from, to: c.to, upper: c.upper, fade: c.fade, part: c.part });
     }
     for (const f of tr.faces ?? []) if (crossed(f.t)) u.express(f.expr, f.hold ?? 99);
+  }
+
+  /**
+   * Square an actor to the ground under it (ActorSpec.align) and sink it (ActorSpec.sink). The
+   * normal is sampled across the actor's own footprint, so a big crab follows the hill, not a bump.
+   */
+  private settle(a: Actor, still: boolean): void {
+    const g = this.g;
+    const u = a.unit;
+    const { x, z } = u.pos;
+    const h = (px: number, pz: number) => g.world.heightAt(px, pz);
+    if (still) u.pos.y = h(x, z);
+    u.pos.y -= a.spec.sink ?? 0;
+    const s = 0.8 * (a.spec.scale ?? 1);
+    const n = this.v.set(-(h(x + s, z) - h(x - s, z)) / (2 * s), 1, -(h(x, z + s) - h(x, z - s)) / (2 * s)).normalize();
+    n.lerp(UP, 1 - Math.min(1, Math.max(0, a.spec.align ?? 0))).normalize();
+    const tilt = new THREE.Quaternion().setFromUnitVectors(UP, n);
+    u.rig.root.quaternion.copy(tilt.multiply(new THREE.Quaternion().setFromAxisAngle(UP, a.yaw)));
   }
 
   /** Position, lift and (if keyed) facing along a path at t. */

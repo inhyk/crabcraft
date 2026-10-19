@@ -118,9 +118,11 @@ const F1g = (left, up, ahead) => {
 // The beast walks up out of the storm behind him while the camera holds on his face, and stops at
 // his left, a little ahead, as the camera pulls back and arcs round in front of him to his right
 // (his sword side): both in profile facing frame right, the dwarf near, the beast beyond.
-const BEAST_FROM = F1(5.5, 0, -4.0);
-const BEAST_NEAR = F1(3.3, 0, 1.4);
-const BEAST_AT = F1(2.3, 0, 3.0);
+// Wide of him: at 2.1 times his size its legs reach about 1.7 units out, so its centre keeps 4.5 or
+// more from his and the two never cross.
+const BEAST_FROM = F1(6.5, 0, -4.0);
+const BEAST_NEAR = F1(4.6, 0, 1.2);
+const BEAST_AT = F1(3.8, 0, 3.0);
 
 /** The road's lamp posts, out of the whiteout (the road itself is hidden by name). */
 const ROAD_OUT = { t: -3, kind: 'snow-hide', box: [-8, -56, 8, 86], max: 4 };
@@ -134,9 +136,11 @@ const C_TRUDGE = 57.0;
 const C_WIDE = 61.0;
 const OPEN_END = 68.7;
 
+// Both squared to the slope (it climbs about 22 degrees toward the throne here), so the beast's
+// downhill legs reach the snow instead of hanging in the air; a little sunk into the powder.
 const cast2 = (dwarfAt, beastAt, yaw) => [
-  { id: 'dwarf', spec: DWARF, at: dwarfAt, yaw },
-  { id: 'beast', enemy: BEAST.enemy, scale: BEAST.scale, at: beastAt, yaw },
+  { id: 'dwarf', spec: DWARF, at: dwarfAt, yaw, align: 0.8, sink: 0.03 },
+  { id: 'beast', enemy: BEAST.enemy, scale: BEAST.scale, at: beastAt, yaw, align: 0.9, sink: 0.1 },
 ];
 
 const face = {
@@ -191,7 +195,7 @@ const face = {
 };
 
 // Behind them, low, as they trudge up the slope toward the throne's crystals in the storm.
-const TR = { d0: F1(0, 0, 0.6), b0: F1(-2.6, 0, 1.4) };
+const TR = { d0: F1(0.6, 0, 0.6), b0: F1(-3.9, 0, 1.4) };
 const trudge = {
   anchor: [D[0], D[1] - 3],
   hide: ['mira-ice-prison', 'world4-flagstone-paths'],
