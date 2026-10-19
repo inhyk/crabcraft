@@ -1,6 +1,8 @@
 // Crab studio: TVC-like turntable for the crab model, race/sex/class lineups, silhouettes,
-// enemies, the LED expression sheet, a 25-crab perf scene and the browser FK check.
-//   /dev/crab.html?view=hero|lineup|silhouette|enemies|faces|perf|fk  (&clean hides the UI)
+// enemies, the LED expression sheet, a 25-crab perf scene, the browser FK check and Tidecrown's
+// hero statues.
+//   /dev/crab.html?view=hero|lineup|silhouette|enemies|faces|perf|fk|statues  (&clean hides the UI)
+//   view=statues: &cam=wide|low|<race> picks the camera, &sil draws black silhouettes on white.
 import '../src/ui/kit.css';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -8,16 +10,22 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Engine } from '../src/core/engine';
 import { initAssets } from '../src/core/assets';
 import { createCrab, createEnemyCrab, HOME_POSE } from '../src/crab/index';
+import { preloadGear } from '../src/crab/gear';
+import { loadCrabTemplate } from '../src/crab/template';
 import type { JumperRig } from '../src/crab/rig';
 import { RACES, RACE_ORDER } from '../src/data/races';
 import { CLASS_ORDER } from '../src/data/classes';
 import { JOINT_NAMES, type CrabRig, type CrabSpec, type Expression, type RaceId, type Sex } from '../src/crab/types';
+import { ToneMappingMode } from 'postprocessing';
+import { buildHeroStatues } from '../src/game/tidecrown/statues';
 
 declare global {
   interface Window {
     __ready?: boolean;
     __crab?: unknown;
     __fk?: unknown;
+    __statues?: unknown;
+    __statueCam?: (name: string) => void;
   }
 }
 
@@ -470,6 +478,199 @@ async function fk(): Promise<void> {
   ready();
 }
 
+/** Size, cost and footing of one statue at the origin, with draws counted by rendering it alone. */
+function statueMetrics(s: THREE.Object3D): Record<string, unknown> {
+  s.updateMatrixWorld(true);
+  let tris = 0;
+  let meshes = 0;
+  const foot = new THREE.Box3();
+  const v = new THREE.Vector3();
+  s.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    meshes++;
+    tris += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3;
+    const p = m.geometry.attributes.position;
+    for (let k = 0; k < p.count; k++) {
+      v.fromBufferAttribute(p, k).applyMatrix4(m.matrixWorld);
+      if (v.y < 0.25) foot.expandByPoint(v);
+    }
+  });
+  const box = new THREE.Box3().setFromObject(s);
+  const solo = new THREE.Scene();
+  const parent = s.parent;
+  solo.add(s);
+  const c = new THREE.PerspectiveCamera(40, 1, 0.5, 400);
+  c.position.set(0, 9, 45);
+  c.lookAt(0, 9, 0);
+  const r = engine.renderer;
+  const shadows = r.shadowMap.enabled;
+  r.shadowMap.enabled = false;
+  r.info.reset();
+  r.render(solo, c);
+  const calls = r.info.render.calls;
+  const drawn = r.info.render.triangles;
+  r.shadowMap.enabled = shadows;
+  parent?.add(s);
+  const r2 = (x: number) => Math.round(x * 100) / 100;
+  return {
+    race: s.userData.race,
+    classId: s.userData.classId,
+    crest: RACES[s.userData.race as RaceId].crestStyles[s.userData.crest as number].name,
+    height: r2(box.max.y),
+    minY: Math.round(box.min.y * 1e4) / 1e4,
+    width: r2(box.max.x - box.min.x),
+    depth: r2(box.max.z - box.min.z),
+    footprint: foot.isEmpty() ? null : [r2(foot.min.x), r2(foot.max.x), r2(foot.min.z), r2(foot.max.z)],
+    footGap: Math.round((s.userData.footGap as number) * 1000) / 1000,
+    lodLegs: s.userData.lodLegs,
+    scale: r2(s.userData.scale as number),
+    meshes,
+    calls,
+    tris,
+    drawnTris: drawn,
+  };
+}
+
+/** Tidecrown's six hero statues on 8x8x8 plinths under a late-afternoon sun, a live crab for scale. */
+async function statueRow(): Promise<void> {
+  const sil = params.has('sil');
+  // Models and gear load first, so the timing is the carving alone.
+  await Promise.all([loadCrabTemplate(), preloadGear()]);
+  const t0 = performance.now();
+  const list = await buildHeroStatues();
+  const buildMs = Math.round(performance.now() - t0);
+  const metrics = list.map((s) => statueMetrics(s));
+  // Every statue at once, alone: what the six cost together.
+  const all = new THREE.Scene();
+  list.forEach((s, i) => {
+    s.position.set((i - 2.5) * 4, 0, 0);
+    all.add(s);
+  });
+  const c0 = new THREE.PerspectiveCamera(60, 1, 0.5, 400);
+  c0.position.set(0, 9, 60);
+  c0.lookAt(0, 9, 0);
+  engine.renderer.shadowMap.enabled = false;
+  engine.renderer.info.reset();
+  engine.renderer.render(all, c0);
+  const together = { calls: engine.renderer.info.render.calls, triangles: engine.renderer.info.render.triangles };
+  engine.renderer.shadowMap.enabled = true;
+
+  const plinth = sil ? 0 : 8;
+  // Side by side, each as wide as it is plus some air (less for the silhouettes).
+  const w = metrics.map((m) => m.width as number);
+  const air = sil ? 2 : 5;
+  const run = w.reduce((a, b) => a + b, 0) + air * (w.length - 1);
+  let edge = -run / 2;
+  const xs = w.map((wi) => {
+    const c = edge + wi / 2;
+    edge += wi + air;
+    return c;
+  });
+  list.forEach((s, i) => {
+    s.position.set(xs[i], plinth, 0);
+    scene.add(s);
+    label(RACES[s.userData.race as RaceId].name, s, sil ? -1.2 : -plinth - 0.2);
+    labels[labels.length - 1].el.classList.add('statue-label');
+  });
+  window.__statues = { statues: metrics, together, buildMs };
+  console.warn(`STATUES ${JSON.stringify(window.__statues)}`);
+
+  cam.far = 2000;
+  if (sil) {
+    scene.background = new THREE.Color(0xffffff);
+    scene.overrideMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    for (const l of labels) {
+      l.el.style.color = '#222';
+      l.el.style.textShadow = 'none';
+    }
+    // Far and narrow, so the row reads like an elevation.
+    cam.fov = 12;
+    const half = Math.atan(Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * (innerWidth / innerHeight));
+    cam.position.set(0, 10, (xs[5] - xs[0] + 26) / 2 / Math.tan(half));
+    cam.lookAt(0, 10, 0);
+    cam.updateProjectionMatrix();
+    engine.setView(scene, cam, { bloom: { intensity: 0 }, vignette: null, toneMapping: ToneMappingMode.LINEAR });
+    ready();
+    return;
+  }
+
+  // Warm late-afternoon sky: a gradient dome, low sun from the front left.
+  const sky = new THREE.SphereGeometry(600, 32, 16);
+  const col: number[] = [];
+  const top = new THREE.Color('#6f9fd8');
+  const horizon = new THREE.Color('#f2c99a');
+  const pos = sky.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const t = Math.max(0, pos.getY(i) / 600);
+    const k = new THREE.Color().lerpColors(horizon, top, Math.pow(t, 0.55));
+    col.push(k.r, k.g, k.b);
+  }
+  sky.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  scene.add(new THREE.Mesh(sky, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false })));
+  scene.fog = new THREE.Fog('#e9cfae', 160, 520);
+  scene.add(new THREE.HemisphereLight('#b4cdf0', '#7a6046', 0.7));
+  const sun = new THREE.DirectionalLight('#ffc78e', 3.4);
+  sun.position.set(-62, 46, 70);
+  sun.target.position.set(0, 8, 0);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(4096, 4096);
+  Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 45, bottom: -35, near: 10, far: 260 });
+  sun.shadow.bias = -0.0003;
+  sun.shadow.normalBias = 0.04;
+  scene.add(sun, sun.target);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), new THREE.MeshStandardMaterial({ color: '#b5a68c', roughness: 0.95 }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  const plinthMat = new THREE.MeshStandardMaterial({ color: '#c4b69c', roughness: 0.9 });
+  const block = new THREE.BoxGeometry(8, 8, 8);
+  const cap = new THREE.BoxGeometry(8.6, 0.6, 8.6);
+  for (const x of xs) {
+    for (const [g, y] of [[block, 4], [cap, 7.7], [cap, 0.3]] as const) {
+      const m = new THREE.Mesh(g, plinthMat);
+      m.position.set(x, y, 0);
+      m.castShadow = m.receiveShadow = true;
+      scene.add(m);
+    }
+  }
+  const crab = await createCrab(spec('human'));
+  crab.root.position.set(xs[0] + 4.2, 0, 19.5);
+  crab.root.rotation.y = Math.PI - 0.35;
+  scene.add(crab.root);
+  crabs.push(crab);
+
+  const presets: Record<string, () => void> = {
+    wide: () => {
+      cam.fov = 30;
+      const half = Math.atan(Math.tan(THREE.MathUtils.degToRad(15)) * (innerWidth / innerHeight));
+      cam.position.set(-0.18 * run, 24, (run / 2 + 6) / Math.tan(half) + 10);
+      cam.lookAt(0, 12, 0);
+    },
+    low: () => {
+      // Crab eye level behind the live crab, looking up at the knight.
+      cam.fov = 62;
+      cam.position.set(xs[0] + 5.5, 0.6, 24);
+      cam.lookAt(xs[0] + 0.5, 10.5, 0);
+    },
+  };
+  list.forEach((s, i) => {
+    presets[s.userData.race as string] = () => {
+      cam.fov = 32;
+      cam.position.set(xs[i] + 18, 17, 48);
+      cam.lookAt(xs[i], 16.5, 0);
+    };
+  });
+  window.__statueCam = (name: string) => {
+    (presets[name] ?? presets.wide)();
+    cam.updateProjectionMatrix();
+    for (const el of document.querySelectorAll<HTMLElement>('.statue-label')) el.style.visibility = name === 'wide' ? '' : 'hidden';
+  };
+  window.__statueCam(params.get('cam') ?? 'wide');
+  engine.setView(scene, cam, { bloom: { intensity: 0.7, threshold: 0.92 } });
+  ready();
+}
+
 // ------------------------------------------------------------------------------------------
 // Controls panel: cycle race / sex / class / shell / crest / led / expression.
 function buildPanel(crab: JumperRig): void {
@@ -519,7 +720,7 @@ function buildPanel(crab: JumperRig): void {
 };
 (window as unknown as Record<string, unknown>).__expr = (e: Expression) => (window.__crab as JumperRig).face.setExpression(e);
 
-const views: Record<string, () => Promise<void>> = { hero, lineup, race: raceSheet, face: faceClose, npcs, rear, silhouette: silhouettes, enemies, faces, perf, fk };
+const views: Record<string, () => Promise<void>> = { hero, lineup, race: raceSheet, face: faceClose, npcs, rear, silhouette: silhouettes, enemies, faces, perf, fk, statues: statueRow };
 await (views[view] ?? hero)();
 
 engine.onFrame(({ dt }) => {
