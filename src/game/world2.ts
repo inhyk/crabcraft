@@ -575,7 +575,7 @@ export class HiddenWorld {
     const s=this.tidecrownSaved;if(!s)return;
     this.tidecrownSaved=null;
     const g=this.game,w=g.world,scene=g.scene;
-    if(this.tidecrown)this.tidecrown.root.visible=false;
+    if(this.tidecrown){this.tidecrown.root.visible=false;this.tidecrown.leave();}
     [this.baseRoot,this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root].forEach((r,i)=>r.visible=s.roots[i]);
     w.heightAt=s.heightAt;w.resolveCollision=s.resolveCollision;w.raycastSolid=s.raycastSolid;
     for(const p of s.pois){p.poi.position.copy(p.position);p.poi.yaw=p.yaw;}

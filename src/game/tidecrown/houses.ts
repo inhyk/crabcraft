@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { lathe, tube, worldBox } from '../../world/geom';
-import { type Kit, loadKit, type Piece, StaticBatch, trs } from '../../world/kit';
+import { harmonise, type Kit, loadKit, type Piece, StaticBatch, trs } from '../../world/kit';
 import { addPatch, stylise } from '../../world/materials';
 import { GLSL_NOISE } from '../../world/noise';
 import { FarBatch, type LodOptions, TidecrownLod } from './lod';
@@ -333,7 +333,12 @@ function filterTriangles(geo: THREE.BufferGeometry, keep: (a: THREE.Vector3, b: 
   return out;
 }
 
-/** A StaticBatch that takes pieces from any of Tidecrown's kits, with overrides and per-placement tints. */
+type MergedPart = ReturnType<StaticBatch['merge']>[number];
+
+/**
+ * A StaticBatch that takes pieces from any of Tidecrown's kits, with overrides and per-placement tints. It keeps its
+ * own lists so the merge can go a material at a time (mergeSteps) for a chunk built over several frames.
+ */
 export class TideBatch extends StaticBatch {
   constructor(
     readonly tide: TidecrownKit,
@@ -343,6 +348,7 @@ export class TideBatch extends StaticBatch {
   }
 
   private tints = new Map<string, THREE.BufferGeometry>();
+  private parts = new Map<THREE.Material, [THREE.BufferGeometry[], THREE.BufferGeometry[]]>();
   /** Triangles placed per kit piece, for budgeting. */
   readonly pieceTris = new Map<string, number>();
 
@@ -354,24 +360,45 @@ export class TideBatch extends StaticBatch {
       const src = indoor ? part.geometry : cutIndoor(part.geometry);
       this.pieceTris.set(piece, (this.pieceTris.get(piece) ?? 0) + (src.getIndex()?.count ?? 0) / 3);
       const geo = (mat as THREE.MeshStandardMaterial).vertexColors ? withColor(src, tint?.get(mat) ?? WHITE, this.tints) : src;
-      super.addGeometry(geo, mat, m, castShadow);
+      this.keep(geo, mat, m, castShadow);
     }
   }
 
-  override merge(): ReturnType<StaticBatch['merge']> {
-    this.tints.clear();
-    return super.merge();
+  private keep(geo: THREE.BufferGeometry, mat: THREE.Material, m: THREE.Matrix4 | null, castShadow: boolean): void {
+    let e = this.parts.get(mat);
+    if (!e) this.parts.set(mat, (e = [[], []]));
+    const g = geo.clone();
+    if (m) g.applyMatrix4(m);
+    e[castShadow ? 0 : 1].push(g);
   }
 
   override addGeometry(geo: THREE.BufferGeometry, mat: THREE.Material, m: THREE.Matrix4 | null, castShadow = true, color?: THREE.Color): void {
     // Vertex-coloured materials need the attribute on every geometry they merge.
     if ((mat as THREE.MeshStandardMaterial).vertexColors && (color || !geo.getAttribute('color'))) geo = withColor(geo, color ?? WHITE, null);
-    super.addGeometry(geo, mat, m, castShadow);
+    this.keep(geo, mat, m, castShadow);
   }
 
-  override build(): THREE.Group {
+  override merge(): MergedPart[] {
+    const steps = this.mergeSteps();
+    for (let s = steps.next(); ; s = steps.next()) if (s.done) return s.value;
+  }
+
+  /** merge() a material and shadow flag at a time, yielding before each. */
+  *mergeSteps(): Generator<void, MergedPart[]> {
     this.tints.clear();
-    return super.build();
+    const out: MergedPart[] = [];
+    for (const [material, lists] of this.parts) {
+      for (const [k, geos] of lists.entries()) {
+        if (!geos.length) continue;
+        yield;
+        const geometry = mergeGeometries(harmonise(geos), false);
+        for (const g of geos) g.dispose();
+        geos.length = 0;
+        if (geometry) out.push({ material, castShadow: k === 0, geometry });
+      }
+    }
+    this.parts.clear();
+    return out;
   }
 }
 
@@ -490,6 +517,39 @@ export function townhouseCollider(lot: TownhouseLot): TidecrownCollider {
   return { x: s.x, z: s.z, hx: lot.hx + 0.2, hz: lot.hz + 0.2, c: Math.cos(s.yaw), s: Math.sin(s.yaw), y0: (s.base ?? s.ground) - 2, y1: lot.top + 1 };
 }
 
+/** A shop's goods set out on the pavement (house-local). */
+export interface PavementGoods {
+  piece: string;
+  lx: number;
+  lz: number;
+  yaw: number;
+  scale: number;
+}
+/**
+ * The goods a shop sets out against its wall beside the arches: plain numbers from a stream of their own, so the plan
+ * registers their colliders without building the house and the near build places the same ones.
+ */
+export function townhouseGoods(spec: TownhouseSpec): PavementGoods[] {
+  if (!spec.shop) return [];
+  const r = stream(spec.seed * 31 + 17);
+  const di = doorIndex(spec);
+  const out: PavementGoods[] = [];
+  for (let i = 0; i < spec.width; i++) {
+    if (i === di || r() >= 0.75) continue;
+    const piece = pick(r, ['Barrel_Apples', 'Prop_Crate', 'Barrel', 'Bag', 'Vase_2', 'Prop_Crate'] as const);
+    const x = -spec.width + 1 + 2 * i;
+    out.push({ piece, lx: x + (r() < 0.5 ? -0.85 : 0.85), lz: spec.depth + WALL + 0.38, yaw: r() * 0.6 - 0.3, scale: piece === 'Prop_Crate' ? 0.6 : 0.8 });
+  }
+  return out;
+}
+/** The colliders of a shop's pavement goods. */
+export function goodsColliders(spec: TownhouseSpec): TidecrownCollider[] {
+  return townhouseGoods(spec).map((g) => {
+    const [x, z] = atLocal(spec, g.lx, g.lz);
+    return { x, z, hx: 0.32, hz: 0.32, c: Math.cos(spec.yaw), s: Math.sin(spec.yaw), y0: spec.ground - 1, y1: spec.ground + 1.2 };
+  });
+}
+
 const WALL_TONES = ['#e9dcc0', '#efe4cc', '#e4cfa4', '#dcd8cc', '#f0dfbc', '#e6d2b6', '#d6d2c6', '#ead6b0', '#e8d9c8', '#e2c9a2'];
 const STONE_TONES = ['#ffffff', '#fbf6ec', '#f6f1e8', '#fff8ea'];
 const ROOF_TONES = ['#33639e', '#2c5690', '#3c70aa', '#2a4f80', '#3a679a'];
@@ -560,9 +620,8 @@ const WIN_WALL: Record<WinKind, string> = { thin: 'Window_Thin_Round', wideFlat:
 const WIN_PIECE: Record<WinKind, string> = { thin: 'Window_Thin_Round1', wideFlat: 'Window_Wide_Flat1', wideRound: 'Window_Wide_Round1' };
 const WIN_SHUT: Record<WinKind, string> = { thin: 'WindowShutters_Thin_Round', wideFlat: 'WindowShutters_Wide_Flat', wideRound: 'WindowShutters_Wide_Round' };
 
-/** Optional extras a house reports to its builder (goods and lamps the caller may light or collide with). */
+/** Optional extras a house reports to its builder (the lamps beside its door, for the caller to light). */
 export interface HouseExtras {
-  colliders: TidecrownCollider[];
   lamps: { x: number; y: number; z: number; yaw: number }[];
 }
 
@@ -690,6 +749,7 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   const r = stream(spec.seed);
   const st = houseStyle(k, r, spec.palette ? HOUSE_PALETTES[spec.palette] : undefined);
   const lot = townhouseLot(spec);
+  const goods = townhouseGoods(spec);
   const W = spec.width * 2;
   const D = spec.depth * 2;
   const F = spec.floors;
@@ -1002,15 +1062,11 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     put(props, 'Shelf_Simple', k.over.props, null, x, y + 1.5, back + 0.12, 0, 1.1, false);
     put(props, pick(r, ['Vase_4', 'Candle_2'] as const), k.over.props, null, x + (r() - 0.5) * 0.6, y + 1.62, back + 0.3, r() * 6, 0.8, false);
     put(props, pick(r, ['Barrel', 'Bag', 'Vase_2'] as const), k.over.props, null, x + (r() - 0.5) * 0.6, y, back + 0.6, r() * 6, 0.85, false);
-    // Goods on the pavement, against the wall between the arches.
-    if (r() < 0.75) {
-      const piece = pick(r, ['Barrel_Apples', 'Prop_Crate', 'Barrel', 'Bag', 'Vase_2', 'Prop_Crate'] as const);
-      const gx = x + (r() < 0.5 ? -0.85 : 0.85);
-      const gz = z + WALL + 0.38;
-      if (piece === 'Prop_Crate') put(village, piece, st.paint, new Map(st.t).set(mat.paint, lin('#9c7650')), gx, 0, gz, r() * 0.6 - 0.3, 0.6);
-      else put(props, piece, k.over.props, null, gx, 0, gz, r() * 0.6 - 0.3, 0.8);
-      const [wx, wz] = atLocal(spec, gx, gz);
-      extras?.colliders.push({ x: wx, z: wz, hx: 0.32, hz: 0.32, c: Math.cos(spec.yaw), s: Math.sin(spec.yaw), y0: spec.ground - 1, y1: spec.ground + 1.2 });
+    // Goods on the pavement, against the wall between the arches (townhouseGoods; the plan has their colliders).
+    for (const g of goods) {
+      if (Math.abs(g.lx - x) > 1) continue;
+      if (g.piece === 'Prop_Crate') put(village, g.piece, st.paint, new Map(st.t).set(mat.paint, lin('#9c7650')), g.lx, 0, g.lz, g.yaw, g.scale);
+      else put(props, g.piece, k.over.props, null, g.lx, 0, g.lz, g.yaw, g.scale);
     }
   }
 
@@ -1747,6 +1803,7 @@ export function planDistrict(o: DistrictPlanOptions): DistrictPlan {
   }
 
   const colliders: TidecrownCollider[] = all.map(townhouseCollider);
+  for (const l of all) colliders.push(...goodsColliders(l.spec));
   for (const y of yards) if (y.solid > 0) colliders.push({ x: y.x, z: y.z, hx: y.solid, hz: y.solid, c: Math.cos(y.yaw), s: Math.sin(y.yaw), y0: y.y - 1, y1: y.y + 2 });
   return { houses, lots: all, yards, colliders, lanes };
 }
@@ -1760,9 +1817,10 @@ export interface DistrictOptions extends DistrictPlanOptions {
   bunting?: boolean;
   /**
    * A city's shared LOD (see cityLod): the district adds its chunks there and the caller builds it once, after
-   * every district. Without one the district makes and builds its own.
+   * every district. Without one the district makes and builds its own (on `renderer`).
    */
   lod?: TidecrownLod<TideBatch>;
+  renderer?: THREE.WebGLRenderer;
   /** Chunk size, switch distances and shadows of the district's own LOD (ignored with `lod`). */
   lodOptions?: LodOptions;
   name?: string;
@@ -1771,19 +1829,18 @@ export interface District {
   /** The district's LOD, built; an empty group when it went into a shared `lod`. */
   group: THREE.Object3D;
   lots: TownhouseLot[];
+  /** Every solid of the district (houses, yards, shop goods), from the plan. */
   colliders: TidecrownCollider[];
   /** Lantern anchors beside doors (world). */
   lamps: { x: number; y: number; z: number; yaw: number }[];
   /** Back lanes the district added between its rows (pave and keep clear like streets). */
   lanes: DistrictStreet[];
   stats: { houses: number; meshes: number; triangles: number; farTriangles: number; chunks: number; pieces: Record<string, number> };
-  /** With fillDistrict(…, defer): fills the near batches a house per step; its goods' colliders join `colliders`. */
-  near?: () => Generator<void, void>;
 }
 
-/** A LOD for a whole city of districts: pass it to every fillDistrict, then build() it and add it to the scene. */
-export function cityLod(kit: TidecrownKit, opts: LodOptions = {}, name = 'tidecrown-city'): TidecrownLod<TideBatch> {
-  return new TidecrownLod((n) => new TideBatch(kit, n), opts, name);
+/** A LOD for a whole city of districts: pass it to every fillDistrict, then build it and add it to the scene. */
+export function cityLod(kit: TidecrownKit, renderer: THREE.WebGLRenderer, opts: LodOptions = {}, name = 'tidecrown-city'): TidecrownLod<TideBatch> {
+  return new TidecrownLod(renderer, (n) => new TideBatch(kit, n), opts, name);
 }
 
 /** Distance along a ray to the nearest house front (and that house), within `max`. */
@@ -1807,9 +1864,10 @@ function rayToLot(lots: TownhouseLot[], x: number, z: number, dx: number, dz: nu
 }
 
 /** Strings of pennants across each street, from one house front to the facing one, every dozen metres or so. */
-function bunting(o: DistrictOptions, plan: DistrictPlan, chunkOf: (x: number, z: number) => { near: TideBatch; far: FarBatch }, pass: 'near' | 'far' | 'both'): void {
+function buntingStrings(o: DistrictOptions, plan: DistrictPlan): { x: number; z: number; a: THREE.Vector3; b: THREE.Vector3; sag: number; seed: number }[] {
   const r = stream((o.seed ?? 1) + 77);
   const setback = o.setback ?? 0.9;
+  const out: { x: number; z: number; a: THREE.Vector3; b: THREE.Vector3; sag: number; seed: number }[] = [];
   for (const st of o.streets) {
     // Squares and avenues are too wide to string across.
     if (st.width > 20) continue;
@@ -1827,94 +1885,75 @@ function bunting(o: DistrictOptions, plan: DistrictPlan, chunkOf: (x: number, z:
       const y = (lot: TownhouseLot) => lot.spec.ground + Math.min(lot.spec.floors - 1, 2) * H - 0.45;
       const pa = new THREE.Vector3(x + nx * (a.t + WALL - 0.02), y(a.lot), z + nz * (a.t + WALL - 0.02));
       const pb = new THREE.Vector3(x - nx * (b.t + WALL - 0.02), y(b.lot), z - nz * (b.t + WALL - 0.02));
-      const g = buntingGeometry(pa, pb, 0.45 + r() * 0.35, Math.floor(r() * 6));
-      const c = chunkOf(x, z);
-      if (pass !== 'far') {
-        c.near.addGeometry(g.flags, o.kit.mat.pennant, null, false);
-        c.near.addGeometry(g.cord, o.kit.mat.iron, null, false);
-      }
-      // Far: the flags without their cord.
-      if (pass !== 'near') c.far.house(IDENTITY).geo(o.kit.mat.pennant, g.flags);
+      out.push({ x, z, a: pa, b: pb, sag: 0.45 + r() * 0.35, seed: Math.floor(r() * 6) });
     }
   }
+  return out;
 }
 const IDENTITY = new THREE.Matrix4();
 const TREE_FAR = new THREE.IcosahedronGeometry(1, 0);
 const TREE_LEAF = lin('#5d8a34');
 
-/** A batch that keeps nothing: the far pass of a deferred district runs the builder without its kit pieces. */
+/** A batch that keeps nothing: the far pass runs the builder without its kit pieces. */
 class NoBatch extends TideBatch {
   override put(): void {}
   override addGeometry(): void {}
 }
 
 /**
- * Plan (or take the plan of) a district of townhouses and build it into LOD chunks (near: the kit; far:
- * buildTownhouse's far build), on the district's own LOD or a shared city one. Deterministic from `seed`.
- * With `defer` only the far builds are made now; `near()` then fills the near batches a house at a time (a
- * generator, so a caller can spread it over frames), and the caller builds the LOD's near meshes after it.
+ * Plan (or take the plan of) a district of townhouses and add it to LOD chunks: the far builds (buildTownhouse's far
+ * build) now, the near detail (the kit) as a recipe per house, yard piece and pennant string that the LOD runs when
+ * it builds the chunk. On the district's own LOD (built here) or a shared city one (built by the caller, see
+ * TidecrownLod.buildFar and stream). Deterministic from `seed`.
  */
-export function fillDistrict(o: DistrictOptions, plan: DistrictPlan = planDistrict(o), defer = false): District {
+export function fillDistrict(o: DistrictOptions, plan: DistrictPlan = planDistrict(o)): District {
   const name = o.name ?? 'tidecrown-district';
-  const lod = o.lod ?? new TidecrownLod((n) => new TideBatch(o.kit, n), o.lodOptions, name);
-  const chunkOf = (x: number, z: number) => lod.chunkAt(x, z);
-  const extras: HouseExtras = { colliders: [], lamps: [] };
-  const used = new Set<TideBatch>();
-  const none = defer ? new NoBatch(o.kit, `${name}:none`) : null;
-  const m = new THREE.Matrix4();
+  if (!o.lod && !o.renderer) throw new Error('fillDistrict: a district without a shared LOD needs a renderer');
+  const lod = o.lod ?? new TidecrownLod(o.renderer!, (n) => new TideBatch(o.kit, n), o.lodOptions, name);
+  const extras: HouseExtras = { lamps: [] };
+  const none = new NoBatch(o.kit, `${name}:none`);
   for (const h of plan.houses) {
-    const c = chunkOf(h.x, h.z);
-    used.add(c.near);
-    buildTownhouse(h, none ?? c.near, none ? { colliders: [], lamps: [] } : extras, c.far);
+    buildTownhouse(h, none, extras, lod.chunkAt(h.x, h.z).far);
+    lod.recipe(h.x, h.z, (b) => buildTownhouse(h, b));
   }
-  const yards = (pass: 'near' | 'far' | 'both') => {
-    for (const y of plan.yards) {
-      const c = chunkOf(y.x, y.z);
-      if (pass !== 'far') {
-        const kit = o.kit[y.kit];
-        const over = y.kit === 'props' ? o.kit.over.props : y.kit === 'nature' ? o.kit.over.nature : o.kit.over.wall;
-        m.copy(trs(y.x, y.y - 0.02, y.z, y.yaw, y.s));
-        c.near.put(kit, y.piece, m, over, null, true);
-      }
-      // Far: trees as a leafy blob on a trunk; the small yard things are left out.
-      if (pass !== 'near' && y.piece.startsWith('CommonTree')) {
-        c.far.house(trs(y.x, y.y, y.z, y.yaw, y.s));
-        c.far.box(o.kit.mat.paint, TRUNK_TONE, -0.35, 0, -0.35, 0.35, 3.2, 0.35, 'ny py');
-        c.far.frame(0, 5.6, 0, 0, 1.95, 2.6, 1.95).geo(o.kit.mat.paint, TREE_FAR, TREE_LEAF);
-      }
+  const m = new THREE.Matrix4();
+  for (const y of plan.yards) {
+    const kit = o.kit[y.kit];
+    const over = y.kit === 'props' ? o.kit.over.props : y.kit === 'nature' ? o.kit.over.nature : o.kit.over.wall;
+    lod.recipe(y.x, y.z, (b) => b.put(kit, y.piece, m.copy(trs(y.x, y.y - 0.02, y.z, y.yaw, y.s)), over, null, true));
+    // Far: trees as a leafy blob on a trunk; the small yard things are left out.
+    if (y.piece.startsWith('CommonTree')) {
+      const far = lod.chunkAt(y.x, y.z).far;
+      far.house(trs(y.x, y.y, y.z, y.yaw, y.s));
+      far.box(o.kit.mat.paint, TRUNK_TONE, -0.35, 0, -0.35, 0.35, 3.2, 0.35, 'ny py');
+      far.frame(0, 5.6, 0, 0, 1.95, 2.6, 1.95).geo(o.kit.mat.paint, TREE_FAR, TREE_LEAF);
     }
-  };
-  const pass = defer ? 'far' : 'both';
-  yards(pass);
-  if (o.bunting !== false) bunting(o, plan, chunkOf, pass);
-  const pieces = new Map<string, number>();
-  for (const b of used) for (const [p, t] of b.pieceTris) pieces.set(p, (pieces.get(p) ?? 0) + t);
-  const top = Object.fromEntries([...pieces].sort((a, b) => b[1] - a[1]).slice(0, 14));
+  }
+  if (o.bunting !== false) {
+    for (const s of buntingStrings(o, plan)) {
+      // Far: the flags without their cord.
+      lod.chunkAt(s.x, s.z).far.house(IDENTITY).geo(o.kit.mat.pennant, buntingGeometry(s.a, s.b, s.sag, s.seed).flags);
+      lod.recipe(s.x, s.z, (b) => {
+        const g = buntingGeometry(s.a, s.b, s.sag, s.seed);
+        b.addGeometry(g.flags, o.kit.mat.pennant, null, false);
+        b.addGeometry(g.cord, o.kit.mat.iron, null, false);
+      });
+    }
+  }
   let group: THREE.Object3D;
   if (o.lod) {
     group = new THREE.Group();
     group.name = name;
-  } else group = defer ? lod.buildFar() : lod.build();
+  } else group = lod.build();
   const ls = lod.stats;
-  const district: District = {
+  const top = Object.fromEntries([...lod.pieceTris].sort((a, b) => b[1] - a[1]).slice(0, 14));
+  return {
     group,
     lots: plan.lots,
-    colliders: [...plan.colliders, ...extras.colliders],
+    colliders: plan.colliders,
     lamps: extras.lamps,
     lanes: plan.lanes,
     stats: { houses: plan.houses.length, meshes: ls.meshes, triangles: ls.nearTriangles, farTriangles: ls.farTriangles, chunks: ls.chunks, pieces: top },
   };
-  if (defer) {
-    district.near = function* () {
-      for (const h of plan.houses) {
-        buildTownhouse(h, chunkOf(h.x, h.z).near, extras, undefined);
-        yield;
-      }
-      yards('near');
-      if (o.bunting !== false) bunting(o, plan, chunkOf, 'near');
-      district.colliders.push(...extras.colliders);
-    };
-  }
-  return district;
 }
 const TRUNK_TONE = lin('#6b5038');

@@ -12,7 +12,7 @@ import type { CityLayout } from './cityLayout';
 import {
   cascadeSpot, type DistrictId, TC_FORGE, TC_GRAND_STAIRS, TC_HARBOUR_LEVEL, TC_LANDMARKS, TC_RETAINING, TC_WATERWHEEL,
 } from './cityPlan';
-import { cityLod, type District, fillDistrict, type TidecrownCollider, type TidecrownKit } from './houses';
+import { cityLod, fillDistrict, type TideBatch, type TidecrownKit } from './houses';
 import type { TidecrownLod } from './lod';
 import { districtOverrides, type TidecrownMaterials } from './materials';
 import { dressMarket } from './marketStalls';
@@ -22,12 +22,13 @@ type Height = (x: number, z: number) => number;
 
 export interface TidecrownCity {
   group: THREE.Group;
-  lod: TidecrownLod;
-  /** Colliders the near house builds add (goods on the pavements), for the island's collision once refine is done. */
-  extraColliders: TidecrownCollider[];
-  /** Build the houses' near detail for about `budget` ms; true once it is all in. */
+  lod: TidecrownLod<TideBatch>;
+  /** Build (and free) the houses' near detail around the camera for about `budget` ms; true once all it needs is in. */
   refine(budget: number): boolean;
+  /** Free every house's near detail (on leaving the city). */
+  release(): void;
   update(time: number, camera?: THREE.Camera): void;
+  dispose(): void;
   stats: { houses: Record<DistrictId, number>; houseTriangles: number; farTriangles: number; chunks: number; nearMs: number; ms: Record<string, number> };
 }
 
@@ -248,7 +249,10 @@ export interface CityKits {
   harbour: Kit;
 }
 
-export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, plan: CityLayout, height: Height): TidecrownCity {
+/** Near detail reach by graphics quality: the switch distance and own shadows (low: less of the city in detail). */
+const NEAR = { high: { near: 90, shadow: 45 }, low: { near: 60, shadow: 30, hysteresis: 10, cap: 80 } } as const;
+
+export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, plan: CityLayout, height: Height, renderer: THREE.WebGLRenderer, quality: 'low' | 'high' = 'high'): TidecrownCity {
   const ms: Record<string, number> = {};
   let t0 = performance.now();
   const lap = (k: string) => { ms[k] = Math.round(performance.now() - t0); t0 = performance.now(); };
@@ -258,18 +262,13 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   const forCity = (m: THREE.Material) => cityOver[m.name] ?? m;
   const forHarbour = (m: THREE.Material) => harbourOver[m.name] ?? m;
 
-  // Townhouses: every zone on one LOD, the far builds now and the near ones a little at a time afterwards (refine).
-  const lod = cityLod(kits.tide, { near: 90, shadow: 45 });
-  const districts: District[] = plan.zones.map((z, i) => fillDistrict({ kit: kits.tide, ...z.options, lod, name: `tidecrown-${z.zone.district}-${i}` }, z.plan, true));
+  // Townhouses: every zone on one LOD, the far builds now, near detail streamed around the camera (refine).
+  const lod = cityLod(kits.tide, renderer, NEAR[quality]);
+  plan.zones.forEach((z, i) => fillDistrict({ kit: kits.tide, ...z.options, lod, name: `tidecrown-${z.zone.district}-${i}` }, z.plan));
   lod.buildFar();
   lod.name = 'tidecrown-houses';
   group.add(lod);
-  function* nearSteps(): Generator<void, void> {
-    for (const d of districts) yield* d.near!();
-    yield* lod.buildNearSteps();
-  }
-  const near = nearSteps();
-  let nearDone = false, nearMs = 0;
+  let nearMs = 0;
   lap('houses');
 
   const market = dressMarket({ kit: kits.tide, ...plan.market.options, name: 'tidecrown-market' }, plan.market.plan);
@@ -624,26 +623,19 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
     group,
     lod,
     refine(budget) {
-      if (nearDone) return true;
       const t = performance.now();
-      while (performance.now() - t < budget) {
-        if (near.next().done) {
-          nearDone = true;
-          break;
-        }
-      }
+      const done = lod.stream(budget);
       nearMs += performance.now() - t;
-      if (nearDone) {
-        this.stats.nearMs = Math.round(nearMs);
-        const ls = lod.stats;
-        this.stats.houseTriangles = ls.nearTriangles;
-        this.stats.farTriangles = ls.farTriangles;
-        this.stats.chunks = ls.chunks;
-        districts.forEach((d, i) => this.extraColliders.push(...d.colliders.slice(plan.zones[i].plan.colliders.length)));
-      }
-      return nearDone;
+      this.stats.nearMs = Math.round(nearMs);
+      this.stats.houseTriangles = lod.stats.nearTriangles;
+      return done;
     },
-    extraColliders: [],
+    release() {
+      lod.releaseNear();
+    },
+    dispose() {
+      lod.dispose();
+    },
     update(time, camera) {
       if (camera) {
         camera.getWorldPosition(eye);

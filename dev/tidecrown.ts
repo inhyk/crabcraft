@@ -16,7 +16,7 @@ import { WORLD_UNIFORMS } from '../src/world/materials';
 import { addPatch } from '../src/world/materials';
 import { GLSL_NOISE } from '../src/world/noise';
 import { loadKit, StaticBatch, trs } from '../src/world/kit';
-import { cityLod, fillDistrict, lineDist, loadTidecrownKit, planDistrict, pointInPoly, type District, type DistrictStreet, type Height, type TidecrownKit, type V2 } from '../src/game/tidecrown/houses';
+import { cityLod, fillDistrict, lineDist, loadTidecrownKit, planDistrict, pointInPoly, type District, type DistrictStreet, type Height, type TideBatch, type TidecrownKit, type V2 } from '../src/game/tidecrown/houses';
 import type { TidecrownLod } from '../src/game/tidecrown/lod';
 import { dressMarket, type Market } from '../src/game/tidecrown/marketStalls';
 
@@ -29,7 +29,7 @@ declare global {
     __shoot?: boolean;
     __shot?: string;
     /** The city view's LOD (force near/far, hide) for the QA's swap check. */
-    __lod?: TidecrownLod;
+    __lod?: TidecrownLod<TideBatch>;
     /** Draw calls and triangles of the last rendered frame. */
     __frame?: { calls: number; triangles: number };
   }
@@ -174,7 +174,7 @@ async function crab(x: number, z: number, h: Height, yaw: number): Promise<void>
 function stat(district: District, extra: Record<string, unknown> = {}): void {
   const info = { view, buildMs: (district.stats as Record<string, unknown>).buildMs, deterministic: (district.stats as Record<string, unknown>).deterministic, lanes: district.lanes.length, houses: district.stats.houses, districtMeshes: district.stats.meshes, districtTriangles: district.stats.triangles, districtFarTriangles: district.stats.farTriangles, chunks: district.stats.chunks, colliders: district.colliders.length, banners: district.lots.filter((l) => l.spec.banner).length, shops: district.lots.filter((l) => l.spec.shop).length, corners: district.lots.filter((l) => l.spec.corner?.left || l.spec.corner?.right).length, pieces: district.stats.pieces, ...extra };
   window.__info = info;
-  if ((district.group as TidecrownLod).isLOD) window.__lod = district.group as TidecrownLod;
+  if ((district.group as TidecrownLod<TideBatch>).isLOD) window.__lod = district.group as TidecrownLod<TideBatch>;
 }
 
 function exposeDistrict(d: District, streets: DistrictStreet[], reserved: V2[][], polygon: V2[], market?: Market): void {
@@ -198,7 +198,7 @@ async function street(): Promise<void> {
   const line: V2[] = [[0, -6], [1.5, 20], [-1, 42], [2, 66]];
   const streets: DistrictStreet[] = [{ points: line, width: 7 }];
   const polygon: V2[] = [[-17, -8], [18, -8], [19, 70], [-17, 70]];
-  const d = fillDistrict({ kit, polygon, streets, height: h, seed: Number(params.get('seed') ?? 7), setback: 0.9, laneSpacing: 0 });
+  const d = fillDistrict({ kit, renderer: engine.renderer, polygon, streets, height: h, seed: Number(params.get('seed') ?? 7), setback: 0.9, laneSpacing: 0 });
   scene.add(d.group);
   scene.add(ground(kit, h, -30, 30, -20, 90, (x, z) => (lineDist(x, z, line) < 3.5 ? 1 : lineDist(x, z, line) < 4.6 ? 0.5 : 0)));
   await crab(0.8, 6.5, h, Math.PI + 0.4);
@@ -224,7 +224,7 @@ async function buildDistrict(): Promise<{ kit: TidecrownKit; d: District; m: Mar
   const reserved = [plazaPoly()];
   const t0 = performance.now();
   const opts = { polygon: DISTRICT_POLY, streets: DISTRICT_STREETS, reserved, height: districtHeight, seed: Number(params.get('seed') ?? 11), laneSpacing: Number(params.get('lanes') ?? 26) };
-  const d = fillDistrict({ kit, ...opts });
+  const d = fillDistrict({ kit, renderer: engine.renderer, ...opts });
   const buildMs = Math.round(performance.now() - t0);
   // The same options must plan the same city.
   const deterministic = JSON.stringify(planDistrict(opts).lots.map((l) => l.spec)) === JSON.stringify(d.lots.map((l) => l.spec));
@@ -278,7 +278,7 @@ async function house(): Promise<void> {
   const line: V2[] = [[-30, 0], [30, 0]];
   const streets: DistrictStreet[] = [{ points: line, width: 6 }];
   const polygon: V2[] = [[-24, 0.5], [24, 0.5], [24, 16], [-24, 16]];
-  const d = fillDistrict({ kit, polygon, streets, height: h, seed: Number(params.get('seed') ?? 3), laneSpacing: 0 });
+  const d = fillDistrict({ kit, renderer: engine.renderer, polygon, streets, height: h, seed: Number(params.get('seed') ?? 3), laneSpacing: 0 });
   scene.add(d.group);
   scene.add(ground(kit, h, -40, 40, -20, 30, (_x, z) => (Math.abs(z) < 3 ? 1 : Math.abs(z) < 4.1 ? 0.5 : 0)));
   await crab(1, -1, h, 0.6);
@@ -327,7 +327,7 @@ const CITY_PRESETS: Record<string, { cam: [number, number, number]; at: [number,
 async function city(): Promise<void> {
   const kit = await loadTidecrownKit();
   const num = (k: string) => (params.has(k) ? Number(params.get(k)) : undefined);
-  const lod = cityLod(kit, { chunk: num('chunk'), near: num('near'), shadow: num('shadow'), hysteresis: num('hyst') });
+  const lod = cityLod(kit, engine.renderer, { chunk: num('chunk'), near: num('near'), shadow: num('shadow'), hysteresis: num('hyst') });
   const t0 = performance.now();
   const districts = CITY_DISTRICTS.map((c, i) => fillDistrict({ kit, polygon: c.poly, streets: c.streets, reserved: CITY_RESERVED, height: cityHeight, seed: c.seed, laneSpacing: c.lanes, lod, name: `tidecrown-city-${i}` }));
   lod.build();

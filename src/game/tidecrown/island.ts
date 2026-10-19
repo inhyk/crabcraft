@@ -98,7 +98,7 @@ export class TidecrownIsland {
     await tick();
 
     t0 = performance.now();
-    this.city = buildTidecrownCity({ tide, city: cityKit, harbour: harbourKit }, mats, this.layout.city, (x, z) => this.layout.heightAt(x, z));
+    this.city = buildTidecrownCity({ tide, city: cityKit, harbour: harbourKit }, mats, this.layout.city, (x, z) => this.layout.heightAt(x, z), renderer, quality);
     this.root.add(this.city.group);
     this.info.city = { ...this.city.stats.ms, plan: this.layout.city.ms };
     step('city', t0);
@@ -144,31 +144,37 @@ export class TidecrownIsland {
     if (this.lanternGlow) this.lanternGlow.emissiveIntensity = 3.2 + 0.5 * Math.sin(time * 1.3);
     this.structures.flame.emissiveIntensity = 2.6 + 0.6 * Math.sin(time * 11) * Math.sin(time * 6.3);
     this.city.update(time, camera);
-    if (!this.detailed) this.refine(6);
+    this.refine(6);
   }
 
   private detailDone!: () => void;
-  /** The houses' near detail goes in a few ms a frame after entry; this resolves when it is all in. */
+  /** The houses' near detail streams in a few ms a frame around the camera; this resolves once it has first caught up. */
   readonly detail = new Promise<void>((r) => (this.detailDone = r));
-  private detailed = false;
-  /** Build `budget` ms more of the near detail (the island's update does 6 a frame). */
+  /** The near detail the camera needs is in. */
+  detailed = false;
+  /** Build (and free) `budget` ms of the houses' near detail for where the camera is (the island's update does 6 a frame). */
   refine(budget: number): boolean {
-    if (this.detailed || !this.built) return this.detailed;
-    if (this.city.refine(budget)) {
-      for (const c of this.city.extraColliders) this.collision.addBoxCS(c.x, c.z, c.hx, c.hz, c.c, c.s, c.y0, c.y1);
-      this.detailed = true;
-      this.detailDone();
-    }
+    if (!this.built) return false;
+    this.detailed = this.city.refine(budget);
+    if (this.detailed) this.detailDone();
     return this.detailed;
+  }
+
+  /** Leaving: the houses' near detail goes (it streams in again on return). */
+  leave(): void {
+    if (this.built) this.city.release();
   }
 
   dispose(): void {
     this.atmosphere?.dispose();
+    // The houses' pools free their own GPU buffers.
+    this.city?.dispose();
     const mats = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
-      // Sprites share one geometry across three.js.
-      if (m.geometry && !(o instanceof THREE.Sprite)) m.geometry.dispose();
+      // A BatchedMesh owns its matrix and indirection textures as well as its geometry; sprites share one geometry.
+      if ((o as THREE.BatchedMesh).isBatchedMesh) (o as THREE.BatchedMesh).dispose();
+      else if (m.geometry && !(o instanceof THREE.Sprite)) m.geometry.dispose();
       if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose();
       if (m.material) for (const mm of Array.isArray(m.material) ? m.material : [m.material]) mats.add(mm);
     });
