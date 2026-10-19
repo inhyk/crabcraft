@@ -19,7 +19,7 @@ export function createEndingStage(shore:AreaDefinition,finalWorld:AreaDefinition
  return immutable({centre:shore.spawn.position,yaw:shore.spawn.yaw,cast});
 }
 type CancelReason=Parameters<EndingPresentationController['cancel']>[0];
-/** shown: what the owner last saw before the pending transition; a save round that keeps the world running publishes it until the transition is durable. */
+/** shown: while a transition waits for its checkpoint (a save round that keeps the world running publishes meanwhile), the owner keeps the frame shown before a skip or the credits; an ending that finishes or is cancelled leaves the screen at once (null). */
 interface Entry {ref:EntityRef;controller:EndingPresentationController;revision:number;pending:boolean;lock:boolean;combat:number;hp:number;shown:Readonly<EndingObservation>|null}
 interface CaptureBinding {ref:EntityRef;id:string;revision:number}
 export class PersonalEndings {
@@ -48,11 +48,12 @@ export class PersonalEndings {
  private dirty(entry:Entry):void {if(entry.revision===Number.MAX_SAFE_INTEGER)throw new Error('Ending transition revision exhausted');entry.revision++;entry.pending=true;}
  cancel(ref:EntityRef,reason:CancelReason):void {
   if(this.requests.has(ref.id)&&sameRef(this.requests.get(ref.id)!,ref))this.requests.delete(ref.id);const entry=this.entry(ref);if(!entry||!this.active(entry))return;
-  if(!entry.pending)entry.shown=entry.controller.snapshot();entry.controller.cancel(reason);this.unlock(entry);this.dirty(entry);
+  // A cancelled ending leaves the screen at once; its durable 'cancelled' view follows.
+  entry.shown=null;entry.controller.cancel(reason);this.unlock(entry);this.dirty(entry);
  }
  forget(ref:EntityRef):void {this.cancel(ref,'retired');if(this.requests.has(ref.id)&&sameRef(this.requests.get(ref.id)!,ref))this.requests.delete(ref.id);if(this.entry(ref)){this.entries.delete(ref.id);this.interrupted.delete(ref.id);}for(const[token,b]of this.captures)if(sameRef(b.ref,ref))this.captures.delete(token);}
  command(ref:EntityRef,command:Extract<PlayerCommand,{kind:'endingControl'}>):boolean {
-  const entry=this.entry(ref);if(!entry||entry.pending||!this.player(ref))return false;const shown=entry.controller.snapshot();if(!entry.controller.command(command.id,command.action))return false;entry.shown=shown;
+  const entry=this.entry(ref);if(!entry||entry.pending||!this.player(ref))return false;const shown=entry.controller.snapshot();if(!entry.controller.command(command.id,command.action))return false;entry.shown=this.active(entry)?shown:null;
   if(!this.active(entry)||entry.controller.phaseName==='credits')this.unlock(entry);this.dirty(entry);return true;
  }
  /** Fixed stage after pending hits/projectiles, never from snapshot/drain. */
