@@ -57,6 +57,12 @@ export class TidecrownIsland {
     if (this.built) return;
     const step = (name: string, t0: number) => (this.info.steps[name] = Math.round(performance.now() - t0));
     let t0 = performance.now();
+    // Every kit at once, fetched while the layout is worked out: World I's village, props and nature (the townhouses'
+    // set), the castle, the districts' landmarks and the harbour; the statues alongside.
+    const loading = Promise.all([
+      loadTidecrownKit(), loadKit('models/world/tidecrown.glb'), loadKit('models/world/tidecrown-city.glb'), loadKit('models/world/tidecrown-harbor.glb'), buildHeroStatues(),
+    ]);
+    await tick();
     this.layout = tidecrownLayout();
     this.collision = this.layout.col;
     this.spawn.y = this.layout.heightAt(this.spawn.x, this.spawn.z);
@@ -65,11 +71,7 @@ export class TidecrownIsland {
     await tick();
 
     t0 = performance.now();
-    // Every kit at once: World I's village, props and nature (the townhouses' set), the castle, the districts' landmarks
-    // and the harbour; the statues alongside.
-    const [tide, kit, cityKit, harbourKit, statues] = await Promise.all([
-      loadTidecrownKit(), loadKit('models/world/tidecrown.glb'), loadKit('models/world/tidecrown-city.glb'), loadKit('models/world/tidecrown-harbor.glb'), buildHeroStatues(),
-    ]);
+    const [tide, kit, cityKit, harbourKit, statues] = await loading;
     const { village, nature } = tide;
     step('assets', t0);
     onProgress?.(0.45);
@@ -81,7 +83,7 @@ export class TidecrownIsland {
     this.root.add(ground);
     const pines: [number, number][] = [];
     for (const [name, list] of this.layout.nature.trees.items) if (name.startsWith('Pine_')) for (const m of list) pines.push([m.elements[12], m.elements[14]]);
-    this.map = paintTidecrownMap(terrain, pines);
+    this.map = paintTidecrownMap(terrain, pines, this.layout.city);
     step('terrain', t0);
     onProgress?.(0.6);
     await tick();

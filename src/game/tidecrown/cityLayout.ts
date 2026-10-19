@@ -5,8 +5,8 @@ import { type Collision, rectSurface } from '../../sim/world/collision';
 import { plateauRadius, polyDistance, TC_AXIS, TC_CITY_WALL, TC_KEEP, TC_P, TC_TERRACES, tcAxis } from '../../sim/world/tidecrownGround';
 import { canalDistance, TC_CANAL } from '../../sim/world/tidecrownCity';
 import {
-  bannerPoleSpots, canalBridges, canalWalls, type DistrictId, facing, gondolaPlan, harbourPlan, lampSpots, quad, retainingWalls,
-  TC_CITY_STREETS, TC_DISTRICTS, TC_GARDENS, TC_GRAND_STAIRS, TC_LANDMARKS, TC_MARKET, TC_RETAINING, TC_SQUARES, TC_STAIR, TC_ZONES, type V2, type Zone,
+  bannerPoleSpots, canalBridges, canalWalls, type DistrictId, dressingPlan, gondolaPlan, harbourPlan, lampSpots, quad, retainingWalls,
+  TC_CITY_STREETS, TC_DISTRICTS, TC_GARDENS, TC_GRAND_STAIRS, TC_LANDMARKS, TC_MARKET, TC_PALETTES, TC_RETAINING, TC_SQUARES, TC_STAIR, TC_ZONES, type V2, type Zone,
 } from './cityPlan';
 import { type DistrictPlan, type DistrictPlanOptions, type DistrictStreet, planDistrict, type TidecrownCollider } from './houses';
 import type { TcPlacement } from './layout';
@@ -24,8 +24,10 @@ export interface CityLayout {
   gondolas: ReturnType<typeof gondolaPlan>;
   lamps: ReturnType<typeof lampSpots>;
   poles: ReturnType<typeof bannerPoleSpots>;
-  /** Garden trees and hedges (nature kit pieces). */
+  /** Garden trees and hedges, and what grows in the planters (nature kit pieces). */
   plants: { piece: string; x: number; y: number; z: number; yaw: number; s: number }[];
+  /** Benches, anvils, stock (props kit) and the stone planters. */
+  dressing: ReturnType<typeof dressingPlan>;
   /** Every solid the city adds, as boxes. */
   colliders: TidecrownCollider[];
   /** Walkable tops: arcade floor, terrace copings, stairs, quays, piers, bridges. */
@@ -121,7 +123,7 @@ export function planCity(height: Height, placements: TcPlacement[]): CityLayout 
     const near = (pts: readonly (readonly number[])[]) => meets(bounds(pts, 0), zb);
     const own = TC_CITY_STREETS.filter((s) => s.district === zone.district && near(s.points)).map((s) => streets[TC_CITY_STREETS.indexOf(s)]);
     const others = streets.filter((s) => !own.includes(s) && near(s.points));
-    const options: DistrictPlanOptions = { polygon: zone.polygon, streets: [...own, ...others], reserved: reserved.filter(near), height, seed: zone.seed, floors: zone.floors, laneSpacing: 0 };
+    const options: DistrictPlanOptions = { polygon: zone.polygon, streets: [...own, ...others], reserved: reserved.filter(near), height, seed: zone.seed, floors: zone.floors, laneSpacing: 0, palette: TC_PALETTES[zone.district] };
     const plan = planDistrict(options);
     zones.push({ zone, options, plan });
     houses[zone.district] += plan.houses.length;
@@ -211,9 +213,12 @@ export function planCity(height: Height, placements: TcPlacement[]): CityLayout 
   const canalWallRuns = canalWalls();
   for (const w of canalWallRuns) {
     const dx = w.bx - w.ax, dz = w.bz - w.az, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
-    const cuts = bridges.map((b) => (((b.x - w.ax) * ux + (b.z - w.az) * uz) - 0)).map((u, i) => [u, bridges[i]] as const)
-      .filter(([u, b]) => u > -b.hw - 1 && u < L + b.hw + 1 && Math.abs((b.x - w.ax) * -uz + (b.z - w.az) * ux) < b.hl + 1)
-      .map(([u, b]) => [u - b.hw - 0.2, u + b.hw + 0.2]).sort((a, b) => a[0] - b[0]);
+    // Where a bridge crosses this run: its deck's width along the run, at its centre's projection.
+    const cuts = bridges
+      .map((b) => ({ b, u: (b.x - w.ax) * ux + (b.z - w.az) * uz, off: Math.abs((b.x - w.ax) * -uz + (b.z - w.az) * ux) }))
+      .filter(({ b, u, off }) => u > -b.hw - 1 && u < L + b.hw + 1 && off < b.hl + 1)
+      .map(({ b, u }) => [u - b.hw - 0.2, u + b.hw + 0.2])
+      .sort((a, b) => a[0] - b[0]);
     let u0 = 0;
     const kerb = (a: number, b: number) => {
       if (b - a < 0.3) return;
@@ -254,8 +259,17 @@ export function planCity(height: Height, placements: TcPlacement[]): CityLayout 
     }
   }
 
+  // Dressing: props block where they stand solid, planters always, their plants grow with the foliage.
+  const dressing = dressingPlan();
+  for (const p of dressing.props) if (p.solid) { const y = height(p.x, p.z); colliders.push(box(p.x, p.z, p.solid * p.s, p.solid * p.s, p.yaw, y - 1, y + 2)); }
+  for (const p of dressing.planters) {
+    const y = height(p.x, p.z);
+    colliders.push(box(p.x, p.z, p.hx + 0.1, p.hz + 0.1, p.yaw, y - 1, y + 3));
+    plants.push({ piece: p.plant, x: p.x, y: y + 0.75, z: p.z, yaw: p.x * 1.7, s: p.s });
+  }
+
   return {
-    zones, market, walls, harbour, bridges, canalWalls: canalWallRuns, gondolas, lamps, poles, plants, colliders, surfaces, reserved, streets, houses,
+    zones, market, walls, harbour, bridges, canalWalls: canalWallRuns, gondolas, lamps, poles, plants, dressing, colliders, surfaces, reserved, streets, houses,
     ms: Math.round(performance.now() - t0),
   };
 }
@@ -324,4 +338,3 @@ export function cityOccupancy(city: CityLayout): (x: number, z: number) => boole
   };
 }
 
-export { facing };

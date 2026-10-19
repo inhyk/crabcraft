@@ -192,6 +192,29 @@ function smoke(sources: THREE.Vector3[]): THREE.Points {
   return p;
 }
 
+/** The forge's fire behind its glass: embers that churn and flicker, orange to white-hot. */
+function forgeFire(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ name: 'tc-forge-fire', color: '#2a120a', emissive: '#ffffff', emissiveIntensity: 1, roughness: 0.6, vertexColors: true });
+  addPatch(m, 'tc-forge-fire', (shader) => {
+    shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFfW;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvFfW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vFfW;\nuniform float uTime;\n${GLSL_NOISE}`)
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        {
+          float n = cc_vnoise(vec2(vFfW.x * 1.7 + vFfW.z, vFfW.y * 2.2 - uTime * 1.6)) * 0.65 + cc_vnoise(vec2(vFfW.x * 4.0, vFfW.y * 5.0 - uTime * 3.1)) * 0.35;
+          float flick = 0.85 + 0.15 * sin(uTime * 9.0 + vFfW.x) * sin(uTime * 5.3);
+          totalEmissiveRadiance = mix(vec3(0.9, 0.22, 0.04), vec3(1.0, 0.75, 0.35), smoothstep(0.35, 0.85, n)) * (1.4 + 1.8 * n) * flick;
+        }`,
+      );
+  });
+  return m;
+}
+
 /** A soft additive glow that reads as light from far away. */
 function glow(color: string, at: THREE.Vector3, size: number, name: string): THREE.Sprite {
   const c = document.createElement('canvas');
@@ -256,7 +279,11 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
 
   // City kit pieces: landmarks, terrace walls, stairs, lamps, banner poles and wall banners.
   const pieces = new Scatter(kits.city, 'tidecrown-city-pieces');
-  for (const l of TC_LANDMARKS) pieces.add(l.piece, trs(l.x, height(l.x, l.z) - 0.12, l.z, l.yaw, l.scale));
+  // The forge on its own: its glass is the fire's glow (the hearth and the lit windows).
+  const forge = new Scatter(kits.city, 'tidecrown-forge');
+  for (const l of TC_LANDMARKS) (l.piece === 'TC_Forge' ? forge : pieces).add(l.piece, trs(l.x, height(l.x, l.z) - 0.12, l.z, l.yaw, l.scale));
+  const fire = forgeFire();
+  group.add(forge.build({ materialFor: (m) => (m.name === 'TC_Glass' ? fire : forCity(m)) }));
   for (const w of plan.walls.runs) pieces.add('TC_RetainingWall_12', trs(w.x, w.y, w.z, w.yaw, new THREE.Vector3(w.sx, w.sy, 1)));
   for (const s of TC_GRAND_STAIRS) pieces.add('TC_Stair_8', trs(s.x, s.y - 0.05, s.z, s.yaw, new THREE.Vector3(s.sx, s.sy, s.sz)));
   group.add(pieces.build({ materialFor: forCity }));
@@ -276,6 +303,18 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
     furnish('TC_BannerWall', x, w.top - 5.55, z, w.yaw);
   });
   const culled: { o: THREE.Object3D; box: THREE.Box3; max: number }[] = [];
+  // Benches, anvils and stock, in one props scatter with its own reach.
+  const propsScatter = new Scatter(kits.tide.props, 'tidecrown-dressing'), propsBox = new THREE.Box3();
+  for (const p of plan.dressing.props) {
+    const y = height(p.x, p.z) - 0.02;
+    propsScatter.add(p.piece, trs(p.x, y, p.z, p.yaw, p.s));
+    propsBox.expandByPoint(new THREE.Vector3(p.x, y, p.z));
+  }
+  if (propsScatter.count) {
+    const g = propsScatter.build({ materialFor: (m) => kits.tide.over.props[m.name] ?? m });
+    group.add(g);
+    culled.push({ o: g, box: propsBox.expandByScalar(4), max: 140 });
+  }
   for (const f of furniture) {
     if (!f.s.count) continue;
     const g = f.s.build({ materialFor: forCity });
@@ -303,15 +342,34 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
     ball.translate(p.x, p.top + 1.05, p.z);
     b.addGeometry(worldUV(ball), G, null);
   }
-  // Canal walls: 2 thick from the bed to a coping that overhangs the water a little.
-  const top = TC_CANAL.street + 0.06, bed = TC_CANAL.bed - 0.4;
+  // Planters: dressed stone boxes with a coping, their plants grow with the foliage.
+  for (const p of plan.dressing.planters) {
+    const b = sector(p.x), y = height(p.x, p.z);
+    b.addGeometry(frameBox(p.x, p.z, p.yaw, 0, y + 0.3, 0, p.hx * 2, 0.9, p.hz * 2), D, null);
+    b.addGeometry(frameBox(p.x, p.z, p.yaw, 0, y + 0.82, 0, p.hx * 2 + 0.3, 0.16, p.hz * 2 + 0.3), L, null);
+  }
+  // Canal walls: 2 thick from the bed, their tops flagged flush with the quay, a raised kerb along the water's edge
+  // overhanging it a little, a dark wet band at the waterline, mooring rings every few metres.
+  const flush = TC_CANAL.street - 0.02, bed = TC_CANAL.bed - 0.4;
+  const darken = (g: THREE.BufferGeometry, k: number) => {
+    const c = g.getAttribute('color');
+    for (let i = 0; i < c.count; i++) c.setXYZ(i, k, k * 1.02, k * 1.04);
+    return g;
+  };
   for (const w of plan.canalWalls) {
     const dx = w.bx - w.ax, dz = w.bz - w.az, len = Math.hypot(dx, dz), yaw = Math.atan2(-dz, dx);
     const mx = (w.ax + w.bx) / 2, mz = (w.az + w.bz) / 2, b = sector(mx);
     // Local +Z toward the water (n).
     const lz = Math.sign(Math.sin(yaw) * w.nx + Math.cos(yaw) * w.nz) || 1;
-    b.addGeometry(frameBox(mx, mz, yaw, 0, (top + bed) / 2, -lz * 1.0, len + 0.04, top - bed, 2.0), D, null);
-    b.addGeometry(frameBox(mx, mz, yaw, 0, top + 0.1, -lz * 0.94, len + 0.04, 0.2, 2.12), L, null);
+    b.addGeometry(frameBox(mx, mz, yaw, 0, (flush + bed) / 2, -lz * 1.0, len + 0.04, flush - bed, 2.0), D, null);
+    b.addGeometry(frameBox(mx, mz, yaw, 0, flush + 0.09, -lz * 0.3, len + 0.04, 0.22, 0.84), L, null);
+    b.addGeometry(darken(frameBox(mx, mz, yaw, 0, TC_CANAL.water + 0.12, lz * 0.02, len + 0.02, 0.5, 0.06), 0.5), D, null);
+    for (let u = -len / 2 + 2.5; u < len / 2 - 1; u += 6.5) {
+      const [rx, rz] = local(mx, mz, yaw, u, lz * 0.06);
+      const ring = new THREE.TorusGeometry(0.22, 0.045, 5, 10).rotateY(yaw);
+      ring.translate(rx, TC_CANAL.water + 1.1, rz);
+      b.addGeometry(worldUV(ring), mats.TC_Iron, null, false);
+    }
   }
   // Bridges: a stone arch over the water, ramps onto the quays, parapets along both sides.
   for (const br of plan.bridges) {
@@ -521,11 +579,11 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   const crystals: { g: THREE.Group; y: number; ph: number }[] = [];
   for (const t of TC_LANDMARKS.filter((l) => l.piece === 'TC_SeaglassTower')) {
     const g = pieceGroup(kits.city, 'TC_SeaglassCrystal', cityOver, `tidecrown-crystal-${t.id}`, false);
-    // Twice the kit's size, hovering a little higher than its anchor (69.5) so it clears the finial.
-    const y = height(t.x, t.z) - 0.12 + 72 * t.scale;
+    // Nearly three times the kit's size, hovering higher than its anchor (69.5) so it clears the finial.
+    const y = height(t.x, t.z) - 0.12 + 74 * t.scale;
     g.position.set(t.x, y, t.z);
-    g.scale.setScalar(t.scale * 2.1);
-    group.add(g, glow('#b07cff', new THREE.Vector3(t.x, y, t.z), 30 * t.scale, 'tc-crystal-glow'), glow('#4fd8e0', new THREE.Vector3(t.x, y - 22 * t.scale, t.z), 22 * t.scale, 'tc-seaglass-glow'));
+    g.scale.setScalar(t.scale * 2.8);
+    group.add(g, glow('#c08cff', new THREE.Vector3(t.x, y, t.z), 38 * t.scale, 'tc-crystal-glow'), glow('#4fd8e0', new THREE.Vector3(t.x, y - 24 * t.scale, t.z), 24 * t.scale, 'tc-seaglass-glow'));
     crystals.push({ g, y, ph: t.x * 0.1 });
   }
   const chimneys = [[-7.2, 28.4, -3.6], [7.2, 28.4, -3.6]].map(([lx, ly, lz]) => {
@@ -533,13 +591,13 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
     return new THREE.Vector3(x, fy + ly, z);
   });
   group.add(smoke(chimneys));
-  const [gx, gz] = local(TC_FORGE.x, TC_FORGE.z, TC_FORGE.yaw, 0, 7.6);
-  const forgeGlow = glow('#ff8a3a', new THREE.Vector3(gx, fy + 2.4, gz), 9, 'tc-forge-glow');
+  const [gx, gz] = local(TC_FORGE.x, TC_FORGE.z, TC_FORGE.yaw, 0, 7.4);
+  const forgeGlow = glow('#ff9a4a', new THREE.Vector3(gx, fy + 1.6, gz), 4.5, 'tc-forge-glow');
   group.add(forgeGlow);
   lap('moving');
 
   // Fine detail far from the camera is left out: the market's stalls, the harbour's small pieces, the ships.
-  culled.push({ o: market.group, box: marketBox, max: 150 });
+  culled.push({ o: market.group, box: marketBox, max: 200 });
   culled.push({ o: harbourPieces, box: new THREE.Box3().setFromObject(harbourPieces), max: 230 });
   for (const s of ships) culled.push({ o: s.g, box: new THREE.Box3().setFromObject(s.g), max: 320 });
   const eye = new THREE.Vector3();
@@ -590,7 +648,7 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
       const f = (d - seg[i]) / (seg[i + 1] - seg[i]), a = route[i], b = route[i + 1];
       gondola.position.set(a[0] + (b[0] - a[0]) * f, TC_CANAL.water + 0.04 * Math.sin(time * 1.3), a[1] + (b[1] - a[1]) * f);
       gondola.rotation.y = Math.atan2(b[0] - a[0], b[1] - a[1]) + (back ? Math.PI : 0);
-      forgeGlow.material.opacity = 0.75 + 0.25 * Math.sin(time * 7.3) * Math.sin(time * 3.1);
+      forgeGlow.material.opacity = 0.45 + 0.2 * Math.sin(time * 7.3) * Math.sin(time * 3.1);
     },
     stats: { houses: plan.houses, houseTriangles: 0, farTriangles: lod.stats.farTriangles, chunks: lod.stats.chunks, nearMs: 0, ms },
   };

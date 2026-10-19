@@ -408,6 +408,8 @@ export interface TownhouseSpec {
   party?: { left?: number[]; right?: number[]; back?: number[] };
   /** Roof ends flush at a party wall shared with a neighbour of the same roofline. */
   trim?: { left?: boolean; right?: boolean };
+  /** A quarter's colours (HOUSE_PALETTES), else the city's. */
+  palette?: string;
 }
 
 export interface DoorSpot {
@@ -508,11 +510,36 @@ interface Style {
   groundStone: boolean;
 }
 
-function houseStyle(k: TidecrownKit, r: () => number): Style {
+/** A quarter's colours over the city's: any list left out keeps the city's tones. */
+export interface HousePalette {
+  walls?: string[];
+  roofs?: string[];
+  /** Share of verdigris copper roofs (default 0.1). */
+  copper?: number;
+  shutters?: string[];
+  doors?: string[];
+  /** Share of houses with a rusticated stone ground floor (default 0.72). */
+  stoneFloor?: number;
+}
+export const HOUSE_PALETTES: Record<string, HousePalette> = {
+  // Violet and teal shutters, cool whites and more copper among the glass towers.
+  seaglass: { walls: ['#e8e4ea', '#ece6e0', '#e2dde4', '#efe9e4', '#e6e0d8'], shutters: ['#5b46b8', '#3f3492', '#2b8f94', '#6e52c8', '#2f7f8f'], doors: ['#3a2f7a', '#2b6f74', '#4a3a8f', '#26446a'], copper: 0.4 },
+  // Noble houses: pale dressed stone below, cream above, deep blue roofs.
+  upper: { walls: ['#f2ead8', '#efe6d2', '#f4ecdc', '#ebe2cc'], roofs: ['#2c5690', '#2a4f80', '#244a7a', '#2f5a94'], doors: ['#26446a', '#1f3a5c', '#5b3b27', '#2c3c55'], copper: 0.06, stoneFloor: 1 },
+  // Smiths' ochre and stone, dark slate roofs, green and brown shutters, copper here and there.
+  works: { walls: ['#d9c9a6', '#d2c09c', '#cbb894', '#dccaa4', '#d6c4a0'], roofs: ['#2f4f74', '#2b4766', '#36587e', '#2a4560'], shutters: ['#3d5a3a', '#2f4f5c', '#5a4630', '#2f5f8f', '#44603e'], copper: 0.2, stoneFloor: 0.9 },
+  // Sea-green and teal by the water.
+  water: { shutters: ['#2b7884', '#3a8889', '#24546c', '#2f6f9a', '#1f6f7a'], doors: ['#1f585c', '#245a7a', '#7a3a2a', '#26446a'] },
+  // Market fronts: the city's blues with ochre and russet doors.
+  market: { doors: ['#26446a', '#1f585c', '#8a5a20', '#245a7a', '#7a3a2a', '#2c3c55'] },
+};
+
+function houseStyle(k: TidecrownKit, r: () => number, palette?: HousePalette): Style {
   const m = k.mat;
-  const wall = lin(pick(r, WALL_TONES));
+  const p = palette ?? {};
+  const wall = lin(pick(r, p.walls ?? WALL_TONES));
   const stone = lin(pick(r, STONE_TONES));
-  const roof = lin(r() < 0.1 ? COPPER : pick(r, ROOF_TONES)).multiplyScalar(0.92 + r() * 0.16);
+  const roof = lin(r() < (p.copper ?? 0.1) ? COPPER : pick(r, p.roofs ?? ROOF_TONES)).multiplyScalar(0.92 + r() * 0.16);
   const frame = lin(pick(r, FRAME_TONES));
   const t: Tint = new Map([
     [m.plaster, wall],
@@ -523,9 +550,9 @@ function houseStyle(k: TidecrownKit, r: () => number): Style {
     [m.tiles, roof],
     [m.paint, frame],
   ]);
-  const shutter = new Map(t).set(m.paint, lin(pick(r, SHUTTER_TONES)));
-  const door = new Map(t).set(m.paint, lin(pick(r, DOOR_TONES)));
-  return { wall: k.over.wall, paint: k.over.paint, t, roof: t, shutter, door, frame: t, groundStone: r() < 0.72 };
+  const shutter = new Map(t).set(m.paint, lin(pick(r, p.shutters ?? SHUTTER_TONES)));
+  const door = new Map(t).set(m.paint, lin(pick(r, p.doors ?? DOOR_TONES)));
+  return { wall: k.over.wall, paint: k.over.paint, t, roof: t, shutter, door, frame: t, groundStone: r() < (p.stoneFloor ?? 0.72) };
 }
 
 type WinKind = 'thin' | 'wideFlat' | 'wideRound';
@@ -661,7 +688,7 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   const k = batch.tide;
   const { village, props, nature, mat } = k;
   const r = stream(spec.seed);
-  const st = houseStyle(k, r);
+  const st = houseStyle(k, r, spec.palette ? HOUSE_PALETTES[spec.palette] : undefined);
   const lot = townhouseLot(spec);
   const W = spec.width * 2;
   const D = spec.depth * 2;
@@ -1335,6 +1362,8 @@ export interface DistrictPlanOptions {
   laneSpacing?: number;
   /** Lane width, default 4. */
   laneWidth?: number;
+  /** The quarter's colours for every house it plans (HOUSE_PALETTES). */
+  palette?: string;
 }
 export interface YardProp {
   kit: 'props' | 'nature' | 'village';
@@ -1602,6 +1631,7 @@ export function planDistrict(o: DistrictPlanOptions): DistrictPlan {
                 balcony: floors >= 3 && r() < (lane ? 0.2 : 0.4),
                 banner: !lane && floors >= 3 && r() < 0.3,
                 roof: w <= 3 && r() < 0.45 ? 'gable' : 'eaves',
+                palette: o.palette,
               });
               quads.push(q);
               id++;

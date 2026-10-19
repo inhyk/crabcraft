@@ -169,6 +169,8 @@ export interface Zone {
   seed: number;
   floors?: [number, number];
 }
+/** Each district's house colours (houses.ts HOUSE_PALETTES). */
+export const TC_PALETTES: Record<DistrictId, string | undefined> = { market: 'market', works: 'works', cathedral: undefined, seaglass: 'seaglass', canal: 'water', harbour: 'water', upper: 'upper' };
 export const TC_ZONES: Zone[] = [
   { district: 'market', seed: 101, polygon: [[-40, 9], [17, 6], [76, 31], [112, 46], [112, 75], [96, 92], [96, 126], [58, 132], [22, 117], [-40, 128]] },
   { district: 'works', seed: 102, polygon: [[-136, 116], [-40, 128], [-40, 9], [-62, 10], [-118, -4], [-136, 0]] },
@@ -364,7 +366,7 @@ export function harbourPlan(): { pieces: HarbourPiece[]; ships: Ship[]; crane: {
       const m = s + 6, x = p[0] + ux * m, z = p[1] + uz * m;
       tiles.push({ x: x + nx * 9.4, z: z + nz * 9.4, yaw: facing(nx, nz), ux, uz, nx, nz });
       // Its walk reaches back over the ledge to the wall's foot (and the sea gate's passage).
-      pieces.push({ piece: 'TC_Quay_12_Plain', x: x + nx * 3.2, y: Q.quay, z: z + nz * 3.2, yaw: facing(-nx, -nz), walk: { lx: 0, lz: 1.2, hx: 6, hz: 4.25, h: Q.quay } });
+      pieces.push({ piece: 'TC_Quay_12_Plain', x: x + nx * 3.45, y: Q.quay, z: z + nz * 3.45, yaw: facing(-nx, -nz), walk: { lx: 0, lz: 1.45, hx: 6, hz: 4.5, h: Q.quay } });
       // Past the wall's towers (their drums stand out 5.6 from the shore).
       quayWalk.push([x + nx * 7.2, z + nz * 7.2]);
     }
@@ -377,7 +379,7 @@ export function harbourPlan(): { pieces: HarbourPiece[]; ships: Ship[]; crane: {
   {
     const t0 = tiles[3], t1 = tiles[4], bx = t0.nx + t1.nx, bz = t0.nz + t1.nz, l = Math.hypot(bx, bz), nx = bx / l, nz = bz / l;
     pieces.push({ piece: 'TC_Quay_12_Plain', x: b[0] + nx * 9.4, y: Q.quay, z: b[1] + nz * 9.4, yaw: facing(nx, nz), walk: { lx: 0, lz: -0.2, hx: 6, hz: 3.2, h: Q.quay } });
-    pieces.push({ piece: 'TC_Quay_12_Plain', x: b[0] + nx * 3.2, y: Q.quay, z: b[1] + nz * 3.2, yaw: facing(-nx, -nz), walk: { lx: 0, lz: 1.2, hx: 6, hz: 4.25, h: Q.quay } });
+    pieces.push({ piece: 'TC_Quay_12_Plain', x: b[0] + nx * 3.45, y: Q.quay, z: b[1] + nz * 3.45, yaw: facing(-nx, -nz), walk: { lx: 0, lz: 1.45, hx: 6, hz: 4.5, h: Q.quay } });
     quayWalk.splice(4, 0, [b[0] + nx * 7.2, b[1] + nz * 7.2]);
   }
   // Piers leave from tiles 2 (the long one) and 0 (south of it) down plank ramps; tiles 4 and 6 carry boat steps.
@@ -410,7 +412,7 @@ export function harbourPlan(): { pieces: HarbourPiece[]; ships: Ship[]; crane: {
     if (!t) continue;
     cargo.push({ x: t.x + t.nx * 1.0 + t.ux * off, y: Q.quay, z: t.z + t.nz * 1.0 + t.uz * off, yaw: t.yaw + Math.PI / 2 });
   }
-  cargo.push({ x: p1.x + p1.len - 10, y: Q.pier, z: p1.z + 0.6, yaw: 0.3 }, { x: p2.x + p2.len - 4, y: Q.pier, z: p2.z, yaw: 0.3 });
+  cargo.push({ x: p2.x + p2.len - 4, y: Q.pier, z: p2.z, yaw: 0.3 });
   return { pieces, ships, crane, cargo, quayWalk: quayWalk.slice(1) };
 }
 
@@ -533,6 +535,83 @@ export function gondolaPlan(): { moored: { x: number; z: number; yaw: number }[]
   at(2, 0.75, -1);
   at(3, 0.3, 1);
   return { moored, route: c.points.slice(1, 4).map(([x, z]) => [x, z] as V2) };
+}
+
+// ------------------------------------------------------------------------------------------------
+// Dressing: what the squares, the forge yard and the quays are furnished with
+
+export interface Prop {
+  kit: 'props' | 'nature';
+  piece: string;
+  x: number;
+  z: number;
+  yaw: number;
+  s: number;
+  /** Collider half size (0: walk through it). */
+  solid: number;
+}
+export interface Planter {
+  x: number;
+  z: number;
+  yaw: number;
+  /** Half extents of the stone box. */
+  hx: number;
+  hz: number;
+  /** What grows in it (a nature kit piece) and its scale. */
+  plant: string;
+  s: number;
+}
+
+/**
+ * The squares and yards: benches round the parvis and the glass plaza, planters with trees in the gate court and at
+ * the foot of the King's Way's ramp, the forge yard's anvils, benches and stock, the quays' barrels, crates, rope and
+ * chain.
+ */
+export function dressingPlan(): { props: Prop[]; planters: Planter[] } {
+  const props: Prop[] = [], planters: Planter[] = [];
+  const prop = (kit: Prop['kit'], piece: string, x: number, z: number, yaw: number, s = 1, solid = 0) => props.push({ kit, piece, x, z, yaw, s, solid });
+  const frame = (x: number, z: number, yaw: number) => (lx: number, lz: number): [number, number] => [x + Math.cos(yaw) * lx + Math.sin(yaw) * lz, z - Math.sin(yaw) * lx + Math.cos(yaw) * lz];
+  // Parvis: benches along its east and west sides facing in, planters at the corners of the stair head.
+  for (const z of [-8, -2.5, 3]) {
+    prop('props', 'Bench', -51.5, z, Math.PI / 2, 1, 0.55);
+    prop('props', 'Bench', -10.5, z, -Math.PI / 2, 1, 0.55);
+  }
+  for (const x of [-42, -20]) planters.push({ x, z: 3.4, yaw: 0, hx: 1.6, hz: 1.6, plant: 'Bush_Common_Flowers', s: 1.1 });
+  // Glass plaza: four benches round the tower, facing it.
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + 0.95, x = SEAGLASS.x + Math.cos(a) * 11.6, z = SEAGLASS.z + Math.sin(a) * 11.6;
+    prop('props', 'Bench', x, z, facing(SEAGLASS.x - x, SEAGLASS.z - z), 1, 0.55);
+  }
+  // Gate court: two pairs of tree planters either side of the way in.
+  for (const t of [7, 19]) for (const sd of [-1, 1]) {
+    const [x, z] = A(t, sd * 15);
+    planters.push({ x, z, yaw: TC_UP_YAW, hx: 2.2, hz: 2.2, plant: 'CommonTree_4', s: 0.8 });
+  }
+  // The foot of the King's Way's ramp up from the market.
+  for (const sd of [-1, 1]) { const [x, z] = A(101, sd * 9.4); planters.push({ x, z, yaw: TC_UP_YAW, hx: 1.4, hz: 1.4, plant: 'Bush_Common_Flowers', s: 1.0 }); }
+  // Forge yard: anvils before the arch, a bench and racks along the front, stock in the corners.
+  const f = frame(FORGE.x, FORGE.z, FORGE.yaw);
+  for (const [lx, lz, piece, s, yaw, solid] of [
+    [-3.2, 11.4, 'Anvil_Log', 1.3, 0.3, 0.7], [3.4, 11.6, 'Anvil_Log', 1.3, -0.4, 0.7], [-1.2, 10.4, 'Cauldron', 1.2, 0, 0.6],
+    [-9.5, 11.5, 'Workbench', 1.2, 0, 0.9], [9.6, 11.4, 'WeaponStand', 1.2, Math.PI, 0.6], [-13.5, 10.8, 'Barrel', 1.1, 0.4, 0.5],
+    [-14.6, 11.6, 'Barrel', 1.1, 1.1, 0.5], [12.5, 11.8, 'Crate_Metal', 1.1, 0.2, 0.6], [6.8, 11.2, 'Whetstone', 1.2, 0.5, 0.5],
+    [-6, 11.8, 'Chain_Coil', 1.1, 0.3, 0], [0.6, 12.4, 'Bucket_Metal', 1.1, 0, 0], [-16, 7.5, 'Crate_Wooden', 1.2, 0.2, 0.6],
+  ] as const) {
+    const [x, z] = f(lx, lz);
+    prop('props', piece, x, z, FORGE.yaw + yaw, s, solid);
+  }
+  // The harbour's quay: barrels, crates, rope and chain by the cargo and at the ramps' heads.
+  const hb = harbourPlan();
+  hb.cargo.forEach((c, i) => {
+    // Quay cargo only (its local z runs along the quay, x toward the land); the piers keep their decks clear.
+    if (c.y !== TC_HARBOUR_LEVEL.quay) return;
+    const g = frame(c.x, c.z, c.yaw);
+    for (const [lx, lz, piece, yaw, solid] of [[0.6, 3.5, 'Barrel', 0.3, 0.5], [-0.9, 3.7, 'Barrel', 1.4, 0.5], [0.4, -3.6, i % 2 ? 'Rope_2' : 'Chain_Coil', 0, 0], [-1.0, -3.3, 'Crate_Wooden', 0.2, 0.6]] as const) {
+      const [x, z] = g(lx, lz);
+      prop('props', piece, x, z, c.yaw + yaw, 1.1, solid);
+    }
+  });
+  return { props, planters };
 }
 
 // ------------------------------------------------------------------------------------------------

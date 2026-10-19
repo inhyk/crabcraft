@@ -436,13 +436,15 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
       mesh.receiveShadow = true;
       mesh.frame = this.frame;
       mesh.casts = (cam) => this.castsInto(cam);
-      l.items.forEach((it, k) => {
+      for (let k = 0; k < l.items.length; k++) {
+        const it = l.items[k];
+        if (!far && k % 24 === 23) yield;
         const id = mesh.addInstance(mesh.addGeometry(geos[k]));
         mesh.setMatrixAt(id, identity);
         mesh.slot[it.chunk] = id;
         mesh.chunkOf[id] = it.chunk;
         geos[k].dispose();
-      });
+      }
       mesh.computeBoundingBox();
       mesh.computeBoundingSphere();
       this.meshes.push(mesh);
