@@ -42,11 +42,11 @@ float snowFarShadowAt(vec3 w,vec3 n){
   if(edge<=0.)return 1.;
   c.z-=snowFarInfo.z;
   float phi=interleavedGradientNoise(gl_FragCoord.xy)*PI2,s=0.;
-  vec2 r=snowFarInfo.y*vec2(1.,2.);
+  vec2 r=snowFarInfo.y*vec2(1.,2.)*1.3;
   #ifdef SNOW_LOW
-  const int TAPS=4;
+  const int TAPS=3;
   #else
-  const int TAPS=8;
+  const int TAPS=5;
   #endif
   for(int i=0;i<TAPS;i++)s+=texture(snowFarMap,vec3(c.xy+vogelDiskSample(i,TAPS,phi)*r,c.z));
   return mix(1.,s/float(TAPS),edge);

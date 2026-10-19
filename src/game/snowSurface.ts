@@ -168,17 +168,20 @@ const SNOW_SHADOW = /* glsl */ `
 ${SNOW_FAR_SHADOW_GLSL}
 float snowGetShadow(sampler2DShadow shadowMap,vec2 shadowMapSize,float shadowIntensity,float shadowBias,float shadowRadius,vec4 shadowCoord){
   shadowCoord.xyz/=shadowCoord.w;shadowCoord.z+=shadowBias;
-  if(shadowCoord.x<0.||shadowCoord.x>1.||shadowCoord.y<0.||shadowCoord.y>1.||shadowCoord.z>1.)return mix(1.,snowFarShadowAt(snowFarW,snowFarN),shadowIntensity);
-  float radius=2.6/shadowMapSize.x,phi=interleavedGradientNoise(gl_FragCoord.xy)*PI2,s=0.;
-  #ifdef SNOW_LOW
-  const int TAPS=5;
-  #else
-  const int TAPS=10;
-  #endif
-  for(int i=0;i<TAPS;i++)s+=texture(shadowMap,vec3(shadowCoord.xy+vogelDiskSample(i,TAPS,phi)*radius,shadowCoord.z));
-  // Hand over to the far map toward the shadow box's edge, so a wide view never shows where the live map ends.
+  // How far inside the live map this pixel is: past its edge (or depth) the far map takes over, and toward the
+  // edge the two are blended, so a wide view never shows where the live map ends.
   vec2 sb=min(shadowCoord.xy,1.-shadowCoord.xy);
-  float live=smoothstep(0.,.08,min(sb.x,sb.y));s/=float(TAPS);
+  float live=shadowCoord.z>1.?0.:smoothstep(0.,.08,min(sb.x,sb.y)),s=1.;
+  if(live>0.){
+    float radius=2.6/shadowMapSize.x,phi=interleavedGradientNoise(gl_FragCoord.xy)*PI2;s=0.;
+    #ifdef SNOW_LOW
+    const int TAPS=5;
+    #else
+    const int TAPS=10;
+    #endif
+    for(int i=0;i<TAPS;i++)s+=texture(shadowMap,vec3(shadowCoord.xy+vogelDiskSample(i,TAPS,phi)*radius,shadowCoord.z));
+    s/=float(TAPS);
+  }
   if(live<1.)s=mix(snowFarShadowAt(snowFarW,snowFarN),s,live);
   return mix(1.,s,shadowIntensity);
 }
