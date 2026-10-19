@@ -1041,11 +1041,19 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
    * journaled, and recovery after a conflict, go to the halting round that pendingReplay starts, as before. External
    * ledger mode, admission, travel, encounters, retirement and shutdown keep the halting barrier; a gate travel whose
    * source Area holds grants not journaled yet first journals them in one (advanceTravel).
-   * With dungeons enabled every Area keeps a durable feature award ledger, whose capture and mark need the world held (a
-   * respawn rebinds that ledger), so the same once-per-interval round is a halting one there.
+   * With dungeons enabled every Area also keeps a durable feature award ledger, and this round lets the world run there too.
+   * Exactly-once rests on two facts per character: the ledger owner's durable revision is the PG revision its next award read
+   * is fenced by (beginFeatureAwardRead, applyCertifiedFeatureAwards), and appliedFeatureAwardIds are the paid awards no
+   * committed checkpoint names yet. A capture records both; its mark, after the commit, advances that revision and drops the
+   * IDs the commit receipted. Award pages are applied only under a barrier, in the halting round pendingReplay starts, so the
+   * paid IDs cannot change while this round is in flight; the owner can: a respawn re-prepares it on the next life and a
+   * stream rebind (bootstrap) invalidates it, both keeping its revision, and a dungeon resident moves. Holding the world kept
+   * capture and mark on the same owner and pose. Here the mark instead re-validates at the post-commit boundary
+   * (Area.markCheckpointDurable without a barrier): same unit, same captured revision (one save round at a time), same run
+   * return binding, and the current owner advances. Seals, award delivery, dungeon entry and exit stay in halting rounds.
    */
   function startSave() {
-    if (featureAwards || haltNextSave) { if (!barrier && !frozen) { haltNextSave = false; startDurability(); } return; }
+    if (haltNextSave) { if (!barrier && !frozen) { haltNextSave = false; startDurability(); } return; }
     if (barrier || frozen || draining || external || !actors.size) return;
     deps.ownership.assertOwned();
     const began = deps.nowMonotonicMs(); lastSave = began; metrics.persistenceBarriers++; metrics.saveRounds++;
@@ -1085,7 +1093,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const ids = captures.map(({ actor }) => actor.record.characterId);
       const [unread, unpaid] = await Promise.all([deps.characters.charactersWithPendingGrants(ids), deps.dungeonCompletions ? deps.dungeonCompletions.charactersWithPendingDungeonAwards(ids) : null]);
       await boundary(() => {
-        deps.ownership.assertOwned();
+        deps.ownership.assertOwned(); let restored = false;
         for (const [index, result] of results.entries()) {
           const { actor, slot, revision, capture } = captures[index];
           // Admission, travel, encounters and retirement wait for this round, so the actor keeps its Area; a respawn may change its ref.
@@ -1102,8 +1110,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
             // the next pump replay the journal for it under a halting round.
             const token = slot.area.beginDurabilityBarrier('recovery');
             try { restoreDurableActor(actor, recovery); } finally { slot.area.releaseDurabilityBarrier(token); }
+            restored = true;
           }
         }
+        // A restore leaves its party (a dungeon resident is evicted); a halting round resyncs at its end, so this one does too.
+        if (restored && p.party) syncPartyContexts();
         for (const source of sources) source.slot.area.acknowledgeGrant(source.grant.id);
         metrics.pendingSourceGrants = retainedSources().length;
         // Journal rows and dungeon awards are read and applied only by the halting round that pendingReplay starts.
