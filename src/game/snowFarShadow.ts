@@ -35,7 +35,11 @@ float snowFarShadowAt(vec3 w,vec3 n){
   if(snowFarInfo.x<.5)return 1.;
   // Pushed off the surface along its normal, then a depth bias: a 20 cm texel at a 13 degree sun.
   vec4 c=snowFarMatrix*vec4(w+n*snowFarInfo.w,1.);
-  if(c.x<0.||c.x>1.||c.y<0.||c.y>1.)return 1.;
+  // Off the map, or past its depth range (the open sea beyond the island box), nothing is baked: lit. Toward the
+  // map's edge the shadow fades, so a coast shadow the box cuts never ends in a straight line.
+  vec2 e=min(c.xy,1.-c.xy);
+  float edge=smoothstep(0.,.04,min(e.x,e.y))*step(c.z,1.)*step(0.,c.z);
+  if(edge<=0.)return 1.;
   c.z-=snowFarInfo.z;
   float phi=interleavedGradientNoise(gl_FragCoord.xy)*PI2,s=0.;
   vec2 r=snowFarInfo.y*vec2(1.,2.);
@@ -45,7 +49,7 @@ float snowFarShadowAt(vec3 w,vec3 n){
   const int TAPS=8;
   #endif
   for(int i=0;i<TAPS;i++)s+=texture(snowFarMap,vec3(c.xy+vogelDiskSample(i,TAPS,phi)*r,c.z));
-  return s/float(TAPS);
+  return mix(1.,s/float(TAPS),edge);
 }
 `;
 

@@ -74,7 +74,7 @@ void main(){
     *(1.-smoothstep(${(SPAN / 2 - 24).toFixed(1)},${(SPAN / 2 - 2).toFixed(1)},dist))*smoothstep(1.2,4.,near);
   // Through shade or sun: one hardware-filtered tap of the far sun map.
   vSdSun=1.;
-  if(snowFarInfo.x>.5){vec4 c=snowFarMatrix*vec4(wp+vec3(0.,.25,0.),1.);if(c.x>0.&&c.x<1.&&c.y>0.&&c.y<1.)vSdSun=texture(snowFarMap,vec3(c.xy,c.z-snowFarInfo.z));}
+  if(snowFarInfo.x>.5){vec4 c=snowFarMatrix*vec4(wp+vec3(0.,.25,0.),1.);if(c.x>0.&&c.x<1.&&c.y>0.&&c.y<1.&&c.z<1.)vSdSun=texture(snowFarMap,vec3(c.xy,c.z-snowFarInfo.z));}
   vec4 mvPosition=viewMatrix*vec4(wp,1.);
   gl_Position=projectionMatrix*mvPosition;
   #include <fog_vertex>
