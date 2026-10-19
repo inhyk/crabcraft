@@ -8,7 +8,7 @@ import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import { createArea } from '../../src/sim/area.ts';
 import { InMemoryCharacterRegistry, InMemoryTransferCoordinator } from '../../src/sim/transfer.ts';
 import { prepareRestore, type CoreCharacterCodec, type IdentityJson, type CheckpointJson, type GrantJson, type RestorePolicy } from '../../src/sim/persistence.ts';
-import type { Area, AreaSnapshot, BossProfileId, EntityRef, GrantReadToken, EventRecord, PlayerCommand, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
+import type { Area, AreaSnapshot, BossProfileId, EntityRef, GrantReadToken, EventRecord, PlayerCommand, PlaceId, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { canChallenge } from '../../src/sim/data/progression.ts';
 import type { LedgerMode } from '../../src/sim/ledger.ts';
 import type { EndingIntegrationOptions } from '../../src/sim/features/worldRules.ts';
@@ -116,8 +116,8 @@ interface Connection {
   chatBusy: boolean; chatPreferences?: ChatPreferences; chatNeedsPreferences: boolean;
   discoveries: { unit: EntityRef; id: string; startOrder: number; inputSequence: number; commandIndex: number }[];
 }
-interface Waiting { connection: Connection; record: StoredCharacter; world: WorldId }
-interface PendingTravel { actor: Actor; source: Slot; ref: EntityRef; gate: string; destination: WorldId }
+interface Waiting { connection: Connection; record: StoredCharacter; world: PlaceId }
+interface PendingTravel { actor: Actor; source: Slot; ref: EntityRef; gate: string; destination: PlaceId }
 const HOST_COMMAND_KINDS = new Set(HOST_COMMANDS);
 /** Victim outcome transactions of one save round in flight at once (the pg pool has 10 clients, one holds ownership). */
 const JOURNAL_CONCURRENCY = 4;
@@ -157,7 +157,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   deps.ownership.assertOwned();
   const registry = new InMemoryCharacterRegistry();
   const transfers = new InMemoryTransferCoordinator(registry);
-  const slots = new Map<WorldId, Slot>();
+  const slots = new Map<PlaceId, Slot>();
   const allSlots = new Set<Slot>();
   const parties = new Map<string, Party>();
   const memberParty = new Map<string, Party>();
@@ -255,7 +255,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const json = (c: Connection, value: unknown) => {
     if (c.ws.readyState === WebSocket.OPEN) { const data = JSON.stringify(value); c.ws.send(data); metrics.packets++; metrics.bytesSent += Buffer.byteLength(data); }
   };
-  const queueNotice = (c: Connection, world: WorldId, position: number) => {
+  const queueNotice = (c: Connection, world: PlaceId, position: number) => {
     const hostedWorld = HOSTABLE_WORLDS.find(id => id === world && slots.has(id));
     if (!hostedWorld) { sendControl(c, { type: 'error', code: 'world-unavailable', retryable: false }); return; }
     const key = `${world}:${position}`;

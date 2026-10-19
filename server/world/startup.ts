@@ -8,7 +8,7 @@ import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/var
 import { canonicalEnemyRespawn, enemyRespawnClearance, enemyStats } from '../../src/sim/data/enemies.ts';
 import { worldChapter } from '../../src/sim/math.ts';
 import { CLASSES } from '../../src/sim/data/classes.ts';
-import type { AreaPolicy, BossProfileId, EnemySpawn, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
+import type { AreaPolicy, BossProfileId, EnemySpawn, PlaceId, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { WorldChatService } from './chat.ts';
 import { CharacterStore } from './character-store.ts';
 import { DurableOutcomeStore } from './contribution-store.ts';
@@ -107,7 +107,7 @@ export function createConfiguredAreaPolicy(region:ConfiguredRegion):AreaPolicy&{
  return Object.freeze({...policy,populationRadius:(spawn:EnemySpawn)=>rules[job(spawn).group].radius,enemyPopulation:(spawn:EnemySpawn,nearbyPlayers:number)=>{integer(nearbyPlayers,'nearby player count',0,Number.MAX_SAFE_INTEGER);const {group,index}=job(spawn),r=rules[group],desired=Math.min(r.max,r.base+Math.floor(nearbyPlayers*r.scale));return{desired:spawn.role==='add'||index<desired?1 as const:0 as const,respawnSeconds:region.respawnSeconds[spawn.role==='echo'?'echo':spawn.kind]};}});
 }
 /** Named choices preserve progression; elapsed death only readies the actual core respawn on its next tick. */
-export function createConfiguredRestorePolicy(input:ConfiguredRestore,catalog:ReadonlyMap<WorldId,LoadedWorldDefinition>):RestorePolicy {
+export function createConfiguredRestorePolicy(input:ConfiguredRestore,catalog:ReadonlyMap<PlaceId,LoadedWorldDefinition>):RestorePolicy {
  const options=validateRestore(input);return Object.freeze({version:`world-restore-v1-${createHash('sha256').update(JSON.stringify(options)).digest('hex').slice(0,24)}`,restore(checkpoint:Readonly<CharacterCheckpointV1>,elapsed:number){
   if(!Number.isFinite(elapsed)||elapsed<0)fail('restore elapsed interval');const out:CharacterCheckpointV1=structuredClone(checkpoint),s=out.survival;
   if(options.cooldowns==='elapse'){for(const cycle of [s.gcd,...Object.values(s.cooldowns)]){cycle.startAge+=elapsed;cycle.endRemaining=Math.max(0,cycle.endRemaining-elapsed);}}
