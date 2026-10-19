@@ -23,6 +23,7 @@ export const THRONE = {
 /** Top of the throne platform. */
 export const throneFloor = () => ARENA.y + THRONE.rise * THRONE.tiers.length;
 
+/** `crown` is the height of the ice crown; 0 roofs the tower in slate instead. */
 export interface Tower { x: number; z: number; r: number; top: number; crown: number }
 /** The glacial citadel: a curtain wall with a frozen gate, four towers, the keep and its great ice spire. */
 export const CITADEL = {
@@ -31,10 +32,10 @@ export const CITADEL = {
   towers: [
     { x: -25, z: -118, r: 4.4, top: 42, crown: 13 },
     { x: 25, z: -118, r: 4.4, top: 42, crown: 12 },
-    { x: -17, z: -138.5, r: 3.8, top: 44.5, crown: 11 },
-    { x: 17, z: -138.5, r: 3.8, top: 44.5, crown: 10 },
+    { x: -17, z: -138.5, r: 3.8, top: 44.5, crown: 0 },
+    { x: 17, z: -138.5, r: 3.8, top: 44.5, crown: 0 },
   ] as readonly Tower[],
-  keep: { x: 0, z: -128, hx: 8.6, hz: 6.6, top: 48, turret: 2.3, spire: 24 },
+  keep: { x: 0, z: -128, hx: 8.6, hz: 6.6, top: 48, turret: 2.3, spire: 29 },
 } as const;
 
 /** The old ice-cliff ring gives way where the citadel stands. */

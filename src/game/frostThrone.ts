@@ -1,9 +1,12 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {crystalCluster,crystalGeometry,type Crystal} from './iceCrystals';
-import {graniteMaterial} from './frostPaving';
+import {loadKit,StaticBatch,trs} from '../world/kit';
+import {addPatch,stylise} from '../world/materials';
+import {lathe} from '../world/geom';
+import {snowCover,snowMass} from './snowCover';
 import {frostFire,type Flame,type Halo} from './frostFire';
-import {Masonry,planeWarp,ringWarp,type V3,type Warp} from './frostMasonry';
+import {Masonry,masonryMaterial,planeWarp,ringWarp,type V3,type Warp} from './frostMasonry';
 import {ARENA,arenaPillars,CITADEL,THRONE,throneFloor,type Tower} from './frostThroneLayout';
 
 /*
@@ -23,6 +26,8 @@ export interface FrostThroneOptions {
 export interface FrostThrone {
  root:THREE.Group;
  update(time:number):void;
+ /** Slate roofs and frozen banners from the kits (CC0, see NOTICE.md); call from buildSettlement(). */
+ dress():Promise<void>;
 }
 
 function stream(seed:number){let s=seed>>>0;return()=>(s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296;}
@@ -59,10 +64,42 @@ function windowAt(M:Masonry,glass:Glass,warp:Warp,u:number,v0:number,v1:number,w
  M.block(warp,u-w/2-j*.6,v1+head+.04,-.22,w+j*1.2,.26,.34,{bevel:.04,closed:true});
 }
 
+/** Smooth 1D value noise, 0..1. */
+function noise1(x:number,k=0){const hh=(v:number)=>{const q=Math.sin(v*127.1+k*311.7)*43758.5453;return q-Math.floor(q);};const i=Math.floor(x),f=x-i,u=f*f*(3-2*f);return hh(i)*(1-u)+hh(i+1)*u;}
+
+/**
+ * Snow banked against a wall foot: highest at the stone, feathering out over `width`, following the ground.
+ * `path` runs along the foot with the outward normal at each point; `open` is 0..1 along it where it thins (a gate).
+ */
+function bank(h:Height,path:{x:number;z:number;nx:number;nz:number}[],height:number,width:number,seed:number,thin=(_t:number)=>1){
+ const pos:number[]=[],occ:number[]=[],idx:number[]=[],nS=6;
+ let along=0;
+ path.forEach((p,i)=>{
+  if(i)along+=Math.hypot(p.x-path[i-1].x,p.z-path[i-1].z);
+  const end=Math.min(1,Math.min(i,path.length-1-i)/3),H=height*(.55+.7*noise1(along*.35,seed))*thin(i/(path.length-1))*(.3+.7*end);
+  for(let k=0;k<=nS;k++){
+   const u=k/nS,d=u*width*(.75+.5*noise1(along*.6+3,seed))-.18,x=p.x+p.nx*d,z=p.z+p.nz*d;
+   pos.push(x,h(x,z)+H*Math.pow(1-Math.pow(u,1.4),1.5)-.06,z);
+   const o=1-.22*Math.pow(1-u,4);occ.push(o,o,o);
+  }
+ });
+ for(let i=0;i<path.length-1;i++)for(let k=0;k<nS;k++){const a=i*(nS+1)+k,b=a+1,c=a+nS+1,d=c+1;idx.push(a,b,c,b,d,c);}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(occ,3));g.setIndex(idx);g.computeVertexNormals();
+ // Wind the strip upward whichever way the path runs.
+ const n=g.getAttribute('normal');let up=0;for(let i=0;i<n.count;i++)up+=n.getY(i);
+ if(up<0){for(let i=0;i<idx.length;i+=3){const t=idx[i+1];idx[i+1]=idx[i+2];idx[i+2]=t;}g.setIndex(idx);g.computeVertexNormals();}
+ return g;
+}
+const line=(ax:number,az:number,bx:number,bz:number,nx:number,nz:number,step=.5)=>{const L=Math.hypot(bx-ax,bz-az),n=Math.max(2,Math.ceil(L/step));return Array.from({length:n+1},(_,i)=>({x:ax+(bx-ax)*i/n,z:az+(bz-az)*i/n,nx,nz}));};
+const arc=(cx:number,cz:number,r:number,a0:number,a1:number,step=.5)=>{const n=Math.max(3,Math.ceil(Math.abs(a1-a0)*r/step));return Array.from({length:n+1},(_,i)=>{const a=a0+(a1-a0)*i/n;return {x:cx+Math.sin(a)*r,z:cz+Math.cos(a)*r,nx:Math.sin(a),nz:Math.cos(a)};});};
+
 export function frostThrone(opts:FrostThroneOptions):FrostThrone {
  const h=opts.height,root=new THREE.Group();root.name='frostlight-throne-citadel';
  const rand=stream(77019),M=new Masonry(rand),glass=new Glass(),ice:Crystal[]=[],icicles:Crystal[]=[];
  const flames:Flame[]=[],halos:Halo[]=[];
+ /** Slate cones for the roofed towers and turrets, and frozen banners, laid by dress() once the kits load. */
+ const drifts:THREE.BufferGeometry[]=[];
+ const roofs:{x:number;y:number;z:number;r:number}[]=[],banners:{x:number;y:number;z:number;yaw:number;s:number}[]=[];
  const teal:V3=[.32,1.55,1.45],violet:V3=[.95,.55,1.7];
  const Y=ARENA.y,yP=throneFloor();
 
@@ -132,6 +169,9 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
   flames.push({x,y:y+ht+.42,z,size:1.5,cold:true});halos.push({x,y:y+ht+.95,z,size:4.2,color:'#5af0c0',power:.55});
  };
  for(const s of [-1,1])pedestal(5.1*s,yP,THRONE.front-2*THRONE.tread-1.0,1.55);
+ // Iron standards at the platform's back corners, each flying Boreas's frozen banner.
+ const poles:THREE.BufferGeometry[]=[],pole=lathe([[.2,0],[.2,.25],[.11,.4],[.075,7.6],[.13,7.7],[.13,7.82],[0,8.15]],10);
+ for(const s of [-1,1]){const x=6.3*s,z=THRONE.back+1.1;poles.push(pole.clone().translate(x,yP-.05,z),new THREE.CylinderGeometry(.05,.05,2.2,6).rotateZ(Math.PI/2).translate(x-s*.9,yP+7.35,z+.12));banners.push({x:x-s*.9,y:yP+7.25,z:z+.2,yaw:0,s:1.25});}
 
  // ---- The glacial citadel.
  M.snow=.45;
@@ -160,10 +200,13 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
   const pr=ring(r+.55);
   for(let u=0;u<C*r-.4;u+=1.05)M.block(ring(r),u,top-2.3,-.62,.42,.75,1.0,{bevel:.04});
   M.face(pr,0,C*(r+.55),top-1.6,top,{len:1.8,course:.8,depth:.7,curve:.8,core:.0});
-  for(let u=0,k=0;u<C*(r+.55)-1.6;u+=1.95,k++)M.block(pr,u,top,0,1.1,1.4+(k%2)*.12,.7,{bevel:.06,seg:2,closed:true});
-  // Floor inside the parapet, snow-covered.
-  M.disc(x,top-.02,z,r,28);
-  crystalCluster(x,top-.4,z,tw.crown,r*.9,7,rand,ice);
+  if(tw.crown>0){
+   for(let u=0,k=0;u<C*(r+.55)-1.6;u+=1.95,k++)M.block(pr,u,top,0,1.1,1.4+(k%2)*.12,.7,{bevel:.06,seg:2,closed:true});
+   // Floor inside the parapet, snow-covered, and the ice crown growing out of it.
+   M.disc(x,top-.02,z,r,28);
+   crystalCluster(x,top-.4,z,tw.crown,r*.9,7,rand,ice);
+  }else{M.disc(x,top-.02,z,r+.5,28);roofs.push({x,y:top,z,r:r+.75});}
+  if(tw.z>-125)banners.push({x,y:top-3.4,z:z+r+.28,yaw:0,s:1.7});
   for(const a of windows){const u=a*r;windowAt(M,glass,ring(r),u,top-11-rand()*3,top-9,.42,teal);windowAt(M,glass,ring(r),u+(rand()<.5?.6:-.6)*r*.4,top-20,top-18.6,.3,teal);}
   for(let u=0;u<C*(r+.55);u+=.38+rand()*.5)if(rand()<.7){const [ix,iy,iz]=pr(u,top-.02,-.05-rand()*.25);icicles.push({x:ix,y:iy,z:iz,axis:[(rand()-.5)*.1,-1,(rand()-.5)*.1],height:.25+rand()**2*1.6,radius:.05+rand()*.06,seed:rand()*97});}
  };
@@ -206,16 +249,17 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
   for(let i=0;i<11;i++){const x=-gt.open+.25+(2*gt.open-.5)*i/10,top=archTop(x)-.25-rand()*.6,y0=h(x,gt.z-.6)-.2;ice.push({x,y:y0,z:gt.z-.7-rand()*.5,axis:[(rand()-.5)*.08,1,(rand()-.5)*.08],height:top-y0,radius:.42+rand()*.18,seed:rand()*97});}
   crystalCluster(0,h(0,gt.z+.8),gt.z+.6,2.6,2.2,6,rand,ice);
   for(const s of [-1,1])windowAt(M,glass,w,gt.half-s*2.6,gt.top-6.4,gt.top-4.4,.5,teal);
+  for(const s of [-1,1])banners.push({x:s*5.05,y:gt.top-1.6,z:gt.z+.2,yaw:0,s:1.55});
   // Bartizans: corbelled out of the corners, each with an ice point.
   for(const s of [-1,1]){
    const bx=s*(gt.half-.3),bz=gt.z+.3,br=1.25,ring=ringWarp(bx,bz,br,0),C=2*Math.PI*br;
    for(let i=0;i<3;i++){const rr=.45+i*.38;M.face(ringWarp(bx,bz,rr,0),0,2*Math.PI*rr,gt.top-6.2+i*.55,gt.top-5.65+i*.55,{len:1.1,course:.55,depth:.5,curve:.5,core:0});}
    M.face(ring,0,C,gt.top-4.6,gt.top+2.6,{len:1.3,course:.8,depth:.5,curve:.5});
-   crystalCluster(bx,gt.top+2.4,bz,4.2,1.1,4,rand,ice);
+   M.disc(bx,gt.top+2.58,bz,br,14);roofs.push({x:bx,y:gt.top+2.6,z:bz,r:br+.3});
   }
  }
  // Towers: the front pair flank the wall; the rear pair stand on the sea ice below the cliff.
- CITADEL.towers.forEach((tw,i)=>{const b=h(tw.x,tw.z)-1.6;tower(tw,b,i<2?[-.35,.35,i?-.9:.9].map(a=>a+(i?0:0)):[2.6,3.7]);});
+ CITADEL.towers.forEach((tw,i)=>{const b=h(tw.x,tw.z)-1.6;tower(tw,b,i<2?[-.62,.62,i?-1.2:1.2]:[2.6,3.7]);});
  // Side walls from the front towers down the cliff to the rear towers, and the sea wall between the rear pair.
  for(const s of [-1,1]){
   const [f,r]=[CITADEL.towers[s<0?0:1],CITADEL.towers[s<0?2:3]];
@@ -255,10 +299,12 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
    M.face(ring,0,C,b,top,{len:1.7,course:1.05,depth:.55,curve:.7});
    for(let u=0;u<C-.3;u+=.95)M.block(ring,u,top-.7,-.5,.36,.7,.9,{bevel:.04});
    M.face(ringWarp(tx,tz,k.turret+.45,0),0,2*Math.PI*(k.turret+.45),top,top+1.1,{len:1.6,course:1.1,depth:.6,curve:.7,core:0});
-   crystalCluster(tx,top+.6,tz,7+rand()*2.5,1.6,5,rand,ice);
+   M.disc(tx,top+1.08,tz,k.turret+.45,16);roofs.push({x:tx,y:top+1.1,z:tz,r:k.turret+.7});
   }
   // The great spire: the citadel's crown and the landmark at the end of the main road.
-  crystalCluster(k.x,k.top-.8,k.z,k.spire,8,11,rand,ice);
+  crystalCluster(k.x,k.top-.8,k.z,k.spire,8.5,11,rand,ice);
+  // Aurora light caught inside the spire, so it glows from the village at the far end of the road.
+  for(const [f,sz] of [[.18,16],[.42,13],[.66,9]] as const)halos.push({x:k.x,y:k.top+k.spire*f,z:k.z,size:sz,color:'#46e0c4',power:.3});
  }
  // A glacier has swallowed the west flank: great leaning slabs against the tower and down the cliff.
  for(let i=0;i<9;i++){
@@ -282,15 +328,55 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
   flames.push({x:p.x,y:top-.25,z:p.z,size:1.65,cold:true});halos.push({x:p.x,y:top+.5,z:p.z,size:5,color:'#55eec4',power:.5});
  }
 
+ // ---- Snow banked at the feet of the walls, towers, dais and collars, so the stone stands in the drift.
+ {
+  const T=CITADEL.towers;
+  drifts.push(bank(h,line(-wl.half+4.4,wl.z+.05,-gt.half,wl.z+.05,0,1),1.25,2.6,3),bank(h,line(gt.half,wl.z+.05,wl.half-4.4,wl.z+.05,0,1),1.2,2.6,4));
+  drifts.push(bank(h,line(-gt.half,gt.z+.15,gt.half,gt.z+.15,0,1),.9,2.2,5,t=>Math.abs(t-.5)<.3?.25:1));
+  for(const s of [-1,1])drifts.push(bank(h,line(s*gt.half+s*.15,gt.z,s*gt.half+s*.15,wl.z,s,0),.8,1.6,6+s));
+  for(const tw of T.slice(0,2))drifts.push(bank(h,arc(tw.x,tw.z,tw.r+.5,-2.2,2.2),1.3,2.8,7+tw.x));
+  for(const s of [-1,1]){const half=THRONE.tiers[0];drifts.push(bank(h,line(s*(half+.05),THRONE.front-.3,s*(half+.05),THRONE.back+.2,s,0),.55,1.6,9+s));}
+  drifts.push(bank(h,line(-THRONE.tiers[0],THRONE.back-.05,THRONE.tiers[0],THRONE.back-.05,0,-1),.6,1.8,12));
+  for(const p of arenaPillars())drifts.push(bank(h,arc(p.x,p.z,1.8,p.a-1.9,p.a+1.9),.5,1.4,13+p.i));
+ }
+ const driftMat=new THREE.MeshStandardMaterial({name:'frostlight-citadel-drift',color:'#e8f2fc',roughness:.9,vertexColors:true});snowMass(driftMat,{lumps:.7});
+ const driftMesh=new THREE.Mesh(mergeGeometries(drifts,false)!,driftMat);driftMesh.name='frostlight-citadel-drifts';driftMesh.receiveShadow=driftMesh.castShadow=true;
+
  // ---- Meshes: one granite, one ice, one icicle, one glass, one iron, the fire.
- const granite=new THREE.Mesh(M.geometry(),graniteMaterial('frostlight-citadel-granite'));granite.name='frostlight-citadel-granite';granite.castShadow=granite.receiveShadow=true;
+ const granite=new THREE.Mesh(M.geometry(),masonryMaterial('frostlight-citadel-granite'));granite.name='frostlight-citadel-granite';granite.castShadow=granite.receiveShadow=true;
  const iceMesh=new THREE.Mesh(crystalGeometry(ice),opts.ice);iceMesh.name='frostlight-citadel-ice';iceMesh.castShadow=true;
  const icicleMesh=new THREE.Mesh(crystalGeometry(icicles),opts.ice);icicleMesh.name='frostlight-citadel-icicles';
  const glassMesh=glass.mesh('frostlight-aurora-glass');
- const iron=new THREE.MeshStandardMaterial({name:'frostlight-brazier-iron',color:'#2a2f36',roughness:.45,metalness:.8});
- const ironMesh=new THREE.Mesh(mergeGeometries(bowls,false)!,iron);ironMesh.name='frostlight-braziers';ironMesh.castShadow=ironMesh.receiveShadow=true;
+ const iron=new THREE.MeshStandardMaterial({name:'frostlight-brazier-iron',color:'#3a4048',roughness:.5,metalness:.6,envMapIntensity:0});
+ const ironMesh=new THREE.Mesh(mergeGeometries([...bowls,...poles],false)!,iron);ironMesh.name='frostlight-braziers';ironMesh.castShadow=ironMesh.receiveShadow=true;
  const fire=frostFire('frostlight-cold-fire',flames,halos,4417,6);
- root.add(granite,iceMesh,icicleMesh,glassMesh,ironMesh,fire.group);
+ root.add(granite,iceMesh,icicleMesh,glassMesh,ironMesh,driftMesh,fire.group);
  root.userData.throne={blocks:M.blocks,crystals:ice.length,icicles:icicles.length,flames:flames.length,pillars:arenaPillars().length,windows:glass.pos.length/3};
- return {root,update(time){fire.update(time);}};
+ return {root,update(time){fire.update(time);},async dress(){
+  const [village,props]=await Promise.all([loadKit('models/world/village.glb'),loadKit('models/world/props.glb')]);
+  // Kit materials are shared with other worlds: patched clones only. Boreas's tiles are slate, his cloth night-blue.
+  const variants=new Map<string,THREE.Material>();
+  /** `night` recolours the banners' cloth and frame to Boreas's night blue. */
+  const cold=(m:THREE.Material,night=false)=>{
+   const key=m.name+(night?'#night':'');let v=variants.get(key);if(v)return v;v=m.clone();const sm=v as THREE.MeshStandardMaterial;
+   if(!/Metal/.test(m.name)){sm.metalness=0;sm.metalnessMap=null;}
+   if(!/Cloth/.test(m.name))sm.side=THREE.FrontSide;
+   if(m.name==='MI_RoundTiles')stylise(v,.15,[.36,.43,.6]);
+   else stylise(v,.5,[.78,.84,.95]);
+   snowCover(v,{cover:m.name==='MI_RoundTiles'?1.2:/Cloth/.test(m.name)?1.05:1});
+   // The kit's cloth is red in its vertex colour: keep the weave's light and dark, dyed night blue.
+   if(night&&/Cloth/.test(m.name))addPatch(v,'frostlight-night-cloth',sh=>{sh.fragmentShader=sh.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\n{float l=dot(diffuseColor.rgb,vec3(.299,.587,.114));diffuseColor.rgb=pow(vec3(l),vec3(.85))*vec3(.3,.52,1.3);}');});
+   variants.set(key,v);return v;
+  };
+  const vo:Record<string,THREE.Material>={},po:Record<string,THREE.Material>={};
+  for(const [n,m] of village.materials)vo[n]=cold(m);
+  for(const [n,m] of props.materials)po[n]=cold(m,true);
+  const roofBatch=new StaticBatch(village,'frostlight-citadel-roofs'),flags=new StaticBatch(props,'frostlight-citadel-banners');
+  const R=village.get('Roof_Tower_RoundTiles').box,rb=Math.max(R.max.x-R.min.x,R.max.z-R.min.z)/2;
+  roofs.forEach((r,i)=>roofBatch.add('Roof_Tower_RoundTiles',trs(r.x,r.y,r.z,i*1.3,r.r/rb),{override:vo}));
+  const B=props.get('Banner_1').box;
+  for(const b of banners){const w=(B.max.x-B.min.x)*b.s;flags.add('Banner_1',trs(b.x-Math.cos(b.yaw)*w/2,b.y,b.z+Math.sin(b.yaw)*w/2,b.yaw,b.s),{override:po});}
+  const g=new THREE.Group();g.name='frostlight-citadel-kit';g.add(roofBatch.build(),flags.build());
+  root.add(g);root.userData.throne.roofs=roofs.length;root.userData.throne.banners=banners.length;
+ }};
 }

@@ -1,10 +1,14 @@
 import * as THREE from 'three';
+import {SNOW_WIND} from '../sim/world/snowGround';
+import {FROST_NOISE} from './frostPaving';
 
 /*
  * Dressed granite for Frostlight's story architecture (Boreas's throne, the glacial citadel, the standing stones).
  * Every block is its own prism with a chamfered face, a tint, a set and a lean of its own, laid in courses over a
  * dark mortar core so the joints read, and shaded by the arena rim's granite (frostPaving.ts graniteMaterial:
- * vertex colour, a frost line over `aGround`, snow on the tops by `aSnow`).
+ * vertex colour, a frost line over `aGround`, snow on the tops by `aSnow`). masonryMaterial() adds what a winter
+ * on the north cliff leaves: snow lodged on every ledge and upper chamfer, so the courses read; rime feathered on
+ * the windward faces, heavier up high; and glazed meltwater runs down from the joints.
  */
 
 export type V3 = [number, number, number];
@@ -46,9 +50,10 @@ export class Masonry {
 
   /** Blue-grey granite, every stone its own; `k` darkens (mortar, recesses) or lightens. */
   tint(k = 1): V3 {
-    const r = this.rand, warm = r() < .12 ? .02 : 0, pale = r() < .1 ? .045 : 0;
-    const g = .15 + r() * .055 + pale;
-    return [(g + warm - .012) * k, (g + .004) * k, (g + .022 - warm * .5) * k];
+    // Blue in albedo: the low amber sun brings it back to a cold grey, the shade keeps it slate.
+    const r = this.rand, warm = r() < .1 ? .008 : 0, pale = r() < .12 ? .022 : 0;
+    const g = .036 + r() * .026 + pale;
+    return [(g + warm - .005) * k, (g + .006) * k, (g + .03 - warm) * k];
   }
 
   tri(a: V3, b: V3, c: V3, tint: V3, centre: V3): void {
@@ -152,4 +157,58 @@ export class Masonry {
     g.computeBoundingSphere();
     return g;
   }
+}
+
+/** The granite of the arena rim (graniteMaterial) weathered for the citadel: lodged snow, windward rime, glaze. */
+export function masonryMaterial(name: string): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({color: '#ffffff', vertexColors: true, roughness: .86});
+  material.name = name;
+  // The scene's environment map belongs to another world (as snowSurface.ts): the hemisphere light is the sky here.
+  material.envMapIntensity = 0;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uMWind = {value: new THREE.Vector2(SNOW_WIND[0], SNOW_WIND[1])};
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aGround;\nattribute float aSnow;\nvarying float vMG;\nvarying float vMS;\nvarying vec3 vMW;\nvarying vec3 vMN;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvMG=aGround;vMS=aSnow;vMW=(modelMatrix*vec4(transformed,1.)).xyz;vMN=normalize(mat3(modelMatrix)*objectNormal);');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${FROST_NOISE}\nuniform vec2 uMWind;\nvarying float vMG;\nvarying float vMS;\nvarying vec3 vMW;\nvarying vec3 vMN;\nfloat mWhite;\nfloat mGlaze;`)
+      .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+        vec3 mNW=normalize(vMN),mA=abs(mNW)/(abs(mNW.x)+abs(mNW.y)+abs(mNW.z));
+        #define M3(f,o) (fpNoise(vMW.zy*(f)+(o))*mA.x+fpNoise(vMW.xz*(f)+(o))*mA.y+fpNoise(vMW.xy*(f)+(o))*mA.z)
+        float mN=M3(3.1,0.);
+        // Broad mottling, dark and light grains up close.
+        diffuseColor.rgb*=.68+.42*(M3(.7,2.)*.5+.5);
+        float mG1=M3(38.,5.)*.5+.5,mG2=M3(91.,9.)*.5+.5,mNear=1.-smoothstep(.004,.02,length(fwidth(vMW)));
+        diffuseColor.rgb*=mix(1.,mix(1.,.55,smoothstep(.62,.8,mG1))*mix(1.,1.35,smoothstep(.66,.84,mG2)),mNear);
+        // Snow lodged on the tops and the upper chamfers, so every course carries a white line.
+        float mUp=mNW.y+mN*.1;
+        float mSnow=smoothstep(.45,.62,mUp)*smoothstep(.1,.4,fpNoise(vMW.xz*1.7+vMW.y*.9+7.)*.9+vMS-.52+mN*.25)*.85;
+        mSnow=max(mSnow,smoothstep(.86,.95,mUp)*smoothstep(-.25,.25,vMS-.3+(M3(.45,4.)*.6+mN*.12)));
+        // Rime feathered on the faces the wind meets, heavier up high; the lee stays dark.
+        float mWind=dot(mNW.xz,-uMWind);
+        float mFeather=fpNoise(vec2(dot(vMW.xz,vec2(-uMWind.y,uMWind.x))*1.7,vMW.y*5.))*.5+.5;
+        float mRime=smoothstep(.1,.75,mWind)*smoothstep(.5,.8,M3(.22,13.)*.5+.5+(mFeather-.5)*.25+(vMW.y-vMG)*.01-.08);
+        float mFrost=(1.-smoothstep(0.,.03+mN*.012,vMW.y-vMG))*.8;
+        // Meltwater glazed down the faces from the joints: darker, cooler, glossy.
+        mGlaze=smoothstep(.62,.9,fpNoise(vec2((vMW.x+vMW.z)*1.9,vMW.y*.16+3.))*.6+fpNoise(vec2((vMW.x+vMW.z)*7.,vMW.y*.4))*.4)*(1.-abs(mNW.y));
+        diffuseColor.rgb*=mix(vec3(1.),vec3(.72,.82,.95),mGlaze);
+        mWhite=max(max(mSnow,mFrost),mRime*.6);
+        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.84,.92,1.),mWhite);`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(mix(.88,.55,mGlaze),.92,mWhite);')
+      // Weathered stone is dull: the low sun's sheen across a whole wall reads as tan plaster, not granite.
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(.3,.7,max(mGlaze,mWhite));')
+      .replace('#include <normal_fragment_maps>', /* glsl */ `#include <normal_fragment_maps>
+        {
+          // Chisel marks: a small world-space bump, softened under snow and rime.
+          #define MF(q) (fpNoise((q).zy*14.+1.)*mA.x+fpNoise((q).xz*14.+1.)*mA.y+fpNoise((q).xy*14.+1.)*mA.z)
+          float e=.012,f0=MF(vMW);
+          vec3 g=vec3(MF(vMW+vec3(e,0.,0.))-f0,MF(vMW+vec3(0.,e,0.))-f0,MF(vMW+vec3(0.,0.,e))-f0)/e;
+          vec3 nW=inverseTransformDirection(normal,viewMatrix);
+          g=(g-dot(g,nW)*nW)*.006*(1.-mWhite*.7);
+          nW=normalize(nW-g);
+          normal=normalize((viewMatrix*vec4(nW,0.)).xyz);
+        }`);
+  };
+  material.customProgramCacheKey = () => 'frostlight-masonry';
+  return material;
 }

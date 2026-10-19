@@ -237,7 +237,7 @@ void main(){
 }`;
 
 /** One split log along x, 1 m long: aLog = (around, along, end) on the bark, (0, radius, 1) on the sawn ends. */
-function logGeometry(){
+export function logGeometry(){
  const g=new THREE.CylinderGeometry(.15,.15,1,9,1).rotateZ(Math.PI/2);
  const uv=g.getAttribute('uv'),n=g.getAttribute('normal'),a=new Float32Array(uv.count*3);
  for(let i=0;i<uv.count;i++){const end=Math.abs(n.getX(i))>.5;a.set(end?[0,Math.hypot(uv.getX(i)-.5,uv.getY(i)-.5)*2,1]:[uv.getX(i),uv.getY(i),0],i*3);}
@@ -245,7 +245,7 @@ function logGeometry(){
  return g;
 }
 /** Dark furrowed bark and pale sawn rings, under the same snow cover as everything else; `charred` for a fire. */
-function logMaterial(charred=false){
+export function logMaterial(charred=false){
  const m=new THREE.MeshStandardMaterial({name:charred?'frostlight-firelogs':'frostlight-logs',color:charred?'#6b625a':'#ffffff',roughness:.92});
  addPatch(m,'frostlight-logs',shader=>{
   shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nattribute vec3 aLog;\nvarying vec3 vLog;').replace('#include <begin_vertex>','#include <begin_vertex>\nvLog = aLog;');
