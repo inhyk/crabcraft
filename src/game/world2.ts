@@ -32,6 +32,16 @@ import {StarThrone} from './starThrone';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
 import {layoutStarhaven,starCrystalGarden} from './world2Colliders';
 import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
+import type {TidecrownIsland} from './tidecrown/island';
+
+/** Everything entering Tidecrown changes, restored as it was when the player leaves. */
+interface TidecrownSaved {
+  roots:boolean[];heightAt:Game['world']['heightAt'];resolveCollision:Game['world']['resolveCollision'];raycastSolid:Game['world']['raycastSolid'];
+  pois:{poi:Poi;position:THREE.Vector3;yaw:number}[];units:{unit:Game['player']['unit'];hidden:boolean;x:number;z:number;yaw:number}[];
+  enemies:{enemy:Game['enemies'][number];alive:boolean;x:number;z:number}[];player:{x:number;z:number;yaw:number};
+  fog:{color:THREE.Color;density:number}|null;environment:THREE.Texture|null;environmentIntensity:number;nav:NavHints|null;zone:string;
+}
+const NO_PORTAL=new THREE.Vector3(1e5,0,1e5);
 
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
@@ -71,10 +81,10 @@ export class HiddenWorld {
   /** Arrival (including respawn) must not immediately trigger the return gateway. */
   resetPortalArrival(){this.travelArmed=false;this.travelAt=this.game.time+3;}
   private baseNames:string[]=[];
-  get portalPosition(){if(this.chapter===6)return this.sixth.spawn;if(this.chapter===5)return this.game.player.unit.pos.distanceTo(this.fifth.next!.root.position)<7?this.fifth.next!.root.position:this.fifth.spawn;if(this.chapter===4&&this.game.player.unit.pos.distanceTo(this.emberGate.root.position)<7)return this.emberGate.root.position;if(this.chapter===4)return this.fourth.spawn;if(this.chapter===3)return this.game.player.unit.pos.distanceTo(this.snowGate.root.position)<7?this.snowGate.root.position:this.third.spawn;if(this.chapter===2&&this.game.player.unit.pos.distanceTo(this.thirdGate.root.position)<6)return this.thirdGate.root.position;return this.chapter===2?this.spawn:this.shorePortal.root.position;}
+  get portalPosition(){if(this.tidecrownSaved)return NO_PORTAL;if(this.chapter===6)return this.sixth.spawn;if(this.chapter===5)return this.game.player.unit.pos.distanceTo(this.fifth.next!.root.position)<7?this.fifth.next!.root.position:this.fifth.spawn;if(this.chapter===4&&this.game.player.unit.pos.distanceTo(this.emberGate.root.position)<7)return this.emberGate.root.position;if(this.chapter===4)return this.fourth.spawn;if(this.chapter===3)return this.game.player.unit.pos.distanceTo(this.snowGate.root.position)<7?this.snowGate.root.position:this.third.spawn;if(this.chapter===2&&this.game.player.unit.pos.distanceTo(this.thirdGate.root.position)<6)return this.thirdGate.root.position;return this.chapter===2?this.spawn:this.shorePortal.root.position;}
   portalLabel(){if(this.chapter===6)return t('월드 5 · 잿불 군도로 돌아가기','Return to World V · Emberreach');if(this.chapter===5)return this.portalPosition===this.fifth.spawn?t('월드 4 · 설원으로 돌아가기','Return to World IV · Frostlight'):t('월드 6 · 하늘숲으로','Travel to World VI · Skybloom');if(this.chapter===4&&this.portalPosition===this.emberGate.root.position)return t('월드 5 · 잿불 군도로 (보레아스 승리 필요)','World V · Emberreach (defeat Boreas first)');return this.chapter===4?t('월드 3으로 돌아가기','Return to World III'):this.chapter===3&&this.portalPosition===this.snowGate.root.position?t('월드 4 · 서리빛 설원으로 (100레벨 왕 승리 필요)','World IV · Frostlight (defeat Solarkan first)'):this.chapter===3?t('월드 2로 돌아가기','Return to World II'):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?t('월드 3 · 새벽의 섬으로','World III · Sail to Dawnreach'):this.chapter===2?t('월드 1로 돌아가기','Return to World I'):t('월드 2로 이동','Travel to World II');}
   canTravel(chapter:1|2|3|4|5|6){return chapter===1||this.game.creatorTravel||this.game.multiplayer?.battle.applying||(chapter>=5?!!this.game.journey?.frostCleared:chapter===4?!!this.game.journey?.finalCleared:chapter===2?!!this.game.journey?.abyssCleared:!!this.game.journey?.abyssCleared&&!!this.game.journey?.trueCleared);}
-  go(chapter:1|2|3|4|5|6,authority=true){if(this.game.dungeons?.active)return false;if(!this.canTravel(chapter)){this.game.hud.messages.info(chapter>=5?t('보레아스를 물리치면 새로운 원정 월드가 열려요.','Defeat Boreas to unlock the frontier worlds.'):chapter===4?t('100레벨 솔라칸을 이겨야 눈 월드가 열려요.','Defeat level 100 Solarkan to unlock Frostlight.'):chapter===2?t('10레벨 심해의 군주를 이겨야 월드2가 열려요.','Defeat the level 10 Lord of the Deep to unlock World II.'):t('월드2의 20레벨 일식 여왕을 이겨야 월드3가 열려요.','Defeat the level 20 Eclipse Queen to unlock World III.'));return false;}if(chapter===1)this.returnToShore();else if(chapter===5||chapter===6)this.enterFrontier(chapter,authority);else if(chapter===4)this.enterSnow(authority);else if(chapter===3)this.enterThird(authority);else this.enter(authority);return true;}
+  go(chapter:1|2|3|4|5|6,authority=true){if(this.game.dungeons?.active)return false;this.leaveTidecrown();if(!this.canTravel(chapter)){this.game.hud.messages.info(chapter>=5?t('보레아스를 물리치면 새로운 원정 월드가 열려요.','Defeat Boreas to unlock the frontier worlds.'):chapter===4?t('100레벨 솔라칸을 이겨야 눈 월드가 열려요.','Defeat level 100 Solarkan to unlock Frostlight.'):chapter===2?t('10레벨 심해의 군주를 이겨야 월드2가 열려요.','Defeat the level 10 Lord of the Deep to unlock World II.'):t('월드2의 20레벨 일식 여왕을 이겨야 월드3가 열려요.','Defeat the level 20 Eclipse Queen to unlock World III.'));return false;}if(chapter===1)this.returnToShore();else if(chapter===5||chapter===6)this.enterFrontier(chapter,authority);else if(chapter===4)this.enterSnow(authority);else if(chapter===3)this.enterThird(authority);else this.enter(authority);return true;}
   travel(){
     const g=this.game;if(g.controlsLocked||g.player.inCombat||g.encounter.engaged){g.hud.messages.info(t('전투가 끝나면 포탈을 이용할 수 있어요.','You can travel through the portal after combat.'));return;}
     const chapter=this.chapter===6?5:this.chapter===5?(this.portalPosition===this.fifth.spawn?4:6):this.chapter===4?(this.portalPosition===this.emberGate.root.position?5:3):this.chapter===3?(this.portalPosition===this.snowGate.root.position?4:2):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?3:this.chapter===2?1:2;
@@ -141,6 +151,7 @@ export class HiddenWorld {
     const p=STAR_OBJECTIVES[kind];return p?new THREE.Vector3(p[0],this.height(...p),p[1]):null;
   }
   interactable() {
+    if(this.tidecrownSaved)return null;
     if(this.chapter>=5)return (this.chapter===5?this.emberRequests:this.skyRequests).interactable();
     if(this.chapter===3)return this.dawnRequests.interactable();
     if(this.chapter===4)return this.snowRequests.interactable();
@@ -222,6 +233,7 @@ export class HiddenWorld {
     for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');
   }
   regionAt(x:number,z:number){
+    if(this.tidecrownSaved)return t('타이드크라운','Tidecrown');
     if(this.chapter===5)return z<-48?'Ember Sanctuary':Math.abs(x)>40||z<24?'Obsidian Wilds':'Emberharbor';
     if(this.chapter===6)return z<-48?'Worldtree Sanctuary':Math.abs(x)>40||z<24?'Whisperleaf Woods':'Skyharbor';
     if(this.chapter===4)return z<-48?'The Frozen Throne':z<20?'Aurora Snowfields':Math.abs(x)>42?'Frostpine Woods':'Snowfall Village';
@@ -238,6 +250,7 @@ export class HiddenWorld {
   }
 
   enter(authority=true) {
+    this.leaveTidecrown();
     if(!this.canTravel(2)){this.go(2);return;}
     if(this.chapter===2&&this.rendered)return;
     if(this.chapter>=3)this.returnToShore();
@@ -370,6 +383,7 @@ export class HiddenWorld {
   }
 
   returnToShore() {
+    this.leaveTidecrown();
     if(this.chapter===1)return;
     this.game.ending.cancel();
     this.game.hud.dialogue.close();
@@ -395,6 +409,7 @@ export class HiddenWorld {
     if(this.chapter>=2&&!this.rendered)this.go(this.chapter,authority);
   }
   showEpilogue() {
+    this.leaveTidecrown();
     this.ambience.stop();this.third.root.visible=this.fourth.root.visible=this.fifth.root.visible=this.sixth.root.visible=false;
     if(!this.rendered)return;this.rendered=false;this.root.visible=false;this.baseRoot.visible=true;
     const w=this.game.world;w.heightAt=this.originalHeight;w.resolveCollision=this.originalCollision;w.raycastSolid=this.originalRay;
@@ -404,6 +419,7 @@ export class HiddenWorld {
   }
   /** Static world/camera presentation for a committed server world; never moves an actor. */
   observeChapter(chapter:1|2|3|4|5|6):void {
+    this.leaveTidecrown();
     const g=this.game,w=g.world;if(this.chapter===chapter)return;
     if(!this.basePois.size)for(const [id,poi]of Object.entries(w.pois))this.basePois.set(id,{position:poi.position.clone(),yaw:poi.yaw});
     this.chapter=chapter;this.rendered=chapter!==1;this.baseRoot.visible=chapter===1;this.root.visible=chapter===2;this.third.root.visible=chapter===3;this.fourth.root.visible=chapter===4;this.fifth.root.visible=chapter===5;this.sixth.root.visible=chapter===6;
@@ -421,6 +437,11 @@ export class HiddenWorld {
     g.hud.minimap.setSnapshot(chapter===1?g.takeMapSnapshot():snapshotMap(g.engine.renderer,g.scene,bounds,[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));
   }
   update(dt:number,time:number,observation?:{flags:Readonly<Record<string,boolean>>}) {
+    if(this.tidecrownSaved&&this.tidecrown){
+      const p=this.game.player.unit.pos,fog=this.game.scene.fog;this.tidecrown.update(time,p.x,p.z,this.game.camera);
+      if(fog instanceof THREE.FogExp2){fog.color.copy(this.tidecrown.fog.color);fog.density=this.tidecrown.fog.density;}
+      return;
+    }
     const flags=observation?.flags??this.game.journey;
     this.snowGate.update(time);this.emberGate.update(time);
     if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
@@ -483,7 +504,85 @@ export class HiddenWorld {
     for(const o of this.rotations){o.rotation.y+=dt*.6;o.rotation.z=Math.sin(time*.7+o.position.x)*.12;}
 
   }
+  /** Tidecrown, the capital hub: built on first use, laid over the current chapter (the quest chapter never changes). */
+  tidecrown?:TidecrownIsland;
+  private tidecrownSaved:TidecrownSaved|null=null;
+  private tidecrownLoading:Promise<boolean>|null=null;
+  /** Milliseconds the last entry took, build included on the first. */
+  tidecrownEntryMs=0;
+  get inTidecrown(){return !!this.tidecrownSaved;}
+  enterTidecrown():Promise<boolean>{
+    if(this.tidecrownSaved)return Promise.resolve(true);
+    if(this.tidecrownLoading)return this.tidecrownLoading;
+    const g=this.game;
+    if(g.dungeons?.active||g.controlsLocked||g.player.inCombat||g.encounter.engaged){g.hud.messages.info(t('전투나 던전을 마친 뒤 이동할 수 있어요.','Finish the fight or expedition before travelling.'));return Promise.resolve(false);}
+    const run=async()=>{
+      const t0=performance.now(),veil=tidecrownVeil();
+      try{
+        await veil.shown;
+        if(!this.tidecrown){
+          const {TidecrownIsland}=await import('./tidecrown/island');
+          const island=new TidecrownIsland();await island.build(g.engine.renderer,g.engine.quality);
+          g.scene.add(island.root);this.tidecrown=island;
+        }
+        if(g.dungeons?.active)return false;
+        this.applyTidecrown(this.tidecrown);this.tidecrownEntryMs=performance.now()-t0;return true;
+      }finally{veil.hide();}
+    };
+    this.tidecrownLoading=run().finally(()=>{this.tidecrownLoading=null;});
+    return this.tidecrownLoading;
+  }
+  private applyTidecrown(island:TidecrownIsland){
+    const g=this.game,w=g.world,scene=g.scene;
+    g.ending.cancel();g.hud.dialogue.close();g.hud.messages.closeDiscovery();
+    const roots=[this.baseRoot,this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root];
+    const bosses=[g.boss,g.finalBoss,g.worldBoss,g.dawnBoss,g.frostBoss,g.emberBoss,g.skyBoss];
+    const units=[...g.npcs.map(n=>n.unit),...g.townsfolk.map(f=>f.unit),...bosses.flatMap(b=>[b.unit,b.freed])];
+    const fog=scene.fog instanceof THREE.FogExp2?scene.fog:null;
+    this.tidecrownSaved={
+      roots:roots.map(r=>r.visible),heightAt:w.heightAt,resolveCollision:w.resolveCollision,raycastSolid:w.raycastSolid,
+      pois:Object.values(w.pois).map(poi=>({poi,position:poi.position.clone(),yaw:poi.yaw})),
+      units:units.map(unit=>({unit,hidden:unit.hidden,x:unit.pos.x,z:unit.pos.z,yaw:unit.yaw})),
+      enemies:g.enemies.filter(e=>e.state!=='gone').map(enemy=>({enemy,alive:enemy.unit.alive,x:enemy.unit.pos.x,z:enemy.unit.pos.z})),
+      player:{x:g.player.unit.pos.x,z:g.player.unit.pos.z,yaw:g.player.unit.yaw},
+      fog:fog?{color:fog.color.clone(),density:fog.density}:null,environment:scene.environment,environmentIntensity:scene.environmentIntensity,nav:this.nav,zone:g.zone,
+    };
+    for(const r of roots)r.visible=false;island.root.visible=true;
+    w.heightAt=(x,z)=>island.height(x,z);w.resolveCollision=(x,z,r,out)=>island.resolve(x,z,r,out);w.raycastSolid=(a,b)=>island.collision.raycast(a,b);
+    // A respawn lands on the arrival; the other points (beacon, gates, quest spots) are moved out of reach.
+    for(const {poi} of this.tidecrownSaved.pois){if(poi.id==='spawn')poi.position.copy(island.spawn);else poi.position.set(-9000,-100,-9000);poi.yaw=island.spawnYaw;}
+    for(const u of units)u.hidden=true;
+    for(const e of g.enemies)if(e.state!=='gone')e.despawn();
+    this.nav=null;
+    // Tidecrown names itself and sets no quest marker; the quest chapter stays as it was.
+    g.zoneAt=()=>t('타이드크라운','Tidecrown');g.objectivePos=()=>null;
+    scene.environment=island.environment(g.engine.renderer);scene.environmentIntensity=island.envIntensity;
+    if(fog){fog.color.copy(island.fog.color);fog.density=island.fog.density;}
+    g.player.setTarget(null);g.player.unit.teleport(w,island.spawn.x,island.spawn.z,island.spawnYaw);g.follow.cut();g.follow.yaw=island.spawnYaw+Math.PI;
+    g.hud.messages.banner(()=>t('타이드크라운','Tidecrown'),()=>t('왕관 항구의 수도 · 크라운셸 성','Capital of the crown harbour · Crownshell Keep'),'zone');
+    try{g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,scene,{minX:-200,maxX:300,minZ:-260,maxZ:320,topY:220},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));}catch{ /* The hub still plays without a map. */ }
+  }
+  /** Back to exactly where the player stood before Tidecrown. */
+  private leaveTidecrown(){
+    const s=this.tidecrownSaved;if(!s)return;
+    this.tidecrownSaved=null;
+    const g=this.game,w=g.world,scene=g.scene;
+    if(this.tidecrown)this.tidecrown.root.visible=false;
+    [this.baseRoot,this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root].forEach((r,i)=>r.visible=s.roots[i]);
+    w.heightAt=s.heightAt;w.resolveCollision=s.resolveCollision;w.raycastSolid=s.raycastSolid;
+    for(const p of s.pois){p.poi.position.copy(p.position);p.poi.yaw=p.yaw;}
+    for(const u of s.units){u.unit.teleport(w,u.x,u.z,u.yaw);u.unit.hidden=u.hidden;}
+    if(this.game.multiplayer?.battle.authority!==false)for(const e of s.enemies){e.enemy.respawnAt(e.alive?e.x:e.enemy.home.x,e.alive?e.z:e.enemy.home.z);}
+    Reflect.deleteProperty(g,'zoneAt');Reflect.deleteProperty(g,'objectivePos');
+    this.nav=s.nav;g.zone=s.zone;
+    scene.environment=s.environment;scene.environmentIntensity=s.environmentIntensity;
+    if(s.fog&&scene.fog instanceof THREE.FogExp2){scene.fog.color.copy(s.fog.color);scene.fog.density=s.fog.density;}
+    g.player.setTarget(null);g.player.unit.teleport(w,s.player.x,s.player.z,s.player.yaw);g.follow.cut();
+    const c=this.chapter,bounds=c===2?{minX:-140,maxX:140,minZ:-150,maxZ:170,topY:90}:c===3?{minX:-150,maxX:150,minZ:-175,maxZ:175,topY:110}:{minX:-145,maxX:145,minZ:-165,maxZ:165,topY:c>=5?160:100};
+    try{g.hud.minimap.setSnapshot(c===1||!this.rendered?g.takeMapSnapshot():snapshotMap(g.engine.renderer,scene,bounds,[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));}catch{ /* Keep the old map. */ }
+  }
   dispose(){
+    this.leaveTidecrown();if(this.tidecrown){this.game.scene.remove(this.tidecrown.root);this.tidecrown.dispose();this.tidecrown=undefined;}
     this.ambience.dispose();this.fourth.disposeSnow();
     this.showEpilogue();this.game.scene.remove(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
@@ -503,4 +602,13 @@ export class HiddenWorld {
     const ownedTextures=new Set<THREE.Texture>();for(const m of mats){const map=(m as THREE.MeshStandardMaterial).map;if(map?.userData.islandPaving)ownedTextures.add(map);}for(const texture of ownedTextures)texture.dispose();
     this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
   }
+}
+
+/** A short fade while Tidecrown is built (first entry) or entered. */
+function tidecrownVeil(){
+  const el=document.createElement('div');el.className='tidecrown-veil';
+  Object.assign(el.style,{position:'fixed',inset:'0',zIndex:'60',pointerEvents:'none',display:'grid',placeItems:'center',opacity:'0',transition:'opacity .35s ease',background:'radial-gradient(circle at 50% 45%, #29496b, #0b1622 70%)',color:'#e9f7ff',font:'600 26px/1.3 Georgia, serif',letterSpacing:'.32em',textShadow:'0 0 18px #53f2e4'});
+  el.textContent=t('타이드크라운','TIDECROWN');document.body.append(el);
+  requestAnimationFrame(()=>{el.style.opacity='1';});
+  return {shown:new Promise<void>(r=>setTimeout(r,380)),hide(){el.style.opacity='0';setTimeout(()=>el.remove(),450);}};
 }
