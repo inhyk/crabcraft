@@ -1,11 +1,17 @@
 // Tidecrown districts (stage 2): enters the capital by creator travel and checks the city the districts add. The first
-// entry is timed (the houses' far builds show at once; their near detail follows in the background, then is forced
-// and timed); every district's main street is walked (none blocked, gently graded, canal bridges included) and so are
-// the Grand Canal's quays and the harbour's quay and long pier; no house overlaps another house, a landmark, a street,
-// the King's Way or a canal, and no landmark overlaps a street or a canal; nothing floats (houses' plinths, landmarks,
-// terrace walls, stairs, lamps and banner poles reach the ground under them); every camera (the six stage 1 views and
-// the district views) stays within the budget of 700 draw calls and 5.5M triangles, shadow pass included; zero page
-// or shader errors. Writes the district shots (1600x900) to CC_QA_SHOTS.
+// entry is timed, and so is every frame for four seconds after it (none over 50 ms once the fade lifts); every
+// district's main street is walked (none blocked, gently graded, canal bridges included) and so are the Grand Canal's
+// quays and the harbour's quay and long pier; no house overlaps another house, a landmark, a street, the King's Way or
+// a canal, and no landmark overlaps a street or a canal; nothing floats (houses' plinths, landmarks, terrace walls,
+// stairs, lamps and banner poles reach the ground under them). Collision: a flood fill from the arrival reaches no
+// point below +1 on the harbour side, the ground just off every canal wall's kerb is within 0.5 of the street, and
+// every collider is in the plan (the near builds add none). Every camera (the six stage 1 views and the district
+// views, near detail built for each) stays within the budget of 700 draw calls and 5.5M triangles, shadow pass
+// included, with Tidecrown's geometry arrays at most 200 MB and the near pools' GPU data at most 200 MB in use; a
+// sprint up the King's Way from outside the city shows every chunk near by its switch distance, with the near
+// build's slices at p95 within their 6 ms budget and no frame over 50 ms; leaving frees every near build (pools,
+// GPU geometries, back to the far-only arrays), and a second entry takes under a second. Zero page or shader errors.
+// Writes the district shots (1600x900) to CC_QA_SHOTS.
 // Usage: CC_QA_BASE=http://127.0.0.1:5253 node tools/qa-tidecrown-districts.mjs
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -14,6 +20,9 @@ import { chromium } from 'playwright';
 const base = process.env.CC_QA_BASE ?? 'http://127.0.0.1:5241';
 const out = process.env.CC_QA_SHOTS ?? 'tmp/qa/tidecrown-districts';
 const BUDGET = { calls: 700, triangles: 5.5e6 };
+/** Tidecrown's geometry arrays (CPU) and the near pools' GPU data in use, MB; a near build slice's budget and the worst frame, ms. */
+const MEMORY = { cpu: 200, nearGpu: 200, leave: 30 };
+const SLICE = 6, FRAME = 50;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
 const errors = [];
@@ -34,25 +43,53 @@ try {
   await p.evaluate(() => { const g = window.app.current.game; g.god = true; g.player.nextSwing = Infinity; });
   await p.waitForTimeout(2000);
 
-  // First entry, then the near detail: a few seconds in the background, the rest forced so the views see it all.
+  // Memory: Tidecrown's (and the scene's) geometry arrays on the CPU, the near and far pools' GPU bytes.
+  await p.evaluate(() => {
+    const arrays = (root) => {
+      const seen = new Set();
+      let b = 0;
+      const add = (a) => { if (a && a.byteLength && !seen.has(a)) { seen.add(a); b += a.byteLength; } };
+      root.traverse((o) => {
+        if (o.isInstancedMesh) { add(o.instanceMatrix.array); add(o.instanceColor?.array); }
+        const g = o.geometry;
+        if (!g) return;
+        for (const a of Object.values(g.attributes)) add(a.isInterleavedBufferAttribute ? a.data.array : a.array);
+        add(g.index?.array);
+      });
+      return b / 1048576;
+    };
+    window.__tcMem = () => {
+      const g = window.app.current.game, i = g.world2.tidecrown, s = i.city.lod.stats, MB = 1048576;
+      return { tidecrown: +arrays(i.root).toFixed(1), scene: +arrays(g.scene).toFixed(1), nearUsed: +(s.nearUsed / MB).toFixed(1), nearGpu: +(s.nearBytes / MB).toFixed(1), farGpu: +(s.farBytes / MB).toFixed(1), resident: s.resident, pools: i.city.lod.meshes.filter((m) => !m.far).length, geometries: window.app.engine.renderer.info.memory.geometries };
+    };
+  });
+
+  // First entry, then every frame and near build slice for four seconds after it (the fade lifts as it resolves).
   const entry = await p.evaluate(async () => {
     const g = window.app.current.game, t0 = performance.now();
     g.creatorTravel = true;
     const ok = await g.world2.enterTidecrown();
-    return { ok, ms: Math.round(performance.now() - t0), steps: g.world2.tidecrown.info.steps, city: g.world2.tidecrown.info.city };
+    const ms = Math.round(performance.now() - t0), i = g.world2.tidecrown, frames = [], slices = [];
+    const refine = i.refine;
+    i.refine = function (b) { const t = performance.now(); const r = refine.call(this, b); slices.push(performance.now() - t); return r; };
+    await new Promise((res) => { let last = performance.now(); const f = () => { const n = performance.now(); frames.push(n - last); last = n; if (n - t0 - ms < 4000) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
+    delete i.refine;
+    return { ok, ms, steps: i.info.steps, city: i.info.city, worstFrame: +Math.max(...frames).toFixed(1), frames: frames.length, worstSlice: +Math.max(...slices).toFixed(1) };
   });
   assert.equal(entry.ok, true, 'enterTidecrown() resolves true');
   await p.waitForFunction(() => !document.querySelector('.tidecrown-veil'), null, { timeout: 30000 });
-  await p.waitForTimeout(3000);
   const detail = await p.evaluate(() => {
-    const i = window.app.current.game.world2.tidecrown, t0 = performance.now(), before = i.city.stats.nearMs;
+    const i = window.app.current.game.world2.tidecrown, t0 = performance.now();
     i.refine(1e9);
-    return { forcedMs: Math.round(performance.now() - t0), totalMs: i.city.stats.nearMs, backgroundBefore: before, stats: i.city.stats };
+    return { forcedMs: Math.round(performance.now() - t0), stats: i.city.stats, lod: i.city.lod.opts };
   });
-  console.log(JSON.stringify({ entry, detail }));
+  const farOnly = await p.evaluate(() => window.__tcMem());
+  console.log(JSON.stringify({ entry, detail, farOnly }));
   const houses = Object.values(detail.stats.houses).reduce((a, b) => a + b, 0);
   assert.ok(houses > 300, `the districts are filled: ${houses} houses ${JSON.stringify(detail.stats.houses)}`);
-  console.log(`PASS entry: first entry ${entry.ms} ms (city ${entry.steps.city} ms of it), ${houses} houses ${JSON.stringify(detail.stats.houses)}; the near detail took ${detail.totalMs} ms of work after it`);
+  assert.ok(entry.worstFrame <= FRAME, `no frame over ${FRAME} ms after the entry: ${entry.worstFrame} ms`);
+  assert.ok(farOnly.tidecrown <= MEMORY.cpu, `far only: Tidecrown geometry ${farOnly.tidecrown} MB`);
+  console.log(`PASS entry: first entry ${entry.ms} ms (city ${entry.steps.city} ms of it), ${houses} houses ${JSON.stringify(detail.stats.houses)}; ${entry.frames} frames in the 4 s after it, the worst ${entry.worstFrame} ms; far only, Tidecrown's geometry arrays are ${farOnly.tidecrown} MB (scene ${farOnly.scene} MB), its far pools ${farOnly.farGpu} MB on the GPU`);
 
   // Walks: every district's main street, the Grand Canal's quays, the harbour's quay and its long pier.
   const walks = await p.evaluate(async () => {
@@ -176,6 +213,62 @@ try {
   for (const k of ['houses', 'landmarks', 'walls', 'stairs', 'furniture']) assert.deepEqual(floating[k], [], `nothing floats: ${k}`);
   console.log(`PASS footing: ${floating.checked} houses, landmarks, terrace walls, stairs, lamps and poles stand on the ground`);
 
+  // Collision: a flood fill from the arrival over the playable box (0.5 apart): nothing below +1 on the harbour side;
+  // the closest a crab gets to every canal wall (just off its kerb) stays within 0.5 of the street; every collider is
+  // in the plan, so a fresh layout registers as many solids as the island holds after its near builds.
+  const collision = await p.evaluate(async () => {
+    const g = window.app.current.game, I = g.world2.tidecrown, r = g.player.unit.radius;
+    const G = await import('/src/sim/world/tidecrownGround.ts');
+    const C = await import('/src/sim/world/tidecrownCity.ts');
+    const L = await import('/src/game/tidecrown/layout.ts');
+    const o = { x: 0, y: 0, set(x, y) { this.x = x; this.y = y; return this; } };
+    const free = (x, z) => { I.resolve(x, z, r, o); return Math.hypot(o.x - x, o.y - z) < 0.02; };
+    const step = 0.5, x0 = G.TC_BOUNDS.minX, z0 = G.TC_BOUNDS.minZ, nx = Math.floor((G.TC_BOUNDS.maxX - x0) / step) + 1, nz = Math.floor((G.TC_BOUNDS.maxZ - z0) / step) + 1;
+    const state = new Int8Array(nx * nz).fill(-1), q = new Int32Array(nx * nz);
+    const at = (i, j) => { const k = j * nx + i; if (state[k] < 0) state[k] = free(x0 + i * step, z0 + j * step) ? 1 : 0; return state[k]; };
+    const ai = Math.round((G.TC_ARRIVAL[0] - x0) / step), aj = Math.round((G.TC_ARRIVAL[1] - z0) / step);
+    const reached = new Uint8Array(nx * nz);
+    let head = 0, tail = 0, n = 0;
+    const low = [];
+    if (at(ai, aj)) { q[tail++] = aj * nx + ai; reached[aj * nx + ai] = 1; }
+    while (head < tail) {
+      const k = q[head++], i = k % nx, j = (k - i) / nx, x = x0 + i * step, z = z0 + j * step;
+      n++;
+      // The harbour side: east of the quay wall, between the keep cliff and the estuary.
+      if (x > 200 && z > -95 && z < 85 && I.height(x, z) < 1 && low.length < 10) low.push([x, z, +I.height(x, z).toFixed(2)]);
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const ii = i + di, jj = j + dj;
+        if ((!di && !dj) || ii < 0 || jj < 0 || ii >= nx || jj >= nz || reached[jj * nx + ii] || !at(ii, jj)) continue;
+        reached[jj * nx + ii] = 1;
+        q[tail++] = jj * nx + ii;
+      }
+    }
+    let kerbs = 0, kerbLow = 0, kerbWorst = 0, kerbAt = null;
+    for (const w of I.layout.city.canalWalls) {
+      const len = Math.hypot(w.bx - w.ax, w.bz - w.az);
+      for (let u = 0.5; u < len - 0.5; u += 0.5) {
+        const f = u / len, lx = w.ax + (w.bx - w.ax) * f, lz = w.az + (w.bz - w.az) * f;
+        let last = null;
+        for (let d = 4; d >= 0; d -= 0.1) { const x = lx - w.nx * d, z = lz - w.nz * d; if (!free(x, z)) break; last = [x, z]; }
+        if (!last) continue;
+        kerbs++;
+        const deficit = C.TC_CANAL.street - I.height(last[0], last[1]);
+        if (deficit > 0.5) kerbLow++;
+        if (deficit > kerbWorst) { kerbWorst = deficit; kerbAt = last.map((v) => +v.toFixed(1)); }
+      }
+    }
+    const shapes = I.collision.shapes.length;
+    I.refine(1e9);
+    return { reached: n, low, kerbs, kerbLow, kerbWorst: +kerbWorst.toFixed(2), kerbAt, shapes, afterNear: I.collision.shapes.length, fresh: L.tidecrownLayout().col.shapes.length };
+  });
+  console.log(JSON.stringify(collision));
+  assert.deepEqual(collision.low, [], 'the flood fill from the arrival reaches no point below +1 on the harbour side');
+  assert.equal(collision.kerbLow, 0, `canal kerbs within 0.5 of the street: worst ${collision.kerbWorst} at ${collision.kerbAt}`);
+  assert.ok(collision.kerbs > 500, `canal wall samples: ${collision.kerbs}`);
+  assert.equal(collision.afterNear, collision.shapes, 'the near builds add no colliders');
+  assert.equal(collision.fresh, collision.shapes, 'a fresh layout registers every solid the island holds');
+  console.log(`PASS collision: ${collision.reached} points reached from the arrival, none below +1 on the harbour side; ${collision.kerbs} canal kerb samples within 0.5 of the street (worst ${collision.kerbWorst}); ${collision.shapes} solids, all from the plan`);
+
   // Views: the six stage 1 cameras and the districts', within the budget.
   const frameStats = () => p.evaluate(() => new Promise((resolve) => {
     const e = window.app.engine, off = e.onAfterFrame(() => { off(); const r = e.renderer.info.render; resolve({ calls: r.calls, triangles: r.triangles }); });
@@ -213,17 +306,92 @@ try {
       const pos = [c.cam[0], c.cam[3] ? c.cam[2] : h(c.cam[0], c.cam[1]) + c.cam[2], c.cam[1]], at = [c.at[0], c.at[3] ? c.at[2] : h(c.at[0], c.at[1]) + c.at[2], c.at[1]];
       g.follow.update = function () { this.camera.position.set(...pos); this.camera.lookAt(...at); };
     }, c);
-    await p.waitForTimeout(1800);
-    views[c.name] = await frameStats();
+    // The LOD sees the camera on the next frame; then everything near it is built at once.
+    await p.waitForTimeout(100);
+    await p.evaluate(() => window.app.current.game.world2.tidecrown.refine(1e9));
+    await p.waitForTimeout(1700);
+    views[c.name] = { ...(await frameStats()), ...(await p.evaluate(() => window.__tcMem())) };
     await p.screenshot({ path: `${out}/${c.name}.png` });
   }
   console.log(JSON.stringify(views));
   for (const [name, v] of Object.entries(views)) {
     assert.ok(v.calls <= BUDGET.calls, `${name}: ${v.calls} draw calls`);
     assert.ok(v.triangles <= BUDGET.triangles, `${name}: ${v.triangles} triangles`);
+    assert.ok(v.tidecrown <= MEMORY.cpu, `${name}: Tidecrown geometry arrays ${v.tidecrown} MB`);
+    assert.ok(v.nearUsed <= MEMORY.nearGpu, `${name}: near pools ${v.nearUsed} MB in use on the GPU`);
   }
-  const worst = Object.values(views).reduce((m, v) => ({ calls: Math.max(m.calls, v.calls), triangles: Math.max(m.triangles, v.triangles) }), { calls: 0, triangles: 0 });
-  console.log(`PASS budget: ${cams.length} views at most ${worst.calls} draw calls and ${(worst.triangles / 1e6).toFixed(2)}M triangles (shots in ${out})`);
+  const worst = Object.values(views).reduce((m, v) => ({ calls: Math.max(m.calls, v.calls), triangles: Math.max(m.triangles, v.triangles), tidecrown: Math.max(m.tidecrown, v.tidecrown), nearUsed: Math.max(m.nearUsed, v.nearUsed), nearGpu: Math.max(m.nearGpu, v.nearGpu) }), { calls: 0, triangles: 0, tidecrown: 0, nearUsed: 0, nearGpu: 0 });
+  console.log(`PASS budget: ${cams.length} views at most ${worst.calls} draw calls and ${(worst.triangles / 1e6).toFixed(2)}M triangles; Tidecrown's geometry arrays at most ${worst.tidecrown} MB, the near pools at most ${worst.nearUsed} MB in use (${worst.nearGpu} MB allocated) on the GPU (shots in ${out})`);
+
+  // A sprint up the King's Way from the Bridge of Six Shells to the keep's stair at crab eye: every chunk near by its
+  // switch distance, the near build's slices within budget, no long frame, the memory budget held.
+  const sprint = await p.evaluate(async () => {
+    const g = window.app.current.game, I = g.world2.tidecrown, lod = I.city.lod, h = (x, z) => g.world.heightAt(x, z);
+    const L = await import('/src/game/tidecrown/layout.ts');
+    const [ax, az] = L.tcAxis(-150), [bx, bz] = L.tcAxis(150), len = Math.hypot(bx - ax, bz - az), speed = 5 * 1.65;
+    let d = 0;
+    g.follow.update = function () {
+      const f = Math.min(1, d / len), f2 = Math.min(1, (d + 6) / len), x = ax + (bx - ax) * f, z = az + (bz - az) * f, x2 = ax + (bx - ax) * f2, z2 = az + (bz - az) * f2;
+      this.camera.position.set(x, h(x, z) + 2.4, z);
+      this.camera.lookAt(x2, h(x2, z2) + 2.2, z2);
+    };
+    // Start clear of the city with nothing near, then run.
+    await new Promise((r) => setTimeout(r, 300));
+    I.refine(1e9);
+    const slices = [], frames = [], late = new Set();
+    let worstLate = 0, memory = window.__tcMem();
+    const refine = I.refine, update = lod.update;
+    I.refine = function (b) { const t = performance.now(); const r = refine.call(this, b); slices.push(performance.now() - t); return r; };
+    lod.update = function (cam) {
+      update.call(this, cam);
+      this.chunks.forEach((c, ci) => { if (c.recipe.length && !c.isNear && c.d < this.opts.near - 0.5) { late.add(ci); worstLate = Math.max(worstLate, this.opts.near - c.d); } });
+    };
+    await new Promise((res) => {
+      let last = -1, t0 = -1;
+      const f = () => {
+        const n = performance.now();
+        if (t0 < 0) t0 = n; else frames.push(n - last);
+        last = n;
+        d = ((n - t0) / 1000) * speed;
+        if (frames.length % 30 === 0) { const m = window.__tcMem(); if (m.nearUsed > memory.nearUsed) memory = m; }
+        if (d < len) requestAnimationFrame(f); else res();
+      };
+      requestAnimationFrame(f);
+    });
+    delete I.refine;
+    delete lod.update;
+    const q = (a, k) => { const s = [...a].sort((x, y) => x - y); return +s[Math.min(s.length - 1, Math.floor(s.length * k))].toFixed(1); };
+    return { len: Math.round(len), speed, late: late.size, worstLate: +worstLate.toFixed(1), slices: slices.length, sliceP95: q(slices, 0.95), sliceMax: q(slices, 1), frames: frames.length, frameP95: q(frames, 0.95), frameMax: q(frames, 1), memory };
+  });
+  console.log(JSON.stringify(sprint));
+  assert.equal(sprint.late, 0, `no chunk shows near later than its switch distance (worst ${sprint.worstLate} inside it)`);
+  assert.ok(sprint.sliceP95 <= SLICE, `near build slices p95 ${sprint.sliceP95} ms within ${SLICE}`);
+  assert.ok(sprint.frameMax <= FRAME, `no frame over ${FRAME} ms on the sprint: ${sprint.frameMax}`);
+  assert.ok(sprint.memory.tidecrown <= MEMORY.cpu && sprint.memory.nearUsed <= MEMORY.nearGpu, `memory on the sprint: ${JSON.stringify(sprint.memory)}`);
+  console.log(`PASS sprint: ${sprint.len} up the King's Way at ${sprint.speed} a second, every chunk near by ${detail.lod.near}; slices p95 ${sprint.sliceP95} ms (max ${sprint.sliceMax}), frames p95 ${sprint.frameP95} ms (max ${sprint.frameMax}); at most ${sprint.memory.nearUsed} MB of near detail in use on the GPU, Tidecrown's arrays ${sprint.memory.tidecrown} MB`);
+
+  // Leaving frees every near build; a second entry is quick.
+  const leave = await p.evaluate(async () => {
+    const g = window.app.current.game, before = window.__tcMem();
+    let disposed = 0;
+    for (const m of g.world2.tidecrown.city.lod.meshes) if (!m.far) m.geometry.addEventListener('dispose', () => disposed++);
+    g.world2.exitTidecrown();
+    await new Promise((r) => setTimeout(r, 500));
+    const after = window.__tcMem();
+    const t0 = performance.now();
+    await g.world2.enterTidecrown();
+    const again = Math.round(performance.now() - t0);
+    g.world2.exitTidecrown();
+    return { before, after: { ...after, disposed }, again };
+  });
+  console.log(JSON.stringify(leave));
+  assert.equal(leave.after.pools + leave.after.resident + leave.after.nearGpu, 0, 'leaving frees every near build and pool');
+  // (World I's own geometries may go up a little: the minimap is redrawn on leaving.)
+  assert.equal(leave.after.disposed, leave.before.pools, 'every near pool geometry is disposed');
+  assert.ok(leave.after.geometries <= leave.before.geometries - leave.before.pools + 8, `the near pools leave the GPU: ${leave.after.geometries} geometries, ${leave.before.geometries} with ${leave.before.pools} pools before`);
+  assert.ok(leave.after.scene - farOnly.scene <= MEMORY.leave, `after leaving the scene's arrays are ${leave.after.scene} MB, far only ${farOnly.scene} MB`);
+  assert.ok(leave.again < 1000, `second entry in ${leave.again} ms`);
+  console.log(`PASS leave: ${leave.before.pools} near pools (${leave.before.nearGpu} MB on the GPU) freed, ${leave.after.geometries} GPU geometries left (${leave.before.geometries} before), scene arrays ${leave.after.scene} MB (far only ${farOnly.scene}); second entry ${leave.again} ms`);
   assert.deepEqual(errors, []);
   console.log('PASS zero page or shader errors');
 } finally {
