@@ -200,7 +200,9 @@ const ICE_LIGHT = /* glsl */ `#include <lights_fragment_end>
 reflectedLight.directSpecular=min(reflectedLight.directSpecular,vec3(.2));`;
 
 const ICE_EMISSIVE = /* glsl */ `#include <emissivemap_fragment>
-totalEmissiveRadiance+=vec3(.22,.8,1.)*aGlowK*1.15;`;
+// The runes burn in the aurora's colours: teal, drifting slowly to violet round each ring.
+float aHue=smoothstep(.25,.95,sin(aAng*2.+aR*.35-faTime*.21)*.5+.5);
+totalEmissiveRadiance+=mix(vec3(.22,.8,1.),vec3(.62,.36,1.05),aHue*.75)*aGlowK*1.15;`;
 
 const ICE_OUT = /* glsl */ `{
   // The sky in the ice, by Fresnel: strong across the floor, gone under snow and frost.

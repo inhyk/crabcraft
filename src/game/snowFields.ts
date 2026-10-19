@@ -46,7 +46,8 @@ function fieldMaterials(ground:SnowGroundUniforms){
   if(!/Metal/.test(n)){sm.metalness=0;sm.metalnessMap=null;}
   const card=/^(Leaves|Grass)/.test(n);
   if(!card&&!/Cloth/.test(n))sm.side=THREE.FrontSide;
-  if(/^Bark/.test(n))stylise(v,.35,[.3,.3,.33]);
+  // Dead bark wet with melt: a rich warm umber, the darkest warm note against the snow.
+ if(/^Bark/.test(n))stylise(v,.95,[.4,.28,.2]);
   // Evergreen scrub (the kit's leaf atlas turned juniper): a dark, cold green that anchors the white.
   else if(n==='Leaves_TwistedTree')stylise(v,.42,[.36,.46,.45],-1.9);
   // Bracken and grass dried to rust and straw: the one warm note in the field.

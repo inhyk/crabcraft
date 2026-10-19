@@ -21,6 +21,7 @@ import {citadelClears} from './frostThroneLayout';
 import {miraPrison,type MiraPrison} from './frostPrison';
 import {frostCamps,type FrostCamps} from './frostCamps';
 import {SnowSky} from './snowSky';
+import {frostPalette} from './snowPalette';
 import {SnowFarShadow,applyFarShadow} from './snowFarShadow';
 import {SnowSpindrift} from './snowSpindrift';
 import {snowPines} from './snowPines';
@@ -86,6 +87,8 @@ export class SnowIsland {
  }
  constructor(){
   this.root.name='WORLD IV · Frostlight';this.root.visible=false;
+  // Gold sun, blue-violet shade (snowPalette.ts), before anything copies the sky's light.
+  frostPalette(this.sky);
   const dark=new THREE.MeshStandardMaterial({color:'#344959',roughness:.9});
   // Grown ice (SNOWFLOW's crystal shape and shading). The seed fixes the formations for every player.
   const {material:iceGlass,refresh:refreshIce}=iceMaterial({sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.refreshIce=refreshIce;this.iceGlass=iceGlass;
@@ -144,12 +147,12 @@ export class SnowIsland {
  /** Frostlight's carved gateway (frostPortal.ts), for the spawn portal and world2's onward gate. */
  gate(position:THREE.Vector3,label:string){return new FrostPortal(position,label,{ice:this.iceGlass,height:(x,z)=>this.height(x,z)});}
  /** Frostlight's own quest props for its DawnRequests (frostRequests.ts). */
- questProps(){return frostRequestLook({height:(x,z)=>this.height(x,z),ice:this.iceGlass});}
+ questProps(){return frostRequestLook({height:(x,z)=>this.height(x,z),ice:this.iceGlass,ground:this.terrain.uniforms});}
  /** The forest and the village need the kits, so they load after construction like DawnIsland's settlement. */
  async buildSettlement(){
   const height=(x:number,z:number)=>this.height(x,z);
   // The fields' groves stand in the same batch as the village forest: one draw for every pine.
-  const [forest,village,,camps,fields]=await Promise.all([snowPines([...snowTrees(),...snowGroves()],height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass}),buildSnowFields({height,ground:this.terrain.uniforms,sunDir:this.sky.sunDir,sky:this.sky})]);
+  const [forest,village,,camps,fields]=await Promise.all([snowPines([...snowTrees(),...snowGroves()],height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass,ground:this.terrain.uniforms,sun:{dir:this.sky.sunDir,color:this.sky.sunLight}}),buildSnowFields({height,ground:this.terrain.uniforms,sunDir:this.sky.sunDir,sky:this.sky})]);
   this.root.add(forest,village.group,camps.group,fields.group);this.camps=camps;this.fields=fields;this.village=village;this.basin.material=village.stone;
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */

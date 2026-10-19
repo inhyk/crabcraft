@@ -78,7 +78,8 @@ function tube(b:Builder,path:V[],r0:number,r1:number,c0:readonly number[],c1:rea
  * rime on the tips. Red-barked dogwood or olive-brown willow. */
 function twigs(b:Builder,o:V,s:number,seed:number,y0:number){
  const R=stream(seed*6263+5),red=R()<.45;
- const bark=red?[.045,.014,.011]:[.04,.028,.016],tipC=red?[.13,.03,.022]:[.1,.062,.03];
+ // Dogwood's winter stems are its colour: deep madder at the crown, scarlet toward the tips.
+ const bark=red?[.07,.016,.012]:[.04,.028,.016],tipC=red?[.25,.04,.024]:[.1,.062,.03];
  const branch=(start:V,dir:V,len:number,r:number,depth:number,al0:number)=>{
   const segs=4,path=[start.clone()],d=dir.clone();let p=start.clone();
   for(let k=0;k<segs;k++){d.add(V3((R()-.5)*.5,.06,(R()-.5)*.5)).normalize();p=p.clone().addScaledVector(d,len/segs);path.push(p);}

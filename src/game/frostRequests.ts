@@ -3,10 +3,11 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {type Kit,StaticBatch,trs} from '../world/kit';
 import {addPatch} from '../world/materials';
 import type {RequestLook,RequestSite,RequestState} from './dawnRequests';
-import {chipStone,driftBank,driftMaterial,frostStone,kitOnce,runeMaterial,runeQuad,runestone,snowyKit,stream} from './frostCraft';
+import {driftBank,driftMaterial,frostStone,kitOnce,runeMaterial,runeQuad,runestone,snowyKit,stream} from './frostCraft';
 import {FROST_LAMP_POSTS,FROST_SEAL_STONES} from './frostPropsLayout';
 import {type Crystal,crystalGeometry} from './iceCrystals';
 import {snowCover} from './snowCover';
+import {boulderGeometry,rockMaterial,snowSkirt,type SnowGroundUniforms} from './snowRocks';
 import {frozenPond} from './snowVillageDressing';
 
 /*
@@ -14,7 +15,9 @@ import {frozenPond} from './snowVillageDressing';
  * on their lids, frost blossoms in a snow mound, guide lanterns on timber posts set in cairns by the northern
  * road, frostiron crystals breaking out of a rock, an ice pearl in a half-open shell set in clear ice, and carved
  * rune stones whose seal glows with the aurora. What the player takes goes when it is taken; what stays (posts,
- * rocks, shells, stones) changes state: lanterns light, seals go dark. While an objective waits, gold glints rise
+ * rocks, shells, stones) changes state: lanterns light, seals go dark. Loose stones (the ore rocks, the cairns, the
+ * pebbles round the seals) are the field boulders' own rock (snowRocks.ts), so nothing in the snowfield is a
+ * different stone from the boulder beside it. While an objective waits, gold glints rise
  * round it over a soft glow on the snow, so it is found by eye.
  */
 
@@ -22,6 +25,8 @@ export interface FrostRequestOptions {
  height:(x:number,z:number)=>number;
  /** The island's grown ice (iceCrystals.ts). */
  ice:THREE.Material;
+ /** The baked ground (snowTerrain.ts uniforms): the rock's snow skirt reads it. */
+ ground:SnowGroundUniforms;
 }
 
 const UP=new THREE.Vector3(0,1,0);
@@ -30,6 +35,17 @@ const CUE:Record<string,[number,number,number,number]>={crate:[1.0,.2,1.6,1.7],h
 
 /** A site's own yaw and seed, from its position, so every client turns it the same way. */
 function siteHash(p:THREE.Vector3){const s=Math.sin(p.x*12.9898+p.z*78.233)*43758.5453;return s-Math.floor(s);}
+
+/**
+ * A small loose stone in the boulders' rock, long half-axis `r`, ground line at y=0, placed by `m`: sharp edged and,
+ * like the fields' pebbles, on the crust with no drift against it. `lie` is the snow its top holds (stones laid up
+ * on a cairn hold some).
+ */
+function fieldStone(seed:number,r:number,ht:number,m:THREE.Matrix4,lie=.08){
+ const g=boulderGeometry({r,h:ht,seed},6,2.2),c=g.getAttribute('color') as THREE.BufferAttribute;
+ for(let k=0;k<c.count;k++){c.setX(k,c.getX(k)*.88);c.setZ(k,lie);}
+ return g.applyMatrix4(m);
+}
 
 const SPARK_VERT=/* glsl */`
 attribute vec4 aSpark; // x node, y seed, z rate, w size
@@ -256,7 +272,7 @@ export function frostRequestLook(opts:FrostRequestOptions):RequestLook{
    sites=list;
    const stone=frostStone(),drift=driftMaterial(),ice=opts.ice,iron=frostironMaterial(),shellMat=shellMaterial(),pearlMat=pearlMaterial();
    runes=runeMaterial();
-   const stones:THREE.BufferGeometry[]=[],drifts:THREE.BufferGeometry[]=[],iceList:Crystal[]=[],shells:THREE.BufferGeometry[]=[],runeGeos:THREE.BufferGeometry[]=[];
+   const stones:THREE.BufferGeometry[]=[],rocks:THREE.BufferGeometry[]=[],drifts:THREE.BufferGeometry[]=[],iceList:Crystal[]=[],shells:THREE.BufferGeometry[]=[],runeGeos:THREE.BufferGeometry[]=[];
    const glowDiscs:THREE.BufferGeometry[]=[],poolDiscs:THREE.BufferGeometry[]=[],sparkPos:number[]=[],sparkAttr:number[]=[],haloPos:number[]=[],haloAttr:number[]=[],haloTint:number[]=[];
    const anchors:THREE.Object3D[]=[];
    // Kit pieces wait for the parse; their snowy materials are cloned once for every site.
@@ -306,10 +322,10 @@ export function frostRequestLook(opts:FrostRequestOptions):RequestLook{
      const toRoad=new THREE.Vector3(Math.sin(lyaw),0,Math.cos(lyaw));
      const plate=new THREE.Vector3(qx,gy+1.72,qz).addScaledVector(toRoad,.16),core=new THREE.Vector3(0,.55,1.1).multiplyScalar(s).applyAxisAngle(UP,lyaw).add(plate);
      anchor.position.copy(core);cueAt=core.clone();
-     // A cairn of field stones round the post's foot.
+     // A cairn of field stones round the post's foot, three more laid on the ring.
      const rr=stream(i*31+7);
-     for(let k=0;k<5;k++){const a=k/5*Math.PI*2+rr()*.5,d=.3+rr()*.08,sz=.2+rr()*.07;stones.push(chipStone(i*11+k,[sz*1.25,sz*.8,sz],{detail:3,planes:7}).applyMatrix4(trs(qx+Math.cos(a)*d,gy-.12,qz+Math.sin(a)*d,a,1)));}
-     for(let k=0;k<3;k++){const a=k/3*Math.PI*2+1,sz=.16+rr()*.05;stones.push(chipStone(i*11+7+k,[sz*1.2,sz*.8,sz],{detail:3,planes:7}).applyMatrix4(trs(qx+Math.cos(a)*.17,gy+.2,qz+Math.sin(a)*.17,a+.4,1,.15,.1)));}
+     for(let k=0;k<5;k++){const a=k/5*Math.PI*2+rr()*.5,d=.32+rr()*.08,sz=.2+rr()*.07;rocks.push(fieldStone(i*11+k,sz*1.3,sz*.9,trs(qx+Math.cos(a)*d,gy-.02,qz+Math.sin(a)*d,a,1)));}
+     for(let k=0;k<3;k++){const a=k/3*Math.PI*2+1,sz=.16+rr()*.05;rocks.push(fieldStone(i*11+7+k,sz*1.25,sz*.8,trs(qx+Math.cos(a)*.2,gy+.24,qz+Math.sin(a)*.2,a+.4,1,.15,.1),.7));}
      bank(driftBank([{x:qx,z:qz,r:.45}],h,{reach:.45,height:.26,seed:i+9}));
      const flame=new THREE.Mesh(new THREE.LatheGeometry([[0,-.1],[.05,-.08],[.078,-.03],[.072,.04],[.046,.1],[.02,.15],[0,.19]].map(([r,y])=>new THREE.Vector2(r*s,y*s)),12),new THREE.MeshStandardMaterial({name:'frostlight-guide-flame',color:'#ffe2a8',emissive:'#ffb04c',emissiveIntensity:5}));
      flame.position.copy(core);flame.name=`frostlight-guide-flame-${letter}`;flame.visible=false;root.add(flame);flames[i]=flame;
@@ -323,15 +339,15 @@ export function frostRequestLook(opts:FrostRequestOptions):RequestLook{
      });
     }else if(site.style==='ore'){
      anchor.position.copy(P).y+=.75;
-     const rock=chipStone(i*13+1,[.74,.56,.62],{detail:4,planes:12,flare:.3,taper:.25});
-     const rockM=trs(P.x,h(P.x,P.z)-.16,P.z,yaw,1,(R()-.5)*.1,(R()-.5)*.1);
-     // Darker field rock: the occlusion colour scales its tone.
-     const col=rock.getAttribute('color') as THREE.BufferAttribute;for(let k=0;k<col.count;k++)col.setXYZ(k,col.getX(k)*.62,col.getY(k)*.64,col.getZ(k)*.7);
-     stones.push(rock.clone().applyMatrix4(rockM));
-     for(let k=0;k<4;k++){const a=R()*Math.PI*2,d=1.0+R()*.5,sz=.12+R()*.1,w=local(Math.cos(a)*d,Math.sin(a)*d);stones.push(chipStone(i*13+3+k,[sz*1.2,sz*.85,sz],{detail:3,planes:7}).applyMatrix4(trs(w.x,w.y-.06,w.z,R()*6,1)));}
+     // A boulder of the field's own rock, the frostiron breaking out of it.
+     const rock=boulderGeometry({r:1.0,h:1.05,seed:i*13+1});
+     let low=Infinity;for(let a=0;a<12;a++)low=Math.min(low,h(P.x+Math.cos(a*.5236)*.8,P.z+Math.sin(a*.5236)*.8));
+     const rockM=trs(P.x,low*.6+h(P.x,P.z)*.4-.02,P.z,yaw,1,(R()-.5)*.1,(R()-.5)*.1);
+     rocks.push(snowSkirt(rock.clone().applyMatrix4(rockM),P.x,P.z,h,.15,.09,i));
+     for(let k=0;k<4;k++){const a=R()*Math.PI*2,d=1.1+R()*.5,sz=.12+R()*.1,w=local(Math.cos(a)*d,Math.sin(a)*d);rocks.push(fieldStone(i*13+3+k,sz*1.25,sz*.6,trs(w.x,w.y-.03,w.z,R()*6,1)));}
      bank(driftBank(W(local,[{x:0,z:0,r:.62}]),h,{reach:.45,height:.22,seed:i+11}));
      // Veins break out of the rock's upper faces as clusters of frostiron.
-     const centre=new THREE.Vector3(0,.5,0),dirs=[0,1,2].map(k=>{const a=k/3*Math.PI*2+R()*.8,el=.45+R()*.5;return new THREE.Vector3(Math.cos(a)*Math.cos(el),Math.sin(el),Math.sin(a)*Math.cos(el));});
+     const centre=new THREE.Vector3(0,.3,0),dirs=[0,1,2].map(k=>{const a=k/3*Math.PI*2+R()*.8,el=.45+R()*.5;return new THREE.Vector3(Math.cos(a)*Math.cos(el),Math.sin(el),Math.sin(a)*Math.cos(el));});
      const veins:Crystal[]=[];
      for(const {p,n} of surfacePoints(rock,dirs,centre)){
       const ax=n.clone().multiplyScalar(.65).addScaledVector(UP,.5).normalize(),hgt=.42+R()*.3;
@@ -362,7 +378,7 @@ export function frostRequestLook(opts:FrostRequestOptions):RequestLook{
      const [sx,sz]=FROST_SEAL_STONES['abc'.indexOf(letter)],road=-Math.sign(sx),gy=h(sx,sz),syaw=road*Math.PI/2+(R()-.5)*.2;
      const stoneM=trs(sx,gy-.22,sz,syaw,1,(R()-.5)*.06,(R()-.5)*.07),D=.4;
      stones.push(runestone(i*17+5,1.05,2.05,D).applyMatrix4(stoneM));
-     for(let k=0;k<3;k++){const a=R()*Math.PI*2,d=.75+R()*.3,sz2=.14+R()*.08;stones.push(chipStone(i*17+9+k,[sz2*1.2,sz2*.85,sz2],{detail:3,planes:7}).applyMatrix4(trs(sx+Math.cos(a)*d,gy-.05,sz+Math.sin(a)*d,R()*6,1)));}
+     for(let k=0;k<3;k++){const a=R()*Math.PI*2,d=.8+R()*.3,sz2=.14+R()*.08;rocks.push(fieldStone(i*17+9+k,sz2*1.25,sz2*.65,trs(sx+Math.cos(a)*d,gy-.03,sz+Math.sin(a)*d,R()*6,1)));}
      const toWorld=(x:number,z:number)=>{const w=new THREE.Vector3(x,0,z).applyAxisAngle(UP,syaw);w.x+=sx;w.z+=sz;w.y=h(w.x,w.z);return w;};
      bank(driftBank(W(toWorld,[{x:-.3,z:0,r:.22},{x:0,z:0,r:.22},{x:.3,z:0,r:.22}]),h,{reach:.45,height:.28,seed:i+17}));
      const face=new THREE.Matrix4().multiplyMatrices(stoneM,trs(0,1.22,D/2+.003,0,1));
@@ -385,6 +401,7 @@ export function frostRequestLook(opts:FrostRequestOptions):RequestLook{
    });
    const add=(mesh:THREE.Mesh|THREE.Points,name:string,shadow=false)=>{mesh.name=name;mesh.castShadow=shadow;mesh.receiveShadow=mesh instanceof THREE.Mesh;root.add(mesh);return mesh;};
    if(stones.length)add(new THREE.Mesh(mergeGeometries(stones,false)!,stone),'frostlight-quest-stones',true);
+   if(rocks.length){const rockMat=rockMaterial(opts.ground,.25,.45,.6);rockMat.vertexColors=true;add(new THREE.Mesh(mergeGeometries(rocks,false)!,rockMat),'frostlight-quest-rocks',true);}
    if(drifts.length)add(new THREE.Mesh(mergeGeometries(drifts,false)!,drift),'frostlight-quest-drifts',true);
    if(iceList.length)add(new THREE.Mesh(crystalGeometry(iceList),ice),'frostlight-pearl-ice-crystals',true);
    if(shells.length)add(new THREE.Mesh(mergeGeometries(shells,false)!,shellMat),'frostlight-pearl-shells',true);
