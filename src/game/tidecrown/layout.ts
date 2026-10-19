@@ -177,6 +177,12 @@ export function tidecrownPlacements(h: Height): TcPlacement[] {
     } else wallRun(h, out, 'TC_WardWall_12', P.wardWall.len, P.wardWall.h, [a[0] + ux * inset, a[1] + uz * inset], [b[0] - ux * inset, b[1] - uz * inset], 'tc-ward');
     tower(h, out, 'TC_WardTower', P.wardTower.r, P.wardTower.h, a[0], a[1], 'tc-ward');
   }
+  // Wing walls where the bridge meets each bank: the ward wall set into the shore.
+  // The forest road reaches the south bridgehead from the east, so that wing is short.
+  for (const [t, s, len] of [[-12.5, -13.6, 1], [-12.5, 13.6, 1], [-96.5, -13.6, 1], [-96.5, 9.8, 0.36]]) {
+    const [x, z] = tcAxis(t, s);
+    out.push(place('TC_WardWall_12', x, TC_LEVEL.deck + 0.9 - P.wardWall.h * 0.9, z, TC_YAW, 'tc-bridge', len, 0.9, 1.2));
+  }
   // Crownshell Keep, its front toward the ward gate.
   out.push(place('TC_Keep', TC_KEEP.x, h(TC_KEEP.x, TC_KEEP.z), TC_KEEP.z, TC_YAW, 'tc-keep'));
   return out;
@@ -255,10 +261,14 @@ function registerSurfaces(col: Collision): void {
   // King's Stair: local +Z points down the stair toward the gate.
   const tm = (TC_T.stairFoot + TC_T.stairTop) / 2, [sx, sz] = tcAxis(tm), run = TC_T.stairTop - TC_T.stairFoot;
   col.addSurface(rectSurface(sx, sz, 8, run / 2, TC_YAW, (TC_LEVEL.upper + TC_LEVEL.plateau) / 2, 0, -(TC_LEVEL.plateau - TC_LEVEL.upper) / run));
-  // Stair balustrades.
+  // Stair balustrades, and the brazier newels at its foot and head (structures.ts builds them).
   for (const k of [-1, 1]) {
     const [x, z] = tcAxis(tm, k * 8.6);
     col.addBox(x, z, 0.6, run / 2, TC_YAW, TC_LEVEL.upper - 2, TC_LEVEL.plateau + 2);
+    for (const [t, y] of [[TC_T.stairFoot - 1.5, TC_LEVEL.upper], [TC_T.stairTop + 1, TC_LEVEL.plateau]]) {
+      const [nx, nz] = tcAxis(t, k * 9.4);
+      col.addBox(nx, nz, 1.5, 1.5, TC_YAW, y - 1, y + 5);
+    }
   }
 }
 

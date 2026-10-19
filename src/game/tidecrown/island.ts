@@ -150,6 +150,7 @@ export class TidecrownIsland {
       this.foliage?.update(camera);
     }
     if (this.lanternGlow) this.lanternGlow.emissiveIntensity = 3.2 + 0.5 * Math.sin(time * 1.3);
+    this.structures.flame.emissiveIntensity = 2.6 + 0.6 * Math.sin(time * 11) * Math.sin(time * 6.3);
   }
 
   dispose(): void {

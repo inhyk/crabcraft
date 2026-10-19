@@ -67,21 +67,12 @@ function buildStair(batch: StaticBatch, mats: TidecrownMaterials): THREE.Vector3
   return braziers;
 }
 
-/** Wing walls where the bridge meets each bank, the kit's ward wall set into the shore. */
-function abutments(out: TcPlacement[]): void {
-  for (const t of [-12.5, -96.5]) {
-    for (const s of [-1, 1]) {
-      const [x, z] = tcAxis(t, s * 13.6);
-      out.push({ piece: 'TC_WardWall_12', x, y: TC_LEVEL.deck + 0.9 - 16 * 0.9, z, yaw: TC_YAW, sx: 1, sy: 0.9, sz: 1.2, batch: 'tc-bridge' });
-    }
-  }
-}
-
 export interface TidecrownStructures {
   group: THREE.Group;
   lantern: THREE.Group;
   lanternAt: THREE.Vector3;
   braziers: THREE.Vector3[];
+  flame: THREE.MeshStandardMaterial;
   /** Placements by batch, for the QA report. */
   batches: Record<string, number>;
 }
@@ -107,9 +98,7 @@ export function buildTidecrownStructures(kit: Kit, village: Kit, mats: Tidecrown
   const override = mats as unknown as Record<string, THREE.Material>;
   const batches = new Map<string, StaticBatch>();
   const count: Record<string, number> = {};
-  const all = [...placements];
-  abutments(all);
-  for (const p of all) {
+  for (const p of placements) {
     if (!kit.has(p.piece)) continue;
     let b = batches.get(p.batch);
     if (!b) batches.set(p.batch, (b = new StaticBatch(kit, p.batch)));
@@ -122,6 +111,14 @@ export function buildTidecrownStructures(kit: Kit, village: Kit, mats: Tidecrown
   group.add(stair.build());
   for (const b of batches.values()) group.add(b.build());
   group.add(buildBanners(placements));
+  // Brazier flames at the stair's foot and head: they bloom and flicker (island update).
+  const flame = new THREE.MeshStandardMaterial({ name: 'tc-brazier-flame', color: '#ffb35a', emissive: '#ff8a2a', emissiveIntensity: 3, transparent: true, opacity: 0.9, depthWrite: false });
+  const flames = new THREE.InstancedMesh(new THREE.ConeGeometry(0.9, 2.4, 7).translate(0, 1.1, 0), flame, braziers.length);
+  braziers.forEach((b, i) => flames.setMatrixAt(i, trs(b.x, b.y - 0.75, b.z, i)));
+  flames.name = 'tc-brazier-flames';
+  flames.castShadow = false;
+  flames.computeBoundingSphere();
+  group.add(flames);
   // The lantern stays its own mesh: it pulses and blooms.
   const lanternAt = new THREE.Vector3(...lanternSpot(height));
   const lantern = new THREE.Group();
@@ -144,5 +141,5 @@ export function buildTidecrownStructures(kit: Kit, village: Kit, mats: Tidecrown
     });
     group.add(st);
   });
-  return { group, lantern, lanternAt, braziers, batches: count };
+  return { group, lantern, lanternAt, braziers, flame, batches: count };
 }
