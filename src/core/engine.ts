@@ -1,5 +1,6 @@
 // Renderer, post-processing and the frame loop. One Engine per page; screens swap the view.
 import * as THREE from 'three';
+import { trackShadowPass } from './shadowPass';
 import {
   BloomEffect,
   BrightnessContrastEffect,
@@ -194,6 +195,7 @@ export class Engine {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.info.autoReset = false;
+    trackShadowPass(this.renderer);
     this.canvas = this.renderer.domElement;
     this.canvas.className = 'cc-canvas';
     container.appendChild(this.canvas);

@@ -82,7 +82,11 @@ export class SeeThrough {
   private patch(src: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
     const m = src.clone();
     m.name = `${src.name}+see`;
-    m.onBeforeCompile = (shader) => {
+    // A material with its own shader patch (the far LOD body) keeps it, under its own program key.
+    const own = Object.hasOwn(m, 'onBeforeCompile') ? m.onBeforeCompile : null;
+    const ownKey = own ? m.customProgramCacheKey() : '';
+    m.onBeforeCompile = (shader, renderer) => {
+      own?.call(m, shader, renderer);
       Object.assign(shader.uniforms, this.uniforms);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <clipping_planes_pars_fragment>', `#include <clipping_planes_pars_fragment>\n${DECL}`)
@@ -90,7 +94,7 @@ export class SeeThrough {
     };
     // Every instance runs the same GLSL, so they share programs; each material still binds the
     // uniforms its own onBeforeCompile handed it.
-    m.customProgramCacheKey = () => 'see-through';
+    m.customProgramCacheKey = () => `see-through${ownKey}`;
     return m;
   }
 }

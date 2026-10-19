@@ -161,6 +161,23 @@ export function snowBoulders(): FieldBoulder[] {
   return (bouldersMemo = out);
 }
 
+/** Stones too small to stand in the way: a few round each boulder field, the crags' stone again. Never solid. */
+let pebblesMemo: FieldBoulder[] | null = null;
+export function snowPebbles(): FieldBoulder[] {
+  if (pebblesMemo) return pebblesMemo;
+  const out: FieldBoulder[] = [];
+  const R = fieldStream(4242);
+  for (const b of snowBoulders()) {
+    const n = Math.floor(R() * 3.2);
+    for (let k = 0; k < n; k++) {
+      const a = R() * 6.283, d = b.r + 0.35 + R() * 1.4, x = b.x + Math.cos(a) * d, z = b.z + Math.sin(a) * d, r = 0.14 + R() * 0.22;
+      if (!fieldClear(x, z, r, false) || out.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + r + 0.3)) continue;
+      out.push({ x: +x.toFixed(2), z: +z.toFixed(2), r: +r.toFixed(2), h: +(r * (0.35 + R() * 0.3)).toFixed(2), yaw: +(R() * 6.283).toFixed(3), seed: 9000 + out.length });
+    }
+  }
+  return (pebblesMemo = out);
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Kit pieces: dead and twisted trees, bushes and ferns through the snow, and the small abandoned scenes.
 
@@ -188,6 +205,8 @@ export const MINERS_TRAIL: readonly XZ[] = [[13, -17], [18, -20.5], [23, -24], [
 export const ORE_WAGON = { x: 44, z: -36.5, yaw: 2.5 } as const;
 /** The woodcutter's clearing at the edge of the Frostpine Woods. */
 export const WOODCUT = { x: -35, z: -28 } as const;
+/** The woodcutter's lantern: a stake driven into a stump by the block (snowStumps()), the lantern hung out over the clearing. */
+export const WOODCUT_LANTERN = { x: WOODCUT.x + 4.8, z: WOODCUT.z - 1.4, stump: 0.5, pole: 1.55, yaw: -1.29, s: 0.62 } as const;
 /** Lone hero trees: silhouettes on the crests. */
 const HERO_TREES: readonly [string, number, number, number, number][] = [
   ['TwistedTree_1', 58.5, -25, 0.4, 0.42],
@@ -222,7 +241,7 @@ export function snowFieldPieces(): FieldPiece[] {
     const R = fieldStream(400 + i);
     add({ kit: 'village', piece: i % 2 ? 'Prop_WoodenFence_Extension1' : 'Prop_WoodenFence_Single', x, z, yaw: yaw + (R() - 0.5) * 0.25, s: 1, sink: 0.12 + R() * 0.1, pitch: (R() - 0.5) * 0.12, roll: (R() - 0.5) * 0.3, solid: { hx: 1.05, hz: 0.14, h: 0.8 } });
   });
-  // The ore wagon, its near wheels sunk, crates spilled behind it.
+  // The ore wagon, its near wheels sunk, crates spilled behind it, its tools dropped.
   {
     const { x, z, yaw } = ORE_WAGON, c = Math.cos(yaw), s = Math.sin(yaw);
     const at = (lx: number, lz: number): XZ => [x + c * lx + s * lz, z - s * lx + c * lz];
@@ -232,50 +251,77 @@ export function snowFieldPieces(): FieldPiece[] {
     const [cx, cz] = at(-1.8, 1.6); add({ kit: 'props', piece: 'Barrel', x: cx, z: cz, yaw: yaw + 1.2, s: 1, sink: 0.12, roll: Math.PI / 2, solid: { r: 0.5, h: 0.7 } });
     const [dx, dz] = at(1.4, 2.4); add({ kit: 'props', piece: 'Pickaxe_Bronze', x: dx, z: dz, yaw: yaw + 0.3, s: 1, sink: 0.3, pitch: 0.35, fine: true });
     const [ex, ez] = at(-1.6, -1.4); add({ kit: 'props', piece: 'Chain_Coil', x: ex, z: ez, yaw: 0.7, s: 1, sink: 0.02, fine: true });
-    const [fx, fz] = at(3.3, -2.0); add({ kit: 'props', piece: 'Bag', x: fx, z: fz, yaw: yaw + 2.0, s: 1, sink: 0.25, roll: 0.5, fine: true });
   }
   // A lantern dropped on the trail, its glass to the sky.
   add({ kit: 'props', piece: 'Lantern_Wall', x: 29.5, z: -25.2, yaw: 0.9, s: 0.75, sink: 0.08, pitch: -1.35, fine: true });
-  // The woodcutter's clearing: an axe left in the block, a bag, a bucket and a coil of rope on a stump; logs and stumps are in snowLogs().
+  // The woodcutter's clearing: an axe left in the block, a bucket and a coil of rope on a stump, a lantern on a stake; logs and stumps are in snowLogs().
   {
     const { x, z } = WOODCUT;
     add({ kit: 'props', piece: 'Axe_Bronze', x: x + 0.05, z: z + 0.05, yaw: 0.6, s: 1.1, sink: -0.62, pitch: 0.42, fine: false });
     add({ kit: 'props', piece: 'Rope_2', x: x + 2.6, z: z + 4.6, yaw: 1.3, s: 0.8, sink: -0.44, fine: true });
-    add({ kit: 'props', piece: 'Bag', x: x + 1.4, z: z + 1.6, yaw: 2.8, s: 0.9, sink: 0.12, fine: true });
     add({ kit: 'props', piece: 'Bucket_Wooden_1', x: x - 1.6, z: z + 1.0, yaw: 0.3, s: 1, sink: 0.08, roll: 1.4, fine: true });
-  }
-  // Undergrowth: bushes and ferns break the snow at grove margins, round boulders and dead trees.
-  const R = fieldStream(9090);
-  // [x, z, ring radius, shaded]: ferns only grow in the shade of trees.
-  const anchors: [number, number, number, boolean][] = [
-    ...snowBoulders().map((b): [number, number, number, boolean] => [b.x, b.z, b.r + 0.8, false]),
-    ...out.filter((p) => /Tree/.test(p.piece)).map((p): [number, number, number, boolean] => [p.x, p.z, 1.6, true]),
-    ...snowGroves().filter((_, i) => i % 3 === 0).map((t): [number, number, number, boolean] => [t.x, t.z, 1.8, true]),
-    // Scrub through the drifts in front of the western and eastern fields.
-    ...([[-39, -8], [-36, -12], [-41, -2], [-34, -4], [38, -2], [32, -10], [27, 0]] as const).map(([x, z]): [number, number, number, boolean] => [x, z, 0.2, false]),
-  ];
-  for (const [ax, az, ar, shade] of anchors) {
-    const n = 1 + Math.floor(R() * 3);
-    for (let k = 0; k < n; k++) {
-      const a = R() * 6.283, d = ar + R() * 1.6, x = ax + Math.cos(a) * d, z = az + Math.sin(a) * d;
-      if (!fieldClear(x, z, 0.6, false)) continue;
-      // In the open: bush or dry grass; under trees, ferns too.
-      const pick = shade ? R() : R() < 0.55 ? 0.2 : 0.9;
-      if (pick < 0.45) add({ kit: 'nature', piece: 'Bush_Common', x, z, yaw: R() * 6.283, s: 0.42 + R() * 0.3, sink: 0.35, fine: k > 0 });
-      else if (pick < 0.75) add({ kit: 'nature', piece: 'Fern_1', x, z, yaw: R() * 6.283, s: 0.45 + R() * 0.25, sink: 0.12, fine: true });
-      else add({ kit: 'nature', piece: R() < 0.5 ? 'Grass_Wispy_Tall' : 'Grass_Wispy_Short', x, z, yaw: R() * 6.283, s: 0.9 + R() * 0.6, sink: 0.08, fine: true });
-    }
-  }
-  // Dry grass through the scoured crust.
-  for (const sc of snowScours()) {
-    const G = fieldStream(sc.seed * 97 + 1), c = Math.cos(sc.yaw), sn = Math.sin(sc.yaw);
-    for (let k = 0; k < 8; k++) {
-      const lx = (G() * 2 - 1) * 0.75 * sc.rx, lz = (G() * 2 - 1) * 0.75 * sc.rz, x = sc.x + c * lx + sn * lz, z = sc.z - sn * lx + c * lz;
-      if (!fieldClear(x, z, 0.3, false)) continue;
-      add({ kit: 'nature', piece: G() < 0.6 ? 'Grass_Wispy_Short' : 'Grass_Wispy_Tall', x, z, yaw: G() * 6.283, s: 0.8 + G() * 0.5, sink: 0.05, fine: k > 3 });
-    }
+    // The lantern on its stake: the kit's wall lantern, its bracket at the stake's head (1.42 m tall at scale 1).
+    const L = WOODCUT_LANTERN;
+    add({ kit: 'props', piece: 'Lantern_Wall', x: L.x, z: L.z, yaw: L.yaw, s: L.s, sink: -(L.stump + L.pole - 1.42 * L.s - 0.05) });
   }
   return (piecesMemo = out);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Scrub (snowScrub.ts): dry grass and dwarf willow through the snow, sparse and in the lee of something, and the
+// cloth the miners tied to their trail's posts. Never solid.
+
+export interface FieldScrub { kind: 'grass' | 'twig' | 'cloth'; x: number; z: number; yaw: number; s: number; seed: number; knot?: number; post?: number; dye?: number; fine?: boolean }
+/** Where on a trail fence the cloth is knotted: the post at its local -x end, a hand below the top. */
+export const TRAIL_KNOT = { x: -0.95, y: 0.68 } as const;
+let scrubMemo: FieldScrub[] | null = null;
+export function snowScrubItems(h: Height = snowHeight): FieldScrub[] {
+  if (scrubMemo) return scrubMemo;
+  const out: FieldScrub[] = [];
+  const R = fieldStream(9090);
+  const put = (kind: FieldScrub['kind'], x: number, z: number, s: number, fine: boolean) => {
+    if (!fieldClear(x, z, 0.5, false)) return;
+    if (out.some((o) => o.kind !== 'cloth' && Math.hypot(o.x - x, o.z - z) < 0.9)) return;
+    out.push({ kind, x: +x.toFixed(2), z: +z.toFixed(2), yaw: +(R() * 6.283).toFixed(3), s: +s.toFixed(2), seed: out.length + 1, fine });
+  };
+  // In the lee of boulders (downwind, +x): a tuft or two where the drift is shallow, willow by the big ones.
+  for (const b of snowBoulders()) {
+    if (R() < 0.35) continue;
+    const a = (R() - 0.5) * 1.8, d = b.r + 0.4 + R() * 0.8;
+    put(b.r > 1.1 && R() < 0.5 ? 'twig' : 'grass', b.x + Math.cos(a) * d, b.z + Math.sin(a) * d, 0.95 + R() * 0.55, false);
+    if (R() < 0.4) put('grass', b.x + Math.cos(a + 0.7) * (d + 0.5), b.z + Math.sin(a + 0.7) * (d + 0.5), 0.6 + R() * 0.4, true);
+  }
+  // Willow at the margins of the groves and round the lone trees.
+  snowGroves().forEach((t, i) => {
+    if (i % 5) return;
+    const a = R() * 6.283, d = 2 + R() * 1.5;
+    put('twig', t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, 0.9 + R() * 0.6, i % 10 !== 0);
+  });
+  for (const p of snowFieldPieces()) if (/Tree/.test(p.piece)) { const a = R() * 6.283; put(R() < 0.5 ? 'twig' : 'grass', p.x + Math.cos(a) * 1.4, p.z + Math.sin(a) * 1.4, 0.8 + R() * 0.4, false); }
+  // Dry grass through the scoured crust, in a few clumps rather than a sprinkle.
+  for (const sc of snowScours(h)) {
+    const G = fieldStream(sc.seed * 97 + 1), c = Math.cos(sc.yaw), sn = Math.sin(sc.yaw);
+    for (let k = 0; k < 5; k++) {
+      const lx = (G() * 2 - 1) * 0.6 * sc.rx, lz = (G() * 2 - 1) * 0.6 * sc.rz;
+      put('grass', sc.x + c * lx + sn * lz, sc.z - sn * lx + c * lz, 0.7 + G() * 0.6, k > 2);
+    }
+  }
+  // Scrub breaking the drifts in front of the western and eastern fields.
+  for (const [x, z] of [[-39, -8], [-36, -12], [-41, -2], [38, -2], [32, -10], [27, 0]] as const) {
+    put('grass', x, z, 0.9 + R() * 0.4, false);
+    put(R() < 0.5 ? 'twig' : 'grass', x + 0.9 + R(), z + R() - 0.5, 0.7 + R() * 0.4, true);
+  }
+  // Rags of red and ochre cloth the miners tied to their trail posts, so the way showed in a whiteout.
+  for (const p of snowFieldPieces()) {
+    if (!/WoodenFence/.test(p.piece)) continue;
+    // The knot through the fence's own placement (kit.ts trs: roll, then pitch, then yaw), without three.js here.
+    const pr = p.pitch ?? 0, rl = p.roll ?? 0, kx = TRAIL_KNOT.x * p.s, ky = TRAIL_KNOT.y * p.s;
+    const x1 = kx * Math.cos(rl) - ky * Math.sin(rl), y1 = kx * Math.sin(rl) + ky * Math.cos(rl);
+    const y2 = y1 * Math.cos(pr), z2 = y1 * Math.sin(pr);
+    const x = p.x + x1 * Math.cos(p.yaw) + z2 * Math.sin(p.yaw), z = p.z - x1 * Math.sin(p.yaw) + z2 * Math.cos(p.yaw), y = h(p.x, p.z) - p.sink + y2;
+    out.push({ kind: 'cloth', x: +x.toFixed(3), z: +z.toFixed(3), yaw: p.yaw, s: 1, seed: out.length + 1, knot: +(y - h(x, z)).toFixed(3), post: 0.065, dye: out.filter((o) => o.kind === 'cloth').length % 3 === 1 ? 1 : 0 });
+  }
+  return (scrubMemo = out);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

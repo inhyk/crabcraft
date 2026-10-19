@@ -58,29 +58,35 @@ try{
   const w=window.app.current.game.world2.fourth,f=w.root.getObjectByName('frostlight-fields');
   const L=await import('/src/game/snowFieldsLayout.ts');
   const m=new window.app.current.game.camera.matrixWorld.constructor();
-  const groves=w.root.getObjectByName('frostlight-groves');
+  // The groves stand in the village forest's batch (world4.ts), one draw for every pine.
+  const groves=w.root.getObjectByName('frostlight-snow-pines');
   const xz=b=>{const out=[];for(let i=0;i<b.instanceCount;i++){b.getMatrixAt(i,m);out.push([+m.elements[12].toFixed(2),+m.elements[14].toFixed(2)]);}return out.sort((a,c)=>a[0]-c[0]||a[1]-c[1]);};
-  const want=L.snowGroves().map(t=>[+t.x.toFixed(2),+t.z.toFixed(2)]).sort((a,c)=>a[0]-c[0]||a[1]-c[1]);
+  const want=L.snowGroves().map(t=>[+t.x.toFixed(2),+t.z.toFixed(2)]);
   // Placeholder primitives: three's stock shapes, or one mesh per piece outside a batch.
   const stock=/^(Box|Cylinder|Cone|Sphere|Plane|Circle|Torus|Octahedron|Icosahedron|Capsule|Dodecahedron|Tetrahedron)Geometry$/;
   let primitives=[],meshes=0,batched=0,instances=0;
   f.traverse(o=>{if(o.isMesh){meshes++;if(stock.test(o.geometry.type))primitives.push(o.name+':'+o.geometry.type);}if(o.isBatchedMesh){batched++;instances+=o.instanceCount;}});
+  // Kit pieces are batched per material across the field, one instance per placement.
+  const kit=f.getObjectByName('frostlight-field-kit'),kitMeshes=kit?kit.children.map(m=>({name:m.name,batched:!!m.isBatchedMesh,instances:m.instanceCount,map:!!m.material.map,shadow:m.castShadow})):[];
   // Every solid's collider is in the island's collision, at its own position.
   const shapes=w.collision.shapes,has=(x,z)=>shapes.some(s=>{const c=s.kind===0?s.c:s.b;return Math.abs(c.x-x)<1e-6&&Math.abs(c.z-z)<1e-6;});
   const solids=[...L.snowGroves(),...L.snowBoulders(),...L.snowFieldPieces().filter(p=>p.solid),...L.snowLogs(),...L.snowStumps()];
   const missing=solids.filter(s=>!has(s.x,s.z)).map(s=>[s.x,s.z]);
-  return {found:!!f,data:f?.userData.fields,groves:groves?.userData.groves,groveMatch:groves?groves.children.every(b=>JSON.stringify(xz(b))===JSON.stringify(want)):false,
-   groveMeshes:groves?.children.length,primitives,meshes,batched,instances,missing,solids:solids.length,
+  const has2=(list,[x,z])=>list.some(([a,b])=>Math.abs(a-x)<.006&&Math.abs(b-z)<.006);
+  return {found:!!f,data:f?.userData.fields,groves:L.snowGroves().length,groveMatch:groves?groves.children.every(b=>{const got=xz(b);return want.every(q=>has2(got,q));}):false,
+   groveMeshes:groves?.children.length,primitives,meshes,batched,instances,kitMeshes,missing,solids:solids.length,
    names:f.children.map(c=>c.name)};
  });
  assert.equal(r.found,true,'frostlight-fields group exists');
- assert.equal(r.groves,r.data.groves);assert.ok(r.groves>=50,`groves hold ${r.groves} extra pines`);assert.equal(r.groveMatch,true,'every grove pine stands on its snowGroves() spot');
+ assert.equal(r.groves,r.data.groves);assert.ok(r.groves>=50,`groves hold ${r.groves} extra pines`);assert.equal(r.groveMatch,true,'every grove pine stands on its snowGroves() spot in the forest batch');
  for(const k of ['boulders','logs','stumps','ponds','tracks','scours','slabs'])assert.ok(r.data[k]>0,`${k}: ${r.data[k]}`);
- assert.ok(r.data.pieces>=150,`kit pieces placed: ${r.data.pieces}`);
+ // The kit bushes, ferns and grass cards gave way to built scrub (snowScrub.ts); the kit pieces left are trees and props.
+ assert.ok(r.data.pieces>=20,`kit pieces placed: ${r.data.pieces}`);
+ assert.ok(r.data.scrub.grass>=40&&r.data.scrub.twig>=15&&r.data.scrub.cloth>=4,`scrub built: ${JSON.stringify(r.data.scrub)}`);
  assert.deepEqual(r.primitives,[],'no stock primitive geometry in the fields');
- assert.ok(r.batched>=8,`kit pieces batched: ${r.batched} BatchedMeshes, ${r.instances} instances`);
+ assert.ok(r.kitMeshes.length>=4&&r.kitMeshes.length<=7&&r.kitMeshes.every(m=>m.batched&&m.map&&m.shadow),`kit pieces batched per material: ${JSON.stringify(r.kitMeshes)}`);
  assert.deepEqual(r.missing,[],'every solid has a collider at its position');
- for(const n of ['frostlight-groves','frostlight-field-boulders','frostlight-field-wood','frostlight-field-trails','frostlight-field-scours','frostlight-ice-shelves','frostlight-field-fine'])assert.ok(r.names.includes(n),`${n} built`);
+ for(const n of ['frostlight-field-kit','frostlight-field-boulders','frostlight-field-wood','frostlight-field-trails','frostlight-field-scours','frostlight-ice-shelves','frostlight-field-ponds','frostlight-field-scrub'])assert.ok(r.names.includes(n),`${n} built`);
  console.log('PASS fields built',JSON.stringify({data:r.data,meshes:r.meshes,batched:r.batched,instances:r.instances,solids:r.solids}));
  const programs=await p.evaluate(()=>window.app.engine.renderer.info.programs.map(q=>q.cacheKey));
  await view(p,'east',[44,-36.5,.8],[33,2.6,-22]);
@@ -88,13 +94,15 @@ try{
  await view(p,'pond',[54,-11,0],[44,2.4,-1]);
  await view(p,'shore',[114,52,0],[97,5,30]);
  const after=await p.evaluate(()=>window.app.engine.renderer.info.programs.map(q=>q.cacheKey));
- for(const k of ['frostlight-field-bark','frostlight-field-pond','frostlight-sea-ice','-skirt'])assert.ok(after.some(c=>c.includes(k)),`${k} shader compiled`);
+ for(const k of ['frostlight-field-bark','frostlight-field-pond','frostlight-sea-ice','frostlight-field-scrub','-skirt'])assert.ok(after.some(c=>c.includes(k)),`${k} shader compiled`);
  assert.ok(after.length>=programs.length);
  console.log('PASS field shaders compiled; wrote tmp/qa/snow-fields-{east,west,pond,shore}.png');
  await p.close();
  const low=await load('low');
- const lr=await low.evaluate(()=>{const f=window.app.current.game.world2.fourth.root.getObjectByName('frostlight-fields');return {fine:f.getObjectByName('frostlight-field-fine').visible,trails:f.getObjectByName('frostlight-field-trails').visible,groves:f.getObjectByName('frostlight-groves').visible,boulders:f.getObjectByName('frostlight-field-boulders').visible};});
- assert.deepEqual(lr,{fine:false,trails:false,groves:true,boulders:true},'low quality drops only the fine dressing and the trails');
+ const lr=await low.evaluate(()=>{const w=window.app.current.game.world2.fourth,f=w.root.getObjectByName('frostlight-fields');const cut=m=>m.geometry.drawRange.count<m.geometry.index.count;
+  const kit=f.getObjectByName('frostlight-field-kit').children,hidden=b=>{for(let i=0;i<b.instanceCount;i++)if(!b.getVisibleAt(i))return true;return false;};
+  return {fine:!kit.some(hidden)?'kept':'dropped',trails:f.getObjectByName('frostlight-field-trails').visible,groves:w.root.getObjectByName('frostlight-snow-pines').visible,boulders:f.getObjectByName('frostlight-field-boulders').visible,scrub:cut(f.getObjectByName('frostlight-field-scrub'))?'thinned':'full'};});
+ assert.deepEqual(lr,{fine:'dropped',trails:false,groves:true,boulders:true,scrub:'thinned'},'low quality drops only the fine dressing, the fine scrub and the trails');
  await view(low,'east-low',[44,-36.5,.8],[33,2.6,-22]);
  console.log('PASS low quality keeps every solid and drops the fine dressing',JSON.stringify(lr));
  assert.deepEqual(errors,[]);console.log('PASS zero page or shader errors');
