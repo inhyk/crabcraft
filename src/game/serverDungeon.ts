@@ -71,9 +71,11 @@ export class ServerDungeon {
  private cleared:string|null=null;
  private paid:{run:string;coins:number;xp:number}|null=null;
  private previous:{coins:number;xp:number}|null=null;
+ /** A clear paid while still inside is celebrated with the banner once the party is home. */
+ private homeBanner:{coins:number;xp:number}|null=null;
  constructor(private readonly ports:ServerDungeonPorts){
   this.g=ports.game;this.chamber=new DungeonChamberView(this.g.scene);
-  this.ui.className='dungeon-ui';this.panel.className='dungeon-panel';this.panel.setAttribute('role','dialog');this.panel.setAttribute('aria-modal','true');this.panel.hidden=true;
+  this.ui.className='dungeon-ui is-server';this.panel.className='dungeon-panel';this.panel.setAttribute('role','dialog');this.panel.setAttribute('aria-modal','true');this.panel.hidden=true;
   this.status.className='dungeon-status';this.status.hidden=true;this.status.setAttribute('aria-live','polite');
   this.menu.type='button';this.menu.className='dungeon-menu';this.menu.textContent=t('⚔ 던전','⚔ Dungeons');this.menu.hidden=true;this.menu.onclick=()=>this.open();
   this.backdrop.className='dg-backdrop';this.backdrop.hidden=true;this.backdrop.onclick=()=>this.close();
@@ -81,6 +83,8 @@ export class ServerDungeon {
   this.ui.append(this.menu,this.status,this.backdrop,this.panel);this.g.app.ui.append(this.ui);
  }
  private get run():DungeonRunView|null{return this.state?.features.dungeon??null;}
+ /** In a run's chamber (the minimap hides itself then, as for the browser expedition). */
+ get active():boolean{return !!this.run;}
  private get isLeader():boolean{const p=this.party,leader=p?.members.find(m=>m.id===p.leader);return !!leader&&same(leader.ref,this.state?.selfRef);}
  private info(text:string){this.g.hud.messages.info(text);}
 
@@ -109,7 +113,7 @@ export class ServerDungeon {
  reset():void {this.state=null;this.party=null;this.pendingStart=null;this.lastWarning=null;this.restoreCaptain();}
  refreshLanguage():void {this.menu.textContent=t('⚔ 던전','⚔ Dungeons');this.menuKey='';if(this.panelOpen)this.render();this.uiKey='';this.renderStatus();}
 
- open():void {if(this.run||!this.state)return;this.panelOpen=true;this.panel.hidden=false;this.backdrop.hidden=false;this.g.input.reset();this.menuKey='';this.render();}
+ open():void {if(this.run||!this.state)return;this.panelOpen=true;this.panel.hidden=false;this.backdrop.hidden=false;this.g.input.reset();this.menuKey='';this.render();this.panel.scrollTop=0;}
  close():void {if(!this.panelOpen)return;this.panelOpen=false;this.panel.hidden=true;this.backdrop.hidden=true;this.g.input.reset();this.menu.focus({preventScroll:true});}
  private render():void {
   const state=this.state;if(!state)return;const self=state.actors.find(a=>same(a.ref,state.selfRef)),flags=state.self.player.flags,party=this.party,running=party?.dungeon??null;
@@ -136,7 +140,7 @@ export class ServerDungeon {
    const w=g.world;this.outside={heightAt:w.heightAt,resolveCollision:w.resolveCollision,raycastSolid:w.raycastSolid};
    // Camera rays and any ground query use the chamber floor and wall, as the run Area's own query does.
    const ground=chamberGround(this.outside);w.heightAt=ground.heightAt;w.resolveCollision=ground.resolveCollision;w.raycastSolid=ground.raycastSolid;
-   g.hud.minimap.toggle(false);g.hud.dialogue.close();
+   g.hud.dialogue.close();
   }
   if(this.built!==key){this.built=key;this.chamber.build(d);this.chamber.resetWarning();this.info(t(`${d.name[0]} · 세 번의 전투를 이겨 내세요!`,`${d.name[1]} · Survive three waves!`));}
   this.chamber.visible=true;
@@ -151,7 +155,11 @@ export class ServerDungeon {
  }
  private outsideChamber():void {
   this.chamber.visible=false;this.restoreCaptain();this.lastWarning=null;
-  if(this.outside){const w=this.g.world;w.heightAt=this.outside.heightAt;w.resolveCollision=this.outside.resolveCollision;w.raycastSolid=this.outside.raycastSolid;this.outside=null;}
+  if(this.outside){const w=this.g.world;w.heightAt=this.outside.heightAt;w.resolveCollision=this.outside.resolveCollision;w.raycastSolid=this.outside.raycastSolid;this.outside=null;
+   const paid=this.homeBanner;this.homeBanner=null;if(paid)this.banner(paid);}
+ }
+ private banner(paid:{coins:number;xp:number}):void {
+  this.g.hud.messages.banner(()=>t('원정 성공!','Expedition complete!'),()=>t(`+${paid.coins.toLocaleString()} 코인 · +${paid.xp.toLocaleString()} XP`,`+${paid.coins.toLocaleString()} coins · +${paid.xp.toLocaleString()} XP`),'zone');
  }
  private restoreCaptain():void {const c=this.captain;this.captain=null;if(c)c.unit.rig.root.scale.copy(c.scale);}
  /**
@@ -164,7 +172,9 @@ export class ServerDungeon {
   if(run?.phase==='clear'&&this.paid?.run!==run.run.runId)this.cleared=run.run.runId;
   if(!this.cleared||!previous||now.coins<=previous.coins||this.entry?.run!==this.cleared)return;
   const entry=this.entry,coins=now.coins-entry.coins,xp=now.xp-entry.xp;this.paid={run:this.cleared,coins,xp};this.cleared=null;
-  this.g.hud.messages.banner(()=>t('원정 성공!','Expedition complete!'),()=>t(`+${coins.toLocaleString()} 코인 · +${xp.toLocaleString()} XP`,`+${coins.toLocaleString()} coins · +${xp.toLocaleString()} XP`),'zone');
+  // Inside, the run banner already shows the result: mark it with sound and light, and keep the big banner for home.
+  if(run){this.homeBanner={coins,xp};this.g.audio.sfx('sfx-quest-complete');const self=this.state&&this.ports.unit(this.state.selfRef);if(self)this.g.vfx.levelUp(self);}
+  else this.banner({coins,xp});
   this.g.hud.chat.system(t(`원정 보상으로 코인 ${coins.toLocaleString()}개와 경험치 ${xp.toLocaleString()}을 받았어요.`,`The expedition paid ${coins.toLocaleString()} coins and ${xp.toLocaleString()} XP.`));
   this.uiKey='';
  }

@@ -97,7 +97,7 @@ export class Minimap {
   }
 
   update(dt: number): void {
-    if(this.game.dungeons?.active){if(this.expanded)this.toggle(false);this.el.style.visibility='hidden';return;}
+    if(this.game.dungeons?.active||this.game.server?.dungeon?.active){if(this.expanded)this.toggle(false);this.el.style.visibility='hidden';return;}
     this.el.style.visibility='';
     if(this.expanded&&(this.game.cinematic||this.game.ending.active||!this.game.player.unit.alive))this.toggle(false);
     this.acc += dt;
