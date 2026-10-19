@@ -129,9 +129,49 @@ export class TidecrownTerrain {
   }
 }
 
+/** World I's rock block in the terrain shader, replaced whole for Tidecrown. */
+const W1_ROCK = /if \(ccRock > 0\.003\) \{[\s\S]*?col = mix\(col, rockC, ccRock\);\n\}/;
+
 /**
- * World I's terrain material over Tidecrown's splat. Its rock turns pale limestone with grey seams and its setts
- * lose the warm brown, like the city's paving stone.
+ * Tidecrown's limestone. World I samples its rock noise from above, which smears down steep faces; here every lookup
+ * is projected along the face's own plane (triplanar), and steep faces are cut into beds about 2.4 high: each bed
+ * its own tone, a lit lip on top, a dark undercut beneath the bed above, and joints that stop at the bed boundaries.
+ * The beds also tilt the normal (tcTilt) so the lips catch the sun. Flat painted rock keeps the plain stone.
+ */
+const TC_ROCK = `if (ccRock > 0.003) {
+  vec3 tw = pow(abs(nW), vec3(4.0));
+  tw /= tw.x + tw.y + tw.z;
+  vec4 tn = texture2D(uNoise, vCcWorld.zy * 0.021) * tw.x + texture2D(uNoise, vCcWorld.xz * 0.021) * tw.y + texture2D(uNoise, vCcWorld.xy * 0.021) * tw.z;
+  float steep = smoothstep(0.3, 0.6, slope);
+  // Beds from about 1.7 to 3.8 thick, dipping gently and wandering a little along the face.
+  float bedY = vCcWorld.y * 0.42 + 0.22 * sin(vCcWorld.y * 0.3 + 1.3) + dot(vCcWorld.xz, vec2(0.011, 0.007)) + (tn.r - 0.5) * 0.6 * steep;
+  float bed = floor(bedY), f = fract(bedY), fw = fwidth(bedY);
+  float h1 = fract(sin(bed * 12.9898 + 4.1) * 43758.5453), h2 = fract(h1 * 7.13 + 0.31);
+  // Most bed tops stand out as ledges over an undercut; the rest are fine seams within a thicker bank.
+  float ledge = mix(0.35, 1.0, step(0.35, h2));
+  float lip = smoothstep(0.6, 0.9, f) * (1.0 - smoothstep(0.94 - fw, 1.0, f)) * ledge;
+  float under = (1.0 - smoothstep(0.0, 0.17 + fw, f)) * ledge;
+  // Joints: a row of the noise per bed, read along the face (z on faces turned to x, x on faces turned to z); some
+  // beds are massive and have none.
+  float side = tw.x / max(tw.x + tw.z, 1e-3);
+  float jn = mix(texture2D(uNoise, vec2(vCcWorld.x * 0.045, bed * 0.531)).r, texture2D(uNoise, vec2(vCcWorld.z * 0.045, bed * 0.531)).r, side);
+  float joint = (1.0 - smoothstep(0.0, 0.012 + 1.5 * fwidth(jn), abs(jn - 0.5))) * step(0.62, h1) * smoothstep(0.12, 0.3, f) * (1.0 - smoothstep(0.82, 0.92, f));
+  vec3 grain = cc_tri(uRock, vCcWorld, nW, 0.16) * vec3(1.05, 1.06, 1.08);
+  vec3 lime = mix(cc_srgb(vec3(0.83, 0.77, 0.66)), cc_srgb(vec3(0.67, 0.66, 0.62)), smoothstep(0.3, 0.7, tn.r + (h1 - 0.5) * 0.5 * steep));
+  lime = mix(lime, cc_srgb(vec3(0.80, 0.68, 0.53)), smoothstep(0.58, 0.8, tn.a) * 0.45);
+  lime *= 1.0 + steep * (0.2 * (h1 - 0.5) + 0.18 * lip - 0.5 * under - 0.24 * joint);
+  vec3 rockC = mix(grain, lime, 0.74);
+  // Damp and weed along the waterline.
+  float wet = 1.0 - smoothstep(0.2, 2.6, vCcWorld.y + (tn.b - 0.5) * 1.6);
+  rockC = mix(rockC, rockC * cc_srgb(vec3(0.5, 0.56, 0.48)), wet * 0.85);
+  tcTilt = steep * ccRock * (0.5 * lip - 0.75 * under);
+  col = mix(col, rockC, ccRock);
+}`;
+
+/**
+ * World I's terrain material over Tidecrown's splat: its rock becomes bedded limestone (TC_ROCK), its setts lose the
+ * warm brown like the city's paving stone, and the setts stay off steep faces (their normal map would light a cliff
+ * as if it were flat).
  */
 export function tidecrownTerrainMaterial(terrain: TidecrownTerrain, village: Kit, nature: Kit, uTime: { value: number }): THREE.MeshStandardMaterial {
   const mat = createTerrainMaterial(
@@ -140,10 +180,21 @@ export function tidecrownTerrainMaterial(terrain: TidecrownTerrain, village: Kit
     { uTime },
   );
   addPatch(mat, 'tidecrown-limestone', (shader) => {
-    shader.fragmentShader = shader.fragmentShader
+    const fs = shader.fragmentShader;
+    if (!W1_ROCK.test(fs)) console.error('tidecrown terrain: World I rock block not found, limestone not applied');
+    shader.fragmentShader = fs
+      .replace('float ccRock;', 'float ccRock;\nfloat tcTilt = 0.0;')
+      // Slope from the triangle itself as well: on a cliff two grid cells wide the vertex normals lean at its foot and
+      // brow, and grass, sand or setts would show there in spikes.
+      .replace('float slope = 1.0 - nW.y;', 'float slope = max(1.0 - nW.y, 1.0 - abs(normalize(cross(dFdx(vCcWorld), dFdy(vCcWorld))).y));')
       .replace('vec3 cobC = texture2D(uCobble, ccXZ * 0.22).rgb * cc_srgb(vec3(1.08, 0.94, 0.80));', 'vec3 cobC = texture2D(uCobble, ccXZ * 0.22).rgb * cc_srgb(vec3(1.3, 1.22, 1.08));')
-      .replace('vec3 stone = mix(cc_srgb(vec3(0.66, 0.52, 0.40)), cc_srgb(vec3(0.55, 0.47, 0.42)), n2);', 'vec3 stone = mix(cc_srgb(vec3(0.80, 0.76, 0.66)), cc_srgb(vec3(0.66, 0.65, 0.62)), n2);')
-      .replace('rockC = mix(rockC, stone * strata, 0.55);', 'rockC = mix(rockC * vec3(1.05, 1.06, 1.08), stone * strata, 0.72);');
+      .replace(/(ccCob = smoothstep\([^;]*;)/, '$1\nccCob *= 1.0 - smoothstep(0.25, 0.4, slope);')
+      .replace(W1_ROCK, TC_ROCK)
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+if (tcTilt != 0.0) normal = normalize(normal + normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz) * tcTilt);`,
+      );
   });
   return mat;
 }

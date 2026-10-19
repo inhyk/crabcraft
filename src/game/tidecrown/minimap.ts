@@ -1,6 +1,6 @@
 // Tidecrown's minimap picture painted from the terrain data (heights, splat, forest, walls): no render pass, so
 // entering the hub never waits on a top-down shot of the whole island.
-import { TC_BOUNDS, TC_CITY_WALL, TC_KEEP, TC_LEVEL, tcAxis } from '../../sim/world/tidecrownGround';
+import { TC_BOUNDS, TC_CITY_WALL, TC_KEEP, TC_LEVEL, TC_T, tcAxis } from '../../sim/world/tidecrownGround';
 import type { MapSnapshot } from '../snapshots';
 import { TC_SPANS, TC_PIECES, wardCorners } from './layout';
 import type { TidecrownTerrain } from './terrain';
@@ -56,7 +56,9 @@ export function paintTidecrownMap(terrain: TidecrownTerrain, pines: readonly [nu
     g.closePath(); g.lineWidth = width; g.strokeStyle = color; g.stroke();
   };
   ring(TC_CITY_WALL, 3.2, '#efe3c6');
-  ring(wardCorners(), 2.4, '#efe3c6');
+  // The ward ring projects to its gate between the front corners.
+  const ward = wardCorners();
+  ring([ward[0], tcAxis(TC_T.wardGate, TC_PIECES.wardGate.w / 2), tcAxis(TC_T.wardGate, -TC_PIECES.wardGate.w / 2), ...ward.slice(1)], 2.4, '#efe3c6');
   const [k0, k1] = [tcAxis(243.6, -30), tcAxis(243.6, 30)], [k2, k3] = [tcAxis(313.6, 30), tcAxis(313.6, -30)];
   g.fillStyle = '#f4ead2';
   g.beginPath(); [k0, k1, k2, k3].forEach(([x, z], i) => (i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z)))); g.closePath(); g.fill();

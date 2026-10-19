@@ -70,17 +70,25 @@ const smoothstep = (x: number, a: number, b: number) => {
   const t = clamp((x - a) / (b - a), 0, 1);
   return t * t * (3 - 2 * t);
 };
+/** A cliff profile from a to b: a talus at the foot and a sharp brow at the top. */
+const brow = (x: number, a: number, b: number) => {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (2 - t);
+};
 
-/** Signed distance to a closed polygon, positive inside. */
-export function polyDistance(x: number, z: number, poly: readonly V2[]): number {
+/** Signed distance to a closed polygon, positive inside; `near` receives the closest point on its outline. */
+export function polyDistance(x: number, z: number, poly: readonly V2[], near?: [number, number]): number {
   let d2 = Infinity, inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const [ax, az] = poly[j], [bx, bz] = poly[i];
     if (az > z !== bz > z && x < ((ax - bx) * (z - bz)) / (az - bz) + bx) inside = !inside;
     const ex = bx - ax, ez = bz - az;
     const t = clamp(((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez), 0, 1);
-    const dx = x - (ax + ex * t), dz = z - (az + ez * t);
-    d2 = Math.min(d2, dx * dx + dz * dz);
+    const dx = x - (ax + ex * t), dz = z - (az + ez * t), e2 = dx * dx + dz * dz;
+    if (e2 < d2) {
+      d2 = e2;
+      if (near) { near[0] = ax + ex * t; near[1] = az + ez * t; }
+    }
   }
   return inside ? Math.sqrt(d2) : -Math.sqrt(d2);
 }
@@ -150,13 +158,19 @@ export function tcCoast(x: number, z: number): { d: number; north: number; south
   const [zn, zs] = estuaryBanks(x);
   const wobble = 2.2 * tcNoise(x * 0.045, z * 0.045, 2) + 6 * tcNoise(x * 0.012 + 7, z * 0.012, 2);
   const harbour = -polyDistance(x, z, TC_HARBOUR);
-  const north = Math.min(polyDistance(x, z, NORTH_COAST), zn - z, harbour) + wobble;
+  let north = Math.min(polyDistance(x, z, NORTH_COAST), zn - z, harbour) + wobble;
+  // North and east of the harbour the rock runs on at least 18 past the city wall, so the wall stands back from its
+  // sea cliffs (the harbour's rock side included) and they keep room for their ledges. Beyond 30 inland the shore
+  // distance changes nothing, so the wall is only measured nearer the sea.
+  const reach = smoothstep(z, -45, -65) * smoothstep(x, 40, 70);
+  if (reach > 0 && north < 30) north = Math.max(north, 18 + 0.5 * wobble + polyDistance(x, z, TC_CITY_WALL) - (1 - reach) * 40);
   // The south shore also ends at a western sea, past the playable edge.
   const south = Math.min(z - zs, x + 312, 520 - x) + wobble;
   return { d: Math.max(north, south), north, south, harbour };
 }
 
 const q = { d: 0, seg: 0, t: 0 };
+const near: [number, number] = [0, 0];
 
 /** Promontory surface before the sea cut: city terraces inside the wall, meadows and hills outside. */
 function northLand(x: number, z: number): number {
@@ -170,10 +184,15 @@ function northLand(x: number, z: number): number {
   let city = TC_LEVEL.lower + 0.25 * tcNoise(x * 0.07, z * 0.07, 2);
   city += (TC_LEVEL.middle - TC_LEVEL.lower) * edge(polyDistance(x, z, MIDDLE));
   city += (TC_LEVEL.upper - TC_LEVEL.middle) * edge(polyDistance(x, z, UPPER));
-  // Keep rock: a sheer rim, except the King's Stair cut on the axis (a ramp under the steps).
+  // Keep rock: a sheer rim, except the King's Stair cut on the axis (a ramp under the steps). Where the city wall
+  // stands on the rock, the rock runs on past it toward the sea cliffs, so no wall or tower overhangs the rim.
   const rim = (1 - plateauRadius(x, z)) * 80;
-  const rock = smoothstep(rim, -2.5, 1.5);
-  const stair = (1 - smoothstep(Math.abs(s), 8.5, 10.5)) * (t > TC_T.stairFoot - 3 && t < TC_T.stairTop + 6 ? 1 : 0);
+  const wall = polyDistance(x, z, TC_CITY_WALL, near);
+  let rock = brow(rim, -2.5, 1.5);
+  if (wall < 0 && wall > -40) rock = Math.max(rock, smoothstep(plateauRadius(near[0], near[1]), 1, 0.94) * smoothstep(-wall, 40, 30));
+  let stair = (1 - smoothstep(Math.abs(s), 8.5, 10.5)) * (t > TC_T.stairFoot - 3 && t < TC_T.stairTop + 6 ? 1 : 0);
+  // At the stair head the cut widens into a level nose under the whole ward gate.
+  if (t > TC_T.stairTop - 2 && t < TC_T.wardGate + 10) stair = Math.max(stair, (1 - smoothstep(Math.abs(s), 13, 15.5)) * smoothstep(t, TC_T.stairTop - 1.5, TC_T.stairTop - 0.5));
   // A straight ramp just under the steps (which rise linearly).
   const climb = TC_LEVEL.upper - 0.4 + (TC_LEVEL.plateau - TC_LEVEL.upper) * clamp((t - TC_T.stairFoot) / (TC_T.stairTop - TC_T.stairFoot), 0, 1);
   city = lerp(city + (TC_LEVEL.plateau + 0.3 * tcNoise(x * 0.05, z * 0.05, 2) - city) * rock, Math.max(city, climb), stair);
@@ -181,7 +200,6 @@ function northLand(x: number, z: number): number {
   const [mx, mz] = tcAxis(TC_T.market);
   city = lerp(city, TC_LEVEL.lower, 1 - smoothstep(Math.hypot(x - mx, z - mz), 30, 36));
   // North and east the city's rock runs on past the wall to the sea cliffs; south and west lie meadows and beaches.
-  const wall = polyDistance(x, z, TC_CITY_WALL);
   const rocky = Math.max(smoothstep(z, -100, -140), smoothstep(x, 186, 204));
   return lerp(h, city, Math.max(smoothstep(wall, -6, 3), rocky * smoothstep(wall, -40, -12)));
 }
@@ -209,13 +227,17 @@ export function tidecrownGround(x: number, z: number): number {
   } else {
     // Beaches rise gently; where the land is high, the shore becomes a cliff.
     const beach = Math.min(land, 0.12 * c.d + 0.6 * smoothstep(c.d, 4, 14) * (1 + tcNoise(x * 0.07, z * 0.07, 2)));
-    const quay = c.harbour < 6 ? 1 : 0;
+    // Low ground along the harbour is a quay; the keep rock meets the harbour in a cliff like the open sea.
+    const quay = c.harbour < 6 ? 1 - smoothstep(land, 12, 18) : 0;
     // Where the land is high (the city's rock) the shore is a broken cliff: buttresses and gullies from noise, two
     // ledges, a talus at the foot. Lower land ends in a steep bank; the quay drops straight in.
     const high = smoothstep(land, 16, 26) * (1 - quay);
     const dd = c.d + (1 - quay) * (1.2 * tcNoise(x * 0.2, z * 0.2, 2) + 2.6 * high * tcNoise(x * 0.06 + 3, z * 0.06, 3));
-    let rise = smoothstep(dd, 0.4, quay ? 1.6 : 5 + 3 * high);
+    const w = lerp(5 + 3 * high, 1.6, quay);
+    let rise = lerp(smoothstep(dd, 0.4, w), brow(dd, 0.4, w), high);
     rise = lerp(rise, rise + 0.06 * Math.sin(rise * Math.PI * 4) * (1 - rise), high);
+    // The city wall and its towers stand on level rock: the cliff only begins 10 past the wall's line.
+    if (high > 0 && rise < 1) rise = Math.max(rise, high * clamp((13 + polyDistance(x, z, TC_CITY_WALL)) / 3, 0, 1));
     const cliff = -3 + (land + 3) * rise;
     h = lerp(lerp(beach, land, smoothstep(c.d, 6, 26)), cliff, Math.max(quay, smoothstep(land, 7, 11)));
   }

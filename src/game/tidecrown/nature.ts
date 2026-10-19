@@ -173,7 +173,8 @@ export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter
     if (structures(x, z) && Math.abs(wallDist(x, z)) < 8) continue;
     let s = 0;
     if (sl < 0.72 && sl > 0.42 && roll < 0.5) s = 1.3 + size * 1.8;
-    else if (c.d > -5 && c.d < 4 && roll < 0.4) s = 0.7 + size * 1.8;
+    // Shore rocks lie at the waterline, never up a sea cliff's face.
+    else if (c.d > -5 && c.d < 4 && y < 2.5 && roll < 0.4) s = 0.7 + size * 1.8;
     else if (c.south > c.north && roll < 0.06) s = 0.7 + size * 1.4;
     else if (Math.hypot(x - cx, z - cz) < 15 && roll < 0.5) s = 0.8 + size * 1.2;
     else continue;

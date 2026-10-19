@@ -1,7 +1,8 @@
 // Tidecrown scenery: creator travel builds the capital on first entry; six fixed cameras (reveal from the ridge, the
 // bridge, the King's Stair, an aerial, the harbour, the Pincer Gate) and a World I arrival shot for comparison, with
 // draw calls and triangles; the walk from the arrival over the crest, across the bridge, through the gate and up the
-// King's Way and the stair to the ward gate is open and gently graded; no page errors.
+// King's Way and the stair to the ward gate is open and gently graded; every wall, tower and gate stands on the ground
+// or on a foundation that reaches it; no page errors.
 // Usage: CC_QA_BASE=http://127.0.0.1:5241 node tools/qa-tidecrown-scenery.mjs  (CC_QA_SHOTS sets the output folder)
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -87,6 +88,34 @@ try {
   assert.ok(walk.worstStep < 0.45, `height steps stay walkable: ${walk.worstStep} at ${walk.worstAt}`);
   assert.ok(Math.abs(walk.deck - 8) < 0.01 && Math.abs(walk.crest - 28) < 0.3 && Math.abs(walk.ward - 40) < 0.6, JSON.stringify(walk));
   console.log(`PASS walk: ${walk.samples} samples from the arrival to the ward gate, none blocked, worst step ${walk.worstStep}`);
+
+  // Footing: under every wall, tower and gate (corners, edge midpoints and centre of its base outline) the terrain is
+  // within 0.6 of the piece's base, or the piece stands on a foundation whose foot is below the ground all round.
+  const footing = await p.evaluate(async () => {
+    const L = await import('/src/game/tidecrown/layout.ts');
+    const T = window.app.current.game.world2.tidecrown.layout;
+    const lowest = (pts) => Math.min(...pts.map(([x, z]) => L.tidecrownHeight(T.heights, x, z)));
+    const out = { pieces: 0, foundations: 0, tallest: 0, floating: [], short: [] };
+    for (const q of T.placements) {
+      if (!L.TC_FOOTPRINTS[q.piece]) continue;
+      out.pieces++;
+      const where = { piece: q.piece, x: +q.x.toFixed(1), z: +q.z.toFixed(1), y: +q.y.toFixed(2) };
+      if (q.foundation) {
+        out.foundations++;
+        out.tallest = Math.max(out.tallest, +(q.y - q.foundation.y).toFixed(1));
+        const under = lowest(L.footprintPoints(q, q.foundation.toe));
+        if (q.foundation.y > under) out.short.push({ ...where, foot: +q.foundation.y.toFixed(2), ground: +under.toFixed(2) });
+      } else {
+        const gap = q.y - lowest(L.footprintPoints(q));
+        if (gap > 0.6) out.floating.push({ ...where, gap: +gap.toFixed(2) });
+      }
+    }
+    return out;
+  });
+  assert.ok(footing.pieces > 100, `walls, towers and gates found: ${footing.pieces}`);
+  assert.deepEqual(footing.floating, [], 'no wall, tower or gate stands more than 0.6 above the ground without a foundation');
+  assert.deepEqual(footing.short, [], 'every foundation reaches below the ground under its foot');
+  console.log(`PASS footing: ${footing.pieces} walls, towers and gates on the ground, ${footing.foundations} of them on foundations (tallest ${footing.tallest})`);
 
   /** Fixed camera at (x, eye above ground, z) looking at (x, height above ground or absolute, z); the player stands at `crab`. */
   async function shot(name, cam, at, crab) {
