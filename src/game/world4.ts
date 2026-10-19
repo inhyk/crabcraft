@@ -14,6 +14,8 @@ import {SnowRidges} from './snowRidges';
 import {snowRocks} from './snowRocks';
 import {SnowSpray} from './snowSpray';
 import {crystalCluster,crystalGeometry,iceMaterial,type Crystal} from './iceCrystals';
+import {frostThrone,type FrostThrone} from './frostThrone';
+import {citadelClears} from './frostThroneLayout';
 import {SnowSky} from './snowSky';
 import {snowPines} from './snowPines';
 import {buildSnowVillage,type SnowVillage} from './snowVillage';
@@ -52,6 +54,8 @@ export class SnowIsland {
  private paving:FrostPaving;
  private arenaFloor:FrostArena;
  private refreshIce:()=>void;
+ /** Boreas's throne, the glacial citadel and the arena's crowned pillars (frostThrone.ts). */
+ private throne:FrostThrone;
  height(x:number,z:number){
   return snowHeight(x,z);
  }
@@ -90,13 +94,12 @@ export class SnowIsland {
   this.root.add(this.prison);
   // Ice cliffs frame the north without obstructing the arena's broad southern entrance.
   const cliffs:Crystal[]=[];
-  for(let i=0;i<42;i++){const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;if(Math.abs(x)<16&&z>-70)continue;const y=this.height(x,z),h=6+i%5*3;crystalCluster(x,y,z,h*1.1,4+i%3,5+i%3,rand,cliffs);}
+  for(let i=0;i<42;i++){const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;if(Math.abs(x)<16&&z>-70||citadelClears(x,z))continue;const y=this.height(x,z),h=6+i%5*3;crystalCluster(x,y,z,h*1.1,4+i%3,5+i%3,rand,cliffs);}
   iceMesh(cliffs,'frostlight-ice-cliffs');
   // Carved ice floor with the three combat rings cut in as runes (frostArena.ts).
   this.arenaFloor=frostArena({center:this.arena.position,radius:this.arena.radius,rings:[6,13,21.5],skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.root.add(this.arenaFloor.root);
-  const pillars:Crystal[]=[];
-  for(let i=0;i<12;i++){const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=this.height(x,z);crystalCluster(x,y,z,8.6,2.6,3,rand,pillars);add(new THREE.OctahedronGeometry(.8),glow,x,y+8.5,z);}
-  iceMesh(pillars,'frostlight-arena-crystals');
+  // The throne, the citadel behind it and the arena's crowned crystal pillars (frostThrone.ts).
+  this.throne=frostThrone({height:(x,z)=>this.height(x,z),ice:iceGlass});this.root.add(this.throne.root);
   this.root.add(this.sky.mesh);
   // Ranges across the frozen sea, hazed toward the dome's own colour.
   this.ridges=new SnowRidges(this.sky);this.root.add(this.ridges.mesh);
@@ -118,5 +121,5 @@ export class SnowIsland {
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
  updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.terrain.setQuality(quality);this.terrain.prepare(renderer);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
  disposeSnow(){this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
- update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.village?.update(time,x,z);this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
+ update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.throne.update(time);this.village?.update(time,x,z);this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
 }
