@@ -3,6 +3,7 @@ import { snowHeight } from '../sim/world/ground';
 import { SNOW_ROCKS } from '../sim/world/snowGround';
 import { Collision } from '../world/collision';
 import { registerSnowVillage } from './snowVillageLayout';
+import { registerFrostProps } from './frostPropsLayout';
 
 // Between the west-side lanes, clear of the road, homes and resident positions.
 export const SNOW_FOUNTAIN = {x:-13,z:65,radius:3.1} as const;
@@ -22,6 +23,8 @@ export function layoutFrostlight(): Collision {
   const col = new Collision({minX:-150,minZ:-175,step:2,nx:151,nz:176,h:new Float32Array(151*176),heightAt:h});
   // The village: kit houses, lamp posts and solid props (snowVillageLayout.ts).
   registerSnowVillage(col,h);
+  // Guide-lantern posts, aurora seal stones and the gateways' piers (frostPropsLayout.ts).
+  registerFrostProps(col,h);
   const {x:fx,z:fz,radius}=SNOW_FOUNTAIN,fy=h(fx,fz);col.addCircle(fx,fz,radius,fy,fy+5);
   for(const {x,z,s} of snowTrees()){const y=h(x,z);col.addCircle(x,z,.6*s,y,y+10*s);}
   for(let i=0;i<42;i++){

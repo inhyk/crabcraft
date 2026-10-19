@@ -3,7 +3,8 @@ import {snowHeight} from '../sim/world/ground';
 import {SNOW_WIND} from '../sim/world/snowGround';
 import {layoutFrostlight,snowTrees,SNOW_FOUNTAIN} from './world4Colliders';
 import type {Poi} from '../world/types';
-import {StarPortal} from './portal';
+import {FrostPortal} from './frostPortal';
+import {frostRequestLook} from './frostRequests';
 import type {IslandPath} from './islandPaths';
 import {frostPaving,type FrostPaving} from './frostPaving';
 import {frostArena,type FrostArena} from './frostArena';
@@ -31,7 +32,7 @@ export class SnowIsland {
  readonly arena:Poi={id:'bossArena',position:new THREE.Vector3(0,19,-78),yaw:0,radius:22};
  readonly town:[number,number][]=[[-16,56],[16,56],[-16,38],[16,38],[-16,74],[16,80],[16,68]];
  readonly collision=layoutFrostlight();
- readonly portal=new StarPortal(this.spawn,'서리빛 설원 → 새벽 항구');
+ readonly portal:FrostPortal;
  private sun=new THREE.DirectionalLight();
  /** SNOWFLOW's atmosphere: a low raking sun at polar twilight, so the aurora still reads. Sun, ambient, fog and ice all come from it. */
  readonly sky=new SnowSky({azimuth:42,elevation:13,night:.55,exposure:.42,wind:[SNOW_WIND[0],SNOW_WIND[1]]});
@@ -68,6 +69,7 @@ export class SnowIsland {
   const glow=new THREE.MeshStandardMaterial({color:'#c4ffff',emissive:'#52d8ff',emissiveIntensity:1.4,roughness:.25});
   // Grown ice (SNOWFLOW's crystal shape and shading). The seed fixes the formations for every player.
   const {material:iceGlass,refresh:refreshIce}=iceMaterial({sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.refreshIce=refreshIce;this.iceGlass=iceGlass;
+  this.portal=this.gate(this.spawn,'서리빛 설원 → 새벽 항구');
   let seed=20261018;const rand=()=>(seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296;
   const iceMesh=(list:Crystal[],name:string)=>{const m=new THREE.Mesh(crystalGeometry(list),iceGlass);m.name=name;m.castShadow=true;this.root.add(m);return m;};
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
@@ -119,6 +121,10 @@ export class SnowIsland {
   const fall=new THREE.Points(flakes,this.snow);fall.frustumCulled=false;fall.name='gpu-snowfall';this.root.add(fall,this.portal.root,new THREE.HemisphereLight(this.sky.hemiSky,this.sky.hemiGround,1));
   this.sky.attachSun(this.sun);this.root.add(this.sun,this.sun.target);
  }
+ /** Frostlight's carved gateway (frostPortal.ts), for the spawn portal and world2's onward gate. */
+ gate(position:THREE.Vector3,label:string){return new FrostPortal(position,label,{ice:this.iceGlass,height:(x,z)=>this.height(x,z)});}
+ /** Frostlight's own quest props for its DawnRequests (frostRequests.ts). */
+ questProps(){return frostRequestLook({height:(x,z)=>this.height(x,z),ice:this.iceGlass});}
  /** The forest and the village need the kits, so they load after construction like DawnIsland's settlement. */
  async buildSettlement(){
   const height=(x:number,z:number)=>this.height(x,z);
