@@ -4,7 +4,7 @@ import type { SnowSpray } from './snowSpray';
 import type { Unit } from './unit';
 import { addPatch } from '../world/materials';
 import { SNOW_SURFACE_GLSL } from './snowTerrain';
-import { SNOW_FAR_SHADOW_GLSL, type SnowFarShadow } from './snowFarShadow';
+import { placeholderFarMap, SNOW_FAR_SHADOW_GLSL, type SnowFarShadow } from './snowFarShadow';
 
 /*
  * The Frostlight snow material: the most important pixels in the world. Ports SNOWFLOW's snow.fragment.wgsl and
@@ -310,7 +310,7 @@ export function applySnowSurface(material: THREE.MeshStandardMaterial, deform: S
     snowGlintStrength: { value: opts.glints ?? 2.2 },
     snowScatterStrength: { value: opts.subsurface ?? 0.42 },
     snowGrain: { value: grain },
-    ...(opts.far?.uniforms ?? { snowFarMap: { value: null }, snowFarMatrix: { value: new THREE.Matrix4() }, snowFarInfo: { value: new THREE.Vector4() } }),
+    ...(opts.far?.uniforms ?? { snowFarMap: { value: placeholderFarMap() }, snowFarMatrix: { value: new THREE.Matrix4() }, snowFarInfo: { value: new THREE.Vector4() } }),
   };
   const tmp = new THREE.Vector3();
   material.userData.snowSurface = uniforms;

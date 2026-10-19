@@ -78,9 +78,24 @@ export function applyFarShadow(material: THREE.Material, far: SnowFarShadow): vo
   });
 }
 
+/**
+ * Until the bake (and in views that never bake, like the monitor) a sampler2DShadow must still see a depth texture
+ * with a compare function: an empty slot binds a colour texture and every draw that reads it is a GL error.
+ * Its contents never matter, snowFarInfo.x is 0 until the bake.
+ */
+export function placeholderFarMap(): THREE.DepthTexture {
+  const depth = new THREE.DepthTexture(1, 1, THREE.UnsignedIntType);
+  depth.format = THREE.DepthFormat;
+  depth.compareFunction = THREE.LessEqualCompare;
+  // Uploaded as an empty 1x1 depth image; without a version three never uploads a texture no target renders.
+  depth.needsUpdate = true;
+  return depth;
+}
+
 export class SnowFarShadow {
+  private readonly placeholder = placeholderFarMap();
   readonly uniforms = {
-    snowFarMap: { value: null as THREE.DepthTexture | null },
+    snowFarMap: { value: this.placeholder as THREE.DepthTexture },
     snowFarMatrix: { value: new THREE.Matrix4() },
     /** x on, y filter radius (uv), z depth bias, w normal offset (m). */
     snowFarInfo: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -179,7 +194,7 @@ export class SnowFarShadow {
   dispose(): void {
     this.target?.dispose();
     this.target = null;
-    this.uniforms.snowFarMap.value = null;
+    this.uniforms.snowFarMap.value = this.placeholder;
     this.uniforms.snowFarInfo.value.x = 0;
     this.ground?.geometry.dispose();
     (this.ground?.material as THREE.Material | undefined)?.dispose();
