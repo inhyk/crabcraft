@@ -396,6 +396,8 @@ export function harbourPlan(): { pieces: HarbourPiece[]; ships: Ship[]; crane: {
     // Piers run due east from the quay's face: a ramp of planks 9 long down to the deck, then the pier's tiles.
     const fx = t.x + t.nx * 3.1, fz = t.z + t.nz * 3.1, yaw = Math.PI / 2, ramp = 9, drop = Q.quay - Q.pier;
     pieces.push({ piece: '', x: fx + ramp / 2, y: Q.quay - drop / 2, z: fz, yaw, walk: { lx: 0, lz: 0, hx: 2.6, hz: ramp / 2 + 0.1, h: Q.quay - drop / 2, gz: -drop / ramp }, ramp: { len: ramp, w: 5.4, drop } });
+    // A flat landing over the ramp's head: the quay's face runs askew to the pier, so it closes the wedge between them.
+    pieces.push({ piece: '', x: fx - 0.4, y: Q.quay, z: fz, yaw, walk: { lx: 0, lz: 0, hx: 2.6, hz: 0.6, h: Q.quay } });
     const len = k === 0 ? 40 : 30;
     for (let j = 0; j < len / 10; j++) pieces.push({ piece: 'TC_Pier_10', x: fx + ramp + 5 + j * 10, y: Q.pier, z: fz, yaw, walk: { lx: 0, lz: 0, hx: 2.6, hz: 5.0, h: Q.pier } });
     piers.push({ x: fx + ramp, z: fz, len });

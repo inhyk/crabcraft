@@ -5,7 +5,7 @@ import { trs } from '../../world/kit';
 import {
   buildTidecrownHeights, polyDistance, TC_AXIS, TC_BOUNDS, TC_CITY_WALL, TC_KEEP, TC_LEVEL, TC_P, TC_ROAD, TC_T, tcAxis, tidecrownHeight, TIDECROWN_GRID,
 } from '../../sim/world/tidecrownGround';
-import { blockCityWater, canalQuayOpen, type CityLayout, cityOccupancy, planCity, registerCity } from './cityLayout';
+import { blockCityWater, blockHarbourShallows, canalQuayOpen, type CityLayout, cityOccupancy, planCity, registerCity } from './cityLayout';
 import { scatterTidecrownNature, type NatureScatter } from './nature';
 
 export * from '../../sim/world/tidecrownGround';
@@ -372,6 +372,7 @@ export function tidecrownLayout(): TidecrownLayout {
   // 1.15 m over 1 m cells). Terrace edges, the keep's rock and the sea cliffs stay blocked, and so does deep water.
   col.buildBlocked({ maxRise: 1.8, deep: -1.1, keepOpen: canalQuayOpen(col) });
   blockCityWater(col);
+  blockHarbourShallows(col);
   return { col, heights, placements, city, nature, heightAt: (x, z) => col.heightAt(x, z) };
 }
 

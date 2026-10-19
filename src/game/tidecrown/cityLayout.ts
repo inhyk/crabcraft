@@ -20,7 +20,8 @@ export interface CityLayout {
   walls: ReturnType<typeof retainingWalls>;
   harbour: ReturnType<typeof harbourPlan>;
   bridges: ReturnType<typeof canalBridges>;
-  canalWalls: ReturnType<typeof canalWalls>;
+  /** The canal walls' runs, each with the height its flagged top is laid (and walked) at. */
+  canalWalls: (ReturnType<typeof canalWalls>[number] & { top: number })[];
   gondolas: ReturnType<typeof gondolaPlan>;
   lamps: ReturnType<typeof lampSpots>;
   poles: ReturnType<typeof bannerPoleSpots>;
@@ -162,33 +163,43 @@ export function planCity(height: Height, placements: TcPlacement[]): CityLayout 
 
   // Terrace walls: a parapet along the front, a walkable coping over the cut behind it.
   const walls = retainingWalls(height);
+  const copings: ReturnType<typeof rectSurface>[] = [];
   for (const w of walls.runs) {
     const len = TC_RETAINING.len * w.sx;
     const [px, pz] = local(w.x, w.z, w.yaw, 0, TC_RETAINING.face - 0.35);
     colliders.push(box(px, pz, len / 2 + 0.3, 0.55, w.yaw, w.y - 2, w.top + 1.2));
     const [cx, cz] = local(w.x, w.z, w.yaw, 0, -1.4);
-    surfaces.push(rectSurface(cx, cz, len / 2 + 0.2, 1.75, w.yaw, w.top));
+    copings.push(rectSurface(cx, cz, len / 2 + 0.2, 1.75, w.yaw, w.top));
   }
+  surfaces.push(...copings);
   for (const p of walls.piers) colliders.push(box(p.x, p.z, 1.3, 1.3, 0, p.y, p.top + 1));
 
   // Grand stairs: the flight (local -Z climbs) between its balustrades.
+  const flights: ReturnType<typeof rectSurface>[] = [];
   for (const s of TC_GRAND_STAIRS) {
     const run = TC_STAIR.run * s.sz, rise = TC_STAIR.rise * s.sy, half = (TC_STAIR.walk * s.sx) / 2;
     const [cx, cz] = local(s.x, s.z, s.yaw, 0, -run / 2);
-    surfaces.push(rectSurface(cx, cz, half, run / 2, s.yaw, s.y + rise / 2, 0, -rise / run));
+    flights.push(rectSurface(cx, cz, half, run / 2, s.yaw, s.y + rise / 2, 0, -rise / run));
+    surfaces.push(flights[flights.length - 1]);
     for (const k of [-1, 1]) {
       const [bx, bz] = local(s.x, s.z, s.yaw, k * (half + 0.45), -run / 2);
       colliders.push(box(bx, bz, 0.45, run / 2 + 0.3, s.yaw, s.y - 1, s.y + rise + 2));
     }
   }
 
-  // Harbour: quays and piers are walked on; ships, the crane and the cargo block.
+  // Harbour: quays and piers are walked on; ships, the crane and the cargo block. Level walks overlap their neighbours
+  // a little (no seams where the sea bed shows through), and where a walk's edge drops to the water a kerb of collision
+  // stands just outside it.
   const harbour = harbourPlan();
+  const walks: ReturnType<typeof rectSurface>[] = [];
   for (const p of harbour.pieces) {
     if (!p.walk) continue;
     const [x, z] = local(p.x, p.z, p.yaw, p.walk.lx, p.walk.lz);
-    surfaces.push(rectSurface(x, z, p.walk.hx, p.walk.hz, p.yaw, p.walk.h, p.walk.gx ?? 0, p.walk.gz ?? 0));
+    const level = !p.walk.gx && !p.walk.gz;
+    walks.push(rectSurface(x, z, p.walk.hx + 0.35, p.walk.hz + (level ? 0.35 : 0), p.yaw, p.walk.h, p.walk.gx ?? 0, p.walk.gz ?? 0));
   }
+  surfaces.push(...walks);
+  colliders.push(...edgeKerbs(walks, walks, height, 1.5));
   for (const s of harbour.ships) colliders.push(box(s.x, s.z, s.hx, s.hz, s.yaw, -6, 40));
   colliders.push(box(...local(harbour.crane.x, harbour.crane.z, harbour.crane.yaw, 0, -1.2), 2.5, 2.6, harbour.crane.yaw, 2, 18));
   for (const c of harbour.cargo) colliders.push(box(c.x, c.z, 2.5, 1.8, c.yaw, c.y - 1, c.y + 2.2));
@@ -268,10 +279,125 @@ export function planCity(height: Height, placements: TcPlacement[]): CityLayout 
     plants.push({ piece: p.plant, x: p.x, y: y + 0.75, z: p.z, yaw: p.x * 1.7, s: p.s });
   }
 
+  // Canal wall tops: flagged flush with the quay just behind them (bridges included) and walked on at that height, over
+  // the 2 m grid's slope into the cut.
+  const above = (x: number, z: number) => {
+    let h = -Infinity;
+    for (const s of surfaces) if (s.contains(x, z)) h = Math.max(h, s.height(x, z));
+    return h > -Infinity ? h : height(x, z);
+  };
+  const canalTops = canalWallRuns.map((w) => {
+    const dx = w.bx - w.ax, dz = w.bz - w.az, len = Math.hypot(dx, dz), yaw = Math.atan2(-dz, dx);
+    const mx = (w.ax + w.bx) / 2, mz = (w.az + w.bz) / 2;
+    // Local +Z toward the water.
+    const lz = Math.sign(Math.sin(yaw) * w.nx + Math.cos(yaw) * w.nz) || 1;
+    let top = TC_CANAL.street - 0.02;
+    for (let u = -len / 2; u <= len / 2 + 0.01; u += 1.5) top = Math.max(top, above(...local(mx, mz, yaw, Math.min(u, len / 2), -lz * 2.3)) + 0.03);
+    top = Math.min(top, TC_CANAL.street + 0.4);
+    return { ...w, top, mx, mz, len, yaw, lz };
+  });
+  const tops = canalTops.map((w) => rectSurface(...local(w.mx, w.mz, w.yaw, 0, -w.lz * 1.45), w.len / 2 + 0.5, 0.85, w.yaw, w.top));
+  surfaces.push(...tops);
+  // A coping that ends over lower ground (where its terrace edge turns away or a ramp falls) is closed there, so
+  // walking off it is not a jump; so is any low gap left between two copings at a corner.
+  // (At a coping's ends a step of more than 0.6 at the very edge counts; its back steps up 0.35 from its terrace, so
+  // there only a dip of 0.75 under it within 0.8 behind it does.)
+  const kerbs = [...edgeKerbs(copings, surfaces, height, 0.6, [0.1], 'ends'), ...edgeKerbs(copings, surfaces, height, 0.75, [0.1, 0.3, 0.5, 0.8], 'back')];
+  colliders.push(...kerbs, ...gapKerbs(copings, surfaces, kerbs, height, 1));
+  // A stair's flight beside a dip past its balustrades' ends, and the corners where two canal wall tops meet over the
+  // cut, likewise.
+  const stairKerbs = edgeKerbs(flights, surfaces, height, 1, [0.1, 0.3, 0.5, 0.8]);
+  colliders.push(...stairKerbs, ...gapKerbs(tops, surfaces, colliders.filter((c) => c.hz === 0.6 && c.y0 === TC_CANAL.bed), height, 1));
+
   return {
-    zones, market, walls, harbour, bridges, canalWalls: canalWallRuns, gondolas, lamps, poles, plants, dressing, colliders, surfaces, reserved, streets, houses,
+    zones, market, walls, harbour, bridges, canalWalls: canalTops.map(({ ax, az, bx, bz, nx, nz, top }) => ({ ax, az, bx, bz, nx, nz, top })), gondolas, lamps, poles, plants, dressing, colliders, surfaces, reserved, streets, houses,
     ms: Math.round(performance.now() - t0),
   };
+}
+
+/**
+ * Kerbs along walks' open edges (`side`: all four, the two across local x, or the one toward local -z): wherever the
+ * ground at any of `probes` outside an edge (on none of `others`) lies more than `dropBy` below the walk, runs of thin
+ * boxes 0.05 to 0.55 outside it keep a crab from stepping off (into the harbour, off a coping's end, into a dip behind
+ * it).
+ */
+function edgeKerbs(walks: ReturnType<typeof rectSurface>[], others: ReturnType<typeof rectSurface>[], height: Height, dropBy: number, probes = [0.3], side: 'all' | 'ends' | 'back' = 'all'): TidecrownCollider[] {
+  const out: TidecrownCollider[] = [];
+  const onWalk = (x: number, z: number) => others.some((w) => w.contains(x, z));
+  for (const w of walks) {
+    const { x, z, hx, hz, yaw } = w.spec as { x: number; z: number; hx: number; hz: number; yaw: number };
+    // Each edge: its half length, and the local axes along it and out of it.
+    for (const [ax, az, nx, nz, half] of [[1, 0, 0, 1, hx], [1, 0, 0, -1, hx], [0, 1, 1, 0, hz], [0, 1, -1, 0, hz]] as const) {
+      if ((side === 'ends' && !nx) || (side === 'back' && nz !== -1)) continue;
+      const depth = nx ? hx : hz, n = Math.max(1, Math.ceil((2 * half) / 0.5));
+      let run: number | null = null;
+      for (let k = 0; k <= n; k++) {
+        const u = -half + (2 * half * k) / n;
+        const [ex, ez] = local(x, z, yaw, ax * u + nx * (depth - 0.05), az * u + nz * (depth - 0.05));
+        const drop = probes.some((d) => {
+          const [px, pz] = local(x, z, yaw, ax * u + nx * (depth + d), az * u + nz * (depth + d));
+          return !onWalk(px, pz) && height(px, pz) < w.height(ex, ez) - dropBy;
+        });
+        if (drop && run === null) run = u;
+        if ((!drop || k === n) && run !== null) {
+          const u1 = drop ? u : u - (2 * half) / n;
+          const m = (run + u1) / 2, len = (u1 - run) / 2 + 0.25;
+          const [cx, cz] = local(x, z, yaw, ax * m + nx * (depth + 0.3), az * m + nz * (depth + 0.3));
+          const top = Math.max(w.height(...local(x, z, yaw, ax * run, az * run)), w.height(...local(x, z, yaw, ax * u1, az * u1)));
+          out.push(box(cx, cz, ax ? len : 0.25, ax ? 0.25 : len, yaw, -8, top + 1.2));
+          run = null;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** Small boxes on low ground left between two walks (within a metre of both) that no walk or kerb covers: corner gaps. */
+function gapKerbs(walks: ReturnType<typeof rectSurface>[], others: ReturnType<typeof rectSurface>[], kerbs: TidecrownCollider[], height: Height, dropBy: number): TidecrownCollider[] {
+  const out: TidecrownCollider[] = [];
+  const seen = new Set<string>();
+  const inBox = (x: number, z: number, b: TidecrownCollider) => {
+    const dx = x - b.x, dz = z - b.z;
+    return Math.abs(b.c * dx - b.s * dz) < b.hx && Math.abs(b.s * dx + b.c * dz) < b.hz;
+  };
+  const near = (o: ReturnType<typeof rectSurface>, px: number, pz: number) => {
+    const { x, z, hx, hz, yaw } = o.spec as { x: number; z: number; hx: number; hz: number; yaw: number };
+    const c = Math.cos(yaw), sn = Math.sin(yaw), dx = px - x, dz = pz - z;
+    return Math.abs(c * dx - sn * dz) <= hx + 1 && Math.abs(sn * dx + c * dz) <= hz + 1;
+  };
+  for (const w of walks) {
+    const { x, z, hx, hz, yaw } = w.spec as { x: number; z: number; hx: number; hz: number; yaw: number };
+    for (let lx = -hx - 1; lx <= hx + 1; lx += 0.25)
+      for (let lz = -hz - 1; lz <= hz + 1; lz += 0.25) {
+        if (Math.abs(lx) <= hx && Math.abs(lz) <= hz) continue;
+        const [px, pz] = local(x, z, yaw, lx, lz);
+        const key = `${Math.round(px * 4)},${Math.round(pz * 4)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const [ex, ez] = local(x, z, yaw, Math.max(-hx, Math.min(hx, lx)), Math.max(-hz, Math.min(hz, lz)));
+        if (!walks.some((o) => o !== w && near(o, px, pz))) continue;
+        if (others.some((o) => o.contains(px, pz)) || height(px, pz) >= w.height(ex, ez) - dropBy) continue;
+        if (kerbs.some((b) => inBox(px, pz, b)) || out.some((b) => inBox(px, pz, b))) continue;
+        out.push(box(px, pz, 0.3, 0.3, yaw, height(px, pz) - 2, w.height(ex, ez) + 1.2));
+      }
+  }
+  return out;
+}
+
+/** After buildBlocked: off the walks, harbour ground under +1 (the sea's shallows) is not walkable. */
+export function blockHarbourShallows(col: Collision): void {
+  const t = col.terrain;
+  for (let j = 0; j < t.nz - 1; j++) {
+    const z = t.minZ + (j + 0.5) * t.step;
+    if (z < -110 || z > 100) continue;
+    for (let i = 0; i < t.nx - 1; i++) {
+      const x = t.minX + (i + 0.5) * t.step;
+      if (x < 190 || polyDistance(x, z, TC_CITY_WALL) > 0 || col.surfaceAt(x, z)) continue;
+      const k = j * t.nx + i, lo = Math.min(t.h[k], t.h[k + 1], t.h[k + t.nx], t.h[k + t.nx + 1]);
+      if (lo < 1) col.blocked[j * (t.nx - 1) + i] = 1;
+    }
+  }
 }
 
 /** Surfaces first (cells under them stay open in buildBlocked), then every solid. */

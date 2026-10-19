@@ -358,11 +358,10 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   for (const w of plan.canalWalls) {
     const dx = w.bx - w.ax, dz = w.bz - w.az, len = Math.hypot(dx, dz), yaw = Math.atan2(-dz, dx);
     const mx = (w.ax + w.bx) / 2, mz = (w.az + w.bz) / 2, b = sector(mx);
-    // Local +Z toward the water (n). The flags sit just over the quay's own ground along the wall's back.
+    // Local +Z toward the water (n). The flags sit just over the quay's own ground along the wall's back (the plan's
+    // walk over the wall top is at the same height).
     const lz = Math.sign(Math.sin(yaw) * w.nx + Math.cos(yaw) * w.nz) || 1;
-    let flush = TC_CANAL.street - 0.02;
-    for (let u = -len / 2; u <= len / 2 + 0.01; u += 1.5) { const [qx, qz] = local(mx, mz, yaw, Math.min(u, len / 2), -lz * 2.3); flush = Math.max(flush, height(qx, qz) + 0.03); }
-    flush = Math.min(flush, TC_CANAL.street + 0.4);
+    const flush = w.top;
     b.addGeometry(frameBox(mx, mz, yaw, 0, (flush + bed) / 2, -lz * 1.0, len + 0.04, flush - bed, 2.0), D, null);
     b.addGeometry(frameBox(mx, mz, yaw, 0, flush + 0.09, -lz * 0.3, len + 0.04, 0.22, 0.84), L, null);
     b.addGeometry(darken(frameBox(mx, mz, yaw, 0, TC_CANAL.water + 0.12, lz * 0.02, len + 0.02, 0.5, 0.06), 0.5), D, null);
