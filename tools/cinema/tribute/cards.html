@@ -521,9 +521,9 @@ function drawMap(t) {
     ctx.restore();
   }
   // Into white.
-  const wa = ramp(t, 35.9, 38.2);
+  const wa = ramp(t, 36.4, 38.7);
   if (wa > 0) { ctx.save(); ctx.globalAlpha = wa; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore();
-    if (ta > 0) { ctx.save(); ctx.globalAlpha = ta * 0.9; line('#8a857c', 0); ctx.restore(); } }
+    if (ta > 0) { ctx.save(); ctx.globalAlpha = ta * 0.95; line('#3f4049', 0); ctx.restore(); } } // dark slate over the white, as in the original
 }
 
 // ----------------------------------------------------------------------------------- rating card
