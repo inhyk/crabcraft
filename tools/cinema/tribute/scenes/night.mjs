@@ -708,7 +708,7 @@ const undeadShots = [
         // Back and down as the golem gathers behind him, then tilting up its height as it looms.
         { t: 6.0, p: G(-4.4, 0.8, 0.42), l: G(0.8, 0.35, 1.9), fov: 44 },
         { t: 8.0, p: G(-4.9, 0.85, 0.32), l: G(1.8, 0.45, 2.5), fov: 47 },
-        { t: 11.5, p: G(-5.3, 0.9, 0.28), l: G(2.0, 0.5, 3.1), fov: 50 },
+        { t: 11.5, p: G(-5.6, 0.9, 0.3), l: G(2.0, 0.5, 3.4), fov: 52 },
       ],
     },
     fx: [

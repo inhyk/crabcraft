@@ -32,7 +32,7 @@ const SHOULDER_Y = 4.6;
 const SHOULDER_X = 2.0;
 const PELVIS_Y = 2.3;
 const CHEST: V3 = [0, 3.75, 0.62];
-const HEAD: V3 = [0, 5.2, 0.15];
+const HEAD: V3 = [0, 5.35, 0.3];
 
 /** One arm, in the shoulder's frame (x outward for the right arm; mirrored for the left). */
 const ARM: { p: V3; s: V3; r?: V3; o: number }[] = [
@@ -80,14 +80,14 @@ const PARTS: Part[] = [
     [-1, 1].map((sd) => ({ g: 'body' as const, p: [sd * 0.5, 3.18 + k * 0.47, 0.85 - k * 0.04] as V3, s: [0.46, 0.15, 0.2] as V3, r: [0, 0, sd * 0.42] as V3, o: 0.86 + k * 0.03 })),
   ),
   // The head, sunk between the shoulders: skull, brow, jaw.
-  { g: 'head', p: HEAD, s: [0.7, 0.62, 0.66], o: 0.9 },
-  { g: 'head', p: [HEAD[0], HEAD[1] + 0.22, HEAD[2] + 0.36], s: [0.62, 0.17, 0.28], o: 0.95 },
-  { g: 'head', p: [HEAD[0], HEAD[1] - 0.32, HEAD[2] + 0.28], s: [0.45, 0.2, 0.34], o: 0.97 },
+  { g: 'head', p: HEAD, s: [0.86, 0.72, 0.78], o: 0.9 },
+  { g: 'head', p: [HEAD[0], HEAD[1] + 0.3, HEAD[2] + 0.45], s: [0.78, 0.2, 0.32], o: 0.95 },
+  { g: 'head', p: [HEAD[0], HEAD[1] - 0.42, HEAD[2] + 0.36], s: [0.55, 0.24, 0.4], o: 0.97 },
 ];
 
 const EYES: V3[] = [
-  [-0.21, HEAD[1] + 0.05, HEAD[2] + 0.58],
-  [0.21, HEAD[1] + 0.05, HEAD[2] + 0.58],
+  [-0.27, HEAD[1] + 0.0, HEAD[2] + 0.78],
+  [0.27, HEAD[1] + 0.0, HEAD[2] + 0.78],
 ];
 
 const smooth = (a: number, b: number, t: number) => {
@@ -178,11 +178,11 @@ class Golem implements Effect {
         if (i == 0) { pos = uChest; size = 0.5 + 0.25 * uChestK; col = vec4(uHot * 3.0, min(1., uChestK) * fl); }
         else if (i == 1) { pos = uChest; size = 0.8 + 0.45 * uChestK; col = vec4(uGold * 1.6, min(1., uChestK * 0.6) * fl); }
         else if (i == 2) { pos = uChest - uUp * 0.1; size = 1.2 + 0.9 * uChestK; col = vec4(mix(uGold, uGreen, 0.5) * 0.6, min(0.5, uChestK * 0.22)); }
-        else if (i == 3) { pos = uEyeL; size = 0.14; col = vec4(uHot * 6.0, uEyeK); }
-        else if (i == 4) { pos = uEyeR; size = 0.14; col = vec4(uHot * 6.0, uEyeK); }
-        else if (i == 5) { pos = uEyeL; size = 0.5; col = vec4(uGold * 2.0, uEyeK * 0.8); }
-        else if (i == 6) { pos = uEyeR; size = 0.5; col = vec4(uGold * 2.0, uEyeK * 0.8); }
-        else if (i == 7) { pos = mix(uEyeL, uEyeR, 0.5); size = 1.3; col = vec4(mix(uGold, uGreen, 0.4) * 0.7, uEyeK * 0.35); }
+        else if (i == 3) { pos = uEyeL; size = 0.2; col = vec4(uHot * 8.0, uEyeK); }
+        else if (i == 4) { pos = uEyeR; size = 0.2; col = vec4(uHot * 8.0, uEyeK); }
+        else if (i == 5) { pos = uEyeL; size = 0.7; col = vec4(uGold * 2.6, uEyeK * 0.85); }
+        else if (i == 6) { pos = uEyeR; size = 0.7; col = vec4(uGold * 2.6, uEyeK * 0.85); }
+        else if (i == 7) { pos = mix(uEyeL, uEyeR, 0.5); size = 1.5; col = vec4(mix(uGold, uGreen, 0.4) * 0.8, uEyeK * 0.4); }
         else { pos = uChest + uUp * 0.1 * uS; size = 0.16 + 0.08 * uChestK; vel = uUp; stretch = 1.1; col = vec4(uHot * 4.0, min(1., uChestK) * fl); }
         size *= uS; stretch *= uS;`,
     });
@@ -198,14 +198,16 @@ class Golem implements Effect {
     const [l0, l1] = (this.cue.loom as [number, number]) ?? [8.8, 11.5];
     const st = smooth(s0, s1, t);
     const lm = smooth(l0, l1, t);
-    const crouch = num(this.cue.crouch, 1.1);
+    const crouch = num(this.cue.crouch, 0.9);
+    const eyesAt = num(this.cue.eyes, 10);
     const breathe = Math.sin(t * 2.1) * 0.04;
     return {
       lift: -crouch * (1 - st) + breathe,
-      lean: 0.38 * (1 - st) - 0.08 * st * (1 - lm) + num(this.cue.leanTo, 0.3) * lm,
+      lean: 0.2 * (1 - st) - 0.08 * st * (1 - lm) + num(this.cue.leanTo, 0.3) * lm,
       armOut: (0.12 * (1 - st) + 0.3 * st) * (1 - lm) + num(this.cue.spread, 0.25) * lm,
       armFwd: 0.15 * (1 - lm) + num(this.cue.reach, 0.75) * lm,
-      nod: 0.35 * (1 - st) - 0.12 * st + 0.1 * lm,
+      // Head down while it gathers, up as it stands, then lowered at him as the eyes light.
+      nod: 0.35 * (1 - st) - 0.12 * st * (1 - lm) + 0.12 * lm + 0.16 * smooth(eyesAt - 0.4, eyesAt + 0.2, t),
     };
   }
 
