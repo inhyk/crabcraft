@@ -1,5 +1,6 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
@@ -18,6 +19,7 @@ import { deliverCertifiedAreaPage, PagedOutcomeRecovery, verifyPagedOutcomeSeal,
 import { DurableOutcomeStore } from './contribution-store.ts';
 import { planOutcomePage } from '../../src/sim/ledger.ts';
 import { setQuestChapter } from '../../src/sim/data/quests.ts';
+import { dungeonAwardId } from '../../src/sim/features/dungeon-awards.ts';
 
 import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
@@ -865,8 +867,9 @@ async function grantLedger(c) {
   return { ids: grants.map(g => g.grant_id), xp: grants.reduce((n, g) => n + JSON.parse(g.payload_json).xp, 0), receipts: receipts.map(r => r.grant_id) };
 }
 
-test('retained saves run at most once per second under constant kills without holding the world, and every reward is journaled and receipted once', { timeout: 30000 }, async () => {
-  const rt = await runtime({ combat: true, enemies: 6 }), bots = [], records = [], timers = [];
+// With dungeons enabled every Area also keeps a durable feature award ledger; the same rounds must let the world run.
+for (const dungeons of [false, true]) test(`${dungeons ? 'dungeons enabled: ' : ''}retained saves run at most once per second under constant kills without holding the world, and every reward is journaled and receipted once`, { timeout: 30000 }, async () => {
+  const rt = await runtime({ combat: true, enemies: 6, dungeons }), bots = [], records = [], timers = [];
   try {
     for (let i = 0; i < 2; i++) { const c = await character('mage'), bot = await client(rt, c); records.push(c); bots.push(bot); await ready(rt, bot); }
     await until(() => !rt.host.stats().durableBarrier);
@@ -897,8 +900,8 @@ test('retained saves run at most once per second under constant kills without ho
 });
 
 // Production runs retained saves with the personal ending on; its input watermark must keep moving with them.
-for (const ending of [false, true]) test(`${ending ? 'ending on: ' : ''}ticks and snapshots go on while a save is in flight, and a result is sent only after the save that contains it commits`, { timeout: 20000 }, async () => {
-  const { gate, characters } = gatedStore(), rt = await runtime({ characters, ending }); let bot;
+for (const [ending, dungeons] of [[false, false], [true, false], [true, true]]) test(`${ending ? 'ending on: ' : ''}${dungeons ? 'dungeons enabled: ' : ''}ticks and snapshots go on while a save is in flight, and a result is sent only after the save that contains it commits`, { timeout: 20000 }, async () => {
+  const { gate, characters } = gatedStore(), rt = await runtime({ characters, ending, dungeons }); let bot;
   try {
     const c = await character('mage'); bot = await client(rt, c); await ready(rt, bot); await until(() => !rt.host.stats().durableBarrier);
     let release; const blocked = new Promise(resolve => { release = resolve; }); gate.armed = () => blocked;
@@ -958,8 +961,8 @@ test('a crash between save rounds loses only progress after the last committed r
   } finally { resumed?.ws.close(); await restarted.close(); }
 });
 
-test('rewards earned while a save is in flight are journaled and applied exactly once, also after a restart', { timeout: 30000 }, async () => {
-  const { gate, characters } = gatedStore(), rt = await runtime({ combat: true, enemies: 6, characters }), bots = [], records = [], timers = [];
+for (const dungeons of [false, true]) test(`${dungeons ? 'dungeons enabled: ' : ''}rewards earned while a save is in flight are journaled and applied exactly once, also after a restart`, { timeout: 30000 }, async () => {
+  const { gate, characters } = gatedStore(), rt = await runtime({ combat: true, enemies: 6, characters, dungeons }), bots = [], records = [], timers = [];
   try {
     for (let i = 0; i < 2; i++) { const c = await character('mage'), bot = await client(rt, c); records.push(c); bots.push(bot); await ready(rt, bot); }
     await until(() => !rt.host.stats().durableBarrier);
@@ -978,7 +981,7 @@ test('rewards earned while a save is in flight are journaled and applied exactly
       assert.equal((await store.getOwned(c.binding.accountId, c.record.characterId)).checkpoint.progress.xp, ledger.xp);
     }
   } finally { for (const t of timers) clearInterval(t); for (const b of bots) b.ws.close(); assert.deepEqual(await rt.close(), { durable: true, unresolved: 0 }); }
-  const restarted = await runtime(), again = [];
+  const restarted = await runtime({ dungeons }), again = [];
   try {
     for (const c of records) { const bot = await client(restarted, c); again.push(bot); await ready(restarted, bot); }
     for (const [i, c] of records.entries()) {
@@ -1032,18 +1035,23 @@ test('a far actor (40 to 80 m) is refreshed every 4th snapshot and never removed
 });
 
 
-test('a save round whose journal write fails is given up without acknowledging or leaking anything, and the next round holds the world and pays every reward once', { timeout: 30000 }, async () => {
-  let failNext = 0, failed = 0;
+for (const dungeons of [false, true]) test(`${dungeons ? 'dungeons enabled: ' : ''}a save round whose journal write fails is given up without acknowledging or leaking anything, and the next round holds the world and pays every reward once`, { timeout: 30000 }, async () => {
+  let failNext = 0, failed = 0, owed = null;
   // The first victim outcome write of the armed round fails as a client-side query deadline would, after nothing committed.
+  // With dungeons enabled a clear award for both players is sealed elsewhere right then: after the given-up round's captures,
+  // before the halting round that follows it.
   const characters = new Proxy(store, { get(target, key) {
-    if (key === 'recordVictimOutcome') return async (...args) => { if (failNext > 0) { failNext--; failed++; throw new Error('Query read timeout'); } return target.recordVictimOutcome(...args); };
+    if (key === 'recordVictimOutcome') return async (...args) => { if (failNext > 0) { failNext--; failed++; if (owed) await new DungeonCompletionStore(pool).recordDungeonCompletion(owed); throw new Error('Query read timeout'); } return target.recordVictimOutcome(...args); };
     const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
   } });
-  const rt = await runtime({ combat: true, enemies: 6, characters }), bots = [], records = [], timers = [];
+  const rt = await runtime({ combat: true, enemies: 6, characters, dungeons }), bots = [], records = [], timers = [];
   try {
     for (let i = 0; i < 2; i++) { const c = await character('mage'), bot = await client(rt, c); records.push(c); bots.push(bot); await ready(rt, bot); }
     await until(() => !rt.host.stats().durableBarrier);
-    const start = rt.host.stats(); failNext = 1;
+    if (dungeons) { const runId = randomUUID(), area = `dungeon:${runId}`;
+      owed = { kind: 'dungeon-clear-v1', candidate: { run: { area, runId }, tier: 35, completedTick: 1, finalWave: [1, 2, 3].map(id => ({ area, id, life: 1 })), baseXp: 700, coins: 300 },
+        recipients: records.map(c => ({ characterId: c.record.characterId, accountId: c.binding.accountId })) }; }
+    const awardXp = dungeons ? 700 : 0, start = rt.host.stats(); failNext = 1;
     for (const bot of bots) timers.push(attackLoop(bot));
     await until(() => failed === 1 || rt.failures.length, 20000);
     await until(() => rt.host.stats().saveRetries > start.saveRetries || rt.failures.some(f => f.stage !== 'save-journal-retry'), 10000);
@@ -1063,8 +1071,13 @@ test('a save round whose journal write fails is given up without acknowledging o
     for (const [i, c] of records.entries()) {
       const ledger = await grantLedger(c), saved = await store.getOwned(c.binding.accountId, c.record.characterId);
       assert.deepEqual(ledger.receipts, ledger.ids, 'every journaled reward has exactly one receipt');
-      assert.equal(saved.checkpoint.progress.xp, ledger.xp); assert.equal(bots[i].state.self.player.xp, ledger.xp);
+      assert.equal(saved.checkpoint.progress.xp, ledger.xp + awardXp); assert.equal(bots[i].state.self.player.xp, ledger.xp + awardXp);
       assert.deepEqual(await store.pendingGrants(c.binding.accountId, c.record.characterId), []);
+      if (dungeons) {
+        const award = dungeonAwardId(owed.candidate.run, c.record.characterId);
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM world_dungeon_award_receipts WHERE award_id=$1', [award])).rows[0].n, 1, 'the owed award is paid once');
+        assert.equal(saved.checkpoint.progress.flags.dungeonCleared35, true);
+      }
     }
     const result = bots[0].results.find(r => r.inputSequence === accepted);
     assert.equal(result.status, 'durable'); assert.equal((await store.getOwned(records[0].binding.accountId, records[0].record.characterId)).checkpoint.progress.quests.status.q1, 'active');
