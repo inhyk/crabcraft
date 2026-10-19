@@ -132,7 +132,6 @@ const elfShots = [
           { t: 5.3, x: E0[0] - 1.2, z: E0[1] - 1.0 },
           { t: 5.9, x: E0[0] - 4.6, z: E0[1] - 3.2 },
         ],
-        acts: [{ t: -2, clip: 'idle', loop: true }],
         faces: [{ t: -2, expr: 'focused' }],
       },
     },
@@ -171,8 +170,8 @@ const elfShots = [
     actors: [{ ...elf, at: RUN[0], yaw: 0 }],
     tracks: {
       elf: {
+        // No looping clip here: the path's speed drives the game's run and scuttle gaits.
         path: runPath,
-        acts: [{ t: -2, clip: 'idle', loop: true }],
         faces: [{ t: -2, expr: 'focused' }],
       },
     },
@@ -242,7 +241,6 @@ const elfShots = [
           { t: 0, x: LEDGE_FROM[0], z: LEDGE_FROM[1] },
           { t: 1.0, x: LEDGE_TO[0], z: LEDGE_TO[1] },
         ],
-        acts: [{ t: -2, clip: 'idle', loop: true }],
         faces: [{ t: -2, expr: 'focused' }],
       },
     },
