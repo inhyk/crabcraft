@@ -15,16 +15,19 @@ export interface PlayerCommit<C extends Json> {
   readonly expectedRevision: number;
   readonly checkpoint: C;
   readonly appliedGrantIds: readonly string[];
+  /** Present only for captures from Areas opted into dungeon feature awards. */
+  readonly appliedFeatureAwardIds?: readonly string[];
 }
 export interface Recovery<I extends Json, C extends Json, G extends Json> {
   character: Character<I, C>;
   grants: (EarnedGrant<G> & { appliedRevision: number | null })[];
+  dungeonAwards?: { id: string; appliedRevision: number | null }[];
 }
 export interface CheckpointStore<I extends Json, C extends Json, G extends Json> {
-  saveCheckpoint(account: string, character: string, revision: number, checkpoint: C, ids: readonly string[]): Promise<Character<I, C>>;
+  saveCheckpoint(account: string, character: string, revision: number, checkpoint: C, ids: readonly string[], dungeonAwardIds?: readonly string[]): Promise<Character<I, C>>;
   /** Optional: all writes in one transaction, all or nothing (CharacterStore.saveCheckpoints). */
-  saveCheckpoints?(writes: readonly { accountId: string; characterId: string; expectedRevision: number; checkpoint: C; appliedGrantIds: readonly string[] }[]): Promise<Character<I, C>[]>;
-  loadForRecovery(account: string, character: string, ids: readonly string[]): Promise<Recovery<I, C, G>>;
+  saveCheckpoints?(writes: readonly { accountId: string; characterId: string; expectedRevision: number; checkpoint: C; appliedGrantIds: readonly string[]; appliedDungeonAwardIds?: readonly string[] }[]): Promise<Character<I, C>[]>;
+  loadForRecovery(account: string, character: string, ids: readonly string[], dungeonAwardIds?: readonly string[]): Promise<Recovery<I, C, G>>;
 }
 export type CommitResult<I extends Json, C extends Json, G extends Json> =
   | { kind: 'saved'; captureId: string; character: Character<I, C> }
@@ -55,7 +58,8 @@ export class PersistenceCoordinator<I extends Json, C extends Json, G extends Js
     this.store = store; this.ownership = ownership; this.options = options;
   }
   private check(input: PlayerCommit<C>): void {
-    if (!input.captureId || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || input.appliedGrantIds.length > 256 || new Set(input.appliedGrantIds).size !== input.appliedGrantIds.length) throw new Error('invalid checkpoint capture');
+    if (!input.captureId || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || input.appliedGrantIds.length > 256 || new Set(input.appliedGrantIds).size !== input.appliedGrantIds.length ||
+      input.appliedFeatureAwardIds && (input.appliedFeatureAwardIds.length > 256 || new Set(input.appliedFeatureAwardIds).size !== input.appliedFeatureAwardIds.length)) throw new Error('invalid checkpoint capture');
   }
   commit(input: PlayerCommit<C>): Promise<CommitResult<I, C, G>> {
     if (this.stopped || this.ownership.closed.aborted) return Promise.resolve({ kind: 'unresolved', captureId: input.captureId, reason: 'ownership' });
@@ -106,7 +110,8 @@ export class PersistenceCoordinator<I extends Json, C extends Json, G extends Js
     if (this.ownership.closed.aborted) { this.unresolved += captures.length; return captures.map(capture => ({ kind: 'unresolved', captureId: capture.captureId, reason: 'ownership' })); }
     try {
       const saved = await this.store.saveCheckpoints!(captures.map(capture => ({ accountId: capture.accountId, characterId: capture.characterId,
-        expectedRevision: capture.expectedRevision, checkpoint: capture.checkpoint, appliedGrantIds: capture.appliedGrantIds })));
+        expectedRevision: capture.expectedRevision, checkpoint: capture.checkpoint, appliedGrantIds: capture.appliedGrantIds,
+        ...(capture.appliedFeatureAwardIds ? { appliedDungeonAwardIds: capture.appliedFeatureAwardIds } : {}) })));
       if (saved.length !== captures.length || saved.some((character, index) => character.characterId !== captures[index].characterId || character.revision !== captures[index].expectedRevision + 1)) throw new Error('incomplete checkpoint batch');
       // A successful write cannot authorize publication after the ownership session was lost.
       if (this.ownership.closed.aborted) { this.unresolved += captures.length; return captures.map(capture => ({ kind: 'unresolved', captureId: capture.captureId, reason: 'ownership' })); }
@@ -119,11 +124,11 @@ export class PersistenceCoordinator<I extends Json, C extends Json, G extends Js
     }
   }
   private async save(capture: PlayerCommit<C>): Promise<CommitResult<I, C, G>> {
-    const start = this.options.now();
+    const start = this.options.now(), feature = capture.appliedFeatureAwardIds ? [capture.appliedFeatureAwardIds] as const : [] as const;
     for (let attempt = 0; attempt < this.options.maxAttempts; attempt++) {
       if (this.ownership.closed.aborted) { this.unresolved++; return { kind: 'unresolved', captureId: capture.captureId, reason: 'ownership' }; }
       try {
-        const character = await this.store.saveCheckpoint(capture.accountId, capture.characterId, capture.expectedRevision, capture.checkpoint, capture.appliedGrantIds);
+        const character = await this.store.saveCheckpoint(capture.accountId, capture.characterId, capture.expectedRevision, capture.checkpoint, capture.appliedGrantIds, ...feature);
         // A successful write cannot authorize publication after the ownership session was lost.
         if (this.ownership.closed.aborted) { this.unresolved++; return { kind: 'unresolved', captureId: capture.captureId, reason: 'ownership' }; }
         this.metrics.saved++; this.metrics.commitMs += this.options.now() - start;
@@ -131,9 +136,9 @@ export class PersistenceCoordinator<I extends Json, C extends Json, G extends Js
       } catch {
         // A failed response can follow a committed transaction. Inspect consistent receipts before retrying.
         try {
-          const recovery = await this.store.loadForRecovery(capture.accountId, capture.characterId, capture.appliedGrantIds);
+          const recovery = await this.store.loadForRecovery(capture.accountId, capture.characterId, capture.appliedGrantIds, ...feature);
           if (this.ownership.closed.aborted) { this.unresolved++; return { kind: 'unresolved', captureId: capture.captureId, reason: 'ownership' }; }
-          if (recovery.character.revision !== capture.expectedRevision || recovery.grants.some(g => g.appliedRevision !== null)) {
+          if (recovery.character.revision !== capture.expectedRevision || recovery.grants.some(g => g.appliedRevision !== null) || recovery.dungeonAwards?.some(a => a.appliedRevision !== null)) {
             this.metrics.recoveries++; return { kind: 'recovery', captureId: capture.captureId, recovery };
           }
         } catch { /* Keep the original immutable capture and freeze its authority until storage returns. */ }
