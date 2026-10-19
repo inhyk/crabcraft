@@ -523,16 +523,16 @@ export const SNOW_KOREAN = {
 
 export const SNOW_POINTS:Partial<Record<SnowObjectiveKind,[number,number]>> = {
   "snow-crate-a": [
-    -12,
-    78
+    -4.6,
+    93.2
   ],
   "snow-crate-b": [
     12,
     72
   ],
   "snow-crate-c": [
-    -12,
-    56
+    -8.2,
+    56.2
   ],
   "snow-herb-a": [
     -47,
