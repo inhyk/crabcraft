@@ -19,7 +19,7 @@ import {SNOW_DEFORM_READ,type SnowDeform} from './snowDeform';
  */
 
 /** Tile edge, metres: each pixel loops only over the segments its tile lists (fpTileTex), at most TILE_K. */
-const TILE = 5;
+const TILE = 4;
 const TILE_K = 16;
 /** Swept junctions and paved squares. */
 const MAX_PLAZA = 24;
