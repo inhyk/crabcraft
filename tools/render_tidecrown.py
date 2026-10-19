@@ -76,18 +76,49 @@ def preview_material(mat, kit_tex: str | None):
     if mat.name == "TC_Glass":
         bsdf.inputs["Emission Color"].default_value = (*srgb("#3f8fd0"), 1)
         bsdf.inputs["Emission Strength"].default_value = 0.35
-    if mat.name == "TC_Nacre":  # stand-in for the runtime mother-of-pearl: hue shifts with the view angle
+    if mat.name == "TC_Nacre":  # stand-in for the runtime mother-of-pearl: pale pink-white, hue shifts with the view angle
         lw = nodes.new("ShaderNodeLayerWeight")
-        lw.inputs["Blend"].default_value = 0.45
+        lw.inputs["Blend"].default_value = 0.5
         ramp = nodes.new("ShaderNodeValToRGB")
         cr = ramp.color_ramp
-        cr.elements[0].color = (*srgb("#f6e6ee"), 1)
-        cr.elements[1].color = (*srgb("#bfe8ee"), 1)
-        e = cr.elements.new(0.55)
-        e.color = (*srgb("#efd9f2"), 1)
+        cr.elements[0].color = (*srgb("#f7e9ef"), 1)
+        cr.elements[1].color = (*srgb("#a9dcd8"), 1)
+        for pos, col in ((0.35, "#f3dbe6"), (0.62, "#e9d9b4"), (0.82, "#c6e3e6")):
+            e = cr.elements.new(pos)
+            e.color = (*srgb(col), 1)
         links.new(lw.outputs["Facing"], ramp.inputs["Fac"])
-        links.new(ramp.outputs["Color"], mul.inputs["A"])
-        bsdf.inputs["Coat Weight"].default_value = 0.6
+        # patchy pearl: soft noise patches of pink, lilac, teal and cream over the view-angle shift
+        tc = nodes.new("ShaderNodeTexCoord")
+        noise = nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = 0.09
+        noise.inputs["Detail"].default_value = 3.0
+        links.new(tc.outputs["Object"], noise.inputs["Vector"])
+        pr = nodes.new("ShaderNodeValToRGB")
+        pc = pr.color_ramp
+        pc.elements[0].color = (*srgb("#f4d6e4"), 1)
+        pc.elements[1].color = (*srgb("#cfeee9"), 1)
+        for pos, col in ((0.38, "#efe4f6"), (0.5, "#f6ecd6"), (0.62, "#dfe2f7")):
+            e = pc.elements.new(pos)
+            e.color = (*srgb(col), 1)
+        links.new(noise.outputs["Fac"], pr.inputs["Fac"])
+        mix = nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        mix.inputs["Factor"].default_value = 1.0
+        links.new(ramp.outputs["Color"], mix.inputs["A"])
+        links.new(pr.outputs["Color"], mix.inputs["B"])
+        gain = nodes.new("ShaderNodeMix")
+        gain.data_type = "RGBA"
+        gain.blend_type = "MULTIPLY"
+        gain.inputs["Factor"].default_value = 1.0
+        gain.inputs["B"].default_value = (1.12, 1.12, 1.12, 1)
+        links.new(mix.outputs["Result"], gain.inputs["A"])
+        links.new(gain.outputs["Result"], mul.inputs["A"])
+        bsdf.inputs["Roughness"].default_value = 0.25
+        bsdf.inputs["Coat Weight"].default_value = 0.5
+        if "Thin Film Thickness" in bsdf.inputs:  # Blender 4.2+: iridescent layer
+            bsdf.inputs["Thin Film Thickness"].default_value = 420.0
+            bsdf.inputs["Thin Film IOR"].default_value = 1.45
 
 
 def setup_scene():
@@ -183,6 +214,10 @@ def views_for(name, mn, mx):
         out.append(("_dome", Vector((-70.0, 70.0, 75.0)), Vector((0.0, 36.0, 0.0)), 40))
         out.append(("_facade", Vector((-28.0, 10.0, 78.0)), Vector((0.0, 18.0, 30.0)), 35))
         out.append(("_side", Vector((140.0, 40.0, 30.0)), Vector((0.0, 55.0, 0.0)), 35))
+        out.append(("_dome34", Vector((-62.0, 88.0, 92.0)), Vector((0.0, 34.0, 2.0)), 38))
+        out.append(("_top", Vector((0.0, 400.0, 1.4)), Vector((0.0, 0.0, 1.4)), 0))  # orthographic, front up
+        out.append(("_stage", Vector((-26.0, 70.0, 34.0)), Vector((0.0, 55.0, 0.0)), 38))
+        out.append(("_margin", Vector((46.0, 36.0, 52.0)), Vector((20.0, 25.0, 14.0)), 35))
     if name == "TC_PincerGate":
         out.append(("_front", Vector((0.0, 8.0, 70.0)), Vector((0.0, 22.0, 0.0)), 35))
         out.append(("_claws", Vector((-14.0, 36.0, 34.0)), Vector((0.0, 38.0, 0.0)), 40))
@@ -193,8 +228,11 @@ def views_for(name, mn, mx):
     return out
 
 
-def render_all(pieces, outdir: Path, kit_tex: str):
+def render_all(pieces, outdir: Path, kit_tex: str, only: str = ""):
+    """only: comma list of output names without the pass tag (e.g. TC_Keep_front,lineup) to render a subset."""
     outdir.mkdir(parents=True, exist_ok=True)
+    want = {s for s in only.split(",") if s}
+    ok = lambda name: not want or name in want
     sc, cam, ground, cmat = setup_scene()
     passes = [("flat", None)]
     if kit_tex:
@@ -220,12 +258,25 @@ def render_all(pieces, outdir: Path, kit_tex: str):
                 lantern.obj.hide_render = False
                 lantern.holder.location = B(pc.anchors["lantern"]["centre"])
             for suffix, eye, tgt, lens in views_for(pc.name, mn, mx):
-                if tag == "tex" and suffix not in ("", "_front", "_facade"):
+                if tag == "tex" and suffix not in ("", "_front", "_facade", "_dome34", "_stage", "_margin"):
                     continue
-                aim(cam, eye, tgt, lens)
+                if not ok(pc.name + suffix):
+                    continue
+                if lens:
+                    aim(cam, eye, tgt, lens)
+                else:  # straight down, orthographic, front (+Z) at the top of the frame
+                    cam.data.type = "ORTHO"
+                    cam.data.ortho_scale = 92.0
+                    cam.location = B(eye)
+                    cam.rotation_euler = (0.0, 0.0, math.pi)
                 render(outdir / f"{pc.name}{suffix}_{tag}.png")
+                cam.data.type = "PERSP"
             if lantern:
                 lantern.holder.location = (0, 0, 0)
+        if ok("tiling"):
+            tiling(pieces, outdir, tag, cam, crabs)
+        if not ok("lineup"):
+            continue
         # lineup: keep in the middle, the rest along the front
         x = -150.0
         order = [pc for pc in pieces if pc.name != "TC_Keep"]
@@ -256,7 +307,6 @@ def render_all(pieces, outdir: Path, kit_tex: str):
             pc.holder.location = (0, 0, 0)
             mn, mx = facts[pc.name]["bbox"]["min"], facts[pc.name]["bbox"]["max"]
             crabs[pc.name].location = B((mn[0] - 1.6, 0.0 if pc.name != "TC_Lantern" else mn[1], mx[2] + 1.2))
-        tiling(pieces, outdir, tag, cam, crabs)
 
 
 def tiling(pieces, outdir, tag, cam, crabs):

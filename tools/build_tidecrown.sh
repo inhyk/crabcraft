@@ -2,12 +2,13 @@
 # Rebuild public/models/world/tidecrown.glb (Tidecrown kit: Crownshell Keep, lantern, ward and city
 # walls, towers and gates, Pincer Gate, bridge span, statue plinth) and tools/tidecrown-pieces.json.
 # Usage: tools/build_tidecrown.sh [--render DIR [--kit-tex DIR]]   (extra args go to build_tidecrown.py)
+# Blender runs on BLENDER_THREADS threads (default 4).
 set -euo pipefail
 BLENDER=${BLENDER:-/Applications/Blender.app/Contents/MacOS/Blender}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-"$BLENDER" -b --factory-startup --python "$ROOT/tools/build_tidecrown.py" -- \
+"$BLENDER" -b --factory-startup -t "${BLENDER_THREADS:-4}" --python "$ROOT/tools/build_tidecrown.py" -- \
   --out "$TMP/tidecrown.raw.glb" --json "$ROOT/tools/tidecrown-pieces.json" "$@" >"$TMP/blender.log" 2>&1 || {
   tail -40 "$TMP/blender.log"
   exit 1
