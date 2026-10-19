@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot,releasePreparedObservation} from './protocol.ts';
+import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,WIRE_SCHEMA_REVISION,projectObservationExtras,projectActor,prepareObservationSnapshot,releasePreparedObservation} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession,InputRateBudget} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent,tick} from '../../../tests/core/worldHarness.mjs';
@@ -274,6 +274,35 @@ test('report acknowledgments never expose internal global moderation decisions',
  const f=fixture(),target={area:binding.area,id:22,life:1},ack={type:'chatResult',inputSequence:1,operation:'report',ok:true,target};
  assert.doesNotThrow(()=>f.codec.encodeControl(header(1),ack));for(const muted of [true,false])assert.throws(()=>f.codec.encodeControl(header(1),{...ack,muted}),/moderation/);
 });
+
+test('personal ending source observation is private, complete on full recovery and absent without opt-in',async()=>{
+ const {EndingPresentationController}=await import('../../../src/sim/features/endingPresentation.ts');
+ const f=fixture(2),owner=f.actors[0].ref,controller=new EndingPresentationController({id:'wire-personal-ending',owner,centre:{x:0,y:0,z:0},yaw:0,cast:[{archetype:'human',appearance}]});
+ const view=observation(f),prepared=prepareObservationSnapshot(view.snapshot,view.appearances,catalog);view.prepared=prepared;view.recovery.endingPresentation=controller.snapshot();const result=apply(f.receiver,f.codec.encodeObservation(view));assert.deepEqual(result.state.recovery.endingPresentation,controller.snapshot());assert.equal(result.state.actors.some(a=>'endingId' in a.ref),false);
+ const other=observation(f);other.snapshot=view.snapshot;other.prepared=prepared;other.selfRef=f.actors[1].ref;Object.assign(other,projectObservationExtras(other.snapshot,f.actors[1].p.state.character,other.visibleIds));const otherReceiver=new GameplayReceiver(binding,catalog),otherCodec=createGameplayProtocol(catalog);const personal=apply(otherReceiver,otherCodec.encodeObservation(other));assert.equal('endingPresentation' in personal.state.recovery,false);assert.equal(JSON.stringify(personal.state).includes('wire-personal-ending'),false);
+ other.recovery.endingPresentation=controller.snapshot();assert.throws(()=>createGameplayProtocol(catalog).encodeObservation(other),/foreign ending owner/);releasePreparedObservation(prepared);
+ const resumed=new GameplayReceiver({...binding,session:'reconnected-ending',epoch:2},catalog),current=observation(f);current.binding={...binding,session:'reconnected-ending',epoch:2};current.recovery.endingPresentation=controller.snapshot();assert.deepEqual(apply(resumed,createGameplayProtocol(catalog).encodeObservation(current)).state.recovery.endingPresentation,controller.snapshot());
+});
+
+test('ending wire rejects foreign lifetime, provider, cast, clocks, unknown fields and ordered command forgery',async()=>{
+ const {EndingPresentationController}=await import('../../../src/sim/features/endingPresentation.ts'),f=fixture(),controller=new EndingPresentationController({id:'wire-ending-validation',owner:f.actors[0].ref,centre:{x:0,y:0,z:0},yaw:0,cast:[{archetype:'human',appearance}]});
+ for(const mutate of [v=>{v.owner.life++;},v=>{v.provider='stale';},v=>{v.cast.push(v.cast[0]);},v=>{v.cast[0].ref.endingId='other';},v=>{v.cast[0].appearance.shell=999;},v=>{v.cast[0].position.x=NaN;},v=>{v.phaseStartedTick=1;},v=>{v.cast[0].recipe.extra=true;},v=>{v.accountId='private';},v=>{v.cues=Array.from({length:65},()=>({ordinal:1,tick:0,kind:'phase',value:'blackout'}));}]){const view=observation(f);view.recovery.endingPresentation=structuredClone(controller.snapshot());mutate(view.recovery.endingPresentation);assert.throws(()=>createGameplayProtocol(catalog).encodeObservation(view));}
+ const commands=[{kind:'endingControl',id:'ending-id',action:'skip'},{kind:'endingControl',id:'ending-id',action:'continue'}],session=new InputSession(binding,catalog,{now:0});for(const [index,command]of commands.entries())session.accept(encodeInput({binding,intent:input(index+1,[command])},catalog),0);const prepared=session.prepareTick(0);assert.deepEqual(prepared.intent.commands,commands);assert.deepEqual(prepared.commandOrigins,[{inputSequence:1,commandIndex:0},{inputSequence:2,commandIndex:0}]);assert.equal(session.consumedInput,0);session.commitConsumed(prepared.token);assert.equal(session.consumedInput,2);
+ for(const command of [{kind:'endingControl',id:'x',action:'finish'},{kind:'endingControl',id:'',action:'skip'},{kind:'endingControl',id:'x',action:'skip',owner:f.actors[0].ref}])assert.throws(()=>encodeInput({binding,intent:input(1,[command])},catalog));
+});
+
+test('maximum admitted personal cast and cue shape fits existing binary limits with 100 actual actors and atomic fragments',async t=>{
+ const {EndingPresentationController}=await import('../../../src/sim/features/endingPresentation.ts'),f=fixture(100),controller=new EndingPresentationController({id:'maximum-wire-shape',owner:f.actors[0].ref,centre:{x:0,y:0,z:0},yaw:0,cast:Array.from({length:24},()=>({archetype:'human',appearance}))});for(let i=0;i<200;i++)controller.step();
+ const ending=structuredClone(controller.snapshot()),layer=ending.cast[0].recipe.layers[0];assert.ok(layer);for(const actor of ending.cast)actor.recipe.layers=Array.from({length:64},()=>structuredClone(layer));ending.cues=Array.from({length:64},(_,i)=>({ordinal:i+1,tick:i,kind:'moment',value:'x'.repeat(128)}));
+ apply(f.receiver,f.codec.encodeObservation(observation(f)));const view=observation(f,2,true);view.recovery.endingPresentation=ending;const chunks=f.codec.encodeObservation(view),bytes=chunks.reduce((n,c)=>n+c.length,0);assert.ok(chunks.length>1&&chunks.length<=LIMITS.fragments);assert.ok(chunks.every(c=>c.length<=LIMITS.fragmentBytes));assert.ok(bytes<LIMITS.messageBytes);for(const chunk of chunks.slice(0,-1))assert.equal(f.receiver.accept(chunk,0),null);assert.equal('endingPresentation' in f.receiver.state.recovery,false);const result=f.receiver.accept(chunks.at(-1),0);assert.deepEqual(result.state.recovery.endingPresentation,ending);assert.equal(result.state.actors.length,view.snapshot.units.length);
+ t.diagnostic(JSON.stringify({scope:'wire-bound shape, not gameplay/load performance',actualPlayers:100,totalActors:view.snapshot.units.length,cast:24,layersPerCast:64,cues:64,bytes,fragments:chunks.length,messageLimit:LIMITS.messageBytes,fragmentLimit:LIMITS.fragmentBytes}));
+});
+
+
+test('compiled schema revision is explicit while a legacy catalog with absent revision remains decodable',()=>{
+ const current={...catalog,wireSchemaRevision:WIRE_SCHEMA_REVISION};assert.doesNotThrow(()=>createGameplayProtocol(current));assert.doesNotThrow(()=>new GameplayReceiver(binding,current));assert.doesNotThrow(()=>createGameplayProtocol(catalog));assert.doesNotThrow(()=>new GameplayReceiver(binding,catalog));for(const revision of [0,2,null,'1']){assert.throws(()=>createGameplayProtocol({...catalog,wireSchemaRevision:revision}),/schema revision/);assert.throws(()=>new GameplayReceiver(binding,{...catalog,wireSchemaRevision:revision}),/schema revision/);}
+});
+
 
 test('shared public prefix preserves private event budgets and only advances successful recipient baselines',()=>{
  const f=fixture(2),a=createGameplayProtocol(catalog),b=createGameplayProtocol(catalog),first=observation(f),prepared=prepareObservationSnapshot(first.snapshot,first.appearances,catalog),receiverA=new GameplayReceiver(binding,catalog),receiverB=new GameplayReceiver(binding,catalog);

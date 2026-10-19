@@ -1,4 +1,6 @@
 import type {ServerGameBridge} from './serverBridge';
+import { WorldEndingPresentation, type EndingPresentationFrame } from '../multiplayer/worldEndingPresentation.ts';
+import type { EndingObservation } from '../sim/features/endingPresentation.ts';
 import type { CoreGameBridge } from './coreBridge';
 import {VillageGames} from './villageGames';
 import {t} from '../i18n';
@@ -99,6 +101,21 @@ const v2 = new THREE.Vector3();
 export class Game {
   core:CoreGameBridge|null=null;
   server:ServerGameBridge|null=null;
+  private serverEnding:WorldEndingPresentation|null=null;
+  private serverEndingHud:{cinematic:boolean;chatKeep:boolean}|null=null;
+  get serverEndingActive():boolean{return this.serverEnding?.active??false;}
+  /** The trusted observation owns choreography; this adapter owns only a private display. */
+  observeServerEnding(observation:EndingObservation|null,frame:EndingPresentationFrame|null):void {
+    if(!this.alive||!this.serverMode||!observation&&!this.serverEnding)return;
+    if(!this.serverEnding)this.serverEnding=new WorldEndingPresentation({parent:this.app.ui,alive:()=>this.alive,
+      activate:(scene,camera)=>this.engine.setView(scene,camera,GAME_VIEW),
+      restore:()=>{this.engine.setView(this.scene,this.camera,GAME_VIEW);this.follow.cut();},
+      cinematic:on=>{if(on&&!this.serverEndingHud){this.serverEndingHud={cinematic:this.hud.root.classList.contains('cinematic'),chatKeep:this.hud.chat.el.classList.contains('hud-keep')};this.hud.chat.el.classList.add('hud-keep');this.hud.setCinematic(true);}else if(!on&&this.serverEndingHud){const prior=this.serverEndingHud;this.serverEndingHud=null;this.hud.setCinematic(prior.cinematic);if(!prior.chatKeep)this.hud.chat.el.classList.remove('hud-keep');}},
+      command:command=>this.server?.command(command)??false,
+      cue:value=>{if(value==='takeoff'||value==='spin_from')this.audio.sfx('sfx-servo-whir',{volume:.4});},
+      error:message=>this.hud.messages.error(message)});
+    this.serverEnding.commit(observation,frame);
+  }
   readonly serverMode=new URLSearchParams(location.search).get('world')==='server';
   /** The developer monitor's invisible view of a relay room (src/spectate.ts); null in a player's game. */
   spectator:Spectator|null=null;
@@ -203,7 +220,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return !!this.spectator || !!this.server?.locked || !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
+    return !!this.spectator || this.serverEndingActive || !!this.server?.locked || !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -684,7 +701,7 @@ export class Game {
   private readonly frame = (f: FrameInfo): void => {
     if (!this.loaded) return;
     const dt = f.dt;
-    if(this.serverMode){this.server?.frame(dt,f.elapsed);return;}
+    if(this.serverMode){this.server?.frame(dt,f.elapsed);this.serverEnding?.render();return;}
     const paused = (this.hud.menu.open||this.app.account.open) && !this.multiplayer?.battle.active;
     if(!this.spectator)this.handleInput();
     const authority = this.multiplayer?.battle.authority !== false;
@@ -1509,6 +1526,7 @@ export class Game {
   private releaseResources(): void {
     if (this.resourcesReleased) return;
     this.resourcesReleased = true;
+    this.serverEnding?.dispose();this.serverEnding=null;
     this.server?.dispose();this.server=null;
     this.dungeons?.dispose();this.dungeons=null;
     this.journey?.dispose();

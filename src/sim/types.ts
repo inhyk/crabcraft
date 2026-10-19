@@ -1,3 +1,5 @@
+import type {EndingIntegrationOptions} from './features/worldRules.ts';
+import type {EndingObservation} from './features/endingPresentation.ts';
 import type {DungeonFeatureAward} from './features/dungeon-awards.ts';
 export type {DungeonFeatureAward} from './features/dungeon-awards.ts';
 import type {DungeonReturnBinding,DungeonCaptureBinding,StagedInstanceExit} from './features/dungeon-persistence.ts';
@@ -233,6 +235,7 @@ export type PlayerCommand =
   | { kind: 'travel'; gateId: string }
   | { kind: 'bossChallenge'; profile: BossSim['profile'] }
   | { kind: 'endingReplay' | 'talkEnd' }
+  | {kind:'endingControl';id:string;action:'skip'|'continue'}
   | { kind:'boat'; command:BoatCommand }
   | { kind:'village'; mode:'hide'|'tag'|'stop' };
 /** Input seq acknowledgment/transport validation is host work; no client position/HP/result.
@@ -374,6 +377,7 @@ export interface AreaServices {
   launch(projectile: Omit<ProjectileState, 'id' | 'elapsed' | 'bornStep'>): number; // Area stamps birth stage; stage-start-list eligibility only
   spawnAdd(boss: EntityRef, x: number, z: number): EnemySim | null;
   runCommand(player: EntityRef, command: PlayerCommand, commandIndex?:number): boolean;
+  inputCommandAllowed?(player:EntityRef,command:PlayerCommand):boolean;
   bossByProfile(profile: BossSim['profile']): BossSim | null;
   encounterActive(): boolean;
   bossAvailable(profile: BossSim['profile']): boolean;
@@ -383,6 +387,7 @@ export interface AreaServices {
   onUnitDied(victim: EntityRef, killer: EntityRef | null): void;
 }
 export interface AreaOptions {
+  readonly endingPresentation?:EndingIntegrationOptions;
   readonly dungeon?:DungeonOptions;
   readonly featureAwards?:{readonly maxPending:number};
   readonly ledgerMode?: 'retained' | 'external-durable';
@@ -547,6 +552,8 @@ export interface Area {
   activateRestoredArrival(token:string):EntityRef;
   restorePlayerCheckpoint(ref:EntityRef,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData,receiptIds?:readonly string[],revision?:number):EntityRef;
   snapshot(): AreaSnapshot;
+  hasPendingEndingTransitions():boolean;
+  endingObservation(owner:EntityRef):Readonly<EndingObservation>|null;
   debugState(): AreaDebugState;
   drainEvents(): readonly EventRecord[]; // overflow fails actor/step preflight; fail-stop on unforeseen overflow, no silent loss/continued partial tick
   applyContext(context: AreaContext): void; // copied at boundary, validates membership before stepping

@@ -13,6 +13,7 @@ export type HostCommand=
  | {kind:'chatBlock';target:import('../../../src/sim/types.ts').EntityRef;blocked:boolean}
  | {kind:'chatMute';target:import('../../../src/sim/types.ts').EntityRef;muted:boolean}
  | {kind:'chatReport';target:import('../../../src/sim/types.ts').EntityRef;reason:typeof REASONS[number]};
+export type EndingControlCommand=Extract<PlayerCommand,{kind:'endingControl'}>;
 export type GameplayCommand=PlayerCommand|HostCommand;
 export const HOST_COMMANDS:readonly string[]=['partyCreate','partyJoin','partyLeave','partyPvp','encounterLeave','chatSay','chatPreferences','chatBlock','chatMute','chatReport'];
 export interface GameplayInput extends Omit<PlayerIntent,'commands'> {readonly commands:readonly GameplayCommand[]}
@@ -27,6 +28,7 @@ export function validateCommand(value:unknown,catalog:GameplayCatalog,area:strin
   case 'target':object(c,{kind,target:v=>{if(v!==null)reference(v,area);}});break;
   case 'partyCreate':case 'partyLeave':case 'encounterLeave':
   case 'jump':case 'dance':case 'cancel':case 'endingReplay':case 'talkEnd':object(c,{kind});break;
+  case 'endingControl':object(c,{kind,id:text,action:choice('skip','continue')});break;
   case 'channelStart':object(c,{kind,channel:choice('recall','beacon','waystone','lighthouse-secret')},{targetId:catalogValue(catalog.interactions)});break;
   case 'interact':object(c,{kind,targetId:catalogValue(catalog.interactions)});break;
   case 'questAccept':case 'questTurnIn':object(c,{kind,questId:quest,npcId:npc});break;

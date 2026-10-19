@@ -11,6 +11,7 @@ import { prepareRestore, type CoreCharacterCodec, type IdentityJson, type Checkp
 import type { Area, AreaSnapshot, BossProfileId, EntityRef, GrantReadToken, EventRecord, PlayerCommand, PlayerIntent, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { canChallenge } from '../../src/sim/data/progression.ts';
 import type { LedgerMode } from '../../src/sim/ledger.ts';
+import type { EndingIntegrationOptions } from '../../src/sim/features/worldRules.ts';
 import { BOSS_PROFILES } from '../../src/sim/data/bosses.ts';
 import { TREASURES, LIGHTHOUSE_SECRET } from '../../src/sim/features/exploration.ts';
 import { CharacterStore, CharacterStoreError, type Character, type VictimOutcomeResources, type GrantBatchEntry } from './character-store.ts';
@@ -22,7 +23,7 @@ import { DeadlineScheduler } from './scheduler.ts';
 import { PersistenceCoordinator, readCertifiedGrantPage, AreaSourceDrain, PagedOutcomeRecovery, type Recovery } from './persistence-coordinator.ts';
 import { PUBLIC_WORLDS, HOSTABLE_WORLDS, type LoadedWorldDefinition } from './catalog.ts';
 import { InputSession, InputRateBudget, HOST_COMMANDS, type HostCommand, type PreparedInput } from './gameplay/intents.ts';
-import { prepareObservationSnapshot, releasePreparedObservation } from './gameplay/protocol.ts';
+import { prepareObservationSnapshot, releasePreparedObservation, WIRE_SCHEMA_REVISION, validateWireSchema } from './gameplay/protocol.ts';
 import type { GameplayCatalog, GameplayProtocol, ObservationInput, PreparedObservation, WireBinding, WorldControl } from './gameplay/protocol.ts';
 import type { CommandResult } from './gameplay/events.ts';
 import { createDungeonDefinition, createDungeonQuery } from '../../src/sim/areas/dungeon.ts';
@@ -47,6 +48,7 @@ export interface HostPolicies {
   readonly maxQueuedInputs: number;
   readonly maxMutationSourcesPerTick: number;
   readonly loopIntervalMs: number;
+  readonly endingPresentation?: { readonly stage: EndingIntegrationOptions['stage'] };
   readonly ledger?: { sourceLimits: SourceLedgerLimits; drainLimits: Omit<ConstructorParameters<typeof AreaSourceDrain>[3], 'codecVersion'>; recoveryLimits: Omit<ConstructorParameters<typeof PagedOutcomeRecovery>[2], 'codecVersion'>; recoveryIntervalMs: number };
   readonly victimOutcome: VictimOutcomeResources;
   readonly victimOutcomeRetryCeiling?: VictimOutcomeResources;
@@ -129,6 +131,8 @@ const reject = (socket: Duplex, status: string) => socket.end(`HTTP/1.1 ${status
 /** Actual numeric simulation host. The synthetic v2 fixture is intentionally not imported. */
 export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHost {
   const p = deps.policies, external = !!p.ledger;
+  validateWireSchema(deps.gameplay.catalog);
+  if (p.endingPresentation && deps.gameplay.catalog.wireSchemaRevision !== WIRE_SCHEMA_REVISION) throw new Error('ending requires the compiled wire schema catalog');
   if (!!deps.outcomes !== external) throw new Error('outcomes service and explicit ledger policy must be paired');
   if (p.ledger && (!Number.isSafeInteger(p.ledger.recoveryIntervalMs) || p.ledger.recoveryIntervalMs < 1)) throw new Error('explicit recovery interval required');
   for (const key of ['authTimeoutMs', 'inputTimeoutMs', 'sessionRevalidateMs', 'checkpointIntervalMs', 'maxConnections', 'maxConnectionsPerIp', 'maxWaiting', 'maxAuthFrameBytes', 'maxFrameBytes', 'maxBufferedBytes', 'maxQueuedInputs', 'maxMutationSourcesPerTick', 'loopIntervalMs'] as const) {
@@ -197,6 +201,13 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const at = (p: number) => values[Math.floor((values.length - 1) * p)] ?? 0;
     return [[`${name}P50Ms`, at(.5)], [`${name}P99Ms`, at(.99)], [`${name}Samples`, values.length]];
   }));
+  const endingOptions = (incarnation: string): EndingIntegrationOptions | undefined => p.endingPresentation ? {
+    incarnation, stage: p.endingPresentation.stage,
+    appearance: owner => {
+      const actor = [...actors.values()].find(actor => sameRef(actor.ref, owner));
+      return actor ? { ...actor.record.identity.appearance, name: shownName(actor.record.identity.appearance.name) } : null;
+    },
+  } : undefined;
   if (PUBLIC_WORLDS.some(world => !deps.worlds.has(world)) || [...deps.worlds.keys()].some(world => !HOSTABLE_WORLDS.some(id => id === world))) throw new Error('missing safe public world configuration');
   for (const world of HOSTABLE_WORLDS.filter(id => deps.worlds.has(id))) {
     const loaded = deps.worlds.get(world);
@@ -204,14 +215,16 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (loaded.publicDefinition.enemies.length > p.maxMutationSourcesPerTick) throw new Error('population exceeds bounded checkpoint receipts');
     const now = deps.nowMonotonicMs();
     const ledgerMode: LedgerMode = external ? 'external-durable' : 'retained';
-    const area = createArea({ ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `${world}:${randomUUID()}`, definition: loaded.publicDefinition, query: loaded.query,
+    const id = `${world}:${randomUUID()}`;
+    const area = createArea({ endingPresentation: endingOptions(id), ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id, definition: loaded.publicDefinition, query: loaded.query,
       actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed, characters: registry,
       context: { mode: 'public', pvp: 'disabled', members: [] }, limits: p.areaLimits, ...(featureAwards ? { featureAwards } : {}) });
     const slot: Slot = { kind: 'public', ledgerMode, world, area, tick: new DeadlineScheduler(30, now), snapshot: new DeadlineScheduler(20, now, 1), events: [], watermark: -1, lastCheckpoint: now, publishes: 0 };
     slots.set(world, slot); allSlots.add(slot);
   }
   if (external && p.party) for (const loaded of deps.worlds.values()) for (const definition of loaded.encounterDefinitions.values()) {
-    const validation = createArea({ id: `party:${randomUUID()}`, ledgerMode: 'external-durable', ledgerLimits: p.ledger!.sourceLimits, definition,
+    const id = `party:${randomUUID()}`;
+    const validation = createArea({ endingPresentation: endingOptions(id), id, ledgerMode: 'external-durable', ledgerLimits: p.ledger!.sourceLimits, definition,
       query: loaded.query, actionData: loaded.actionData, policy: loaded.policy, seed: loaded.seed,
       context: { mode: 'party-encounter', pvp: 'disabled', members: [] }, limits: p.areaLimits, ...(featureAwards ? { featureAwards } : {}) });
     validation.dispose();
@@ -231,6 +244,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       () => !stopped && allSlots.has(slot) && slot.area === area && deps.ownership === ownership && !drainedFailedSources.has(slot));
   }
   for (const slot of allSlots) slot.source = sourceAdapter(slot);
+  // Retained results wait in c.results until the save round that contains them commits, and ending transitions are held
+  // by their capture binding, so the retained input watermark is the live one; only external rounds hold it back.
   const publishedConsumed = (c: Connection) => external ? c.publishedConsumed : c.input!.consumedInput;
   const sourceFailed = (slot: Slot) => failedSources.has(slot) || drainedFailedSources.has(slot);
   const json = (c: Connection, value: unknown) => {
@@ -543,7 +558,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (!destination) {
         if ([...allSlots].filter(s => s.kind !== 'public').length >= p.party.maxEncounters) { controlError(c, 'encounter-capacity'); continue; }
         const loaded = deps.worlds.get(source.world)!, now = deps.nowMonotonicMs();
-        const area = createArea({ ledgerMode: source.ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id: `party:${randomUUID()}`, definition, query: loaded.query, actionData: loaded.actionData,
+        const id = `party:${randomUUID()}`;
+        const area = createArea({ endingPresentation: endingOptions(id), ledgerMode: source.ledgerMode, ledgerLimits: p.ledger?.sourceLimits, id, definition, query: loaded.query, actionData: loaded.actionData,
           policy: loaded.policy, seed: loaded.seed, characters: registry, context: { mode: 'party-encounter', pvp: party.pvp ? 'party-only' : 'disabled', members: [] }, limits: p.areaLimits, ...(featureAwards ? { featureAwards } : {}) });
         area.bootstrapEncounter(profile, { beaconLit: beacon });
         destination = { kind: 'party', ledgerMode: source.ledgerMode, world: source.world, area, party, profile, tick: new DeadlineScheduler(30, now),
@@ -1215,11 +1231,13 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           const encodeStart = deps.nowMonotonicMs(), wasFull = c.full, held = new Set<number>();
           c.visible = visible(slot, actor, c, job.beat, held);
           if (!c.full) metrics.aoiFarHeld += held.size;
+          const extras = p.observationExtras(snapshot, actor.record.characterId, c.visible);
+          const recovery = p.endingPresentation ? { ...extras.recovery, endingPresentation: slot.area.endingObservation(actor.ref) } : extras.recovery;
           const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
             acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c), selfRef: actor.ref,
             snapshot, prepared, events: job.events, visibleIds: c.visible, heldIds: c.full ? undefined : held, full: c.full, eventWatermark: job.watermark, appearances: job.appearances,
             results: materializeResults(c),
-            ...p.observationExtras(snapshot, actor.record.characterId, c.visible) });
+            ...extras, recovery });
           observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
           for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
           c.full = false; c.baselineSequence = c.sequence; c.ready = []; metrics.snapshots++;
@@ -1279,7 +1297,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       const origin = frame.commandOrigins[index];
       if (!origin) throw new Error('missing command origin');
       const outcome = outcomes.find(result => result.commandIndex === index && sameRef(result.unit, unit));
-      if (command.kind === 'forgeBuy' || command.kind === 'forgeUpgrade') {
+      if (command.kind === 'endingControl') {
+        c.results.push({ ...origin, status: outcome?.success ? 'succeeded' : 'failed', code: outcome?.success ? 'ending-control-accepted' : 'ending-control-rejected' });
+      } else if (command.kind === 'forgeBuy' || command.kind === 'forgeUpgrade') {
         const record = emitted.find(record => !used.has(record) && record.tick === inputTick && record.event.type === 'equipment' && sameRef(record.event.unit, unit) && record.event.operation === (command.kind === 'forgeBuy' ? 'buy' : 'upgrade') && record.event.slot === (command.slot ?? 'weapon') && record.event.request === command.request);
         if (record?.event.type === 'equipment') {
           used.add(record); c.results.push({ ...origin, status: outcome?.success ? 'durable' : 'failed', code: `equipment-${record.event.result}`, ...(command.request === undefined ? {} : { request: command.request }) });
@@ -1312,7 +1332,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (!external) return;
     progression ||= slot.area.pendingGrants().length > 0 || emitted.some(({ event }) =>
       ['quest', 'xp', 'levelUp', 'equipment', 'achievement', 'discovery', 'endingReady', 'death', 'respawn'].includes(event.type));
-    if (progression || sourceNeedsIO(slot) || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
+    if (progression || p.endingPresentation && slot.area.hasPendingEndingTransitions() || sourceNeedsIO(slot) || now - slot.lastCheckpoint >= p.checkpointIntervalMs) startDurability();
     else for (const { c } of prepared) c.publishedConsumed = c.input!.consumedInput;
   };
   const pump = () => {
@@ -1409,9 +1429,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           const bytes = buffer(raw); metrics.bytesReceived += bytes.byteLength; metrics.receivedPackets++;
           if (c.phase === 'preauth') {
             if (binary || bytes.byteLength > p.maxAuthFrameBytes) { close(c, 'auth-frame'); return; }
-            let value: { type?: unknown; ticket?: unknown; characterId?: unknown };
+            let value: { type?: unknown; ticket?: unknown; characterId?: unknown; schemaRevision?: unknown };
             try { value = JSON.parse(bytes.toString('utf8')); } catch { close(c, 'auth-frame'); return; }
-            if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'characterId,ticket,type' || value.type !== 'authenticate' || typeof value.characterId !== 'string') { close(c, 'auth-frame'); return; }
+            if (!value || typeof value !== 'object' || Array.isArray(value) || !['characterId,ticket,type', 'characterId,schemaRevision,ticket,type'].includes(Object.keys(value).sort().join(',')) || value.type !== 'authenticate' || typeof value.characterId !== 'string') { close(c, 'auth-frame'); return; }
+            if (Object.hasOwn(value, 'schemaRevision') && (value.schemaRevision !== WIRE_SCHEMA_REVISION || value.schemaRevision !== deps.gameplay.catalog.wireSchemaRevision) || p.endingPresentation && value.schemaRevision !== WIRE_SCHEMA_REVISION) { close(c, 'protocol-schema'); return; }
             c.phase = 'authenticating'; const attempt = c.generation;
             void deps.admission.consume(value.ticket, origin).then(binding => enqueue(() => {
               if (c.closed || c.generation !== attempt || !accepting || deps.ownership.closed.aborted) return;

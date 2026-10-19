@@ -10,6 +10,10 @@ import {createPool,migrate} from './db.ts';
 import {CharacterStore} from '../world/character-store.ts';
 import {createCoreCharacterCodec} from '../../src/sim/persistence.ts';
 import {loadBakedWorld} from '../../src/sim/world/baked.ts';
+import {createWorldVariants} from '../../src/sim/areas/variants.ts';
+import {createWorld4Definition} from '../../src/sim/areas/world4.ts';
+import {createEndingStage} from '../../src/sim/features/worldRules.ts';
+import {setQuestChapter} from '../../src/sim/data/quests.ts';
 import {createWorld1Definition} from '../../src/sim/areas/world1.ts';
 import {GameplayReceiver} from '../world/gameplay/protocol.ts';
 import {encodeInput} from '../world/gameplay/intents.ts';
@@ -23,8 +27,8 @@ async function until(check,ms=8000){const end=performance.now()+ms;while(!check(
 function fixtureConfig(source){return {schema:'world-startup-v1',victimOutcome:{maxEntries:1024,maxPayloadBytes:4194304,timeoutMs:3000},chat:{maxPending:16},ownership:{key:'bundled-main-qa',heartbeatMs:100,queryTimeoutMs:1000},assets:{source,manifest:'world-manifest.json'},
  worlds:Object.fromEntries(['w1','w2','w3','w4'].map((world,i)=>[world,{seed:i+1,populationMode:'fixed-slots',fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:1,scavenger:0,jellyfish:0,shallowPatrols:0},respawnSeconds:{scrapling:300,scavenger:300,jellyfish:300,echo:120}}])),
  restore:{cooldowns:'pause',statuses:'pause',death:'pause',history:'pause',hp:'preserve',resource:'preserve',location:'saved',activity:'cancel'},limits:{maxConnections:16,maxConnectionsPerIp:8,maxWaiting:16,checkpointIntervalMs:100},party:{enabled:false},characters:{maxCharactersPerAccount:2}};}
-function start(database,config,ledgerConfig){
- const child=spawn(process.execPath,[main.pathname],{env:{...process.env,DATABASE_URL:database,HOST:'127.0.0.1',PORT:'0',ALLOWED_ORIGINS:'http://localhost',WORLD_ENABLED:'1',WORLD_CONFIG_JSON:config,WORLD_LEDGER_CONFIG_JSON:ledgerConfig===undefined?undefined:JSON.stringify(ledgerConfig)},stdio:['ignore','pipe','pipe']});
+function start(database,config,ledgerConfig,enabled=true){
+ const child=spawn(process.execPath,[main.pathname],{env:{...process.env,DATABASE_URL:database,HOST:'127.0.0.1',PORT:'0',ALLOWED_ORIGINS:'http://localhost',WORLD_ENABLED:enabled?'1':undefined,WORLD_CONFIG_JSON:config,WORLD_LEDGER_CONFIG_JSON:ledgerConfig===undefined?undefined:JSON.stringify(ledgerConfig)},stdio:['ignore','pipe','pipe']});
  let output='',errors='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>errors+=b);
  const exit=once(child,'exit');
  return {child,exit,get output(){return output;},get errors(){return errors;},async ready(){await until(()=>/crabcraft server listening on 127\.0\.0\.1:\d+/.test(output)||child.exitCode!==null);assert.equal(child.exitCode,null,'configured main must remain alive');return 'http://'+output.match(/listening on (127\.0\.0\.1:\d+)/)[1];},async stop(){if(child.exitCode===null)child.kill('SIGTERM');const timer=setTimeout(()=>child.kill('SIGKILL'),9000);try{return await exit;}finally{clearTimeout(timer);}}};
@@ -33,7 +37,7 @@ async function connect(url,origin,catalog,ticket,characterId){
  const ws=new WebSocket(url.replace('http:','ws:')+'/world',{headers:{Origin:origin}}),bot={ws,view:null,binding:null,receiver:null,errors:[]};
  ws.on('error',e=>bot.errors.push(e.message));
  ws.on('message',(bytes,binary)=>{try{if(binary){const update=bot.receiver.accept(bytes,performance.now()/1000);if(update?.kind==='snapshot')bot.view=update.state;}else{const value=JSON.parse(bytes.toString());if(value.type==='world-bound'){const{type,...binding}=value;bot.binding=binding;bot.receiver=new GameplayReceiver(binding,catalog);}else if(value.type==='error')bot.errors.push(value.code??'world error');}}catch(e){bot.errors.push(e.message);}});
- await once(ws,'open');ws.send(JSON.stringify({type:'authenticate',ticket,characterId}));await until(()=>bot.view||bot.errors.length);assert.deepEqual(bot.errors,[]);assert.ok(bot.view);return bot;
+ await once(ws,'open');ws.send(JSON.stringify({type:'authenticate',ticket,characterId,...(catalog.wireSchemaRevision===undefined?{}:{schemaRevision:catalog.wireSchemaRevision})}));await until(()=>bot.view||bot.errors.length);assert.deepEqual(bot.errors,[]);assert.ok(bot.view);return bot;
 }
 
 for(const externalLedger of [false,true]) test(`bundled ${externalLedger?'external':'retained'} main packages real assets and multiplexes account, legacy and authenticated Area routes`,{timeout:30000},async()=>{
@@ -69,6 +73,11 @@ for(const externalLedger of [false,true]) test(`bundled ${externalLedger?'extern
   await until(()=>{const actor=bot.view.actors.find(a=>a.ref.id===bot.view.selfRef.id);return Math.hypot(actor.x-before.x,actor.z-before.z)>.01;});
   legacy=new WebSocket(origin.replace('http:','ws:')+'/multiplayer',{headers:{Origin:origin}});const welcome=once(legacy,'message');await once(legacy,'open');legacy.send(JSON.stringify({type:'create',spec:identity.appearance}));assert.equal(JSON.parse((await welcome)[0].toString()).type,'welcome');legacy.close();await once(legacy,'close');legacy=null;
   bot.ws.close();await once(bot.ws,'close');bot=null;
+  // Explicit trusted W4 earned-flag fixture proves bundled startup reachability, not earned story completion.
+  const finalQuery=loadBakedWorld(JSON.parse(await readFile(new URL('../../public/world/collision-w4.json',import.meta.url),'utf8'))),finalDefinition=createWorld4Definition({query:finalQuery,personalProps:{heightAt:finalQuery.heightAt,resolveCollision:(x,z,r,out)=>finalQuery.collision.resolve(x,z,r,out)},fixedLevels:{scrapling:1,scavenger:2,jellyfish:2,echo:10},population:{scrapling:1,scavenger:0,jellyfish:0,shallowPatrols:0}}),second=await store.getOwned(account,createdCharacter.characterId),checkpoint=structuredClone(second.checkpoint);
+  checkpoint.world='w4';checkpoint.location={...finalDefinition.spawn.position,yaw:finalDefinition.spawn.yaw};setQuestChapter(checkpoint.progress.quests,4);checkpoint.progress.flags.frostCleared=true;await store.saveCheckpoint(account,second.characterId,second.revision,checkpoint,[]);
+  const endingTicket=await (await fetch(origin+'/api/account/world-ticket',{method:'POST',headers:{Origin:origin,'X-Crabcraft-Account':'1',Cookie:cookie}})).json();bot=await connect(origin,origin,catalog,endingTicket.ticket,second.characterId);await until(()=>bot.view.recovery.endingPresentation);const ending=bot.view.recovery.endingPresentation,expected=createEndingStage(createWorldVariants('w1',definition).publicDefinition,createWorldVariants('w4',finalDefinition).encounterDefinitions.get('frost'));
+  assert.equal(catalog.wireSchemaRevision,1);assert.equal(ending.phase,'blackout');assert.deepEqual(ending.cast.slice(1).map(a=>a.archetype),expected.cast.map(a=>a.archetype));assert.deepEqual(ending.cast[0].appearance,appearance);assert.equal(ending.cast.length,expected.cast.length+1);assert.equal(bot.view.self.player.xp,0);assert.equal(bot.view.self.player.coins,0);assert.equal((await store.getOwned(account,second.characterId)).checkpoint.progress.flags.frostEndingStarted,true);bot.ws.close();await once(bot.ws,'close');bot=null;
   const exit=await processState.stop();assert.equal(exit[0],0);assert.equal(exit[1],null);
   const saved=await store.getOwned(account,character.characterId);assert.ok(saved.revision>0);assert.equal(saved.checkpoint.progress.xp,0);assert.equal(saved.checkpoint.progress.coins,0);
   assert.deepEqual((await pool.query('SELECT save,revision,updated FROM accounts WHERE username=$1',[account])).rows[0],{save:oldSave,revision:'47',updated:'123'});
@@ -101,4 +110,12 @@ test('bundled world startup failure keeps legacy account and rooms healthy while
    const [code,signal]=await processState.stop();assert.equal(code,0);assert.equal(signal,null);processState=null;
   }
  }finally{legacy?.terminate();if(processState?.child.exitCode===null)await processState.stop();await guard?.release();await pool.end();cluster.stop();}
+});
+
+
+test('bundled main with WORLD_ENABLED absent keeps legacy routes and does not construct an ending host', {timeout:20000},async()=>{
+ const cluster=await startPostgres(),pool=createPool(cluster.url),live=new Set();pool.on('connect',c=>{live.add(c);c.once('end',()=>live.delete(c));});let processState,legacy,guard;
+ try{await migrate(pool);processState=start(cluster.url,'intentionally invalid unused world JSON',undefined,false);const origin=await processState.ready();assert.equal((await fetch(origin+'/healthz')).status,200);assert.equal((await fetch(origin+'/world')).status,404);assert.equal((await fetch(origin+'/api/account/world-catalog',{headers:{Origin:origin,'X-Crabcraft-Account':'1'}})).status,404);assert(!processState.errors.includes('world startup failed'));guard=await acquireHostOwnership(pool,'bundled-main-qa');await guard.release();guard=null;
+  legacy=new WebSocket(origin.replace('http:','ws:')+'/multiplayer',{headers:{Origin:origin}});const welcome=once(legacy,'message');await once(legacy,'open');legacy.send(JSON.stringify({type:'create',spec:{race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'Legacy default'}}));assert.equal(JSON.parse((await welcome)[0].toString()).type,'welcome');legacy.close();await once(legacy,'close');legacy=null;assert.equal((await processState.stop())[0],0);
+ }finally{legacy?.terminate();if(processState?.child.exitCode===null)await processState.stop();await guard?.release();const ended=[...live].map(c=>once(c,'end'));await pool.end();await Promise.all(ended);cluster.stop();}
 });

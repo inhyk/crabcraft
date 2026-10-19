@@ -2,7 +2,7 @@ import { captureEdges, sampleHeld, type PlayerInputGame } from '../game/playerIn
 import type { HeldInput } from '../sim/input.ts';
 import type { ChannelKind, PlayerCommand } from '../sim/types.ts';
 import {
-  GameplayReceiver, LIMITS, binding as validateBinding, clone, encodeControl, sameBinding,
+  GameplayReceiver, LIMITS, WIRE_SCHEMA_REVISION, validateWireSchema, binding as validateBinding, clone, encodeControl, sameBinding,
   type GameplayCatalog, type GameplayState, type WireBinding, type WireHeader, type WorldControl,
 } from '../../server/world/gameplay/protocol.ts';
 import { HOST_COMMANDS, encodeInput, validateCommand, type GameplayCommand, type GameplayInput } from '../../server/world/gameplay/intents.ts';
@@ -118,6 +118,7 @@ export class WorldClient {
   }
 
   private begin(characterId: string): Promise<void> {
+    try { validateWireSchema(this.catalog); } catch { this.stopAttempt('protocol-schema'); this.setState('closed', 'protocol-schema'); return Promise.reject(new Error('protocol-schema')); }
     this.stopAttempt('replaced');
     this.characterId = characterId;
     const generation = this.generation;
@@ -152,7 +153,7 @@ export class WorldClient {
       socket.addEventListener('open', () => {
         if (!this.active(generation, socket)) return;
         this.setState('authenticating');
-        socket.send(JSON.stringify({ type: 'authenticate', ticket: result.ticket, characterId }));
+        socket.send(JSON.stringify({ type: 'authenticate', ticket: result.ticket, characterId, ...(this.catalog.wireSchemaRevision === undefined ? {} : { schemaRevision: WIRE_SCHEMA_REVISION }) }));
       });
       socket.addEventListener('message', event => {
         if (this.active(generation, socket)) this.receive((event as MessageEvent).data);
