@@ -2,6 +2,9 @@ import {CHAT_MAX} from '../../chat/filter.ts';
 import {copyValue,freezeValue} from '../../../src/sim/events.ts';
 import {createRenderPoseRecipe,evaluateRenderPoseRecipe,isRenderPoseRecipe,renderPoseProviderVersion} from '../../../src/sim/renderPose.ts';
 import type {RenderPoseRecipe} from '../../../src/sim/renderPose.ts';
+import type {EndingObservation} from '../../../src/sim/features/endingPresentation.ts';
+import type {DungeonObservation} from '../../../src/sim/features/dungeon.ts';
+import {DUNGEONS} from '../../../src/sim/data/dungeons.ts';
 /** Gameplay v3. Pure bounded binary values shared by server and browser; v2 is untouched. */
 import { ACHIEVEMENT_IDS } from '../../../src/sim/persistence.ts';
 import type { CommandResult } from './events.ts';
@@ -9,10 +12,22 @@ import type { AreaSnapshot, BossObservation, EntityRef, EventRecord, PlayerState
 import { encodeInput, decodeInput, inputFromFrame } from './intents.ts';
 import { encodeEvents, validateEvent, selectEvents, validateEventPayload, validateResult, indexEvents, selectIndexedEvents, type EventIndex } from './events.ts';
 export const MAGIC=0x5747, VERSION=3;
+/** 2: dungeon observation mode with its typed run view, the party control's running run and the dungeon host commands. */
+export const WIRE_SCHEMA_REVISION=2 as const;
+/** Canonical dungeon tiers and the host run UUID form (lowercase), shared by commands, catalog, run view and party control. */
+export const DUNGEON_TIERS:readonly number[]=Object.freeze(DUNGEONS.map(d=>d.level));
+export const DUNGEON_RUN_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const LIMITS=Object.freeze({fragmentBytes:16384,messageBytes:2097152,fragments:256,actors:2048,projectiles:4096,events:512,commands:32,depth:24,nodes:300000,stringBytes:4096,array:16384,object:256,assemblySeconds:5});
 export interface WireBinding {session:string;area:string;epoch:number;catalog:string}
 export interface WireHeader extends WireBinding {sequence:number;tick:number;acceptedInput:number;consumedInput:number}
-export interface GameplayCatalog {version:string;poseProviderVersion:string;archetypes:readonly string[];actions:readonly string[];abilities:readonly string[];quests:readonly string[];npcs:readonly string[];interactions:readonly string[];gates:readonly string[];objectives:readonly string[];flags:readonly string[];jointCount:number;appearanceLimits:Readonly<Record<string,{shell:number;crest:number;led:number}>>}
+export interface GameplayCatalog {wireSchemaRevision?:number;/** Dungeon tiers this server runs (ascending), absent when dungeons are off. */dungeons?:readonly number[];version:string;poseProviderVersion:string;archetypes:readonly string[];actions:readonly string[];abilities:readonly string[];quests:readonly string[];npcs:readonly string[];interactions:readonly string[];gates:readonly string[];objectives:readonly string[];flags:readonly string[];jointCount:number;appearanceLimits:Readonly<Record<string,{shell:number;crest:number;led:number}>>}
+/** Missing revision is the original v3 catalog, whose optional ending field is never advertised. */
+export function validateWireSchema(catalog:Pick<GameplayCatalog,'wireSchemaRevision'>):void {if(catalog.wireSchemaRevision!==undefined&&catalog.wireSchemaRevision!==WIRE_SCHEMA_REVISION)fail('unsupported wire schema revision');}
+/** Advertised dungeon tiers: unique canonical tiers in ascending order, only with the compiled schema revision. */
+export function validateCatalogDungeons(catalog:Pick<GameplayCatalog,'wireSchemaRevision'|'dungeons'>):void {
+ const tiers=catalog.dungeons;if(tiers===undefined)return;
+ if(catalog.wireSchemaRevision!==WIRE_SCHEMA_REVISION||!Array.isArray(tiers)||!tiers.length||tiers.length>DUNGEON_TIERS.length||tiers.some((tier,i)=>!DUNGEON_TIERS.includes(tier)||i>0&&tier<=tiers[i-1]))fail('invalid catalog dungeon tiers');
+}
 export type Value=null|boolean|number|string|Value[]|{[key:string]:Value};
 export type Validator=(value:unknown)=>void;
 export function fail(message:string):never {throw new Error(`gameplay-v3: ${message}`);}
@@ -38,7 +53,7 @@ export function binding(value:unknown):asserts value is WireBinding {object(valu
 export function header(value:unknown):asserts value is WireHeader {object(value,{session:text,area:text,epoch:v=>integer(v,1),catalog:text,sequence:v=>integer(v,1),tick:integer,acceptedInput:integer,consumedInput:integer});if(Number(value.consumedInput)>Number(value.acceptedInput))fail('consumed input exceeds accepted');}
 export function sameBinding(a:WireBinding,b:WireBinding):boolean {return a.session===b.session&&a.area===b.area&&a.epoch===b.epoch&&a.catalog===b.catalog;}
 export function clone<T>(value:T):T{return decodeValue(encodeValue(value)) as T;}
-const KEYS=('ref area id life archetype kind reaction level x y z yaw radius height hp maxHp alive hidden targetable invulnerable stunUntil slowUntil slowPct rust rustUntil absorb absorbMax absorbUntil blessingUntil encounterBlessing pushX pushZ pushTime lift npcId pose actions locomotionTime localVx localVz yawRate previousX previousZ previousYaw appliedQ appliedPosition appliedRotation gaitPhase controllerVx controllerVz controllerYaw locomotionQ locomotionPosition locomotionRotation locomotionWeights part upper from to loopFrom loop speed fade carryRoot generation start clipTime fadeIn fadeOut weight targetWeight ended interrupted root curve dataVersion metersToUnits committed committedClipTime rebase character unit classId resource maxResource xp coins attackRank armorRank weaponOwned armorOwned baseMaxHp gcdStart gcdEnd cooldowns cast channel target warded nextSwing lastAttack queued velX velZ jumpT spinT lastSpend targetDeadAt dash t deadUntil role controlsLocked talkTarget quests flags cogMisses chapter status progress cogs tracked ability end targetId source style elapsed bornStep hit anchorVersion type src dst amount crit school reason stage seconds caster range half stun landed slot moment move oldMaxHp jump attack at mech shapes cancelled boss phase show textKey yell recipient item recipients grant appliedHere position quest objective value operation result request destination gate header sequence tick acceptedInput consumedInput session epoch catalog full baseline eventWatermark selfRef actors removed projectiles self features recovery events results world time state weapon armor boat village environment telegraphs ending order inputSequence commandIndex revision durable poseDelta mask values fields appearance shell crest led name race sex lighthouseSecretFound endings replay poses poseRecipe recipe locomotion layers version bosses profile enraged stateTime freedTime showFrame').split(' ');
+const KEYS=('ref area id life archetype kind reaction level x y z yaw radius height hp maxHp alive hidden targetable invulnerable stunUntil slowUntil slowPct rust rustUntil absorb absorbMax absorbUntil blessingUntil encounterBlessing pushX pushZ pushTime lift npcId pose actions locomotionTime localVx localVz yawRate previousX previousZ previousYaw appliedQ appliedPosition appliedRotation gaitPhase controllerVx controllerVz controllerYaw locomotionQ locomotionPosition locomotionRotation locomotionWeights part upper from to loopFrom loop speed fade carryRoot generation start clipTime fadeIn fadeOut weight targetWeight ended interrupted root curve dataVersion metersToUnits committed committedClipTime rebase character unit classId resource maxResource xp coins attackRank armorRank weaponOwned armorOwned baseMaxHp gcdStart gcdEnd cooldowns cast channel target warded nextSwing lastAttack queued velX velZ jumpT spinT lastSpend targetDeadAt dash t deadUntil role controlsLocked talkTarget quests flags cogMisses chapter status progress cogs tracked ability end targetId source style elapsed bornStep hit anchorVersion type src dst amount crit school reason stage seconds caster range half stun landed slot moment move oldMaxHp jump attack at mech shapes cancelled boss phase show textKey yell recipient item recipients grant appliedHere position quest objective value operation result request destination gate header sequence tick acceptedInput consumedInput session epoch catalog full baseline eventWatermark selfRef actors removed projectiles self features recovery events results world time state weapon armor boat village environment telegraphs ending order inputSequence commandIndex revision durable poseDelta mask values fields appearance shell crest led name race sex lighthouseSecretFound endings replay poses poseRecipe recipe locomotion layers version bosses profile enraged stateTime freedTime showFrame dungeon run tier restRemaining hazardSerial warning activeEnemies captain completionPending runId shape width depth inner').split(' ');
 const KEY_INDEX=new Map<string,number>();KEYS.forEach((key,index)=>{if(!KEY_INDEX.has(key))KEY_INDEX.set(key,index);});
 /** The wire dictionary of object keys (index + 1 on the wire, 0 = inline key). Read-only; exported for encoder tests. */
 export const DICTIONARY_KEYS:readonly string[]=Object.freeze([...KEYS]);
@@ -249,8 +264,11 @@ export interface FeatureView {
  exploration?:readonly {unit:EntityRef;activeUntil:number}[];
  boat:null|{x:number;z:number;yaw:number;speed:number;seats:readonly(EntityRef|null)[]};
  village:null|{id:string;mode:'hide'|'tag';phase:'ready'|'play'|'done';left:number;starter:EntityRef;seeker:EntityRef;members:readonly EntityRef[];caught:readonly EntityRef[];result:string};
+ /** Present exactly when environment.mode is 'dungeon': the run Area's own typed view (warning X/Z are local to the chamber centre). */
+ dungeon?:DungeonRunView;
 }
-export interface RecoveryView {bosses?:readonly BossObservation[];telegraphs:readonly EventRecord[];endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]}
+export type DungeonRunView=Readonly<DungeonObservation>;
+export interface RecoveryView {endingPresentation?:Readonly<EndingObservation>|null;bosses?:readonly BossObservation[];telegraphs:readonly EventRecord[];endings:readonly {unit:EntityRef;chapter:4;replay:boolean}[]}
 export interface RenderPoseSource {recipe:RenderPoseRecipe;localVx:number;localVz:number}
 export interface ActorUpdate {ref:EntityRef;fields:Partial<Omit<PublicActor,'ref'>>;poseDelta?:PoseDelta;poseRecipe?:number}
 export interface SnapshotPayload {
@@ -273,14 +291,30 @@ function validateSelf(value:unknown,c:GameplayCatalog,area:string):void {
   if(Number(v.xp)<0||Number(v.coins)<0||Number(v.resource)<0||Number(v.resource)>Number(v.maxResource))fail('invalid self progress');
  },achievements:v=>object(v,{distance:number,earned:list(catalogValue(ACHIEVEMENT_IDS),ACHIEVEMENT_IDS.length)})});
 }
+const nonnegative=(v:unknown)=>{number(v);if(v<0)fail('negative value');};
+const positive=(v:unknown)=>{number(v);if(v<=0)fail('non-positive value');};
+/** One warning shape of dungeonHazards(): metres around the chamber centre. */
+function dungeonHazard(v:unknown):void {
+ if(v&&typeof v==='object'&&(v as {shape?:unknown}).shape==='rect')object(v,{shape:choice('rect'),x:number,z:number,width:positive,depth:positive,yaw:number});
+ else{object(v,{shape:choice('circle','ring'),x:number,z:number,radius:positive},{inner:nonnegative});if(v.inner!==undefined&&Number(v.inner)>=Number(v.radius))fail('invalid hazard ring');}
+}
+export function validateDungeonRun(value:unknown,area:string):asserts value is DungeonRunView {
+ const ref=(x:unknown)=>reference(x,area);
+ object(value,{run:x=>object(x,{area:text,runId:v=>{if(typeof v!=='string'||!DUNGEON_RUN_ID.test(v))fail('invalid dungeon run id');}}),tier:choice(...DUNGEON_TIERS),stage:choice(1,2,3),phase:choice('rest','wave','clear','failed'),clock:nonnegative,restRemaining:nonnegative,hazardSerial:integer,warning:list(dungeonHazard,8),activeEnemies:list(ref,6),captain:nullable(ref),completionPending:bool});
+ const run=value as unknown as DungeonRunView;if(run.run.area!==area)fail('foreign dungeon run');
+ if(new Set(run.activeEnemies.map(r=>r.id)).size!==run.activeEnemies.length)fail('duplicate dungeon enemy');
+ if(run.phase!=='wave'&&run.warning.length)fail('dungeon warning outside a wave');
+}
 function validateFeatures(v:unknown,area:string):void {
  const ref=(x:unknown)=>reference(x,area);
- object(v,{environment:x=>object(x,{beacon:bool,clock:number,mode:choice('public','party-encounter','legacy-room'),pvp:choice('disabled','party-only')}),boat:nullable(x=>{object(x,{x:number,z:number,yaw:number,speed:number,seats:list(nullable(ref),2,2)});const seats=x.seats as (EntityRef|null)[];if(seats[0]&&seats[1]&&seats[0].id===seats[1].id)fail('duplicate boat seat');}),village:nullable(x=>object(x,{id:text,mode:choice('hide','tag'),phase:choice('ready','play','done'),left:number,starter:ref,seeker:ref,members:list(ref,100),caught:list(ref,100),result:choice('','seekers','runners','cancelled')}))},{exploration:list(x=>object(x,{unit:ref,activeUntil:number}),1)});
+ object(v,{environment:x=>object(x,{beacon:bool,clock:number,mode:choice('public','party-encounter','legacy-room','dungeon'),pvp:choice('disabled','party-only')}),boat:nullable(x=>{object(x,{x:number,z:number,yaw:number,speed:number,seats:list(nullable(ref),2,2)});const seats=x.seats as (EntityRef|null)[];if(seats[0]&&seats[1]&&seats[0].id===seats[1].id)fail('duplicate boat seat');}),village:nullable(x=>object(x,{id:text,mode:choice('hide','tag'),phase:choice('ready','play','done'),left:number,starter:ref,seeker:ref,members:list(ref,100),caught:list(ref,100),result:choice('','seekers','runners','cancelled')}))},{exploration:list(x=>object(x,{unit:ref,activeUntil:number}),1),dungeon:x=>validateDungeonRun(x,area)});
+ const features=v as unknown as FeatureView;if((features.environment.mode==='dungeon')!==(features.dungeon!==undefined))fail('dungeon view and mode mismatch');
 }
 function validateProjectile(v:unknown,area:string):void {object(v,{id:x=>integer(x,1,0xffffffff),source:x=>reference(x,area),target:x=>reference(x,area),style:choice('bubble','spark','holy','rust'),x:number,y:number,z:number,speed:number,elapsed:number,bornStep:integer});}
 function checkSnapshot(p:unknown,c:GameplayCatalog,area:string,ownedPublic=false,publicChecked=false):asserts p is SnapshotPayload {
- object(p,{full:bool,baseline:integer,eventWatermark:v=>integer(v,-1),world:choice('w1','w2','w3','w4','w5','w6'),time:number,selfRef:v=>reference(v,area),poses:publicChecked?()=>{}:list(ownedPublic?()=>{}:renderSource,LIMITS.actors),actors:publicChecked?()=>{}:list(v=>{object(v,{ref:x=>reference(x,area),fields:x=>{if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).some(k=>!ACTOR_FIELDS.includes(k as typeof ACTOR_FIELDS[number])))fail('unknown actor field');}},{poseDelta:x=>poseDelta(x,c),poseRecipe:x=>integer(x,0,LIMITS.actors-1)});},LIMITS.actors),removed:publicChecked?()=>{}:list(v=>reference(v,area),LIMITS.actors),projectiles:publicChecked?()=>{}:list(v=>validateProjectile(v,area),LIMITS.projectiles),self:v=>validateSelf(v,c,area),features:v=>validateFeatures(v,area),recovery:v=>object(v,{telegraphs:list(x=>{validateEvent(x,c,area);if((x as EventRecord).event.type!=='telegraph')fail('non-telegraph recovery');},64),endings:list(x=>object(x,{unit:v=>reference(v,area),chapter:choice(4),replay:bool}),1)},{bosses:list(x=>object(x,{unit:v=>reference(v,area),profile:choice('rust','abyss','eclipse','dawn','frost','ember','sky'),state:choice('dormant','waking','idle','fight','dying','dead'),phase:integer,enraged:bool,stateTime:number,freed:v=>reference(v,area),freedTime:number,showFrame:bool}),5)}),events:list(v=>validateEvent(v,c,area),LIMITS.events),results:list(validateResult,256)});
+ object(p,{full:bool,baseline:integer,eventWatermark:v=>integer(v,-1),world:choice('w1','w2','w3','w4','w5','w6'),time:number,selfRef:v=>reference(v,area),poses:publicChecked?()=>{}:list(ownedPublic?()=>{}:renderSource,LIMITS.actors),actors:publicChecked?()=>{}:list(v=>{object(v,{ref:x=>reference(x,area),fields:x=>{if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).some(k=>!ACTOR_FIELDS.includes(k as typeof ACTOR_FIELDS[number])))fail('unknown actor field');}},{poseDelta:x=>poseDelta(x,c),poseRecipe:x=>integer(x,0,LIMITS.actors-1)});},LIMITS.actors),removed:publicChecked?()=>{}:list(v=>reference(v,area),LIMITS.actors),projectiles:publicChecked?()=>{}:list(v=>validateProjectile(v,area),LIMITS.projectiles),self:v=>validateSelf(v,c,area),features:v=>validateFeatures(v,area),recovery:v=>object(v,{telegraphs:list(x=>{validateEvent(x,c,area);if((x as EventRecord).event.type!=='telegraph')fail('non-telegraph recovery');},64),endings:list(x=>object(x,{unit:v=>reference(v,area),chapter:choice(4),replay:bool}),1)},{endingPresentation:nullable(v=>validateEndingObservation(v,c,area)),bosses:list(x=>object(x,{unit:v=>reference(v,area),profile:choice('rust','abyss','eclipse','dawn','frost','ember','sky'),state:choice('dormant','waking','idle','fight','dying','dead'),phase:integer,enraged:bool,stateTime:number,freed:v=>reference(v,area),freedTime:number,showFrame:bool}),5)}),events:list(v=>validateEvent(v,c,area),LIMITS.events),results:list(validateResult,256)});
  const snapshot=p as unknown as SnapshotPayload;
+ const ending=snapshot.recovery.endingPresentation;if(ending&&(ending.owner.id!==snapshot.selfRef.id||ending.owner.life!==snapshot.selfRef.life||ending.owner.area!==snapshot.selfRef.area))fail('foreign ending owner');
  if(snapshot.full?(snapshot.baseline!==0||snapshot.removed.length>0):snapshot.baseline<1)fail('invalid baseline');
  if(snapshot.self.player.unit.id!==snapshot.selfRef.id||snapshot.self.player.unit.life!==snapshot.selfRef.life)fail('self reference mismatch');
  if(publicChecked)return;
@@ -314,18 +348,19 @@ export type WorldControl=
  | {type:'chatLine';channel:'area'|'party';line:{sender:EntityRef;name:string;text:string;at:number}}
  | {type:'chatPreferences';enabled:boolean;partyOnly:boolean}
  | {type:'chatResult';inputSequence:number;operation:'say'|'preferences'|'block'|'mute'|'report';ok:boolean;target?:EntityRef;blocked?:boolean;muted?:boolean;error?:string}
- | {type:'party';state:null|{code:string;leader:string;members:readonly {id:string;name:string;ref:EntityRef|null;world:AreaSnapshot['world'];online:boolean}[];pvp:boolean}}
+ | {type:'party';state:null|{code:string;leader:string;members:readonly {id:string;name:string;ref:EntityRef|null;world:AreaSnapshot['world'];online:boolean}[];pvp:boolean;/** With dungeons on: the party's running run, which members join by its ID. */dungeon?:PartyDungeon|null}}
  | {type:'queued';world:'w1'|'w2'|'w3'|'w4'|'w5'|'w6';position:number}
  | {type:'error';code:string;retryable:boolean}
  | {type:'restarting';retryAfterSeconds:number}
  | {type:'resync';lastSequence:number;reason:'baseline'|'gap'|'fragment'|'catalog'};
+export interface PartyDungeon {runId:string;tier:number}
 export function validateControl(v:unknown):asserts v is WorldControl {
  if(!v||typeof v!=='object')fail('invalid control');const type=(v as WorldControl).type;
  if(type==='inputAck')object(v,{type:choice(type)});
  else if(type==='chatLine')object(v,{type:choice(type),channel:choice('area','party'),line:x=>object(x,{sender:reference,name:v=>text(v,64),text:v=>{if(typeof v!=='string'||!v.length||[...v].length>CHAT_MAX)fail('invalid filtered chat text');},at:integer})});
  else if(type==='chatPreferences')object(v,{type:choice(type),enabled:bool,partyOnly:bool});
  else if(type==='chatResult'){object(v,{type:choice(type),inputSequence:x=>integer(x,1),operation:choice('say','preferences','block','mute','report'),ok:bool},{target:reference,blocked:bool,muted:bool,error:text});if(v.operation!=='block'&&v.blocked!==undefined||v.operation!=='mute'&&v.muted!==undefined)fail('private/unrelated moderation state');if(v.ok){if(v.error!==undefined)fail('successful chat result has error');if(['block','mute','report'].includes(v.operation as string)&&v.target===undefined)fail('chat result missing target');if(v.operation==='block'&&v.blocked===undefined||v.operation==='mute'&&v.muted===undefined)fail('chat result missing state');}else if(v.error===undefined)fail('chat failure missing error');}
- else if(type==='party')object(v,{type:choice(type),state:nullable(s=>{object(s,{code:x=>{if(typeof x!=='string'||! /^[0-9A-F]{6}$/.test(x))fail('invalid party code');},leader:text,members:list(m=>object(m,{id:text,name:x=>text(x,64),ref:nullable(reference),world:choice('w1','w2','w3','w4','w5','w6'),online:bool}),8,1),pvp:bool});const members=s.members as {id:string}[];if(new Set(members.map(m=>m.id)).size!==members.length||!members.some(m=>m.id===s.leader))fail('invalid party membership');})});
+ else if(type==='party')object(v,{type:choice(type),state:nullable(s=>{object(s,{code:x=>{if(typeof x!=='string'||! /^[0-9A-F]{6}$/.test(x))fail('invalid party code');},leader:text,members:list(m=>object(m,{id:text,name:x=>text(x,64),ref:nullable(reference),world:choice('w1','w2','w3','w4','w5','w6'),online:bool}),8,1),pvp:bool},{dungeon:nullable(d=>object(d,{runId:x=>{if(typeof x!=='string'||!DUNGEON_RUN_ID.test(x))fail('invalid dungeon run id');},tier:choice(...DUNGEON_TIERS)}))});const members=s.members as {id:string}[];if(new Set(members.map(m=>m.id)).size!==members.length||!members.some(m=>m.id===s.leader))fail('invalid party membership');})});
  else if(type==='queued')object(v,{type:choice(type),world:choice('w1','w2','w3','w4','w5','w6'),position:x=>integer(x,1)});
  else if(type==='error')object(v,{type:choice(type),code:text,retryable:bool});
  else if(type==='restarting')object(v,{type:choice(type),retryAfterSeconds:number});
@@ -353,7 +388,7 @@ export interface ObservationChecks {verify?:boolean}
 /** One instance per connection: binding, sequence and successful baseline advancement remain connection-owned. */
 export function createGameplayProtocol(catalog:GameplayCatalog,options:ObservationChecks={}):GameplayProtocol {
  const verify=options.verify??true;
- catalog=clone(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes:Lookup<RenderPoseSource>=new Map<number,RenderPoseSource>();let previous:readonly PublicActor[]=[],prior:WireHeader|null=null;let previousPublic:PublicBaseline|null=null;let controlBinding:WireBinding|null=null,controlSequence=0,resyncPending=false;
+ catalog=clone(catalog);validateWireSchema(catalog);validateCatalogDungeons(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes:Lookup<RenderPoseSource>=new Map<number,RenderPoseSource>();let previous:readonly PublicActor[]=[],prior:WireHeader|null=null;let previousPublic:PublicBaseline|null=null;let controlBinding:WireBinding|null=null,controlSequence=0,resyncPending=false;
  return {
   catalog:clone(catalog),encodeEvents:(h,p)=>encodeEvents(h,p,catalog),encodeControl,
   encodeInput:p=>encodeInput(p,catalog),decodeInput:(b,e)=>decodeInput(b,e,catalog),
@@ -407,6 +442,24 @@ function validateAppearance(v:unknown,c:GameplayCatalog):void {
  object(v,{race:catalogValue(Object.keys(c.appearanceLimits)),sex:choice('male','female'),classId:choice('warrior','mage','priest'),shell:integer,crest:integer,led:integer,name:x=>text(x,64)});
  const limits=c.appearanceLimits[v.race as string];for(const k of ['shell','crest','led'] as const)integer(v[k],0,limits[k]-1);
 }
+/** Personal presentation is carried as a complete private view, never AOI actors. */
+export function validateEndingObservation(value:unknown,c:GameplayCatalog,area:string):asserts value is EndingObservation {
+ const phases=['blackout','opening','routine','finale','credits','finished','cancelled'] as const;
+ object(value,{id:text,owner:v=>reference(v,area),tick:integer,sequence:integer,phase:choice(...phases),phaseStartedTick:integer,
+  orbitYaw:number,celebrationStartedTick:integer,skipAvailableTick:integer,provider:v=>{if(v!==c.poseProviderVersion)fail('ending pose provider mismatch');},move:nullable(catalogValue(c.actions)),
+  cast:list(v=>object(v,{ref:r=>object(r,{endingId:text,slot:n=>integer(n,0,23)}),archetype:catalogValue(c.archetypes),position:vector,yaw:number,recipe:r=>{
+   if(!isRenderPoseRecipe(r)||r.layers.length>64)fail('invalid ending render recipe');
+   for(const layer of r.layers){catalogValue(c.actions)(layer.id);number(layer.time);number(layer.weight);if(layer.rebase){number(layer.rebase.x);number(layer.rebase.z);number(layer.rebase.yaw);}}
+   r.locomotion?.forEach(number);
+  }},{appearance:v=>validateAppearance(v,c)}),24),
+  cues:list(v=>object(v,{ordinal:n=>integer(n,1),tick:integer,kind:choice('phase','step','moment'),value:v=>{if(typeof v!=='string'||v.length>128)fail('invalid ending cue');}}),64),
+  reason:nullable(choice('skip','complete','retired','restored','combat','damage','death','transferred'))});
+ const ending=value as unknown as EndingObservation;
+ if(ending.phaseStartedTick>ending.tick||ending.skipAvailableTick<ending.celebrationStartedTick)fail('invalid ending clock');
+ if(['credits','finished','cancelled'].includes(ending.phase)?ending.cast.length!==0:ending.cast.length<1)fail('invalid ending phase cast');
+ const slots=new Set<number>();for(const actor of ending.cast){if(actor.ref.endingId!==ending.id||slots.has(actor.ref.slot))fail('duplicate or foreign ending cast');slots.add(actor.ref.slot);}
+ let ordinal=0,tick=0;for(const cue of ending.cues){if(cue.ordinal<=ordinal||cue.tick<tick||cue.tick>ending.tick)fail('unordered ending cue');ordinal=cue.ordinal;tick=cue.tick;}
+}
 export interface GameplayState {
  header:WireHeader;sequence:number;world:AreaSnapshot['world'];time:number;eventWatermark:number;selfRef:EntityRef;
  actors:readonly PublicActor[];projectiles:readonly PublicProjectile[];self:SelfView;features:FeatureView;recovery:RecoveryView;
@@ -419,7 +472,7 @@ export class GameplayReceiver {
  private binding:WireBinding;private catalog:GameplayCatalog;private assembler:FragmentAssembler;
  private current:GameplayState|null=null;private last:WireHeader|null=null;private eventOrder=-1;
  needsResync=false;
- constructor(expected:WireBinding,catalog:GameplayCatalog){binding(expected);if(expected.catalog!==catalog.version)fail('catalog mismatch');if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');this.binding=clone(expected);this.catalog=clone(catalog);this.assembler=new FragmentAssembler(expected);}
+ constructor(expected:WireBinding,catalog:GameplayCatalog){validateWireSchema(catalog);validateCatalogDungeons(catalog);binding(expected);if(expected.catalog!==catalog.version)fail('catalog mismatch');if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');this.binding=clone(expected);this.catalog=clone(catalog);this.assembler=new FragmentAssembler(expected);}
  get state():GameplayState|null{return this.current?clone(this.current):null;}
  get header():WireHeader|null{return this.last?clone(this.last):null;}
  get retainedBytes():number{return this.assembler.retainedBytes;}

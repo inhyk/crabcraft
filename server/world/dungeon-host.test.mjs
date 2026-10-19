@@ -1,5 +1,6 @@
-// Actual PG + WebSocket host with dungeon runs enabled. Dungeon commands use the trusted typed host API until D3 adds wire messages;
-// combat, presence, reconnect and persistence go through real sockets, the real numeric host loop and PostgreSQL.
+// Actual PG + WebSocket host with dungeon runs enabled. The D2 cases use the trusted typed host API; the D3 cases at the end send
+// the same commands as wire input and read the run from observations and the party control. Combat, presence, reconnect and
+// persistence go through real sockets, the real numeric host loop and PostgreSQL.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -21,7 +22,7 @@ import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
 import { createWorldVariants } from '../../src/sim/areas/variants.ts';
 import { xpForLevel } from '../../src/sim/data/progression.ts';
 import { DUNGEON_CHAMBER } from '../../src/sim/data/dungeons.ts';
-import { createGameplayProtocol, GameplayReceiver, projectObservationExtras } from './gameplay/protocol.ts';
+import { createGameplayProtocol, GameplayReceiver, projectObservationExtras, WIRE_SCHEMA_REVISION } from './gameplay/protocol.ts';
 import { encodeInput } from './gameplay/intents.ts';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -45,7 +46,7 @@ before(async () => {
     policies: Object.fromEntries(ids.map(id => [id, policy])), seeds: { w1: 1, w2: 2, w3: 3, w4: 4 }, variants: createWorldVariants });
   const spawn = loaded.get('w1').publicDefinition.spawn;
   codec = createCoreCharacterCodec({ identities: [{ classId: 'warrior', archetype: 'human' }], freshLocation: { ...spawn.position, yaw: spawn.yaw } });
-  store = new CharacterStore(pool, codec); dungeonStore = new DungeonCompletionStore(pool); gameplayCatalog = createGameplayCatalog(loaded);
+  store = new CharacterStore(pool, codec); dungeonStore = new DungeonCompletionStore(pool); gameplayCatalog = createGameplayCatalog(loaded, { dungeons: [35, 50] });
 });
 after(async () => { await pool?.end(); cluster?.stop(); });
 
@@ -61,7 +62,7 @@ async function runtime(options = {}) {
   try {
     host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds: loaded, codec, ownership, dungeonCompletions: options.dungeonStore ?? dungeonStore,
       ...(options.ledger ? { outcomes: new DurableOutcomeStore(pool, codec, { planOutcomePage }) } : {}),
-      gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog) },
+      gameplay: { catalog: options.catalog ?? gameplayCatalog, create: () => createGameplayProtocol(options.catalog ?? gameplayCatalog) },
       policies: { authTimeoutMs: 1000, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 3000, sessionRevalidateMs: 1000, checkpointIntervalMs: 200,
         maxConnections: 16, maxConnectionsPerIp: 16, maxWaiting: 16, maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
         maxMutationSourcesPerTick: 64, loopIntervalMs: 2,
@@ -111,7 +112,7 @@ async function relevel(c, level) {
 }
 async function client(rt, c) {
   const ws = new WebSocket(rt.url, { headers: { Origin: origin } });
-  const bot = { ws, c, state: null, receiver: null, binding: null, sequence: 0, errors: [], controls: [] };
+  const bot = { ws, c, state: null, receiver: null, binding: null, sequence: 0, errors: [], controls: [], runs: [], warned: 0 };
   ws.on('message', (bytes, binary) => {
     try {
       if (!binary) {
@@ -119,19 +120,23 @@ async function client(rt, c) {
         if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.state = null; bot.receiver = new GameplayReceiver(binding, gameplayCatalog); }
       } else {
         const result = bot.receiver.accept(bytes, performance.now() / 1000);
-        if (result?.kind === 'snapshot') bot.state = result.state; else if (result?.kind === 'control') bot.controls.push(result.control);
+        if (result?.kind === 'snapshot') {
+          bot.state = result.state; const run = result.state.features.dungeon;
+          // Every distinct stage:phase this client observed, in order, and how many observations carried a hazard warning.
+          if (run) { const key = `${run.stage}:${run.phase}`; if (bot.runs.at(-1) !== key) bot.runs.push(key); if (run.warning.length) bot.warned++; }
+        } else if (result?.kind === 'control') bot.controls.push(result.control);
       }
     } catch (error) { bot.errors.push(error.message); }
   });
   await once(ws, 'open');
-  ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.id }));
+  ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.id, schemaRevision: gameplayCatalog.wireSchemaRevision }));
   bot.send = commands => { if (ws.readyState === WebSocket.OPEN) ws.send(encodeInput({ binding: bot.binding, intent: { seq: ++bot.sequence, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, commands } }, gameplayCatalog)); };
   bot.self = () => bot.state?.actors.find(a => a.ref.id === bot.state.selfRef.id && a.ref.life === bot.state.selfRef.life);
   bot.party = () => bot.controls.filter(v => v.type === 'party').at(-1)?.state ?? null;
   bot.inPublic = () => !!bot.binding?.area.startsWith('w') && bot.state?.header.area === bot.binding.area;
-  // Dungeon slots publish no observation until D3, so a dungeon login is complete once it is bound there.
-  await until(() => bot.state || bot.binding?.area.startsWith('dungeon:') || bot.errors.length || bot.controls.some(v => v.type === 'error'), 8000, 'login');
-  assert.deepEqual(bot.errors, []); assert.ok(bot.state || bot.binding?.area.startsWith('dungeon:'), JSON.stringify(bot.controls));
+  // Dungeon slots publish their typed run view since D3, so every login ends with an observation.
+  await until(() => bot.state || bot.errors.length || bot.controls.some(v => v.type === 'error'), 8000, 'login');
+  assert.deepEqual(bot.errors, []); assert.ok(bot.state, JSON.stringify(bot.controls));
   return bot;
 }
 async function closeBot(bot) { if (bot && bot.ws.readyState !== WebSocket.CLOSED) { bot.ws.close(); await once(bot.ws, 'close'); } }
@@ -460,4 +465,133 @@ test('with dungeons enabled a retained host saves once per interval in halting r
     assert.ok(end.ticks - start.ticks > 0);
     for (const bot of bots) assert.deepEqual(bot.errors, []);
   } finally { clearInterval(beat); for (const bot of bots) await closeBot(bot); await rt.close(); }
+});
+
+// D3: the same commands as wire input. Successes are visible as rebinds and observations; denials arrive as control errors.
+const controlErrors = bot => bot.controls.filter(v => v.type === 'error').map(v => v.code);
+async function denied(bot, command, code) {
+  const before = controlErrors(bot).length; bot.send([command]);
+  await until(() => controlErrors(bot).length > before, 5000, `control error ${code}`);
+  assert.equal(controlErrors(bot).at(-1), code, JSON.stringify(command)); assert.equal(bot.ws.readyState, WebSocket.OPEN, 'a denial keeps the connection');
+}
+const run = bot => bot.state?.features.dungeon;
+
+for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}wire: a solo player's party starts with dungeonStart, observes the typed run through rest and wave, sees the run in its party control and the leader returns with dungeonReturn`, { timeout: 30000 }, async () => {
+  const rt = await runtime({ ledger }); let A, beat;
+  try {
+    const a = await character({ level: 40 }); A = await client(rt, a); beat = heartbeat([A]);
+    await denied(A, { kind: 'dungeonStart', tier: 35 }, 'dungeon-party-required');
+    await party(A); const origin = position(A);
+    assert.equal(A.party().dungeon, null, 'with dungeons on the party control names no run yet');
+    A.send([{ kind: 'dungeonStart', tier: 35 }]);
+    await until(() => inDungeon(A) && run(A), 5000, 'enter');
+    const view = run(A);
+    assert.equal(A.state.features.environment.mode, 'dungeon'); assert.equal(A.state.header.area, A.binding.area);
+    assert.deepEqual(view.run.area, A.binding.area); assert.match(view.run.runId, /^[0-9a-f-]{36}$/); assert.equal(view.tier, 35);
+    assert.deepEqual(Object.keys(view).sort(), ['activeEnemies', 'captain', 'clock', 'completionPending', 'hazardSerial', 'phase', 'restRemaining', 'run', 'stage', 'tier', 'warning']);
+    assert.equal(A.state.world, 'w3'); near(position(A), { x: DUNGEON_CHAMBER.x, z: DUNGEON_CHAMBER.z + DUNGEON_CHAMBER.spawnOffset }, 'chamber entry');
+    assert.ok(Math.abs(A.self().y - DUNGEON_CHAMBER.y) < .01, 'standing on the chamber floor');
+    await until(() => A.party()?.dungeon?.runId === view.run.runId, 3000, 'party control run');
+    assert.deepEqual(A.party().dungeon, { runId: view.run.runId, tier: 35 });
+    // The real controller: two seconds of rest, then the first wave opens with its hazard warning.
+    await until(() => run(A)?.phase === 'wave' && A.warned > 0, 8000, 'first wave with warning');
+    assert.deepEqual(A.runs.slice(0, 2), ['1:rest', '1:wave']); assert.equal(run(A).activeEnemies.length > 0, true);
+    A.send([{ kind: 'dungeonReturn', run: view.run.runId }]);
+    await until(() => A.inPublic() && A.state.features.environment.mode === 'public', 5000, 'return home');
+    assert.equal(A.state.features.dungeon, undefined, 'public observations carry no run view'); near(position(A), origin, 'home at origin');
+    await until(() => A.party()?.dungeon === null && rt.host.stats().dungeonAreas === 0, 5000, 'run disposed and party control cleared');
+    assert.deepEqual(rt.failures, []); assert.deepEqual(A.errors, []);
+  } finally { clearInterval(beat); await closeBot(A); await rt.close(); }
+});
+
+for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}wire: a member who left joins the running run by the ID in its party control and a follower's early return is a control error`, { timeout: 30000 }, async () => {
+  const rt = await runtime({ ledger }), bots = []; let beat;
+  try {
+    const a = await character({ level: 120 }), b = await character({ level: 120, offset: 2 });
+    const A = await client(rt, a), B = await client(rt, b); bots.push(A, B); beat = heartbeat(bots);
+    await party(A, B);
+    await denied(B, { kind: 'dungeonStart', tier: 35 }, 'dungeon-leader-required');
+    await denied(A, { kind: 'dungeonJoin', run: '00000000-0000-4000-8000-000000000000' }, 'dungeon-run-unavailable');
+    A.send([{ kind: 'dungeonStart', tier: 35 }]);
+    await until(() => inDungeon(A) && inDungeon(B) && run(A) && run(B), 5000, 'party enters');
+    const runId = run(A).run.runId; assert.equal(run(B).run.runId, runId); assert.equal(A.binding.area, B.binding.area);
+    await denied(B, { kind: 'dungeonReturn', run: runId }, 'dungeon-leader-required');
+    // Leaving alone keeps the party, whose control still names the run for the way back.
+    B.send([{ kind: 'encounterLeave' }]); await until(() => B.inPublic(), 5000, 'leave alone');
+    await until(() => B.party()?.dungeon?.runId === runId, 3000, 'member party control');
+    await until(async () => {
+      const errors = controlErrors(B).length; B.send([{ kind: 'dungeonJoin', run: B.party().dungeon.runId }]);
+      await until(() => inDungeon(B) || controlErrors(B).length > errors, 5000, 'join outcome');
+      if (inDungeon(B)) return true;
+      // The canonical five seconds out of combat may still be running for a member the sentinels reached.
+      assert.equal(controlErrors(B).at(-1), 'dungeon-party-busy'); await delay(250); return false;
+    }, 12000, 'late join');
+    await until(() => run(B)?.run.runId === runId, 3000, 'joined run view'); assert.equal(B.binding.area, A.binding.area);
+    A.send([{ kind: 'dungeonReturn', run: runId }]); await until(() => A.inPublic() && B.inPublic(), 5000, 'leader ends the run');
+    assert.deepEqual(rt.failures, []); for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { clearInterval(beat); for (const bot of bots) await closeBot(bot); await rt.close(); }
+});
+
+test('wire: a follower sees every stage and phase of a real clear, brings everyone home with dungeonReturn and sees the awards it received', { timeout: 150000 }, async () => {
+  const rt = await runtime(), bots = []; let beat, fight;
+  try {
+    const a = await character({ level: 650 }), b = await character({ level: 200, offset: 2 });
+    const A = await client(rt, a), B = await client(rt, b); bots.push(A, B); beat = heartbeat([B]);
+    await party(A, B); const origins = [position(A), position(B)], before = { xp: B.state.self.player.xp, coins: B.state.self.player.coins };
+    A.send([{ kind: 'dungeonStart', tier: 35 }]);
+    await until(() => inDungeon(A) && inDungeon(B) && run(A) && run(B), 5000, 'party enters');
+    const runId = run(B).run.runId;
+    // The leader fights with ordinary target/ability input, choosing targets from its own observed run view.
+    let turn = 0;
+    fight = setInterval(() => { const view = run(A), target = view?.activeEnemies[0]; A.send(target && view.phase === 'wave' ? [{ kind: 'target', target }, { kind: 'ability', slot: [3, 1, 4][turn++ % 3] }] : []); }, 50);
+    await until(() => run(B)?.phase === 'clear', 90000, 'clear');
+    clearInterval(fight); fight = undefined;
+    assert.deepEqual(B.runs, ['1:rest', '1:wave', '2:rest', '2:wave', '3:rest', '3:wave', '3:clear']);
+    assert.ok(B.warned > 0, 'hazard warnings were observed during the waves');
+    B.send([{ kind: 'dungeonReturn', run: runId }]);
+    await until(() => A.inPublic() && B.inPublic(), 5000, 'follower returns everyone after the clear');
+    near(position(A), origins[0], 'leader origin'); near(position(B), origins[1], 'member origin');
+    // The certified award reaches the member's own observed state: exactly the tier's coins and XP, and the cleared mark.
+    await until(() => B.state.self.player.flags.dungeonCleared35 === true && B.state.self.player.coins > before.coins, 10000, 'award observed');
+    assert.equal(B.state.self.player.coins - before.coins, 1800); assert.equal(B.state.self.player.xp - before.xp, 1800);
+    await until(() => A.party()?.dungeon === null && B.party()?.dungeon === null, 5000, 'party control cleared');
+    assert.deepEqual(rt.failures, []); for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { clearInterval(beat); clearInterval(fight); for (const bot of bots) await closeBot(bot); await rt.close(); }
+});
+
+test('wire: denials for world and level arrive as control errors, and nobody moves', { timeout: 30000 }, async () => {
+  const rt = await runtime(), bots = []; let beat;
+  try {
+    const a = await character({ level: 40, world: 'w1' }), b = await character({ level: 30 });
+    const A = await client(rt, a), B = await client(rt, b); bots.push(A, B); beat = heartbeat(bots);
+    await party(A); await party(B);
+    await denied(A, { kind: 'dungeonStart', tier: 35 }, 'dungeon-world');
+    await denied(B, { kind: 'dungeonStart', tier: 35 }, 'dungeon-level');
+    await denied(B, { kind: 'dungeonStart', tier: 75 }, 'dungeon-unavailable');
+    assert.ok(A.inPublic() && B.inPublic()); assert.equal(rt.host.stats().dungeonAreas, 0);
+    assert.deepEqual(rt.failures, []); for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { clearInterval(beat); for (const bot of bots) await closeBot(bot); await rt.close(); }
+});
+
+test('wire: with dungeons on, a client of another or no schema revision is closed with protocol-schema before its ticket is used, and the host refuses a catalog that does not advertise its tiers', { timeout: 30000 }, async () => {
+  await assert.rejects(runtime({ catalog: createGameplayCatalog(loaded) }), /catalog dungeon tiers/);
+  await assert.rejects(runtime({ catalog: createGameplayCatalog(loaded, { dungeons: [35] }) }), /catalog dungeon tiers/);
+  const rt = await runtime(), c = await character({ level: 40 }), sockets = [];
+  try {
+    const ticket = rt.admission.issue(c.binding, origin).ticket;
+    for (const revision of [undefined, WIRE_SCHEMA_REVISION - 1, WIRE_SCHEMA_REVISION + 1]) {
+      const ws = new WebSocket(rt.url, { headers: { Origin: origin } }), messages = []; sockets.push(ws);
+      ws.on('message', bytes => messages.push(JSON.parse(bytes.toString()))); await once(ws, 'open');
+      ws.send(JSON.stringify({ type: 'authenticate', ticket, characterId: c.id, ...(revision === undefined ? {} : { schemaRevision: revision }) }));
+      await once(ws, 'close');
+      assert.deepEqual(messages, [{ type: 'error', code: 'protocol-schema', retryable: false }], String(revision));
+    }
+    assert.equal(rt.host.stats().activeActors, 0);
+    // The ticket was never consumed, so the current client still enters with it.
+    const ws = new WebSocket(rt.url, { headers: { Origin: origin } }), messages = []; sockets.push(ws);
+    ws.on('message', (bytes, binary) => { if (!binary) messages.push(JSON.parse(bytes.toString())); }); await once(ws, 'open');
+    ws.send(JSON.stringify({ type: 'authenticate', ticket, characterId: c.id, schemaRevision: WIRE_SCHEMA_REVISION }));
+    await until(() => messages.some(m => m.type === 'world-bound'), 5000, 'current revision admitted');
+    assert.deepEqual(rt.failures, []);
+  } finally { for (const ws of sockets) ws.close(); await rt.close(); }
 });

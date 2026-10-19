@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,projectObservationExtras,projectActor,prepareObservationSnapshot,releasePreparedObservation} from './protocol.ts';
+import {createGameplayProtocol,GameplayReceiver,FragmentAssembler,encodeValue,decodeValue,encodeMessage,LIMITS,WIRE_SCHEMA_REVISION,projectObservationExtras,projectActor,prepareObservationSnapshot,releasePreparedObservation} from './protocol.ts';
 import {encodeInput,decodeInput,InputSession,InputRateBudget} from './intents.ts';
 import {encodeEvents} from './events.ts';
 import {worldArea,addActor,intent,tick} from '../../../tests/core/worldHarness.mjs';
@@ -275,6 +275,35 @@ test('report acknowledgments never expose internal global moderation decisions',
  assert.doesNotThrow(()=>f.codec.encodeControl(header(1),ack));for(const muted of [true,false])assert.throws(()=>f.codec.encodeControl(header(1),{...ack,muted}),/moderation/);
 });
 
+test('personal ending source observation is private, complete on full recovery and absent without opt-in',async()=>{
+ const {EndingPresentationController}=await import('../../../src/sim/features/endingPresentation.ts');
+ const f=fixture(2),owner=f.actors[0].ref,controller=new EndingPresentationController({id:'wire-personal-ending',owner,centre:{x:0,y:0,z:0},yaw:0,cast:[{archetype:'human',appearance}]});
+ const view=observation(f),prepared=prepareObservationSnapshot(view.snapshot,view.appearances,catalog);view.prepared=prepared;view.recovery.endingPresentation=controller.snapshot();const result=apply(f.receiver,f.codec.encodeObservation(view));assert.deepEqual(result.state.recovery.endingPresentation,controller.snapshot());assert.equal(result.state.actors.some(a=>'endingId' in a.ref),false);
+ const other=observation(f);other.snapshot=view.snapshot;other.prepared=prepared;other.selfRef=f.actors[1].ref;Object.assign(other,projectObservationExtras(other.snapshot,f.actors[1].p.state.character,other.visibleIds));const otherReceiver=new GameplayReceiver(binding,catalog),otherCodec=createGameplayProtocol(catalog);const personal=apply(otherReceiver,otherCodec.encodeObservation(other));assert.equal('endingPresentation' in personal.state.recovery,false);assert.equal(JSON.stringify(personal.state).includes('wire-personal-ending'),false);
+ other.recovery.endingPresentation=controller.snapshot();assert.throws(()=>createGameplayProtocol(catalog).encodeObservation(other),/foreign ending owner/);releasePreparedObservation(prepared);
+ const resumed=new GameplayReceiver({...binding,session:'reconnected-ending',epoch:2},catalog),current=observation(f);current.binding={...binding,session:'reconnected-ending',epoch:2};current.recovery.endingPresentation=controller.snapshot();assert.deepEqual(apply(resumed,createGameplayProtocol(catalog).encodeObservation(current)).state.recovery.endingPresentation,controller.snapshot());
+});
+
+test('ending wire rejects foreign lifetime, provider, cast, clocks, unknown fields and ordered command forgery',async()=>{
+ const {EndingPresentationController}=await import('../../../src/sim/features/endingPresentation.ts'),f=fixture(),controller=new EndingPresentationController({id:'wire-ending-validation',owner:f.actors[0].ref,centre:{x:0,y:0,z:0},yaw:0,cast:[{archetype:'human',appearance}]});
+ for(const mutate of [v=>{v.owner.life++;},v=>{v.provider='stale';},v=>{v.cast.push(v.cast[0]);},v=>{v.cast[0].ref.endingId='other';},v=>{v.cast[0].appearance.shell=999;},v=>{v.cast[0].position.x=NaN;},v=>{v.phaseStartedTick=1;},v=>{v.cast[0].recipe.extra=true;},v=>{v.accountId='private';},v=>{v.cues=Array.from({length:65},()=>({ordinal:1,tick:0,kind:'phase',value:'blackout'}));}]){const view=observation(f);view.recovery.endingPresentation=structuredClone(controller.snapshot());mutate(view.recovery.endingPresentation);assert.throws(()=>createGameplayProtocol(catalog).encodeObservation(view));}
+ const commands=[{kind:'endingControl',id:'ending-id',action:'skip'},{kind:'endingControl',id:'ending-id',action:'continue'}],session=new InputSession(binding,catalog,{now:0});for(const [index,command]of commands.entries())session.accept(encodeInput({binding,intent:input(index+1,[command])},catalog),0);const prepared=session.prepareTick(0);assert.deepEqual(prepared.intent.commands,commands);assert.deepEqual(prepared.commandOrigins,[{inputSequence:1,commandIndex:0},{inputSequence:2,commandIndex:0}]);assert.equal(session.consumedInput,0);session.commitConsumed(prepared.token);assert.equal(session.consumedInput,2);
+ for(const command of [{kind:'endingControl',id:'x',action:'finish'},{kind:'endingControl',id:'',action:'skip'},{kind:'endingControl',id:'x',action:'skip',owner:f.actors[0].ref}])assert.throws(()=>encodeInput({binding,intent:input(1,[command])},catalog));
+});
+
+test('maximum admitted personal cast and cue shape fits existing binary limits with 100 actual actors and atomic fragments',async t=>{
+ const {EndingPresentationController}=await import('../../../src/sim/features/endingPresentation.ts'),f=fixture(100),controller=new EndingPresentationController({id:'maximum-wire-shape',owner:f.actors[0].ref,centre:{x:0,y:0,z:0},yaw:0,cast:Array.from({length:24},()=>({archetype:'human',appearance}))});for(let i=0;i<200;i++)controller.step();
+ const ending=structuredClone(controller.snapshot()),layer=ending.cast[0].recipe.layers[0];assert.ok(layer);for(const actor of ending.cast)actor.recipe.layers=Array.from({length:64},()=>structuredClone(layer));ending.cues=Array.from({length:64},(_,i)=>({ordinal:i+1,tick:i,kind:'moment',value:'x'.repeat(128)}));
+ apply(f.receiver,f.codec.encodeObservation(observation(f)));const view=observation(f,2,true);view.recovery.endingPresentation=ending;const chunks=f.codec.encodeObservation(view),bytes=chunks.reduce((n,c)=>n+c.length,0);assert.ok(chunks.length>1&&chunks.length<=LIMITS.fragments);assert.ok(chunks.every(c=>c.length<=LIMITS.fragmentBytes));assert.ok(bytes<LIMITS.messageBytes);for(const chunk of chunks.slice(0,-1))assert.equal(f.receiver.accept(chunk,0),null);assert.equal('endingPresentation' in f.receiver.state.recovery,false);const result=f.receiver.accept(chunks.at(-1),0);assert.deepEqual(result.state.recovery.endingPresentation,ending);assert.equal(result.state.actors.length,view.snapshot.units.length);
+ t.diagnostic(JSON.stringify({scope:'wire-bound shape, not gameplay/load performance',actualPlayers:100,totalActors:view.snapshot.units.length,cast:24,layersPerCast:64,cues:64,bytes,fragments:chunks.length,messageLimit:LIMITS.messageBytes,fragmentLimit:LIMITS.fragmentBytes}));
+});
+
+
+test('compiled schema revision is explicit while a legacy catalog with absent revision remains decodable',()=>{
+ const current={...catalog,wireSchemaRevision:WIRE_SCHEMA_REVISION};assert.doesNotThrow(()=>createGameplayProtocol(current));assert.doesNotThrow(()=>new GameplayReceiver(binding,current));assert.doesNotThrow(()=>createGameplayProtocol(catalog));assert.doesNotThrow(()=>new GameplayReceiver(binding,catalog));for(const revision of [0,WIRE_SCHEMA_REVISION-1,WIRE_SCHEMA_REVISION+1,null,String(WIRE_SCHEMA_REVISION)]){assert.throws(()=>createGameplayProtocol({...catalog,wireSchemaRevision:revision}),/schema revision/);assert.throws(()=>new GameplayReceiver(binding,{...catalog,wireSchemaRevision:revision}),/schema revision/);}
+});
+
+
 test('shared public prefix preserves private event budgets and only advances successful recipient baselines',()=>{
  const f=fixture(2),a=createGameplayProtocol(catalog),b=createGameplayProtocol(catalog),first=observation(f),prepared=prepareObservationSnapshot(first.snapshot,first.appearances,catalog),receiverA=new GameplayReceiver(binding,catalog),receiverB=new GameplayReceiver(binding,catalog);
  apply(receiverA,a.encodeObservation({...first,prepared}));apply(receiverB,b.encodeObservation({...first,prepared,selfRef:f.actors[1].ref,...projectObservationExtras(first.snapshot,f.actors[1].p.state.character,first.visibleIds)}));
@@ -296,4 +325,54 @@ test('revoked input is strictly decoded without apply/ACK and one rate budget su
 
 test('publication release invalidates only its prepared token without losing committed connection baselines',()=>{
  const f=fixture(2),source=observation(f),prepared=prepareObservationSnapshot(source.snapshot,source.appearances,catalog);const first=f.codec.encodeObservation({...source,prepared});apply(f.receiver,first);releasePreparedObservation(prepared);releasePreparedObservation(prepared);assert.throws(()=>f.codec.encodeObservation({...source,prepared,sequence:2}),/prepared/);const next=prepareObservationSnapshot(source.snapshot,source.appearances,catalog),chunks=f.codec.encodeObservation({...source,prepared:next,sequence:2});assert.equal(apply(f.receiver,chunks).state.sequence,2);releasePreparedObservation(next);
+});
+
+test('dungeon host commands are typed single-command frames; tiers and run IDs outside the canonical forms reject',()=>{
+ const run='0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b';
+ for(const command of [{kind:'dungeonStart',tier:35},{kind:'dungeonStart',tier:650},{kind:'dungeonJoin',run},{kind:'dungeonReturn',run}]){
+  const frame=input(1,[command]);assert.deepEqual(decodeInput(encodeInput({binding,intent:frame},catalog),binding,catalog),frame);
+  assert.throws(()=>encodeInput({binding,intent:input(1,[command,{kind:'jump'}])},catalog),/cannot mix/);
+ }
+ for(const command of [{kind:'dungeonStart',tier:36},{kind:'dungeonStart',tier:'35'},{kind:'dungeonStart'},{kind:'dungeonStart',tier:35,owner:'x'},{kind:'dungeonJoin',run:run.toUpperCase()},{kind:'dungeonJoin',run:'run-1'},{kind:'dungeonReturn'},{kind:'dungeonReturn',run,tier:35}])
+  assert.throws(()=>encodeInput({binding,intent:input(1,[command])},catalog),/gameplay-v3/,JSON.stringify(command));
+ const session=new InputSession(binding,catalog,{now:0});session.accept(encodeInput({binding,intent:input(1,[{kind:'jump'}])},catalog),0);session.accept(encodeInput({binding,intent:input(2,[{kind:'dungeonStart',tier:35}])},catalog),0);
+ assert.deepEqual(session.prepareTick(0).intent.commands,[{kind:'jump'}],'a dungeon command never coalesces with an earlier frame');
+});
+
+test('dungeon run view roundtrips from an actual run Area and every malformed run, hazard or mode pairing rejects',async()=>{
+ const {createArea}=await import('../../../src/sim/area.ts'),{createDungeonDefinition,createDungeonQuery}=await import('../../../src/sim/areas/dungeon.ts'),{realActionData}=await import('../../../src/sim/data/actions.ts'),{flatWorld}=await import('../../../tests/core/worldHarness.mjs');
+ const runId='00000000-0000-4000-8000-0000000000aa',area=createArea({id:binding.area,dungeon:{runId,tier:35},definition:createDungeonDefinition(35),query:createDungeonQuery(flatWorld),seed:15,policy:{enemyLevel:s=>s.fixedLevel,enemyPopulation:()=>({desired:1,respawnSeconds:30}),damageAllowed:()=>true,canInteract:()=>true},actionData:realActionData,context:{mode:'dungeon',members:[],pvp:'disabled'},limits:{eventCount:100000,inputCommandsPerTick:32,timers:1000,projectiles:1000}});
+ const ref=area.attachFresh('dungeon-viewer','mage','human','spawn'),p=area.services.player(ref);p.restoreXp(xpForLevel(40));
+ const view=(sequence,full)=>{const snapshot=area.snapshot(),visible=new Set(snapshot.units.map(u=>u.ref.id)),extras=projectObservationExtras(snapshot,'dungeon-viewer',visible);return {binding,sequence,tick:snapshot.tick,acceptedInput:0,consumedInput:0,selfRef:ref,snapshot,events:[],visibleIds:visible,full,eventWatermark:-1,...extras,features:{...extras.features,dungeon:area.dungeonObservation()},appearances:{[`${ref.id}:${ref.life}`]:appearance}};};
+ const codec=createGameplayProtocol(catalog),receiver=new GameplayReceiver(binding,catalog);
+ const rest=apply(receiver,codec.encodeObservation(view(1,true)));assert.equal(rest.state.features.environment.mode,'dungeon');assert.deepEqual(rest.state.features.dungeon,area.dungeonObservation());assert.equal(rest.state.features.dungeon.phase,'rest');assert.deepEqual(rest.state.features.dungeon.run,{area:binding.area,runId});
+ for(let i=0;i<200&&area.dungeonObservation().phase!=='wave';i++)tick(area);
+ const wave=apply(receiver,codec.encodeObservation(view(2,false))).state.features.dungeon;assert.equal(wave.phase,'wave');assert.equal(wave.stage,1);assert.ok(wave.warning.length>0,'a fresh wave starts with its warning');assert.equal(wave.activeEnemies.length,3);assert.deepEqual(wave,area.dungeonObservation());
+ const mutations=[
+  [v=>{delete v.features.dungeon;},/mode mismatch/],[v=>{v.features.environment.mode='public';},/mode mismatch/],
+  [v=>{v.features.dungeon.run.area='other-area';},/foreign dungeon run/],[v=>{v.features.dungeon.run.runId=runId.toUpperCase();},/run id/],[v=>{v.features.dungeon.tier=36;},/discriminator/],
+  [v=>{v.features.dungeon.stage=4;},/discriminator/],[v=>{v.features.dungeon.phase='done';},/discriminator/],[v=>{v.features.dungeon.clock=-1;},/negative/],[v=>{v.features.dungeon.hazardSerial=1.5;},/integer/],
+  [v=>{v.features.dungeon.phase='rest';},/warning outside a wave/],[v=>{v.features.dungeon.warning=[{shape:'triangle',x:0,z:0,radius:1}];},/discriminator/],[v=>{v.features.dungeon.warning=[{shape:'rect',x:0,z:0,width:2,yaw:0}];},/missing depth/],
+  [v=>{v.features.dungeon.warning=[{shape:'ring',x:0,z:0,radius:4,inner:4}];},/hazard ring/],[v=>{v.features.dungeon.warning=[{shape:'circle',x:0,z:0,radius:0}];},/non-positive/],[v=>{v.features.dungeon.warning=Array.from({length:9},()=>({shape:'circle',x:0,z:0,radius:1}));},/invalid list/],
+  [v=>{v.features.dungeon.activeEnemies=[{...v.features.dungeon.activeEnemies[0],area:'other-area'}];},/foreign area ref/],[v=>{v.features.dungeon.activeEnemies=[v.features.dungeon.activeEnemies[0],v.features.dungeon.activeEnemies[0]];},/duplicate dungeon enemy/],
+  [v=>{v.features.dungeon.captain={area:binding.area,id:0,life:1};},/integer/],[v=>{v.features.dungeon.owner='private';},/unknown field owner/],
+ ];
+ for(const [mutate,error] of mutations){const value=view(3,true);value.features=structuredClone(value.features);mutate(value);assert.throws(()=>createGameplayProtocol(catalog).encodeObservation(value),error,String(mutate));}
+ // The browser validates the same rules on frames it did not build.
+ const forged=view(3,true);forged.features={...forged.features,dungeon:{...structuredClone(forged.features.dungeon),tier:36}};const trusted=createGameplayProtocol(catalog,{verify:false}).encodeObservation(forged);
+ assert.throws(()=>apply(new GameplayReceiver(binding,catalog),trusted),/discriminator/);
+ for(const p of area.pendingGrants())area.acknowledgeGrant(p.grant.id);
+});
+
+test('party control carries the running dungeon run only in its typed form and the catalog advertises canonical tiers only',()=>{
+ const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));
+ const state={code:'A1B2C3',leader:'member-a',members:[{id:'member-a',name:'Alice',ref:f.actors[0].ref,world:'w3',online:true}],pvp:false};
+ let sequence=1;
+ for(const dungeon of [undefined,null,{runId:'0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b',tier:35}]){const control={type:'party',state:{...state,...(dungeon===undefined?{}:{dungeon})}};assert.deepEqual(apply(f.receiver,f.codec.encodeControl(header(++sequence),control)).control,control);}
+ for(const dungeon of [{runId:'0F1E2D3C-4B5A-4987-8A6B-5C4D3E2F1A0B',tier:35},{runId:'run',tier:35},{runId:'0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b',tier:36},{runId:'0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b'},{runId:'0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b',tier:35,area:'dungeon:x'}])
+  assert.throws(()=>f.codec.encodeControl(header(9),{type:'party',state:{...state,dungeon}}),/gameplay-v3/,JSON.stringify(dungeon));
+ const current={...catalog,wireSchemaRevision:WIRE_SCHEMA_REVISION};
+ assert.doesNotThrow(()=>createGameplayProtocol({...current,dungeons:[35,50,650]}));assert.doesNotThrow(()=>new GameplayReceiver(binding,{...current,dungeons:[35]}));
+ for(const dungeons of [[],[36],[50,35],[35,35],['35'],null])assert.throws(()=>createGameplayProtocol({...current,dungeons}),/catalog dungeon tiers/,JSON.stringify(dungeons));
+ assert.throws(()=>createGameplayProtocol({...catalog,dungeons:[35,50]}),/catalog dungeon tiers/,'tiers need the compiled schema revision');
 });

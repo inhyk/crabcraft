@@ -40,11 +40,10 @@ const fbm3 = (x: number, y: number, z: number, seed: number, oct: number) => {
   return s;
 };
 
-/** One crag in rock-local units: long axis x, up y, short axis z; 1 is the long half-axis. */
-function cragGeometry(k: SnowRock): THREE.BufferGeometry {
+/** One crag in rock-local units: long axis x, up y, short axis z; 1 is the long half-axis. `detail` overrides the subdivision. */
+export function cragGeometry(k: SnowRock, detail = k.r >= 6 ? 34 : 24): THREE.BufferGeometry {
   const R = rng(k.seed * 7919 + 13);
   // Edge subdivisions: ~12k vertices on the big crags, ~6k on the small, so planes, joints and grain all resolve.
-  const detail = k.r >= 6 ? 34 : 24;
   const base = new THREE.IcosahedronGeometry(1, detail);
   base.deleteAttribute('normal');
   base.deleteAttribute('uv');
@@ -123,14 +122,17 @@ float rkFbm(vec3 p){return rkNoise(p)*.55+rkNoise(p*2.17+7.1)*.28+rkNoise(p*4.63
 float rkGround(vec2 p){vec2 uv=(p-snowGroundRect.xy)*snowGroundRect.z;return textureLod(snowGroundTex,clamp(uv,0.,1.),0.).x;}
 `;
 
-/** The crags as one group of meshes sharing one material. `ground` is the gameplay height; `terrain` the bake's uniforms. */
-export function snowRocks(ground: (x: number, z: number) => number, terrain: { snowGroundTex: { value: THREE.Texture | null }; snowGroundRect: { value: THREE.Vector4 } }): THREE.Group {
-  const group = new THREE.Group();
-  group.name = 'frostlight-rock-outcrops';
+/** The baked ground's uniforms (snowTerrain.ts), read for the snow skirt. */
+export type SnowGroundUniforms = { snowGroundTex: { value: THREE.Texture | null }; snowGroundRect: { value: THREE.Vector4 } };
+/**
+ * The crags' stone: weathered, jointed, snow on what can hold it and a skirt where the drift meets it. World-space
+ * meshes only. `skirt` scales the drift's height on the stone and `lie` how readily faces hold snow (1 for the crags).
+ */
+export function rockMaterial(terrain: SnowGroundUniforms, skirt = 1, lie = 1): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.88, metalness: 0 });
   mat.name = 'frostlight-rock';
   const uniforms = { snowGroundTex: terrain.snowGroundTex, snowGroundRect: terrain.snowGroundRect, rockBedding: { value: new THREE.Vector3(0.2, 0.97, 0.1).normalize() } };
-  addPatch(mat, 'frostlight-rock', (shader) => {
+  addPatch(mat, `frostlight-rock${skirt}${lie}`, (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${ROCK_VERTEX_HEAD}`)
@@ -148,8 +150,8 @@ export function snowRocks(ground: (x: number, z: number) => number, terrain: { s
         vec3 rRock=mix(vec3(.032,.036,.043),vec3(.088,.09,.096),clamp(.5+.55*rn1+.25*rn2,0.,1.));
         rRock=mix(rRock,rRock*vec3(1.22,1.,.82),smoothstep(.62,.95,rBed)*.55)*(1.+.18*rn3)*(1.-rStreak*.45)+rSpeck*.035;
         // Snow lies where the face can hold it, thicker in hollows of the noise, and skirts the drift line.
-        float rLie=smoothstep(.5,.72,rN.y+.16*rn1+.07*rn2);
-        float rSkirt=1.-smoothstep(.04,.5+.35*(rn2*.5+.5),rW.y-rkGround(rW.xz));
+        float rLie=smoothstep(.5,.72,rN.y+.16*rn1+.07*rn2-${((1 - lie) * 0.4).toFixed(3)});
+        float rSkirt=1.-smoothstep(${(0.04 * skirt).toFixed(3)},${(0.5 * skirt).toFixed(3)}+${(0.35 * skirt).toFixed(3)}*(rn2*.5+.5),rW.y-rkGround(rW.xz));
         float rSnow=max(rLie,rSkirt);
         diffuseColor.rgb=mix(rRock,vec3(.79,.86,.97),rSnow);`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor=mix(.86,.62,rSnow);')
@@ -167,6 +169,14 @@ export function snowRocks(ground: (x: number, z: number) => number, terrain: { s
           }
         }`);
   });
+  return mat;
+}
+
+/** The crags as one group of meshes sharing one material. `ground` is the gameplay height; `terrain` the bake's uniforms. */
+export function snowRocks(ground: (x: number, z: number) => number, terrain: SnowGroundUniforms): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'frostlight-rock-outcrops';
+  const mat = rockMaterial(terrain);
   for (const k of SNOW_ROCKS) {
     const geo = cragGeometry(k);
     // Sink the crag until its widest section is under the lowest snow around it.

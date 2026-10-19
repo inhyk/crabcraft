@@ -17,16 +17,17 @@ import { createArea } from '../../src/sim/area.ts';
 import { deliverCertifiedAreaPage, PagedOutcomeRecovery, verifyPagedOutcomeSeal, AreaSourceDrain } from './persistence-coordinator.ts';
 import { DurableOutcomeStore } from './contribution-store.ts';
 import { planOutcomePage } from '../../src/sim/ledger.ts';
+import { setQuestChapter } from '../../src/sim/data/quests.ts';
 
 import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
-import { createGameplayProtocol, GameplayReceiver, FragmentAssembler, encodeMessage, projectObservationExtras } from './gameplay/protocol.ts';
+import { createGameplayProtocol, GameplayReceiver, FragmentAssembler, encodeMessage, projectObservationExtras, WIRE_SCHEMA_REVISION } from './gameplay/protocol.ts';
 import { WorldClient } from '../../src/multiplayer/worldClient.ts';
 import { encodeInput } from './gameplay/intents.ts';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, ms = 5000) { const end = performance.now() + ms; while (!check()) { if (performance.now() > end) throw new Error('condition timeout'); await delay(10); } }
-let cluster, pool, loaded, codec, store, gameplayCatalog;
+let cluster, pool, loaded, codec, store, gameplayCatalog, dungeonCatalog;
 let accountNumber = 0;
 const origin = 'http://localhost:5260';
 const appearance = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'HostHero' };
@@ -47,7 +48,7 @@ before(async () => {
   const spawn = loaded.get('w1').publicDefinition.spawn;
   codec = createCoreCharacterCodec({ identities: [{ classId: 'warrior', archetype: 'human' }, { classId: 'mage', archetype: 'human' }], freshLocation: { ...spawn.position, yaw: spawn.yaw } });
   store = new CharacterStore(pool, codec);
-  gameplayCatalog = createGameplayCatalog(loaded);
+  gameplayCatalog = createGameplayCatalog(loaded); dungeonCatalog = createGameplayCatalog(loaded, { dungeons: [35, 50] });
 });
 after(async () => { await pool?.end(); cluster?.stop(); });
 
@@ -70,10 +71,10 @@ async function runtime(options = {}) {
     const x = spawn.x + 3 + (k % 3) * 1.5, z = spawn.z + Math.floor(k / 3) * 1.5;
     return { ...base.publicDefinition.enemies[0], ...(k ? { id: base.publicDefinition.enemies[0].id.replace(/:\d+$/, `:${k}`) } : {}), home: { x, y: base.query.heightAt(x, z), z }, wanderRadius: 0 };
   }) } });
-  const failures = [];
+  const failures = [], catalog = options.catalog ?? (options.dungeons ? dungeonCatalog : gameplayCatalog);
   let host;
   try { host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, dungeonCompletions: options.dungeons ? new DungeonCompletionStore(pool) : undefined, outcomes: options.withoutOutcomes ? undefined : options.ledger ? options.outcomes ?? new DurableOutcomeStore(pool,codec,{planOutcomePage}) : options.outcomes, chat: options.chat ? new WorldChatService(pool) : undefined,
-    gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog, { verify: options.verify ?? true }), verifyObservations: options.verify ?? true },
+    gameplay: { catalog, create: () => createGameplayProtocol(catalog, { verify: options.verify ?? true }), verifyObservations: options.verify ?? true },
     policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
       checkpointIntervalMs: options.checkpointIntervalMs ?? 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
@@ -82,6 +83,7 @@ async function runtime(options = {}) {
       victimOutcomeRetryCeiling: options.victimRetry ? { maxEntries: 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 } : undefined,
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
       areaLimits: { eventCount: 4096, inputCommandsPerTick: 32, timers: 256, projectiles: 256 }, restore: explicitRestore,
+      endingPresentation: options.ending ? { stage: { centre: base.publicDefinition.spawn.position, yaw: base.publicDefinition.spawn.yaw, cast: base.publicDefinition.npcs.filter(n=>n.id==='brinebeard').map(n=>({archetype:n.archetype})) } } : undefined,
       party: options.party || options.dungeons ? { maxParties: 8, maxEncounters: 8, returnSpawn: () => 'bossArena' } : undefined,
       dungeons: options.dungeons ? { tiers: [35, 50], maxPendingAwards: 8 } : undefined,
       offlineSeconds: (record, now) => Math.max(0, now - record.updatedAt) / 1000,
@@ -93,7 +95,7 @@ async function runtime(options = {}) {
   const server = createServer(); server.on('upgrade', host.handleUpgrade); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const url = `ws://127.0.0.1:${server.address().port}/world`;
   if(!options.deferReady)try{await host.ready();}catch(error){await host.shutdown(1000);server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await ownership.release();throw error;}
-  return { host, admission, ownership, url, failures, async close() {
+  return { host, admission, ownership, url, failures, catalog, async close() {
     const result = await host.shutdown(3000); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await ownership.release();
     return result;
   } };
@@ -105,7 +107,7 @@ async function client(rt, c, auth = true) {
     try {
       if (!binary) {
         const value = JSON.parse(bytes.toString()); bot.controls.push(value);
-        if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.receiver = new GameplayReceiver(binding, gameplayCatalog); bot.tap = new FragmentAssembler(binding); }
+        if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.receiver = new GameplayReceiver(binding, rt.catalog); bot.tap = new FragmentAssembler(binding); }
       } else {
         bot.packets++; const captured=bot.tap.accept(bytes,performance.now()/1000);if(captured)bot.messages.push({kind:captured.kind,header:captured.header,control:captured.kind===17?captured.payload:null});const result = bot.receiver.accept(bytes, performance.now() / 1000);
         if (result?.kind === 'snapshot') { bot.state = result.state; bot.events.push(...result.events); bot.results.push(...result.results); }
@@ -115,8 +117,8 @@ async function client(rt, c, auth = true) {
     } catch (error) { bot.errors.push(error.message); }
   });
   await once(ws, 'open');
-  if (auth) ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.record.characterId }));
-  bot.send = (commands, held = {}) => ws.send(encodeInput({ binding: bot.binding, intent: { seq: ++bot.sequence, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, ...held, commands } }, gameplayCatalog));
+  if (auth) ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.record.characterId, ...(rt.catalog.wireSchemaRevision===undefined?{}:{schemaRevision:rt.catalog.wireSchemaRevision}) }));
+  bot.send = (commands, held = {}) => ws.send(encodeInput({ binding: bot.binding, intent: { seq: ++bot.sequence, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, ...held, commands } }, rt.catalog));
   return bot;
 }
 // Retained saves are batched once per checkpointIntervalMs while the world keeps running, so progress a client already sees
@@ -767,6 +769,37 @@ test('external optional pair and full-roster capacity reject before admission wh
 });
 
 
+// Trusted earned-gate integration fixture only. This does not prove earning the W4 boss/story completion.
+async function endingGateCharacter(earned){const c=await character('mage'),checkpoint=structuredClone(c.record.checkpoint),world=loaded.get('w4'),spawn=world.publicDefinition.spawn;checkpoint.world='w4';checkpoint.location={...spawn.position,yaw:spawn.yaw};setQuestChapter(checkpoint.progress.quests,4);if(earned)checkpoint.progress.flags.frostCleared=true;c.record=await store.saveCheckpoint(c.binding.accountId,c.record.characterId,c.record.revision,checkpoint,[]);return c;}
+
+for (const ledger of [true,false]) test(`${ledger?'':'retained saves: '}actual ending host gates private start and credits on real PG writes, keeps peers live, and reconnects without duplicating rewards`, {timeout:25000},async()=>{
+ const owner=await endingGateCharacter(true),peer=await endingGateCharacter(false);let startArmed=true,terminalArmed=false,blocker,bot,other,resumed,next,nextBot,originalClosed=false;
+ // Save rounds write one character with saveCheckpoint and several in one saveCheckpoints transaction; both are gated.
+ const gate=async(characterId,cp)=>{const own=characterId===owner.record.characterId,start=startArmed&&own&&cp.progress.flags.frostEndingStarted&&cp.activity.controlsLocked,terminal=terminalArmed&&own&&cp.progress.flags.frostEndingStarted&&!cp.activity.controlsLocked;if(start||terminal){if(start)startArmed=false;else terminalArmed=false;blocker=await pool.connect();await blocker.query('BEGIN');await blocker.query('SELECT 1 FROM world_characters WHERE character_id=$1 FOR UPDATE',[owner.record.characterId]);}};
+ const delayed=new Proxy(store,{get(target,key){if(key==='saveCheckpoint')return async(...args)=>{await gate(args[1],args[3]);return target.saveCheckpoint(...args);};if(key==='saveCheckpoints')return async entries=>{for(const entry of entries)await gate(entry.characterId,entry.checkpoint);return target.saveCheckpoints(entries);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}}),rt=await runtime({ledger,ending:true,characters:delayed});
+ const release=async()=>{if(blocker){const held=blocker;blocker=null;await held.query('COMMIT');held.release();}};
+ const pgBlocked=async()=>{await until(()=>blocker||rt.failures.length);assert.deepEqual(rt.failures,[]);for(let i=0;;i++){if((await pool.query("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%world_characters%FOR UPDATE%'")).rowCount)break;if(i>200)throw Error('ending save did not block in PG');await delay(10);}};
+ try{
+  [bot,other]=await Promise.all([client(rt,owner),client(rt,peer)]);await pgBlocked();assert.equal(bot.state?.recovery.endingPresentation??null,null);assert.equal(rt.host.stats().durableBarrier,true);await release();await ready(rt,bot);await ready(rt,other);await until(()=>bot.state.recovery.endingPresentation);const initial=bot.state.recovery.endingPresentation,id=initial.id;assert.equal(initial.phase,'blackout');assert.deepEqual(initial.cast[0].appearance,owner.record.identity.appearance);assert.equal(bot.state.self.player.controlsLocked,true);assert.equal(other.state.self.player.controlsLocked,false);assert.equal(JSON.stringify(other.state).includes(id),false);
+  const before=other.state.actors.find(a=>a.ref.id===other.state.selfRef.id);other.send([],{forward:1});await until(()=>{const a=other.state.actors.find(a=>a.ref.id===other.state.selfRef.id);return Math.hypot(a.x-before.x,a.z-before.z)>.2;});await until(()=>!rt.host.stats().durableBarrier);assert.notEqual(bot.state.recovery.endingPresentation.phase,'finished');assert.equal(JSON.stringify(other.state).includes(id),false);
+  await until(()=>bot.state.recovery.endingPresentation.tick>=bot.state.recovery.endingPresentation.skipAvailableTick,10000);await until(()=>!rt.host.stats().durableBarrier);terminalArmed=true;bot.send([{kind:'endingControl',id,action:'skip'}]);await pgBlocked();assert.notEqual(bot.state.recovery.endingPresentation.phase,'credits');assert.equal(bot.results.some(r=>r.inputSequence===1),false);await release();await until(()=>bot.state.recovery.endingPresentation.phase==='credits'&&bot.results.some(r=>r.inputSequence===1&&r.status==='succeeded'));assert.equal(bot.state.self.player.controlsLocked,false);
+  bot.ws.close();await once(bot.ws,'close');resumed=await client(rt,owner);await ready(rt,resumed);assert.notEqual(resumed.binding.session,bot.binding.session);assert.equal(resumed.state.recovery.endingPresentation.id,id);assert.equal(resumed.state.recovery.endingPresentation.phase,'credits');resumed.send([{kind:'endingControl',id,action:'continue'}]);await until(()=>resumed.state.recovery.endingPresentation?.phase==='finished');const saved=await store.getOwned(owner.binding.accountId,owner.record.characterId);assert.equal(saved.checkpoint.progress.xp,0);assert.equal(saved.checkpoint.progress.coins,0);assert.equal(saved.checkpoint.progress.flags.frostCleared,true);assert.equal(saved.checkpoint.activity.controlsLocked,false);assert.equal(JSON.stringify(other.state).includes(id),false);assert.deepEqual(rt.failures,[]);assert.deepEqual(resumed.errors,[]);
+  bot.ws.close();other.ws.close();resumed.ws.close();await rt.close();originalClosed=true;next=await runtime({ledger,ending:true});nextBot=await client(next,owner);await ready(next,nextBot);assert.equal(nextBot.state.recovery.endingPresentation,null);assert.equal(nextBot.state.self.player.flags.frostCleared,true);assert.equal(nextBot.state.self.player.controlsLocked,false);nextBot.send([{kind:'endingReplay'}]);await until(()=>nextBot.state.recovery.endingPresentation);assert.notEqual(nextBot.state.recovery.endingPresentation.id,id);assert.equal(nextBot.state.self.player.xp,0);assert.equal(nextBot.state.self.player.coins,0);assert.deepEqual(next.failures,[]);
+ }finally{await release();bot?.ws.close();other?.ws.close();resumed?.ws.close();nextBot?.ws.close();if(next)await next.close();if(!originalClosed)await rt.close();}
+});
+
+
+test('ending schema handshake rejects missing or mismatched peers before consuming the reusable ticket or attaching a character', {timeout:10000},async()=>{
+ await assert.rejects(runtime({catalog:{...gameplayCatalog,wireSchemaRevision:WIRE_SCHEMA_REVISION+1}}),/schema revision/);
+ const c=await character(),rt=await runtime({ledger:true,ending:true}),bots=[];let consumes=0;const consume=rt.admission.consume.bind(rt.admission);rt.admission.consume=(...args)=>{consumes++;return consume(...args);};const ticket=rt.admission.issue(c.binding,origin).ticket;
+ try{
+  for(const revision of [undefined,null,WIRE_SCHEMA_REVISION-1,WIRE_SCHEMA_REVISION+1]){const bot=await client(rt,c,false);bots.push(bot);bot.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,...(revision===undefined?{}:{schemaRevision:revision})}));await until(()=>bot.controls.some(v=>v.code==='protocol-schema'));await until(()=>bot.ws.readyState===WebSocket.CLOSED);assert.equal(consumes,0);assert.equal(rt.host.stats().activeActors,0);}
+  const unknown=await client(rt,c,false);bots.push(unknown);unknown.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,schemaRevision:WIRE_SCHEMA_REVISION,accountId:c.binding.accountId}));await until(()=>unknown.controls.some(v=>v.code==='auth-frame'));assert.equal(consumes,0);
+  const matching=await client(rt,c,false);bots.push(matching);matching.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,schemaRevision:WIRE_SCHEMA_REVISION}));await ready(rt,matching);assert.equal(consumes,1);assert.equal(rt.host.stats().activeActors,1);assert.deepEqual(rt.failures,[]);
+ }finally{for(const bot of bots)bot.ws.close();await rt.close();}
+ const off=await runtime();let legacy;try{legacy=await client(off,c,false);legacy.ws.send(JSON.stringify({type:'authenticate',ticket:off.admission.issue(c.binding,origin).ticket,characterId:c.record.characterId}));await ready(off,legacy);assert.deepEqual(off.failures,[]);}finally{legacy?.ws.close();await off.close();}
+});
+
 const rawIntent=(seq,commands=[],held={})=>({seq,forward:0,strafe:0,turn:0,sprint:false,steeringYaw:null,heldChannel:null,commands,...held});
 const clientControl=(binding,sequence=1)=>createGameplayProtocol(gameplayCatalog).encodeControl({...binding,sequence,tick:0,acceptedInput:0,consumedInput:0},{type:'resync',lastSequence:0,reason:'baseline'})[0];
 
@@ -863,8 +896,9 @@ test('retained saves run at most once per second under constant kills without ho
   } finally { for (const t of timers) clearInterval(t); for (const b of bots) b.ws.close(); await rt.close(); }
 });
 
-test('ticks and snapshots go on while a save is in flight, and a result is sent only after the save that contains it commits', { timeout: 20000 }, async () => {
-  const { gate, characters } = gatedStore(), rt = await runtime({ characters }); let bot;
+// Production runs retained saves with the personal ending on; its input watermark must keep moving with them.
+for (const ending of [false, true]) test(`${ending ? 'ending on: ' : ''}ticks and snapshots go on while a save is in flight, and a result is sent only after the save that contains it commits`, { timeout: 20000 }, async () => {
+  const { gate, characters } = gatedStore(), rt = await runtime({ characters, ending }); let bot;
   try {
     const c = await character('mage'); bot = await client(rt, c); await ready(rt, bot); await until(() => !rt.host.stats().durableBarrier);
     let release; const blocked = new Promise(resolve => { release = resolve; }); gate.armed = () => blocked;
@@ -880,6 +914,7 @@ test('ticks and snapshots go on while a save is in flight, and a result is sent 
     assert.ok(bot.state.sequence - sequence >= 4, JSON.stringify({ snapshots: bot.state.sequence - sequence }));
     // The accepted quest is in the world and in snapshots, but not acknowledged and not in PG yet.
     assert.equal(bot.state.self.player.quests.status.q1, 'active');
+    assert.ok(bot.state.header.consumedInput >= accepted, JSON.stringify({ consumed: bot.state.header.consumedInput, accepted }));
     assert.equal(bot.results.some(r => r.inputSequence === accepted), false);
     assert.equal((await store.getOwned(c.binding.accountId, c.record.characterId)).checkpoint.progress.quests.status.q1, 'available');
     release();
