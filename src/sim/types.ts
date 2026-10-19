@@ -543,6 +543,8 @@ export interface Area {
   capturePlayerCheckpoint(ref:EntityRef):CapturedPlayer;
   appliedGrantIds(character:CharacterId):readonly string[];
   markCheckpointDurable(captureId:string,revision:number,ids:readonly string[],featureIds?:readonly string[]):void;
+  /** Host save round that never wrote this capture: forget it so it holds no capacity or transfer check. */
+  discardCheckpointCapture(captureId:string):void;
   quiescePlayer(ref:EntityRef,reason:string):PlayerRetirement;
   abortPlayerRetirement(token:string):void;
   commitPlayerRetirement(token:string):void;

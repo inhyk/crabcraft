@@ -145,6 +145,15 @@ const inDungeon = bot => bot.binding.area.startsWith('dungeon:');
 const position = bot => { const s = bot.self(); return { x: s.x, z: s.z }; };
 const near = (a, b, what) => { assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < .01, `${what}: ${JSON.stringify([a, b])}`); };
 const count = async table => (await pool.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n;
+/** Unpaid awards at the character's current revision: a live host may checkpoint an online character between two reads. */
+async function unpaidAwards(p) {
+  for (let i = 0; i < 20; i++) {
+    const { revision } = await store.getOwned(p.binding.accountId, p.id);
+    const read = await dungeonStore.readPendingDungeonAwards(p.binding.accountId, p.id, revision, 10);
+    if (read.kind === 'page') return { awards: read.page.awards, more: read.more };
+  }
+  throw new Error('revision kept moving under the award read');
+}
 
 for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}dungeon start checks leader, level, world, party and room capacity before anyone moves, then the whole party enters together`, { timeout: 30000 }, async () => {
   const rt = await runtime({ maxEncounters: 1, ledger }), bots = []; let beat;
@@ -309,7 +318,7 @@ for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}a 
     for (const i of [0, 1, 2]) { assert.equal(paid[i].checkpoint.progress.xp, before[i].checkpoint.progress.xp + 1800); assert.equal(paid[i].checkpoint.progress.coins, before[i].checkpoint.progress.coins + 1800); }
     assert.equal(paid[3].checkpoint.progress.xp, before[3].checkpoint.progress.xp); assert.equal(paid[3].checkpoint.progress.flags.dungeonCleared35, undefined);
     assert.equal(await count('world_dungeon_award_receipts'), counts[2] + 3);
-    for (const [i, p] of people.entries()) assert.deepEqual(await dungeonStore.readPendingDungeonAwards(p.binding.accountId, p.id, paid[i].revision, 10), { kind: 'page', page: { revision: paid[i].revision, awards: [] }, more: false });
+    for (const p of people) assert.deepEqual(await unpaidAwards(p), { awards: [], more: false }, `no unpaid award for ${p.id}`);
     assert.deepEqual(rt.failures, []); for (const bot of bots) assert.deepEqual(bot.errors, []);
   } finally { clearInterval(beat); clearInterval(fight); for (const bot of bots) await closeBot(bot); await rt.close(); }
 });
@@ -406,7 +415,7 @@ for (const ledger of [false, true]) test(`${ledger ? 'external ledger: ' : ''}an
     const paid = await store.getOwned(a.binding.accountId, a.id);
     assert.equal(paid.checkpoint.progress.xp, before.checkpoint.progress.xp + 700); assert.equal(paid.checkpoint.progress.coins, before.checkpoint.progress.coins + 300);
     assert.equal(paid.checkpoint.progress.flags.dungeonCleared35, true); assert.equal(await receipts(award), 1);
-    assert.deepEqual(await dungeonStore.readPendingDungeonAwards(a.binding.accountId, a.id, paid.revision, 10), { kind: 'page', page: { revision: paid.revision, awards: [] }, more: false });
+    assert.deepEqual(await unpaidAwards(a), { awards: [], more: false });
     await until(() => A.state?.self.player.flags.dungeonCleared35 === true && A.state.self.player.xp === paid.checkpoint.progress.xp, 3000, 'award visible to the client');
     assert.deepEqual(rt.failures, []); assert.deepEqual(A.errors, []);
   } finally { clearInterval(beat); await closeBot(A); await rt.close(); }
@@ -432,4 +441,23 @@ test('a skipped retained character whose award lands with a moved PG revision is
     await until(() => A.state?.self.player.xp === paid.checkpoint.progress.xp && A.state.self.player.flags.dungeonCleared35 === true, 3000, 'recovered award visible');
     assert.deepEqual(rt.failures, []); assert.deepEqual(A.errors, []);
   } finally { clearInterval(beat); await closeBot(A); await rt.close(); }
+});
+
+test('with dungeons enabled a retained host saves once per interval in halting rounds only, since feature award captures need the world held', { timeout: 30000 }, async () => {
+  const rt = await runtime(), bots = []; let beat;
+  try {
+    for (let i = 0; i < 2; i++) bots.push(await client(rt, await character({ offset: i })));
+    beat = heartbeat(bots);
+    await until(() => !rt.host.stats().durableBarrier, 8000, 'admission rounds');
+    const start = rt.host.stats(), t0 = performance.now();
+    await delay(1500);
+    const end = rt.host.stats(), seconds = (performance.now() - t0) / 1000;
+    assert.deepEqual(rt.failures, []); assert.equal(end.frozen, false);
+    assert.equal(end.saveRounds, 0, 'no running-world round'); assert.equal(end.checkpointCaptures, 0);
+    const rounds = end.haltingBarriers - start.haltingBarriers;
+    // checkpointIntervalMs is 200 ms here: about one round per interval, never one per tick.
+    assert.ok(rounds >= 2 && rounds <= Math.ceil(seconds / .2) + 1, JSON.stringify({ rounds, seconds }));
+    assert.ok(end.ticks - start.ticks > 0);
+    for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { clearInterval(beat); for (const bot of bots) await closeBot(bot); await rt.close(); }
 });

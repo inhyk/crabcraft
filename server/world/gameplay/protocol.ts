@@ -44,17 +44,32 @@ export function sameBinding(a:WireBinding,b:WireBinding):boolean {return a.sessi
 export function clone<T>(value:T):T{return decodeValue(encodeValue(value)) as T;}
 const KEYS=('ref area id life archetype kind reaction level x y z yaw radius height hp maxHp alive hidden targetable invulnerable stunUntil slowUntil slowPct rust rustUntil absorb absorbMax absorbUntil blessingUntil encounterBlessing pushX pushZ pushTime lift npcId pose actions locomotionTime localVx localVz yawRate previousX previousZ previousYaw appliedQ appliedPosition appliedRotation gaitPhase controllerVx controllerVz controllerYaw locomotionQ locomotionPosition locomotionRotation locomotionWeights part upper from to loopFrom loop speed fade carryRoot generation start clipTime fadeIn fadeOut weight targetWeight ended interrupted root curve dataVersion metersToUnits committed committedClipTime rebase character unit classId resource maxResource xp coins attackRank armorRank weaponOwned armorOwned baseMaxHp gcdStart gcdEnd cooldowns cast channel target warded nextSwing lastAttack queued velX velZ jumpT spinT lastSpend targetDeadAt dash t deadUntil role controlsLocked talkTarget quests flags cogMisses chapter status progress cogs tracked ability end targetId source style elapsed bornStep hit anchorVersion type src dst amount crit school reason stage seconds caster range half stun landed slot moment move oldMaxHp jump attack at mech shapes cancelled boss phase show textKey yell recipient item recipients grant appliedHere position quest objective value operation result request destination gate header sequence tick acceptedInput consumedInput session epoch catalog full baseline eventWatermark selfRef actors removed projectiles self features recovery events results world time state weapon armor boat village environment telegraphs ending order inputSequence commandIndex revision durable poseDelta mask values fields appearance shell crest led name race sex lighthouseSecretFound endings replay poses poseRecipe recipe locomotion layers version bosses profile enraged stateTime freedTime showFrame').split(' ');
 const KEY_INDEX=new Map<string,number>();KEYS.forEach((key,index)=>{if(!KEY_INDEX.has(key))KEY_INDEX.set(key,index);});
+/** The wire dictionary of object keys (index + 1 on the wire, 0 = inline key). Read-only; exported for encoder tests. */
+export const DICTIONARY_KEYS:readonly string[]=Object.freeze([...KEYS]);
 const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
+/** Byte output. Capacity grows by doubling up to LIMITS.messageBytes; every write checks that limit first. */
 class Writer {
- bytes=new Uint8Array(1024);view=new DataView(this.bytes.buffer);offset=0;
- need(n:number){if(this.offset+n>LIMITS.messageBytes)fail('message size limit');if(this.offset+n>this.bytes.length){const next=new Uint8Array(Math.min(LIMITS.messageBytes,Math.max(this.bytes.length*2,this.offset+n)));next.set(this.bytes);this.bytes=next;this.view=new DataView(next.buffer);}}
- u8(n:number){this.need(1);this.view.setUint8(this.offset++,n);}
+ bytes:Uint8Array;view:DataView;offset=0;
+ constructor(capacity=1024){this.bytes=new Uint8Array(Math.min(LIMITS.messageBytes,Math.max(16,capacity)));this.view=new DataView(this.bytes.buffer);}
+ need(n:number){const end=this.offset+n;if(end>this.bytes.length){if(end>LIMITS.messageBytes)fail('message size limit');const next=new Uint8Array(Math.min(LIMITS.messageBytes,Math.max(this.bytes.length*2,end)));next.set(this.bytes.subarray(0,this.offset));this.bytes=next;this.view=new DataView(next.buffer);}}
+ u8(n:number){this.need(1);this.bytes[this.offset++]=n;}
  u16(n:number){this.need(2);this.view.setUint16(this.offset,n,true);this.offset+=2;}
  u32(n:number){this.need(4);this.view.setUint32(this.offset,n,true);this.offset+=4;}
  f32(n:number){number(n);if(Math.fround(n)!==n)fail('lossy f32 forbidden');this.need(4);this.view.setFloat32(this.offset,n,true);this.offset+=4;}
- f64(n:number){number(n);this.need(8);this.view.setFloat64(this.offset,n,true);this.offset+=8;}
+ f64(n:number){if(typeof n!=='number'||!Number.isFinite(n)||Number.isInteger(n)&&!Number.isSafeInteger(n))fail('invalid numeric value');this.need(8);this.view.setFloat64(this.offset,n,true);this.offset+=8;}
  raw(b:Uint8Array){this.need(b.length);this.bytes.set(b,this.offset);this.offset+=b.length;}
- string(s:string){const b=encoder.encode(s);if(b.length>LIMITS.stringBytes)fail('string size limit');this.u16(b.length);this.raw(b);}
+ /** raw(b.subarray(from, to)) without the view for short ranges. */
+ copy(b:Uint8Array,from:number,to:number){const n=to-from;this.need(n);if(n>64){this.bytes.set(b.subarray(from,to),this.offset);this.offset+=n;return;}const bytes=this.bytes;let at=this.offset;for(let i=from;i<to;i++)bytes[at++]=b[i];this.offset=at;}
+ /** u16 byte length + UTF-8 (TextEncoder's bytes; ASCII is copied directly). */
+ string(s:string){
+  const n=s.length;
+  if(n<=LIMITS.stringBytes){
+   this.need(2+n);const bytes=this.bytes,start=this.offset+2;let i=0;
+   for(;i<n;i++){const c=s.charCodeAt(i);if(c>0x7f)break;bytes[start+i]=c;}
+   if(i===n){this.view.setUint16(this.offset,n,true);this.offset=start+n;return;}
+  }
+  const b=encoder.encode(s);if(b.length>LIMITS.stringBytes)fail('string size limit');this.u16(b.length);this.raw(b);
+ }
  finish(){return this.bytes.slice(0,this.offset);}
 }
 class Reader {
@@ -71,22 +86,73 @@ class Reader {
  end(){if(this.offset!==this.bytes.length)fail('trailing bytes');}
 }
 interface ValuePrefix {bytes:Uint8Array;strings:ReadonlyMap<string,number>;nodes:number;hash:number}
-function valueEncoder(prefix?:ValuePrefix){
- const w=new Writer(),seen=new Set<object>(),strings=new Map<string,number>(prefix?.strings);let nodes=prefix?.nodes??0;if(prefix)w.raw(prefix.bytes);
+/**
+ * Tagged value encoding with a per-message string table (tag 4 inline, tag 9 index). A prefix continues an earlier
+ * encoding: its string table is read through (not copied) and new strings take the following indices. The checks run in
+ * the same order as the decoder's limits, so oversize, cyclic, non-plain and non-finite values fail the same way.
+ *
+ * options.templates (one publication's TemplateArena): a frozen object is written from its template, the bytes write()
+ * gives it with every string value left as a slot. Splicing copies the bytes and resolves each slot through this message's
+ * string table in order, exactly as write() would, so the output is byte-identical; frozen values never change, so a
+ * template stays valid while the publication lasts. Anything a template cannot reproduce (a limit, a cycle) takes write()
+ * and fails the same way. Templates live in one reused buffer and flat arrays, so they add almost no garbage.
+ */
+class TemplateArena {
+ bytes=new Uint8Array(1<<16);used=0;
+ /** Per template id, six numbers: start, end, first slot, slot count, nodes, depth. */
+ meta:number[]=[];slotAt:number[]=[];slotText:string[]=[];
+ /** Template id per frozen object; -1 when write() fails for it. */
+ ids=new Map<object,number>();
+ append(src:Uint8Array,length:number):number{if(this.used+length>this.bytes.length){const next=new Uint8Array(Math.max(this.bytes.length*2,this.used+length));next.set(this.bytes.subarray(0,this.used));this.bytes=next;}const start=this.used;this.bytes.set(src.subarray(0,length),start);this.used+=length;return start;}
+ clear(){this.used=0;this.meta.length=0;this.slotAt.length=0;this.slotText.length=0;this.ids.clear();}
+}
+const spareArenas:TemplateArena[]=[];
+const takeArena=()=>spareArenas.pop()??new TemplateArena();
+const returnArena=(arena:TemplateArena)=>{arena.clear();if(spareArenas.length<4)spareArenas.push(arena);};
+function valueEncoder(prefix?:ValuePrefix,options:{templates?:TemplateArena;record?:{at:number[];text:string[]};writer?:Writer}={}){
+ const w=options.writer??new Writer(prefix?prefix.bytes.length*2:1024),path:object[]=[],base=prefix?.strings,strings=new Map<string,number>(),baseSize=base?.size??0,record=options.record,arena=options.templates;let nodes=prefix?.nodes??0,deepest=0;if(prefix)w.raw(prefix.bytes);
+ const text=(v:string)=>{
+  if(record){record.at.push(w.offset);record.text.push(v);return;}
+  let index=strings.get(v);if(index===undefined&&base)index=base.get(v);if(index!==undefined){w.u8(9);w.u16(index);}else{if(baseSize+strings.size>=65535)fail('string table limit');strings.set(v,baseSize+strings.size);w.u8(4);w.string(v);}
+ };
+ const splice=(v:object,depth:number):boolean=>{
+  const a=arena!;let id=a.ids.get(v);
+  if(id===undefined){id=recordTemplate(a,v);a.ids.set(v,id);}
+  if(id<0)return false;
+  const m=a.meta,at=id*6,end=m[at+1],first=m[at+2],last=first+m[at+3];
+  if(nodes+m[at+4]>LIMITS.nodes||depth+m[at+5]>LIMITS.depth||path.includes(v))return false;
+  nodes+=m[at+4];let from=m[at];const bytes=a.bytes;
+  for(let k=first;k<last;k++){const slot=a.slotAt[k];if(slot>from)w.copy(bytes,from,slot);from=slot;text(a.slotText[k]);}
+  if(from<end)w.copy(bytes,from,end);return true;
+ };
  const write=(v:unknown,depth:number)=>{
-  if(++nodes>LIMITS.nodes||depth>LIMITS.depth)fail('value complexity limit');
-  if(v===null){w.u8(0);return;}if(v===false||v===true){w.u8(v?2:1);return;}if(typeof v==='number'){w.u8(3);w.f64(v);return;}if(typeof v==='string'){const index=strings.get(v);if(index!==undefined){w.u8(9);w.u16(index);}else{if(strings.size>=65535)fail('string table limit');strings.set(v,strings.size);w.u8(4);w.string(v);}return;}
-  if(!v||typeof v!=='object'||seen.has(v))fail('non-value or cyclic data');seen.add(v);
+  if(arena&&v!==null&&typeof v==='object'&&Object.isFrozen(v)&&splice(v,depth))return;
+  if(++nodes>LIMITS.nodes||depth>LIMITS.depth)fail('value complexity limit');if(depth>deepest)deepest=depth;
+  if(v===null){w.u8(0);return;}if(v===false||v===true){w.u8(v?2:1);return;}
+  if(typeof v==='number'){w.u8(3);w.f64(v);return;}
+  if(typeof v==='string'){text(v);return;}
+  if(!v||typeof v!=='object'||path.includes(v))fail('non-value or cyclic data');path.push(v);
   if(Array.isArray(v)){
    if(v.length>LIMITS.array)fail('array size limit');const numeric=v.length>0&&v.every(n=>typeof n==='number'),exact32=numeric&&v.every(n=>Number.isFinite(n)&&Math.fround(n)===n);w.u8(exact32?8:numeric?7:5);w.u16(v.length);
-   if(numeric){nodes+=v.length;if(nodes>LIMITS.nodes)fail('value complexity limit');v.forEach(n=>exact32?w.f32(n):w.f64(n));}else v.forEach(n=>write(n,depth+1));
+   if(numeric){nodes+=v.length;if(nodes>LIMITS.nodes)fail('value complexity limit');if(exact32)v.forEach(n=>w.f32(n));else v.forEach(n=>w.f64(n));}else v.forEach(n=>write(n,depth+1));
   }else{
-   if(![Object.prototype,null].includes(Object.getPrototypeOf(v)))fail('non-plain data');const entries=Object.entries(v).filter(([,x])=>x!==undefined);
-   if(entries.length>LIMITS.object)fail('object size limit');w.u8(6);w.u16(entries.length);
-   for(const[k,x]of entries){if(['__proto__','constructor','prototype'].includes(k))fail('unsafe map key');const i=KEY_INDEX.get(k)??-1;w.u16(i+1);if(i<0)w.string(k);write(x,depth+1);}
-  }seen.delete(v);
+   const proto=Object.getPrototypeOf(v);if(proto!==Object.prototype&&proto!==null)fail('non-plain data');
+   const record=v as Record<string,unknown>,keys=Object.keys(record);let count=0;for(let i=0;i<keys.length;i++)if(record[keys[i]]!==undefined)count++;
+   if(count>LIMITS.object)fail('object size limit');w.u8(6);w.u16(count);
+   for(let i=0;i<keys.length;i++){const k=keys[i],x=record[k];if(x===undefined)continue;if(k==='__proto__'||k==='constructor'||k==='prototype')fail('unsafe map key');const index=KEY_INDEX.get(k)??-1;w.u16(index+1);if(index<0)w.string(k);write(x,depth+1);}
+  }path.pop();
  };
- return {w,write,beginRecord(size:number){if(++nodes>LIMITS.nodes)fail('value complexity limit');w.u8(6);w.u16(size);},field(k:string,v:unknown){const index=KEY_INDEX.get(k)??-1;w.u16(index+1);if(index<0)w.string(k);write(v,1);},prefix():ValuePrefix{const bytes=w.finish();return{bytes,strings:new Map(strings),nodes,hash:checksum(bytes)};}};
+ return {w,write,nodes:()=>nodes,deepest:()=>deepest,reset(){w.offset=0;path.length=0;strings.clear();nodes=prefix?.nodes??0;deepest=0;},
+  beginRecord(size:number){if(++nodes>LIMITS.nodes)fail('value complexity limit');w.u8(6);w.u16(size);},field(k:string,v:unknown){const index=KEY_INDEX.get(k)??-1;w.u16(index+1);if(index<0)w.string(k);write(v,1);},prefix():ValuePrefix{const bytes=w.finish(),all=new Map(base);for(const [k,i] of strings)all.set(k,i);return{bytes,strings:all,nodes,hash:checksum(bytes)};}};
+}
+/** write(v, 0) with string values recorded as slots, appended to the arena; -1 when write() would fail (the caller then writes and fails in place). */
+const recordSlots={at:[] as number[],text:[] as string[]},recordScratch=new Writer(4096),recorder=valueEncoder(undefined,{record:recordSlots,writer:recordScratch});
+function recordTemplate(arena:TemplateArena,v:object):number {
+ recorder.reset();recordSlots.at.length=0;recordSlots.text.length=0;
+ try{recorder.write(v,0);}catch{recorder.reset();return -1;}
+ const length=recordScratch.offset,start=arena.append(recordScratch.bytes,length),first=arena.slotAt.length;
+ for(let i=0;i<recordSlots.at.length;i++){arena.slotAt.push(start+recordSlots.at[i]);arena.slotText.push(recordSlots.text[i]);}
+ const id=arena.meta.length/6;arena.meta.push(start,start+length,first,recordSlots.at.length,recorder.nodes(),recorder.deepest());return id;
 }
 export function encodeValue(value:unknown):Uint8Array {const valueWriter=valueEncoder();valueWriter.write(value,0);return valueWriter.w.finish();}
 export function decodeValue(bytes:Uint8Array):Value {
@@ -99,14 +165,21 @@ export function decodeValue(bytes:Uint8Array):Value {
   return fail('unknown binary tag');
  };const result=read(0);r.end();return result;
 }
-function checksum(bytes:Uint8Array,start=0,seed=2166136261):number {let n=seed;for(let i=start;i<bytes.length;i++)n=Math.imul(n^bytes[i],16777619);return n>>>0;}
+/** FNV-1a over bytes[start..], continuing from seed: the same byte order and value, unrolled by four (about 4x faster in V8). */
+function checksum(bytes:Uint8Array,start=0,seed=2166136261):number {
+ let n=seed|0,i=start;const end=bytes.length,stop=end-3;
+ for(;i<stop;i+=4){n=Math.imul(n^bytes[i],16777619);n=Math.imul(n^bytes[i+1],16777619);n=Math.imul(n^bytes[i+2],16777619);n=Math.imul(n^bytes[i+3],16777619);}
+ for(;i<end;i++)n=Math.imul(n^bytes[i],16777619);return n>>>0;
+}
 export function encodeMessage(kind:1|2|16|17,h:WireHeader,payload:unknown):Uint8Array[] {
  header(h);const body=encodeValue(payload);return frameMessage(kind,h,body,checksum(body));
 }
+const headerScratch=new Writer(512);
 function frameMessage(kind:1|2|16|17,h:WireHeader,body:Uint8Array,hash:number):Uint8Array[] {
- const hbytes=encodeValue(h),overhead=4+2+hbytes.length+2+2+4+4;
+ headerScratch.offset=0;valueEncoder(undefined,{writer:headerScratch}).write(h,0);
+ const hbytes=headerScratch.bytes.subarray(0,headerScratch.offset),overhead=4+2+hbytes.length+2+2+4+4;
  const room=LIMITS.fragmentBytes-overhead;if(room<1)fail('oversized header');const count=Math.max(1,Math.ceil(body.length/room));if(count>LIMITS.fragments)fail('fragment count limit');
- return Array.from({length:count},(_,i)=>{const w=new Writer();w.u16(MAGIC);w.u8(VERSION);w.u8(kind);w.u16(hbytes.length);w.raw(hbytes);w.u16(i);w.u16(count);w.u32(body.length);w.u32(hash);w.raw(body.slice(i*room,(i+1)*room));return w.finish();});
+ return Array.from({length:count},(_,i)=>{const part=body.subarray(i*room,(i+1)*room),w=new Writer(overhead+part.length);w.u16(MAGIC);w.u8(VERSION);w.u8(kind);w.u16(hbytes.length);w.raw(hbytes);w.u16(i);w.u16(count);w.u32(body.length);w.u32(hash);w.raw(part);return w.offset===w.bytes.length?w.bytes:w.finish();});
 }
 export interface DecodedMessage {kind:1|2|16|17;header:WireHeader;payload:Value;interrupted:boolean}
 /** Parse one fragment's envelope and header. The caller has already checked the fragment byte limit. */
@@ -233,6 +306,13 @@ export interface ObservationInput {
  binding:WireBinding;sequence:number;tick:number;acceptedInput:number;consumedInput:number;selfRef:EntityRef;
  snapshot:AreaSnapshot;prepared?:PreparedObservation;events:readonly EventRecord[];visibleIds:ReadonlySet<number>;full:boolean;eventWatermark:number;
  features:FeatureView;recovery:RecoveryView;achievements:AchievementView;appearances:Readonly<Record<string,Appearance>>;results?:readonly CommandResult[];
+ /**
+  * Interest tier (optional): visible actors whose public state this snapshot holds at what the recipient last received.
+  * A held actor that the previous baseline has in the same life stays in the baseline (not removed, events and projectiles
+  * still selected) with its last sent fields and pose, so it gets no update; its accumulated change goes out when it is no
+  * longer held. A held actor new to the recipient, or in a new life, is sent as usual. Ignored for a full snapshot.
+  */
+ heldIds?:ReadonlySet<number>;
 }
 export type WorldControl=
  | {type:'inputAck'}
@@ -278,7 +358,7 @@ export interface ObservationChecks {verify?:boolean}
 /** One instance per connection: binding, sequence and successful baseline advancement remain connection-owned. */
 export function createGameplayProtocol(catalog:GameplayCatalog,options:ObservationChecks={}):GameplayProtocol {
  const verify=options.verify??true;
- catalog=clone(catalog);validateWireSchema(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes=new Map<number,RenderPoseSource>();let previous:readonly PublicActor[]=[],prior:WireHeader|null=null;let previousPublic:PublicBaseline|null=null;let controlBinding:WireBinding|null=null,controlSequence=0,resyncPending=false;
+ catalog=clone(catalog);validateWireSchema(catalog);text(catalog.version);integer(catalog.jointCount,1,30);if(catalog.poseProviderVersion!==renderPoseProviderVersion)fail('pose provider mismatch');const catalogSignature=JSON.stringify(catalog);let previousRecipes:Lookup<RenderPoseSource>=new Map<number,RenderPoseSource>();let previous:readonly PublicActor[]=[],prior:WireHeader|null=null;let previousPublic:PublicBaseline|null=null;let controlBinding:WireBinding|null=null,controlSequence=0,resyncPending=false;
  return {
   catalog:clone(catalog),encodeEvents:(h,p)=>encodeEvents(h,p,catalog),encodeControl,
   encodeInput:p=>encodeInput(p,catalog),decodeInput:(b,e)=>decodeInput(b,e,catalog),
@@ -299,30 +379,32 @@ export function createGameplayProtocol(catalog:GameplayCatalog,options:Observati
    const player=input.snapshot.players.find(p=>p.unit.id===input.selfRef.id&&p.unit.life===input.selfRef.life);if(!player)fail('missing owned self');
    const prepared=input.prepared?preparedObservations.get(input.prepared):undefined;
    if(input.prepared&&(!prepared||prepared.source!==input.snapshot||prepared.catalog!==catalogSignature))fail('forged/stale prepared observation');
-   const full=input.full||!prior;let actors:readonly PublicActor[],recipes:Map<number,RenderPoseSource>,baseline:PublicBaseline,publicFields:PublicSnapshotFields,projection:PreparedProjection|undefined;
-   if(prepared){baseline=preparedBaseline(prepared,input.visibleIds,input.selfRef.id);projection=preparedProjection(prepared,baseline,full?null:previousPublic!);publicFields=projection.fields;actors=baseline.actors;recipes=baseline.recipes;}
+   const full=input.full||!prior;let actors:readonly PublicActor[],recipes:Lookup<RenderPoseSource>,baseline:PublicBaseline,publicFields:PublicSnapshotFields,projection:PreparedProjection|undefined;
+   if(prepared){const shared=preparedBaseline(prepared,input.visibleIds,input.selfRef.id);baseline=!full&&input.heldIds?.size?heldBaseline(shared,previousPublic!,input.heldIds):shared;projection=preparedProjection(prepared,baseline,full?null:previousPublic!,baseline===shared);publicFields=projection.fields;actors=baseline.actors;recipes=baseline.recipes;}
    else {
+   const old=new Map(previous.map(a=>[a.ref.id,a])),held=new Set<number>();
    actors=input.snapshot.units.filter(u=>input.visibleIds.has(u.ref.id)||u.ref.id===input.selfRef.id).map(u=>{
+    const kept=full||!input.heldIds?.has(u.ref.id)?undefined:old.get(u.ref.id);if(kept&&kept.ref.life===u.ref.life&&previousRecipes.has(u.ref.id)){held.add(u.ref.id);return kept;}
     const appearance=input.appearances[`${u.ref.id}:${u.ref.life}`]??null;if(u.kind==='player'&&!appearance)fail('missing player appearance');return projectActor(u,appearance);
    });
-   const old=new Map(previous.map(a=>[a.ref.id,a])),updates:ActorUpdate[]=[],ids=new Set(actors.map(a=>a.ref.id));
-   const poses:RenderPoseSource[]=[],posePool=new Map<string,number>();recipes=new Map<number,RenderPoseSource>();
+   const updates:ActorUpdate[]=[],ids=new Set(actors.map(a=>a.ref.id));
+   const poses:RenderPoseSource[]=[],posePool=new Map<string,number>(),own=new Map<number,RenderPoseSource>();recipes=own;
    const units=new Map(input.snapshot.units.map(u=>[u.ref.id,u]));
    for(const a of actors){
     validateActor(a,catalog,h.area);const prev=full?null:old.get(a.ref.id),sameLife=!!prev&&prev.ref.life===a.ref.life;
     let fields:Partial<Omit<PublicActor,'ref'>>;
     fields={};for(const k of ACTOR_FIELDS){if(k==='pose')continue;if(!sameLife||!equalValue(prev![k],a[k]))(fields as Record<string,unknown>)[k]=a[k];}
-    const recipe={recipe:createRenderPoseRecipe(units.get(a.ref.id)!),localVx:a.pose.localVx,localVz:a.pose.localVz};renderSource(recipe);recipes.set(a.ref.id,recipe);
+    const recipe=held.has(a.ref.id)?previousRecipes.get(a.ref.id)!:{recipe:createRenderPoseRecipe(units.get(a.ref.id)!),localVx:a.pose.localVx,localVz:a.pose.localVz};renderSource(recipe);own.set(a.ref.id,recipe);
     let index:number|undefined;if(!sameLife||!equalValue(previousRecipes.get(a.ref.id),recipe)){const key=recipeKey(recipe);index=posePool.get(key);if(index===undefined){index=poses.length;posePool.set(key,index);poses.push(recipe);}}
     if(Object.keys(fields).length||index!==undefined)updates.push({ref:a.ref,fields,...(index===undefined?{}:{poseRecipe:index})});
    }
    const projectiles=input.snapshot.projectiles.filter(p=>ids.has(p.source.id)||ids.has(p.target.id)).map(({hit:_hit,anchorVersion:_anchor,...p})=>p);
    publicFields={world:input.snapshot.world,time:input.snapshot.time,poses,actors:updates,removed:full?[]:previous.filter(a=>!ids.has(a.ref.id)).map(a=>a.ref),projectiles};
-   baseline=makePublicBaseline(actors,recipes);
+   baseline=makePublicBaseline(actors,own);
    }
    const ownUnit=input.snapshot.units.find(u=>u.ref.id===input.selfRef.id&&u.ref.life===input.selfRef.life);if(!ownUnit)fail('missing owned actor');
    const payload:SnapshotPayload={...publicFields,full,baseline:full?0:prior!.sequence,eventWatermark:input.eventWatermark,selfRef:input.selfRef,self:projectSelf(player,input.achievements,input.snapshot.time-ownUnit.lastCombat<5),features:input.features,recovery:input.recovery,events:prepared?selectIndexedEvents(preparedEventIndex(prepared,input.events),input.selfRef,player.character,baseline.ids):selectEvents(input.events,input.selfRef,player.character,baseline.ids),results:input.results??[]};
-   if(verify){checkSnapshot(payload,catalog,h.area,!!prepared,!!projection?.validated);if(projection)projection.validated=true;}else checkSnapshotBounds(payload);if(payload.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');const encoded=projection?encodePreparedSnapshot(h,payload,projection.prefix):encodeMessage(1,h,payload);previous=actors;previousRecipes=recipes;previousPublic=baseline;prior=clone(h);if(full)resyncPending=false;return encoded;
+   if(verify){checkSnapshot(payload,catalog,h.area,!!prepared,!!projection?.validated);if(projection)projection.validated=true;}else checkSnapshotBounds(payload);if(payload.results.some(r=>r.inputSequence>h.consumedInput))fail('result precedes input consumption');const encoded=projection?projection.prefix?encodePreparedSnapshot(h,payload,projection.prefix,prepared!.templates):encodeWholeSnapshot(h,payload,prepared!.templates):encodeMessage(1,h,payload);previous=actors;previousRecipes=recipes;previousPublic=baseline;prior={...h};if(full)resyncPending=false;return encoded;
   },
  };
 }
@@ -423,7 +505,7 @@ function equalValue(a:unknown,b:unknown):boolean {
 
 /** Unforgeable per-publication token. It exposes no personal state or actor payload. */
 export interface PreparedObservation {readonly kind:'gameplay-prepared-v1';readonly area:string;readonly tick:number}
-interface PreparedPublicData {baselines:Map<number,PublicBaseline[]>;baselineCount:number;positions:ReadonlyMap<number,number>;unitActors:readonly PublicActor[];events?:{records:readonly EventRecord[];source:readonly EventRecord[];index:EventIndex};full:Map<PublicBaseline,PreparedProjection>;changes:WeakMap<PublicBaseline,Map<PublicBaseline,PreparedProjection>>;cachedGroups:number;cachedBytes:number;source:AreaSnapshot;catalog:string;actors:ReadonlyMap<number,PublicActor>;recipes:ReadonlyMap<number,RenderPoseSource>;poseKeys:ReadonlyMap<number,string>;fullFields:ReadonlyMap<number,Partial<Omit<PublicActor,'ref'>>>;deltas:WeakMap<PublicActor,{actor:PublicActor;fields:Partial<Omit<PublicActor,'ref'>>}>}
+interface PreparedPublicData {templates:TemplateArena;flights:readonly PublicProjectile[];baselines:Map<number,PublicBaseline[]>;baselineCount:number;positions:ReadonlyMap<number,number>;unitActors:readonly PublicActor[];events?:{records:readonly EventRecord[];source:readonly EventRecord[];index:EventIndex};full:Map<PublicBaseline,PreparedProjection>;changes:WeakMap<PublicBaseline,Map<PublicBaseline,PreparedProjection>>;cachedGroups:number;cachedBytes:number;source:AreaSnapshot;catalog:string;actors:ReadonlyMap<number,PublicActor>;recipes:ReadonlyMap<number,RenderPoseSource>;poseKeys:ReadonlyMap<number,string>;fullFields:ReadonlyMap<number,Partial<Omit<PublicActor,'ref'>>>;deltas:WeakMap<PublicActor,{actor:PublicActor;fields:Partial<Omit<PublicActor,'ref'>>}>}
 const preparedObservations=new WeakMap<PreparedObservation,PreparedPublicData>();
 function assertDeepFrozen(value:unknown,seen=new Set<object>(),depth=0):void {
  if(depth>LIMITS.depth)fail('prepared snapshot depth');if(value===null||typeof value!=='object')return;
@@ -448,21 +530,32 @@ export function prepareObservationSnapshot(snapshot:AreaSnapshot,appearances:Obs
   positions.set(unit.ref.id,unitActors.length);unitActors.push(actor);actors.set(unit.ref.id,actor);recipes.set(unit.ref.id,freezeValue(copyValue(recipe)));poseKeys.set(unit.ref.id,recipeKey(recipe));fullFields.set(unit.ref.id,freezeValue(Object.fromEntries(ACTOR_FIELDS.filter(k=>k!=='pose').map(k=>[k,actor[k]]))));
  }
  const token:PreparedObservation=Object.freeze({kind:'gameplay-prepared-v1',area:snapshot.area,tick:snapshot.tick});
- preparedObservations.set(token,{source:snapshot,catalog:catalogSignatureOf(catalog),actors,recipes,poseKeys,fullFields,positions,unitActors,deltas:new WeakMap(),baselines:new Map(),baselineCount:0,full:new Map(),changes:new WeakMap(),cachedGroups:0,cachedBytes:0});return token;
+ preparedObservations.set(token,{templates:takeArena(),flights:snapshot.projectiles.map(({hit:_hit,anchorVersion:_version,...flight})=>freezeValue(flight)),source:snapshot,catalog:catalogSignatureOf(catalog),actors,recipes,poseKeys,fullFields,positions,unitActors,deltas:new WeakMap(),baselines:new Map(),baselineCount:0,full:new Map(),changes:new WeakMap(),cachedGroups:0,cachedBytes:0});return token;
 }
 
 /** End one synchronous publication; connection baselines contain only detached public values. */
-export function releasePreparedObservation(token:PreparedObservation):void {preparedObservations.delete(token);}
+export function releasePreparedObservation(token:PreparedObservation):void {const data=preparedObservations.get(token);if(!data)return;preparedObservations.delete(token);returnArena(data.templates);}
 
 function recipeKey(recipe:RenderPoseSource):string {return JSON.stringify(recipe,(_key,value)=>typeof value==='number'&&Object.is(value,-0)?'negative-zero':value);}
 
+const NO_FIELDS:Partial<Omit<PublicActor,'ref'>>=Object.freeze({});
+function hasKeys(value:object):boolean {for(const key in value)if(Object.hasOwn(value,key))return true;return false;}
 // A cache bound is a reuse limit, never a packet/actor/AOI acceptance limit. Excess groups take the same uncached path.
 const MAX_PREPARED_GROUPS=100,MAX_PREPARED_PREFIX_BYTES=LIMITS.messageBytes;
 const PUBLIC_SNAPSHOT_FIELDS=['world','time','poses','actors','removed','projectiles'] as const;
 const PRIVATE_SNAPSHOT_FIELDS=['full','baseline','eventWatermark','selfRef','self','features','recovery','events','results'] as const;
 type PublicSnapshotFields=Pick<SnapshotPayload,'world'|'time'|'poses'|'actors'|'removed'|'projectiles'>;
-interface PublicBaseline {actors:readonly PublicActor[];byId:ReadonlyMap<number,PublicActor>;ids:ReadonlySet<number>;recipes:Map<number,RenderPoseSource>;recipeKeys:ReadonlyMap<number,string>}
-interface PreparedProjection {fields:PublicSnapshotFields;prefix:ValuePrefix;validated:boolean}
+interface Lookup<V> {get(id:number):V|undefined;has(id:number):boolean}
+interface PublicBaseline {actors:readonly PublicActor[];byId:Lookup<PublicActor>;ids:ReadonlySet<number>;recipes:Lookup<RenderPoseSource>;recipeKeys:Lookup<string>}
+/** A held baseline's lookups: the held actors' last sent values over the shared baseline of this publication. */
+class Overlay<V> implements Lookup<V> {
+ private readonly base:Lookup<V>;private readonly top:ReadonlyMap<number,V>;
+ constructor(base:Lookup<V>,top:ReadonlyMap<number,V>){this.base=base;this.top=top;}
+ get(id:number):V|undefined{const value=this.top.get(id);return value===undefined?this.base.get(id):value;}
+ has(id:number):boolean{return this.top.has(id)||this.base.has(id);}
+}
+/** prefix: the encoded public fields when this projection is cached for other recipients; null encodes it in one pass. */
+interface PreparedProjection {fields:PublicSnapshotFields;prefix:ValuePrefix|null;validated:boolean}
 function makePublicBaseline(actors:readonly PublicActor[],recipes:Map<number,RenderPoseSource>,keys?:ReadonlyMap<number,string>):PublicBaseline {return{actors,byId:new Map(actors.map(a=>[a.ref.id,a])),ids:new Set(actors.map(a=>a.ref.id)),recipes,recipeKeys:keys??new Map([...recipes].map(([id,recipe])=>[id,recipeKey(recipe)]))};}
 /**
  * The visible actors (and self) in snapshot unit order, as filtering snapshot.units would give, built from the visible
@@ -480,27 +573,48 @@ function preparedBaseline(p:PreparedPublicData,visible:ReadonlySet<number>,self:
  const baseline=makePublicBaseline(Object.freeze(actors),new Map(actors.map(a=>[a.ref.id,p.recipes.get(a.ref.id)!])),new Map(actors.map(a=>[a.ref.id,p.poseKeys.get(a.ref.id)!])));
  if(p.baselineCount<MAX_PREPARED_GROUPS){if(bucket)bucket.push(baseline);else p.baselines.set(hash,[baseline]);p.baselineCount++;}return baseline;
 }
+/** The baseline with each held actor (ObservationInput.heldIds) that previous has in the same life replaced by its last sent value. */
+function heldBaseline(current:PublicBaseline,previous:PublicBaseline,held:ReadonlySet<number>):PublicBaseline {
+ let byId:Map<number,PublicActor>|null=null,recipes:Map<number,RenderPoseSource>|null=null,keys:Map<number,string>|null=null;
+ const actors=current.actors.map(actor=>{
+  const id=actor.ref.id;if(!held.has(id))return actor;const prior=previous.byId.get(id);if(!prior||prior.ref.life!==actor.ref.life||prior===actor)return actor;
+  (byId??=new Map()).set(id,prior);(recipes??=new Map()).set(id,previous.recipes.get(id)!);(keys??=new Map()).set(id,previous.recipeKeys.get(id)!);return prior;
+ });
+ if(!byId)return current;
+ return {actors:Object.freeze(actors),byId:new Overlay(current.byId,byId),ids:current.ids,recipes:new Overlay(current.recipes,recipes!),recipeKeys:new Overlay(current.recipeKeys,keys!)};
+}
 /** One event index per publication, reused while every recipient is given the same event records. */
 function preparedEventIndex(p:PreparedPublicData,events:readonly EventRecord[]):EventIndex {
  const cached=p.events;
  if(cached&&cached.source===events&&cached.records.length===events.length&&events.every((record,i)=>cached.records[i]===record))return cached.index;
  const records=[...events],index=indexEvents(records);p.events={records,source:events,index};return index;
 }
-function preparedProjection(p:PreparedPublicData,current:PublicBaseline,previous:PublicBaseline|null):PreparedProjection {
- const cache=previous?p.changes.get(previous):p.full,cached=cache?.get(current);if(cached)return cached;
+/** share: current is a baseline other recipients may also have (not held), so the projection is cached with its prefix. */
+function preparedProjection(p:PreparedPublicData,current:PublicBaseline,previous:PublicBaseline|null,share:boolean):PreparedProjection {
+ const cache=share?previous?p.changes.get(previous):p.full:undefined,cached=cache?.get(current);if(cached)return cached;
  const poses:RenderPoseSource[]=[],pool=new Map<string,number>(),updates:ActorUpdate[]=[];
  for(const actor of current.actors){const prev=previous?.byId.get(actor.ref.id),sameLife=!!prev&&prev.ref.life===actor.ref.life,cachedFields=prev?p.deltas.get(prev):undefined;let fields:Partial<Omit<PublicActor,'ref'>>;
   if(!sameLife)fields=p.fullFields.get(actor.ref.id)!;
+  else if(prev===actor)fields=NO_FIELDS; // a held actor: the recipient already has exactly this value
   else if(cachedFields?.actor===actor)fields=cachedFields.fields;
   else{fields={};for(const k of ACTOR_FIELDS)if(k!=='pose'&&!equalValue(prev![k],actor[k]))(fields as Record<string,unknown>)[k]=actor[k];p.deltas.set(prev!,{actor,fields:freezeValue(fields)});}
   let index:number|undefined;const key=current.recipeKeys.get(actor.ref.id)!;if(!sameLife||previous!.recipeKeys.get(actor.ref.id)!==key){index=pool.get(key);if(index===undefined){index=poses.length;pool.set(key,index);poses.push(current.recipes.get(actor.ref.id)!);}}
-  if(Object.keys(fields).length||index!==undefined)updates.push({ref:actor.ref,fields,...(index===undefined?{}:{poseRecipe:index})});
+  if(index!==undefined)updates.push({ref:actor.ref,fields,poseRecipe:index});else if(fields!==NO_FIELDS&&hasKeys(fields))updates.push({ref:actor.ref,fields});
  }
- const fields:PublicSnapshotFields={world:p.source.world,time:p.source.time,poses,actors:updates,removed:previous?previous.actors.filter(a=>!current.ids.has(a.ref.id)).map(a=>a.ref):[],projectiles:p.source.projectiles.filter(f=>current.ids.has(f.source.id)||current.ids.has(f.target.id)).map(({hit:_hit,anchorVersion:_version,...flight})=>flight)};
- const writer=valueEncoder();writer.beginRecord(PUBLIC_SNAPSHOT_FIELDS.length+PRIVATE_SNAPSHOT_FIELDS.length);for(const key of PUBLIC_SNAPSHOT_FIELDS)writer.field(key,fields[key]);const projection={fields,prefix:writer.prefix(),validated:false};
- if(p.cachedGroups<MAX_PREPARED_GROUPS&&p.cachedBytes+projection.prefix.bytes.length<=MAX_PREPARED_PREFIX_BYTES){let target=cache;if(!target&&previous){target=new Map();p.changes.set(previous,target);}target!.set(current,projection);p.cachedGroups++;p.cachedBytes+=projection.prefix.bytes.length;}
+ const fields:PublicSnapshotFields={world:p.source.world,time:p.source.time,poses,actors:updates,removed:previous?previous.actors.filter(a=>!current.ids.has(a.ref.id)).map(a=>a.ref):[],projectiles:p.flights.filter(f=>current.ids.has(f.source.id)||current.ids.has(f.target.id))};
+ if(!share||p.cachedGroups>=MAX_PREPARED_GROUPS)return {fields,prefix:null,validated:false};
+ const writer=valueEncoder(undefined,{templates:p.templates});writer.beginRecord(PUBLIC_SNAPSHOT_FIELDS.length+PRIVATE_SNAPSHOT_FIELDS.length);for(const key of PUBLIC_SNAPSHOT_FIELDS)writer.field(key,fields[key]);const prefix=writer.prefix();
+ if(p.cachedBytes+prefix.bytes.length>MAX_PREPARED_PREFIX_BYTES)return {fields,prefix,validated:false};
+ const projection={fields,prefix,validated:false};let target=cache;if(!target&&previous){target=new Map();p.changes.set(previous,target);}target!.set(current,projection);p.cachedGroups++;p.cachedBytes+=prefix.bytes.length;
  return projection;
 }
-function encodePreparedSnapshot(h:WireHeader,payload:SnapshotPayload,prefix:ValuePrefix):Uint8Array[] {
- const writer=valueEncoder(prefix);for(const key of PRIVATE_SNAPSHOT_FIELDS)writer.field(key,payload[key]);const body=writer.w.finish();return frameMessage(1,h,body,checksum(body,prefix.bytes.length,prefix.hash));
+/** One pass over every field in a reused scratch buffer: the bytes of the prefix path, without materializing the prefix. */
+const scratch=new Writer(65536);
+function encodeWholeSnapshot(h:WireHeader,payload:SnapshotPayload,templates:TemplateArena):Uint8Array[] {
+ scratch.offset=0;const writer=valueEncoder(undefined,{templates,writer:scratch});
+ writer.beginRecord(PUBLIC_SNAPSHOT_FIELDS.length+PRIVATE_SNAPSHOT_FIELDS.length);for(const key of PUBLIC_SNAPSHOT_FIELDS)writer.field(key,payload[key]);for(const key of PRIVATE_SNAPSHOT_FIELDS)writer.field(key,payload[key]);
+ const body=writer.w.bytes.subarray(0,writer.w.offset);return frameMessage(1,h,body,checksum(body));
+}
+function encodePreparedSnapshot(h:WireHeader,payload:SnapshotPayload,prefix:ValuePrefix,templates:TemplateArena):Uint8Array[] {
+ const writer=valueEncoder(prefix,{templates});for(const key of PRIVATE_SNAPSHOT_FIELDS)writer.field(key,payload[key]);const body=writer.w.finish();return frameMessage(1,h,body,checksum(body,prefix.bytes.length,prefix.hash));
 }

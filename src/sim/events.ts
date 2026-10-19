@@ -1,18 +1,40 @@
 import type { CoreEvent, EntityRef, EventRecord } from './types.ts';
-/** Copy only plain finite value data. Reject accidental functions, renderer classes and cycles. */
-export function copyValue<T>(value: T, seen = new Set<object>()): T {
+/**
+ * Copy only plain finite value data. Reject accidental functions, renderer classes and cycles.
+ * The result, checks and errors are those of `value.map(copy)` for arrays and
+ * `Object.fromEntries(Object.entries(value).map(copy))` for objects (holes stay holes, a `__proto__` key stays an own
+ * property, a null-prototype object becomes a plain one), walked without the per-object entry arrays: this runs for the
+ * whole Area at every snapshot. `ancestors` is the current path, so shared (DAG) values copy and only cycles fail.
+ */
+function copyPlain(value: unknown, ancestors: object[], freeze: boolean): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'undefined') return value;
   if (typeof value === 'number') { if (!Number.isFinite(value)) throw new TypeError('Nonfinite simulation value'); return value; }
   if (typeof value !== 'object') throw new TypeError('Non-value simulation payload');
-  if (seen.has(value)) throw new TypeError('Cyclic simulation payload');
-  const proto = Object.getPrototypeOf(value);
-  if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) throw new TypeError('Non-plain simulation payload');
-  seen.add(value);
-  const result = Array.isArray(value) ? value.map(v => copyValue(v, seen)) : Object.fromEntries(Object.entries(value).map(([k,v]) => [k, copyValue(v, seen)]));
-  seen.delete(value); return result as T;
+  if (ancestors.includes(value)) throw new TypeError('Cyclic simulation payload');
+  const array = Array.isArray(value), proto = Object.getPrototypeOf(value);
+  if (!array && proto !== Object.prototype && proto !== null) throw new TypeError('Non-plain simulation payload');
+  ancestors.push(value);
+  let result: unknown;
+  if (array && proto !== Array.prototype) result = (value as unknown[]).map(v => copyPlain(v, ancestors, freeze)); // subclass or other realm: as map() does
+  else if (array) {
+    const source = value as unknown[], length = source.length, out = new Array<unknown>(length);
+    for (let i = 0; i < length; i++) if (i in source) out[i] = copyPlain(source[i], ancestors, freeze);
+    result = out;
+  } else {
+    const source = value as Record<string, unknown>, keys = Object.keys(source), out: Record<string, unknown> = {};
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i], copied = copyPlain(source[key], ancestors, freeze);
+      if (key === '__proto__') Object.defineProperty(out, key, { value: copied, writable: true, enumerable: true, configurable: true }); else out[key] = copied;
+    }
+    result = out;
+  }
+  ancestors.pop();
+  return freeze ? Object.freeze(result) : result;
 }
+export function copyValue<T>(value: T): T { return copyPlain(value, [], false) as T; }
 export function freezeValue<T>(value: T): T { if (value && typeof value === 'object') { for (const child of Object.values(value)) freezeValue(child); Object.freeze(value); } return value; }
-export const immutable = <T>(value: T): T => freezeValue(copyValue(value));
+/** freezeValue(copyValue(value)) in one walk: every copied object is frozen once its children are. */
+export const immutable = <T>(value: T): T => copyPlain(value, [], true) as T;
 export const refKey = (ref: EntityRef): string => JSON.stringify([ref.area, ref.id, ref.life]);
 export const sameRef = (a: EntityRef, b: EntityRef): boolean => a.area === b.area && a.id === b.id && a.life === b.life;
 export class Events {
