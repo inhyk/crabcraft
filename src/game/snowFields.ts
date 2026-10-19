@@ -3,10 +3,9 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {type Kit,loadKit,Scatter,trs} from '../world/kit';
 import {addPatch,stylise} from '../world/materials';
 import {SNOW_SEA_ICE} from '../sim/world/snowGround';
-import {GUARDED_NOISE,snowCover,snowMass} from './snowCover';
+import {GUARDED_NOISE,snowCover} from './snowCover';
 import {cragGeometry,rockMaterial,type SnowGroundUniforms} from './snowRocks';
 import {snowPines} from './snowPines';
-import {frozenPond} from './snowVillageDressing';
 import {fieldStream,type FieldKit,type FieldLog,type FieldStump,type ShelfSlab,SNOW_PONDS,SNOW_TRACKS,snowBoulders,snowFieldPieces,snowGroves,snowLogs,snowScours,snowShelves,snowStumps} from './snowFieldsLayout';
 
 /*
@@ -44,15 +43,17 @@ function fieldMaterials(ground:SnowGroundUniforms){
   if(!/Metal/.test(n)){sm.metalness=0;sm.metalnessMap=null;}
   const card=/^(Leaves|Grass)/.test(n);
   if(!card&&!/Cloth/.test(n))sm.side=THREE.FrontSide;
-  if(/^Bark/.test(n))stylise(v,.38,[.7,.7,.76]);
-  // Evergreen scrub: a dark, cold green that anchors the white.
-  else if(n==='Leaves_TwistedTree')stylise(v,.55,[.62,.78,.8],-.35);
+  if(/^Bark/.test(n))stylise(v,.35,[.3,.3,.33]);
+  // Evergreen scrub (the kit's leaf atlas turned juniper): a dark, cold green that anchors the white.
+  else if(n==='Leaves_TwistedTree')stylise(v,.42,[.36,.46,.45],-1.9);
   // Bracken and grass dried to rust and straw: the one warm note in the field.
-  else if(n==='Leaves')stylise(v,.18,[1.25,.86,.56]);
+  else if(n==='Leaves')stylise(v,.22,[1.15,.78,.5]);
   else if(n==='Grass')stylise(v,.12,[1.3,1.1,.78]);
-  else stylise(v,.95,[1.0,.98,.97]);
-  const skirt={ground,height:card?.05:/^Bark/.test(n)?.35:.22};
-  snowCover(v,{cover:n==='Leaves_TwistedTree'?1.25:card?.75:/^Bark/.test(n)?.85:1,skirt});
+  // Wood left out for winters goes silver-grey.
+  else if(/Wood|Furniture/.test(n))stylise(v,.35,[.34,.34,.37]);
+  else stylise(v,.85,[.98,.97,.97]);
+  const skirt={ground,height:card?.05:/^Bark/.test(n)?.16:.14};
+  snowCover(v,{cover:n==='Leaves_TwistedTree'?1.1:n==='Leaves'?-.3:card?.6:/^Bark/.test(n)?.85:1,skirt});
   variants.set(m,v);return v;
  };
 }
@@ -71,18 +72,18 @@ function barkMaterial(ground:SnowGroundUniforms){
     if (vLog.z > 0.5) {
      // Sawn face: growth rings, a darker heart, weathered grey towards the bark.
      float r = vLog.y, ring = 0.5 + 0.5 * sin(r * 34.0 + cc_vnoise(vec2(r * 6.0, vLog.x * 3.0)) * 4.0);
-     c = mix(vec3(0.46, 0.34, 0.22), vec3(0.66, 0.52, 0.34), ring) * mix(0.82, 1.0, smoothstep(0.0, 0.25, r)) * mix(1.0, 0.45, smoothstep(0.86, 0.98, r));
-     c = mix(c, vec3(0.42, 0.42, 0.44), 0.35 * cc_vnoise(vec2(vLog.x * 9.0, r * 7.0)));
+     c = mix(vec3(0.085, 0.06, 0.036), vec3(0.15, 0.11, 0.068), ring) * mix(0.8, 1.0, smoothstep(0.0, 0.25, r)) * mix(1.0, 0.35, smoothstep(0.86, 0.98, r));
+     c = mix(c, vec3(0.09, 0.09, 0.095), 0.35 * cc_vnoise(vec2(vLog.x * 9.0, r * 7.0)));
     } else {
      // Furrowed bark: ridges along the trunk, grey lichen on the ridges.
-     float n = cc_vnoise(vec2(vLog.x * 6.0, vLog.y * 1.1)) * 0.6 + cc_vnoise(vec2(vLog.x * 17.0, vLog.y * 3.4)) * 0.4;
-     c = mix(vec3(0.09, 0.07, 0.06), vec3(0.27, 0.22, 0.18), n);
-     c = mix(c, vec3(0.42, 0.45, 0.42), smoothstep(0.66, 0.86, cc_vnoise(vec2(vLog.x * 3.0, vLog.y * 0.8) + 5.0)) * 0.55);
+     float n = cc_vnoise(vec2(vLog.x * 17.0, vLog.y * 2.2)) * 0.6 + cc_vnoise(vec2(vLog.x * 44.0, vLog.y * 7.0)) * 0.4;
+     c = mix(vec3(0.01, 0.008, 0.007), vec3(0.036, 0.028, 0.022), n);
+     c = mix(c, vec3(0.065, 0.07, 0.066), smoothstep(0.66, 0.86, cc_vnoise(vec2(vLog.x * 5.0, vLog.y * 1.6) + 5.0)) * 0.5);
     }
     diffuseColor.rgb *= c;
    }`);
  });
- snowCover(m,{cover:1,skirt:{ground,height:.28}});
+ snowCover(m,{cover:1,skirt:{ground,height:.1}});
  return m;
 }
 
@@ -153,43 +154,63 @@ function stumpGeometry(s:FieldStump){
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Frozen ponds: ice at the hollow's floor, so the shore follows the drift, with a rim of packed snow.
+// Frozen ponds: ice at the hollow's floor, so the shore follows the drift; rime grows in from the shore.
+
+/** Clear black ice in plates, white cracks, rime and blown snow towards the shore. aShore: 0 centre, 1 shore. */
+function pondIce(){
+ const m=new THREE.MeshStandardMaterial({name:'frostlight-field-pond',color:'#ffffff',roughness:.1,metalness:.05});
+ addPatch(m,'frostlight-field-pond',shader=>{
+  shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nattribute float aShore;\nvarying float vShore;\nvarying vec2 vPondW;').replace('#include <begin_vertex>','#include <begin_vertex>\nvShore = aShore;\nvPondW = (modelMatrix * vec4(position, 1.0)).xz;');
+  shader.fragmentShader=shader.fragmentShader
+   .replace('#include <common>',`#include <common>\nvarying float vShore;\nvarying vec2 vPondW;\n${GUARDED_NOISE}\nfloat pondSnow;`)
+   .replace('#include <color_fragment>',`#include <color_fragment>
+    {
+     // Plates: distance to the nearest and second-nearest jittered seed; a crack where they tie.
+     vec2 q = vPondW * 1.3, iq = floor(q);
+     float f1 = 9.0, f2 = 9.0;
+     for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+      vec2 c = iq + vec2(float(i), float(j)), o = c + cc_hash22(c) * 0.85;
+      float d = length(q - o);
+      if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
+     }
+     float crack = 1.0 - smoothstep(0.012, 0.05, f2 - f1);
+     float depth = cc_fbm(vPondW * 0.6 + 3.0);
+     // Deep clear ice reads near black under the sky; bubbles and frost cloud it in places.
+     vec3 ice = mix(vec3(0.04, 0.1, 0.15), vec3(0.2, 0.38, 0.48), depth * 0.9);
+     ice = mix(ice, vec3(0.5, 0.66, 0.76), smoothstep(0.6, 0.85, cc_fbm(vPondW * 2.4 + 9.0)) * 0.45);
+     ice = mix(ice, vec3(0.86, 0.94, 1.0), crack * 0.8);
+     float rime = smoothstep(0.55, 0.95, vShore + (cc_fbm(vPondW * 1.7) - 0.5) * 0.5);
+     float streak = smoothstep(0.6, 0.75, cc_fbm(vec2(vPondW.x * 0.35, vPondW.y * 1.6) + 11.0)) * 0.85;
+     pondSnow = max(rime, streak);
+     diffuseColor.rgb = mix(ice, vec3(0.93, 0.96, 1.0), pondSnow);
+    }`)
+   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.85, pondSnow);');
+ });
+ return m;
+}
 
 function pondGeometry(p:{x:number;z:number;r:number;seed:number},h:Height){
  // The ice settles a little above the hollow's lowest snow.
  let lo=Infinity,hi=-Infinity;
  for(let a=0;a<24;a++)for(const f of [0,.35,.7,1]){const x=p.x+Math.cos(a/24*6.283)*p.r*f,z=p.z+Math.sin(a/24*6.283)*p.r*f,y=h(x,z);lo=Math.min(lo,y);hi=Math.max(hi,y);}
- const level=lo+Math.min(.3,(hi-lo)*.4)+.04,seg=64,shore:number[]=[];
+ const level=lo+Math.min(.3,(hi-lo)*.4)+.04,seg=72,shore:number[]=[];
  for(let i=0;i<seg;i++){
   const a=i/seg*Math.PI*2;let d=.5;
-  for(;d<p.r;d+=.08)if(h(p.x+Math.cos(a)*d,p.z+Math.sin(a)*d)>level+.02)break;
+  for(;d<p.r*1.4;d+=.08)if(h(p.x+Math.cos(a)*d,p.z+Math.sin(a)*d)>level+.06)break;
   shore.push(d);
  }
  // Smooth the shoreline so it reads as water that froze, not as a contour plot.
  const sm=shore.map((_,i)=>{let s=0;for(let k=-3;k<=3;k++)s+=shore[(i+k+seg)%seg];return s/7;});
- const ice:number[]=[],idx:number[]=[];
- ice.push(0,0,0);
- const rings=6;
- for(let j=1;j<=rings;j++)for(let i=0;i<seg;i++){const a=i/seg*Math.PI*2,d=sm[i]*j/rings;ice.push(Math.cos(a)*d,0,Math.sin(a)*d);}
+ const pos:number[]=[0,0,0],sh:number[]=[0],idx:number[]=[],rings=7;
+ for(let j=1;j<=rings;j++)for(let i=0;i<seg;i++){const a=i/seg*Math.PI*2,d=sm[i]*j/rings+.25*(j===rings?1:0);pos.push(Math.cos(a)*d,0,Math.sin(a)*d);sh.push(j/rings);}
+ // A skirt down from the shore, so no gap shows where the drift dips below the ice.
+ for(let i=0;i<seg;i++){const a=i/seg*Math.PI*2,d=sm[i]+.4;pos.push(Math.cos(a)*d,-.45,Math.sin(a)*d);sh.push(1);}
  for(let i=0;i<seg;i++)idx.push(0,1+(i+1)%seg,1+i);
- for(let j=1;j<rings;j++)for(let i=0;i<seg;i++){const a=1+(j-1)*seg+i,b=1+(j-1)*seg+(i+1)%seg,c=a+seg,d=b+seg;idx.push(a,b,c,b,d,c);}
- const iceGeo=new THREE.BufferGeometry();iceGeo.setAttribute('position',new THREE.Float32BufferAttribute(ice,3));iceGeo.setIndex(idx);iceGeo.computeVertexNormals();
- // Rim: from a lip just above the ice out to the drift, ragged.
- const rim:number[]=[],occ:number[]=[],ridx:number[]=[],steps=5,R=fieldStream(p.seed*71);
- const jag=Array.from({length:seg},()=>R());
- for(let i=0;i<seg;i++){
-  const a=i/seg*Math.PI*2,c=Math.cos(a),s=Math.sin(a),w=.7+.5*(jag[i]*.5+jag[(i+1)%seg]*.5);
-  for(let k=0;k<=steps;k++){
-   const u=k/steps,d=sm[i]-.12+u*w,x=p.x+c*d,z=p.z+s*d,g=h(x,z);
-   const lip=level+.05+.07*Math.sin(u*Math.PI)*(1-u);
-   const y=Math.max(g+.015,lip*(1-u)+(g+.015)*u+Math.sin(u*Math.PI)*.06);
-   rim.push(x,y,z);const o=.9+.1*u;occ.push(o,o,o);
-  }
- }
- for(let i=0;i<seg;i++)for(let k=0;k<steps;k++){const a=i*(steps+1)+k,b=((i+1)%seg)*(steps+1)+k;ridx.push(a,b,a+1,a+1,b,b+1);}
- const rimGeo=new THREE.BufferGeometry();rimGeo.setAttribute('position',new THREE.Float32BufferAttribute(rim,3));rimGeo.setAttribute('color',new THREE.Float32BufferAttribute(occ,3));rimGeo.setIndex(ridx);rimGeo.computeVertexNormals();
- const mean=sm.reduce((s,v)=>s+v,0)/seg;
- return {iceGeo,rimGeo,level,mean};
+ for(let j=1;j<=rings;j++)for(let i=0;i<seg;i++){const a=1+(j-1)*seg+i,b=1+(j-1)*seg+(i+1)%seg,c=a+seg,d=b+seg;idx.push(a,b,c,b,d,c);}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('aShore',new THREE.Float32BufferAttribute(sh,1));g.setIndex(idx);g.computeVertexNormals();
+ // The skirt's normals face up too: it only shows as a sliver of rime at the shore.
+ const n=g.getAttribute('normal');for(let i=0;i<n.count;i++)n.setXYZ(i,0,1,0);
+ return {geo:g,level};
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -231,19 +252,24 @@ void main(){
   float d=printDepth(p,kind),dx=printDepth(p+vec2(e,0.),kind)-d,dy=printDepth(p+vec2(0.,e),kind)-d;
   vec3 n=normalize(vec3(-dx/e*.35,1.,-dy/e*.35));
   float lit=clamp(dot(n,normalize(vec3(uSun.x,max(uSun.y,.25),uSun.z)))*1.2,0.,1.);
-  float deep=kind>2.5?.18:.55;
-  f=mix(vec3(1.),mix(vec3(.62,.72,.9),vec3(.94,.97,1.),lit),d*deep);
+  float deep=kind>2.5?.42:.9;
+  f=mix(vec3(1.),mix(vec3(.48,.6,.84),vec3(.95,.97,1.),lit),d*deep);
  }else{
-  // Scoured crest: frozen ground and gravel through the crust, snow lying in streaks along the wind.
+  // Scoured crest: the crust broken into plates with frozen ground and gravel between, drift tails downwind (+x).
   vec2 p=vDecal.xy,w=vDecalW.xz;
-  float edge=length(p)+(cc_fbm(w*.45+vDecal.w)-.5)*.7+(cc_vnoise(w*2.1)-.5)*.18;
-  float m=smoothstep(1.,.62,edge);
-  float streak=smoothstep(.55,.75,cc_vnoise(vec2(w.x*.5,w.y*2.6)+vDecal.w*3.));
-  float crust=smoothstep(.35,.7,cc_fbm(w*1.3+7.));
-  vec3 soil=mix(vec3(.2,.18,.17),vec3(.36,.33,.3),cc_vnoise(w*6.));
-  soil=mix(soil,vec3(.55,.6,.66),crust*.6);
-  soil*=.85+.3*step(.82,cc_hash12(floor(w*9.)));
-  f=mix(vec3(1.),soil/.9,m*(1.-streak*.85));
+  float body=1.-smoothstep(.45,1.,length(p)+(cc_fbm(w*.35+vDecal.w)-.5)*.6);
+  float plates=cc_fbm(w*vec2(1.1,.7)+vDecal.w*5.)+(cc_vnoise(w*5.)-.5)*.16;
+  float tail=smoothstep(.4,.8,cc_vnoise(vec2(w.x*.35,w.y*3.2)+vDecal.w*3.));
+  float bare=smoothstep(-.025,.025,body*.78-plates-tail*.22);
+  vec3 soil=mix(vec3(.13,.11,.1),vec3(.3,.26,.21),cc_vnoise(w*7.));
+  soil=mix(soil,vec3(.42,.36,.25),smoothstep(.55,.8,cc_vnoise(w*2.3+3.))*.7);
+  // Gravel: fine grain that fades out before it can alias.
+  float fw=length(fwidth(w));
+  soil*=1.+(cc_vnoise(w*13.)-.5)*.5*(1.-smoothstep(.02,.08,fw));
+  // A glazed rim of wind crust round each bare plate.
+  float rim=bare*(1.-bare)*4.;
+  f=mix(vec3(1.),soil/.9,bare);
+  f*=mix(vec3(1.),vec3(.8,.86,.95),rim*.6*body);
  }
  f=mix(vec3(1.),f,vDecalFade);
  gl_FragColor=vec4(f,1.);
@@ -278,16 +304,16 @@ function trailGeometry(h:Height){
     const wob=Math.sin((i*len+d)*.35+t.seed)*.35,x=ax+dx*d+dz*wob,z=az+dz*d-dx*wob;
     if(t.kind==='hare'){
      // Hind feet side by side ahead of the fore feet in line.
-     for(const o of [-.11,.11])quad(x+dz*o,z-dx*o,yaw,.07,.15,1,R());
-     quad(x-dx*.3,z-dz*.3,yaw,.06,.08,0,R());quad(x-dx*.45+dz*.03,z-dz*.45-dx*.03,yaw,.06,.08,0,R());
+     for(const o of [-.13,.13])quad(x+dz*o,z-dx*o,yaw,.09,.2,1,R());
+     quad(x-dx*.36,z-dz*.36,yaw,.08,.1,0,R());quad(x-dx*.55+dz*.04,z-dz*.55-dx*.04,yaw,.08,.1,0,R());
     }else{
      const o=side*(t.kind==='fox'?.04:.11);side=-side;
-     quad(x+dz*o,z-dx*o,yaw+(R()-.5)*.2,t.kind==='fox'?.09:.1,t.kind==='fox'?.11:.13,kind,R());
+     quad(x+dz*o,z-dx*o,yaw+(R()-.5)*.2,t.kind==='fox'?.12:.14,t.kind==='fox'?.15:.18,kind,R());
     }
    }
    // The trough the animal pushed through the powder.
    const n=Math.max(1,Math.round(len/1.5));
-   for(let k=0;k<n;k++){const d0=(k+.5)*len/n,wob=Math.sin((i*len+d0)*.35+t.seed)*.35;quad(ax+dx*d0+dz*wob,az+dz*d0-dx*wob,yaw,.22,len/n/2+.1,3,0,.06);}
+   for(let k=0;k<n;k++){const d0=(k+.5)*len/n,wob=Math.sin((i*len+d0)*.35+t.seed)*.35;quad(ax+dx*d0+dz*wob,az+dz*d0-dx*wob,yaw,.32,len/n/2+.1,3,0,.06);}
   }
  }
  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('aDecal',new THREE.Float32BufferAttribute(dec,4));g.setIndex(idx);
@@ -312,22 +338,28 @@ function scourGeometry(h:Height){
 // ---------------------------------------------------------------------------------------------------------------
 // Sea ice: shelf plates and ridge rubble, snow on top, banded blue ice on the broken faces.
 
+/** One broken plate: few corners and long straight breaks, a snow pillow on top, a bevel of crust, jagged faces. */
 function slabGeometry(s:ShelfSlab){
- const R=fieldStream(s.seed*7331+11),n=7+Math.floor(R()*3),ring:[number,number][]=[];
- for(let i=0;i<n;i++){const a=(i+R()*.6)/n*Math.PI*2;ring.push([Math.cos(a)*s.w*.5*(.75+R()*.3),Math.sin(a)*s.d*.5*(.75+R()*.3)]);}
+ const R=fieldStream(s.seed*7331+11),n=4+Math.floor(R()*3),ring:[number,number][]=[];
+ const angs=Array.from({length:n},(_,i)=>(i+(R()-.5)*.55)/n*Math.PI*2).sort((a,b)=>a-b);
+ for(const a of angs){const c=Math.cos(a)/(s.w*.5),d=Math.sin(a)/(s.d*.5),r=(.88+R()*.24)/Math.sqrt(c*c+d*d);ring.push([Math.cos(a)*r,Math.sin(a)*r]);}
+ const h=s.t*.5,bev=Math.min(.08,s.t*.18);
+ const T=ring.map(([x,z])=>[x*.93,h+(R()-.5)*.02,z*.93]);
+ const U=ring.map(([x,z])=>[x,h-bev,z]);
+ const M=ring.map(([x,z])=>{const k=1+(R()-.3)*.05;return [x*k,h*(R()*.5-.3),z*k];});
+ const B=ring.map(([x,z])=>[x*.95,-h,z*.95]);
  const pos:number[]=[],band:number[]=[];
- const top=(i:number)=>{const [x,z]=ring[i%n];return [x,s.t*.5+(R()-.5)*.06*s.t,z];};
- const mid=(i:number)=>{const [x,z]=ring[i%n];return [x*1.02,s.t*(R()*.3-.05),z*1.02];};
- const bot=(i:number)=>{const [x,z]=ring[i%n];return [x*.97,-s.t*.5,z*.97];};
- const T=Array.from({length:n},(_,i)=>top(i)),M=Array.from({length:n},(_,i)=>mid(i)),B=Array.from({length:n},(_,i)=>bot(i));
  const tri=(a:number[],b:number[],c:number[],ba:number,bb:number,bc:number)=>{pos.push(...a,...b,...c);band.push(ba,bb,bc);};
- // Top (fan), sides in two bands, bottom.
- const ct=[0,s.t*.5+.04,0];
+ // Snow pillowed over the plate.
+ const ct=[0,h+Math.min(.18,s.t*.2),0];
  for(let i=0;i<n;i++){const j=(i+1)%n;
-  tri(ct,T[j],T[i],2,2,2);
-  tri(T[i],T[j],M[i],1,1,.5);tri(M[i],T[j],M[j],.5,1,.5);
-  tri(M[i],M[j],B[i],.5,.5,0);tri(B[i],M[j],B[j],0,.5,0);
-  tri([0,-s.t*.5,0],B[i],B[j],0,0,0);
+  // Long edges get a mid vertex so the break is not one flat facet.
+  const tm=[(T[i][0]+T[j][0])/2*1.0,h+(R()-.3)*.03,(T[i][2]+T[j][2])/2];
+  tri(ct,tm,T[i],2,2,2);tri(ct,T[j],tm,2,2,2);
+  tri(T[i],tm,U[i],2,2,1);tri(tm,T[j],U[j],2,2,1);tri(U[i],tm,U[j],1,2,1);
+  tri(U[i],U[j],M[i],1,1,.5);tri(M[i],U[j],M[j],.5,1,.5);
+  tri(M[i],M[j],B[i],.5,.5,0);tri(B[i],M[j],B[j],.0,.5,0);
+  tri([0,-h,0],B[j],B[i],0,0,0);
  }
  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('aBand',new THREE.Float32BufferAttribute(band,1));
  g.computeVertexNormals();
@@ -344,16 +376,17 @@ function seaIceMaterial(){
    .replace('#include <color_fragment>',`#include <color_fragment>
     {
      vec3 n = normalize(vIceN);
-     // Broken faces: deep blue at the waterline paling upward, strata of old snow, a white crust at the top.
-     float strata = 0.5 + 0.5 * sin(vIceW.y * 26.0 + cc_vnoise(vIceW.xz * 1.7) * 5.0);
-     vec3 ice = mix(vec3(0.05, 0.27, 0.38), vec3(0.42, 0.74, 0.84), smoothstep(0.0, 1.0, vBand) * 0.8 + cc_vnoise(vIceW.xz * 3.0 + vIceW.y) * 0.2);
-     ice = mix(ice, vec3(0.78, 0.9, 0.95), strata * 0.18);
-     float crust = smoothstep(0.82, 0.98, vBand + (cc_vnoise(vIceW.xz * 4.0) - 0.5) * 0.18);
-     iceSnow = max(smoothstep(0.55, 0.8, n.y + (cc_vnoise(vIceW.xz * 1.4) - 0.5) * 0.4), crust);
+     // Broken faces: glassy blue-green, deepest at the waterline, paling up into the old snow layers of the floe.
+     float layer = cc_vnoise(vec2(vIceW.y * 9.0, (vIceW.x + vIceW.z) * 0.6));
+     vec3 ice = mix(vec3(0.07, 0.33, 0.42), vec3(0.5, 0.8, 0.88), smoothstep(0.0, 0.95, vBand));
+     ice = mix(ice, vec3(0.72, 0.88, 0.93), smoothstep(0.62, 0.9, layer) * 0.35 * vBand);
+     ice *= 0.92 + 0.16 * cc_vnoise(vIceW.xz * 2.3 + vIceW.y * 3.0);
+     float top = smoothstep(1.2, 1.9, vBand);
+     iceSnow = max(top, smoothstep(0.62, 0.85, n.y + (cc_vnoise(vIceW.xz * 1.4) - 0.5) * 0.3));
      diffuseColor.rgb = mix(ice, vec3(0.93, 0.96, 1.0), iceSnow);
     }`)
    .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor = mix(0.2, 0.85, iceSnow);')
-   .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.02, 0.1, 0.13) * (1.0 - iceSnow) * smoothstep(0.2, 1.0, vBand);');
+   .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.015, 0.08, 0.1) * (1.0 - iceSnow) * smoothstep(0.1, 1.0, vBand);');
  });
  return m;
 }
@@ -393,7 +426,7 @@ export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields
   for(const k of Object.keys(g.attributes))if(k!=='position'&&k!=='normal')g.deleteAttribute(k);
   rocks.push(g);
  }
- const boulders=new THREE.Mesh(mergeGeometries(rocks,false)!,rockMaterial(opts.ground));boulders.name='frostlight-field-boulders';boulders.castShadow=boulders.receiveShadow=true;group.add(boulders);
+ const boulders=new THREE.Mesh(mergeGeometries(rocks,false)!,rockMaterial(opts.ground,.3,.8));boulders.name='frostlight-field-boulders';boulders.castShadow=boulders.receiveShadow=true;group.add(boulders);
 
  // Logs and stumps.
  const wood:THREE.BufferGeometry[]=[];
@@ -402,14 +435,11 @@ export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields
  const logs=new THREE.Mesh(mergeGeometries(wood,false)!,barkMaterial(opts.ground));logs.name='frostlight-field-wood';logs.castShadow=logs.receiveShadow=true;group.add(logs);
 
  // Ponds.
- const driftMat=new THREE.MeshStandardMaterial({name:'frostlight-field-drift',color:'#e8f2fc',roughness:.9,vertexColors:true});snowMass(driftMat,{lumps:.6});
- const rims:THREE.BufferGeometry[]=[];
+ const iceMat=pondIce();
  SNOW_PONDS.forEach((p,i)=>{
-  const {iceGeo,rimGeo,level,mean}=pondGeometry(p,h);
-  const ice=new THREE.Mesh(iceGeo,frozenPond(mean));ice.name=`frostlight-field-pond-${i}`;ice.position.set(p.x,level,p.z);ice.receiveShadow=true;group.add(ice);
-  rims.push(rimGeo);
+  const {geo,level}=pondGeometry(p,h);
+  const ice=new THREE.Mesh(geo,iceMat);ice.name=`frostlight-field-pond-${i}`;ice.position.set(p.x,level,p.z);ice.receiveShadow=true;group.add(ice);
  });
- const rim=new THREE.Mesh(mergeGeometries(rims,false)!,driftMat);rim.name='frostlight-field-pond-rims';rim.receiveShadow=true;group.add(rim);
 
  // Trails and scours.
  const decalMat=decalMaterial(opts.sunDir);
