@@ -28,6 +28,20 @@ export interface SnowSkyOptions {
   cloud?: number;
   /** Direction the wind blows on the ground (x, z), so cirrus streaks run with the sastrugi. */
   wind?: [number, number];
+  /** A grade on the sky's light (snowPalette.ts), applied where the light is made so everything that reads it agrees. */
+  palette?: SkyPalette;
+}
+
+/**
+ * Per-channel grades on the direct sun and on the sky's fill, and a scale on the snow bounce. The sun's grade
+ * changes the beam only, as SNOWFLOW's warmth does. The fill's hue (normalised on green, which carries the
+ * luminance) grades the sky itself, the dome, its horizon, the fog and every sky colour read off it; its green
+ * is how much of that sky reaches the hemisphere, so shade is the same violet as the sky, only less of it.
+ */
+export interface SkyPalette {
+  sun: readonly [number, number, number];
+  fill: readonly [number, number, number];
+  bounce: number;
 }
 
 const EARTH_R = 6360000;
@@ -145,6 +159,8 @@ export interface BakedSky {
   horizon: Float32Array;
   /** Graded zenith radiance. */
   zenith: [number, number, number];
+  /** The palette's grade on the sky's light, already in every number above but the sun's and the bounce. */
+  skyTint: [number, number, number];
   /** LUT_W x LUT_H RGBA, ungraded, atmosphere units. */
   lut: Float32Array;
   width: number;
@@ -179,9 +195,13 @@ export function bakeSnowSky(opts: SnowSkyOptions = {}): BakedSky {
     }
   }
   const grade = (v: number[]) => { for (let c = 0; c < 3; c++) v[c] *= 1 + (NIGHT_TINT[c] - 1) * night; return v; };
+  // The palette's sky grade goes on after the pale horizon band, so the thick horizon carries it too; the snow
+  // bounce below the horizon keeps its own colour.
+  const fill = opts.palette?.fill, skyTint = (fill ? fill.map(v => v / fill[1]) : [1, 1, 1]) as [number, number, number];
   const sample = (i: number, j: number, gb: readonly number[]) => {
     const k = (j * LUT_W + i) * 3, v = [raw[k], raw[k + 1], raw[k + 2]];
-    finish(v, Math.sin(rowElevation(j / (LUT_H - 1))), gb);
+    finish(v, Math.sin(rowElevation(j / (LUT_H - 1))), gb.map((g, c) => g / skyTint[c]));
+    for (let c = 0; c < 3; c++) v[c] *= skyTint[c];
     return v;
   };
   // Sky irradiance on level snow from the upper hemisphere (exact, so the bounce needs no iteration).
@@ -195,7 +215,8 @@ export function bakeSnowSky(opts: SnowSkyOptions = {}): BakedSky {
       for (let c = 0; c < 3; c++) skyUp[c] += v[c] * w;
     }
   }
-  const groundBounce = SNOW_ALBEDO.map((a, c) => a * (sunRadiance[c] * Math.max(0, sunDir[1]) + skyUp[c]) / Math.PI) as [number, number, number];
+  // The bounce is the ungraded snow's; the palette scales it on its own.
+  const groundBounce = SNOW_ALBEDO.map((a, c) => a * (sunRadiance[c] * Math.max(0, sunDir[1]) + skyUp[c] / skyTint[c]) / Math.PI) as [number, number, number];
   const lut = new Float32Array(LUT_W * LUT_H * 4);
   for (let j = 0; j < LUT_H; j++) for (let i = 0; i < LUT_W; i++) {
     const v = sample(i, j, groundBounce);
@@ -210,7 +231,7 @@ export function bakeSnowSky(opts: SnowSkyOptions = {}): BakedSky {
     horizon.set(grade(v), i * 3);
   }
   const zenith = grade(sample(0, LUT_H - 1, groundBounce)) as [number, number, number];
-  return { sunDir, sunColor, sunRadiance, sunScale, groundBounce, skyUp, horizon, zenith, lut, width: LUT_W, height: LUT_H };
+  return { sunDir, sunColor, sunRadiance, sunScale, groundBounce, skyUp, horizon, zenith, skyTint, lut, width: LUT_W, height: LUT_H };
 }
 
 const SKY_VERTEX = /* glsl */ `
@@ -233,6 +254,7 @@ uniform float time;
 uniform vec2 windDir;
 uniform float cloudAmount;
 uniform vec3 hazeColor;
+uniform vec3 skyTint;
 varying vec3 vWorld;
 #include <common>
 vec2 skHash22(vec2 p){vec3 p3=fract(vec3(p.xyx)*vec3(.1031,.1030,.0973));p3+=dot(p3,p3.yzx+33.33);return fract((p3.xx+p3.yz)*p3.zy);}
@@ -270,7 +292,7 @@ void main(){
     float cloud=smoothstep(.06,.34,skFbm(cp));
     cloud*=smoothstep(0.,.22,d.y)*(1.-smoothstep(.55,1.,d.y)*.45)*cloudAmount;
     float lit=pow(max(0.,mu*.5+.5),3.);
-    vec3 cc=mix(vec3(.52,.60,.74),sunColor*1.35,lit*.75)*(.55+sunScale*.06)*exposure;
+    vec3 cc=mix(vec3(.52,.60,.74)*skyTint,sunColor*1.35,lit*.75)*(.55+sunScale*.06)*exposure;
     col=mix(col,cc,cloud*.62);
   }
   col*=mix(vec3(1.),vec3(.25,.38,.65),night);
@@ -316,10 +338,12 @@ export class SnowSky {
     const night = opts.night ?? 0;
     this.sunDir = new THREE.Vector3(...b.sunDir);
     this.sunAz = new THREE.Vector2(b.sunDir[0], b.sunDir[2]).normalize();
+    const pal = opts.palette;
     this.sunLight = toColor(b.sunRadiance, k);
+    if (pal) this.sunLight.multiply(new THREE.Color().setRGB(...pal.sun, THREE.LinearSRGBColorSpace));
     // three.js irradiance from a HemisphereLight is mix(ground, sky) * intensity, diffuse is albedo / PI of it.
-    this.hemiSky = toColor(b.skyUp, k);
-    this.hemiGround = toColor(b.groundBounce, k * Math.PI);
+    this.hemiSky = toColor(b.skyUp, k * (pal?.fill[1] ?? 1));
+    this.hemiGround = toColor(b.groundBounce, k * Math.PI * (pal?.bounce ?? 1));
     const mean = [0, 0, 0];
     for (let i = 0; i < b.width; i++) for (let c = 0; c < 3; c++) mean[c] += b.horizon[i * 3 + c] / b.width;
     this.skyHorizon = toColor(mean, k);
@@ -350,6 +374,7 @@ export class SnowSky {
         windDir: { value: wind },
         cloudAmount: { value: opts.cloud ?? 0.55 },
         hazeColor: { value: this.skyHorizon.clone() },
+        skyTint: { value: new THREE.Vector3(...b.skyTint) },
       },
     });
     // World teardown disposes materials, not the textures in their uniforms.

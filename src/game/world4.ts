@@ -21,7 +21,7 @@ import {citadelClears} from './frostThroneLayout';
 import {miraPrison,type MiraPrison} from './frostPrison';
 import {frostCamps,type FrostCamps} from './frostCamps';
 import {SnowSky} from './snowSky';
-import {frostPalette} from './snowPalette';
+import {FROST_PALETTE} from './snowPalette';
 import {SnowFarShadow,applyFarShadow} from './snowFarShadow';
 import {SnowSpindrift} from './snowSpindrift';
 import {snowPines} from './snowPines';
@@ -50,8 +50,8 @@ export class SnowIsland {
  readonly collision=layoutFrostlight();
  readonly portal:FrostPortal;
  private sun=new THREE.DirectionalLight();
- /** SNOWFLOW's atmosphere: a low raking sun at polar twilight, so the aurora still reads. Sun, ambient, fog and ice all come from it. */
- readonly sky=new SnowSky({azimuth:42,elevation:13,night:.55,exposure:.42,wind:[SNOW_WIND[0],SNOW_WIND[1]]});
+ /** SNOWFLOW's atmosphere: a low raking sun at polar twilight, so the aurora still reads. Sun, ambient, fog and ice all come from it, graded by Frostlight's palette (gold sun, blue-violet sky). */
+ readonly sky=new SnowSky({azimuth:42,elevation:13,night:.55,exposure:.42,wind:[SNOW_WIND[0],SNOW_WIND[1]],palette:FROST_PALETTE});
  private snow:THREE.ShaderMaterial;
  private aurora:THREE.ShaderMaterial;
  /** Prints and berms the crabs leave in the snowfield (SNOWFLOW's deformation buffer). */
@@ -87,8 +87,6 @@ export class SnowIsland {
  }
  constructor(){
   this.root.name='WORLD IV · Frostlight';this.root.visible=false;
-  // Gold sun, blue-violet shade (snowPalette.ts), before anything copies the sky's light.
-  frostPalette(this.sky);
   const dark=new THREE.MeshStandardMaterial({color:'#344959',roughness:.9});
   // Grown ice (SNOWFLOW's crystal shape and shading). The seed fixes the formations for every player.
   const {material:iceGlass,refresh:refreshIce}=iceMaterial({sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.refreshIce=refreshIce;this.iceGlass=iceGlass;
