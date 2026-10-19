@@ -77,7 +77,7 @@ try {
         samples++;
       }
     }
-    return { zone: g.zone, minimap: g.hud.minimap.snap === g.world2.tidecrown.map, samples, pushed: pushed.slice(0, 12), pushedCount: pushed.length, worstStep: +worstStep.toFixed(3), worstAt, crest: +w.heightAt(...L.tcAxis(-135)).toFixed(2), deck: +w.heightAt(...L.tcAxis(-53)).toFixed(2), ward: +w.heightAt(...L.tcAxis(209.3)).toFixed(2) };
+    return { zone: g.zone, minimap: g.hud.minimap.snap === g.world2.tidecrown.map, samples, pushed: pushed.slice(0, 12), pushedCount: pushed.length, worstStep: +worstStep.toFixed(3), worstAt, crest: +w.heightAt(...L.tcAxis(L.TC_T.crest)).toFixed(2), deck: +w.heightAt(...L.tcAxis(-53)).toFixed(2), ward: +w.heightAt(...L.tcAxis(209.3)).toFixed(2) };
   });
   console.log(JSON.stringify({ entry, walk }));
   assert.equal(entry.chapter, 1, 'Tidecrown is laid over the current world chapter');
@@ -104,7 +104,7 @@ try {
   const L = await p.evaluate(async () => {
     const L = await import('/src/game/tidecrown/layout.ts');
     const a = (t, s = 0) => L.tcAxis(t, s);
-    return { crest: a(-133, -2.5), overlookBack: a(-147, 0), keep: [L.TC_KEEP.x, L.TC_KEEP.z], deckSouth: a(-92, 1.5), deckCrab: a(-86, 2.5), gate: a(0), gateFront: a(-31, 1.5), stairFoot: a(158, 0), stairCrab: a(162, 1), aerial: a(-270, -120), centre: a(120, 0), harbourSea: [330, -20], harbourAim: [L.TC_KEEP.x, L.TC_KEEP.z], yaw: Math.atan2(-L.TC_AXIS.ux, -L.TC_AXIS.uz) + Math.PI };
+    return { crest: a(-163, -2.5), overlookBack: a(-177, 0), keep: [L.TC_KEEP.x, L.TC_KEEP.z], deckSouth: a(-92, 1.5), deckCrab: a(-86, 2.5), gate: a(0), gateFront: a(-31, 1.5), stairFoot: a(158, 0), stairCrab: a(162, 1), aerial: a(-270, -120), centre: a(120, 0), harbourSea: [330, -20], harbourAim: [L.TC_KEEP.x, L.TC_KEEP.z], yaw: Math.atan2(-L.TC_AXIS.ux, -L.TC_AXIS.uz) + Math.PI };
   });
   await hud(false);
   const shots = {};

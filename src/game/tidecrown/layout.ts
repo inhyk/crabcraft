@@ -28,7 +28,7 @@ export const TC_PIECES = {
   pincerGate: { w: 40, d: 14, passW: 12, passH: 18, h: 46 },
   bridgeSpan: { len: 30, w: 14, pier: 14, bayX: 11, bayZ: 15 },
   plinth: { w: 8, h: 8 },
-  statue: { h: 18 },
+  statue: { h: 13 },
 } as const;
 
 /** Hero statues on the Bridge of Six Shells, in the order buildHeroStatues() returns them. */

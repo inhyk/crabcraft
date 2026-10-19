@@ -2,7 +2,8 @@
 // each, culled as a unit), the King's Stair, the bridge abutments, the lantern in the claw crown and the statues.
 import * as THREE from 'three';
 import { type Kit, StaticBatch, trs } from '../../world/kit';
-import { lanternSpot, statueSpots, type TcPlacement, TC_LEVEL, TC_T, TC_YAW, tcAxis } from './layout';
+import { lanternSpot, statueSpots, type TcPlacement, TC_LEVEL, TC_PIECES, TC_T, TC_YAW, tcAxis } from './layout';
+import { STATUE_HEIGHT } from './statues';
 import type { TidecrownMaterials } from './materials';
 import { buildBanners } from './banners';
 
@@ -136,6 +137,7 @@ export function buildTidecrownStructures(kit: Kit, village: Kit, mats: Tidecrown
     if (!s) return;
     st.position.set(s.x, s.y, s.z);
     st.rotation.set(0, s.yaw, 0);
+    st.scale.setScalar(TC_PIECES.statue.h / STATUE_HEIGHT);
     st.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true;
     });

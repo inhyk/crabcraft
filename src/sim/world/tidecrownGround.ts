@@ -22,7 +22,7 @@ export function tcAxisCoords(x: number, z: number): [number, number] {
 /** Ground levels: the terraces climb toward the keep so it always stands above the roofs. */
 export const TC_LEVEL = { lower: 6, middle: 14, upper: 24, plateau: 40, deck: 8, crest: 28 } as const;
 /** Axis distances of the composition, from the ridge crest to the keep. */
-export const TC_T = { crest: -135, overlook: -127, bridgeSouth: -104, bridgeNorth: -8, gate: 0, market: 60, middleRamp: 104, upperRamp: 153, stairFoot: 165, stairTop: 201, wardGate: 209.3, keep: 278.6 } as const;
+export const TC_T = { crest: -165, overlook: -157, bridgeSouth: -104, bridgeNorth: -8, gate: 0, market: 60, middleRamp: 104, upperRamp: 153, stairFoot: 165, stairTop: 201, wardGate: 209.3, keep: 278.6 } as const;
 export const TC_KEEP = { x: 150, z: -128 } as const;
 /** Keep rock: a superellipse in the axis frame (centre offset and semi-axes along u and p, exponent). Its north and
  * east rims are the sea cliffs. */
@@ -53,14 +53,14 @@ const UPPER: readonly V2[] = [
 ];
 /** The forest road from the south edge (the future link to Clawhaven) over the crest and down to the bridge. */
 export const TC_ROAD: readonly (readonly [number, number, number])[] = [
-  [-64, 334, 12.6], [-60, 300, 14], [-52, 284, 17], [-40, 271.5, 21], [-27, 261.5, 25.3], [-13.3, 252.05, 28], [-10.1, 244.7, 27.7],
-  [2, 240, 26.4], [18, 237, 24.2], [33, 233, 21], [42.5, 226.5, 19.2], [37, 219.5, 17.6], [22, 219.4, 13.2], [10.4, 227.4, 9], [-1.9, 225.4, 8],
+  [-70, 345, 8], [-66, 326, 12.5], [-56, 308, 17], [-44, 294, 23], [-33, 285, 26.5], [-25.12, 279.62, 28],
+  [-19.22, 265.84, 22.5], [-11.32, 247.46, 13.5], [-5.01, 232.75, 8], [-1.45, 224.48, 8],
 ];
-/** Index of the first cobbled road vertex: dirt through the woods, stone setts down to the bridge. */
-export const TC_ROAD_COBBLE_FROM = 10;
-const TC_ROAD_HAIRPIN = 10;
-export const TC_ARRIVAL: V2 = [-60, 300];
-export const TC_BOUNDS = { minX: -200, maxX: 300, minZ: -260, maxZ: 320 } as const;
+/** Index of the first cobbled road vertex: dirt through the woods, stone setts from the crest straight down the axis to the bridge. */
+export const TC_ROAD_COBBLE_FROM = 5;
+const TC_ROAD_HAIRPIN = 5;
+export const TC_ARRIVAL: V2 = [-66, 326];
+export const TC_BOUNDS = { minX: -200, maxX: 300, minZ: -260, maxZ: 350 } as const;
 /** Terrain samples: 2 m apart, wider than the playable bounds so the coast and sea frame every view. */
 export const TIDECROWN_GRID = { minX: -330, minZ: -330, step: 2, nx: 381, nz: 381 } as const;
 
@@ -189,10 +189,10 @@ function northLand(x: number, z: number): number {
 /** South shore: the forested ridge with its crest on the axis, falling to the estuary and rolling away south. */
 function southLand(x: number, z: number): number {
   const n = tcNoise(x * 0.018 + 31, z * 0.018, 4);
-  const ridgeZ = 252 + 0.0016 * (x + 13) * (x + 13) + 6 * tcNoise(x * 0.01, 3, 2);
-  const along = 0.45 + 0.55 * Math.exp(-Math.pow((x + 25) / 110, 2));
+  const ridgeZ = 279 + 0.0016 * (x + 25) * (x + 25) + 6 * tcNoise(x * 0.01, 3, 2);
+  const along = 0.45 + 0.55 * Math.exp(-Math.pow((x + 37) / 110, 2));
   const across = Math.exp(-Math.pow((z - ridgeZ) / (z < ridgeZ ? 20 : 34), 2));
-  let h = 7 + 3.5 * n + (TC_LEVEL.crest - 7) * along * across + 6 * smoothstep(z, 300, 400) * (0.6 + 0.4 * n);
+  let h = 7 + 3.5 * n + (TC_LEVEL.crest - 7) * along * across + 6 * smoothstep(z, 330, 420) * (0.6 + 0.4 * n);
   return h + 0.6 * tcNoise(x * 0.11, z * 0.11, 2);
 }
 
@@ -224,22 +224,22 @@ export function tidecrownGround(x: number, z: number): number {
 
 /** The forest road cut into the ridge, then the level pads the structures stand on (over land and shore alike). */
 function pads(x: number, z: number, h: number): number {
-  if (x > -90 && x < 70 && z > 205 && z < 345) {
+  if (x > -100 && x < 70 && z > 205 && z < 365) {
     polylineNearest(x, z, TC_ROAD, q);
     const half = 3.4, shoulder = 6;
     if (q.d < half + shoulder) {
       const a = TC_ROAD[q.seg], b = TC_ROAD[q.seg + 1];
       h = lerp(h, lerp(a[2], b[2], q.t), 1 - smoothstep(q.d, half, half + shoulder));
     }
-    // The hairpin turns on a level landing.
+    // The crest is a level landing where the forest road turns onto the axis.
     const [hx, hz, hy] = TC_ROAD[TC_ROAD_HAIRPIN];
-    h = lerp(h, hy, 1 - smoothstep(Math.hypot(x - hx, z - hz), 4, 6.5));
+    h = lerp(h, hy, 1 - smoothstep(Math.hypot(x - hx, z - hz), 1.5, 4));
   }
   const [t, s] = tcAxisCoords(x, z);
   if (t > -160 && t < 40 && Math.abs(s) < 40) {
     // Overlook on the crest where the axis begins.
     const [cx, cz] = tcAxis(TC_T.crest);
-    h = lerp(h, TC_LEVEL.crest, 1 - smoothstep(Math.hypot(x - cx, z - cz), 6, 14));
+    h = lerp(h, TC_LEVEL.crest, 1 - smoothstep(Math.hypot(x - cx, z - cz), 2.5, 5.5));
     // South bridgehead and its abutment, level with the deck.
     h = lerp(h, TC_LEVEL.deck, (1 - smoothstep(Math.abs(s), 10.5, 14)) * smoothstep(t, -114, -110) * (1 - smoothstep(t, -97.5, -95)));
     // North landing and the gate court: the deck's level at the gate, easing down into the lower town.
