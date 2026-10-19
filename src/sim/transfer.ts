@@ -1,6 +1,7 @@
-import type { Area, AreaServices, AwardMailbox, CharacterId, CharacterRegistry, EarnedGrant, EntityRef, PlayerSim, PlayerState, SimUnit, TransferCoordinator, TransferDTO, WorldId } from './types.ts';
-import { worldChapter } from './math.ts';
-import { canTravelTo, levelForXp } from './data/progression.ts';
+import type { Area, AreaServices, AwardMailbox, CharacterId, CharacterRegistry, EarnedGrant, EntityRef, PlaceId, PlayerSim, PlayerState, SimUnit, TransferCoordinator, TransferDTO } from './types.ts';
+import { canTravelToPlace, placeChapter } from './math.ts';
+import { levelForXp } from './data/progression.ts';
+import { inTravelRange, isTravelKind } from './interactions.ts';
 import { restoreEquipment } from './data/equipment.ts';
 import { setQuestChapter } from './data/quests.ts';
 const copy=<T>(value:T):T=>structuredClone(value);
@@ -14,11 +15,12 @@ export function captureTransfer(services:AreaServices,player:PlayerSim,appliedGr
  status:{stunRemaining:remaining(u.stunUntil,now),slowRemaining:remaining(u.slowUntil,now),slowPct:u.slowPct,rustRemaining:remaining(u.rustUntil,now),rust:u.rust,absorbRemaining:remaining(u.absorbUntil,now),absorb:u.absorb,absorbMax:u.absorbMax,blessingRemaining:remaining(u.blessingUntil,now)},history:{combatAge:age(u.lastCombat,now),spendAge:age(p.lastSpend,now),attackAge:age(p.lastAttack,now),nextSwingRemaining:remaining(p.nextSwing,now)},quests:p.quests,flags:p.flags,cogMisses:p.cogMisses,achievements:p.achievements,lighthouseSecretFound:p.lighthouseSecretFound,appliedGrantIds:[...appliedGrantIds]});
 }
 /** Restores only retained values onto a newly allocated actor at its admitted spawn. */
-export function restoreTransfer(dto:TransferDTO,unit:SimUnit,state:PlayerState,now:number,destinationWorld:WorldId):void {
+export function restoreTransfer(dto:TransferDTO,unit:SimUnit,state:PlayerState,now:number,destinationWorld:PlaceId):void {
  if(dto.version!=='s2-transfer-v1'||state.character!==dto.character)throw new Error('transfer-identity');const d=copy(dto);
  Object.assign(unit,{hp:d.hp,maxHp:d.maxHp,alive:true,level:levelForXp(d.xp),stunUntil:now+d.status.stunRemaining,slowUntil:now+d.status.slowRemaining,slowPct:d.status.slowRemaining>0?d.status.slowPct:0,rustUntil:now+d.status.rustRemaining,rust:d.status.rustRemaining>0?d.status.rust:0,absorbUntil:now+d.status.absorbRemaining,absorb:d.status.absorbRemaining>0?d.status.absorb:0,absorbMax:d.status.absorbMax,blessingUntil:now+d.status.blessingRemaining,encounterBlessing:false,lastCombat:now-d.history.combatAge,pushX:0,pushZ:0,pushTime:0,lift:0,pendingHit:null,actions:[]});
  Object.assign(state,{unit:unit.ref,resource:d.resource,maxResource:d.maxResource,xp:d.xp,coins:d.coins,...restoreEquipment(d),baseMaxHp:d.baseMaxHp,cooldowns:Object.fromEntries(Object.entries(d.cooldowns).map(([id,c])=>[id,{start:now-c.startAge,end:now+c.endRemaining}])),gcdStart:now-d.gcd.startAge,gcdEnd:now+d.gcd.endRemaining,lastSpend:now-d.history.spendAge,lastAttack:now-d.history.attackAge,nextSwing:now+d.history.nextSwingRemaining,quests:d.quests,flags:d.flags,cogMisses:d.cogMisses,achievements:d.achievements??{earned:[],distance:0},lighthouseSecretFound:d.lighthouseSecretFound??false,warded:d.status.absorbRemaining>0&&d.status.absorb>0,cast:null,channel:null,target:null,queued:null,velX:0,velZ:0,jumpT:0,spinT:0,targetDeadAt:0,dash:null,deadUntil:null,controlsLocked:false,talkTarget:null});
- setQuestChapter(state.quests,worldChapter(destinationWorld));
+ // Entering a hub keeps the chapter the player brought; a chapter world sets its own.
+ const chapter=placeChapter(destinationWorld);if(chapter!==null)setQuestChapter(state.quests,chapter);
 }
 export class InMemoryCharacterRegistry implements CharacterRegistry {
  private readonly owners=new Map<CharacterId,EntityRef>();
@@ -44,14 +46,13 @@ export class InMemoryTransferCoordinator implements TransferCoordinator {
   if(source===destination)return {ok:false,reason:'same-area'};const owner=this.characters.owner(character);if(!owner||owner.area!==source.services.id)return {ok:false,reason:'not-owner'};
   const player=source.services.playerByCharacter(character),unit=player&&source.services.getUnit(player.state.unit),member=source.services.context.members.find(m=>m.character===character);
   if(!player||!unit?.alive||!sameRef(owner,unit.ref)||member?.seatedBoat||member?.villagePlaying||player.state.controlsLocked)return {ok:false,reason:'travel-busy'};
-  const point=source.services.definition.interactions.find(i=>i.id===gate&&i.kind==='gate');
-  if(!point||point.destination!==destination.services.world||Math.hypot(unit.x-point.position.x,unit.y-point.position.y,unit.z-point.position.z)>point.range||!source.services.policy.canInteract(source.services.context,player.state,gate))return {ok:false,reason:'invalid-gate'};
-  const chapter=worldChapter(destination.services.world);
-  if(!canTravelTo(chapter,player.state.flags))return {ok:false,reason:'locked-world'};
+  const point=source.services.definition.interactions.find(i=>i.id===gate&&isTravelKind(i.kind));
+  if(!point||point.destination!==destination.services.world||!inTravelRange(point,unit)||!source.services.policy.canInteract(source.services.context,player.state,gate))return {ok:false,reason:'invalid-gate'};
+  if(!canTravelToPlace(destination.services.world,player.state.flags))return {ok:false,reason:'locked-world'};
   if(source.services.encounterActive()||source.services.time-unit.lastCombat<5)return {ok:false,reason:'in-combat'};
   let preparedGrants:readonly {grant:EarnedGrant;appliedHere:boolean}[]=[];
   let admission:ReturnType<Area['reserveAdmission']>=null,departure:ReturnType<Area['stageDeparture']>|null=null,arrival:ReturnType<Area['stageArrival']>|null=null;
-  try {admission=destination.reserveAdmission(character,(destination.services.definition.pois.arrival??destination.services.definition.spawn).id,hostTick);if(!admission)return {ok:false,reason:'destination-full'};departure=source.stageDeparture(unit.ref);arrival=destination.stageArrival(admission,departure.dto);preparedGrants=source.pendingGrants();for(const entry of preparedGrants)this.awards.record(entry.grant,entry.appliedHere);
+  try {const arrivalId=point.arrival??destination.services.definition.pois.arrival?.id??destination.services.definition.spawn.id;admission=destination.reserveAdmission(character,arrivalId,hostTick);if(!admission)return {ok:false,reason:'destination-full'};departure=source.stageDeparture(unit.ref);arrival=destination.stageArrival(admission,departure.dto);preparedGrants=source.pendingGrants();for(const entry of preparedGrants)this.awards.record(entry.grant,entry.appliedHere);
    if(!this.characters.compareAndSwap(character,owner,arrival.newRef))throw new Error('registry-conflict');
   }catch(error){if(arrival)destination.abortArrival(arrival.token);if(departure)source.abortDeparture(departure.token);if(admission)destination.releaseAdmission(admission.token);return {ok:false,reason:error instanceof Error?error.message:'transfer-failed'};}
   // Contract: no observer/tick/I/O here, these operations cannot fail after registry CAS.

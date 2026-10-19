@@ -2,6 +2,7 @@
 import type { AreaDefinition, AreaServices, CoreEvent, EntityRef, PlayerCommand, PlayerSim, Vec3 } from '../types.ts';
 import { immutable, sameRef } from '../events.ts';
 import { canPresentFrostEnding } from '../data/progression.ts';
+import { placeChapter } from '../math.ts';
 import { rigCatalog, type RigSpec } from '../data/rig-catalog.ts';
 import { EndingPresentationController, type CastSpec, type EndingObservation } from './endingPresentation.ts';
 export interface EndingIntegrationOptions {
@@ -71,8 +72,9 @@ export class PersonalEndings {
   for(const ref of this.requests.values()){
    const player=this.player(ref),unit=this.services.getUnit(ref);if(!player||!unit){this.requests.delete(ref.id);continue;}
    const old=this.entry(ref);if(old&&(old.pending||this.active(old))){this.requests.delete(ref.id);continue;}
-   const member=this.services.context.members.find(m=>sameRef(m.unit,ref));
-   if(!unit.alive||unit.hidden||member?.seatedBoat||member?.villagePlaying||!canPresentFrostEnding(this.services.context.mode,Number(this.services.world.slice(1)) as 1|2|3|4,player.state.flags,this.services.bossByProfile('frost')?.state??null,player.state.controlsLocked))continue;
+   // A hub has no chapter, so no ending plays there.
+   const member=this.services.context.members.find(m=>sameRef(m.unit,ref)),chapter=placeChapter(this.services.world);
+   if(!unit.alive||unit.hidden||member?.seatedBoat||member?.villagePlaying||chapter===null||!canPresentFrostEnding(this.services.context.mode,chapter,player.state.flags,this.services.bossByProfile('frost')?.state??null,player.state.controlsLocked))continue;
    // Existing combat activity is allowed to resolve; never create invulnerability for a cinematic.
    if(this.services.time-unit.lastCombat<5)continue;
    const appearance=this.options.appearance(ref);if(!appearance)continue;
