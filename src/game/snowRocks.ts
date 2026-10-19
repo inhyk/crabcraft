@@ -40,11 +40,10 @@ const fbm3 = (x: number, y: number, z: number, seed: number, oct: number) => {
   return s;
 };
 
-/** One crag in rock-local units: long axis x, up y, short axis z; 1 is the long half-axis. */
-function cragGeometry(k: SnowRock): THREE.BufferGeometry {
+/** One crag in rock-local units: long axis x, up y, short axis z; 1 is the long half-axis. `detail` overrides the subdivision. */
+export function cragGeometry(k: SnowRock, detail = k.r >= 6 ? 34 : 24): THREE.BufferGeometry {
   const R = rng(k.seed * 7919 + 13);
   // Edge subdivisions: ~12k vertices on the big crags, ~6k on the small, so planes, joints and grain all resolve.
-  const detail = k.r >= 6 ? 34 : 24;
   const base = new THREE.IcosahedronGeometry(1, detail);
   base.deleteAttribute('normal');
   base.deleteAttribute('uv');
@@ -123,10 +122,10 @@ float rkFbm(vec3 p){return rkNoise(p)*.55+rkNoise(p*2.17+7.1)*.28+rkNoise(p*4.63
 float rkGround(vec2 p){vec2 uv=(p-snowGroundRect.xy)*snowGroundRect.z;return textureLod(snowGroundTex,clamp(uv,0.,1.),0.).x;}
 `;
 
-/** The crags as one group of meshes sharing one material. `ground` is the gameplay height; `terrain` the bake's uniforms. */
-export function snowRocks(ground: (x: number, z: number) => number, terrain: { snowGroundTex: { value: THREE.Texture | null }; snowGroundRect: { value: THREE.Vector4 } }): THREE.Group {
-  const group = new THREE.Group();
-  group.name = 'frostlight-rock-outcrops';
+/** The baked ground's uniforms (snowTerrain.ts), read for the snow skirt. */
+export type SnowGroundUniforms = { snowGroundTex: { value: THREE.Texture | null }; snowGroundRect: { value: THREE.Vector4 } };
+/** The crags' stone: weathered, jointed, snow on what can hold it and a skirt where the drift meets it. World-space meshes only. */
+export function rockMaterial(terrain: SnowGroundUniforms): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.88, metalness: 0 });
   mat.name = 'frostlight-rock';
   const uniforms = { snowGroundTex: terrain.snowGroundTex, snowGroundRect: terrain.snowGroundRect, rockBedding: { value: new THREE.Vector3(0.2, 0.97, 0.1).normalize() } };
@@ -167,6 +166,14 @@ export function snowRocks(ground: (x: number, z: number) => number, terrain: { s
           }
         }`);
   });
+  return mat;
+}
+
+/** The crags as one group of meshes sharing one material. `ground` is the gameplay height; `terrain` the bake's uniforms. */
+export function snowRocks(ground: (x: number, z: number) => number, terrain: SnowGroundUniforms): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'frostlight-rock-outcrops';
+  const mat = rockMaterial(terrain);
   for (const k of SNOW_ROCKS) {
     const geo = cragGeometry(k);
     // Sink the crag until its widest section is under the lowest snow around it.
