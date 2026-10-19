@@ -59,12 +59,13 @@ try{
  console.log('PASS chapter-4 fog is the sky horizon in the view direction',JSON.stringify({away,sunward}));
 
  // Seam: looking out to sea, the fogged far sea and the dome above it must blend with no row-to-row jump.
- await p.evaluate(()=>{window.app.current.game.scene.getObjectByName('gpu-snowfall').visible=false;});
+ // The far ranges (snowRidges.ts) stand on that horizon by design; the seam is the fog against the dome, so they step aside.
+ await p.evaluate(()=>{const s=window.app.current.game.scene;s.getObjectByName('gpu-snowfall').visible=false;s.getObjectByName('frostlight-far-ridges').visible=false;});
  const seams={};
  for(const [name,pos,dir] of [['east',[140,east,0],[1,0]],['away',awayPos,anti]]){await aim(p,pos,[pos[0]+dir[0]*400,pos[1],pos[2]+dir[1]*400]);await p.waitForTimeout(700);seams[name]=await seam(p);await p.screenshot({path:`tmp/qa/snow-sky-horizon-${name}.png`});}
  assert.ok(Object.values(seams).every(s=>s.step<=3),`no seam at the horizon (max 3/255 between rows): ${JSON.stringify(seams)}`);
  console.log('PASS the fogged sea dissolves into the dome without a seam',JSON.stringify(seams));
- await p.evaluate(()=>{window.app.current.game.scene.getObjectByName('gpu-snowfall').visible=true;});
+ await p.evaluate(()=>{const s=window.app.current.game.scene;s.getObjectByName('gpu-snowfall').visible=true;s.getObjectByName('frostlight-far-ridges').visible=true;});
  await aim(p,await p.evaluate(()=>{const g=window.app.current.game;return [0,g.world.heightAt(0,70)+4,70];}),[0,62,-200]);await p.waitForTimeout(900);
  await p.screenshot({path:'tmp/qa/snow-sky-aurora.png'});
  await aim(p,await p.evaluate(()=>{const g=window.app.current.game;return [-10,g.world.heightAt(-10,-10)+4,-10];}),[200,34,220]);await p.waitForTimeout(900);
