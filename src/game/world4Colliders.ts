@@ -1,5 +1,6 @@
 // Frostlight registrations used by the rendered island and the offline collision bake.
 import { snowHeight } from '../sim/world/ground';
+import { SNOW_ROCKS } from '../sim/world/snowGround';
 import { Collision } from '../world/collision';
 import { registerSnowVillage } from './snowVillageLayout';
 
@@ -31,6 +32,12 @@ export function layoutFrostlight(): Collision {
   for(let i=0;i<12;i++){
     const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;
     const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=h(x,z);col.addCircle(x,z,1.5,y,y+10);
+  }
+  // Rock outcrops (snowRocks.ts): a box for the crag's body and a circle at each rounded end of its long axis.
+  for(const k of SNOW_ROCKS){
+    const y=h(k.x,k.z),top=y+1.3*k.h;
+    col.addBox(k.x,k.z,.62*k.r,.5*k.r,k.yaw,y-1,top);
+    for(const f of [-.6,.6])col.addCircle(k.x+Math.cos(k.yaw)*f*k.r,k.z-Math.sin(k.yaw)*f*k.r,.32*k.r,y-1,top);
   }
   return col;
 }

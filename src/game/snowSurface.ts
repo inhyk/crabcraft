@@ -1,73 +1,134 @@
 import * as THREE from 'three';
-import { SNOW_DEFORM_READ, type SnowDeform } from './snowDeform';
+import type { SnowDeform } from './snowDeform';
 import type { SnowSpray } from './snowSpray';
 import type { Unit } from './unit';
+import { addPatch } from '../world/materials';
+import { SNOW_SURFACE_GLSL } from './snowTerrain';
 
 /*
- * The Frostlight snow surface. Reads SnowDeform for prints and berms, adds wind-carved ripples and fine
- * grain, and ports SNOWFLOW's back-scatter subsurface term and grazing-angle glints (shading.wgsl, MIT,
- * Copyright (c) 2026 Maksymilian Dendura; see NOTICE.md) onto a MeshStandardMaterial.
+ * The Frostlight snow material: the most important pixels in the world. Ports SNOWFLOW's snow.fragment.wgsl and
+ * shading.wgsl (MIT, Copyright (c) 2026 Maksymilian Dendura; see NOTICE.md) onto a MeshStandardMaterial whose
+ * vertices the clipmap (snowTerrain.ts) has already placed.
+ *
+ * Normals are summed as slopes before they become a normal: the landform's slope read per pixel from the baked
+ * ground, the footprint-filtered sastrugi, ripples and grain, and the footprint field; a generated grain map at
+ * three tiling scales is folded in last (triplanar on steep faces). Lighting swaps Lambert for wrapped diffuse,
+ * filters the sun's shadow wider than three.js does, adds back-scatter that survives in shadow, a narrow
+ * grazing-only glint, and occlusion that darkens toward blue. Compression, ice and loose berm mass from the
+ * footprint field are surface states, not separate materials.
  */
 
 export interface SnowSurfaceOptions {
   /** Light the glints and back-scatter answer to. Its world direction and radiance are read every frame. */
   sun: THREE.DirectionalLight;
+  /** The sky's horizon and zenith radiance, for the sky the snow reflects. */
+  skyHorizon: THREE.Color;
+  skyZenith: THREE.Color;
   /** Height relief of prints in the normal, 1 = true slope. */
   relief?: number;
   glints?: number;
   subsurface?: number;
 }
 
+/** Tileable grain: rounded crystals with dark crevices (SNOWFLOW detailBake). RG normal, B cavity. */
+function grainTexture(size = 256): THREE.DataTexture {
+  const h = new Float32Array(size * size), cav = new Float32Array(size * size);
+  const hash = (x: number, y: number, s: number) => {
+    let k = Math.imul(((x % s) + s) % s, 0x27d4eb2d) ^ Math.imul(((y % s) + s) % s, 0x165667b1) ^ Math.imul(s, 0x9e3779b1);
+    k = Math.imul(k ^ (k >>> 15), 0x2c1b3c6d); k = Math.imul(k ^ (k >>> 12), 0x297a2d39); k ^= k >>> 15;
+    return k >>> 0;
+  };
+  const layer = (cells: number, w: number, cw: number) => {
+    for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
+      const gx = (i + 0.5) / size * cells, gy = (j + 0.5) / size * cells, ix = Math.floor(gx), iy = Math.floor(gy);
+      let best = 0, c = 1;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const r = hash(ix + dx, iy + dy, cells);
+        const cx = ix + dx + 0.25 + (r & 1023) / 1023 * 0.5, cy = iy + dy + 0.25 + (r >>> 10 & 1023) / 1023 * 0.5;
+        const rad = 0.3 + (r >>> 20 & 255) / 255 * 0.26, d = Math.hypot(gx - cx, gy - cy) / rad;
+        if (d < 1) { best = Math.max(best, Math.sqrt(1 - d * d) * (0.55 + (r >>> 28) / 15 * 0.45)); c = Math.min(c, 1 - (1 - d) * 0.5); }
+      }
+      h[j * size + i] += best * w; cav[j * size + i] += c * cw;
+    }
+  };
+  layer(20, 1, 0.55); layer(45, 0.42, 0.3); layer(97, 0.17, 0.15);
+  const data = new Uint8Array(size * size * 4), k = size * 0.045;
+  for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
+    const at = (x: number, y: number) => h[((y + size) % size) * size + ((x + size) % size)];
+    const dx = (at(i + 1, j) - at(i - 1, j)) * k, dy = (at(i, j + 1) - at(i, j - 1)) * k, l = Math.hypot(dx, dy, 1);
+    data.set([(-dx / l * 0.5 + 0.5) * 255, (-dy / l * 0.5 + 0.5) * 255, cav[j * size + i] * 255, 255], (j * size + i) * 4);
+  }
+  const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = 4;
+  t.colorSpace = THREE.NoColorSpace;
+  t.name = 'frostlight-snow-grain';
+  t.needsUpdate = true;
+  return t;
+}
+
 const SURFACE_FRAGMENT_HEAD = /* glsl */ `
-${SNOW_DEFORM_READ}
 uniform vec3 snowSunDir;
 uniform vec3 snowSunColor;
-uniform float snowRelief;
+uniform vec3 snowSkyHorizon;
+uniform vec3 snowSkyZenith;
+uniform float snowPrintRelief;
 uniform float snowGlintStrength;
 uniform float snowScatterStrength;
+uniform sampler2D snowGrain;
 varying vec3 vSnowWorld;
-// Sastrugi: ripples carved across the prevailing wind, warped so they never read as a pattern, plus grain.
-vec2 snowDetailGrad(vec2 p,float fade){
-  vec2 wd=vec2(.8,.6);
-  float warp=sdNoise2(p*.31)*2.6;
-  float ph=dot(p,wd)*2.4+warp;
-  float amp=.03*(.55+.45*sdNoise2(p*.11+3.7));
-  vec2 g=wd*cos(ph)*2.4*amp*smoothstep(1.,.25,fade);
-  float e=.05,f=8.;
-  float n0=sdNoise2(p*f),nx=sdNoise2((p+vec2(e,0.))*f),nz=sdNoise2((p+vec2(0.,e))*f);
-  g+=vec2(nx-n0,nz-n0)/e*.0045*(1.-smoothstep(.03,.16,fade));
-  return g;
+varying vec4 vSnowInfo;
+varying vec4 vSnowWind;
+float snowWrapAmt=.32;
+float snowSunVis=1.;
+vec3 snowUnpack(vec2 rg){vec2 xy=rg*2.-1.;return vec3(xy,sqrt(max(0.,1.-dot(xy,xy))));}
+// Reoriented normal mapping: the detail keeps the base's tilt.
+vec3 snowRNM(vec3 base,vec3 detail){vec3 t=base+vec3(0.,0.,1.),u=detail*vec3(-1.,-1.,1.);return normalize(t*dot(t,u)-u*t.z);}
+// Grain normal at one tiling scale; triplanar on steep faces so it never smears up a slope.
+vec3 snowDetail(vec3 w,vec3 N,float scale,float steep,vec3 dx,vec3 dy){
+  vec3 n=snowUnpack(textureGrad(snowGrain,w.xz*scale,dx.xz*scale,dy.xz*scale).xy);
+  if(steep>.01){
+    vec3 a=snowUnpack(textureGrad(snowGrain,w.xy*scale,dx.xy*scale,dy.xy*scale).xy);
+    vec3 b=snowUnpack(textureGrad(snowGrain,w.zy*scale,dx.zy*scale,dy.zy*scale).xy);
+    vec3 m=abs(N);n=normalize(mix(n,(a*m.z+b*m.x+n*m.y)/(m.x+m.y+m.z),steep));
+  }
+  return n;
 }
-// One octave of crystal sparkle: each world cell owns one jittered facet, so a glint is nailed to the ground.
+// One octave of crystal facets: each world cell owns at most one jittered facet, nailed to the ground.
 float snowGlintOctave(vec2 p,float cell,vec3 N,vec3 H,vec3 T,vec3 B,float sharp){
   vec2 id=floor(p/cell);
   vec2 r=sdHash22(id),r2=sdHash22(id+vec2(19.73,7.31));
-  if(r2.x>.62)return 0.;
+  if(r2.x>.55)return 0.;
   vec2 c=(id+.5+(r-.5)*.72)*cell;
-  float d=length(p-c)/(cell*.22);
+  float d=length(p-c)/(cell*.17);
   float disc=clamp(1.-d*d,0.,1.);
   if(disc<=0.)return 0.;
   float ang=r.y*6.2831853;
-  vec3 facet=normalize(N+(T*cos(ang)+B*sin(ang))*(.10+r2.y*.26));
+  vec3 facet=normalize(N+(T*cos(ang)+B*sin(ang))*(.10+r2.y*.24));
   return disc*pow(clamp(dot(facet,H),0.,1.),sharp);
 }
-// Gated on a grazing view: snow sparkles looking across it into the sun and stays matte looking down.
-float snowGlints(vec2 p,vec3 N,vec3 V,vec3 L,float footprint){
+// Only looking across the snow into a low sun; looking down it stays matte.
+float snowGlints(vec2 p,vec3 N,vec3 V,vec3 L,float fp){
   vec3 H=normalize(V+L);
   vec3 up=abs(N.y)>.95?vec3(1.,0.,0.):vec3(0.,1.,0.);
   vec3 T=normalize(cross(up,N)),B=cross(N,T);
-  float graze=pow(1.-clamp(dot(N,V),0.,1.),2.2);
+  float graze=pow(1.-clamp(dot(N,V),0.,1.),3.2);
   float nl=clamp(dot(N,L),0.,1.);
   float gate=graze*smoothstep(.02,.35,nl)*(1.-smoothstep(.55,.95,nl)*.55);
   if(gate<=.001)return 0.;
-  float sum=0.;
-  float a=.12,b=.36;
-  sum+=snowGlintOctave(p,a,N,H,T,B,420.)*(1.-smoothstep(a*.55,a*2.2,footprint));
-  sum+=snowGlintOctave(p+vec2(53.1,17.9),b,N,H,T,B,900.)*(1.-smoothstep(b*.55,b*2.2,footprint))*1.35;
+  float a=.052,b=.185,sum=0.;
+  float fa=1.-smoothstep(a*.55,a*2.2,fp),fb=1.-smoothstep(b*.55,b*2.2,fp);
+  if(fa>.001)sum+=snowGlintOctave(p,a,N,H,T,B,780.)*fa;
+  #ifndef SNOW_LOW
+  if(fb>.001)sum+=snowGlintOctave(p+vec2(53.1,17.9),b,N,H,T,B,1500.)*fb*1.35;
+  #endif
   return sum*gate;
 }
-// Light that entered the snow and left toward the eye. Thin edges (berm crests, far walls of prints)
-// transmit brightly and wide; deep snow transmits little and comes back blue.
+// Light that entered the snow and left toward the eye. Thin edges transmit brightly and wide; deep snow
+// little, near straight through, and blue, because red is absorbed first.
 vec3 snowSubsurface(vec3 N,vec3 L,vec3 V,float thickness){
   vec3 tint=mix(vec3(.94,.965,1.),vec3(.55,.72,1.),clamp(thickness,0.,1.));
   vec3 h=normalize(L+N*.28);
@@ -76,67 +137,190 @@ vec3 snowSubsurface(vec3 N,vec3 L,vec3 V,float thickness){
 }
 `;
 
-/** Patch a snow ground material in place. Call the returned function once a frame before it draws. */
+/** Wrapped diffuse in place of Lambert: snow's millimetre mean free path carries light past the terminator. */
+const SNOW_DIRECT = /* glsl */ `
+#undef RE_Direct
+#define RE_Direct RE_Direct_Snow
+void RE_Direct_Snow(const in IncidentLight directLight,const in vec3 geometryPosition,const in vec3 geometryNormal,const in vec3 geometryViewDir,const in vec3 geometryClearcoatNormal,const in PhysicalMaterial material,inout ReflectedLight reflectedLight){
+  float nl=dot(geometryNormal,directLight.direction);
+  // Energy-normalised, so a low sun still models the relief: it softens the terminator, it does not lift the field.
+  float wrap=max(0.,(nl+snowWrapAmt)/((1.+snowWrapAmt)*(1.+snowWrapAmt)));
+  reflectedLight.directSpecular+=saturate(nl)*directLight.color*BRDF_GGX(directLight.direction,geometryViewDir,geometryNormal,material)*material.multiScatteringCompensation;
+  vec3 F=F_Schlick(material.specularColor,material.specularF90,saturate(dot(geometryViewDir,normalize(directLight.direction+geometryViewDir))));
+  reflectedLight.directDiffuse+=wrap*directLight.color*BRDF_Lambert(material.diffuseContribution)*(1.-F);
+  // The sun's own visibility, cast shadows included, for the terms added after lighting.
+  if(dot(directLight.direction,normalize((viewMatrix*vec4(snowSunDir,0.)).xyz))>.9995)snowSunVis=dot(directLight.color,vec3(1.))/max(1e-5,dot(snowSunColor,vec3(1.)));
+}
+`;
+
+/**
+ * The sun's shadow on snow, filtered wider than three.js's five taps: ten hardware-compared taps on a rotated
+ * Vogel disk 2.6 texels across. A low sun stretches every texel along its bearing, and the default filter leaves
+ * that stair-stepping on the brightest, flattest surface in the frame.
+ */
+const SNOW_SHADOW = /* glsl */ `
+#if defined( USE_SHADOWMAP ) && defined( SHADOWMAP_TYPE_PCF ) && NUM_DIR_LIGHT_SHADOWS > 0
+float snowGetShadow(sampler2DShadow shadowMap,vec2 shadowMapSize,float shadowIntensity,float shadowBias,float shadowRadius,vec4 shadowCoord){
+  shadowCoord.xyz/=shadowCoord.w;shadowCoord.z+=shadowBias;
+  if(shadowCoord.x<0.||shadowCoord.x>1.||shadowCoord.y<0.||shadowCoord.y>1.||shadowCoord.z>1.)return 1.;
+  float radius=2.6/shadowMapSize.x,phi=interleavedGradientNoise(gl_FragCoord.xy)*PI2,s=0.;
+  #ifdef SNOW_LOW
+  const int TAPS=5;
+  #else
+  const int TAPS=10;
+  #endif
+  for(int i=0;i<TAPS;i++)s+=texture(shadowMap,vec3(shadowCoord.xy+vogelDiskSample(i,TAPS,phi)*radius,shadowCoord.z));
+  // Fade out toward the shadow box's edge, so a wide view never shows where the map ends as a straight line.
+  vec2 sb=min(shadowCoord.xy,1.-shadowCoord.xy);
+  return mix(1.,s/float(TAPS),shadowIntensity*smoothstep(0.,.08,min(sb.x,sb.y)));
+}
+#else
+#define snowGetShadow getShadow
+#endif
+`;
+
+const SNOW_STATE = /* glsl */ `
+  vec3 sW=vSnowWorld;vec2 sXZ=sW.xz;
+  vec3 sDx=dFdx(sW),sDy=dFdy(sW);
+  // World size of this pixel, and its narrow axis (the one grazing views do not inflate).
+  float sFoot=max(length(vec2(length(sDx.xz),length(sDy.xz))),1e-4);
+  float sFootMin=max(min(length(sDx.xz),length(sDy.xz)),1e-4);
+  float sKeep=vSnowInfo.y,sFineKeep=vSnowInfo.z,sSea=vSnowInfo.w;
+  // The landform's slope per pixel from the bake, filtered to the pixel's own footprint.
+  vec2 sGUV=snowGroundUV(sXZ),sGdx=dFdx(sGUV),sGdy=dFdy(sGUV);
+  vec2 sGrad=snowGroundIn(sGUV)?textureGrad(snowGroundTex,sGUV,sGdx,sGdy).yz:vec2(0.);
+  // Footprint field: depression, berm, compression, ice. The gradient's step widens with the pixel.
+  vec4 sD=vec4(0.);vec2 sDG=vec2(0.);float sDepW=0.;
+  float sFall=snowDeformFalloff(sXZ);
+  if(sFall>.001){
+    float texel=snowDeformSize/snowDeformRes,e=max(texel*2.,sFootMin*1.4),eu=e/snowDeformSize;
+    vec2 uv=fract(sXZ/snowDeformSize);
+    vec4 c=texture2D(snowDeformTex,uv),xa=texture2D(snowDeformTex,uv+vec2(eu,0.)),xb=texture2D(snowDeformTex,uv-vec2(eu,0.));
+    vec4 za=texture2D(snowDeformTex,uv+vec2(0.,eu)),zb=texture2D(snowDeformTex,uv-vec2(0.,eu));
+    sDG=vec2((xa.g-xa.r)-(xb.g-xb.r),(za.g-za.r)-(zb.g-zb.r))/(2.*e)*sFall*snowPrintRelief;
+    float wide=clamp(sFootMin/(texel*4.),0.,1.)*.8;
+    sD=mix(c,(c+xa+xb+za+zb)*.2,wide)*sFall;
+    // How steeply the print wall falls here: its rim is where the occlusion and the broken crust sit.
+    sDepW=clamp(length(vec2(xa.r-xb.r,za.r-zb.r))/(2.*e)*sFall*1.6,0.,1.);
+  }
+  float sComp=clamp(sD.b,0.,1.),sIce=clamp(sD.a,0.,1.),sLoose=clamp(sD.g*7.,0.,1.);
+  // The village and the paving margins are trodden all winter.
+  sComp=max(sComp,(1.-smoothstep(0.,.5,sKeep))*.28*(1.-sSea));
+  vec3 sN0=normalize(vec3(-sGrad.x,1.,-sGrad.y));
+  // Exposed rock: on the outcrops and the coast cliffs, gated by slope so snow keeps the flatter faces.
+  float sCoast=smoothstep(.02,.18,sSea)*(1.-smoothstep(.8,.98,sSea));
+  float sRock=sCoast*smoothstep(.30,.55,1.-sN0.y);
+  // Wind-scoured blue ice on the frozen sea, in streaks along the wind.
+  float sScour=0.;
+  if(sSea>.5){vec2 q=vec2(dot(sXZ,SG_WIND),dot(sXZ,vec2(-SG_WIND.y,SG_WIND.x)));sScour=smoothstep(.12,.42,sgNoised(q*vec2(.012,.05)).x+.35*sgNoised(q*vec2(.05,.2)).x)*smoothstep(.5,1.,sSea);}
+  sIce=max(sIce,sScour*.8);
+  // Albedo sits in a high, slightly blue band and never reaches white.
+  vec3 sAlb=vec3(.79,.86,.97);float sRough=.62,sThick=1.;
+  sAlb=mix(sAlb,vec3(.6,.67,.79),sComp*.8);sRough=mix(sRough,.36,sComp);sThick=mix(sThick,.35,sComp);
+  sAlb=mix(sAlb,vec3(.42,.57,.72),sIce*.8);sRough=mix(sRough,.08,sIce);sThick=mix(sThick,.15,sIce);
+  if(sLoose>.001){
+    // Broken, thrown snow at a berm: brighter, rougher, chunky.
+    float chunk=sdNoise2(sXZ*34.)*.5+.5;
+    sAlb=mix(sAlb,vec3(.84,.9,1.),sLoose*.55)*(1.-sLoose*.12*chunk);sRough=mix(sRough,.78,sLoose*.7);sThick=mix(sThick,1.,sLoose*.6);
+  }
+  if(sRock>.001){
+    // Dark, cool rock with faint bedding and lichen-free mottling, projected from the side it faces.
+    vec3 an=abs(sN0);
+    float mottle=(sdNoise2(sW.xy*.9)*an.z+sdNoise2(sW.zy*.9)*an.x+sdNoise2(sXZ*.9)*an.y)/(an.x+an.y+an.z)*.5+.5;
+    float bed=sin(sW.y*4.1+sdNoise2(sXZ*.21)*3.)*.5+.5;
+    vec3 rc=mix(vec3(.045,.05,.06),vec3(.115,.12,.13),mottle*.75+bed*.25);
+    sAlb=mix(sAlb,rc,sRock);sRough=mix(sRough,.86,sRock);sThick=mix(sThick,0.,sRock);
+  }
+  diffuseColor.rgb=sAlb;
+  snowWrapAmt=mix(.32,.08,max(sComp*.6,sRock));
+`;
+
+const SNOW_NORMAL = /* glsl */ `
+  vec3 sN;
+  {
+    vec2 g=sGrad+sDG;
+    vec3 f=snowFine(sXZ,sFoot,sFineKeep*(1.-sRock),sSea,1.,vSnowWind);
+    g+=f.yz;
+    // Broken crust at a print's rim: clumps, not a bevel.
+    if(sLoose+sDepW>.01){vec3 cl=sgNoised(sXZ*26.);g+=cl.yz*.0028*(sLoose+sDepW)*(1.-smoothstep(.01,.05,sFoot));}
+    sN=normalize(vec3(-g.x,1.,-g.y));
+    float steep=smoothstep(.45,.85,1.-sN.y);
+    vec3 acc=vec3(0.,0.,1.);
+    float f0=1.-smoothstep(.003,.016,sFoot);
+    #ifndef SNOW_LOW
+    if(f0>.001)acc=snowRNM(acc,mix(vec3(0.,0.,1.),snowDetail(sW,sN,7.5,steep,sDx,sDy),f0));
+    #endif
+    float f1=1.-smoothstep(.016,.1,sFoot);
+    if(f1>.001)acc=snowRNM(acc,mix(vec3(0.,0.,1.),snowDetail(sW,sN,1.7,steep,sDx,sDy),f1*.85));
+    float f2=1.-smoothstep(.08,.6,sFoot);
+    if(f2>.001)acc=snowRNM(acc,mix(vec3(0.,0.,1.),snowDetail(sW,sN,.31,steep,sDx,sDy),f2*.6));
+    vec3 up=abs(sN.y)>.99?vec3(1.,0.,0.):vec3(0.,1.,0.);
+    vec3 T=normalize(cross(up,sN)),B=cross(sN,T);
+    float s=mix(.2,.1,sComp)*mix(1.,.4,sIce)+sRock*.5;
+    sN=normalize(sN+(T*acc.x+B*acc.y)*s);
+  }
+  normal=normalize((viewMatrix*vec4(sN,0.)).xyz);
+`;
+
+const SNOW_AFTER = /* glsl */ `
+  {
+    vec3 sL=normalize(snowSunDir),sV=normalize(cameraPosition-vSnowWorld);
+    // Sky the snow reflects, sharper and stronger on ice.
+    vec3 R=reflect(-sV,sN);
+    vec3 sky=mix(snowSkyHorizon,snowSkyZenith,smoothstep(0.,.6,R.y));
+    float fr=pow(1.-clamp(dot(sN,sV),0.,1.),5.);
+    outgoingLight+=sky*fr*mix(.05,.45,sIce)*(1.-sRock*.8)*(1.-sComp*.3)+sky*.05*sIce;
+    // Back-scatter is only partly shadowed: light reaches a shaded drift lip through the snow.
+    outgoingLight+=snowSunColor*diffuseColor.rgb*snowSubsurface(sN,sL,sV,sThick)*snowScatterStrength*(1.-sRock)*mix(.42,1.,snowSunVis);
+    outgoingLight+=snowSunColor*snowGlints(sXZ,sN,sV,sL,sFoot)*snowGlintStrength*snowSunVis*(1.-sIce*.6)*(1.-sRock)*(1.-sComp*.5);
+    // Occlusion scales everything and goes blue where it darkens, the way a hollow in snow does.
+    float cav=textureGrad(snowGrain,sXZ*1.7,sDx.xz*1.7,sDy.xz*1.7).b;
+    float ao=mix(1.,cav,.35*(1.-smoothstep(.02,.25,sFoot)))*(1.-clamp(sD.r*1.9,0.,1.)*.38)*(1.-sDepW*.22);
+    outgoingLight*=ao*mix(vec3(1.),vec3(.55,.72,1.),(1.-ao)*.95);
+  }
+`;
+
+/**
+ * Patch the clipmap's snow material in place. Call the returned function once a frame before it draws.
+ * The clipmap's vertex patch (SnowTerrain) must already be on the material; this adds the fragment side.
+ */
 export function applySnowSurface(material: THREE.MeshStandardMaterial, deform: SnowDeform, opts: SnowSurfaceOptions): () => void {
   const sunDir = new THREE.Vector3(0, 1, 0), sunColor = new THREE.Color();
+  const grain = grainTexture();
   const uniforms = {
     ...deform.uniforms,
     snowSunDir: { value: sunDir },
     snowSunColor: { value: sunColor },
-    snowRelief: { value: opts.relief ?? 1.15 },
-    snowGlintStrength: { value: opts.glints ?? 8 },
-    snowScatterStrength: { value: opts.subsurface ?? 0.55 },
+    snowSkyHorizon: { value: opts.skyHorizon },
+    snowSkyZenith: { value: opts.skyZenith },
+    snowPrintRelief: { value: opts.relief ?? 1.15 },
+    snowGlintStrength: { value: opts.glints ?? 2.2 },
+    snowScatterStrength: { value: opts.subsurface ?? 0.42 },
+    snowGrain: { value: grain },
   };
   const tmp = new THREE.Vector3();
   material.userData.snowSurface = uniforms;
-  // The light can move or be re-tinted, so its world direction and radiance are read every frame.
+  // The scene's environment map belongs to another world; the snow reflects this sky instead.
+  material.envMapIntensity = 0;
+  material.addEventListener('dispose', () => grain.dispose());
   const refresh = () => {
     opts.sun.getWorldPosition(sunDir);
     opts.sun.target.getWorldPosition(tmp);
     sunDir.sub(tmp).normalize();
     sunColor.copy(opts.sun.color).multiplyScalar(opts.sun.intensity);
   };
-  material.onBeforeCompile = (shader) => {
+  addPatch(material, 'frostlight-snow-surface', (shader) => {
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vSnowWorld;')
-      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvSnowWorld=(modelMatrix*vec4(transformed,1.)).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${SURFACE_FRAGMENT_HEAD}`)
-      .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
-        vec2 sW=vSnowWorld.xz;
-        float sFall=snowDeformFalloff(sW);
-        vec4 sD=snowDeformAt(sW)*sFall;
-        float sPit=clamp(sD.r/.12,0.,1.),sRim=clamp(sD.g/.05,0.,1.);
-        float sFoot=length(fwidth(sW));
-        // A print is a cavity: darker, bluer at the floor, packed snow a touch greyer.
-        diffuseColor.rgb*=mix(vec3(1.),vec3(.78,.86,1.),sPit*.8+sD.b*.1);
-        diffuseColor.rgb*=1.+sRim*.05;`)
-      .replace('#include <normal_fragment_maps>', /* glsl */ `#include <normal_fragment_maps>
-        vec3 sNW;
-        {
-          float e=snowDeformSize/snowDeformRes;
-          vec2 g=vec2(snowDeformHeight(sW+vec2(e,0.))-snowDeformHeight(sW-vec2(e,0.)),
-                      snowDeformHeight(sW+vec2(0.,e))-snowDeformHeight(sW-vec2(0.,e)))/(2.*e)*sFall*snowRelief;
-          g+=snowDetailGrad(sW,sFoot);
-          sNW=inverseTransformDirection(normal,viewMatrix);
-          sNW=normalize(sNW+vec3(-g.x,0.,-g.y));
-          normal=normalize((viewMatrix*vec4(sNW,0.)).xyz);
-        }`)
-      .replace('#include <opaque_fragment>', /* glsl */ `{
-          vec3 sL=normalize(snowSunDir);
-          vec3 sV=inverseTransformDirection(normalize(vViewPosition),viewMatrix);
-          // Sun visibility from the direct light three.js already shadowed, so neither term shines in shade.
-          float sLam=max(dot(sNW,sL),0.);
-          float sExpect=dot(BRDF_Lambert(diffuseColor.rgb)*snowSunColor*sLam,vec3(.333));
-          float sVis=sExpect>1e-4?clamp(dot(reflectedLight.directDiffuse,vec3(.333))/sExpect,0.,1.):0.;
-          float sThick=clamp(1.-sPit*.75-sRim*.6,0.,1.);
-          outgoingLight+=snowSunColor*diffuseColor.rgb*snowSubsurface(sNW,sL,sV,sThick)*snowScatterStrength*mix(.35,1.,sVis);
-          outgoingLight+=snowSunColor*snowGlints(sW,sNW,sV,sL,sFoot)*snowGlintStrength*sVis;
-        }
-        #include <opaque_fragment>`);
-  };
-  material.customProgramCacheKey = () => 'frostlight-snow-surface';
+      .replace('#include <common>', `#include <common>\n${SNOW_SURFACE_GLSL}\n${SURFACE_FRAGMENT_HEAD}`)
+      .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>\n${SNOW_DIRECT}`)
+      .replace('#include <shadowmap_pars_fragment>', `#include <shadowmap_pars_fragment>\n${SNOW_SHADOW}`)
+      .replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin.replace(/getShadow\( directionalShadowMap/g, 'snowGetShadow( directionalShadowMap'))
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${SNOW_STATE}`)
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor=sRough;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${SNOW_NORMAL}`)
+      .replace('#include <opaque_fragment>', `${SNOW_AFTER}\n#include <opaque_fragment>`);
+  });
   refresh();
   return refresh;
 }
