@@ -2,13 +2,16 @@
 // falling out of the sky, and the impact (the stock `explode` is game-sized and its flash lasts a
 // frame). Everything is a function of the shot clock, so a seek or a still lands on the same frame.
 //
-//   night-impact { at, t, scale, color, hot, mid, smoke, toward, light, until }
+//   night-impact { at, t, scale, color, hot, mid, smoke, toward, light, until, flash, gain, dust, dome, haze }
 //       fireball of billowing puffs, flash and core glows, a shock dome and ground ring, a dust wave,
-//       burning debris rocks and sparks (biased toward `toward`), a rising fire and smoke column, light
+//       burning debris rocks and sparks (biased toward `toward`), a rising fire and smoke column, light;
+//       `gain` scales the fire's glow, `dust` the dust wave's reach, `dome` the shock dome, `haze` the
+//       core's lingering glow, the ground fire and the high glow, `chunkSize` the debris (all 1 by default)
 //   night-rocks  { at, n, radius, arc, size, rise, riseDur, h, glow, burst, burstAt, burstSpeed, heat, heatAt }
 //       molten boulders that climb out of the ground and hover, then blast apart at `burst`
-//   night-meteor { from, to, t, d, size, color, core, light }
-//       a burning rock with a fiery tail and sparks, from `from` to `to` in `d` seconds
+//   night-meteor { from, to, t, d, size, color, core, light, glow, tail }
+//       a burning rock with a fiery tail, a comet streak `tail` sizes long and sparks, from `from` to
+//       `to` in `d` seconds
 import * as THREE from 'three';
 import { mulberry, num, registerEffect, type Effect, type FxContext } from '../fx';
 import type { FxCue } from '../types';
@@ -54,8 +57,11 @@ class Impact implements Effect {
       uCool: { value: hdr(cue.color ?? '#7dff3a', 1) },
       uSmoke: { value: hdr(cue.smoke ?? '#10160b', 1) },
       uFlash: { value: num(cue.flash, 1) },
+      uGain: { value: num(cue.gain, 1) },
+      uDust: { value: num(cue.dust, 1) },
+      uHaze: { value: num(cue.haze, 1) },
     };
-    const decl = 'uniform vec3 uC, uBias, uHot, uMid, uCool, uSmoke; uniform float uS, uG, uFlash;';
+    const decl = 'uniform vec3 uC, uBias, uHot, uMid, uCool, uSmoke; uniform float uS, uG, uFlash, uGain, uDust, uHaze;';
     const heatColor = /* glsl */ `
       vec3 heatCol(float h){
         vec3 c = mix(uSmoke, uCool * 0.6, smoothstep(0.04, 0.22, h));
@@ -81,7 +87,7 @@ class Impact implements Effect {
           pos = uC + d * reach * k + vec3(0., 1., 0.) * uS * (0.28 * t + 0.3 * k);
           size = uS * (0.28 + 0.3 * s2.z) * (0.22 + 0.95 * k) * (1. + 0.22 * t);
           float h = exp(-t * (0.75 + 0.9 * s2.w)) * (1. - 0.45 * s1.z) + 0.1 * (s1.w - 0.5);
-          float glow = 0.35 + 7.0 * h * h;
+          float glow = 0.35 + 7.0 * uGain * h * h;
           col = vec4(heatCol(h) * glow, smoothstep(0.0, 0.05, t) * (1. - smoothstep(3.0, 5.0, t)) * (0.9 + 0.1 * s1.w));
           rot = s2.y * 6.283 + t * (s2.z - 0.5) * 0.8;
         }`,
@@ -104,7 +110,7 @@ class Impact implements Effect {
           pos = uC + j + vec3(0., uS * 0.2 + rise, 0.);
           size = uS * (0.22 + 0.18 * s2.z) * (1. + 0.6 * t);
           float h = exp(-t * (1.2 + s2.w)) * 0.95;
-          col = vec4(heatCol(h) * (0.3 + 6.0 * h * h), smoothstep(0.0, 0.25, t) * (1. - smoothstep(life * 0.55, life, t)) * 0.95);
+          col = vec4(heatCol(h) * (0.3 + 6.0 * uGain * h * h), smoothstep(0.0, 0.25, t) * (1. - smoothstep(life * 0.55, life, t)) * 0.95);
           rot = s2.w * 6.283 + t * 0.4 * (s1.x - 0.5);
         }`,
     });
@@ -121,11 +127,11 @@ class Impact implements Effect {
         float t = tau - 0.04;
         if (t > 0.0) {
           float a = idx * 6.2831853 + s1.x * 0.3;
-          float R = uS * (1.0 + 4.5 * (0.75 + 0.25 * s1.y)) * (1. - exp(-t * 2.4));
+          float R = uS * (1.0 + 4.5 * uDust * (0.75 + 0.25 * s1.y)) * (1. - exp(-t * 2.4));
           pos = vec3(uC.x + cos(a) * R, uG + uS * (0.12 + 0.12 * s1.z) * (1. + t), uC.z + sin(a) * R);
           size = uS * (0.3 + 0.25 * s2.z) * (0.5 + 0.8 * (1. - exp(-t * 2.)));
           float h = exp(-t * 2.2);
-          col = vec4(mix(uSmoke * 1.6, uMid * 2.5, h), (1. - smoothstep(1.4, 3.2, t)) * 0.8);
+          col = vec4(mix(uSmoke * 1.6, uMid * 2.5 * uGain, h), (1. - smoothstep(1.4, 3.2, t)) * 0.8);
           rot = s2.y * 6.283;
         }`,
     });
@@ -165,9 +171,9 @@ class Impact implements Effect {
       body: /* glsl */ `
         int i = int(idx * 3.0 + 0.5);
         if (i == 0) { pos = uC + vec3(0., uS * 0.3, 0.); size = uS * (1.2 + 3.0 * (1. - exp(-tau * 10.))); col = vec4(uHot * 5.0, exp(-tau * 4.5) * uFlash); }
-        else if (i == 1) { pos = uC + vec3(0., uS * (0.4 + 0.25 * tau), 0.); size = uS * 1.8; col = vec4(mix(uMid, uHot, exp(-tau)) * 2.5, smoothstep(0.0, 0.04, tau) * (0.45 + 0.55 * exp(-tau * 0.8)) * (0.9 + 0.1 * sin(tau * 31.))); }
-        else if (i == 2) { pos = vec3(uC.x, uG + uS * 0.2, uC.z); size = uS * 4.0; col = vec4(uCool * 1.4, smoothstep(0.0, 0.1, tau) * (0.35 + 0.65 * exp(-tau * 0.6))); }
-        else { pos = uC + vec3(0., uS * (1.2 + 0.4 * tau), 0.); size = uS * 3.0; col = vec4(mix(uCool, uMid, 0.4) * 1.0, smoothstep(0.1, 0.6, tau) * exp(-tau * 0.35)); }`,
+        else if (i == 1) { pos = uC + vec3(0., uS * (0.4 + 0.25 * tau), 0.); size = uS * 1.8; col = vec4(mix(uMid, uHot, exp(-tau)) * 2.5, smoothstep(0.0, 0.04, tau) * (0.45 * uHaze + 0.55 * exp(-tau * 0.8)) * (0.9 + 0.1 * sin(tau * 31.))); }
+        else if (i == 2) { pos = vec3(uC.x, uG + uS * 0.2, uC.z); size = uS * 4.0 * mix(0.5, 1.0, uHaze); col = vec4(uCool * 1.4, uHaze * smoothstep(0.0, 0.1, tau) * (0.35 + 0.65 * exp(-tau * 0.6))); }
+        else { pos = uC + vec3(0., uS * (1.2 + 0.4 * tau), 0.); size = uS * 3.0 * mix(0.5, 1.0, uHaze); col = vec4(mix(uCool, uMid, 0.4) * 1.0, uHaze * smoothstep(0.1, 0.6, tau) * exp(-tau * 0.35)); }`,
     });
     // Ground ring: a bright band racing out over the ground.
     const ringMat = new THREE.ShaderMaterial({
@@ -218,7 +224,7 @@ class Impact implements Effect {
       this.chunkData.push({
         dir: dir.normalize(),
         speed: S * (1.4 + 3.2 * rnd()),
-        size: S * (0.035 + 0.11 * rnd() ** 2),
+        size: S * (0.035 + 0.11 * rnd() ** 2) * num(cue.chunkSize, 1),
         spin: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(14),
         rot0: new THREE.Vector3(rnd() * 6, rnd() * 6, rnd() * 6),
         born: toward ? -1 : rnd() * 0.08,
@@ -247,7 +253,7 @@ class Impact implements Effect {
     this.ring.position.set(c.x, g + 0.12, c.z);
     this.ring.scale.setScalar(Math.max(0.01, S * 6.5 * (1 - Math.exp(-tau * 2.0))));
     (this.ring.material as THREE.ShaderMaterial).uniforms.uA.value = ra;
-    const sa = on ? Math.exp(-tau * 3.5) * Math.min(1, tau / 0.02) : 0;
+    const sa = on ? num(this.cue.dome, 1) * Math.exp(-tau * 3.5) * Math.min(1, tau / 0.02) : 0;
     this.shell.visible = sa > 0.002;
     this.shell.position.set(c.x, g, c.z);
     this.shell.scale.setScalar(Math.max(0.01, S * 4.2 * (1 - Math.exp(-tau * 4.5))));
@@ -389,6 +395,7 @@ class Meteor implements Effect {
   private tail: Billboards;
   private sparks: Billboards;
   private glow: Billboards;
+  private streak: Billboards;
   private light: THREE.PointLight;
   private eul = new THREE.Euler();
   constructor(
@@ -404,9 +411,11 @@ class Meteor implements Effect {
       uR: { value: size },
       uCore: { value: hdr(cue.core ?? '#ffd04a', 1) },
       uCol: { value: hdr(cue.color ?? '#9dff4a', 1) },
+      uGlow: { value: num(cue.glow, 1) },
+      uTail: { value: num(cue.tail, 0) },
     };
     const decl = /* glsl */ `
-      uniform vec3 uFrom, uTo, uCore, uCol; uniform float uD, uR;
+      uniform vec3 uFrom, uTo, uCore, uCol; uniform float uD, uR, uGlow, uTail;
       vec3 headAt(float t){ float k = clamp(t / uD, 0., 1.); return mix(uFrom, uTo, k * (0.45 + 0.55 * k)); }`;
     this.tail = new Billboards(scene, {
       count: 110,
@@ -463,8 +472,27 @@ class Meteor implements Effect {
       body: /* glsl */ `
         if (tau >= 0.0 && tau < uD) {
           pos = headAt(tau);
-          if (idx < 0.5) { size = uR * 4.0; col = vec4(uCore * 4.0, 1.0); }
-          else { size = uR * 11.0; col = vec4(uCol * 1.6, 0.8); }
+          if (idx < 0.5) { size = uR * 4.0 * uGlow; col = vec4(uCore * 4.0, 1.0); }
+          else { size = uR * 11.0 * uGlow; col = vec4(uCol * 1.6, 0.8); }
+        }`,
+    });
+    // The comet streak: layered velocity-stretched glows trailing the head, hot inside, green out.
+    this.streak = new Billboards(scene, {
+      count: 6,
+      seed: 65,
+      sprite: 1,
+      decl,
+      uniforms: u,
+      renderOrder: 8,
+      body: /* glsl */ `
+        if (uTail > 0.0 && tau >= 0.0 && tau < uD) {
+          vec3 a = headAt(tau); vec3 b = headAt(min(tau + 0.02, uD));
+          vec3 v = (b - a) / 0.02; float sp = length(v) + 1e-3;
+          float L = uR * uTail * (0.35 + 0.65 * idx);
+          pos = a - v / sp * L * 0.5;
+          vel = v; stretch = L / sp;
+          size = uR * (0.5 + 0.9 * idx);
+          col = vec4(mix(uCore, uCol, idx) * (4.0 - 2.5 * idx), (0.95 - 0.55 * idx) * smoothstep(0.0, 0.15, tau));
         }`,
     });
     this.light = new THREE.PointLight(new THREE.Color(String(cue.color ?? '#9dff4a')), 0, 160, 1.2);
@@ -475,7 +503,7 @@ class Meteor implements Effect {
     const tau = ctx.t - this.cue.t;
     const d = num(this.cue.d, 2);
     const to = ctx.point(this.cue.to);
-    for (const b of [this.tail, this.sparks, this.glow]) {
+    for (const b of [this.tail, this.sparks, this.glow, this.streak]) {
       (b.u.uTo.value as THREE.Vector3).copy(to);
       b.set(tau, ctx, tau < d + 1);
     }
@@ -493,7 +521,7 @@ class Meteor implements Effect {
 
   dispose(): void {
     this.head.dispose();
-    for (const b of [this.tail, this.sparks, this.glow]) b.dispose();
+    for (const b of [this.tail, this.sparks, this.glow, this.streak]) b.dispose();
     this.light.removeFromParent();
     this.light.dispose();
   }
