@@ -148,7 +148,7 @@ export class Game {
   skyBoss!: Boss;
   creatorTravel = false;
   world2!: HiddenWorld;
-  /** World I's zone lines (the King's Road to Tidecrown); local play only. */
+  /** Zone lines between World I and Tidecrown (the King's Road and its way back); a server world only turns back at the King's Road. */
   zoneLines: ZoneLines | null = null;
   journey: BossJourney | null = null;
   lighthouseSecret: LighthouseSecret | null = null;
@@ -585,13 +585,13 @@ export class Game {
         hudRoot.style.opacity = '';
       }, 900);
     }, 700);
+    this.zoneLines = new ZoneLines(this);
     if(this.serverMode){this.loaded=false;const {ServerGameBridge}=await import('./serverBridge');this.server=await ServerGameBridge.create(this,new URLSearchParams(location.search).get('character')??'');this.loaded=true;return;}
     this.journey = new BossJourney(this);
     this.lighthouseSecret = new LighthouseSecret(this);
     this.boats=new ShoreBoat(this);
     this.achievements=new Achievements(this);
     this.journey.restore();
-    this.zoneLines = new ZoneLines(this);
     if(import.meta.env.DEV&&new URLSearchParams(location.search).get('simCore')==='1'){this.loaded=false;const {CoreGameBridge}=await import('./coreBridge');this.core=await CoreGameBridge.create(this);this.loaded=true;}
     if(SPECTATE)this.spectator=new Spectator(this,SPECTATE);else this.intro();
     this.villageGames=new VillageGames(this);

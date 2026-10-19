@@ -512,11 +512,16 @@ export class HiddenWorld {
   /** Milliseconds the last entry took, build included on the first. */
   tidecrownEntryMs=0;
   get inTidecrown(){return !!this.tidecrownSaved;}
+  /** False during a fight or an expedition; `notify` tells the player why. */
+  canEnterTidecrown(notify=false){
+    const g=this.game;if(!(g.dungeons?.active||g.controlsLocked||g.player.inCombat||g.encounter.engaged))return true;
+    if(notify)g.hud.messages.info(t('전투나 던전을 마친 뒤 이동할 수 있어요.','Finish the fight or expedition before travelling.'));return false;
+  }
   enterTidecrown():Promise<boolean>{
     if(this.tidecrownSaved)return Promise.resolve(true);
     if(this.tidecrownLoading)return this.tidecrownLoading;
     const g=this.game;
-    if(g.dungeons?.active||g.controlsLocked||g.player.inCombat||g.encounter.engaged){g.hud.messages.info(t('전투나 던전을 마친 뒤 이동할 수 있어요.','Finish the fight or expedition before travelling.'));return Promise.resolve(false);}
+    if(!this.canEnterTidecrown(true))return Promise.resolve(false);
     const run=async()=>{
       const t0=performance.now(),veil=tidecrownVeil();
       try{
@@ -563,8 +568,10 @@ export class HiddenWorld {
     g.hud.messages.banner(()=>t('타이드크라운','Tidecrown'),()=>t('왕관 항구의 수도 · 크라운셸 성','Capital of the crown harbour · Crownshell Keep'),'zone');
     g.hud.minimap.setSnapshot(island.map);
   }
-  /** Back to exactly where the player stood before Tidecrown. */
-  private leaveTidecrown(){
+  /** Leaves Tidecrown onto `arrival` (a World I point and the way to face), or else back to where the player stood before. */
+  exitTidecrown(arrival?:{x:number;z:number;yaw:number}){if(!this.tidecrownSaved)return false;this.leaveTidecrown(arrival);return true;}
+  /** Back to exactly where the player stood before Tidecrown, unless an arrival is given. */
+  private leaveTidecrown(arrival?:{x:number;z:number;yaw:number}){
     const s=this.tidecrownSaved;if(!s)return;
     this.tidecrownSaved=null;
     const g=this.game,w=g.world,scene=g.scene;
@@ -578,7 +585,7 @@ export class HiddenWorld {
     this.nav=s.nav;g.zone=s.zone;
     scene.environment=s.environment;scene.environmentIntensity=s.environmentIntensity;
     if(s.fog&&scene.fog instanceof THREE.FogExp2){scene.fog.color.copy(s.fog.color);scene.fog.density=s.fog.density;}
-    g.player.setTarget(null);g.player.unit.teleport(w,s.player.x,s.player.z,s.player.yaw);g.follow.cut();
+    const at=arrival??s.player;g.player.setTarget(null);g.player.unit.teleport(w,at.x,at.z,at.yaw);g.follow.cut();if(arrival)g.follow.yaw=at.yaw+Math.PI;
     const c=this.chapter,bounds=c===2?{minX:-140,maxX:140,minZ:-150,maxZ:170,topY:90}:c===3?{minX:-150,maxX:150,minZ:-175,maxZ:175,topY:110}:{minX:-145,maxX:145,minZ:-165,maxZ:165,topY:c>=5?160:100};
     try{g.hud.minimap.setSnapshot(c===1||!this.rendered?g.takeMapSnapshot():snapshotMap(g.engine.renderer,scene,bounds,[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));}catch{ /* Keep the old map. */ }
   }

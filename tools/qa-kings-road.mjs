@@ -1,6 +1,6 @@
 // The King's Road from Clawhaven to the Tidecrown zone line: the centre line is open and gentle from the
 // chapel plaza to the line; a walk along it fires the zone line exactly once (turned back with the notice
-// while Tidecrown is not built, through the fade when world2.enterTidecrown exists); Tidecrown's skyline
+// while the road is closed, as on a server world, and through the fade into world2.enterTidecrown); Tidecrown's skyline
 // stays inside its budget and adds no colliders; its lantern answers the beacon after a delay, once, and
 // at once on a restore. Writes the review shots to CC_QA_SHOTS (default tmp/qa/kings-road).
 import assert from 'node:assert/strict';
@@ -62,7 +62,8 @@ try {
 
   // 2. Walk it: step along the road a frame at a time, then hold W across the line.
   const frame = () => p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-  await p.evaluate(() => { window.__line = window.app.current.game.zoneLines.lines[0]; });
+  // Closed, as on a server world, which does not host Tidecrown yet.
+  await p.evaluate(() => { const z = window.app.current.game.zoneLines; window.__line = z.lines[0]; z.tidecrownOpen = () => false; });
   const n = await p.evaluate(async () => (await import('/src/world/kingsRoad.ts')).KINGS_LINE_ARC);
   for (let s = 0; s < n - 3; s += 1.2) {
     await p.evaluate((s) => import('/src/world/layout.ts').then((L) => { const g = window.app.current.game, q = L.kingsRoadAt(s); g.player.unit.teleport(g.world, q.x, q.z, Math.atan2(q.dx, q.dz)); }), s);
@@ -86,9 +87,10 @@ try {
   assert.ok(fallback.chat.includes('타이드크라운으로 가는 길은 곧 열려요'), 'the not-yet-open notice is in the chat');
   console.log(`PASS walked the road: the zone line fired once, the notice showed and the player stands back at z ${fallback.z.toFixed(1)}`);
 
-  // 3. With Tidecrown present the same crossing goes through the fade into world2.enterTidecrown.
+  // 3. Open, the same crossing goes through the fade into world2.enterTidecrown (stubbed here; the road trip QA enters it).
   await p.evaluate(() => {
     const g = window.app.current.game;
+    delete g.zoneLines.tidecrownOpen;
     window.__tc = 0; window.__dark = false;
     g.world2.enterTidecrown = () => { window.__tc++; window.__dark = !!document.querySelector('.cc-blackout.on'); return new Promise((r) => setTimeout(r, 300)); };
   });
