@@ -1,22 +1,14 @@
 // Scene 'snow' of the tribute (see ../timeline.mjs for the song ranges it fills): Frostlight in a
-// blizzard. The dwarf's face out of white, his beast beside him, the two climbing toward the Frozen
-// Throne; later the montage's charge through the storm, the human mage's frost among the arena's
+// blizzard. The dwarf's face out of white, the city he turns to look at, his beast beside him, the two
+// climbing the road to its gate; later the montage's charge through the storm, the human mage's frost among the arena's
 // crystals and the tauren roaring in the snowy pines.
+import { snowGround as ground } from '../../../../src/sim/world/snowGround.ts';
 import { BEAST, DWARF, MAGE, TAUREN } from '../cast.mjs';
 
 const PI = Math.PI;
 
 // ------------------------------------------------------------------------------------- helpers
 
-/** Frostlight's ground (src/sim/world/ground.ts snowHeight), for world-fixed camera keys. */
-const sm = (x, a, b) => (x <= a ? 0 : x >= b ? 1 : ((x - a) / (b - a)) ** 2 * (3 - (2 * (x - a)) / (b - a)));
-function ground(x, z) {
-  const edge = Math.hypot(x / 128, (z - 2) / 155);
-  const plateau = 5 + 14 * sm(-z, 5, 55);
-  const hills = Math.sin(x * 0.052) * Math.sin(z * 0.037) * 2.5 * (1 - Math.exp((-x * x) / 600));
-  const t = sm(Math.hypot(x, z + 78), 22, 32);
-  return edge > 0.83 ? 5 - (edge - 0.83) * 70 : (1 - t) * 19 + t * (plateau + hills);
-}
 /** A point `up` above the ground at x, z. */
 const G = (x, z, up = 0) => [x, ground(x, z) + up, z];
 /** World points in a frame standing at x, z facing yaw: (left, up from that ground, ahead). */
@@ -103,150 +95,165 @@ function blizzard({ wind = [-3, -2.5, 9], heavy = 1, sky = '#dde2ec', zenith = '
 
 // ------------------------------------------------------------------------- snow-open 39.5-68.7
 
-// The dwarf on the slope below the Frozen Throne, off the road, his beast ahead at his right. The
-// camera keeps to his left: his sword is in the right claw and would cross the close-ups.
-const D = [20, -24];
-const YAW0 = PI + 1.25; // looking west-north-west into the storm
-const YAW1 = PI; // turned to his right: up the slope, toward the throne
+// The dwarf on the snow road's last slope below the city: its gate stands 40 units up the road, on the plateau
+// where the Frozen Throne was (src/capture/cinema/fx/snow-city.ts raises it and clears the arena). He faces
+// west into the storm, turns to his right toward the city, and the camera comes round behind his left
+// shoulder (his sword is in the right claw) as the city shows through the snow. His beast walks up on his
+// left; then the two climb the road to the gate.
+const D = [10.5, -19.5]; // between the road's lamp posts, east of the road
+const GATE = [0, -52];
+const YAW1 = Math.atan2(GATE[0] - D[0], GATE[1] - D[1]); // toward the gate, up the road
+const YAW0 = YAW1 + 1.35; // west, into the wind; he turns to his right
 const F0 = frame(D[0], D[1], YAW0);
 const F1 = frame(D[0], D[1], YAW1);
-/** F1's frame with `up` measured from the ground under the point itself (the slope rises ahead). */
+/** F1's frame with `up` measured from the ground under the point itself (the road climbs ahead). */
 const F1g = (left, up, ahead) => {
   const p = F1(left, 0, ahead);
   return G(p[0], p[2], up);
 };
-// The beast walks up out of the storm behind him while the camera holds on his face, and stops at
-// his left, a little ahead, as the camera pulls back and arcs round in front of him to his right
-// (his sword side): both in profile facing frame right, the dwarf near, the beast beyond.
-// Wide of him: at 2.1 times his size its legs reach about 1.7 units out, so its centre keeps 4.5 or
-// more from his and the two never cross.
-const BEAST_FROM = F1(6.5, 0, -4.0);
-const BEAST_NEAR = F1(4.6, 0, 1.2);
-const BEAST_AT = F1(3.8, 0, 3.0);
+/**
+ * A look point `d` units from camera point p toward a far target: the same aim, but near enough that the
+ * spline between it and a close look key does not swing wide.
+ */
+const toward = (p, target, d = 6) => {
+  const v = target.map((t, i) => t - p[i]);
+  const n = Math.hypot(...v);
+  return p.map((q, i) => +(q + (v[i] * d) / n).toFixed(3));
+};
+/** The city's gate towers and keep, for the camera to look at. */
+const GATE_LOOK = G(GATE[0], GATE[1], 13);
+/** Low on the gate, so the two in the foreground stay in frame under the city. */
+const GATE_LOW = G(GATE[0], GATE[1], 1.5);
+const KEEP_LOOK = G(0, -95, 24);
+const CITY = { t: -3, kind: 'snow-city', at: GATE, yaw: 0, clear: [-46, -120, 46, -50] };
 
-/** The road's lamp posts, out of the whiteout (the road itself is hidden by name). */
-const ROAD_OUT = { t: -3, kind: 'snow-hide', box: [-8, -56, 8, 86], max: 4 };
-/** The arena's ice disc, its glow rings and the diamonds over the crystals: primitives in a close shot. */
-const ARENA_OUT = { t: -3, kind: 'snow-hide', box: [-30, -110, 30, -46], max: 47 };
-/** Mira's ice prison by the throne (the world shows it again every frame, so hide its bars). */
-const PRISON_OUT = { t: -3, kind: 'snow-hide', box: [9, -66, 17, -58], max: 6 };
+// The beast comes up from behind on his left and stops 4.6 units off, a little ahead (at 2.1 times his size
+// its legs reach about 1.7 out, so the two never touch).
+const BEAST_FROM = F1(6.0, 0, -7.0);
+const BEAST_NEAR = F1(5.4, 0, -0.4);
+const BEAST_AT = F1(5.1, 0, 1.7);
 
 const OPEN = 39.5;
 const C_TRUDGE = 57.0;
 const C_WIDE = 61.0;
 const OPEN_END = 68.7;
 
-// Both squared to the slope (it climbs about 22 degrees toward the throne here), so the beast's
-// downhill legs reach the snow instead of hanging in the air; a little sunk into the powder.
+// Both squared to the slope, a little sunk into the powder.
 const cast2 = (dwarfAt, beastAt, yaw) => [
   { id: 'dwarf', spec: DWARF, at: dwarfAt, yaw, align: 0.8, sink: 0.03 },
   { id: 'beast', enemy: BEAST.enemy, scale: BEAST.scale, at: beastAt, yaw, align: 0.9, sink: 0.1 },
 ];
+const HIDE = ['mira-ice-prison'];
 
 const face = {
   anchor: D,
-  hide: ['mira-ice-prison', 'world4-flagstone-paths'],
-  view: { ...COLD, dof: true, bokeh: 3 },
-  fog: { color: '#dde2ec', density: 0.04 },
+  hide: HIDE,
+  view: { ...COLD, dof: true, bokeh: 2.2 },
+  fog: { color: '#dde2ec', density: 0.017 },
   actors: cast2(D, [BEAST_FROM[0], BEAST_FROM[2]], YAW1),
   tracks: {
     dwarf: {
       path: [
         { t: 0, x: D[0], z: D[1], yaw: YAW0 },
-        { t: 4.6, x: D[0], z: D[1], yaw: YAW0 - 0.12 },
-        { t: 7.6, x: D[0], z: D[1], yaw: YAW1 },
+        { t: 3.6, x: D[0], z: D[1], yaw: YAW0 + 0.1 },
+        { t: 6.0, x: D[0], z: D[1], yaw: YAW1 },
         { t: 17.5, x: D[0], z: D[1], yaw: YAW1 },
       ],
-      faces: [{ t: -2, expr: 'focused' }, { t: 3.1, expr: 'blink', hold: 0.16 }, { t: 3.3, expr: 'focused' }, { t: 9.2, expr: 'blink', hold: 0.16 }, { t: 9.4, expr: 'focused' }],
+      faces: [{ t: -2, expr: 'focused' }, { t: 2.6, expr: 'blink', hold: 0.16 }, { t: 2.8, expr: 'focused' }, { t: 8.8, expr: 'blink', hold: 0.16 }, { t: 9.0, expr: 'focused' }],
       acts: [{ t: 13.5, clip: 'claw_right' }],
     },
     beast: {
       path: [
-        { t: 9.0, x: BEAST_FROM[0], z: BEAST_FROM[2] },
-        { t: 12.0, x: BEAST_NEAR[0], z: BEAST_NEAR[2], yaw: Math.atan2(BEAST_NEAR[0] - BEAST_FROM[0], BEAST_NEAR[2] - BEAST_FROM[2]) },
-        { t: 13.2, x: BEAST_AT[0], z: BEAST_AT[2], yaw: YAW1 },
+        { t: 9.2, x: BEAST_FROM[0], z: BEAST_FROM[2] },
+        { t: 12.2, x: BEAST_NEAR[0], z: BEAST_NEAR[2] },
+        { t: 13.4, x: BEAST_AT[0], z: BEAST_AT[2], yaw: YAW1 },
       ],
-      show: [[-5, false], [8.8, true]],
+      show: [[-5, false], [9.0, true]],
       faces: [{ t: -2, expr: 'neutral' }, { t: 13.4, expr: 'angry' }],
-      acts: [{ t: 13.5, clip: 'attack_slam' }, { t: 15.9, clip: 'claw_left' }],
+      acts: [{ t: 13.6, clip: 'attack_slam' }],
     },
   },
   cam: {
     ...move([
-      { t: 0, p: F0(-0.05, 0.52, 1.7), l: F0(0, 0.7, 0.2), fov: 31 },
-      { t: 4.6, p: F0(-0.02, 0.54, 1.45), l: F0(0, 0.71, 0.25), fov: 30 },
-      { t: 7.6, p: F1(1.9, 0.7, 1.2), l: F1(0, 0.74, 0.7), fov: 28 },
-      { t: 10.5, p: F1(1.75, 0.68, 1.25), l: F1(0, 0.74, 0.75), fov: 27 },
-      { t: 12.1, p: F1(-1.1, 0.95, 3.9), l: F1(0.5, 0.8, 0.9), fov: 36 },
-      { t: 13.6, p: F1g(-3.4, 0.8, 0.5), l: F1g(0.7, 0.72, 1.4), fov: 46 },
-      { t: 17.5, p: F1g(-3.15, 0.8, 0.25), l: F1g(0.7, 0.76, 1.4), fov: 45 },
+      { t: 0, p: F0(0.3, 0.8, 2.6), l: F0(0, 0.6, 0), fov: 27 },
+      { t: 3.6, p: F0(0.28, 0.78, 2.4), l: F0(0, 0.6, 0), fov: 27 },
+      { t: 6.4, p: F1(2.4, 0.7, 1.9), l: F1(0, 0.72, 0.2), fov: 30 },
+      { t: 8.8, p: F1(2.6, 0.75, 0.9), l: F1(0, 0.78, 0.4), fov: 31 },
+      { t: 10.6, p: F1g(2.3, 0.75, -2.2), l: toward(F1g(2.3, 0.75, -2.2), GATE_LOOK), fov: 40 },
+      { t: 12.4, p: F1g(2.5, 0.55, -4.6), l: toward(F1g(2.5, 0.55, -4.6), GATE_LOW), fov: 46 },
+      { t: 17.5, p: F1g(2.3, 0.55, -4.0), l: toward(F1g(2.3, 0.55, -4.0), GATE_LOW), fov: 45 },
     ]),
     focus: 'dwarf',
-    range: 1.6,
+    range: 2.5,
   },
   fx: [
-    ...blizzard({ wind: [-2.5, -2.2, 9] }),
-    ROAD_OUT,
-    PRISON_OUT,
-    ARENA_OUT,
+    ...blizzard({ wind: [3.5, -2.2, 6] }),
+    CITY,
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.35, 0.9], [1.0, 0.35], [1.5, 0]] },
     { t: 13.9, kind: 'shake', d: 0.7, amp: 0.04 },
   ],
 };
 
-// Behind them, low, as they trudge up the slope toward the throne's crystals in the storm.
-const TR = { d0: F1(0.6, 0, 0.6), b0: F1(-3.9, 0, 1.4) };
+// Behind them, low, as they climb the road toward the gate through the storm.
+const TR = { d0: F1(0, 0, 0.4), b0: F1(5.0, 0, 1.9) };
 const trudge = {
   anchor: [D[0], D[1] - 3],
-  hide: ['mira-ice-prison', 'world4-flagstone-paths'],
-  view: { ...COLD, dof: true, bokeh: 1.5 },
-  fog: { color: '#dde2ec', density: 0.016 },
+  hide: HIDE,
+  view: { ...COLD, dof: true, bokeh: 1.2 },
+  fog: { color: '#dde2ec', density: 0.013 },
   actors: cast2([TR.d0[0], TR.d0[2]], [TR.b0[0], TR.b0[2]], YAW1),
   tracks: {
-    dwarf: { path: [{ t: 0, x: TR.d0[0], z: TR.d0[2] }, { t: 4, x: TR.d0[0] + 0.3, z: TR.d0[2] - 5.2 }], faces: [{ t: -2, expr: 'focused' }] },
-    beast: { path: [{ t: 0, x: TR.b0[0], z: TR.b0[2] }, { t: 4, x: TR.b0[0] + 0.2, z: TR.b0[2] - 5.4 }], faces: [{ t: -2, expr: 'neutral' }] },
+    dwarf: { path: [{ t: 0, x: TR.d0[0], z: TR.d0[2] }, { t: 4, x: TR.d0[0] - 0.6, z: TR.d0[2] - 5.0 }], faces: [{ t: -2, expr: 'focused' }] },
+    beast: { path: [{ t: 0, x: TR.b0[0], z: TR.b0[2] }, { t: 4, x: TR.b0[0] - 0.6, z: TR.b0[2] - 5.2 }], faces: [{ t: -2, expr: 'neutral' }] },
   },
   cam: {
     ...move([
-      { t: 0, p: F1(-0.6, 1.25, -5.6), l: G(22, -62, 3.5), fov: 40 },
-      { t: 4, p: F1(-0.6, 1.4, -3.9), l: G(22, -62, 4), fov: 39 },
+      { t: 0, p: F1g(2.3, 0.6, -4.8), l: GATE_LOW, fov: 47 },
+      { t: 4, p: F1g(2.1, 0.75, -2.2), l: GATE_LOW, fov: 46 },
     ]),
     focus: 'dwarf',
-    range: 8,
+    range: 10,
   },
-  fx: [...blizzard({ wind: [-2, -2.2, 9.5], heavy: 1.1 }), ROAD_OUT, PRISON_OUT, ARENA_OUT],
+  fx: [...blizzard({ wind: [3, -2.2, 6.5], heavy: 1.1 }), CITY],
 };
 
-// Far down the slope: two small figures climbing toward the throne's crystals in the whiteout, a
-// pine's edge sliding in at the right before the white takes over.
-const WD = { d0: [20, -32], d1: [19.6, -42.5], b0: [21.8, -34.8], b1: [21.4, -45.3] };
+// Far down the road: two small figures climbing toward the gate in the whiteout, the city above them; a pine's
+// edge slides in at the right before the white takes over.
+const WD = { d0: F1(0, 0, 6.5), d1: F1(-0.3, 0, 14.0), b0: F1(4.2, 0, 7.3), b1: F1(3.9, 0, 14.8) };
+const WC = [17, 17];
 const wide = {
-  anchor: [19, -37],
-  hide: ['mira-ice-prison', 'world4-flagstone-paths'],
+  anchor: [8, -10],
+  hide: HIDE,
   // No vignette and little bloom: the shot ends on flat white with leaves drawn over it.
   view: { ...COLD, saturation: -0.3, vignette: null, bloom: { intensity: 0, threshold: 5 } },
-  fog: { color: '#d6dbe7', density: 0.0045 },
-  actors: cast2(WD.d0, WD.b0, YAW1),
+  fog: { color: '#d6dbe7', density: 0.0075 },
+  actors: cast2([WD.d0[0], WD.d0[2]], [WD.b0[0], WD.b0[2]], YAW1),
   tracks: {
-    dwarf: { path: [{ t: 0, x: WD.d0[0], z: WD.d0[1] }, { t: 7.7, x: WD.d1[0], z: WD.d1[1] }] },
-    beast: { path: [{ t: 0, x: WD.b0[0], z: WD.b0[1] }, { t: 7.7, x: WD.b1[0], z: WD.b1[1] }] },
+    dwarf: { path: [{ t: 0, x: WD.d0[0], z: WD.d0[2] }, { t: 7.7, x: WD.d1[0], z: WD.d1[2] }] },
+    beast: { path: [{ t: 0, x: WD.b0[0], z: WD.b0[2] }, { t: 7.7, x: WD.b1[0], z: WD.b1[2] }] },
   },
   cam: move([
-    { t: 0, p: G(9, 6, 1.8), l: G(14, -72, 7), fov: 30 },
-    { t: 7.7, p: G(12.5, 5.2, 2.2), l: G(15, -72, 7.5), fov: 29 },
+    { t: 0, p: G(WC[0], WC[1], 5), l: [GATE[0] + 2, 23, GATE[1]], fov: 36 },
+    { t: 7.7, p: G(WC[0] - 2.5, WC[1] - 4, 5.2), l: [GATE[0] + 1, 23.5, GATE[1]], fov: 34 },
   ]),
   fx: [
-    ...blizzard({ wind: [-3, -2.5, 10], heavy: 1.2, drift: 0.12, sky: '#cdd3e2', zenith: '#9aa3c2' }),
-    ROAD_OUT,
-    PRISON_OUT,
-    ARENA_OUT,
-    { t: -3, kind: 'snow-pines', trees: [[18.3, -3.9, 0.9], [21.6, -9.5, 1.15]] },
-    { t: 6.3, kind: 'snow-leaves', count: 260, box: [9, 6, 9], drift: [-2.5, -1.2, 3.5], size: 0.15, color: '#b8436f', color2: '#7a3fb8', fadeIn: 0.8 },
+    ...blizzard({ wind: [3, -2.5, 7], heavy: 1.2, drift: 0.12, sky: '#cdd3e2', zenith: '#9aa3c2' }),
+    CITY,
+    { t: -3, kind: 'snow-pines', trees: [[WC[0] + 3.2, WC[1] - 6.5, 0.9], [WC[0] + 5.5, WC[1] - 12, 1.1]] },
+    { t: 6.3, kind: 'snow-leaves', count: 200, box: [12, 7, 12], drift: [-2.5, -1.2, 3.5], size: 0.09, near: 1.4, color: '#a2482a', color2: '#c98a3c', fadeIn: 0.8 },
     { t: 6.6, kind: 'snow-whiteout', curve: [[6.6, 0], [7.0, 0.25], [7.35, 0.62], [7.6, 1], [7.7, 1]] },
   ],
 };
 
 // ---------------------------------------------------------------------- snow-charge 146.58-151.92
+
+/** The road's lamp posts. */
+const ROAD_OUT = { t: -3, kind: 'snow-hide', box: [-8, -56, 8, 86], max: 4 };
+/** The arena's ice disc, its glow rings and the diamonds over the crystals: primitives in a close shot. */
+const ARENA_OUT = { t: -3, kind: 'snow-hide', box: [-30, -110, 30, -46], max: 47 };
+/** Mira's ice prison by the throne (the world shows it again every frame, so hide its bars). */
+const PRISON_OUT = { t: -3, kind: 'snow-hide', box: [9, -66, 17, -58], max: 6 };
+
 
 // The west woods: pines and ice cliffs behind, open snow in front.
 const CH = [-30, -9];
