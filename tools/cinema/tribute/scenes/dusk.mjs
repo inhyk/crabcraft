@@ -240,8 +240,8 @@ const orc = {
     keys: [
       // Low in the street, creeping back a step as he comes; wide enough for his spread claws.
       { t: 0, p: { g: [0.5, 0.34, 18.6] }, l: { a: 'o', o: [0, 0.75, 0], y0: true }, fov: 30 },
-      { t: 4.4, p: { g: [0.4, 0.36, 19.0] }, l: { a: 'o', o: [0, 0.85, 0], y0: true }, fov: 38 },
-      { t: 8.25, p: { g: [-0.8, 0.4, 19.2] }, l: { a: 'o', o: [0, 0.95, 0], y0: true }, fov: 38 },
+      { t: 4.4, p: { g: [0.4, 0.36, 19.0] }, l: { a: 'o', o: [0, 0.85, 0], y0: true }, fov: 32 },
+      { t: 8.25, p: { g: [-0.8, 0.4, 19.2] }, l: { a: 'o', o: [0, 0.95, 0], y0: true }, fov: 31 },
     ],
     ease: 'linear',
     focus: 'o',
@@ -398,15 +398,16 @@ const leap = {
       acts: [{ t: 0.15, clip: 'jump', from: 0.45, speed: 0.5 }],
       faces: [{ t: -2, expr: 'angry' }],
     },
-    g: { path: [{ t: 0, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 9.2 }, { t: 1.96, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 9.8 }], acts: [{ t: -0.4, clip: 'attack_slam', from: 1.0, speed: 0.7 }] },
+    // Hauled up on the gallery, claws raised over it (its slam would sweep through the lens here).
+    g: { path: [{ t: 0, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 9.2 }, { t: 1.96, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 9.8 }], acts: [{ t: -0.6, clip: 'claw_left', speed: 0.8 }] },
   },
   cam: {
     // From under the gallery's edge, looking up past the rail: he springs above it into the sky.
     // Fixed look points (a camera tied to the actor goes black on the frame his jump starts).
     keys: [
-      { t: 0, p: LHP(216, 8.6, 28.6), l: LHP(203, 3.7, 29.6), fov: 40 },
-      { t: 0.95, p: LHP(190, 8.3, 29.0), l: LHP(176, 3.7, 31.2), fov: 42 },
-      { t: 1.96, p: LHP(180, 8.0, 29.2), l: LHP(150, 3.7, 30.6), fov: 44 },
+      { t: 0, p: LHP(216, 8.6, 28.6), l: LHP(203, 3.7, 29.6), fov: 36 },
+      { t: 0.95, p: LHP(190, 8.3, 29.0), l: LHP(178, 3.7, 31.0), fov: 35 },
+      { t: 1.96, p: LHP(180, 8.0, 29.2), l: LHP(152, 3.7, 30.4), fov: 38 },
     ],
     ease: 'linear',
     focus: 'w',
