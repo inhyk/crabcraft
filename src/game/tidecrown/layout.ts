@@ -2,7 +2,7 @@
 // The landform itself lives in src/sim/world/tidecrownGround.ts so the server can share it.
 import { Collision, rectSurface, type Vec2Out } from '../../sim/world/collision';
 import {
-  buildTidecrownHeights, TC_AXIS, TC_BOUNDS, TC_CITY_WALL, TC_KEEP, TC_LEVEL, TC_P, TC_ROAD, TC_T, tcAxis, tidecrownHeight, TIDECROWN_GRID,
+  buildTidecrownHeights, polyDistance, TC_AXIS, TC_BOUNDS, TC_CITY_WALL, TC_KEEP, TC_LEVEL, TC_P, TC_ROAD, TC_T, tcAxis, tidecrownHeight, TIDECROWN_GRID,
 } from '../../sim/world/tidecrownGround';
 import { scatterTidecrownNature, type NatureScatter } from './nature';
 
@@ -35,6 +35,8 @@ export const TC_PIECES = {
 export const TC_STATUES = ['human', 'orc', 'dwarf', 'undead', 'nightelf', 'tauren'] as const;
 export const TC_SPANS = [-83, -53, -23] as const;
 export const TC_WARD = { r: 80 } as const;
+/** The sea gate: the ward gate piece, a little larger, in the quay wall (city wall edge 8, from (222, 52) to (208, -5)). */
+export const TC_SEA_GATE = { edge: 8, at: 0.6, scale: 1.25 } as const;
 /** Facing up the forest road from the arrival. */
 export const TC_ARRIVAL_YAW = Math.atan2(TC_ROAD[2][0] - TC_ROAD[1][0], TC_ROAD[2][1] - TC_ROAD[1][1]);
 
@@ -118,20 +120,33 @@ export function tidecrownPlacements(h: Height): TcPlacement[] {
     const a = wall[i] as [number, number], b = wall[(i + 1) % n] as [number, number];
     if (i === 2) continue;
     const batch = wallSide((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
-    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
-    // Towers at the corners (not at the gate's own flanks) and every 50 to 60 units along the long edges.
-    const stops = [0];
-    const k = Math.max(1, Math.round(L / 55));
-    for (let j = 1; j < k; j++) stops.push(j / k);
-    stops.push(1);
-    for (let j = 0; j < stops.length - 1; j++) {
-      const s0 = stops[j], s1 = stops[j + 1];
-      const pa: [number, number] = [a[0] + dx * s0, a[1] + dz * s0], pb: [number, number] = [a[0] + dx * s1, a[1] + dz * s1];
-      // Pull each run back from the towers it meets so the wall ends inside the tower drum.
-      const back = (s1 - s0) * L, inset = Math.min(P.cityTower.r * 0.7, back / 4);
-      const ux = dx / L, uz = dz / L;
-      wallRun(h, out, 'TC_CityWall_12', P.cityWall.len, P.cityWall.h, [pa[0] + ux * (j === 0 && i === 3 ? 0 : inset), pa[1] + uz * (j === 0 && i === 3 ? 0 : inset)], [pb[0] - ux * (j === stops.length - 2 && i === 1 ? 0 : inset), pb[1] - uz * (j === stops.length - 2 && i === 1 ? 0 : inset)], batch);
-      if (j > 0) tower(h, out, 'TC_CityTower', P.cityTower.r, P.cityTower.h, pa[0], pa[1], batch);
+    const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
+    const at = (f: number): [number, number] => [a[0] + dx * f, a[1] + dz * f];
+    // The sea gate interrupts its edge between two flanking towers.
+    const gap = i === TC_SEA_GATE.edge ? (P.wardGate.w * TC_SEA_GATE.scale) / 2 + P.cityTower.r * 0.9 : 0;
+    const parts: [number, number][] = gap ? [[0, TC_SEA_GATE.at - gap / L], [TC_SEA_GATE.at + gap / L, 1]] : [[0, 1]];
+    for (const [c0, c1] of parts) {
+      // Towers at the corners (not at the Pincer Gate's own flanks) and every 50 to 60 units along the long edges.
+      const k = Math.max(1, Math.round(((c1 - c0) * L) / 55)), stops = [c0];
+      for (let j = 1; j < k; j++) stops.push(c0 + ((c1 - c0) * j) / k);
+      stops.push(c1);
+      for (let j = 0; j < stops.length - 1; j++) {
+        const pa = at(stops[j]), pb = at(stops[j + 1]);
+        // Pull each run back from the towers it meets so the wall ends inside the tower drum.
+        const inset = Math.min(P.cityTower.r * 0.7, ((stops[j + 1] - stops[j]) * L) / 4);
+        const i0 = j === 0 && i === 3 ? 0 : inset, i1 = j === stops.length - 2 && i === 1 ? 0 : inset;
+        wallRun(h, out, 'TC_CityWall_12', P.cityWall.len, P.cityWall.h, [pa[0] + ux * i0, pa[1] + uz * i0], [pb[0] - ux * i1, pb[1] - uz * i1], batch);
+        if (j > 0 || stops[j] > 0) tower(h, out, 'TC_CityTower', P.cityTower.r, P.cityTower.h, pa[0], pa[1], batch);
+      }
+      if (c1 < 1) tower(h, out, 'TC_CityTower', P.cityTower.r, P.cityTower.h, ...at(c1), batch);
+    }
+    if (gap) {
+      // The gate's front faces the harbour.
+      const [mx, mz] = at(TC_SEA_GATE.at);
+      let nx = -uz, nz = ux;
+      if (polyDistance(mx + nx * 3, mz + nz * 3, TC_CITY_WALL) > 0) { nx = -nx; nz = -nz; }
+      const sc = TC_SEA_GATE.scale;
+      out.push(place('TC_WardGate', mx, h(mx, mz) - 0.3, mz, Math.atan2(nx, nz), batch, sc, sc, sc));
     }
     if (i !== 1) tower(h, out, 'TC_CityTower', P.cityTower.r, P.cityTower.h, b[0], b[1], batch);
   }
@@ -205,9 +220,9 @@ function registerPiece(col: Collision, p: TcPlacement): void {
       break;
     }
     case 'TC_WardGate': {
-      const side = (P.wardGate.w - P.wardGate.passW) / 4;
-      for (const k of [-1, 1]) box(k * (P.wardGate.passW / 2 + side), 0, side, P.wardGate.d / 2, -2, P.wardGate.h);
-      box(0, 0, P.wardGate.passW / 2, P.wardGate.d / 2, P.wardGate.passH, P.wardGate.h, true);
+      const side = ((P.wardGate.w - P.wardGate.passW) / 4) * p.sx, pass = (P.wardGate.passW / 2) * p.sx, d = (P.wardGate.d / 2) * p.sz;
+      for (const k of [-1, 1]) box(k * (pass + side), 0, side, d, -2, P.wardGate.h * p.sy);
+      box(0, 0, pass, d, P.wardGate.passH * p.sy, P.wardGate.h * p.sy, true);
       break;
     }
     case 'TC_Keep':
