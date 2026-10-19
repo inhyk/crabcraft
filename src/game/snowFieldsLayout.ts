@@ -214,7 +214,7 @@ export function snowFieldPieces(): FieldPiece[] {
     // Bark only: the twisted trees stand bare through the winter.
     add({ kit: 'nature', piece, x, z, yaw, s, sink: 0.25, solid: { r: 0.55 * s * 2, h: 9 * s } });
   }
-  // The miners' trail: fence posts sunk to their top rail, some leaning, gaps where they have gone.
+  // The miners' trail: fence segments drifted in to the lower rail, some leaning, gaps where they have gone.
   MINERS_TRAIL.forEach(([x, z], i) => {
     const next = MINERS_TRAIL[Math.min(i + 1, MINERS_TRAIL.length - 1)], prev = MINERS_TRAIL[Math.max(i - 1, 0)];
     const yaw = Math.atan2(-(next[1] - prev[1]), next[0] - prev[0]);
@@ -235,11 +235,11 @@ export function snowFieldPieces(): FieldPiece[] {
   }
   // A lantern dropped on the trail, its glass to the sky.
   add({ kit: 'props', piece: 'Lantern_Wall', x: 29.5, z: -25.2, yaw: 0.9, s: 0.75, sink: 0.08, pitch: -1.35, fine: true });
-  // The woodcutter's clearing: an axe left in the block, a bag and a coil of rope; logs and stumps are in snowLogs().
+  // The woodcutter's clearing: an axe left in the block, a bag, a bucket and a coil of rope on a stump; logs and stumps are in snowLogs().
   {
     const { x, z } = WOODCUT;
     add({ kit: 'props', piece: 'Axe_Bronze', x: x + 0.05, z: z + 0.05, yaw: 0.6, s: 1.1, sink: -0.62, pitch: 0.42, fine: false });
-    add({ kit: 'props', piece: 'Rope_2', x: x + 3.4, z: z + 2.2, yaw: 1.3, s: 0.8, sink: -0.43, fine: true });
+    add({ kit: 'props', piece: 'Rope_2', x: x + 2.6, z: z + 4.6, yaw: 1.3, s: 0.8, sink: -0.44, fine: true });
     add({ kit: 'props', piece: 'Bag', x: x + 1.4, z: z + 1.6, yaw: 2.8, s: 0.9, sink: 0.12, fine: true });
     add({ kit: 'props', piece: 'Bucket_Wooden_1', x: x - 1.6, z: z + 1.0, yaw: 0.3, s: 1, sink: 0.08, roll: 1.4, fine: true });
   }
