@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <title>Tribute cards</title>
 <!--
-  The tribute's 2D cards as a pure function of song time: the rating card, the engraved gold map of
-  the six worlds and the logo. tools/cinema/tribute/cards.mjs opens this page on the dev server, hands
+  The tribute's 2D cards as a pure function of song time: the rating card, the painted parchment map
+  of the six worlds and the logo. tools/cinema/tribute/cards.mjs opens this page on the dev server, hands
   it the islands (tools/cinema/tribute/islands.mjs: the worlds' real ground heights) and records frames
-  with renderAt(t). The map is a WebGL2 shader on #g (relief from the worlds' coasts and heights); the
+  with renderAt(t). The map is a WebGL2 shader on #g (painted from the worlds' coasts and heights); the
   cards and the map's titles are drawn on the 2D canvas #c above it.
 -->
 <style>
@@ -24,7 +24,7 @@ const W = 1920, H = 872;
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 const glc = document.getElementById('g');
-const KO = '"AppleMyungjo", "Apple SD Gothic Neo", serif';
+const KO = '"Apple SD Gothic Neo", "Pretendard", sans-serif';
 
 // ----------------------------------------------------------------------------------- helpers
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -45,16 +45,17 @@ function makeNoise(seed) {
 }
 
 // ----------------------------------------------------------------------------------- the map
-// An engraved gold plate. cardsInit builds a signed distance field of the land (map px, + on land)
+// A painted parchment map. cardsInit builds a signed distance field of the land (map px, + on land)
 // from the worlds' sampled coasts and a few drawn capes, an elevation field (real heights plus
-// mountain ranges) and a label layer (carved names, raised range marks). A WebGL2 shader turns them
-// into hillshaded gold relief on a patina sea with the turning maelstrom; a post pass adds glow, zoom
-// blur, vignette and grain. The sea is procedural and unbounded: no view shows past the plate.
+// mountain ranges) and a label layer (the two continents' names, ink mountains). A WebGL2 shader
+// paints mottled orange-gold land with a dark coastline, water lines off the coast, a mottled
+// grey-teal sea and the turning ink maelstrom; a post pass softens it and adds glow, zoom blur,
+// vignette and grain. The sea is procedural and unbounded: no view shows past the sheet.
 const MW = 4400, MH = 2000; // map space (px)
 const GS = 2, GW = MW / GS, GH = MH / GS; // field grid: one cell per 2 map px
 const SWIRL = { x: 1810, y: 975, r: 250 };
 
-// The two continents' outlines (map px), drawn after the original plate: Clawhaven tall in the west
+// The two continents' outlines (map px), drawn after the original map: Clawhaven tall in the west
 // with a north-east arm, the east continent (Frostlight joined to Starhaven) with a hooked north.
 const WEST = [[960, 240], [1080, 250], [1170, 330], [1230, 420], [1330, 440], [1450, 430], [1530, 480], [1500, 560], [1390, 590],
   [1420, 700], [1450, 900], [1450, 1200], [1430, 1450], [1330, 1560], [1200, 1640], [1120, 1760], [1000, 1840], [900, 1830],
@@ -83,7 +84,7 @@ const SHAPES = [
   ['+', 3480, 1500, 3480, 1500, 34], ['+', 400, 640, 400, 640, 30], ['+', 1250, 190, 1250, 190, 34],
   ['+', 2420, 900, 2420, 900, 28], ['+', 3460, 760, 3460, 760, 30],
 ];
-// Mountain ranges as polylines (map px): raised in the elevation field and marked with carved peaks.
+// Mountain ranges as polylines (map px): raised in the elevation field and marked with ink peaks.
 const RANGES_M = [
   [[860, 330], [740, 560], [700, 820], [720, 1100], [800, 1380], [900, 1650]],
   [[1080, 380], [1250, 470], [1420, 500]],
@@ -92,14 +93,8 @@ const RANGES_M = [
   [[2700, 560], [2900, 700], [3150, 640]],
   [[2900, 1150], [2860, 1400], [2950, 1620]],
 ];
-const LABELS = [ // [text, x, y, size, weight]
-  ['클로헤이븐', 960, 940, 120, 'bold'], ['서리빛 설원', 2950, 640, 88, 'bold'], ['잊힌 별의 섬', 3030, 1290, 88, 'bold'],
-  ['새벽 항구', 2130, 1470, 46, 'bold'], ['하늘숲', 2480, 1580, 46, 'bold'], ['잿불 군도', 1600, 1720, 46, 'bold'],
-];
-// Clawhaven's places (world units from its centre), marked with a carved cross.
-const PLACES = [['달샘 숲', -80, 50], ['철의 난파선', 150, 115], ['솔트미어 등대', 190, -132], ['소금물 해안', 120, 40]];
-// Frostlight's and Starhaven's places on the east continent (map px).
-const EAST_PLACES = [['눈꽃 마을', 2880, 780], ['얼음 왕좌', 3180, 330], ['별빛 항구', 2880, 1150], ['달그늘 수정 숲', 3120, 1500]];
+// The two continents' names, as the original names only Kalimdor and the Eastern Kingdoms: [text, x, y, size].
+const LABELS = [['클로헤이븐', 990, 950, 78], ['서리빛 설원', 2950, 650, 78]];
 
 let GL = null, LOGO = null, LOGO_NOISE = null, PRESENT = null;
 
@@ -187,34 +182,66 @@ function buildField(data) {
   const toSea = edt(land, GW, GH, 0), toLand = edt(land, GW, GH, 1);
   const out = new Float32Array(N * 2);
   for (let k = 0; k < N; k++) { const sd = land[k] ? toSea[k] - 0.5 : -(toLand[k] - 0.5); out[k * 2] = Math.max(-700, Math.min(700, sd * GS)); out[k * 2 + 1] = elev[k]; }
-  // Keep the plate's border open sea, so clamped lookups outside the map stay sea.
+  // Keep the sheet's border open sea, so clamped lookups outside the map stay sea.
   for (let gy = 0; gy < GH; gy++) for (let gx = 0; gx < GW; gx++) if (gx === 0 || gy === 0 || gx === GW - 1 || gy === GH - 1) { out[(gy * GW + gx) * 2] = -700; out[(gy * GW + gx) * 2 + 1] = 0; }
   return { field: out, land };
 }
 
-/** Labels (red: ink, green: soft carve) and range peaks (blue: raised) at map resolution. */
+/** A name in gothic with its corners rounded (blur, then threshold back), as a signed distance
+ *  field: a canvas whose red is 0.5 + d / 24 (d: map px from the letters' edge, + inside). */
+const NAME_RANGE = 12;
+function roundedName(s, size) {
+  const font = `700 ${size}px ${KO}`, sp = Math.round(size * 0.4), pad = Math.ceil(size * 0.3) + NAME_RANGE;
+  const m = canvas(8, 8).getContext('2d'); m.font = font; m.letterSpacing = `${sp}px`;
+  const w = Math.ceil(m.measureText(s).width) + pad * 2, h = Math.ceil(size * 1.2) + pad * 2;
+  const a = canvas(w, h); const ag = a.getContext('2d', { willReadFrequently: true });
+  ag.font = font; ag.letterSpacing = `${sp}px`; ag.textAlign = 'center'; ag.textBaseline = 'middle'; ag.fillStyle = '#fff';
+  ag.filter = `blur(${(size * 0.035).toFixed(1)}px)`; ag.fillText(s, w / 2 + sp / 2, h / 2);
+  const d = ag.getImageData(0, 0, w, h); const mask = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) mask[i] = d.data[i * 4 + 3] > 118 ? 1 : 0;
+  const toOut = edt(mask, w, h, 0), toIn = edt(mask, w, h, 1);
+  for (let i = 0; i < w * h; i++) {
+    const sd = mask[i] ? toOut[i] - 0.5 : -(toIn[i] - 0.5);
+    d.data[i * 4] = Math.round(255 * clamp01(0.5 + sd / (2 * NAME_RANGE))); d.data[i * 4 + 1] = d.data[i * 4 + 2] = 0; d.data[i * 4 + 3] = 255;
+  }
+  ag.putImageData(d, 0, 0);
+  return a;
+}
+/** The label layer at map resolution: red the names' distance field, green the mountains' ink strokes,
+ *  blue their lit slopes. */
 function buildLabels(land) {
   const c = canvas(MW, MH); const g = c.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, MW, MH); g.globalCompositeOperation = 'lighter';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  const w1 = WORLDS[0];
-  const texts = LABELS.map(([s, x, y, size, weight]) => [s, x, y, size, weight]);
-  const places = [...PLACES.map(([n, wx, wz]) => [n, w1.x + wx * w1.s, w1.y + wz * w1.s]), ...EAST_PLACES];
-  for (const [name, x, y] of places) texts.push(['+', x, y, 44, 'bold'], [name, x - 26 - name.length * 21, y + 2, 40, 'bold']);
-  texts.push(['소용돌이', SWIRL.x, SWIRL.y + SWIRL.r + 70, 52, 'bold']);
-  const pass = (color, blur) => { g.filter = blur ? `blur(${blur}px)` : 'none'; g.fillStyle = color;
-    for (const [s, x, y, size, weight] of texts) { g.font = `${weight} ${size}px ${KO}`; g.letterSpacing = `${Math.round(size * 0.08)}px`; g.fillText(s, x, y); } };
-  pass('#f00', 0); pass('#0f0', 2.5);
-  // Peaks along the ranges, carved as small raised chevrons (only on land).
+  const boxes = [];
+  for (const [s, x, y, size] of LABELS) {
+    const f = roundedName(s, size);
+    g.drawImage(f, Math.round(x - f.width / 2), Math.round(y - f.height / 2));
+    boxes.push([x - f.width / 2, y - f.height / 2 + size * 0.2, x + f.width / 2, y + f.height / 2 - size * 0.2]);
+  }
+  // Mountains: sparse clusters of thin chevrons along the ranges, drawn in ink (only on land, off the names).
   const r = mulberry(77); const onLand = (x, y) => land[Math.floor(y / GS) * GW + Math.floor(x / GS)] === 1;
-  g.filter = 'blur(1.4px)'; g.strokeStyle = '#00f'; g.lineCap = g.lineJoin = 'round'; g.lineWidth = 5;
+  const free = (x, y) => !boxes.some(([x0, y0, x1, y1]) => x > x0 - 40 && x < x1 + 40 && y > y0 - 40 && y < y1 + 40);
+  const peaks = [];
   for (const pl of RANGES_M) for (let i = 1; i < pl.length; i++) {
     const [x0, y0] = pl[i - 1], [x1, y1] = pl[i]; const len = Math.hypot(x1 - x0, y1 - y0);
-    for (let d = 0; d < len; d += 34) {
-      const k = d / len; const x = lerp(x0, x1, k) + (r() - 0.5) * 120, y = lerp(y0, y1, k) + (r() - 0.5) * 120, s = 16 + r() * 14;
-      if (!onLand(x, y) || !onLand(x, y - 40) || !onLand(x, y + 40)) continue;
-      g.beginPath(); g.moveTo(x - s, y + s * 0.55); g.lineTo(x - s * 0.1, y - s * 0.65); g.lineTo(x + s * 0.4, y - s * 0.05); g.lineTo(x + s * 0.65, y - s * 0.3); g.lineTo(x + s * 1.1, y + s * 0.55); g.stroke();
+    for (let d = r() * 60; d < len; d += 70 + r() * 90) {
+      const k = d / len; const cx = lerp(x0, x1, k) + (r() - 0.5) * 140, cy = lerp(y0, y1, k) + (r() - 0.5) * 140;
+      for (let j = 0, n = 3 + Math.floor(r() * 5); j < n; j++) {
+        const x = cx + (r() - 0.5) * 130, y = cy + (r() - 0.5) * 80, s = 16 + r() * 16;
+        if (onLand(x - s, y) && onLand(x + s, y) && onLand(x, y - 40) && onLand(x, y + 40) && free(x, y)) peaks.push([x, y, s, r()]);
+      }
     }
+  }
+  g.lineCap = g.lineJoin = 'round'; g.filter = 'blur(5px)'; g.fillStyle = '#00f';
+  for (const [x, y, s] of peaks) { // the lit (west) slope
+    g.beginPath(); g.moveTo(x - s * 1.05, y + s * 0.5); g.lineTo(x - s * 0.1, y - s * 0.62); g.lineTo(x + s * 0.1, y + s * 0.5); g.closePath(); g.fill();
+  }
+  g.filter = 'blur(0.7px)'; g.strokeStyle = '#0f0'; g.lineWidth = 3.2;
+  for (const [x, y, s, q] of peaks) {
+    g.beginPath(); g.moveTo(x - s * 1.05, y + s * 0.5); g.lineTo(x - s * 0.1, y - s * 0.62);
+    if (q < 0.5) { g.lineTo(x + s * 0.35, y - s * 0.1); g.lineTo(x + s * 0.6, y - s * 0.32); }
+    g.lineTo(x + s * 1.05, y + s * 0.5); g.stroke();
+    g.beginPath(); g.moveTo(x - s * 0.1, y - s * 0.62); g.lineTo(x + s * 0.08, y + s * 0.05); g.stroke(); // the shaded ridge
   }
   return c;
 }
@@ -226,7 +253,7 @@ precision highp float;
 uniform sampler2D uField, uLab;
 uniform vec2 uRes, uMap;
 uniform vec3 uView, uSwirl;
-uniform float uT, uAlpha;
+uniform float uT, uAlpha, uLabA;
 out vec4 o;
 float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
@@ -234,83 +261,147 @@ float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 
 const mat2 ROT = mat2(0.8, -0.6, 0.6, 0.8);
 float fbm(vec2 p, int oct) { float s = 0.0, a = 0.5, n = 0.0; for (int i = 0; i < 6; i++) { if (i >= oct) break; s += a * vnoise(p); n += a; p = ROT * p * 2.03 + 17.1; a *= 0.5; } return s / n; }
 float sfbm(vec2 p, int oct) { return (fbm(p, oct) - 0.5) * 2.0; }
-float ridged(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { float n = 1.0 - abs(2.0 * vnoise(p) - 1.0); s += a * n * n; p = ROT * p * 2.1 + 3.7; a *= 0.5; } return s / 0.9375; }
+const float TAU = 6.2831853;
 
-// Signed coast distance (map px, + on land): the built field, warped and roughened.
+// Signed coast distance (map px, + on land): the built field, warped into soft round lobes.
 float coastAt(vec2 p, out float elev) {
   vec2 w = vec2(sfbm(p / 300.0, 3), sfbm(p / 300.0 + 5.2, 3));
   vec2 fe = texture(uField, (p + w * 55.0) / uMap).rg;
   elev = fe.y;
-  return fe.x + 60.0 * sfbm(p / 380.0 + 9.1, 3) + 30.0 * sfbm(p / 95.0 + 2.7, 4) + 7.0 * sfbm(p / 16.0, 2);
+  return fe.x + 55.0 * sfbm(p / 380.0 + 9.1, 3) + 24.0 * sfbm(p / 120.0 + 2.7, 3) + 3.0 * sfbm(p / 30.0, 2);
 }
-// The maelstrom: x carved spiral grooves, y fine brushed hatching around it.
-vec2 swirl(vec2 p) {
-  vec2 d = (p - uSwirl.xy) / uSwirl.z; float r = length(d);
-  if (r > 1.7) return vec2(0.0);
-  float a = atan(d.y, d.x) + uT * 0.16;
-  float wob = sfbm(d * 2.5 + 4.0, 3);
-  float g = cos(3.0 * a - 6.2832 * 5.5 * pow(r, 0.85) + wob * 1.4);
-  float groove = smoothstep(0.35, 0.95, g) * smoothstep(1.02, 0.72, r) * smoothstep(0.02, 0.1, r);
-  float hz = cos(90.0 * a - 6.2832 * 9.0 * r + wob * 5.0);
-  float hatch = smoothstep(0.4, 1.0, hz) * smoothstep(0.5, 0.85, r) * smoothstep(1.7, 1.0, r) * smoothstep(0.38, 0.6, fbm(d * 5.0 + 1.3, 3));
-  return vec2(groove, hatch);
+// Soft painted relief (map px) for the land's light: rolling bumps, higher in the ranges.
+float relief(vec2 p) { float e = texture(uField, p / uMap).g; return 5.0 * fbm(p / 85.0, 3) + e * (6.0 + 14.0 * fbm(p / 150.0 + 2.0, 3)); }
+
+// The maelstrom in ink, turning counter-clockwise like the original's: three tight arms broken into
+// dashes in the eye, long flaring streaks outside. x: ink, y: the pale glow under it. px: map px per
+// output px.
+vec2 swirl(vec2 p, float px) {
+  vec2 d = (p - uSwirl.xy) / uSwirl.z; float r = length(d), R = uSwirl.z;
+  float glow = exp(-r * r / 0.22);
+  if (r > 1.5) return vec2(0.0, glow);
+  float a = atan(d.y, d.x) + uT * 0.17;
+  float wob = sfbm(d * 2.2 + 4.0, 3);
+  // The eye: arms 0.1 R apart, winding outward clockwise.
+  float ph = (3.0 * a - 73.9 * r - wob * 1.3) / TAU, n = floor(ph + 0.5), arm = mod(n, 3.0);
+  float dist = abs(ph - n) * TAU * R / sqrt(9.0 / max(r * r, 1e-4) + 5461.0);
+  float s = 12.3 * r * r * R; // arc length along the arm (map px)
+  float dn = vnoise(vec2(s / 34.0 + arm * 3.1, arm * 11.0 + 3.0));
+  float w = R * mix(0.006, 0.019, smoothstep(0.03, 0.5, r)) * mix(0.35, 1.0, smoothstep(0.22, 0.55, dn));
+  float inkIn = (1.0 - smoothstep(w - px, w + px, dist)) * smoothstep(0.2, 0.3, dn)
+    * smoothstep(0.02, 0.07, r) * (1.0 - smoothstep(0.76, 0.98, r + 0.1 * wob));
+  // The flare: 24 streaks on a log spiral (pitch 20 deg), each broken into short lengths.
+  float ph2 = (24.0 * a - 65.9 * log(max(r, 1e-3)) - wob * 2.5) / TAU, n2 = floor(ph2 + 0.5), arm2 = mod(n2, 24.0);
+  float dist2 = abs(ph2 - n2) * TAU * r * R / 70.1;
+  float s2 = 2.92 * r * R;
+  float env = vnoise(vec2(s2 / 52.0 + arm2 * 1.7, arm2 * 7.0 + 50.0));
+  float w2 = R * 0.017 * smoothstep(0.25, 0.65, env) * (1.0 - smoothstep(0.9, 1.4, r));
+  float inkOut = (1.0 - smoothstep(w2 - px, w2 + px, dist2)) * smoothstep(0.28, 0.4, env)
+    * smoothstep(0.55, 0.78, r) * (1.0 - smoothstep(1.05, 1.4, r + 0.2 * wob));
+  float chalk = 0.62 + 0.5 * vnoise(p / 3.2) * vnoise(p / 9.0 + 4.0) * 2.0;
+  return vec2(min(1.0, max(inkIn, inkOut * 0.92) * chalk), glow);
 }
-// Height (map px) of the plate: gold land above the sea, ranges, texture, carved labels and swirl.
-float heightAt(vec2 p, out float cf, out float elev, out vec4 lab, out vec2 sw) {
-  cf = coastAt(p, elev);
-  float land = smoothstep(-1.0, 1.0, cf);
-  lab = texture(uLab, p / uMap);
-  sw = swirl(p);
-  float hl = 9.0 + 7.0 * smoothstep(0.0, 50.0, cf) + 5.0 * smoothstep(40.0, 260.0, cf)
-    + elev * (10.0 + 28.0 * ridged(p / 115.0)) + 4.0 * fbm(p / 75.0, 4) + 0.5 * vnoise(p / 6.0);
-  float hs = 5.0 * fbm(p / 170.0, 4) + 1.3 * fbm(p / 20.0, 3)
-    + 2.6 * exp(-pow((cf + 24.0) / 5.0, 2.0)) - 3.5 * smoothstep(-80.0, -3.0, cf)
-    - 5.0 * sw.x - 1.6 * sw.y;
-  return mix(hs, hl, land) - 6.5 * lab.g + 4.5 * lab.b;
+// Water lines: short horizontal hatch strokes in a band off the coast, sparser further out.
+float hatch(vec2 p, float cf, float px) {
+  float b = -cf - 11.0, reach = 72.0 + 28.0 * sfbm(p / 170.0 + 7.0, 2);
+  if (b < -3.0 || b > reach + 6.0) return 0.0;
+  float sp = 10.5, yy = p.y + 2.5 * sfbm(p / 110.0, 2), row = floor(yy / sp);
+  float fy = abs(fract(yy / sp) - 0.5) * sp;
+  float hw = 1.8, aa = max(0.5 * px, 0.6);
+  float line = (1.0 - smoothstep(hw - aa, hw + aa, fy)) * min(1.0, 2.0 * hw / px);
+  float k = clamp(b / reach, 0.0, 1.0);
+  float dash = smoothstep(0.0, 0.08, vnoise(vec2(p.x / 42.0, row)) - mix(0.12, 0.8, k * k));
+  return line * dash * smoothstep(-3.0, 1.0, b) * (1.0 - smoothstep(reach - 6.0, reach + 6.0, b));
+}
+// Faint straight folds across the sheet: x darker crease, y its lit lip.
+vec2 creases(vec2 p) {
+  vec2 c = vec2(0.0);
+  for (int i = 0; i < 6; i++) {
+    float fi = float(i);
+    vec2 q = vec2(hash(vec2(fi, 1.3)), hash(vec2(fi, 2.7))) * uMap;
+    float an = hash(vec2(fi, 4.1)) * 3.1416; vec2 dir = vec2(cos(an), sin(an));
+    float dd = dot(p - q, vec2(-dir.y, dir.x)), along = dot(p - q, dir);
+    float env = smoothstep(0.35, 0.65, vnoise(vec2(along / 500.0, fi * 9.0)));
+    c += env * vec2(exp(-dd * dd / 3.0), exp(-(dd - 3.0) * (dd - 3.0) / 4.0));
+  }
+  return c;
 }
 void main() {
   vec2 p = uView.xy + (gl_FragCoord.xy - 0.5 * uRes) * vec2(1.0, -1.0) / uView.z;
-  float e = max(1.0, 0.9 / uView.z);
-  float cf, elev, c1, e1; vec4 lab, l1; vec2 sw, s1;
-  float h = heightAt(p, cf, elev, lab, sw);
-  float hx = heightAt(p + vec2(e, 0.0), c1, e1, l1, s1);
-  float hy = heightAt(p + vec2(0.0, e), c1, e1, l1, s1);
-  vec3 n = normalize(vec3(-(hx - h) / e, -(hy - h) / e, 1.0));
-  vec3 L = normalize(vec3(-0.6 + 0.2 * sin(uT * 0.21), -0.62, 0.58)); // upper left (map y points down)
-  float diff = max(dot(n, L), 0.0);
-  float land = smoothstep(-1.0, 1.0, cf);
+  float px = 1.0 / uView.z;
+  float elev; float cf = coastAt(p, elev);
+  float aa = max(0.7 * px, 0.7);
+  float land = smoothstep(-aa, aa, cf);
+  vec3 L = normalize(vec3(-0.6, -0.62, 0.58)); // upper left (map y points down)
 
-  // Sea: a mottled patina of olive, verdigris, teal and rust with paler glowing areas.
-  float n1 = fbm(p / 700.0 + 1.7, 4), n2 = fbm(p / 320.0 + 5.1, 4), n3 = fbm(p / 150.0 + 8.9, 4), n4 = fbm(p / 950.0 + 2.2, 3);
-  vec3 sea = mix(vec3(0.63, 0.61, 0.36), vec3(0.50, 0.59, 0.38), smoothstep(0.38, 0.62, n1));
-  sea = mix(sea, vec3(0.27, 0.46, 0.42), smoothstep(0.55, 0.72, n2) * 0.8);
-  sea = mix(sea, vec3(0.60, 0.41, 0.22), smoothstep(0.58, 0.76, n3) * 0.45);
-  sea = mix(sea, vec3(0.88, 0.84, 0.60), smoothstep(0.5, 0.75, n4) * 0.55);
-  sea *= 0.84 + 0.32 * fbm(p / 14.0, 3);
-  float halo = 1.0 - smoothstep(-70.0, -4.0, cf);
-  sea = mix(sea * vec3(0.66, 0.58, 0.44), sea, halo);
-  vec2 sd = (p - uSwirl.xy) / uSwirl.z; float sr = length(sd);
-  sea = mix(sea, vec3(0.76, 0.66, 0.60), 0.35 * smoothstep(1.1, 0.2, sr));
-  sea = mix(sea, vec3(0.30, 0.20, 0.17), 0.5 * sw.x + 0.45 * sw.y);
-  float ce; float shadow = smoothstep(-8.0, 12.0, coastAt(p - normalize(L.xy) * 18.0, ce));
-  sea *= (0.52 + 0.62 * diff) * (1.0 - 0.45 * shadow * (1.0 - land));
+  // Sea: mottled grey-teal, olive and yellow-green parchment, grain and dark speckles.
+  float n1 = fbm(p / 900.0 + 1.7, 4), n2 = fbm(p / 420.0 + 5.1, 4), n3 = fbm(p / 170.0 + 8.9, 4), n4 = fbm(p / 55.0 + 2.2, 3);
+  vec3 sea = vec3(0.62, 0.60, 0.42);
+  sea = mix(sea, vec3(0.52, 0.58, 0.53), smoothstep(0.34, 0.74, n1) * 0.65);
+  sea = mix(sea, vec3(0.70, 0.71, 0.36), smoothstep(0.4, 0.78, n2) * 0.75);
+  sea = mix(sea, vec3(0.60, 0.52, 0.44), smoothstep(0.52, 0.8, n3) * 0.4);
+  sea = mix(sea, vec3(0.80, 0.76, 0.62), smoothstep(0.5, 0.85, fbm(p / 650.0 + 3.3, 3)) * 0.5);
+  sea *= (0.86 + 0.26 * n4) * (0.8 + 0.25 * fbm(p / 1300.0 + 6.0, 3));
+  sea *= 0.86 + 0.28 * mix(vnoise(p / 4.5), vnoise(p / 11.0 + 3.0), 0.5);
+  sea = mix(sea, sea * vec3(0.8, 0.72, 0.6), smoothstep(0.55, 0.8, fbm(p / 45.0 + 21.0, 3)) * 0.5);
+  vec2 cell = floor(p / 80.0); float hs = hash(cell + 3.1);
+  if (hs > 0.988) { vec2 cc = (cell + 0.25 + 0.5 * vec2(hash(cell + 7.7), hash(cell + 9.1))) * 80.0; float rr = 2.0 + 3.5 * hash(cell + 1.3);
+    sea *= 1.0 - 0.6 * (1.0 - smoothstep(rr - px, rr + px, length(p - cc))); }
+  sea *= 1.0 - 0.1 * smoothstep(0.6, 0.85, fbm(p / 60.0 + 11.0, 3));
+  // The swirl's pale eye, then the coast: a pale halo, a browner band under the water lines.
+  vec2 sw = swirl(p, max(1.6 * px, 2.2));
+  sea = mix(sea, vec3(0.80, 0.73, 0.62), 0.6 * sw.y);
+  float halo = 1.0 - smoothstep(3.0, 14.0, -cf);
+  float band = (1.0 - smoothstep(30.0, 95.0, -cf)) * (1.0 - halo);
+  sea = mix(sea, sea * vec3(0.86, 0.78, 0.66), 0.55 * band);
+  sea = mix(sea, vec3(0.70, 0.70, 0.60), 0.6 * halo);
+  sea = mix(sea, vec3(0.40, 0.25, 0.14), 0.78 * hatch(p, cf, px));
 
-  // Land: gold, bright yellow on the ridges, burnt orange and brown in creases and along the coast.
-  float m = fbm(p / 190.0 + 3.3, 4);
-  float k = clamp((h - 12.0) / 34.0, 0.0, 1.0);
-  vec3 gold = mix(vec3(0.86, 0.52, 0.10), vec3(0.97, 0.78, 0.24), smoothstep(0.3, 0.68, m + 0.35 * k));
-  gold = mix(gold, vec3(1.0, 0.88, 0.40), smoothstep(0.55, 1.0, k + 0.25 * (m - 0.5)) * 0.55);
-  float rim = 1.0 - smoothstep(2.0, 22.0 + 30.0 * m, cf);
-  gold = mix(gold, vec3(0.70, 0.34, 0.07), rim * 0.8);
-  gold = mix(gold, vec3(0.22, 0.09, 0.02), 1.0 - smoothstep(0.5, 4.0, cf));
-  vec3 Hv = normalize(L + vec3(0.0, 0.0, 1.0));
-  float sheen = 0.55 + 0.45 * sin(p.x / 900.0 + p.y / 1400.0 - uT * 0.3);
-  float spec = pow(max(dot(n, Hv), 0.0), 26.0) * sheen;
-  vec3 metal = gold * (0.28 + 1.05 * diff) + spec * vec3(1.0, 0.8, 0.4) * 0.35;
+  // Land: mottled orange-gold paint with cloudy blotches, soft bumps, a darker orange rim at the coast.
+  float m1 = fbm(p / 260.0 + 3.3, 4), m2 = fbm(p / 110.0 + 7.7, 4), m3 = fbm(p / 38.0 + 1.1, 3);
+  vec3 gold = vec3(0.84, 0.66, 0.18);
+  gold = mix(gold, vec3(0.88, 0.55, 0.17), smoothstep(0.45, 0.72, m1) * 0.7);
+  gold = mix(gold, vec3(0.66, 0.40, 0.10), smoothstep(0.54, 0.8, m2) * 0.7);
+  gold = mix(gold, vec3(0.94, 0.80, 0.30), smoothstep(0.5, 0.78, fbm(p / 520.0 + 9.0, 3)) * 0.55);
+  gold = mix(gold, vec3(0.76, 0.70, 0.34), smoothstep(0.56, 0.84, fbm(p / 190.0 + 4.0, 3)) * 0.55);
+  gold = mix(gold, vec3(0.82, 0.48, 0.12), smoothstep(0.54, 0.74, fbm(p / 26.0 + 5.0, 3)) * 0.4);
+  gold = mix(gold, vec3(1.0, 0.86, 0.38), smoothstep(0.58, 0.8, fbm(p / 70.0 + 2.0, 3)) * 0.35);
+  gold = mix(gold, vec3(0.97, 0.88, 0.48), smoothstep(0.6, 0.82, fbm(p / 95.0 + 13.0, 3)) * 0.45);
+  gold *= (0.84 + 0.3 * m3) * (0.92 + 0.16 * vnoise(p / 4.5));
+  float rim = 1.0 - smoothstep(4.0, 40.0 + 34.0 * m2, cf);
+  gold = mix(gold, vec3(0.64, 0.36, 0.08), rim * rim * 0.75);
+  float e = max(1.5, px);
+  float h0 = relief(p), hx = relief(p + vec2(e, 0.0)), hy = relief(p + vec2(0.0, e));
+  vec3 nrm = normalize(vec3(-(hx - h0) / e, -(hy - h0) / e, 1.0));
+  gold *= 0.8 + 0.34 * max(dot(nrm, L), 0.0);
+  // Mountains: lit slopes, then the ink.
+  vec4 lab = texture(uLab, p / uMap);
+  gold = mix(gold, vec3(0.99, 0.90, 0.52), 0.45 * lab.b);
+  gold = mix(gold, vec3(0.42, 0.23, 0.09), 0.8 * lab.g);
 
-  vec3 col = mix(sea, metal, land);
-  // Carved ink in the labels.
-  col = mix(col, mix(vec3(0.16, 0.10, 0.06), vec3(0.30, 0.12, 0.02), land), lab.r * 0.7 + lab.b * 0.35);
+  vec3 col = mix(sea, gold, land);
+  // The swirl's ink, fainter where it crosses land.
+  col = mix(col, vec3(0.42, 0.24, 0.17), 0.86 * sw.x * (1.0 - 0.5 * land));
+  // The coastline: a thin dark red-brown line.
+  col = mix(col, vec3(0.36, 0.17, 0.07), 0.85 * (1.0 - smoothstep(2.0 - aa, 2.0 + aa, abs(cf - 1.0))));
+  // Folds across everything.
+  vec2 cr = creases(p); col *= 1.0 - 0.1 * cr.x; col += 0.05 * cr.y;
+  // The names, pressed into the paint: a dark red-brown outline, a lighter halo round it, the fill a
+  // little darker than the land and shaded on the wall away from the light.
+  float sd = (lab.r - 0.5) * 24.0;
+  if (uLabA > 0.0 && sd > -11.0) {
+    float fill = smoothstep(-aa, aa, sd);
+    float line = smoothstep(-3.6 - aa, -3.6 + aa, sd) * (1.0 - fill);
+    float lit = smoothstep(-8.5, -6.0, sd) * (1.0 - smoothstep(-4.2, -3.4, sd));
+    float q = 1.5;
+    vec2 gd = vec2(texture(uLab, (p + vec2(q, 0.0)) / uMap).r - texture(uLab, (p - vec2(q, 0.0)) / uMap).r,
+                   texture(uLab, (p + vec2(0.0, q)) / uMap).r - texture(uLab, (p - vec2(0.0, q)) / uMap).r) * 12.0 / q;
+    float bev = 1.0 + 0.45 * dot(gd, normalize(L.xy)) * (1.0 - smoothstep(0.0, 5.0, sd));
+    vec3 lc = mix(col, min(col * 1.08 + vec3(0.08, 0.07, 0.04), vec3(1.0)), 0.4 * lit);
+    lc = mix(lc, vec3(0.35, 0.15, 0.06), 0.9 * line);
+    lc = mix(lc, col * vec3(0.82, 0.7, 0.56) * bev, fill);
+    col = mix(col, lc, uLabA);
+  }
   o = vec4(col, uAlpha);
 }`;
 const FS_POST = `#version 300 es
@@ -325,11 +416,12 @@ void main() {
   vec3 c = vec3(0.0);
   if (uBlur > 0.0005) { vec2 d = uv - 0.5; for (int i = 0; i < 32; i++) c += texture(uScene, 0.5 + d * (1.0 - uBlur * float(i) / 31.0)).rgb; c /= 32.0; }
   else c = texture(uScene, uv).rgb;
-  if (uFocus > 0.001) c = mix(c, textureLod(uScene, uv, 2.6).rgb, uFocus);
+  c = mix(c, textureLod(uScene, uv, 1.2).rgb, 0.5); // the original is a little out of focus throughout
+  if (uFocus > 0.001) c = mix(c, textureLod(uScene, uv, 3.4).rgb, uFocus);
   vec3 g = textureLod(uScene, uv, 4.0).rgb * 0.5 + textureLod(uScene, uv, 6.0).rgb * 0.5;
   c += uGlow * g * g * vec3(1.0, 0.82, 0.55);
   float r = length((uv - 0.5) * vec2(2.0, 1.75));
-  c *= mix(1.0, 0.3 - uDark, smoothstep(0.55 - uDark, 1.45, r)) * (1.0 - uDark);
+  c *= mix(1.0, 0.24 - uDark, smoothstep(0.45 - uDark, 1.4, r)) * (1.0 - uDark);
   c *= mix(vec3(1.0), vec3(1.14, 0.92, 0.68), uDark * 2.0);
   c *= vec3(1.02, 0.97, 0.88);
   c += (hash(gl_FragCoord.xy + floor(uT * 24.0 + 0.5) * 61.7) - 0.5) * 0.035;
@@ -397,6 +489,8 @@ function drawMap(t) {
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.useProgram(map.p); gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
   gl.uniform1f(map.u.uT, t);
+  // The names are written in as the camera comes close to the west, as in the original.
+  gl.uniform1f(map.u.uLabA, ramp(t, 14.4, 16.4));
   for (const [v, a] of layers) { if (a <= 0) continue; gl.uniform3f(map.u.uView, v.x, v.y, v.z); gl.uniform1f(map.u.uAlpha, a); gl.drawArrays(gl.TRIANGLES, 0, 3); }
   gl.disable(gl.BLEND);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, scene); gl.generateMipmap(gl.TEXTURE_2D);
@@ -406,7 +500,7 @@ function drawMap(t) {
   // A radial zoom blur and a darker, warmer frame under the presents line, as in the original.
   gl.uniform1f(post.u.uBlur, 0.06 * ramp(t, 28.6, 31.0));
   gl.uniform1f(post.u.uDark, 0.28 * ramp(t, 28.5, 31));
-  gl.uniform1f(post.u.uGlow, 0.55);
+  gl.uniform1f(post.u.uGlow, 0.14 + 0.3 * ramp(t, 28.5, 31)); // the land blazes under the presents line
   // Out of focus as it fades up from black.
   gl.uniform1f(post.u.uFocus, 0.85 * (1 - ramp(t, 8.4, 10.4)));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
