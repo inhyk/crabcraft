@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SNOW_DEFORM_READ, type SnowDeform } from './snowDeform';
 import { SNOW_ROCKS, SNOW_SEA_ICE, SNOW_WIND } from '../sim/world/snowGround';
+import { FROST_PADS, FROST_ROAD_BOX, FROST_ROAD_SHOULDER, FROST_ROAD_WAYS, FROST_WAYS, type FrostWay } from '../sim/world/snowLayout';
 import { addPatch } from '../world/materials';
 
 /*
@@ -19,6 +20,17 @@ import { addPatch } from '../world/materials';
  */
 
 const r3 = (v: number) => v.toFixed(3);
+/** A way list as GLSL segments (ax, az, bx, bz) and one radius each, from the half width plus `pad`. */
+const segsGlsl = (name: string, ways: readonly FrostWay[], pad: number) => {
+  const seg: string[] = [], rad: string[] = [];
+  for (const w of ways) for (let k = 1; k < w.points.length; k++) { const a = w.points[k - 1], b = w.points[k]; seg.push(`vec4(${r3(a[0])},${r3(a[1])},${r3(b[0])},${r3(b[1])})`); rad.push(r3(w.width / 2 + pad)); }
+  return `const int ${name}_N=${seg.length};\nconst vec4 ${name}[${seg.length}]=vec4[${seg.length}](${seg.join(',')});\nconst float ${name}_R[${seg.length}]=float[${seg.length}](${rad.join(',')});`;
+};
+/** The paved ways' box, grown by `m`: past it a pixel is at least `m` from every stone. */
+const pavedBox = (m: number) => {
+  const pts = [...FROST_WAYS.flatMap((w) => w.points), ...FROST_PADS.flatMap((p): [number, number][] => [[p.x - p.r, p.z - p.r], [p.x + p.r, p.z + p.r]])];
+  return `vec4(${r3(Math.min(...pts.map((p) => p[0])) - m)},${r3(Math.min(...pts.map((p) => p[1])) - m)},${r3(Math.max(...pts.map((p) => p[0])) + m)},${r3(Math.max(...pts.map((p) => p[1])) + m)})`;
+};
 /** GLSL twin of snowGround.ts, height only. Keep the two in step: QA compares them on the GPU. */
 export const SNOW_GROUND_GLSL = /* glsl */ `
 const vec2 SG_WIND=vec2(${SNOW_WIND[0].toFixed(4)},${SNOW_WIND[1].toFixed(4)});
@@ -63,9 +75,20 @@ float sgFbm(vec2 q,int octaves,float gain,float damp){
   }
   return sum;
 }
+// The roads out of the village (snowLayout.ts): segments, each with its half width plus the shoulder.
+${segsGlsl('SG_ROAD', FROST_ROAD_WAYS, FROST_ROAD_SHOULDER)}
+const vec4 SG_ROAD_BOX=vec4(${FROST_ROAD_BOX.map(r3).join(',')});
+float sgSegDist(vec2 p,vec4 s){vec2 d=s.zw-s.xy,q=p-s.xy;float l2=dot(d,d),t=l2>0.?clamp(dot(q,d)/l2,0.,1.):0.;return length(q-d*t);}
+// snowLayout.ts frostRoadKeepDist: distance past the roads' shoulder, 1000 well beyond.
+float sgRoadKeep(vec2 p){
+  if(p.x<SG_ROAD_BOX.x||p.y<SG_ROAD_BOX.y||p.x>SG_ROAD_BOX.z||p.y>SG_ROAD_BOX.w)return 1e3;
+  float d=1e3;
+  for(int i=0;i<SG_ROAD_N;i++)d=min(d,sgSegDist(p,SG_ROAD[i])-SG_ROAD_R[i]);
+  return d;
+}
 // 0 on the village, road and arena, 1 in the field.
 float snowKeep(vec2 p){
-  float dz=max(max(-53.-p.y,p.y-94.),0.),road=length(vec2(p.x,dz))-6.;
+  float road=sgRoadKeep(p);
   float qx=abs(p.x)-45.,qz=abs(p.y-60.5)-35.5;
   float village=length(max(vec2(qx,qz),0.))+min(max(qx,qz),0.);
   float arena=length(vec2(p.x,p.y+78.))-34.;
@@ -194,17 +217,21 @@ uniform vec4 snowGroundRect;
 vec2 snowGroundUV(vec2 p){return (p-snowGroundRect.xy)*snowGroundRect.z;}
 bool snowGroundIn(vec2 uv){return all(greaterThanEqual(uv,vec2(0.)))&&all(lessThanEqual(uv,vec2(1.)));}
 vec4 snowGroundAt(vec2 p){vec2 uv=snowGroundUV(p);return snowGroundIn(uv)?textureLod(snowGroundTex,uv,0.):vec4(SG_SEA,0.,0.,1.);}
-// Visual fine relief fades to nothing on paving, the plaza, the fountain and the arena floor.
+// Visual fine relief fades to nothing on paving, the squares, the fountain and the arena floor.
+${segsGlsl('SG_PAVE', FROST_WAYS, 1.6)}
+const vec3 SG_PADS[${FROST_PADS.length}]=vec3[${FROST_PADS.length}](${FROST_PADS.map((p) => `vec3(${r3(p.x)},${r3(p.z)},${r3(p.r + 1.6)})`).join(',')});
+const vec4 SG_PAVE_BOX=${pavedBox(5)};
 float snowFineKeep(vec2 p){
-  float dzr=max(max(-53.-p.y,p.y-94.),0.);
-  float road=length(vec2(p.x,dzr))-5.6;
-  float street=1e3;
-  for(int i=0;i<3;i++){float zs=38.+18.*float(i);street=min(street,length(vec2(max(abs(p.x)-22.,0.),p.y-zs))-3.6);}
+  float paved=1e3;
+  if(p.x>SG_PAVE_BOX.x&&p.y>SG_PAVE_BOX.y&&p.x<SG_PAVE_BOX.z&&p.y<SG_PAVE_BOX.w){
+    for(int i=0;i<SG_PAVE_N;i++)paved=min(paved,sgSegDist(p,SG_PAVE[i])-SG_PAVE_R[i]);
+    for(int i=0;i<${FROST_PADS.length};i++)paved=min(paved,length(p-SG_PADS[i].xy)-SG_PADS[i].z);
+  }
   float arena=length(p-vec2(0.,-78.))-23.5;
   float fountain=length(p-vec2(-13.,65.))-4.;
   float qx=abs(p.x)-44.,qz=abs(p.y-60.5)-34.5;
   float village=length(max(vec2(qx,qz),0.))+min(max(qx,qz),0.);
-  return smoothstep(0.,3.,road)*smoothstep(0.,3.,street)*smoothstep(0.,4.,arena)*smoothstep(0.,2.,fountain)*mix(.35,1.,smoothstep(0.,8.,village));
+  return smoothstep(0.,3.,paved)*smoothstep(0.,4.,arena)*smoothstep(0.,2.,fountain)*mix(.35,1.,smoothstep(0.,8.,village));
 }
 `;
 

@@ -5,6 +5,10 @@ import { snowHeight } from '../sim/world/ground';
 import { TownBuilder, type WallSet } from '../world/buildings';
 import type { Collision } from '../world/collision';
 import { trs } from '../world/kit';
+import { FROST_PADS, FROST_WAYS, type FrostWay } from '../sim/world/snowLayout';
+
+/** The frozen fountain at the heart of the market (world4Colliders.ts SNOW_FOUNTAIN). */
+const SNOW_FOUNTAIN_AT = { x: -13, z: 65 } as const;
 
 export type SnowLotKind = 'house' | 'tavern' | 'chapel' | 'forge';
 export interface SnowLot {
@@ -21,31 +25,38 @@ export interface SnowLot {
   style: number;
 }
 
-const E = Math.PI / 2, W = -Math.PI / 2, S = 0, N = Math.PI;
-/** Fronts face the street they stand on; small turns keep the rows from reading as a grid. */
+/** A lot whose front looks at (fx, fz), turned a little by `twist` so no two rows line up. */
+const lot = (id: string, kind: SnowLotKind, x: number, z: number, fx: number, fz: number, sx: number, sz: number, floors: number, style: number, twist = 0): SnowLot =>
+  ({ id, kind, x, z, yaw: Math.atan2(fx - x, fz - z) + twist, sx, sz, floors, style });
+/**
+ * Fronts face the street, the square or the lane they stand on (src/sim/world/snowLayout.ts), set back so their
+ * door steps stay off the stones. Every house that closes a bend of the high street is two storeys tall.
+ */
 export const SNOW_LOTS: readonly SnowLot[] = [
-  // Cross-street ends: the tavern closes the south street, the chapel the middle one.
-  { id: 'tavern', kind: 'tavern', x: -28.5, z: 74, yaw: E, sx: 4, sz: 5, floors: 2, style: 0 },
-  // Steps out front stay 2 m clear of the street ends (x = +-22), so the lanes walk through end to end.
-  { id: 'chapel', kind: 'chapel', x: 31, z: 56, yaw: W, sx: 3, sz: 5, floors: 2, style: 0 },
-  { id: 'forge', kind: 'forge', x: 27.5, z: 67.5, yaw: W, sx: 4, sz: 3, floors: 1, style: 0 },
-  { id: 'w-38', kind: 'house', x: -27.5, z: 38, yaw: E + 0.04, sx: 4, sz: 3, floors: 2, style: 0 },
-  { id: 'w-56', kind: 'house', x: -27.5, z: 56, yaw: E - 0.03, sx: 3, sz: 3, floors: 2, style: 1 },
-  { id: 'w-65', kind: 'house', x: -28, z: 64.5, yaw: E + 0.05, sx: 3, sz: 3, floors: 1, style: 3 },
-  { id: 'e-38', kind: 'house', x: 29, z: 38, yaw: W - 0.03, sx: 4, sz: 3, floors: 2, style: 2 },
-  { id: 'e-79', kind: 'house', x: 28, z: 80, yaw: W + 0.06, sx: 3, sz: 4, floors: 2, style: 1 },
-  // Main-street frontage.
-  { id: 'w-47', kind: 'house', x: -10.5, z: 47, yaw: E, sx: 3, sz: 3, floors: 2, style: 3 },
-  { id: 'e-47', kind: 'house', x: 10.5, z: 47, yaw: W, sx: 4, sz: 3, floors: 2, style: 1 },
-  { id: 'e-62', kind: 'house', x: 10, z: 62.5, yaw: W, sx: 2, sz: 3, floors: 1, style: 2 },
-  { id: 'w-31', kind: 'house', x: -12, z: 30.5, yaw: E + 0.03, sx: 3, sz: 3, floors: 1, style: 2 },
-  { id: 'e-29', kind: 'house', x: 11.5, z: 29.5, yaw: W - 0.04, sx: 3, sz: 4, floors: 2, style: 0 },
-  // Behind the arrival, west of the spawn ring and east of the ember gate.
-  { id: 'w-88', kind: 'house', x: -28, z: 88, yaw: E - 0.12, sx: 3, sz: 3, floors: 2, style: 2 },
-  { id: 'e-90', kind: 'house', x: 27, z: 91, yaw: W + 0.15, sx: 3, sz: 3, floors: 1, style: 3 },
-  // A second row gives the village depth from the road.
-  { id: 'w-47b', kind: 'house', x: -37, z: 47, yaw: E + 0.08, sx: 3, sz: 3, floors: 1, style: 1 },
-  { id: 'e-47b', kind: 'house', x: 37, z: 47.5, yaw: W - 0.1, sx: 3, sz: 3, floors: 1, style: 3 },
+  // The arrival square between the two portals.
+  lot('square-north', 'house', 2.8, 97.6, 1, 86, 3, 3, 2, 1, 0.05),
+  lot('square-west', 'house', -22.6, 89, -12, 88.5, 3, 3, 2, 2, -0.06),
+  lot('square-east', 'house', 25.4, 90.6, 13, 85, 3, 3, 1, 3),
+  // The portal row, east along its lane.
+  lot('row-a', 'house', 21.6, 82.8, 19.6, 74.2, 3, 4, 2, 1),
+  lot('row-b', 'house', 23.5, 61, 27, 68.5, 4, 3, 2, 2),
+  // The market round the fountain: the tavern faces it across the stones.
+  lot('tavern', 'tavern', -30.4, 67.2, -13.6, 65, 4, 5, 2, 0),
+  lot('market-north', 'house', -13.8, 79.4, -13.6, 64.6, 3, 3, 1, 3, 0.04),
+  lot('market-south', 'house', -16.4, 49.2, -14, 64, 3, 3, 2, 1),
+  // High street frontage.
+  lot('street-west', 'house', -8.2, 45.4, 0.6, 46, 3, 3, 2, 3, 0.08),
+  lot('street-east-a', 'house', 6.6, 64.4, -4, 64, 2, 3, 1, 2),
+  lot('street-east-b', 'house', 9.4, 55.6, -2.6, 53.6, 4, 3, 2, 1),
+  // The chapel on the eastern rise, at the head of its lane.
+  lot('chapel', 'chapel', 24.6, 46.4, 15, 46.6, 3, 5, 2, 0),
+  lot('lane-north', 'house', 11, 40.4, 11, 47.8, 3, 3, 1, 3, -0.05),
+  // The forge by the gate, its yard open to the street.
+  lot('forge', 'forge', 17, 33.2, 2.6, 34.4, 4, 3, 1, 0),
+  lot('gate-west', 'house', -9.8, 33.6, -1, 33, 3, 3, 1, 2),
+  // Out along the woods lane.
+  lot('woods-a', 'house', -34, 55.5, -28, 50, 3, 3, 1, 1),
+  lot('woods-b', 'house', -26, 41.8, -31, 46.8, 4, 3, 2, 0),
 ];
 
 const STYLES: [WallSet, WallSet][] = [
@@ -94,6 +105,12 @@ export interface VillageFrames {
   /** Ground-floor footprints (world centre, half sizes, yaw, floor height) for plinths and drifts. */
   footprints: { lot: SnowLot; h: number; hx: number; hz: number; doors: [number, number][] }[];
   forgeHearth: THREE.Vector3;
+  /**
+   * Each building's solid, as TownBuilder sizes it (footprint plus 15 cm, from 2 m under the floor to 6 m over the
+   * roof line), at the lot's own yaw: TownBuilder reads its yaw back from the matrix, which folds fronts that face
+   * north onto mirrored boxes.
+   */
+  solids: { x: number; z: number; hx: number; hz: number; yaw: number; y0: number; y1: number }[];
 }
 
 type Put = (piece: string, m: THREE.Matrix4) => void;
@@ -103,7 +120,8 @@ type Put = (piece: string, m: THREE.Matrix4) => void;
  * a collision it registers footprints. `put` places the extra village pieces (roofs are the builder's).
  */
 export function raiseFrostlight(builder: TownBuilder, put: Put | null, chapelBuilder = builder, h = snowHeight): VillageFrames {
-  const frames: VillageFrames = { roofs: [], chimneys: [], footprints: [], forgeHearth: new THREE.Vector3() };
+  const frames: VillageFrames = { roofs: [], chimneys: [], footprints: [], forgeHearth: new THREE.Vector3(), solids: [] };
+  const solid = (x: number, z: number, half: number, halfD: number, yaw: number, y: number, top: number) => frames.solids.push({ x, z, hx: half + 0.15, hz: halfD + 0.15, yaw, y0: y - 2, y1: y + top + 6 });
   const m = new THREE.Matrix4();
   const at = (base: THREE.Matrix4, piece: string, x: number, y: number, z: number, yaw = 0, s: number | THREE.Vector3 = 1) => {
     put?.(piece, m.multiplyMatrices(base, trs(x, y, z, yaw, s)));
@@ -157,7 +175,9 @@ export function raiseFrostlight(builder: TownBuilder, put: Put | null, chapelBui
       // Bell tower on the north front corner, flush with the facade.
       const tx = -lot.sx - 2, tz = lot.sz - 2;
       const tb = new THREE.Matrix4().multiplyMatrices(base, trs(tx, 0, tz, 0));
-      chapelBuilder.house(tb, { sx: 2, sz: 2, floors: 4, ground: 'stone', upper: 'stone', ridge: 'z', doors: [], wide: false, round: true, shutters: false, chimney: false, dormer: false, noRoof: true, seed: 23 }, new THREE.Vector3(tx, 0, tz).applyMatrix4(base));
+      const tp = new THREE.Vector3(tx, 0, tz).applyMatrix4(base);
+      chapelBuilder.house(tb, { sx: 2, sz: 2, floors: 4, ground: 'stone', upper: 'stone', ridge: 'z', doors: [], wide: false, round: true, shutters: false, chimney: false, dormer: false, noRoof: true, seed: 23 }, tp);
+      solid(tp.x, tp.z, 2, 2, lot.yaw, tp.y, 4 * STOREY);
       at(tb, 'Roof_Tower_RoundTiles', 0, 4 * STOREY, 0, 0, 0.85);
     } else {
       builder.house(base, { sx: lot.sx, sz: lot.sz, floors: 1, ground: 'stone', upper: 'stone', ridge: 'x', doors: [], wide: true, round: false, shutters: false, chimney: false, dormer: false, openFront: true, seed: 31 }, pos);
@@ -169,19 +189,45 @@ export function raiseFrostlight(builder: TownBuilder, put: Put | null, chapelBui
       roofFrame(base, w, d, STOREY, 'x');
     }
     frames.footprints.push({ lot, h: y, hx: lot.sx, hz: lot.sz, doors });
+    frames.solids.splice(lot.kind === 'chapel' ? frames.solids.length - 1 : frames.solids.length, 0, { x: lot.x, z: lot.z, hx: lot.sx + 0.15, hz: lot.sz + 0.15, yaw: lot.yaw, y0: y - 2, y1: y + (lot.kind === 'forge' ? 1 : lot.kind === 'house' ? lot.floors : 2) * STOREY + 6 });
   }
   return frames;
 }
 
-/** Lamp posts: iron pole, bracket lantern facing `yaw`. Off the paving (|x|<=4 road, |z-street|<=2 lanes). */
+/** The point `s` metres along a way, offset `off` metres past its paved edge to the right (side 1) or left (-1). */
+export function alongWay(w: FrostWay, s: number, side: number, off: number): { x: number; z: number; yaw: number } {
+  const p = w.points;
+  for (let k = 1; k < p.length; k++) {
+    const [ax, az] = p[k - 1], [bx, bz] = p[k], len = Math.hypot(bx - ax, bz - az);
+    if (s > len && k < p.length - 1) { s -= len; continue; }
+    const t = Math.min(1, s / len), ux = (bx - ax) / len, uz = (bz - az) / len, d = side * (w.width / 2 + off);
+    // Right of the way is (uz, -ux); the lantern looks back across it.
+    return { x: ax + ux * len * t + uz * d, z: az + uz * len * t - ux * d, yaw: Math.atan2(-uz * side, ux * side) };
+  }
+  throw new Error(`alongWay: ${w.id}`);
+}
+/** The point `r` metres from a square's centre at bearing `a` (radians from +z toward +x), its lantern facing in. */
+const roundPad = (id: string, a: number, off: number) => {
+  const p = FROST_PADS.find((q) => q.id === id)!, r = p.r + off;
+  return { x: p.x + Math.sin(a) * r, z: p.z + Math.cos(a) * r, yaw: a + Math.PI };
+};
+const wayOf = (id: string) => FROST_WAYS.find((w) => w.id === id)!;
+
+/** Lamp posts: iron pole, bracket lantern facing `yaw`, standing just off the stones. */
 export function snowLamps(): { x: number; z: number; yaw: number }[] {
   const lamps: { x: number; z: number; yaw: number }[] = [];
-  const road = (x: number, z: number) => lamps.push({ x, z, yaw: x < 0 ? Math.PI / 2 : -Math.PI / 2 });
-  // Through the village the posts flank each crossing on opposite corners, then alternate up the hill.
-  for (const [x, z] of [[-5.6, 88], [5.6, 79], [-5.6, 77.4], [5.6, 70.6], [-5.6, 65], [5.6, 59.4], [-5.6, 52.6], [5.6, 47], [-5.6, 41.4], [5.6, 34.6], [-5.6, 28]] as const) road(x, z);
-  for (let z = 14, side = 1; z > -48; z -= 13, side = -side) road(side * 5.6, z);
-  // Lane lamps at the street ends and the fountain square.
-  lamps.push({ x: -20.5, z: 59.4, yaw: S }, { x: -6.8, z: 69, yaw: W }, { x: 20.5, z: 52.6, yaw: N }, { x: -20.5, z: 41.4, yaw: N }, { x: 20.5, z: 34.6, yaw: S }, { x: 19.5, z: 77.4, yaw: N });
+  const along = (id: string, list: [number, number][], off = 1.5) => { for (const [s, side] of list) lamps.push(alongWay(wayOf(id), s, side, off)); };
+  // Down the high street they alternate, a pair at the gate.
+  along('high-street', [[5.5, 1], [16, -1], [37, 1], [44, -1], [52.5, 1], [52.5, -1]]);
+  // Round the arrival square and the market.
+  for (const a of [0.9, 4.0]) lamps.push(roundPad('arrival', a, 1.4));
+  lamps.push(roundPad('arrival-west', 4.6, 1.3), roundPad('arrival-east', 1.2, 1.3), roundPad('market', 0.1, 1.4), roundPad('market', 3.0, 1.4), roundPad('market-west', 4.0, 1.3));
+  // The lanes.
+  along('chapel-lane', [[6, -1], [12.5, 1]], 1.3);
+  along('woods-lane', [[7, 1], [18, -1]], 1.3);
+  along('east-lane', [[8, -1], [20, 1]], 1.3);
+  // Out along the north road, alternating, clear of the guide lanterns and the ring of stones.
+  along('north-road', [[12, 1], [26, -1], [40, 1], [54, -1]], 1.7);
   return lamps;
 }
 
@@ -204,28 +250,37 @@ export function snowProps(): SnowProp[] {
   const p = (kit: SnowProp['kit'], piece: string, x: number, z: number, yaw = 0, solid: SnowPropShape = null, s = 1, dy = 0) => out.push({ kit, piece, x, z, yaw, s, dy, solid });
   const lot = (id: string) => SNOW_LOTS.find((l) => l.id === id)!;
   const local = (id: string, lx: number, lz: number) => atLot(lot(id), lx, lz);
-  // Fountain square: benches facing the basin, a market stall and cart on the square's west side.
-  for (const a of [1.57, 2.45, 5.68]) {
-    const x = -13 + Math.sin(a) * 5.4, z = 65 + Math.cos(a) * 5.4;
+  const { x: fx, z: fz } = SNOW_FOUNTAIN_AT;
+  // Market: benches round the fountain facing the basin, a stall and its crates on the square's west side.
+  for (const a of [0.2, 3.4, 4.9]) {
+    const x = fx + Math.sin(a) * 5.4, z = fz + Math.cos(a) * 5.4;
     p('props', 'Bench', x, z, a + Math.PI / 2, { hx: 1.4, hz: 0.35 });
   }
-  p('props', 'Stall_Empty', -20.6, 64.8, E, { hx: 1.1, hz: 0.6 });
-  p('props', 'FarmCrate_Apple', -20.2, 64.4, E, null, 1, 0.82);
-  p('props', 'FarmCrate_Carrot', -20.2, 65.3, E + 0.3, null, 1, 0.82);
-  p('props', 'Barrel_Apples', -21.3, 62.9, 1.1, { r: 0.4 });
-  p('props', 'Stall_Cart_Empty', -9.4, 69.9, Math.PI + 0.2, { hx: 1.6, hz: 0.6 });
-  p('props', 'Crate_Wooden', -18.4, 61.4, 0.3, { r: 0.55 });
-  p('props', 'Crate_Wooden', -18.4, 61.4, 0.9, null, 0.8, 0.88);
-  // Tavern terrace: a table with stools either side of the street's end, barrels at the corners.
-  for (const z of [70.6, 77.4]) {
-    p('props', 'Table_Large', -21.7, z, 0, { hx: 1.45, hz: 0.6 });
-    for (const [dx, dz] of [[-0.8, -0.95], [0.8, -0.95], [-0.8, 0.95], [0.8, 0.95]]) p('props', 'Stool', -21.7 + dx, z + dz, dx + dz);
+  const stall = { x: -19.5, z: 72.6, yaw: 2.43 };
+  const st = (lx: number, lz: number) => atLot(stall, lx, lz);
+  p('props', 'Stall_Empty', stall.x, stall.z, stall.yaw, { hx: 1.1, hz: 0.6 });
+  let [x, z] = st(0.4, 0.3);
+  p('props', 'FarmCrate_Apple', x, z, stall.yaw, null, 1, 0.82);
+  [x, z] = st(-0.5, 0.3);
+  p('props', 'FarmCrate_Carrot', x, z, stall.yaw + 0.3, null, 1, 0.82);
+  [x, z] = st(1.9, -0.6);
+  p('props', 'Barrel_Apples', x, z, 1.1, { r: 0.4 });
+  [x, z] = st(-1.9, -0.2);
+  p('props', 'Crate_Wooden', x, z, 0.3, { r: 0.55 });
+  p('props', 'Crate_Wooden', x, z, 0.9, null, 0.8, 0.88);
+  p('props', 'Stall_Cart_Empty', -7.6, 75.2, Math.PI - 0.35, { hx: 1.6, hz: 0.6 });
+  // Tavern terrace: two tables with stools out front, barrels at its corners.
+  const tv = lot('tavern');
+  for (const lx of [-2.2, 2.4]) {
+    const [tx, tz] = local('tavern', lx, tv.sz + 1.7);
+    p('props', 'Table_Large', tx, tz, tv.yaw + Math.PI / 2, { hx: 1.45, hz: 0.6 });
+    for (const [dx, dz] of [[-0.8, -0.95], [0.8, -0.95], [-0.8, 0.95], [0.8, 0.95]]) { const [sx, sz] = local('tavern', lx + dz, tv.sz + 1.7 + dx); p('props', 'Stool', sx, sz, dx + dz); }
   }
-  for (const [x, z, piece] of [[-24.2, 69.2, 'Barrel'], [-23.4, 68.7, 'Barrel'], [-24.0, 79.2, 'Barrel_Holder']] as const) p('props', piece, x, z, x * 0.7, { r: piece === 'Barrel' ? 0.4 : 0.75 });
+  for (const [lx, lz, piece] of [[-4.6, 5.9, 'Barrel'], [-4.2, 6.7, 'Barrel'], [4.7, 6.1, 'Barrel_Holder']] as const) { const [bx, bz] = local('tavern', lx, lz); p('props', piece, bx, bz, bx * 0.7, { r: piece === 'Barrel' ? 0.4 : 0.75 }); }
   // Forge yard in front of the open smithy.
   const fy = lot('forge').yaw;
   const f = (lx: number, lz: number) => local('forge', lx, lz);
-  let [x, z] = f(1.2, 4.6);
+  [x, z] = f(1.2, 4.6);
   p('props', 'Anvil_Log', x, z, fy + 0.4, { r: 0.55 });
   // The bench stands out in the yard: anything under the roof would wrongly carry snow.
   [x, z] = f(-2.4, 4.1);
@@ -237,17 +292,17 @@ export function snowProps(): SnowProp[] {
   [x, z] = f(-0.8, 5.8);
   p('props', 'Barrel', x, z, 0, { r: 0.45 });
   p('props', 'Bucket_Metal', x + 0.7, z + 0.2, 1);
-  // A wagon waits by the forge, a woodcutter's cart by the west houses.
+  // A wagon waits by the forge, a woodcutter's cart where the woods lane leaves the village.
   [x, z] = f(-6.4, -1.0);
   p('village', 'Prop_Wagon', x, z, fy + Math.PI / 2 - 0.2, { hx: 1.0, hz: 2.0 });
-  p('village', 'Prop_Wagon', -33.2, 59.6, 0.25, { hx: 1.0, hz: 2.0 });
+  p('village', 'Prop_Wagon', -38.4, 49.2, 0.85, { hx: 1.0, hz: 2.0 });
   // Crates and sacks by the doors.
-  for (const [id, lx, lz, piece] of [['w-47', 2.2, 3.7, 'Crate_Wooden'], ['e-47', -3.0, 3.7, 'Barrel'], ['e-38', 3.2, 3.8, 'Crate_Wooden'], ['w-38', -3.4, 3.8, 'Barrel'], ['w-56', 2.2, 3.8, 'Bag'], ['e-29', -2.2, 3.7, 'Barrel'], ['w-31', 2.2, 3.7, 'Crate_Wooden']] as const) {
+  for (const [id, lx, lz, piece] of [['street-west', 2.2, 3.7, 'Crate_Wooden'], ['street-east-b', -3.0, 3.7, 'Barrel'], ['row-a', 2.2, 4.8, 'Crate_Wooden'], ['woods-b', -3.4, 3.8, 'Barrel'], ['market-south', 2.2, 3.8, 'Bag'], ['gate-west', -2.2, 3.7, 'Barrel'], ['lane-north', 2.2, 3.7, 'Crate_Wooden']] as const) {
     const [px, pz] = local(id, lx, lz);
     p('props', piece, px, pz, lot(id).yaw + lx, { r: 0.45 });
   }
   // Wall banners: either side of the chapel door, and over the tavern's.
-  const ch = lot('chapel'), tv = lot('tavern');
+  const ch = lot('chapel');
   // The kit banner hangs from its left end (1.61 m wide).
   for (const lx of [-3.1, 1.1]) {
     const [bx, bz] = local('chapel', lx, ch.sz + 0.1);
@@ -257,8 +312,8 @@ export function snowProps(): SnowProp[] {
     const [bx, bz] = local('tavern', lx, tv.sz + 0.1);
     p('props', 'Banner_2', bx, bz, tv.yaw, null, 1.1, lotHeight(tv) - snowHeight(bx, bz) + 1.9);
   }
-  // Garden fences half sunk in the snow behind the main-street houses.
-  for (const id of ['w-47', 'e-47', 'w-31', 'e-29']) {
+  // Garden fences half sunk in the snow behind the houses.
+  for (const id of ['street-west', 'street-east-b', 'gate-west', 'row-b']) {
     const l = lot(id), back = -l.sz - 2.2;
     for (let i = -l.sx + 1; i < l.sx; i += 2) {
       const [px, pz] = local(id, i, back);
@@ -270,12 +325,12 @@ export function snowProps(): SnowProp[] {
 
 /** Woodpiles stacked against a side wall: [lot id, side (-1 left, 1 right), local z]. */
 export const SNOW_WOODPILES: readonly [string, number, number][] = [
-  ['w-47', 1, -1.0],
-  ['e-47', -1, 0.2],
-  ['w-56', -1, -1.2],
-  ['e-38', 1, -0.8],
+  ['street-west', 1, -1.0],
+  ['street-east-b', -1, 0.2],
+  ['market-south', -1, -1.2],
+  ['woods-b', 1, -0.8],
   ['tavern', 1, -2.4],
-  ['w-88', 1, 0.0],
+  ['square-west', 1, 0.0],
 ];
 /** Woodpile centre in lot-local space: 0.55 m out from the side wall. */
 export function woodpileAt(lot: SnowLot, side: number, lz: number): [number, number] {
@@ -296,21 +351,21 @@ export function snowSteps(h = snowHeight): { x: number; z: number; yaw: number; 
 
 /** Snowmen: position, the way the face looks (yaw of local +z), size. */
 export const SNOW_SNOWMEN: readonly { x: number; z: number; yaw: number; s: number }[] = [
-  // Greets the arrival from beside the road; one minds the market corner, one the chapel lane.
-  { x: 7.6, z: 78.0, yaw: -1.09, s: 0.92 },
-  { x: -17.8, z: 58.9, yaw: 1.73, s: 0.8 },
-  { x: 19.6, z: 61.0, yaw: -2.15, s: 1.0 },
+  // Greets the arrival beside the square; one minds the market corner, one the chapel lane.
+  { x: -6.6, z: 79.6, yaw: 1.2, s: 0.92 },
+  { x: -23.4, z: 74.6, yaw: 2.2, s: 0.8 },
+  { x: 15.6, z: 51.4, yaw: -2.6, s: 1.0 },
 ];
 /** The market's soup cauldron over a log fire, by the stall. */
-export const SNOW_CAULDRON = { x: -23.0, z: 63.2 } as const;
+export const SNOW_CAULDRON = { x: -24.2, z: 59.6 } as const;
 
 type GarlandEnd = { lot: string; lx: number; dy: number } | { x: number; z: number; dy: number };
 /** Strings of lights between facing fronts and lamp-post tops, high over the streets. */
 const GARLANDS: [GarlandEnd, GarlandEnd, number][] = [
-  [{ lot: 'w-47', lx: 0.4, dy: 4.7 }, { lot: 'e-47', lx: -0.6, dy: 4.7 }, 1.3],
-  [{ lot: 'w-31', lx: 0, dy: 2.7 }, { lot: 'e-29', lx: 0.8, dy: 4.5 }, 1.0],
-  [{ lot: 'tavern', lx: -3.7, dy: 5.5 }, { x: -5.6, z: 77.4, dy: 3.42 }, 1.1],
-  [{ lot: 'w-65', lx: 1.6, dy: 2.75 }, { x: -6.8, z: 69, dy: 3.42 }, 0.9],
+  [{ lot: 'street-west', lx: 0.4, dy: 4.7 }, { lot: 'street-east-b', lx: 2.6, dy: 4.7 }, 1.3],
+  [{ lot: 'market-north', lx: 0, dy: 2.7 }, { lot: 'street-east-a', lx: 0.8, dy: 2.6 }, 1.1],
+  [{ lot: 'tavern', lx: -3.7, dy: 5.5 }, { lot: 'market-south', lx: 0.6, dy: 4.6 }, 1.4],
+  [{ lot: 'gate-west', lx: 1.6, dy: 2.75 }, { lot: 'forge', lx: 3.2, dy: 2.9 }, 1.2],
 ];
 export function snowGarlands(h = snowHeight): { a: THREE.Vector3; b: THREE.Vector3; sag: number }[] {
   const end = (e: GarlandEnd) => {
@@ -324,7 +379,7 @@ export function snowGarlands(h = snowHeight): { a: THREE.Vector3; b: THREE.Vecto
 
 /** Same low props as World I: they stop a crab but not a spell aimed above it. */
 export function registerSnowVillage(col: Collision, h = snowHeight): void {
-  raiseFrostlight(new TownBuilder(null, null, col, {}), null, undefined, h);
+  for (const b of raiseFrostlight(new TownBuilder(null, null, null, {}), null, undefined, h).solids) col.addBox(b.x, b.z, b.hx, b.hz, b.yaw, b.y0, b.y1);
   for (const { x, z } of snowLamps()) col.addCircle(x, z, 0.3, h(x, z) - 1, h(x, z) + 3.6);
   for (const pr of snowProps()) {
     if (!pr.solid) continue;

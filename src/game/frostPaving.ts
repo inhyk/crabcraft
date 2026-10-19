@@ -18,8 +18,13 @@ import {SNOW_DEFORM_READ,type SnowDeform} from './snowDeform';
  * 2026 Maksymilian Dendura; see NOTICE.md), one octave.
  */
 
-const MAX_SEG = 8;
-const MAX_PLAZA = 4;
+/** Tile edge, metres: each pixel loops only over the segments its tile lists (fpTileTex), at most TILE_K. */
+const TILE = 5;
+const TILE_K = 16;
+/** Swept junctions and paved squares. */
+const MAX_PLAZA = 24;
+/** A segment joins a tile's list when its paved box comes this close: everything it shades lies within 1.5 m. */
+const TILE_REACH = 2;
 /** Grid step of the surface mesh, metres. */
 const CELL = .5;
 /** Above the rendered terrain, so the snowfield never pokes through. */
@@ -54,15 +59,19 @@ float fpFbm(vec2 p){return fpNoise(p)*.55+fpNoise(p*2.03+7.1)*.3+fpNoise(p*4.11-
 `;
 
 const PAVING_HEAD = /* glsl */ `
-#define FP_MAX_SEG ${MAX_SEG}
-uniform vec4 fpSeg[FP_MAX_SEG];
-uniform vec4 fpSegInfo[FP_MAX_SEG];
-uniform vec2 fpSegEnd[FP_MAX_SEG];
-uniform int fpSegCount;
-// Where a street crosses the main road: a swept square (xz, radius).
+// Segments, three texels each: (ax, az, bx, bz), (half width, main, along, seed), (start buried, end buried).
+uniform sampler2D fpSegTex;
+// One row per tile: the indices (plus one, 0 ends the list) of the segments that reach it, four per texel.
+uniform sampler2D fpTileTex;
+// Tile grid: origin x, z, 1 / tile size, tiles across; and tiles down.
+uniform vec4 fpTileGrid;
+uniform float fpTileRows;
+#define FP_TILE_K ${TILE_K}
+// Swept squares: where a street meets a main road (xz, swept radius, 0) and the paved squares (xz, swept, paved radius).
 #define FP_MAX_PLAZA ${MAX_PLAZA}
-uniform vec3 fpPlaza[FP_MAX_PLAZA];
+uniform vec4 fpPlaza[FP_MAX_PLAZA];
 uniform int fpPlazaCount;
+float fpPick(vec4 v,int i){return i==0?v.x:i==1?v.y:i==2?v.z:v.w;}
 uniform float fpDetail;
 uniform vec3 fpSkyH;
 uniform vec3 fpSkyZ;
@@ -125,9 +134,12 @@ float fpFoot=length(abs(fpDpx)+abs(fpDpy));
 // The network: a filleted union of the paths; two cart ruts with a packed crown between them down the main road,
 // a beaten line down each street; how far a free end lies buried.
 float fpSd=1e3,fpTrod=0.,fpRut=0.,fpWear=0.,fpEnd=0.;
-for(int i=0;i<FP_MAX_SEG;i++){
-  if(i>=fpSegCount)break;
-  vec4 s=fpSeg[i],info=fpSegInfo[i];vec2 ends=fpSegEnd[i];
+ivec2 fpTc=clamp(ivec2(floor((fpP-fpTileGrid.xy)*fpTileGrid.z)),ivec2(0),ivec2(int(fpTileGrid.w)-1,int(fpTileRows)-1));
+int fpTile=fpTc.y*int(fpTileGrid.w)+fpTc.x;
+for(int k=0;k<FP_TILE_K;k++){
+  int si=int(fpPick(texelFetch(fpTileTex,ivec2(k/4,fpTile),0),k-k/4*4))-1;
+  if(si<0)break;
+  vec4 s=texelFetch(fpSegTex,ivec2(0,si),0),info=texelFetch(fpSegTex,ivec2(1,si),0);vec2 ends=texelFetch(fpSegTex,ivec2(2,si),0).xy;
   vec2 ab=s.zw-s.xy;float L=length(ab);vec2 dir=ab/L,ap=fpP-s.xy;
   float t=dot(ap,dir),across=dot(ap,vec2(dir.y,-dir.x));
   vec2 bd=vec2(abs(across)-info.x,max(-t,t-L));
@@ -152,7 +164,7 @@ for(int i=0;i<FP_MAX_SEG;i++){
   fpEnd=max(fpEnd,buried*(1.-smoothstep(-.2,.4,bd.x)));
 }
 float fpN1=fpFbm(fpP*.3+1.7),fpN2=fpNoise(fpP*1.6+4.);
-for(int i=0;i<FP_MAX_PLAZA;i++){if(i>=fpPlazaCount)break;vec3 q=fpPlaza[i];fpWear=max(fpWear,1.-smoothstep(q.z*.55,q.z,length(fpP-q.xy)+fpN1*1.4+fpN2*.3));}
+for(int i=0;i<FP_MAX_PLAZA;i++){if(i>=fpPlazaCount)break;vec4 q=fpPlaza[i];float d=length(fpP-q.xy);if(q.w>0.)fpSd=fpSmin(fpSd,d-q.w,.3);fpWear=max(fpWear,1.-smoothstep(q.z*.55,q.z,d+fpN1*1.4+fpN2*.3));}
 // Snow level, same units: bare in the worn middle, banked white at the sides with a narrow ragged band between,
 // here and there a shovelled clump on the stones, swept up against the kerbs, drifted in across the edges and over
 // the free ends.
@@ -357,6 +369,8 @@ export interface FrostPavingOptions {
   sunDir: THREE.Vector3;
   /** Prints in the road's snow come from the snowfield's own deformation field. */
   deform: SnowDeform;
+  /** Paved squares, each one disc of its outline; swept bare in the middle. */
+  pads?: readonly {x: number; z: number; r: number}[];
 }
 
 export interface FrostPaving {
@@ -365,9 +379,33 @@ export interface FrostPaving {
   setQuality(q: 'high' | 'low'): void;
 }
 
-/** Frostlight's paths (same layout and `covers` contract as islandPaths), dressed as a snowed-in village street. */
+/** Distance from a segment's paved box (half width `half` round a-b, square ends) to (x, z); negative inside. */
+function segBox(s: Seg, x: number, z: number): number {
+  const dx = s.bx - s.ax, dz = s.bz - s.az, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L, px = x - s.ax, pz = z - s.az;
+  const t = px * ux + pz * uz, across = Math.abs(px * uz - pz * ux), bx = across - s.half, by = Math.max(-t, t - L);
+  return Math.hypot(Math.max(bx, 0), Math.max(by, 0)) + Math.min(Math.max(bx, by), 0);
+}
+/** Distance from segment a-b to the rectangle [x0, x1] x [z0, z1] (0 when they meet). */
+function segRect(ax: number, az: number, bx: number, bz: number, x0: number, z0: number, x1: number, z1: number): number {
+  const inside = (x: number, z: number) => x >= x0 && x <= x1 && z >= z0 && z <= z1;
+  if (inside(ax, az) || inside(bx, bz)) return 0;
+  const sd = (px: number, pz: number) => { const dx = bx - ax, dz = bz - az, t = Math.min(1, Math.max(0, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz))); return Math.hypot(px - ax - dx * t, pz - az - dz * t); };
+  const rd = (px: number, pz: number) => Math.hypot(Math.max(x0 - px, 0, px - x1), Math.max(z0 - pz, 0, pz - z1));
+  // Crossing an edge: the segment meets the rectangle's boundary.
+  const cross = (cx: number, cz: number, ex: number, ez: number) => {
+    const d1x = bx - ax, d1z = bz - az, d2x = ex - cx, d2z = ez - cz, den = d1x * d2z - d1z * d2x;
+    if (Math.abs(den) < 1e-12) return false;
+    const t = ((cx - ax) * d2z - (cz - az) * d2x) / den, u = ((cx - ax) * d1z - (cz - az) * d1x) / den;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+  };
+  if (cross(x0, z0, x1, z0) || cross(x1, z0, x1, z1) || cross(x1, z1, x0, z1) || cross(x0, z1, x0, z0)) return 0;
+  return Math.min(rd(ax, az), rd(bx, bz), sd(x0, z0), sd(x1, z0), sd(x0, z1), sd(x1, z1));
+}
+
+/** Frostlight's paths and squares (same `covers` contract as islandPaths), dressed as snowed-in village streets. */
 export function frostPaving(height: (x: number, z: number) => number, paths: IslandPath[], opts: FrostPavingOptions): FrostPaving {
   const root = new THREE.Group(); root.name = 'world4-snow-paving';
+  const pads = opts.pads ?? [];
   const segs: Seg[] = [];
   paths.forEach((path, pi) => {
     let along = 0;
@@ -378,32 +416,39 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
       along += len;
     }
   });
-  if (segs.length > MAX_SEG) throw new Error(`frostPaving: ${segs.length} segments, max ${MAX_SEG}`);
-  // A free end is a path's first or last point that no other path's paving reaches.
-  const boxDist = (s: Seg, x: number, z: number) => {
-    const dx = s.bx - s.ax, dz = s.bz - s.az, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L, px = x - s.ax, pz = z - s.az;
-    const t = px * ux + pz * uz, across = Math.abs(px * uz - pz * ux), bx = across - s.half, by = Math.max(-t, t - L);
-    return Math.hypot(Math.max(bx, 0), Math.max(by, 0)) + Math.min(Math.max(bx, by), 0);
-  };
-  const free = (s: Seg, x: number, z: number) => !segs.some(o => o.path !== s.path && boxDist(o, x, z) < .5);
-  const sdNet = (x: number, z: number) => segs.reduce((d, s) => Math.min(d, boxDist(s, x, z)), Infinity);
-  // Junctions of a street with the main road, swept into small squares.
-  const plazas: THREE.Vector3[] = [];
-  for (const m of segs.filter(s => s.main)) for (const s of segs.filter(s => !s.main)) {
-    const dx = m.bx - m.ax, dz = m.bz - m.az, ex = s.bx - s.ax, ez = s.bz - s.az, den = dx * ez - dz * ex;
-    if (Math.abs(den) < 1e-6) continue;
-    const t = ((s.ax - m.ax) * ez - (s.az - m.az) * ex) / den, u = ((s.ax - m.ax) * dz - (s.az - m.az) * dx) / den;
-    if (t >= 0 && t <= 1 && u >= 0 && u <= 1 && plazas.length < MAX_PLAZA) plazas.push(new THREE.Vector3(m.ax + dx * t, m.az + dz * t, m.half * 1.25));
-  }
-  const ground = (x: number, z: number) => pavingGround(height, x, z, 4);
-
-  // Surface: grid cells over the network, one vertex per grid point, so overlapping paths never double up.
+  // Tiles: each lists the segments whose paved box comes within TILE_REACH of it.
   let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
   for (const s of segs) {
     minX = Math.min(minX, s.ax - s.half - 1, s.bx - s.half - 1); maxX = Math.max(maxX, s.ax + s.half + 1, s.bx + s.half + 1);
     minZ = Math.min(minZ, s.az - s.half - 1, s.bz - s.half - 1); maxZ = Math.max(maxZ, s.az + s.half + 1, s.bz + s.half + 1);
   }
+  for (const p of pads) { minX = Math.min(minX, p.x - p.r - 1); maxX = Math.max(maxX, p.x + p.r + 1); minZ = Math.min(minZ, p.z - p.r - 1); maxZ = Math.max(maxZ, p.z + p.r + 1); }
   minX = Math.floor(minX / CELL) * CELL; minZ = Math.floor(minZ / CELL) * CELL;
+  const tx = Math.ceil((maxX - minX) / TILE), tz = Math.ceil((maxZ - minZ) / TILE);
+  const tiles: number[][] = [];
+  for (let j = 0; j < tz; j++) for (let i = 0; i < tx; i++) {
+    const x0 = minX + i * TILE, z0 = minZ + j * TILE, list: number[] = [];
+    segs.forEach((s, k) => { if (segRect(s.ax, s.az, s.bx, s.bz, x0, z0, x0 + TILE, z0 + TILE) - s.half < TILE_REACH) list.push(k); });
+    if (list.length > TILE_K) throw new Error(`frostPaving: ${list.length} segments reach tile ${i},${j}, max ${TILE_K}`);
+    tiles.push(list);
+  }
+  const tileOf = (x: number, z: number) => tiles[Math.min(tz - 1, Math.max(0, Math.floor((z - minZ) / TILE))) * tx + Math.min(tx - 1, Math.max(0, Math.floor((x - minX) / TILE)))];
+  const padDist = (x: number, z: number) => pads.reduce((d, p) => Math.min(d, Math.hypot(x - p.x, z - p.z) - p.r), Infinity);
+  // A free end is a path's first or last point that no other path's paving, and no square, reaches.
+  const free = (s: Seg, x: number, z: number) => padDist(x, z) >= .5 && !segs.some(o => o.path !== s.path && segBox(o, x, z) < .5);
+  const sdNet = (x: number, z: number) => tileOf(x, z).reduce((d, k) => Math.min(d, segBox(segs[k], x, z)), padDist(x, z));
+  // Swept squares: the paved squares themselves, and small ones where a street meets a main road.
+  const plazas: THREE.Vector4[] = pads.map(p => new THREE.Vector4(p.x, p.z, p.r * .95, p.r));
+  for (const m of segs.filter(s => s.main)) for (const s of segs.filter(s => !s.main)) {
+    const dx = m.bx - m.ax, dz = m.bz - m.az, ex = s.bx - s.ax, ez = s.bz - s.az, den = dx * ez - dz * ex;
+    if (Math.abs(den) < 1e-6) continue;
+    const t = ((s.ax - m.ax) * ez - (s.az - m.az) * ex) / den, u = ((s.ax - m.ax) * dz - (s.az - m.az) * dx) / den;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) plazas.push(new THREE.Vector4(m.ax + dx * t, m.az + dz * t, m.half * 1.25, 0));
+  }
+  if (plazas.length > MAX_PLAZA) throw new Error(`frostPaving: ${plazas.length} squares, max ${MAX_PLAZA}`);
+  const ground = (x: number, z: number) => pavingGround(height, x, z, 4);
+
+  // Surface: grid cells over the network, one vertex per grid point, so overlapping paths never double up.
   const nx = Math.ceil((maxX - minX) / CELL), nz = Math.ceil((maxZ - minZ) / CELL);
   const vid = new Int32Array((nx + 1) * (nz + 1)).fill(-1), pos: number[] = [], drift: number[] = [], index: number[] = [];
   const vert = (i: number, j: number) => {
@@ -421,12 +466,17 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
   geo.setAttribute('aDrift', new THREE.Float32BufferAttribute(drift, 1));
   geo.setIndex(index); geo.computeVertexNormals(); geo.computeBoundingSphere();
 
+  const segData = new Float32Array(segs.length * 12);
+  segs.forEach((s, i) => segData.set([s.ax, s.az, s.bx, s.bz, s.half, s.main ? 1 : 0, s.along0, s.seed, s.first && free(s, s.ax, s.az) ? 1 : 0, s.last && free(s, s.bx, s.bz) ? 1 : 0, 0, 0], i * 12));
+  const tileData = new Float32Array(tiles.length * TILE_K);
+  tiles.forEach((list, t) => list.forEach((k, j) => { tileData[t * TILE_K + j] = k + 1; }));
+  const tex = (data: Float32Array, w: number, h: number) => { const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType); t.needsUpdate = true; return t; };
   const uniforms = {
-    fpSeg: {value: Array.from({length: MAX_SEG}, (_, i) => segs[i] ? new THREE.Vector4(segs[i].ax, segs[i].az, segs[i].bx, segs[i].bz) : new THREE.Vector4())},
-    fpSegInfo: {value: Array.from({length: MAX_SEG}, (_, i) => segs[i] ? new THREE.Vector4(segs[i].half, segs[i].main ? 1 : 0, segs[i].along0, segs[i].seed) : new THREE.Vector4())},
-    fpSegEnd: {value: Array.from({length: MAX_SEG}, (_, i) => { const s = segs[i]; return s ? new THREE.Vector2(s.first && free(s, s.ax, s.az) ? 1 : 0, s.last && free(s, s.bx, s.bz) ? 1 : 0) : new THREE.Vector2(); })},
-    fpSegCount: {value: segs.length},
-    fpPlaza: {value: Array.from({length: MAX_PLAZA}, (_, i) => plazas[i] ?? new THREE.Vector3())},
+    fpSegTex: {value: tex(segData, 3, segs.length)},
+    fpTileTex: {value: tex(tileData, TILE_K / 4, tiles.length)},
+    fpTileGrid: {value: new THREE.Vector4(minX, minZ, 1 / TILE, tx)},
+    fpTileRows: {value: tz},
+    fpPlaza: {value: Array.from({length: MAX_PLAZA}, (_, i) => plazas[i] ?? new THREE.Vector4())},
     fpPlazaCount: {value: plazas.length},
     fpDetail: {value: 1},
     fpSkyH: {value: opts.skyHorizon},
@@ -454,7 +504,9 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
   surface.name = 'frostlight-paving-surface'; surface.receiveShadow = true; surface.renderOrder = -1;
   root.add(surface);
 
-  root.userData.covers = (x: number, z: number) => onIslandPath(paths, x, z);
-  root.userData.stats = {segments: segs.length, plazas: plazas.length, freeEnds: uniforms.fpSegEnd.value.reduce((n, v) => n + v.x + v.y, 0), cells: index.length / 6, vertices: pos.length / 3};
+  root.userData.covers = (x: number, z: number) => onIslandPath(paths, x, z) || padDist(x, z) <= .3;
+  let freeEnds = 0;
+  for (let i = 0; i < segs.length; i++) freeEnds += segData[i * 12 + 8] + segData[i * 12 + 9];
+  root.userData.stats = {segments: segs.length, plazas: plazas.length - pads.length, pads: pads.length, freeEnds, cells: index.length / 6, vertices: pos.length / 3, tiles: tiles.length, maxPerTile: Math.max(...tiles.map(t => t.length))};
   return {root, setQuality(q) { uniforms.fpDetail.value = q === 'low' ? 0 : 1; }};
 }
