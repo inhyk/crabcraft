@@ -7,6 +7,7 @@ import { type Kit, loadKit } from '../../world/kit';
 import { WORLD_UNIFORMS } from '../../world/materials';
 import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, type TidecrownAtmosphere } from './atmosphere';
 import { buildHorizon } from './horizon';
+import { buildGulls } from './gulls';
 import type { MapSnapshot } from '../snapshots';
 import { paintTidecrownMap } from './minimap';
 import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
@@ -130,7 +131,7 @@ export class TidecrownIsland {
 
     t0 = performance.now();
     this.atmosphere = buildTidecrownAtmosphere(terrain, quality, WORLD_UNIFORMS.uTime, this.structures.lanternAt);
-    this.root.add(this.atmosphere.group, buildHorizon());
+    this.root.add(this.atmosphere.group, buildHorizon(), buildGulls(WORLD_UNIFORMS.uTime));
     this.atmosphere.environment(renderer);
     step('atmosphere', t0);
     this.built = true;
