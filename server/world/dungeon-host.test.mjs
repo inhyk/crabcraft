@@ -433,3 +433,22 @@ test('a skipped retained character whose award lands with a moved PG revision is
     assert.deepEqual(rt.failures, []); assert.deepEqual(A.errors, []);
   } finally { clearInterval(beat); await closeBot(A); await rt.close(); }
 });
+
+test('with dungeons enabled a retained host saves once per interval in halting rounds only, since feature award captures need the world held', { timeout: 30000 }, async () => {
+  const rt = await runtime(), bots = []; let beat;
+  try {
+    for (let i = 0; i < 2; i++) bots.push(await client(rt, await character({ offset: i })));
+    beat = heartbeat(bots);
+    await until(() => !rt.host.stats().durableBarrier, 8000, 'admission rounds');
+    const start = rt.host.stats(), t0 = performance.now();
+    await delay(1500);
+    const end = rt.host.stats(), seconds = (performance.now() - t0) / 1000;
+    assert.deepEqual(rt.failures, []); assert.equal(end.frozen, false);
+    assert.equal(end.saveRounds, 0, 'no running-world round'); assert.equal(end.checkpointCaptures, 0);
+    const rounds = end.haltingBarriers - start.haltingBarriers;
+    // checkpointIntervalMs is 200 ms here: about one round per interval, never one per tick.
+    assert.ok(rounds >= 2 && rounds <= Math.ceil(seconds / .2) + 1, JSON.stringify({ rounds, seconds }));
+    assert.ok(end.ticks - start.ticks > 0);
+    for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { clearInterval(beat); for (const bot of bots) await closeBot(bot); await rt.close(); }
+});
