@@ -136,8 +136,8 @@ export const FROST_NPCS: readonly { readonly x: number; readonly z: number; read
   npc(-3.8, 31.4, -1.6, 19),
   // Hoofclaw ladles soup from the market cauldron.
   npc(-25.8, 60.2, -13, 62),
-  // Rattlebolt trims the lanterns where the road leaves the gate.
-  npc(5.6, 30.2, 2.6, 12.4),
+  // Rattlebolt trims the lanterns at the foot of the gate's watchtower, where the road leaves the village.
+  npc(3.2, 30, -2.6, 22),
   // Pip works the anvil in the forge yard.
   npc(10.2, 34.6, 2.6, 34.4),
 ];

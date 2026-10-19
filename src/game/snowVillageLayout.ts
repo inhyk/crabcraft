@@ -10,7 +10,7 @@ import { FROST_PADS, FROST_WAYS, type FrostWay } from '../sim/world/snowLayout';
 /** The frozen fountain at the heart of the market (world4Colliders.ts SNOW_FOUNTAIN). */
 const SNOW_FOUNTAIN_AT = { x: -13, z: 65 } as const;
 
-export type SnowLotKind = 'house' | 'tavern' | 'chapel' | 'forge';
+export type SnowLotKind = 'house' | 'tavern' | 'chapel' | 'forge' | 'tower';
 export interface SnowLot {
   id: string;
   kind: SnowLotKind;
@@ -47,6 +47,7 @@ export const SNOW_LOTS: readonly SnowLot[] = [
   // High street frontage.
   lot('street-west', 'house', -8.2, 45.4, 0.6, 46, 3, 3, 2, 3, 0.08),
   lot('street-east-a', 'house', 6.6, 64.4, -4, 64, 2, 3, 1, 2),
+  lot('street-east-c', 'house', 7.4, 71.2, -1.6, 70.6, 3, 3, 2, 1, 0.06),
   lot('street-east-b', 'house', 9.4, 55.6, -2.6, 53.6, 4, 3, 2, 1),
   // The chapel on the eastern rise, at the head of its lane.
   lot('chapel', 'chapel', 24.6, 46.4, 15, 46.6, 3, 5, 2, 0),
@@ -54,8 +55,9 @@ export const SNOW_LOTS: readonly SnowLot[] = [
   // The forge by the gate, its yard open to the street.
   lot('forge', 'forge', 17, 33.2, 2.6, 34.4, 4, 3, 1, 0),
   lot('gate-west', 'house', -9.8, 33.6, -1, 33, 3, 3, 1, 2),
+  // The watchtower east of the gate, the first thing the north road sees of the village.
+  lot('gate-tower', 'tower', 6.2, 26.8, -1.8, 27, 2, 2, 3, 0),
   // Out along the woods lane.
-  lot('woods-a', 'house', -34, 55.5, -28, 50, 3, 3, 1, 1),
   lot('woods-b', 'house', -26, 41.8, -31, 46.8, 4, 3, 2, 0),
 ];
 
@@ -179,6 +181,11 @@ export function raiseFrostlight(builder: TownBuilder, put: Put | null, chapelBui
       chapelBuilder.house(tb, { sx: 2, sz: 2, floors: 4, ground: 'stone', upper: 'stone', ridge: 'z', doors: [], wide: false, round: true, shutters: false, chimney: false, dormer: false, noRoof: true, seed: 23 }, tp);
       solid(tp.x, tp.z, 2, 2, lot.yaw, tp.y, 4 * STOREY);
       at(tb, 'Roof_Tower_RoundTiles', 0, 4 * STOREY, 0, 0, 0.85);
+    } else if (lot.kind === 'tower') {
+      // The gate's watchtower: stone storeys, plain glass, a door onto the road.
+      builder.house(base, { sx: lot.sx, sz: lot.sz, floors: lot.floors, ground: 'stone', upper: 'stone', ridge: 'z', doors: [{ side: 'front', index: 1, round: true }], wide: false, round: true, shutters: false, chimney: false, dormer: false, noRoof: true, seed: 41 }, pos);
+      door(1);
+      at(base, 'Roof_Tower_RoundTiles', 0, lot.floors * STOREY, 0, 0, 0.85);
     } else {
       builder.house(base, { sx: lot.sx, sz: lot.sz, floors: 1, ground: 'stone', upper: 'stone', ridge: 'x', doors: [], wide: true, round: false, shutters: false, chimney: false, dormer: false, openFront: true, seed: 31 }, pos);
       for (let i = 1; i < lot.sx; i++) at(base, 'Corner_Exterior_Wood', -lot.sx + i * 2, 0, lot.sz, 0, new THREE.Vector3(1.6, 1, 1.6));
@@ -189,7 +196,7 @@ export function raiseFrostlight(builder: TownBuilder, put: Put | null, chapelBui
       roofFrame(base, w, d, STOREY, 'x');
     }
     frames.footprints.push({ lot, h: y, hx: lot.sx, hz: lot.sz, doors });
-    frames.solids.splice(lot.kind === 'chapel' ? frames.solids.length - 1 : frames.solids.length, 0, { x: lot.x, z: lot.z, hx: lot.sx + 0.15, hz: lot.sz + 0.15, yaw: lot.yaw, y0: y - 2, y1: y + (lot.kind === 'forge' ? 1 : lot.kind === 'house' ? lot.floors : 2) * STOREY + 6 });
+    frames.solids.splice(lot.kind === 'chapel' ? frames.solids.length - 1 : frames.solids.length, 0, { x: lot.x, z: lot.z, hx: lot.sx + 0.15, hz: lot.sz + 0.15, yaw: lot.yaw, y0: y - 2, y1: y + (lot.kind === 'forge' ? 1 : lot.kind === 'house' || lot.kind === 'tower' ? lot.floors : 2) * STOREY + 6 });
   }
   return frames;
 }
@@ -218,7 +225,7 @@ export function snowLamps(): { x: number; z: number; yaw: number }[] {
   const lamps: { x: number; z: number; yaw: number }[] = [];
   const along = (id: string, list: [number, number][], off = 1.5) => { for (const [s, side] of list) lamps.push(alongWay(wayOf(id), s, side, off)); };
   // Down the high street they alternate, a pair at the gate.
-  along('high-street', [[5.5, 1], [16, -1], [37, 1], [44, -1], [52.5, 1], [52.5, -1]]);
+  along('high-street', [[5.5, 1], [16, -1], [37, 1], [44, -1], [52.5, 1]]);
   // Round the arrival square and the market.
   for (const a of [0.9, 4.0]) lamps.push(roundPad('arrival', a, 1.4));
   lamps.push(roundPad('arrival-west', 4.6, 1.3), roundPad('arrival-east', 0.4, 1.3), roundPad('market', 0.1, 1.4), roundPad('market', 3.0, 1.4), roundPad('market-west', 4.0, 1.3));
@@ -365,7 +372,7 @@ const GARLANDS: [GarlandEnd, GarlandEnd, number][] = [
   [{ lot: 'street-west', lx: 0.4, dy: 4.7 }, { lot: 'street-east-b', lx: 2.6, dy: 4.7 }, 1.3],
   [{ lot: 'market-north', lx: 0, dy: 2.7 }, { lot: 'street-east-a', lx: 0.8, dy: 2.6 }, 1.1],
   [{ lot: 'tavern', lx: -3.7, dy: 5.5 }, { lot: 'market-south', lx: 0.6, dy: 4.6 }, 1.4],
-  [{ lot: 'gate-west', lx: 1.6, dy: 2.75 }, { lot: 'forge', lx: 3.2, dy: 2.9 }, 1.2],
+  [{ lot: 'gate-west', lx: 1.6, dy: 2.75 }, { lot: 'gate-tower', lx: -0.4, dy: 5.4 }, 1.2],
 ];
 export function snowGarlands(h = snowHeight): { a: THREE.Vector3; b: THREE.Vector3; sag: number }[] {
   const end = (e: GarlandEnd) => {

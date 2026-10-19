@@ -527,8 +527,8 @@ export const SNOW_POINTS:Partial<Record<SnowObjectiveKind,[number,number]>> = {
     93.2
   ],
   "snow-crate-b": [
-    12,
-    72
+    17.2,
+    70.4
   ],
   "snow-crate-c": [
     -8.2,

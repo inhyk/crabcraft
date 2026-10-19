@@ -1,4 +1,4 @@
-// Frostlight village: kit houses on every layout lot (with a tavern, a chapel and a forge), lamp posts, props,
+// Frostlight village: kit houses on every layout lot (with a tavern, a chapel, a forge and the gate's watchtower), lamp posts, props,
 // snowmen, string lights and snow on roofs; nothing primitive left in the village frame; NPCs, spawn, arrival and
 // the portal stand in the open and every NPC is reachable on foot from the arrival; paving stays clear; the
 // low-quality page loads the same village. Writes tmp/qa/snow-village*.png.
@@ -57,7 +57,7 @@ try{
   return {info,kinds,lots:L.SNOW_LOTS.length,lamps:L.snowLamps().length,props:L.snowProps().length,snowmen:L.SNOW_SNOWMEN.length,kitDraws,kitVerts,prim,blockedPoints,paving:paving.slice(0,8),pavingBlocked:paving.length,unreachable,trapped,
    names:v.group.children.map(o=>o.name).sort()};});
  console.log(JSON.stringify(r));
- assert.deepEqual(r.kinds,['chapel','forge','house','tavern']);
+ assert.deepEqual(r.kinds,['chapel','forge','house','tavern','tower']);
  assert.equal(r.info.lots,r.lots);assert.ok(r.lots>=15,`${r.lots} lots`);
  assert.ok(r.info.roofs>=r.lots,`a snow cap per roof: ${r.info.roofs}`);assert.ok(r.info.chimneys>=r.lots,`${r.info.chimneys} chimneys`);
  assert.equal(r.info.lamps,r.lamps);assert.ok(r.lamps>=16,`${r.lamps} lamp posts`);
