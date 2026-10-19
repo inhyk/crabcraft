@@ -1,8 +1,10 @@
 // Tidecrown studio: the capital's townhouse generator and market dressing on preview ground.
-//   /dev/tidecrown.html?view=street|district|market|house|pieces  (&clean hides the UI)
+//   /dev/tidecrown.html?view=street|district|market|house|city|pieces  (&clean hides the UI)
 // street: a sloping street of row houses at eye level in late-afternoon sun, a red crab for scale.
 // district: fillDistrict on a 150 x 110 sample block with two crossing streets and a market plaza, from above.
 // market: eye level among the stalls. house: a short row close up. pieces: the kit gallery (&kit=props, &f=regex).
+// city: about 300 houses over 400 x 340 on one LOD, &preset=street|far|aerial|castle|edge|high (edge and high look
+// at the city from the switch distance, for the near/far swap check); &near=, &chunk=, &shadow= tune the LOD.
 import '../src/ui/kit.css';
 import * as THREE from 'three';
 import { Engine } from '../src/core/engine';
@@ -14,7 +16,8 @@ import { WORLD_UNIFORMS } from '../src/world/materials';
 import { addPatch } from '../src/world/materials';
 import { GLSL_NOISE } from '../src/world/noise';
 import { loadKit, StaticBatch, trs } from '../src/world/kit';
-import { fillDistrict, lineDist, loadTidecrownKit, planDistrict, pointInPoly, type District, type DistrictStreet, type Height, type TidecrownKit, type V2 } from '../src/game/tidecrown/houses';
+import { cityLod, fillDistrict, lineDist, loadTidecrownKit, planDistrict, pointInPoly, type District, type DistrictStreet, type Height, type TidecrownKit, type V2 } from '../src/game/tidecrown/houses';
+import type { TidecrownLod } from '../src/game/tidecrown/lod';
 import { dressMarket, type Market } from '../src/game/tidecrown/marketStalls';
 
 declare global {
@@ -25,6 +28,10 @@ declare global {
     /** Set true to grab the next rendered frame into __shot (a PNG data URL), for headless capture. */
     __shoot?: boolean;
     __shot?: string;
+    /** The city view's LOD (force near/far, hide) for the QA's swap check. */
+    __lod?: TidecrownLod;
+    /** Draw calls and triangles of the last rendered frame. */
+    __frame?: { calls: number; triangles: number };
   }
 }
 
@@ -37,7 +44,7 @@ const scene = new THREE.Scene();
 const cam = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 2000);
 const stats = document.getElementById('stats')!;
 const panel = document.getElementById('panel')!;
-for (const v of ['street', 'district', 'market', 'house', 'pieces']) {
+for (const v of ['street', 'district', 'market', 'house', 'city', 'pieces']) {
   const a = document.createElement('a');
   a.href = `?view=${v}`;
   a.textContent = v;
@@ -91,8 +98,7 @@ function aimSun(focus: THREE.Vector3, extent: number): void {
 // ---------------------------------------------------------------------------------------------
 // Preview ground: cobbled streets and plazas, flagged pavements, grassy yards behind the rows.
 
-function ground(kit: TidecrownKit, h: Height, x0: number, x1: number, z0: number, z1: number, paved: (x: number, z: number) => number): THREE.Mesh {
-  const step = 0.5;
+function ground(kit: TidecrownKit, h: Height, x0: number, x1: number, z0: number, z1: number, paved: (x: number, z: number) => number, step = 0.5, drop = 0): THREE.Mesh {
   const nx = Math.ceil((x1 - x0) / step);
   const nz = Math.ceil((z1 - z0) / step);
   const pos: number[] = [];
@@ -103,7 +109,7 @@ function ground(kit: TidecrownKit, h: Height, x0: number, x1: number, z0: number
     for (let i = 0; i <= nx; i++) {
       const x = x0 + i * step;
       const z = z0 + j * step;
-      pos.push(x, h(x, z), z);
+      pos.push(x, h(x, z) - drop, z);
       uv.push(x * 0.42, z * 0.42);
       pave.push(paved(x, z));
     }
@@ -166,8 +172,9 @@ async function crab(x: number, z: number, h: Height, yaw: number): Promise<void>
 }
 
 function stat(district: District, extra: Record<string, unknown> = {}): void {
-  const info = { view, buildMs: (district.stats as Record<string, unknown>).buildMs, deterministic: (district.stats as Record<string, unknown>).deterministic, lanes: district.lanes.length, houses: district.stats.houses, districtMeshes: district.stats.meshes, districtTriangles: district.stats.triangles, colliders: district.colliders.length, banners: district.lots.filter((l) => l.spec.banner).length, shops: district.lots.filter((l) => l.spec.shop).length, corners: district.lots.filter((l) => l.spec.corner?.left || l.spec.corner?.right).length, pieces: district.stats.pieces, ...extra };
+  const info = { view, buildMs: (district.stats as Record<string, unknown>).buildMs, deterministic: (district.stats as Record<string, unknown>).deterministic, lanes: district.lanes.length, houses: district.stats.houses, districtMeshes: district.stats.meshes, districtTriangles: district.stats.triangles, districtFarTriangles: district.stats.farTriangles, chunks: district.stats.chunks, colliders: district.colliders.length, banners: district.lots.filter((l) => l.spec.banner).length, shops: district.lots.filter((l) => l.spec.shop).length, corners: district.lots.filter((l) => l.spec.corner?.left || l.spec.corner?.right).length, pieces: district.stats.pieces, ...extra };
   window.__info = info;
+  if ((district.group as TidecrownLod).isLOD) window.__lod = district.group as TidecrownLod;
 }
 
 function exposeDistrict(d: District, streets: DistrictStreet[], reserved: V2[][], polygon: V2[], market?: Market): void {
@@ -283,6 +290,108 @@ async function house(): Promise<void> {
   stat(d);
 }
 
+// ---------------------------------------------------------------------------------------------
+// City: about 300 townhouses over 400 x 340 in four districts on one shared LOD, around a castle hill, a central
+// market plaza, a cathedral square, gardens and smaller squares. Streets: Crown Way (north-south), Tide Street
+// (west-east) and two ring streets.
+
+const cityHeight: Height = (x, z) => -0.035 * z + 1.6 * Math.sin(x * 0.017) * Math.cos(z * 0.021);
+const circle = (x: number, z: number, r: number, n = 14): V2[] => Array.from({ length: n }, (_, i) => [x + Math.cos((i / n) * Math.PI * 2) * r, z + Math.sin((i / n) * Math.PI * 2) * r] as V2);
+const CROWN_WAY: DistrictStreet = { points: [[0, -80], [3, -40], [0, 0], [-3, 60], [2, 120], [0, 178]], width: 9 };
+const TIDE_STREET: DistrictStreet = { points: [[-208, 16], [-130, 10], [-60, 14], [0, 8], [60, 4], [130, 12], [208, 8]], width: 8 };
+const WEST_RING: DistrictStreet = { points: [[-98, -150], [-104, -90], [-96, -20], [-102, 60], [-97, 150]], width: 7 };
+const EAST_RING: DistrictStreet = { points: [[100, -150], [96, -90], [104, -20], [98, 60], [103, 150]], width: 7 };
+const MARKET = { x: 0, z: 8, r: 26 };
+// Castle hill, market plaza, cathedral square, two gardens, a park, the harbour gate and four street squares.
+const CITY_RESERVED: V2[][] = [circle(0, -128, 55), circle(MARKET.x, MARKET.z, MARKET.r), circle(120, 128, 26), circle(-150, 140, 24), circle(-125, -115, 24), circle(135, -115, 28), circle(0, 152, 22), circle(-100, -40, 20), circle(100, 75, 20), circle(-152, 12, 17), circle(152, 10, 17)];
+const CITY_DISTRICTS: { poly: V2[]; streets: DistrictStreet[]; seed: number; lanes: number }[] = [
+  { poly: [[-198, -168], [0, -168], [0, 12], [-198, 12]], streets: [TIDE_STREET, CROWN_WAY, WEST_RING], seed: 21, lanes: 0 },
+  { poly: [[0, -168], [198, -168], [198, 8], [0, 8]], streets: [TIDE_STREET, CROWN_WAY, EAST_RING], seed: 22, lanes: 0 },
+  { poly: [[-198, 12], [0, 12], [0, 168], [-198, 168]], streets: [TIDE_STREET, CROWN_WAY, WEST_RING], seed: 23, lanes: 0 },
+  { poly: [[0, 8], [198, 8], [198, 168], [0, 168]], streets: [TIDE_STREET, CROWN_WAY, EAST_RING], seed: 24, lanes: 0 },
+];
+const CITY_PRESETS: Record<string, { cam: [number, number, number]; at: [number, number, number]; fov: number; fog: number }> = {
+  // Crab eye in Tide Street, looking east down the avenue to the market plaza.
+  street: { cam: [-150, 1.9, 11.6], at: [-60, 4, 14], fov: 50, fog: 0.0034 },
+  // Crab eye on Crown Way below the market, looking north up the avenue to the castle hill.
+  crown: { cam: [-1.5, 1.9, 120], at: [1, 5, 40], fov: 50, fog: 0.0034 },
+  // Crab eye on the west ring street, looking south past the square.
+  ring: { cam: [-99, 1.9, -95], at: [-99, 4, -10], fov: 50, fog: 0.0034 },
+  // From a ridge 300 units south of the centre, 30 above the city.
+  far: { cam: [0, 30, 300], at: [0, 6, 0], fov: 42, fog: 0.0012 },
+  aerial: { cam: [-40, 170, 220], at: [0, 0, -10], fov: 42, fog: 0.0012 },
+  // The castle stair: 28 above Crown Way at the gate, looking south over the roofs.
+  castle: { cam: [0, 28, -76], at: [0, 2, 40], fov: 50, fog: 0.0025 },
+};
+
+async function city(): Promise<void> {
+  const kit = await loadTidecrownKit();
+  const num = (k: string) => (params.has(k) ? Number(params.get(k)) : undefined);
+  const lod = cityLod(kit, { chunk: num('chunk'), near: num('near'), shadow: num('shadow'), hysteresis: num('hyst') });
+  const t0 = performance.now();
+  const districts = CITY_DISTRICTS.map((c, i) => fillDistrict({ kit, polygon: c.poly, streets: c.streets, reserved: CITY_RESERVED, height: cityHeight, seed: c.seed, laneSpacing: c.lanes, lod, name: `tidecrown-city-${i}` }));
+  lod.build();
+  const buildMs = Math.round(performance.now() - t0);
+  scene.add(lod);
+  window.__lod = lod;
+  const streets = [CROWN_WAY, TIDE_STREET, WEST_RING, EAST_RING, ...districts.flatMap((d) => d.lanes)];
+  const paved = (x: number, z: number) => {
+    if (Math.hypot(x - MARKET.x, z - MARKET.z) < MARKET.r) return 1;
+    let best = 0;
+    for (const s of streets) {
+      const dd = lineDist(x, z, s.points);
+      if (dd < s.width / 2) return 1;
+      if (dd < s.width / 2 + 1.1) best = 0.5;
+    }
+    return best;
+  };
+  scene.add(ground(kit, cityHeight, -215, 215, -185, 185, paved, 1));
+  const outer = ground(kit, cityHeight, -900, 900, -900, 900, () => 0, 30, 0.6);
+  scene.add(outer);
+  const presetName = params.get('preset') ?? 'street';
+  const ls = lod.stats;
+  const houses = districts.reduce((n, d) => n + d.stats.houses, 0);
+  window.__district = {
+    lots: districts.flatMap((d) => d.lots.map((l) => ({ corners: l.corners, doors: l.doors, floors: l.spec.floors, width: l.spec.width, depth: l.spec.depth, shop: !!l.spec.shop, top: l.top }))),
+    streets,
+    reserved: CITY_RESERVED,
+    polygon: [[-198, -168], [198, -168], [198, 168], [-198, 168]],
+    stalls: [],
+    colliders: districts.reduce((n, d) => n + d.colliders.length, 0),
+    stats: ls,
+  };
+  window.__info = { view, preset: presetName, buildMs, houses, chunks: ls.chunks, lodMeshes: ls.meshes, nearTriangles: ls.nearTriangles, farTriangles: ls.farTriangles, farPerHouse: Math.round(ls.farTriangles / houses), nearPerHouse: Math.round(ls.nearTriangles / houses), lod: lod.opts };
+  // Presets, or the swap check's views: from the switch distance at crab eye (edge) or 30 up (high).
+  // &dist= puts the edge and high views at another distance from the nearest houses than the switch distance.
+  const near = num('dist') ?? lod.opts.near;
+  const southEdge = Math.max(...districts.flatMap((d) => d.lots.flatMap((l) => l.corners.map((c) => (Math.abs(c[0]) < 40 ? c[1] : -Infinity)))));
+  const presets: typeof CITY_PRESETS = {
+    ...CITY_PRESETS,
+    edge: { cam: [0, 1.9, southEdge + near - 2], at: [0, 6, southEdge - 30], fov: 50, fog: 0.0034 },
+    high: { cam: [0, 30, southEdge + Math.sqrt(near * near - 26 * 26) - 2], at: [0, 2, southEdge - 40], fov: 50, fog: 0.0025 },
+  };
+  const pr = presets[presetName] ?? presets.street;
+  cam.fov = pr.fov;
+  cam.position.set(pr.cam[0], cityHeight(pr.cam[0], pr.cam[2]) + pr.cam[1], pr.cam[2]);
+  cam.lookAt(pr.at[0], cityHeight(pr.at[0], pr.at[2]) + pr.at[1], pr.at[2]);
+  scene.fog = new THREE.FogExp2('#e9d2b4', pr.fog);
+  // The game's sun: a 70-unit shadow box centred ahead of the camera (src/world/index.ts).
+  const fwd = new THREE.Vector3();
+  cam.getWorldDirection(fwd);
+  const ahead = THREE.MathUtils.clamp((cam.position.y - cityHeight(cam.position.x, cam.position.z)) * 1.2, 12, 45);
+  const focus = cam.position.clone().addScaledVector(fwd.setY(0).normalize(), ahead);
+  focus.y = cityHeight(focus.x, focus.z);
+  aimSun(focus, 70);
+  if (presetName === 'street') await crab(-140, 12.6, cityHeight, Math.PI / 2 + 0.3);
+  for (const k of [...Object.keys(CITY_PRESETS), 'edge', 'high']) {
+    const a = document.createElement('a');
+    a.href = `?view=city&preset=${k}`;
+    a.textContent = k;
+    if (k === presetName) a.className = 'on';
+    panel.appendChild(a);
+  }
+}
+
 async function pieces(): Promise<void> {
   const kit = await loadKit(`models/world/${params.get('kit') ?? 'village'}.glb`);
   const filter = new RegExp(params.get('f') ?? '.');
@@ -312,13 +421,13 @@ async function pieces(): Promise<void> {
   cam.lookAt(W / 2 - sp / 2, 1, D / 2 - sp / 2);
 }
 
-const views: Record<string, () => Promise<void>> = { street, district, market, house, pieces };
+const views: Record<string, () => Promise<void>> = { street, district, market, house, city, pieces };
 await (views[view] ?? street)();
 // &cam=x,y,z,tx,ty,tz places the camera anywhere (heights above the ground there), for spot checks.
 const camArg = params.get('cam')?.split(',').map(Number);
 if (camArg?.length === 6) {
   const [x, y, z, tx, ty, tz] = camArg;
-  const g = view === 'district' || view === 'market' ? districtHeight : () => 0;
+  const g = view === 'district' || view === 'market' ? districtHeight : view === 'city' ? cityHeight : () => 0;
   cam.position.set(x, g(x, z) + y, z);
   cam.lookAt(tx, g(tx, tz) + ty, tz);
 }
@@ -327,9 +436,15 @@ let frames = 0;
 engine.onFrame(({ elapsed }) => {
   WORLD_UNIFORMS.uTime.value = elapsed;
   frames++;
+});
+engine.onAfterFrame(() => {
   const info = engine.renderer.info;
-  stats.textContent = `${view}  ${engine.fps.toFixed(0)} fps\ncalls ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k`;
-  if (frames === 40 && window.__info) Object.assign(window.__info as object, { frameCalls: info.render.calls, frameTriangles: info.render.triangles });
+  window.__frame = { calls: info.render.calls, triangles: info.render.triangles };
+  const l = window.__lod?.frame;
+  // Houses: the LOD's own draws in the camera and shadow passes; frame: everything on screen.
+  const houses = l ? `\nhouses ${l.calls + l.shadowCalls} calls (${l.shadowCalls} shadow)  ${((l.triangles + l.shadowTriangles) / 1000).toFixed(0)}k tris (${(l.shadowTriangles / 1000).toFixed(0)}k shadow)\nnear chunks ${window.__lod!.stats.near}/${window.__lod!.chunks.length}` : '';
+  stats.textContent = `${view}  ${engine.fps.toFixed(0)} fps\nframe ${info.render.calls} calls  ${(info.render.triangles / 1000).toFixed(0)}k tris${houses}`;
+  if (frames === 40 && window.__info) Object.assign(window.__info as object, { frameCalls: info.render.calls, frameTriangles: info.render.triangles, ...(l ? { houseCalls: l.calls + l.shadowCalls, houseShadowCalls: l.shadowCalls, houseTriangles: l.triangles + l.shadowTriangles, houseShadowTriangles: l.shadowTriangles, nearChunks: window.__lod!.stats.near } : {}) });
   if (frames === 45) window.__ready = true;
 });
 engine.onAfterFrame(() => {

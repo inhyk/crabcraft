@@ -2,13 +2,15 @@
 // Medieval Village MegaKit and its props and nature kits (CC0, see NOTICE.md). Kit materials are shared with
 // World 1, so Tidecrown recolours its own clones; per-house colours ride on vertex colour, so a whole quarter of
 // the city is still one draw per material. planDistrict lays the rows out as plain numbers (lots and colliders,
-// also usable without the kit); fillDistrict builds them, one batch per quarter so frustum culling works.
+// also usable without the kit); fillDistrict builds them into distance-LOD chunks (lod.ts): the kit up close, a
+// few hundred triangles a house beyond the switch distance, every chunk of a material in one multi-draw.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { lathe, tube, worldBox } from '../../world/geom';
-import { type Kit, loadKit, StaticBatch, trs } from '../../world/kit';
+import { type Kit, loadKit, type Piece, StaticBatch, trs } from '../../world/kit';
 import { addPatch, stylise } from '../../world/materials';
 import { GLSL_NOISE } from '../../world/noise';
+import { FarBatch, type LodOptions, TidecrownLod } from './lod';
 
 export type V2 = [number, number];
 export type Height = (x: number, z: number) => number;
@@ -46,6 +48,8 @@ export interface TidecrownMaterials {
   paint: THREE.MeshStandardMaterial;
   tiles: THREE.MeshStandardMaterial;
   glass: THREE.MeshStandardMaterial;
+  /** The same glass for far-build window decals, offset in depth so it stays in front of its wall. */
+  farGlass: THREE.MeshStandardMaterial;
   iron: THREE.MeshStandardMaterial;
   gold: THREE.MeshStandardMaterial;
   awning: THREE.MeshStandardMaterial;
@@ -147,13 +151,46 @@ function bannerMaterial(): THREE.MeshStandardMaterial {
   return m;
 }
 
-function glassMaterial(): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ name: 'tidecrown-glass', color: '#3a4656', emissive: '#ffb066', emissiveIntensity: 1.6, roughness: 0.12, metalness: 0.55, vertexColors: true });
+function glassMaterial(decal = false): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ name: decal ? 'tidecrown-far-glass' : 'tidecrown-glass', color: '#3a4656', emissive: '#ffb066', emissiveIntensity: 1.6, roughness: 0.12, metalness: 0.55, vertexColors: true });
   // Vertex colour red is the light inside each window (0 dark .. 1 lamp-lit); the pane itself stays dark glass.
+  // Far windows (vertex alpha 0) are decals on an uncut wall: uv counts panes from the glass corner, colour green
+  // and blue carry columns / 8 and rows / 8, and the shader paints the glazing bars and the frame around them.
+  // The decal material is offset to stay in front of its wall at any distance.
+  m.polygonOffset = decal;
+  m.polygonOffsetFactor = -1;
+  m.polygonOffsetUnits = -4;
   addPatch(m, 'tc-glass', (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vPane;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvPane = uv;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <color_fragment>', '#ifdef USE_COLOR\n float cLit = vColor.r;\n#endif\n')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n#ifdef USE_COLOR\n totalEmissiveRadiance *= cLit * cLit;\n#endif');
+      .replace('#include <common>', '#include <common>\nvarying vec2 vPane;')
+      .replace(
+        '#include <color_fragment>',
+        `float cLit = 0.0;
+        float cBar = 0.0;
+        #ifdef USE_COLOR
+          cLit = vColor.r;
+          #ifdef USE_COLOR_ALPHA
+          if (vColor.a < 0.5) {
+            vec2 n = vColor.gb * 8.0;
+            vec2 f = fract(vPane);
+            vec2 d = min(f, 1.0 - f);
+            vec2 aa = max(fwidth(vPane), vec2(1e-4));
+            vec2 cov = clamp((0.07 - d) / aa + 0.5, 0.0, 1.0);
+            // Bars thinner than a pixel fade to their share of the pane.
+            cov = mix(cov, vec2(0.14), clamp(aa * 3.0 - 0.6, 0.0, 1.0));
+            cBar = max(cov.x, cov.y);
+            // The frame: anywhere outside the panes.
+            vec2 out2 = step(vPane, vec2(0.0)) + step(n, vPane);
+            cBar = max(cBar, min(out2.x + out2.y, 1.0));
+          }
+          #endif
+        #endif
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.58, 0.54), cBar);`,
+      )
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - cBar;')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.75, cBar);')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= cLit * cLit * (1.0 - cBar);');
   });
   return m;
 }
@@ -186,7 +223,7 @@ export function loadTidecrownKit(): Promise<TidecrownKit> {
     vine.side = THREE.DoubleSide;
     const gold = new THREE.MeshStandardMaterial({ name: 'tidecrown-gold', color: '#e0ad48', metalness: 0.9, roughness: 0.28 });
     const pennant = new THREE.MeshStandardMaterial({ name: 'tidecrown-pennant', color: '#ffffff', roughness: 0.8, side: THREE.DoubleSide, vertexColors: true });
-    const mat: TidecrownMaterials = { plaster, limestone, ashlar, rock, stone, paint, tiles, glass: glassMaterial(), iron, gold, awning: clothMaterial(), banner: bannerMaterial(), pennant, vine };
+    const mat: TidecrownMaterials = { plaster, limestone, ashlar, rock, stone, paint, tiles, glass: glassMaterial(), farGlass: glassMaterial(true), iron, gold, awning: clothMaterial(), banner: bannerMaterial(), pennant, vine };
     const wall: Over = {
       MI_Plaster: plaster,
       MI_UnevenBrick: limestone,
@@ -244,6 +281,58 @@ function withColor(geo: THREE.BufferGeometry, c: THREE.Color, cache: Map<string,
   return g;
 }
 
+const indoorCut = new Map<string, THREE.BufferGeometry>();
+/**
+ * A wall-mounted kit part without the triangles that face into the house from behind the wall plane (piece-local
+ * +z is out, z = 0 the outer face): the kit's interior plaster, inner frames and the backs of doors. Houses are
+ * closed (glass, doors and the shop boxes fill every opening), so nothing outside ever sees them.
+ */
+function cutIndoor(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  let out = indoorCut.get(geo.uuid);
+  if (!out) indoorCut.set(geo.uuid, (out = filterTriangles(geo, (a, b, c, n) => !(n.z < -0.3 * n.length() && (a.z + b.z + c.z) / 3 < -0.02))));
+  return out;
+}
+
+/** `geo` keeping the triangles `keep` accepts (corners and unnormalised normal), compacted. */
+function filterTriangles(geo: THREE.BufferGeometry, keep: (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, n: THREE.Vector3) => boolean): THREE.BufferGeometry {
+  const pos = geo.getAttribute('position');
+  const index = geo.getIndex();
+  if (!index) return geo;
+  const kept: number[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const e1 = new THREE.Vector3();
+  const e2 = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  for (let t = 0; t < index.count; t += 3) {
+    const i0 = index.getX(t);
+    const i1 = index.getX(t + 1);
+    const i2 = index.getX(t + 2);
+    a.fromBufferAttribute(pos, i0);
+    b.fromBufferAttribute(pos, i1);
+    c.fromBufferAttribute(pos, i2);
+    n.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a));
+    if (keep(a, b, c, n)) kept.push(i0, i1, i2);
+  }
+  if (kept.length === index.count) return geo;
+  const remap = new Map<number, number>();
+  const idx = kept.map((i) => {
+    let j = remap.get(i);
+    if (j === undefined) remap.set(i, (j = remap.size));
+    return j;
+  });
+  const out = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(geo.attributes)) {
+    const src = attr as THREE.BufferAttribute;
+    const arr = new Float32Array(remap.size * src.itemSize);
+    for (const [from, to] of remap) for (let k = 0; k < src.itemSize; k++) arr[to * src.itemSize + k] = src.array[from * src.itemSize + k] as number;
+    out.setAttribute(name, new THREE.BufferAttribute(arr, src.itemSize));
+  }
+  out.setIndex(idx);
+  return out;
+}
+
 /** A StaticBatch that takes pieces from any of Tidecrown's kits, with overrides and per-placement tints. */
 export class TideBatch extends StaticBatch {
   constructor(
@@ -257,14 +346,21 @@ export class TideBatch extends StaticBatch {
   /** Triangles placed per kit piece, for budgeting. */
   readonly pieceTris = new Map<string, number>();
 
-  put(kit: Kit, piece: string, m: THREE.Matrix4, over: Over, tint?: Tint | null, castShadow = true): void {
+  /** Place a kit piece; `indoor` false drops what faces into a closed house behind the wall (see cutIndoor). */
+  put(kit: Kit, piece: string, m: THREE.Matrix4, over: Over, tint?: Tint | null, castShadow = true, indoor = true): void {
     for (const part of kit.get(piece).parts) {
       const mat = part.material.name in over ? over[part.material.name] : part.material;
       if (!mat) continue;
-      this.pieceTris.set(piece, (this.pieceTris.get(piece) ?? 0) + (part.geometry.getIndex()?.count ?? 0) / 3);
-      const geo = (mat as THREE.MeshStandardMaterial).vertexColors ? withColor(part.geometry, tint?.get(mat) ?? WHITE, this.tints) : part.geometry;
+      const src = indoor ? part.geometry : cutIndoor(part.geometry);
+      this.pieceTris.set(piece, (this.pieceTris.get(piece) ?? 0) + (src.getIndex()?.count ?? 0) / 3);
+      const geo = (mat as THREE.MeshStandardMaterial).vertexColors ? withColor(src, tint?.get(mat) ?? WHITE, this.tints) : src;
       super.addGeometry(geo, mat, m, castShadow);
     }
+  }
+
+  override merge(): ReturnType<StaticBatch['merge']> {
+    this.tints.clear();
+    return super.merge();
   }
 
   override addGeometry(geo: THREE.BufferGeometry, mat: THREE.Material, m: THREE.Matrix4 | null, castShadow = true, color?: THREE.Color): void {
@@ -443,13 +539,125 @@ export interface HouseExtras {
   lamps: { x: number; y: number; z: number; yaw: number }[];
 }
 
+// --- far build: the same house as quads and prisms (lod.ts) ----------------------------------------
+
+/** UV scale and origin for far rects, by surface: [u per unit, v per unit, u origin, v origin]. */
+type UvSpec = [number, number, number, number];
+const UV_PLASTER: UvSpec = [0.5, 1.25 / 3, -1, 0];
+const UV_LIME: UvSpec = [0.5, 1.423 / 3, -1, 0];
+const UV_APRON: UvSpec = [0.5, 0.475, -1, -1.219];
+const UV_ROCK: UvSpec = [0.5, 0.459, -1, -1.26];
+const UV_POST: UvSpec = [0.5, 0.26, 0, 0];
+const UV_PAINT: UvSpec = [0.6, 0.3, 0, 0];
+/** Glazing bars per window: columns and rows of panes. */
+const PANES: Record<WinKind, [number, number]> = { wideFlat: [3, 3], wideRound: [3, 3], thin: [1, 4] };
+
+/** An opening: half width, bottom, springing and apex of the outer edge (the hole) and of what fills it. */
+interface Hole {
+  ox: number;
+  o0: number;
+  os: number;
+  ot: number;
+  ix: number;
+  i0: number;
+  is: number;
+  it: number;
+}
+const WIN_HOLE: Record<WinKind, Hole> = {
+  wideFlat: { ox: 0.804, o0: 0.944, os: 2.524, ot: 2.524, ix: 0.505, i0: 1.097, is: 2.355, it: 2.355 },
+  wideRound: { ox: 0.682, o0: 1.016, os: 2.07, ot: 2.742, ix: 0.545, i0: 1.065, is: 2.07, it: 2.619 },
+  thin: { ox: 0.444, o0: 1.016, os: 2.2, ot: 2.621, ix: 0.279, i0: 1.088, is: 2.2, it: 2.479 },
+};
+/** Closed shutters: half width and top; open ones: each leaf from (inner x, z) to (outer x, z). */
+const SHUT: Record<WinKind, { cx: number; top: number; leaf: [number, number, number, number] }> = {
+  wideFlat: { cx: 0.674, top: 2.517, leaf: [0.674, 0.137, 1.239, 0.593] },
+  wideRound: { cx: 0.64, top: 2.74, leaf: [0.64, 0.09, 1.15, 0.563] },
+  thin: { cx: 0.434, top: 2.612, leaf: [0.434, 0.059, 0.8, 0.436] },
+};
+const DOOR_HOLE: Hole = { ox: 0.76, o0: 0, os: 1.85, ot: 2.657, ix: 0.56, i0: 0, is: 1.85, it: 2.35 };
+const FLAT_DOOR_HOLE: Hole = { ox: 0.826, o0: 0, os: 2.37, ot: 2.37, ix: 0.56, i0: 0, is: 2.135, it: 2.135 };
+/** Round-tile roof sections by span: tile line y = a - k|x| from the ridge cap (half width 0.375) to the eave x. */
+const ROOF_FAR: Record<number, { a: number; k: number; ridge: number; eave: number }> = {
+  4: { a: 3.73, k: 1.484, ridge: 3.72, eave: 2.757 },
+  6: { a: 4.62, k: 1.244, ridge: 4.89, eave: 4.125 },
+  8: { a: 5.77, k: 1.242, ridge: 6.0, eave: 4.976 },
+};
+/** Gable plaster: half width past the wall line and apex, by span. */
+const GABLE_FAR: Record<number, number> = { 4: 2.937, 6: 4.377, 8: 5.314 };
+const FINIAL_FAR = [[0, 0], [0.13, 0.55], [0.03, 0.8], [0, 1.2]] as [number, number][];
+
+/** A wall surface in layers from the storey floor up: [y0, y1, material, tint, uv]. */
+type Layer = [number, number, THREE.Material, THREE.Color, UvSpec];
+
+// Far facades are drawn in a wall-module frame: x across -1..1, y up the storey, z out of the wall.
+
+/** A run of wall from x0 to x1, its layers stacked. */
+function farWall(fb: FarBatch, layers: Layer[], x0: number, x1: number): void {
+  for (const [y0, y1, m, c, uv] of layers) fb.rect(m, c, x0, y0, x1, y1, 0, uv);
+}
+/** One module's layers with an opening (a door or an arch) cut out. */
+function farHoleWall(fb: FarBatch, layers: Layer[], h: Hole): void {
+  for (const [y0, y1, m, c, uv] of layers) {
+    // A layer wholly below the hole is one rect; otherwise piers either side, then what lies below and above.
+    if (y1 <= h.o0 + 1e-3) {
+      fb.rect(m, c, -1, y0, 1, y1, 0, uv);
+      continue;
+    }
+    fb.rect(m, c, -1, y0, -h.ox, y1, 0, uv);
+    fb.rect(m, c, h.ox, y0, 1, y1, 0, uv);
+    fb.rect(m, c, -h.ox, y0, h.ox, Math.min(y1, h.o0), 0, uv);
+    if (y1 <= h.os) continue;
+    const b = Math.max(y0, h.os);
+    if (h.ot <= h.os + 1e-3) fb.rect(m, c, -h.ox, Math.max(b, h.ot), h.ox, y1, 0, uv);
+    else if (b < h.ot) {
+      const [su, sv, ou, ov] = uv;
+      const q = (x: number, y: number): [number, number] => [(x - ou) * su, (y - ov) * sv];
+      fb.poly(m, c, [[-h.ox, b, 0], [0, h.ot, 0], [0, y1, 0], [-h.ox, y1, 0]], [q(-h.ox, b), q(0, h.ot), q(0, y1), q(-h.ox, y1)]);
+      fb.poly(m, c, [[0, h.ot, 0], [h.ox, b, 0], [h.ox, y1, 0], [0, y1, 0]], [q(0, h.ot), q(h.ox, b), q(h.ox, y1), q(0, y1)]);
+    }
+  }
+}
+/** The ring between a hole's outer edge and its inner panel, and the panel itself. */
+function farFill(fb: FarBatch, h: Hole, ringMat: THREE.Material, ringTint: THREE.Color, ringUv: UvSpec, inner: THREE.Material, innerTint: THREE.Color, innerZ: number, grow = 0): void {
+  const [su, sv, ou, ov] = ringUv;
+  const q = (x: number, y: number): [number, number] => [(x - ou) * su, (y - ov) * sv];
+  fb.rect(ringMat, ringTint, -h.ox, h.o0, h.ox, h.i0, 0, ringUv);
+  fb.rect(ringMat, ringTint, -h.ox, h.i0, -h.ix, h.is, 0, ringUv);
+  fb.rect(ringMat, ringTint, h.ix, h.i0, h.ox, h.is, 0, ringUv);
+  if (h.ot <= h.os + 1e-3 && h.it <= h.is + 1e-3) fb.rect(ringMat, ringTint, -h.ox, h.is, h.ox, h.ot, 0, ringUv);
+  else {
+    fb.poly(ringMat, ringTint, [[-h.ox, h.is, 0], [-h.ix, h.is, 0], [0, h.it, 0], [0, h.ot, 0]], [q(-h.ox, h.is), q(-h.ix, h.is), q(0, h.it), q(0, h.ot)]);
+    fb.poly(ringMat, ringTint, [[h.ix, h.is, 0], [h.ox, h.is, 0], [0, h.ot, 0], [0, h.it, 0]], [q(h.ix, h.is), q(h.ox, h.is), q(0, h.ot), q(0, h.it)]);
+  }
+  // The panel is a little larger than its opening when recessed, so no crack shows at an angle.
+  const x = h.ix + grow;
+  const t = h.it + grow;
+  const s = h.is + grow * 0.5;
+  const pq = (px: number, py: number): [number, number] => [(px + x) * 0.6, py * 0.3];
+  if (t <= s + 1e-3) fb.poly(inner, innerTint, [[-x, h.i0, innerZ], [x, h.i0, innerZ], [x, t, innerZ], [-x, t, innerZ]], [pq(-x, h.i0), pq(x, h.i0), pq(x, t), pq(-x, t)]);
+  else fb.poly(inner, innerTint, [[-x, h.i0, innerZ], [x, h.i0, innerZ], [x, s, innerZ], [0, t, innerZ], [-x, s, innerZ]], [pq(-x, h.i0), pq(x, h.i0), pq(x, s), pq(0, t), pq(-x, s)]);
+}
+
+/** A far window: one decal over the frame's outline; the glass shader draws panes, bars and frame (see glassMaterial). */
+function farWindow(fb: FarBatch, glass: THREE.Material, h: Hole, [cols, rows]: [number, number], lit: number): void {
+  const pw = (2 * h.ix) / cols;
+  const ph = (h.it - h.i0) / rows;
+  const q = (x: number, y: number): [number, number] => [(x + h.ix) / pw, (y - h.i0) / ph];
+  const c = new THREE.Color(lit, cols / 8, rows / 8);
+  const z = 0.004;
+  if (h.ot <= h.os + 1e-3) fb.poly(glass, c, [[-h.ox, h.o0, z], [h.ox, h.o0, z], [h.ox, h.ot, z], [-h.ox, h.ot, z]], [q(-h.ox, h.o0), q(h.ox, h.o0), q(h.ox, h.ot), q(-h.ox, h.ot)], 0);
+  else fb.poly(glass, c, [[-h.ox, h.o0, z], [h.ox, h.o0, z], [h.ox, h.os, z], [0, h.ot, z], [-h.ox, h.os, z]], [q(-h.ox, h.o0), q(h.ox, h.o0), q(h.ox, h.os), q(0, h.ot), q(-h.ox, h.os)], 0);
+}
+
 /**
  * Raise one townhouse into `batch`: plinth, storeys of wall modules (rusticated stone or plaster ground floor,
  * banded plaster above), corner quoins, windows with shutters and window boxes, a door with steps and a lantern
  * on the street, an optional shop arcade under a striped awning and an optional balcony, then the round-tile roof
- * with gables, dormers, chimneys and gold finials.
+ * with gables, dormers, chimneys and gold finials. With `far`, the same house also goes there as its far build:
+ * walls as plain runs with window decals (the glass shader draws frames and bars), doors and arcades cut in,
+ * shutters, sills, bands and quoins as quads, the roof as a tiled prism with its dormers and chimneys.
  */
-export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: HouseExtras): TownhouseLot {
+export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: HouseExtras, far?: FarBatch): TownhouseLot {
   const k = batch.tide;
   const { village, props, nature, mat } = k;
   const r = stream(spec.seed);
@@ -460,15 +668,21 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   const F = spec.floors;
   const base = trs(spec.x, spec.ground, spec.z, spec.yaw);
   const m = new THREE.Matrix4();
+  const fb = far?.house(base);
+  // Wall-mounted pieces lose their indoor faces (see cutIndoor).
+  const indoor = (piece: string) => !/^(Wall_|Window_|Door_|DoorFrame_)/.test(piece);
   // Plaster walls leave out the kit's timber frame: stone bands and quoins carry the lines instead.
   const put = (kit: Kit, piece: string, over: Over, tint: Tint | null, x: number, y: number, z: number, yaw = 0, scale: number | THREE.Vector3 = 1, shadow = true, pitch = 0) => {
     if (over === st.wall && piece.startsWith('Wall_Plaster')) over = k.over.plaster;
     m.multiplyMatrices(base, trs(x, y, z, yaw, scale, pitch));
-    batch.put(kit, piece, m, over, tint, shadow);
+    batch.put(kit, piece, m, over, tint, shadow, indoor(piece));
   };
   const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   const geo = (g: THREE.BufferGeometry, material: THREE.Material, tint: THREE.Color | undefined, shadow = true) => batch.addGeometry(g.applyMatrix4(base), material, null, shadow, tint);
-  const stoneTint = st.t.get(mat.stone);
+  const stoneTint = st.t.get(mat.stone)!;
+  const wallTint = st.t.get(mat.plaster)!;
+  const frameTint = st.t.get(mat.paint)!;
+  const shutterTint = st.shutter.get(mat.paint)!;
   const hidden = (side: Side, i: number, f: number) => {
     const p = side === 'front' ? undefined : spec.party?.[side];
     return !!p && (p[i] ?? 0) > f;
@@ -496,32 +710,78 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   const pr = hidden('right', 0, 0) ? 0 : 0.17;
   const pb = hidden('back', 0, 0) ? 0 : 0.17;
   geo(worldBox(W + pl + pr, ph, D + 0.17 + pb, 0.5).translate((pr - pl) / 2, -ph / 2 + 0.04, (0.17 - pb) / 2), mat.limestone, stoneTint);
+  fb?.frame().box(mat.limestone, stoneTint, -W / 2 - pl, 0.04 - ph, -D / 2 - pb, W / 2 + pr, 0.04, D / 2 + 0.17, 'ny');
 
   const sides: Side[] = ['front', 'right', 'back', 'left'];
+  /** Quoin width per corner and storey (0: none), for the far build. */
+  const quoins = [0, 1, 2, 3].map(() => new Array<number>(F).fill(0));
   for (let f = 0; f < F; f++) {
     const y = f * H;
     const groundSet = f === 0 && st.groundStone;
     const prefix = groundSet ? 'Wall_UnevenBrick' : 'Wall_Plaster';
+    // Far wall layers: rusticated stone, plaster on an ashlar base, or plaster; window walls stand on an apron.
+    const plain: Layer[] = groundSet ? [[0, H, mat.limestone, stoneTint, UV_LIME]] : f === 0 ? [[0, 0.88, mat.ashlar, stoneTint, UV_APRON], [0.88, H, mat.plaster, wallTint, UV_PLASTER]] : [[0, H, mat.plaster, wallTint, UV_PLASTER]];
+    const apron: Layer[] = f === 0 ? plain : [[0, 0.88, mat.ashlar, stoneTint, UV_APRON], [0.88, H, mat.plaster, wallTint, UV_PLASTER]];
+    const rockBase: Layer[] = groundSet ? plain : [[0, 0.91, mat.rock, stoneTint, UV_ROCK], [0.91, H, mat.plaster, wallTint, UV_PLASTER]];
     for (const side of sides) {
       const sf = sideFrame(side, W, D);
       const c = Math.cos(sf.yaw);
       const s = Math.sin(sf.yaw);
+      // Modules run along +x in their frame on the front and back, along -x on the sides.
+      const dir = side === 'front' || side === 'back' ? 1 : -1;
+      // Far walls run unbroken across plain and window modules alike (windows are decals), split where the layers change.
+      let run: { i: number; n: number; layers: Layer[] } | null = null;
+      let band: { i: number; n: number } | null = null;
+      const flush = () => {
+        if (fb && run) {
+          const [x, z] = sf.at(run.i);
+          fb.frame(x, y, z, sf.yaw);
+          farWall(fb, run.layers, dir > 0 ? -1 : 1 - 2 * run.n, dir > 0 ? -1 + 2 * run.n : 1);
+        }
+        run = null;
+      };
+      const extend = (i: number, layers: Layer[]) => {
+        if (run && run.layers !== layers) flush();
+        if (run) run.n++;
+        else run = { i, n: 1, layers };
+      };
+      const flushBand = () => {
+        if (fb && band) {
+          const [x, z] = sf.at(band.i);
+          const x0 = dir > 0 ? -1 : 1 - 2 * band.n;
+          const x1 = dir > 0 ? -1 + 2 * band.n : 1;
+          fb.frame(x, y, z, sf.yaw);
+          fb.trimBox(mat.stone, stoneTint, x0, -0.146, -0.02, x1, 0.151, 0.142, 'nzpxnx', 0.5, 0.02, 0.29);
+        }
+        band = null;
+      };
       for (let i = 0; i < sf.count; i++) {
-        if (hidden(side, i, f)) continue;
+        if (hidden(side, i, f)) {
+          flush();
+          flushBand();
+          continue;
+        }
         const [x, z] = sf.at(i);
         const street = isCorner(side);
         // Storey band under every upper floor of the street fronts.
-        if (f > 0 && street) put(village, 'Wall_BottomCover', st.wall, st.t, x, y, z, sf.yaw, v(1, 1.25, 1.2));
+        if (f > 0 && street) {
+          put(village, 'Wall_BottomCover', st.wall, st.t, x, y, z, sf.yaw, v(1, 1.25, 1.2));
+          if (band) band.n++;
+          else band = { i, n: 1 };
+        } else flushBand();
         if (side === 'front' && f === 0 && i === di) {
-          door(x, y, z, sf.yaw, c, s, groundSet, true);
+          flush();
+          door(x, y, z, sf.yaw, c, s, groundSet, true, rockBase);
           continue;
         }
         if (side === 'front' && f === 0 && spec.shop) {
-          shopArch(x, y, z, sf.yaw, groundSet);
+          flush();
+          shopArch(x, y, z, sf.yaw, groundSet, rockBase);
           continue;
         }
         if (f === balconyFloor && side === 'front') {
-          balconyDoor(x, y, z, sf.yaw);
+          flush();
+          balconyDoor(x, y, z, sf.yaw, rockBase);
           continue;
         }
         let kind: WinKind | 'plain' = 'plain';
@@ -532,11 +792,30 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
         if (kind === 'plain') {
           put(village, groundSet ? 'Wall_UnevenBrick_Straight' : f === 0 ? 'Wall_Plaster_Straight_Base' : 'Wall_Plaster_Straight', st.wall, st.t, x, y, z, sf.yaw);
           // Ivy on a few blank walls.
-          if (r() < 0.12 && f < F - 1) put(village, pick(r, ['Prop_Vine1', 'Prop_Vine2'] as const), st.wall, null, x + c * (r() - 0.5) * 0.6 + s * 0.12, y + H + 0.1, z - s * (r() - 0.5) * 0.6 + c * 0.12, sf.yaw, 0.9 + r() * 0.3, false);
+          if (r() < 0.12 && f < F - 1) {
+            const vine = pick(r, ['Prop_Vine1', 'Prop_Vine2'] as const);
+            const ox = (r() - 0.5) * 0.6;
+            const oz = (r() - 0.5) * 0.6;
+            const vs = 0.9 + r() * 0.3;
+            const vx = x + c * ox + s * 0.12;
+            const vz = z - s * oz + c * 0.12;
+            put(village, vine, st.wall, null, vx, y + H + 0.1, vz, sf.yaw, vs, false);
+            if (fb) {
+              // Far ivy: one strand-wide card down the piece's outline, the leaf cluster repeated along it.
+              const b = village.get(vine).box;
+              const mx = (b.min.x + b.max.x) / 2;
+              const hw = (b.max.x - b.min.x) * 0.32;
+              fb.frame(vx, y + H + 0.1, vz, sf.yaw, vs, vs, vs).poly(mat.vine, WHITE, [[mx - hw, b.min.y, 0.05], [mx + hw, b.min.y, 0.05], [mx + hw, b.max.y, 0.05], [mx - hw, b.max.y, 0.05]], [[0, 2.4], [1, 2.4], [1, 0], [0, 0]]);
+            }
+          }
+          extend(i, plain);
           continue;
         }
+        extend(i, apron);
         window(x, y, z, sf.yaw, c, s, kind, prefix, street, f);
       }
+      flush();
+      flushBand();
     }
     // Quoins: pale stone pilasters at the corners (the front pair always shows).
     const cornerAt: [number, number, number, Side][] = [
@@ -550,7 +829,29 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
       const sideIdx = side === 'left' ? (front ? 0 : D / 2 - 1) : front ? D / 2 - 1 : 0;
       // A quoin on a shared party line is laid by the house to its left only.
       if (hidden(side, sideIdx, f) && (!front || side === 'left')) return;
-      put(village, 'Corner_ExteriorWide_Wood', st.wall, st.t, cx, y, cz, cy, v(groundSet ? 2.1 : 1.7, 1.02, groundSet ? 2.1 : 1.7));
+      const qs = groundSet ? 2.1 : 1.7;
+      put(village, 'Corner_ExteriorWide_Wood', st.wall, st.t, cx, y, cz, cy, v(qs, 1.02, qs));
+      quoins[n][f] = qs;
+    });
+  }
+  if (fb) {
+    // Far quoins: the two outer faces of each pilaster, one box per run of storeys of the same width.
+    fb.frame();
+    [[-W / 2, D / 2], [W / 2, D / 2], [W / 2, -D / 2], [-W / 2, -D / 2]].forEach(([cx, cz], n) => {
+      const sx = Math.sign(cx);
+      const sz = Math.sign(cz);
+      const turned = n % 2 === 1;
+      for (let f = 0; f < F; ) {
+        const qs = quoins[n][f];
+        let g = f + 1;
+        while (g < F && quoins[n][g] === qs) g++;
+        if (qs) {
+          const ax = (turned ? 0.166 : 0.145) * qs;
+          const az = (turned ? 0.145 : 0.166) * qs;
+          fb.trimBox(mat.stone, stoneTint, cx - ax, f * H, cz - az, cx + ax, g * H + 0.06, cz + az, `py ny ${sz > 0 ? 'nz' : 'pz'} ${sx > 0 ? 'nx' : 'px'}`, 0.33, 0.02, 0.29);
+        }
+        f = g;
+      }
     });
   }
   const top = F * H;
@@ -563,13 +864,44 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
 
   function window(x: number, y: number, z: number, yaw: number, c: number, s: number, kind: WinKind, prefix: string, street: boolean, f: number): void {
     put(village, `${prefix}_${WIN_WALL[kind]}`, st.wall, st.t, x, y, z, yaw);
-    put(village, WIN_PIECE[kind], st.paint, glassTint(st.frame), x, y, z, yaw, 1, false);
-    if (street ? r() < shutterOdds : r() < 0.25) put(village, `${WIN_SHUT[kind]}_${r() < 0.7 ? 'Open' : 'Closed'}`, st.paint, st.shutter, x, y, z, yaw, 1, false);
+    const lit = glassTint(st.frame);
+    put(village, WIN_PIECE[kind], st.paint, lit, x, y, z, yaw, 1, false);
+    let shut: 'Open' | 'Closed' | null = null;
+    if (street ? r() < shutterOdds : r() < 0.25) {
+      shut = r() < 0.7 ? 'Open' : 'Closed';
+      put(village, `${WIN_SHUT[kind]}_${shut}`, st.paint, st.shutter, x, y, z, yaw, 1, false);
+    }
+    const h = WIN_HOLE[kind];
+    if (fb) {
+      fb.frame(x, y, z, yaw);
+      farWindow(fb, mat.farGlass, h, PANES[kind], lit.get(mat.glass)!.r);
+      if (shut === 'Closed') {
+        const sh = SHUT[kind];
+        fb.rect(mat.paint, shutterTint, -sh.cx, 1.093, sh.cx, sh.top, 0.2, UV_PAINT);
+      }
+      // Sill.
+      fb.box(mat.paint, frameTint, -h.ox - 0.04, h.o0 - 0.09, 0, h.ox + 0.04, h.o0, 0.3, 'nz ny px nx', 0.1);
+      if (shut === 'Open') {
+        const sh = SHUT[kind];
+        const [ax, az, bx, bz] = sh.leaf;
+        for (const sx of [-1, 1]) {
+          // Both faces of each leaf, angled out from the frame.
+          const p: Vec3[] = [[sx * ax, 1.093, az], [sx * bx, 1.093, bz], [sx * bx, sh.top, bz], [sx * ax, sh.top, az]];
+          const uv: [number, number][] = [[0, 0.33], [0.6, 0.33], [0.6, 0.78], [0, 0.78]];
+          fb.poly(mat.paint, shutterTint, sx > 0 ? p : [p[1], p[0], p[3], p[2]], uv);
+          fb.poly(mat.paint, shutterTint, sx > 0 ? [p[1], p[0], p[3], p[2]] : p, uv);
+        }
+      }
+    }
     // Stone window boxes with flowers under upper street windows.
     if (street && f > 0 && r() < boxOdds) {
       const w = kind === 'thin' ? 0.62 : 0.78;
       const sill = kind === 'wideFlat' ? 0.86 : 0.93;
       put(village, 'Prop_ExteriorBorder_Straight1', st.wall, st.t, x, y + sill, z + 0, yaw, v(w, 2.4, 0.42), true);
+      if (fb) {
+        fb.box(mat.rock, stoneTint, -w, sill, 0, w, sill + 0.32, 0.294, 'nz', 0.5);
+        fb.rect(mat.paint, LEAF_TONE, -w * 0.85, sill + 0.3, w * 0.85, sill + 0.62, 0.16, UV_PAINT);
+      }
       const n = 2;
       for (let j = 0; j < n; j++) {
         const lx = (j - (n - 1) / 2) * (w * 1.6) / n;
@@ -582,14 +914,20 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     }
   }
 
-  function door(x: number, y: number, z: number, yaw: number, c: number, s: number, groundSet: boolean, main: boolean): void {
+  function door(x: number, y: number, z: number, yaw: number, c: number, s: number, groundSet: boolean, main: boolean, layers: Layer[]): void {
     put(village, groundSet ? 'Wall_UnevenBrick_Door_Round' : 'Wall_Plaster_Door_Round', st.wall, st.t, x, y, z, yaw);
     const piece = pick(r, ['Door_1_Round', 'Door_4_Round', 'Door_8_Round', 'Door_1_Round'] as const);
     // Doors hinge at their local x = 0; centre them in the opening.
     const ox = -0.55;
     const oz = -0.12;
-    put(village, piece, st.paint, glassTint(st.door), x + c * ox + s * oz, y, z - s * ox + c * oz, yaw, 1, false);
+    const tint = glassTint(st.door);
+    put(village, piece, st.paint, tint, x + c * ox + s * oz, y, z - s * ox + c * oz, yaw, 1, false);
     put(village, 'DoorFrame_Round_WoodDark', st.wall, st.t, x, y, z, yaw, v(1.08, 1.04, 1.4), false);
+    if (fb) {
+      fb.frame(x, y, z, yaw);
+      farHoleWall(fb, layers, DOOR_HOLE);
+      farFill(fb, DOOR_HOLE, mat.stone, stoneTint, UV_POST, mat.paint, tint.get(mat.paint)!, oz, 0.1);
+    }
     if (!main) return;
     // A wall lantern beside the door, and steps down to the street.
     const side = (spec.seed >> 3) % 2 ? 1 : -1;
@@ -609,11 +947,12 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
         const d = 0.34 * (j + 1);
         const h = yTop + rise + 0.4;
         geo(worldBox(1.6 + 0.2 * j, h, d, 0.5).translate(x, yTop - h / 2, z + WALL + d / 2), mat.limestone, stoneTint);
+        fb?.frame().box(mat.limestone, stoneTint, x - 0.8 - 0.1 * j, yTop - h, z + WALL, x + 0.8 + 0.1 * j, yTop, z + WALL + d, 'ny nz');
       }
     }
   }
 
-  function shopArch(x: number, y: number, z: number, yaw: number, groundSet: boolean): void {
+  function shopArch(x: number, y: number, z: number, yaw: number, groundSet: boolean, layers: Layer[]): void {
     // An open arch onto a shallow shop: back wall, floor, ceiling, a shelf of wares and goods out front.
     put(village, groundSet ? 'Wall_UnevenBrick_Door_Round' : 'Wall_Plaster_Door_Round', st.wall, st.t, x, y, z, yaw);
     put(village, 'DoorFrame_Round_WoodDark', st.wall, st.t, x, y, z, yaw, v(1.08, 1.04, 1.4), false);
@@ -622,6 +961,17 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     put(village, 'Floor_WoodDark', st.paint, new Map(st.t).set(mat.paint, lin('#8a6a4a')), x, y + 0.02, z - 0.6, 0, v(1, 1, 0.62), false);
     put(village, 'Floor_WoodDark', st.paint, new Map(st.t).set(mat.paint, lin('#6d5440')), x, y + 2.75, z - 0.6, 0, v(1, 1, 0.62), false, Math.PI);
     for (const sx of [-1, 1]) put(village, 'Wall_Plaster_Straight', st.wall, st.t, x + sx * 0.98, y, z - 0.6, -sx * Math.PI / 2, v(0.62, 1, 1), false);
+    if (fb) {
+      fb.frame(x, y, z, yaw);
+      farHoleWall(fb, layers, DOOR_HOLE);
+      farFill(fb, DOOR_HOLE, mat.stone, stoneTint, UV_POST, mat.plaster, wallTint, -1.25, 0.42);
+      // The shop's sides, ceiling and floor, seen through the arch.
+      const shade = wallTint.clone().multiplyScalar(0.8);
+      fb.poly(mat.plaster, shade, [[-0.98, 0, 0], [-0.98, 0, -1.25], [-0.98, 2.75, -1.25], [-0.98, 2.75, 0]], [[0, 0], [0.6, 0], [0.6, 1.15], [0, 1.15]]);
+      fb.poly(mat.plaster, shade, [[0.98, 0, -1.25], [0.98, 0, 0], [0.98, 2.75, 0], [0.98, 2.75, -1.25]], [[0, 0], [0.6, 0], [0.6, 1.15], [0, 1.15]]);
+      fb.poly(mat.paint, SHOP_CEILING, [[-0.98, 2.75, 0], [-0.98, 2.75, -1.25], [0.98, 2.75, -1.25], [0.98, 2.75, 0]], [[0, 0.32], [0.6, 0.32], [0.6, 0.55], [0, 0.55]]);
+      fb.poly(mat.paint, SHOP_FLOOR, [[-0.98, 0.02, -1.25], [-0.98, 0.02, 0], [0.98, 0.02, 0], [0.98, 0.02, -1.25]], [[0, 0.32], [0.6, 0.32], [0.6, 0.55], [0, 0.55]]);
+    }
     put(props, 'Shelf_Simple', k.over.props, null, x, y + 1.5, back + 0.12, 0, 1.1, false);
     put(props, pick(r, ['Vase_4', 'Candle_2'] as const), k.over.props, null, x + (r() - 0.5) * 0.6, y + 1.62, back + 0.3, r() * 6, 0.8, false);
     put(props, pick(r, ['Barrel', 'Bag', 'Vase_2'] as const), k.over.props, null, x + (r() - 0.5) * 0.6, y, back + 0.6, r() * 6, 0.85, false);
@@ -637,16 +987,28 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     }
   }
 
-  function balconyDoor(x: number, y: number, z: number, yaw: number): void {
+  function balconyDoor(x: number, y: number, z: number, yaw: number, layers: Layer[]): void {
     put(village, 'Wall_Plaster_Door_Flat', st.wall, st.t, x, y, z, yaw);
-    put(village, 'Door_1_Flat', st.paint, glassTint(st.shutter), x - 0.55, y, z - 0.12, yaw, 1, false);
+    const leaf = glassTint(st.shutter);
+    put(village, 'Door_1_Flat', st.paint, leaf, x - 0.55, y, z - 0.12, yaw, 1, false);
     put(village, 'DoorFrame_Flat_WoodDark', st.wall, st.t, x, y, z, yaw, v(1.05, 1.03, 1.4), false);
     // Stone slab on corbels, iron railing along its edge.
     geo(worldBox(2.04, 0.2, 1.0, 0.5).translate(x, y - 0.06, z + 0.55), mat.limestone, stoneTint);
     put(village, 'Wall_BottomCover', st.wall, st.t, x, y - 0.1, z + 1.08, 0, v(1.02, 1.1, 0.8));
     for (const sx of [-0.8, 0.8]) put(village, 'Prop_Support', st.wall, st.t, x + sx, y - 1.45, z + 0.05, 0, v(1.3, 0.55, 0.52));
-    put(village, rail, st.paint, new Map(st.t).set(mat.paint, lin('#2c3440')), x, y + 0.04, z + 0.02, 0, v(1.02, 0.9, 0.95));
-    for (const sx of [-1, 1]) put(village, 'Balcony_Cross_Straight', st.paint, new Map(st.t).set(mat.paint, lin('#2c3440')), x, y + 0.04, z + 0.52, sx * Math.PI / 2, v(0.5, 0.9, 1.0));
+    const railTint = new Map(st.t).set(mat.paint, lin('#2c3440'));
+    put(village, rail, st.paint, railTint, x, y + 0.04, z + 0.02, 0, v(1.02, 0.9, 0.95));
+    for (const sx of [-1, 1]) put(village, 'Balcony_Cross_Straight', st.paint, railTint, x, y + 0.04, z + 0.52, sx * Math.PI / 2, v(0.5, 0.9, 1.0));
+    if (fb) {
+      fb.frame(x, y, z, yaw);
+      farHoleWall(fb, layers.map(([y0, y1, ...rest]) => [y0, Math.min(y1, H), ...rest] as Layer), FLAT_DOOR_HOLE);
+      farFill(fb, FLAT_DOOR_HOLE, mat.stone, stoneTint, UV_POST, mat.paint, leaf.get(mat.paint)!, -0.12, 0.1);
+      fb.box(mat.limestone, stoneTint, -1.02, -0.16, 0.05, 1.02, 0.04, 1.05, '');
+      const iron = railTint.get(mat.paint)!;
+      // The railing as rails and posts, both faces.
+      for (const [x0, y0, x1, y1] of [[-1, 0.93, 1, 1.05], [-1, 0.04, 1, 0.12], [-1, 0.04, -0.94, 1.0], [0.94, 0.04, 1, 1.0], [-0.36, 0.04, -0.3, 1.0], [0.3, 0.04, 0.36, 1.0]]) fb.rect(mat.paint, iron, x0, y0, x1, y1, 1.08, UV_PAINT);
+      fb.rect(mat.paint, iron, -1, 0.93, 1, 1.05, 1.06, UV_PAINT, true);
+    }
   }
 
   function awning(): void {
@@ -654,6 +1016,7 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     const g = awningGeometry(w, 1.05, 0.5, (spec.seed % 3) + 1);
     g.translate(0, 2.92, D / 2 + WALL + 0.02);
     geo(g, mat.awning, WHITE);
+    fb?.frame().geo(mat.awning, awningGeometry(w, 1.05, 0.5, 1, true).translate(0, 2.92, D / 2 + WALL + 0.02));
     // Iron stays from the wall to the front rail.
     const rods: THREE.BufferGeometry[] = [];
     for (const sx of [-w / 2 + 0.1, w / 2 - 0.1]) {
@@ -672,6 +1035,7 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     const g = bannerGeometry(0.8, 2.6, spec.seed);
     g.translate(px, y0, D / 2 + WALL + 0.42);
     geo(g, mat.banner, WHITE);
+    fb?.frame().geo(mat.banner, bannerGeometry(0.8, 2.6, spec.seed, 2, 2).translate(px, y0, D / 2 + WALL + 0.42));
     const a = new THREE.Vector3(px, y0 + 0.05, D / 2 + WALL);
     const b = new THREE.Vector3(px, y0 + 0.05, D / 2 + WALL + 0.5);
     const rod = tube([new THREE.Vector3(px - 0.48, y0 + 0.02, D / 2 + WALL + 0.42), new THREE.Vector3(px + 0.48, y0 + 0.02, D / 2 + WALL + 0.42)], () => 0.022, 6);
@@ -695,19 +1059,39 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     const sLen = (full - tl - tr) / full;
     const shift = (tl - tr) / 2;
     const scale = v(1, 1, (len / L) * sLen);
-    if (ridge === 'x') put(village, `Roof_RoundTiles_${span}x${L}`, st.paint, st.roof, shift, top, 0, Math.PI / 2, scale);
-    else put(village, `Roof_RoundTiles_${span}x${L}`, st.paint, st.roof, 0, top, 0, 0, scale);
+    const piece = `Roof_RoundTiles_${span}x${L}`;
+    if (ridge === 'x') put(village, piece, st.paint, st.roof, shift, top, 0, Math.PI / 2, scale);
+    else put(village, piece, st.paint, st.roof, 0, top, 0, 0, scale);
+    if (fb) {
+      fb.frame(ridge === 'x' ? shift : 0, top, 0, ridge === 'x' ? Math.PI / 2 : 0, 1, 1, scale.z);
+      farRoof(span, village.get(piece));
+    }
     // Plastered gables without the kit's timbers; left out against a neighbour of the same roofline.
     const gable = `Roof_Front_Brick${span}`;
     const gOver = k.over.plaster;
     const gt = st.t;
+    const farGable = (x: number, z: number, yaw: number) => {
+      if (!fb) return;
+      const gx = span / 2 + 0.123;
+      fb.frame(x, top, z, yaw).poly(mat.plaster, wallTint, [[-gx, 0.02, 0], [gx, 0.02, 0], [0, GABLE_FAR[span], 0]], [[0, 0], [gx, 0], [gx / 2, GABLE_FAR[span] * 0.4167]]);
+    };
     if (ridge === 'z') {
       put(village, gable, gOver, gt, 0, top, D / 2, 0);
-      if (!hidden('back', 0, F)) put(village, gable, gOver, gt, 0, top, -D / 2, Math.PI);
+      farGable(0, D / 2, 0);
+      if (!hidden('back', 0, F)) {
+        put(village, gable, gOver, gt, 0, top, -D / 2, Math.PI);
+        farGable(0, -D / 2, Math.PI);
+      }
       finial(0, top + RIDGE[span] + 0.02, D / 2 + 0.55, 1);
     } else {
-      if (!spec.trim?.right && !hidden('right', 0, F)) put(village, gable, gOver, gt, W / 2, top, 0, Math.PI / 2);
-      if (!spec.trim?.left && !hidden('left', 0, F)) put(village, gable, gOver, gt, -W / 2, top, 0, -Math.PI / 2);
+      if (!spec.trim?.right && !hidden('right', 0, F)) {
+        put(village, gable, gOver, gt, W / 2, top, 0, Math.PI / 2);
+        farGable(W / 2, 0, Math.PI / 2);
+      }
+      if (!spec.trim?.left && !hidden('left', 0, F)) {
+        put(village, gable, gOver, gt, -W / 2, top, 0, -Math.PI / 2);
+        farGable(-W / 2, 0, -Math.PI / 2);
+      }
       if (!spec.trim?.left && !spec.trim?.right && r() < 0.5) finial(r() < 0.5 ? -W / 2 - 0.6 : W / 2 + 0.6, top + RIDGE[span] + 0.02, 0, 0.8);
     }
     // Dormers on the street slope of deep eaves roofs.
@@ -715,7 +1099,9 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
       const n = W >= 6 ? (r() < 0.5 ? 2 : 1) : r() < 0.6 ? 1 : 0;
       for (let j = 0; j < n; j++) {
         const dx = n === 1 ? (r() - 0.5) * (W - 3) : (j === 0 ? -1 : 1) * (W / 4);
-        put(village, 'Roof_Dormer_RoundTile', st.paint, glassTint(st.roof), dx, top + 0.95, span / 2 - 1.95, -Math.PI / 2);
+        const lit = glassTint(st.roof);
+        put(village, 'Roof_Dormer_RoundTile', st.paint, lit, dx, top + 0.95, span / 2 - 1.95, -Math.PI / 2);
+        if (fb) farDormer(dx, top + 0.95, span / 2 - 1.95, lit.get(mat.glass)!);
       }
     }
     // Chimney stacks on the party walls, through the ridge.
@@ -725,7 +1111,70 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
       const sideSign = j === 0 ? (spec.seed % 2 ? 1 : -1) : spec.seed % 2 ? -1 : 1;
       const [cx, cz] = ridge === 'x' ? [sideSign * (W / 2 - 0.55), (r() - 0.5) * 0.8] : [sideSign * 0.3 + (r() - 0.5) * 0.4, -D / 4 - r() * D * 0.2];
       const h = rh + 0.9 + r() * 0.6 - (ridge === 'z' ? 0 : 0.1);
-      put(village, 'Prop_Chimney2', st.wall, st.t, cx, top - 0.4, cz, (spec.seed % 4) * (Math.PI / 2), v(0.85, (h + 0.4) / 3, 0.85));
+      const cyaw = (spec.seed % 4) * (Math.PI / 2);
+      put(village, 'Prop_Chimney2', st.wall, st.t, cx, top - 0.4, cz, cyaw, v(0.85, (h + 0.4) / 3, 0.85));
+      if (fb) {
+        fb.frame(cx, top - 0.4, cz, cyaw, 0.85, (h + 0.4) / 3, 0.85).box(mat.limestone, stoneTint, -0.5, 0, -0.494, 0.446, 2.8, 0.494, 'ny');
+        fb.box(mat.limestone, stoneTint, -0.56, 2.8, -0.55, 0.5, 3, 0.55, 'ny');
+      }
+    }
+  }
+
+  /** The far roof: a tiled section with a ridge cap, fascia and soffit on the eaves, bargeboards at the ends. */
+  function farRoof(span: number, piece: Piece): void {
+    if (!fb) return;
+    const p = ROOF_FAR[span];
+    const tiles = piece.parts.find((pt) => pt.material.name === 'MI_RoundTiles')?.geometry.boundingBox ?? piece.box;
+    const z0 = tiles.min.z;
+    const z1 = tiles.max.z;
+    const rc = 0.375;
+    const xe = p.eave;
+    const yAt = (x: number) => p.a - p.k * x;
+    const ye = yAt(xe);
+    const yc = yAt(rc);
+    const slope = Math.hypot(1, p.k);
+    const roof = st.roof.get(mat.tiles)!;
+    const trim = st.roof.get(mat.paint)!;
+    const tu = (z: number) => -0.318 * z;
+    const tv = (x: number) => 0.24 * slope * x;
+    const wallLine = span / 2;
+    const yw = yAt(wallLine);
+    for (const sx of [-1, 1]) {
+      const X = (x: number) => sx * x;
+      // Tiles from the eave to the cap, then the cap to the ridge (counter-clockwise from outside).
+      const slab = (xa: number, ya: number, xb: number, yb: number) => {
+        const pts: Vec3[] = [[X(xa), ya, z1], [X(xa), ya, z0], [X(xb), yb, z0], [X(xb), yb, z1]];
+        fb.poly(mat.tiles, roof, sx > 0 ? pts : [pts[1], pts[0], pts[3], pts[2]], sx > 0 ? [[tu(z1), tv(xa)], [tu(z0), tv(xa)], [tu(z0), tv(xb)], [tu(z1), tv(xb)]] : [[tu(z0), tv(xa)], [tu(z1), tv(xa)], [tu(z1), tv(xb)], [tu(z0), tv(xb)]]);
+      };
+      slab(xe, ye, rc, yc);
+      slab(rc, yc, 0, p.ridge);
+      // Fascia board and soffit under the eave, back to the wall line.
+      const f0: Vec3[] = [[X(xe), ye - 0.28, z1], [X(xe), ye - 0.28, z0], [X(xe), ye, z0], [X(xe), ye, z1]];
+      fb.poly(mat.tiles, roof, sx > 0 ? f0 : [f0[1], f0[0], f0[3], f0[2]], [[tu(z1), 0.1], [tu(z0), 0.1], [tu(z0), 0.16], [tu(z1), 0.16]]);
+      const s0: Vec3[] = [[X(wallLine), yw - 0.85, z1], [X(wallLine), yw - 0.85, z0], [X(xe), ye - 0.28, z0], [X(xe), ye - 0.28, z1]];
+      fb.poly(mat.paint, trim, sx > 0 ? s0 : [s0[1], s0[0], s0[3], s0[2]], [[0, 0.32], [1, 0.32], [1, 0.55], [0, 0.55]]);
+      // Bargeboards: the roof's thickness at both ends.
+      for (const [z, out] of [[z0, -1], [z1, 1]] as const) {
+        const e: Vec3[] = [[X(xe), ye - 0.28, z], [X(0), p.ridge - 0.42, z], [X(0), p.ridge, z], [X(xe), ye, z]];
+        const flip = (sx > 0) !== (out > 0);
+        fb.poly(mat.paint, trim, flip ? e : [e[1], e[0], e[3], e[2]], [[0, 0.05], [1, 0.05], [1, 0.25], [0, 0.25]]);
+      }
+    }
+  }
+
+  function farDormer(x: number, y: number, z: number, glass: THREE.Color): void {
+    if (!fb) return;
+    // Dormer frame: +x is out of the roof (toward the street).
+    fb.frame(x, y, z, -Math.PI / 2);
+    const roof = st.roof.get(mat.tiles)!;
+    const fx = 1.64;
+    fb.poly(mat.plaster, wallTint, [[fx, 0.07, 0.72], [fx, 0.07, -0.72], [fx, 1.46, -0.72], [fx, 2.18, 0], [fx, 1.46, 0.72]], [[0, 0], [0.72, 0], [0.72, 0.6], [0.36, 0.9], [0, 0.6]]);
+    fb.poly(mat.farGlass, new THREE.Color(glass.r, 2 / 8, 2 / 8), [[fx + 0.01, 0.2, 0.48], [fx + 0.01, 0.2, -0.48], [fx + 0.01, 1.09, -0.48], [fx + 0.01, 1.09, 0.48]], [[-0.1, -0.1], [2.1, -0.1], [2.1, 2.1], [-0.1, 2.1]], 0);
+    for (const sz of [-1, 1]) {
+      const cheek: Vec3[] = [[0.2, 0.07, sz * 0.72], [fx, 0.07, sz * 0.72], [fx, 1.46, sz * 0.72], [0.2, 1.46, sz * 0.72]];
+      fb.poly(mat.plaster, wallTint, sz > 0 ? cheek : [cheek[1], cheek[0], cheek[3], cheek[2]], [[0, 0], [0.7, 0], [0.7, 0.6], [0, 0.6]]);
+      const slope: Vec3[] = [[-0.02, 1.5, sz * 1.22], [1.9, 1.5, sz * 1.22], [1.9, 2.7, 0], [-0.02, 2.7, 0]];
+      fb.poly(mat.tiles, roof, sz > 0 ? slope : [slope[1], slope[0], slope[3], slope[2]], [[0, 0], [0.6, 0], [0.6, 0.4], [0, 0.4]]);
     }
   }
 
@@ -733,6 +1182,7 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   function finial(x: number, y: number, z: number, s: number): void {
     const g = lathe([[0, 0], [0.09, 0], [0.11, 0.06], [0.05, 0.14], [0.04, 0.42], [0.1, 0.5], [0.13, 0.6], [0.1, 0.7], [0.04, 0.76], [0.025, 1.05], [0, 1.2]], 10).scale(s, s, s).translate(x, y, z);
     geo(g, mat.gold, undefined);
+    fb?.frame().geo(mat.gold, lathe(FINIAL_FAR, 3).scale(s, s, s).translate(x, y, z));
     if (spec.corner?.left || spec.corner?.right) {
       const arrow = new THREE.Shape([new THREE.Vector2(-0.55, -0.02), new THREE.Vector2(0.32, -0.02), new THREE.Vector2(0.3, -0.12), new THREE.Vector2(0.55, 0), new THREE.Vector2(0.3, 0.12), new THREE.Vector2(0.32, 0.02), new THREE.Vector2(-0.4, 0.02), new THREE.Vector2(-0.55, 0.16), new THREE.Vector2(-0.48, 0), new THREE.Vector2(-0.55, -0.16)]);
       const vane = new THREE.ExtrudeGeometry(arrow, { depth: 0.03, bevelEnabled: false }).translate(0, 0, -0.015).rotateY((spec.seed % 7) * 0.9);
@@ -740,14 +1190,19 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     }
   }
 }
+const LEAF_TONE = lin('#4f7a2e');
+const SHOP_CEILING = lin('#6d5440');
+const SHOP_FLOOR = lin('#8a6a4a');
+type Vec3 = [number, number, number];
 
 /**
  * A shop awning `w` wide: the cloth falls `proj` out from the wall and `drop` down, sagging between its stays,
  * finished with a scalloped valance. aCloth carries the stripe coordinate (metres across, along the fall).
  */
-export function awningGeometry(w: number, proj: number, drop: number, scallopSeed = 1): THREE.BufferGeometry {
-  const nx = Math.max(8, Math.round(w * 6));
-  const nz = 6;
+export function awningGeometry(w: number, proj: number, drop: number, scallopSeed = 1, far = false): THREE.BufferGeometry {
+  // The far build keeps the fall and the stripes (they are in the shader) and drops the sag and scallops.
+  const nx = far ? 1 : Math.max(8, Math.round(w * 6));
+  const nz = far ? 1 : 6;
   const pos: number[] = [];
   const cloth: number[] = [];
   const idx: number[] = [];
@@ -776,7 +1231,7 @@ export function awningGeometry(w: number, proj: number, drop: number, scallopSee
     const u = i / vx;
     const x = -w / 2 + w * u;
     const phase = (u * n) % 1;
-    const hem = 0.14 + 0.1 * Math.sin(Math.PI * phase);
+    const hem = far ? 0.2 : 0.14 + 0.1 * Math.sin(Math.PI * phase);
     const yTop = -drop - sag(u, 1);
     pos.push(x, yTop, proj + 0.005, x, yTop - hem, proj + 0.012);
     const fall = Math.hypot(proj, drop);
@@ -795,9 +1250,7 @@ export function awningGeometry(w: number, proj: number, drop: number, scallopSee
 }
 
 /** A hanging banner `w` wide and `h` long with a swallowtail hem and a soft ripple; aCloth as on awnings. */
-export function bannerGeometry(w: number, h: number, seed = 0): THREE.BufferGeometry {
-  const nx = 6;
-  const ny = 14;
+export function bannerGeometry(w: number, h: number, seed = 0, nx = 6, ny = 14): THREE.BufferGeometry {
   const pos: number[] = [];
   const cloth: number[] = [];
   const idx: number[] = [];
@@ -1275,19 +1728,30 @@ export interface DistrictOptions extends DistrictPlanOptions {
   kit: TidecrownKit;
   /** Pennant strings across the streets between facing houses (default on). */
   bunting?: boolean;
-  /** Batches per axis over the district's bounds: 2 x 2 quarters by default. */
-  chunks?: [number, number];
+  /**
+   * A city's shared LOD (see cityLod): the district adds its chunks there and the caller builds it once, after
+   * every district. Without one the district makes and builds its own.
+   */
+  lod?: TidecrownLod<TideBatch>;
+  /** Chunk size, switch distances and shadows of the district's own LOD (ignored with `lod`). */
+  lodOptions?: LodOptions;
   name?: string;
 }
 export interface District {
-  group: THREE.Group;
+  /** The district's LOD, built; an empty group when it went into a shared `lod`. */
+  group: THREE.Object3D;
   lots: TownhouseLot[];
   colliders: TidecrownCollider[];
   /** Lantern anchors beside doors (world). */
   lamps: { x: number; y: number; z: number; yaw: number }[];
   /** Back lanes the district added between its rows (pave and keep clear like streets). */
   lanes: DistrictStreet[];
-  stats: { houses: number; meshes: number; triangles: number; pieces: Record<string, number> };
+  stats: { houses: number; meshes: number; triangles: number; farTriangles: number; chunks: number; pieces: Record<string, number> };
+}
+
+/** A LOD for a whole city of districts: pass it to every fillDistrict, then build() it and add it to the scene. */
+export function cityLod(kit: TidecrownKit, opts: LodOptions = {}, name = 'tidecrown-city'): TidecrownLod<TideBatch> {
+  return new TidecrownLod((n) => new TideBatch(kit, n), opts, name);
 }
 
 /** Distance along a ray to the nearest house front (and that house), within `max`. */
@@ -1311,7 +1775,7 @@ function rayToLot(lots: TownhouseLot[], x: number, z: number, dx: number, dz: nu
 }
 
 /** Strings of pennants across each street, from one house front to the facing one, every dozen metres or so. */
-function bunting(o: DistrictOptions, plan: DistrictPlan, chunkOf: (x: number, z: number) => TideBatch): void {
+function bunting(o: DistrictOptions, plan: DistrictPlan, chunkOf: (x: number, z: number) => { near: TideBatch; far: FarBatch }): void {
   const r = stream((o.seed ?? 1) + 77);
   const setback = o.setback ?? 0.9;
   for (const st of o.streets) {
@@ -1330,58 +1794,65 @@ function bunting(o: DistrictOptions, plan: DistrictPlan, chunkOf: (x: number, z:
       const pa = new THREE.Vector3(x + nx * (a.t + WALL - 0.02), y(a.lot), z + nz * (a.t + WALL - 0.02));
       const pb = new THREE.Vector3(x - nx * (b.t + WALL - 0.02), y(b.lot), z - nz * (b.t + WALL - 0.02));
       const g = buntingGeometry(pa, pb, 0.45 + r() * 0.35, Math.floor(r() * 6));
-      const batch = chunkOf(x, z);
-      batch.addGeometry(g.flags, o.kit.mat.pennant, null, false);
-      batch.addGeometry(g.cord, o.kit.mat.iron, null, false);
+      const c = chunkOf(x, z);
+      c.near.addGeometry(g.flags, o.kit.mat.pennant, null, false);
+      c.near.addGeometry(g.cord, o.kit.mat.iron, null, false);
+      // Far: the flags without their cord.
+      c.far.house(IDENTITY).geo(o.kit.mat.pennant, g.flags);
     }
   }
 }
+const IDENTITY = new THREE.Matrix4();
+const TREE_FAR = new THREE.IcosahedronGeometry(1, 0);
+const TREE_LEAF = lin('#5d8a34');
 
-/** Plan and build a district of townhouses, one batch per quarter. Deterministic from `seed`. */
+/**
+ * Plan and build a district of townhouses into LOD chunks (near: the kit; far: buildTownhouse's far build), on
+ * the district's own LOD or a shared city one. Deterministic from `seed`.
+ */
 export function fillDistrict(o: DistrictOptions): District {
   const plan = planDistrict(o);
   const name = o.name ?? 'tidecrown-district';
-  const group = new THREE.Group();
-  group.name = name;
-  const [cx, cz] = o.chunks ?? [2, 2];
-  let x0 = Infinity;
-  let x1 = -Infinity;
-  let z0 = Infinity;
-  let z1 = -Infinity;
-  for (const [x, z] of o.polygon) {
-    x0 = Math.min(x0, x);
-    x1 = Math.max(x1, x);
-    z0 = Math.min(z0, z);
-    z1 = Math.max(z1, z);
-  }
-  const batches: TideBatch[] = [];
-  const chunkOf = (x: number, z: number) => {
-    const i = Math.min(cx - 1, Math.max(0, Math.floor(((x - x0) / (x1 - x0 || 1)) * cx)));
-    const j = Math.min(cz - 1, Math.max(0, Math.floor(((z - z0) / (z1 - z0 || 1)) * cz)));
-    const k = j * cx + i;
-    return (batches[k] ??= new TideBatch(o.kit, `${name}:quarter-${i}-${j}`));
-  };
+  const lod = o.lod ?? new TidecrownLod((n) => new TideBatch(o.kit, n), o.lodOptions, name);
+  const chunkOf = (x: number, z: number) => lod.chunkAt(x, z);
   const extras: HouseExtras = { colliders: [], lamps: [] };
-  for (const h of plan.houses) buildTownhouse(h, chunkOf(h.x, h.z), extras);
+  const used = new Set<TideBatch>();
+  for (const h of plan.houses) {
+    const c = chunkOf(h.x, h.z);
+    used.add(c.near);
+    buildTownhouse(h, c.near, extras, c.far);
+  }
   const m = new THREE.Matrix4();
   for (const y of plan.yards) {
     const kit = o.kit[y.kit];
     const over = y.kit === 'props' ? o.kit.over.props : y.kit === 'nature' ? o.kit.over.nature : o.kit.over.wall;
     m.copy(trs(y.x, y.y - 0.02, y.z, y.yaw, y.s));
-    chunkOf(y.x, y.z).put(kit, y.piece, m, over, null, true);
+    const c = chunkOf(y.x, y.z);
+    c.near.put(kit, y.piece, m, over, null, true);
+    // Far: trees as a leafy blob on a trunk; the small yard things are left out.
+    if (y.piece.startsWith('CommonTree')) {
+      c.far.house(trs(y.x, y.y, y.z, y.yaw, y.s));
+      c.far.box(o.kit.mat.paint, TRUNK_TONE, -0.35, 0, -0.35, 0.35, 3.2, 0.35, 'ny py');
+      c.far.frame(0, 5.6, 0, 0, 1.95, 2.6, 1.95).geo(o.kit.mat.paint, TREE_FAR, TREE_LEAF);
+    }
   }
   if (o.bunting !== false) bunting(o, plan, chunkOf);
-  for (const b of batches) if (b) group.add(b.build());
-  let meshes = 0;
-  let triangles = 0;
-  group.traverse((ob) => {
-    const mesh = ob as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    meshes++;
-    triangles += (mesh.geometry.getIndex()?.count ?? mesh.geometry.getAttribute('position').count) / 3;
-  });
   const pieces = new Map<string, number>();
-  for (const b of batches) if (b) for (const [p, t] of b.pieceTris) pieces.set(p, (pieces.get(p) ?? 0) + t);
+  for (const b of used) for (const [p, t] of b.pieceTris) pieces.set(p, (pieces.get(p) ?? 0) + t);
   const top = Object.fromEntries([...pieces].sort((a, b) => b[1] - a[1]).slice(0, 14));
-  return { group, lots: plan.lots, colliders: [...plan.colliders, ...extras.colliders], lamps: extras.lamps, lanes: plan.lanes, stats: { houses: plan.houses.length, meshes, triangles, pieces: top } };
+  let group: THREE.Object3D;
+  if (o.lod) {
+    group = new THREE.Group();
+    group.name = name;
+  } else group = lod.build();
+  const ls = lod.stats;
+  return {
+    group,
+    lots: plan.lots,
+    colliders: [...plan.colliders, ...extras.colliders],
+    lamps: extras.lamps,
+    lanes: plan.lanes,
+    stats: { houses: plan.houses.length, meshes: ls.meshes, triangles: ls.nearTriangles, farTriangles: ls.farTriangles, chunks: ls.chunks, pieces: top },
+  };
 }
+const TRUNK_TONE = lin('#6b5038');
