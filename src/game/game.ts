@@ -71,6 +71,9 @@ export const DEFAULT_SPEC: CrabSpec = { race: 'human', sex: 'male', classId: 'wa
 const CULL_DIST = 80;
 const SHADOW_DIST = 18;
 const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } };
+/** Frostlight's own grade while it is shown: cool lifted shadows, warm lamp light, snow that reads white (grade.ts). */
+// Bloom keys above the brightest sunlit snow, so lamps and windows glow and the snow does not haze over.
+const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },
@@ -257,7 +260,7 @@ export class Game {
     progress(0.56, 'Building Starhaven');
     await this.world2.buildSettlement();
     if (!this.alive) return;
-    this.engine.setView(this.scene, this.camera, GAME_VIEW);
+    this.engine.setView(this.scene, this.camera, this.gameView());
     this.vfx = new Vfx(this.scene, (x,z) => this.world.heightAt(x,z));
     this.vfx.density = app.engine.quality === 'low' ? 0.55 : 1;
     this.objective = new ObjectiveMarker(this.vfx.fx);
@@ -740,6 +743,8 @@ export class Game {
     const worldTime=this.multiplayer?.battle.worldTime(f.elapsed,dt) ?? f.elapsed;
     this.world.update(dt, worldTime, this.camera);
     this.world2.update(dt,worldTime);
+    // The game's own views follow the world shown; endings and captures that set their own are left alone.
+    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
     this.lighthouseSecret?.update();
     // A spectator view shows no HUD and plays no music.
     if(!this.spectator){
@@ -1441,6 +1446,8 @@ export class Game {
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }
 
+  private gameView(): ViewOptions { return this.world2?.fourth.root.visible ? FROST_VIEW : GAME_VIEW; }
+
   /** A duel keeps the adventure alive, even when entered from a shared victory celebration. */
   resumeFriendAdventure(authority:boolean):void {
     this.ending.cancel();this.journey?.closeChapterEnding();
@@ -1457,7 +1464,7 @@ export class Game {
 
   /** Celebration effects and direct music requests must not leak into the next adventure. */
   resumeAfterEnding(): void {
-    this.engine.setView(this.scene, this.camera, GAME_VIEW);
+    this.engine.setView(this.scene, this.camera, this.gameView());
     if (this.musicOn) this.updateMusic(true);
     else this.audio.stopMusic(.4);
   }
