@@ -213,10 +213,6 @@ float fpFw=max(abs(dot(fpDpx,fpG))+abs(dot(fpDpy,fpG)),1e-4);
 float fpFar=smoothstep(.012,.05,fpFw);
 float fpBlur=smoothstep(.09,.3,fpFoot);
 float fpBev=smoothstep(0.,.02+fpFw,-fpOut);
-// Per-stone values (snow height, tint, top) meet the next stone's in the joint as a step that no pixel filters:
-// within a pixel and a half of the outline they ease to the quarry's mean, so at a distance a stone's edge does
-// not flick between snow and granite as the camera moves.
-float fpEdge=smoothstep(0.,fpFw*1.5,-fpOut);
 // The joint: an antialiased 2 cm line whose contrast falls as it narrows below the pixel, so its area holds.
 float fpJc=(1.-smoothstep(-fpFw,fpFw,-fpOut-.006))*min(1.,.03/fpFw)*(1.-fpBlur*.6);
 float fpTop=.84+.16*fract(fpId*5.3);
@@ -224,7 +220,7 @@ vec2 fpGS=(-fpG*fpSlope+fpCG)*FP_RELIEF*(1.-fpFar);
 // Where snow lies on a stone: its arris (not the whole crown), each stone a little higher or lower than the next,
 // and a ragged noise, so a half-buried course shows patches and filled joints, not a ring round every stone.
 float fpAx=clamp(-fpOut/.045,0.,1.),fpArr=1.-(1.-fpAx)*(1.-fpAx);
-float fpHs=mix(fpH,fpTop*fpArr,.6)+(fract(fpId*13.7)-.5)*.34*(1.-fpBlur)*fpEdge+(fpNoise(fpP*5.1+fpId)*.6*fpEdge+fpNoise(fpP*11.3)*.4)*.16*(1.-fpFar);
+float fpHs=mix(fpH,fpTop*fpArr,.6)+(fract(fpId*13.7)-.5)*.34*(1.-fpBlur)+(fpNoise(fpP*5.1+fpId)*.6+fpNoise(fpP*11.3)*.4)*.16*(1.-fpFar);
 // Height averages that no longer resolve go to their mean. The snow line's edge is as wide as the pixel's step
 // across the arris (stone units per pixel), so it never snaps from stone to stone.
 float fpSw=max(.05,mix(fpSlope,fpTop*2.*(1.-fpAx)/.045,.6)*fpFw*.8)+fpFar*.1+fpBlur*.25;
@@ -237,7 +233,7 @@ float fpPack=clamp(fpWear*.8+fpTrod*.5,0.,1.)*(1.-fpFresh);
 // Thin snow keeps the shape of the stones under it.
 float fpThin=1.-smoothstep(0.,.7,fpS-fpH);
 // How far the visible surface sits below the stone tops around it: joints and hollows see less sky.
-float fpRecess=clamp((mix(.92,fpTop,fpEdge)*.92-max(fpS,fpH))/.55,0.,1.)*(1.-fpFar*.75)*(1.-fpSnow*.8);
+float fpRecess=clamp((fpTop*.92-max(fpS,fpH))/.55,0.,1.)*(1.-fpFar*.75)*(1.-fpSnow*.8);
 // Granite from several quarries, a few warm and slate flags; dark where the shoulder meets the joint.
 float fpV=fract(fpId*17.13);
 vec3 fpStone=mix(vec3(.13,.125,.12),vec3(.3,.285,.265),fract(fpId*3.7));
@@ -245,7 +241,7 @@ fpStone=mix(fpStone,vec3(.31,.235,.17),step(.86,fpV)*.75);
 fpStone=mix(fpStone,vec3(.13,.145,.17),step(fpV,.12)*.8);
 fpStone*=.82+.36*(fpNoise(fpP*4.7+fpId*13.)*.5+.5);
 // Under two pixels a stone is the quarry's mean, varied only at the scale of whole patches of road.
-fpStone=mix(vec3(.205,.194,.182)*(.86+.28*(fpNoise(fpP*.9+3.)*.5+.5)),fpStone,(1.-fpBlur)*fpEdge);
+fpStone=mix(fpStone,vec3(.205,.194,.182)*(.86+.28*(fpNoise(fpP*.9+3.)*.5+.5)),fpBlur);
 float fpNear=1.-smoothstep(.006,.03,fpFoot);
 // Grain: each octave gone before a pixel spans half its wavelength (2.4 and 1 cm), or it crawls as the crab walks.
 if(fpNear>0.)fpStone*=1.+fpNoise(fpP*41.)*.22*(1.-smoothstep(.008,.017,fpFoot))+fpNoise(fpP*97.)*.16*(1.-smoothstep(.0035,.0075,fpFoot));
