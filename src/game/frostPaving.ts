@@ -191,16 +191,17 @@ float fpFar=smoothstep(.012,.05,fpFw);
 float fpBlur=smoothstep(.09,.3,fpFoot);
 float fpBev=smoothstep(0.,.02+fpFw,-fpOut);
 // The joint: an antialiased 2 cm line whose contrast falls as it narrows below the pixel, so its area holds.
-float fpJc=(1.-smoothstep(-fpFw*.5,fpFw*.5,-fpOut-.006))*min(1.,.045/fpFw)*(1.-fpBlur*.6);
+float fpJc=(1.-smoothstep(-fpFw,fpFw,-fpOut-.006))*min(1.,.03/fpFw)*(1.-fpBlur*.6);
 float fpTop=.84+.16*fract(fpId*5.3);
 vec2 fpGS=(-fpG*fpSlope+fpCG)*FP_RELIEF*(1.-fpFar);
 // Where snow lies on a stone: its arris (not the whole crown), each stone a little higher or lower than the next,
 // and a ragged noise, so a half-buried course shows patches and filled joints, not a ring round every stone.
-float fpArr=1.-pow(1.-clamp(-fpOut/.045,0.,1.),2.);
-float fpHs=mix(fpH,fpTop*fpArr,.6)+(fract(fpId*13.7)-.5)*.34+(fpNoise(fpP*5.1+fpId)*.6+fpNoise(fpP*11.3)*.4)*.16;
-// Height averages that no longer resolve go to their mean, the snow line's edge widening with them.
+float fpAx=clamp(-fpOut/.045,0.,1.),fpArr=1.-(1.-fpAx)*(1.-fpAx);
+float fpHs=mix(fpH,fpTop*fpArr,.6)+(fract(fpId*13.7)-.5)*.34*(1.-fpBlur)+(fpNoise(fpP*5.1+fpId)*.6+fpNoise(fpP*11.3)*.4)*.16*(1.-fpFar);
+// Height averages that no longer resolve go to their mean. The snow line's edge is as wide as the pixel's step
+// across the arris (stone units per pixel), so it never snaps from stone to stone.
+float fpSw=max(.05,mix(fpSlope,fpTop*2.*(1.-fpAx)/.045,.6)*fpFw*.8)+fpFar*.1+fpBlur*.25;
 fpH=mix(fpH,.62,fpFar);fpHs=mix(fpHs,.62,fpBlur);
-float fpSw=.05+fpFar*.12+fpBlur*.25;
 // Meltwater keeps some joints open (only where the snow is thin enough for it to matter).
 if(fpS<1.05)fpS-=(1.-fpBev)*(.2+.4*(fpNoise(fpP*3.3+fpId)*.5+.5))*(1.-fpFar)*(1.-smoothstep(.55,1.05,fpS));
 float fpSnow=smoothstep(-fpSw,fpSw,fpS-fpHs+fpNoise(fpP*7.3)*.06*(1.-fpBlur)-.04);
