@@ -59,6 +59,7 @@ export class DebugTools {
       button('월드 2로 이동','Travel to World II',()=>{this.game.creatorTravel=true;if(!this.game.multiplayer?.battle.enterWorld2())this.game.world2.go(2);}),
       button('월드 3로 이동','Travel to World III',()=>{this.game.creatorTravel=true;if(!this.game.multiplayer?.battle.travel(3))this.game.world2.go(3);}),
       ...([4,5,6] as const).map(chapter=>button(`월드 ${chapter}로 이동`,`Travel to World ${chapter}`,()=>{this.game.creatorTravel=true;if(!this.game.multiplayer?.battle.travel(chapter))this.game.world2.go(chapter);})),
+      button('타이드크라운으로 이동','Travel to Tidecrown',()=>{this.game.creatorTravel=true;void this.game.world2.enterTidecrown();}),
       button('현재 목표 완료','Complete current objective',()=>this.completeObjective()),button('목표로 이동','Teleport to objective',()=>this.teleport()),
       button('제작자 화면 닫기','Close creator tools',()=>{this.panel.hidden=true;}));
   }

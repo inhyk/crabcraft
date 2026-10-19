@@ -2,7 +2,9 @@
 // a fireball falls on the southern ridge at sunset and the tauren rises on the hill over the bay;
 // the village burns and the orc roars in its street; a fireball strikes the lighthouse and the giant
 // smashes it while a warrior leaps from its gallery; later, the orc and the night elf clash at sunset.
-// Effects named dusk-* live in src/capture/cinema/fx/dusk-fire.ts and dusk-pose.ts.
+// The tauren lets dust go from his open claw; the wind carries it out over the bay, it heats into
+// embers and the embers become the burning village.
+// Effects named dusk-* live in src/capture/cinema/fx/ (dusk-fire, dusk-pose, dusk-arm, dusk-dust).
 import { ELF, GIANT, ORC, TAUREN } from '../cast.mjs';
 
 /** The portal on the beach by the wreck: a game object that does not belong in a cinematic. */
@@ -58,7 +60,8 @@ const meteor = {
     ease: 'linear',
   },
   fx: [
-    { t: 0, kind: 'fade', color: '#fff6ea', curve: [[0, 1], [0.35, 0.93], [0.95, 0.42], [1.35, 0]] },
+    // The white holds until 112.1 and clears off the blast.
+    { t: 0, kind: 'fade', color: '#fff6ea', curve: [[0, 1], [0.6, 0.97], [0.95, 0.9], [1.1, 0.5], [1.25, 0.12], [1.4, 0]] },
     { t: 0.12, kind: 'dusk-fireball', from: [300, 150, 250], to: IMPACT, d: 0.9, size: 2.4, trail: 120, light: 2500, distance: 160 },
     { t: 1.02, kind: 'dusk-blast', at: IMPACT, r: 10, column: 8, light: 6000, distance: 180, flashA: 0.75, flashD: 0.35, flashColor: '#ffe2b0', shake: 0.1, puffs: 56, debris: 44 },
     { t: 1.02, kind: 'shake', d: 0.7, amp: 0.12 },
@@ -66,7 +69,9 @@ const meteor = {
 };
 
 // He sits on the lip of the plateau facing the ridge, rises as the camera creeps in, and turns
-// toward the bay and the sun; the tree stands against the sunset beside him.
+// toward the bay and the sun. The camera stays back on the far side from the sun, so his whole
+// shell rises as a silhouette against the sunset (his lantern is put away: the claw is for dust).
+const EMPTY_CLAW = { t: -6, kind: 'dusk-arm', actor: 't', joints: {}, w: [[0, 0]], hide: ['clawR'] };
 const rise = {
   id: 'dusk-rise',
   ...span(C.rise, C.reveal),
@@ -89,24 +94,68 @@ const rise = {
   },
   cam: {
     keys: [
-      // Low behind him at the grass, tilting and rising with him as he stands.
-      { t: 0, p: polar(T, 236, 3.6, 0.22), l: polar(T, 44, 1.2, 0.36), fov: 32 },
-      { t: 1.2, p: polar(T, 237, 3.4, 0.26), l: polar(T, 44, 1.2, 0.4), fov: 32 },
-      { t: 2.2, p: polar(T, 239, 3.3, 0.6), l: polar(T, 46, 2, 1.0), fov: 31 },
-      { t: 4.5, p: polar(T, 248, 3.0, 0.8), l: polar(T, 48, 3, 0.95), fov: 32 },
+      // Low in the grass behind him, the sun over his shell; rising with him as he stands.
+      { t: 0, p: polar(T, 214, 6.2, 0.62), l: polar(T, 40, 1.5, 0.85), fov: 30 },
+      { t: 1.2, p: polar(T, 216, 6.0, 0.66), l: polar(T, 40, 1.5, 0.9), fov: 30 },
+      { t: 2.6, p: polar(T, 222, 5.4, 0.9), l: polar(T, 42, 2, 1.2), fov: 30 },
+      { t: 4.5, p: polar(T, 232, 4.8, 1.15), l: polar(T, 46, 3, 1.3), fov: 31 },
     ],
     ease: 'sine',
     focus: 't',
     range: 3,
   },
-  fx: [IMPACT_PLUME, MOTES()],
+  fx: [IMPACT_PLUME, MOTES(), EMPTY_CLAW],
 };
 
-// The camera comes round behind his left shoulder to his right, always on his shadow side so the
-// sunset stays behind him, as he turns his head to look over the bay.
+// 119.5: his right claw comes up and out over the bay and opens; dust streams from it and the wind
+// takes it toward the sun. The camera behind his right shoulder, looking past him into the sunset.
+const TY = 66;
+/** The wind's bearing: out over the bay, clear of the trees on the slope. */
+const DUST_WIND = 68;
+const ARM_OUT = { RF_J0_joint: -0.6, RF_J1_joint: -1.35, RF_J2_joint: -0.8 };
+/** Song second the claw opens and lets the dust go. */
+const DUST_AT = 119.5;
+/** The one stream of dust, in a shot starting at song second `at`: the same grains in every shot. */
+const DUST = (at) => {
+  const o = DUST_AT - at;
+  return [
+    { t: -6, kind: 'dusk-arm', actor: 't', joints: ARM_OUT, w: [[o - 1.0, 0], [o - 0.1, 1]], hide: ['clawR'] },
+    { t: -6, kind: 'dusk-arm', actor: 't', joints: { RF_J4_joint: 1.2 }, w: [[o - 0.15, 0], [o + 0.2, 1]] },
+    {
+      t: o,
+      kind: 'dusk-dust',
+      socket: { actor: 't', name: 'clawR' },
+      until: o + 6,
+      rate: 3200,
+      life: 4.8,
+      wind: [Math.sin(deg(DUST_WIND)), 0.06, Math.cos(deg(DUST_WIND))],
+      v0: 1.6,
+      acc: 3.0,
+      vel: [0, -0.35, 0],
+      damp: 0.45,
+      rise: 0.2,
+      spread0: 0.03,
+      spread1: 0.9,
+      turb: 0.45,
+      size0: 0.034,
+      size1: 0.16,
+      color: '#f0b878',
+      color2: '#ffd9a0',
+      hot: '#ff9a3c',
+      hot2: '#ff4410',
+      glow: 2.6,
+      opacity: 0.85,
+      // Dust in the sunset light, warm orange streaks over the bay, red sparks as it dives.
+      heat: [[o, 0], [o + 1.8, 0.05], [o + 2.6, 0.3], [o + 3.5, 0.65], [o + 4.2, 1]],
+      heatAge: 0.15,
+      streak: [[o + 1.6, 0], [o + 2.6, 0.1], [o + 4.2, 0.18]],
+      order: 1001,
+    },
+  ];
+};
 const BAY = 62;
-const REVEAL_END = polar(T, 205, 2.8, 1.5);
-const REVEAL_END_LOOK = polar(T, 58, 6, 0.6);
+const REVEAL_END = polar(T, TY - 132, 2.7, 1.35);
+const REVEAL_END_LOOK = polar(T, DUST_WIND + 2, 10, 0.5);
 const reveal = {
   id: 'dusk-reveal',
   ...span(C.reveal, C.dive),
@@ -115,23 +164,23 @@ const reveal = {
   hide: [PORTAL],
   view: { ...DUSK_VIEW, dof: true, bokeh: 2.5 },
   actors: [{ id: 't', spec: TAUREN, at: T, yaw: deg(55) }],
-  tracks: { t: { path: [{ t: 0, x: T[0], z: T[1], yaw: deg(55) }, { t: 0.6, x: T[0], z: T[1], yaw: deg(55) }, { t: 3.0, x: T[0], z: T[1], yaw: deg(82) }], faces: [{ t: -2, expr: 'focused' }] } },
+  tracks: { t: { path: [{ t: 0, x: T[0], z: T[1], yaw: deg(55) }, { t: 1.2, x: T[0], z: T[1], yaw: deg(TY) }], faces: [{ t: -2, expr: 'focused' }] } },
   cam: {
     keys: [
-      { t: 0, p: polar(T, 168, 2.8, 0.8), l: polar(T, 30, 0.6, 0.95), fov: 36 },
-      { t: 1.5, p: polar(T, 186, 2.6, 0.95), l: polar(T, 40, 1.6, 0.85), fov: 35 },
+      { t: 0, p: polar(T, TY - 150, 3.4, 1.25), l: polar(T, TY, 6, 0.85), fov: 36 },
+      { t: 2.0, p: polar(T, TY - 142, 3.0, 1.3), l: polar(T, DUST_WIND + 6, 8, 0.7), fov: 35 },
       { t: 3.5, p: REVEAL_END, l: REVEAL_END_LOOK, fov: 34 },
     ],
-    ease: 'linear',
+    ease: 'sine',
     focus: 't',
     range: 4,
   },
-  fx: [IMPACT_PLUME, MOTES()],
+  fx: [IMPACT_PLUME, MOTES(), ...DUST(C.reveal)],
 };
 
-const at = (b, d) => flat(T, b, d);
-const D3 = at(BAY, 22);
-const D4 = at(BAY - 2, 40);
+// 121.5: the camera slides past his shoulder and rides the wind with the dust out over the bay; the
+// dust burns into orange streaks, and at 123.3 the camera dives into a red haze of sparks.
+const S = (d, h) => polar(T, DUST_WIND + 2, d, h);
 const dive = {
   id: 'dusk-dive',
   ...span(C.dive, C.smoke),
@@ -139,23 +188,26 @@ const dive = {
   mood: 0,
   hide: [PORTAL],
   view: { ...DUSK_VIEW, bloom: { intensity: 1.5, threshold: 0.7, radius: 0.85 } },
-  actors: [{ id: 't', spec: TAUREN, at: T, yaw: deg(82) }],
-  tracks: { t: { path: [{ t: 0, x: T[0], z: T[1], yaw: deg(82) }], faces: [{ t: -2, expr: 'focused' }] } },
+  actors: [{ id: 't', spec: TAUREN, at: T, yaw: deg(TY) }],
+  tracks: { t: { path: [{ t: 0, x: T[0], z: T[1], yaw: deg(TY) }], faces: [{ t: -2, expr: 'focused' }] } },
   cam: {
     keys: [
       { t: 0, p: REVEAL_END, l: REVEAL_END_LOOK, fov: 34 },
-      // Up and over his head, clear of the horns, and out over the slope.
-      { t: 0.8, p: polar(T, 150, 1.4, 2.6), l: polar(T, BAY, 12, 0), fov: 40 },
-      { t: 1.6, p: polar(T, BAY, 9, 2.4), l: polar(T, BAY - 1, 35, -0.5), fov: 46 },
-      { t: 2.3, p: { g: [D3[0], 2.0, D3[1]] }, l: polar(T, BAY - 3, 60, 0), fov: 50 },
-      { t: 3.0, p: [D4[0], 1.6, D4[1]], l: [D4[0] + 40 * Math.sin(deg(50)), 1.4, D4[1] + 40 * Math.cos(deg(50))], fov: 52 },
+      { t: 0.5, p: polar(T, TY - 105, 2.0, 1.4), l: S(12, 0.9), fov: 36 },
+      // Past the shoulder, out along the stream.
+      { t: 1.3, p: S(3.5, 1.7), l: S(16, 1.0), fov: 42 },
+      { t: 2.3, p: S(12, 2.4), l: S(28, 0.3), fov: 48 },
+      // The dive.
+      { t: 3.0, p: S(21, 3.2), l: S(25, -3.5), fov: 54 },
     ],
-    ease: 'linear',
+    ease: 'sine',
   },
   fx: [
     IMPACT_PLUME,
-    { t: 1.6, kind: 'dusk-haze', alpha: [[1.6, 0], [2.5, 0.35], [3.0, 0.75]], cover: [[1.6, 0.35], [3, 0.7]], color: '#7a3a1c', color2: '#e8935a', color3: '#ffcf8a', back: 0.55, flow: [-0.2, 0.05] },
     MOTES(500, [24, 8, 24]),
+    ...DUST(C.dive),
+    { t: 1.0, kind: 'dusk-haze', alpha: [[1.3, 0], [2.0, 0.15], [2.5, 0.38], [3.0, 0.72]], cover: [[1.3, 0.35], [3, 0.78]], color: '#6a1608', color2: '#d4461a', color3: '#ffb070', back: 0.6, flow: [-0.25, 0.05] },
+    { t: 2.2, kind: 'fade', color: '#c8401a', curve: [[2.3, 0], [3.0, 0.35]] },
   ],
 };
 
@@ -208,6 +260,8 @@ const smoke = {
     { t: 2.4, kind: 'dusk-fire', spots: [[-1.4, 18.6, 0.5], [2.2, 19.2, 0.45], [0.2, 19.6, 0.4], [3.6, 19.8, 0.5]], height: 2.2, seed: 41, smoke: 0, grow: [[2.4, 0], [3.4, 0.8], [4.25, 1.1]] },
     { t: -2, kind: 'dusk-haze', alpha: [[0, 1], [2.6, 1], [3.6, 0.75], [4.25, 0.55]], cover: [[0, 0.55], [2.6, 0.5], [4.25, 0.4]], back: 1, color: '#4a0d05', color2: '#b8300c', color3: '#ff7a24', flow: [-0.16, 0.04], scale: 1.5 },
     { t: -2, kind: 'embers', box: [16, 10, 16], count: 900, drift: [-1.6, 1.4, 0.2], size: 0.05, shift: [0, 0, 5] },
+    // The dust's sparks fly on into the red from the dive, slow and drift.
+    { t: -2.5, kind: 'dusk-dust', at: { g: [1.4, 1.6, 12.5] }, box: [12, 5, 4], until: 0.8, rate: 260, life: 2.4, wind: [-0.12, 0.1, 1], v0: 5, acc: -1.9, spread0: 0.2, spread1: 0.6, turb: 0.35, size0: 0.025, size1: 0.035, heat: [[0, 1]], streak: [[0, 0.06], [2, 0.03]], hot: '#ffa040', hot2: '#ff4a10', glow: 3.2, opacity: 0.9, pxMax: 0.015, fade: [[0, 1], [0.8, 0.6], [1.8, 0]], order: 1001 },
   ],
 };
 
@@ -259,10 +313,10 @@ const orc = {
     // The roar.
     { t: 4.6, kind: 'shake', d: 1.2, amp: 0.05 },
     // The wall of fire between the lens and him.
-    { t: 6.9, kind: 'dusk-fire', spots: [[-2.2, 21.9, 1], [-0.9, 22.1, 1.1], [0.3, 22.0, 0.9], [-1.5, 21.7, 0.8], [-0.2, 21.6, 0.85], [-3.3, 22.2, 1], [1.4, 22.3, 1]], height: 3.0, gain: 1.1, glow: 0.6, seed: 77, smoke: 0, grow: [[6.9, 0], [7.5, 0.7], [8.0, 1.5], [8.25, 1.8]] },
-    { t: 7.0, kind: 'dusk-haze', additive: true, alpha: [[7.0, 0], [7.7, 0.25], [8.25, 0.55]], cover: [[7, 0.35], [8.25, 0.65]], back: 0.3, color: '#3a0802', color2: '#ff5a10', color3: '#ffb040', flow: [0, 0.6], scale: 1.4 },
-    // 135.5 to 136.5: the fire fills the frame and burns to white.
-    { t: 7.2, kind: 'fade', color: '#fff0d8', curve: [[7.3, 0], [7.8, 0.3], [8.1, 0.75], [8.25, 0.88]] },
+    { t: 6.9, kind: 'dusk-fire', spots: [[-2.2, 21.9, 1], [-0.9, 22.1, 1.1], [0.3, 22.0, 0.9], [-1.5, 21.7, 0.8], [-0.2, 21.6, 0.85], [-3.3, 22.2, 1], [1.4, 22.3, 1]], height: 3.0, gain: 1.15, glow: 0.6, seed: 77, smoke: 0, grow: [[6.9, 0], [7.4, 0.8], [7.7, 1.5], [8.25, 1.9]] },
+    { t: 7.1, kind: 'dusk-haze', additive: true, alpha: [[7.2, 0], [7.5, 0.3], [7.8, 0.6]], cover: [[7.2, 0.35], [7.8, 0.7]], back: 0.3, color: '#3a0802', color2: '#ff6a14', color3: '#ffc860', flow: [0, 0.6], scale: 1.4 },
+    // 135.58: the fire fills the frame and burns to white, white by 136.0.
+    { t: 7.2, kind: 'fade', color: '#fff4e0', curve: [[7.3, 0], [7.45, 0.3], [7.6, 0.62], [7.8, 0.9], [8.0, 1], [8.25, 1]] },
   ],
 };
 
@@ -311,7 +365,9 @@ const CLIMB_ACTS = CLIMB.filter((_, i) => i % 2 === 1 && i < CLIMB.length - 1).m
 /** The giant's glow: a fel light on its chest and a hot one at its claws. */
 const GIANT_GLOW = (t0) => [
   { t: t0, kind: 'light', at: { a: 'g', o: [0, 3, -2.5] }, color: '#b8e04a', intensity: 90, distance: 14, flicker: 0.25 },
-  { t: t0, kind: 'light', at: { a: 'g', o: [0, 6, 2] }, color: '#ff8a2a', intensity: 80, distance: 14, flicker: 0.4 },
+  { t: t0, kind: 'light', at: { a: 'g', o: [0, 6, 2] }, color: '#ff8a2a', intensity: 30, distance: 12, flicker: 0.4 },
+  // A cold rim from the sky so its shape reads off the burning sky.
+  { t: t0, kind: 'light', at: { a: 'g', o: [0, 9, -6] }, color: '#9ab0ff', intensity: 70, distance: 18 },
 ];
 const tower = {
   id: 'dusk-tower',
@@ -336,7 +392,7 @@ const tower = {
     { t: -6, kind: 'dusk-pose', actor: 'g', pitch: [[0, 74]] },
     ...GIANT_GLOW(-6),
     // Out of the white burn: a short warm haze that clears off the tower.
-    { t: 0, kind: 'fade', color: '#ffd8b0', curve: [[0, 0.4], [0.3, 0]] },
+    { t: 0, kind: 'fade', color: '#fff0dc', curve: [[0, 0.75], [0.12, 0.4], [0.28, 0]] },
     // 137.0: the fireball comes in from the upper left and strikes under the gallery.
     { t: 0.0, kind: 'dusk-fireball', from: [LH_HIT[0] + 26, LH_HIT[1] + 16, LH_HIT[2] + 4], to: LH_HIT, d: 0.5, size: 1.8, trail: 90, light: 1600, distance: 26, accel: 1.2 },
     { t: 0.5, kind: 'dusk-blast', at: LH_HIT, r: 4.2, column: 4, light: 2400, distance: 30, flashA: 0.12, flashD: 0.08, flashColor: '#ffb060', shake: 0.1, puffs: 56, debris: 50, gravity: 9.8 },
@@ -359,8 +415,8 @@ const giant = {
   tracks: { g: { path: [{ t: 0, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 7.6 }, { t: 1, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 9.2 }], acts: [{ t: -0.2, clip: 'attack_slam', speed: 0.9 }] } },
   cam: {
     keys: [
-      { t: 0, p: LHP(172, 23, 16), l: LHP(110, 2, 25), fov: 48 },
-      { t: 1, p: LHP(169, 22, 16.8), l: LHP(110, 2, 25.6), fov: 46 },
+      { t: 0, p: LHP(174, 31, 14), l: LHP(112, 2, 25), fov: 46 },
+      { t: 1, p: LHP(171, 30, 14.8), l: LHP(112, 2, 25.6), fov: 44 },
     ],
     ease: 'linear',
     shake: 0.04,
@@ -426,6 +482,9 @@ const leap = {
     { t: -6, kind: 'light', at: { a: 'w', o: [0.8, 2.0, -2.2] }, color: '#9ab0ff', intensity: 22, distance: 6 },
     { t: -6, kind: 'light', at: { a: 'w', o: [0, 1.2, 2.5] }, color: '#ffe0b0', intensity: 10, distance: 6 },
     { t: 0.9, kind: 'dusk-blast', at: LHP(300, 3.6, 29.2), r: 1.6, column: 0, light: 800, distance: 10, flash: false, puffs: 26, debris: 18, seed: 13 },
+    // 143.6: the giant's blow bursts behind him in the sky and the frame goes white.
+    { t: 1.55, kind: 'dusk-blast', at: LHP(128, 5, 33.5), r: 6, column: 0, light: 5000, distance: 30, flashA: 0.35, flashD: 0.1, flashColor: '#ffe0b0', shake: 0.12, puffs: 64, debris: 40, seed: 21 },
+    { t: 1.5, kind: 'fade', color: '#fff4e2', curve: [[1.6, 0], [1.72, 0.3], [1.85, 0.72], [1.96, 0.96]] },
   ],
 };
 
@@ -435,11 +494,17 @@ const leap = {
 const CO = [99.5, 6.5];
 const EB = 132;
 const CE0 = flat(CO, EB, 4.4);
-const CE1 = flat(CO, EB, 1.15);
-const CE2 = flat(CO, EB - 12, 0.9);
+// Far enough apart that their claws meet between them and their bodies never overlap.
+const CE1 = flat(CO, EB, 1.8);
+const CE2 = flat(CO, EB - 8, 1.75);
 const CLASH_VIEW = { exposure: 0.92, saturation: 0.28, contrast: 0.14, bloom: { intensity: 1.25, threshold: 0.78, radius: 0.8 }, vignette: { offset: 0.22, darkness: 0.7 }, dof: true, bokeh: 2.2 };
 const CLASH_MOTES = { t: -5, kind: 'motes', color: '#ffd28a', color2: '#ffb36b', count: 300, box: [14, 6, 14], drift: [0.25, 0.12, 0.1], size: 0.04, opacity: 0.8 };
-const HIT = { a: 'o', o: [0, 0.75, 0.8] };
+const HIT = { a: 'o', o: [0, 0.75, 0.85] };
+/** Each crab lit off the sunset: a warm key on the orc, a violet rim on the elf. */
+const CLASH_LIGHTS = [
+  { t: -2, kind: 'light', at: { a: 'o', o: [0.6, 1.4, 1.6] }, color: '#ffd2a0', intensity: 10, distance: 5 },
+  { t: -2, kind: 'light', at: { a: 'e', o: [0, 1.5, -1.3] }, color: '#d0b0ff', intensity: 16, distance: 5 },
+];
 const clashA = {
   id: 'dusk-clash-a',
   ...span(C.clashA, C.clashB),
@@ -453,8 +518,8 @@ const clashA = {
     e: {
       path: [
         { t: 0, x: CE0[0], z: CE0[1], yaw: deg(EB + 180) },
-        { t: 0.38, x: flat(CO, EB, 3.6)[0], z: flat(CO, EB, 3.6)[1], yaw: deg(EB + 180) },
-        { t: 0.66, x: flat(CO, EB, 2.3)[0], z: flat(CO, EB, 2.3)[1], yaw: deg(EB + 180), lift: 1.6 },
+        { t: 0.38, x: flat(CO, EB, 3.9)[0], z: flat(CO, EB, 3.9)[1], yaw: deg(EB + 180) },
+        { t: 0.66, x: flat(CO, EB, 2.8)[0], z: flat(CO, EB, 2.8)[1], yaw: deg(EB + 180), lift: 1.6 },
         { t: 0.92, x: CE1[0], z: CE1[1], yaw: deg(EB + 180), lift: 0.55 },
         { t: 1.54, x: CE2[0], z: CE2[1], yaw: deg(EB + 180), lift: 0 },
       ],
@@ -477,6 +542,9 @@ const clashA = {
     { t: 0.9, kind: 'light', at: HIT, color: '#ffd8a0', curve: [[0.88, 0], [0.92, 60], [1.15, 0]], distance: 6 },
     { t: 0.9, kind: 'shake', d: 0.3, amp: 0.04 },
     CLASH_MOTES,
+    ...CLASH_LIGHTS,
+    // 154.33 to 154.58: out of the white-green flash.
+    { t: 0, kind: 'fade', color: '#f2ffe6', curve: [[0, 0.35], [0.12, 0.92], [0.25, 1], [0.37, 0.9], [0.5, 0.25], [0.62, 0]] },
   ],
 };
 
@@ -494,8 +562,9 @@ const clashB = {
   },
   cam: {
     keys: [
-      { t: 0, p: polar(CO, EB + 95, 2.4, 0.2), l: polar(CO, EB, 0.5, 0.7), fov: 38 },
-      { t: 1.96, p: polar(CO, EB + 105, 2.1, 0.26), l: polar(CO, EB, 0.45, 0.78), fov: 36 },
+      // Side on to the line between them: the orc on one side, the elf on the other.
+      { t: 0, p: polar(CO, EB + 92, 3.4, 0.3), l: polar(CO, EB, 0.85, 0.6), fov: 36 },
+      { t: 1.96, p: polar(CO, EB + 100, 3.0, 0.32), l: polar(CO, EB, 0.85, 0.66), fov: 35 },
     ],
     ease: 'linear',
     focus: 'e',
@@ -506,9 +575,10 @@ const clashB = {
     { t: 0.95, kind: 'vfx', recipe: 'sparks', args: [{ pt: { a: 'o', o: [0, 0.7, 0.7] } }, { color: '#ffb0e0', k: 6 }, 70, 10, { life: 0.45 }] },
     { t: 0.95, kind: 'flash', d: 0.1, a: 0.25, color: '#ffe8f4' },
     CLASH_MOTES,
+    ...CLASH_LIGHTS,
     { t: 1.2, kind: 'leaves', color: '#ffc4e8', color2: '#ffffff', count: 500, box: [10, 6, 10], drift: [1.2, 0.6, 0.5], size: 0.07, fadeIn: 0.3 },
-    // 157.29 to 157.71: a pink-white flash fills the frame.
-    { t: 0, kind: 'fade', color: '#ffe8f2', curve: [[1.54, 0], [1.68, 0.4], [1.84, 0.85], [1.93, 1], [1.96, 1]] },
+    // Pink-white by 157.33, held into the snow scene's pink opening.
+    { t: 0, kind: 'fade', color: '#ffe6f0', curve: [[1.2, 0], [1.4, 0.45], [1.58, 0.95], [1.65, 1], [1.96, 1]] },
   ],
 };
 

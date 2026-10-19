@@ -129,9 +129,9 @@ const CITY = { t: -3, kind: 'snow-city', at: GATE, yaw: 0, clear: [-46, -120, 46
 
 // The beast comes up from behind on his left and stops 4.6 units off, a little ahead (at 2.1 times his size
 // its legs reach about 1.7 out, so the two never touch).
-const BEAST_FROM = F1(6.0, 0, -7.0);
-const BEAST_NEAR = F1(5.4, 0, -0.4);
-const BEAST_AT = F1(5.1, 0, 1.7);
+const BEAST_FROM = F1(8.5, 0, -3.5);
+const BEAST_NEAR = F1(6.9, 0, 0.4);
+const BEAST_AT = F1(5.6, 0, 2.2);
 
 const OPEN = 39.5;
 const C_TRUDGE = 57.0;
@@ -170,7 +170,8 @@ const face = {
       ],
       show: [[-5, false], [9.0, true]],
       faces: [{ t: -2, expr: 'neutral' }, { t: 13.4, expr: 'angry' }],
-      acts: [{ t: 13.6, clip: 'attack_slam' }],
+      // A growl with its claws up at 55.5 s, where the original's bear roars.
+      acts: [{ t: 13.6, clip: 'attack_slam' }, { t: 16.0, clip: 'attack_slam', from: 1.235, to: 1.9, speed: 0.6 }],
     },
   },
   cam: {
@@ -189,8 +190,10 @@ const face = {
   fx: [
     ...blizzard({ wind: [3.5, -2.2, 6] }),
     CITY,
-    { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.35, 0.9], [1.0, 0.35], [1.5, 0]] },
+    // Out of the white as late as the original, which is clear at 41.2 s.
+    { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.5, 0.85], [1.0, 0.55], [1.45, 0.2], [1.75, 0]] },
     { t: 13.9, kind: 'shake', d: 0.7, amp: 0.04 },
+    { t: 16.05, kind: 'shake', d: 0.6, amp: 0.035 },
   ],
 };
 
@@ -263,11 +266,18 @@ const charge = {
   fog: { color: '#cdd6e2', density: 0.03 },
   actors: cast2([-58, 11], [-56, 6.5], PI / 2),
   tracks: {
-    beast: { path: [{ t: 0, x: -39.5, z: 6.4 }, { t: 2.92, x: -27.5, z: 6.6 }], faces: [{ t: -2, expr: 'angry' }] },
+    // Past the lens on its right, 4 units off, not through it.
+    beast: { path: [{ t: 0, x: -39.5, z: 3.6 }, { t: 2.92, x: -27.5, z: 3.8 }], faces: [{ t: -2, expr: 'angry' }] },
     dwarf: { path: [{ t: 0, x: -58, z: 10 }, { t: 2.92, x: -42, z: 9.5 }], faces: [{ t: -2, expr: 'angry' }] },
   },
   cam: { keys: [{ t: 0, p: G(CH[0], CH[1], 0.45), l: G(-44, 6.6, 1.3), fov: 48 }, { t: 2.92, p: G(CH[0] + 0.25, CH[1] + 0.15, 0.4), l: G(-44, 6.4, 1.2), fov: 48 }], ease: 'linear' },
-  fx: [...blizzard({ wind: [6, -2, 4], heavy: 1.3 }), ROAD_OUT, { t: 2.2, kind: 'shake', d: 0.8, amp: 0.06 }],
+  fx: [
+    ...blizzard({ wind: [6, -2, 4], heavy: 1.3 }),
+    ROAD_OUT,
+    // The shot the original opens on (146.6 s): a muzzle flash from the dwarf off frame left.
+    { t: 0.02, kind: 'explode', at: G(-35.5, 10.6, 1.0), scale: 0.3, color: '#ffcf6a' },
+    { t: 2.2, kind: 'shake', d: 0.8, amp: 0.06 },
+  ],
 };
 const chargeDwarf = {
   anchor: [-40, 9],
@@ -278,7 +288,8 @@ const chargeDwarf = {
     beast: { path: [{ t: 0, x: -34, z: 6.4 }, { t: 2.42, x: -16, z: 5.5 }], faces: [{ t: -2, expr: 'angry' }] },
     dwarf: { path: [{ t: 0, x: -45.5, z: 10.2 }, { t: 2.42, x: -33, z: 8.1 }], faces: [{ t: -2, expr: 'angry' }], acts: [{ t: -0.3, clip: 'claw_right', upper: true }] },
   },
-  cam: { keys: [{ t: 0, p: G(-37, 7.4, 0.45), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }, { t: 2.42, p: G(-36.8, 7.2, 0.45), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }], ease: 'linear' },
+  // Far enough back that the dwarf runs past 4.5 units off instead of filling the lens.
+  cam: { keys: [{ t: 0, p: G(-37.5, 4.2, 0.5), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }, { t: 2.42, p: G(-37.3, 4.0, 0.5), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }], ease: 'linear' },
   fx: [...blizzard({ wind: [6, -2, 4], heavy: 1.3 }), ROAD_OUT],
 };
 
@@ -349,11 +360,19 @@ const tauren = {
   view: { ...COLD, dof: true, bokeh: 1.5 },
   fog: { color: '#cfd7e2', density: 0.028 },
   actors: [{ id: 'tauren', spec: TAUREN, at: TA, yaw: -PI / 2 - 0.25 }],
-  tracks: { tauren: { acts: [{ t: 0.05, clip: 'attack_slam', from: 1.235, to: 1.9, speed: 0.6 }], faces: [{ t: -2, expr: 'angry' }] } },
+  // Roars, then lunges at the lens (162.9 s) and fills it before the logo.
+  tracks: {
+    tauren: {
+      path: [{ t: 0.75, x: TA[0], z: TA[1], yaw: -PI / 2 - 0.25 }, { t: 1.04, x: TA[0] - 1.0, z: TA[1] + 0.25, yaw: -PI / 2 - 0.25 }],
+      acts: [{ t: 0.05, clip: 'attack_slam', from: 1.235, to: 1.9, speed: 0.6 }],
+      faces: [{ t: -2, expr: 'angry' }],
+    },
+  },
   cam: {
     ...move([
       { t: 0, p: G(TA[0] - 3.6, TA[1] + 1.0, 0.45), l: G(TA[0], TA[1], 1.25), fov: 40 },
-      { t: 1.04, p: G(TA[0] - 3.3, TA[1] + 0.95, 0.5), l: G(TA[0], TA[1], 1.35), fov: 39 },
+      { t: 0.8, p: G(TA[0] - 3.4, TA[1] + 0.97, 0.5), l: G(TA[0], TA[1], 1.33), fov: 40 },
+      { t: 1.04, p: G(TA[0] - 2.0, TA[1] + 0.6, 0.7), l: G(TA[0] - 1.0, TA[1] + 0.25, 1.0), fov: 52 },
     ]),
     focus: 'tauren',
     range: 4,
@@ -362,7 +381,9 @@ const tauren = {
     ...blizzard({ wind: [3, -2.5, 6] }),
     { t: -3, kind: 'snow-pines', trees: [[80.5, -3.0, 1.05], [81.0, -9.5, 0.9], [79.0, 2.5, 1.0], [84.0, -1.0, 1.2]] },
     { t: 0.35, kind: 'shake', d: 0.6, amp: 0.03 },
-    { t: 0, kind: 'fade', color: '#f6f8ff', curve: [[0, 0.9], [0.2, 0]] },
+    // The original holds the white to 162.33 s.
+    { t: 0, kind: 'fade', color: '#f6f8ff', curve: [[0, 1], [0.13, 1], [0.3, 0]] },
+    { t: 0.85, kind: 'shake', d: 0.2, amp: 0.05 },
   ],
 };
 
