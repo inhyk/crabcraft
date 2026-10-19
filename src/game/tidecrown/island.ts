@@ -7,6 +7,8 @@ import { type Kit, loadKit } from '../../world/kit';
 import { WORLD_UNIFORMS } from '../../world/materials';
 import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, type TidecrownAtmosphere } from './atmosphere';
 import { buildHorizon } from './horizon';
+import type { MapSnapshot } from '../snapshots';
+import { paintTidecrownMap } from './minimap';
 import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
 import { tidecrownMaterials } from './materials';
 import { buildTidecrownStructures, type TidecrownStructures } from './structures';
@@ -41,6 +43,8 @@ export class TidecrownIsland {
   collision!: Collision;
   atmosphere!: TidecrownAtmosphere;
   structures!: TidecrownStructures;
+  /** Minimap picture, painted from the terrain at build time. */
+  map!: MapSnapshot;
   /** Which castle kit and statues were used ('glb' / 'stub'), and how long each build step took (ms). */
   readonly info: { kit: string; statues: string; steps: Record<string, number>; nature: Record<string, number> } = { kit: '', statues: '', steps: {}, nature: {} };
   private foliage: FoliageResult | null = null;
@@ -93,6 +97,9 @@ export class TidecrownIsland {
     const terrain = new TidecrownTerrain(this.layout.heights);
     const ground = terrain.buildMeshes(tidecrownTerrainMaterial(terrain, village, nature, WORLD_UNIFORMS.uTime));
     this.root.add(ground);
+    const pines: [number, number][] = [];
+    for (const [name, list] of this.layout.nature.trees.items) if (name.startsWith('Pine_')) for (const m of list) pines.push([m.elements[12], m.elements[14]]);
+    this.map = paintTidecrownMap(terrain, pines);
     step('terrain', t0);
     onProgress?.(0.6);
     await tick();

@@ -560,7 +560,7 @@ export class HiddenWorld {
     if(fog){fog.color.copy(island.fog.color);fog.density=island.fog.density;}
     g.player.setTarget(null);g.player.unit.teleport(w,island.spawn.x,island.spawn.z,island.spawnYaw);g.follow.cut();g.follow.yaw=island.spawnYaw+Math.PI;
     g.hud.messages.banner(()=>t('타이드크라운','Tidecrown'),()=>t('왕관 항구의 수도 · 크라운셸 성','Capital of the crown harbour · Crownshell Keep'),'zone');
-    try{g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,scene,{minX:-200,maxX:300,minZ:-260,maxZ:320,topY:220},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));}catch{ /* The hub still plays without a map. */ }
+    g.hud.minimap.setSnapshot(island.map);
   }
   /** Back to exactly where the player stood before Tidecrown. */
   private leaveTidecrown(){

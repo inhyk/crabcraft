@@ -77,10 +77,12 @@ try {
         samples++;
       }
     }
-    return { samples, pushed: pushed.slice(0, 12), pushedCount: pushed.length, worstStep: +worstStep.toFixed(3), worstAt, crest: +w.heightAt(...L.tcAxis(-135)).toFixed(2), deck: +w.heightAt(...L.tcAxis(-53)).toFixed(2), ward: +w.heightAt(...L.tcAxis(209.3)).toFixed(2) };
+    return { zone: g.zone, minimap: g.hud.minimap.snap === g.world2.tidecrown.map, samples, pushed: pushed.slice(0, 12), pushedCount: pushed.length, worstStep: +worstStep.toFixed(3), worstAt, crest: +w.heightAt(...L.tcAxis(-135)).toFixed(2), deck: +w.heightAt(...L.tcAxis(-53)).toFixed(2), ward: +w.heightAt(...L.tcAxis(209.3)).toFixed(2) };
   });
   console.log(JSON.stringify({ entry, walk }));
   assert.equal(entry.chapter, 1, 'Tidecrown is laid over the current world chapter');
+  assert.equal(walk.zone, '타이드크라운', 'the zone reads Tidecrown');
+  assert.ok(walk.minimap, 'the minimap shows Tidecrown');
   assert.equal(walk.pushedCount, 0, `the walk is open: ${JSON.stringify(walk.pushed)}`);
   assert.ok(walk.worstStep < 0.45, `height steps stay walkable: ${walk.worstStep} at ${walk.worstAt}`);
   assert.ok(Math.abs(walk.deck - 8) < 0.01 && Math.abs(walk.crest - 28) < 0.3 && Math.abs(walk.ward - 40) < 0.6, JSON.stringify(walk));
@@ -102,7 +104,7 @@ try {
   const L = await p.evaluate(async () => {
     const L = await import('/src/game/tidecrown/layout.ts');
     const a = (t, s = 0) => L.tcAxis(t, s);
-    return { crest: a(-133, -2.5), overlookBack: a(-147, 0), keep: [L.TC_KEEP.x, L.TC_KEEP.z], deckSouth: a(-92, 1.5), deckCrab: a(-86, 2.5), gate: a(0), gateFront: a(-24, 3), stairFoot: a(158, 0), stairCrab: a(162, 1), aerial: a(-210, -230), centre: a(130, 0), harbourSea: [330, -20], harbourAim: [L.TC_KEEP.x, L.TC_KEEP.z], yaw: Math.atan2(-L.TC_AXIS.ux, -L.TC_AXIS.uz) + Math.PI };
+    return { crest: a(-133, -2.5), overlookBack: a(-147, 0), keep: [L.TC_KEEP.x, L.TC_KEEP.z], deckSouth: a(-92, 1.5), deckCrab: a(-86, 2.5), gate: a(0), gateFront: a(-14, 2), stairFoot: a(158, 0), stairCrab: a(162, 1), aerial: a(-210, -230), centre: a(130, 0), harbourSea: [330, -20], harbourAim: [L.TC_KEEP.x, L.TC_KEEP.z], yaw: Math.atan2(-L.TC_AXIS.ux, -L.TC_AXIS.uz) + Math.PI };
   });
   await hud(false);
   const shots = {};
@@ -119,7 +121,10 @@ try {
   const left = await p.evaluate(() => { const g = window.app.current.game; g.world2.go(1); return { inside: g.world2.inTidecrown, visible: g.world2.tidecrown.root.visible, base: g.world.root.visible, quest: g.quests.chapter }; });
   assert.deepEqual({ inside: left.inside, visible: left.visible, base: left.base }, { inside: false, visible: false, base: true }, 'leaving restores World I');
   assert.equal(left.quest, entry.quest, 'the quest chapter never changed');
-  console.log('PASS leaving Tidecrown restores World I and the quest chapter');
+  // A second entry reuses the built island.
+  const again = await p.evaluate(async () => { const g = window.app.current.game, t0 = performance.now(); await g.world2.enterTidecrown(); const ms = Math.round(performance.now() - t0); g.world2.returnToShore(); return { ms, inside: g.world2.inTidecrown, base: g.world.root.visible }; });
+  assert.deepEqual({ inside: again.inside, base: again.base }, { inside: false, base: true });
+  console.log(`PASS leaving Tidecrown restores World I and the quest chapter; a second entry took ${again.ms} ms`);
   assert.deepEqual(errors, []);
   console.log('PASS zero page or shader errors');
 } finally {
