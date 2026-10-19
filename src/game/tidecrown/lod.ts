@@ -625,6 +625,8 @@ const _e = new THREE.Vector3();
 const _l = new THREE.Vector3();
 const _ahead = new THREE.Vector3();
 const _m4 = new THREE.Matrix4();
+/** A near build's steps: a recipe fill (a house), a material's merge, a material packed into its pool. */
+type Step = 'fill' | 'merge' | 'pack';
 /** Seconds of camera travel the streaming builds ahead for. */
 const LOOKAHEAD = 1.5;
 
@@ -659,7 +661,9 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
   private eye = new THREE.Vector3();
   private vel = new THREE.Vector3();
   private eyeT = -1;
-  private job: { ci: number; steps: Generator<void, void>; pools: LodMesh[] } | null = null;
+  private job: { ci: number; steps: Generator<Step | void, void>; pools: LodMesh[]; next: Step } | null = null;
+  /** About what each kind of build step costs (ms), to keep stream() slices within their budget. */
+  private stepMs: Record<Step, number> = { fill: 1, merge: 1, pack: 1 };
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -697,7 +701,7 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
   build(): this {
     this.buildFar();
     this.streaming = false;
-    for (let ci = 0; ci < this.chunks.length; ci++) for (const _ of this.nearSteps(ci, []));
+    for (let ci = 0; ci < this.chunks.length; ci++) for (const _ of this.nearSteps(ci, [])) void _;
     this.apply();
     return this;
   }
@@ -750,18 +754,19 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
   }
 
   /** Build one chunk's near detail: its recipe a step at a time, the merge a material at a time, then into the pools. */
-  private *nearSteps(ci: number, pools: LodMesh[]): Generator<void, void> {
+  private *nearSteps(ci: number, pools: LodMesh[]): Generator<Step | void, void> {
     const c = this.chunks[ci];
     const sink = this.makeNear(`${this.name}:${c.i},${c.j}`);
     for (const fill of c.recipe) {
+      yield 'fill';
       fill(sink);
-      yield;
     }
+    // The merge yields (nothing) before each material.
     const merged = yield* sink.mergeSteps();
     if (sink.pieceTris) for (const [k, t] of sink.pieceTris) this.pieceTris.set(k, (this.pieceTris.get(k) ?? 0) + t);
     let tris = 0;
     for (const e of merged) {
-      yield;
+      yield 'pack';
       const m = e.material;
       const key = `${m.uuid}|${e.castShadow}|false`;
       const layout = this.pools.get(key)?.layout ?? layoutFor(m, e.geometry);
@@ -818,7 +823,7 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
     if (this.job && this.chunks[this.job.ci].da > keep) this.cancel();
     const t0 = performance.now();
     let idle = false;
-    while (performance.now() - t0 < budget) {
+    for (let t = t0; t - t0 < budget; ) {
       if (!this.job) {
         let best = -1;
         this.chunks.forEach((c, ci) => {
@@ -829,12 +834,20 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
           break;
         }
         const pools: LodMesh[] = [];
-        this.job = { ci: best, steps: this.nearSteps(best, pools), pools };
+        this.job = { ci: best, steps: this.nearSteps(best, pools), pools, next: 'pack' };
       }
-      if (this.job.steps.next().done) {
+      // A step that would likely overrun the slice waits for the next frame (the first step of a slice always runs).
+      const kind = this.job.next;
+      if (t > t0 && t - t0 + this.stepMs[kind] > budget) break;
+      const r = this.job.steps.next();
+      const now = performance.now(), d = now - t;
+      // Rises fast, falls slowly: about the dearest recent step of the kind.
+      this.stepMs[kind] = d > this.stepMs[kind] ? (d + this.stepMs[kind]) / 2 : this.stepMs[kind] * 0.97 + d * 0.03;
+      t = now;
+      if (r.done) {
         this.job = null;
         changed = true;
-      }
+      } else this.job.next = r.value ?? 'merge';
     }
     if (changed) {
       for (let k = this.meshes.length - 1; k >= 0; k--) {

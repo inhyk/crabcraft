@@ -160,6 +160,14 @@ export class TidecrownIsland {
     return this.detailed;
   }
 
+  /**
+   * Just entered (the fade still up): let the first frames render, so the shader links and texture uploads of what
+   * the arrival sees happen behind the fade, not after it lifts.
+   */
+  async settle(): Promise<void> {
+    for (let i = 0; i < 3; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  }
+
   /** Leaving: the houses' near detail goes (it streams in again on return). */
   leave(): void {
     if (this.built) this.city.release();
