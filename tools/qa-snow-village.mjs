@@ -54,12 +54,13 @@ try{
   // Every open cell of the village is reachable from the arrival: a player restored or pushed out anywhere walks home.
   let trapped=0;for(let n=0;n<NX*NZ;n++)if(open[n]&&!seen[n]){const x=X0+(n%NX)*S,z=Z0+Math.floor(n/NX)*S;if(Math.abs(x)<44&&z>26&&z<96)trapped++;}
   const kinds=[...new Set(L.SNOW_LOTS.map(l=>l.kind))].sort();
-  return {info,kinds,lots:L.SNOW_LOTS.length,lamps:L.snowLamps().length,props:L.snowProps().length,snowmen:L.SNOW_SNOWMEN.length,kitDraws,kitVerts,prim,blockedPoints,paving:paving.slice(0,8),pavingBlocked:paving.length,unreachable,trapped,
+  return {info,kinds,lots:L.SNOW_LOTS.length,pitched:L.SNOW_LOTS.filter(l=>l.kind!=='tower').length,lamps:L.snowLamps().length,props:L.snowProps().length,snowmen:L.SNOW_SNOWMEN.length,kitDraws,kitVerts,prim,blockedPoints,paving:paving.slice(0,8),pavingBlocked:paving.length,unreachable,trapped,
    names:v.group.children.map(o=>o.name).sort()};});
  console.log(JSON.stringify(r));
  assert.deepEqual(r.kinds,['chapel','forge','house','tavern','tower']);
  assert.equal(r.info.lots,r.lots);assert.ok(r.lots>=15,`${r.lots} lots`);
- assert.ok(r.info.roofs>=r.lots,`a snow cap per roof: ${r.info.roofs}`);assert.ok(r.info.chimneys>=r.lots,`${r.info.chimneys} chimneys`);
+ // The gate's watchtower wears the kit's round tower roof (as the chapel's bell tower does): no pitched cap, no chimney.
+ assert.ok(r.info.roofs>=r.pitched,`a snow cap per pitched roof: ${r.info.roofs}/${r.pitched}`);assert.ok(r.info.chimneys>=r.pitched,`${r.info.chimneys} chimneys`);
  assert.equal(r.info.lamps,r.lamps);assert.ok(r.lamps>=16,`${r.lamps} lamp posts`);
  assert.equal(r.info.props,r.props);assert.ok(r.props>=40,`${r.props} props`);
  assert.equal(r.info.snowmen,r.snowmen);assert.ok(r.info.garlands>=3&&r.info.bulbs>=100,`${r.info.garlands} light strings, ${r.info.bulbs} bulbs`);
