@@ -475,6 +475,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     for (const [character, request] of travels) {
       const { actor, source } = request, destination = slots.get(request.destination);
       if (!destination || actor.slot !== source || !sameRef(actor.ref, request.ref) || !actor.connection) { travels.delete(character); continue; }
+      // The transfer records every unacknowledged grant of the source Area (whoever its recipient is) in the in-memory
+      // mailbox and acknowledges it there. Retained grants wait for the next save round, and ticks go on while one is in
+      // flight, so the source may hold grants that are not journaled yet: journal them in a halting round first (no tick
+      // can add one before the travel runs at a later pump), so the transfer never acknowledges a grant that is not in PG.
+      if (source.ledgerMode === 'retained' && source.area.pendingGrants().length) { startDurability(); return; }
       const result = transfers.transfer(character, source.area, destination.area, request.gate, metrics.ticks);
       if (result.ok) {
         actor.ref = result.ref; actor.slot = destination; actor.generation = generation++;
@@ -999,7 +1004,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
    * are the captures marked durable, the grants acknowledged and the captured results released to their streams. A crash
    * loses at most the progress after the last committed round; nothing sent as durable can be lost. Rows other writers
    * journaled, and recovery after a conflict, go to the halting round that pendingReplay starts, as before. External
-   * ledger mode, admission, travel, encounters, retirement and shutdown keep the halting barrier.
+   * ledger mode, admission, travel, encounters, retirement and shutdown keep the halting barrier; a gate travel whose
+   * source Area holds grants not journaled yet first journals them in one (advanceTravel).
    * With dungeons enabled every Area keeps a durable feature award ledger, whose capture and mark need the world held (a
    * respawn rebinds that ledger), so the same once-per-interval round is a halting one there.
    */
@@ -1106,8 +1112,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     const unsettled = actor.slot.area.appliedGrantIds(character).length || actor.slot.area.appliedFeatureAwardIds(character).length;
     if (external) { if ([...allSlots].some(slot => slot.area.pendingGrants().length) || unsettled) { startDurability(); return; } }
     // Retained: retire once nothing earned for this character is only in memory (no unjournaled grant names it, its applied
-    // grants and feature awards are durable). The next save round settles that; other characters' grants no longer hold it.
-    else if ([...allSlots].some(slot => slot.area.pendingGrants().some(entry => entry.grant.recipient === character)) || unsettled) return;
+    // grants and feature awards are durable). The next save round settles that; other characters' grants no longer hold it
+    // while another actor remains. The last actor waits for every grant: a death credits contributors who have left, so a
+    // grant can name only absent characters, and with no actor left no save round runs (startSave, startDurability, shutdown).
+    else if ((actors.size === 1 ? retainedSources().length > 0 : [...allSlots].some(slot => slot.area.pendingGrants().some(entry => entry.grant.recipient === character))) || unsettled) return;
     const retirement = actor.slot.area.quiescePlayer(actor.ref, 'disconnect');
     const capturedGeneration = actor.generation;
     const task = async () => {
@@ -1454,7 +1462,8 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
         wss.close(() => { clearTimeout(timeout); resolve(); });
       });
       // An unsealed clear is an owed obligation lost with this process; report it rather than claim a durable stop.
-      const count = unresolved + persisted.unresolved + (barrier ? 1 : 0) + [...allSlots].filter(slot => slot.dungeon?.frozen).length;
+      // So is a retained grant still only in memory with no actor left: the final round above did not run to journal it.
+      const count = unresolved + persisted.unresolved + (barrier ? 1 : 0) + [...allSlots].filter(slot => slot.dungeon?.frozen).length + (actors.size ? 0 : retainedSources().length);
       return { durable: persisted.durable && count === 0, unresolved: count };
     },
     dungeon(characterId, command) {

@@ -7,6 +7,7 @@ import { WebSocket } from 'ws';
 import { startPostgres } from '../node/local-postgres.mjs';
 import { createPool, migrate } from '../node/db.ts';
 import { CharacterStore } from './character-store.ts';
+import { DungeonCompletionStore } from './dungeon-completion-store.ts';
 import { WorldTicketRegistry } from './admission.ts';
 import { acquireHostOwnership } from './ownership.ts';
 import { WorldChatService } from './chat.ts';
@@ -71,17 +72,18 @@ async function runtime(options = {}) {
   }) } });
   const failures = [];
   let host;
-  try { host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, outcomes: options.withoutOutcomes ? undefined : options.ledger ? options.outcomes ?? new DurableOutcomeStore(pool,codec,{planOutcomePage}) : options.outcomes, chat: options.chat ? new WorldChatService(pool) : undefined,
+  try { host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, dungeonCompletions: options.dungeons ? new DungeonCompletionStore(pool) : undefined, outcomes: options.withoutOutcomes ? undefined : options.ledger ? options.outcomes ?? new DurableOutcomeStore(pool,codec,{planOutcomePage}) : options.outcomes, chat: options.chat ? new WorldChatService(pool) : undefined,
     gameplay: { catalog: gameplayCatalog, create: () => createGameplayProtocol(gameplayCatalog, { verify: options.verify ?? true }), verifyObservations: options.verify ?? true },
     policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
-      checkpointIntervalMs: 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
+      checkpointIntervalMs: options.checkpointIntervalMs ?? 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
       maxMutationSourcesPerTick: 64, loopIntervalMs: 2, ledger: options.ledger ? {sourceLimits:options.ledgerSourceLimits??sourceLimits,drainLimits:{pageSize:100,creditBatchesPerSlice:1,outcomesPerSlice:1,summaryVictimsPerSlice:10,writeAttempts:2},recoveryLimits:{draftsPerSlice:10,pageSize:options.recoveryPageSize??100},recoveryIntervalMs:options.recoveryIntervalMs??100} : undefined, chat: options.chat ? { maxPending: 4 } : undefined,
       victimOutcome: { maxEntries: options.victimMaxEntries ?? 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 },
       victimOutcomeRetryCeiling: options.victimRetry ? { maxEntries: 2048, maxPayloadBytes: 8 * 1024 * 1024, timeoutMs: 5000 } : undefined,
       persistence: { maxQueuedPerCharacter: 1, maxAttempts: 2, retryMs: 1, maxRecoveryRounds: 2 },
       areaLimits: { eventCount: 4096, inputCommandsPerTick: 32, timers: 256, projectiles: 256 }, restore: explicitRestore,
-      party: options.party ? { maxParties: 8, maxEncounters: 8, returnSpawn: () => 'bossArena' } : undefined,
+      party: options.party || options.dungeons ? { maxParties: 8, maxEncounters: 8, returnSpawn: () => 'bossArena' } : undefined,
+      dungeons: options.dungeons ? { tiers: [35, 50], maxPendingAwards: 8 } : undefined,
       offlineSeconds: (record, now) => Math.max(0, now - record.updatedAt) / 1000,
       visible: (unit, viewer) => personalNpcVisible(worlds.get(viewer.quests.chapter === 1 ? 'w1' : 'w' + viewer.quests.chapter).publicDefinition, unit.npcId, viewer.flags),
       observationExtras: projectObservationExtras },
@@ -1033,4 +1035,44 @@ test('a save round whose journal write fails is given up without acknowledging o
     assert.equal(result.status, 'durable'); assert.equal((await store.getOwned(records[0].binding.accountId, records[0].record.characterId)).checkpoint.progress.quests.status.q1, 'active');
     for (const bot of bots) assert.deepEqual(bot.errors, []);
   } finally { for (const t of timers) clearInterval(t); for (const b of bots) b.ws.close(); assert.deepEqual(await rt.close(), { durable: true, unresolved: 0 }); }
+});
+
+for (const dungeons of [false, true]) test(`${dungeons ? 'dungeons enabled: ' : ''}a gate travel right after another player's kill journals that reward before the transfer can acknowledge it, and nothing fails closed`, { timeout: 30000 }, async () => {
+  // A save interval longer than the test keeps the kill's grant unjournaled until the travel; on a real host that window is
+  // up to one interval (1 s). The transfer records every unacknowledged grant of its source Area (any recipient) in an
+  // in-memory mailbox and acknowledges it there, so a grant it takes must already be in PG.
+  const rt = await runtime({ combat: true, dungeons, checkpointIntervalMs: 60000 }), bots = [];
+  let closed;
+  try {
+    const x = await character('mage'), y = await character('mage');
+    const w1 = loaded.get('w1'), gate = w1.publicDefinition.interactions.find(i => i.id === 'gate:w2');
+    // Trusted navigation/unlock fixture for Y only, not earned progression or client position input.
+    const checkpoint = structuredClone(y.record.checkpoint);
+    checkpoint.progress.flags = { ...checkpoint.progress.flags, abyssCleared: true, trueCleared: true, finalCleared: true };
+    const out = { x: 0, y: 0, set(a, b) { this.x = a; this.y = b; return this; } };
+    w1.query.resolveCollision(gate.position.x, gate.position.z, w1.actionData.archetype('human').radius, out);
+    checkpoint.location = { x: out.x, y: w1.query.heightAt(out.x, out.y), z: out.y, yaw: 0 };
+    y.record = await store.saveCheckpoint(y.binding.accountId, y.record.characterId, y.record.revision, checkpoint, []);
+    const bx = await client(rt, x); bots.push(bx); await ready(rt, bx);
+    const by = await client(rt, y); bots.push(by); await ready(rt, by);
+    await until(() => !rt.host.stats().durableBarrier);
+    const rounds = rt.host.stats().persistenceBarriers;
+    const target = bx.state.actors.find(a => a.kind === 'scrapling'); assert.ok(target);
+    bx.send([{ kind: 'target', target: target.ref }, { kind: 'ability', slot: 1 }]);
+    const heartbeat = setInterval(() => { if (bx.ws.readyState === WebSocket.OPEN) bx.send([]); }, 50);
+    try { await until(() => bx.state.self.player.xp > 0 || rt.failures.length, 10000); } finally { clearInterval(heartbeat); }
+    assert.equal(rt.host.stats().persistenceBarriers, rounds, 'no save round ran since the kill, so its grant is not journaled yet');
+    const before = by.binding.area;
+    by.send([{ kind: 'travel', gateId: 'gate:w2' }]);
+    await until(() => by.binding.area !== before && by.state.world === 'w2' || by.controls.some(v => v.type === 'error') || rt.failures.length || rt.host.stats().frozen, 8000);
+    await until(() => !rt.host.stats().durableBarrier || rt.failures.length);
+    const ledger = await grantLedger(x), saved = await store.getOwned(x.binding.accountId, x.record.characterId);
+    const result = { traveled: by.binding.area !== before && by.state.world === 'w2', failures: rt.failures, frozen: rt.host.stats().frozen,
+      journaled: ledger.ids.length, receipted: ledger.receipts.length, savedXp: saved.checkpoint.progress.xp, shownXp: bx.state.self.player.xp };
+    assert.deepEqual(result, { traveled: true, failures: [], frozen: false, journaled: 1, receipted: 1, savedXp: ledger.xp, shownXp: ledger.xp });
+    assert.ok(ledger.xp > 0); assert.deepEqual(ledger.receipts, ledger.ids);
+    assert.equal((await store.getOwned(y.binding.accountId, y.record.characterId)).checkpoint.world, 'w2');
+    for (const bot of bots) assert.deepEqual(bot.errors, []);
+  } finally { for (const b of bots) b.ws.close(); closed = await rt.close(); }
+  assert.deepEqual(closed, { durable: true, unresolved: 0 });
 });
