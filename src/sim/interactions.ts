@@ -92,12 +92,12 @@ export class InteractionRules {
    const distance=Math.hypot(unit.x-gate.position.x,unit.z-gate.position.z);if(distance>4.5)portal.armed=true;if(portal.armed&&distance<1.7&&s.time>portal.readyAt){portal.armed=false;portal.readyAt=s.time+3;this.interact(unit.ref,gate.id);}
   }for(const states of [this.portals,this.edges])for(const character of states.keys())if(!characters.has(character))states.delete(character);
  }
- /** Zone lines arm 2m inside and fire on crossing within the band; a refused crossing stays armed and retries. */
+ /** Zone lines arm 2m inside and fire on crossing within the band; a refused crossing stays armed and retries, and being past the line outside the band disarms. */
  private edgeCrossing(unit:SimUnit,character:string,lines:readonly Interaction[]):void {
   let state=this.edges.get(character);
   if(!state||state.ref.id!==unit.ref.id||state.ref.life!==unit.ref.life){state={ref:{...unit.ref},armed:[]};this.edges.set(character,state);}
   for(const point of lines){const b=edgeBand(point,unit.x,unit.z),armed=state.armed.indexOf(point.id);
-   if(b.along<=-2){if(armed<0)state.armed.push(point.id);}else if(armed>=0&&b.along>=0&&b.lateral<=point.range&&this.interact(unit.ref,point.id))state.armed.splice(armed,1);}
+   if(b.along<=-2){if(armed<0)state.armed.push(point.id);}else if(armed>=0&&b.along>=0&&(b.lateral>point.range||b.along>point.edge!.depth||this.interact(unit.ref,point.id)))state.armed.splice(armed,1);}
  }
  debugState():{beaconLit:boolean;portals:readonly {character:string;ref:EntityRef;armed:boolean;readyAt:number}[];edges:readonly {character:string;ref:EntityRef;armed:readonly string[]}[]}{return {beaconLit:this.world.beaconLit,portals:[...this.portals].map(([character,p])=>({character,...p,ref:{...p.ref}})),edges:[...this.edges].map(([character,e])=>({character,ref:{...e.ref},armed:[...e.armed]}))};}
 }

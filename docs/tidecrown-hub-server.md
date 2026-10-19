@@ -1,6 +1,6 @@
 # Tidecrown 허브 서버 시뮬레이션 (PR A)
 
-새 수도 Tidecrown은 모든 월드를 잇는 chapter 없는 허브다. 이 문서는 네 PR 중 첫 PR A의 `src/sim` 변경만 설명한다. 허브 place id, 걸어서 넘는 경계선(`edge`)과 항구 배편(`route`) 이동, 링크마다 정하는 도착 지점, 허브를 지나도 유지되는 quest chapter를 시뮬레이션에 넣었다. 실제 월드 정의(world1..4, frontier), server host, catalog, startup, gameplay protocol과 `WIRE_SCHEMA_REVISION`은 바꾸지 않았다. 따라서 지금 서버에서 Tidecrown은 아직 열리지 않고 기존 여섯 월드의 동작과 wire bytes는 그대로다.
+새 수도 Tidecrown은 모든 월드를 잇는 chapter 없는 허브다. 이 문서는 네 PR 중 첫 PR A의 `src/sim` 변경만 설명한다. 허브 place id, 걸어서 넘는 경계선(`edge`)과 항구 배편(`route`) 이동, 링크마다 정하는 도착 지점, 허브를 지나도 유지되는 quest chapter를 시뮬레이션에 넣었다. 실제 월드 정의(world1..4, frontier), catalog, gameplay protocol과 `WIRE_SCHEMA_REVISION`은 바꾸지 않았다. server host와 startup은 타입만 `PlaceId`로 넓혔고 동작은 같다. 따라서 지금 서버에서 Tidecrown은 아직 열리지 않고 기존 여섯 월드의 동작과 wire bytes는 그대로다.
 
 ## 정체성: 새 id `tc`
 
@@ -67,6 +67,7 @@ interaction kind에 `route`와 `edge`를 추가했다. 세 이동 종류는 `isT
 - 이동 검사 범위: `-1 <= along <= depth` 이고 `lateral <= range`
 - 캐릭터마다 경계선별 무장 상태를 둔다. `along <= -2`가 되면 무장한다.
 - 무장 상태에서 `along >= 0`, `lateral <= range`가 되면 `interact`를 부른다. 성공했을 때만 무장을 푼다. 전투 중처럼 거부되면 무장을 유지하고 띠 안에 있는 동안 매 tick 다시 시도한다.
+- 무장 상태에서 `along >= 0` 인데 띠 밖(`lateral > range` 또는 `along > depth`)이면 넘기지 않고 무장을 푼다. 띠 옆으로 넘었다가 바깥쪽에서 띠 안으로 미끄러져 들어오거나, depth 너머로 뛰었다가 되돌아와도 넘어가지 않는다.
 - 경계선 밖에 저장되어 접속한 캐릭터는 무장하지 않은 채 시작하므로 바로 넘어가지 않는다. 다시 2m 안쪽으로 들어갔다 나와야 한다.
 - 상태는 portal 상태와 같은 시점에 지운다(퇴장, respawn, 이동 불가 상태). `debugState().interactions.edges`에 `{character, ref, armed}`로 보인다. edge가 없는 월드에서는 항상 빈 배열이다.
 

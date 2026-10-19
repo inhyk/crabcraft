@@ -48,9 +48,10 @@ test('W1 zone line arms inside, fires once on crossing and lands at the hub arri
  assert.deepEqual(arrived.p.state.quests,quests);assert.equal(arrived.p.state.quests.chapter,1);assert.deepEqual(arrived.p.state.flags,flags);assert.equal(c.characters.owner('hero').area,'hub-edge-tc');
 });
 
-test('zone line ignores crossings outside the band, waits out combat and never fires for a character restored past it',()=>{
+test('zone line ignores crossings outside the band or past its depth, waits out combat and never fires for a character restored past it',()=>{
  const w1=place('hub-edge-reject','w1'),hero=attach(w1);
- at(hero,-60,-230);tick(w1);at(hero,-49,-239);tick(w1,5);assert.equal(ready(w1).length,0);
+ at(hero,-60,-230);tick(w1);at(hero,-49,-239);tick(w1,5);assert.equal(ready(w1).length,0);assert.deepEqual(w1.debugState().interactions.edges[0].armed,[]);at(hero,-55,-239);tick(w1,5);assert.equal(ready(w1).length,0);
+ at(hero,-60,-230);tick(w1);at(hero,-60,-252);tick(w1);at(hero,-60,-245);tick(w1,5);assert.equal(ready(w1).length,0);
  at(hero,-60,-230);tick(w1);hero.u.lastCombat=w1.services.time;at(hero,-60,-239);tick(w1,140);assert.equal(ready(w1).length,0);
  tick(w1,20);assert.deepEqual(ready(w1).map(e=>e.gate),['edge:tc']);
  const login=place('hub-edge-login','w1'),checkpoint=freshCheckpoint(context,{x:-60,y:0,z:-239,yaw:0});restore(login,checkpoint);const back=actor(login,context.characterId);
