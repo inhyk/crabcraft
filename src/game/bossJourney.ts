@@ -111,10 +111,10 @@ export class BossJourney {
         }
       }
       this.game.quests.restoreTracking(data.trackedQuests);
-      if (typeof data.beacon==='boolean'){this.game.beaconLit=data.beacon;this.game.world.setBeaconLit(data.beacon);this.game.world.setMood(data.beacon?1:data.mood===3?3:0,true);}
+      if (typeof data.beacon==='boolean'){this.game.beaconLit=data.beacon;this.game.world.setBeaconLit(data.beacon,true);this.game.world.setMood(data.beacon?1:data.mood===3?3:0,true);}
       else if (this.game.quests.status.q3 === 'done') {
         this.game.beaconLit = true;
-        this.game.world.setBeaconLit(true);
+        this.game.world.setBeaconLit(true, true);
       }
       const legacyBlessing = !this.rustCleared && !this.abyssCleared && !this.trueCleared;
       this.game.player.unit.blessingUntil = this.game.quests.status.q3 === 'done' && (typeof data.moonwater === 'boolean' ? data.moonwater : legacyBlessing) ? Infinity : 0;

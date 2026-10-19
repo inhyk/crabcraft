@@ -38,8 +38,8 @@ export interface World {
   raycastSolid(from: THREE.Vector3, to: THREE.Vector3): number | null;
   /** Called every frame: water, foliage sway, beacon, fog, ambient particles. */
   update(dt: number, elapsed: number, camera: THREE.Camera): void;
-  /** Quest hooks. */
-  setBeaconLit(lit: boolean): void;
+  /** Quest hooks. `instant` restores the state (a save, a server snapshot) without the lighting-up animation. */
+  setBeaconLit(lit: boolean, instant?: boolean): void;
   /** 0 = dusk (start), 1 = night (boss), 2 = celebration (ending fireworks). */
   setMood(mood: 0 | 1 | 2 | 3, instant?: boolean): void;
   getEnvironment(): { mood: 0 | 1 | 2 | 3; beacon: boolean };

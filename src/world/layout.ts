@@ -118,6 +118,116 @@ export const ROADS: Road[] = [
   { kind: 'sand', width: 4, points: [[114, 17], [114, 50], [118, 80], [124, 98]] },
 ];
 
+/**
+ * The King's Road: from the chapel plaza round the chapel, north through the pine woods, up the
+ * gully and along the ridge to the King's Gate on World I's north edge, where the zone line to
+ * Tidecrown crosses it. Control points carry explicit heights (grade at most 0.18, about 10 degrees);
+ * the road is a Catmull-Rom curve through them. Cobbled through town, a kerbed dirt road after.
+ * It is carved after every other feature (Terrain), so the rest of the world's scatter is unchanged.
+ */
+const KINGS_ROAD_CONTROL: readonly (readonly [number, number, number])[] = [
+  [-3, -36, 4.42],
+  [-9.5, -44.5, 4.5],
+  [-11.2, -54, 4.5],
+  [-13.5, -64, 4.45],
+  [-19, -77, 4.6],
+  [-25, -92, 5.8],
+  [-29, -108, 7.8],
+  [-32, -124, 10.5],
+  [-36, -139, 13.2],
+  [-35, -152, 15.2],
+  [-29, -164, 17.5],
+  [-24, -177, 20.0],
+  [-22, -192, 22.6],
+  [-26, -205, 25.0],
+  [-36, -213, 27.4],
+  [-48, -217, 29.6],
+  [-57, -226, 30.9],
+  [-60, -238, 31.6],
+  [-60, -249, 31.8],
+];
+
+function catmullRom(ctrl: readonly (readonly [number, number, number])[], spacing: number) {
+  const points: V2[] = [];
+  const heights: number[] = [];
+  for (let i = 0; i < ctrl.length - 1; i++) {
+    const p0 = ctrl[Math.max(0, i - 1)];
+    const p1 = ctrl[i];
+    const p2 = ctrl[i + 1];
+    const p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
+    const n = Math.max(2, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / spacing));
+    for (let k = 0; k < n; k++) {
+      const u = k / n;
+      const f = (j: number) => 0.5 * (2 * p1[j] + (p2[j] - p0[j]) * u + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * u * u + (3 * p1[j] - p0[j] - 3 * p2[j] + p3[j]) * u * u * u);
+      points.push([f(0), f(1)]);
+      heights.push(f(2));
+    }
+  }
+  const last = ctrl[ctrl.length - 1];
+  points.push([last[0], last[1]]);
+  heights.push(last[2]);
+  return { points, heights };
+}
+
+const kingsCurve = catmullRom(KINGS_ROAD_CONTROL, 3);
+export const KINGS_ROAD = {
+  width: 5,
+  /** Shoulder over which the terrain blends back to the land (cut banks and embankments). */
+  shoulder: 4.5,
+  points: kingsCurve.points,
+  heights: kingsCurve.heights,
+  /** Arc length where the town cobbles give way to the kerbed dirt road. */
+  cobbleEnd: 40,
+} as const;
+
+/** Point, height and unit direction (x, z) at arc length s along the King's Road. */
+export function kingsRoadAt(s: number): { x: number; z: number; h: number; dx: number; dz: number } {
+  const { points: p, heights: hs } = KINGS_ROAD;
+  let acc = 0;
+  for (let i = 0; i < p.length - 1; i++) {
+    const ex = p[i + 1][0] - p[i][0];
+    const ez = p[i + 1][1] - p[i][1];
+    const len = Math.hypot(ex, ez);
+    if (acc + len >= s || i === p.length - 2) {
+      const t = Math.max(0, Math.min(1, (s - acc) / len));
+      return { x: p[i][0] + ex * t, z: p[i][1] + ez * t, h: hs[i] + (hs[i + 1] - hs[i]) * t, dx: ex / len, dz: ez / len };
+    }
+    acc += len;
+  }
+  return { x: p[0][0], z: p[0][1], h: hs[0], dx: 0, dz: -1 };
+}
+
+/** Arc length of the road where it meets z (the road runs north, so z falls along it). */
+export function kingsRoadArcAtZ(z: number): number {
+  const { points: p } = KINGS_ROAD;
+  let acc = 0;
+  for (let i = 0; i < p.length - 1; i++) {
+    const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]);
+    if (p[i + 1][1] <= z) return acc + (len * (p[i][1] - z)) / (p[i][1] - p[i + 1][1]);
+    acc += len;
+  }
+  return acc;
+}
+
+/** The zone line to Tidecrown: crossing it northward (toward -z) leaves World I. */
+export const KINGS_ROAD_LINE = { a: [-84, -238] as V2, b: [-36, -238] as V2, dir: [0, -1] as V2 } as const;
+
+const kingsGateAt = kingsRoadAt(kingsRoadArcAtZ(KINGS_ROAD_LINE.a[1]) - 5);
+/** The King's Gate: a stone arch over the road a few steps before the zone line. */
+export const KINGS_GATE = { x: kingsGateAt.x, z: kingsGateAt.z, h: kingsGateAt.h, yaw: Math.atan2(-kingsGateAt.dx, -kingsGateAt.dz), span: 9 } as const;
+
+const kingsReturnAt = kingsRoadAt(kingsRoadArcAtZ(KINGS_ROAD_LINE.a[1]) - 9);
+/** Where players coming back from Tidecrown arrive in World I: on the road south of the gate, facing south. */
+export const KINGS_ROAD_RETURN = { x: kingsReturnAt.x, z: kingsReturnAt.z, yaw: Math.atan2(-kingsReturnAt.dx, -kingsReturnAt.dz) } as const;
+
+/** Tidecrown seen from World I (its real place in World I coordinates; Tidecrown z = World I z + 520). */
+export const TIDECROWN_VIEW = {
+  keep: [150, -648] as V2,
+  /** Top of the spire's crown of claws, and the lantern they hold. */
+  crownTop: 190,
+  lanternY: 182,
+} as const;
+
 /** Round plazas (cobbled, flattened). */
 export const PLAZAS: { x: number; z: number; r: number; h: number }[] = [
   { x: 0, z: 0, r: 15, h: TOWN_H },

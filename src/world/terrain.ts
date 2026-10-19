@@ -10,6 +10,7 @@ import {
   GROVE,
   HEADLAND,
   HEADLAND_H,
+  KINGS_ROAD,
   LIGHTHOUSE,
   LOTS,
   PLAZAS,
@@ -77,6 +78,37 @@ function boxDist(x: number, z: number, cx: number, cz: number, yaw: number, hx: 
   return Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
 }
 
+/** Heights and splat of the land at one stage of shaping, with the queries scattering needs. */
+export class LandSnapshot {
+  private readonly grid: { minX: number; minZ: number; step: number; nx: number; nz: number; h: Float32Array };
+  constructor(
+    g: { minX: number; minZ: number; step: number; nx: number; nz: number },
+    h: Float32Array,
+    private readonly splat: Uint8Array,
+    private readonly coast: (x: number, z: number) => number,
+  ) {
+    this.grid = { minX: g.minX, minZ: g.minZ, step: g.step, nx: g.nx, nz: g.nz, h };
+  }
+  heightAt(x: number, z: number): number {
+    return gridHeight(this.grid, x, z);
+  }
+  coastAt(x: number, z: number): number {
+    return this.coast(x, z);
+  }
+  splatAt(x: number, z: number, ch: number): number {
+    const g = this.grid;
+    const i = clamp(Math.round((x - g.minX) / g.step), 0, g.nx - 1);
+    const j = clamp(Math.round((z - g.minZ) / g.step), 0, g.nz - 1);
+    return this.splat[(j * g.nx + i) * 4 + ch] / 255;
+  }
+  slopeAt(x: number, z: number): number {
+    const e = this.grid.step;
+    const dx = this.heightAt(x + e, z) - this.heightAt(x - e, z);
+    const dz = this.heightAt(x, z + e) - this.heightAt(x, z - e);
+    return 2 * e / Math.sqrt(dx * dx + dz * dz + 4 * e * e);
+  }
+}
+
 export class Terrain {
   readonly nx: number;
   readonly nz: number;
@@ -92,6 +124,11 @@ export class Terrain {
   /** RGBA splat: R sand, G cobble, B dirt, A painted rock. */
   readonly splat: Uint8Array;
   private readonly noise = new Simplex(7);
+  /**
+   * The land as it was before the King's Road was carved. The vegetation scatter decides from it, so
+   * adding the road only clears its own corridor and leaves every other tree, rock and tuft in place.
+   */
+  readonly beforeKingsRoad: LandSnapshot;
 
   constructor() {
     this.nx = Math.round(this.sizeX / this.step) + 1;
@@ -101,6 +138,49 @@ export class Terrain {
     this.coast = new Float32Array(n);
     this.splat = new Uint8Array(n * 4);
     this.shape();
+    this.beforeKingsRoad = new LandSnapshot(this, this.h.slice(), this.splat.slice(), (x, z) => this.coastAt(x, z));
+    this.carveKingsRoad();
+  }
+
+  /** The King's Road, carved last: explicit heights, cut banks and embankments, cobble then dirt. */
+  private carveKingsRoad(): void {
+    const { nx, nz, step, minX, minZ, h, splat } = this;
+    const { points, heights, width, shoulder, cobbleEnd } = KINGS_ROAD;
+    const half = width / 2;
+    const q = { d: 0, s: 0, t: 0, seg: 0 };
+    const m = half + shoulder + 1;
+    let x0 = Infinity;
+    let z0 = Infinity;
+    let x1 = -Infinity;
+    let z1 = -Infinity;
+    for (const [px, pz] of points) {
+      x0 = Math.min(x0, px);
+      z0 = Math.min(z0, pz);
+      x1 = Math.max(x1, px);
+      z1 = Math.max(z1, pz);
+    }
+    const i0 = Math.max(0, Math.floor((x0 - m - minX) / step));
+    const i1 = Math.min(nx - 1, Math.ceil((x1 + m - minX) / step));
+    const j0 = Math.max(0, Math.floor((z0 - m - minZ) / step));
+    const j1 = Math.min(nz - 1, Math.ceil((z1 + m - minZ) / step));
+    const paint = (k: number, ch: number, w: number) => {
+      const v = Math.round(clamp(w, 0, 1) * 255);
+      if (v > splat[k * 4 + ch]) splat[k * 4 + ch] = v;
+    };
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const k = j * nx + i;
+        polylineDist(minX + i * step, minZ + j * step, points, q);
+        if (q.d > half + shoulder) continue;
+        const target = lerp(heights[q.seg], heights[q.seg + 1], q.t);
+        // Deep cuts and embankments show their rock.
+        const bank = smoothstep(1.2, 3.5, Math.abs(h[k] - target)) * smoothstep(half + 0.4, half + 1.4, q.d) * (1 - smoothstep(half + shoulder - 1.2, half + shoulder, q.d));
+        h[k] = lerp(h[k], target, 1 - smoothstep(half, half + shoulder, q.d));
+        paint(k, 3, bank * 0.85);
+        const edge = 1 - smoothstep(half - 0.8, half + 0.6, q.d);
+        paint(k, 1, edge * (1 - smoothstep(cobbleEnd - 8, cobbleEnd + 4, q.s)));
+        paint(k, 2, edge * smoothstep(cobbleEnd - 10, cobbleEnd, q.s));
+      }
   }
 
   /** Natural land before plazas, lots and roads. */

@@ -18,6 +18,7 @@ import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
 import { HiddenWorld } from './world2';
+import { ZoneLines } from './zoneLine';
 import { Multiplayer } from '../multiplayer/client';
 import { Spectator } from './spectator';
 import { SPECTATE } from '../spectate';
@@ -147,6 +148,8 @@ export class Game {
   skyBoss!: Boss;
   creatorTravel = false;
   world2!: HiddenWorld;
+  /** Zone lines between World I and Tidecrown (the King's Road and its way back); a server world only turns back at the King's Road. */
+  zoneLines: ZoneLines | null = null;
   journey: BossJourney | null = null;
   lighthouseSecret: LighthouseSecret | null = null;
   boats:ShoreBoat|null=null;
@@ -582,6 +585,7 @@ export class Game {
         hudRoot.style.opacity = '';
       }, 900);
     }, 700);
+    this.zoneLines = new ZoneLines(this);
     if(this.serverMode){this.loaded=false;const {ServerGameBridge}=await import('./serverBridge');this.server=await ServerGameBridge.create(this,new URLSearchParams(location.search).get('character')??'');this.loaded=true;return;}
     this.journey = new BossJourney(this);
     this.lighthouseSecret = new LighthouseSecret(this);
@@ -764,6 +768,7 @@ export class Game {
     this.world2.update(dt,worldTime);
     // The game's own views follow the world shown; endings and captures that set their own are left alone.
     const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW||view===TIDECROWN_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
+    if (!paused) this.zoneLines?.update();
     this.lighthouseSecret?.update();
     // A spectator view shows no HUD and plays no music.
     if(!this.spectator){

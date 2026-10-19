@@ -60,6 +60,8 @@ export const TC_ROAD: readonly (readonly [number, number, number])[] = [
 export const TC_ROAD_COBBLE_FROM = 5;
 const TC_ROAD_HAIRPIN = 5;
 export const TC_ARRIVAL: V2 = [-66, 326];
+/** The zone line back to World I: across the forest road 12 south of the arrival, crossed southward (+z). */
+export const TC_RETURN_LINE = { a: [-92, 338] as V2, b: [-45, 338] as V2, dir: [0, 1] as V2 } as const;
 export const TC_BOUNDS = { minX: -200, maxX: 300, minZ: -260, maxZ: 350 } as const;
 /** Terrain samples: 2 m apart, wider than the playable bounds so the coast and sea frame every view. */
 export const TIDECROWN_GRID = { minX: -330, minZ: -330, step: 2, nx: 381, nz: 381 } as const;
