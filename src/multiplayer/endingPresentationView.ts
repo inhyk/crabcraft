@@ -76,6 +76,17 @@ export function endingRingStations(cast:readonly Pick<EndingCast,'position'>[],c
  const near=Math.min(...guests.map(g=>g.radius)),far=Math.max(...guests.map(g=>g.radius)),inner=guests.filter(g=>g.radius<=(near+far)/2+1e-6).sort((a,b)=>a.angle-b.angle);
  return inner.map((g,i)=>{const next=inner[(i+1)%inner.length],span=i+1<inner.length?next.angle-g.angle:next.angle+Math.PI*2-g.angle;return {angle:g.angle+span/2,radius:near+.35};});
 }
+/** Hero cuts: guests standing within this multiple of the camera's distance from the stage centre are on the camera's side of the ring. */
+export const ENDING_NEAR_GUESTS=1.3;
+/**
+ * Guests who step out of a hero cut: those on the camera's side of the ring, whose claws, swords and shields
+ * would otherwise poke up through the bottom of the frame. It depends only on the camera station (fixed through
+ * a move) and the fixed guest ring, never on the pose, so no guest pops in or out during a move.
+ */
+export function endingHiddenGuests(cast:readonly Pick<EndingCast,'position'|'ref'>[],centre:THREE.Vector3,station:THREE.Vector3):Set<number> {
+ const reach=Math.hypot(station.x-centre.x,station.z-centre.z)*ENDING_NEAR_GUESTS;
+ return new Set(cast.slice(1).filter(g=>Math.hypot(g.position.x-station.x,g.position.z-station.z)<reach).map(g=>g.ref.slot));
+}
 const wrap=(angle:number)=>Math.atan2(Math.sin(angle),Math.cos(angle));
 type BonePiece={mesh:THREE.SkinnedMesh;bone:THREE.Bone;box:THREE.Box3};
 const bonePieces=new WeakMap<CrabRig,BonePiece[]>();
@@ -229,6 +240,9 @@ export class EndingPresentationView {
   const ticks=this.fit?Math.max(0,state.tick-this.fit.tick):0;
   this.fit=this.fit&&this.fit.shot===shot&&this.fit.distance===distance&&this.fit.fov>=fov?{shot,distance,fov:Math.max(fov,this.fit.fov-.12*Math.min(ticks,30)),tick:state.tick}:{shot,distance,fov,tick:state.tick};
   placeEndingCamera(camera,view.target,view.direction,this.fit.distance,this.fit.fov,frame.pitch);
+  // Hero cuts stand at a fixed station, so the camera position is that station; wide cuts show everyone.
+  const hidden=shot==='close'||shot==='low'?endingHiddenGuests(state.cast,centre,camera.position):new Set<number>();
+  for(const [slot,rig]of this.rigs){rig.root.visible=!hidden.has(slot);this.contacts.show(slot,!hidden.has(slot));}
   this.placed={key,target:view.target,direction:view.direction,distance:this.fit.distance,fov:this.fit.fov,pitch:frame.pitch};
  }
  /** Current cut, for QA and the HUD; null outside the cast phases. */

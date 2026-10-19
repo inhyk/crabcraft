@@ -9,6 +9,7 @@ import { createSky, createSkyUniforms } from '../world/sky';
 import { createTerrainMaterial, noiseTexture, Terrain } from '../world/terrain';
 import { radialSprite } from '../screens/create/textures';
 import { ENDING_BELL_TOWER } from './endingLayout';
+import { dressFestivalFloor } from './endingFloor';
 
 export interface EndingStage {
  root:THREE.Group;
@@ -41,14 +42,13 @@ export async function createEndingStage():Promise<EndingStage> {
   const land=new THREE.PlaneGeometry(2,2,low?96:160,low?96:160);land.rotateX(-Math.PI/2);const positions=land.attributes.position;const spread=(t:number)=>12*t+988*t*t*t;for(let i=0;i<positions.count;i++){const x=spread(positions.getX(i)),z=spread(positions.getZ(i));positions.setXYZ(i,x,3+height(x,z),z);}land.computeVertexNormals();
   // W1 shader uses source coordinates including height. Translate the mesh, not its shader inputs.
   const lawn=new THREE.Mesh(land,ground);lawn.position.y=-3.08;lawn.receiveShadow=true;root.add(lawn);
-  // Court inlays: slate bands frame the dancers, a brass medallion marks the hero's floor.
+  // Court inlays: slate bands frame the dancers; the brass medallion under the hero is part of the festival floor.
   const inlay=village.material('MI_Brick')!.clone();inlay.color.set('#4d5f5c');owned.add(inlay);
-  const brass=village.material('MI_Brick')!.clone();brass.color.set('#d6ac62');owned.add(brass);
   const band=(inner:number,outer:number,material:THREE.Material,y:number)=>{const ring=new THREE.RingGeometry(inner,outer,96);ring.rotateX(-Math.PI/2);const uv=ring.attributes.uv,pos=ring.attributes.position;for(let i=0;i<uv.count;i++)uv.setXY(i,pos.getX(i)*.22,pos.getZ(i)*.22);const mesh=new THREE.Mesh(ring,material);mesh.position.y=y;mesh.receiveShadow=true;root.add(mesh);};
-  band(8.8,9.15,inlay,-.045);band(12,12.2,inlay,-.045);band(2.25,2.5,brass,-.044);band(2.95,3.05,brass,-.044);
-  // Warm light pool on the hero, soft enough to keep the cobble texture readable.
+  band(8.8,9.15,inlay,-.045);band(12,12.2,inlay,-.045);
+  // Warm light pool on the hero, soft enough to keep the inlay readable.
   const pool=radialSprite(128,0,[[0,1],[.45,.55],[1,0]]);textures.add(pool);
-  const poolMaterial=new THREE.MeshBasicMaterial({color:'#ffcf86',alphaMap:pool,transparent:true,opacity:.26,depthWrite:false,blending:THREE.AdditiveBlending});owned.add(poolMaterial);
+  const poolMaterial=new THREE.MeshBasicMaterial({color:'#ffcf86',alphaMap:pool,transparent:true,opacity:.2,depthWrite:false,blending:THREE.AdditiveBlending});owned.add(poolMaterial);
   const poolMesh=new THREE.Mesh(new THREE.PlaneGeometry(7.5,7.5).rotateX(-Math.PI/2),poolMaterial);poolMesh.position.y=-.035;poolMesh.renderOrder=1;root.add(poolMesh);
   const spot=new THREE.SpotLight('#ffd9a0',low?110:130,32,THREE.MathUtils.degToRad(17),.6,1.6);spot.position.set(0,15,1.5);spot.target.position.set(0,0,0);root.add(spot,spot.target);
   const homes=new StaticBatch(village,'ending-village'),builder=new TownBuilder(village,homes,null,{});
@@ -123,11 +123,13 @@ export async function createEndingStage():Promise<EndingStage> {
   for(let i=0,count=low?60:90;i<count;i++){const a=i*2.399963+.7,r=52+(i*7.31%1)*36,x=Math.sin(a)*r,z=Math.cos(a)*r;if(clear(x,z,2))continue;put(nature,garden,`Pine_${i%3===0?5:i%5+1}`,x,z,a,.95+(i%4)*.14,-.2);}
   for(let i=0;i<820;i++){const a=i*2.399963,r=13.2+(i%37)*.34,x=Math.sin(a)*r,z=Math.cos(a)*r;if(Math.abs(x)<4&&z<0)continue;put(nature,garden,i%7===0?'Bush_Common_Flowers':i%5===0?'Flower_4_Group':i%3===0?'Flower_3_Group':i%2===0?'Clover_2':'Clover_1',x,z,a,.24+(i%4)*.06);}
   for(let i=0;i<18;i++){const a=i*2.399963,r=14.5+i%3*3,x=Math.sin(a)*r,z=Math.cos(a)*r;if(clear(x,z,1))continue;put(nature,garden,`Rock_Medium_${i%3+1}`,x,z,a,.5+i%3*.2);}
-  // Petals thrown by the crowd: dense near the dancers, thinning towards the benches.
-  for(let i=0,count=low?220:360;i<count;i++){const a=i*2.399963+Math.sin(i*12.9898)*.4,r=2.7+Math.pow(((i*.618034)%1),.8)*12.2,x=Math.sin(a)*r,z=Math.cos(a)*r;put(nature,garden,`Petal_${i%5+1}`,x,z,a*3.1,.42+(i%4)*.07,-.03);}
+  // Petals thrown by the crowd: dense near the dancers, thinning towards the benches. Hero cuts stand among the
+  // guests at 0.5 m, so petals there stay small; they grow towards the benches, where only wide cuts see them.
+  for(let i=0,count=low?220:360;i<count;i++){const a=i*2.399963+Math.sin(i*12.9898)*.4,r=3.4+Math.pow(((i*.618034)%1),.8)*11.5,x=Math.sin(a)*r,z=Math.cos(a)*r;put(nature,garden,`Petal_${i%5+1}`,x,z,a*3.1,THREE.MathUtils.lerp(.2,.42,THREE.MathUtils.smoothstep(r,4.5,9))+(i%4)*.05,-.03);}
   // A second drift of petals where the crowd stood, between the guests and the candelabra, and posies at each candelabrum.
   for(let i=0,count=low?150:240;i<count;i++){const a=i*2.399963+1.1,r=7+((i*.754877)%1)*6.4;put(nature,garden,`Petal_${(i+2)%5+1}`,Math.sin(a)*r,Math.cos(a)*r,a*2.3,.4+(i%3)*.08,-.03);}
   for(let i=0;i<12;i++){const angle=(i+.5)*Math.PI/6;for(const side of [-1,1]){const a=angle+side*.045,r=10.6+side*.12;put(nature,garden,side<0?'Flower_3_Group':'Flower_4_Group',Math.sin(a)*r,Math.cos(a)*r,angle,.26,-.06);}}
+  dressFestivalFloor({root,owned,textures,props,garden,dressing,glows,low});
   root.add(dressing.build(),garden.build());
   const skyTime={value:0};
   const sky=createSkyUniforms(skyTime,noiseTexture());sky.uZenith.value.set(ENDING_DUSK.zenith);sky.uHorizon.value.set(ENDING_DUSK.horizon);sky.uMid.value.set(ENDING_DUSK.mid);sky.uGround.value.set(ENDING_DUSK.ground);sky.uSunColor.value.set(ENDING_DUSK.sun);sky.uCloudLit.value.set(ENDING_DUSK.cloudLit);sky.uCloudShade.value.set(ENDING_DUSK.cloudShade);

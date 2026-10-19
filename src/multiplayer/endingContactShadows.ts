@@ -13,6 +13,8 @@ export class EndingContactShadows {
   if(!mesh){const material=new THREE.MeshBasicMaterial({color:0x000000,alphaMap:this.texture,transparent:true,opacity,depthWrite:false});mesh=new THREE.Mesh(this.geometry,material);mesh.renderOrder=1;this.meshes.set(slot,mesh);this.root.add(mesh);}
   mesh.position.set(x,y,z);mesh.scale.set(width,1,depth);mesh.material.opacity=opacity;
  }
+ /** Hides the shadow of a guest who steps out of a hero cut. */
+ show(slot:number,visible:boolean):void {const mesh=this.meshes.get(slot);if(mesh)mesh.visible=visible;}
  retain(slots:ReadonlySet<number>):void {for(const [slot,mesh]of this.meshes)if(!slots.has(slot)){mesh.removeFromParent();mesh.material.dispose();this.meshes.delete(slot);}}
  dispose():void {this.retain(new Set());this.geometry.dispose();this.texture.dispose();this.root.clear();}
 }
