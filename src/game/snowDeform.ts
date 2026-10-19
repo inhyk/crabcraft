@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SNOW_WIND } from '../sim/world/snowGround';
 
 /*
  * Snow deformation field for Frostlight. A port of SNOWFLOW's terrain state buffer (deformSim.fragment.wgsl
@@ -189,7 +190,8 @@ export class SnowDeform {
         refillRate: { value: 1 },
         maxDepth: { value: this.maxDepth },
         maxBerm: { value: this.maxBerm },
-        windAngle: { value: 0.65 },
+        // Infill comes from upwind of Frostlight's prevailing wind.
+        windAngle: { value: Math.atan2(SNOW_WIND[0], SNOW_WIND[1]) },
       },
     });
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mat);
