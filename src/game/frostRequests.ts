@@ -302,8 +302,8 @@ export function frostRequestLook(opts:FrostRequestOptions):RequestLook{
       root.add(stems.build());group.add(heads.build());
      });
     }else if(site.style==='lamp'){
-     const [qx,qz]=FROST_LAMP_POSTS['abc'.indexOf(letter)],road=-Math.sign(qx),gy=h(qx,qz),s=.85;
-     const lyaw=road*Math.PI/2,toRoad=new THREE.Vector3(road,0,0);
+     const [qx,qz,lyaw]=FROST_LAMP_POSTS['abc'.indexOf(letter)],gy=h(qx,qz),s=.85;
+     const toRoad=new THREE.Vector3(Math.sin(lyaw),0,Math.cos(lyaw));
      const plate=new THREE.Vector3(qx,gy+1.72,qz).addScaledVector(toRoad,.16),core=new THREE.Vector3(0,.55,1.1).multiplyScalar(s).applyAxisAngle(UP,lyaw).add(plate);
      anchor.position.copy(core);cueAt=core.clone();
      // A cairn of field stones round the post's foot.

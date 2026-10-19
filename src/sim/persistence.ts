@@ -1,10 +1,10 @@
 /** Strict new-character persistence. No legacy save normalization or offline policy defaults. */
-import type { AbilityId, ChannelKind, ClassId, EarnedGrant, PlayerState, SimUnit, WorldId } from './types.ts';
+import type { AbilityId, ChannelKind, ClassId, EarnedGrant, PlaceId, PlayerState, SimUnit } from './types.ts';
 import {DUNGEONS} from './data/dungeons.ts';
 import { CLASSES } from './data/classes.ts';
 import { freshQuests, QUEST_ORDER, QUESTS } from './data/quests.ts';
 import { levelForXp } from './data/progression.ts';
-import { worldChapter } from './math.ts';
+import { PLACE_IDS, placeChapter } from './math.ts';
 
 export const ACHIEVEMENT_IDS = Object.freeze(['sail','crew','landfall','island','treasure','moon','sunset','moonTreasure','sunsetTreasure','archipelago','rust','abyss','eclipse','dawn','secret']);
 export const EARNED_BOSS_FLAG_IDS = Object.freeze(['rustCleared','abyssCleared','trueCleared','finalCleared','frostCleared','emberCleared','skyCleared']);
@@ -24,7 +24,7 @@ export type InterruptedActivity = {
  motion:{velocityX:number;velocityZ:number;jumpRemaining:number;spinRemaining:number;pushX:number;pushZ:number;pushRemaining:number;lift:number;dashElapsed:number|null};
 };
 export type CharacterCheckpointV1 = {
- schema:'world-character-v1'; character:string; classId:ClassId; archetype:string; world:WorldId;
+ schema:'world-character-v1'; character:string; classId:ClassId; archetype:string; world:PlaceId;
  location:LocationCheckpoint;
  progress:{ xp:number; coins:number; baseMaxHp:number; attackRank:number; armorRank:number; weaponOwned:boolean; armorOwned:boolean; quests:QuestCheckpoint; flags:Record<string,boolean>; cogMisses:number; achievements:AchievementCheckpoint; lighthouseSecretFound:boolean };
  survival:{ alive:boolean; hp:number; maxHp:number; resource:number; maxResource:number; respawnRemaining:number|null; cooldowns:Record<string,DurationCheckpoint>; gcd:DurationCheckpoint;
@@ -85,17 +85,18 @@ const PRE_SNOW_QUEST_IDS=Object.freeze(['q1','q2','q3','q4','w1','w2','w3','w4',
 const ADDED_SNOW_QUEST_IDS=Object.freeze(['s3','s4','s5','s6','s7','s8','s9','s10','s11','s12']);
 const PRE_FRONTIER_QUEST_IDS=Object.freeze([...PRE_SNOW_QUEST_IDS,...ADDED_SNOW_QUEST_IDS]);
 const ADDED_FRONTIER_QUEST_IDS=Object.freeze([5,6].flatMap(chapter=>Array.from({length:12},(_,i)=>`r${chapter}q${i+1}`)));
-function quests(value:unknown,world:WorldId):void {
- const q=fields(value,['chapter','status','progress','cogs','tracked'],'quests');if(q.chapter!==worldChapter(world))fail('quests.chapter');
+function quests(value:unknown,world:PlaceId):void {
+ // A hub keeps the chapter the player brought; a chapter world must match its own.
+ const q=fields(value,['chapter','status','progress','cogs','tracked'],'quests'),chapter=placeChapter(world);if(chapter===null?!(Number.isSafeInteger(q.chapter)&&(q.chapter as number)>=1&&(q.chapter as number)<=6):q.chapter!==chapter)fail('quests.chapter');
  const rawStatus=object(q.status,'quests.status');
  // Released v1 catalogs contained exactly25 or35 entries. Never infer a partial catalog.
  const previous=[PRE_SNOW_QUEST_IDS,PRE_FRONTIER_QUEST_IDS].find(ids=>Object.keys(rawStatus).length===ids.length&&ids.every(id=>Object.hasOwn(rawStatus,id)));
  if(previous){
-  if(worldChapter(world)>4)fail('quests.previous-catalog.world');
+  if(chapter===null||chapter>4)fail('quests.previous-catalog.world');
   const added=previous===PRE_SNOW_QUEST_IDS?[...ADDED_SNOW_QUEST_IDS,...ADDED_FRONTIER_QUEST_IDS]:ADDED_FRONTIER_QUEST_IDS;
   const progress=object(q.progress,'quests.progress'),tracked=object(q.tracked,'quests.tracked');
   if(added.some(id=>QUESTS[id].objectives.some(o=>Object.hasOwn(progress,o.id)))||Object.values(tracked).some(id=>added.includes(id as string)))fail('quests.previous-catalog.references');
-  const defaults=freshQuests(worldChapter(world));for(const id of added)rawStatus[id]=defaults.status[id];
+  const defaults=freshQuests(chapter);for(const id of added)rawStatus[id]=defaults.status[id];
  }
  const status=fields(q.status,QUEST_ORDER,'quests.status');for(const v of Object.values(status))member(v,['locked','available','active','ready','done'],'quest.status');
  const objectives=new Map(Object.values(QUESTS).flatMap(q=>q.objectives.map(o=>[o.id,o.count] as const)));objectives.set('patrol-kills',4);
@@ -106,11 +107,11 @@ function quests(value:unknown,world:WorldId):void {
 }
 /** Strict detached validation, with only the complete released25/35-quest v1 catalog upgrades. No clamping or partial-shape repair. */
 export function validateCheckpoint(value:unknown,context?:IdentityContext):CharacterCheckpointV1 {
- const c=fields(detached(value),['schema','character','classId','archetype','world','location','progress','survival','activity'],'root');member(c.schema,['world-character-v1'],'schema');text(c.character,'character');member(c.classId,Object.keys(CLASSES),'class');text(c.archetype,'archetype',256);member(c.world,['w1','w2','w3','w4','w5','w6'],'world');location(c.location);
+ const c=fields(detached(value),['schema','character','classId','archetype','world','location','progress','survival','activity'],'root');member(c.schema,['world-character-v1'],'schema');text(c.character,'character');member(c.classId,Object.keys(CLASSES),'class');text(c.archetype,'archetype',256);member(c.world,PLACE_IDS,'world');location(c.location);
  if(context&&(c.character!==context.characterId||c.classId!==context.identity.classId||c.archetype!==context.identity.archetype))fail('identity-mismatch');
  const p=fields(c.progress,['xp','coins','baseMaxHp','attackRank','armorRank','weaponOwned','armorOwned','quests','flags','cogMisses','achievements','lighthouseSecretFound'],'progress');
  integer(p.xp,'xp');integer(p.coins,'coins');integer(p.attackRank,'attackRank',0,100);integer(p.armorRank,'armorRank',0,100);bool(p.weaponOwned,'weaponOwned');bool(p.armorOwned,'armorOwned');if((p.attackRank>0)!==p.weaponOwned||(p.armorRank>0)!==p.armorOwned)fail('gear-ownership');
- const cls=CLASSES[c.classId as ClassId];if(p.baseMaxHp!==cls.baseHp)fail('baseMaxHp');integer(p.cogMisses,'cogMisses',0,2);bool(p.lighthouseSecretFound,'lighthouseSecretFound');quests(p.quests,c.world as WorldId);
+ const cls=CLASSES[c.classId as ClassId];if(p.baseMaxHp!==cls.baseHp)fail('baseMaxHp');integer(p.cogMisses,'cogMisses',0,2);bool(p.lighthouseSecretFound,'lighthouseSecretFound');quests(p.quests,c.world as PlaceId);
  const flags=object(p.flags,'flags');for(const [id,v]of Object.entries(flags)){member(id,PERSONAL_FLAG_IDS,'flags.key');bool(v,'flags.value');}
  const achievements=fields(p.achievements,['earned','distance'],'achievements');if(!Array.isArray(achievements.earned)||new Set(achievements.earned).size!==achievements.earned.length)fail('achievements.earned');for(const id of achievements.earned)member(id,ACHIEVEMENT_IDS,'achievement');finite(achievements.distance,'achievements.distance',0);
  const s=fields(c.survival,['alive','hp','maxHp','resource','maxResource','respawnRemaining','cooldowns','gcd','statuses','history'],'survival');bool(s.alive,'alive');const level=levelForXp(p.xp),maxHp=Math.round(cls.baseHp*(1+.15*(level-1))),maxResource=cls.resource==='rage'?100:120+20*(level-1);if(s.maxHp!==maxHp||s.maxResource!==maxResource)fail('derived-stats');integer(s.maxHp,'maxHp',1);finite(s.hp,'hp',0,maxHp);finite(s.resource,'resource',0,maxResource);if(s.alive&&s.hp<=0)fail('alive.hp');if(s.alive&&s.respawnRemaining!==null)fail('alive.respawn');if(s.respawnRemaining!==null)finite(s.respawnRemaining,'respawnRemaining',0);if(!s.alive&&s.respawnRemaining===null)fail('dead.respawn');
@@ -123,7 +124,7 @@ export function validateCheckpoint(value:unknown,context?:IdentityContext):Chara
  if(a.channel!==null){const channel=fields(a.channel,['kind','startAge','endRemaining'],'channel');member(channel.kind,['recall','beacon','waystone','lighthouse-secret'],'channel.kind');duration({startAge:channel.startAge,endRemaining:channel.endRemaining},'channel');}
  return freeze(c as CharacterCheckpointV1);
 }
-export type CheckpointCaptureInput = {unit:SimUnit;state:PlayerState;world:WorldId;time:number;activity:{seated:boolean;village:boolean;rootPending?:boolean}};
+export type CheckpointCaptureInput = {unit:SimUnit;state:PlayerState;world:PlaceId;time:number;activity:{seated:boolean;village:boolean;rootPending?:boolean}};
 export function projectCheckpoint({unit:u,state:p,world,time,activity}:CheckpointCaptureInput):CharacterCheckpointV1 {
  finite(time,'capture.time',0);if(p.unit.area!==u.ref.area||p.unit.id!==u.ref.id||p.unit.life!==u.ref.life||u.kind!=='player')fail('capture.identity');
  const age=(t:number)=>Math.max(0,time-t),remaining=(t:number)=>Math.max(0,t-time),cycle=(d:{start:number;end:number})=>({startAge:age(d.start),endRemaining:remaining(d.end)});

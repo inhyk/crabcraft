@@ -1,4 +1,5 @@
-import type { Chapter, WorldId, Vec3 } from './types.ts';
+import type { Chapter, HubId, PlaceId, WorldId, Vec3 } from './types.ts';
+import { canTravelTo } from './data/progression.ts';
 export const TAU = Math.PI * 2;
 export const clamp = (x: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, x));
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -16,5 +17,13 @@ export const easeInOut = (t: number): number => t < .5 ? 2 * t * t : 1 - (-2 * t
 export function validatePopulation(value:{desired:number;respawnSeconds:number}):{desired:0|1;respawnSeconds:number} {if((value.desired!==0&&value.desired!==1)||!Number.isFinite(value.respawnSeconds)||value.respawnSeconds<0)throw new RangeError('Population policy requires desired 0 or 1 and finite nonnegative respawnSeconds');return {desired:value.desired,respawnSeconds:value.respawnSeconds};}
 
 export const worldChapter = (world: WorldId): Chapter => ({w1:1,w2:2,w3:3,w4:4,w5:5,w6:6} as const)[world];
+export const PLACE_IDS: readonly PlaceId[] = Object.freeze(['w1','w2','w3','w4','w5','w6','tc'] as const);
+export const isHub = (place: PlaceId): place is HubId => place === 'tc';
+/** Null in a hub: there the quest chapter stays what the player brought. */
+export const placeChapter = (place: PlaceId): Chapter | null => isHub(place) ? null : worldChapter(place);
+/** A hub is always open; a chapter world keeps its story unlock. */
+export const canTravelToPlace = (place: PlaceId, flags: Readonly<Record<string, boolean>>): boolean => isHub(place) || canTravelTo(worldChapter(place), flags);
+/** For enemy and reward rules, which a hub never runs (no enemies or bosses). */
+export function chapterWorld(place: PlaceId): WorldId { if (isHub(place)) throw new Error('hub-has-no-chapter'); return place; }
 
 export function populationRadius(value:number):number {if(!Number.isFinite(value)||value<=0)throw new RangeError('Invalid population radius');return value;}

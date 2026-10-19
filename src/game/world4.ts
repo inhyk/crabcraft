@@ -6,6 +6,7 @@ import type {Poi} from '../world/types';
 import {FrostPortal} from './frostPortal';
 import {frostRequestLook} from './frostRequests';
 import type {IslandPath} from './islandPaths';
+import {FROST_NORTH_ROAD,FROST_NPCS,FROST_PADS,FROST_POIS,FROST_TOWN_POINTS,FROST_WAYS} from '../sim/world/snowLayout';
 import {frostPaving,type FrostPaving} from './frostPaving';
 import {frostArena,type FrostArena} from './frostArena';
 import {SnowDeform} from './snowDeform';
@@ -29,13 +30,21 @@ import {frozenPond} from './snowVillageDressing';
 import {lathe} from '../world/geom';
 import type {Unit} from './unit';
 
+/** Frostlight's points of interest, as the client places them (the server's are in src/sim/areas/world4.ts). */
+export const SNOW_POI_POINTS=[['forge',...FROST_POIS.forge],['chapel',...FROST_POIS.chapel],['tavern',...FROST_POIS.tavern],['grove',-55,25],['shore',55,25],['wreck',48,-15],['lighthouse',0,-44],['beacon',0,-46],['bossArena',0,-78]] as const;
+
 /** Deterministic snow realm. Trees share instanced meshes; snowfall runs on the GPU. */
 export class SnowIsland {
  readonly root=new THREE.Group();
  readonly prison=new THREE.Group();
  readonly spawn=new THREE.Vector3(-12,5,90);
  readonly arena:Poi={id:'bossArena',position:new THREE.Vector3(0,19,-78),yaw:0,radius:22};
- readonly town:[number,number][]=[[-16,56],[16,56],[-16,38],[16,38],[-16,74],[16,80],[16,68]];
+ /** The residents where their trades live, the way each faces, and where the townsfolk mill about (snowLayout.ts). */
+ readonly town:[number,number][]=FROST_NPCS.map(n=>[n.x,n.z]);
+ readonly townYaw=FROST_NPCS.map(n=>n.yaw);
+ readonly walks=FROST_TOWN_POINTS;
+ /** Way points along the north road for the path hints: the gate, the eastern bend, the ring of stones. */
+ readonly roadHints=[FROST_NORTH_ROAD.points[0],FROST_NORTH_ROAD.points[Math.floor(FROST_NORTH_ROAD.points.length/2)],FROST_NORTH_ROAD.points[FROST_NORTH_ROAD.points.length-1]];
  readonly collision=layoutFrostlight();
  readonly portal:FrostPortal;
  private sun=new THREE.DirectionalLight();
@@ -90,9 +99,10 @@ export class SnowIsland {
   this.terrain.mesh.name='snowdrift-terrain';this.root.add(this.terrain.mesh);
   // Crags breaking through the drifts, for scale and the horizon (snowRocks.ts).
   this.root.add(snowRocks((x,z)=>this.height(x,z),this.terrain.uniforms));
-  // Snowed-in cobbled streets (frostPaving.ts) on the same layout as before, so walking and covers() are unchanged.
-  const paths:IslandPath[]=[{points:[[0,94],[0,28],[0,-53]],width:8,trim:true},...[38,56,74].map(z=>({points:[[-22,z],[22,z]] as [number,number][],width:4,trim:true}))];
-  this.paving=frostPaving((x,z)=>this.height(x,z),paths,{skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,sunDir:this.sky.sunDir,deform:this.deform});this.root.add(this.paving.root);
+  // Snowed-in cobbled streets and squares (frostPaving.ts) on Frostlight's own plan (snowLayout.ts): the winding high
+  // street, the lanes, the two squares, the road out of the gate and the processional way to the throne.
+  const paths:IslandPath[]=FROST_WAYS.map(w=>({points:w.points,width:w.width,trim:true}));
+  this.paving=frostPaving((x,z)=>this.height(x,z),paths,{skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,sunDir:this.sky.sunDir,deform:this.deform,pads:FROST_PADS});this.root.add(this.paving.root);
   // Frozen fountain: a turned stone basin (the kit's stone once buildSettlement() has it) round a pond of ice.
   const {x:fx,z:fz}=SNOW_FOUNTAIN,fy=this.height(fx,fz);
   this.basin=add(lathe([[2.42,.36],[2.46,.62],[2.6,.75],[2.92,.75],[3.06,.6],[3.06,.12],[3.14,0],[3.14,-.6]],56,.5),dark,fx,fy,fz);this.basin.name='snow-fountain-basin';
