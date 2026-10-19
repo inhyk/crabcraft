@@ -300,7 +300,7 @@ test('maximum admitted personal cast and cue shape fits existing binary limits w
 
 
 test('compiled schema revision is explicit while a legacy catalog with absent revision remains decodable',()=>{
- const current={...catalog,wireSchemaRevision:WIRE_SCHEMA_REVISION};assert.doesNotThrow(()=>createGameplayProtocol(current));assert.doesNotThrow(()=>new GameplayReceiver(binding,current));assert.doesNotThrow(()=>createGameplayProtocol(catalog));assert.doesNotThrow(()=>new GameplayReceiver(binding,catalog));for(const revision of [0,2,null,'1']){assert.throws(()=>createGameplayProtocol({...catalog,wireSchemaRevision:revision}),/schema revision/);assert.throws(()=>new GameplayReceiver(binding,{...catalog,wireSchemaRevision:revision}),/schema revision/);}
+ const current={...catalog,wireSchemaRevision:WIRE_SCHEMA_REVISION};assert.doesNotThrow(()=>createGameplayProtocol(current));assert.doesNotThrow(()=>new GameplayReceiver(binding,current));assert.doesNotThrow(()=>createGameplayProtocol(catalog));assert.doesNotThrow(()=>new GameplayReceiver(binding,catalog));for(const revision of [0,WIRE_SCHEMA_REVISION-1,WIRE_SCHEMA_REVISION+1,null,String(WIRE_SCHEMA_REVISION)]){assert.throws(()=>createGameplayProtocol({...catalog,wireSchemaRevision:revision}),/schema revision/);assert.throws(()=>new GameplayReceiver(binding,{...catalog,wireSchemaRevision:revision}),/schema revision/);}
 });
 
 
@@ -325,4 +325,54 @@ test('revoked input is strictly decoded without apply/ACK and one rate budget su
 
 test('publication release invalidates only its prepared token without losing committed connection baselines',()=>{
  const f=fixture(2),source=observation(f),prepared=prepareObservationSnapshot(source.snapshot,source.appearances,catalog);const first=f.codec.encodeObservation({...source,prepared});apply(f.receiver,first);releasePreparedObservation(prepared);releasePreparedObservation(prepared);assert.throws(()=>f.codec.encodeObservation({...source,prepared,sequence:2}),/prepared/);const next=prepareObservationSnapshot(source.snapshot,source.appearances,catalog),chunks=f.codec.encodeObservation({...source,prepared:next,sequence:2});assert.equal(apply(f.receiver,chunks).state.sequence,2);releasePreparedObservation(next);
+});
+
+test('dungeon host commands are typed single-command frames; tiers and run IDs outside the canonical forms reject',()=>{
+ const run='0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b';
+ for(const command of [{kind:'dungeonStart',tier:35},{kind:'dungeonStart',tier:650},{kind:'dungeonJoin',run},{kind:'dungeonReturn',run}]){
+  const frame=input(1,[command]);assert.deepEqual(decodeInput(encodeInput({binding,intent:frame},catalog),binding,catalog),frame);
+  assert.throws(()=>encodeInput({binding,intent:input(1,[command,{kind:'jump'}])},catalog),/cannot mix/);
+ }
+ for(const command of [{kind:'dungeonStart',tier:36},{kind:'dungeonStart',tier:'35'},{kind:'dungeonStart'},{kind:'dungeonStart',tier:35,owner:'x'},{kind:'dungeonJoin',run:run.toUpperCase()},{kind:'dungeonJoin',run:'run-1'},{kind:'dungeonReturn'},{kind:'dungeonReturn',run,tier:35}])
+  assert.throws(()=>encodeInput({binding,intent:input(1,[command])},catalog),/gameplay-v3/,JSON.stringify(command));
+ const session=new InputSession(binding,catalog,{now:0});session.accept(encodeInput({binding,intent:input(1,[{kind:'jump'}])},catalog),0);session.accept(encodeInput({binding,intent:input(2,[{kind:'dungeonStart',tier:35}])},catalog),0);
+ assert.deepEqual(session.prepareTick(0).intent.commands,[{kind:'jump'}],'a dungeon command never coalesces with an earlier frame');
+});
+
+test('dungeon run view roundtrips from an actual run Area and every malformed run, hazard or mode pairing rejects',async()=>{
+ const {createArea}=await import('../../../src/sim/area.ts'),{createDungeonDefinition,createDungeonQuery}=await import('../../../src/sim/areas/dungeon.ts'),{realActionData}=await import('../../../src/sim/data/actions.ts'),{flatWorld}=await import('../../../tests/core/worldHarness.mjs');
+ const runId='00000000-0000-4000-8000-0000000000aa',area=createArea({id:binding.area,dungeon:{runId,tier:35},definition:createDungeonDefinition(35),query:createDungeonQuery(flatWorld),seed:15,policy:{enemyLevel:s=>s.fixedLevel,enemyPopulation:()=>({desired:1,respawnSeconds:30}),damageAllowed:()=>true,canInteract:()=>true},actionData:realActionData,context:{mode:'dungeon',members:[],pvp:'disabled'},limits:{eventCount:100000,inputCommandsPerTick:32,timers:1000,projectiles:1000}});
+ const ref=area.attachFresh('dungeon-viewer','mage','human','spawn'),p=area.services.player(ref);p.restoreXp(xpForLevel(40));
+ const view=(sequence,full)=>{const snapshot=area.snapshot(),visible=new Set(snapshot.units.map(u=>u.ref.id)),extras=projectObservationExtras(snapshot,'dungeon-viewer',visible);return {binding,sequence,tick:snapshot.tick,acceptedInput:0,consumedInput:0,selfRef:ref,snapshot,events:[],visibleIds:visible,full,eventWatermark:-1,...extras,features:{...extras.features,dungeon:area.dungeonObservation()},appearances:{[`${ref.id}:${ref.life}`]:appearance}};};
+ const codec=createGameplayProtocol(catalog),receiver=new GameplayReceiver(binding,catalog);
+ const rest=apply(receiver,codec.encodeObservation(view(1,true)));assert.equal(rest.state.features.environment.mode,'dungeon');assert.deepEqual(rest.state.features.dungeon,area.dungeonObservation());assert.equal(rest.state.features.dungeon.phase,'rest');assert.deepEqual(rest.state.features.dungeon.run,{area:binding.area,runId});
+ for(let i=0;i<200&&area.dungeonObservation().phase!=='wave';i++)tick(area);
+ const wave=apply(receiver,codec.encodeObservation(view(2,false))).state.features.dungeon;assert.equal(wave.phase,'wave');assert.equal(wave.stage,1);assert.ok(wave.warning.length>0,'a fresh wave starts with its warning');assert.equal(wave.activeEnemies.length,3);assert.deepEqual(wave,area.dungeonObservation());
+ const mutations=[
+  [v=>{delete v.features.dungeon;},/mode mismatch/],[v=>{v.features.environment.mode='public';},/mode mismatch/],
+  [v=>{v.features.dungeon.run.area='other-area';},/foreign dungeon run/],[v=>{v.features.dungeon.run.runId=runId.toUpperCase();},/run id/],[v=>{v.features.dungeon.tier=36;},/discriminator/],
+  [v=>{v.features.dungeon.stage=4;},/discriminator/],[v=>{v.features.dungeon.phase='done';},/discriminator/],[v=>{v.features.dungeon.clock=-1;},/negative/],[v=>{v.features.dungeon.hazardSerial=1.5;},/integer/],
+  [v=>{v.features.dungeon.phase='rest';},/warning outside a wave/],[v=>{v.features.dungeon.warning=[{shape:'triangle',x:0,z:0,radius:1}];},/discriminator/],[v=>{v.features.dungeon.warning=[{shape:'rect',x:0,z:0,width:2,yaw:0}];},/missing depth/],
+  [v=>{v.features.dungeon.warning=[{shape:'ring',x:0,z:0,radius:4,inner:4}];},/hazard ring/],[v=>{v.features.dungeon.warning=[{shape:'circle',x:0,z:0,radius:0}];},/non-positive/],[v=>{v.features.dungeon.warning=Array.from({length:9},()=>({shape:'circle',x:0,z:0,radius:1}));},/invalid list/],
+  [v=>{v.features.dungeon.activeEnemies=[{...v.features.dungeon.activeEnemies[0],area:'other-area'}];},/foreign area ref/],[v=>{v.features.dungeon.activeEnemies=[v.features.dungeon.activeEnemies[0],v.features.dungeon.activeEnemies[0]];},/duplicate dungeon enemy/],
+  [v=>{v.features.dungeon.captain={area:binding.area,id:0,life:1};},/integer/],[v=>{v.features.dungeon.owner='private';},/unknown field owner/],
+ ];
+ for(const [mutate,error] of mutations){const value=view(3,true);value.features=structuredClone(value.features);mutate(value);assert.throws(()=>createGameplayProtocol(catalog).encodeObservation(value),error,String(mutate));}
+ // The browser validates the same rules on frames it did not build.
+ const forged=view(3,true);forged.features={...forged.features,dungeon:{...structuredClone(forged.features.dungeon),tier:36}};const trusted=createGameplayProtocol(catalog,{verify:false}).encodeObservation(forged);
+ assert.throws(()=>apply(new GameplayReceiver(binding,catalog),trusted),/discriminator/);
+ for(const p of area.pendingGrants())area.acknowledgeGrant(p.grant.id);
+});
+
+test('party control carries the running dungeon run only in its typed form and the catalog advertises canonical tiers only',()=>{
+ const f=fixture();apply(f.receiver,f.codec.encodeObservation(observation(f)));
+ const state={code:'A1B2C3',leader:'member-a',members:[{id:'member-a',name:'Alice',ref:f.actors[0].ref,world:'w3',online:true}],pvp:false};
+ let sequence=1;
+ for(const dungeon of [undefined,null,{runId:'0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b',tier:35}]){const control={type:'party',state:{...state,...(dungeon===undefined?{}:{dungeon})}};assert.deepEqual(apply(f.receiver,f.codec.encodeControl(header(++sequence),control)).control,control);}
+ for(const dungeon of [{runId:'0F1E2D3C-4B5A-4987-8A6B-5C4D3E2F1A0B',tier:35},{runId:'run',tier:35},{runId:'0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b',tier:36},{runId:'0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b'},{runId:'0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b',tier:35,area:'dungeon:x'}])
+  assert.throws(()=>f.codec.encodeControl(header(9),{type:'party',state:{...state,dungeon}}),/gameplay-v3/,JSON.stringify(dungeon));
+ const current={...catalog,wireSchemaRevision:WIRE_SCHEMA_REVISION};
+ assert.doesNotThrow(()=>createGameplayProtocol({...current,dungeons:[35,50,650]}));assert.doesNotThrow(()=>new GameplayReceiver(binding,{...current,dungeons:[35]}));
+ for(const dungeons of [[],[36],[50,35],[35,35],['35'],null])assert.throws(()=>createGameplayProtocol({...current,dungeons}),/catalog dungeon tiers/,JSON.stringify(dungeons));
+ assert.throws(()=>createGameplayProtocol({...catalog,dungeons:[35,50]}),/catalog dungeon tiers/,'tiers need the compiled schema revision');
 });
