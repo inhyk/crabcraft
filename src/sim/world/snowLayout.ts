@@ -50,7 +50,7 @@ export const FROST_GATE: XZ = [-0.6, 29.6];
  * processional way runs straight to the arena gate, as an approach to a throne should.
  */
 export const FROST_HIGH_STREET = way('high-street', 7, [[0.6, 80.5], [-1.6, 74.5], [-4.6, 67.5], [-5.2, 60], [-3.1, 53.4], [0.9, 47.2], [3.5, 40.6], [2.6, 34.4], FROST_GATE]);
-export const FROST_NORTH_ROAD = way('north-road', 6.5, [FROST_GATE, [-2.6, 25.2], [-1.6, 19], [2.6, 12.4], [9, 6.2], [11.3, 0.4], [8.4, -8], [2, -14.8], [-2.4, -20.4], [-1.2, -24], [0, -26.5]], 2.4);
+export const FROST_NORTH_ROAD = way('north-road', 6.5, [FROST_GATE, [-2.6, 25.2], [-1.6, 19], [3, 12.6], [10.4, 7], [12.6, 0.8], [9.4, -7.8], [2.4, -14.8], [-2.4, -20.4], [-1.2, -24], [0, -26.5]], 2.4);
 export const FROST_PROCESSION: FrostWay = { id: 'procession', width: 8, points: [[0, -26.5], [0, -53]] };
 /** Lanes: to the chapel on its rise, west out to the Frostpine Woods, east along the portal row. */
 export const FROST_LANES: readonly FrostWay[] = [

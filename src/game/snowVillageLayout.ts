@@ -221,7 +221,7 @@ export function snowLamps(): { x: number; z: number; yaw: number }[] {
   along('high-street', [[5.5, 1], [16, -1], [37, 1], [44, -1], [52.5, 1], [52.5, -1]]);
   // Round the arrival square and the market.
   for (const a of [0.9, 4.0]) lamps.push(roundPad('arrival', a, 1.4));
-  lamps.push(roundPad('arrival-west', 4.6, 1.3), roundPad('arrival-east', 1.2, 1.3), roundPad('market', 0.1, 1.4), roundPad('market', 3.0, 1.4), roundPad('market-west', 4.0, 1.3));
+  lamps.push(roundPad('arrival-west', 4.6, 1.3), roundPad('arrival-east', 0.4, 1.3), roundPad('market', 0.1, 1.4), roundPad('market', 3.0, 1.4), roundPad('market-west', 4.0, 1.3));
   // The lanes.
   along('chapel-lane', [[6, -1], [12.5, 1]], 1.3);
   along('woods-lane', [[7, 1], [18, -1]], 1.3);
@@ -254,7 +254,7 @@ export function snowProps(): SnowProp[] {
   // Market: benches round the fountain facing the basin, a stall and its crates on the square's west side.
   for (const a of [0.2, 3.4, 4.9]) {
     const x = fx + Math.sin(a) * 5.4, z = fz + Math.cos(a) * 5.4;
-    p('props', 'Bench', x, z, a + Math.PI / 2, { hx: 1.4, hz: 0.35 });
+    p('props', 'Bench', x, z, a + Math.PI, { hx: 1.4, hz: 0.35 });
   }
   const stall = { x: -19.5, z: 72.6, yaw: 2.43 };
   const st = (lx: number, lz: number) => atLot(stall, lx, lz);
@@ -276,7 +276,7 @@ export function snowProps(): SnowProp[] {
     p('props', 'Table_Large', tx, tz, tv.yaw + Math.PI / 2, { hx: 1.45, hz: 0.6 });
     for (const [dx, dz] of [[-0.8, -0.95], [0.8, -0.95], [-0.8, 0.95], [0.8, 0.95]]) { const [sx, sz] = local('tavern', lx + dz, tv.sz + 1.7 + dx); p('props', 'Stool', sx, sz, dx + dz); }
   }
-  for (const [lx, lz, piece] of [[-4.6, 5.9, 'Barrel'], [-4.2, 6.7, 'Barrel'], [4.7, 6.1, 'Barrel_Holder']] as const) { const [bx, bz] = local('tavern', lx, lz); p('props', piece, bx, bz, bx * 0.7, { r: piece === 'Barrel' ? 0.4 : 0.75 }); }
+  for (const [lx, lz, piece] of [[-4.7, 5.6, 'Barrel'], [4.7, 6.1, 'Barrel_Holder']] as const) { const [bx, bz] = local('tavern', lx, lz); p('props', piece, bx, bz, bx * 0.7, { r: piece === 'Barrel' ? 0.4 : 0.75 }); }
   // Forge yard in front of the open smithy.
   const fy = lot('forge').yaw;
   const f = (lx: number, lz: number) => local('forge', lx, lz);
@@ -289,12 +289,12 @@ export function snowProps(): SnowProp[] {
   p('props', 'WeaponStand', x, z, fy - 0.5, { hx: 0.7, hz: 0.5 });
   [x, z] = f(3.8, 5.6);
   p('props', 'Whetstone', x, z, fy + 2.2, { r: 0.6 });
-  [x, z] = f(-0.8, 5.8);
+  [x, z] = f(-1.2, 7.0);
   p('props', 'Barrel', x, z, 0, { r: 0.45 });
   p('props', 'Bucket_Metal', x + 0.7, z + 0.2, 1);
   // A wagon waits by the forge, a woodcutter's cart where the woods lane leaves the village.
-  [x, z] = f(-6.4, -1.0);
-  p('village', 'Prop_Wagon', x, z, fy + Math.PI / 2 - 0.2, { hx: 1.0, hz: 2.0 });
+  [x, z] = f(5.8, 1.2);
+  p('village', 'Prop_Wagon', x, z, fy + Math.PI / 2 + 0.25, { hx: 1.0, hz: 2.0 });
   p('village', 'Prop_Wagon', -38.4, 49.2, 0.85, { hx: 1.0, hz: 2.0 });
   // Crates and sacks by the doors.
   for (const [id, lx, lz, piece] of [['street-west', 2.2, 3.7, 'Crate_Wooden'], ['street-east-b', -3.0, 3.7, 'Barrel'], ['row-a', 2.2, 4.8, 'Crate_Wooden'], ['woods-b', -3.4, 3.8, 'Barrel'], ['market-south', 2.2, 3.8, 'Bag'], ['gate-west', -2.2, 3.7, 'Barrel'], ['lane-north', 2.2, 3.7, 'Crate_Wooden']] as const) {

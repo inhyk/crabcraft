@@ -37,8 +37,8 @@ try{
  assert.ok(settled2.live<=5,`run spray settles: ${JSON.stringify(settled2)}`);
  assert.equal(settled2.recycled,0,'one runner never fills the ring');
  console.log('PASS walking and running kick powder that settles',JSON.stringify({walk,run,settled:settled2.live}));
- // The main road runs north-south through x=0; prints are hidden under paving, so is spray.
- await place(p,0,12,Math.PI);await p.waitForTimeout(600);
+ // The processional way runs straight north on x=0 from the ring of stones; prints are hidden under paving, so is spray.
+ await place(p,0,-28,Math.PI);await p.waitForTimeout(600);
  const road=await move(p,['w'],1500);
  assert.ok(road.onPaving>10&&road.emitted===0,`no spray off paving: ${JSON.stringify(road)}`);
  console.log('PASS paved road throws no spray',JSON.stringify(road));
