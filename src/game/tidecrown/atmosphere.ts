@@ -1,16 +1,18 @@
-// Late afternoon over Tidecrown: a low warm sun from the south-west (the city's southern faces glow from the ridge),
-// a clear blue sky with soft clouds, a pale sea haze, World I's painted sky and water, and the keep's cyan lantern
-// with a beam that reads from far away.
+// Late afternoon over Tidecrown: a low golden sun from the south-west rakes the limestone (the city's southern faces
+// glow from the ridge and the bridge) and throws long shadows; a cool lilac sky fills the shade, a warm haze pales the
+// distance, the sky grades from deep blue overhead to a peach horizon, and the keep's cyan lantern sends a beam that
+// reads from far away.
 import * as THREE from 'three';
 import { createSky, createSkyUniforms, type SkyUniforms } from '../../world/sky';
 import { noiseTexture } from '../../world/terrain';
 import { createWater, type WaterUniforms } from '../../world/water';
 import type { TidecrownTerrain } from './terrain';
 
-/** Toward the sun: south-west, about 24 degrees up. */
-export const TC_SUN_DIR = new THREE.Vector3(-0.62, 0.42, 0.72).normalize();
-export const TC_FOG = { color: new THREE.Color('#cfd9e2'), density: 0.0012 } as const;
-export const TC_ENV_INTENSITY = 0.32;
+/** Toward the sun: south-west by west, about 16 degrees up. */
+export const TC_SUN_DIR = new THREE.Vector3(-0.83, 0.276, 0.48).normalize();
+/** Haze: lilac pearl looking away from the sun, warm gold looking into it. */
+export const TC_FOG = { color: new THREE.Color('#dcd6e6'), toward: new THREE.Color('#f4d6ae'), density: 0.0009 } as const;
+export const TC_ENV_INTENSITY = 0.3;
 
 export interface TidecrownAtmosphere {
   group: THREE.Group;
@@ -19,6 +21,8 @@ export interface TidecrownAtmosphere {
   sun: THREE.DirectionalLight;
   water: { mesh: THREE.Mesh; uniforms: WaterUniforms };
   lanternLight: THREE.PointLight;
+  /** The haze colour for a camera: warmer the more it faces the sun. */
+  hazeColor(camera: THREE.Camera, out: THREE.Color): THREE.Color;
   /** Prefiltered sky for reflections (metal, nacre, glass). */
   environment(renderer: THREE.WebGLRenderer): THREE.Texture;
   update(time: number, camera: THREE.Camera, playerX: number, playerZ: number, ground: (x: number, z: number) => number): void;
@@ -84,35 +88,43 @@ function lanternHalo(at: THREE.Vector3): THREE.Sprite {
   return sprite;
 }
 
+/** World I's painted sky with its high wisps thinned, so the sky reads as cumulus over a clear evening. */
+function tidecrownSky(u: SkyUniforms): THREE.Mesh {
+  const sky = createSky(u), mat = sky.material as THREE.ShaderMaterial;
+  mat.fragmentShader = mat.fragmentShader.replace('smoothstep(0.08, 0.3, y) * 0.5', 'smoothstep(0.08, 0.3, y) * 0.2');
+  return sky;
+}
+
 export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'low' | 'high', uTime: { value: number }, lanternAt: THREE.Vector3): TidecrownAtmosphere {
   const group = new THREE.Group();
   group.name = 'tidecrown-atmosphere';
   const skyU = createSkyUniforms(uTime, noiseTexture());
   skyU.uSunDir.value.copy(TC_SUN_DIR);
   skyU.uMoonDir.value.set(0.3, 0.5, -0.8).normalize();
-  skyU.uZenith.value.set('#2c63c6');
-  skyU.uMid.value.set('#9cc0e4');
-  skyU.uHorizon.value.set('#f7cf9e');
-  skyU.uGround.value.set('#cfd9e2');
-  skyU.uSunColor.value.set('#fff1cf');
-  skyU.uGlow.value.set('#ffa457');
-  skyU.uCloudLit.value.set('#fff5e6');
-  skyU.uCloudShade.value.set('#9aabc6');
+  // Deep blue-violet overhead, a lilac band away from the sun and peach toward it; clouds peach and rose.
+  skyU.uZenith.value.set('#4a5fd0');
+  skyU.uMid.value.set('#c6b8de');
+  skyU.uHorizon.value.set('#ffc68a');
+  skyU.uGround.value.set('#e6cfb8');
+  skyU.uSunColor.value.set('#fff0cc');
+  skyU.uGlow.value.set('#ffa050');
+  skyU.uCloudLit.value.set('#ffe4c8');
+  skyU.uCloudShade.value.set('#d4b6ca');
   skyU.uSunVis.value = 1;
-  skyU.uCloudCover.value = 0.52;
-  const sky = createSky(skyU);
+  skyU.uCloudCover.value = 0.62;
+  const sky = tidecrownSky(skyU);
   group.add(sky);
 
   const water = createWater(skyU, terrain.heightTexture(), new THREE.Vector2(terrain.minX, terrain.minZ), new THREE.Vector2(terrain.sizeX, terrain.sizeZ), quality);
   water.uniforms.uDeep.value.set('#0c4b7a');
   water.uniforms.uShallow.value.set('#33c1b2');
-  water.uniforms.uSunLight.value.set('#ffe1b8');
+  water.uniforms.uSunLight.value.set('#ffd6a4');
   (water.mesh.material as THREE.ShaderMaterial).uniforms.uTime = uTime;
   water.mesh.position.set(50, 0, 40);
   group.add(water.mesh);
 
   // Key light: shadows follow a focus ahead of the camera, snapped to shadow texels.
-  const sun = new THREE.DirectionalLight('#ffcb8e', 4.6);
+  const sun = new THREE.DirectionalLight('#ffc890', 6.2);
   sun.name = 'tidecrown-sun';
   sun.castShadow = true;
   const shadowSize = quality === 'high' ? 4096 : 2048, extent = quality === 'high' ? 72 : 56;
@@ -121,7 +133,8 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
   sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.bias = -0.0003;
   sun.shadow.normalBias = 0.06;
-  const hemi = new THREE.HemisphereLight('#bac8dc', '#7d6041', 0.8);
+  // Cool lilac sky fill for the shade, warm bounce from the ground.
+  const hemi = new THREE.HemisphereLight('#979ee8', '#b88d62', 0.7);
   group.add(sun, sun.target, hemi);
 
   const lanternLight = new THREE.PointLight('#53f2e4', 520, 120, 1.5);
@@ -129,7 +142,8 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
   group.add(lanternLight, lanternBeam(lanternAt), lanternHalo(lanternAt));
 
   let envRT: THREE.WebGLRenderTarget | null = null;
-  const focus = new THREE.Vector3(), fwd = new THREE.Vector3();
+  const focus = new THREE.Vector3(), fwd = new THREE.Vector3(), look = new THREE.Vector3();
+  const sunFlat = TC_SUN_DIR.clone().setY(0).normalize();
   const texel = (2 * extent) / shadowSize;
   return {
     group,
@@ -141,21 +155,28 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
     environment(renderer) {
       if (!envRT) {
         const pmrem = new THREE.PMREMGenerator(renderer), scene = new THREE.Scene();
-        scene.add(createSky(skyU));
+        scene.add(tidecrownSky(skyU));
         envRT = pmrem.fromScene(scene, 0, 0.1, 100);
         pmrem.dispose();
         (scene.children[0] as THREE.Mesh).geometry.dispose();
       }
       return envRT.texture;
     },
+    hazeColor(camera, out) {
+      camera.getWorldDirection(look);
+      const t = (Math.hypot(look.x, look.z) > 1e-3 ? look.setY(0).normalize().dot(sunFlat) : 0) * 0.5 + 0.5;
+      return out.copy(TC_FOG.color).lerp(TC_FOG.toward, t * t);
+    },
     update(time, camera, playerX, playerZ, ground) {
       sky.position.copy(camera.position);
-      // Shadows follow the player; a free camera far from the player (cinematics, screenshots) takes them along
-      // a little ahead of itself instead.
+      // Shadows follow the player; a free camera far from the player (cinematics, screenshots) takes them to the
+      // ground it looks down at, or a little ahead of itself.
       if (Math.hypot(camera.position.x - playerX, camera.position.z - playerZ) < 40) focus.set(playerX, 0, playerZ);
       else {
         camera.getWorldDirection(fwd);
-        focus.copy(camera.position).addScaledVector(fwd.setY(0).normalize(), THREE.MathUtils.clamp(camera.position.y * 1.1, 14, 48));
+        const down = fwd.y < -0.08 ? (camera.position.y - ground(camera.position.x, camera.position.z)) / -fwd.y : 0;
+        if (down > 48) focus.copy(camera.position).addScaledVector(fwd, Math.min(down, 420));
+        else focus.copy(camera.position).addScaledVector(fwd.setY(0).normalize(), THREE.MathUtils.clamp(camera.position.y * 1.1, 14, 48));
       }
       focus.y = ground(focus.x, focus.z);
       focus.x = Math.round(focus.x / texel) * texel;

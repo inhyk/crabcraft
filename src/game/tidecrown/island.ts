@@ -22,7 +22,8 @@ export class TidecrownIsland {
   readonly root = new THREE.Group();
   readonly spawn = new THREE.Vector3(TC_ARRIVAL[0], 0, TC_ARRIVAL[1]);
   readonly spawnYaw = TC_ARRIVAL_YAW;
-  readonly fog = TC_FOG;
+  /** Scene fog while inside; the colour follows the camera (warmer facing the sun). */
+  readonly fog = { color: TC_FOG.color.clone(), density: TC_FOG.density };
   readonly envIntensity = TC_ENV_INTENSITY;
   layout!: TidecrownLayout;
   collision!: Collision;
@@ -121,6 +122,7 @@ export class TidecrownIsland {
     if (!this.built) return;
     if (camera) {
       this.atmosphere.update(time, camera, playerX, playerZ, (x, z) => this.layout.heightAt(x, z));
+      this.atmosphere.hazeColor(camera, this.fog.color);
       this.foliage?.update(camera);
     }
     if (this.lanternGlow) this.lanternGlow.emissiveIntensity = 3.2 + 0.5 * Math.sin(time * 1.3);

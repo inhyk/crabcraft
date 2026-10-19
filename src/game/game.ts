@@ -76,6 +76,8 @@ const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vign
 /** Frostlight's own grade while it is shown: cool lifted shadows, warm lamp light, snow that reads white (grade.ts). */
 // Bloom keys above the brightest sunlit snow, so lamps and windows glow and the snow does not haze over.
 const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
+/** Tidecrown's late afternoon: a touch brighter and richer, violet lifted shade, a soft glow on sunlit stone. */
+const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.1, agxLook: { saturation: 1.28, power: 1.1 }, bloom: { intensity: 1.1, threshold: 0.78, smoothing: 0.3, radius: 0.8 }, grade: { lift: [0.014, 0.006, 0.03], warm: 0.35, white: 0.1 } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },
@@ -761,7 +763,7 @@ export class Game {
     this.world.update(dt, worldTime, this.camera);
     this.world2.update(dt,worldTime);
     // The game's own views follow the world shown; endings and captures that set their own are left alone.
-    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
+    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW||view===TIDECROWN_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
     this.lighthouseSecret?.update();
     // A spectator view shows no HUD and plays no music.
     if(!this.spectator){
@@ -1463,7 +1465,7 @@ export class Game {
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }
 
-  private gameView(): ViewOptions { return this.world2?.fourth.root.visible ? FROST_VIEW : GAME_VIEW; }
+  private gameView(): ViewOptions { return this.world2?.inTidecrown ? TIDECROWN_VIEW : this.world2?.fourth.root.visible ? FROST_VIEW : GAME_VIEW; }
 
   /** A duel keeps the adventure alive, even when entered from a shared victory celebration. */
   resumeFriendAdventure(authority:boolean):void {
