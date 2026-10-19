@@ -29,8 +29,8 @@ export interface SnowLot {
 const lot = (id: string, kind: SnowLotKind, x: number, z: number, fx: number, fz: number, sx: number, sz: number, floors: number, style: number, twist = 0): SnowLot =>
   ({ id, kind, x, z, yaw: Math.atan2(fx - x, fz - z) + twist, sx, sz, floors, style });
 /**
- * Fronts face the street, the square or the lane they stand on (src/sim/world/snowLayout.ts), set back so their
- * door steps stay off the stones. Every house that closes a bend of the high street is two storeys tall.
+ * Frostlight's own plan (src/sim/world/snowLayout.ts): fronts face the street, square or lane they stand on, set
+ * back so their door steps stay off the stones, and the high street's bends end on a house front.
  */
 export const SNOW_LOTS: readonly SnowLot[] = [
   // The arrival square between the two portals.

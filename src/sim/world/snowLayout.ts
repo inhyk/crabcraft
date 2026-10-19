@@ -38,16 +38,15 @@ function spline(ctrl: readonly XZ[], step: number): XZ[] {
 }
 const way = (id: string, width: number, ctrl: readonly XZ[], step = 2.6): FrostWay => ({ id, width, points: spline(ctrl, step) });
 
-/** The aurora ridge's ring of standing stones, which the road runs through on x = 0 (frostThroneLayout.ts RIDGE). */
-export const FROST_RING = { x: 0, z: -34, r: 9.6 } as const;
 /** Where the high street leaves the village and the north road begins. */
-export const FROST_GATE: XZ = [-0.6, 29.6];
+const FROST_GATE: XZ = [-0.6, 29.6];
 
 /**
  * The high street: out of the arrival square, west round the market and the fountain, east again under the chapel's
  * rise, and out through the gate. The north road: out of the gate past the first guide lantern, round the eastern
  * shoulder past the second, back west past the third, and into the ring of standing stones. From the ring the
- * processional way runs straight to the arena gate, as an approach to a throne should.
+ * processional way runs straight to the arena gate, as an approach to a throne should; it enters the aurora
+ * ridge's ring of standing stones on x = 0 (frostThroneLayout.ts RIDGE).
  */
 export const FROST_HIGH_STREET = way('high-street', 7, [[0.6, 80.5], [-1.6, 74.5], [-4.6, 67.5], [-5.2, 60], [-3.1, 53.4], [0.9, 47.2], [3.5, 40.6], [2.6, 34.4], FROST_GATE]);
 export const FROST_NORTH_ROAD = way('north-road', 6.5, [FROST_GATE, [-2.6, 25.2], [-1.6, 19], [3, 12.6], [10.4, 7], [12.6, 0.8], [9.4, -7.8], [2.4, -14.8], [-2.4, -20.4], [-1.2, -24], [0, -26.5]], 2.4);
