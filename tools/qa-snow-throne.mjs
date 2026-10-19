@@ -53,7 +53,10 @@ const inspect=async p=>p.evaluate(async()=>{
  const blockedPoints=Object.entries(Q.SNOW_POINTS).filter(([,[x,z]])=>!laneFree(x,z,4)).map(([n])=>n);
  const storyPoints=Object.entries(Q.SNOW_POINTS).filter(([n])=>/visit|seal/.test(n)).filter(([,[x,z]])=>!free(x,z,1)).map(([n])=>n);
  const disc=[];for(let x=-21;x<=21;x+=1.5)for(let z=-99;z<=-57;z+=1.5)if(Math.hypot(x,z+78)<=21.5&&!free(x,z,.5))disc.push([x,z]);
- const road=[];for(let z=-53;z<=28;z+=.5)for(let x=-3.5;x<=3.5;x+=.5)if(!free(x,z,.3))road.push([x,z]);
+ // The road from the village gate to the arena gate (snowLayout.ts), across its paved width.
+ const P=await import('/src/sim/world/snowLayout.ts'),road=[];
+ for(const wy of P.FROST_ROAD_WAYS)for(let k=1;k<wy.points.length;k++){const [ax,az]=wy.points[k-1],[bx,bz]=wy.points[k],Lk=Math.hypot(bx-ax,bz-az),nx=(bz-az)/Lk,nz=-(bx-ax)/Lk;
+  for(let t=0;t<1;t+=.5/Lk)for(let d=-(wy.width/2-.5);d<=wy.width/2-.5+1e-9;d+=.5){const x=ax+(bx-ax)*t+nx*d,z=az+(bz-az)*t+nz*d;if(!free(x,z,.3))road.push([+x.toFixed(1),+z.toFixed(1)]);}}
  return {throne:root?.userData.throne,prison:prison.userData.prison,sites:sites?.userData.sites,prim,notSolid,blockedPoints,storyPoints,disc:disc.length,discAt:disc.slice(0,4),road:road.length,roadAt:road.slice(0,4),
   throneMeshes:names(root),prisonMeshes:names(prison),siteMeshes:names(sites),prisonName:prison.name,prisonVisible:prison.visible};
 });

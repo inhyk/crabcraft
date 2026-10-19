@@ -8,12 +8,14 @@ import { buildDressing } from './dressing';
 import { buildFoliage } from './foliage';
 import { buildFx } from './fx';
 import { buildFountain } from './fountain';
+import { buildKingsRoad } from './kingsRoad';
 import { loadKit, StaticBatch, trs } from './kit';
 import { GRID, GROVE, LIGHTHOUSE, LOTS, POI_DEFS, SPAWN_POINTS } from './layout';
 import { buildLighthouse } from './lighthouse';
 import { stylise, WORLD_UNIFORMS } from './materials';
 import { blendMood, cloneMood, MOODS, type Mood } from './moods';
 import { createSky, createSkyUniforms } from './sky';
+import { buildSkyline } from './skyline';
 import { createTerrainMaterial, noiseTexture, Terrain } from './terrain';
 import { createWater } from './water';
 import { buildWreck } from './wreck';
@@ -97,6 +99,13 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
   progress(0.7, 'Setting out the market');
   const dressing = buildDressing(village, props, terrain, propBatch, dressBatch, skyU);
   root.add(dressing.group);
+  const kingsRoad = buildKingsRoad(village, terrain, propBatch);
+  root.add(kingsRoad.group);
+  dressing.glows.push(...kingsRoad.glows);
+  dressing.lights.push(...kingsRoad.lights);
+  // Tidecrown on the northern horizon, in its real place; hidden with this root in the other realms.
+  const skyline = buildSkyline(terrain);
+  root.add(skyline.group);
   const doorGlows = town.doorLamps.map((d) => {
     propBatch.add('Lantern_Wall', trs(d.pos.x, d.pos.y, d.pos.z, d.yaw, 0.75));
     return {
@@ -299,6 +308,7 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
     dressing.moonbeam.uniforms.uStrength.value = 0.06 + 0.16 * (1 - mood.sunVis);
     moodMagic = 0.6 + 0.6 * (1 - mood.sunVis);
     moodLamp = 0.55 + 0.45 * mood.lamps;
+    skyline.setNight(THREE.MathUtils.smoothstep(mood.lamps, 1.2, 2.1));
   };
   applyMood();
 
@@ -333,6 +343,7 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
         scene.environment = envRT.texture;
       }
       lighthouse.update(dt, elapsed, camera, mood.lamps);
+      skyline.update(dt, elapsed);
       foliage.update(camera);
       // Particles: pixel scale for point sizes; fireworks only in the celebration mood.
       const pcam = camera as THREE.PerspectiveCamera;
@@ -368,9 +379,11 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
       sun.target.position.copy(focus);
       sun.target.updateMatrixWorld();
     },
-    setBeaconLit(lit) {
+    setBeaconLit(lit, instant = false) {
       beaconOn = lit;
       lighthouse.setLit(lit);
+      // Tidecrown's lantern answers: a few seconds after a live lighting, at once on a restore.
+      skyline.setLit(lit, instant);
     },
     setMood(m, instant = false) {
       moodId = m; target = MOODS[m]; blending = instant ? 1 : 0;
@@ -403,7 +416,7 @@ export const createWorld: CreateWorld = async ({ renderer, scene, quality, onPro
   pois.wreck.position.copy(wreck.gangwayFoot);
   pois.bossArena.position.copy(wreck.arena);
   // Debug info for the dev harness (not part of the World contract).
-  (world as World & { debug?: unknown }).debug = { foliage: foliage.counts, collision: col, lighthouse, setBeamPhase: (p: number) => (lighthouse.phase = p) };
+  (world as World & { debug?: unknown }).debug = { foliage: foliage.counts, collision: col, lighthouse, skyline, kingsRoad: kingsRoad.group, setBeamPhase: (p: number) => (lighthouse.phase = p) };
   return world;
 };
 

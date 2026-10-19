@@ -1,6 +1,6 @@
 // Frostlight ground: the snowed-in cobble streets (frostPaving.ts) and the carved ice arena floor (frostArena.ts)
 // replace the square tile paving and the flat blue disc with its torus rings. Checks the structure, that covers()
-// still means the old layout, that the paving hugs the ground, that the arena floor and its height are unchanged,
+// follows Frostlight's own street plan, that the paving hugs the ground, that the arena floor and its height are unchanged,
 // that every program compiles at both qualities, that the low sun no longer blows the ice out, and zero errors.
 // Writes tmp/qa/snow-ground-*.png.
 import assert from 'node:assert/strict';
@@ -46,8 +46,8 @@ async function blown(p,buf,top=.45){
 const SUN=Math.atan2(-.65,-.72);
 try{
  const p=await load('high');
- const r=await p.evaluate(()=>{
-  const g=window.app.current.game,w=g.world2.fourth,root=w.root,H=(x,z)=>g.world.heightAt(x,z);
+ const r=await p.evaluate(async()=>{
+  const g=window.app.current.game,w=g.world2.fourth,root=w.root,H=(x,z)=>g.world.heightAt(x,z),P=await import('/src/sim/world/snowLayout.ts');
   const pav=root.getObjectByName('world4-snow-paving'),surf=root.getObjectByName('frostlight-paving-surface');
   const ice=root.getObjectByName('frostlight-arena-ice'),rim=root.getObjectByName('frostlight-arena-rim');
   // Nothing of the old placeholder ground may remain: tile paving, a wide cylinder floor, torus rings lying on the
@@ -63,31 +63,39 @@ try{
   });
   pav.traverse(o=>{if(o.isMesh)pavMeshes++;});
   const covers=pav.userData.covers;
-  const on=[[0,93.9],[0,60],[4.25,30],[0,-52.9],[-21.9,38],[21.9,56],[10,74],[-2.2,75.9]].map(([x,z])=>covers(x,z));
-  const off=[[0,94.2],[0,-53.2],[4.4,30],[-22.2,56],[10,76.4],[10,71.6],[12,0]].map(([x,z])=>covers(x,z));
+  // covers() is Frostlight's plan (snowLayout.ts): on every way's stones and kerbs and on the squares, false a step past them.
+  const on=[],off=[];
+  for(const wy of P.FROST_WAYS)for(let k=1;k<wy.points.length;k++){const [ax,az]=wy.points[k-1],[bx,bz]=wy.points[k],L=Math.hypot(bx-ax,bz-az),nx=(bz-az)/L,nz=-(bx-ax)/L,mx=(ax+bx)/2,mz=(az+bz)/2;
+   for(const sgn of [-1,1]){on.push([mx+nx*sgn*(wy.width/2+.2),mz+nz*sgn*(wy.width/2+.2)]);const ox=mx+nx*sgn*(wy.width/2+.45),oz=mz+nz*sgn*(wy.width/2+.45);if(P.frostPavedDist(ox,oz)>.4)off.push([ox,oz]);}}
+  for(const q of P.FROST_PADS)on.push([q.x,q.z]);
+  const end=P.FROST_PROCESSION.points.at(-1);on.push([end[0],end[1]+.1]);off.push([end[0],end[1]-.4],[30,0],[0,10],[0,-10]);
+  const onMiss=on.filter(([x,z])=>!covers(x,z)),offHit=off.filter(([x,z])=>covers(x,z));
   // The surface hugs the rendered ground: never under it, never floating.
   const pos=surf.geometry.attributes.position;let minLift=1e9,maxLift=-1e9;
   for(let i=0;i<pos.count;i++){const l=pos.getY(i)-H(pos.getX(i),pos.getZ(i));minLift=Math.min(minLift,l);maxLift=Math.max(maxLift,l);}
   // Gameplay height inside the arena is untouched.
   let arenaDev=0;for(let rr=0;rr<=21.5;rr+=3.5)for(let i=0;i<16;i++){const a=i/16*Math.PI*2;arenaDev=Math.max(arenaDev,Math.abs(H(Math.sin(a)*rr,-78+Math.cos(a)*rr)-19));}
-  return {old,torus,discs,pavMeshes,on,off,minLift,maxLift,stats:pav.userData.stats,arenaDev,
+  return {old,torus,discs,pavMeshes,onMiss,offHit,onN:on.length,offN:off.length,ways:P.FROST_WAYS.length,pads:P.FROST_PADS.length,segs:P.FROST_WAYS.reduce((n,w)=>n+w.points.length-1,0),minLift,maxLift,stats:pav.userData.stats,arenaDev,
    ice:ice&&{type:ice.geometry.type,radius:ice.geometry.parameters.radius,pos:ice.position.toArray(),shadow:ice.receiveShadow},rim:rim&&{blocks:root.getObjectByName("frostlight-arena-floor").userData.stats.rimBlocks,gate:root.getObjectByName("frostlight-arena-floor").userData.stats.gateBlocks,cast:rim.castShadow},
    floor:root.getObjectByName('frostlight-arena-floor').userData.stats,
    materials:[surf.material.name,ice?.material.name,rim?.material.name]};
  });
  assert.deepEqual(r.old,[],'old tile paving is gone');assert.equal(r.torus,0,'no torus rings left on the arena');assert.equal(r.discs,0,'no flat cylinder arena floor');
  assert.equal(r.pavMeshes,1,'the street network is one surface mesh');
- assert.ok(r.on.every(Boolean),`covers() holds on the paths: ${JSON.stringify(r.on)}`);assert.ok(!r.off.some(Boolean),`covers() is false off them: ${JSON.stringify(r.off)}`);
- assert.equal(r.stats.segments,5);assert.equal(r.stats.freeEnds,8);assert.equal(r.stats.plazas,3);
+ assert.deepEqual(r.onMiss,[],`covers() holds on all ${r.onN} kerb points of the plan`);assert.deepEqual(r.offHit,[],`covers() is false at all ${r.offN} points just past them`);
+ // Every segment of every way and every square is laid; the lanes' far ends and the processional way's end at the
+ // arena lie buried in snow; each lane that leaves a main street gets a swept square at its foot.
+ assert.equal(r.stats.segments,r.segs);assert.equal(r.stats.pads,r.pads);assert.ok(r.stats.maxPerTile<=16,JSON.stringify(r.stats));
+ assert.equal(r.stats.freeEnds,4,JSON.stringify(r.stats));assert.equal(r.stats.plazas,1,JSON.stringify(r.stats));
  assert.ok(r.minLift>=.029&&r.maxLift<.3,`paving sits on the ground: ${r.minLift} .. ${r.maxLift}`);
  assert.ok(r.arenaDev<1e-9,`arena floor height unchanged: ${r.arenaDev}`);
  assert.equal(r.ice.type,'CircleGeometry');assert.ok(Math.abs(r.ice.radius-22.05)<1e-6);assert.deepEqual(r.ice.pos.map(v=>+v.toFixed(3)),[0,19.035,-78]);assert.equal(r.ice.shadow,true);
  assert.equal(r.rim.blocks,38);assert.equal(r.rim.gate,2);
  assert.ok(r.floor.cracks>60&&r.floor.fine>0&&r.floor.dropped<r.floor.gridCells*.01,`the ice holds a crack web, baked for lookup: ${JSON.stringify(r.floor)}`);assert.equal(r.rim.cast,true);
  assert.deepEqual(r.materials,['frostlight-snow-paving','frostlight-arena-ice','frostlight-arena-rim']);
- console.log('PASS ground structure: one cobble surface on the old layout, ice disc and carved rim, no placeholder left',JSON.stringify({stats:r.stats,lift:[+r.minLift.toFixed(3),+r.maxLift.toFixed(3)],floor:r.floor}));
- await play(p,0,50,Math.PI,0);await p.screenshot({path:'tmp/qa/snow-ground-road.png'});
- await play(p,0,40,SUN+Math.PI,SUN);await p.screenshot({path:'tmp/qa/snow-ground-road-sun.png'});
+ console.log('PASS ground structure: one cobble surface on Frostlight\'s own plan, ice disc and carved rim, no placeholder left',JSON.stringify({stats:r.stats,lift:[+r.minLift.toFixed(3),+r.maxLift.toFixed(3)],floor:r.floor}));
+ await play(p,1,47,Math.PI-.3,.3);await p.screenshot({path:'tmp/qa/snow-ground-road.png'});
+ await play(p,2.4,12,SUN+Math.PI,SUN);await p.screenshot({path:'tmp/qa/snow-ground-road-sun.png'});
  await play(p,0,-66,Math.PI,0);await p.screenshot({path:'tmp/qa/snow-ground-arena.png'});
  await play(p,-4,-90,SUN+Math.PI,SUN);await p.screenshot({path:'tmp/qa/snow-ground-arena-sun.png'});
  // Low across the ice into the sun, where the old glossy disc blew 4.5% of the floor out to white.
