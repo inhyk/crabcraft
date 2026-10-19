@@ -168,7 +168,9 @@ if(aR<3.){
 float aFrost=smoothstep(.45,.8,fpNoise(vFaW.xz*.42+3.)*.7+fpNoise(vFaW.xz*.9+5.)*.3)*.45+smoothstep(17.,21.6,aR+fpNoise(aP*.3)*2.)*.35;
 float aStreak=fpNoise(vec2(dot(aP,vec2(.8,.6))*.32,dot(aP,vec2(-.6,.8))*2.1))*.5+.5;
 float aDust=smoothstep(18.4,21.7,aR+fpNoise(aP*.22)*2.6)*1.05+aStreak*.4*smoothstep(10.,20.,aR);
-float aSnow=smoothstep(.56,.64,aDust+fpNoise(aP*1.3)*.14+fpNoise(aP*4.7)*.05);
+// The drift thins out over a hand's width into a grainy fringe of powder (the grain fades before it can alias), not
+// a cut edge with a rim of shade round it.
+float aSnow=smoothstep(.5,.72,aDust+fpNoise(aP*1.3)*.14+fpNoise(aP*4.7)*.05+fpNoise(aP*17.)*.06*(1.-smoothstep(.015,.05,aFoot)));
 // The runes are warm enough to keep their band clear.
 for(int i=0;i<3;i++){float dR=aR-faRings[i];aSnow*=smoothstep(.3,.75,abs(dR));}
 vec3 aCol=mix(aIce,vec3(.6,.7,.78),aFrost);
@@ -187,7 +189,7 @@ roughnessFactor=mix(roughnessFactor,.6,aCut);
 const ICE_NORMAL = /* glsl */ `
 {
   // Snow carries a little height; the ice itself undulates gently.
-  float h=smoothstep(.0,1.,aSnow)*.025+fpNoise(vFaW.xz*.35)*.01;
+  float h=smoothstep(.35,1.,aSnow)*.022+fpNoise(vFaW.xz*.35)*.01;
   vec2 dpx=dFdx(vFaW.xz),dpy=dFdy(vFaW.xz);float dsx=dFdx(h),dsy=dFdy(h),det=dpx.x*dpy.y-dpx.y*dpy.x;
   vec2 g=abs(det)>1e-12?clamp(vec2(dsx*dpy.y-dsy*dpx.y,dpx.x*dsy-dpy.x*dsx)/det,-.4,.4):vec2(0.);
   vec3 nW=inverseTransformDirection(normal,viewMatrix);

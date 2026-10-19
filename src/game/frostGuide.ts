@@ -139,8 +139,10 @@ varying float vDown;
 ${fogPars}
 void main() {
   float r = length(vXY);
-  float e = pow(1.0 / (1.0 + r * r * uLift), 1.5);
-  float a = e * smoothstep(1.0, 0.6, r) * smoothstep(0.22, 0.55, vDown) * uAlpha * vInst * fogKeep(vDepth);
+  // The falloff less its value at the rim, so the light runs out to nothing there instead of ending in a disc.
+  float e1 = pow(1.0 / (1.0 + uLift), 1.5);
+  float e = max(0.0, (pow(1.0 / (1.0 + r * r * uLift), 1.5) - e1) / (1.0 - e1));
+  float a = e * smoothstep(0.22, 0.55, vDown) * uAlpha * vInst * fogKeep(vDepth);
   if (a < 0.002) discard;
   gl_FragColor = vec4(vec3(1.5, 0.92, 0.42) * a, a * 0.5);
 }`;
@@ -269,7 +271,7 @@ export class FrostGuide {
     this.motes.onBeforeRender = moteScale;
 
     // Patch radius PATCH metres (the 2 m plane scaled); uLift is (radius / mote height)^2 for that falloff.
-    this.patchMat = material(patchVert, patchFrag, { uAlpha: { value: 0.42 }, uLift: { value: (PATCH / 0.42) ** 2 } });
+    this.patchMat = material(patchVert, patchFrag, { uAlpha: { value: 0.32 }, uLift: { value: (PATCH / 0.42) ** 2 } });
     this.patches = new THREE.InstancedMesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), this.patchMat, MOTES);
     this.patches.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MOTES * 3), 3);
     this.patches.name = 'frost-guide-patches';
