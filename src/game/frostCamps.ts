@@ -13,6 +13,7 @@ import {OVERLOOK,PROCESSION,RIDGE,ridgeStones,SHELTER} from './frostThroneLayout
 import {boulderGeometry,rockMaterial,type SnowGroundUniforms} from './snowRocks';
 import {cairnStones,clothMaterial,lightPools,type Pool,streamerGeometry} from './frostCairns';
 import {WAY_CAIRNS} from './frostCairnsLayout';
+import {lanternFlame,lanternFlameAt,noteLantern} from './frostLantern';
 
 /*
  * The three places "Charting the Aurora" sends the player, and the way to the throne past the aurora seals:
@@ -58,7 +59,7 @@ export async function frostCamps(opts:{height:Height;ice:THREE.Material;ground:S
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(X,d.normalize()).multiply(new THREE.Quaternion().setFromAxisAngle(X,rand()*6.28)));g.translate((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);out.push(g);};
  const rod=(a:THREE.Vector3,b:THREE.Vector3,r:number,out:THREE.BufferGeometry[])=>{const d=b.clone().sub(a),l=d.length();const g=new THREE.CylinderGeometry(r,r,l,8).rotateZ(-Math.PI/2);
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(X,d.normalize()));g.translate((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);out.push(g);};
- const lantern=(x:number,y:number,z:number,yaw:number,s=.75)=>{const m=trs(x,y,z,yaw,s);kit.add('Lantern_Wall',m,{override:po,castShadow:false});const c=V(0,.55,1.1).applyMatrix4(m);
+ const lantern=(x:number,y:number,z:number,yaw:number,s=.75)=>{const m=trs(x,y,z,yaw,s);kit.add('Lantern_Wall',m,{override:po,castShadow:false});const c=lanternFlame(m);noteLantern(group,m,c);
   flames.push({x:c.x,y:c.y-.12,z:c.z,size:.32*s/.75,cold:false});halos.push({x:c.x,y:c.y,z:c.z,size:2.2*s/.75,color:'#ffb257',power:.6});};
 
  // ---- The hunter's lean-to: posts, beams, a roof of logs under a cap of snow, one side walled, open to the fire.
@@ -252,7 +253,7 @@ export async function frostCamps(opts:{height:Height;ice:THREE.Material;ground:S
   c.dyes.forEach((d,k)=>{const [len,w,droop]=L[k];cloth.push(streamerGeometry(at(gy+3.25-k*.3),len,w,d,c.seed*10+k,droop));});
   const p=at(gy+1.85),dir=V(Math.sin(c.face),0,Math.cos(c.face));p.addScaledVector(dir,.07);
   lantern(p.x,p.y,p.z,c.face,.62);
-  const lc=V(0,.55,1.1).multiplyScalar(.62).applyAxisAngle(V(0,1,0),c.face).add(p);
+  const lc=lanternFlameAt(p.x,p.y,p.z,c.face,.62);
   pools.push({x:lc.x,z:lc.z,r:3,color:'#ff9a46',power:.12});
  }
 

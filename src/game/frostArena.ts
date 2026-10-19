@@ -197,7 +197,13 @@ const ICE_NORMAL = /* glsl */ `
 `;
 
 const ICE_LIGHT = /* glsl */ `#include <lights_fragment_end>
-reflectedLight.directSpecular=min(reflectedLight.directSpecular,vec3(.2));`;
+{
+  // The sun's highlight rolls off softly to .2, scaled as a whole so it keeps the sun's hue: clamped per channel,
+  // the gold glare's edge split into bands (blue clipped first, then green, then red) and read as a rainbow.
+  vec3 s=reflectedLight.directSpecular;float m=max(max(s.r,s.g),s.b);
+  float k=m<.12?m:.12+.08*(1.-exp(-(m-.12)/.08));
+  reflectedLight.directSpecular=s*(k/max(m,1e-5));
+}`;
 
 const ICE_EMISSIVE = /* glsl */ `#include <emissivemap_fragment>
 // The runes burn in the aurora's colours: teal, drifting slowly to violet round each ring.
