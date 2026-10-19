@@ -62,13 +62,14 @@ export class ServerDungeon {
  private pendingStart:number|null=null;
  private built='';
  private outside:ChamberGround|null=null;
+ private ground:ChamberGround|null=null;
  private uiKey='';
  private menuKey='';
  private captain:{unit:Unit;scale:THREE.Vector3}|null=null;
  private lastWarning:{run:string;serial:number}|null=null;
  /** Self coins and XP when this session first saw the run, then what the paid clear brought; all from observed state. */
  private entry:{run:string;coins:number;xp:number}|null=null;
- private cleared:string|null=null;
+ private cleared:{run:string;tier:number}|null=null;
  private paid:{run:string;coins:number;xp:number}|null=null;
  private previous:{coins:number;xp:number}|null=null;
  /** A clear paid while still inside is celebrated with the banner once the party is home. */
@@ -92,7 +93,7 @@ export class ServerDungeon {
  observe(state:GameplayState):void {
   this.state=state;const run=this.run,self=state.self.player;
   if(run)this.inside(run);else this.outsideChamber();
-  this.accountRewards(run,{coins:self.coins,xp:self.xp});
+  this.accountRewards(run,self);
   this.menu.hidden=!!run;if(run&&this.panelOpen)this.close();
   if(this.panelOpen)this.render();
   this.renderStatus();
@@ -139,7 +140,7 @@ export class ServerDungeon {
   if(!this.outside){
    const w=g.world;this.outside={heightAt:w.heightAt,resolveCollision:w.resolveCollision,raycastSolid:w.raycastSolid};
    // Camera rays and any ground query use the chamber floor and wall, as the run Area's own query does.
-   const ground=chamberGround(this.outside);w.heightAt=ground.heightAt;w.resolveCollision=ground.resolveCollision;w.raycastSolid=ground.raycastSolid;
+   const ground=this.ground=chamberGround(this.outside);w.heightAt=ground.heightAt;w.resolveCollision=ground.resolveCollision;w.raycastSolid=ground.raycastSolid;
    g.hud.dialogue.close();
   }
   if(this.built!==key){this.built=key;this.chamber.build(d);this.chamber.resetWarning();this.info(t(`${d.name[0]} · 세 번의 전투를 이겨 내세요!`,`${d.name[1]} · Survive three waves!`));}
@@ -155,7 +156,9 @@ export class ServerDungeon {
  }
  private outsideChamber():void {
   this.chamber.visible=false;this.restoreCaptain();this.lastWarning=null;
-  if(this.outside){const w=this.g.world;w.heightAt=this.outside.heightAt;w.resolveCollision=this.outside.resolveCollision;w.raycastSolid=this.outside.raycastSolid;this.outside=null;
+  if(this.outside){
+   // Put back what was there unless a chapter change already replaced the chamber ground.
+   const w=this.g.world;if(w.heightAt===this.ground?.heightAt){w.heightAt=this.outside.heightAt;w.resolveCollision=this.outside.resolveCollision;w.raycastSolid=this.outside.raycastSolid;}this.outside=this.ground=null;
    const paid=this.homeBanner;this.homeBanner=null;if(paid)this.banner(paid);}
  }
  private banner(paid:{coins:number;xp:number}):void {
@@ -164,14 +167,16 @@ export class ServerDungeon {
  private restoreCaptain():void {const c=this.captain;this.captain=null;if(c)c.unit.rig.root.scale.copy(c.scale);}
  /**
   * Rewards are what the server state shows: self coins and XP from the first observation of a run to the first observation
-  * after its clear in which coins went up, which is where the certified award (with the last wave's kill rewards) lands.
+  * after its clear in which coins went up with the tier's cleared mark set, which is where the certified award (with the last
+  * wave's kill rewards) lands.
   */
- private accountRewards(run:DungeonRunView|null,now:{coins:number;xp:number}):void {
-  const previous=this.previous;this.previous=now;
+ private accountRewards(run:DungeonRunView|null,self:GameplayState['self']['player']):void {
+  const previous=this.previous,now={coins:self.coins,xp:self.xp};this.previous=now;
   if(run&&this.entry?.run!==run.run.runId)this.entry={run:run.run.runId,coins:now.coins,xp:now.xp};
-  if(run?.phase==='clear'&&this.paid?.run!==run.run.runId)this.cleared=run.run.runId;
-  if(!this.cleared||!previous||now.coins<=previous.coins||this.entry?.run!==this.cleared)return;
-  const entry=this.entry,coins=now.coins-entry.coins,xp=now.xp-entry.xp;this.paid={run:this.cleared,coins,xp};this.cleared=null;
+  if(run?.phase==='clear'&&this.paid?.run!==run.run.runId)this.cleared={run:run.run.runId,tier:run.tier};
+  const cleared=this.cleared;
+  if(!cleared||!previous||now.coins<=previous.coins||!self.flags[`dungeonCleared${cleared.tier}`]||this.entry?.run!==cleared.run)return;
+  const entry=this.entry,coins=now.coins-entry.coins,xp=now.xp-entry.xp;this.paid={run:cleared.run,coins,xp};this.cleared=null;
   // Inside, the run banner already shows the result: mark it with sound and light, and keep the big banner for home.
   if(run){this.homeBanner={coins,xp};this.g.audio.sfx('sfx-quest-complete');const self=this.state&&this.ports.unit(this.state.selfRef);if(self)this.g.vfx.levelUp(self);}
   else this.banner({coins,xp});
