@@ -244,7 +244,9 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       () => !stopped && allSlots.has(slot) && slot.area === area && deps.ownership === ownership && !drainedFailedSources.has(slot));
   }
   for (const slot of allSlots) slot.source = sourceAdapter(slot);
-  const publishedConsumed = (c: Connection) => external || p.endingPresentation ? c.publishedConsumed : c.input!.consumedInput;
+  // Retained results wait in c.results until the save round that contains them commits, and ending transitions are held
+  // by their capture binding, so the retained input watermark is the live one; only external rounds hold it back.
+  const publishedConsumed = (c: Connection) => external ? c.publishedConsumed : c.input!.consumedInput;
   const sourceFailed = (slot: Slot) => failedSources.has(slot) || drainedFailedSources.has(slot);
   const json = (c: Connection, value: unknown) => {
     if (c.ws.readyState === WebSocket.OPEN) { const data = JSON.stringify(value); c.ws.send(data); metrics.packets++; metrics.bytesSent += Buffer.byteLength(data); }

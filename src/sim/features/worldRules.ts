@@ -19,7 +19,8 @@ export function createEndingStage(shore:AreaDefinition,finalWorld:AreaDefinition
  return immutable({centre:shore.spawn.position,yaw:shore.spawn.yaw,cast});
 }
 type CancelReason=Parameters<EndingPresentationController['cancel']>[0];
-interface Entry {ref:EntityRef;controller:EndingPresentationController;revision:number;pending:boolean;lock:boolean;combat:number;hp:number}
+/** shown: what the owner last saw before the pending transition; a save round that keeps the world running publishes it until the transition is durable. */
+interface Entry {ref:EntityRef;controller:EndingPresentationController;revision:number;pending:boolean;lock:boolean;combat:number;hp:number;shown:Readonly<EndingObservation>|null}
 interface CaptureBinding {ref:EntityRef;id:string;revision:number}
 export class PersonalEndings {
  private readonly options:EndingIntegrationOptions;
@@ -47,11 +48,11 @@ export class PersonalEndings {
  private dirty(entry:Entry):void {if(entry.revision===Number.MAX_SAFE_INTEGER)throw new Error('Ending transition revision exhausted');entry.revision++;entry.pending=true;}
  cancel(ref:EntityRef,reason:CancelReason):void {
   if(this.requests.has(ref.id)&&sameRef(this.requests.get(ref.id)!,ref))this.requests.delete(ref.id);const entry=this.entry(ref);if(!entry||!this.active(entry))return;
-  entry.controller.cancel(reason);this.unlock(entry);this.dirty(entry);
+  if(!entry.pending)entry.shown=entry.controller.snapshot();entry.controller.cancel(reason);this.unlock(entry);this.dirty(entry);
  }
  forget(ref:EntityRef):void {this.cancel(ref,'retired');if(this.requests.has(ref.id)&&sameRef(this.requests.get(ref.id)!,ref))this.requests.delete(ref.id);if(this.entry(ref)){this.entries.delete(ref.id);this.interrupted.delete(ref.id);}for(const[token,b]of this.captures)if(sameRef(b.ref,ref))this.captures.delete(token);}
  command(ref:EntityRef,command:Extract<PlayerCommand,{kind:'endingControl'}>):boolean {
-  const entry=this.entry(ref);if(!entry||entry.pending||!this.player(ref)||!entry.controller.command(command.id,command.action))return false;
+  const entry=this.entry(ref);if(!entry||entry.pending||!this.player(ref))return false;const shown=entry.controller.snapshot();if(!entry.controller.command(command.id,command.action))return false;entry.shown=shown;
   if(!this.active(entry)||entry.controller.phaseName==='credits')this.unlock(entry);this.dirty(entry);return true;
  }
  /** Fixed stage after pending hits/projectiles, never from snapshot/drain. */
@@ -63,8 +64,8 @@ export class PersonalEndings {
    if(!unit.alive||interruption||unit.hp<entry.hp||unit.lastCombat>entry.combat){this.cancel(entry.ref,!unit.alive?'death':interruption??(unit.hp<entry.hp?'damage':'combat'));continue;}
    entry.hp=unit.hp;
    if(entry.pending)continue;
-   const before=entry.controller.phaseName;if(before!=='credits')entry.controller.step();
-   if(entry.controller.phaseName==='credits'&&before!=='credits'){this.unlock(entry);this.dirty(entry);}
+   const before=entry.controller.phaseName;if(before==='credits')continue;const shown=entry.controller.snapshot();entry.controller.step();
+   if(entry.controller.phaseName==='credits'){entry.shown=shown;this.unlock(entry);this.dirty(entry);}
   }
   for(const ref of this.requests.values()){
    const player=this.player(ref),unit=this.services.getUnit(ref);if(!player||!unit){this.requests.delete(ref.id);continue;}
@@ -78,12 +79,12 @@ export class PersonalEndings {
    const id=JSON.stringify([this.options.incarnation,ref.id,ref.life,++this.serial]);
    const controller=new EndingPresentationController({id,owner:ref,centre:this.options.stage.centre,yaw:this.options.stage.yaw,cast:[{archetype:unit.archetype,appearance},...this.options.stage.cast]});
    this.neutralize(ref);player.state.target=null;player.state.talkTarget=null;player.state.controlsLocked=true;
-   this.entries.set(ref.id,{ref:{...ref},controller,revision:1,pending:true,lock:true,combat:unit.lastCombat,hp:unit.hp});this.requests.delete(ref.id);
+   this.entries.set(ref.id,{ref:{...ref},controller,revision:1,pending:true,lock:true,combat:unit.lastCombat,hp:unit.hp,shown:null});this.requests.delete(ref.id);
   }
   this.interrupted.clear();
  }
  pending():boolean {return [...this.entries.values()].some(e=>e.pending);}
- observation(ref:EntityRef):Readonly<EndingObservation>|null {const entry=this.entry(ref);return this.player(ref)&&entry&&!entry.pending?entry.controller.snapshot():null;}
+ observation(ref:EntityRef):Readonly<EndingObservation>|null {const entry=this.entry(ref);return this.player(ref)&&entry?entry.pending?entry.shown:entry.controller.snapshot():null;}
  bindCapture(captureId:string,ref:EntityRef):void {const entry=this.entry(ref);if(entry?.pending)this.captures.set(captureId,{ref:{...ref},id:entry.controller.id,revision:entry.revision});}
  markCapture(captureId:string):void {const binding=this.captures.get(captureId);this.captures.delete(captureId);if(!binding)return;const entry=this.entry(binding.ref);if(entry&&entry.pending&&entry.revision===binding.revision&&entry.controller.id===binding.id)entry.pending=false;}
  discardCapture(captureId:string):void {this.captures.delete(captureId);}
