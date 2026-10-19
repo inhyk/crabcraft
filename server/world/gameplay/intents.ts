@@ -1,7 +1,7 @@
 import {REASONS} from '../../chat/safety.ts';
 import type { PlayerCommand, PlayerIntent } from '../../../src/sim/types.ts';
 import { copyValue } from '../../../src/sim/events.ts';
-import { LIMITS, bool, catalogValue, choice, clone, decodeClientFrame, encodeMessage, fail, integer, number, object, reference, sameBinding, text } from './protocol.ts';
+import { LIMITS, DUNGEON_RUN_ID, DUNGEON_TIERS, bool, catalogValue, choice, clone, decodeClientFrame, encodeMessage, fail, integer, number, object, reference, sameBinding, text } from './protocol.ts';
 import type { DecodedMessage, GameplayCatalog, WireBinding, WireHeader } from './protocol.ts';
 /** Feature commands are distinct ordered intents; Area validates their gameplay authorization. */
 export type HostCommand=
@@ -12,10 +12,13 @@ export type HostCommand=
  | {kind:'chatPreferences';enabled?:boolean;partyOnly?:boolean}
  | {kind:'chatBlock';target:import('../../../src/sim/types.ts').EntityRef;blocked:boolean}
  | {kind:'chatMute';target:import('../../../src/sim/types.ts').EntityRef;muted:boolean}
- | {kind:'chatReport';target:import('../../../src/sim/types.ts').EntityRef;reason:typeof REASONS[number]};
+ | {kind:'chatReport';target:import('../../../src/sim/types.ts').EntityRef;reason:typeof REASONS[number]}
+ /** Dungeon runs: the leader starts one for the party, members join the party's running run, the leader (or anyone once it ended) returns it. */
+ | {kind:'dungeonStart';tier:import('../../../src/sim/data/dungeons.ts').DungeonTier}
+ | {kind:'dungeonJoin'|'dungeonReturn';run:string};
 export type EndingControlCommand=Extract<PlayerCommand,{kind:'endingControl'}>;
 export type GameplayCommand=PlayerCommand|HostCommand;
-export const HOST_COMMANDS:readonly string[]=['partyCreate','partyJoin','partyLeave','partyPvp','encounterLeave','chatSay','chatPreferences','chatBlock','chatMute','chatReport'];
+export const HOST_COMMANDS:readonly string[]=['partyCreate','partyJoin','partyLeave','partyPvp','encounterLeave','chatSay','chatPreferences','chatBlock','chatMute','chatReport','dungeonStart','dungeonJoin','dungeonReturn'];
 export interface GameplayInput extends Omit<PlayerIntent,'commands'> {readonly commands:readonly GameplayCommand[]}
 export interface InputPacket {binding:WireBinding;intent:GameplayInput}
 const axis=(v:unknown)=>{number(v);if(v< -1||v>1)fail('axis out of range');};
@@ -43,6 +46,8 @@ export function validateCommand(value:unknown,catalog:GameplayCatalog,area:strin
   case 'chatReport':object(c,{kind,target:reference,reason:choice(...REASONS)});break;
   case 'partyJoin':object(c,{kind,code:v=>{if(typeof v!=='string'||! /^[0-9A-F]{6}$/.test(v))fail('invalid party code');}});break;
   case 'partyPvp':object(c,{kind,enabled:bool});break;
+  case 'dungeonStart':object(c,{kind,tier:choice(...DUNGEON_TIERS)});break;
+  case 'dungeonJoin':case 'dungeonReturn':object(c,{kind,run:v=>{if(typeof v!=='string'||!DUNGEON_RUN_ID.test(v))fail('invalid dungeon run');}});break;
   case 'boat':object(c,{kind,command:v=>object(v,{action:choice('board','leave','call','drive'),throttle:axis,steer:axis})});break;
   case 'village':object(c,{kind,mode:choice('hide','tag','stop')});break;
   default:fail('unknown command');

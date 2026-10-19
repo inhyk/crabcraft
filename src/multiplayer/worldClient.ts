@@ -88,6 +88,11 @@ export class WorldClient {
   private status: WorldConnectionState = 'idle';
   private current: GameplayState | null = null;
   private queueInfo: { world: string; position: number } | null = null;
+  /**
+   * The last error control on this socket. The host closes the socket right after an error that ends the session, so the
+   * close reports it; a denied command (party, encounter, travel, dungeon) leaves the socket open and the next message clears it.
+   */
+  private closing: { code: string; retryable: boolean } | null = null;
   private resolveConnect: (() => void) | null = null;
   private rejectConnect: ((error: Error) => void) | null = null;
 
@@ -158,7 +163,7 @@ export class WorldClient {
       socket.addEventListener('message', event => {
         if (this.active(generation, socket)) this.receive((event as MessageEvent).data);
       });
-      socket.addEventListener('close', () => { if (this.active(generation, socket)) this.fail('disconnected', true); });
+      socket.addEventListener('close', () => { if (this.active(generation, socket)) { const closing = this.closing; this.fail(closing?.code ?? 'disconnected', closing?.retryable ?? true); } });
       socket.addEventListener('error', () => { if (this.active(generation, socket)) this.fail('transport', true); });
     } catch {
       if (this.active(generation)) this.fail('connection', true);
@@ -190,10 +195,11 @@ export class WorldClient {
       const header = this.receiver.header;
       if (header) this.acknowledge(header);
     } catch { this.clearFragmentTimer(); this.recover('gap'); return; }
+    this.closing = null;
     if (result.kind === 'control') {
       const control = result.control;
       this.options.onControl?.(clone(control));
-      if (control.type === 'error') this.fail(control.code, control.retryable);
+      if (control.type === 'error') this.closing = { code: control.code, retryable: control.retryable };
       else if (control.type === 'restarting') this.fail('restarting', true);
       return;
     }
@@ -288,7 +294,7 @@ export class WorldClient {
     this.options.resetInput?.();
   }
   private stopAttempt(reason: string): void {
-    this.generation++; this.clearTimer(); this.clearFragmentTimer(); this.abort?.abort(); this.abort = null;
+    this.generation++; this.clearTimer(); this.clearFragmentTimer(); this.abort?.abort(); this.abort = null; this.closing = null;
     const socket = this.socket; this.socket = null; socket?.close();
     this.rejectConnect?.(new Error(reason)); this.resolveConnect = this.rejectConnect = null;
     this.binding = null; this.receiver = null; this.current = null; this.queueInfo = null; this.clearInput(); this.options.onReset?.(reason);

@@ -21,13 +21,13 @@ import { setQuestChapter } from '../../src/sim/data/quests.ts';
 
 import { createCoreCharacterCodec } from '../../src/sim/persistence.ts';
 import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/variants.ts';
-import { createGameplayProtocol, GameplayReceiver, FragmentAssembler, encodeMessage, projectObservationExtras } from './gameplay/protocol.ts';
+import { createGameplayProtocol, GameplayReceiver, FragmentAssembler, encodeMessage, projectObservationExtras, WIRE_SCHEMA_REVISION } from './gameplay/protocol.ts';
 import { WorldClient } from '../../src/multiplayer/worldClient.ts';
 import { encodeInput } from './gameplay/intents.ts';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, ms = 5000) { const end = performance.now() + ms; while (!check()) { if (performance.now() > end) throw new Error('condition timeout'); await delay(10); } }
-let cluster, pool, loaded, codec, store, gameplayCatalog;
+let cluster, pool, loaded, codec, store, gameplayCatalog, dungeonCatalog;
 let accountNumber = 0;
 const origin = 'http://localhost:5260';
 const appearance = { race: 'human', sex: 'male', classId: 'warrior', shell: 0, crest: 0, led: 0, name: 'HostHero' };
@@ -48,7 +48,7 @@ before(async () => {
   const spawn = loaded.get('w1').publicDefinition.spawn;
   codec = createCoreCharacterCodec({ identities: [{ classId: 'warrior', archetype: 'human' }, { classId: 'mage', archetype: 'human' }], freshLocation: { ...spawn.position, yaw: spawn.yaw } });
   store = new CharacterStore(pool, codec);
-  gameplayCatalog = createGameplayCatalog(loaded);
+  gameplayCatalog = createGameplayCatalog(loaded); dungeonCatalog = createGameplayCatalog(loaded, { dungeons: [35, 50] });
 });
 after(async () => { await pool?.end(); cluster?.stop(); });
 
@@ -71,10 +71,10 @@ async function runtime(options = {}) {
     const x = spawn.x + 3 + (k % 3) * 1.5, z = spawn.z + Math.floor(k / 3) * 1.5;
     return { ...base.publicDefinition.enemies[0], ...(k ? { id: base.publicDefinition.enemies[0].id.replace(/:\d+$/, `:${k}`) } : {}), home: { x, y: base.query.heightAt(x, z), z }, wanderRadius: 0 };
   }) } });
-  const failures = [];
+  const failures = [], catalog = options.catalog ?? (options.dungeons ? dungeonCatalog : gameplayCatalog);
   let host;
   try { host = createActualWorldHost({ admission, characters: options.characters ?? store, worlds, codec, ownership, dungeonCompletions: options.dungeons ? new DungeonCompletionStore(pool) : undefined, outcomes: options.withoutOutcomes ? undefined : options.ledger ? options.outcomes ?? new DurableOutcomeStore(pool,codec,{planOutcomePage}) : options.outcomes, chat: options.chat ? new WorldChatService(pool) : undefined,
-    gameplay: { catalog: options.catalog??gameplayCatalog, create: () => createGameplayProtocol(options.catalog??gameplayCatalog, { verify: options.verify ?? true }), verifyObservations: options.verify ?? true },
+    gameplay: { catalog, create: () => createGameplayProtocol(catalog, { verify: options.verify ?? true }), verifyObservations: options.verify ?? true },
     policies: { authTimeoutMs: options.capacity ? 2000 : 500, inputTimeoutMs: 250, reconnectGraceMs: options.grace ?? 2000, sessionRevalidateMs: 100,
       checkpointIntervalMs: options.checkpointIntervalMs ?? 1000, maxConnections: options.capacity ? 110 : 16, maxConnectionsPerIp: options.capacity ? 110 : 16, maxWaiting: options.capacity ? 110 : 16,
       maxAuthFrameBytes: 1024, maxFrameBytes: 65536, maxBufferedBytes: 8 * 1024 * 1024, maxQueuedInputs: 128,
@@ -95,7 +95,7 @@ async function runtime(options = {}) {
   const server = createServer(); server.on('upgrade', host.handleUpgrade); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const url = `ws://127.0.0.1:${server.address().port}/world`;
   if(!options.deferReady)try{await host.ready();}catch(error){await host.shutdown(1000);server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await ownership.release();throw error;}
-  return { host, admission, ownership, url, failures, async close() {
+  return { host, admission, ownership, url, failures, catalog, async close() {
     const result = await host.shutdown(3000); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await ownership.release();
     return result;
   } };
@@ -107,7 +107,7 @@ async function client(rt, c, auth = true) {
     try {
       if (!binary) {
         const value = JSON.parse(bytes.toString()); bot.controls.push(value);
-        if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.receiver = new GameplayReceiver(binding, gameplayCatalog); bot.tap = new FragmentAssembler(binding); }
+        if (value.type === 'world-bound') { const { type: _type, ...binding } = value; bot.binding = binding; bot.sequence = 0; bot.receiver = new GameplayReceiver(binding, rt.catalog); bot.tap = new FragmentAssembler(binding); }
       } else {
         bot.packets++; const captured=bot.tap.accept(bytes,performance.now()/1000);if(captured)bot.messages.push({kind:captured.kind,header:captured.header,control:captured.kind===17?captured.payload:null});const result = bot.receiver.accept(bytes, performance.now() / 1000);
         if (result?.kind === 'snapshot') { bot.state = result.state; bot.events.push(...result.events); bot.results.push(...result.results); }
@@ -117,8 +117,8 @@ async function client(rt, c, auth = true) {
     } catch (error) { bot.errors.push(error.message); }
   });
   await once(ws, 'open');
-  if (auth) ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.record.characterId, ...(gameplayCatalog.wireSchemaRevision===undefined?{}:{schemaRevision:gameplayCatalog.wireSchemaRevision}) }));
-  bot.send = (commands, held = {}) => ws.send(encodeInput({ binding: bot.binding, intent: { seq: ++bot.sequence, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, ...held, commands } }, gameplayCatalog));
+  if (auth) ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.record.characterId, ...(rt.catalog.wireSchemaRevision===undefined?{}:{schemaRevision:rt.catalog.wireSchemaRevision}) }));
+  bot.send = (commands, held = {}) => ws.send(encodeInput({ binding: bot.binding, intent: { seq: ++bot.sequence, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, ...held, commands } }, rt.catalog));
   return bot;
 }
 // Retained saves are batched once per checkpointIntervalMs while the world keeps running, so progress a client already sees
@@ -790,12 +790,12 @@ for (const ledger of [true,false]) test(`${ledger?'':'retained saves: '}actual e
 
 
 test('ending schema handshake rejects missing or mismatched peers before consuming the reusable ticket or attaching a character', {timeout:10000},async()=>{
- await assert.rejects(runtime({catalog:{...gameplayCatalog,wireSchemaRevision:2}}),/schema revision/);
+ await assert.rejects(runtime({catalog:{...gameplayCatalog,wireSchemaRevision:WIRE_SCHEMA_REVISION+1}}),/schema revision/);
  const c=await character(),rt=await runtime({ledger:true,ending:true}),bots=[];let consumes=0;const consume=rt.admission.consume.bind(rt.admission);rt.admission.consume=(...args)=>{consumes++;return consume(...args);};const ticket=rt.admission.issue(c.binding,origin).ticket;
  try{
-  for(const revision of [undefined,null,2]){const bot=await client(rt,c,false);bots.push(bot);bot.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,...(revision===undefined?{}:{schemaRevision:revision})}));await until(()=>bot.controls.some(v=>v.code==='protocol-schema'));await until(()=>bot.ws.readyState===WebSocket.CLOSED);assert.equal(consumes,0);assert.equal(rt.host.stats().activeActors,0);}
-  const unknown=await client(rt,c,false);bots.push(unknown);unknown.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,schemaRevision:1,accountId:c.binding.accountId}));await until(()=>unknown.controls.some(v=>v.code==='auth-frame'));assert.equal(consumes,0);
-  const matching=await client(rt,c,false);bots.push(matching);matching.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,schemaRevision:1}));await ready(rt,matching);assert.equal(consumes,1);assert.equal(rt.host.stats().activeActors,1);assert.deepEqual(rt.failures,[]);
+  for(const revision of [undefined,null,WIRE_SCHEMA_REVISION-1,WIRE_SCHEMA_REVISION+1]){const bot=await client(rt,c,false);bots.push(bot);bot.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,...(revision===undefined?{}:{schemaRevision:revision})}));await until(()=>bot.controls.some(v=>v.code==='protocol-schema'));await until(()=>bot.ws.readyState===WebSocket.CLOSED);assert.equal(consumes,0);assert.equal(rt.host.stats().activeActors,0);}
+  const unknown=await client(rt,c,false);bots.push(unknown);unknown.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,schemaRevision:WIRE_SCHEMA_REVISION,accountId:c.binding.accountId}));await until(()=>unknown.controls.some(v=>v.code==='auth-frame'));assert.equal(consumes,0);
+  const matching=await client(rt,c,false);bots.push(matching);matching.ws.send(JSON.stringify({type:'authenticate',ticket,characterId:c.record.characterId,schemaRevision:WIRE_SCHEMA_REVISION}));await ready(rt,matching);assert.equal(consumes,1);assert.equal(rt.host.stats().activeActors,1);assert.deepEqual(rt.failures,[]);
  }finally{for(const bot of bots)bot.ws.close();await rt.close();}
  const off=await runtime();let legacy;try{legacy=await client(off,c,false);legacy.ws.send(JSON.stringify({type:'authenticate',ticket:off.admission.issue(c.binding,origin).ticket,characterId:c.record.characterId}));await ready(off,legacy);assert.deepEqual(off.failures,[]);}finally{legacy?.ws.close();await off.close();}
 });

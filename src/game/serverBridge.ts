@@ -3,6 +3,7 @@ import type {Game} from './game';
 import {Unit} from './unit';
 import {createMotionController} from '../motion/provider';
 import {ServerSocial} from './serverSocial';
+import {ServerDungeon} from './serverDungeon';
 import {WorldClient} from '../multiplayer/worldClient.ts';
 import {WorldPresentation} from '../multiplayer/worldPresentation.ts';
 import {WorldView,worldActorKey} from '../multiplayer/worldView.ts';
@@ -25,6 +26,8 @@ export class ServerGameBridge {
  readonly social:ServerSocial;
  readonly view:WorldView;
  readonly presentation:WorldPresentation;
+ /** Expeditions, present only when the server's catalog advertises dungeon tiers. */
+ readonly dungeon:ServerDungeon|null;
  private incomplete=new Set<string>();
  private readonly hostedGates:ReadonlySet<string>;
  private readonly hostedBosses:ReadonlySet<string>;
@@ -69,14 +72,17 @@ export class ServerGameBridge {
    const unit=new Unit(name,actor.kind,actor.reaction,handle.rig,createMotionController(handle.rig));unit.npcId=actor.npcId??'';unit.bindWorldView(handle.readState);this.labelUnit(unit,actor);this.units.set(worldActorKey(actor.ref),unit);game.units.push(unit);
    if(this.state&&worldActorKey(this.state.selfRef)===worldActorKey(actor.ref))this.bindSelf(unit,actor);
   },onRemoved:ref=>{const key=worldActorKey(ref),u=this.units.get(key);if(u){game.units=game.units.filter(x=>x!==u);this.units.delete(key);if(this.self===u)this.self=null;}},onError:()=>this.notice('Cannot load server actor'),onEvents:records=>this.presentation.events(records)});
+  this.dungeon=catalog.dungeons?.length?new ServerDungeon({game,tiers:catalog.dungeons,command:command=>this.command(command),unit:ref=>this.unit(ref)}):null;
   this.client=new WorldClient({catalog,resetInput:()=>game.input.reset(),onState:(state,code)=>{this.status.hidden=state==='admitted'&&!!this.self;if(!this.status.hidden)this.status.textContent=code==='protocol-schema'?t('게임 버전이 달라요. 페이지를 새로고침해 주세요.','Client/server versions differ. Reload the page.'):state==='authRequired'?'Google login required':`Server: ${state}`;},onSnapshot:(state,events,results)=>{
-   this.state=state;game.achievements?.observe(state.self.achievements);game.boats?.observe(state.features.boat,state.selfRef);game.time=state.time;game.beaconLit=state.features.environment.beacon;game.world.setBeaconLit(game.beaconLit);game.world2.observeChapter(Number(state.world.slice(1)) as 1|2|3|4|5|6);this.presentation.commit(state);this.view.commit(state,events,results);const unit=this.units.get(worldActorKey(state.selfRef));if(unit&&unit!==this.self)this.bindSelf(unit,state.actors.find(a=>worldActorKey(a.ref)===worldActorKey(state.selfRef))!);if(this.self){game.hud.targetFrame.setUnit(this.unit(state.self.player.target));game.hud.tracker.update(game.quests);game.hud.showDeath(!this.self.alive);}this.status.hidden=this.client.state==='admitted'&&!!this.self;
-  },onEvents:(events,results)=>this.view.events(events,results),onReset:()=>{this.social.reset();this.party=null;this.requestedChannel=null;this.state=null;this.self=null;this.presentation.reset();this.view.reset();game.hud.targetFrame.setUnit(null);game.hud.dialogue.close();for(const p of this.transactions.values())p.reject(new Error('Connection changed before confirmation'));this.transactions.clear();},onControl:control=>{this.social.observe(control);if(control.type==='party'){this.party=control.state;if(this.partyPanel?.open)this.renderParty();}},onRejected:code=>game.hud.messages.error(code)});
+   this.state=state;game.achievements?.observe(state.self.achievements);game.boats?.observe(state.features.boat,state.selfRef);game.time=state.time;game.beaconLit=state.features.environment.beacon;game.world.setBeaconLit(game.beaconLit);game.world2.observeChapter(Number(state.world.slice(1)) as 1|2|3|4|5|6);this.presentation.commit(state);this.view.commit(state,events,results);const unit=this.units.get(worldActorKey(state.selfRef));if(unit&&unit!==this.self)this.bindSelf(unit,state.actors.find(a=>worldActorKey(a.ref)===worldActorKey(state.selfRef))!);if(this.self){game.hud.targetFrame.setUnit(this.unit(state.self.player.target));game.hud.tracker.update(game.quests);game.hud.showDeath(!this.self.alive);}this.dungeon?.observe(state);this.status.hidden=this.client.state==='admitted'&&!!this.self;
+  },onEvents:(events,results)=>this.view.events(events,results),onReset:()=>{this.social.reset();this.dungeon?.reset();this.party=null;this.requestedChannel=null;this.state=null;this.self=null;this.presentation.reset();this.view.reset();game.hud.targetFrame.setUnit(null);game.hud.dialogue.close();for(const p of this.transactions.values())p.reject(new Error('Connection changed before confirmation'));this.transactions.clear();},onControl:control=>{this.social.observe(control);if(control.type==='party'){this.party=control.state;this.dungeon?.observeParty(control.state);if(this.partyPanel?.open)this.renderParty();}
+   // A denied command keeps the connection; an error the host closes on also ends the socket, which WorldClient reports.
+   else if(control.type==='error'&&!this.dungeon?.error(control.code)&&/^(party|encounter|travel)-/.test(control.code))game.hud.messages.error(t('지금은 할 수 없어요.','You cannot do that right now.'));},onRejected:code=>game.hud.messages.error(code)});
   game.hud.dialogue.onClose=()=>this.command({kind:'talkEnd'});
   void this.client.connect(character).catch(error=>this.notice(error instanceof Error?error.message:'Connection failed'));
  }
  get ready():boolean{return !!this.self&&!!this.state;}
- get locked():boolean {const round=this.state?.features.village,ref=this.state?.selfRef,same=(r:EntityRef|null)=>!!r&&!!ref&&worldActorKey(r)===worldActorKey(ref);return !this.ready||this.client.state!=='admitted'||this.social.open||!!this.partyPanel?.open||!!this.state?.self.player.controlsLocked||this.seated||!!round&&round.phase!=='done'&&(round.caught.some(same)||round.phase==='ready'&&same(round.seeker));}
+ get locked():boolean {const round=this.state?.features.village,ref=this.state?.selfRef,same=(r:EntityRef|null)=>!!r&&!!ref&&worldActorKey(r)===worldActorKey(ref);return !this.ready||this.client.state!=='admitted'||this.social.open||!!this.partyPanel?.open||!!this.dungeon?.panelOpen||!!this.state?.self.player.controlsLocked||this.seated||!!round&&round.phase!=='done'&&(round.caught.some(same)||round.phase==='ready'&&same(round.seeker));}
  get seated():boolean{return !!this.state?.features.boat?.seats.some(ref=>ref&&worldActorKey(ref)===worldActorKey(this.state!.selfRef));}
  get villagePlaying():boolean{return !!this.state?.features.village&&this.state.features.village.phase!=='done';}
  concealMap(unit:Unit):boolean{return this.villagePlaying&&this.state?.features.village?.mode==='hide'&&(unit.kind==='townsfolk'||unit.kind==='player'&&unit!==this.self);}
@@ -99,7 +105,7 @@ export class ServerGameBridge {
   if(actor.kind==='scrapling'||actor.kind==='scavenger'||actor.kind==='jellyfish'){unit.name=ENEMY_STATS[actor.kind].name;if(chapter===2)unit.name=actor.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');else if(chapter===3)unit.name=actor.kind==='scrapling'?t('잿빛 해안 약탈자','Ash Coast Raider'):t('황혼 성채 파수병','Twilight Sentinel');else if(chapter===4)unit.name=actor.kind==='scrapling'?t('서리 껍질 약탈자','Frost-shell Raider'):t('빙하 성채 파수병','Glacial Sentinel');else if(chapter===5)unit.name=actor.kind==='scrapling'?t('잿불 껍질 약탈자','Ember-shell Raider'):t('흑요석 유적 파수병','Obsidian Sentinel');else if(chapter===6)unit.name=actor.kind==='scrapling'?t('가시덩굴 약탈자','Thornvine Raider'):t('하늘숲 유적 수호자','Skybloom Guardian');return;}
   unit.name=unit.rig.spec.name;
  }
- refreshLanguage():void {for(const unit of this.units.values()){const actor=unit.ref&&this.view.actor(unit.ref)?.readState();if(actor)this.labelUnit(unit,actor);}if(this.partyPanel?.open)this.renderParty();}
+ refreshLanguage():void {for(const unit of this.units.values()){const actor=unit.ref&&this.view.actor(unit.ref)?.readState();if(actor)this.labelUnit(unit,actor);}if(this.partyPanel?.open)this.renderParty();this.dungeon?.refreshLanguage();}
  private notice(text:string):void{this.status.hidden=false;this.status.textContent=text;}
  command(command:GameplayCommand):boolean{if(command.kind==='bossChallenge'&&(command.profile==='ember'||command.profile==='sky')&&!this.hostedBosses.has(command.profile))return false;return this.client.command(command);}
  private unit(ref:EntityRef|null|undefined):Unit|null{return ref?this.units.get(worldActorKey(ref))??null:null;}
@@ -156,5 +162,5 @@ export class ServerGameBridge {
  }
  forge(slot:EquipmentSlot,operation:'buy'|'upgrade',npcId='pip'):Promise<EquipmentResult>{const request=++this.requestId;return new Promise((resolve,reject)=>{if(this.transactions.size>=32||!this.command({kind:operation==='buy'?'forgeBuy':'forgeUpgrade',npcId,slot,request})){reject(new Error('Server command unavailable'));return;}this.transactions.set(request,{resolve,reject});});}
  diagnostics(){return {state:this.client.state,header:this.state?.header,world:this.state?.world,self:this.state?.self,actorCount:this.units.size,incomplete:[...this.incomplete],input:this.client.inputWatermarks,position:this.self?.pos.toArray()};}
- dispose():void {if(this.disposed)return;this.disposed=true;this.client.dispose();this.presentation.dispose();this.view.dispose();this.status.remove();this.social.dispose();this.partyPanel?.remove();for(const p of this.transactions.values())p.reject(new Error('World view disposed'));this.transactions.clear();}
+ dispose():void {if(this.disposed)return;this.disposed=true;this.client.dispose();this.presentation.dispose();this.view.dispose();this.status.remove();this.social.dispose();this.dungeon?.dispose();this.partyPanel?.remove();for(const p of this.transactions.values())p.reject(new Error('World view disposed'));this.transactions.clear();}
 }

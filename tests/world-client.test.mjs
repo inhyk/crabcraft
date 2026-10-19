@@ -236,3 +236,29 @@ test('party host commands occupy exclusive frames while ordinary prefix and suff
 test('frontier queue notices are supported before binding and unknown worlds still close',async()=>{
  for(const world of ['w5','w6','w7']){const controls=[],f=clientFixture(actualWorld(),{onControl:c=>controls.push(c)});try{const promise=f.client.connect('owned-character');promise.catch(()=>{});await tickAsync();const socket=f.sockets.at(-1);socket.open();socket.receive(JSON.stringify({type:'queued',world,position:2}));await tickAsync();if(world==='w7')assert.equal(socket.closed,true);else{assert.equal(socket.closed,false);assert.equal(f.client.state,'queued');}}finally{f.client.dispose();}}
 });
+
+test('a denied host command arrives as an error control without ending the session; an error the host closes on still ends it with its code', async () => {
+  for (const followUp of ['close', 'snapshot-then-close']) {
+    const controls = [], states = [], f = clientFixture(actualWorld(), { onControl: control => controls.push(control), onState: (state, code) => states.push([state, code]) });
+    try {
+      const socket = await f.admitted(); let sequence = 2;
+      const control = value => deliver(socket, encodeControl({ ...f.world.binding, sequence: sequence++, tick: 0, acceptedInput: 0, consumedInput: 0 }, value));
+      control({ type: 'error', code: 'dungeon-level', retryable: false });
+      assert.equal(f.client.state, 'admitted'); assert.deepEqual(controls.at(-1), { type: 'error', code: 'dungeon-level', retryable: false });
+      assert.equal(f.client.command({ kind: 'dungeonStart', tier: 35 }), true, 'commands are still accepted');
+      if (followUp === 'close') { control({ type: 'error', code: 'session-expired', retryable: false }); socket.close(); assert.deepEqual(states.at(-1), ['authRequired', 'session-expired']); }
+      else { deliver(socket, f.world.packets(sequence, { full: true })); assert.equal(f.client.state, 'admitted'); socket.close(); assert.deepEqual(states.at(-1), ['closed', 'disconnected'], 'a later drop is not reported as the old denial'); }
+    } finally { f.client.dispose(); }
+  }
+});
+
+test('a server that closes an older schema with protocol-schema ends the attempt without retrying', async () => {
+  const states = [], f = clientFixture(actualWorld(), { maxReconnects: 5, onState: (state, code) => states.push([state, code]) });
+  try {
+    const connecting = f.client.connect('owned-character').catch(error => error); await tickAsync();
+    const socket = f.sockets.at(-1); socket.open();
+    socket.receive(JSON.stringify({ type: 'error', code: 'protocol-schema', retryable: false })); socket.close();
+    assert.match((await connecting).message, /protocol-schema/); assert.deepEqual(states.at(-1), ['authRequired', 'protocol-schema']);
+    await new Promise(resolve => setTimeout(resolve, 50)); assert.equal(f.sockets.length, 1, 'no reconnect loop'); assert.equal(f.requests.length, 1, 'no second ticket');
+  } finally { f.client.dispose(); }
+});
