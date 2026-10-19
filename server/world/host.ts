@@ -1311,8 +1311,11 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     if (stopped) return;
     try {
       if (deps.ownership.closed.aborted) failClosed();
+      // The turn that finishes a publication does no world work: ticks start at the next timer turn. Ticking right after the
+      // last slice put about three times as many young-generation collections inside Area.step (local 100-bot runs: 125-130
+      // ticks over 10 ms against 26), which is what the tick p99 budget measures.
       if (publication) continuePublication();
-      if (!publication) pumpWorld();
+      else pumpWorld();
     } catch (error) { if (publication) endPublication(false); deps.onFailure?.('pump', error); unresolved++; failClosed(); }
     // An open publication or due catch-up ticks continue right after pending IO callbacks; otherwise the loop interval applies.
     if (publication || behind) slice = setImmediate(pump); else timer = setTimeout(pump, p.loopIntervalMs);
