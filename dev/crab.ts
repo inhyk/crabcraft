@@ -2,7 +2,8 @@
 // enemies, the LED expression sheet, a 25-crab perf scene, the browser FK check and Tidecrown's
 // hero statues.
 //   /dev/crab.html?view=hero|lineup|silhouette|enemies|faces|perf|fk|statues  (&clean hides the UI)
-//   view=statues: &cam=wide|low|<race> picks the camera, &sil draws black silhouettes on white.
+//   view=statues: &cam=wide|low|<race>[:front|:side|:back] picks the camera, &sil draws black
+//   silhouettes on white.
 import '../src/ui/kit.css';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -525,6 +526,8 @@ function statueMetrics(s: THREE.Object3D): Record<string, unknown> {
     footGap: Math.round((s.userData.footGap as number) * 1000) / 1000,
     lodLegs: s.userData.lodLegs,
     scale: r2(s.userData.scale as number),
+    visor: Math.round(s.userData.visor as number),
+    buried: s.userData.buried,
     meshes,
     calls,
     tris,
@@ -626,14 +629,17 @@ async function statueRow(): Promise<void> {
   const plinthMat = new THREE.MeshStandardMaterial({ color: '#c4b69c', roughness: 0.9 });
   const block = new THREE.BoxGeometry(8, 8, 8);
   const cap = new THREE.BoxGeometry(8.6, 0.6, 8.6);
-  for (const x of xs) {
+  const plinths = xs.map((x) => {
+    const p = new THREE.Group();
     for (const [g, y] of [[block, 4], [cap, 7.7], [cap, 0.3]] as const) {
       const m = new THREE.Mesh(g, plinthMat);
       m.position.set(x, y, 0);
       m.castShadow = m.receiveShadow = true;
-      scene.add(m);
+      p.add(m);
     }
-  }
+    scene.add(p);
+    return p;
+  });
   const crab = await createCrab(spec('human'));
   crab.root.position.set(xs[0] + 4.2, 0, 19.5);
   crab.root.rotation.y = Math.PI - 0.35;
@@ -654,14 +660,37 @@ async function statueRow(): Promise<void> {
       cam.lookAt(xs[0] + 0.5, 10.5, 0);
     },
   };
+  // Per statue: <race> (three-quarter, head height), <race>:front (from the bridge floor, looking up),
+  // <race>:side and <race>:back (alone, the others hidden).
+  const solo = (i: number) => list.forEach((s, j) => (s.visible = plinths[j].visible = j === i || i < 0));
   list.forEach((s, i) => {
-    presets[s.userData.race as string] = () => {
+    const race = s.userData.race as string;
+    presets[race] = () => {
       cam.fov = 32;
       cam.position.set(xs[i] + 18, 17, 48);
       cam.lookAt(xs[i], 16.5, 0);
     };
+    presets[`${race}:front`] = () => {
+      cam.fov = 50;
+      cam.position.set(xs[i] - 4, 1.6, 26);
+      cam.lookAt(xs[i], 15, 0);
+    };
+    presets[`${race}:side`] = () => {
+      solo(i);
+      cam.fov = 32;
+      cam.position.set(xs[i] + 52, 14, 0);
+      cam.lookAt(xs[i], 14, 0);
+    };
+    presets[`${race}:back`] = () => {
+      solo(i);
+      cam.fov = 32;
+      cam.position.set(xs[i] - 14, 18, -44);
+      cam.lookAt(xs[i], 15, 0);
+    };
   });
   window.__statueCam = (name: string) => {
+    solo(-1);
+    crab.root.visible = !name.includes(':');
     (presets[name] ?? presets.wide)();
     cam.updateProjectionMatrix();
     for (const el of document.querySelectorAll<HTMLElement>('.statue-label')) el.style.visibility = name === 'wide' ? '' : 'hidden';

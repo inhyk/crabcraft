@@ -2,7 +2,7 @@
 // Each statue is a dressed crab (race gear, crest, class weapon) posed on the rig's own joints
 // (feet planted and claws raised by a small solver), frozen into static geometry (full-detail
 // shell, far-LOD mechanics, the gear meshes) and split into three draws whose materials every
-// statue shares: weathered limestone, bronze-gold accents, and the visor with faintly glowing eyes.
+// statue shares: clean pale limestone, warm bronze accents, and the visor with faintly glowing eyes.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { createCrab, HOME } from '../../crab/index';
@@ -46,7 +46,7 @@ interface StatueDef {
   crestExtra?: number;
   /** base_link height (live shell heights) and nose-up pitch (radians). */
   body: { y: number; pitch: number };
-  /** Walking feet on the ground, (x, z) in live shell heights. */
+  /** Walking feet on the ground, (x, z) in live shell heights; pulled in to the plinth top's corners. */
   feet: { LM: V2; RM: V2; LR: V2; RR: V2 };
   clawL: ClawGoal;
   clawR: ClawGoal;
@@ -55,64 +55,79 @@ interface StatueDef {
 /**
  * Bridge order: human, orc, dwarf, undead, night elf, tauren. Every statue lifts something high
  * (blade, staff, lantern) so its height comes from the gesture, which keeps the body small enough
- * for its feet, gathered under it, to stand on the plinth (`feet` are pulled in to fit).
+ * for its feet, planted wide at the plinth top's corners, to stand on it. The shells are pitched
+ * nose-up so the visors look out over the bridge, and the claws hold their pieces beside the body
+ * rather than out in front, so the weight sits over the feet.
  */
 const STATUES: StatueDef[] = [
   {
-    // Knight: reared up, sword raised upright before him, shield up at the shoulder.
+    // Knight: reared up, great sword raised upright at his side, great shield up at the shoulder.
     race: 'human', sex: 'male', classId: 'warrior', crest: 0,
-    body: { y: 0.95, pitch: 0.25 },
-    feet: { LM: [0.55, 0.2], RM: [-0.55, 0.2], LR: [0.5, -0.55], RR: [-0.5, -0.55] },
-    clawR: { aim: [-0.1, 0.9, -0.4], axis: 'y', reach: [-0.25, 1, 0.6], jaw: 0.1 },
-    clawL: { aim: [-0.1, 1, 0.1], axis: 'hinge', face: [0.15, 0.05, 1], reach: [0.6, 0.1, 1], extend: 0.85, jaw: -0.1 },
+    body: { y: 0.95, pitch: 0.42 },
+    feet: { LM: [0.9, 0.45], RM: [-0.9, 0.45], LR: [0.9, -0.55], RR: [-0.9, -0.55] },
+    clawR: { aim: [0.32, 0.95, 0.05], axis: 'y', reach: [-0.95, 0.35, 0.3], extend: 0.8, jaw: 0.1 },
+    clawL: { aim: [-0.1, 1, 0.1], axis: 'hinge', face: [0.4, 0.05, 1], reach: [1, 0.15, 0.45], extend: 0.85, jaw: -0.1 },
   },
   {
     // Orc: both claws flung up and out in a roar, blade swung in over its head, shield high.
     race: 'orc', sex: 'male', classId: 'warrior', crest: 0,
-    body: { y: 0.9, pitch: 0.25 },
-    feet: { LM: [0.6, 0.22], RM: [-0.6, 0.22], LR: [0.52, -0.55], RR: [-0.52, -0.55] },
+    body: { y: 0.9, pitch: 0.42 },
+    feet: { LM: [0.9, 0.45], RM: [-0.9, 0.45], LR: [0.9, -0.55], RR: [-0.9, -0.55] },
     clawR: { aim: [0.55, 0.8, 0.2], axis: 'y', reach: [-0.8, 0.6, 0.2], jaw: 0.5 },
     clawL: { aim: [-0.5, 0.8, 0.3], axis: 'hinge', face: [1, 0.25, 0.6], reach: [0.8, 0.55, 0.25], jaw: -0.45 },
   },
   {
     // Dwarf: squat and broad, sword at rest on the shoulder, shield braced at its side.
     race: 'dwarf', sex: 'male', classId: 'warrior', crest: 0,
-    body: { y: 0.85, pitch: 0.2 },
-    feet: { LM: [0.6, 0.22], RM: [-0.6, 0.22], LR: [0.52, -0.6], RR: [-0.52, -0.6] },
-    clawR: { aim: [0.65, 0.55, -0.5], axis: 'y', reach: [-0.4, 0.5, 1], extend: 0.75, jaw: 0.05 },
+    body: { y: 1.0, pitch: 0.34 },
+    feet: { LM: [0.9, 0.45], RM: [-0.9, 0.45], LR: [0.9, -0.55], RR: [-0.9, -0.55] },
+    clawR: { aim: [0.65, 0.55, -0.5], axis: 'y', reach: [-0.7, 0.5, 0.5], extend: 0.75, jaw: 0.05 },
     clawL: { aim: [-0.1, 1, -0.2], axis: 'hinge', face: [0.6, 0, 0.8], reach: [1, -0.15, 0.3], extend: 0.85, jaw: -0.05 },
   },
   {
     // Undead: hunched under the hood, lantern lifted over its head, hymnal held before it.
     race: 'undead', sex: 'male', classId: 'priest', crest: 0,
-    body: { y: 0.92, pitch: -0.2 },
-    feet: { LM: [0.68, 0.05], RM: [-0.68, 0.05], LR: [0.5, -0.55], RR: [-0.5, -0.55] },
+    body: { y: 0.82, pitch: -0.04 },
+    feet: { LM: [0.9, 0.45], RM: [-0.9, 0.45], LR: [0.9, -0.55], RR: [-0.9, -0.55] },
     clawR: { aim: [0.3, 0.9, -0.25], axis: 'y', reach: [-0.45, 1, 0.45], extend: 0.95, jaw: 0.1 },
-    clawL: { aim: [0, 1, 0], axis: 'hinge', face: [0, 0.6, 1], reach: [0.35, 0, 1], extend: 0.75, jaw: -0.1 },
+    clawL: { aim: [0, 1, 0], axis: 'hinge', face: [0.2, 0.5, 1], reach: [0.6, 0.2, 0.7], extend: 0.7, jaw: -0.1 },
   },
   {
     // Night elf: tall on straight legs, staff raised to the moon, the other claw open to the sky.
     race: 'nightelf', sex: 'female', classId: 'mage', crest: 1, crestExtra: 2,
-    body: { y: 1.0, pitch: 0.45 },
-    feet: { LM: [0.5, 0.15], RM: [-0.5, 0.15], LR: [0.45, -0.45], RR: [-0.45, -0.45] },
-    clawR: { aim: [-0.15, 0.85, -0.45], axis: 'y', reach: [-0.3, 1, 0.5], jaw: 0.1 },
+    body: { y: 1.0, pitch: 0.59 },
+    feet: { LM: [0.9, 0.45], RM: [-0.9, 0.45], LR: [0.9, -0.55], RR: [-0.9, -0.55] },
+    clawR: { aim: [-0.1, 1, -0.15], axis: 'y', reach: [-0.5, 1, 0.3], jaw: 0.1 },
     clawL: { aim: [0.5, 0.85, 0.2], axis: 'jaw', reach: [0.5, 1, 0.3], jaw: -0.7 },
   },
   {
     // Tauren: broad and raised under the great horns, lantern staff upright at its side like a totem.
     race: 'tauren', sex: 'male', classId: 'priest', crest: 0,
-    body: { y: 0.95, pitch: 0.3 },
-    feet: { LM: [0.55, 0.2], RM: [-0.55, 0.2], LR: [0.5, -0.55], RR: [-0.5, -0.55] },
-    clawR: { aim: [0, 1, 0], axis: 'y', reach: [-1, 0, 0.3], jaw: 0.1 },
-    clawL: { aim: [0, 1, 0], axis: 'hinge', face: [0.3, 0.5, 1], reach: [0.75, -0.1, 0.8], extend: 0.85, jaw: -0.1 },
+    body: { y: 0.95, pitch: 0.47 },
+    feet: { LM: [0.9, 0.45], RM: [-0.9, 0.45], LR: [0.9, -0.55], RR: [-0.9, -0.55] },
+    clawR: { aim: [0, 1, 0], axis: 'y', reach: [-1, 0.5, 0.2], jaw: 0.1 },
+    clawL: { aim: [0, 1, 0], axis: 'hinge', face: [0.3, 0.5, 1], reach: [0.9, 0.1, 0.5], extend: 0.85, jaw: -0.1 },
   },
 ];
+
+/**
+ * Statues exaggerate: the held pieces are carved larger than the game's in-hand scale (a great
+ * sword, a great shield), scaled around the point the claw grips so the grip stays in the jaw
+ * (weapon frame, robot metres: the shield's handle and the hymnal's back sit out along the jaw).
+ */
+const HELD: Record<string, { scale: number; grip: V3 }> = {
+  sword: { scale: 1.8, grip: [0, 0, 0] },
+  shield: { scale: 1.8, grip: [0, 0, 0.022] },
+  staff: { scale: 1.6, grip: [0, 0, 0] },
+  lantern: { scale: 1.8, grip: [0, 0, 0] },
+  hymnal: { scale: 1.8, grip: [0, 0, 0.022] },
+};
 
 // ------------------------------------------------------------------------------------------
 // Materials, shared by all six statues.
 
-const STONE = '#d9cfb8';
-const BRONZE = '#b8913f';
+const STONE = '#e6d8bc';
+const BRONZE = '#bf8e3e';
 const EYE = '#53f2e4';
 /** Eye texture spots for the visor glass (dark) and glowing gear (lantern glass, staff orb). */
 const VISOR_UV: V2 = [0.03, 0.06];
@@ -131,18 +146,18 @@ function statueMaterials(): StatueMaterials {
   const stone = new THREE.MeshStandardMaterial({
     name: 'statue-limestone',
     color: STONE,
-    roughness: 0.86,
+    roughness: 0.9,
     metalness: 0,
     map: grain,
     bumpMap: grain,
-    bumpScale: 2,
+    bumpScale: 1.3,
     vertexColors: true,
   });
   const bronze = new THREE.MeshStandardMaterial({
     name: 'statue-bronze',
     color: BRONZE,
-    roughness: 0.36,
-    metalness: 0.8,
+    roughness: 0.34,
+    metalness: 0.82,
     vertexColors: true,
   });
   const eye = new THREE.MeshStandardMaterial({
@@ -157,6 +172,11 @@ function statueMaterials(): StatueMaterials {
   materials = { stone, bronze, eye };
   return materials;
 }
+
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
 
 /** Tileable lattice value noise with period `p` cells across the texture. */
 function tileNoise(size: number, p: number, seed: number): Float32Array {
@@ -185,41 +205,38 @@ function tileNoise(size: number, p: number, seed: number): Float32Array {
   return out;
 }
 
-/** Pale limestone grain: soft mottling, a fine tooth, scattered pits and faint bedding lines. */
+/** Clean pale limestone: a soft cloud, a fine speckle (dark and light grains) and faint warm veins. */
 function limestoneTexture(size: number): THREE.Texture {
-  const oct = [4, 8, 16, 32, 64].map((p, i) => tileNoise(size, p, 11 + i * 31));
+  const oct = [4, 8, 16, 32].map((p, i) => tileNoise(size, p, 11 + i * 31));
   const fine = tileNoise(size, 128, 97);
-  const warp = tileNoise(size, 4, 501);
+  const warp = [tileNoise(size, 4, 501), tileNoise(size, 8, 733)];
   const data = new Uint8Array(size * size * 4);
   for (let i = 0; i < size * size; i++) {
-    const y = Math.floor(i / size);
-    const m = oct[0][i] * 0.4 + oct[1][i] * 0.3 + oct[2][i] * 0.18 + oct[3][i] * 0.08 + oct[4][i] * 0.04;
-    // Bedding: thin darker lines that wander with the warp (period-safe: integer cycles).
-    const bed = Math.abs(Math.sin(((y / size) * 6 + warp[i] * 0.6) * Math.PI));
-    let l = 0.84 + (m - 0.5) * 0.3 + (fine[i] - 0.5) * 0.14 - (bed < 0.05 ? (0.05 - bed) * 1.6 : 0);
-    l = Math.max(0, Math.min(1, l));
-    data[i * 4] = Math.round(l * 255);
-    data[i * 4 + 1] = Math.round(l * (0.985 + (oct[1][i] - 0.5) * 0.02) * 255);
-    data[i * 4 + 2] = Math.round(l * (0.95 + (oct[0][i] - 0.5) * 0.06) * 255);
+    const x = (i % size) / size;
+    const y = Math.floor(i / size) / size;
+    const cloud = oct[0][i] * 0.45 + oct[1][i] * 0.3 + oct[2][i] * 0.17 + oct[3][i] * 0.08;
+    // Veins: thin lines on a warped diagonal field (integer cycles across the tile keep it seamless),
+    // fading in and out along their length.
+    const field = Math.sin((2 * x + 3 * y + warp[0][i] * 1.1 + warp[1][i] * 0.3) * Math.PI * 2);
+    const vein = (1 - smooth(0, 0.06, Math.abs(field))) * smooth(0.45, 0.75, oct[1][i]);
+    const l = 0.9 + (cloud - 0.5) * 0.14 + (fine[i] - 0.5) * 0.08 - vein * 0.1;
+    data[i * 4] = Math.round(Math.min(1, l) * 255);
+    data[i * 4 + 1] = Math.round(Math.min(1, l - vein * 0.012) * 255);
+    data[i * 4 + 2] = Math.round(Math.min(1, l * (0.985 + (oct[0][i] - 0.5) * 0.03) - vein * 0.03) * 255);
     data[i * 4 + 3] = 255;
   }
-  // Pits: small dark dots, wrapped at the edges.
+  // Speckle: one- and two-pixel grains, mostly a little darker, some a little lighter, wrapped.
   let s = 7;
   const rnd = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) & 0xffff) / 0xffff;
-  for (let k = 0; k < size * 1.6; k++) {
-    const cx = rnd() * size;
-    const cy = rnd() * size;
-    const r = 0.6 + rnd() * 1.3;
-    const depth = 0.55 + rnd() * 0.3;
-    for (let dy = -2; dy <= 2; dy++)
-      for (let dx = -2; dx <= 2; dx++) {
-        const d = Math.hypot(dx, dy) / r;
-        if (d > 1) continue;
-        const x = (Math.floor(cx) + dx + size) % size;
-        const y = (Math.floor(cy) + dy + size) % size;
-        const j = (y * size + x) * 4;
-        const f = 1 - (1 - depth) * (1 - d * d);
-        for (let c = 0; c < 3; c++) data[j + c] = Math.round(data[j + c] * f);
+  for (let k = 0; k < size * 3; k++) {
+    const cx = Math.floor(rnd() * size);
+    const cy = Math.floor(rnd() * size);
+    const f = rnd() < 0.7 ? 0.8 + rnd() * 0.1 : 1.04 + rnd() * 0.04;
+    const r = rnd() < 0.75 ? 0 : 1;
+    for (let dy = 0; dy <= r; dy++)
+      for (let dx = 0; dx <= r; dx++) {
+        const j = (((cy + dy) % size) * size + ((cx + dx) % size)) * 4;
+        for (let c = 0; c < 3; c++) data[j + c] = Math.min(255, Math.round(data[j + c] * f));
       }
   }
   const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
@@ -391,7 +408,7 @@ class Poser {
    * weight of the sideways error against the height error). A right leg starts
    * from its left twin's mirrored angles (every leg joint flips sign), so both bend the same way.
    */
-  foot(leg: Leg, target: V3, footprint = 0.15): number {
+  foot(leg: Leg, target: V3, footprint = 0.15, starts = 6): number {
     const tip = this.rig.linkNode(`${leg}_foot_tip_link`);
     const joints = [0, 1, 2].map((k) => jointIndex(`${leg}_J${k}_joint`));
     const limb = this.rig.linkNode(`${leg}_hip_link`);
@@ -404,7 +421,7 @@ class Poser {
       joints.forEach((i, k) => this.set(i, -this.q[twin[k]]));
       return this.solve(limb, joints, residual);
     }
-    return this.solveFrom(limb, joints, residual, 6, leg.charCodeAt(0) * 31 + leg.charCodeAt(1));
+    return this.solveFrom(limb, joints, residual, starts, leg.charCodeAt(0) * 31 + leg.charCodeAt(1));
   }
 
   claw(side: 'L' | 'R', goal: ClawGoal): number {
@@ -582,8 +599,10 @@ function sourceTriangles(s: BodySource): number[] {
   return tris;
 }
 
-/** Room left between a foot's tip and the plinth edge, world units (the pad reaches a little past it). */
-const FOOT_MARGIN = 0.9;
+/** Border left between the feet's pads and the plinth top's edge, world units. */
+const PLINTH_BORDER = 0.15;
+/** Height above the ground within which a foot counts as standing on it, world units. */
+const FOOT_BAND = 0.25;
 
 /** Most triangles one statue may have. */
 const TRIANGLE_BUDGET = 58000;
@@ -665,37 +684,172 @@ function bakeRig(rig: JumperRig, body: BodySource[]): Record<Bucket, Piece[]> {
   return out;
 }
 
-/**
- * Lowest (or highest) point, world units, of what rides on one link (skinned body and the gear on
- * that link), or of the whole posed crab when `link` is null.
- */
-function extremeY(rig: JumperRig, t: CrabTemplate, body: BodySource[], link: string | null, highest = false): number {
+/** Every vertex (world space) of what rides on the given links (skinned body and gear), or of the whole posed crab. */
+function eachVertex(rig: JumperRig, t: CrabTemplate, body: BodySource[], links: string[] | null, fn: (v: THREE.Vector3) => void): void {
   rig.root.updateMatrixWorld(true);
-  const bone = link ? t.linkByName.get(link)!.bone : -1;
+  const bones = links && new Set(links.map((l) => t.linkByName.get(l)!.bone));
   const mats = rig.bones.map((b, i) => new THREE.Matrix4().multiplyMatrices(b.matrixWorld, rig.skeleton.boneInverses[i]));
   const v = new THREE.Vector3();
-  let best = highest ? -Infinity : Infinity;
-  const take = (y: number) => (best = highest ? Math.max(best, y) : Math.min(best, y));
   for (const src of body) {
     const pa = src.geo.getAttribute('position');
     const si = src.geo.getAttribute('skinIndex');
     for (let i = 0; i < pa.count; i++) {
       const b = si.getX(i);
-      if ((link && b !== bone) || !src.keep(b)) continue;
-      take(v.fromBufferAttribute(pa, i).applyMatrix4(mats[b]).y);
+      if ((bones && !bones.has(b)) || !src.keep(b)) continue;
+      fn(v.fromBufferAttribute(pa, i).applyMatrix4(mats[b]));
     }
   }
-  const node = link ? rig.linkNode(link) : null;
+  const nodes = links && new Set(links.map((l) => rig.linkNode(l)));
   for (const g of rig.gearMeshes) {
-    if (node && g.parent !== node) continue;
+    if (nodes && !nodes.has(g.parent!)) continue;
     g.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh || !visibleInTree(mesh)) return;
       const pa = mesh.geometry.getAttribute('position');
-      for (let i = 0; i < pa.count; i++) take(v.fromBufferAttribute(pa, i).applyMatrix4(mesh.matrixWorld).y);
+      for (let i = 0; i < pa.count; i++) fn(v.fromBufferAttribute(pa, i).applyMatrix4(mesh.matrixWorld));
     });
   }
+}
+
+/** Lowest (or highest) point, world units, of what rides on one link, or of the whole posed crab when `link` is null. */
+function extremeY(rig: JumperRig, t: CrabTemplate, body: BodySource[], link: string | null, highest = false): number {
+  let best = highest ? -Infinity : Infinity;
+  eachVertex(rig, t, body, link ? [link] : null, (v) => (best = highest ? Math.max(best, v.y) : Math.min(best, v.y)));
   return best;
+}
+
+/** What a foot stands on: its calf's vertices below `low`, world units. */
+function padBox(rig: JumperRig, t: CrabTemplate, body: BodySource[], leg: Leg, low: number): THREE.Box3 {
+  const box = new THREE.Box3();
+  eachVertex(rig, t, body, [`${leg}_calf_link`], (v) => v.y < low && box.expandByPoint(v));
+  return box;
+}
+
+/** Degrees the visor glass faces above the horizon (its mean normal). */
+function visorPitch(rig: JumperRig): number {
+  const face = rig.face.mesh;
+  face.updateWorldMatrix(true, false);
+  const na = face.geometry.getAttribute('normal');
+  const n = new THREE.Vector3();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < na.count; i++) n.add(v.fromBufferAttribute(na, i));
+  n.applyMatrix3(new THREE.Matrix3().getNormalMatrix(face.matrixWorld)).normalize();
+  return THREE.MathUtils.radToDeg(Math.asin(n.y));
+}
+
+/**
+ * Share of each held piece's vertices buried inside the rest of the statue (the claw holding it
+ * left out), the check that the enlarged pieces never run through the body. The statue becomes
+ * a voxel solid: cells its triangles touch, the outside flood-filled from the border, and what is
+ * left is inside; a vertex in a touched cell only grazes the surface and does not count.
+ */
+function buriedHeld(rig: JumperRig, t: CrabTemplate, body: BodySource[], vox: number): Record<string, number> {
+  rig.root.updateMatrixWorld(true);
+  const mats = rig.bones.map((b, i) => new THREE.Matrix4().multiplyMatrices(b.matrixWorld, rig.skeleton.boneInverses[i]));
+  const held = rig.gearMeshes.filter((g) => g.parent?.name.startsWith('socket:claw'));
+  const out: Record<string, number> = {};
+  for (const side of ['L', 'R'] as const) {
+    const pieces = held.filter((g) => g.parent!.name === `socket:claw${side}`);
+    if (!pieces.length) continue;
+    const claw = new Set([`${side}F_palm_link`, `${side}F_finger_link`].map((n) => t.linkByName.get(n)!.bone));
+    const tris: number[] = [];
+    const v = new THREE.Vector3();
+    for (const src of body) {
+      const pa = src.geo.getAttribute('position');
+      const si = src.geo.getAttribute('skinIndex');
+      const idx = sourceTriangles(src);
+      for (let k = 0; k < idx.length; k += 3) {
+        if (claw.has(si.getX(idx[k]))) continue;
+        for (let c = 0; c < 3; c++) {
+          const b = si.getX(idx[k + c]);
+          v.fromBufferAttribute(pa, idx[k + c]).applyMatrix4(mats[b]);
+          tris.push(v.x, v.y, v.z);
+        }
+      }
+    }
+    for (const g of rig.gearMeshes) {
+      if (pieces.includes(g)) continue;
+      g.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || !visibleInTree(m)) return;
+        const pa = m.geometry.getAttribute('position');
+        const ix = m.geometry.index;
+        const n = ix ? ix.count : pa.count;
+        for (let k = 0; k < n; k++) {
+          v.fromBufferAttribute(pa, ix ? ix.getX(k) : k).applyMatrix4(m.matrixWorld);
+          tris.push(v.x, v.y, v.z);
+        }
+      });
+    }
+    const box = new THREE.Box3();
+    for (let i = 0; i < tris.length; i += 3) box.expandByPoint(v.set(tris[i], tris[i + 1], tris[i + 2]));
+    const o = box.min.clone().subScalar(vox * 2);
+    const nx = Math.ceil((box.max.x - o.x) / vox) + 3;
+    const ny = Math.ceil((box.max.y - o.y) / vox) + 3;
+    const nz = Math.ceil((box.max.z - o.z) / vox) + 3;
+    // 0 unknown, 1 surface, 2 outside.
+    const grid = new Uint8Array(nx * ny * nz);
+    const cell = (x: number, y: number, z: number) => {
+      const i = Math.floor((x - o.x) / vox);
+      const j = Math.floor((y - o.y) / vox);
+      const k = Math.floor((z - o.z) / vox);
+      return i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz ? -1 : (k * ny + j) * nx + i;
+    };
+    for (let i = 0; i < tris.length; i += 9) {
+      const e = Math.max(
+        Math.hypot(tris[i + 3] - tris[i], tris[i + 4] - tris[i + 1], tris[i + 5] - tris[i + 2]),
+        Math.hypot(tris[i + 6] - tris[i], tris[i + 7] - tris[i + 1], tris[i + 8] - tris[i + 2]),
+        Math.hypot(tris[i + 6] - tris[i + 3], tris[i + 7] - tris[i + 4], tris[i + 8] - tris[i + 5]),
+      );
+      const steps = Math.min(80, Math.ceil(e / (vox * 0.5)));
+      for (let a = 0; a <= steps; a++)
+        for (let b = 0; b <= steps - a; b++) {
+          const u = a / steps;
+          const w = b / steps;
+          const c = cell(
+            tris[i] + (tris[i + 3] - tris[i]) * u + (tris[i + 6] - tris[i]) * w,
+            tris[i + 1] + (tris[i + 4] - tris[i + 1]) * u + (tris[i + 7] - tris[i + 1]) * w,
+            tris[i + 2] + (tris[i + 5] - tris[i + 2]) * u + (tris[i + 8] - tris[i + 2]) * w,
+          );
+          if (c >= 0) grid[c] = 1;
+        }
+    }
+    const stack = new Int32Array(grid.length);
+    let top = 0;
+    stack[top++] = 0;
+    grid[0] = 2;
+    while (top) {
+      const c = stack[--top];
+      const i = c % nx;
+      const j = Math.floor(c / nx) % ny;
+      const k = Math.floor(c / (nx * ny));
+      for (const [di, dj, dk, d] of [[1, 0, 0, 1], [-1, 0, 0, -1], [0, 1, 0, nx], [0, -1, 0, -nx], [0, 0, 1, nx * ny], [0, 0, -1, -nx * ny]]) {
+        const ii = i + di;
+        const jj = j + dj;
+        const kk = k + dk;
+        if (ii < 0 || jj < 0 || kk < 0 || ii >= nx || jj >= ny || kk >= nz || grid[c + d]) continue;
+        grid[c + d] = 2;
+        stack[top++] = c + d;
+      }
+    }
+    for (const g of pieces) {
+      let all = 0;
+      let inside = 0;
+      g.traverse((ob) => {
+        const m = ob as THREE.Mesh;
+        if (!m.isMesh || !visibleInTree(m)) return;
+        const pa = m.geometry.getAttribute('position');
+        for (let k = 0; k < pa.count; k++) {
+          v.fromBufferAttribute(pa, k).applyMatrix4(m.matrixWorld);
+          const c = cell(v.x, v.y, v.z);
+          all++;
+          if (c >= 0 && grid[c] === 0) inside++;
+        }
+      });
+      out[g.userData.id as string] = Math.round((inside / Math.max(1, all)) * 1000) / 1000;
+    }
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------------------------------
@@ -824,11 +978,6 @@ function vnoise(x: number, y: number, z: number): number {
   return s;
 }
 
-const smooth = (a: number, b: number, x: number) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-
 const fbm = (x: number, y: number, z: number) => vnoise(x, y, z) * 0.55 + vnoise(x * 2.1, y * 2.1, z * 2.1) * 0.3 + vnoise(x * 4.3, y * 4.3, z * 4.3) * 0.15;
 
 function weather(geo: THREE.BufferGeometry, occ: Float32Array, height: number, kind: 'stone' | 'bronze', seed: number): void {
@@ -837,7 +986,7 @@ function weather(geo: THREE.BufferGeometry, occ: Float32Array, height: number, k
   const col = new Float32Array(p.count * 3);
   // Verdigris relative to the bronze base colour (linear), so vertex colour times material colour lands on it.
   const base = new THREE.Color(BRONZE);
-  const pat = new THREE.Color('#4f8f74');
+  const pat = new THREE.Color('#5e9a7c');
   const ratio = [pat.r / base.r, pat.g / base.g, pat.b / base.b];
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i);
@@ -845,22 +994,21 @@ function weather(geo: THREE.BufferGeometry, occ: Float32Array, height: number, k
     const z = p.getZ(i);
     const ny = n.getY(i);
     const o = occ[i];
-    const ao = 1 - Math.min(1, o * 1.5) * 0.8;
-    const up = 0.86 + 0.14 * Math.min(1, y / (height * 0.4));
-    const face = 1 + Math.max(0, ny) * 0.07 - Math.max(0, -ny) * 0.16;
     const m = fbm(x * 0.32 + seed, y * 0.32, z * 0.32);
     if (kind === 'stone') {
-      // Mottled limestone: bleached on top, darker in the folds, underneath, down the rain streaks
-      // on the steep faces, and in a few weathered patches.
-      const streak = fbm(x * 0.9 + seed, y * 0.07, z * 0.9);
-      const rain = 1 - 0.16 * smooth(0.42, 0.72, streak) * (1 - Math.abs(ny));
-      const patch = smooth(0.55, 0.78, fbm(x * 0.11, y * 0.11 + seed, z * 0.11));
-      const tone = (0.8 + m * 0.4) * ao * up * face * rain * (1 - 0.14 * patch);
-      const warm = 0.03 * (fbm(x * 0.6, y * 0.6 + seed, z * 0.6) - 0.5) + 0.03 * patch;
-      col.set([tone * (1 + warm), tone * (1 + warm * 0.4), tone * (1 - warm * 1.6)], i * 3);
+      // Clean limestone: open faces stay pale, the carving's crevices and undersides go dark and a
+      // little warm so it still reads under a low sun.
+      const crease = smooth(0.03, 0.42, o);
+      const ao = 1 - 0.85 * crease;
+      const up = 0.93 + 0.07 * Math.min(1, y / (height * 0.4));
+      const face = 1 + Math.max(0, ny) * 0.04 - Math.max(0, -ny) * 0.12;
+      const tone = (0.95 + (fbm(x * 0.22, y * 0.22 + seed, z * 0.22) - 0.5) * 0.16) * ao * up * face;
+      const warm = 0.12 * crease;
+      col.set([tone * (1 + warm * 0.25), tone, tone * (1 - warm)], i * 3);
     } else {
-      const pv = Math.min(1, Math.max(0, o * 1.6 + (m - 0.5) * 0.7 + Math.max(0, ny) * 0.15 - 0.12)) * 0.75;
-      const tone = (0.8 + m * 0.35) * (1 - Math.min(1, o * 1.35) * 0.55);
+      // Warm bronze; a hint of green patina only down in the recesses.
+      const pv = smooth(0.25, 0.7, o) * (0.35 + 0.3 * m);
+      const tone = (0.9 + m * 0.2) * (1 - smooth(0.2, 0.8, o) * 0.45);
       col.set([tone * (1 + (ratio[0] - 1) * pv), tone * (1 + (ratio[1] - 1) * pv), tone * (1 + (ratio[2] - 1) * pv)], i * 3);
     }
   }
@@ -896,6 +1044,10 @@ interface BakedStatue {
   footGap: number;
   /** World units per live shell height in this statue. */
   scale: number;
+  /** Degrees the visor faces above the horizon. */
+  visor: number;
+  /** Dev builds: share of each held piece's vertices buried in the body (0: none run through it). */
+  buried: Record<string, number> | null;
   stone: THREE.BufferGeometry;
   bronze: THREE.BufferGeometry;
   eye: THREE.BufferGeometry;
@@ -915,6 +1067,13 @@ async function carve(d: StatueDef, t: CrabTemplate, seed: number): Promise<Baked
       rig.gearMeshes.push(g);
     }
   }
+  for (const g of rig.gearMeshes) {
+    const h = HELD[g.userData.id as string];
+    if (!h || !g.parent?.name.startsWith('socket:')) continue;
+    const grip = new THREE.Vector3(...h.grip).multiply(g.scale).applyQuaternion(g.quaternion);
+    g.position.addScaledVector(grip, 1 - h.scale);
+    g.scale.multiplyScalar(h.scale);
+  }
   let gearTris = 0;
   for (const g of rig.gearMeshes)
     g.traverse((o) => {
@@ -933,25 +1092,50 @@ async function carve(d: StatueDef, t: CrabTemplate, seed: number): Promise<Baked
   p.claw('L', d.clawL);
   p.claw('R', d.clawR);
   const scale = STATUE_HEIGHT / (extremeY(rig, t, parts, null, true) / unit);
-  const half = (STATUE_PLINTH / 2 - FOOT_MARGIN) / scale;
+  // Feet: the stance pushed out to the plinth top's corners, then each foot pulled in until its pad
+  // stands on the top inside a small border (a pad reaches past its tip by a leg-dependent amount).
   const zs = LEGS.map((l) => d.feet[l][1]);
   const zc = (Math.min(...zs) + Math.max(...zs)) / 2;
+  const edge = STATUE_PLINTH / 2 - PLINTH_BORDER;
+  // First guess: the pads reach about 0.6 past the tips.
+  const h0 = (edge - 0.6) / scale;
   const feet = {} as Record<Leg, V3>;
   for (const l of LEGS) {
     const [x, z] = d.feet[l];
-    feet[l] = [Math.sign(x) * Math.min(Math.abs(x), half), 0, zc + Math.max(-half, Math.min(half, z - zc))];
+    feet[l] = [Math.sign(x) * Math.min(Math.abs(x), h0), 0, zc + Math.max(-h0, Math.min(h0, z - zc))];
   }
-  // Later passes aim each tip link so the foot's lowest point, not the tip, meets the ground: for a
-  // settled pose that point sits a fixed way below the tip.
-  for (let pass = 0; pass < 4; pass++) {
-    for (const leg of LEGS) {
-      if (pass) feet[leg][1] = p.pos(rig.linkNode(`${leg}_foot_tip_link`)).y - extremeY(rig, t, parts, `${leg}_calf_link`) / unit;
-      p.foot(leg, feet[leg], pass < 3 ? 0.15 : 0.04);
+  let pads = new THREE.Box3();
+  for (let fit = 0; fit < 4; fit++) {
+    // Later passes aim each tip link so the foot's lowest point, not the tip, meets the ground: for a
+    // settled pose that point sits a fixed way below the tip.
+    for (let pass = 0; pass < 4; pass++) {
+      for (const leg of LEGS) {
+        if (pass) feet[leg][1] = p.pos(rig.linkNode(`${leg}_foot_tip_link`)).y - extremeY(rig, t, parts, `${leg}_calf_link`) / unit;
+        p.foot(leg, feet[leg], pass < 3 ? 0.15 : 0.04, fit ? 1 : 6);
+      }
     }
+    p.update();
+    // Measured at the scale the statue ends up with (its whole height, now that it stands).
+    const k = (STATUE_HEIGHT * unit) / (extremeY(rig, t, parts, null, true) - extremeY(rig, t, parts, null));
+    const low = extremeY(rig, t, parts, null) + FOOT_BAND / k;
+    const each = LEGS.map((l) => padBox(rig, t, parts, l, low));
+    pads = each.reduce((a, b) => a.union(b), new THREE.Box3());
+    const c = pads.getCenter(new THREE.Vector3());
+    let fits = true;
+    LEGS.forEach((l, i) => {
+      const over = (lo: number, hi: number, mid: number) => Math.max(0, Math.max(mid - lo, hi - mid) * k - edge) / k / unit;
+      const ox = over(each[i].min.x, each[i].max.x, c.x);
+      const oz = over(each[i].min.z, each[i].max.z, c.z);
+      if (ox > 0 || oz > 0) fits = false;
+      const side = l[0] === 'L' ? 1 : -1;
+      feet[l][0] = side * Math.max(0, side * feet[l][0] - ox * 1.1);
+      feet[l][2] -= Math.sign(feet[l][2] - c.z / unit) * oz * 1.1;
+    });
+    if (fits) break;
   }
-  p.update();
   const footLow = LEGS.map((leg) => extremeY(rig, t, parts, `${leg}_calf_link`));
-  const tips = LEGS.map((l) => p.pos(rig.linkNode(`${l}_foot_tip_link`)));
+  const visor = visorPitch(rig);
+  const buried = import.meta.env.DEV ? buriedHeld(rig, t, parts, unit * 0.025) : null;
 
   const pieces = bakeRig(rig, parts);
   const stone = toGeometry(pieces.stone, false);
@@ -960,9 +1144,8 @@ async function carve(d: StatueDef, t: CrabTemplate, seed: number): Promise<Baked
   rig.dispose();
   extra?.dispose();
 
-  // Base centre under the feet, lowest point on the ground, scaled to the statue height.
-  const cx = (Math.min(...tips.map((f) => f.x)) + Math.max(...tips.map((f) => f.x))) / 2;
-  const cz = (Math.min(...tips.map((f) => f.z)) + Math.max(...tips.map((f) => f.z))) / 2;
+  // Base centre under the pads, lowest point on the ground, scaled to the statue height.
+  const base = pads.getCenter(new THREE.Vector3());
   const box = new THREE.Box3();
   for (const g of [stone, bronze, eye]) {
     g.computeBoundingBox();
@@ -970,7 +1153,7 @@ async function carve(d: StatueDef, t: CrabTemplate, seed: number): Promise<Baked
   }
   const k = STATUE_HEIGHT / (box.max.y - box.min.y);
   const footGap = Math.max(...footLow.map((y) => (y - box.min.y) * k));
-  const m = new THREE.Matrix4().makeScale(k, k, k).multiply(new THREE.Matrix4().makeTranslation(-cx * unit, -box.min.y, -cz * unit));
+  const m = new THREE.Matrix4().makeScale(k, k, k).multiply(new THREE.Matrix4().makeTranslation(-base.x, -box.min.y, -base.z));
   for (const g of [stone, bronze, eye]) {
     g.applyMatrix4(m);
     g.computeBoundingBox();
@@ -981,7 +1164,7 @@ async function carve(d: StatueDef, t: CrabTemplate, seed: number): Promise<Baked
   weather(bronze, oBronze, STATUE_HEIGHT, 'bronze', seed);
   boxUv(stone);
   boxUv(bronze);
-  return { race: d.race, classId: d.classId, crest: d.crest, lodLegs, footGap, scale: k * unit, stone, bronze, eye };
+  return { race: d.race, classId: d.classId, crest: d.crest, lodLegs, footGap, scale: k * unit, visor, buried, stone, bronze, eye };
 }
 
 let baked: Promise<BakedStatue[]> | null = null;
@@ -1011,7 +1194,7 @@ export async function buildHeroStatues(): Promise<THREE.Object3D[]> {
   return list.map((s) => {
     const g = new THREE.Group();
     g.name = `statue:${s.race}`;
-    g.userData = { race: s.race, classId: s.classId, crest: s.crest, lodLegs: s.lodLegs, footGap: s.footGap, scale: s.scale };
+    g.userData = { race: s.race, classId: s.classId, crest: s.crest, lodLegs: s.lodLegs, footGap: s.footGap, scale: s.scale, visor: s.visor, buried: s.buried };
     for (const key of ['stone', 'bronze', 'eye'] as const) {
       const mesh = new THREE.Mesh(s[key], mats[key]);
       mesh.name = `statue-${s.race}-${key}`;
