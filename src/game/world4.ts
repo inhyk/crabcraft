@@ -15,6 +15,7 @@ import {snowRocks} from './snowRocks';
 import {SnowSpray} from './snowSpray';
 import {crystalCluster,crystalGeometry,iceMaterial,type Crystal} from './iceCrystals';
 import {SnowSky} from './snowSky';
+import {SnowFarShadow,applyFarShadow} from './snowFarShadow';
 import {snowPines} from './snowPines';
 import {buildSnowVillage,type SnowVillage} from './snowVillage';
 import {frozenPond} from './snowVillageDressing';
@@ -52,6 +53,8 @@ export class SnowIsland {
  private paving:FrostPaving;
  private arenaFloor:FrostArena;
  private refreshIce:()=>void;
+ /** The sun's shadow past the live shadow box, baked once the village and forest stand (snowFarShadow.ts). */
+ readonly farShadow:SnowFarShadow;
  height(x:number,z:number){
   return snowHeight(x,z);
  }
@@ -67,8 +70,8 @@ export class SnowIsland {
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
   // The snowfield: a clipmap that follows the player, placed and carved on the GPU (snowTerrain.ts), shaded by snowSurface.ts.
   const groundMat=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.62,metalness:0});
-  this.terrain=new SnowTerrain(groundMat,this.deform);
-  this.refreshSnow=applySnowSurface(groundMat,this.deform,{sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith});
+  this.terrain=new SnowTerrain(groundMat,this.deform);this.farShadow=new SnowFarShadow(this.sky.sunDir);
+  this.refreshSnow=applySnowSurface(groundMat,this.deform,{sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,far:this.farShadow});
   this.terrain.mesh.name='snowdrift-terrain';this.root.add(this.terrain.mesh);
   // Crags breaking through the drifts, for scale and the horizon (snowRocks.ts).
   this.root.add(snowRocks((x,z)=>this.height(x,z),this.terrain.uniforms));
@@ -94,6 +97,8 @@ export class SnowIsland {
   iceMesh(cliffs,'frostlight-ice-cliffs');
   // Carved ice floor with the three combat rings cut in as runes (frostArena.ts).
   this.arenaFloor=frostArena({center:this.arena.position,radius:this.arena.radius,rings:[6,13,21.5],skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.root.add(this.arenaFloor.root);
+  // The floors take the far sun shadow past the live box too, so they never stay lit beside shaded snow.
+  for(const o of [this.paving.root.getObjectByName('frostlight-paving-surface'),this.arenaFloor.root.getObjectByName('frostlight-arena-ice')])if(o instanceof THREE.Mesh)applyFarShadow(o.material,this.farShadow);
   const pillars:Crystal[]=[];
   for(let i=0;i<12;i++){const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=this.height(x,z);crystalCluster(x,y,z,8.6,2.6,3,rand,pillars);add(new THREE.OctahedronGeometry(.8),glow,x,y+8.5,z);}
   iceMesh(pillars,'frostlight-arena-crystals');
@@ -116,7 +121,8 @@ export class SnowIsland {
   this.root.add(forest,village.group);this.village=village;this.basin.material=village.stone;
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
- updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.terrain.setQuality(quality);this.terrain.prepare(renderer);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
- disposeSnow(){this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
+ updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.terrain.setQuality(quality);this.terrain.prepare(renderer);
+  if(this.village&&!this.farShadow.baked)this.farShadow.bake(renderer,this.root,{tex:this.terrain.uniforms.snowGroundTex.value!,rect:this.terrain.uniforms.snowGroundRect.value},[this.terrain.mesh,this.prison,this.portal.root],quality);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
+ disposeSnow(){this.farShadow.dispose();this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
  update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.village?.update(time,x,z);this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
 }
