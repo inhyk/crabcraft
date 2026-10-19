@@ -472,7 +472,7 @@ class Meteor implements Effect {
       body: /* glsl */ `
         if (tau >= 0.0 && tau < uD) {
           pos = headAt(tau);
-          if (idx < 0.5) { size = uR * 4.0 * uGlow; col = vec4(uCore * 4.0, 1.0); }
+          if (idx < 0.5) { size = uR * 4.0 * uGlow; col = vec4(uCore * 2.2, 1.0); }
           else { size = uR * 11.0 * uGlow; col = vec4(uCol * 1.6, 0.8); }
         }`,
     });
@@ -492,7 +492,7 @@ class Meteor implements Effect {
           pos = a - v / sp * L * 0.5;
           vel = v; stretch = L / sp;
           size = uR * (0.5 + 0.9 * idx);
-          col = vec4(mix(uCore, uCol, idx) * (4.0 - 2.5 * idx), (0.95 - 0.55 * idx) * smoothstep(0.0, 0.15, tau));
+          col = vec4(mix(uCore, uCol, idx) * (2.4 - 1.4 * idx), (0.95 - 0.55 * idx) * smoothstep(0.0, 0.15, tau));
         }`,
     });
     this.light = new THREE.PointLight(new THREE.Color(String(cue.color ?? '#9dff4a')), 0, 160, 1.2);

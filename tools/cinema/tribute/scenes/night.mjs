@@ -43,6 +43,8 @@ const view = (o = {}) => ({
 const VIOLET = { kind: 'night-grade', t: -3, mul: '#b48cff', mulTop: '#9d8cff', gain: 1.7, lift: '#0b0420', liftK: 0.35 };
 /** The original's moonlit wood: a soft lavender multiply, blacks lifted into a grey-violet haze. */
 const LAVENDER = { kind: 'night-grade', t: -3, mul: '#d0aef8', mulTop: '#d0c0ff', gain: 1.45, lift: '#2e2244', liftK: 0.6 };
+/** The undead's ground, close: olive earth and gold fissures (Starhaven's lavender sand pulled out). */
+const EARTH = { kind: 'night-grade', t: -3, mul: '#8e9c68', mulTop: '#a4b47c', gain: 1.0, lift: '#050801', liftK: 0.3 };
 /** Grave green under a sickly sky. */
 const GRAVE = { kind: 'night-grade', t: -3, mul: '#a8ba98', mulTop: '#b4d68e', gain: 1.0, gainTop: 1.05, lift: '#030600', liftK: 0.3 };
 
@@ -50,8 +52,6 @@ const GRAVE = { kind: 'night-grade', t: -3, mul: '#a8ba98', mulTop: '#b4d68e', g
 
 /** A point `dist` from `c` toward `yaw` (0 = +z), `h` above the ground. */
 const around = (c, yaw, dist, h) => ({ g: [c[0] + Math.sin(yaw) * dist, h, c[1] + Math.cos(yaw) * dist] });
-/** The violet night haze that sets dark trunks off against the depth of the wood. */
-const HAZE = { color: '#3a2470', density: 0.03 };
 /** The run's lavender mist: trunks fade into it a few metres off, the way the original's do. */
 const MIST = { color: '#6d5f9c', density: 0.05 };
 /** Where she waits, west of the Moonpool, the moonbeam behind her. */
@@ -132,17 +132,19 @@ const elfShots = [
   // Out of white, leaves blowing across; she waits among the ferns, alert, then spins and dashes.
   cut('night-elf-face', ELF_IN, ELF_RUN, 1, {
     mood: 1,
-    view: view({ dof: true, bokeh: 5, exposure: 1.15 }),
-    fog: HAZE,
+    view: view({ dof: true, bokeh: 5, exposure: 1.25, saturation: -0.1, contrast: 0.04 }),
+    fog: MIST,
     anchor: E0,
     actors: [{ ...elf, at: E0, yaw: FACE }],
     tracks: {
       elf: {
         path: [
+          // Alert: she looks one way, the other, back, then wheels into the dash.
           { t: 0, x: E0[0], z: E0[1], yaw: FACE },
-          { t: 1.7, x: E0[0], z: E0[1], yaw: FACE + 0.45 },
-          { t: 3.1, x: E0[0], z: E0[1], yaw: FACE - 0.4 },
-          { t: 4.55, x: E0[0], z: E0[1], yaw: FACE + 0.1 },
+          { t: 1.3, x: E0[0], z: E0[1], yaw: FACE + 0.6 },
+          { t: 2.5, x: E0[0], z: E0[1], yaw: FACE - 0.55 },
+          { t: 3.5, x: E0[0], z: E0[1], yaw: FACE + 0.3 },
+          { t: 4.3, x: E0[0], z: E0[1], yaw: FACE + 0.15 },
           { t: 4.95, x: E0[0] - 0.1, z: E0[1] - 0.1, yaw: FACE + 2.0 },
           { t: 5.3, x: E0[0] - 1.2, z: E0[1] - 1.0 },
           { t: 5.9, x: E0[0] - 4.6, z: E0[1] - 3.2 },
@@ -162,7 +164,7 @@ const elfShots = [
       ],
     },
     fx: [
-      { ...VIOLET, k: [[0, 0], [0.35, 0.2], [1.2, 1]] },
+      { ...LAVENDER, k: [[0, 0], [0.35, 0.2], [1.2, 1]] },
       { kind: 'night-veil', t: -1, alpha: [[0, 1], [0.3, 0.9], [1.1, 0]], color: '#ffffff', gain: 5 },
       // A gust through the white, then leaves drifting down.
       { kind: 'leaves', t: -1, until: 1.8, fadeOut: 0.5, count: 2200, box: [7, 4, 7], drift: [5.5, -1.2, -2.5], size: 0.075, color: '#3a1030', color2: '#6a2040', opacity: 1, seed: 3 },
@@ -215,8 +217,8 @@ const elfShots = [
   // The change: a violet burst as she springs into the spinning leap.
   cut('night-elf-change', ELF_CHANGE, ELF_LEDGE, 1, {
     mood: 1,
-    view: view({ exposure: 1.2 }),
-    fog: HAZE,
+    view: view({ exposure: 1.4, saturation: -0.1, contrast: 0.04 }),
+    fog: MIST,
     anchor: [-90.5, 95],
     actors: [{ ...elf, at: [-90.9, 91.6], yaw: 0 }],
     tracks: {
@@ -238,7 +240,7 @@ const elfShots = [
       ],
     },
     fx: [
-      VIOLET,
+      LAVENDER,
       { kind: 'night-burst', t: 0.32, at: { a: 'elf', o: [0, 0.6, 0], y0: true }, size: 1.1, d: 0.35, color: '#b066ff', color2: '#ff7ad9', light: 30, gain: 0.55 },
       { kind: 'flash', t: 0.34, d: 0.22, rise: 0.04, a: 0.35, color: '#c890ff' },
       { kind: 'light', t: -1, at: { a: 'elf', o: [1.6, 1.3, -0.6] }, color: '#c27bff', intensity: 10, distance: 7 },
@@ -412,7 +414,8 @@ const NO_ASTROLABE = { kind: 'night-drop', t: -3, at: [80, -40], r: 5.5, above: 
 const undeadShots = [
   // Low on the ground in the dark: his claws creep in and the ground splits into molten fissures.
   cut('night-undead-ground', UNDEAD_IN, UNDEAD_CAST, 2, {
-    view: view({ exposure: 0.88, saturation: -0.1, contrast: 0.2, dof: true, bokeh: 4, vignette: { offset: 0.2, darkness: 0.9 } }),
+    view: view({ exposure: 0.95, saturation: -0.1, contrast: 0.24, dof: true, bokeh: 4, vignette: { offset: 0.2, darkness: 0.85 } }),
+    hide: UNDEAD_HIDE,
     anchor: U,
     actors: [{ ...undead, at: U_FROM, yaw: U_YAW }],
     tracks: {
@@ -422,28 +425,29 @@ const undeadShots = [
           { t: 6.3, x: U[0], z: U[1] },
           { t: 6.6, x: U[0], z: U[1], yaw: U_YAW },
         ],
-        acts: [{ t: -2, clip: 'idle', loop: true }],
         faces: [{ t: -2, expr: 'angry' }],
       },
     },
+    // Down at his claws: the lens backs away just ahead of him, low, the fissures opening under each step.
     cam: {
       ease: 'inout',
       focus: 'u',
-      range: 1.6,
+      range: 1.4,
       keys: [
-        { t: 0, p: G(-2.7, 0.85, 0.13), l: G(1.6, -0.1, 0.14), fov: 38 },
-        { t: 6.5, p: G(-2.45, 0.7, 0.2), l: G(0.2, 0.0, 0.36), fov: 38 },
+        { t: 0, p: { a: 'u', o: [1.0, 0.32, 3.6] }, l: { a: 'u', o: [0.1, 0.1, 1.0] }, fov: 40 },
+        { t: 6.5, p: { a: 'u', o: [0.7, 0.36, 3.0] }, l: { a: 'u', o: [0, 0.2, 0.8] }, fov: 40 },
       ],
     },
     fx: [
-      GRAVE,
+      EARTH,
       ...footfalls(U_FROM, U, 0.3, 6.2, 0.5),
       { kind: 'night-cracks', t: 0.0, at: P(2.0, 0), radius: 6, grow: 6.5, cells: 0.9, warp: 1.1, width: 0.05, keep: 0.5, gain: 1.0 },
-      { kind: 'night-rocks', t: -9, at: { g: [U[0], 0, U[1]] }, n: 30, radius: 2.0, size: [0.05, 0.2], h: [-0.1, 0.02], rise: [-9, -9], riseDur: 0.01, glow: 0.25, seed: 77 },
-      { kind: 'night-mist', t: -5, at: { g: [U[0], 0.35, U[1] - 2] }, box: [14, 1.0, 14], count: 46, size: 2.0, color: '#0b1409', opacity: 0.55 },
+      { kind: 'night-mist', t: -5, at: { g: [U[0], 0.35, U[1] - 2] }, box: [14, 1.0, 14], count: 46, size: 2.0, color: '#0b1409', opacity: 0.45 },
       { kind: 'embers', t: -1, at: { g: [U[0], 0.6, U[1] - 2] }, count: 260, box: [7, 3, 7], drift: [0.15, 0.7, 0.05], size: 0.035, color: '#ffc85a', color2: '#ff7a1a' },
       { kind: 'motes', t: -1, at: { g: [U[0], 1.2, U[1] - 2] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
-      { kind: 'light', t: -1, at: { a: 'u', o: [0, 0.12, 0.3] }, color: '#ffae3a', intensity: 3.2, distance: 4.5, flicker: 0.15 },
+      // The fissures' glow on his claws, and a low warm fill from the lens side.
+      { kind: 'light', t: -1, at: { a: 'u', o: [0, 0.12, 0.3] }, color: '#ffae3a', intensity: 4, distance: 4.5, flicker: 0.15 },
+      { kind: 'light', t: -1, at: { a: 'u', o: [0.3, 0.4, 1.6] }, color: '#ffc46a', intensity: 1.6, distance: 4 },
     ],
   }),
 
@@ -499,11 +503,13 @@ const undeadShots = [
       { kind: 'embers', t: -1, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
       // Boulders climb out of the ground round him, the burning rock falls, the blast.
       boulders(0),
-      { kind: 'night-meteor', t: FALL, from: METEOR_FROM, to: { g: [IMPACT[0], 0.5, IMPACT[1]] }, d: LAND - FALL, size: 1.3, light: 500, glow: 0.45, tail: 14, color: '#a8ff3a', core: '#ffc23a' },
+      { kind: 'night-meteor', t: FALL, from: METEOR_FROM, to: { g: [IMPACT[0], 0.5, IMPACT[1]] }, d: LAND - FALL, size: 1.3, light: 500, glow: 0.4, tail: 14, color: '#8cf03a', core: '#ffb02a' },
       { kind: 'night-impact', t: LAND, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 3.4, toward: G(-3.6, 0.8, 1), light: 700, flash: 0.45, gain: 0.45, dust: 0.12, dome: 0, haze: 0.3, puffs: 60, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
       { kind: 'flash', t: LAND + 0.02, d: 0.22, rise: 0.03, a: 0.22, color: '#e6ffb0' },
       { kind: 'shake', t: LAND, d: 1.6, amp: 0.22 },
-      { kind: 'fade', t: 9, color: '#fbffef', curve: [[10.8, 0], [11.2, 0.75], [11.5, 1]] },
+      // The blast's light swells to white for the cut (a veil in the scene, so it brightens, not greys).
+      { kind: 'night-veil', t: 9, alpha: [[10.5, 0], [11.15, 0.75], [11.5, 1]], color: '#f6ffe2', gain: 2.5 },
+      { kind: 'fade', t: 9, color: '#ffffff', curve: [[11.3, 0], [11.5, 1]] },
     ],
   }),
 ];
@@ -539,7 +545,14 @@ const explodeShots = [
       { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: 1.0 },
       { kind: 'night-cracks', t: -6, at: U, radius: 9, grow: 3, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
       boulders(0.25 - 9.9, 4.5),
-      { kind: 'night-impact', t: -0.15, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 5.0, toward: EX_CAM, light: 900, flash: 0.5, gain: 0.9, dust: 0.15, dome: 0, haze: 0.25, chunks: 46, chunkSize: 2.2, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
+      // Molten rocks between him and the blast, thrown at the lens through the whole shot.
+      { kind: 'night-rocks', t: -9, at: G(4.5, -1.2, 0), n: 12, radius: 3.2, size: [0.25, 0.75], h: [0.4, 2.6], rise: [-9, -9], riseDur: 0.01, glow: [[0, 1.2], [0.3, 2.2], [2.3, 1.4]], burst: 0.12, burstAt: { g: [IMPACT[0], 0.2, IMPACT[1]] }, burstSpeed: 4.2, seed: 61 },
+      // Two more waves out of the blast itself, so rocks keep coming at the lens to the cut.
+      ...[[0.75, 71, 3.6], [1.35, 81, 3.2]].map(([at, seed, speed]) => ({
+        kind: 'night-rocks', t: -9, at: G(8.6, -3.4, 0), n: 9, radius: 1.8, size: [0.3, 0.85], h: [0.6, 2.6], rise: [at, at], riseDur: 0.01,
+        glow: 2.0, burst: at + 0.01, burstAt: G(12.5, -4.6, 0.5), burstSpeed: speed, seed,
+      })),
+      { kind: 'night-impact', t: -0.15, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 4.0, toward: EX_CAM, light: 900, flash: 0.5, gain: 0.4, dust: 0.15, dome: 0, haze: 0.25, puffs: 35, chunks: 46, chunkSize: 1.4, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
       { kind: 'embers', t: -1, at: { g: [U[0], 1.0, U[1] - 3] }, count: 400, box: [12, 6, 12], drift: [0.2, 1.4, 0.4], size: 0.04, color: '#ffc85a', color2: '#9dff4a' },
       { kind: 'shake', t: 0.05, d: 1.5, amp: 0.2 },
       // The original's white flash on the cut (152.0 s), then the blast's own glare at the end.
