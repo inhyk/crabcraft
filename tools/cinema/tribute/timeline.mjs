@@ -16,5 +16,5 @@ export const RANGES = [
   { id: 'night-explode', from: 151.92, to: 154.21, owner: 'night', what: 'green explosion, to white' },
   { id: 'dusk-clash', from: 154.21, to: 157.71, owner: 'dusk', what: 'orc against night elf at sunset, white flash' },
   { id: 'snow-frost', from: 157.71, to: 163.08, owner: 'snow', what: 'human mage casting frost among ice, ice pillar, tauren roaring in snowy pines' },
-  { id: 'card-logo', from: 163.08, to: 174.17, owner: 'cards', what: 'World of Crabcraft logo burns in, holds, fades' },
+  { id: 'card-logo', from: 163.08, to: 174.17, owner: 'cards', what: 'a globe settles on the emblem, World of Crabcraft forged in by fire, holds, fades' },
 ];

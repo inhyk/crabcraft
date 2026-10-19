@@ -60,6 +60,13 @@ export interface BillboardOpts {
   additive?: boolean;
   fog?: boolean;
   depthTest?: boolean;
+  /** Write depth (small sharp particles under depth of field, which reads the depth buffer). */
+  depthWrite?: boolean;
+  /**
+   * Draw both faces. A `stretch` streak's corner basis (n, d) is mirrored, so its quad winds backwards
+   * and single-sided streaks are culled; opt in here rather than change every older effect's look.
+   */
+  doubleSide?: boolean;
   renderOrder?: number;
 }
 
@@ -91,8 +98,9 @@ export class Billboards {
     const additive = o.additive ?? true;
     this.mat = new THREE.ShaderMaterial({
       transparent: true,
-      depthWrite: false,
+      depthWrite: o.depthWrite ?? false,
       depthTest: o.depthTest ?? true,
+      side: o.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
       blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
       defines: { SPRITE: o.sprite ?? 0, ADDITIVE: additive ? 1 : 0 },
       uniforms: { uTime: { value: 0 }, ...fogUniforms(), ...(o.uniforms ?? {}) },
