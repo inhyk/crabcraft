@@ -53,7 +53,8 @@ MATS = {
     "TC_Slate": ((0.12, 0.24, 0.46), 0.0, 0.6, 0.0),
     "TC_Gold": ((1.0, 0.74, 0.30), 1.0, 0.3, 0.0),
     "TC_Glass": ((0.16, 0.42, 0.78), 0.0, 0.15, 0.4),
-    "TC_Seaglass": ((0.36, 0.16, 0.92), 0.0, 0.1, 0.7),
+    "TC_Seaglass": ((0.10, 0.55, 0.72), 0.0, 0.1, 0.7),
+    "TC_SeaglassDeep": ((0.42, 0.16, 0.92), 0.0, 0.1, 0.9),
     "TC_Copper": ((0.32, 0.62, 0.52), 0.6, 0.5, 0.0),
     "TC_Iron": ((0.16, 0.16, 0.18), 0.8, 0.5, 0.0),
     "TC_Wood": ((0.42, 0.26, 0.14), 0.0, 0.8, 0.0),
@@ -73,6 +74,7 @@ UV_DENSITY = {
     "TC_Gold": (0.5, 0.5),
     "TC_Iron": (0.5, 0.5),
     "TC_Seaglass": (0.25, 0.25),
+    "TC_SeaglassDeep": (0.25, 0.25),
     "TC_Glass": (0.5, 0.5),  # windows get their own 0..1 square instead
     "TC_Banner": (0.5, 0.5),  # banners get their own 0..1 square instead
 }
@@ -1481,15 +1483,32 @@ def build_seaglass_tower(p: Piece):
     v, f, uv = g_lathe([(3.4, 8.6), (6.9, 8.6), (6.9, 9.0), (3.4, 9.0)], 32, loop=True, uv_mat="TC_LimestoneDark")
     p.add(v, f, "TC_LimestoneDark", uv=uv)
     ring_rail(p, 9.0, 6.65, 26, 1.0)
-    # shaft
-    prof = [(0, 8.9)] + [(tower_r(y), y) for y in lin(9.0, 44.0, 8)] + [(0, 44.0)]
-    v, f, uv = g_lathe(prof, 28, uv_mat="TC_Limestone", r_ref=3.35)
-    p.add(v, f, "TC_Limestone", uv=uv)
+    # shaft: an octagonal core of seaglass framed by eight limestone ribs that follow the taper, string courses at
+    # its foot and head, the gold bands across the glass
+    prof = [(0, 8.9)] + [(tower_r(y) - 0.18, y) for y in lin(9.0, 44.0, 8)] + [(0, 44.0)]
+    v, f, uv = g_lathe(prof, 8, a0=PI / 8, a1=PI / 8 + TAU, uv_mat="TC_Seaglass", r_ref=3.1)
+    p.add(v, f, "TC_Seaglass", uv=uv)
+    for k in range(8):
+        phi = PI / 8 + k * TAU / 8
+        d = Vector((math.cos(phi), 0, -math.sin(phi)))
+        t = Vector((math.sin(phi), 0, math.cos(phi)))
+        pts = []
+        for y in (8.9, 44.0):
+            r = tower_r(y) - 0.18
+            for dd in (-0.25, 0.4):
+                for s in (-0.27, 0.27):
+                    pts.append(tuple(d * (r + dd) + t * s + Vector((0, y, 0))))
+        v, f = g_hull(pts)
+        p.add(v, f, "TC_Limestone")
+    for y, h in ((8.9, 0.7), (43.2, 0.7)):
+        r = tower_r(y + h / 2) + 0.35
+        v, f, _ = g_lathe([(r - 0.6, y), (r, y), (r, y + h), (r - 0.6, y + h)], 8, a0=PI / 8, a1=PI / 8 + TAU, loop=True)
+        p.add(v, f, "TC_LimestoneDark")
     for y in (18.0, 27.0, 36.0):
         r = tower_r(y)
-        v, f, _ = g_lathe([(r - 0.05, y), (r + 0.16, y + 0.04), (r + 0.16, y + 0.24), (r - 0.05, y + 0.28)], 28, loop=True)
+        v, f, _ = g_lathe([(r - 0.25, y), (r + 0.05, y + 0.04), (r + 0.05, y + 0.24), (r - 0.25, y + 0.28)], 8, a0=PI / 8, a1=PI / 8 + TAU, loop=True)
         p.add(v, f, "TC_Gold")
-    # spiral ribbon of seaglass with gold rails and brackets
+    # spiral ribbon of deep violet seaglass with gold rails and brackets, wound outside the ribs
     y0, y1, turns = 10.4, 43.0, 3.25
     N = int(turns * 40)
     th0 = PI * 0.15
@@ -1497,36 +1516,22 @@ def build_seaglass_tower(p: Piece):
     for i in range(N + 1):
         y = y0 + (y1 - y0) * i / N
         th = th0 + TAU * turns * i / N
-        r = tower_r(y) + 0.32
+        r = tower_r(y) + 0.62
         d = Vector((math.sin(th), 0, math.cos(th)))
         path.append(d * r + Vector((0, y, 0)))
         rail_hi.append(d * (r + 0.06) + Vector((0, y + 0.92, 0)))
         rail_lo.append(d * (r + 0.06) + Vector((0, y - 0.92, 0)))
     v, f = g_sweep([(-0.2, -0.85), (0.2, -0.85), (0.2, 0.85), (-0.2, 0.85)], path, (0, 1, 0))
-    p.add(v, f, "TC_Seaglass")
+    p.add(v, f, "TC_SeaglassDeep")
     for rail in (rail_hi, rail_lo):
         v, f = g_tube(rail, 0.1, 4)
         p.add(v, f, "TC_Gold")
     for i in range(0, N + 1, 10):
         q = path[i]
         d = Vector((q.x, 0, q.z)).normalized()
-        a = d * (tower_r(q.y) - 0.1) + Vector((0, q.y - 0.95, 0))
+        a = d * (tower_r(q.y) + 0.1) + Vector((0, q.y - 0.95, 0))
         v, f = g_tube([a, q + d * 0.2 + Vector((0, -0.85, 0))], 0.08, 4)
         p.add(v, f, "TC_Gold")
-    # lancet windows between the turns
-    pitch = (y1 - y0) / turns
-    for k in range(int(turns)):
-        for j in range(4):
-            phi = j * PI / 2 + PI / 4
-            # ribbon height at this angle on turn k, window halfway to the next turn
-            frac = ((phi - th0) % TAU) / TAU
-            yr = y0 + (frac + k) * pitch
-            ys = yr + pitch * 0.5 - 1.4
-            if ys + 2.9 > y1 + 0.5 or ys < 10.5:
-                continue
-            r = tower_r(ys + 1.4)
-            gothic_window(p, T(r * math.sin(phi), ys, r * math.cos(phi)) @ RY(phi), 0.9, 2.8, depth=0.3, frame=0.2,
-                          r_fac=1.0, lights=1, mat_glass="TC_Seaglass", hood=False)
     # corbelled top chamber with seaglass windows
     v, f, uv = g_lathe([(0, 43.8), (tower_r(44.0), 43.8), (3.15, 44.4), (3.8, 45.3), (4.45, 45.9), (0, 45.9)], 28, uv_mat="TC_LimestoneDark")
     p.add(v, f, "TC_LimestoneDark", uv=uv)
@@ -1575,7 +1580,7 @@ def build_seaglass_crystal(p: Piece):
     def crystal(M, r, up, down, n=6):
         pts = [(r * math.cos(TAU * i / n), y, r * math.sin(TAU * i / n)) for i in range(n) for y in (-0.15 * r, 0.25 * r)]
         v, f = g_hull(pts + [(0, up, 0), (0, -down, 0)])
-        p.add(v, f, "TC_Seaglass", M)
+        p.add(v, f, "TC_SeaglassDeep", M)
 
     crystal(I4, 0.95, 2.9, 2.1)
     for k in range(6):

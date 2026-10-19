@@ -9,6 +9,7 @@
     "TC_Gold",
     "TC_Glass",
     "TC_Seaglass",
+    "TC_SeaglassDeep",
     "TC_Copper",
     "TC_Iron",
     "TC_Wood",
@@ -46,6 +47,10 @@
         "v": 0.5
       },
       "TC_Seaglass": {
+        "u": 0.25,
+        "v": 0.25
+      },
+      "TC_SeaglassDeep": {
         "u": 0.25,
         "v": 0.25
       },
@@ -584,7 +589,7 @@
       }
     },
     "TC_SeaglassTower": {
-      "triangles": 16251,
+      "triangles": 13376,
       "budget": 30000,
       "bounds": {
         "min": [
@@ -609,6 +614,7 @@
         "TC_Slate",
         "TC_Gold",
         "TC_Seaglass",
+        "TC_SeaglassDeep",
         "TC_Iron",
         "TC_Wood"
       ],
@@ -663,7 +669,7 @@
       ],
       "materials": [
         "TC_Gold",
-        "TC_Seaglass"
+        "TC_SeaglassDeep"
       ],
       "anchors": {},
       "note": "Origin at the cluster centre; spin about +Y. Hovers at TC_SeaglassTower anchors.crystal.pos."

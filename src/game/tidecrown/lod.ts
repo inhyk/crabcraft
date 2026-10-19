@@ -326,6 +326,8 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
   /** Cost of the last render (camera and shadow pass). */
   readonly frame: LodFrame = { calls: 0, triangles: 0, shadowCalls: 0, shadowTriangles: 0 };
   built = false;
+  /** Near builds are in (buildFar() shows only the far ones until buildNear()). */
+  nearReady = false;
   /** The camera's frustum of the last update, and which chunks' shadows can fall inside it. */
   private view = new THREE.Frustum();
   private casting = new Uint8Array(0);
@@ -361,27 +363,66 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
   build(): this {
     if (this.built) throw new Error('TidecrownLod built twice');
     this.built = true;
+    this.meshesFor(false);
+    this.meshesFor(true);
+    this.nearReady = true;
+    this.casting = new Uint8Array(this.chunks.length).fill(1);
+    this.apply();
+    return this;
+  }
+
+  /**
+   * Only the far builds, for a quick first show: every chunk stays far until buildNear() adds the near ones (filled
+   * into the same chunks' near batches meanwhile).
+   */
+  buildFar(): this {
+    if (this.built) throw new Error('TidecrownLod built twice');
+    this.built = true;
+    this.meshesFor(true);
+    this.casting = new Uint8Array(this.chunks.length).fill(1);
+    this.apply();
+    return this;
+  }
+
+  /** The near builds after buildFar(); from now on chunks swap by distance. */
+  buildNear(): this {
+    for (const _ of this.buildNearSteps());
+    return this;
+  }
+
+  /** buildNear() in steps (a chunk's merge, then a material's mesh, per step), to spread over frames. */
+  *buildNearSteps(): Generator<void, void> {
+    if (!this.built || this.nearReady) throw new Error('TidecrownLod.buildNear needs buildFar first, once');
+    yield* this.meshSteps(false);
+    this.nearReady = true;
+    this.apply();
+  }
+
+  private meshesFor(far: boolean): void {
+    for (const _ of this.meshSteps(far));
+  }
+
+  private *meshSteps(far: boolean): Generator<void, void> {
     const lists = new Map<string, { material: THREE.Material; castShadow: boolean; far: boolean; items: { chunk: number; geometry: THREE.BufferGeometry }[] }>();
     const farCasts = (m: THREE.Material) => this.opts.farShadows && !/glass|vine/.test(m.name);
-    this.chunks.forEach((c, ci) => {
-      const add = (list: Merged[], far: boolean) => {
-        for (const e of list) {
-          const key = `${far ? 'far' : 'near'}|${e.material.uuid}|${e.castShadow}`;
-          let l = lists.get(key);
-          if (!l) lists.set(key, (l = { material: e.material, castShadow: e.castShadow, far, items: [] }));
-          e.geometry.computeBoundingBox();
-          c.box.union(e.geometry.boundingBox!);
-          const tris = (e.geometry.getIndex()?.count ?? e.geometry.getAttribute('position').count) / 3;
-          if (far) c.farTriangles += tris;
-          else c.nearTriangles += tris;
-          l.items.push({ chunk: ci, geometry: e.geometry });
-        }
-      };
-      add(c.near.merge(), false);
-      add(c.far.merge(farCasts), true);
-    });
+    for (let ci = 0; ci < this.chunks.length; ci++) {
+      const c = this.chunks[ci];
+      if (!far) yield;
+      for (const e of far ? c.far.merge(farCasts) : c.near.merge()) {
+        const key = `${e.material.uuid}|${e.castShadow}`;
+        let l = lists.get(key);
+        if (!l) lists.set(key, (l = { material: e.material, castShadow: e.castShadow, far, items: [] }));
+        e.geometry.computeBoundingBox();
+        c.box.union(e.geometry.boundingBox!);
+        const tris = (e.geometry.getIndex()?.count ?? e.geometry.getAttribute('position').count) / 3;
+        if (far) c.farTriangles += tris;
+        else c.nearTriangles += tris;
+        l.items.push({ chunk: ci, geometry: e.geometry });
+      }
+    }
     const identity = new THREE.Matrix4();
     for (const l of lists.values()) {
+      if (!far) yield;
       const geos = harmonise(l.items.map((it) => it.geometry));
       let verts = 0;
       let idx = 0;
@@ -408,9 +449,6 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
       this.add(mesh);
     }
     for (const c of this.chunks) if (c.box.isEmpty()) c.box.setFromCenterAndSize(new THREE.Vector3(), new THREE.Vector3());
-    this.casting = new Uint8Array(this.chunks.length).fill(1);
-    this.apply();
-    return this;
   }
 
   /** Swap chunks for `camera` (three.js calls this while projecting the scene, before the shadow pass). */
@@ -424,8 +462,8 @@ export class TidecrownLod<N extends NearSink = NearSink> extends THREE.LOD {
     let changed = false;
     for (const c of this.chunks) {
       const d = c.box.distanceToPoint(_p);
-      const isNear = this.force ? this.force === 'near' : c.isNear ? d < near + hysteresis : d < near;
-      const shadowNear = this.force ? this.force === 'near' && d < shadow : c.shadowNear ? d < shadow + hysteresis : d < shadow;
+      const isNear = !this.nearReady ? false : this.force ? this.force === 'near' : c.isNear ? d < near + hysteresis : d < near;
+      const shadowNear = isNear && (this.force ? this.force === 'near' && d < shadow : c.shadowNear ? d < shadow + hysteresis : d < shadow);
       if (isNear !== c.isNear || shadowNear !== c.shadowNear) changed = true;
       c.isNear = isNear;
       c.shadowNear = shadowNear;

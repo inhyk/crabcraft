@@ -3,6 +3,7 @@
 // TIDECROWN_GRID and walks the triangles (tidecrownHeight); the server can build the same grid. Imports nothing
 // outside src/sim/world.
 import { gridHeight, type HeightGrid } from './ground.ts';
+import { canalCut } from './tidecrownCity.ts';
 
 type V2 = readonly [number, number];
 
@@ -241,7 +242,12 @@ export function tidecrownGround(x: number, z: number): number {
     const cliff = -3 + (land + 3) * rise;
     h = lerp(lerp(beach, land, smoothstep(c.d, 6, 26)), cliff, Math.max(quay, smoothstep(land, 7, 11)));
   }
-  return pads(x, z, h);
+  // Inside the city wall the streets keep their terrace level: the harbour quay and the estuary beach stop at the wall.
+  if (Math.abs(h - land) > 1e-4) {
+    const wall = polyDistance(x, z, TC_CITY_WALL);
+    if (wall > 1) h = lerp(h, land, smoothstep(wall, 1, 4));
+  }
+  return pads(x, z, canalCut(x, z, h));
 }
 
 /** The forest road cut into the ridge, then the level pads the structures stand on (over land and shore alike). */
@@ -288,3 +294,6 @@ export function tidecrownGrid(h: Float32Array): HeightGrid & { h: Float32Array }
 export function tidecrownHeight(h: Float32Array, x: number, z: number): number {
   return gridHeight(tidecrownGrid(h), x, z);
 }
+
+/** The terrace outlines (middle 14, upper 24), for the retaining walls along their edges. */
+export const TC_TERRACES = { middle: MIDDLE, upper: UPPER } as const;

@@ -3,11 +3,16 @@
 // material reads vertex colour, where the kit bakes its ambient occlusion.
 import * as THREE from 'three';
 import type { Kit } from '../../world/kit';
-import { addPatch, plankMaterial, stylise } from '../../world/materials';
+import { addPatch, plankMaterial, stylise, WORLD_UNIFORMS } from '../../world/materials';
 import { GLSL_NOISE } from '../../world/noise';
 import { noiseTexture } from '../../world/terrain';
+import { crestTexture, sailTexture } from './banners';
 
-export const TC_MATERIAL_NAMES = ['TC_Limestone', 'TC_LimestoneDark', 'TC_Slate', 'TC_Gold', 'TC_Nacre', 'TC_Glass', 'TC_LanternGlow', 'TC_Iron', 'TC_Wood'] as const;
+export const TC_MATERIAL_NAMES = [
+  'TC_Limestone', 'TC_LimestoneDark', 'TC_Slate', 'TC_Gold', 'TC_Nacre', 'TC_Glass', 'TC_LanternGlow', 'TC_Iron', 'TC_Wood',
+  // The districts' kits (tidecrown-city.glb, tidecrown-harbor.glb).
+  'TC_Seaglass', 'TC_SeaglassDeep', 'TC_Copper', 'TC_Banner', 'TC_DeckWood', 'TC_WoodDark', 'TC_Sail', 'TC_Rope', 'TC_PaintBlue',
+] as const;
 export type TcMaterialName = (typeof TC_MATERIAL_NAMES)[number];
 export type TidecrownMaterials = Record<TcMaterialName, THREE.Material>;
 
@@ -112,6 +117,69 @@ function nacre(): THREE.MeshPhysicalMaterial {
   });
 }
 
+/**
+ * Seaglass: thick sea-worn glass lit from within. The film shifts colour with the view, the rim glows (the glass
+ * gathers light at its edges), a slow caustic shimmer runs up through it, and the colour drifts from `low` at the foot
+ * to `high` up a tower. Opaque enough to sort as one piece.
+ */
+function seaglass(name: string, low: string, high: string, glow: number): THREE.MeshPhysicalMaterial {
+  const m = new THREE.MeshPhysicalMaterial({
+    name, color: '#ffffff', emissive: '#ffffff', emissiveIntensity: 1, roughness: 0.05, metalness: 0.05,
+    iridescence: 0.85, iridescenceIOR: 1.5, iridescenceThicknessRange: [200, 650], clearcoat: 1, clearcoatRoughness: 0.03,
+    specularIntensity: 1, envMapIntensity: 2.4, transparent: true, opacity: 0.93, vertexColors: true,
+  });
+  const lo = new THREE.Color(low), hi = new THREE.Color(high);
+  const v3 = (c: THREE.Color) => `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`;
+  addPatch(m, `tc-seaglass-${name}`, (shader) => {
+    shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSgW;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvSgW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vSgW;\nuniform float uTime;\n${GLSL_NOISE}`)
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        float sgN = cc_vnoise(vec2(vSgW.x + vSgW.z, vSgW.y) * 0.3);
+        vec3 sgCol = mix(${v3(lo)}, ${v3(hi)}, smoothstep(0.15, 0.85, fract(vSgW.y / 90.0) + (sgN - 0.5) * 0.35));
+        diffuseColor.rgb = sgCol * 0.45;`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        {
+          vec3 V = normalize(cameraPosition - vSgW);
+          vec3 Nw = normalize(cross(dFdx(vSgW), dFdy(vSgW)));
+          float rim = pow(1.0 - abs(dot(Nw, V)), 2.2);
+          float caustic = cc_vnoise(vec2(vSgW.x * 0.6 + vSgW.z * 0.4, vSgW.y * 0.45 - uTime * 0.35)) * cc_vnoise(vec2(vSgW.z * 0.7 - vSgW.x * 0.3, vSgW.y * 0.8 + uTime * 0.21));
+          totalEmissiveRadiance = sgCol * ${glow.toFixed(2)} * (0.45 + 1.7 * rim + 1.4 * smoothstep(0.22, 0.6, caustic));
+        }`,
+      );
+  });
+  return m;
+}
+
+/** The kit's planks (village.glb MI_WoodTrim): the harbour's UVs take one plank per strip of its dark floor band. */
+function deckWood(village: Kit, name: string, tint: string): THREE.MeshStandardMaterial {
+  const src = village.material('MI_WoodTrim');
+  const m = (src?.clone() ?? new THREE.MeshStandardMaterial()) as THREE.MeshStandardMaterial;
+  m.name = name;
+  m.color.set(tint);
+  m.vertexColors = true;
+  m.metalness = 0;
+  for (const key of ['map', 'normalMap', 'roughnessMap'] as const) {
+    const t = m[key];
+    if (!t) continue;
+    const c = t.clone();
+    c.wrapS = c.wrapT = THREE.RepeatWrapping;
+    c.offset.set(0, 0.31);
+    c.userData.tidecrown = true;
+    m[key] = c;
+  }
+  stylise(m, 1.1, [1.02, 1.0, 0.96]);
+  return m;
+}
+
 /** One material per TC_* name. `village` is World I's village kit (its stone textures). */
 export function tidecrownMaterials(village: Kit): TidecrownMaterials {
   const brick = village.material('MI_Brick'), tiles = village.material('MI_RoundTiles');
@@ -128,5 +196,23 @@ export function tidecrownMaterials(village: Kit): TidecrownMaterials {
     TC_LanternGlow: new THREE.MeshStandardMaterial({ name: 'TC_LanternGlow', color: '#53f2e4', emissive: '#53f2e4', emissiveIntensity: 3.2, roughness: 0.2, vertexColors: true }),
     TC_Iron: new THREE.MeshStandardMaterial({ name: 'TC_Iron', color: '#3b3f46', metalness: 0.75, roughness: 0.42, vertexColors: true }),
     TC_Wood: wood,
+    // Sea-blue to teal for the towers' glass, violet to orchid for their spirals and crystals.
+    TC_Seaglass: seaglass('TC_Seaglass', '#1ea9b4', '#3f7cf0', 1),
+    TC_SeaglassDeep: seaglass('TC_SeaglassDeep', '#7a4cf5', '#c25cf0', 1.25),
+    // Verdigris: the round tiles turned sea-green, the course lines kept.
+    TC_Copper: stone(tiles, 'TC_Copper', '#5d9d8a', 0.19, 1.05, 0.73, 1.1),
+    TC_Banner: new THREE.MeshStandardMaterial({ name: 'TC_Banner', map: crestTexture(false), roughness: 0.85, side: THREE.DoubleSide, vertexColors: true }),
+    TC_DeckWood: deckWood(village, 'TC_DeckWood', '#ffffff'),
+    TC_WoodDark: deckWood(village, 'TC_WoodDark', '#9a8676'),
+    TC_Sail: new THREE.MeshStandardMaterial({ name: 'TC_Sail', map: sailTexture(), roughness: 0.92, side: THREE.DoubleSide, vertexColors: true }),
+    TC_Rope: new THREE.MeshStandardMaterial({ name: 'TC_Rope', color: '#a68a62', roughness: 0.95, vertexColors: true }),
+    TC_PaintBlue: new THREE.MeshStandardMaterial({ name: 'TC_PaintBlue', color: '#2b5a9c', roughness: 0.6, metalness: 0.05, vertexColors: true }),
   };
+}
+
+/** Material overrides for the districts' kits: their wood takes the planks (the castle's TC_Wood is procedural). */
+export function districtOverrides(mats: TidecrownMaterials, harbour: boolean): Record<string, THREE.Material> {
+  const o = { ...(mats as unknown as Record<string, THREE.Material>) };
+  if (harbour) o.TC_Wood = mats.TC_DeckWood;
+  return o;
 }

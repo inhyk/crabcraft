@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import type { Collision } from '../../sim/world/collision';
 import { buildFoliage, type FoliageResult } from '../../world/foliage';
 import { loadKit } from '../../world/kit';
+import { buildTidecrownCity, type TidecrownCity } from './city';
+import { loadTidecrownKit } from './houses';
 import { WORLD_UNIFORMS } from '../../world/materials';
 import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, type TidecrownAtmosphere } from './atmosphere';
 import { buildHorizon } from './horizon';
@@ -29,10 +31,11 @@ export class TidecrownIsland {
   collision!: Collision;
   atmosphere!: TidecrownAtmosphere;
   structures!: TidecrownStructures;
+  city!: TidecrownCity;
   /** Minimap picture, painted from the terrain at build time. */
   map!: MapSnapshot;
   /** How long each build step took (ms) and how much nature was scattered. */
-  readonly info: { steps: Record<string, number>; nature: Record<string, number> } = { steps: {}, nature: {} };
+  readonly info: { steps: Record<string, number>; nature: Record<string, number>; city: Record<string, number> } = { steps: {}, nature: {}, city: {} };
   private foliage: FoliageResult | null = null;
   private lanternGlow: THREE.MeshStandardMaterial | null = null;
   private built = false;
@@ -62,9 +65,12 @@ export class TidecrownIsland {
     await tick();
 
     t0 = performance.now();
-    const [village, nature] = await Promise.all([loadKit('models/world/village.glb'), loadKit('models/world/nature.glb')]);
-    const kit = await loadKit('models/world/tidecrown.glb');
-    const statues = await buildHeroStatues();
+    // Every kit at once: World I's village, props and nature (the townhouses' set), the castle, the districts' landmarks
+    // and the harbour; the statues alongside.
+    const [tide, kit, cityKit, harbourKit, statues] = await Promise.all([
+      loadTidecrownKit(), loadKit('models/world/tidecrown.glb'), loadKit('models/world/tidecrown-city.glb'), loadKit('models/world/tidecrown-harbor.glb'), buildHeroStatues(),
+    ]);
+    const { village, nature } = tide;
     step('assets', t0);
     onProgress?.(0.45);
     await tick();
@@ -86,7 +92,15 @@ export class TidecrownIsland {
     this.structures = buildTidecrownStructures(kit, village, mats, this.layout.placements, (x, z) => this.layout.heightAt(x, z), statues);
     this.root.add(this.structures.group);
     step('structures', t0);
-    onProgress?.(0.75);
+    onProgress?.(0.7);
+    await tick();
+
+    t0 = performance.now();
+    this.city = buildTidecrownCity({ tide, city: cityKit, harbour: harbourKit }, mats, this.layout.city, (x, z) => this.layout.heightAt(x, z));
+    this.root.add(this.city.group);
+    this.info.city = { ...this.city.stats.ms, plan: this.layout.city.ms };
+    step('city', t0);
+    onProgress?.(0.8);
     await tick();
 
     t0 = performance.now();
@@ -127,6 +141,23 @@ export class TidecrownIsland {
     }
     if (this.lanternGlow) this.lanternGlow.emissiveIntensity = 3.2 + 0.5 * Math.sin(time * 1.3);
     this.structures.flame.emissiveIntensity = 2.6 + 0.6 * Math.sin(time * 11) * Math.sin(time * 6.3);
+    this.city.update(time, camera);
+    if (!this.detailed) this.refine(6);
+  }
+
+  private detailDone!: () => void;
+  /** The houses' near detail goes in a few ms a frame after entry; this resolves when it is all in. */
+  readonly detail = new Promise<void>((r) => (this.detailDone = r));
+  private detailed = false;
+  /** Build `budget` ms more of the near detail (the island's update does 6 a frame). */
+  refine(budget: number): boolean {
+    if (this.detailed || !this.built) return this.detailed;
+    if (this.city.refine(budget)) {
+      for (const c of this.city.extraColliders) this.collision.addBoxCS(c.x, c.z, c.hx, c.hz, c.c, c.s, c.y0, c.y1);
+      this.detailed = true;
+      this.detailDone();
+    }
+    return this.detailed;
   }
 
   dispose(): void {

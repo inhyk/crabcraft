@@ -1,9 +1,11 @@
 // Tidecrown's anchors, the placement of every castle-scale piece, and the collision they register (no meshes).
 // The landform itself lives in src/sim/world/tidecrownGround.ts so the server can share it.
 import { Collision, rectSurface, type Vec2Out } from '../../sim/world/collision';
+import { trs } from '../../world/kit';
 import {
   buildTidecrownHeights, polyDistance, TC_AXIS, TC_BOUNDS, TC_CITY_WALL, TC_KEEP, TC_LEVEL, TC_P, TC_ROAD, TC_T, tcAxis, tidecrownHeight, TIDECROWN_GRID,
 } from '../../sim/world/tidecrownGround';
+import { blockCityWater, canalQuayOpen, type CityLayout, cityOccupancy, planCity, registerCity } from './cityLayout';
 import { scatterTidecrownNature, type NatureScatter } from './nature';
 
 export * from '../../sim/world/tidecrownGround';
@@ -325,6 +327,8 @@ export interface TidecrownLayout {
   col: Collision;
   heights: Float32Array;
   placements: TcPlacement[];
+  /** The districts: houses, landmarks, quays, canals (cityLayout.ts). */
+  city: CityLayout;
   nature: NatureScatter;
   /** Ground plus walkable decks (bridge, stair). */
   heightAt(x: number, z: number): number;
@@ -359,11 +363,16 @@ export function tidecrownLayout(): TidecrownLayout {
   const terrainHeight = ground.heightAt;
   const placements = tidecrownPlacements(terrainHeight);
   for (const p of placements) registerPiece(col, p);
-  const nature = scatterTidecrownNature(terrainHeight, col);
+  const city = planCity(terrainHeight, placements);
+  registerCity(col, city);
+  const nature = scatterTidecrownNature(terrainHeight, col, cityOccupancy(city));
+  // The gardens' trees and hedges grow with the rest of the foliage (its distance LOD and culling).
+  for (const p of city.plants) (p.piece.startsWith('CommonTree') ? nature.trees : nature.small).add(p.piece, trs(p.x, p.y - 0.1, p.z, p.yaw, p.s));
   // Cells are 2 m: a 1.8 m rise across one is a slope of about 0.9 along the grid, 0.7 diagonally (World I allows
   // 1.15 m over 1 m cells). Terrace edges, the keep's rock and the sea cliffs stay blocked, and so does deep water.
-  col.buildBlocked({ maxRise: 1.8, deep: -1.1 });
-  return { col, heights, placements, nature, heightAt: (x, z) => col.heightAt(x, z) };
+  col.buildBlocked({ maxRise: 1.8, deep: -1.1, keepOpen: canalQuayOpen(col) });
+  blockCityWater(col);
+  return { col, heights, placements, city, nature, heightAt: (x, z) => col.heightAt(x, z) };
 }
 
 /** Collision for Tidecrown (walls, towers, gates, parapets, keep, ward, plinths, trees and the deep-water edge). */

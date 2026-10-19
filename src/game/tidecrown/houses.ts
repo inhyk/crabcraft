@@ -1747,6 +1747,8 @@ export interface District {
   /** Back lanes the district added between its rows (pave and keep clear like streets). */
   lanes: DistrictStreet[];
   stats: { houses: number; meshes: number; triangles: number; farTriangles: number; chunks: number; pieces: Record<string, number> };
+  /** With fillDistrict(…, defer): fills the near batches a house per step; its goods' colliders join `colliders`. */
+  near?: () => Generator<void, void>;
 }
 
 /** A LOD for a whole city of districts: pass it to every fillDistrict, then build() it and add it to the scene. */
@@ -1775,10 +1777,12 @@ function rayToLot(lots: TownhouseLot[], x: number, z: number, dx: number, dz: nu
 }
 
 /** Strings of pennants across each street, from one house front to the facing one, every dozen metres or so. */
-function bunting(o: DistrictOptions, plan: DistrictPlan, chunkOf: (x: number, z: number) => { near: TideBatch; far: FarBatch }): void {
+function bunting(o: DistrictOptions, plan: DistrictPlan, chunkOf: (x: number, z: number) => { near: TideBatch; far: FarBatch }, pass: 'near' | 'far' | 'both'): void {
   const r = stream((o.seed ?? 1) + 77);
   const setback = o.setback ?? 0.9;
   for (const st of o.streets) {
+    // Squares and avenues are too wide to string across.
+    if (st.width > 20) continue;
     const pts = resample(st.points, 1);
     for (let i = 6 + Math.floor(r() * 6); i < pts.length - 2; i += 10 + Math.floor(r() * 6)) {
       const [x, z] = pts[i];
@@ -1795,10 +1799,12 @@ function bunting(o: DistrictOptions, plan: DistrictPlan, chunkOf: (x: number, z:
       const pb = new THREE.Vector3(x - nx * (b.t + WALL - 0.02), y(b.lot), z - nz * (b.t + WALL - 0.02));
       const g = buntingGeometry(pa, pb, 0.45 + r() * 0.35, Math.floor(r() * 6));
       const c = chunkOf(x, z);
-      c.near.addGeometry(g.flags, o.kit.mat.pennant, null, false);
-      c.near.addGeometry(g.cord, o.kit.mat.iron, null, false);
+      if (pass !== 'far') {
+        c.near.addGeometry(g.flags, o.kit.mat.pennant, null, false);
+        c.near.addGeometry(g.cord, o.kit.mat.iron, null, false);
+      }
       // Far: the flags without their cord.
-      c.far.house(IDENTITY).geo(o.kit.mat.pennant, g.flags);
+      if (pass !== 'near') c.far.house(IDENTITY).geo(o.kit.mat.pennant, g.flags);
     }
   }
 }
@@ -1806,37 +1812,51 @@ const IDENTITY = new THREE.Matrix4();
 const TREE_FAR = new THREE.IcosahedronGeometry(1, 0);
 const TREE_LEAF = lin('#5d8a34');
 
+/** A batch that keeps nothing: the far pass of a deferred district runs the builder without its kit pieces. */
+class NoBatch extends TideBatch {
+  override put(): void {}
+  override addGeometry(): void {}
+}
+
 /**
- * Plan and build a district of townhouses into LOD chunks (near: the kit; far: buildTownhouse's far build), on
- * the district's own LOD or a shared city one. Deterministic from `seed`.
+ * Plan (or take the plan of) a district of townhouses and build it into LOD chunks (near: the kit; far:
+ * buildTownhouse's far build), on the district's own LOD or a shared city one. Deterministic from `seed`.
+ * With `defer` only the far builds are made now; `near()` then fills the near batches a house at a time (a
+ * generator, so a caller can spread it over frames), and the caller builds the LOD's near meshes after it.
  */
-export function fillDistrict(o: DistrictOptions): District {
-  const plan = planDistrict(o);
+export function fillDistrict(o: DistrictOptions, plan: DistrictPlan = planDistrict(o), defer = false): District {
   const name = o.name ?? 'tidecrown-district';
   const lod = o.lod ?? new TidecrownLod((n) => new TideBatch(o.kit, n), o.lodOptions, name);
   const chunkOf = (x: number, z: number) => lod.chunkAt(x, z);
   const extras: HouseExtras = { colliders: [], lamps: [] };
   const used = new Set<TideBatch>();
+  const none = defer ? new NoBatch(o.kit, `${name}:none`) : null;
+  const m = new THREE.Matrix4();
   for (const h of plan.houses) {
     const c = chunkOf(h.x, h.z);
     used.add(c.near);
-    buildTownhouse(h, c.near, extras, c.far);
+    buildTownhouse(h, none ?? c.near, none ? { colliders: [], lamps: [] } : extras, c.far);
   }
-  const m = new THREE.Matrix4();
-  for (const y of plan.yards) {
-    const kit = o.kit[y.kit];
-    const over = y.kit === 'props' ? o.kit.over.props : y.kit === 'nature' ? o.kit.over.nature : o.kit.over.wall;
-    m.copy(trs(y.x, y.y - 0.02, y.z, y.yaw, y.s));
-    const c = chunkOf(y.x, y.z);
-    c.near.put(kit, y.piece, m, over, null, true);
-    // Far: trees as a leafy blob on a trunk; the small yard things are left out.
-    if (y.piece.startsWith('CommonTree')) {
-      c.far.house(trs(y.x, y.y, y.z, y.yaw, y.s));
-      c.far.box(o.kit.mat.paint, TRUNK_TONE, -0.35, 0, -0.35, 0.35, 3.2, 0.35, 'ny py');
-      c.far.frame(0, 5.6, 0, 0, 1.95, 2.6, 1.95).geo(o.kit.mat.paint, TREE_FAR, TREE_LEAF);
+  const yards = (pass: 'near' | 'far' | 'both') => {
+    for (const y of plan.yards) {
+      const c = chunkOf(y.x, y.z);
+      if (pass !== 'far') {
+        const kit = o.kit[y.kit];
+        const over = y.kit === 'props' ? o.kit.over.props : y.kit === 'nature' ? o.kit.over.nature : o.kit.over.wall;
+        m.copy(trs(y.x, y.y - 0.02, y.z, y.yaw, y.s));
+        c.near.put(kit, y.piece, m, over, null, true);
+      }
+      // Far: trees as a leafy blob on a trunk; the small yard things are left out.
+      if (pass !== 'near' && y.piece.startsWith('CommonTree')) {
+        c.far.house(trs(y.x, y.y, y.z, y.yaw, y.s));
+        c.far.box(o.kit.mat.paint, TRUNK_TONE, -0.35, 0, -0.35, 0.35, 3.2, 0.35, 'ny py');
+        c.far.frame(0, 5.6, 0, 0, 1.95, 2.6, 1.95).geo(o.kit.mat.paint, TREE_FAR, TREE_LEAF);
+      }
     }
-  }
-  if (o.bunting !== false) bunting(o, plan, chunkOf);
+  };
+  const pass = defer ? 'far' : 'both';
+  yards(pass);
+  if (o.bunting !== false) bunting(o, plan, chunkOf, pass);
   const pieces = new Map<string, number>();
   for (const b of used) for (const [p, t] of b.pieceTris) pieces.set(p, (pieces.get(p) ?? 0) + t);
   const top = Object.fromEntries([...pieces].sort((a, b) => b[1] - a[1]).slice(0, 14));
@@ -1844,9 +1864,9 @@ export function fillDistrict(o: DistrictOptions): District {
   if (o.lod) {
     group = new THREE.Group();
     group.name = name;
-  } else group = lod.build();
+  } else group = defer ? lod.buildFar() : lod.build();
   const ls = lod.stats;
-  return {
+  const district: District = {
     group,
     lots: plan.lots,
     colliders: [...plan.colliders, ...extras.colliders],
@@ -1854,5 +1874,17 @@ export function fillDistrict(o: DistrictOptions): District {
     lanes: plan.lanes,
     stats: { houses: plan.houses.length, meshes: ls.meshes, triangles: ls.nearTriangles, farTriangles: ls.farTriangles, chunks: ls.chunks, pieces: top },
   };
+  if (defer) {
+    district.near = function* () {
+      for (const h of plan.houses) {
+        buildTownhouse(h, chunkOf(h.x, h.z).near, extras, undefined);
+        yield;
+      }
+      yards('near');
+      if (o.bunting !== false) bunting(o, plan, chunkOf, 'near');
+      district.colliders.push(...extras.colliders);
+    };
+  }
+  return district;
 }
 const TRUNK_TONE = lin('#6b5038');

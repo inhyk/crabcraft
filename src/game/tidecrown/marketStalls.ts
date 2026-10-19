@@ -1,11 +1,11 @@
 // Tidecrown market dressing: kit stalls and carts (props.glb, CC0, see NOTICE.md) under Tidecrown's striped awnings,
 // set in two rings around a plaza with its lanes and centre left open, heaped with crates, barrels, sacks and coin.
+// planMarket lays the stalls out as plain numbers (and their colliders); dressMarket builds them.
 import * as THREE from 'three';
 import { trs } from '../../world/kit';
-import { awningGeometry, type DistrictStreet, type Height, polyLineDist, stream, type TidecrownCollider, TideBatch, type TidecrownKit } from './houses';
+import { awningGeometry, type DistrictStreet, type Height, pointInPoly, polyDist, polyLineDist, stream, type TidecrownCollider, TideBatch, type TidecrownKit, type V2 } from './houses';
 
-export interface MarketOptions {
-  kit: TidecrownKit;
+export interface MarketPlanOptions {
   /** Plaza centre and radius. */
   x: number;
   z: number;
@@ -20,6 +20,13 @@ export interface MarketOptions {
   streets?: DistrictStreet[];
   /** Radius around the centre kept open (fountain, statue), default radius * 0.3. */
   inner?: number;
+  /** Ground kept free of stalls (a fountain or a hall standing in the plaza). */
+  reserved?: V2[][];
+  /** Rings of stalls as fractions of the radius, facing the centre (1) or away (-1); default two. */
+  rings?: { f: number; facing: 1 | -1 }[];
+}
+export interface MarketOptions extends MarketPlanOptions {
+  kit: TidecrownKit;
   name?: string;
 }
 export interface MarketStall {
@@ -30,6 +37,12 @@ export interface MarketStall {
   yaw: number;
   hx: number;
   hz: number;
+}
+export interface MarketPlan {
+  stalls: MarketStall[];
+  /** Crate stacks between neighbouring outer stalls. */
+  stacks: { x: number; z: number; yaw: number }[];
+  colliders: TidecrownCollider[];
 }
 export interface Market {
   group: THREE.Group;
@@ -42,28 +55,22 @@ const pick = <T>(r: () => number, list: readonly T[]): T => list[Math.floor(r() 
 /** Half extents of each kind on the ground (with its goods), for spacing and colliders. */
 const SIZE: Record<MarketStall['kind'], [number, number]> = { stall: [1.05, 0.62], cart: [1.65, 0.62], table: [1.5, 0.66] };
 
+const corners = (x: number, z: number, hx: number, hz: number, yaw: number): V2[] => {
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return [[-hx, hz], [hx, hz], [hx, -hz], [-hx, -hz]].map(([lx, lz]) => [x + c * lx + s * lz, z - s * lx + c * lz] as V2);
+};
+
 /**
  * Place stalls around a plaza: an outer ring facing in and an inner ring facing out, with an aisle between,
- * every lane and the centre left clear. Returns the batched meshes and one collider per stall.
+ * every lane, the centre and the reserved ground left clear; crate stacks between some outer stalls.
  */
-export function dressMarket(o: MarketOptions): Market {
+export function planMarket(o: MarketPlanOptions): MarketPlan {
   const r = stream(o.seed ?? 3);
-  const k = o.kit;
-  const P = k.over.props;
-  const batch = new TideBatch(k, o.name ?? 'tidecrown-market');
   const lanes = o.lanes ?? [];
   const laneW = o.laneWidth ?? 5;
   const inner = o.inner ?? o.radius * 0.3;
   const stalls: MarketStall[] = [];
-  const colliders: TidecrownCollider[] = [];
-  const m = new THREE.Matrix4();
-  const at = (x: number, z: number, yaw: number) => (lx: number, ly: number, lz: number, ry = 0, s: number | THREE.Vector3 = 1) => {
-    const c = Math.cos(yaw);
-    const sn = Math.sin(yaw);
-    const wx = x + c * lx + sn * lz;
-    const wz = z - sn * lx + c * lz;
-    return m.copy(trs(wx, o.height(wx, wz) + ly, wz, yaw + ry, s));
-  };
   // A footprint is clear of a lane when every corner keeps half the lane width (plus a margin) off its ray.
   const inLane = (x: number, z: number, hx: number, hz: number, yaw: number) => {
     const c = Math.cos(yaw);
@@ -83,9 +90,8 @@ export function dressMarket(o: MarketOptions): Market {
   };
   const clear = (x: number, z: number, hx: number, hz: number, yaw: number) => {
     if (inLane(x, z, hx, hz, yaw)) return false;
-    const c = Math.cos(yaw);
-    const s = Math.sin(yaw);
-    const q: [number, number][] = [[-hx, hz], [hx, hz], [hx, -hz], [-hx, -hz]].map(([lx, lz]) => [x + c * lx + s * lz, z - s * lx + c * lz]);
+    const q = corners(x, z, hx, hz, yaw);
+    if ((o.reserved ?? []).some((p) => polyDist(q, p) < 0.6 || q.some(([px, pz]) => pointInPoly(px, pz, p)))) return false;
     return !(o.streets ?? []).some((st) => polyLineDist(q, st.points) < st.width / 2 + 0.5);
   };
   const fits = (x: number, z: number, hx: number, hz: number, yaw: number) => {
@@ -93,10 +99,12 @@ export function dressMarket(o: MarketOptions): Market {
     return stalls.every((st) => Math.hypot(st.x - x, st.z - z) > Math.max(hx, hz) + Math.max(st.hx, st.hz) + 0.5);
   };
 
-  const rings: { rad: number; facing: 1 | -1 }[] = [
-    { rad: o.radius * 0.8, facing: 1 },
-    { rad: Math.max(inner + 1.4, o.radius * 0.46), facing: -1 },
-  ];
+  const rings: { rad: number; facing: 1 | -1 }[] = o.rings
+    ? o.rings.map((g) => ({ rad: Math.max(inner + 1.4, o.radius * g.f), facing: g.facing }))
+    : [
+        { rad: o.radius * 0.8, facing: 1 },
+        { rad: Math.max(inner + 1.4, o.radius * 0.46), facing: -1 },
+      ];
   for (const ring of rings) {
     const circ = Math.PI * 2 * ring.rad;
     let a = r() * Math.PI * 2;
@@ -116,9 +124,45 @@ export function dressMarket(o: MarketOptions): Market {
       } else a += 0.4 / ring.rad;
     }
   }
-
-  const goods = ['FarmCrate_Apple', 'FarmCrate_Carrot', 'FarmCrate_Apple', 'Vase_4', 'Bag', 'Coin_Pile', 'Mug'] as const;
+  const colliders: TidecrownCollider[] = [];
   for (const st of stalls) {
+    const y = o.height(st.x, st.z);
+    colliders.push({ x: st.x, z: st.z, hx: st.hx, hz: st.hz, c: Math.cos(st.yaw), s: Math.sin(st.yaw), y0: y - 1, y1: y + 3 });
+  }
+  // Crates and barrels stacked between the outer stalls.
+  const stacks: MarketPlan['stacks'] = [];
+  const outer = stalls.filter((st) => Math.hypot(st.x - o.x, st.z - o.z) > o.radius * 0.6);
+  for (let i = 0; i < outer.length; i++) {
+    if (r() < 0.4) continue;
+    const a = outer[i];
+    const b = outer[(i + 1) % outer.length];
+    const x = (a.x + b.x) / 2;
+    const z = (a.z + b.z) / 2;
+    if (Math.hypot(a.x - b.x, a.z - b.z) > 6 || !clear(x, z, 0.7, 0.6, a.yaw)) continue;
+    const yaw = a.yaw + (r() - 0.5) * 0.5;
+    stacks.push({ x, z, yaw });
+    const y = o.height(x, z);
+    colliders.push({ x, z, hx: 0.7, hz: 0.6, c: Math.cos(yaw), s: Math.sin(yaw), y0: y - 1, y1: y + 2 });
+  }
+  return { stalls, stacks, colliders };
+}
+
+/** Build a planned market (or plan it here): stalls, carts and tables with their goods, the crate stacks. */
+export function dressMarket(o: MarketOptions, plan: MarketPlan = planMarket(o)): Market {
+  const r = stream((o.seed ?? 3) + 7);
+  const k = o.kit;
+  const P = k.over.props;
+  const batch = new TideBatch(k, o.name ?? 'tidecrown-market');
+  const m = new THREE.Matrix4();
+  const at = (x: number, z: number, yaw: number) => (lx: number, ly: number, lz: number, ry = 0, s: number | THREE.Vector3 = 1) => {
+    const c = Math.cos(yaw);
+    const sn = Math.sin(yaw);
+    const wx = x + c * lx + sn * lz;
+    const wz = z - sn * lx + c * lz;
+    return m.copy(trs(wx, o.height(wx, wz) + ly, wz, yaw + ry, s));
+  };
+  const goods = ['FarmCrate_Apple', 'FarmCrate_Carrot', 'FarmCrate_Apple', 'Vase_4', 'Bag', 'Coin_Pile', 'Mug'] as const;
+  for (const st of plan.stalls) {
     const put = at(st.x, st.z, st.yaw);
     const canopy = (w: number, cx: number, y: number, back: number, proj: number) => {
       const g = awningGeometry(w, proj, 0.42, Math.floor(r() * 3));
@@ -143,31 +187,14 @@ export function dressMarket(o: MarketOptions): Market {
       canopy(3.1, 0, 2.5, -0.7, 1.45);
       for (const sx of [-1.45, 1.45]) batch.put(k.village, 'Corner_ExteriorWide_Wood', put(sx, 0, 0.62, 0, new THREE.Vector3(0.45, 0.68, 0.45)), k.over.paint, new Map([[k.mat.paint, new THREE.Color('#2a3138')]]));
     }
-    const c = Math.cos(st.yaw);
-    const s = Math.sin(st.yaw);
-    const y = o.height(st.x, st.z);
-    colliders.push({ x: st.x, z: st.z, hx: st.hx, hz: st.hz, c, s, y0: y - 1, y1: y + 3 });
   }
-
-  // Crates and barrels stacked between the outer stalls, sacks against them.
-  const outer = stalls.filter((st) => Math.hypot(st.x - o.x, st.z - o.z) > o.radius * 0.6);
-  for (let i = 0; i < outer.length; i++) {
-    if (r() < 0.4) continue;
-    const a = outer[i];
-    const b = outer[(i + 1) % outer.length];
-    const x = (a.x + b.x) / 2;
-    const z = (a.z + b.z) / 2;
-    if (Math.hypot(a.x - b.x, a.z - b.z) > 6 || !clear(x, z, 0.7, 0.6, a.yaw)) continue;
-    const yaw = a.yaw + (r() - 0.5) * 0.5;
-    const put = at(x, z, yaw);
+  for (const s of plan.stacks) {
+    const put = at(s.x, s.z, s.yaw);
     batch.put(k.props, 'Crate_Wooden', put(0, 0, -0.3, 0, 0.8), P, null);
     if (r() < 0.6) batch.put(k.props, 'Crate_Wooden', put(0.05, 0.7, -0.32, 0.3, 0.7), P, null);
     batch.put(k.props, pick(r, ['Barrel', 'Barrel_Apples', 'Bag']), put(0.55, 0, 0.2, r() * 6, 0.8), P, null);
-    const y = o.height(x, z);
-    colliders.push({ x, z, hx: 0.7, hz: 0.6, c: Math.cos(yaw), s: Math.sin(yaw), y0: y - 1, y1: y + 2 });
   }
-
   const group = batch.build();
   group.name = o.name ?? 'tidecrown-market';
-  return { group, colliders, stalls };
+  return { group, colliders: plan.colliders, stalls: plan.stalls };
 }

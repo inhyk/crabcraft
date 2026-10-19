@@ -24,7 +24,7 @@ const BUDGETS = {
   TC_BannerWall: 1500,
   TC_MarketArcade: 12000,
 };
-const MATERIALS = new Set(['TC_Limestone', 'TC_LimestoneDark', 'TC_Slate', 'TC_Gold', 'TC_Glass', 'TC_Seaglass', 'TC_Copper', 'TC_Iron', 'TC_Wood', 'TC_Banner']);
+const MATERIALS = new Set(['TC_Limestone', 'TC_LimestoneDark', 'TC_Slate', 'TC_Gold', 'TC_Glass', 'TC_Seaglass', 'TC_SeaglassDeep', 'TC_Copper', 'TC_Iron', 'TC_Wood', 'TC_Banner']);
 
 const errors = [];
 const fail = (msg) => errors.push(msg);
