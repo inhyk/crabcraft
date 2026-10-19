@@ -1,0 +1,722 @@
+{
+  "file": "public/models/world/tidecrown-city.glb",
+  "generator": "tools/build_tidecrown_city.py",
+  "units": "game units (crab = 1 tall, storey = 3, town door about 2 x 3); Y up; origin at the ground centre of the footprint; main door faces +Z",
+  "materials": [
+    "TC_Limestone",
+    "TC_LimestoneDark",
+    "TC_Slate",
+    "TC_Gold",
+    "TC_Glass",
+    "TC_Seaglass",
+    "TC_Copper",
+    "TC_Iron",
+    "TC_Wood",
+    "TC_Banner"
+  ],
+  "uvDensity": {
+    "note": "UV units per game unit, u along the horizontal tangent, v up the wall or up the roof slope (glTF V decreases upwards like the kit). Measured on village.glb: MI_Brick and MI_UnevenBrick walls 0.500 x 0.475, MI_RoundTiles roofs 0.225 x 0.194 (Roof_RoundTiles_*), Roof_Tower_RoundTiles 0.26 x 0.23, MI_WoodTrim about 0.45. Round towers and cones wrap u to whole tiles. TC_Glass windows and TC_Banner cloths each get their own 0..1 square.",
+    "perMaterial": {
+      "TC_Limestone": {
+        "u": 0.5,
+        "v": 0.475
+      },
+      "TC_LimestoneDark": {
+        "u": 0.5,
+        "v": 0.475
+      },
+      "TC_Slate": {
+        "u": 0.225,
+        "v": 0.194
+      },
+      "TC_Copper": {
+        "u": 0.225,
+        "v": 0.194
+      },
+      "TC_Wood": {
+        "u": 0.45,
+        "v": 0.45
+      },
+      "TC_Gold": {
+        "u": 0.5,
+        "v": 0.5
+      },
+      "TC_Iron": {
+        "u": 0.5,
+        "v": 0.5
+      },
+      "TC_Seaglass": {
+        "u": 0.25,
+        "v": 0.25
+      },
+      "TC_Glass": {
+        "u": 0.5,
+        "v": 0.5
+      },
+      "TC_Banner": {
+        "u": 0.5,
+        "v": 0.5
+      }
+    },
+    "kitTextureFor": {
+      "TC_Limestone": "MI_Brick",
+      "TC_LimestoneDark": "MI_UnevenBrick",
+      "TC_Slate": "MI_RoundTiles",
+      "TC_Copper": "MI_RoundTiles",
+      "TC_Wood": "MI_WoodTrim"
+    }
+  },
+  "vertexColor": "COLOR_0 = baked ambient occlusion (linear grey, alpha 1); multiply into the base colour",
+  "pieces": {
+    "TC_Lamp": {
+      "triangles": 890,
+      "budget": 1500,
+      "bounds": {
+        "min": [
+          -0.539,
+          0.0,
+          -0.526
+        ],
+        "max": [
+          0.55,
+          5.75,
+          0.547
+        ]
+      },
+      "size": [
+        1.089,
+        5.75,
+        1.074
+      ],
+      "materials": [
+        "TC_LimestoneDark",
+        "TC_Gold",
+        "TC_Glass",
+        "TC_Iron"
+      ],
+      "anchors": {
+        "light": [
+          0.0,
+          4.45,
+          0.0
+        ]
+      }
+    },
+    "TC_BannerPole": {
+      "triangles": 876,
+      "budget": 1500,
+      "bounds": {
+        "min": [
+          -1.31,
+          0.0,
+          -0.55
+        ],
+        "max": [
+          1.31,
+          9.25,
+          0.55
+        ]
+      },
+      "size": [
+        2.62,
+        9.25,
+        1.1
+      ],
+      "materials": [
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Gold",
+        "TC_Iron",
+        "TC_Banner"
+      ],
+      "anchors": {
+        "banner": {
+          "top": [
+            0,
+            7.85,
+            0.36
+          ],
+          "width": 1.9,
+          "length": 5.15
+        }
+      }
+    },
+    "TC_BannerWall": {
+      "triangles": 836,
+      "budget": 1500,
+      "bounds": {
+        "min": [
+          -1.52,
+          0.0,
+          0.0
+        ],
+        "max": [
+          1.52,
+          5.36,
+          0.411
+        ]
+      },
+      "size": [
+        3.04,
+        5.36,
+        0.411
+      ],
+      "materials": [
+        "TC_Gold",
+        "TC_Banner"
+      ],
+      "anchors": {
+        "mount": [
+          0.0,
+          5.12,
+          0.0
+        ],
+        "banner": {
+          "top": [
+            0,
+            5.05,
+            0.32
+          ],
+          "width": 2.0,
+          "length": 5.05
+        }
+      }
+    },
+    "TC_Stair_8": {
+      "triangles": 3020,
+      "budget": 4000,
+      "bounds": {
+        "min": [
+          -4.025,
+          0.0,
+          -16.01
+        ],
+        "max": [
+          4.025,
+          10.95,
+          0.12
+        ]
+      },
+      "size": [
+        8.05,
+        10.95,
+        16.13
+      ],
+      "materials": [
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Gold"
+      ],
+      "anchors": {
+        "bottom": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "top": [
+          0.0,
+          8.0,
+          -16.0
+        ],
+        "walkWidth": 6.6
+      }
+    },
+    "TC_RetainingWall_12": {
+      "triangles": 1204,
+      "budget": 2500,
+      "bounds": {
+        "min": [
+          -6.0,
+          0.0,
+          -1.1
+        ],
+        "max": [
+          6.0,
+          8.0,
+          2.5
+        ]
+      },
+      "size": [
+        12.0,
+        8.0,
+        3.6
+      ],
+      "materials": [
+        "TC_Limestone",
+        "TC_LimestoneDark"
+      ],
+      "anchors": {
+        "terraceY": 8.0,
+        "faceZ": 0.8,
+        "tileLength": 12.0
+      }
+    },
+    "TC_Fountain": {
+      "triangles": 5732,
+      "budget": 15000,
+      "bounds": {
+        "min": [
+          -7.846,
+          0.0,
+          -7.656
+        ],
+        "max": [
+          8.0,
+          9.96,
+          7.961
+        ]
+      },
+      "size": [
+        15.846,
+        9.96,
+        15.617
+      ],
+      "materials": [
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Gold",
+        "TC_Glass"
+      ],
+      "anchors": {
+        "spouts": [
+          {
+            "pos": [
+              0.746,
+              1.55,
+              1.802
+            ],
+            "dir": [
+              0.361,
+              0.33,
+              0.872
+            ]
+          },
+          {
+            "pos": [
+              1.802,
+              1.55,
+              0.746
+            ],
+            "dir": [
+              0.872,
+              0.33,
+              0.361
+            ]
+          },
+          {
+            "pos": [
+              1.802,
+              1.55,
+              -0.746
+            ],
+            "dir": [
+              0.872,
+              0.33,
+              -0.361
+            ]
+          },
+          {
+            "pos": [
+              0.746,
+              1.55,
+              -1.802
+            ],
+            "dir": [
+              0.361,
+              0.33,
+              -0.872
+            ]
+          },
+          {
+            "pos": [
+              -0.746,
+              1.55,
+              -1.802
+            ],
+            "dir": [
+              -0.361,
+              0.33,
+              -0.872
+            ]
+          },
+          {
+            "pos": [
+              -1.802,
+              1.55,
+              -0.746
+            ],
+            "dir": [
+              -0.872,
+              0.33,
+              -0.361
+            ]
+          },
+          {
+            "pos": [
+              -1.802,
+              1.55,
+              0.746
+            ],
+            "dir": [
+              -0.872,
+              0.33,
+              0.361
+            ]
+          },
+          {
+            "pos": [
+              -0.746,
+              1.55,
+              1.802
+            ],
+            "dir": [
+              -0.361,
+              0.33,
+              0.872
+            ]
+          }
+        ],
+        "water": [
+          {
+            "y": 0.85,
+            "radius": 6.45,
+            "sides": 8,
+            "rotation": "flat faces toward +-x and +-z"
+          },
+          {
+            "y": 2.55,
+            "radius": 2.8,
+            "sides": 16
+          }
+        ],
+        "spill": {
+          "y": 2.66,
+          "radius": 3.12
+        }
+      }
+    },
+    "TC_MarketArcade": {
+      "triangles": 10390,
+      "budget": 12000,
+      "bounds": {
+        "min": [
+          -10.692,
+          0.0,
+          -5.892
+        ],
+        "max": [
+          10.692,
+          19.629,
+          5.892
+        ]
+      },
+      "size": [
+        21.384,
+        19.629,
+        11.784
+      ],
+      "materials": [
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Slate",
+        "TC_Gold",
+        "TC_Wood"
+      ],
+      "anchors": {
+        "lights": [
+          [
+            -7.36,
+            6.4,
+            0.0
+          ],
+          [
+            -3.68,
+            6.4,
+            0.0
+          ],
+          [
+            0.0,
+            6.4,
+            0.0
+          ],
+          [
+            3.68,
+            6.4,
+            0.0
+          ],
+          [
+            7.36,
+            6.4,
+            0.0
+          ]
+        ],
+        "openSides": "all four sides are open arcades; the floor is at y=0.24"
+      }
+    },
+    "TC_Waterwheel": {
+      "triangles": 1732,
+      "budget": 4000,
+      "bounds": {
+        "min": [
+          -1.45,
+          -5.35,
+          -5.35
+        ],
+        "max": [
+          2.5,
+          5.35,
+          5.35
+        ]
+      },
+      "size": [
+        3.95,
+        10.7,
+        10.7
+      ],
+      "materials": [
+        "TC_Gold",
+        "TC_Iron",
+        "TC_Wood"
+      ],
+      "anchors": {
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "radius": 5.35
+      },
+      "note": "Rotate about local +X (the axle). Place at TC_Forge anchors.waterwheel.pos."
+    },
+    "TC_Forge": {
+      "triangles": 9382,
+      "budget": 25000,
+      "bounds": {
+        "min": [
+          -17.0,
+          0.0,
+          -9.974
+        ],
+        "max": [
+          18.05,
+          31.15,
+          9.974
+        ]
+      },
+      "size": [
+        35.05,
+        31.15,
+        19.947
+      ],
+      "materials": [
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Gold",
+        "TC_Glass",
+        "TC_Copper",
+        "TC_Iron",
+        "TC_Wood"
+      ],
+      "anchors": {
+        "waterwheel": {
+          "piece": "TC_Waterwheel",
+          "pos": [
+            14.85,
+            5.4,
+            -1.0
+          ],
+          "axis": [
+            1,
+            0,
+            0
+          ],
+          "waterY": 0.6,
+          "race": {
+            "x": [
+              13.65,
+              16.05
+            ],
+            "z": [
+              -7.25,
+              5.25
+            ]
+          }
+        },
+        "smoke": [
+          [
+            -7.2,
+            28.4,
+            -3.6
+          ],
+          [
+            7.2,
+            28.4,
+            -3.6
+          ]
+        ],
+        "forgeGlow": [
+          0.0,
+          1.3,
+          6.8
+        ],
+        "doors": [
+          [
+            -8.0,
+            0.0,
+            8.6
+          ],
+          [
+            8.0,
+            0.0,
+            8.6
+          ]
+        ],
+        "forgeArch": {
+          "centre": [
+            0.0,
+            0.0,
+            9.0
+          ],
+          "width": 7.2,
+          "height": 6.8,
+          "depth": 3.0
+        }
+      }
+    },
+    "TC_SeaglassTower": {
+      "triangles": 16251,
+      "budget": 30000,
+      "bounds": {
+        "min": [
+          -7.4,
+          0.0,
+          -7.4
+        ],
+        "max": [
+          7.4,
+          66.4,
+          7.771
+        ]
+      },
+      "size": [
+        14.8,
+        66.4,
+        15.171
+      ],
+      "materials": [
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Slate",
+        "TC_Gold",
+        "TC_Seaglass",
+        "TC_Iron",
+        "TC_Wood"
+      ],
+      "anchors": {
+        "door": [
+          0.0,
+          0.6,
+          7.4
+        ],
+        "crystal": {
+          "piece": "TC_SeaglassCrystal",
+          "pos": [
+            0.0,
+            69.5,
+            0.0
+          ],
+          "spinAxis": [
+            0,
+            1,
+            0
+          ],
+          "bob": 0.5
+        },
+        "glow": [
+          [
+            0.0,
+            49.0,
+            0.0
+          ]
+        ]
+      }
+    },
+    "TC_SeaglassCrystal": {
+      "triangles": 688,
+      "budget": 3000,
+      "bounds": {
+        "min": [
+          -2.29,
+          -2.1,
+          -2.151
+        ],
+        "max": [
+          2.29,
+          2.9,
+          2.151
+        ]
+      },
+      "size": [
+        4.58,
+        5.0,
+        4.302
+      ],
+      "materials": [
+        "TC_Gold",
+        "TC_Seaglass"
+      ],
+      "anchors": {},
+      "note": "Origin at the cluster centre; spin about +Y. Hovers at TC_SeaglassTower anchors.crystal.pos."
+    },
+    "TC_Cathedral": {
+      "triangles": 42957,
+      "budget": 60000,
+      "bounds": {
+        "min": [
+          -14.58,
+          0.0,
+          -27.14
+        ],
+        "max": [
+          14.58,
+          72.6,
+          29.4
+        ]
+      },
+      "size": [
+        29.16,
+        72.6,
+        56.54
+      ],
+      "materials": [
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Slate",
+        "TC_Gold",
+        "TC_Glass",
+        "TC_Iron",
+        "TC_Wood"
+      ],
+      "anchors": {
+        "door": [
+          0.0,
+          0.6,
+          26.66
+        ],
+        "bells": [
+          0.0,
+          28.0,
+          21.0
+        ],
+        "roseWindow": {
+          "centre": [
+            0.0,
+            17.6,
+            26.5
+          ],
+          "radius": 3.3
+        }
+      }
+    }
+  }
+}
