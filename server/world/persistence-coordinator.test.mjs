@@ -117,3 +117,30 @@ test('batched commit saves together, and after a lost batch response every captu
   assert.equal(coordinator.metrics.batchFallbacks, 1);
   assert.deepEqual(await coordinator.shutdown(100), { durable: true, unresolved: 0 });
 });
+
+test('a batch hands dungeon award receipts to saveCheckpoints, and its per-capture fallback to saveCheckpoint and loadForRecovery', async () => {
+  const calls = [];
+  const fake = failBatch => ({
+    async saveCheckpoints(writes) {
+      calls.push(['batch', writes.map(w => w.appliedDungeonAwardIds ?? null)]);
+      if (failBatch) throw new Error('lost batch response');
+      return writes.map(w => ({ characterId: w.characterId, accountId: w.accountId, revision: w.expectedRevision + 1, checkpoint: w.checkpoint, updatedAt: 1 }));
+    },
+    async saveCheckpoint(a, c, r, checkpoint, ids, ...feature) {
+      calls.push(['single', c, feature]);
+      if (c === 'c2' && !calls.some(call => call[0] === 'recovery')) throw new Error('lost single response');
+      return { characterId: c, accountId: a, revision: r + 1, checkpoint, updatedAt: 1 };
+    },
+    async loadForRecovery(a, c, ids, ...feature) { calls.push(['recovery', c, feature]); return { character: { characterId: c, accountId: a, revision: 0, checkpoint: {}, updatedAt: 1 }, grants: [], dungeonAwards: [{ id: 'award-2', appliedRevision: null }] }; },
+  });
+  const inputs = [{ captureId: 'c1:1', accountId: account, characterId: 'c1', expectedRevision: 0, checkpoint: { xp: 1 }, appliedGrantIds: [] },
+    { captureId: 'c2:1', accountId: account, characterId: 'c2', expectedRevision: 0, checkpoint: { xp: 2 }, appliedGrantIds: [], appliedFeatureAwardIds: ['award-2'] }];
+  const batched = await new PersistenceCoordinator(fake(false), ownership, options).commitBatch(inputs);
+  assert.deepEqual(batched.map(r => r.kind), ['saved', 'saved']);
+  assert.deepEqual(calls, [['batch', [null, ['award-2']]]]);
+  calls.length = 0;
+  const fallback = await new PersistenceCoordinator(fake(true), ownership, options).commitBatch(inputs);
+  assert.deepEqual(fallback.map(r => r.kind), ['saved', 'saved']);
+  // The capture without awards keeps the old call shape; the one with awards names them in every call, also the recovery read.
+  assert.deepEqual(calls, [['batch', [null, ['award-2']]], ['single', 'c1', []], ['single', 'c2', [['award-2']]], ['recovery', 'c2', [['award-2']]], ['single', 'c2', [['award-2']]]]);
+});
