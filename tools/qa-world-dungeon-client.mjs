@@ -138,8 +138,17 @@ try {
   result.checks.run = { area: inside.a.area, runId: inside.a.run.run.runId, tier: inside.a.run.tier };
   await until(async () => (await A.evaluate(() => window.dungeonQA.controls.filter(c => c.type === 'party').at(-1)?.state?.dungeon?.runId)) === inside.a.run.run.runId, 5000, 'party control carries the run');
 
-  // The first wave opens with its hazard warning: both clients show the chamber and the red floor before anyone fights.
-  await until(async () => { const v = await view(A); return v.run?.phase === 'wave' && v.run.warning.length > 0; }, 15000, 'wave with warning');
+  // A member steps out alone and comes back through the menu's join card for the party's running run.
+  await B.bringToFront(); await B.locator('.dungeon-status').getByRole('button', { name: '혼자 나가기', exact: true }).click();
+  await until(async () => (await view(B))?.mode === 'public', 10000, 'member steps out');
+  assert.equal((await view(A)).mode, 'dungeon', 'the run goes on for the leader');
+  await B.locator('.dungeon-menu').click(); await B.locator('.dungeon-panel').waitFor();
+  const joinCard = B.locator('.dg-card[data-level="35"] .dg-enter'); await B.waitForFunction(() => document.querySelector('.dg-card[data-level="35"] .dg-enter')?.classList.contains('is-join'));
+  result.checks.joinButton = await joinCard.innerText(); result.checks.joinNotice = await B.locator('.dg-notice').innerText();
+  await shot(B, '1-menu-member-join'); await joinCard.click();
+  await until(async () => (await view(B))?.mode === 'dungeon' && (await view(B)).run?.run.runId === inside.a.run.run.runId, 15000, 'member rejoins the run');
+  // A wave with its hazard warning on both screens before anyone fights (the warning shows 2.5 s of every 7 s).
+  await until(async () => { const [a, b] = [await view(A), await view(B)]; return [a, b].every(v => v.run?.phase === 'wave' && v.run.warning.length > 0 && v.run.clock % 7 < 1.2); }, 30000, 'wave with warning on both');
   await Promise.all([A.waitForFunction(() => document.querySelector('.dungeon-status')?.dataset.phase === 'wave'), B.waitForFunction(() => document.querySelector('.dungeon-status')?.dataset.phase === 'wave')]);
   result.checks.warningShapes = (await view(A)).run.warning.length;
   for (const page of [A, B]) await layout(page, '.dungeon-status', 'chamber');

@@ -143,7 +143,8 @@ export class ServerDungeon {
    const ground=this.ground=chamberGround(this.outside);w.heightAt=ground.heightAt;w.resolveCollision=ground.resolveCollision;w.raycastSolid=ground.raycastSolid;
    g.hud.dialogue.close();
   }
-  if(this.built!==key){this.built=key;this.chamber.build(d);this.chamber.resetWarning();this.info(t(`${d.name[0]} · 세 번의 전투를 이겨 내세요!`,`${d.name[1]} · Survive three waves!`));}
+  // The run banner names the expedition; a toast here would sit right behind it.
+  if(this.built!==key){this.built=key;this.chamber.build(d);this.chamber.resetWarning();}
   this.chamber.visible=true;
   // The hazard fires when its warning ends inside the same wave and serial; the ring is the observed strike.
   const warned=this.lastWarning;
