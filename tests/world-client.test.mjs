@@ -251,3 +251,14 @@ test('a denied host command arrives as an error control without ending the sessi
     } finally { f.client.dispose(); }
   }
 });
+
+test('a server that closes an older schema with protocol-schema ends the attempt without retrying', async () => {
+  const states = [], f = clientFixture(actualWorld(), { maxReconnects: 5, onState: (state, code) => states.push([state, code]) });
+  try {
+    const connecting = f.client.connect('owned-character').catch(error => error); await tickAsync();
+    const socket = f.sockets.at(-1); socket.open();
+    socket.receive(JSON.stringify({ type: 'error', code: 'protocol-schema', retryable: false })); socket.close();
+    assert.match((await connecting).message, /protocol-schema/); assert.deepEqual(states.at(-1), ['authRequired', 'protocol-schema']);
+    await new Promise(resolve => setTimeout(resolve, 50)); assert.equal(f.sockets.length, 1, 'no reconnect loop'); assert.equal(f.requests.length, 1, 'no second ticket');
+  } finally { f.client.dispose(); }
+});
