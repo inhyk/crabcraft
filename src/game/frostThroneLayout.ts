@@ -54,6 +54,43 @@ export function arenaPillars(): { i: number; x: number; z: number; a: number }[]
   return out;
 }
 
+/** "Charting the Aurora": the hunter's lean-to in the Frostpine Woods (visit point -50, 26 stays open). */
+export const SHELTER = {
+  /** Front centre of the lean-to; it opens toward the fire. */
+  x: -57, z: 22, yaw: 1.03,
+  width: 4.4, depth: 2.6,
+  fire: { x: -54.6, z: 23.4 },
+  sled: { x: -57.8, z: 27.6, yaw: 1.75 },
+} as const;
+/** The eastern ice overlook: a carved parapet on the ledge, facing the frozen sea to the south-east. */
+export const OVERLOOK = {
+  x: 61, z: 22,
+  /** Parapet arc radius and its span (angles from +x toward +z). */
+  r: 4.4, a0: .4, a1: 1.5,
+  standard: { x: 59.4, z: 26.3 },
+} as const;
+/** The northern aurora ridge: a ring of standing stones the main road runs through, and an observer's camp. */
+export const RIDGE = {
+  x: 0, z: -34, r: 9.6, clear: 6.2,
+  /** The observer's camp east of the ring: an armillary on a pedestal, a telescope on its tripod, a chest. */
+  armillary: { x: 13.2, z: -30.4 }, scope: { x: 12.9, z: -36.2 }, chest: { x: 15.1, z: -33.4, yaw: 1.4 },
+} as const;
+export function ridgeStones(): { x: number; z: number; a: number; h: number }[] {
+  const out: { x: number; z: number; a: number; h: number }[] = [];
+  for (let i = 0; i < 14; i++) {
+    const a = (i + .5) / 14 * Math.PI * 2, x = RIDGE.x + Math.sin(a) * RIDGE.r, z = RIDGE.z + Math.cos(a) * RIDGE.r;
+    if (Math.abs(x) < RIDGE.clear) continue;
+    out.push({ x, z, a, h: 3.1 + ((i * 7) % 5) * .42 });
+  }
+  return out;
+}
+/** The way to the throne past the aurora seals: frozen standards in pairs, then two gate obelisks at the arena. */
+export const PROCESSION = {
+  standards: [-41, -47.5] as readonly number[],
+  side: 5.3,
+  obelisk: { x: 6.6, z: -53.6, r: 1.15 },
+} as const;
+
 export function registerFrostThrone(col: Collision, h = snowHeight): void {
   const y = ARENA.y, t = THRONE;
   // The dais and the throne on it: one solid, the tiers are a monument, not a stair (heights are the terrain's).
@@ -63,4 +100,28 @@ export function registerFrostThrone(col: Collision, h = snowHeight): void {
   col.addBox(0, (c.gate.z + c.wall.z - c.wall.thick) / 2, c.gate.half, (c.gate.z - c.wall.z + c.wall.thick) / 2, 0, y - 2, c.gate.top);
   for (const tw of c.towers) col.addCircle(tw.x, tw.z, tw.r + .5, h(tw.x, tw.z) - 2, tw.top);
   col.addBox(c.keep.x, c.keep.z, c.keep.hx + 1, c.keep.hz + 1, 0, y - 2, c.keep.top);
+  // The lean-to (its roof slopes back from the front posts), the fire ring, the woodpile and the sled.
+  const S = SHELTER, sy = Math.sin(S.yaw), cy = Math.cos(S.yaw), at = (lx: number, lz: number) => [S.x + cy * lx + sy * lz, S.z - sy * lx + cy * lz] as const;
+  const [lx, lz] = at(0, -S.depth / 2);
+  col.addBox(lx, lz, S.width / 2 + .2, S.depth / 2 + .2, S.yaw, h(lx, lz) - 1, h(lx, lz) + 2.6);
+  const [wx, wz] = at(-S.width / 2 - .55, -1.1);
+  col.addBox(wx, wz, .5, 1.2, S.yaw, h(wx, wz) - 1, h(wx, wz) + 1.2);
+  col.addCircle(S.fire.x, S.fire.z, .7, h(S.fire.x, S.fire.z) - 1, h(S.fire.x, S.fire.z) + .6);
+  col.addBox(S.sled.x, S.sled.z, 1.15, .55, S.sled.yaw, h(S.sled.x, S.sled.z) - 1, h(S.sled.x, S.sled.z) + 1);
+  // The overlook's parapet in short straight runs and its standard.
+  const O = OVERLOOK, n = 6;
+  for (let i = 0; i < n; i++) {
+    const a0 = O.a0 + (O.a1 - O.a0) * i / n, a1 = O.a0 + (O.a1 - O.a0) * (i + 1) / n;
+    const ax = O.x + Math.cos(a0) * O.r, az = O.z + Math.sin(a0) * O.r, bx = O.x + Math.cos(a1) * O.r, bz = O.z + Math.sin(a1) * O.r;
+    const my = h((ax + bx) / 2, (az + bz) / 2);
+    col.addBox((ax + bx) / 2, (az + bz) / 2, Math.hypot(bx - ax, bz - az) / 2 + .1, .35, Math.atan2(-(bz - az), bx - ax), my - 1, my + 1.1);
+  }
+  col.addCircle(O.standard.x, O.standard.z, .3, h(O.standard.x, O.standard.z) - 1, h(O.standard.x, O.standard.z) + 6);
+  for (const st of ridgeStones()) col.addCircle(st.x, st.z, .75, h(st.x, st.z) - 1, h(st.x, st.z) + st.h);
+  const A = RIDGE.armillary, C = RIDGE.chest;
+  col.addCircle(A.x, A.z, .65, h(A.x, A.z) - 1, h(A.x, A.z) + 2.4);
+  col.addBox(C.x, C.z, 1.0, .6, C.yaw, h(C.x, C.z) - 1, h(C.x, C.z) + .8);
+  const P = PROCESSION;
+  for (const z of P.standards) for (const s of [-1, 1]) col.addCircle(s * P.side, z, .3, h(s * P.side, z) - 1, h(s * P.side, z) + 7);
+  for (const s of [-1, 1]) col.addCircle(s * P.obelisk.x, P.obelisk.z, P.obelisk.r, y - 1, y + 9);
 }

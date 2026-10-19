@@ -17,6 +17,7 @@ import {crystalCluster,crystalGeometry,iceMaterial,type Crystal} from './iceCrys
 import {frostThrone,type FrostThrone} from './frostThrone';
 import {citadelClears} from './frostThroneLayout';
 import {miraPrison,type MiraPrison} from './frostPrison';
+import {frostCamps,type FrostCamps} from './frostCamps';
 import {SnowSky} from './snowSky';
 import {snowPines} from './snowPines';
 import {buildSnowVillage,type SnowVillage} from './snowVillage';
@@ -58,6 +59,8 @@ export class SnowIsland {
  /** Boreas's throne, the glacial citadel and the arena's crowned pillars (frostThrone.ts). */
  private throne:FrostThrone;
  private prisonFx:MiraPrison;
+ /** The lean-to, the overlook, the ridge stones and the processional way (frostCamps.ts); null until the kits load. */
+ private camps:FrostCamps|null=null;
  height(x:number,z:number){
   return snowHeight(x,z);
  }
@@ -115,11 +118,11 @@ export class SnowIsland {
  /** The forest and the village need the kits, so they load after construction like DawnIsland's settlement. */
  async buildSettlement(){
   const height=(x:number,z:number)=>this.height(x,z);
-  const [forest,village]=await Promise.all([snowPines(snowTrees(),height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress()]);
-  this.root.add(forest,village.group);this.village=village;this.basin.material=village.stone;
+  const [forest,village,,camps]=await Promise.all([snowPines(snowTrees(),height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass})]);
+  this.root.add(forest,village.group,camps.group);this.camps=camps;this.village=village;this.basin.material=village.stone;
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
  updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.terrain.setQuality(quality);this.terrain.prepare(renderer);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
  disposeSnow(){this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
- update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;if(!rescued)this.prisonFx.update(time);this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.throne.update(time);this.village?.update(time,x,z);this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
+ update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;if(!rescued)this.prisonFx.update(time);this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.throne.update(time);this.camps?.update(time);this.village?.update(time,x,z);this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
 }

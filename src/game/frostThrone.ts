@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {crystalCluster,crystalGeometry,type Crystal} from './iceCrystals';
-import {loadKit,StaticBatch,trs} from '../world/kit';
+import {harmonise,loadKit,StaticBatch,trs} from '../world/kit';
 import {addPatch,stylise} from '../world/materials';
 import {lathe} from '../world/geom';
 import {snowCover,snowMass} from './snowCover';
@@ -34,7 +34,7 @@ function stream(seed:number){let s=seed>>>0;return()=>(s=(Math.imul(s,1664525)+1
 const clamp01=(v:number)=>Math.min(1,Math.max(0,v));
 
 /** Aurora window glass: emissive teal, brightest low in the pane, a few violet. HDR, so the bloom picks it up. */
-class Glass {
+export class Glass {
  pos:number[]=[];col:number[]=[];
  /** A lancet (rectangle and pointed head) on a face, `w` wide, sill at v0, springing at v1. */
  lancet(warp:Warp,u:number,v0:number,v1:number,w:number,tint:V3,t=-.02){
@@ -56,7 +56,7 @@ class Glass {
 }
 
 /** Glass a few centimetres proud of the face, framed by a proud stone surround: jambs, sill and hood. */
-function windowAt(M:Masonry,glass:Glass,warp:Warp,u:number,v0:number,v1:number,w:number,tint:V3){
+export function windowAt(M:Masonry,glass:Glass,warp:Warp,u:number,v0:number,v1:number,w:number,tint:V3){
  const head=w*.85,j=Math.max(.18,w*.32);
  glass.lancet(warp,u,v0,v1,w,tint,-.08);
  for(const s of [-1,1])M.block(warp,s<0?u-w/2-j:u+w/2,v0-.04,-.2,j,v1+head*.55-v0+.04,.32,{bevel:.04,closed:true});
@@ -71,7 +71,7 @@ function noise1(x:number,k=0){const hh=(v:number)=>{const q=Math.sin(v*127.1+k*3
  * Snow banked against a wall foot: highest at the stone, feathering out over `width`, following the ground.
  * `path` runs along the foot with the outward normal at each point; `open` is 0..1 along it where it thins (a gate).
  */
-function bank(h:Height,path:{x:number;z:number;nx:number;nz:number}[],height:number,width:number,seed:number,thin=(_t:number)=>1){
+export function bank(h:Height,path:{x:number;z:number;nx:number;nz:number}[],height:number,width:number,seed:number,thin=(_t:number)=>1){
  const pos:number[]=[],occ:number[]=[],idx:number[]=[],nS=6;
  let along=0;
  path.forEach((p,i)=>{
@@ -90,8 +90,8 @@ function bank(h:Height,path:{x:number;z:number;nx:number;nz:number}[],height:num
  if(up<0){for(let i=0;i<idx.length;i+=3){const t=idx[i+1];idx[i+1]=idx[i+2];idx[i+2]=t;}g.setIndex(idx);g.computeVertexNormals();}
  return g;
 }
-const line=(ax:number,az:number,bx:number,bz:number,nx:number,nz:number,step=.5)=>{const L=Math.hypot(bx-ax,bz-az),n=Math.max(2,Math.ceil(L/step));return Array.from({length:n+1},(_,i)=>({x:ax+(bx-ax)*i/n,z:az+(bz-az)*i/n,nx,nz}));};
-const arc=(cx:number,cz:number,r:number,a0:number,a1:number,step=.5)=>{const n=Math.max(3,Math.ceil(Math.abs(a1-a0)*r/step));return Array.from({length:n+1},(_,i)=>{const a=a0+(a1-a0)*i/n;return {x:cx+Math.sin(a)*r,z:cz+Math.cos(a)*r,nx:Math.sin(a),nz:Math.cos(a)};});};
+export const line=(ax:number,az:number,bx:number,bz:number,nx:number,nz:number,step=.5)=>{const L=Math.hypot(bx-ax,bz-az),n=Math.max(2,Math.ceil(L/step));return Array.from({length:n+1},(_,i)=>({x:ax+(bx-ax)*i/n,z:az+(bz-az)*i/n,nx,nz}));};
+export const arc=(cx:number,cz:number,r:number,a0:number,a1:number,step=.5)=>{const n=Math.max(3,Math.ceil(Math.abs(a1-a0)*r/step));return Array.from({length:n+1},(_,i)=>{const a=a0+(a1-a0)*i/n;return {x:cx+Math.sin(a)*r,z:cz+Math.cos(a)*r,nx:Math.sin(a),nz:Math.cos(a)};});};
 
 export function frostThrone(opts:FrostThroneOptions):FrostThrone {
  const h=opts.height,root=new THREE.Group();root.name='frostlight-throne-citadel';
@@ -340,7 +340,7 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
   for(const p of arenaPillars())drifts.push(bank(h,arc(p.x,p.z,1.8,p.a-1.9,p.a+1.9),.5,1.4,13+p.i));
  }
  const driftMat=new THREE.MeshStandardMaterial({name:'frostlight-citadel-drift',color:'#e8f2fc',roughness:.9,vertexColors:true});snowMass(driftMat,{lumps:.7});
- const driftMesh=new THREE.Mesh(mergeGeometries(drifts,false)!,driftMat);driftMesh.name='frostlight-citadel-drifts';driftMesh.receiveShadow=driftMesh.castShadow=true;
+ const driftMesh=new THREE.Mesh(mergeGeometries(harmonise(drifts),false)!,driftMat);driftMesh.name='frostlight-citadel-drifts';driftMesh.receiveShadow=driftMesh.castShadow=true;
 
  // ---- Meshes: one granite, one ice, one icicle, one glass, one iron, the fire.
  const granite=new THREE.Mesh(M.geometry(),masonryMaterial('frostlight-citadel-granite'));granite.name='frostlight-citadel-granite';granite.castShadow=granite.receiveShadow=true;
@@ -348,7 +348,7 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
  const icicleMesh=new THREE.Mesh(crystalGeometry(icicles),opts.ice);icicleMesh.name='frostlight-citadel-icicles';
  const glassMesh=glass.mesh('frostlight-aurora-glass');
  const iron=new THREE.MeshStandardMaterial({name:'frostlight-brazier-iron',color:'#3a4048',roughness:.5,metalness:.6,envMapIntensity:0});
- const ironMesh=new THREE.Mesh(mergeGeometries([...bowls,...poles],false)!,iron);ironMesh.name='frostlight-braziers';ironMesh.castShadow=ironMesh.receiveShadow=true;
+ const ironMesh=new THREE.Mesh(mergeGeometries(harmonise([...bowls,...poles]),false)!,iron);ironMesh.name='frostlight-braziers';ironMesh.castShadow=ironMesh.receiveShadow=true;
  const fire=frostFire('frostlight-cold-fire',flames,halos,4417,6);
  root.add(granite,iceMesh,icicleMesh,glassMesh,ironMesh,driftMesh,fire.group);
  root.userData.throne={blocks:M.blocks,crystals:ice.length,icicles:icicles.length,flames:flames.length,pillars:arenaPillars().length,windows:glass.pos.length/3};

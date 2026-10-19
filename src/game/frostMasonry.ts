@@ -138,6 +138,29 @@ export class Masonry {
     return tops;
   }
 
+  /**
+   * A rough-hewn standing stone: eight faces, each ring's corners knocked in or out, tapering to a blunt crown.
+   * Its front face (toward nx, nz) stays flat and true, for the runes cut into it. Returns that face's depth.
+   */
+  menhir(x: number, z: number, y: number, h: number, w: number, d: number, nx: number, nz: number, lean: number): number {
+    const r = this.rand, tint = this.tint(), tx = -nz, tz = nx;
+    const rings = [[-.5, 1.04], [.15, 1], [.4, .97], [.68, .9], [.86, .74], [.97, .42]] as const;
+    // Octagon corners in the stone's frame: across (a) and toward the front (b).
+    const corner = (k: number) => { const a = (k + .5) / 8 * Math.PI * 2; return [Math.sin(a) * w / 2 * 1.08, Math.cos(a) * d / 2 * 1.08] as const; };
+    const front = new Set([0, 7]);
+    const pts = rings.map(([f, k], ri) => Array.from({length: 8}, (_, c) => {
+      const [a, b] = corner(c), j = front.has(c) && ri < 5 ? 1 : 1 + (r() - .5) * .22, yy = y + (f < 0 ? f : f * h) + (ri > 3 ? (r() - .5) * .12 : 0);
+      const ly = Math.max(0, yy - y);
+      return [x + tx * a * k * j + nx * (b * k * j + lean * ly), yy, z + tz * a * k * j + nz * (b * k * j + lean * ly)] as V3;
+    }));
+    const c: V3 = [x, y + h * .45, z];
+    for (let ri = 0; ri < rings.length - 1; ri++) for (let k = 0; k < 8; k++) { const k1 = (k + 1) % 8; this.quad(pts[ri][k], pts[ri][k1], pts[ri + 1][k1], pts[ri + 1][k], tint, c); }
+    const top = pts[rings.length - 1], apex: V3 = [x + (r() - .5) * w * .1 + nx * lean * h, y + h * (1 + r() * .04), z + (r() - .5) * d * .1 + nz * lean * h];
+    for (let k = 0; k < 8; k++) this.tri(top[k], top[(k + 1) % 8], apex, tint, c);
+    this.blocks++;
+    return d / 2 * 1.08 * Math.cos(Math.PI / 8);
+  }
+
   /** A flat round cap facing up (tower floors, collar tops). */
   disc(x: number, y: number, z: number, r: number, n = 20, tint = this.tint(.9)): void {
     const c: V3 = [x, y - 1, z];
