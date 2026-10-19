@@ -145,7 +145,7 @@ export async function startConfiguredWorld(options:ConfiguredWorldOptions) {
  const catalog=await loadCheckedCatalog(options.assets,config),party=createConfiguredPartyPolicy(config.party,catalog),spawn=catalog.get('w1')!.publicDefinition.spawn;
  const frost=catalog.get('w4')!.encounterDefinitions.get('frost');if(!frost)fail('ending Frost metadata');
  const endingPresentation={stage:createEndingStage(catalog.get('w1')!.publicDefinition,frost)};
- const codec=createCoreCharacterCodec({identities:['human','orc','dwarf','undead','nightelf','tauren'].flatMap(archetype=>Object.keys(CLASSES).map(classId=>({classId:classId as keyof typeof CLASSES,archetype}))),freshLocation:{...spawn.position,yaw:spawn.yaw}}),characters=new CharacterStore(options.pool,codec),gameplayCatalog=createGameplayCatalog(catalog),restore=createConfiguredRestorePolicy(config.restore,catalog);
+ const codec=createCoreCharacterCodec({identities:['human','orc','dwarf','undead','nightelf','tauren'].flatMap(archetype=>Object.keys(CLASSES).map(classId=>({classId:classId as keyof typeof CLASSES,archetype}))),freshLocation:{...spawn.position,yaw:spawn.yaw}}),characters=new CharacterStore(options.pool,codec),gameplayCatalog=createGameplayCatalog(catalog,config.dungeons?.enabled?{dungeons:config.dungeons.tiers}:{}),restore=createConfiguredRestorePolicy(config.restore,catalog);
  // Construct/validate the concrete protocol before retaining a database ownership session.
  createGameplayProtocol(gameplayCatalog);
  const outcomes=ledgerConfig?new DurableOutcomeStore(options.pool,codec,{planOutcomePage,queryTimeoutMs:ledgerConfig.queryTimeoutMs}):undefined;

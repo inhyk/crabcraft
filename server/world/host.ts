@@ -91,7 +91,7 @@ export interface ActualWorldHost {
   retryDurability(resources: VictimOutcomeResources): Promise<boolean>;
   shutdown(deadlineMs: number): Promise<{ durable: boolean; unresolved: number }>;
   stats(): Readonly<Record<string, number | boolean>>;
-  /** Trusted typed dungeon commands for a connected, authenticated character. The wire decoder for them is D3. */
+  /** Trusted typed dungeon commands for a connected, authenticated character; the wire commands share its queue. */
   dungeon(characterId: string, command: DungeonCommand): Promise<DungeonCommandResult>;
   /** Read-only view of the character's current run, or null outside a dungeon. */
   dungeonObservation(characterId: string): Readonly<DungeonObservation> | null;
@@ -133,6 +133,10 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   const p = deps.policies, external = !!p.ledger;
   validateWireSchema(deps.gameplay.catalog);
   if (p.endingPresentation && deps.gameplay.catalog.wireSchemaRevision !== WIRE_SCHEMA_REVISION) throw new Error('ending requires the compiled wire schema catalog');
+  // The browser offers exactly the advertised tiers, and the dungeon view needs the compiled schema on both ends.
+  if (p.dungeons && deps.gameplay.catalog.wireSchemaRevision !== WIRE_SCHEMA_REVISION) throw new Error('dungeons require the compiled wire schema catalog');
+  { const advertised = deps.gameplay.catalog.dungeons ?? [], tiers = p.dungeons?.tiers ?? [];
+    if (advertised.length !== tiers.length || tiers.some(tier => !advertised.includes(tier))) throw new Error('catalog dungeon tiers must match the dungeon policy'); }
   if (!!deps.outcomes !== external) throw new Error('outcomes service and explicit ledger policy must be paired');
   if (p.ledger && (!Number.isSafeInteger(p.ledger.recoveryIntervalMs) || p.ledger.recoveryIntervalMs < 1)) throw new Error('explicit recovery interval required');
   for (const key of ['authTimeoutMs', 'inputTimeoutMs', 'sessionRevalidateMs', 'checkpointIntervalMs', 'maxConnections', 'maxConnectionsPerIp', 'maxWaiting', 'maxAuthFrameBytes', 'maxFrameBytes', 'maxBufferedBytes', 'maxQueuedInputs', 'maxMutationSourcesPerTick', 'loopIntervalMs'] as const) {
@@ -289,12 +293,15 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   }
   function partyState(party: Party | undefined) {
     if (!party) return null;
+    const run = party.dungeon?.dungeon;
     return { code: party.code, leader: party.members.get(party.leader)!, pvp: party.pvp,
       members: [...party.members].map(([character, id]) => {
         const actor = actors.get(character);
         if (!actor) throw new Error('party references retired actor');
         return { id, name: shownName(actor.record.identity.appearance.name), ref: actor.ref, world: actor.slot.world, online: !!actor.connection };
-      }) };
+      }),
+      // Members learn the running run here to join it; absent without dungeons so the older shape is unchanged.
+      ...(p.dungeons ? { dungeon: run ? { runId: run.runId, tier: run.tier } : null } : {}) };
   }
   function publishParty(c: Connection) {
     if (!c.stream || !c.input || !c.actor || c.stream.area !== c.actor.slot.area.services.id || c.closed || c.ws.readyState !== WebSocket.OPEN) return;
@@ -345,6 +352,15 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
       if (actor.slot.kind !== 'party') { controlError(c, 'encounter-unavailable'); return; }
       returnRequests.set(character, { actor, leaveParty: false });
     }
+  }
+  /** A dungeon command from the wire joins the same ordered queue as host.dungeon(); a denial arrives as a control error. */
+  function requestDungeon(c: Connection, command: Extract<HostCommand, { kind: `dungeon${string}` }>) {
+    const actor = c.actor!, character = actor.record.characterId;
+    if (!p.dungeons) { controlError(c, 'dungeon-unavailable'); return; }
+    let owned: DungeonCommand;
+    try { owned = validateDungeonCommand({ ...command }); } catch { controlError(c, 'invalid-command'); return; }
+    if (dungeonRequests.has(character)) { controlError(c, 'dungeon-busy'); return; }
+    dungeonRequests.set(character, { actor, command: owned, resolve: () => {} });
   }
   function participantOf(actor: Actor): ChatParticipant {
     return { accountId: actor.record.accountId, ref: { ...actor.ref }, name: shownName(actor.record.identity.appearance.name), partyId: memberParty.get(actor.record.characterId)?.code ?? null };
@@ -746,11 +762,14 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
   };
   const cleanupDungeons = () => {
     if (barrier || frozen) return;
+    let ended = false;
     for (const slot of allSlots) if (slot.kind === 'dungeon' && slot.area.players.size === 0 && !slot.dungeon!.frozen && !slot.area.pendingDungeonCompletion() &&
       (!slot.source || !slot.area.resourceUsage().dirtyCreditEntries && !slot.area.resourceUsage().pendingDeaths)) {
       slot.area.dispose(); allSlots.delete(slot); failedSources.delete(slot); drainedFailedSources.delete(slot); attemptedFailedSources.delete(slot);
-      if (slot.party?.dungeon === slot) slot.party.dungeon = undefined;
+      if (slot.party?.dungeon === slot) { slot.party.dungeon = undefined; ended = true; }
     }
+    // The party control stops advertising the disposed run.
+    if (ended) syncPartyContexts();
   };
   /** A safe public checkpoint cannot restore in the chamber: discard the local life and readmit the durable one publicly. */
   function evictDungeonResident(actor: Actor, recovery: Recovery<IdentityJson, CheckpointJson, GrantJson>) {
@@ -1199,17 +1218,17 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
    */
   const PUBLISH_SLICE_MS = 4;
   let publication: { slot: Slot; snapshot: AreaSnapshot; prepared: PreparedObservation; appearances: ObservationInput['appearances']; beat: number;
-    events: EventRecord[]; watermark: number; recipients: Actor[]; index: number; started: number; busy: number } | null = null;
+    events: EventRecord[]; watermark: number; recipients: Actor[]; index: number; started: number; busy: number; dungeon: Readonly<DungeonObservation> | null } | null = null;
   const publish = (slot: Slot) => {
     if (halted() || frozen || publication || [...actors.values()].some(actor => actor.pendingReplay)) return;
-    // The current observation schema has no dungeon mode; D3 adds a typed run view. Events stay bounded meanwhile.
-    if (slot.kind === 'dungeon') { slot.events = []; return; }
     const start = deps.nowMonotonicMs(), snapshot = slot.area.snapshot();
     const appearances = Object.fromEntries([...actors.values()].filter(a => a.slot === slot).map(a => [`${a.ref.id}:${a.ref.life}`, { ...a.record.identity.appearance, name: shownName(a.record.identity.appearance.name) }]));
     const prepared = prepareObservationSnapshot(snapshot, appearances, deps.gameplay.catalog, { verify: deps.gameplay.verifyObservations ?? true });
     observe('snapshotPrepare', deps.nowMonotonicMs() - start);
+    // A run Area's typed view is read at the same boundary as its snapshot and shared by every recipient.
     publication = { slot, snapshot, prepared, appearances, beat: slot.publishes++, events: slot.events, watermark: slot.watermark,
-      recipients: [...actors.values()].filter(actor => actor.slot === slot), index: 0, started: start, busy: deps.nowMonotonicMs() - start };
+      recipients: [...actors.values()].filter(actor => actor.slot === slot), index: 0, started: start, busy: deps.nowMonotonicMs() - start,
+      dungeon: slot.kind === 'dungeon' ? slot.area.dungeonObservation() : null };
     slot.events = [];
     continuePublication();
   };
@@ -1233,11 +1252,12 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
           if (!c.full) metrics.aoiFarHeld += held.size;
           const extras = p.observationExtras(snapshot, actor.record.characterId, c.visible);
           const recovery = p.endingPresentation ? { ...extras.recovery, endingPresentation: slot.area.endingObservation(actor.ref) } : extras.recovery;
+          const features = job.dungeon ? { ...extras.features, dungeon: job.dungeon } : extras.features;
           const chunks = c.protocol.encodeObservation({ binding: c.stream, sequence: ++c.sequence, tick: snapshot.tick,
             acceptedInput: c.input.acceptedInput, consumedInput: publishedConsumed(c), selfRef: actor.ref,
             snapshot, prepared, events: job.events, visibleIds: c.visible, heldIds: c.full ? undefined : held, full: c.full, eventWatermark: job.watermark, appearances: job.appearances,
             results: materializeResults(c),
-            ...extras, recovery });
+            ...extras, features, recovery });
           observe('recipientEncode', deps.nowMonotonicMs() - encodeStart);
           for (const chunk of chunks) { c.ws.send(chunk, { binary: true }); metrics.packets++; metrics.bytesSent += chunk.byteLength; }
           c.full = false; c.baselineSequence = c.sequence; c.ready = []; metrics.snapshots++;
@@ -1286,6 +1306,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
     for (const { c, frame } of prepared) c.input!.commitConsumed(frame.token);
     for (const { c, command, inputSequence } of hostCommands) {
       if (command.kind.startsWith('chat')) { chatCommand(c, command as Extract<HostCommand, {kind:`chat${string}`}>, inputSequence); continue; }
+      if (command.kind.startsWith('dungeon')) { requestDungeon(c, command as Extract<HostCommand, {kind:`dungeon${string}`}>); continue; }
       if (command.kind === 'bossChallenge') {
         if (!p.party || !command.profile) controlError(c, 'party-unavailable');
         else encounterRequests.set(c.actor!.record.characterId, { actor: c.actor!, profile: command.profile });
@@ -1432,7 +1453,7 @@ export function createActualWorldHost(deps: ActualWorldHostDeps): ActualWorldHos
             let value: { type?: unknown; ticket?: unknown; characterId?: unknown; schemaRevision?: unknown };
             try { value = JSON.parse(bytes.toString('utf8')); } catch { close(c, 'auth-frame'); return; }
             if (!value || typeof value !== 'object' || Array.isArray(value) || !['characterId,ticket,type', 'characterId,schemaRevision,ticket,type'].includes(Object.keys(value).sort().join(',')) || value.type !== 'authenticate' || typeof value.characterId !== 'string') { close(c, 'auth-frame'); return; }
-            if (Object.hasOwn(value, 'schemaRevision') && (value.schemaRevision !== WIRE_SCHEMA_REVISION || value.schemaRevision !== deps.gameplay.catalog.wireSchemaRevision) || p.endingPresentation && value.schemaRevision !== WIRE_SCHEMA_REVISION) { close(c, 'protocol-schema'); return; }
+            if (Object.hasOwn(value, 'schemaRevision') && (value.schemaRevision !== WIRE_SCHEMA_REVISION || value.schemaRevision !== deps.gameplay.catalog.wireSchemaRevision) || (p.endingPresentation || p.dungeons) && value.schemaRevision !== WIRE_SCHEMA_REVISION) { close(c, 'protocol-schema'); return; }
             c.phase = 'authenticating'; const attempt = c.generation;
             void deps.admission.consume(value.ticket, origin).then(binding => enqueue(() => {
               if (c.closed || c.generation !== attempt || !accepting || deps.ownership.closed.aborted) return;

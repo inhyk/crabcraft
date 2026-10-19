@@ -300,7 +300,7 @@ test('maximum admitted personal cast and cue shape fits existing binary limits w
 
 
 test('compiled schema revision is explicit while a legacy catalog with absent revision remains decodable',()=>{
- const current={...catalog,wireSchemaRevision:WIRE_SCHEMA_REVISION};assert.doesNotThrow(()=>createGameplayProtocol(current));assert.doesNotThrow(()=>new GameplayReceiver(binding,current));assert.doesNotThrow(()=>createGameplayProtocol(catalog));assert.doesNotThrow(()=>new GameplayReceiver(binding,catalog));for(const revision of [0,2,null,'1']){assert.throws(()=>createGameplayProtocol({...catalog,wireSchemaRevision:revision}),/schema revision/);assert.throws(()=>new GameplayReceiver(binding,{...catalog,wireSchemaRevision:revision}),/schema revision/);}
+ const current={...catalog,wireSchemaRevision:WIRE_SCHEMA_REVISION};assert.doesNotThrow(()=>createGameplayProtocol(current));assert.doesNotThrow(()=>new GameplayReceiver(binding,current));assert.doesNotThrow(()=>createGameplayProtocol(catalog));assert.doesNotThrow(()=>new GameplayReceiver(binding,catalog));for(const revision of [0,WIRE_SCHEMA_REVISION-1,WIRE_SCHEMA_REVISION+1,null,String(WIRE_SCHEMA_REVISION)]){assert.throws(()=>createGameplayProtocol({...catalog,wireSchemaRevision:revision}),/schema revision/);assert.throws(()=>new GameplayReceiver(binding,{...catalog,wireSchemaRevision:revision}),/schema revision/);}
 });
 
 

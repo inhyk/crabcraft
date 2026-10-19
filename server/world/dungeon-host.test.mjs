@@ -45,7 +45,7 @@ before(async () => {
     policies: Object.fromEntries(ids.map(id => [id, policy])), seeds: { w1: 1, w2: 2, w3: 3, w4: 4 }, variants: createWorldVariants });
   const spawn = loaded.get('w1').publicDefinition.spawn;
   codec = createCoreCharacterCodec({ identities: [{ classId: 'warrior', archetype: 'human' }], freshLocation: { ...spawn.position, yaw: spawn.yaw } });
-  store = new CharacterStore(pool, codec); dungeonStore = new DungeonCompletionStore(pool); gameplayCatalog = createGameplayCatalog(loaded);
+  store = new CharacterStore(pool, codec); dungeonStore = new DungeonCompletionStore(pool); gameplayCatalog = createGameplayCatalog(loaded, { dungeons: [35, 50] });
 });
 after(async () => { await pool?.end(); cluster?.stop(); });
 
@@ -124,14 +124,14 @@ async function client(rt, c) {
     } catch (error) { bot.errors.push(error.message); }
   });
   await once(ws, 'open');
-  ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.id }));
+  ws.send(JSON.stringify({ type: 'authenticate', ticket: rt.admission.issue(c.binding, origin).ticket, characterId: c.id, schemaRevision: gameplayCatalog.wireSchemaRevision }));
   bot.send = commands => { if (ws.readyState === WebSocket.OPEN) ws.send(encodeInput({ binding: bot.binding, intent: { seq: ++bot.sequence, forward: 0, strafe: 0, turn: 0, sprint: false, steeringYaw: null, heldChannel: null, commands } }, gameplayCatalog)); };
   bot.self = () => bot.state?.actors.find(a => a.ref.id === bot.state.selfRef.id && a.ref.life === bot.state.selfRef.life);
   bot.party = () => bot.controls.filter(v => v.type === 'party').at(-1)?.state ?? null;
   bot.inPublic = () => !!bot.binding?.area.startsWith('w') && bot.state?.header.area === bot.binding.area;
-  // Dungeon slots publish no observation until D3, so a dungeon login is complete once it is bound there.
-  await until(() => bot.state || bot.binding?.area.startsWith('dungeon:') || bot.errors.length || bot.controls.some(v => v.type === 'error'), 8000, 'login');
-  assert.deepEqual(bot.errors, []); assert.ok(bot.state || bot.binding?.area.startsWith('dungeon:'), JSON.stringify(bot.controls));
+  // Dungeon slots publish their typed run view since D3, so every login ends with an observation.
+  await until(() => bot.state || bot.errors.length || bot.controls.some(v => v.type === 'error'), 8000, 'login');
+  assert.deepEqual(bot.errors, []); assert.ok(bot.state, JSON.stringify(bot.controls));
   return bot;
 }
 async function closeBot(bot) { if (bot && bot.ws.readyState !== WebSocket.CLOSED) { bot.ws.close(); await once(bot.ws, 'close'); } }
