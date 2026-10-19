@@ -53,6 +53,17 @@ export class DurableReceipts {
     if(durableRevision(revision)<current.durableRevision)throw new Error('Stale ledger revision');
     return immutable({...current,ledgerGeneration:this.next(),durableRevision:revision});
   }
+  /**
+   * Mark for a retained capture whose save round let the world run (no barrier): a respawn re-prepared the owner on its next
+   * life, or a stream rebind invalidated it, but only a mark moves the durable revision, so the current owner of the same
+   * unit must still carry the captured one. That owner advances; no read can be pending without a barrier.
+   */
+  prepareRunningMark(capture:DurableLedgerBinding,ref:EntityRef,revision:number):DurableLedgerBinding {
+    const current=this.current(ref,capture.character);
+    if(current.durableRevision!==capture.durableRevision||current.actor.area!==capture.actor.area||current.actor.id!==capture.actor.id||current.actor.life<capture.actor.life||this.reads.has(capture.character))throw new Error('Stale checkpoint ledger capture');
+    if(durableRevision(revision)<current.durableRevision)throw new Error('Stale ledger revision');
+    return immutable({...current,ledgerGeneration:this.next(),durableRevision:revision});
+  }
   hasRead(character:CharacterId):boolean {return this.reads.has(character);}
   remove(character:CharacterId):void {this.owners.delete(character);this.reads.delete(character);}
   cancelAll():void {this.reads.clear();}
