@@ -161,7 +161,7 @@ export interface BakedSky {
   zenith: [number, number, number];
   /** The palette's grade on the sky's light, already in every number above but the sun's and the bounce. */
   skyTint: [number, number, number];
-  /** LUT_W x LUT_H RGBA, ungraded, atmosphere units. */
+  /** LUT_W x LUT_H RGBA, atmosphere units: the palette's sky tint in, the night grade not. */
   lut: Float32Array;
   width: number;
   height: number;
