@@ -59,8 +59,9 @@ test('current Dawnreach and Frostlight geometry keep distinct landmarks and boun
   assert.equal(snow.heightAt(0, 70), 5);
   assert.equal(dawn.heightAt(0, 70), 4);
   assert.equal(dawn.collision.shapes.some(s => s.kind === 0 && s.c.x === -11 && s.c.z === 53), false);
-  // The village's 55 boxes (kit houses, crates, woodpiles, door steps; snowVillageLayout.ts) and the seven rock outcrops of src/sim/world/snowGround.ts.
-  assert.equal(snowData.shapes.filter(s => s[0] === 1).length, 55 + 7);
+  // The village's 55 boxes (kit houses, crates, woodpiles, door steps; snowVillageLayout.ts), the seven rock outcrops of src/sim/world/snowGround.ts,
+  // and 14 from frostThroneLayout.ts: the throne dais, curtain wall, gatehouse and keep, the lean-to, its woodpile and sled, six overlook parapet runs and the ridge camp's chest.
+  assert.equal(snowData.shapes.filter(s => s[0] === 1).length, 55 + 7 + 14);
   const fountain = snowData.shapes.find(s => s[0] === 0 && s[1] === -13 && s[2] === 65);
   assert.ok(fountain);
   assert.equal(snow.raycastSolid({x:-18,y:6,z:56},{x:-2,y:6,z:56}),null);
