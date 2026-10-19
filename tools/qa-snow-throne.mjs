@@ -62,10 +62,10 @@ try{
  const r=await inspect(p);
  console.log(JSON.stringify({...r,throneMeshes:r.throneMeshes.length,siteMeshes:r.siteMeshes.length}));
  const t=r.throne;
- assert.ok(t.blocks>3000,`${t.blocks} dressed blocks`);assert.ok(t.crystals>150,`${t.crystals} crystals`);assert.ok(t.icicles>150,`${t.icicles} icicles`);
+ assert.ok(t.blocks>3000,`${t.blocks} dressed blocks`);assert.ok(t.farTriangles<t.nearTriangles/10,`far LOD ${t.farTriangles} of ${t.nearTriangles} triangles`);assert.ok(t.crystals>150,`${t.crystals} crystals`);assert.ok(t.icicles>150,`${t.icicles} icicles`);
  assert.equal(t.pillars,8,'eight crowned pillars, the ninth gave way to the throne');assert.ok(t.flames>=10,`${t.flames} cold flames`);assert.ok(t.windows>100,'aurora windows');
  assert.equal(t.roofs,8,'slate roofs on the rear towers, keep turrets and bartizans');assert.ok(t.banners>=6,`${t.banners} frozen banners`);
- for(const n of ['frostlight-citadel-granite','frostlight-citadel-ice','frostlight-citadel-icicles','frostlight-aurora-glass','frostlight-braziers','frostlight-citadel-drifts','frostlight-cold-fire-tongues','frostlight-cold-fire-halos'])assert.ok(r.throneMeshes.includes(n),`throne has ${n}`);
+ for(const n of ['frostlight-citadel-granite','frostlight-citadel-granite-far','frostlight-citadel-ice','frostlight-aurora-glass','frostlight-braziers','frostlight-citadel-drifts','frostlight-cold-fire-tongues','frostlight-cold-fire-halos'])assert.ok(r.throneMeshes.includes(n),`throne has ${n}`);
  assert.ok(r.throneMeshes.some(n=>n.startsWith('frostlight-citadel-roofs:')),'kit roofs');assert.ok(r.throneMeshes.some(n=>n.startsWith('frostlight-citadel-banners:')),'kit banners');
  assert.equal(r.prisonName,'mira-ice-prison');assert.equal(r.prison.bars,10);
  for(const n of ['mira-prison-stone','mira-prison-bars','mira-prison-runes'])assert.ok(r.prisonMeshes.includes(n),`prison has ${n}`);

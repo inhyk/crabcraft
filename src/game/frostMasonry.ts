@@ -23,6 +23,8 @@ export interface BlockOpts {
   tint?: V3;
   /** Also close the back and bottom (free-standing pieces). */
   closed?: boolean;
+  /** Also lay it, plain, in the far mason (a silhouette piece: merlons, the throne). */
+  far?: boolean;
 }
 
 /** Straight face: origin, unit direction along it, and the outward normal (horizontal). */
@@ -42,7 +44,16 @@ export class Masonry {
   private col: number[] = [];
   private gnd: number[] = [];
   private snw: number[] = [];
+  private crs: number[] = [];
+  private idx: number[] = [];
   blocks = 0;
+  /**
+   * The far version of what this mason lays: each course run as one slab whose joints the shader draws (`aCourse`),
+   * merlons and other silhouette pieces as plain boxes. Swapped in by a THREE.LOD past a hundred metres.
+   */
+  far: Masonry | null = null;
+  /** 1 for a far mason: the shader cuts the courses and joints into its slabs. */
+  course = 0;
   /** Ground height for the frost line and how much snow the tops hold, for what is laid next. */
   ground = 0;
   snow = .3;
@@ -56,16 +67,29 @@ export class Masonry {
     return [(g + warm - .005) * k, (g + .006) * k, (g + .03 - warm) * k];
   }
 
-  tri(a: V3, b: V3, c: V3, tint: V3, centre: V3): void {
-    // Wind outward from the block's centre (the warps can mirror).
+  private vert(p: V3, tint: V3): number {
+    this.pos.push(p[0], p[1], p[2]); this.col.push(tint[0], tint[1], tint[2]); this.gnd.push(this.ground); this.snw.push(this.snow); this.crs.push(this.course);
+    return this.pos.length / 3 - 1;
+  }
+
+  /** True when a-b-c winds away from `centre` (the warps can mirror, so every face checks). */
+  private outward(a: V3, b: V3, c: V3, centre: V3): boolean {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
     const mx = (a[0] + b[0] + c[0]) / 3 - centre[0], my = (a[1] + b[1] + c[1]) / 3 - centre[1], mz = (a[2] + b[2] + c[2]) / 3 - centre[2];
-    const order = nx * mx + ny * my + nz * mz < 0 ? [a, c, b] : [a, b, c];
-    for (const p of order) { this.pos.push(p[0], p[1], p[2]); this.col.push(tint[0], tint[1], tint[2]); this.gnd.push(this.ground); this.snw.push(this.snow); }
+    return nx * mx + ny * my + nz * mz >= 0;
   }
 
-  quad(a: V3, b: V3, c: V3, d: V3, tint: V3, centre: V3): void { this.tri(a, b, c, tint, centre); this.tri(a, c, d, tint, centre); }
+  tri(a: V3, b: V3, c: V3, tint: V3, centre: V3): void {
+    const i = this.vert(a, tint), j = this.vert(b, tint), k = this.vert(c, tint);
+    if (this.outward(a, b, c, centre)) this.idx.push(i, j, k); else this.idx.push(i, k, j);
+  }
+
+  /** A planar quad as four shared corners (indexed: two thirds of the vertices of two loose triangles). */
+  quad(a: V3, b: V3, c: V3, d: V3, tint: V3, centre: V3): void {
+    const i = this.vert(a, tint), j = this.vert(b, tint), k = this.vert(c, tint), l = this.vert(d, tint);
+    if (this.outward(a, b, c, centre)) this.idx.push(i, j, k, i, k, l); else this.idx.push(i, k, j, i, l, k);
+  }
 
   /** One dressed block: u0..u0+w along, v0..v0+h up, t0..t0+d deep; the face at t0 is chamfered. */
   block(warp: Warp, u0: number, v0: number, t0: number, w: number, h: number, d: number, o: BlockOpts = {}): void {
@@ -88,6 +112,7 @@ export class Masonry {
     this.quad(P(u0, v0, t0 + b), P(u0, v1, t0 + b), P(u0, v1, t1), P(u0, v0, t1), tint, c);
     this.quad(P(u1, v0, t0 + b), P(u1, v1, t0 + b), P(u1, v1, t1), P(u1, v0, t1), tint, c);
     this.blocks++;
+    if (o.far && this.far) { const f = this.far; f.ground = this.ground; f.snow = this.snow; f.slab(warp, u0, v0, t0, w, h, d, tint, seg, o.closed ? 63 : 1 | 4 | 16 | 32); }
   }
 
   /** Plain box in warp space (a core, a slab), every face, no chamfer. */
@@ -113,6 +138,7 @@ export class Masonry {
     const tops: number[] = [];
     // The mortar a few centimetres behind the faces, seen only in the joints.
     const core = (o.core ?? 1) > 0, mortar = this.tint(.32);
+    if (this.far) { const f = this.far; f.ground = this.ground; f.snow = this.snow; f.slab(warp, u0, v0, 0, u1 - u0, v1 - v0, depth, f.tint(1.05), Math.max(1, Math.ceil((u1 - u0) / (o.curve ? 1.4 : 1e9))), 1 | 4); }
     if (core && !o.skip) this.slab(warp, u0, v0, .14, u1 - u0, v1 - v0, depth, mortar, Math.max(1, Math.ceil((u1 - u0) / (o.curve ?? 1e9))), 1);
     let v = v0;
     while (v < v1 - .05) {
@@ -163,6 +189,7 @@ export class Masonry {
 
   /** A flat round cap facing up (tower floors, collar tops). */
   disc(x: number, y: number, z: number, r: number, n = 20, tint = this.tint(.9)): void {
+    if (this.far) { this.far.ground = this.ground; this.far.snow = this.snow; this.far.disc(x, y, z, r, Math.max(8, n >> 1), tint); }
     const c: V3 = [x, y - 1, z];
     for (let i = 0; i < n; i++) {
       const a0 = i / n * Math.PI * 2, a1 = (i + 1) / n * Math.PI * 2;
@@ -176,6 +203,8 @@ export class Masonry {
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setAttribute('aGround', new THREE.Float32BufferAttribute(this.gnd, 1));
     g.setAttribute('aSnow', new THREE.Float32BufferAttribute(this.snw, 1));
+    g.setAttribute('aCourse', new THREE.Float32BufferAttribute(this.crs, 1));
+    g.setIndex(this.idx);
     g.computeVertexNormals();
     g.computeBoundingSphere();
     return g;
@@ -191,10 +220,10 @@ export function masonryMaterial(name: string): THREE.MeshStandardMaterial {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uMWind = {value: new THREE.Vector2(SNOW_WIND[0], SNOW_WIND[1])};
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aGround;\nattribute float aSnow;\nvarying float vMG;\nvarying float vMS;\nvarying vec3 vMW;\nvarying vec3 vMN;')
-      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvMG=aGround;vMS=aSnow;vMW=(modelMatrix*vec4(transformed,1.)).xyz;vMN=normalize(mat3(modelMatrix)*objectNormal);');
+      .replace('#include <common>', '#include <common>\nattribute float aGround;\nattribute float aSnow;\nattribute float aCourse;\nvarying float vMG;\nvarying float vMS;\nvarying float vMC;\nvarying vec3 vMW;\nvarying vec3 vMN;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvMG=aGround;vMS=aSnow;vMC=aCourse;vMW=(modelMatrix*vec4(transformed,1.)).xyz;vMN=normalize(mat3(modelMatrix)*objectNormal);');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${FROST_NOISE}\nuniform vec2 uMWind;\nvarying float vMG;\nvarying float vMS;\nvarying vec3 vMW;\nvarying vec3 vMN;\nfloat mWhite;\nfloat mGlaze;`)
+      .replace('#include <common>', `#include <common>\n${FROST_NOISE}\nuniform vec2 uMWind;\nvarying float vMG;\nvarying float vMS;\nvarying float vMC;\nvarying vec3 vMW;\nvarying vec3 vMN;\nfloat mWhite;\nfloat mGlaze;`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
         vec3 mNW=normalize(vMN),mA=abs(mNW)/(abs(mNW.x)+abs(mNW.y)+abs(mNW.z));
         #define M3(f,o) (fpNoise(vMW.zy*(f)+(o))*mA.x+fpNoise(vMW.xz*(f)+(o))*mA.y+fpNoise(vMW.xy*(f)+(o))*mA.z)
@@ -203,6 +232,16 @@ export function masonryMaterial(name: string): THREE.MeshStandardMaterial {
         diffuseColor.rgb*=.68+.42*(M3(.7,2.)*.5+.5);
         float mG1=M3(38.,5.)*.5+.5,mG2=M3(91.,9.)*.5+.5,mNear=1.-smoothstep(.004,.02,length(fwidth(vMW)));
         diffuseColor.rgb*=mix(1.,mix(1.,.55,smoothstep(.62,.8,mG1))*mix(1.,1.35,smoothstep(.66,.84,mG2)),mNear);
+        // Far slabs: the courses and joints drawn, each block its own tint, a line of snow on every course.
+        float mLodge=0.;
+        if(vMC>.5){
+          vec2 mT=normalize(vec2(-mNW.z,mNW.x)+1e-4);
+          float mCy=(vMW.y-.37)/1.12,mCi=floor(mCy),mBx=(dot(vMW.xz,mT)+fract(sin(mCi*91.7)*437.5)*2.1)/2.1,mBi=floor(mBx);
+          float mFy=fract(mCy),mFx=fract(mBx);
+          float mJ=(1.-smoothstep(0.,fwidth(mBx)*1.2+.03,min(mFx,1.-mFx))*smoothstep(0.,fwidth(mCy)*1.2+.05,min(mFy,1.-mFy)))*(1.-abs(mNW.y));
+          diffuseColor.rgb*=mix(.8,1.2,fract(sin(mCi*12.9898+mBi*78.233)*43758.5453))*mix(1.,.32,mJ);
+          mLodge=smoothstep(.92,.98,mFy)*step(.72,fract(sin(mCi*3.1+mBi*7.7)*913.1)+vMS*.3)*(1.-abs(mNW.y))*.4;
+        }
         // Snow lodged on the tops and the upper chamfers, so every course carries a white line.
         float mUp=mNW.y+mN*.1;
         float mSnow=smoothstep(.45,.62,mUp)*smoothstep(.1,.4,fpNoise(vMW.xz*1.7+vMW.y*.9+7.)*.9+vMS-.52+mN*.25)*.85;
@@ -215,7 +254,7 @@ export function masonryMaterial(name: string): THREE.MeshStandardMaterial {
         // Meltwater glazed down the faces from the joints: darker, cooler, glossy.
         mGlaze=smoothstep(.62,.9,fpNoise(vec2((vMW.x+vMW.z)*1.9,vMW.y*.16+3.))*.6+fpNoise(vec2((vMW.x+vMW.z)*7.,vMW.y*.4))*.4)*(1.-abs(mNW.y));
         diffuseColor.rgb*=mix(vec3(1.),vec3(.72,.82,.95),mGlaze);
-        mWhite=max(max(mSnow,mFrost),mRime*.6);
+        mWhite=max(max(max(mSnow,mFrost),mRime*.6),mLodge);
         diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.84,.92,1.),mWhite);`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(mix(.88,.55,mGlaze),.92,mWhite);')
       // Weathered stone is dull: the low sun's sheen across a whole wall reads as tan plaster, not granite.

@@ -125,8 +125,8 @@ export async function frostCamps(opts:{height:Height;ice:THREE.Material}):Promis
   // A paved compass at the point: a round centre stone, two rings of curved pavers draped over the ground.
   const drape=(r0:number,a0:number):Warp=>(u,v,t)=>{const a=a0+u/r0,rr=r0-t,x=O.x+Math.sin(a)*rr,z=O.z+Math.cos(a)*rr;return [x,h(x,z)+v,z];};
   M.ground=gy-.2;
-  for(const [r1,r0,n] of [[1.6,.62,8],[2.75,1.62,14]] as const){const off=rand()*6.28;for(let i=0;i<n;i++){const L=2*Math.PI*r1/n;M.block(drape(r1,off),i*L+.03,-.14,0,L-.06,.18,r1-r0-.03,{bevel:.04,seg:3,closed:true,tint:M.tint(1.5)});}}
-  M.block((u,v,t)=>{const a=u/.6,rr=.6-t,x=O.x+Math.sin(a)*rr,z=O.z+Math.cos(a)*rr;return [x,h(x,z)+v,z];},0,-.14,0,2*Math.PI*.6,.2,.58,{bevel:.04,seg:12,closed:true,tint:M.tint(1.6)});
+  for(const [r1,r0,n] of [[1.6,.62,8],[2.75,1.62,14]] as const){const off=rand()*6.28;for(let i=0;i<n;i++){const L=2*Math.PI*r1/n;M.block(drape(r1,off),i*L+.03,-.14,0,L-.06,.18,r1-r0-.03,{bevel:.04,seg:3,closed:true,tint:M.tint(2.4)});}}
+  M.block((u,v,t)=>{const a=u/.6,rr=.6-t,x=O.x+Math.sin(a)*rr,z=O.z+Math.cos(a)*rr;return [x,h(x,z)+v,z];},0,-.14,0,2*Math.PI*.6,.2,.58,{bevel:.04,seg:12,closed:true,tint:M.tint(2.6)});
   // The compass star inlaid in brass, its long point on the sea.
   for(let k=0;k<8;k++){const a=k/8*Math.PI*2+Math.PI/4,len=k%2?.42:.56,w=.09,tip=V(O.x+Math.cos(a)*len,0,O.z+Math.sin(a)*len);
    const l=V(O.x+Math.cos(a+1.57)*w,0,O.z+Math.sin(a+1.57)*w),rr=V(O.x+Math.cos(a-1.57)*w,0,O.z+Math.sin(a-1.57)*w),c=V(O.x,0,O.z);
@@ -139,9 +139,11 @@ export async function frostCamps(opts:{height:Height;ice:THREE.Material}):Promis
   const inner:Warp=(u,v,t)=>{const a=a0+u/R,rr=R+t;return [O.x+Math.sin(a)*rr,v,O.z+Math.cos(a)*rr];};
   M.face(inner,0,span*R,low-.6,top-.25,{len:1.1,course:.42,depth:.4,curve:.5});
   M.face(ringWarp(O.x,O.z,R+.75,a0),0,span*(R+.75),low-.6,top-.25,{len:1.2,course:.48,depth:.4,curve:.5});
-  for(let u=-.15;u<span*R+.15;){const w=Math.min(.9+rand()*.4,span*R+.15-u);M.block((uu,vv,tt)=>{const a=a0+uu/R,rr=R-.12+tt;return [O.x+Math.sin(a)*rr,vv,O.z+Math.cos(a)*rr];},u+.02,top-.25,0,w-.04,.24,1.0,{bevel:.05,seg:2,closed:true,tint:M.tint(1.2)});u+=w;}
+  for(let u=-.15;u<span*R+.15;){const w=Math.min(.9+rand()*.4,span*R+.15-u);M.block((uu,vv,tt)=>{const a=a0+uu/R,rr=R-.12+tt;return [O.x+Math.sin(a)*rr,vv,O.z+Math.cos(a)*rr];},u+.02,top-.25,0,w-.04,.24,1.0,{bevel:.05,seg:2,closed:true,tint:M.tint(1.9)});u+=w;}
   // A post at each end of the parapet.
-  for(const a of [O.a0,O.a1]){const x=O.x+Math.cos(a)*(R+.37),z=O.z+Math.sin(a)*(R+.37);M.ground=h(x,z);M.block((u,v,t)=>[x-.3+u,v,z-.3+t],0,h(x,z)-.4,0,.6,top+.45-h(x,z)+.4,.6,{bevel:.06,closed:true});M.block((u,v,t)=>[x-.38+u,v,z-.38+t],0,top+.45,0,.76,.18,.76,{bevel:.05,closed:true,tint:M.tint(1.2)});}
+  // A post at each end of the parapet, each carrying a lantern on an iron crook.
+  for(const a of [O.a0,O.a1]){const x=O.x+Math.cos(a)*(R+.37),z=O.z+Math.sin(a)*(R+.37);M.ground=h(x,z);M.block((u,v,t)=>[x-.3+u,v,z-.3+t],0,h(x,z)-.4,0,.6,top+.45-h(x,z)+.4,.6,{bevel:.06,closed:true});M.block((u,v,t)=>[x-.38+u,v,z-.38+t],0,top+.45,0,.76,.18,.76,{bevel:.05,closed:true,tint:M.tint(1.9)});
+   rod(V(x,top+.6,z),V(x,top+1.9,z),.035,iron);lantern(x,top+1.0,z,Math.atan2(O.x-x,O.z-z),.6);}
   // The spyglass on its brass-shod tripod inside the parapet, trained out over the frozen sea.
   const am=(O.a0+O.a1)/2,sx=O.x+Math.cos(am)*(R-.9),sz=O.z+Math.sin(am)*(R-.9),sgy=h(sx,sz),dir=V(Math.cos(am),.2,Math.sin(am)).normalize();
   const pivot=V(sx,sgy+1.35,sz);

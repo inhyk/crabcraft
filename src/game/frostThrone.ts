@@ -69,7 +69,7 @@ function noise1(x:number,k=0){const hh=(v:number)=>{const q=Math.sin(v*127.1+k*3
 
 /**
  * Snow banked against a wall foot: highest at the stone, feathering out over `width`, following the ground.
- * `path` runs along the foot with the outward normal at each point; `open` is 0..1 along it where it thins (a gate).
+ * `path` runs along the foot with the outward normal at each point; `thin(t)` scales it along the path (0..1), as at a gate.
  */
 export function bank(h:Height,path:{x:number;z:number;nx:number;nz:number}[],height:number,width:number,seed:number,thin=(_t:number)=>1){
  const pos:number[]=[],occ:number[]=[],idx:number[]=[],nS=6;
@@ -96,6 +96,8 @@ export const arc=(cx:number,cz:number,r:number,a0:number,a1:number,step=.5)=>{co
 export function frostThrone(opts:FrostThroneOptions):FrostThrone {
  const h=opts.height,root=new THREE.Group();root.name='frostlight-throne-citadel';
  const rand=stream(77019),M=new Masonry(rand),glass=new Glass(),ice:Crystal[]=[],icicles:Crystal[]=[];
+ // The far mason lays the same citadel as plain slabs, its joints drawn in the shader, for a LOD past 105 m.
+ const F=new Masonry(stream(77020));F.course=1;M.far=F;
  const flames:Flame[]=[],halos:Halo[]=[];
  /** Slate cones for the roofed towers and turrets, and frozen banners, laid by dress() once the kits load. */
  const drifts:THREE.BufferGeometry[]=[];
@@ -105,12 +107,12 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
 
  // Block helpers in a frame facing +z (the arena): x0..x1 across, y0..y1 up, front face at z = zf, `d` deep.
  const front=(zf:number)=>planeWarp(0,zf,-1,0);
- const box=(x0:number,x1:number,y0:number,y1:number,zf:number,d:number,bevel=.08,tint?:V3)=>M.block(front(zf),-x1,y0,0,x1-x0,y1-y0,d,{bevel,tint,closed:true});
+ const box=(x0:number,x1:number,y0:number,y1:number,zf:number,d:number,bevel=.08,tint?:V3)=>M.block(front(zf),-x1,y0,0,x1-x0,y1-y0,d,{bevel,tint,closed:true,far:true});
  /** A block narrowing upward to `top` of its width: the gable caps of the throne. */
  const taper=(x0:number,x1:number,y0:number,y1:number,zf:number,d:number,top:number,tint?:V3)=>{
   const cx=(x0+x1)/2,half=(x1-x0)/2;
   const w:Warp=(u,v,t)=>{const k=1-(1-top)*clamp01((v-y0)/(y1-y0));return [cx+(half-u)*k,v,zf-t];};
-  M.block(w,0,y0,0,2*half,y1-y0,d,{bevel:.06,tint,closed:true});
+  M.block(w,0,y0,0,2*half,y1-y0,d,{bevel:.06,tint,closed:true,far:true});
  };
 
  // ---- The dais: three straight tiers of long stones, each a riser and a tread, the top one the throne's floor.
@@ -138,6 +140,10 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
  box(-2.25,2.25,by,by+.38,tz-1.1,1.75,.06,dark());by+=.38;
  taper(-2.1,2.1,by,by+2.8,tz-1.25,1.45,.06);
  const runeY=yP+5.7,runeZ=tz-1.25+.035;
+ // A raised frame round the sigil panel, a moulded lip on the seat, and a band of runes along the plinth.
+ for(const [x0,x1,y0,y1] of [[-1.62,1.62,runeY+1.48,runeY+1.66],[-1.62,1.62,runeY-1.66,runeY-1.48],[-1.62,-1.44,runeY-1.48,runeY+1.48],[1.44,1.62,runeY-1.48,runeY+1.48]] as const)box(x0,x1,y0,y1,tz-1.13,.14,.03,dark());
+ box(-2.5,2.5,yP+2.05,yP+2.32,tz+1.88,3.3,.06,dark());
+ for(const s of [-1,1])box(s>0?2.38:-3.48,s>0?3.48:-2.38,yP+.62,yP+.9,tz+2.05,3.6,.05,dark());
  // The snowflake sigil of the arena's centre, cut into the back and lit from within.
  {
   const r=1.05,seg=(x0:number,y0:number,x1:number,y1:number,w:number)=>{const dx=x1-x0,dy=y1-y0,l=Math.hypot(dx,dy),nx=-dy/l*w/2,ny=dx/l*w/2;
@@ -147,6 +153,15 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
    for(const f of [.5,.75]){const bx=ca*r*f,byy=runeY+sa*r*f;for(const s of [-1,1]){const b=a+s*.75;seg(bx,byy,bx+Math.cos(b)*.32*(1.2-f),byy+Math.sin(b)*.32*(1.2-f),.07);}}}
   for(let k=0;k<24;k++){const a0=k/24*Math.PI*2,a1=(k+1)/24*Math.PI*2;seg(Math.cos(a0)*1.32,runeY+Math.sin(a0)*1.32,Math.cos(a1)*1.32,runeY+Math.sin(a1)*1.32,.06);}
   halos.push({x:0,y:runeY,z:runeZ+.3,size:3.4,color:'#5fe8d4',power:.35});
+ }
+ {
+  // Runes cut along the plinth's face and the top riser, lit like the arena rim's.
+  const r=stream(4242),c:V3=[teal[0]*1.1,teal[1],teal[2]];
+  const seg=(x0:number,y0:number,x1:number,y1:number,z:number,w=.045)=>{const dx=x1-x0,dy=y1-y0,l=Math.hypot(dx,dy),nx=-dy/l*w/2,ny=dx/l*w/2;
+   for(const [x,y] of [[x0+nx,y0+ny],[x1+nx,y1+ny],[x1-nx,y1-ny],[x0+nx,y0+ny],[x1-nx,y1-ny],[x0-nx,y0-ny]]){glass.pos.push(x,y,z);glass.col.push(...c);}};
+  const band=(x0:number,x1:number,y:number,z:number,hh:number)=>{for(let x=x0;x<=x1;x+=hh*.95){seg(x,y-hh/2,x,y+hh/2,z);const s1=r()<.5?1:-1;seg(x,y+hh/2,x+.3*hh*s1,y+.12*hh,z);if(r()<.6)seg(x,y,x-.3*hh*s1,y-.3*hh,z);if(r()<.35)seg(x-.28*hh,y+.25*hh,x+.28*hh,y-.1*hh,z);}};
+  band(-3.0,3.0,yP+.31,tz+3.1+.02,.38);
+  band(-THRONE.tiers[2]+.6,THRONE.tiers[2]-.6,Y+THRONE.rise*2.5,THRONE.front-2*THRONE.tread+.02,.28);
  }
  // The crown: ice fanning out behind the back like a frozen sunburst, the longest straight up.
  const cO=new THREE.Vector3(0,yP+5.4,tz-2.0);
@@ -185,7 +200,7 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
  const parapet=(w:Warp,u0:number,u1:number,v:number,o:{out?:number;corbels?:boolean;merlon?:number}={})=>{
   const out=o.out??.35;
   if(o.corbels!==false)for(let u=u0+.35;u<u1-.5;u+=1.15)M.block(w,u,v-.72,-out,.42,.72,out+.4,{bevel:.04});
-  for(let u=u0-.2;u<u1+.2-.05;){const ww=Math.min(1.6+rand()*.8,u1+.2-u);M.block(w,u+.02,v,-out,ww-.04,.5,out+.5,{bevel:.05});u+=ww;}
+  for(let u=u0-.2;u<u1+.2-.05;){const ww=Math.min(1.6+rand()*.8,u1+.2-u);M.block(w,u+.02,v,-out,ww-.04,.5,out+.5,{bevel:.05,far:true});u+=ww;}
   const mw=o.merlon??1.2;let k=0;
   for(let u=u0+.15;u+mw<=u1-.1;u+=mw+.85,k++)M.block(w,u,v+.5,-out+.06,mw,1.45+(k%3===1?.1:0),.75,{bevel:.06,closed:true});
  };
@@ -201,7 +216,7 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
   for(let u=0;u<C*r-.4;u+=1.05)M.block(ring(r),u,top-2.3,-.62,.42,.75,1.0,{bevel:.04});
   M.face(pr,0,C*(r+.55),top-1.6,top,{len:1.8,course:.8,depth:.7,curve:.8,core:.0});
   if(tw.crown>0){
-   for(let u=0,k=0;u<C*(r+.55)-1.6;u+=1.95,k++)M.block(pr,u,top,0,1.1,1.4+(k%2)*.12,.7,{bevel:.06,seg:2,closed:true});
+   for(let u=0,k=0;u<C*(r+.55)-1.6;u+=1.95,k++)M.block(pr,u,top,0,1.1,1.4+(k%2)*.12,.7,{bevel:.06,seg:2,closed:true,far:true});
    // Floor inside the parapet, snow-covered, and the ice crown growing out of it.
    M.disc(x,top-.02,z,r,28);
    crystalCluster(x,top-.4,z,tw.crown,r*.9,7,rand,ice);
@@ -343,15 +358,21 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
  const driftMesh=new THREE.Mesh(mergeGeometries(harmonise(drifts),false)!,driftMat);driftMesh.name='frostlight-citadel-drifts';driftMesh.receiveShadow=driftMesh.castShadow=true;
 
  // ---- Meshes: one granite, one ice, one icicle, one glass, one iron, the fire.
- const granite=new THREE.Mesh(M.geometry(),masonryMaterial('frostlight-citadel-granite'));granite.name='frostlight-citadel-granite';granite.castShadow=granite.receiveShadow=true;
- const iceMesh=new THREE.Mesh(crystalGeometry(ice),opts.ice);iceMesh.name='frostlight-citadel-ice';iceMesh.castShadow=true;
- const icicleMesh=new THREE.Mesh(crystalGeometry(icicles),opts.ice);icicleMesh.name='frostlight-citadel-icicles';
+ const stoneMat=masonryMaterial('frostlight-citadel-granite');
+ // Near: every block dressed and chamfered. Far: the same walls as slabs. The LOD sits at the keep, so the arena and
+ // the ridge see the near stone and the village and the snowfields the far.
+ const lodAt=new THREE.Vector3(0,30,-112),lod=new THREE.LOD();lod.name='frostlight-citadel-lod';lod.position.copy(lodAt);
+ const granite=new THREE.Mesh(M.geometry(),stoneMat);granite.name='frostlight-citadel-granite';granite.castShadow=granite.receiveShadow=true;granite.position.copy(lodAt).negate();
+ const farStone=new THREE.Mesh(F.geometry(),stoneMat);farStone.name='frostlight-citadel-granite-far';farStone.castShadow=farStone.receiveShadow=true;farStone.position.copy(lodAt).negate();
+ lod.addLevel(granite,0);lod.addLevel(farStone,105);
+ // Crowns, crystals and icicles are one draw.
+ const iceMesh=new THREE.Mesh(crystalGeometry([...ice,...icicles]),opts.ice);iceMesh.name='frostlight-citadel-ice';iceMesh.castShadow=true;
  const glassMesh=glass.mesh('frostlight-aurora-glass');
  const iron=new THREE.MeshStandardMaterial({name:'frostlight-brazier-iron',color:'#3a4048',roughness:.5,metalness:.6,envMapIntensity:0});
  const ironMesh=new THREE.Mesh(mergeGeometries(harmonise([...bowls,...poles]),false)!,iron);ironMesh.name='frostlight-braziers';ironMesh.castShadow=ironMesh.receiveShadow=true;
  const fire=frostFire('frostlight-cold-fire',flames,halos,4417,6);
- root.add(granite,iceMesh,icicleMesh,glassMesh,ironMesh,driftMesh,fire.group);
- root.userData.throne={blocks:M.blocks,crystals:ice.length,icicles:icicles.length,flames:flames.length,pillars:arenaPillars().length,windows:glass.pos.length/3};
+ root.add(lod,iceMesh,glassMesh,ironMesh,driftMesh,fire.group);
+ root.userData.throne={blocks:M.blocks,nearTriangles:granite.geometry.index!.count/3,farTriangles:farStone.geometry.index!.count/3,crystals:ice.length,icicles:icicles.length,flames:flames.length,pillars:arenaPillars().length,windows:glass.pos.length/3};
  return {root,update(time){fire.update(time);},async dress(){
   const [village,props]=await Promise.all([loadKit('models/world/village.glb'),loadKit('models/world/props.glb')]);
   // Kit materials are shared with other worlds: patched clones only. Boreas's tiles are slate, his cloth night-blue.
