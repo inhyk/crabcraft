@@ -141,6 +141,7 @@ export const FROST_NPCS: readonly { readonly x: number; readonly z: number; read
   npc(10.2, 34.6, 2.6, 34.4),
 ];
 /** Where the townsfolk mill about: the squares, the high street and the lanes. */
-export const FROST_TOWN_POINTS: readonly XZ[] = [[-6.4, 86.4], [-8, 68.2], [4.4, 82.4], [-1.6, 56.6], [8.6, 48.2], [-18.4, 62.6], [1.8, 41.6]];
+// Each point stands clear of the nearest wall by a resident's radius (0.5 m), so the server never pushes one out.
+export const FROST_TOWN_POINTS: readonly XZ[] = [[-6.4, 86.4], [-8, 68.2], [4.4, 82.4], [-1.6, 56.6], [8.4, 48.2], [-18.5, 62.1], [1.8, 41.6]];
 /** The village's points of interest (server and client POIs). */
-export const FROST_POIS = { forge: [13.6, 34.6], chapel: [17.4, 46.2], tavern: [-23.4, 67.6] } as const;
+export const FROST_POIS = { forge: [13.4, 34.1], chapel: [17, 46.4], tavern: [-23.6, 67.4] } as const;

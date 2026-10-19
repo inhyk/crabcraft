@@ -26,6 +26,7 @@ import {SnowSpindrift} from './snowSpindrift';
 import {snowPines} from './snowPines';
 import {buildSnowVillage,type SnowVillage} from './snowVillage';
 import {buildSnowFields,type SnowFields} from './snowFields';
+import {snowGroves} from './snowFieldsLayout';
 import {frozenPond} from './snowVillageDressing';
 import {lathe} from '../world/geom';
 import type {Unit} from './unit';
@@ -147,7 +148,8 @@ export class SnowIsland {
  /** The forest and the village need the kits, so they load after construction like DawnIsland's settlement. */
  async buildSettlement(){
   const height=(x:number,z:number)=>this.height(x,z);
-  const [forest,village,,camps,fields]=await Promise.all([snowPines(snowTrees(),height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass}),buildSnowFields({height,ground:this.terrain.uniforms,sunDir:this.sky.sunDir})]);
+  // The fields' groves stand in the same batch as the village forest: one draw for every pine.
+  const [forest,village,,camps,fields]=await Promise.all([snowPines([...snowTrees(),...snowGroves()],height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass}),buildSnowFields({height,ground:this.terrain.uniforms,sunDir:this.sky.sunDir,sky:this.sky})]);
   this.root.add(forest,village.group,camps.group,fields.group);this.camps=camps;this.fields=fields;this.village=village;this.basin.material=village.stone;
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */

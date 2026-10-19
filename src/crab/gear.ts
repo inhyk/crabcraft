@@ -216,4 +216,5 @@ function markGearDetail(rig: JumperRig): void {
       }
     });
   }
+  rig.refreshGearShadows();
 }
