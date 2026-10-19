@@ -50,6 +50,7 @@ import { Enemy, ENEMY_STATS, type EnemyKind } from './enemies';
 import { Npc, Townsfolk } from './npcs';
 import { NavHints } from './nav';
 import { ObjectiveMarker } from './objective';
+import { shadowLights } from '../core/shadowPass';
 import { Player } from './player';
 import {
   NPCS,
@@ -73,6 +74,38 @@ export const DEFAULT_SPEC: CrabSpec = { race: 'human', sex: 'male', classId: 'wa
 
 const CULL_DIST = 80;
 const SHADOW_DIST = 18;
+/** Reach of a crab's shadow in crab heights under a shadow light that is not a sun (no direction to follow). */
+const SHADOW_REACH = 8;
+const viewFrustum = new THREE.Frustum();
+const viewProj = new THREE.Matrix4();
+const shadowReach = new THREE.Sphere();
+const sunDir = new THREE.Vector3();
+const sunAt = new THREE.Vector3();
+
+/**
+ * Whether a crab's shadow can land in the view (viewFrustum, this frame): the crab itself, or the
+ * ground its shadow covers away from each directional sun. Other shadow lights: any direction.
+ */
+function shadowInView(pos: THREE.Vector3, h: number, suns: readonly THREE.DirectionalLight[] | null): boolean {
+  shadowReach.center.copy(pos).y += h * 0.5;
+  shadowReach.radius = h * (suns ? 1.2 : SHADOW_REACH + 0.6);
+  if (viewFrustum.intersectsSphere(shadowReach)) return true;
+  if (!suns) return false;
+  for (const sun of suns) {
+    sunDir.setFromMatrixPosition(sun.matrixWorld).sub(sunAt.setFromMatrixPosition(sun.target.matrixWorld)).normalize();
+    const across = Math.hypot(sunDir.x, sunDir.z);
+    const len = Math.min(40, (1.6 * h * across) / Math.max(sunDir.y, 0.04));
+    const n = Math.ceil(len / h);
+    const step = across > 1e-4 ? -len / n / across : 0;
+    // Spheres along the shadow's strip on the ground, crab to tip, a metre to spare.
+    shadowReach.radius = 0.9 * h + 0.5 * (len / n) + 1;
+    for (let i = 1; i <= n; i++) {
+      shadowReach.center.set(pos.x + sunDir.x * step * i, pos.y, pos.z + sunDir.z * step * i);
+      if (viewFrustum.intersectsSphere(shadowReach)) return true;
+    }
+  }
+  return false;
+}
 const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } };
 /** Frostlight's own grade while it is shown: cool lifted shadows, warm lamp light, snow that reads white (grade.ts). */
 // Bloom keys above the brightest sunlit snow, so lamps and windows glow and the snow does not haze over.
@@ -745,11 +778,16 @@ export class Game {
     const cam = this.camera.position;
     // Screen pixels per world unit at distance 1 (CSS pixels, so Retina does not change the LOD).
     const pxPerUnit = window.innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
+    // A crab whose shadow cannot reach the view stays out of the sun's shadow map.
+    this.camera.updateMatrixWorld();
+    viewFrustum.setFromProjectionMatrix(viewProj.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
+    const casters = shadowLights(this.scene);
+    const suns = casters.every((l) => (l as THREE.DirectionalLight).isDirectionalLight) ? (casters as THREE.DirectionalLight[]) : null;
     for (const u of this.units) {
       const d = cam.distanceTo(u.pos);
       const culled = d > CULL_DIST * (u.kind === 'boss' ? 1.6 : 1);
       u.culled = culled;
-      u.setShadows(d < SHADOW_DIST * (u.kind === 'boss' ? 2 : 1));
+      u.setShadows(d < SHADOW_DIST * (u.kind === 'boss' ? 2 : 1) && shadowInView(u.pos, u.height, suns));
       u.rig.root.visible = !culled && !u.hidden;
       // Far LOD under ~90 px of shell height; back to full detail over ~110 px (no flicker).
       const px = (u.height * pxPerUnit) / Math.max(d, 0.1);
@@ -761,6 +799,7 @@ export class Game {
     this.updateSelection();
     const goal = this.spectator || this.dungeons?.active || this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
     this.hintVia = goal ? this.world2.chapter>=2 ? this.world2.waypoint(this.player.unit.pos, goal, this.time) : this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
+    this.objective.frost = this.gameView() === FROST_VIEW;
     this.objective.update(this.time, this.world, this.player.unit.pos, goal, this.hintVia, this.player.inCombat);
     if (!this.ending.active) this.director.update(dt);
     const worldTime=this.multiplayer?.battle.worldTime(f.elapsed,dt) ?? f.elapsed;

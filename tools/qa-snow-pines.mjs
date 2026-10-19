@@ -1,5 +1,6 @@
-// Frostlight forest: the kit pines stand on every snowTrees() trunk in two batched draws, the old cone
-// boughs are gone, the snow patch compiles, and the low-quality page loads too. Writes tmp/qa/snow-pines*.png.
+// Frostlight forest: the kit pines stand on every snowTrees() trunk and every grove pine of the fields
+// (snowGroves(), batched in the same two draws), the old cone boughs are gone, the snow patch compiles, and the
+// low-quality page loads too. Writes tmp/qa/snow-pines*.png.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {mkdir} from 'node:fs/promises';
@@ -23,22 +24,23 @@ try{
  const p=await load('high');
  const r=await p.evaluate(async()=>{const g=window.app.current.game,w=g.world2.fourth,ren=window.app.engine.renderer;
   const {snowTrees}=await import('/src/game/world4Colliders.ts');
+  const {snowGroves}=await import('/src/game/snowFieldsLayout.ts');
   const forest=w.root.getObjectByName('frostlight-snow-pines'),m=new window.app.current.game.camera.matrixWorld.constructor();
   const meshes=forest?forest.children.map(b=>{const xz=[];for(let i=0;i<b.instanceCount;i++){b.getMatrixAt(i,m);xz.push([+m.elements[12].toFixed(3),+m.elements[14].toFixed(3)]);}
    let verts=0;b.geometry&&(verts=b.geometry.getAttribute('position').count);
    return {name:b.name,batched:!!b.isBatchedMesh,instances:b.instanceCount,verts,map:!!b.material.map,shadow:b.castShadow,xz:xz.sort((a,c)=>a[0]-c[0]||a[1]-c[1])};}):[];
-  const want=snowTrees().map(t=>[+t.x.toFixed(3),+t.z.toFixed(3)]).sort((a,c)=>a[0]-c[0]||a[1]-c[1]);
+  const want=[...snowTrees(),...snowGroves()].map(t=>[+t.x.toFixed(3),+t.z.toFixed(3)]).sort((a,c)=>a[0]-c[0]||a[1]-c[1]);
   // The primitive forest used Cylinder/Cone InstancedMeshes; nothing of that kind may remain.
   let cones=0;w.root.traverse(o=>{if(o.isInstancedMesh&&/Cone|Cylinder/.test(o.geometry.type))cones++;});
   return {found:!!forest,pines:forest?.userData.pines,snowPines:w.root.userData.snowPines,meshes:meshes.map(({xz,...rest})=>rest),
-   positionsMatch:meshes.length>0&&meshes.every(b=>JSON.stringify(b.xz)===JSON.stringify(want)),cones,trees:want.length};});
+   positionsMatch:meshes.length>0&&meshes.every(b=>JSON.stringify(b.xz)===JSON.stringify(want)),cones,trees:snowTrees().length,all:want.length};});
  assert.equal(r.found,true,'forest group exists');
- assert.equal(r.snowPines,91);assert.equal(r.pines,91);assert.equal(r.trees,91);
+ assert.equal(r.snowPines,91);assert.equal(r.trees,91);assert.ok(r.all>=141,`91 trunks and the groves: ${r.all}`);assert.equal(r.pines,r.all);
  assert.deepEqual(r.meshes.map(b=>b.name).sort(),['frostlight-snow-pines:Bark_NormalTree','frostlight-snow-pines:Leaves_Pine']);
- for(const b of r.meshes){assert.equal(b.batched,true);assert.equal(b.instances,91);assert.equal(b.map,true,`${b.name} keeps the kit texture`);assert.equal(b.shadow,true);assert.ok(b.verts>2000,`${b.name} holds kit geometry: ${b.verts} vertices`);}
- assert.equal(r.positionsMatch,true,'every pine stands on a snowTrees() trunk');
+ for(const b of r.meshes){assert.equal(b.batched,true);assert.equal(b.instances,r.all);assert.equal(b.map,true,`${b.name} keeps the kit texture`);assert.equal(b.shadow,true);assert.ok(b.verts>2000,`${b.name} holds kit geometry: ${b.verts} vertices`);}
+ assert.equal(r.positionsMatch,true,'every pine stands on a snowTrees() trunk or a snowGroves() spot');
  assert.equal(r.cones,0,'no primitive trees remain');
- console.log('PASS kit pines on all 91 trunks',JSON.stringify(r));
+ console.log(`PASS kit pines on all 91 trunks and ${r.all-91} grove spots`,JSON.stringify(r));
  await frame(p);
  const programs=await p.evaluate(()=>window.app.engine.renderer.info.programs.filter(q=>q.cacheKey.includes('snow-laden')).length);
  assert.ok(programs>=2,`snow patch compiled for needles and bark: ${programs}`);
@@ -47,7 +49,7 @@ try{
  await p.close();
  const low=await load('low');
  const lr=await low.evaluate(()=>{const f=window.app.current.game.world2.fourth.root.getObjectByName('frostlight-snow-pines');return {pines:f?.userData.pines,instances:f?.children.map(b=>b.instanceCount)};});
- assert.equal(lr.pines,91);assert.deepEqual(lr.instances,[91,91]);
+ assert.equal(lr.pines,r.all);assert.deepEqual(lr.instances,[r.all,r.all]);
  await frame(low);await low.screenshot({path:'tmp/qa/snow-pines-low.png'});
  console.log('PASS low quality loads the same forest',JSON.stringify(lr));
  assert.deepEqual(errors,[]);console.log('PASS zero browser or shader errors');
