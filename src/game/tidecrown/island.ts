@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import type { Collision } from '../../sim/world/collision';
 import { buildFoliage, type FoliageResult } from '../../world/foliage';
-import { type Kit, loadKit } from '../../world/kit';
+import { loadKit } from '../../world/kit';
 import { WORLD_UNIFORMS } from '../../world/materials';
 import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, type TidecrownAtmosphere } from './atmosphere';
 import { buildHorizon } from './horizon';
@@ -12,27 +12,11 @@ import type { MapSnapshot } from '../snapshots';
 import { paintTidecrownMap } from './minimap';
 import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
 import { tidecrownMaterials } from './materials';
+import { buildHeroStatues } from './statues';
 import { buildTidecrownStructures, type TidecrownStructures } from './structures';
 import { TidecrownTerrain, tidecrownTerrainMaterial } from './terrain';
 
-interface StubModule {
-  buildStubKit(): Kit;
-  buildStubStatues(): Promise<THREE.Object3D[]>;
-}
-interface StatueModule {
-  buildHeroStatues(): Promise<THREE.Object3D[]>;
-}
-// Both resolve to nothing once their files are gone: the statues land from their own branch, the stub is deleted.
-const statueModules: Partial<Record<string, () => Promise<StatueModule>>> = import.meta.glob<StatueModule>('./statues.ts');
-const stubModules: Partial<Record<string, () => Promise<StubModule>>> = import.meta.glob<StubModule>('./stubKit.ts');
-
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
-
-async function loadStub(): Promise<StubModule> {
-  const load = stubModules['./stubKit.ts'];
-  if (!load) throw new Error('tidecrown: castle kit and stub are both missing');
-  return load();
-}
 
 export class TidecrownIsland {
   readonly root = new THREE.Group();
@@ -46,8 +30,8 @@ export class TidecrownIsland {
   structures!: TidecrownStructures;
   /** Minimap picture, painted from the terrain at build time. */
   map!: MapSnapshot;
-  /** Which castle kit and statues were used ('glb' / 'stub'), and how long each build step took (ms). */
-  readonly info: { kit: string; statues: string; steps: Record<string, number>; nature: Record<string, number> } = { kit: '', statues: '', steps: {}, nature: {} };
+  /** How long each build step took (ms) and how much nature was scattered. */
+  readonly info: { steps: Record<string, number>; nature: Record<string, number> } = { steps: {}, nature: {} };
   private foliage: FoliageResult | null = null;
   private lanternGlow: THREE.MeshStandardMaterial | null = null;
   private built = false;
@@ -78,18 +62,8 @@ export class TidecrownIsland {
 
     t0 = performance.now();
     const [village, nature] = await Promise.all([loadKit('models/world/village.glb'), loadKit('models/world/nature.glb')]);
-    let kit: Kit;
-    try {
-      kit = await loadKit('models/world/tidecrown.glb');
-      if (!kit.has('TC_Keep')) throw new Error('no TC_Keep');
-      this.info.kit = 'glb';
-    } catch {
-      kit = (await loadStub()).buildStubKit();
-      this.info.kit = 'stub';
-    }
-    const statueLoad = statueModules['./statues.ts'];
-    const statues = statueLoad ? await (await statueLoad()).buildHeroStatues() : await (await loadStub()).buildStubStatues();
-    this.info.statues = statueLoad ? 'statues.ts' : 'stub';
+    const kit = await loadKit('models/world/tidecrown.glb');
+    const statues = await buildHeroStatues();
     step('assets', t0);
     onProgress?.(0.45);
     await tick();

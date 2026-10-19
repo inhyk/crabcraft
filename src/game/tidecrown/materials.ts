@@ -121,7 +121,7 @@ export function tidecrownMaterials(village: Kit): TidecrownMaterials {
   return {
     TC_Limestone: stone(brick, 'TC_Limestone', '#e6dcc6', 0.25, 0.85, 0.62, 1.05),
     TC_LimestoneDark: stone(brick, 'TC_LimestoneDark', '#cfc2a6', 0.25, 1.0, 0.8, 1.05),
-    TC_Slate: stone(tiles, 'TC_Slate', '#35577d', 0.19, 1.1, 1, 1.15),
+    TC_Slate: stone(tiles, 'TC_Slate', '#35577d', 0.19, 1.1, 0.73, 1.15),
     TC_Gold: new THREE.MeshStandardMaterial({ name: 'TC_Gold', color: '#c9a24a', metalness: 0.85, roughness: 0.35, vertexColors: true }),
     TC_Nacre: nacre(),
     TC_Glass: stainedGlass(),

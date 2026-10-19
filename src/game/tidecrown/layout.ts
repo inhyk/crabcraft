@@ -18,7 +18,7 @@ export const TC_YAW = Math.atan2(-TC_AXIS.ux, -TC_AXIS.uz);
  * tools/tidecrown-pieces.json; the bridge bay and the lantern anchor are the values to check against it.
  */
 export const TC_PIECES = {
-  keep: { w: 60, d: 70, body: 60, spire: 150, lanternY: 142 },
+  keep: { w: 60, d: 70, body: 60, spire: 150, lanternY: 144.5 },
   lantern: { d: 8 },
   wardTower: { r: 7, h: 56 },
   wardWall: { len: 12, h: 16, thick: 4 },
@@ -26,7 +26,7 @@ export const TC_PIECES = {
   cityWall: { len: 12, h: 24, thick: 6 },
   cityTower: { r: 6, h: 32 },
   pincerGate: { w: 40, d: 14, passW: 12, passH: 18, h: 46 },
-  bridgeSpan: { len: 30, w: 14, pier: 14, bayX: 11, bayZ: 0 },
+  bridgeSpan: { len: 30, w: 14, pier: 14, bayX: 11, bayZ: 15 },
   plinth: { w: 8, h: 8 },
   statue: { h: 18 },
 } as const;
