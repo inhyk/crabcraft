@@ -56,10 +56,17 @@ export function placeEndingCamera(camera:THREE.PerspectiveCamera,target:THREE.Ve
  camera.fov=fov;camera.updateProjectionMatrix();camera.position.copy(target).addScaledVector(direction,distance);camera.lookAt(target);
  camera.rotateX(-Math.atan(pitch*Math.tan(THREE.MathUtils.degToRad(fov/2))));camera.updateMatrixWorld();
 }
-/** Narrowest lens at the given distance that keeps every corner inside the frame window; backs out only if no lens fits. */
-export function fitEndingCamera(camera:THREE.PerspectiveCamera,target:THREE.Vector3,direction:THREE.Vector3,corners:readonly THREE.Vector3[],distance:number,frame:Frame=ENDING_FRAME,lens:readonly [number,number]=[MIN_FOV,MAX_FOV],backOut=true):{distance:number;fov:number;fits:boolean} {
+/** Window for the gear a hero holds: it may leave the hero's frame window but stays clear of the letterboxes (11% top and bottom). */
+export const ENDING_GEAR_FRAME={x:.95,top:.72,bottom:-.72} as const;
+type Window={readonly x:number;readonly top:number;readonly bottom:number};
+/**
+ * Narrowest lens at the given distance that keeps every corner inside the frame window (and every `loose` corner
+ * inside its own window); backs out only if no lens fits.
+ */
+export function fitEndingCamera(camera:THREE.PerspectiveCamera,target:THREE.Vector3,direction:THREE.Vector3,corners:readonly THREE.Vector3[],distance:number,frame:Frame=ENDING_FRAME,lens:readonly [number,number]=[MIN_FOV,MAX_FOV],backOut=true,loose:{corners:readonly THREE.Vector3[];frame:Window}={corners:[],frame:ENDING_GEAR_FRAME}):{distance:number;fov:number;fits:boolean} {
  const point=new THREE.Vector3();
- const fits=(distance:number,fov:number)=>{placeEndingCamera(camera,target,direction,distance,fov,frame.pitch);for(const corner of corners){point.copy(corner).applyMatrix4(camera.matrixWorldInverse);if(point.z>-.5)return false;point.applyMatrix4(camera.projectionMatrix);if(Math.abs(point.x)>frame.x||point.y>frame.top||point.y<frame.bottom)return false;}return true;};
+ const within=(list:readonly THREE.Vector3[],window:Window)=>{for(const corner of list){point.copy(corner).applyMatrix4(camera.matrixWorldInverse);if(point.z>-.5)return false;point.applyMatrix4(camera.projectionMatrix);if(Math.abs(point.x)>window.x||point.y>window.top||point.y<window.bottom)return false;}return true;};
+ const fits=(distance:number,fov:number)=>{placeEndingCamera(camera,target,direction,distance,fov,frame.pitch);return within(corners,frame)&&within(loose.corners,loose.frame);};
  for(let i=0;backOut&&i<12&&!fits(distance,lens[1]);i++)distance*=1.15;
  let narrow=lens[0],wide=lens[1];if(fits(distance,narrow))return {distance,fov:narrow,fits:true};
  if(!fits(distance,wide))return {distance,fov:wide,fits:false};
@@ -105,6 +112,13 @@ function piecesOf(rig:CrabRig):BonePiece[] {
 function posedCorners(rig:CrabRig):THREE.Vector3[] {
  const out:THREE.Vector3[]=[],matrix=new THREE.Matrix4();
  for(const {mesh,bone,box}of piecesOf(rig)){matrix.multiplyMatrices(mesh.matrixWorld,mesh.bindMatrixInverse).multiply(bone.matrixWorld);for(let i=0;i<8;i++)out.push(new THREE.Vector3(i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z).applyMatrix4(matrix));}
+ return out;
+}
+/** Corners of the rigid gear the rig carries (staff, shield, lantern): parented meshes the skinning hull does not cover. */
+function gearCorners(rig:CrabRig):THREE.Vector3[] {
+ const out:THREE.Vector3[]=[];
+ // Each piece's own bounding box, turned with it: a staff held at a slant stays a thin box, not a wide cube.
+ rig.root.traverse(object=>{const mesh=object as THREE.Mesh;if(!mesh.isMesh||(mesh as THREE.SkinnedMesh).isSkinnedMesh||!mesh.visible)return;if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();const box=mesh.geometry.boundingBox!;if(box.isEmpty())return;for(let i=0;i<8;i++)out.push(new THREE.Vector3(i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z).applyMatrix4(mesh.matrixWorld));});
  return out;
 }
 /** No local phase clock: commit copies a server observation; render cannot progress the sequence. */
@@ -159,15 +173,16 @@ export class EndingPresentationView {
   // between two observations reuse it.
   const camera=this.ports.camera,key=`${state.sequence}|${this.rigs.size}|${camera.aspect}`;
   if(this.placed?.key===key){placeEndingCamera(camera,this.placed.target,this.placed.direction,this.placed.distance,this.placed.fov,this.placed.pitch);return;}
-  const corners:THREE.Vector3[]=[],box=new THREE.Box3();let heroCorners:THREE.Vector3[]=[];
+  const corners:THREE.Vector3[]=[],box=new THREE.Box3();let heroCorners:THREE.Vector3[]=[],heroGear:THREE.Vector3[]=[];
   for(const actor of state.cast){const rig=this.rigs.get(actor.ref.slot),p=actor.position;
    // Stable envelope around each server position, unioned with the live rig, keeps the fit calm.
    box.set(new THREE.Vector3(p.x-1.25,p.y-.1,p.z-1.25),new THREE.Vector3(p.x+1.25,p.y+1.8,p.z+1.25));
    if(rig){rig.root.updateMatrixWorld(true);const live=new THREE.Box3().setFromObject(rig.root);box.union(live);const body=rig.body.getWorldPosition(new THREE.Vector3()),height=Math.max(0,live.min.y-(p.y-.08)),scale=rig.root.scale.x,size=(1.6+height*.5)*scale;this.contacts.set(actor.ref.slot,body.x,p.y-.066,body.z,size*1.1,size*.85,.62/(1+height*1.5));}
    else box.expandByVector(new THREE.Vector3(.6,1.6,.6));
    const own=Array.from({length:8},(_,i)=>new THREE.Vector3(i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z));corners.push(...own);
-   // Hero cuts fit the posed rig itself (the calm envelope is wider than a close lens can hold).
-   if(actor===hero)heroCorners=rig?posedCorners(rig):own;
+   // Hero cuts fit the posed rig itself (the calm envelope is wider than a close lens can hold), and keep the gear
+   // it holds clear of the letterboxes.
+   if(actor===hero){heroCorners=rig?posedCorners(rig):own;heroGear=rig?gearCorners(rig):[];}
   }
   // Every cut is a function of the accepted observation: phase, move, server ticks and the observed cast.
   const {centre,yaw}=endingStageFrame(state.cast);
@@ -234,7 +249,7 @@ export class EndingPresentationView {
    fitCorners=heroCorners;frame={x:.8,top:.48,bottom:-.34,pitch:tall?.07:-.04};lens=[30,90];
   }
   // Hero cuts never back out of the dancer ring: if the pose outgrows the lens, the lens stays at its widest.
-  const {distance,fov,fits}=fitEndingCamera(camera,view.target,view.direction,fitCorners,view.distance,frame,lens,shot!=='close'&&shot!=='low');this.fits=fits;
+  const heroCut=shot==='close'||shot==='low',{distance,fov,fits}=fitEndingCamera(camera,view.target,view.direction,fitCorners,view.distance,frame,lens,!heroCut,{corners:heroCut?heroGear:[],frame:ENDING_GEAR_FRAME});this.fits=fits;
   // A new cut snaps; within a cut the lens widens at once when needed and narrows back gently, per
   // accepted tick, so dance steps do not pump it and rendering alone never moves the camera.
   const ticks=this.fit?Math.max(0,state.tick-this.fit.tick):0;
