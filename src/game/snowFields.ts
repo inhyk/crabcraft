@@ -393,6 +393,15 @@ function seaIceMaterial(){
 
 // ---------------------------------------------------------------------------------------------------------------
 
+/** World-space pieces merged per 40 m cell, so each cell is frustum-culled (and shadow-culled) on its own. */
+function cells(name:string,items:readonly {x:number;z:number;geo:THREE.BufferGeometry}[],material:THREE.Material,shadow=true){
+ const by=new Map<string,THREE.BufferGeometry[]>();
+ for(const it of items){const k=`${Math.floor(it.x/40)},${Math.floor(it.z/40)}`;let l=by.get(k);if(!l)by.set(k,l=[]);l.push(it.geo);}
+ const group=new THREE.Group();group.name=name;
+ for(const [k,geos] of by){const m=new THREE.Mesh(mergeGeometries(geos,false)!,material);m.name=`${name}:${k}`;m.castShadow=shadow;m.receiveShadow=true;m.matrixAutoUpdate=false;group.add(m);}
+ return group;
+}
+
 /** Load the kits and dress the fields. The caller adds `group` to the island root. */
 export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields>{
  const h=opts.height,group=new THREE.Group();group.name='frostlight-fields';
@@ -409,7 +418,7 @@ export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields
  for(const p of snowFieldPieces()){
   const piece=BARE.test(p.piece)?`${p.piece}_Bare`:p.piece;
   if(!kits[p.kit].has(piece))continue;
-  const shadow=!/^(Fern|Grass)/.test(piece);
+  const shadow=!/^(Fern|Grass|Bush)/.test(piece);
   scatterFor(p.kit,shadow,!!p.fine).add(piece,trs(p.x,h(p.x,p.z)-p.sink,p.z,p.yaw,p.s,p.pitch??0,p.roll??0));placed++;
  }
  const fineGroup=new THREE.Group();fineGroup.name='frostlight-field-fine';
@@ -417,22 +426,22 @@ export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields
  for(const [key,s] of fine)fineGroup.add(s.build({castShadow:!key.endsWith(':false'),materialFor:mat}));
  group.add(fineGroup);
 
- // Boulders: the crags' generator at a boulder's detail, one merged mesh in the crags' stone.
- const rocks:THREE.BufferGeometry[]=[];
- for(const b of snowBoulders()){
-  const g=cragGeometry({x:b.x,z:b.z,r:b.r,h:b.h,yaw:b.yaw,seed:b.seed},b.r>1.2?14:10);
+ // Boulders: the crags' generator at a boulder's detail, in the crags' stone, merged per cell.
+ const rocks=snowBoulders().map(b=>{
+  const g=cragGeometry({x:b.x,z:b.z,r:b.r,h:b.h,yaw:b.yaw,seed:b.seed},b.r>1.2?7:5);
   let low=Infinity;for(let a=0;a<8;a++)low=Math.min(low,h(b.x+Math.cos(a*.785)*b.r,b.z+Math.sin(a*.785)*b.r));
   g.applyMatrix4(trs(b.x,low-.3*b.h,b.z,b.yaw,b.r));
   for(const k of Object.keys(g.attributes))if(k!=='position'&&k!=='normal')g.deleteAttribute(k);
-  rocks.push(g);
- }
- const boulders=new THREE.Mesh(mergeGeometries(rocks,false)!,rockMaterial(opts.ground,.3,.8));boulders.name='frostlight-field-boulders';boulders.castShadow=boulders.receiveShadow=true;group.add(boulders);
+  return {x:b.x,z:b.z,geo:g};
+ });
+ const boulders=cells('frostlight-field-boulders',rocks,rockMaterial(opts.ground,.3,.8));group.add(boulders);
 
  // Logs and stumps.
- const wood:THREE.BufferGeometry[]=[];
- for(const l of snowLogs()){const g=logGeometry(l),y=h(l.x,l.z)+l.r-l.sink;g.applyMatrix4(trs(l.x,y,l.z,l.yaw,1,0,(fieldStream(l.seed)()-.5)*.06));wood.push(g);}
- for(const s of snowStumps()){const g=stumpGeometry(s);g.applyMatrix4(trs(s.x,h(s.x,s.z),s.z,s.seed));wood.push(g);}
- const logs=new THREE.Mesh(mergeGeometries(wood,false)!,barkMaterial(opts.ground));logs.name='frostlight-field-wood';logs.castShadow=logs.receiveShadow=true;group.add(logs);
+ const wood=[
+  ...snowLogs().map(l=>{const g=logGeometry(l),y=h(l.x,l.z)+l.r-l.sink;g.applyMatrix4(trs(l.x,y,l.z,l.yaw,1,0,(fieldStream(l.seed)()-.5)*.06));return {x:l.x,z:l.z,geo:g};}),
+  ...snowStumps().map(s=>{const g=stumpGeometry(s);g.applyMatrix4(trs(s.x,h(s.x,s.z),s.z,s.seed));return {x:s.x,z:s.z,geo:g};}),
+ ];
+ const logs=cells('frostlight-field-wood',wood,barkMaterial(opts.ground));group.add(logs);
 
  // Ponds.
  const iceMat=pondIce();
@@ -447,8 +456,8 @@ export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields
  const scours=new THREE.Mesh(scourGeometry(h),decalMat);scours.name='frostlight-field-scours';scours.renderOrder=1;group.add(scours);
 
  // Sea ice.
- const slabs=snowShelves().map(s=>{const g=slabGeometry(s);g.applyMatrix4(trs(s.x,SNOW_SEA_ICE+s.lift-s.t*.3,s.z,s.yaw,1,s.pitch,s.roll));return g;});
- const shelves=new THREE.Mesh(mergeGeometries(slabs,false)!,seaIceMaterial());shelves.name='frostlight-ice-shelves';shelves.castShadow=shelves.receiveShadow=true;group.add(shelves);
+ const slabs=snowShelves().map(s=>{const g=slabGeometry(s);g.applyMatrix4(trs(s.x,SNOW_SEA_ICE+s.lift-s.t*.3,s.z,s.yaw,1,s.pitch,s.roll));return {x:s.x,z:s.z,geo:g};});
+ const shelves=cells('frostlight-ice-shelves',slabs,seaIceMaterial());group.add(shelves);
 
  group.userData.fields={pieces:placed,groves:snowGroves().length,boulders:snowBoulders().length,logs:snowLogs().length,stumps:snowStumps().length,ponds:SNOW_PONDS.length,tracks:SNOW_TRACKS.length,scours:snowScours(h).length,slabs:slabs.length};
  for(const piece of [...nature.pieces.values(),...props.pieces.values(),...village.pieces.values()])for(const part of piece.parts)part.geometry.dispose();

@@ -72,9 +72,9 @@ interface Blob { x: number; z: number; rx: number; rz: number; yaw: number; n: n
 /** Grove outlines: an ellipse broken by a noisy edge. `small` is the share of young pines. */
 const GROVES: readonly Blob[] = [
   // Frostpine Woods, round the frost blossoms and the shelter (which keep their clearings).
-  { x: -64, z: 40, rx: 11, rz: 15, yaw: 0.3, n: 16, seed: 1 },
-  { x: -60, z: 70, rx: 10, rz: 13, yaw: -0.4, n: 12, seed: 2 },
-  { x: -54, z: 96, rx: 8, rz: 8, yaw: 0.2, n: 7, seed: 3, small: 0.5 },
+  { x: -64, z: 40, rx: 11, rz: 15, yaw: 0.3, n: 13, seed: 1 },
+  { x: -60, z: 70, rx: 10, rz: 13, yaw: -0.4, n: 9, seed: 2 },
+  { x: -54, z: 96, rx: 8, rz: 8, yaw: 0.2, n: 5, seed: 3, small: 0.5 },
   { x: -74, z: 6, rx: 7, rz: 11, yaw: 0.1, n: 8, seed: 4 },
   { x: -66, z: -28, rx: 8, rz: 11, yaw: -0.3, n: 9, seed: 5 },
   { x: -34, z: -66, rx: 8, rz: 6, yaw: 0.6, n: 6, seed: 6, small: 0.4 },
@@ -82,7 +82,7 @@ const GROVES: readonly Blob[] = [
   // A few copses on the open east side.
   { x: 84, z: 32, rx: 6, rz: 9, yaw: 0.2, n: 6, seed: 8, small: 0.3 },
   { x: 64, z: 98, rx: 7, rz: 6, yaw: -0.5, n: 6, seed: 9, small: 0.4 },
-  { x: 26, z: 112, rx: 7, rz: 5, yaw: 0.1, n: 5, seed: 10, small: 0.5 },
+  { x: 26, z: 112, rx: 7, rz: 5, yaw: 0.1, n: 4, seed: 10, small: 0.5 },
   { x: 40, z: -60, rx: 5, rz: 5, yaw: 0, n: 4, seed: 11, small: 0.5 },
 ];
 
@@ -245,8 +245,9 @@ export function snowFieldPieces(): FieldPiece[] {
   }
   // A supply sled's load half buried on the western slope: crates and a barrel, the sled itself long gone under.
   {
-    const x = -56, z = -2;
-    if (fieldClear(x, z, 2, true)) {
+    const at = fieldSettle(-56, -2, 2, true, 6);
+    if (at) {
+      const [x, z] = at;
       add({ kit: 'village', piece: 'Prop_Crate', x, z, yaw: 0.4, s: 1, sink: 0.5, roll: 0.12, solid: { hx: 0.6, hz: 0.6, h: 0.7 } });
       add({ kit: 'props', piece: 'Crate_Metal', x: x + 1.3, z: z + 0.6, yaw: 1.1, s: 0.9, sink: 0.42, pitch: 0.2, solid: { hx: 0.45, hz: 0.45, h: 0.5 } });
       add({ kit: 'props', piece: 'Barrel', x: x - 0.9, z: z + 1.4, yaw: 0.2, s: 1, sink: 0.35, pitch: 0.4, solid: { r: 0.45, h: 0.6 } });
