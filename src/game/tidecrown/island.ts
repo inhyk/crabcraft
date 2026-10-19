@@ -145,10 +145,8 @@ export class TidecrownIsland {
 
   update(time: number, playerX: number, playerZ: number, camera?: THREE.Camera): void {
     if (!this.built) return;
-    void playerX;
-    void playerZ;
     if (camera) {
-      this.atmosphere.update(time, camera, (x, z) => this.layout.heightAt(x, z));
+      this.atmosphere.update(time, camera, playerX, playerZ, (x, z) => this.layout.heightAt(x, z));
       this.foliage?.update(camera);
     }
     if (this.lanternGlow) this.lanternGlow.emissiveIntensity = 3.2 + 0.5 * Math.sin(time * 1.3);
@@ -159,14 +157,16 @@ export class TidecrownIsland {
     const mats = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
+      // Sprites share one geometry across three.js.
+      if (m.geometry && !(o instanceof THREE.Sprite)) m.geometry.dispose();
       if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose();
       if (m.material) for (const mm of Array.isArray(m.material) ? m.material : [m.material]) mats.add(mm);
     });
+    // Only textures made here; the kit maps and the shared noise belong to World I.
     for (const m of mats) {
-      for (const v of Object.values(m)) if (v instanceof THREE.Texture && (v.userData.tidecrown || v instanceof THREE.CanvasTexture || v instanceof THREE.DataTexture)) textures.add(v);
+      for (const v of Object.values(m)) if (v instanceof THREE.Texture && (v.userData.tidecrown || v instanceof THREE.CanvasTexture)) textures.add(v);
       m.dispose();
     }
-    for (const t of textures) if (t.userData.tidecrown || t instanceof THREE.CanvasTexture) t.dispose();
+    for (const t of textures) t.dispose();
   }
 }

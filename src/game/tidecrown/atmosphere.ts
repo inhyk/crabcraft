@@ -7,10 +7,10 @@ import { noiseTexture } from '../../world/terrain';
 import { createWater, type WaterUniforms } from '../../world/water';
 import type { TidecrownTerrain } from './terrain';
 
-/** Toward the sun: south-west, about 21 degrees up. */
-export const TC_SUN_DIR = new THREE.Vector3(-0.62, 0.3, 0.72).normalize();
+/** Toward the sun: south-west, about 24 degrees up. */
+export const TC_SUN_DIR = new THREE.Vector3(-0.62, 0.42, 0.72).normalize();
 export const TC_FOG = { color: new THREE.Color('#cfd9e2'), density: 0.0012 } as const;
-export const TC_ENV_INTENSITY = 0.38;
+export const TC_ENV_INTENSITY = 0.32;
 
 export interface TidecrownAtmosphere {
   group: THREE.Group;
@@ -21,7 +21,7 @@ export interface TidecrownAtmosphere {
   lanternLight: THREE.PointLight;
   /** Prefiltered sky for reflections (metal, nacre, glass). */
   environment(renderer: THREE.WebGLRenderer): THREE.Texture;
-  update(time: number, camera: THREE.Camera, ground: (x: number, z: number) => number): void;
+  update(time: number, camera: THREE.Camera, playerX: number, playerZ: number, ground: (x: number, z: number) => number): void;
   dispose(): void;
 }
 
@@ -121,7 +121,7 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
   sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.bias = -0.0003;
   sun.shadow.normalBias = 0.06;
-  const hemi = new THREE.HemisphereLight('#a7bfe0', '#7d6041', 0.78);
+  const hemi = new THREE.HemisphereLight('#bac8dc', '#7d6041', 0.8);
   group.add(sun, sun.target, hemi);
 
   const lanternLight = new THREE.PointLight('#53f2e4', 520, 120, 1.5);
@@ -148,11 +148,15 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
       }
       return envRT.texture;
     },
-    update(time, camera, ground) {
+    update(time, camera, playerX, playerZ, ground) {
       sky.position.copy(camera.position);
-      camera.getWorldDirection(fwd);
-      const ahead = THREE.MathUtils.clamp(camera.position.y * 1.1, 14, 48);
-      focus.copy(camera.position).addScaledVector(fwd.setY(0).normalize(), ahead);
+      // Shadows follow the player; a free camera far from the player (cinematics, screenshots) takes them along
+      // a little ahead of itself instead.
+      if (Math.hypot(camera.position.x - playerX, camera.position.z - playerZ) < 40) focus.set(playerX, 0, playerZ);
+      else {
+        camera.getWorldDirection(fwd);
+        focus.copy(camera.position).addScaledVector(fwd.setY(0).normalize(), THREE.MathUtils.clamp(camera.position.y * 1.1, 14, 48));
+      }
       focus.y = ground(focus.x, focus.z);
       focus.x = Math.round(focus.x / texel) * texel;
       focus.z = Math.round(focus.z / texel) * texel;
