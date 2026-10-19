@@ -255,36 +255,36 @@ const ARENA_OUT = { t: -3, kind: 'snow-hide', box: [-30, -110, 30, -46], max: 47
 const PRISON_OUT = { t: -3, kind: 'snow-hide', box: [9, -66, 17, -58], max: 6 };
 
 
-// The west woods: pines and ice cliffs behind, open snow in front.
-const CH = [-30, -9];
+// The west woods, south of the rock outcrop: pines behind, open snow falling away in front.
+const CH = [-30, 8];
 const charge = {
-  anchor: [-38, -9],
+  anchor: [-38, 8],
   view: { ...COLD, dof: true, bokeh: 2 },
   fog: { color: '#cdd6e2', density: 0.03 },
-  actors: cast2([-58, -6], [-56, -10.5], PI / 2),
+  actors: cast2([-58, 11], [-56, 6.5], PI / 2),
   tracks: {
-    beast: { path: [{ t: 0, x: -39.5, z: -10.6 }, { t: 2.92, x: -27.5, z: -10.4 }], faces: [{ t: -2, expr: 'angry' }] },
-    dwarf: { path: [{ t: 0, x: -58, z: -7 }, { t: 2.92, x: -42, z: -7.5 }], faces: [{ t: -2, expr: 'angry' }] },
+    beast: { path: [{ t: 0, x: -39.5, z: 6.4 }, { t: 2.92, x: -27.5, z: 6.6 }], faces: [{ t: -2, expr: 'angry' }] },
+    dwarf: { path: [{ t: 0, x: -58, z: 10 }, { t: 2.92, x: -42, z: 9.5 }], faces: [{ t: -2, expr: 'angry' }] },
   },
-  cam: { keys: [{ t: 0, p: G(CH[0], CH[1], 0.45), l: G(-44, -10.4, 1.3), fov: 48 }, { t: 2.92, p: G(CH[0] + 0.25, CH[1] + 0.15, 0.4), l: G(-44, -10.6, 1.2), fov: 48 }], ease: 'linear' },
+  cam: { keys: [{ t: 0, p: G(CH[0], CH[1], 0.45), l: G(-44, 6.6, 1.3), fov: 48 }, { t: 2.92, p: G(CH[0] + 0.25, CH[1] + 0.15, 0.4), l: G(-44, 6.4, 1.2), fov: 48 }], ease: 'linear' },
   fx: [...blizzard({ wind: [6, -2, 4], heavy: 1.3 }), ROAD_OUT, { t: 2.2, kind: 'shake', d: 0.8, amp: 0.06 }],
 };
 const chargeDwarf = {
-  anchor: [-40, -8],
+  anchor: [-40, 9],
   view: { ...COLD, dof: true, bokeh: 2 },
   fog: { color: '#cdd6e2', density: 0.03 },
-  actors: cast2([-50, -6.5], [-34, -10], PI / 2),
+  actors: cast2([-50, 10.5], [-34, 7], PI / 2),
   tracks: {
-    beast: { path: [{ t: 0, x: -34, z: -10.6 }, { t: 2.42, x: -16, z: -11.5 }], faces: [{ t: -2, expr: 'angry' }] },
-    dwarf: { path: [{ t: 0, x: -45.5, z: -6.8 }, { t: 2.42, x: -33, z: -8.9 }], faces: [{ t: -2, expr: 'angry' }], acts: [{ t: -0.3, clip: 'claw_right', upper: true }] },
+    beast: { path: [{ t: 0, x: -34, z: 6.4 }, { t: 2.42, x: -16, z: 5.5 }], faces: [{ t: -2, expr: 'angry' }] },
+    dwarf: { path: [{ t: 0, x: -45.5, z: 10.2 }, { t: 2.42, x: -33, z: 8.1 }], faces: [{ t: -2, expr: 'angry' }], acts: [{ t: -0.3, clip: 'claw_right', upper: true }] },
   },
-  cam: { keys: [{ t: 0, p: G(-37, -9.6, 0.45), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }, { t: 2.42, p: G(-36.8, -9.8, 0.45), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }], ease: 'linear' },
+  cam: { keys: [{ t: 0, p: G(-37, 7.4, 0.45), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }, { t: 2.42, p: G(-36.8, 7.2, 0.45), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }], ease: 'linear' },
   fx: [...blizzard({ wind: [6, -2, 4], heavy: 1.3 }), ROAD_OUT],
 };
 
 // ----------------------------------------------------------------------- snow-frost 157.71-163.08
 
-// Among the Frozen Throne's crystals: the mage by the pillar at (21.7, -65.5).
+// Among the Frozen Throne's crystals: the mage sweeps his staff and throws frost along the ground.
 const MG = [27.4, -84.2];
 const MYAW = 1.0;
 const MF = frame(MG[0], MG[1], MYAW);
@@ -293,16 +293,18 @@ const frostCast = {
   view: { ...COLD, saturation: -0.05, bloom: { intensity: 1.1, threshold: 0.85 }, dof: true, bokeh: 2.5 },
   fog: { color: '#7d88b0', density: 0.02 },
   actors: [{ id: 'mage', spec: MAGE, at: MG, yaw: MYAW }],
-  tracks: { mage: { acts: [{ t: -0.6, clip: 'cast', loop: true }], faces: [{ t: -2, expr: 'focused' }] } },
+  tracks: { mage: { acts: [{ t: 0.3, clip: 'attack_swipe' }, { t: 1.2, clip: 'cast', loop: true }], faces: [{ t: -2, expr: 'focused' }, { t: 0.3, expr: 'angry' }] } },
   cam: move([
-    { t: 0, p: MF(1.3, 0.4, 2.9), l: MF(0, 0.95, 0), fov: 40 },
-    { t: 2.71, p: MF(0.9, 0.42, 2.4), l: MF(0, 1.0, 0), fov: 40 },
+    { t: 0, p: MF(1.9, 0.32, 2.9), l: MF(0, 0.9, 0.3), fov: 40 },
+    { t: 2.71, p: MF(1.4, 0.4, 2.3), l: MF(0, 0.95, 0.3), fov: 40 },
   ]),
   fx: [
     ...blizzard({ wind: [-2, -1.5, 6], sky: '#8c97bd', zenith: '#3d4772', sun: 0.35, hemi: 1.0, tint: [0.84, 0.92, 1.15] }),
     ARENA_OUT,
     { t: 0, kind: 'fade', color: '#ffe6f0', curve: [[0, 1], [0.59, 0]] },
-    { t: 0.6, kind: 'vfx', recipe: 'frostSpray', args: [{ pt: { a: 'mage', o: [0, 0.4, 0.4] } }, MYAW, 4, 0.6] },
+    { t: 0.5, kind: 'vfx', recipe: 'frostSpray', args: [{ pt: { a: 'mage', o: [0, 0.4, 0.4] } }, MYAW + 0.35, 5, 0.7] },
+    { t: 0.55, kind: 'snow-shards', from: MF(0.3, 0, 0.8).filter((_, i) => i !== 1), yaw: MYAW + 0.35, length: 7.5, count: 18, spread: 1.5, height: 1.7, grow: 0.55 },
+    { t: 1.5, kind: 'vfx', recipe: 'frostSpray', args: [{ pt: { a: 'mage', o: [0, 0.4, 0.4] } }, MYAW, 5, 0.6] },
     { t: 0.4, kind: 'light', at: { a: 'mage', o: [0, 1.2, 0.8] }, color: '#7fc8ff', curve: [[0.4, 0], [0.8, 40], [2.71, 30]], distance: 12 },
   ],
 };
@@ -318,8 +320,8 @@ const frostPillar = {
   tracks: { mage: { acts: [{ t: -1, clip: 'cast', loop: true }], faces: [{ t: -2, expr: 'focused' }] } },
   cam: {
     ...move([
-      { t: 0, p: G(19.4, -79.6, 0.35), l: G(23.6, -78.1, 1.5), fov: 44 },
-      { t: 0.91, p: G(19.5, -79.4, 0.45), l: G(23.6, -78.1, 1.7), fov: 43 },
+      { t: 0, p: G(20.7, -79.3, 0.25), l: G(23.4, -78.15, 1.45), fov: 42 },
+      { t: 0.91, p: G(20.85, -79.25, 0.3), l: G(23.4, -78.15, 1.75), fov: 42 },
     ]),
     focus: 'mage',
     range: 5,
@@ -334,10 +336,10 @@ const frostPillar = {
 const frostRise = {
   ...frostPillar,
   cam: move([
-    { t: 0, p: G(20.8, -79.0, 1.0), l: G(PL[0], PL[1], 3.0), fov: 46 },
-    { t: 0.71, p: G(21.2, -78.9, 3.3), l: G(PL[0], PL[1], 7.2), fov: 46 },
+    { t: 0, p: G(20.6, -79.35, 0.22), l: G(23.4, -78.15, 1.9), fov: 50 },
+    { t: 0.71, p: G(20.4, -79.4, 0.3), l: G(23.9, -78.1, 3.7), fov: 52 },
   ]),
-  fx: [...frostPillar.fx, { t: 0, kind: 'flash', color: '#f4f0ff', d: 0.3, a: 0.6 }],
+  fx: [...frostPillar.fx, { t: 0, kind: 'flash', color: '#f4f0ff', d: 0.3, a: 0.5 }, { t: 0.68, kind: 'flash', color: '#f6f8ff', rise: 0.22, d: 0.05, a: 0.95 }],
 };
 // The tauren roaring among the east woods' pines.
 const TA = [76, -6];
@@ -360,6 +362,7 @@ const tauren = {
     ...blizzard({ wind: [3, -2.5, 6] }),
     { t: -3, kind: 'snow-pines', trees: [[80.5, -3.0, 1.05], [81.0, -9.5, 0.9], [79.0, 2.5, 1.0], [84.0, -1.0, 1.2]] },
     { t: 0.35, kind: 'shake', d: 0.6, amp: 0.03 },
+    { t: 0, kind: 'fade', color: '#f6f8ff', curve: [[0, 0.9], [0.2, 0]] },
   ],
 };
 
