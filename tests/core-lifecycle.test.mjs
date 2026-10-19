@@ -86,3 +86,20 @@ test('step returns actual delegated command outcomes by supplied index without i
  assert.deepEqual(result,[{unit:u.ref,commandIndex:1,success:true},{unit:u.ref,commandIndex:2,success:false}]);assert.equal(p.state.coins,50);assert.ok(Object.isFrozen(result));assert.ok(Object.isFrozen(result[0]));
  assert.deepEqual(a.step(new Map([[u.ref.id,intent(9,commands)]])),[]);assert.deepEqual(a.step(new Map()),[]);
 });
+
+test('a Frostlight save restores on the ground: out of what is now a building, the saved height only where the ground still is',async()=>{
+ const {loadBakedWorld}=await import('../src/sim/world/baked.ts'),{readFileSync}=await import('node:fs');
+ const snow=loadBakedWorld(JSON.parse(readFileSync(new URL('../public/world/collision-w4.json',import.meta.url),'utf8')));
+ const back=(x,y,z)=>{
+  const registry=new InMemoryCharacterRegistry(),source=worldArea('save','w4',{characters:registry}),dest=worldArea('load','w4',{characters:registry,query:snow});const {u}=addActor(source);
+  const c=structuredClone(source.capturePlayerCheckpoint(u.ref).checkpoint);c.location={...c.location,x,y,z};
+  const staged=dest.stageRestoredArrival(dest.reserveAdmission('hero','spawn',0),c,restore(c));assert.equal(registry.compareAndSwap('hero',u.ref,staged.newRef),true);
+  return dest.services.getUnit(dest.activateRestoredArrival(staged.token));
+ };
+ // Saved where the tavern now stands, high in the air: out past its wall, on the ground.
+ const t=back(-30.4,45,67.2);assert.ok(Math.hypot(t.x+30.4,t.z-67.2)>4,JSON.stringify([t.x,t.z]));assert.equal(t.y,snow.heightAt(t.x,t.z));
+ // Saved over ground whose height has changed since (the old straight road, now drifted snow): on today's ground.
+ const r=back(0,snow.heightAt(0,5)+3,5);assert.deepEqual([r.x,r.z],[0,5]);assert.equal(r.y,snow.heightAt(0,5));
+ // Saved mid-hop on open ground: the saved height stands.
+ const y=snow.heightAt(-1.6,56.6)+.3,h=back(-1.6,y,56.6);assert.equal(h.y,y);
+});

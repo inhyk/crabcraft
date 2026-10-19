@@ -42,7 +42,8 @@ export const SNOW_LOTS: readonly SnowLot[] = [
   lot('row-b', 'house', 23.5, 61, 27, 68.5, 4, 3, 2, 2),
   // The market round the fountain: the tavern faces it across the stones.
   lot('tavern', 'tavern', -30.4, 67.2, -13.6, 65, 4, 5, 2, 0),
-  lot('market-north', 'house', -13.8, 79.4, -13.6, 64.6, 3, 3, 1, 3, 0.04),
+  // North-west of the market, clear of the way a player walks out of the spawn portal.
+  lot('market-north', 'house', -19.6, 80.8, -13.6, 64.6, 3, 3, 1, 3, 0.04),
   lot('market-south', 'house', -16.4, 49.2, -14, 64, 3, 3, 2, 1),
   // High street frontage.
   lot('street-west', 'house', -8.2, 45.4, 0.6, 46, 3, 3, 2, 3, 0.08),
@@ -370,7 +371,7 @@ type GarlandEnd = { lot: string; lx: number; dy: number } | { x: number; z: numb
 /** Strings of lights between facing fronts and lamp-post tops, high over the streets. */
 const GARLANDS: [GarlandEnd, GarlandEnd, number][] = [
   [{ lot: 'street-west', lx: 0.4, dy: 4.7 }, { lot: 'street-east-b', lx: 2.6, dy: 4.7 }, 1.3],
-  [{ lot: 'market-north', lx: 0, dy: 2.7 }, { lot: 'street-east-a', lx: 0.8, dy: 2.6 }, 1.1],
+  [{ lot: 'market-north', lx: 0, dy: 2.7 }, { x: -12.56, z: 74.95, dy: 3.42 }, 0.7],
   [{ lot: 'tavern', lx: -3.7, dy: 5.5 }, { lot: 'market-south', lx: 0.6, dy: 4.6 }, 1.4],
   [{ lot: 'gate-west', lx: 1.6, dy: 2.75 }, { lot: 'gate-tower', lx: -0.4, dy: 5.4 }, 1.2],
 ];

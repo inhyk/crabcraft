@@ -59,11 +59,11 @@ test('current Dawnreach and Frostlight geometry keep distinct landmarks and boun
   assert.equal(snow.heightAt(0, 70), 5);
   assert.equal(dawn.heightAt(0, 70), 4);
   assert.equal(dawn.collision.shapes.some(s => s.kind === 0 && s.c.x === -11 && s.c.z === 53), false);
-  // The village's 57 boxes (18 kit buildings, the gate's watchtower among them, and the chapel's bell tower; benches, the stall, the cart, two terrace tables, the forge yard's
-  // bench and weapon stand, two wagons and 14 garden fences; six woodpiles; seven door steps; snowVillageLayout.ts), the seven rock outcrops of src/sim/world/snowGround.ts,
+  // The village's 58 boxes (18 kit buildings, the gate's watchtower among them, and the chapel's bell tower; benches, the stall, the cart, two terrace tables, the forge yard's
+  // bench and weapon stand, two wagons and 14 garden fences; six woodpiles; eight door steps; snowVillageLayout.ts), the seven rock outcrops of src/sim/world/snowGround.ts,
   // 14 from frostThroneLayout.ts (the throne dais, curtain wall, gatehouse and keep, the lean-to, its woodpile and sled, six overlook parapet runs and the ridge camp's chest)
   // and the open fields' 18 (six fence segments of the miners' trail, the ore wagon, two crates and nine logs; snowFieldsLayout.ts).
-  assert.equal(snowData.shapes.filter(s => s[0] === 1).length, 57 + 7 + 14 + 18);
+  assert.equal(snowData.shapes.filter(s => s[0] === 1).length, 58 + 7 + 14 + 18);
   const fountain = snowData.shapes.find(s => s[0] === 0 && s[1] === -13 && s[2] === 65);
   assert.ok(fountain);
   // Frostlight's own street plan (src/sim/world/snowLayout.ts): nothing solid stands on the centreline of any street, lane or road.

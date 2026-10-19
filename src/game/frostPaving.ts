@@ -19,7 +19,7 @@ import {SNOW_DEFORM_READ,type SnowDeform} from './snowDeform';
  */
 
 /** Tile edge, metres: each pixel loops only over the segments its tile lists (fpTileTex), at most TILE_K. */
-const TILE = 4;
+const TILE = 3;
 const TILE_K = 16;
 /** Swept junctions and paved squares. */
 const MAX_PLAZA = 24;
@@ -59,8 +59,8 @@ float fpFbm(vec2 p){return fpNoise(p)*.55+fpNoise(p*2.03+7.1)*.3+fpNoise(p*4.11-
 `;
 
 const PAVING_HEAD = /* glsl */ `
-// Segments, three texels each: (ax, az, bx, bz), (half width, main, along, seed), (start buried, end buried, start
-// joins, end joins: 1 where the path runs on into its next segment).
+// Segments, three texels each: (ax, az, bx, bz), (half width, main, joins, buried ends) with each pair packed as
+// start + 2 end, and (along, seed), which only the segments near the pixel need.
 uniform sampler2D fpSegTex;
 // One row per tile: the indices (plus one, 0 ends the list) of the segments that reach it, four per texel.
 uniform sampler2D fpTileTex;
@@ -140,30 +140,33 @@ int fpTile=fpTc.y*int(fpTileGrid.w)+fpTc.x;
 for(int k=0;k<FP_TILE_K;k++){
   int si=int(fpPick(texelFetch(fpTileTex,ivec2(k/4,fpTile),0),k-k/4*4))-1;
   if(si<0)break;
-  vec4 s=texelFetch(fpSegTex,ivec2(0,si),0),info=texelFetch(fpSegTex,ivec2(1,si),0),e4=texelFetch(fpSegTex,ivec2(2,si),0);vec2 ends=e4.xy;
+  vec4 s=texelFetch(fpSegTex,ivec2(0,si),0),info=texelFetch(fpSegTex,ivec2(1,si),0);
+  // Joins (1 where the path runs on into its next segment) and buried free ends, start and end.
+  vec2 jn=vec2(mod(info.z,2.),floor(info.z*.5)),ends=vec2(mod(info.w,2.),floor(info.w*.5));
   vec2 ab=s.zw-s.xy;float L=length(ab);vec2 dir=ab/L,ap=fpP-s.xy;
   float t=dot(ap,dir),across=dot(ap,vec2(dir.y,-dir.x));
   // The outline: square at a path's own ends, round past a joint where the next segment carries on, so a winding
   // path of short segments keeps its full depth inside (a union of boxes would not) and closes the outside of bends.
-  float ovA=-t,ovB=t-L,ovJ=max(max(ovA*e4.z,ovB*e4.w),0.);
-  vec2 bd=vec2(abs(across)-info.x,max(mix(ovA,-1e3,e4.z),mix(ovB,-1e3,e4.w)));
+  float ovA=-t,ovB=t-L,ovJ=max(max(ovA*jn.x,ovB*jn.y),0.);
+  vec2 bd=vec2(abs(across)-info.x,max(mix(ovA,-1e3,jn.x),mix(ovB,-1e3,jn.y)));
   fpSd=fpSmin(fpSd,ovJ>0.?length(vec2(ovJ,across))-info.x:length(max(bd,0.))+min(max(bd.x,bd.y),0.),.3);
-  if(bd.x>1.5||max(ovA-e4.z*1.2,ovB-e4.w*1.2)>1.5)continue;
-  float along=t+info.z,inside=1.-smoothstep(-.3,.4,max(-t-e4.z*1.2,t-L-e4.w*1.2));
-  float c=fpNoise(vec2(along*.045,info.w))*.9+fpNoise(vec2(along*.17,info.w+3.))*.16;
+  if(bd.x>1.5||max(ovA-jn.x*1.2,ovB-jn.y*1.2)>1.5)continue;
+  vec2 as=texelFetch(fpSegTex,ivec2(2,si),0).xy;
+  float along=t+as.x,inside=1.-smoothstep(-.3,.4,max(-t-jn.x*1.2,t-L-jn.y*1.2));
+  float c=fpNoise(vec2(along*.045,as.y))*.9+fpNoise(vec2(along*.17,as.y+3.))*.16;
   if(info.y>.5){
-    float x=across-c*.45,r=abs(abs(x)-.82)+fpNoise(vec2(along*.9,info.w))*.05;
+    float x=across-c*.45,r=abs(abs(x)-.82)+fpNoise(vec2(along*.9,as.y))*.05;
     float rut=1.-smoothstep(.1,.3,r);
     fpRut=max(fpRut,rut*inside);
     float crown=(1.-smoothstep(.25,.55,abs(x)))*.5,verge=(1.-smoothstep(1.1,2.5,abs(x)))*.32;
     fpTrod=max(fpTrod,max(rut,max(crown,verge))*inside);
-    fpWear=max(fpWear,(1.-smoothstep(1.5,2.7,abs(x)+fpNoise(vec2(along*.11,info.w+9.))*.7))*inside);
+    fpWear=max(fpWear,(1.-smoothstep(1.5,2.7,abs(x)+fpNoise(vec2(along*.11,as.y+9.))*.7))*inside);
   }else{
     float x=across-c*.3;
     fpTrod=max(fpTrod,(1.-smoothstep(.25,1.05,abs(x)))*.82*inside);
-    fpWear=max(fpWear,(1.-smoothstep(.8,1.6,abs(x)+fpNoise(vec2(along*.13,info.w+9.))*.45))*inside);
+    fpWear=max(fpWear,(1.-smoothstep(.8,1.6,abs(x)+fpNoise(vec2(along*.13,as.y+9.))*.45))*inside);
   }
-  float tn=t+fpNoise(vec2(across*.8,info.w+5.))*.9+fpNoise(vec2(across*2.6,info.w))*.25;
+  float tn=t+fpNoise(vec2(across*.8,as.y+5.))*.9+fpNoise(vec2(across*2.6,as.y))*.25;
   float buried=max(ends.x*smoothstep(2.4,-.3,tn),ends.y*smoothstep(L-2.4,L+.3,tn));
   fpEnd=max(fpEnd,buried*(1.-smoothstep(-.2,.4,bd.x)));
 }
@@ -476,7 +479,12 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
   geo.setIndex(index); geo.computeVertexNormals(); geo.computeBoundingSphere();
 
   const segData = new Float32Array(segs.length * 12);
-  segs.forEach((s, i) => segData.set([s.ax, s.az, s.bx, s.bz, s.half, s.main ? 1 : 0, s.along0, s.seed, s.first && free(s, s.ax, s.az) ? 1 : 0, s.last && free(s, s.bx, s.bz) ? 1 : 0, s.first ? 0 : 1, s.last ? 0 : 1], i * 12));
+  let freeEnds = 0;
+  segs.forEach((s, i) => {
+    const endA = s.first && free(s, s.ax, s.az) ? 1 : 0, endB = s.last && free(s, s.bx, s.bz) ? 1 : 0;
+    freeEnds += endA + endB;
+    segData.set([s.ax, s.az, s.bx, s.bz, s.half, s.main ? 1 : 0, (s.first ? 0 : 1) + (s.last ? 0 : 2), endA + endB * 2, s.along0, s.seed, 0, 0], i * 12);
+  });
   const tileData = new Float32Array(tiles.length * TILE_K);
   tiles.forEach((list, t) => list.forEach((k, j) => { tileData[t * TILE_K + j] = k + 1; }));
   const tex = (data: Float32Array, w: number, h: number) => { const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType); t.needsUpdate = true; return t; };
@@ -515,8 +523,6 @@ export function frostPaving(height: (x: number, z: number) => number, paths: Isl
 
   // Whether (x, z) is on the stones, kerbs included: the paths' own test, the bends' outsides and the squares.
   root.userData.covers = (x: number, z: number) => onIslandPath(paths, x, z) || padDist(x, z) <= .3 || tileOf(x, z).some(k => segBox(segs[k], x, z) <= .3);
-  let freeEnds = 0;
-  for (let i = 0; i < segs.length; i++) freeEnds += segData[i * 12 + 8] + segData[i * 12 + 9];
   root.userData.stats = {segments: segs.length, plazas: plazas.length - pads.length, pads: pads.length, freeEnds, cells: index.length / 6, vertices: pos.length / 3, tiles: tiles.length, maxPerTile: Math.max(...tiles.map(t => t.length))};
   return {root, setQuality(q) { uniforms.fpDetail.value = q === 'low' ? 0 : 1; }};
 }

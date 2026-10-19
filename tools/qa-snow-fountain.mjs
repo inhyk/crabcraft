@@ -1,3 +1,6 @@
+// Frostlight's streets (src/sim/world/snowLayout.ts): the player walks the high street, every lane, the road out of the
+// gate and the processional way to the arena gate end to end under actual collision; the frozen fountain stays
+// solid at the heart of the market. Writes tmp/qa/snow-fountain-moved.png.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});

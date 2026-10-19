@@ -131,7 +131,7 @@ export const FROST_NPCS: readonly { readonly x: number; readonly z: number; read
   // Silvermoon reads the aurora from the chapel steps.
   npc(15.2, 44.6, 1, 48),
   // Coralline keeps the healer's house on the market's north side.
-  npc(-11.2, 75.4, -13, 65),
+  npc(-16.4, 76.2, -13, 65),
   // Grukk keeps the gate, eyes on the north road.
   npc(-3.8, 31.4, -1.6, 19),
   // Hoofclaw ladles soup from the market cauldron.
