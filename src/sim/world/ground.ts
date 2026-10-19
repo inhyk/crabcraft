@@ -1,4 +1,5 @@
 // Ground height of the four worlds, shared by the browser and the server (numbers only).
+import { snowGround } from './snowGround.ts';
 
 export interface HeightGrid {
   minX: number;
@@ -65,13 +66,9 @@ export function dawnHeight(x: number, z: number): number {
   return natural+(DAWN_ARENA_HEIGHT-natural)*arena;
 }
 
-/** World IV: Frostlight's shore, rising trail and flat Boreas arena. */
+/** World IV: Frostlight's carved snowfield (snowGround.ts), the old shore, trail and arena kept where gameplay needs them. */
 export function snowHeight(x: number, z: number): number {
-  const edge = Math.hypot(x / 128, (z - 2) / 155);
-  const plateau = 5 + 14 * smoothstep(-z, 5, 55);
-  const hills = Math.sin(x * .052) * Math.sin(z * .037) * 2.5 * (1 - Math.exp(-x * x / 600));
-  const t = smoothstep(Math.hypot(x, z + 78), 22, 32);
-  return edge > .83 ? 5 - (edge - .83) * 70 : (1 - t) * 19 + t * (plateau + hills);
+  return snowGround(x, z);
 }
 
 /** Broad, walkable frontier terraces with the same surface in rendering and simulation. */
