@@ -137,8 +137,10 @@ float fpFoot=length(abs(fpDpx)+abs(fpDpy));
 float fpSd=1e3,fpTrod=0.,fpRut=0.,fpWear=0.,fpEnd=0.;
 ivec2 fpTc=clamp(ivec2(floor((fpP-fpTileGrid.xy)*fpTileGrid.z)),ivec2(0),ivec2(int(fpTileGrid.w)-1,int(fpTileRows)-1));
 int fpTile=fpTc.y*int(fpTileGrid.w)+fpTc.x;
-for(int k=0;k<FP_TILE_K;k++){
-  int si=int(fpPick(texelFetch(fpTileTex,ivec2(k/4,fpTile),0),k-k/4*4))-1;
+for(int q=0;q<FP_TILE_K/4;q++){
+ vec4 fpIds=texelFetch(fpTileTex,ivec2(q,fpTile),0);
+ for(int fpC=0;fpC<4;fpC++){
+  int si=int(fpPick(fpIds,fpC))-1;
   if(si<0)break;
   vec4 s=texelFetch(fpSegTex,ivec2(0,si),0),info=texelFetch(fpSegTex,ivec2(1,si),0);
   // Joins (1 where the path runs on into its next segment) and buried free ends, start and end.
@@ -169,6 +171,8 @@ for(int k=0;k<FP_TILE_K;k++){
   float tn=t+fpNoise(vec2(across*.8,as.y+5.))*.9+fpNoise(vec2(across*2.6,as.y))*.25;
   float buried=max(ends.x*smoothstep(2.4,-.3,tn),ends.y*smoothstep(L-2.4,L+.3,tn));
   fpEnd=max(fpEnd,buried*(1.-smoothstep(-.2,.4,bd.x)));
+ }
+ if(fpIds.w<.5)break;
 }
 float fpN1=fpFbm(fpP*.3+1.7),fpN2=fpNoise(fpP*1.6+4.);
 for(int i=0;i<FP_MAX_PLAZA;i++){if(i>=fpPlazaCount)break;vec4 q=fpPlaza[i];float d=length(fpP-q.xy);if(q.w>0.)fpSd=fpSmin(fpSd,d-q.w,.3);fpWear=max(fpWear,1.-smoothstep(q.z*.55,q.z,d+fpN1*1.4+fpN2*.3));}
