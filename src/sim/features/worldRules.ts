@@ -65,7 +65,7 @@ export class PersonalEndings {
    if(!unit.alive||interruption||unit.hp<entry.hp||unit.lastCombat>entry.combat){this.cancel(entry.ref,!unit.alive?'death':interruption??(unit.hp<entry.hp?'damage':'combat'));continue;}
    entry.hp=unit.hp;
    if(entry.pending)continue;
-   const before=entry.controller.phaseName;if(before==='credits')continue;const shown=entry.controller.snapshot();entry.controller.step();
+   const before=entry.controller.phaseName;if(before==='credits')continue;const shown=entry.controller.entersCreditsNextStep?entry.controller.snapshot():null;entry.controller.step();
    if(entry.controller.phaseName==='credits'){entry.shown=shown;this.unlock(entry);this.dirty(entry);}
   }
   for(const ref of this.requests.values()){

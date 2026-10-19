@@ -47,6 +47,8 @@ export class EndingPresentationController {
   if(phase==='credits'||phase==='finished'||phase==='cancelled')for(const u of this.actors)this.actions.stop(u,undefined,0);
  }
  private playStep():void {const step=BREAK_ROUTINE[this.stepIndex];this.actions.play(this.actors[0],actionRequest(realActionData,step.id,{from:step.from,to:step.to,speed:1,fade:step.fade,carryRoot:true}));this.cue('step',step.id);}
+ /** Whether the next step() enters the credits on its own (the finale runs out). */
+ get entersCreditsNextStep():boolean {return this.phase==='finale'&&this.tick+1-this.phaseStart>=FINALE;}
  /** Only the server scheduler calls this, exactly once per fixed tick. */
  step():void {
   if(this.phase==='finished'||this.phase==='cancelled')return;this.tick++;this.sequence++;
