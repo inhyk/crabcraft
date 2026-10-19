@@ -513,7 +513,8 @@ test('with dungeons enabled a respawn between a running save round\'s capture an
     assert.equal(rt.host.stats().haltingBarrier, false, 'the round lets the world run');
     assert.equal(A.self().alive, false, 'captured before the respawn');
     const before = await store.getOwned(a.binding.accountId, a.id);
-    await until(() => A.state?.selfRef.life > life && A.self()?.alive, 10000, 'respawn while the save is in flight');
+    await until(() => A.state?.selfRef.life > life && A.self()?.alive || rt.failures.length > 0, 10000, 'respawn while the save is in flight');
+    assert.deepEqual(rt.failures, []);
     assert.equal(rt.host.stats().durableBarrier, true, 'the respawn happened inside the round');
     release();
     await until(() => !rt.host.stats().durableBarrier || rt.failures.length, 8000, 'round ends');
