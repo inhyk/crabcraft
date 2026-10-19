@@ -19,6 +19,8 @@ const WALL = 0.09; // wall pieces stand this far out of their module line
 const ROOF_LENGTHS: Record<number, number[]> = { 4: [4, 6, 8], 6: [6, 8, 10, 12, 14], 8: [8, 10, 12, 14] };
 /** Ridge height above the wall top and eave overhang of the kit's round-tile roofs, by span. */
 const RIDGE: Record<number, number> = { 4: 3.73, 6: 4.89, 8: 6.0 };
+/** Roofs sit this far above the storey line, so their eaves clear the top-floor windows. */
+const ROOF_LIFT = 0.25;
 
 /** Deterministic 0..1 stream. */
 export function stream(seed: number): () => number {
@@ -47,6 +49,10 @@ export interface TidecrownMaterials {
   iron: THREE.MeshStandardMaterial;
   gold: THREE.MeshStandardMaterial;
   awning: THREE.MeshStandardMaterial;
+  /** Long sea-blue banners with a gold border and roundel, hung from iron arms. */
+  banner: THREE.MeshStandardMaterial;
+  /** Pennants of the street bunting (colour per flag in the vertex colour). */
+  pennant: THREE.MeshStandardMaterial;
   vine: THREE.Material;
 }
 
@@ -56,7 +62,7 @@ export interface TidecrownKit {
   nature: Kit;
   mat: TidecrownMaterials;
   /** Material overrides by kit material name, per family of pieces. */
-  over: { wall: Over; paint: Over; props: Over; nature: Over };
+  over: { wall: Over; paint: Over; plaster: Over; props: Over; nature: Over };
 }
 
 const lin = (hex: string) => new THREE.Color(hex);
@@ -113,9 +119,37 @@ function clothMaterial(): THREE.MeshStandardMaterial {
   return m;
 }
 
+function bannerMaterial(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ name: 'tidecrown-banner', color: '#ffffff', roughness: 0.78, side: THREE.DoubleSide, vertexColors: true });
+  // aCloth: x across (0..0.8), y down the fall. Gold hem and border, a gold roundel with a crowned diamond.
+  addPatch(m, 'tc-banner', (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aCloth;\nvarying vec2 vCloth;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCloth = aCloth;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec2 vCloth;\n${GLSL_NOISE}`).replace(
+      '#include <map_fragment>',
+      `#include <map_fragment>
+      {
+        vec3 blue = ${glslVec(lin('#24508f'))};
+        vec3 gold = ${glslVec(lin('#e2ae45'))};
+        float u = vCloth.x, v = vCloth.y;
+        float border = 1.0 - step(0.055, u) * step(u, 0.745) * step(0.07, v);
+        vec2 p = vec2(u - 0.4, v - 0.78);
+        float ring = 1.0 - smoothstep(0.018, 0.03, abs(length(p) - 0.2));
+        float gem = 1.0 - smoothstep(0.0, 0.012, abs(p.x) * 1.3 + abs(p.y) - 0.11);
+        float bar = (1.0 - step(0.012, abs(v - 1.16))) * step(abs(u - 0.4), 0.2);
+        float g = clamp(border + ring + gem + bar, 0.0, 1.0);
+        float weave = 0.94 + 0.06 * cc_vnoise(vCloth * 70.0);
+        diffuseColor.rgb *= mix(blue, gold, g) * weave;
+      }`,
+    );
+  });
+  return m;
+}
+
 function glassMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ name: 'tidecrown-glass', color: '#3a4656', emissive: '#ffb066', emissiveIntensity: 1.6, roughness: 0.12, metalness: 0.55, vertexColors: true });
-  // Vertex colour: red is the light inside (0 dark .. 1 lamp-lit), green the sky glint on the pane.
+  // Vertex colour red is the light inside each window (0 dark .. 1 lamp-lit); the pane itself stays dark glass.
   addPatch(m, 'tc-glass', (shader) => {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <color_fragment>', '#ifdef USE_COLOR\n float cLit = vColor.r;\n#endif\n')
@@ -151,7 +185,8 @@ export function loadTidecrownKit(): Promise<TidecrownKit> {
     const vine = kitClone(vm('MI_Vine'), 'tidecrown-vine', false);
     vine.side = THREE.DoubleSide;
     const gold = new THREE.MeshStandardMaterial({ name: 'tidecrown-gold', color: '#e0ad48', metalness: 0.9, roughness: 0.28 });
-    const mat: TidecrownMaterials = { plaster, limestone, ashlar, rock, stone, paint, tiles, glass: glassMaterial(), iron, gold, awning: clothMaterial(), vine };
+    const pennant = new THREE.MeshStandardMaterial({ name: 'tidecrown-pennant', color: '#ffffff', roughness: 0.8, side: THREE.DoubleSide, vertexColors: true });
+    const mat: TidecrownMaterials = { plaster, limestone, ashlar, rock, stone, paint, tiles, glass: glassMaterial(), iron, gold, awning: clothMaterial(), banner: bannerMaterial(), pennant, vine };
     const wall: Over = {
       MI_Plaster: plaster,
       MI_UnevenBrick: limestone,
@@ -165,7 +200,8 @@ export function loadTidecrownKit(): Promise<TidecrownKit> {
     };
     const propsOver: Over = {};
     for (const [name, m] of props.materials) {
-      const c = kitClone(m, `tidecrown-${name}`, (m as THREE.MeshStandardMaterial).vertexColors);
+      // Vertex colour on: the kit paints produce (carrots, apples) through it.
+      const c = kitClone(m, `tidecrown-${name}`, true);
       if (/Cloth/.test(name)) c.side = THREE.DoubleSide;
       propsOver[name] = c;
     }
@@ -180,7 +216,7 @@ export function loadTidecrownKit(): Promise<TidecrownKit> {
       else stylise(c, 1.1, [1.0, 1.0, 0.95]);
       natureOver[name] = c;
     }
-    return { village, props, nature, mat, over: { wall, paint: { ...wall, MI_WoodTrim: paint }, props: propsOver, nature: natureOver } };
+    return { village, props, nature, mat, over: { wall, paint: { ...wall, MI_WoodTrim: paint }, plaster: { ...wall, MI_WoodTrim: null }, props: propsOver, nature: natureOver } };
   })();
   return kitPromise;
 }
@@ -266,6 +302,8 @@ export interface TownhouseSpec {
   doorstep?: number;
   shop?: boolean;
   balcony?: boolean;
+  /** A Tidecrown banner on the street front (three storeys or more). */
+  banner?: boolean;
   /** 'eaves': ridge along the street; 'gable': the gable end faces the street. */
   roof?: 'eaves' | 'gable';
   /** Side walls that front a second street (a corner house) get windows like the front. */
@@ -346,7 +384,7 @@ export function townhouseLot(spec: TownhouseSpec): TownhouseLot {
   const [dx, dz] = atLocal(spec, -spec.width + 1 + 2 * di, hz);
   const doors: DoorSpot[] = [{ x: dx, z: dz, nx: Math.sin(spec.yaw), nz: Math.cos(spec.yaw) }];
   const { span } = roofSpan(spec);
-  return { spec, corners, hx, hz, doors, top: spec.ground + spec.floors * H + (RIDGE[span] ?? 4) };
+  return { spec, corners, hx, hz, doors, top: spec.ground + spec.floors * H + ROOF_LIFT + (RIDGE[span] ?? 4) };
 }
 
 export function townhouseCollider(lot: TownhouseLot): TidecrownCollider {
@@ -422,7 +460,9 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   const F = spec.floors;
   const base = trs(spec.x, spec.ground, spec.z, spec.yaw);
   const m = new THREE.Matrix4();
+  // Plaster walls leave out the kit's timber frame: stone bands and quoins carry the lines instead.
   const put = (kit: Kit, piece: string, over: Over, tint: Tint | null, x: number, y: number, z: number, yaw = 0, scale: number | THREE.Vector3 = 1, shadow = true, pitch = 0) => {
+    if (over === st.wall && piece.startsWith('Wall_Plaster')) over = k.over.plaster;
     m.multiplyMatrices(base, trs(x, y, z, yaw, scale, pitch));
     batch.put(kit, piece, m, over, tint, shadow);
   };
@@ -444,7 +484,7 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   const boxOdds = 0.12 + r() * 0.3;
   const glassLit = () => {
     const q = r();
-    return new THREE.Color(q < 0.18 ? 0.55 + r() * 0.45 : 0.04 + r() * 0.08, 1, 1);
+    return new THREE.Color(q < 0.14 ? 0.55 + r() * 0.45 : 0.04 + r() * 0.08, 1, 1);
   };
   const glassTint = (t: Tint) => new Map(t).set(mat.glass, glassLit());
 
@@ -514,8 +554,9 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     });
   }
   const top = F * H;
-  roof(top);
+  roof(top + ROOF_LIFT);
   if (spec.shop) awning();
+  if (spec.banner && F >= 3) banner();
   return lot;
 
   // --- pieces -----------------------------------------------------------------------------------
@@ -623,6 +664,24 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     geo(mergeGeometries(rods, false)!, mat.iron, undefined);
   }
 
+  function banner(): void {
+    // On a pier between windows, hung below the top storey band from an iron arm.
+    const piers = spec.width - 1;
+    const px = piers > 0 ? -W / 2 + 2 * (1 + (spec.seed % piers)) : -W / 2 + 0.35;
+    const y0 = (F - 1) * H - 0.15;
+    const g = bannerGeometry(0.8, 2.6, spec.seed);
+    g.translate(px, y0, D / 2 + WALL + 0.42);
+    geo(g, mat.banner, WHITE);
+    const a = new THREE.Vector3(px, y0 + 0.05, D / 2 + WALL);
+    const b = new THREE.Vector3(px, y0 + 0.05, D / 2 + WALL + 0.5);
+    const rod = tube([new THREE.Vector3(px - 0.48, y0 + 0.02, D / 2 + WALL + 0.42), new THREE.Vector3(px + 0.48, y0 + 0.02, D / 2 + WALL + 0.42)], () => 0.022, 6);
+    const arm = tube([a, a.clone().lerp(b, 0.5).add(new THREE.Vector3(0, 0.06, 0)), b], () => 0.03, 6);
+    const brace = tube([new THREE.Vector3(px, y0 - 0.45, D / 2 + WALL), new THREE.Vector3(px, y0 + 0.02, D / 2 + WALL + 0.42)], () => 0.018, 5);
+    geo(mergeGeometries([rod, arm, brace], false)!, mat.iron, undefined);
+    geo(lathe([[0, 0], [0.05, 0.01], [0.055, 0.05], [0.03, 0.1], [0, 0.13]], 8).translate(px + 0.5, y0 - 0.04, D / 2 + WALL + 0.42), mat.gold, undefined);
+    geo(lathe([[0, 0], [0.05, 0.01], [0.055, 0.05], [0.03, 0.1], [0, 0.13]], 8).translate(px - 0.5, y0 - 0.04, D / 2 + WALL + 0.42), mat.gold, undefined);
+  }
+
   function roof(top: number): void {
     const { span, len, ridge } = roofSpan(spec);
     const lens = ROOF_LENGTHS[span];
@@ -638,16 +697,17 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     const scale = v(1, 1, (len / L) * sLen);
     if (ridge === 'x') put(village, `Roof_RoundTiles_${span}x${L}`, st.paint, st.roof, shift, top, 0, Math.PI / 2, scale);
     else put(village, `Roof_RoundTiles_${span}x${L}`, st.paint, st.roof, 0, top, 0, 0, scale);
-    // Gable walls, their kit timbers limewashed into the plaster; left out against a neighbour of the same roofline.
+    // Plastered gables without the kit's timbers; left out against a neighbour of the same roofline.
     const gable = `Roof_Front_Brick${span}`;
-    const gt = new Map(st.t).set(mat.paint, st.t.get(mat.plaster)!.clone().multiplyScalar(0.94));
+    const gOver = k.over.plaster;
+    const gt = st.t;
     if (ridge === 'z') {
-      put(village, gable, st.paint, gt, 0, top, D / 2, 0);
-      if (!hidden('back', 0, F)) put(village, gable, st.paint, gt, 0, top, -D / 2, Math.PI);
+      put(village, gable, gOver, gt, 0, top, D / 2, 0);
+      if (!hidden('back', 0, F)) put(village, gable, gOver, gt, 0, top, -D / 2, Math.PI);
       finial(0, top + RIDGE[span] + 0.02, D / 2 + 0.55, 1);
     } else {
-      if (!spec.trim?.right && !hidden('right', 0, F)) put(village, gable, st.paint, gt, W / 2, top, 0, Math.PI / 2);
-      if (!spec.trim?.left && !hidden('left', 0, F)) put(village, gable, st.paint, gt, -W / 2, top, 0, -Math.PI / 2);
+      if (!spec.trim?.right && !hidden('right', 0, F)) put(village, gable, gOver, gt, W / 2, top, 0, Math.PI / 2);
+      if (!spec.trim?.left && !hidden('left', 0, F)) put(village, gable, gOver, gt, -W / 2, top, 0, -Math.PI / 2);
       if (!spec.trim?.left && !spec.trim?.right && r() < 0.5) finial(r() < 0.5 ? -W / 2 - 0.6 : W / 2 + 0.6, top + RIDGE[span] + 0.02, 0, 0.8);
     }
     // Dormers on the street slope of deep eaves roofs.
@@ -732,6 +792,66 @@ export function awningGeometry(w: number, proj: number, drop: number, scallopSee
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
+}
+
+/** A hanging banner `w` wide and `h` long with a swallowtail hem and a soft ripple; aCloth as on awnings. */
+export function bannerGeometry(w: number, h: number, seed = 0): THREE.BufferGeometry {
+  const nx = 6;
+  const ny = 14;
+  const pos: number[] = [];
+  const cloth: number[] = [];
+  const idx: number[] = [];
+  for (let j = 0; j <= ny; j++) {
+    const t = j / ny;
+    for (let i = 0; i <= nx; i++) {
+      const u = i / nx;
+      // The swallowtail: the hem rises toward the middle.
+      const notch = 0.32 * (1 - Math.abs(u - 0.5) * 2);
+      const v = t * (h - notch * Math.pow(t, 6));
+      const ripple = 0.05 * Math.sin(u * 5.5 + seed) * t + 0.03 * Math.sin(t * 6 + seed * 1.7) * t;
+      pos.push(-w / 2 + w * u, -v, ripple);
+      cloth.push(w * u, v);
+    }
+  }
+  for (let j = 0; j < ny; j++)
+    for (let i = 0; i < nx; i++) {
+      const a = j * (nx + 1) + i;
+      idx.push(a, a + nx + 1, a + 1, a + 1, a + nx + 1, a + nx + 2);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aCloth', new THREE.Float32BufferAttribute(cloth, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+const PENNANTS = ['#2b5b93', '#f1eadb', '#d9a536', '#2b7884', '#f1eadb', '#3c6fa6'].map(lin);
+
+/** A string of pennants between two facade points, sagging `sag` at the middle. Returns cloth and cord. */
+export function buntingGeometry(a: THREE.Vector3, b: THREE.Vector3, sag: number, seed: number): { flags: THREE.BufferGeometry; cord: THREE.BufferGeometry } {
+  const len = a.distanceTo(b);
+  const at = (t: number) => a.clone().lerp(b, t).add(new THREE.Vector3(0, -4 * sag * t * (1 - t), 0));
+  const path = Array.from({ length: 17 }, (_, i) => at(i / 16));
+  const cord = tube(path, () => 0.014, 5);
+  const pos: number[] = [];
+  const col: number[] = [];
+  const n = Math.max(3, Math.floor(len / 0.55));
+  for (let i = 0; i < n; i++) {
+    const t0 = (i + 0.2) / n;
+    const t1 = (i + 0.8) / n;
+    const p0 = at(t0);
+    const p1 = at(t1);
+    const tip = at((t0 + t1) / 2).add(new THREE.Vector3(0, -0.36, 0.04 * Math.sin(i * 1.7 + seed)));
+    pos.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, tip.x, tip.y, tip.z);
+    const c = PENNANTS[(i + seed) % PENNANTS.length];
+    for (let k = 0; k < 3; k++) col.push(c.r, c.g, c.b, 1);
+  }
+  const flags = new THREE.BufferGeometry();
+  flags.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  flags.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  flags.computeVertexNormals();
+  return { flags, cord };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -1027,6 +1147,7 @@ export function planDistrict(o: DistrictPlanOptions): DistrictPlan {
                 ground: 0,
                 shop: floors >= 2 && r() < (lane ? 0.08 : plaza < 25 ? 0.6 : 0.3),
                 balcony: floors >= 3 && r() < (lane ? 0.2 : 0.4),
+                banner: !lane && floors >= 3 && r() < 0.3,
                 roof: w <= 3 && r() < 0.45 ? 'gable' : 'eaves',
               });
               quads.push(q);
@@ -1152,6 +1273,8 @@ export function planDistrict(o: DistrictPlanOptions): DistrictPlan {
 
 export interface DistrictOptions extends DistrictPlanOptions {
   kit: TidecrownKit;
+  /** Pennant strings across the streets between facing houses (default on). */
+  bunting?: boolean;
   /** Batches per axis over the district's bounds: 2 x 2 quarters by default. */
   chunks?: [number, number];
   name?: string;
@@ -1165,6 +1288,53 @@ export interface District {
   /** Back lanes the district added between its rows (pave and keep clear like streets). */
   lanes: DistrictStreet[];
   stats: { houses: number; meshes: number; triangles: number; pieces: Record<string, number> };
+}
+
+/** Distance along a ray to the nearest house front (and that house), within `max`. */
+function rayToLot(lots: TownhouseLot[], x: number, z: number, dx: number, dz: number, max: number): { t: number; lot: TownhouseLot } | null {
+  let best: { t: number; lot: TownhouseLot } | null = null;
+  for (const lot of lots) {
+    const c = lot.corners;
+    for (let i = 0; i < 4; i++) {
+      const [ax, az] = c[i];
+      const [bx, bz] = c[(i + 1) % 4];
+      const ex = bx - ax;
+      const ez = bz - az;
+      const den = dx * ez - dz * ex;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((ax - x) * ez - (az - z) * ex) / den;
+      const u = ((ax - x) * dz - (az - z) * dx) / den;
+      if (t > 0 && t < max && u >= 0 && u <= 1 && (!best || t < best.t)) best = { t, lot };
+    }
+  }
+  return best;
+}
+
+/** Strings of pennants across each street, from one house front to the facing one, every dozen metres or so. */
+function bunting(o: DistrictOptions, plan: DistrictPlan, chunkOf: (x: number, z: number) => TideBatch): void {
+  const r = stream((o.seed ?? 1) + 77);
+  const setback = o.setback ?? 0.9;
+  for (const st of o.streets) {
+    const pts = resample(st.points, 1);
+    for (let i = 6 + Math.floor(r() * 6); i < pts.length - 2; i += 10 + Math.floor(r() * 6)) {
+      const [x, z] = pts[i];
+      const [nx2, nz2] = pts[i + 1];
+      const l = Math.hypot(nx2 - x, nz2 - z) || 1;
+      const nx = -(nz2 - z) / l;
+      const nz = (nx2 - x) / l;
+      const max = st.width / 2 + setback + 1.2;
+      const a = rayToLot(plan.lots, x, z, nx, nz, max);
+      const b = rayToLot(plan.lots, x, z, -nx, -nz, max);
+      if (!a || !b) continue;
+      const y = (lot: TownhouseLot) => lot.spec.ground + Math.min(lot.spec.floors - 1, 2) * H - 0.45;
+      const pa = new THREE.Vector3(x + nx * (a.t + WALL - 0.02), y(a.lot), z + nz * (a.t + WALL - 0.02));
+      const pb = new THREE.Vector3(x - nx * (b.t + WALL - 0.02), y(b.lot), z - nz * (b.t + WALL - 0.02));
+      const g = buntingGeometry(pa, pb, 0.45 + r() * 0.35, Math.floor(r() * 6));
+      const batch = chunkOf(x, z);
+      batch.addGeometry(g.flags, o.kit.mat.pennant, null, false);
+      batch.addGeometry(g.cord, o.kit.mat.iron, null, false);
+    }
+  }
 }
 
 /** Plan and build a district of townhouses, one batch per quarter. Deterministic from `seed`. */
@@ -1200,6 +1370,7 @@ export function fillDistrict(o: DistrictOptions): District {
     m.copy(trs(y.x, y.y - 0.02, y.z, y.yaw, y.s));
     chunkOf(y.x, y.z).put(kit, y.piece, m, over, null, true);
   }
+  if (o.bunting !== false) bunting(o, plan, chunkOf);
   for (const b of batches) if (b) group.add(b.build());
   let meshes = 0;
   let triangles = 0;

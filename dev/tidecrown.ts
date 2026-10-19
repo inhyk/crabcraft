@@ -50,7 +50,7 @@ for (const v of ['street', 'district', 'market', 'house', 'pieces']) {
 
 const skyU = createSkyUniforms(WORLD_UNIFORMS.uTime, noiseTexture());
 // &sd=x,y,z overrides the direction toward the sun.
-const sunDir = new THREE.Vector3(...((params.get('sd') ?? (view === 'street' ? '0.14,0.6,0.79' : '0.45,0.72,0.52')).split(',').map(Number) as [number, number, number])).normalize();
+const sunDir = new THREE.Vector3(...((params.get('sd') ?? (view === 'street' ? '0.14,0.6,0.79' : view === 'house' ? '-0.35,0.62,-0.7' : '0.45,0.72,0.52')).split(',').map(Number) as [number, number, number])).normalize();
 function setSky(dir: THREE.Vector3): void {
   skyU.uSunDir.value.copy(dir);
   skyU.uZenith.value.set('#2f6bc4');
@@ -166,7 +166,7 @@ async function crab(x: number, z: number, h: Height, yaw: number): Promise<void>
 }
 
 function stat(district: District, extra: Record<string, unknown> = {}): void {
-  const info = { view, buildMs: (district.stats as Record<string, unknown>).buildMs, deterministic: (district.stats as Record<string, unknown>).deterministic, lanes: district.lanes.length, houses: district.stats.houses, districtMeshes: district.stats.meshes, districtTriangles: district.stats.triangles, colliders: district.colliders.length, pieces: district.stats.pieces, ...extra };
+  const info = { view, buildMs: (district.stats as Record<string, unknown>).buildMs, deterministic: (district.stats as Record<string, unknown>).deterministic, lanes: district.lanes.length, houses: district.stats.houses, districtMeshes: district.stats.meshes, districtTriangles: district.stats.triangles, colliders: district.colliders.length, banners: district.lots.filter((l) => l.spec.banner).length, shops: district.lots.filter((l) => l.spec.shop).length, corners: district.lots.filter((l) => l.spec.corner?.left || l.spec.corner?.right).length, pieces: district.stats.pieces, ...extra };
   window.__info = info;
 }
 
@@ -244,10 +244,10 @@ async function buildDistrict(): Promise<{ kit: TidecrownKit; d: District; m: Mar
 async function district(): Promise<void> {
   const { d, m } = await buildDistrict();
   await crab(3, 9, districtHeight, 2.4);
-  cam.fov = 38;
-  cam.position.set(-70, 95, 120);
+  cam.fov = 40;
+  cam.position.set(-52, 62, 84);
   if (params.has('top')) cam.position.set(0, 260, 1);
-  cam.lookAt(2, 2, -4);
+  cam.lookAt(4, 0, -10);
   aimSun(new THREE.Vector3(0, 0, 0), 100);
   scene.fog = new THREE.FogExp2('#e9d2b4', 0.0016);
   stat(d, { stalls: m.stalls.length, marketColliders: m.colliders.length });
@@ -257,10 +257,10 @@ async function market(): Promise<void> {
   const { d, m } = await buildDistrict();
   await crab(-2.6, 8.4, districtHeight, 2.6);
   cam.fov = 52;
-  const cx = -5;
-  const cz = 13;
-  cam.position.set(cx, districtHeight(cx, cz) + 1.75, cz);
-  cam.lookAt(4, districtHeight(4, -6) + 1.6, -8);
+  const cx = -8;
+  const cz = 15.5;
+  cam.position.set(cx, districtHeight(cx, cz) + 1.8, cz);
+  cam.lookAt(5, districtHeight(5, -9) + 2.4, -9);
   aimSun(new THREE.Vector3(0, 0, 0), 45);
   stat(d, { stalls: m.stalls.length, marketColliders: m.colliders.length });
 }
@@ -314,6 +314,14 @@ async function pieces(): Promise<void> {
 
 const views: Record<string, () => Promise<void>> = { street, district, market, house, pieces };
 await (views[view] ?? street)();
+// &cam=x,y,z,tx,ty,tz places the camera anywhere (heights above the ground there), for spot checks.
+const camArg = params.get('cam')?.split(',').map(Number);
+if (camArg?.length === 6) {
+  const [x, y, z, tx, ty, tz] = camArg;
+  const g = view === 'district' || view === 'market' ? districtHeight : () => 0;
+  cam.position.set(x, g(x, z) + y, z);
+  cam.lookAt(tx, g(tx, tz) + ty, tz);
+}
 engine.setView(scene, cam, { bloom: { intensity: 0.55, threshold: 0.95 }, exposure: Number(params.get('exp') ?? 1.0) });
 let frames = 0;
 engine.onFrame(({ elapsed }) => {
