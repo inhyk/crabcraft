@@ -16,6 +16,7 @@ import {SnowSpray} from './snowSpray';
 import {crystalCluster,crystalGeometry,iceMaterial,type Crystal} from './iceCrystals';
 import {SnowSky} from './snowSky';
 import {SnowFarShadow,applyFarShadow} from './snowFarShadow';
+import {SnowSpindrift} from './snowSpindrift';
 import {snowPines} from './snowPines';
 import {buildSnowVillage,type SnowVillage} from './snowVillage';
 import {frozenPond} from './snowVillageDressing';
@@ -55,6 +56,8 @@ export class SnowIsland {
  private refreshIce:()=>void;
  /** The sun's shadow past the live shadow box, baked once the village and forest stand (snowFarShadow.ts). */
  readonly farShadow:SnowFarShadow;
+ /** Streamers of snow the wind lifts off the crests (snowSpindrift.ts). */
+ readonly spindrift:SnowSpindrift;
  height(x:number,z:number){
   return snowHeight(x,z);
  }
@@ -102,6 +105,7 @@ export class SnowIsland {
   const pillars:Crystal[]=[];
   for(let i=0;i<12;i++){const a=i/12*Math.PI*2;if(Math.cos(a)>.7)continue;const x=Math.sin(a)*25,z=-78+Math.cos(a)*25,y=this.height(x,z);crystalCluster(x,y,z,8.6,2.6,3,rand,pillars);add(new THREE.OctahedronGeometry(.8),glow,x,y+8.5,z);}
   iceMesh(pillars,'frostlight-arena-crystals');
+  this.spindrift=new SnowSpindrift({sunDir:this.sky.sunDir,sunLight:this.sky.sunLight,sky:this.sky.hemiSky,bounce:this.sky.hemiGround,ground:this.terrain.uniforms,far:this.farShadow});this.root.add(this.spindrift.mesh);
   this.root.add(this.sky.mesh);
   // Ranges across the frozen sea, hazed toward the dome's own colour.
   this.ridges=new SnowRidges(this.sky);this.root.add(this.ridges.mesh);
@@ -109,8 +113,9 @@ export class SnowIsland {
   // Its ends fade out, so the curtain never shows the edge of its plane.
   this.aurora=new THREE.ShaderMaterial({side:THREE.DoubleSide,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{time:{value:0}},vertexShader:'varying vec2 v;uniform float time;void main(){v=uv;vec3 p=position;p.z+=sin(p.x*.025+time*.15)*20.;gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.);}',fragmentShader:'varying vec2 v;uniform float time;void main(){float rays=.5+.5*sin(v.x*75.+sin(v.x*12.+time*.2)*3.);float a=sin(v.y*3.14159)*(.1+.22*rays)*smoothstep(0.,.2,v.x)*smoothstep(1.,.8,v.x);gl_FragColor=vec4(mix(vec3(.1,.95,.65),vec3(.35,.32,.9),v.y)*1.7,a);}'});
   add(new THREE.PlaneGeometry(650,90,64,1),this.aurora,0,135,-270).castShadow=false;
+  // Flakes ride the wind and stay put in the world (wrapped round the player), so walking passes through them.
   const flakes=new THREE.BufferGeometry(),fp=new Float32Array(1800*3);for(let i=0;i<1800;i++)fp.set([Math.sin(i*127.1)*60,Math.sin(i*311.7)*30,Math.sin(i*74.7)*60],i*3);flakes.setAttribute('position',new THREE.BufferAttribute(fp,3));
-  this.snow=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{time:{value:0},origin:{value:new THREE.Vector3()}},vertexShader:'uniform float time;uniform vec3 origin;void main(){vec3 p=position;p.x+=sin(time*.2+position.z)*1.6;p.y=mod(position.y-time*1.6+60.,60.)-15.;p+=origin;vec4 mv=modelViewMatrix*vec4(p,1.);gl_PointSize=clamp(65./max(1.,-mv.z),1.2,4.);gl_Position=projectionMatrix*mv;}',fragmentShader:'void main(){float a=1.-smoothstep(.2,.5,length(gl_PointCoord-.5));gl_FragColor=vec4(.9,.97,1.,a*.75);}'});
+  this.snow=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{time:{value:0},origin:{value:new THREE.Vector3()},wind:{value:new THREE.Vector2(SNOW_WIND[0],SNOW_WIND[1])}},vertexShader:'uniform float time;uniform vec3 origin;uniform vec2 wind;void main(){vec3 p=position;p.y=mod(position.y-time*(1.3+.6*fract(position.x*.37))+60.,60.)-15.+origin.y;vec2 q=position.xz+wind*time*1.9+vec2(sin(time*.6+position.z),cos(time*.45+position.x))*.7;p.xz=origin.xz+mod(q-origin.xz+60.,120.)-60.;vec4 mv=modelViewMatrix*vec4(p,1.);gl_PointSize=clamp(65./max(1.,-mv.z),1.2,4.);gl_Position=projectionMatrix*mv;}',fragmentShader:'void main(){float a=1.-smoothstep(.2,.5,length(gl_PointCoord-.5));gl_FragColor=vec4(.9,.97,1.,a*.75);}'});
   const fall=new THREE.Points(flakes,this.snow);fall.frustumCulled=false;fall.name='gpu-snowfall';this.root.add(fall,this.portal.root,new THREE.HemisphereLight(this.sky.hemiSky,this.sky.hemiGround,1));
   this.sky.attachSun(this.sun);this.root.add(this.sun,this.sun.target);
  }
@@ -122,7 +127,7 @@ export class SnowIsland {
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */
  updateSnow(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'='high'){this.terrain.setQuality(quality);this.terrain.prepare(renderer);
-  if(this.village&&!this.farShadow.baked)this.farShadow.bake(renderer,this.root,{tex:this.terrain.uniforms.snowGroundTex.value!,rect:this.terrain.uniforms.snowGroundRect.value},[this.terrain.mesh,this.prison,this.portal.root],quality);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
+  if(this.village&&!this.farShadow.baked)this.farShadow.bake(renderer,this.root,{tex:this.terrain.uniforms.snowGroundTex.value!,rect:this.terrain.uniforms.snowGroundRect.value},[this.terrain.mesh,this.prison,this.portal.root],quality);this.ridges.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.paving.setQuality(quality);this.arenaFloor.update(this.snow.uniforms.time.value,quality);this.spray.update(dt,x,z,quality);this.spindrift.setQuality(quality);this.village?.setQuality(quality);this.refreshSnow();this.refreshIce();}
  disposeSnow(){this.farShadow.dispose();this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
- update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.village?.update(time,x,z);this.sky.update(time);this.sky.followSun(x,this.height(x,z),z);}
+ update(time:number,x:number,z:number,rescued=false){this.terrain.follow(x,z);this.prison.visible=!rescued;this.portal.update(time);this.snow.uniforms.time.value=time;this.snow.uniforms.origin.value.set(x,this.height(x,z),z);this.aurora.uniforms.time.value=time;this.village?.update(time,x,z);this.sky.update(time);this.spindrift.update(time,x,z);this.sky.followSun(x,this.height(x,z),z);}
 }
