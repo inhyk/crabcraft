@@ -1,0 +1,671 @@
+{
+ "meta": {
+  "glb": "public/models/world/tidecrown-harbor.glb",
+  "builder": "tools/build_tidecrown_harbor.sh (Blender 5.0 headless + gltf-transform meshopt --quantize-normal 12)",
+  "units": "game units, 1 = crab shell height",
+  "axes": "y up, bow / front faces +z; ship +x side is its port side",
+  "origins": {
+   "ships": "waterline centre: y = 0 is the waterline, z centred on the waterline length, x on the centreline",
+   "piers_quays": "top surface centre (deck top / quay top at y = 0)",
+   "other": "base centre at y = 0"
+  },
+  "materials": [
+   "TC_Wood",
+   "TC_WoodDark",
+   "TC_Sail",
+   "TC_Rope",
+   "TC_Gold",
+   "TC_Iron",
+   "TC_PaintBlue",
+   "TC_Limestone",
+   "TC_LimestoneDark"
+  ],
+  "textures": "none embedded; the game assigns textures and tints by material name",
+  "uv": {
+   "wood": {
+    "uv_per_unit": 0.4917,
+    "source": "village.glb Floor_WoodDark, material MI_WoodTrim (area-weighted UV/world ratio 0.4912, median 0.4917)",
+    "u": "along the grain",
+    "v": "across the grain",
+    "planks": "every plank strip (hull strakes, deck, pier, wall boards) starts at v = 0 and spans at most 0.24 = one Floor_WoodDark strip of T_WoodTrim (v 0.31..0.55), so v + 0.31 shows one plank per strip; round timbers and other faces use world planar/cylindrical mapping at the same density",
+    "also_used_by": [
+     "TC_Rope",
+     "TC_Gold",
+     "TC_Iron",
+     "TC_PaintBlue"
+    ]
+   },
+   "stone": {
+    "uv_per_unit": 0.5,
+    "source": "village.glb Floor_Brick / Wall_UnevenBrick (one UV tile per 2 units)",
+    "materials": [
+     "TC_Limestone",
+     "TC_LimestoneDark"
+    ]
+   },
+   "sail": {
+    "material": "TC_Sail",
+    "rule": "every set sail owns the 0..1 square, aspect kept: the longer side spans 0..1 and the crest centre is (0.5, 0.5)",
+    "square_sails": "u = 0 at the -x edge to 1 at +x, v = 0 at the head; reads unmirrored from ahead (+z)",
+    "lateen": "u = 0 at the forward end to 1 aft, v = 0 at the top; reads unmirrored from the +x side",
+    "furled": "TC_GalleonFurled bundles use world cylindrical mapping, not the crest square"
+   },
+   "convention": "glTF UV (v runs down the image)"
+  },
+  "ao": "per-vertex hemisphere occlusion ray traced in Blender, stored linear in COLOR_0 (0.28..1, multiply with the base colour)"
+ },
+ "pieces": {
+  "TC_Galleon": {
+   "triangles": 43387,
+   "budget": 45000,
+   "bounds": {
+    "min": [
+     -7.54,
+     -3.92,
+     -18.183
+    ],
+    "max": [
+     7.555,
+     33.96,
+     23.882
+    ]
+   },
+   "materials": [
+    "TC_Wood",
+    "TC_WoodDark",
+    "TC_Sail",
+    "TC_Rope",
+    "TC_Gold",
+    "TC_Iron",
+    "TC_PaintBlue"
+   ],
+   "anchors": {
+    "figurehead": [
+     0.0,
+     5.5517,
+     22.4866
+    ],
+    "gangplank": [
+     5.347,
+     2.7,
+     4.05
+    ],
+    "gangplank_negx": [
+     -5.347,
+     2.7,
+     4.05
+    ],
+    "lantern_hook_negx": [
+     -3.6462,
+     8.47,
+     -17.9771
+    ],
+    "lantern_hook_posx": [
+     3.6462,
+     8.47,
+     -17.9771
+    ],
+    "lantern_0": [
+     0.0,
+     9.97,
+     -17.2771
+    ],
+    "lantern_1": [
+     -3.6462,
+     7.58,
+     -17.9771
+    ],
+    "lantern_2": [
+     3.6462,
+     7.58,
+     -17.9771
+    ],
+    "wheel": [
+     0.0,
+     5.1,
+     -10.7134
+    ],
+    "deck_waist": [
+     0.0,
+     2.7,
+     3.0
+    ],
+    "deck_quarter": [
+     0.0,
+     5.1,
+     -8.6
+    ],
+    "deck_poop": [
+     0.0,
+     7.4,
+     -14.8
+    ],
+    "deck_fore": [
+     0.0,
+     4.8,
+     12.6
+    ],
+    "masthead_fore": [
+     0.0,
+     30.16,
+     12.21
+    ],
+    "masthead_main": [
+     0.0,
+     33.96,
+     0.9
+    ],
+    "masthead_mizzen": [
+     0.0,
+     24.96,
+     -8.768
+    ],
+    "bowsprit_tip": [
+     0.0,
+     9.6,
+     23.8
+    ]
+   },
+   "waterline": [
+    -15.822,
+    15.822
+   ],
+   "decks": {
+    "poop": 7.4,
+    "quarter": 5.1,
+    "waist": 2.7,
+    "fore": 4.8
+   }
+  },
+  "TC_GalleonFurled": {
+   "triangles": 42811,
+   "budget": 45000,
+   "bounds": {
+    "min": [
+     -7.5,
+     -3.92,
+     -18.183
+    ],
+    "max": [
+     7.5,
+     33.96,
+     23.882
+    ]
+   },
+   "materials": [
+    "TC_Wood",
+    "TC_WoodDark",
+    "TC_Sail",
+    "TC_Rope",
+    "TC_Gold",
+    "TC_Iron",
+    "TC_PaintBlue"
+   ],
+   "anchors": {
+    "figurehead": [
+     0.0,
+     5.5517,
+     22.4866
+    ],
+    "gangplank": [
+     5.347,
+     2.7,
+     4.05
+    ],
+    "gangplank_negx": [
+     -5.347,
+     2.7,
+     4.05
+    ],
+    "lantern_hook_negx": [
+     -3.6462,
+     8.47,
+     -17.9771
+    ],
+    "lantern_hook_posx": [
+     3.6462,
+     8.47,
+     -17.9771
+    ],
+    "lantern_0": [
+     0.0,
+     9.97,
+     -17.2771
+    ],
+    "lantern_1": [
+     -3.6462,
+     7.58,
+     -17.9771
+    ],
+    "lantern_2": [
+     3.6462,
+     7.58,
+     -17.9771
+    ],
+    "wheel": [
+     0.0,
+     5.1,
+     -10.7134
+    ],
+    "deck_waist": [
+     0.0,
+     2.7,
+     3.0
+    ],
+    "deck_quarter": [
+     0.0,
+     5.1,
+     -8.6
+    ],
+    "deck_poop": [
+     0.0,
+     7.4,
+     -14.8
+    ],
+    "deck_fore": [
+     0.0,
+     4.8,
+     12.6
+    ],
+    "masthead_fore": [
+     0.0,
+     30.16,
+     12.21
+    ],
+    "masthead_main": [
+     0.0,
+     33.96,
+     0.9
+    ],
+    "masthead_mizzen": [
+     0.0,
+     24.96,
+     -8.768
+    ],
+    "bowsprit_tip": [
+     0.0,
+     9.6,
+     23.8
+    ]
+   },
+   "waterline": [
+    -15.822,
+    15.822
+   ],
+   "decks": {
+    "poop": 7.4,
+    "quarter": 5.1,
+    "waist": 2.7,
+    "fore": 4.8
+   }
+  },
+  "TC_Cog": {
+   "triangles": 15389,
+   "budget": 18000,
+   "bounds": {
+    "min": [
+     -5.833,
+     -2.5,
+     -10.538
+    ],
+    "max": [
+     5.855,
+     20.52,
+     12.646
+    ]
+   },
+   "materials": [
+    "TC_Wood",
+    "TC_WoodDark",
+    "TC_Sail",
+    "TC_Rope",
+    "TC_Gold",
+    "TC_Iron",
+    "TC_PaintBlue"
+   ],
+   "anchors": {
+    "gangplank": [
+     3.1593,
+     2.0,
+     -2.8
+    ],
+    "gangplank_negx": [
+     -3.1593,
+     2.0,
+     -2.8
+    ],
+    "masthead": [
+     0.0,
+     20.52,
+     0.4
+    ],
+    "lantern_0": [
+     0.0,
+     4.7,
+     -10.35
+    ],
+    "lantern_hook_0": [
+     0.0,
+     5.45,
+     -10.35
+    ],
+    "deck": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "castle_deck": [
+     0.0,
+     4.45,
+     -6.8724
+    ],
+    "bowsprit_tip": [
+     0.0,
+     5.4,
+     12.6
+    ]
+   },
+   "waterline": [
+    -8.617,
+    8.617
+   ],
+   "decks": {
+    "main": 2.0,
+    "castle": 4.45,
+    "forecastle": 4.3
+   }
+  },
+  "TC_Gondola": {
+   "triangles": 2042,
+   "budget": 3000,
+   "bounds": {
+    "min": [
+     -0.895,
+     -0.427,
+     -4.651
+    ],
+    "max": [
+     1.029,
+     2.918,
+     3.939
+    ]
+   },
+   "materials": [
+    "TC_Wood",
+    "TC_WoodDark",
+    "TC_Gold",
+    "TC_PaintBlue"
+   ],
+   "anchors": {
+    "seat_0": [
+     0.0,
+     0.27,
+     1.05
+    ],
+    "seat_1": [
+     -0.3,
+     0.28,
+     -0.4
+    ],
+    "seat_2": [
+     0.3,
+     0.28,
+     -0.4
+    ],
+    "prow_ornament": [
+     0.0,
+     3.05,
+     3.7321
+    ],
+    "gondolier": [
+     0.0,
+     0.5,
+     -2.6
+    ]
+   },
+   "waterline": [
+    -3.285,
+    3.285
+   ]
+  },
+  "TC_Pier_10": {
+   "triangles": 1488,
+   "budget": 2500,
+   "bounds": {
+    "min": [
+     -3.38,
+     -6.0,
+     -5.002
+    ],
+    "max": [
+     3.35,
+     0.98,
+     5.002
+    ]
+   },
+   "materials": [
+    "TC_Wood",
+    "TC_WoodDark",
+    "TC_Rope",
+    "TC_Iron"
+   ],
+   "anchors": {
+    "rope_rail_x": [
+     2.85,
+     0.8,
+     0.0
+    ],
+    "bollard_0": [
+     -2.55,
+     0.72,
+     -2.5
+    ],
+    "bollard_1": [
+     -2.55,
+     0.72,
+     2.5
+    ],
+    "ladder": [
+     -3.32,
+     0.0,
+     0.0
+    ]
+   },
+   "tile_length": 10.0,
+   "tile_axis": "z",
+   "deck_top": 0.0,
+   "post_depth": 6.0
+  },
+  "TC_Quay_12": {
+   "triangles": 1904,
+   "budget": 2500,
+   "bounds": {
+    "min": [
+     -6.0,
+     -8.0,
+     -3.0
+    ],
+    "max": [
+     6.0,
+     0.9,
+     4.38
+    ]
+   },
+   "materials": [
+    "TC_Gold",
+    "TC_Iron",
+    "TC_Limestone",
+    "TC_LimestoneDark"
+   ],
+   "anchors": {
+    "ring_0": [
+     -3.75,
+     -1.6,
+     3.15
+    ],
+    "ring_1": [
+     3.75,
+     -1.6,
+     3.15
+    ],
+    "bollard_0": [
+     -4.5,
+     0.9,
+     2.1
+    ],
+    "bollard_1": [
+     4.6,
+     0.9,
+     2.1
+    ],
+    "steps_top": [
+     1.65,
+     0.0,
+     3.675
+    ],
+    "steps_bottom": [
+     -4.3,
+     -3.0,
+     3.675
+    ]
+   },
+   "tile_length": 12.0,
+   "tile_axis": "x",
+   "top": 0.0,
+   "face_z": 3.0,
+   "face_depth": 8.0,
+   "intended_freeboard": [
+    1.5,
+    2.5
+   ]
+  },
+  "TC_Quay_12_Plain": {
+   "triangles": 1368,
+   "budget": 2500,
+   "bounds": {
+    "min": [
+     -6.0,
+     -8.0,
+     -3.0
+    ],
+    "max": [
+     6.0,
+     0.9,
+     3.195
+    ]
+   },
+   "materials": [
+    "TC_Gold",
+    "TC_Iron",
+    "TC_Limestone",
+    "TC_LimestoneDark"
+   ],
+   "anchors": {
+    "ring_0": [
+     -3.0,
+     -1.6,
+     3.15
+    ],
+    "ring_1": [
+     3.0,
+     -1.6,
+     3.15
+    ],
+    "bollard_0": [
+     -3.0,
+     0.9,
+     2.1
+    ],
+    "bollard_1": [
+     3.0,
+     0.9,
+     2.1
+    ]
+   },
+   "tile_length": 12.0,
+   "tile_axis": "x",
+   "top": 0.0,
+   "face_z": 3.0,
+   "face_depth": 8.0,
+   "intended_freeboard": [
+    1.5,
+    2.5
+   ]
+  },
+  "TC_Crane": {
+   "triangles": 2680,
+   "budget": 6000,
+   "bounds": {
+    "min": [
+     -2.6,
+     0.0,
+     -3.83
+    ],
+    "max": [
+     2.6,
+     14.0,
+     10.445
+    ]
+   },
+   "materials": [
+    "TC_Wood",
+    "TC_WoodDark",
+    "TC_Rope",
+    "TC_Gold",
+    "TC_Iron",
+    "TC_PaintBlue"
+   ],
+   "anchors": {
+    "wheel_inside": [
+     0.0,
+     0.7,
+     -1.1
+    ],
+    "hook": [
+     0.0,
+     4.25,
+     10.17
+    ],
+    "jib_tip": [
+     0.0,
+     13.5,
+     9.55
+    ]
+   },
+   "front": "+z (jib reaches over the water)"
+  },
+  "TC_CargoSet": {
+   "triangles": 1720,
+   "budget": 3000,
+   "bounds": {
+    "min": [
+     -2.71,
+     -0.02,
+     -1.742
+    ],
+    "max": [
+     2.41,
+     2.0,
+     2.056
+    ]
+   },
+   "materials": [
+    "TC_Wood",
+    "TC_WoodDark",
+    "TC_Rope",
+    "TC_Iron"
+   ],
+   "anchors": {
+    "centre": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "footprint": [
+    5.0,
+    3.6
+   ]
+  }
+ }
+}
