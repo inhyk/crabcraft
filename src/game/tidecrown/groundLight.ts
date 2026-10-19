@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { TC_BOUNDS, TC_CITY_WALL } from '../../sim/world/tidecrownGround';
 import type { CityLayout } from './cityLayout';
 import { TC_FORGE } from './cityPlan';
+import { returnArchFrame } from './layout';
 
 export interface GroundLight {
   texture: THREE.DataTexture;
@@ -74,7 +75,7 @@ export function paintGroundLight(city: CityLayout): GroundLight {
     }
     return g.getImageData(0, 0, w, h).data;
   };
-  const lamps = pools(city.lamps.map((l) => ({ x: l.x, z: l.z, r: 7.5, k: 1 })));
+  const lamps = pools([...city.lamps, ...returnArchFrame().lamps.map(([x, z]) => ({ x, z }))].map((l) => ({ x: l.x, z: l.z, r: 7.5, k: 1 })));
   const c = Math.cos(TC_FORGE.yaw), s = Math.sin(TC_FORGE.yaw);
   const fire = pools([
     { x: TC_FORGE.x + s * 9, z: TC_FORGE.z + c * 9, r: 13, k: 1 },

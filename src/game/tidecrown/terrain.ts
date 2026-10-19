@@ -1,13 +1,12 @@
 // Tidecrown's ground mesh on World I's splat-painted terrain material (grass, sand, dirt, cobble, rock), with the
 // rock and setts re-tinted toward pale limestone. Split into tiles so the camera and the shadow pass cull them.
 import * as THREE from 'three';
-import { plateauRadius, polyDistance, TC_CITY_WALL, tcCoast, TIDECROWN_GRID } from '../../sim/world/tidecrownGround';
+import { TIDECROWN_GRID } from '../../sim/world/tidecrownGround';
 import type { Kit } from '../../world/kit';
 import { addPatch } from '../../world/materials';
-import { Simplex, smoothstep } from '../../world/noise';
 import { createTerrainMaterial, type Terrain } from '../../world/terrain';
 import type { GroundLight } from './groundLight';
-import { tcPaving } from './paving';
+import { paintTidecrownSplat } from './splat';
 
 export class TidecrownTerrain {
   readonly nx = TIDECROWN_GRID.nx;
@@ -20,43 +19,9 @@ export class TidecrownTerrain {
   /** RGBA splat: R sand, G cobble, B dirt, A painted rock. */
   readonly splat: Uint8Array;
 
-  constructor(readonly h: Float32Array) {
-    this.splat = new Uint8Array(this.nx * this.nz * 4);
-    this.paint();
-  }
-
-  private paint(): void {
-    const { nx, nz, step, minX, minZ, h, splat } = this;
-    const N = new Simplex(23), pave = { cobble: 0, dirt: 0, clear: 0 };
-    const put = (k: number, ch: number, w: number) => {
-      const v = Math.round(Math.max(0, Math.min(1, w)) * 255);
-      if (v > splat[k * 4 + ch]) splat[k * 4 + ch] = v;
-    };
-    for (let j = 0; j < nz; j++) {
-      const z = minZ + j * step;
-      for (let i = 0; i < nx; i++) {
-        const x = minX + i * step, k = j * nx + i, y = h[k];
-        const n = N.fbm(x * 0.05, z * 0.05, 2), c = tcCoast(x, z);
-        // Beaches along low shores, sand under the shallows.
-        if (y < 3.6 + n) put(k, 0, (1 - smoothstep(9 + 4 * n, 15 + 4 * n, c.d)) * (1 - smoothstep(2.2 + n, 3.6 + n, y)));
-        if (y < 0.4) put(k, 0, 1);
-        if (x > -150 && x < 260 && z > -250 && z < 345) {
-          tcPaving(x, z, pave);
-          put(k, 1, pave.cobble);
-          put(k, 2, pave.dirt);
-        }
-        // Worn earth along the foot of the city wall, and patches in the lawns and under the pines.
-        const wd = polyDistance(x, z, TC_CITY_WALL);
-        if (Math.abs(wd) < 9) put(k, 2, (1 - smoothstep(3, 9, Math.abs(wd))) * (0.55 + 0.4 * n));
-        const patches = N.fbm(x * 0.031 + 11, z * 0.031, 3);
-        if (c.south > c.north && c.d > 12) put(k, 2, smoothstep(0.05, 0.45, patches) * 0.75);
-        else if (wd > 6) put(k, 2, smoothstep(0.25, 0.6, patches) * 0.6);
-        // The keep's rock shows bare limestone around its rim; the overlook has its outcrops.
-        const rim = plateauRadius(x, z);
-        if (rim > 0.9 && rim < 1.08) put(k, 3, (1 - smoothstep(0.03, 0.08, Math.abs(rim - 1.0))) * 0.9);
-        if (c.d > 0 && c.d < 7 && y > 7) put(k, 3, 1 - smoothstep(3, 7, c.d));
-      }
-    }
+  /** `splat`: paintTidecrownSplat(h) worked out elsewhere (the heights worker). */
+  constructor(readonly h: Float32Array, splat?: Uint8Array) {
+    this.splat = splat ?? paintTidecrownSplat(h);
   }
 
   splatTexture(): THREE.DataTexture {

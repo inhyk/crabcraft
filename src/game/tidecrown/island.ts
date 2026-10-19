@@ -13,6 +13,7 @@ import { buildGulls } from './gulls';
 import { type GroundLight, paintGroundLight } from './groundLight';
 import type { MapSnapshot } from '../snapshots';
 import { paintTidecrownMap } from './minimap';
+import { buildTidecrownHeights } from '../../sim/world/tidecrownGround';
 import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
 import { tidecrownMaterials } from './materials';
 import { buildHeroStatues } from './statues';
@@ -20,6 +21,45 @@ import { buildTidecrownStructures, type TidecrownStructures } from './structures
 import { TidecrownTerrain, tidecrownTerrainMaterial } from './terrain';
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+/** The landform's heights and ground splat on a worker (the same numbers as on the main thread), or here if workers
+ * fail. */
+function offThread(): { heights: Promise<Float32Array>; splat: Promise<Uint8Array | undefined> } {
+  let toH!: (h: Float32Array) => void, toS!: (s?: Uint8Array) => void;
+  const heights = new Promise<Float32Array>((r) => (toH = r)), splat = new Promise<Uint8Array | undefined>((r) => (toS = r));
+  let w: Worker | null = null, got = false;
+  const fallback = () => {
+    w?.terminate();
+    if (!got) toH(buildTidecrownHeights());
+    toS(undefined);
+  };
+  try {
+    w = new Worker(new URL('./heights.worker.ts', import.meta.url), { type: 'module', name: 'tidecrown-heights' });
+  } catch {
+    fallback();
+    return { heights, splat };
+  }
+  w.onmessage = (e: MessageEvent<{ heights?: Float32Array; splat?: Uint8Array }>) => {
+    if (e.data.heights) { got = true; toH(e.data.heights); }
+    if (e.data.splat) { toS(e.data.splat); w!.terminate(); }
+  };
+  w.onerror = fallback;
+  w.postMessage(0);
+  return { heights, splat };
+}
+
+/** Every kit at once (World I's village, props and nature for the townhouses, the castle, the districts' landmarks and
+ * the harbour) and the statues. */
+const loadAll = () => Promise.all([
+  loadTidecrownKit(), loadKit('models/world/tidecrown.glb'), loadKit('models/world/tidecrown-city.glb'), loadKit('models/world/tidecrown-harbor.glb'), buildHeroStatues(),
+]);
+let early: { loading: ReturnType<typeof loadAll>; heights: Promise<Float32Array>; splat: Promise<Uint8Array | undefined> } | null = null;
+
+/** Start what need not wait for the fade: the kits' download and parse, and the heights. build() takes them up. */
+export function prefetchTidecrown(): void {
+  early ??= { loading: loadAll(), ...offThread() };
+}
 
 export class TidecrownIsland {
   readonly root = new THREE.Group();
@@ -59,13 +99,12 @@ export class TidecrownIsland {
     if (this.built) return;
     const step = (name: string, t0: number) => (this.info.steps[name] = Math.round(performance.now() - t0));
     let t0 = performance.now();
-    // Every kit at once, fetched while the layout is worked out: World I's village, props and nature (the townhouses'
-    // set), the castle, the districts' landmarks and the harbour; the statues alongside.
-    const loading = Promise.all([
-      loadTidecrownKit(), loadKit('models/world/tidecrown.glb'), loadKit('models/world/tidecrown-city.glb'), loadKit('models/world/tidecrown-harbor.glb'), buildHeroStatues(),
-    ]);
+    // The kits load while the layout is worked out, on heights from a worker (both usually started under the fade).
+    prefetchTidecrown();
+    const { loading, heights, splat } = early!;
+    early = null;
     await tick();
-    this.layout = tidecrownLayout();
+    this.layout = tidecrownLayout(await heights);
     this.collision = this.layout.col;
     this.spawn.y = this.layout.heightAt(this.spawn.x, this.spawn.z);
     step('layout', t0);
@@ -80,7 +119,7 @@ export class TidecrownIsland {
     await tick();
 
     t0 = performance.now();
-    const terrain = new TidecrownTerrain(this.layout.heights);
+    const terrain = new TidecrownTerrain(this.layout.heights, await splat);
     this.groundLight = paintGroundLight(this.layout.city);
     const ground = terrain.buildMeshes(tidecrownTerrainMaterial(terrain, village, nature, WORLD_UNIFORMS.uTime, this.groundLight));
     this.root.add(ground);
@@ -171,7 +210,7 @@ export class TidecrownIsland {
    * the arrival sees happen behind the fade, not after it lifts.
    */
   async settle(): Promise<void> {
-    for (let i = 0; i < 3; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    for (let i = 0; i < 3; i++) await frame();
   }
 
   /** Leaving: the houses' near detail goes (it streams in again on return). */

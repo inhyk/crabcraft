@@ -62,7 +62,7 @@ export class Minimap {
 
   setSnapshot(s: MapSnapshot): void {
     this.snap = s;
-    this.expandedRadius=s.size*.72;
+    this.expandedRadius=(s.view?.size??s.size)*.72;
     if(this.expanded)this.radius=this.expandedRadius;
   }
 
@@ -112,7 +112,7 @@ export class Minimap {
     const half = S / 2;
     const scale = half / this.radius;
     const playerPos = g.player.unit.pos;
-    const p = this.expanded&&this.snap?{x:this.snap.minX+this.snap.size/2,z:this.snap.minZ+this.snap.size/2}:playerPos;
+    const p = this.expanded&&this.snap?this.snap.view??{x:this.snap.minX+this.snap.size/2,z:this.snap.minZ+this.snap.size/2}:playerPos;
     const a = this.expanded?Math.PI:g.follow.forwardYaw;
     const fx = Math.sin(a);
     const fz = Math.cos(a);

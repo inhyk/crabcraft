@@ -524,10 +524,12 @@ export class HiddenWorld {
     if(!this.canEnterTidecrown(true))return Promise.resolve(false);
     const run=async()=>{
       const t0=performance.now(),veil=tidecrownVeil();
+      // The island's module, kits and heights start under the fade.
+      const mod=this.tidecrown?null:import('./tidecrown/island').then(m=>{m.prefetchTidecrown();return m;});mod?.catch(()=>{});
       try{
         await veil.shown;
         if(!this.tidecrown){
-          const {TidecrownIsland}=await import('./tidecrown/island');
+          const {TidecrownIsland}=await mod!;
           const island=new TidecrownIsland();await island.build(g.engine.renderer,g.engine.quality);
           g.scene.add(island.root);this.tidecrown=island;
         }

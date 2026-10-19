@@ -14,6 +14,7 @@ import {VoyageIsland} from './voyageIsland';
 import {DungeonExpeditions} from './dungeons';
 import {worldMusic,type MusicMood} from './worldMusic';
 import {VOYAGE_ISLANDS} from '../world/voyage';
+import { KINGS_ROAD, KINGS_ROAD_LINE } from '../world/layout';
 import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
@@ -659,7 +660,19 @@ export class Game {
     }
     const pad = 45;
     const hide: THREE.Object3D[] = [this.vfx.group, this.objective.group, ...this.units.map((u) => u.rig.root)];
-    return snapshotMap(this.engine.renderer, this.scene, { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad, topY: topY + 70 }, hide);
+    if (this.world2.chapter !== 1) return snapshotMap(this.engine.renderer, this.scene, { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad, topY: topY + 70 }, hide);
+    // World I's picture also reaches up the King's Road past its zone line, grown by whole texels round the usual one
+    // (same scale, same pixel grid); the expanded map keeps the usual framing.
+    const size = Math.max(maxX - minX, maxZ - minZ) + 2 * pad, texel = size / 1024;
+    const x0 = (minX + maxX) / 2 - size / 2, z0 = (minZ + maxZ) / 2 - size / 2;
+    let ex0 = x0, ex1 = x0 + size, ez0 = z0, ez1 = z0 + size;
+    for (const [x, z] of [...KINGS_ROAD.points, KINGS_ROAD_LINE.a, KINGS_ROAD_LINE.b]) {
+      ex0 = Math.min(ex0, x - pad); ex1 = Math.max(ex1, x + pad); ez0 = Math.min(ez0, z - pad); ez1 = Math.max(ez1, z + pad);
+    }
+    const l = Math.ceil((x0 - ex0) / texel - 1e-6), t = Math.ceil((z0 - ez0) / texel - 1e-6);
+    const n = Math.max(1024 + l + Math.ceil((ex1 - x0 - size) / texel - 1e-6), 1024 + t + Math.ceil((ez1 - z0 - size) / texel - 1e-6));
+    const sx = x0 - l * texel, sz = z0 - t * texel;
+    return snapshotMap(this.engine.renderer, this.scene, { minX: sx, maxX: sx + n * texel, minZ: sz, maxZ: sz + n * texel, topY: topY + 70 }, hide, n, { x: x0 + size / 2, z: z0 + size / 2, size });
   }
 
   private showLoading(chapter: 1 | 2 | 3 | 4 | 5 | 6): void {

@@ -19,6 +19,7 @@ import type { TidecrownLod } from './lod';
 import { lampHalos } from './groundLight';
 import { districtOverrides, type TidecrownMaterials } from './materials';
 import { dressMarket } from './marketStalls';
+import { buildReturnArch } from './returnArch';
 import { worldUV } from './structures';
 
 type Height = (x: number, z: number) => number;
@@ -374,10 +375,13 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
   }
   // The street lamps burn warm (the kit's lantern panes are the stained glass otherwise), each with a halo.
   const lampGlass = new THREE.MeshStandardMaterial({ name: 'tc-lamp-glass', color: '#3a2c1c', emissive: '#ffc070', emissiveIntensity: 3.4, roughness: 0.3, vertexColors: true });
-  group.add(lampHalos(plan.lamps.map((l) => new THREE.Vector3(l.x, height(l.x, l.z) - 0.05 + 4.45, l.z))));
+  const lampFor = (m: THREE.Material) => (m.name === 'TC_Glass' ? lampGlass : forCity(m));
+  // The arch at the return line, with its own pair of lamps.
+  const arch = buildReturnArch(kits.city, mats, lampFor, height);
+  group.add(arch.group, lampHalos([...plan.lamps.map((l) => new THREE.Vector3(l.x, height(l.x, l.z) - 0.05 + 4.45, l.z)), ...arch.lampHeads]));
   for (const f of furniture) {
     if (!f.s.count) continue;
-    const g = f.s.build({ materialFor: (m) => (m.name === 'TC_Glass' ? lampGlass : forCity(m)) });
+    const g = f.s.build({ materialFor: lampFor });
     group.add(g);
     culled.push({ o: g, box: f.box.expandByScalar(6), max: 160 });
   }
