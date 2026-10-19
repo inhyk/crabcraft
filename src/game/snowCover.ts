@@ -16,13 +16,16 @@ export interface SnowCoverOptions {
  cover?:number;
  /** Bare at the instance's foot (trees, where the drift round the trunk takes over). Instanced or batched only. */
  foot?:boolean;
+ /** Bank snow against the piece where it meets the drift: the baked ground (snowTerrain.ts) and the bank's height, metres. */
+ skirt?:{ground:{snowGroundTex:{value:THREE.Texture|null};snowGroundRect:{value:THREE.Vector4}};height:number};
 }
 
 /** Patch `mat` so up-facing surfaces carry snow. The cache key keeps one program per cover and foot setting. */
 export function snowCover(mat:THREE.Material,opts:SnowCoverOptions={}){
- const cover=opts.cover??1,foot=opts.foot??false;
- addPatch(mat,`snow-laden${cover}${foot?'':'-flat'}`,shader=>{
+ const cover=opts.cover??1,foot=opts.foot??false,skirt=opts.skirt;
+ addPatch(mat,`snow-laden${cover}${foot?'':'-flat'}${skirt?`-skirt${skirt.height}`:''}`,shader=>{
   shader.uniforms.uSnowColor={value:SNOW_COLOR};
+  if(skirt){shader.uniforms.uSkirtGround=skirt.ground.snowGroundTex;shader.uniforms.uSkirtRect=skirt.ground.snowGroundRect;}
   shader.vertexShader=shader.vertexShader
    .replace('#include <common>','#include <common>\nvarying vec3 vSnowW;\nvarying vec3 vSnowN;\nvarying vec3 vSnowRoot;')
    // View-space normal back to world space: valid for instanced, batched and plain meshes alike.
@@ -38,7 +41,7 @@ export function snowCover(mat:THREE.Material,opts:SnowCoverOptions={}){
     #endif
     vSnowRoot = (modelMatrix * snowRoot).xyz;`);
   shader.fragmentShader=shader.fragmentShader
-   .replace('#include <common>',`#include <common>\nvarying vec3 vSnowW;\nvarying vec3 vSnowN;\nvarying vec3 vSnowRoot;\nuniform vec3 uSnowColor;\n${GUARDED_NOISE}\nfloat ccSnow;`)
+   .replace('#include <common>',`#include <common>\nvarying vec3 vSnowW;\nvarying vec3 vSnowN;\nvarying vec3 vSnowRoot;\nuniform vec3 uSnowColor;\n${skirt?'uniform sampler2D uSkirtGround;\nuniform vec4 uSkirtRect;\n':''}${GUARDED_NOISE}\nfloat ccSnow;`)
    .replace('#include <color_fragment>',`#include <color_fragment>
     {
      // Double-sided cards: the face we see decides which way is up.
@@ -48,6 +51,9 @@ export function snowCover(mat:THREE.Material,opts:SnowCoverOptions={}){
      float drift = cc_vnoise(q * 1.3) * 0.62 + cc_vnoise(q * 4.7 + 11.0) * 0.38;
      float up = sn.y + (drift - 0.5) * 0.6 + (load - 0.5) * 0.16 + ${(cover-1).toFixed(3)} * 0.4;
      ccSnow = smoothstep(0.62, 0.8, up)${foot?' * smoothstep(0.5, 1.6, vSnowW.y - vSnowRoot.y)':''};
+     ${skirt?`// Drift banked against the piece: snow up to a ragged line a little above the ground.
+     float skirtUp = vSnowW.y - textureLod(uSkirtGround, clamp((vSnowW.xz - uSkirtRect.xy) * uSkirtRect.z, 0.0, 1.0), 0.0).x;
+     ccSnow = max(ccSnow, 1.0 - smoothstep(${(skirt.height*.35).toFixed(3)}, ${(skirt.height).toFixed(3)} * (0.6 + 0.8 * drift), skirtUp));`:''}
      #ifdef USE_COLOR
       // Keep the kit's baked occlusion so snow deep inside a crown or a recess stays in shade.
       float occ = mix(1.0, dot(vColor.rgb, vec3(0.299, 0.587, 0.114)), 0.5);

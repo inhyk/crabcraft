@@ -119,7 +119,9 @@ float fpStoneAt(vec2 q){float id,sl;vec2 l,h,g,cg;float o=fpCourse(q,id,l,h,g);r
 
 const PAVING_COLOR = /* glsl */ `
 vec2 fpP=vFpWorld.xz;
-float fpFoot=length(fwidth(fpP));
+// The pixel's footprint on the ground: its two screen axes, and their summed size (the long axis dominates).
+vec2 fpDpx=dFdx(fpP),fpDpy=dFdy(fpP);
+float fpFoot=length(abs(fpDpx)+abs(fpDpy));
 // The network: a filleted union of the paths; two cart ruts with a packed crown between them down the main road,
 // a beaten line down each street; how far a free end lies buried.
 float fpSd=1e3,fpTrod=0.,fpRut=0.,fpWear=0.,fpEnd=0.;
@@ -169,7 +171,7 @@ float fpAlpha=(1.-smoothstep(1.6,2.3,fpS))*(1.-smoothstep(.04,${REACH.toFixed(2)
 // before any neighbour can be discarded.
 vec2 fpGSnow;
 {
-  vec2 dpx=dFdx(fpP),dpy=dFdy(fpP);
+  vec2 dpx=fpDpx,dpy=fpDpy;
   float sN=fpS-fpLip*.85,h=min(sN,1.)*FP_RELIEF+max(sN-1.,0.)*.07,dsx=dFdx(h),dsy=dFdy(h),det=dpx.x*dpy.y-dpx.y*dpy.x;
   fpGSnow=abs(det)>1e-12?clamp(vec2(dsx*dpy.y-dsy*dpx.y,dpx.x*dsy-dpy.x*dsx)/det,-.6,.6):vec2(0.);
 }
@@ -179,29 +181,44 @@ vec2 fpQ=fpP+vec2(fpNoise(fpP*2.3),fpNoise(fpP*2.3+7.))*.016;
 fpQ.y+=fpNoise(vec2(fpP.x*.19,fpP.y*.03+5.))*.13;
 float fpId;vec2 fpLoc,fpHalf,fpG;
 float fpOut=fpCourse(fpQ,fpId,fpLoc,fpHalf,fpG)+fpNoise(fpP*13.+fpId*9.)*.006;
-// Height in stone units (1 = FP_RELIEF m) and its gradient in metres per metre. Far away the joints are finer
-// than a pixel, so the pattern settles to its average instead of shimmering.
+// Height in stone units (1 = FP_RELIEF m) and its gradient in metres per metre.
 float fpSlope;vec2 fpCG;float fpH=fpDome(-fpOut,fpId,fpLoc,fpHalf,fpSlope,fpCG);
-float fpBev=smoothstep(0.,.02,-fpOut);
-float fpFar=smoothstep(.008,.035,fpFoot);
+// Filter widths. fpFw is the pixel's extent across the nearest outline (from its analytic gradient), so a joint
+// seen side-on stays crisp while one seen edge-on at a grazing angle is filtered. fpFar: the arris and the relief
+// are finer than that. fpBlur: whole stones are under two pixels along the long axis, so only their average shows.
+float fpFw=max(abs(dot(fpDpx,fpG))+abs(dot(fpDpy,fpG)),1e-4);
+float fpFar=smoothstep(.012,.05,fpFw);
+float fpBlur=smoothstep(.09,.3,fpFoot);
+float fpBev=smoothstep(0.,.02+fpFw,-fpOut);
+// The joint: an antialiased 2 cm line whose contrast falls as it narrows below the pixel, so its area holds.
+float fpJc=(1.-smoothstep(-fpFw,fpFw,-fpOut-.006))*min(1.,.03/fpFw)*(1.-fpBlur*.6);
 float fpTop=.84+.16*fract(fpId*5.3);
 vec2 fpGS=(-fpG*fpSlope+fpCG)*FP_RELIEF*(1.-fpFar);
-fpH=mix(fpH,.62,fpFar);fpBev=mix(fpBev,.8,fpFar);
+// Where snow lies on a stone: its arris (not the whole crown), each stone a little higher or lower than the next,
+// and a ragged noise, so a half-buried course shows patches and filled joints, not a ring round every stone.
+float fpAx=clamp(-fpOut/.045,0.,1.),fpArr=1.-(1.-fpAx)*(1.-fpAx);
+float fpHs=mix(fpH,fpTop*fpArr,.6)+(fract(fpId*13.7)-.5)*.34*(1.-fpBlur)+(fpNoise(fpP*5.1+fpId)*.6+fpNoise(fpP*11.3)*.4)*.16*(1.-fpFar);
+// Height averages that no longer resolve go to their mean. The snow line's edge is as wide as the pixel's step
+// across the arris (stone units per pixel), so it never snaps from stone to stone.
+float fpSw=max(.05,mix(fpSlope,fpTop*2.*(1.-fpAx)/.045,.6)*fpFw*.8)+fpFar*.1+fpBlur*.25;
+fpH=mix(fpH,.62,fpFar);fpHs=mix(fpHs,.62,fpBlur);
 // Meltwater keeps some joints open (only where the snow is thin enough for it to matter).
 if(fpS<1.05)fpS-=(1.-fpBev)*(.2+.4*(fpNoise(fpP*3.3+fpId)*.5+.5))*(1.-fpFar)*(1.-smoothstep(.55,1.05,fpS));
-float fpSnow=smoothstep(-.05,.05,fpS-fpH+fpNoise(fpP*7.3)*.06-.04);
+float fpSnow=smoothstep(-fpSw,fpSw,fpS-fpHs+fpNoise(fpP*7.3)*.06*(1.-fpBlur)-.04);
 float fpFresh=smoothstep(1.,1.9,fpS);
 float fpPack=clamp(fpWear*.8+fpTrod*.5,0.,1.)*(1.-fpFresh);
 // Thin snow keeps the shape of the stones under it.
 float fpThin=1.-smoothstep(0.,.7,fpS-fpH);
 // How far the visible surface sits below the stone tops around it: joints and hollows see less sky.
-float fpRecess=clamp((fpTop*.92-max(fpS,fpH))/.55,0.,1.)*(1.-fpFar*.6)*(1.-fpSnow*.8);
+float fpRecess=clamp((fpTop*.92-max(fpS,fpH))/.55,0.,1.)*(1.-fpFar*.75)*(1.-fpSnow*.8);
 // Granite from several quarries, a few warm and slate flags; dark where the shoulder meets the joint.
 float fpV=fract(fpId*17.13);
 vec3 fpStone=mix(vec3(.13,.125,.12),vec3(.3,.285,.265),fract(fpId*3.7));
 fpStone=mix(fpStone,vec3(.31,.235,.17),step(.86,fpV)*.75);
 fpStone=mix(fpStone,vec3(.13,.145,.17),step(fpV,.12)*.8);
 fpStone*=.82+.36*(fpNoise(fpP*4.7+fpId*13.)*.5+.5);
+// Under two pixels a stone is the quarry's mean, varied only at the scale of whole patches of road.
+fpStone=mix(fpStone,vec3(.205,.194,.182)*(.86+.28*(fpNoise(fpP*.9+3.)*.5+.5)),fpBlur);
 float fpNear=1.-smoothstep(.006,.03,fpFoot);
 if(fpNear>0.)fpStone*=1.+(fpNoise(fpP*41.)*.22+fpNoise(fpP*97.)*.16)*fpNear;
 float fpWet=smoothstep(.35,.9,fpTrod)*(1.-fpSnow);
@@ -212,7 +229,7 @@ fpStone=mix(fpStone,vec3(.5,.56,.64),smoothstep(-.25,0.,fpS-fpH)*(1.-fpWet)*.35)
 float fpIce=0.;
 if(fpRut>0.)fpIce=fpRut*smoothstep(.6,.8,fpNoise(fpP*.45+2.)*.5+.5+fpNoise(fpP*2.1)*.08)*(1.-fpSnow);
 vec3 fpJoint=mix(vec3(.045,.045,.05),vec3(.085,.08,.075),fpN1*.5+.5);
-vec3 fpRock=mix(fpJoint,fpStone,smoothstep(0.,.35,fpBev));
+vec3 fpRock=mix(fpStone,fpJoint,fpJc);
 // Snow: fresh in the drifts (the snowfield's own albedo), packed and greyer on the road, dirtied in the ruts.
 vec3 fpSnowC=mix(vec3(.84,.93,1.)*.97,vec3(.6,.655,.74),smoothstep(.2,1.,fpPack));
 fpSnowC=mix(fpSnowC,vec3(.43,.43,.44),fpRut*.5*(1.-fpFresh));
