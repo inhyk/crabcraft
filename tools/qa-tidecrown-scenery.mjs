@@ -104,16 +104,16 @@ try {
   const L = await p.evaluate(async () => {
     const L = await import('/src/game/tidecrown/layout.ts');
     const a = (t, s = 0) => L.tcAxis(t, s);
-    return { crest: a(-133, -2.5), overlookBack: a(-147, 0), keep: [L.TC_KEEP.x, L.TC_KEEP.z], deckSouth: a(-92, 1.5), deckCrab: a(-86, 2.5), gate: a(0), gateFront: a(-14, 2), stairFoot: a(158, 0), stairCrab: a(162, 1), aerial: a(-210, -230), centre: a(130, 0), harbourSea: [330, -20], harbourAim: [L.TC_KEEP.x, L.TC_KEEP.z], yaw: Math.atan2(-L.TC_AXIS.ux, -L.TC_AXIS.uz) + Math.PI };
+    return { crest: a(-133, -2.5), overlookBack: a(-147, 0), keep: [L.TC_KEEP.x, L.TC_KEEP.z], deckSouth: a(-92, 1.5), deckCrab: a(-86, 2.5), gate: a(0), gateFront: a(-31, 1.5), stairFoot: a(158, 0), stairCrab: a(162, 1), aerial: a(-270, -120), centre: a(120, 0), harbourSea: [330, -20], harbourAim: [L.TC_KEEP.x, L.TC_KEEP.z], yaw: Math.atan2(-L.TC_AXIS.ux, -L.TC_AXIS.uz) + Math.PI };
   });
   await hud(false);
   const shots = {};
   shots.reveal = await shot('1-reveal', [L.overlookBack[0], 7.5, L.overlookBack[1]], [L.keep[0], 50, L.keep[1], 1], [L.crest[0], L.crest[1], L.yaw]);
   shots.bridge = await shot('2-bridge', [L.deckSouth[0], 2.5, L.deckSouth[1]], [L.gate[0], 13, L.gate[1]], [L.deckCrab[0], L.deckCrab[1], L.yaw]);
   shots.keep = await shot('3-keep', [L.stairFoot[0], 2.4, L.stairFoot[1]], [L.keep[0], 108, L.keep[1], 1], [L.stairCrab[0], L.stairCrab[1], L.yaw]);
-  shots.aerial = await shot('4-aerial', [L.aerial[0], 210, L.aerial[1], 1], [L.centre[0], 10, L.centre[1]], null);
+  shots.aerial = await shot('4-aerial', [L.aerial[0], 190, L.aerial[1], 1], [L.centre[0], 4, L.centre[1]], null);
   shots.harbour = await shot('5-harbour', [L.harbourSea[0], 9, L.harbourSea[1], 1], [L.harbourAim[0], 70, L.harbourAim[1], 1], null);
-  shots.gate = await shot('6-gate', [L.gateFront[0], 2.2, L.gateFront[1]], [L.gate[0], 30, L.gate[1]], null);
+  shots.gate = await shot('6-gate', [L.gateFront[0], 2.4, L.gateFront[1]], [L.gate[0], 27, L.gate[1]], null);
   await hud(true);
   console.log(JSON.stringify({ w1Arrival: w1, tidecrown: shots }));
   console.log(`PASS six Tidecrown shots and a World I arrival shot in ${out}`);

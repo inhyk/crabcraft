@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { type Kit, StaticBatch, trs } from '../../world/kit';
 import { lanternSpot, statueSpots, type TcPlacement, TC_LEVEL, TC_T, TC_YAW, tcAxis } from './layout';
 import type { TidecrownMaterials } from './materials';
+import { buildBanners } from './banners';
 
 type Height = (x: number, z: number) => number;
 
@@ -120,6 +121,7 @@ export function buildTidecrownStructures(kit: Kit, village: Kit, mats: Tidecrown
   const braziers = buildStair(stair, mats);
   group.add(stair.build());
   for (const b of batches.values()) group.add(b.build());
+  group.add(buildBanners(placements));
   // The lantern stays its own mesh: it pulses and blooms.
   const lanternAt = new THREE.Vector3(...lanternSpot(height));
   const lantern = new THREE.Group();

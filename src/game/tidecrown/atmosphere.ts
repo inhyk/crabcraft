@@ -9,7 +9,7 @@ import type { TidecrownTerrain } from './terrain';
 
 /** Toward the sun: south-west, about 21 degrees up. */
 export const TC_SUN_DIR = new THREE.Vector3(-0.62, 0.3, 0.72).normalize();
-export const TC_FOG = { color: new THREE.Color('#cfd9e2'), density: 0.00135 } as const;
+export const TC_FOG = { color: new THREE.Color('#cfd9e2'), density: 0.0012 } as const;
 export const TC_ENV_INTENSITY = 0.38;
 
 export interface TidecrownAtmosphere {

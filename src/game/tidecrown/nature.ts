@@ -197,7 +197,7 @@ export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter
   // Grass tufts: thick along the road, the overlook and the meadows, sparse on lawns inside the walls.
   const tuftTarget = 18000, tufts: THREE.Matrix4[][] = [[], [], []];
   let placed = 0;
-  for (let i = 0; i < tuftTarget * 4 && placed < tuftTarget; i++) {
+  for (let i = 0; i < tuftTarget * 7 && placed < tuftTarget; i++) {
     const x = -220 + R() * 500, z = -250 + R() * 560, roll = R(), patchRoll = R(), kind = R(), size = R(), turn = R();
     const c = tcCoast(x, z);
     if (c.d < 4) continue;
