@@ -518,7 +518,7 @@ test('with dungeons enabled a respawn between a running save round\'s capture an
     // committed revision lets this one through instead of failing closed.
     const award = (await dungeonStore.recordDungeonCompletion(sealedElsewhere([a], 700, 300))).awardIds[0];
     await until(async () => await receipts(award) === 1 || rt.failures.length > 0, 8000, 'award paid');
-    await idleBarriers(rt, 3);
+    assert.deepEqual(rt.failures, []); await idleBarriers(rt, 3);
     assert.deepEqual(rt.failures, []); assert.equal(await receipts(award), 1);
     const paid = await store.getOwned(a.binding.accountId, a.id);
     assert.equal(paid.checkpoint.progress.xp, before.checkpoint.progress.xp + 700); assert.equal(paid.checkpoint.progress.coins, before.checkpoint.progress.coins + 300);
