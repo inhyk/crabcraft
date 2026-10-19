@@ -84,3 +84,20 @@ test('recovery eviction discards a dungeon resident only inside a barrier, relea
  assert.equal(f.a.players.size,0);assert.equal(registry.owner(character),null);assert.deepEqual(f.a.appliedFeatureAwardIds(character),[]);assert.deepEqual(f.a.debugState().lifecycle.retirements,[]);assert.deepEqual(f.a.debugState().lifecycle.barriers,[]);
  assert.throws(()=>f.a.evictForRecovery(ref));f.a.commitPlayerRetirement(q.token);assert.equal(f.a.dungeonObservation().run.runId.startsWith('run-'),true);f.a.dispose();
 });
+test('retained capture and mark need no barrier: a respawn or rebind between them keeps the durable revision, a moving resident keeps its return, a discarded capture keeps its paid award',()=>{
+ const f=fixture(),b=f.a.beginDurabilityBarrier('pay'),a=award(1201);readApply(f,[a]);f.a.releaseDurabilityBarrier(b);
+ // A save round that gave up before its commit: the paid award stays applied in memory for the next capture.
+ const given=f.a.capturePlayerCheckpoint(f.u.ref);assert.deepEqual(given.appliedFeatureAwardIds,[a.id]);f.a.discardCheckpointCapture(given.captureId);assert.deepEqual(f.a.appliedFeatureAwardIds(character),[a.id]);
+ const c=f.a.capturePlayerCheckpoint(f.u.ref),old=f.u.ref;f.p.respawn();assert.notDeepEqual(f.u.ref,old);f.a.invalidateGrantRead(f.u.ref);
+ f.a.markCheckpointDurable(c.captureId,1,c.appliedGrantIds,c.appliedFeatureAwardIds);assert.deepEqual(f.a.appliedFeatureAwardIds(character),[]);
+ // The next award read is fenced by the committed revision on the new life, and the receipted award is a duplicate there.
+ const r=f.a.beginDurabilityBarrier('read'),xp=f.p.state.xp;assert.throws(()=>f.a.beginFeatureAwardRead(f.u.ref,0),/revision/);
+ assert.deepEqual(f.a.applyCertifiedFeatureAwards(f.a.beginFeatureAwardRead(f.u.ref,1),{revision:1,awards:[{award:a,appliedRevision:1}]}),[{id:a.id,result:'duplicate'}]);assert.equal(f.p.state.xp,xp);f.a.releaseDurabilityBarrier(r);
+ // Only a mark moves the revision: a capture taken before another capture was marked is stale.
+ const first=f.a.capturePlayerCheckpoint(f.u.ref),second=f.a.capturePlayerCheckpoint(f.u.ref);f.a.markCheckpointDurable(second.captureId,2,[],[]);assert.throws(()=>f.a.markCheckpointDurable(first.captureId,3,[],[]),/Stale checkpoint ledger/);f.a.discardCheckpointCapture(first.captureId);f.a.dispose();
+ // A dungeon resident moves and respawns while its save is in flight; a changed return binding is still refused.
+ const d=fixture({dungeon:true});bindReturn(d);const moved=d.a.capturePlayerCheckpoint(d.u.ref);d.u.x+=1;d.p.respawn();d.a.markCheckpointDurable(moved.captureId,1,[],[]);
+ const rebound=d.a.capturePlayerCheckpoint(d.u.ref);d.a.bindDungeonReturn(d.u.ref,{version:2,world:'w3',location:{x:4,y:0,z:4,yaw:.4}},flatWorld);assert.throws(()=>d.a.markCheckpointDurable(rebound.captureId,2,[],[]),/changed/);d.a.discardCheckpointCapture(rebound.captureId);d.a.dispose();
+ // The external ledger keeps its barrier.
+ const e=fixture({external:true});assert.throws(()=>e.a.capturePlayerCheckpoint(e.u.ref),/barrier/);e.a.dispose();
+});

@@ -540,8 +540,14 @@ export interface Area {
   cancelGrantRead(token:GrantReadToken):void;
   invalidateGrantRead(ref:EntityRef):void;
   resourceUsage():Readonly<Record<string,number>>;
+  /** External ledger: under a durability barrier only. Retained (also with feature awards): at any between-tick boundary. */
   capturePlayerCheckpoint(ref:EntityRef):CapturedPlayer;
   appliedGrantIds(character:CharacterId):readonly string[];
+  /**
+   * Under a barrier nothing may have changed since the capture. A retained mark without one follows a save round that let
+   * the world run: the character may be on a later life of the same unit or rebound, but its return binding and its durable
+   * feature ledger revision must be the captured ones; the current ledger owner then advances to `revision`.
+   */
   markCheckpointDurable(captureId:string,revision:number,ids:readonly string[],featureIds?:readonly string[]):void;
   /** Host save round that never wrote this capture: forget it so it holds no capacity or transfer check. */
   discardCheckpointCapture(captureId:string):void;
