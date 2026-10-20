@@ -75,24 +75,39 @@ export function buildReturnArch(cityKit: Kit, mats: TidecrownMaterials, lampMate
     const [x, y, z] = P(lx, ly, lz);
     list.push(geo.rotateZ(rz).rotateY(f.yaw).translate(x, y, z));
   };
-  const pillarTop = 7.2;
+  const pillarTop = 7.2, W = 2 * f.half + 2.2, r0 = f.half - 1.1, archTop = pillarTop + r0 + 1.5, attic = archTop + 2.0;
   for (const k of [-1, 1]) {
     const lx = f.half * k, [px, pz] = f.pillars[(k + 1) / 2], foot = Math.min(h(px, pz), y0) - 1.4;
     put(dark, worldBox(2.7, y0 - foot + 1.0, 2.7), lx, (foot - y0 + 1.0) / 2, 0);
     put(light, worldBox(2.2, pillarTop - 1.0, 2.2), lx, 1.0 + (pillarTop - 1.0) / 2, 0);
-    put(dark, worldBox(2.75, 0.5, 2.75), lx, pillarTop + 0.25, 0);
-    put(light, worldBox(1.25, 1.3, 1.25), lx, pillarTop + 1.15, 0);
-    put(slate, new THREE.ConeGeometry(1.05, 2.4, 4).rotateY(Math.PI / 4), lx, pillarTop + 3.0, 0);
+    put(dark, worldBox(2.6, 0.45, 2.0), lx, pillarTop - 0.2, 0);
+    // Pinnacles over the coping, above each pillar.
+    put(light, worldBox(1.3, 1.2, 1.3), lx, attic + 0.55 + 0.6, 0);
+    put(slate, new THREE.ConeGeometry(1.05, 2.4, 4).rotateY(Math.PI / 4), lx, attic + 0.55 + 1.2 + 1.2, 0);
   }
-  const r0 = f.half - 1.1, n = 13;
-  for (let i = 0; i < n; i++) {
-    const a = Math.PI * (1 - (i + 0.5) / n), w = (Math.PI * (r0 + 0.55)) / n - 0.06;
-    put(i % 2 ? light : dark, worldBox(1.1, w, 1.8), Math.cos(a) * (r0 + 0.55), pillarTop + Math.sin(a) * (r0 + 0.55), 0, a);
-  }
-  const top = pillarTop + r0 + 1.3;
-  for (const k of [-1, 1]) put(light, worldBox(2.3, top - pillarTop - 0.5, 1.5), k * (f.half - 1.45), pillarTop + 0.5 + (top - pillarTop - 0.5) / 2, 0);
-  put(dark, worldBox(2 * f.half + 2.6, 0.6, 2.3), 0, top + 0.3, 0);
-  put(light, worldBox(2.8, 0.55, 1.1), 0, top + 0.88, 0);
+  // The arch block: spandrels and the attic over a round opening springing from the pillars' inner faces.
+  const block = new THREE.Shape();
+  block.moveTo(-W / 2, pillarTop);
+  block.lineTo(-r0, pillarTop);
+  for (let i = 1; i < 24; i++) { const a = Math.PI * (1 - i / 24); block.lineTo(Math.cos(a) * r0, pillarTop + Math.sin(a) * r0); }
+  block.lineTo(r0, pillarTop);
+  block.lineTo(W / 2, pillarTop);
+  block.lineTo(W / 2, attic);
+  block.lineTo(-W / 2, attic);
+  block.closePath();
+  put(light, new THREE.ExtrudeGeometry(block, { depth: 1.6, bevelEnabled: false, curveSegments: 1 }).translate(0, 0, -0.8), 0, 0, 0);
+  // The voussoir ring and keystone stand proud of it; a string course under the attic.
+  const ring = new THREE.Shape();
+  ring.moveTo(r0 + 1.0, pillarTop);
+  for (let i = 1; i <= 24; i++) { const a = (Math.PI * i) / 24; ring.lineTo(Math.cos(a) * (r0 + 1.0), pillarTop + Math.sin(a) * (r0 + 1.0)); }
+  for (let i = 24; i >= 0; i--) { const a = (Math.PI * i) / 24; ring.lineTo(Math.cos(a) * r0, pillarTop + Math.sin(a) * r0); }
+  ring.closePath();
+  put(dark, new THREE.ExtrudeGeometry(ring, { depth: 1.9, bevelEnabled: false, curveSegments: 1 }).translate(0, 0, -0.95), 0, 0, 0);
+  put(dark, worldBox(1.1, 1.5, 2.1), 0, pillarTop + r0 + 0.55, 0);
+  put(dark, worldBox(W + 0.3, 0.3, 1.9), 0, archTop, 0);
+  put(dark, worldBox(W + 0.7, 0.55, 2.3), 0, attic + 0.27, 0);
+  const top = attic + 0.55;
+  put(light, worldBox(2.8, 0.55, 1.1), 0, top + 0.27, 0);
   // World UVs and the kit's vertex colour (the castle's stone reads it).
   const meshOf = (geos: THREE.BufferGeometry[], m: THREE.Material, name: string) => {
     const mesh = new THREE.Mesh(mergeGeometries(geos.map((g) => worldUV(g))), m);
@@ -103,16 +118,16 @@ export function buildReturnArch(cityKit: Kit, mats: TidecrownMaterials, lampMate
   group.add(meshOf(light, mats.TC_Limestone, 'tc-return-arch-stone'), meshOf(dark, mats.TC_LimestoneDark, 'tc-return-arch-dressings'), meshOf(slate, mats.TC_Slate, 'tc-return-arch-caps'));
   // The crown: three gilded points over the keystone.
   const crown: THREE.BufferGeometry[] = [];
-  for (const [lx, hh] of [[-0.95, 1.1], [0, 1.8], [0.95, 1.1]] as [number, number][]) put(crown, new THREE.ConeGeometry(0.4, hh, 4).rotateY(Math.PI / 4), lx, top + 1.15 + hh / 2, 0);
+  for (const [lx, hh] of [[-0.95, 1.1], [0, 1.8], [0.95, 1.1]] as [number, number][]) put(crown, new THREE.ConeGeometry(0.4, hh, 4).rotateY(Math.PI / 4), lx, top + 0.55 + hh / 2, 0);
   group.add(meshOf(crown, mats.TC_Gold, 'tc-return-arch-crown'));
-  // Plaques on the spandrel, both faces: Clawhaven (and the arrows) toward the arrival, Tidecrown toward the road south.
+  // Plaques on the attic, both faces: Clawhaven (and the arrows) toward the arrival, Tidecrown toward the road south.
   const plaque: THREE.BufferGeometry[] = [];
   for (const face of [-1, 1]) {
-    const pl = new THREE.PlaneGeometry(5.2, 1.3);
+    const pl = new THREE.PlaneGeometry(6.4, 1.6);
     const uv = pl.getAttribute('uv') as THREE.BufferAttribute;
     for (let i = 0; i < uv.count; i++) uv.setY(i, face < 0 ? 0.5 + uv.getY(i) * 0.5 : uv.getY(i) * 0.5);
     if (face < 0) pl.rotateY(Math.PI);
-    put(plaque, pl, 0, top - 0.75, face * 0.77);
+    put(plaque, pl, 0, (archTop + attic) / 2 + 0.1, face * 0.81);
   }
   const plaqueMesh = new THREE.Mesh(mergeAll(plaque), new THREE.MeshStandardMaterial({ name: 'tc-return-plaque', map: plaqueTexture(), roughness: 0.6, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -2 }));
   plaqueMesh.name = 'tc-return-plaque';

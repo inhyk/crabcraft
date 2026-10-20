@@ -415,5 +415,5 @@ export function registerReturnArch(col: Collision, h: Height): void {
   const f = returnArchFrame(), y = h(f.x, f.z);
   for (const [px, pz] of f.pillars) col.addBox(px, pz, 1.15, 1.15, f.yaw, y - 2, y + 12);
   for (const [lx, lz] of f.lamps) col.addBox(lx, lz, 0.4, 0.4, f.yaw, h(lx, lz) - 1, h(lx, lz) + 5.8);
-  col.addBox(f.x, f.z, f.half, 1.0, f.yaw, y + 6.8, y + 13, true);
+  col.addBox(f.x, f.z, f.half + 1.1, 1.0, f.yaw, y + 6.6, y + 18, true);
 }

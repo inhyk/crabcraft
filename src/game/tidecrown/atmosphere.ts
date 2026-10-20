@@ -124,7 +124,7 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
   group.add(water.mesh);
 
   // Key light: shadows follow a focus ahead of the camera, snapped to shadow texels.
-  const sun = new THREE.DirectionalLight('#ffb370', 5.1);
+  const sun = new THREE.DirectionalLight('#ffa25a', 5.3);
   sun.name = 'tidecrown-sun';
   sun.castShadow = true;
   const shadowSize = quality === 'high' ? 4096 : 2048, extent = quality === 'high' ? 72 : 56;
