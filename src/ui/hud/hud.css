@@ -684,3 +684,23 @@
 .plate.remote-player .player-badge{display:inline-block;margin-right:6px;padding:1px 4px;border:1px solid #8eeaff66;border-radius:3px;font:700 9px system-ui;vertical-align:middle;color:#b6f3ff;background:#17617e66}
 .plate.remote-player .title{color:#c3e4ef;font-size:11px}
 .plate.remote-player .hpbar{margin:4px auto 0}
+
+/* ---------------------------------------------------------------- H: hide the interface (hideUi.ts) */
+#cc-ui { transition: opacity 0.35s ease; }
+html.cc-ui-hidden #cc-ui, html.cc-ui-hidden body > .cc-tooltip { opacity: 0 !important; }
+html.cc-ui-hidden #cc-ui :not(dialog, dialog *) { pointer-events: none !important; }
+.hide-ui-note {
+  position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%) translateY(6px);
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 16px; border-radius: 20px; white-space: nowrap;
+  background: linear-gradient(180deg, rgba(20, 22, 30, 0.78), rgba(8, 9, 12, 0.78));
+  border: 1px solid #b08a3a; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font: 600 14px var(--font-body); color: #f6e7bf; text-shadow: 0 1px 0 #000;
+  opacity: 0; transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.hide-ui-note.on { opacity: 1; transform: translateX(-50%); }
+.hide-ui-note kbd {
+  display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 4px;
+  font: 700 13px var(--font-display); color: #2a1a04; text-align: center;
+  background: linear-gradient(180deg, #fff1b8, #d9b45a); box-shadow: 0 2px 0 #6b4a14;
+}
