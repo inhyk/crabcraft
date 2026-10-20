@@ -8,6 +8,7 @@ import {boulderGeometry,rockMaterial,snowSkirt,type SnowGroundUniforms} from './
 import {frostFire} from './frostFire';
 import {fieldStream,WOODCUT_LANTERN,type FieldKit,type FieldLog,type FieldStump,type ShelfSlab,SNOW_PONDS,SNOW_TRACKS,snowBoulders,snowFieldPieces,snowGroves,snowLogs,snowPebbles,snowScours,snowScrubItems,snowShelves,snowStumps} from './snowFieldsLayout';
 import {snowScrub} from './snowScrub';
+import {lanternFlameAt,noteLantern} from './frostLantern';
 
 /*
  * Frostlight's open snowfields (layout in snowFieldsLayout.ts): the western Frostpine Woods and a few copses east,
@@ -46,7 +47,8 @@ function fieldMaterials(ground:SnowGroundUniforms){
   if(!/Metal/.test(n)){sm.metalness=0;sm.metalnessMap=null;}
   const card=/^(Leaves|Grass)/.test(n);
   if(!card&&!/Cloth/.test(n))sm.side=THREE.FrontSide;
-  if(/^Bark/.test(n))stylise(v,.35,[.3,.3,.33]);
+  // Dead bark wet with melt: a rich warm umber, the darkest warm note against the snow.
+ if(/^Bark/.test(n))stylise(v,.95,[.4,.28,.2]);
   // Evergreen scrub (the kit's leaf atlas turned juniper): a dark, cold green that anchors the white.
   else if(n==='Leaves_TwistedTree')stylise(v,.42,[.36,.46,.45],-1.9);
   // Bracken and grass dried to rust and straw: the one warm note in the field.
@@ -534,7 +536,7 @@ export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields
  wood.push({x:L.x,z:L.z,geo:stake});
  const logs=cells('frostlight-field-wood',wood,barkMaterial(opts.ground));group.add(logs);
  // Its flame and the warm light round it: the one warm point in the western field.
- const lc=new THREE.Vector3(0,.55,1.1).multiplyScalar(L.s).applyAxisAngle(new THREE.Vector3(0,1,0),L.yaw).add(new THREE.Vector3(L.x,ly-(-(L.stump+L.pole-1.42*L.s-.05)),L.z));
+ const lly=ly+L.stump+L.pole-1.42*L.s-.05,lc=lanternFlameAt(L.x,lly,L.z,L.yaw,L.s);noteLantern(group,trs(L.x,lly,L.z,L.yaw,L.s),lc);
  const fire=frostFire('frostlight-field-lantern',[{x:lc.x,y:lc.y-.12,z:lc.z,size:.3,cold:false}],[{x:lc.x,y:lc.y,z:lc.z,size:2.6,color:'#ffb257',power:.7},{x:lc.x,y:ly+.3,z:lc.z,size:6,color:'#ff9440',power:.22}],7171,4);
  group.add(fire.group);
 
