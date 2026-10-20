@@ -111,6 +111,9 @@ export class Townsfolk {
     this.pauseUntil = game.time + rand(0, 4);
   }
 
+  /** Where it strolls (to put back after a relocate). */
+  get walks(): { points: THREE.Vector3[]; radius: number; route: NavHints | null } { return { points: this.points, radius: this.radius, route: this.route }; }
+
   relocate(points:THREE.Vector3[],radius:number,route:NavHints|null=null) {this.points=points;this.radius=radius;this.route=route;this.walking=false;this.velX=this.velZ=0;this.stuckFor=0;this.pauseUntil=this.game.time+1;this.frozen=false;}
 
   bark(): void {

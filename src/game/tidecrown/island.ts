@@ -14,7 +14,8 @@ import { type GroundLight, paintGroundLight } from './groundLight';
 import type { MapSnapshot } from '../snapshots';
 import { paintTidecrownMap } from './minimap';
 import { buildTidecrownHeights } from '../../sim/world/tidecrownGround';
-import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
+import { TC_MARKET } from './cityPlan';
+import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tcAxis, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
 import { tidecrownMaterials } from './materials';
 import { buildHeroStatues } from './statues';
 import { buildTidecrownStructures, type TidecrownStructures } from './structures';
@@ -73,6 +74,14 @@ export class TidecrownIsland {
   atmosphere!: TidecrownAtmosphere;
   structures!: TidecrownStructures;
   city!: TidecrownCity;
+  /** Open squares and streets where Clawhaven's townsfolk stroll while the player is here: a few points each. */
+  readonly strolls: [number, number][][] = [
+    [tcAxis(10, -9), tcAxis(10, 9), tcAxis(24, -9), tcAxis(24, 9)],
+    [tcAxis(114, -6), tcAxis(124, 6), tcAxis(134, -6), tcAxis(144, 6)],
+    [[-46, -6], [-31, -1], [-16, -6]],
+    [tcAxis(158, -10), tcAxis(158, 10), tcAxis(162, 0)],
+    [45, 135, 225, 315].map((a) => [TC_MARKET.centre[0] + 33.5 * Math.cos((a * Math.PI) / 180), TC_MARKET.centre[1] + 33.5 * Math.sin((a * Math.PI) / 180)] as [number, number]),
+  ];
   /** Minimap picture, painted from the terrain at build time. */
   map!: MapSnapshot;
   /** How long each build step took (ms) and how much nature was scattered. */

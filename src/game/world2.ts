@@ -41,6 +41,7 @@ interface TidecrownSaved {
   pois:{poi:Poi;position:THREE.Vector3;yaw:number}[];units:{unit:Game['player']['unit'];hidden:boolean;x:number;z:number;yaw:number}[];
   enemies:{enemy:Game['enemies'][number];alive:boolean;x:number;z:number}[];player:{x:number;z:number;yaw:number};
   fog:{color:THREE.Color;density:number}|null;environment:THREE.Texture|null;environmentIntensity:number;nav:NavHints|null;zone:string;
+  walks:Game['townsfolk'][number]['walks'][];
 }
 const NO_PORTAL=new THREE.Vector3(1e5,0,1e5);
 
@@ -554,12 +555,19 @@ export class HiddenWorld {
       enemies:g.enemies.filter(e=>e.state!=='gone').map(enemy=>({enemy,alive:enemy.unit.alive,x:enemy.unit.pos.x,z:enemy.unit.pos.z})),
       player:{x:g.player.unit.pos.x,z:g.player.unit.pos.z,yaw:g.player.unit.yaw},
       fog:fog?{color:fog.color.clone(),density:fog.density}:null,environment:scene.environment,environmentIntensity:scene.environmentIntensity,nav:this.nav,zone:g.zone,
+      walks:g.townsfolk.map(f=>f.walks),
     };
     for(const r of roots)r.visible=false;island.root.visible=true;
     w.heightAt=(x,z)=>island.height(x,z);w.resolveCollision=(x,z,r,out)=>island.resolve(x,z,r,out);w.raycastSolid=(a,b)=>island.collision.raycast(a,b);
     // A respawn lands on the arrival; the other points (beacon, gates, quest spots) are moved out of reach.
     for(const {poi} of this.tidecrownSaved.pois){if(poi.id==='spawn')poi.position.copy(island.spawn);else poi.position.set(-9000,-100,-9000);poi.yaw=island.spawnYaw;}
     for(const u of units)u.hidden=true;
+    // Clawhaven's townsfolk come along and stroll the capital's squares (their walks only; the named NPCs stay home).
+    g.townsfolk.forEach((f,i)=>{
+      if(g.villageGames?.ownsNpc(f.unit))return;
+      const area=island.strolls[i%island.strolls.length].map(([x,z])=>new THREE.Vector3(x,island.height(x,z),z)),p=area[Math.floor(i/island.strolls.length)%area.length];
+      f.unit.hidden=false;f.unit.teleport(w,p.x,p.z,i*.8);f.relocate(area,2.5);
+    });
     for(const e of g.enemies)if(e.state!=='gone')e.despawn();
     this.nav=null;
     // Tidecrown names itself and sets no quest marker; the quest chapter stays as it was.
@@ -582,6 +590,7 @@ export class HiddenWorld {
     w.heightAt=s.heightAt;w.resolveCollision=s.resolveCollision;w.raycastSolid=s.raycastSolid;
     for(const p of s.pois){p.poi.position.copy(p.position);p.poi.yaw=p.yaw;}
     for(const u of s.units){u.unit.teleport(w,u.x,u.z,u.yaw);u.unit.hidden=u.hidden;}
+    g.townsfolk.forEach((f,i)=>{const k=s.walks[i];if(k)f.relocate(k.points,k.radius,k.route);});
     if(this.game.multiplayer?.battle.authority!==false)for(const e of s.enemies){e.enemy.respawnAt(e.alive?e.x:e.enemy.home.x,e.alive?e.z:e.enemy.home.z);}
     Reflect.deleteProperty(g,'zoneAt');Reflect.deleteProperty(g,'objectivePos');
     this.nav=s.nav;g.zone=s.zone;
