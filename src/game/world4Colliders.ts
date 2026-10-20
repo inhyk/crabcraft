@@ -6,6 +6,7 @@ import { arenaPillars, citadelClears, registerFrostThrone } from './frostThroneL
 import { registerSnowVillage } from './snowVillageLayout';
 import { registerFrostProps } from './frostPropsLayout';
 import { registerSnowFields } from './snowFieldsLayout';
+import { registerWayCairns } from './frostCairnsLayout';
 
 // Between the west-side lanes, clear of the road, homes and resident positions.
 export const SNOW_FOUNTAIN = {x:-13,z:65,radius:3.1} as const;
@@ -45,5 +46,7 @@ export function layoutFrostlight(): Collision {
   }
   // The open fields: groves, boulders, dead trees, logs, stumps and the abandoned props (snowFieldsLayout.ts).
   registerSnowFields(col,h);
+  // The way-cairns by the north road and out on the fields (frostCairnsLayout.ts).
+  registerWayCairns(col,h);
   return col;
 }

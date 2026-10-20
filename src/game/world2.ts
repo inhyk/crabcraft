@@ -34,6 +34,8 @@ import {buildStarHeights,starSurfaceHeight} from './world2Height';
 import {layoutStarhaven,starCrystalGarden} from './world2Colliders';
 import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
 import type {TidecrownIsland} from './tidecrown/island';
+import type {TidecrownResidents} from './tidecrownResidents';
+import {TidecrownLoading} from './tidecrown/loading';
 
 /** Everything entering Tidecrown changes, restored as it was when the player leaves. */
 interface TidecrownSaved {
@@ -41,7 +43,6 @@ interface TidecrownSaved {
   pois:{poi:Poi;position:THREE.Vector3;yaw:number}[];units:{unit:Game['player']['unit'];hidden:boolean;x:number;z:number;yaw:number}[];
   enemies:{enemy:Game['enemies'][number];alive:boolean;x:number;z:number}[];player:{x:number;z:number;yaw:number};
   fog:{color:THREE.Color;density:number}|null;environment:THREE.Texture|null;environmentIntensity:number;nav:NavHints|null;zone:string;
-  walks:Game['townsfolk'][number]['walks'][];
 }
 const NO_PORTAL=new THREE.Vector3(1e5,0,1e5);
 
@@ -440,7 +441,7 @@ export class HiddenWorld {
   }
   update(dt:number,time:number,observation?:{flags:Readonly<Record<string,boolean>>}) {
     if(this.tidecrownSaved&&this.tidecrown){
-      const p=this.game.player.unit.pos,fog=this.game.scene.fog;this.tidecrown.update(time,p.x,p.z,this.game.camera);
+      const p=this.game.player.unit.pos,fog=this.game.scene.fog;this.tidecrown.update(time,p.x,p.z,this.game.camera);this.tidecrownPeople?.update(dt);
       if(fog instanceof THREE.FogExp2){fog.color.copy(this.tidecrown.fog.color);fog.density=this.tidecrown.fog.density;}
       return;
     }
@@ -508,6 +509,7 @@ export class HiddenWorld {
   }
   /** Tidecrown, the capital hub: built on first use, laid over the current chapter (the quest chapter never changes). */
   tidecrown?:TidecrownIsland;
+  tidecrownPeople?:TidecrownResidents;
   private tidecrownSaved:TidecrownSaved|null=null;
   private tidecrownLoading:Promise<boolean>|null=null;
   /** Milliseconds the last entry took, build included on the first. */
@@ -524,19 +526,31 @@ export class HiddenWorld {
     const g=this.game;
     if(!this.canEnterTidecrown(true))return Promise.resolve(false);
     const run=async()=>{
-      const t0=performance.now(),veil=tidecrownVeil();
-      // The island's module, kits and heights start under the fade.
-      const mod=this.tidecrown?null:import('./tidecrown/island').then(m=>{m.prefetchTidecrown();return m;});mod?.catch(()=>{});
+      const t0=performance.now(),screen=new TidecrownLoading(g.app.overlay,!this.tidecrown);
       try{
-        await veil.shown;
-        if(!this.tidecrown){
-          const {TidecrownIsland}=await mod!;
-          const island=new TidecrownIsland();await island.build(g.engine.renderer,g.engine.quality);
+        // The island's module loads, and its kits and heights start, while the painting fades in.
+        const [,mod]=await Promise.all([screen.shown,this.tidecrown?null:import('./tidecrown/island').then(m=>{m.prefetchTidecrown();return m;})]);
+        if(mod&&!this.tidecrown){
+          // A frame first, so the bar's run for the layout (the longest step, one block) is on screen.
+          screen.reached('import');await screen.frames(1);
+          const island=new mod.TidecrownIsland();await island.build(g.engine.renderer,g.engine.quality,()=>screen.reached(...Object.keys(island.info.steps)));
           g.scene.add(island.root);this.tidecrown=island;
         }
+        if(!this.tidecrown)return false;
+        if(!this.tidecrownPeople){
+          const {TidecrownResidents}=await import('./tidecrownResidents');
+          const people=new TidecrownResidents(g,this.tidecrown);this.tidecrownPeople=people;
+          try{await people.load();}catch(error){this.tidecrownPeople=undefined;throw error;}
+          screen.reached('residents');
+        }
         if(g.dungeons?.active)return false;
-        this.applyTidecrown(this.tidecrown);await Promise.all([this.tidecrown.settle(),this.warmTidecrownFolk()]);this.tidecrownEntryMs=performance.now()-t0;return true;
-      }finally{veil.hide();}
+        // The first frame inside compiles every shader in one block. A frame before it puts the bar's run for that on
+        // screen (the engine draws first in each frame); once it is drawn, the bar runs to full.
+        await screen.frames(1);
+        this.applyTidecrown(this.tidecrown);
+        const settled=Promise.all([this.tidecrown.settle(),this.warmTidecrownResidents()]);await screen.frames(1);screen.reached('settle');await settled;this.tidecrownEntryMs=performance.now()-t0;
+        await screen.finish();return true;
+      }finally{screen.hide();}
     };
     this.tidecrownLoading=run().finally(()=>{this.tidecrownLoading=null;});
     return this.tidecrownLoading;
@@ -555,19 +569,12 @@ export class HiddenWorld {
       enemies:g.enemies.filter(e=>e.state!=='gone').map(enemy=>({enemy,alive:enemy.unit.alive,x:enemy.unit.pos.x,z:enemy.unit.pos.z})),
       player:{x:g.player.unit.pos.x,z:g.player.unit.pos.z,yaw:g.player.unit.yaw},
       fog:fog?{color:fog.color.clone(),density:fog.density}:null,environment:scene.environment,environmentIntensity:scene.environmentIntensity,nav:this.nav,zone:g.zone,
-      walks:g.townsfolk.map(f=>f.walks),
     };
     for(const r of roots)r.visible=false;island.root.visible=true;
     w.heightAt=(x,z)=>island.height(x,z);w.resolveCollision=(x,z,r,out)=>island.resolve(x,z,r,out);w.raycastSolid=(a,b)=>island.collision.raycast(a,b);
     // A respawn lands on the arrival; the other points (beacon, gates, quest spots) are moved out of reach.
     for(const {poi} of this.tidecrownSaved.pois){if(poi.id==='spawn')poi.position.copy(island.spawn);else poi.position.set(-9000,-100,-9000);poi.yaw=island.spawnYaw;}
     for(const u of units)u.hidden=true;
-    // Clawhaven's townsfolk come along and stroll the capital's squares (their walks only; the named NPCs stay home).
-    g.townsfolk.forEach((f,i)=>{
-      if(g.villageGames?.ownsNpc(f.unit))return;
-      const area=island.strolls[i%island.strolls.length].map(([x,z])=>new THREE.Vector3(x,island.height(x,z),z)),p=area[Math.floor(i/island.strolls.length)%area.length];
-      f.unit.hidden=false;f.unit.teleport(w,p.x,p.z,i*.8);f.relocate(area,2.5);
-    });
     for(const e of g.enemies)if(e.state!=='gone')e.despawn();
     this.nav=null;
     // Tidecrown names itself and sets no quest marker; the quest chapter stays as it was.
@@ -576,18 +583,18 @@ export class HiddenWorld {
     if(fog){fog.color.copy(island.fog.color);fog.density=island.fog.density;}
     g.player.setTarget(null);g.player.unit.teleport(w,island.spawn.x,island.spawn.z,island.spawnYaw);g.follow.cut();g.follow.yaw=island.spawnYaw+Math.PI;
     g.hud.messages.banner(()=>t('타이드크라운','Tidecrown'),()=>t('왕관 항구의 수도 · 크라운셸 성','Capital of the crown harbour · Crownshell Keep'),'zone');
-    g.hud.minimap.setSnapshot(island.map);
+    g.hud.minimap.setSnapshot(island.map);this.tidecrownPeople?.show();
   }
   /**
-   * The strolling townsfolk's shaders for the capital's lights, fog and sky, compiled behind the fade: each crab's
-   * own shell (and the undead's rust) would otherwise link mid-walk, the first time it comes near in full detail.
+   * The residents' shaders for the capital's lights, fog and sky, compiled behind the loading screen: each crab's own
+   * shell (and the undead's rust) would otherwise link mid-walk, the first time it comes near in full detail.
    * Compiled into a render target like the effect chain's, so the variant is the one drawn (linear, no tone mapping);
-   * the fade waits for the links at most 1.5 s.
+   * the screen waits for the links at most 1.5 s.
    */
-  private warmTidecrownFolk():Promise<unknown>{
+  private warmTidecrownResidents():Promise<unknown>{
     const g=this.game,r=g.engine.renderer,rt=new THREE.WebGLRenderTarget(1,1),prev=r.getRenderTarget();
     r.setRenderTarget(rt);
-    const ready=Promise.all(g.townsfolk.filter(f=>!f.unit.hidden).map(f=>r.compileAsync(f.unit.rig.root,g.camera,g.scene)));
+    const ready=Promise.all((this.tidecrownPeople?.people??[]).filter(p=>!p.unit.hidden).map(p=>r.compileAsync(p.unit.rig.root,g.camera,g.scene)));
     r.setRenderTarget(prev);rt.dispose();
     return Promise.race([ready.catch(()=>{}),new Promise(res=>setTimeout(res,1500))]);
   }
@@ -596,14 +603,13 @@ export class HiddenWorld {
   /** Back to exactly where the player stood before Tidecrown, unless an arrival is given. */
   private leaveTidecrown(arrival?:{x:number;z:number;yaw:number}){
     const s=this.tidecrownSaved;if(!s)return;
-    this.tidecrownSaved=null;
+    this.tidecrownSaved=null;this.tidecrownPeople?.hide();
     const g=this.game,w=g.world,scene=g.scene;
     if(this.tidecrown){this.tidecrown.root.visible=false;this.tidecrown.leave();}
     [this.baseRoot,this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root].forEach((r,i)=>r.visible=s.roots[i]);
     w.heightAt=s.heightAt;w.resolveCollision=s.resolveCollision;w.raycastSolid=s.raycastSolid;
     for(const p of s.pois){p.poi.position.copy(p.position);p.poi.yaw=p.yaw;}
     for(const u of s.units){u.unit.teleport(w,u.x,u.z,u.yaw);u.unit.hidden=u.hidden;}
-    g.townsfolk.forEach((f,i)=>{const k=s.walks[i];if(k)f.relocate(k.points,k.radius,k.route);});
     if(this.game.multiplayer?.battle.authority!==false)for(const e of s.enemies){e.enemy.respawnAt(e.alive?e.x:e.enemy.home.x,e.alive?e.z:e.enemy.home.z);}
     Reflect.deleteProperty(g,'zoneAt');Reflect.deleteProperty(g,'objectivePos');
     this.nav=s.nav;g.zone=s.zone;
@@ -614,7 +620,7 @@ export class HiddenWorld {
     try{g.hud.minimap.setSnapshot(c===1||!this.rendered?g.takeMapSnapshot():snapshotMap(g.engine.renderer,scene,bounds,[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));}catch{ /* Keep the old map. */ }
   }
   dispose(){
-    this.leaveTidecrown();if(this.tidecrown){this.game.scene.remove(this.tidecrown.root);this.tidecrown.dispose();this.tidecrown=undefined;}
+    this.leaveTidecrown();this.tidecrownPeople?.dispose();if(this.tidecrown){this.game.scene.remove(this.tidecrown.root);this.tidecrown.dispose();this.tidecrown=undefined;}
     this.ambience.dispose();this.fourth.disposeSnow();
     this.showEpilogue();this.game.scene.remove(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
@@ -634,13 +640,4 @@ export class HiddenWorld {
     const ownedTextures=new Set<THREE.Texture>();for(const m of mats){const map=(m as THREE.MeshStandardMaterial).map;if(map?.userData.islandPaving)ownedTextures.add(map);}for(const texture of ownedTextures)texture.dispose();
     this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
   }
-}
-
-/** A short fade while Tidecrown is built (first entry) or entered. */
-function tidecrownVeil(){
-  const el=document.createElement('div');el.className='tidecrown-veil';
-  Object.assign(el.style,{position:'fixed',inset:'0',zIndex:'60',pointerEvents:'none',display:'grid',placeItems:'center',opacity:'0',transition:'opacity .35s ease',background:'radial-gradient(circle at 50% 45%, #29496b, #0b1622 70%)',color:'#e9f7ff',font:'600 26px/1.3 Georgia, serif',letterSpacing:'.32em',textShadow:'0 0 18px #53f2e4'});
-  el.textContent=t('타이드크라운','TIDECROWN');document.body.append(el);
-  requestAnimationFrame(()=>{el.style.opacity='1';});
-  return {shown:new Promise<void>(r=>setTimeout(r,380)),hide(){el.style.opacity='0';setTimeout(()=>el.remove(),450);}};
 }

@@ -12,6 +12,7 @@ import { Bubbles, FloatingText, Nameplates } from './plates';
 import { DialogueWindow, QuestLogPanel, QuestTracker } from './questui';
 import { ControlHints } from './hints';
 import {ForgePanel} from './forge';
+import { HideUi } from './hideUi';
 
 export class Hud {
   readonly root: HTMLElement;
@@ -33,6 +34,7 @@ export class Hud {
   readonly menu: GameMenu;
   readonly hints: ControlHints;
   readonly forge:ForgePanel;
+  readonly hideUi: HideUi;
   readonly sidePanels: HTMLElement;
   private bossBottom = -1;
   private dmgFlash: HTMLElement;
@@ -66,6 +68,7 @@ export class Hud {
     this.menu = new GameMenu(game);
     this.hints = new ControlHints();
     this.forge=new ForgePanel(game);
+    this.hideUi = new HideUi(game);
     this.dmgFlash = h('div', { class: 'dmg-flash hud-keep' });
     this.lowHp = h('div', { class: 'low-hp' });
     this.letterTop = h('div', { class: 'letterbox top hud-keep' });
@@ -139,6 +142,7 @@ export class Hud {
     this.dialogue.update(dt);
     this.hints.update(dt);
     this.forge.update();
+    this.hideUi.update();
     const p = g.player.unit;
     const low = p.alive && p.hp / p.maxHp < 0.3 && !g.cinematic;
     this.lowHp.style.opacity = low ? '1' : '0';
@@ -188,6 +192,7 @@ export class Hud {
 
   dispose(): void {
     this.forge.close();
+    this.hideUi.dispose();
     this.actionBar.dispose();
     this.chat.dispose();
     this.messages.dispose();

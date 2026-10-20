@@ -278,7 +278,7 @@ export class JumperRig implements CrabRig {
 
   /** With the proxy on, each gear piece casts from one merged mesh (gearShadow.ts); the dresser calls it too. */
   refreshGearShadows(): void {
-    syncGearShadows(this.gearMeshes, this.shadowProxy ? shadowProxyMaterial() : null);
+    syncGearShadows(this.gearMeshes, this.shadowProxy ? shadowProxyMaterial() : null, this.gearDetail);
   }
 
   private applyShadowCasting(): void {

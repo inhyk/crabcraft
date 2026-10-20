@@ -168,7 +168,9 @@ if(aR<3.){
 float aFrost=smoothstep(.45,.8,fpNoise(vFaW.xz*.42+3.)*.7+fpNoise(vFaW.xz*.9+5.)*.3)*.45+smoothstep(17.,21.6,aR+fpNoise(aP*.3)*2.)*.35;
 float aStreak=fpNoise(vec2(dot(aP,vec2(.8,.6))*.32,dot(aP,vec2(-.6,.8))*2.1))*.5+.5;
 float aDust=smoothstep(18.4,21.7,aR+fpNoise(aP*.22)*2.6)*1.05+aStreak*.4*smoothstep(10.,20.,aR);
-float aSnow=smoothstep(.56,.64,aDust+fpNoise(aP*1.3)*.14+fpNoise(aP*4.7)*.05);
+// The drift thins out over a hand's width into a grainy fringe of powder (the grain fades before it can alias), not
+// a cut edge with a rim of shade round it.
+float aSnow=smoothstep(.5,.72,aDust+fpNoise(aP*1.3)*.14+fpNoise(aP*4.7)*.05+fpNoise(aP*17.)*.06*(1.-smoothstep(.015,.05,aFoot)));
 // The runes are warm enough to keep their band clear.
 for(int i=0;i<3;i++){float dR=aR-faRings[i];aSnow*=smoothstep(.3,.75,abs(dR));}
 vec3 aCol=mix(aIce,vec3(.6,.7,.78),aFrost);
@@ -187,7 +189,7 @@ roughnessFactor=mix(roughnessFactor,.6,aCut);
 const ICE_NORMAL = /* glsl */ `
 {
   // Snow carries a little height; the ice itself undulates gently.
-  float h=smoothstep(.0,1.,aSnow)*.025+fpNoise(vFaW.xz*.35)*.01;
+  float h=smoothstep(.35,1.,aSnow)*.022+fpNoise(vFaW.xz*.35)*.01;
   vec2 dpx=dFdx(vFaW.xz),dpy=dFdy(vFaW.xz);float dsx=dFdx(h),dsy=dFdy(h),det=dpx.x*dpy.y-dpx.y*dpy.x;
   vec2 g=abs(det)>1e-12?clamp(vec2(dsx*dpy.y-dsy*dpx.y,dpx.x*dsy-dpy.x*dsx)/det,-.4,.4):vec2(0.);
   vec3 nW=inverseTransformDirection(normal,viewMatrix);
@@ -197,10 +199,18 @@ const ICE_NORMAL = /* glsl */ `
 `;
 
 const ICE_LIGHT = /* glsl */ `#include <lights_fragment_end>
-reflectedLight.directSpecular=min(reflectedLight.directSpecular,vec3(.2));`;
+{
+  // The sun's highlight rolls off softly to .2, scaled as a whole so it keeps the sun's hue: clamped per channel,
+  // the gold glare's edge split into bands (blue clipped first, then green, then red) and read as a rainbow.
+  vec3 s=reflectedLight.directSpecular;float m=max(max(s.r,s.g),s.b);
+  float k=m<.12?m:.12+.08*(1.-exp(-(m-.12)/.08));
+  reflectedLight.directSpecular=s*(k/max(m,1e-5));
+}`;
 
 const ICE_EMISSIVE = /* glsl */ `#include <emissivemap_fragment>
-totalEmissiveRadiance+=vec3(.22,.8,1.)*aGlowK*1.15;`;
+// The runes burn in the aurora's colours: teal, drifting slowly to violet round each ring.
+float aHue=smoothstep(.25,.95,sin(aAng*2.+aR*.35-faTime*.21)*.5+.5);
+totalEmissiveRadiance+=mix(vec3(.22,.8,1.),vec3(.62,.36,1.05),aHue*.75)*aGlowK*1.15;`;
 
 const ICE_OUT = /* glsl */ `{
   // The sky in the ice, by Fresnel: strong across the floor, gone under snow and frost.

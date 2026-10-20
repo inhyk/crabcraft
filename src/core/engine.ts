@@ -31,8 +31,12 @@ export interface FrameInfo {
 }
 
 export interface ViewOptions {
-  /** Bloom picks up LEDs, lamps, spell effects. Threshold is in linear HDR luminance. */
-  bloom?: { intensity?: number; threshold?: number; smoothing?: number; radius?: number };
+  /**
+   * Bloom picks up LEDs, lamps, spell effects. Threshold is in linear HDR luminance. `knee`: a pixel adds only
+   * its excess over the threshold (a quadratic knee `smoothing` wide), not its whole value, so a broad sky glow
+   * just over the threshold draws no contour where it crosses it.
+   */
+  bloom?: { intensity?: number; threshold?: number; smoothing?: number; radius?: number; knee?: boolean };
   /** Shallow depth of field (character creation, cinematics). Distances in world units. */
   dof?: { focusDistance: number; focusRange: number; bokehScale?: number } | null;
   exposure?: number;
@@ -242,6 +246,13 @@ export class Engine {
       radius: b.radius ?? 0.72,
     });
     this.bloom.scale = this.bloomScale();
+    if (b.knee) {
+      const lum = this.bloom.luminanceMaterial;
+      lum.fragmentShader = lum.fragmentShader.replace(
+        'mask=smoothstep(threshold,threshold+smoothing,l);',
+        'float k=max(smoothing,1e-4)*.5,s=clamp(l-threshold+k,0.,2.*k);mask=max(s*s/(4.*k),l-threshold)/max(l,1e-4);',
+      );
+    }
     effects.push(this.bloom);
     if (opts.toneMapping !== undefined) effects.push(new ToneMappingEffect({ mode: opts.toneMapping }));
     else effects.push(new AgxLookEffect(opts.agxLook?.saturation ?? 1.22, opts.agxLook?.power ?? 1.06));

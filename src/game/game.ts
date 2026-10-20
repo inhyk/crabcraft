@@ -109,8 +109,9 @@ function shadowInView(pos: THREE.Vector3, h: number, suns: readonly THREE.Direct
 }
 const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } };
 /** Frostlight's own grade while it is shown: cool lifted shadows, warm lamp light, snow that reads white (grade.ts). */
-// Bloom keys above the brightest sunlit snow, so lamps and windows glow and the snow does not haze over.
-const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
+// Bloom keys above the brightest sunlit snow, so lamps and windows glow and the snow does not haze over; with a
+// knee, so the sky round a low sun glows without a contour where it crosses the threshold.
+const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78, knee: true }, agxLook: { saturation: 1.32, power: 1.06 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
 /** Tidecrown's late afternoon: rich and warm, sunlit stone golden and shade lilac; bloom keys above the stone, on lamps and windows. */
 const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.14, agxLook: { saturation: 1.34, power: 1.15 }, bloom: { intensity: 0.85, threshold: 1.45, smoothing: 0.3, radius: 0.75 }, grade: { lift: [0.013, 0.006, 0.032], warm: 0.55, white: 0.02, split: { shadow: [0.96, 0.975, 1.045], highlight: [1.11, 1.0, 0.8] } } };
 
@@ -1088,6 +1089,7 @@ export class Game {
   }
 
   talkTo(u: Unit): void {
+    if(this.world2.inTidecrown&&this.world2.tidecrownPeople?.talkTo(u))return;
     if(this.server){this.server.talk(u);return;}
     if (u.kind === 'townsfolk') {
       (u.ctrl as Townsfolk).faceToward(this.player.unit);

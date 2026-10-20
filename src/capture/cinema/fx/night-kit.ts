@@ -197,7 +197,7 @@ export class Rocks {
   private q = new THREE.Quaternion();
   private s = new THREE.Vector3();
   constructor(scene: THREE.Scene, count: number, cue: FxCue, seed = 5) {
-    const geo = new THREE.IcosahedronGeometry(1, 3);
+    const geo = new THREE.IcosahedronGeometry(1, num(cue.detail, 3));
     const rnd = mulberry(seed);
     const sd = new Float32Array(count * 4);
     for (let i = 0; i < sd.length; i++) sd[i] = rnd();
@@ -216,17 +216,19 @@ export class Rocks {
         uHeatCol: { value: hdr(cue.heatColor ?? '#ffd27a', 1) },
         uHeat: { value: 0 },
         uCells: { value: num(cue.cells, 2.2) },
+        uRim: { value: hdr(cue.rim ?? '#000000', num(cue.rimK, 1)) },
+        uLump: { value: num(cue.lump, 0.6) },
         ...fogUniforms(),
       },
       vertexShader: /* glsl */ `
-        attribute vec4 aSeed; attribute float aGlow;
+        attribute vec4 aSeed; attribute float aGlow; uniform float uLump;
         ${FOG_GLSL}
         ${GLSL}
         varying vec3 vObj; varying vec3 vWorld; varying float vGlow; varying vec4 vSeed; varying float vFog;
         void main(){
           vec3 p = position;
           float n = fbm(p * 1.2 + aSeed.xyz * 10.);
-          p *= 0.7 + 0.6 * n;
+          p *= 1.0 - uLump * 0.5 + uLump * n;
           p.y *= 0.75 + 0.35 * aSeed.w;
           vObj = p; vGlow = aGlow; vSeed = aSeed;
           vec4 w = modelMatrix * instanceMatrix * vec4(p, 1.0);
@@ -236,7 +238,7 @@ export class Rocks {
           vFog = fogAmount(-mv.z);
         }`,
       fragmentShader: /* glsl */ `
-        uniform vec3 uBase, uCrack, uCrack2, uKeyDir, uKey, uAmb, uHeatPos, uHeatCol; uniform float uHeat, uCells;
+        uniform vec3 uBase, uCrack, uCrack2, uKeyDir, uKey, uAmb, uHeatPos, uHeatCol, uRim; uniform float uHeat, uCells;
         ${FOG_GLSL}
         ${GLSL}
         varying vec3 vObj; varying vec3 vWorld; varying float vGlow; varying vec4 vSeed; varying float vFog;
@@ -258,6 +260,7 @@ export class Rocks {
           vec3 col = base * (uAmb + uKey * max(0., dot(N, uKeyDir)));
           vec3 toH = uHeatPos - vWorld; float dh = length(toH);
           col += base * uHeatCol * uHeat * max(0., dot(N, toH / max(dh, 1e-3))) / (1. + dh * dh * 0.01);
+          col += uRim * pow(1. - abs(dot(N, normalize(cameraPosition - vWorld))), 3.0) * grain;
           vec3 cc = mix(uCrack, uCrack2, smoothstep(0.35, 0.75, fbm(vObj * 1.4 + 3.0)));
           col += cc * (crack * 6.0 + smoothstep(0.55, 0.9, n) * 0.35) * vGlow;
           col = mix(col, uFogColor, vFog);
@@ -274,6 +277,13 @@ export class Rocks {
     this.q.setFromEuler(rot);
     this.s.setScalar(Math.max(1e-4, scale));
     this.m.compose(pos, this.q, this.s);
+    this.mesh.setMatrixAt(i, this.m);
+    this.glow.setX(i, glow);
+  }
+
+  /** Place instance `i` with a turn and a per-axis scale (stretched rocks: ribs, claws). */
+  setScaled(i: number, pos: THREE.Vector3, rot: THREE.Quaternion, scale: THREE.Vector3, glow: number): void {
+    this.m.compose(pos, rot, this.s.copy(scale).max(new THREE.Vector3(1e-4, 1e-4, 1e-4)));
     this.mesh.setMatrixAt(i, this.m);
     this.glow.setX(i, glow);
   }

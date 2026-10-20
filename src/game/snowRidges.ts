@@ -100,6 +100,9 @@ uniform vec3 hemiGround;
 uniform float hazeHigh;
 uniform float hazeLow;
 uniform float hazeScale;
+uniform vec3 sunColor;
+uniform float sunScale;
+uniform float exposure;
 varying vec3 vWorld;
 varying vec2 vUv;
 #include <common>
@@ -140,7 +143,11 @@ void main(){
   float low=abs(dy)>1.?H/dy*(exp(-max(y0,0.)/H)-exp(-max(y1,0.)/H)):exp(-max(y0,0.)/H);
   // The lowest few tens of metres sit inside the ground haze the fogged sea ice already dissolves into.
   float T=exp(-dist*(hazeHigh+hazeLow*low))*smoothstep(-4.,45.,y1);
-  gl_FragColor=vec4(col*T+skyAlong(d)*(1.-T),1.);
+  // The aureole the dome adds round the sun is forward scatter in this same haze: the air in front of a range
+  // carries most of it, so the glow wraps the silhouette instead of stopping at it.
+  float mu=max(0.,dot(d,sunDir));
+  vec3 glow=sunColor*sunScale*(pow(mu,1400.)*5.5+pow(mu,64.)*.28)*.5*exposure*(1.-night);
+  gl_FragColor=vec4(col*T+skyAlong(d)*(1.-T)+glow*(1.-T*T),1.);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -196,6 +203,7 @@ export class SnowRidges {
       uniforms: {
         ridgeMap: { value: this.map.texture },
         skyLUT: su.skyLUT, sunDir: su.sunDir, night: su.night, hazeColor: su.hazeColor,
+        sunColor: su.sunColor, sunScale: su.sunScale, exposure: su.exposure,
         sunLight: { value: sky.sunLight }, hemiSky: { value: sky.hemiSky }, hemiGround: { value: sky.hemiGround },
         hazeHigh: { value: 0.00034 }, hazeLow: { value: 0.0024 }, hazeScale: { value: 70 },
       },

@@ -10,13 +10,19 @@ import {Masonry,masonryMaterial,ringWarp,type V3,type Warp} from './frostMasonry
 import {arc,bank,Glass,line} from './frostThrone';
 import {logGeometry,logMaterial} from './snowVillage';
 import {OVERLOOK,PROCESSION,RIDGE,ridgeStones,SHELTER} from './frostThroneLayout';
+import {boulderGeometry,rockMaterial,type SnowGroundUniforms} from './snowRocks';
+import {cairnStones,clothMaterial,lightPools,type Pool,streamerGeometry} from './frostCairns';
+import {WAY_CAIRNS} from './frostCairnsLayout';
+import {lanternFlame,lanternFlameAt,noteLantern} from './frostLantern';
 
 /*
  * The three places "Charting the Aurora" sends the player, and the way to the throne past the aurora seals:
  * a hunter's lean-to of logs in the Frostpine Woods with its banked fire, woodpile and loaded sled; a carved
  * parapet on the eastern ice ledge with a brass spyglass trained on the frozen sea; a ring of rune-cut standing
  * stones on the northern ridge, with an observer's armillary and telescope; and frozen standards and two gate
- * obelisks along the road's last stretch. Kit props (CC0, see NOTICE.md) under the same snow as the village.
+ * obelisks along the road's last stretch; and the way-cairns where the north road bends and out on the fields, each
+ * with a lantern and dyed cloth streaming downwind (frostCairns.ts). Kit props (CC0, see NOTICE.md) under the same
+ * snow as the village.
  * Each quest point stays open: nothing solid within 4 m of it (frostThroneLayout.ts holds the colliders).
  */
 
@@ -26,9 +32,9 @@ export interface FrostCamps {group:THREE.Group;update(time:number):void}
 function stream(seed:number){let s=seed>>>0;return()=>(s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296;}
 const V=(x:number,y:number,z:number)=>new THREE.Vector3(x,y,z);
 
-export async function frostCamps(opts:{height:Height;ice:THREE.Material}):Promise<FrostCamps>{
+export async function frostCamps(opts:{height:Height;ice:THREE.Material;ground:SnowGroundUniforms;sun:{dir:THREE.Vector3;color:THREE.Color}}):Promise<FrostCamps>{
  const h=opts.height,rand=stream(5151);
- const [props,nature]=await Promise.all([loadKit('models/world/props.glb'),loadKit('models/world/nature.glb')]);
+ const props=await loadKit('models/world/props.glb');
  const group=new THREE.Group();group.name='frostlight-aurora-sites';
  // Kit materials are shared with other worlds: patched clones, snowed like the village's.
  const variants=new Map<string,THREE.Material>();
@@ -41,20 +47,19 @@ export async function frostCamps(opts:{height:Height;ice:THREE.Material}):Promis
   if(night&&/Cloth/.test(m.name))addPatch(v,'frostlight-night-cloth',sh=>{sh.fragmentShader=sh.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\n{float l=dot(diffuseColor.rgb,vec3(.299,.587,.114));diffuseColor.rgb=pow(vec3(l),vec3(.85))*vec3(.42,.7,1.7);}');});
   variants.set(key,v);return v;
  };
- const po:Record<string,THREE.Material>={},pn:Record<string,THREE.Material>={},no:Record<string,THREE.Material>={};
+ const po:Record<string,THREE.Material>={},pn:Record<string,THREE.Material>={};
  for(const [n,m] of props.materials){po[n]=snowy(m);pn[n]=snowy(m,true);}
- for(const [n,m] of nature.materials)no[n]=snowy(m);
- const kit=new StaticBatch(props,'frostlight-sites-props'),rocks=new StaticBatch(nature,'frostlight-sites-rocks');
+ const kit=new StaticBatch(props,'frostlight-sites-props');
  const M=new Masonry(rand),glass=new Glass(),ice:Crystal[]=[],drifts:THREE.BufferGeometry[]=[];
- const flames:Flame[]=[],halos:Halo[]=[];
- const logs:THREE.BufferGeometry[]=[],charred:THREE.BufferGeometry[]=[],planks:THREE.BufferGeometry[]=[],iron:THREE.BufferGeometry[]=[],brass:THREE.BufferGeometry[]=[],snowCaps:THREE.BufferGeometry[]=[];
+ const flames:Flame[]=[],halos:Halo[]=[],pools:Pool[]=[],cloth:THREE.BufferGeometry[]=[];
+ const ring:THREE.BufferGeometry[]=[],logs:THREE.BufferGeometry[]=[],charred:THREE.BufferGeometry[]=[],planks:THREE.BufferGeometry[]=[],iron:THREE.BufferGeometry[]=[],brass:THREE.BufferGeometry[]=[],snowCaps:THREE.BufferGeometry[]=[];
  const LOG=logGeometry(),X=V(1,0,0);
  /** A round log from a to b (the village's bark and sawn rings). */
  const log=(a:THREE.Vector3,b:THREE.Vector3,r:number,out=logs)=>{const d=b.clone().sub(a),l=d.length();const g=LOG.clone().scale(l,r/.15,r/.15);
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(X,d.normalize()).multiply(new THREE.Quaternion().setFromAxisAngle(X,rand()*6.28)));g.translate((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);out.push(g);};
  const rod=(a:THREE.Vector3,b:THREE.Vector3,r:number,out:THREE.BufferGeometry[])=>{const d=b.clone().sub(a),l=d.length();const g=new THREE.CylinderGeometry(r,r,l,8).rotateZ(-Math.PI/2);
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(X,d.normalize()));g.translate((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);out.push(g);};
- const lantern=(x:number,y:number,z:number,yaw:number,s=.75)=>{const m=trs(x,y,z,yaw,s);kit.add('Lantern_Wall',m,{override:po,castShadow:false});const c=V(0,.55,1.1).applyMatrix4(m);
+ const lantern=(x:number,y:number,z:number,yaw:number,s=.75)=>{const m=trs(x,y,z,yaw,s);kit.add('Lantern_Wall',m,{override:po,castShadow:false});const c=lanternFlame(m);noteLantern(group,m,c);
   flames.push({x:c.x,y:c.y-.12,z:c.z,size:.32*s/.75,cold:false});halos.push({x:c.x,y:c.y,z:c.z,size:2.2*s/.75,color:'#ffb257',power:.6});};
 
  // ---- The hunter's lean-to: posts, beams, a roof of logs under a cap of snow, one side walled, open to the fire.
@@ -98,12 +103,20 @@ export async function frostCamps(opts:{height:Height;ice:THREE.Material}):Promis
   {const c=P(-hw-.9,0,1.1);log(c.clone().add(V(0,-.2,0)),c.clone().add(V(0,.42,0)),.3);const [x,z]=[c.x,c.z];kit.add('Axe_Bronze',trs(x+.06,c.y+.62,z,S.yaw+.6,1.2,0,.35),{override:po});}
   // The banked fire: a ring of stones, logs leaning together, a tripod and a pot, and a log to sit on.
   const F=S.fire,fy=h(F.x,F.z);
-  const rockNames=[...nature.pieces.keys()].filter(n=>/^Rock_Medium_/.test(n));
-  for(let i=0;i<9;i++){const a=i/9*Math.PI*2+rand()*.3,r=.72;rocks.add(rockNames[i%rockNames.length],trs(F.x+Math.sin(a)*r,fy-.06,F.z+Math.cos(a)*r,rand()*6.28,new THREE.Vector3(.16+rand()*.05,.13+rand()*.05,.16+rand()*.05)),{override:no});}
+  // The ring is the field boulders' rock (snowRocks.ts): sooted on the faces toward the fire, the snow melted off.
+  for(let i=0;i<9;i++){
+   const a=i/9*Math.PI*2+rand()*.3,r=.78,x=F.x+Math.sin(a)*r,z=F.z+Math.cos(a)*r,yaw=a+1.57+(rand()-.5)*.6,sr=.24+rand()*.07,sh=sr*(.55+rand()*.25);
+   const g=boulderGeometry({r:sr,h:sh,seed:700+i+Math.floor(rand()*50)},8,1.8).applyMatrix4(trs(x,h(x,z)-.02,z,yaw,1));
+   const p=g.getAttribute('position'),c=g.getAttribute('color') as THREE.BufferAttribute;
+   for(let k=0;k<c.count;k++){const d=Math.hypot(p.getX(k)-F.x,p.getZ(k)-F.z);c.setX(k,c.getX(k)*(.4+.6*THREE.MathUtils.smoothstep(d,r-.12,r+.14)));c.setZ(k,.12);}
+   ring.push(g);
+  }
   for(let i=0;i<5;i++){const a=i/5*Math.PI*2+.4;log(V(F.x+Math.sin(a)*.5,fy+.04,F.z+Math.cos(a)*.5),V(F.x+Math.sin(a)*.08,fy+.42,F.z+Math.cos(a)*.08),.07,charred);}
   for(let i=0;i<3;i++){const a=i/3*Math.PI*2+.9;log(V(F.x+Math.sin(a)*1.0,fy-.1,F.z+Math.cos(a)*1.0),V(F.x+Math.sin(a)*.05,fy+1.75,F.z+Math.cos(a)*.05),.04);}
   kit.add('Pot_1',trs(F.x,fy+.7,F.z,0,1.1),{override:po});rod(V(F.x,fy+.92,F.z),V(F.x,fy+1.7,F.z),.008,iron);
   flames.push({x:F.x,y:fy+.12,z:F.z,size:.75,cold:false});halos.push({x:F.x,y:fy+.4,z:F.z,size:3.6,color:'#ff7a2a',power:.75},{x:F.x,y:fy+.1,z:F.z,size:1.4,color:'#ff5a10',power:.9});
+  // Its light on the snow round the camp, reaching out past the lean-to's posts.
+  pools.push({x:F.x,z:F.z,r:6,color:'#ff7a30',power:.3});
   log(P(1.0,.22,1.95),P(2.6,.22,1.4),.21);
   // The sled: two runners curled up at the front, slats across, and a load lashed on.
   {
@@ -230,6 +243,20 @@ export async function frostCamps(opts:{height:Height;ice:THREE.Material}):Promis
   }
  }
 
+ // ---- The way-cairns: stones round a leaning pole, a lantern hung toward the way, cloth streaming downwind.
+ for(const c of WAY_CAIRNS){
+  const {stones}=cairnStones(c,h);ring.push(...stones);
+  const R=stream(c.seed*31+5),gy=h(c.x,c.z),foot=V(c.x,gy-.3,c.z),head=V(c.x+(R()-.5)*.14,gy+3.4,c.z+(R()-.5)*.14);
+  log(foot,head,.065);
+  const at=(y:number)=>foot.clone().lerp(head,(y-foot.y)/(head.y-foot.y));
+  const L=[[3.1,.34,.2],[1.7,.2,.32],[1.15,.14,.44]];
+  c.dyes.forEach((d,k)=>{const [len,w,droop]=L[k];cloth.push(streamerGeometry(at(gy+3.25-k*.3),len,w,d,c.seed*10+k,droop));});
+  const p=at(gy+1.85),dir=V(Math.sin(c.face),0,Math.cos(c.face));p.addScaledVector(dir,.07);
+  lantern(p.x,p.y,p.z,c.face,.62);
+  const lc=lanternFlameAt(p.x,p.y,p.z,c.face,.62);
+  pools.push({x:lc.x,z:lc.z,r:3,color:'#ff9a46',power:.12});
+ }
+
  // ---- Meshes.
  const add=(geos:THREE.BufferGeometry[],mat:THREE.Material,name:string,cast=true)=>{if(!geos.length)return;const m=new THREE.Mesh(mergeGeometries(harmonise(geos),false)!,mat);m.name=name;m.castShadow=cast;m.receiveShadow=true;group.add(m);};
  add(logs,logMaterial(),'frostlight-sites-logs');add(charred,logMaterial(true),'frostlight-sites-firelogs');
@@ -241,8 +268,11 @@ export async function frostCamps(opts:{height:Height;ice:THREE.Material}):Promis
  const driftMat=new THREE.MeshStandardMaterial({name:'frostlight-sites-drift',color:'#e8f2fc',roughness:.9,vertexColors:true});snowMass(driftMat,{lumps:.7});add(drifts,driftMat,'frostlight-sites-drifts');
  const stone=new THREE.Mesh(M.geometry(),masonryMaterial('frostlight-sites-stone'));stone.name='frostlight-sites-stone';stone.castShadow=stone.receiveShadow=true;group.add(stone);
  const iceMesh=new THREE.Mesh(crystalGeometry(ice),opts.ice);iceMesh.name='frostlight-sites-ice';iceMesh.castShadow=true;group.add(iceMesh);
- group.add(glass.mesh('frostlight-sites-runes'),kit.build(),rocks.build());
+ const ringMat=rockMaterial(opts.ground,.25,.45,.6);ringMat.vertexColors=true;add(ring,ringMat,'frostlight-sites-firering');
+ group.add(glass.mesh('frostlight-sites-runes'),kit.build());
  const fire=frostFire('frostlight-sites-fire',flames,halos,9091,5);group.add(fire.group);
- group.userData.sites={stones:ridgeStones().length,flames:flames.length,blocks:M.blocks,standards:PROCESSION.standards.length*2};
- return {group,update(time){fire.update(time);}};
+ const wool=clothMaterial(opts.sun),clothMesh=new THREE.Mesh(mergeGeometries(cloth,false)!,wool.material);clothMesh.name='frostlight-cairn-cloth';clothMesh.castShadow=clothMesh.receiveShadow=true;group.add(clothMesh);
+ const light=lightPools(pools,h),poolMesh=new THREE.Mesh(mergeGeometries(light.geos,false)!,light.material);poolMesh.name='frostlight-light-pools';poolMesh.renderOrder=2;group.add(poolMesh);
+ group.userData.sites={stones:ridgeStones().length,flames:flames.length,blocks:M.blocks,standards:PROCESSION.standards.length*2,cairns:WAY_CAIRNS.length,streamers:cloth.length,pools:pools.length};
+ return {group,update(time){fire.update(time);wool.update(time);light.update(time);}};
 }
