@@ -52,7 +52,7 @@ try {
     return { ok, ms: Math.round(performance.now() - t0), entryMs: Math.round(g.world2.tidecrownEntryMs), info: g.world2.tidecrown.info, chapter: g.world2.chapter, quest: g.quests.chapter };
   });
   assert.equal(entry.ok, true, 'enterTidecrown() resolves true');
-  await p.waitForFunction(() => !document.querySelector('.tidecrown-veil'), null, { timeout: 30000 });
+  await p.waitForFunction(() => !document.querySelector('.tidecrown-loading'), null, { timeout: 30000 });
   await p.waitForTimeout(2500);
 
   // The walk: arrival, up the road to the crest, down to the bridge, across it, through the gate, up the King's Way
