@@ -8,7 +8,7 @@ try{
  await p.addInitScript(()=>{localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'Capital visitor'}));localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.language','ko');localStorage.setItem('cc.quality','high');});
  await p.goto(base+'/?screen=game');await p.locator('.launch-notice-start').click();await p.waitForFunction(()=>window.app?.current?.game?.loaded&&!document.querySelector('.loading'),null,{timeout:240000});
  const entry=await p.evaluate(async()=>{const g=window.app.current.game;g.god=true;g.creatorTravel=true;g.ending.cancel();g.player.nextSwing=Infinity;window.__capitalBefore={quest:JSON.stringify(g.quests.status),chapter:g.quests.chapter,units:g.units.length};await g.world2.enterTidecrown();return {count:g.world2.tidecrownPeople.people.length,names:g.world2.tidecrownPeople.people.map(p=>p.unit.name),visible:g.world2.tidecrownPeople.people.filter(p=>!p.unit.hidden).length};});
- assert.equal(entry.count,32);assert.equal(entry.visible,32);assert.equal(new Set(entry.names).size,32);await p.waitForFunction(()=>!document.querySelector('.tidecrown-veil'));
+ assert.equal(entry.count,32);assert.equal(entry.visible,32);assert.equal(new Set(entry.names).size,32);await p.waitForFunction(()=>!document.querySelector('.tidecrown-loading'));
  console.log('PASS 32 unique, visible residents loaded lazily on capital entry');
  const reveal=async()=>{await p.locator('.dlg-text').click();await p.waitForFunction(()=>{const d=window.app.current.game.hud.dialogue;return !d.typing&&document.querySelector('.dlg-text').textContent===d.paras.map(p=>p.text).join('');});};
  // Each resident is reached through the actual F interaction, rather than calling a dialogue helper.

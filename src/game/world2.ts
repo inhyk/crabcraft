@@ -35,6 +35,7 @@ import {layoutStarhaven,starCrystalGarden} from './world2Colliders';
 import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
 import type {TidecrownIsland} from './tidecrown/island';
 import type {TidecrownResidents} from './tidecrownResidents';
+import {TidecrownLoading} from './tidecrown/loading';
 
 /** Everything entering Tidecrown changes, restored as it was when the player leaves. */
 interface TidecrownSaved {
@@ -525,22 +526,31 @@ export class HiddenWorld {
     const g=this.game;
     if(!this.canEnterTidecrown(true))return Promise.resolve(false);
     const run=async()=>{
-      const t0=performance.now(),veil=tidecrownVeil();
+      const t0=performance.now(),screen=new TidecrownLoading(g.app.overlay,!this.tidecrown);
       try{
-        await veil.shown;
-        if(!this.tidecrown){
-          const {TidecrownIsland}=await import('./tidecrown/island');
-          const island=new TidecrownIsland();await island.build(g.engine.renderer,g.engine.quality);
+        // The island's module loads while the painting fades in.
+        const [,mod]=await Promise.all([screen.shown,this.tidecrown?null:import('./tidecrown/island')]);
+        if(mod&&!this.tidecrown){
+          // A frame first, so the bar's run for the layout (the longest step, one block) is on screen.
+          screen.reached('import');await screen.frames(1);
+          const island=new mod.TidecrownIsland();await island.build(g.engine.renderer,g.engine.quality,()=>screen.reached(...Object.keys(island.info.steps)));
           g.scene.add(island.root);this.tidecrown=island;
         }
+        if(!this.tidecrown)return false;
         if(!this.tidecrownPeople){
           const {TidecrownResidents}=await import('./tidecrownResidents');
           const people=new TidecrownResidents(g,this.tidecrown);this.tidecrownPeople=people;
           try{await people.load();}catch(error){this.tidecrownPeople=undefined;throw error;}
+          screen.reached('residents');
         }
         if(g.dungeons?.active)return false;
-        this.applyTidecrown(this.tidecrown);await this.tidecrown.settle();this.tidecrownEntryMs=performance.now()-t0;return true;
-      }finally{veil.hide();}
+        // The first frame inside compiles every shader in one block. A frame before it puts the bar's run for that on
+        // screen (the engine draws first in each frame); once it is drawn, the bar runs to full.
+        await screen.frames(1);
+        this.applyTidecrown(this.tidecrown);
+        const settled=this.tidecrown.settle();await screen.frames(1);screen.reached('settle');await settled;this.tidecrownEntryMs=performance.now()-t0;
+        await screen.finish();return true;
+      }finally{screen.hide();}
     };
     this.tidecrownLoading=run().finally(()=>{this.tidecrownLoading=null;});
     return this.tidecrownLoading;
@@ -617,13 +627,4 @@ export class HiddenWorld {
     const ownedTextures=new Set<THREE.Texture>();for(const m of mats){const map=(m as THREE.MeshStandardMaterial).map;if(map?.userData.islandPaving)ownedTextures.add(map);}for(const texture of ownedTextures)texture.dispose();
     this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
   }
-}
-
-/** A short fade while Tidecrown is built (first entry) or entered. */
-function tidecrownVeil(){
-  const el=document.createElement('div');el.className='tidecrown-veil';
-  Object.assign(el.style,{position:'fixed',inset:'0',zIndex:'60',pointerEvents:'none',display:'grid',placeItems:'center',opacity:'0',transition:'opacity .35s ease',background:'radial-gradient(circle at 50% 45%, #29496b, #0b1622 70%)',color:'#e9f7ff',font:'600 26px/1.3 Georgia, serif',letterSpacing:'.32em',textShadow:'0 0 18px #53f2e4'});
-  el.textContent=t('타이드크라운','TIDECROWN');document.body.append(el);
-  requestAnimationFrame(()=>{el.style.opacity='1';});
-  return {shown:new Promise<void>(r=>setTimeout(r,380)),hide(){el.style.opacity='0';setTimeout(()=>el.remove(),450);}};
 }

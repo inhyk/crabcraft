@@ -82,7 +82,7 @@ try {
       }, [pts, stop, ahead], { timeout, polling: 'raf' });
     } finally { await hold(false); }
   };
-  const settled = () => p.waitForFunction(() => !document.querySelector('.cc-blackout.on') && !document.querySelector('.tidecrown-veil'), null, { timeout: 60000 });
+  const settled = () => p.waitForFunction(() => !document.querySelector('.cc-blackout.on') && !document.querySelector('.tidecrown-loading'), null, { timeout: 60000 });
   const where = () => p.evaluate(() => { const g = window.app.current.game, u = g.player.unit; return { x: +u.pos.x.toFixed(2), z: +u.pos.z.toFixed(2), yaw: +u.yaw.toFixed(3), inTidecrown: g.world2.inTidecrown, chapter: g.world2.chapter, quest: g.quests.chapter, w1: g.world.root.visible, zone: g.zone, kings: window.__kings.fired, back: window.__back.fired }; });
   const yawGap = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
   const road = await p.evaluate(() => window.__L.KINGS_ROAD.points.map(([x, z]) => [x, z]));
