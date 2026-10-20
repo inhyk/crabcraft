@@ -579,6 +579,55 @@ const boulders = (dt, burstSpeed = 9) => ({
   seed: 52,
 });
 
+/** The golem's feet: behind him, a touch right, so the blast goes up past its left shoulder. */
+const GOLEM = P(4.2, 0.2);
+/** The summoned golem: the boulders heave up round him (102.7-105.1 s), fly together behind him into
+ *  its body (105.5-107.4 s), it straightens as its chest blazes (107.5-108.2 s), leans over him with its
+ *  pincer fists forward, and its eyes light at 109.5 s. */
+const golem = {
+  kind: 'night-golem',
+  t: -9,
+  at: { g: [GOLEM[0], 0, GOLEM[1]] },
+  right: RIGHT,
+  src: G(1.2, 0, 0),
+  radius: 4.6,
+  // Only beside and behind him: the rocks fly away from the lens into its body.
+  arc: [CAM_ANGLE + 1.7, CAM_ANGLE + Math.PI * 2 - 1.7],
+  scale: 1.45,
+  detail: 1,
+  lump: 0.75,
+  cells: 1.05,
+  rise: [3.2, 5.6],
+  fly: [6.0, 7.9],
+  stand: [7.7, 8.5],
+  blaze: [8.0, 8.7],
+  loom: [8.7, 11.5],
+  eyes: 10.0,
+  glow: [[3, 0.3], [6, 0.42], [8, 0.45]],
+  rock: '#191510',
+  key: '#7f9a78',
+  keyK: 0.55,
+  amb: '#1c2a18',
+  ambK: 0.5,
+  rim: '#8cff4a',
+  rimK: 0.9,
+  seed: 77,
+};
+/** A far meteor streaking across the storm at 103.2 s (the original's sky is full of them). */
+const STREAK = {
+  kind: 'night-meteor',
+  t: 3.7,
+  from: [U[0] + FWD[0] * 46 + RIGHT[0] * 24, 27, U[1] + FWD[1] * 46 + RIGHT[1] * 24],
+  to: [U[0] + FWD[0] * 42 - RIGHT[0] * 6, 11, U[1] + FWD[1] * 42 - RIGHT[1] * 6],
+  d: 0.95,
+  size: 0.55,
+  light: 0,
+  glow: 0.6,
+  tail: 22,
+  color: '#a8ff5a',
+  core: '#ffe08a',
+};
+
 /** The rock's fall: in at the top of the cast shot's frame, right of centre, down across the sky onto the impact. */
 const METEOR_FROM = [IMPACT[0] + RIGHT[0] * 13 + FWD[0] * 14, 26, IMPACT[1] + RIGHT[1] * 13 + FWD[1] * 14];
 /** When it falls (cast shot seconds) and lands. */
@@ -651,13 +700,15 @@ const undeadShots = [
     },
     cam: {
       ease: 'inout',
-      focus: 'u',
-      range: 3.5,
+      focus: 'look',
+      range: 5.5,
       keys: [
         { t: 0, p: G(-3.0, 0.55, 0.3), l: G(0, 0.15, 0.95), fov: 40 },
         { t: 3.0, p: G(-3.9, 0.7, 0.42), l: G(0, 0.1, 1.45), fov: 42 },
-        { t: 8.5, p: G(-4.3, 0.95, 0.45), l: G(1.5, 0.9, 1.9), fov: 44 },
-        { t: 11.5, p: G(-4.5, 1.0, 0.45), l: G(1.5, 0.8, 2.0), fov: 45 },
+        // Back and down as the golem gathers behind him, then tilting up its height as it looms.
+        { t: 6.0, p: G(-4.4, 0.8, 0.42), l: G(0.8, 0.35, 1.9), fov: 44 },
+        { t: 8.0, p: G(-4.9, 0.85, 0.32), l: G(1.8, 0.45, 2.5), fov: 47 },
+        { t: 11.5, p: G(-5.6, 0.9, 0.3), l: G(2.0, 0.5, 3.4), fov: 52 },
       ],
     },
     fx: [
@@ -678,8 +729,10 @@ const undeadShots = [
       { kind: 'light', t: 0, at: { a: 'u', o: [STAFF[0], STAFF[1], STAFF[2] + 0.4] }, color: '#7dff4a', curve: [[0, 0], [0.8, 0], [1.8, 5], [3.8, 7], [3.95, 16], [4.6, 7], [6.2, 8], [6.35, 18], [7.2, 9], [8.4, 10]], distance: 9, flicker: 0.1 },
       { kind: 'motes', t: -1, at: { a: 'u', o: [0, 1.6, 0] }, count: 220, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
       { kind: 'embers', t: -1, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
-      // Boulders climb out of the ground round him, the burning rock falls, the blast.
-      boulders(0),
+      // Boulders climb out of the ground round him and fly together behind him into the golem; the
+      // burning rock falls past its shoulder, the blast.
+      golem,
+      STREAK,
       { kind: 'night-meteor', t: FALL, from: METEOR_FROM, to: { g: [IMPACT[0], 0.5, IMPACT[1]] }, d: LAND - FALL, size: 1.3, light: 500, glow: 0.4, tail: 14, color: '#8cf03a', core: '#ffb02a' },
       { kind: 'night-impact', t: LAND, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 3.4, toward: G(-3.6, 0.8, 1), light: 700, flash: 0.45, gain: 0.45, dust: 0.12, dome: 0, haze: 0.3, puffs: 60, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
       { kind: 'flash', t: LAND + 0.02, d: 0.22, rise: 0.03, a: 0.22, color: '#e6ffb0' },

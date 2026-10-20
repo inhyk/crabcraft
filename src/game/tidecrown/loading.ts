@@ -20,6 +20,8 @@ const STEPS: readonly Step[] = [
   ['city', 340, '집과 항구 짓는 중', 'Building the houses and harbour'],
   ['foliage', 10, '숲과 풀밭 가꾸는 중', 'Growing the woods and meadows'],
   ['atmosphere', 25, '하늘과 바다 칠하는 중', 'Painting the sky and sea'],
+  // The residents' crabs (tidecrownResidents.ts), first entry only.
+  ['residents', 500, '주민들 맞이하는 중', 'Greeting the townsfolk', true],
   // The first frames: every material's shader compiles here (about 1 s; 7 s while the GPU's shader cache is cold).
   ['settle', 1000, '도시 풍경 그리는 중', 'Painting the city view', true],
 ];

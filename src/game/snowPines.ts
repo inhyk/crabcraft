@@ -28,11 +28,12 @@ export async function snowPines(trees:readonly {x:number;z:number;s:number}[],he
   const pitch=((h>>>4&0xf)/15-.5)*.05,roll=((h>>>24&0xf)/15-.5)*.05;
   forest.add(piece,trs(x,height(x,z)-.12*scale,z,yaw,new THREE.Vector3(scale*CROWN_WIDTH,scale,scale*CROWN_WIDTH),pitch,roll));
  });
- // Cooled needles and a darker bark, each with its own snow line; kit materials stay untouched.
+ // Deep spruce needles (cool, but green enough to stand apart from the blue shade) and a darker bark, each with
+ // its own snow line; kit materials stay untouched.
  const variants=new Map<THREE.Material,THREE.Material>();
  const group=forest.build({materialFor:m=>{
   let v=variants.get(m);if(v)return v;v=m.clone();
-  if(m.name.startsWith('Leaves')){stylise(v,.85,[.9,1.02,1.06],-.55);snowCover(v,{cover:1,foot:true});}
+  if(m.name.startsWith('Leaves')){stylise(v,1.05,[.86,1.02,.98],-.36);snowCover(v,{cover:1,foot:true});}
   else{stylise(v,.45,[.74,.74,.8]);snowCover(v,{cover:.7,foot:true});}
   variants.set(m,v);return v;
  }});
