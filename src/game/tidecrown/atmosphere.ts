@@ -185,6 +185,8 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
       sun.target.position.copy(focus);
       sun.target.updateMatrixWorld();
       lanternLight.intensity = 520 * (0.9 + 0.1 * Math.sin(time * 1.3));
+      // Under the pines by the arrival the shade gets a little more sky, so the first view is not black on orange.
+      hemi.intensity = 0.6 + 0.22 * THREE.MathUtils.smoothstep(playerZ, 290, 318);
     },
     dispose() {
       envRT?.dispose();

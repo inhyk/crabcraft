@@ -127,12 +127,39 @@ const TC_ROCK = `if (ccRock > 0.003) {
   lime = mix(lime, cc_srgb(vec3(0.80, 0.68, 0.53)), smoothstep(0.58, 0.8, tn.a) * 0.45);
   lime *= 1.0 + steep * (0.2 * (h1 - 0.5) + 0.18 * lip - 0.5 * under - 0.24 * joint);
   vec3 rockC = mix(grain, lime, 0.74);
+  // Inside the city wall a bank no painted rock claims is a built revetment: rubble in the walls' limestone, its
+  // joints darker toward the foot.
+  float rev = tcL.a * steep * (1.0 - smoothstep(0.2, 0.5, sp.a));
+  if (rev > 0.01) {
+    vec3 rub = texture2D(uCobble, vCcWorld.zy * 0.26).rgb * tw.x + texture2D(uCobble, vCcWorld.xz * 0.26).rgb * tw.y + texture2D(uCobble, vCcWorld.xy * 0.26).rgb * tw.z;
+    float rl = dot(rub, vec3(0.299, 0.587, 0.114));
+    vec3 revC = mix(cc_srgb(vec3(0.36, 0.34, 0.31)), cc_srgb(vec3(0.84, 0.79, 0.69)), smoothstep(0.07, 0.3, rl)) * (0.86 + 0.2 * tn.g);
+    rockC = mix(rockC, revC, rev);
+  }
   // Damp and weed along the waterline.
   float wet = 1.0 - smoothstep(0.2, 2.6, vCcWorld.y + (tn.b - 0.5) * 1.6);
   rockC = mix(rockC, rockC * cc_srgb(vec3(0.5, 0.56, 0.48)), wet * 0.85);
-  tcTilt = steep * ccRock * (0.5 * lip - 0.75 * under);
+  tcTilt = steep * ccRock * (0.5 * lip - 0.75 * under) * (1.0 - rev);
   col = mix(col, rockC, ccRock);
 }`;
+
+/**
+ * Tidecrown's setts: the kit's cobble regraded by its own value onto cool grey limestone setts (away from the crabs'
+ * reds and the walls' warm cream), varied in broad patches and stone to stone, with dark wet joints near the house
+ * fronts, a paler polished wear in the open and damp patches that hold the sky.
+ */
+const TC_COB = `vec3 cobT = texture2D(uCobble, ccXZ * 0.22).rgb;
+  float cobL = dot(cobT, vec3(0.299, 0.587, 0.114));
+  float face = smoothstep(0.07, 0.3, cobL);
+  vec3 tint = mix(cc_srgb(vec3(0.8, 0.76, 0.7)), cc_srgb(vec3(0.85, 0.77, 0.65)), smoothstep(0.3, 0.7, nzA.r));
+  tint = mix(tint, cc_srgb(vec3(0.7, 0.72, 0.76)), smoothstep(0.5, 0.75, n3) * 0.5);
+  tint = mix(tint, cc_srgb(vec3(0.9, 0.85, 0.77)), smoothstep(0.6, 0.85, nzA.a) * 0.5);
+  tint *= 0.82 + 0.36 * n2;
+  float tcOpen = smoothstep(0.6, 0.97, tcL.r);
+  vec3 cobC = mix(cc_srgb(vec3(0.25, 0.24, 0.24)) * mix(0.55, 1.0, tcOpen), tint, face) * (0.8 + 0.5 * cobL);
+  cobC *= 1.0 + 0.16 * tcOpen * face * smoothstep(0.35, 0.7, nzA.g);
+  tcPuddle = smoothstep(0.6, 0.68, nzA.g + (n2 - 0.5) * 0.08) * (1.0 - smoothstep(0.2, 0.32, slope));
+  cobC *= 1.0 - 0.38 * tcPuddle;`;
 
 /**
  * World I's terrain material over Tidecrown's splat: its rock becomes bedded limestone (TC_ROCK), its setts lose the
@@ -150,16 +177,24 @@ export function tidecrownTerrainMaterial(terrain: TidecrownTerrain, village: Kit
     const fs = shader.fragmentShader;
     if (!W1_ROCK.test(fs)) console.error('tidecrown terrain: World I rock block not found, limestone not applied');
     shader.fragmentShader = fs
-      .replace('float ccRock;', 'float ccRock;\nfloat tcTilt = 0.0;\nuniform sampler2D uTcLight;\nuniform vec2 uTcLightO;\nuniform vec2 uTcLightS;\nvec4 tcL;')
+      .replace('float ccRock;', 'float ccRock;\nfloat tcTilt = 0.0;\nfloat tcPuddle = 0.0;\nuniform sampler2D uTcLight;\nuniform vec2 uTcLightO;\nuniform vec2 uTcLightS;\nvec4 tcL;')
+      .replace('vec4 sp = texture2D(uSplat, (ccXZ - uOrigin) / uSize);', 'vec4 sp = texture2D(uSplat, (ccXZ - uOrigin) / uSize);\ntcL = texture2D(uTcLight, (ccXZ - uTcLightO) / uTcLightS);')
       // The streets' light (groundLight.ts): darker along the house fronts and in the lanes, warm under the lamps.
-      .replace('diffuseColor.rgb *= col;', 'tcL = texture2D(uTcLight, (ccXZ - uTcLightO) / uTcLightS);\ndiffuseColor.rgb *= col * mix(0.38, 1.0, tcL.r);')
+      .replace('diffuseColor.rgb *= col;', 'diffuseColor.rgb *= col * mix(0.38, 1.0, tcL.r);')
+      // The forest road's earth calmer and less orange; on the south shore only true cliffs turn to rock (the road's cut
+      // banks stay grass).
+      .replace('vec3 dirtC = cc_srgb(vec3(0.55, 0.40, 0.25)) * (0.82 + 0.3 * n2);', 'vec3 dirtC = cc_srgb(vec3(0.5, 0.43, 0.35)) * (0.84 + 0.26 * n2);')
+      .replace('ccRock = max(smoothstep(0.30, 0.42, slope', 'float tcWild = smoothstep(200.0, 214.0, vCcWorld.z);\nccRock = max(smoothstep(mix(0.30, 0.5, tcWild), mix(0.42, 0.66, tcWild), slope')
+      // Damp setts: smoother, the sky in them.
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.3, tcPuddle * ccCob);')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.6, 0.28) * (tcL.g * tcL.g * 0.42) + vec3(1.0, 0.38, 0.1) * (tcL.b * tcL.b * 0.7);')
       // Slope from the triangle itself as well: on a cliff two grid cells wide the vertex normals lean at its foot and
       // brow, and grass, sand or setts would show there in spikes.
       .replace('float slope = 1.0 - nW.y;', 'float slope = max(1.0 - nW.y, 1.0 - abs(normalize(cross(dFdx(vCcWorld), dFdy(vCcWorld))).y));')
-      .replace('vec3 cobC = texture2D(uCobble, ccXZ * 0.22).rgb * cc_srgb(vec3(1.08, 0.94, 0.80));', 'vec3 cobC = texture2D(uCobble, ccXZ * 0.22).rgb * cc_srgb(vec3(1.3, 1.22, 1.08));')
+      .replace('vec3 cobC = texture2D(uCobble, ccXZ * 0.22).rgb * cc_srgb(vec3(1.08, 0.94, 0.80));', TC_COB)
       .replace(/(ccCob = smoothstep\([^;]*;)/, '$1\nccCob *= 1.0 - smoothstep(0.25, 0.4, slope);')
       .replace(W1_ROCK, TC_ROCK)
+      .replace('normal = normalize(mix(normal, vn, ccCob * 0.85));', 'normal = normalize(mix(normal, vn, ccCob * 0.85 * (1.0 - 0.6 * tcPuddle)));')
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>

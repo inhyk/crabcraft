@@ -14,7 +14,6 @@ import { type GroundLight, paintGroundLight } from './groundLight';
 import type { MapSnapshot } from '../snapshots';
 import { paintTidecrownMap } from './minimap';
 import { buildTidecrownHeights } from '../../sim/world/tidecrownGround';
-import { TC_MARKET } from './cityPlan';
 import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tcAxis, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
 import { tidecrownMaterials } from './materials';
 import { buildHeroStatues } from './statues';
@@ -74,13 +73,20 @@ export class TidecrownIsland {
   atmosphere!: TidecrownAtmosphere;
   structures!: TidecrownStructures;
   city!: TidecrownCity;
-  /** Open squares and streets where Clawhaven's townsfolk stroll while the player is here: a few points each. */
+  /**
+   * Open squares and streets where Clawhaven's townsfolk stroll while the player is here, one walker each: the
+   * market square's two halves and Pearl Street first (where the stalls and shops are), then the gate court, the
+   * King's Way, the parvis and the stair foot.
+   */
   readonly strolls: [number, number][][] = [
+    [tcAxis(36, -2), tcAxis(44, 2.5), tcAxis(52, -2)],
+    [[100, 83], [114, 79.5], [128, 75.5]],
     [tcAxis(10, -9), tcAxis(10, 9), tcAxis(24, -9), tcAxis(24, 9)],
+    [tcAxis(68, 2), tcAxis(76, -2.5), tcAxis(84, 2)],
     [tcAxis(114, -6), tcAxis(124, 6), tcAxis(134, -6), tcAxis(144, 6)],
     [[-46, -6], [-31, -1], [-16, -6]],
+    [[134, 72.5], [150, 66], [166, 59]],
     [tcAxis(158, -10), tcAxis(158, 10), tcAxis(162, 0)],
-    [45, 135, 225, 315].map((a) => [TC_MARKET.centre[0] + 33.5 * Math.cos((a * Math.PI) / 180), TC_MARKET.centre[1] + 33.5 * Math.sin((a * Math.PI) / 180)] as [number, number]),
   ];
   /** Minimap picture, painted from the terrain at build time. */
   map!: MapSnapshot;

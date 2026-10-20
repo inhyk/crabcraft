@@ -1,6 +1,7 @@
 // Light on Tidecrown's ground, painted once from the plan: R is the sky the streets see (dark along the house fronts,
-// in the lanes and at the foot of the walls), G the lamps' warm pools, B the forge's and the candles' fire. The
-// terrain shader reads it; the lamp heads get a halo each (one draw for the city).
+// in the lanes and at the foot of the walls), G the lamps' warm pools, B the forge's and the candles' fire, A the
+// ground inside the city wall (its banks are built revetments). The terrain shader reads it; the lamp heads get a
+// halo each (one draw for the city).
 import * as THREE from 'three';
 import { TC_BOUNDS, TC_CITY_WALL } from '../../sim/world/tidecrownGround';
 import type { CityLayout } from './cityLayout';
@@ -81,12 +82,18 @@ export function paintGroundLight(city: CityLayout): GroundLight {
     { x: TC_FORGE.x + s * 9, z: TC_FORGE.z + c * 9, r: 13, k: 1 },
     ...city.dressing.candles.map(([x, z]) => ({ x, z, r: 3, k: 0.7 })),
   ]);
-  const a = blurred.getImageData(0, 0, w, h).data, data = new Uint8Array(w * h * 4);
+  const inside = canvas('#000');
+  inside.fillStyle = '#fff';
+  inside.beginPath();
+  TC_CITY_WALL.forEach(([x, z], i) => (i ? inside.lineTo(x, z) : inside.moveTo(x, z)));
+  inside.closePath();
+  inside.fill();
+  const a = blurred.getImageData(0, 0, w, h).data, walled = inside.getImageData(0, 0, w, h).data, data = new Uint8Array(w * h * 4);
   for (let i = 0; i < w * h; i++) {
     data[i * 4] = a[i * 4];
     data[i * 4 + 1] = lamps[i * 4];
     data[i * 4 + 2] = fire[i * 4];
-    data[i * 4 + 3] = 255;
+    data[i * 4 + 3] = walled[i * 4];
   }
   const texture = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.UnsignedByteType);
   texture.magFilter = texture.minFilter = THREE.LinearFilter;

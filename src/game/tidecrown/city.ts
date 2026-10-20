@@ -149,6 +149,33 @@ function fallingWater(speed = 1.6): THREE.MeshBasicMaterial {
   return m;
 }
 
+/**
+ * A fountain's thin water: a lit, mostly clear sheet of threads running down (uv `along`, 1 at the lip), brighter
+ * where the threads bunch, fading in at the lip and out at the foot so it never shows an edge.
+ */
+function waterSheet(along: 'x' | 'y', threads: number, speed: number): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ name: 'tc-water-sheet', color: '#a9dcdc', roughness: 0.12, metalness: 0, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  addPatch(m, `tc-water-sheet-${along}-${threads}-${speed}`, (shader) => {
+    shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWsUv;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvWsUv = uv;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec2 vWsUv;\nuniform float uTime;\n${GLSL_NOISE}`)
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          float v = vWsUv.${along}, u = vWsUv.${along === 'x' ? 'y' : 'x'};
+          float thread = cc_vnoise(vec2(u * ${threads.toFixed(1)}, v * 2.2 + uTime * ${speed.toFixed(2)}));
+          float fine = cc_vnoise(vec2(u * ${(threads * 2.7).toFixed(1)}, v * 5.0 + uTime * ${(speed * 1.6).toFixed(2)}));
+          float t = smoothstep(0.45, 0.85, thread * 0.65 + fine * 0.35);
+          diffuseColor.rgb *= mix(vec3(0.62, 0.84, 0.86), vec3(1.0), t);
+          diffuseColor.a = (0.07 + 0.5 * t) * smoothstep(1.0, 0.9, v) * smoothstep(0.0, 0.25, v);
+        }`,
+      );
+  });
+  return m;
+}
+
 /** A ribbon of falling water along a path (width across, uv.y from top to foot). */
 function waterRibbon(pts: THREE.Vector3[], width: number, side: THREE.Vector3): THREE.BufferGeometry {
   const pos: number[] = [], uv: number[] = [], idx: number[] = [];
@@ -169,10 +196,10 @@ function waterRibbon(pts: THREE.Vector3[], width: number, side: THREE.Vector3): 
 }
 
 /** White water where falling water lands: churning foam on discs (uv 0.5 at the centre), all splashes in one draw. */
-function foamSplash(discs: { at: THREE.Vector3; r: number; sx?: number }[]): THREE.Mesh {
+function foamSplash(discs: { at: THREE.Vector3; r: number; sx?: number }[], color = '#f2fbf8', strength = 0.95): THREE.Mesh {
   const g = mergeGeometries(discs.map(({ at, r, sx = 1 }) => new THREE.CircleGeometry(r, 20).rotateX(-Math.PI / 2).scale(sx, 1, 1).translate(at.x, at.y, at.z)));
-  const m = new THREE.MeshBasicMaterial({ name: 'tc-foam', color: '#f2fbf8', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-  addPatch(m, 'tc-foam', (shader) => {
+  const m = new THREE.MeshBasicMaterial({ name: 'tc-foam', color, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  addPatch(m, `tc-foam-${strength}`, (shader) => {
     shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFoUv;\nvarying vec2 vFoW;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvFoUv = uv;\nvFoW = position.xz;');
     shader.fragmentShader = shader.fragmentShader
@@ -184,7 +211,7 @@ function foamSplash(discs: { at: THREE.Vector3; r: number; sx?: number }[]): THR
           float r = length(vFoUv - 0.5) * 2.0;
           float churn = cc_vnoise(vFoW * 2.6 + vec2(uTime * 1.3, -uTime * 0.9)) * 0.6 + cc_vnoise(vFoW * 6.0 - uTime * 2.1) * 0.4;
           float ring = 0.5 + 0.5 * sin(r * 9.0 - uTime * 6.0 + churn * 4.0);
-          diffuseColor.a = (1.0 - smoothstep(0.35, 1.0, r)) * smoothstep(0.3, 0.6, churn * 0.7 + ring * 0.3 + (1.0 - r) * 0.35) * 0.95;
+          diffuseColor.a = (1.0 - smoothstep(0.35, 1.0, r)) * smoothstep(0.3, 0.6, churn * 0.7 + ring * 0.3 + (1.0 - r) * 0.35) * ${strength.toFixed(2)};
         }`,
       );
   });
@@ -192,6 +219,31 @@ function foamSplash(discs: { at: THREE.Vector3; r: number; sx?: number }[]): THR
   mesh.name = 'tc-foam';
   mesh.renderOrder = 2;
   return mesh;
+}
+
+/** A claw along `pts`: a tube tapering from `r0` to `r1`, closed at the tip. */
+function clawGeometry(pts: THREE.Vector3[], r0: number, r1: number, radial = 7): THREE.BufferGeometry {
+  const curve = new THREE.CatmullRomCurve3(pts), n = 18, frames = curve.computeFrenetFrames(n, false);
+  const pos: number[] = [], idx: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    const p = curve.getPointAt(i / n), r = r0 + (r1 - r0) * Math.pow(i / n, 0.8);
+    for (let j = 0; j < radial; j++) {
+      const a = (j / radial) * Math.PI * 2, N = frames.normals[i], B = frames.binormals[i];
+      pos.push(p.x + r * (Math.cos(a) * N.x + Math.sin(a) * B.x), p.y + r * (Math.cos(a) * N.y + Math.sin(a) * B.y), p.z + r * (Math.cos(a) * N.z + Math.sin(a) * B.z));
+      if (i < n) {
+        const a0 = i * radial + j, a1 = i * radial + ((j + 1) % radial);
+        idx.push(a0, a1, a0 + radial, a1, a1 + radial, a0 + radial);
+      }
+    }
+  }
+  const tip = curve.getPointAt(1).addScaledVector(curve.getTangentAt(1), r1 * 2.5), t = pos.length / 3;
+  pos.push(tip.x, tip.y, tip.z);
+  for (let j = 0; j < radial; j++) idx.push(n * radial + j, n * radial + ((j + 1) % radial), t);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -330,7 +382,9 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
   let nearMs = 0;
   lap('houses');
 
-  const market = dressMarket({ kit: kits.tide, ...plan.market.options, name: 'tidecrown-market' }, plan.market.plan);
+  // The arcade's floor stands two steps (0.24) over the landmark's footing.
+  const halls = TC_LANDMARKS.filter((l) => l.piece === 'TC_MarketArcade').map((l) => ({ x: l.x, z: l.z, y: height(l.x, l.z) - 0.12 + 0.24, yaw: l.yaw }));
+  const market = dressMarket({ kit: kits.tide, ...plan.market.options, name: 'tidecrown-market', halls }, plan.market.plan);
   group.add(market.group);
   const marketBox = new THREE.Box3().setFromObject(market.group);
   lap('market');
@@ -577,8 +631,8 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
     { at: new THREE.Vector3(wfx, fy + race.water + 0.06, wfz), r: 1.15, sx: 0.95 },
   ]));
 
-  // Fountains: two basins of still water, the eight jets and the spill from the upper bowl.
-  const jets: THREE.BufferGeometry[] = [];
+  // Fountains: two basins of still water, the eight jets and the thin spill from the upper bowl, foam where they land.
+  const jets: THREE.BufferGeometry[] = [], spills: THREE.BufferGeometry[] = [], landing: { at: THREE.Vector3; r: number }[] = [];
   for (const f of TC_LANDMARKS.filter((l) => l.piece === 'TC_Fountain')) {
     const y = height(f.x, f.z) - 0.12, s = f.scale;
     const basin = (r: number, sides: number, yy: number, rot: number) => {
@@ -602,16 +656,24 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
       const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.07, 5, false);
       g.scale(s, s, s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
       jets.push(g);
+      const end = pts[pts.length - 1].clone().multiplyScalar(s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
+      landing.push({ at: end.setY(y + 0.87 * s), r: 0.32 * s });
     }
-    const spill = new THREE.CylinderGeometry(3.12, 3.32, 1.75, 32, 1, true);
+    // The spill: a sheet falling from the upper bowl's lip, flaring a little as it drops, into a ring of foam.
+    const spill = new THREE.CylinderGeometry(3.12, 3.4, 1.75, 40, 1, true);
     spill.translate(0, 2.66 - 0.875, 0).scale(s, s, s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
-    jets.push(spill);
+    spills.push(spill);
+    for (let i = 0; i < 30; i++) {
+      const a = (i / 30) * Math.PI * 2;
+      landing.push({ at: new THREE.Vector3(f.x + Math.cos(a) * 3.45 * s, y + 0.87 * s, f.z + Math.sin(a) * 3.45 * s), r: 0.5 * s });
+    }
   }
-  for (const g of jets) {
-    const m = new THREE.Mesh(g, falls);
-    m.name = 'tc-fountain-jet';
-    m.renderOrder = 2;
-    group.add(m);
+  if (jets.length) {
+    const jet = new THREE.Mesh(mergeGeometries(jets), waterSheet('x', 3, 2.4));
+    const sheet = new THREE.Mesh(mergeGeometries(spills), waterSheet('y', 90, 1.4));
+    jet.name = sheet.name = 'tc-fountain-jet';
+    jet.renderOrder = sheet.renderOrder = 2;
+    group.add(jet, sheet, foamSplash(landing, '#c4dcda', 0.5));
   }
   lap('water');
 
@@ -676,15 +738,23 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
   wheel.rotation.y = TC_FORGE.yaw;
   group.add(wheel);
   const crystals: { g: THREE.Group; y: number; ph: number }[] = [];
+  const claws = new StaticBatch(kits.city, 'tidecrown-crystal-claws');
   for (const t of TC_LANDMARKS.filter((l) => l.piece === 'TC_SeaglassTower')) {
     const g = pieceGroup(kits.city, 'TC_SeaglassCrystal', cityOver, `tidecrown-crystal-${t.id}`, false);
-    // Nearly three times the kit's size, hovering higher than its anchor (69.5) so it clears the finial.
-    const y = height(t.x, t.z) - 0.12 + 74 * t.scale;
+    // Nearly three times the kit's size, its point on the finial's tip (66.4) and its waist in four gold claws that
+    // rise from the cap, so it reads as held there and turning.
+    const y0 = height(t.x, t.z) - 0.12, y = y0 + 72.2 * t.scale;
     g.position.set(t.x, y, t.z);
     g.scale.setScalar(t.scale * 2.8);
-    group.add(g, glow('#c08cff', new THREE.Vector3(t.x, y, t.z), 38 * t.scale, 'tc-crystal-glow'), glow('#4fd8e0', new THREE.Vector3(t.x, y - 24 * t.scale, t.z), 24 * t.scale, 'tc-seaglass-glow'));
+    for (let k = 0; k < 4; k++) {
+      const a = Math.PI / 4 + (k * Math.PI) / 2, c = Math.cos(a), sn = Math.sin(a);
+      const prof: [number, number][] = [[0.95, 61.9], [2.0, 64.0], [3.05, 67.2], [3.35, 70.4], [2.95, 73.0], [2.2, 74.6]];
+      claws.addGeometry(worldUV(clawGeometry(prof.map(([r, h]) => new THREE.Vector3(t.x + c * r * t.scale, y0 + h * t.scale, t.z + sn * r * t.scale)), 0.34 * t.scale, 0.07 * t.scale)), mats.TC_Gold, null, false);
+    }
+    group.add(g, glow('#c08cff', new THREE.Vector3(t.x, y, t.z), 34 * t.scale, 'tc-crystal-glow'), glow('#4fd8e0', new THREE.Vector3(t.x, y - 22 * t.scale, t.z), 24 * t.scale, 'tc-seaglass-glow'));
     crystals.push({ g, y, ph: t.x * 0.1 });
   }
+  group.add(claws.build());
   const chimneys = [[-7.2, 28.4, -3.6], [7.2, 28.4, -3.6]].map(([lx, ly, lz]) => {
     const [x, z] = local(TC_FORGE.x, TC_FORGE.z, TC_FORGE.yaw, lx, lz);
     return new THREE.Vector3(x, fy + ly, z);
@@ -732,7 +802,7 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
       wheel.rotation.x = -time * 0.55;
       for (const c of crystals) {
         c.g.rotation.y = time * 0.25 + c.ph;
-        c.g.position.y = c.y + 0.5 * Math.sin(time * 0.7 + c.ph);
+        c.g.position.y = c.y + 0.08 * Math.sin(time * 0.7 + c.ph);
       }
       for (const s of ships) {
         s.g.position.y = s.bob * Math.sin(time * 0.6 + s.ph);
