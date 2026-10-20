@@ -7,6 +7,7 @@ import {addPatch,stylise} from '../world/materials';
 import {GLSL_NOISE} from '../world/noise';
 import {type Crystal,crystalGeometry} from './iceCrystals';
 import {GUARDED_NOISE,snowCover,snowMass} from './snowCover';
+import {lanternFlame,noteLantern} from './frostLantern';
 import {embers,garland,snowman} from './snowVillageDressing';
 import {atLot,raiseFrostlight,type RoofFrame,SNOW_CAULDRON,snowGarlands,SNOW_LOTS,SNOW_SNOWMEN,SNOW_WOODPILES,snowLamps,snowProps,snowSteps,type VillageFrames,woodpileAt} from './snowVillageLayout';
 
@@ -67,7 +68,7 @@ const LIP:[number,number][]=[[.05,.88],[.12,.62],[.17,.28],[.18,-.05],[.13,-.32]
  */
 function roofCap(prof:Profile,frame:RoofFrame,seed:number,eaves:THREE.Vector3[][]){
  const T=.3,xe=Math.min(-prof.xmin,prof.xmax)-.04,z0=prof.zmin+.06,z1=prof.zmax-.06;
- const nU=30,nZ=Math.max(8,Math.ceil((z1-z0)*new THREE.Vector3().setFromMatrixColumn(frame.m,2).length()/.32));
+ const nU=30,nZ=Math.max(8,Math.ceil((z1-z0)*new THREE.Vector3().setFromMatrixColumn(frame.m,2).length()/.28));
  const cols:{x:number;edge:number}[]=[];
  for(let k=LIP.length-1;k>=0;k--)cols.push({x:-xe,edge:-(k+1)});
  for(let i=0;i<=nU;i++)cols.push({x:-xe+2*xe*i/nU,edge:0});
@@ -75,14 +76,16 @@ function roofCap(prof:Profile,frame:RoofFrame,seed:number,eaves:THREE.Vector3[][
  const pos:number[]=[],occ:number[]=[],idx:number[]=[],w=cols.length;
  const left:THREE.Vector3[]=[],right:THREE.Vector3[]=[];
  for(let j=0;j<=nZ;j++){
-  const z=z0+(z1-z0)*j/nZ,d=Math.min(z-z0,z1-z)/.45,end=Math.sqrt(THREE.MathUtils.clamp(d,0,1));
+  // Rows crowd the gables (four times as dense as mid-roof), where the cap rounds off into the tiles.
+  const u=j/nZ,z=z0+(z1-z0)*(u-.75*Math.sin(2*Math.PI*u)/(2*Math.PI)),d=Math.min(z-z0,z1-z)/.45,end=Math.sqrt(THREE.MathUtils.clamp(d,0,1));
   for(const {x,edge} of cols){
    const side=Math.sign(x)||1,load=.75+.5*noise1(z*.55+x*.25,seed)+.12*noise1(z*2.1,seed+3);
    let t=(T*load+.06*Math.max(0,1-Math.abs(x)/.6))*end-.05*(1-end),px=x,py=prof.at(x);
    if(edge){const [o,dn]=LIP[Math.abs(edge)-1],droop=(.85+.5*noise1(z*.9,seed+side*7))*end;px=x+side*o*droop;py=prof.at(xe*side)+(dn*T*load*droop)-(1-end)*.05;t=0;}
    pos.push(px,py+t,z);
-   // Occlusion: the roll tucks into shade under the eave, and the cap thins into the tiles at the gables.
-   const o=(edge?1-.45*THREE.MathUtils.smoothstep(Math.abs(edge),3,6):1)*(.88+.12*end);occ.push(o,o,o);
+   // Occlusion: the roll tucks into shade under the eave, the lower slope dims toward it, and the cap thins into
+   // the tiles at the gables.
+   const o=(edge?1-.45*THREE.MathUtils.smoothstep(Math.abs(edge),3,6):1)*(.88+.12*end)*(1-.1*THREE.MathUtils.smoothstep(Math.abs(x)/xe,.55,1));occ.push(o,o,o);
   }
   // Icicles hang from the lowest point of the roll.
   const lo=(s:number)=>new THREE.Vector3(s*(xe+.1),prof.at(xe*s)-.4*T,z).applyMatrix4(frame.m);
@@ -347,7 +350,7 @@ export async function buildSnowVillage(opts:SnowVillageOptions):Promise<SnowVill
  // Roof caps and the icicles under their eaves.
  const capGeos:THREE.BufferGeometry[]=[],eaves:THREE.Vector3[][]=[],profiles=new Map<string,Profile>();
  frames.roofs.forEach((r,i)=>{let p=profiles.get(r.piece);if(!p)profiles.set(r.piece,p=roofProfile(village,r.piece));capGeos.push(roofCap(p,r,i*7+3,eaves));});
- const snowMat=new THREE.MeshStandardMaterial({name:'frostlight-snow',color:'#e9f1f9',roughness:.84,vertexColors:true});snowMass(snowMat);
+ const snowMat=new THREE.MeshStandardMaterial({name:'frostlight-snow',color:'#e9f1f9',roughness:.84,vertexColors:true});snowMass(snowMat,{carve:1,white:.25});
  const caps=new THREE.Mesh(mergeGeometries(capGeos,false)!,snowMat);caps.name='frostlight-roof-snow';caps.receiveShadow=true;caps.castShadow=false;group.add(caps);
  const driftMat=new THREE.MeshStandardMaterial({name:'frostlight-drift',color:'#e8f2fc',roughness:.9,vertexColors:true});snowMass(driftMat,{lumps:.7});
  // Snowmen: their packed bodies share the drift mesh, the faces, arms, scarves and light cables one trim mesh.
@@ -383,7 +386,7 @@ export async function buildSnowVillage(opts:SnowVillageOptions):Promise<SnowVill
   const m=trs(l.pos.x,l.pos.y,l.pos.z,l.yaw,l.s);
   // Lanterns are small and lit: their shadows would not read, so they skip the shadow pass.
   kitProps.add('Lantern_Wall',m,{override:pOver,castShadow:false});
-  const core=new THREE.Vector3(0,.55,1.1).applyMatrix4(m);
+  const core=lanternFlame(m);noteLantern(group,m,core);
   flames.push(flame.clone().scale(l.s,l.s,l.s).translate(core.x,core.y,core.z));
   glows.push({pos:core,color:warm,size:l.s*2.1});spots.push({pos:core,color:warm,power:1,flicker:0});
  }

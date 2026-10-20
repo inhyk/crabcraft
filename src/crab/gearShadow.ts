@@ -19,8 +19,12 @@ function mergeable(m: THREE.Mesh): boolean {
   );
 }
 
-/** Merge (proxy on) or restore (proxy off) the shadows of every gear piece. */
-export function syncGearShadows(pieces: readonly THREE.Object3D[], material: THREE.Material | null): void {
+/**
+ * Merge (proxy on) or restore (proxy off) the shadows of every gear piece. Meshes in `detail` hide at the far LOD,
+ * so they keep casting their own shadow (and stop with it) instead of joining the merged one.
+ */
+export function syncGearShadows(pieces: readonly THREE.Object3D[], material: THREE.Material | null, detail: readonly THREE.Object3D[] = []): void {
+  const own = new Set(detail);
   for (const piece of pieces) {
     const old = piece.children.find((c) => c.name === SHADOW);
     old?.removeFromParent();
@@ -30,7 +34,7 @@ export function syncGearShadows(pieces: readonly THREE.Object3D[], material: THR
       if (!m.isMesh) return;
       if (m.userData.gearShadowMerged) m.castShadow = true;
       delete m.userData.gearShadowMerged;
-      if (mergeable(m)) merged.push(m);
+      if (mergeable(m) && !own.has(m)) merged.push(m);
     });
     if (!material || merged.length < 2) continue;
     const mesh = new THREE.Mesh(geometryFor(piece, merged), material);

@@ -21,6 +21,7 @@ import {citadelClears} from './frostThroneLayout';
 import {miraPrison,type MiraPrison} from './frostPrison';
 import {frostCamps,type FrostCamps} from './frostCamps';
 import {SnowSky} from './snowSky';
+import {FROST_PALETTE} from './snowPalette';
 import {SnowFarShadow,applyFarShadow} from './snowFarShadow';
 import {SnowSpindrift} from './snowSpindrift';
 import {snowPines} from './snowPines';
@@ -49,8 +50,8 @@ export class SnowIsland {
  readonly collision=layoutFrostlight();
  readonly portal:FrostPortal;
  private sun=new THREE.DirectionalLight();
- /** SNOWFLOW's atmosphere: a low raking sun at polar twilight, so the aurora still reads. Sun, ambient, fog and ice all come from it. */
- readonly sky=new SnowSky({azimuth:42,elevation:13,night:.55,exposure:.42,wind:[SNOW_WIND[0],SNOW_WIND[1]]});
+ /** SNOWFLOW's atmosphere: a low raking sun at polar twilight, so the aurora still reads. Sun, ambient, fog and ice all come from it, graded by Frostlight's palette (gold sun, blue-violet sky). */
+ readonly sky=new SnowSky({azimuth:42,elevation:13,night:.55,exposure:.42,wind:[SNOW_WIND[0],SNOW_WIND[1]],palette:FROST_PALETTE});
  private snow:THREE.ShaderMaterial;
  private aurora:THREE.ShaderMaterial;
  /** Prints and berms the crabs leave in the snowfield (SNOWFLOW's deformation buffer). */
@@ -144,12 +145,12 @@ export class SnowIsland {
  /** Frostlight's carved gateway (frostPortal.ts), for the spawn portal and world2's onward gate. */
  gate(position:THREE.Vector3,label:string){return new FrostPortal(position,label,{ice:this.iceGlass,height:(x,z)=>this.height(x,z)});}
  /** Frostlight's own quest props for its DawnRequests (frostRequests.ts). */
- questProps(){return frostRequestLook({height:(x,z)=>this.height(x,z),ice:this.iceGlass});}
+ questProps(){return frostRequestLook({height:(x,z)=>this.height(x,z),ice:this.iceGlass,ground:this.terrain.uniforms});}
  /** The forest and the village need the kits, so they load after construction like DawnIsland's settlement. */
  async buildSettlement(){
   const height=(x:number,z:number)=>this.height(x,z);
   // The fields' groves stand in the same batch as the village forest: one draw for every pine.
-  const [forest,village,,camps,fields]=await Promise.all([snowPines([...snowTrees(),...snowGroves()],height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass}),buildSnowFields({height,ground:this.terrain.uniforms,sunDir:this.sky.sunDir,sky:this.sky})]);
+  const [forest,village,,camps,fields]=await Promise.all([snowPines([...snowTrees(),...snowGroves()],height),buildSnowVillage({height,ice:this.iceGlass}),this.throne.dress(),frostCamps({height,ice:this.iceGlass,ground:this.terrain.uniforms,sun:{dir:this.sky.sunDir,color:this.sky.sunLight}}),buildSnowFields({height,ground:this.terrain.uniforms,sunDir:this.sky.sunDir,sky:this.sky})]);
   this.root.add(forest,village.group,camps.group,fields.group);this.camps=camps;this.fields=fields;this.village=village;this.basin.material=village.stone;
  }
  /** Footprints for every crab near the player, then one deformation step. Runs only while Frostlight is shown. */

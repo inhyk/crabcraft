@@ -243,7 +243,8 @@ fpStone*=.82+.36*(fpNoise(fpP*4.7+fpId*13.)*.5+.5);
 // Under two pixels a stone is the quarry's mean, varied only at the scale of whole patches of road.
 fpStone=mix(fpStone,vec3(.205,.194,.182)*(.86+.28*(fpNoise(fpP*.9+3.)*.5+.5)),fpBlur);
 float fpNear=1.-smoothstep(.006,.03,fpFoot);
-if(fpNear>0.)fpStone*=1.+(fpNoise(fpP*41.)*.22+fpNoise(fpP*97.)*.16)*fpNear;
+// Grain: each octave gone before a pixel spans half its wavelength (2.4 and 1 cm), or it crawls as the crab walks.
+if(fpNear>0.)fpStone*=1.+fpNoise(fpP*41.)*.22*(1.-smoothstep(.008,.017,fpFoot))+fpNoise(fpP*97.)*.16*(1.-smoothstep(.0035,.0075,fpFoot));
 float fpWet=smoothstep(.35,.9,fpTrod)*(1.-fpSnow);
 fpStone*=mix(1.,.66,fpWet);
 // Rime on stone that lies close under the snow line.

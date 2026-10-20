@@ -122,57 +122,6 @@ export function shade(g:THREE.BufferGeometry,o=1){
  g.setAttribute('color',new THREE.BufferAttribute(a,3));return g;
 }
 
-export interface ChipOptions {
- /** Icosphere subdivisions. */
- detail?:number;
- /** Fracture planes cutting the blob into faces. */
- planes?:number;
- /** Cut flat dressed faces at +-z, this fraction of the half depth out: a stone made to carry a carving. */
- dressed?:number;
- /** Widen the foot so it sits down into the snow. */
- flare?:number;
- /** Narrow toward the top, 0..1. */
- taper?:number;
- /** How far the big lumps push the outline, 0..1. */
- lumps?:number;
-}
-
-/**
- * A stone of half-extents `size` with its foot at y=0: an icosphere pushed into lumps, leant, flared at the foot,
- * narrowed toward the top, then cut by shallow fracture planes into faces and roughened. Occlusion in vertex
- * colour darkens the underside and the foot.
- */
-export function chipStone(seed:number,size:[number,number,number],opts:ChipOptions={}){
- const R=stream(seed*7919+11),[sx,sy,sz]=size,lumps=opts.lumps??1,taper=opts.taper??.15,flare=opts.flare??.25;
- const base=new THREE.IcosahedronGeometry(1,opts.detail??3);base.deleteAttribute('normal');base.deleteAttribute('uv');
- const g=mergeVertices(base);base.dispose();
- const planes:[THREE.Vector3,number][]=[];
- for(let i=0;i<(opts.planes??11);i++){
-  const az=R()*Math.PI*2,el=-.35+R()*1.25;
-  const n=new THREE.Vector3(Math.cos(el)*Math.cos(az),Math.sin(el),Math.cos(el)*Math.sin(az));
-  planes.push([n,Math.hypot(n.x*sx,n.y*sy,n.z*sz)*(.8+R()*.14)]);
- }
- if(opts.dressed)for(const s of [1,-1])planes.push([new THREE.Vector3(0,0,s),sz*opts.dressed]);
- const pos=g.getAttribute('position') as THREE.BufferAttribute,p=new THREE.Vector3(),dir=new THREE.Vector3(),k=R()*50;
- const leanX=(R()-.5)*.35,leanZ=(R()-.5)*.25;
- for(let i=0;i<pos.count;i++){
-  dir.fromBufferAttribute(pos,i).normalize();
-  const lump=(noise3(dir.x*1.5+k,dir.y*1.5,dir.z*1.5,seed)-.5)*.55+(noise3(dir.x*3.4+k,dir.y*3.4,dir.z*3.4,seed+2)-.5)*.2;
-  p.copy(dir).multiplyScalar(1+lump*lumps);
-  if(p.y<0){const f=1+flare*-p.y;p.x*=f;p.z*=f;}else{const f=1-taper*p.y;p.x*=f;p.z*=f;}
-  p.set(p.x*sx+p.y*sy*leanX,p.y*sy,p.z*sz+p.y*sy*leanZ);
-  const rough=(noise3(p.x*6+k,p.y*6,p.z*6,seed+1)-.5)*.05;
-  p.addScaledVector(dir,rough*Math.min(sx,sy,sz));
-  for(const [n,d] of planes){const over=p.dot(n)-d;if(over>0)p.addScaledVector(n,-over);}
-  pos.setXYZ(i,p.x,p.y+sy,p.z);
- }
- g.computeVertexNormals();
- const occ=new Float32Array(pos.count*3);
- for(let i=0;i<pos.count;i++){const y=pos.getY(i)/(2*sy);const o=.55+.45*THREE.MathUtils.smoothstep(y,0,.45);occ.set([o,o,o],i*3);}
- g.setAttribute('color',new THREE.BufferAttribute(occ,3));
- return g;
-}
-
 /**
  * A runestone: a flat slab with a worn, uneven outline (broad foot, a shoulder, the crown off centre), its faces
  * dressed flat to carry a carving and its edges rounded. Foot at y=0, faces at z = +-depth/2.
@@ -185,7 +134,7 @@ export function runestone(seed:number,w:number,h:number,depth:number){
  const bevel=Math.min(.07,depth*.22);
  const g=new THREE.ExtrudeGeometry(shape,{depth:depth-2*bevel,bevelEnabled:true,bevelThickness:bevel,bevelSize:bevel,bevelSegments:3,curveSegments:6});
  g.translate(0,0,-(depth-2*bevel)/2);g.deleteAttribute('uv');
- // Indexed, like the chipped stones it is merged with; hard edges keep their split normals.
+ // Indexed, so runestones merge with each other; hard edges keep their split normals.
  const m=mergeVertices(g);g.dispose();
  const pos=m.getAttribute('position'),occ=new Float32Array(pos.count*3);
  for(let i=0;i<pos.count;i++){const o=.55+.45*THREE.MathUtils.smoothstep(pos.getY(i)/h,0,.35);occ.set([o,o,o],i*3);}
