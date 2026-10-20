@@ -306,7 +306,7 @@ export function dressMarket(o: MarketOptions, plan: MarketPlan = planMarket(o)):
       batch.put(k.props, pick(rt, ['Barrel', 'Crate_Wooden', 'Bag', 'Barrel_Apples']), put((rt() < 0.5 ? -1 : 1) * 1.05, 0, -0.85, rt() * 6, 0.8), P, null);
     }
   }
-  // Along the King's Way's edges through the square: benches facing the way, stock, a cart, a notice board.
+  // Along the King's Way's edges through the square: benches facing the way, stacked stock and produce.
   const way = o.streets?.[0];
   if (way) {
     const [ax, az] = way.points[0], [bx, bz] = way.points[way.points.length - 1], L = Math.hypot(bx - ax, bz - az);

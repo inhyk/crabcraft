@@ -86,10 +86,6 @@ function grade(mat: THREE.MeshStandardMaterial, key: string, l0: number, l1: num
   });
 }
 
-/**
- * The wood trim as dressed stone: its grain (stretched down a tall quoin) gives way to the ashlar's blocks, laid in the
- * world along each face (triplanar) and graded onto the same ramp; the vertex colour still tints and shades it.
- */
 /** A varying `name` with the world position, batched and instanced meshes included. */
 function worldVarying(shader: THREE.WebGLProgramParametersWithUniforms, name: string): void {
   shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nvarying vec3 ${name};`).replace(
@@ -108,6 +104,10 @@ function worldVarying(shader: THREE.WebGLProgramParametersWithUniforms, name: st
   );
 }
 
+/**
+ * The wood trim as dressed stone: its grain (stretched down a tall quoin) gives way to the ashlar's blocks, laid in the
+ * world along each face (triplanar) and graded onto the same ramp; the vertex colour still tints and shades it.
+ */
 function dressedStone(mat: THREE.MeshStandardMaterial, ashlar: THREE.Texture | null, dark: string, light: string): void {
   if (!ashlar) return;
   const tex = ashlar.clone();
