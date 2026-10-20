@@ -10,7 +10,7 @@ import { buildBanners } from './banners';
 type Height = (x: number, z: number) => number;
 
 /** World-unit UVs (box projection) and a white vertex colour, so procedural stone matches the kit's texel density. */
-function worldUV(g: THREE.BufferGeometry, density = 0.5, up = density): THREE.BufferGeometry {
+export function worldUV(g: THREE.BufferGeometry, density = 0.5, up = density): THREE.BufferGeometry {
   const geo = g.index ? g.toNonIndexed() : g;
   const p = geo.getAttribute('position'), n = geo.getAttribute('normal');
   const uv = new Float32Array(p.count * 2), col = new Float32Array(p.count * 4);

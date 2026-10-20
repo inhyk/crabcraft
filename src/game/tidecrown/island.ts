@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import type { Collision } from '../../sim/world/collision';
 import { buildFoliage, type FoliageResult } from '../../world/foliage';
 import { loadKit } from '../../world/kit';
+import { buildTidecrownCity, type TidecrownCity } from './city';
+import { loadTidecrownKit } from './houses';
 import { WORLD_UNIFORMS } from '../../world/materials';
 import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, type TidecrownAtmosphere } from './atmosphere';
 import { buildHorizon } from './horizon';
@@ -29,10 +31,11 @@ export class TidecrownIsland {
   collision!: Collision;
   atmosphere!: TidecrownAtmosphere;
   structures!: TidecrownStructures;
+  city!: TidecrownCity;
   /** Minimap picture, painted from the terrain at build time. */
   map!: MapSnapshot;
   /** How long each build step took (ms) and how much nature was scattered. */
-  readonly info: { steps: Record<string, number>; nature: Record<string, number> } = { steps: {}, nature: {} };
+  readonly info: { steps: Record<string, number>; nature: Record<string, number>; city: Record<string, number> } = { steps: {}, nature: {}, city: {} };
   private foliage: FoliageResult | null = null;
   private lanternGlow: THREE.MeshStandardMaterial | null = null;
   private built = false;
@@ -54,6 +57,12 @@ export class TidecrownIsland {
     if (this.built) return;
     const step = (name: string, t0: number) => (this.info.steps[name] = Math.round(performance.now() - t0));
     let t0 = performance.now();
+    // Every kit at once, fetched while the layout is worked out: World I's village, props and nature (the townhouses'
+    // set), the castle, the districts' landmarks and the harbour; the statues alongside.
+    const loading = Promise.all([
+      loadTidecrownKit(), loadKit('models/world/tidecrown.glb'), loadKit('models/world/tidecrown-city.glb'), loadKit('models/world/tidecrown-harbor.glb'), buildHeroStatues(),
+    ]);
+    await tick();
     this.layout = tidecrownLayout();
     this.collision = this.layout.col;
     this.spawn.y = this.layout.heightAt(this.spawn.x, this.spawn.z);
@@ -62,9 +71,8 @@ export class TidecrownIsland {
     await tick();
 
     t0 = performance.now();
-    const [village, nature] = await Promise.all([loadKit('models/world/village.glb'), loadKit('models/world/nature.glb')]);
-    const kit = await loadKit('models/world/tidecrown.glb');
-    const statues = await buildHeroStatues();
+    const [tide, kit, cityKit, harbourKit, statues] = await loading;
+    const { village, nature } = tide;
     step('assets', t0);
     onProgress?.(0.45);
     await tick();
@@ -75,7 +83,7 @@ export class TidecrownIsland {
     this.root.add(ground);
     const pines: [number, number][] = [];
     for (const [name, list] of this.layout.nature.trees.items) if (name.startsWith('Pine_')) for (const m of list) pines.push([m.elements[12], m.elements[14]]);
-    this.map = paintTidecrownMap(terrain, pines);
+    this.map = paintTidecrownMap(terrain, pines, this.layout.city);
     step('terrain', t0);
     onProgress?.(0.6);
     await tick();
@@ -86,7 +94,15 @@ export class TidecrownIsland {
     this.structures = buildTidecrownStructures(kit, village, mats, this.layout.placements, (x, z) => this.layout.heightAt(x, z), statues);
     this.root.add(this.structures.group);
     step('structures', t0);
-    onProgress?.(0.75);
+    onProgress?.(0.7);
+    await tick();
+
+    t0 = performance.now();
+    this.city = buildTidecrownCity({ tide, city: cityKit, harbour: harbourKit }, mats, this.layout.city, (x, z) => this.layout.heightAt(x, z), renderer, quality);
+    this.root.add(this.city.group);
+    this.info.city = { ...this.city.stats.ms, plan: this.layout.city.ms };
+    step('city', t0);
+    onProgress?.(0.8);
     await tick();
 
     t0 = performance.now();
@@ -127,15 +143,46 @@ export class TidecrownIsland {
     }
     if (this.lanternGlow) this.lanternGlow.emissiveIntensity = 3.2 + 0.5 * Math.sin(time * 1.3);
     this.structures.flame.emissiveIntensity = 2.6 + 0.6 * Math.sin(time * 11) * Math.sin(time * 6.3);
+    this.city.update(time, camera);
+    this.refine(6);
+  }
+
+  private detailDone!: () => void;
+  /** The houses' near detail streams in a few ms a frame around the camera; this resolves once it has first caught up. */
+  readonly detail = new Promise<void>((r) => (this.detailDone = r));
+  /** The near detail the camera needs is in. */
+  detailed = false;
+  /** Build (and free) `budget` ms of the houses' near detail for where the camera is (the island's update does 6 a frame). */
+  refine(budget: number): boolean {
+    if (!this.built) return false;
+    this.detailed = this.city.refine(budget);
+    if (this.detailed) this.detailDone();
+    return this.detailed;
+  }
+
+  /**
+   * Just entered (the fade still up): let the first frames render, so the shader links and texture uploads of what
+   * the arrival sees happen behind the fade, not after it lifts.
+   */
+  async settle(): Promise<void> {
+    for (let i = 0; i < 3; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  }
+
+  /** Leaving: the houses' near detail goes (it streams in again on return). */
+  leave(): void {
+    if (this.built) this.city.release();
   }
 
   dispose(): void {
     this.atmosphere?.dispose();
+    // The houses' pools free their own GPU buffers.
+    this.city?.dispose();
     const mats = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
-      // Sprites share one geometry across three.js.
-      if (m.geometry && !(o instanceof THREE.Sprite)) m.geometry.dispose();
+      // A BatchedMesh owns its matrix and indirection textures as well as its geometry; sprites share one geometry.
+      if ((o as THREE.BatchedMesh).isBatchedMesh) (o as THREE.BatchedMesh).dispose();
+      else if (m.geometry && !(o instanceof THREE.Sprite)) m.geometry.dispose();
       if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose();
       if (m.material) for (const mm of Array.isArray(m.material) ? m.material : [m.material]) mats.add(mm);
     });

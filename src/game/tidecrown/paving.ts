@@ -1,6 +1,9 @@
-// Where Tidecrown is paved: the King's Way, the gate court, the market square, the keep's court and a few streets
-// in cobble; the forest road in dirt until it nears the bridge. Shared by the terrain splat and the scatter.
-import { polylineNearest, TC_KEEP, TC_ROAD, TC_ROAD_COBBLE_FROM, TC_T, tcAxis, tcAxisCoords } from '../../sim/world/tidecrownGround';
+// Where Tidecrown is paved: the King's Way, the gate court, the market square, the keep's court, every district street
+// with its pavements up to the house fronts, the squares and the canal quays in cobble; the forest road in dirt until it
+// nears the bridge. Shared by the terrain splat and the scatter.
+import { polyDistance, polylineNearest, TC_KEEP, TC_ROAD, TC_ROAD_COBBLE_FROM, TC_T, tcAxis, tcAxisCoords } from '../../sim/world/tidecrownGround';
+import { canalDistance, TC_CANAL } from '../../sim/world/tidecrownCity';
+import { TC_CITY_STREETS, TC_SQUARES } from './cityPlan';
 
 type V2 = [number, number];
 const smoothstep = (x: number, a: number, b: number) => {
@@ -8,12 +11,19 @@ const smoothstep = (x: number, a: number, b: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** Cobbled streets off the King's Way: west from the market, east to the harbour quay, the quay itself. */
-export const TC_STREETS: { points: V2[]; width: number }[] = [
-  { points: [tcAxis(TC_T.market, -28), [10, 52], [-40, 44], [-96, 36], [-132, 30]], width: 7 },
-  { points: [tcAxis(TC_T.market, 28), [128, 76], [168, 58], [196, 34], [214, 22]], width: 7 },
-  { points: [[200, 50], [212, 20], [206, -6], [216, -48]], width: 9 },
-];
+/** Paved streets: the city's carriageways and their pavements (0.9 to the house fronts, a little under them). */
+export const TC_STREETS: { points: V2[]; width: number; box: [number, number, number, number] }[] = TC_CITY_STREETS.filter((s) => !s.unpaved).map((s) => {
+  const width = s.width + 2.2;
+  let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+  for (const [x, z] of s.points) { a = Math.min(a, x); b = Math.max(b, x); c = Math.min(c, z); d = Math.max(d, z); }
+  const g = width / 2 + 1;
+  return { points: s.points, width, box: [a - g, b + g, c - g, d + g] };
+});
+const SQUARES = TC_SQUARES.filter((s) => s.id !== 'market').map((s) => {
+  let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+  for (const [x, z] of s.poly) { a = Math.min(a, x); b = Math.max(b, x); c = Math.min(c, z); d = Math.max(d, z); }
+  return { poly: s.poly, box: [a - 1, b + 1, c - 1, d + 1] as const };
+});
 const ROAD_DIRT = TC_ROAD.slice(0, TC_ROAD_COBBLE_FROM + 1);
 const ROAD_COBBLE = TC_ROAD.slice(TC_ROAD_COBBLE_FROM);
 const q = { d: 0, seg: 0, t: 0 };
@@ -48,8 +58,15 @@ export function tcPaving(x: number, z: number, out: Paving = { cobble: 0, dirt: 
   const kd = Math.hypot(x - TC_KEEP.x, z - TC_KEEP.z);
   if (kd < 60) take(kd - 46, 0, 'c');
   for (const st of TC_STREETS) {
+    if (x < st.box[0] || x > st.box[1] || z < st.box[2] || z > st.box[3]) continue;
     polylineNearest(x, z, st.points, q);
     take(q.d, st.width / 2, 'c');
+  }
+  for (const sq of SQUARES) if (x > sq.box[0] && x < sq.box[1] && z > sq.box[2] && z < sq.box[3]) take(-polyDistance(x, z, sq.poly), 0, 'c');
+  // The canal quays: from the wall's coping 3.5 back, the bridges' landings with them.
+  if (x > 80 && x < 225 && z > 45 && z < 112) {
+    const d = canalDistance(x, z);
+    if (d < TC_CANAL.wall + 5) take(d, TC_CANAL.wall + 3.5, 'c');
   }
   // The forest road: earth through the woods, setts for its last stretch down to the bridge.
   if (x > -90 && x < 70 && z > 205 && z < 345) {

@@ -5,8 +5,9 @@ import * as THREE from 'three';
 import { addPatch, WORLD_UNIFORMS } from '../../world/materials';
 import { TC_KEEP, type TcPlacement, TC_PIECES } from './layout';
 
-/** The crest, painted once: blue field, gold border and fringe, a gold crab with raised claws. */
-function crestTexture(): THREE.CanvasTexture {
+/** The crest, painted once: blue field, gold border and fringe, a gold crab with raised claws. `flipY` false for glTF
+ * UVs (their v runs down the image). */
+export function crestTexture(flipY = true): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 128;
   c.height = 320;
@@ -40,6 +41,62 @@ function crestTexture(): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
+  t.flipY = flipY;
+  t.userData.tidecrown = true;
+  return t;
+}
+
+/** A gold crab with raised claws at (cx, cy), `s` its scale. */
+function crab(g: CanvasRenderingContext2D, cx: number, cy: number, s: number, ink: string, back: string): void {
+  g.save();
+  g.translate(cx, cy);
+  g.scale(s, s);
+  g.fillStyle = ink;
+  g.strokeStyle = ink;
+  g.beginPath(); g.ellipse(0, 10, 26, 18, 0, 0, Math.PI * 2); g.fill();
+  g.lineWidth = 5; g.lineCap = 'round';
+  for (const k of [-1, 1]) {
+    for (let i = 0; i < 3; i++) { g.beginPath(); g.moveTo(k * 18, 14 + i * 5); g.lineTo(k * 36, 22 + i * 9); g.lineTo(k * 40, 40 + i * 6); g.stroke(); }
+    g.beginPath(); g.moveTo(k * 16, 0); g.quadraticCurveTo(k * 34, -14, k * 30, -36); g.stroke();
+    g.beginPath(); g.ellipse(k * 28, -44, 9, 13, k * 0.3, 0, Math.PI * 2); g.fill();
+    g.fillStyle = back; g.beginPath(); g.moveTo(k * 28, -58); g.lineTo(k * 24, -42); g.lineTo(k * 33, -46); g.closePath(); g.fill(); g.fillStyle = ink;
+    g.beginPath(); g.arc(k * 8, -10, 3.5, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
+/**
+ * Sailcloth for the ships (glTF UVs: one 0..1 square per sail, crest at the centre): cream panels with seams and a
+ * little weathering, the kingdom's blue roundel ringed in gold with the crab.
+ */
+export function sailTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#f1e6cf';
+  g.fillRect(0, 0, 512, 512);
+  // Panels and their seams, weathered toward the foot.
+  for (let x = 0; x < 512; x += 46) {
+    g.fillStyle = (x / 46) % 2 ? 'rgba(120,96,60,0.05)' : 'rgba(255,255,255,0.04)';
+    g.fillRect(x, 0, 46, 512);
+    g.fillStyle = 'rgba(110,86,52,0.22)';
+    g.fillRect(x, 0, 2, 512);
+  }
+  const foot = g.createLinearGradient(0, 300, 0, 512);
+  foot.addColorStop(0, 'rgba(120,92,58,0)');
+  foot.addColorStop(1, 'rgba(120,92,58,0.18)');
+  g.fillStyle = foot;
+  g.fillRect(0, 0, 512, 512);
+  // Roundel.
+  g.fillStyle = '#d8b25a';
+  g.beginPath(); g.arc(256, 256, 150, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#244a96';
+  g.beginPath(); g.arc(256, 256, 136, 0, Math.PI * 2); g.fill();
+  crab(g, 256, 262, 2.6, '#e2bd62', '#244a96');
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  t.flipY = false;
   t.userData.tidecrown = true;
   return t;
 }
