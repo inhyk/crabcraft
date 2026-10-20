@@ -7,6 +7,7 @@ import {addPatch,stylise} from '../world/materials';
 import {GLSL_NOISE} from '../world/noise';
 import {type Crystal,crystalGeometry} from './iceCrystals';
 import {GUARDED_NOISE,snowCover,snowMass} from './snowCover';
+import {lanternFlame,noteLantern} from './frostLantern';
 import {embers,garland,snowman} from './snowVillageDressing';
 import {atLot,raiseFrostlight,type RoofFrame,SNOW_CAULDRON,snowGarlands,SNOW_LOTS,SNOW_SNOWMEN,SNOW_WOODPILES,snowLamps,snowProps,snowSteps,type VillageFrames,woodpileAt} from './snowVillageLayout';
 
@@ -385,7 +386,7 @@ export async function buildSnowVillage(opts:SnowVillageOptions):Promise<SnowVill
   const m=trs(l.pos.x,l.pos.y,l.pos.z,l.yaw,l.s);
   // Lanterns are small and lit: their shadows would not read, so they skip the shadow pass.
   kitProps.add('Lantern_Wall',m,{override:pOver,castShadow:false});
-  const core=new THREE.Vector3(0,.55,1.1).applyMatrix4(m);
+  const core=lanternFlame(m);noteLantern(group,m,core);
   flames.push(flame.clone().scale(l.s,l.s,l.s).translate(core.x,core.y,core.z));
   glows.push({pos:core,color:warm,size:l.s*2.1});spots.push({pos:core,color:warm,power:1,flicker:0});
  }

@@ -9,6 +9,7 @@ import {type Crystal,crystalGeometry} from './iceCrystals';
 import {snowCover} from './snowCover';
 import {boulderGeometry,rockMaterial,snowSkirt,type SnowGroundUniforms} from './snowRocks';
 import {frozenPond} from './snowVillageDressing';
+import {lanternFlameAt,noteLantern} from './frostLantern';
 
 /*
  * Frostlight's quest props, each a finished thing where its quest says it is: relief crates and sacks with snow
@@ -320,7 +321,7 @@ export function frostRequestLook(opts:FrostRequestOptions):RequestLook{
     }else if(site.style==='lamp'){
      const [qx,qz,lyaw]=FROST_LAMP_POSTS['abc'.indexOf(letter)],gy=h(qx,qz),s=.85;
      const toRoad=new THREE.Vector3(Math.sin(lyaw),0,Math.cos(lyaw));
-     const plate=new THREE.Vector3(qx,gy+1.72,qz).addScaledVector(toRoad,.16),core=new THREE.Vector3(0,.55,1.1).multiplyScalar(s).applyAxisAngle(UP,lyaw).add(plate);
+     const plate=new THREE.Vector3(qx,gy+1.72,qz).addScaledVector(toRoad,.16),core=lanternFlameAt(plate.x,plate.y,plate.z,lyaw,s);
      anchor.position.copy(core);cueAt=core.clone();
      // A cairn of field stones round the post's foot, three more laid on the ring.
      const rr=stream(i*31+7);
@@ -333,7 +334,7 @@ export function frostRequestLook(opts:FrostRequestOptions):RequestLook{
      poolDiscs.push(groundDisc(core.x,core.z,4.2,i,h,lift).translate(0,.01,0));
      kitJobs.push(({props,village,over,vo})=>{
       const b=new StaticBatch(props,`frostlight-guide-lantern-${letter}`),post=new StaticBatch(village,`frostlight-guide-post-${letter}`);
-      b.add('Lantern_Wall',trs(plate.x,plate.y,plate.z,lyaw,s),{override:over,castShadow:false});
+      const lm=trs(plate.x,plate.y,plate.z,lyaw,s);b.add('Lantern_Wall',lm,{override:over,castShadow:false});noteLantern(root,lm,core);
       post.add('Corner_ExteriorWide_Wood',trs(qx,gy-.2,qz,lyaw,1.05),{override:vo});
       root.add(b.build(),post.build());
      });
