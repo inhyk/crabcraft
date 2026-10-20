@@ -196,7 +196,7 @@ function makeWares() {
     bolts: CLOTH_TONES.map((c) => painted(new THREE.CylinderGeometry(0.1, 0.1, 0.56, 12).rotateX(Math.PI / 2), () => lin(c))),
     /** Lengths of cloth hanging over an edge. */
     drapes: CLOTH_TONES.map((c) => painted(new THREE.BoxGeometry(0.5, 0.75, 0.02), () => lin(c))),
-    string: painted(new THREE.BoxGeometry(0.012, 0.3, 0.012), () => lin('#3a2e24')),
+    string: painted(new THREE.BoxGeometry(0.025, 0.3, 0.025), () => lin('#2a211a')),
   };
 }
 
@@ -233,7 +233,7 @@ export function dressMarket(o: MarketOptions, plan: MarketPlan = planMarket(o)):
           ware(pick(rt, FISH), put(fx, y + 0.17 + j * 0.05, zc + (rt() - 0.5) * 0.1, Math.PI / 2 + (rt() - 0.5) * 0.6 + j * Math.PI));
         }
       } else {
-        for (let i = 0; i < Math.round(w * 16); i++) ware(pick(rt, SHELLS), put(x0 + 0.08 + rt() * (w - 0.16), y + 0.17 + rt() * 0.05, zc + (rt() - 0.5) * 0.42, rt() * 6.3));
+        for (let i = 0; i < Math.round(w * 11); i++) ware(pick(rt, SHELLS), put(x0 + 0.1 + rt() * (w - 0.2), y + 0.15 + rt() * 0.03, zc + (rt() - 0.5) * 0.38, rt() * 6.3, 1.3));
         batch.put(k.props, 'Vase_4', put(x1 - 0.12, y, zc - 0.15, rt() * 6, 0.6), P, null, false);
       }
     } else if (trade === 'cloth') {
@@ -252,13 +252,12 @@ export function dressMarket(o: MarketOptions, plan: MarketPlan = planMarket(o)):
   };
   /** Goods hung from a canopy's front rail at height y, depth z. */
   const hung = (put: ReturnType<typeof at>, trade: Trade, y: number, x0: number, x1: number, z: number) => {
-    if (trade !== 'fish' && trade !== 'shells' && trade !== 'cloth') return;
+    if (trade !== 'fish' && trade !== 'cloth') return;
     const n = trade === 'cloth' ? 2 : 3;
     for (let i = 0; i < n; i++) {
       const x = x0 + (i + 0.5) * ((x1 - x0) / n);
       ware(STRING, put(x, y - 0.15, z, 0));
       if (trade === 'fish') ware(pick(rt, FISH), put(x, y - 0.3, z, Math.PI / 2 + (rt() - 0.5) * 0.4).multiply(hang));
-      else if (trade === 'shells') for (let j = 0; j < 4; j++) ware(pick(rt, SHELLS), put(x, y - 0.33 - j * 0.11, z, rt() * 6));
       else ware(pick(rt, DRAPES), put(x, y - 0.68, z, (rt() - 0.5) * 0.3), true);
     }
   };

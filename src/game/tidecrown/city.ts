@@ -176,6 +176,37 @@ function waterSheet(along: 'x' | 'y', threads: number, speed: number): THREE.Mes
   return m;
 }
 
+/** Foam churning in a band where a curtain of water lands: rings from r0 to r1 round each centre, one draw. */
+function foamRing(rings: { at: THREE.Vector3; r0: number; r1: number }[]): THREE.Mesh {
+  const g = mergeGeometries(rings.map(({ at, r0, r1 }) => {
+    const ring = new THREE.RingGeometry(r0, r1, 64, 1).rotateX(-Math.PI / 2);
+    const p = ring.getAttribute('position'), edge = new Float32Array(p.count);
+    for (let i = 0; i < p.count; i++) edge[i] = (Math.hypot(p.getX(i), p.getZ(i)) - r0) / (r1 - r0);
+    ring.setAttribute('aEdge', new THREE.BufferAttribute(edge, 1));
+    return ring.translate(at.x, at.y, at.z);
+  }))!;
+  const m = new THREE.MeshBasicMaterial({ name: 'tc-foam-ring', color: '#d6e6e3', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  addPatch(m, 'tc-foam-ring', (shader) => {
+    shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float aEdge;\nvarying float vFrE;\nvarying vec2 vFrW;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvFrE = aEdge;\nvFrW = position.xz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying float vFrE;\nvarying vec2 vFrW;\nuniform float uTime;\n${GLSL_NOISE}`)
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          float churn = cc_vnoise(vFrW * 3.1 + vec2(uTime * 1.1, -uTime * 0.8)) * 0.6 + cc_vnoise(vFrW * 7.0 - uTime * 1.7) * 0.4;
+          float band = smoothstep(0.0, 0.35, vFrE) * (1.0 - smoothstep(0.45, 1.0, vFrE));
+          diffuseColor.a = band * smoothstep(0.32, 0.62, churn + (1.0 - vFrE) * 0.15) * 0.62;
+        }`,
+      );
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.name = 'tc-foam-ring';
+  mesh.renderOrder = 2;
+  return mesh;
+}
+
 /** A ribbon of falling water along a path (width across, uv.y from top to foot). */
 function waterRibbon(pts: THREE.Vector3[], width: number, side: THREE.Vector3): THREE.BufferGeometry {
   const pos: number[] = [], uv: number[] = [], idx: number[] = [];
@@ -196,10 +227,10 @@ function waterRibbon(pts: THREE.Vector3[], width: number, side: THREE.Vector3): 
 }
 
 /** White water where falling water lands: churning foam on discs (uv 0.5 at the centre), all splashes in one draw. */
-function foamSplash(discs: { at: THREE.Vector3; r: number; sx?: number }[], color = '#f2fbf8', strength = 0.95): THREE.Mesh {
+function foamSplash(discs: { at: THREE.Vector3; r: number; sx?: number }[]): THREE.Mesh {
   const g = mergeGeometries(discs.map(({ at, r, sx = 1 }) => new THREE.CircleGeometry(r, 20).rotateX(-Math.PI / 2).scale(sx, 1, 1).translate(at.x, at.y, at.z)));
-  const m = new THREE.MeshBasicMaterial({ name: 'tc-foam', color, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-  addPatch(m, `tc-foam-${strength}`, (shader) => {
+  const m = new THREE.MeshBasicMaterial({ name: 'tc-foam', color: '#f2fbf8', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  addPatch(m, 'tc-foam', (shader) => {
     shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFoUv;\nvarying vec2 vFoW;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvFoUv = uv;\nvFoW = position.xz;');
     shader.fragmentShader = shader.fragmentShader
@@ -211,7 +242,7 @@ function foamSplash(discs: { at: THREE.Vector3; r: number; sx?: number }[], colo
           float r = length(vFoUv - 0.5) * 2.0;
           float churn = cc_vnoise(vFoW * 2.6 + vec2(uTime * 1.3, -uTime * 0.9)) * 0.6 + cc_vnoise(vFoW * 6.0 - uTime * 2.1) * 0.4;
           float ring = 0.5 + 0.5 * sin(r * 9.0 - uTime * 6.0 + churn * 4.0);
-          diffuseColor.a = (1.0 - smoothstep(0.35, 1.0, r)) * smoothstep(0.3, 0.6, churn * 0.7 + ring * 0.3 + (1.0 - r) * 0.35) * ${strength.toFixed(2)};
+          diffuseColor.a = (1.0 - smoothstep(0.35, 1.0, r)) * smoothstep(0.3, 0.6, churn * 0.7 + ring * 0.3 + (1.0 - r) * 0.35) * 0.95;
         }`,
       );
   });
@@ -632,7 +663,7 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
   ]));
 
   // Fountains: two basins of still water, the eight jets and the thin spill from the upper bowl, foam where they land.
-  const jets: THREE.BufferGeometry[] = [], spills: THREE.BufferGeometry[] = [], landing: { at: THREE.Vector3; r: number }[] = [];
+  const jets: THREE.BufferGeometry[] = [], spills: THREE.BufferGeometry[] = [], rings: { at: THREE.Vector3; r0: number; r1: number }[] = [];
   for (const f of TC_LANDMARKS.filter((l) => l.piece === 'TC_Fountain')) {
     const y = height(f.x, f.z) - 0.12, s = f.scale;
     const basin = (r: number, sides: number, yy: number, rot: number) => {
@@ -656,24 +687,19 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
       const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.07, 5, false);
       g.scale(s, s, s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
       jets.push(g);
-      const end = pts[pts.length - 1].clone().multiplyScalar(s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
-      landing.push({ at: end.setY(y + 0.87 * s), r: 0.32 * s });
     }
     // The spill: a sheet falling from the upper bowl's lip, flaring a little as it drops, into a ring of foam.
     const spill = new THREE.CylinderGeometry(3.12, 3.4, 1.75, 40, 1, true);
     spill.translate(0, 2.66 - 0.875, 0).scale(s, s, s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
     spills.push(spill);
-    for (let i = 0; i < 30; i++) {
-      const a = (i / 30) * Math.PI * 2;
-      landing.push({ at: new THREE.Vector3(f.x + Math.cos(a) * 3.45 * s, y + 0.87 * s, f.z + Math.sin(a) * 3.45 * s), r: 0.5 * s });
-    }
+    rings.push({ at: new THREE.Vector3(f.x, y + 0.87 * s, f.z), r0: 3.0 * s, r1: 4.15 * s });
   }
   if (jets.length) {
     const jet = new THREE.Mesh(mergeGeometries(jets), waterSheet('x', 3, 2.4));
     const sheet = new THREE.Mesh(mergeGeometries(spills), waterSheet('y', 90, 1.4));
     jet.name = sheet.name = 'tc-fountain-jet';
     jet.renderOrder = sheet.renderOrder = 2;
-    group.add(jet, sheet, foamSplash(landing, '#c4dcda', 0.5));
+    group.add(jet, sheet, foamRing(rings));
   }
   lap('water');
 
