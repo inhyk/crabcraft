@@ -1076,6 +1076,7 @@ export class Game {
   }
 
   talkTo(u: Unit): void {
+    if(this.world2.inTidecrown&&this.world2.tidecrownPeople?.talkTo(u))return;
     if(this.server){this.server.talk(u);return;}
     if (u.kind === 'townsfolk') {
       (u.ctrl as Townsfolk).faceToward(this.player.unit);

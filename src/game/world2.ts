@@ -34,6 +34,7 @@ import {buildStarHeights,starSurfaceHeight} from './world2Height';
 import {layoutStarhaven,starCrystalGarden} from './world2Colliders';
 import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
 import type {TidecrownIsland} from './tidecrown/island';
+import type {TidecrownResidents} from './tidecrownResidents';
 
 /** Everything entering Tidecrown changes, restored as it was when the player leaves. */
 interface TidecrownSaved {
@@ -439,7 +440,7 @@ export class HiddenWorld {
   }
   update(dt:number,time:number,observation?:{flags:Readonly<Record<string,boolean>>}) {
     if(this.tidecrownSaved&&this.tidecrown){
-      const p=this.game.player.unit.pos,fog=this.game.scene.fog;this.tidecrown.update(time,p.x,p.z,this.game.camera);
+      const p=this.game.player.unit.pos,fog=this.game.scene.fog;this.tidecrown.update(time,p.x,p.z,this.game.camera);this.tidecrownPeople?.update(dt);
       if(fog instanceof THREE.FogExp2){fog.color.copy(this.tidecrown.fog.color);fog.density=this.tidecrown.fog.density;}
       return;
     }
@@ -507,6 +508,7 @@ export class HiddenWorld {
   }
   /** Tidecrown, the capital hub: built on first use, laid over the current chapter (the quest chapter never changes). */
   tidecrown?:TidecrownIsland;
+  tidecrownPeople?:TidecrownResidents;
   private tidecrownSaved:TidecrownSaved|null=null;
   private tidecrownLoading:Promise<boolean>|null=null;
   /** Milliseconds the last entry took, build included on the first. */
@@ -530,6 +532,11 @@ export class HiddenWorld {
           const {TidecrownIsland}=await import('./tidecrown/island');
           const island=new TidecrownIsland();await island.build(g.engine.renderer,g.engine.quality);
           g.scene.add(island.root);this.tidecrown=island;
+        }
+        if(!this.tidecrownPeople){
+          const {TidecrownResidents}=await import('./tidecrownResidents');
+          const people=new TidecrownResidents(g,this.tidecrown);this.tidecrownPeople=people;
+          try{await people.load();}catch(error){this.tidecrownPeople=undefined;throw error;}
         }
         if(g.dungeons?.active)return false;
         this.applyTidecrown(this.tidecrown);await this.tidecrown.settle();this.tidecrownEntryMs=performance.now()-t0;return true;
@@ -566,14 +573,14 @@ export class HiddenWorld {
     if(fog){fog.color.copy(island.fog.color);fog.density=island.fog.density;}
     g.player.setTarget(null);g.player.unit.teleport(w,island.spawn.x,island.spawn.z,island.spawnYaw);g.follow.cut();g.follow.yaw=island.spawnYaw+Math.PI;
     g.hud.messages.banner(()=>t('타이드크라운','Tidecrown'),()=>t('왕관 항구의 수도 · 크라운셸 성','Capital of the crown harbour · Crownshell Keep'),'zone');
-    g.hud.minimap.setSnapshot(island.map);
+    g.hud.minimap.setSnapshot(island.map);this.tidecrownPeople?.show();
   }
   /** Leaves Tidecrown onto `arrival` (a World I point and the way to face), or else back to where the player stood before. */
   exitTidecrown(arrival?:{x:number;z:number;yaw:number}){if(!this.tidecrownSaved)return false;this.leaveTidecrown(arrival);return true;}
   /** Back to exactly where the player stood before Tidecrown, unless an arrival is given. */
   private leaveTidecrown(arrival?:{x:number;z:number;yaw:number}){
     const s=this.tidecrownSaved;if(!s)return;
-    this.tidecrownSaved=null;
+    this.tidecrownSaved=null;this.tidecrownPeople?.hide();
     const g=this.game,w=g.world,scene=g.scene;
     if(this.tidecrown){this.tidecrown.root.visible=false;this.tidecrown.leave();}
     [this.baseRoot,this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root].forEach((r,i)=>r.visible=s.roots[i]);
@@ -590,7 +597,7 @@ export class HiddenWorld {
     try{g.hud.minimap.setSnapshot(c===1||!this.rendered?g.takeMapSnapshot():snapshotMap(g.engine.renderer,scene,bounds,[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));}catch{ /* Keep the old map. */ }
   }
   dispose(){
-    this.leaveTidecrown();if(this.tidecrown){this.game.scene.remove(this.tidecrown.root);this.tidecrown.dispose();this.tidecrown=undefined;}
+    this.leaveTidecrown();this.tidecrownPeople?.dispose();if(this.tidecrown){this.game.scene.remove(this.tidecrown.root);this.tidecrown.dispose();this.tidecrown=undefined;}
     this.ambience.dispose();this.fourth.disposeSnow();
     this.showEpilogue();this.game.scene.remove(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
