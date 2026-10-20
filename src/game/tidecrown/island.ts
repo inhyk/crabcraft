@@ -6,8 +6,8 @@ import { buildFoliage, type FoliageResult } from '../../world/foliage';
 import { loadKit } from '../../world/kit';
 import { buildTidecrownCity, type TidecrownCity } from './city';
 import { loadTidecrownKit } from './houses';
-import { WORLD_UNIFORMS } from '../../world/materials';
-import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, type TidecrownAtmosphere } from './atmosphere';
+import { addPatch, WORLD_UNIFORMS } from '../../world/materials';
+import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, TC_SHADE_LIFT, type TidecrownAtmosphere } from './atmosphere';
 import { buildHorizon } from './horizon';
 import { buildGulls } from './gulls';
 import { type GroundLight, paintGroundLight } from './groundLight';
@@ -179,6 +179,21 @@ export class TidecrownIsland {
     }
     this.foliage = buildFoliage(nature, scatter, quality);
     this.foliage.group.name = 'tidecrown-foliage';
+    // Tidecrown's own clones of the leaf and bark materials take the forest's shade lift (atmosphere.ts).
+    const lifted = new Set<THREE.Material>();
+    this.foliage.group.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      for (const mat of Array.isArray(m) ? m : m ? [m] : []) {
+        if (lifted.has(mat) || !/^(Leaves|Bark)/.test(mat.name)) continue;
+        lifted.add(mat);
+        addPatch(mat, 'tc-shade-lift', (shader) => {
+          shader.uniforms.uTcLift = TC_SHADE_LIFT;
+          shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', '#include <common>\nuniform float uTcLift;')
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * uTcLift;');
+        });
+      }
+    });
     this.root.add(this.foliage.group);
     this.info.nature = { ...this.foliage.counts };
     step('foliage', t0);

@@ -13,6 +13,8 @@ export const TC_SUN_DIR = new THREE.Vector3(-0.83, 0.276, 0.48).normalize();
 /** Haze: lilac pearl looking away from the sun, warm gold looking into it. */
 export const TC_FOG = { color: new THREE.Color('#dcd6e6'), toward: new THREE.Color('#f4d6ae'), density: 0.0006 } as const;
 export const TC_ENV_INTENSITY = 0.24;
+/** Extra sky in the pines' shade (leaves and bark add their albedo times this), raised near the arrival. */
+export const TC_SHADE_LIFT = { value: 0 };
 
 export interface TidecrownAtmosphere {
   group: THREE.Group;
@@ -186,7 +188,9 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
       sun.target.updateMatrixWorld();
       lanternLight.intensity = 520 * (0.9 + 0.1 * Math.sin(time * 1.3));
       // Under the pines by the arrival the shade gets a little more sky, so the first view is not black on orange.
-      hemi.intensity = 0.6 + 0.22 * THREE.MathUtils.smoothstep(playerZ, 290, 318);
+      const forest = THREE.MathUtils.smoothstep(playerZ, 290, 318);
+      hemi.intensity = 0.6 + 0.22 * forest;
+      TC_SHADE_LIFT.value = 0.3 * forest;
     },
     dispose() {
       envRT?.dispose();
