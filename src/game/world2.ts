@@ -535,7 +535,7 @@ export class HiddenWorld {
           g.scene.add(island.root);this.tidecrown=island;
         }
         if(g.dungeons?.active)return false;
-        this.applyTidecrown(this.tidecrown);await this.tidecrown.settle();this.tidecrownEntryMs=performance.now()-t0;return true;
+        this.applyTidecrown(this.tidecrown);await Promise.all([this.tidecrown.settle(),this.warmTidecrownFolk()]);this.tidecrownEntryMs=performance.now()-t0;return true;
       }finally{veil.hide();}
     };
     this.tidecrownLoading=run().finally(()=>{this.tidecrownLoading=null;});
@@ -577,6 +577,18 @@ export class HiddenWorld {
     g.player.setTarget(null);g.player.unit.teleport(w,island.spawn.x,island.spawn.z,island.spawnYaw);g.follow.cut();g.follow.yaw=island.spawnYaw+Math.PI;
     g.hud.messages.banner(()=>t('타이드크라운','Tidecrown'),()=>t('왕관 항구의 수도 · 크라운셸 성','Capital of the crown harbour · Crownshell Keep'),'zone');
     g.hud.minimap.setSnapshot(island.map);
+  }
+  /**
+   * The strolling townsfolk's shaders for the capital's lights, fog and sky, compiled behind the fade: each crab's
+   * own shell (and the undead's rust) would otherwise link mid-walk, the first time it comes near in full detail.
+   * Compiled into a render target like the effect chain's, so the variant is the one drawn (linear, no tone mapping).
+   */
+  private warmTidecrownFolk():Promise<unknown>{
+    const g=this.game,r=g.engine.renderer,rt=new THREE.WebGLRenderTarget(1,1),prev=r.getRenderTarget();
+    r.setRenderTarget(rt);
+    const ready=Promise.all(g.townsfolk.filter(f=>!f.unit.hidden).map(f=>r.compileAsync(f.unit.rig.root,g.camera,g.scene)));
+    r.setRenderTarget(prev);
+    return ready.catch(()=>{}).finally(()=>rt.dispose());
   }
   /** Leaves Tidecrown onto `arrival` (a World I point and the way to face), or else back to where the player stood before. */
   exitTidecrown(arrival?:{x:number;z:number;yaw:number}){if(!this.tidecrownSaved)return false;this.leaveTidecrown(arrival);return true;}
