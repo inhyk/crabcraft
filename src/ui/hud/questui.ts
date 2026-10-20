@@ -189,7 +189,7 @@ export class DialogueWindow {
     this.nameEl = h('div', { class: 'dlg-name' });
     this.titleEl = h('div', { class: 'dlg-title' });
     this.textEl = h('div', { class: 'dlg-text' });
-    this.textEl.addEventListener('click', () => (this.shown = this.total));
+    this.textEl.addEventListener('click', () => this.skipTyping());
     this.body = h('div', { class: 'dlg-body' });
     this.buttonsEl = h('div', { class: 'dlg-buttons' });
     this.el = h(
