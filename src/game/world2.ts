@@ -581,14 +581,15 @@ export class HiddenWorld {
   /**
    * The strolling townsfolk's shaders for the capital's lights, fog and sky, compiled behind the fade: each crab's
    * own shell (and the undead's rust) would otherwise link mid-walk, the first time it comes near in full detail.
-   * Compiled into a render target like the effect chain's, so the variant is the one drawn (linear, no tone mapping).
+   * Compiled into a render target like the effect chain's, so the variant is the one drawn (linear, no tone mapping);
+   * the fade waits for the links at most 1.5 s.
    */
   private warmTidecrownFolk():Promise<unknown>{
     const g=this.game,r=g.engine.renderer,rt=new THREE.WebGLRenderTarget(1,1),prev=r.getRenderTarget();
     r.setRenderTarget(rt);
     const ready=Promise.all(g.townsfolk.filter(f=>!f.unit.hidden).map(f=>r.compileAsync(f.unit.rig.root,g.camera,g.scene)));
-    r.setRenderTarget(prev);
-    return ready.catch(()=>{}).finally(()=>rt.dispose());
+    r.setRenderTarget(prev);rt.dispose();
+    return Promise.race([ready.catch(()=>{}),new Promise(res=>setTimeout(res,1500))]);
   }
   /** Leaves Tidecrown onto `arrival` (a World I point and the way to face), or else back to where the player stood before. */
   exitTidecrown(arrival?:{x:number;z:number;yaw:number}){if(!this.tidecrownSaved)return false;this.leaveTidecrown(arrival);return true;}
