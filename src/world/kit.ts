@@ -131,25 +131,33 @@ export class StaticBatch {
     entry[castShadow ? 0 : 1].geos.push(g);
   }
 
-  build(): THREE.Group {
-    const group = new THREE.Group();
-    group.name = this.name;
+  /** One merged geometry per material and shadow flag; empties the batch. */
+  merge(): { material: THREE.Material; castShadow: boolean; geometry: THREE.BufferGeometry }[] {
+    const out: { material: THREE.Material; castShadow: boolean; geometry: THREE.BufferGeometry }[] = [];
     for (const [mat, entries] of this.lists) {
       for (const e of entries) {
         if (!e.geos.length) continue;
         const geo = mergeGeometries(harmonise(e.geos), false);
-        if (!geo) continue;
-        geo.computeBoundingSphere();
-        geo.computeBoundingBox();
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.name = `${this.name}:${mat.name}`;
-        mesh.castShadow = e.shadow;
-        mesh.receiveShadow = true;
-        mesh.matrixAutoUpdate = false;
-        group.add(mesh);
+        if (geo) out.push({ material: mat, castShadow: e.shadow, geometry: geo });
       }
     }
     this.lists.clear();
+    return out;
+  }
+
+  build(): THREE.Group {
+    const group = new THREE.Group();
+    group.name = this.name;
+    for (const { material: mat, castShadow, geometry: geo } of this.merge()) {
+      geo.computeBoundingSphere();
+      geo.computeBoundingBox();
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = `${this.name}:${mat.name}`;
+      mesh.castShadow = castShadow;
+      mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
+      group.add(mesh);
+    }
     return group;
   }
 }

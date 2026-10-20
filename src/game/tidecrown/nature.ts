@@ -21,7 +21,8 @@ class Placements {
   }
 }
 
-export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter {
+/** `built` marks ground the city stands on (houses, landmarks, squares, canals): nothing grows there. */
+export function scatterTidecrownNature(h: Height, col: Collision, built: (x: number, z: number) => boolean = () => false): NatureScatter {
   const R = rng(5207), N = new Simplex(91);
   const trees = new Placements(), small = new Placements();
   const counts: Record<string, number> = {};
@@ -63,7 +64,7 @@ export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter
       }
       d *= 0.45 + 0.75 * n;
       if (roll > d) continue;
-      if (inView(jx, jz) || structures(jx, jz)) continue;
+      if (inView(jx, jz) || structures(jx, jz) || built(jx, jz)) continue;
       tcPaving(jx, jz, pave);
       if (pave.clear < 3) continue;
       const y = h(jx, jz);
@@ -85,7 +86,7 @@ export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter
     const wd = wallDist(x, z);
     if (wd > -12) continue;
     if (roll > 0.35 + 0.4 * N.fbm(x / 30 + 5, z / 30, 2)) continue;
-    if (structures(x, z)) continue;
+    if (structures(x, z) || built(x, z)) continue;
     const y = h(x, z);
     if (y < 1.8 || slope(x, z) < 0.8) continue;
     const s = 0.85 + size * 0.55;
@@ -105,14 +106,13 @@ export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter
   for (let t = 96; t <= 158; t += 8.5) for (const side of [-1, 1]) cypress(...tcAxis(t, side * 11), k++);
   for (let t = 167; t <= 199; t += 8) for (const side of [-1, 1]) cypress(...tcAxis(t, side * 13.5), k++);
   for (let t = 214; t <= 234; t += 10) for (const side of [-1, 1]) cypress(...tcAxis(t, side * 17), k++);
-  for (const side of [-1, 1]) for (const t of [8, 20]) cypress(...tcAxis(t, side * 24), k++);
   for (let i = 0; i < 400; i++) {
     const x = -140 + R() * 360, z = -200 + R() * 330, roll = R(), pick = R(), size = R(), turn = R();
     if (roll > 0.18) continue;
     const wd = wallDist(x, z);
     if (wd < 10) continue;
     tcPaving(x, z, pave);
-    if (pave.clear < 6) continue;
+    if (pave.clear < 6 || built(x, z) || built(x + 2.5, z) || built(x - 2.5, z) || built(x, z + 2.5) || built(x, z - 2.5)) continue;
     const y = h(x, z);
     if (slope(x, z) < 0.86) continue;
     const s = 0.8 + size * 0.45;
@@ -131,7 +131,7 @@ export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter
     const underWall = wd < -4 && wd > -12;
     const forest = c.south > c.north && roll < 0.3;
     const riverside = c.d < 16 && roll < 0.4;
-    if (!(verge || underWall || forest || riverside) || pave.clear < 0.6 || wd > -4) continue;
+    if (!(verge || underWall || forest || riverside) || pave.clear < 0.6 || wd > -4 || built(x, z)) continue;
     if (structures(x, z) && !verge) continue;
     const y = h(x, z);
     if (y < 1.2 || slope(x, z) < 0.74) continue;
@@ -146,7 +146,7 @@ export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter
     tcPaving(x, z, pave);
     if (pave.clear < 0.6) continue;
     const wd = wallDist(x, z);
-    if (wd > -3 && wd < 3) continue;
+    if ((wd > -3 && wd < 3) || built(x, z)) continue;
     const y = h(x, z);
     if (y < 1.4 || slope(x, z) < 0.78) continue;
     const forest = c.south > c.north && Math.hypot(x - cx, z - cz) > 14;
@@ -170,7 +170,7 @@ export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter
     if (y < -3) continue;
     tcPaving(x, z, pave);
     if (pave.clear < 0.4) continue;
-    if (structures(x, z) && Math.abs(wallDist(x, z)) < 8) continue;
+    if ((structures(x, z) && Math.abs(wallDist(x, z)) < 8) || built(x, z)) continue;
     let s = 0;
     if (sl < 0.72 && sl > 0.42 && roll < 0.5) s = 1.3 + size * 1.8;
     // Shore rocks lie at the waterline, never up a sea cliff's face.
@@ -207,7 +207,7 @@ export function scatterTidecrownNature(h: Height, col: Collision): NatureScatter
     const near = Math.min(pave.clear, Math.hypot(x - cx, z - cz));
     if (roll > 1.1 - near / 60) continue;
     const wd = wallDist(x, z);
-    if (wd > -2 && wd < 4) continue;
+    if ((wd > -2 && wd < 4) || built(x, z)) continue;
     const y = h(x, z);
     if (y < 1 || slope(x, z) < 0.8) continue;
     const patch = N.fbm(x / 9, z / 9 + 70, 2);

@@ -2,13 +2,16 @@
 // entering the hub never waits on a top-down shot of the whole island.
 import { TC_BOUNDS, TC_CITY_WALL, TC_KEEP, TC_LEVEL, TC_T, tcAxis } from '../../sim/world/tidecrownGround';
 import type { MapSnapshot } from '../snapshots';
+import { TC_CANALS } from '../../sim/world/tidecrownCity';
+import type { CityLayout } from './cityLayout';
+import { TC_LANDMARKS } from './cityPlan';
 import { TC_SPANS, TC_PIECES, wardCorners } from './layout';
 import type { TidecrownTerrain } from './terrain';
 
 const rgb = (hex: string) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 const GRASS = rgb('#6c9944'), SAND = rgb('#dcc38f'), DIRT = rgb('#9b7752'), COBBLE = rgb('#c4b8a0'), ROCK = rgb('#aaa395'), SHALLOW = rgb('#3fb9b0'), DEEP = rgb('#17507e');
 
-export function paintTidecrownMap(terrain: TidecrownTerrain, pines: readonly [number, number][]): MapSnapshot {
+export function paintTidecrownMap(terrain: TidecrownTerrain, pines: readonly [number, number][], city?: CityLayout): MapSnapshot {
   const minX = TC_BOUNDS.minX - 40, minZ = TC_BOUNDS.minZ, size = TC_BOUNDS.maxZ - TC_BOUNDS.minZ, px = 512;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = px;
@@ -55,6 +58,28 @@ export function paintTidecrownMap(terrain: TidecrownTerrain, pines: readonly [nu
     pts.forEach(([x, z], i) => (i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z))));
     g.closePath(); g.lineWidth = width; g.strokeStyle = color; g.stroke();
   };
+  if (city) {
+    // The districts: canals, the quay and piers, roofs in the city's blue, landmarks in limestone.
+    const fill = (pts: readonly (readonly number[])[], color: string) => {
+      g.beginPath();
+      pts.forEach(([x, z], i) => (i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z))));
+      g.closePath(); g.fillStyle = color; g.fill();
+    };
+    g.lineCap = 'butt';
+    for (const c of TC_CANALS) {
+      g.beginPath();
+      c.points.forEach(([x, z], i) => (i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z))));
+      g.lineWidth = (c.width / size) * px; g.strokeStyle = '#3aa6b4'; g.stroke();
+    }
+    for (const q of city.harbour.pieces) {
+      const w = q.walk;
+      if (!w) continue;
+      const c = Math.cos(q.yaw), sn = Math.sin(q.yaw);
+      fill([[-w.hx, w.hz], [w.hx, w.hz], [w.hx, -w.hz], [-w.hx, -w.hz]].map(([lx, lz]) => [q.x + c * (lx + w.lx) + sn * (lz + w.lz), q.z - sn * (lx + w.lx) + c * (lz + w.lz)]), q.piece === 'TC_Pier_10' || q.ramp ? '#8f6c4a' : '#d9cfba');
+    }
+    for (const z of city.zones) for (const l of z.plan.lots) fill(l.corners, '#3f5f93');
+    for (const l of TC_LANDMARKS) fill(l.keep.map(([x, z]) => [l.x + (x - l.x) * 0.82, l.z + (z - l.z) * 0.82]), '#efe6d2');
+  }
   ring(TC_CITY_WALL, 3.2, '#efe3c6');
   // The ward ring projects to its gate between the front corners.
   const ward = wardCorners();

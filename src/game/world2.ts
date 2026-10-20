@@ -532,7 +532,7 @@ export class HiddenWorld {
           g.scene.add(island.root);this.tidecrown=island;
         }
         if(g.dungeons?.active)return false;
-        this.applyTidecrown(this.tidecrown);this.tidecrownEntryMs=performance.now()-t0;return true;
+        this.applyTidecrown(this.tidecrown);await this.tidecrown.settle();this.tidecrownEntryMs=performance.now()-t0;return true;
       }finally{veil.hide();}
     };
     this.tidecrownLoading=run().finally(()=>{this.tidecrownLoading=null;});
@@ -575,7 +575,7 @@ export class HiddenWorld {
     const s=this.tidecrownSaved;if(!s)return;
     this.tidecrownSaved=null;
     const g=this.game,w=g.world,scene=g.scene;
-    if(this.tidecrown)this.tidecrown.root.visible=false;
+    if(this.tidecrown){this.tidecrown.root.visible=false;this.tidecrown.leave();}
     [this.baseRoot,this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root].forEach((r,i)=>r.visible=s.roots[i]);
     w.heightAt=s.heightAt;w.resolveCollision=s.resolveCollision;w.raycastSolid=s.raycastSolid;
     for(const p of s.pois){p.poi.position.copy(p.position);p.poi.yaw=p.yaw;}
