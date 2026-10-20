@@ -17,6 +17,7 @@ import type { TidecrownLod } from './lod';
 import { districtOverrides, type TidecrownMaterials } from './materials';
 import { dressMarket } from './marketStalls';
 import { worldUV } from './structures';
+import {fountainJetPoints,fountainSpillPoints} from './fountainGeometry';
 
 type Height = (x: number, z: number) => number;
 
@@ -109,7 +110,7 @@ function fallingWater(speed = 1.6): THREE.MeshBasicMaterial {
           float streak = cc_vnoise(vec2(vFwUv.x * 9.0, vFwUv.y * 2.5 - uTime * ${speed.toFixed(2)}));
           float fine = cc_vnoise(vec2(vFwUv.x * 23.0, vFwUv.y * 6.0 - uTime * ${(speed * 1.7).toFixed(2)}));
           diffuseColor.rgb *= mix(vec3(0.55, 0.82, 0.86), vec3(1.0), smoothstep(0.35, 0.8, streak * 0.7 + fine * 0.3));
-          diffuseColor.a = 0.42 + 0.45 * smoothstep(0.3, 0.75, streak) + 0.2 * smoothstep(0.85, 1.0, vFwUv.y);
+          diffuseColor.a *= 0.42 + 0.45 * smoothstep(0.3, 0.75, streak) + 0.2 * smoothstep(0.85, 1.0, vFwUv.y);
         }`,
       );
   });
@@ -327,6 +328,12 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   const L = mats.TC_Limestone, D = mats.TC_LimestoneDark, G = mats.TC_Gold;
   const stone = [new StaticBatch(kits.city, 'tidecrown-stone-west'), new StaticBatch(kits.city, 'tidecrown-stone-centre'), new StaticBatch(kits.city, 'tidecrown-stone-east')];
   const sector = (x: number) => stone[x < 0 ? 0 : x < 120 ? 1 : 2];
+  // These used to block movement with no visible object. Share the collision plan, position, yaw and footprint.
+  for(const k of plan.safetyKerbs){
+    const yaw=Math.atan2(k.s,k.c),b=sector(k.x);
+    b.addGeometry(frameBox(k.x,k.z,yaw,0,k.y1-.66,0,k.hx*2,1.08,k.hz*2),L,null);
+    b.addGeometry(frameBox(k.x,k.z,yaw,0,k.y1-.06,0,k.hx*2,.12,k.hz*2),D,null);
+  }
   for (const w of plan.walls.runs) {
     const len = TC_RETAINING.len * w.sx, b = sector(w.x);
     b.addGeometry(frameBox(w.x, w.z, w.yaw, 0, w.top + 0.5, 0.5, len, 1.0, 0.6), L, null);
@@ -504,30 +511,21 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
     const b0 = new THREE.Mesh(basin(6.45, 8, 0.85, Math.PI / 8), water), b1 = new THREE.Mesh(basin(2.8, 16, 2.55, 0), water);
     b0.name = b1.name = 'tc-fountain-water';
     group.add(b0, b1);
-    const spouts: [number, number, number, number, number, number][] = [[0.746, 1.802], [1.802, 0.746], [1.802, -0.746], [0.746, -1.802], [-0.746, -1.802], [-1.802, -0.746], [-1.802, 0.746], [-0.746, 1.802]].map(([x, z]) => {
-      const l = Math.hypot(x, z);
-      return [x, 1.55, z, (x / l) * 0.93, 0.33, (z / l) * 0.93];
-    });
-    for (const [x, yy, z, dx, dy, dz] of spouts) {
-      const pts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 12; i++) {
-        const t = i / 12, d = 3.4 * t;
-        pts.push(new THREE.Vector3(x + dx * d, yy + dy * d * 1.2 + 1.1 * t - 1.9 * t * t, z + dz * d));
-      }
-      const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.07, 5, false);
-      g.scale(s, s, s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
-      jets.push(g);
+    const spouts=[[0.746,1.802],[1.802,0.746],[1.802,-0.746],[0.746,-1.802],[-0.746,-1.802],[-1.802,-0.746],[-1.802,0.746],[-0.746,1.802]];
+    for(const [x,z] of spouts){
+      const g=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(fountainJetPoints(x,z)),16,.045,5,false);
+      g.scale(s,s,s).applyMatrix4(trs(f.x,y,f.z,f.yaw));jets.push(g);
     }
-    const spill = new THREE.CylinderGeometry(3.12, 3.32, 1.75, 32, 1, true);
-    spill.translate(0, 2.66 - 0.875, 0).scale(s, s, s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
-    jets.push(spill);
+    for(let i=0;i<16;i++){
+      const a=i/16*Math.PI*2;
+      const spill=waterRibbon(fountainSpillPoints(a),.16,new THREE.Vector3(-Math.sin(a),0,Math.cos(a)));
+      spill.scale(s,s,s).applyMatrix4(trs(f.x,y,f.z,f.yaw));jets.push(spill);
+    }
   }
-  for (const g of jets) {
-    const m = new THREE.Mesh(g, falls);
-    m.name = 'tc-fountain-jet';
-    m.renderOrder = 2;
-    group.add(m);
-  }
+  const fountainWater=fallingWater(2.1);fountainWater.opacity=.62;
+  const fountainStreams=new StaticBatch(kits.city,'tc-fountain-streams');
+  for(const g of jets){fountainStreams.addGeometry(g,fountainWater,null,false);g.dispose();}
+  group.add(fountainStreams.build());
   lap('water');
 
   // Harbour kit: quays, piers, the crane, cargo and the moored gondolas.

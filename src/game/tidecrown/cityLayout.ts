@@ -31,6 +31,8 @@ export interface CityLayout {
   dressing: ReturnType<typeof dressingPlan>;
   /** Every solid the city adds, as boxes. */
   colliders: TidecrownCollider[];
+  /** Drop-edge barriers, rendered from these very same boxes instead of invisible guards. */
+  safetyKerbs:TidecrownCollider[];
   /** Walkable tops: arcade floor, terrace copings, stairs, quays, piers, bridges. */
   surfaces: ReturnType<typeof rectSurface>[];
   /** Ground the houses kept off (for the QA and the scatter). */
@@ -111,6 +113,8 @@ export function planCity(height: Height, placements: TcPlacement[]): CityLayout 
   const houses = Object.fromEntries(Object.keys(TC_DISTRICTS).map((k) => [k, 0])) as Record<DistrictId, number>;
   const zones: CityLayout['zones'] = [];
   const colliders: TidecrownCollider[] = [];
+  const safetyKerbs:TidecrownCollider[]=[];
+  const guard=(list:TidecrownCollider[])=>{safetyKerbs.push(...list);colliders.push(...list);};
   const bounds = (pts: readonly (readonly number[])[], grow: number) => {
     let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
     for (const p of pts) { a = Math.min(a, p[0]); b = Math.max(b, p[0]); c = Math.min(c, p[1]); d = Math.max(d, p[1]); }
@@ -149,9 +153,9 @@ export function planCity(height: Height, placements: TcPlacement[]): CityLayout 
   // Landmarks.
   for (const l of TC_LANDMARKS) {
     const y = height(l.x, l.z);
-    for (const [lx, lz, hx, hz, y0, y1] of l.solids) {
+    for (const [lx, lz, hx, hz, y0, y1, yaw=0] of l.solids) {
       const [x, z] = local(l.x, l.z, l.yaw, lx * l.scale, lz * l.scale);
-      colliders.push(box(x, z, hx * l.scale, hz * l.scale, l.yaw, y + y0 * l.scale, y + y1 * l.scale));
+      colliders.push(box(x, z, hx * l.scale, hz * l.scale, l.yaw+yaw, y + y0 * l.scale, y + y1 * l.scale));
     }
     if (l.piece === 'TC_MarketArcade') surfaces.push(rectSurface(l.x, l.z, 10.6, 5.8, l.yaw, y + 0.24));
     if (l.piece === 'TC_Cathedral') {
@@ -199,7 +203,7 @@ export function planCity(height: Height, placements: TcPlacement[]): CityLayout 
     walks.push(rectSurface(x, z, p.walk.hx + 0.35, p.walk.hz + (level ? 0.35 : 0), p.yaw, p.walk.h, p.walk.gx ?? 0, p.walk.gz ?? 0));
   }
   surfaces.push(...walks);
-  colliders.push(...edgeKerbs(walks, walks, height, 1.5));
+  guard(edgeKerbs(walks, walks, height, 1.5));
   for (const s of harbour.ships) colliders.push(box(s.x, s.z, s.hx, s.hz, s.yaw, -6, 40));
   colliders.push(box(...local(harbour.crane.x, harbour.crane.z, harbour.crane.yaw, 0, -1.2), 2.5, 2.6, harbour.crane.yaw, 2, 18));
   for (const c of harbour.cargo) colliders.push(box(c.x, c.z, 2.5, 1.8, c.yaw, c.y - 1, c.y + 2.2));
@@ -303,14 +307,14 @@ export function planCity(height: Height, placements: TcPlacement[]): CityLayout 
   // (At a coping's ends a step of more than 0.6 at the very edge counts; its back steps up 0.35 from its terrace, so
   // there only a dip of 0.75 under it within 0.8 behind it does.)
   const kerbs = [...edgeKerbs(copings, surfaces, height, 0.6, [0.1], 'ends'), ...edgeKerbs(copings, surfaces, height, 0.75, [0.1, 0.3, 0.5, 0.8], 'back')];
-  colliders.push(...kerbs, ...gapKerbs(copings, surfaces, kerbs, height, 1));
+  guard([...kerbs, ...gapKerbs(copings, surfaces, kerbs, height, 1)]);
   // A stair's flight beside a dip past its balustrades' ends, and the corners where two canal wall tops meet over the
   // cut, likewise.
   const stairKerbs = edgeKerbs(flights, surfaces, height, 1, [0.1, 0.3, 0.5, 0.8]);
-  colliders.push(...stairKerbs, ...gapKerbs(tops, surfaces, colliders.filter((c) => c.hz === 0.6 && c.y0 === TC_CANAL.bed), height, 1));
+  guard([...stairKerbs, ...gapKerbs(tops, surfaces, colliders.filter((c) => c.hz === 0.6 && c.y0 === TC_CANAL.bed), height, 1)]);
 
   return {
-    zones, market, walls, harbour, bridges, canalWalls: canalTops.map(({ ax, az, bx, bz, nx, nz, top }) => ({ ax, az, bx, bz, nx, nz, top })), gondolas, lamps, poles, plants, dressing, colliders, surfaces, reserved, streets, houses,
+    zones, market, walls, harbour, bridges, canalWalls: canalTops.map(({ ax, az, bx, bz, nx, nz, top }) => ({ ax, az, bx, bz, nx, nz, top })), gondolas, lamps, poles, plants, dressing, colliders, safetyKerbs, surfaces, reserved, streets, houses,
     ms: Math.round(performance.now() - t0),
   };
 }
