@@ -77,7 +77,7 @@ try {
     return { ok, ms, steps: i.info.steps, city: i.info.city, worstFrame: +Math.max(...frames).toFixed(1), frames: frames.length, worstSlice: +Math.max(...slices).toFixed(1) };
   });
   assert.equal(entry.ok, true, 'enterTidecrown() resolves true');
-  await p.waitForFunction(() => !document.querySelector('.tidecrown-veil'), null, { timeout: 30000 });
+  await p.waitForFunction(() => !document.querySelector('.tidecrown-loading'), null, { timeout: 30000 });
   const detail = await p.evaluate(() => {
     const i = window.app.current.game.world2.tidecrown, t0 = performance.now();
     i.refine(1e9);
