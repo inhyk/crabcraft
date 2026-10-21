@@ -152,10 +152,10 @@ const walkDistance = (t) => {
   }
   return d;
 };
-// The beast's place beside him: 4 units to his right and 2.4 ahead (at 2.1 times his size its legs reach about
-// 2.5 out, so the two never touch).
-const B_LEFT = -4.0;
-const B_AHEAD = 2.4;
+// The beast's place beside him: 3.8 units to his right, a little ahead, on the road's bank (at 2.1 times his size
+// its legs reach about 2.5 out, so the two never touch).
+const B_LEFT = -3.8;
+const B_AHEAD = 0.8;
 // Sample one continuing walk for both cameras, every frame from `start`.
 const walkPath = (left, ahead, start, end, offset = 0) => {
   const count = Math.round((end - start) * 24);
@@ -229,7 +229,7 @@ const face = {
   hide: HIDE,
   // A tighter bloom, so the LEDs glow without veiling the moustache.
   view: { ...COLD, dof: true, bokeh: 2.2, bloom: { intensity: 0.45, threshold: 1.2, radius: 0.4 } },
-  actors: cast2(D, F1(-12, 0, 4.4).filter((_, i) => i !== 1), YAW1 + PI / 2),
+  actors: cast2(D, F1(-11.5, 0, 3.0).filter((_, i) => i !== 1), YAW1 + PI / 2),
   tracks: {
     dwarf: {
       path: [
@@ -244,9 +244,9 @@ const face = {
       // In from the right across the slope (its head into the frame's right edge at 50.75 s), padding up beside him
       // by 52.6 s; it wheels round to its right to roar.
       path: [
-        { t: 9.4, x: F1(-12, 0, 4.4)[0], z: F1(-12, 0, 4.4)[2] },
-        { t: S(50.75), x: F1(-6.6, 0, 3.0)[0], z: F1(-6.6, 0, 3.0)[2] },
-        { t: S(51.5), x: F1(-5.0, 0, 2.6)[0], z: F1(-5.0, 0, 2.6)[2] },
+        { t: 9.4, x: F1(-11.5, 0, 3.0)[0], z: F1(-11.5, 0, 3.0)[2] },
+        { t: S(50.75), x: F1(-6.4, 0, 1.6)[0], z: F1(-6.4, 0, 1.6)[2] },
+        { t: S(51.5), x: F1(-4.9, 0, 1.0)[0], z: F1(-4.9, 0, 1.0)[2] },
         { t: S(52.6), x: F1(B_LEFT, 0, B_AHEAD)[0], z: F1(B_LEFT, 0, B_AHEAD)[2], yaw: YAW1 },
         ...walkPath(B_LEFT, B_AHEAD, S(53.5), C_WIDE - OPEN).map((k) => ({ ...k, yaw: +(YAW1 - ROAR_TURN * bump(k.t, S(55.15), S(55.7), S(56.45), S(57.0))).toFixed(4) })),
       ],
@@ -267,22 +267,22 @@ const face = {
         { t: 8.2, p: F1(-2.35, 0.82, -0.25), l: F1(0, 0.8, 0.5), fov: 32 },
         // ...to low over his right shoulder at 49.3 s, staring out into the storm; drifting right as the beast comes in.
         { t: S(49.3), p: F1(-0.7, 0.72, -1.25), l: F1(0.15, 0.6, 4.5), fov: 36 },
-        // Drawing back and up off his shoulder to take in the beast on the bank above him.
-        { t: S(50.2), p: F1(-0.85, 0.85, -1.7), l: F1(-0.3, 0.95, 4.5), fov: 40 },
-        { t: S(51.2), p: F1(-1.1, 1.2, -2.7), l: F1(-1.2, 1.65, 4.5), fov: 44 },
-        { t: S(52.6), p: F1(-1.3, 1.5, -3.6), l: F1(-2.0, 2.3, 4.5), fov: 46 },
-        { t: S(53.45), p: F1(-1.45, 1.65, -3.9), l: F1(-2.2, 2.3, 4.5), fov: 46 },
-        // Walking: up behind the two of them and round behind the beast to its right...
-        { t: S(54.4), p: W(-3.0, 2.6, -3.7, S(54.4)), l: W(-2.0, 0.6, 3.0, S(54.4)), fov: 42 },
-        { t: S(55.4), p: W(-7.8, 1.6, -1.8, S(55.4)), l: W(-3.6, 1.0, 2.8, S(55.4)), fov: 40 },
+        // Drawing back and up off his shoulder to take in the beast on the bank beside him.
+        { t: S(50.2), p: F1(-0.8, 0.85, -1.8), l: F1(-0.4, 0.95, 4.5), fov: 40 },
+        { t: S(51.2), p: F1(-0.9, 1.15, -3.0), l: F1(-1.4, 1.5, 4.5), fov: 44 },
+        { t: S(52.6), p: F1(-0.95, 1.4, -4.1), l: F1(-1.8, 1.7, 4.0), fov: 44 },
+        { t: S(53.45), p: F1(-1.0, 1.5, -4.4), l: F1(-1.9, 1.7, 4.0), fov: 44 },
+        // Walking: following the two of them side by side, then out round behind the beast to its right...
+        { t: S(54.4), p: W(-2.2, 2.4, -4.8, S(54.4)), l: W(-1.8, 0.8, 3.0, S(54.4)), fov: 42 },
+        { t: S(55.4), p: W(-7.6, 1.7, -3.0, S(55.4)), l: W(-3.4, 1.1, 1.8, S(55.4)), fov: 40 },
         // ...low for the roar as it wheels round toward the lens...
-        { t: S(55.9), p: W(-8.6, 1.25, -1.2, S(55.5)), l: W(-5.0, 1.6, 2.4, S(55.5)), fov: 38 },
-        { t: S(56.5), p: W(-8.6, 1.05, -1.3, S(55.5)), l: W(-5.3, 2.2, 2.4, S(55.5)), fov: 36 },
+        { t: S(55.9), p: W(-8.2, 1.25, -2.8, S(55.5)), l: W(-5.0, 1.6, 0.9, S(55.5)), fov: 38 },
+        { t: S(56.5), p: W(-8.3, 1.05, -2.9, S(55.5)), l: W(-5.1, 2.2, 0.9, S(55.5)), fov: 36 },
         // ...then turning after them as they set off, rising and drawing back while they climb away and the city
         // comes through the snow at the right.
-        { t: S(57.2), p: W(-8.2, 1.2, -1.6, S(55.5)), l: W(-3.2, 1.0, 3.0, S(57.2)), fov: 38 },
-        { t: S(58.5), p: W(-7.6, 1.5, -2.2, S(55.5)), l: W(-2.6, 1.0, 3.0, S(58.5)), fov: 40 },
-        { t: S(61.0), p: W(-6.8, 2.1, -3.2, S(55.5)), l: W(-2.2, 1.2, 3.0, S(61.0)), fov: 40 },
+        { t: S(57.2), p: W(-7.9, 1.2, -3.2, S(55.5)), l: W(-2.8, 1.0, 2.0, S(57.2)), fov: 38 },
+        { t: S(58.5), p: W(-7.3, 1.5, -3.8, S(55.5)), l: W(-2.4, 1.0, 2.6, S(58.5)), fov: 40 },
+        { t: S(61.0), p: W(-6.5, 2.1, -4.8, S(55.5)), l: W(-2.0, 1.2, 2.8, S(61.0)), fov: 40 },
       ]),
       (t) => (t < 9 ? 0 : t < 10 ? (t - 9) * 0.012 : 0.012),
     ),
@@ -296,7 +296,7 @@ const face = {
     // The spindrift over the lens thinned while it is a hand's breadth from the fur, back as he turns; the gust.
     ...blizzard({ wind: [0.65, -2.2, 6.9] }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.035], [2.6, 0.035], [4.6, 0.12], [S(59.1), 0.12], [S(59.3), 0.38], [S(59.7), 0.2], [S(60.3), 0.12]] } : c)),
     // The storm swallows the valley and the city while he stares into it, and lifts off the city at 58.5 s.
-    { t: -3, kind: 'snow-fog', color: '#dde2ec', density: [[0, 0.014], [3.6, 0.02], [5.2, 0.04], [8.6, 0.05], [S(58.1), 0.05], [S(58.5), 0.036], [S(59.1), 0.022], [S(60.0), 0.015], [S(61.0), 0.012]] },
+    { t: -3, kind: 'snow-fog', color: '#dde2ec', density: [[0, 0.014], [3.6, 0.02], [5.2, 0.04], [8.6, 0.05], [S(57.9), 0.05], [S(58.3), 0.032], [S(58.7), 0.021], [S(59.5), 0.015], [S(61.0), 0.012]] },
     CITY,
     LAMP_CLEARANCE,
     // Out of the white as late as the original, which is clear at 41.2 s.
@@ -369,7 +369,7 @@ const wide = {
     CITY,
     LAMP_CLEARANCE,
     // The fir the camera draws back past, at the right from 64 s.
-    { t: -3, kind: 'snow-pines', trees: [WB(20.5, 12.5, 0), WB(28, 15.5, 0)].map((p, i) => [+p[0].toFixed(2), +p[2].toFixed(2), [1.0, 1.15][i]]) },
+    { t: -3, kind: 'snow-pines', trees: [WB(22, 8.6, 0), WB(29, 12.5, 0)].map((p, i) => [+p[0].toFixed(2), +p[2].toFixed(2), [0.8, 1.0][i]]) },
     { t: 6.1, kind: 'snow-leaves', count: 200, box: [12, 7, 12], drift: [-2.5, -1.2, 3.5], size: 0.09, near: 1.4, color: '#a2482a', color2: '#c98a3c', fadeIn: 0.6 },
     { t: 6.6, kind: 'snow-whiteout', curve: [[6.6, 0], [7.0, 0.25], [7.35, 0.62], [7.6, 1], [7.7, 1]] },
   ],
