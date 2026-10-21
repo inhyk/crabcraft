@@ -668,7 +668,7 @@ const undeadShots = [
   // falls past its shoulder, the blast, and the light swells to white.
   cut('night-undead', UNDEAD_IN, UNDEAD_OUT, 2, {
     view: view({ exposure: 1.05, saturation: -0.14, contrast: 0.25, dof: true, bokeh: 3.5, vignette: { offset: 0.2, darkness: 0.85 } }),
-    hide: [...UNDEAD_HIDE, ...COLUMNS],
+    hide: [...UNDEAD_HIDE, ...COLUMNS, 'star-quest-waystone', 'star-quest-ore', 'star-quest-ore-cluster', 'star-memory-seal', 'star-memory-seal-frame', 'star-faceted-crystal', 'star-island-crystal-gardens'],
     anchor: U,
     actors: [{ ...undead, at: U, yaw: U_YAW }],
     tracks: {
@@ -677,12 +677,12 @@ const undeadShots = [
           { t: -3, clip: 'idle', loop: true },
           // The gather and channel, the summons flung skyward, the channel again, a second fling at the fall.
           { t: 6.75, clip: 'cast', part: 'channel', loop: true },
-          { t: 10.1, clip: 'cast', part: 'release' },
-          { t: 11.2, clip: 'cast', part: 'channel', loop: true },
+          { t: 8.6, clip: 'cast', part: 'release' },
+          { t: 9.7, clip: 'cast', part: 'channel', loop: true },
           { t: 12.5, clip: 'cast', part: 'release' },
           { t: 13.6, clip: 'cast', part: 'channel', loop: true },
         ],
-        faces: [{ t: -2, expr: 'angry' }, { t: 10.1, expr: 'focused', hold: 0.8 }, { t: 12.5, expr: 'angry' }],
+        faces: [{ t: -2, expr: 'angry' }, { t: 8.6, expr: 'focused', hold: 0.8 }, { t: 12.5, expr: 'angry' }],
       },
     },
     cam: {
@@ -711,9 +711,10 @@ const undeadShots = [
         // ...and tilting up its height as it straightens, blazes and looms.
         { t: 14.5, p: H(-0.45, 0.25, 2.95), l: H(0.0, 3.1, -2.8), fov: 58 },
         { t: 16.2, p: H(-0.5, 0.23, 3.15), l: H(0.05, 3.5, -2.9), fov: 60 },
-        // It lurches at the lens and the lens flinches back and down.
-        { t: 17.2, p: H(-0.6, 0.2, 3.6), l: H(0.1, 3.6, -2.6), fov: 62 },
-        { t: 18, p: H(-0.62, 0.2, 3.7), l: H(0.1, 3.6, -2.5), fov: 62 },
+        // It lurches at the lens and the lens pushes in at its eyes on the blast's onset (109.95 s).
+        { t: 16.95, p: H(-0.5, 0.24, 3.1), l: H(0.05, 3.6, -2.8), fov: 60 },
+        { t: 17.6, p: H(-0.42, 0.34, 2.6), l: H(0.05, 3.8, -2.6), fov: 55 },
+        { t: 18, p: H(-0.4, 0.36, 2.5), l: H(0.05, 3.85, -2.5), fov: 54 },
       ],
     },
     fx: [
@@ -729,7 +730,7 @@ const undeadShots = [
       STEP_POSE,
       // His staff as gnarled dark wood with red prayer beads (src/capture/cinema/fx/night-staff.ts), kicked
       // by the stamp and each fling of the cast.
-      { kind: 'night-staff', t: -3, actor: 'u', beads: { swing: [[STAMP, 0.3, 90], [6.75, 0.35], [10.1, 0.45, 90], [12.5, 0.45, 90]] } },
+      { kind: 'night-staff', t: -3, actor: 'u', beads: { swing: [[STAMP, 0.3, 90], [6.75, 0.35], [8.6, 0.45, 90], [12.5, 0.45, 90]] } },
       { kind: 'shake', t: STAMP, d: 0.45, amp: 0.03 },
       { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 1.6, light: 1.6, gain: 0.75, embers: 150, clear: LOW_PATH.map((q) => [...q, 0.9]) },
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
@@ -750,10 +751,12 @@ const undeadShots = [
       // A sickly green rim from the sky behind his left.
       { kind: 'light', t: -1, at: G(1.6, -1.8, 2.6), color: '#9dff5a', curve: [[5.4, 0], [5.8, 22]], distance: 7 },
       // The staff's gather, flaring at each fling.
-      { kind: 'swirl', t: 7.1, until: 14.9, at: { a: 'u', o: STAFF }, radius: 1.6, rate: 60, size: 0.2, color: '#7dff6a' },
-      { kind: 'night-glow', t: 7.0, at: { a: 'u', o: STAFF }, size: 0.6, color: '#8dff4a', k: [[7.0, 0], [8.1, 1.0], [10.2, 1.4], [10.4, 3.2], [11.1, 1.3], [12.6, 1.6], [12.8, 3.4], [13.7, 1.8], [14.9, 2.2], [15.3, 0.6]] },
-      { kind: 'light', t: 6.5, at: { a: 'u', o: [STAFF[0], STAFF[1], STAFF[2] + 0.4] }, color: '#7dff4a', curve: [[6.5, 0], [7.3, 0], [8.3, 5], [10.3, 7], [10.45, 16], [11.1, 7], [12.7, 8], [12.85, 18], [13.7, 9], [14.9, 10]], distance: 9, flicker: 0.1 },
-      { kind: 'motes', t: 6, fadeIn: 1, at: { a: 'u', o: [0, 1.6, 0] }, count: 220, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
+      { kind: 'swirl', t: 7.1, until: 14.9, at: { a: 'u', o: STAFF }, radius: 1.6, rate: 60, size: 0.08, color: '#7dff6a' },
+      // The fling's two hits (101.67, 102.25 s) glint molten in the ground at lower left.
+      { kind: 'light', t: 8, at: H(-0.9, 0.08, 1.5), color: '#ff9a3a', curve: [[8.6, 0], [8.67, 22], [8.95, 3], [9.2, 3], [9.25, 22], [9.6, 3], [11, 2]], distance: 3, flicker: 0.2 },
+      { kind: 'night-glow', t: 7.0, at: { a: 'u', o: STAFF }, size: 0.5, color: '#8dff4a', k: [[7.0, 0], [8.1, 0.5], [8.7, 0.8], [8.9, 2.2], [9.6, 0.7], [12.6, 0.9], [12.8, 2.4], [13.7, 1.0], [14.9, 1.3], [15.3, 0.4]] },
+      { kind: 'light', t: 6.5, at: { a: 'u', o: [STAFF[0], STAFF[1], STAFF[2] + 0.4] }, color: '#7dff4a', curve: [[6.5, 0], [7.3, 0], [8.3, 5], [8.8, 7], [8.95, 16], [9.6, 7], [12.7, 8], [12.85, 18], [13.7, 9], [14.9, 10]], distance: 9, flicker: 0.1 },
+      { kind: 'motes', t: 6, fadeIn: 1, at: { a: 'u', o: [0, 1.6, 0] }, count: 120, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
       { kind: 'embers', t: 6, fadeIn: 1.5, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
       // Boulders climb out of the ground round him and fly together behind him into the golem; the
       // burning rock falls past its shoulder, the blast.
@@ -767,9 +770,10 @@ const undeadShots = [
       { kind: 'flash', t: LAND + 0.02, d: 0.22, rise: 0.03, a: 0.22, color: '#e6ffb0' },
       { kind: 'shake', t: LAND, d: 1.6, amp: 0.22 },
       { kind: 'shake', t: 16.4, d: 0.9, amp: 0.12 },
-      // The blast's light swells to white for the cut (a veil in the scene, so it brightens, not greys).
-      { kind: 'night-veil', t: 15.5, alpha: [[17.0, 0], [17.65, 0.75], [18.0, 1]], color: '#f6ffe2', gain: 2.5 },
-      { kind: 'fade', t: 15.5, color: '#ffffff', curve: [[17.8, 0], [18.0, 1]] },
+      // 110.45 s: its chest bursts and the white swallows the frame by 110.85 s (over everything: a veil in
+      // the scene left the claws and beads as white cut-outs in a green hole).
+      { kind: 'night-burst', t: 17.45, at: G(3.4, 0.2, 4.6), d: 0.6, size: 3.2, color: '#fff2c0', color2: '#ffb040', light: 600, gain: 1.4 },
+      { kind: 'fade', t: 15.5, color: '#fffbea', curve: [[17.45, 0], [17.7, 0.55], [17.85, 1]] },
     ],
   }),
 ];
