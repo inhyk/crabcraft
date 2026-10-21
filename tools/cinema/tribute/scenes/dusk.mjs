@@ -212,6 +212,15 @@ const dive = {
 };
 
 // --------------------------------------------------------------------------------- 2. dusk-fire
+/** [x, z] at shot second t along [t, x, z] waypoints, straight between them. */
+const along = (way, t) => {
+  let i = 0;
+  while (i < way.length - 2 && t > way[i + 1][0]) i++;
+  const [ta, xa, za] = way[i];
+  const [tb, xb, zb] = way[i + 1];
+  const k = Math.min(1, Math.max(0, (t - ta) / (tb - ta)));
+  return [xa + (xb - xa) * k, za + (zb - za) * k];
+};
 // The village burns at night: the south street from the square to The Molting Kettle (tavern at
 // (-2, 40), plaza (-1, 29)), houses h-e (-15, 32), h-f (10.5, 27), h-s3 (18, 38).
 const NIGHT_FIRE_VIEW = { exposure: 1.0, saturation: 0.15, contrast: 0.18, bloom: { intensity: 1.4, threshold: 0.7, radius: 0.85 }, vignette: { offset: 0.2, darkness: 0.75 } };
@@ -238,6 +247,9 @@ const VILLAGE_FX = (t0 = -6) => [
   { t: t0, kind: 'dusk-grade', color: '#ffe0cc' },
 ];
 
+// As the smoke thins the orc is a shape against the burning tavern, toprocking on the beat, and he
+// breaks into the run that carries him into the next shot.
+const SMOKE_WAY = [[0, -1.5, 30.4], [3.85, -1.5, 30.4], [4.25, -1.45, 28.9]];
 const smoke = {
   id: 'dusk-smoke',
   ...span(C.smoke, C.orc),
@@ -246,16 +258,32 @@ const smoke = {
   anchor: [0, 26],
   view: NIGHT_FIRE_VIEW,
   fog: FIRE_FOG,
-  actors: [],
+  actors: [{ id: 'o', spec: ORC, at: SMOKE_WAY[0].slice(1), yaw: Math.PI }],
+  tracks: {
+    o: {
+      path: Array.from({ length: 86 }, (_, i) => {
+        const t = +((4.25 * i) / 85).toFixed(4);
+        const [x, z] = along(SMOKE_WAY, t);
+        return { t, x: +x.toFixed(3), z: +z.toFixed(3), yaw: Math.PI };
+      }),
+      // The toprock from its first beat (clip 1.39), stopped after the right jab (3.07) so the run
+      // takes over at 3.85.
+      acts: [{ t: 2.1, clip: 'break_toprock', from: 1.39, to: 3.14 }],
+      faces: [{ t: -2, expr: 'angry' }],
+    },
+  },
   cam: {
     keys: [
       { t: 0, p: { g: [1.5, 0.5, 15] }, l: { g: [-1.5, 3.2, 38] }, fov: 44 },
-      { t: 4.25, p: { g: [1.0, 0.45, 17.5] }, l: { g: [-1.5, 2.8, 38] }, fov: 42 },
+      { t: 2.3, p: { g: [1.23, 0.47, 16.35] }, l: { g: [-1.5, 3.0, 38] }, fov: 43 },
+      // As the smoke thins the lens closes in on the shape toprocking in the street.
+      { t: 4.25, p: { g: [1.0, 0.45, 17.5] }, l: { g: [-1.45, 0.8, 30] }, fov: 22 },
     ],
     ease: 'linear',
   },
   fx: [
     ...VILLAGE_FX(),
+    { t: -6, kind: 'dusk-pose', actor: 'o', nocull: true },
     // First flames licking up close to the lens at the bottom of the frame.
     { t: 2.4, kind: 'dusk-fire', spots: [[-1.4, 18.6, 0.5], [2.2, 19.2, 0.45], [0.2, 19.6, 0.4], [3.6, 19.8, 0.5]], height: 2.2, seed: 41, smoke: 0, grow: [[2.4, 0], [3.4, 0.8], [4.25, 1.1]] },
     { t: -2, kind: 'dusk-haze', alpha: [[0, 1], [2.6, 1], [3.6, 0.75], [4.25, 0.55]], cover: [[0, 0.55], [2.6, 0.5], [4.25, 0.4]], back: 1, color: '#4a0d05', color2: '#b8300c', color3: '#ff7a24', flow: [-0.16, 0.04], scale: 1.5 },
@@ -265,11 +293,24 @@ const smoke = {
   ],
 };
 
-// The orc strides down the burning street out of the smoke toward the waiting lens, growing in the
-// frame, stops and roars, claws and blades spread; the fire rises in front of him until it fills
-// the frame.
-const O0 = [-1.7, 31.5];
-const O1 = [-1.0, 23.2];
+// The orc comes out of the smoke at a run, slashing as he comes, and fires every move he has on
+// the soundtrack's hits: a 720 over the street (lands on 129.94), a back flip (lands on 130.78), a
+// slam that cracks the cobbles (131.69), three turns of the spin through the sparks, then he tips
+// up onto his claws in a freeze on the roar (134.07) and holds it while the fire rises in front of
+// him until it fills the frame. Clip windows and events: src/motion/breakClips.ts, skills.ts.
+const ORC_HIT = { leap: 1.69, flip: 2.53, slam: 3.44, freeze: 5.82 };
+/** [t, x, z]: the run, the leap, settling, the lunge into the slam, then planted for the roar. */
+const ORC_WAY = [[0, -1.45, 28.95], [0.95, -1.3, 27.4], [1.69, -1.1, 25.4], [1.95, -1.05, 25.1], [3.0, -1.05, 25.1], [3.44, -1.0, 24.1], [4.7, -1.0, 23.6], [8.25, -1.0, 23.6]];
+/** Where he plants for the roar. */
+const O1 = ORC_WAY[ORC_WAY.length - 1].slice(1);
+/** Facing: the lens, then turned 1 radian to his left (screen right) during the spin. */
+const ORC_TURN = 1.0;
+const orcYaw = (t) => Math.PI + ORC_TURN * Math.min(1, Math.max(0, (t - 3.75) / 0.9));
+/** A spot on the street where he stands at shot second t, h above the ground. */
+const orcAt = (t, h = 0.1) => {
+  const [x, z] = along(ORC_WAY, t);
+  return { g: [x, h, z] };
+};
 const orc = {
   id: 'dusk-orc',
   ...span(C.orc, C.tower),
@@ -278,24 +319,50 @@ const orc = {
   anchor: [0, 26],
   view: { ...NIGHT_FIRE_VIEW, dof: true, bokeh: 2.5 },
   fog: FIRE_FOG,
-  actors: [{ id: 'o', spec: ORC, at: O0, yaw: Math.PI }],
+  actors: [{ id: 'o', spec: ORC, at: ORC_WAY[0].slice(1), yaw: Math.PI }],
   tracks: {
     o: {
-      // He slows into his last steps (the key at 4.0 keeps the spline from overshooting and walking
-      // him back), then stands facing the lens.
-      path: [{ t: 0, x: O0[0], z: O0[1] }, { t: 4.0, x: O1[0] - 0.042, z: O1[1] + 0.62 }, { t: 4.4, x: O1[0], z: O1[1], yaw: Math.PI }, { t: 8.25, x: O1[0], z: O1[1], yaw: Math.PI }],
-      ease: 'linear',
-      // The cast's gather, slowed: claws up and spread, a roar held until the fire takes him.
-      acts: [{ t: 4.55, clip: 'cast', from: 1.23, to: 2.6, speed: 0.6, fade: 0.25 }],
+      // Dense keys so the spline follows the straight runs between the waypoints. Under the spin he
+      // comes round a further turn to his left, so the freeze shows its profile, three quarters on.
+      path: Array.from({ length: 166 }, (_, i) => {
+        const t = +((8.25 * i) / 165).toFixed(4);
+        const [x, z] = along(ORC_WAY, t);
+        return { t, x: +x.toFixed(3), z: +z.toFixed(3), yaw: +orcYaw(t).toFixed(4) };
+      }),
+      acts: [
+        // A slash as he runs, claws only (the legs keep running): its hit 0.28 s in, on 128.62.
+        { t: 0.09, clip: 'attack_swipe', upper: true },
+        // The 720: takeoff at clip 0.9, down at 1.42.
+        { t: ORC_HIT.leap - (1.42 - 0.675), clip: 'break_jumpspin', from: 0.675, to: 2.065 },
+        // The back flip: down at clip 1.14.
+        { t: ORC_HIT.flip - (1.14 - 0.675), clip: 'break_backflip', from: 0.675, to: 1.825, fade: 0.1 },
+        // The slam: impact 0.38 s after it starts at its game rate.
+        { t: ORC_HIT.slam - 0.38, clip: 'attack_slam', fade: 0.15 },
+        // The spin, three turns: clip 0.675 to 2.1 comes round to face the lens again.
+        { t: 3.62, clip: 'break_spin', from: 0.675, to: 2.1, speed: 1.26, fade: 0.12 },
+        // The claw stand: two bounces, the lift, up on his claws at clip 3.065 on the roar, held.
+        { t: ORC_HIT.freeze - (3.065 - 1.95), clip: 'break_clawstand', from: 1.95, to: 6.425, fade: 0.2 },
+      ],
       faces: [{ t: -2, expr: 'angry' }],
     },
   },
   cam: {
     keys: [
-      // Low in the street, creeping back a step as he comes; wide enough for his spread claws.
-      { t: 0, p: { g: [0.5, 0.34, 18.6] }, l: { a: 'o', o: [0, 0.75, 0], y0: true }, fov: 30 },
-      { t: 4.4, p: { g: [0.4, 0.36, 19.0] }, l: { a: 'o', o: [0, 0.85, 0], y0: true }, fov: 32 },
-      { t: 8.25, p: { g: [-0.8, 0.4, 19.2] }, l: { a: 'o', o: [0, 0.95, 0], y0: true }, fov: 31 },
+      // Low in the street as he comes out of the smoke at a run.
+      { t: 0, p: { g: [0.6, 0.34, 18.2] }, l: { a: 'o', o: [0, 0.7, 0], y0: true }, fov: 24 },
+      { t: 0.95, p: { g: [0.5, 0.36, 18.5] }, l: { a: 'o', o: [0, 0.8, 0], y0: true }, fov: 30 },
+      // Up with the 720 (its body rises about two units).
+      { t: 1.35, p: { g: [0.45, 0.4, 18.7] }, l: { a: 'o', o: [0, 1.9, 0], y0: true }, fov: 34 },
+      { t: 1.69, p: { g: [0.4, 0.42, 18.8] }, l: { a: 'o', o: [0, 1.1, 0], y0: true }, fov: 32 },
+      { t: 2.6, p: { g: [0.3, 0.4, 19.0] }, l: { a: 'o', o: [0, 0.85, 0], y0: true }, fov: 31 },
+      // A punch in on the slam.
+      { t: 3.3, p: { g: [0.2, 0.38, 19.2] }, l: { a: 'o', o: [0, 0.7, 0], y0: true }, fov: 30 },
+      { t: 3.55, p: { g: [0.1, 0.34, 19.6] }, l: { a: 'o', o: [0, 0.6, 0], y0: true }, fov: 25 },
+      // Round to his right as he spins.
+      { t: 4.7, p: { g: [-2.6, 0.5, 20.1] }, l: { a: 'o', o: [0, 0.7, 0], y0: true }, fov: 29 },
+      // Back in front and low for the freeze, wide enough for him up on his claws.
+      { t: 5.8, p: { g: [-1.4, 0.3, 19.5] }, l: { a: 'o', o: [0, 0.9, 0], y0: true }, fov: 32 },
+      { t: 8.25, p: { g: [-1.2, 0.28, 19.9] }, l: { a: 'o', o: [0, 1.0, 0], y0: true }, fov: 30 },
     ],
     ease: 'linear',
     focus: 'o',
@@ -310,8 +377,19 @@ const orc = {
     // Big flames close on both sides of the street, framing him.
     { t: -6, kind: 'dusk-fire', spots: [[-3.8, 22.4, 1.7], [3.6, 23.2, 1.6], [-4.6, 27, 1.9], [4.4, 28.2, 1.8], [-3.2, 31.5, 1.6], [3.4, 32.5, 1.5]], height: 2.6, gain: 1.0, seed: 19, smoke: 0.7 },
     { t: -6, kind: 'dusk-pose', actor: 'o', nocull: true },
-    // The roar.
-    { t: 4.6, kind: 'shake', d: 1.2, amp: 0.05 },
+    // The 720 comes down: sparks and soot off the cobbles.
+    { t: ORC_HIT.leap, kind: 'shake', d: 0.5, amp: 0.07 },
+    { t: ORC_HIT.leap, kind: 'explode', at: orcAt(ORC_HIT.leap), scale: 0.3, color: '#ff8a2a', smoke: '#2a120a', flash: false },
+    // The back flip comes down.
+    { t: ORC_HIT.flip, kind: 'shake', d: 0.35, amp: 0.05 },
+    { t: ORC_HIT.flip, kind: 'explode', at: orcAt(ORC_HIT.flip), scale: 0.2, color: '#ff8a2a', smoke: '#2a120a', flash: false },
+    // The slam: the street cracks open glowing under his claws and the flames beside him leap up.
+    { t: ORC_HIT.slam, kind: 'shake', d: 0.7, amp: 0.13 },
+    { t: ORC_HIT.slam, kind: 'explode', at: orcAt(ORC_HIT.slam), scale: 0.28, color: '#ff7a1a', smoke: '#2a120a', flashColor: '#ff9a50', flashA: 0.08 },
+    { t: ORC_HIT.slam, kind: 'cracks', at: along(ORC_WAY, ORC_HIT.slam), radius: 2.6, grow: 0.45, color: '#ff8a2a', gain: 3, until: 7.0, fadeOut: 1.5 },
+    { t: ORC_HIT.slam, kind: 'dusk-fire', spots: [[O1[0] - 2.3, O1[1] + 0.8, 1.0], [O1[0] + 2.1, O1[1] + 1.1, 0.9], [O1[0] - 1.6, O1[1] + 2.4, 0.8], [O1[0] + 1.5, O1[1] + 2.6, 0.8]], height: 2.6, gain: 1.1, glow: 0.5, seed: 61, smoke: 0, grow: [[ORC_HIT.slam, 0], [ORC_HIT.slam + 0.15, 1.4], [ORC_HIT.slam + 0.9, 0.85]] },
+    // The roar, held up on his claws.
+    { t: ORC_HIT.freeze, kind: 'shake', d: 1.4, amp: 0.06 },
     // The wall of fire between the lens and him.
     { t: 6.9, kind: 'dusk-fire', spots: [[-2.2, 21.9, 1], [-0.9, 22.1, 1.1], [0.3, 22.0, 0.9], [-1.5, 21.7, 0.8], [-0.2, 21.6, 0.85], [-3.3, 22.2, 1], [1.4, 22.3, 1]], height: 3.0, gain: 1.15, glow: 0.6, seed: 77, smoke: 0, grow: [[6.9, 0], [7.4, 0.8], [7.7, 1.5], [8.25, 1.9]] },
     { t: 7.1, kind: 'dusk-haze', additive: true, alpha: [[7.2, 0], [7.5, 0.3], [7.8, 0.6]], cover: [[7.2, 0.35], [7.8, 0.7]], back: 0.3, color: '#3a0802', color2: '#ff6a14', color3: '#ffc860', flow: [0, 0.6], scale: 1.4 },
