@@ -200,6 +200,8 @@ const face = {
     { t: -3, kind: 'fur', actor: 'dwarf', led: [[0, 0.35], [1.6, 0.45], [3.6, 1]] },
     // Focus held on the moustache's frosted tips while the depth of field opens up to the face.
     { t: -3, kind: 'focus', at: { a: 'dwarf', o: [0.36, 0.42, 0.68] }, range: [[0, 0.07], [1.6, 0.12], [3.6, 2.5]], until: 4 },
+    // Once the beast is in, the focus is on its coat, the nearest fur in frame.
+    { t: 11, kind: 'focus', at: { a: 'beast', o: [0, 1.3, 0] }, range: [[11, 3], [13, 2.4]] },
     { t: 13.9, kind: 'shake', d: 0.7, amp: 0.04 },
     { t: 16.05, kind: 'shake', d: 0.6, amp: 0.035 },
   ],

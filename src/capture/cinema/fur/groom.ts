@@ -144,13 +144,13 @@ const SHELL_C = new THREE.Vector3(0, 0.024, -0.009);
 const SHELL_R = new THREE.Vector3(0.097, 0.052, 0.108);
 
 /**
- * The costume's key light, in the crab's own frame (bind space): high on its right and a little behind,
- * so a camera in front of it sees the fur lit from the side and back. The coat's shadow is cast from
+ * The costume's key light, in the crab's own frame (bind space): high on its right and in front, so a
+ * camera in front of it sees the fur lit from 45 to 60 degrees off its axis. The coat's shadow is cast from
  * here; snow-fur.ts lights from the same direction unless a cue says otherwise.
  */
 export const KEY: [number, number, number] = (() => {
-  const l = Math.hypot(-0.62, 0.68, -0.3);
-  return [-0.62 / l, 0.68 / l, -0.3 / l];
+  const l = Math.hypot(-0.55, 0.7, 0.45);
+  return [-0.55 / l, 0.7 / l, 0.45 / l];
 })();
 
 const ss01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
@@ -363,13 +363,16 @@ function clump(
     const gi = guideOf[i];
     if (gi < 0 || gi === i || free[i]) continue;
     const gpts = guidePts.get(gi)!;
-    const k = pull * (0.7 + 0.6 * g.data[i * 5 + 3]);
+    // Some locks tight, some loose (by the guide), each strand a little different.
+    const lockR = fract(Math.sin(gi * 78.233) * 43758.5453);
+    const k = pull * (0.45 + 1.0 * lockR) * (0.8 + 0.4 * g.data[i * 5 + 3]);
     // A lock shares its colour and its tips' bleaching, with a little spread.
     g.data[i * 5 + 1] = g.data[gi * 5 + 1] * 0.7 + g.data[i * 5 + 1] * 0.3;
     g.data[i * 5 + 3] = g.data[gi * 5 + 3] * 0.6 + g.data[i * 5 + 3] * 0.4;
     for (let j = 1; j < P; j++) {
       const v = j / (P - 1);
-      const f = Math.min(0.95, k * Math.pow(v, pow));
+      // Gathered most at two thirds of the length, parting again toward the tip.
+      const f = Math.min(0.95, k * Math.pow(v, pow) * (1 - 0.45 * ss01((v - 0.68) / 0.32)));
       own.fromArray(g.pts, (i * P + j) * 3);
       gp.fromArray(gpts, j * 3);
       own.lerp(gp, f);

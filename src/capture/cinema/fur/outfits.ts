@@ -38,12 +38,12 @@ const MANTLE: Layer = {
   curl: 0.14,
   width: 0.00016,
   stiff: 1,
-  clump: { size: 30, pull: 0.7, pow: 1.3 },
-  locks: { big: 6, lengthVar: 0.2, stray: 0.03 },
+  clump: { size: 30, pull: 0.55, pow: 1.3 },
+  locks: { big: 6, lengthVar: 0.3, stray: 0.04 },
   snow: (p, n, r) => ss(0.6, 0.98, n.y) * Math.max(0, blotch(p, 0.7) * 1.6 - 0.8) * r,
   wave: { amp: 0.04, freq: 1.0 },
   jitter: 0.2,
-  look: { colA: '#1c130d', colB: '#3e2e21', tip: '#6e5e4c', tipAmt: 0.6, rootAO: 0.06, spec1: 0.04, spec2: 0.16, back: 1.2, wrap: 0.4 },
+  look: { colA: '#1c130d', colB: '#3e2e21', tip: '#6e5e4c', tipAmt: 0.6, rootAO: 0.06, spec1: 0.04, spec2: 0.16, back: 1.2, wrap: 0.4, tipWidth: 0.15 },
   bits: { clumps: 0.2, crystals: 0.4, size: 0.0009, powder: 3 },
 };
 
@@ -64,10 +64,11 @@ const BEARD: Layer = {
   clump: { size: 22, pull: 0.85, pow: 1.1 },
   locks: { big: 8, lengthVar: 0.25, stray: 0.03 },
   wave: { amp: 0.06, freq: 1.6 },
-  snow: (p, _n, r) => (0.3 + Math.max(0, blotch(p) * 1.4 - 0.6)) * (0.5 + 0.5 * r),
+  // Dusted all over, frozen into a crust in the middle under the moustache (the original's chin).
+  snow: (p, _n, r) => Math.min(1, (0.22 + Math.max(0, blotch(p) * 1.4 - 0.6)) * (0.5 + 0.5 * r) + 0.9 * ss(0.03, 0.012, Math.abs(p.x)) * ss(-0.004, 0.012, p.y)),
   jitter: 0.15,
-  look: { colA: '#341406', colB: '#6a2c0e', tip: '#8c4a1c', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.35, gloss1: 120, gloss2: 28, shift: 0.1, back: 1.6, tipWidth: 0.3 },
-  bits: { clumps: 0.4, crystals: 0.35, size: 0.0012, powder: 6 },
+  look: { colA: '#341406', colB: '#6a2c0e', tip: '#8c4a1c', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.35, gloss1: 120, gloss2: 28, shift: 0.1, back: 1.6, tipWidth: 0.18 },
+  bits: { clumps: 0.5, crystals: 0.3, size: 0.0012, powder: 3 },
 };
 
 const MOUSTACHE: Layer = {
@@ -86,10 +87,10 @@ const MOUSTACHE: Layer = {
   stiff: 1.4,
   clump: { size: 14, pull: 0.85, pow: 1.05 },
   locks: { big: 7, lengthVar: 0.25, stray: 0.04 },
-  snow: (p, _n, r) => (blotch(p, 1.4) > 0.6 ? 0.7 : 0.15) * r,
+  snow: (p, _n, r) => (blotch(p, 1.4) > 0.55 ? 0.75 : 0.2) * (0.4 + 0.6 * r),
   wave: { amp: 0.05, freq: 1.2 },
-  look: { colA: '#361406', colB: '#6e2e10', tip: '#925020', tipAmt: 0.5, rootAO: 0.2, spec1: 0.05, spec2: 0.35, gloss1: 120, back: 1.6, tipWidth: 0.3 },
-  bits: { clumps: 0.4, crystals: 0.35, size: 0.0011, powder: 6 },
+  look: { colA: '#361406', colB: '#6e2e10', tip: '#925020', tipAmt: 0.5, rootAO: 0.2, spec1: 0.05, spec2: 0.35, gloss1: 120, back: 1.6, tipWidth: 0.16 },
+  bits: { clumps: 0.6, crystals: 0.3, size: 0.0011, powder: 3 },
 };
 
 const BROWS: Layer = {
@@ -202,7 +203,7 @@ const PELT: Layer = {
   count: 380000,
   points: 7,
   seg: 8,
-  length: (p, _n, r) => 0.016 + 0.026 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.008 : 0) + 0.007 * r,
+  length: (p, _n, r) => 0.012 + 0.02 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.006 : 0) + 0.005 * r,
   dir: (p, n, _r, out) => {
     const h = new THREE.Vector3(p.x, 0, p.z + 0.01).normalize();
     return out
@@ -230,24 +231,39 @@ const PELT: Layer = {
 const GUARD: Layer = {
   ...PELT,
   name: 'guard',
-  count: 70000,
+  count: 26000,
   points: 8,
   seg: 10,
   length: (p, n, r) =>
-    (0.034 + 0.03 * ss(0.055, 0.004, p.y) + 0.026 * ss(0.03, 0.0, Math.abs(p.x)) * Math.max(0, n.y)) * (0.75 + 0.5 * r),
+    (0.028 + 0.024 * ss(0.055, 0.004, p.y) + 0.02 * ss(0.03, 0.0, Math.abs(p.x)) * Math.max(0, n.y)) * (0.75 + 0.5 * r),
   dir: (p, n, _r, out) => {
     const h = new THREE.Vector3(p.x, 0, p.z + 0.01).normalize();
     return out.copy(n).multiplyScalar(0.7).addScaledVector(h, 0.35).add(new THREE.Vector3(0, -0.1, -0.35 * Math.max(0, n.y)));
   },
-  gravity: 0.7,
+  gravity: 0.85,
   curl: 0.1,
-  jitter: 0.35,
+  jitter: 0.15,
   width: 0.00034,
   stiff: 1.6,
   clump: { size: 10, pull: 0.4, pow: 1.5 },
   locks: undefined,
   wave: { amp: 0.06, freq: 1.1 },
   look: { colA: '#1a1009', colB: '#3a2214', tip: '#8a6a4e', tipAmt: 0.85, rootAO: 0.1, spec1: 0.05, spec2: 0.2, back: 1.6, wrap: 0.3, tipWidth: 0.2 },
+  bits: undefined,
+};
+
+/** The middle of the coat: heavy locks a third longer than the undercoat, where the pelt's weight shows. */
+const MID: Layer = {
+  ...PELT,
+  name: 'mid',
+  count: 100000,
+  length: (p, _n, r) => (0.021 + 0.03 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.009 : 0)) * (0.8 + 0.4 * r),
+  gravity: 0.95,
+  jitter: 0.2,
+  width: 0.00024,
+  clump: { size: 26, pull: 0.75, pow: 1.1 },
+  locks: { big: 5, lengthVar: 0.25, stray: 0.02 },
+  look: { colA: '#160d08', colB: '#3c2216', tip: '#6e4a32', tipAmt: 0.7, rootAO: 0.06, spec1: 0.04, spec2: 0.18, back: 1.4, wrap: 0.3, tipWidth: 0.18 },
   bits: undefined,
 };
 
@@ -280,5 +296,5 @@ export const OUTFIT_HIDES: Record<string, string[]> = {
 
 export const OUTFITS: Record<string, Layer[]> = {
   dwarf: [MANTLE, BEARD, MOUSTACHE, BROWS, BRAID],
-  beast: [PELT, GUARD, LIMBS],
+  beast: [PELT, MID, GUARD, LIMBS],
 };
