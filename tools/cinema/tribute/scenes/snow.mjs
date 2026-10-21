@@ -278,13 +278,14 @@ const face = {
         // ...low for the roar as it wheels round toward the lens...
         { t: S(55.9), p: W(-8.2, 1.25, -2.8, S(55.5)), l: W(-5.0, 1.6, 0.9, S(55.5)), fov: 38 },
         { t: S(56.5), p: W(-8.3, 1.05, -2.9, S(55.5)), l: W(-5.1, 2.2, 0.9, S(55.5)), fov: 36 },
-        // ...then turning after them as they set off, rising and drawing back while they climb away and the city
-        // comes through the snow at the right.
+        // ...then turning after them as they set off, rising, drawing back and panning on toward the city as they
+        // climb away and it comes through the snow at the right.
         { t: S(57.2), p: W(-7.9, 1.2, -3.2, S(55.5)), l: W(-2.8, 1.0, 2.0, S(57.2)), fov: 38 },
-        { t: S(58.5), p: W(-7.3, 1.5, -3.8, S(55.5)), l: W(-2.4, 1.0, 2.6, S(58.5)), fov: 40 },
-        { t: S(61.0), p: W(-6.5, 2.1, -4.8, S(55.5)), l: W(-2.0, 1.2, 2.8, S(61.0)), fov: 40 },
+        { t: S(58.5), p: W(-7.3, 1.5, -3.8, S(55.5)), l: W(-2.9, 1.15, 3.0, S(58.5)), fov: 40 },
+        { t: S(61.0), p: W(-6.3, 2.1, -4.9, S(55.5)), l: W(-3.6, 1.6, 4.4, S(61.0)), fov: 40 },
       ]),
-      (t) => (t < 9 ? 0 : t < 10 ? (t - 9) * 0.012 : 0.012),
+      // Hand-held from the shoulder shot on, looser once they climb away into the storm.
+      (t) => (t < 9 ? 0 : t < 10 ? (t - 9) * 0.012 : t < S(57.2) ? 0.012 : Math.min(0.035, 0.012 + (t - S(57.2)) * 0.046)),
     ),
     focus: 'dwarf',
     range: 2.5,
@@ -359,7 +360,7 @@ const wide = {
       { t: 5.5, p: WB(24, 6.8, 5.0), l: toward(WB(24, 6.8, 5.0), [GATE[0] + 1, 22, GATE[1]], 10), fov: 36 },
       { t: 7.7, p: WB(27.5, 7.6, 5.3), l: toward(WB(27.5, 7.6, 5.3), [GATE[0] + 1, 22.5, GATE[1]], 10), fov: 35 },
     ]),
-    (t) => 0.02,
+    () => 0.06,
   ),
   fx: [
     // 66.5 s: the storm thickens into a veil over the gate.
