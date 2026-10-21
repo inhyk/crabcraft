@@ -4,6 +4,7 @@ import { ROUTINE } from '../motion/breakdance';
 import * as THREE from 'three';
 import type { Game } from '../game/game';
 import type { SimEvent, SimSink, Vec3 } from '../game/events';
+import { isPractice } from '../game/combat';
 import { Unit } from '../game/unit';
 import type { Skill } from '../../server/protocol';
 import { createCrab } from '../crab/provider';
@@ -407,6 +408,8 @@ export class Multiplayer {
   private shareSkill(e: SimEvent) {
     const u = this.game.player.unit;
     if (this.game.spectator || !(this.room || this.shard)) return;
+    // The capital's training dummies are this client's own: nothing aimed at one is shared.
+    if ((e.type === 'ability' || e.type === 'projectile') && isPractice(e.target)) return;
     let skill: Skill;
     switch (e.type) {
       case 'ability': {
