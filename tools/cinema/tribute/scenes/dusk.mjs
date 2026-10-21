@@ -432,12 +432,25 @@ const giant = {
   ],
 };
 
-// A warrior on the gallery runs round its ring (3.7 from the axis, floor 28.5) through the flames
-// and leaps at the giant over the rail; the camera low outside the rail on the sun side, the sky
-// behind him.
+// A warrior on the gallery runs round its ring (3.7 from the axis, floor 28.5) through the flames,
+// hops onto the rail and back flips off it at the giant; the camera low outside the rail on the sun
+// side, the sky behind him.
 const RING = (b) => flat(LH, b, 3.7);
 const W0 = RING(205);
-const LEAP = [[0, 205, 0], [0.3, 200, 0], [0.62, 188, 1.6], [0.95, 175, 2.5], [1.3, 162, 2.3], [1.62, 152, 1.4], [1.96, 144, 0.6]];
+/** His bearing round the ring at shot seconds. */
+const LEAP = [[0, 205], [0.3, 200], [0.62, 188], [0.95, 175], [1.3, 162], [1.62, 152], [1.96, 144]];
+/** Off the rail at 0.85 (142.85): in the air from 143.0 like the original's spring at 143.2. */
+const TAKEOFF = 0.85;
+const sm = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+/** The hop onto the rail (0.3-0.6), then a little rise under the flip (the clip lifts the body itself). */
+const leapLift = (t) => 0.9 * sm((t - 0.3) / 0.3) + (t > TAKEOFF ? 0.5 * Math.sin(Math.min(1, (t - TAKEOFF) / 1.1) * Math.PI) : 0);
+const leapAt = (t) => {
+  let i = 0;
+  while (i < LEAP.length - 2 && t > LEAP[i + 1][0]) i++;
+  const [ta, ba] = LEAP[i];
+  const [tb, bb] = LEAP[i + 1];
+  return ba + (bb - ba) * Math.min(1, Math.max(0, (t - ta) / (tb - ta)));
+};
 const leap = {
   id: 'dusk-leap',
   ...span(C.leap, C.black),
@@ -450,8 +463,13 @@ const leap = {
   actors: [{ id: 'w', spec: ORC, at: W0, yaw: deg(205 - 90) }, GIANT_ACTOR],
   tracks: {
     w: {
-      path: LEAP.map(([t, b, lift], i) => ({ t, x: RING(b)[0], z: RING(b)[1], lift, ...(i < 1 ? { yaw: deg(b - 90) } : {}) })),
-      acts: [{ t: 0.15, clip: 'jump', from: 0.45, speed: 0.5 }],
+      path: Array.from({ length: 49 }, (_, i) => {
+        const t = +((1.96 * i) / 48).toFixed(4);
+        const [x, z] = RING(leapAt(t));
+        return { t, x: +x.toFixed(3), z: +z.toFixed(3), lift: +leapLift(t).toFixed(3), ...(i < 1 ? { yaw: deg(205 - 90) } : {}) };
+      }),
+      // The hop, then the back flip at half speed (src/motion/breakClips.ts: takeoff 0.84, land 1.14).
+      acts: [{ t: 0.25, clip: 'jump', from: 0.45, speed: 0.9 }, { t: TAKEOFF - (0.84 - 0.675) / 0.5, clip: 'break_backflip', from: 0.675, to: 1.825, speed: 0.5 }],
       faces: [{ t: -2, expr: 'angry' }],
     },
     // Hauled up on the gallery, claws raised over it (its slam would sweep through the lens here).
