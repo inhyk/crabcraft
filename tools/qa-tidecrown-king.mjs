@@ -16,7 +16,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { createServer } from 'vite';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -31,7 +31,7 @@ const watch = (p) => {
 };
 const NAME = 'King visitor';
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args });
+const browser = await launchBrowser({ headless: true, args });
 try {
   const p = await browser.newPage({ viewport: { width: 1600, height: 900 } });
   p.setDefaultTimeout(90000);
@@ -330,7 +330,7 @@ if (process.env.CC_QA_SERVER !== '0') {
     const origin = new URL(metadata.origin);
     server = await createServer({ root, configFile: false, server: { host: '127.0.0.1', port: browserPort, strictPort: true, proxy: { '/world': { target: origin.origin, ws: true }, '/api/account': { target: origin.origin } } }, logLevel: 'error' });
     await server.listen();
-    sb = await chromium.launch({ channel: 'chrome', headless: true, args });
+    sb = await launchBrowser({ headless: true, args });
     const context = await sb.newContext({ viewport: { width: 1600, height: 900 } });
     await context.grantPermissions(['local-network-access'], { origin: clientOrigin });
     await context.addCookies([{ name: metadata.cookie.name, value: metadata.cookie.value, domain: '127.0.0.1', path: metadata.cookie.path, httpOnly: true, sameSite: 'Strict', secure: false }]);
