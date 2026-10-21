@@ -46,3 +46,45 @@ node tools/cinema/capture.mjs --url http://localhost:5311 --program tools/cinema
 the user supplies at edit time. The soundtrack and the rendered video stay outside the repository
 (the repository takes no third-party music or video). `tribute/timeline.mjs` is the cut list,
 `tribute/cast.mjs` the characters, `tribute/scenes/*.mjs` the shots.
+
+## Night-elf action showcase
+
+`tribute/scenes/elf-actions.mjs` replaces only the original `night-elf-run`
+(74.6-88.0 seconds, edit frames 1790-2111) with seven shots. The close-up,
+transformation, cliff leap and the rest of the tribute retain their original specs.
+All seven actions play existing MuJoCo motion clips through the game runtime:
+
+| Shot | Song seconds | Source clip | Treatment |
+|---|---|---|---|
+| night-elf-toprock | 74.6-76.0 | break_toprock | Running entry, two-beat footwork excerpt |
+| night-elf-sixstep | 76.0-77.7 | break_sixstep | Running entry, elevated view of the pivot |
+| night-elf-spin | 77.7-79.15 | break_spin | Ground spin excerpt, side view |
+| night-elf-backflip | 79.15-80.8 | break_backflip | Full takeoff, rotation and recovery, puddle hit at 79.72 |
+| night-elf-clawstand | 80.8-82.8 | break_clawstand | Balance and return to the feet |
+| night-elf-oneclaw | 82.8-85.2 | break_oneclaw | One-claw balance and release, water accent at 84.38 |
+| night-elf-720 | 85.2-88.0 | break_jumpspin | Full 720 and recovery at 0.58x, then the original transformation mark |
+
+The shorter dance shots are excerpts, not complete policy rollouts. Grounded action
+roots stay planted. The jumps use the recorded floating-body pose; their stage path
+does not add another jump. Only the post-720 transformation lift is authored, matching
+the following shot at x=-90.5, z=94.5, lift=1.15. The stage waits for referenced clips
+before starting its clock, so a cold cache cannot delay the first action.
+
+```sh
+pnpm dev --host 127.0.0.1 --port 5357 --strictPort
+node tools/cinema/qa-elf-actions.mjs --url http://127.0.0.1:5357 --out /absolute/qa.json
+node tools/cinema/capture.mjs --url http://127.0.0.1:5357 \
+  --program tools/cinema/tribute/program.mjs \
+  --shots night-elf-toprock,night-elf-sixstep,night-elf-spin,night-elf-backflip,night-elf-clawstand,night-elf-oneclaw,night-elf-720 \
+  --out /absolute/shots --size 1920x872 --dsf 2 --blur 6 --shutter 0.35
+node tools/cinema/tribute/splice-elf-actions.mjs \
+  --source /absolute/tribute-v14-fur.mp4 --shots /absolute/shots --out /absolute/edit
+```
+
+The browser QA checks every one of the 322 frames for visible-rig bounds within the
+camera, verifies all seven actions actually play, checks clip windows and edit seams,
+and compares every unrelated shot spec to the original. This is cinematic framing
+and playback QA, not a physics-policy acceptance test. The splice script requires a
+1920x1080, 24 fps source, checks exact shot/frame counts and copies its audio stream.
+It writes a silent action master, full replacement edit, 72-93 s review excerpt and
+before/after comparison. User-supplied media and rendered files stay outside the repo.
