@@ -224,7 +224,9 @@ const LN = (s, h, z) => [laneX(z) + s, 6 + h, z];
 const LG = (s, h, z) => ({ g: [laneX(z) + s, h, z] });
 /** The keep's lantern, the seaglass crystals and the gulls go; the sky is night, red from below. */
 const CRYSTALS = ['tidecrown-crystal-seaglass', 'tidecrown-crystal-seaglass-west', 'tidecrown-crystal-seaglass-north'];
-const TIDE_NIGHT = { t: -6, kind: 'dusk-tide', hide: CRYSTALS, sky: { zenith: '#0a0406', mid: '#3a0c06', horizon: '#8a2a10', ground: '#1a0806', glow: '#a02a08', sun: '#ff6020', cloudLit: '#802a10', cloudShade: '#200806', cover: 0.9 }, sunDir: [0.3, 0.05, -1], sun: { color: '#ff5020', intensity: 0.4 }, hemi: { sky: '#3a1a2a', ground: '#2a0a06', intensity: 0.15 }, env: 0.05 };
+/** The island's cyan lantern glass burns orange; its lit windows glow low and warm. */
+const FIRELIT = { TC_LanternGlow: { color: '#ff7a2a', emissive: '#ff6a1a', intensity: 2.2 }, TC_Glass: { emissive: '#ff9a5a', intensity: 0.7 } };
+const TIDE_NIGHT = { t: -6, kind: 'dusk-tide', hide: CRYSTALS, sky: { zenith: '#0a0406', mid: '#3a0c06', horizon: '#8a2a10', ground: '#1a0806', glow: '#a02a08', sun: '#ff6020', cloudLit: '#802a10', cloudShade: '#200806', cover: 0.9 }, sunDir: [0.3, 0.05, -1], sun: { color: '#ff5020', intensity: 0.4 }, hemi: { sky: '#3a1a2a', ground: '#2a0a06', intensity: 0.15 }, env: 0.05, mats: FIRELIT };
 const NIGHT_FIRE_VIEW = { exposure: 1.0, saturation: 0.15, contrast: 0.2, bloom: { intensity: 1.4, threshold: 0.7, radius: 0.85 }, vignette: { offset: 0.2, darkness: 0.75 } };
 const FIRE_FOG = { color: '#120604', density: 0.022 };
 /** Fire at the foot of the house fronts and in the street's litter, [s, z, scale]. */
@@ -242,20 +244,37 @@ const ROOF_FLAMES = [
   [-4.2, 10.5, 48, 2.4], [4.2, 10.5, 50, 2.6], [-4.2, 10.8, 55, 2.2], [4.4, 10.5, 58, 2.5], [-4.4, 10.5, 61.5, 2.0], [4.4, 10.8, 64, 2.1],
   [-1, 12, 40, 3.2], [3, 11.5, 36, 3.0],
 ].map(([s, h, z, k]) => ({ at: LN(s, h, z), s: k }));
+/** Debris heaped along the lane's sides and strewn in its middle, clear of the orc's line (s 0). */
+const LANE_RUBBLE = {
+  t: -6,
+  kind: 'dusk-rubble',
+  seed: 5,
+  piles: [
+    [-2.4, 70.0, 0.9, 30, 0.15], [2.4, 69.4, 0.9, 30, 0.2], [-2.3, 66.2, 0.8, 24, 0.25], [2.4, 64.6, 0.9, 26, 0.2],
+    [-2.3, 61.8, 0.8, 22, 0.2], [2.3, 59.2, 0.8, 20, 0.2], [-2.2, 56.0, 0.8, 20, 0.2], [2.2, 53.0, 0.8, 20, 0.2],
+    [-1.4, 68.8, 0.4, 8], [1.5, 67.6, 0.4, 8], [-1.3, 63.8, 0.45, 8], [1.3, 61.4, 0.45, 8], [-0.6, 59.0, 0.4, 6], [0.8, 56.5, 0.4, 6],
+  ].map(([s, z, r, n, lean]) => [laneX(z) + s, z, r, n, lean ?? 0]),
+  size: 0.55,
+  ash: [[0, 60, 5.4, 26], [0, 70, 5.4, 6]].map(([s, z, w, l]) => [laneX(z) + s, z, w, l, Math.atan2(2, 52)]),
+  ember: 1.2,
+};
 const LANE_FX = (t0 = -6) => [
   TIDE_NIGHT,
-  { t: t0, kind: 'dusk-fire', spots: LANE_FLAMES, height: 2.4, seed: 11, gain: 0.85 },
-  { t: t0, kind: 'dusk-fire', spots: FRONT_FLAMES, height: 2.2, seed: 17, smoke: 0.6, gain: 0.8 },
-  { t: t0, kind: 'dusk-fire', spots: ROOF_FLAMES, height: 2.8, seed: 23, smoke: 0.85, gain: 0.85 },
-  { t: t0, kind: 'dusk-plume', at: LG(-4, 16, 52), rate: 3, life: 10, rise: 2.6, spread: 2.5, size0: 3, size1: 12, prewarm: 10, opacity: 0.8, wind: [1.2, 0.4], seed: 3 },
-  { t: t0, kind: 'dusk-plume', at: LG(4.5, 16, 60), rate: 2.5, life: 9, rise: 2.4, spread: 2, size0: 3, size1: 10, prewarm: 9, opacity: 0.75, wind: [1.2, 0.4], seed: 4 },
-  { t: t0, kind: 'dusk-plume', at: LG(0, 18, 38), rate: 2.5, life: 9, rise: 2.4, spread: 3, size0: 4, size1: 14, prewarm: 9, opacity: 0.75, wind: [1.2, 0.4], seed: 5 },
+  LANE_RUBBLE,
+  { t: t0, kind: 'dusk-fire', spots: LANE_FLAMES, height: 3.0, seed: 11, gain: 1.0, glow: 0.35 },
+  { t: t0, kind: 'dusk-fire', spots: FRONT_FLAMES, height: 2.6, seed: 17, smoke: 0.7, gain: 1.0, glow: 0.3 },
+  { t: t0, kind: 'dusk-fire', spots: ROOF_FLAMES, height: 3.4, seed: 23, smoke: 0.9, gain: 1.0, glow: 0.3 },
+  { t: t0, kind: 'dusk-plume', at: LG(-4, 16, 52), rate: 3, life: 10, rise: 2.6, spread: 2.5, size0: 3, size1: 12, prewarm: 10, opacity: 0.85, wind: [1.2, 0.4], seed: 3, color: '#120c0b' },
+  { t: t0, kind: 'dusk-plume', at: LG(4.5, 16, 60), rate: 2.5, life: 9, rise: 2.4, spread: 2, size0: 3, size1: 10, prewarm: 9, opacity: 0.8, wind: [1.2, 0.4], seed: 4, color: '#120c0b' },
+  { t: t0, kind: 'dusk-plume', at: LG(0, 18, 38), rate: 2.5, life: 9, rise: 2.4, spread: 3, size0: 4, size1: 14, prewarm: 9, opacity: 0.8, wind: [1.2, 0.4], seed: 5, color: '#120c0b' },
   { t: t0, kind: 'embers', at: LG(0, 5, 60), box: [12, 14, 30], count: 1600, drift: [0.8, 2.6, 0.3], size: 0.07 },
-  { t: t0, kind: 'light', at: LG(-2.2, 2.5, 56), color: '#ff6a1a', intensity: 30, distance: 20, flicker: 0.35 },
-  { t: t0, kind: 'light', at: LG(2.2, 2.5, 61), color: '#ff7a22', intensity: 30, distance: 20, flicker: 0.35 },
-  { t: t0, kind: 'light', at: LG(0, 6, 50), color: '#ff5a14', intensity: 45, distance: 28, flicker: 0.3 },
-  { t: t0, kind: 'light', at: LG(0, 2, 70), color: '#ff8a3a', intensity: 14, distance: 14, flicker: 0.4 },
-  { t: t0, kind: 'dusk-grade', color: '#ffe0cc' },
+  // Firelight flickering on the fronts, low so the stone stays dark between the flames.
+  { t: t0, kind: 'light', at: LG(-2.4, 1.5, 56), color: '#ff5a14', intensity: 16, distance: 12, flicker: 0.5 },
+  { t: t0, kind: 'light', at: LG(2.4, 1.5, 61), color: '#ff6a1a', intensity: 16, distance: 12, flicker: 0.5 },
+  { t: t0, kind: 'light', at: LG(0, 7, 50), color: '#ff4a10', intensity: 22, distance: 24, flicker: 0.4 },
+  { t: t0, kind: 'light', at: LG(-2.2, 1.2, 67), color: '#ff7a2a', intensity: 8, distance: 8, flicker: 0.55 },
+  { t: t0, kind: 'light', at: LG(2.2, 1.2, 68), color: '#ff7a2a', intensity: 8, distance: 8, flicker: 0.55 },
+  { t: t0, kind: 'dusk-grade', color: '#ffd6c0' },
 ];
 
 // 124.0: the red haze from the dive fills the frame, the dust's sparks flying on into it; black smoke
@@ -280,11 +299,11 @@ const smoke = {
   fx: [
     ...LANE_FX(),
     // The first flames, close to the lens at the lower left.
-    { t: 3.4, kind: 'dusk-fire', spots: [[-14.5, 70.2, 0.5], [-13.9, 69.4, 0.42], [-15.0, 69.0, 0.55], [-14.2, 68.6, 0.36]], height: 2.2, seed: 41, smoke: 0, grow: [[3.45, 0], [3.9, 0.8], [4.25, 1.1]] },
-    // The red: opaque until 127.9, then thinning so the lane shows at 128.0.
-    { t: -2, kind: 'dusk-haze', alpha: [[0, 1], [3.75, 1], [4.0, 0.72], [4.25, 0.5]], cover: [[0, 0.55], [3.6, 0.5], [4.25, 0.4]], back: 1, color: '#4a0d05', color2: '#b8300c', color3: '#ff7a24', flow: [-0.16, 0.04], scale: 1.5 },
+    { t: 3.4, kind: 'dusk-fire', spots: [[-14.5, 70.2, 0.5], [-13.9, 69.4, 0.42], [-15.0, 69.0, 0.55], [-14.2, 68.6, 0.36]], height: 2.2, seed: 41, smoke: 0, grow: [[3.45, 0], [3.9, 0.8], [4.25, 1.1]], order: 1002 },
+    // The red: opaque until 127.95, then thinning so the lane shows at 128.0.
+    { t: -2, kind: 'dusk-haze', alpha: [[0, 1], [3.95, 1], [4.08, 0.62], [4.25, 0.45]], cover: [[0, 0.55], [3.6, 0.5], [4.25, 0.4]], back: 1, color: '#4a0d05', color2: '#b8300c', color3: '#ff7a24', flow: [-0.16, 0.04], scale: 1.5 },
     // Black smoke rolling in from the right, 125.5 to 127.5.
-    { t: 1.3, kind: 'dusk-haze', sweep: [[1.5, 1.15], [3.3, 0.05]], alpha: [[1.4, 0], [1.7, 0.85], [3.4, 0.85], [3.9, 0.45], [4.25, 0.3]], cover: [[1.5, 0.5], [3.3, 0.62], [3.9, 0.45]], back: 0, color: '#1a0805', color2: '#5a1408', color3: '#ff6a1e', flow: [-0.45, 0.06], scale: 1.3, order: 1000 },
+    { t: 1.3, kind: 'dusk-haze', sweep: [[1.5, 1.15], [3.3, 0.05]], alpha: [[1.4, 0], [1.7, 0.85], [3.95, 0.85], [4.1, 0.45], [4.25, 0.3]], cover: [[1.5, 0.5], [3.3, 0.62], [3.9, 0.45]], back: 0, color: '#1a0805', color2: '#5a1408', color3: '#ff6a1e', flow: [-0.45, 0.06], scale: 1.3, order: 1000 },
     { t: -2, kind: 'embers', box: [16, 10, 16], count: 900, drift: [-1.6, 1.4, -0.2], size: 0.05, shift: [0, 0, -5] },
     // The dust's sparks fly on into the red from the dive, slow and drift.
     { t: -2.5, kind: 'dusk-dust', at: { g: [-13.1, 1.6, 76.5] }, box: [12, 5, 4], until: 0.8, rate: 260, life: 2.4, wind: [0.12, 0.1, -1], v0: 5, acc: -1.9, spread0: 0.2, spread1: 0.6, turb: 0.35, size0: 0.025, size1: 0.035, heat: [[0, 1]], streak: [[0, 0.06], [2, 0.03]], hot: '#ffa040', hot2: '#ff4a10', glow: 3.2, opacity: 0.9, pxMax: 0.015, fade: [[0, 1], [0.8, 0.6], [1.8, 0]], order: 1001 },
@@ -362,58 +381,69 @@ const orc = {
   ],
 };
 
-// The Cathedral of the Tide, high on the middle terrace (ground 14), its front to the south over the
-// parvis: a gable front 26 wide and 24 high, the bell tower above it from 24 to 44 (12.8 square, its
-// front flush with the gable at z -15.1) and its spire to 72. Every camera stands on the parvis to the
-// south-west, the sun low behind the tower so the stone goes dark against a burning sky. A fireball
-// strikes the belfry; the giant climbs the front's left side, hauls itself over the tower's top and
-// it bursts; the warrior springs from the ledge at the spire's foot.
+// The Cathedral of the Tide, high on the middle terrace (ground 14) on the brink over the lower town,
+// its front to the south over the parvis: a gable front 26 wide and 22 high, the bell tower above it
+// (12 square, its front flush with the gable at z -15.1), its belfry roof at 34 inside a parapet that
+// rises to 38 at the corner pinnacles, and the slate spire to 72. The cameras stand on the parvis to
+// the south-west, the dusk behind the tower so its stone goes dark against a burning sky. A fireball
+// strikes the belfry; the giant climbs the front's left side and hauls itself over the parapet, the
+// top bursts; the warrior on the belfry roof hops onto the front parapet and back flips off it.
 const CATH = { x: -31, z: -42.5, y: 13.88 };
 /** A world point in the cathedral's frame: `lx` across (+ east), `y` above its floor, `lz` out of its front. */
 const CP = (lx, y, lz) => [CATH.x + lx, CATH.y + y, CATH.z + lz];
 /** The parvis's ground, under every actor here. */
 const PARVIS = 13.95;
-const TIDE_DUSK = { t: -6, kind: 'dusk-tide', hide: CRYSTALS, sky: { zenith: '#24122a', mid: '#7a3024', horizon: '#ff6a24', ground: '#341610', glow: '#ff4a14', sun: '#ffb070', cloudLit: '#ff7a40', cloudShade: '#3a1826', cover: 0.75 }, sunDir: [0.55, 0.1, -0.83], sun: { color: '#ff6a2a', intensity: 2.2 }, hemi: { sky: '#4a2e5a', ground: '#3a1a10', intensity: 0.3 }, env: 0.1 };
-const TOWER_VIEW = { exposure: 1.0, saturation: 0.32, contrast: 0.2, bloom: { intensity: 1.3, threshold: 0.75, radius: 0.85 }, vignette: { offset: 0.2, darkness: 0.7 } };
+/** Dusk over the burning city: violet overhead, a red-orange horizon, clouds lit from below. */
+const TIDE_DUSK = { t: -6, kind: 'dusk-tide', hide: CRYSTALS, sky: { zenith: '#3a2458', mid: '#b04438', horizon: '#ffa040', ground: '#341610', glow: '#ff8030', sun: '#ffc080', cloudLit: '#ffa060', cloudShade: '#4a2a48', cover: 0.75 }, sunDir: [0.55, 0.1, -0.83], sun: { color: '#ff7a3a', intensity: 2.0 }, hemi: { sky: '#5a3a6a', ground: '#3a1a10', intensity: 0.3 }, env: 0.1, mats: FIRELIT };
+const TOWER_VIEW = { exposure: 1.0, saturation: 0.2, contrast: 0.22, bloom: { intensity: 1.3, threshold: 0.75, radius: 0.85 }, vignette: { offset: 0.2, darkness: 0.7 } };
 const TOWER_SKY = (t0) => [
   TIDE_DUSK,
-  // Smoke from the burning city drifting across the sky behind the tower.
-  { t: t0, kind: 'dusk-plume', at: { g: [10, 0, -80] }, rate: 1.4, life: 16, rise: 2.4, spread: 7, size0: 8, size1: 24, prewarm: 16, opacity: 0.55, wind: [2.5, -1], color: '#1e1214', glow: '#7a2810', glowH: 8, seed: 8 },
-  { t: t0, kind: 'dusk-plume', at: { g: [-80, 0, -70] }, rate: 1.2, life: 16, rise: 2.2, spread: 6, size0: 7, size1: 20, prewarm: 16, opacity: 0.5, wind: [2.5, -1], color: '#1c1012', glow: '#6a2410', glowH: 6, seed: 9 },
-  { t: t0, kind: 'embers', at: CP(0, 30, 30), box: [40, 40, 30], count: 1400, drift: [1.2, 2.2, -0.4], size: 0.1 },
+  // Smoke from the burning lower town drifting across the sky behind the tower.
+  { t: t0, kind: 'dusk-plume', at: { g: [40, 0, -90] }, rate: 1.4, life: 16, rise: 2.4, spread: 7, size0: 8, size1: 24, prewarm: 16, opacity: 0.3, wind: [2.5, -1], color: '#1e1214', glow: '#7a2810', glowH: 8, seed: 8 },
+  { t: t0, kind: 'dusk-plume', at: { g: [-100, 0, -60] }, rate: 1.2, life: 16, rise: 2.2, spread: 6, size0: 7, size1: 20, prewarm: 16, opacity: 0.3, wind: [2.5, -1], color: '#1c1012', glow: '#6a2410', glowH: 6, seed: 9 },
+  { t: t0, kind: 'dusk-plume', at: { g: [-20, 0, 40] }, rate: 1.6, life: 14, rise: 3, spread: 6, size0: 6, size1: 18, prewarm: 14, opacity: 0.4, wind: [1.5, -2], color: '#1a1012', glow: '#ff5a14', glowH: 10, seed: 10 },
+  { t: t0, kind: 'embers', at: CP(0, 24, 34), box: [40, 40, 30], count: 1400, drift: [1.2, 2.2, -0.4], size: 0.1 },
   // Fires in the lower town light the front from below.
-  { t: t0, kind: 'light', at: CP(-8, 4, 40), color: '#ff7a2a', intensity: 25, distance: 45, flicker: 0.2 },
-  // Warm light on the near stone, violet left in the shadows.
+  { t: t0, kind: 'light', at: CP(-8, 2, 40), color: '#ff6a20', intensity: 30, distance: 45, flicker: 0.25 },
   { t: t0, kind: 'dusk-grade', color: '#ffe4d0' },
 ];
+/** The parvis under the lens: broken stone heaped like the foot of a crag, burning wreckage, soot. */
+const PARVIS_RUBBLE = (t0) => [
+  { t: t0, kind: 'dusk-rubble', seed: 21, size: 2.2, ember: 0, piles: [[-47.5, -1.5, 3.2, 40, 0.3], [-43.5, 2.5, 2.2, 22, 0.4], [-39, -6, 2.4, 20, 0.3], [-50, -7, 2.6, 22, 0.2], [-34, 1, 1.8, 14, 0.4]], ash: [[-44, -2, 16, 14]] },
+  { t: t0, kind: 'dusk-fire', spots: [[-43.8, 2.2, 1.0], [-39.2, -5.6, 0.9], [-34.2, 0.8, 0.8], [-49.5, -6.5, 0.8]], height: 2.6, seed: 61, smoke: 0.8, glow: 0.3 },
+  { t: t0, kind: 'light', at: { g: [-42, 1.5, 0] }, color: '#ff6a1a', intensity: 20, distance: 14, flicker: 0.5 },
+];
 /** Where the fireball strikes: the belfry's front, right of its middle. */
-const STRIKE = CP(3.2, 33, 27.8);
-/** Small fires on the walls from the start; more where the fireball struck. */
+const STRIKE = CP(3.2, 29, 27.8);
+/** Small fires on the walls from the start: the gable's corners, the belfry's pinnacles, windows. */
 const WALL_FIRES = (t0) => [
-  { t: t0, kind: 'dusk-fire', spots: [[-12.6, 24.2, 28.2, 0.8], [12.4, 24.2, 28.2, 0.7], [-5.9, 44.2, 26.9, 0.6], [5.9, 44.2, 26.9, 0.55], [-9, 13, 28.6, 0.5], [8, 17, 28.6, 0.45]].map(([x, y, z, s]) => ({ at: CP(x, y, z), s })), height: 2.8, seed: 33, smoke: 0.7, glow: 0.3, wind: [1.4, -0.6] },
+  { t: t0, kind: 'dusk-fire', spots: [[-12.6, 21.6, 28.2, 0.8], [12.4, 21.6, 28.2, 0.7], [-5.9, 38.2, 27.0, 0.55], [5.9, 38.2, 27.0, 0.5], [-9, 13, 28.6, 0.5], [8, 16.5, 28.6, 0.45]].map(([x, y, z, s]) => ({ at: CP(x, y, z), s })), height: 2.8, seed: 33, smoke: 0.7, glow: 0.3, wind: [1.4, -0.6] },
 ];
 const STRUCK_FIRES = (t0, k = 1) => [
-  { t: t0, kind: 'dusk-fire', spots: [[3.2, 32.6, 28.2, 1.3], [1.4, 31, 28.2, 0.9], [5.2, 34, 28.2, 0.9], [4, 36.5, 28.2, 1.1]].map(([x, y, z, s]) => ({ at: CP(x, y, z), s: s * k })), height: 3.0, seed: 31, smoke: 0.9, glow: 0.4, wind: [1.4, -0.6], fadeIn: 0.4 },
-  { t: t0, kind: 'dusk-plume', at: CP(3.5, 37, 28.5), rate: 3, life: 8, rise: 3, spread: 2, size0: 2.5, size1: 11, prewarm: 0, opacity: 0.75, wind: [2.2, -1], color: '#1e1412', glow: '#ff6a1a', glowH: 3, seed: 12 },
-  { t: t0, kind: 'light', at: CP(3.5, 33, 33), color: '#ff6a1a', intensity: 90, distance: 32, flicker: 0.35, fadeIn: 0.3 },
+  { t: t0, kind: 'dusk-fire', spots: [[3.2, 28.6, 28.2, 1.3], [1.4, 27, 28.2, 0.9], [5.2, 30, 28.2, 0.9], [4, 32.5, 28.2, 1.1]].map(([x, y, z, s]) => ({ at: CP(x, y, z), s: s * k })), height: 3.0, seed: 31, smoke: 0.9, glow: 0.4, wind: [1.4, -0.6], fadeIn: 0.4 },
+  { t: t0, kind: 'dusk-plume', at: CP(3.5, 33, 28.5), rate: 3, life: 8, rise: 3, spread: 2, size0: 2.5, size1: 11, prewarm: 0, opacity: 0.75, wind: [2.2, -1], color: '#1e1412', glow: '#ff6a1a', glowH: 3, seed: 12 },
+  { t: t0, kind: 'light', at: CP(3.5, 29, 33), color: '#ff6a1a', intensity: 90, distance: 32, flicker: 0.35, fadeIn: 0.3 },
 ];
 
-// The giant at a size for the tower (the cast's 3.5 would bury it: the rig is 3.5 crabs already),
-// nose up against the front's left side, its back to the parvis, legs on the wall. Path lift is
-// above the parvis.
-const G = [CATH.x - 4.8, CATH.z + 27.4 + 1.3];
+// The giant clings to the front's left side, nose up against it, its back to the parvis, and climbs
+// in lunges. A molten thing: fire jetting from its plates, fel-green smoke pouring off it, its chest
+// glowing. Path lift is above the parvis.
+const G = [CATH.x - 6.6, CATH.z + 27.4 + 1.1];
 const GIANT_YAW = Math.PI;
-const GIANT_ACTOR = { id: 'g', ...GIANT, scale: 1.6, at: G, yaw: GIANT_YAW };
-/** Clinging from 137.5, then hand over hand: [t, lift], thuds 139.41, 140.21, 140.39; hauls on up. */
-const CLIMB = [[0, 12], [2.62, 13], [2.91, 18], [3.4, 18.4], [3.71, 23.5], [3.8, 23.7], [3.89, 26.5], [4.05, 26.8], [4.5, 31]];
+const GIANT_ACTOR = { id: 'g', ...GIANT, scale: 0.95, at: G, yaw: GIANT_YAW };
+/** [t, lift] from 136.5: clinging, then hand over hand, thuds 139.41, 140.21, 140.39; hauls on up. */
+const CLIMB = [[0, 15], [2.6, 16], [2.91, 18.5], [3.4, 19], [3.71, 21.5], [3.8, 21.7], [3.89, 24], [4.1, 24.4], [4.5, 26]];
 const CLIMB_PATH = CLIMB.map(([t, lift]) => ({ t, x: G[0], z: G[1], yaw: GIANT_YAW, lift }));
 const CLIMB_ACTS = [[2.91, 'claw_left'], [3.71, 'claw_right'], [3.89, 'claw_left']].map(([t, clip]) => ({ t: t - 0.3, clip, speed: 1.4 }));
-/** The giant's glow: a fel light on its chest and a hot one at its claws. */
-const GIANT_GLOW = (t0) => [
-  { t: t0, kind: 'light', at: { a: 'g', o: [0, 1.4, -1.2] }, color: '#b8e04a', intensity: 40, distance: 7, flicker: 0.25 },
-  { t: t0, kind: 'light', at: { a: 'g', o: [0, 3, 1] }, color: '#ff8a2a', intensity: 18, distance: 6, flicker: 0.4 },
-  // A cold rim from the sky so its shape reads off the burning sky.
+const GIANT_FX = (t0) => [
+  { t: t0, kind: 'light', at: { a: 'g', o: [0, 1.4, -1.2] }, color: '#b8e04a', intensity: 40, distance: 8, flicker: 0.25 },
+  { t: t0, kind: 'light', at: { a: 'g', o: [0, 3, 1] }, color: '#ff8a2a', intensity: 30, distance: 8, flicker: 0.4 },
+  // A cold rim from the sky so its shape reads off the dark stone.
   { t: t0, kind: 'light', at: { a: 'g', o: [0, 4.5, -3] }, color: '#9ab0ff', intensity: 35, distance: 9 },
+  // Fire jetting from its plates.
+  { t: t0, kind: 'dusk-fire', spots: [[-1.1, 1.6, -0.8, 0.5], [1.0, 2.2, -0.7, 0.45], [0, 3.0, -0.9, 0.55], [0.6, 0.9, -0.6, 0.35]].map(([l, u, f, s]) => ({ at: { a: 'g', o: [l, u, f] }, s })), height: 2.2, seed: 71, smoke: 0, glow: 0.5, gain: 1.2 },
+  // Fel smoke pouring off it.
+  { t: t0, kind: 'dusk-plume', at: { a: 'g', o: [0, 2, -1] }, rate: 7, life: 3.5, rise: 1.6, spread: 1.0, size0: 0.7, size1: 3, prewarm: 3.5, opacity: 0.4, wind: [-1.2, 0.6], color: '#1a2410', glow: '#4a8018', glowH: 1.5, glowK: 0.8, seed: 13 },
 ];
 const tower = {
   id: 'dusk-tower',
@@ -424,45 +454,51 @@ const tower = {
   actors: [GIANT_ACTOR],
   tracks: { g: { path: CLIMB_PATH, acts: CLIMB_ACTS } },
   cam: {
+    // Low among the rubble, the tower over it; craning up the front as the giant climbs.
     keys: [
-      { t: 0, p: { g: [-47, 1.5, 4] }, l: CP(-7, 29, 26), fov: 50 },
-      { t: 4.5, p: { g: [-44, 6, 0.5] }, l: CP(-5, 41, 26), fov: 46 },
+      { t: 0, p: { g: [-47, 1.3, 5] }, l: CP(-2, 26, 26), fov: 48 },
+      { t: 1.0, p: { g: [-46.6, 1.6, 4.4] }, l: CP(-2.5, 27, 26), fov: 47 },
+      { t: 4.5, p: { g: [-44, 9, 1.5] }, l: CP(-4, 34, 26), fov: 42 },
     ],
     ease: 'sine',
   },
   fx: [
     ...TOWER_SKY(-6),
+    ...PARVIS_RUBBLE(-6),
     ...WALL_FIRES(-6),
     { t: -6, kind: 'dusk-pose', actor: 'g', pitch: [[0, 74]] },
-    ...GIANT_GLOW(-6),
+    ...GIANT_FX(-6),
     // Out of the white burn: a short warm haze that clears off the tower.
     { t: 0, kind: 'fade', color: '#fff0dc', curve: [[0, 0.75], [0.12, 0.4], [0.28, 0]] },
     // 137.0: the fireball comes in from the left and strikes the belfry at 137.15.
     { t: 0.3, kind: 'dusk-fireball', from: [STRIKE[0] - 40, STRIKE[1] + 16, STRIKE[2] - 24], to: STRIKE, d: 0.35, size: 2.2, trail: 90, light: 1600, distance: 30, accel: 1.2 },
     { t: 0.65, kind: 'dusk-blast', at: STRIKE, r: 5, column: 4, light: 2400, distance: 34, flashA: 0.14, flashD: 0.08, flashColor: '#ffb060', shake: 0.1, puffs: 56, debris: 50, gravity: 9.8 },
     ...STRUCK_FIRES(0.67),
+    // The thuds: grit bursting from the stone under its claws.
+    ...[2.91, 3.71, 3.89].map((t, i) => ({ t, kind: 'dusk-blast', at: { a: 'g', o: [0, 3.2, 0.6] }, r: 1.2, column: 0, light: 300, distance: 8, flash: false, shake: 0.05, puffs: 14, debris: 18, ring: 0, seed: 40 + i, fireA: 0.3 })),
+    ...[2.91, 3.71, 3.89].map((t) => ({ t, kind: 'shake', d: 0.25, amp: 0.05 })),
   ],
 };
 
-// 141.0: over the top. The giant hauls itself up the tower's top and the top bursts (141.36); the
-// warrior shows on the ledge through the smoke by 141.9. The camera up close under it on the parvis's
-// side.
-const W0 = CP(1.2, 44, 26.2);
+// 141.0: the giant hauls itself up over the parapet and the top bursts (141.36); the warrior shows on
+// the belfry roof through the smoke by 141.9. The camera halfway up, under the top.
+const W0 = CP(2.8, 35.2, 25.7);
+const W_LIFT = W0[1] - PARVIS;
 const giant = {
   id: 'dusk-giant',
   ...span(C.giant, C.leap),
   chapter: 7,
   anchor: [-40, 0],
   view: TOWER_VIEW,
-  actors: [GIANT_ACTOR, { id: 'w', spec: ORC, at: [W0[0], W0[2]], yaw: 0 }],
+  actors: [GIANT_ACTOR, { id: 'w', spec: ORC, at: [W0[0], W0[2]], yaw: Math.PI }],
   tracks: {
-    g: { path: [{ t: 0, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 31 }, { t: 0.3, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 35.5 }, { t: 1, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 37 }], acts: [{ t: -0.2, clip: 'attack_slam', speed: 0.9 }] },
-    w: { path: [{ t: 0, x: W0[0], z: W0[2], yaw: 0, lift: W0[1] - PARVIS }], faces: [{ t: -2, expr: 'angry' }], show: [[-9, false], [0.6, true]] },
+    g: { path: [{ t: 0, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 26 }, { t: 0.36, x: G[0], z: G[1], yaw: GIANT_YAW, lift: 28 }, { t: 1, x: G[0] + 0.4, z: G[1] - 0.6, yaw: GIANT_YAW, lift: 30 }], acts: [{ t: -0.2, clip: 'claw_right', speed: 1.2 }, { t: 0.3, clip: 'attack_slam', speed: 0.9 }] },
+    w: { path: [{ t: 0, x: W0[0], z: W0[2], yaw: deg(200), lift: W_LIFT }], faces: [{ t: -2, expr: 'angry' }], show: [[-9, false], [0.6, true]] },
   },
   cam: {
     keys: [
-      { t: 0, p: { g: [-43, 20, -1] }, l: CP(-1, 40, 26), fov: 46 },
-      { t: 1, p: { g: [-42, 21.5, -1.5] }, l: CP(-0.5, 42, 26), fov: 44 },
+      { t: 0, p: { g: [-42, 15, -1] }, l: CP(-2, 34.5, 26), fov: 42 },
+      { t: 1, p: { g: [-41, 16.5, -1.5] }, l: CP(-1, 35.5, 26), fov: 40 },
     ],
     ease: 'linear',
     shake: 0.04,
@@ -471,62 +507,75 @@ const giant = {
     ...TOWER_SKY(-6),
     ...WALL_FIRES(-6),
     ...STRUCK_FIRES(-6),
-    ...GIANT_GLOW(-6),
+    ...GIANT_FX(-6),
     { t: -6, kind: 'dusk-pose', actor: 'g', pitch: [[0, 74], [1, 60]] },
     // 141.36: the tower's top bursts in a ball of fire.
-    { t: 0.36, kind: 'dusk-blast', at: CP(-2, 45, 26), r: 6, column: 0, light: 3000, distance: 26, flashA: 0.12, flashD: 0.08, flashColor: '#ffb060', shake: 0.16, puffs: 60, debris: 50 },
-    { t: 0.55, kind: 'dusk-blast', at: CP(-5.5, 42, 27), r: 3, column: 0, light: 1200, distance: 14, flash: false, shake: 0.06, puffs: 30, debris: 26, seed: 9 },
-    // Flames on the ledge round him as he shows.
-    { t: 0.4, kind: 'dusk-fire', spots: [{ at: CP(-2.6, 44, 26.6), s: 0.9 }, { at: CP(4.2, 44, 26.4), s: 0.8 }], height: 2.4, seed: 52, smoke: 0.5, fadeIn: 0.3 },
+    { t: 0.36, kind: 'dusk-blast', at: CP(-3.5, 36, 26), r: 5, column: 0, light: 3000, distance: 26, flashA: 0.12, flashD: 0.08, flashColor: '#ffb060', shake: 0.16, puffs: 60, debris: 50 },
+    { t: 0.55, kind: 'dusk-blast', at: CP(-5.5, 33, 27.5), r: 2.5, column: 0, light: 1200, distance: 14, flash: false, shake: 0.06, puffs: 30, debris: 26, seed: 9 },
+    // Flames on the parapet round him as he shows.
+    { t: 0.4, kind: 'dusk-fire', spots: [{ at: CP(0.6, 34.6, 26.4), s: 0.8 }, { at: CP(5.2, 38.2, 26.8), s: 0.6 }, { at: CP(-1.5, 35.6, 26.2), s: 0.7 }], height: 2.4, seed: 52, smoke: 0.5, fadeIn: 0.3 },
   ],
 };
 
-// 142.0: the warrior on the ledge at the spire's foot amid the flames, the burning sky behind; he
-// crouches (142.4) and springs at the lens (143.2), his blade swinging; the giant's fire blooms
-// behind him (143.3) and the frame goes white by 143.8.
-const W1 = CP(1.0, 45.8, 30.4);
-const W2 = CP(0.8, 44.8, 31.6);
+// 142.0: the warrior on the belfry roof amid the flames, the giant's fire behind him; he hops onto the
+// front parapet (142.25), crouches and back flips off it out over the parvis (in the air 143.0 to
+// 143.45); the giant's fire blooms behind him (143.3) and the frame goes white by 143.8. The camera
+// over the parapet's west end, looking along it at him with the east sky and the fire beyond.
+/** Off the parapet at 0.85 (142.85): in the air from 143.0 like the original's spring at 143.2. */
+const TAKEOFF = 0.85;
+const sm = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+/** On the roof, the hop onto the parapet (0.3-0.6), then out over the edge under the flip. */
+const W_HOP = CP(2.8, 35.2, 26.7);
+const W_OUT = CP(2.8, 35.2, 29.3);
+const leapLift = (t) => W_LIFT + 0.9 * sm((t - 0.3) / 0.3) + (t > TAKEOFF ? 0.5 * Math.sin(Math.min(1, (t - TAKEOFF) / 1.1) * Math.PI) : 0);
+const leapZ = (t) => (t < 0.3 ? W0[2] : t < 0.6 ? W0[2] + (W_HOP[2] - W0[2]) * sm((t - 0.3) / 0.3) : t < TAKEOFF ? W_HOP[2] : W_HOP[2] + (W_OUT[2] - W_HOP[2]) * sm((t - TAKEOFF) / 1.0));
 const leap = {
   id: 'dusk-leap',
   ...span(C.leap, C.black),
   chapter: 7,
   anchor: [-40, 0],
   view: { ...TOWER_VIEW, dof: true, bokeh: 2 },
-  actors: [{ id: 'w', spec: ORC, at: [W0[0], W0[2]], yaw: 0 }],
+  actors: [{ id: 'w', spec: ORC, at: [W0[0], W0[2]], yaw: Math.PI }],
   tracks: {
     w: {
-      path: [
-        { t: 0, x: W0[0], z: W0[2], yaw: 0, lift: W0[1] - PARVIS },
-        { t: 1.15, x: W0[0], z: W0[2], yaw: 0, lift: W0[1] - PARVIS },
-        { t: 1.55, x: W1[0], z: W1[2], yaw: 0, lift: W1[1] - PARVIS },
-        { t: 1.96, x: W2[0], z: W2[2], yaw: 0, lift: W2[1] - PARVIS },
-      ],
-      acts: [{ t: 0.35, clip: 'jump', from: 0.3, speed: 0.55 }, { t: 1.3, clip: 'attack_swipe', upper: true }],
+      path: Array.from({ length: 41 }, (_, i) => {
+        const t = +((1.96 * i) / 40).toFixed(4);
+        return { t, x: W0[0], z: +leapZ(t).toFixed(3), lift: +leapLift(t).toFixed(3), yaw: Math.PI };
+      }),
+      // The hop, then the back flip at half speed (src/motion/breakClips.ts: takeoff 0.84, land 1.14).
+      acts: [{ t: 0.25, clip: 'jump', from: 0.45, speed: 0.9 }, { t: TAKEOFF - (0.84 - 0.675) / 0.5, clip: 'break_backflip', from: 0.675, to: 1.825, speed: 0.5 }],
       faces: [{ t: -2, expr: 'angry' }],
     },
   },
   cam: {
-    // In front of the ledge a little below it, looking up past him into the sky; he leaps at it.
     keys: [
-      { t: 0, p: CP(2.4, 43.3, 31.4), l: CP(0.6, 45.0, 26.2), fov: 40 },
-      { t: 1.96, p: CP(2.6, 43.0, 32.6), l: CP(0.6, 46.0, 30), fov: 44 },
+      { t: 0, p: CP(-6.5, 39.5, 33), l: CP(2.8, 36.3, 29.3), fov: 34 },
+      { t: 1.96, p: CP(-6.3, 39.2, 34), l: CP(3.0, 37.2, 30.5), fov: 38 },
     ],
     ease: 'linear',
     focus: 'w',
-    range: 5,
+    range: 6,
   },
   fx: [
     ...TOWER_SKY(-6),
     ...WALL_FIRES(-6),
     ...STRUCK_FIRES(-6, 0.8),
-    // Flames along the ledge round him.
-    { t: -6, kind: 'dusk-fire', spots: [[-4.6, 1.0], [-2.8, 0.8], [3.6, 0.9], [5.2, 0.7]].map(([x, k]) => ({ at: CP(x, 44, 26.6), s: k })), height: 2.4, seed: 51, smoke: 0.6, glow: 0.6 },
+    // The top still burning from the giant's blast: flames along the roof and parapet, thick smoke over
+    // the spire.
+    { t: -6, kind: 'dusk-fire', spots: [[-3.5, 34.2, 25.6, 1.0], [-1.0, 35.6, 25.4, 0.8], [-5.5, 38.2, 26.6, 0.7], [5.6, 38.3, 26.8, 0.6], [0.4, 34.8, 23.5, 0.9]].map(([x, y, z, k]) => ({ at: CP(x, y, z), s: k })), height: 2.6, seed: 51, smoke: 0.8, glow: 0.4 },
+    { t: -6, kind: 'dusk-plume', at: CP(-2, 37, 23), rate: 4, life: 7, rise: 3.5, spread: 2.5, size0: 3, size1: 10, prewarm: 7, opacity: 0.85, wind: [1.5, -0.6], color: '#1a1210', glow: '#ff6a1a', glowH: 4, seed: 15 },
+    // Smoke rolling off the roof over the spire's foot and round the east pinnacle.
+    { t: -6, kind: 'dusk-plume', at: CP(-1.5, 35.5, 24.2), rate: 6, life: 4, rise: 1.6, spread: 1.2, size0: 1.6, size1: 4.5, prewarm: 4, opacity: 0.8, wind: [0.9, 0.4], color: '#140e0c', glow: '#ff5a14', glowH: 1.5, seed: 16 },
+    { t: -6, kind: 'dusk-plume', at: CP(5.6, 38.4, 25.6), rate: 4, life: 4, rise: 1.4, spread: 0.8, size0: 1.2, size1: 3.5, prewarm: 4, opacity: 0.7, wind: [0.9, 0.4], color: '#140e0c', glow: '#ff5a14', glowH: 1.2, seed: 17 },
+    { t: -6, kind: 'dusk-fire', spots: [{ at: CP(5.6, 38.3, 26.9), s: 1.0 }, { at: CP(4.6, 36.4, 27.3), s: 0.6 }, { at: CP(-0.6, 36.2, 27.3), s: 0.7 }], height: 2.4, seed: 57, smoke: 0, glow: 0.4 },
     { t: -6, kind: 'light', at: { a: 'w', o: [-1.2, 1.2, -1.5] }, color: '#ff7a2a', intensity: 12, distance: 6, flicker: 0.4 },
     // A cool rim from the sky so the red crab stands off the fire.
     { t: -6, kind: 'light', at: { a: 'w', o: [0.8, 2.0, -2.2] }, color: '#9ab0ff', intensity: 22, distance: 6 },
     { t: -6, kind: 'light', at: { a: 'w', o: [0, 1.2, 2.5] }, color: '#ffe0b0', intensity: 10, distance: 6 },
+    // Firelight from the burning roof before him.
+    { t: -6, kind: 'light', at: { a: 'w', o: [1.5, 0.8, 2.0] }, color: '#ff8a3a', intensity: 30, distance: 7, flicker: 0.4 },
     // 143.3: the giant's fire blooms behind him and the frame goes white by 143.8.
-    { t: 1.3, kind: 'dusk-blast', at: CP(-4, 50, 24), r: 6, column: 0, light: 5000, distance: 30, flashA: 0.3, flashD: 0.1, flashColor: '#ffe0b0', shake: 0.12, puffs: 64, debris: 40, seed: 21 },
+    { t: 1.3, kind: 'dusk-blast', at: CP(6, 37.5, 24.5), r: 5, column: 0, light: 5000, distance: 30, flashA: 0.3, flashD: 0.1, flashColor: '#ffe0b0', shake: 0.12, puffs: 64, debris: 40, seed: 21 },
     { t: 1.4, kind: 'fade', color: '#fff4e2', curve: [[1.5, 0], [1.62, 0.3], [1.72, 0.7], [1.8, 0.95], [1.96, 1]] },
   ],
 };

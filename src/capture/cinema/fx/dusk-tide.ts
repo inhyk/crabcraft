@@ -6,6 +6,8 @@
 //   sunDir  [x, y, z] toward the sun (the sky's sun and the key light's direction)
 //   sun     { color, intensity }     hemi { sky, ground, intensity }     env: reflections' intensity
 //   hide    more object names kept hidden
+//   mats    { <material name>: { color, emissive, intensity } }: the island's materials recoloured (the
+//           cyan lantern glass to firelight, the windows dimmed)
 import * as THREE from 'three';
 import { registerEffect, type Effect } from '../fx';
 import type { FxCue } from '../types';
@@ -74,6 +76,19 @@ class Tide implements Effect {
       const old = this.scene.environmentIntensity;
       this.undo.push(() => (this.scene.environmentIntensity = old));
     }
+    const mats = (cue.mats ?? {}) as Record<string, { color?: string; emissive?: string; intensity?: number }>;
+    const seen = new Set<THREE.Material>();
+    this.scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      for (const mat of Array.isArray(m) ? m : m ? [m] : []) {
+        const want = mats[mat.name];
+        if (!want || seen.has(mat) || !(mat instanceof THREE.MeshStandardMaterial)) continue;
+        seen.add(mat);
+        if (want.color) set(() => mat.color.clone(), (c) => mat.color.copy(c), new THREE.Color(want.color));
+        if (want.emissive) set(() => mat.emissive.clone(), (c) => mat.emissive.copy(c), new THREE.Color(want.emissive));
+        if (want.intensity !== undefined) set(() => mat.emissiveIntensity, (v) => (mat.emissiveIntensity = v), want.intensity);
+      }
+    });
     const names = new Set([...HIDE, ...((cue.hide as string[]) ?? [])]);
     this.scene.traverse((o) => {
       if (names.has(o.name) && o.visible) this.hidden.push(o);
