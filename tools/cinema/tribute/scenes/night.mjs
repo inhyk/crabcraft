@@ -236,6 +236,8 @@ const beast = { id: 'beast', enemy: 'scavenger', scale: 1.5 };
 const SHADE = { kind: 'night-shade', t: -3, actor: 'beast', body: '#150c24', glow: '#b45cff', eyes: '#d890ff', stretch: [1, 0.8, 1.3] };
 
 const elf = { id: 'elf', spec: ELF };
+/** A forest floor over the wood's flat ground (src/capture/cinema/fx/night-floor.ts): moss, soil, litter, fine grass. */
+const FLOOR = { kind: 'night-floor', t: -3, soil: '#2a2232', moss: '#2a3d3a', litter: '#4a2a4c', litter2: '#3c2a44', grass: '#1d3530', tip: '#7a9a8e', count: 30, seed: 17 };
 
 const elfShots = [
   // Out of white, leaves blowing across; she waits among the ferns, alert, then spins and dashes.
@@ -274,6 +276,7 @@ const elfShots = [
     },
     fx: [
       { ...LAVENDER, k: [[0, 0], [0.35, 0.2], [1.2, 1]] },
+      { ...FLOOR, box: [E0[0] - 12, E0[1] - 10, E0[0] + 8, E0[1] + 10] },
       { kind: 'night-veil', t: -1, alpha: [[0, 1], [0.3, 0.9], [1.1, 0]], color: '#ffffff', gain: 5 },
       // A gust through the white, then leaves drifting down.
       { kind: 'leaves', t: -1, until: 1.8, fadeOut: 0.5, count: 2200, box: [7, 4, 7], drift: [5.5, -1.2, -2.5], size: 0.075, color: '#3a1030', color2: '#6a2040', opacity: 1, seed: 3 },
@@ -317,6 +320,9 @@ const elfShots = [
       LANE_CLEAR,
       PUSH_CLEAR,
       PUSH_GRASS,
+      { ...FLOOR, box: [-106, 12, -82, 100], clear: [[PUDDLE[0], PUDDLE[1], 1.2], [POND[0], POND[1], 3.0], [POND[0] - 1.2, POND[1] - 2.8, 1.2]] },
+      // The world's coarse grass tufts in the floor's box give way to its fine blades.
+      { kind: 'night-clear', t: -3, match: 'grass', skip: '^$', cut: Array.from({ length: 7 * 23 }, (_, i) => [-106 + (i % 7) * 4, 12 + Math.floor(i / 7) * 4, 3]) },
       // Grass and ferns out of the water.
       { kind: 'night-clear', t: -3, skip: '^$', cut: [[PUDDLE[0], PUDDLE[1], 1.9], [POND[0], POND[1], 4.0], [POND[0] - 1.2, POND[1] - 2.8, 1.6]] },
       // Ferns between the lens and her where she splashes.
@@ -635,6 +641,8 @@ const FALL = 6.3;
 const LAND = 8.5;
 /** Scenery the undead shots drop: the observatory's grey rubble and its violet astrolabe (it read as clutter). */
 const UNDEAD_HIDE = ['observatory-rubble'];
+/** The observatory's columns: bare cylinders standing by him in the cast and the blast. */
+const COLUMNS = ['observatory-column-shafts', 'observatory-column-bases', 'observatory-column-capitals', 'observatory-column-bands', 'observatory-column-runes'];
 const NO_ASTROLABE = { kind: 'night-drop', t: -3, at: [80, -40], r: 5.5, above: 3 };
 
 const undeadShots = [
@@ -681,7 +689,7 @@ const undeadShots = [
   // channel held while boulders climb out of the ground round him; the burning rock falls, the blast.
   cut('night-undead-cast', UNDEAD_CAST, UNDEAD_OUT, 2, {
     view: view({ exposure: 1.2, saturation: -0.18, contrast: 0.26, dof: true, bokeh: 2.5 }),
-    hide: UNDEAD_HIDE,
+    hide: [...UNDEAD_HIDE, ...COLUMNS],
     anchor: U,
     actors: [{ ...undead, at: U, yaw: U_YAW }],
     tracks: {
@@ -754,7 +762,7 @@ const explodeShots = [
   // fire, the camera thrown forward into it.
   cut('night-explode', EXPLODE_IN, EXPLODE_OUT, 2, {
     view: view({ exposure: 0.95, saturation: -0.16, contrast: 0.26 }),
-    hide: UNDEAD_HIDE,
+    hide: [...UNDEAD_HIDE, ...COLUMNS],
     anchor: U,
     actors: [{ ...undead, at: U, yaw: U_YAW + Math.PI - 0.4 }],
     tracks: {
