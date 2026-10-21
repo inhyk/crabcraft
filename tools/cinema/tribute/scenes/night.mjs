@@ -760,8 +760,9 @@ const undeadShots = [
       { kind: 'embers', t: 6, fadeIn: 1.5, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
       // Boulders climb out of the ground round him and fly together behind him into the golem; the
       // burning rock falls past its shoulder, the blast.
-      // Whole and blazing, it lurches over him at 109.2 s, fists thrust at the lens (the original's swing).
-      { ...golem, loom: [16.2, 17.2], leanTo: 0.45, reach: 1.05 },
+      // Fire erupts out of its shoulders and fists at 107.4 s and keeps burning; whole and blazing, it
+      // lurches over him at 109.2 s, fists thrust at the lens (the original's swing), every crack flaring.
+      { ...golem, loom: [16.2, 17.2], leanTo: 0.45, reach: 1.05, fire: { at: 14.4 }, flare: [[16.9, 1], [17.1, 3], [17.6, 3]] },
       // More molten rocks heave out of the ground round him, beside the lens, and the blast throws them.
       { ...boulders(LAND - 9.9), n: 9, size: [0.22, 0.6], h: [0.1, 1.0], rise: [9.6, 12.6], seed: 53 },
       STREAK,
