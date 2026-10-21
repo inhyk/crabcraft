@@ -1,12 +1,12 @@
-// The night-elf run becomes a seven-move showcase, still on the original edit grid.
+// The night-elf run becomes a short dash and a seven-move showcase, still on the original edit grid.
 // Every articulation is a recorded Jumper policy from public/motions. Grounded moves
 // plant their stage root; only the approach/recovery translates it. The camera supplies
 // the travelling energy while a claw or foot is supporting the body.
 import { ELF } from '../cast.mjs';
 
 export const ELF_ACTIONS = [
-  { id: 'night-elf-toprock', at: 74.6, end: 76.0, clip: 'break_toprock', from: 1.39, to: 2.3, speed: 1.1, approach: 0.55, point: [-89, 26], yaw: -0.35, label: 'Toprock feint', camera: 'front' },
-  { id: 'night-elf-sixstep', at: 76.0, end: 77.7, clip: 'break_sixstep', from: 1.1, to: 2.55, speed: 1.2, approach: 0.45, point: [-90, 37], yaw: 0.0, label: 'Six-step pivot', camera: 'high' },
+  { id: 'night-elf-toprock', at: 75.6, end: 76.55, clip: 'break_toprock', from: 1.39, to: 2.3, speed: 1.1, point: [-89, 26], yaw: -0.35, label: 'Toprock feint', camera: 'front' },
+  { id: 'night-elf-sixstep', at: 76.55, end: 77.7, clip: 'break_sixstep', from: 1.1, to: 2.55, speed: 1.3, point: [-90, 37], yaw: 0.0, label: 'Six-step pivot', camera: 'high' },
   { id: 'night-elf-spin', at: 77.7, end: 79.15, clip: 'break_spin', from: 1.05, to: 2.8, speed: 1.2, point: [-91, 45], yaw: -0.2, label: 'Ground spin', camera: 'side' },
   { id: 'night-elf-backflip', at: 79.15, end: 80.8, clip: 'break_backflip', from: 0.675, to: 1.825, speed: 0.82, point: [-91.45, 48.2], yaw: 0, label: 'Backflip into the puddle', camera: 'wide', land: 0.567 },
   { id: 'night-elf-clawstand', at: 80.8, end: 82.8, clip: 'break_clawstand', from: 3.65, to: 6.425, speed: 1.55, point: [-92.5, 62], yaw: -0.2, label: 'Two-claw balance', camera: 'low' },
@@ -15,6 +15,8 @@ export const ELF_ACTIONS = [
 ];
 
 const G = (p, x, y, z) => ({ g: [p[0] + x, y, p[1] + z] });
+/** Moss, soil, litter and fine grass (src/capture/cinema/fx/night-floor.ts) in the run's violet night. */
+const FLOOR = { kind: 'night-floor', t: -3, soil: '#2a2232', moss: '#2a3d3a', litter: '#4a2a4c', litter2: '#3c2a44', grass: '#1d3530', tip: '#7a9a8e', count: 30, seed: 17 };
 const angles = {
   front: [[-3.9, 1.15, 3.4], [-4.4, 0.9, 2.2], 0.65, 41],
   high: [[-3.9, 4.7, 1.6], [-4.2, 3.4, -1.4], 0.3, 47],
@@ -42,15 +44,14 @@ function actionShot(a, run) {
     return { t, x: p[0], z: p[1] - 2.6 * before * before + (last ? 2.1 : 0.9) * after * after, yaw: a.yaw, lift: last ? 1.15 * after * after : 0 };
   });
   const trail = run.fx.filter((f) => ['leaves', 'motes'].includes(f.kind)).map((f) => ({ ...f, count: Math.round(f.count * 0.45), size: f.size * 0.65 }));
+  // The run's own look (its lavender grade, mist and lens), so the moves sit in the same moonlit
+  // wood as the close-up before them and the change after.
+  const grade = run.fx.filter((f) => f.kind === 'night-grade');
   return {
     id: a.id, at: a.at, length, chapter: 1, mood: 1,
     anchor: p,
-    view: {
-      exposure: 1.26, saturation: -0.07, contrast: 0.16,
-      bloom: { intensity: 0.62, threshold: 0.95, radius: 0.48 },
-      vignette: { offset: 0.27, darkness: 0.45 }, dof: true, bokeh: 1.5,
-    },
-    fog: { color: '#595879', density: 0.035 },
+    view: run.view,
+    fog: run.fog,
     actors: [{ id: 'elf', spec: ELF, at: p, yaw: a.yaw }],
     tracks: { elf: {
       path,
@@ -65,7 +66,7 @@ function actionShot(a, run) {
       ],
     },
     fx: [
-      { kind: 'night-grade', t: -3, mul: '#c0b4e8', mulTop: '#b8c3fa', gain: 1.2, lift: '#0b1029', liftK: 0.25 },
+      ...grade,
       // Clear the feet and every sight line, keeping the surrounding forest as depth layers.
       { kind: 'night-clear', t: -3, cut: [[...p, a.camera === 'high' ? 7 : 3.6], ...[0, 0.25, 0.5, 0.75, 1].flatMap((t) => {
         const x = start[0] + (end[0] - start[0]) * t;
@@ -73,6 +74,9 @@ function actionShot(a, run) {
         return [[p[0] + x, p[1] + z, a.camera === 'high' ? 6 : 2.5], [p[0] + x * 0.5, p[1] + z * 0.5, 1.7]];
       })] },
       { kind: 'night-clear', t: -3, skip: '^$', cut: [[...p, 3.4], [p[0], p[1] - 2.5, 2]] },
+      // A forest floor over the wood's flat ground; the coarse cone tufts around it give way to its fine grass.
+      { ...FLOOR, box: [p[0] - 14, p[1] - 14, p[0] + 14, p[1] + 14], ...(waterAt === undefined ? {} : { clear: [[...p, 1.9]], wet: 0.75 }) },
+      { kind: 'night-clear', t: -3, match: 'grass', skip: '^$', cut: Array.from({ length: 64 }, (_, i) => [p[0] - 14 + (i % 8) * 4, p[1] - 14 + Math.floor(i / 8) * 4, 3]) },
       ...trail,
       { kind: 'elf-contact', t: -3, actor: 'elf', jump: a.land === undefined ? null : { takeoff: (a.clip === 'break_backflip' ? 0.84 - a.from : 0.9 - a.from) / a.speed, land: a.land } },
       { kind: 'light', t: -3, at: G(p, -2.8, 3.6, 1.3), color: '#c7dcff', intensity: 15, distance: 9 },
@@ -91,6 +95,20 @@ function actionShot(a, run) {
 }
 
 /** Keep all other shots, including the close-up, transformation and moon dive, byte-for-byte. */
+/**
+ * The run keeps its first second, the dash out of the close-up (74.6-75.6), and the moves start
+ * where the original cuts away under a trunk that whips past the lens (src/capture/cinema/fx/
+ * night-wipe.ts): the same sweep ends the dash and opens the toprock, covering the frame at the cut.
+ */
+const DASH_END = 75.6;
+const WIPE = { kind: 'night-wipe', d: 0.5, from: 1.9, to: -1.9 };
 export function withElfActions(shots) {
-  return shots.flatMap((s) => s.id === 'night-elf-run' ? ELF_ACTIONS.map((a) => actionShot(a, s)) : [s]);
+  return shots.flatMap((s) => {
+    if (s.id !== 'night-elf-run') return [s];
+    const cut = +(DASH_END - s.at).toFixed(4);
+    const dash = { ...s, length: cut, fx: [...s.fx, { ...WIPE, t: cut - WIPE.d / 2 }] };
+    const moves = ELF_ACTIONS.map((a) => actionShot(a, s));
+    moves[0].fx.push({ ...WIPE, t: -WIPE.d / 2 });
+    return [dash, ...moves];
+  });
 }
