@@ -7,9 +7,7 @@ import { ELF } from '../cast.mjs';
 export const ELF_ACTIONS = [
   { id: 'night-elf-toprock', at: 74.6, end: 76.0, clip: 'break_toprock', from: 1.39, to: 2.3, speed: 1.1, approach: 0.55, point: [-89, 26], yaw: -0.35, label: 'Toprock feint', camera: 'front' },
   { id: 'night-elf-sixstep', at: 76.0, end: 77.7, clip: 'break_sixstep', from: 1.1, to: 2.55, speed: 1.2, approach: 0.45, point: [-90, 37], yaw: 0.0, label: 'Six-step pivot', camera: 'high' },
-  { id: 'night-elf-spin', at: 77.7, end: 79.15, clip: 'break_spin', from: 1.05, to: 1.8, speed: 1.5, point: [-91, 45], yaw: -0.1, label: 'Ground spin, then the leap over the creek', camera: 'side', leap: true, look: { y0: true },
-    faces: [{ t: -2, expr: 'focused' }, { t: 0.45, expr: 'angry' }],
-    then: [{ t: 0.525, clip: 'jump', from: 0.9, to: 1.075, speed: 1, fade: 0.08 }, { t: 0.7, clip: 'jump', from: 1.075, to: 1.3, speed: 0.3, fade: 0.01 }] },
+  { id: 'night-elf-spin', at: 77.7, end: 79.15, clip: 'break_spin', from: 1.05, to: 2.8, speed: 1.2, point: [-91, 45], yaw: -0.2, label: 'Ground spin', camera: 'side' },
   { id: 'night-elf-backflip', at: 79.15, end: 80.8, clip: 'break_backflip', from: 0.828, to: 1.14, speed: 0.55, point: [-91.5, 49.7], yaw: 0, label: 'Backflip over the creek onto the far bank', camera: 'wide', leap: true, land: 0.567,
     faces: [{ t: -2, expr: 'angry' }, { t: 0.85, expr: 'focused' }],
     then: [{ t: 0.567, clip: 'break_backflip', from: 1.14, to: 1.825, speed: 0.8, fade: 0.01 }] },
@@ -21,6 +19,19 @@ export const ELF_ACTIONS = [
     faces: [{ t: -2, expr: 'focused' }, { t: 0.3, expr: 'angry' }],
     keys: [[0, 0, -4.6, 0], [0.35, 0, -2.4, 0], [0.489, 0, -2.4, 0], [1.09, 0, 0, 0], [1.84, 0, 0, 0]] },
 ];
+
+/**
+ * The spin's restaging for the leap over the creek, kept apart from its line above so that line
+ * stays as it was: a shorter, faster spin, a crouch into the jump that leaves the ground on the hit
+ * (78.40 s), and the jump's air pose held long across the water; the face sets as she springs.
+ */
+const RESTAGE = {
+  'night-elf-spin': {
+    to: 1.8, speed: 1.5, yaw: -0.1, label: 'Ground spin, then the leap over the creek', leap: true, look: { y0: true },
+    faces: [{ t: -2, expr: 'focused' }, { t: 0.45, expr: 'angry' }],
+    then: [{ t: 0.525, clip: 'jump', from: 0.9, to: 1.075, speed: 1, fade: 0.08 }, { t: 0.7, clip: 'jump', from: 1.075, to: 1.3, speed: 0.3, fade: 0.01 }],
+  },
+};
 
 const G = (p, x, y, z) => ({ g: [p[0] + x, y, p[1] + z] });
 /** Moss, soil, litter and fine grass (src/capture/cinema/fx/night-floor.ts) in the run's violet night. */
@@ -62,7 +73,8 @@ const creekFx = () => [
   },
 ];
 
-function actionShot(a, run) {
+function actionShot(base, run) {
+  const a = { ...base, ...RESTAGE[base.id] };
   const length = a.end - a.at;
   const [start, end, target, fov, clear = {}] = angles[a.camera];
   const near = clear.near ?? 3.6;
