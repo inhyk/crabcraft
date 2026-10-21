@@ -58,7 +58,7 @@ const MESAS = {
   lift: 0.2,
 };
 /** Where the fireball comes down: the shore at the foot of the near butte. */
-const SITE = flat(T, 70, 400);
+const SITE = flat(T, 70, 330);
 const SITE_AT = [SITE[0], 1, SITE[1]];
 /** Song second the fireball strikes, and the one the fire takes and climbs (the original's 120.2). */
 const STRIKE_AT = 112.42;
@@ -70,14 +70,16 @@ const FIRE_UP = (at) => {
   const o = FIRE_AT - at;
   const spot = (b, d, s) => ({ at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, 0.5] : [v])), s });
   return [
-    { t: o - 0.1, kind: 'dusk-fire', spots: [spot(70, 400, 15), spot(68.6, 408, 12), spot(71.4, 394, 12), spot(67.4, 418, 9), spot(72.8, 388, 8.5), spot(69.4, 388, 7), spot(66.2, 430, 6)], height: 3.2, gain: 1.6, glow: 0.9, seed: 81, smoke: 0, grow: [[o - 0.05, 0], [o + 0.25, 0.55], [o + 0.7, 0.9], [o + 1.2, 1.1], [o + 4, 1.2]] },
-    ...[[70, 400, 0], [68, 414, 1], [72.2, 390, 2]].map(([b, d, k]) => ({ t: o + 0.05 * k, kind: 'dusk-plume', at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, 10] : [v])), rate: 9, life: 9, rise: 30, spread: 3, size0: 6, size1: 34, wind: [7, 2], opacity: 0.9, color: '#201412', glow: '#ff5a18', glowH: 30, glowK: 1.6, seed: 40 + k })),
+    { t: o - 0.1, kind: 'dusk-fire', spots: [spot(70, 330, 18), spot(68.4, 338, 14), spot(71.6, 324, 14), spot(66.8, 348, 10), spot(73.2, 318, 10), spot(69.2, 318, 8), spot(65.4, 358, 7)], height: 3.2, gain: 1.6, glow: 0.9, seed: 81, smoke: 0, grow: [[o - 0.05, 0], [o + 0.25, 0.55], [o + 0.7, 0.9], [o + 1.2, 1.1], [o + 4, 1.2]] },
+    ...[[70, 330, 0], [67.8, 344, 1], [72.4, 320, 2]].map(([b, d, k]) => ({ t: o + 0.05 * k, kind: 'dusk-plume', at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, 10] : [v])), rate: 9, life: 9, rise: 34, spread: 3.5, size0: 8, size1: 42, wind: [7, 2], opacity: 0.9, color: '#201412', glow: '#ff5a18', glowH: 30, glowK: 1.6, seed: 40 + k })),
   ];
 };
 const DUSK_VIEW = { exposure: 1.05, saturation: 0.18, contrast: 0.08, bloom: { intensity: 1.3, threshold: 0.75, radius: 0.8 }, vignette: { offset: 0.25, darkness: 0.6 } };
 const MOTES = (n = 260, box = [14, 6, 14]) => ({ t: -5, kind: 'motes', color: '#ffd28a', color2: '#ffb36b', count: n, box, drift: [0.25, 0.12, 0.1], size: 0.035, opacity: 0.7 });
 /** The plateau's grass for close shots: dry, gold at the tips, over a dusty floor (not the flat green). */
 const TUFTS = ['grass-0', 'grass-1', 'grass-2'];
+/** The meadow's small props: low and dark against the sun, they read as blocks this close. */
+const PROPS = [...[1, 2, 3].flatMap((i) => [`Rock_Medium_${i}`, `Pebble_Round_${i}`, `DeadTree_${i}`]), ...[1, 2, 3, 4, 5].map((i) => `Petal_${i}`), 'Mushroom_Common', 'Clover_1', 'Bush_Common', 'Bush_Common_Flowers', 'Fern_1', 'Flower_3_Group', 'Flower_4_Group'];
 const DRY_FLOOR = ([x, z], half, seed) => ({ t: -6, kind: 'night-floor', box: [x - half, z - half, x + half, z + half], soil: '#4a3022', moss: '#5e5626', litter: '#6e4426', litter2: '#8a6a3a', grass: '#4e4e1e', tip: '#e2b464', count: 34, height: [0.16, 0.62], width: 0.026, wind: 0.09, drift: 0.4, seed });
 /** The sun's direction from T: its glare over the lens is drawn at this far point. */
 const SUN = [...flat(T, 42, 900)].flatMap((v, i) => (i === 0 ? [v, 210] : [v]));
@@ -107,7 +109,7 @@ const meteor = {
   fx: [
     MESAS,
     DRY_FLOOR(T, 9, 61),
-    { t: -6, kind: 'dusk-hide', names: TUFTS },
+    { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS] },
     // The white holds to 111.5, the glare burns through it and recedes by 112.6.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.45, 1], [0.7, 0.85], [0.95, 0.55], [1.15, 0.22], [1.35, 0.05], [1.5, 0]] },
     { t: 0, kind: 'dusk-glare', at: SUN, alpha: [[0, 1.4], [0.6, 1.4], [1.1, 1.0], [1.4, 0.55], [2, 0.42]], radius: [[0, 1.6], [0.6, 1.2], [1.2, 0.45], [1.5, 0.3], [2, 0.26]], color: '#fff6e8', color2: '#ffb468' },
@@ -172,7 +174,7 @@ const rise = {
   fx: [
     MESAS,
     DRY_FLOOR(T, 9, 61),
-    { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...LONE_TREE] },
+    { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS, ...LONE_TREE] },
     STRIKE_SMOKE(C.rise),
     MOTES(),
     EMPTY_CLAW,
@@ -264,7 +266,7 @@ const reveal = {
   fx: [
     MESAS,
     DRY_FLOOR(T, 9, 61),
-    { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...LONE_TREE] },
+    { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS, ...LONE_TREE] },
     STRIKE_SMOKE(C.reveal),
     ...FIRE_UP(C.reveal),
     MOTES(),
@@ -306,7 +308,7 @@ const dive = {
   fx: [
     MESAS,
     DRY_FLOOR(T, 9, 61),
-    { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...LONE_TREE] },
+    { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS, ...LONE_TREE] },
     STRIKE_SMOKE(C.dive),
     ...FIRE_UP(C.dive),
     MOTES(500, [24, 8, 24]),
@@ -771,7 +773,7 @@ const CLASH_LIGHTS = [
 ];
 /** The meadow round them: dry gold grass and dust over the flat green, the game's flat tufts gone. */
 const CLASH_GROUND = [
-  { t: -6, kind: 'dusk-hide', names: [...TUFTS, 'Rock_Medium_1', 'Rock_Medium_2', 'Rock_Medium_3'] },
+  { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS] },
   { ...DRY_FLOOR(CO, 11, 67), count: 40, height: [0.14, 0.5] },
   // Dust hanging low in the sun behind them.
   { t: -2, kind: 'dusk-plume', at: polar(CO, 45, 9, 0.2), rate: 1.2, life: 9, rise: 0.25, spread: 4, size0: 3, size1 : 8, prewarm: 9, opacity: 0.22, wind: [0.6, 0.3], color: '#c8885a', glow: '#ffb070', glowH: 2, glowK: 0.4, seed: 71 },
@@ -875,8 +877,8 @@ const clashB = {
       { t: 0, p: polar(CO, EB + 72, 2.6, 0.2), l: polar(CO, EB, 0.9, 0.95), fov: 36 },
       { t: 0.55, p: polar(CO, EB + 88, 2.4, 0.22), l: polar(CO, EB, 0.6, 0.85), fov: 35 },
       // Side on to his fall: the somersault in profile.
-      { t: 1.1, p: polar(CO, EB + 96, 2.8, 0.3), l: polar(CO, EB + 180, 0.9, 0.5), fov: 37 },
-      { t: 1.96, p: polar(CO, EB + 104, 3.1, 0.36), l: polar(CO, EB + 180, 1.7, 0.4), fov: 39 },
+      { t: 1.1, p: polar(CO, EB + 96, 2.8, 0.3), l: { a: 'o', o: [0, 0.55, 0], y0: true }, fov: 38 },
+      { t: 1.96, p: polar(CO, EB + 104, 3.1, 0.36), l: { a: 'o', o: [0, 0.4, 0], y0: true }, fov: 40 },
     ],
     ease: 'linear',
     focus: 'o',
@@ -904,6 +906,7 @@ const clashB = {
     { t: 0.86, kind: 'shake', d: 0.3, amp: 0.06 },
     // Warm bounce off the grass on his side and belly as he goes over.
     { t: -2, kind: 'light', at: polar(CO, EB + 120, 1.6, 0.7), color: '#ffb880', intensity: 14, distance: 4.5 },
+    { t: 0.6, kind: 'light', at: { a: 'o', o: [0.9, 0.3, 0.7] }, color: '#ffc090', intensity: 18, distance: 3 },
     CLASH_MOTES,
     ...CLASH_LIGHTS,
     { t: 1.45, kind: 'leaves', color: '#ffc4e8', color2: '#ffffff', count: 500, box: [10, 6, 10], drift: [1.2, 0.6, 0.5], size: 0.07, fadeIn: 0.2 },
