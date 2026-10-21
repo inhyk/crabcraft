@@ -4,11 +4,21 @@ import {AbilityRange} from '../../game/abilityRange';
 import { h } from '../dom';
 import {t} from '../../i18n';
 import type { Game } from '../../game/game';
-import type { AbilityDef } from '../../data/classes';
+import type { AbilityDef, Resource } from '../../data/classes';
 import { GCD, xpForLevel } from '../../game/player';
 import { abilityNeedsTarget, isMeleeAbility } from '../../game/abilities';
 import {abilityName,abilityDescription} from '../../game/abilityLocale';
 import { iconEl, iconSvg } from './icons';
+
+/** An ability's cost, cast and cooldown, and its reach, as the tooltip and the class trainers show them. */
+export function abilityFacts(ab: AbilityDef, resource: Resource): { meta: string[]; reach: string } {
+  const meta: string[] = [];
+  if (ab.cost) meta.push(`${ab.cost} ${resource === 'rage' ? t('분노','Rage') : t('마나','Mana')}`);
+  meta.push(ab.castTime > 0 ? t(`시전 ${ab.castTime}초`,`${ab.castTime} sec cast`) : t('즉시 시전','Instant'));
+  if (ab.cooldown > 0) meta.push(t(`재사용 ${ab.cooldown}초`,`${ab.cooldown} sec cooldown`));
+  const reach = ab.id==='steam-blink'?t(`최대 이동 ${ab.range}m`,`Travel up to ${ab.range} m`):ab.id==='frost-spray'?t(`전방 ${ab.range}m · 부채꼴`,`Forward ${ab.range} m · cone`):isMeleeAbility(ab) ? t('근접 거리 1.8m','Melee reach 1.8 m') : abilityNeedsTarget(ab) ? t(`사거리 ${ab.range}m`,`${ab.range} m range`) : ab.range > 0 ? t(`반경 ${ab.range}m`,`${ab.range} m radius`) : t('자신','Self');
+  return { meta, reach };
+}
 
 interface Slot {
   ab: AbilityDef;
@@ -96,12 +106,7 @@ export class ActionBar {
     this.hideTip();
     this.tooltipSource={ab,anchor};
     this.rangePreview.show(ab);
-    const cls = this.game.player.cls;
-    const meta: string[] = [];
-    if (ab.cost) meta.push(`${ab.cost} ${cls.resource === 'rage' ? t('분노','Rage') : t('마나','Mana')}`);
-    meta.push(ab.castTime > 0 ? t(`시전 ${ab.castTime}초`,`${ab.castTime} sec cast`) : t('즉시 시전','Instant'));
-    if (ab.cooldown > 0) meta.push(t(`재사용 ${ab.cooldown}초`,`${ab.cooldown} sec cooldown`));
-    const range = ab.id==='steam-blink'?t(`최대 이동 ${ab.range}m`,`Travel up to ${ab.range} m`):ab.id==='frost-spray'?t(`전방 ${ab.range}m · 부채꼴`,`Forward ${ab.range} m · cone`):isMeleeAbility(ab) ? t('근접 거리 1.8m','Melee reach 1.8 m') : abilityNeedsTarget(ab) ? t(`사거리 ${ab.range}m`,`${ab.range} m range`) : ab.range > 0 ? t(`반경 ${ab.range}m`,`${ab.range} m radius`) : t('자신','Self');
+    const { meta, reach: range } = abilityFacts(ab, this.game.player.cls.resource);
     const tip = h(
       'div',
       { class: 'cc-tooltip' },

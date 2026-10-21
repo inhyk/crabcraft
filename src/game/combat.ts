@@ -28,9 +28,17 @@ export interface CombatController {
   onDeath?(killer: Unit | null): void;
   /** Persistent equipment mitigation belongs to the unit's own controller. */
   readonly damageTakenMultiplier?: number;
+  /**
+   * Takes the whole hit itself and returns what it took (a training dummy, tidecrown/training.ts): nothing is routed to
+   * a relay room or shared, and nothing dies.
+   */
+  practice?(src: Unit | null, amount: number, o: HitOptions): number;
 }
 
 const ctrlOf = (u: Unit | null): CombatController | null => (u?.ctrl as CombatController | null) ?? null;
+
+/** A unit that takes its own hits on this client only (a training dummy). */
+export const isPractice = (u: Unit | null | undefined): boolean => !!ctrlOf(u ?? null)?.practice;
 
 export const CRIT_CHANCE = 0.12;
 export const CRIT_MULT = 1.75;
@@ -45,6 +53,8 @@ export class Combat {
   damage(src: Unit | null, dst: Unit, amount: number, o: HitOptions = {}): number {
     const g = this.game;
     if(g.villageGames?.playing&&(dst.kind==='player'||dst.kind==='remote'||src?.kind==='player'||src?.kind==='remote'))return 0;
+    const practice = ctrlOf(dst)?.practice;
+    if (practice) return practice.call(dst.ctrl, src, amount, o);
     // Endgame locks apply per character, even beside an eligible friend.
     const frontierBoss=[g.emberBoss,g.skyBoss].find(b=>b&&(dst===b.unit||src===b.unit));
     if(frontierBoss&&((src?.kind==='player'||src?.kind==='remote')&&src.level<frontierBoss.profile.level||(dst.kind==='player'||dst.kind==='remote')&&dst.level<frontierBoss.profile.level))return 0;
