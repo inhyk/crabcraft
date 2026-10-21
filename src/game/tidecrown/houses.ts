@@ -251,6 +251,15 @@ export function loadTidecrownKit(): Promise<TidecrownKit> {
     grade(plaster, 'plaster', 0.3, 0.41, '#dad5cc', '#ffffff');
     const limestone = kitClone(vm('MI_UnevenBrick'), 'tidecrown-limestone');
     grade(limestone, 'limestone', 0.1, 0.3, '#8a8170', '#f2ead8');
+    // The rubble at twice the kit's density, so its stones sit at about one and a half of the ashlar blocks beside it.
+    for (const slot of ['map', 'normalMap', 'roughnessMap'] as const) {
+      const t = limestone[slot]?.clone();
+      if (!t) continue;
+      t.repeat.multiplyScalar(2);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.userData.tidecrown = true;
+      limestone[slot] = t;
+    }
     const ashlar = kitClone(vm('MI_Brick'), 'tidecrown-ashlar');
     grade(ashlar, 'ashlar', 0.15, 0.36, '#b4aa95', '#f4ede0');
     const rock = kitClone(vm('MI_RockTrim'), 'tidecrown-rock');
@@ -669,7 +678,8 @@ function houseStyle(k: TidecrownKit, r: () => number, palette?: HousePalette, se
   const rw = stream(seed * 7919 + 211), q = rw();
   const weather = ROOF_WEATHER.find(([at]) => q < at);
   if (weather) roof.lerp(lin(weather[1]), weather[2]);
-  roof.multiplyScalar(0.8 + rw() * 0.45);
+  // A wide spread house to house, so a district's roofs read one by one from above, not as one blue mass.
+  roof.multiplyScalar(0.72 + rw() * 0.68);
   const frame = lin(pick(r, FRAME_TONES));
   const t: Tint = new Map([
     [m.plaster, wall],
@@ -862,12 +872,14 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   // Plinth: dressed stone under the floor down past the lowest ground.
   const low = Math.min(spec.base ?? spec.ground, spec.doorstep ?? spec.ground) - 0.7;
   const ph = spec.ground - low + 0.04;
-  // Flush with the party line where a neighbour stands, so two plinths never share a face.
-  const pl = hidden('left', 0, 0) ? 0 : 0.17;
-  const pr = hidden('right', 0, 0) ? 0 : 0.17;
-  const pb = hidden('back', 0, 0) ? 0 : 0.17;
-  geo(worldBox(W + pl + pr, ph, D + 0.17 + pb, 0.5).translate((pr - pl) / 2, -ph / 2 + 0.04, (0.17 - pb) / 2), mat.limestone, stoneTint);
-  fb?.frame().box(mat.limestone, stoneTint, -W / 2 - pl, 0.04 - ph, -D / 2 - pb, W / 2 + pr, 0.04, D / 2 + 0.17, 'ny');
+  // Flush with the party line where a neighbour stands, so two plinths never share a face; elsewhere a lip of 5 cm (a
+  // deeper one read as a ledge along the street).
+  const lip = 0.05;
+  const pl = hidden('left', 0, 0) ? 0 : lip;
+  const pr = hidden('right', 0, 0) ? 0 : lip;
+  const pb = hidden('back', 0, 0) ? 0 : lip;
+  geo(worldBox(W + pl + pr, ph, D + lip + pb, 0.5).translate((pr - pl) / 2, -ph / 2 + 0.04, (lip - pb) / 2), mat.limestone, stoneTint);
+  fb?.frame().box(mat.limestone, stoneTint, -W / 2 - pl, 0.04 - ph, -D / 2 - pb, W / 2 + pr, 0.04, D / 2 + lip, 'ny');
 
   const sides: Side[] = ['front', 'right', 'back', 'left'];
   /** Quoin width per corner and storey (0: none), for the far build. */
@@ -1150,7 +1162,8 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     geo(worldBox(2.04, 0.2, 1.0, 0.5).translate(x, y - 0.06, z + 0.55), mat.limestone, stoneTint);
     put(village, 'Wall_BottomCover', st.wall, st.t, x, y - 0.1, z + 1.08, 0, v(1.02, 1.1, 0.8));
     for (const sx of [-0.8, 0.8]) put(village, 'Prop_Support', st.wall, st.t, x + sx, y - 1.45, z + 0.05, 0, v(1.3, 0.55, 0.52));
-    const railTint = new Map(st.t).set(mat.paint, lin('#2c3440'));
+    // Painted iron in a weathered slate blue: darker reads as a black block against the wall.
+    const railTint = new Map(st.t).set(mat.paint, lin('#8ea6b8'));
     put(village, rail, st.paint, railTint, x, y + 0.04, z + 0.02, 0, v(1.02, 0.9, 0.95));
     for (const sx of [-1, 1]) put(village, 'Balcony_Cross_Straight', st.paint, railTint, x, y + 0.04, z + 0.52, sx * Math.PI / 2, v(0.5, 0.9, 1.0));
     if (fb) {

@@ -187,6 +187,10 @@ export function tidecrownTerrainMaterial(terrain: TidecrownTerrain, village: Kit
       .replace('ccRock = max(smoothstep(0.30, 0.42, slope', 'float tcWild = smoothstep(200.0, 214.0, vCcWorld.z);\nccRock = max(smoothstep(mix(0.30, 0.5, tcWild), mix(0.42, 0.66, tcWild), slope')
       // Damp setts: smoother, the sky in them.
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.3, tcPuddle * ccCob);')
+      // The setts in shade: the sky's lilac fill on them half greyed and lifted, so the late-afternoon mood stays while
+      // the crabs (red, blue, brown) stand off the paving.
+      .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, vec3(dot(reflectedLight.indirectDiffuse, vec3(0.2126, 0.7152, 0.0722))), 0.7 * ccCob) * (1.0 + 0.5 * ccCob);`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.6, 0.28) * (tcL.g * tcL.g * 0.42) + vec3(1.0, 0.38, 0.1) * (tcL.b * tcL.b * 0.7);')
       // Slope from the triangle itself as well: on a cliff two grid cells wide the vertex normals lean at its foot and
       // brow, and grass, sand or setts would show there in spikes.

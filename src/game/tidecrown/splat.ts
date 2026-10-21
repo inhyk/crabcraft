@@ -39,3 +39,26 @@ export function paintTidecrownSplat(h: Float32Array): Uint8Array {
   }
   return splat;
 }
+
+/**
+ * The setts run on to the houses along a street: within `margin` of a footprint and `reach` of a paved street (its
+ * fronts, and the gaps between houses that open on it) the cobble weight is full, so no strip of grass or earth shows
+ * between the paving and a plinth. Back gardens keep their grass. Painted into `splat` on the main thread, which has
+ * the plan.
+ */
+export function paveAprons(splat: Uint8Array, lots: readonly { corners: readonly [number, number][] }[], margin = 1.6, reach = 4): void {
+  const { nx, nz, step, minX, minZ } = TIDECROWN_GRID;
+  const pave = { cobble: 0, dirt: 0, clear: 0 };
+  for (const { corners } of lots) {
+    let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+    for (const [x, z] of corners) { a = Math.min(a, x); b = Math.max(b, x); c = Math.min(c, z); d = Math.max(d, z); }
+    const i0 = Math.max(0, Math.floor((a - margin - minX) / step)), i1 = Math.min(nx - 1, Math.ceil((b + margin - minX) / step));
+    const j0 = Math.max(0, Math.floor((c - margin - minZ) / step)), j1 = Math.min(nz - 1, Math.ceil((d + margin - minZ) / step));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = minX + i * step, z = minZ + j * step, k = (j * nx + i) * 4;
+      if (splat[k + 1] === 255 || -polyDistance(x, z, corners as [number, number][]) > margin) continue;
+      if (tcPaving(x, z, pave).clear > reach) continue;
+      splat[k + 1] = 255;
+    }
+  }
+}
