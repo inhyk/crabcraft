@@ -365,44 +365,6 @@ const charge = {
   ],
 };
 
-// snow-cock (146.0-146.58, a trial in the black before the gun): in the dark the dwarf, riding, cocks his
-// blunderbuss on the two clicks (146.02, 146.17), a glint off the lock each time, his eyes lighting up on the
-// second. Not in `shots` (the timeline keeps this span black); tools render it on its own for comparison.
-const COCK = 0.58; // its end is the charge shot's start
-export const snowCock = {
-  id: 'snow-cock',
-  at: 146.0,
-  length: COCK,
-  chapter: 4,
-  anchor: [AX, 0],
-  view: { ...COLD, exposure: 0.32, bloom: { intensity: 1.4, threshold: 0.55 }, vignette: { offset: 0.15, darkness: 0.9 }, dof: true, bokeh: 2.5 },
-  fog: { color: '#3a4152', density: 0.04 },
-  actors: riders([AX + 3, 0], [AX, AZ0 - 12]),
-  tracks: {
-    beast: { path: sampled((t) => runA(t - COCK), -1.6, COCK), faces: [{ t: -2, expr: 'angry' }] },
-    dwarf: { acts: DWARF_TRACK.acts, faces: [{ t: -2, expr: 'focused' }, { t: 0.17, expr: 'angry' }] },
-  },
-  cam: {
-    keys: [
-      { t: 0, p: { a: 'beast', o: [-1.35, 2.85, 1.95] }, l: { a: 'beast', o: [-0.3, 2.8, 0.7] }, fov: 32 },
-      { t: COCK, p: { a: 'beast', o: [-1.15, 2.83, 2.0] }, l: { a: 'beast', o: [-0.28, 2.8, 0.7] }, fov: 30 },
-    ],
-    ease: 'linear',
-    focus: 'look',
-    range: 1.5,
-  },
-  fx: [
-    ...blizzard({ wind: [6, -2, 4], heavy: 1.3, sun: 0.25, hemi: 0.7 }),
-    RIDE,
-    AIM_ARM,
-    gun({ aim: [[-3, { a: 'beast', o: [-0.7, 9, 1.6] }]], clicks: [0.02, 0.17] }),
-    { t: -3, kind: 'snow-eyes', actor: 'dwarf', k: [[0.17, 0.25], [0.2, 2.6], [COCK, 1.6]] },
-    { t: 0.02, kind: 'light', at: { a: 'beast', o: [-0.6, 2.75, 1.0] }, color: '#ffd9a0', curve: [[0.02, 0], [0.03, 6], [0.09, 0], [0.17, 0], [0.18, 7], [0.26, 0]], distance: 3 },
-    // Out of the black: the picture only just there.
-    { t: 0, kind: 'fade', color: '#000000', curve: [[0, 1], [0.06, 0.6], [0.3, 0.35], [COCK, 0.25]] },
-  ],
-};
-
 // snow-charge-dwarf (149.5-151.92): down the slope in bounds, the tauren ahead, the crash at 151.55, white.
 const BX = -102;
 const T = [-105.4, -5.0];
