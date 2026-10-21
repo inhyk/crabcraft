@@ -650,8 +650,8 @@ const UNDEAD_FLOOR = {
   box: [U[0] - 9, U[1] - 9, U[0] + 9, U[1] + 9],
   soil: '#4a3e2a',
   moss: '#3e4a2a',
-  litter: '#5a4628',
-  litter2: '#4a4030',
+  litter: '#463a26',
+  litter2: '#40382a',
   grass: '#34461f',
   tip: '#a8b870',
   count: 30,
@@ -697,24 +697,27 @@ const undeadShots = [
         { t: 2.2, p: H(1.85, 0.22, 3.0), l: H(0.55, 0.0, 1.45), fov: 36 },
         // ...round in front of the step and up a little, the ring of rot widening past the lens...
         { t: 3.4, p: H(1.0, 0.42, 3.7), l: H(0.45, 0.0, 1.5), fov: 38 },
-        { t: 4.4, p: H(0.9, 0.3, 2.9), l: H(0.5, 0.22, 1.25), fov: 38 },
-        // ...in to the planted claw and up it, his body, to his face (his staff out of frame left).
-        { t: 5.5, p: H(1.0, 0.75, 2.45), l: H(0.4, 0.6, 0.8), fov: 40 },
-        { t: 6.6, p: H(0.95, 1.15, 2.2), l: H(0.2, 0.98, 0.3), fov: 40 },
+        { t: 4.4, p: H(0.95, 0.28, 2.7), l: H(0.45, 0.15, 1.2), fov: 34 },
+        // ...in to the planted claw and slowly up it past the beads (his face kept above the frame)...
+        { t: 5.4, p: H(1.0, 0.6, 2.5), l: H(0.3, 0.35, 0.7), fov: 30 },
+        // ...tilting up to his face on 99.0-99.5 s (his staff out of frame left).
+        { t: 6.3, p: H(0.95, 0.95, 2.3), l: H(0.18, 0.92, 0.3), fov: 36 },
+        { t: 6.8, p: H(0.95, 1.12, 2.2), l: H(0.2, 0.98, 0.3), fov: 40 },
         // Down to the ground close in front of him, looking up as he raises his claws and channels...
-        { t: 7.6, p: H(0.75, 0.5, 2.3), l: H(0.15, 1.0, 0), fov: 42 },
+        { t: 7.8, p: H(0.75, 0.5, 2.3), l: H(0.15, 1.0, 0), fov: 42 },
         { t: 9.0, p: H(0.55, 0.3, 2.35), l: H(0.1, 1.4, -0.3), fov: 46 },
         // ...widening and drifting round to his right as the boulders climb out round him and fly
         // together behind him, so he stays big in the frame with the golem rising over him...
         { t: 10.5, p: H(0.25, 0.28, 2.7), l: H(0.0, 1.8, -1.0), fov: 54 },
         { t: 12.5, p: H(-0.25, 0.28, 2.9), l: H(-0.1, 2.4, -2.0), fov: 57 },
-        // ...and tilting up its height as it straightens, blazes and looms.
-        { t: 14.5, p: H(-0.45, 0.25, 2.95), l: H(0.0, 3.1, -2.8), fov: 58 },
-        { t: 16.2, p: H(-0.5, 0.23, 3.15), l: H(0.05, 3.5, -2.9), fov: 60 },
-        // It lurches at the lens and the lens pushes in at its eyes on the blast's onset (109.95 s).
-        { t: 16.95, p: H(-0.5, 0.24, 3.1), l: H(0.05, 3.6, -2.8), fov: 60 },
-        { t: 17.6, p: H(-0.42, 0.34, 2.6), l: H(0.05, 3.8, -2.6), fov: 55 },
-        { t: 18, p: H(-0.4, 0.36, 2.5), l: H(0.05, 3.85, -2.5), fov: 54 },
+        // ...then tilting up the golem as it straightens, blazes and looms, the lens closing in so its
+        // head breaks the top of the frame...
+        { t: 14.5, p: H(-0.45, 0.22, 2.95), l: H(0.0, 2.75, -2.8), fov: 50 },
+        { t: 16.2, p: H(-0.5, 0.2, 3.1), l: H(0.05, 2.95, -2.9), fov: 50 },
+        // ...and as it lurches at the lens the lens pushes in at its eyes on the blast's onset (109.95 s).
+        { t: 16.95, p: H(-0.5, 0.2, 3.05), l: H(0.05, 3.0, -2.8), fov: 50 },
+        { t: 17.6, p: H(-0.42, 0.28, 2.55), l: H(0.05, 3.55, -2.6), fov: 45 },
+        { t: 18, p: H(-0.4, 0.3, 2.45), l: H(0.05, 3.6, -2.5), fov: 44 },
       ],
     },
     fx: [
@@ -732,20 +735,24 @@ const undeadShots = [
       // by the stamp and each fling of the cast.
       { kind: 'night-staff', t: -3, actor: 'u', beads: { swing: [[STAMP, 0.3, 90], [6.75, 0.35], [8.6, 0.45, 90], [12.5, 0.45, 90]] } },
       { kind: 'shake', t: STAMP, d: 0.45, amp: 0.03 },
-      { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 0.8, light: 1.6, gain: 0.75, embers: 260, smoke: 220, smokeA: 0.42, clear: LOW_PATH.map((q) => [...q, 0.9]) },
+      { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 0.8, light: 0.9, gain: 0.75, embers: 260, smoke: 160, smokeA: 0.22, clear: LOW_PATH.map((q) => [...q, 0.9]) },
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
       { kind: 'motes', t: -1, at: { g: [U[0], 1.2, U[1] - 2] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
       // Cold moonlight from above the lens, so the ground and the claw read before the fire opens.
       { kind: 'light', t: -1, at: H(1.2, 3.2, 3.6), color: '#8296bc', curve: [[0, 420], [6.0, 300], [8.0, 30]], distance: 14 },
       // A pale fill from the lens side once he channels, so his face reads against the green sky.
-      { kind: 'light', t: 6, at: H(0.1, 0.6, 2.0), color: '#d6e6a0', curve: [[6.4, 0], [7.4, 8], [9.5, 8], [10.5, 14], [18, 14]], distance: 5 },
+      { kind: 'light', t: 6, at: H(0.1, 0.6, 2.0), color: '#d6e6a0', curve: [[6.4, 0], [7.4, 14], [9, 70], [18, 70]], distance: 5 },
+      // The rocks heaving out round him throw molten light on him, and the gathering summons rims him green.
+      { kind: 'light', t: 9, at: H(2.4, 0.5, 0.6), color: '#ff9a40', curve: [[9.6, 0], [12.6, 12], [18, 10]], distance: 5, flicker: 0.2 },
+      { kind: 'light', t: 9, at: H(-2.4, 0.5, 0.6), color: '#ff9a40', curve: [[9.6, 0], [12.6, 12], [18, 10]], distance: 5, flicker: 0.2 },
+      { kind: 'light', t: 9, at: H(0, 1.8, -1.5), color: '#9dff5a', curve: [[10, 0], [11, 18], [18, 18]], distance: 4 },
       // The blight's fire under his claws, low in front of him: the original's undead is lit from below.
-      { kind: 'light', t: 6, at: H(0.2, 0.15, 1.3), color: '#ffb050', curve: [[6.4, 0], [7.6, 10], [18, 14]], distance: 3.5, flicker: 0.2 },
+      { kind: 'light', t: 6, at: H(0.2, 0.15, 1.3), color: '#ffb050', curve: [[6.4, 0], [7.6, 12], [9, 45], [18, 45]], distance: 3.5, flicker: 0.2 },
       // 98.5 s: a sickly glow flares up behind him, rims him green, and the sky behind him sickens and swells.
       { kind: 'night-glow', t: 5, at: H(-11, 6, -4), size: 12, color: '#d8ff6a', k: [[5.35, 0], [5.6, 1.6], [6.0, 1.2], [6.5, 1.3], [8.5, 0.6], [9.8, 0]] },
       { kind: 'light', t: 5, at: H(-1.2, 1.8, -1.6), color: '#a8ff5a', curve: [[5.4, 0], [5.65, 14], [6.5, 10]], distance: 6 },
       // (Wide and low before the blast: looking up past him it would read as a green sun.)
-      { kind: 'night-glow', t: -1, at: SKY, size: 170, color: '#5cc42a', k: [[5.3, 0], [5.7, 0.4], [6.5, 0.45], [9.5, 0.4], [14.9, 0.5], [15.1, 0.9], [18, 1.0]] },
+      { kind: 'night-glow', t: -1, at: SKY, size: 170, color: '#5cc42a', k: [[5.3, 0], [5.7, 0.3], [6.5, 0.35], [9.5, 0.3], [14.9, 0.4], [15.1, 0.9], [18, 1.0]] },
       // The molten blight lights him from below as it spreads.
       { kind: 'light', t: -1, at: G(-1.3, -0.5, 0.3), color: '#ffb44a', curve: [[1, 0], [4, 8], [7, 16]], distance: 6, flicker: 0.15 },
       // A sickly green rim from the sky behind his left.
@@ -754,7 +761,7 @@ const undeadShots = [
       { kind: 'swirl', t: 7.1, until: 14.9, at: { a: 'u', o: STAFF }, radius: 1.6, rate: 60, size: 0.08, color: '#7dff6a' },
       // The fling's two hits (101.67, 102.25 s) glint molten in the ground at lower left.
       { kind: 'light', t: 8, at: H(-0.9, 0.08, 1.5), color: '#ff9a3a', curve: [[8.6, 0], [8.67, 22], [8.95, 3], [9.2, 3], [9.25, 22], [9.6, 3], [11, 2]], distance: 3, flicker: 0.2 },
-      { kind: 'night-glow', t: 7.0, at: { a: 'u', o: STAFF }, size: 0.5, color: '#8dff4a', k: [[7.0, 0], [8.1, 0.5], [8.7, 0.8], [8.9, 2.2], [9.6, 0.7], [12.6, 0.9], [12.8, 2.4], [13.7, 1.0], [14.9, 1.3], [15.3, 0.4]] },
+      { kind: 'night-glow', t: 7.0, at: { a: 'u', o: STAFF }, size: 0.35, color: '#8dff4a', k: [[7.0, 0], [8.1, 0.5], [8.7, 0.8], [8.9, 2.2], [9.6, 0.7], [12.6, 0.9], [12.8, 2.4], [13.7, 1.0], [14.9, 1.3], [15.3, 0.4]] },
       { kind: 'light', t: 6.5, at: { a: 'u', o: [STAFF[0], STAFF[1], STAFF[2] + 0.4] }, color: '#7dff4a', curve: [[6.5, 0], [7.3, 0], [8.3, 5], [8.8, 7], [8.95, 16], [9.6, 7], [12.7, 8], [12.85, 18], [13.7, 9], [14.9, 10]], distance: 9, flicker: 0.1 },
       { kind: 'motes', t: 6, fadeIn: 1, at: { a: 'u', o: [0, 1.6, 0] }, count: 120, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
       { kind: 'embers', t: 6, fadeIn: 1.5, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
@@ -767,8 +774,8 @@ const undeadShots = [
       { ...boulders(LAND - 9.9), n: 9, size: [0.22, 0.6], h: [0.1, 1.0], rise: [9.6, 12.6], seed: 53 },
       STREAK,
       { kind: 'night-meteor', t: FALL, from: METEOR_FROM, to: { g: [IMPACT[0], 0.5, IMPACT[1]] }, d: LAND - FALL, size: 1.3, light: 500, glow: 0.4, tail: 14, color: '#8cf03a', core: '#ffb02a' },
-      { kind: 'night-impact', t: LAND, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 3.4, toward: G(-3.6, 0.8, 1), light: 700, flash: 0.45, gain: 0.45, dust: 0.12, dome: 0, haze: 0.3, puffs: 60, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
-      { kind: 'flash', t: LAND + 0.02, d: 0.22, rise: 0.03, a: 0.22, color: '#e6ffb0' },
+      { kind: 'night-impact', t: LAND, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 3.4, toward: G(-3.6, 0.8, 1), light: 700, flash: 0.3, gain: 0.45, dust: 0.12, dome: 0, haze: 0.3, puffs: 60, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
+      { kind: 'flash', t: LAND + 0.02, d: 0.45, rise: 0.12, a: 0.18, color: '#e6ffb0' },
       { kind: 'shake', t: LAND, d: 1.6, amp: 0.22 },
       { kind: 'shake', t: 16.4, d: 0.9, amp: 0.12 },
       // 110.45 s: its chest bursts and the white swallows the frame by 110.85 s (over everything: a veil in
