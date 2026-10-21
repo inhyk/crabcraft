@@ -290,11 +290,14 @@ const smoke = {
   fog: FIRE_FOG,
   actors: [],
   cam: {
+    // Drifting across the lane and panning with the smoke as it rolls in, as the original's lens moves.
     keys: [
-      { t: 0, p: { g: SMOKE_CAM }, l: LG(0.2, 3.2, 52), fov: 44 },
-      { t: 4.25, p: { g: [-12.95, 0.42, 72.6] }, l: LG(0.1, 2.6, 52), fov: 40 },
+      { t: 0, p: { g: [SMOKE_CAM[0] - 0.9, 0.55, 74.3] }, l: LG(-1.2, 3.4, 52), fov: 44 },
+      { t: 2.1, p: { g: [SMOKE_CAM[0] - 0.1, 0.5, 73.5] }, l: LG(-0.2, 3.0, 52), fov: 42 },
+      { t: 4.25, p: { g: [SMOKE_CAM[0] + 0.7, 0.42, 72.6] }, l: LG(0.6, 2.6, 52), fov: 40 },
     ],
     ease: 'linear',
+    shake: 0.03,
   },
   fx: [
     ...LANE_FX(),
@@ -384,11 +387,14 @@ const orc = {
     keys: [
       // Low in the lane as he comes out of the smoke at a run.
       OCAM(0, -1.6, 0.34, 71.2, 0.7, 24),
+      OCAM(0.5, -0.9, 0.35, 71.0, 0.75, 27),
       OCAM(0.95, -1.5, 0.36, 70.9, 0.8, 30),
       // Up with the 720 (its body rises about two units).
       OCAM(1.35, -1.45, 0.4, 70.7, 1.9, 34),
       OCAM(1.69, -1.4, 0.42, 70.6, 1.1, 32),
+      OCAM(2.15, -0.6, 0.41, 70.5, 0.95, 31),
       OCAM(2.6, -1.3, 0.4, 70.4, 0.85, 31),
+      OCAM(2.95, -1.9, 0.39, 70.3, 0.78, 30),
       // A punch in on the slam.
       OCAM(3.3, -1.2, 0.38, 70.2, 0.7, 30),
       OCAM(3.55, -1.1, 0.34, 69.8, 0.6, 25),
@@ -396,10 +402,12 @@ const orc = {
       OCAM(4.7, 1.6, 0.5, 69.3, 0.7, 29),
       // Back in front and low for the freeze, wide enough for him up on his claws.
       OCAM(5.8, 0.4, 0.3, 69.9, 0.9, 32),
-      // In on him as he roars.
-      OCAM(8.25, 0.2, 0.3, 69.1, 1.05, 28),
+      // In on him as he roars, arcing round to his right: the lens never rests.
+      OCAM(7.0, -0.6, 0.32, 69.5, 1.0, 30),
+      OCAM(8.25, -1.4, 0.3, 69.2, 1.05, 28),
     ],
     ease: 'linear',
+    shake: 0.035,
     focus: 'o',
     range: 3,
   },

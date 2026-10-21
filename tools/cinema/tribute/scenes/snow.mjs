@@ -332,7 +332,7 @@ function runA(t) {
 }
 const FA = frame(AX, 12, 0);
 const chargeCam = move([
-  { t: 0.32, p: FA(1.7, 1.5, 0.4), l: FA(0, 1.9, -6.5), fov: 40 },
+  { t: 0.23, p: FA(1.7, 1.5, 0.4), l: FA(0, 1.9, -6.5), fov: 40 },
   { t: 1.12, p: FA(1.95, 1.2, 4.9), l: FA(0, 2.0, -1.2), fov: 40 },
   { t: 1.45, p: FA(1.75, 1.4, 4.2), l: FA(0, 2.4, 0.3), fov: 42 },
   { t: 2.02, p: FA(1.55, 1.3, 3.7), l: FA(0, 2.3, 0.6), fov: 42 },
@@ -353,7 +353,7 @@ const charge = {
     keys: [
       // 146.58: the bell of the gun straight into the lens, the dwarf behind it.
       { t: 0, p: { a: 'beast', o: [-0.2, 2.8, 2.45] }, l: { a: 'beast', o: [-0.25, 2.68, 0.5] }, fov: 40 },
-      { t: 0.3, p: { a: 'beast', o: [-0.19, 2.79, 2.4] }, l: { a: 'beast', o: [-0.25, 2.68, 0.5] }, fov: 40 },
+      { t: 0.22, p: { a: 'beast', o: [-0.19, 2.79, 2.4] }, l: { a: 'beast', o: [-0.25, 2.68, 0.5] }, fov: 40 },
       // Cut under the white at 146.91 to the two charging at the lens.
       ...chargeCam.keys,
     ],
@@ -368,8 +368,9 @@ const charge = {
     RIDE,
     AIM_ARM,
     // 146.73 the shot: the glare floods the lens by the boom at 146.91 and clears by 147.05.
-    gun({ aim: [[-3, 'camera'], [0.31, GUN_UP]], fire: 0.15, kick: 0.2, shake: 0.14, flash: [[0.15, 0], [0.19, 0.35], [0.23, 0.72], [0.27, 0.95], [0.29, 1], [0.335, 1], [0.36, 0.6], [0.39, 0.3], [0.43, 0.1], [0.47, 0]] }),
-    { t: 0.32, kind: 'wash', color: '#d8dde6', color2: '#f6f3ee', alpha: [[0.32, 0.4], [0.45, 0.15], [0.62, 0]], cover: [[0.32, 0.6], [0.62, 0.3]], flow: [0.4, 0.1], scale: 1.8 },
+    // The white peaks at 146.79-146.82 as the original's does and is gone by 146.96; the cut hides in it.
+    gun({ aim: [[-3, 'camera'], [0.225, GUN_UP]], fire: 0.15, kick: 0.2, shake: 0.14, flash: [[0.13, 0], [0.16, 0.6], [0.19, 0.95], [0.21, 1], [0.245, 1], [0.27, 0.6], [0.3, 0.3], [0.34, 0.1], [0.38, 0]] }),
+    { t: 0.23, kind: 'wash', color: '#d8dde6', color2: '#f6f3ee', alpha: [[0.23, 0.4], [0.38, 0.15], [0.55, 0]], cover: [[0.23, 0.6], [0.55, 0.3]], flow: [0.4, 0.1], scale: 1.8 },
     { t: -1.6, kind: 'snow-kick', actor: 'beast', until: 1.4, rate: 16, size: 0.5 },
     // 147.7 it rears: claws up and wide, snow shaken off its shell; 148.0-148.6 the roar.
     { t: -3, kind: 'dusk-arm', actor: 'beast', joints: ROAR, w: [[1.0, 0], [1.38, 1], [2.04, 1], [2.14, 0]] },
@@ -607,10 +608,13 @@ const tauren = {
   },
   cam: {
     ...move([
-      { t: 0, p: G(TA[0] - 3.6, TA[1] + 1.0, 0.45), l: G(TA[0], TA[1], 1.25), fov: 40 },
-      { t: 0.8, p: G(TA[0] - 3.4, TA[1] + 0.97, 0.5), l: G(TA[0], TA[1], 1.33), fov: 40 },
+      // Swinging round in front of him as he roars, as the original's camera never rests.
+      // High enough to clear the boulder in front of him (the Frostlight rocks of #147).
+      { t: 0, p: G(TA[0] - 3.75, TA[1] + 1.5, 0.95), l: G(TA[0], TA[1], 1.2), fov: 40 },
+      { t: 0.8, p: G(TA[0] - 3.3, TA[1] + 0.8, 1.0), l: G(TA[0], TA[1], 1.25), fov: 40 },
       { t: 1.04, p: G(TA[0] - 2.0, TA[1] + 0.6, 0.7), l: G(TA[0] - 1.0, TA[1] + 0.25, 1.0), fov: 52 },
     ]),
+    shake: 0.03,
     focus: 'tauren',
     range: 4,
   },
