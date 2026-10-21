@@ -33,6 +33,18 @@ const MIN_SHOWN = 900;
 /** The bar's last run, once every step is done and it is not yet full. */
 const SWEEP = 100;
 
+/** An open step's ease, cubic-bezier(.15, .7, .3, 1), at time fraction `x` (the x of the curve solved by Newton). */
+function easeOpen(x: number): number {
+  const curve = (t: number, a: number, b: number) => 3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t;
+  let t = x;
+  for (let i = 0; i < 8; i++) {
+    const slope = (curve(t + 1e-4, 0.15, 0.3) - curve(t, 0.15, 0.3)) / 1e-4;
+    if (!slope) break;
+    t = Math.min(1, Math.max(0, t - (curve(t, 0.15, 0.3) - x) / slope));
+  }
+  return curve(t, 0.7, 1);
+}
+
 const tips = () => [
   t('크라운셸 성 꼭대기에서 청록빛 등불이 빛나요. 길을 잃으면 그 빛을 따라 성으로 가 보세요.', 'A teal lantern shines atop Crownshell Keep. Lost? Follow its light to the castle.'),
   t('여섯 껍질의 다리에는 여섯 종족마다 영웅 게 석상이 하나씩 서 있어요.', 'The Bridge of Six Shells has a hero crab statue for each of the six peoples.'),
@@ -58,6 +70,11 @@ export class TidecrownLoading {
   private began = this.t0;
   private target = 0;
   private ends = this.t0;
+  /** The run's start (fill and time) and length, and whether it eases (an open step). */
+  private from = 0;
+  private runAt = this.t0;
+  private runMs = 0;
+  private runOpen = false;
   /** Actual over typical time of the steps this machine has run so far. */
   private pace = 1;
   private spent = 0;
@@ -153,9 +170,25 @@ export class TidecrownLoading {
     else this.run(upTo / total, ms * this.pace);
   }
 
+  /** The bar's fill at `now` by its run's own clock. */
+  private fill(now: number): number {
+    const k = this.runMs > 0 ? Math.min(1, Math.max(0, (now - this.runAt) / this.runMs)) : 1;
+    return this.from + (this.target - this.from) * (this.runOpen ? easeOpen(k) : k);
+  }
+
   private run(f: number, ms: number, ease = 'linear'): void {
+    // A new run starts from where the bar is by the last run's clock. Left to the browser, it starts from the style
+    // clock, which after a long block on the main thread is still where that block began: the bar would jump back.
+    const now = performance.now(), cur = Math.min(this.fill(now), f);
+    this.bar.style.transition = 'none';
+    this.bar.style.transform = `scaleX(${cur.toFixed(4)})`;
+    void this.bar.offsetWidth;
+    this.from = cur;
     this.target = f;
-    this.ends = performance.now() + ms;
+    this.runAt = now;
+    this.runMs = ms;
+    this.runOpen = ease !== 'linear';
+    this.ends = now + ms;
     this.bar.style.transition = `transform ${Math.round(ms)}ms ${ease}`;
     this.bar.style.transform = `scaleX(${f.toFixed(4)})`;
   }
