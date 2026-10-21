@@ -1,0 +1,128 @@
+{
+  "editFrames": 322,
+  "shots": [
+    {
+      "id": "night-elf-toprock",
+      "frames": 34,
+      "activeFrames": 20,
+      "clippedFrames": 0,
+      "extrema": {
+        "x": [
+          -0.48759416548425205,
+          0.474304389775608
+        ],
+        "y": [
+          -0.8964026178158739,
+          0.7809085285390277
+        ]
+      }
+    },
+    {
+      "id": "night-elf-sixstep",
+      "frames": 41,
+      "activeFrames": 30,
+      "clippedFrames": 0,
+      "extrema": {
+        "x": [
+          -0.3693213245285933,
+          0.8525620248452528
+        ],
+        "y": [
+          -0.9514717655385079,
+          0.8626726116943528
+        ]
+      }
+    },
+    {
+      "id": "night-elf-spin",
+      "frames": 35,
+      "activeFrames": 35,
+      "clippedFrames": 0,
+      "extrema": {
+        "x": [
+          -0.65200270686123,
+          0.6857099842910419
+        ],
+        "y": [
+          -0.9181736162593963,
+          0.7034354742602906
+        ]
+      }
+    },
+    {
+      "id": "night-elf-backflip",
+      "frames": 39,
+      "activeFrames": 36,
+      "clippedFrames": 0,
+      "extrema": {
+        "x": [
+          -0.5474701264079502,
+          0.3357113659665032
+        ],
+        "y": [
+          -0.8235736795619354,
+          0.7590125094602201
+        ]
+      },
+      "rotationDegrees": -359.94573166629704
+    },
+    {
+      "id": "night-elf-clawstand",
+      "frames": 48,
+      "activeFrames": 45,
+      "clippedFrames": 0,
+      "extrema": {
+        "x": [
+          -0.43660423874537374,
+          0.39836713233780235
+        ],
+        "y": [
+          -0.8791352366169759,
+          0.7732010465047873
+        ]
+      }
+    },
+    {
+      "id": "night-elf-oneclaw",
+      "frames": 58,
+      "activeFrames": 49,
+      "clippedFrames": 0,
+      "extrema": {
+        "x": [
+          -0.4525165490441831,
+          0.6377523174319851
+        ],
+        "y": [
+          -0.8975519847384573,
+          0.8480056945122058
+        ]
+      }
+    },
+    {
+      "id": "night-elf-720",
+      "frames": 67,
+      "activeFrames": 59,
+      "clippedFrames": 0,
+      "extrema": {
+        "x": [
+          -0.3931148751738737,
+          0.4504623402376179
+        ],
+        "y": [
+          -0.7512752985521042,
+          0.774445156503376
+        ]
+      },
+      "rotationDegrees": 719.8114115240751
+    }
+  ],
+  "errors": [],
+  "failures": [],
+  "capture": {
+    "width": 3840,
+    "height": 1744,
+    "fps": 24,
+    "samples": 6,
+    "shutter": 0.35
+  }
+}
