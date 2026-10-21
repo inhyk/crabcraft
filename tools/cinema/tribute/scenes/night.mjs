@@ -594,10 +594,10 @@ const golem = {
   rimK: 0.9,
   seed: 77,
 };
-/** A far meteor streaking across the storm at 103.2 s (the original's sky is full of them). */
+/** A far meteor streaking across the storm at 100.4 s, upper right, as the original's does. */
 const STREAK = {
   kind: 'night-meteor',
-  t: 10.2,
+  t: 7.4,
   from: [U[0] + FWD[0] * 46 + RIGHT[0] * 24, 27, U[1] + FWD[1] * 46 + RIGHT[1] * 24],
   to: [U[0] + FWD[0] * 42 - RIGHT[0] * 6, 11, U[1] + FWD[1] * 42 - RIGHT[1] * 6],
   d: 0.95,
