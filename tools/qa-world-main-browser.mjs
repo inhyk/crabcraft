@@ -6,7 +6,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { startPostgres, freePort } from '../server/node/local-postgres.mjs';
 import { createPool, migrate } from '../server/node/db.ts';
 import { GameplayReceiver } from '../server/world/gameplay/protocol.ts';
@@ -34,7 +34,7 @@ try{
  const backend='http://'+output.match(/listening on (127\.0\.0\.1:\d+)/)[1];
  frontend=await preview({root,configFile:false,preview:{host:'127.0.0.1',port,strictPort:true,proxy:{'/api/account':{target:backend},'/world':{target:backend,ws:true}}},logLevel:'error'});
  const catalog=await (await fetch(backend+'/api/account/world-catalog')).json();
- browser=await chromium.launch({headless:true,channel:'chrome'});const context=await browser.newContext({viewport:{width:1280,height:720}});
+ browser=await launchBrowser({headless:true});const context=await browser.newContext({viewport:{width:1280,height:720}});
  await context.grantPermissions(['local-network-access'],{origin});
  await context.addCookies([{name:'cc_account',value:`${account}.${token}`,domain:'127.0.0.1',path:'/api/account',httpOnly:true,sameSite:'Strict'}]);
  const page=await context.newPage(),pageErrors=[],wireErrors=[],streams=[];let legacyPosts=0,characterPosts=0;

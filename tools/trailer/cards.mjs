@@ -8,7 +8,7 @@
 //          [--end-note <text> --end-note-zh <text>]
 // --captions defaults to tools/trailer/captions.json; the logo's tagline defaults to the trailer's;
 // --end-note adds a line (and its Chinese) under the end card's handles.
-import { chromium } from 'playwright';
+import { launchBrowser } from '../lib/browser.mjs';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,7 +38,7 @@ const query = (mode) => {
 const fps = 60;
 mkdirSync(outDir, { recursive: true });
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--hide-scrollbars'] });
+const browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--hide-scrollbars'] });
 
 async function card(mode, seconds) {
   const dsf = 2;

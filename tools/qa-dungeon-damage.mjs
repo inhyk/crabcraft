@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5236';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 try{
  const p=await browser.newPage();p.on('pageerror',e=>errors.push(e.message));await p.routeWebSocket('**/multiplayer*',ws=>ws.close());

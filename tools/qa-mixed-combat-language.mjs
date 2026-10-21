@@ -1,11 +1,11 @@
 // Two real clients with a configurable relay; normal mechanic durations. Combat staging/damage are fixtures.
 // Default is local. An explicit CC_QA_RELAY may select the existing public relay. Run after GPU endurance exits.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192';
 const relay=process.env.CC_QA_RELAY??new URL('/multiplayer',base).href.replace(/^http/,'ws');
 if(!/^wss?:$/.test(new URL(relay).protocol))throw Error('QA relay must use WebSocket');
 console.log('TRANSPORT',JSON.stringify({base,relay}));
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 async function open(name,language){const p=await browser.newPage({viewport:{width:718,height:492}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(({name,language,relay})=>{localStorage.setItem('cc.language',language);localStorage.setItem('cc.quality','low');localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name}));const Original=window.WebSocket;window.WebSocket=class extends Original{constructor(url,protocols){const target=new URL(String(url));if(target.pathname==='/multiplayer'){const replacement=new URL(relay);target.searchParams.forEach((value,key)=>replacement.searchParams.set(key,value));super(replacement,protocols);}else super(url,protocols);}};},{name,language,relay});await p.goto(base+'/?screen=game&multiplayer');await p.locator('.launch-notice-start').click();await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));return p;}
 const state=p=>p.evaluate(()=>{const g=window.app.current.game,b=g.worldBoss,s=g.multiplayer.battle;return {lang:localStorage.getItem('cc.language'),time:g.time,authority:s.authority,hp:b.unit.hp,phase:b.phase,kind:b.mech?.kind??null,left:b.mech?b.mech.dur-b.mech.t:null,name:b.unit.name,warning:document.querySelector('.msg-warn').textContent,mode:s.mode,party:s.partyOf(s.ownId)};});
 async function settings(p){await p.evaluate(()=>{const g=window.app.current.game;g.hud.menu.show();g.hud.menu.settings();});}

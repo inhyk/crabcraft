@@ -1,9 +1,9 @@
 // node tools/qa-monitor-spectator.mjs — the developer monitor's live spectator views against the real local stack:
 // a throwaway Postgres, server-dist/main.mjs on 8796 with MONITOR_IPS=127.0.0.1, and `vite preview` of dist/ on 5231
-// proxying /api/account and /multiplayer to it. Two real Chrome players share a public World I shard; one walks to the
+// proxying /api/account and /multiplayer to it. Two Chrome for Testing players share a public World I shard; one walks to the
 // scraplings and fights. The monitor at 1920x1080 must show that player's tile as the real game (monsters, the attack)
 // while neither player ever sees the observer. Run `pnpm build` first. Screenshots go to CC_QA_SHOTS (default tmp/qa).
-import assert from 'node:assert/strict';import {execFileSync,spawn} from 'node:child_process';import {mkdirSync} from 'node:fs';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {chromium} from 'playwright';
+import assert from 'node:assert/strict';import {execFileSync,spawn} from 'node:child_process';import {mkdirSync} from 'node:fs';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {launchBrowser} from './lib/browser.mjs';
 import {startPostgres} from '../server/node/local-postgres.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),shots=process.env.CC_QA_SHOTS??join(root,'tmp/qa'),shot=name=>join(shots,name);mkdirSync(shots,{recursive:true});
 const API=8796,WEB=5231,base=`http://127.0.0.1:${WEB}`;
@@ -32,7 +32,7 @@ const game=(p,fn,arg)=>p.evaluate(fn,arg);
 try{
  await run([join(root,'server-dist/main.mjs')],{PORT:String(API),HOST:'127.0.0.1',DATABASE_URL:postgres.url,MONITOR_IPS:'127.0.0.1'},/listening on/);
  await run([join(root,'node_modules/vite/bin/vite.js'),'preview','--host','127.0.0.1','--port',String(WEB),'--strictPort'],{CC_SERVER_URL:`http://127.0.0.1:${API}`},new RegExp(String(WEB)));
- browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio','--disable-renderer-backgrounding','--disable-background-timer-throttling','--disable-backgrounding-occluded-windows']});
+ browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio','--disable-renderer-backgrounding','--disable-background-timer-throttling','--disable-backgrounding-occluded-windows']});
  // Two players in one public World I shard; the fighter entered first, so its browser runs the shard's monsters.
  const fighter=await player('Spectated Fighter','warrior'),friend=await player('Second Crab','mage');
  const shard=await game(fighter,()=>window.app.current.game.multiplayer.shard);

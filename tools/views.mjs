@@ -5,7 +5,7 @@
 //
 // Usage: node tools/views.mjs [--url http://localhost:5209] [--out dir] [--prefix name]
 //          [--views square,shore,lighthouse,wreck,ending] [--hud] [--eval "js run after boot"]
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -23,7 +23,7 @@ const showHud = args.includes('--hud');
 mkdirSync(outDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 page.on('pageerror', (e) => console.log('pageerror', e.message));
 page.on('console', (m) => m.type() === 'error' && console.log('console error', m.text()));

@@ -1,8 +1,8 @@
 // GPU browser QA: defaults to preview + room relay on 5192.
 // Set CC_QA_URL to the public game URL to use its real Internet backend without interception.
 // Two independent browser contexts exercise real room packets and UI controls.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 const baseUrl=process.env.CC_QA_URL??'http://127.0.0.1:5192/';
 const localRelay=new URL(baseUrl).hostname==='127.0.0.1';

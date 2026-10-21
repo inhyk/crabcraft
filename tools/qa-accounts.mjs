@@ -1,7 +1,7 @@
 // node tools/qa-accounts.mjs — Google sign-in in headless Chrome, with no real Google account: a throwaway Postgres,
 // server-dist/main.mjs on 8795 (the /api/account proxy target in vite.config.ts) pointed at a fake Google, and
 // `vite preview` of dist/ on 5205. Run `pnpm build` first. Screenshots go to CC_QA_SHOTS (default tmp/qa).
-import assert from 'node:assert/strict';import {execFileSync,spawn} from 'node:child_process';import {randomBytes} from 'node:crypto';import {mkdirSync} from 'node:fs';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {chromium} from 'playwright';
+import assert from 'node:assert/strict';import {execFileSync,spawn} from 'node:child_process';import {randomBytes} from 'node:crypto';import {mkdirSync} from 'node:fs';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {launchBrowser} from './lib/browser.mjs';
 import {fakeGoogle} from '../server/node/fake-google.mjs';import {startPostgres} from '../server/node/local-postgres.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),shots=process.env.CC_QA_SHOTS??join(root,'tmp/qa'),shot=name=>join(shots,name);mkdirSync(shots,{recursive:true});
 const base='http://127.0.0.1:5205',clientId='qa-client.apps.googleusercontent.com',clientSecret='GOCSPX-'+randomBytes(18).toString('base64url');
@@ -35,7 +35,7 @@ async function game(p){await p.getByRole('button',{name:/^(입장하기|Enter Wo
 try{
  await run([join(root,'server-dist/main.mjs')],{PORT:'8795',HOST:'127.0.0.1',DATABASE_URL:postgres.url,GOOGLE_CLIENT_ID:clientId,GOOGLE_CLIENT_SECRET:clientSecret,GOOGLE_AUTH_URL:google.authUrl,GOOGLE_TOKEN_URL:google.tokenUrl},/listening on/);
  await run([join(root,'node_modules/vite/bin/vite.js'),'preview','--host','127.0.0.1','--port','5205','--strictPort'],{},/5205/);
- browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+ browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
  const p=await open(true);
  // A guest's session check answers 200 {signedIn:false}: booting logs no console error.
  assert.deepEqual(consoleErrors,[]);console.log('GUEST_BOOT_NO_CONSOLE_ERROR_PASS');

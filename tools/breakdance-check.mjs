@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Headless check of the breakdance in installed Chrome (real GPU), with screenshots for review:
+// Headless check of the breakdance in Chrome for Testing (real GPU), with screenshots for review:
 //   game   boots ?screen=game&debug=1 with a saved crab, presses B, follows the routine through
 //          window.cc.state() and fails unless all six moves play in order and it ends completed;
 //          then starts it again and walks (W) to check that moving ends it;
@@ -18,7 +18,7 @@
 //
 //   node tools/breakdance-check.mjs [--url http://localhost:5206] [--out dir] [--only game|robot|routine]
 // Needs a dev or preview server running (pnpm dev --port 5206 --strictPort).
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -49,8 +49,7 @@ const LIVE = [
 const AIR_SHOT = { power_jumpspin: 0.35, power_backflip: 0.25 };
 
 async function open(url, spec) {
-  const browser = await chromium.launch({
-    channel: 'chrome',
+  const browser = await launchBrowser({
     headless: true,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'],
   });

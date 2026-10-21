@@ -4,7 +4,7 @@
 //
 // Usage: node tools/cinema/tribute/cards.mjs --url http://localhost:5311 --islands <islands.json> --out <dir>
 //          [--only card-map] [--stills 10,20,32]   (stills at song seconds instead of recordings)
-import { chromium } from 'playwright';
+import { launchBrowser } from '../../lib/browser.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Recorder } from '../../trailer/lib.mjs';
@@ -22,7 +22,7 @@ const only = (opt('--only', '') || '').split(',').filter(Boolean);
 const stills = (opt('--stills', '') || '').split(',').filter(Boolean).map(Number);
 mkdirSync(outDir, { recursive: true });
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--hide-scrollbars'] });
+const browser = await launchBrowser({ headless: true, args: ['--hide-scrollbars'] });
 try {
   const ctx = await browser.newContext({ viewport: { width: 1920, height: 872 }, deviceScaleFactor: 1 });
   // Swallow the dev server's HMR socket: an edit in the worktree must not reload the page mid-render.
