@@ -134,8 +134,8 @@ export interface FogSpec {
 
 export interface ShotSpec {
   id: string;
-  /** World 1 to 6. */
-  chapter: 1 | 2 | 3 | 4 | 5 | 6;
+  /** World 1 to 6, or 7 for Tidecrown (the capital, its own coordinates). */
+  chapter: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   /** Shot seconds. */
   length: number;
   /** World 1's lighting mood (0 dusk, 1 moonlit night, 2 violet celebration, 3 morning). */

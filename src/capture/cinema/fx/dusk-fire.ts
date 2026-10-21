@@ -720,7 +720,8 @@ class Blast implements Effect {
 /**
  * Smoke over the lens: dark billows (`color`) rolling across a glowing backdrop (`color2`, hottest
  * toward the bottom, `color3`). `alpha` [[t, a]...] covers the frame (1 = nothing shows through);
- * `cover` [[t, c]...] how much of it the billows fill; `flow` [x, y] drift per second.
+ * `cover` [[t, c]...] how much of it the billows fill; `flow` [x, y] drift per second; `sweep`
+ * [[t, x]...] the billows' left edge across the frame (0 left, 1 right): smoke rolling in from the right.
  */
 class Haze implements Effect {
   private mesh: THREE.Mesh;
@@ -745,10 +746,11 @@ class Haze implements Effect {
         uFlow: { value: new THREE.Vector2(...((cue.flow as [number, number]) ?? [-0.12, 0.05])) },
         uScale: { value: num(cue.scale, 1.6) },
         uAspect: { value: 2.2 },
+        uEdge: { value: -1 },
       },
       vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
       fragmentShader: /* glsl */ `
-        uniform float uTime, uA, uCover, uScale, uAspect, uBack; uniform vec3 uC1, uC2, uC3; uniform vec2 uFlow;
+        uniform float uTime, uA, uCover, uScale, uAspect, uBack, uEdge; uniform vec3 uC1, uC2, uC3; uniform vec2 uFlow;
         varying vec2 vUv;
         ${NOISE}
         void main() {
@@ -761,6 +763,7 @@ class Haze implements Effect {
           float n1 = fbm(vec3(p - uFlow * uTime, uTime * 0.1));
           float n2 = fbm(vec3(p * 1.9 + vec2(4.1, 2.3) - uFlow * uTime * 1.7, uTime * 0.22 + 3.0));
           float d = smoothstep(1.0 - uCover - 0.2, 1.0 - uCover + 0.25, n1 * 0.7 + n2 * 0.45);
+          d *= smoothstep(uEdge - 0.05, uEdge + 0.3, vUv.x + 0.35 * (n1 - 0.5));
           float rim = smoothstep(0.0, 0.5, d) * (1.0 - smoothstep(0.5, 1.0, d));
           vec3 smoke = uC1 * (0.7 + 0.6 * n2) + uC2 * rim * 0.35;
           vec3 c = mix(back, smoke, d);
@@ -781,6 +784,7 @@ class Haze implements Effect {
     u.uTime.value = ctx.t + num(this.cue.offset, 0);
     u.uA.value = a;
     u.uCover.value = this.cue.cover ? curve(this.cue.cover as [number, number][], ctx.t) : 0.6;
+    u.uEdge.value = this.cue.sweep ? curve(this.cue.sweep as [number, number][], ctx.t) : -1;
     u.uAspect.value = ctx.camera.aspect;
   }
 
