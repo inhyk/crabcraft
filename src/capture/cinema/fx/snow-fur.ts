@@ -11,7 +11,8 @@
 //           rim { dir [x, y, z] (camera space: x right, y up, z at the lens), color, k or gain }: lights
 //           for the fur alone (a rim from behind makes it glow), led (gain or [[t, gain]...] on the
 //           LED face's brightness, so a macro reads the fur and not the glare), inertia (0.25: how far
-//           the tips swing back when the actor speeds up, per unit/s^2) }
+//           the tips swing back when the actor speeds up, per unit/s^2), fill (gain or [[t, gain]...]
+//           on the sky and ambient light the fur takes, 1 = the scene's, lower to let the key shape it) }
 //   focus { at (a point; default: the camera's own focus), range [[t, units]...], dist [[t, units]...] }
 //           overrides the depth of field's focus each frame (racks within a shot)
 //   lens  { near (camera near plane while the cue runs), until }
@@ -219,6 +220,7 @@ class Fur implements Effect {
       lampColor(key, U.uKeyCol.value as THREE.Color);
       (U.uRimDir.value as THREE.Vector3).copy(rimView);
       lampColor(rim, U.uRimCol.value as THREE.Color);
+      U.uFill.value = Array.isArray(this.cue.fill) ? curve(this.cue.fill as [number, number][], ctx.t) : num(this.cue.fill, 1);
       (d.hair.material as THREE.ShaderMaterial).uniforms.uWidthMul.value = Math.min(2.5, 1 / Math.sqrt(density));
     }
     // The braid rings ride the braids' sway (the shader's wind at the ring, its random terms at their mean).

@@ -119,6 +119,7 @@ uniform vec3 uKeyDir;
 uniform vec3 uKeyCol;
 uniform vec3 uRimDir;
 uniform vec3 uRimCol;
+uniform float uFill;
 uniform float uSpec1;
 uniform float uSpec2;
 uniform float uGloss1;
@@ -143,11 +144,12 @@ vec3 dirLight(vec3 L, vec3 lc, vec3 alb, vec3 T, vec3 T1, vec3 T2, vec3 N, vec3 
   return lc * ((alb * diff + s1 + s2 * alb * 2.0) * facing * ao * sh + back * alb);
 }
 vec3 hairLight(vec3 alb, vec3 T, vec3 N, vec3 V, float ao, float tipLit, float sparkle) {
-  vec3 col = ambientLightColor * alb * ao;
+  // The fill (sky and ambient) can be held under the key so the coat's shading reads.
+  vec3 col = ambientLightColor * alb * ao * uFill;
   #if NUM_HEMI_LIGHTS > 0
   for (int i = 0; i < NUM_HEMI_LIGHTS; i++) {
     float h = dot(N, hemisphereLights[i].direction) * 0.5 + 0.5;
-    col += mix(hemisphereLights[i].groundColor, hemisphereLights[i].skyColor, h) * alb * ao;
+    col += mix(hemisphereLights[i].groundColor, hemisphereLights[i].skyColor, h) * alb * ao * uFill;
   }
   #endif
   vec3 T1 = normalize(T + N * uShift);
@@ -367,6 +369,7 @@ export function strandUniforms(tex: THREE.DataTexture, stride: number, p: number
     uKeyCol: { value: new THREE.Color(0, 0, 0) },
     uRimDir: { value: new THREE.Vector3(0, 0, -1) },
     uRimCol: { value: new THREE.Color(0, 0, 0) },
+    uFill: { value: 1 },
   };
 }
 

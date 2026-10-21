@@ -148,8 +148,9 @@ const HIDE = ['mira-ice-prison'];
 const face = {
   anchor: D,
   hide: HIDE,
-  view: { ...COLD, dof: true, bokeh: 2.2 },
-  fog: { color: '#dde2ec', density: 0.017 },
+  // A tighter bloom, so the LEDs glow without veiling the moustache.
+  view: { ...COLD, dof: true, bokeh: 2.2, bloom: { intensity: 0.45, threshold: 1.2, radius: 0.4 } },
+  fog: { color: '#dde2ec', density: 0.012 },
   actors: cast2(D, [BEAST_FROM[0], BEAST_FROM[2]], YAW1),
   tracks: {
     dwarf: {
@@ -178,8 +179,8 @@ const face = {
   // from the lens, then up and back to the original's close-up of his face.
   cam: {
     ...move([
-      { t: 0, p: F0(0.45, 0.31, 0.98), l: F0(0.32, 0.41, 0.62), fov: 32 },
-      { t: 1.6, p: F0(0.46, 0.42, 1.38), l: F0(0.25, 0.46, 0.58), fov: 31 },
+      { t: 0, p: F0(0.46, 0.33, 1.06), l: F0(0.32, 0.41, 0.62), fov: 32 },
+      { t: 1.2, p: F0(0.465, 0.355, 1.13), l: F0(0.3, 0.42, 0.61), fov: 32 },
       { t: 3.6, p: F0(0.28, 0.78, 2.4), l: F0(0, 0.6, 0), fov: 27 },
       { t: 6.4, p: F1(2.4, 0.7, 1.9), l: F1(0, 0.72, 0.2), fov: 30 },
       { t: 8.8, p: F1(2.6, 0.75, 0.9), l: F1(0, 0.78, 0.4), fov: 31 },
@@ -197,7 +198,16 @@ const face = {
     // Out of the white as late as the original, which is clear at 41.2 s.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.5, 0.85], [1.0, 0.55], [1.45, 0.2], [1.75, 0]] },
     // The LEDs dimmed while the lens is on the moustache, so the fur reads before the glare.
-    { t: -3, kind: 'fur', actor: 'dwarf', led: [[0, 0.35], [1.6, 0.45], [3.6, 1]] },
+    // The fill held two stops under a stronger key while the lens is on the moustache, so the beard
+    // has a lit side and a dark side.
+    {
+      t: -3,
+      kind: 'fur',
+      actor: 'dwarf',
+      led: [[0, 0.45], [1.6, 0.5], [3.6, 1]],
+      fill: [[0, 0.5], [3.6, 0.75], [6, 1]],
+      key: { color: '#fff1e0', k: [[0, 10], [3.6, 8], [6, 7]] },
+    },
     // Focus held on the moustache's frosted tips while the depth of field opens up to the face.
     { t: -3, kind: 'focus', at: { a: 'dwarf', o: [0.36, 0.42, 0.68] }, range: [[0, 0.07], [1.6, 0.12], [3.6, 2.5]], until: 4 },
     // Once the beast is in, the focus is on its coat, the nearest fur in frame.

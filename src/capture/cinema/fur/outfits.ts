@@ -88,7 +88,7 @@ const BEARD: Layer = {
   // Dusted all over, frozen into a crust in the middle under the moustache (the original's chin).
   snow: (p, _n, r) => Math.min(1, (0.22 + Math.max(0, blotch(p) * 1.4 - 0.6)) * (0.5 + 0.5 * r) + 0.5 * ss(0.03, 0.012, Math.abs(p.x)) * ss(-0.004, 0.012, p.y)),
   jitter: 0.15,
-  look: { colA: '#2e160a', colB: '#5c2e14', tip: '#7c4a26', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.35, gloss1: 120, gloss2: 28, shift: 0.1, back: 1.6, tipWidth: 0.18 },
+  look: { colA: '#2e160a', colB: '#5c2e14', tip: '#7c4a26', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.25, gloss1: 120, gloss2: 45, shift: 0.1, back: 1.6, tipWidth: 0.18 },
   bits: { clumps: 0.5, crystals: 0.3, size: 0.0012, powder: 3 },
 };
 
