@@ -31,6 +31,8 @@ export interface Layer {
   curl: number;
   /** Random turn of the hair's first direction (locks then lie a little every way). */
   jitter?: number;
+  /** A slow swirl in the comb across the coat (partings and whorls), as a share of the direction. */
+  flow?: number;
   /** Root width, metres. */
   width: number;
   /** Wind response divisor (1 normal, 2 half as much). */
@@ -244,6 +246,16 @@ function growLayer(parts: RigParts, layer: Layer, rng: () => number, density: nu
     n.toArray(normals, i * 3);
     // Grow: from just above the surface, along the comb, drooping, wandering a little.
     layer.dir(p, n, r, d).normalize();
+    if (layer.flow) {
+      // A field a few centimetres across: neighbouring hairs turn together, so the coat parts and whorls.
+      d.add(
+        new THREE.Vector3(
+          Math.sin(p.y * 47 + p.z * 31 + 0.3),
+          0.4 * Math.sin(p.x * 39 + p.z * 43 + 1.9),
+          Math.sin(p.x * 41 + p.y * 37 + 4.1),
+        ).multiplyScalar(layer.flow),
+      ).normalize();
+    }
     if (layer.jitter) d.add(new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5).multiplyScalar(layer.jitter * 2)).normalize();
     const step = len / (P - 1);
     q.copy(p).addScaledVector(n, 0.00025);
@@ -578,7 +590,7 @@ function occlusion(crops: Crop[]): void {
         const a = (s * P + j) * 3;
         const up = march(pts[a], pts[a + 1], pts[a + 2], 0, 1, 0);
         const out = march(pts[a], pts[a + 1], pts[a + 2], nx0, ny0, nz0);
-        c.occ[s * P + j] = Math.exp(-(0.55 * up + 0.45 * out) * 0.8);
+        c.occ[s * P + j] = Math.exp(-(0.55 * up + 0.45 * out) * 1.1);
         c.occK[s * P + j] = Math.exp(-march(pts[a], pts[a + 1], pts[a + 2], kx, ky, kz) * 0.9);
       }
     }

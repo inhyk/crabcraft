@@ -139,7 +139,7 @@ vec3 dirLight(vec3 L, vec3 lc, vec3 alb, vec3 T, vec3 T1, vec3 T2, vec3 N, vec3 
   float s2 = kk(T2, H, uGloss2) * uSpec2 * (0.4 + sparkle);
   float back = pow(max(0.0, dot(-V, L)), 4.0) * uBack * tipLit;
   // The coat's own shadow (toward the key, from the groom) darkens what the light would reach.
-  float sh = mix(0.12, 1.0, vShadow);
+  float sh = mix(0.05, 1.0, vShadow);
   return lc * ((alb * diff + s1 + s2 * alb * 2.0) * facing * ao * sh + back * alb);
 }
 vec3 hairLight(vec3 alb, vec3 T, vec3 N, vec3 V, float ao, float tipLit, float sparkle) {
@@ -217,7 +217,7 @@ void main() {
   float speck = fract(sin(dot(vec2(r * 91.7 + r2 * 13.1, floor(vV * 30.0)), vec2(12.9898, 78.233))) * 43758.5453);
   float rime = step(0.88, speck) * smoothstep(0.2, 0.7, vData.z) * smoothstep(0.15, 0.5, vV);
   alb = mix(alb, uSnowCol, rime * 0.35);
-  float ao = mix(uRootAO, 1.0, vOcc) * mix(0.7, 1.0, smoothstep(0.0, 0.6, vV));
+  float ao = mix(uRootAO, 1.0, vOcc) * mix(0.55, 1.0, smoothstep(0.0, 0.6, vV));
   float sparkle = snow > 0.2 ? step(0.93, fract(r * 517.3 + vV * 3.1)) * 3.0 : 0.0;
   vec3 col = hairLight(alb, T, N, V, ao, vV, sparkle);
   gl_FragColor = vec4(col, 1.0);
@@ -391,7 +391,7 @@ export function hairMaterial(shared: Record<string, THREE.IUniform>, look: HairL
         uColB: { value: lin(look.colB) },
         uTipCol: { value: lin(look.tip) },
         uTipAmt: { value: look.tipAmt },
-        uSnowCol: { value: lin(look.snow ?? '#f4f7ff') },
+        uSnowCol: { value: lin(look.snow ?? '#e9f0ff') },
         uSnowLen: { value: look.snowLen ?? 0.3 },
         uRootAO: { value: look.rootAO ?? 0.22 },
         uSpec1: { value: look.spec1 ?? 0.05 },
@@ -418,7 +418,7 @@ export function bitsMaterial(shared: Record<string, THREE.IUniform>, glint: numb
     uniforms: THREE.UniformsUtils.merge([
       THREE.UniformsLib.lights,
       THREE.UniformsLib.fog,
-      { uSnowCol: { value: lin('#f2f6ff') }, uGlint: { value: glint } },
+      { uSnowCol: { value: lin('#e6eeff') }, uGlint: { value: glint } },
     ]),
   });
   Object.assign(m.uniforms, shared);
