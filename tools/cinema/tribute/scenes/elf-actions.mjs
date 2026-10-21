@@ -42,15 +42,14 @@ function actionShot(a, run) {
     return { t, x: p[0], z: p[1] - 2.6 * before * before + (last ? 2.1 : 0.9) * after * after, yaw: a.yaw, lift: last ? 1.15 * after * after : 0 };
   });
   const trail = run.fx.filter((f) => ['leaves', 'motes'].includes(f.kind)).map((f) => ({ ...f, count: Math.round(f.count * 0.45), size: f.size * 0.65 }));
+  // The run's own look (its lavender grade, mist and lens), so the moves sit in the same moonlit
+  // wood as the close-up before them and the change after.
+  const grade = run.fx.filter((f) => f.kind === 'night-grade');
   return {
     id: a.id, at: a.at, length, chapter: 1, mood: 1,
     anchor: p,
-    view: {
-      exposure: 1.26, saturation: -0.07, contrast: 0.16,
-      bloom: { intensity: 0.62, threshold: 0.95, radius: 0.48 },
-      vignette: { offset: 0.27, darkness: 0.45 }, dof: true, bokeh: 1.5,
-    },
-    fog: { color: '#595879', density: 0.035 },
+    view: run.view,
+    fog: run.fog,
     actors: [{ id: 'elf', spec: ELF, at: p, yaw: a.yaw }],
     tracks: { elf: {
       path,
@@ -65,7 +64,7 @@ function actionShot(a, run) {
       ],
     },
     fx: [
-      { kind: 'night-grade', t: -3, mul: '#c0b4e8', mulTop: '#b8c3fa', gain: 1.2, lift: '#0b1029', liftK: 0.25 },
+      ...grade,
       // Clear the feet and every sight line, keeping the surrounding forest as depth layers.
       { kind: 'night-clear', t: -3, cut: [[...p, a.camera === 'high' ? 7 : 3.6], ...[0, 0.25, 0.5, 0.75, 1].flatMap((t) => {
         const x = start[0] + (end[0] - start[0]) * t;
