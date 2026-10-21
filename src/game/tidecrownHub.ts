@@ -1,18 +1,17 @@
 // Tidecrown, the hub that links every world. In the capital the Goldclaw's captain on the long pier and the portal in
 // the Seaglass Quarter offer every world, open or locked by the game's own unlock rules; every world has a crown
 // portal beside its own gateway that leads back to the capital's harbour. Travel takes the worlds' portal path (a relay
-// room's chapter request, else world2.go), so a room moves together and the quest chapter rules stay as they are. A
-// server world does not host Tidecrown yet: nothing here is built there.
+// room's chapter request, else world2.go), so a room moves together and the quest chapter rules stay as they are. The
+// capital's named crabs (the captain, the portal's keeper) are `keepers` (tidecrown/keepers.ts); a feature
+// that adds one registers it in the constructor below. A server world does not host Tidecrown yet: nothing here is
+// built there.
 import * as THREE from 'three';
-import { createCrab } from '../crab/provider';
-import type { CrabSpec } from '../crab/types';
 import { t } from '../i18n';
-import { createMotionController } from '../motion/provider';
 import type { Game } from './game';
 import { CrownPortal } from './tidecrown/crownPortal';
 import type { TidecrownIsland } from './tidecrown/island';
-import { Unit } from './unit';
-import { turnToward, yawTo } from './util';
+import { type Keeper, TidecrownKeepers } from './tidecrown/keepers';
+import type { Unit } from './unit';
 import type { HiddenWorld } from './world2';
 
 export type HubChapter = 1 | 2 | 3 | 4 | 5 | 6;
@@ -35,6 +34,9 @@ export const TC_HARBOUR_ARRIVAL: Arrival = { x: 221.5, z: 15.8, yaw: Math.atan2(
 const CAPTAIN: Arrival = { x: 261, z: 8.9, yaw: -Math.PI / 2 };
 /** The Seaglass portal on the green east of the glass plaza, facing the great tower; its keeper at its right. */
 const SEAGLASS: Arrival = { x: -50, z: -110, yaw: Math.atan2(-66 + 50, -122 + 110) };
+const OPAL: Arrival = {
+  x: SEAGLASS.x + Math.cos(SEAGLASS.yaw) * 4.6 + Math.sin(SEAGLASS.yaw) * 1.6, z: SEAGLASS.z - Math.sin(SEAGLASS.yaw) * 4.6 + Math.cos(SEAGLASS.yaw) * 1.6, yaw: SEAGLASS.yaw,
+};
 /**
  * Each world's crown portal, beside one of its own gateways on open ground clear of the villagers' posts, facing into
  * its town (World I's is placed from the wreck): Starhaven south-east of its portal, past the carts on the cross street;
@@ -50,25 +52,25 @@ const AT = 6;
 /** '로' or '으로' after a Korean word. */
 const ro = (word: string) => { const c = word.charCodeAt(word.length - 1) - 0xac00, f = c >= 0 && c < 11172 ? c % 28 : 0; return f === 0 || f === 8 ? '로' : '으로'; };
 
-interface Keeper { unit: Unit; at: THREE.Vector3; yaw: number; name: [string, string]; title: [string, string]; portrait: string; lastHello: number }
 type By = 'ship' | 'portal';
 
 export class TidecrownHub {
   /** Each world's crown portal and where it stands. */
   private readonly returns = new Map<HubChapter, { portal: CrownPortal; at: Arrival }>();
   private seaglass: CrownPortal | null = null;
-  private captain: Keeper | null = null;
-  private keeper: Keeper | null = null;
-  private loading: Promise<void> | null = null;
+  /** The capital's named crabs (not game units); see tidecrown/keepers.ts for adding one. */
+  readonly keepers: TidecrownKeepers;
+  private readonly captain: Keeper | null = null;
+  private readonly keeper: Keeper | null = null;
   private shown = false;
   /** The Seaglass ring's walk-in, armed once the player is clear of it. */
   private armed = false;
   /** A sail's landing, waiting for its world (at once alone, or once a relay room's host has moved). */
   private pending: { chapter: HubChapter; at: Arrival; until: number } | null = null;
   private told = false;
-  private readonly cam = new THREE.Vector3();
 
   constructor(private readonly g: Game, private readonly w2: HiddenWorld, places: Record<HubChapter, { root: THREE.Object3D; height: (x: number, z: number) => number }>) {
+    this.keepers = new TidecrownKeepers(g);
     if (g.serverMode) return;
     const wreck = g.world.pois.wreck.position;
     // World I: on the grass west of the shore portal (wreck - 7, + 7), facing the village.
@@ -80,56 +82,40 @@ export class TidecrownHub {
       place.root.add(portal.root);
       this.returns.set(chapter, { portal, at: p });
     }
+    this.captain = this.keepers.add({
+      id: 'tc-captain', ...CAPTAIN, spec: { race: 'human', sex: 'female', classId: 'warrior', shell: 2, crest: 1, led: 0, name: 'Ara' }, extras: ['captain-hat'],
+      name: ['아라 선장', 'Captain Ara'], title: ['금빛집게호 선장', 'Captain of the Goldclaw'], marker: ['배편', 'Ships'],
+      prompt: ['아라 선장에게 말 걸기 · 모든 월드로 가는 배', 'Talk to Captain Ara · Ships to every world'], talk: () => this.choose('ship'),
+    });
+    // The portal is her F point (use() opens her choice), so she has none of her own.
+    this.keeper = this.keepers.add({
+      id: 'tc-portal-keeper', ...OPAL, spec: { race: 'nightelf', sex: 'female', classId: 'mage', shell: 1, crest: 2, led: 2, name: 'Opal' },
+      name: ['포탈지기 오팔', 'Opal'], title: ['바다유리 포탈지기', 'Seaglass Portal Keeper'],
+    });
   }
 
   /** The crabs drawn here (for the shader warm-up behind the loading screen). */
-  get units(): Unit[] { return [this.captain, this.keeper].flatMap((k) => (k ? [k.unit] : [])); }
+  get units(): Unit[] { return this.keepers.units; }
+
   /** Where each world's crown portal stands (none on a server world). */
   get crownPortals(): { chapter: HubChapter; x: number; z: number; yaw: number }[] { return [...this.returns].map(([chapter, r]) => ({ chapter, ...r.at })); }
 
-  /** Tidecrown's side, built on the first entry behind its loading screen: the Seaglass portal and the two crabs. */
+  /** Tidecrown's side, built on the first entry behind its loading screen: the Seaglass portal and the keepers. */
   load(island: TidecrownIsland): Promise<void> {
     if (this.g.serverMode) return Promise.resolve();
-    // Each piece once, so a retry after a failed crab load adds nothing twice.
-    this.loading ??= (async () => {
-      if (!this.seaglass) {
-        this.seaglass = new CrownPortal(new THREE.Vector3(SEAGLASS.x, island.height(SEAGLASS.x, SEAGLASS.z), SEAGLASS.z), SEAGLASS.yaw, 'seaglass-portal');
-        island.root.add(this.seaglass.root);
-      }
-      const side = { x: Math.cos(SEAGLASS.yaw) * 4.6 + Math.sin(SEAGLASS.yaw) * 1.6, z: -Math.sin(SEAGLASS.yaw) * 4.6 + Math.cos(SEAGLASS.yaw) * 1.6 };
-      this.captain ??= await this.crab(island, CAPTAIN, { race: 'human', sex: 'female', classId: 'warrior', shell: 2, crest: 1, led: 0, name: 'Ara' }, ['captain-hat'], ['아라 선장', 'Captain Ara'], ['금빛집게호 선장', 'Captain of the Goldclaw'], 'tc-captain');
-      this.keeper ??= await this.crab(island, { x: SEAGLASS.x + side.x, z: SEAGLASS.z + side.z, yaw: SEAGLASS.yaw }, { race: 'nightelf', sex: 'female', classId: 'mage', shell: 1, crest: 2, led: 2, name: 'Opal' }, [], ['포탈지기 오팔', 'Opal'], ['바다유리 포탈지기', 'Seaglass Portal Keeper'], 'tc-portal-keeper');
-    })().catch((error) => { this.loading = null; throw error; });
-    return this.loading;
-  }
-
-  private async crab(island: TidecrownIsland, at: Arrival, spec: CrabSpec, extras: string[], name: [string, string], title: [string, string], id: string): Promise<Keeper> {
-    const rig = await createCrab(spec, extras);
-    (rig as typeof rig & { useShadowProxy?: (on: boolean) => void }).useShadowProxy?.(true);
-    const unit = new Unit(t(...name), 'npc', 'friendly', rig, createMotionController(rig));
-    unit.npcId = id;
-    unit.title = t(...title);
-    unit.hidden = true;
-    rig.root.visible = false;
-    unit.measure();
-    this.g.scene.add(rig.root);
-    const out = new THREE.Vector2();
-    island.resolve(at.x, at.z, unit.radius + 0.2, out);
-    return { unit, at: new THREE.Vector3(out.x, island.height(out.x, out.y), out.y), yaw: at.yaw, name, title, portrait: `art/portraits/${spec.race}-${spec.sex}.webp`, lastHello: -100 };
+    if (!this.seaglass) {
+      this.seaglass = new CrownPortal(new THREE.Vector3(SEAGLASS.x, island.height(SEAGLASS.x, SEAGLASS.z), SEAGLASS.z), SEAGLASS.yaw, 'seaglass-portal');
+      island.root.add(this.seaglass.root);
+    }
+    // Each crab once, so a retry after a failed crab load adds nothing twice.
+    return this.keepers.load(island);
   }
 
   show(): void {
     if (this.shown || this.g.serverMode) return;
     this.shown = true;
     this.armed = false;
-    for (const k of [this.captain, this.keeper]) {
-      if (!k) continue;
-      k.unit.hidden = false;
-      // Drawn from the start, so the warm-up behind the loading screen compiles its shaders; culling follows next frame.
-      k.unit.rig.root.visible = true;
-      k.unit.teleport(this.g.world, k.at.x, k.at.z, k.yaw);
-      this.g.hud.plates.also.add(k.unit);
-    }
+    this.keepers.show();
     if (!this.told) {
       this.told = true;
       this.g.hud.chat.system(t('다른 월드로 가려면 왕관 항구 긴 부두의 아라 선장이나 바다유리 구역의 포탈을 찾아가세요.', 'To travel to another world, find Captain Ara on the Crown Harbour’s long pier or the portal in the Seaglass Quarter.'));
@@ -138,35 +124,29 @@ export class TidecrownHub {
 
   hide(): void {
     this.shown = false;
-    for (const k of [this.captain, this.keeper]) {
-      if (!k) continue;
-      if (this.g.hud.dialogue.unit === k.unit) this.g.hud.dialogue.close();
-      k.unit.hidden = true;
-      k.unit.rig.root.visible = false;
-      this.g.hud.plates.also.delete(k.unit);
-    }
+    this.keepers.hide();
   }
 
   /**
-   * The hub point the player is at: in Tidecrown the nearer of the captain and the Seaglass portal, in a world its crown
-   * portal within AT. Null otherwise. Stable vectors, as world2's other portals are.
+   * The hub point the player is at: in Tidecrown the nearest of the keepers who talk (the captain) and the
+   * Seaglass portal, in a world its crown portal within AT. Null otherwise. Stable vectors, as world2's other portals are.
    */
   point(): THREE.Vector3 | null {
     const p = this.g.player.unit.pos;
     if (this.w2.inTidecrown) {
-      if (!this.shown || !this.captain || !this.seaglass) return null;
-      const c = this.captain.at, s = this.seaglass.root.position;
-      return Math.hypot(p.x - c.x, p.z - c.z) <= Math.hypot(p.x - s.x, p.z - s.z) ? c : s;
+      if (!this.shown || !this.seaglass) return null;
+      const k = this.keepers.nearest(p.x, p.z), s = this.seaglass.root.position;
+      return k && Math.hypot(p.x - k.at.x, p.z - k.at.z) <= Math.hypot(p.x - s.x, p.z - s.z) ? k.at : s;
     }
     // Only while its world is the one shown (an ending shows World I over a later chapter).
     const r = this.returns.get(this.w2.chapter)?.portal.root;
     return r?.parent?.visible && Math.hypot(p.x - r.position.x, p.z - r.position.z) < AT ? r.position : null;
   }
 
-  /** Minimap marks: the crown portal of the world shown, or in Tidecrown the captain's pier and the Seaglass portal. */
+  /** Minimap marks: the crown portal of the world shown, or in Tidecrown the keepers' (the captain's pier) and the Seaglass portal. */
   markers(): { at: THREE.Vector3; label: string }[] {
     if (this.w2.inTidecrown) {
-      return this.shown && this.captain && this.seaglass ? [{ at: this.captain.at, label: t('배편', 'Ships') }, { at: this.seaglass.root.position, label: t('포탈', 'Portal') }] : [];
+      return this.shown && this.seaglass ? [...this.keepers.markers(), { at: this.seaglass.root.position, label: t('포탈', 'Portal') }] : [];
     }
     const r = this.returns.get(this.w2.chapter)?.portal.root;
     return r?.parent?.visible ? [{ at: r.position, label: t('타이드크라운', 'Tidecrown') }] : [];
@@ -176,7 +156,8 @@ export class TidecrownHub {
   label(): string | null {
     const at = this.point();
     if (!at) return null;
-    if (at === this.captain?.at) return t('아라 선장에게 말 걸기 · 모든 월드로 가는 배', 'Talk to Captain Ara · Ships to every world');
+    const k = this.keepers.keeperAt(at);
+    if (k) return this.keepers.prompt(k);
     if (at === this.seaglass?.root.position) return t('바다유리 포탈 · 모든 월드로', 'Seaglass portal · To every world');
     return t('타이드크라운 · 왕관 항구로', 'To Tidecrown · Crown Harbour');
   }
@@ -185,7 +166,8 @@ export class TidecrownHub {
   use(): boolean {
     const at = this.point();
     if (!at) return false;
-    if (at === this.captain?.at) this.choose('ship');
+    const k = this.keepers.keeperAt(at);
+    if (k) k.def.talk?.();
     else if (at === this.seaglass?.root.position) this.choose('portal');
     else void this.toTidecrown();
     return true;
@@ -265,13 +247,10 @@ export class TidecrownHub {
 
   /** The travel choice: every world, open ones to pick and locked ones with the reason. */
   choose(by: By): void {
-    const k = by === 'ship' ? this.captain : this.keeper;
-    if (!k || !this.shown) return;
-    const g = this.g, u = k.unit;
-    g.player.setTarget(null);
-    u.setYaw(yawTo(u.pos.x, u.pos.z, g.player.unit.pos.x, g.player.unit.pos.z));
-    u.express('happy', 1.2);
-    u.act('gesture_hello');
+    const k = by === 'ship' ? this.captain : this.keeper, u = k?.unit;
+    if (!k || !u || !this.shown) return;
+    const g = this.g;
+    k.greet();
     // Open worlds in the gold style, locked ones dark behind a lock.
     const buttons = HUB_WORLDS.map((w) => {
       const locked = !this.w2.canTravel(w.chapter);
@@ -292,11 +271,11 @@ export class TidecrownHub {
   }
 
   private confirm(by: By, chapter: HubChapter): void {
-    const k = by === 'ship' ? this.captain : this.keeper, w = HUB_WORLDS[chapter - 1];
-    if (!k) return;
+    const k = by === 'ship' ? this.captain : this.keeper, w = HUB_WORLDS[chapter - 1], u = k?.unit;
+    if (!k || !u) return;
     const place = t(`월드 ${ROMAN[chapter]} · ${w.ko}`, `World ${ROMAN[chapter]} · ${w.en}`);
     this.g.hud.dialogue.open({
-      unit: k.unit, portraitArt: k.portrait, questTitle: place,
+      unit: u, portraitArt: k.portrait, questTitle: place,
       paragraphs: [by === 'ship' ? t(`${w.ko}${ro(w.ko)} 출항할까요?`, `Set sail for ${w.en}?`) : t(`${w.ko}${ro(w.ko)} 가는 포탈을 열까요?`, `Open the way to ${w.en}?`)],
       buttons: [
         { label: by === 'ship' ? t('출항하기', 'Set sail') : t('포탈로 들어가기', 'Step through'), primary: true, onClick: () => void this.sail(chapter) },
@@ -306,10 +285,10 @@ export class TidecrownHub {
   }
 
   private refuse(by: By, chapter: HubChapter): void {
-    const k = by === 'ship' ? this.captain : this.keeper, w = HUB_WORLDS[chapter - 1];
-    if (!k) return;
+    const k = by === 'ship' ? this.captain : this.keeper, w = HUB_WORLDS[chapter - 1], u = k?.unit;
+    if (!k || !u) return;
     this.g.hud.dialogue.open({
-      unit: k.unit, portraitArt: k.portrait, questTitle: `🔒 ${t(`월드 ${ROMAN[chapter]} · ${w.ko}`, `World ${ROMAN[chapter]} · ${w.en}`)}`,
+      unit: u, portraitArt: k.portrait, questTitle: `🔒 ${t(`월드 ${ROMAN[chapter]} · ${w.ko}`, `World ${ROMAN[chapter]} · ${w.en}`)}`,
       paragraphs: [this.w2.travelLock(chapter) ?? ''],
       buttons: [
         { label: t('다른 곳 고르기', 'Choose another'), primary: true, onClick: () => this.choose(by) },
@@ -337,30 +316,7 @@ export class TidecrownHub {
         this.choose('portal');
       }
     }
-    const camera = g.camera.position, pxPerUnit = window.innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(g.camera.fov / 2)));
-    for (const k of [this.captain, this.keeper]) {
-      if (!k) continue;
-      const u = k.unit;
-      u.name = t(...k.name);
-      u.title = t(...k.title);
-      const near = u.distTo(player), talking = g.hud.dialogue.unit === u;
-      // Facing whoever comes to the pier or the portal; back to the post once they go.
-      u.setYaw(turnToward(u.yaw, talking || near < 7 ? yawTo(u.pos.x, u.pos.z, player.pos.x, player.pos.z) : k.yaw, 2.4, dt));
-      if (!talking && near < 5 && time - k.lastHello > 35 && !u.motion.action) {
-        u.act('gesture_hello');
-        u.express('happy', 1.2);
-        k.lastHello = time;
-      }
-      u.feedLocomotion(dt);
-      // The game draws only its own units; these two get the same culling, detail and shadow rules.
-      const d = this.cam.copy(camera).distanceTo(u.pos);
-      u.culled = d > 80;
-      u.rig.root.visible = !u.culled && !u.hidden;
-      u.lod = (u.height * pxPerUnit) / Math.max(d, 0.1) < (u.lod ? 110 : 90) ? 1 : 0;
-      u.rig.setLod?.(u.lod);
-      u.setShadows(d < 18);
-      u.updateVisual(dt);
-    }
+    this.keepers.update(dt, time);
   }
 
   dispose(): void {
@@ -369,11 +325,6 @@ export class TidecrownHub {
     this.returns.clear();
     this.seaglass?.dispose();
     this.seaglass = null;
-    for (const k of [this.captain, this.keeper]) {
-      if (!k) continue;
-      this.g.scene.remove(k.unit.rig.root);
-      k.unit.dispose();
-    }
-    this.captain = this.keeper = null;
+    this.keepers.dispose();
   }
 }
