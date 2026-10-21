@@ -1,8 +1,8 @@
 // Focused real-input dodge on a staged phase-III boss; no god mode or injected player damage.
 // Level/world travel use the actual creator UI. Run only after GPU endurance is terminal.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192',probe=process.env.CC_QA_PROBE==='1';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[],results=[];
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[],results=[];
 try{
  const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(()=>{localStorage.setItem('cc.language','ko');localStorage.setItem('cc.quality','low');localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'priest',shell:0,crest:0,led:0,name:'Walking Probe'}));});await p.goto(base+'/?screen=game');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));
  await p.keyboard.type('13570');await p.getByRole('button',{name:'레벨 +10',exact:true}).click();for(let i=0;i<9;i++)await p.getByRole('button',{name:'레벨 +1',exact:true}).click();assert.equal(await p.evaluate(()=>window.app.current.game.player.level),20);await p.getByRole('button',{name:'월드 2로 이동',exact:true}).click();await p.waitForFunction(()=>window.app.current.game.world2.chapter===2);await p.getByRole('button',{name:'제작자 화면 닫기',exact:true}).click();await p.locator('.boss-journey:has(.bj-card.eclipse) > summary').first().click();await p.locator('.bj-card.eclipse button').click();await p.waitForFunction(()=>window.app.current.game.worldBoss.state==='fight',null,{timeout:10000});

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Frame-time benchmark of the integrated game in installed Chrome (real GPU).
+// Frame-time benchmark of the integrated game in Chrome for Testing (real GPU).
 // Boots ?screen=game&debug=1, then measures four scenes: the town square (camera orbiting),
 // shore combat, the boss fight and the ending dance. For each scene it records, per 1 s window,
 // the frame rate, the CPU time of a frame (update + render submission) and the GPU time of the
@@ -12,7 +12,7 @@
 // World II: --scenes star-town,star-forest,star-ruins,star-boss
 // --quality sets cc.quality before boot (high | low | auto). Measurements default to 'high' so a
 // fixed pixel ratio is compared; 'auto' lets dynamic resolution react.
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { writeFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
@@ -35,8 +35,7 @@ const SPECS = {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.launch({
-  channel: 'chrome',
+const browser = await launchBrowser({
   headless: true,
   args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--mute-audio'],
 });

@@ -1,11 +1,11 @@
 // Exercise the real quest/dialogue/settings windows in isolated compact browsers.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 await mkdir('tmp/qa',{recursive:true});
 const base=process.env.CC_QA_URL||'http://127.0.0.1:5192';
 const probe=process.env.CC_QA_PROBE==='1';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
 try {
  for(const [width,height,lang] of [[718,492,'ko'],[390,844,'en']]) {
   const page=await browser.newPage({viewport:{width,height}}),errors=[];

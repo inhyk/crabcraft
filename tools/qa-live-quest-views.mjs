@@ -1,7 +1,7 @@
 // A friend's combat updates a quest while the other player reads its log/dialogue.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';import {mkdir,writeFile} from 'node:fs/promises';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';import {mkdir,writeFile} from 'node:fs/promises';
 const english=!!process.env.CC_QA_EN,accept=english?'Accept quest':'퀘스트 받기',reward=english?'Claim reward':'보상 받기';
-await mkdir('tmp/qa',{recursive:true});const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+await mkdir('tmp/qa',{recursive:true});const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 async function open(name){const ctx=await browser.newContext({viewport:{width:1280,height:800}}),p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(name=>{localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','low');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name}));const Original=window.WebSocket;window.WebSocket=class extends Original{constructor(url,protocols){super(String(url).includes('/multiplayer')?'ws://127.0.0.1:5192/multiplayer':url,protocols);}};},name);await p.goto('http://127.0.0.1:5192/?screen=game');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});return p;}
 async function visit(p,id){await p.evaluate(id=>{const g=window.app.current.game,n=g.npcById(id);g.player.unit.teleport(g.world,n.unit.pos.x,n.unit.pos.z+2,Math.PI);g.player.setTarget(null);g.follow.cut();},id);await p.keyboard.press('KeyF');await p.locator('.dlg').waitFor({state:'visible'});await p.evaluate(()=>window.app.current.game.hud.dialogue.skipTyping());}
 try{

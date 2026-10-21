@@ -1,7 +1,7 @@
 // Shared plumbing for the trailer capture scripts: a Chrome page in capture mode (?capture=1, see
 // src/capture/clock.ts), a frame-exact recorder that steps the page by a fixed dt, screenshots
 // the whole page (canvas and HTML HUD) through CDP and pipes the frames into ffmpeg.
-import { chromium } from 'playwright';
+import { launchBrowser } from '../lib/browser.mjs';
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -29,8 +29,7 @@ const BASE_CSS = `
  * crab, `size` the CSS viewport, `dsf` the device scale (2 renders and captures at twice the size).
  */
 export async function openApp({ base, query, spec = null, size = [1920, 1080], dsf = 2, storage = {}, seed = 7 }) {
-  const browser = await chromium.launch({
-    channel: 'chrome',
+  const browser = await launchBrowser({
     headless: true,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--hide-scrollbars', '--mute-audio'],
   });

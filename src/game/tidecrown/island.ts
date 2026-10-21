@@ -17,6 +17,7 @@ import { buildTidecrownHeights } from '../../sim/world/tidecrownGround';
 import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
 import { tidecrownMaterials } from './materials';
 import { buildHeroStatues } from './statues';
+import { paveAprons } from './splat';
 import { buildTidecrownStructures, type TidecrownStructures } from './structures';
 import { TidecrownTerrain, tidecrownTerrainMaterial } from './terrain';
 
@@ -120,6 +121,7 @@ export class TidecrownIsland {
 
     t0 = performance.now();
     const terrain = new TidecrownTerrain(this.layout.heights, await splat);
+    paveAprons(terrain.splat, this.layout.city.zones.flatMap((z) => z.plan.lots));
     this.groundLight = paintGroundLight(this.layout.city);
     const ground = terrain.buildMeshes(tidecrownTerrainMaterial(terrain, village, nature, WORLD_UNIFORMS.uTime, this.groundLight));
     this.root.add(ground);

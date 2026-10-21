@@ -1,10 +1,10 @@
 // GPU browser QA: run a Vite preview on port 5192, then node tools/qa-starhaven.mjs.
 // Uses isolated browser storage; battle kills are injected through the real combat pipeline.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 await mkdir('tmp/qa',{recursive:true});
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
 try{
  const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto((process.env.CC_QA_URL??'http://127.0.0.1:5192/')+'?screen=game');await page.waitForFunction(()=>window.app?.current?.game?.loaded,{},{timeout:90000});

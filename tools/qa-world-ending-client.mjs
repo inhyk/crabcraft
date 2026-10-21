@@ -8,7 +8,7 @@ import {mkdtemp,readFile,mkdir,rm,writeFile} from 'node:fs/promises';
 import {join,resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createServer} from 'vite';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import {freePort} from '../server/node/local-postgres.mjs';
 import {GameplayReceiver,WIRE_SCHEMA_REVISION} from '../server/world/gameplay/protocol.ts';
 import {decodeInput} from '../server/world/gameplay/intents.ts';
@@ -36,7 +36,7 @@ try{
  const origin=new URL(metadata.clientOrigin),backend=new URL(metadata.origin);
  if(origin.protocol!=='http:'||origin.hostname!=='127.0.0.1'||backend.protocol!=='http:'||backend.hostname!=='127.0.0.1'||metadata.endingIntegrationFixture!==true||metadata.earnedEnding!==false||metadata.world!=='w4'||metadata.catalog.wireSchemaRevision!==WIRE_SCHEMA_REVISION)throw Error('Expected explicit trusted W4 ending integration fixture');
  server=await createServer({root,configFile:false,logLevel:'error',server:{host:'127.0.0.1',port:Number(origin.port),strictPort:true,hmr:false,proxy:{'/api/account':{target:backend.origin},'/world':{target:backend.origin,ws:true}}}});await server.listen();
- browser=await chromium.launch({channel:'chrome',headless:true});const context=await browser.newContext({viewport:{width,height}});await context.grantPermissions(['local-network-access'],{origin:origin.origin});await context.addCookies([{name:metadata.cookie.name,value:metadata.cookie.value,domain:'127.0.0.1',path:metadata.cookie.path,httpOnly:true,sameSite:'Strict'}]);
+ browser=await launchBrowser({headless:true});const context=await browser.newContext({viewport:{width,height}});await context.grantPermissions(['local-network-access'],{origin:origin.origin});await context.addCookies([{name:metadata.cookie.name,value:metadata.cookie.value,domain:'127.0.0.1',path:metadata.cookie.path,httpOnly:true,sameSite:'Strict'}]);
  const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  page.on('websocket',ws=>{if(new URL(ws.url()).pathname!=='/world')return;const stream={binding:null,receiver:null,state:null};streams.push(stream);
   ws.on('framereceived',({payload})=>{try{if(typeof payload==='string'){const value=JSON.parse(payload);if(value.type==='world-bound'){const{type,...binding}=value;stream.binding=binding;stream.receiver=new GameplayReceiver(binding,metadata.catalog);}}else if(stream.receiver){const result=stream.receiver.accept(payload,performance.now()/1000);if(result?.kind==='snapshot')stream.state=result.state;}}catch(error){wireErrors.push(error.message);}});

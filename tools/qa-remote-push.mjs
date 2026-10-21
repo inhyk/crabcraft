@@ -1,8 +1,8 @@
 // Real two-client relay/Player movement; injected impulse and staged boss are explicit fixtures.
 // Run only after the frozen endurance process finishes, to avoid competing GPU workloads.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 async function open(name,language){const p=await browser.newPage({viewport:{width:960,height:600}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(({name,language,base})=>{localStorage.setItem('cc.language',language);localStorage.setItem('cc.quality','low');localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name}));const WS=window.WebSocket;window.WebSocket=class extends WS{constructor(url,protocols){super(String(url).includes('/multiplayer')?base.replace('http:','ws:')+'/multiplayer':url,protocols);}};},{name,language,base});await p.goto(base+'/?screen=game&multiplayer');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));return p;}
 const position=p=>p.evaluate(()=>{const g=window.app.current.game,u=g.player.unit;return {x:u.pos.x,z:u.pos.z,pushTime:u.pushTime,time:g.time,kind:g.worldBoss.mech?.kind??null,connected:g.multiplayer.battle.active};});
 const drift=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);

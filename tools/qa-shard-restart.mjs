@@ -4,7 +4,7 @@
 // (the /api/account proxy target in vite.config.ts) and `vite preview` of dist/ on 5208; the pages' /multiplayer
 // socket is pointed at 8795, since the preview's own relay is not the one being restarted. Run `pnpm build` first.
 // Screenshots go to CC_QA_SHOTS (default tmp/qa).
-import assert from 'node:assert/strict';import {execFileSync,spawn} from 'node:child_process';import {mkdirSync} from 'node:fs';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {chromium} from 'playwright';
+import assert from 'node:assert/strict';import {execFileSync,spawn} from 'node:child_process';import {mkdirSync} from 'node:fs';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {launchBrowser} from './lib/browser.mjs';
 import {startPostgres} from '../server/node/local-postgres.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),shots=process.env.CC_QA_SHOTS??join(root,'tmp/qa'),shot=name=>join(shots,name);mkdirSync(shots,{recursive:true});
 const base='http://127.0.0.1:5208';
@@ -38,7 +38,7 @@ const together=(p,timeout)=>p.waitForFunction(()=>{const m=window.app.current.ga
 try{
  let server=await serve();
  await run([join(root,'node_modules/vite/bin/vite.js'),'preview','--host','127.0.0.1','--port','5208','--strictPort'],{},/5208/);
- browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+ browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
  const a=await open('Shard Ada'),b=await open('Shard Bo');
  for(const p of [a,b])await together(p,15000);
  const before=[await shard(a),await shard(b)];
