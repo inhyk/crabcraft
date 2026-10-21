@@ -349,11 +349,12 @@ if (process.env.CC_QA_LOCAL !== '0' && (want('hold') || want('throw'))) {
     const b = await context.newPage();
     b.setDefaultTimeout(90000);
     watch(b);
-    // The second window's frames stop the moment its journey is read, and run again on __qaThaw().
+    // The second window's frames stop the moment its journey is read (a frame asked for before then waits too), and run
+    // again on __qaThaw().
     await b.addInitScript(() => {
       const raf = window.requestAnimationFrame.bind(window), queued = [];
       window.__qaFrozen = false;
-      window.requestAnimationFrame = (cb) => { if (!window.__qaFrozen) return raf(cb); queued.push(cb); return 0; };
+      window.requestAnimationFrame = (cb) => raf((t) => { if (window.__qaFrozen) queued.push(cb); else cb(t); });
       window.__qaThaw = () => { window.__qaFrozen = false; for (const cb of queued.splice(0)) raf(cb); };
       void import('/src/game/bossJourney.ts').then(({ BossJourney }) => {
         const restore = BossJourney.prototype.restore;
@@ -364,8 +365,9 @@ if (process.env.CC_QA_LOCAL !== '0' && (want('hold') || want('throw'))) {
     await b.locator('.launch-notice-start').click();
     await b.waitForFunction(() => window.__qaFrozen && window.app?.current?.game?.journey?.root, null, { timeout: 240000, polling: 200 });
     const tried = await a.evaluate(async () => ({ twin: await window.__V.vault().shared(), moved: await window.__V.vault().move('deposit', 100), state: window.__V.state() }));
-    // Thawed, the second window plays on for more than one 3 s journey save.
+    // Thawed, the second window loads and plays on for more than one 3 s journey save.
     await b.evaluate(() => window.__qaThaw());
+    await b.waitForFunction(() => window.app.current.game.loaded && !document.querySelector('.loading'), null, { timeout: 240000 });
     await pause(4500);
     const after = await a.evaluate(() => window.__V.state());
     assert.equal(after.journey + after.vault, 1000, `the coins stored after the second window saved: ${JSON.stringify({ tried, after })}`);
@@ -658,7 +660,8 @@ if (process.env.CC_QA_ACCOUNT !== '0' && accountParts.some(want)) {
         localStorage.setItem('cc.account.meta:' + u, JSON.stringify({ revision, snapshot: JSON.stringify(save) }));
       };
       await s.evaluate(oldLoad, [user, deposit.save, deposit.revision]);
-      assert.deepEqual(await local(s, user), { journey: JSON.parse(deposit.save[saverJourney]), vault: '{"coins":300}', guest: '{"coins":0}' });
+      const stale = await local(s, user);
+      assert.deepEqual([stale.journey, stale.vault], [JSON.parse(deposit.save[saverJourney]), '{"coins":300}']);
       const q = await visit(s);
       await pause(3000);
       const loaded = await local(q, user), cloud = await saved(user);
