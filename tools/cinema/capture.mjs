@@ -114,11 +114,14 @@ try {
     // Travel, then step until the loading painting has gone and the world has settled.
     const moved = await page.evaluate((c) => window.__cinema.travel(c), shot.chapter);
     if (moved) {
-      for (let i = 0; i < 40; i++) {
+      // Tidecrown (7) builds itself on first entry, which takes longer.
+      let done = false;
+      for (let i = 0; i < (shot.chapter === 7 ? 160 : 40) && !done; i++) {
         await advance(app, 0.5, 30);
-        const done = await page.evaluate((c) => window.__cinema.chapter === c && !document.querySelector('.loading'), shot.chapter);
-        if (done) break;
+        done = await page.evaluate((c) => window.__cinema.chapter === c && !document.querySelector('.loading'), shot.chapter);
       }
+      const err = await page.evaluate(() => window.__cinema.travelError);
+      if (err || (shot.chapter === 7 && !done)) throw new Error(`${shot.id}: travel to world ${shot.chapter} failed ${err}`);
       await advance(app, 2, 30);
     }
     const st = await page.evaluate((s) => window.__cinema.stage(s), shot);

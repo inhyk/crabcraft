@@ -781,13 +781,15 @@ const undeadShots = [
 
 /** The blast shot's camera: low behind his left, looking past him into the fire. */
 const EX_CAM = G(-3.4, -2.6, 0.35);
+/** The golem's feet in the blast shot: far enough back that it stands whole over him. */
+const GOLEM_EX = P(7.6, 0.4);
 
 const explodeShots = [
   // Out of a white flash, the blast close: boulders blown at the lens, the undead black against the
   // fire, the camera thrown forward into it.
   cut('night-explode', EXPLODE_IN, EXPLODE_OUT, 2, {
     view: view({ exposure: 0.95, saturation: -0.16, contrast: 0.26 }),
-    hide: UNDEAD_HIDE,
+    hide: [...UNDEAD_HIDE, ...COLUMNS],
     anchor: U,
     actors: [{ ...undead, at: U, yaw: U_YAW + Math.PI - 0.4 }],
     tracks: {
@@ -800,8 +802,9 @@ const explodeShots = [
       ease: 'out',
       shake: 0.04,
       keys: [
-        { t: 0, p: EX_CAM, l: G(4, -0.8, 1.9), fov: 46 },
-        { t: 2.29, p: G(-2.3, -2.1, 0.5), l: G(4.2, -1.0, 2.4), fov: 39 },
+        // Up past him at the golem towering in the blast.
+        { t: 0, p: EX_CAM, l: G(6.5, -0.4, 3.5), fov: 50 },
+        { t: 2.29, p: G(-2.3, -2.1, 0.5), l: G(6.8, -0.6, 4.6), fov: 48 },
       ],
     },
     fx: [
@@ -811,6 +814,9 @@ const explodeShots = [
       { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: 1.0 },
       { kind: 'night-cracks', t: -6, at: U, radius: 9, grow: 3, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
       boulders(0.42 - 9.9, 4.5),
+      // The golem he summoned, whole and looming over him, black against the blast; its chest bursts
+      // open white-gold at 153.39 s (the original's core in the boulder mass).
+      { ...golem, at: { g: [GOLEM_EX[0], 0, GOLEM_EX[1]] }, t: -30, rise: [-30, -29], fly: [-28, -26], stand: [-25, -24], loom: [-23, -21], eyes: -20, lit: -30, blaze: [1.47, 1.9], glow: [[0, 0.5], [1.4, 0.55], [1.6, 0.9], [2.29, 0.7]] },
       // Molten rocks between him and the blast, thrown at the lens through the whole shot.
       { kind: 'night-rocks', t: -9, at: G(4.5, -1.2, 0), n: 12, radius: 3.2, size: [0.25, 0.75], h: [0.4, 2.6], rise: [-9, -9], riseDur: 0.01, glow: [[0, 1.2], [0.3, 2.2], [2.3, 1.4]], burst: 0.4, burstAt: { g: [IMPACT[0], 0.2, IMPACT[1]] }, burstSpeed: 4.2, seed: 61 },
       // Two more waves out of the blast itself, so rocks keep coming at the lens to the cut.

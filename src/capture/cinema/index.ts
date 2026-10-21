@@ -10,7 +10,8 @@
 //
 // window.__cinema:
 //   init()            take over the game (call once, after it has loaded)
-//   travel(chapter)   go to a world; resolves once the switch has started (wait for .loading to go)
+//   travel(chapter)   go to a world (7: Tidecrown); returns once the switch has started (wait for
+//                     `chapter` to equal it and .loading to go)
 //   stage(shot)       build a shot (types.ts ShotSpec); resolves when every actor is dressed
 //   seek(t)           put the shot clock at t seconds
 //   probe()           shot clock and the last frame's draw stats
@@ -143,21 +144,50 @@ class CinemaStage {
     for (const u of g.units) if (!mine.has(u)) u.hidden = true;
   }
 
+  /** Chapter 7 is Tidecrown, laid over the current chapter; its entry is async (built on first use). */
   travel(chapter: number): boolean {
     const w = this.g.world2;
+    if (chapter === 7) {
+      if (w.inTidecrown || this.entering) return false;
+      this.travelError = '';
+      this.entering = true;
+      void w.enterTidecrown().then(
+        (ok) => {
+          this.entering = false;
+          if (!ok) this.travelError = 'Tidecrown refused the entry';
+          w.tidecrownPeople?.hide();
+          this.freeze();
+        },
+        (e) => {
+          this.entering = false;
+          this.travelError = String(e);
+        },
+      );
+      return true;
+    }
+    if (w.inTidecrown && w.chapter === chapter) return w.exitTidecrown();
     if (w.chapter === chapter) return false;
     w.go(chapter as 1 | 2 | 3 | 4 | 5 | 6);
     return true;
   }
 
+  /** Tidecrown's entry is under way. */
+  private entering = false;
+  /** Why the last travel failed, if it did. */
+  travelError = '';
+
+  /** The world on screen: 7 once Tidecrown has been entered and has settled. */
   get chapter(): number {
-    return this.g.world2.chapter;
+    const w = this.g.world2;
+    if (this.entering) return 0;
+    return w.inTidecrown ? 7 : w.chapter;
   }
 
   async stage(shot: ShotSpec): Promise<{ actors: number }> {
     const g = this.g;
     this.clear();
     this.shot = shot;
+    g.world2.tidecrownPeople?.hide();
     this.freeze();
     if (shot.mood !== undefined) g.world.setMood(shot.mood, true);
     for (const name of shot.hide ?? []) {
@@ -291,6 +321,9 @@ class CinemaStage {
     const t = this.time;
     this.overlayA = 0;
     if (shot.mood !== undefined) g.world.setMood(shot.mood, true);
+    // Tidecrown's houses stream their near detail around the camera: catch up fast after a cut.
+    const tc = g.world2.inTidecrown ? g.world2.tidecrown : undefined;
+    if (tc && !tc.detailed) tc.refine(40);
     for (const a of this.actors.values()) this.drive(a, t, dt);
     // The hidden player stands where the shot is, so snowfall, footprints and streaming follow it.
     const anchor = shot.anchor ?? (shot.actors[0] ? [this.actors.get(shot.actors[0].id)!.unit.pos.x, this.actors.get(shot.actors[0].id)!.unit.pos.z] : null);
