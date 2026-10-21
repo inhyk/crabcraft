@@ -2,9 +2,10 @@
 // the Seaglass Quarter offer every world, open or locked by the game's own unlock rules; every world has a crown
 // portal beside its own gateway that leads back to the capital's harbour. Travel takes the worlds' portal path (a relay
 // room's chapter request, else world2.go), so a room moves together and the quest chapter rules stay as they are. The
-// capital's named crabs (the captain, the portal's keeper, the king, the vault's keeper) are `keepers`
-// (tidecrown/keepers.ts); a feature that adds one registers it in the constructor below. A server world does not host
-// Tidecrown yet: nothing here is built there.
+// capital's named crabs (the captain, the portal's keeper, the king, the class trainers, the vault's keeper) are
+// `keepers` (tidecrown/keepers.ts); a feature that adds one registers it in the constructor below. The trainers' yards
+// and their training dummies are `training` (tidecrown/training.ts). A server world does not host Tidecrown yet:
+// nothing here is built there.
 import * as THREE from 'three';
 import { t } from '../i18n';
 import type { Game } from './game';
@@ -13,6 +14,7 @@ import type { TidecrownIsland } from './tidecrown/island';
 import { type Keeper, TidecrownKeepers } from './tidecrown/keepers';
 import { TidecrownKing } from './tidecrown/king';
 import type { KingdomRequests } from './tidecrown/kingdomRequests';
+import { TidecrownTraining } from './tidecrown/training';
 import { TidecrownVault } from './tidecrown/vault';
 import type { Unit } from './unit';
 import type { HiddenWorld } from './world2';
@@ -66,6 +68,8 @@ export class TidecrownHub {
   private readonly captain: Keeper | null = null;
   private readonly keeper: Keeper | null = null;
   private readonly king: TidecrownKing | null = null;
+  /** The class trainers' yards and their dummies (none on a server world). */
+  readonly training: TidecrownTraining | null = null;
   /** The Royal Vault and its keeper Bell (tidecrown/vault.ts; none on a server world). */
   readonly vault: TidecrownVault | null = null;
   private shown = false;
@@ -99,23 +103,25 @@ export class TidecrownHub {
       name: ['포탈지기 오팔', 'Opal'], title: ['바다유리 포탈지기', 'Seaglass Portal Keeper'],
     });
     this.king = new TidecrownKing(g, this.keepers);
+    this.training = new TidecrownTraining(g, this.keepers);
     this.vault = new TidecrownVault(g, this.keepers);
   }
 
-  /** The crabs drawn here (for the shader warm-up behind the loading screen). */
-  get units(): Unit[] { return this.keepers.units; }
+  /** The crabs and the training dummies drawn here (for the shader warm-up behind the loading screen). */
+  get units(): Unit[] { return [...this.keepers.units, ...(this.training?.built ?? [])]; }
   /** The King's kingdom request log (none on a server world). */
   get kingdom(): KingdomRequests | null { return this.king?.requests ?? null; }
   /** Where each world's crown portal stands (none on a server world). */
   get crownPortals(): { chapter: HubChapter; x: number; z: number; yaw: number }[] { return [...this.returns].map(([chapter, r]) => ({ chapter, ...r.at })); }
 
-  /** Tidecrown's side, built on the first entry behind its loading screen: the Seaglass portal and the keepers. */
+  /** Tidecrown's side, built on the first entry behind its loading screen: the Seaglass portal, the training yards and the keepers. */
   load(island: TidecrownIsland): Promise<void> {
     if (this.g.serverMode) return Promise.resolve();
     if (!this.seaglass) {
       this.seaglass = new CrownPortal(new THREE.Vector3(SEAGLASS.x, island.height(SEAGLASS.x, SEAGLASS.z), SEAGLASS.z), SEAGLASS.yaw, 'seaglass-portal');
       island.root.add(this.seaglass.root);
     }
+    this.training?.load(island);
     // Each crab once, so a retry after a failed crab load adds nothing twice.
     // The vault's strongbox is dressing: without it the capital still opens (the next entry tries again).
     return Promise.all([this.keepers.load(island), this.vault?.dress(island).catch((e) => console.warn('vault dressing', e))]).then(() => {});
@@ -126,10 +132,12 @@ export class TidecrownHub {
     this.shown = true;
     this.armed = false;
     this.keepers.show();
+    this.training?.show();
     if (!this.told) {
       this.told = true;
       this.g.hud.chat.system(t('다른 월드로 가려면 왕관 항구 긴 부두의 아라 선장이나 바다유리 구역의 포탈을 찾아가세요.', 'To travel to another world, find Captain Ara on the Crown Harbour’s long pier or the portal in the Seaglass Quarter.'));
       this.g.hud.chat.system(t('크라운셸 성으로 오르는 큰 계단 위에서 마리너스 왕이 왕국 의뢰를 줘요.', 'King Marinus gives kingdom requests at the head of the great stair to Crownshell Keep.'));
+      this.g.hud.chat.system(t('직업 교관이 기술을 알려 줘요: 전사는 따개비 공방, 사제는 조수 대성당 앞 광장, 마법사는 바다유리 구역. 옆의 허수아비로 연습할 수 있어요.', 'Class trainers explain your skills: warriors at the Barnacle Works, priests before the Cathedral of the Tide, mages in the Seaglass Quarter. Practise on the dummies beside them.'));
       this.g.hud.chat.system(t('탈피 시장의 지붕 덮인 장터에서 금고지기 벨이 왕실 금고를 지켜요. 맡긴 코인은 다른 캐릭터로도 꺼낼 수 있어요.', 'Bell keeps the Royal Vault in the covered hall of Moult Market. Coins left there can be taken out by your other characters.'));
     }
   }
@@ -137,6 +145,7 @@ export class TidecrownHub {
   hide(): void {
     this.shown = false;
     this.keepers.hide();
+    this.training?.hide();
   }
 
   /**
@@ -172,6 +181,14 @@ export class TidecrownHub {
     if (k) return this.keepers.prompt(k);
     if (at === this.seaglass?.root.position) return t('바다유리 포탈 · 모든 월드로', 'Seaglass portal · To every world');
     return t('타이드크라운 · 왕관 항구로', 'To Tidecrown · Crown Harbour');
+  }
+
+  /** F at a keeper who talks: their talk (a fight does not wait for it, as travel does); false if not at one. */
+  talk(): boolean {
+    const at = this.point(), k = at && this.keepers.keeperAt(at);
+    if (!k?.def.talk) return false;
+    k.def.talk();
+    return true;
   }
 
   /** F at, or a walk into, the hub point the player is at; false if at none. */
@@ -331,6 +348,7 @@ export class TidecrownHub {
       }
     }
     this.keepers.update(dt, time);
+    this.training?.update(dt);
     this.vault?.update();
   }
 
@@ -340,6 +358,7 @@ export class TidecrownHub {
     this.returns.clear();
     this.seaglass?.dispose();
     this.seaglass = null;
+    this.training?.dispose();
     this.keepers.dispose();
     this.king?.dispose();
     this.vault?.dispose();

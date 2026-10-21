@@ -174,12 +174,12 @@ export interface DialoguePage {
   questTitle?: string;
   questId?: QuestId;
   paragraphs: string[];
+  /** A block under the text, shown at once (a trainer's skill list). */
+  extra?: HTMLElement;
   objectives?: string[];
   rewardXp?: number;
   rewardCoins?: number;
   rewardItem?: string;
-  /** A block under the text, shown at once. */
-  extra?: HTMLElement;
   buttons: DialogueButton[];
 }
 
@@ -287,6 +287,7 @@ export class DialogueWindow {
       btn.addEventListener('mouseenter', () => this.game.audio.sfx('sfx-hover', { volume: 0.3 }));
       this.buttonsEl.append(btn);
     }
+    this.body.scrollTop = 0;
     this.total = this.paras.reduce((n, x) => n + x.text.length, 0);
     this.shown = 0;
     this.talkT = 0;

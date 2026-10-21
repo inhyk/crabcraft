@@ -14,9 +14,10 @@ export type Ease = 'linear' | 'in' | 'out' | 'inout' | 'smooth' | 'sine';
  * - { g: [x, h, z] }: h units above the ground at x, z.
  * - { a: id, o: [x, y, z] }: in an actor's frame (x to its left, y up from its feet, z ahead of it),
  *   following the actor; `y0: true` measures y from where the actor stood at t = 0 instead (a camera
- *   that should not bob with a jump).
+ *   that should not bob with a jump). `body: true` instead follows the recorded floating body,
+ *   keeping its yaw-stable offset axes (useful for framing a full flip without orbiting with it).
  */
-export type Pt = V3 | { g: V3 } | { a: string; o?: V3; y0?: boolean };
+export type Pt = V3 | { g: V3 } | { a: string; o?: V3; y0?: boolean; body?: boolean };
 
 export interface CamKey {
   t: number;
@@ -134,8 +135,8 @@ export interface FogSpec {
 
 export interface ShotSpec {
   id: string;
-  /** World 1 to 6. */
-  chapter: 1 | 2 | 3 | 4 | 5 | 6;
+  /** World 1 to 6, or 7 for Tidecrown (the capital, its own coordinates). */
+  chapter: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   /** Shot seconds. */
   length: number;
   /** World 1's lighting mood (0 dusk, 1 moonlit night, 2 violet celebration, 3 morning). */
