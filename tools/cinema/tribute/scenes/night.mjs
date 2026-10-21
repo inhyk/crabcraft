@@ -560,6 +560,9 @@ const boulders = (dt, burstSpeed = 9) => ({
   seed: 52,
 });
 
+/** The broken windmill on a knoll beyond the ground's edge, dark against the sky at the right of the frame
+ *  (src/capture/cinema/fx/night-windmill.ts). */
+const WINDMILL = { kind: 'night-windmill', t: -3, face: U, yaw: -0.3, scale: 1.4, knoll: 13, cloud: { k: 1.6 } };
 /** The golem's feet: behind him, a touch right, so the blast goes up past its left shoulder. */
 const GOLEM = P(4.2, 0.2);
 /** The summoned golem: the boulders heave up round him (102.7-105.1 s), fly together behind him into
@@ -781,6 +784,8 @@ const undeadShots = [
       // Fire erupts out of its shoulders and fists at 107.4 s and keeps burning; whole and blazing, it
       // lurches over him at 109.2 s, fists thrust at the lens (the original's swing), every crack flaring.
       { ...golem, loom: [16.2, 17.2], leanTo: 0.45, reach: 1.05, fire: { at: 14.4 }, flare: [[16.9, 1], [17.1, 3], [17.6, 3]] },
+      // The ruined windmill held at the right of the frame behind him while the lens moves, as the original's.
+      { ...WINDMILL, path: [[6.5, 69.7, -71.2, -9.1], [7, 71.0, -69.4, -9.3], [7.8, 73.5, -65.5, -2.4], [8.6, 77.6, -63.6, 3.4], [9.6, 83.4, -60.9, 6.9], [10.6, 87.8, -57.5, 8.1], [12, 90.8, -53.8, 8.9], [13, 92.3, -52.9, 9.5], [14, 92.6, -52.6, 9.2], [14.6, 92.5, -52.6, 8.6]] },
       // More molten rocks heave out of the ground round him, beside the lens, and the blast throws them.
       { ...boulders(LAND - 9.9), n: 9, size: [0.22, 0.6], h: [0.1, 1.0], rise: [9.6, 12.6], seed: 53 },
       STREAK,
@@ -840,6 +845,7 @@ const explodeShots = [
       { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: 1.0 },
       { kind: 'night-cracks', t: -6, at: U, radius: 9, grow: 3, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
       boulders(0.42 - 9.9, 4.5),
+      { ...WINDMILL, at: { g: [96.5, 19, -53.1] } },
       // The golem he summoned, whole and looming over him, black against the blast; its chest bursts
       // open white-gold at 153.39 s (the original's core in the boulder mass).
       { ...golem, at: { g: [GOLEM_EX[0], 0, GOLEM_EX[1]] }, t: -30, rise: [-30, -29], fly: [-28, -26], stand: [-25, -24], loom: [-23, -21], eyes: -20, lit: -30, blaze: [1.47, 1.9], glow: [[0, 0.5], [1.4, 0.55], [1.6, 0.9], [2.29, 0.7]] },
