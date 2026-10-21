@@ -3,16 +3,24 @@
 // the residents, the King, Captain Ara and the Seaglass portal; F at her opens the vault: the coins carried and the
 // coins in the vault, a deposit and a withdraw row (100, 1,000, 10,000, all). Clicks move exact amounts and write the
 // vault and the journey at once (a double click moves once), buttons are disabled when a side is short, and a fight,
-// a dungeon, or another window on the same character refuse; a window that only rewrites the same coins does not.
-// A reload keeps both balances; a second character on the device sees and takes the same vault. Then on a server
-// world (a loopback host with a disposable PG, as qa-tidecrown-king) nothing is built and the key is not touched.
-// Then signed in (a throwaway Postgres, server-dist/main.mjs and a fake Google, as qa-accounts, behind a dev server of
-// its own): the first sign-in takes the guest vault into the account, a deposit reaches the account's save with its
-// journey, a second computer loads it, a second character there takes it out, and the first computer then loads that.
+// a dungeon, or another window on the same character refuse; a window that only rewrites the same coins does not, and
+// one that writes other coins leaves this one saving nothing more, with a notice to reload. A reload keeps both
+// balances; a second character on the device sees and takes the same vault. A window still loading (its frames stopped
+// right after it read the journey) already holds the character, and a journey save that throws moves nothing. Then on
+// a server world (a loopback host with a disposable PG, as qa-tidecrown-king) nothing is built and the key is not
+// touched. Then signed in (a throwaway Postgres, server-dist/main.mjs and a fake Google, as qa-accounts, behind a dev
+// server of its own): the first sign-in takes the guest vault into the account (it leaves the guest once saved there),
+// a deposit reaches the account's save with its journey, a second computer loads it, a second character there takes it
+// out, and the first computer then loads that. Then, each on an account of its own: a game window stops saving before
+// another window loads the account's save over its unsent move; a sync note written by a page from before the vault
+// is not trusted with the vault; an unreadable vault does not stop the rest from saving, and a load that replaces it
+// keeps it in the backup; a second new account on the computer gets none of the guest vault the first one took; moves
+// wait while the account is in conflict.
 // Zero page errors throughout.
 // Writes the 1600x900 shots to CC_QA_SHOTS (default tmp/vault-shots).
 // Usage: CC_QA_BASE=http://127.0.0.1:5281 node tools/qa-tidecrown-vault.mjs   (CC_QA_SERVER=0 skips the server world,
-//   CC_QA_ACCOUNT=0 the signed-in part, CC_QA_LOCAL=0 the guest part)
+//   CC_QA_ACCOUNT=0 the signed-in part, CC_QA_LOCAL=0 the guest part; CC_QA_ONLY=a,b runs only the named parts: local,
+//   hold, throw, server, account, load, meta, invalid, import, conflict)
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -36,6 +44,8 @@ const watch = (p) => {
   p.on('console', (m) => { if (m.type() === 'error' && /shader|program|WebGL|tidecrown|portal|hub|keeper|vault|journey|bundle/i.test(m.text())) errors.push(m.text().slice(0, 300)); });
 };
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const only = process.env.CC_QA_ONLY?.split(',');
+const want = (part) => !only || only.includes(part);
 const HEIR = { race: 'dwarf', sex: 'male', classId: 'mage', shell: 1, crest: 0, led: 2, name: 'Vault heir' };
 
 /** Page helpers: boot the game, cross into the capital, find and talk to Bell, read the vault and its page. */
@@ -98,6 +108,7 @@ function driver(p) {
   };
   const click = async (move, amount, dbl = false) => {
     const b = p.locator(`.vault-row.${move} .vault-amt[data-amount="${amount}"]`);
+    assert.equal(await p.evaluate(() => window.__V.vault().refusal()), null, `the vault refuses a ${move} of ${amount}`);
     const before = await p.evaluate(() => window.__V.state());
     if (dbl) await b.dblclick(); else await b.click();
     await p.waitForFunction((b) => { const s = window.__V.state(); return s.carried !== b.carried && !window.__V.vault().busy; }, before);
@@ -111,7 +122,7 @@ function driver(p) {
   return { boot, loaded, ready, intoCapital, toBell, click, twinned };
 }
 
-if (process.env.CC_QA_LOCAL !== '0') {
+if (process.env.CC_QA_LOCAL !== '0' && want('local')) {
 const browser = await launchBrowser({ headless: true, args });
 try {
   const context = await browser.newContext({ viewport: { width: 1600, height: 900 } });
@@ -266,13 +277,20 @@ try {
   assert.deepEqual(back, { moved: true, again: true, state: { carried: 10000, vault: 2345, stored: '{"coins":2345}', journey: 10000 } });
   const writer = await context.newPage();
   await writer.goto(base + '/');
-  await writer.evaluate((key) => { const j = JSON.parse(localStorage.getItem(key)); localStorage.setItem(key, JSON.stringify({ ...j, coins: 77 })); }, await p.evaluate(() => window.__V.journeyKey()));
+  const key = await p.evaluate(() => window.__V.journeyKey()), kept = await p.evaluate((k) => localStorage.getItem(k), key);
+  await writer.evaluate((key) => { const j = JSON.parse(localStorage.getItem(key)); localStorage.setItem(key, JSON.stringify({ ...j, coins: 77 })); }, key);
   await p.waitForFunction(() => window.__V.page().status.includes('다른 창에서도'));
-  assert.equal(await p.evaluate(async () => window.__V.vault().move('withdraw', 100)), false);
+  // This window no longer holds the character: it says so, and neither moves coins nor saves over the other window's.
+  const lost = await p.evaluate(async (key) => {
+    const j = window.app.current.game.journey;
+    return { lost: j.hold?.lost ?? null, notice: document.querySelector('.save-hold-notice')?.textContent ?? '', moved: await window.__V.vault().move('withdraw', 100), saved: j.save(), stored: JSON.parse(localStorage.getItem(key)).coins };
+  }, key);
+  assert.deepEqual(lost, { lost: 'other', notice: '다른 창에서 이 캐릭터의 코인이 바뀌었어요. 이 창의 진행은 이제 저장되지 않으니 새로 고쳐 주세요.새로 고치기', moved: false, saved: false, stored: 77 });
+  await p.screenshot({ path: `${shots}/vault-hold-lost.png` });
+  // The other window puts the coins back; this one reloads below.
+  await writer.evaluate(([k, v]) => localStorage.setItem(k, v), [key, kept]);
   await writer.close();
-  // This window's own save puts its coins back before the reload.
-  await p.evaluate(() => window.app.current.game.journey.save());
-  console.log('PASS with a second window on the same character every move is refused; once it closed (having saved the same coins) moves work again; a window that wrote other coins for this character leaves this one refusing');
+  console.log('PASS with a second window on the same character every move is refused; once it closed (having saved the same coins) moves work again; a window that wrote other coins for this character leaves this one refusing, saving nothing more and asking for a reload');
 
   // 7. A reload keeps both balances.
   await p.reload();
@@ -302,8 +320,85 @@ try {
 }
 }
 
-// 9. A server world: the capital is not hosted there, so no Bell, no vault, and the key is left as it was.
-if (process.env.CC_QA_SERVER !== '0') {
+// 9. Two windows on one guest character, the second one's frames stopped right after it read the journey (a window
+//    still loading, or a background tab): it holds the character already, so a move in the first is refused, and
+//    thawed it saves no coins over the vault's. Then (part "throw") a journey save that throws: no coins move.
+if (process.env.CC_QA_LOCAL !== '0' && (want('hold') || want('throw'))) {
+  const browser = await launchBrowser({ headless: true, args });
+  try {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    await context.routeWebSocket('**/multiplayer*', (ws) => ws.close());
+    await context.addInitScript(() => {
+      if (localStorage.getItem('cc.qaHoldSeed')) return;
+      localStorage.setItem('cc.qaHoldSeed', '1');
+      const spec = { race: 'orc', sex: 'male', classId: 'mage', shell: 0, crest: 0, led: 0, name: 'Hold keeper' };
+      localStorage.setItem('cc.spec', JSON.stringify(spec));
+      localStorage.setItem(`cc.journey.v1:${spec.race}:${spec.sex}:${spec.classId}:${spec.name}`, JSON.stringify({ xp: 950, coins: 1000, chapter: 1 }));
+      localStorage.setItem('cc.hintsSeen', '1');
+      localStorage.setItem('cc.language', 'ko');
+      localStorage.setItem('cc.quality', 'low');
+    });
+    const a = await context.newPage();
+    a.setDefaultTimeout(90000);
+    watch(a);
+    await a.goto(base + '/?screen=game');
+    await driver(a).boot();
+    const start = { carried: 1000, vault: 0, stored: null, journey: 1000 };
+    assert.deepEqual(await a.evaluate(() => window.__V.state()), start);
+    if (want('hold')) {
+    const b = await context.newPage();
+    b.setDefaultTimeout(90000);
+    watch(b);
+    // The second window's frames stop the moment its journey is read, and run again on __qaThaw().
+    await b.addInitScript(() => {
+      const raf = window.requestAnimationFrame.bind(window), queued = [];
+      window.__qaFrozen = false;
+      window.requestAnimationFrame = (cb) => { if (!window.__qaFrozen) return raf(cb); queued.push(cb); return 0; };
+      window.__qaThaw = () => { window.__qaFrozen = false; for (const cb of queued.splice(0)) raf(cb); };
+      void import('/src/game/bossJourney.ts').then(({ BossJourney }) => {
+        const restore = BossJourney.prototype.restore;
+        BossJourney.prototype.restore = function () { window.__qaFrozen = true; return restore.call(this); };
+      });
+    });
+    await b.goto(base + '/?screen=game');
+    await b.locator('.launch-notice-start').click();
+    await b.waitForFunction(() => window.__qaFrozen && window.app?.current?.game?.journey?.root, null, { timeout: 240000, polling: 200 });
+    const tried = await a.evaluate(async () => ({ twin: await window.__V.vault().shared(), moved: await window.__V.vault().move('deposit', 100), state: window.__V.state() }));
+    // Thawed, the second window plays on for more than one 3 s journey save.
+    await b.evaluate(() => window.__qaThaw());
+    await pause(4500);
+    const after = await a.evaluate(() => window.__V.state());
+    assert.equal(after.journey + after.vault, 1000, `the coins stored after the second window saved: ${JSON.stringify({ tried, after })}`);
+    assert.deepEqual(tried, { twin: true, moved: false, state: start });
+    console.log('PASS a second window on the same character whose frames stopped right after it read the journey already holds it: a deposit in the first is refused, and once thawed and saving it puts no coins back (1,000 carried, 0 in the vault)');
+    await b.close();
+    }
+
+    // A journey save that throws (it builds its record before storing it) is a refused write: both sides stay.
+    if (want('throw')) {
+    const thrown = await a.evaluate(async () => {
+      const g = window.app.current.game, snapshot = g.achievements.snapshot;
+      g.achievements.snapshot = () => { throw new Error('qa: the journey record cannot be built'); };
+      try {
+        return { moved: await window.__V.vault().move('deposit', 100), state: window.__V.state(), refused: window.__V.vault().said?.text() };
+      } catch (e) {
+        return { threw: String(e), state: window.__V.state() };
+      } finally {
+        g.achievements.snapshot = snapshot;
+      }
+    });
+    assert.deepEqual(thrown, { moved: false, state: { carried: 1000, vault: 0, stored: '{"coins":0}', journey: 1000 }, refused: '저장하지 못해서 코인을 옮기지 않았어요.' });
+    assert.deepEqual(await a.evaluate(async () => ({ moved: await window.__V.vault().move('deposit', 100), state: window.__V.state() })), { moved: true, state: { carried: 900, vault: 100, stored: '{"coins":100}', journey: 900 } });
+    console.log('PASS a journey save that throws counts as refused: the vault goes back and the coins stay carried (1,000 and 0); the next deposit works');
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+}
+
+// 10. A server world: the capital is not hosted there, so no Bell, no vault, and the key is left as it was.
+if (process.env.CC_QA_SERVER !== '0' && want('server')) {
   const browserPort = await freePort(), hostPort = await freePort(), clientOrigin = `http://127.0.0.1:${browserPort}`;
   const scratch = await mkdtemp('/private/tmp/crabcraft-vault-server-'), metadataPath = join(scratch, 'host.json');
   let host, server, sb;
@@ -345,8 +440,9 @@ if (process.env.CC_QA_SERVER !== '0') {
   }
 }
 
-// 10. Signed in: the vault rides in the account's save with the journey, and every computer of the account loads it.
-if (process.env.CC_QA_ACCOUNT !== '0') {
+// 11. Signed in: the vault rides in the account's save with the journey, and every computer of the account loads it.
+const accountParts = ['account', 'load', 'meta', 'invalid', 'import', 'conflict'];
+if (process.env.CC_QA_ACCOUNT !== '0' && accountParts.some(want)) {
   execFileSync(process.execPath, [join(root, 'server/node/build.mjs')], { stdio: 'ignore' });
   const clientId = 'qa-client.apps.googleusercontent.com', clientSecret = 'GOCSPX-' + randomBytes(18).toString('base64url');
   const postgres = await startPostgres(), db = new pg.Pool({ connectionString: postgres.url });
@@ -365,6 +461,8 @@ if (process.env.CC_QA_ACCOUNT !== '0') {
     await dev.listen();
     delete process.env.CC_SERVER_URL;
     ab = await launchBrowser({ headless: true, args });
+    const SAVER = { race: 'human', sex: 'female', classId: 'priest', shell: 2, crest: 1, led: 0, name: 'Vault saver' };
+    const saverJourney = `cc.journey.v1:${SAVER.race}:${SAVER.sex}:${SAVER.classId}:${SAVER.name}`;
     const saved = async (username) => JSON.parse((await db.query('SELECT save FROM accounts WHERE username = $1', [username])).rows[0]?.save ?? '{}');
     const waitSave = async (username, ok, what) => {
       for (const until = Date.now() + 30000; ; await pause(300)) {
@@ -373,8 +471,20 @@ if (process.env.CC_QA_ACCOUNT !== '0') {
         if (Date.now() > until) throw new Error(`the account save never ${what}: ${JSON.stringify(s)}`);
       }
     };
-    const device = async (seed) => {
+    /** The Google round trip from the title screen: back on the title, signed in. */
+    const signIn = async (page) => {
+      if (!(await page.getByRole('button', { name: 'Google로 로그인', exact: true }).isVisible())) await page.getByRole('button', { name: '로그인', exact: true }).click();
+      await page.evaluate(() => { window.__qaLeaving = true; });
+      await page.getByRole('button', { name: 'Google로 로그인', exact: true }).click();
+      await page.waitForFunction(() => !window.__qaLeaving && window.app?.currentId === 'title' && /^g[a-f0-9]{23}$/.test(window.app.account.username), null, { timeout: 90000 });
+      return page.evaluate(() => window.app.account.username);
+    };
+    /** A new Google identity: the next sign-in creates an account of its own. */
+    const newGoogle = (part) => (google.claims.sub = `qa-vault-${part}-${randomBytes(4).toString('hex')}`);
+    const device = async (seed, { offline = false } = {}) => {
       const c = await ab.newContext({ viewport: { width: 1600, height: 900 } });
+      // Saves that never reach the account server (the sign-in itself does).
+      if (offline) await c.route('**/api/account/save', (r) => r.abort());
       await c.routeWebSocket('**/multiplayer*', (ws) => ws.close());
       const page = await c.newPage();
       page.setDefaultTimeout(90000);
@@ -393,27 +503,48 @@ if (process.env.CC_QA_ACCOUNT !== '0') {
       await page.goto(devBase);
       await page.locator('.launch-notice-start').click();
       await page.waitForFunction(() => window.app?.currentId === 'title');
-      await page.getByRole('button', { name: '로그인', exact: true }).click();
-      await page.evaluate(() => { window.__qaLeaving = true; });
-      await page.getByRole('button', { name: 'Google로 로그인', exact: true }).click();
-      await page.waitForFunction(() => !window.__qaLeaving && window.app?.currentId === 'title' && /^g[a-f0-9]{23}$/.test(window.app.account.username), null, { timeout: 90000 });
+      await signIn(page);
       return page;
     };
+    /** Another page of the same computer (browser context), on the title screen once its account check is done. */
+    const visit = async (page) => {
+      const p2 = await page.context().newPage();
+      p2.setDefaultTimeout(90000);
+      watch(p2);
+      await p2.goto(devBase);
+      await p2.locator('.launch-notice-start').click();
+      await p2.waitForFunction(() => window.app?.currentId === 'title' && /^g[a-f0-9]{23}$/.test(window.app.account.username));
+      return p2;
+    };
+    /** A page of the same computer that runs no game script (a static file), to change its storage untouched. */
+    const blank = async (page) => {
+      const p2 = await page.context().newPage();
+      await p2.goto(devBase + '/release-notes.json');
+      return p2;
+    };
+    /** Another computer saved: the account's save changes (or only its revision moves on). */
+    const otherComputer = async (username, change = {}) => {
+      const save = { ...(await saved(username)), ...change };
+      const r = await db.query('UPDATE accounts SET save = $1, revision = revision + 1 WHERE username = $2 RETURNING revision', [JSON.stringify(save), username]);
+      return { save, revision: Number(r.rows[0].revision) };
+    };
+    const local = (page, username) => page.evaluate(([u, j]) => ({ journey: JSON.parse(localStorage.getItem(`cc.account.v1:${u}:${j}`) ?? 'null'), vault: localStorage.getItem(`cc.account.v1:${u}:cc.vault.v1`), guest: localStorage.getItem('cc.vault.v1') }), [username, saverJourney]);
     const enter = async (page) => {
       await page.getByRole('button', { name: '입장하기', exact: true }).click();
       const dr = driver(page);
       await dr.loaded();
       await dr.ready();
     };
-    const SAVER = { race: 'human', sex: 'female', classId: 'priest', shell: 2, crest: 1, led: 0, name: 'Vault saver' };
-    const saverJourney = `cc.journey.v1:${SAVER.race}:${SAVER.sex}:${SAVER.classId}:${SAVER.name}`;
 
+    if (want('account')) {
     // The first sign-in takes this device's guest adventure into the new account, the vault with it.
     const one = await device({ spec: SAVER });
     const username = await one.evaluate(() => window.app.account.username);
     let cloud = await waitSave(username, (s) => s['cc.vault.v1'] && s[saverJourney], 'took the guest adventure');
     assert.deepEqual([cloud['cc.vault.v1'], JSON.parse(cloud[saverJourney]).coins], ['{"coins":300}', 5000]);
-    console.log(`PASS the first Google sign-in takes the guest adventure into the new account, vault included (save: 5,000 carried, vault {"coins":300})`);
+    // Saved there, those 300 coins leave the guest's vault: no other account's first sign-in takes them again.
+    await one.waitForFunction(() => localStorage.getItem('cc.vault.v1') === '{"coins":0}', null, { timeout: 20000 });
+    console.log(`PASS the first Google sign-in takes the guest adventure into the new account, vault included (save: 5,000 carried, vault {"coins":300}); once saved there the guest vault holds 0`);
     await enter(one);
     const od = driver(one);
     await od.intoCapital();
@@ -423,11 +554,15 @@ if (process.env.CC_QA_ACCOUNT !== '0') {
     const dep = await od.click('deposit', 1000);
     assert.deepEqual(dep.state, { carried: 4000, vault: 1300, stored: '{"coins":1300}', journey: 4000 });
     const keys = await one.evaluate((u) => ({ account: localStorage.getItem(`cc.account.v1:${u}:cc.vault.v1`), guest: localStorage.getItem('cc.vault.v1') }), username);
-    assert.deepEqual(keys, { account: '{"coins":1300}', guest: '{"coins":300}' });
+    assert.deepEqual(keys, { account: '{"coins":1300}', guest: '{"coins":0}' });
     await one.screenshot({ path: `${shots}/vault-signed-in.png` });
     cloud = await waitSave(username, (s) => s['cc.vault.v1'] === '{"coins":1300}', 'took the deposit');
     assert.equal(JSON.parse(cloud[saverJourney]).coins, 4000, 'the journey half of the deposit is in the same save');
-    console.log('PASS signed in, the page says every character of the Google account shares the vault; a 1,000 deposit is saved under the account (the guest vault stays 300) and reaches the account save together with the journey (4,000 carried, vault 1,300)');
+    // This computer leaves the game with everything sent, so the second computer's saves below meet no newer one from
+    // it (two computers saving at once is a conflict, and the vault waits through one).
+    await one.evaluate(() => window.app.go('title'));
+    for (const until = Date.now() + 30000; !(await one.evaluate(() => window.app.account.flush())); await pause(500)) if (Date.now() > until) throw new Error('the first computer never finished saving');
+    console.log('PASS signed in, the page says every character of the Google account shares the vault; a 1,000 deposit is saved under the account (the guest vault stays 0) and reaches the account save together with the journey (4,000 carried, vault 1,300)');
 
     // A second computer loads the account's vault; a second character there takes it all out.
     const two = await device({});
@@ -454,9 +589,193 @@ if (process.env.CC_QA_ACCOUNT !== '0') {
     await one.locator('.launch-notice-start').click();
     await one.waitForFunction(() => window.app?.currentId === 'title' && /^g[a-f0-9]{23}$/.test(window.app.account.username));
     const reloaded = await one.evaluate((u) => ({ account: localStorage.getItem(`cc.account.v1:${u}:cc.vault.v1`), guest: localStorage.getItem('cc.vault.v1') }), username);
-    assert.deepEqual(reloaded, { account: '{"coins":0}', guest: '{"coins":300}' });
+    assert.deepEqual(reloaded, { account: '{"coins":0}', guest: '{"coins":0}' });
     assert.deepEqual(errors, []);
-    console.log('PASS the first computer, reloaded, loads the emptied vault from the account (the guest vault is still its own 300); zero page errors');
+    console.log('PASS the first computer, reloaded, loads the emptied vault from the account (the guest vault is still its own 0); zero page errors');
+    }
+
+    // 12. A game window and a load of the account's save in another window of the same computer. The game window took
+    //     100 coins out, saved, then took 100 more that it could not send (its saves fail); another computer saved
+    //     meanwhile, so a new window here loads the account's save over this copy. The game window stops saving before
+    //     that load lands: its 3 s journey save does not put back the 100 coins the load returned to the vault.
+    if (want('load')) {
+      newGoogle('load');
+      const a = await device({ spec: SAVER });
+      const user = await a.evaluate(() => window.app.account.username);
+      await waitSave(user, (s) => s['cc.vault.v1'] === '{"coins":300}', 'took the guest adventure');
+      await enter(a);
+      assert.equal(await a.evaluate(() => window.__V.vault().move('withdraw', 100)), true);
+      await waitSave(user, (s) => s['cc.vault.v1'] === '{"coins":200}' && JSON.parse(s[saverJourney]).coins === 5100, 'took the withdrawal');
+      await a.route('**/api/account/save', (r) => r.abort());
+      assert.equal(await a.evaluate(() => window.__V.vault().move('withdraw', 100)), true);
+      assert.deepEqual(await a.evaluate(() => window.__V.state()), { carried: 5200, vault: 100, stored: '{"coins":100}', journey: 5200 });
+      await otherComputer(user);
+      const c = await visit(a);
+      // Past the game window's next journey save: this computer's copy is the account's save, 5,300 coins in all.
+      await pause(4000);
+      const after = await local(c, user);
+      assert.deepEqual([after.journey.coins, after.vault], [5100, '{"coins":200}'], `coins on this computer after the load: ${JSON.stringify(after)}`);
+      const game = await a.evaluate(async () => {
+        const j = window.app.current.game.journey;
+        return { lost: j.hold?.lost ?? null, notice: document.querySelector('.save-hold-notice p')?.textContent ?? '', saved: j.save(), moved: await window.__V.vault().move('deposit', 100), refusal: window.__V.vault().refusal(), carried: window.app.current.game.player.coins };
+      });
+      assert.deepEqual(game, {
+        lost: 'loaded', notice: '다른 창에서 계정 저장을 불러왔어요. 이 창의 진행은 이제 저장되지 않으니 새로 고쳐 주세요.', saved: false, moved: false,
+        refusal: '다른 창에서 계정 저장을 불러왔어요. 이 창을 새로 고친 뒤 금고를 써 주세요.', carried: 5200,
+      });
+      assert.deepEqual([(await local(c, user)).journey.coins, (await local(c, user)).vault], [5100, '{"coins":200}']);
+      await a.screenshot({ path: `${shots}/vault-load-elsewhere.png` });
+      // Reloaded, the game window plays on from the loaded save.
+      await a.unroute('**/api/account/save');
+      await a.reload();
+      await a.locator('.launch-notice-start').click();
+      await a.waitForFunction(() => window.app?.currentId === 'title' && /^g[a-f0-9]{23}$/.test(window.app.account.username));
+      await enter(a);
+      assert.deepEqual(await a.evaluate(() => window.__V.state()), { carried: 5100, vault: 200, stored: '{"coins":200}', journey: 5100 });
+      await c.close();
+      await a.context().close();
+      console.log('PASS a game window that took 100 coins out but could not send it stops saving (lost: loaded) before another window loads the account save over it; past its 3 s save this computer holds the account\'s 5,100 carried and 200 in the vault (5,300 in all, not 5,400); it says to reload, moves nothing, and reloaded plays on from 5,100 and 200');
+    }
+
+    // 13. Sync notes from pages before the vault. A page from before the vault, still open on this computer, loads the
+    //     account's save after another computer put 400 in the vault: it takes the journey but not the vault (it does
+    //     not know that key) and writes its old note with the vault in it. A page from now on does not keep that copy
+    //     over the account's: it loads the vault. Then the first load after the deploy on a computer where only old
+    //     pages ran: progress they never sent is kept and sent, as before, and the account's vault comes in with it.
+    if (want('meta')) {
+      newGoogle('meta');
+      const p = await device({ spec: SAVER });
+      const user = await p.evaluate(() => window.app.account.username);
+      await waitSave(user, (s) => s['cc.vault.v1'] === '{"coins":300}', 'took the guest adventure');
+      await pause(500);
+      const deposit = await otherComputer(user, { [saverJourney]: JSON.stringify({ ...JSON.parse((await saved(user))[saverJourney]), coins: 4600 }), 'cc.vault.v1': '{"coins":700}' });
+      const s = await blank(p);
+      await p.close();
+      const oldLoad = ([u, save, revision]) => {
+        const pre = `cc.account.v1:${u}:`;
+        for (const k of Object.keys(localStorage)) if (k.startsWith(pre) && k !== pre + 'cc.vault.v1') localStorage.removeItem(k);
+        for (const [k, v] of Object.entries(save)) if (k !== 'cc.vault.v1') localStorage.setItem(pre + k, v);
+        localStorage.setItem('cc.account.meta:' + u, JSON.stringify({ revision, snapshot: JSON.stringify(save) }));
+      };
+      await s.evaluate(oldLoad, [user, deposit.save, deposit.revision]);
+      assert.deepEqual(await local(s, user), { journey: JSON.parse(deposit.save[saverJourney]), vault: '{"coins":300}', guest: '{"coins":0}' });
+      const q = await visit(s);
+      await pause(3000);
+      const loaded = await local(q, user), cloud = await saved(user);
+      assert.deepEqual([loaded.journey.coins, loaded.vault, cloud['cc.vault.v1']], [4600, '{"coins":700}', '{"coins":700}'], `after a new page: ${JSON.stringify({ loaded, cloud })}`);
+      console.log('PASS a page from before the vault that loaded the account save left this computer with the other computer\'s journey (4,600) but its own stale vault (300) and an old note holding 700; the next page loads the vault (700) instead of sending 300 over it');
+      await q.close();
+
+      // The first load after the deploy: no v2 note, an old note at the account's revision, unsent progress, no vault.
+      await s.evaluate(([u, j, save, revision]) => {
+        const pre = `cc.account.v1:${u}:`;
+        localStorage.removeItem('cc.account.meta.v2:' + u);
+        localStorage.removeItem(pre + 'cc.vault.v1');
+        localStorage.setItem('cc.account.meta:' + u, JSON.stringify({ revision, snapshot: JSON.stringify(save) }));
+        const journey = JSON.parse(localStorage.getItem(pre + j));
+        localStorage.setItem(pre + j, JSON.stringify({ ...journey, xp: journey.xp + 500 }));
+      }, [user, saverJourney, await saved(user), Number((await db.query('SELECT revision FROM accounts WHERE username = $1', [user])).rows[0].revision)]);
+      const xp = JSON.parse((await saved(user))[saverJourney]).xp + 500;
+      const r = await visit(s);
+      const first = await local(r, user);
+      assert.deepEqual([first.journey.xp, first.journey.coins, first.vault], [xp, 4600, '{"coins":700}'], `the first load after the deploy: ${JSON.stringify(first)}`);
+      const sent = await waitSave(user, (c) => JSON.parse(c[saverJourney]).xp === xp, 'took the unsent progress');
+      assert.equal(sent['cc.vault.v1'], '{"coins":700}');
+      await r.context().close();
+      console.log(`PASS the first load after the deploy keeps progress only old pages saw (xp ${xp - 500} to ${xp}) and sends it, as before, and takes the account's vault (700) into this computer's copy instead of showing 0`);
+    }
+
+    // 14. An unreadable vault on this computer stays here, refuses moves, and does not stop the rest from saving.
+    if (want('invalid')) {
+      newGoogle('invalid');
+      const p = await device({ spec: SAVER });
+      const user = await p.evaluate(() => window.app.account.username);
+      await waitSave(user, (s) => s['cc.vault.v1'] === '{"coins":300}', 'took the guest adventure');
+      await enter(p);
+      const before = Number((await db.query('SELECT revision FROM accounts WHERE username = $1', [user])).rows[0].revision);
+      await p.evaluate((u) => {
+        localStorage.setItem(`cc.account.v1:${u}:cc.vault.v1`, '{"coins":-1}');
+        const g = window.app.current.game;
+        g.player.gainXp(5);
+        g.journey.save();
+      }, user);
+      const cloud = await waitSave(user, (s) => JSON.parse(s[saverJourney]).xp > 950, 'took progress past an unreadable vault');
+      const after = await p.evaluate((u) => ({ stored: localStorage.getItem(`cc.account.v1:${u}:cc.vault.v1`), refusal: window.__V.vault().refusal(), status: window.app.account.state }), user);
+      assert.deepEqual({ ...after, vault: cloud['cc.vault.v1'] }, { stored: '{"coins":-1}', refusal: '금고 기록을 읽을 수 없어서 쓸 수 없어요.', status: '계정에 저장됐어요.', vault: '{"coins":300}' });
+      assert.ok(Number((await db.query('SELECT revision FROM accounts WHERE username = $1', [user])).rows[0].revision) > before);
+      // Another computer saved: a new page loads the account's vault over it, and the unreadable one stays in the backup.
+      await otherComputer(user);
+      const q = await visit(p);
+      const loaded = await q.evaluate((u) => ({ vault: localStorage.getItem(`cc.account.v1:${u}:cc.vault.v1`), backup: JSON.parse(localStorage.getItem('cc.account.backup:' + u) ?? '{}')['cc.vault.v1'] ?? null }), user);
+      assert.deepEqual(loaded, { vault: '{"coins":300}', backup: '{"coins":-1}' });
+      await p.context().close();
+      console.log('PASS an unreadable vault ({"coins":-1}) stays on this computer and refuses moves; the journey still saves to the account, which keeps its vault (300); a later load puts 300 back here and keeps the unreadable value in the backup');
+    }
+
+    // 15. One guest vault, two new Google accounts on this computer: the first takes the 300 coins, the second none.
+    //     While the first account has not saved them yet, they stay the guest's, and no other account takes them.
+    const signOut = async (p) => {
+      await p.getByRole('button', { name: '계정 · Google', exact: true }).click();
+      await p.getByRole('button', { name: '로그아웃', exact: true }).click();
+      const keep = p.getByRole('button', { name: '이 기기에 보관하고 로그아웃', exact: true });
+      await p.waitForFunction(() => !window.app.account.username || document.querySelector('.account-dialog')?.textContent.includes('이 기기에 보관하고 로그아웃'));
+      if (await keep.isVisible()) await keep.click();
+      await p.waitForFunction(() => !window.app.account.username);
+    };
+    if (want('import')) {
+      newGoogle('import-a');
+      const p = await device({ spec: SAVER });
+      const first = await p.evaluate(() => window.app.account.username);
+      await waitSave(first, (s) => s['cc.vault.v1'] === '{"coins":300}', 'took the guest adventure');
+      await p.waitForFunction(() => localStorage.getItem('cc.vault.v1') === '{"coins":0}', null, { timeout: 20000 });
+      await signOut(p);
+      newGoogle('import-b');
+      const second = await signIn(p);
+      assert.notEqual(second, first);
+      const cloud = await waitSave(second, (s) => s[saverJourney], 'took the guest adventure');
+      assert.deepEqual([JSON.parse(cloud[saverJourney]).coins, cloud['cc.vault.v1'], JSON.parse((await saved(first))['cc.vault.v1']).coins], [5000, '{"coins":0}', 300]);
+      await p.context().close();
+      console.log('PASS the first new account takes the guest vault\'s 300 coins and, once saved, the guest vault holds 0; a second new account on the same computer takes the guest journey (5,000 carried) but no coins from the vault');
+
+      // The first account's save does not get through: the coins stay in the guest vault, and a second new account
+      // signed in meanwhile does not take them. Back on the first account, saved at last, they leave the guest.
+      const subA = newGoogle('pending-a');
+      const q = await device({ spec: SAVER }, { offline: true });
+      const a = await q.evaluate(() => window.app.account.username);
+      await pause(3000);
+      assert.deepEqual([await local(q, a).then((l) => [l.vault, l.guest]), (await saved(a))['cc.vault.v1']], [['{"coins":300}', '{"coins":300}'], undefined]);
+      await signOut(q);
+      await q.context().unroute('**/api/account/save');
+      newGoogle('pending-b');
+      const b = await signIn(q);
+      const bCloud = await waitSave(b, (s) => s[saverJourney], 'took the guest adventure');
+      assert.deepEqual([bCloud['cc.vault.v1'], await q.evaluate(() => localStorage.getItem('cc.vault.v1'))], [undefined, '{"coins":300}']);
+      await signOut(q);
+      google.claims.sub = subA;
+      assert.equal(await signIn(q), a);
+      await waitSave(a, (s) => s['cc.vault.v1'] === '{"coins":300}', 'took the guest vault at last');
+      await q.waitForFunction(() => localStorage.getItem('cc.vault.v1') === '{"coins":0}', null, { timeout: 20000 });
+      await q.context().close();
+      console.log('PASS while the first account could not save, the 300 coins stayed in the guest vault and a second new account signed in meanwhile took none of them; back on the first account they were saved there and left the guest vault (0)');
+    }
+
+    // 16. Moves wait while the account is in conflict (another window or computer saved first): they would be undone
+    //     when the player loads the account's save.
+    if (want('conflict')) {
+      newGoogle('conflict');
+      const p = await device({ spec: SAVER });
+      const user = await p.evaluate(() => window.app.account.username);
+      await waitSave(user, (s) => s['cc.vault.v1'] === '{"coins":300}', 'took the guest adventure');
+      await enter(p);
+      await otherComputer(user);
+      await p.evaluate(() => { const g = window.app.current.game; g.player.gainXp(5); g.journey.save(); });
+      await p.waitForFunction(() => window.app.account.clash, null, { timeout: 20000 });
+      const r = await p.evaluate(async () => ({ moved: await window.__V.vault().move('deposit', 100), refusal: window.__V.vault().refusal(), state: window.__V.state() }));
+      assert.deepEqual(r, { moved: false, refusal: '다른 창에서 먼저 저장해서 지금은 금고를 쓸 수 없어요. 계정 저장을 불러온 뒤 써 주세요.', state: { carried: 5000, vault: 300, stored: '{"coins":300}', journey: 5000 } });
+      await p.context().close();
+      console.log('PASS while the account is in conflict a deposit is refused with a note to load the account save; the coins stay (5,000 carried, 300 in the vault)');
+    }
+    assert.deepEqual(errors, []);
   } finally {
     await ab?.close();
     await dev?.close();
