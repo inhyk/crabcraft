@@ -37,8 +37,11 @@ const tips = () => [
   t('크라운셸 성 꼭대기에서 청록빛 등불이 빛나요. 길을 잃으면 그 빛을 따라 성으로 가 보세요.', 'A teal lantern shines atop Crownshell Keep. Lost? Follow its light to the castle.'),
   t('여섯 껍질의 다리에는 여섯 종족마다 영웅 게 석상이 하나씩 서 있어요.', 'The Bridge of Six Shells has a hero crab statue for each of the six peoples.'),
   t('운하에는 곤돌라가 떠 있어요. 한 척은 큰 운하를 오가요.', 'Gondolas float on the canals, and one glides up and down the Grand Canal.'),
-  t('왕관 항구에는 금빛 집게 선수상을 단 갈레온이 정박해 있어요.', 'A galleon with a gold claw figurehead is moored in the Crown Harbour.'),
-  t('도착한 숲길을 따라 남쪽으로 내려가면 왕의 길을 지나 클로헤이븐으로 돌아가요.', 'Walk back south down the forest road to take the King’s Road home to Clawhaven.'),
+  t('왕관 항구에는 금빛 집게 선수상을 단 갈레온, 금빛집게호가 정박해 있어요.', 'The Goldclaw, a galleon with a gold claw figurehead, is moored in the Crown Harbour.'),
+  t('숲길을 따라 남쪽으로 내려가면 왕의 길을 지나 클로헤이븐으로 가요.', 'Walk south down the forest road to take the King’s Road to Clawhaven.'),
+  t('긴 부두의 아라 선장에게 말을 걸면 금빛집게호를 타고 다른 월드로 갈 수 있어요.', 'Talk to Captain Ara on the long pier to sail the Goldclaw to another world.'),
+  t('바다유리 구역의 포탈로도 다른 월드에 갈 수 있어요.', 'The portal in the Seaglass Quarter leads to the other worlds too.'),
+  t('모든 월드의 포탈 옆에 왕관 포탈이 있어요. 들어가면 이 항구로 와요.', 'Every world has a crown portal beside its own. Step in to come to this harbour.'),
 ];
 
 export class TidecrownLoading {

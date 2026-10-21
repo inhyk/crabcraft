@@ -337,6 +337,9 @@
 .dlg-buttons { display: flex; justify-content: space-between; gap: 12px; padding: 14px 22px 20px; }
 .dlg-buttons .cc-btn { min-width: 0; flex: 1; font-size: 16px; padding: 9px 12px; }
 .dlg-buttons .cc-btn:only-child { flex: none; min-width: 200px; margin: 0 auto; }
+/* A long choice (Tidecrown's six worlds) in two columns; an odd last button spans both. */
+.dlg-buttons:has(> .cc-btn:nth-child(5)) { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.dlg-buttons:has(> .cc-btn:nth-child(5)) > .cc-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
 
 /* ---------------------------------------------------------------- quest log */
 .qlog { position: absolute; left: 50%; top: 50%; width: 760px; height: 520px; transform: translate(-50%, -50%); display: flex; padding: 0 !important; animation: cc-fade-in 0.2s ease both; }
