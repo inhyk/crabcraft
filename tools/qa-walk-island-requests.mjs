@@ -2,10 +2,10 @@
 // Creator UI sets starting level/world only. The island planner is queried for clear paths;
 // no player position/HP/quest progress, invulnerability or damage is injected.
 // Run only after the sequential GPU endurance process has exited.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const held=new Set(),errors=[];let page;
 async function keys(next){for(const k of [...held])if(!next.includes(k)){await page.keyboard.up(k);held.delete(k);}for(const k of next)if(!held.has(k)){await page.keyboard.down(k);held.add(k);}}
 const read=()=>page.evaluate(()=>{const g=window.app.current.game,u=g.player.unit;return {time:g.time,god:g.god,alive:u.alive,hp:u.hp,maxHp:u.maxHp,p:[u.pos.x,u.pos.z],yaw:u.yaw,cameraYaw:g.follow.forwardYaw,resource:g.player.resource,gcd:g.player.gcdEnd,cast:!!g.player.cast,abilities:g.player.cls.abilities.map(a=>({cost:a.cost,cd:g.player.cooldownLeft(a)})),target:g.player.target?.id,foes:g.units.filter(v=>v.hostile&&v.alive&&!v.hidden&&![g.boss.unit,g.finalBoss.unit,g.worldBoss.unit].includes(v)&&Math.hypot(v.pos.x-u.pos.x,v.pos.z-u.pos.z)<15).map(v=>({id:v.id,x:v.pos.x,z:v.pos.z,d:Math.hypot(v.pos.x-u.pos.x,v.pos.z-u.pos.z)})),xp:g.player.xp,level:g.player.level,statuses:{...g.quests.status},progress:Object.fromEntries(g.quests.progress),chapter:g.world2.chapter};});

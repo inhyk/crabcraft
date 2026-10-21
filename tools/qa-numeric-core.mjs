@@ -1,6 +1,6 @@
-import assert from 'node:assert/strict';import {mkdirSync,writeFileSync} from 'node:fs';import {resolve} from 'node:path';import {chromium} from 'playwright';
+import assert from 'node:assert/strict';import {mkdirSync,writeFileSync} from 'node:fs';import {resolve} from 'node:path';import {launchBrowser} from './lib/browser.mjs';
 const args=process.argv.slice(2),index=args.indexOf('--url'),url=index<0?'http://127.0.0.1:5257':args[index+1],out=resolve('output/playwright/numeric-core');mkdirSync(out,{recursive:true});
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--autoplay-policy=no-user-gesture-required']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--autoplay-policy=no-user-gesture-required']});
 const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
  await page.route('**/api/account/session',route=>route.fulfill({json:{signedIn:false}}));

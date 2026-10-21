@@ -1,7 +1,8 @@
 import {h,art} from '../dom';
 import {t,language} from '../../i18n';
 import type {Game} from '../../game/game';
-import type {Npc} from '../../game/npcs';
+import type {Unit} from '../../game/unit';
+interface ForgeMerchant {unit:Unit;def:{id:string};capital?:boolean;available?:()=>boolean;}
 import {EQUIPMENT_PRICE,MAX_EQUIPMENT_RANK,upgradeCost,weaponMultiplier,armorMultiplier,type EquipmentSlot} from '../../game/equipment';
 import './forge.css';
 
@@ -10,7 +11,7 @@ export class ForgePanel {
  readonly el=h('dialog',{class:'forge-panel hud-i','aria-labelledby':'forge-title'});
  private content=h('div',{class:'forge-content'});
  private notice=h('p',{class:'forge-notice',role:'status','aria-live':'polite'});
- private npc:Npc|null=null;
+ private npc:ForgeMerchant|null=null;
  private request:(()=>void)|null=null;
  private last='';
  private generation=0;
@@ -20,18 +21,19 @@ export class ForgePanel {
   this.el.addEventListener('keydown',e=>e.stopPropagation());
   this.el.addEventListener('cancel',e=>{e.preventDefault();this.close();});
  }
- show(npc:Npc,request:()=>void){
+ show(npc:ForgeMerchant,request:()=>void){
   this.generation++;this.npc=npc;this.request=request;this.last='';this.notice.textContent='';this.el.classList.remove('forged');
   this.render();if(!this.open)this.el.showModal();
  }
  close(){this.generation++;if(this.open)this.el.close();this.npc=null;this.request=null;}
  update(){
   if(!this.open)return;
-  if(!this.g.player.unit.alive||this.g.cinematic||this.g.ending.active||!this.npc||this.g.player.unit.distTo(this.npc.unit)>8){this.close();return;}
+  if(!this.g.player.unit.alive||this.g.cinematic||this.g.ending.active||!this.npc||this.npc.unit.hidden||this.npc.available?.()===false||this.g.player.unit.distTo(this.npc.unit)>8){this.close();return;}
   const p=this.g.player,key=`${language()}|${p.coins}|${p.attackRank}|${p.armorRank}|${p.weaponOwned}|${p.armorOwned}|${p.inCombat}`;
   if(key!==this.last){this.last=key;this.render();}
  }
  private async buy(slot:EquipmentSlot){
+  this.update();if(!this.open)return;
   const generation=this.generation,buying=!this.g.player.ownsEquipment(slot);
   let result;try{result=this.g.server?await this.g.server.forge(slot,buying?'buy':'upgrade',this.npc?.def.id??'pip'):buying?this.g.player.buyEquipment(slot):this.g.player.upgradeEquipment(slot);}catch{if(this.open&&generation===this.generation)this.notice.textContent=t('서버 확인을 기다릴 수 없습니다. 다시 연결해 주세요.','Confirmation unavailable. Reconnect to the server.');return;}
   if(!this.open||generation!==this.generation)return;
@@ -60,10 +62,10 @@ export class ForgePanel {
  private render(focus?:EquipmentSlot){
   const p=this.g.player;this.last=`${language()}|${p.coins}|${p.attackRank}|${p.armorRank}|${p.weaponOwned}|${p.armorOwned}|${p.inCombat}`;
   this.content.replaceChildren(
-   h('header',{class:'forge-header'},h('div',null,h('span',{class:'forge-eyebrow'},'CRABCRAFT · FORGE'),h('h1',{id:'forge-title'},t('장비 구매 · 강화','Equipment Shop & Forge')),h('p',null,this.npc?.unit.name??'')),h('button',{class:'forge-close',type:'button','aria-label':t('대장간 닫기','Close forge'),onclick:()=>this.close()},'×')),
+   h('header',{class:'forge-header'},h('div',null,h('span',{class:'forge-eyebrow'},'CRABCRAFT · FORGE'),h('h1',{id:'forge-title'},this.npc?.capital?t('타이드크라운 장비상점','Tidecrown Outfitters'):t('장비 구매 · 강화','Equipment Shop & Forge')),h('p',null,this.npc?.unit.name??'')),h('button',{class:'forge-close',type:'button','aria-label':t('대장간 닫기','Close forge'),onclick:()=>this.close()},'×')),
    h('div',{class:'forge-wallet'},h('span',null,t('보유 코인','Your coins')),h('strong',null,`🪙 ${this.g.player.coins.toLocaleString()}`)),
    h('div',{class:'forge-cards'},this.card('weapon'),this.card('armor')),
-   h('footer',null,h('span',null,t('장비를 먼저 구매한 뒤 강화하세요. 구매와 강화는 자동 저장돼요.','Buy equipment first, then upgrade it. Purchases and upgrades save automatically.')),h('button',{class:'forge-request',type:'button',onclick:()=>{const request=this.request;this.close();request?.();}},t('주민의 부탁 듣기','Hear villager requests'))));
+   h('footer',null,h('span',null,t('장비를 먼저 구매한 뒤 강화하세요. 구매와 강화는 자동 저장돼요.','Buy equipment first, then upgrade it. Purchases and upgrades save automatically.')),h('button',{class:'forge-request',type:'button',onclick:()=>{const request=this.request;this.close();request?.();}},this.npc?.capital?t('상인과 대화하기','Talk to merchant'):t('주민의 부탁 듣기','Hear villager requests'))));
   if(focus)((this.el.querySelector(`[data-slot="${focus}"]:not(:disabled)`)??this.el.querySelector('.forge-close'))as HTMLButtonElement|null)?.focus();
  }
 }

@@ -8,7 +8,7 @@
 // the same solid placements; only visual decoration and detail may change.
 // Tolerance: Chrome's Math.sin, cos, atan2 and exp differ from Node's in the last bit, so colliders
 // placed with them (box angles, World II's sin-hash scatter) agree to about 1e-9, not exactly.
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compareRuns, loadSim, readBaked, runQueries, samplePoints, WORLDS } from './collision-bake-lib.mjs';
@@ -23,7 +23,7 @@ mkdirSync(out, { recursive: true });
 const report = { quality, url, tolerance: TOL, worlds: [], errors: [] };
 
 const sim = await loadSim();
-const browser = await chromium.launch({ channel: 'chrome', headless: !args.includes('--headed'), args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser({ headless: !args.includes('--headed'), args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
 let failed = false;
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

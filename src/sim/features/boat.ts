@@ -88,9 +88,11 @@ export class NumericBoat {
     teleport(u,this.context.query,exit.x,exit.z);this.compact();
     this.context.emit({type:'boatLeft',actor:{...u.ref},id,...exit,shore:!!land,voyage:this.voyage});
     if(land)this.achievement(id,u,'landfall');
-    if(!land&&!this.state.seats.some(Boolean))this.resetHome();
+    if((!land||this.nearBerth())&&!this.state.seats.some(Boolean))this.resetHome();
   }
   private compact():void {this.state.seats=[...this.state.seats.filter((id):id is string=>id!==null),null,null].slice(0,2) as BoatState['seats'];this.throttle=this.steer=this.state.speed=0;}
+  /** Left empty within reach of its berth, the skiff goes back to it; left at a farther shore, it waits there. */
+  private nearBerth():boolean {return Math.hypot(this.state.x-151,this.state.z-18.5)<=12;}
   private resetHome():void {this.state={...home(),exits:this.state.exits};this.throttle=this.steer=0;this.inputAt=-10;this.bindings.clear();}
   /** Call only at an accepted fixed-step transport boundary; the adapter validates room/life mappings. */
   applyObservation(observation:FeatureObservation<BoatState>):boolean {
@@ -118,7 +120,7 @@ export class NumericBoat {
     if(g.authority){
       let removed=false;
       for(let i=0;i<2;i++){const id=this.state.seats[i];if(id&&!this.bound(id)?.alive){this.state.seats[i]=null;this.bindings.delete(id);removed=true;}}
-      if(removed){this.compact();if(!this.state.seats.some(Boolean)&&!this.landing())this.resetHome();}
+      if(removed){this.compact();if(!this.state.seats.some(Boolean)&&(!this.landing()||this.nearBerth()))this.resetHome();}
       if(!this.state.seats[0]&&this.state.seats[1]||!this.state.seats.some(Boolean)&&this.state.speed!==0)this.compact();
       const active=g.time-this.inputAt<.4&&!!this.state.seats[0],target=active?this.throttle*6:0;
       this.state.speed+=(target-this.state.speed)*Math.min(1,dt*2.5);

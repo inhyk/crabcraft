@@ -94,6 +94,8 @@ export class BossJourney {
       this.game.player.armorRank=equipmentRank(data.armorRank);
       this.game.player.weaponOwned=data.weaponOwned===true||this.game.player.attackRank>0;
       this.game.player.armorOwned=data.armorOwned===true||this.game.player.armorRank>0;
+      // The King of Tidecrown's request log; an older save without it starts a fresh log.
+      this.game.world2.hub.kingdom?.restore(data.kingdom);
       this.rustCleared = data.rust === true;
       this.abyssCleared = this.rustCleared && data.abyss === true;
       this.firstEndingSeen = this.abyssCleared && data.firstEnding === true;
@@ -128,7 +130,7 @@ export class BossJourney {
 
   save() {
     localStorageSet(this.key, JSON.stringify({emberCleared:this.emberCleared,skyCleared:this.skyCleared, xpBlessingUntil:this.game.player.xpBlessingUntil,frostCleared:this.frostCleared,achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,armorRank:this.game.player.armorRank,weaponOwned:this.game.player.weaponOwned,armorOwned:this.game.player.armorOwned,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
-      quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked }));
+      quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked, kingdom:this.game.world2.hub.kingdom?.snapshot() }));
   }
 
   onKill() {

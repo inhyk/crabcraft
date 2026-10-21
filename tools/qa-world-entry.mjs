@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+import {launchBrowser} from './lib/browser.mjs';
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 try {
  for(const language of ['ko','en'])for(const chapter of [1,2,3,4]){
   const p=await browser.newPage({viewport:{width:1280,height:800}}),errors=[];p.on('pageerror',e=>errors.push(e.message));

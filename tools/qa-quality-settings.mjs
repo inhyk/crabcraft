@@ -1,9 +1,9 @@
 // Real settings buttons, retained World II quest, same-renderer title resume and full reload.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';import {mkdir,writeFile} from 'node:fs/promises';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';import {mkdir,writeFile} from 'node:fs/promises';
 const base=process.env.CC_QA_BASE_URL??'http://127.0.0.1:5192';await mkdir('tmp/qa',{recursive:true});
 // Legacy guest fixture only; this does not exercise the server-world login policy.
 const evidence={base,fixture:'GET /api/account/session -> 200 {signedIn:false}; coherent local boss unlocks',rounds:[],layouts:[],consoleErrors:[]};
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];evidence.browser=browser.version();
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];evidence.browser=browser.version();
 try{
  const p=await browser.newPage({viewport:{width:1280,height:800},deviceScaleFactor:2});p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')evidence.consoleErrors.push(m.text());});await p.route('**/api/account/session',route=>{assert.equal(route.request().method(),'GET');return route.fulfill({status:200,json:{signedIn:false}});});await p.addInitScript(()=>{localStorage.removeItem('cc.account.pending');localStorage.removeItem('cc.lastAccount');if(!localStorage.getItem('cc.spec')){localStorage.setItem('cc.language','ko');localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','low');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'Quality Crab'}));}});await p.goto(base+'/?screen=game');
  async function loaded(){await p.waitForFunction(()=>document.querySelector('.launch-notice-start')||window.app,null,{timeout:90000});if(await p.locator('.launch-notice-start').count())await p.locator('.launch-notice-start').click();await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));}

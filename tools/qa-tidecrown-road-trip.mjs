@@ -7,12 +7,12 @@
 // Usage: CC_QA_BASE=http://127.0.0.1:5251 node tools/qa-tidecrown-road-trip.mjs
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 
 const base = process.env.CC_QA_BASE ?? 'http://127.0.0.1:5241';
 const shots = process.env.CC_QA_SHOTS ?? 'tmp/qa/tidecrown-road';
 await mkdir(shots, { recursive: true });
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
+const browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
 const errors = [];
 try {
   const p = await browser.newPage({ viewport: { width: 1600, height: 900 } });

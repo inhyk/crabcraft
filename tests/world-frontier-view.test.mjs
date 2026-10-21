@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {createServer} from 'vite';
-import {chromium} from 'playwright';
+import {launchBrowser} from '../tools/lib/browser.mjs';
 const bootstrap=String.raw`
 import * as THREE from '/node_modules/.vite/deps/three.js';
 import {HiddenWorld} from '/src/game/world2.ts';
@@ -41,7 +41,7 @@ test('actual Chrome readonly W4/W5/W6 scene, canonical POIs, catalog gates and n
  const root=fileURLToPath(new URL('../',import.meta.url)),artifacts=await mkdtemp('/private/tmp/crabcraft-a6-view-');let server,browser;const errors=[];
  try{
   server=await createServer({root,configFile:false,logLevel:'error',server:{host:'127.0.0.1',port:0},plugins:[{name:'frontier-readonly-fixture',configureServer(s){s.middlewares.use((req,res,next)=>{if(req.url?.startsWith('/__frontier-test')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body style="margin:0"><script type="module" src="/__frontier-entry"></script></body></html>');}else if(req.url==='/__frontier-entry'){res.setHeader('Content-Type','text/javascript');res.end(bootstrap);}else next();});}}]});await server.listen();
-  browser=await chromium.launch({headless:true,channel:'chrome'});const page=await browser.newPage({viewport:{width:960,height:640}});page.on('pageerror',e=>errors.push(e.message));const url=server.resolvedUrls.local[0]+'__frontier-test';await page.goto(url);await page.waitForFunction(()=>window.frontierQA?.ready,null,{timeout:90000});
+  browser=await launchBrowser({headless:true});const page=await browser.newPage({viewport:{width:960,height:640}});page.on('pageerror',e=>errors.push(e.message));const url=server.resolvedUrls.local[0]+'__frontier-test';await page.goto(url);await page.waitForFunction(()=>window.frontierQA?.ready,null,{timeout:90000});
   for(const chapter of [5,6]){const state=await page.evaluate(chapter=>window.frontierObserve(chapter),chapter);assert.equal(state.actorUnchanged,true);await page.screenshot({path:`${artifacts}/w${chapter}.png`});}
   const result=await page.evaluate(()=>window.frontierQA);assert.equal(result.actorUnchanged,true);assert.equal(result.authorityCalls,0);assert.equal(result.commands,1);assert.deepEqual(errors,[]);await writeFile(`${artifacts}/result.json`,JSON.stringify(result,null,2));console.log(`frontier browser evidence: ${artifacts}`);
  }finally{await browser?.close();await server?.close();}
