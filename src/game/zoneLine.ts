@@ -1,6 +1,6 @@
 // Zone lines: a segment on the ground that fires once when the local player crosses it in one
 // direction, and re-arms after they step back. The King's Road line leads from World I to Tidecrown,
-// and Tidecrown's south line leads back down the road.
+// and Tidecrown's south line leads back down the road to Clawhaven.
 import { t } from '../i18n';
 import type { HeldInput } from '../sim/input';
 import { TC_RETURN_LINE } from '../sim/world/tidecrownGround';
@@ -121,13 +121,15 @@ export class ZoneLines {
     const g = this.game;
     return new ZoneLine({
       id: 'clawhaven', realm: 'tidecrown', ...TC_RETURN_LINE,
-      // Entered over another world (creator travel), it leads back to where the player stood there.
-      onCross: () => void this.travel(() => g.world2.exitTidecrown(g.world2.chapter === 1 ? KINGS_ROAD_RETURN : undefined)),
+      // Entered over another world (by ship, portal or creator travel), the road still leads to Clawhaven: the hub's
+      // sail to World I, which a relay room follows.
+      onCross: () => void (g.world2.chapter === 1 ? this.travel(() => g.world2.exitTidecrown(KINGS_ROAD_RETURN)) : g.world2.hub.sail(1, KINGS_ROAD_RETURN)),
     });
   }
 
-  /** Fade to black, run the move, lift the fade; `refused` runs when the move resolves false. */
-  private async travel(move: () => Promise<boolean> | boolean, refused?: () => void): Promise<void> {
+  /** Fade to black, run the move, lift the fade; `refused` runs when the move resolves false. Tidecrown's ships and
+   * portals travel through it too. */
+  async travel(move: () => Promise<boolean> | boolean, refused?: () => void): Promise<void> {
     if (this.travelling) return;
     this.travelling = true;
     const app = this.game.app;

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Evidence run for Robot Mode's appearance switch in real Chrome (GPU): the player's geared crab
+// Evidence run for Robot Mode's appearance switch in Chrome for Testing (GPU): the player's geared crab
 // walking and dancing on the live policy, the x-ray overlay of the physics robot over it, the bare
 // robot, the HUD card, the crab's link-by-link distance from the physics bodies, and fps of both.
 //   node tools/robot-skin-shots.mjs <app url, e.g. http://localhost:5208/> <out dir> [--spec '{json}'] [--nospec]
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -17,8 +17,7 @@ const spec = JSON.parse(
 );
 mkdirSync(out, { recursive: true });
 
-const browser = await chromium.launch({
-  channel: 'chrome',
+const browser = await launchBrowser({
   headless: true,
   args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'],
 });

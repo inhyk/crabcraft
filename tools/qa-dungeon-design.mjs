@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5235';await mkdir('tmp/qa',{recursive:true});
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 try{
  const p=await browser.newPage({viewport:{width:1440,height:1000}});p.on('pageerror',e=>errors.push(e.message));await p.routeWebSocket('**/multiplayer*',ws=>ws.close());await p.addInitScript(()=>{localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'priest',shell:0,crest:0,led:0,name:'Dungeon design QA'}));localStorage.setItem('cc.hintsSeen','1');if(!localStorage.getItem('cc.language'))localStorage.setItem('cc.language','ko');});await p.goto(base+'/?screen=game');await p.locator('.launch-notice-start').click();await p.waitForFunction(()=>window.app?.current?.game?.loaded&&!document.querySelector('.loading'),null,{timeout:120000});await p.evaluate(()=>{const g=window.app.current.game;g.god=true;g.creatorTravel=true;g.ending.cancel();g.journey.rustCleared=g.journey.abyssCleared=g.journey.trueCleared=g.journey.finalCleared=g.journey.frostCleared=true;g.world2.go(5);const n=450-20;g.player.restoreXp(22000+2200*n+100*n*(n-1));g.dungeons.open();});
  assert.equal(await p.locator('.dungeon-cards article').count(),10);assert.equal(await p.locator('.dg-art svg').count(),10);await p.screenshot({path:'tmp/qa/dungeon-design-desktop.png'});

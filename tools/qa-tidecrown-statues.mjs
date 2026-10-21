@@ -4,7 +4,7 @@
 // silhouettes) to --out (default tmp/qa/tidecrown-statues).
 //   pnpm dev --port 5242 --strictPort &   node tools/qa-tidecrown-statues.mjs [--base URL] [--out DIR] [--no-shots]
 import assert from 'node:assert/strict';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -18,7 +18,7 @@ const out = resolve(opt('--out', 'tmp/qa/tidecrown-statues'));
 const shots = !args.includes('--no-shots');
 await mkdir(out, { recursive: true });
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
+const browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
 const errors = [];
 async function open(query) {
   const p = await browser.newPage({ viewport: { width: 1600, height: 900 } });

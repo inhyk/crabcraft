@@ -2,13 +2,13 @@
 // Native Chrome input plus explicit event ordering for Windows' menu after button release.
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 
 const base = process.env.CC_QA_BASE ?? 'http://127.0.0.1:5268';
 const out = 'tmp/qa/right-click-camera';
 mkdirSync(out, { recursive: true });
-const browser = await chromium.launch({
-  channel: 'chrome', headless: !process.argv.includes('--headed'),
+const browser = await launchBrowser({
+  headless: !process.argv.includes('--headed'),
   args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'],
 });
 let passed = 0;

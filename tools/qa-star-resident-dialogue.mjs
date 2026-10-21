@@ -1,5 +1,5 @@
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 try{
  const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(()=>{localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','low');});await p.goto('http://127.0.0.1:5192/?screen=game');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.evaluate(()=>{const g=window.app.current.game;g.god=true;g.world2.enter();});
  async function visit(id){await p.evaluate(id=>{const g=window.app.current.game,n=g.npcById(id);g.player.unit.lastCombat=-999;g.player.unit.teleport(g.world,n.unit.pos.x,n.unit.pos.z+2);g.follow.cut();g.player.setTarget(null);},id);await p.keyboard.press('KeyF');await p.locator('.dlg').waitFor({state:'visible'});await p.evaluate(()=>window.app.current.game.hud.dialogue.skipTyping());await p.locator('.dlg').evaluate(el=>Promise.all(el.getAnimations().map(a=>a.finished)));}

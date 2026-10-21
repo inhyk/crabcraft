@@ -15,6 +15,7 @@
 //   seek(t)           put the shot clock at t seconds
 //   probe()           shot clock and the last frame's draw stats
 import * as THREE from 'three';
+import { getMotionLibrary } from '../../motion/library';
 import { createCrab, createEnemyCrab } from '../../crab/provider';
 import type { CrabRig } from '../../crab/types';
 import type { Game } from '../../game/game';
@@ -90,6 +91,11 @@ class CinemaStage {
   private shakeAmp = 0;
   private hidden: THREE.Object3D[] = [];
   private v = new THREE.Vector3();
+  /**
+   * Sub-pixel camera offset, drawing-buffer pixels, set by capture.mjs between the renders it
+   * averages into one frame (supersampling: hairs thinner than a pixel come out at their true weight).
+   */
+  jitter: [number, number] = [0, 0];
   private buf = new THREE.Vector2();
   private started = false;
   /** The world's own fog, put back when a shot that overrode it ends. */
@@ -163,6 +169,9 @@ class CinemaStage {
       });
     }
     this.setView(shot);
+    const library = getMotionLibrary();
+    await library.ready;
+    await Promise.all([...new Set(Object.values(shot.tracks ?? {}).flatMap((track) => (track.acts ?? []).map((act) => act.clip)))].map((id) => library.load(id)));
     // Actors, dressed in parallel.
     const rigs = await Promise.all(
       shot.actors.map((a) => (a.enemy ? createEnemyCrab(a.enemy) : (createCrab as (s: unknown, e?: string[]) => Promise<CrabRig>)(a.spec, a.extras ?? []))),
@@ -256,7 +265,7 @@ class CinemaStage {
   point(p: Pt | unknown, out = new THREE.Vector3()): THREE.Vector3 {
     const g = this.g;
     if (Array.isArray(p)) return out.set(p[0], p[1], p[2]);
-    const o = p as { g?: V3; a?: string; o?: V3; y0?: boolean };
+    const o = p as { g?: V3; a?: string; o?: V3; y0?: boolean; body?: boolean };
     if (o.g) return out.set(o.g[0], g.world.heightAt(o.g[0], o.g[2]) + o.g[1], o.g[2]);
     if (o.a) {
       const a = this.actors.get(o.a);
@@ -265,6 +274,10 @@ class CinemaStage {
       const u = a.unit;
       const s = Math.sin(u.yaw);
       const c = Math.cos(u.yaw);
+      if (o.body) {
+        u.rig.body.getWorldPosition(out);
+        return out.add(new THREE.Vector3(lx * c + lz * s, ly, -lx * s + lz * c));
+      }
       // Local x is the actor's left: (cos yaw, 0, -sin yaw); forward (sin yaw, 0, cos yaw).
       return out.set(u.pos.x + lx * c + lz * s, (o.y0 ? a.y0 : u.pos.y) + ly, u.pos.z - lx * s + lz * c);
     }
@@ -413,6 +426,11 @@ class CinemaStage {
       cam.fov = fov;
       cam.updateProjectionMatrix();
     }
+    const [jx, jy] = this.jitter;
+    if (jx || jy) {
+      const s = this.g.engine.renderer.getDrawingBufferSize(this.buf);
+      cam.setViewOffset(s.x, s.y, jx, jy, s.x, s.y);
+    } else if (cam.view?.enabled) cam.clearViewOffset();
     cam.updateMatrixWorld();
     const focus = shot.cam.focus ?? 'look';
     if (shot.view?.dof) {

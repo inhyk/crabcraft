@@ -86,6 +86,51 @@ function grade(mat: THREE.MeshStandardMaterial, key: string, l0: number, l1: num
   });
 }
 
+/** A varying `name` with the world position, batched and instanced meshes included. */
+function worldVarying(shader: THREE.WebGLProgramParametersWithUniforms, name: string): void {
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nvarying vec3 ${name};`).replace(
+    '#include <worldpos_vertex>',
+    `#include <worldpos_vertex>
+    {
+      vec4 w = vec4(transformed, 1.0);
+      #ifdef USE_BATCHING
+        w = batchingMatrix * w;
+      #endif
+      #ifdef USE_INSTANCING
+        w = instanceMatrix * w;
+      #endif
+      ${name} = (modelMatrix * w).xyz;
+    }`,
+  );
+}
+
+/**
+ * The wood trim as dressed stone: its grain (stretched down a tall quoin) gives way to the ashlar's blocks, laid in the
+ * world along each face (triplanar) and graded onto the same ramp; the vertex colour still tints and shades it.
+ */
+function dressedStone(mat: THREE.MeshStandardMaterial, ashlar: THREE.Texture | null, dark: string, light: string): void {
+  if (!ashlar) return;
+  const tex = ashlar.clone();
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.userData.tidecrown = true;
+  mat.normalMap = null;
+  addPatch(mat, 'tc-dressed-stone', (shader) => {
+    shader.uniforms.uTsAshlar = { value: tex };
+    worldVarying(shader, 'vTsW');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTsW;\nuniform sampler2D uTsAshlar;').replace(
+      '#include <color_fragment>',
+      `{
+        vec3 n = normalize(cross(dFdx(vTsW), dFdy(vTsW)));
+        vec3 w = pow(abs(n), vec3(4.0));
+        w /= w.x + w.y + w.z;
+        vec3 a = texture2D(uTsAshlar, vTsW.zy * 0.5).rgb * w.x + texture2D(uTsAshlar, vTsW.xz * 0.5).rgb * w.y + texture2D(uTsAshlar, vTsW.xy * 0.5).rgb * w.z;
+        diffuseColor.rgb = mix(${glslVec(lin(dark))}, ${glslVec(lin(light))}, smoothstep(0.15, 0.36, dot(a, vec3(0.299, 0.587, 0.114))));
+      }
+      #include <color_fragment>`,
+    );
+  });
+}
+
 function kitClone(m: THREE.Material | undefined, name: string, vertexColors = true): THREE.MeshStandardMaterial {
   const c = (m as THREE.MeshStandardMaterial).clone();
   c.name = name;
@@ -152,7 +197,7 @@ function bannerMaterial(): THREE.MeshStandardMaterial {
 }
 
 function glassMaterial(decal = false): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ name: decal ? 'tidecrown-far-glass' : 'tidecrown-glass', color: '#3a4656', emissive: '#ffb066', emissiveIntensity: 1.6, roughness: 0.12, metalness: 0.55, vertexColors: true });
+  const m = new THREE.MeshStandardMaterial({ name: decal ? 'tidecrown-far-glass' : 'tidecrown-glass', color: '#3a4656', emissive: '#ffb066', emissiveIntensity: 2.3, roughness: 0.12, metalness: 0.55, vertexColors: true });
   // Vertex colour red is the light inside each window (0 dark .. 1 lamp-lit); the pane itself stays dark glass.
   // Far windows (vertex alpha 0) are decals on an uncut wall: uv counts panes from the glass corner, colour green
   // and blue carry columns / 8 and rows / 8, and the shader paints the glazing bars and the frame around them.
@@ -206,17 +251,43 @@ export function loadTidecrownKit(): Promise<TidecrownKit> {
     grade(plaster, 'plaster', 0.3, 0.41, '#dad5cc', '#ffffff');
     const limestone = kitClone(vm('MI_UnevenBrick'), 'tidecrown-limestone');
     grade(limestone, 'limestone', 0.1, 0.3, '#8a8170', '#f2ead8');
+    // The rubble at twice the kit's density, so its stones sit at about one and a half of the ashlar blocks beside it.
+    for (const slot of ['map', 'normalMap', 'roughnessMap'] as const) {
+      const t = limestone[slot]?.clone();
+      if (!t) continue;
+      t.repeat.multiplyScalar(2);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.userData.tidecrown = true;
+      limestone[slot] = t;
+    }
     const ashlar = kitClone(vm('MI_Brick'), 'tidecrown-ashlar');
     grade(ashlar, 'ashlar', 0.15, 0.36, '#b4aa95', '#f4ede0');
     const rock = kitClone(vm('MI_RockTrim'), 'tidecrown-rock');
     grade(rock, 'rock', 0.13, 0.43, '#a39983', '#f3ecdc');
     const stone = kitClone(vm('MI_WoodTrim'), 'tidecrown-stone-trim');
     grade(stone, 'stone', 0.05, 0.4, '#b9ae98', '#f6efe0');
+    dressedStone(stone, (vm('MI_Brick') as THREE.MeshStandardMaterial).map, '#b9ae98', '#f6efe0');
     const paint = kitClone(vm('MI_WoodTrim'), 'tidecrown-paint');
     grade(paint, 'paint', 0.05, 0.4, '#8f8f8f', '#ffffff');
     const tiles = kitClone(vm('MI_RoundTiles'), 'tidecrown-tiles');
-    grade(tiles, 'tiles', 0.11, 0.27, '#5c5c5c', '#ffffff');
+    grade(tiles, 'tiles', 0.11, 0.27, '#454545', '#ececec');
     tiles.roughness = 0.62;
+    // Weathering across each roof: patches a shade lighter or darker, a little moss toward the eaves.
+    addPatch(tiles, 'tc-tile-weather', (shader) => {
+      worldVarying(shader, 'vTwW');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vTwW;\n${GLSL_NOISE}`).replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          float n = cc_vnoise(vTwW.xz * 0.21 + vTwW.y * 0.13) * 0.65 + cc_vnoise(vTwW.xz * 0.9 - vTwW.y * 0.4) * 0.35;
+          diffuseColor.rgb *= 0.8 + 0.4 * n;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.78, 1.0, 0.72), smoothstep(0.62, 0.85, cc_vnoise(vTwW.xz * 0.37 + 5.1)) * 0.6);
+          // Ridge caps (the tiles that lie flat) are paler, mortar-bedded, and catch the low sun.
+          float ridge = smoothstep(0.86, 0.97, abs(normalize(cross(dFdx(vTwW), dFdy(vTwW))).y));
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.5 + vec3(0.05, 0.045, 0.04), ridge * 0.8);
+        }`,
+      );
+    });
     const iron = kitClone(vm('MI_MetalOrnaments'), 'tidecrown-iron', false);
     iron.color.set('#5a5e66');
     const vine = kitClone(vm('MI_Vine'), 'tidecrown-vine', false);
@@ -594,12 +665,21 @@ export const HOUSE_PALETTES: Record<string, HousePalette> = {
   market: { doors: ['#26446a', '#1f585c', '#8a5a20', '#245a7a', '#7a3a2a', '#2c3c55'] },
 };
 
-function houseStyle(k: TidecrownKit, r: () => number, palette?: HousePalette): Style {
+/** Weathering over a roof's tone, house by house: dark slate, grey slate, sun-faded blue, greener copper. */
+const ROOF_WEATHER: [number, string, number][] = [[0.18, '#1a1e24', 0.7], [0.36, '#6a6e74', 0.8], [0.5, '#a9c0d8', 0.55], [0.6, '#4f9a7a', 0.7]];
+
+function houseStyle(k: TidecrownKit, r: () => number, palette?: HousePalette, seed = 0): Style {
   const m = k.mat;
   const p = palette ?? {};
   const wall = lin(pick(r, p.walls ?? WALL_TONES));
   const stone = lin(pick(r, STONE_TONES));
   const roof = lin(r() < (p.copper ?? 0.1) ? COPPER : pick(r, p.roofs ?? ROOF_TONES)).multiplyScalar(0.92 + r() * 0.16);
+  // Its own stream, so the house's other draws stay as they were.
+  const rw = stream(seed * 7919 + 211), q = rw();
+  const weather = ROOF_WEATHER.find(([at]) => q < at);
+  if (weather) roof.lerp(lin(weather[1]), weather[2]);
+  // A wide spread house to house, so a district's roofs read one by one from above, not as one blue mass.
+  roof.multiplyScalar(0.72 + rw() * 0.68);
   const frame = lin(pick(r, FRAME_TONES));
   const t: Tint = new Map([
     [m.plaster, wall],
@@ -747,7 +827,7 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   const k = batch.tide;
   const { village, props, nature, mat } = k;
   const r = stream(spec.seed);
-  const st = houseStyle(k, r, spec.palette ? HOUSE_PALETTES[spec.palette] : undefined);
+  const st = houseStyle(k, r, spec.palette ? HOUSE_PALETTES[spec.palette] : undefined, spec.seed);
   const lot = townhouseLot(spec);
   const goods = townhouseGoods(spec);
   const W = spec.width * 2;
@@ -785,19 +865,21 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   const boxOdds = 0.12 + r() * 0.3;
   const glassLit = () => {
     const q = r();
-    return new THREE.Color(q < 0.14 ? 0.55 + r() * 0.45 : 0.04 + r() * 0.08, 1, 1);
+    return new THREE.Color(q < 0.24 ? 0.55 + r() * 0.45 : 0.04 + r() * 0.08, 1, 1);
   };
   const glassTint = (t: Tint) => new Map(t).set(mat.glass, glassLit());
 
   // Plinth: dressed stone under the floor down past the lowest ground.
   const low = Math.min(spec.base ?? spec.ground, spec.doorstep ?? spec.ground) - 0.7;
   const ph = spec.ground - low + 0.04;
-  // Flush with the party line where a neighbour stands, so two plinths never share a face.
-  const pl = hidden('left', 0, 0) ? 0 : 0.17;
-  const pr = hidden('right', 0, 0) ? 0 : 0.17;
-  const pb = hidden('back', 0, 0) ? 0 : 0.17;
-  geo(worldBox(W + pl + pr, ph, D + 0.17 + pb, 0.5).translate((pr - pl) / 2, -ph / 2 + 0.04, (0.17 - pb) / 2), mat.limestone, stoneTint);
-  fb?.frame().box(mat.limestone, stoneTint, -W / 2 - pl, 0.04 - ph, -D / 2 - pb, W / 2 + pr, 0.04, D / 2 + 0.17, 'ny');
+  // Flush with the party line where a neighbour stands, so two plinths never share a face; elsewhere a lip of 5 cm (a
+  // deeper one read as a ledge along the street).
+  const lip = 0.05;
+  const pl = hidden('left', 0, 0) ? 0 : lip;
+  const pr = hidden('right', 0, 0) ? 0 : lip;
+  const pb = hidden('back', 0, 0) ? 0 : lip;
+  geo(worldBox(W + pl + pr, ph, D + lip + pb, 0.5).translate((pr - pl) / 2, -ph / 2 + 0.04, (lip - pb) / 2), mat.limestone, stoneTint);
+  fb?.frame().box(mat.limestone, stoneTint, -W / 2 - pl, 0.04 - ph, -D / 2 - pb, W / 2 + pr, 0.04, D / 2 + lip, 'ny');
 
   const sides: Side[] = ['front', 'right', 'back', 'left'];
   /** Quoin width per corner and storey (0: none), for the far build. */
@@ -945,6 +1027,7 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   roof(top + ROOF_LIFT);
   if (spec.shop) awning();
   if (spec.banner && F >= 3) banner();
+  frontDressing();
   return lot;
 
   // --- pieces -----------------------------------------------------------------------------------
@@ -1079,7 +1162,8 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     geo(worldBox(2.04, 0.2, 1.0, 0.5).translate(x, y - 0.06, z + 0.55), mat.limestone, stoneTint);
     put(village, 'Wall_BottomCover', st.wall, st.t, x, y - 0.1, z + 1.08, 0, v(1.02, 1.1, 0.8));
     for (const sx of [-0.8, 0.8]) put(village, 'Prop_Support', st.wall, st.t, x + sx, y - 1.45, z + 0.05, 0, v(1.3, 0.55, 0.52));
-    const railTint = new Map(st.t).set(mat.paint, lin('#2c3440'));
+    // Painted iron in a weathered slate blue: darker reads as a black block against the wall.
+    const railTint = new Map(st.t).set(mat.paint, lin('#8ea6b8'));
     put(village, rail, st.paint, railTint, x, y + 0.04, z + 0.02, 0, v(1.02, 0.9, 0.95));
     for (const sx of [-1, 1]) put(village, 'Balcony_Cross_Straight', st.paint, railTint, x, y + 0.04, z + 0.52, sx * Math.PI / 2, v(0.5, 0.9, 1.0));
     if (fb) {
@@ -1108,6 +1192,53 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
       rods.push(tube([a, a.clone().lerp(b, 0.5).add(new THREE.Vector3(0, -0.04, 0)), b], () => 0.025, 6));
     }
     geo(mergeGeometries(rods, false)!, mat.iron, undefined);
+  }
+
+  function frontDressing(): void {
+    // Life along the street, from a stream of its own (the house's other draws stay as they were): a bench, tubs of
+    // flowers, barrels or crates against the front between the door and the windows, and a sign hung out over a
+    // shop's arches (now and then over an inn's door). Dressing only, near the wall: the walk passes them.
+    const rd = stream(spec.seed * 104729 + 7);
+    const yp = (spec.doorstep ?? spec.ground) - spec.ground;
+    const zf = D / 2 + WALL;
+    if (spec.shop || rd() < 0.14) sign(rd);
+    if (spec.shop) return;
+    for (let i = 0; i < spec.width; i++) {
+      const q = rd();
+      if (i === di || q > 0.55) continue;
+      const x = -W / 2 + 1 + 2 * i;
+      if (q < 0.15) put(props, 'Bench', k.over.props, null, x, yp, zf + 0.32, 0, v(0.6, 1, 1));
+      else if (q < 0.3) {
+        for (const sx of [-0.62, 0.62]) {
+          put(props, 'Bucket_Wooden_1', k.over.props, null, x + sx, yp, zf + 0.3, rd() * 6, 1.5);
+          put(nature, rd() < 0.6 ? 'Flower_3_Single' : 'Plant_7', k.over.nature, null, x + sx, yp + 0.38, zf + 0.3, rd() * 6, 0.3, false);
+        }
+      } else if (q < 0.43) {
+        put(props, 'Barrel', k.over.props, null, x - 0.42, yp, zf + 0.38, rd() * 6, 0.8);
+        put(props, rd() < 0.5 ? 'Barrel' : 'Barrel_Apples', k.over.props, null, x + 0.36, yp, zf + 0.36, rd() * 6, 0.75);
+      } else {
+        put(village, 'Prop_Crate', st.paint, new Map(st.t).set(mat.paint, lin('#9c7650')), x - 0.3, yp, zf + 0.36, rd() * 0.5 - 0.25, 0.6);
+        put(props, 'Bag', k.over.props, null, x + 0.45, yp, zf + 0.3, rd() * 6, 0.7);
+      }
+    }
+  }
+
+  function sign(rd: () => number): void {
+    // A painted board hung square to the front from an iron arm, a gold roundel on each face.
+    const side = (spec.seed >> 3) % 2 ? 1 : -1;
+    const dx = -W / 2 + 1 + 2 * di;
+    const x = spec.shop ? side * (W / 2 - 0.45) : dx - side * 1.05;
+    const y = spec.shop ? 3.72 : 2.98;
+    const zf = D / 2 + WALL;
+    const board = new THREE.BoxGeometry(0.05, 0.5, 0.62).translate(x, y - 0.42, zf + 0.62);
+    geo(board, mat.paint, lin(pick(rd, ['#24508f', '#7a2e2a', '#2b6f5a', '#c9902f', '#3a2f6a', '#1f585c'] as const)));
+    const disc = lathe([[0, 0], [0.15, 0], [0.15, 0.012], [0.11, 0.03], [0, 0.03]], 14);
+    geo(disc.clone().rotateZ(-Math.PI / 2).translate(x + 0.025, y - 0.42, zf + 0.62), mat.gold, undefined);
+    geo(disc.rotateZ(Math.PI / 2).translate(x - 0.025, y - 0.42, zf + 0.62), mat.gold, undefined);
+    const arm = tube([new THREE.Vector3(x, y, zf), new THREE.Vector3(x, y, zf + 1.0)], () => 0.025, 6);
+    const brace = tube([new THREE.Vector3(x, y - 0.45, zf), new THREE.Vector3(x, y - 0.12, zf + 0.25), new THREE.Vector3(x, y, zf + 0.62)], () => 0.016, 5);
+    const rings = [0.38, 0.86].map((z) => tube([new THREE.Vector3(x, y, zf + z), new THREE.Vector3(x, y - 0.17, zf + z)], () => 0.012, 4));
+    geo(mergeGeometries([arm, brace, ...rings], false)!, mat.iron, undefined);
   }
 
   function banner(): void {

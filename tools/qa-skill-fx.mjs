@@ -4,7 +4,7 @@
 // mage casts Bubble Bolt at a scrapling, then Frost Spray, Tidal Nova and Steam Blink. The warrior's game and a spectator
 // view following the mage must draw the cast, the bolt in flight and each ability. Run `pnpm build` first.
 // Screenshots go to CC_QA_SHOTS (default tmp/qa).
-import assert from 'node:assert/strict';import {execFileSync,spawn} from 'node:child_process';import {mkdirSync} from 'node:fs';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {chromium} from 'playwright';
+import assert from 'node:assert/strict';import {execFileSync,spawn} from 'node:child_process';import {mkdirSync} from 'node:fs';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {launchBrowser} from './lib/browser.mjs';
 import {startPostgres} from '../server/node/local-postgres.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),shots=process.env.CC_QA_SHOTS??join(root,'tmp/qa'),shot=name=>join(shots,name);mkdirSync(shots,{recursive:true});
 const API=8797,WEB=5232,base=`http://127.0.0.1:${WEB}`;
@@ -34,7 +34,7 @@ const spy=()=>{const g=window.app.current.game,fx=window.__fx={};
 try{
  await run([join(root,'server-dist/main.mjs')],{PORT:String(API),HOST:'127.0.0.1',DATABASE_URL:postgres.url,MONITOR_IPS:'127.0.0.1'},/listening on/);
  await run([join(root,'node_modules/vite/bin/vite.js'),'preview','--host','127.0.0.1','--port',String(WEB),'--strictPort'],{CC_SERVER_URL:`http://127.0.0.1:${API}`},new RegExp(String(WEB)));
- browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio','--disable-renderer-backgrounding','--disable-background-timer-throttling','--disable-backgrounding-occluded-windows']});
+ browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio','--disable-renderer-backgrounding','--disable-background-timer-throttling','--disable-backgrounding-occluded-windows']});
  // The mage entered first, so its browser runs the shard's monsters; the warrior mirrors them.
  const mage=await player('Skill Mage','mage'),warrior=await player('Watching Warrior','warrior');
  const shard=await game(mage,()=>window.app.current.game.multiplayer.shard);

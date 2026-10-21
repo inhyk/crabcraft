@@ -332,11 +332,15 @@
 .dlg-obj li::before { content: '\25C6  '; color: #a3161f; font-size: 11px; }
 .dlg-reward { display: flex; align-items: center; gap: 10px; font: 600 15px var(--font-body); color: #3b220b; }
 .dlg-reward .xp { padding: 3px 10px; border-radius: 12px; background: rgba(110, 50, 160, 0.18); color: #4e1a85; box-shadow: inset 0 0 0 1px rgba(110, 50, 160, 0.4); }
+.dlg-reward .coins { padding: 3px 10px; border-radius: 12px; background: rgba(196, 140, 30, 0.2); color: #6b4200; box-shadow: inset 0 0 0 1px rgba(170, 120, 20, 0.5); }
 .dlg-reward .item { display: flex; align-items: center; gap: 6px; }
 .dlg-reward .item i { width: 28px; height: 28px; border-radius: 4px; box-shadow: 0 0 0 1px #000, 0 0 0 2px #8a6a2a; background: radial-gradient(circle at 40% 35%, #c98a4a, #5a2a10); }
 .dlg-buttons { display: flex; justify-content: space-between; gap: 12px; padding: 14px 22px 20px; }
 .dlg-buttons .cc-btn { min-width: 0; flex: 1; font-size: 16px; padding: 9px 12px; }
 .dlg-buttons .cc-btn:only-child { flex: none; min-width: 200px; margin: 0 auto; }
+/* A long choice (Tidecrown's six worlds) in two columns; an odd last button spans both. */
+.dlg-buttons:has(> .cc-btn:nth-child(5)) { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.dlg-buttons:has(> .cc-btn:nth-child(5)) > .cc-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
 
 /* ---------------------------------------------------------------- quest log */
 .qlog { position: absolute; left: 50%; top: 50%; width: 760px; height: 520px; transform: translate(-50%, -50%); display: flex; padding: 0 !important; animation: cc-fade-in 0.2s ease both; }

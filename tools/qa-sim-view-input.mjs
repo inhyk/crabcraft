@@ -1,14 +1,14 @@
 // Real production rigs verify the extracted view boundary, not full S2 browser acceptance.
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const server = await createServer({ root, server: { host: '127.0.0.1', port: 5276, strictPort: true }, logLevel: 'error' });
 let browser;
 try {
   await server.listen();
-  browser = await chromium.launch({ headless: true, channel: 'chrome' });
+  browser = await launchBrowser({ headless: true });
   const page = await browser.newPage();
   await page.route('**/__sim_view_input__', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Simulation view helper parity</title>' }));
   await page.goto('http://127.0.0.1:5276/__sim_view_input__');

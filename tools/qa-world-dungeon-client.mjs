@@ -13,7 +13,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { isAbsolute, join } from 'node:path';
 import { preview } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { startPostgres, freePort } from '../server/node/local-postgres.mjs';
 import { createPool, migrate } from '../server/node/db.ts';
 import { CharacterStore } from '../server/world/character-store.ts';
@@ -74,7 +74,7 @@ try {
   const catalog = await (await fetch(backend + '/api/account/world-catalog')).json();
   assert.deepEqual(catalog.dungeons, config.dungeons.tiers, 'the catalog advertises the configured tiers'); result.checks.schemaRevision = catalog.wireSchemaRevision;
 
-  browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
+  browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
   const pageErrors = [], wireErrors = [];
   async function open(who, viewport) {
     const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });

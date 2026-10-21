@@ -4,10 +4,11 @@
 // the night elf alert among the ferns, a spin and a dash, a long tracking run through the pines,
 // her change in a violet burst, a run along the headland cliff and a leap across the moon, then a
 // cyan whoosh into darkness.
-// night-undead (93.0 to 111.0): Starhaven's Fallen Star Ruins, graded grave green; the undead's claws
-// creep over the sand and it splits into molten fissures, he rises and channels under the observatory's
-// astrolabe, boulders climb out of the ground round him, a burning rock falls out of the sky behind him
-// and the blast whites out the frame.
+// night-undead (93.0 to 111.0): Starhaven's Fallen Star Ruins, graded grave green, in one take like the
+// original's: the undead's claw stamps down and a molten blight spreads out of the step, the lens sweeps
+// low round it, climbs his leg to his face and drops to look up at him channelling while boulders climb
+// out of the ground round him and gather into the golem; a burning rock falls behind him and the blast
+// whites out the frame.
 // night-explode (151.92 to 154.21): the same blast, close, the undead black against it.
 //
 // The run through the pines and the camera beside it were planned off-line from the forest's tree
@@ -22,7 +23,6 @@ const ELF_LEDGE = 89.0;
 const ELF_LEAP = 90.0;
 const ELF_WHOOSH = 91.75;
 const UNDEAD_IN = 93.0;
-const UNDEAD_CAST = 99.5;
 const UNDEAD_OUT = 111.0;
 const EXPLODE_IN = 151.92;
 const EXPLODE_OUT = 154.21;
@@ -530,31 +530,12 @@ const G = (ahead, right, h) => {
 };
 /** Where the burning rock lands: behind him, screen left, as the original's blasts go up left of him. */
 const IMPACT = P(10, -4.2);
-/** Where he starts his creep (ahead of his mark, away from the camera). */
-const U_FROM = P(4.2, -0.3);
 const UNDEAD_SCALE = 1.3;
 const undead = { id: 'u', spec: UNDEAD, scale: UNDEAD_SCALE };
 /** The staff head, in his frame (left, up, ahead), scaled with him. */
 const STAFF = [0.45 * UNDEAD_SCALE, 1.35 * UNDEAD_SCALE, 0.25 * UNDEAD_SCALE];
 /** The sky behind him, far along the view. */
 const SKY = [U[0] + FWD[0] * 70, 26, U[1] + FWD[1] * 70];
-
-/** Molten fissures opening under his claws as he creeps (every step, alternating sides). */
-function footfalls(from, to, t0, t1, every) {
-  const out = [];
-  const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
-  const side = [-(to[1] - from[1]) / len, (to[0] - from[0]) / len];
-  const n = Math.floor((t1 - t0) / every);
-  for (let i = 0; i <= n; i++) {
-    const t = t0 + i * every;
-    const k = (t - t0) / (t1 - t0);
-    const s = i % 2 ? 0.5 : -0.5;
-    const x = from[0] + (to[0] - from[0]) * k + side[0] * s;
-    const z = from[1] + (to[1] - from[1]) * k + side[1] * s;
-    out.push({ kind: 'night-cracks', t, at: [x, z], radius: 1.6, grow: 1.1, cells: 1.4, warp: 1.0, width: 0.045, keep: 0.4, gain: 1.7 });
-  }
-  return out;
-}
 
 /** The camera's bearing from him (radians, x = cos, z = sin), for the boulders' arc. */
 const CAM_ANGLE = Math.atan2(TO_CAM[1], TO_CAM[0]);
@@ -597,13 +578,13 @@ const golem = {
   detail: 1,
   lump: 0.75,
   cells: 1.05,
-  rise: [3.2, 5.6],
-  fly: [6.0, 7.9],
-  stand: [7.7, 8.5],
-  blaze: [8.0, 8.7],
-  loom: [8.7, 11.5],
-  eyes: 10.0,
-  glow: [[3, 0.3], [6, 0.42], [8, 0.45]],
+  rise: [9.7, 12.1],
+  fly: [12.5, 14.4],
+  stand: [14.2, 15.0],
+  blaze: [14.5, 15.2],
+  loom: [15.2, 18.0],
+  eyes: 16.5,
+  glow: [[9.5, 0.3], [12.5, 0.42], [14.5, 0.45]],
   rock: '#191510',
   key: '#7f9a78',
   keyK: 0.55,
@@ -616,7 +597,7 @@ const golem = {
 /** A far meteor streaking across the storm at 103.2 s (the original's sky is full of them). */
 const STREAK = {
   kind: 'night-meteor',
-  t: 3.7,
+  t: 10.2,
   from: [U[0] + FWD[0] * 46 + RIGHT[0] * 24, 27, U[1] + FWD[1] * 46 + RIGHT[1] * 24],
   to: [U[0] + FWD[0] * 42 - RIGHT[0] * 6, 11, U[1] + FWD[1] * 42 - RIGHT[1] * 6],
   d: 0.95,
@@ -628,109 +609,138 @@ const STREAK = {
   core: '#ffe08a',
 };
 
-/** The rock's fall: in at the top of the cast shot's frame, right of centre, down across the sky onto the impact. */
+/** The rock's fall: in at the top of the frame, right of centre, down across the sky onto the impact. */
 const METEOR_FROM = [IMPACT[0] + RIGHT[0] * 13 + FWD[0] * 14, 26, IMPACT[1] + RIGHT[1] * 13 + FWD[1] * 14];
-/** When it falls (cast shot seconds) and lands. */
-const FALL = 6.3;
-const LAND = 8.5;
+/** When it falls (shot seconds) and lands. */
+const FALL = 12.8;
+const LAND = 15.0;
 /** Scenery the undead shots drop: the observatory's grey rubble and its violet astrolabe (it read as clutter). */
 const UNDEAD_HIDE = ['observatory-rubble'];
 /** The observatory's columns: bare cylinders standing by him in the cast and the blast. */
 const COLUMNS = ['observatory-column-shafts', 'observatory-column-bases', 'observatory-column-capitals', 'observatory-column-bands', 'observatory-column-runes'];
 const NO_ASTROLABE = { kind: 'night-drop', t: -3, at: [80, -40], r: 5.5, above: 3 };
 
-const undeadShots = [
-  // Low on the ground in the dark: his claws creep in and the ground splits into molten fissures.
-  cut('night-undead-ground', UNDEAD_IN, UNDEAD_CAST, 2, {
-    view: view({ exposure: 0.95, saturation: -0.1, contrast: 0.24, dof: true, bokeh: 4, vignette: { offset: 0.2, darkness: 0.85 } }),
-    hide: UNDEAD_HIDE,
-    anchor: U,
-    actors: [{ ...undead, at: U_FROM, yaw: U_YAW }],
-    tracks: {
-      u: {
-        path: [
-          { t: 0, x: U_FROM[0], z: U_FROM[1] },
-          { t: 6.3, x: U[0], z: U[1] },
-          { t: 6.6, x: U[0], z: U[1], yaw: U_YAW },
-        ],
-        faces: [{ t: -2, expr: 'angry' }],
-      },
-    },
-    // Down at his claws: the lens backs away just ahead of him, low, the fissures opening under each step.
-    cam: {
-      ease: 'inout',
-      focus: 'u',
-      range: 1.4,
-      keys: [
-        { t: 0, p: { a: 'u', o: [1.0, 0.32, 3.6] }, l: { a: 'u', o: [0.1, 0.1, 1.0] }, fov: 40 },
-        { t: 6.5, p: { a: 'u', o: [0.7, 0.36, 3.0] }, l: { a: 'u', o: [0, 0.2, 0.8] }, fov: 40 },
-      ],
-    },
-    fx: [
-      EARTH,
-      ...footfalls(U_FROM, U, 0.3, 6.2, 0.5),
-      { kind: 'night-cracks', t: 0.0, at: P(2.0, 0), radius: 6, grow: 6.5, cells: 0.9, warp: 1.1, width: 0.05, keep: 0.5, gain: 1.0 },
-      { kind: 'night-mist', t: -5, at: { g: [U[0], 0.35, U[1] - 2] }, box: [14, 1.0, 14], count: 46, size: 2.0, color: '#0b1409', opacity: 0.45 },
-      { kind: 'embers', t: -1, at: { g: [U[0], 0.6, U[1] - 2] }, count: 260, box: [7, 3, 7], drift: [0.15, 0.7, 0.05], size: 0.035, color: '#ffc85a', color2: '#ff7a1a' },
-      { kind: 'motes', t: -1, at: { g: [U[0], 1.2, U[1] - 2] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
-      // The fissures' glow on his claws, and a low warm fill from the lens side.
-      { kind: 'light', t: -1, at: { a: 'u', o: [0, 0.12, 0.3] }, color: '#ffae3a', intensity: 4, distance: 4.5, flicker: 0.15 },
-      { kind: 'light', t: -1, at: { a: 'u', o: [0.3, 0.4, 1.6] }, color: '#ffc46a', intensity: 1.6, distance: 4 },
-    ],
-  }),
+/** A point in his frame (left, up, ahead) on his standing spot, fixed to the ground (he does not travel). */
+const H = (left, up, ahead) => G(-ahead, left, up);
+/** His frame to the ground: `left` and `ahead` of him. */
+const L = (left, ahead) => P(-ahead, left);
+/** Where his free (left) claw stamps down, and when: song frame 2251 (93.79 s), the sound at 93.81 s. */
+const STEP = L(0.47, 1.25);
+const STAMP = 19 / 24;
+/** His left claw raised out of frame, lifted higher, stamped down into the ground, pressed in. */
+const RAISED = { LF_J0_joint: 0.25, LF_J1_joint: -1.05, LF_J2_joint: 0.2, LF_J3_joint: -0.35 };
+const HIGH = { LF_J0_joint: 0.3, LF_J1_joint: -1.3, LF_J2_joint: 0.3, LF_J3_joint: -0.5 };
+const PLANT = { LF_J0_joint: 0.15, LF_J1_joint: 0.13, LF_J2_joint: 0, LF_J3_joint: 0 };
+const STEP_POSE = {
+  kind: 'night-step',
+  t: -3,
+  actor: 'u',
+  keys: [[-1, RAISED], [0.2, RAISED], [0.55, HIGH], [STAMP, PLANT, 'in'], [STAMP + 0.07, { ...PLANT, LF_J1_joint: 0.18 }, 'out'], [STAMP + 0.4, PLANT]],
+  pitch: [[0, 0], [0.5, 1.5], [STAMP, -2.5], [STAMP + 0.3, -1.2], [1.6, -1.5], [6.4, -1.5], [7.4, 0]],
+  // The claw stays planted until the lens is on his face, then the cast takes his legs back.
+  w: [[6.4, 1], [7.4, 0]],
+};
 
-  // He rises into frame and casts: the gather, the staff thrust at the sky to call the rock down, the
-  // channel held while boulders climb out of the ground round him; the burning rock falls, the blast.
-  cut('night-undead-cast', UNDEAD_CAST, UNDEAD_OUT, 2, {
-    view: view({ exposure: 1.2, saturation: -0.18, contrast: 0.26, dof: true, bokeh: 2.5 }),
-    hide: UNDEAD_HIDE,
+/** Where the lens skims the ground in the first seconds (no grass there). */
+const LOW_PATH = [L(1.55, 2.25), L(1.85, 3.0), L(1.0, 3.7), L(0.9, 2.9)];
+/** Dark grass and dirt round him (src/capture/cinema/fx/night-floor.ts) over Starhaven's flat sand. */
+const UNDEAD_FLOOR = {
+  kind: 'night-floor',
+  t: -3,
+  box: [U[0] - 9, U[1] - 9, U[0] + 9, U[1] + 9],
+  soil: '#4a3e2a',
+  moss: '#3e4a2a',
+  litter: '#5a4628',
+  litter2: '#4a4030',
+  grass: '#34461f',
+  tip: '#a8b870',
+  count: 30,
+  clear: LOW_PATH.map((q) => [...q, 0.6]),
+  seed: 23,
+};
+
+const undeadShots = [
+  // One take, like the original. Low on the dark ground his free claw stamps down into frame on 93.81 s
+  // and the blight spreads out of the step, wider and wider, a burning front ahead of the rot; the lens
+  // skims back over it and swings round in front of the step, then climbs his claw and body to his face
+  // as a sickly glow flares up behind him (98.5 s). It drops to look up at him as he channels; boulders
+  // climb out of the ground round him and fly together behind him into the golem, the burning rock
+  // falls past its shoulder, the blast, and the light swells to white.
+  cut('night-undead', UNDEAD_IN, UNDEAD_OUT, 2, {
+    view: view({ exposure: 1.05, saturation: -0.14, contrast: 0.25, dof: true, bokeh: 3.5, vignette: { offset: 0.2, darkness: 0.85 } }),
+    hide: [...UNDEAD_HIDE, ...COLUMNS],
     anchor: U,
     actors: [{ ...undead, at: U, yaw: U_YAW }],
     tracks: {
       u: {
         acts: [
-          { t: -2, clip: 'idle', loop: true },
+          { t: -3, clip: 'idle', loop: true },
           // The gather and channel, the summons flung skyward, the channel again, a second fling at the fall.
-          { t: 0.25, clip: 'cast', part: 'channel', loop: true },
-          { t: 3.6, clip: 'cast', part: 'release' },
-          { t: 4.7, clip: 'cast', part: 'channel', loop: true },
-          { t: 6.0, clip: 'cast', part: 'release' },
-          { t: 7.1, clip: 'cast', part: 'channel', loop: true },
+          { t: 6.75, clip: 'cast', part: 'channel', loop: true },
+          { t: 10.1, clip: 'cast', part: 'release' },
+          { t: 11.2, clip: 'cast', part: 'channel', loop: true },
+          { t: 12.5, clip: 'cast', part: 'release' },
+          { t: 13.6, clip: 'cast', part: 'channel', loop: true },
         ],
-        faces: [{ t: -2, expr: 'angry' }, { t: 3.6, expr: 'focused', hold: 0.8 }, { t: 6.0, expr: 'angry' }],
+        faces: [{ t: -2, expr: 'angry' }, { t: 10.1, expr: 'focused', hold: 0.8 }, { t: 12.5, expr: 'angry' }],
       },
     },
     cam: {
-      ease: 'inout',
+      ease: 'linear',
       focus: 'look',
-      range: 5.5,
+      range: 1.6,
       keys: [
-        { t: 0, p: G(-3.0, 0.55, 0.3), l: G(0, 0.15, 0.95), fov: 40 },
-        { t: 3.0, p: G(-3.9, 0.7, 0.42), l: G(0, 0.1, 1.45), fov: 42 },
-        // Back and down as the golem gathers behind him, then tilting up its height as it looms.
-        { t: 6.0, p: G(-4.4, 0.8, 0.42), l: G(0.8, 0.35, 1.9), fov: 44 },
-        { t: 8.0, p: G(-4.9, 0.85, 0.32), l: G(1.8, 0.45, 2.5), fov: 47 },
-        { t: 11.5, p: G(-5.6, 0.9, 0.3), l: G(2.0, 0.5, 3.4), fov: 52 },
+        // The step, close and low: only his claw and the ground, his body above the frame.
+        { t: 0, p: H(1.55, 0.2, 2.25), l: H(0.45, 0.03, 1.3), fov: 34 },
+        { t: 0.85, p: H(1.54, 0.2, 2.23), l: H(0.45, 0.03, 1.29), fov: 34 },
+        // Back over the spreading front, skimming the ground...
+        { t: 2.2, p: H(1.85, 0.22, 3.0), l: H(0.55, 0.0, 1.45), fov: 36 },
+        // ...round in front of the step and up a little, the ring of rot widening past the lens...
+        { t: 3.4, p: H(1.0, 0.42, 3.7), l: H(0.45, 0.0, 1.5), fov: 38 },
+        { t: 4.4, p: H(0.9, 0.3, 2.9), l: H(0.5, 0.22, 1.25), fov: 38 },
+        // ...in to the planted claw and up it, his body, to his face (his staff out of frame left).
+        { t: 5.5, p: H(1.0, 0.75, 2.45), l: H(0.4, 0.6, 0.8), fov: 40 },
+        { t: 6.6, p: H(0.95, 1.15, 2.2), l: H(0.2, 0.98, 0.3), fov: 40 },
+        // Down to look up at him as he channels, back as the boulders climb out round him...
+        { t: 8.2, p: H(0.55, 0.32, 3.0), l: H(0.15, 0.95, 0), fov: 40 },
+        { t: 9.8, p: H(0.7, 0.42, 3.9), l: H(0.1, 1.45, 0), fov: 42 },
+        // ...then tilting up the golem's height as it gathers behind him and looms.
+        { t: 12.5, p: H(0.8, 0.42, 4.4), l: H(0.35, 1.9, -0.8), fov: 44 },
+        { t: 14.5, p: H(0.85, 0.32, 4.9), l: H(0.45, 2.5, -1.8), fov: 47 },
+        { t: 18, p: H(0.9, 0.3, 5.6), l: H(0.5, 3.4, -2.0), fov: 52 },
       ],
     },
     fx: [
-      GRAVE,
+      // Olive earth for the ground, grave green once he is up and casting.
+      { ...EARTH, k: [[0, 1], [5.6, 1], [7.4, 0]] },
+      { ...GRAVE, k: [[0, 0], [5.6, 0], [7.4, 1]] },
       NO_ASTROLABE,
-      { kind: 'night-cracks', t: -6, at: P(2.0, 0), radius: 6, grow: 6.5, cells: 0.9, warp: 1.1, width: 0.05, keep: 0.5, gain: 1.0 },
-      { kind: 'night-cracks', t: 1.2, at: U, radius: 9, grow: 7, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
+      { kind: 'focus', t: -1, range: [[0, 1.6], [4.4, 1.8], [6.6, 2.4], [9.8, 5.5]] },
+      { kind: 'lens', t: -1, near: 0.03, until: 6 },
+      UNDEAD_FLOOR,
+      STEP_POSE,
+      { kind: 'shake', t: STAMP, d: 0.45, amp: 0.03 },
+      { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 1.6, light: 1.6, gain: 0.75, embers: 150, clear: LOW_PATH.map((q) => [...q, 0.9]) },
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
-      // The sky behind him sickens green and swells; deep, not bright.
-      { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: [[0, 0.6], [3, 0.6], [8.4, 0.75], [8.6, 1.0], [11.5, 1.1]] },
-      // The molten cracks light him from below from the first frame.
-      { kind: 'light', t: -1, at: G(-1.3, -0.5, 0.3), color: '#ffb44a', intensity: 16, distance: 6, flicker: 0.15 },
+      { kind: 'motes', t: -1, at: { g: [U[0], 1.2, U[1] - 2] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
+      // Cold moonlight from above the lens, so the ground and the claw read before the fire opens.
+      { kind: 'light', t: -1, at: H(1.2, 3.2, 3.6), color: '#8296bc', curve: [[0, 320], [6.0, 260], [8.0, 30]], distance: 14 },
+      // A pale fill from the lens side once he channels, so his face reads against the green sky.
+      { kind: 'light', t: 6, at: H(0.4, 0.5, 2.2), color: '#d6e6a0', curve: [[6.4, 0], [7.4, 6], [11, 6], [13, 3]], distance: 4 },
+      // 98.5 s: a sickly glow flares up behind him, rims him green, and the sky behind him sickens and swells.
+      { kind: 'night-glow', t: 5, at: H(-11, 6, -4), size: 12, color: '#d8ff6a', k: [[5.35, 0], [5.6, 1.6], [6.0, 1.2], [6.5, 1.3], [8.5, 0.6]] },
+      { kind: 'light', t: 5, at: H(-1.2, 1.8, -1.6), color: '#a8ff5a', curve: [[5.4, 0], [5.65, 14], [6.5, 10]], distance: 6 },
+      { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: [[5.3, 0], [5.7, 0.5], [6.5, 0.6], [9.5, 0.6], [14.9, 0.75], [15.1, 1.0], [18, 1.1]] },
+      // The molten blight lights him from below as it spreads.
+      { kind: 'light', t: -1, at: G(-1.3, -0.5, 0.3), color: '#ffb44a', curve: [[1, 0], [4, 8], [7, 16]], distance: 6, flicker: 0.15 },
       // A sickly green rim from the sky behind his left.
-      { kind: 'light', t: -1, at: G(1.6, -1.8, 2.6), color: '#9dff5a', intensity: 22, distance: 7 },
+      { kind: 'light', t: -1, at: G(1.6, -1.8, 2.6), color: '#9dff5a', curve: [[5.4, 0], [5.8, 22]], distance: 7 },
       // The staff's gather, flaring at each fling.
-      { kind: 'swirl', t: 0.6, until: 8.4, at: { a: 'u', o: STAFF }, radius: 1.6, rate: 60, size: 0.2, color: '#7dff6a' },
-      { kind: 'night-glow', t: 0.5, at: { a: 'u', o: STAFF }, size: 1.3, color: '#8dff4a', k: [[0.5, 0], [1.6, 1.0], [3.7, 1.4], [3.9, 3.2], [4.6, 1.3], [6.1, 1.6], [6.3, 3.4], [7.2, 1.8], [8.4, 2.2], [8.8, 0.6]] },
-      { kind: 'light', t: 0, at: { a: 'u', o: [STAFF[0], STAFF[1], STAFF[2] + 0.4] }, color: '#7dff4a', curve: [[0, 0], [0.8, 0], [1.8, 5], [3.8, 7], [3.95, 16], [4.6, 7], [6.2, 8], [6.35, 18], [7.2, 9], [8.4, 10]], distance: 9, flicker: 0.1 },
-      { kind: 'motes', t: -1, at: { a: 'u', o: [0, 1.6, 0] }, count: 220, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
-      { kind: 'embers', t: -1, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
+      { kind: 'swirl', t: 7.1, until: 14.9, at: { a: 'u', o: STAFF }, radius: 1.6, rate: 60, size: 0.2, color: '#7dff6a' },
+      { kind: 'night-glow', t: 7.0, at: { a: 'u', o: STAFF }, size: 1.3, color: '#8dff4a', k: [[7.0, 0], [8.1, 1.0], [10.2, 1.4], [10.4, 3.2], [11.1, 1.3], [12.6, 1.6], [12.8, 3.4], [13.7, 1.8], [14.9, 2.2], [15.3, 0.6]] },
+      { kind: 'light', t: 6.5, at: { a: 'u', o: [STAFF[0], STAFF[1], STAFF[2] + 0.4] }, color: '#7dff4a', curve: [[6.5, 0], [7.3, 0], [8.3, 5], [10.3, 7], [10.45, 16], [11.1, 7], [12.7, 8], [12.85, 18], [13.7, 9], [14.9, 10]], distance: 9, flicker: 0.1 },
+      { kind: 'motes', t: 6, fadeIn: 1, at: { a: 'u', o: [0, 1.6, 0] }, count: 220, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
+      { kind: 'embers', t: 6, fadeIn: 1.5, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
       // Boulders climb out of the ground round him and fly together behind him into the golem; the
       // burning rock falls past its shoulder, the blast.
       golem,
@@ -740,8 +750,8 @@ const undeadShots = [
       { kind: 'flash', t: LAND + 0.02, d: 0.22, rise: 0.03, a: 0.22, color: '#e6ffb0' },
       { kind: 'shake', t: LAND, d: 1.6, amp: 0.22 },
       // The blast's light swells to white for the cut (a veil in the scene, so it brightens, not greys).
-      { kind: 'night-veil', t: 9, alpha: [[10.5, 0], [11.15, 0.75], [11.5, 1]], color: '#f6ffe2', gain: 2.5 },
-      { kind: 'fade', t: 9, color: '#ffffff', curve: [[11.3, 0], [11.5, 1]] },
+      { kind: 'night-veil', t: 15.5, alpha: [[17.0, 0], [17.65, 0.75], [18.0, 1]], color: '#f6ffe2', gain: 2.5 },
+      { kind: 'fade', t: 15.5, color: '#ffffff', curve: [[17.8, 0], [18.0, 1]] },
     ],
   }),
 ];

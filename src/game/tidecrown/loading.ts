@@ -33,12 +33,27 @@ const MIN_SHOWN = 900;
 /** The bar's last run, once every step is done and it is not yet full. */
 const SWEEP = 100;
 
+/** An open step's ease, cubic-bezier(.15, .7, .3, 1), at time fraction `x` (the x of the curve solved by Newton). */
+function easeOpen(x: number): number {
+  const curve = (t: number, a: number, b: number) => 3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t;
+  let t = x;
+  for (let i = 0; i < 8; i++) {
+    const slope = (curve(t + 1e-4, 0.15, 0.3) - curve(t, 0.15, 0.3)) / 1e-4;
+    if (!slope) break;
+    t = Math.min(1, Math.max(0, t - (curve(t, 0.15, 0.3) - x) / slope));
+  }
+  return curve(t, 0.7, 1);
+}
+
 const tips = () => [
   t('크라운셸 성 꼭대기에서 청록빛 등불이 빛나요. 길을 잃으면 그 빛을 따라 성으로 가 보세요.', 'A teal lantern shines atop Crownshell Keep. Lost? Follow its light to the castle.'),
   t('여섯 껍질의 다리에는 여섯 종족마다 영웅 게 석상이 하나씩 서 있어요.', 'The Bridge of Six Shells has a hero crab statue for each of the six peoples.'),
   t('운하에는 곤돌라가 떠 있어요. 한 척은 큰 운하를 오가요.', 'Gondolas float on the canals, and one glides up and down the Grand Canal.'),
-  t('왕관 항구에는 금빛 집게 선수상을 단 갈레온이 정박해 있어요.', 'A galleon with a gold claw figurehead is moored in the Crown Harbour.'),
-  t('도착한 숲길을 따라 남쪽으로 내려가면 왕의 길을 지나 클로헤이븐으로 돌아가요.', 'Walk back south down the forest road to take the King’s Road home to Clawhaven.'),
+  t('왕관 항구에는 금빛 집게 선수상을 단 갈레온, 금빛집게호가 정박해 있어요.', 'The Goldclaw, a galleon with a gold claw figurehead, is moored in the Crown Harbour.'),
+  t('숲길을 따라 남쪽으로 내려가면 왕의 길을 지나 클로헤이븐으로 가요.', 'Walk south down the forest road to take the King’s Road to Clawhaven.'),
+  t('긴 부두의 아라 선장에게 말을 걸면 금빛집게호를 타고 다른 월드로 갈 수 있어요.', 'Talk to Captain Ara on the long pier to sail the Goldclaw to another world.'),
+  t('바다유리 구역의 포탈로도 다른 월드에 갈 수 있어요.', 'The portal in the Seaglass Quarter leads to the other worlds too.'),
+  t('모든 월드의 포탈 옆에 왕관 포탈이 있어요. 들어가면 이 항구로 와요.', 'Every world has a crown portal beside its own. Step in to come to this harbour.'),
 ];
 
 export class TidecrownLoading {
@@ -55,6 +70,11 @@ export class TidecrownLoading {
   private began = this.t0;
   private target = 0;
   private ends = this.t0;
+  /** The run's start (fill and time) and length, and whether it eases (an open step). */
+  private from = 0;
+  private runAt = this.t0;
+  private runMs = 0;
+  private runOpen = false;
   /** Actual over typical time of the steps this machine has run so far. */
   private pace = 1;
   private spent = 0;
@@ -150,9 +170,25 @@ export class TidecrownLoading {
     else this.run(upTo / total, ms * this.pace);
   }
 
+  /** The bar's fill at `now` by its run's own clock. */
+  private fill(now: number): number {
+    const k = this.runMs > 0 ? Math.min(1, Math.max(0, (now - this.runAt) / this.runMs)) : 1;
+    return this.from + (this.target - this.from) * (this.runOpen ? easeOpen(k) : k);
+  }
+
   private run(f: number, ms: number, ease = 'linear'): void {
+    // A new run starts from where the bar is by the last run's clock. Left to the browser, it starts from the style
+    // clock, which after a long block on the main thread is still where that block began: the bar would jump back.
+    const now = performance.now(), cur = Math.min(this.fill(now), f);
+    this.bar.style.transition = 'none';
+    this.bar.style.transform = `scaleX(${cur.toFixed(4)})`;
+    void this.bar.offsetWidth;
+    this.from = cur;
     this.target = f;
-    this.ends = performance.now() + ms;
+    this.runAt = now;
+    this.runMs = ms;
+    this.runOpen = ease !== 'linear';
+    this.ends = now + ms;
     this.bar.style.transition = `transform ${Math.round(ms)}ms ${ease}`;
     this.bar.style.transform = `scaleX(${f.toFixed(4)})`;
   }

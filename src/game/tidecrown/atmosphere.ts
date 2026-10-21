@@ -11,8 +11,10 @@ import type { TidecrownTerrain } from './terrain';
 /** Toward the sun: south-west by west, about 16 degrees up. */
 export const TC_SUN_DIR = new THREE.Vector3(-0.83, 0.276, 0.48).normalize();
 /** Haze: lilac pearl looking away from the sun, warm gold looking into it. */
-export const TC_FOG = { color: new THREE.Color('#dcd6e6'), toward: new THREE.Color('#f4d6ae'), density: 0.0009 } as const;
-export const TC_ENV_INTENSITY = 0.3;
+export const TC_FOG = { color: new THREE.Color('#dcd6e6'), toward: new THREE.Color('#f4d6ae'), density: 0.0006 } as const;
+export const TC_ENV_INTENSITY = 0.24;
+/** Extra sky in the pines' shade (leaves and bark add their albedo times this), raised near the arrival. */
+export const TC_SHADE_LIFT = { value: 0 };
 
 export interface TidecrownAtmosphere {
   group: THREE.Group;
@@ -95,6 +97,24 @@ function tidecrownSky(u: SkyUniforms): THREE.Mesh {
   return sky;
 }
 
+/**
+ * World I's water with its wave normals filtered by each pixel's footprint on the sea: a swell or ripple finer than a
+ * few pixels fades out instead of aliasing into rings across the bay seen from above.
+ */
+function filterWaves(mat: THREE.ShaderMaterial): void {
+  const fs = mat.fragmentShader;
+  mat.fragmentShader = fs
+    .replace('vec2 waveGrad(vec2 p, float t) {', 'vec2 tcDx = vec2(0.0), tcDy = vec2(0.0);\nfloat tcFoot = 0.0;\nvec2 waveGrad(vec2 p, float t) {')
+    // A swell fades by its phase step from pixel to pixel along its own heading; the ripple noise by the
+    // footprint across the view (along it, at a grazing angle, it is the sea's glitter).
+    .replace('g += dirs[i] * cos(ph) * f * (0.32 / (1.0 + float(i)));', 'g += dirs[i] * cos(ph) * f * (0.32 / (1.0 + float(i))) * (1.0 - smoothstep(0.5, 1.6, f * max(abs(dot(dirs[i], tcDx)), abs(dot(dirs[i], tcDy)))));')
+    .replace('g += vec2(nx - n0, nz - n0) / e * 0.12;', 'g += vec2(nx - n0, nz - n0) / e * 0.12 * (1.0 - smoothstep(0.15, 0.6, tcFoot));')
+    .replace('vec2 g = waveGrad(xz, t)', 'tcDx = dFdx(xz);\n        tcDy = dFdy(xz);\n        tcFoot = min(length(tcDx), length(tcDy));\n        vec2 g = waveGrad(xz, t)')
+    // Where the ripples have gone, broad wind patches keep the sea from reading as glass.
+    .replace('vec3 col = mix(body, refl, fres);', 'vec3 col = mix(body, refl, fres);\n        col *= mix(1.0, 0.9 + 0.2 * texture2D(uNoise, xz * 0.0023 + vec2(0.31, 0.17)).g, smoothstep(0.3, 1.6, tcFoot));');
+  if ((mat.fragmentShader.match(/tcFoot|tcDx/g) ?? []).length !== 8) console.error('tidecrown water: wave filter not applied');
+}
+
 export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'low' | 'high', uTime: { value: number }, lanternAt: THREE.Vector3): TidecrownAtmosphere {
   const group = new THREE.Group();
   group.name = 'tidecrown-atmosphere';
@@ -120,11 +140,12 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
   water.uniforms.uShallow.value.set('#33c1b2');
   water.uniforms.uSunLight.value.set('#ffd6a4');
   (water.mesh.material as THREE.ShaderMaterial).uniforms.uTime = uTime;
+  filterWaves(water.mesh.material as THREE.ShaderMaterial);
   water.mesh.position.set(50, 0, 40);
   group.add(water.mesh);
 
   // Key light: shadows follow a focus ahead of the camera, snapped to shadow texels.
-  const sun = new THREE.DirectionalLight('#ffc890', 6.2);
+  const sun = new THREE.DirectionalLight('#ffa25a', 5.3);
   sun.name = 'tidecrown-sun';
   sun.castShadow = true;
   const shadowSize = quality === 'high' ? 4096 : 2048, extent = quality === 'high' ? 72 : 56;
@@ -134,7 +155,7 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
   sun.shadow.bias = -0.0003;
   sun.shadow.normalBias = 0.06;
   // Cool lilac sky fill for the shade, warm bounce from the ground.
-  const hemi = new THREE.HemisphereLight('#979ee8', '#b88d62', 0.7);
+  const hemi = new THREE.HemisphereLight('#9497ea', '#a27b56', 0.6);
   group.add(sun, sun.target, hemi);
 
   const lanternLight = new THREE.PointLight('#53f2e4', 520, 120, 1.5);
@@ -185,6 +206,10 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
       sun.target.position.copy(focus);
       sun.target.updateMatrixWorld();
       lanternLight.intensity = 520 * (0.9 + 0.1 * Math.sin(time * 1.3));
+      // Under the pines by the arrival the shade gets a little more sky, so the first view is not black on orange.
+      const forest = THREE.MathUtils.smoothstep(playerZ, 290, 318);
+      hemi.intensity = 0.6 + 0.22 * forest;
+      TC_SHADE_LIFT.value = 0.3 * forest;
     },
     dispose() {
       envRT?.dispose();
