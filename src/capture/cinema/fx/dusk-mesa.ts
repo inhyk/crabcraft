@@ -243,8 +243,14 @@ class Merlons implements Effect {
     const soot = num(cue.soot, 0.5);
     const geos: THREE.BufferGeometry[] = [];
     const c = new THREE.Color();
-    for (const [x, y, z, w, h, d, yaw = 0] of boxes) {
+    for (const [x, y, z, w0, h0, d0, yaw = 0] of boxes) {
+      // No two blocks cut alike: a little off in size, set a little askew.
+      const w = w0 * (0.92 + 0.14 * R());
+      const h = h0 * (0.9 + 0.16 * R());
+      const d = d0 * (0.94 + 0.1 * R());
       const g = new THREE.BoxGeometry(w, h, d, 6, 6, 5).toNonIndexed();
+      g.rotateZ((R() - 0.5) * 0.08);
+      g.rotateX((R() - 0.5) * 0.06);
       const p = g.getAttribute('position');
       const cols = new Float32Array(p.count * 3);
       const ph = [R() * 9, R() * 9, R() * 9];

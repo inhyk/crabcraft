@@ -52,9 +52,9 @@ const MESAS = {
   kind: 'dusk-mesa',
   mesas: MESA_RING.map(([b, d, r, h, st, yw], i) => [...flat(T, b, d), r, h, i + 3, st, yw]),
   base: -10,
-  haze: '#f0a27c',
+  haze: '#ea8c6a',
   hazeK: 0.0013,
-  hazeMax: 0.62,
+  hazeMax: 0.56,
   lift: 0.2,
 };
 /** Where the fireball comes down: the shore at the foot of the near butte. */
@@ -70,8 +70,8 @@ const FIRE_UP = (at) => {
   const o = FIRE_AT - at;
   const spot = (b, d, s) => ({ at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, 0.5] : [v])), s });
   return [
-    { t: o - 0.1, kind: 'dusk-fire', spots: [spot(70, 400, 12), spot(68.6, 408, 9), spot(71.4, 394, 9.5), spot(67.4, 418, 7), spot(72.8, 388, 6.5), spot(69.4, 388, 5)], height: 3.2, gain: 1.4, glow: 0.9, seed: 81, smoke: 0, grow: [[o - 0.05, 0], [o + 0.25, 0.55], [o + 0.7, 0.9], [o + 1.2, 1.1], [o + 4, 1.2]] },
-    ...[[70, 400, 0], [68, 414, 1], [72.2, 390, 2]].map(([b, d, k]) => ({ t: o + 0.05 * k, kind: 'dusk-plume', at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, 10] : [v])), rate: 6, life: 8, rise: 34, spread: 4, size0: 10, size1: 58, wind: [6, 2], opacity: 0.9, color: '#201412', glow: '#ff5a18', glowH: 30, glowK: 1.6, seed: 40 + k })),
+    { t: o - 0.1, kind: 'dusk-fire', spots: [spot(70, 400, 15), spot(68.6, 408, 12), spot(71.4, 394, 12), spot(67.4, 418, 9), spot(72.8, 388, 8.5), spot(69.4, 388, 7), spot(66.2, 430, 6)], height: 3.2, gain: 1.6, glow: 0.9, seed: 81, smoke: 0, grow: [[o - 0.05, 0], [o + 0.25, 0.55], [o + 0.7, 0.9], [o + 1.2, 1.1], [o + 4, 1.2]] },
+    ...[[70, 400, 0], [68, 414, 1], [72.2, 390, 2]].map(([b, d, k]) => ({ t: o + 0.05 * k, kind: 'dusk-plume', at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, 10] : [v])), rate: 9, life: 9, rise: 30, spread: 3, size0: 6, size1: 34, wind: [7, 2], opacity: 0.9, color: '#201412', glow: '#ff5a18', glowH: 30, glowK: 1.6, seed: 40 + k })),
   ];
 };
 const DUSK_VIEW = { exposure: 1.05, saturation: 0.18, contrast: 0.08, bloom: { intensity: 1.3, threshold: 0.75, radius: 0.8 }, vignette: { offset: 0.25, darkness: 0.6 } };
@@ -122,6 +122,11 @@ const meteor = {
 // 113.0: his horns and claw sweep in at the right as he turns in his crouch; he heaves up (113.5 to
 // 114.9, a thump on 114.88), his back to us and filling the right of the frame, and settles hunched,
 // looking out over the bay. The camera pans onto him and arcs round to his right for his profile.
+/** A world point at a bearing and distance from T, y up (over the sea, where the ground is the bed). */
+const AT = (b, d, y) => [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, y] : [v]));
+/** The lone tree on the lip stands right in front of the far fire from his flank: gone for the close shots. */
+const LONE_TREE = ['CommonTree_1', 'CommonTree_2', 'CommonTree_3', 'CommonTree_4', 'CommonTree_5'];
+const TY = 66;
 const EMPTY_CLAW = { t: -6, kind: 'dusk-arm', actor: 't', joints: {}, w: [[0, 0]], hide: ['clawR'] };
 /** Each crab off the sunset: a warm rim from the sun's side, a cool fill from the lens's. */
 const TAUREN_LIGHTS = [
@@ -141,12 +146,12 @@ const rise = {
     t: {
       path: [
         { t: 0, x: T[0], z: T[1], yaw: deg(8) },
-        { t: 0.45, x: T[0], z: T[1], yaw: deg(40) },
+        { t: 0.3, x: T[0], z: T[1], yaw: deg(40) },
         { t: 2.4, x: T[0], z: T[1], yaw: deg(44) },
         { t: 4.5, x: T[0], z: T[1], yaw: deg(55) },
       ],
       // In his crouch, then up in one heave.
-      acts: [{ t: -6, clip: 'sit' }, { t: 0.5, clip: 'idle', fade: 1.4 }],
+      acts: [{ t: -6, clip: 'sit' }, { t: 0.4, clip: 'idle', fade: 1.4 }],
       faces: [{ t: -2, expr: 'sleepy' }, { t: 0.4, expr: 'neutral' }, { t: 1.9, expr: 'focused' }],
     },
   },
@@ -155,8 +160,9 @@ const rise = {
       { t: 0, p: polar(T, 188, 3.5, 0.44), l: polar(T, 74, 40, 4.2), fov: 35 },
       { t: 0.9, p: polar(T, 198, 3.25, 0.5), l: polar(T, 38, 14, 2.2), fov: 34 },
       { t: 2.0, p: polar(T, 214, 3.3, 0.62), l: polar(T, 30, 4, 1.25), fov: 33 },
-      { t: 3.3, p: polar(T, 246, 3.4, 0.95), l: polar(T, 48, 5, 0.95), fov: 34 },
-      { t: 4.5, p: polar(T, 270, 3.45, 1.18), l: polar(T, 64, 6, 0.86), fov: 36 },
+      // Round to his right shoulder: the bay and the mesas open up beyond him.
+      { t: 3.2, p: polar(T, 245, 3.1, 0.95), l: AT(60, 40, 5.5), fov: 34 },
+      { t: 4.5, p: polar(T, TY - 158, 2.75, 1.1), l: AT(TY + 18, 40, 4.5), fov: 34 },
     ],
     ease: 'linear',
     focus: 't',
@@ -166,7 +172,7 @@ const rise = {
   fx: [
     MESAS,
     DRY_FLOOR(T, 9, 61),
-    { t: -6, kind: 'dusk-hide', names: TUFTS },
+    { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...LONE_TREE] },
     STRIKE_SMOKE(C.rise),
     MOTES(),
     EMPTY_CLAW,
@@ -180,7 +186,6 @@ const rise = {
 
 // 119.5: his right claw comes up and out over the bay and opens; dust streams from it and the wind
 // takes it toward the sun. The camera behind his right shoulder, looking past him into the sunset.
-const TY = 66;
 /** The wind's bearing: out over the bay, clear of the trees on the slope. */
 const DUST_WIND = 96;
 const ARM_OUT = { RF_J0_joint: -0.6, RF_J1_joint: -1.35, RF_J2_joint: -0.8 };
@@ -224,12 +229,8 @@ const DUST = (at) => {
     },
   ];
 };
-/** A world point at a bearing and distance from T, y up (over the sea, where the ground is the bed). */
-const AT = (b, d, y) => [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, y] : [v]));
-/** The lone tree on the lip stands right in front of the far fire from his flank: gone for the close shots. */
-const LONE_TREE = ['CommonTree_1', 'CommonTree_2', 'CommonTree_3', 'CommonTree_4', 'CommonTree_5'];
-const REVEAL_END = polar(T, TY - 128, 2.6, 1.32);
-const REVEAL_END_LOOK = AT(TY + 6, 40, 3.5);
+const REVEAL_END = polar(T, TY - 128, 2.35, 1.32);
+const REVEAL_END_LOOK = AT(TY + 5, 40, 3.5);
 // 117.5: close on his profile; he lifts his snout to the wind (117.6 to 118.5), draws in and leans out
 // over the bay (118.5 to 120.2), and the fire takes on the far shore at the right (120.2), his face
 // going hard. The camera pushes in along his flank.
@@ -250,9 +251,9 @@ const reveal = {
   },
   cam: {
     keys: [
-      { t: 0, p: polar(T, TY - 156, 3.0, 1.12), l: AT(TY + 16, 40, 5), fov: 35 },
-      { t: 1.0, p: polar(T, TY - 149, 2.8, 1.18), l: AT(TY + 13, 40, 5), fov: 34 },
-      { t: 2.2, p: polar(T, TY - 138, 2.7, 1.26), l: AT(TY + 9, 40, 4), fov: 34 },
+      { t: 0, p: polar(T, TY - 158, 2.75, 1.1), l: AT(TY + 18, 40, 4.5), fov: 34 },
+      { t: 1.2, p: polar(T, TY - 150, 2.55, 1.15), l: AT(TY + 14, 40, 4.5), fov: 34 },
+      { t: 2.4, p: polar(T, TY - 138, 2.45, 1.25), l: AT(TY + 9, 40, 4), fov: 34 },
       { t: 3.5, p: REVEAL_END, l: REVEAL_END_LOOK, fov: 34 },
     ],
     ease: 'linear',
@@ -291,12 +292,13 @@ const dive = {
   cam: {
     keys: [
       { t: 0, p: REVEAL_END, l: REVEAL_END_LOOK, fov: 34 },
-      { t: 0.6, p: polar(T, TY - 120, 2.3, 1.4), l: AT(TY + 12, 40, 2.5), fov: 35 },
-      { t: 1.3, p: polar(T, TY - 84, 1.55, 1.6), l: AT(DUST_WIND - 6, 30, 0), fov: 38 },
+      // In behind his right shoulder as he hunches over the edge.
+      { t: 0.8, p: polar(T, TY - 150, 1.9, 1.65), l: AT(TY + 4, 30, 0.5), fov: 36 },
+      { t: 1.3, p: polar(T, TY - 100, 1.0, 2.0), l: AT(TY + 10, 30, -1), fov: 40 },
       // Past the shoulder, out over the edge and down the slope.
-      { t: 1.9, p: S(4.5, 1.5), l: S(14, -1.2), fov: 44 },
-      { t: 2.5, p: S(10, 1.1), l: S(20, -2.2), fov: 50 },
-      { t: 3.0, p: S(16, 0.7), l: S(22, -3.0), fov: 56 },
+      { t: 1.75, p: polar(T, TY - 10, 2.0, 1.7), l: S(14, -1.2), fov: 44 },
+      { t: 2.3, p: S(7, 1.2), l: S(18, -2.2), fov: 50 },
+      { t: 3.0, p: S(15, 0.7), l: S(22, -3.0), fov: 56 },
     ],
     ease: 'linear',
     shake: 0.01,
@@ -311,8 +313,9 @@ const dive = {
     ...TAUREN_LIGHTS,
     { t: -6, kind: 'dusk-pose', actor: 't', pitch: [[0, -12], [0.5, -12], [1.3, -22]] },
     ...DUST(C.dive),
-    { t: 1.6, kind: 'dusk-haze', alpha: [[1.7, 0], [2.2, 0.15], [2.55, 0.4], [3.0, 0.74]], cover: [[1.7, 0.35], [3, 0.78]], color: '#6a1608', color2: '#d4461a', color3: '#ffb070', back: 0.6, flow: [-0.25, 0.05] },
-    { t: 2.2, kind: 'fade', color: '#c8401a', curve: [[2.4, 0], [3.0, 0.35]] },
+    { t: 1.6, kind: 'dusk-haze', alpha: [[1.9, 0], [2.25, 0.25], [2.5, 0.55], [2.75, 0.85], [3.0, 0.92]], cover: [[1.9, 0.4], [3, 0.8]], color: '#6a1608', color2: '#d4461a', color3: '#ffb070', back: 0.65, flow: [-0.25, 0.05] },
+    { t: 2.2, kind: 'fade', color: '#c8401a', curve: [[2.3, 0], [2.6, 0.25], [3.0, 0.45]] },
+    { t: 1.8, kind: 'embers', at: S(16, 1.2), box: [10, 5, 10], count: 1400, drift: [0.6, 1.4, 0.3], size: 0.05 },
   ],
 };
 
@@ -683,7 +686,7 @@ const PARAPET = (() => {
     const c = Math.cos(a);
     const s = Math.sin(a);
     const put = (x, y, z, w, h, d) => out.push([...CP(x * c + z * s, y, 21 - x * s + z * c), w, h, d, f * 90]);
-    for (const x of [-3.6, -1.8, 0, 1.8, 3.6]) put(x, 34.95, 5.35, 1.0, 0.9, 0.72);
+    for (const x of [-3.6, -1.8, 0, 1.8, 3.6]) put(x, 35.0, 5.35, 1.06, 1.02, 0.8);
     for (const x of [-3.55, 0, 3.55]) put(x, 34.28, 5.35, 3.62, 0.62, 0.74);
   }
   return out;
@@ -723,7 +726,7 @@ const leap = {
     ...STRUCK_FIRES(-6, 0.8),
     // The parapet in weathered, soot-dark stone, the tower's limestone darkened with it: this close the
     // city's pale blocks read as placeholders.
-    { t: -6, kind: 'dusk-merlons', boxes: PARAPET, seed: 5 },
+    { t: -6, kind: 'dusk-merlons', boxes: PARAPET, seed: 5, color: '#352b27', color2: '#56463c', soot: 0.6 },
     { t: -6, kind: 'dusk-tide', mats: { TC_Limestone: { color: '#8e7a6e' }, TC_LimestoneDark: { color: '#6e5c52' } } },
     // The top still burning from the giant's blast: flames along the roof and parapet, thick smoke over
     // the spire.
@@ -768,7 +771,7 @@ const CLASH_LIGHTS = [
 ];
 /** The meadow round them: dry gold grass and dust over the flat green, the game's flat tufts gone. */
 const CLASH_GROUND = [
-  { t: -6, kind: 'dusk-hide', names: TUFTS },
+  { t: -6, kind: 'dusk-hide', names: [...TUFTS, 'Rock_Medium_1', 'Rock_Medium_2', 'Rock_Medium_3'] },
   { ...DRY_FLOOR(CO, 11, 67), count: 40, height: [0.14, 0.5] },
   // Dust hanging low in the sun behind them.
   { t: -2, kind: 'dusk-plume', at: polar(CO, 45, 9, 0.2), rate: 1.2, life: 9, rise: 0.25, spread: 4, size0: 3, size1 : 8, prewarm: 9, opacity: 0.22, wind: [0.6, 0.3], color: '#c8885a', glow: '#ffb070', glowH: 2, glowK: 0.4, seed: 71 },
@@ -870,9 +873,10 @@ const clashB = {
     // Low under the elf, swinging round as she whirls, then tilting down after him as he goes over.
     keys: [
       { t: 0, p: polar(CO, EB + 72, 2.6, 0.2), l: polar(CO, EB, 0.9, 0.95), fov: 36 },
-      { t: 0.55, p: polar(CO, EB + 92, 2.4, 0.22), l: polar(CO, EB, 0.6, 0.85), fov: 35 },
-      { t: 1.1, p: polar(CO, EB + 112, 2.6, 0.32), l: polar(CO, EB + 180, 0.9, 0.45), fov: 36 },
-      { t: 1.96, p: polar(CO, EB + 126, 2.7, 0.4), l: polar(CO, EB + 180, 1.9, 0.3), fov: 38 },
+      { t: 0.55, p: polar(CO, EB + 88, 2.4, 0.22), l: polar(CO, EB, 0.6, 0.85), fov: 35 },
+      // Side on to his fall: the somersault in profile.
+      { t: 1.1, p: polar(CO, EB + 96, 2.8, 0.3), l: polar(CO, EB + 180, 0.9, 0.5), fov: 37 },
+      { t: 1.96, p: polar(CO, EB + 104, 3.1, 0.36), l: polar(CO, EB + 180, 1.7, 0.4), fov: 39 },
     ],
     ease: 'linear',
     focus: 'o',
@@ -898,6 +902,8 @@ const clashB = {
       ];
     }),
     { t: 0.86, kind: 'shake', d: 0.3, amp: 0.06 },
+    // Warm bounce off the grass on his side and belly as he goes over.
+    { t: -2, kind: 'light', at: polar(CO, EB + 120, 1.6, 0.7), color: '#ffb880', intensity: 14, distance: 4.5 },
     CLASH_MOTES,
     ...CLASH_LIGHTS,
     { t: 1.45, kind: 'leaves', color: '#ffc4e8', color2: '#ffffff', count: 500, box: [10, 6, 10], drift: [1.2, 0.6, 0.5], size: 0.07, fadeIn: 0.2 },
