@@ -62,7 +62,7 @@ export class Minimap {
 
   setSnapshot(s: MapSnapshot): void {
     this.snap = s;
-    this.expandedRadius=s.size*.72;
+    this.expandedRadius=(s.view?.size??s.size)*.72;
     if(this.expanded)this.radius=this.expandedRadius;
   }
 
@@ -112,7 +112,7 @@ export class Minimap {
     const half = S / 2;
     const scale = half / this.radius;
     const playerPos = g.player.unit.pos;
-    const p = this.expanded&&this.snap?{x:this.snap.minX+this.snap.size/2,z:this.snap.minZ+this.snap.size/2}:playerPos;
+    const p = this.expanded&&this.snap?this.snap.view??{x:this.snap.minX+this.snap.size/2,z:this.snap.minZ+this.snap.size/2}:playerPos;
     const a = this.expanded?Math.PI:g.follow.forwardYaw;
     const fx = Math.sin(a);
     const fz = Math.cos(a);
@@ -193,8 +193,10 @@ export class Minimap {
       for(const [wx,wz,label] of [[67,72,t('새벽 등대','Dawnwatch')],[-62,48,t('바닷바람 정원','Seabreeze Gardens')]] as [number,number,string][]){const [x,y]=toScreen(wx,wz);if(Math.hypot(x-half,y-half)>half-22*d)continue;c.fillStyle='#ffe2a1';c.strokeStyle='#182932';c.lineWidth=3*d;c.beginPath();c.arc(x,y,4*d,0,Math.PI*2);c.fill();c.stroke();c.strokeText(label,x,y-9*d);c.fillText(label,x,y-9*d);}
     }
     // The two-way portal remains visible while quest and party markers change.
-    const portal=g.world2.portalPosition,[portalX,portalY]=toScreen(portal.x,portal.z);
-    if(Math.hypot(portalX-half,portalY-half)<half-8*d){c.strokeStyle='#c7b1ff';c.lineWidth=2*d;c.beginPath();c.ellipse(portalX,portalY,4*d,6*d,0,0,Math.PI*2);c.stroke();}
+    const portal=g.world2.portalPosition,[portalX,portalY]=toScreen(portal.x,portal.z),hub=g.world2.hub?.markers()??[];
+    if(Math.hypot(portalX-half,portalY-half)<half-8*d&&!hub.some(m=>m.at===portal)){c.strokeStyle='#c7b1ff';c.lineWidth=2*d;c.beginPath();c.ellipse(portalX,portalY,4*d,6*d,0,0,Math.PI*2);c.stroke();}
+    // Tidecrown's hub, in gold: each world's crown portal back to it, and in the capital its ships and its portal.
+    for(const m of hub){const [x,y]=toScreen(m.at.x,m.at.z);if(Math.hypot(x-half,y-half)>half-22*d)continue;c.strokeStyle='#ffd98a';c.lineWidth=2*d;c.beginPath();c.ellipse(x,y,5*d,7*d,0,0,Math.PI*2);c.stroke();c.strokeStyle='#10202b';c.lineWidth=3*d;c.fillStyle='#ffe7a8';c.strokeText(m.label,x,y-11*d);c.fillText(m.label,x,y-11*d);}
     if(g.world2.chapter===4||g.world2.chapter===5){
       const next=g.world2.chapter===4?{x:14,z:84}:{x:0,z:-72},[x,y]=toScreen(next.x,next.z);
       if(Math.hypot(x-half,y-half)<half-22*d){c.strokeStyle='#a6f5e1';c.fillStyle='#c6ffef';c.lineWidth=2*d;c.beginPath();c.ellipse(x,y,5*d,7*d,0,0,Math.PI*2);c.stroke();const label=g.world2.chapter===4?t('월드 5 포탈','World V Portal'):t('월드 6 포탈','World VI Portal');c.strokeText(label,x,y-11*d);c.fillText(label,x,y-11*d);}

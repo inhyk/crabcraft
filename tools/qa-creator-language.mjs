@@ -1,5 +1,5 @@
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 try{
  const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(()=>{localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','low');});await p.goto('http://127.0.0.1:5192/?screen=game');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});
  await p.evaluate(()=>{const i=document.createElement('input');i.id='creator-typing-probe';document.body.append(i);i.focus();});await p.keyboard.type('13570');assert.equal(await p.locator('.creator-tools').isVisible(),false);await p.evaluate(()=>document.querySelector('#creator-typing-probe').remove());await p.keyboard.type('13570');await p.locator('.creator-tools').waitFor({state:'visible'});assert.match(await p.locator('.creator-tools').textContent(),/제작자 모드/);

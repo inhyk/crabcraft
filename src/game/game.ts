@@ -14,6 +14,7 @@ import {VoyageIsland} from './voyageIsland';
 import {DungeonExpeditions} from './dungeons';
 import {worldMusic,type MusicMood} from './worldMusic';
 import {VOYAGE_ISLANDS} from '../world/voyage';
+import { GRID, KINGS_ROAD, KINGS_ROAD_LINE } from '../world/layout';
 import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
@@ -111,8 +112,8 @@ const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vign
 // Bloom keys above the brightest sunlit snow, so lamps and windows glow and the snow does not haze over; with a
 // knee, so the sky round a low sun glows without a contour where it crosses the threshold.
 const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78, knee: true }, agxLook: { saturation: 1.32, power: 1.06 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
-/** Tidecrown's late afternoon: a touch brighter and richer, violet lifted shade, a soft glow on sunlit stone. */
-const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.1, agxLook: { saturation: 1.28, power: 1.1 }, bloom: { intensity: 1.1, threshold: 0.78, smoothing: 0.3, radius: 0.8 }, grade: { lift: [0.014, 0.006, 0.03], warm: 0.35, white: 0.1 } };
+/** Tidecrown's late afternoon: rich and warm, sunlit stone golden and shade lilac; bloom keys above the stone, on lamps and windows. */
+const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.14, agxLook: { saturation: 1.34, power: 1.15 }, bloom: { intensity: 0.85, threshold: 1.45, smoothing: 0.3, radius: 0.75 }, grade: { lift: [0.013, 0.006, 0.032], warm: 0.55, white: 0.02, split: { shadow: [0.96, 0.975, 1.045], highlight: [1.11, 1.0, 0.8] } } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },
@@ -660,7 +661,19 @@ export class Game {
     }
     const pad = 45;
     const hide: THREE.Object3D[] = [this.vfx.group, this.objective.group, ...this.units.map((u) => u.rig.root)];
-    return snapshotMap(this.engine.renderer, this.scene, { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad, topY: topY + 70 }, hide);
+    if (this.world2.chapter !== 1) return snapshotMap(this.engine.renderer, this.scene, { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad, topY: topY + 70 }, hide);
+    // World I's picture also reaches up the King's Road past its zone line to the terrain's north edge, grown by whole
+    // texels round the usual one (same scale, same pixel grid); the expanded map keeps the usual framing.
+    const size = Math.max(maxX - minX, maxZ - minZ) + 2 * pad, texel = size / 1024;
+    const x0 = (minX + maxX) / 2 - size / 2, z0 = (minZ + maxZ) / 2 - size / 2;
+    let ex0 = x0, ex1 = x0 + size, ez0 = z0, ez1 = z0 + size;
+    for (const [x, z] of [...KINGS_ROAD.points, KINGS_ROAD_LINE.a, KINGS_ROAD_LINE.b]) {
+      ex0 = Math.min(ex0, x - pad); ex1 = Math.max(ex1, x + pad); ez0 = Math.min(ez0, Math.max(GRID.minZ, z - pad)); ez1 = Math.max(ez1, z + pad);
+    }
+    const l = Math.ceil((x0 - ex0) / texel - 1e-6), t = Math.ceil((z0 - ez0) / texel - 1e-6);
+    const n = Math.max(1024 + l + Math.ceil((ex1 - x0 - size) / texel - 1e-6), 1024 + t + Math.ceil((ez1 - z0 - size) / texel - 1e-6));
+    const sx = x0 - l * texel, sz = z0 - t * texel;
+    return snapshotMap(this.engine.renderer, this.scene, { minX: sx, maxX: sx + n * texel, minZ: sz, maxZ: sz + n * texel, topY: topY + 70 }, hide, n, { x: x0 + size / 2, z: z0 + size / 2, size });
   }
 
   private showLoading(chapter: 1 | 2 | 3 | 4 | 5 | 6): void {

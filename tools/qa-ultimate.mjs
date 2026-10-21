@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// Focused installed-Chrome QA on the real game, input loop, action bar and BrowserSink.
+// Focused Chrome for Testing QA on the real game, input loop, action bar and BrowserSink.
 // Account session is a local guest response; cooldown boundaries use fixture game time, not60s wall time.
 import assert from 'node:assert/strict';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 const args = process.argv.slice(2);
 const opt = (name, fallback) => { const i = args.indexOf(name); return i < 0 ? fallback : args[i + 1]; };
 const url = opt('--url', 'http://127.0.0.1:5238');
 const out = resolve(opt('--out', 'output/playwright/ultimate')); mkdirSync(out, { recursive: true });
-const browser = await chromium.launch({ channel: 'chrome', headless: !args.includes('--headed'), args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
+const browser = await launchBrowser({ headless: !args.includes('--headed'), args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 const results = [];
 try {
   for (const classId of ['warrior', 'mage', 'priest']) {

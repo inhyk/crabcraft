@@ -1,5 +1,5 @@
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 try{const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(()=>localStorage.setItem('cc.quality','low'));await p.goto('http://127.0.0.1:5192/?screen=game');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.evaluate(()=>{const g=window.app.current.game;g.god=true;g.world2.enter();});await p.waitForTimeout(1200);const hints=await p.locator('.hints').innerText();console.log('HINTS KO',hints);
  for(const lang of ['ko','en']){
   if(lang==='en'){await p.keyboard.press('Escape');await p.getByRole('button',{name:'설정',exact:true}).click();await p.getByRole('button',{name:'English',exact:true}).click();await p.getByRole('button',{name:'Back',exact:true}).click();}

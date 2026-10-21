@@ -97,6 +97,8 @@ export interface MapSnapshot {
   minX: number;
   minZ: number;
   size: number;
+  /** The expanded map's centre and size when the picture reaches past them (World I's road to Tidecrown). */
+  view?: { x: number; z: number; size: number };
 }
 
 /**
@@ -108,6 +110,8 @@ export function snapshotMap(
   scene: THREE.Scene,
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number; topY: number },
   hide: THREE.Object3D[],
+  px = 1024,
+  view?: MapSnapshot['view'],
 ): MapSnapshot {
   const size = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ);
   const cx = (bounds.minX + bounds.maxX) / 2;
@@ -117,7 +121,7 @@ export function snapshotMap(
   cam.position.set(cx, bounds.topY, cz);
   cam.up.set(0, 0, -1);
   cam.lookAt(cx, 0, cz);
-  const rt = new THREE.WebGLRenderTarget(1024, 1024, { type: THREE.UnsignedByteType });
+  const rt = new THREE.WebGLRenderTarget(px, px, { type: THREE.UnsignedByteType });
   const fog = scene.fog;
   const bg = scene.background;
   // Perspective-sized particles become huge discs in an orthographic map. Capture static
@@ -135,7 +139,7 @@ export function snapshotMap(
   const clearColor = renderer.getClearColor(new THREE.Color()).clone();
   const clearAlpha = renderer.getClearAlpha();
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 1024;
+  canvas.width = canvas.height = px;
   try {
     scene.fog = null;
     scene.background = new THREE.Color(0x1d3d52);
@@ -155,5 +159,5 @@ export function snapshotMap(
   }
   // cam.up = -Z means the top of the image is -Z; minimap code maps world (x, z) to
   // ((x - minX) / size, (z - minZ) / size) in image space.
-  return { canvas, minX: cx - half, minZ: cz - half, size };
+  return { canvas, minX: cx - half, minZ: cz - half, size, view };
 }

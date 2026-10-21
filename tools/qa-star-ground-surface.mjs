@@ -1,7 +1,7 @@
 // Compare off-grid gameplay height with the actual rendered terrain triangles.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
 await mkdir('tmp/qa',{recursive:true});
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 try {
  const page=await browser.newPage({viewport:{width:1280,height:800}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(()=>{localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','low');});await page.goto((process.env.CC_QA_URL||'http://127.0.0.1:5192')+'/?screen=game');await page.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});
  const result=await page.evaluate(()=>{

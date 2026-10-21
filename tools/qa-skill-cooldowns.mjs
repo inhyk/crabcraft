@@ -1,7 +1,7 @@
 // Native keyboard + action-bar spam. Isolated immobile target / ample resources / God are fixtures.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 try{
  for(const cls of ['warrior','mage','priest']){
   const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));

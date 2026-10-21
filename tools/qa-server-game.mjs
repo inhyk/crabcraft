@@ -1,11 +1,11 @@
-// Real Chrome -> authenticated loopback host -> actual Area -> production rig observation.
+// Chrome for Testing -> authenticated loopback host -> actual Area -> production rig observation.
 // This exercises the actual Game route against disposable local PG, never the production VM.
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const browserPort=Number(process.env.WORLD_QA_BROWSER_PORT??5277),hostPort=Number(process.env.WORLD_QA_HOST_PORT??5288),clientOrigin=`http://127.0.0.1:${browserPort}`;
@@ -34,7 +34,7 @@ try {
   if (origin.hostname !== '127.0.0.1' || origin.protocol !== 'http:' || metadata.clientOrigin !== clientOrigin) throw new Error('QA host must use the expected loopback origins');
   server = await createServer({ root, configFile: false, server: { host: '127.0.0.1', port: browserPort, strictPort: true, proxy: { '/world': { target: origin.origin, ws: true }, '/api/account': { target: origin.origin } } }, logLevel: 'error' });
   await server.listen();
-  browser = await chromium.launch({ headless: true, channel: 'chrome' });
+  browser = await launchBrowser({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   await context.grantPermissions(['local-network-access'], { origin: clientOrigin });
   await context.addCookies([{ name: metadata.cookie.name, value: metadata.cookie.value, domain: '127.0.0.1', path: metadata.cookie.path, httpOnly: true, sameSite: 'Strict', secure: false }]);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// End-to-end playtest of the whole quest chain in installed Chrome (real GPU).
+// End-to-end playtest of the whole quest chain in Chrome for Testing (real GPU).
 // Boots ?screen=game&debug=1 with a saved crab for each class (in English), plays through every
 // quest with the debug hooks (F8 god mode, F9 complete objective, F10 teleport) plus real movement
 // and ability key presses, screenshots each stage, and fails on any console error or uncaught
@@ -10,7 +10,7 @@
 //
 // Usage: node tools/playtest.mjs [--url http://localhost:5206] [--out dir] [--class warrior,mage,priest] [--headed]
 // Needs a dev or preview server running (pnpm dev --port 5206 --strictPort).
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -37,8 +37,7 @@ const ASSET_RE = /\/(art|audio|models|motions|robot|fonts)\/|\/favicon\.ico$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function run(cls) {
-  const browser = await chromium.launch({
-    channel: 'chrome',
+  const browser = await launchBrowser({
     headless: !headed,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'],
   });

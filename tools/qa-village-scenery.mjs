@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5205';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));p.setDefaultTimeout(30000);
 async function load(page,name){await page.addInitScript(name=>{localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name}));localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','high');if(location.hostname==='127.0.0.1'){const WS=window.WebSocket;window.WebSocket=class extends WS{constructor(url,protocols){const u=new URL(String(url));if(u.pathname==='/multiplayer'){u.host=location.host;u.protocol='ws:';}super(u.href,protocols);}};}},name);await page.goto(base+'/?screen=game');await page.locator('.launch-notice-start').click();await page.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await page.waitForFunction(()=>!document.querySelector('.loading'));}
 const snap=page=>page.evaluate(()=>{const g=window.app.current.game,r=g.villageGames.state;return {r,own:g.villageGames.ownId,locked:g.controlsLocked,hp:g.player.unit.hp,x:g.player.unit.pos.x,z:g.player.unit.pos.z};});

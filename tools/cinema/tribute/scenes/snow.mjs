@@ -134,7 +134,7 @@ const BEAST_NEAR = F1(6.9, 0, 0.4);
 const BEAST_AT = F1(5.6, 0, 2.2);
 
 const OPEN = 39.5;
-const C_TRUDGE = 57.0;
+const WALK_AT = 17.1; // after the growl, in the same take as the face reveal
 const C_WIDE = 61.0;
 const OPEN_END = 68.7;
 
@@ -144,12 +144,31 @@ const cast2 = (dwarfAt, beastAt, yaw) => [
   { id: 'beast', enemy: BEAST.enemy, scale: BEAST.scale, at: beastAt, yaw, align: 0.9, sink: 0.1 },
 ];
 const HIDE = ['mira-ice-prison'];
+// The last north-road lamp stood inside the beast's right legs. Move the complete lamp west,
+// for both opening views, while leaving the game world's placement untouched.
+const LAMP_CLEARANCE = { t: -3, kind: 'snow-lamp-offset', at: [6.078627274048131, -18.125775308568286], offset: [-10, 0] };
+const WALK_RAMP = 0.65;
+const WALK_SPEED = 5 / (C_WIDE - OPEN - WALK_AT - WALK_RAMP / 2);
+const walkDistance = (t) => {
+  const u = Math.max(0, t - WALK_AT);
+  return WALK_SPEED * (u < WALK_RAMP ? u * u / (2 * WALK_RAMP) : u - WALK_RAMP / 2);
+};
+// Sample one continuing walk for both cameras. Its first 0.65 s ease into the walking speed.
+const walkPath = (left, ahead, start, end, offset = 0) => {
+  const count = Math.round((end - start) * 24);
+  return Array.from({ length: count + 1 }, (_, i) => {
+    const t = start + (end - start) * i / count;
+    const p = F1(left, 0, ahead + walkDistance(t));
+    return { t: +(t - offset).toFixed(6), x: p[0], z: p[2], yaw: YAW1 };
+  });
+};
 
 const face = {
   anchor: D,
   hide: HIDE,
-  view: { ...COLD, dof: true, bokeh: 2.2 },
-  fog: { color: '#dde2ec', density: 0.017 },
+  // A tighter bloom, so the LEDs glow without veiling the moustache.
+  view: { ...COLD, dof: true, bokeh: 2.2, bloom: { intensity: 0.45, threshold: 1.2, radius: 0.4 } },
+  fog: { color: '#dde2ec', density: 0.012 },
   actors: cast2(D, [BEAST_FROM[0], BEAST_FROM[2]], YAW1),
   tracks: {
     dwarf: {
@@ -157,7 +176,7 @@ const face = {
         { t: 0, x: D[0], z: D[1], yaw: YAW0 },
         { t: 3.6, x: D[0], z: D[1], yaw: YAW0 + 0.1 },
         { t: 6.0, x: D[0], z: D[1], yaw: YAW1 },
-        { t: 17.5, x: D[0], z: D[1], yaw: YAW1 },
+        ...walkPath(0, 0, WALK_AT, C_WIDE - OPEN),
       ],
       faces: [{ t: -2, expr: 'focused' }, { t: 2.6, expr: 'blink', hold: 0.16 }, { t: 2.8, expr: 'focused' }, { t: 8.8, expr: 'blink', hold: 0.16 }, { t: 9.0, expr: 'focused' }],
       acts: [{ t: 13.5, clip: 'claw_right' }],
@@ -167,6 +186,7 @@ const face = {
         { t: 9.2, x: BEAST_FROM[0], z: BEAST_FROM[2] },
         { t: 12.2, x: BEAST_NEAR[0], z: BEAST_NEAR[2] },
         { t: 13.4, x: BEAST_AT[0], z: BEAST_AT[2], yaw: YAW1 },
+        ...walkPath(5.6, 2.2, WALK_AT, C_WIDE - OPEN),
       ],
       show: [[-5, false], [9.0, true]],
       faces: [{ t: -2, expr: 'neutral' }, { t: 13.4, expr: 'angry' }],
@@ -174,66 +194,65 @@ const face = {
       acts: [{ t: 13.6, clip: 'attack_slam' }, { t: 16.0, clip: 'attack_slam', from: 1.235, to: 1.9, speed: 0.6 }],
     },
   },
+  // Out of the white onto the fur itself: the snow-caked moustache under his left eye, a hand's breadth
+  // from the lens, then up and back to the original's close-up of his face.
   cam: {
     ...move([
-      { t: 0, p: F0(0.3, 0.8, 2.6), l: F0(0, 0.6, 0), fov: 27 },
+      { t: 0, p: F0(0.46, 0.33, 1.06), l: F0(0.32, 0.41, 0.62), fov: 32 },
+      { t: 1.2, p: F0(0.465, 0.355, 1.13), l: F0(0.3, 0.42, 0.61), fov: 32 },
       { t: 3.6, p: F0(0.28, 0.78, 2.4), l: F0(0, 0.6, 0), fov: 27 },
       { t: 6.4, p: F1(2.4, 0.7, 1.9), l: F1(0, 0.72, 0.2), fov: 30 },
       { t: 8.8, p: F1(2.6, 0.75, 0.9), l: F1(0, 0.78, 0.4), fov: 31 },
       { t: 10.6, p: F1g(2.3, 0.75, -2.2), l: toward(F1g(2.3, 0.75, -2.2), GATE_LOOK), fov: 40 },
       { t: 12.4, p: F1g(2.5, 0.55, -4.6), l: toward(F1g(2.5, 0.55, -4.6), GATE_LOW), fov: 46 },
       { t: 17.5, p: F1g(2.3, 0.55, -4.0), l: toward(F1g(2.3, 0.55, -4.0), GATE_LOW), fov: 45 },
+      { t: 21.5, p: F1g(2.1, 0.75, -2.2), l: toward(F1g(2.1, 0.75, -2.2), GATE_LOW), fov: 46 },
     ]),
     focus: 'dwarf',
     range: 2.5,
   },
   fx: [
-    ...blizzard({ wind: [3.5, -2.2, 6] }),
+    // The spindrift over the lens thinned while it is a hand's breadth from the fur, back as he turns.
+    ...blizzard({ wind: [3.5, -2.2, 6] }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.035], [2.6, 0.035], [4.6, 0.12]] } : c)),
     CITY,
+    LAMP_CLEARANCE,
     // Out of the white as late as the original, which is clear at 41.2 s.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.5, 0.85], [1.0, 0.55], [1.45, 0.2], [1.75, 0]] },
+    // The LEDs dimmed while the lens is on the moustache, so the fur reads before the glare.
+    // The fill held two stops under a stronger key while the lens is on the moustache, so the beard
+    // has a lit side and a dark side.
+    {
+      t: -3,
+      kind: 'fur',
+      actor: 'dwarf',
+      led: [[0, 0.45], [1.6, 0.5], [3.6, 1]],
+      fill: [[0, 0.5], [3.6, 0.75], [6, 1]],
+      key: { color: '#fff1e0', k: [[0, 10], [3.6, 8], [6, 7]] },
+    },
+    // Focus held on the moustache's frosted tips while the depth of field opens up to the face.
+    { t: -3, kind: 'focus', at: { a: 'dwarf', o: [0.36, 0.42, 0.68] }, range: [[0, 0.07], [1.6, 0.12], [3.6, 2.5]], until: 4 },
+    // Once the beast is in, the focus is on its coat, the nearest fur in frame.
+    { t: 11, kind: 'focus', at: { a: 'beast', o: [0, 1.3, 0] }, range: [[11, 3], [13, 2.4]] },
     { t: 13.9, kind: 'shake', d: 0.7, amp: 0.04 },
     { t: 16.05, kind: 'shake', d: 0.6, amp: 0.035 },
   ],
 };
 
-// Behind them, low, as they climb the road toward the gate through the storm.
-const TR = { d0: F1(0, 0, 0.4), b0: F1(5.0, 0, 1.9) };
-const trudge = {
-  anchor: [D[0], D[1] - 3],
-  hide: HIDE,
-  view: { ...COLD, dof: true, bokeh: 1.2 },
-  fog: { color: '#dde2ec', density: 0.013 },
-  actors: cast2([TR.d0[0], TR.d0[2]], [TR.b0[0], TR.b0[2]], YAW1),
-  tracks: {
-    dwarf: { path: [{ t: 0, x: TR.d0[0], z: TR.d0[2] }, { t: 4, x: TR.d0[0] - 0.6, z: TR.d0[2] - 5.0 }], faces: [{ t: -2, expr: 'focused' }] },
-    beast: { path: [{ t: 0, x: TR.b0[0], z: TR.b0[2] }, { t: 4, x: TR.b0[0] - 0.6, z: TR.b0[2] - 5.2 }], faces: [{ t: -2, expr: 'neutral' }] },
-  },
-  cam: {
-    ...move([
-      { t: 0, p: F1g(2.3, 0.6, -4.8), l: GATE_LOW, fov: 47 },
-      { t: 4, p: F1g(2.1, 0.75, -2.2), l: GATE_LOW, fov: 46 },
-    ]),
-    focus: 'dwarf',
-    range: 10,
-  },
-  fx: [...blizzard({ wind: [3, -2.2, 6.5], heavy: 1.1 }), CITY],
-};
-
 // Far down the road: two small figures climbing toward the gate in the whiteout, the city above them; a pine's
 // edge slides in at the right before the white takes over.
-const WD = { d0: F1(0, 0, 6.5), d1: F1(-0.3, 0, 14.0), b0: F1(4.2, 0, 7.3), b1: F1(3.9, 0, 14.8) };
+const WIDE_AT = C_WIDE - OPEN;
+const WD = { d0: F1(0, 0, walkDistance(WIDE_AT)), b0: F1(5.6, 0, 2.2 + walkDistance(WIDE_AT)) };
 const WC = [17, 17];
 const wide = {
-  anchor: [8, -10],
+  // Omit the fixed anchor: the stage follows the dwarf, keeping both crabs in the snow field.
   hide: HIDE,
   // No vignette and little bloom: the shot ends on flat white with leaves drawn over it.
   view: { ...COLD, saturation: -0.3, vignette: null, bloom: { intensity: 0, threshold: 5 } },
   fog: { color: '#d6dbe7', density: 0.0075 },
   actors: cast2([WD.d0[0], WD.d0[2]], [WD.b0[0], WD.b0[2]], YAW1),
   tracks: {
-    dwarf: { path: [{ t: 0, x: WD.d0[0], z: WD.d0[2] }, { t: 7.7, x: WD.d1[0], z: WD.d1[2] }] },
-    beast: { path: [{ t: 0, x: WD.b0[0], z: WD.b0[2] }, { t: 7.7, x: WD.b1[0], z: WD.b1[2] }] },
+    dwarf: { path: walkPath(0, 0, WIDE_AT, OPEN_END - OPEN, WIDE_AT) },
+    beast: { path: walkPath(5.6, 2.2, WIDE_AT, OPEN_END - OPEN, WIDE_AT) },
   },
   cam: move([
     { t: 0, p: G(WC[0], WC[1], 5), l: [GATE[0] + 2, 23, GATE[1]], fov: 36 },
@@ -242,6 +261,7 @@ const wide = {
   fx: [
     ...blizzard({ wind: [3, -2.5, 7], heavy: 1.2, drift: 0.12, sky: '#cdd3e2', zenith: '#9aa3c2' }),
     CITY,
+    LAMP_CLEARANCE,
     { t: -3, kind: 'snow-pines', trees: [[WC[0] + 3.2, WC[1] - 6.5, 0.9], [WC[0] + 5.5, WC[1] - 12, 1.1]] },
     { t: 6.3, kind: 'snow-leaves', count: 200, box: [12, 7, 12], drift: [-2.5, -1.2, 3.5], size: 0.09, near: 1.4, color: '#a2482a', color2: '#c98a3c', fadeIn: 0.8 },
     { t: 6.6, kind: 'snow-whiteout', curve: [[6.6, 0], [7.0, 0.25], [7.35, 0.62], [7.6, 1], [7.7, 1]] },
@@ -476,7 +496,6 @@ const tauren = {
 export const shots = [
   ...tile(OPEN, OPEN_END, [
     ['snow-face', OPEN, face],
-    ['snow-trudge', C_TRUDGE, trudge],
     ['snow-wide', C_WIDE, wide],
   ]),
   ...tile(146.58, 151.92, [

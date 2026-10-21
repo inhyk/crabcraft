@@ -6,7 +6,7 @@
 //
 // Usage: node tools/framing.mjs [--url http://localhost:5212] [--out dir] [--prefix name]
 //          [--size 1600x900] [--shots boss,dialogue] [--npcs brinebeard,grukk,silvermoon]
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -24,7 +24,7 @@ const npcs = opt('--npcs', 'brinebeard,grukk,silvermoon').split(',');
 mkdirSync(outDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
 const errors = [];
 
 async function boot() {

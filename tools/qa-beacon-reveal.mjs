@@ -1,8 +1,8 @@
 // Focused real-browser regression: quest completion uses the actual event/reward pipeline.
 // Quest objectives are injected to isolate the 2.6-second reveal race, rather than replay the whole shore.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import assert from 'node:assert/strict';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
 try{
  for(const scenario of ['off','travel','lit']){
   const context=await browser.newContext(),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
