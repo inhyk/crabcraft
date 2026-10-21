@@ -2,9 +2,9 @@
 // the Seaglass Quarter offer every world, open or locked by the game's own unlock rules; every world has a crown
 // portal beside its own gateway that leads back to the capital's harbour. Travel takes the worlds' portal path (a relay
 // room's chapter request, else world2.go), so a room moves together and the quest chapter rules stay as they are. The
-// capital's named crabs (the captain, the portal's keeper, the king) are `keepers` (tidecrown/keepers.ts); a feature
-// that adds one registers it in the constructor below. A server world does not host Tidecrown yet: nothing here is
-// built there.
+// capital's named crabs (the captain, the portal's keeper, the king, the vault's keeper) are `keepers`
+// (tidecrown/keepers.ts); a feature that adds one registers it in the constructor below. A server world does not host
+// Tidecrown yet: nothing here is built there.
 import * as THREE from 'three';
 import { t } from '../i18n';
 import type { Game } from './game';
@@ -13,6 +13,7 @@ import type { TidecrownIsland } from './tidecrown/island';
 import { type Keeper, TidecrownKeepers } from './tidecrown/keepers';
 import { TidecrownKing } from './tidecrown/king';
 import type { KingdomRequests } from './tidecrown/kingdomRequests';
+import { TidecrownVault } from './tidecrown/vault';
 import type { Unit } from './unit';
 import type { HiddenWorld } from './world2';
 
@@ -65,6 +66,8 @@ export class TidecrownHub {
   private readonly captain: Keeper | null = null;
   private readonly keeper: Keeper | null = null;
   private readonly king: TidecrownKing | null = null;
+  /** The Royal Vault and its keeper Bell (tidecrown/vault.ts; none on a server world). */
+  readonly vault: TidecrownVault | null = null;
   private shown = false;
   /** The Seaglass ring's walk-in, armed once the player is clear of it. */
   private armed = false;
@@ -96,6 +99,7 @@ export class TidecrownHub {
       name: ['포탈지기 오팔', 'Opal'], title: ['바다유리 포탈지기', 'Seaglass Portal Keeper'],
     });
     this.king = new TidecrownKing(g, this.keepers);
+    this.vault = new TidecrownVault(g, this.keepers);
   }
 
   /** The crabs drawn here (for the shader warm-up behind the loading screen). */
@@ -113,7 +117,8 @@ export class TidecrownHub {
       island.root.add(this.seaglass.root);
     }
     // Each crab once, so a retry after a failed crab load adds nothing twice.
-    return this.keepers.load(island);
+    // The vault's strongbox is dressing: without it the capital still opens (the next entry tries again).
+    return Promise.all([this.keepers.load(island), this.vault?.dress(island).catch((e) => console.warn('vault dressing', e))]).then(() => {});
   }
 
   show(): void {
@@ -125,6 +130,7 @@ export class TidecrownHub {
       this.told = true;
       this.g.hud.chat.system(t('다른 월드로 가려면 왕관 항구 긴 부두의 아라 선장이나 바다유리 구역의 포탈을 찾아가세요.', 'To travel to another world, find Captain Ara on the Crown Harbour’s long pier or the portal in the Seaglass Quarter.'));
       this.g.hud.chat.system(t('크라운셸 성으로 오르는 큰 계단 위에서 마리너스 왕이 왕국 의뢰를 줘요.', 'King Marinus gives kingdom requests at the head of the great stair to Crownshell Keep.'));
+      this.g.hud.chat.system(t('탈피 시장의 지붕 덮인 장터에서 금고지기 벨이 왕실 금고를 지켜요. 맡긴 코인은 다른 캐릭터로도 꺼낼 수 있어요.', 'Bell keeps the Royal Vault in the covered hall of Moult Market. Coins left there can be taken out by your other characters.'));
     }
   }
 
@@ -307,6 +313,7 @@ export class TidecrownHub {
     this.land();
     // Kingdom requests count in the worlds, so the log looks every frame.
     this.king?.update();
+    this.vault?.claim();
     if (!this.w2.inTidecrown) {
       this.returns.get(this.w2.chapter)?.portal.update(time);
       return;
@@ -325,6 +332,7 @@ export class TidecrownHub {
       }
     }
     this.keepers.update(dt, time);
+    this.vault?.update();
   }
 
   dispose(): void {
@@ -335,5 +343,6 @@ export class TidecrownHub {
     this.seaglass = null;
     this.keepers.dispose();
     this.king?.dispose();
+    this.vault?.dispose();
   }
 }

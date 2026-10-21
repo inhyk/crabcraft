@@ -128,8 +128,9 @@ export class BossJourney {
     } catch { /* A missing or damaged local save starts a fresh journey. */ }
   }
 
-  save() {
-    localStorageSet(this.key, JSON.stringify({emberCleared:this.emberCleared,skyCleared:this.skyCleared, xpBlessingUntil:this.game.player.xpBlessingUntil,frostCleared:this.frostCleared,achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,armorRank:this.game.player.armorRank,weaponOwned:this.game.player.weaponOwned,armorOwned:this.game.player.armorOwned,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
+  /** Writes the journey now; false if storage refused it. */
+  save(): boolean {
+    return localStorageSet(this.key, JSON.stringify({emberCleared:this.emberCleared,skyCleared:this.skyCleared, xpBlessingUntil:this.game.player.xpBlessingUntil,frostCleared:this.frostCleared,achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,armorRank:this.game.player.armorRank,weaponOwned:this.game.player.weaponOwned,armorOwned:this.game.player.armorOwned,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
       quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked, kingdom:this.game.world2.hub.kingdom?.snapshot() }));
   }
 
