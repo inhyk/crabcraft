@@ -1,4 +1,4 @@
-// The King's Road zone line on a server world (Real Chrome -> loopback host -> actual Area, disposable local PG, never
+// The King's Road zone line on a server world (Chrome for Testing -> loopback host -> actual Area, disposable local PG, never
 // the production VM). The server does not host Tidecrown yet, so a new level-1 character who walks (Shift+W with the
 // right mouse button steering, no teleport) from the spawn up the road across the line is not taken there: the notice
 // shows and the server walks the player back south of the line; the world and the quest chapter do not change.
@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const browserPort = Number(process.env.WORLD_QA_BROWSER_PORT ?? 5277), hostPort = Number(process.env.WORLD_QA_HOST_PORT ?? 5288), clientOrigin = `http://127.0.0.1:${browserPort}`;
@@ -34,7 +34,7 @@ try {
   if (origin.hostname !== '127.0.0.1' || origin.protocol !== 'http:' || metadata.clientOrigin !== clientOrigin) throw new Error('QA host must use the expected loopback origins');
   server = await createServer({ root, configFile: false, server: { host: '127.0.0.1', port: browserPort, strictPort: true, proxy: { '/world': { target: origin.origin, ws: true }, '/api/account': { target: origin.origin } } }, logLevel: 'error' });
   await server.listen();
-  browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
+  browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
   const context = await browser.newContext({ viewport: { width: 1600, height: 900 } });
   await context.grantPermissions(['local-network-access'], { origin: clientOrigin });
   await context.addCookies([{ name: metadata.cookie.name, value: metadata.cookie.value, domain: '127.0.0.1', path: metadata.cookie.path, httpOnly: true, sameSite: 'Strict', secure: false }]);

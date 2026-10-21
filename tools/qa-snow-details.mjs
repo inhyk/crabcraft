@@ -6,11 +6,11 @@
 // (4) Sun-facing roof snow shows its relief: luma contrast of sunlit, sun-facing roof pixels at ripple and pillow
 // scale, with no white blow-out. Zero page or shader errors, high and low quality. Writes tmp/qa/snow-details-*.png.
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import {mkdir} from 'node:fs/promises';
 await mkdir('tmp/qa',{recursive:true});
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5230';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 async function load(quality){
  const p=await browser.newPage({viewport:{width:1600,height:900}});

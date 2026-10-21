@@ -1,4 +1,4 @@
-// Local real Chrome -> account handler -> v3 host -> disposable Postgres.
+// Local Chrome for Testing -> account handler -> v3 host -> disposable Postgres.
 // Records transport success separately from native Game UI coverage. Never grants progression.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -6,7 +6,7 @@ import { mkdtemp, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const port = Number(process.env.WORLD_QA_BROWSER_PORT ?? 5279);
@@ -30,7 +30,7 @@ try {
   const hostURL = new URL(metadata.origin); assert.equal(hostURL.hostname, '127.0.0.1'); assert.equal(metadata.clientOrigin, clientOrigin);
   vite = await createServer({ root, configFile: false, logLevel: 'error', server: { host: '127.0.0.1', port, strictPort: true, proxy: { '/world': { target: hostURL.origin, ws: true }, '/api/account': { target: hostURL.origin } } } });
   await vite.listen();
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  browser = await launchBrowser({ headless: true });
   async function open(characterId) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     await context.grantPermissions(['local-network-access'], { origin: clientOrigin });

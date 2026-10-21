@@ -1,10 +1,10 @@
 // Real two-browser local relay: portal F, party lifecycle and repeated rejoins.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import assert from 'node:assert/strict';
 import {worldOf} from '../server/combatProtocol.ts';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192';
 const relay=process.env.CC_QA_RELAY??new URL('/multiplayer',base).href.replace(/^http/,'ws');
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 try{
  async function open(name){const context=await browser.newContext({viewport:{width:1280,height:800}}),p=await context.newPage();p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(({name,relay})=>{localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','low');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name}));const Original=window.WebSocket;window.WebSocket=class extends Original{constructor(url,protocols){const target=new URL(String(url));if(target.pathname==='/multiplayer'){const replacement=new URL(relay);target.searchParams.forEach((value,key)=>replacement.searchParams.set(key,value));super(replacement,protocols);}else super(url,protocols);}};},{name,relay});await p.goto(base+'/?screen=game');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.evaluate(()=>{const g=window.app.current.game;g.god=true;g.multiplayer.root.open=true;});return p;}

@@ -1,11 +1,11 @@
 // Creator UI sets only the starting level/world. From Challenge onward, this pilot uses
 // native keyboard input and reads state; no god mode, HP edits, teleports or combat calls.
 // Run only after the sequential GPU endurance job has completely exited.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192';
 const relay=process.env.CC_QA_RELAY??new URL('/multiplayer',base).href.replace(/^http/,'ws');
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[],heldByPage=new WeakMap(),inputs=[],pages=[];let page;
 async function keys(next){
  const held=heldByPage.get(page)??new Set();heldByPage.set(page,held);

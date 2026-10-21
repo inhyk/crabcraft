@@ -47,8 +47,8 @@ export interface Landmark {
   yaw: number;
   scale: number;
   district: DistrictId;
-  /** Collision boxes in the piece's frame (scaled): [lx, lz, hx, hz, y0, y1]. */
-  solids: [number, number, number, number, number, number][];
+  /** Collision boxes in the piece's frame (scaled): [lx, lz, hx, hz, y0, y1, localYaw?]. */
+  solids: [number, number, number, number, number, number, number?][];
   /** Ground kept clear of houses around it (grown footprint, world). */
   keep: V2[];
 }
@@ -58,6 +58,10 @@ const lm = (id: string, piece: string, district: DistrictId, x: number, z: numbe
   keep: quad(x + Math.cos(yaw) * keep[0] * scale + Math.sin(yaw) * keep[1] * scale, z - Math.sin(yaw) * keep[0] * scale + Math.cos(yaw) * keep[1] * scale, keep[2] * scale, keep[3] * scale, yaw),
 });
 
+/** Exact regular polygon, as overlapping inscribed boxes. Seventh field is local yaw. */
+export function polygonSolids(radius:number,sides:number,y0:number,y1:number):Landmark['solids']{
+ return Array.from({length:sides/2},(_,i)=>[0,0,radius*Math.cos(Math.PI/sides),radius*Math.sin(Math.PI/sides),y0,y1,i*2*Math.PI/sides]);
+}
 const FOUNTAIN_AT = A(TC_T.market, -15.5);
 const ARCADE_AT = A(TC_T.market, 18.5);
 /** The cathedral faces south across its parvis, high on the middle terrace above the lower town. */
@@ -66,17 +70,17 @@ const SEAGLASS = { x: -66, z: -122 } as const;
 const FORGE = { x: -90, z: 21.5, yaw: 0 } as const;
 
 export const TC_LANDMARKS: Landmark[] = [
-  lm('fountain', 'TC_Fountain', 'market', ...FOUNTAIN_AT, TC_UP_YAW, 1, [[0, 0, 7.4, 7.4, -1, 3.2], [0, 0, 1.6, 1.6, 0, 9.9]], [0, 0, 9.4, 9.4]),
+  lm('fountain', 'TC_Fountain', 'market', ...FOUNTAIN_AT, TC_UP_YAW, 1, [...polygonSolids(7.38,8,-1,3.2),[0,0,1.6,1.6,0,9.9]], [0, 0, 9.4, 9.4]),
   lm('arcade', 'TC_MarketArcade', 'market', ...ARCADE_AT, along(TC_AXIS.ux, TC_AXIS.uz), 1,
     // Open on every side: its piers and the stair to the gallery block, the floor is walked on.
     [[-10.1, -5.3, 0.6, 0.6, -1, 8], [-10.1, 5.3, 0.6, 0.6, -1, 8], [10.1, -5.3, 0.6, 0.6, -1, 8], [10.1, 5.3, 0.6, 0.6, -1, 8], [0, -5.3, 0.6, 0.6, -1, 8], [0, 5.3, 0.6, 0.6, -1, 8], [-5.05, -5.3, 0.5, 0.5, -1, 8], [5.05, -5.3, 0.5, 0.5, -1, 8], [-5.05, 5.3, 0.5, 0.5, -1, 8], [5.05, 5.3, 0.5, 0.5, -1, 8]],
     [0, 0, 12.2, 7.4]),
   lm('cathedral', 'TC_Cathedral', 'cathedral', CATHEDRAL.x, CATHEDRAL.z, CATHEDRAL.yaw, 1, [[0, -0.5, 14.3, 26.6, -2, 72], [0, 27.4, 6.2, 1.8, -2, 1.2]], [0, 1, 16.5, 30]),
-  lm('seaglass', 'TC_SeaglassTower', 'seaglass', SEAGLASS.x, SEAGLASS.z, facing(1, 0.55), 1, [[0, 0, 7.2, 7.2, -2, 70]], [0, 0, 9, 9]),
-  lm('seaglass-west', 'TC_SeaglassTower', 'seaglass', -102, -90, facing(1, -0.2), 0.62, [[0, 0, 7.2, 7.2, -2, 70]], [0, 0, 9, 9]),
-  lm('seaglass-north', 'TC_SeaglassTower', 'seaglass', -34, -142, facing(-0.3, 1), 0.5, [[0, 0, 7.2, 7.2, -2, 70]], [0, 0, 9, 9]),
+  lm('seaglass', 'TC_SeaglassTower', 'seaglass', SEAGLASS.x, SEAGLASS.z, facing(1, 0.55), 1, [...polygonSolids(7.4,32,-2,70),...Array.from({length:4},(_,i):Landmark['solids'][number]=>{const a=Math.PI/4+i*Math.PI/2;return [Math.sin(a)*6.75,Math.cos(a)*6.75,.45,.85,-2,8,a];})], [0, 0, 9, 9]),
+  lm('seaglass-west', 'TC_SeaglassTower', 'seaglass', -102, -90, facing(1, -0.2), 0.62, [...polygonSolids(7.4,32,-2,70),...Array.from({length:4},(_,i):Landmark['solids'][number]=>{const a=Math.PI/4+i*Math.PI/2;return [Math.sin(a)*6.75,Math.cos(a)*6.75,.45,.85,-2,8,a];})], [0, 0, 9, 9]),
+  lm('seaglass-north', 'TC_SeaglassTower', 'seaglass', -34, -142, facing(-0.3, 1), 0.5, [...polygonSolids(7.4,32,-2,70),...Array.from({length:4},(_,i):Landmark['solids'][number]=>{const a=Math.PI/4+i*Math.PI/2;return [Math.sin(a)*6.75,Math.cos(a)*6.75,.45,.85,-2,8,a];})], [0, 0, 9, 9]),
   lm('forge', 'TC_Forge', 'works', FORGE.x, FORGE.z, FORGE.yaw, 1, [[-1.5, -0.6, 15.5, 9.4, -2, 31], [14.85, -1, 1.6, 6.4, -2, 10.8]], [1, -3, 19.5, 13]),
-  lm('upper-fountain', 'TC_Fountain', 'upper', 136, -4, TC_UP_YAW, 0.62, [[0, 0, 7.4, 7.4, -1, 3.2], [0, 0, 1.6, 1.6, 0, 9.9]], [0, 0, 9, 9]),
+  lm('upper-fountain', 'TC_Fountain', 'upper', 136, -4, TC_UP_YAW, 0.62, [...polygonSolids(7.38,8,-1,3.2),[0,0,1.6,1.6,0,9.9]], [0, 0, 9, 9]),
 ];
 /** The forge's waterwheel on its race (TC_Forge anchors, piece frame). */
 export const TC_WATERWHEEL = { x: FORGE.x + 14.85, y: 5.4, z: FORGE.z - 1, yaw: FORGE.yaw, race: { x: [13.65, 16.05], z: [-7.25, 5.25], water: 0.6 } } as const;
@@ -124,21 +128,21 @@ export const TC_CITY_STREETS: CityStreet[] = [
   { id: 'grand-canal', points: TC_CANALS[0].points.map(([x, z]) => [x, z] as V2), width: TC_CANALS[0].width + 2 * (TC_CANAL.wall + 3), district: 'canal', unpaved: true },
   { id: 'north-canal', points: TC_CANALS[1].points.map(([x, z]) => [x, z] as V2), width: TC_CANALS[1].width + 2 * (TC_CANAL.wall + 2.5), district: 'canal', unpaved: true },
   // Middle terrace: Cathedral Street from the square to the King's Way, Terrace Street on to the harbour's corner.
-  { id: 'cathedral-street', points: [[-118, -15], [-54, -10.5]], width: 6, district: 'cathedral' },
+  { id: 'cathedral-street', points: [[-114, -14.71875], [-54, -10.5]], width: 6, district: 'cathedral' },
   { id: 'shell-street', points: [[-93, -13.2], [-96, -48], [-104, -80]], width: 6, district: 'cathedral' },
   { id: 'mercers-row', points: [[-58, -46], [-93.4, -46]], width: 5, district: 'cathedral' },
   { id: 'chapter-street', points: [[-8, -12], [30, -9], [80, 1.5], A(128, -13)], width: 6, district: 'cathedral', main: true },
-  { id: 'terrace-street', points: [A(128, 13), [140, 27], [176, 18], [192, -4]], width: 6, district: 'canal' },
+  { id: 'terrace-street', points: [A(128, 13), [140, 27], [176, 18], [188, 1.5]], width: 6, district: 'canal' },
   // Seaglass Quarter: Glass Street from the cathedral square north round the towers.
   { id: 'glass-street', points: [[-58, -14], [-58, -70], [-60, -100], [-86, -112], [-100, -107.5]], width: 6, district: 'seaglass', main: true },
   { id: 'prism-lane', points: [[-48, -122], [-24, -132], [-6, -146]], width: 5, district: 'seaglass' },
-  { id: 'kiln-lane', points: [[-58, -86], [-16, -91]], width: 5, district: 'seaglass' },
+  { id: 'kiln-lane', points: [[-58, -86], [-20, -90.5238095238]], width: 5, district: 'seaglass' },
   { id: 'crystal-walk', points: [[-62, -138], [-48, -152], [-20, -161], [14, -168]], width: 5, district: 'seaglass' },
   // Upper Town: Noble Street along the keep rock, through the stair-foot plaza.
   { id: 'noble-street-west', points: [[20, -150], [18, -120], [30, -90], [54, -62], [78, -44], A(158, -15)], width: 7, district: 'upper', main: true },
   { id: 'stair-lane', points: [[45, -40.5], [62, -56]], width: 5, district: 'upper' },
-  { id: 'rim-walk', points: [[46, -150], [50, -120], [56, -100], [70, -82], [92, -66]], width: 5, district: 'upper' },
-  { id: 'noble-street-east', points: [A(158, 15), [140, -24], [168, -22], [190, -30]], width: 7, district: 'upper' },
+  { id: 'rim-walk', points: [[46, -150], [50, -120], [56, -100], [70, -82], [82, -73.2727272727]], width: 5, district: 'upper' },
+  { id: 'noble-street-east', points: [A(158, 15), [140, -24], [168, -22], [183.5, -27.6363636364]], width: 7, district: 'upper' },
 ];
 export const streetById = (id: string) => TC_CITY_STREETS.find((s) => s.id === id)!;
 

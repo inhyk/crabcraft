@@ -1,10 +1,10 @@
-import assert from 'node:assert/strict';import {mkdir,writeFile} from 'node:fs/promises';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {createServer} from 'vite';import {chromium} from 'playwright';
+import assert from 'node:assert/strict';import {mkdir,writeFile} from 'node:fs/promises';import {join} from 'node:path';import {fileURLToPath} from 'node:url';import {createServer} from 'vite';import {launchBrowser} from './lib/browser.mjs';
 import {EndingPresentationController} from '../src/sim/features/endingPresentation.ts';
 const root=fileURLToPath(new URL('../',import.meta.url)),output=join(root,'output/playwright/ending-prototype');
 const options={id:'fixture-ending-a',owner:{area:'fixture-w4',id:1,life:1},centre:{x:0,y:0,z:0},yaw:0,cast:[{archetype:'human'},...Array.from({length:8},(_,i)=>({archetype:`townsfolk:${i}`}))]};
 let server,browser;try{
  await mkdir(output,{recursive:true});server=await createServer({root,configFile:false,logLevel:'error',server:{host:'127.0.0.1',port:0,hmr:false}});await server.listen();const origin=`http://127.0.0.1:${server.httpServer.address().port}`;
- browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1280,height:800}}),errors=[];await page.context().grantPermissions(['local-network-access'],{origin});page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});page.on('pageerror',e=>{errors.push(e.message);console.error('Browser fixture:',e.message);});
+ browser=await launchBrowser({headless:true});const page=await browser.newPage({viewport:{width:1280,height:800}}),errors=[];await page.context().grantPermissions(['local-network-access'],{origin});page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});page.on('pageerror',e=>{errors.push(e.message);console.error('Browser fixture:',e.message);});
  await page.route(`${origin}/ending-fixture`,route=>route.fulfill({contentType:'text/html',body:'<html><body><script type="module" src="/tools/ending-presentation-fixture.ts"></script></body></html>'}));
  await page.addInitScript(()=>localStorage.setItem('cc.language','en'));await page.goto(`${origin}/ending-fixture`);await page.waitForFunction(()=>window.endingFixture);const controller=new EndingPresentationController(options);
  await page.evaluate(id=>window.endingFixture.view.bind(id),options.id);

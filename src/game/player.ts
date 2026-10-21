@@ -7,7 +7,7 @@ import {equipmentRank,MAX_EQUIPMENT_RANK,upgradeCost,weaponMultiplier,armorMulti
 import type { AbilityDef, ClassDef } from '../data/classes';
 import type { Game } from './game';
 import { lineOfSight, type Unit } from './unit';
-import { executeAbility, abilityNeedsTarget, isMeleeAbility } from './abilities';
+import { executeAbility, abilityNeedsTarget, combatUnits, isMeleeAbility } from './abilities';
 import { BreakRoutine } from './breakdance';
 import { rollCrit, CRIT_MULT, type CombatController } from './combat';
 import { v3, type ErrorReason, type Label } from './events';
@@ -568,7 +568,7 @@ export class Player implements CombatController {
     const g = this.game;
     const u = this.unit;
     const fy = g.follow.forwardYaw;
-    const list = g.units
+    const list = combatUnits(g)
       .filter((o) => o.hostile && o.alive && !o.hidden && o.targetable && u.distTo(o) < 32)
       .filter((o) => Math.abs(angleDiff(yawTo(u.pos.x, u.pos.z, o.pos.x, o.pos.z), fy)) < 1.45 || u.distTo(o) < 4)
       .sort((a, b) => u.distTo(a) - u.distTo(b));
@@ -587,7 +587,7 @@ export class Player implements CombatController {
     ray.direction.copy(ndc.sub(cam.position).normalize());
     let best: Unit | null = null;
     let bestD = Infinity;
-    for (const o of g.units) {
+    for (const o of combatUnits(g)) {
       if (o === this.unit || o.hidden || !o.targetable || o.culled) continue;
       sphere.center.set(o.pos.x, o.pos.y + o.height * 0.5, o.pos.z);
       sphere.radius = Math.max(o.radius * 1.05, o.height * 0.6);

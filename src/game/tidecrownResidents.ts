@@ -38,7 +38,7 @@ export class TidecrownResidents {
     if(this.disposed){rig.dispose();return;}
     (rig as typeof rig&{useShadowProxy?:(on:boolean)=>void}).useShadowProxy?.(true);
     const unit=new Unit(t(...def.name),'npc','friendly',rig,createMotionController(rig));
-    unit.npcId=`tidecrown-resident-${index}`;unit.ctrl=this;unit.hidden=true;unit.title=t(...def.role);
+    unit.npcId=`tidecrown-resident-${index}`;unit.ctrl=this;unit.hidden=true;unit.title=(def.shop?'🪙 ':'')+t(...def.role);
     const street=TC_CITY_STREETS.find(s=>s.id===def.street)!;
     const lengths=street.points.slice(1).map((b,i)=>Math.hypot(b[0]-street.points[i][0],b[1]-street.points[i][1]));
     let along=lengths.reduce((a,b)=>a+b,0)*def.at,segment=0;
@@ -63,6 +63,7 @@ export class TidecrownResidents {
  show(){this.shown=true;for(const p of this.people){p.unit.hidden=false;p.unit.teleport(this.g.world,p.home.x,p.home.z,p.unit.yaw);}}
  hide(){
   this.shown=false;
+  if(this.g.hud.forge.open&&this.people.some(p=>p.unit===this.g.hud.dialogue.unit))this.g.hud.forge.close();
   if(this.people.some(p=>p.unit===this.g.hud.dialogue.unit))this.g.hud.dialogue.close();
   for(const p of this.people)p.unit.hidden=true;
  }
@@ -70,7 +71,7 @@ export class TidecrownResidents {
   if(!this.shown)return;
   const g=this.g,player=g.player.unit,now=g.time;
   for(const p of this.people){
-   const u=p.unit;u.name=t(...p.def.name);u.title=t(...p.def.role);
+   const u=p.unit;u.name=t(...p.def.name);u.title=(p.def.shop?'🪙 ':'')+t(...p.def.role);
    const d=u.distTo(player);if(d>75)continue;
    const talking=g.hud.dialogue.unit===u;
    if(talking||d<6){
@@ -89,7 +90,20 @@ export class TidecrownResidents {
   const p=this.people.find(p=>p.unit===unit);
   if(!p||!this.shown||unit.hidden||!this.g.player.unit.alive||this.g.player.unit.distTo(unit)>8)return false;
   unit.setYaw(yawTo(unit.pos.x,unit.pos.z,this.g.player.unit.pos.x,this.g.player.unit.pos.z));unit.express('happy',1.2);unit.act('gesture_hello');
-  const show=(district=false):void=>this.g.hud.dialogue.open({unit,portraitArt:p.portrait,questTitle:t(...p.def.role),paragraphs:[district?t(...DISTRICT_STORIES[p.district]):p.index++%2===0?t(...p.def.line):t(`저는 ${p.def.name[0]}예요. ${TC_DISTRICTS[p.district].ko}에서 하루를 보내고 있죠. 오늘 수도에서 좋은 추억을 만드세요!`,`I am ${p.def.name[1]}. I spend my days in ${TC_DISTRICTS[p.district].en}. I hope you make happy memories in the capital!`)],buttons:[{label:t('다른 이야기 듣기','Another story'),primary:true,onClick:()=>show()},{label:t('이곳에 대해 알려 주세요','Tell me about this district'),onClick:()=>show(true)},{label:t('다음에 만나요','Goodbye'),onClick:()=>this.g.hud.dialogue.close()}]});
+  const show=(district=false):void=>{
+   const buttons=[
+    {label:t('다른 이야기 듣기','Another story'),primary:!p.def.shop,onClick:()=>show()},
+    {label:t('이곳에 대해 알려 주세요','Tell me about this district'),onClick:()=>show(true)},
+    {label:t('다음에 만나요','Goodbye'),onClick:()=>this.g.hud.dialogue.close()},
+   ];
+   if(p.def.shop)buttons.unshift({label:t('🪙 장비 상점 열기','🪙 Open equipment shop'),primary:true,onClick:()=>{
+    this.g.player.setTarget(null);this.g.player.interruptCast();this.g.player.cancelChannel();
+    // The conversation stays behind the modal so this resident stops strolling while serving a customer.
+    this.g.hud.forge.show({unit,def:{id:unit.npcId!},capital:true,available:()=>this.shown&&this.g.world2.inTidecrown},()=>show());
+   }});
+   const story=p.index++%2===0?t(...p.def.line):t(`저는 ${p.def.name[0]}예요. ${TC_DISTRICTS[p.district].ko}에서 하루를 보내고 있죠. 오늘 수도에서 좋은 추억을 만드세요!`,`I am ${p.def.name[1]}. I spend my days in ${TC_DISTRICTS[p.district].en}. I hope you make happy memories in the capital!`);
+   this.g.hud.dialogue.open({unit,portraitArt:p.portrait,questTitle:t(...p.def.role),paragraphs:[district?t(...DISTRICT_STORIES[p.district]):story],buttons});
+  };
   show();return true;
  }
  dispose(){this.disposed=true;this.shown=false;for(const p of this.people)p.unit.hidden=true;}

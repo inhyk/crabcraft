@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Evidence run for Robot Mode in real Chrome (GPU): drives the robot with the keyboard the way a
-// person would and saves timed screenshots plus a JSON log of what the live sim reported.
+// Evidence run for Robot Mode in Chrome for Testing (GPU): drives the robot with the keyboard the
+// way a person would and saves timed screenshots plus a JSON log of what the live sim reported.
 //   node tools/robot-shots.mjs <url of dev/robot.html> <out dir> [--walk 30]
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -11,8 +11,7 @@ const out = process.argv[3] ?? '.';
 const walkS = Number(process.argv.includes('--walk') ? process.argv[process.argv.indexOf('--walk') + 1] : 30);
 mkdirSync(out, { recursive: true });
 
-const browser = await chromium.launch({
-  channel: 'chrome',
+const browser = await launchBrowser({
   headless: true,
   args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'],
 });

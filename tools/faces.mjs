@@ -5,7 +5,7 @@
 // dusk light for paint checks.
 //
 // Usage: node tools/faces.mjs [--url http://localhost:5209] [--out dir] [--dist 8] [--dpr 1]
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -21,7 +21,7 @@ const dpr = Number(opt('--dpr', '1'));
 mkdirSync(outDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
+const browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
 const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: dpr });
 const page = await ctx.newPage();
 page.on('pageerror', (e) => console.log('pageerror', e.message));

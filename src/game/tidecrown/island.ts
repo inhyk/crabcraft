@@ -6,19 +6,61 @@ import { buildFoliage, type FoliageResult } from '../../world/foliage';
 import { loadKit } from '../../world/kit';
 import { buildTidecrownCity, type TidecrownCity } from './city';
 import { loadTidecrownKit } from './houses';
-import { WORLD_UNIFORMS } from '../../world/materials';
-import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, type TidecrownAtmosphere } from './atmosphere';
+import { addPatch, WORLD_UNIFORMS } from '../../world/materials';
+import { buildTidecrownAtmosphere, TC_ENV_INTENSITY, TC_FOG, TC_SHADE_LIFT, type TidecrownAtmosphere } from './atmosphere';
 import { buildHorizon } from './horizon';
 import { buildGulls } from './gulls';
+import { type GroundLight, paintGroundLight } from './groundLight';
 import type { MapSnapshot } from '../snapshots';
 import { paintTidecrownMap } from './minimap';
+import { buildTidecrownHeights } from '../../sim/world/tidecrownGround';
 import { resolveTidecrown, TC_ARRIVAL, TC_ARRIVAL_YAW, tidecrownGround, tidecrownLayout, type TidecrownLayout } from './layout';
 import { tidecrownMaterials } from './materials';
 import { buildHeroStatues } from './statues';
+import { paveAprons } from './splat';
 import { buildTidecrownStructures, type TidecrownStructures } from './structures';
 import { TidecrownTerrain, tidecrownTerrainMaterial } from './terrain';
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+/** The landform's heights and ground splat on a worker (the same numbers as on the main thread), or here if workers
+ * fail. */
+function offThread(): { heights: Promise<Float32Array>; splat: Promise<Uint8Array | undefined> } {
+  let toH!: (h: Float32Array) => void, toS!: (s?: Uint8Array) => void;
+  const heights = new Promise<Float32Array>((r) => (toH = r)), splat = new Promise<Uint8Array | undefined>((r) => (toS = r));
+  let w: Worker | null = null, got = false;
+  const fallback = () => {
+    w?.terminate();
+    if (!got) toH(buildTidecrownHeights());
+    toS(undefined);
+  };
+  try {
+    w = new Worker(new URL('./heights.worker.ts', import.meta.url), { type: 'module', name: 'tidecrown-heights' });
+  } catch {
+    fallback();
+    return { heights, splat };
+  }
+  w.onmessage = (e: MessageEvent<{ heights?: Float32Array; splat?: Uint8Array }>) => {
+    if (e.data.heights) { got = true; toH(e.data.heights); }
+    if (e.data.splat) { toS(e.data.splat); w!.terminate(); }
+  };
+  w.onerror = fallback;
+  w.postMessage(0);
+  return { heights, splat };
+}
+
+/** Every kit at once (World I's village, props and nature for the townhouses, the castle, the districts' landmarks and
+ * the harbour) and the statues. */
+const loadAll = () => Promise.all([
+  loadTidecrownKit(), loadKit('models/world/tidecrown.glb'), loadKit('models/world/tidecrown-city.glb'), loadKit('models/world/tidecrown-harbor.glb'), buildHeroStatues(),
+]);
+let early: { loading: ReturnType<typeof loadAll>; heights: Promise<Float32Array>; splat: Promise<Uint8Array | undefined> } | null = null;
+
+/** Start what need not wait for the fade: the kits' download and parse, and the heights. build() takes them up. */
+export function prefetchTidecrown(): void {
+  early ??= { loading: loadAll(), ...offThread() };
+}
 
 export class TidecrownIsland {
   readonly root = new THREE.Group();
@@ -37,6 +79,7 @@ export class TidecrownIsland {
   /** How long each build step took (ms) and how much nature was scattered. */
   readonly info: { steps: Record<string, number>; nature: Record<string, number>; city: Record<string, number> } = { steps: {}, nature: {}, city: {} };
   private foliage: FoliageResult | null = null;
+  private groundLight: GroundLight | null = null;
   private lanternGlow: THREE.MeshStandardMaterial | null = null;
   private built = false;
 
@@ -57,13 +100,12 @@ export class TidecrownIsland {
     if (this.built) return;
     const step = (name: string, t0: number) => (this.info.steps[name] = Math.round(performance.now() - t0));
     let t0 = performance.now();
-    // Every kit at once, fetched while the layout is worked out: World I's village, props and nature (the townhouses'
-    // set), the castle, the districts' landmarks and the harbour; the statues alongside.
-    const loading = Promise.all([
-      loadTidecrownKit(), loadKit('models/world/tidecrown.glb'), loadKit('models/world/tidecrown-city.glb'), loadKit('models/world/tidecrown-harbor.glb'), buildHeroStatues(),
-    ]);
+    // The kits load while the layout is worked out, on heights from a worker (both usually started under the fade).
+    prefetchTidecrown();
+    const { loading, heights, splat } = early!;
+    early = null;
     await tick();
-    this.layout = tidecrownLayout();
+    this.layout = tidecrownLayout(await heights);
     this.collision = this.layout.col;
     this.spawn.y = this.layout.heightAt(this.spawn.x, this.spawn.z);
     step('layout', t0);
@@ -78,8 +120,10 @@ export class TidecrownIsland {
     await tick();
 
     t0 = performance.now();
-    const terrain = new TidecrownTerrain(this.layout.heights);
-    const ground = terrain.buildMeshes(tidecrownTerrainMaterial(terrain, village, nature, WORLD_UNIFORMS.uTime));
+    const terrain = new TidecrownTerrain(this.layout.heights, await splat);
+    paveAprons(terrain.splat, this.layout.city.zones.flatMap((z) => z.plan.lots));
+    this.groundLight = paintGroundLight(this.layout.city);
+    const ground = terrain.buildMeshes(tidecrownTerrainMaterial(terrain, village, nature, WORLD_UNIFORMS.uTime, this.groundLight));
     this.root.add(ground);
     const pines: [number, number][] = [];
     for (const [name, list] of this.layout.nature.trees.items) if (name.startsWith('Pine_')) for (const m of list) pines.push([m.elements[12], m.elements[14]]);
@@ -97,8 +141,16 @@ export class TidecrownIsland {
     onProgress?.(0.7);
     await tick();
 
+    // The sky before the city: its canals reflect it.
     t0 = performance.now();
-    this.city = buildTidecrownCity({ tide, city: cityKit, harbour: harbourKit }, mats, this.layout.city, (x, z) => this.layout.heightAt(x, z), renderer, quality);
+    this.atmosphere = buildTidecrownAtmosphere(terrain, quality, WORLD_UNIFORMS.uTime, this.structures.lanternAt);
+    this.root.add(this.atmosphere.group, buildHorizon(), buildGulls(WORLD_UNIFORMS.uTime));
+    this.atmosphere.environment(renderer);
+    step('atmosphere', t0);
+    await tick();
+
+    t0 = performance.now();
+    this.city = buildTidecrownCity({ tide, city: cityKit, harbour: harbourKit }, mats, this.atmosphere.skyU, this.layout.city, (x, z) => this.layout.heightAt(x, z), renderer, quality);
     this.root.add(this.city.group);
     this.info.city = { ...this.city.stats.ms, plan: this.layout.city.ms };
     step('city', t0);
@@ -114,17 +166,27 @@ export class TidecrownIsland {
     }
     this.foliage = buildFoliage(nature, scatter, quality);
     this.foliage.group.name = 'tidecrown-foliage';
+    // Tidecrown's own clones of the leaf and bark materials take the forest's shade lift (atmosphere.ts).
+    const lifted = new Set<THREE.Material>();
+    this.foliage.group.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      for (const mat of Array.isArray(m) ? m : m ? [m] : []) {
+        if (lifted.has(mat) || !/^(Leaves|Bark)/.test(mat.name)) continue;
+        lifted.add(mat);
+        addPatch(mat, 'tc-shade-lift', (shader) => {
+          shader.uniforms.uTcLift = TC_SHADE_LIFT;
+          shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', '#include <common>\nuniform float uTcLift;')
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * uTcLift;');
+        });
+      }
+    });
     this.root.add(this.foliage.group);
     this.info.nature = { ...this.foliage.counts };
     step('foliage', t0);
     onProgress?.(0.9);
     await tick();
 
-    t0 = performance.now();
-    this.atmosphere = buildTidecrownAtmosphere(terrain, quality, WORLD_UNIFORMS.uTime, this.structures.lanternAt);
-    this.root.add(this.atmosphere.group, buildHorizon(), buildGulls(WORLD_UNIFORMS.uTime));
-    this.atmosphere.environment(renderer);
-    step('atmosphere', t0);
     this.built = true;
     onProgress?.(1);
   }
@@ -165,7 +227,7 @@ export class TidecrownIsland {
    * the arrival sees happen behind the fade, not after it lifts.
    */
   async settle(): Promise<void> {
-    for (let i = 0; i < 3; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    for (let i = 0; i < 3; i++) await frame();
   }
 
   /** Leaving: the houses' near detail goes (it streams in again on return). */
@@ -192,5 +254,6 @@ export class TidecrownIsland {
       m.dispose();
     }
     for (const t of textures) t.dispose();
+    this.groundLight?.texture.dispose();
   }
 }

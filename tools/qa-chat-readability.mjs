@@ -1,5 +1,5 @@
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 try{
  const p=await browser.newPage({viewport:{width:1024,height:768}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(()=>{localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','low');});await p.goto('http://127.0.0.1:5192/?screen=game');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.evaluate(()=>{const g=window.app.current.game;g.god=true;g.world2.enter();g.hud.chat.system('별빛 항구에 오신 것을 환영해요.');g.hud.chat.quest('다음 목표: 북쪽 별빛 등불을 밝혀 주세요.');g.hud.chat.say('친구','함께 왕좌로 가자!');g.hud.chat.whisper('실버문','천천히 껍질을 회복하세요.');g.hud.chat.yell('아스트라 · 일식의 여왕','별의 그림자 속으로 들어오라!');g.hud.chat.say('Long invitation','https://example.invalid/'+ 'verylongroomcode'.repeat(12));g.hud.chat.yell('아스트라','안쪽 원이 안전합니다.');});
  for(const [width,height] of [[1024,768],[1280,800],[1440,900],[718,492]]){

@@ -9,7 +9,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { freePort, startPostgres } from '../server/node/local-postgres.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url)), shots = process.env.CC_QA_SHOTS ?? join(root, 'tmp/qa'), shot = name => join(shots, name);
@@ -51,7 +51,7 @@ const lastLine = async (p, text) => (await view(p)).lines.find(l => l.includes(t
 try {
   await run([join(root, 'server-dist/main.mjs')], { PORT: String(serverPort), HOST: '127.0.0.1', DATABASE_URL: postgres.url }, /listening on/);
   await run([join(root, 'node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', String(previewPort), '--strictPort'], {}, new RegExp(String(previewPort)));
-  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
+  browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
   const kid = await open('Kind crab'), rude = await open('Rude crab');
   await Promise.all([together(kid), together(rude)]);
 

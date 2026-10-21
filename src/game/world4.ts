@@ -29,7 +29,7 @@ import {buildSnowVillage,type SnowVillage} from './snowVillage';
 import {buildSnowFields,type SnowFields} from './snowFields';
 import {snowGroves} from './snowFieldsLayout';
 import {frozenPond} from './snowVillageDressing';
-import {lathe} from '../world/geom';
+import {snowFountainBasin} from './snowFountain';
 import type {Unit} from './unit';
 
 /** Frostlight's points of interest, as the client places them (the server's are in src/sim/areas/world4.ts). */
@@ -107,7 +107,7 @@ export class SnowIsland {
   this.paving=frostPaving((x,z)=>this.height(x,z),paths,{skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,sunDir:this.sky.sunDir,deform:this.deform,pads:FROST_PADS});this.root.add(this.paving.root);
   // Frozen fountain: a turned stone basin (the kit's stone once buildSettlement() has it) round a pond of ice.
   const {x:fx,z:fz}=SNOW_FOUNTAIN,fy=this.height(fx,fz);
-  this.basin=add(lathe([[2.42,.36],[2.46,.62],[2.6,.75],[2.92,.75],[3.06,.6],[3.06,.12],[3.14,0],[3.14,-.6]],56,.5),dark,fx,fy,fz);this.basin.name='snow-fountain-basin';
+  this.basin=add(snowFountainBasin(),dark,fx,fy,fz);this.basin.name='snow-fountain-basin';
   const pond=add(new THREE.CircleGeometry(2.46,48).rotateX(-Math.PI/2),frozenPond(2.46),fx,fy+.44,fz);pond.name='snow-fountain-ice';pond.castShadow=false;
   iceMesh(crystalCluster(0,0,0,4.4,1.9,6,rand),'snow-fountain-sculpture').position.set(fx,fy+.62,fz);
   // Houses, lamp posts and the rest of the village are kit pieces, raised in buildSettlement() (snowVillage.ts).

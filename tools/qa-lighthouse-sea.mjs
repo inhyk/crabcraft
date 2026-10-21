@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5205';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 async function relay(p){await p.addInitScript(()=>{if(location.hostname!=='127.0.0.1')return;const WS=window.WebSocket;window.WebSocket=class extends WS{constructor(url,protocols){const target=new URL(String(url));if(target.pathname==='/multiplayer'){target.host=location.host;target.protocol='ws:';}super(target.href,protocols);}};});}
 async function loaded(p){await p.locator('.launch-notice-start').click();await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));}
 try{

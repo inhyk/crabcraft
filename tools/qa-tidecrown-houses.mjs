@@ -10,7 +10,7 @@
 //   CC_QA_BASE=http://127.0.0.1:5244 node tools/qa-tidecrown-houses.mjs
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 
 const base = process.env.CC_QA_BASE ?? 'http://127.0.0.1:5244';
 const out = process.env.TIDECROWN_SHOTS ?? '/private/tmp/claude-501/-Users-inkeun-projects-crabcraft/78bf7b2c-07a0-4bdb-9652-08ca659106a1/scratchpad/houses-lod-shots';
@@ -100,7 +100,7 @@ function checkDistrict(name, d) {
   return problems;
 }
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
+const browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
 const errors = [];
 
 async function open(query, tag) {
