@@ -61,7 +61,7 @@ export class ShoreBoat {
     if(c.action==='leave'){if(seat>=0){
       const land=this.landing(u.radius??1.2),exit=land??{x:143,z:23};this.state.exits={...(this.state.exits??{}),[id]:{...exit,shore:!!land}};
       const entries=Object.entries(this.state.exits);this.state.exits=Object.fromEntries(entries.slice(-8));
-      this.state.seats[seat]=null;u.teleport(g.world,exit.x,exit.z);this.compact();if(!land&&!this.state.seats.some(Boolean))this.resetHome();
+      this.state.seats[seat]=null;u.teleport(g.world,exit.x,exit.z);this.compact();if((!land||this.nearBerth())&&!this.state.seats.some(Boolean))this.resetHome();
     }return;}
     if(c.action==='board'){
       if(seat>=0||g.encounter.engaged||!this.canBoard(u.pos.x,u.pos.y,u.pos.z))return;
@@ -71,6 +71,8 @@ export class ShoreBoat {
     if(seat===0){this.throttle=c.throttle;this.steer=c.steer;this.inputAt=g.time;}
   }
   private compact(){this.state.seats=this.state.seats.filter(Boolean).concat([null,null]).slice(0,2) as BoatState['seats'];this.throttle=this.steer=0;this.state.speed=0;}
+  /** Left empty within reach of its berth, the skiff goes back to it; left at a farther shore, it waits there. */
+  private nearBerth(){return Math.hypot(this.state.x-151,this.state.z-18.5)<=12;}
   private resetHome(){this.state={...home(),exits:this.state.exits};}
   networkState():BoatState{return {...this.state,seats:[...this.state.seats],exits:this.state.exits?structuredClone(this.state.exits):undefined};}
   applyNetwork(s:BoatState|undefined){if(this.observed)throw new Error('Observed boat rejects legacy state');if(s)this.state={...s,seats:[...s.seats]};}
@@ -84,7 +86,7 @@ export class ShoreBoat {
     const g=this.g,b=g.multiplayer?.battle,authority=b?.authority!==false;
     this.root.visible=g.world2.chapter===1;
     if(!this.root.visible){this.state=home();this.wasSeated=false;return;}
-    if(authority){let removed=false;for(let i=0;i<2;i++){const id=this.state.seats[i];if(id&&((id!=='solo'&&!b?.hasBoatMember(id))||this.unit(id)?.alive===false)){this.state.seats[i]=null;removed=true;}}if(removed){this.compact();if(!this.state.seats.some(Boolean)&&!this.landing())this.resetHome();}if(!this.state.seats[0]&&this.state.seats[1])this.compact();if(!this.state.seats.some(Boolean)&&this.state.speed!==0)this.compact();}
+    if(authority){let removed=false;for(let i=0;i<2;i++){const id=this.state.seats[i];if(id&&((id!=='solo'&&!b?.hasBoatMember(id))||this.unit(id)?.alive===false)){this.state.seats[i]=null;removed=true;}}if(removed){this.compact();if(!this.state.seats.some(Boolean)&&(!this.landing()||this.nearBerth()))this.resetHome();}if(!this.state.seats[0]&&this.state.seats[1])this.compact();if(!this.state.seats.some(Boolean)&&this.state.speed!==0)this.compact();}
     if(this.seated&&!this.wasSeated){this.clearPose();g.hud.messages.info(t('바다에 섬 3개가 있어요! G 지도에서 섬과 배를 찾아보세요.','Three islands await! Press G to locate the islands and your skiff.'));}
     if(!this.seated&&this.wasSeated&&g.player.unit.alive){const exit=this.state.exits?.[this.id];if(exit){g.player.unit.teleport(g.world,exit.x,exit.z);if(exit.shore)g.achievements?.unlock('landfall');}else this.dock();}
     this.wasSeated=this.seated;
