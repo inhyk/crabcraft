@@ -371,7 +371,9 @@ const frostCast = {
     NO_SIGIL,
     // Out of the pink-white the montage arrives in, the blast rolls into the lens (whoosh at 158.04 s).
     { t: 0, kind: 'fade', color: '#ffe6f0', curve: [[0, 0.9], [0.06, 0.35], [0.14, 0]] },
-    { t: 0, kind: 'snow-frost-blast', from: mxz(0, -2.6), to: mxz(0, 6.4), d: 0.36, width0: 2.2, width1: 5.2, size0: 0.7, size1: 3.4, flat: 1.6, lift: 0.4, count: 320, crystals: 110, opacity: 0.85, until: 0.5, fadeOut: 0.16 },
+    { t: 0, kind: 'snow-frost-blast', from: mxz(0, -3.6), to: mxz(0, 5.6), d: 0.4, width0: 2.6, width1: 6, size0: 0.6, size1: 2.5, flat: 2.2, lift: 0.3, count: 380, crystals: 120, opacity: 0.9, color: '#f6f9ff', color2: '#8ea4d8', until: 0.5, fadeOut: 0.16 },
+    // He spins out of what it leaves; then it hangs low round his feet.
+    mist(0.28, 1.2, 1.0, { opacity: 0.4, size0: 0.7, size1: 1.2, lift: 0.25, count: 60, fadeOut: 0.45, seed: 9 }),
     mist(0.3, 2.4, 2.9),
     { t: 0, kind: 'wash', color: '#cdd8f4', color2: '#ffffff', alpha: [[0.2, 0], [0.3, 0.85], [0.4, 0.8], [0.5, 0.35], [0.65, 0.1], [0.85, 0]], cover: [[0.2, 0.5], [0.32, 0.9], [0.42, 0.7], [0.55, 0.4], [0.85, 0.3]], flow: [-0.9, 0.15], scale: 1.8 },
     { t: 0, kind: 'fade', color: '#eef1ff', curve: [[0.22, 0], [0.3, 0.65], [0.38, 0.55], [0.47, 0]] },
