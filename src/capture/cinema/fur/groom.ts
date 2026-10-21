@@ -188,7 +188,6 @@ function growLayer(parts: RigParts, layer: Layer, rng: () => number, density: nu
   if (total <= 0 || N === 0) return { grown: { pts, roots, normals, data, count: 0 }, bones };
   const d = new THREE.Vector3();
   const q = new THREE.Vector3();
-  const lens = new Float32Array(N);
   let made = 0;
   let guard = 0;
   while (made < N && guard++ < N * 20) {
@@ -222,7 +221,6 @@ function growLayer(parts: RigParts, layer: Layer, rng: () => number, density: nu
     if (len <= 0) continue;
     const i = made++;
     bones[i] = surf.bone[t];
-    lens[i] = len;
     p.toArray(roots, i * 3);
     n.toArray(normals, i * 3);
     // Grow: from just above the surface, along the comb, drooping, wandering a little.
