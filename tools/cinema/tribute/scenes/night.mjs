@@ -655,6 +655,10 @@ const UNDEAD_FLOOR = {
   grass: '#34461f',
   tip: '#a8b870',
   count: 30,
+  // Clods, stones, bumpy cracked soil, sparse broken leaves, and the grass in tufts.
+  relief: { clods: 3, pebbles: 6, litter: 110 },
+  cell: 0.2,
+  blade: 'tuft',
   clear: LOW_PATH.map((q) => [...q, 0.6]),
   seed: 23,
 };
@@ -739,11 +743,13 @@ const undeadShots = [
       // shell and a bandaged leg swinging at the stamp and each fling, a cracked visor, a faded hood.
       { kind: 'night-rags', t: -3, actor: 'u', kicks: [[STAMP, 0.35], [8.6, 0.5], [12.5, 0.5]] },
       { kind: 'shake', t: STAMP, d: 0.45, amp: 0.03 },
-      { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 0.8, light: 0.9, gain: 0.75, embers: 260, smoke: 160, smokeA: 0.22, clear: LOW_PATH.map((q) => [...q, 0.9]) },
+      { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, aim: L(0.9, 2.6), radius: 9, dur: 8, rate: 0.8, light: 0.9, gain: 0.75, embers: 260, smoke: 160, smokeA: 0.22, clear: LOW_PATH.map((q) => [...q, 0.9]) },
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
       { kind: 'motes', t: -1, at: { g: [U[0], 1.2, U[1] - 2] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
       // Cold moonlight from above the lens, so the ground and the claw read before the fire opens.
       { kind: 'light', t: -1, at: H(1.2, 3.2, 3.6), color: '#8296bc', curve: [[0, 420], [6.0, 300], [8.0, 30]], distance: 14 },
+      // A low cool fill skimming the ground from behind the lens, so the soil, clods and grass read in the dark.
+      { kind: 'light', t: -1, at: H(2.4, 0.9, 3.6), color: '#7d8fae', curve: [[0, 90], [5.5, 80], [7.5, 0]], distance: 7 },
       // A pale fill from the lens side once he channels, so his face reads against the green sky.
       { kind: 'light', t: 6, at: H(0.1, 0.6, 2.0), color: '#d6e6a0', curve: [[6.4, 0], [7.4, 14], [9, 70], [18, 70]], distance: 5 },
       // The rocks heaving out round him throw molten light on him, and the gathering summons rims him green.
