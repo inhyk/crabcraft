@@ -125,7 +125,7 @@ export class TidecrownVault {
     this.g.hud.dialogue.open({
       unit: u, portraitArt: this.keeper.portrait, questTitle: t('🪙 왕실 금고', '🪙 The Royal Vault'),
       paragraphs: [t('어서 오세요, 왕실 금고예요! 여기 맡긴 코인은 다른 캐릭터로도 꺼낼 수 있어요.', 'Welcome to the Royal Vault! Coins you leave here can be taken out by your other characters too.')],
-      panel: this.panel,
+      extra: this.panel,
       buttons: [{ label: t('고마워요', 'Thank you'), primary: true, onClick: () => this.g.hud.dialogue.close() }],
     });
     this.render();

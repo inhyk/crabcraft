@@ -178,8 +178,8 @@ export interface DialoguePage {
   rewardXp?: number;
   rewardCoins?: number;
   rewardItem?: string;
-  /** A feature's own section under the text (the Royal Vault's balances and its deposit and withdraw rows). */
-  panel?: HTMLElement;
+  /** A block under the text, shown at once. */
+  extra?: HTMLElement;
   buttons: DialogueButton[];
 }
 
@@ -262,7 +262,7 @@ export class DialogueWindow {
       this.paras.push({ el, text: t });
     }
     this.body.append(this.textEl);
-    if (p.panel) this.body.append(p.panel);
+    if (p.extra) this.body.append(p.extra);
     if (p.objectives?.length) {
       this.body.append(h('div', { class: 'dlg-sec' }, t('목표','Objectives')));
       const ul = h('ul', { class: 'dlg-obj' });
