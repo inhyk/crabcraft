@@ -92,7 +92,10 @@ export class HiddenWorld {
   travelLock(chapter:1|2|3|4|5|6){return this.canTravel(chapter)?null:chapter>=5?t('보레아스를 물리치면 새로운 원정 월드가 열려요.','Defeat Boreas to unlock the frontier worlds.'):chapter===4?t('100레벨 솔라칸을 이겨야 눈 월드가 열려요.','Defeat level 100 Solarkan to unlock Frostlight.'):chapter===2?t('10레벨 심해의 군주를 이겨야 월드2가 열려요.','Defeat the level 10 Lord of the Deep to unlock World II.'):t('월드2의 20레벨 일식 여왕을 이겨야 월드3가 열려요.','Defeat the level 20 Eclipse Queen to unlock World III.');}
   go(chapter:1|2|3|4|5|6,authority=true){if(this.game.dungeons?.active)return false;this.leaveTidecrown();const lock=this.travelLock(chapter);if(lock){this.game.hud.messages.info(lock);return false;}if(chapter===1)this.returnToShore();else if(chapter===5||chapter===6)this.enterFrontier(chapter,authority);else if(chapter===4)this.enterSnow(authority);else if(chapter===3)this.enterThird(authority);else this.enter(authority);return true;}
   travel(){
-    const g=this.game;if(g.controlsLocked||g.player.inCombat||g.encounter.engaged){g.hud.messages.info(t('전투가 끝나면 포탈을 이용할 수 있어요.','You can travel through the portal after combat.'));return;}
+    const g=this.game;
+    // A keeper's talk is not travel: a trainer answers beside the dummies just hit.
+    if(this.hub.talk())return;
+    if(g.controlsLocked||g.player.inCombat||g.encounter.engaged){g.hud.messages.info(t('전투가 끝나면 포탈을 이용할 수 있어요.','You can travel through the portal after combat.'));return;}
     if(this.hub.use())return;
     const chapter=this.chapter===6?5:this.chapter===5?(this.portalPosition===this.fifth.spawn?4:6):this.chapter===4?(this.portalPosition===this.emberGate.root.position?5:3):this.chapter===3?(this.portalPosition===this.snowGate.root.position?4:2):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?3:this.chapter===2?1:2;
     if(!this.canTravel(chapter)){this.go(chapter);return;}

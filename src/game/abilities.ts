@@ -24,9 +24,15 @@ export function isMeleeAbility(a: AbilityDef): boolean {
 const v1 = new THREE.Vector3();
 const v2 = new THREE.Vector2();
 
+/** Every unit a skill, a click or Tab can reach: the game's own, and the capital's training dummies (kept out of g.units). */
+export function combatUnits(g: Game): readonly Unit[] {
+  const dummies = g.world2?.hub?.training?.units;
+  return dummies?.length ? [...g.units, ...dummies] : g.units;
+}
+
 /** Hostile, living units whose edge is within `radius` of a point. */
 export function enemiesNear(g: Game, x: number, z: number, radius: number): Unit[] {
-  return g.units.filter((o) => o.hostile && o.alive && !o.hidden && Math.hypot(o.pos.x - x, o.pos.z - z) - o.radius <= radius);
+  return combatUnits(g).filter((o) => o.hostile && o.alive && !o.hidden && Math.hypot(o.pos.x - x, o.pos.z - z) - o.radius <= radius);
 }
 
 function hit(g: Game, p: Player, t: Unit, min: number, max: number, school: 'physical' | 'frost' | 'water' | 'holy', critBonus = 0): number {
