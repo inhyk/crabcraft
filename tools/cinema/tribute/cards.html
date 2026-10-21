@@ -93,8 +93,17 @@ const RANGES_M = [
   [[2700, 560], [2900, 700], [3150, 640]],
   [[2900, 1150], [2860, 1400], [2950, 1620]],
 ];
-// The two continents' names, as the original names only Kalimdor and the Eastern Kingdoms: [text, x, y, size].
-const LABELS = [['클로헤이븐', 990, 950, 78], ['서리빛 설원', 2950, 650, 78]];
+// The names, written in one by one as in the original (Kalimdor; the Eastern Kingdoms, Ironforge and Stormwind
+// with their stars, Khaz Modan): [text, x, y, size, fade in from, to (song s), star]. The east continent's two
+// starred cities are its worlds' capitals, the throne of Frostlight in the north and Starhaven's harbour south.
+const LABELS = [
+  ['클로헤이븐', 990, 950, 78, 14.22, 14.72],
+  ['서리빛 설원', 2832, 940, 78, 20.5, 21.25],
+  ['얼음 왕좌', 2931, 729, 44, 21.88, 22.3, true],
+  ['별빛 항구', 3018, 1152, 44, 22.58, 22.98, true],
+  ['서리 소나무 숲', 3050, 540, 54, 23.18, 23.65],
+];
+const NL = LABELS.length;
 
 const SKW = 4096, SKH = 2048; // the globe's skin (the map baked equirectangular)
 
@@ -189,16 +198,23 @@ function buildField(data) {
   return { field: out, land };
 }
 
-/** A name in gothic with its corners rounded (blur, then threshold back), as a signed distance
- *  field: a canvas whose red is 0.5 + d / 24 (d: map px from the letters' edge, + inside). */
+/** A name in gothic (and a city's four-point star, up and left of it) with its corners rounded (blur, then
+ *  threshold back), as a signed distance field: a canvas whose red is 0.5 + d / 24 (d: map px from the
+ *  letters' edge, + inside). cx, cy: the name's centre in it. */
 const NAME_RANGE = 12;
-function roundedName(s, size) {
+function roundedName(s, size, star) {
   const font = `700 ${size}px ${KO}`, sp = Math.round(size * 0.4), pad = Math.ceil(size * 0.3) + NAME_RANGE;
   const m = canvas(8, 8).getContext('2d'); m.font = font; m.letterSpacing = `${sp}px`;
-  const w = Math.ceil(m.measureText(s).width) + pad * 2, h = Math.ceil(size * 1.2) + pad * 2;
+  const tw = Math.ceil(m.measureText(s).width), w = tw + pad * 2, h = Math.ceil(size * 1.2) + pad * 2 + (star ? Math.ceil(size * 1.05) : 0);
+  const cx = w / 2, cy = star ? h - pad - size * 0.6 : h / 2;
   const a = canvas(w, h); const ag = a.getContext('2d', { willReadFrequently: true });
   ag.font = font; ag.letterSpacing = `${sp}px`; ag.textAlign = 'center'; ag.textBaseline = 'middle'; ag.fillStyle = '#fff';
-  ag.filter = `blur(${(size * 0.035).toFixed(1)}px)`; ag.fillText(s, w / 2 + sp / 2, h / 2);
+  ag.filter = `blur(${(size * 0.035).toFixed(1)}px)`; ag.fillText(s, cx + sp / 2, cy);
+  if (star) { // long points up and down, pinched waist
+    const x = cx - 0.2 * tw, y = cy - size * 1.12, v = size * 0.5, u = size * 0.34, c = size * 0.06;
+    ag.beginPath(); ag.moveTo(x, y - v); ag.quadraticCurveTo(x + c, y - c, x + u, y); ag.quadraticCurveTo(x + c, y + c, x, y + v);
+    ag.quadraticCurveTo(x - c, y + c, x - u, y); ag.quadraticCurveTo(x - c, y - c, x, y - v); ag.fill();
+  }
   const d = ag.getImageData(0, 0, w, h); const mask = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) mask[i] = d.data[i * 4 + 3] > 118 ? 1 : 0;
   const toOut = edt(mask, w, h, 0), toIn = edt(mask, w, h, 1);
@@ -207,19 +223,23 @@ function roundedName(s, size) {
     d.data[i * 4] = Math.round(255 * clamp01(0.5 + sd / (2 * NAME_RANGE))); d.data[i * 4 + 1] = d.data[i * 4 + 2] = 0; d.data[i * 4 + 3] = 255;
   }
   ag.putImageData(d, 0, 0);
-  return a;
+  return { c: a, cx, cy };
 }
-/** The label layer at map resolution: red the names' distance field, green the mountains' ink strokes,
- *  blue their lit slopes. */
+/** Each name's box (map px), where the shader fades that name in. */
+const LABEL_BOX = new Float32Array(NL * 4);
+/** The label layer at map resolution: red the names' distance field, green ink (the mountains' strokes and
+ *  the drawings in the sea), blue the mountains' lit slopes. */
 function buildLabels(land) {
   const c = canvas(MW, MH); const g = c.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, MW, MH); g.globalCompositeOperation = 'lighter';
   const boxes = [];
-  for (const [s, x, y, size] of LABELS) {
-    const f = roundedName(s, size);
-    g.drawImage(f, Math.round(x - f.width / 2), Math.round(y - f.height / 2));
-    boxes.push([x - f.width / 2, y - f.height / 2 + size * 0.2, x + f.width / 2, y + f.height / 2 - size * 0.2]);
-  }
+  LABELS.forEach(([s, x, y, size, , , star], i) => {
+    const { c: f, cx, cy } = roundedName(s, size, star);
+    const x0 = Math.round(x - cx), y0 = Math.round(y - cy);
+    g.drawImage(f, x0, y0);
+    LABEL_BOX.set([x0, y0, x0 + f.width, y0 + f.height], i * 4);
+    boxes.push([x0, y0 + size * 0.2, x0 + f.width, y0 + f.height - size * 0.2]);
+  });
   // Mountains: sparse clusters of thin chevrons along the ranges, drawn in ink (only on land, off the names).
   const r = mulberry(77); const onLand = (x, y) => land[Math.floor(y / GS) * GW + Math.floor(x / GS)] === 1;
   const free = (x, y) => !boxes.some(([x0, y0, x1, y1]) => x > x0 - 40 && x < x1 + 40 && y > y0 - 40 && y < y1 + 40);
@@ -245,7 +265,91 @@ function buildLabels(land) {
     g.lineTo(x + s * 1.05, y + s * 0.5); g.stroke();
     g.beginPath(); g.moveTo(x - s * 0.1, y - s * 0.62); g.lineTo(x + s * 0.08, y + s * 0.05); g.stroke(); // the shaded ridge
   }
+  // The drawings in the sea off the east continent, as the original's: a galleon at lower left, a dragon at right.
+  drawShip(g, 1760, 1395, 1.8);
+  drawDragon(g, 3545, 1232, 1.45);
   return c;
+}
+
+/** Ink line art on the label layer (green, added): `fn` draws in local units round (x, y) within 160 units,
+ *  s map px per unit (drawn on its own canvas, then softened onto the layer in one pass). */
+function inked(dst, x, y, s, ink, fn) {
+  const half = Math.ceil(160 * s), c = canvas(half * 2, half * 2), g = c.getContext('2d');
+  g.globalCompositeOperation = 'lighter'; g.translate(half, half); g.scale(s, s); g.lineCap = g.lineJoin = 'round';
+  const k = (a) => `rgb(0,${Math.round(255 * ink * a)},0)`;
+  const P = (pts, close) => { g.beginPath(); pts.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py))); if (close) g.closePath(); };
+  // Curve through points (Catmull-Rom as cubic Beziers).
+  const C = (pts) => { g.beginPath(); g.moveTo(...pts[0]);
+    for (let i = 0; i < pts.length - 1; i++) { const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+      g.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6, p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1]); } };
+  const st = (w, a = 1) => { g.lineWidth = 1.35 * w / s; g.strokeStyle = k(a); g.stroke(); };
+  const fl = (a) => { g.fillStyle = k(a); g.fill(); };
+  fn({ P, C, st, fl, g });
+  dst.save(); dst.filter = 'blur(0.6px)'; dst.drawImage(c, Math.round(x - half), Math.round(y - half)); dst.restore();
+}
+/** A three-masted galleon sailing east, sails full, on a few strokes of sea (local units, ~150 wide). */
+function drawShip(g, x, y, s) {
+  inked(g, x, y, s, 0.95, ({ P, C, st, fl, g }) => {
+    // Hull: high stern castle aft (west), the bow and bowsprit east.
+    const hull = [[-52, -16], [-49, 2], [-40, 13], [-18, 20], [14, 20], [38, 13], [53, -3], [57, -8]];
+    C([...hull]); g.lineTo(52, -6); g.quadraticCurveTo(20, 0, -24, -2); g.lineTo(-30, -11); g.lineTo(-52, -16); fl(0.16); C(hull); st(3.0);
+    P([[57, -8], [52, -6]]); st(2.6); C([[52, -6], [20, -1], [-24, -2]]); st(2.4); P([[-24, -2], [-30, -11], [-52, -16]]); st(2.4);
+    C([[-48, 6], [-20, 12], [14, 12], [44, 4]]); st(1.4, 0.8); // a wale
+    for (let i = 0; i < 7; i++) { const px = -32 + i * 10, py = 5.5 + 0.4 * Math.abs(i - 3); P([[px, py], [px + 4, py], [px + 4, py + 3.4], [px, py + 3.4]], true); fl(0.7); } // gun ports
+    for (let i = 0; i < 9; i++) { const px = -40 + i * 10; P([[px, 14 - 0.02 * px * px / 8], [px + 6, 19 - 0.02 * px * px / 8]]); st(1.0, 0.45); } // hull shading
+    P([[-46, -14], [-46, -24], [-34, -22], [-34, -12]]); st(1.6, 0.8); // the stern lantern rail
+    P([[53, -6], [80, -17]]); st(2.2); // bowsprit
+    // Masts, yards and full square sails (billowing east), small topsails.
+    const masts = [[-28, -4, -74, [[-12, -36, 34], [-40, -66, 26]]], [2, -1, -98, [[-10, -42, 46], [-46, -74, 38], [-78, -94, 26]]], [30, -3, -82, [[-12, -38, 38], [-42, -66, 30], [-70, -80, 18]]]];
+    for (const [mx, y0, y1, sails] of masts) {
+      for (const [ta, tb, w] of sails) { // yard at ta, foot at tb (y), width w
+        const l = mx - w / 2, r = mx + w / 2, b = 0.18 * w;
+        g.beginPath(); g.moveTo(l, ta); g.lineTo(r, ta); g.quadraticCurveTo(r + b, (ta + tb) / 2, r - 1, tb); g.quadraticCurveTo(mx + b * 0.4, tb + b * 0.55, l + 1, tb);
+        g.quadraticCurveTo(l + b * 0.7, (ta + tb) / 2, l, ta); g.closePath(); fl(0.12); st(2.0);
+        P([[l - 4, ta], [r + 4, ta]]); st(2.2); // the yard
+        for (const f of [0.3, 0.62]) { C([[lerp(l, r, f), ta + 2], [lerp(l, r, f) + b * 0.5, (ta + tb) / 2], [lerp(l, r, f) + b * 0.15, tb - 2]]); st(1.0, 0.55); } // billow folds
+      }
+      P([[mx, y0], [mx, y1]]); st(2.2);
+      P([[mx, y1], [mx + 13, y1 - 3], [mx + 8, y1 + 1], [mx + 15, y1 + 4], [mx, y1 + 4]]); st(1.4); // pennant
+    }
+    P([[80, -17], [30, -82]]); st(1.1, 0.75); P([[80, -17], [62, -20], [34, -76]]); st(1.4); P([[62, -20], [40, -12]]); st(1.4); // jib and stays
+    P([[-52, -16], [-28, -74]]); st(1.0, 0.7); P([[-28, -74], [2, -98]]); st(1.0, 0.7); P([[2, -98], [30, -82]]); st(1.0, 0.7);
+    for (const [mx, top] of [[-28, -74], [2, -98], [30, -82]]) for (const d of [-12, 12]) { P([[mx, top + 6], [mx + d, -2]]); st(0.8, 0.45); } // shrouds
+    // The sea: curling wave strokes under the hull and ahead of the bow.
+    const wave = (wx, wy, w, a) => { C([[wx - w, wy], [wx - w * 0.4, wy - 3], [wx, wy - 1], [wx + w * 0.35, wy - 5], [wx + w * 0.55, wy - 2]]); st(1.6, a); };
+    wave(-30, 24, 30, 0.9); wave(22, 25, 34, 0.9); wave(64, 15, 18, 0.8); wave(-62, 20, 16, 0.7); wave(-4, 33, 26, 0.6); wave(46, 31, 22, 0.55); wave(-44, 34, 18, 0.5);
+  });
+}
+/** A winged dragon gliding west toward the continent, tail curled (local units, ~240 wide). */
+function drawDragon(g, x, y, s) {
+  inked(g, x, y, s, 1, ({ P, C, st, fl, g }) => {
+    const top = [[-84, -31], [-64, -20], [-36, -14], [0, -16], [40, -9], [78, -5], [104, -12], [118, -26], [116, -40]];
+    const bot = [[-90, -12], [-64, -5], [-40, 9], [-4, 14], [36, 9], [76, 3], [104, -3], [122, -18], [124, -34], [116, -40]];
+    // Body filled faintly, then outlined.
+    C(top); for (const p of [...bot].reverse()) g.lineTo(...p); g.closePath(); fl(0.14);
+    C(top); st(2.4); C(bot); st(2.4);
+    // The tail's spade.
+    P([[116, -40], [108, -52], [122, -48], [126, -58], [128, -44], [124, -34]]); fl(0.25); st(1.8);
+    // Head: snout to the west, open jaw, horns, an eye.
+    P([[-84, -31], [-98, -32], [-112, -26], [-110, -22], [-96, -21], [-108, -15], [-104, -11], [-90, -12]]); fl(0.2); st(2.2);
+    P([[-82, -31], [-74, -46], [-70, -50]]); st(2.0); P([[-78, -29], [-64, -40]]); st(1.8);
+    P([[-95, -28], [-92, -27]]); st(2.6);
+    for (const [a, b] of [[-60, -18], [-40, -13], [-18, -14], [6, -16], [30, -12], [54, -8], [78, -6], [98, -9]]) { P([[a - 4, b + 1], [a, b - 7], [a + 4, b + 1]]); st(1.4, 0.8); } // spines
+    for (let i = 0; i < 9; i++) { const k = i / 8, xa = lerp(-58, 92, k); P([[xa, lerp(-2, 0, k) + 4 * Math.sin(k * 3)], [xa + 3, lerp(10, -1, k) + 3 * Math.sin(k * 3)]]); st(1.0, 0.5); } // belly bands
+    // Legs with claws, tucked.
+    C([[-40, 6], [-46, 20], [-40, 30]]); st(2.0); P([[-40, 30], [-47, 33]]); st(1.4); P([[-40, 30], [-42, 36]]); st(1.4); P([[-40, 30], [-34, 34]]); st(1.4);
+    C([[34, 8], [30, 22], [40, 30]]); st(2.0); P([[40, 30], [34, 34]]); st(1.4); P([[40, 30], [42, 36]]); st(1.4); P([[40, 30], [48, 32]]); st(1.4);
+    // The near wing raised: arm to the wrist, three fingers fanning back, scalloped membrane.
+    const S = [-26, -14], E = [-8, -58], Wr = [-30, -92], F = [[24, -104], [56, -76], [52, -38]], R = [22, -12];
+    P([S, E, Wr]); st(2.4);
+    for (const f of F) { P([Wr, f]); st(1.6); }
+    const memb = [Wr, F[0], F[1], F[2], R]; g.beginPath(); g.moveTo(...Wr);
+    for (let i = 1; i < memb.length; i++) { const a = memb[i - 1], b = memb[i], mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, dx = Wr[0] - mx, dy = Wr[1] - my, l = Math.hypot(dx, dy);
+      g.quadraticCurveTo(mx + dx / l * 12, my + dy / l * 12, b[0], b[1]); }
+    g.lineTo(...S); g.closePath(); fl(0.12); st(1.8);
+    // The far wing's tip behind the back.
+    P([[-14, -16], [6, -60], [-4, -84]]); st(1.6, 0.7); C([[-4, -84], [14, -70], [24, -62], [16, -46], [30, -26], [14, -16]]); st(1.4, 0.6);
+  });
 }
 
 const VS = `#version 300 es
@@ -256,6 +360,8 @@ uniform sampler2D uField, uLab;
 uniform vec2 uRes, uMap;
 uniform vec3 uView, uSwirl;
 uniform float uT, uAlpha, uLabA, uBake;
+uniform vec4 uLabBox[${NL}];
+uniform float uLabAl[${NL}];
 out vec4 o;
 float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
@@ -379,9 +485,10 @@ void main() {
   // Mountains: lit slopes, then the ink.
   vec4 lab = texture(uLab, p / uMap);
   gold = mix(gold, vec3(0.99, 0.90, 0.52), 0.45 * lab.b);
-  gold = mix(gold, vec3(0.42, 0.23, 0.09), 0.8 * lab.g);
 
   vec3 col = mix(sea, gold, land);
+  // The ink: the mountains on land, the drawings in the sea.
+  col = mix(col, vec3(0.42, 0.23, 0.09), 0.8 * lab.g);
   // The swirl's ink, fainter where it crosses land.
   col = mix(col, vec3(0.42, 0.24, 0.17), 0.86 * sw.x * (1.0 - 0.5 * land));
   // The coastline: a thin dark red-brown line.
@@ -391,7 +498,10 @@ void main() {
   // The names, pressed into the paint: a dark red-brown outline, a lighter halo round it, the fill a
   // little darker than the land and shaded on the wall away from the light.
   float sd = (lab.r - 0.5) * 24.0;
-  if (uLabA > 0.0 && sd > -11.0) {
+  float la = 0.0; // this name's fade
+  for (int i = 0; i < ${NL}; i++) { vec4 b = uLabBox[i]; if (p.x > b.x && p.y > b.y && p.x < b.z && p.y < b.w) la = uLabAl[i]; }
+  la *= uLabA;
+  if (la > 0.0 && sd > -11.0) {
     float fill = smoothstep(-aa, aa, sd);
     float line = smoothstep(-3.6 - aa, -3.6 + aa, sd) * (1.0 - fill);
     float lit = smoothstep(-8.5, -6.0, sd) * (1.0 - smoothstep(-4.2, -3.4, sd));
@@ -402,7 +512,7 @@ void main() {
     vec3 lc = mix(col, min(col * 1.08 + vec3(0.08, 0.07, 0.04), vec3(1.0)), 0.4 * lit);
     lc = mix(lc, vec3(0.35, 0.15, 0.06), 0.9 * line);
     lc = mix(lc, col * vec3(0.82, 0.7, 0.56) * bev, fill);
-    col = mix(col, lc, uLabA);
+    col = mix(col, lc, la);
   }
   o = vec4(col, uBake > 0.5 ? land : uAlpha); // baked for the globe: alpha is the land
 }`;
@@ -410,7 +520,7 @@ const FS_POST = `#version 300 es
 precision highp float;
 uniform sampler2D uScene;
 uniform vec2 uRes;
-uniform float uT, uBlur, uDark, uGlow, uFocus;
+uniform float uT, uBlur, uDark, uGlow, uFocus, uFocusR;
 out vec4 o;
 float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 void main() {
@@ -419,7 +529,11 @@ void main() {
   if (uBlur > 0.0005) { vec2 d = uv - 0.5; for (int i = 0; i < 32; i++) c += texture(uScene, 0.5 + d * (1.0 - uBlur * float(i) / 31.0)).rgb; c /= 32.0; }
   else c = texture(uScene, uv).rgb;
   c = mix(c, textureLod(uScene, uv, 1.2).rgb, 0.5); // the original is a little out of focus throughout
-  if (uFocus > 0.001) c = mix(c, textureLod(uScene, uv, 3.4).rgb, uFocus);
+  if (uFocus > 0.001) { // out of focus: a disc of uFocusR px (golden-angle taps on the mip chain)
+    vec3 b = vec3(0.0); float lod = max(0.0, log2(uFocusR / 4.0));
+    for (int i = 0; i < 32; i++) { float a = float(i) * 2.39996, r = uFocusR * sqrt((float(i) + 0.5) / 32.0); b += textureLod(uScene, uv + vec2(cos(a), sin(a)) * r / uRes, lod).rgb; }
+    c = mix(c, b / 32.0, uFocus);
+  }
   vec3 g = textureLod(uScene, uv, 4.0).rgb * 0.5 + textureLod(uScene, uv, 6.0).rgb * 0.5;
   c += uGlow * g * g * vec3(1.0, 0.82, 0.55);
   float r = length((uv - 0.5) * vec2(2.0, 1.75));
@@ -494,7 +608,7 @@ function initGL(data) {
   const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   const map = compile(gl, VS, FS_MAP), post = compile(gl, VS, FS_POST);
-  gl.useProgram(map.p); gl.uniform1i(map.u.uField, 0); gl.uniform1i(map.u.uLab, 1);
+  gl.useProgram(map.p); gl.uniform1i(map.u.uField, 0); gl.uniform1i(map.u.uLab, 1); gl.uniform4fv(map.u['uLabBox[0]'], LABEL_BOX);
   gl.uniform2f(map.u.uRes, W, H); gl.uniform2f(map.u.uMap, MW, MH); gl.uniform3f(map.u.uSwirl, SWIRL.x, SWIRL.y, SWIRL.r);
   gl.useProgram(post.p); gl.uniform1i(post.u.uScene, 2); gl.uniform2f(post.u.uRes, W, H);
   // The globe's skin: the whole map (no names) baked once, equirectangular, land in alpha.
@@ -515,8 +629,9 @@ function initGL(data) {
 // Camera over the map at song time t: centre (map px) and zoom (output px per map px).
 const FULL = W / MW;
 const MAP_IN = 6.3; // the map starts out of black under the end of the rating card's range
-// Its fade, matched to the original's brightness: a faint toe, then rising to full at 9.4 s.
-const mapIn = (t) => Math.max(0.12 * clamp01((t - MAP_IN) / 1.1), Math.pow(clamp01((t - MAP_IN) / 3.1), 2.45));
+// Its fade, matched to the original's brightness (mean luma, frame by frame): a faint toe, then rising to full
+// at 9.4 s.
+const mapIn = (t) => Math.max(0.07 * clamp01((t - MAP_IN) / 1.2), Math.pow(clamp01((t - 6.4) / 3.0), 2.8));
 const VIEWS = {
   full: (t) => ({ x: lerp(2080, 1960, ramp(t, 9, 14)), y: 990, z: FULL * lerp(1.02, 1.17, ramp(t, 8, 14)) }),
   west: (t) => ({ x: lerp(1300, 1360, ramp(t, 13.6, 20)), y: lerp(930, 1040, ramp(t, 13.6, 20)), z: FULL * lerp(2.3, 2.45, ramp(t, 13.6, 20)) }),
@@ -538,8 +653,8 @@ function drawMap(t) {
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.useProgram(map.p); gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
   gl.uniform1f(map.u.uT, t);
-  // The names are written in as the camera comes close to the west, as in the original.
-  gl.uniform1f(map.u.uLabA, ramp(t, 14.4, 16.4));
+  // The names are written in one by one as the camera comes to each continent, as in the original.
+  gl.uniform1f(map.u.uLabA, 1); gl.uniform1fv(map.u['uLabAl[0]'], LABELS.map((l) => ramp(t, l[4], l[5])));
   for (const [v, a] of layers) { if (a <= 0) continue; gl.uniform3f(map.u.uView, v.x, v.y, v.z); gl.uniform1f(map.u.uAlpha, a); gl.drawArrays(gl.TRIANGLES, 0, 3); }
   gl.disable(gl.BLEND);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, scene); gl.generateMipmap(gl.TEXTURE_2D);
@@ -548,32 +663,40 @@ function drawMap(t) {
   gl.uniform1f(post.u.uT, t);
   // A radial zoom blur and a darker, warmer frame under the presents line, as in the original.
   gl.uniform1f(post.u.uBlur, 0.06 * ramp(t, 28.6, 31.0));
-  gl.uniform1f(post.u.uDark, 0.28 * ramp(t, 28.5, 31));
+  gl.uniform1f(post.u.uDark, 0.28 * ramp(t, 28.5, 31) * (1 - ramp(t, 35.6, 37.6))); // and paler as it washes out
   gl.uniform1f(post.u.uGlow, 0.14 + 0.3 * ramp(t, 28.5, 31)); // the land blazes under the presents line
-  // Out of focus as it fades up from black.
-  gl.uniform1f(post.u.uFocus, 0.85 * (1 - ramp(t, 8.4, 10.4)));
+  // Far out of focus as it fades up from black, so the continents read only from about 8.5 s, as in the original.
+  gl.uniform1f(post.u.uFocus, 1 - ramp(t, 9.0, 10.3)); gl.uniform1f(post.u.uFocusR, 5 + 70 * (1 - ramp(t, 7.4, 9.5)));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.finish();
 
-  // The presents line and the wash to white, on the 2D canvas above.
+  // The wash to white, then the presents line on top of it: it fades in on the original's 30.0-30.8 s and keeps a
+  // dark rim, so it never dims while the map pales under it; on the white its fill turns slate and it fades away as
+  // the original's does, 37.7-39.4 s.
   ctx.clearRect(0, 0, W, H);
-  const ta = Math.min(ramp(t, 30.2, 32.2), 1 - ramp(t, 37.9, 38.9));
-  const white = ramp(t, 36.0, 37.6);
-  const line = (fill, glow) => {
-    ctx.font = PRESENT.font; ctx.letterSpacing = PRESENT.spacing; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    if (glow > 0) { ctx.shadowColor = `rgba(20,10,2,${glow})`; ctx.shadowBlur = 26; ctx.fillStyle = fill; ctx.fillText(PRESENT.text, W / 2, H / 2 + 6); ctx.shadowBlur = 8; }
-    ctx.fillStyle = fill; ctx.fillText(PRESENT.text, W / 2, H / 2 + 6); ctx.shadowBlur = 0;
-  };
+  const wa = pw(WASH, t);
+  if (wa > 0) { ctx.save(); ctx.globalAlpha = wa; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  const ta = Math.min(ramp(t, 29.95, 30.85), pw(TITLE_OUT, t));
   if (ta > 0) {
+    const k = ramp(t, 36.95, 37.7), y = H / 2 + 6, text = PRESENT.text; // k: cream on the map, slate on the white
+    const fill = `rgb(${[[242, 70], [230, 72], [204, 82]].map(([a, b]) => Math.round(lerp(a, b, k))).join(',')})`;
     ctx.save(); ctx.globalAlpha = ta;
-    line(`rgb(${Math.round(lerp(242, 120, white))},${Math.round(lerp(230, 116, white))},${Math.round(lerp(204, 110, white))})`, 0.9 * (1 - white));
+    ctx.font = PRESENT.font; ctx.letterSpacing = PRESENT.spacing; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (k < 1) { ctx.shadowColor = `rgba(20,10,2,${0.9 * (1 - k)})`; ctx.fillStyle = fill; ctx.shadowBlur = 26; ctx.fillText(text, W / 2, y); ctx.shadowBlur = 8; ctx.fillText(text, W / 2, y); ctx.shadowBlur = 0; }
+    ctx.lineWidth = 3; ctx.strokeStyle = `rgba(24,18,14,${lerp(0.8, 0.3, k)})`; ctx.strokeText(text, W / 2, y);
+    ctx.fillStyle = fill; ctx.fillText(text, W / 2, y);
     ctx.restore();
   }
-  // Into white.
-  const wa = ramp(t, 36.4, 38.7);
-  if (wa > 0) { ctx.save(); ctx.globalAlpha = wa; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore();
-    if (ta > 0) { ctx.save(); ctx.globalAlpha = ta * 0.95; line('#3f4049', 0); ctx.restore(); } } // dark slate over the white, as in the original
 }
+/** Piecewise linear through [[t, v], ...], held flat outside. */
+function pw(keys, t) {
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) if (t <= keys[i][0]) return lerp(keys[i - 1][1], keys[i][1], (t - keys[i - 1][0]) / (keys[i][0] - keys[i - 1][0]));
+  return keys[keys.length - 1][1];
+}
+// The white over the map and the presents line's fade out, from the original's brightness frame by frame.
+const WASH = [[36.2, 0], [36.5, 0.06], [36.75, 0.13], [37.0, 0.22], [37.25, 0.35], [37.5, 0.5], [37.75, 0.62], [38.0, 0.72], [38.25, 0.81], [38.5, 0.9], [38.75, 0.97], [38.9, 1]];
+const TITLE_OUT = [[37.7, 1], [38.75, 0.55], [39.4, 0]];
 
 // ----------------------------------------------------------------------------------- rating card
 function drawRating(t, overMap) {
@@ -598,6 +721,10 @@ let LS = 1, LH = 0, LY = 0;
 const FORGE = [[228, 392], [500, 392], [522, 414], [1078, 414], [1100, 392], [1372, 392], [1372, 600], [228, 600]];
 const FX0 = 190, FX1 = 1430, F0 = 164.36, F1 = 165.11; // the fire front's path (logo px) and times
 const WORD_Y = 500; // the lower word's middle (logo px)
+// The upper word's letters (logo px columns of W O R L D O F, rows 324-396) and when each writes in: one by one,
+// as the original writes "WORLD" 163.5-164.1 s.
+const UPPER = [[555, 639], [648, 705], [719, 768], [783, 827], [843, 896], [936, 993], [1007, 1046]], UPPER_Y = [324, 396];
+const UPPER_T = [163.5, 163.58, 163.66, 163.74, 163.82, 163.94, 164.02];
 const GLOBE = { x: 960, y: 288, r: 150 }; // where the globe settles: on the crab emblem (screen px)
 const RAYS = [];
 const SCR = []; // scratch canvases, cleared on use
@@ -678,7 +805,7 @@ function drawLogo(t) {
   ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(sc, sc); ctx.translate(-W / 2, -H / 2);
   if (t >= 166.05 || up <= 0) { ctx.globalAlpha = up; if (up > 0) ctx.drawImage(LOGO, LX, LY, LW, LH); }
   else {
-    ctx.globalAlpha = up; ctx.drawImage(LG.up, LX, LY);
+    ctx.globalAlpha = up; ctx.drawImage(LG.bare, LX, LY);
     // The lower word: cold and dark ahead of the front, forged behind it.
     const edge = (g, behind) => { const gr = g.createLinearGradient(front * LS - 28, 0, front * LS + 28, 0);
       gr.addColorStop(0, behind ? '#fff' : 'rgba(0,0,0,0)'); gr.addColorStop(1, behind ? 'rgba(0,0,0,0)' : '#fff'); return gr; };
@@ -705,16 +832,22 @@ function drawLogo(t) {
       if (spill > 0.005) { ctx.globalAlpha = up * spill; ctx.filter = 'blur(6px)'; ctx.drawImage(LG.warm, LX, LY); ctx.filter = 'none'; }
       ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = up;
     }
-    // "WORLD OF" lit left to right as it stands, as the original writes its upper word in.
-    const wk = clamp01((t - 163.5) / 0.6);
-    if (wk > 0 && wk < 1) {
-      const bx = lerp(380, 1220, wk) * LS, wg = layer(3); wg.drawImage(LG.banner, 0, 0); wg.globalCompositeOperation = 'destination-in';
-      const gr = wg.createLinearGradient(bx - 90, 0, bx + 90, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.5, '#fff'); gr.addColorStop(1, 'rgba(0,0,0,0)');
-      wg.fillStyle = gr; wg.fillRect(0, 0, LW, LH);
-      const a = Math.sin(Math.PI * wk) * up;
-      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.9 * a; ctx.drawImage(SCR[3], LX, LY);
-      ctx.filter = 'blur(12px)'; ctx.drawImage(SCR[3], LX, LY); ctx.filter = 'none';
-      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = up;
+    // "WORLD OF" written in letter by letter: each wiped in from its left, flaring white hot and cooling to its gold.
+    for (const L of LG.letters) {
+      const k = clamp01((t - L.t) / 0.07);
+      if (k <= 0) continue;
+      const h = Math.exp(-Math.max(0, t - L.t - 0.04) / 0.26);
+      const wipe = (src, i) => { const g = layer(i, L.c.width, L.c.height); g.drawImage(src, 0, 0); if (k >= 1) return SCR[i];
+        const e = lerp(-0.15, 1.15, k) * L.c.width, gr = g.createLinearGradient(e - 10, 0, e + 10, 0);
+        gr.addColorStop(0, '#fff'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.globalCompositeOperation = 'destination-in'; g.fillStyle = gr; g.fillRect(0, 0, L.c.width, L.c.height); return SCR[i]; };
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = up; ctx.drawImage(wipe(L.c, 6), LX + L.x, LY + L.y);
+      if (h > 0.01) {
+        const hot = wipe(L.hot, 7);
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.85 * h * up; ctx.drawImage(hot, LX + L.x, LY + L.y);
+        ctx.filter = 'blur(7px)'; ctx.globalAlpha = h * up; ctx.drawImage(hot, LX + L.x, LY + L.y);
+        ctx.filter = 'blur(22px)'; ctx.globalAlpha = 0.7 * h * up; ctx.drawImage(hot, LX + L.x, LY + L.y);
+        ctx.filter = 'none'; ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = up;
+      }
     }
   }
   // The flare on the fire front: a hot core and a long horizontal streak.
@@ -759,10 +892,45 @@ window.cardsInit = async (islands) => {
   const word = cut('destination-in'), up = cut('destination-out');
   // Before the forge the word's plate is dim and out of focus: no letters to read yet.
   const cold = mk((g) => { g.filter = 'blur(22px) brightness(0.32) saturate(0.6)'; g.drawImage(word, 0, 0); g.filter = 'none'; g.globalCompositeOperation = 'destination-in'; g.drawImage(mask, 0, 0); });
-  const banner = mk((g) => { g.drawImage(up, 0, 0); g.globalCompositeOperation = 'destination-in'; g.fillRect(380 * LS, 300 * LS, 840 * LS, 115 * LS); });
+  // The upper word lifted off its banner by colour (the gold letters, grown to take their dark rims) for its
+  // writing in, one canvas per letter, and the banner bare under them (its red smeared into the holes).
+  const ux0 = Math.floor((UPPER[0][0] - 14) * LS), ux1 = Math.ceil((UPPER[UPPER.length - 1][1] + 14) * LS);
+  const uy0 = Math.floor(UPPER_Y[0] * LS), uy1 = Math.ceil(UPPER_Y[1] * LS), uw = ux1 - ux0, uh = uy1 - uy0;
+  const ug = canvas(uw, uh).getContext('2d', { willReadFrequently: true }); ug.drawImage(LOGO, -ux0, -uy0, LW, LH); // above the lower word's cut
+  const px = ug.getImageData(0, 0, uw, uh).data;
+  const N = uw * uh, gold = new Uint8Array(N);
+  for (let i = 0; i < N; i++) { const r = px[i * 4], gg = px[i * 4 + 1]; gold[i] = px[i * 4 + 3] > 0 && gg > 60 && gg > 0.4 * r ? 1 : 0; }
+  const grow = (m, R) => { const o = new Uint8Array(N);
+    for (let y = 0; y < uh; y++) for (let x = 0; x < uw; x++) { if (!m[y * uw + x]) continue;
+      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < uw && yy < uh && dx * dx + dy * dy <= R * R + 1) o[yy * uw + xx] = 1; } }
+    return o; };
+  // The letters' dark rims and shadows: darker than the red plate, near the gold.
+  const near = grow(gold, 10), rim = new Uint8Array(N);
+  for (let i = 0; i < N; i++) rim[i] = gold[i] || (near[i] && px[i * 4] < 78 && px[i * 4 + 1] < 40) ? 1 : 0;
+  const hole = grow(rim, 2), glow = grow(gold, 1);
+  const lettersD = new ImageData(uw, uh), glowD = new ImageData(uw, uh), cutD = new ImageData(new Uint8ClampedArray(px), uw, uh);
+  for (let i = 0; i < N; i++) if (hole[i]) { for (let j = 0; j < 4; j++) lettersD.data[i * 4 + j] = px[i * 4 + j]; cutD.data[i * 4 + 3] = 0; }
+  for (let i = 0; i < N; i++) if (glow[i]) glowD.data.set([255, 226, 170, 255], i * 4); // the hot letters: the gold only
+  const holes = canvas(uw, uh); holes.getContext('2d').putImageData(cutD, 0, 0);
+  const sm = canvas(uw, uh); const smg = sm.getContext('2d', { willReadFrequently: true }); smg.filter = 'blur(12px)'; smg.drawImage(holes, 0, 0);
+  const smD = smg.getImageData(0, 0, uw, uh).data; // un-premultiplied: the mean colour round each hole
+  const bareD = cutD;
+  for (let i = 0; i < uw * uh; i++) if (hole[i]) { const a = smD[i * 4 + 3] > 2;
+    bareD.data[i * 4] = a ? smD[i * 4] : 90; bareD.data[i * 4 + 1] = a ? smD[i * 4 + 1] : 12; bareD.data[i * 4 + 2] = a ? smD[i * 4 + 2] : 10; bareD.data[i * 4 + 3] = px[i * 4 + 3]; }
+  const bare = mk((g) => { g.drawImage(up, 0, 0); g.clearRect(ux0, uy0, uw, uh); g.putImageData(bareD, ux0, uy0); });
+  const lettersC = canvas(uw, uh); lettersC.getContext('2d').putImageData(lettersD, 0, 0);
+  const glowC = canvas(uw, uh); glowC.getContext('2d').putImageData(glowD, 0, 0);
+  const letters = UPPER.map(([a, b], i) => {
+    const l = i ? (UPPER[i - 1][1] + a) / 2 : a - 14, r = i < UPPER.length - 1 ? (b + UPPER[i + 1][0]) / 2 : b + 14;
+    const x0 = Math.floor(l * LS) - ux0, x1 = Math.ceil(r * LS) - ux0;
+    const c = canvas(x1 - x0, uh); c.getContext('2d').drawImage(lettersC, -x0, 0);
+    const hot = canvas(x1 - x0, uh); hot.getContext('2d').drawImage(glowC, -x0, 0);
+    return { c, hot, x: ux0 + x0, y: uy0, t: UPPER_T[i] };
+  });
   const warm = mk((g) => { g.drawImage(up, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = 'rgb(255,140,50)'; g.fillRect(0, 0, LW, LH); });
   const lum = mk((g) => { g.filter = 'grayscale(1) contrast(1.3) brightness(1.5)'; g.drawImage(word, 0, 0); });
-  LG = { word, up, cold, lum, banner, warm };
+  LG = { word, up, cold, lum, warm, bare, letters };
   // The rays: mostly near the horizontal, as the original's burst out sideways.
   const r = mulberry(5);
   for (let i = 0; i < 44; i++) {
