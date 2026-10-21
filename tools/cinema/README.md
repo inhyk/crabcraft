@@ -47,6 +47,12 @@ the user supplies at edit time. The soundtrack and the rendered video stay outsi
 (the repository takes no third-party music or video). `tribute/timeline.mjs` is the cut list,
 `tribute/cast.mjs` the characters, `tribute/scenes/*.mjs` the shots.
 
+The snow opening uses one continuous `snow-face` take from 39.5 to 61 seconds (including the
+former `snow-trudge` shot), followed by `snow-wide`. Capture both together to retain the walk's
+snow tracks between views. `CC_QA_BASE=http://localhost:5311 node tools/cinema/qa-snow-opening.mjs`
+checks the lamp clearance, motion through 57 seconds, the wide shot's footprints and restoration
+of the world's lamp geometry after filming.
+
 ## Night-elf action showcase
 
 `tribute/scenes/elf-actions.mjs` replaces only the original `night-elf-run`
