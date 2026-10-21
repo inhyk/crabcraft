@@ -5,7 +5,8 @@
 //   snow-gun { actor, socket ('clawR'), size (1 = about 1.4 units long), grip [x, y, z] (the gun-local
 //              point the claw holds), aim [[t, point | 'camera'], ...] (the latest key at t wins),
 //              lift [[t, degrees]] (muzzle up), fire (t of the shot), kick (recoil, units), hide [sockets],
-//              flash [[t, alpha]...] and flashColor (the glare flooding the lens), shake, light }
+//              flash [[t, alpha]...] and flashColor (the glare flooding the lens), shake, light,
+//              clicks [t, ...] (the hammer drawn back a notch at each, with a glint off the lock) }
 // The shot at `fire`: a flame tongue and a glare out of the bell that floods the lens, a smoke ring and
 // a smoke cloud rolling out along the barrel, sparks and burning wadding, the gun kicking back and
 // climbing, the camera shaking.
@@ -27,7 +28,7 @@ const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 const along = (geo: THREE.BufferGeometry) => geo.rotateX(Math.PI / 2);
 
 /** The blunderbuss, +z out of the muzzle, origin at the lock; returns the group and the muzzle's z. */
-function buildGun(): { gun: THREE.Group; muzzle: number } {
+function buildGun(): { gun: THREE.Group; muzzle: number; hammer: THREE.Mesh } {
   const iron = new THREE.MeshStandardMaterial({ color: '#4a4f58', metalness: 0.85, roughness: 0.36 });
   const bore = new THREE.MeshStandardMaterial({ color: '#16181c', metalness: 0.6, roughness: 0.55, side: THREE.DoubleSide });
   const wood = new THREE.MeshStandardMaterial({ color: '#6e3a1a', metalness: 0, roughness: 0.58 });
@@ -78,7 +79,7 @@ function buildGun(): { gun: THREE.Group; muzzle: number } {
   const guard = add(new THREE.TorusGeometry(0.05, 0.009, 6, 20, Math.PI), brass, 0, -0.1, -0.02);
   guard.rotation.set(0, Math.PI / 2, Math.PI);
   add(new THREE.BoxGeometry(0.012, 0.06, 0.012), iron, 0, -0.1, -0.02);
-  return { gun, muzzle: bellZ + 0.32 };
+  return { gun, muzzle: bellZ + 0.32, hammer };
 }
 
 /** A soft ring of smoke: a torus whose edges fade where its surface turns away from the view. */
@@ -132,6 +133,8 @@ class Gun implements Effect {
   private hidden: THREE.Object3D[] = [];
   private hid = false;
   private fired = false;
+  private hammer: THREE.Mesh;
+  private clicked = 0;
   private v = new THREE.Vector3();
   private dir = new THREE.Vector3();
   private m = new THREE.Matrix4();
@@ -140,7 +143,8 @@ class Gun implements Effect {
     private cue: FxCue,
     scene: THREE.Scene,
   ) {
-    const { gun, muzzle } = buildGun();
+    const { gun, muzzle, hammer } = buildGun();
+    this.hammer = hammer;
     this.muzzleZ = muzzle;
     this.gun = new THREE.Group();
     const [gx, gy, gz] = (cue.grip as number[]) ?? [0, 0, 0];
@@ -203,6 +207,19 @@ class Gun implements Effect {
     this.gun.position.copy(grip).addScaledVector(this.dir, -num(this.cue.kick, 0.18) * rec);
     this.gun.updateMatrixWorld(true);
     const size = num(this.cue.size, 1);
+    // The hammer: down on the pan, back a notch at each click, falling forward at the shot.
+    const clicks = (this.cue.clicks as number[]) ?? [];
+    if (clicks.length) {
+      const notch = clicks.reduce((n, c) => n + smooth((ctx.t - c) / 0.03), 0);
+      this.hammer.rotation.x = tau >= 0 ? -0.05 : -0.05 - 0.55 * notch;
+      while (this.clicked < clicks.length && ctx.t >= clicks[this.clicked]) {
+        const at = this.hammer.getWorldPosition(new THREE.Vector3());
+        ctx.vfx.sparks(at, new THREE.Color(4, 3, 1.6), 5, 1.2 * size, { life: 0.18 });
+        ctx.vfx.glow(at, new THREE.Color(3, 2.6, 2), 0.18 * size, 0.1);
+        ctx.shake(0.01);
+        this.clicked++;
+      }
+    }
     const muzzle = new THREE.Vector3(0, 0, this.muzzleZ).applyMatrix4(this.inner.children[0].matrixWorld);
     const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.gun.quaternion);
 
@@ -272,6 +289,7 @@ class Gun implements Effect {
 
   reset(): void {
     this.fired = false;
+    this.clicked = 0;
   }
 
   dispose(): void {
