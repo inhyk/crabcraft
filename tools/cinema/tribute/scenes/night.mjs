@@ -667,7 +667,7 @@ const undeadShots = [
   // climb out of the ground round him and fly together behind him into the golem, the burning rock
   // falls past its shoulder, the blast, and the light swells to white.
   cut('night-undead', UNDEAD_IN, UNDEAD_OUT, 2, {
-    view: view({ exposure: 1.05, saturation: -0.14, contrast: 0.25, dof: true, bokeh: 3.5, vignette: { offset: 0.2, darkness: 0.85 } }),
+    view: view({ exposure: 1.05, saturation: -0.14, contrast: 0.25, dof: true, bokeh: 3.5, vignette: { offset: 0.3, darkness: 0.6 } }),
     hide: [...UNDEAD_HIDE, ...COLUMNS, 'star-quest-waystone', 'star-quest-ore', 'star-quest-ore-cluster', 'star-memory-seal', 'star-memory-seal-frame', 'star-faceted-crystal', 'star-island-crystal-gardens'],
     anchor: U,
     actors: [{ ...undead, at: U, yaw: U_YAW }],
@@ -682,7 +682,7 @@ const undeadShots = [
           { t: 12.5, clip: 'cast', part: 'release' },
           { t: 13.6, clip: 'cast', part: 'channel', loop: true },
         ],
-        faces: [{ t: -2, expr: 'angry' }, { t: 8.6, expr: 'focused', hold: 0.8 }, { t: 12.5, expr: 'angry' }],
+        faces: [{ t: -2, expr: 'angry' }],
       },
     },
     cam: {
@@ -733,7 +733,8 @@ const undeadShots = [
       STEP_POSE,
       // His staff as gnarled dark wood with red prayer beads (src/capture/cinema/fx/night-staff.ts), kicked
       // by the stamp and each fling of the cast.
-      { kind: 'night-staff', t: -3, actor: 'u', beads: { swing: [[STAMP, 0.3, 90], [6.75, 0.35], [8.6, 0.45, 90], [12.5, 0.45, 90]] } },
+      // The string hangs low off the shaft so it swings down into the low frame at 96.7 s.
+      { kind: 'night-staff', t: -3, actor: 'u', beads: { at: 0.55, length: 0.42, swing: [[STAMP, 0.3, 90], [3.7, 0.6, 75], [6.75, 0.35], [8.6, 0.45, 90], [12.5, 0.45, 90]] } },
       { kind: 'shake', t: STAMP, d: 0.45, amp: 0.03 },
       { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 0.8, light: 0.9, gain: 0.75, embers: 260, smoke: 160, smokeA: 0.22, clear: LOW_PATH.map((q) => [...q, 0.9]) },
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
@@ -752,7 +753,7 @@ const undeadShots = [
       { kind: 'night-glow', t: 5, at: H(-11, 6, -4), size: 12, color: '#d8ff6a', k: [[5.35, 0], [5.6, 1.6], [6.0, 1.2], [6.5, 1.3], [8.5, 0.6], [9.8, 0]] },
       { kind: 'light', t: 5, at: H(-1.2, 1.8, -1.6), color: '#a8ff5a', curve: [[5.4, 0], [5.65, 14], [6.5, 10]], distance: 6 },
       // (Wide and low before the blast: looking up past him it would read as a green sun.)
-      { kind: 'night-glow', t: -1, at: SKY, size: 170, color: '#5cc42a', k: [[5.3, 0], [5.7, 0.3], [6.5, 0.35], [9.5, 0.3], [14.9, 0.4], [15.1, 0.9], [18, 1.0]] },
+      { kind: 'night-glow', t: -1, at: SKY, size: 170, color: '#5cc42a', k: [[5.3, 0], [5.7, 0.3], [6.5, 0.35], [9.8, 0.3], [10.4, 0.6], [14.9, 0.65], [15.1, 0.9], [18, 1.0]] },
       // The molten blight lights him from below as it spreads.
       { kind: 'light', t: -1, at: G(-1.3, -0.5, 0.3), color: '#ffb44a', curve: [[1, 0], [4, 8], [7, 16]], distance: 6, flicker: 0.15 },
       // A sickly green rim from the sky behind his left.
@@ -778,10 +779,10 @@ const undeadShots = [
       { kind: 'flash', t: LAND + 0.02, d: 0.45, rise: 0.12, a: 0.18, color: '#e6ffb0' },
       { kind: 'shake', t: LAND, d: 1.6, amp: 0.22 },
       { kind: 'shake', t: 16.4, d: 0.9, amp: 0.12 },
-      // 110.45 s: its chest bursts and the white swallows the frame by 110.85 s (over everything: a veil in
+      // 110.6 s: its chest bursts and the white swallows the frame by 110.9 s (over everything: a veil in
       // the scene left the claws and beads as white cut-outs in a green hole).
-      { kind: 'night-burst', t: 17.45, at: G(3.4, 0.2, 4.6), d: 0.6, size: 3.2, color: '#fff2c0', color2: '#ffb040', light: 600, gain: 1.4 },
-      { kind: 'fade', t: 15.5, color: '#fffbea', curve: [[17.45, 0], [17.7, 0.55], [17.85, 1]] },
+      { kind: 'night-burst', t: 17.6, at: G(3.4, 0.2, 4.6), d: 0.6, size: 3.2, color: '#fff2c0', color2: '#ffb040', light: 600, gain: 1.4 },
+      { kind: 'fade', t: 15.5, color: '#fffbea', curve: [[17.6, 0], [17.78, 0.55], [17.92, 1]] },
     ],
   }),
 ];
