@@ -609,11 +609,12 @@ const tauren = {
   cam: {
     ...move([
       // Swinging round in front of him as he roars, as the original's camera never rests.
-      { t: 0, p: G(TA[0] - 3.5, TA[1] + 1.9, 0.42), l: G(TA[0], TA[1], 1.25), fov: 40 },
-      { t: 0.8, p: G(TA[0] - 3.5, TA[1] + 0.4, 0.5), l: G(TA[0], TA[1], 1.33), fov: 40 },
+      // High enough to clear the boulder in front of him (the Frostlight rocks of #147).
+      { t: 0, p: G(TA[0] - 3.75, TA[1] + 1.5, 0.95), l: G(TA[0], TA[1], 1.2), fov: 40 },
+      { t: 0.8, p: G(TA[0] - 3.3, TA[1] + 0.8, 1.0), l: G(TA[0], TA[1], 1.25), fov: 40 },
       { t: 1.04, p: G(TA[0] - 2.0, TA[1] + 0.6, 0.7), l: G(TA[0] - 1.0, TA[1] + 0.25, 1.0), fov: 52 },
     ]),
-    shake: 0.02,
+    shake: 0.03,
     focus: 'tauren',
     range: 4,
   },
