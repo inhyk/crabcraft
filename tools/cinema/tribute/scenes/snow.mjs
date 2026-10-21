@@ -295,62 +295,124 @@ const chargeDwarf = {
 
 // ----------------------------------------------------------------------- snow-frost 157.71-163.08
 
-// Among the Frozen Throne's crystals: the mage sweeps his staff and throws frost along the ground.
-const MG = [27.4, -84.2];
-const MYAW = 1.0;
+// Boreas's arena, in front of his throne: the mage stands where the line from the lens to the citadel's
+// keep crosses the arena, so the throne's ice crown and the keep's spire rise behind him. A frost blast
+// rolls over the snow into the lens, he spins out of the mist as ice bursts up around him, gathers cold
+// light in his claws, raises them, and holds a crackling ball of frost over his head
+// (src/capture/cinema/fx/snow-frost.ts).
+const MG = [3.2, -95];
+/** Low, in front of him; the keep (0, -128) is straight behind him from here. */
+const LOW = [3.55, -91.6];
+const MYAW = Math.atan2(LOW[0] - MG[0], LOW[1] - MG[1]); // facing the lens
 const MF = frame(MG[0], MG[1], MYAW);
+/** He spins one turn out of the mist, fast and slowing into his stance. */
+const spin = (t0, t1) => {
+  const keys = [];
+  const n = Math.round((t1 - t0) * 48);
+  for (let i = 0; i <= n; i++) {
+    const u = i / n;
+    keys.push({ t: +(t0 + (t1 - t0) * u).toFixed(4), x: MG[0], z: MG[1], yaw: +(MYAW + 2 * PI * (1 - u) ** 1.6).toFixed(4) });
+  }
+  return keys;
+};
+/** A darker storm for the frost: dusk blue overhead, the snow lighter so his light carries. */
+const FROST_SKY = { wind: [-2.5, -1.5, 5], heavy: 0.75, sky: '#7d88b6', zenith: '#262e5c', sun: 0.32, hemi: 0.85, tint: [0.82, 0.9, 1.18] };
+const FROST_VIEW = { ...COLD, exposure: 1.12, saturation: -0.04, contrast: 0.1, bloom: { intensity: 1.2, threshold: 0.82 } };
+/** The ball of frost between his raised claws. */
+const orb = (extra) => ({ kind: 'snow-frost-orb', actor: 'mage', sockets: ['clawL', 'clawR'], up: 0.32, size: 0.13, arcs: 11, arcLen: 3, splinters: 12, orbit: 3.6, motes: 18, light: 26, distance: 7, ...extra });
+/** Both claws up (attack_slam's wind-up), held. */
+const HOLD = { clip: 'attack_slam', loop: true, from: 1.765, to: 1.775 };
+
 const frostCast = {
   anchor: MG,
-  view: { ...COLD, saturation: -0.05, bloom: { intensity: 1.1, threshold: 0.85 }, dof: true, bokeh: 2.5 },
-  fog: { color: '#7d88b0', density: 0.02 },
-  actors: [{ id: 'mage', spec: MAGE, at: MG, yaw: MYAW }],
-  tracks: { mage: { acts: [{ t: 0.3, clip: 'attack_swipe' }, { t: 1.2, clip: 'cast', loop: true }], faces: [{ t: -2, expr: 'focused' }, { t: 0.3, expr: 'angry' }] } },
-  cam: move([
-    { t: 0, p: MF(1.9, 0.32, 2.9), l: MF(0, 0.9, 0.3), fov: 40 },
-    { t: 2.71, p: MF(1.4, 0.4, 2.3), l: MF(0, 0.95, 0.3), fov: 40 },
-  ]),
-  fx: [
-    ...blizzard({ wind: [-2, -1.5, 6], sky: '#8c97bd', zenith: '#3d4772', sun: 0.35, hemi: 1.0, tint: [0.84, 0.92, 1.15] }),
-    ARENA_OUT,
-    { t: 0, kind: 'fade', color: '#ffe6f0', curve: [[0, 1], [0.59, 0]] },
-    { t: 0.5, kind: 'vfx', recipe: 'frostSpray', args: [{ pt: { a: 'mage', o: [0, 0.4, 0.4] } }, MYAW + 0.35, 5, 0.7] },
-    { t: 0.55, kind: 'snow-shards', from: MF(0.3, 0, 0.8).filter((_, i) => i !== 1), yaw: MYAW + 0.35, length: 7.5, count: 18, spread: 1.5, height: 1.7, grow: 0.55 },
-    { t: 1.5, kind: 'vfx', recipe: 'frostSpray', args: [{ pt: { a: 'mage', o: [0, 0.4, 0.4] } }, MYAW, 5, 0.6] },
-    { t: 0.4, kind: 'light', at: { a: 'mage', o: [0, 1.2, 0.8] }, color: '#7fc8ff', curve: [[0.4, 0], [0.8, 40], [2.71, 30]], distance: 12 },
-  ],
-};
-// The arena's east crystal (25, -78), seen from inside the ring: the mage at its foot against the sky.
-const PL = [25, -78];
-const MP = [23.2, -78.2];
-const frostPillar = {
-  anchor: [21, -78],
   hide: ['mira-ice-prison'],
-  view: { ...COLD, exposure: 1.22, saturation: -0.02, bloom: { intensity: 1.3, threshold: 0.8 }, dof: true, bokeh: 1.5 },
-  fog: { color: '#b3bce0', density: 0.012 },
-  actors: [{ id: 'mage', spec: MAGE, at: MP, yaw: -PI / 2 }],
-  tracks: { mage: { acts: [{ t: -1, clip: 'cast', loop: true }], faces: [{ t: -2, expr: 'focused' }] } },
+  view: { ...FROST_VIEW, dof: true, bokeh: 1.8 },
+  fog: { color: '#5d6894', density: 0.013 },
+  actors: [{ id: 'mage', spec: MAGE, at: MG, yaw: MYAW }],
+  tracks: {
+    mage: {
+      path: spin(0.46, 0.9),
+      show: [[-5, false], [0.4, true]],
+      acts: [
+        // Claws flung out through the spin, then low in front gathering the cold; both claws up on 160.0 s.
+        { t: 0.4, clip: 'cast', from: 1.85, to: 2.6, speed: 1.1 },
+        { t: 1.0, clip: 'cast', loop: true, from: 1.5, to: 1.53, fade: 0.3 },
+        { t: 2.29, clip: 'attack_slam', from: 1.35, to: 1.775, speed: 1.3 },
+        { t: 2.6, ...HOLD },
+      ],
+      faces: [{ t: -2, expr: 'focused' }, { t: 2.29, expr: 'angry' }],
+    },
+  },
   cam: {
     ...move([
-      { t: 0, p: G(20.7, -79.3, 0.25), l: G(23.4, -78.15, 1.45), fov: 42 },
-      { t: 0.91, p: G(20.85, -79.25, 0.3), l: G(23.4, -78.15, 1.75), fov: 42 },
+      { t: 0, p: MF(-0.1, 0.3, 3.6), l: MF(0, 0.6, 0), fov: 42 },
+      { t: 0.9, p: MF(-0.05, 0.32, 3.3), l: MF(0, 0.72, 0), fov: 42 },
+      { t: 2.2, p: MF(0, 0.32, 3.0), l: MF(0, 0.8, 0), fov: 41 },
+      { t: 2.71, p: MF(0.02, 0.28, 2.85), l: MF(0, 1.05, 0), fov: 42 },
     ]),
     focus: 'mage',
-    range: 5,
+    range: 3,
   },
   fx: [
-    ...blizzard({ wind: [-2, -1.5, 6], sky: '#b4bce0', zenith: '#525c90', sun: 0.6, hemi: 1.3, tint: [0.88, 0.94, 1.12], drift: 0.06 }),
-    PRISON_OUT,
+    ...blizzard(FROST_SKY),
     ARENA_OUT,
-    { t: -1, kind: 'light', at: { a: 'mage', o: [0, 1.0, 0.6] }, color: '#8fd2ff', intensity: 25, distance: 9 },
+    // Out of the pink-white the montage arrives in, the blast rolls into the lens (whoosh at 158.04 s).
+    { t: 0, kind: 'fade', color: '#ffe6f0', curve: [[0, 0.9], [0.06, 0.35], [0.14, 0]] },
+    { t: 0, kind: 'snow-frost-blast', from: MF(0, 0, -3.5).filter((_, i) => i !== 1), to: MF(0, 0, 5.8).filter((_, i) => i !== 1), d: 0.36, width0: 1.6, width1: 4.4, size0: 0.5, size1: 3.4, flat: 1.7, lift: 0.4, count: 260, crystals: 90, opacity: 0.85, until: 0.5, fadeOut: 0.16 },
+    // What the blast leaves: mist curling round his feet as he spins out of it.
+    { t: 0.3, kind: 'snow-frost-blast', from: MF(0, 0, -0.8).filter((_, i) => i !== 1), to: MF(0, 0, 3.4).filter((_, i) => i !== 1), d: 2.2, width0: 1.6, width1: 3.4, size0: 0.55, size1: 1.0, flat: 2.2, lift: 0.18, count: 26, crystals: 0, opacity: 0.22, until: 1.4, fadeOut: 0.6, seed: 8 },
+    { t: 0, kind: 'wash', color: '#cdd8f4', color2: '#ffffff', alpha: [[0.2, 0], [0.3, 0.85], [0.4, 0.8], [0.5, 0.35], [0.65, 0.1], [0.85, 0]], cover: [[0.2, 0.5], [0.32, 0.9], [0.42, 0.7], [0.55, 0.4], [0.85, 0.3]], flow: [-0.9, 0.15], scale: 1.8 },
+    { t: 0, kind: 'fade', color: '#eef1ff', curve: [[0.22, 0], [0.3, 0.65], [0.38, 0.55], [0.47, 0]] },
+    { t: 0.04, kind: 'shake', d: 0.4, amp: 0.025 },
+    // Ice bursting up around him as he spins; at 159.22 s it juts further and a crack runs at the lens.
+    { t: 0.52, kind: 'snow-frost-ice', at: MG, r0: 1.05, r1: 1.7, count: 9, height: 0.85, gap: [MYAW, 0.72], stagger: 0.32, rise: 0.12, jut: [[1.5, 1], [1.6, 1.35]], seed: 4 },
+    { t: 1.5, kind: 'snow-frost-ice', at: MG, r0: 2.0, r1: 3.0, count: 8, height: 1.5, gap: [MYAW, 0.75], stagger: 0.1, rise: 0.1, seed: 7 },
+    { t: 1.5, kind: 'snow-frost-crack', from: MF(-0.15, 0, 0.55).filter((_, i) => i !== 1), yaw: MYAW + 0.12, length: 3.0, width: 0.08, grow: 0.22, gain: 4, branches: 0.45 },
+    { t: 1.5, kind: 'shake', d: 0.35, amp: 0.03 },
+    // Cold light gathering in both claws.
+    { t: 0.95, kind: 'snow-frost-orb', actor: 'mage', socket: 'clawL', size: 0.07, arcs: 4, motes: 12, reach: 10, light: 4, distance: 3, gain: [[0.95, 0], [1.4, 0.55], [2.25, 1]], until: 2.6, fadeOut: 0.2, seed: 1 },
+    { t: 0.95, kind: 'snow-frost-orb', actor: 'mage', socket: 'clawR', size: 0.07, arcs: 4, motes: 12, reach: 10, light: 4, distance: 3, gain: [[0.95, 0], [1.4, 0.55], [2.25, 1]], until: 2.6, fadeOut: 0.2, seed: 2 },
+    // Raised on 160.0 s; the blue-white burst at 160.35 s.
+    orb({ t: 2.29, grow: [[2.29, 0.3], [2.62, 1]], gain: [[2.29, 0.25], [2.6, 1]], flares: [[2.64, 0.3, 4]], seed: 3 }),
+    { t: 2.64, kind: 'flash', color: '#e4eeff', rise: 0.04, d: 0.28, a: 0.82 },
+  ],
+};
+// Low under him, the citadel towering behind: the ball of frost crackling over his head.
+const frostPillar = {
+  anchor: MG,
+  hide: ['mira-ice-prison'],
+  view: { ...FROST_VIEW, dof: true, bokeh: 1.2 },
+  fog: { color: '#4f5a88', density: 0.01 },
+  actors: [{ id: 'mage', spec: MAGE, at: MG, yaw: MYAW }],
+  tracks: { mage: { acts: [{ t: -1, ...HOLD }], faces: [{ t: -2, expr: 'angry' }] } },
+  cam: {
+    ...move([
+      { t: 0, p: G(...MF(-0.5, 0, 2.5).filter((_, i) => i !== 1), 0.14), l: MF(0.35, 4.6, -5.5), fov: 60 },
+      { t: 0.91, p: G(...MF(-0.45, 0, 2.3).filter((_, i) => i !== 1), 0.13), l: MF(0.3, 5.3, -5.5), fov: 60 },
+    ]),
+    focus: 'mage',
+    range: 4,
+  },
+  fx: [
+    ...blizzard({ ...FROST_SKY, drift: 0.06 }),
+    ARENA_OUT,
+    orb({ t: -1, flares: [[0.02, 0.25, 2.2]] }),
   ],
 };
 const frostRise = {
   ...frostPillar,
   cam: move([
-    { t: 0, p: G(20.6, -79.35, 0.22), l: G(23.4, -78.15, 1.9), fov: 50 },
-    { t: 0.71, p: G(20.4, -79.4, 0.3), l: G(23.9, -78.1, 3.7), fov: 52 },
+    { t: 0, p: G(...MF(0.45, 0, 2.0).filter((_, i) => i !== 1), 0.12), l: MF(-0.3, 5.2, -5), fov: 64, roll: -0.05 },
+    { t: 0.71, p: G(...MF(0.42, 0, 1.85).filter((_, i) => i !== 1), 0.12), l: MF(-0.3, 5.6, -5), fov: 65, roll: -0.07 },
   ]),
-  fx: [...frostPillar.fx, { t: 0, kind: 'flash', color: '#f4f0ff', d: 0.3, a: 0.5 }, { t: 0.68, kind: 'flash', color: '#f6f8ff', rise: 0.22, d: 0.05, a: 0.95 }],
+  fx: [
+    ...blizzard({ ...FROST_SKY, drift: 0.06 }),
+    ARENA_OUT,
+    // Brighter as the shot opens (161.33 s), then he lets it go into white (161.95 s).
+    orb({ t: -1, flares: [[0.02, 0.2, 2.6], [0.62, 0.2, 7]] }),
+    { t: 0, kind: 'flash', color: '#eef0ff', d: 0.18, a: 0.4 },
+    { t: 0, kind: 'fade', color: '#f6f8ff', curve: [[0.58, 0], [0.64, 0.75], [0.7, 1]] },
+  ],
 };
 // The tauren roaring among the east woods' pines.
 const TA = [76, -6];
