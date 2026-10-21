@@ -21,6 +21,7 @@ import { districtOverrides, type TidecrownMaterials } from './materials';
 import { dressMarket } from './marketStalls';
 import { buildReturnArch } from './returnArch';
 import { worldUV } from './structures';
+import {fountainJetPoints,fountainSpillPoints} from './fountainGeometry';
 
 type Height = (x: number, z: number) => number;
 
@@ -142,34 +143,7 @@ function fallingWater(speed = 1.6): THREE.MeshBasicMaterial {
           float streak = cc_vnoise(vec2(vFwUv.x * 9.0, vFwUv.y * 2.5 - uTime * ${speed.toFixed(2)}));
           float fine = cc_vnoise(vec2(vFwUv.x * 23.0, vFwUv.y * 6.0 - uTime * ${(speed * 1.7).toFixed(2)}));
           diffuseColor.rgb *= mix(vec3(0.55, 0.82, 0.86), vec3(1.0), smoothstep(0.35, 0.8, streak * 0.7 + fine * 0.3));
-          diffuseColor.a = 0.42 + 0.45 * smoothstep(0.3, 0.75, streak) + 0.2 * smoothstep(0.85, 1.0, vFwUv.y);
-        }`,
-      );
-  });
-  return m;
-}
-
-/**
- * A fountain's thin water: a lit, mostly clear sheet of threads running down (uv `along`, 1 at the lip), brighter
- * where the threads bunch, fading in at the lip and out at the foot so it never shows an edge.
- */
-function waterSheet(along: 'x' | 'y', threads: number, speed: number): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ name: 'tc-water-sheet', color: '#a9dcdc', roughness: 0.12, metalness: 0, transparent: true, depthWrite: false, side: THREE.DoubleSide });
-  addPatch(m, `tc-water-sheet-${along}-${threads}-${speed}`, (shader) => {
-    shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWsUv;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvWsUv = uv;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec2 vWsUv;\nuniform float uTime;\n${GLSL_NOISE}`)
-      .replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-        {
-          float v = vWsUv.${along}, u = vWsUv.${along === 'x' ? 'y' : 'x'};
-          float thread = cc_vnoise(vec2(u * ${threads.toFixed(1)}, v * 2.2 + uTime * ${speed.toFixed(2)}));
-          float fine = cc_vnoise(vec2(u * ${(threads * 2.7).toFixed(1)}, v * 5.0 + uTime * ${(speed * 1.6).toFixed(2)}));
-          float t = smoothstep(0.45, 0.85, thread * 0.65 + fine * 0.35);
-          diffuseColor.rgb *= mix(vec3(0.62, 0.84, 0.86), vec3(1.0), t);
-          diffuseColor.a = (0.07 + 0.5 * t) * smoothstep(1.0, 0.9, v) * smoothstep(0.0, 0.25, v);
+          diffuseColor.a *= 0.42 + 0.45 * smoothstep(0.3, 0.75, streak) + 0.2 * smoothstep(0.85, 1.0, vFwUv.y);
         }`,
       );
   });
@@ -477,6 +451,12 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
   const L = mats.TC_Limestone, D = mats.TC_LimestoneDark, G = mats.TC_Gold;
   const stone = [new StaticBatch(kits.city, 'tidecrown-stone-west'), new StaticBatch(kits.city, 'tidecrown-stone-centre'), new StaticBatch(kits.city, 'tidecrown-stone-east')];
   const sector = (x: number) => stone[x < 0 ? 0 : x < 120 ? 1 : 2];
+  // These used to block movement with no visible object. Share the collision plan, position, yaw and footprint.
+  for(const k of plan.safetyKerbs){
+    const yaw=Math.atan2(k.s,k.c),b=sector(k.x);
+    b.addGeometry(frameBox(k.x,k.z,yaw,0,k.y1-.66,0,k.hx*2,1.08,k.hz*2),L,null);
+    b.addGeometry(frameBox(k.x,k.z,yaw,0,k.y1-.06,0,k.hx*2,.12,k.hz*2),D,null);
+  }
   for (const w of plan.walls.runs) {
     const len = TC_RETAINING.len * w.sx, b = sector(w.x);
     b.addGeometry(frameBox(w.x, w.z, w.yaw, 0, w.top + 0.5, 0.5, len, 1.0, 0.6), L, null);
@@ -662,8 +642,8 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
     { at: new THREE.Vector3(wfx, fy + race.water + 0.06, wfz), r: 1.15, sx: 0.95 },
   ]));
 
-  // Fountains: two basins of still water, the eight jets and the thin spill from the upper bowl, foam where they land.
-  const jets: THREE.BufferGeometry[] = [], spills: THREE.BufferGeometry[] = [], rings: { at: THREE.Vector3; r0: number; r1: number }[] = [];
+  // Fountains: two basins of still water, the eight jets and the overflow streams from the upper bowl, foam where they land.
+  const jets: THREE.BufferGeometry[] = [], rings: { at: THREE.Vector3; r0: number; r1: number }[] = [];
   for (const f of TC_LANDMARKS.filter((l) => l.piece === 'TC_Fountain')) {
     const y = height(f.x, f.z) - 0.12, s = f.scale;
     const basin = (r: number, sides: number, yy: number, rot: number) => {
@@ -674,33 +654,24 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky
     const b0 = new THREE.Mesh(basin(6.45, 8, 0.85, Math.PI / 8), basinWater), b1 = new THREE.Mesh(basin(2.8, 16, 2.55, 0), basinWater);
     b0.name = b1.name = 'tc-fountain-water';
     group.add(b0, b1);
-    const spouts: [number, number, number, number, number, number][] = [[0.746, 1.802], [1.802, 0.746], [1.802, -0.746], [0.746, -1.802], [-0.746, -1.802], [-1.802, -0.746], [-1.802, 0.746], [-0.746, 1.802]].map(([x, z]) => {
-      const l = Math.hypot(x, z);
-      return [x, 1.55, z, (x / l) * 0.93, 0.33, (z / l) * 0.93];
-    });
-    for (const [x, yy, z, dx, dy, dz] of spouts) {
-      const pts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 12; i++) {
-        const t = i / 12, d = 3.4 * t;
-        pts.push(new THREE.Vector3(x + dx * d, yy + dy * d * 1.2 + 1.1 * t - 1.9 * t * t, z + dz * d));
-      }
-      const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.07, 5, false);
-      g.scale(s, s, s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
-      jets.push(g);
+    const spouts=[[0.746,1.802],[1.802,0.746],[1.802,-0.746],[0.746,-1.802],[-0.746,-1.802],[-1.802,-0.746],[-1.802,0.746],[-0.746,1.802]];
+    for(const [x,z] of spouts){
+      const g=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(fountainJetPoints(x,z)),16,.045,5,false);
+      g.scale(s,s,s).applyMatrix4(trs(f.x,y,f.z,f.yaw));jets.push(g);
     }
-    // The spill: a sheet falling from the upper bowl's lip, flaring a little as it drops, into a ring of foam.
-    const spill = new THREE.CylinderGeometry(3.12, 3.4, 1.75, 40, 1, true);
-    spill.translate(0, 2.66 - 0.875, 0).scale(s, s, s).applyMatrix4(trs(f.x, y, f.z, f.yaw));
-    spills.push(spill);
+    for(let i=0;i<16;i++){
+      const a=i/16*Math.PI*2;
+      const spill=waterRibbon(fountainSpillPoints(a),.16,new THREE.Vector3(-Math.sin(a),0,Math.cos(a)));
+      spill.scale(s,s,s).applyMatrix4(trs(f.x,y,f.z,f.yaw));jets.push(spill);
+    }
+    // Foam churning where the overflow streams land in the lower pool.
     rings.push({ at: new THREE.Vector3(f.x, y + 0.87 * s, f.z), r0: 3.0 * s, r1: 4.15 * s });
   }
-  if (jets.length) {
-    const jet = new THREE.Mesh(mergeGeometries(jets), waterSheet('x', 3, 2.4));
-    const sheet = new THREE.Mesh(mergeGeometries(spills), waterSheet('y', 90, 1.4));
-    jet.name = sheet.name = 'tc-fountain-jet';
-    jet.renderOrder = sheet.renderOrder = 2;
-    group.add(jet, sheet, foamRing(rings));
-  }
+  const fountainWater=fallingWater(2.1);fountainWater.opacity=.62;
+  const fountainStreams=new StaticBatch(kits.city,'tc-fountain-streams');
+  for(const g of jets){fountainStreams.addGeometry(g,fountainWater,null,false);g.dispose();}
+  group.add(fountainStreams.build());
+  if (rings.length) group.add(foamRing(rings));
   lap('water');
 
   // Harbour kit: quays, piers, the crane, cargo and the moored gondolas.
