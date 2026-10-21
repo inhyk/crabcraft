@@ -313,9 +313,10 @@ const smoke = {
 // 128.25: the orc comes out of the smoke down the lane at a run, slashing as he comes, and fires
 // every move he has on the soundtrack's hits: a 720 (down on 129.94), a back flip (130.78), a slam
 // that cracks the street (131.69), three turns of the spin, then he tips up onto his claws in a
-// freeze on the roar (134.07) and holds it while the fire surges up in front of him (135.05) and
-// burns to white (136.4). Clip windows and events: src/motion/breakClips.ts, skills.ts.
-const ORC_HIT = { leap: 1.69, flip: 2.53, slam: 3.44, freeze: 5.82 };
+// freeze as the roar starts (133.63), drops back onto his legs on its low hit (134.07) and throws
+// his claws wide, roaring, as the original's orc does, until the fire surges up in front of him
+// (135.05) and burns to white (136.4). Clip windows and events: src/motion/breakClips.ts, skills.ts.
+const ORC_HIT = { leap: 1.69, flip: 2.53, slam: 3.44, freeze: 5.385, roar: 5.82 };
 /** [t, s, z] along the lane (s across it, + east): the run, the leap, the lunge into the slam, planted. */
 const ORC_WAY = [[0, 0, 60.4], [0.95, 0, 62.0], [1.69, 0, 64.0], [1.95, 0, 64.3], [3.0, 0, 64.3], [3.44, 0, 65.3], [4.7, 0, 65.8], [8.25, 0, 65.8]];
 /** [s, z] at shot second t along [t, s, z] waypoints, straight between them. */
@@ -332,8 +333,10 @@ const orcAt = (t, h = 0.1) => {
   const [s, z] = along(ORC_WAY, t);
   return LG(s, h, z);
 };
-/** Facing the lens (+z), then turned 1 radian further to his left under the spin, so the freeze shows its profile. */
-const orcYaw = (t) => 1.0 * Math.min(1, Math.max(0, (t - 3.75) / 0.9));
+/** Facing the lens (+z), turned 1 radian further to his left under the spin so the freeze shows its
+ * profile, then back round to the lens as he drops into the roar. */
+const ramp = (t, a, b) => Math.min(1, Math.max(0, (t - a) / (b - a)));
+const orcYaw = (t) => 1.0 * ramp(t, 3.75, 4.65) - 0.8 * ramp(t, 5.9, 6.4);
 const O1 = [laneX(65.8), 65.8];
 /** A camera key `s` across the lane at `z`, `h` up, looking at him `look` above the street. */
 const OCAM = (t, s, h, z, look, fov) => ({ t, p: LG(s, h, z), l: { a: 'o', o: [0, look, 0], y0: true }, fov });
@@ -364,8 +367,15 @@ const orc = {
         { t: ORC_HIT.slam - 0.38, clip: 'attack_slam', fade: 0.15 },
         // The spin, three turns: clip 0.675 to 2.1 comes round to face the lens again.
         { t: 3.62, clip: 'break_spin', from: 0.675, to: 2.1, speed: 1.26, fade: 0.12 },
-        // The claw stand: two bounces, the lift, up on his claws at clip 3.065 on the roar, held.
-        { t: ORC_HIT.freeze - (3.065 - 1.95), clip: 'break_clawstand', from: 1.95, to: 6.425, fade: 0.2 },
+        // The claw stand from just before its lift (clip 2.4): up on his claws at clip 3.065, held
+        // to 3.45; the pose holds unchanged to the release (4.745), so the release follows without a
+        // seam, three times as fast, and he is down on his legs just after the roar's low hit.
+        { t: ORC_HIT.freeze - (3.065 - 2.4), clip: 'break_clawstand', from: 2.4, to: 3.45, fade: 0.15 },
+        { t: ORC_HIT.freeze + (3.45 - 3.065), clip: 'break_clawstand', from: 4.745, to: 5.75, speed: 3, fade: 0 },
+        // The roar: the cast's gather to claws up and spread wide (clip 1.8), then that pose all but
+        // held (a tenth of the pace) while the fire rises over him.
+        { t: ORC_HIT.roar + 0.08, clip: 'cast', from: 1.23, to: 1.8, speed: 1.3, fade: 0.15 },
+        { t: ORC_HIT.roar + 0.08 + (1.8 - 1.23) / 1.3, clip: 'cast', from: 1.8, to: 1.95, speed: 0.1, fade: 0 },
       ],
       faces: [{ t: -2, expr: 'angry' }],
     },
@@ -386,7 +396,8 @@ const orc = {
       OCAM(4.7, 1.6, 0.5, 69.3, 0.7, 29),
       // Back in front and low for the freeze, wide enough for him up on his claws.
       OCAM(5.8, 0.4, 0.3, 69.9, 0.9, 32),
-      OCAM(8.25, 0.2, 0.28, 69.5, 1.0, 30),
+      // In on him as he roars.
+      OCAM(8.25, 0.2, 0.3, 69.1, 1.05, 28),
     ],
     ease: 'linear',
     focus: 'o',
@@ -413,8 +424,9 @@ const orc = {
     { t: ORC_HIT.slam, kind: 'explode', at: orcAt(ORC_HIT.slam), scale: 0.28, color: '#ff7a1a', smoke: '#2a120a', flashColor: '#ff9a50', flashA: 0.08 },
     { t: ORC_HIT.slam, kind: 'cracks', at: [laneX(65.3), 65.3], radius: 2.6, grow: 0.45, color: '#ff8a2a', gain: 3, until: 7.0, fadeOut: 1.5 },
     { t: ORC_HIT.slam, kind: 'dusk-fire', spots: [[2.3, -0.8, 1.0], [-2.1, -1.1, 0.9], [1.6, -2.4, 0.8], [-1.5, -2.6, 0.8]].map(([s, dz, k]) => [laneX(O1[1] + dz) + s, O1[1] + dz, k]), height: 2.6, gain: 1.1, glow: 0.5, seed: 61, smoke: 0, grow: [[ORC_HIT.slam, 0], [ORC_HIT.slam + 0.15, 1.4], [ORC_HIT.slam + 0.9, 0.85]] },
-    // The roar, held up on his claws (134.07).
-    { t: ORC_HIT.freeze, kind: 'shake', d: 1.4, amp: 0.06 },
+    // Up on his claws (133.63), then the roar (134.07): the street shakes under it.
+    { t: ORC_HIT.freeze, kind: 'shake', d: 0.4, amp: 0.04 },
+    { t: ORC_HIT.roar, kind: 'shake', d: 1.4, amp: 0.07 },
     // 135.05 to 135.6: the wall of fire surges up between the lens and him.
     { t: 6.75, kind: 'dusk-fire', spots: [[-1.2, 68.1, 1], [0.1, 68.3, 1.1], [1.3, 68.2, 0.9], [-0.5, 67.8, 0.8], [0.8, 67.7, 0.85], [-2.3, 68.4, 1], [2.4, 68.5, 1]].map(([s, z, k]) => [laneX(z) + s, z, k]), height: 3.0, gain: 1.3, glow: 0.6, seed: 77, smoke: 0, grow: [[6.8, 0], [7.05, 0.7], [7.35, 1.4], [7.7, 1.9], [8.25, 2.2]] },
     { t: 7.0, kind: 'dusk-haze', additive: true, alpha: [[7.05, 0], [7.35, 0.3], [7.7, 0.65]], cover: [[7.05, 0.35], [7.7, 0.7]], back: 0.3, color: '#3a0802', color2: '#ff6a14', color3: '#ffc860', flow: [0, 0.6], scale: 1.4 },
