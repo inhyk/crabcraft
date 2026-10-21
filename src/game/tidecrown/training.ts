@@ -107,7 +107,7 @@ export const TRAINING_YARDS: readonly TrainingYard[] = [
     // The lawn between the great tower and the city wall, north of Glass Street; far from the portal and Opal.
     trainer: { id: 'tc-trainer-mage', x: -78.5, z: -116.5, yaw: face(-78.5, -116.5, -72, -109), spec: { race: 'nightelf', sex: 'male', classId: 'mage', shell: 0, crest: 1, led: 0, name: 'Azur' }, name: ['교관 아주르', 'Azur'], title: ['✦ 마법사 교관', '✦ Mage Trainer'], marker: ['마법사 훈련', 'Mage training'] },
     place: ['바다유리 구역, 큰 탑 서쪽 잔디밭', 'the lawn west of the great tower in the Seaglass Quarter'],
-    dummies: [[-83.5, -121.5], [-87.5, -118.6], [-86.8, -125.6]],
+    dummies: [[-83.5, -121.5], [-86, -119], [-86.8, -125.6]],
     props: [[-90.6, -128.4, 0.2], [-80.6, -125.2, 1.1]],
     greeting: ['바다유리 구역에 잘 왔어요. 나는 마법사 교관 아주르예요. 마법사는 바다유리 지팡이로 물과 증기, 서리를 다뤄요. 가까이 붙으면 약하니 거리를 지키는 게 중요하죠.', 'Welcome to the Seaglass Quarter. I am Azur, the mages’ trainer. Mages bend water, steam and frost through a sea-glass staff. You are fragile up close, so keep your distance.'],
     practise: ['옆의 바다유리 허수아비는 깨지지 않아요. 어떤 주문이든 걸어 보세요. 피해 숫자가 떠오르고, 연습 기록 창이 초당 피해와 가장 큰 한 방을 세어 줘요. 경험치와 코인은 주지 않아요.', 'The sea-glass dummies beside me never shatter. Cast any spell at them: the numbers rise and the practice panel counts your damage per second and your biggest hit. They give no XP or coins.'],
@@ -661,7 +661,11 @@ export class TidecrownTraining {
   private openPanel(yard: number): void {
     this.practising = yard;
     if (yard >= 0 && !this.panel) {
-      this.panel = new PracticePanel(() => { this.meter.reset(); this.g.audio.sfx('sfx-click', { volume: 0.5 }); });
+      this.panel = new PracticePanel(() => {
+        this.meter.reset();
+        this.panel?.render(this.meter, this.g.time);
+        this.g.audio.sfx('sfx-click', { volume: 0.5 });
+      });
       this.g.hud.root.append(this.panel.el);
     }
     this.panel?.show(yard >= 0);
