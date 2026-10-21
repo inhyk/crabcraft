@@ -528,8 +528,8 @@ export class HiddenWorld {
     const run=async()=>{
       const t0=performance.now(),screen=new TidecrownLoading(g.app.overlay,!this.tidecrown);
       try{
-        // The island's module loads while the painting fades in.
-        const [,mod]=await Promise.all([screen.shown,this.tidecrown?null:import('./tidecrown/island')]);
+        // The island's module loads, and its kits and heights start, while the painting fades in.
+        const [,mod]=await Promise.all([screen.shown,this.tidecrown?null:import('./tidecrown/island').then(m=>{m.prefetchTidecrown();return m;})]);
         if(mod&&!this.tidecrown){
           // A frame first, so the bar's run for the layout (the longest step, one block) is on screen.
           screen.reached('import');await screen.frames(1);
@@ -548,7 +548,7 @@ export class HiddenWorld {
         // screen (the engine draws first in each frame); once it is drawn, the bar runs to full.
         await screen.frames(1);
         this.applyTidecrown(this.tidecrown);
-        const settled=this.tidecrown.settle();await screen.frames(1);screen.reached('settle');await settled;this.tidecrownEntryMs=performance.now()-t0;
+        const settled=Promise.all([this.tidecrown.settle(),this.warmTidecrownResidents()]);await screen.frames(1);screen.reached('settle');await settled;this.tidecrownEntryMs=performance.now()-t0;
         await screen.finish();return true;
       }finally{screen.hide();}
     };
@@ -584,6 +584,19 @@ export class HiddenWorld {
     g.player.setTarget(null);g.player.unit.teleport(w,island.spawn.x,island.spawn.z,island.spawnYaw);g.follow.cut();g.follow.yaw=island.spawnYaw+Math.PI;
     g.hud.messages.banner(()=>t('타이드크라운','Tidecrown'),()=>t('왕관 항구의 수도 · 크라운셸 성','Capital of the crown harbour · Crownshell Keep'),'zone');
     g.hud.minimap.setSnapshot(island.map);this.tidecrownPeople?.show();
+  }
+  /**
+   * The residents' shaders for the capital's lights, fog and sky, compiled behind the loading screen: each crab's own
+   * shell (and the undead's rust) would otherwise link mid-walk, the first time it comes near in full detail.
+   * Compiled into a render target like the effect chain's, so the variant is the one drawn (linear, no tone mapping);
+   * the screen waits for the links at most 1.5 s.
+   */
+  private warmTidecrownResidents():Promise<unknown>{
+    const g=this.game,r=g.engine.renderer,rt=new THREE.WebGLRenderTarget(1,1),prev=r.getRenderTarget();
+    r.setRenderTarget(rt);
+    const ready=Promise.all((this.tidecrownPeople?.people??[]).filter(p=>!p.unit.hidden).map(p=>r.compileAsync(p.unit.rig.root,g.camera,g.scene)));
+    r.setRenderTarget(prev);rt.dispose();
+    return Promise.race([ready.catch(()=>{}),new Promise(res=>setTimeout(res,1500))]);
   }
   /** Leaves Tidecrown onto `arrival` (a World I point and the way to face), or else back to where the player stood before. */
   exitTidecrown(arrival?:{x:number;z:number;yaw:number}){if(!this.tidecrownSaved)return false;this.leaveTidecrown(arrival);return true;}

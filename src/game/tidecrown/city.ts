@@ -4,9 +4,11 @@
 // quays, piers, crane and moored boats, and what moves: the ships, a gondola, the waterwheel, the seaglass crystals,
 // the forge's smoke and the fountains' water.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { type Kit, Scatter, StaticBatch, trs } from '../../world/kit';
 import { addPatch, WORLD_UNIFORMS } from '../../world/materials';
 import { GLSL_NOISE } from '../../world/noise';
+import { CC_SKY, CC_SKY_UNIFORMS, type SkyUniforms } from '../../world/sky';
 import { TC_CANAL, TC_CANALS } from '../../sim/world/tidecrownCity';
 import type { CityLayout } from './cityLayout';
 import {
@@ -14,8 +16,10 @@ import {
 } from './cityPlan';
 import { cityLod, fillDistrict, type TideBatch, type TidecrownKit } from './houses';
 import type { TidecrownLod } from './lod';
+import { lampHalos } from './groundLight';
 import { districtOverrides, type TidecrownMaterials } from './materials';
 import { dressMarket } from './marketStalls';
+import { buildReturnArch } from './returnArch';
 import { worldUV } from './structures';
 import {fountainJetPoints,fountainSpillPoints} from './fountainGeometry';
 
@@ -60,42 +64,71 @@ function pieceGroup(kit: Kit, piece: string, over: Record<string, THREE.Material
 // ------------------------------------------------------------------------------------------------
 // Water
 
-/** Still water (canals, basins): sky-lit, rippling, deeper teal toward the middle of a channel. */
-function stillWater(): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ name: 'tc-canal-water', color: '#1d6a80', roughness: 0.05, metalness: 0.0, envMapIntensity: 1.5, transparent: true, opacity: 0.94 });
-  addPatch(m, 'tc-canal-water', (shader) => {
-    shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
+/**
+ * Canal and basin water: a dark green-blue body (lit, so the houses' shadows fall on it and the sun glints), ripples
+ * drifting down the channel (aFlow), the painted sky reflected with a fresnel (the walls and fronts hide the low sky,
+ * so only the steep reflections are bright), and foam along the walls (aCross, -1..1 across the channel) and in rings
+ * where the cascade lands (uSplash).
+ */
+function skyWater(sky: SkyUniforms, channel: boolean, splash = new THREE.Vector3()): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ name: channel ? 'tc-canal-water' : 'tc-basin-water', color: '#0d3540', roughness: 0.07, metalness: 0, envMapIntensity: 0, emissive: '#ffffff' });
+  addPatch(m, `tc-sky-water-${channel}`, (shader) => {
+    Object.assign(shader.uniforms, sky, { uSplash: { value: splash } });
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vCwW;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvCwW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      .replace('#include <common>', `#include <common>\nvarying vec3 vCwW;\n${channel ? 'attribute vec2 aFlow;\nattribute float aCross;\nvarying vec2 vCwFlow;\nvarying float vCwCross;' : ''}`)
+      .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>\nvCwW = (modelMatrix * vec4(transformed, 1.0)).xyz;${channel ? '\nvCwFlow = aFlow;\nvCwCross = aCross;' : ''}`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vCwW;\nuniform float uTime;\n${GLSL_NOISE}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vCwW;\n${channel ? 'varying vec2 vCwFlow;\nvarying float vCwCross;' : ''}\nuniform vec3 uSplash;\n${CC_SKY_UNIFORMS}\n${CC_SKY}
+float tcRipple(vec2 p, vec2 drift) {
+  return cc_vnoise(p * 0.8 - drift) + 0.5 * cc_vnoise(p * 1.9 - drift * 1.7 + 3.1) + 0.25 * cc_vnoise(p * 4.1 + vec2(uTime * 0.45, -uTime * 0.31));
+}
+vec3 tcN;
+float tcFoam;`)
       .replace(
         '#include <map_fragment>',
         `#include <map_fragment>
         {
-          float n = cc_vnoise(vCwW.xz * 0.35 + vec2(uTime * 0.05, -uTime * 0.03));
-          diffuseColor.rgb = mix(vec3(0.07, 0.3, 0.36), vec3(0.16, 0.52, 0.55), n);
+          vec2 drift = ${channel ? 'vCwFlow * uTime * 0.55' : 'vec2(uTime * 0.12, -uTime * 0.08)'};
+          vec2 p = vCwW.xz;
+          float e = 0.06, a = tcRipple(p, drift);
+          float gx = (tcRipple(p + vec2(e, 0.0), drift) - a) / e, gz = (tcRipple(p + vec2(0.0, e), drift) - a) / e;
+          tcN = normalize(vec3(-gx * 0.16, 1.0, -gz * 0.16));
+          float body = cc_vnoise(p * 0.12 + drift * 0.2);
+          diffuseColor.rgb = mix(vec3(0.012, 0.06, 0.07), vec3(0.03, 0.12, 0.12), body);
+          tcFoam = 0.0;
+          ${channel ? `float wall = abs(vCwCross);
+          float lap = cc_vnoise(vec2(dot(p, vCwFlow) * 1.6 - uTime * 0.9, wall * 3.0)) * cc_vnoise(p * 3.1 + uTime * 0.3);
+          tcFoam = smoothstep(0.9, 0.99, wall) * (0.35 + 0.65 * smoothstep(0.15, 0.45, lap));
+          // Rings spreading where the cascade lands.
+          float d = length(p - uSplash.xz);
+          if (d < 6.0 && uSplash.y > 0.0) {
+            float ring = 0.5 + 0.5 * sin(d * 4.2 - uTime * 5.0 + cc_vnoise(p * 2.0) * 3.0);
+            tcFoam = max(tcFoam, (1.0 - smoothstep(0.6, 5.5, d)) * (0.45 + 0.55 * ring) * smoothstep(0.2, 0.6, cc_vnoise(p * 3.0 - uTime * 0.7)));
+            tcFoam = max(tcFoam, 1.0 - smoothstep(0.4, 1.4, d));
+          }
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85, 0.9, 0.88), tcFoam);` : ''}
         }`,
       )
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.8, tcFoam);')
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize((viewMatrix * vec4(tcN, 0.0)).xyz);')
       .replace(
-        '#include <normal_fragment_maps>',
-        `#include <normal_fragment_maps>
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
         {
-          vec2 p = vCwW.xz * 1.3;
-          float e = 0.08;
-          float a = cc_vnoise(p + vec2(uTime * 0.35, uTime * 0.21)) + 0.5 * cc_vnoise(p * 2.3 - vec2(uTime * 0.5, -uTime * 0.27));
-          float bx = cc_vnoise(p + vec2(e, 0.0) + vec2(uTime * 0.35, uTime * 0.21)) + 0.5 * cc_vnoise((p + vec2(e, 0.0)) * 2.3 - vec2(uTime * 0.5, -uTime * 0.27));
-          float bz = cc_vnoise(p + vec2(0.0, e) + vec2(uTime * 0.35, uTime * 0.21)) + 0.5 * cc_vnoise((p + vec2(0.0, e)) * 2.3 - vec2(uTime * 0.5, -uTime * 0.27));
-          vec3 nW = normalize(vec3((a - bx) * 1.6, 1.0, (a - bz) * 1.6));
-          normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
+          vec3 V = normalize(cameraPosition - vCwW);
+          vec3 R = reflect(-V, tcN);
+          R.y = abs(R.y);
+          float fres = 0.025 + 0.975 * pow(1.0 - max(dot(tcN, V), 0.0), 5.0);
+          // The fronts along the water stand in for the low sky: a dim warm stone instead.
+          vec3 refl = mix(vec3(0.09, 0.08, 0.075), ccSky(R, 0.0), smoothstep(${channel ? '0.18, 0.62' : '0.02, 0.2'}, R.y));
+          totalEmissiveRadiance = refl * fres * 0.9 * (1.0 - tcFoam);
         }`,
       );
   });
   return m;
 }
 
-/** Falling or running water: bright streaks scrolling along the geometry's v (uv.y), foam at its foot. */
+/** Falling water: bright streaks scrolling along the geometry's v (uv.y), foam at its foot. */
 function fallingWater(speed = 1.6): THREE.MeshBasicMaterial {
   const m = new THREE.MeshBasicMaterial({ name: 'tc-falling-water', color: '#d9f6f4', transparent: true, depthWrite: false, side: THREE.DoubleSide });
   addPatch(m, `tc-falling-water-${speed}`, (shader) => {
@@ -117,6 +150,37 @@ function fallingWater(speed = 1.6): THREE.MeshBasicMaterial {
   return m;
 }
 
+/** Foam churning in a band where a curtain of water lands: rings from r0 to r1 round each centre, one draw. */
+function foamRing(rings: { at: THREE.Vector3; r0: number; r1: number }[]): THREE.Mesh {
+  const g = mergeGeometries(rings.map(({ at, r0, r1 }) => {
+    const ring = new THREE.RingGeometry(r0, r1, 64, 1).rotateX(-Math.PI / 2);
+    const p = ring.getAttribute('position'), edge = new Float32Array(p.count);
+    for (let i = 0; i < p.count; i++) edge[i] = (Math.hypot(p.getX(i), p.getZ(i)) - r0) / (r1 - r0);
+    ring.setAttribute('aEdge', new THREE.BufferAttribute(edge, 1));
+    return ring.translate(at.x, at.y, at.z);
+  }))!;
+  const m = new THREE.MeshBasicMaterial({ name: 'tc-foam-ring', color: '#d6e6e3', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  addPatch(m, 'tc-foam-ring', (shader) => {
+    shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float aEdge;\nvarying float vFrE;\nvarying vec2 vFrW;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvFrE = aEdge;\nvFrW = position.xz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying float vFrE;\nvarying vec2 vFrW;\nuniform float uTime;\n${GLSL_NOISE}`)
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          float churn = cc_vnoise(vFrW * 3.1 + vec2(uTime * 1.1, -uTime * 0.8)) * 0.6 + cc_vnoise(vFrW * 7.0 - uTime * 1.7) * 0.4;
+          float band = smoothstep(0.0, 0.35, vFrE) * (1.0 - smoothstep(0.45, 1.0, vFrE));
+          diffuseColor.a = band * smoothstep(0.32, 0.62, churn + (1.0 - vFrE) * 0.15) * 0.62;
+        }`,
+      );
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.name = 'tc-foam-ring';
+  mesh.renderOrder = 2;
+  return mesh;
+}
+
 /** A ribbon of falling water along a path (width across, uv.y from top to foot). */
 function waterRibbon(pts: THREE.Vector3[], width: number, side: THREE.Vector3): THREE.BufferGeometry {
   const pos: number[] = [], uv: number[] = [], idx: number[] = [];
@@ -131,6 +195,57 @@ function waterRibbon(pts: THREE.Vector3[], width: number, side: THREE.Vector3): 
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** White water where falling water lands: churning foam on discs (uv 0.5 at the centre), all splashes in one draw. */
+function foamSplash(discs: { at: THREE.Vector3; r: number; sx?: number }[]): THREE.Mesh {
+  const g = mergeGeometries(discs.map(({ at, r, sx = 1 }) => new THREE.CircleGeometry(r, 20).rotateX(-Math.PI / 2).scale(sx, 1, 1).translate(at.x, at.y, at.z)));
+  const m = new THREE.MeshBasicMaterial({ name: 'tc-foam', color: '#f2fbf8', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  addPatch(m, 'tc-foam', (shader) => {
+    shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFoUv;\nvarying vec2 vFoW;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvFoUv = uv;\nvFoW = position.xz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec2 vFoUv;\nvarying vec2 vFoW;\nuniform float uTime;\n${GLSL_NOISE}`)
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          float r = length(vFoUv - 0.5) * 2.0;
+          float churn = cc_vnoise(vFoW * 2.6 + vec2(uTime * 1.3, -uTime * 0.9)) * 0.6 + cc_vnoise(vFoW * 6.0 - uTime * 2.1) * 0.4;
+          float ring = 0.5 + 0.5 * sin(r * 9.0 - uTime * 6.0 + churn * 4.0);
+          diffuseColor.a = (1.0 - smoothstep(0.35, 1.0, r)) * smoothstep(0.3, 0.6, churn * 0.7 + ring * 0.3 + (1.0 - r) * 0.35) * 0.95;
+        }`,
+      );
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.name = 'tc-foam';
+  mesh.renderOrder = 2;
+  return mesh;
+}
+
+/** A claw along `pts`: a tube tapering from `r0` to `r1`, closed at the tip. */
+function clawGeometry(pts: THREE.Vector3[], r0: number, r1: number, radial = 7): THREE.BufferGeometry {
+  const curve = new THREE.CatmullRomCurve3(pts), n = 18, frames = curve.computeFrenetFrames(n, false);
+  const pos: number[] = [], idx: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    const p = curve.getPointAt(i / n), r = r0 + (r1 - r0) * Math.pow(i / n, 0.8);
+    for (let j = 0; j < radial; j++) {
+      const a = (j / radial) * Math.PI * 2, N = frames.normals[i], B = frames.binormals[i];
+      pos.push(p.x + r * (Math.cos(a) * N.x + Math.sin(a) * B.x), p.y + r * (Math.cos(a) * N.y + Math.sin(a) * B.y), p.z + r * (Math.cos(a) * N.z + Math.sin(a) * B.z));
+      if (i < n) {
+        const a0 = i * radial + j, a1 = i * radial + ((j + 1) % radial);
+        idx.push(a0, a1, a0 + radial, a1, a1 + radial, a0 + radial);
+      }
+    }
+  }
+  const tip = curve.getPointAt(1).addScaledVector(curve.getTangentAt(1), r1 * 2.5), t = pos.length / 3;
+  pos.push(tip.x, tip.y, tip.z);
+  for (let j = 0; j < radial; j++) idx.push(n * radial + j, n * radial + ((j + 1) % radial), t);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
@@ -253,7 +368,7 @@ export interface CityKits {
 /** Near detail reach by graphics quality: the switch distance and own shadows (low: less of the city in detail). */
 const NEAR = { high: { near: 90, shadow: 45 }, low: { near: 60, shadow: 30, hysteresis: 10, cap: 80 } } as const;
 
-export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, plan: CityLayout, height: Height, renderer: THREE.WebGLRenderer, quality: 'low' | 'high' = 'high'): TidecrownCity {
+export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, sky: SkyUniforms, plan: CityLayout, height: Height, renderer: THREE.WebGLRenderer, quality: 'low' | 'high' = 'high'): TidecrownCity {
   const ms: Record<string, number> = {};
   let t0 = performance.now();
   const lap = (k: string) => { ms[k] = Math.round(performance.now() - t0); t0 = performance.now(); };
@@ -272,7 +387,9 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   let nearMs = 0;
   lap('houses');
 
-  const market = dressMarket({ kit: kits.tide, ...plan.market.options, name: 'tidecrown-market' }, plan.market.plan);
+  // The arcade's floor stands two steps (0.24) over the landmark's footing.
+  const halls = TC_LANDMARKS.filter((l) => l.piece === 'TC_MarketArcade').map((l) => ({ x: l.x, z: l.z, y: height(l.x, l.z) - 0.12 + 0.24, yaw: l.yaw }));
+  const market = dressMarket({ kit: kits.tide, ...plan.market.options, name: 'tidecrown-market', halls }, plan.market.plan);
   group.add(market.group);
   const marketBox = new THREE.Box3().setFromObject(market.group);
   lap('market');
@@ -315,9 +432,15 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
     group.add(g);
     culled.push({ o: g, box: propsBox.expandByScalar(4), max: 140 });
   }
+  // The street lamps burn warm (the kit's lantern panes are the stained glass otherwise), each with a halo.
+  const lampGlass = new THREE.MeshStandardMaterial({ name: 'tc-lamp-glass', color: '#3a2c1c', emissive: '#ffc070', emissiveIntensity: 3.4, roughness: 0.3, vertexColors: true });
+  const lampFor = (m: THREE.Material) => (m.name === 'TC_Glass' ? lampGlass : forCity(m));
+  // The arch at the return line, with its own pair of lamps.
+  const arch = buildReturnArch(kits.city, mats, lampFor, height);
+  group.add(arch.group, lampHalos([...plan.lamps.map((l) => new THREE.Vector3(l.x, height(l.x, l.z) - 0.05 + 4.45, l.z)), ...arch.lampHeads]));
   for (const f of furniture) {
     if (!f.s.count) continue;
-    const g = f.s.build({ materialFor: forCity });
+    const g = f.s.build({ materialFor: lampFor });
     group.add(g);
     culled.push({ o: g, box: f.box.expandByScalar(6), max: 160 });
   }
@@ -451,23 +574,30 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   for (const b of stone) group.add(b.build());
   lap('stone');
 
-  // Water: the canals, the forge's channel and race, the fountains' basins.
-  const water = stillWater();
-  const wpos: number[] = [], widx: number[] = [];
-  const quadAt = (pts: [number, number][], y: number) => {
+  // Water: the canals, the forge's channel and race, the fountains' basins. The Grand Canal runs east to the harbour,
+  // the branch south from the cascade.
+  const splash = new THREE.Vector3(cas.x + cas.nx * 2.9, 1, cas.z + cas.nz * 2.9);
+  const water = skyWater(sky, true, splash), basinWater = skyWater(sky, false);
+  water.side = basinWater.side = THREE.DoubleSide;
+  const wpos: number[] = [], wflow: number[] = [], wcross: number[] = [], widx: number[] = [];
+  const quadAt = (pts: [number, number][], y: number, fx: number, fz: number) => {
     const i0 = wpos.length / 3;
-    for (const [x, z] of pts) wpos.push(x, y, z);
+    for (const [x, z] of pts) wpos.push(x, y, z), wflow.push(fx, fz);
+    wcross.push(1, 1, -1, -1);
     widx.push(i0, i0 + 2, i0 + 1, i0, i0 + 3, i0 + 2);
   };
-  for (const c of TC_CANALS) {
+  TC_CANALS.forEach((c, ci) => {
+    const flow = ci === 1 ? -1 : 1;
     for (let i = 0; i < c.points.length - 1; i++) {
       const [ax, az] = c.points[i], [bx, bz] = c.points[i + 1], len = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / len, uz = (bz - az) / len, h = c.width / 2 + 0.15;
       const e0 = i === 0 ? 0.1 : c.width / 2, e1 = i === c.points.length - 2 ? 0.1 : c.width / 2;
-      quadAt([[ax - ux * e0 - uz * h, az - uz * e0 + ux * h], [bx + ux * e1 - uz * h, bz + uz * e1 + ux * h], [bx + ux * e1 + uz * h, bz + uz * e1 - ux * h], [ax - ux * e0 + uz * h, az - uz * e0 - ux * h]], TC_CANAL.water);
+      quadAt([[ax - ux * e0 - uz * h, az - uz * e0 + ux * h], [bx + ux * e1 - uz * h, bz + uz * e1 + ux * h], [bx + ux * e1 + uz * h, bz + uz * e1 - ux * h], [ax - ux * e0 + uz * h, az - uz * e0 - ux * h]], TC_CANAL.water, ux * flow, uz * flow);
     }
-  }
+  });
   const wg = new THREE.BufferGeometry();
   wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos, 3));
+  wg.setAttribute('aFlow', new THREE.Float32BufferAttribute(wflow, 2));
+  wg.setAttribute('aCross', new THREE.Float32BufferAttribute(wcross, 1));
   wg.setIndex(widx);
   wg.computeVertexNormals();
   // Faces up whichever way the quads wound.
@@ -478,8 +608,7 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   canalWater.receiveShadow = true;
   group.add(canalWater);
 
-  water.side = THREE.DoubleSide;
-  const falls = fallingWater(1.4), race2 = fallingWater(0.9);
+  const falls = fallingWater(1.4);
   // The spout's fall into the basin.
   const fall: THREE.Vector3[] = [];
   for (let i = 0; i <= 10; i++) { const f = i / 10; fall.push(new THREE.Vector3(chx, spoutY - (spoutY - fy - 0.7) * f * f, wallZ + 0.5 + 0.9 * f)); }
@@ -495,12 +624,26 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   group.add(cascade);
   const flowMesh = new THREE.Mesh(waterRibbon(fall, 0.55, new THREE.Vector3(1, 0, 0)), falls);
   flowMesh.name = 'tc-forge-fall';
-  const raceMesh = new THREE.Mesh(waterRibbon(run, 2.3, new THREE.Vector3(1, 0, 0)), race2);
+  // The race is a channel like the canals: their water, flowing to the wheel.
+  const raceGeo = waterRibbon(run, 2.3, new THREE.Vector3(1, 0, 0)), rl = Math.hypot(rx1 - chx, rz1 - wallZ - 1.4);
+  const ruv = raceGeo.getAttribute('uv');
+  raceGeo.setAttribute('aFlow', new THREE.Float32BufferAttribute(Array.from({ length: ruv.count }, () => [(rx1 - chx) / rl, (rz1 - wallZ - 1.4) / rl]).flat(), 2));
+  raceGeo.setAttribute('aCross', new THREE.Float32BufferAttribute(Array.from({ length: ruv.count }, (_, i) => ruv.getX(i) * 2 - 1), 1));
+  raceGeo.computeVertexNormals();
+  const raceMesh = new THREE.Mesh(raceGeo, water);
+  raceMesh.receiveShadow = true;
   raceMesh.name = 'tc-forge-race';
   group.add(flowMesh, raceMesh);
+  // White water where the cascade meets the canal, the spout's fall the basin, and the wheel's paddles the race.
+  const [wfx, wfz] = local(TC_FORGE.x, TC_FORGE.z, TC_FORGE.yaw, 14.85, -1);
+  group.add(foamSplash([
+    { at: new THREE.Vector3(splash.x, TC_CANAL.water + 0.05, splash.z), r: 1.9 },
+    { at: new THREE.Vector3(chx, fy + 0.84, wallZ + 1.4), r: 1.0 },
+    { at: new THREE.Vector3(wfx, fy + race.water + 0.06, wfz), r: 1.15, sx: 0.95 },
+  ]));
 
-  // Fountains: two basins of still water, the eight jets and the spill from the upper bowl.
-  const jets: THREE.BufferGeometry[] = [];
+  // Fountains: two basins of still water, the eight jets and the overflow streams from the upper bowl, foam where they land.
+  const jets: THREE.BufferGeometry[] = [], rings: { at: THREE.Vector3; r0: number; r1: number }[] = [];
   for (const f of TC_LANDMARKS.filter((l) => l.piece === 'TC_Fountain')) {
     const y = height(f.x, f.z) - 0.12, s = f.scale;
     const basin = (r: number, sides: number, yy: number, rot: number) => {
@@ -508,7 +651,7 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
       g.applyMatrix4(trs(f.x, y + yy * s, f.z, f.yaw));
       return g;
     };
-    const b0 = new THREE.Mesh(basin(6.45, 8, 0.85, Math.PI / 8), water), b1 = new THREE.Mesh(basin(2.8, 16, 2.55, 0), water);
+    const b0 = new THREE.Mesh(basin(6.45, 8, 0.85, Math.PI / 8), basinWater), b1 = new THREE.Mesh(basin(2.8, 16, 2.55, 0), basinWater);
     b0.name = b1.name = 'tc-fountain-water';
     group.add(b0, b1);
     const spouts=[[0.746,1.802],[1.802,0.746],[1.802,-0.746],[0.746,-1.802],[-0.746,-1.802],[-1.802,-0.746],[-1.802,0.746],[-0.746,1.802]];
@@ -521,11 +664,14 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
       const spill=waterRibbon(fountainSpillPoints(a),.16,new THREE.Vector3(-Math.sin(a),0,Math.cos(a)));
       spill.scale(s,s,s).applyMatrix4(trs(f.x,y,f.z,f.yaw));jets.push(spill);
     }
+    // Foam churning where the overflow streams land in the lower pool.
+    rings.push({ at: new THREE.Vector3(f.x, y + 0.87 * s, f.z), r0: 3.0 * s, r1: 4.15 * s });
   }
   const fountainWater=fallingWater(2.1);fountainWater.opacity=.62;
   const fountainStreams=new StaticBatch(kits.city,'tc-fountain-streams');
   for(const g of jets){fountainStreams.addGeometry(g,fountainWater,null,false);g.dispose();}
   group.add(fountainStreams.build());
+  if (rings.length) group.add(foamRing(rings));
   lap('water');
 
   // Harbour kit: quays, piers, the crane, cargo and the moored gondolas.
@@ -589,15 +735,23 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   wheel.rotation.y = TC_FORGE.yaw;
   group.add(wheel);
   const crystals: { g: THREE.Group; y: number; ph: number }[] = [];
+  const claws = new StaticBatch(kits.city, 'tidecrown-crystal-claws');
   for (const t of TC_LANDMARKS.filter((l) => l.piece === 'TC_SeaglassTower')) {
     const g = pieceGroup(kits.city, 'TC_SeaglassCrystal', cityOver, `tidecrown-crystal-${t.id}`, false);
-    // Nearly three times the kit's size, hovering higher than its anchor (69.5) so it clears the finial.
-    const y = height(t.x, t.z) - 0.12 + 74 * t.scale;
+    // Nearly three times the kit's size, its point on the finial's tip (66.4) and its waist in four gold claws that
+    // rise from the cap, so it reads as held there and turning.
+    const y0 = height(t.x, t.z) - 0.12, y = y0 + 72.2 * t.scale;
     g.position.set(t.x, y, t.z);
     g.scale.setScalar(t.scale * 2.8);
-    group.add(g, glow('#c08cff', new THREE.Vector3(t.x, y, t.z), 38 * t.scale, 'tc-crystal-glow'), glow('#4fd8e0', new THREE.Vector3(t.x, y - 24 * t.scale, t.z), 24 * t.scale, 'tc-seaglass-glow'));
+    for (let k = 0; k < 4; k++) {
+      const a = Math.PI / 4 + (k * Math.PI) / 2, c = Math.cos(a), sn = Math.sin(a);
+      const prof: [number, number][] = [[0.95, 61.9], [2.0, 64.0], [3.05, 67.2], [3.35, 70.4], [2.95, 73.0], [2.2, 74.6]];
+      claws.addGeometry(worldUV(clawGeometry(prof.map(([r, h]) => new THREE.Vector3(t.x + c * r * t.scale, y0 + h * t.scale, t.z + sn * r * t.scale)), 0.34 * t.scale, 0.07 * t.scale)), mats.TC_Gold, null, false);
+    }
+    group.add(g, glow('#c08cff', new THREE.Vector3(t.x, y, t.z), 34 * t.scale, 'tc-crystal-glow'), glow('#4fd8e0', new THREE.Vector3(t.x, y - 22 * t.scale, t.z), 24 * t.scale, 'tc-seaglass-glow'));
     crystals.push({ g, y, ph: t.x * 0.1 });
   }
+  group.add(claws.build());
   const chimneys = [[-7.2, 28.4, -3.6], [7.2, 28.4, -3.6]].map(([lx, ly, lz]) => {
     const [x, z] = local(TC_FORGE.x, TC_FORGE.z, TC_FORGE.yaw, lx, lz);
     return new THREE.Vector3(x, fy + ly, z);
@@ -606,8 +760,12 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
   // The cathedral's candles burn by its doors.
   for (const [x, z] of plan.dressing.candles) group.add(glow('#ffc070', new THREE.Vector3(x, height(x, z) + 2.25, z), 1.6, 'tc-candle-glow'));
   const [gx, gz] = local(TC_FORGE.x, TC_FORGE.z, TC_FORGE.yaw, 0, 7.4);
-  const forgeGlow = glow('#ff9a4a', new THREE.Vector3(gx, fy + 1.6, gz), 4.5, 'tc-forge-glow');
-  group.add(forgeGlow);
+  const forgeGlow = glow('#ff9a4a', new THREE.Vector3(gx, fy + 1.6, gz), 7, 'tc-forge-glow');
+  // The hearth lights its yard and the house fronts across it (one of the city's few real lights).
+  const forgeLight = new THREE.PointLight('#ff8a3a', 90, 34, 1.6);
+  forgeLight.position.set(gx, fy + 3, gz);
+  forgeLight.name = 'tc-forge-light';
+  group.add(forgeGlow, forgeLight);
   lap('moving');
 
   // Fine detail far from the camera is left out: the market's stalls, the harbour's small pieces, the ships.
@@ -641,7 +799,7 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
       wheel.rotation.x = -time * 0.55;
       for (const c of crystals) {
         c.g.rotation.y = time * 0.25 + c.ph;
-        c.g.position.y = c.y + 0.5 * Math.sin(time * 0.7 + c.ph);
+        c.g.position.y = c.y + 0.08 * Math.sin(time * 0.7 + c.ph);
       }
       for (const s of ships) {
         s.g.position.y = s.bob * Math.sin(time * 0.6 + s.ph);
@@ -655,7 +813,9 @@ export function buildTidecrownCity(kits: CityKits, mats: TidecrownMaterials, pla
       const f = (d - seg[i]) / (seg[i + 1] - seg[i]), a = route[i], b = route[i + 1];
       gondola.position.set(a[0] + (b[0] - a[0]) * f, TC_CANAL.water + 0.04 * Math.sin(time * 1.3), a[1] + (b[1] - a[1]) * f);
       gondola.rotation.y = Math.atan2(b[0] - a[0], b[1] - a[1]) + (back ? Math.PI : 0);
-      forgeGlow.material.opacity = 0.45 + 0.2 * Math.sin(time * 7.3) * Math.sin(time * 3.1);
+      const flick = Math.sin(time * 7.3) * Math.sin(time * 3.1);
+      forgeGlow.material.opacity = 0.55 + 0.2 * flick;
+      forgeLight.intensity = 90 * (0.88 + 0.12 * flick);
     },
     stats: { houses: plan.houses, houseTriangles: 0, farTriangles: lod.stats.farTriangles, chunks: lod.stats.chunks, nearMs: 0, ms },
   };

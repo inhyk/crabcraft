@@ -3,7 +3,7 @@
 import { Collision, rectSurface, type Vec2Out } from '../../sim/world/collision';
 import { trs } from '../../world/kit';
 import {
-  buildTidecrownHeights, polyDistance, TC_AXIS, TC_BOUNDS, TC_CITY_WALL, TC_KEEP, TC_LEVEL, TC_P, TC_ROAD, TC_T, tcAxis, tidecrownHeight, TIDECROWN_GRID,
+  buildTidecrownHeights, polyDistance, TC_AXIS, TC_BOUNDS, TC_CITY_WALL, TC_KEEP, TC_LEVEL, TC_P, TC_RETURN_LINE, TC_ROAD, TC_T, tcAxis, tidecrownHeight, TIDECROWN_GRID,
 } from '../../sim/world/tidecrownGround';
 import { blockCityWater, blockHarbourShallows, canalQuayOpen, type CityLayout, cityOccupancy, planCity, registerCity } from './cityLayout';
 import { scatterTidecrownNature, type NatureScatter } from './nature';
@@ -355,8 +355,8 @@ function registerSurfaces(col: Collision): void {
 }
 
 /** Collision, heights and every placement for Tidecrown: the same registration the server will bake. */
-export function tidecrownLayout(): TidecrownLayout {
-  const heights = buildTidecrownHeights();
+/** `heights`: buildTidecrownHeights() worked out elsewhere (a worker). */
+export function tidecrownLayout(heights = buildTidecrownHeights()): TidecrownLayout {
   const ground = { ...TIDECROWN_GRID, h: heights, heightAt: (x: number, z: number) => tidecrownHeight(heights, x, z) };
   const col = new Collision(ground);
   registerSurfaces(col);
@@ -365,7 +365,9 @@ export function tidecrownLayout(): TidecrownLayout {
   for (const p of placements) registerPiece(col, p);
   const city = planCity(terrainHeight, placements);
   registerCity(col, city);
-  const nature = scatterTidecrownNature(terrainHeight, col, cityOccupancy(city));
+  registerReturnArch(col, terrainHeight);
+  const built = cityOccupancy(city);
+  const nature = scatterTidecrownNature(terrainHeight, col, (x, z) => built(x, z) || nearReturnArch(x, z));
   // The gardens' trees and hedges grow with the rest of the foliage (its distance LOD and culling).
   for (const p of city.plants) (p.piece.startsWith('CommonTree') ? nature.trees : nature.small).add(p.piece, trs(p.x, p.y - 0.1, p.z, p.yaw, p.s));
   // Cells are 2 m: a 1.8 m rise across one is a slope of about 0.9 along the grid, 0.7 diagonally (World I allows
@@ -384,4 +386,34 @@ export function layoutTidecrown(): Collision {
 /** Movement inside the playable rectangle, then against the collision. */
 export function resolveTidecrown<T extends Vec2Out>(col: Collision, x: number, z: number, r: number, out: T): T {
   return col.resolve(Math.min(TC_BOUNDS.maxX, Math.max(TC_BOUNDS.minX, x)), Math.min(TC_BOUNDS.maxZ, Math.max(TC_BOUNDS.minZ, z)), r, out);
+}
+
+// ------------------------------------------------------------------------------------------------
+// The return arch over the forest road (returnArch.ts builds it)
+
+/** The arch 1.8 north of the line, across the road there; local +z faces south (toward Clawhaven). */
+export function returnArchFrame() {
+  const z = TC_RETURN_LINE.a[1] - 1.8;
+  // The road's segment that crosses z.
+  let i = 0;
+  while (i < TC_ROAD.length - 2 && !(TC_ROAD[i][1] >= z && TC_ROAD[i + 1][1] <= z)) i++;
+  const [ax, az] = TC_ROAD[i], [bx, bz] = TC_ROAD[i + 1], f = (az - z) / (az - bz), len = Math.hypot(bx - ax, bz - az);
+  const dx = (bx - ax) / len, dz = (bz - az) / len, yaw = Math.atan2(-dx, -dz);
+  const x = ax + (bx - ax) * f, span = 9.6, half = span / 2;
+  const ux = Math.cos(yaw), uz = -Math.sin(yaw), vx = Math.sin(yaw), vz = Math.cos(yaw);
+  return { x, z, yaw, half, ux, uz, vx, vz, pillars: [-1, 1].map((k) => [x + ux * half * k, z + uz * half * k] as [number, number]), lamps: [-1, 1].map((k) => [x + ux * (half + 1.6) * k - vx * 2.2, z + uz * (half + 1.6) * k - vz * 2.2] as [number, number]) };
+}
+
+/** Kept clear of trees and bushes. */
+export function nearReturnArch(x: number, z: number): boolean {
+  const f = returnArchFrame();
+  return Math.abs((x - f.x) * f.ux + (z - f.z) * f.uz) < f.half + 4.5 && Math.abs((x - f.x) * f.vx + (z - f.z) * f.vz) < 5;
+}
+
+/** The pillars and lamps block movement; the arch blocks the follow camera only. */
+export function registerReturnArch(col: Collision, h: Height): void {
+  const f = returnArchFrame(), y = h(f.x, f.z);
+  for (const [px, pz] of f.pillars) col.addBox(px, pz, 1.15, 1.15, f.yaw, y - 2, y + 12);
+  for (const [lx, lz] of f.lamps) col.addBox(lx, lz, 0.4, 0.4, f.yaw, h(lx, lz) - 1, h(lx, lz) + 5.8);
+  col.addBox(f.x, f.z, f.half + 1.1, 1.0, f.yaw, y + 6.6, y + 18, true);
 }

@@ -173,7 +173,7 @@ export function buildTidecrownStructures(kit: Kit, village: Kit, mats: Tidecrown
   const braziers = buildStair(stair, mats);
   group.add(stair.build());
   for (const b of batches.values()) group.add(b.build());
-  group.add(buildBanners(placements));
+  group.add(buildBanners(placements, kit));
   // Brazier flames at the stair's foot and head: they bloom and flicker (island update).
   const flame = new THREE.MeshStandardMaterial({ name: 'tc-brazier-flame', color: '#ffb35a', emissive: '#ff8a2a', emissiveIntensity: 3, transparent: true, opacity: 0.9, depthWrite: false });
   const flames = new THREE.InstancedMesh(new THREE.ConeGeometry(0.9, 2.4, 7).translate(0, 1.1, 0), flame, braziers.length);

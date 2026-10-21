@@ -1,7 +1,10 @@
 // Tidecrown's colours on its walls: sea-blue banners with a gold border and the crab crest, hung on every wall and
-// ward tower (facing out) and either side of the Pincer Gate. One instanced draw for the cloth, one for the rods;
-// the cloth sways from its rod in the shared wind.
+// ward tower (facing out), along the city wall's outer face and either side of the Pincer Gate; a swallow-tailed
+// pennant flies from every tower's finial. One instanced draw each for the cloth, the rods, the pennants and their
+// staffs; the cloth sways from its rod and the pennants stream in the shared wind.
 import * as THREE from 'three';
+import { polyDistance, TC_CITY_WALL } from '../../sim/world/tidecrownGround';
+import type { Kit } from '../../world/kit';
 import { addPatch, WORLD_UNIFORMS } from '../../world/materials';
 import { TC_KEEP, type TcPlacement, TC_PIECES } from './layout';
 
@@ -101,7 +104,64 @@ export function sailTexture(): THREE.CanvasTexture {
   return t;
 }
 
-export function buildBanners(placements: TcPlacement[]): THREE.Group {
+/** Swallow-tailed pennants on staffs above the given finials, streaming downwind. */
+function pennants(tops: THREE.Vector3[]): THREE.Object3D[] {
+  const L = 8.5, Hh = 1.9, S = 7;
+  const cloth = new THREE.PlaneGeometry(L, Hh * 2, 14, 2);
+  const pos = cloth.getAttribute('position');
+  for (let i = 0; i < pos.count; i++) {
+    // Tapering from the staff to a forked tail (u 0..1 along the fly).
+    const u = (pos.getX(i) + L / 2) / L, v = pos.getY(i) / Hh;
+    const half = Hh * (1 - 0.55 * u), notch = u > 0.82 && Math.abs(v) < 0.5 ? (u - 0.82) * 3.2 * L * 0.18 : 0;
+    pos.setXYZ(i, u * L - notch, v * half, 0);
+  }
+  cloth.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ name: 'tc-pennant', color: '#ffffff', side: THREE.DoubleSide, roughness: 0.8 });
+  const wind = WORLD_UNIFORMS.uWind.value;
+  addPatch(mat, 'tc-pennant', (shader) => {
+    shader.uniforms.uTime = WORLD_UNIFORMS.uTime;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying vec2 vPn;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        {
+          vec3 o = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+          float u = position.x / ${L.toFixed(1)}, ph = dot(o.xz, vec2(0.21, 0.13));
+          vPn = vec2(u, position.y);
+          transformed.z += u * (1.1 * sin(u * 5.0 - uTime * 4.2 + ph) + 0.3 * sin(u * 11.0 - uTime * 7.0 + ph));
+          transformed.y -= u * u * 0.8;
+        }`,
+      );
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vPn;').replace(
+      '#include <map_fragment>',
+      `#include <map_fragment>
+      {
+        // Sea blue with a gold stripe down the middle and a gold hoist.
+        vec3 blue = vec3(0.03, 0.09, 0.32), gold = vec3(0.75, 0.48, 0.12);
+        float g = max(1.0 - smoothstep(0.16, 0.22, abs(vPn.y)), 1.0 - smoothstep(0.08, 0.1, vPn.x));
+        diffuseColor.rgb *= mix(blue, gold, g);
+      }`,
+    );
+  });
+  const staff = new THREE.CylinderGeometry(0.1, 0.14, S, 6).translate(0, S / 2, 0);
+  const staffMat = new THREE.MeshStandardMaterial({ name: 'tc-pennant-staff', color: '#c9a24a', metalness: 0.85, roughness: 0.35 });
+  const flags = new THREE.InstancedMesh(cloth, mat, tops.length), staffs = new THREE.InstancedMesh(staff, staffMat, tops.length);
+  const yaw = Math.atan2(-wind.y, wind.x), q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), one = new THREE.Vector3(1, 1, 1);
+  tops.forEach((t, i) => {
+    staffs.setMatrixAt(i, new THREE.Matrix4().makeTranslation(t.x, t.y, t.z));
+    flags.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(t.x, t.y + S - Hh, t.z), q, one));
+  });
+  for (const m of [flags, staffs]) {
+    m.castShadow = false;
+    m.computeBoundingSphere();
+  }
+  flags.name = 'tc-pennants';
+  staffs.name = 'tc-pennant-staffs';
+  return [flags, staffs];
+}
+
+export function buildBanners(placements: TcPlacement[], kit?: Kit): THREE.Group {
   const group = new THREE.Group();
   group.name = 'tc-banners';
   const W = 3.4, H = 8;
@@ -126,6 +186,15 @@ export function buildBanners(placements: TcPlacement[]): THREE.Group {
   const spots: THREE.Matrix4[] = [];
   const hang = (x: number, y: number, z: number, yaw: number) => spots.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), new THREE.Vector3(1, 1, 1)));
   const cx = 40, cz = -20;
+  // Every third run of the city wall carries one on its outer face, below the parapet.
+  let run = 0;
+  for (const p of placements) {
+    if (p.piece !== 'TC_CityWall_12' || run++ % 3 !== 1 || p.sx < 0.8) continue;
+    let nx = Math.sin(p.yaw), nz = Math.cos(p.yaw);
+    if (polyDistance(p.x + nx * 6, p.z + nz * 6, TC_CITY_WALL) > 0) { nx = -nx; nz = -nz; }
+    const off = TC_PIECES.cityWall.thick / 2 + 0.35;
+    hang(p.x + nx * off, p.y + 20.5 * p.sy, p.z + nz * off, Math.atan2(nx, nz));
+  }
   for (const p of placements) {
     if (p.piece === 'TC_CityTower' || p.piece === 'TC_WardTower') {
       const ward = p.piece === 'TC_WardTower', ox = ward ? TC_KEEP.x : cx, oz = ward ? TC_KEEP.z : cz;
@@ -149,5 +218,12 @@ export function buildBanners(placements: TcPlacement[]): THREE.Group {
   banners.name = 'tc-banner-cloth';
   rods.name = 'tc-banner-rods';
   group.add(banners, rods);
+  // Pennants over the city and ward towers.
+  const tops: THREE.Vector3[] = [];
+  for (const p of placements) {
+    if ((p.piece !== 'TC_CityTower' && p.piece !== 'TC_WardTower') || !kit?.has(p.piece)) continue;
+    tops.push(new THREE.Vector3(p.x, p.y + (kit.get(p.piece).box.max.y - 0.3) * p.sy, p.z));
+  }
+  if (tops.length) group.add(...pennants(tops));
   return group;
 }

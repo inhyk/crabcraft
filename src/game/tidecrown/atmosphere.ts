@@ -11,8 +11,10 @@ import type { TidecrownTerrain } from './terrain';
 /** Toward the sun: south-west by west, about 16 degrees up. */
 export const TC_SUN_DIR = new THREE.Vector3(-0.83, 0.276, 0.48).normalize();
 /** Haze: lilac pearl looking away from the sun, warm gold looking into it. */
-export const TC_FOG = { color: new THREE.Color('#dcd6e6'), toward: new THREE.Color('#f4d6ae'), density: 0.0009 } as const;
-export const TC_ENV_INTENSITY = 0.3;
+export const TC_FOG = { color: new THREE.Color('#dcd6e6'), toward: new THREE.Color('#f4d6ae'), density: 0.0006 } as const;
+export const TC_ENV_INTENSITY = 0.24;
+/** Extra sky in the pines' shade (leaves and bark add their albedo times this), raised near the arrival. */
+export const TC_SHADE_LIFT = { value: 0 };
 
 export interface TidecrownAtmosphere {
   group: THREE.Group;
@@ -124,7 +126,7 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
   group.add(water.mesh);
 
   // Key light: shadows follow a focus ahead of the camera, snapped to shadow texels.
-  const sun = new THREE.DirectionalLight('#ffc890', 6.2);
+  const sun = new THREE.DirectionalLight('#ffa25a', 5.3);
   sun.name = 'tidecrown-sun';
   sun.castShadow = true;
   const shadowSize = quality === 'high' ? 4096 : 2048, extent = quality === 'high' ? 72 : 56;
@@ -134,7 +136,7 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
   sun.shadow.bias = -0.0003;
   sun.shadow.normalBias = 0.06;
   // Cool lilac sky fill for the shade, warm bounce from the ground.
-  const hemi = new THREE.HemisphereLight('#979ee8', '#b88d62', 0.7);
+  const hemi = new THREE.HemisphereLight('#9497ea', '#a27b56', 0.6);
   group.add(sun, sun.target, hemi);
 
   const lanternLight = new THREE.PointLight('#53f2e4', 520, 120, 1.5);
@@ -185,6 +187,10 @@ export function buildTidecrownAtmosphere(terrain: TidecrownTerrain, quality: 'lo
       sun.target.position.copy(focus);
       sun.target.updateMatrixWorld();
       lanternLight.intensity = 520 * (0.9 + 0.1 * Math.sin(time * 1.3));
+      // Under the pines by the arrival the shade gets a little more sky, so the first view is not black on orange.
+      const forest = THREE.MathUtils.smoothstep(playerZ, 290, 318);
+      hemi.intensity = 0.6 + 0.22 * forest;
+      TC_SHADE_LIFT.value = 0.3 * forest;
     },
     dispose() {
       envRT?.dispose();
