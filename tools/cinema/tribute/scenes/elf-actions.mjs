@@ -1,12 +1,12 @@
-// The night-elf run becomes a seven-move showcase, still on the original edit grid.
+// The night-elf run becomes a short dash and a seven-move showcase, still on the original edit grid.
 // Every articulation is a recorded Jumper policy from public/motions. Grounded moves
 // plant their stage root; only the approach/recovery translates it. The camera supplies
 // the travelling energy while a claw or foot is supporting the body.
 import { ELF } from '../cast.mjs';
 
 export const ELF_ACTIONS = [
-  { id: 'night-elf-toprock', at: 74.6, end: 76.0, clip: 'break_toprock', from: 1.39, to: 2.3, speed: 1.1, approach: 0.55, point: [-89, 26], yaw: -0.35, label: 'Toprock feint', camera: 'front' },
-  { id: 'night-elf-sixstep', at: 76.0, end: 77.7, clip: 'break_sixstep', from: 1.1, to: 2.55, speed: 1.2, approach: 0.45, point: [-90, 37], yaw: 0.0, label: 'Six-step pivot', camera: 'high' },
+  { id: 'night-elf-toprock', at: 75.6, end: 76.55, clip: 'break_toprock', from: 1.39, to: 2.3, speed: 1.1, point: [-89, 26], yaw: -0.35, label: 'Toprock feint', camera: 'front' },
+  { id: 'night-elf-sixstep', at: 76.55, end: 77.7, clip: 'break_sixstep', from: 1.1, to: 2.55, speed: 1.3, point: [-90, 37], yaw: 0.0, label: 'Six-step pivot', camera: 'high' },
   { id: 'night-elf-spin', at: 77.7, end: 79.15, clip: 'break_spin', from: 1.05, to: 2.8, speed: 1.2, point: [-91, 45], yaw: -0.2, label: 'Ground spin', camera: 'side' },
   { id: 'night-elf-backflip', at: 79.15, end: 80.8, clip: 'break_backflip', from: 0.675, to: 1.825, speed: 0.82, point: [-91.45, 48.2], yaw: 0, label: 'Backflip into the puddle', camera: 'wide', land: 0.567 },
   { id: 'night-elf-clawstand', at: 80.8, end: 82.8, clip: 'break_clawstand', from: 3.65, to: 6.425, speed: 1.55, point: [-92.5, 62], yaw: -0.2, label: 'Two-claw balance', camera: 'low' },
@@ -95,6 +95,20 @@ function actionShot(a, run) {
 }
 
 /** Keep all other shots, including the close-up, transformation and moon dive, byte-for-byte. */
+/**
+ * The run keeps its first second, the dash out of the close-up (74.6-75.6), and the moves start
+ * where the original cuts away under a trunk that whips past the lens (src/capture/cinema/fx/
+ * night-wipe.ts): the same sweep ends the dash and opens the toprock, covering the frame at the cut.
+ */
+const DASH_END = 75.6;
+const WIPE = { kind: 'night-wipe', d: 0.5, from: 1.9, to: -1.9 };
 export function withElfActions(shots) {
-  return shots.flatMap((s) => s.id === 'night-elf-run' ? ELF_ACTIONS.map((a) => actionShot(a, s)) : [s]);
+  return shots.flatMap((s) => {
+    if (s.id !== 'night-elf-run') return [s];
+    const cut = +(DASH_END - s.at).toFixed(4);
+    const dash = { ...s, length: cut, fx: [...s.fx, { ...WIPE, t: cut - WIPE.d / 2 }] };
+    const moves = ELF_ACTIONS.map((a) => actionShot(a, s));
+    moves[0].fx.push({ ...WIPE, t: -WIPE.d / 2 });
+    return [dash, ...moves];
+  });
 }
