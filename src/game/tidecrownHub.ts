@@ -90,13 +90,15 @@ export class TidecrownHub {
   /** Tidecrown's side, built on the first entry behind its loading screen: the Seaglass portal and the two crabs. */
   load(island: TidecrownIsland): Promise<void> {
     if (this.g.serverMode) return Promise.resolve();
+    // Each piece once, so a retry after a failed crab load adds nothing twice.
     this.loading ??= (async () => {
-      const portal = new CrownPortal(new THREE.Vector3(SEAGLASS.x, island.height(SEAGLASS.x, SEAGLASS.z), SEAGLASS.z), SEAGLASS.yaw, 'seaglass-portal');
-      island.root.add(portal.root);
-      this.seaglass = portal;
+      if (!this.seaglass) {
+        this.seaglass = new CrownPortal(new THREE.Vector3(SEAGLASS.x, island.height(SEAGLASS.x, SEAGLASS.z), SEAGLASS.z), SEAGLASS.yaw, 'seaglass-portal');
+        island.root.add(this.seaglass.root);
+      }
       const side = { x: Math.cos(SEAGLASS.yaw) * 4.6 + Math.sin(SEAGLASS.yaw) * 1.6, z: -Math.sin(SEAGLASS.yaw) * 4.6 + Math.cos(SEAGLASS.yaw) * 1.6 };
-      this.captain = await this.crab(island, CAPTAIN, { race: 'human', sex: 'female', classId: 'warrior', shell: 2, crest: 1, led: 0, name: 'Ara' }, ['captain-hat'], ['아라 선장', 'Captain Ara'], ['금빛집게호 선장', 'Captain of the Goldclaw'], 'tc-captain');
-      this.keeper = await this.crab(island, { x: SEAGLASS.x + side.x, z: SEAGLASS.z + side.z, yaw: SEAGLASS.yaw }, { race: 'nightelf', sex: 'female', classId: 'mage', shell: 1, crest: 2, led: 2, name: 'Opal' }, [], ['포탈지기 오팔', 'Opal'], ['바다유리 포탈지기', 'Seaglass Portal Keeper'], 'tc-portal-keeper');
+      this.captain ??= await this.crab(island, CAPTAIN, { race: 'human', sex: 'female', classId: 'warrior', shell: 2, crest: 1, led: 0, name: 'Ara' }, ['captain-hat'], ['아라 선장', 'Captain Ara'], ['금빛집게호 선장', 'Captain of the Goldclaw'], 'tc-captain');
+      this.keeper ??= await this.crab(island, { x: SEAGLASS.x + side.x, z: SEAGLASS.z + side.z, yaw: SEAGLASS.yaw }, { race: 'nightelf', sex: 'female', classId: 'mage', shell: 1, crest: 2, led: 2, name: 'Opal' }, [], ['포탈지기 오팔', 'Opal'], ['바다유리 포탈지기', 'Seaglass Portal Keeper'], 'tc-portal-keeper');
     })().catch((error) => { this.loading = null; throw error; });
     return this.loading;
   }
@@ -159,6 +161,15 @@ export class TidecrownHub {
     // Only while its world is the one shown (an ending shows World I over a later chapter).
     const r = this.returns.get(this.w2.chapter)?.portal.root;
     return r?.parent?.visible && Math.hypot(p.x - r.position.x, p.z - r.position.z) < AT ? r.position : null;
+  }
+
+  /** Minimap marks: the crown portal of the world shown, or in Tidecrown the captain's pier and the Seaglass portal. */
+  markers(): { at: THREE.Vector3; label: string }[] {
+    if (this.w2.inTidecrown) {
+      return this.shown && this.captain && this.seaglass ? [{ at: this.captain.at, label: t('배편', 'Ships') }, { at: this.seaglass.root.position, label: t('포탈', 'Portal') }] : [];
+    }
+    const r = this.returns.get(this.w2.chapter)?.portal.root;
+    return r?.parent?.visible ? [{ at: r.position, label: t('타이드크라운', 'Tidecrown') }] : [];
   }
 
   /** The prompt at the hub point the player is at. */
