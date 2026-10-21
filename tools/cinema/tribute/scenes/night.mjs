@@ -396,7 +396,9 @@ const elfShots = [
     fx: [
       LAVENDER,
       SHADE,
-      { kind: 'night-burst', t: -0.04, at: { g: [RUN_END[0], 1.7, RUN_END[1]] }, size: 1.05, d: 0.75, color: '#ff3fd0', color2: '#ffa6f2', light: 12, gain: 0.45, count: 420 },
+      // The light she changes in, in depth: shafts through the mist, sparks round the shape, glowing
+      // smoke; it streams away behind the beast as it breaks out.
+      { kind: 'elf-aura', t: -0.04, pre: 0, at: { g: [RUN_END[0], 1.7, RUN_END[1]] }, size: 1.05, d: 0.75, color: '#ff3fd0', color2: '#ffa6f2', light: 22, gain: 0.6, stream: 0.3, streamDir: [-0.4, 0.5, -4] },
       { kind: 'night-veil', t: -1, alpha: [[0, 0.14], [0.12, 0.15], [0.45, 0.05], [0.85, 0]], color: '#ff6ad6', gain: 1.2 },
       { kind: 'night-glow', t: -1, at: { g: [RUN_END[0], 1.5, RUN_END[1]] }, color: '#ff4fd0', size: 3.2, k: [[0, 0.7], [0.4, 0.25], [1, 0.05]] },
       // Pink smoke trailing off the beast as it breaks out.
@@ -500,10 +502,14 @@ const elfShots = [
         kind: 'night-foam', t: -0.05, alpha: [[0, 0.9], [0.2, 0.86], [0.4, 0.7], [0.75, 0.45], [1.1, 0]], cover: [[0, 0.62], [0.12, 0.55], [0.3, 0.38], [0.6, 0.18], [1.0, 0.05]],
         color: '#e8f8fa', gain: 0.85, color2: '#3a9cac', gain2: 0.6, dark: '#05222a', center: [0.02, 0.06], speed: 2.2, scale: 1,
       },
-      { kind: 'leaves', t: -1, count: 2600, box: [9, 6, 12], drift: [0.4, -0.3, 1.2], size: 0.38, color: '#06222a', color2: '#0f3a44', opacity: 1, seed: 8 },
+      { kind: 'leaves', t: -1, count: 900, box: [9, 6, 12], drift: [0.4, -0.3, 1.2], size: 0.2, color: '#06222a', color2: '#0f3a44', opacity: 1, seed: 8 },
+      // Under: moonlight shafts down through the broken surface, bubbles boiling up past the lens,
+      // churned white water below the surface.
+      { kind: 'elf-under', t: 0.2, fadeIn: 0.12, d: 1.05, at: [SPLASH[0] + 3.2, -2.4, SPLASH[2] + 1.0], box: [9, 4.6, 9], color: '#5fe8f4', color2: '#e8ffff', gain: 1.0, rise: 1.8 },
       // Bubbles rising past the lens once under.
       { kind: 'motes', t: 0.25, fadeIn: 0.15, count: 600, box: [6, 5, 6], drift: [0.1, 1.6, 0.2], size: 0.07, color: '#e8ffff', color2: '#9ff6ff' },
-      { kind: 'night-streaks', t: -1, alpha: [[0, 0.8], [0.6, 0.5], [1.1, 0]], fill: [[0, 0.3], [0.3, 0.1], [0.6, 0]], color: '#7ff6ff', color2: '#ffffff', speed: 5, gain: 1.6 },
+      // Spray streaks only while it plunges through the splash (the white), gone once under.
+      { kind: 'night-streaks', t: -1, alpha: [[0, 0.6], [0.25, 0]], fill: [[0, 0.3], [0.25, 0]], color: '#7ff6ff', color2: '#ffffff', speed: 5, gain: 1.6 },
       { kind: 'fade', t: -1, color: '#000000', curve: [[0, 0], [0.7, 0], [1.2, 1]] },
     ],
   }),
