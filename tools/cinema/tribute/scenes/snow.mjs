@@ -450,31 +450,23 @@ const frostCast = {
     { t: 0.4, kind: 'light', at: { a: 'mage', o: [0, 1.2, 0.8] }, color: '#7fc8ff', curve: [[0.4, 0], [0.8, 40], [2.71, 30]], distance: 12 },
   ],
 };
-// In the arena's north half, low in front of the mage: the glacial citadel towers behind him, its
-// ice-crowned towers, the throne and the keep's great ice spire (src/game/frostThroneLayout.ts CITADEL).
-const FC = [13.2, -88.8];
-/** From the lens toward the keep (0, -128). */
-const FU = ((d) => d.map((v) => v / Math.hypot(...d)))([0 - FC[0], -128 - FC[1]]);
-const MP = [+(FC[0] + FU[0] * 3.4).toFixed(2), +(FC[1] + FU[1] * 3.4).toFixed(2)];
-/** On the line to the keep, `up` high (world y), past the wall. */
-const SPIRE = (up) => [+(FC[0] + FU[0] * 38).toFixed(2), up, +(FC[1] + FU[1] * 38).toFixed(2)];
-/** The lens a little to the side of FC: k > 0 to the mage's left. */
-const FCs = (k, up) => G(FC[0] - FU[1] * k, FC[1] + FU[0] * k, up);
+// The arena's east crystal (25, -78), seen from inside the ring: the mage at its foot against the sky.
+const PL = [25, -78];
+const MP = [23.2, -78.2];
 const frostPillar = {
-  anchor: MP,
+  anchor: [21, -78],
   hide: ['mira-ice-prison'],
-  view: { ...COLD, exposure: 1.22, saturation: -0.02, bloom: { intensity: 1.3, threshold: 0.8 }, dof: true, bokeh: 1.0 },
+  view: { ...COLD, exposure: 1.22, saturation: -0.02, bloom: { intensity: 1.3, threshold: 0.8 }, dof: true, bokeh: 1.5 },
   fog: { color: '#b3bce0', density: 0.012 },
-  // Facing the lens.
-  actors: [{ id: 'mage', spec: MAGE, at: MP, yaw: Math.atan2(-FU[0], -FU[1]) }],
+  actors: [{ id: 'mage', spec: MAGE, at: MP, yaw: -PI / 2 }],
   tracks: { mage: { acts: [{ t: -1, clip: 'cast', loop: true }], faces: [{ t: -2, expr: 'focused' }] } },
   cam: {
     ...move([
-      { t: 0, p: FCs(0, 0.25), l: SPIRE(32), fov: 50 },
-      { t: 0.91, p: FCs(-0.3, 0.3), l: SPIRE(32), fov: 50 },
+      { t: 0, p: G(20.7, -79.3, 0.25), l: G(23.4, -78.15, 1.45), fov: 42 },
+      { t: 0.91, p: G(20.85, -79.25, 0.3), l: G(23.4, -78.15, 1.75), fov: 42 },
     ]),
     focus: 'mage',
-    range: 12,
+    range: 5,
   },
   fx: [
     ...blizzard({ wind: [-2, -1.5, 6], sky: '#b4bce0', zenith: '#525c90', sun: 0.6, hemi: 1.3, tint: [0.88, 0.94, 1.12], drift: 0.06 }),
@@ -485,15 +477,10 @@ const frostPillar = {
 };
 const frostRise = {
   ...frostPillar,
-  // Tilting up the citadel to its spires.
-  cam: {
-    ...move([
-      { t: 0, p: FCs(0, 0.22), l: SPIRE(34), fov: 54 },
-      { t: 0.71, p: FCs(0.3, 0.3), l: SPIRE(40), fov: 56 },
-    ]),
-    focus: 'mage',
-    range: 12,
-  },
+  cam: move([
+    { t: 0, p: G(20.6, -79.35, 0.22), l: G(23.4, -78.15, 1.9), fov: 50 },
+    { t: 0.71, p: G(20.4, -79.4, 0.3), l: G(23.9, -78.1, 3.7), fov: 52 },
+  ]),
   fx: [...frostPillar.fx, { t: 0, kind: 'flash', color: '#f4f0ff', d: 0.3, a: 0.5 }, { t: 0.68, kind: 'flash', color: '#f6f8ff', rise: 0.22, d: 0.05, a: 0.95 }],
 };
 // The tauren roaring among the east woods' pines.
