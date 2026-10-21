@@ -701,13 +701,16 @@ const undeadShots = [
         // ...in to the planted claw and up it, his body, to his face (his staff out of frame left).
         { t: 5.5, p: H(1.0, 0.75, 2.45), l: H(0.4, 0.6, 0.8), fov: 40 },
         { t: 6.6, p: H(0.95, 1.15, 2.2), l: H(0.2, 0.98, 0.3), fov: 40 },
-        // Down to look up at him as he channels, back as the boulders climb out round him...
-        { t: 8.2, p: H(0.55, 0.32, 3.0), l: H(0.15, 0.95, 0), fov: 40 },
-        { t: 9.8, p: H(0.7, 0.42, 3.9), l: H(0.1, 1.45, 0), fov: 42 },
-        // ...then tilting up the golem's height as it gathers behind him and looms.
-        { t: 12.5, p: H(0.8, 0.42, 4.4), l: H(0.35, 1.9, -0.8), fov: 44 },
-        { t: 14.5, p: H(0.85, 0.32, 4.9), l: H(0.45, 2.5, -1.8), fov: 47 },
-        { t: 18, p: H(0.9, 0.3, 5.6), l: H(0.5, 3.4, -2.0), fov: 52 },
+        // Down to the ground close in front of him, looking up as he raises his claws and channels...
+        { t: 7.6, p: H(0.75, 0.5, 2.3), l: H(0.15, 1.0, 0), fov: 42 },
+        { t: 9.0, p: H(0.55, 0.3, 2.35), l: H(0.1, 1.4, -0.3), fov: 46 },
+        // ...widening and drifting round to his right as the boulders climb out round him and fly
+        // together behind him, so he stays big in the frame with the golem rising over him...
+        { t: 10.5, p: H(0.25, 0.28, 2.7), l: H(0.0, 1.8, -1.0), fov: 54 },
+        { t: 12.5, p: H(-0.25, 0.28, 2.9), l: H(-0.1, 2.4, -2.0), fov: 57 },
+        // ...and tilting up its height as it straightens, blazes and looms.
+        { t: 14.5, p: H(-0.45, 0.25, 2.95), l: H(0.0, 3.1, -2.8), fov: 58 },
+        { t: 18, p: H(-0.55, 0.22, 3.3), l: H(0.1, 3.7, -3.0), fov: 60 },
       ],
     },
     fx: [
@@ -715,7 +718,9 @@ const undeadShots = [
       { ...EARTH, k: [[0, 1], [5.6, 1], [7.4, 0]] },
       { ...GRAVE, k: [[0, 0], [5.6, 0], [7.4, 1]] },
       NO_ASTROLABE,
-      { kind: 'focus', t: -1, range: [[0, 1.6], [4.4, 1.8], [6.6, 2.4], [9.8, 5.5]] },
+      { kind: 'focus', t: -1, until: 6.6, range: [[0, 1.6], [4.4, 1.8], [6.6, 2.4]] },
+      // Once he is up, focus stays on him while the lens looks up past him at the golem.
+      { kind: 'focus', t: 6.6, at: { a: 'u', o: [0, 0.9, 0] }, range: [[6.6, 2.4], [9.8, 4.5], [14, 6]] },
       { kind: 'lens', t: -1, near: 0.03, until: 6 },
       UNDEAD_FLOOR,
       STEP_POSE,
@@ -724,26 +729,31 @@ const undeadShots = [
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
       { kind: 'motes', t: -1, at: { g: [U[0], 1.2, U[1] - 2] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
       // Cold moonlight from above the lens, so the ground and the claw read before the fire opens.
-      { kind: 'light', t: -1, at: H(1.2, 3.2, 3.6), color: '#8296bc', curve: [[0, 320], [6.0, 260], [8.0, 30]], distance: 14 },
+      { kind: 'light', t: -1, at: H(1.2, 3.2, 3.6), color: '#8296bc', curve: [[0, 420], [6.0, 300], [8.0, 30]], distance: 14 },
       // A pale fill from the lens side once he channels, so his face reads against the green sky.
-      { kind: 'light', t: 6, at: H(0.4, 0.5, 2.2), color: '#d6e6a0', curve: [[6.4, 0], [7.4, 6], [11, 6], [13, 3]], distance: 4 },
+      { kind: 'light', t: 6, at: H(0.1, 0.6, 2.0), color: '#d6e6a0', curve: [[6.4, 0], [7.4, 8], [9.5, 8], [10.5, 14], [18, 14]], distance: 5 },
+      // The blight's fire under his claws, low in front of him: the original's undead is lit from below.
+      { kind: 'light', t: 6, at: H(0.2, 0.15, 1.3), color: '#ffb050', curve: [[6.4, 0], [7.6, 10], [18, 14]], distance: 3.5, flicker: 0.2 },
       // 98.5 s: a sickly glow flares up behind him, rims him green, and the sky behind him sickens and swells.
-      { kind: 'night-glow', t: 5, at: H(-11, 6, -4), size: 12, color: '#d8ff6a', k: [[5.35, 0], [5.6, 1.6], [6.0, 1.2], [6.5, 1.3], [8.5, 0.6]] },
+      { kind: 'night-glow', t: 5, at: H(-11, 6, -4), size: 12, color: '#d8ff6a', k: [[5.35, 0], [5.6, 1.6], [6.0, 1.2], [6.5, 1.3], [8.5, 0.6], [9.8, 0]] },
       { kind: 'light', t: 5, at: H(-1.2, 1.8, -1.6), color: '#a8ff5a', curve: [[5.4, 0], [5.65, 14], [6.5, 10]], distance: 6 },
-      { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: [[5.3, 0], [5.7, 0.5], [6.5, 0.6], [9.5, 0.6], [14.9, 0.75], [15.1, 1.0], [18, 1.1]] },
+      // (Wide and low before the blast: looking up past him it would read as a green sun.)
+      { kind: 'night-glow', t: -1, at: SKY, size: 170, color: '#5cc42a', k: [[5.3, 0], [5.7, 0.4], [6.5, 0.45], [9.5, 0.4], [14.9, 0.5], [15.1, 0.9], [18, 1.0]] },
       // The molten blight lights him from below as it spreads.
       { kind: 'light', t: -1, at: G(-1.3, -0.5, 0.3), color: '#ffb44a', curve: [[1, 0], [4, 8], [7, 16]], distance: 6, flicker: 0.15 },
       // A sickly green rim from the sky behind his left.
       { kind: 'light', t: -1, at: G(1.6, -1.8, 2.6), color: '#9dff5a', curve: [[5.4, 0], [5.8, 22]], distance: 7 },
       // The staff's gather, flaring at each fling.
       { kind: 'swirl', t: 7.1, until: 14.9, at: { a: 'u', o: STAFF }, radius: 1.6, rate: 60, size: 0.2, color: '#7dff6a' },
-      { kind: 'night-glow', t: 7.0, at: { a: 'u', o: STAFF }, size: 1.3, color: '#8dff4a', k: [[7.0, 0], [8.1, 1.0], [10.2, 1.4], [10.4, 3.2], [11.1, 1.3], [12.6, 1.6], [12.8, 3.4], [13.7, 1.8], [14.9, 2.2], [15.3, 0.6]] },
+      { kind: 'night-glow', t: 7.0, at: { a: 'u', o: STAFF }, size: 0.6, color: '#8dff4a', k: [[7.0, 0], [8.1, 1.0], [10.2, 1.4], [10.4, 3.2], [11.1, 1.3], [12.6, 1.6], [12.8, 3.4], [13.7, 1.8], [14.9, 2.2], [15.3, 0.6]] },
       { kind: 'light', t: 6.5, at: { a: 'u', o: [STAFF[0], STAFF[1], STAFF[2] + 0.4] }, color: '#7dff4a', curve: [[6.5, 0], [7.3, 0], [8.3, 5], [10.3, 7], [10.45, 16], [11.1, 7], [12.7, 8], [12.85, 18], [13.7, 9], [14.9, 10]], distance: 9, flicker: 0.1 },
       { kind: 'motes', t: 6, fadeIn: 1, at: { a: 'u', o: [0, 1.6, 0] }, count: 220, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
       { kind: 'embers', t: 6, fadeIn: 1.5, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
       // Boulders climb out of the ground round him and fly together behind him into the golem; the
       // burning rock falls past its shoulder, the blast.
       golem,
+      // More molten rocks heave out of the ground round him, beside the lens, and the blast throws them.
+      { ...boulders(LAND - 9.9), n: 9, size: [0.22, 0.6], h: [0.1, 1.0], rise: [9.6, 12.6], seed: 53 },
       STREAK,
       { kind: 'night-meteor', t: FALL, from: METEOR_FROM, to: { g: [IMPACT[0], 0.5, IMPACT[1]] }, d: LAND - FALL, size: 1.3, light: 500, glow: 0.4, tail: 14, color: '#8cf03a', core: '#ffb02a' },
       { kind: 'night-impact', t: LAND, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 3.4, toward: G(-3.6, 0.8, 1), light: 700, flash: 0.45, gain: 0.45, dust: 0.12, dome: 0, haze: 0.3, puffs: 60, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
