@@ -200,6 +200,8 @@ const face = {
     ...move([
       { t: 0, p: F0(0.46, 0.33, 1.06), l: F0(0.32, 0.41, 0.62), fov: 32 },
       { t: 1.2, p: F0(0.465, 0.355, 1.13), l: F0(0.3, 0.42, 0.61), fov: 32 },
+      // Easing off the fur slowly (a fifth of the way back by 2.4 s), so the locks read before the face.
+      { t: 2.4, p: F0(0.424, 0.449, 1.409), l: F0(0.234, 0.46, 0.476), fov: 30.9 },
       { t: 3.6, p: F0(0.28, 0.78, 2.4), l: F0(0, 0.6, 0), fov: 27 },
       { t: 6.4, p: F1(2.4, 0.7, 1.9), l: F1(0, 0.72, 0.2), fov: 30 },
       { t: 8.8, p: F1(2.6, 0.75, 0.9), l: F1(0, 0.78, 0.4), fov: 31 },
@@ -219,15 +221,15 @@ const face = {
     // Out of the white as late as the original, which is clear at 41.2 s.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.5, 0.85], [1.0, 0.55], [1.45, 0.2], [1.75, 0]] },
     // The LEDs dimmed while the lens is on the moustache, so the fur reads before the glare.
-    // The fill held two stops under a stronger key while the lens is on the moustache, so the beard
-    // has a lit side and a dark side.
+    // The fill held under a stronger key while the lens is on the moustache, so the beard has a lit
+    // side and a dark side, and its locks shade each other.
     {
       t: -3,
       kind: 'fur',
       actor: 'dwarf',
       led: [[0, 0.45], [1.6, 0.5], [3.6, 1]],
-      fill: [[0, 0.5], [3.6, 0.75], [6, 1]],
-      key: { color: '#fff1e0', k: [[0, 10], [3.6, 8], [6, 7]] },
+      fill: [[0, 0.3], [3.6, 0.6], [6, 1]],
+      key: { color: '#fff1e0', k: [[0, 13], [3.6, 9], [6, 7]] },
     },
     // Focus held on the moustache's frosted tips while the depth of field opens up to the face.
     { t: -3, kind: 'focus', at: { a: 'dwarf', o: [0.36, 0.42, 0.68] }, range: [[0, 0.07], [1.6, 0.12], [3.6, 2.5]], until: 4 },
