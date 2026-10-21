@@ -4,14 +4,14 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const sha = x => createHash('sha256').update(x).digest('hex');
 const server = await createServer({root, server:{host:'127.0.0.1',port:5266,strictPort:true}, logLevel:'error'});
 await server.listen();
 let browser;
 try {
- browser = await chromium.launch({headless:true,channel:'chrome'});
+ browser = await launchBrowser({headless:true});
  const page=await browser.newPage();
  await page.route('**/__sim_bake__',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><title>Numeric motion bake</title>'}));
  await page.goto('http://127.0.0.1:5266/__sim_bake__');

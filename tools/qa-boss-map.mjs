@@ -1,7 +1,7 @@
 // Actual map controls + timed boss network warnings. World/level/boss/position/God are explicit fixtures.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192',relay=process.env.CC_QA_RELAY??new URL('/multiplayer',base).href.replace(/^http/,'ws');
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 async function open(name,lang){const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(({name,lang,relay})=>{localStorage.setItem('cc.language',lang);localStorage.setItem('cc.quality','high');localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name}));const Original=window.WebSocket;window.WebSocket=class extends Original{constructor(url,protocols){const target=new URL(String(url)),replacement=new URL(relay);target.searchParams.forEach((v,k)=>replacement.searchParams.set(k,v));super(target.pathname==='/multiplayer'?replacement:url,protocols);}};},{name,lang,relay});await p.goto(base+'/?screen=game&multiplayer');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));return p;}
 async function map(p,chapter){
  const compact=await p.evaluate(()=>window.app.current.game.hud.minimap.radius);await p.getByRole('button',{name:/지도 크게|Expand map/}).click();await p.waitForFunction(()=>window.app.current.game.hud.minimap.expanded);

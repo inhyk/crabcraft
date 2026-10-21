@@ -1,6 +1,6 @@
 // Observe native engine timing/dynamic resolution; do not nest GPU queries or replace its loop.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';import {writeFile} from 'node:fs/promises';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[],results=[];
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';import {writeFile} from 'node:fs/promises';
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[],results=[];
 try{
  const p=await browser.newPage({viewport:{width:1280,height:800},deviceScaleFactor:2});p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error'&&!m.text().includes('Failed to load resource'))errors.push(m.text());});await p.addInitScript(()=>{localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.quality','auto');localStorage.setItem('cc.resScale','2');});await p.goto('http://127.0.0.1:5192/?screen=game');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});
  for(const [name,x,z] of [['town',0,55],['forest',-75,-35],['boss',0,-65]]){

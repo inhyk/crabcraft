@@ -3,7 +3,9 @@
 // Usage: node tools/shot.mjs <url> <out.png> [--wait-ready] [--size 1600x900] [--timeout 60000] [--eval "js"]
 // --wait-ready waits until the page sets `window.__ready = true` (set it after the first good frame).
 // Console errors and warnings are printed so a broken page is visible in the log.
-import { chromium } from 'playwright';
+// The browser is Chrome for Testing or Playwright's Chromium, never the Google Chrome people use;
+// tools/lib/browser.mjs says which one is picked, and CRABCRAFT_CHROME=<executable> overrides it.
+import { launchBrowser } from './lib/browser.mjs';
 
 const args = process.argv.slice(2);
 const url = args[0];
@@ -20,8 +22,7 @@ const [w, h] = opt('--size', '1600x900').split('x').map(Number);
 const timeout = Number(opt('--timeout', '60000'));
 const evalJs = opt('--eval', null);
 
-const browser = await chromium.launch({
-  channel: 'chrome',
+const browser = await launchBrowser({
   headless: true,
   args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'],
 });

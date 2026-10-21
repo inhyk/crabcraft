@@ -91,3 +91,4 @@ git branch -D feat/<이름>-<YYYYMMDD>
 - `vercel`, `wrangler deploy` 로 배포
 - `kubony/crabcraft` 에 push
 - 비공개 영상(APT 노래가 들어간 군무)이나 그 노래를 레포에 넣기
+- 자동화(Playwright, puppeteer, headless, 스크린샷)에서 `channel: 'chrome'` 이나 `/Applications/Google Chrome.app` 으로 브라우저 띄우기. 그러면 사람이 쓰는 크롬이 안 열린다. `tools/lib/browser.mjs` 의 `launchBrowser` 로 띄운다.

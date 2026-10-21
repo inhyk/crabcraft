@@ -4,7 +4,7 @@
 // woodcutter's lantern, lichen on the stone), the field view stays under its draw-call budget, low quality works,
 // and nothing logs an error. Writes tmp/qa/snow-materials-*.png.
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import {mkdir} from 'node:fs/promises';
 import {bundle} from './collision-bake-lib.mjs';
 await mkdir('tmp/qa',{recursive:true});
@@ -20,7 +20,7 @@ const scrub=L.snowScrubItems();
 assert.ok(scrub.filter(s=>s.kind==='cloth').length>=4,'cloth is tied to the miners\' trail posts');
 console.log('PASS layout: no kit rock or scrub piece;',L.snowBoulders().length,'boulders,',L.snowPebbles().length,'pebbles,',scrub.length,'scrub items');
 
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 async function load(quality){const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error'&&/shader|program|WebGL/i.test(m.text()))errors.push(m.text().slice(0,300));});p.setDefaultTimeout(60000);
  await p.addInitScript(quality=>{localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'Stone reader'}));localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.language','ko');localStorage.setItem('cc.quality',quality);if(location.hostname==='127.0.0.1'){const WS=window.WebSocket;window.WebSocket=class extends WS{constructor(url,protocols){const u=new URL(String(url));if(u.pathname==='/multiplayer'){u.host=location.host;u.protocol='ws:';}super(u.href,protocols);}};}},quality);

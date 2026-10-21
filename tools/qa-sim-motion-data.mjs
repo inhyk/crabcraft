@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const data=JSON.parse(await readFile(root+'src/sim/data/pose-data.json','utf8'));
 const {version,...payload}=data;if(version!=='shipped-motion-v1-'+createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0,20))throw new Error('Numeric motion artifact content hash mismatch');
@@ -18,7 +18,7 @@ if(JSON.stringify(catalog.rigs)!==JSON.stringify(expectedRigs))throw new Error('
 if(process.argv.includes('--freshness-only')){console.log(`PASS: ${Object.keys(data.sourceHashes).length} source hashes match ${data.version}`);process.exit(0);}
 const server=await createServer({root,server:{host:'127.0.0.1',port:5266,strictPort:true},logLevel:'error'});await server.listen();let browser;
 try{
- browser=await chromium.launch({headless:true,channel:'chrome'});const page=await browser.newPage();
+ browser=await launchBrowser({headless:true});const page=await browser.newPage();
  await page.route('**/__sim_parity__',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><title>Motion numeric parity</title>'}));
  await page.goto('http://127.0.0.1:5266/__sim_parity__');
  const result=await page.evaluate(async()=>{

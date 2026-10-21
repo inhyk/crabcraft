@@ -8,7 +8,7 @@
 // multiplayer panel's button and the host must see it. Any console error or page error fails.
 //
 //   node tools/qa-breakdance-multiplayer.mjs [--url http://127.0.0.1:5192] [--out tmp/qa/breakdance-mp]
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -26,8 +26,7 @@ const ROUTINE = ['break_toprock', 'break_sixstep', 'break_spin', 'break_jumpspin
 // Seconds into each move for the shared screenshot (the 720 near its apex).
 const SHOTS = { break_toprock: 2.5, break_jumpspin: 0.42, break_oneclaw: 2.6 };
 
-const browser = await chromium.launch({
-  channel: 'chrome',
+const browser = await launchBrowser({
   headless: true,
   args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--mute-audio'],
 });
