@@ -4,8 +4,8 @@
 // the night elf alert among the ferns, a spin and a dash, a long tracking run through the pines,
 // her change in a violet burst, a run along the headland cliff and a leap across the moon, then a
 // cyan whoosh into darkness.
-// night-undead (93.0 to 111.0): Starhaven's Fallen Star Ruins, graded grave green; the undead's claws
-// creep over the sand and it splits into molten fissures, he rises and channels under the observatory's
+// night-undead (93.0 to 111.0): Starhaven's Fallen Star Ruins, graded grave green; the undead's claw
+// stamps down and a molten blight spreads out of the step, he rises and channels under the observatory's
 // astrolabe, boulders climb out of the ground round him, a burning rock falls out of the sky behind him
 // and the blast whites out the frame.
 // night-explode (151.92 to 154.21): the same blast, close, the undead black against it.
@@ -530,31 +530,12 @@ const G = (ahead, right, h) => {
 };
 /** Where the burning rock lands: behind him, screen left, as the original's blasts go up left of him. */
 const IMPACT = P(10, -4.2);
-/** Where he starts his creep (ahead of his mark, away from the camera). */
-const U_FROM = P(4.2, -0.3);
 const UNDEAD_SCALE = 1.3;
 const undead = { id: 'u', spec: UNDEAD, scale: UNDEAD_SCALE };
 /** The staff head, in his frame (left, up, ahead), scaled with him. */
 const STAFF = [0.45 * UNDEAD_SCALE, 1.35 * UNDEAD_SCALE, 0.25 * UNDEAD_SCALE];
 /** The sky behind him, far along the view. */
 const SKY = [U[0] + FWD[0] * 70, 26, U[1] + FWD[1] * 70];
-
-/** Molten fissures opening under his claws as he creeps (every step, alternating sides). */
-function footfalls(from, to, t0, t1, every) {
-  const out = [];
-  const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
-  const side = [-(to[1] - from[1]) / len, (to[0] - from[0]) / len];
-  const n = Math.floor((t1 - t0) / every);
-  for (let i = 0; i <= n; i++) {
-    const t = t0 + i * every;
-    const k = (t - t0) / (t1 - t0);
-    const s = i % 2 ? 0.5 : -0.5;
-    const x = from[0] + (to[0] - from[0]) * k + side[0] * s;
-    const z = from[1] + (to[1] - from[1]) * k + side[1] * s;
-    out.push({ kind: 'night-cracks', t, at: [x, z], radius: 1.6, grow: 1.1, cells: 1.4, warp: 1.0, width: 0.045, keep: 0.4, gain: 1.7 });
-  }
-  return out;
-}
 
 /** The camera's bearing from him (radians, x = cos, z = sin), for the boulders' arc. */
 const CAM_ANGLE = Math.atan2(TO_CAM[1], TO_CAM[0]);
@@ -637,43 +618,67 @@ const LAND = 8.5;
 const UNDEAD_HIDE = ['observatory-rubble'];
 const NO_ASTROLABE = { kind: 'night-drop', t: -3, at: [80, -40], r: 5.5, above: 3 };
 
+/** A point in his frame (left, up, ahead) on his standing spot, fixed to the ground (he does not travel). */
+const H = (left, up, ahead) => G(-ahead, left, up);
+/** His frame to the ground: `left` and `ahead` of him. */
+const L = (left, ahead) => P(-ahead, left);
+/** Where his free (left) claw stamps down, and when: song frame 2251 (93.79 s), the sound at 93.81 s. */
+const STEP = L(0.47, 1.25);
+const STAMP = 19 / 24;
+/** His left claw raised out of frame, lifted higher, stamped down into the ground, pressed in. */
+const RAISED = { LF_J0_joint: 0.25, LF_J1_joint: -1.05, LF_J2_joint: 0.2, LF_J3_joint: -0.35 };
+const HIGH = { LF_J0_joint: 0.3, LF_J1_joint: -1.3, LF_J2_joint: 0.3, LF_J3_joint: -0.5 };
+const PLANT = { LF_J0_joint: 0.15, LF_J1_joint: 0.13, LF_J2_joint: 0, LF_J3_joint: 0 };
+const STEP_POSE = {
+  kind: 'night-step',
+  t: -3,
+  actor: 'u',
+  keys: [[-1, RAISED], [0.2, RAISED], [0.55, HIGH], [STAMP, PLANT, 'in'], [STAMP + 0.07, { ...PLANT, LF_J1_joint: 0.18 }, 'out'], [STAMP + 0.4, PLANT]],
+  pitch: [[0, 0], [0.5, 1.5], [STAMP, -2.5], [STAMP + 0.3, -1.2], [1.6, -1.5]],
+};
+
 const undeadShots = [
-  // Low on the ground in the dark: his claws creep in and the ground splits into molten fissures.
+  // Low on the dark ground: his free claw stamps down into frame on 93.81 s and the blight spreads out
+  // of the step, wider and wider, a burning front ahead of the rot; the lens drifts back with it, then
+  // climbs his claw and body to his face as a sickly glow flares up behind him.
   cut('night-undead-ground', UNDEAD_IN, UNDEAD_CAST, 2, {
     view: view({ exposure: 0.95, saturation: -0.1, contrast: 0.24, dof: true, bokeh: 4, vignette: { offset: 0.2, darkness: 0.85 } }),
     hide: UNDEAD_HIDE,
     anchor: U,
-    actors: [{ ...undead, at: U_FROM, yaw: U_YAW }],
+    actors: [{ ...undead, at: U, yaw: U_YAW }],
     tracks: {
       u: {
-        path: [
-          { t: 0, x: U_FROM[0], z: U_FROM[1] },
-          { t: 6.3, x: U[0], z: U[1] },
-          { t: 6.6, x: U[0], z: U[1], yaw: U_YAW },
-        ],
+        acts: [{ t: -3, clip: 'idle', loop: true }],
         faces: [{ t: -2, expr: 'angry' }],
       },
     },
-    // Down at his claws: the lens backs away just ahead of him, low, the fissures opening under each step.
     cam: {
-      ease: 'inout',
-      focus: 'u',
-      range: 1.4,
+      ease: 'linear',
+      focus: 'look',
+      range: 1.6,
       keys: [
-        { t: 0, p: { a: 'u', o: [1.0, 0.32, 3.6] }, l: { a: 'u', o: [0.1, 0.1, 1.0] }, fov: 40 },
-        { t: 6.5, p: { a: 'u', o: [0.7, 0.36, 3.0] }, l: { a: 'u', o: [0, 0.2, 0.8] }, fov: 40 },
+        { t: 0, p: H(1.75, 0.38, 2.55), l: H(0.5, 0.06, 1.45), fov: 40 },
+        { t: 0.85, p: H(1.74, 0.38, 2.53), l: H(0.5, 0.06, 1.44), fov: 40 },
+        // Back and up with the spreading front, looking down into it...
+        { t: 2.4, p: H(2.3, 0.6, 2.75), l: H(0.45, 0.0, 1.4), fov: 42 },
+        { t: 4.6, p: H(3.3, 1.2, 2.4), l: H(0.4, 0.0, 1.3), fov: 44 },
+        // ...then in and up his claw to his face.
+        { t: 5.6, p: H(2.3, 1.25, 2.2), l: H(0.3, 0.55, 0.9), fov: 42 },
+        { t: 6.5, p: H(1.2, 1.3, 2.0), l: H(0.05, 0.95, 0.5), fov: 40 },
       ],
     },
     fx: [
       EARTH,
-      ...footfalls(U_FROM, U, 0.3, 6.2, 0.5),
-      { kind: 'night-cracks', t: 0.0, at: P(2.0, 0), radius: 6, grow: 6.5, cells: 0.9, warp: 1.1, width: 0.05, keep: 0.5, gain: 1.0 },
+      STEP_POSE,
+      { kind: 'shake', t: STAMP, d: 0.45, amp: 0.03 },
+      { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 7, dur: 4.65, rate: 1.2, light: 3, embers: 150, clear: [[...L(1.75, 2.55), 0.9]] },
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.35, U[1] - 2] }, box: [14, 1.0, 14], count: 46, size: 2.0, color: '#0b1409', opacity: 0.45 },
-      { kind: 'embers', t: -1, at: { g: [U[0], 0.6, U[1] - 2] }, count: 260, box: [7, 3, 7], drift: [0.15, 0.7, 0.05], size: 0.035, color: '#ffc85a', color2: '#ff7a1a' },
       { kind: 'motes', t: -1, at: { g: [U[0], 1.2, U[1] - 2] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
-      // The fissures' glow on his claws, and a low warm fill from the lens side.
-      { kind: 'light', t: -1, at: { a: 'u', o: [0, 0.12, 0.3] }, color: '#ffae3a', intensity: 4, distance: 4.5, flicker: 0.15 },
-      { kind: 'light', t: -1, at: { a: 'u', o: [0.3, 0.4, 1.6] }, color: '#ffc46a', intensity: 1.6, distance: 4 },
+      // Cold moonlight from above the lens, so the ground and the claw read before the fire opens.
+      { kind: 'light', t: -1, at: H(1.2, 3.2, 3.6), color: '#8296bc', intensity: 150, distance: 14 },
+      // 98.5 s: a sickly glow flares up behind him, and rims him green for the cast.
+      { kind: 'night-glow', t: 5, at: H(-11, 6, -4), size: 12, color: '#d8ff6a', k: [[5.35, 0], [5.6, 1.6], [6.0, 1.2], [6.5, 1.3]] },
+      { kind: 'light', t: 5, at: H(-1.2, 1.8, -1.6), color: '#a8ff5a', curve: [[5.4, 0], [5.65, 14], [6.5, 10]], distance: 6 },
     ],
   }),
 
