@@ -39,6 +39,15 @@ const SHOULDER_X = 2.0;
 const PELVIS_Y = 2.3;
 const CHEST: V3 = [0, 3.75, 0.62];
 const HEAD: V3 = [0, 5.35, 0.3];
+/** The molten core behind the ribs (golem frame), its half size, and its rib bars: centre lines at
+ *  y + |x| RIB_SLOPE = RIB_C + RIB_GAP k (core units, from its centre), bars RIB_BAR of each gap. */
+const CORE: V3 = [0, 3.72, 0.5];
+const CORE_HALF: [number, number] = [1.0, 1.0];
+const RIB_SLOPE = 0.55;
+const RIB_GAP = 0.34;
+const RIB_C = 0.185;
+const RIB_BAR = 0.42;
+const RIB_K = [-2, -1, 0, 1, 2];
 
 /** One arm, in the shoulder's frame (x outward for the right arm; mirrored for the left). */
 const ARM: { p: V3; s: V3; r?: V3; o: number }[] = [
@@ -81,10 +90,19 @@ const PARTS: Part[] = [
     r: a.r ? ([a.r[0], -a.r[1], -a.r[2]] as V3) : undefined,
     o: a.o + 0.02,
   })),
-  // Ribs: three dark pairs over the cavity, outer ends high, a glowing seam down the middle.
-  ...[0, 1, 2].flatMap((k) =>
-    [-1, 1].map((sd) => ({ g: 'body' as const, p: [sd * 0.5, 3.18 + k * 0.47, 0.85 - k * 0.04] as V3, s: [0.46, 0.15, 0.2] as V3, r: [0, 0, sd * 0.42] as V3, o: 0.86 + k * 0.03 })),
+  // Ribs: five dark pairs over the molten core, sloping down and out from a glowing spine (on the
+  // core's dark bars), and two cracked plates over the top of the cage.
+  ...RIB_K.flatMap((k, j) =>
+    [-1, 1].map((sd) => ({
+      g: 'body' as const,
+      p: [sd * 0.5, CORE[1] + RIB_C + RIB_GAP * (k + RIB_BAR / 2) - 0.5 * RIB_SLOPE, CORE[2] + 0.1 - 0.02 * Math.abs(k)] as V3,
+      s: [0.46 - 0.04 * Math.abs(k), 0.068, 0.11] as V3,
+      r: [0, 0, -sd * Math.atan(RIB_SLOPE)] as V3,
+      o: 0.84 + j * 0.02,
+    })),
   ),
+  { g: 'body', p: [-0.58, CORE[1] + 0.78, CORE[2] + 0.14], s: [0.55, 0.3, 0.24], r: [0.3, 0, 0.32], o: 0.94 },
+  { g: 'body', p: [0.58, CORE[1] + 0.78, CORE[2] + 0.14], s: [0.55, 0.3, 0.24], r: [0.3, 0, -0.32], o: 0.95 },
   // The head, sunk between the shoulders: skull, brow, jaw.
   { g: 'head', p: HEAD, s: [0.86, 0.72, 0.78], o: 0.9 },
   { g: 'head', p: [HEAD[0], HEAD[1] + 0.3, HEAD[2] + 0.45], s: [0.78, 0.2, 0.32], o: 0.95 },
@@ -397,6 +415,45 @@ class GolemFire {
   }
 }
 
+/** The molten core: a ribcage of glowing gaps (a spine, chevrons between dark rib bars) in a ragged egg. */
+const CORE_VS = /* glsl */ `
+  uniform vec2 uHalf; uniform float uFogMode, uFogA, uFogB;
+  varying vec2 vP; varying float vFog;
+  void main() {
+    vP = position.xy * 2.0 * uHalf;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    float d = -mv.z;
+    vFog = uFogMode < 0.5 ? 0.0 : (uFogMode < 1.5 ? 1.0 - exp(-uFogA * uFogA * d * d) : smoothstep(uFogA, uFogB, d));
+    gl_Position = projectionMatrix * mv;
+  }`;
+
+const CORE_FS = /* glsl */ `
+  uniform vec2 uHalf; uniform float uK, uTime, uSlope, uGap, uC, uBar; uniform vec3 uHot, uGold, uDeep, uRock, uFogColor;
+  varying vec2 vP; varying float vFog;
+  ${NOISE}
+  void main() {
+    vec2 p = vP; float ax = abs(p.x);
+    float n = fbm(vec3(p * 3.2, uTime * 0.7));
+    float m = fbm(vec3(p * 1.3 - vec2(0., uTime * 0.5), 4.0));
+    // A ragged egg, narrower at the bottom.
+    vec2 e = vec2(p.x / (uHalf.x * (0.78 + 0.22 * smoothstep(-0.9, 0.5, p.y))), p.y / uHalf.y);
+    float r = length(e) + (n - 0.5) * 0.16;
+    if (r > 1.0) discard;
+    float spine = 1. - smoothstep(0.045 + 0.03 * n, 0.09 + 0.04 * n, ax);
+    float fr = fract((p.y + ax * uSlope - uC) / uGap);
+    float bar = smoothstep(0.0, 0.05, fr) * (1. - smoothstep(uBar - 0.03, uBar + 0.03, fr)) * (1. - spine);
+    bar = max(bar, smoothstep(0.86, 0.97, r));
+    // White at the heart, gold, then deep orange out to the rim; churning.
+    float heat = clamp(1.15 - r * 0.85 + spine * 0.35 + (m - 0.5) * 0.4, 0., 1.);
+    vec3 g = mix(uDeep, uGold, smoothstep(0.05, 0.5, heat));
+    g = mix(g, uHot, smoothstep(0.55, 0.95, heat));
+    vec3 em = g * (0.6 + 5.5 * heat * heat + 2.5 * spine) * (0.8 + 0.4 * n) * uK;
+    // The bars: dark rock lit at their edges by the gaps.
+    float lip = smoothstep(0.05, 0.0, min(fr, uBar - fr)) * bar;
+    vec3 c = mix(em, uRock * (0.7 + 0.6 * n) + em * (0.03 + 0.25 * lip), bar);
+    gl_FragColor = vec4(c * (1. - vFog) + uFogColor * vFog * (1. - min(1., uK * 0.2)), 1.0);
+  }`;
+
 interface Rock {
   part: Part;
   src: THREE.Vector3; // hover point (x, z on the ground ring; y = hover height)
@@ -414,7 +471,10 @@ class Golem implements Effect {
   private rocks: Rocks;
   private glows: Billboards;
   private light: THREE.PointLight;
+  private rimLight: THREE.PointLight;
   private eyeLight: THREE.PointLight;
+  private core: THREE.Mesh;
+  private coreMat: THREE.ShaderMaterial;
   private data: Rock[] = [];
   private q = new THREE.Quaternion();
   private q2 = new THREE.Quaternion();
@@ -426,12 +486,13 @@ class Golem implements Effect {
   private fire: GolemFire | null = null;
   private spots = [0, 1, 2, 3].map(() => new THREE.Vector3());
   private spots0 = [0, 1, 2, 3].map(() => new THREE.Vector3());
+  private coreIn: [number, number];
   constructor(
     private cue: FxCue,
     scene: THREE.Scene,
   ) {
     const S = (this.S = num(cue.scale, 1));
-    this.rocks = new Rocks(scene, PARTS.length, { cells: 1.5, crack: '#ffc23a', crack2: '#8dff3a', ...cue }, num(cue.seed, 77));
+    this.rocks = new Rocks(scene, PARTS.length, { cells: 1.5, crack: '#ffc23a', crack2: '#8dff3a', vein: 1.5, emerge: true, ...cue }, num(cue.seed, 77));
     const rnd = mulberry(num(cue.seed, 77) * 7 + 3);
     const [a0, a1] = (cue.arc as [number, number]) ?? [0, Math.PI * 2];
     const [r0, r1] = (cue.rise as [number, number]) ?? [3.5, 6];
@@ -480,19 +541,45 @@ class Golem implements Effect {
       body: /* glsl */ `
         int i = int(idx * 8.0 + 0.5);
         float fl = 0.9 + 0.1 * sin(tau * 23. + idx * 7.) * sin(tau * 7.3);
-        if (i == 0) { pos = uChest; size = 0.5 + 0.25 * uChestK; col = vec4(uHot * 3.0, min(1., uChestK) * fl); }
-        else if (i == 1) { pos = uChest; size = 0.8 + 0.45 * uChestK; col = vec4(uGold * 1.6, min(1., uChestK * 0.6) * fl); }
+        if (i == 0) { pos = uChest; size = 1.0 + 0.3 * uChestK; col = vec4(uGold * 1.2, min(0.45, uChestK * 0.2) * fl); }
+        else if (i == 1) { pos = uChest; size = 1.5 + 0.5 * uChestK; col = vec4(mix(uGold, uHot, 0.3) * 0.9, min(0.4, uChestK * 0.14) * fl); }
         else if (i == 2) { pos = uChest - uUp * 0.1; size = 1.2 + 0.9 * uChestK; col = vec4(mix(uGold, uGreen, 0.5) * 0.6, min(0.5, uChestK * 0.22)); }
         else if (i == 3) { pos = uEyeL; size = 0.2; col = vec4(uHot * 8.0, uEyeK); }
         else if (i == 4) { pos = uEyeR; size = 0.2; col = vec4(uHot * 8.0, uEyeK); }
         else if (i == 5) { pos = uEyeL; size = 0.7; col = vec4(uGold * 2.6, uEyeK * 0.85); }
         else if (i == 6) { pos = uEyeR; size = 0.7; col = vec4(uGold * 2.6, uEyeK * 0.85); }
         else if (i == 7) { pos = mix(uEyeL, uEyeR, 0.5); size = 1.5; col = vec4(mix(uGold, uGreen, 0.4) * 0.8, uEyeK * 0.4); }
-        else { pos = uChest + uUp * 0.1 * uS; size = 0.16 + 0.08 * uChestK; vel = uUp; stretch = 1.1; col = vec4(uHot * 4.0, min(1., uChestK) * fl); }
+        else { size = 0.; }
         size *= uS; stretch *= uS;`,
     });
-    // The seam glow is a velocity-stretched quad; its sprite is the soft glow, fine for a seam.
-    this.light = new THREE.PointLight(new THREE.Color(String(cue.gold ?? '#ffc04a')), 0, 14 * S, 1.4);
+    // The core's orange light, and its spill low onto his back (he stands between it and the lens).
+    const orange = new THREE.Color(String(cue.chestColor ?? '#ff8a2c'));
+    this.light = new THREE.PointLight(orange, 0, 14 * S, 1.4);
+    this.rimLight = new THREE.PointLight(orange, 0, 5 * S, 1.6);
+    scene.add(this.rimLight);
+    this.coreMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uHalf: { value: new THREE.Vector2(...CORE_HALF) },
+        uK: { value: 0 },
+        uTime: { value: 0 },
+        uSlope: { value: RIB_SLOPE },
+        uGap: { value: RIB_GAP },
+        uC: { value: RIB_C },
+        uBar: { value: RIB_BAR },
+        uHot: { value: hdr(cue.hot ?? '#fff6d8', 1) },
+        uGold: { value: hdr(cue.gold ?? '#ffc04a', 1) },
+        uDeep: { value: hdr(cue.chestColor ?? '#ff6a14', 0.8) },
+        uRock: { value: new THREE.Color(String(cue.rock ?? '#191510')).multiplyScalar(0.7) },
+        ...fogUniforms(),
+      },
+      vertexShader: CORE_VS,
+      fragmentShader: CORE_FS,
+    });
+    this.core = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.coreMat);
+    this.core.frustumCulled = false;
+    scene.add(this.core);
+    const o = 0.24; // the back wall's turn to fly in: the cavity is there from then
+    this.coreIn = [f0 + (f1 - flyDur - f0) * o, f0 + (f1 - flyDur - f0) * o + flyDur];
     this.eyeLight = new THREE.PointLight(new THREE.Color(String(cue.gold ?? '#ffc04a')), 0, 5 * S, 1.6);
     scene.add(this.light, this.eyeLight);
     if (cue.fire && typeof cue.fire === 'object') {
@@ -624,13 +711,15 @@ class Golem implements Effect {
         const gx = src.x + r.src.x;
         const gz = src.z + r.src.z;
         const g = ctx.ground(gx, gz);
-        const rk = Math.min(1, (t - r.start) / 1.4);
-        const re = 1 - (1 - rk) ** 3;
+        const rk = Math.min(1, (t - r.start) / 1.8);
+        const re = 1 - (1 - rk) ** 2.5;
         const tl = t - r.start;
         const hover = this.v.set(gx, g - mean + (r.src.y + mean) * re + Math.sin(t * 1.3 + i) * 0.1 * re, gz);
         this.e.set(r.rot0.x + r.spin.x * tl, r.rot0.y + r.spin.y * tl, r.rot0.z + r.spin.z * tl);
         const tumble = this.q2.setFromEuler(this.e);
         const fk = smooth(r.fly0, r.fly1, t);
+        // Molten as it heaves out, still hot as it hangs there, cooling as it flies into place.
+        glow *= 1 + (0.7 + 1.5 * Math.exp(-Math.max(0, t - r.start) * 1.5)) * (1 - fk);
         if (fk <= 0) {
           world.copy(hover);
           this.q.copy(tumble);
@@ -668,11 +757,26 @@ class Golem implements Effect {
     gu.uEyeK.value = t > until ? 0 : eyes;
     this.glows.set(t, ctx, chestK > 0.001 || eyes > 0.001);
     const ru = this.rocks.mat.uniforms;
-    (ru.uHeatPos.value as THREE.Vector3).copy(chestW);
+    // The heat sits in the core, behind the ribs, so their fronts stay dark bars against it.
+    this.slot({ g: 'body', p: [CORE[0], CORE[1], CORE[2] - 0.2], s: [1, 1, 1], o: 0 }, pose, local, slotRot);
+    (ru.uHeatPos.value as THREE.Vector3).copy(local).applyQuaternion(frame).add(base);
     ru.uHeat.value = num(this.cue.heat, 3.5) * chestK;
     this.rocks.commit(ctx);
-    this.light.position.copy(chestW).addScaledVector(fwd, 0.6 * this.S);
-    this.light.intensity = num(this.cue.light, 60) * chestK;
+    this.light.position.copy(chestW).addScaledVector(fwd, 0.9 * this.S);
+    this.light.intensity = num(this.cue.light, 90) * chestK;
+    this.rimLight.position.copy(chestW).lerp(this.v.copy(src).setY(src.y + 1.5), 0.62);
+    this.rimLight.intensity = num(this.cue.rimLight, 30) * chestK;
+    // The core, in once the torso has flown together round it.
+    const cin = smooth(this.coreIn[0], this.coreIn[1], t);
+    this.slot({ g: 'body', p: CORE, s: [1, 1, 1], o: 0 }, pose, local, slotRot);
+    this.core.position.copy(local).applyQuaternion(frame).add(base);
+    this.core.quaternion.copy(frame).multiply(slotRot);
+    this.core.scale.set(2 * CORE_HALF[0] * this.S * cin, 2 * CORE_HALF[1] * this.S * cin, 1);
+    this.core.visible = cin > 0.001 && t <= until;
+    const cu = this.coreMat.uniforms;
+    cu.uK.value = chestK * num(this.cue.coreGain, 1) * flare;
+    cu.uTime.value = t;
+    syncFog(cu, ctx.scene);
     this.eyeLight.position.copy(eyeW[0]).lerp(eyeW[1], 0.5).addScaledVector(fwd, 0.3);
     this.eyeLight.intensity = num(this.cue.eyeLight, 8) * (t > until ? 0 : eyes);
     if (this.fire) {
@@ -695,7 +799,10 @@ class Golem implements Effect {
     this.fire?.dispose();
     this.rocks.dispose();
     this.glows.dispose();
-    for (const l of [this.light, this.eyeLight]) {
+    this.core.removeFromParent();
+    this.core.geometry.dispose();
+    this.coreMat.dispose();
+    for (const l of [this.light, this.rimLight, this.eyeLight]) {
       l.removeFromParent();
       l.dispose();
     }

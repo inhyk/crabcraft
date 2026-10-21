@@ -1,6 +1,6 @@
 // Building blocks for the night scene's effects (night-look.ts, night-impact.ts): camera-facing
 // particles whose every attribute is a GLSL function of the cue's clock (so any frame renders on its
-// own, like fx.ts's volumes), lumpy rocks with glowing cracks, and the scene fog for both.
+// own, like fx.ts's volumes), chipped boulders with molten veins, and the scene fog for both.
 import * as THREE from 'three';
 import { mulberry, NOISE, num, type FxContext } from '../fx';
 import type { FxCue } from '../types';
@@ -185,9 +185,22 @@ export class Billboards {
   }
 }
 
+/** Clods and dust puffs per rock breaking out of the ground. */
+const DEBRIS_CLODS = 9;
+const DEBRIS_DUST = 3;
+
 /**
- * Lumpy faceted rocks with molten cracks (an infernal's boulders, a meteor's core, flying debris).
- * Each instance has a glow; positions and turns are set per frame by the owner.
+ * Chipped basalt boulders with molten veins (an infernal's boulders, a meteor's core, flying debris).
+ * Each instance is a seeded lump sheared flat by a few planes (big cuts, then chips off its edges),
+ * so every rock has its own faceted silhouette for good. The veins are branching cracks of varying
+ * width (warped noise isolines: wide trunks with white-hot deep stretches, thin offshoots near them),
+ * HDR, with a slow pulse running along them. Each instance has a glow; positions and turns are set
+ * per frame by the owner. With `emerge` (on by default for night-rocks) a rock breaking out of the
+ * ground pops clods and dust off its hole and leaves the broken earth lying round it, all read off its
+ * height over the ground each frame (seek-safe).
+ *   rock, crack (vein, white-hot at its core), crack2 (the glow round the veins), cells (vein scale),
+ *   lump, cut (0..1 how hard the planes shear it, default 1), bump, vein (vein brightness, default 1),
+ *   dirt (clod colour)
  */
 export class Rocks {
   readonly mesh: THREE.InstancedMesh;
@@ -196,14 +209,18 @@ export class Rocks {
   private m = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private s = new THREE.Vector3();
+  /** Per instance: x, y, z, radius (for the emergence debris). */
+  private at: Float32Array;
+  private debris: Billboards | null = null;
   constructor(scene: THREE.Scene, count: number, cue: FxCue, seed = 5) {
-    const geo = new THREE.IcosahedronGeometry(1, num(cue.detail, 3));
+    const geo = new THREE.IcosahedronGeometry(1, Math.max(2, num(cue.detail, 3)));
     const rnd = mulberry(seed);
     const sd = new Float32Array(count * 4);
     for (let i = 0; i < sd.length; i++) sd[i] = rnd();
     geo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(sd, 4));
     this.glow = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
     geo.setAttribute('aGlow', this.glow);
+    this.at = new Float32Array(count * 4);
     this.mat = new THREE.ShaderMaterial({
       uniforms: {
         uBase: { value: new THREE.Color(String(cue.rock ?? '#1c1712')) },
@@ -218,10 +235,14 @@ export class Rocks {
         uCells: { value: num(cue.cells, 2.2) },
         uRim: { value: hdr(cue.rim ?? '#000000', num(cue.rimK, 1)) },
         uLump: { value: num(cue.lump, 0.6) },
+        uCut: { value: num(cue.cut, 1) },
+        uBump: { value: num(cue.bump, 1) },
+        uVein: { value: num(cue.vein, 1) },
+        uTime: { value: 0 },
         ...fogUniforms(),
       },
       vertexShader: /* glsl */ `
-        attribute vec4 aSeed; attribute float aGlow; uniform float uLump;
+        attribute vec4 aSeed; attribute float aGlow; uniform float uLump, uCut;
         ${FOG_GLSL}
         ${GLSL}
         varying vec3 vObj; varying vec3 vWorld; varying float vGlow; varying vec4 vSeed; varying float vFog;
@@ -229,7 +250,14 @@ export class Rocks {
           vec3 p = position;
           float n = fbm(p * 1.2 + aSeed.xyz * 10.);
           p *= 1.0 - uLump * 0.5 + uLump * n;
-          p.y *= 0.75 + 0.35 * aSeed.w;
+          // Shear it flat: five big cuts, then six chips off its edges, each plane seeded per rock.
+          for (int k = 0; k < 11; k++) {
+            vec3 h = h33(aSeed.xyz * 91.7 + aSeed.w * 13.1 + float(k) * vec3(3.17, 5.71, 7.13));
+            vec3 dir = dirFrom(h.xy);
+            float d = mix(1.6, k < 5 ? 0.5 + 0.22 * h.z : 0.76 + 0.14 * h.z, uCut);
+            p -= dir * max(0., dot(p, dir) - d);
+          }
+          p *= vec3(0.9 + 0.22 * aSeed.x, 0.75 + 0.35 * aSeed.w, 0.9 + 0.22 * aSeed.z);
           vObj = p; vGlow = aGlow; vSeed = aSeed;
           vec4 w = modelMatrix * instanceMatrix * vec4(p, 1.0);
           vWorld = w.xyz;
@@ -238,31 +266,69 @@ export class Rocks {
           vFog = fogAmount(-mv.z);
         }`,
       fragmentShader: /* glsl */ `
-        uniform vec3 uBase, uCrack, uCrack2, uKeyDir, uKey, uAmb, uHeatPos, uHeatCol, uRim; uniform float uHeat, uCells;
+        uniform vec3 uBase, uCrack, uCrack2, uKeyDir, uKey, uAmb, uHeatPos, uHeatCol, uRim; uniform float uHeat, uCells, uBump, uVein, uTime;
         ${FOG_GLSL}
         ${GLSL}
         varying vec3 vObj; varying vec3 vWorld; varying float vGlow; varying vec4 vSeed; varying float vFog;
-        void main(){
-          vec3 N = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
-          vec3 p = vObj * uCells + vSeed.xyz * 7.;
+        // Distance to the nearest cell border, and two hashes of that border (its cells' pair).
+        vec3 crackNet(vec3 p){
           vec3 i = floor(p), f = fract(p);
-          float d1 = 9., d2 = 9.;
+          float d1 = 9., d2 = 9.; vec3 r1 = vec3(0.), r2 = vec3(0.), c1 = vec3(0.), c2 = vec3(0.);
           for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
             vec3 g = vec3(float(x), float(y), float(z));
-            float d = length(g + h33(i + g) - f);
-            if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+            vec3 r = g + h33(i + g) - f; float d = dot(r, r);
+            if (d < d1) { d2 = d1; r2 = r1; c2 = c1; d1 = d; r1 = r; c1 = i + g; }
+            else if (d < d2) { d2 = d; r2 = r; c2 = i + g; }
           }
-          float n = fbm(vObj * 3.1 + vSeed.yzx * 5.);
-          float edge = 1. - smoothstep(0.0, 0.07 + 0.08 * n, d2 - d1);
-          float crack = edge * smoothstep(0.32, 0.55, n);
-          float grain = 0.55 + 0.6 * fbm(vObj * 7.0 + 2.0);
-          vec3 base = uBase * grain;
+          vec3 h = h33(c1 + c2 + abs(c1 - c2) * 0.37 + 0.13);
+          return vec3(dot(0.5 * (r1 + r2), normalize(r2 - r1)), h.x, h.y);
+        }
+        void main(){
+          vec3 dpx = dFdx(vWorld), dpy = dFdy(vWorld);
+          vec3 Nf = normalize(cross(dpx, dpy));
+          vec3 q = vObj * uCells + vSeed.xyz * 7.;
+          // Veins: the borders of big warped cells, about half of them shut (so they branch and end
+          // instead of closing into a grid), each its own width, deepest (white-hot) in the widest; thin
+          // offshoots off a finer net only near an open trunk.
+          vec3 wq = q + (vec3(vnoise(q * 0.7), vnoise(q * 0.7 + 17.3), vnoise(q * 0.7 + 31.7)) - 0.5) * 0.8;
+          vec3 T = crackNet(wq * 0.7);
+          T.x += (vnoise(q * 9.1) - 0.5) * 0.05 + (vnoise(q * 21.) - 0.5) * 0.025;
+          vec3 B = crackNet(wq * 2.0 + 5.3);
+          B.x += (vnoise(q * 13.) - 0.5) * 0.04;
+          float wobble = 0.75 + 0.5 * vnoise(q * 2.3 + 11.);
+          float wT = (0.018 + 0.085 * T.z * T.z) * wobble * step(T.y, 0.62);
+          float trunk = 1. - smoothstep(wT * 0.5, wT, max(T.x, 0.));
+          float near = step(T.y, 0.62) * (1. - smoothstep(0.05, 0.32, T.x));
+          float shoot = (1. - smoothstep(0.012, 0.03 + 0.03 * B.z, B.x)) * step(B.y, 0.5) * near;
+          float vein = max(trunk, shoot * 0.8);
+          float prof = trunk * clamp(1. - T.x / max(wT, 1e-3), 0., 1.);
+          float core = (1. - smoothstep(0., wT * 0.45, T.x)) * smoothstep(0.35, 0.8, T.z) * step(T.y, 0.62);
+          float halo = (1. - smoothstep(0., 0.3, T.x)) * step(T.y, 0.62);
+          // Rough basalt: pitted grain, grooves along the veins (bumped normal).
+          float g1 = fbm(vObj * 3.3 + vSeed.zxy * 5.), g2 = fbm(vObj * 11. + 2.);
+          float hgt = g1 * 0.07 + g2 * 0.025 - vein * 0.045 - halo * 0.02;
+          vec3 r1 = cross(dpy, Nf), r2 = cross(Nf, dpx);
+          float det = dot(dpx, r1);
+          vec3 sg = sign(det) * (dFdx(hgt) * r1 + dFdy(hgt) * r2);
+          vec3 N = normalize(abs(det) * Nf - uBump * sg);
+          float grain = 0.5 + 0.7 * g1 * (0.7 + 0.6 * g2);
+          vec3 tint = mix(vec3(0.82, 0.86, 0.8), vec3(1.2, 1.02, 0.86), fbm(vObj * 1.6 + vSeed.wxy * 4.));
+          vec3 base = uBase * grain * tint * (1. - 0.45 * halo * (1. - vein));
           vec3 col = base * (uAmb + uKey * max(0., dot(N, uKeyDir)));
+          // Wet-looking sheen on some faces, chalky on others.
+          vec3 V = normalize(cameraPosition - vWorld);
+          float rough = smoothstep(0.35, 0.7, fbm(q * 0.7 + 50.));
+          col += uKey * pow(max(0., dot(N, normalize(uKeyDir + V))), mix(5., 36., rough)) * mix(0.015, 0.16, rough) * grain;
           vec3 toH = uHeatPos - vWorld; float dh = length(toH);
           col += base * uHeatCol * uHeat * max(0., dot(N, toH / max(dh, 1e-3))) / (1. + dh * dh * 0.01);
-          col += uRim * pow(1. - abs(dot(N, normalize(cameraPosition - vWorld))), 3.0) * grain;
-          vec3 cc = mix(uCrack, uCrack2, smoothstep(0.35, 0.75, fbm(vObj * 1.4 + 3.0)));
-          col += cc * (crack * 6.0 + smoothstep(0.55, 0.9, n) * 0.35) * vGlow;
+          col += uRim * pow(1. - abs(dot(N, V)), 3.0) * grain;
+          // Molten veins: white-hot where deepest, a pulse creeping along them, the rock round them aglow.
+          float pulse = 0.68 + 0.32 * sin(fbm(q * 0.35 + 61.) * 18. - uTime * 1.7 + vSeed.w * 6.2831853);
+          vec3 hot = mix(uCrack, vec3(max(uCrack.r, max(uCrack.g, uCrack.b))) * vec3(1., 0.96, 0.85), 0.65);
+          vec3 e = mix(uCrack * vec3(1., 0.62, 0.3) * 2.5, uCrack * 6.5, prof) * vein + hot * core * 14.0 + mix(uCrack, uCrack2, 0.65) * halo * halo * 0.7;
+          // Lit from beneath by its own heat (the hole it climbs out of, the fire round it).
+          e += uCrack * (0.05 + 0.1 * halo) * pow(max(0., -N.y), 2.);
+          col += e * uVein * vGlow * pulse;
           col = mix(col, uFogColor, vFog);
           gl_FragColor = vec4(col, 1.0);
         }`,
@@ -271,6 +337,54 @@ export class Rocks {
     this.mesh.frustumCulled = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     scene.add(this.mesh);
+    if (cue.emerge ?? cue.kind === 'night-rocks') this.debris = this.makeDebris(scene, count, cue);
+  }
+
+  /** Clods and dust for each rock, placed in GLSL off its base point and how far it is out of the ground. */
+  private makeDebris(scene: THREE.Scene, count: number, cue: FxCue): Billboards {
+    const per = DEBRIS_CLODS + DEBRIS_DUST;
+    const total = count * per;
+    return new Billboards(scene, {
+      count: total,
+      seed: 37,
+      sprite: 0,
+      additive: false,
+      renderOrder: 6,
+      decl: `uniform vec4 uRk[${count}]; uniform vec2 uEm[${count}]; uniform vec3 uDirt, uDust, uLava;`,
+      uniforms: {
+        uRk: { value: [...Array(count)].map(() => new THREE.Vector4()) },
+        uEm: { value: [...Array(count)].map(() => new THREE.Vector2()) },
+        uDirt: { value: new THREE.Color(String(cue.dirt ?? '#2a2519')) },
+        uDust: { value: new THREE.Color(String(cue.dust ?? '#3b3a2a')) },
+        uLava: { value: hdr(cue.crack ?? '#ffc23a', 1) },
+      },
+      body: /* glsl */ `
+        int i = int(idx * ${total - 1}. + 0.5);
+        int rk = i / ${per}; int j = i - rk * ${per};
+        vec4 R = uRk[rk]; vec2 E = uEm[rk];
+        float e = E.x;
+        if (R.w > 0.0 && e > 0.002 && E.y > 0.002) {
+          float ang = s1.x * 6.2831853;
+          vec3 dir = vec3(cos(ang), 0., sin(ang));
+          if (j < ${DEBRIS_CLODS}) {
+            // Thrown off the hole in the first third of its climb, then lying round it.
+            float k = clamp((e / 0.34 - s1.y * 0.4) / 0.6, 0., 1.);
+            float reach = R.w * (0.75 + 0.2 * s1.z + (0.35 + 0.9 * s1.w) * k);
+            size = R.w * (0.07 + 0.11 * s2.y * s2.y);
+            pos = R.xyz + dir * reach + vec3(0., size * 0.55 + R.w * (0.25 + 1.0 * s2.x) * 4. * k * (1. - k), 0.);
+            rot = s2.z * 6.2831853 + k * (s2.w - 0.5) * 9.;
+            vec3 c = uDirt * (0.55 + 0.7 * s2.w);
+            col = vec4(c + uLava * 0.25 * (1. - k) * step(0.5, s1.z), E.y);
+          } else {
+            // A dust puff billowing off the break and settling.
+            float k = clamp(e / 0.55 - s1.y * 0.25, 0., 1.);
+            pos = R.xyz + dir * R.w * (0.55 + 1.1 * k) + vec3(0., R.w * (0.15 + 0.8 * k), 0.);
+            size = R.w * (0.3 + 0.55 * k) * (0.8 + 0.4 * s2.x);
+            rot = s2.y * 6.2831853 + tau * 0.2;
+            col = vec4(uDust * (0.8 + 0.4 * s2.z), 0.26 * sin(3.14159 * k) * E.y);
+          }
+        }`,
+    });
   }
 
   set(i: number, pos: THREE.Vector3, rot: THREE.Euler, scale: number, glow: number): void {
@@ -279,6 +393,7 @@ export class Rocks {
     this.m.compose(pos, this.q, this.s);
     this.mesh.setMatrixAt(i, this.m);
     this.glow.setX(i, glow);
+    this.at.set([pos.x, pos.y, pos.z, scale], i * 4);
   }
 
   /** Place instance `i` with a turn and a per-axis scale (stretched rocks: ribs, claws). */
@@ -286,15 +401,40 @@ export class Rocks {
     this.m.compose(pos, rot, this.s.copy(scale).max(new THREE.Vector3(1e-4, 1e-4, 1e-4)));
     this.mesh.setMatrixAt(i, this.m);
     this.glow.setX(i, glow);
+    this.at.set([pos.x, pos.y, pos.z, (scale.x + scale.y + scale.z) / 3], i * 4);
   }
 
   commit(ctx: FxContext): void {
+    if (this.debris) {
+      // How far each rock is out of the ground (0 buried .. 1 clear of it); a breaking rock glows hotter.
+      const u = this.debris.u;
+      const rk = u.uRk.value as THREE.Vector4[];
+      const em = u.uEm.value as THREE.Vector2[];
+      let any = false;
+      for (let i = 0; i < rk.length; i++) {
+        const [x, y, z, s] = this.at.subarray(i * 4, i * 4 + 4);
+        const r = s * 0.95;
+        const g = ctx.ground(x, z);
+        const e = r > 0.01 ? Math.min(1, Math.max(0, (y - g + r) / (2 * r))) : 0;
+        // Gone once the rock is well up off its hole (flown away, thrown).
+        const keep = 1 - THREE.MathUtils.smoothstep(y - g, 2.2 * r + 1.2, 4 * r + 2.6);
+        rk[i].set(x, g, z, r > 0.01 ? r : 0);
+        em[i].set(e, keep);
+        if (e > 0.002 && keep > 0.002) {
+          any = true;
+          if (e < 1) this.glow.setX(i, this.glow.getX(i) * (1 + 1.3 * (1 - e)));
+        }
+      }
+      this.debris.set(ctx.t, ctx, any && this.mesh.visible);
+    }
     this.mesh.instanceMatrix.needsUpdate = true;
     this.glow.needsUpdate = true;
+    this.mat.uniforms.uTime.value = ctx.t;
     syncFog(this.mat.uniforms, ctx.scene);
   }
 
   dispose(): void {
+    this.debris?.dispose();
     this.mesh.removeFromParent();
     this.mesh.geometry.dispose();
     this.mat.dispose();
