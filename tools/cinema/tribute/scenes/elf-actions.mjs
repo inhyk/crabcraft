@@ -15,6 +15,8 @@ export const ELF_ACTIONS = [
 ];
 
 const G = (p, x, y, z) => ({ g: [p[0] + x, y, p[1] + z] });
+/** Moss, soil, litter and fine grass (src/capture/cinema/fx/night-floor.ts) in the run's violet night. */
+const FLOOR = { kind: 'night-floor', t: -3, soil: '#2a2232', moss: '#2a3d3a', litter: '#4a2a4c', litter2: '#3c2a44', grass: '#1d3530', tip: '#7a9a8e', count: 30, seed: 17 };
 const angles = {
   front: [[-3.9, 1.15, 3.4], [-4.4, 0.9, 2.2], 0.65, 41],
   high: [[-3.9, 4.7, 1.6], [-4.2, 3.4, -1.4], 0.3, 47],
@@ -72,6 +74,9 @@ function actionShot(a, run) {
         return [[p[0] + x, p[1] + z, a.camera === 'high' ? 6 : 2.5], [p[0] + x * 0.5, p[1] + z * 0.5, 1.7]];
       })] },
       { kind: 'night-clear', t: -3, skip: '^$', cut: [[...p, 3.4], [p[0], p[1] - 2.5, 2]] },
+      // A forest floor over the wood's flat ground; the coarse cone tufts around it give way to its fine grass.
+      { ...FLOOR, box: [p[0] - 14, p[1] - 14, p[0] + 14, p[1] + 14], ...(waterAt === undefined ? {} : { clear: [[...p, 1.9]], wet: 0.75 }) },
+      { kind: 'night-clear', t: -3, match: 'grass', skip: '^$', cut: Array.from({ length: 64 }, (_, i) => [p[0] - 14 + (i % 8) * 4, p[1] - 14 + Math.floor(i / 8) * 4, 3]) },
       ...trail,
       { kind: 'elf-contact', t: -3, actor: 'elf', jump: a.land === undefined ? null : { takeoff: (a.clip === 'break_backflip' ? 0.84 - a.from : 0.9 - a.from) / a.speed, land: a.land } },
       { kind: 'light', t: -3, at: G(p, -2.8, 3.6, 1.3), color: '#c7dcff', intensity: 15, distance: 9 },

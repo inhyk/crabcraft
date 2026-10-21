@@ -6,7 +6,8 @@
 //   night-floor { box: [x0, z0, x1, z1], cell (ground mesh spacing, 0.5), lift (0.012), tile (texture tile, 2.6),
 //                 soil, moss, litter, litter2 (colours), drift (broad tint, 0.35), count (blades per square unit,
 //                 22), height [min, max] (0.12, 0.34), width (0.022), grass, tip (colours), wind (0.06),
-//                 clear [[x, z, r], ...] (no grass: water, whose surface draws over the cover), seed }
+//                 clear [[x, z, r], ...] (no grass: water, whose surface draws over the cover),
+//                 wet (0: off; how dark the cover goes inside the clear circles, a puddle's wet mud), seed }
 import * as THREE from 'three';
 import { mulberry, num, registerEffect, type Effect, type FxContext } from '../fx';
 import type { FxCue } from '../types';
@@ -166,6 +167,7 @@ class Floor implements Effect {
     const clear = (cue.clear as [number, number, number][]) ?? [];
     const inClear = (x: number, z: number, pad = 0) => clear.some(([cx, cz, r]) => Math.hypot(x - cx, z - cz) < r + pad);
     const lift = num(cue.lift, 0.012);
+    const wet = num(cue.wet, 0);
 
     // The ground cover: a grid hugging the terrain, just under anything the shot floats on the ground.
     const cell = num(cue.cell, 0.5);
@@ -183,7 +185,9 @@ class Floor implements Effect {
         const z = z0 + ((z1 - z0) * j) / nz;
         pos.push(x, ground(x, z) + lift, z);
         uv.push(x / tile, z / tile);
-        const d = 1 - driftK + driftK * 2 * drift(x / 40, z / 40, 3);
+        let d = 1 - driftK + driftK * 2 * drift(x / 40, z / 40, 3);
+        // Wet, dark mud under the water, fading out across the circle's outer third.
+        if (wet > 0) for (const [cx, cz, r] of clear) d *= 1 - wet * Math.min(1, Math.max(0, (r - Math.hypot(x - cx, z - cz)) / (r * 0.35)));
         colr.push(d, d, d * 1.04);
       }
     }
