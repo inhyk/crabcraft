@@ -197,10 +197,39 @@ class Blast implements Effect {
 
 // ---------------------------------------------------------------------------- ice out of the ground
 
-/** The world's own ice (frostThrone.ts' crystals), so the burst matches the arena's pillars. */
-function worldIce(scene: THREE.Scene): THREE.Material | null {
-  const m = scene.getObjectByName('frostlight-citadel-ice') as THREE.Mesh | undefined;
-  return (m?.material as THREE.Material) ?? null;
+/**
+ * Ice for the burst: lit like the world (the claws' and the orb's lights reach it), deep blue at the foot to a
+ * white point, every facet its own depth, frosted rime creeping up from the snow, a cold rim and an inner glow.
+ */
+function frostIce(glow: number): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.18, metalness: 0.0, flatShading: true, envMapIntensity: 0.6 });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uGlow = { value: glow };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aH01; attribute float aSeed; varying float vH; varying float vS; varying vec3 vWp;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvH = aH01; vS = aSeed; vWp = (modelMatrix * vec4(position, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying float vH; varying float vS; varying vec3 vWp; uniform float uGlow;\n${NOISE}`)
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        vec3 fn = normalize(cross(dFdx(vWp), dFdy(vWp)));
+        float facet = h31(floor(fn * 3.7) + vS);
+        vec3 ice = mix(vec3(0.03, 0.1, 0.32), vec3(0.3, 0.6, 0.95), smoothstep(0.0, 0.7, vH));
+        ice = mix(ice, vec3(0.85, 0.95, 1.0), smoothstep(0.75, 1.0, vH));
+        ice *= (0.3 + 0.55 * facet) * (0.7 + 0.3 * vH);
+        float rime = smoothstep(0.5, 0.72, fbm(vWp * 4.2 + vS) + (0.32 - vH) * 1.1);
+        diffuseColor.rgb = mix(ice, vec3(0.8, 0.88, 0.95), rime * 0.8);`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        float ndv = abs(dot(normal, normalize(vViewPosition)));
+        float veins = smoothstep(0.62, 0.7, fbm(vWp * vec3(2.0, 0.6, 2.0) + vS * 3.0));
+        totalEmissiveRadiance += vec3(0.3, 0.62, 1.0) * (pow(1.0 - ndv, 3.0) * 0.55 + uGlow * 0.3 * vH * vH * (1.0 - rime) + veins * 0.35 * uGlow);`,
+      );
+  };
+  return m;
 }
 
 class Ice implements Effect {
@@ -213,11 +242,8 @@ class Ice implements Effect {
     scene: THREE.Scene,
     ground: (x: number, z: number) => number,
   ) {
-    let mat = worldIce(scene);
-    if (!mat) {
-      mat = new THREE.MeshStandardMaterial({ color: '#cfeeff', emissive: '#3f8dff', emissiveIntensity: 0.6, roughness: 0.1, transparent: true, opacity: 0.85, flatShading: true });
-      this.own = mat;
-    }
+    const mat = frostIce(num(cue.glow, 0.6));
+    this.own = mat;
     const [cx, cz] = xz(cue.at, [0, 0]);
     const r0 = num(cue.r0, 1);
     const r1 = num(cue.r1, 2);
@@ -234,7 +260,8 @@ class Ice implements Effect {
       const x = cx + Math.sin(a) * r;
       const z = cz + Math.cos(a) * r;
       const h = height * (0.6 + 0.6 * rnd()) * (0.75 + 0.5 * ((r - r0) / Math.max(1e-3, r1 - r0)));
-      const list: Crystal[] = crystalCluster(0, 0, 0, h, h * 0.42, 3 + Math.floor(rnd() * 3), rnd);
+      // Thin, jagged shards (`thin` < 1 slims them), several to a cluster.
+      const list: Crystal[] = crystalCluster(0, 0, 0, h, h * 0.42 * num(cue.thin, 1), 3 + Math.floor(rnd() * 4), rnd);
       // Leaning away from the centre, as if thrown up by it.
       const lean = 0.25 + 0.3 * rnd();
       for (const c of list) {
@@ -598,7 +625,44 @@ class Orb implements Effect {
   }
 }
 
+// ----------------------------------------------------------------------------- the throne's sigil
+
+/**
+ * Folds away the lit glass inside `box` [x0, y0, z0, x1, y1, z1] of the world's aurora glass (the
+ * throne's snowflake sigil reads as an icon behind him); the glass comes back on dispose.
+ */
+class Unsigil implements Effect {
+  private attr: THREE.BufferAttribute | null = null;
+  private saved: Float32Array | null = null;
+  constructor(cue: FxCue, scene: THREE.Scene) {
+    const m = scene.getObjectByName(String(cue.mesh ?? 'frostlight-aurora-glass')) as THREE.Mesh | undefined;
+    const attr = m?.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!m || !attr || m.geometry.index) return;
+    const [x0, y0, z0, x1, y1, z1] = (cue.box as number[]) ?? [0, 0, 0, 0, 0, 0];
+    m.updateMatrixWorld(true);
+    const a = attr.array as Float32Array;
+    this.saved = a.slice();
+    const c = new THREE.Vector3();
+    for (let i = 0; i < attr.count; i += 3) {
+      c.set(0, 0, 0);
+      for (let j = 0; j < 3; j++) c.add(new THREE.Vector3(a[(i + j) * 3], a[(i + j) * 3 + 1], a[(i + j) * 3 + 2]));
+      c.multiplyScalar(1 / 3).applyMatrix4(m.matrixWorld);
+      if (c.x < x0 || c.x > x1 || c.y < y0 || c.y > y1 || c.z < z0 || c.z > z1) continue;
+      for (let j = 1; j < 3; j++) for (let k = 0; k < 3; k++) a[(i + j) * 3 + k] = a[i * 3 + k];
+    }
+    attr.needsUpdate = true;
+    this.attr = attr;
+  }
+  update(): void {}
+  dispose(): void {
+    if (!this.attr || !this.saved) return;
+    (this.attr.array as Float32Array).set(this.saved);
+    this.attr.needsUpdate = true;
+  }
+}
+
 registerEffect('snow-frost-blast', (cue, scene, ground) => new Blast(cue, scene, ground));
 registerEffect('snow-frost-ice', (cue, scene, ground) => new Ice(cue, scene, ground));
 registerEffect('snow-frost-crack', (cue, scene, ground) => new Crack(cue, scene, ground));
 registerEffect('snow-frost-orb', (cue, scene) => new Orb(cue, scene));
+registerEffect('snow-frost-unsigil', (cue, scene) => new Unsigil(cue, scene));
