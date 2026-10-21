@@ -735,6 +735,9 @@ const undeadShots = [
       // by the stamp and each fling of the cast.
       // The string hangs low off the shaft so it swings down into the low frame at 96.7 s.
       { kind: 'night-staff', t: -3, actor: 'u', beads: { at: 0.55, length: 0.42, swing: [[STAMP, 0.3, 90], [3.7, 0.6, 75], [6.75, 0.35], [8.6, 0.45, 90], [12.5, 0.45, 90]] } },
+      // A weathered corpse of a crab (src/capture/cinema/fx/night-rags.ts): rust and grime, rags off his
+      // shell and a bandaged leg swinging at the stamp and each fling, a cracked visor, a faded hood.
+      { kind: 'night-rags', t: -3, actor: 'u', kicks: [[STAMP, 0.35], [8.6, 0.5], [12.5, 0.5]] },
       { kind: 'shake', t: STAMP, d: 0.45, amp: 0.03 },
       { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 0.8, light: 0.9, gain: 0.75, embers: 260, smoke: 160, smokeA: 0.22, clear: LOW_PATH.map((q) => [...q, 0.9]) },
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
