@@ -710,7 +710,10 @@ const undeadShots = [
         { t: 12.5, p: H(-0.25, 0.28, 2.9), l: H(-0.1, 2.4, -2.0), fov: 57 },
         // ...and tilting up its height as it straightens, blazes and looms.
         { t: 14.5, p: H(-0.45, 0.25, 2.95), l: H(0.0, 3.1, -2.8), fov: 58 },
-        { t: 18, p: H(-0.55, 0.22, 3.3), l: H(0.1, 3.7, -3.0), fov: 60 },
+        { t: 16.2, p: H(-0.5, 0.23, 3.15), l: H(0.05, 3.5, -2.9), fov: 60 },
+        // It lurches at the lens and the lens flinches back and down.
+        { t: 17.2, p: H(-0.6, 0.2, 3.6), l: H(0.1, 3.6, -2.6), fov: 62 },
+        { t: 18, p: H(-0.62, 0.2, 3.7), l: H(0.1, 3.6, -2.5), fov: 62 },
       ],
     },
     fx: [
@@ -754,7 +757,8 @@ const undeadShots = [
       { kind: 'embers', t: 6, fadeIn: 1.5, at: { g: [U[0], 0.6, U[1] - 2] }, count: 360, box: [12, 5, 12], drift: [0.15, 0.9, 0.05], size: 0.035, color: '#ffc85a', color2: '#9dff4a' },
       // Boulders climb out of the ground round him and fly together behind him into the golem; the
       // burning rock falls past its shoulder, the blast.
-      golem,
+      // Whole and blazing, it lurches over him at 109.2 s, fists thrust at the lens (the original's swing).
+      { ...golem, loom: [16.2, 17.2], leanTo: 0.45, reach: 1.05 },
       // More molten rocks heave out of the ground round him, beside the lens, and the blast throws them.
       { ...boulders(LAND - 9.9), n: 9, size: [0.22, 0.6], h: [0.1, 1.0], rise: [9.6, 12.6], seed: 53 },
       STREAK,
@@ -762,6 +766,7 @@ const undeadShots = [
       { kind: 'night-impact', t: LAND, at: { g: [IMPACT[0], 0.8, IMPACT[1]] }, scale: 3.4, toward: G(-3.6, 0.8, 1), light: 700, flash: 0.45, gain: 0.45, dust: 0.12, dome: 0, haze: 0.3, puffs: 60, hot: '#fff4a8', color: '#6fe02e', smoke: '#0a1006' },
       { kind: 'flash', t: LAND + 0.02, d: 0.22, rise: 0.03, a: 0.22, color: '#e6ffb0' },
       { kind: 'shake', t: LAND, d: 1.6, amp: 0.22 },
+      { kind: 'shake', t: 16.4, d: 0.9, amp: 0.12 },
       // The blast's light swells to white for the cut (a veil in the scene, so it brightens, not greys).
       { kind: 'night-veil', t: 15.5, alpha: [[17.0, 0], [17.65, 0.75], [18.0, 1]], color: '#f6ffe2', gain: 2.5 },
       { kind: 'fade', t: 15.5, color: '#ffffff', curve: [[17.8, 0], [18.0, 1]] },
