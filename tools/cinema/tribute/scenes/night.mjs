@@ -822,6 +822,7 @@ const explodeShots = [
       GRAVE,
       NO_ASTROLABE,
       { kind: 'night-staff', t: -3, actor: 'u', beads: { swing: [[0.15, 0.5, 90]] } },
+      { kind: 'night-rags', t: -3, actor: 'u', kicks: [[0.15, 0.5]] },
       { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: 1.0 },
       { kind: 'night-cracks', t: -6, at: U, radius: 9, grow: 3, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
       boulders(0.42 - 9.9, 4.5),
