@@ -1,17 +1,22 @@
 /** Guest saves remain untouched. Each account gets its own local progress cache. */
 let profile='';
-export const progressKey=(key:string)=>key==='cc.spec'||key==='cc.lighthouseSecret.v1'||key.startsWith('cc.journey.v1:');
+/** The Royal Vault of Tidecrown: coins shared by every character of the account (of the device, for a guest). */
+export const VAULT_KEY='cc.vault.v1';
+export const progressKey=(key:string)=>key==='cc.spec'||key==='cc.lighthouseSecret.v1'||key===VAULT_KEY||key.startsWith('cc.journey.v1:');
 export function setSaveProfile(username:string){profile=username;}
 export function saveProfile(){return profile;}
 export function storageKey(key:string){return profile&&progressKey(key)?`cc.account.v1:${profile}:${key}`:key;}
 export function readBundle(username=profile):Record<string,string>{
  const prefix=username?`cc.account.v1:${username}:`:'',out:Record<string,string>={};
  for(let i=0;i<localStorage.length;i++){const raw=localStorage.key(i)!;if(prefix&&!raw.startsWith(prefix))continue;const key=prefix?raw.slice(prefix.length):raw;if(progressKey(key)){const v=localStorage.getItem(raw);if(v!==null)out[key]=v;}}
- // The active character plus its own journey are enough to continue on another computer.
+ // The active character plus its own journey are enough to continue on another computer; the vault goes in the same
+ // bundle, so a deposit's two halves (vault up, journey down) always travel and load together.
  const spec=out['cc.spec'];if(!spec)return {};
  const s=JSON.parse(spec),journey=`cc.journey.v1:${s.race}:${s.sex}:${s.classId}:${s.name}`;
- return Object.fromEntries(Object.entries(out).filter(([k])=>k==='cc.spec'||k==='cc.lighthouseSecret.v1'||k===journey));
+ return Object.fromEntries(Object.entries(out).filter(([k])=>k==='cc.spec'||k==='cc.lighthouseSecret.v1'||k===VAULT_KEY||k===journey));
 }
+/** The account's progress becomes exactly the bundle's: the vault with the journey it was saved with (a bundle without
+ *  a vault never had one, as the server keeps the stored vault when a page from before the vault saves). */
 export function applyBundle(username:string,bundle:Record<string,string>){
  const prefix=`cc.account.v1:${username}:`,remove:string[]=[];
  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i)!;if(k.startsWith(prefix)&&progressKey(k.slice(prefix.length)))remove.push(k);}

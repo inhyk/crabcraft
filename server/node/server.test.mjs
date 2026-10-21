@@ -358,6 +358,38 @@ test('the first Google sign-in creates an account, the next reuses it; session, 
   assert.equal((await db.query('SELECT count(*)::int AS n FROM accounts WHERE username = $1', [username])).rows[0].n, 1);
 });
 
+test('the Royal Vault rides in the save: checked, and kept when a page from before the vault saves without it', async () => {
+  const { cookie } = await googleSignIn({ sub: 'qa-' + randomBytes(6).toString('hex') });
+  const journey = 'cc.journey.v1:human:male:warrior:Test crab', base = { 'cc.spec': JSON.stringify(spec), [journey]: JSON.stringify({ xp: 137, coins: 0, chapter: 1 }) };
+  // A deposit: the journey's coins and the vault in one save.
+  const deposit = { ...base, 'cc.vault.v1': JSON.stringify({ coins: 73 }) };
+  assert.equal((await api('save', { revision: 0, save: deposit }, { cookie })).json.revision, 1);
+  assert.deepEqual((await api('session', undefined, { cookie })).json.save, deposit);
+  // Bad vaults are refused and change nothing.
+  for (const v of ['{"coins":-1}', '{"coins":1.5}', '{"coins":"73"}', `{"coins":${Number.MAX_SAFE_INTEGER + 1}}`, 'null', `{"coins":1,"x":"${'y'.repeat(200)}"}`]) {
+    const r = await api('save', { revision: 1, save: { ...base, 'cc.vault.v1': v } }, { cookie });
+    assert.deepEqual([r.status, r.json.error], [400, 'save'], v.slice(0, 30));
+  }
+  const after = (await api('session', undefined, { cookie })).json;
+  assert.deepEqual([after.revision, after.save], [1, deposit]);
+  // An older page knows nothing of the vault: its save is accepted and the stored vault stays, after its own keys.
+  const older = { ...base, [journey]: JSON.stringify({ xp: 200, coins: 5, chapter: 1 }) };
+  assert.equal((await api('save', { revision: 1, save: older }, { cookie })).json.revision, 2);
+  const kept = (await api('session', undefined, { cookie })).json.save;
+  assert.deepEqual(kept, { ...older, 'cc.vault.v1': JSON.stringify({ coins: 73 }) });
+  assert.deepEqual(Object.keys(kept), [...Object.keys(older), 'cc.vault.v1']);
+  // A stale older page still conflicts rather than saving over a newer vault.
+  assert.equal((await api('save', { revision: 1, save: older }, { cookie })).json.error, 'conflict');
+  // A withdrawal down to an empty vault is stored as 0, not dropped.
+  const emptied = { ...base, [journey]: JSON.stringify({ xp: 200, coins: 78, chapter: 1 }), 'cc.vault.v1': JSON.stringify({ coins: 0 }) };
+  assert.equal((await api('save', { revision: 2, save: emptied }, { cookie })).json.revision, 3);
+  assert.deepEqual((await api('session', undefined, { cookie })).json.save, emptied);
+  // An account that never had a vault gains none from an older page's save.
+  const other = await googleSignIn({ sub: 'qa-' + randomBytes(6).toString('hex') });
+  assert.equal((await api('save', { revision: 0, save: base }, { cookie: other.cookie })).json.revision, 1);
+  assert.deepEqual((await api('session', undefined, { cookie: other.cookie })).json.save, base);
+});
+
 test('the callback refuses a wrong or missing state, a refusal at Google and bad id tokens', async () => {
   const sub = 'qa-' + randomBytes(6).toString('hex');
   const refused = async (result, location = '/?account=error') => {
