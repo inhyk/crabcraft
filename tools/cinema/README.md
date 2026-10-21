@@ -67,7 +67,8 @@ All seven actions play existing MuJoCo motion clips through the game runtime:
 The shorter dance shots are excerpts, not complete policy rollouts. Grounded action
 roots stay planted. The jumps use the recorded floating-body pose; their stage path
 does not add another jump. Only the post-720 transformation lift is authored, matching
-the following shot at x=-90.5, z=94.5, lift=1.15. The stage waits for referenced clips
+the following shot at x=-90.5, z=94.5, lift=1.15. The 720 camera follows the recorded
+floating body with `body: true` point references to keep the airborne crab prominent. The stage waits for referenced clips
 before starting its clock, so a cold cache cannot delay the first action.
 
 ```sh
@@ -82,7 +83,8 @@ node tools/cinema/tribute/splice-elf-actions.mjs \
 ```
 
 The browser QA checks every one of the 322 frames for visible-rig bounds within the
-camera, verifies all seven actions actually play, checks clip windows and edit seams,
+camera, verifies all seven actions actually play and the flip/720 complete their rotations,
+checks clip windows and edit seams,
 and compares every unrelated shot spec to the original. This is cinematic framing
 and playback QA, not a physics-policy acceptance test. The splice script requires a
 1920x1080, 24 fps source, checks exact shot/frame counts and copies its audio stream.

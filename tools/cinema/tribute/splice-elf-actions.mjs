@@ -32,7 +32,7 @@ filters.push(`${ELF_ACTIONS.map((_, i) => `[v${i}]`).join('')}concat=n=${ELF_ACT
 const master = resolve(out, 'elf-actions-master.mp4');
 ff([...inputs, '-filter_complex', filters.join(';'), '-map', '[v]', '-an', '-c:v', 'libx264', '-crf', '15', '-preset', 'slow', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', master]);
 const full = resolve(out, 'tribute-v14-elf-actions.mp4');
-ff(['-i', source, '-i', master, '-filter_complex', `[0:v]split=2[b][a];[b]trim=end_frame=${k0},setpts=PTS-STARTPTS[before];[a]trim=start_frame=${k1},setpts=PTS-STARTPTS[after];[before][1:v][after]concat=n=3:v=1:a=0[v]`, '-map', '[v]', '-map', '0:a?', '-c:v', 'libx264', '-crf', '16', '-preset', 'slow', '-c:a', 'copy', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', full]);
+ff(['-i', source, '-i', master, '-filter_complex', `[0:v]split=2[b][a];[b]trim=end_frame=${k0},setpts=PTS-STARTPTS[before];[a]trim=start_frame=${k1},setpts=PTS-STARTPTS[after];[before][1:v][after]concat=n=3:v=1:a=0[v]`, '-map', '[v]', '-map', '0:a?', '-c:v', 'libx264', '-crf', '16', '-preset', 'medium', '-c:a', 'copy', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', full]);
 const got = Number(video(full).nb_read_packets), expected = Number(sourceVideo.nb_read_packets);
 if (got !== expected) throw new Error(`Full edit: ${got} frames, expected ${expected}`);
 // Review clip includes the close-up cue and original transformation, so both cuts can be judged.
