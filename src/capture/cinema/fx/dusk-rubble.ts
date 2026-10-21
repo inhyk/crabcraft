@@ -136,10 +136,10 @@ class Rubble implements Effect {
             float soot = fbm(vec3(vW.xz * 0.7, 1.0));
             float a = edge * smoothstep(0.35, 0.6, soot + 0.12);
             // Coals: small hot specks in the soot, breathing.
-            float c = fbm(vec3(vW.xz * 4.5, uTime * 0.15));
-            float coal = smoothstep(0.66, 0.78, c) * edge;
+            float c = fbm(vec3(vW.xz * 9.0, uTime * 0.15));
+            float coal = smoothstep(0.7, 0.8, c) * edge * smoothstep(0.45, 0.65, soot);
             float fl = 0.75 + 0.25 * sin(uTime * 4.0 + vW.x * 3.0 + vW.z * 2.0);
-            vec3 col = vec3(0.025, 0.018, 0.015) * (0.6 + 0.8 * soot) + vec3(3.2, 0.75, 0.1) * coal * fl * uEmber;
+            vec3 col = vec3(0.025, 0.018, 0.015) * (0.6 + 0.8 * soot) + vec3(2.4, 0.5, 0.06) * coal * fl * uEmber;
             gl_FragColor = vec4(col, clamp(a * 0.9 + coal, 0.0, 1.0));
             #include <fog_fragment>
           }`,

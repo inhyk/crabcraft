@@ -299,7 +299,7 @@ const smoke = {
   fx: [
     ...LANE_FX(),
     // The first flames, close to the lens at the lower left.
-    { t: 3.4, kind: 'dusk-fire', spots: [[-14.5, 70.2, 0.5], [-13.9, 69.4, 0.42], [-15.0, 69.0, 0.55], [-14.2, 68.6, 0.36]], height: 2.2, seed: 41, smoke: 0, grow: [[3.45, 0], [3.9, 0.8], [4.25, 1.1]], order: 1002 },
+    { t: 3.4, kind: 'dusk-fire', spots: [[-14.5, 70.2, 0.5], [-13.9, 69.4, 0.42], [-15.0, 69.0, 0.55], [-14.2, 68.6, 0.36]], height: 2.2, seed: 41, smoke: 0, grow: [[3.3, 0], [3.6, 0.7], [3.95, 1.0], [4.25, 1.2]], order: 1002 },
     // The red: opaque until 127.95, then thinning so the lane shows at 128.0.
     { t: -2, kind: 'dusk-haze', alpha: [[0, 1], [3.95, 1], [4.08, 0.62], [4.25, 0.45]], cover: [[0, 0.55], [3.6, 0.5], [4.25, 0.4]], back: 1, color: '#4a0d05', color2: '#b8300c', color3: '#ff7a24', flow: [-0.16, 0.04], scale: 1.5 },
     // Black smoke rolling in from the right, 125.5 to 127.5.
@@ -367,15 +367,15 @@ const orc = {
     // A cold rim from the night sky behind him: the red crab stands off the red fire.
     { t: -2, kind: 'light', at: { a: 'o', o: [0.4, 2.2, -2.2] }, color: '#8fa8ff', intensity: 26, distance: 6 },
     // Big flames close on both sides of the lane, framing him, and the litter he walks through.
-    { t: -6, kind: 'dusk-fire', spots: [[-2.9, 65.2, 1.0], [2.9, 66.0, 0.9], [-2.8, 61.5, 1.1], [2.8, 62.8, 1.0], [-1.3, 59.6, 0.5], [1.2, 61.2, 0.45]].map(([s, z, k]) => [laneX(z) + s, z, k]), height: 2.6, gain: 0.8, seed: 19, smoke: 0.7 },
+    { t: -6, kind: 'dusk-fire', spots: [[-2.7, 65.2, 1.5], [2.7, 66.0, 1.4], [-2.6, 61.5, 1.6], [2.6, 62.8, 1.5], [-1.3, 59.6, 0.7], [1.2, 61.2, 0.6]].map(([s, z, k]) => [laneX(z) + s, z, k]), height: 3.0, gain: 1.25, glow: 0.35, seed: 19, smoke: 0.7 },
     // 129.97: a burst at his side as he strides through.
     { t: 1.68, kind: 'dusk-fire', spots: [[laneX(64) + 2.6, 64, 0.9], [laneX(63.5) - 2.6, 63.5, 0.85]], height: 2.6, gain: 0.9, seed: 29, smoke: 0.4, grow: [[1.68, 0], [1.85, 1.4], [2.4, 0.9]] },
     { t: -6, kind: 'dusk-pose', actor: 'o', nocull: true },
     // The roar.
     { t: 5.25, kind: 'shake', d: 1.0, amp: 0.05 },
-    // 135.57: the wall of fire between the lens and him.
-    { t: 7.0, kind: 'dusk-fire', spots: [[-1.2, 68.1, 1], [0.1, 68.3, 1.1], [1.3, 68.2, 0.9], [-0.5, 67.8, 0.8], [0.8, 67.7, 0.85], [-2.3, 68.4, 1], [2.4, 68.5, 1]].map(([s, z, k]) => [laneX(z) + s, z, k]), height: 3.0, gain: 1.15, glow: 0.6, seed: 77, smoke: 0, grow: [[7.1, 0], [7.4, 0.8], [7.7, 1.5], [8.25, 1.9]] },
-    { t: 7.2, kind: 'dusk-haze', additive: true, alpha: [[7.3, 0], [7.6, 0.3], [7.9, 0.6]], cover: [[7.3, 0.35], [7.9, 0.7]], back: 0.3, color: '#3a0802', color2: '#ff6a14', color3: '#ffc860', flow: [0, 0.6], scale: 1.4 },
+    // 135.05 to 135.6: the wall of fire surges up between the lens and him.
+    { t: 6.75, kind: 'dusk-fire', spots: [[-1.2, 68.1, 1], [0.1, 68.3, 1.1], [1.3, 68.2, 0.9], [-0.5, 67.8, 0.8], [0.8, 67.7, 0.85], [-2.3, 68.4, 1], [2.4, 68.5, 1]].map(([s, z, k]) => [laneX(z) + s, z, k]), height: 3.0, gain: 1.3, glow: 0.6, seed: 77, smoke: 0, grow: [[6.8, 0], [7.05, 0.7], [7.35, 1.4], [7.7, 1.9], [8.25, 2.2]] },
+    { t: 7.0, kind: 'dusk-haze', additive: true, alpha: [[7.05, 0], [7.35, 0.3], [7.7, 0.65]], cover: [[7.05, 0.35], [7.7, 0.7]], back: 0.3, color: '#3a0802', color2: '#ff6a14', color3: '#ffc860', flow: [0, 0.6], scale: 1.4 },
     // The fire fills the frame and burns to white, white by 136.4.
     { t: 7.3, kind: 'fade', color: '#fff4e0', curve: [[7.45, 0], [7.6, 0.25], [7.8, 0.6], [8.0, 0.9], [8.15, 1], [8.25, 1]] },
   ],
@@ -409,7 +409,7 @@ const TOWER_SKY = (t0) => [
 ];
 /** The parvis under the lens: broken stone heaped like the foot of a crag, burning wreckage, soot. */
 const PARVIS_RUBBLE = (t0) => [
-  { t: t0, kind: 'dusk-rubble', seed: 21, size: 2.2, ember: 0, piles: [[-47.5, -1.5, 3.2, 40, 0.3], [-43.5, 2.5, 2.2, 22, 0.4], [-39, -6, 2.4, 20, 0.3], [-50, -7, 2.6, 22, 0.2], [-34, 1, 1.8, 14, 0.4]], ash: [[-44, -2, 16, 14]] },
+  { t: t0, kind: 'dusk-rubble', seed: 21, size: 1.8, ember: 0, piles: [[-47.5, -1.5, 3.2, 44], [-43.5, 2.5, 2.2, 24], [-39, -6, 2.4, 22], [-50, -7, 2.6, 24], [-34, 1, 1.8, 16]], ash: [[-44, -2, 16, 14]] },
   { t: t0, kind: 'dusk-fire', spots: [[-43.8, 2.2, 1.0], [-39.2, -5.6, 0.9], [-34.2, 0.8, 0.8], [-49.5, -6.5, 0.8]], height: 2.6, seed: 61, smoke: 0.8, glow: 0.3 },
   { t: t0, kind: 'light', at: { g: [-42, 1.5, 0] }, color: '#ff6a1a', intensity: 20, distance: 14, flicker: 0.5 },
 ];
@@ -456,9 +456,10 @@ const tower = {
   cam: {
     // Low among the rubble, the tower over it; craning up the front as the giant climbs.
     keys: [
-      { t: 0, p: { g: [-47, 1.3, 5] }, l: CP(-2, 26, 26), fov: 48 },
-      { t: 1.0, p: { g: [-46.6, 1.6, 4.4] }, l: CP(-2.5, 27, 26), fov: 47 },
-      { t: 4.5, p: { g: [-44, 9, 1.5] }, l: CP(-4, 34, 26), fov: 42 },
+      { t: 0, p: { g: [-47, 1.3, 5] }, l: CP(-3, 21, 26), fov: 50 },
+      { t: 1.0, p: { g: [-46.6, 1.6, 4.4] }, l: CP(-3, 22, 26), fov: 49 },
+      { t: 2.6, p: { g: [-45.8, 3.6, 3.4] }, l: CP(-3.5, 25.5, 26), fov: 46 },
+      { t: 4.5, p: { g: [-44, 9, 1.5] }, l: CP(-4, 33, 26), fov: 42 },
     ],
     ease: 'sine',
   },
@@ -469,10 +470,10 @@ const tower = {
     { t: -6, kind: 'dusk-pose', actor: 'g', pitch: [[0, 74]] },
     ...GIANT_FX(-6),
     // Out of the white burn: a short warm haze that clears off the tower.
-    { t: 0, kind: 'fade', color: '#fff0dc', curve: [[0, 0.75], [0.12, 0.4], [0.28, 0]] },
+    { t: 0, kind: 'fade', color: '#ffe2b8', curve: [[0, 0.7], [0.08, 0.3], [0.18, 0]] },
     // 137.0: the fireball comes in from the left and strikes the belfry at 137.15.
     { t: 0.3, kind: 'dusk-fireball', from: [STRIKE[0] - 40, STRIKE[1] + 16, STRIKE[2] - 24], to: STRIKE, d: 0.35, size: 2.2, trail: 90, light: 1600, distance: 30, accel: 1.2 },
-    { t: 0.65, kind: 'dusk-blast', at: STRIKE, r: 5, column: 4, light: 2400, distance: 34, flashA: 0.14, flashD: 0.08, flashColor: '#ffb060', shake: 0.1, puffs: 56, debris: 50, gravity: 9.8 },
+    { t: 0.65, kind: 'dusk-blast', at: STRIKE, r: 5, column: 1.2, columnLife: 4, smokeLife: 3.2, light: 2400, distance: 34, flashA: 0.14, flashD: 0.08, flashColor: '#ffb060', shake: 0.1, puffs: 56, debris: 50, gravity: 9.8 },
     ...STRUCK_FIRES(0.67),
     // The thuds: grit bursting from the stone under its claws.
     ...[2.91, 3.71, 3.89].map((t, i) => ({ t, kind: 'dusk-blast', at: { a: 'g', o: [0, 3.2, 0.6] }, r: 1.2, column: 0, light: 300, distance: 8, flash: false, shake: 0.05, puffs: 14, debris: 18, ring: 0, seed: 40 + i, fireA: 0.3 })),
@@ -482,7 +483,7 @@ const tower = {
 
 // 141.0: the giant hauls itself up over the parapet and the top bursts (141.36); the warrior shows on
 // the belfry roof through the smoke by 141.9. The camera halfway up, under the top.
-const W0 = CP(2.8, 35.2, 25.7);
+const W0 = CP(1.4, 35.2, 25.7);
 const W_LIFT = W0[1] - PARVIS;
 const giant = {
   id: 'dusk-giant',
@@ -520,13 +521,13 @@ const giant = {
 // 142.0: the warrior on the belfry roof amid the flames, the giant's fire behind him; he hops onto the
 // front parapet (142.25), crouches and back flips off it out over the parvis (in the air 143.0 to
 // 143.45); the giant's fire blooms behind him (143.3) and the frame goes white by 143.8. The camera
-// over the parapet's west end, looking along it at him with the east sky and the fire beyond.
+// in front of the parapet's middle, looking along it at him with the east pinnacle, the sky and the fire beyond.
 /** Off the parapet at 0.85 (142.85): in the air from 143.0 like the original's spring at 143.2. */
 const TAKEOFF = 0.85;
 const sm = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 /** On the roof, the hop onto the parapet (0.3-0.6), then out over the edge under the flip. */
-const W_HOP = CP(2.8, 35.2, 26.7);
-const W_OUT = CP(2.8, 35.2, 29.3);
+const W_HOP = CP(1.4, 35.2, 26.7);
+const W_OUT = CP(1.4, 35.2, 29.3);
 const leapLift = (t) => W_LIFT + 0.9 * sm((t - 0.3) / 0.3) + (t > TAKEOFF ? 0.5 * Math.sin(Math.min(1, (t - TAKEOFF) / 1.1) * Math.PI) : 0);
 const leapZ = (t) => (t < 0.3 ? W0[2] : t < 0.6 ? W0[2] + (W_HOP[2] - W0[2]) * sm((t - 0.3) / 0.3) : t < TAKEOFF ? W_HOP[2] : W_HOP[2] + (W_OUT[2] - W_HOP[2]) * sm((t - TAKEOFF) / 1.0));
 const leap = {
@@ -549,10 +550,12 @@ const leap = {
   },
   cam: {
     keys: [
-      { t: 0, p: CP(-6.5, 39.5, 33), l: CP(2.8, 36.3, 29.3), fov: 34 },
-      { t: 1.96, p: CP(-6.3, 39.2, 34), l: CP(3.0, 37.2, 30.5), fov: 38 },
+      { t: 0, p: CP(-3.2, 37.6, 31.2), l: CP(1.6, 36.4, 26.8), fov: 36 },
+      { t: 0.8, p: CP(-3.3, 37.6, 31.6), l: CP(1.6, 37.0, 27.2), fov: 37 },
+      { t: 1.25, p: CP(-3.4, 37.5, 32.0), l: CP(1.6, 38.7, 28.2), fov: 39 },
+      { t: 1.96, p: CP(-3.5, 37.4, 32.4), l: CP(1.6, 38.4, 29.0), fov: 41 },
     ],
-    ease: 'linear',
+    ease: 'sine',
     focus: 'w',
     range: 6,
   },
@@ -566,14 +569,15 @@ const leap = {
     { t: -6, kind: 'dusk-plume', at: CP(-2, 37, 23), rate: 4, life: 7, rise: 3.5, spread: 2.5, size0: 3, size1: 10, prewarm: 7, opacity: 0.85, wind: [1.5, -0.6], color: '#1a1210', glow: '#ff6a1a', glowH: 4, seed: 15 },
     // Smoke rolling off the roof over the spire's foot and round the east pinnacle.
     { t: -6, kind: 'dusk-plume', at: CP(-1.5, 35.5, 24.2), rate: 6, life: 4, rise: 1.6, spread: 1.2, size0: 1.6, size1: 4.5, prewarm: 4, opacity: 0.8, wind: [0.9, 0.4], color: '#140e0c', glow: '#ff5a14', glowH: 1.5, seed: 16 },
-    { t: -6, kind: 'dusk-plume', at: CP(5.6, 38.4, 25.6), rate: 4, life: 4, rise: 1.4, spread: 0.8, size0: 1.2, size1: 3.5, prewarm: 4, opacity: 0.7, wind: [0.9, 0.4], color: '#140e0c', glow: '#ff5a14', glowH: 1.2, seed: 17 },
-    { t: -6, kind: 'dusk-fire', spots: [{ at: CP(5.6, 38.3, 26.9), s: 1.0 }, { at: CP(4.6, 36.4, 27.3), s: 0.6 }, { at: CP(-0.6, 36.2, 27.3), s: 0.7 }], height: 2.4, seed: 57, smoke: 0, glow: 0.4 },
+    { t: -6, kind: 'dusk-plume', at: CP(5.4, 37.6, 27.9), rate: 6, life: 4, rise: 1.2, spread: 0.9, size0: 1.4, size1: 4, prewarm: 4, opacity: 0.85, wind: [0.9, 0.4], color: '#140e0c', glow: '#ff5a14', glowH: 1.2, seed: 17 },
+    { t: -6, kind: 'dusk-fire', spots: [{ at: CP(5.6, 38.3, 27.2), s: 1.3 }, { at: CP(5.2, 39.6, 27.4), s: 0.9 }, { at: CP(4.0, 36.4, 27.3), s: 0.7 }, { at: CP(-1.6, 36.2, 27.3), s: 0.7 }], height: 2.4, seed: 57, smoke: 0, glow: 0.4 },
     { t: -6, kind: 'light', at: { a: 'w', o: [-1.2, 1.2, -1.5] }, color: '#ff7a2a', intensity: 12, distance: 6, flicker: 0.4 },
     // A cool rim from the sky so the red crab stands off the fire.
     { t: -6, kind: 'light', at: { a: 'w', o: [0.8, 2.0, -2.2] }, color: '#9ab0ff', intensity: 22, distance: 6 },
-    { t: -6, kind: 'light', at: { a: 'w', o: [0, 1.2, 2.5] }, color: '#ffe0b0', intensity: 10, distance: 6 },
+    // A warm key from the lens's side (he faces the tower, his back to us).
+    { t: -6, kind: 'light', at: { a: 'w', o: [0.6, 1.5, -2.6] }, color: '#ffc890', intensity: 26, distance: 6 },
     // Firelight from the burning roof before him.
-    { t: -6, kind: 'light', at: { a: 'w', o: [1.5, 0.8, 2.0] }, color: '#ff8a3a', intensity: 30, distance: 7, flicker: 0.4 },
+    { t: -6, kind: 'light', at: { a: 'w', o: [-1.0, 0.8, 2.0] }, color: '#ff8a3a', intensity: 24, distance: 4.5, flicker: 0.4 },
     // 143.3: the giant's fire blooms behind him and the frame goes white by 143.8.
     { t: 1.3, kind: 'dusk-blast', at: CP(6, 37.5, 24.5), r: 5, column: 0, light: 5000, distance: 30, flashA: 0.3, flashD: 0.1, flashColor: '#ffe0b0', shake: 0.12, puffs: 64, debris: 40, seed: 21 },
     { t: 1.4, kind: 'fade', color: '#fff4e2', curve: [[1.5, 0], [1.62, 0.3], [1.72, 0.7], [1.8, 0.95], [1.96, 1]] },
