@@ -191,10 +191,13 @@ const face = {
     range: 2.5,
   },
   fx: [
-    ...blizzard({ wind: [3.5, -2.2, 6] }),
+    // The spindrift over the lens thinned while it is a hand's breadth from the fur, back as he turns.
+    ...blizzard({ wind: [3.5, -2.2, 6] }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.035], [2.6, 0.035], [4.6, 0.12]] } : c)),
     CITY,
     // Out of the white as late as the original, which is clear at 41.2 s.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.5, 0.85], [1.0, 0.55], [1.45, 0.2], [1.75, 0]] },
+    // The LEDs dimmed while the lens is on the moustache, so the fur reads before the glare.
+    { t: -3, kind: 'fur', actor: 'dwarf', led: [[0, 0.35], [1.6, 0.45], [3.6, 1]] },
     // Focus held on the moustache's frosted tips while the depth of field opens up to the face.
     { t: -3, kind: 'focus', at: { a: 'dwarf', o: [0.36, 0.42, 0.68] }, range: [[0, 0.07], [1.6, 0.12], [3.6, 2.5]], until: 4 },
     { t: 13.9, kind: 'shake', d: 0.7, amp: 0.04 },

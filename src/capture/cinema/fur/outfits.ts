@@ -38,7 +38,8 @@ const MANTLE: Layer = {
   curl: 0.14,
   width: 0.00016,
   stiff: 1,
-  clump: { size: 45, pull: 0.7, pow: 1.3 },
+  clump: { size: 30, pull: 0.7, pow: 1.3 },
+  locks: { big: 6, lengthVar: 0.2, stray: 0.03 },
   snow: (p, n, r) => ss(0.6, 0.98, n.y) * Math.max(0, blotch(p, 0.7) * 1.6 - 0.8) * r,
   wave: { amp: 0.04, freq: 1.0 },
   jitter: 0.2,
@@ -60,7 +61,8 @@ const BEARD: Layer = {
   curl: 0.18,
   width: 0.00022,
   stiff: 1.6,
-  clump: { size: 70, pull: 0.85, pow: 1.1 },
+  clump: { size: 22, pull: 0.85, pow: 1.1 },
+  locks: { big: 8, lengthVar: 0.25, stray: 0.03 },
   wave: { amp: 0.06, freq: 1.6 },
   snow: (p, _n, r) => (0.3 + Math.max(0, blotch(p) * 1.4 - 0.6)) * (0.5 + 0.5 * r),
   jitter: 0.15,
@@ -82,7 +84,8 @@ const MOUSTACHE: Layer = {
   curl: 0.09,
   width: 0.00026,
   stiff: 1.4,
-  clump: { size: 40, pull: 0.8, pow: 1.1 },
+  clump: { size: 14, pull: 0.85, pow: 1.05 },
+  locks: { big: 7, lengthVar: 0.25, stray: 0.04 },
   snow: (p, _n, r) => (blotch(p, 1.4) > 0.6 ? 0.7 : 0.15) * r,
   wave: { amp: 0.05, freq: 1.2 },
   look: { colA: '#361406', colB: '#6e2e10', tip: '#925020', tipAmt: 0.5, rootAO: 0.2, spec1: 0.05, spec2: 0.35, gloss1: 120, back: 1.6, tipWidth: 0.3 },
@@ -216,8 +219,36 @@ const PELT: Layer = {
   wave: { amp: 0.05, freq: 1.3 },
   snow: (p, n, r) => ss(0.6, 0.98, n.y) * Math.max(0, blotch(p, 0.5) * 1.5 - 0.6) * r,
   jitter: 0.3,
-  look: { colA: '#120a06', colB: '#2e1d12', tip: '#5a3e2c', tipAmt: 0.7, rootAO: 0.06, spec1: 0.03, spec2: 0.12, back: 1.3, wrap: 0.3 },
+  look: { colA: '#140c08', colB: '#3a2014', tip: '#6a4630', tipAmt: 0.75, rootAO: 0.06, spec1: 0.03, spec2: 0.14, back: 1.3, wrap: 0.3 },
   bits: { clumps: 0.15, crystals: 0.25, size: 0.0012, powder: 2 },
+};
+
+/**
+ * Guard hairs over the pelt: fewer, two to three times longer and coarser, standing out of the coat
+ * with pale tips, longest down the spine, so the outline breaks up and the coat has a top layer.
+ */
+const GUARD: Layer = {
+  ...PELT,
+  name: 'guard',
+  count: 70000,
+  points: 8,
+  seg: 10,
+  length: (p, n, r) =>
+    (0.034 + 0.03 * ss(0.055, 0.004, p.y) + 0.026 * ss(0.03, 0.0, Math.abs(p.x)) * Math.max(0, n.y)) * (0.75 + 0.5 * r),
+  dir: (p, n, _r, out) => {
+    const h = new THREE.Vector3(p.x, 0, p.z + 0.01).normalize();
+    return out.copy(n).multiplyScalar(0.7).addScaledVector(h, 0.35).add(new THREE.Vector3(0, -0.1, -0.35 * Math.max(0, n.y)));
+  },
+  gravity: 0.7,
+  curl: 0.1,
+  jitter: 0.35,
+  width: 0.00034,
+  stiff: 1.6,
+  clump: { size: 10, pull: 0.4, pow: 1.5 },
+  locks: undefined,
+  wave: { amp: 0.06, freq: 1.1 },
+  look: { colA: '#1a1009', colB: '#3a2214', tip: '#8a6a4e', tipAmt: 0.85, rootAO: 0.1, spec1: 0.05, spec2: 0.2, back: 1.6, wrap: 0.3, tipWidth: 0.2 },
+  bits: undefined,
 };
 
 const LIMBS: Layer = {
@@ -249,5 +280,5 @@ export const OUTFIT_HIDES: Record<string, string[]> = {
 
 export const OUTFITS: Record<string, Layer[]> = {
   dwarf: [MANTLE, BEARD, MOUSTACHE, BROWS, BRAID],
-  beast: [PELT, LIMBS],
+  beast: [PELT, GUARD, LIMBS],
 };

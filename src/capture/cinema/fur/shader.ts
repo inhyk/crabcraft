@@ -59,7 +59,8 @@ void strandAt(int id, float v, out vec3 pos, out vec3 tanV, out vec4 data, out v
   // Gusts travel across the coat along the wind; each strand flutters a little on its own.
   float r = d1.w;
   float ph = dot(d0.xyz, uWindK) - uTime * uWaveSpeed;
-  float gust = uGust * (0.62 + 0.26 * sin(ph) + 0.12 * sin(ph * 2.7 + 1.3 + r * 2.0));
+  // Locks share r, so each lock catches the gust on its own beat.
+  float gust = uGust * (0.55 + 0.22 * sin(ph) + 0.23 * sin(ph * 2.7 + 1.3 + r * 6.2831));
   float fl = uFlutter * sin(uTime * (11.0 + 7.0 * d3.w) + r * 40.0 + v * 4.0);
   float k = len / max(0.2, nrm.w);
   pos += (uWind * gust + uFlutterDir * fl) * k * v * v;
@@ -212,6 +213,10 @@ void main() {
   // Only the snowiest hairs frost white at the tips; the rest carry their snow as clumps (the bits).
   float snow = smoothstep(0.55, 0.9, vData.z) * smoothstep(1.0 - uSnowLen * (0.5 + r2), 1.0, vV);
   alb = mix(alb, uSnowCol, clamp(snow, 0.0, 1.0));
+  // Rime: specks of frost along snowy hairs, a finer layer than the snow bits.
+  float speck = fract(sin(dot(vec2(r * 91.7 + r2 * 13.1, floor(vV * 30.0)), vec2(12.9898, 78.233))) * 43758.5453);
+  float rime = step(0.8, speck) * smoothstep(0.15, 0.6, vData.z) * smoothstep(0.15, 0.5, vV);
+  alb = mix(alb, uSnowCol, rime * 0.55);
   float ao = mix(uRootAO, 1.0, vOcc) * mix(0.7, 1.0, smoothstep(0.0, 0.6, vV));
   float sparkle = snow > 0.2 ? step(0.93, fract(r * 517.3 + vV * 3.1)) * 3.0 : 0.0;
   vec3 col = hairLight(alb, T, N, V, ao, vV, sparkle);

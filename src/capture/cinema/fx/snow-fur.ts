@@ -6,8 +6,12 @@
 //           a second), blow (0.3: tip sway as a share of the hair's length at full gust), flutter (0.05),
 //           wave (0.22: gust wavelength along the coat, metres of the rig), hz (2.2: gust rate),
 //           lodPx (650: the actor's screen height in drawing-buffer pixels below which strands thin out),
-//           key / rim { dir [x, y, z] (toward the light, camera space: x right, y up, z at the lens),
-//           color, k [[t, gain]...] or gain } lights for the fur alone (a rim from behind makes it glow) }
+//           key { dir [left, up, ahead] (toward the light in the actor's own frame; default the groom's
+//           KEY, which the coat's shadow is cast from), color, k [[t, gain]...] or gain },
+//           rim { dir [x, y, z] (camera space: x right, y up, z at the lens), color, k or gain }: lights
+//           for the fur alone (a rim from behind makes it glow), led (gain or [[t, gain]...] on the
+//           LED face's brightness, so a macro reads the fur and not the glare), inertia (0.25: how far
+//           the tips swing back when the actor speeds up, per unit/s^2) }
 //   focus { at (a point; default: the camera's own focus), range [[t, units]...], dist [[t, units]...] }
 //           overrides the depth of field's focus each frame (racks within a shot)
 //   lens  { near (camera near plane while the cue runs), until }
@@ -17,7 +21,7 @@ import type { FxCue } from '../types';
 import type { Unit } from '../../../game/unit';
 import type { JumperRig } from '../../../crab/rig';
 import type { PartClass } from '../../../crab/template';
-import { groom, type RigParts, type StrandSet } from '../fur/groom';
+import { KEY, groom, type RigParts, type StrandSet } from '../fur/groom';
 import { BRAIDS, BRAID_LEN, BRAID_RING, OUTFITS, OUTFIT_HIDES, braidAxis } from '../fur/outfits';
 import { bitsGeometry, bitsMaterial, hairMaterial, ribbon, strandUniforms } from '../fur/shader';
 
@@ -87,6 +91,8 @@ class Fur implements Effect {
   private unit: Unit | null = null;
   private last = new THREE.Vector3();
   private vel = new THREE.Vector3();
+  private acc = new THREE.Vector3();
+  private led: number | null = null;
   private lastT = NaN;
   constructor(private cue: FxCue) {}
 
@@ -155,12 +161,19 @@ class Fur implements Effect {
     }
     // Wind felt by the coat: the storm's, less the actor's own run.
     const dt = ctx.t - this.lastT;
-    if (dt > 0 && dt < 0.2) this.vel.lerp(P.copy(u.pos).sub(this.last).divideScalar(dt), Math.min(1, dt * 8));
-    else if (!(dt > 0)) this.vel.set(0, 0, 0);
+    if (dt > 0 && dt < 0.2) {
+      const v0 = this.vel.clone();
+      this.vel.lerp(P.copy(u.pos).sub(this.last).divideScalar(dt), Math.min(1, dt * 8));
+      this.acc.lerp(v0.sub(this.vel).divideScalar(-dt), Math.min(1, dt * 6));
+    } else if (!(dt > 0)) {
+      this.vel.set(0, 0, 0);
+      this.acc.set(0, 0, 0);
+    }
     this.lastT = ctx.t;
     this.last.copy(u.pos);
     const w = (this.cue.wind as number[]) ?? [2, -1, 3];
-    const air = new THREE.Vector3(w[0], w[1] * 0.3, w[2]).sub(this.vel);
+    // Speeding up leaves the tips behind; stopping swings them on ahead.
+    const air = new THREE.Vector3(w[0], w[1] * 0.3, w[2]).sub(this.vel).addScaledVector(this.acc, -num(this.cue.inertia, 0.25));
     const speed = air.length();
     const blow = num(this.cue.blow, 0.3) * Math.min(1.8, Math.max(0.35, speed / 7));
     const dirW = speed > 1e-3 ? air.divideScalar(speed) : new THREE.Vector3(1, 0, 0);
@@ -169,12 +182,20 @@ class Fur implements Effect {
     const px = (u.height * ctx.pxPerUnit) / dist;
     const density = Math.min(1, Math.max(0.12, px / num(this.cue.lodPx, 650)));
     const wave = num(this.cue.wave, 0.22);
-    const lamp = (spec: unknown, dir: THREE.Vector3, col: THREE.Color) => {
-      const l = spec as { dir?: number[]; color?: string; k?: [number, number][]; gain?: number } | undefined;
-      if (!l?.dir) return col.setRGB(0, 0, 0);
-      dir.fromArray(l.dir).normalize();
-      return col.set(l.color ?? '#ffffff').multiplyScalar(l.k ? curve(l.k, ctx.t) : num(l.gain, 1));
-    };
+    type Lamp = { dir?: number[]; color?: string; k?: [number, number][]; gain?: number } | undefined;
+    const lampColor = (l: Lamp, col: THREE.Color) => col.set(l?.color ?? '#ffffff').multiplyScalar(l ? (l.k ? curve(l.k, ctx.t) : num(l.gain, 1)) : 0);
+    // The key in the actor's frame, turned with its body into camera space.
+    const key = this.cue.key as Lamp;
+    rig.bones[0].getWorldQuaternion(Q);
+    const keyView = new THREE.Vector3().fromArray(key?.dir ?? KEY).normalize().applyQuaternion(Q).transformDirection(ctx.camera.matrixWorldInverse);
+    const rim = this.cue.rim as Lamp;
+    const rimView = new THREE.Vector3().fromArray(rim?.dir ?? [0, 0, -1]).normalize();
+    // The LED face, dimmed or brightened (restored on dispose).
+    const face = rig.face as unknown as { intensity: number };
+    if (this.cue.led !== undefined) {
+      if (this.led === null) this.led = face.intensity;
+      face.intensity = Array.isArray(this.cue.led) ? curve(this.cue.led as [number, number][], ctx.t) : num(this.cue.led, 1);
+    }
     for (const d of this.drawn) {
       d.hair.visible = visible;
       if (d.bits) d.bits.visible = visible;
@@ -194,8 +215,10 @@ class Fur implements Effect {
       U.uScale.value = S.x;
       U.uPxSize.value = 1 / ctx.pxPerUnit;
       U.uDensity.value = density;
-      lamp(this.cue.key, U.uKeyDir.value as THREE.Vector3, U.uKeyCol.value as THREE.Color);
-      lamp(this.cue.rim, U.uRimDir.value as THREE.Vector3, U.uRimCol.value as THREE.Color);
+      (U.uKeyDir.value as THREE.Vector3).copy(keyView);
+      lampColor(key, U.uKeyCol.value as THREE.Color);
+      (U.uRimDir.value as THREE.Vector3).copy(rimView);
+      lampColor(rim, U.uRimCol.value as THREE.Color);
       (d.hair.material as THREE.ShaderMaterial).uniforms.uWidthMul.value = Math.min(2.5, 1 / Math.sqrt(density));
     }
     // The braid rings ride the braids' sway (the shader's wind at the ring, its random terms at their mean).
@@ -233,6 +256,8 @@ class Fur implements Effect {
       b.geometry.dispose();
     }
     for (const o of this.hid) o.visible = true;
+    if (this.led !== null && this.unit) (this.unit.rig.face as unknown as { intensity: number }).intensity = this.led;
+    this.led = null;
     this.drawn = [];
     this.beads = [];
     this.hid = [];

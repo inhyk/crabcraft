@@ -36,6 +36,12 @@ export interface Layer {
   /** Wind response divisor (1 normal, 2 half as much). */
   stiff: number;
   clump: { size: number; pull: number; pow: number };
+  /**
+   * Locks inside locks: a first pass gathers strands into big locks of `size` x this many strands
+   * (half the pull), then the clump pass splits them into small ones. Each small lock also gets its
+   * own length within +-`lengthVar`, and a `stray` share of hairs keeps out of every lock.
+   */
+  locks?: { big: number; lengthVar: number; stray: number };
   /** A lazy S along the hair (amplitude as a share of its length, cycles over the length). */
   wave?: { amp: number; freq: number };
   snow(p: V, n: V, r: number): number;
@@ -137,10 +143,14 @@ function surface(parts: RigParts, layer: Layer): Surface {
 const SHELL_C = new THREE.Vector3(0, 0.024, -0.009);
 const SHELL_R = new THREE.Vector3(0.097, 0.052, 0.108);
 
-/** Where the coat's own shadow is cast from (bind space): high, in front and to the left, as the key lights it. */
-const KEY = (() => {
-  const l = Math.hypot(0.35, 0.75, 0.55);
-  return [0.35 / l, 0.75 / l, 0.55 / l];
+/**
+ * The costume's key light, in the crab's own frame (bind space): high on its right and a little behind,
+ * so a camera in front of it sees the fur lit from the side and back. The coat's shadow is cast from
+ * here; snow-fur.ts lights from the same direction unless a cue says otherwise.
+ */
+export const KEY: [number, number, number] = (() => {
+  const l = Math.hypot(-0.62, 0.68, -0.3);
+  return [-0.62 / l, 0.68 / l, -0.3 / l];
 })();
 
 const ss01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
@@ -268,17 +278,30 @@ function growLayer(parts: RigParts, layer: Layer, rng: () => number, density: nu
     data[i * 5 + 4] = layer.stiff;
   }
   const count = made;
-  clump(layer, { pts, roots, normals, data, count }, rng);
+  const grown = { pts, roots, normals, data, count };
+  const free = new Uint8Array(count);
+  if (layer.locks) {
+    for (let i = 0; i < count; i++) free[i] = rng() < layer.locks.stray ? 1 : 0;
+    const { size, pull, pow } = layer.clump;
+    clump(layer, grown, rng, { size: size * layer.locks.big, pull: pull * 0.5, pow }, free, 0);
+  }
+  clump(layer, grown, rng, layer.clump, free, layer.locks?.lengthVar ?? 0);
   return { grown: { pts, roots, normals, data, count }, bones };
 }
 
 /** Pull each hair's tip toward its clump's guide hair (the nearest of a sparse set of guides). */
-function clump(layer: Layer, g: Grown, rng: () => number): void {
-  const { size, pull, pow } = layer.clump;
+function clump(
+  layer: Layer,
+  g: Grown,
+  rng: () => number,
+  { size, pull, pow }: { size: number; pull: number; pow: number },
+  free: Uint8Array,
+  lengthVar: number,
+): void {
   if (pull <= 0 || g.count < 2) return;
   const P = layer.points;
   const guides: number[] = [];
-  for (let i = 0; i < g.count; i++) if (rng() < 1 / size) guides.push(i);
+  for (let i = 0; i < g.count; i++) if (!free[i] && rng() < 1 / size) guides.push(i);
   if (!guides.length) return;
   // Grid over the roots, cell about one clump across.
   let minX = Infinity;
@@ -338,7 +361,7 @@ function clump(layer: Layer, g: Grown, rng: () => number): void {
   const gp = new THREE.Vector3();
   for (let i = 0; i < g.count; i++) {
     const gi = guideOf[i];
-    if (gi < 0 || gi === i) continue;
+    if (gi < 0 || gi === i || free[i]) continue;
     const gpts = guidePts.get(gi)!;
     const k = pull * (0.7 + 0.6 * g.data[i * 5 + 3]);
     // A lock shares its colour and its tips' bleaching, with a little spread.
@@ -354,7 +377,24 @@ function clump(layer: Layer, g: Grown, rng: () => number): void {
       own.toArray(g.pts, (i * P + j) * 3);
     }
   }
+  if (lengthVar > 0) {
+    // Each lock its own length: every hair of it (the guide too) scaled about its root.
+    const root = new THREE.Vector3();
+    for (let i = 0; i < g.count; i++) {
+      const gi = guideOf[i];
+      if (gi < 0 || free[i]) continue;
+      const f = 1 + lengthVar * (2 * fract(Math.sin(gi * 12.9898) * 43758.5453) - 1);
+      root.fromArray(g.pts, i * P * 3);
+      for (let j = 1; j < P; j++) {
+        own.fromArray(g.pts, (i * P + j) * 3).sub(root).multiplyScalar(f).add(root);
+        keepOut(own);
+        own.toArray(g.pts, (i * P + j) * 3);
+      }
+    }
+  }
 }
+
+const fract = (x: number) => x - Math.floor(x);
 
 /** Splits grown strands by bone and packs each bone's into a texture in that bone's frame. */
 function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
