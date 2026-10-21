@@ -269,9 +269,9 @@ const face = {
         { t: S(49.3), p: F1(-0.7, 0.72, -1.25), l: F1(0.15, 0.6, 4.5), fov: 36 },
         // Drawing back and up off his shoulder to take in the beast on the bank beside him.
         { t: S(50.2), p: F1(-0.8, 0.85, -1.8), l: F1(-0.4, 0.95, 4.5), fov: 40 },
-        { t: S(51.2), p: F1(-0.9, 1.15, -3.0), l: F1(-1.4, 1.5, 4.5), fov: 44 },
-        { t: S(52.6), p: F1(-0.95, 1.4, -4.1), l: F1(-1.8, 1.7, 4.0), fov: 44 },
-        { t: S(53.45), p: F1(-1.0, 1.5, -4.4), l: F1(-1.9, 1.7, 4.0), fov: 44 },
+        { t: S(51.2), p: F1(-0.9, 1.2, -3.0), l: F1(-1.4, 1.7, 4.5), fov: 44 },
+        { t: S(52.6), p: F1(-0.95, 1.55, -4.1), l: F1(-1.8, 2.1, 4.0), fov: 44 },
+        { t: S(53.45), p: F1(-1.0, 1.65, -4.4), l: F1(-1.9, 2.0, 4.0), fov: 44 },
         // Walking: following the two of them side by side, then out round behind the beast to its right...
         { t: S(54.4), p: W(-2.2, 2.4, -4.8, S(54.4)), l: W(-1.8, 0.8, 3.0, S(54.4)), fov: 42 },
         { t: S(55.4), p: W(-7.6, 1.7, -3.0, S(55.4)), l: W(-3.4, 1.1, 1.8, S(55.4)), fov: 40 },
@@ -369,7 +369,7 @@ const wide = {
     CITY,
     LAMP_CLEARANCE,
     // The fir the camera draws back past, at the right from 64 s.
-    { t: -3, kind: 'snow-pines', trees: [WB(22, 8.6, 0), WB(29, 12.5, 0)].map((p, i) => [+p[0].toFixed(2), +p[2].toFixed(2), [0.8, 1.0][i]]) },
+    { t: -3, kind: 'snow-pines', trees: [WB(16.8, 10.3, 0), WB(26, 14, 0)].map((p, i) => [+p[0].toFixed(2), +p[2].toFixed(2), [0.85, 1.0][i]]) },
     { t: 6.1, kind: 'snow-leaves', count: 200, box: [12, 7, 12], drift: [-2.5, -1.2, 3.5], size: 0.09, near: 1.4, color: '#a2482a', color2: '#c98a3c', fadeIn: 0.6 },
     { t: 6.6, kind: 'snow-whiteout', curve: [[6.6, 0], [7.0, 0.25], [7.35, 0.62], [7.6, 1], [7.7, 1]] },
   ],
