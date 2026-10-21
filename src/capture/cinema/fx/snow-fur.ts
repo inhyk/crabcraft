@@ -3,7 +3,8 @@
 // glint. Plus the lens controls the macro shots need.
 //
 //   fur   { actor, outfit ('dwarf' | 'beast'), density (1), wind [x, y, z] (the snow's drift, world units
-//           a second), blow (0.3: tip sway as a share of the hair's length at full gust), flutter (0.05),
+//           a second), blow (0.3: tip sway as a share of the hair's length at full gust), flutter (0.06:
+//           the tips' own flick), swing (0.3: each lock's own sway, as a share of the gust),
 //           wave (0.22: gust wavelength along the coat, metres of the rig), hz (2.2: gust rate),
 //           lodPx (650: the actor's screen height in drawing-buffer pixels below which strands thin out),
 //           key { dir [left, up, ahead] (toward the light in the actor's own frame; default the groom's
@@ -13,6 +14,10 @@
 //           LED face's brightness, so a macro reads the fur and not the glare), inertia (0.25: how far
 //           the tips swing back when the actor speeds up, per unit/s^2), fill (gain or [[t, gain]...]
 //           on the sky and ambient light the fur takes, 1 = the scene's, lower to let the key shape it) }
+//           shadow (false to go without the deep opacity map; or { res (2048), k (2.5: how dark a hair's
+//           shade is per hair in front of it), at (a point the map is centred on; default the whole
+//           coat), radius (world units round it, or [[t, units]...]) }: the coat's shadow from its key,
+//           drawn every frame
 //   focus { at (a point; default: the camera's own focus), range [[t, units]...], dist [[t, units]...] }
 //           overrides the depth of field's focus each frame (racks within a shot)
 //   lens  { near (camera near plane while the cue runs), until }
@@ -22,11 +27,13 @@ import type { FxCue } from '../types';
 import type { Unit } from '../../../game/unit';
 import type { JumperRig } from '../../../crab/rig';
 import type { PartClass } from '../../../crab/template';
-import { KEY, groom, type RigParts, type StrandSet } from '../fur/groom';
+import { KEY, SHELL_C, SHELL_R, groom, type RigParts, type StrandSet } from '../fur/groom';
+import { FurShadow } from '../fur/shadow';
 import { BRAIDS, BRAID_LEN, BRAID_RING, OUTFITS, OUTFIT_HIDES, braidAxis } from '../fur/outfits';
 import { bitsGeometry, bitsMaterial, hairMaterial, ribbon, strandUniforms } from '../fur/shader';
 
 interface Engine {
+  renderer: THREE.WebGLRenderer;
   setFocus(d: number, r?: number): void;
   dof: { cocMaterial: { worldFocusDistance: number } } | null;
 }
@@ -52,18 +59,19 @@ function rigParts(rig: JumperRig): RigParts | null {
 }
 
 /** Grown once per outfit and density: every crab of the template shares the same skinned geometry. */
-const groomed = new Map<string, { sets: StrandSet[]; ribbons: THREE.InstancedBufferGeometry[]; bits: (THREE.InstancedBufferGeometry | null)[] }>();
+const groomed = new Map<string, { sets: StrandSet[]; sphere: THREE.Sphere; ribbons: THREE.InstancedBufferGeometry[]; bits: (THREE.InstancedBufferGeometry | null)[] }>();
 
 function outfitSets(outfit: string, density: number, parts: RigParts) {
   const key = `${outfit}:${density}`;
   let g = groomed.get(key);
   if (!g) {
     const t0 = performance.now();
-    const sets = groom(parts, OUTFITS[outfit] ?? [], outfit === 'beast' ? 2 : 1, density);
+    const { sets, sphere } = groom(parts, OUTFITS[outfit] ?? [], outfit === 'beast' ? 2 : 1, density);
     g = {
       sets,
+      sphere,
       ribbons: sets.map((s) => ribbon(s.layer.seg, s.count)),
-      bits: sets.map((s) => (s.bits ? bitsGeometry(s.bits.strand, s.bits.at, s.bits.size, s.bits.spin) : null)),
+      bits: sets.map((s) => (s.bits ? bitsGeometry(s.bits.strand, s.bits.at, s.bits.size, s.bits.spin, s.bits.shape) : null)),
     };
     groomed.set(key, g);
     const n = sets.reduce((a, s) => a + s.count, 0);
@@ -95,6 +103,9 @@ class Fur implements Effect {
   private acc = new THREE.Vector3();
   private led: number | null = null;
   private lastT = NaN;
+  private shadow: FurShadow | null = null;
+  /** The coat's bounding sphere in bind space. */
+  private sphere = new THREE.Sphere();
   constructor(private cue: FxCue) {}
 
   private attach(): boolean {
@@ -105,9 +116,17 @@ class Fur implements Effect {
     if (!parts) return false;
     const outfit = String(this.cue.outfit ?? 'dwarf');
     const g = outfitSets(outfit, num(this.cue.density, 1), parts);
+    this.sphere.copy(g.sphere);
+    const sh = this.cue.shadow as { res?: number } | false | undefined;
+    if (sh !== false) {
+      this.shadow = new FurShadow(num(sh?.res, 2048));
+      this.shadow.addShell(rig.bones[0], parts.boneInverses[0], SHELL_C, SHELL_R.clone().multiplyScalar(0.97));
+    }
     g.sets.forEach((set, i) => {
       const u = strandUniforms(set.tex, set.stride, set.layer.points);
-      const hair = new THREE.Mesh(g.ribbons[i], hairMaterial(u, set.layer.look));
+      const hairMat = hairMaterial(u, set.layer.look);
+      if (this.shadow) Object.assign(hairMat.uniforms, this.shadow.uniforms);
+      const hair = new THREE.Mesh(g.ribbons[i], hairMat);
       hair.name = `fur:${set.layer.name}`;
       hair.frustumCulled = false;
       hair.castShadow = false;
@@ -116,11 +135,15 @@ class Fur implements Effect {
       bone.add(hair);
       let bits: THREE.Mesh | null = null;
       if (g.bits[i]) {
-        bits = new THREE.Mesh(g.bits[i]!, bitsMaterial(u, 6));
+        const bitsMat = bitsMaterial(u, 6);
+        if (this.shadow) Object.assign(bitsMat.uniforms, this.shadow.uniforms);
+        bits = new THREE.Mesh(g.bits[i]!, bitsMat);
         bits.name = `fur-snow:${set.layer.name}`;
         bits.frustumCulled = false;
         bone.add(bits);
       }
+      this.shadow?.addHair(hair, u, hairMat);
+      if (bits) this.shadow?.addBits(bits, u);
       this.drawn.push({ set, u, hair, bits, bone });
     });
     if (outfit === 'dwarf') {
@@ -188,7 +211,8 @@ class Fur implements Effect {
     // The key in the actor's frame, turned with its body into camera space.
     const key = this.cue.key as Lamp;
     rig.bones[0].getWorldQuaternion(Q);
-    const keyView = new THREE.Vector3().fromArray(key?.dir ?? KEY).normalize().applyQuaternion(Q).transformDirection(ctx.camera.matrixWorldInverse);
+    const keyWorld = new THREE.Vector3().fromArray(key?.dir ?? KEY).normalize().applyQuaternion(Q);
+    const keyView = keyWorld.clone().transformDirection(ctx.camera.matrixWorldInverse);
     const rim = this.cue.rim as Lamp;
     const rimView = new THREE.Vector3().fromArray(rim?.dir ?? [0, 0, -1]).normalize();
     // The LED face, dimmed or brightened (restored on dispose).
@@ -211,7 +235,8 @@ class Fur implements Effect {
       (U.uWindK.value as THREE.Vector3).copy(local).multiplyScalar((Math.PI * 2) / wave);
       U.uWaveSpeed.value = Math.PI * 2 * num(this.cue.hz, 2.2);
       U.uGust.value = 1;
-      U.uFlutter.value = num(this.cue.flutter, 0.05) * Math.min(1.6, speed / 7);
+      U.uFlutter.value = num(this.cue.flutter, 0.06) * Math.min(1.6, speed / 7);
+      U.uSwing.value = num(this.cue.swing, 0.3);
       (U.uFlutterDir.value as THREE.Vector3).crossVectors(local, up).normalize();
       U.uScale.value = S.x;
       U.uPxSize.value = 1 / ctx.pxPerUnit;
@@ -222,6 +247,18 @@ class Fur implements Effect {
       lampColor(rim, U.uRimCol.value as THREE.Color);
       U.uFill.value = Array.isArray(this.cue.fill) ? curve(this.cue.fill as [number, number][], ctx.t) : num(this.cue.fill, 1);
       (d.hair.material as THREE.ShaderMaterial).uniforms.uWidthMul.value = Math.min(2.5, 1 / Math.sqrt(density));
+    }
+    const engine = game()?.engine;
+    if (this.shadow && visible && engine) {
+      // The map over the whole coat, or over a part of it a macro is on (finer texels there).
+      const sh = (this.cue.shadow ?? {}) as { k?: number; at?: unknown; radius?: number | [number, number][] };
+      const bone0 = rig.bones[0];
+      bone0.updateWorldMatrix(true, false);
+      const scale = new THREE.Vector3().setFromMatrixScale(bone0.matrixWorld).x;
+      const toWorld = bone0.matrixWorld.clone().multiply(rigParts(rig)!.boneInverses[0]);
+      const centre = sh.at ? ctx.point(sh.at) : this.sphere.center.clone().applyMatrix4(toWorld);
+      const radius = Array.isArray(sh.radius) ? curve(sh.radius, ctx.t) : num(sh.radius, this.sphere.radius * scale * 1.05);
+      this.shadow.render(engine.renderer, keyWorld, centre, radius, scale, num(sh.k, 2.5));
     }
     // The braid rings ride the braids' sway (the shader's wind at the ring, its random terms at their mean).
     const base = this.drawn.find((d) => d.set.layer.name === 'braids');
@@ -235,7 +272,7 @@ class Fur implements Effect {
       const at = braidAxis(b.root, b.side, BRAID_RING).applyMatrix4(inv);
       const below = braidAxis(b.root, b.side, BRAID_RING + 0.05).applyMatrix4(inv);
       const ph = root.dot(U.uWindK.value as THREE.Vector3) - ctx.t * U.uWaveSpeed.value;
-      const gust = U.uGust.value * (0.62 + 0.26 * Math.sin(ph) + 0.12 * Math.sin(ph * 2.7 + 2.3));
+      const gust = U.uGust.value * (0.5 + 0.2 * Math.sin(ph) + 0.09 * Math.sin(ph * 2.7 + 2.3));
       const k2 = (BRAID_LEN / 3) * BRAID_RING * BRAID_RING;
       const sway = (U.uWind.value as THREE.Vector3).clone().multiplyScalar(gust * k2);
       ring.position.copy(at).add(sway);
@@ -257,6 +294,8 @@ class Fur implements Effect {
       b.removeFromParent();
       b.geometry.dispose();
     }
+    this.shadow?.dispose();
+    this.shadow = null;
     for (const o of this.hid) o.visible = true;
     if (this.led !== null && this.unit) (this.unit.rig.face as unknown as { intensity: number }).intensity = this.led;
     this.led = null;
