@@ -250,47 +250,178 @@ const wide = {
 
 // ---------------------------------------------------------------------- snow-charge 146.58-151.92
 
-/** The road's lamp posts. */
-const ROAD_OUT = { t: -3, kind: 'snow-hide', box: [-8, -56, 8, 86], max: 4 };
 /** The arena's ice disc, its glow rings and the diamonds over the crystals: primitives in a close shot. */
 const ARENA_OUT = { t: -3, kind: 'snow-hide', box: [-30, -110, 30, -46], max: 47 };
 /** Mira's ice prison by the throne (the world shows it again every frame, so hide its bars). */
 const PRISON_OUT = { t: -3, kind: 'snow-hide', box: [9, -66, 17, -58], max: 6 };
 
 
-// The west woods, south of the rock outcrop: pines behind, open snow falling away in front.
-const CH = [-30, 8];
+// The west edge of the world, between the crest over the sea ice and the west woods: open snow on the flat
+// (the gun, the charge, the roar) and the long slope the north cliffs send down to it (the bounding run
+// and the tauren). The beast runs south (+z) in both; the dwarf rides on its shell with his blunderbuss
+// (src/capture/cinema/fx/snow-gun.ts, snow-beast.ts).
+
+/** Path keys every frame from a motion t -> {x, z, lift}: the stage's spline through them is the motion. */
+function sampled(fn, t0, t1, fps = 24) {
+  const n = Math.round((t1 - t0) * fps);
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const t = t0 + ((t1 - t0) * i) / n;
+    const a = fn(t);
+    const b = fn(t + 0.02);
+    return { t: +t.toFixed(4), x: +a.x.toFixed(3), z: +a.z.toFixed(3), lift: +(a.lift ?? 0).toFixed(3), yaw: +Math.atan2(b.x - a.x, b.z - a.z).toFixed(4) };
+  });
+}
+/** Linear camera keys every frame from t -> {p, l, fov}. */
+function shotCam(fn, t0, t1, fps = 24) {
+  const n = Math.round((t1 - t0) * fps);
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const t = t0 + ((t1 - t0) * i) / n;
+    const c = fn(t);
+    return { t: +t.toFixed(4), p: r3(c.p), l: r3(c.l), fov: c.fov ?? 40 };
+  });
+}
+const sm = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+
+/** The dwarf on the beast's shell, the claw that holds the gun forward, the gun. */
+const RIDE = { t: -3, kind: 'snow-ride', actor: 'dwarf', mount: 'beast', seat: [0, -0.12, -0.15] };
+const AIM_ARM = { t: -3, kind: 'dusk-arm', actor: 'dwarf', joints: { RF_J0_joint: -0.3, RF_J1_joint: -0.9, RF_J2_joint: -0.4 }, w: [[0, 1]] };
+/** Raised over the beast's head as they charge. */
+const GUN_UP = { a: 'beast', o: [0.6, 9, 7] };
+const gun = (extra) => ({ t: -3, kind: 'snow-gun', actor: 'dwarf', size: 0.9, grip: [0, 0, 0.1], hide: ['clawR', 'clawL'], ...extra });
+/** Both claws high and wide, pincers open. */
+const ROAR = { LF_J0_joint: 0.6, RF_J0_joint: -0.5, LF_J1_joint: -1.4, RF_J1_joint: -1.4, LF_J2_joint: 0.8, RF_J2_joint: -0.8, LF_J4_joint: -1.0, RF_J4_joint: 1.0 };
+/** The left claw slashing across in front of it. */
+const SWIPE = { LF_J0_joint: -1.1, LF_J1_joint: -0.5, LF_J2_joint: 0.2, LF_J4_joint: -0.8 };
+const riders = (dwarfAt, beastAt) => [
+  { id: 'beast', enemy: BEAST.enemy, scale: BEAST.scale, at: beastAt, yaw: 0, align: 0.8, sink: 0.05 },
+  { id: 'dwarf', spec: DWARF, at: dwarfAt, yaw: 0 },
+];
+const DWARF_TRACK = { acts: [{ t: -3, clip: 'idle', loop: true }], faces: [{ t: -2, expr: 'angry' }] };
+
+// snow-charge-beast (146.58-149.5): the gun in the lens, the shot, the charge, the roar, the lunge over the lens.
+const AX = -104;
+const AZ0 = 2.81;
+/** The beast's run on the flat: 7.5 a second, a stop to rear and roar at z 12, then the lunge. */
+function runA(t) {
+  let z;
+  if (t <= 1.0) z = AZ0 + 7.5 * t;
+  else if (t <= 1.45) z = AZ0 + 7.5 + 7.5 * (t - 1) - (7.5 / 0.9) * (t - 1) ** 2;
+  else if (t <= 2.02) z = 12 + 0.3 * ((t - 1.45) / 0.57);
+  else z = 12.3 + 11.5 * ((t - 2.02) / 0.9) ** 2;
+  return { x: AX, z };
+}
+const FA = frame(AX, 12, 0);
+const chargeCam = move([
+  { t: 0.32, p: FA(1.7, 1.5, 0.4), l: FA(0, 1.9, -6.5), fov: 40 },
+  { t: 1.12, p: FA(1.95, 1.2, 4.9), l: FA(0, 2.0, -1.2), fov: 40 },
+  { t: 1.45, p: FA(1.75, 1.4, 4.2), l: FA(0, 2.4, 0.3), fov: 42 },
+  { t: 2.02, p: FA(1.55, 1.3, 3.7), l: FA(0, 2.3, 0.6), fov: 42 },
+  { t: 2.4, p: FA(2.0, 1.0, 4.6), l: FA(0.3, 1.7, 2.6), fov: 44 },
+  { t: 2.7, p: FA(2.2, 0.95, 4.6), l: FA(-0.4, 1.4, 6.0), fov: 46 },
+  { t: 2.92, p: FA(2.2, 0.95, 4.6), l: FA(-1.5, 1.3, 9.0), fov: 46 },
+]);
 const charge = {
-  anchor: [-38, 8],
+  anchor: [AX, 10],
   view: { ...COLD, dof: true, bokeh: 2 },
-  fog: { color: '#cdd6e2', density: 0.03 },
-  actors: cast2([-58, 11], [-56, 6.5], PI / 2),
+  fog: { color: '#cdd6e2', density: 0.028 },
+  actors: riders([AX + 3, 0], [AX, AZ0 - 12]),
   tracks: {
-    // Past the lens on its right, 4 units off, not through it.
-    beast: { path: [{ t: 0, x: -39.5, z: 3.6 }, { t: 2.92, x: -27.5, z: 3.8 }], faces: [{ t: -2, expr: 'angry' }] },
-    dwarf: { path: [{ t: 0, x: -58, z: 10 }, { t: 2.92, x: -42, z: 9.5 }], faces: [{ t: -2, expr: 'angry' }] },
+    beast: { path: sampled(runA, -1.6, 2.92), faces: [{ t: -2, expr: 'angry' }] },
+    dwarf: DWARF_TRACK,
   },
-  cam: { keys: [{ t: 0, p: G(CH[0], CH[1], 0.45), l: G(-44, 6.6, 1.3), fov: 48 }, { t: 2.92, p: G(CH[0] + 0.25, CH[1] + 0.15, 0.4), l: G(-44, 6.4, 1.2), fov: 48 }], ease: 'linear' },
+  cam: {
+    keys: [
+      // 146.58: the bell of the gun straight into the lens, the dwarf behind it.
+      { t: 0, p: { a: 'beast', o: [-0.2, 2.8, 2.45] }, l: { a: 'beast', o: [-0.25, 2.68, 0.5] }, fov: 40 },
+      { t: 0.3, p: { a: 'beast', o: [-0.19, 2.79, 2.4] }, l: { a: 'beast', o: [-0.25, 2.68, 0.5] }, fov: 40 },
+      // Cut under the white at 146.91 to the two charging at the lens.
+      ...chargeCam.keys,
+    ],
+    ease: 'linear',
+    spline: false,
+    focus: 'look',
+    range: 3,
+  },
   fx: [
     ...blizzard({ wind: [6, -2, 4], heavy: 1.3 }),
-    ROAD_OUT,
-    // The shot the original opens on (146.6 s): a muzzle flash from the dwarf off frame left.
-    { t: 0.02, kind: 'explode', at: G(-35.5, 10.6, 1.0), scale: 0.3, color: '#ffcf6a' },
-    { t: 2.2, kind: 'shake', d: 0.8, amp: 0.06 },
+    { t: -3, kind: 'snow-rear', actor: 'beast', pitch: [[1.0, 0], [1.42, 18], [2.02, 22], [2.14, 6], [2.35, -8], [2.92, -4]], pivot: 1.4 },
+    RIDE,
+    AIM_ARM,
+    // 146.73 the shot: the glare floods the lens by the boom at 146.91 and clears by 147.05.
+    gun({ aim: [[-3, 'camera'], [0.31, GUN_UP]], fire: 0.15, kick: 0.2, shake: 0.14, flash: [[0.15, 0], [0.19, 0.35], [0.23, 0.72], [0.27, 0.95], [0.29, 1], [0.335, 1], [0.36, 0.6], [0.39, 0.3], [0.43, 0.1], [0.47, 0]] }),
+    { t: 0.32, kind: 'wash', color: '#d8dde6', color2: '#f6f3ee', alpha: [[0.32, 0.4], [0.45, 0.15], [0.62, 0]], cover: [[0.32, 0.6], [0.62, 0.3]], flow: [0.4, 0.1], scale: 1.8 },
+    { t: -1.6, kind: 'snow-kick', actor: 'beast', until: 1.4, rate: 16, size: 0.5 },
+    // 147.7 it rears: claws up and wide, snow shaken off its shell; 148.0-148.6 the roar.
+    { t: -3, kind: 'dusk-arm', actor: 'beast', joints: ROAR, w: [[1.0, 0], [1.38, 1], [2.04, 1], [2.14, 0]] },
+    { t: -3, kind: 'dusk-arm', actor: 'beast', joints: SWIPE, w: [[2.04, 0], [2.14, 1], [2.32, 1], [2.5, 0]] },
+    { t: 1.18, kind: 'snow-powder', at: { a: 'beast', o: [0, 2.3, -0.3] }, count: 50, flakes: 90, spread: 2.6, rise: 2.2, size: 0.8, life: 1.3 },
+    { t: 1.42, kind: 'snow-powder', at: { a: 'beast', o: [0, 2.6, 0.3] }, count: 30, flakes: 60, spread: 2.2, rise: 1.6, size: 0.6, life: 1.1 },
+    { t: -3, kind: 'snow-eyes', actor: 'beast', k: [[1.1, 1], [1.42, 3.8], [2.02, 3.8], [2.4, 1.6]] },
+    { t: 1.42, kind: 'snow-breath', actor: 'beast', until: 2.02, rate: 110, speed: 5.5, size: 0.7, life: 0.9 },
+    { t: 1.42, kind: 'shake', d: 0.6, amp: 0.05 },
+    { t: 1.75, kind: 'shake', d: 0.3, amp: 0.03 },
+    { t: 2.1, kind: 'shake', d: 0.8, amp: 0.08 },
+    { t: 2.3, kind: 'snow-kick', actor: 'beast', until: 2.92, rate: 30, size: 0.7 },
   ],
 };
+
+// snow-charge-dwarf (149.5-151.92): down the slope in bounds, the tauren ahead, the crash at 151.55, white.
+const BX = -102;
+const T = [-105.4, -5.0];
+const HIT = 2.05;
+/** Bounding down the slope at 9 a second, veering onto the tauren; a last leap lands on him at HIT. */
+function runB(t) {
+  const x = BX - 2.2 * sm((t - 0.9) / 1.15);
+  const z = t <= HIT ? -7.7 - 9 * (HIT - t) : -7.7 + 1.6 * (1 - Math.exp(-(t - HIT) * 6));
+  let lift = 0;
+  if (t < 1.7) lift = 0.5 * Math.abs(Math.sin((Math.PI * (t - 1.7)) / 0.5));
+  else if (t < HIT) lift = 0.9 * Math.sin((Math.PI * (t - 1.7)) / (HIT - 1.7));
+  return { x, z, lift };
+}
+const camB = (t) => {
+  // Low behind the beast's right; it holds just before the crash so the slam plays in frame.
+  const b = runB(Math.min(t, 2.02));
+  const back = 4.4 - 1.1 * sm((t - 1.1) / 0.9);
+  return { p: G(b.x - 3.1 - 0.5 * sm((t - 1.1) / 0.9), b.z - back, 1.5), l: G(b.x - 2.0, b.z + 8, 1.5), fov: 44 - 4 * sm((t - 1.1) / 0.9) };
+};
 const chargeDwarf = {
-  anchor: [-40, 9],
-  view: { ...COLD, dof: true, bokeh: 2 },
-  fog: { color: '#cdd6e2', density: 0.03 },
-  actors: cast2([-50, 10.5], [-34, 7], PI / 2),
+  anchor: [BX, -14],
+  view: { ...COLD, dof: true, bokeh: 1.6 },
+  fog: { color: '#cdd6e2', density: 0.022 },
+  actors: [...riders([BX + 3, -30], [BX, -40]), { id: 'tauren', spec: TAUREN, scale: 2.1, at: T, yaw: PI, align: 0.5 }],
   tracks: {
-    beast: { path: [{ t: 0, x: -34, z: 6.4 }, { t: 2.42, x: -16, z: 5.5 }], faces: [{ t: -2, expr: 'angry' }] },
-    dwarf: { path: [{ t: 0, x: -45.5, z: 10.2 }, { t: 2.42, x: -33, z: 8.1 }], faces: [{ t: -2, expr: 'angry' }], acts: [{ t: -0.3, clip: 'claw_right', upper: true }] },
+    beast: { path: sampled(runB, -1.6, 2.42), faces: [{ t: -2, expr: 'angry' }] },
+    dwarf: DWARF_TRACK,
+    tauren: {
+      path: [
+        { t: -2, x: T[0], z: T[1], yaw: PI },
+        { t: HIT, x: T[0], z: T[1], yaw: PI },
+        { t: HIT + 0.18, x: T[0] - 0.8, z: T[1] + 2.6, yaw: PI + 0.35, lift: 1.1 },
+        { t: 2.42, x: T[0] - 1.3, z: T[1] + 4.4, yaw: PI + 0.55, lift: 0.6 },
+      ],
+      acts: [{ t: 0.9, clip: 'attack_slam', from: 1.235, to: 1.9, speed: 0.6 }, { t: HIT, clip: 'hit_react' }],
+      faces: [{ t: -2, expr: 'angry' }, { t: HIT, expr: 'hurt' }],
+    },
   },
-  // Far enough back that the dwarf runs past 4.5 units off instead of filling the lens.
-  cam: { keys: [{ t: 0, p: G(-37.5, 4.2, 0.5), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }, { t: 2.42, p: G(-37.3, 4.0, 0.5), l: { a: 'dwarf', o: [0, 0.6, 0] }, fov: 44 }], ease: 'linear' },
-  fx: [...blizzard({ wind: [6, -2, 4], heavy: 1.3 }), ROAD_OUT],
+  cam: { keys: shotCam(camB, 0, 2.42), ease: 'linear', spline: false, focus: 'beast', range: 8 },
+  fx: [
+    ...blizzard({ wind: [6, -2, 4], heavy: 1.3 }),
+    { t: -3, kind: 'snow-rear', actor: 'beast', pitch: [[1.6, 0], [1.75, 12], [1.95, 0], [HIT, -12], [2.25, -4]], pivot: 1.4 },
+    RIDE,
+    AIM_ARM,
+    gun({ aim: [[-3, GUN_UP]] }),
+    { t: -1.6, kind: 'snow-kick', actor: 'beast', until: 2.4, rate: 22, size: 0.6 },
+    ...[0.2, 0.7, 1.2, 1.7].map((t) => ({ t, kind: 'snow-powder', at: { a: 'beast', o: [0, 0.1, 0.8] }, count: 14, flakes: 24, spread: 2.2, rise: 1.6, size: 0.7, life: 0.9 })),
+    { t: -3, kind: 'dusk-arm', actor: 'beast', joints: { LF_J1_joint: -0.9, RF_J1_joint: -0.9, LF_J4_joint: -0.9, RF_J4_joint: 0.9 }, w: [[1.6, 0], [1.85, 1], [2.2, 1], [2.42, 0.4]] },
+    { t: -3, kind: 'snow-eyes', actor: 'beast', k: [[1.5, 1.2], [1.9, 3], [2.42, 2]] },
+    // 151.55 the crash: powder bursts off the two of them, the tauren thrown back, the lens shaken.
+    { t: HIT, kind: 'snow-powder', at: G(T[0] + 0.5, T[1] - 0.9, 1.0), count: 170, flakes: 240, spread: 5, rise: 3.4, size: 1.4, life: 1.4 },
+    { t: HIT + 0.05, kind: 'snow-powder', at: G(T[0] - 0.4, T[1] + 1.0, 0.2), count: 60, flakes: 80, spread: 3.5, rise: 2, size: 0.9, life: 1.2 },
+    { t: -3, kind: 'dusk-pose', actor: 'tauren', pitch: [[HIT, 0], [HIT + 0.15, 22], [2.42, 38]] },
+    { t: HIT, kind: 'shake', d: 0.5, amp: 0.2 },
+    // 151.8 white into the green explosion.
+    { t: 0, kind: 'fade', color: '#ffffff', curve: [[2.2, 0], [2.29, 0.45], [2.34, 0.85], [2.38, 1], [2.42, 1]] },
+  ],
 };
 
 // ----------------------------------------------------------------------- snow-frost 157.71-163.08
