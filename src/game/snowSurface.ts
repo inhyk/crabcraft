@@ -323,6 +323,12 @@ export function applySnowSurface(material: THREE.MeshStandardMaterial, deform: S
     sunDir.sub(tmp).normalize();
     sunColor.copy(opts.sun.color).multiplyScalar(opts.sun.intensity);
   };
+  patchSnowSurface(material, uniforms);
+  refresh();
+  return refresh;
+}
+
+function patchSnowSurface(material: THREE.MeshStandardMaterial, uniforms: Record<string, THREE.IUniform>): void {
   addPatch(material, 'frostlight-snow-surface', (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.fragmentShader = shader.fragmentShader
@@ -335,8 +341,21 @@ export function applySnowSurface(material: THREE.MeshStandardMaterial, deform: S
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${SNOW_NORMAL}`)
       .replace('#include <opaque_fragment>', `${SNOW_AFTER}\n#include <opaque_fragment>`);
   });
-  refresh();
-  return refresh;
+}
+
+/** The line of the snow fragment shader that reads the landform's slope; meshes that share the snow swap it. */
+export const SNOW_SLOPE_LINE = 'vec2 sGrad=snowGroundIn(sGUV)?textureGrad(snowGroundTex,sGUV,sGdx,sGdy).yz:vec2(0.);';
+
+/**
+ * Shade another mesh as the snowfield itself: the fragment side of `snow` (a material applySnowSurface() patched)
+ * on the very same uniforms, so the sun, sky, prints and far shadow stay one. The mesh's vertex shader must supply
+ * the clipmap's varyings (vSnowWorld, vSnowInfo, vSnowWind).
+ */
+export function shareSnowSurface(material: THREE.MeshStandardMaterial, snow: THREE.Material): void {
+  const uniforms = snow.userData.snowSurface as Record<string, THREE.IUniform> | undefined;
+  if (!uniforms) throw new Error('shareSnowSurface: the snow material has no snow surface');
+  material.envMapIntensity = 0;
+  patchSnowSurface(material, uniforms);
 }
 
 const FEET = ['LM', 'RM', 'LR', 'RR'] as const;

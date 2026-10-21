@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import {SNOW_WIND} from '../sim/world/snowGround';
 import {FROST_NOISE,graniteMaterial} from './frostPaving';
 
 /*
@@ -40,6 +41,8 @@ uniform vec3 faSkyZ;
 uniform vec3 faBounce;
 uniform float faTime;
 uniform float faDetail;
+uniform vec2 faWind;
+uniform float faRadius;
 // The crack web, baked on the CPU (frostArena below): a grid that lists, per cell, the cracks whose sheets a ray
 // entering there can meet (8 ids, -1 ends the list), and the cracks themselves (ends; depth, weight, fine).
 uniform sampler2D faGrid;
@@ -164,18 +167,38 @@ if(aR<3.){
   float cut=1.-smoothstep(sw*.5,sw,d);
   aCut=max(aCut,cut);aGlow+=cut*(.6+.2*sin(faTime*.9))+exp(-aR*aR/1.2)*.05;
 }
-// Frost flowers on the surface; powder blown in from the rim in wind streaks, piled against the rim stones.
+// Frost flowers on the surface.
 float aFrost=smoothstep(.45,.8,fpNoise(vFaW.xz*.42+3.)*.7+fpNoise(vFaW.xz*.9+5.)*.3)*.45+smoothstep(17.,21.6,aR+fpNoise(aP*.3)*2.)*.35;
-float aStreak=fpNoise(vec2(dot(aP,vec2(.8,.6))*.32,dot(aP,vec2(-.6,.8))*2.1))*.5+.5;
-float aDust=smoothstep(18.4,21.7,aR+fpNoise(aP*.22)*2.6)*1.05+aStreak*.4*smoothstep(10.,20.,aR);
-// The drift thins out over a hand's width into a grainy fringe of powder (the grain fades before it can alias), not
-// a cut edge with a rim of shade round it.
-float aSnow=smoothstep(.5,.72,aDust+fpNoise(aP*1.3)*.14+fpNoise(aP*4.7)*.05+fpNoise(aP*17.)*.06*(1.-smoothstep(.015,.05,aFoot)));
-// The runes are warm enough to keep their band clear.
-for(int i=0;i<3;i++){float dR=aR-faRings[i];aSnow*=smoothstep(.3,.75,abs(dR));}
+// Powder the wind has laid on the ice, as a depth: tongues streaming downwind from the upwind rim's lee, each its own
+// length, tapering as they thin; a drift banked against the downwind rim; a little against the rim all round; powder
+// lying in the ice's hollows (the relief ICE_NORMAL gives it); a thin dusting combed out along the wind.
+vec2 aWp=vec2(-faWind.y,faWind.x);
+float aS=dot(aP,faWind),aC=dot(aP,aWp),aHalf=sqrt(max(faRadius*faRadius-aC*aC,0.));
+float aUp=aS+aHalf,aDn=aHalf-aS;
+float aMe=aC+fpNoise(vec2(aUp*.12,aC*.05+1.))*1.7;
+float aTk=smoothstep(.2,.85,fpNoise(vec2(aMe*.2,7.3))*.5+.5+fpNoise(vec2(aMe*.7,2.1))*.16);
+float aLen=mix(3.,13.,fpNoise(vec2(aMe*.19,4.4))*.5+.5);
+float aTongue=aTk*exp(-aUp/aLen)*1.6*smoothstep(0.,1.2,aUp);
+float aBank=exp(-aDn/1.9)*(.7+.45*fpNoise(vec2(aC*.33,9.1)));
+float aEdge=exp(-max(faRadius-aR,0.)/1.1)*(.6+.35*fpNoise(aP*.4));
+float aHollow=smoothstep(.1,.65,-fpNoise(vFaW.xz*.35));
+float aComb=smoothstep(.5,.95,fpNoise(vec2(aS*.2,aC*1.05))*.5+.5)*.22;
+float aDepth=aTongue+aBank+aEdge+aHollow*(.22+aTongue*.6)+aComb;
+// Depth to cover: packed powder where it lies deep, its margin rippled and feathered over a hand or two (never a
+// cut edge), then a sifted dusting, a soft frosting of the ice that thins with the depth (mottled, never a speckle).
+float aGrain=fpNoise(aP*5.3)*.6+fpNoise(aP*17.)*.4*(1.-smoothstep(.015,.05,aFoot));
+float aPack=smoothstep(.34,.66,aDepth+aGrain*.17);
+float aThin=smoothstep(.1,.38,aDepth);
+float aDust=aThin*.28*clamp(.55+.9*(fpNoise(aP*2.3+7.)*.6+fpNoise(aP*8.1+2.)*.4),0.,1.);
+float aSnow=max(aPack,aDust);
+// The runes and the sigil are warm enough to keep their bands clear.
+for(int i=0;i<3;i++){float dR=aR-faRings[i];aSnow*=smoothstep(.25,.85,abs(dR));}
+aSnow*=smoothstep(1.6,3.6,aR);
 vec3 aCol=mix(aIce,vec3(.6,.7,.78),aFrost);
 aCol*=mix(1.,.55,aCut);
-aCol=mix(aCol,vec3(.84,.93,1.),aSnow*(1.-aCut*.6));
+// Sifted grains a touch grey (the dark ice glints between them), packed drift white.
+vec3 aPowder=mix(vec3(.72,.81,.9),vec3(.84,.93,1.),aPack);
+aCol=mix(aCol,aPowder,aSnow*(1.-aCut*.6));
 diffuseColor.rgb*=aCol;
 float aGlowK=aGlow*(1.-aSnow*.35);
 `;
@@ -188,8 +211,8 @@ roughnessFactor=mix(roughnessFactor,.6,aCut);
 
 const ICE_NORMAL = /* glsl */ `
 {
-  // Snow carries a little height; the ice itself undulates gently.
-  float h=smoothstep(.35,1.,aSnow)*.022+fpNoise(vFaW.xz*.35)*.01;
+  // Snow carries height (the drift's own depth, so its crest and lee shade softly); the ice undulates gently.
+  float h=smoothstep(.15,1.6,aDepth)*aSnow*.035+fpNoise(vFaW.xz*.35)*.01;
   vec2 dpx=dFdx(vFaW.xz),dpy=dFdy(vFaW.xz);float dsx=dFdx(h),dsy=dFdy(h),det=dpx.x*dpy.y-dpx.y*dpy.x;
   vec2 g=abs(det)>1e-12?clamp(vec2(dsx*dpy.y-dsy*dpx.y,dpx.x*dsy-dpy.x*dsx)/det,-.4,.4):vec2(0.);
   vec3 nW=inverseTransformDirection(normal,viewMatrix);
@@ -314,6 +337,8 @@ export function frostArena(opts: FrostArenaOptions): FrostArena {
     faBounce: {value: opts.snowBounce},
     faTime: {value: 0},
     faDetail: {value: 1},
+    faWind: {value: new THREE.Vector2(SNOW_WIND[0], SNOW_WIND[1])},
+    faRadius: {value: opts.radius - .2},
     faGrid: {value: null as THREE.DataTexture | null},
     faCracks: {value: null as THREE.DataTexture | null},
     faGridInfo: {value: new THREE.Vector4()},

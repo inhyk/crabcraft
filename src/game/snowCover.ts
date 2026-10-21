@@ -78,6 +78,12 @@ export interface SnowMassOptions {
  carve?:number;
  /** 0..1: how much of a low sun's colour the lit snow sheds, so a slope turned to the sun stays white, not cream. */
  white?:number;
+ /**
+  * Extra share of the direct sun a slope keeps (roof caps). A slope square to a 13 degree sun takes three to four
+  * times the light of the level snow beside it; the tone curve's shoulder folds most of that away, so without this
+  * a sunlit roof reads the same white as the ground it stands on.
+  */
+ sun?:number;
 }
 
 /**
@@ -88,8 +94,8 @@ export interface SnowMassOptions {
  * The glint is SNOWFLOW's jittered-facet sparkle (MIT, Maksymilian Dendura; see NOTICE.md), as in snowSurface.ts.
  */
 export function snowMass(mat:THREE.MeshStandardMaterial,opts:SnowMassOptions={}){
- const lumps=opts.lumps??1,glints=opts.glints??1,carve=opts.carve??0,white=opts.white??0;
- addPatch(mat,`snow-mass${lumps}${glints}${carve?`-carve${carve}`:''}${white?`-white${white}`:''}`,shader=>{
+ const lumps=opts.lumps??1,glints=opts.glints??1,carve=opts.carve??0,white=opts.white??0,sun=opts.sun??0;
+ addPatch(mat,`snow-mass${lumps}${glints}${carve?`-carve${carve}`:''}${white?`-white${white}`:''}${sun?`-sun${sun}`:''}`,shader=>{
   shader.vertexShader=shader.vertexShader
    .replace('#include <common>','#include <common>\nvarying vec3 vMassW;')
    .replace('#include <project_vertex>','#include <project_vertex>\nvMassW = (vec4(mvPosition.xyz, 0.0) * viewMatrix).xyz + cameraPosition;');
@@ -170,6 +176,10 @@ float ccMassGlint(vec2 p, vec3 N, vec3 H) {
      // Only looking across the snow into the sun; seen from above it stays matte, as the ground does.
      float graze = pow(1.0 - clamp(dot(massN, Vw), 0.0, 1.0), 3.2) * 2.2;
      if (graze > 0.002) outgoingLight += sunC * ccMassGlint(gp, massN, normalize(Vw + Lw)) * ${(7*glints).toFixed(2)} * vis * graze * smoothstep(0.02, 0.2, nl) * (1.0 - smoothstep(0.55, 0.95, nl) * 0.55);
+     ${sun?`// The extra sun keeps its light but little of its orange, so a lit roof reads brighter than the snow round
+     // it, not yellow.
+     vec3 massDD = reflectedLight.directDiffuse;
+     outgoingLight += mix(massDD, vec3(dot(massDD, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.02, 1.0, 0.96), 0.7) * ${sun.toFixed(3)};`:''}
      ${white?`// A low sun is orange; snow turned square to it would go cream. Keep its light, lose part of its hue.
      vec3 sunW = mix(sunC, vec3(dot(sunC, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.02, 1.0, 0.97), ${white.toFixed(3)});
      outgoingLight += BRDF_Lambert(diffuseColor.rgb) * (sunW - sunC) * nl * vis;`:''}
@@ -182,6 +192,10 @@ float ccMassGlint(vec2 p, vec3 N, vec3 H) {
      outgoingLight *= mix(vec3(1.0), vec3(0.82, 0.91, 1.05), clamp((nl0 - nlw) * 3.0, 0.0, 1.0) * massSun);`:''}
      // Shaded snow takes the sky's blue; packed snow in the sun keeps a warm hint of the low sun.
      outgoingLight *= mix(vec3(0.9, 0.95, 1.06), vec3(1.0), vis);
+     ${sun?`// Where the cap turns away from the eye (its ridge and cornice seen edge on) it goes a step cooler and darker,
+     // the turn of a white form, so a roof keeps its outline against the snow behind it.
+     float massRim = pow(1.0 - clamp(dot(massN0, Vw), 0.0, 1.0), 2.2);
+     outgoingLight *= mix(vec3(1.0), vec3(0.68, 0.78, 0.95), min(1.0, massRim * 1.1));`:''}
      ${carve?`// Ripple troughs and the occluded roll under an eave hold a little blue shade, as hollows in snow do.
      #ifdef USE_COLOR
       float massOcc = dot(vColor.rgb, vec3(0.333));

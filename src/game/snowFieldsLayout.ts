@@ -4,10 +4,11 @@
 // place the same pieces.
 import { snowHeight } from '../sim/world/ground';
 import { SNOW_POINTS } from '../sim/data/quests';
-import { SNOW_ROCKS } from '../sim/world/snowGround';
+import { SNOW_ROCKS, SNOW_WIND } from '../sim/world/snowGround';
 import { frostRoadEdgeDist } from '../sim/world/snowLayout';
 import type { Collision } from '../world/collision';
 import { snowTrees } from './world4Colliders';
+import { frostEnemyHomes, iceCliffs } from './frostCliffsLayout';
 
 type Height = (x: number, z: number) => number;
 type XZ = [number, number];
@@ -17,14 +18,41 @@ export function fieldStream(seed: number) { let s = seed >>> 0; return () => (s 
 
 /** The Frozen Throne worker's sites (forest shelter, ice overlook, aurora ridge): 10 m kept free around each. */
 export const FIELD_SITES: readonly XZ[] = [[-50, 26], [61, 22], [0, -34]];
-/** Monster homes, the formula of src/sim/areas/world4.ts for any population. */
-export const FIELD_HOMES: readonly XZ[] = Array.from({ length: 48 }, (_, i): XZ => [(i % 2 ? 1 : -1) * (44 + (i % 4) * 7), 20 - Math.floor(i / 2) * 12]).filter(([, z]) => z > -140);
+/** Monster start points, read from the server's World IV definition (frostCliffsLayout.ts), for any population. */
+export const FIELD_HOMES: readonly XZ[] = frostEnemyHomes().filter(([, z]) => z > -140);
 const QUEST: readonly XZ[] = Object.values(SNOW_POINTS) as XZ[];
 let pinesMemo: XZ[] | null = null;
 /** The 91 snowTrees() trunks, read lazily (world4Colliders.ts imports this module). */
 const pines = () => (pinesMemo ??= snowTrees().map((t): XZ => [t.x, t.z]));
-/** The ring of ice cliffs (world4.ts), as its colliders place them. */
-export const FIELD_CLIFFS: readonly XZ[] = Array.from({ length: 42 }, (_, i): XZ => { const a = (i / 42) * Math.PI * 2; return [Math.sin(a) * 78, -42 + Math.cos(a) * 70]; }).filter(([x, z]) => !(Math.abs(x) < 16 && z > -70));
+/** The ring of ice cliffs (frostCliffsLayout.ts), as the meshes and colliders place them. */
+export const FIELD_CLIFFS: readonly XZ[] = iceCliffs().map((c): XZ => [c.x, c.z]);
+
+// The terrain's veering wind (snowTerrain.ts snowWindField().x), so the drifts lie along the ground's own sastrugi.
+const GX = [1, 0.92388, 0.70711, 0.38268, 0, -0.38268, -0.70711, -0.92388, -1, -0.92388, -0.70711, -0.38268, 0, 0.38268, 0.70711, 0.92388];
+const GZ = [0, 0.38268, 0.70711, 0.92388, 1, 0.92388, 0.70711, 0.38268, 0, -0.38268, -0.70711, -0.92388, -1, -0.92388, -0.70711, -0.38268];
+function gradIndex(ix: number, iz: number): number {
+  let h = Math.imul(ix, 0x27d4eb2d) ^ Math.imul(iz, 0x165667b1);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  h ^= h >>> 15;
+  return h >>> 28;
+}
+function noise(px: number, pz: number): number {
+  const ix = Math.floor(px), iz = Math.floor(pz), fx = px - ix, fz = pz - iz;
+  const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10), uz = fz * fz * fz * (fz * (fz * 6 - 15) + 10);
+  const a = gradIndex(ix, iz), b = gradIndex(ix + 1, iz), c = gradIndex(ix, iz + 1), d = gradIndex(ix + 1, iz + 1);
+  const va = GX[a] * fx + GZ[a] * fz, vb = GX[b] * (fx - 1) + GZ[b] * fz, vc = GX[c] * fx + GZ[c] * (fz - 1), vd = GX[d] * (fx - 1) + GZ[d] * (fz - 1);
+  return va + (vb - va) * ux + (vc - va) * uz + (va - vb - vc + vd) * ux * uz;
+}
+/** Bearing the wind blows toward at (x, z), radians in the x-z plane (0 is +x). */
+export function windAt(x: number, z: number): number {
+  return Math.atan2(SNOW_WIND[1], SNOW_WIND[0]) + noise(x * 0.0083 + 31.7, z * 0.0083 + 12.3) * 0.42;
+}
+/** Where the wind scoured the snow into sastrugi (snowWindField().z), 0..1. */
+export function scourAt(x: number, z: number): number {
+  const t = Math.min(1, Math.max(0, (noise(x * 0.021 + 3.3, z * 0.021 - 8.1) + 0.32) / 0.74));
+  return t * t * (3 - 2 * t);
+}
 
 /** Island edge in units of the ellipse the walkable area is cut from (0.8 is the walkable limit). */
 export const fieldEdge = (x: number, z: number) => Math.hypot(x / 128, (z - 2) / 155);
@@ -161,6 +189,13 @@ export function snowBoulders(): FieldBoulder[] {
   return (bouldersMemo = out);
 }
 
+/** Stone spills on the windward side of the crests (centre x, z, half extents x, z, count, seed), in the wide views' open slopes. */
+const STONE_SPILLS: readonly [number, number, number, number, number, number][] = [
+  [-39.6, -2.6, 2.6, 4.2, 16, 1],
+  // Talus below the woodcutter's crag.
+  [-34.2, -7.6, 2.6, 3.6, 20, 2],
+];
+
 /** Stones too small to stand in the way: a few round each boulder field, the crags' stone again. Never solid. */
 let pebblesMemo: FieldBoulder[] | null = null;
 export function snowPebbles(): FieldBoulder[] {
@@ -174,6 +209,26 @@ export function snowPebbles(): FieldBoulder[] {
       if (!fieldClear(x, z, r, false) || out.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + r + 0.3)) continue;
       out.push({ x: +x.toFixed(2), z: +z.toFixed(2), r: +r.toFixed(2), h: +(r * (0.35 + R() * 0.3)).toFixed(2), yaw: +(R() * 6.283).toFixed(3), seed: 9000 + out.length });
     }
+  }
+  // Scree on the windward slopes the wind strips bare to feed the cornices on their lee: a loose spill of stones down
+  // the slope, larger at its head.
+  for (const [cx, cz, rx, rz, n, seed] of STONE_SPILLS) {
+    const S = fieldStream(seed * 613 + 1);
+    for (let k = 0, tries = 0; k < n && tries < n * 12; tries++) {
+      const a = S() * Math.PI * 2, d = Math.sqrt(S()), x = cx + Math.cos(a) * d * rx, z = cz + Math.sin(a) * d * rz;
+      const r = (0.13 + S() * S() * 0.3) * (1.3 - d * 0.5);
+      if (!fieldClear(x, z, r, false) || out.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + r + 0.35)) continue;
+      out.push({ x: +x.toFixed(2), z: +z.toFixed(2), r: +r.toFixed(2), h: +(r * (0.35 + S() * 0.35)).toFixed(2), yaw: +(S() * 6.283).toFixed(3), seed: 9000 + out.length });
+      k++;
+    }
+  }
+  // Stones breaking through where the wind scoured the crust thin, in loose scatters, never a sprinkle.
+  for (let gz = -84; gz <= 116; gz += 2.6) for (let gx = -96; gx <= 96; gx += 2.6) {
+    const x = gx + (R() - 0.5) * 2.2, z = gz + (R() - 0.5) * 2.2, keep = scourAt(x, z) * (0.6 + 0.56 * noise(x * 0.11 + 4.1, z * 0.11 - 2.7)), roll = R();
+    if (roll > Math.min(1, Math.max(0, (keep - 0.3) / 0.5)) * 0.5) continue;
+    const r = 0.1 + R() * R() * 0.32;
+    if (!fieldClear(x, z, r, false) || out.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + r + 0.4)) continue;
+    out.push({ x: +x.toFixed(2), z: +z.toFixed(2), r: +r.toFixed(2), h: +(r * (0.3 + R() * 0.35)).toFixed(2), yaw: +(R() * 6.283).toFixed(3), seed: 9000 + out.length });
   }
   return (pebblesMemo = out);
 }
@@ -268,6 +323,89 @@ export function snowFieldPieces(): FieldPiece[] {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Half-buried story: what the trappers and carters left on the open fields, going under the drifts. Built from
+// worked timber in snowFields.ts.
+
+export interface FieldStory {
+  kind: 'sled' | 'wheel' | 'runner' | 'fence';
+  x: number;
+  z: number;
+  yaw: number;
+  /** Euler angles as kit.ts trs() takes them: pitch about local x, roll about local z (a wheel's axle), radians. */
+  roll: number;
+  pitch: number;
+  /** Metres the piece sits below the snow. */
+  sink: number;
+  seed: number;
+  /** Half width it shows the wind, and the height of the drift it banks (snowDriftsLayout.ts). */
+  w: number;
+  drift: number;
+  solid?: FieldSolid;
+  /** Fence lengths: metres from post to post, the post heights over the snow at either end, and whether its rail is gone. */
+  len?: number;
+  posts?: [number, number];
+  bare?: boolean;
+}
+let storyMemo: FieldStory[] | null = null;
+export function snowStory(): FieldStory[] {
+  if (storyMemo) return storyMemo;
+  const all: FieldStory[] = [
+    // A trapper's hand sled on the flats before the diggings, its tail under the drift, the curled runners up.
+    { kind: 'sled', x: 35.2, z: -6.2, yaw: 0.55, roll: 0.12, pitch: 0.16, sink: 0.22, seed: 1, w: 0.55, drift: 0.3, solid: { hx: 1.15, hz: 0.5, h: 0.45 } },
+    // A cart wheel frozen in on the woodcutter's lee slope, leaning back against the drift, its foot under the snow.
+    { kind: 'wheel', x: -30.2, z: -16.6, yaw: -0.15, roll: 0.4, pitch: -0.38, sink: 0.12, seed: 2, w: 0.5, drift: 0.3, solid: { r: 0.55, h: 0.6 } },
+    // A sled runner curling out of the drift below the crest.
+    { kind: 'runner', x: -33.6, z: -11.4, yaw: -0.4, roll: 0.34, pitch: 0.5, sink: 0.1, seed: 3, w: 0.2, drift: 0.14 },
+    // Another sled on the eastern field, beyond the overlook's path.
+    { kind: 'sled', x: 70.5, z: 50.5, yaw: -0.9, roll: -0.2, pitch: 0.12, sink: 0.3, seed: 4, w: 0.55, drift: 0.3, solid: { hx: 1.15, hz: 0.5, h: 0.4 } },
+    { kind: 'wheel', x: -62.5, z: -2.5, yaw: -0.5, roll: 1.9, pitch: 1.12, sink: 0.1, seed: 5, w: 0.5, drift: 0.28, solid: { r: 0.55, h: 0.6 } },
+    // The drifted fence, length by length: its posts leaning with the snow's creep, a rail sagging between them.
+    ...DRIFTED_FENCE.slice(1).map(([bx, bz], i): FieldStory => {
+      const [ax, az] = DRIFTED_FENCE[i], R = fieldStream(500 + i), len = Math.hypot(bx - ax, bz - az), yaw = Math.atan2(-(bz - az), bx - ax);
+      const across = Math.abs(Math.sin(-yaw - windAt(ax, az)));
+      return { kind: 'fence', x: +((ax + bx) / 2).toFixed(2), z: +((az + bz) / 2).toFixed(2), yaw: +yaw.toFixed(3), roll: 0, pitch: 0, sink: 0, seed: 10 + i, w: +((len / 2) * across).toFixed(2), drift: 0.26, len: +len.toFixed(2), posts: [+(0.42 + R() * 0.3).toFixed(2), +(0.42 + R() * 0.3).toFixed(2)], bare: i === 2, ...(i === 2 ? {} : { solid: { hx: len / 2, hz: 0.12, h: 0.6 } }) };
+    }),
+  ];
+  // Each where it is put, or the nearest free spot within a few metres (a fence stays in its line or goes).
+  return (storyMemo = all.flatMap((t) => {
+    if (t.kind === 'fence') return fieldClear(t.x, t.z, t.len! / 2, true) ? [t] : [];
+    const at = fieldSettle(t.x, t.z, t.solid ? ('r' in t.solid ? t.solid.r : t.solid.hx) : 0.4, !!t.solid, 6);
+    return at ? [{ ...t, x: at[0], z: at[1] }] : [];
+  }));
+}
+
+/** Young spruce buried to the shoulders in small groups: (centre x, z, count, spread). */
+const SAPLING_GROUPS: readonly [number, number, number, number][] = [
+  [31.3, -11.3, 4, 1.6], [-28.6, -19, 3, 1.4], [-32.2, -13.8, 3, 1.2], [-38.2, -8.6, 3, 1.5], [26, 16, 3, 1.5], [-56, 8, 4, 1.8], [66, -30, 3, 1.4], [-60, -12, 3, 1.5],
+  [74, 40, 4, 1.8], [-70, 30, 3, 1.5], [52, -46, 3, 1.4], [-44, -48, 3, 1.5], [40, 96, 4, 1.8], [-36, 104, 3, 1.5],
+];
+/** A young spruce drowned in the drifts: a kit pine (snowPines.ts) of scale `s`, `sink` metres of it under the snow. */
+export interface FieldSapling { x: number; z: number; s: number; sink: number; seed: number }
+/** Height of the kit pine at s = 1 (snowPines.ts TREE_HEIGHT). */
+const PINE_HEIGHT = 10.2;
+let saplingsMemo: FieldSapling[] | null = null;
+/** Only the tops of young spruce show above the snow, a few to a group: dark green where the open fields are emptiest. */
+export function snowSaplings(): FieldSapling[] {
+  if (saplingsMemo) return saplingsMemo;
+  const out: FieldSapling[] = [];
+  SAPLING_GROUPS.forEach(([cx, cz, n, spread], g) => {
+    const R = fieldStream(700 + g);
+    for (let k = 0, tries = 0; k < n && tries < 40; tries++) {
+      const a = R() * Math.PI * 2, d = (k === 0 ? 0 : 0.7 + R()) * spread * 0.7, x = +(cx + Math.cos(a) * d).toFixed(2), z = +(cz + Math.sin(a) * d).toFixed(2);
+      if (!fieldClear(x, z, 0.8, true) || out.some((o) => Math.hypot(o.x - x, o.z - z) < 1.3)) continue;
+      // The first of a group stands tallest; what shows is the top metre or two, the rest is under the drift.
+      const s = +(k === 0 ? 0.36 + R() * 0.08 : 0.2 + R() * 0.14).toFixed(3), show = k === 0 ? 1.5 + R() * 0.5 : 0.7 + R() * 0.7;
+      out.push({ x, z, s, sink: +(PINE_HEIGHT * s - show).toFixed(2), seed: g * 10 + k });
+      k++;
+    }
+  });
+  return (saplingsMemo = out);
+}
+
+/** An old fence line across the woodcutter's lee slope, drifted in to its top rail, one of its lengths gone. */
+const DRIFTED_FENCE: readonly XZ[] = [[-33.6, -22.6], [-32.8, -20.5], [-32.05, -18.4], [-31.3, -16.3], [-30.6, -14.2]];
+
+// ---------------------------------------------------------------------------------------------------------------
 // Scrub (snowScrub.ts): dry grass and dwarf willow through the snow, sparse and in the lee of something, and the
 // cloth the miners tied to their trail's posts. Never solid.
 
@@ -298,6 +436,11 @@ export function snowScrubItems(h: Height = snowHeight): FieldScrub[] {
     put('twig', t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, 0.9 + R() * 0.6, i % 10 !== 0);
   });
   for (const p of snowFieldPieces()) if (/Tree/.test(p.piece)) { const a = R() * 6.283; put(R() < 0.5 ? 'twig' : 'grass', p.x + Math.cos(a) * 1.4, p.z + Math.sin(a) * 1.4, 0.8 + R() * 0.4, false); }
+  // Dry grass through the scree.
+  for (const [cx, cz, rx, rz, n] of STONE_SPILLS) for (let k = 0; k < Math.ceil(n / 4); k++) { const a = R() * 6.283, d = Math.sqrt(R()); put(R() < 0.7 ? 'grass' : 'twig', cx + Math.cos(a) * d * rx, cz + Math.sin(a) * d * rz, 0.8 + R() * 0.5, k > 1); }
+  // Willow and dry grass round the buried spruce and the half-buried things.
+  for (const p of snowSaplings()) if (R() < 0.6) { const a = R() * 6.283, d = 0.8 + R() * 0.8; put(R() < 0.6 ? 'twig' : 'grass', p.x + Math.cos(a) * d, p.z + Math.sin(a) * d, 0.7 + R() * 0.5, false); }
+  for (const t of snowStory()) for (let k = 0; k < 2; k++) { const a = R() * 6.283, d = t.w + 0.5 + R() * 0.7; put(k ? 'twig' : 'grass', t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, 0.7 + R() * 0.4, k > 0); }
   // Dry grass through the scoured crust, in a few clumps rather than a sprinkle.
   for (const sc of snowScours(h)) {
     const G = fieldStream(sc.seed * 97 + 1), c = Math.cos(sc.yaw), sn = Math.sin(sc.yaw);
@@ -313,7 +456,7 @@ export function snowScrubItems(h: Height = snowHeight): FieldScrub[] {
   }
   // Rags of red and ochre cloth the miners tied to their trail posts, so the way showed in a whiteout.
   for (const p of snowFieldPieces()) {
-    if (!/WoodenFence/.test(p.piece)) continue;
+    if (!/WoodenFence/.test(p.piece) || !MINERS_TRAIL.some(([x, z]) => x === p.x && z === p.z)) continue;
     // The knot through the fence's own placement (kit.ts trs: roll, then pitch, then yaw), without three.js here.
     const pr = p.pitch ?? 0, rl = p.roll ?? 0, kx = TRAIL_KNOT.x * p.s, ky = TRAIL_KNOT.y * p.s;
     const x1 = kx * Math.cos(rl) - ky * Math.sin(rl), y1 = kx * Math.sin(rl) + ky * Math.cos(rl);
@@ -379,6 +522,11 @@ export const SNOW_TRACKS: readonly FieldTrack[] = [
   { kind: 'deer', points: [[-70, 48], [-62, 52], [-56, 60], [-60, 74], [-66, 84]], seed: 13 },
   { kind: 'fox', points: [[70, 40], [76, 50], [80, 60], [74, 72], [70, 82]], seed: 14 },
   { kind: 'deer', points: [[30, -10], [24, -4], [20, 6], [22, 14], [28, 18]], seed: 15 },
+  // A fox out of the juniper on the woodcutter's lee slope, past the frozen wheel, through the fence's gap and over
+  // the crest towards the clearing.
+  { kind: 'fox', points: [[-27.4, -20.6], [-29.4, -18.2], [-30.9, -17.4], [-32.1, -18.5], [-33.6, -19.2], [-35.6, -20.6], [-36.8, -23.2], [-36, -25.6]], seed: 16 },
+  // A hare from the juniper before the diggings, across the sastrugi to the sled and on to the rocks.
+  { kind: 'hare', points: [[29.4, -13.6], [31, -11.6], [32.9, -9.4], [34.4, -7.4], [36.6, -5.6], [38.6, -7.4], [39.4, -9.8]], seed: 17 },
 ];
 
 /** Crests the wind has scoured to frozen ground, with dry grass through the crust. */
@@ -473,4 +621,13 @@ export function registerSnowFields(col: Collision, h: Height = snowHeight): void
   // A log lies along its local x: yaw as in rotation.y.
   for (const l of snowLogs()) { const y = h(l.x, l.z); col.addBox(l.x, l.z, l.len / 2, l.r + 0.05, l.yaw, y - 1, y + l.r * 2 - l.sink + 0.2); }
   for (const s of snowStumps()) { const y = h(s.x, s.z); col.addCircle(s.x, s.z, s.r, y - 1, y + s.h); }
+  // The buried spruce: only its top shows, but a crab walks round it.
+  for (const t of snowSaplings()) { const y = h(t.x, t.z); col.addCircle(t.x, t.z, 0.35, y - 1, y + PINE_HEIGHT * t.s - t.sink); }
+  // The half-buried sleds and wheels.
+  for (const t of snowStory()) {
+    if (!t.solid) continue;
+    const y = h(t.x, t.z);
+    if ('r' in t.solid) col.addCircle(t.x, t.z, t.solid.r, y - 1, y + t.solid.h);
+    else col.addBox(t.x, t.z, t.solid.hx, t.solid.hz, t.yaw, y - 1, y + t.solid.h);
+  }
 }

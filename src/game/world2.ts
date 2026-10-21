@@ -471,7 +471,7 @@ export class HiddenWorld {
     }
     if(!this.rendered)return;
     if(this.chapter>=5){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set(this.chapter===5?'#a07b70':'#b6dcce');fog.density=.0023;}return;}
-    if(this.chapter===4){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){const e=this.game.camera.matrixWorld.elements;this.fourth.sky.fogColor(-e[8],-e[10],fog.color);fog.density=.0035;}return;}
+    if(this.chapter===4){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){const e=this.game.camera.matrixWorld.elements;this.fourth.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.fourth.sky.fogDensity(e[13],-e[9]);}return;}
     if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#a4b5c4');fog.density=.0025;}return;}
     const echo=this.game.enemies.find(e=>e.isEcho);
     if(!observation&&echo&&this.game.multiplayer?.battle.authority!==false&&echo.state==='gone'&&time>this.echoAt&&!this.game.encounter.engaged){echo.home.set(0,this.height(0,-22),-22);echo.respawnAt(0,-22);this.echoAt=time+120;this.game.hud.messages.info(t('녹의 폭군의 잔영이 별길에 나타났어요!','An echo of the Rust Tyrant has appeared on the Starroad!'));}
