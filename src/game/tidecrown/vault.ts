@@ -5,12 +5,14 @@
 // of a move always reach the cloud, and come back from it, together.
 //
 // A move writes the vault and the journey at once, in one synchronous step, and puts both back if either write is
-// refused, so after a reload the coins are on exactly one side. It is refused in a fight, in a dungeon, while dead, to
-// a spectator, and while another window plays the same character (that window's own saves would put back the coins
-// moved here). Nothing is sent to a relay room: coins are the local player's. On a server world nothing here is built.
+// refused (or the journey's save throws), so after a reload the coins are on exactly one side. It is refused in a
+// fight, in a dungeon, while dead, to a spectator, while another window plays the same character or this window no
+// longer holds it (../saveHold.ts: such a window's saves would put back the coins moved), and while the account's saves
+// are stopped (a conflict with another window, an expired login), as the next load of the account would undo the move.
+// Nothing is sent to a relay room: coins are the local player's. On a server world nothing here is built.
 import * as THREE from 'three';
 import { localStorageGet, localStorageSet } from '../../app';
-import { saveProfile, storageKey, VAULT_KEY } from '../../accountStorage';
+import { saveProfile, VAULT_KEY } from '../../accountStorage';
 import { language, t } from '../../i18n';
 import { TC_AXIS, TC_P, TC_T, tcAxis } from '../../sim/world/tidecrownGround';
 import { h } from '../../ui/dom';
@@ -47,26 +49,10 @@ export class TidecrownVault {
   private said: { text: () => string; moved: boolean } | null = null;
   private key = '';
   private busy = false;
-  /** Another window wrote this character's journey with other coins (a storage event): this window's coins are out of
-   *  date until it reloads, and its own saves would undo a move made there. */
-  private stale = false;
-  /** Another window holds this character now (seen at the last check). */
+  /** Another window holds this character too (seen at the last check). */
   private twin = false;
-  /** This window's hold on its character (Web Locks, shared): two holders mean two windows on one character. */
-  private lockName = '';
-  private release: (() => void) | null = null;
-  private disposed = false;
   private dressing: THREE.Group | null = null;
   private dressed: Promise<void> | null = null;
-  private readonly onStorage = (e: StorageEvent) => {
-    if (!this.g.player) return;
-    try {
-      if (e.storageArea !== localStorage) return;
-      if (e.key === null) { this.stale = true; return; }
-      // A cloud save loaded in another window rewrites the same journey: only other coins matter here.
-      if (e.key === this.journeyKey() && e.newValue !== null && JSON.parse(e.newValue)?.coins !== this.g.player.coins) this.stale = true;
-    } catch { this.stale = true; }
-  };
 
   constructor(private readonly g: Game, keepers: TidecrownKeepers) {
     this.keeper = keepers.add({
@@ -76,16 +62,6 @@ export class TidecrownVault {
       prompt: ['금고지기 벨에게 말 걸기 · 왕실 금고', 'Talk to Bell · The Royal Vault'], marker: ['금고', 'Vault'],
       talk: () => this.talk(),
     });
-    window.addEventListener('storage', this.onStorage);
-  }
-
-  /** Every frame, wherever the player is: takes this window's hold on its character once the player is there. */
-  claim(): void {
-    if (this.lockName || this.disposed || !this.g.player) return;
-    this.lockName = `cc-player:${this.journeyKey()}`;
-    try {
-      void navigator.locks?.request(this.lockName, { mode: 'shared' }, () => (this.disposed ? undefined : new Promise<void>((r) => (this.release = r)))).catch(() => {});
-    } catch { /* No Web Locks: the storage events still guard. */ }
   }
 
   get unit() { return this.keeper.unit; }
@@ -93,10 +69,8 @@ export class TidecrownVault {
   /** The vault's coins now, read from storage each time (another window may have moved some); null if unreadable. */
   get coins(): number | null { return vaultCoins(localStorageGet(VAULT_KEY)); }
 
-  private journeyKey(): string {
-    const s = this.g.player.unit.rig.spec;
-    return storageKey(`cc.journey.v1:${s.race}:${s.sex}:${s.classId}:${s.name}`);
-  }
+  /** Whether another window holds this character too (false without a journey). */
+  private shared(): Promise<boolean> { return this.g.journey?.hold?.shared() ?? Promise.resolve(false); }
 
   /** The strongbox and the coins at Bell's post, from the props kit Tidecrown's market already uses; once. */
   dress(island: TidecrownIsland): Promise<void> {
@@ -157,22 +131,19 @@ export class TidecrownVault {
     if (g.player.inCombat) return t('싸우는 중에는 금고를 쓸 수 없어요.', 'You cannot use the vault during a fight.');
     if (g.dungeons?.active) return t('던전 안에서는 금고를 쓸 수 없어요.', 'You cannot use the vault in a dungeon.');
     if (!g.journey) return t('지금은 금고를 쓸 수 없어요.', 'The vault cannot be used right now.');
-    if (this.stale || this.twin) return t('다른 창에서도 이 캐릭터로 놀고 있어요. 그 창을 닫고 이 창을 새로 고쳐 주세요.', 'This character is also playing in another window. Close it and reload this one.');
+    const lost = g.journey.hold?.lost, halted = g.app.account.halted;
+    if (lost === 'loaded') return t('다른 창에서 계정 저장을 불러왔어요. 이 창을 새로 고친 뒤 금고를 써 주세요.', 'Another window loaded your account save. Reload this window to use the vault.');
+    if (lost || this.twin) return t('다른 창에서도 이 캐릭터로 놀고 있어요. 그 창을 닫고 이 창을 새로 고쳐 주세요.', 'This character is also playing in another window. Close it and reload this one.');
+    if (halted === 'conflict') return t('다른 창에서 먼저 저장해서 지금은 금고를 쓸 수 없어요. 계정 저장을 불러온 뒤 써 주세요.', 'Another window saved first, so the vault is closed for now. Load the account save, then use it.');
+    if (halted === 'session') return t('로그인이 만료돼서 지금은 금고를 쓸 수 없어요. 다시 로그인해 주세요.', 'Your login expired, so the vault is closed for now. Please sign in again.');
     if (this.coins === null) return t('금고 기록을 읽을 수 없어서 쓸 수 없어요.', 'The vault record cannot be read, so it cannot be used.');
     return null;
   }
 
-  /** Whether another window holds this character too (Web Locks; false where there are none). */
-  private async shared(): Promise<boolean> {
-    try {
-      const held = this.lockName ? (await navigator.locks?.query())?.held ?? [] : [];
-      return held.filter((l) => l.name === this.lockName).length > 1;
-    } catch { return false; }
-  }
-
   /**
    * Moves coins between the player and the vault: the vault is written first, then the journey, both in this call; if
-   * either write is refused both go back as they were. True when coins moved.
+   * either write is refused (a journey save that throws counts as refused) both go back as they were. True when coins
+   * moved.
    */
   async move(move: VaultMove, amount: VaultAmount): Promise<boolean> {
     if (this.busy) return false;
@@ -190,7 +161,9 @@ export class TidecrownVault {
       const failed = () => t('저장하지 못해서 코인을 옮기지 않았어요.', 'Could not save, so no coins moved.');
       if (!localStorageSet(VAULT_KEY, vaultValue(next.vault))) return this.tell(failed, false);
       g.player.coins = next.carried;
-      if (!g.journey!.save()) {
+      let saved = false;
+      try { saved = g.journey!.save(); } catch (e) { console.warn('vault: the journey save threw', e); }
+      if (!saved) {
         g.player.coins = carried;
         localStorageSet(VAULT_KEY, before ?? vaultValue(vault));
         return this.tell(failed, false);
@@ -249,10 +222,6 @@ export class TidecrownVault {
   }
 
   dispose(): void {
-    this.disposed = true;
-    window.removeEventListener('storage', this.onStorage);
-    this.release?.();
-    this.release = null;
     this.dressing?.removeFromParent();
     this.dressing = null;
   }

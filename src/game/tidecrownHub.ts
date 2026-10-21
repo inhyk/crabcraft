@@ -313,7 +313,6 @@ export class TidecrownHub {
     this.land();
     // Kingdom requests count in the worlds, so the log looks every frame.
     this.king?.update();
-    this.vault?.claim();
     if (!this.w2.inTidecrown) {
       this.returns.get(this.w2.chapter)?.portal.update(time);
       return;

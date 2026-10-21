@@ -9,9 +9,11 @@ export const VAULT_AMOUNTS = [100, 1000, 10000] as const;
 
 const coinsOk = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
 
-/** The stored vault's coins: 0 when there is none yet, null when the value is not a vault (then it is left alone). */
+/** The stored vault's coins: 0 when there is none yet, null when the value is not a vault the account servers accept
+ *  (server/node/accounts.ts vaultOf, which also caps it at 200 characters); such a value is left alone. */
 export function vaultCoins(raw: string | null): number | null {
   if (raw === null) return 0;
+  if (raw.length > 200) return null;
   try {
     const data = JSON.parse(raw);
     return data && typeof data === 'object' && !Array.isArray(data) && coinsOk(data.coins) ? data.coins : null;
