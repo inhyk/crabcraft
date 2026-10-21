@@ -45,7 +45,7 @@ const MANTLE: Layer = {
   wave: { amp: 0.04, freq: 1.0 },
   jitter: 0.2,
   look: { colA: '#1c130d', colB: '#3e2e21', tip: '#6e5e4c', tipAmt: 0.6, rootAO: 0.06, spec1: 0.04, spec2: 0.16, back: 1.2, wrap: 0.4, tipWidth: 0.15 },
-  bits: { clumps: 0.2, crystals: 0.4, size: 0.0009, powder: 3 },
+  bits: { clumps: 0.2, crystals: 0.4, size: 0.0009, powder: 3, bind: 0.8 },
 };
 
 /** Under the mantle: a short, dense, dark undercoat that the long hair parts over, so the gaps read deep. */
@@ -82,14 +82,14 @@ const BEARD: Layer = {
   curl: 0.18,
   width: 0.00022,
   stiff: 1.6,
-  clump: { size: 22, pull: 0.85, pow: 1.1 },
-  locks: { big: 8, lengthVar: 0.25, stray: 0.03 },
+  clump: { size: 40, pull: 1.0, pow: 0.8 },
+  locks: { big: 5, lengthVar: 0.3, stray: 0.03 },
   wave: { amp: 0.06, freq: 1.6 },
   // Dusted all over, frozen into a crust in the middle under the moustache (the original's chin).
   snow: (p, _n, r) => Math.min(1, (0.22 + Math.max(0, blotch(p) * 1.4 - 0.6)) * (0.5 + 0.5 * r) + 0.5 * ss(0.03, 0.012, Math.abs(p.x)) * ss(-0.004, 0.012, p.y)),
   jitter: 0.15,
-  look: { colA: '#2e160a', colB: '#5c2e14', tip: '#7c4a26', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.25, gloss1: 120, gloss2: 45, shift: 0.1, back: 1.6, tipWidth: 0.18 },
-  bits: { clumps: 0.5, crystals: 0.3, size: 0.0012, powder: 3 },
+  look: { colA: '#2e160a', colB: '#5c2e14', tip: '#7c4a26', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.38, gloss1: 120, gloss2: 45, shift: 0.1, back: 1.6, tipWidth: 0.18 },
+  bits: { clumps: 0.5, crystals: 0.3, size: 0.0012, powder: 3, bind: 1.5 },
 };
 
 const MOUSTACHE: Layer = {
@@ -106,14 +106,14 @@ const MOUSTACHE: Layer = {
   curl: 0.09,
   width: 0.00026,
   stiff: 1.4,
-  clump: { size: 8, pull: 0.85, pow: 1.05 },
-  locks: { big: 10, lengthVar: 0.3, stray: 0.07 },
+  clump: { size: 16, pull: 1.0, pow: 0.8 },
+  locks: { big: 6, lengthVar: 0.3, stray: 0.05 },
   jitter: 0.2,
   flow: 0.3,
   snow: (p, _n, r) => (blotch(p, 1.4) > 0.55 ? 0.75 : 0.2) * (0.4 + 0.6 * r),
   wave: { amp: 0.05, freq: 1.2 },
   look: { colA: '#30160a', colB: '#603016', tip: '#845028', tipAmt: 0.5, rootAO: 0.2, spec1: 0.05, spec2: 0.35, gloss1: 120, back: 1.6, tipWidth: 0.16 },
-  bits: { clumps: 0.6, crystals: 0.3, size: 0.0011, powder: 3 },
+  bits: { clumps: 0.6, crystals: 0.3, size: 0.0011, powder: 3, bind: 1.5 },
 };
 
 const BROWS: Layer = {
@@ -134,7 +134,7 @@ const BROWS: Layer = {
   snow: (p, _n, r) => (blotch(p, 1.3) > 0.5 ? 0.6 : 0.1) * r,
   wave: { amp: 0.08, freq: 1.4 },
   look: { colA: '#2c1006', colB: '#5e260e', tip: '#8a6a58', tipAmt: 0.45, rootAO: 0.2, spec1: 0.04, spec2: 0.25, back: 1.4, tipWidth: 0.3 },
-  bits: { clumps: 0.2, crystals: 0.3, size: 0.0011, powder: 2 },
+  bits: { clumps: 0.2, crystals: 0.3, size: 0.0011, powder: 2, bind: 1 },
 };
 
 /** Where the two braids hang from, bind space; the rings close them at BRAID_RING of their length. */
@@ -218,34 +218,39 @@ const BRAID: Layer = {
   grow: growBraids,
 };
 
+/**
+ * The beast's coat in three layers by count, about 70 / 25 / 5: this dense undercoat pressed flat along
+ * the body, heavy mid-length locks over it (MID) where the pelt's weight shows, and a few long guard
+ * hairs breaking the outline (GUARD).
+ */
 const PELT: Layer = {
   name: 'pelt',
   classes: ['shell', 'dark'],
   links: /^base_link$/,
   mask: (p, n) => (n.y < -0.35 || p.y < -0.002 || (Math.abs(p.x) < 0.058 && p.z > 0.062 && p.y > 0.03 && p.y < 0.068) ? 0 : 1),
-  count: 380000,
+  count: 400000,
   points: 7,
   seg: 8,
-  length: (p, _n, r) => 0.016 + 0.026 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.008 : 0) + 0.007 * r,
+  length: (p, _n, r) => 0.01 + 0.016 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.005 : 0) + 0.005 * r,
   dir: (p, n, _r, out) => {
     const h = new THREE.Vector3(p.x, 0, p.z + 0.01).normalize();
     return out
       .copy(n)
-      .multiplyScalar(0.45)
-      .addScaledVector(h, 0.5 * (1 - Math.max(0, n.y)))
-      .add(new THREE.Vector3(0, -0.25, -0.7 * Math.max(0, n.y)));
+      .multiplyScalar(0.25)
+      .addScaledVector(h, 0.6 * (1 - Math.max(0, n.y)))
+      .add(new THREE.Vector3(0, -0.3, -0.85 * Math.max(0, n.y)));
   },
-  gravity: 0.85,
-  curl: 0.18,
-  width: 0.00018,
-  stiff: 1.2,
-  clump: { size: 80, pull: 0.55, pow: 1.3 },
+  gravity: 0.7,
+  curl: 0.16,
+  width: 0.00017,
+  stiff: 1.4,
+  clump: { size: 60, pull: 0.45, pow: 1.3 },
   wave: { amp: 0.05, freq: 1.3 },
   snow: (p, n, r) => ss(0.6, 0.98, n.y) * Math.max(0, blotch(p, 0.5) * 1.5 - 0.6) * r,
-  jitter: 0.3,
+  jitter: 0.25,
   flow: 0.4,
-  look: { colA: '#0c0705', colB: '#20140c', tip: '#3c2a1c', tipAmt: 0.7, rootAO: 0.04, spec1: 0.03, spec2: 0.12, back: 1.3, wrap: 0.3 },
-  bits: { clumps: 0.15, crystals: 0.25, size: 0.0012, powder: 2 },
+  look: { colA: '#0a0604', colB: '#1c120a', tip: '#34241a', tipAmt: 0.6, rootAO: 0.04, spec1: 0.03, spec2: 0.1, back: 1.2, wrap: 0.3 },
+  bits: { clumps: 0.15, crystals: 0.25, size: 0.0012, powder: 2, bind: 0.6 },
 };
 
 /**
@@ -255,11 +260,11 @@ const PELT: Layer = {
 const GUARD: Layer = {
   ...PELT,
   name: 'guard',
-  count: 70000,
+  count: 28000,
   points: 8,
   seg: 10,
   length: (p, n, r) =>
-    (0.034 + 0.03 * ss(0.055, 0.004, p.y) + 0.026 * ss(0.03, 0.0, Math.abs(p.x)) * Math.max(0, n.y)) * (0.75 + 0.5 * r),
+    (0.04 + 0.034 * ss(0.055, 0.004, p.y) + 0.03 * ss(0.03, 0.0, Math.abs(p.x)) * Math.max(0, n.y)) * (0.75 + 0.5 * r),
   dir: (p, n, _r, out) => {
     const h = new THREE.Vector3(p.x, 0, p.z + 0.01).normalize();
     return out.copy(n).multiplyScalar(0.7).addScaledVector(h, 0.35).add(new THREE.Vector3(0, -0.1, -0.35 * Math.max(0, n.y)));
@@ -281,13 +286,22 @@ const GUARD: Layer = {
 const MID: Layer = {
   ...PELT,
   name: 'mid',
-  count: 60000,
+  count: 140000,
   flow: 0.45,
-  length: (p, _n, r) => (0.024 + 0.034 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.01 : 0)) * (0.8 + 0.4 * r),
+  length: (p, _n, r) => (0.03 + 0.04 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.012 : 0)) * (0.8 + 0.4 * r),
+  dir: (p, n, _r, out) => {
+    const h = new THREE.Vector3(p.x, 0, p.z + 0.01).normalize();
+    return out
+      .copy(n)
+      .multiplyScalar(0.45)
+      .addScaledVector(h, 0.5 * (1 - Math.max(0, n.y)))
+      .add(new THREE.Vector3(0, -0.25, -0.7 * Math.max(0, n.y)));
+  },
   gravity: 0.95,
   jitter: 0.2,
   width: 0.00024,
-  clump: { size: 26, pull: 0.75, pow: 1.1 },
+  stiff: 1.2,
+  clump: { size: 30, pull: 0.85, pow: 1.0 },
   locks: { big: 5, lengthVar: 0.25, stray: 0.02 },
   look: { colA: '#160d08', colB: '#3c2216', tip: '#6e4a32', tipAmt: 0.7, rootAO: 0.06, spec1: 0.04, spec2: 0.18, back: 1.4, wrap: 0.3, tipWidth: 0.18 },
   bits: undefined,

@@ -48,8 +48,12 @@ export interface Layer {
   wave?: { amp: number; freq: number };
   snow(p: V, n: V, r: number): number;
   look: HairLook;
-  /** Snow on the hair: clumps and crystals near the tips, powder (grains per unit of snow) all along. */
-  bits?: { clumps: number; crystals: number; size: number; powder?: number };
+  /**
+   * Snow on the hair: clumps and crystals near the tips, powder (grains per unit of snow) all along,
+   * and `bind` (clumps per unit of snow on a lock's guide hair): long lumps where a lock gathers,
+   * sunk into it, that tie its hairs together.
+   */
+  bits?: { clumps: number; crystals: number; size: number; powder?: number; bind?: number };
   /** Replaces the grower for special hair (braids). */
   grow?: (rng: () => number) => Grown;
 }
@@ -72,6 +76,8 @@ interface Crop {
   occ: Float32Array;
   /** The same toward the key light (KEY): the coat's own shadow. */
   occK: Float32Array;
+  /** Each strand's lock (its guide hair's index; the guide's own index for a guide), -1 for none. */
+  lockOf: Int32Array;
 }
 
 /** One drawable set: a layer's strands that ride one bone. */
@@ -81,8 +87,8 @@ export interface StrandSet {
   count: number;
   stride: number;
   tex: THREE.DataTexture;
-  /** Snow bits on the strands' tips (strand index, v, size, spin). */
-  bits: { strand: Float32Array; at: Float32Array; size: Float32Array; spin: Float32Array } | null;
+  /** Snow bits on the strands (strand index, v, size, spin, shape: stretch along the hair and lift). */
+  bits: { strand: Float32Array; at: Float32Array; size: Float32Array; spin: Float32Array; shape: Float32Array } | null;
 }
 
 export const TEX_W = 4096;
@@ -142,8 +148,8 @@ function surface(parts: RigParts, layer: Layer): Surface {
 }
 
 /** The shell as an ellipsoid hair is kept outside of (bind space, metres). */
-const SHELL_C = new THREE.Vector3(0, 0.024, -0.009);
-const SHELL_R = new THREE.Vector3(0.097, 0.052, 0.108);
+export const SHELL_C = new THREE.Vector3(0, 0.024, -0.009);
+export const SHELL_R = new THREE.Vector3(0.097, 0.052, 0.108);
 
 /**
  * The costume's key light, in the crab's own frame (bind space): high on its right side, a broad side
@@ -176,7 +182,7 @@ function keepOut(p: V): void {
 }
 
 /** Data channels: width, random, snow, random 2 (texels 0..3 w), stiffness (normal texel w). */
-function growLayer(parts: RigParts, layer: Layer, rng: () => number, density: number): { grown: Grown; bones: Int32Array } {
+function growLayer(parts: RigParts, layer: Layer, rng: () => number, density: number): { grown: Grown; bones: Int32Array; lockOf: Int32Array } {
   const surf = surface(parts, layer);
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
@@ -206,7 +212,7 @@ function growLayer(parts: RigParts, layer: Layer, rng: () => number, density: nu
   const normals = new Float32Array(N * 3);
   const data = new Float32Array(N * 5);
   const bones = new Int32Array(N);
-  if (total <= 0 || N === 0) return { grown: { pts, roots, normals, data, count: 0 }, bones };
+  if (total <= 0 || N === 0) return { grown: { pts, roots, normals, data, count: 0 }, bones, lockOf: new Int32Array(0) };
   const d = new THREE.Vector3();
   const q = new THREE.Vector3();
   let made = 0;
@@ -297,11 +303,14 @@ function growLayer(parts: RigParts, layer: Layer, rng: () => number, density: nu
     const { size, pull, pow } = layer.clump;
     clump(layer, grown, rng, { size: size * layer.locks.big, pull: pull * 0.5, pow }, free, 0);
   }
-  clump(layer, grown, rng, layer.clump, free, layer.locks?.lengthVar ?? 0);
-  return { grown: { pts, roots, normals, data, count }, bones };
+  const lockOf = clump(layer, grown, rng, layer.clump, free, layer.locks?.lengthVar ?? 0);
+  return { grown: { pts, roots, normals, data, count }, bones, lockOf };
 }
 
-/** Pull each hair's tip toward its clump's guide hair (the nearest of a sparse set of guides). */
+/**
+ * Pull each hair's tip toward its clump's guide hair (the nearest of a sparse set of guides). Returns
+ * each hair's guide (-1 for strays and when nothing clumps).
+ */
 function clump(
   layer: Layer,
   g: Grown,
@@ -309,8 +318,9 @@ function clump(
   { size, pull, pow }: { size: number; pull: number; pow: number },
   free: Uint8Array,
   lengthVar: number,
-): void {
-  if (pull <= 0 || g.count < 2) return;
+): Int32Array {
+  const none = new Int32Array(g.count).fill(-1);
+  if (pull <= 0 || g.count < 2) return none;
   const P = layer.points;
   const guides: number[] = [];
   // Lock sizes wander across the coat (a third to twice `size`), so tufts do not repeat like scales.
@@ -318,7 +328,7 @@ function clump(
     const m = 0.33 + 1.67 * blotch3(g.roots[i * 3], g.roots[i * 3 + 1], g.roots[i * 3 + 2]);
     if (!free[i] && rng() < 1 / (size * m)) guides.push(i);
   }
-  if (!guides.length) return;
+  if (!guides.length) return none;
   // Grid over the roots, cell about one clump across.
   let minX = Infinity;
   let minY = Infinity;
@@ -411,6 +421,8 @@ function clump(
       }
     }
   }
+  for (let i = 0; i < g.count; i++) if (free[i]) guideOf[i] = -1;
+  return guideOf;
 }
 
 const fract = (x: number) => x - Math.floor(x);
@@ -420,7 +432,7 @@ const blotch3 = (x: number, y: number, z: number) =>
 
 /** Splits grown strands by bone and packs each bone's into a texture in that bone's frame. */
 function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
-  const { layer, grown, bones, occ, occK } = crop;
+  const { layer, grown, bones, occ, occK, lockOf } = crop;
   const P = layer.points;
   // Points, the root normal, then each point's sky and key occlusion, four to a texel.
   const Q = Math.ceil(P / 4);
@@ -472,10 +484,24 @@ function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
       const at: number[] = [];
       const size: number[] = [];
       const spin: number[] = [];
+      const shape: number[] = [];
       const { clumps, crystals } = layer.bits;
       const powder = layer.bits.powder ?? 0;
+      const bind = layer.bits.bind ?? 0;
       list.forEach((src, k) => {
         const snow = grown.data[src * 5 + 2];
+        // Snow packed where a lock gathers (on its guide, two thirds down): a long lump along the hair,
+        // sunk into the lock so its hairs cross over the edges.
+        if (bind > 0 && lockOf[src] === src && snow > 0.3) {
+          const n = Math.floor(bind * snow + rng());
+          for (let m = 0; m < n; m++) {
+            s.push(k);
+            at.push(0.5 + 0.32 * rng());
+            size.push(layer.bits!.size * (0.45 + 0.45 * rng()));
+            spin.push(rng(), rng(), rng(), rng());
+            shape.push(1.6 + 1.6 * rng(), 0.05 * rng());
+          }
+        }
         // Powder: fine grains caught all along the hair, the way blown snow sits in a beard.
         if (powder > 0 && snow > 0.05) {
           const n = Math.floor(powder * snow + rng());
@@ -484,6 +510,7 @@ function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
             at.push(0.2 + 0.8 * Math.sqrt(rng()));
             size.push(layer.bits!.size * (0.12 + 0.14 * rng()));
             spin.push(rng(), rng(), rng(), rng());
+            shape.push(1, 0.35);
           }
         }
         if (snow < 0.25) return;
@@ -504,9 +531,10 @@ function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
           const nz = rng() * 2 - 1;
           const l = Math.hypot(nx, ny, nz);
           spin.push((nx / l) * 0.5 + 0.5, (ny / l) * 0.5 + 0.5, (nz / l) * 0.5 + 0.5, rng());
+          shape.push(1, 0.35);
         }
       });
-      if (s.length) bits = { strand: Float32Array.from(s), at: Float32Array.from(at), size: Float32Array.from(size), spin: Float32Array.from(spin) };
+      if (s.length) bits = { strand: Float32Array.from(s), at: Float32Array.from(at), size: Float32Array.from(size), spin: Float32Array.from(spin), shape: Float32Array.from(shape) };
     }
     out.push({ layer, bone, count: list.length, stride, tex, bits });
   }
@@ -597,21 +625,28 @@ function occlusion(crops: Crop[]): void {
   }
 }
 
-/** Every set of an outfit: strands grown on the rig, shaded by their own coat, split per bone. */
-export function groom(parts: RigParts, layers: Layer[], seed: number, density: number): StrandSet[] {
+/**
+ * Every set of an outfit: strands grown on the rig, shaded by their own coat, split per bone; and the
+ * sphere round all of them in bind space (the deep opacity map is fitted to it).
+ */
+export function groom(parts: RigParts, layers: Layer[], seed: number, density: number): { sets: StrandSet[]; sphere: THREE.Sphere } {
   const crops: Crop[] = layers.map((layer, li) => {
     const rng = mulberry(seed * 977 + li * 131 + 7);
     if (layer.grow) {
       const grown = layer.grow(rng);
       const n = grown.count * layer.points;
-      return { layer, grown, bones: new Int32Array(grown.count), occ: new Float32Array(n).fill(1), occK: new Float32Array(n).fill(1) };
+      return { layer, grown, bones: new Int32Array(grown.count), occ: new Float32Array(n).fill(1), occK: new Float32Array(n).fill(1), lockOf: new Int32Array(grown.count).fill(-1) };
     }
-    const { grown, bones } = growLayer(parts, layer, rng, density);
+    const { grown, bones, lockOf } = growLayer(parts, layer, rng, density);
     const n = grown.count * layer.points;
-    return { layer, grown, bones, occ: new Float32Array(n).fill(1), occK: new Float32Array(n).fill(1) };
+    return { layer, grown, bones, occ: new Float32Array(n).fill(1), occK: new Float32Array(n).fill(1), lockOf };
   });
   occlusion(crops);
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  for (const c of crops) for (let i = 0; i < c.grown.count * c.layer.points; i++) box.expandByPoint(v.fromArray(c.grown.pts, i * 3));
+  const sphere = box.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 0.2) : box.getBoundingSphere(new THREE.Sphere());
   const out: StrandSet[] = [];
   crops.forEach((crop, li) => out.push(...pack(parts, crop, mulberry(seed * 31 + li * 17 + 3))));
-  return out;
+  return { sets: out, sphere };
 }
