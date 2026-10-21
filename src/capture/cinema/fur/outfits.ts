@@ -88,7 +88,7 @@ const BEARD: Layer = {
   // Dusted all over, frozen into a crust in the middle under the moustache (the original's chin).
   snow: (p, _n, r) => Math.min(1, (0.22 + Math.max(0, blotch(p) * 1.4 - 0.6)) * (0.5 + 0.5 * r) + 0.5 * ss(0.03, 0.012, Math.abs(p.x)) * ss(-0.004, 0.012, p.y)),
   jitter: 0.15,
-  look: { colA: '#341406', colB: '#6a2c0e', tip: '#8c4a1c', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.35, gloss1: 120, gloss2: 28, shift: 0.1, back: 1.6, tipWidth: 0.18 },
+  look: { colA: '#2e160a', colB: '#5c2e14', tip: '#7c4a26', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.35, gloss1: 120, gloss2: 28, shift: 0.1, back: 1.6, tipWidth: 0.18 },
   bits: { clumps: 0.5, crystals: 0.3, size: 0.0012, powder: 3 },
 };
 
@@ -107,12 +107,12 @@ const MOUSTACHE: Layer = {
   width: 0.00026,
   stiff: 1.4,
   clump: { size: 8, pull: 0.85, pow: 1.05 },
-  locks: { big: 10, lengthVar: 0.3, stray: 0.04 },
+  locks: { big: 10, lengthVar: 0.3, stray: 0.07 },
   jitter: 0.2,
   flow: 0.3,
   snow: (p, _n, r) => (blotch(p, 1.4) > 0.55 ? 0.75 : 0.2) * (0.4 + 0.6 * r),
   wave: { amp: 0.05, freq: 1.2 },
-  look: { colA: '#361406', colB: '#6e2e10', tip: '#925020', tipAmt: 0.5, rootAO: 0.2, spec1: 0.05, spec2: 0.35, gloss1: 120, back: 1.6, tipWidth: 0.16 },
+  look: { colA: '#30160a', colB: '#603016', tip: '#845028', tipAmt: 0.5, rootAO: 0.2, spec1: 0.05, spec2: 0.35, gloss1: 120, back: 1.6, tipWidth: 0.16 },
   bits: { clumps: 0.6, crystals: 0.3, size: 0.0011, powder: 3 },
 };
 
@@ -213,7 +213,7 @@ const BRAID: Layer = {
   points: 28,
   seg: 40,
   stiff: 3,
-  look: { ...BEARD.look, colA: '#301205', colB: '#62280c', tipAmt: 0.25, rootAO: 0.35 },
+  look: { ...BEARD.look, colA: '#2c1408', colB: '#582a12', tipAmt: 0.25, rootAO: 0.35 },
   bits: { clumps: 0.3, crystals: 0.4, size: 0.0009 },
   grow: growBraids,
 };

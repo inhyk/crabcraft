@@ -90,6 +90,11 @@ class CinemaStage {
   private shakeAmp = 0;
   private hidden: THREE.Object3D[] = [];
   private v = new THREE.Vector3();
+  /**
+   * Sub-pixel camera offset, drawing-buffer pixels, set by capture.mjs between the renders it
+   * averages into one frame (supersampling: hairs thinner than a pixel come out at their true weight).
+   */
+  jitter: [number, number] = [0, 0];
   private buf = new THREE.Vector2();
   private started = false;
   /** The world's own fog, put back when a shot that overrode it ends. */
@@ -413,6 +418,11 @@ class CinemaStage {
       cam.fov = fov;
       cam.updateProjectionMatrix();
     }
+    const [jx, jy] = this.jitter;
+    if (jx || jy) {
+      const s = this.g.engine.renderer.getDrawingBufferSize(this.buf);
+      cam.setViewOffset(s.x, s.y, jx, jy, s.x, s.y);
+    } else if (cam.view?.enabled) cam.clearViewOffset();
     cam.updateMatrixWorld();
     const focus = shot.cam.focus ?? 'look';
     if (shot.view?.dof) {

@@ -8,7 +8,8 @@
 //          [--shots id,id] [--fps 24] [--dsf 1] [--size 1920x872] [--preroll 1.5]
 //          [--stills 0,1.5,3]   (stills at these shot seconds instead of a recording: <out>/<id>-<t>.jpg)
 //          [--blur 6] [--shutter 0.5]   (motion blur: each frame averages that many renders spread over
-//          the shutter's share of the frame interval, ending on the frame's instant)
+//          the shutter's share of the frame interval, ending on the frame's instant; each render is
+//          also shifted by a sub-pixel Halton offset, so the average is supersampled too)
 // A program module exports `shots`: ShotSpec objects (src/capture/cinema/types.ts) with `at`, the
 // song second the shot starts on in the edit. Writes <out>/<id>.mp4 and <id>.json (frames, blank
 // repairs, page errors, the shot clock of every frame).
@@ -41,6 +42,17 @@ const shutter = Math.min(1, Math.max(0.05, Number(opt('--shutter', '0.5'))));
  * go to an intermediate file that ffmpeg averages back down `blur` to one. The last sub-step lands
  * on the frame's own instant, as record()'s single step does.
  */
+/** The radical inverse of i in `base`: a low-discrepancy sequence in [0, 1). */
+function halton(i, base) {
+  let f = 1;
+  let r = 0;
+  for (let n = i; n > 0; n = Math.floor(n / base)) {
+    f /= base;
+    r += f * (n % base);
+  }
+  return r;
+}
+
 async function recordBlur(app, file, { frames, fps, probe }) {
   const sub = `${file}.sub.mp4`;
   const rec = new Recorder(sub, { fps: fps * blur, crf: 10 });
@@ -52,11 +64,13 @@ async function recordBlur(app, file, { frames, fps, probe }) {
   for (let f = 0; f < frames; f++) {
     if (shutter < 1) await app.page.evaluate((d) => window.__capture.step(1, d), dt * (1 - shutter));
     for (let k = 0; k < blur; k++) {
+      await app.page.evaluate((j) => (window.__cinema.jitter = j), [halton(k + 1, 2) - 0.5, halton(k + 1, 3) - 0.5]);
       await app.page.evaluate((d) => window.__capture.step(1, d), (dt * shutter) / blur);
       await rec.write(await grab(app));
     }
     if (probe) probes.push(await app.page.evaluate(probe));
   }
+  await app.page.evaluate(() => (window.__cinema.jitter = [0, 0]));
   await rec.close();
   const r = spawnSync(FFMPEG, ['-v', 'error', '-y', '-i', sub, '-vf', `tmix=frames=${blur},select='not(mod(n+1\,${blur}))',setpts=N/(${fps}*TB)`, '-r', String(fps),
     '-c:v', 'libx264', '-preset', 'fast', '-crf', '14', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', `${file}.mp4`], { stdio: 'inherit' });

@@ -384,7 +384,7 @@ export function hairMaterial(shared: Record<string, THREE.IUniform>, look: HairL
       THREE.UniformsLib.lights,
       THREE.UniformsLib.fog,
       {
-        uMinPx: { value: 0.7 },
+        uMinPx: { value: 0.4 },
         uWidthMul: { value: 1 },
         uTipWidth: { value: look.tipWidth ?? 0.25 },
         uColA: { value: lin(look.colA) },
