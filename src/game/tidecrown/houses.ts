@@ -251,6 +251,15 @@ export function loadTidecrownKit(): Promise<TidecrownKit> {
     grade(plaster, 'plaster', 0.3, 0.41, '#dad5cc', '#ffffff');
     const limestone = kitClone(vm('MI_UnevenBrick'), 'tidecrown-limestone');
     grade(limestone, 'limestone', 0.1, 0.3, '#8a8170', '#f2ead8');
+    // The rubble at twice the kit's density, so its stones sit at about one and a half of the ashlar blocks beside it.
+    for (const slot of ['map', 'normalMap', 'roughnessMap'] as const) {
+      const t = limestone[slot]?.clone();
+      if (!t) continue;
+      t.repeat.multiplyScalar(2);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.userData.tidecrown = true;
+      limestone[slot] = t;
+    }
     const ashlar = kitClone(vm('MI_Brick'), 'tidecrown-ashlar');
     grade(ashlar, 'ashlar', 0.15, 0.36, '#b4aa95', '#f4ede0');
     const rock = kitClone(vm('MI_RockTrim'), 'tidecrown-rock');
@@ -862,12 +871,14 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
   // Plinth: dressed stone under the floor down past the lowest ground.
   const low = Math.min(spec.base ?? spec.ground, spec.doorstep ?? spec.ground) - 0.7;
   const ph = spec.ground - low + 0.04;
-  // Flush with the party line where a neighbour stands, so two plinths never share a face.
-  const pl = hidden('left', 0, 0) ? 0 : 0.17;
-  const pr = hidden('right', 0, 0) ? 0 : 0.17;
-  const pb = hidden('back', 0, 0) ? 0 : 0.17;
-  geo(worldBox(W + pl + pr, ph, D + 0.17 + pb, 0.5).translate((pr - pl) / 2, -ph / 2 + 0.04, (0.17 - pb) / 2), mat.limestone, stoneTint);
-  fb?.frame().box(mat.limestone, stoneTint, -W / 2 - pl, 0.04 - ph, -D / 2 - pb, W / 2 + pr, 0.04, D / 2 + 0.17, 'ny');
+  // Flush with the party line where a neighbour stands, so two plinths never share a face; elsewhere a lip of 5 cm (a
+  // deeper one read as a ledge along the street).
+  const lip = 0.05;
+  const pl = hidden('left', 0, 0) ? 0 : lip;
+  const pr = hidden('right', 0, 0) ? 0 : lip;
+  const pb = hidden('back', 0, 0) ? 0 : lip;
+  geo(worldBox(W + pl + pr, ph, D + lip + pb, 0.5).translate((pr - pl) / 2, -ph / 2 + 0.04, (lip - pb) / 2), mat.limestone, stoneTint);
+  fb?.frame().box(mat.limestone, stoneTint, -W / 2 - pl, 0.04 - ph, -D / 2 - pb, W / 2 + pr, 0.04, D / 2 + lip, 'ny');
 
   const sides: Side[] = ['front', 'right', 'back', 'left'];
   /** Quoin width per corner and storey (0: none), for the far build. */
