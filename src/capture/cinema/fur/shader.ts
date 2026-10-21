@@ -22,13 +22,13 @@ uniform vec3 uFlutterDir;
 vec4 texel(int i) { return texelFetch(uStrands, ivec2(i % uTexW, i / uTexW), 0); }
 
 // Texel 0..P-1: points (xyz) with per-strand data in w: width, random, snow, random 2.
-// Texel P: the root's surface normal (xyz) and the strand's stiffness (w). Then each point's
-// occlusion, four to a texel.
-float occAt(int base, float v) {
+// Texel P: the root's surface normal (xyz) and the strand's stiffness (w). Then each point's sky
+// occlusion, four to a texel, and after those its occlusion toward the key light (set 1).
+float occAt(int base, float v, int set) {
   float s = v * float(uP - 1);
   int i = min(int(floor(s)), uP - 2);
   float u = s - float(i);
-  int o = base + uP + 1;
+  int o = base + uP + 1 + set * ((uP + 3) / 4);
   vec4 a = texel(o + i / 4);
   vec4 b = texel(o + (i + 1) / 4);
   float x = a[i % 4];
@@ -83,12 +83,14 @@ out vec3 vN;
 out vec4 vData;
 out vec3 vViewPos;
 out float vOcc;
+out float vShadow;
 #include <common>
 #include <fog_pars_vertex>
 void main() {
   vec3 pos; vec3 tanV; vec4 data; vec4 nrm;
   strandAt(gl_InstanceID, aV, pos, tanV, data, nrm);
-  vOcc = occAt(gl_InstanceID * uStride, aV);
+  vOcc = occAt(gl_InstanceID * uStride, aV, 0);
+  vShadow = occAt(gl_InstanceID * uStride, aV, 1);
   // Level of detail: a fixed random subset of strands, the survivors wider.
   if (fract(data.y * 13.37 + data.w * 7.91) > uDensity) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
@@ -135,7 +137,9 @@ vec3 dirLight(vec3 L, vec3 lc, vec3 alb, vec3 T, vec3 T1, vec3 T2, vec3 N, vec3 
   float s1 = kk(T1, H, uGloss1) * uSpec1;
   float s2 = kk(T2, H, uGloss2) * uSpec2 * (0.4 + sparkle);
   float back = pow(max(0.0, dot(-V, L)), 4.0) * uBack * tipLit;
-  return lc * (alb * diff * facing * ao + (s1 + s2 * alb * 2.0) * facing * ao + back * alb);
+  // The coat's own shadow (toward the key, from the groom) darkens what the light would reach.
+  float sh = mix(0.12, 1.0, vShadow);
+  return lc * ((alb * diff + s1 + s2 * alb * 2.0) * facing * ao * sh + back * alb);
 }
 vec3 hairLight(vec3 alb, vec3 T, vec3 N, vec3 V, float ao, float tipLit, float sparkle) {
   vec3 col = ambientLightColor * alb * ao;
@@ -190,6 +194,7 @@ in vec3 vN;
 in vec4 vData;
 in vec3 vViewPos;
 in float vOcc;
+in float vShadow;
 #include <common>
 #include <lights_pars_begin>
 #include <fog_pars_fragment>

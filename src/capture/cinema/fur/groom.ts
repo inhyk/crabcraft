@@ -40,7 +40,8 @@ export interface Layer {
   wave?: { amp: number; freq: number };
   snow(p: V, n: V, r: number): number;
   look: HairLook;
-  bits?: { clumps: number; crystals: number; size: number };
+  /** Snow on the hair: clumps and crystals near the tips, powder (grains per unit of snow) all along. */
+  bits?: { clumps: number; crystals: number; size: number; powder?: number };
   /** Replaces the grower for special hair (braids). */
   grow?: (rng: () => number) => Grown;
 }
@@ -61,6 +62,8 @@ interface Crop {
   bones: Int32Array;
   /** Light reaching each control point through the coat above it, 0..1 (count * points). */
   occ: Float32Array;
+  /** The same toward the key light (KEY): the coat's own shadow. */
+  occK: Float32Array;
 }
 
 /** One drawable set: a layer's strands that ride one bone. */
@@ -133,6 +136,12 @@ function surface(parts: RigParts, layer: Layer): Surface {
 /** The shell as an ellipsoid hair is kept outside of (bind space, metres). */
 const SHELL_C = new THREE.Vector3(0, 0.024, -0.009);
 const SHELL_R = new THREE.Vector3(0.097, 0.052, 0.108);
+
+/** Where the coat's own shadow is cast from (bind space): high, in front and to the left, as the key lights it. */
+const KEY = (() => {
+  const l = Math.hypot(0.35, 0.75, 0.55);
+  return [0.35 / l, 0.75 / l, 0.55 / l];
+})();
 
 const ss01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
@@ -349,10 +358,11 @@ function clump(layer: Layer, g: Grown, rng: () => number): void {
 
 /** Splits grown strands by bone and packs each bone's into a texture in that bone's frame. */
 function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
-  const { layer, grown, bones, occ } = crop;
+  const { layer, grown, bones, occ, occK } = crop;
   const P = layer.points;
-  // Points, the root normal, then the occlusion of each point four to a texel.
-  const stride = P + 1 + Math.ceil(P / 4);
+  // Points, the root normal, then each point's sky and key occlusion, four to a texel.
+  const Q = Math.ceil(P / 4);
+  const stride = P + 1 + 2 * Q;
   const byBone = new Map<number, number[]>();
   for (let i = 0; i < grown.count; i++) (byBone.get(bones[i]) ?? byBone.set(bones[i], []).get(bones[i])!).push(i);
   const out: StrandSet[] = [];
@@ -384,7 +394,10 @@ function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
       arr[o + P * 4 + 1] = v.y;
       arr[o + P * 4 + 2] = v.z;
       arr[o + P * 4 + 3] = grown.data[src * 5 + 4];
-      for (let j = 0; j < P; j++) arr[o + (P + 1) * 4 + j] = occ[src * P + j];
+      for (let j = 0; j < P; j++) {
+        arr[o + (P + 1) * 4 + j] = occ[src * P + j];
+        arr[o + (P + 1 + Q) * 4 + j] = occK[src * P + j];
+      }
     });
     const tex = new THREE.DataTexture(arr, TEX_W, h, THREE.RGBAFormat, THREE.FloatType);
     tex.minFilter = THREE.NearestFilter;
@@ -398,8 +411,19 @@ function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
       const size: number[] = [];
       const spin: number[] = [];
       const { clumps, crystals } = layer.bits;
+      const powder = layer.bits.powder ?? 0;
       list.forEach((src, k) => {
         const snow = grown.data[src * 5 + 2];
+        // Powder: fine grains caught all along the hair, the way blown snow sits in a beard.
+        if (powder > 0 && snow > 0.05) {
+          const n = Math.floor(powder * snow + rng());
+          for (let m = 0; m < n; m++) {
+            s.push(k);
+            at.push(0.2 + 0.8 * Math.sqrt(rng()));
+            size.push(layer.bits!.size * (0.12 + 0.14 * rng()));
+            spin.push(rng(), rng(), rng(), rng());
+          }
+        }
         if (snow < 0.25) return;
         const tries = (clumps + crystals) * snow;
         for (let m = 0; m < 4; m++) {
@@ -408,7 +432,7 @@ function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
           s.push(k);
           at.push(0.62 + 0.38 * Math.sqrt(rng()));
           // Mostly fine rime and granules, now and then a whole flake.
-          const sz = layer.bits!.size * (crystal ? 0.35 + 1.1 * Math.pow(rng(), 3) : 0.25 + 0.4 * rng());
+          const sz = layer.bits!.size * (crystal ? 0.22 + 0.7 * Math.pow(rng(), 3) : 0.25 + 0.4 * rng());
           size.push(crystal ? -sz : sz);
           // A crystal's facet normal, biased to face up and out; w turns the star.
           const nx = rng() * 2 - 1;
@@ -481,6 +505,7 @@ function occlusion(crops: Crop[]): void {
     for (let j = 0; j < ny; j++)
       for (let i = 0; i < nx; i++)
         if (inShell(lo[0] + (i + 0.5) * h, lo[1] + (j + 0.5) * h, lo[2] + (k + 0.5) * h, 0.97)) tau[(k * ny + j) * nx + i] += 6;
+  const [kx, ky, kz] = KEY;
   const march = (x: number, y: number, z: number, dx: number, dy: number, dz: number) => {
     let sum = 0;
     for (let m = 1; m <= 16; m++) {
@@ -501,7 +526,8 @@ function occlusion(crops: Crop[]): void {
         const a = (s * P + j) * 3;
         const up = march(pts[a], pts[a + 1], pts[a + 2], 0, 1, 0);
         const out = march(pts[a], pts[a + 1], pts[a + 2], nx0, ny0, nz0);
-        c.occ[s * P + j] = Math.exp(-(0.55 * up + 0.45 * out) * 0.5);
+        c.occ[s * P + j] = Math.exp(-(0.55 * up + 0.45 * out) * 0.8);
+        c.occK[s * P + j] = Math.exp(-march(pts[a], pts[a + 1], pts[a + 2], kx, ky, kz) * 0.9);
       }
     }
   }
@@ -513,10 +539,12 @@ export function groom(parts: RigParts, layers: Layer[], seed: number, density: n
     const rng = mulberry(seed * 977 + li * 131 + 7);
     if (layer.grow) {
       const grown = layer.grow(rng);
-      return { layer, grown, bones: new Int32Array(grown.count), occ: new Float32Array(grown.count * layer.points).fill(1) };
+      const n = grown.count * layer.points;
+      return { layer, grown, bones: new Int32Array(grown.count), occ: new Float32Array(n).fill(1), occK: new Float32Array(n).fill(1) };
     }
     const { grown, bones } = growLayer(parts, layer, rng, density);
-    return { layer, grown, bones, occ: new Float32Array(grown.count * layer.points).fill(1) };
+    const n = grown.count * layer.points;
+    return { layer, grown, bones, occ: new Float32Array(n).fill(1), occK: new Float32Array(n).fill(1) };
   });
   occlusion(crops);
   const out: StrandSet[] = [];

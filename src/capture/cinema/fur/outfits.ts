@@ -43,7 +43,7 @@ const MANTLE: Layer = {
   wave: { amp: 0.04, freq: 1.0 },
   jitter: 0.2,
   look: { colA: '#1c130d', colB: '#3e2e21', tip: '#6e5e4c', tipAmt: 0.6, rootAO: 0.06, spec1: 0.04, spec2: 0.16, back: 1.2, wrap: 0.4 },
-  bits: { clumps: 0.4, crystals: 0.8, size: 0.0009 },
+  bits: { clumps: 0.2, crystals: 0.4, size: 0.0009, powder: 3 },
 };
 
 const BEARD: Layer = {
@@ -62,10 +62,10 @@ const BEARD: Layer = {
   stiff: 1.6,
   clump: { size: 70, pull: 0.85, pow: 1.1 },
   wave: { amp: 0.06, freq: 1.6 },
-  snow: (p, _n, r) => Math.max(0, blotch(p) * 1.4 - 0.6) * (0.5 + 0.5 * r),
+  snow: (p, _n, r) => (0.3 + Math.max(0, blotch(p) * 1.4 - 0.6)) * (0.5 + 0.5 * r),
   jitter: 0.15,
   look: { colA: '#341406', colB: '#6a2c0e', tip: '#8c4a1c', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.35, gloss1: 120, gloss2: 28, shift: 0.1, back: 1.6, tipWidth: 0.3 },
-  bits: { clumps: 0.8, crystals: 0.8, size: 0.0012 },
+  bits: { clumps: 0.4, crystals: 0.35, size: 0.0012, powder: 6 },
 };
 
 const MOUSTACHE: Layer = {
@@ -86,7 +86,7 @@ const MOUSTACHE: Layer = {
   snow: (p, _n, r) => (blotch(p, 1.4) > 0.6 ? 0.7 : 0.15) * r,
   wave: { amp: 0.05, freq: 1.2 },
   look: { colA: '#361406', colB: '#6e2e10', tip: '#925020', tipAmt: 0.5, rootAO: 0.2, spec1: 0.05, spec2: 0.35, gloss1: 120, back: 1.6, tipWidth: 0.3 },
-  bits: { clumps: 0.8, crystals: 0.8, size: 0.0011 },
+  bits: { clumps: 0.4, crystals: 0.35, size: 0.0011, powder: 6 },
 };
 
 const BROWS: Layer = {
@@ -97,8 +97,8 @@ const BROWS: Layer = {
   count: 30000,
   points: 6,
   seg: 6,
-  length: (p, _n, r) => 0.012 + 0.014 * (Math.abs(p.x) / 0.06) + 0.006 * r,
-  dir: (p, _n, _r, out) => out.set(sgn(p.x) * 0.75, 0.6, 0.9),
+  length: (p, _n, r) => 0.01 + 0.012 * (Math.abs(p.x) / 0.06) + 0.005 * r,
+  dir: (p, _n, _r, out) => out.set(sgn(p.x) * 0.8, 0.32, 1),
   gravity: 0.3,
   curl: 0.22,
   width: 0.00022,
@@ -107,7 +107,7 @@ const BROWS: Layer = {
   snow: (_p, _n, r) => 0.35 * r,
   wave: { amp: 0.08, freq: 1.4 },
   look: { colA: '#2c1006', colB: '#5e260e', tip: '#8a6a58', tipAmt: 0.45, rootAO: 0.2, spec1: 0.04, spec2: 0.25, back: 1.4, tipWidth: 0.3 },
-  bits: { clumps: 0.3, crystals: 0.45, size: 0.0011 },
+  bits: { clumps: 0.2, crystals: 0.3, size: 0.0011, powder: 2 },
 };
 
 /** Where the two braids hang from, bind space; the rings close them at BRAID_RING of their length. */
@@ -217,7 +217,7 @@ const PELT: Layer = {
   snow: (p, n, r) => ss(0.6, 0.98, n.y) * Math.max(0, blotch(p, 0.5) * 1.5 - 0.6) * r,
   jitter: 0.3,
   look: { colA: '#120a06', colB: '#2e1d12', tip: '#5a3e2c', tipAmt: 0.7, rootAO: 0.06, spec1: 0.03, spec2: 0.12, back: 1.3, wrap: 0.3 },
-  bits: { clumps: 0.2, crystals: 0.4, size: 0.0009 },
+  bits: { clumps: 0.15, crystals: 0.25, size: 0.0012, powder: 2 },
 };
 
 const LIMBS: Layer = {
