@@ -7,7 +7,12 @@
 //                 soil, moss, litter, litter2 (colours), drift (broad tint, 0.35), count (blades per square unit,
 //                 22), height [min, max] (0.12, 0.34), width (0.022), grass, tip (colours), wind (0.06),
 //                 clear [[x, z, r], ...] (no grass: water, whose surface draws over the cover),
-//                 wet (0: off; how dark the cover goes inside the clear circles, a puddle's wet mud), seed }
+//                 wet (0: off; how dark the cover goes inside the clear circles, a puddle's wet mud), seed,
+//                 relief (off unless given): { clods, pebbles (per square unit, 3, 6), bump (soil unevenness, 0.4),
+//                   litter (leaves in the tile, 120), size (clod size, 1) }: lumpy earth clods and small stones
+//                   seated in the ground, a bumpy cracked soil, sparse crumpled and broken leaves,
+//                 blade: 'tuft' (off unless given): the grass grows in tufts of tapered, curved blades of mixed
+//                   width and height fanning out from their root }
 import * as THREE from 'three';
 import { mulberry, num, registerEffect, type Effect, type FxContext } from '../fx';
 import type { FxCue } from '../types';
@@ -126,8 +131,179 @@ function floorTexture(cue: FxCue, seed: number): THREE.CanvasTexture {
   return t;
 }
 
+/** A crumpled or broken leaf outline: a ragged point-ended lobe, sometimes with a bite out of it. */
+function leafPath(g: CanvasRenderingContext2D, r: () => number, l: number): void {
+  const n = 14;
+  const bite = r() < 0.45 ? Math.floor(r() * n) : -1;
+  g.beginPath();
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const tip = Math.abs(Math.cos(a));
+    let rr = (0.42 + 0.58 * tip ** 0.6) * (0.75 + 0.35 * r());
+    if (bite >= 0 && Math.abs(i - bite) <= 1) rr *= 0.35;
+    const w = Math.sin(a) * 0.45;
+    g.lineTo(Math.cos(a) * l * rr, w * l * rr * (1 + 0.3 * Math.sin(a * 3 + l)));
+  }
+  g.closePath();
+}
+
+/** The relief tile: soil and moss with dry cracks, sparse crumpled leaves, a few small stones; plus its bump map. */
+function reliefTexture(cue: FxCue, rel: Record<string, unknown>, seed: number): [THREE.CanvasTexture, THREE.CanvasTexture] {
+  const S = 512;
+  const mk = () => {
+    const c = document.createElement('canvas');
+    c.width = c.height = S;
+    return [c, c.getContext('2d')!] as const;
+  };
+  const [c, g] = mk();
+  const [cb, gb] = mk();
+  const img = g.createImageData(S, S);
+  const bim = gb.createImageData(S, S);
+  const soil = new THREE.Color(String(cue.soil ?? '#2a2230'));
+  const moss = new THREE.Color(String(cue.moss ?? '#2f4a3c'));
+  const dark = soil.clone().multiplyScalar(0.5);
+  const n1 = tileNoise(seed, 4);
+  const n2 = tileNoise(seed + 7, 16);
+  const n3 = tileNoise(seed + 13, 64);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const u = x / S;
+      const v = y / S;
+      const m = Math.min(1, Math.max(0, (n1(u, v, 4) - 0.48) * 4));
+      const grit = n2(u, v, 3);
+      const fine = n3(u, v, 2);
+      const col = soil.clone().lerp(moss, m * 0.8).lerp(dark, Math.max(0, 0.5 - grit) * 0.9);
+      const k = 1.15 + 0.45 * grit + 0.35 * (fine - 0.5);
+      const i = (y * S + x) * 4;
+      img.data[i] = Math.min(255, col.r * 255 * k);
+      img.data[i + 1] = Math.min(255, col.g * 255 * k);
+      img.data[i + 2] = Math.min(255, col.b * 255 * k);
+      img.data[i + 3] = 255;
+      const h = 255 * (0.25 + 0.4 * grit + 0.35 * fine);
+      bim.data[i] = bim.data[i + 1] = bim.data[i + 2] = h;
+      bim.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  gb.putImageData(bim, 0, 0);
+  const r = mulberry(seed + 3);
+  const wrap = (fn: (ox: number, oy: number) => void) => {
+    for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) fn(ox, oy);
+  };
+  // Dry cracks: wandering, forking dark grooves.
+  for (let i = 0; i < 70; i++) {
+    let x = r() * S;
+    let y = r() * S;
+    let a = r() * Math.PI * 2;
+    const pts: [number, number][] = [[x, y]];
+    const len = 8 + Math.floor(r() * 18);
+    for (let k = 0; k < len; k++) {
+      a += (r() - 0.5) * 1.1;
+      x += Math.cos(a) * 4;
+      y += Math.sin(a) * 4;
+      pts.push([x, y]);
+    }
+    const w = 0.6 + r() * 1.2;
+    wrap((ox, oy) => {
+      for (const [gg, style] of [[g, 'rgba(0,0,0,0.55)'], [gb, 'rgba(0,0,0,0.9)']] as const) {
+        gg.strokeStyle = style;
+        gg.lineWidth = w;
+        gg.beginPath();
+        pts.forEach(([px, py], k) => (k ? gg.lineTo(px + ox, py + oy) : gg.moveTo(px + ox, py + oy)));
+        gg.stroke();
+      }
+    });
+  }
+  // Leaves: sparse, dark, crumpled or broken, a lit and a shaded half, raised a little in the bump map.
+  const leaf = [String(cue.litter ?? '#4a2a4a'), String(cue.litter2 ?? '#5a3a3a'), '#2e2418'];
+  const nl = Math.round(num(rel.litter, 120));
+  for (let i = 0; i < nl; i++) {
+    const x = r() * S;
+    const y = r() * S;
+    const a = r() * Math.PI * 2;
+    const l = 5 + r() * 8;
+    const col = new THREE.Color(leaf[Math.floor(r() * leaf.length)]).multiplyScalar(0.45 + r() * 0.4);
+    const curl = r();
+    const ls = Math.floor(r() * 1e6) + 1;
+    wrap((ox, oy) => {
+      for (const [gg, fill] of [[g, col.getStyle()], [gb, 'rgb(235,235,235)']] as const) {
+        const pr = mulberry(ls);
+        gg.save();
+        gg.translate(x + ox, y + oy);
+        gg.rotate(a);
+        gg.globalAlpha = gg === g ? 0.9 : 0.6;
+        gg.fillStyle = fill;
+        leafPath(gg, pr, l);
+        gg.fill();
+        if (gg === g) {
+          // The curled half in shadow, a midrib and veins.
+          gg.save();
+          gg.clip();
+          gg.fillStyle = `rgba(0,0,0,${0.25 + 0.3 * curl})`;
+          gg.fillRect(-l, 0, l * 2, l);
+          gg.restore();
+          gg.strokeStyle = 'rgba(0,0,0,0.4)';
+          gg.lineWidth = 0.5;
+          gg.beginPath();
+          gg.moveTo(-l * 0.9, 0);
+          gg.lineTo(l * 0.9, 0);
+          gg.stroke();
+        }
+        gg.restore();
+      }
+    });
+  }
+  // A few small dark stones (the big ones are real geometry).
+  for (let i = 0; i < 50; i++) {
+    const x = r() * S;
+    const y = r() * S;
+    const rad = 1 + r() * 2.2;
+    const k = 0.2 + r() * 0.25;
+    wrap((ox, oy) => {
+      const gr = g.createRadialGradient(x + ox - rad * 0.3, y + oy - rad * 0.4, 0, x + ox, y + oy, rad);
+      gr.addColorStop(0, `rgba(${120 * k + 30},${115 * k + 30},${110 * k + 28},1)`);
+      gr.addColorStop(1, `rgba(${30 * k},${28 * k},${24 * k},1)`);
+      g.fillStyle = gr;
+      g.beginPath();
+      g.arc(x + ox, y + oy, rad, 0, Math.PI * 2);
+      g.fill();
+      gb.fillStyle = 'rgb(250,250,250)';
+      gb.beginPath();
+      gb.arc(x + ox, y + oy, rad, 0, Math.PI * 2);
+      gb.fill();
+    });
+  }
+  const tex = (cv: HTMLCanvasElement, srgb: boolean) => {
+    const t = new THREE.CanvasTexture(cv);
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = 8;
+    return t;
+  };
+  return [tex(c, true), tex(cb, false)];
+}
+
+/** A lump: an icosphere pushed about by noise (a clod of earth, or smoother for a stone). */
+function lumpGeometry(seed: number, rough: number, detail: number): THREE.BufferGeometry {
+  const g = new THREE.IcosahedronGeometry(1, detail);
+  const r = mulberry(seed);
+  const bumps = Array.from({ length: 7 }, () => [new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(), (r() - 0.3) * rough] as const);
+  const p = g.attributes.position as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    let k = 1;
+    for (const [d, a] of bumps) k += a * Math.max(0, v.dot(d)) ** 3;
+    k += (Math.sin(v.x * 9 + seed) * Math.sin(v.y * 7) * Math.sin(v.z * 8)) * rough * 0.25;
+    p.setXYZ(i, v.x * k, v.y * k, v.z * k);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
 /** One grass blade, 1 tall: a tapered strip curving forward, base dark to tip light (vertex colours). */
-function bladeGeometry(width: number): THREE.BufferGeometry {
+function bladeGeometry(width: number, tuft = false): THREE.BufferGeometry {
+  if (tuft) return tuftBlade(width);
   const seg = 4;
   const pos: number[] = [];
   const col: number[] = [];
@@ -154,12 +330,42 @@ function bladeGeometry(width: number): THREE.BufferGeometry {
   return g;
 }
 
+/** A tuft's blade, 1 tall: widest a little above the root, tapering to a sharp tip, curving over. */
+function tuftBlade(width: number): THREE.BufferGeometry {
+  const seg = 7;
+  const pos: number[] = [];
+  const col: number[] = [];
+  const nor: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= seg; i++) {
+    const h = i / seg;
+    const w = width * Math.min(1, 0.55 + h * 4) * (1 - h) ** 0.9;
+    const bend = 0.32 * h * h;
+    const y = h * (1 - 0.12 * h * h);
+    pos.push(-w, y, bend, w, y, bend);
+    const k = 0.3 + 0.7 * h;
+    col.push(k, k, k, k, k, k);
+    nor.push(0, 1 - h * 0.5, 0.35 + h * 0.6, 0, 1 - h * 0.5, 0.35 + h * 0.6);
+    if (i < seg) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setIndex(idx);
+  return g;
+}
+
 class Floor implements Effect {
   private group = new THREE.Group();
   private uTime = { value: 0 };
   private mats: THREE.Material[] = [];
   private geos: THREE.BufferGeometry[] = [];
   private tex: THREE.Texture;
+  private bump: THREE.Texture | null = null;
 
   constructor(cue: FxCue, scene: THREE.Scene, ground: Ground) {
     const [x0, z0, x1, z1] = (cue.box as number[]) ?? [-5, -5, 5, 5];
@@ -204,8 +410,14 @@ class Floor implements Effect {
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    this.tex = floorTexture(cue, seed);
+    const rel = cue.relief as Record<string, unknown> | undefined;
+    if (rel) [this.tex, this.bump] = reliefTexture(cue, rel, seed);
+    else this.tex = floorTexture(cue, seed);
     const floorMat = new THREE.MeshStandardMaterial({ map: this.tex, vertexColors: true, roughness: 0.95, metalness: 0 });
+    if (this.bump) {
+      floorMat.bumpMap = this.bump;
+      floorMat.bumpScale = num(rel!.bump, 0.4);
+    }
     const floor = new THREE.Mesh(geo, floorMat);
     floor.receiveShadow = true;
     floor.name = 'cinema-forest-floor';
@@ -217,7 +429,8 @@ class Floor implements Effect {
     const per = num(cue.count, 22);
     const count = Math.round(per * (x1 - x0) * (z1 - z0));
     const [h0, h1] = (cue.height as number[]) ?? [0.12, 0.34];
-    const blade = bladeGeometry(num(cue.width, 0.022));
+    const tuft = cue.blade === 'tuft';
+    const blade = bladeGeometry(num(cue.width, tuft ? 0.01 : 0.022), tuft);
     const grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
     const uTime = this.uTime;
     const wind = num(cue.wind, 0.06);
@@ -247,7 +460,34 @@ class Floor implements Effect {
     const tip = new THREE.Color(String(cue.tip ?? '#6f8f6a'));
     const clump = tileNoise(seed + 9, 8);
     let n = 0;
-    for (let i = 0; i < count; i++) {
+    if (tuft) {
+      // Tufts: blades fanning out of a root, the outer ones leaning further; tufts thicker in clumps.
+      for (let c = 0, tufts = Math.round(count / 14); c < tufts && n < count; c++) {
+        const cx = x0 + r() * (x1 - x0);
+        const cz = z0 + r() * (z1 - z0);
+        if (r() > 0.2 + 0.95 * clump(cx / 18, cz / 18, 3) || inClear(cx, cz, 0.3)) continue;
+        const th = h0 + (h1 - h0) * r() ** 1.3;
+        const k = Math.min(count - n, 7 + Math.floor(r() * 16));
+        const shade = r();
+        for (let b = 0; b < k; b++) {
+          const a = r() * Math.PI * 2;
+          const rr = Math.sqrt(r()) * 0.045;
+          const x = cx + Math.cos(a) * rr;
+          const z = cz + Math.sin(a) * rr;
+          const h = th * (0.45 + 0.65 * r());
+          p.set(x, ground(x, z), z);
+          // Facing out of the tuft (its bend leans away from the root), more for the outer blades.
+          const out = 0.1 + 0.6 * (rr / 0.045) + (r() - 0.5) * 0.3;
+          e.set(out, Math.PI / 2 - a + (r() - 0.5) * 0.6, (r() - 0.5) * 0.25, 'YXZ');
+          q.setFromEuler(e);
+          s.set(0.45 + r() * 0.95, h, h);
+          m.compose(p, q, s);
+          grass.setMatrixAt(n, m);
+          grass.setColorAt(n, base.clone().lerp(tip, 0.15 + 0.5 * shade * r()).multiplyScalar(0.75 + 0.4 * r()));
+          n++;
+        }
+      }
+    } else for (let i = 0; i < count; i++) {
       const x = x0 + r() * (x1 - x0);
       const z = z0 + r() * (z1 - z0);
       // Thicker in clumps, thin on bare patches.
@@ -269,7 +509,52 @@ class Floor implements Effect {
     this.group.add(grass);
     this.geos.push(blade);
     this.mats.push(grassMat);
+    if (rel) this.lumps(rel, cue, x0, z0, x1, z1, seed, inClear, ground);
     scene.add(this.group);
+  }
+
+  /** Clods of earth and small stones, instanced, seated part-way into the ground. */
+  private lumps(rel: Record<string, unknown>, cue: FxCue, x0: number, z0: number, x1: number, z1: number, seed: number, inClear: (x: number, z: number, pad?: number) => boolean, ground: Ground): void {
+    const area = (x1 - x0) * (z1 - z0);
+    const r = mulberry(seed + 31);
+    const size = num(rel.size, 1);
+    const soil = new THREE.Color(String(cue.soil ?? '#2a2230'));
+    const kinds = [
+      // clods: dark soil, rough, flattened; stones: grey, smoother, a little shine
+      { n: Math.round(num(rel.clods, 3) * area), geo: lumpGeometry(seed + 1, 0.9, 2), mat: new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 }), s: [0.03, 0.13], flat: 0.6, sink: 0.3, col: () => soil.clone().multiplyScalar(0.8 + 0.6 * r()) },
+      { n: Math.round(num(rel.pebbles, 6) * area), geo: lumpGeometry(seed + 2, 0.4, 2), mat: new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0 }), s: [0.012, 0.045], flat: 0.65, sink: 0.25, col: () => new THREE.Color('#6b665c').lerp(soil, 0.3 + 0.4 * r()).multiplyScalar(0.45 + 0.5 * r()) },
+    ];
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const p = new THREE.Vector3();
+    const sc = new THREE.Vector3();
+    for (const k of kinds) {
+      const mesh = new THREE.InstancedMesh(k.geo, k.mat, Math.max(1, k.n));
+      let n = 0;
+      for (let i = 0; i < k.n; i++) {
+        const x = x0 + r() * (x1 - x0);
+        const z = z0 + r() * (z1 - z0);
+        const sz = (k.s[0] + (k.s[1] - k.s[0]) * r() ** 2.2) * size;
+        if (inClear(x, z, 0.1)) continue;
+        sc.set(sz * (0.8 + 0.5 * r()), sz * k.flat * (0.7 + 0.5 * r()), sz * (0.8 + 0.5 * r()));
+        p.set(x, ground(x, z) - sc.y * k.sink, z);
+        e.set((r() - 0.5) * 0.4, r() * Math.PI * 2, (r() - 0.5) * 0.4);
+        q.setFromEuler(e);
+        m.compose(p, q, sc);
+        mesh.setMatrixAt(n, m);
+        mesh.setColorAt(n, k.col());
+        n++;
+      }
+      mesh.count = n;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.frustumCulled = false;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+      this.geos.push(k.geo);
+      this.mats.push(k.mat);
+    }
   }
 
   update(ctx: FxContext): void {
@@ -281,6 +566,7 @@ class Floor implements Effect {
     for (const g of this.geos) g.dispose();
     for (const m of this.mats) m.dispose();
     this.tex.dispose();
+    this.bump?.dispose();
   }
 }
 

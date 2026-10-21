@@ -503,11 +503,13 @@ class Meteor implements Effect {
     const tau = ctx.t - this.cue.t;
     const d = num(this.cue.d, 2);
     const to = ctx.point(this.cue.to);
+    // `from` may be a point on the ground ({ g }) like `to`, not only world coordinates.
+    const from = Array.isArray(this.cue.from) ? vec(this.cue.from, [0, 60, 0]) : ctx.point(this.cue.from);
     for (const b of [this.tail, this.sparks, this.glow, this.streak]) {
       (b.u.uTo.value as THREE.Vector3).copy(to);
+      (b.u.uFrom.value as THREE.Vector3).copy(from);
       b.set(tau, ctx, tau < d + 1);
     }
-    const from = vec(this.cue.from, [0, 60, 0]);
     const k = Math.min(1, Math.max(0, tau / d));
     const p = from.clone().lerp(to, k * (0.45 + 0.55 * k));
     const on = tau >= 0 && tau < d;

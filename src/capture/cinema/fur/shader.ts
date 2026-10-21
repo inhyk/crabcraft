@@ -18,6 +18,7 @@ uniform float uWaveSpeed;
 uniform float uGust;
 uniform float uFlutter;
 uniform vec3 uFlutterDir;
+uniform float uSwing;
 
 vec4 texel(int i) { return texelFetch(uStrands, ivec2(i % uTexW, i / uTexW), 0); }
 
@@ -56,20 +57,73 @@ void strandAt(int id, float v, out vec3 pos, out vec3 tanV, out vec4 data, out v
   tanV = 0.5 * ((p2 - p0) + 2.0 * a * u + 3.0 * b * u * u) * float(uP - 1);
   vec3 tip = texel(base + uP - 1).xyz;
   float len = length(tip - d0.xyz);
-  // Gusts travel across the coat along the wind; each strand flutters a little on its own.
+  // Gusts travel across the coat along the wind; each lock swings on its own; tips flick.
   float r = d1.w;
   float ph = dot(d0.xyz, uWindK) - uTime * uWaveSpeed;
   // Locks share r, so each lock catches the gust on its own beat.
-  float gust = uGust * (0.55 + 0.22 * sin(ph) + 0.23 * sin(ph * 2.7 + 1.3 + r * 6.2831));
-  float fl = uFlutter * sin(uTime * (11.0 + 7.0 * d3.w) + r * 40.0 + v * 4.0);
+  float gust = uGust * (0.5 + 0.2 * sin(ph) + 0.18 * sin(ph * 2.7 + 1.3 + r * 6.2831));
+  // A lock's own swing, 0.6 to 1.4 Hz, in a direction of its own across the wind.
+  float ang = r * 6.2831;
+  vec3 swingDir = uWind * cos(ang) + uFlutterDir * length(uWind) * sin(ang);
+  float swing = uSwing * sin(uTime * (3.8 + 5.0 * r) + r * 97.0);
+  // The tips' flick, 2 to 5 Hz, every hair its own.
+  float fl = uFlutter * sin(uTime * (14.0 + 18.0 * d3.w) + r * 40.0 + d2.w * 31.0 + v * 4.0) * (0.4 + v);
   float k = len / max(0.2, nrm.w);
-  pos += (uWind * gust + uFlutterDir * fl) * k * v * v;
-  tanV += (uWind * gust + uFlutterDir * fl) * k * 2.0 * v;
+  vec3 disp = uWind * gust + swingDir * swing + uFlutterDir * fl;
+  pos += disp * k * v * v;
+  tanV += disp * k * 2.0 * v;
+}
+`;
+
+/** Where a point sits in the coat's deep opacity map (shadow.ts): map uv and depth from the key. */
+const DOM_VERT = /* glsl */ `
+uniform mat4 uDomMat;
+uniform mat4 uDomView;
+out vec3 vDom;
+void domCoord(vec3 wp) {
+  vec4 c = uDomMat * vec4(wp, 1.0);
+  vDom = vec3(c.xy * 0.5 + 0.5, -(uDomView * vec4(wp, 1.0)).z);
+}
+`;
+
+/** Light reaching a point from the key through the hair in front of it, or -1 off the map. */
+const DOM_FRAG = /* glsl */ `
+uniform float uDomOn;
+uniform highp sampler2D uDomD0;
+uniform highp sampler2D uDomL0;
+uniform highp sampler2D uDomL1;
+uniform vec4 uDomB0;
+uniform vec4 uDomB1;
+uniform float uDomNear;
+uniform float uDomFar;
+uniform float uDomK;
+uniform float uDomBias;
+in vec3 vDom;
+float domShadow() {
+  if (uDomOn < 0.5 || vDom.x < 0.0 || vDom.y < 0.0 || vDom.x > 1.0 || vDom.y > 1.0) return -1.0;
+  float d0 = uDomNear + texture(uDomD0, vDom.xy).r * (uDomFar - uDomNear);
+  float z = vDom.z - uDomBias - d0;
+  if (z <= 0.0) return 1.0;
+  vec4 a = texture(uDomL0, vDom.xy);
+  vec4 b = texture(uDomL1, vDom.xy);
+  // The hair summed up to each slab's far side, read piecewise linear in depth.
+  float op;
+  if (z < uDomB0.x) op = a.x * z / uDomB0.x;
+  else if (z < uDomB0.y) op = mix(a.x, a.y, (z - uDomB0.x) / (uDomB0.y - uDomB0.x));
+  else if (z < uDomB0.z) op = mix(a.y, a.z, (z - uDomB0.y) / (uDomB0.z - uDomB0.y));
+  else if (z < uDomB0.w) op = mix(a.z, a.w, (z - uDomB0.z) / (uDomB0.w - uDomB0.z));
+  else if (z < uDomB1.x) op = mix(a.w, b.x, (z - uDomB0.w) / (uDomB1.x - uDomB0.w));
+  else if (z < uDomB1.y) op = mix(b.x, b.y, (z - uDomB1.x) / (uDomB1.y - uDomB1.x));
+  else if (z < uDomB1.z) op = mix(b.y, b.z, (z - uDomB1.y) / (uDomB1.z - uDomB1.y));
+  else if (z < uDomB1.w) op = mix(b.z, b.w, (z - uDomB1.z) / (uDomB1.w - uDomB1.z));
+  else op = b.w;
+  return exp(-uDomK * op);
 }
 `;
 
 const HAIR_VERT = /* glsl */ `
 ${STRAND}
+${DOM_VERT}
 uniform float uScale;
 uniform float uPxSize;
 uniform float uMinPx;
@@ -94,6 +148,7 @@ void main() {
   vShadow = occAt(gl_InstanceID * uStride, aV, 1);
   // Level of detail: a fixed random subset of strands, the survivors wider.
   if (fract(data.y * 13.37 + data.w * 7.91) > uDensity) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
+  domCoord((modelMatrix * vec4(pos, 1.0)).xyz);
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
   vec3 T = normalize((modelViewMatrix * vec4(tanV, 0.0)).xyz);
   vec3 V = normalize(-mvPosition.xyz);
@@ -131,7 +186,7 @@ float kk(vec3 T, vec3 H, float e) {
   float th = dot(T, H);
   return pow(max(0.0, sqrt(max(0.0, 1.0 - th * th))), e);
 }
-vec3 dirLight(vec3 L, vec3 lc, vec3 alb, vec3 T, vec3 T1, vec3 T2, vec3 N, vec3 V, float ao, float tipLit, float sparkle) {
+vec3 dirLight(vec3 L, vec3 lc, vec3 alb, vec3 T, vec3 T1, vec3 T2, vec3 N, vec3 V, float ao, float tipLit, float sparkle, float sh) {
   float tl = dot(T, L);
   float diff = sqrt(max(0.0, 1.0 - tl * tl));
   float facing = clamp((dot(N, L) + uWrap) / (1.0 + uWrap), 0.0, 1.0);
@@ -139,8 +194,7 @@ vec3 dirLight(vec3 L, vec3 lc, vec3 alb, vec3 T, vec3 T1, vec3 T2, vec3 N, vec3 
   float s1 = kk(T1, H, uGloss1) * uSpec1;
   float s2 = kk(T2, H, uGloss2) * uSpec2 * (0.4 + sparkle);
   float back = pow(max(0.0, dot(-V, L)), 4.0) * uBack * tipLit;
-  // The coat's own shadow (toward the key, from the groom) darkens what the light would reach.
-  float sh = mix(0.05, 1.0, vShadow);
+  // sh: the coat's own shadow, which darkens what the light would reach.
   return lc * ((alb * diff + s1 + s2 * alb * 2.0) * facing * ao * sh + back * alb);
 }
 vec3 hairLight(vec3 alb, vec3 T, vec3 N, vec3 V, float ao, float tipLit, float sparkle) {
@@ -154,12 +208,17 @@ vec3 hairLight(vec3 alb, vec3 T, vec3 N, vec3 V, float ao, float tipLit, float s
   #endif
   vec3 T1 = normalize(T + N * uShift);
   vec3 T2 = normalize(T - N * uShift * 1.6);
+  // The scene's lights take the groom's shadow (cast from the key's side at rest); the key takes the
+  // deep opacity map, drawn every frame, where it reaches.
+  float groomSh = mix(0.05, 1.0, vShadow);
+  float dom = domShadow();
+  float keySh = dom < 0.0 ? groomSh : mix(0.025, 1.0, dom);
   #if NUM_DIR_LIGHTS > 0
-  for (int i = 0; i < NUM_DIR_LIGHTS; i++) col += dirLight(directionalLights[i].direction, directionalLights[i].color, alb, T, T1, T2, N, V, ao, tipLit, sparkle);
+  for (int i = 0; i < NUM_DIR_LIGHTS; i++) col += dirLight(directionalLights[i].direction, directionalLights[i].color, alb, T, T1, T2, N, V, ao, tipLit, sparkle, groomSh);
   #endif
   // The costume's own key and rim (view space), lighting the fur and nothing else. The rim only
   // shines through the tips and along the silhouette, where the coat turns away from the lens.
-  col += dirLight(uKeyDir, uKeyCol, alb, T, T1, T2, N, V, ao, tipLit, sparkle);
+  col += dirLight(uKeyDir, uKeyCol, alb, T, T1, T2, N, V, ao, tipLit, sparkle, keySh);
   float edge = pow(1.0 - abs(dot(N, V)), 2.0);
   float through = pow(max(0.0, dot(-V, uRimDir)), 3.0);
   vec3 Hr = normalize(uRimDir + V);
@@ -201,6 +260,7 @@ in float vShadow;
 #include <common>
 #include <lights_pars_begin>
 #include <fog_pars_fragment>
+${DOM_FRAG}
 ${LIGHTING}
 void main() {
   vec3 T = normalize(vT);
@@ -229,8 +289,22 @@ void main() {
 }
 `;
 
+/** A snow bit's quad: round, or stretched `stretch` times along its hair as seen on screen. */
+const BIT_AXES = /* glsl */ `
+mat2 bitAxes(float stretch, vec3 tanV) {
+  if (stretch < 1.01) return mat2(1.0);
+  vec2 t = (modelViewMatrix * vec4(tanV, 0.0)).xy;
+  float l = length(t);
+  if (l < 1e-8) return mat2(1.0);
+  t /= l;
+  return mat2(t * stretch, vec2(-t.y, t.x));
+}
+`;
+
 const BITS_VERT = /* glsl */ `
 ${STRAND}
+${DOM_VERT}
+${BIT_AXES}
 uniform float uScale;
 uniform float uPxSize;
 uniform float uDensity;
@@ -239,6 +313,7 @@ in float aStrand;
 in float aAt;
 in float aSize;
 in vec4 aSpin;
+in vec2 aShape;
 out vec2 vCorner;
 out vec4 vSpin;
 out float vKind;
@@ -250,9 +325,11 @@ void main() {
   int id = int(aStrand);
   strandAt(id, aAt, pos, tanV, data, nrm);
   if (fract(data.y * 13.37 + data.w * 7.91) > uDensity) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
-  vec4 mvPosition = modelViewMatrix * vec4(pos + nrm.xyz * aSize * 0.35, 1.0);
+  vec3 at = pos + nrm.xyz * aSize * aShape.y;
+  domCoord((modelMatrix * vec4(at, 1.0)).xyz);
+  vec4 mvPosition = modelViewMatrix * vec4(at, 1.0);
   float s = max(abs(aSize) * uScale, 1.5 * uPxSize * max(0.001, -mvPosition.z));
-  mvPosition.xy += aCorner * s;
+  mvPosition.xy += bitAxes(aShape.x, tanV) * aCorner * s;
   gl_Position = projectionMatrix * mvPosition;
   vCorner = aCorner;
   vSpin = aSpin;
@@ -276,8 +353,11 @@ in vec3 vViewPos;
 #include <common>
 #include <lights_pars_begin>
 #include <fog_pars_fragment>
+${DOM_FRAG}
 void main() {
   vec2 c = vCorner;
+  float dom = domShadow();
+  float keySh = dom < 0.0 ? 1.0 : mix(0.04, 1.0, dom);
   float r = length(c);
   vec3 V = normalize(-vViewPos);
   vec3 col;
@@ -297,7 +377,7 @@ void main() {
       g += pow(max(0.0, dot(R, V)), 60.0) * length(directionalLights[i].color);
     }
     #endif
-    g += pow(max(0.0, dot(reflect(-uKeyDir, n), V)), 60.0) * length(uKeyCol);
+    g += pow(max(0.0, dot(reflect(-uKeyDir, n), V)), 60.0) * length(uKeyCol) * keySh;
     g += pow(max(0.0, dot(reflect(-uRimDir, n), V)), 60.0) * length(uRimCol);
     vec3 sky = ambientLightColor;
     #if NUM_HEMI_LIGHTS > 0
@@ -316,13 +396,86 @@ void main() {
     #if NUM_DIR_LIGHTS > 0
     for (int i = 0; i < NUM_DIR_LIGHTS; i++) l += directionalLights[i].color * max(0.0, dot(n, directionalLights[i].direction) * 0.8 + 0.2);
     #endif
-    l += uKeyCol * max(0.0, dot(n, uKeyDir) * 0.8 + 0.2) + uRimCol * pow(max(0.0, -dot(vec3(0.0, 0.0, 1.0), uRimDir)), 2.0) * smoothstep(0.5, 1.0, r / lump);
+    l += uKeyCol * max(0.0, dot(n, uKeyDir) * 0.8 + 0.2) * keySh + uRimCol * pow(max(0.0, -dot(vec3(0.0, 0.0, 1.0), uRimDir)), 2.0) * smoothstep(0.5, 1.0, r / lump);
     col = uSnowCol * l * (0.8 + 0.2 * n.z) * RECIPROCAL_PI;
   }
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
+}
+`;
+
+/**
+ * The hair drawn into the deep opacity map (shadow.ts), from an orthographic light: a ribbon at least
+ * one and a half texels wide whose opacity is the share of it the hair really covers.
+ */
+export const HAIR_SHADOW_VERT = /* glsl */ `
+${STRAND}
+uniform float uScale;
+uniform float uWidthMul;
+uniform float uTipWidth;
+uniform float uDensity;
+uniform float uTexel;
+uniform float uAlphaK;
+in float aV;
+in float aSide;
+out float vDepth;
+out float vAlpha;
+out vec2 vCorner;
+void main() {
+  vec3 pos; vec3 tanV; vec4 data; vec4 nrm;
+  strandAt(gl_InstanceID, aV, pos, tanV, data, nrm);
+  vCorner = vec2(0.0);
+  vDepth = 0.0;
+  vAlpha = 0.0;
+  if (fract(data.y * 13.37 + data.w * 7.91) > uDensity) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
+  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+  vec3 T = normalize((modelViewMatrix * vec4(tanV, 0.0)).xyz);
+  vec3 side = cross(T, vec3(0.0, 0.0, 1.0));
+  float sl = length(side);
+  side = sl > 1e-4 ? side / sl : vec3(1.0, 0.0, 0.0);
+  float w = data.x * mix(1.0, uTipWidth, pow(aV, 0.8)) * uWidthMul * uScale;
+  float wd = max(w, uTexel * 1.5);
+  vAlpha = uAlphaK * w / wd;
+  mv.xyz += side * aSide * 0.5 * wd;
+  vDepth = -mv.z;
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+/** The snow bits in the map: discs at least a texel across, opacity by the share they cover. */
+export const BITS_SHADOW_VERT = /* glsl */ `
+${STRAND}
+uniform float uScale;
+uniform float uDensity;
+uniform float uTexel;
+uniform float uAlphaK;
+in vec2 aCorner;
+in float aStrand;
+in float aAt;
+in float aSize;
+in vec4 aSpin;
+in vec2 aShape;
+out float vDepth;
+out float vAlpha;
+out vec2 vCorner;
+${BIT_AXES}
+void main() {
+  vec3 pos; vec3 tanV; vec4 data; vec4 nrm;
+  strandAt(int(aStrand), aAt, pos, tanV, data, nrm);
+  vCorner = aCorner;
+  vDepth = 0.0;
+  vAlpha = 0.0;
+  if (fract(data.y * 13.37 + data.w * 7.91) > uDensity) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
+  vec4 mv = modelViewMatrix * vec4(pos + nrm.xyz * aSize * aShape.y, 1.0);
+  float s0 = abs(aSize) * uScale;
+  float s = max(s0, uTexel);
+  // Ice crystals are thin plates and let most of the light by.
+  vAlpha = uAlphaK * (aSize < 0.0 ? 0.3 : 1.0) * (s0 * s0) / (s * s);
+  mv.xy += bitAxes(aShape.x, tanV) * aCorner * s;
+  vDepth = -mv.z;
+  gl_Position = projectionMatrix * mv;
 }
 `;
 
@@ -362,6 +515,7 @@ export function strandUniforms(tex: THREE.DataTexture, stride: number, p: number
     uGust: { value: 1 },
     uFlutter: { value: 0 },
     uFlutterDir: { value: new THREE.Vector3(1, 0, 0) },
+    uSwing: { value: 0 },
     uScale: { value: 1 },
     uPxSize: { value: 0.001 },
     uDensity: { value: 1 },
@@ -370,6 +524,24 @@ export function strandUniforms(tex: THREE.DataTexture, stride: number, p: number
     uRimDir: { value: new THREE.Vector3(0, 0, -1) },
     uRimCol: { value: new THREE.Color(0, 0, 0) },
     uFill: { value: 1 },
+  };
+}
+
+/** Stand-ins for the deep opacity map's uniforms until shadow.ts shares its own (off by default). */
+function domDefaults(): Record<string, THREE.IUniform> {
+  return {
+    uDomOn: { value: 0 },
+    uDomD0: { value: null },
+    uDomL0: { value: null },
+    uDomL1: { value: null },
+    uDomMat: { value: new THREE.Matrix4() },
+    uDomView: { value: new THREE.Matrix4() },
+    uDomB0: { value: new THREE.Vector4(1, 2, 3, 4) },
+    uDomB1: { value: new THREE.Vector4(5, 6, 7, 8) },
+    uDomNear: { value: 0 },
+    uDomFar: { value: 1 },
+    uDomK: { value: 1 },
+    uDomBias: { value: 0 },
   };
 }
 
@@ -407,7 +579,7 @@ export function hairMaterial(shared: Record<string, THREE.IUniform>, look: HairL
       },
     ]),
   });
-  Object.assign(m.uniforms, shared);
+  Object.assign(m.uniforms, domDefaults(), shared);
   return m;
 }
 
@@ -424,7 +596,7 @@ export function bitsMaterial(shared: Record<string, THREE.IUniform>, glint: numb
       { uSnowCol: { value: lin('#e6eeff') }, uGlint: { value: glint } },
     ]),
   });
-  Object.assign(m.uniforms, shared);
+  Object.assign(m.uniforms, domDefaults(), shared);
   return m;
 }
 
@@ -454,8 +626,8 @@ export function ribbon(seg: number, count: number): THREE.InstancedBufferGeometr
   return g;
 }
 
-/** Quads for the snow bits; per instance: strand, v on it, size (negative: an ice crystal), spin. */
-export function bitsGeometry(strand: Float32Array, at: Float32Array, size: Float32Array, spin: Float32Array): THREE.InstancedBufferGeometry {
+/** Quads for the snow bits; per instance: strand, v on it, size (negative: an ice crystal), spin, shape. */
+export function bitsGeometry(strand: Float32Array, at: Float32Array, size: Float32Array, spin: Float32Array, shape: Float32Array): THREE.InstancedBufferGeometry {
   const g = new THREE.InstancedBufferGeometry();
   g.setIndex([0, 1, 2, 0, 2, 3]);
   g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(12), 3));
@@ -464,6 +636,7 @@ export function bitsGeometry(strand: Float32Array, at: Float32Array, size: Float
   g.setAttribute('aAt', new THREE.InstancedBufferAttribute(at, 1));
   g.setAttribute('aSize', new THREE.InstancedBufferAttribute(size, 1));
   g.setAttribute('aSpin', new THREE.InstancedBufferAttribute(spin, 4));
+  g.setAttribute('aShape', new THREE.InstancedBufferAttribute(shape, 2));
   g.instanceCount = strand.length;
   return g;
 }
