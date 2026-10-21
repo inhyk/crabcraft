@@ -14,19 +14,23 @@ export const GIANT = { enemy: 'corrodius', scale: 3.5 };
 
 /**
  * The fur costumes (src/capture/cinema/fx/snow-fur.ts): the dwarf's mantle, beard and brows and the
- * beast's pelt, put on in every shot they appear in, blowing with that shot's snow. A shot that has its
- * own fur cue for an actor keeps it. Key and rim light the fur alone (camera space: x right, y up, z at
- * the lens); the rim comes from behind and makes the coat's edge glow.
+ * beast's pelt, put on in every shot they appear in, blowing with that shot's snow. A shot's own fur cue
+ * for an actor (say to dim the LEDs in a macro) keeps its fields and gets the rest from here. The key
+ * lights the fur alone from high on the crab's right and behind (the groom casts the coat's shadow from
+ * there); the rim comes from behind the camera's subject and makes the coat's edge glow.
  */
-const FUR_KEY = { dir: [-0.5, 0.7, 0.6], color: '#fff2e0', gain: 2.4 };
+const FUR_KEY = { color: '#fff1e0', gain: 7 };
 const FUR_RIM = { dir: [0.35, 0.45, -1], color: '#dfe9ff', gain: 6 };
 const outfit = (a) => (a.spec?.name === DWARF.name ? 'dwarf' : a.enemy === BEAST.enemy && a.scale === BEAST.scale ? 'beast' : null);
 export function dress(shot) {
   const fx = shot.fx ?? [];
   const wind = fx.filter((f) => f.kind === 'snow-streaks').pop()?.drift ?? [2, -1, 3];
-  const own = new Set(fx.filter((f) => f.kind === 'fur').map((f) => f.actor));
-  const add = shot.actors
-    .filter((a) => outfit(a) && !own.has(a.id))
-    .map((a) => ({ t: -3, kind: 'fur', actor: a.id, outfit: outfit(a), wind, key: FUR_KEY, rim: FUR_RIM }));
-  return add.length ? { ...shot, fx: [...fx, ...add] } : shot;
+  const base = (a) => ({ t: -3, kind: 'fur', actor: a.id, outfit: outfit(a), wind, key: FUR_KEY, rim: FUR_RIM });
+  const dressed = shot.actors.filter((a) => outfit(a));
+  if (!dressed.length) return shot;
+  const own = (a) => fx.find((f) => f.kind === 'fur' && f.actor === a.id);
+  return {
+    ...shot,
+    fx: [...fx.filter((f) => f.kind !== 'fur' || !dressed.some((a) => a.id === f.actor)), ...dressed.map((a) => ({ ...base(a), ...own(a) }))],
+  };
 }

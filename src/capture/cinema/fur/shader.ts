@@ -22,13 +22,13 @@ uniform vec3 uFlutterDir;
 vec4 texel(int i) { return texelFetch(uStrands, ivec2(i % uTexW, i / uTexW), 0); }
 
 // Texel 0..P-1: points (xyz) with per-strand data in w: width, random, snow, random 2.
-// Texel P: the root's surface normal (xyz) and the strand's stiffness (w). Then each point's
-// occlusion, four to a texel.
-float occAt(int base, float v) {
+// Texel P: the root's surface normal (xyz) and the strand's stiffness (w). Then each point's sky
+// occlusion, four to a texel, and after those its occlusion toward the key light (set 1).
+float occAt(int base, float v, int set) {
   float s = v * float(uP - 1);
   int i = min(int(floor(s)), uP - 2);
   float u = s - float(i);
-  int o = base + uP + 1;
+  int o = base + uP + 1 + set * ((uP + 3) / 4);
   vec4 a = texel(o + i / 4);
   vec4 b = texel(o + (i + 1) / 4);
   float x = a[i % 4];
@@ -59,7 +59,8 @@ void strandAt(int id, float v, out vec3 pos, out vec3 tanV, out vec4 data, out v
   // Gusts travel across the coat along the wind; each strand flutters a little on its own.
   float r = d1.w;
   float ph = dot(d0.xyz, uWindK) - uTime * uWaveSpeed;
-  float gust = uGust * (0.62 + 0.26 * sin(ph) + 0.12 * sin(ph * 2.7 + 1.3 + r * 2.0));
+  // Locks share r, so each lock catches the gust on its own beat.
+  float gust = uGust * (0.55 + 0.22 * sin(ph) + 0.23 * sin(ph * 2.7 + 1.3 + r * 6.2831));
   float fl = uFlutter * sin(uTime * (11.0 + 7.0 * d3.w) + r * 40.0 + v * 4.0);
   float k = len / max(0.2, nrm.w);
   pos += (uWind * gust + uFlutterDir * fl) * k * v * v;
@@ -83,12 +84,14 @@ out vec3 vN;
 out vec4 vData;
 out vec3 vViewPos;
 out float vOcc;
+out float vShadow;
 #include <common>
 #include <fog_pars_vertex>
 void main() {
   vec3 pos; vec3 tanV; vec4 data; vec4 nrm;
   strandAt(gl_InstanceID, aV, pos, tanV, data, nrm);
-  vOcc = occAt(gl_InstanceID * uStride, aV);
+  vOcc = occAt(gl_InstanceID * uStride, aV, 0);
+  vShadow = occAt(gl_InstanceID * uStride, aV, 1);
   // Level of detail: a fixed random subset of strands, the survivors wider.
   if (fract(data.y * 13.37 + data.w * 7.91) > uDensity) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
@@ -116,6 +119,7 @@ uniform vec3 uKeyDir;
 uniform vec3 uKeyCol;
 uniform vec3 uRimDir;
 uniform vec3 uRimCol;
+uniform float uFill;
 uniform float uSpec1;
 uniform float uSpec2;
 uniform float uGloss1;
@@ -135,14 +139,17 @@ vec3 dirLight(vec3 L, vec3 lc, vec3 alb, vec3 T, vec3 T1, vec3 T2, vec3 N, vec3 
   float s1 = kk(T1, H, uGloss1) * uSpec1;
   float s2 = kk(T2, H, uGloss2) * uSpec2 * (0.4 + sparkle);
   float back = pow(max(0.0, dot(-V, L)), 4.0) * uBack * tipLit;
-  return lc * (alb * diff * facing * ao + (s1 + s2 * alb * 2.0) * facing * ao + back * alb);
+  // The coat's own shadow (toward the key, from the groom) darkens what the light would reach.
+  float sh = mix(0.05, 1.0, vShadow);
+  return lc * ((alb * diff + s1 + s2 * alb * 2.0) * facing * ao * sh + back * alb);
 }
 vec3 hairLight(vec3 alb, vec3 T, vec3 N, vec3 V, float ao, float tipLit, float sparkle) {
-  vec3 col = ambientLightColor * alb * ao;
+  // The fill (sky and ambient) can be held under the key so the coat's shading reads.
+  vec3 col = ambientLightColor * alb * ao * uFill;
   #if NUM_HEMI_LIGHTS > 0
   for (int i = 0; i < NUM_HEMI_LIGHTS; i++) {
     float h = dot(N, hemisphereLights[i].direction) * 0.5 + 0.5;
-    col += mix(hemisphereLights[i].groundColor, hemisphereLights[i].skyColor, h) * alb * ao;
+    col += mix(hemisphereLights[i].groundColor, hemisphereLights[i].skyColor, h) * alb * ao * uFill;
   }
   #endif
   vec3 T1 = normalize(T + N * uShift);
@@ -190,6 +197,7 @@ in vec3 vN;
 in vec4 vData;
 in vec3 vViewPos;
 in float vOcc;
+in float vShadow;
 #include <common>
 #include <lights_pars_begin>
 #include <fog_pars_fragment>
@@ -207,7 +215,11 @@ void main() {
   // Only the snowiest hairs frost white at the tips; the rest carry their snow as clumps (the bits).
   float snow = smoothstep(0.55, 0.9, vData.z) * smoothstep(1.0 - uSnowLen * (0.5 + r2), 1.0, vV);
   alb = mix(alb, uSnowCol, clamp(snow, 0.0, 1.0));
-  float ao = mix(uRootAO, 1.0, vOcc) * mix(0.7, 1.0, smoothstep(0.0, 0.6, vV));
+  // Rime: specks of frost along snowy hairs, a finer layer than the snow bits.
+  float speck = fract(sin(dot(vec2(r * 91.7 + r2 * 13.1, floor(vV * 30.0)), vec2(12.9898, 78.233))) * 43758.5453);
+  float rime = step(0.88, speck) * smoothstep(0.2, 0.7, vData.z) * smoothstep(0.15, 0.5, vV);
+  alb = mix(alb, uSnowCol, rime * 0.35);
+  float ao = mix(uRootAO, 1.0, vOcc) * mix(0.55, 1.0, smoothstep(0.0, 0.6, vV));
   float sparkle = snow > 0.2 ? step(0.93, fract(r * 517.3 + vV * 3.1)) * 3.0 : 0.0;
   vec3 col = hairLight(alb, T, N, V, ao, vV, sparkle);
   gl_FragColor = vec4(col, 1.0);
@@ -357,6 +369,7 @@ export function strandUniforms(tex: THREE.DataTexture, stride: number, p: number
     uKeyCol: { value: new THREE.Color(0, 0, 0) },
     uRimDir: { value: new THREE.Vector3(0, 0, -1) },
     uRimCol: { value: new THREE.Color(0, 0, 0) },
+    uFill: { value: 1 },
   };
 }
 
@@ -374,14 +387,14 @@ export function hairMaterial(shared: Record<string, THREE.IUniform>, look: HairL
       THREE.UniformsLib.lights,
       THREE.UniformsLib.fog,
       {
-        uMinPx: { value: 0.7 },
+        uMinPx: { value: 0.4 },
         uWidthMul: { value: 1 },
         uTipWidth: { value: look.tipWidth ?? 0.25 },
         uColA: { value: lin(look.colA) },
         uColB: { value: lin(look.colB) },
         uTipCol: { value: lin(look.tip) },
         uTipAmt: { value: look.tipAmt },
-        uSnowCol: { value: lin(look.snow ?? '#f4f7ff') },
+        uSnowCol: { value: lin(look.snow ?? '#e9f0ff') },
         uSnowLen: { value: look.snowLen ?? 0.3 },
         uRootAO: { value: look.rootAO ?? 0.22 },
         uSpec1: { value: look.spec1 ?? 0.05 },
@@ -408,7 +421,7 @@ export function bitsMaterial(shared: Record<string, THREE.IUniform>, glint: numb
     uniforms: THREE.UniformsUtils.merge([
       THREE.UniformsLib.lights,
       THREE.UniformsLib.fog,
-      { uSnowCol: { value: lin('#f2f6ff') }, uGlint: { value: glint } },
+      { uSnowCol: { value: lin('#e6eeff') }, uGlint: { value: glint } },
     ]),
   });
   Object.assign(m.uniforms, shared);
