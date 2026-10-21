@@ -732,7 +732,7 @@ const undeadShots = [
       // by the stamp and each fling of the cast.
       { kind: 'night-staff', t: -3, actor: 'u', beads: { swing: [[STAMP, 0.3, 90], [6.75, 0.35], [8.6, 0.45, 90], [12.5, 0.45, 90]] } },
       { kind: 'shake', t: STAMP, d: 0.45, amp: 0.03 },
-      { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 1.6, light: 1.6, gain: 0.75, embers: 150, clear: LOW_PATH.map((q) => [...q, 0.9]) },
+      { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 0.8, light: 1.6, gain: 0.75, embers: 260, smoke: 220, smokeA: 0.42, clear: LOW_PATH.map((q) => [...q, 0.9]) },
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
       { kind: 'motes', t: -1, at: { g: [U[0], 1.2, U[1] - 2] }, count: 160, box: [10, 4, 10], drift: [0.1, 0.15, 0.05], size: 0.04, color: '#9dff6a', color2: '#d0ff9a' },
       // Cold moonlight from above the lens, so the ground and the claw read before the fire opens.
