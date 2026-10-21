@@ -266,8 +266,8 @@ function buildLabels(land) {
     g.beginPath(); g.moveTo(x - s * 0.1, y - s * 0.62); g.lineTo(x + s * 0.08, y + s * 0.05); g.stroke(); // the shaded ridge
   }
   // The drawings in the sea off the east continent, as the original's: a galleon at lower left, a dragon at right.
-  drawShip(g, 1695, 1385, 1.8);
-  drawDragon(g, 3590, 1230, 1.45);
+  drawShip(g, 1760, 1395, 1.8);
+  drawDragon(g, 3545, 1232, 1.45);
   return c;
 }
 
@@ -282,7 +282,7 @@ function inked(dst, x, y, s, ink, fn) {
   const C = (pts) => { g.beginPath(); g.moveTo(...pts[0]);
     for (let i = 0; i < pts.length - 1; i++) { const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
       g.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6, p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1]); } };
-  const st = (w, a = 1) => { g.lineWidth = w / s; g.strokeStyle = k(a); g.stroke(); };
+  const st = (w, a = 1) => { g.lineWidth = 1.35 * w / s; g.strokeStyle = k(a); g.stroke(); };
   const fl = (a) => { g.fillStyle = k(a); g.fill(); };
   fn({ P, C, st, fl, g });
   dst.save(); dst.filter = 'blur(0.6px)'; dst.drawImage(c, Math.round(x - half), Math.round(y - half)); dst.restore();
@@ -322,7 +322,7 @@ function drawShip(g, x, y, s) {
 }
 /** A winged dragon gliding west toward the continent, tail curled (local units, ~240 wide). */
 function drawDragon(g, x, y, s) {
-  inked(g, x, y, s, 0.85, ({ P, C, st, fl, g }) => {
+  inked(g, x, y, s, 1, ({ P, C, st, fl, g }) => {
     const top = [[-84, -31], [-64, -20], [-36, -14], [0, -16], [40, -9], [78, -5], [104, -12], [118, -26], [116, -40]];
     const bot = [[-90, -12], [-64, -5], [-40, 9], [-4, 14], [36, 9], [76, 3], [104, -3], [122, -18], [124, -34], [116, -40]];
     // Body filled faintly, then outlined.
