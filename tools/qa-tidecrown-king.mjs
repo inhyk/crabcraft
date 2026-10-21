@@ -7,7 +7,8 @@
 // nothing). A reload keeps the log in the journey save and pays nothing again; an old save without the field, and one
 // with a broken field, load with a fresh log. Then on a server world (a loopback host with a disposable PG, as
 // qa-tidecrown-hub) no king is built. Zero page errors throughout.
-// Writes the 1600x900 shots to CC_QA_SHOTS (default tmp/king-shots).
+// Writes the 1600x900 shots (the king before the gate, his crown, his offer, the tracker, turn-in and thanks) to
+// CC_QA_SHOTS (default tmp/king-shots).
 // Usage: CC_QA_BASE=http://127.0.0.1:5271 node tools/qa-tidecrown-king.mjs   (CC_QA_SERVER=0 skips the server world;
 //   WORLD_QA_BROWSER_PORT, WORLD_QA_HOST_PORT pick its ports)
 import assert from 'node:assert/strict';
@@ -151,6 +152,14 @@ try {
   });
   await p.waitForTimeout(4500);
   await p.screenshot({ path: `${shots}/king-before-the-gate.png` });
+  // His crown, close.
+  await p.evaluate(() => {
+    const g = window.app.current.game, { x, z, yaw } = window.__K.K.KING_POST, y = g.world2.tidecrown.height(x, z);
+    const cx = x + Math.sin(yaw) * 3.1 + Math.cos(yaw) * 0.9, cz = z + Math.cos(yaw) * 3.1 - Math.sin(yaw) * 0.9;
+    window.__K.cam([cx, y + 2.1, cz], [x, y + 1.25, z]);
+  });
+  await p.waitForTimeout(2500);
+  await p.screenshot({ path: `${shots}/king-crown.png` });
   await p.evaluate(() => window.__K.free());
 
   // 2. F opens his dialogue: the first request offered to a new save, with its objective and reward.
