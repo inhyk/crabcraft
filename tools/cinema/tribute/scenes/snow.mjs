@@ -174,9 +174,12 @@ const face = {
       acts: [{ t: 13.6, clip: 'attack_slam' }, { t: 16.0, clip: 'attack_slam', from: 1.235, to: 1.9, speed: 0.6 }],
     },
   },
+  // Out of the white onto the fur itself: the snow-caked moustache under his left eye, a hand's breadth
+  // from the lens, then up and back to the original's close-up of his face.
   cam: {
     ...move([
-      { t: 0, p: F0(0.3, 0.8, 2.6), l: F0(0, 0.6, 0), fov: 27 },
+      { t: 0, p: F0(0.45, 0.33, 0.98), l: F0(0.32, 0.43, 0.62), fov: 32 },
+      { t: 1.6, p: F0(0.46, 0.44, 1.38), l: F0(0.25, 0.48, 0.58), fov: 31 },
       { t: 3.6, p: F0(0.28, 0.78, 2.4), l: F0(0, 0.6, 0), fov: 27 },
       { t: 6.4, p: F1(2.4, 0.7, 1.9), l: F1(0, 0.72, 0.2), fov: 30 },
       { t: 8.8, p: F1(2.6, 0.75, 0.9), l: F1(0, 0.78, 0.4), fov: 31 },
@@ -192,6 +195,8 @@ const face = {
     CITY,
     // Out of the white as late as the original, which is clear at 41.2 s.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.5, 0.85], [1.0, 0.55], [1.45, 0.2], [1.75, 0]] },
+    // Focus held on the moustache's frosted tips while the depth of field opens up to the face.
+    { t: -3, kind: 'focus', at: { a: 'dwarf', o: [0.36, 0.42, 0.68] }, range: [[0, 0.07], [1.6, 0.12], [3.6, 2.5]], until: 4 },
     { t: 13.9, kind: 'shake', d: 0.7, amp: 0.04 },
     { t: 16.05, kind: 'shake', d: 0.6, amp: 0.035 },
   ],
