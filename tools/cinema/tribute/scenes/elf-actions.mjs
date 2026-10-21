@@ -39,8 +39,8 @@ const angles = {
   wide: [[-5.6, 0.45, -3.9], [-4.9, 0.95, 2.1], 0.7, 42],
   low: [[-4.3, 0.6, 2.5], [-4.9, 1.0, -0.2], 0.88, 45],
   arc: [[-4.5, 1.25, 1.2], [-4.1, 1.1, -1.8], 0.70, 47],
-  // The low chase: knee high in the ferns, keeping pace beside her.
-  hero: [[-5.6, 0.55, -6.6], [-5.9, 0.7, 2.4], 0.35, 38, { near: 2.6, lens: 1.0, mid: 0.6 }],
+  // The low chase: knee high, keeping pace from beyond a row of trunks that flash across the lens.
+  hero: [[-9.5, 0.6, -6.4], [-9.6, 0.8, 2.3], 0.4, 31, { near: 2.6, lens: 1.3, mid: 0, keep: [[-98.51, 89.24, 0.5], [-97.37, 87.17, 0.5]] }],
 };
 /** The leap over the creek: off the near bank on the hit (78.40 s), onto the far one on the thud (79.72 s). */
 const LEAP = { up: 78.4, down: 79.72, from: [-91, 45], to: [-91.5, 49.7], h: 1.3 };
@@ -57,8 +57,8 @@ const creekFx = () => [
   {
     kind: 'night-pool', t: -3, at: CREEK, size: CREEK_R, rise: 0.04, edge: 0.35,
     deep: '#010104', shallow: '#070512', sky: '#1c1838', moon: [1, 0.22, 0.1], glint: 2.2, opacity: 0.96,
-    sheen: 0.7, sheenP: 22, crestK: 0.9, rim: 0.12,
-    hits: Array.from({ length: 20 }, (_, i) => [-1.2 + i * 0.16, CREEK[0] - 5 + ((i * 3.7) % 10), CREEK[1] + 0.5 * Math.sin(i * 2.3), 0.35]),
+    sheen: 1.0, sheenP: 18, crestK: 0.25, rim: 0.08,
+    hits: Array.from({ length: 12 }, (_, i) => [-1.2 + i * 0.27, CREEK[0] - 5 + ((i * 3.7) % 10), CREEK[1] + 0.5 * Math.sin(i * 2.3), 0.12]),
   },
 ];
 
@@ -132,7 +132,7 @@ function actionShot(a, run) {
         const x = start[0] + (end[0] - start[0]) * t;
         const z = start[2] + (end[2] - start[2]) * t;
         return [[p[0] + x, p[1] + z, lens], ...(mid ? [[p[0] + x * 0.5, p[1] + z * 0.5, mid]] : [])];
-      }), ...(a.leap ? [[...LEAP.from, 2.2], [...LEAP.to, 2.2]] : [])] },
+      }), ...(a.leap ? [[...LEAP.from, 2.2], [...LEAP.to, 2.2]] : []), ...(clear.keep ?? [])] },
       { kind: 'night-clear', t: -3, skip: '^$', cut: [[...p, 3.4], [p[0], p[1] - 2.5, 2]] },
       // A forest floor over the wood's flat ground; the coarse cone tufts around it give way to its fine grass.
       {
