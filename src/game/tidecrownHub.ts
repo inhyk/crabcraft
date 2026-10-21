@@ -2,7 +2,7 @@
 // the Seaglass Quarter offer every world, open or locked by the game's own unlock rules; every world has a crown
 // portal beside its own gateway that leads back to the capital's harbour. Travel takes the worlds' portal path (a relay
 // room's chapter request, else world2.go), so a room moves together and the quest chapter rules stay as they are. The
-// capital's named crabs (the captain, the portal's keeper) are `keepers` (tidecrown/keepers.ts); a feature
+// capital's named crabs (the captain, the portal's keeper, the king) are `keepers` (tidecrown/keepers.ts); a feature
 // that adds one registers it in the constructor below. A server world does not host Tidecrown yet: nothing here is
 // built there.
 import * as THREE from 'three';
@@ -11,6 +11,8 @@ import type { Game } from './game';
 import { CrownPortal } from './tidecrown/crownPortal';
 import type { TidecrownIsland } from './tidecrown/island';
 import { type Keeper, TidecrownKeepers } from './tidecrown/keepers';
+import { TidecrownKing } from './tidecrown/king';
+import type { KingdomRequests } from './tidecrown/kingdomRequests';
 import type { Unit } from './unit';
 import type { HiddenWorld } from './world2';
 
@@ -62,6 +64,7 @@ export class TidecrownHub {
   readonly keepers: TidecrownKeepers;
   private readonly captain: Keeper | null = null;
   private readonly keeper: Keeper | null = null;
+  private readonly king: TidecrownKing | null = null;
   private shown = false;
   /** The Seaglass ring's walk-in, armed once the player is clear of it. */
   private armed = false;
@@ -92,11 +95,13 @@ export class TidecrownHub {
       id: 'tc-portal-keeper', ...OPAL, spec: { race: 'nightelf', sex: 'female', classId: 'mage', shell: 1, crest: 2, led: 2, name: 'Opal' },
       name: ['포탈지기 오팔', 'Opal'], title: ['바다유리 포탈지기', 'Seaglass Portal Keeper'],
     });
+    this.king = new TidecrownKing(g, this.keepers);
   }
 
   /** The crabs drawn here (for the shader warm-up behind the loading screen). */
   get units(): Unit[] { return this.keepers.units; }
-
+  /** The King's kingdom request log (none on a server world). */
+  get kingdom(): KingdomRequests | null { return this.king?.requests ?? null; }
   /** Where each world's crown portal stands (none on a server world). */
   get crownPortals(): { chapter: HubChapter; x: number; z: number; yaw: number }[] { return [...this.returns].map(([chapter, r]) => ({ chapter, ...r.at })); }
 
@@ -119,6 +124,7 @@ export class TidecrownHub {
     if (!this.told) {
       this.told = true;
       this.g.hud.chat.system(t('다른 월드로 가려면 왕관 항구 긴 부두의 아라 선장이나 바다유리 구역의 포탈을 찾아가세요.', 'To travel to another world, find Captain Ara on the Crown Harbour’s long pier or the portal in the Seaglass Quarter.'));
+      this.g.hud.chat.system(t('크라운셸 성으로 오르는 큰 계단 위에서 마리너스 왕이 왕국 의뢰를 줘요.', 'King Marinus gives kingdom requests at the head of the great stair to Crownshell Keep.'));
     }
   }
 
@@ -128,7 +134,7 @@ export class TidecrownHub {
   }
 
   /**
-   * The hub point the player is at: in Tidecrown the nearest of the keepers who talk (the captain) and the
+   * The hub point the player is at: in Tidecrown the nearest of the keepers who talk (the captain, the king) and the
    * Seaglass portal, in a world its crown portal within AT. Null otherwise. Stable vectors, as world2's other portals are.
    */
   point(): THREE.Vector3 | null {
@@ -143,7 +149,7 @@ export class TidecrownHub {
     return r?.parent?.visible && Math.hypot(p.x - r.position.x, p.z - r.position.z) < AT ? r.position : null;
   }
 
-  /** Minimap marks: the crown portal of the world shown, or in Tidecrown the keepers' (the captain's pier) and the Seaglass portal. */
+  /** Minimap marks: the crown portal of the world shown, or in Tidecrown the keepers' (the captain's pier, the king) and the Seaglass portal. */
   markers(): { at: THREE.Vector3; label: string }[] {
     if (this.w2.inTidecrown) {
       return this.shown && this.seaglass ? [...this.keepers.markers(), { at: this.seaglass.root.position, label: t('포탈', 'Portal') }] : [];
@@ -299,6 +305,8 @@ export class TidecrownHub {
 
   update(dt: number, time: number): void {
     this.land();
+    // Kingdom requests count in the worlds, so the log looks every frame.
+    this.king?.update();
     if (!this.w2.inTidecrown) {
       this.returns.get(this.w2.chapter)?.portal.update(time);
       return;
@@ -326,5 +334,6 @@ export class TidecrownHub {
     this.seaglass?.dispose();
     this.seaglass = null;
     this.keepers.dispose();
+    this.king?.dispose();
   }
 }
