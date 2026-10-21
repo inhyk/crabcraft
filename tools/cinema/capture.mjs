@@ -7,13 +7,16 @@
 // Usage: node tools/cinema/capture.mjs --url http://localhost:5311 --program <program.mjs> --out <dir>
 //          [--shots id,id] [--fps 24] [--dsf 1] [--size 1920x872] [--preroll 1.5]
 //          [--stills 0,1.5,3]   (stills at these shot seconds instead of a recording: <out>/<id>-<t>.jpg)
+//          [--blur 6] [--shutter 0.5]   (motion blur: each frame averages that many renders spread over
+//          the shutter's share of the frame interval, ending on the frame's instant)
 // A program module exports `shots`: ShotSpec objects (src/capture/cinema/types.ts) with `at`, the
 // song second the shot starts on in the edit. Writes <out>/<id>.mp4 and <id>.json (frames, blank
 // repairs, page errors, the shot clock of every frame).
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { advance, grab, openApp, record } from '../trailer/lib.mjs';
+import { FFMPEG, Recorder, advance, grab, openApp, record } from '../trailer/lib.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => {
@@ -29,6 +32,40 @@ const [w, h] = opt('--size', '1920x872').split('x').map(Number);
 const preroll = Number(opt('--preroll', '1.5'));
 const only = (opt('--shots', '') || '').split(',').filter(Boolean);
 const stills = (opt('--stills', '') || '').split(',').filter(Boolean).map(Number);
+const blur = Math.max(1, Math.round(Number(opt('--blur', '1'))));
+const shutter = Math.min(1, Math.max(0.05, Number(opt('--shutter', '0.5'))));
+
+/**
+ * record() with motion blur: per frame, the clock moves through the closed part of the shutter in one
+ * step, then through the open part in `blur` sub-steps, each one rendered and grabbed; the sub-frames
+ * go to an intermediate file that ffmpeg averages back down `blur` to one. The last sub-step lands
+ * on the frame's own instant, as record()'s single step does.
+ */
+async function recordBlur(app, file, { frames, fps, probe }) {
+  const sub = `${file}.sub.mp4`;
+  const rec = new Recorder(sub, { fps: fps * blur, crf: 10 });
+  const dt = 1000 / fps;
+  const probes = [];
+  const t0 = Date.now();
+  await app.page.evaluate((d) => window.__capture.step(2, d), dt);
+  await app.page.evaluate(() => window.__T?.rebase());
+  for (let f = 0; f < frames; f++) {
+    if (shutter < 1) await app.page.evaluate((d) => window.__capture.step(1, d), dt * (1 - shutter));
+    for (let k = 0; k < blur; k++) {
+      await app.page.evaluate((d) => window.__capture.step(1, d), (dt * shutter) / blur);
+      await rec.write(await grab(app));
+    }
+    if (probe) probes.push(await app.page.evaluate(probe));
+  }
+  await rec.close();
+  const r = spawnSync(FFMPEG, ['-v', 'error', '-y', '-i', sub, '-vf', `tmix=frames=${blur},select='not(mod(n+1\,${blur}))',setpts=N/(${fps}*TB)`, '-r', String(fps),
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '14', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', `${file}.mp4`], { stdio: 'inherit' });
+  if (r.status !== 0) throw new Error(`ffmpeg failed averaging ${sub}`);
+  rmSync(sub, { force: true });
+  const meta = { frames, fps, blur, shutter, wallSeconds: (Date.now() - t0) / 1000, blanks: [], errors: app.errors.slice(), probe: probes };
+  writeFileSync(`${file}.json`, JSON.stringify(meta));
+  return meta;
+}
 mkdirSync(outDir, { recursive: true });
 
 const { shots } = await import(pathToFileURL(programPath).href);
@@ -88,7 +125,9 @@ try {
     // recorded frame is shot time 0.
     await page.evaluate((t) => window.__cinema.seek(t), -(pre + 3) / fps);
     await advance(app, pre / fps, fps);
-    const meta = await record(app, name, { duration: frames / fps, fps, probe: () => window.__cinema.probe(), log: false });
+    const meta = blur > 1
+      ? await recordBlur(app, name, { frames, fps, probe: () => window.__cinema.probe() })
+      : await record(app, name, { duration: frames / fps, fps, probe: () => window.__cinema.probe(), log: false });
     const first = meta.probe[0]?.t ?? NaN;
     if (Math.abs(first) > 0.5 / fps) console.warn(`  ${shot.id}: first frame at shot time ${first}, expected 0`);
     if (meta.frames !== frames) throw new Error(`${shot.id}: ${meta.frames} frames, expected ${frames}`);

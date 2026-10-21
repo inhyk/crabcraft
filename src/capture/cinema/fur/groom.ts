@@ -144,13 +144,13 @@ const SHELL_C = new THREE.Vector3(0, 0.024, -0.009);
 const SHELL_R = new THREE.Vector3(0.097, 0.052, 0.108);
 
 /**
- * The costume's key light, in the crab's own frame (bind space): high on its right and in front, so a
- * camera in front of it sees the fur lit from 45 to 60 degrees off its axis. The coat's shadow is cast from
+ * The costume's key light, in the crab's own frame (bind space): high on its right side, a broad side
+ * and top light for a camera in front of it. The coat's shadow is cast from
  * here; snow-fur.ts lights from the same direction unless a cue says otherwise.
  */
 export const KEY: [number, number, number] = (() => {
-  const l = Math.hypot(-0.55, 0.7, 0.45);
-  return [-0.55 / l, 0.7 / l, 0.45 / l];
+  const l = Math.hypot(-0.75, 0.62, 0.12);
+  return [-0.75 / l, 0.62 / l, 0.12 / l];
 })();
 
 const ss01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
@@ -301,7 +301,11 @@ function clump(
   if (pull <= 0 || g.count < 2) return;
   const P = layer.points;
   const guides: number[] = [];
-  for (let i = 0; i < g.count; i++) if (!free[i] && rng() < 1 / size) guides.push(i);
+  // Lock sizes wander across the coat (a third to twice `size`), so tufts do not repeat like scales.
+  for (let i = 0; i < g.count; i++) {
+    const m = 0.33 + 1.67 * blotch3(g.roots[i * 3], g.roots[i * 3 + 1], g.roots[i * 3 + 2]);
+    if (!free[i] && rng() < 1 / (size * m)) guides.push(i);
+  }
   if (!guides.length) return;
   // Grid over the roots, cell about one clump across.
   let minX = Infinity;
@@ -398,6 +402,9 @@ function clump(
 }
 
 const fract = (x: number) => x - Math.floor(x);
+/** Smooth 0..1 noise a few centimetres across (bind-space metres). */
+const blotch3 = (x: number, y: number, z: number) =>
+  0.5 + 0.5 * Math.sin(x * 61 + 1.7) * Math.sin(y * 53 + 0.4) * Math.sin(z * 57 + 2.9);
 
 /** Splits grown strands by bone and packs each bone's into a texture in that bone's frame. */
 function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
@@ -474,8 +481,10 @@ function pack(parts: RigParts, crop: Crop, rng: () => number): StrandSet[] {
           const crystal = rng() < crystals / (clumps + crystals);
           s.push(k);
           at.push(0.62 + 0.38 * Math.sqrt(rng()));
-          // Mostly fine rime and granules, now and then a whole flake.
-          const sz = layer.bits!.size * (crystal ? 0.22 + 0.7 * Math.pow(rng(), 3) : 0.25 + 0.4 * rng());
+          // Mostly fine rime and granules, now and then a whole flake; the snowiest hairs (a crust)
+          // carry big clumps that bridge their neighbours.
+          const crust = snow > 0.75 ? 2.2 : 1;
+          const sz = layer.bits!.size * (crystal ? 0.22 + 0.7 * Math.pow(rng(), 3) : (0.25 + 0.4 * rng()) * crust);
           size.push(crystal ? -sz : sz);
           // A crystal's facet normal, biased to face up and out; w turns the star.
           const nx = rng() * 2 - 1;

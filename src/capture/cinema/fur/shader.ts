@@ -215,9 +215,8 @@ void main() {
   alb = mix(alb, uSnowCol, clamp(snow, 0.0, 1.0));
   // Rime: specks of frost along snowy hairs, a finer layer than the snow bits.
   float speck = fract(sin(dot(vec2(r * 91.7 + r2 * 13.1, floor(vV * 30.0)), vec2(12.9898, 78.233))) * 43758.5453);
-  // The snowiest hairs (the frozen crust under the moustache) rime densely along their whole length.
-  float rime = step(mix(0.82, 0.58, smoothstep(0.6, 1.0, vData.z)), speck) * smoothstep(0.15, 0.6, vData.z) * smoothstep(0.1, 0.4, vV);
-  alb = mix(alb, uSnowCol, rime * 0.55);
+  float rime = step(0.88, speck) * smoothstep(0.2, 0.7, vData.z) * smoothstep(0.15, 0.5, vV);
+  alb = mix(alb, uSnowCol, rime * 0.35);
   float ao = mix(uRootAO, 1.0, vOcc) * mix(0.7, 1.0, smoothstep(0.0, 0.6, vV));
   float sparkle = snow > 0.2 ? step(0.93, fract(r * 517.3 + vV * 3.1)) * 3.0 : 0.0;
   vec3 col = hairLight(alb, T, N, V, ao, vV, sparkle);

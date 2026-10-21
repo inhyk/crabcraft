@@ -65,7 +65,7 @@ const BEARD: Layer = {
   locks: { big: 8, lengthVar: 0.25, stray: 0.03 },
   wave: { amp: 0.06, freq: 1.6 },
   // Dusted all over, frozen into a crust in the middle under the moustache (the original's chin).
-  snow: (p, _n, r) => Math.min(1, (0.22 + Math.max(0, blotch(p) * 1.4 - 0.6)) * (0.5 + 0.5 * r) + 0.9 * ss(0.03, 0.012, Math.abs(p.x)) * ss(-0.004, 0.012, p.y)),
+  snow: (p, _n, r) => Math.min(1, (0.22 + Math.max(0, blotch(p) * 1.4 - 0.6)) * (0.5 + 0.5 * r) + 0.5 * ss(0.03, 0.012, Math.abs(p.x)) * ss(-0.004, 0.012, p.y)),
   jitter: 0.15,
   look: { colA: '#341406', colB: '#6a2c0e', tip: '#8c4a1c', tipAmt: 0.5, rootAO: 0.12, spec1: 0.05, spec2: 0.35, gloss1: 120, gloss2: 28, shift: 0.1, back: 1.6, tipWidth: 0.18 },
   bits: { clumps: 0.5, crystals: 0.3, size: 0.0012, powder: 3 },
@@ -203,7 +203,7 @@ const PELT: Layer = {
   count: 380000,
   points: 7,
   seg: 8,
-  length: (p, _n, r) => 0.012 + 0.02 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.006 : 0) + 0.005 * r,
+  length: (p, _n, r) => 0.016 + 0.026 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.008 : 0) + 0.007 * r,
   dir: (p, n, _r, out) => {
     const h = new THREE.Vector3(p.x, 0, p.z + 0.01).normalize();
     return out
@@ -231,18 +231,18 @@ const PELT: Layer = {
 const GUARD: Layer = {
   ...PELT,
   name: 'guard',
-  count: 26000,
+  count: 70000,
   points: 8,
   seg: 10,
   length: (p, n, r) =>
-    (0.028 + 0.024 * ss(0.055, 0.004, p.y) + 0.02 * ss(0.03, 0.0, Math.abs(p.x)) * Math.max(0, n.y)) * (0.75 + 0.5 * r),
+    (0.034 + 0.03 * ss(0.055, 0.004, p.y) + 0.026 * ss(0.03, 0.0, Math.abs(p.x)) * Math.max(0, n.y)) * (0.75 + 0.5 * r),
   dir: (p, n, _r, out) => {
     const h = new THREE.Vector3(p.x, 0, p.z + 0.01).normalize();
     return out.copy(n).multiplyScalar(0.7).addScaledVector(h, 0.35).add(new THREE.Vector3(0, -0.1, -0.35 * Math.max(0, n.y)));
   },
-  gravity: 0.85,
+  gravity: 0.7,
   curl: 0.1,
-  jitter: 0.15,
+  jitter: 0.35,
   width: 0.00034,
   stiff: 1.6,
   clump: { size: 10, pull: 0.4, pow: 1.5 },
@@ -256,8 +256,8 @@ const GUARD: Layer = {
 const MID: Layer = {
   ...PELT,
   name: 'mid',
-  count: 100000,
-  length: (p, _n, r) => (0.021 + 0.03 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.009 : 0)) * (0.8 + 0.4 * r),
+  count: 60000,
+  length: (p, _n, r) => (0.024 + 0.034 * ss(0.055, 0.004, p.y) + (p.z > 0.045 ? 0.01 : 0)) * (0.8 + 0.4 * r),
   gravity: 0.95,
   jitter: 0.2,
   width: 0.00024,
