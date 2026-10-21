@@ -724,6 +724,9 @@ const undeadShots = [
       { kind: 'lens', t: -1, near: 0.03, until: 6 },
       UNDEAD_FLOOR,
       STEP_POSE,
+      // His staff as gnarled dark wood with red prayer beads (src/capture/cinema/fx/night-staff.ts), kicked
+      // by the stamp and each fling of the cast.
+      { kind: 'night-staff', t: -3, actor: 'u', beads: { swing: [[STAMP, 0.3, 90], [6.75, 0.35], [10.1, 0.45, 90], [12.5, 0.45, 90]] } },
       { kind: 'shake', t: STAMP, d: 0.45, amp: 0.03 },
       { kind: 'night-blight', t: STAMP + 0.06, step: STAMP, at: STEP, radius: 9, dur: 8, rate: 1.6, light: 1.6, gain: 0.75, embers: 150, clear: LOW_PATH.map((q) => [...q, 0.9]) },
       { kind: 'night-mist', t: -5, at: { g: [U[0], 0.4, U[1] - 3] }, box: [18, 1.2, 18], count: 50, size: 2.4, color: '#0b1409', opacity: 0.5 },
@@ -794,6 +797,7 @@ const explodeShots = [
     fx: [
       GRAVE,
       NO_ASTROLABE,
+      { kind: 'night-staff', t: -3, actor: 'u', beads: { swing: [[0.15, 0.5, 90]] } },
       { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: 1.0 },
       { kind: 'night-cracks', t: -6, at: U, radius: 9, grow: 3, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
       boulders(0.42 - 9.9, 4.5),
