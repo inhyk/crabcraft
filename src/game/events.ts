@@ -116,8 +116,16 @@ export type SimSink = (e: SimEvent) => void;
 /** Where the simulation sends its events. One sink; the host replaces it. */
 export class SimEvents {
   sink: SimSink = () => {};
+  /** Features that only watch outcomes (kills, victories) listen here, beside whatever sink is installed. */
+  private readonly listeners = new Set<SimSink>();
   emit(e: SimEvent): void {
     this.sink(e);
+    for (const fn of this.listeners) fn(e);
+  }
+  /** Watches every event after the sink; returns the call that stops it. */
+  listen(fn: SimSink): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
   }
 }
 
