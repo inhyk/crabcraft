@@ -30,6 +30,8 @@ function project(cam: THREE.Camera, p: THREE.Vector3): { x: number; y: number } 
 
 export class Nameplates {
   readonly el: HTMLElement;
+  /** Crabs that get a plate though they are not the game's units (Tidecrown's captain and portal keeper). */
+  readonly also = new Set<Unit>();
   private plates = new Map<number, Plate>();
 
   constructor() {
@@ -51,7 +53,7 @@ export class Nameplates {
     const cam = g.camera;
     const target = g.player.target;
     const seen = new Set<number>();
-    for (const u of g.units) {
+    for (const u of this.also.size ? [...g.units, ...this.also] : g.units) {
       if (u.kind === 'player' || u.hidden || u.culled) continue;
       if (!u.alive && u !== target) continue;
       if (u.kind === 'boss' && g.hud.bossFrame.visible) continue;
