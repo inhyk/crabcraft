@@ -1,7 +1,7 @@
 // Native controls/dialogue/travel with explicit journey, pose, survival and coin fixtures.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5205',relay=process.env.CC_QA_RELAY??new URL('/multiplayer',base).href.replace(/^http/,'ws');
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[];
 async function open(name,lang='ko'){const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(({name,lang,relay})=>{localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name}));localStorage.setItem('cc.language',lang);localStorage.setItem('cc.quality','high');localStorage.setItem('cc.hintsSeen','1');const WS=window.WebSocket;window.WebSocket=class extends WS{constructor(url,protocols){const target=new URL(String(url)),next=new URL(relay);target.searchParams.forEach((v,k)=>next.searchParams.set(k,v));super(target.pathname==='/multiplayer'?next:url,protocols);}};},{name,lang,relay});await p.goto(base+'/?screen=game&multiplayer');await p.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});await p.waitForFunction(()=>!document.querySelector('.loading'));return p;}
 const chapter=p=>p.evaluate(()=>window.app.current.game.world2.chapter);
 async function portal(p){await p.evaluate(()=>{const g=window.app.current.game,pos=g.world2.portalPosition;g.player.unit.teleport(g.world,pos.x,pos.z+2.4);g.player.unit.lastCombat=-999;g.follow.cut();});await p.keyboard.press('KeyF');}

@@ -4,11 +4,11 @@
 // that every program compiles at both qualities, that the low sun no longer blows the ice out, and zero errors.
 // Writes tmp/qa/snow-ground-*.png.
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import {mkdir} from 'node:fs/promises';
 await mkdir('tmp/qa',{recursive:true});
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5230';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 async function load(quality){
  const p=await browser.newPage({viewport:{width:1280,height:800}});

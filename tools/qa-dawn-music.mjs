@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5205',errors=[];
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));p.setDefaultTimeout(25000);
 async function song(id){await p.waitForFunction(id=>window.app.audio.music?.id===id,id);return p.evaluate(()=>{const a=window.app.audio,b=a.music.src.buffer;let rms=0;const d=b.getChannelData(0);for(let i=0;i<d.length;i+=100)rms+=d[i]*d[i];return {id:a.music.id,state:a.ctx.state,duration:b.duration,rms:Math.sqrt(rms/(d.length/100)),loop:a.music.src.loop};});}
 try{

@@ -6,12 +6,12 @@
 // Usage: CC_QA_BASE=http://127.0.0.1:5241 node tools/qa-tidecrown-scenery.mjs  (CC_QA_SHOTS sets the output folder)
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 
 const base = process.env.CC_QA_BASE ?? 'http://127.0.0.1:5241';
 const out = process.env.CC_QA_SHOTS ?? 'tmp/qa/tidecrown';
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
+const browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
 const errors = [];
 try {
   const p = await browser.newPage({ viewport: { width: 1600, height: 900 } });

@@ -15,7 +15,7 @@
 // Usage: CC_QA_BASE=http://127.0.0.1:5253 node tools/qa-tidecrown-districts.mjs
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 
 const base = process.env.CC_QA_BASE ?? 'http://127.0.0.1:5241';
 const out = process.env.CC_QA_SHOTS ?? 'tmp/qa/tidecrown-districts';
@@ -24,7 +24,7 @@ const BUDGET = { calls: 700, triangles: 5.5e6 };
 const MEMORY = { cpu: 200, nearGpu: 200, leave: 30 };
 const SLICE = 6, FRAME = 50;
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
+const browser = await launchBrowser({ headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'] });
 const errors = [];
 try {
   const p = await browser.newPage({ viewport: { width: 1600, height: 900 } });

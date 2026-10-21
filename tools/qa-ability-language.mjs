@@ -1,9 +1,9 @@
 // Actual hover tooltips and Settings buttons. Run after the GPU endurance chain is terminal.
-import {chromium} from 'playwright';import assert from 'node:assert/strict';
+import {launchBrowser} from './lib/browser.mjs';import assert from 'node:assert/strict';
 import {CLASSES} from '../src/data/classes.ts';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192',probe=process.env.CC_QA_PROBE==='1';
 const ko={warrior:['집게 강타','껍질 방패치기','옆걸음 돌진','소용돌이'],mage:['물거품 화살','서리 분사','증기 점멸','해일 폭발'],priest:['성스러운 일격','껍질 치유','따개비 보호막','성스러운 파도']};
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[],views=[];
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});const errors=[],views=[];
 async function settings(p,lang){await p.evaluate(()=>{const g=window.app.current.game;g.hud.menu.show();g.hud.menu.settings();});await p.getByRole('button',{name:lang==='ko'?'한국어':'English',exact:true}).click();}
 async function resume(p,lang){await p.getByRole('button',{name:lang==='ko'?'뒤로':'Back',exact:true}).click();await p.getByRole('button',{name:lang==='ko'?'계속하기':'Resume',exact:true}).click();}
 const cast=p=>p.evaluate(()=>{const g=window.app.current.game,c=g.player.cast;return {time:g.time,id:c?.ability.id??null,start:c?.start,end:c?.end,gcd:g.player.gcdEnd,label:document.querySelector('.castbar .label').textContent};});

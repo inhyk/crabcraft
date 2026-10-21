@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import {mkdir} from 'node:fs/promises';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5234';
 await mkdir('tmp/qa',{recursive:true});
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 async function load(name){const p=await browser.newPage({viewport:{width:1440,height:900}});p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(name=>{const WS=WebSocket;window.WebSocket=class extends WS{send(data){try{if(JSON.parse(data).type==='enter')return;}catch{}super.send(data);}};localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'priest',shell:0,crest:0,led:0,name}));localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.language','ko');},name);await p.goto(base+'/?screen=game');await p.locator('.launch-notice-start').click();await p.waitForFunction(()=>window.app?.current?.game?.loaded&&!document.querySelector('.loading'),null,{timeout:120000});await p.evaluate(()=>{const g=window.app.current.game;g.ending.cancel();g.god=true;g.player.nextSwing=Infinity;});await p.keyboard.press('Space');return p;}
 try{

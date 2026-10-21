@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import {mkdir} from 'node:fs/promises';
 
 await mkdir('tmp/qa',{recursive:true});
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 try{
   const errors=[],base=process.env.CC_QA_BASE??'http://127.0.0.1:5225';
   async function enter(name){

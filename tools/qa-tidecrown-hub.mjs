@@ -1,4 +1,4 @@
-// Tidecrown as the hub (real Chrome on the dev server, a new save, no creator travel). Through F and walk-ins, never a
+// Tidecrown as the hub (Chrome for Testing on the dev server, a new save, no creator travel). Through F and walk-ins, never a
 // direct call for the trips: World I's crown portal into Tidecrown (the loading screen, the harbour quay facing the
 // sea gate); the captain's travel choice shows every world open or locked exactly as canTravel says; a locked world
 // refuses with its own message; sailing to World I restores everything Tidecrown changed and lands at the crown portal;
@@ -14,7 +14,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser.mjs';
 import { createServer } from 'vite';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -28,7 +28,7 @@ const watch = (p) => {
   p.on('console', (m) => { if (m.type() === 'error' && /shader|program|WebGL|tidecrown|portal|hub|zone line/i.test(m.text())) errors.push(m.text().slice(0, 300)); });
 };
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args });
+const browser = await launchBrowser({ headless: true, args });
 try {
   const p = await browser.newPage({ viewport: { width: 1600, height: 900 } });
   p.setDefaultTimeout(90000);
@@ -278,7 +278,7 @@ if (process.env.CC_QA_SERVER !== '0') {
     const origin = new URL(metadata.origin);
     server = await createServer({ root, configFile: false, server: { host: '127.0.0.1', port: browserPort, strictPort: true, proxy: { '/world': { target: origin.origin, ws: true }, '/api/account': { target: origin.origin } } }, logLevel: 'error' });
     await server.listen();
-    sb = await chromium.launch({ channel: 'chrome', headless: true, args });
+    sb = await launchBrowser({ headless: true, args });
     const context = await sb.newContext({ viewport: { width: 1600, height: 900 } });
     await context.grantPermissions(['local-network-access'], { origin: clientOrigin });
     await context.addCookies([{ name: metadata.cookie.name, value: metadata.cookie.value, domain: '127.0.0.1', path: metadata.cookie.path, httpOnly: true, sameSite: 'Strict', secure: false }]);
