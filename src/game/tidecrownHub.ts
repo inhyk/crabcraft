@@ -37,11 +37,11 @@ const CAPTAIN: Arrival = { x: 261, z: 8.9, yaw: -Math.PI / 2 };
 const SEAGLASS: Arrival = { x: -50, z: -110, yaw: Math.atan2(-66 + 50, -122 + 110) };
 /**
  * Each world's crown portal, beside one of its own gateways on open ground clear of the villagers' posts, facing into
- * its town (World I's is placed from the wreck): Starhaven east of its portal, Dawnharbor south of the snow gate, the
- * snow village and the two frontier harbours south of the portal they arrive by.
+ * its town (World I's is placed from the wreck): Starhaven south-east of its portal, past the carts on the cross street;
+ * Dawnharbor south of the snow gate; the snow village and the two frontier harbours south of the portal they arrive by.
  */
 const RETURNS: Record<Exclude<HubChapter, 1>, Arrival> = {
-  2: { x: 13, z: 88, yaw: Math.PI }, 3: { x: 13, z: 97, yaw: Math.PI }, 4: { x: -13, z: 102, yaw: Math.PI },
+  2: { x: 12, z: 97, yaw: Math.PI }, 3: { x: 13, z: 97, yaw: Math.PI }, 4: { x: -13, z: 102, yaw: Math.PI },
   5: { x: -12, z: 97, yaw: Math.PI }, 6: { x: -12, z: 97, yaw: Math.PI },
 };
 /** How near a crown portal counts as at it (its prompt shows inside 4, a walk-in fires inside 1.7). */
