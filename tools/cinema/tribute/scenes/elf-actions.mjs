@@ -27,7 +27,7 @@ export const ELF_ACTIONS = [
  */
 const RESTAGE = {
   'night-elf-spin': {
-    to: 1.8, speed: 1.5, yaw: -0.1, label: 'Ground spin, then the leap over the creek', leap: true, look: { y0: true },
+    to: 1.8, speed: 1.5, yaw: -0.1, label: 'Ground spin, then the leap over the creek', leap: true,
     faces: [{ t: -2, expr: 'focused' }, { t: 0.45, expr: 'angry' }],
     then: [{ t: 0.525, clip: 'jump', from: 0.9, to: 1.075, speed: 1, fade: 0.08 }, { t: 0.7, clip: 'jump', from: 1.075, to: 1.3, speed: 0.3, fade: 0.01 }],
   },
@@ -45,9 +45,9 @@ const angles = {
   // The original's wide: small in the moonlit wood from well off, trunks sliding across the lens.
   high: [[-11.2, 1.7, -4.6], [-11.0, 1.45, 3.8], 0.45, 30, { near: 1.6, lens: 1.3, mid: 0 }],
   // Side on to the leap and the creek, trucking with her across it.
-  side: [[-6.6, 0.8, -2.4], [-7.0, 1.25, 4.9], 1.0, 44],
+  side: [[-6.6, 0.8, -2.4], [-7.0, 1.25, 4.9], 0.7, 44],
   // Low under the far half of the flip, then along the bank she lands on.
-  wide: [[-5.6, 0.45, -3.9], [-4.9, 0.95, 2.1], 0.7, 42],
+  wide: [[-6.2, 0.5, -4.2], [-5.2, 0.95, 2.1], 0.85, 50],
   low: [[-4.3, 0.6, 2.5], [-4.9, 1.0, -0.2], 0.88, 45],
   arc: [[-4.5, 1.25, 1.2], [-4.1, 1.1, -1.8], 0.70, 47],
   // The low chase: knee high, keeping pace from beyond a row of trunks that flash across the lens.
@@ -113,13 +113,13 @@ function actionShot(base, run) {
   // wood as the close-up before them and the change after.
   const grade = run.fx.filter((f) => f.kind === 'night-grade');
   const air = a.leap ? [LEAP.up - t0, LEAP.down - t0] : a.land === undefined ? null : [approach + ((a.clip === 'break_backflip' ? 0.84 : 0.9) - a.from) / a.speed, a.land];
-  const look = a.look ?? (a.leap ? { y0: false } : { y0: !last, body: last });
+  const look = { y0: !last, body: last };
   return {
     id: a.id, at: a.at, length, chapter: 1, mood: 1,
     anchor: p,
     view: run.view,
     fog: run.fog,
-    actors: [{ id: 'elf', spec: ELF, at: [path[0].x, path[0].z], yaw: a.yaw }],
+    actors: [{ id: 'elf', spec: ELF, at: a.leap ? [path[0].x, path[0].z] : p, yaw: a.yaw }],
     tracks: { elf: {
       path,
       acts: [
@@ -130,10 +130,17 @@ function actionShot(base, run) {
     } },
     cam: {
       ease: 'linear', spline: false, focus: 'elf', range: 4.5,
-      keys: [
-        { t: 0, p: G(p, ...start), l: { a: 'elf', o: [0, target, 0], ...look }, fov },
-        { t: length, p: G(p, ...end), l: { a: 'elf', o: [0, target, 0.2], ...look }, fov: fov - 1 },
-      ],
+      keys: a.leap
+        // Over the leap the lens tilts up with most of her lift: she rises in frame, never out of it.
+        ? Array.from({ length: 9 }, (_, i) => {
+          const t = (i * length) / 8;
+          const [x, z, lift] = leapAt(t0 + t);
+          return { t, p: G(p, ...start.map((v, j) => v + ((end[j] - v) * i) / 8)), l: { g: [x, target + 0.95 * lift, z + 0.2 * i / 8] }, fov: fov - i / 8 };
+        })
+        : [
+          { t: 0, p: G(p, ...start), l: { a: 'elf', o: [0, target, 0], ...look }, fov },
+          { t: length, p: G(p, ...end), l: { a: 'elf', o: [0, target, 0.2], ...look }, fov: fov - 1 },
+        ],
     },
     fx: [
       ...grade,
