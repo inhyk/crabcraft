@@ -678,7 +678,8 @@ function houseStyle(k: TidecrownKit, r: () => number, palette?: HousePalette, se
   const rw = stream(seed * 7919 + 211), q = rw();
   const weather = ROOF_WEATHER.find(([at]) => q < at);
   if (weather) roof.lerp(lin(weather[1]), weather[2]);
-  roof.multiplyScalar(0.8 + rw() * 0.45);
+  // A wide spread house to house, so a district's roofs read one by one from above, not as one blue mass.
+  roof.multiplyScalar(0.72 + rw() * 0.68);
   const frame = lin(pick(r, FRAME_TONES));
   const t: Tint = new Map([
     [m.plaster, wall],
@@ -1161,7 +1162,8 @@ export function buildTownhouse(spec: TownhouseSpec, batch: TideBatch, extras?: H
     geo(worldBox(2.04, 0.2, 1.0, 0.5).translate(x, y - 0.06, z + 0.55), mat.limestone, stoneTint);
     put(village, 'Wall_BottomCover', st.wall, st.t, x, y - 0.1, z + 1.08, 0, v(1.02, 1.1, 0.8));
     for (const sx of [-0.8, 0.8]) put(village, 'Prop_Support', st.wall, st.t, x + sx, y - 1.45, z + 0.05, 0, v(1.3, 0.55, 0.52));
-    const railTint = new Map(st.t).set(mat.paint, lin('#2c3440'));
+    // Painted iron in a weathered slate blue: darker reads as a black block against the wall.
+    const railTint = new Map(st.t).set(mat.paint, lin('#8ea6b8'));
     put(village, rail, st.paint, railTint, x, y + 0.04, z + 0.02, 0, v(1.02, 0.9, 0.95));
     for (const sx of [-1, 1]) put(village, 'Balcony_Cross_Straight', st.paint, railTint, x, y + 0.04, z + 0.52, sx * Math.PI / 2, v(0.5, 0.9, 1.0));
     if (fb) {
