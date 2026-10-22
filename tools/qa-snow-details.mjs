@@ -1,6 +1,6 @@
 // Frostlight finishing details. (1) The guide motes read as round lantern points with no streak beside them: the
-// guide's motes and their snow patches drawn alone in a gameplay still, every blob no wider than 1.6 times its
-// height. (2) No rainbow edge on the arena ice in a low view into the sun: the longest vertical run of yellow-green
+// guide's motes and their snow patches drawn alone in a gameplay still, one mote at a time (two motes overlapping on
+// screen would otherwise merge into one wide blob), every blob no wider than 1.6 times its height. (2) No rainbow edge on the arena ice in a low view into the sun: the longest vertical run of yellow-green
 // ice pixels (hues the ice, its glare and its runes never take) away from the rune strokes. (3) Every hung lantern's
 // flame burns inside the kit lantern's cage, a drawn flame stands at each, and the cage matches the kit's vertices.
 // (4) Sun-facing roof snow shows its relief: luma contrast of sunlit, sun-facing roof pixels at ripple and pillow
@@ -72,11 +72,30 @@ async function alone(p,parts,lumaMin,shot){
  await p.evaluate(()=>{const g=window.app.current.game,scene=g.scene,s=window.__iso;scene.onBeforeRender=s.hook;scene.background=s.bg;for(const [o,v] of s.saved)o.visible=v;});
  return r.map(b=>({...b,aspect:+(b.w/b.h).toFixed(2)}));
 }
-/** The motes alone (their bright cores, each its own blob) and the snow patches under them alone. */
+/**
+ * One mote at a time: after the guide's own update each frame, every other mote and its patch is put out, so each
+ * mote's shape is judged alone wherever the path crosses the screen.
+ */
+const solo=(p,i)=>p.evaluate(i=>{const fg=window.app.current.game.objective.frostGuide;window.__solo=i;
+ if(!fg.__solo){fg.__solo=true;const up=fg.update;fg.update=function(...a){up.apply(this,a);const k=window.__solo;if(k==null)return;const b=this.moteBright,c=this.patches.instanceColor;
+  for(let j=0;j<b.count;j++)if(j!==k){b.setX(j,0);c.setX(j,0);}b.needsUpdate=true;c.needsUpdate=true;};}
+ return fg.moteBright.count;},i);
+/** Each mote alone (its bright core) and its snow patch alone, and the two together; blobs from every mote. */
 async function moteBlobs(p,from,to,pitch,shot){
  await guideView(p,from,to,pitch);
  await p.screenshot({path:`tmp/qa/snow-details-motes-${shot}.png`});
- return {motes:await alone(p,['motes'],60,`${shot}-motes`),patches:await alone(p,['patches'],12,`${shot}-patches`),both:await alone(p,['motes','patches'],22,`${shot}-alone`)};
+ const n=await solo(p,null),out={motes:[],patches:[],both:[]};
+ for(let i=0;i<n;i++){
+  await solo(p,i);
+  const m=await alone(p,['motes'],60,`${shot}-motes`);
+  if(!m.length)continue;
+  // The mote's own blob is its largest; anything else is its halo's fringe.
+  out.motes.push(m.reduce((a,b)=>b.n>a.n?b:a));
+  out.patches.push(...await alone(p,['patches'],12,`${shot}-patches`));
+  out.both.push(...await alone(p,['motes','patches'],22,`${shot}-alone`));
+ }
+ await solo(p,null);
+ return out;
 }
 
 /** (2) Rainbow on the ice: the longest vertical run, in any 12-pixel column band, of yellow-green ice pixels more than 6 px from a rune stroke. */

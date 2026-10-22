@@ -6,7 +6,9 @@ import {SNOW_SEA_ICE} from '../sim/world/snowGround';
 import {GUARDED_NOISE,snowCover} from './snowCover';
 import {boulderGeometry,rockMaterial,snowSkirt,type SnowGroundUniforms} from './snowRocks';
 import {frostFire} from './frostFire';
-import {fieldStream,WOODCUT_LANTERN,type FieldKit,type FieldLog,type FieldStump,type ShelfSlab,SNOW_PONDS,SNOW_TRACKS,snowBoulders,snowFieldPieces,snowGroves,snowLogs,snowPebbles,snowScours,snowScrubItems,snowShelves,snowStumps} from './snowFieldsLayout';
+import {fieldStream,WOODCUT_LANTERN,type FieldKit,type FieldLog,type FieldStory,type FieldStump,type ShelfSlab,SNOW_PONDS,SNOW_TRACKS,snowBoulders,snowFieldPieces,snowGroves,snowLogs,snowPebbles,snowScours,snowScrubItems,snowShelves,snowStory,snowStumps} from './snowFieldsLayout';
+import {snowScoops} from './snowDriftsLayout';
+import {snowDrifts} from './snowDrifts';
 import {snowScrub} from './snowScrub';
 import {lanternFlameAt,noteLantern} from './frostLantern';
 
@@ -29,6 +31,8 @@ export interface SnowFieldsOptions {
  sunDir:THREE.Vector3;
  /** The sky's colours (snowSky.ts), for what the pond ice reflects. */
  sky:{skyHorizon:THREE.Color;skyZenith:THREE.Color};
+ /** The snowfield's material (applySnowSurface), which the wind's drifts share (snowDrifts.ts). */
+ snow?:THREE.Material;
 }
 export interface SnowFields {
  group:THREE.Group;
@@ -74,7 +78,13 @@ function barkMaterial(ground:SnowGroundUniforms){
   shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>\nvarying vec3 vLog;\n${GUARDED_NOISE}\nfloat ccBarkH = 0.0;`).replace('#include <map_fragment>',`#include <map_fragment>
    {
     vec3 c;
-    if (vLog.z > 0.5) {
+    if (vLog.z > 0.25 && vLog.z < 0.75) {
+     // Worked timber left out for winters: silver-grey, the grain open along the board, dark in its checks.
+     float g = cc_vnoise(vec2(vLog.x * 38.0, vLog.y * 1.4)) * 0.6 + cc_vnoise(vec2(vLog.x * 95.0, vLog.y * 4.0)) * 0.4;
+     c = mix(vec3(0.075, 0.07, 0.066), vec3(0.2, 0.19, 0.175), g);
+     c *= mix(1.0, 0.5, smoothstep(0.72, 0.9, cc_vnoise(vec2(vLog.x * 16.0, vLog.y * 0.7) + 3.0)));
+     ccBarkH = g * 0.5;
+    } else if (vLog.z > 0.5) {
      // Sawn face: growth rings, a darker heart, weathered grey towards the bark.
      float r = vLog.y, ring = 0.5 + 0.5 * sin(r * 34.0 + cc_vnoise(vec2(r * 6.0, vLog.x * 3.0)) * 4.0);
      c = mix(vec3(0.085, 0.06, 0.036), vec3(0.15, 0.11, 0.068), ring) * mix(0.8, 1.0, smoothstep(0.0, 0.25, r)) * mix(1.0, 0.35, smoothstep(0.86, 0.98, r));
@@ -171,6 +181,102 @@ function stumpGeometry(s:FieldStump){
  g.computeVertexNormals();
  // Cap vertices (normal straight up or down) carry the ring radius.
  logAttr(g,s.r*6.28,i=>Math.abs(n.getY(i))>.9?[R()*3,Math.min(1,Math.hypot(p.getX(i),p.getZ(i))/s.r),1]:null);
+ return g;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Half-buried story: a trapper's sled, a cart wheel, a lone runner, all of worked timber.
+
+/** Worked timber: aLog (across, along the grain, 0.5); `axis` is the geometry's own grain axis. */
+function timber(g:THREE.BufferGeometry,axis:'x'|'y'|'z'){
+ const p=g.getAttribute('position'),a=new Float32Array(p.count*3),o=axis==='x'?[2,0]:axis==='y'?[0,1]:[0,2];
+ for(let i=0;i<p.count;i++){const v=[p.getX(i),p.getY(i),p.getZ(i)];a.set([v[o[0]]+v[1]*.7,v[o[1]],.5],i*3);}
+ g.setAttribute('aLog',new THREE.BufferAttribute(a,3));
+ for(const k of Object.keys(g.attributes))if(!['position','normal','aLog'].includes(k))g.deleteAttribute(k);
+ return g.index?g.toNonIndexed():g;
+}
+/** A bar of section w (across, along z) by t (in the path's plane) swept along a path in an x-y plane, grain along it. */
+function bar(path:THREE.Vector3[],w:number,t:number){
+ const curve=new THREE.CatmullRomCurve3(path),seg=Math.max(6,path.length*4),pts=curve.getSpacedPoints(seg),L=curve.getLength();
+ const pos:number[]=[],log:number[]=[],idx:number[]=[];
+ // Four faces, each its own strip so the arrises stay sharp: (offset in the plane, offset across) at each edge.
+ const faces:[number,number,number,number][]=[[1,-1,1,1],[1,1,-1,1],[-1,1,-1,-1],[-1,-1,1,-1]];
+ for(const [a0,b0,a1,b1] of faces){
+  const base=pos.length/3;
+  for(let i=0;i<=seg;i++){
+   const P=pts[i],T=pts[Math.min(seg,i+1)].clone().sub(pts[Math.max(0,i-1)]).normalize(),U=P3(-T.y,T.x,0);
+   for(const [a,b] of [[a0,b0],[a1,b1]]){pos.push(P.x+U.x*a*t/2,P.y+U.y*a*t/2,P.z+b*w/2);log.push((a+b)*.02,i/seg*L,.5);}
+  }
+  for(let i=0;i<seg;i++){const k=base+i*2;idx.push(k,k+1,k+2,k+1,k+3,k+2);}
+ }
+ // End caps.
+ for(const i of [0,seg]){
+  const P=pts[i],T=pts[Math.min(seg,i+1)].clone().sub(pts[Math.max(0,i-1)]).normalize(),U=P3(-T.y,T.x,0),base=pos.length/3;
+  for(const [a,b] of [[1,-1],[1,1],[-1,1],[-1,-1]]){pos.push(P.x+U.x*a*t/2,P.y+U.y*a*t/2,P.z+b*w/2);log.push(0,i/seg*L,.5);}
+  idx.push(...(i?[base,base+1,base+2,base,base+2,base+3]:[base,base+2,base+1,base,base+3,base+2]));
+ }
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('aLog',new THREE.Float32BufferAttribute(log,3));g.setIndex(idx);g.computeVertexNormals();
+ return g.toNonIndexed();
+}
+const P3=(x:number,y:number,z=0)=>new THREE.Vector3(x,y,z);
+/** A sled runner along +x, its nose curled up and back at +x. */
+function runnerGeometry(z:number){
+ const path=[P3(-1.05,.02),P3(-.4,0),P3(.3,0),P3(.72,.04),P3(.95,.16),P3(1.02,.32),P3(.94,.43),P3(.82,.42)].map(v=>v.setZ(z));
+ return bar(path,.05,.065);
+}
+function sledGeometry(seed:number){
+ const R=fieldStream(seed*211+9),parts:THREE.BufferGeometry[]=[];
+ for(const z of [-.33,.33]){
+  parts.push(runnerGeometry(z));
+  // Stanchions up from each runner to the deck, and a rail along the deck's edge.
+  for(const x of [-.75,-.15,.45])parts.push(timber(new THREE.BoxGeometry(.05,.2,.05).translate(x,.12,z),'y'));
+  parts.push(bar([P3(-.9,.235,z),P3(0,.24,z),P3(.72,.235,z)],.045,.04));
+ }
+ // Slats across the deck, one gone, one sprung.
+ for(let i=0;i<7;i++){
+  if(i===4)continue;
+  const x=-.85+i*.24,g=new THREE.BoxGeometry(.11,.025,.86).translate(0,.27,0);
+  if(i===2)g.rotateX(.12).translate(0,.02,0);
+  parts.push(timber(g.rotateY((R()-.5)*.06).translate(x,0,0),'z'));
+ }
+ return mergeGeometries(parts,false)!;
+}
+/** A spoked cart wheel in the x-y plane, its axle along z. */
+function wheelGeometry(seed:number){
+ const R=fieldStream(seed*313+1),parts:THREE.BufferGeometry[]=[],rad=.55,n=10;
+ const rim:THREE.Vector3[]=[];for(let i=0;i<=24;i++){const a=i/24*Math.PI*2;rim.push(P3(Math.cos(a)*rad,Math.sin(a)*rad));}
+ parts.push(bar(rim,.09,.08));
+ parts.push(timber(new THREE.CylinderGeometry(.12,.13,.3,12).rotateX(Math.PI/2),'z'));
+ for(let i=0;i<n;i++){
+  if(i===3&&R()<.7)continue;
+  const a=i/n*Math.PI*2+.1;parts.push(timber(new THREE.CylinderGeometry(.032,.042,rad-.1,6).translate(0,(rad-.1)/2+.08,0).rotateZ(a-Math.PI/2),'y'));
+ }
+ return mergeGeometries(parts,false)!;
+}
+/** One length of the old fence, in world space: a post at its start (and one at its end if `last`), the rail between. */
+function fenceGeometry(t:FieldStory,h:Height,last:boolean){
+ const R=fieldStream(t.seed*577+3),c=Math.cos(t.yaw),s=Math.sin(t.yaw),L=t.len!,parts:THREE.BufferGeometry[]=[];
+ const end=(k:-1|1)=>{const x=t.x+c*k*L/2,z=t.z-s*k*L/2;return [x,z,h(x,z)] as const;};
+ const post=(k:-1|1,above:number)=>{
+  const [x,z,y]=end(k),g=timber(new THREE.BoxGeometry(.11,above+.45,.1).translate(0,(above+.45)/2-.45,0),'y');
+  // Leaning with the creep, downwind and a little along the line.
+  g.applyMatrix4(trs(x,y,z,t.yaw+(R()-.5)*.3,1,(R()-.3)*.16,(R()-.5)*.14));
+  parts.push(g);
+ };
+ post(-1,t.posts![0]);if(last)post(1,t.posts![1]);
+ if(!t.bare){
+  const [ax,az,ay]=end(-1),[,,by]=end(1),a=P3(0,ay+t.posts![0]-.09,0),b=P3(L,by+t.posts![1]-.09-(R()<.4?.25:0),0);
+  // The rail in the post's own frame (x along the line), sagging, then placed.
+  const mid=a.clone().lerp(b,.5).add(P3(0,-.05-R()*.05,0)),g=bar([a,mid,b],.06,.07);
+  g.applyMatrix4(new THREE.Matrix4().makeRotationY(t.yaw).setPosition(ax,0,az));
+  parts.push(g);
+ }
+ return mergeGeometries(parts,false)!;
+}
+function storyGeometry(t:FieldStory,h:Height,last=false){
+ if(t.kind==='fence')return fenceGeometry(t,h,last);
+ const g=t.kind==='sled'?sledGeometry(t.seed):t.kind==='wheel'?wheelGeometry(t.seed):mergeGeometries([runnerGeometry(0)],false)!;
+ g.applyMatrix4(trs(t.x,h(t.x,t.z)-t.sink,t.z,t.yaw,1,t.pitch,t.roll));
  return g;
 }
 
@@ -322,6 +428,15 @@ void main(){
   float lit=clamp(dot(n,normalize(vec3(uSun.x,max(uSun.y,.25),uSun.z)))*1.2,0.,1.);
   float deep=kind>2.5?.42:.9;
   f=mix(vec3(1.),mix(vec3(.48,.6,.84),vec3(.95,.97,1.),lit),d*deep);
+ }else if(kind>4.5){
+  // Wind scoop: the hollow the wind keeps open round the windward side of an obstacle, deepest close in. The wall
+  // facing away from the sun sits in blue shade, the rim facing it catches the light.
+  vec2 p=vDecal.xy;float e=.05;
+  #define SCOOP(q) (smoothstep(.95,1.15,length(q))*(1.-smoothstep(1.2,1.95+.25*sin(atan((q).y,(q).x)*3.+vDecal.w),length(q)))*smoothstep(.6,-.45,(q).x/max(length(q),1e-3)))
+  float d=SCOOP(p),dx=SCOOP(p+vec2(e,0.))-d,dy=SCOOP(p+vec2(0.,e))-d;
+  vec3 n=normalize(vec3(-dx/e*.3,1.,-dy/e*.3));
+  float lit=clamp(dot(n,normalize(vec3(uSun.x,max(uSun.y,.25),uSun.z)))*1.25,0.,1.);
+  f=mix(vec3(1.),mix(vec3(.6,.71,.9),vec3(1.),lit),d*.75);
  }else{
   // Scoured crest: the crust broken into plates with frozen ground and gravel between, drift tails downwind (+x).
   vec2 p=vDecal.xy,w=vDecalW.xz;
@@ -396,6 +511,22 @@ function scourGeometry(h:Height){
   for(let j=0;j<=n;j++)for(let i=0;i<=n;i++){
    const u=i/n*2-1,v=j/n*2-1,lx=u*s.rx*1.25,lz=v*s.rz*1.25,x=s.x+c*lx+sn*lz,z=s.z-sn*lx+c*lz;
    pos.push(x,h(x,z)+.09,z);dec.push(u*1.25,v*1.25,4,s.seed*1.7);
+  }
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++){const a=b+j*(n+1)+i,bb=a+1,cc=a+n+1,d=cc+1;idx.push(a,cc,bb,bb,cc,d);}
+ }
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('aDecal',new THREE.Float32BufferAttribute(dec,4));g.setIndex(idx);
+ return g;
+}
+
+/** Wind scoops as draped grids round each obstacle, x along the wind in units of its radius. */
+function scoopGeometry(h:Height){
+ const pos:number[]=[],dec:number[]=[],idx:number[]=[],n=10;
+ for(const sc of snowScoops()){
+  const c=Math.cos(sc.dir),s=Math.sin(sc.dir),b=pos.length/3;
+  for(let j=0;j<=n;j++)for(let i=0;i<=n;i++){
+   // Upwind of the obstacle only: x from -2.2 to 0.8 radii.
+   const u=-2.2+3*i/n,v=-2.2+4.4*j/n,lx=u*sc.r,lz=v*sc.r,x=sc.x+c*lx-s*lz,z=sc.z+s*lx+c*lz;
+   pos.push(x,h(x,z)+.07,z);dec.push(u,v,5,sc.seed*1.3);
   }
   for(let j=0;j<n;j++)for(let i=0;i<n;i++){const a=b+j*(n+1)+i,bb=a+1,cc=a+n+1,d=cc+1;idx.push(a,cc,bb,bb,cc,d);}
  }
@@ -514,7 +645,8 @@ export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields
  // Boulders: the crags' stone at a boulder's size, rounded and worn (snowRocks.ts), banked in snow, one mesh.
  const stones=snowPebbles(),rocks0=snowBoulders().length;
  const rocks=[...snowBoulders(),...stones].map((b,i)=>{
-  const pebble=i>=rocks0,g=pebble?boulderGeometry(b,6,2.5):boulderGeometry(b);
+  // A pebble a hand across needs few faces; the stones a foot across keep their full shape.
+  const pebble=i>=rocks0,g=pebble?boulderGeometry(b,b.r<.22?3:b.r<.32?4:6,2.5):boulderGeometry(b);
   let low=Infinity;for(let a=0;a<12;a++)low=Math.min(low,h(b.x+Math.cos(a*.5236)*b.r*.8,b.z+Math.sin(a*.5236)*b.r*.8));
   // The ground line between the lowest snow round the stone and the snow at its heart: buried uphill, its foot showing downhill.
   g.applyMatrix4(trs(b.x,low*.6+h(b.x,b.z)*.4-(pebble?.05:.04),b.z,b.yaw,1));
@@ -529,6 +661,7 @@ export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields
  const wood=[
   ...snowLogs().map(l=>{const g=logGeometry(l),y=h(l.x,l.z)+l.r-l.sink;g.applyMatrix4(trs(l.x,y,l.z,l.yaw,1,0,(fieldStream(l.seed)()-.5)*.06));return {x:l.x,z:l.z,geo:g};}),
   ...snowStumps().map(s=>{const g=stumpGeometry(s);g.applyMatrix4(trs(s.x,h(s.x,s.z),s.z,s.seed));return {x:s.x,z:s.z,geo:snowSkirt(g,s.x,s.z,h,.12,.07,s.seed).toNonIndexed()};}),
+  ...snowStory().map((t,i,all)=>({x:t.x,z:t.z,geo:storyGeometry(t,h,t.kind==='fence'&&all[i+1]?.kind!=='fence')})),
  ];
  // The woodcutter's stake, driven into a stump, leaning a little; its lantern is a kit piece in snowFieldPieces().
  const L=WOODCUT_LANTERN,ly=h(L.x,L.z),stake=logGeometry({x:0,z:0,yaw:0,len:L.pole+.15,r:.05,seed:77,sink:0,branches:0});
@@ -550,18 +683,22 @@ export async function buildSnowFields(opts:SnowFieldsOptions):Promise<SnowFields
  // Trails and scours.
  const decalMat=decalMaterial(opts.sunDir);
  const trails=new THREE.Mesh(trailGeometry(h),decalMat);trails.name='frostlight-field-trails';trails.renderOrder=1;group.add(trails);
- const scours=new THREE.Mesh(scourGeometry(h),decalMat);scours.name='frostlight-field-scours';scours.renderOrder=1;group.add(scours);
+ const scours=new THREE.Mesh(mergeGeometries([scourGeometry(h),scoopGeometry(h)],false)!,decalMat);scours.name='frostlight-field-scours';scours.renderOrder=1;group.add(scours);
+
+ // The wind's own sculpture: lee tails, sastrugi and cornices in the snowfield's material.
+ const drifts=opts.snow?snowDrifts({height:h,snow:opts.snow,ground:opts.ground}):null;
+ if(drifts)group.add(drifts.group);
 
  // Sea ice.
  const slabs=snowShelves().map(s=>{const g=slabGeometry(s);g.applyMatrix4(trs(s.x,SNOW_SEA_ICE+s.lift-s.t*.3,s.z,s.yaw,1,s.pitch,s.roll));return {x:s.x,z:s.z,geo:g};});
  const shelves=cells('frostlight-ice-shelves',slabs,seaIceMaterial());group.add(shelves);
 
- group.userData.fields={pieces:placed,scrub:scrub.count,kitMeshes:kit.children.length,groves:snowGroves().length,boulders:snowBoulders().length,pebbles:snowPebbles().length,logs:snowLogs().length,stumps:snowStumps().length,ponds:SNOW_PONDS.length,tracks:SNOW_TRACKS.length,scours:snowScours(h).length,slabs:slabs.length};
+ group.userData.fields={pieces:placed,scrub:scrub.count,kitMeshes:kit.children.length,groves:snowGroves().length,boulders:snowBoulders().length,pebbles:snowPebbles().length,logs:snowLogs().length,stumps:snowStumps().length,ponds:SNOW_PONDS.length,tracks:SNOW_TRACKS.length,scours:snowScours(h).length,slabs:slabs.length,story:snowStory().length,scoops:snowScoops().length,...drifts?.stats};
  for(const piece of [...nature.pieces.values(),...props.pieces.values(),...village.pieces.values()])for(const part of piece.parts)part.geometry.dispose();
  let quality:'high'|'low'='high';
  return {
   group,
-  setQuality(q){if(q===quality)return;quality=q;for(const f of fineIds)for(const id of f.ids)f.bm.setVisibleAt(id,q==='high');trails.visible=q==='high';scrub.setQuality(q);},
-  update(time,x,z){decalMat.uniforms.uFocus.value.set(x,0,z);pond.uniforms.pdTime.value=time;scrub.update(time);fire.update(time);},
+  setQuality(q){if(q===quality)return;quality=q;for(const f of fineIds)for(const id of f.ids)f.bm.setVisibleAt(id,q==='high');trails.visible=q==='high';scrub.setQuality(q);drifts?.setQuality(q);},
+  update(time,x,z){decalMat.uniforms.uFocus.value.set(x,0,z);drifts?.update(x,z);pond.uniforms.pdTime.value=time;scrub.update(time);fire.update(time);},
  };
 }

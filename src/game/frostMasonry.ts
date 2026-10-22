@@ -9,6 +9,9 @@ import {FROST_NOISE} from './frostPaving';
  * vertex colour, a frost line over `aGround`, snow on the tops by `aSnow`). masonryMaterial() adds what a winter
  * on the north cliff leaves: snow lodged on every ledge and upper chamfer, so the courses read; rime feathered on
  * the windward faces, heavier up high; and glazed meltwater runs down from the joints.
+ * So a wall never reads as one repeated tile: every stone its own value and hue (iron-stained, pale, dark), thin and
+ * tall courses among the common ones, long stones and short, some slots laid as two stacked stones, long-and-short
+ * quoins at the corners; the joints packed with frost and snow in drifts, damp low on the wall, lichen in places.
  */
 
 export type V3 = [number, number, number];
@@ -57,14 +60,25 @@ export class Masonry {
   /** Ground height for the frost line and how much snow the tops hold, for what is laid next. */
   ground = 0;
   snow = .3;
-  constructor(readonly rand: () => number) {}
+  /**
+   * The mason's own choices (course heights, splits, quoins), from a stream of their own: `rand` sees the same calls
+   * in the same order as before, so whatever else draws from it (the camps' logs, the prison) stays where it was.
+   */
+  private q: () => number;
+  constructor(readonly rand: () => number, salt = 0) {
+    let s = (40503 + salt * 977) >>> 0;
+    this.q = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+  }
 
   /** Blue-grey granite, every stone its own; `k` darkens (mortar, recesses) or lightens. */
-  tint(k = 1): V3 {
-    // Blue in albedo: the low amber sun brings it back to a cold grey, the shade keeps it slate.
-    const r = this.rand, warm = r() < .1 ? .008 : 0, pale = r() < .12 ? .022 : 0;
-    const g = .036 + r() * .026 + pale;
-    return [(g + warm - .005) * k, (g + .006) * k, (g + .03 - warm) * k];
+  tint(k = 1, rng: () => number = this.rand): V3 {
+    // Blue in albedo: the low amber sun brings it back to a cold grey, the shade keeps it slate. Three draws, as ever:
+    // the first picks the stone (iron-stained, cold slate, the common grey), the second a pale or a dark one.
+    const r = rng, a = r(), b = r(), c = r();
+    const warm = a < .12 ? .004 + a * .04 : 0, cold = a > .86 ? .005 : 0;
+    const v = b < .14 ? 1.42 : b > .9 ? .62 : .82 + (b - .14) * .45;
+    const g = (.034 + c * .032) * v;
+    return [(g + warm * 1.4 - .005 - cold) * k, (g + .006 + warm * .35) * k, (g + .03 - warm + cold * .6) * k];
   }
 
   private vert(p: V3, tint: V3): number {
@@ -129,38 +143,107 @@ export class Masonry {
     if (faces & 32) this.quad(P(u1, v0, t0), P(u1, v1, t0), P(u1, v1, t1), P(u1, v0, t1), tint, c);
   }
 
-  /**
-   * Courses of blocks over a mortar core on the face u0..u1, v0..v1 (running bond). `len` is the mean block length,
-   * `course` the mean course height; `skip(u, v)` leaves a block out (an opening). Returns the course tops.
-   */
-  face(warp: Warp, u0: number, u1: number, v0: number, v1: number, o: {len?: number; course?: number; depth?: number; core?: number; curve?: number; skip?: (u: number, v: number) => boolean} = {}): number[] {
-    const r = this.rand, len = o.len ?? 1.7, course = o.course ?? .95, depth = o.depth ?? .55, gap = .055;
-    const tops: number[] = [];
-    // The mortar a few centimetres behind the faces, seen only in the joints.
-    const core = (o.core ?? 1) > 0, mortar = this.tint(.32);
-    if (this.far) { const f = this.far; f.ground = this.ground; f.snow = this.snow; f.slab(warp, u0, v0, 0, u1 - u0, v1 - v0, depth, f.tint(1.05), Math.max(1, Math.ceil((u1 - u0) / (o.curve ? 1.4 : 1e9))), 1 | 4); }
-    if (core && !o.skip) this.slab(warp, u0, v0, .14, u1 - u0, v1 - v0, depth, mortar, Math.max(1, Math.ceil((u1 - u0) / (o.curve ?? 1e9))), 1);
-    let v = v0;
-    while (v < v1 - .05) {
+  /** The draws base147's plain running bond took from `rand` for this face (mortar, courses, stones), and no more. */
+  private spendPlain(u0: number, u1: number, v0: number, v1: number, o: {len?: number; course?: number; skip?: (u: number, v: number) => boolean}): void {
+    const r = this.rand, len = o.len ?? 1.7, course = o.course ?? .95, tint = () => { r(); r(); r(); };
+    tint();
+    for (let v = v0; v < v1 - .05;) {
       let h = course * (.82 + r() * .36);
       if (v1 - (v + h) < course * .5) h = v1 - v;
-      let u = u0 - r() * len * .6;
-      while (u < u1 - .02) {
+      for (let u = u0 - r() * len * .6; u < u1 - .02;) {
         let w = len * (.6 + r() * .8);
         const a = Math.max(u, u0), e = Math.min(u + w, u1);
         if (u1 - e < len * .3) w = u1 - u;
         const ee = Math.min(u + w, u1);
+        if (!o.skip?.(a + (ee - a) / 2, v + h / 2) && ee - a > .25) { r(); r(); tint(); }
+        u += w;
+      }
+      v += h;
+    }
+  }
+
+  /**
+   * Courses of blocks over a mortar core on the face u0..u1, v0..v1 (running bond). `len` is the mean block length,
+   * `course` the mean course height; `skip(u, v)` leaves a block out (an opening). Returns the course tops.
+   */
+  face(warp: Warp, u0: number, u1: number, v0: number, v1: number, o: {len?: number; course?: number; depth?: number; core?: number; curve?: number; skip?: (u: number, v: number) => boolean; quoins?: number} = {}): number[] {
+    // `rand` is drawn exactly as the plain running bond drew it (spendPlain), so whatever draws from the same stream
+    // after the wall (the citadel's ice, the camps' logs, the prison's bars) stays where it was; the wall itself is
+    // laid from the mason's own stream.
+    this.spendPlain(u0, u1, v0, v1, o);
+    const q = this.q, r = q, len = o.len ?? 1.7, course = o.course ?? .95, depth = o.depth ?? .55, gap = .055;
+    const tops: number[] = [];
+    // The mortar a few centimetres behind the faces, seen only in the joints (aCourse 2: the shader packs frost in it).
+    const core = (o.core ?? 1) > 0, mortar = this.tint(.32, q);
+    const joint = (fn: () => void) => { const c = this.course; this.course = 2; fn(); this.course = c; };
+    const segs = (a: number, ee: number) => o.curve ? Math.max(1, Math.ceil((ee - a) / o.curve)) : 1;
+    if (this.far) { const f = this.far; f.ground = this.ground; f.snow = this.snow; f.slab(warp, u0, v0, 0, u1 - u0, v1 - v0, depth, f.tint(1.05), Math.max(1, Math.ceil((u1 - u0) / (o.curve ? 1.4 : 1e9))), 1 | 4); }
+    if (core && !o.skip) joint(() => this.slab(warp, u0, v0, .14, u1 - u0, v1 - v0, depth, mortar, Math.max(1, Math.ceil((u1 - u0) / (o.curve ?? 1e9))), 1));
+    const lay = (a: number, ee: number, v: number, h: number, set: number, bevel: number, tint?: V3) => {
+      const seg = segs(a, ee);
+      this.block(warp, a + gap / 2, v + gap / 2, set, ee - a - gap, h - gap, depth, {bevel, seg, tint: tint ?? this.tint(1, q)});
+      // With openings the mortar goes behind each block alone, so the openings stay open.
+      if (core && o.skip) joint(() => this.slab(warp, a, v, .14, ee - a, h, depth, mortar, seg, 1));
+    };
+    /** One stone in a slot: now and then laid as two stacked stones of their own, so the courses do not run on. */
+    const stone = (a: number, ee: number, v: number, h: number, set: number, bevel: number) => {
+      if (h > course * .8 && ee - a < len * 1.3 && q() < .13) {
+        const k = .42 + q() * .16, h0 = h * k, seg = segs(a, ee);
+        this.block(warp, a + gap / 2, v + gap / 2, set, ee - a - gap, h0 - gap, depth, {bevel: bevel * .8, seg, tint: this.tint(1, q)});
+        this.block(warp, a + gap / 2, v + h0 + gap / 2, set + (q() - .5) * .03, ee - a - gap, h - h0 - gap, depth, {bevel: bevel * .8, seg, tint: this.tint(1, q)});
+        if (core && o.skip) joint(() => this.slab(warp, a, v, .14, ee - a, h, depth, mortar, seg, 1));
+      } else lay(a, ee, v, h, set, bevel);
+    };
+    /** Through stones: a stone of one course run up through the next, so no bed joint runs the wall's whole length. */
+    type Through = {a: number; ee: number; v: number; h: number; set: number; bevel: number; tint: V3};
+    let through: Through[] = [];
+    let v = v0, n = 0;
+    while (v < v1 - .05) {
+      // Mostly common courses, some thin, some tall: the rows of a wall built over generations.
+      const kc = q();
+      let h = course * (.82 + r() * .36) * (kc < .16 ? .62 : kc > .86 ? 1.36 : 1);
+      if (v1 - (v + h) < course * .5) h = v1 - v;
+      // The stones held over from the course below rise through this one (unless an opening would cut them).
+      const below = through; through = [];
+      for (const t of below) {
+        if (o.skip?.((t.a + t.ee) / 2, v + h / 2)) { lay(t.a, t.ee, t.v, t.h, t.set, t.bevel, t.tint); continue; }
+        lay(t.a, t.ee, t.v, t.h + h, t.set, t.bevel, t.tint);
+      }
+      const held = below.filter(t => !o.skip?.((t.a + t.ee) / 2, v + h / 2));
+      const last = v1 - (v + h) < course * .6;
+      let u = u0 - r() * len * .6;
+      // Long-and-short quoins: the end stones alternate course by course, paler, dressed and a little proud.
+      let uEnd = u1;
+      if (o.quoins) {
+        const qa = o.quoins * (n % 2 ? 1.35 : .72), qb = o.quoins * (n % 2 ? .72 : 1.35), qt = this.tint(1.22, q);
+        if (!o.skip?.(u0 + qa / 2, v + h / 2)) { this.block(warp, u0 + gap / 2, v + gap / 2, -.035, qa - gap, h - gap, depth, {bevel: .06, tint: qt}); if (core && o.skip) joint(() => this.slab(warp, u0, v, .14, qa, h, depth, mortar, 1, 1)); }
+        if (!o.skip?.(u1 - qb / 2, v + h / 2)) { this.block(warp, u1 - qb + gap / 2, v + gap / 2, -.035, qb - gap, h - gap, depth, {bevel: .06, tint: qt}); if (core && o.skip) joint(() => this.slab(warp, u1 - qb, v, .14, qb, h, depth, mortar, 1, 1)); }
+        u = u0 + qa; uEnd = u1 - qb;
+      }
+      while (u < uEnd - .02) {
+        const kw = q();
+        let w = len * (.6 + r() * .8) * (kw < .14 ? .55 : kw > .84 ? 1.5 : 1);
+        const e = Math.min(u + w, uEnd);
+        if (uEnd - e < len * .3) w = uEnd - u;
+        let a = Math.max(u, u0), ee = Math.min(u + w, uEnd);
         if (!o.skip?.(a + (ee - a) / 2, v + h / 2) && ee - a > .25) {
-          const set = (r() - .5) * .05;
-          const seg = o.curve ? Math.max(1, Math.ceil((ee - a) / o.curve)) : 1;
-          this.block(warp, a + gap / 2, v + gap / 2, set, ee - a - gap, h - gap, depth, {bevel: .05 + r() * .05, seg});
-          // With openings the mortar goes behind each block alone, so the openings stay open.
-          if (core && o.skip) this.slab(warp, a, v, .14, ee - a, h, depth, mortar, seg, 1);
+          const set = (r() - .5) * .05, bevel = .05 + r() * .05;
+          // Cut round a through stone from the course below: the part on its left keeps this slot's draws, a part on
+          // its right is a stone of its own.
+          const hit = held.find(t => t.a < ee - .02 && t.ee > a + .02);
+          if (hit) {
+            const left = hit.a - a, right = ee - hit.ee, tint = this.tint(1, q);
+            if (left > .3) lay(a, hit.a, v, h, set, bevel, tint);
+            if (right > .3) lay(hit.ee, ee, v, h, set + (q() - .5) * .03, bevel, left > .3 ? this.tint(1, q) : tint);
+          } else if (!last && n > 0 && h > course * .75 && ee - a < len * 1.25 && a > u0 + .2 && ee < uEnd - .2 && q() < .11) {
+            through.push({a, ee, v, h, set, bevel, tint: this.tint(1, q)});
+          } else stone(a, ee, v, h, set, bevel);
         }
         u += w;
       }
-      v += h; tops.push(v);
+      v += h; tops.push(v); n++;
     }
+    for (const t of through) lay(t.a, t.ee, t.v, t.h, t.set, t.bevel, t.tint);
     return tops;
   }
 
@@ -227,27 +310,53 @@ export function masonryMaterial(name: string): THREE.MeshStandardMaterial {
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
         vec3 mNW=normalize(vMN),mA=abs(mNW)/(abs(mNW.x)+abs(mNW.y)+abs(mNW.z));
         #define M3(f,o) (fpNoise(vMW.zy*(f)+(o))*mA.x+fpNoise(vMW.xz*(f)+(o))*mA.y+fpNoise(vMW.xy*(f)+(o))*mA.z)
-        float mN=M3(3.1,0.);
-        // Broad mottling, dark and light grains up close.
-        diffuseColor.rgb*=.68+.42*(M3(.7,2.)*.5+.5);
+        float mN=M3(3.1,0.),mWind=dot(mNW.xz,-uMWind);
+        // Broad mottling, dark and light grains up close (light: each stone's own tint has to carry the wall).
+        diffuseColor.rgb*=.8+.28*(M3(.7,2.)*.5+.5);
         float mG1=M3(38.,5.)*.5+.5,mG2=M3(91.,9.)*.5+.5,mNear=1.-smoothstep(.004,.02,length(fwidth(vMW)));
         diffuseColor.rgb*=mix(1.,mix(1.,.55,smoothstep(.62,.8,mG1))*mix(1.,1.35,smoothstep(.66,.84,mG2)),mNear);
-        // Far slabs: the courses and joints drawn, each block its own tint, a line of snow on every course.
+        // Far slabs: the courses and joints drawn, courses of uneven height (edges jittered by a quarter course),
+        // stones of uneven length course by course, each its own value and hue, a line of snow on some courses.
         float mLodge=0.;
-        if(vMC>.5){
+        if(vMC>.5&&vMC<1.5){
           vec2 mT=normalize(vec2(-mNW.z,mNW.x)+1e-4);
-          float mCy=(vMW.y-.37)/1.12,mCi=floor(mCy),mBx=(dot(vMW.xz,mT)+fract(sin(mCi*91.7)*437.5)*2.1)/2.1,mBi=floor(mBx);
-          float mFy=fract(mCy),mFx=fract(mBx);
-          float mJ=(1.-smoothstep(0.,fwidth(mBx)*1.2+.03,min(mFx,1.-mFx))*smoothstep(0.,fwidth(mCy)*1.2+.05,min(mFy,1.-mFy)))*(1.-abs(mNW.y));
-          diffuseColor.rgb*=mix(.8,1.2,fract(sin(mCi*12.9898+mBi*78.233)*43758.5453))*mix(1.,.32,mJ);
-          mLodge=smoothstep(.92,.98,mFy)*step(.72,fract(sin(mCi*3.1+mBi*7.7)*913.1)+vMS*.3)*(1.-abs(mNW.y))*.4;
+          #define MEDGE(k) ((k)+(fpHash12(vec2(k,4.1))-.5)*.5)
+          float mY=(vMW.y-.37)/1.12,mCi=floor(mY),e0=MEDGE(mCi),e1=MEDGE(mCi+1.);
+          if(mY<e0){mCi-=1.;e1=e0;e0=MEDGE(mCi);}else if(mY>=e1){mCi+=1.;e0=e1;e1=MEDGE(mCi+1.);}
+          float mFy=(mY-e0)/(e1-e0),mBl=mix(1.4,2.9,fpHash12(vec2(mCi,8.3)));
+          float mBx=(dot(vMW.xz,mT)+fpHash12(vec2(mCi,2.7))*mBl)/mBl,mBi=floor(mBx),mFx=fract(mBx);
+          float mJ=(1.-smoothstep(0.,fwidth(mBx)*1.2+.03,min(mFx,1.-mFx))*smoothstep(0.,fwidth(mY)/(e1-e0)*1.2+.05,min(mFy,1.-mFy)))*(1.-abs(mNW.y));
+          float mH1=fpHash12(vec2(mCi*1.7+3.,mBi)),mH2=fpHash12(vec2(mBi*.37+5.,mCi));
+          vec3 mHue=mH2<.12?vec3(1.1,1.02,.91):mH2>.86?vec3(.94,.98,1.06):vec3(1.);
+          diffuseColor.rgb*=mHue*(mH1<.14?1.38:mH1>.9?.64:.82+(mH1-.14)*.45)*mix(1.,.32,mJ);
+          mLodge=smoothstep(.92,.98,mFy)*step(.72,fpHash12(vec2(mCi*3.1,mBi*7.7))+vMS*.3)*(1.-abs(mNW.y))*.4;
         }
+        // The joints (the mortar behind the stones): frost packed into them in drifts across the wall, more to
+        // windward and up high, dark elsewhere, so the joint grid never runs unbroken. The frost sits in the joint's
+        // shade (grey, not white), and past a few metres the joint takes the stone's own value: from across the
+        // arena a grid of light or dark lines is what reads as a repeated tile.
+        float mJFar=smoothstep(.008,.035,length(fwidth(vMW)));
+        if(vMC>1.5){
+          float mPack=smoothstep(.5,.74,M3(.55,17.)*.5+.5+mWind*.16+(vMW.y-vMG)*.006)*(1.-mJFar);
+          diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.15,.175,.22),mPack*.65);
+          diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.026,.032,.048)*(.8+.4*(M3(.7,2.)*.5+.5)),mJFar*.85);
+        }
+        // Weather bigger than a stone, so no stretch of wall repeats: broad patches bleached or darkened, and long
+        // stains run down the faces from the merlons and the slits, each its own length.
+        float mAbove=vMW.y-vMG,mSide=1.-abs(mNW.y);
+        vec2 mTw=normalize(vec2(-mNW.z,mNW.x)+1e-4);float mAlong=dot(vMW.xz,mTw);
+        diffuseColor.rgb*=.76+.44*smoothstep(.15,.85,M3(.13,41.)*.5+.5);
+        float mStain=smoothstep(.5,.8,fpNoise(vec2(mAlong*.7,vMW.y*.04+fpNoise(vec2(mAlong*.3,3.))*.4))*.5+.5)*smoothstep(.1,.7,fpNoise(vec2(mAlong*.7+9.,vMW.y*.09))*.5+.5);
+        diffuseColor.rgb*=mix(vec3(1.),vec3(.56,.58,.6),mStain*mSide*step(vMC,1.5));
+        // Damp low on the wall where the drift melts against it; lichen, ochre and rust, on the lee faces.
+        diffuseColor.rgb*=mix(1.,.76,smoothstep(.0,.25,mAbove)*(1.-smoothstep(.4,2.4,mAbove+M3(1.1,23.)*.5))*mSide);
+        float mLich=smoothstep(.76,.92,M3(.9,31.)*.5+.5+mN*.06)*mSide*smoothstep(-.3,.3,-mWind)*step(vMC,1.5);
+        diffuseColor.rgb*=mix(vec3(1.),vec3(1.45,1.12,.6),mLich*.65);
         // Snow lodged on the tops and the upper chamfers, so every course carries a white line.
         float mUp=mNW.y+mN*.1;
         float mSnow=smoothstep(.45,.62,mUp)*smoothstep(.1,.4,fpNoise(vMW.xz*1.7+vMW.y*.9+7.)*.9+vMS-.52+mN*.25)*.85;
         mSnow=max(mSnow,smoothstep(.86,.95,mUp)*smoothstep(-.25,.25,vMS-.3+(M3(.45,4.)*.6+mN*.12)));
         // Rime feathered on the faces the wind meets, heavier up high; the lee stays dark.
-        float mWind=dot(mNW.xz,-uMWind);
         float mFeather=fpNoise(vec2(dot(vMW.xz,vec2(-uMWind.y,uMWind.x))*1.7,vMW.y*5.))*.5+.5;
         float mRime=smoothstep(.1,.75,mWind)*smoothstep(.5,.8,M3(.22,13.)*.5+.5+(mFeather-.5)*.25+(vMW.y-vMG)*.01-.08);
         float mFrost=(1.-smoothstep(0.,.03+mN*.012,vMW.y-vMG))*.8;

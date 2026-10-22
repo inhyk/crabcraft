@@ -48,8 +48,13 @@ float snowFarShadowAt(vec3 w,vec3 n){
   #else
   const int TAPS=5;
   #endif
-  for(int i=0;i<TAPS;i++)s+=texture(snowFarMap,vec3(c.xy+vogelDiskSample(i,TAPS,phi)*r,c.z));
-  return mix(1.,s/float(TAPS),edge);
+  // Out on the frozen sea every shadow is the coast's, cast from tens of metres away: its edge widens with that
+  // distance (about 1 m in 20, the sun's disc and the haze), so the island's shadow on the ice ends softly.
+  float sea=(length(vec2(w.x/128.,(w.z-2.)/155.))-.9)*140.;
+  int taps=TAPS;
+  if(sea>0.){r*=1.+min(sea,90.)*.16;taps=TAPS+7;}
+  for(int i=0;i<TAPS+7;i++){if(i>=taps)break;s+=texture(snowFarMap,vec3(c.xy+vogelDiskSample(i,taps,phi)*r,c.z));}
+  return mix(1.,s/float(taps),edge);
 }
 `;
 
