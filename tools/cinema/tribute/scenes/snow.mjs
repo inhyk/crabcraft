@@ -95,15 +95,16 @@ function blizzard({ wind = [-3, -2.5, 9], heavy = 1, sky = '#dde2ec', zenith = '
 
 // ------------------------------------------------------------------------- snow-open 39.5-68.7
 
-// The dwarf on the snow road's last slope below the city: its gate stands 40 units up the road, on the plateau
+// The dwarf on the snow road's last slope below the city: its gate stands 34 units up the road, on the plateau
 // where the Frozen Throne was (src/capture/cinema/fx/snow-city.ts raises it and clears the arena). He faces
-// west into the storm, turns to his right toward the city, and the camera comes round behind his left
-// shoulder (his sword is in the right claw) as the city shows through the snow. His beast walks up on his
-// left; then the two climb the road to the gate.
+// into the storm, turns to his left toward the city, and the camera comes round his right side to behind his
+// right shoulder while the storm hides the city. His beast walks up on his right (in from the frame's right),
+// he swings his blunderbuss onto his shoulder, they walk a few steps, the beast rears and roars, and the two
+// climb the road away from the lens as the city comes through the snow.
 const D = [10.5, -19.5]; // between the road's lamp posts, east of the road
 const GATE = [0, -52];
 const YAW1 = Math.atan2(GATE[0] - D[0], GATE[1] - D[1]); // toward the gate, up the road
-const YAW0 = YAW1 + 1.35; // west, into the wind; he turns to his right
+const YAW0 = YAW1 - 1.35; // into the wind; he turns to his left
 const F0 = frame(D[0], D[1], YAW0);
 const F1 = frame(D[0], D[1], YAW1);
 /** F1's frame with `up` measured from the ground under the point itself (the road climbs ahead). */
@@ -122,38 +123,40 @@ const toward = (p, target, d = 6) => {
 };
 /** The city's gate towers and keep, for the camera to look at. */
 const GATE_LOOK = G(GATE[0], GATE[1], 13);
-/** Low on the gate, so the two in the foreground stay in frame under the city. */
-const GATE_LOW = G(GATE[0], GATE[1], 1.5);
-const KEEP_LOOK = G(0, -95, 24);
 const CITY = { t: -3, kind: 'snow-city', at: GATE, yaw: 0, clear: [-46, -120, 46, -50] };
 
-// The beast comes up from behind on his left and stops 4.6 units off, a little ahead (at 2.1 times his size
-// its legs reach about 1.7 out, so the two never touch).
-const BEAST_FROM = F1(8.5, 0, -3.5);
-const BEAST_NEAR = F1(6.9, 0, 0.4);
-const BEAST_AT = F1(5.6, 0, 2.2);
-
 const OPEN = 39.5;
-const WALK_AT = 17.1; // after the growl, in the same take as the face reveal
 const C_WIDE = 61.0;
 const OPEN_END = 68.7;
+/** Song seconds to snow-face seconds. */
+const S = (song) => +(song - OPEN).toFixed(4);
 
-// Both squared to the slope, a little sunk into the powder.
-const cast2 = (dwarfAt, beastAt, yaw) => [
-  { id: 'dwarf', spec: DWARF, at: dwarfAt, yaw, align: 0.8, sink: 0.03 },
-  { id: 'beast', enemy: BEAST.enemy, scale: BEAST.scale, at: beastAt, yaw, align: 0.9, sink: 0.1 },
-];
-const HIDE = ['mira-ice-prison'];
-// The last north-road lamp stood inside the beast's right legs. Move the complete lamp west,
-// for both opening views, while leaving the game world's placement untouched.
-const LAMP_CLEARANCE = { t: -3, kind: 'snow-lamp-offset', at: [6.078627274048131, -18.125775308568286], offset: [-10, 0] };
-const WALK_RAMP = 0.65;
-const WALK_SPEED = 5 / (C_WIDE - OPEN - WALK_AT - WALK_RAMP / 2);
-const walkDistance = (t) => {
-  const u = Math.max(0, t - WALK_AT);
-  return WALK_SPEED * (u < WALK_RAMP ? u * u / (2 * WALK_RAMP) : u - WALK_RAMP / 2);
+/**
+ * Walking speed up the road (units a second) at snow-face time t, piecewise linear: a few slow steps side by
+ * side (53.5-55.6 s), a halt while the beast roars, then the climb from 56.5 s, on into the wide shot.
+ */
+const PACE = [[S(53.5), 0], [S(54.0), 0.85], [S(55.0), 0.85], [S(55.6), 0], [S(56.5), 0], [S(57.1), 1.5]];
+const pace = (t) => {
+  if (t <= PACE[0][0]) return 0;
+  for (let i = 1; i < PACE.length; i++) if (t <= PACE[i][0]) return PACE[i - 1][1] + ((PACE[i][1] - PACE[i - 1][1]) * (t - PACE[i - 1][0])) / (PACE[i][0] - PACE[i - 1][0]);
+  return PACE[PACE.length - 1][1];
 };
-// Sample one continuing walk for both cameras. Its first 0.65 s ease into the walking speed.
+/** Distance walked by time t (exact for the piecewise-linear pace). */
+const walkDistance = (t) => {
+  let d = 0;
+  let prev = PACE[0][0];
+  for (let i = 1; i <= PACE.length && prev < t; i++) {
+    const end = Math.min(t, i < PACE.length ? PACE[i][0] : t);
+    if (end > prev) d += ((pace(prev) + pace(end)) / 2) * (end - prev);
+    prev = end;
+  }
+  return d;
+};
+// The beast's place beside him: 3.8 units to his right, a little ahead, on the road's bank (at 2.1 times his size
+// its legs reach about 2.5 out, so the two never touch).
+const B_LEFT = -3.8;
+const B_AHEAD = 0.8;
+// Sample one continuing walk for both cameras, every frame from `start`.
 const walkPath = (left, ahead, start, end, offset = 0) => {
   const count = Math.round((end - start) * 24);
   return Array.from({ length: count + 1 }, (_, i) => {
@@ -162,110 +165,215 @@ const walkPath = (left, ahead, start, end, offset = 0) => {
     return { t: +(t - offset).toFixed(6), x: p[0], z: p[2], yaw: YAW1 };
   });
 };
+/** A point in F1's frame carried up the road by the walk at time t (`up` from the ground under it). */
+const W = (left, up, ahead, t) => F1g(left, up, ahead + walkDistance(t));
+
+/**
+ * A slow hand-held drift added to sampled camera keys: smooth sums of sines on the position and the look
+ * point, `amp(t)` units (0 = locked off).
+ */
+function handheld(cam, amp) {
+  const n = (t, a, b, c) => Math.sin(t * a + b) * 0.55 + Math.sin(t * c + b * 2.3) * 0.3 + Math.sin(t * (a + c) * 0.61 + b * 0.7) * 0.15;
+  return {
+    ...cam,
+    keys: cam.keys.map((k) => {
+      const A = amp(k.t);
+      if (!A) return k;
+      const dp = [n(k.t, 2.1, 0.3, 4.7), n(k.t, 1.7, 1.9, 5.3) * 0.6, n(k.t, 2.6, 4.1, 3.9)];
+      const dl = [n(k.t, 2.4, 2.2, 5.9), n(k.t, 1.9, 3.3, 4.3) * 0.8, n(k.t, 2.9, 5.1, 3.1)];
+      return { ...k, p: r3(k.p.map((v, i) => v + A * dp[i])), l: r3(k.l.map((v, i) => v + A * 2.2 * dl[i])) };
+    }),
+  };
+}
+
+// Both squared to the slope, a little sunk into the powder.
+const cast2 = (dwarfAt, beastAt, yaw) => [
+  { id: 'dwarf', spec: DWARF, at: dwarfAt, yaw, align: 0.8, sink: 0.03 },
+  { id: 'beast', enemy: BEAST.enemy, scale: BEAST.scale, at: beastAt, yaw, align: 0.9, sink: 0.1 },
+];
+const HIDE = ['mira-ice-prison'];
+// The last north-road lamp stood where the opening's lens passes. Move the complete lamp west,
+// for both opening views, while leaving the game world's placement untouched.
+const LAMP_CLEARANCE = { t: -3, kind: 'snow-lamp-offset', at: [6.078627274048131, -18.125775308568286], offset: [-10, 0] };
+
+// The blunderbuss (src/capture/cinema/fx/snow-gun.ts) in his right claw in place of the sword: slung low at
+// his side, then on 52.7 s a dip and a swing up onto his shoulder, overshooting and settling by 53.4 s.
+const SWING = S(52.7);
+const GUN_OPEN = {
+  t: -3,
+  kind: 'snow-gun',
+  actor: 'dwarf',
+  size: 0.85,
+  grip: [0, 0, 0.12],
+  // The sword and the shield put away for the opening.
+  hide: ['clawR', 'clawL'],
+  aim: [[-3, { a: 'dwarf', o: [0.2, 0.55, 40] }]],
+  lift: [[-3, -72], [SWING - 0.12, -72], [SWING + 0.05, -82], [SWING + 0.42, 70], [SWING + 0.55, 104], [SWING + 0.72, 92], [SWING + 0.9, 97]],
+};
+/** The right claw lowered to his side with the gun... */
+const ARM_LOW = { t: -3, kind: 'dusk-arm', actor: 'dwarf', joints: { RF_J0_joint: -0.4, RF_J1_joint: 0.7, RF_J2_joint: 0.5 }, w: [[-3, 1], [SWING + 0.05, 1], [SWING + 0.4, 0]] };
+/** ...and raised to the shoulder, the gun upright on it. */
+const ARM_SHOULDER = { t: -3, kind: 'dusk-arm', actor: 'dwarf', joints: { RF_J0_joint: -0.15, RF_J1_joint: -1.0, RF_J2_joint: -0.85 }, w: [[SWING + 0.05, 0], [SWING + 0.5, 1]] };
+
+/** The beast rears and roars, 55.75-56.5 s: head down, up, claws high and wide, eyes flaring, breath steaming. */
+const ROAR_AT = S(55.75);
+/** How far it turns to its right (toward the valley and the lens) to roar. */
+const ROAR_TURN = 1.6;
+/** 0 before a, up to 1 at b, held to c, down to 0 at d (smooth). */
+const smooth01 = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+const bump = (t, a, b, c, d) => (t <= a || t >= d ? 0 : t < b ? smooth01((t - a) / (b - a)) : t <= c ? 1 : 1 - smooth01((t - c) / (d - c)));
+const ROAR_ARM = { LF_J0_joint: 0.6, RF_J0_joint: -0.5, LF_J1_joint: -1.4, RF_J1_joint: -1.4, LF_J2_joint: 0.8, RF_J2_joint: -0.8, LF_J4_joint: -1.0, RF_J4_joint: 1.0 };
 
 const face = {
   anchor: D,
   hide: HIDE,
   // A tighter bloom, so the LEDs glow without veiling the moustache.
   view: { ...COLD, dof: true, bokeh: 2.2, bloom: { intensity: 0.45, threshold: 1.2, radius: 0.4 } },
-  fog: { color: '#dde2ec', density: 0.012 },
-  actors: cast2(D, [BEAST_FROM[0], BEAST_FROM[2]], YAW1),
+  actors: cast2(D, F1(-11.5, 0, 3.0).filter((_, i) => i !== 1), YAW1 + PI / 2),
   tracks: {
     dwarf: {
       path: [
         { t: 0, x: D[0], z: D[1], yaw: YAW0 },
-        { t: 3.6, x: D[0], z: D[1], yaw: YAW0 + 0.1 },
+        { t: 3.6, x: D[0], z: D[1], yaw: YAW0 - 0.1 },
         { t: 6.0, x: D[0], z: D[1], yaw: YAW1 },
-        ...walkPath(0, 0, WALK_AT, C_WIDE - OPEN),
+        ...walkPath(0, 0, S(53.5), C_WIDE - OPEN),
       ],
-      faces: [{ t: -2, expr: 'focused' }, { t: 2.6, expr: 'blink', hold: 0.16 }, { t: 2.8, expr: 'focused' }, { t: 8.8, expr: 'blink', hold: 0.16 }, { t: 9.0, expr: 'focused' }],
-      acts: [{ t: 13.5, clip: 'claw_right' }],
+      faces: [{ t: -2, expr: 'focused' }, { t: 2.6, expr: 'blink', hold: 0.16 }, { t: 2.8, expr: 'focused' }, { t: 8.8, expr: 'blink', hold: 0.16 }, { t: 9.0, expr: 'focused' }, { t: S(52.55), expr: 'angry' }, { t: S(53.6), expr: 'focused' }, { t: S(56.3), expr: 'blink', hold: 0.16 }, { t: S(56.5), expr: 'focused' }],
     },
     beast: {
+      // In from the right across the slope (its head into the frame's right edge at 50.75 s), padding up beside him
+      // by 52.6 s; it wheels round to its right to roar.
       path: [
-        { t: 9.2, x: BEAST_FROM[0], z: BEAST_FROM[2] },
-        { t: 12.2, x: BEAST_NEAR[0], z: BEAST_NEAR[2] },
-        { t: 13.4, x: BEAST_AT[0], z: BEAST_AT[2], yaw: YAW1 },
-        ...walkPath(5.6, 2.2, WALK_AT, C_WIDE - OPEN),
+        { t: 9.4, x: F1(-11.5, 0, 3.0)[0], z: F1(-11.5, 0, 3.0)[2] },
+        { t: S(50.75), x: F1(-6.4, 0, 1.6)[0], z: F1(-6.4, 0, 1.6)[2] },
+        { t: S(51.5), x: F1(-4.9, 0, 1.0)[0], z: F1(-4.9, 0, 1.0)[2] },
+        { t: S(52.6), x: F1(B_LEFT, 0, B_AHEAD)[0], z: F1(B_LEFT, 0, B_AHEAD)[2], yaw: YAW1 },
+        ...walkPath(B_LEFT, B_AHEAD, S(53.5), C_WIDE - OPEN).map((k) => ({ ...k, yaw: +(YAW1 - ROAR_TURN * bump(k.t, S(55.15), S(55.7), S(56.45), S(57.0))).toFixed(4) })),
       ],
       show: [[-5, false], [9.0, true]],
-      faces: [{ t: -2, expr: 'neutral' }, { t: 13.4, expr: 'angry' }],
-      // A growl with its claws up at 55.5 s, where the original's bear roars.
-      acts: [{ t: 13.6, clip: 'attack_slam' }, { t: 16.0, clip: 'attack_slam', from: 1.235, to: 1.9, speed: 0.6 }],
+      faces: [{ t: -2, expr: 'neutral' }, { t: S(55.5), expr: 'angry' }],
     },
   },
-  // Out of the white onto the fur itself: the snow-caked moustache under his left eye, a hand's breadth
-  // from the lens, then up and back to the original's close-up of his face.
   cam: {
-    ...move([
-      { t: 0, p: F0(0.46, 0.33, 1.06), l: F0(0.32, 0.41, 0.62), fov: 32 },
-      { t: 1.2, p: F0(0.465, 0.355, 1.13), l: F0(0.3, 0.42, 0.61), fov: 32 },
-      // Easing off the fur slowly (a fifth of the way back by 2.4 s), so the locks read before the face.
-      { t: 2.4, p: F0(0.424, 0.449, 1.409), l: F0(0.234, 0.46, 0.476), fov: 30.9 },
-      { t: 3.6, p: F0(0.28, 0.78, 2.4), l: F0(0, 0.6, 0), fov: 27 },
-      { t: 6.4, p: F1(2.4, 0.7, 1.9), l: F1(0, 0.72, 0.2), fov: 30 },
-      { t: 8.8, p: F1(2.6, 0.75, 0.9), l: F1(0, 0.78, 0.4), fov: 31 },
-      { t: 10.6, p: F1g(2.3, 0.75, -2.2), l: toward(F1g(2.3, 0.75, -2.2), GATE_LOOK), fov: 40 },
-      { t: 12.4, p: F1g(2.5, 0.55, -4.6), l: toward(F1g(2.5, 0.55, -4.6), GATE_LOW), fov: 46 },
-      { t: 17.5, p: F1g(2.3, 0.55, -4.0), l: toward(F1g(2.3, 0.55, -4.0), GATE_LOW), fov: 45 },
-      { t: 21.5, p: F1g(2.1, 0.75, -2.2), l: toward(F1g(2.1, 0.75, -2.2), GATE_LOW), fov: 46 },
-    ]),
+    ...handheld(
+      move([
+        // Out of the white onto the fur itself: the snow-caked moustache under his right eye, a hand's breadth
+        // from the lens, then up and back to the original's close-up of his face.
+        { t: 0, p: F0(-0.46, 0.33, 1.06), l: F0(-0.32, 0.41, 0.62), fov: 32 },
+        { t: 1.2, p: F0(-0.465, 0.355, 1.13), l: F0(-0.3, 0.42, 0.61), fov: 32 },
+        // Easing off the fur slowly (a fifth of the way back by 2.4 s), so the locks read before the face.
+        { t: 2.4, p: F0(-0.424, 0.449, 1.409), l: F0(-0.234, 0.46, 0.476), fov: 30.9 },
+        { t: 3.6, p: F0(-0.28, 0.78, 2.4), l: F0(0, 0.6, 0), fov: 27 },
+        // Round his right side to his profile as he turns, and on behind him...
+        { t: 6.4, p: F1(-2.4, 0.7, 1.9), l: F1(0, 0.72, 0.2), fov: 30 },
+        { t: 8.2, p: F1(-2.35, 0.82, -0.25), l: F1(0, 0.8, 0.5), fov: 32 },
+        // ...to low over his right shoulder at 49.3 s, staring out into the storm; drifting right as the beast comes in.
+        { t: S(49.3), p: F1(-0.7, 0.72, -1.25), l: F1(0.15, 0.6, 4.5), fov: 36 },
+        // Drawing back and up off his shoulder to take in the beast on the bank beside him.
+        { t: S(50.2), p: F1(-0.8, 0.85, -1.8), l: F1(-0.4, 0.95, 4.5), fov: 40 },
+        { t: S(51.2), p: F1(-0.9, 1.2, -3.0), l: F1(-1.4, 1.7, 4.5), fov: 44 },
+        { t: S(52.6), p: F1(-0.95, 1.55, -4.1), l: F1(-1.8, 2.1, 4.0), fov: 44 },
+        { t: S(53.45), p: F1(-1.0, 1.65, -4.4), l: F1(-1.9, 2.0, 4.0), fov: 44 },
+        // Walking: following the two of them side by side, then out round behind the beast to its right...
+        { t: S(54.4), p: W(-2.2, 2.4, -4.8, S(54.4)), l: W(-1.8, 0.8, 3.0, S(54.4)), fov: 42 },
+        { t: S(55.4), p: W(-7.6, 1.7, -3.0, S(55.4)), l: W(-3.4, 1.1, 1.8, S(55.4)), fov: 40 },
+        // ...low for the roar as it wheels round toward the lens...
+        { t: S(55.9), p: W(-8.2, 1.25, -2.8, S(55.5)), l: W(-5.0, 1.6, 0.9, S(55.5)), fov: 38 },
+        { t: S(56.5), p: W(-8.3, 1.05, -2.9, S(55.5)), l: W(-5.1, 2.2, 0.9, S(55.5)), fov: 36 },
+        // ...then turning after them as they set off, rising, drawing back and panning on toward the city as they
+        // climb away and it comes through the snow at the right.
+        { t: S(57.2), p: W(-7.9, 1.2, -3.2, S(55.5)), l: W(-2.8, 1.0, 2.0, S(57.2)), fov: 38 },
+        { t: S(58.5), p: W(-7.3, 1.5, -3.8, S(55.5)), l: W(-2.9, 1.15, 3.0, S(58.5)), fov: 40 },
+        { t: S(61.0), p: W(-6.3, 2.1, -4.9, S(55.5)), l: W(-3.6, 1.6, 4.4, S(61.0)), fov: 40 },
+      ]),
+      // Hand-held from the shoulder shot on, looser once they climb away into the storm.
+      (t) => (t < 9 ? 0 : t < 10 ? (t - 9) * 0.012 : t < S(57.2) ? 0.012 : Math.min(0.035, 0.012 + (t - S(57.2)) * 0.046)),
+    ),
     focus: 'dwarf',
     range: 2.5,
   },
   fx: [
-    // The spindrift over the lens thinned while it is a hand's breadth from the fur, back as he turns.
-    ...blizzard({ wind: [3.5, -2.2, 6] }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.035], [2.6, 0.035], [4.6, 0.12]] } : c)),
+    // 59.2 s: a gust whips snow across the slope, right to left.
+    { t: S(59.05), kind: 'snow-streaks', count: 3800, box: [14, 6, 14], drift: [-7.6, -1.2, 10.5], gust: [3, 1, 3], size: 0.026, trail: 0.07, opacity: 0.95, near: 0.4, seed: 9, fadeIn: 0.12, until: S(60.1), fadeOut: 0.5 },
+    { t: S(59.1), kind: 'snow-powder', at: W(-4.5, 0.2, 3.4, S(59.1)), count: 40, flakes: 70, spread: 4.5, rise: 1.4, size: 1.1, life: 1.2 },
+    // The spindrift over the lens thinned while it is a hand's breadth from the fur, back as he turns; the gust.
+    ...blizzard({ wind: [0.65, -2.2, 6.9] }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.035], [2.6, 0.035], [4.6, 0.12], [S(59.1), 0.12], [S(59.3), 0.38], [S(59.7), 0.2], [S(60.3), 0.12]] } : c)),
+    // The storm swallows the valley and the city while he stares into it, and lifts off the city at 58.5 s.
+    { t: -3, kind: 'snow-fog', color: '#dde2ec', density: [[0, 0.014], [3.6, 0.02], [5.2, 0.04], [8.6, 0.05], [S(57.9), 0.05], [S(58.3), 0.032], [S(58.7), 0.021], [S(59.5), 0.015], [S(61.0), 0.012]] },
     CITY,
     LAMP_CLEARANCE,
     // Out of the white as late as the original, which is clear at 41.2 s.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.5, 0.85], [1.0, 0.55], [1.45, 0.2], [1.75, 0]] },
     // The LEDs dimmed while the lens is on the moustache, so the fur reads before the glare.
     // The fill held under a stronger key while the lens is on the moustache, so the beard has a lit
-    // side and a dark side, and its locks shade each other.
+    // side and a dark side (the key from his left, the side away from the lens), and its locks shade each other.
     {
       t: -3,
       kind: 'fur',
       actor: 'dwarf',
       led: [[0, 0.45], [1.6, 0.5], [3.6, 1]],
       fill: [[0, 0.3], [3.6, 0.6], [6, 1]],
-      key: { color: '#fff1e0', k: [[0, 13], [3.6, 9], [6, 7]] },
+      key: { dir: [0.75, 0.62, 0.12], color: '#fff1e0', k: [[0, 13], [3.6, 9], [6, 7]] },
     },
     // Focus held on the moustache's frosted tips while the depth of field opens up to the face.
-    { t: -3, kind: 'focus', at: { a: 'dwarf', o: [0.36, 0.42, 0.68] }, range: [[0, 0.07], [1.6, 0.12], [3.6, 2.5]], until: 4 },
-    // Once the beast is in, the focus is on its coat, the nearest fur in frame.
-    { t: 11, kind: 'focus', at: { a: 'beast', o: [0, 1.3, 0] }, range: [[11, 3], [13, 2.4]] },
-    { t: 13.9, kind: 'shake', d: 0.7, amp: 0.04 },
-    { t: 16.05, kind: 'shake', d: 0.6, amp: 0.035 },
+    { t: -3, kind: 'focus', at: { a: 'dwarf', o: [-0.36, 0.42, 0.68] }, range: [[0, 0.07], [1.6, 0.12], [3.6, 2.5]], until: 4 },
+    // Over his shoulder the focus is on him, the beast soft beyond; on the beast for its roar; on both as they go.
+    { t: S(54.4), kind: 'focus', at: { a: 'beast', o: [0, 1.3, 1.0] }, range: [[S(54.4), 2.2], [S(57.5), 3.0], [S(61), 6]] },
+    // Back lights keeping both off the white once they are seen against the storm.
+    { t: -3, kind: 'snow-rim', actor: 'dwarf', color: '#ffe7cc', k: [[7.5, 0], [9.2, 8], [S(61), 8]], back: 1.4, up: 1.1 },
+    { t: -3, kind: 'snow-rim', actor: 'beast', color: '#e6eeff', k: [[10.5, 0], [11.5, 26], [S(61), 26]], back: 2.6, up: 1.2 },
+    // The gun, the sword put away.
+    GUN_OPEN,
+    ARM_LOW,
+    ARM_SHOULDER,
+    { t: SWING + 0.5, kind: 'shake', d: 0.25, amp: 0.012 },
+    // The roar: a dip of the head, rearing on its hind legs, claws flung high, then down onto its front feet.
+    { t: -3, kind: 'snow-rear', actor: 'beast', pitch: [[ROAR_AT - 0.3, 0], [ROAR_AT - 0.05, -5], [ROAR_AT + 0.3, 20], [ROAR_AT + 0.7, 23], [ROAR_AT + 0.95, 6], [ROAR_AT + 1.1, -3], [ROAR_AT + 1.3, 0]], pivot: 1.4 },
+    { t: -3, kind: 'dusk-arm', actor: 'beast', joints: ROAR_ARM, w: [[ROAR_AT, 0], [ROAR_AT + 0.28, 1], [ROAR_AT + 0.75, 1], [ROAR_AT + 1.05, 0]] },
+    { t: -3, kind: 'snow-eyes', actor: 'beast', k: [[ROAR_AT - 0.2, 1], [ROAR_AT + 0.25, 3.8], [ROAR_AT + 0.75, 3.8], [ROAR_AT + 1.2, 1.4]] },
+    { t: ROAR_AT + 0.2, kind: 'snow-breath', actor: 'beast', until: ROAR_AT + 0.78, rate: 100, speed: 4.5, size: 0.6, life: 0.9 },
+    { t: ROAR_AT + 0.15, kind: 'snow-powder', at: { a: 'beast', o: [0, 2.2, -0.3] }, count: 30, flakes: 60, spread: 2.2, rise: 1.8, size: 0.7, life: 1.2 },
+    { t: ROAR_AT + 1.05, kind: 'snow-powder', at: { a: 'beast', o: [0, 0.1, 1.2] }, count: 18, flakes: 30, spread: 2, rise: 1.0, size: 0.6, life: 1.0 },
+    { t: ROAR_AT + 0.25, kind: 'shake', d: 0.7, amp: 0.035 },
+    { t: ROAR_AT + 1.05, kind: 'shake', d: 0.3, amp: 0.025 },
   ],
 };
 
-// Far down the road: two small figures climbing toward the gate in the whiteout, the city above them; a pine's
-// edge slides in at the right before the white takes over.
+// Far down the road: two figures climbing toward the gate, the camera drawing back down the slope past a fir at the
+// right; the storm thickens into a veil over the gate (66.5 s) before leaves and white take over.
 const WIDE_AT = C_WIDE - OPEN;
-const WD = { d0: F1(0, 0, walkDistance(WIDE_AT)), b0: F1(5.6, 0, 2.2 + walkDistance(WIDE_AT)) };
-const WC = [17, 17];
+const WD = { d0: F1(0, 0, walkDistance(WIDE_AT)), b0: F1(B_LEFT, 0, B_AHEAD + walkDistance(WIDE_AT)) };
+/** The wide's frame: from the pair at the cut, back down the road and off to their right. */
+const WB = (back, right, up) => F1g(-right, up, walkDistance(WIDE_AT) - back);
 const wide = {
   // Omit the fixed anchor: the stage follows the dwarf, keeping both crabs in the snow field.
   hide: HIDE,
   // No vignette and little bloom: the shot ends on flat white with leaves drawn over it.
   view: { ...COLD, saturation: -0.3, vignette: null, bloom: { intensity: 0, threshold: 5 } },
-  fog: { color: '#d6dbe7', density: 0.0075 },
   actors: cast2([WD.d0[0], WD.d0[2]], [WD.b0[0], WD.b0[2]], YAW1),
   tracks: {
     dwarf: { path: walkPath(0, 0, WIDE_AT, OPEN_END - OPEN, WIDE_AT) },
-    beast: { path: walkPath(5.6, 2.2, WIDE_AT, OPEN_END - OPEN, WIDE_AT) },
+    beast: { path: walkPath(B_LEFT, B_AHEAD, WIDE_AT, OPEN_END - OPEN, WIDE_AT) },
   },
-  cam: move([
-    { t: 0, p: G(WC[0], WC[1], 5), l: [GATE[0] + 2, 23, GATE[1]], fov: 36 },
-    { t: 7.7, p: G(WC[0] - 2.5, WC[1] - 4, 5.2), l: [GATE[0] + 1, 23.5, GATE[1]], fov: 34 },
-  ]),
+  cam: handheld(
+    move([
+      { t: 0, p: WB(15, 4.5, 4.2), l: toward(WB(15, 4.5, 4.2), [GATE[0] + 2, 21, GATE[1]], 10), fov: 38 },
+      { t: 3.0, p: WB(19.5, 5.6, 4.6), l: toward(WB(19.5, 5.6, 4.6), [GATE[0] + 1.5, 21.5, GATE[1]], 10), fov: 37 },
+      { t: 5.5, p: WB(24, 6.8, 5.0), l: toward(WB(24, 6.8, 5.0), [GATE[0] + 1, 22, GATE[1]], 10), fov: 36 },
+      { t: 7.7, p: WB(27.5, 7.6, 5.3), l: toward(WB(27.5, 7.6, 5.3), [GATE[0] + 1, 22.5, GATE[1]], 10), fov: 35 },
+    ]),
+    () => 0.06,
+  ),
   fx: [
-    ...blizzard({ wind: [3, -2.5, 7], heavy: 1.2, drift: 0.12, sky: '#cdd3e2', zenith: '#9aa3c2' }),
+    // 66.5 s: the storm thickens into a veil over the gate.
+    { t: 5.4, kind: 'snow-streaks', count: 5000, box: [20, 10, 20], drift: [0.8, -2.5, 9], gust: [2, 1, 3], size: 0.024, trail: 0.06, opacity: 0.9, seed: 12, fadeIn: 1.0 },
+    ...blizzard({ wind: [0.65, -2.5, 7.5], heavy: 1.2, drift: 0.12, sky: '#cdd3e2', zenith: '#9aa3c2' }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.12], [5.4, 0.12], [6.6, 0.42], [7.2, 0.5]] } : c)),
+    { t: -3, kind: 'snow-fog', color: '#d6dbe7', density: [[0, 0.016], [5.4, 0.017], [6.6, 0.034], [7.7, 0.038]] },
     CITY,
     LAMP_CLEARANCE,
-    { t: -3, kind: 'snow-pines', trees: [[WC[0] + 3.2, WC[1] - 6.5, 0.9], [WC[0] + 5.5, WC[1] - 12, 1.1]] },
-    { t: 6.3, kind: 'snow-leaves', count: 200, box: [12, 7, 12], drift: [-2.5, -1.2, 3.5], size: 0.09, near: 1.4, color: '#a2482a', color2: '#c98a3c', fadeIn: 0.8 },
+    // The fir the camera draws back past, at the right from 64 s.
+    { t: -3, kind: 'snow-pines', trees: [WB(16.8, 10.3, 0), WB(26, 14, 0)].map((p, i) => [+p[0].toFixed(2), +p[2].toFixed(2), [0.85, 1.0][i]]) },
+    { t: 6.1, kind: 'snow-leaves', count: 200, box: [12, 7, 12], drift: [-2.5, -1.2, 3.5], size: 0.09, near: 1.4, color: '#a2482a', color2: '#c98a3c', fadeIn: 0.6 },
     { t: 6.6, kind: 'snow-whiteout', curve: [[6.6, 0], [7.0, 0.25], [7.35, 0.62], [7.6, 1], [7.7, 1]] },
   ],
 };
