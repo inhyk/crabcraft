@@ -2,10 +2,10 @@
 // the Seaglass Quarter offer every world, open or locked by the game's own unlock rules; every world has a crown
 // portal beside its own gateway that leads back to the capital's harbour. Travel takes the worlds' portal path (a relay
 // room's chapter request, else world2.go), so a room moves together and the quest chapter rules stay as they are. The
-// capital's named crabs (the captain, the portal's keeper, the king, the class trainers) are `keepers`
-// (tidecrown/keepers.ts); a feature that adds one registers it in the constructor below. The trainers' yards and their
-// training dummies are `training` (tidecrown/training.ts). A server world does not host Tidecrown yet: nothing here is
-// built there.
+// capital's named crabs (the captain, the portal's keeper, the king, the class trainers, the vault's keeper) are
+// `keepers` (tidecrown/keepers.ts); a feature that adds one registers it in the constructor below. The trainers' yards
+// and their training dummies are `training` (tidecrown/training.ts). A server world does not host Tidecrown yet:
+// nothing here is built there.
 import * as THREE from 'three';
 import { t } from '../i18n';
 import type { Game } from './game';
@@ -15,6 +15,7 @@ import { type Keeper, TidecrownKeepers } from './tidecrown/keepers';
 import { TidecrownKing } from './tidecrown/king';
 import type { KingdomRequests } from './tidecrown/kingdomRequests';
 import { TidecrownTraining } from './tidecrown/training';
+import { TidecrownVault } from './tidecrown/vault';
 import type { Unit } from './unit';
 import type { HiddenWorld } from './world2';
 
@@ -69,6 +70,8 @@ export class TidecrownHub {
   private readonly king: TidecrownKing | null = null;
   /** The class trainers' yards and their dummies (none on a server world). */
   readonly training: TidecrownTraining | null = null;
+  /** The Royal Vault and its keeper Bell (tidecrown/vault.ts; none on a server world). */
+  readonly vault: TidecrownVault | null = null;
   private shown = false;
   /** The Seaglass ring's walk-in, armed once the player is clear of it. */
   private armed = false;
@@ -101,6 +104,7 @@ export class TidecrownHub {
     });
     this.king = new TidecrownKing(g, this.keepers);
     this.training = new TidecrownTraining(g, this.keepers);
+    this.vault = new TidecrownVault(g, this.keepers);
   }
 
   /** The crabs and the training dummies drawn here (for the shader warm-up behind the loading screen). */
@@ -119,7 +123,8 @@ export class TidecrownHub {
     }
     this.training?.load(island);
     // Each crab once, so a retry after a failed crab load adds nothing twice.
-    return this.keepers.load(island);
+    // The vault's strongbox is dressing: without it the capital still opens (the next entry tries again).
+    return Promise.all([this.keepers.load(island), this.vault?.dress(island).catch((e) => console.warn('vault dressing', e))]).then(() => {});
   }
 
   show(): void {
@@ -133,6 +138,7 @@ export class TidecrownHub {
       this.g.hud.chat.system(t('다른 월드로 가려면 왕관 항구 긴 부두의 아라 선장이나 바다유리 구역의 포탈을 찾아가세요.', 'To travel to another world, find Captain Ara on the Crown Harbour’s long pier or the portal in the Seaglass Quarter.'));
       this.g.hud.chat.system(t('크라운셸 성으로 오르는 큰 계단 위에서 마리너스 왕이 왕국 의뢰를 줘요.', 'King Marinus gives kingdom requests at the head of the great stair to Crownshell Keep.'));
       this.g.hud.chat.system(t('직업 교관이 기술을 알려 줘요: 전사는 따개비 공방, 사제는 조수 대성당 앞 광장, 마법사는 바다유리 구역. 옆의 허수아비로 연습할 수 있어요.', 'Class trainers explain your skills: warriors at the Barnacle Works, priests before the Cathedral of the Tide, mages in the Seaglass Quarter. Practise on the dummies beside them.'));
+      this.g.hud.chat.system(t('탈피 시장의 지붕 덮인 장터에서 금고지기 벨이 왕실 금고를 지켜요. 맡긴 코인은 다른 캐릭터로도 꺼낼 수 있어요.', 'Bell keeps the Royal Vault in the covered hall of Moult Market. Coins left there can be taken out by your other characters.'));
     }
   }
 
@@ -343,6 +349,7 @@ export class TidecrownHub {
     }
     this.keepers.update(dt, time);
     this.training?.update(dt);
+    this.vault?.update();
   }
 
   dispose(): void {
@@ -354,5 +361,6 @@ export class TidecrownHub {
     this.training?.dispose();
     this.keepers.dispose();
     this.king?.dispose();
+    this.vault?.dispose();
   }
 }

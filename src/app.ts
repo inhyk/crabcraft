@@ -109,13 +109,16 @@ export function localStorageGet(key: string): string | null {
   }
 }
 
-export function localStorageSet(key: string, value: string): void {
-  if (SPECTATE) return;
+/** True once the value is stored (false for a spectator, or when storage refused it). */
+export function localStorageSet(key: string, value: string): boolean {
+  if (SPECTATE) return false;
   try {
     const resolved=storageKey(key),changed=localStorage.getItem(resolved)!==value;
     localStorage.setItem(resolved, value);
     if(changed&&progressKey(key))window.dispatchEvent(new Event('cc-progress-saved'));
+    return true;
   } catch {
     /* private mode */
+    return false;
   }
 }

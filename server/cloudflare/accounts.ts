@@ -11,12 +11,16 @@ const passwordHash=async(password:string,salt:string)=>{
 };
 export const accountName=(v:unknown)=>typeof v==='string'&&/^[a-zA-Z0-9_]{3,24}$/.test(v)?v.toLowerCase():null;
 type Bundle=Record<string,string>;
+// The Royal Vault, as server/node/accounts.ts: optional `{"coins": n}`, kept when an older page saves without it.
+const VAULT_KEY='cc.vault.v1';
+const vaultOf=(v:string)=>{if(v.length>200)return false;try{const data=JSON.parse(v);return !!data&&typeof data==='object'&&!Array.isArray(data)&&Number.isSafeInteger(data.coins)&&data.coins>=0;}catch{return false;}};
 function bundleOf(value:unknown):Bundle|null{
  if(!value||typeof value!=='object'||Array.isArray(value))return null;
  const entries=Object.entries(value);if(entries.length>18||JSON.stringify(value).length>48000)return null;
  for(const [k,v] of entries){
-  if(!(k==='cc.spec'||k==='cc.lighthouseSecret.v1'||k.startsWith('cc.journey.v1:'))||k.length>180||typeof v!=='string'||v.length>16000)return null;
+  if(!(k==='cc.spec'||k==='cc.lighthouseSecret.v1'||k===VAULT_KEY||k.startsWith('cc.journey.v1:'))||k.length>180||typeof v!=='string'||v.length>16000)return null;
   if(k==='cc.lighthouseSecret.v1'){if(v!=='found')return null;continue;}
+  if(k===VAULT_KEY){if(!vaultOf(v))return null;continue;}
   try{const data=JSON.parse(v);if(k==='cc.spec'?!specOf(data):(!data||!Number.isSafeInteger(data.xp)||data.xp<0))return null;}catch{return null;}
  }
  return Object.fromEntries(entries);
@@ -64,6 +68,7 @@ export class CrabAccount extends DurableObject<Env>{
    const save=bundleOf(body.save);if(!save||!Number.isSafeInteger(body.revision))return fail(400,'save');
    const row=sql.exec<AccountRow>('SELECT * FROM account WHERE id=1').one();
    if(body.revision!==row.revision)return fail(409,'conflict');
+   const vault=(JSON.parse(row.save) as Bundle)[VAULT_KEY];if(!(VAULT_KEY in save)&&typeof vault==='string')save[VAULT_KEY]=vault;
    sql.exec('UPDATE account SET save=?,revision=revision+1,updated=? WHERE id=1',JSON.stringify(save),now);
   }else if(action!=='session')return fail(404,'route');
   const row=sql.exec<AccountRow>('SELECT * FROM account WHERE id=1').one();

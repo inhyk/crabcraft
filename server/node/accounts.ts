@@ -16,12 +16,20 @@ export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export const googleAccount = (sub: string) => 'g' + digest('google:' + sub).slice(0, 23);
 
 type Bundle = Record<string, string>;
+/** The Royal Vault: `{"coins": n}`, coins shared by the account's characters. Optional, so pages from before it still save. */
+export const VAULT_KEY = 'cc.vault.v1';
+/** A vault value: a JSON object whose `coins` is a safe integer of at least 0, in at most 200 characters. */
+export const vaultOf = (v: string): boolean => {
+  if (v.length > 200) return false;
+  try { const data = JSON.parse(v); return !!data && typeof data === 'object' && !Array.isArray(data) && Number.isSafeInteger(data.coins) && data.coins >= 0; } catch { return false; }
+};
 export function bundleOf(value: unknown): Bundle | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const entries = Object.entries(value); if (entries.length > 18 || JSON.stringify(value).length > 48000) return null;
   for (const [k, v] of entries) {
-    if (!(k === 'cc.spec' || k === 'cc.lighthouseSecret.v1' || k.startsWith('cc.journey.v1:')) || k.length > 180 || typeof v !== 'string' || v.length > 16000) return null;
+    if (!(k === 'cc.spec' || k === 'cc.lighthouseSecret.v1' || k === VAULT_KEY || k.startsWith('cc.journey.v1:')) || k.length > 180 || typeof v !== 'string' || v.length > 16000) return null;
     if (k === 'cc.lighthouseSecret.v1') { if (v !== 'found') return null; continue; }
+    if (k === VAULT_KEY) { if (!vaultOf(v)) return null; continue; }
     try { const data = JSON.parse(v); if (k === 'cc.spec' ? !specOf(data) : (!data || !Number.isSafeInteger(data.xp) || data.xp < 0)) return null; } catch { return null; }
   }
   return Object.fromEntries(entries);
@@ -88,6 +96,13 @@ async function handle(db: Pool, action: string, session: SessionBinding, body: B
   if (action === 'save') {
     if (!await limit(db, 'save:' + username, 60, 60)) return fail(429, 'rate');
     const save = bundleOf(body.save); if (!save || !Number.isSafeInteger(body.revision)) return fail(400, 'save');
+    // A page from before the vault leaves it out: the stored one stays. Read at the revision the write below must
+    // still find, so a vault changed in between turns this save into a conflict instead of being dropped.
+    if (!(VAULT_KEY in save)) {
+      const stored = (await db.query<{ save: string }>('SELECT save FROM accounts WHERE username = $1 AND revision = $2', [username, body.revision])).rows[0];
+      const vault = stored ? (JSON.parse(stored.save) as Bundle)[VAULT_KEY] : undefined;
+      if (typeof vault === 'string') save[VAULT_KEY] = vault;
+    }
     const r = await db.query<{ revision: string; updated: string }>('UPDATE accounts SET save = $1, revision = revision + 1, updated = $2 WHERE username = $3 AND revision = $4 RETURNING revision, updated', [JSON.stringify(save), now, username, body.revision]);
     if (!r.rowCount) return fail(409, 'conflict');
     return { status: 200, body: { username, revision: Number(r.rows[0].revision), updated: Number(r.rows[0].updated) } };
