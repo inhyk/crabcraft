@@ -396,7 +396,9 @@ const elfShots = [
     fx: [
       LAVENDER,
       SHADE,
-      { kind: 'night-burst', t: -0.04, at: { g: [RUN_END[0], 1.7, RUN_END[1]] }, size: 1.05, d: 0.75, color: '#ff3fd0', color2: '#ffa6f2', light: 12, gain: 0.45, count: 420 },
+      // The light she changes in, in depth: shafts through the mist, sparks round the shape, glowing
+      // smoke; it streams away behind the beast as it breaks out.
+      { kind: 'elf-aura', t: -0.04, pre: 0, at: { g: [RUN_END[0], 1.7, RUN_END[1]] }, size: 1.05, d: 0.75, color: '#ff3fd0', color2: '#ffa6f2', light: 22, gain: 0.6, stream: 0.3, streamDir: [-0.4, 0.5, -4] },
       { kind: 'night-veil', t: -1, alpha: [[0, 0.14], [0.12, 0.15], [0.45, 0.05], [0.85, 0]], color: '#ff6ad6', gain: 1.2 },
       { kind: 'night-glow', t: -1, at: { g: [RUN_END[0], 1.5, RUN_END[1]] }, color: '#ff4fd0', size: 3.2, k: [[0, 0.7], [0.4, 0.25], [1, 0.05]] },
       // Pink smoke trailing off the beast as it breaks out.
@@ -500,10 +502,14 @@ const elfShots = [
         kind: 'night-foam', t: -0.05, alpha: [[0, 0.9], [0.2, 0.86], [0.4, 0.7], [0.75, 0.45], [1.1, 0]], cover: [[0, 0.62], [0.12, 0.55], [0.3, 0.38], [0.6, 0.18], [1.0, 0.05]],
         color: '#e8f8fa', gain: 0.85, color2: '#3a9cac', gain2: 0.6, dark: '#05222a', center: [0.02, 0.06], speed: 2.2, scale: 1,
       },
-      { kind: 'leaves', t: -1, count: 2600, box: [9, 6, 12], drift: [0.4, -0.3, 1.2], size: 0.38, color: '#06222a', color2: '#0f3a44', opacity: 1, seed: 8 },
+      { kind: 'leaves', t: -1, count: 900, box: [9, 6, 12], drift: [0.4, -0.3, 1.2], size: 0.2, color: '#06222a', color2: '#0f3a44', opacity: 1, seed: 8 },
+      // Under: moonlight shafts down through the broken surface, bubbles boiling up past the lens,
+      // churned white water below the surface.
+      { kind: 'elf-under', t: 0.2, fadeIn: 0.12, d: 1.05, at: [SPLASH[0] + 3.2, -2.4, SPLASH[2] + 1.0], box: [9, 4.6, 9], color: '#5fe8f4', color2: '#e8ffff', gain: 1.0, rise: 1.8 },
       // Bubbles rising past the lens once under.
       { kind: 'motes', t: 0.25, fadeIn: 0.15, count: 600, box: [6, 5, 6], drift: [0.1, 1.6, 0.2], size: 0.07, color: '#e8ffff', color2: '#9ff6ff' },
-      { kind: 'night-streaks', t: -1, alpha: [[0, 0.8], [0.6, 0.5], [1.1, 0]], fill: [[0, 0.3], [0.3, 0.1], [0.6, 0]], color: '#7ff6ff', color2: '#ffffff', speed: 5, gain: 1.6 },
+      // Spray streaks only while it plunges through the splash (the white), gone once under.
+      { kind: 'night-streaks', t: -1, alpha: [[0, 0.6], [0.25, 0]], fill: [[0, 0.3], [0.25, 0]], color: '#7ff6ff', color2: '#ffffff', speed: 5, gain: 1.6 },
       { kind: 'fade', t: -1, color: '#000000', curve: [[0, 0], [0.7, 0], [1.2, 1]] },
     ],
   }),
@@ -560,6 +566,9 @@ const boulders = (dt, burstSpeed = 9) => ({
   seed: 52,
 });
 
+/** The broken windmill on a knoll beyond the ground's edge, dark against the sky at the right of the frame
+ *  (src/capture/cinema/fx/night-windmill.ts). */
+const WINDMILL = { kind: 'night-windmill', t: -3, face: U, yaw: -0.3, scale: 1.4, knoll: 13, cloud: { k: 1.6 } };
 /** The golem's feet: behind him, a touch right, so the blast goes up past its left shoulder. */
 const GOLEM = P(4.2, 0.2);
 /** The summoned golem: the boulders heave up round him (102.7-105.1 s), fly together behind him into
@@ -705,10 +714,10 @@ const undeadShots = [
         // ...in to the planted claw and slowly up it past the beads (his face kept above the frame)...
         { t: 5.4, p: H(1.0, 0.6, 2.5), l: H(0.3, 0.35, 0.7), fov: 30 },
         // ...tilting up to his face on 99.0-99.5 s (his staff out of frame left).
-        { t: 6.3, p: H(0.95, 0.95, 2.3), l: H(0.18, 0.92, 0.3), fov: 36 },
-        { t: 6.8, p: H(0.95, 1.12, 2.2), l: H(0.2, 0.98, 0.3), fov: 40 },
+        { t: 6.5, p: H(0.95, 0.95, 2.3), l: H(0.18, 0.92, 0.3), fov: 36 },
+        { t: 7.0, p: H(0.95, 1.12, 2.2), l: H(0.2, 0.98, 0.3), fov: 40 },
         // Down to the ground close in front of him, looking up as he raises his claws and channels...
-        { t: 7.8, p: H(0.75, 0.5, 2.3), l: H(0.15, 1.0, 0), fov: 42 },
+        { t: 8.0, p: H(0.75, 0.5, 2.3), l: H(0.15, 1.0, 0), fov: 42 },
         { t: 9.0, p: H(0.55, 0.3, 2.35), l: H(0.1, 1.4, -0.3), fov: 46 },
         // ...widening and drifting round to his right as the boulders climb out round him and fly
         // together behind him, so he stays big in the frame with the golem rising over him...
@@ -718,10 +727,10 @@ const undeadShots = [
         // head breaks the top of the frame...
         { t: 14.5, p: H(-0.45, 0.22, 2.95), l: H(0.0, 2.75, -2.8), fov: 50 },
         { t: 16.2, p: H(-0.5, 0.2, 3.1), l: H(0.05, 2.95, -2.9), fov: 50 },
-        // ...and as it lurches at the lens the lens pushes in at its eyes on the blast's onset (109.95 s).
-        { t: 16.95, p: H(-0.5, 0.2, 3.05), l: H(0.05, 3.5, -2.8), fov: 50 },
-        { t: 17.6, p: H(-0.42, 0.28, 2.55), l: H(0.05, 4.1, -2.6), fov: 48 },
-        { t: 18, p: H(-0.4, 0.3, 2.45), l: H(0.05, 4.2, -2.5), fov: 47 },
+        // ...and as it lurches at the lens the lens holds back and tilts up to its eyes (109.95 s).
+        { t: 16.95, p: H(-0.55, 0.22, 3.4), l: H(0.05, 4.0, -2.8), fov: 54 },
+        { t: 17.6, p: H(-0.5, 0.28, 3.25), l: H(0.05, 4.4, -2.6), fov: 53 },
+        { t: 18, p: H(-0.5, 0.3, 3.2), l: H(0.05, 4.5, -2.5), fov: 53 },
       ],
     },
     fx: [
@@ -739,8 +748,8 @@ const undeadShots = [
       STEP_POSE,
       // His staff as gnarled dark wood with red prayer beads (src/capture/cinema/fx/night-staff.ts), kicked
       // by the stamp and each fling of the cast.
-      // The string hangs low off the shaft so it swings down into the low frame at 96.7 s.
-      { kind: 'night-staff', t: -3, actor: 'u', beads: { at: 0.55, length: 0.42, swing: [[STAMP, 0.3, 90], [3.7, 0.6, 75], [6.75, 0.35], [8.6, 0.45, 90], [12.5, 0.45, 90]] } },
+      // The string hangs off the shaft above the low frame and swings into it as the lens rises at 96.7 s.
+      { kind: 'night-staff', t: -3, actor: 'u', beads: { at: 0.72, length: 0.36, swing: [[STAMP, 0.3, 90], [3.7, 0.6, 75], [6.75, 0.35], [8.6, 0.45, 90], [12.5, 0.45, 90]] } },
       // A weathered corpse of a crab (src/capture/cinema/fx/night-rags.ts): rust and grime, rags off his
       // shell and a bandaged leg swinging at the stamp and each fling, a cracked visor, a faded hood.
       { kind: 'night-rags', t: -3, actor: 'u', kicks: [[STAMP, 0.35], [8.6, 0.5], [12.5, 0.5]] },
@@ -761,7 +770,8 @@ const undeadShots = [
       // The blight's fire under his claws, low in front of him: the original's undead is lit from below.
       { kind: 'light', t: 6, at: H(0.2, 0.15, 1.3), color: '#ffb050', curve: [[6.4, 0], [7.6, 12], [9, 45], [18, 45]], distance: 3.5, flicker: 0.2 },
       // 98.5 s: a sickly glow flares up behind him, rims him green, and the sky behind him sickens and swells.
-      { kind: 'night-glow', t: 5, at: H(-11, 6, -4), size: 12, color: '#d8ff6a', k: [[5.35, 0], [5.6, 1.6], [6.0, 1.2], [6.5, 1.3], [8.5, 0.6], [9.8, 0]] },
+      { kind: 'night-glow', t: 5, at: H(-11, 6, -4), size: 14, color: '#e4ff6a', k: [[5.35, 0], [5.55, 2.8], [6.0, 1.8], [6.5, 1.4], [8.5, 0.6], [9.8, 0]] },
+      { kind: 'light', t: 5, at: H(-2.6, 1.6, -2.6), color: '#d8ff6a', curve: [[5.4, 0], [5.55, 40], [6.2, 18], [7.5, 8]], distance: 7 },
       { kind: 'light', t: 5, at: H(-1.2, 1.8, -1.6), color: '#a8ff5a', curve: [[5.4, 0], [5.65, 14], [6.5, 10]], distance: 6 },
       // (Wide and low before the blast: looking up past him it would read as a green sun.)
       { kind: 'night-glow', t: -1, at: SKY, size: 170, color: '#5cc42a', k: [[5.3, 0], [5.7, 0.3], [6.5, 0.35], [9.8, 0.3], [10.4, 0.6], [14.9, 0.65], [15.1, 0.9], [18, 1.0]] },
@@ -772,6 +782,7 @@ const undeadShots = [
       // The staff's gather, flaring at each fling.
       { kind: 'swirl', t: 7.1, until: 14.9, at: { a: 'u', o: STAFF }, radius: 1.6, rate: 60, size: 0.08, color: '#7dff6a' },
       // The fling's two hits (101.67, 102.25 s) glint molten in the ground at lower left.
+      ...[8.67, 9.25].map((t) => ({ kind: 'night-burst', t, at: H(-1.1, 0.4, 0.3), d: 0.3, size: 0.22, color: '#ffc070', color2: '#ff6a10', light: 40, gain: 0.4 })),
       { kind: 'light', t: 8, at: H(-0.9, 0.08, 1.5), color: '#ff9a3a', curve: [[8.6, 0], [8.67, 22], [8.95, 3], [9.2, 3], [9.25, 22], [9.6, 3], [11, 2]], distance: 3, flicker: 0.2 },
       { kind: 'light', t: 6.5, at: { a: 'u', o: [STAFF[0], STAFF[1], STAFF[2] + 0.4] }, color: '#7dff4a', curve: [[6.5, 0], [7.3, 0], [8.3, 5], [8.8, 7], [8.95, 16], [9.6, 7], [12.7, 8], [12.85, 18], [13.7, 9], [14.9, 10]], distance: 9, flicker: 0.1 },
       { kind: 'motes', t: 6, fadeIn: 1, at: { a: 'u', o: [0, 1.6, 0] }, count: 120, box: [8, 5, 8], drift: [0.1, 0.35, 0.05], size: 0.045, color: '#9dff6a', color2: '#d0ff9a' },
@@ -781,6 +792,8 @@ const undeadShots = [
       // Fire erupts out of its shoulders and fists at 107.4 s and keeps burning; whole and blazing, it
       // lurches over him at 109.2 s, fists thrust at the lens (the original's swing), every crack flaring.
       { ...golem, loom: [16.2, 17.2], leanTo: 0.45, reach: 1.05, fire: { at: 14.4 }, flare: [[16.9, 1], [17.1, 3], [17.6, 3]] },
+      // The ruined windmill held at the right of the frame behind him while the lens moves, as the original's.
+      { ...WINDMILL, path: [[6.5, 69.7, -71.2, -9.1], [7, 71.0, -69.4, -9.3], [7.8, 73.5, -65.5, -2.4], [8.6, 77.6, -63.6, 3.4], [9.6, 83.4, -60.9, 6.9], [10.6, 87.8, -57.5, 8.1], [12, 90.8, -53.8, 8.9], [13, 92.3, -52.9, 9.5], [14, 92.6, -52.6, 9.2], [14.6, 92.5, -52.6, 8.6]] },
       // More molten rocks heave out of the ground round him, beside the lens, and the blast throws them.
       { ...boulders(LAND - 9.9), n: 9, size: [0.22, 0.6], h: [0.1, 1.0], rise: [9.6, 12.6], seed: 53 },
       STREAK,
@@ -840,6 +853,7 @@ const explodeShots = [
       { kind: 'night-glow', t: -1, at: SKY, size: 110, color: '#5cc42a', k: 1.0 },
       { kind: 'night-cracks', t: -6, at: U, radius: 9, grow: 3, cells: 0.8, warp: 1.2, width: 0.06, keep: 0.45, gain: 1.3 },
       boulders(0.42 - 9.9, 4.5),
+      { ...WINDMILL, at: { g: [96.5, 19, -53.1] } },
       // The golem he summoned, whole and looming over him, black against the blast; its chest bursts
       // open white-gold at 153.39 s (the original's core in the boulder mass).
       { ...golem, at: { g: [GOLEM_EX[0], 0, GOLEM_EX[1]] }, t: -30, rise: [-30, -29], fly: [-28, -26], stand: [-25, -24], loom: [-23, -21], eyes: -20, lit: -30, blaze: [1.47, 1.9], glow: [[0, 0.5], [1.4, 0.55], [1.6, 0.9], [2.29, 0.7]] },
