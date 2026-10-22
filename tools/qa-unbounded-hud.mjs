@@ -1,7 +1,7 @@
 // Saved high-level fixtures exercise the real HUD; no XP grind is claimed.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import assert from 'node:assert/strict';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 try {
  const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));

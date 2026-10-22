@@ -1,9 +1,9 @@
 // Exports the actual Three.js settlement, including its existing postprocessing, as loading art.
 // Run after a production build with the preview listening on port 5192.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
 try {
   const page=await browser.newPage({viewport:{width:1600,height:900}});
   await page.addInitScript(()=>localStorage.setItem('cc.hintsSeen','1'));

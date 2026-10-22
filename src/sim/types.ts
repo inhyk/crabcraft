@@ -1,3 +1,5 @@
+import type {EndingIntegrationOptions} from './features/worldRules.ts';
+import type {EndingObservation} from './features/endingPresentation.ts';
 import type {DungeonFeatureAward} from './features/dungeon-awards.ts';
 export type {DungeonFeatureAward} from './features/dungeon-awards.ts';
 import type {DungeonReturnBinding,DungeonCaptureBinding,StagedInstanceExit} from './features/dungeon-persistence.ts';
@@ -18,6 +20,10 @@ import type {BoatCommand, BoatState, VillageRound, FeatureEvent, NpcFeatureEvent
  * Core state and events contain numeric/value data, never renderer objects, browser callbacks or I/O.
  */
 export type WorldId = 'w1' | 'w2' | 'w3' | 'w4' | 'w5' | 'w6';
+/** A chapter-less hub Area. Quests keep the chapter the player brought. */
+export type HubId = 'tc';
+/** The Area a character is in: a chapter world or a hub. */
+export type PlaceId = WorldId | HubId;
 export type Chapter = 1 | 2 | 3 | 4 | 5 | 6;
 export type EquipmentSlot = 'weapon' | 'armor';
 export type EquipmentResult = 'bought' | 'owned' | 'busy' | 'coins' | 'upgraded' | 'unowned' | 'max';
@@ -216,7 +222,7 @@ export type CoreEvent =
   | {type:'discovery';unit:EntityRef;discovery:'treasure'|'lighthouse-secret';id:string;first:boolean;coins:number;activeUntil:number|null}
   | { type: 'equipment'; unit: EntityRef; slot: EquipmentSlot; operation: 'buy' | 'upgrade'; result: EquipmentResult; request?: number }
   | { type: 'endingReady'; unit: EntityRef; chapter: 4; replay: boolean }
-  | { type: 'travelReady'; unit: EntityRef; destination: WorldId; gate: string };
+  | { type: 'travelReady'; unit: EntityRef; destination: PlaceId; gate: string };
 export interface EventRecord { readonly tick: Tick; readonly order: number; readonly event: CoreEvent }
 
 export type ChannelKind = 'recall' | 'beacon' | 'waystone' | 'lighthouse-secret';
@@ -233,6 +239,7 @@ export type PlayerCommand =
   | { kind: 'travel'; gateId: string }
   | { kind: 'bossChallenge'; profile: BossSim['profile'] }
   | { kind: 'endingReplay' | 'talkEnd' }
+  | {kind:'endingControl';id:string;action:'skip'|'continue'}
   | { kind:'boat'; command:BoatCommand }
   | { kind:'village'; mode:'hide'|'tag'|'stop' };
 /** Input seq acknowledgment/transport validation is host work; no client position/HP/result.
@@ -314,12 +321,16 @@ export interface AmbientSpawn {
   readonly route?: { readonly points: readonly Readonly<Vec3>[]; readonly radiusPadding: number; readonly step: number };
 }
 export interface AreaDefinition {
-  readonly world: WorldId; readonly spawn: Poi; readonly recall: Poi;
+  readonly world: PlaceId; readonly spawn: Poi; readonly recall: Poi;
   readonly townsfolk?: readonly AmbientSpawn[];
   readonly pois: Readonly<Record<string, Poi>>; readonly enemies: readonly EnemySpawn[];
+  /** Per-link landing points, resolved by id like pois but kept out of the nav graph and party checks. */
+  readonly arrivals?: Readonly<Record<string, Poi>>;
   readonly bosses: readonly { profile: BossSim['profile']; arena: Poi; freedNpcId: string; freedArchetype?: string; freedPosition?: Readonly<Vec3>; captiveBeforeVictory?: boolean }[];
   readonly npcs: readonly { id: string; position: Readonly<Vec3>; yaw: number; archetype?: string; targetable?:boolean; personalVisibility?:{flag:'rustCleared'|'abyssCleared'|'trueCleared'|'finalCleared'|'frostCleared'|'emberCleared'|'skyCleared';value:boolean} }[];
-  readonly interactions: readonly { id: string; kind: 'gate' | 'beacon' | 'crystal' | 'waystone' | 'explore' | 'treasure' | 'secret'; position: Readonly<Vec3>; range: number; destination?: WorldId; objective?: string; channelTo?: Readonly<Vec3> }[];
+  /** Travel kinds: gate (walk-in portal), route (explicit command only) and edge (zone line the Area triggers).
+   * arrival names a spawn/recall/poi/arrival in the destination. edge: outward unit normal and band depth; range is the lateral half-width. */
+  readonly interactions: readonly { id: string; kind: 'gate' | 'route' | 'edge' | 'beacon' | 'crystal' | 'waystone' | 'explore' | 'treasure' | 'secret'; position: Readonly<Vec3>; range: number; destination?: PlaceId; arrival?: string; edge?: { readonly nx: number; readonly nz: number; readonly depth: number }; objective?: string; channelTo?: Readonly<Vec3> }[];
 }
 /** Required explicit host policy. Formula/levels are configuration, not newly decided balance.
  * Must be deterministic and may depend only on inputs, never a clock/RNG outside Area.
@@ -352,7 +363,7 @@ export interface Contribution { victim: EntityRef; contributors: readonly Charac
 export interface AreaServices {
   readonly ledgerMode?: 'retained' | 'external-durable';
   reserveOutcomeRandom(startState:number,drawCount:number,finalState:number):void;
-  readonly id: AreaId; readonly world: WorldId; readonly time: number; readonly tick: Tick;
+  readonly id: AreaId; readonly world: PlaceId; readonly time: number; readonly tick: Tick;
   readonly query: WorldQuery; readonly actionData: ActionData; readonly context: AreaContext; readonly definition: AreaDefinition; readonly policy: AreaPolicy;
   readonly random: RandomSource; readonly ids: IdSource; readonly combat: CombatRules; readonly timers: AreaTimers;
   getUnit(ref: EntityRef): SimUnit | null; // rejects wrong Area, removed IDs and stale lives
@@ -374,6 +385,7 @@ export interface AreaServices {
   launch(projectile: Omit<ProjectileState, 'id' | 'elapsed' | 'bornStep'>): number; // Area stamps birth stage; stage-start-list eligibility only
   spawnAdd(boss: EntityRef, x: number, z: number): EnemySim | null;
   runCommand(player: EntityRef, command: PlayerCommand, commandIndex?:number): boolean;
+  inputCommandAllowed?(player:EntityRef,command:PlayerCommand):boolean;
   bossByProfile(profile: BossSim['profile']): BossSim | null;
   encounterActive(): boolean;
   bossAvailable(profile: BossSim['profile']): boolean;
@@ -383,6 +395,7 @@ export interface AreaServices {
   onUnitDied(victim: EntityRef, killer: EntityRef | null): void;
 }
 export interface AreaOptions {
+  readonly endingPresentation?:EndingIntegrationOptions;
   readonly dungeon?:DungeonOptions;
   readonly featureAwards?:{readonly maxPending:number};
   readonly ledgerMode?: 'retained' | 'external-durable';
@@ -394,7 +407,7 @@ export interface AreaOptions {
 }
 export interface BossObservation {readonly unit:EntityRef;readonly profile:BossProfileId;readonly state:BossSim['state'];readonly phase:number;readonly enraged:boolean;readonly stateTime:number;readonly freed:EntityRef;readonly freedTime:number;readonly showFrame:boolean}
 export interface AreaSnapshot {
-  readonly area: AreaId; readonly world: WorldId; readonly tick: Tick; readonly time: number;
+  readonly area: AreaId; readonly world: PlaceId; readonly tick: Tick; readonly time: number;
   readonly units: readonly Readonly<SimUnit>[];
   readonly players: readonly Readonly<PlayerState>[];
   readonly projectiles: readonly Readonly<ProjectileState>[];
@@ -535,9 +548,17 @@ export interface Area {
   cancelGrantRead(token:GrantReadToken):void;
   invalidateGrantRead(ref:EntityRef):void;
   resourceUsage():Readonly<Record<string,number>>;
+  /** External ledger: under a durability barrier only. Retained (also with feature awards): at any between-tick boundary. */
   capturePlayerCheckpoint(ref:EntityRef):CapturedPlayer;
   appliedGrantIds(character:CharacterId):readonly string[];
+  /**
+   * Under a barrier nothing may have changed since the capture. A retained mark without one follows a save round that let
+   * the world run: the character may be on a later life of the same unit or rebound, but its return binding and its durable
+   * feature ledger revision must be the captured ones; the current ledger owner then advances to `revision`.
+   */
   markCheckpointDurable(captureId:string,revision:number,ids:readonly string[],featureIds?:readonly string[]):void;
+  /** Host save round that never wrote this capture: forget it so it holds no capacity or transfer check. */
+  discardCheckpointCapture(captureId:string):void;
   quiescePlayer(ref:EntityRef,reason:string):PlayerRetirement;
   abortPlayerRetirement(token:string):void;
   commitPlayerRetirement(token:string):void;
@@ -545,6 +566,8 @@ export interface Area {
   activateRestoredArrival(token:string):EntityRef;
   restorePlayerCheckpoint(ref:EntityRef,checkpoint:CharacterCheckpointV1,restored:RestoredPlayerData,receiptIds?:readonly string[],revision?:number):EntityRef;
   snapshot(): AreaSnapshot;
+  hasPendingEndingTransitions():boolean;
+  endingObservation(owner:EntityRef):Readonly<EndingObservation>|null;
   debugState(): AreaDebugState;
   drainEvents(): readonly EventRecord[]; // overflow fails actor/step preflight; fail-stop on unforeseen overflow, no silent loss/continued partial tick
   applyContext(context: AreaContext): void; // copied at boundary, validates membership before stepping

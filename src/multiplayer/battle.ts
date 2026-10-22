@@ -103,9 +103,9 @@ export class BattleSync {
       if (this.active && !this.authority && !this.applying) this.event({kind:'environment',target:'world',environment:{mood:m}});
       else this.originalMood(m,instant);
     };
-    game.world.setBeaconLit=lit=>{
+    game.world.setBeaconLit=(lit,instant)=>{
       if (this.active && !this.authority && !this.applying) { this.event({kind:'environment',target:'world',environment:{beacon:lit}}); }
-      else this.originalBeacon(lit);
+      else this.originalBeacon(lit,instant);
     };
     game.enemies.forEach((e, i) => this.register(`e${i}`, e.unit));
     game.npcs?.forEach((n,i)=>this.register(`n${i}`,n.unit));

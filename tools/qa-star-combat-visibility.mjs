@@ -1,9 +1,9 @@
 // Real boss telegraphs, native quality buttons, and actual framebuffer coverage.
 // Boss phase/position are fixtures; this does not claim a naturally won fight.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 try {
  const p=await browser.newPage({viewport:{width:1280,height:800}});

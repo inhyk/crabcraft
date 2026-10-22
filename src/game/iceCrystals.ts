@@ -6,7 +6,8 @@ import * as THREE from 'three';
  * dispersion, back-lit glow, a frosted foot that attaches it to the drift) are ported from SNOWFLOW's
  * crystal.wgsl and crystal.fragment.wgsl (MIT, Copyright (c) 2026 Maksymilian Dendura; see NOTICE.md).
  * SNOWFLOW refracts into a baked sky LUT; this world has none, so `env()` is the island's own sky gradient
- * over a snow bounce.
+ * over a snow bounce, with the aurora in its northern quarter (world4.ts hangs the curtain there), so the ice
+ * carries the aurora's green and violet wherever a facet looks north.
  */
 
 export interface Crystal {
@@ -143,10 +144,17 @@ float icNoise(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
   float a=dot(icHash22(i)*2.-1.,f),b=dot(icHash22(i+vec2(1.,0.))*2.-1.,f-vec2(1.,0.));
   float c=dot(icHash22(i+vec2(0.,1.))*2.-1.,f-vec2(0.,1.)),d=dot(icHash22(i+vec2(1.))*2.-1.,f-vec2(1.));
   return mix(mix(a,b,u.x),mix(c,d,u.x),u.y)*1.4;}
+// The aurora as the ice sees it: a band of rays across the northern sky, green low, violet high.
+vec3 icAurora(vec3 d){
+  float north=smoothstep(-.2,.75,-d.z*inversesqrt(max(dot(d.xz,d.xz),1e-4)));
+  float band=smoothstep(-.06,.18,d.y)*(1.-smoothstep(.55,.9,d.y));
+  float az=atan(d.x,-d.z),rays=.5+.5*sin(az*21.+sin(az*4.3)*2.2);
+  return mix(vec3(.06,.62,.4),vec3(.3,.2,.72),smoothstep(.22,.55,d.y))*north*band*(.45+.55*rays);
+}
 // What the ice sees: the island's sky above the horizon, lit snow below it.
 vec3 env(vec3 d){
   if(d.y<0.)return snowBounce*(.55+.45*smoothstep(-1.,0.,d.y));
-  return mix(skyHorizon,skyZenith,smoothstep(0.,.6,d.y))+sunColor*.03*pow(max(dot(d,sunDir),0.),12.);
+  return mix(skyHorizon,skyZenith,smoothstep(0.,.6,d.y))+icAurora(d)+sunColor*.03*pow(max(dot(d,sunDir),0.),12.);
 }
 float wrapDiffuse(float nl,float w){return max(0.,(nl+w)/((1.+w)*(1.+w)));}
 void main(){
@@ -176,6 +184,8 @@ void main(){
   vec3 deepTint=mix(vec3(.42,.74,1.),vec3(.86,.95,1.),exp(-path*2.5));
   color+=sunColor*RECIPROCAL_PI*deepTint*through*scatter*1.6;
   color+=env(N)*deepTint*.35;
+  // The aurora caught in the body: what a facet faces of the northern sky glows faintly through it.
+  color+=icAurora(normalize(vec3(N.x,max(N.y,.12),N.z)))*(.55+.45*through)*(1.-frost);
   // Inclusions: bubbles and growth bands frozen into the body, so a prism is not one flat tint.
   float band=icNoise(vec2(vWorld.y*1.7+vSeed*5.,vSeed))*.5+.5;
   float bubbles=smoothstep(.55,.95,icNoise(vWorld.xz*1.3+vWorld.y*2.1+vSeed*11.)*.5+.5);

@@ -395,6 +395,16 @@ crabcraft bundle, `python scripts/deploy.py --manifests deploy/crabcraft.manifes
 interpreter with `mujoco` and `onnxruntime`; the Blender scripts need Blender. See the docstring at
 the top of each script.
 
+The Playwright tools and browser tests (`tools/**/*.mjs`, `tests/world-frontier-view.test.mjs`)
+never start the Google Chrome people use: on macOS a headless copy of it registers as a second
+instance of the same app, and the Dock icon and opened links then go to the copy, which has no
+windows. They all start their browser through `launchBrowser` in `tools/lib/browser.mjs`, which
+takes, in order, `CRABCRAFT_CHROME` (the path of a Chrome for Testing or Chromium executable), the
+newest Chrome for Testing in Puppeteer's cache (`$PUPPETEER_CACHE_DIR` or `~/.cache/puppeteer`),
+the one chrome-devtools-mcp keeps (`~/.cache/chrome-devtools-mcp`), then Playwright's Chromium
+(`pnpm exec playwright install chromium`, or the newest Chromium already in Playwright's cache), and
+closes the browser when a tool dies on an error, Ctrl-C, SIGTERM or SIGHUP.
+
 ## Project layout
 
 ```

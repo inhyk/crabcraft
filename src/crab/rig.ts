@@ -2,6 +2,9 @@
 // joint rotations in exact MuJoCo qpos convention, LED face, race posture and gear.
 import * as THREE from 'three';
 import { LedFace } from './face';
+import { lodBody } from './lodBody';
+import { syncGearShadows } from './gearShadow';
+import { shadowOnly } from '../core/shadowPass';
 import { partMaterial, shellMaterial, type ShellLook } from './materials';
 import { HOME, HOME_POSE } from './pose';
 import { HUNCH_PITCH, linkMatrix, solvePostureBias, type Posture } from './posture';
@@ -73,8 +76,10 @@ export class JumperRig implements CrabRig {
   private bias: Float32Array = new Float32Array(JOINT_NAMES.length);
   private sockets = new Map<SocketName, THREE.Object3D>();
   private parts = new Map<PartClass, THREE.SkinnedMesh>();
-  /** Far LOD meshes (same skeleton and materials), shown instead of parts at lod 1. */
+  /** Far LOD shell (same skeleton, its own material), shown instead of the parts at lod 1. */
   private lodMeshes = new Map<PartClass, THREE.SkinnedMesh>();
+  /** Far LOD body: every other class in one draw (lodBody.ts). */
+  private lodBody: THREE.SkinnedMesh | null = null;
   private lod = 0;
   /** Casts the crab's shadow from the LOD body when on (see useShadowProxy). */
   private shadowProxy: THREE.SkinnedMesh | null = null;
@@ -152,7 +157,12 @@ export class JumperRig implements CrabRig {
 
     // Skinned parts, full detail and the far LOD.
     this.syncParts(this.parts, t.parts(look.without), look, '', this.lod === 0);
-    if (t.lodParts) this.syncParts(this.lodMeshes, t.lodParts(look.without), look, '-lod', this.lod === 1);
+    if (t.lodParts) {
+      const lp = t.lodParts(look.without);
+      const shell = lp.get('shell');
+      this.syncParts(this.lodMeshes, new Map(shell ? [['shell', shell]] : []), look, '-lod', this.lod === 1);
+      this.syncLodBody(lodBody(lp, look.parts));
+    }
     if (this.shadowProxy && t.lodShadow) this.shadowProxy.geometry = t.lodShadow(look.without);
     this.applyShadowCasting();
 
@@ -201,16 +211,38 @@ export class JumperRig implements CrabRig {
     }
   }
 
+  private syncLodBody(body: ReturnType<typeof lodBody>): void {
+    if (!body) {
+      this.lodBody?.removeFromParent();
+      this.lodBody = null;
+      return;
+    }
+    if (this.lodBody) {
+      this.lodBody.geometry = body.geometry;
+      this.lodBody.material = body.material;
+      return;
+    }
+    const m = new THREE.SkinnedMesh(body.geometry, body.material);
+    m.name = 'crab-body-lod';
+    m.receiveShadow = true;
+    m.bind(this.skeleton, new THREE.Matrix4());
+    m.visible = this.lod === 1;
+    m.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.02, 0), 0.55);
+    this.model.add(m);
+    this.lodBody = m;
+  }
+
   /**
    * Level of detail: 0 full, 1 far (the simplified body, and gear pieces too small to read at that
    * size are hidden). Cheap to call every frame; it only touches visibility on a change.
    */
   setLod(level: number): void {
-    const lod = level > 0 && this.lodMeshes.size ? 1 : 0;
+    const lod = level > 0 && (this.lodMeshes.size || this.lodBody) ? 1 : 0;
     if (lod === this.lod) return;
     this.lod = lod;
     for (const m of this.parts.values()) m.visible = lod === 0;
     for (const m of this.lodMeshes.values()) m.visible = lod === 1;
+    if (this.lodBody) this.lodBody.visible = lod === 1;
     for (const o of this.gearDetail) o.visible = lod === 0;
   }
 
@@ -233,6 +265,7 @@ export class JumperRig implements CrabRig {
       m.receiveShadow = false;
       m.bind(this.skeleton, new THREE.Matrix4());
       m.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.02, 0), 0.55);
+      shadowOnly(m);
       this.model.add(m);
       this.shadowProxy = m;
     } else if (!on && this.shadowProxy) {
@@ -240,12 +273,19 @@ export class JumperRig implements CrabRig {
       this.shadowProxy = null;
     }
     this.applyShadowCasting();
+    this.refreshGearShadows();
+  }
+
+  /** With the proxy on, each gear piece casts from one merged mesh (gearShadow.ts); the dresser calls it too. */
+  refreshGearShadows(): void {
+    syncGearShadows(this.gearMeshes, this.shadowProxy ? shadowProxyMaterial() : null, this.gearDetail);
   }
 
   private applyShadowCasting(): void {
     const proxy = !!this.shadowProxy;
     for (const [cls, m] of this.parts) m.castShadow = !proxy && cls !== 'visor';
     for (const [cls, m] of this.lodMeshes) m.castShadow = !proxy && cls !== 'visor';
+    if (this.lodBody) this.lodBody.castShadow = !proxy;
   }
 
   /** Gear pieces hidden at the far LOD (small next to the crab); filled by the gear dresser. */

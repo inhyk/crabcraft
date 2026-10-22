@@ -10,12 +10,14 @@ import { starMemory } from '../../game/starMemories';
 export class QuestTracker {
   readonly el: HTMLElement;
   private list: HTMLElement;
+  /** The active kingdom request (the King of Tidecrown's), under the quests. */
+  private kingdom = h('div', { class: 'qt-kingdom' });
   private key = '#';
   private seen = new Set<QuestId>();
 
   constructor(onClick: (q: QuestId) => void) {
     this.list = h('div', { class: 'qt-list' });
-    this.el = h('div', { class: 'qt' }, h('div', { class: 'qt-head' }, t('퀘스트','Quests')), this.list);
+    this.el = h('div', { class: 'qt' }, h('div', { class: 'qt-head' }, t('퀘스트','Quests')), this.list, this.kingdom);
     this.list.addEventListener('click', (e) => {
       const q = (e.target as HTMLElement).closest('[data-q]')?.getAttribute('data-q') as QuestId | null;
       if (q) onClick(q);
@@ -30,7 +32,7 @@ export class QuestTracker {
     if (key === this.key && !flashId) return;
     this.key = key;
     this.list.replaceChildren();
-    this.el.style.display = active.length ? '' : 'none';
+    this.el.style.display = active.length || this.kingdom.childElementCount ? '' : 'none';
     for (const id of active) {
       const def = QUESTS[id];
       const isNew = !this.seen.has(id);
@@ -48,6 +50,18 @@ export class QuestTracker {
       }
       this.list.append(q);
     }
+  }
+
+  /** Shows the active kingdom request's objectives, or the turn-in hint once they are met; null clears it. */
+  setKingdom(entry: { title: string; lines: { text: string; done: boolean }[]; ready: string | null } | null): void {
+    this.kingdom.replaceChildren();
+    if (entry) {
+      const q = h('div', { class: 'qt-q hud-i' }, h('div', { class: 'qt-title' }, `👑 ${entry.title}`));
+      if (entry.ready) q.append(h('div', { class: 'qt-ready' }, entry.ready));
+      else for (const l of entry.lines) q.append(h('div', { class: `qt-obj${l.done ? ' done' : ''}` }, l.done ? l.text : `- ${l.text}`));
+      this.kingdom.append(q);
+    }
+    this.el.style.display = this.list.childElementCount || this.kingdom.childElementCount ? '' : 'none';
   }
 }
 
@@ -160,8 +174,11 @@ export interface DialoguePage {
   questTitle?: string;
   questId?: QuestId;
   paragraphs: string[];
+  /** A block under the text, shown at once (a trainer's skill list). */
+  extra?: HTMLElement;
   objectives?: string[];
   rewardXp?: number;
+  rewardCoins?: number;
   rewardItem?: string;
   buttons: DialogueButton[];
 }
@@ -189,7 +206,7 @@ export class DialogueWindow {
     this.nameEl = h('div', { class: 'dlg-name' });
     this.titleEl = h('div', { class: 'dlg-title' });
     this.textEl = h('div', { class: 'dlg-text' });
-    this.textEl.addEventListener('click', () => (this.shown = this.total));
+    this.textEl.addEventListener('click', () => this.skipTyping());
     this.body = h('div', { class: 'dlg-body' });
     this.buttonsEl = h('div', { class: 'dlg-buttons' });
     this.el = h(
@@ -245,15 +262,17 @@ export class DialogueWindow {
       this.paras.push({ el, text: t });
     }
     this.body.append(this.textEl);
+    if (p.extra) this.body.append(p.extra);
     if (p.objectives?.length) {
       this.body.append(h('div', { class: 'dlg-sec' }, t('목표','Objectives')));
       const ul = h('ul', { class: 'dlg-obj' });
       for (const o of p.objectives) ul.append(h('li', null, o));
       this.body.append(ul);
     }
-    if (p.rewardXp || p.rewardItem) {
+    if (p.rewardXp || p.rewardCoins || p.rewardItem) {
       this.body.append(h('div', { class: 'dlg-sec' }, t('보상','Rewards')));
       const r = h('div', { class: 'dlg-reward' });
+      if (p.rewardCoins) r.append(h('span', { class: 'coins' }, t(`🪙 ${p.rewardCoins.toLocaleString()} 코인`, `🪙 ${p.rewardCoins.toLocaleString()} coins`)));
       if (p.rewardXp) r.append(h('span', { class: 'xp' }, `${p.rewardXp} XP`));
       if (p.rewardItem) r.append(h('span', { class: 'item' }, h('i'), p.rewardItem));
       this.body.append(r);
@@ -268,6 +287,7 @@ export class DialogueWindow {
       btn.addEventListener('mouseenter', () => this.game.audio.sfx('sfx-hover', { volume: 0.3 }));
       this.buttonsEl.append(btn);
     }
+    this.body.scrollTop = 0;
     this.total = this.paras.reduce((n, x) => n + x.text.length, 0);
     this.shown = 0;
     this.talkT = 0;

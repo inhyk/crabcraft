@@ -311,32 +311,30 @@ const TONGUE_FS = /* glsl */ `
   void main() {
     vec2 uv = vUv;
     float s = vSeed.x;
-    float layer = vSeed.y; // 0 back (wide, red), 1 body, 2 core (narrow, hot)
-    float n1 = fbm(vec3(uv.x * 2.4 + s * 17.0, uv.y * 1.7 - uTime * 2.3, uTime * 0.45 + s * 5.0));
-    float n2 = fbm(vec3(uv.x * 5.5 - s * 3.0, uv.y * 4.2 - uTime * 3.9, uTime * 0.8 + s));
-    // Licking sideways more toward the top.
-    float x = uv.x - 0.5 + (n1 - 0.5) * 0.6 * uv.y + sin(uv.y * 7.0 - uTime * 6.0 + s * 20.0) * 0.035 * uv.y;
-    // Round, wide foot narrowing to a tip; two lobes so it is never one triangle.
-    float w = mix(0.4, 0.03, pow(uv.y, 0.7));
-    float body = 1.0 - smoothstep(w * 0.45, w, abs(x));
-    float lobe = 1.0 - smoothstep(w * 0.2, w * 0.6, abs(x + (n2 - 0.5) * 0.3 - 0.12 * sin(s * 30.0)));
-    body = max(body, lobe * smoothstep(0.85, 0.3, uv.y));
-    float top = 1.0 - smoothstep(0.3, 1.0, uv.y + (n2 - 0.5) * 0.65);
-    float foot = smoothstep(0.0, 0.08, uv.y);
-    float heat = body * top * foot;
-    // Breaking into tongues and wisps.
-    heat *= smoothstep(0.18, 0.55, n2 + 0.38 * (1.0 - uv.y));
-    heat = clamp(heat * 1.5, 0.0, 1.0);
-    vec3 deep = vec3(0.42, 0.025, 0.0);
-    vec3 orange = vec3(1.0, 0.27, 0.02);
-    vec3 yellow = vec3(1.0, 0.6, 0.14);
-    vec3 white = vec3(1.0, 0.9, 0.62);
-    vec3 c = mix(deep, orange, smoothstep(0.0, 0.35, heat));
-    c = mix(c, yellow, smoothstep(0.45, 0.85, heat) * (0.25 + 0.35 * layer));
-    c = mix(c, white, smoothstep(0.85, 1.0, heat) * (1.0 - uv.y) * (0.15 + 0.35 * max(0.0, layer - 1.0)));
-    float k = layer < 0.5 ? 0.5 : (layer < 1.5 ? 0.85 : 1.0);
-    if (layer < 0.5) c = mix(c, deep * 1.8, 0.4);
-    gl_FragColor = vec4(c * heat * 1.7 * k * uGain * (1.0 - fogK() * 0.9), heat);
+    float layer = vSeed.y; // 0 back (wide, dark red), 1 body, 2 core (narrow, hot)
+    float y = uv.y;
+    // Turbulence rising through the flame (fbm spread to about -1..1), the sway growing with height.
+    vec3 q = vec3(uv.x * 2.0 + s * 17.0, y * 1.5 - uTime * 1.8, uTime * 0.5 + s * 5.0);
+    float w1 = (fbm(q) - 0.5) * 2.6;
+    float w2 = (fbm(q * 2.2 + vec3(3.1, -uTime * 2.4, 1.7)) - 0.5) * 2.6;
+    float x = uv.x - 0.5 + w1 * 0.16 * y + w2 * 0.05 * (0.3 + y) + sin(y * 9.0 - uTime * 7.5 + s * 20.0) * 0.025 * y;
+    // A broad round foot narrowing into licks.
+    float hw = 0.47 * pow(max(1.0 - y, 0.0), 0.55) * (0.88 + 0.12 * w2);
+    float shape = 1.0 - smoothstep(hw * 0.15, hw, abs(x));
+    // Fine detail eats the edges, tears holes and splits the top into separate tongues.
+    float d = (fbm(vec3(uv.x * 6.5 + s * 9.0, y * 4.8 - uTime * 4.0, uTime * 0.9 + s)) - 0.5) * 2.6;
+    float d2 = (fbm(vec3(uv.x * 13.0 - s * 4.0, y * 9.0 - uTime * 6.5, uTime * 1.3 + s * 2.0)) - 0.5) * 2.6;
+    float top = 1.0 - smoothstep(0.15, 0.95, y + d * 0.2 + w1 * 0.1);
+    float heat = shape * top * smoothstep(0.0, 0.06, y);
+    heat *= 0.62 + 0.38 * d + 0.18 * d2;
+    heat = clamp(heat * 1.25 - 0.06, 0.0, 1.0);
+    // Colour by heat: soot red at the edges, orange, yellow; a pale core only low in the hottest middle.
+    vec3 c = vec3(0.32, 0.025, 0.0);
+    c = mix(c, vec3(1.0, 0.2, 0.015), smoothstep(0.1, 0.42, heat));
+    c = mix(c, vec3(1.0, 0.5, 0.08), smoothstep(0.42, 0.72, heat));
+    c = mix(c, vec3(1.0, 0.8, 0.4), smoothstep(0.78, 1.0, heat) * (1.0 - y) * step(1.5, layer));
+    float k = layer < 0.5 ? 0.3 : (layer < 1.5 ? 0.8 : 1.0);
+    gl_FragColor = vec4(c * heat * 1.55 * k * uGain * (1.0 - fogK() * 0.9), heat);
   }`;
 
 type Spot = { x: number; z: number; s: number; lift: number; at?: unknown };
@@ -378,14 +376,17 @@ class Fire implements Effect {
     this.spots.forEach((sp, i) => {
       const hh = h * sp.s * (0.8 + 0.4 * rnd());
       // Back (wide, low, red), body, core (narrow, hot), each a little apart.
+      // Two bodies apart and a tall lick, so no spot is one shape.
       const L: [number, number, number][] = [
-        [0.9, 0.78, 0],
-        [0.6, 1.0, 1],
-        [0.34, 0.6, 2],
+        [0.95, 0.72, 0],
+        [0.62, 1.0, 1],
+        [0.5, 0.8, 1],
+        [0.24, 1.18, 1],
+        [0.34, 0.58, 2],
       ];
-      for (const [w, hk, layer] of layers === 3 ? L : layers === 2 ? [L[0], L[1]] : [L[1]]) {
+      for (const [w, hk, layer] of layers === 3 ? L : layers === 2 ? L.slice(0, 3) : [L[1]]) {
         const j = rnd();
-        this.quads.push({ spot: i, dx: (rnd() - 0.5) * hh * 0.25, dz: (rnd() - 0.5) * hh * 0.25, dy: -0.06 * hh });
+        this.quads.push({ spot: i, dx: (rnd() - 0.5) * hh * 0.4, dz: (rnd() - 0.5) * hh * 0.4, dy: -0.06 * hh });
         sizes.push(hh * w, hh * hk);
         seeds.push(j, layer);
       }
@@ -416,7 +417,11 @@ class Fire implements Effect {
     this.mesh.renderOrder = num(cue.order, 6);
     scene.add(this.mesh);
     const smokeA = num(cue.smoke, 0.7);
-    this.plume = plumeOpts({ t: 0, kind: '', ...((cue.plume as object) ?? {}) }, { rate: 2.2, life: 4.5, rise: 2.2 * h / 3, spread: 0.25 * h, size0: 0.45 * h, size1: 1.8 * h, glowH: 1.6 * h, opacity: smokeA, wind: (cue.wind as [number, number]) ?? [0.6, 0.15], prewarm: 4.5 });
+    this.plume = plumeOpts({ t: 0, kind: '', ...((cue.plume as object) ?? {}) }, { rate: 2.2, life: 4.5, rise: 2.2 * h / 3, spread: 0.25 * h, size0: 0.45 * h, size1: 1.8 * h, glowH: 0.9 * h, opacity: smokeA, wind: (cue.wind as [number, number]) ?? [0.6, 0.15], prewarm: 4.5 });
+    // Soot-dark smoke, lit only just over the flames (a brightly lit plume turns the frame to orange fog).
+    const pc = (cue.plume as Record<string, unknown>) ?? {};
+    if (pc.glowK === undefined) this.plume.glow = this.plume.glow.map((v) => v * 0.4) as [number, number, number];
+    if (pc.color === undefined) this.plume.color = rgb('#17110f', '#17110f');
     this.smoke = smokeA > 0 ? new PuffLayer(scene, Math.ceil(this.spots.length * (this.plume.rate * this.plume.life + 2)), false, 5) : null;
     this.glowL = new PuffLayer(scene, this.spots.length * 2, true, 6);
   }
@@ -720,7 +725,8 @@ class Blast implements Effect {
 /**
  * Smoke over the lens: dark billows (`color`) rolling across a glowing backdrop (`color2`, hottest
  * toward the bottom, `color3`). `alpha` [[t, a]...] covers the frame (1 = nothing shows through);
- * `cover` [[t, c]...] how much of it the billows fill; `flow` [x, y] drift per second.
+ * `cover` [[t, c]...] how much of it the billows fill; `flow` [x, y] drift per second; `sweep`
+ * [[t, x]...] the billows' left edge across the frame (0 left, 1 right): smoke rolling in from the right.
  */
 class Haze implements Effect {
   private mesh: THREE.Mesh;
@@ -745,10 +751,11 @@ class Haze implements Effect {
         uFlow: { value: new THREE.Vector2(...((cue.flow as [number, number]) ?? [-0.12, 0.05])) },
         uScale: { value: num(cue.scale, 1.6) },
         uAspect: { value: 2.2 },
+        uEdge: { value: -1 },
       },
       vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
       fragmentShader: /* glsl */ `
-        uniform float uTime, uA, uCover, uScale, uAspect, uBack; uniform vec3 uC1, uC2, uC3; uniform vec2 uFlow;
+        uniform float uTime, uA, uCover, uScale, uAspect, uBack, uEdge; uniform vec3 uC1, uC2, uC3; uniform vec2 uFlow;
         varying vec2 vUv;
         ${NOISE}
         void main() {
@@ -761,6 +768,7 @@ class Haze implements Effect {
           float n1 = fbm(vec3(p - uFlow * uTime, uTime * 0.1));
           float n2 = fbm(vec3(p * 1.9 + vec2(4.1, 2.3) - uFlow * uTime * 1.7, uTime * 0.22 + 3.0));
           float d = smoothstep(1.0 - uCover - 0.2, 1.0 - uCover + 0.25, n1 * 0.7 + n2 * 0.45);
+          d *= smoothstep(uEdge - 0.05, uEdge + 0.3, vUv.x + 0.35 * (n1 - 0.5));
           float rim = smoothstep(0.0, 0.5, d) * (1.0 - smoothstep(0.5, 1.0, d));
           vec3 smoke = uC1 * (0.7 + 0.6 * n2) + uC2 * rim * 0.35;
           vec3 c = mix(back, smoke, d);
@@ -781,6 +789,7 @@ class Haze implements Effect {
     u.uTime.value = ctx.t + num(this.cue.offset, 0);
     u.uA.value = a;
     u.uCover.value = this.cue.cover ? curve(this.cue.cover as [number, number][], ctx.t) : 0.6;
+    u.uEdge.value = this.cue.sweep ? curve(this.cue.sweep as [number, number][], ctx.t) : -1;
     u.uAspect.value = ctx.camera.aspect;
   }
 

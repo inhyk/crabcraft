@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { World } from '../world/types';
 import type { FxPool, Fx } from './vfx/effects';
 import { C } from './vfx/vfx';
+import { FrostGuide } from './frostGuide';
 
 const CRUMBS = 9;
 const SPACING = 2.2;
@@ -21,6 +22,9 @@ export class ObjectiveMarker {
   private p = new THREE.Vector3();
   private col = new THREE.Color();
   enabled = true;
+  /** Frostlight's own guidance (frostGuide.ts) instead of the pillar, chevron and crumbs; set by the game. */
+  frost = false;
+  private frostGuide: FrostGuide | null = null;
 
   constructor(fx: FxPool) {
     this.beam = fx.spawn('pillar', Infinity);
@@ -67,6 +71,12 @@ export class ObjectiveMarker {
 
   /** `target` gets the beam; the chevron and breadcrumbs lead toward `via`, the next waypoint. */
   update(time: number, world: World, from: THREE.Vector3, target: THREE.Vector3 | null, via: THREE.Vector3 | null, combat: boolean): void {
+    if (this.frost) {
+      this.beam.mesh.visible = this.chevron.visible = this.crumbs.visible = false;
+      (this.frostGuide ??= new FrostGuide(this.group)).update(time, world, from, target, via, combat, this.enabled);
+      return;
+    }
+    this.frostGuide?.hide();
     const show = this.enabled && !!target;
     const dist = target ? Math.hypot(target.x - from.x, target.z - from.z) : 0;
     this.beam.mesh.visible = show && dist > 5;
@@ -119,6 +129,7 @@ export class ObjectiveMarker {
     this.crumbs.geometry.dispose();
     this.crumbs.dispose();
     this.crumbMat.dispose();
+    this.frostGuide?.dispose();
     this.group.removeFromParent();
   }
 }

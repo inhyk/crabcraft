@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import type { Collision } from './collision';
 import { type Kit, trs } from './kit';
 import { InstanceField, type LodPart, lowPine } from './instances';
-import { GROVE, LIGHTHOUSE, LOTS, PLAZAS, ROADS, WRECK } from './layout';
+import { GROVE, KINGS_ROAD, LIGHTHOUSE, LOTS, PLAZAS, ROADS, WRECK, kingsRoadAt } from './layout';
+import { KINGS_LINE_ARC, KINGS_ROAD_LENGTH, kingsRoadDist } from './kingsRoad';
 import { windSway, stylise, addPatch } from './materials';
 import { rng, Simplex, smoothstep } from './noise';
 import { polylineDist, type Terrain } from './terrain';
@@ -132,6 +133,13 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
   const F = new Features();
   const N = new Simplex(31);
   const R = rng(1234);
+  // Decide from the land before the King's Road was carved and drop what lands in its corridor
+  // after every random draw, so the road leaves the rest of the scatter exactly where it was.
+  const land = terrain.beforeKingsRoad;
+  const clear = (x: number, z: number, r: number) => kingsRoadDist(x, z) > r;
+  /** Trees keep their trunks off the carved shoulders; small things stop at the carve edge. */
+  const TREE_CLEAR = KINGS_ROAD.width / 2 + KINGS_ROAD.shoulder + 1;
+  const SMALL_CLEAR = KINGS_ROAD.width / 2 + KINGS_ROAD.shoulder + 0.2;
   const trees = new Placements();
   const small = new Placements();
   const counts: Record<string, number> = {};
@@ -141,10 +149,10 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
   const dense = 1;
 
   const groundOk = (x: number, z: number, minH = 0.9) => {
-    const h = terrain.heightAt(x, z);
+    const h = land.heightAt(x, z);
     if (h < minH) return null;
-    if (terrain.slopeAt(x, z) < 0.78) return null;
-    if (terrain.splatAt(x, z, 0) > 0.4) return null; // sand
+    if (land.slopeAt(x, z) < 0.78) return null;
+    if (land.splatAt(x, z, 0) > 0.4) return null; // sand
     return h;
   };
 
@@ -180,7 +188,9 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
       const far = m.road > 35 && m.built > 35;
       const name = far ? (R() < 0.75 ? 'Pine_5' : 'Pine_4') : pineNames[Math.floor(R() * pineNames.length)];
       const s = 1.05 + R() * 0.9 + (gr < GROVE.r + 14 ? 0.4 : 0);
-      trees.add(name, trs(jx, h - 0.15, jz, R() * Math.PI * 2, s));
+      const rot = R() * Math.PI * 2;
+      if (!clear(jx, jz, TREE_CLEAR)) continue;
+      trees.add(name, trs(jx, h - 0.15, jz, rot, s));
       col.addCircle(jx, jz, 0.45 * s, h - 1, h + 9 * s);
       count('pine');
     }
@@ -199,7 +209,10 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
     const h = groundOk(x, z, 1.8);
     if (h === null) continue;
     const s = 0.85 + R() * 0.5;
-    trees.add(commons[Math.floor(R() * commons.length)], trs(x, h - 0.15, z, R() * Math.PI * 2, s));
+    const name = commons[Math.floor(R() * commons.length)];
+    const rot = R() * Math.PI * 2;
+    if (!clear(x, z, TREE_CLEAR)) continue;
+    trees.add(name, trs(x, h - 0.15, z, rot, s));
     col.addCircle(x, z, 0.4 * s, h - 1, h + 7 * s);
     count('tree');
   }
@@ -232,7 +245,9 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
     const h = groundOk(x, z, 1.2);
     if (h === null) continue;
     const name = R() < 0.4 ? 'Bush_Common_Flowers' : 'Bush_Common';
-    small.add(name, trs(x, h - 0.1, z, R() * 6.3, 0.7 + R() * 0.6));
+    const bm = trs(x, h - 0.1, z, R() * 6.3, 0.7 + R() * 0.6);
+    if (!clear(x, z, SMALL_CLEAR)) continue;
+    small.add(name, bm);
     count('bush');
   }
   // Flowers and ferns: meadow patches; ferns under the pines; petals sprinkled everywhere green.
@@ -245,26 +260,31 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
     if (h === null) continue;
     const forest = x < -55 || z < -70;
     const patch = N.fbm(x / 18, z / 18 + 40, 2);
+    const keep = clear(x, z, SMALL_CLEAR);
     if (forest) {
-      if (R() < 0.5) small.add('Fern_1', trs(x, h - 0.05, z, R() * 6.3, 0.8 + R() * 0.7)), count('fern');
+      if (R() < 0.5) {
+        const fm = trs(x, h - 0.05, z, R() * 6.3, 0.8 + R() * 0.7);
+        if (keep) small.add('Fern_1', fm), count('fern');
+      }
     } else if (patch > 0.15) {
       const name = R() < 0.5 ? 'Flower_3_Group' : R() < 0.5 ? 'Flower_4_Group' : 'Clover_1';
-      small.add(name, trs(x, h - 0.05, z, R() * 6.3, 0.45 + R() * 0.3));
-      count('flower');
+      const fm = trs(x, h - 0.05, z, R() * 6.3, 0.45 + R() * 0.3);
+      if (keep) small.add(name, fm), count('flower');
     } else if (R() < 0.6) {
-      small.add(`Petal_${1 + Math.floor(R() * 5)}`, trs(x, h + 0.01, z, R() * 6.3, 0.9 + R() * 0.6));
-      count('petal');
+      const name = `Petal_${1 + Math.floor(R() * 5)}`;
+      const pm = trs(x, h + 0.01, z, R() * 6.3, 0.9 + R() * 0.6);
+      if (keep) small.add(name, pm), count('petal');
     }
   }
   // Rocks: cliff feet, beach, headland and forest.
   for (let i = 0; i < 1400 * dense; i++) {
     const x = -220 + R() * 400;
     const z = -230 + R() * 460;
-    const h = terrain.heightAt(x, z);
-    const slope = terrain.slopeAt(x, z);
+    const h = land.heightAt(x, z);
+    const slope = land.slopeAt(x, z);
     const m = F.mask(x, z);
     if (m.road < 1.5 || m.built < 2) continue;
-    const coast = terrain.coastAt(x, z);
+    const coast = land.coastAt(x, z);
     let s = 0;
     if (slope < 0.72 && slope > 0.45 && R() < 0.45) s = 1.2 + R() * 1.6; // cliff dressing
     else if (coast > -6 && coast < 4 && R() < 0.35) s = 0.6 + R() * 1.6; // shore boulders
@@ -272,7 +292,9 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
     else continue;
     if (h < -4) continue;
     const name = `Rock_Medium_${1 + Math.floor(R() * 3)}`;
-    small.add(name, trs(x, h - 0.65 * s, z, R() * 6.3, s, (R() - 0.5) * 0.3, (R() - 0.5) * 0.3));
+    const rm = trs(x, h - 0.65 * s, z, R() * 6.3, s, (R() - 0.5) * 0.3, (R() - 0.5) * 0.3);
+    if (!clear(x, z, SMALL_CLEAR + 1.1 * s)) continue;
+    small.add(name, rm);
     if (s > 1.2 && h > 0) col.addCircle(x, z, 1.1 * s, h - 2, h + 2 * s);
     count('rock');
   }
@@ -304,15 +326,17 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
     if (m.road < 0.3 || m.built < 0.4) continue;
     const h = groundOk(x, z, 1.0);
     if (h === null) continue;
-    if (terrain.splatAt(x, z, 2) > 0.3 || terrain.splatAt(x, z, 1) > 0.3) continue;
+    if (land.splatAt(x, z, 2) > 0.3 || land.splatAt(x, z, 1) > 0.3) continue;
     const patch = N.fbm(x / 9, z / 9 + 70, 2);
     if (patch < -0.25 && R() < 0.7) continue;
     const s = 0.8 + R() * 0.7 + Math.max(0, patch) * 0.6;
     const tm = trs(x, h - 0.03, z, R() * 6.3, s);
-    tufts[Math.floor(R() * 3)].push(tm);
+    const shape = Math.floor(R() * 3);
+    if (clear(x, z, SMALL_CLEAR)) tufts[shape].push(tm);
     placedTufts++;
   }
   counts.tufts = placedTufts;
+  dressKingsRoad(terrain, col, F, trees, small, tufts, count);
   if (quality === 'low') {
     for (const [name, matrices] of small.items) {
       // All rocks stay visible because the larger ones block movement.
@@ -320,6 +344,77 @@ export function scatterFoliage(terrain: Terrain, col: Collision, quality: 'low' 
     }
   }
   return { trees, small, tufts, counts, groveGlow };
+}
+
+/**
+ * The King's Road's own woods, drawn from their own random sequence: trees lining both sides beyond
+ * the carved shoulders, ferns, bushes, flowers, stones and grass on the shoulders themselves.
+ */
+function dressKingsRoad(terrain: Terrain, col: Collision, F: Features, trees: Placements, small: Placements, tufts: THREE.Matrix4[][], count: (k: string) => void): void {
+  const R = rng(777);
+  const half = KINGS_ROAD.width / 2;
+  const carve = half + KINGS_ROAD.shoulder;
+  const pines = ['Pine_1', 'Pine_2', 'Pine_3', 'Pine_4'];
+  const commons = ['CommonTree_1', 'CommonTree_2', 'CommonTree_3', 'CommonTree_5'];
+  const at = (s: number, side: number, off: number) => {
+    const p = kingsRoadAt(s);
+    return [p.x + p.dz * side * off, p.z - p.dx * side * off] as const;
+  };
+  const builtClear = (x: number, z: number, r: number) => {
+    const m = F.mask(x, z);
+    return m.built > r && m.road > r;
+  };
+  // Trees: a loose double row, closer together in the woods than in the meadow behind the chapel.
+  for (const side of [-1, 1]) {
+    for (let s = KINGS_ROAD.cobbleEnd - 14 + R() * 4; s < KINGS_ROAD_LENGTH - 2; s += 5.5 + R() * 5) {
+      const off = carve + 1.6 + R() * 4.5;
+      const [x, z] = at(s, side, off);
+      const woods = z < -88;
+      const pick = R();
+      const sc = woods ? 1.1 + R() * 0.8 : 0.85 + R() * 0.45;
+      const rot = R() * Math.PI * 2;
+      if (kingsRoadDist(x, z) < carve + 1.2 || !builtClear(x, z, 5)) continue;
+      if (Math.abs(s - KINGS_LINE_ARC + 5) < 9) continue; // keep the gate's view open
+      const h = terrain.heightAt(x, z);
+      if (terrain.slopeAt(x, z) < 0.74) continue;
+      const out = { x: 0, y: 0, set(a: number, b: number) { this.x = a; this.y = b; return this; } };
+      col.resolve(x, z, 1.6, out);
+      if (Math.hypot(out.x - x, out.y - z) > 0.01) continue;
+      const name = woods ? pines[Math.floor(pick * pines.length)] : commons[Math.floor(pick * commons.length)];
+      trees.add(name, trs(x, h - 0.15, z, rot, sc));
+      col.addCircle(x, z, (woods ? 0.45 : 0.4) * sc, h - 1, h + (woods ? 9 : 7) * sc);
+      count('kingsTree');
+    }
+  }
+  // The shoulders: ferns and bushes in the woods, flowers in the meadow, a few stones, grass everywhere.
+  for (let s = KINGS_ROAD.cobbleEnd - 6; s < KINGS_ROAD_LENGTH - 1; s += 1.6) {
+    for (const side of [-1, 1]) {
+      const off = half + 0.9 + R() * (KINGS_ROAD.shoulder - 0.6);
+      const [x, z] = at(s + (R() - 0.5) * 1.4, side, off);
+      const kind = R();
+      const rot = R() * 6.3;
+      const sc = R();
+      if (kingsRoadDist(x, z) < half + 0.75 || !builtClear(x, z, 1.5)) continue;
+      const h = terrain.heightAt(x, z);
+      if (terrain.slopeAt(x, z) < 0.8) continue;
+      const woods = z < -88;
+      if (kind < 0.16) small.add(woods ? 'Fern_1' : 'Flower_4_Group', trs(x, h - 0.05, z, rot, woods ? 0.8 + sc * 0.6 : 0.45 + sc * 0.3)), count('kingsPlant');
+      else if (kind < 0.24) small.add(woods ? 'Bush_Common' : 'Bush_Common_Flowers', trs(x, h - 0.1, z, rot, 0.6 + sc * 0.5)), count('kingsPlant');
+      else if (kind < 0.29) small.add(woods ? 'Fern_1' : 'Flower_3_Group', trs(x, h - 0.05, z, rot, 0.5 + sc * 0.4)), count('kingsPlant');
+      else if (kind < 0.33) small.add(`Rock_Medium_${1 + Math.floor(sc * 3)}`, trs(x, h - 0.35, z, rot, 0.45 + sc * 0.4, 0.2, -0.1)), count('kingsRock');
+    }
+    for (let i = 0; i < 3; i++) {
+      const side = R() < 0.5 ? -1 : 1;
+      const off = half + 0.7 + R() * (KINGS_ROAD.shoulder + 0.5);
+      const [x, z] = at(s + R() * 1.6, side, off);
+      const rot = R() * 6.3;
+      const sc = 0.75 + R() * 0.7;
+      const shape = Math.floor(R() * 3);
+      if (kingsRoadDist(x, z) < half + 0.55 || !builtClear(x, z, 0.5)) continue;
+      if (terrain.slopeAt(x, z) < 0.82 || terrain.splatAt(x, z, 1) > 0.3) continue;
+      tufts[shape].push(trs(x, terrain.heightAt(x, z) - 0.03, z, rot, sc));
+    }
+  }
 }
 
 export function buildFoliage(nature: Kit, scatter: FoliageScatter, quality: 'low' | 'high'): FoliageResult {

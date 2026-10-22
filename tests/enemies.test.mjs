@@ -2,6 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {Enemy,ENEMY_STATS} from '../tmp/test-modules/enemies.js';
+import {DUNGEONS} from '../src/sim/data/dungeons.ts';
+import {dungeonEnemyStats} from '../src/sim/data/dungeon-enemies.ts';
 
 function make(kind='scrapling'){
  const unit={pos:new THREE.Vector3(),level:1,hp:1,maxHp:1,alive:true,hidden:false,invulnerable:false,baseTint:null,
@@ -95,5 +97,20 @@ test('dungeon attacks are stronger while fixed health and takeover damage stay s
   assert.equal(unit.maxHp,(180+level*8)*(isCaptain?4:1));
   unit.hp=50;enemy.resumeAuthority();enemy.resumeAuthority();
   assert.equal(unit.hp,50);assert.deepEqual(enemy.stats.dmg,[normal[0],isCaptain?captain:normal[1]]);
+ }
+});
+
+test('browser dungeon enemies use the server sim stats field by field for every tier and captain flag',()=>{
+ assert.deepEqual(DUNGEONS.map(d=>d.level),[35,50,75,150,200,250,350,450,550,650]);
+ for(const {level}of DUNGEONS)for(const captain of [false,true]){
+  const {unit,enemy}=make('scavenger'),expected=dungeonEnemyStats(level,captain),label=`tier ${level} captain ${captain}`;
+  enemy.isAdd=true;enemy.isDungeonOnly=true;enemy.dungeonLevel=level;enemy.dungeonCaptain=captain;
+  for(const step of ['resumeAuthority','respawnAt']){
+   if(step==='respawnAt')enemy.respawnAt(0,0);else enemy.resumeAuthority();
+   const {name:_name,...stats}=enemy.stats;
+   assert.deepEqual(Object.keys(stats).sort(),Object.keys(expected).sort(),label);
+   for(const key of Object.keys(expected))assert.deepStrictEqual(stats[key],expected[key],`${label} ${key} after ${step}`);
+   assert.equal(unit.level,expected.level,label);assert.equal(unit.maxHp,expected.hp,label);
+  }
  }
 });

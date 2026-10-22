@@ -3,11 +3,11 @@
 // had; the open field carries wind relief; the crags are real meshes the player cannot walk into; the far ranges
 // are baked; and low quality keeps all of it on a coarser lattice. Writes tmp/qa/snow-terrain-*.png.
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import {mkdir} from 'node:fs/promises';
 await mkdir('tmp/qa',{recursive:true});
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5230';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 async function load(quality){const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error'&&/shader|program|WebGL/i.test(m.text()))errors.push(m.text().slice(0,300));});p.setDefaultTimeout(30000);
  await p.addInitScript(quality=>{localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'Snow surveyor'}));localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.language','ko');localStorage.setItem('cc.quality',quality);if(location.hostname==='127.0.0.1'){const WS=window.WebSocket;window.WebSocket=class extends WS{constructor(url,protocols){const u=new URL(String(url));if(u.pathname==='/multiplayer'){u.host=location.host;u.protocol='ws:';}super(u.href,protocols);}};}},quality);
@@ -48,23 +48,25 @@ try{
  console.log('PASS the GPU ground is snowHeight()',JSON.stringify(probe));
 
  // Gameplay ground is untouched where gameplay needs it; the field carries relief.
- const ground=await p.evaluate(()=>{const g=window.app.current.game,h=(x,z)=>g.world.heightAt(x,z);
+ const ground=await p.evaluate(async()=>{const g=window.app.current.game,h=(x,z)=>g.world.heightAt(x,z),P=await import('/src/sim/world/snowLayout.ts'),Q=(await import('/src/sim/data/quests.ts')).SNOW_POINTS;
   const ss=(x,a,b)=>x<=a?0:x>=b?1:((x-a)/(b-a))**2*(3-2*(x-a)/(b-a));
   const old=(x,z)=>{const edge=Math.hypot(x/128,(z-2)/155),plateau=5+14*ss(-z,5,55),hills=Math.sin(x*.052)*Math.sin(z*.037)*2.5*(1-Math.exp(-x*x/600)),t=ss(Math.hypot(x,z+78),22,32);return edge>.83?5-(edge-.83)*70:(1-t)*19+t*(plateau+hills);};
-  // Spawn, arrival, the W5 gate, NPCs, the fountain, the village crates, Mira's prison and the arena.
-  const keep=[[-12,90],[0,82],[14,84],[-16,56],[16,56],[-16,38],[16,38],[-16,74],[16,80],[16,68],[-13,65],[-12,78],[12,72],[-12,56],[13,-62],[0,-78],[18,-78],[0,-100]];
-  for(let z=94;z>=-53;z-=3)for(const x of [-4,0,4])keep.push([x,z]);
-  for(const z of [38,56,74])for(let x=-22;x<=22;x+=2)keep.push([x,z]);
+  // Spawn, arrival, the W5 gate, the residents, the fountain, the village crates, Mira's prison and the arena.
+  const keep=[[-12,90],[0,82],[14,84],...P.FROST_NPCS.map(n=>[n.x,n.z]),[-13,65],Q['snow-crate-a'],Q['snow-crate-b'],Q['snow-crate-c'],[13,-62],[0,-78],[18,-78],[0,-100]];
+  // Every street, lane and road of Frostlight's plan (snowLayout.ts), across its whole paved width, and the squares.
+  for(const w of P.FROST_WAYS)for(let k=1;k<w.points.length;k++){const [ax,az]=w.points[k-1],[bx,bz]=w.points[k],L=Math.hypot(bx-ax,bz-az),nx=(bz-az)/L,nz=-(bx-ax)/L;
+   for(let t=0;t<1;t+=.25)for(const a of [-1,-.5,0,.5,1]){const d=a*w.width/2;keep.push([ax+(bx-ax)*t+nx*d,az+(bz-az)*t+nz*d]);}}
+  for(const q of P.FROST_PADS)for(let a=0;a<6.28;a+=.5)keep.push([q.x+Math.sin(a)*q.r*.9,q.z+Math.cos(a)*q.r*.9]);
   let drift=0;for(const [x,z] of keep)drift=Math.max(drift,Math.abs(h(x,z)-old(x,z)));
   // Quest points out in the field ride the new ground; it must stay walkable under them.
   const quests=[[-47,40],[-52,28],[-44,14],[-7,26],[7,4],[-7,-22],[-50,26],[61,22],[0,-34],[36,8],[44,-6],[34,-22],[62,34],[68,20],[60,4],[-17,-34],[17,-42],[-16,-54]];
   let steep=0;for(const [x,z] of quests)steep=Math.max(steep,Math.hypot(h(x+.5,z)-h(x-.5,z),h(x,z+.5)-h(x,z-.5)));
   // Relief of the open field: how far the ground stands off the mean of four points 10 m around it.
-  const field=[];for(let x=-110;x<=110;x+=3)for(let z=-130;z<=130;z+=3){if(Math.hypot(x/128,(z-2)/155)>.78||Math.abs(x)<55&&z>20||Math.hypot(x,z+78)<46||Math.abs(x)<20)continue;
+  const field=[];for(let x=-110;x<=110;x+=3)for(let z=-130;z<=130;z+=3){if(Math.hypot(x/128,(z-2)/155)>.78||Math.abs(x)<55&&z>20||Math.hypot(x,z+78)<46||P.frostRoadKeepDist(x,z)<12)continue;
    field.push(Math.abs(h(x,z)-(h(x+10,z)+h(x-10,z)+h(x,z+10)+h(x,z-10))/4));}
   field.sort((a,b)=>a-b);const p90=field[Math.floor(field.length*.9)],sd=field.reduce((a,b)=>a+b,0)/field.length;
   return {points:keep.length,drift,questSlope:+steep.toFixed(3),samples:field.length,mean:+sd.toFixed(2),p90:+p90.toFixed(2),max:+field[field.length-1].toFixed(2)};});
- assert.ok(ground.drift<1e-9,`village, roads, arena, spawn, NPCs and village quest points keep their ground: ${JSON.stringify(ground)}`);
+ assert.ok(ground.drift<1e-9,`village, its streets and squares, the north road, arena, spawn, NPCs and village quest points keep their ground: ${JSON.stringify(ground)}`);
  assert.ok(ground.questSlope<.6,`field quest points stand on walkable snow: ${JSON.stringify(ground)}`);
  assert.ok(ground.p90>.6&&ground.max>2,`the open field has wind-carved relief: ${JSON.stringify(ground)}`);
  console.log('PASS gameplay ground kept, field carved',JSON.stringify(ground));

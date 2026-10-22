@@ -43,6 +43,8 @@ W5/W6에도 위 표의 `seed`, `populationMode`, `fixedLevels`, `population`, `r
 
 `deploy/vm/world-dev-6.json`은 `deploy/vm/world-dev.json`에 W5(seed 1005)와 W6(seed 1006), 아래 표의 레벨과 respawn, population 12/4/6/3, `returns.ember`/`returns.sky`의 `spawn`을 더한 6월드 dev 설정이다. 이 파일로 실제 package를 기동해 `/healthz` 200, `/world` 426, catalog의 `gate:w5`/`gate:w6`와 `boss-ember`/`boss-sky`를 확인했다. VM의 `/etc/crabcraft/dev-world.json`은 이 PR이 바꾸지 않는다.
 
+`deploy/vm/world-dev-6.json`은 `dungeons`도 켠다(`enabled:true`, 여섯 월드에 속한 열 tier 전부, `maxPendingAwards:8`). `dungeons`는 `party.enabled:true`가 있어야 받아들이고, 켜면 catalog가 `dungeons`(tier 목록)를 알려 브라우저가 던전 메뉴를 보여 준다. 켠 서버는 wire schema revision이 컴파일된 값(2)과 같은 클라이언트만 받고, 다른 revision은 인증 단계에서 `protocol-schema`로 닫는다. 던전을 켜도 retained 저장은 던전을 끈 서버처럼 1초마다 세계를 멈추지 않고 묶어 저장한다(#139). 보상 지급, 클리어 봉인, 던전 입장과 퇴장만 세계를 잠깐 멈춘 저장에서 한다. VM(c2d-standard-2)의 50봇 공개 세계 측정에서 던전 켬은 tick p99 8.07~8.98 ms, VM busy 44.9~47.5%, 세계를 멈춘 저장 0회였고 던전 끔과 차이가 판 사이 흔들림보다 작았다(2026-10-20). 되돌릴 때는 `dungeons` 키를 지워야 한다. 옛 서버는 모르는 root 키가 있는 설정을 거부한다. VM의 `/etc/crabcraft/dev-world.json`은 이 변경으로 바뀌지 않는다.
+
 현재 canonical helper(`src/sim/data/enemies.ts`, dev52 합성 기준)의 source 값은 다음과 같다. 이 값은 config의 자동 기본값이 아니며 운영 설정에서 명시해야 한다.
 
 | Region | scrapling / scavenger / jellyfish / echo 레벨 | ordinary respawn | echo respawn | respawn clearance |

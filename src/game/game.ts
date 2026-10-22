@@ -1,4 +1,6 @@
 import type {ServerGameBridge} from './serverBridge';
+import { WorldEndingPresentation, type EndingPresentationFrame } from '../multiplayer/worldEndingPresentation.ts';
+import type { EndingObservation } from '../sim/features/endingPresentation.ts';
 import type { CoreGameBridge } from './coreBridge';
 import {VillageGames} from './villageGames';
 import {t} from '../i18n';
@@ -12,10 +14,12 @@ import {VoyageIsland} from './voyageIsland';
 import {DungeonExpeditions} from './dungeons';
 import {worldMusic,type MusicMood} from './worldMusic';
 import {VOYAGE_ISLANDS} from '../world/voyage';
+import { GRID, KINGS_ROAD, KINGS_ROAD_LINE } from '../world/layout';
 import {ShoreBoat} from './shoreBoat';
 import {LighthouseSecret} from './lighthouseSecret';
 import {createJellyfishRig} from '../crab/jellyfish';
 import { HiddenWorld } from './world2';
+import { ZoneLines } from './zoneLine';
 import { Multiplayer } from '../multiplayer/client';
 import { Spectator } from './spectator';
 import { SPECTATE } from '../spectate';
@@ -47,6 +51,7 @@ import { Enemy, ENEMY_STATS, type EnemyKind } from './enemies';
 import { Npc, Townsfolk } from './npcs';
 import { NavHints } from './nav';
 import { ObjectiveMarker } from './objective';
+import { shadowLights } from '../core/shadowPass';
 import { Player } from './player';
 import {
   NPCS,
@@ -70,7 +75,45 @@ export const DEFAULT_SPEC: CrabSpec = { race: 'human', sex: 'male', classId: 'wa
 
 const CULL_DIST = 80;
 const SHADOW_DIST = 18;
+/** Reach of a crab's shadow in crab heights under a shadow light that is not a sun (no direction to follow). */
+const SHADOW_REACH = 8;
+const viewFrustum = new THREE.Frustum();
+const viewProj = new THREE.Matrix4();
+const shadowReach = new THREE.Sphere();
+const sunDir = new THREE.Vector3();
+const sunAt = new THREE.Vector3();
+
+/**
+ * Whether a crab's shadow can land in the view (viewFrustum, this frame): the crab itself, or the
+ * ground its shadow covers away from each directional sun. Other shadow lights: any direction.
+ */
+function shadowInView(pos: THREE.Vector3, h: number, suns: readonly THREE.DirectionalLight[] | null): boolean {
+  shadowReach.center.copy(pos).y += h * 0.5;
+  shadowReach.radius = h * (suns ? 1.2 : SHADOW_REACH + 0.6);
+  if (viewFrustum.intersectsSphere(shadowReach)) return true;
+  if (!suns) return false;
+  for (const sun of suns) {
+    sunDir.setFromMatrixPosition(sun.matrixWorld).sub(sunAt.setFromMatrixPosition(sun.target.matrixWorld)).normalize();
+    const across = Math.hypot(sunDir.x, sunDir.z);
+    const len = Math.min(40, (1.6 * h * across) / Math.max(sunDir.y, 0.04));
+    const n = Math.ceil(len / h);
+    const step = across > 1e-4 ? -len / n / across : 0;
+    // Spheres along the shadow's strip on the ground, crab to tip, a metre to spare.
+    shadowReach.radius = 0.9 * h + 0.5 * (len / n) + 1;
+    for (let i = 1; i <= n; i++) {
+      shadowReach.center.set(pos.x + sunDir.x * step * i, pos.y, pos.z + sunDir.z * step * i);
+      if (viewFrustum.intersectsSphere(shadowReach)) return true;
+    }
+  }
+  return false;
+}
 const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vignette: { offset: 0.3, darkness: 0.5 } };
+/** Frostlight's own grade while it is shown: cool lifted shadows, warm lamp light, snow that reads white (grade.ts). */
+// Bloom keys above the brightest sunlit snow, so lamps and windows glow and the snow does not haze over; with a
+// knee, so the sky round a low sun glows without a contour where it crosses the threshold.
+const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78, knee: true }, agxLook: { saturation: 1.32, power: 1.06 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
+/** Tidecrown's late afternoon: rich and warm, sunlit stone golden and shade lilac; bloom keys above the stone, on lamps and windows. */
+const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.14, agxLook: { saturation: 1.34, power: 1.15 }, bloom: { intensity: 0.85, threshold: 1.45, smoothing: 0.3, radius: 0.75 }, grade: { lift: [0.013, 0.006, 0.032], warm: 0.55, white: 0.02, split: { shadow: [0.96, 0.975, 1.045], highlight: [1.11, 1.0, 0.8] } } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },
@@ -96,6 +139,21 @@ const v2 = new THREE.Vector3();
 export class Game {
   core:CoreGameBridge|null=null;
   server:ServerGameBridge|null=null;
+  private serverEnding:WorldEndingPresentation|null=null;
+  private serverEndingHud:{cinematic:boolean;chatKeep:boolean}|null=null;
+  get serverEndingActive():boolean{return this.serverEnding?.active??false;}
+  /** The trusted observation owns choreography; this adapter owns only a private display. */
+  observeServerEnding(observation:EndingObservation|null,frame:EndingPresentationFrame|null):void {
+    if(!this.alive||!this.serverMode||!observation&&!this.serverEnding)return;
+    if(!this.serverEnding)this.serverEnding=new WorldEndingPresentation({parent:this.app.ui,alive:()=>this.alive,
+      activate:(scene,camera)=>this.engine.setView(scene,camera,GAME_VIEW),
+      restore:()=>{this.engine.setView(this.scene,this.camera,GAME_VIEW);this.follow.cut();},
+      cinematic:on=>{if(on&&!this.serverEndingHud){this.serverEndingHud={cinematic:this.hud.root.classList.contains('cinematic'),chatKeep:this.hud.chat.el.classList.contains('hud-keep')};this.hud.chat.el.classList.add('hud-keep');this.hud.setCinematic(true);}else if(!on&&this.serverEndingHud){const prior=this.serverEndingHud;this.serverEndingHud=null;this.hud.setCinematic(prior.cinematic);if(!prior.chatKeep)this.hud.chat.el.classList.remove('hud-keep');}},
+      command:command=>this.server?.command(command)??false,
+      cue:value=>{if(value==='takeoff'||value==='spin_from')this.audio.sfx('sfx-servo-whir',{volume:.4});},
+      error:message=>this.hud.messages.error(message)});
+    this.serverEnding.commit(observation,frame);
+  }
   readonly serverMode=new URLSearchParams(location.search).get('world')==='server';
   /** The developer monitor's invisible view of a relay room (src/spectate.ts); null in a player's game. */
   spectator:Spectator|null=null;
@@ -125,6 +183,8 @@ export class Game {
   skyBoss!: Boss;
   creatorTravel = false;
   world2!: HiddenWorld;
+  /** Zone lines between World I and Tidecrown (the King's Road and its way back); a server world only turns back at the King's Road. */
+  zoneLines: ZoneLines | null = null;
   journey: BossJourney | null = null;
   lighthouseSecret: LighthouseSecret | null = null;
   boats:ShoreBoat|null=null;
@@ -200,7 +260,7 @@ export class Game {
 
   /** Movement, abilities and targeting are off (dead, cutscene, menu). */
   get controlsLocked(): boolean {
-    return !!this.spectator || !!this.server?.locked || !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
+    return !!this.spectator || this.serverEndingActive || !!this.server?.locked || !!this.dungeons?.panelOpen || !!this.villageGames?.locked || !!this.boats?.seated || this.app.account.open || this.cinematic || this.ending.active || !this.player.unit.alive || this.respawning || this.hud.menu.open || !!this.hud.forge?.open || this.hud.minimap.expanded;
   }
 
   // ================================================================ loading
@@ -257,7 +317,7 @@ export class Game {
     progress(0.56, 'Building Starhaven');
     await this.world2.buildSettlement();
     if (!this.alive) return;
-    this.engine.setView(this.scene, this.camera, GAME_VIEW);
+    this.engine.setView(this.scene, this.camera, this.gameView());
     this.vfx = new Vfx(this.scene, (x,z) => this.world.heightAt(x,z));
     this.vfx.density = app.engine.quality === 'low' ? 0.55 : 1;
     this.objective = new ObjectiveMarker(this.vfx.fx);
@@ -560,6 +620,7 @@ export class Game {
         hudRoot.style.opacity = '';
       }, 900);
     }, 700);
+    this.zoneLines = new ZoneLines(this);
     if(this.serverMode){this.loaded=false;const {ServerGameBridge}=await import('./serverBridge');this.server=await ServerGameBridge.create(this,new URLSearchParams(location.search).get('character')??'');this.loaded=true;return;}
     this.journey = new BossJourney(this);
     this.lighthouseSecret = new LighthouseSecret(this);
@@ -600,7 +661,19 @@ export class Game {
     }
     const pad = 45;
     const hide: THREE.Object3D[] = [this.vfx.group, this.objective.group, ...this.units.map((u) => u.rig.root)];
-    return snapshotMap(this.engine.renderer, this.scene, { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad, topY: topY + 70 }, hide);
+    if (this.world2.chapter !== 1) return snapshotMap(this.engine.renderer, this.scene, { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad, topY: topY + 70 }, hide);
+    // World I's picture also reaches up the King's Road past its zone line to the terrain's north edge, grown by whole
+    // texels round the usual one (same scale, same pixel grid); the expanded map keeps the usual framing.
+    const size = Math.max(maxX - minX, maxZ - minZ) + 2 * pad, texel = size / 1024;
+    const x0 = (minX + maxX) / 2 - size / 2, z0 = (minZ + maxZ) / 2 - size / 2;
+    let ex0 = x0, ex1 = x0 + size, ez0 = z0, ez1 = z0 + size;
+    for (const [x, z] of [...KINGS_ROAD.points, KINGS_ROAD_LINE.a, KINGS_ROAD_LINE.b]) {
+      ex0 = Math.min(ex0, x - pad); ex1 = Math.max(ex1, x + pad); ez0 = Math.min(ez0, Math.max(GRID.minZ, z - pad)); ez1 = Math.max(ez1, z + pad);
+    }
+    const l = Math.ceil((x0 - ex0) / texel - 1e-6), t = Math.ceil((z0 - ez0) / texel - 1e-6);
+    const n = Math.max(1024 + l + Math.ceil((ex1 - x0 - size) / texel - 1e-6), 1024 + t + Math.ceil((ez1 - z0 - size) / texel - 1e-6));
+    const sx = x0 - l * texel, sz = z0 - t * texel;
+    return snapshotMap(this.engine.renderer, this.scene, { minX: sx, maxX: sx + n * texel, minZ: sz, maxZ: sz + n * texel, topY: topY + 70 }, hide, n, { x: x0 + size / 2, z: z0 + size / 2, size });
   }
 
   private showLoading(chapter: 1 | 2 | 3 | 4 | 5 | 6): void {
@@ -681,7 +754,7 @@ export class Game {
   private readonly frame = (f: FrameInfo): void => {
     if (!this.loaded) return;
     const dt = f.dt;
-    if(this.serverMode){this.server?.frame(dt,f.elapsed);return;}
+    if(this.serverMode){this.server?.frame(dt,f.elapsed);this.serverEnding?.render();return;}
     const paused = (this.hud.menu.open||this.app.account.open) && !this.multiplayer?.battle.active;
     if(!this.spectator)this.handleInput();
     const authority = this.multiplayer?.battle.authority !== false;
@@ -719,11 +792,16 @@ export class Game {
     const cam = this.camera.position;
     // Screen pixels per world unit at distance 1 (CSS pixels, so Retina does not change the LOD).
     const pxPerUnit = window.innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
+    // A crab whose shadow cannot reach the view stays out of the sun's shadow map.
+    this.camera.updateMatrixWorld();
+    viewFrustum.setFromProjectionMatrix(viewProj.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
+    const casters = shadowLights(this.scene);
+    const suns = casters.every((l) => (l as THREE.DirectionalLight).isDirectionalLight) ? (casters as THREE.DirectionalLight[]) : null;
     for (const u of this.units) {
       const d = cam.distanceTo(u.pos);
       const culled = d > CULL_DIST * (u.kind === 'boss' ? 1.6 : 1);
       u.culled = culled;
-      u.setShadows(d < SHADOW_DIST * (u.kind === 'boss' ? 2 : 1));
+      u.setShadows(d < SHADOW_DIST * (u.kind === 'boss' ? 2 : 1) && shadowInView(u.pos, u.height, suns));
       u.rig.root.visible = !culled && !u.hidden;
       // Far LOD under ~90 px of shell height; back to full detail over ~110 px (no flicker).
       const px = (u.height * pxPerUnit) / Math.max(d, 0.1);
@@ -735,11 +813,15 @@ export class Game {
     this.updateSelection();
     const goal = this.spectator || this.dungeons?.active || this.ending.active || !this.player.unit.alive ? null : this.objectivePos();
     this.hintVia = goal ? this.world2.chapter>=2 ? this.world2.waypoint(this.player.unit.pos, goal, this.time) : this.nav.waypoint(this.player.unit.pos, goal, this.time) : null;
+    this.objective.frost = this.gameView() === FROST_VIEW;
     this.objective.update(this.time, this.world, this.player.unit.pos, goal, this.hintVia, this.player.inCombat);
     if (!this.ending.active) this.director.update(dt);
     const worldTime=this.multiplayer?.battle.worldTime(f.elapsed,dt) ?? f.elapsed;
     this.world.update(dt, worldTime, this.camera);
     this.world2.update(dt,worldTime);
+    // The game's own views follow the world shown; endings and captures that set their own are left alone.
+    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW||view===TIDECROWN_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
+    if (!paused) this.zoneLines?.update();
     this.lighthouseSecret?.update();
     // A spectator view shows no HUD and plays no music.
     if(!this.spectator){
@@ -1007,6 +1089,7 @@ export class Game {
   }
 
   talkTo(u: Unit): void {
+    if(this.world2.inTidecrown&&this.world2.tidecrownPeople?.talkTo(u))return;
     if(this.server){this.server.talk(u);return;}
     if (u.kind === 'townsfolk') {
       (u.ctrl as Townsfolk).faceToward(this.player.unit);
@@ -1441,6 +1524,8 @@ export class Game {
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }
 
+  private gameView(): ViewOptions { return this.world2?.inTidecrown ? TIDECROWN_VIEW : this.world2?.fourth.root.visible ? FROST_VIEW : GAME_VIEW; }
+
   /** A duel keeps the adventure alive, even when entered from a shared victory celebration. */
   resumeFriendAdventure(authority:boolean):void {
     this.ending.cancel();this.journey?.closeChapterEnding();
@@ -1457,7 +1542,7 @@ export class Game {
 
   /** Celebration effects and direct music requests must not leak into the next adventure. */
   resumeAfterEnding(): void {
-    this.engine.setView(this.scene, this.camera, GAME_VIEW);
+    this.engine.setView(this.scene, this.camera, this.gameView());
     if (this.musicOn) this.updateMusic(true);
     else this.audio.stopMusic(.4);
   }
@@ -1502,6 +1587,7 @@ export class Game {
   private releaseResources(): void {
     if (this.resourcesReleased) return;
     this.resourcesReleased = true;
+    this.serverEnding?.dispose();this.serverEnding=null;
     this.server?.dispose();this.server=null;
     this.dungeons?.dispose();this.dungeons=null;
     this.journey?.dispose();

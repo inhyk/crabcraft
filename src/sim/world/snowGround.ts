@@ -6,6 +6,8 @@
 // moat upwind), and a coast that falls to a frozen sea. The decimetre sastrugi and ripples are visual only and
 // live in the shader.
 
+import { frostRoadKeepDist } from './snowLayout.ts';
+
 /** Direction the wind blows on Frostlight, (x, z), unit. The sky's cirrus and the sastrugi follow it too. */
 // Held about 45 degrees off the sun's bearing (SNOWFLOW's rule): a sun that rakes straight along the sastrugi lights
 // both flanks alike and the fine structure goes flat; one straight across them flattens the broad hills instead.
@@ -94,11 +96,12 @@ const smooth01 = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 const smoothstep = (x: number, a: number, b: number) => smooth01((x - a) / (b - a));
 
 /**
- * 0 where gameplay needs the old ground (the village, the paved road, the boss arena), 1 in the open field.
- * Fades over 12 m so the relief rises out of the flats instead of stepping.
+ * 0 where gameplay needs the old ground (the village, the road out of it and the processional way, the boss arena),
+ * 1 in the open field. Fades over 12 m so the relief rises out of the flats instead of stepping. The road keeps
+ * its ground to FROST_ROAD_SHOULDER past the paved edge (snowLayout.ts).
  */
 export function snowKeep(x: number, z: number): number {
-  const dz = Math.max(-53 - z, z - 94, 0), road = Math.sqrt(x * x + dz * dz) - 6;
+  const road = frostRoadKeepDist(x, z);
   const qx = Math.abs(x) - 45, qz = Math.abs(z - 60.5) - 35.5;
   const ox = Math.max(qx, 0), oz = Math.max(qz, 0), village = Math.sqrt(ox * ox + oz * oz) + Math.min(Math.max(qx, qz), 0);
   const arena = Math.sqrt(x * x + (z + 78) * (z + 78)) - 34;

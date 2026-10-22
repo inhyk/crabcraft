@@ -8,10 +8,11 @@ import { createWorldVariants, personalNpcVisible } from '../../src/sim/areas/var
 import { canonicalEnemyRespawn, enemyRespawnClearance, enemyStats } from '../../src/sim/data/enemies.ts';
 import { worldChapter } from '../../src/sim/math.ts';
 import { CLASSES } from '../../src/sim/data/classes.ts';
-import type { AreaPolicy, BossProfileId, EnemySpawn, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
+import type { AreaPolicy, BossProfileId, EnemySpawn, PlaceId, PlayerState, SimUnit, WorldId } from '../../src/sim/types.ts';
 import { WorldChatService } from './chat.ts';
 import { CharacterStore } from './character-store.ts';
 import { DurableOutcomeStore } from './contribution-store.ts';
+import { createEndingStage } from '../../src/sim/features/worldRules.ts';
 import { planOutcomePage } from '../../src/sim/ledger.ts';
 import { type WorldTicketRegistry } from './admission.ts';
 import { loadWorldCatalog, createGameplayCatalog, PUBLIC_WORLDS, OPTIONAL_WORLDS, HOSTABLE_WORLDS, HOSTED_BOSSES, BOSS_WORLDS, configuredWorldIds, type WorldConfiguration, type LoadedWorldDefinition, type HostedBossProfileId } from './catalog.ts';
@@ -106,7 +107,7 @@ export function createConfiguredAreaPolicy(region:ConfiguredRegion):AreaPolicy&{
  return Object.freeze({...policy,populationRadius:(spawn:EnemySpawn)=>rules[job(spawn).group].radius,enemyPopulation:(spawn:EnemySpawn,nearbyPlayers:number)=>{integer(nearbyPlayers,'nearby player count',0,Number.MAX_SAFE_INTEGER);const {group,index}=job(spawn),r=rules[group],desired=Math.min(r.max,r.base+Math.floor(nearbyPlayers*r.scale));return{desired:spawn.role==='add'||index<desired?1 as const:0 as const,respawnSeconds:region.respawnSeconds[spawn.role==='echo'?'echo':spawn.kind]};}});
 }
 /** Named choices preserve progression; elapsed death only readies the actual core respawn on its next tick. */
-export function createConfiguredRestorePolicy(input:ConfiguredRestore,catalog:ReadonlyMap<WorldId,LoadedWorldDefinition>):RestorePolicy {
+export function createConfiguredRestorePolicy(input:ConfiguredRestore,catalog:ReadonlyMap<PlaceId,LoadedWorldDefinition>):RestorePolicy {
  const options=validateRestore(input);return Object.freeze({version:`world-restore-v1-${createHash('sha256').update(JSON.stringify(options)).digest('hex').slice(0,24)}`,restore(checkpoint:Readonly<CharacterCheckpointV1>,elapsed:number){
   if(!Number.isFinite(elapsed)||elapsed<0)fail('restore elapsed interval');const out:CharacterCheckpointV1=structuredClone(checkpoint),s=out.survival;
   if(options.cooldowns==='elapse'){for(const cycle of [s.gcd,...Object.values(s.cooldowns)]){cycle.startAge+=elapsed;cycle.endRemaining=Math.max(0,cycle.endRemaining-elapsed);}}
@@ -142,13 +143,15 @@ export interface ConfiguredWorldOptions {pool:Pool;admission:WorldTicketRegistry
 export async function startConfiguredWorld(options:ConfiguredWorldOptions) {
  const config=validateWorldConfig(options.config),ledgerConfig=options.ledgerConfig===undefined?undefined:validateLedgerConfig(options.ledgerConfig);if(typeof options.originAllowed!=='function'||typeof options.clientIp!=='function')fail('HTTP callbacks');
  const catalog=await loadCheckedCatalog(options.assets,config),party=createConfiguredPartyPolicy(config.party,catalog),spawn=catalog.get('w1')!.publicDefinition.spawn;
- const codec=createCoreCharacterCodec({identities:['human','orc','dwarf','undead','nightelf','tauren'].flatMap(archetype=>Object.keys(CLASSES).map(classId=>({classId:classId as keyof typeof CLASSES,archetype}))),freshLocation:{...spawn.position,yaw:spawn.yaw}}),characters=new CharacterStore(options.pool,codec),gameplayCatalog=createGameplayCatalog(catalog),restore=createConfiguredRestorePolicy(config.restore,catalog);
+ const frost=catalog.get('w4')!.encounterDefinitions.get('frost');if(!frost)fail('ending Frost metadata');
+ const endingPresentation={stage:createEndingStage(catalog.get('w1')!.publicDefinition,frost)};
+ const codec=createCoreCharacterCodec({identities:['human','orc','dwarf','undead','nightelf','tauren'].flatMap(archetype=>Object.keys(CLASSES).map(classId=>({classId:classId as keyof typeof CLASSES,archetype}))),freshLocation:{...spawn.position,yaw:spawn.yaw}}),characters=new CharacterStore(options.pool,codec),gameplayCatalog=createGameplayCatalog(catalog,config.dungeons?.enabled?{dungeons:config.dungeons.tiers}:{}),restore=createConfiguredRestorePolicy(config.restore,catalog);
  // Construct/validate the concrete protocol before retaining a database ownership session.
  createGameplayProtocol(gameplayCatalog);
  const outcomes=ledgerConfig?new DurableOutcomeStore(options.pool,codec,{planOutcomePage,queryTimeoutMs:ledgerConfig.queryTimeoutMs}):undefined;
  const ownership=await acquireHostOwnership(options.pool,config.ownership.key,config.ownership);
  let host:ReturnType<typeof createActualWorldHost>|undefined;
- try{const policies:HostPolicies={...config.limits,...(ledgerConfig?{ledger:{sourceLimits:ledgerConfig.sourceLimits,drainLimits:ledgerConfig.drainLimits,recoveryLimits:ledgerConfig.recoveryLimits,recoveryIntervalMs:ledgerConfig.recoveryIntervalMs}}:{}),victimOutcome:config.victimOutcome,...(config.victimOutcomeRetryCeiling?{victimOutcomeRetryCeiling:config.victimOutcomeRetryCeiling}:{}),chat:config.chat,...(party?{party}:{}),...(config.dungeons?.enabled?{dungeons:{tiers:config.dungeons.tiers,maxPendingAwards:config.dungeons.maxPendingAwards}}:{}),persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
+ try{const policies:HostPolicies={...config.limits,endingPresentation,...(ledgerConfig?{ledger:{sourceLimits:ledgerConfig.sourceLimits,drainLimits:ledgerConfig.drainLimits,recoveryLimits:ledgerConfig.recoveryLimits,recoveryIntervalMs:ledgerConfig.recoveryIntervalMs}}:{}),victimOutcome:config.victimOutcome,...(config.victimOutcomeRetryCeiling?{victimOutcomeRetryCeiling:config.victimOutcomeRetryCeiling}:{}),chat:config.chat,...(party?{party}:{}),...(config.dungeons?.enabled?{dungeons:{tiers:config.dungeons.tiers,maxPendingAwards:config.dungeons.maxPendingAwards}}:{}),persistence:config.persistence,areaLimits:config.areaLimits,restore,offlineSeconds:(character,now)=>{if(!Number.isSafeInteger(now)||!Number.isSafeInteger(character.updatedAt)||character.updatedAt<0||now<character.updatedAt)fail('offline clock regression');return(now-character.updatedAt)/1000;},visible:createConfiguredVisibility(catalog),observationExtras:projectObservationExtras};
   host=createActualWorldHost({...(outcomes?{outcomes}:{}),...(config.dungeons?.enabled?{dungeonCompletions:new DungeonCompletionStore(options.pool)}:{}),chat:new WorldChatService(options.pool),admission:options.admission,characters,worlds:catalog,codec,gameplay:{catalog:gameplayCatalog,create:()=>createGameplayProtocol(gameplayCatalog,{verify:options.verifyObservations??true}),verifyObservations:options.verifyObservations??true},ownership,policies,originAllowed:options.originAllowed,clientIp:options.clientIp,nowMonotonicMs:()=>performance.now(),nowWallMs:Date.now});
   await host.ready();
   return {host,catalog,ownership,characters,codec,gameplayCatalog,config,ledgerConfig};

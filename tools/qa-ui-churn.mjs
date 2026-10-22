@@ -1,10 +1,10 @@
 // Real-browser idle DOM churn and live level/party rendering; no HP/combat fixtures.
-import {chromium} from 'playwright';
+import {launchBrowser} from './lib/browser.mjs';
 import {writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5192';
 const output=process.argv[2]??'tmp/qa/ui-churn.json',strict=process.argv.includes('--optimized');
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
+const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];const page=await browser.newPage({viewport:{width:1280,height:800}});page.on('pageerror',e=>errors.push(e.message));
 try{
  await page.addInitScript(relay=>{const Original=window.WebSocket;window.WebSocket=class extends Original{constructor(url,protocols){super(String(url).includes('/multiplayer')?relay:url,protocols);}};localStorage.setItem('cc.language','ko');localStorage.setItem('cc.quality','high');localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'mage',shell:0,crest:0,led:0,name:'UI Performance'}));},new URL('/multiplayer',base).href.replace(/^http/,'ws'));

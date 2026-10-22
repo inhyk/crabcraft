@@ -1,0 +1,542 @@
+{
+  "budgets": {
+    "TC_CityTower": 10000,
+    "TC_CityWall_12": 3000,
+    "TC_Keep": 120000,
+    "TC_PincerGate": 40000,
+    "TC_WardTower": 10000,
+    "TC_WardWall_12": 3000
+  },
+  "file": "public/models/world/tidecrown.glb",
+  "pieces": {
+    "TC_BridgeSpan": {
+      "anchors": {
+        "deckTop": 0.0,
+        "deckWidth": 12.4,
+        "length": 30.0,
+        "pierBottom": -14.0,
+        "plinthSlotNote": "bays sit at the span ends; neighbouring spans share a slot (8.0 x 9.2 clear)",
+        "plinthSlots": [
+          [
+            -11.0,
+            0.0,
+            -15.0
+          ],
+          [
+            -11.0,
+            0.0,
+            15.0
+          ],
+          [
+            11.0,
+            0.0,
+            -15.0
+          ],
+          [
+            11.0,
+            0.0,
+            15.0
+          ]
+        ]
+      },
+      "bbox": {
+        "max": [
+          16.05,
+          2.42,
+          15.0
+        ],
+        "min": [
+          -16.05,
+          -14.0,
+          -15.0
+        ]
+      },
+      "materials": [
+        "TC_Gold",
+        "TC_Limestone",
+        "TC_LimestoneDark"
+      ],
+      "size": [
+        32.1,
+        16.42,
+        30.0
+      ],
+      "triangles": 10112
+    },
+    "TC_CityTower": {
+      "anchors": {
+        "flagSocket": [
+          0.0,
+          51.44,
+          0.0
+        ],
+        "masonryTop": 32.44,
+        "radius": 6.0,
+        "roofApex": 47.94,
+        "roofEave": 32.94,
+        "socketRadius": 0.2,
+        "walkway": [
+          0.0,
+          29.2,
+          0.0
+        ],
+        "wallJoint": "city walls end at the tower centre; the 7.6 base flare hides their batter"
+      },
+      "bbox": {
+        "max": [
+          7.737,
+          51.44,
+          7.78
+        ],
+        "min": [
+          -7.737,
+          0.0,
+          -7.78
+        ]
+      },
+      "materials": [
+        "TC_Gold",
+        "TC_Iron",
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Slate"
+      ],
+      "size": [
+        15.474,
+        51.44,
+        15.56
+      ],
+      "triangles": 7626
+    },
+    "TC_CityWall_12": {
+      "anchors": {
+        "ends": [
+          [
+            -6.0,
+            0.0,
+            0.0
+          ],
+          [
+            6.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "length": 12.0,
+        "outerFace": "+Z",
+        "walkway": [
+          0.0,
+          21.8,
+          0.0
+        ],
+        "walkwayWidth": 4.9
+      },
+      "bbox": {
+        "max": [
+          6.0,
+          24.04,
+          4.05
+        ],
+        "min": [
+          -6.0,
+          0.0,
+          -4.05
+        ]
+      },
+      "materials": [
+        "TC_Iron",
+        "TC_Limestone",
+        "TC_LimestoneDark"
+      ],
+      "size": [
+        12.0,
+        24.04,
+        8.1
+      ],
+      "triangles": 2198
+    },
+    "TC_Keep": {
+      "anchors": {
+        "clawTipHeight": 150.0,
+        "domeTop": [
+          0.0,
+          48.0,
+          0.0
+        ],
+        "door": {
+          "centre": [
+            0.0,
+            0.0,
+            35.5
+          ],
+          "height": 10.0,
+          "width": 6.0
+        },
+        "hallRoofLine": 22.0,
+        "lantern": {
+          "centre": [
+            0.0,
+            144.5,
+            0.0
+          ],
+          "diameter": 8.0
+        },
+        "roseWindow": {
+          "centre": [
+            0.0,
+            22.2,
+            35.4
+          ],
+          "radius": 5.55
+        },
+        "spireTop": [
+          0.0,
+          140.25,
+          0.0
+        ]
+      },
+      "bbox": {
+        "max": [
+          36.546,
+          150.06,
+          38.724
+        ],
+        "min": [
+          -36.546,
+          0.0,
+          -38.724
+        ]
+      },
+      "materials": [
+        "TC_Glass",
+        "TC_Gold",
+        "TC_Iron",
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Nacre",
+        "TC_Slate",
+        "TC_Wood"
+      ],
+      "size": [
+        73.092,
+        150.06,
+        77.448
+      ],
+      "triangles": 114514
+    },
+    "TC_Lantern": {
+      "anchors": {
+        "centre": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "diameter": 8.0,
+        "radius": 4.0
+      },
+      "bbox": {
+        "max": [
+          3.804,
+          4.24,
+          4.0
+        ],
+        "min": [
+          -3.804,
+          -4.24,
+          -4.0
+        ]
+      },
+      "materials": [
+        "TC_LanternGlow"
+      ],
+      "size": [
+        7.608,
+        8.48,
+        8.0
+      ],
+      "triangles": 80
+    },
+    "TC_PincerGate": {
+      "anchors": {
+        "clawTips": [
+          [
+            -0.55,
+            46.0,
+            0.0
+          ],
+          [
+            0.55,
+            46.0,
+            0.0
+          ]
+        ],
+        "crownEmblem": [
+          0.0,
+          42.4,
+          0.0
+        ],
+        "passage": {
+          "centre": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "depth": 10.0,
+          "height": 18.0,
+          "springing": 10.5,
+          "width": 12.0
+        },
+        "portcullisBottom": 16.3,
+        "towerWalkway": 23.1,
+        "wallSides": [
+          [
+            -18.0,
+            0.0,
+            0.0
+          ],
+          [
+            18.0,
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      "bbox": {
+        "max": [
+          18.9,
+          46.564,
+          7.05
+        ],
+        "min": [
+          -18.9,
+          0.0,
+          -7.05
+        ]
+      },
+      "materials": [
+        "TC_Gold",
+        "TC_Iron",
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Wood"
+      ],
+      "size": [
+        37.8,
+        46.564,
+        14.1
+      ],
+      "triangles": 31754
+    },
+    "TC_Plinth": {
+      "anchors": {
+        "shield": [
+          0.0,
+          3.85,
+          3.5
+        ],
+        "top": [
+          0.0,
+          8.0,
+          0.0
+        ],
+        "topSize": [
+          7.0,
+          7.0
+        ]
+      },
+      "bbox": {
+        "max": [
+          4.0,
+          8.0,
+          4.0
+        ],
+        "min": [
+          -4.0,
+          0.0,
+          -4.0
+        ]
+      },
+      "materials": [
+        "TC_Gold",
+        "TC_Limestone",
+        "TC_LimestoneDark"
+      ],
+      "size": [
+        8.0,
+        8.0,
+        8.0
+      ],
+      "triangles": 2736
+    },
+    "TC_WardGate": {
+      "anchors": {
+        "passage": {
+          "centre": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "depth": 10.0,
+          "height": 9.0,
+          "springing": 5.205,
+          "width": 6.0
+        },
+        "portcullisBottom": 7.75,
+        "sides": [
+          [
+            -8.0,
+            0.0,
+            0.0
+          ],
+          [
+            8.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "walkway": [
+          0.0,
+          19.55,
+          0.0
+        ]
+      },
+      "bbox": {
+        "max": [
+          10.98,
+          32.918,
+          7.98
+        ],
+        "min": [
+          -10.98,
+          0.0,
+          -5.95
+        ]
+      },
+      "materials": [
+        "TC_Gold",
+        "TC_Iron",
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Slate"
+      ],
+      "size": [
+        21.96,
+        32.918,
+        13.93
+      ],
+      "triangles": 15164
+    },
+    "TC_WardTower": {
+      "anchors": {
+        "flagSocket": [
+          0.0,
+          78.04,
+          0.0
+        ],
+        "masonryTop": 56.04,
+        "radius": 7.0,
+        "roofApex": 74.54,
+        "roofEave": 56.54,
+        "socketRadius": 0.2,
+        "walkway": [
+          0.0,
+          52.0,
+          0.0
+        ]
+      },
+      "bbox": {
+        "max": [
+          8.98,
+          78.04,
+          8.98
+        ],
+        "min": [
+          -8.98,
+          0.0,
+          -8.98
+        ]
+      },
+      "materials": [
+        "TC_Glass",
+        "TC_Gold",
+        "TC_Iron",
+        "TC_Limestone",
+        "TC_LimestoneDark",
+        "TC_Slate"
+      ],
+      "size": [
+        17.96,
+        78.04,
+        17.96
+      ],
+      "triangles": 9922
+    },
+    "TC_WardWall_12": {
+      "anchors": {
+        "ends": [
+          [
+            -6.0,
+            0.0,
+            0.0
+          ],
+          [
+            6.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "length": 12.0,
+        "walkway": [
+          0.0,
+          13.82,
+          0.0
+        ],
+        "walkwayWidth": 2.9
+      },
+      "bbox": {
+        "max": [
+          6.0,
+          16.0,
+          2.62
+        ],
+        "min": [
+          -6.0,
+          0.0,
+          -2.62
+        ]
+      },
+      "materials": [
+        "TC_Iron",
+        "TC_Limestone",
+        "TC_LimestoneDark"
+      ],
+      "size": [
+        12.0,
+        16.0,
+        5.24
+      ],
+      "triangles": 2250
+    }
+  },
+  "units": "game units (1 = crab shell height); Y up; piece origin at the ground centre of its footprint; front +Z",
+  "uvDensity": {
+    "note": "UV units per world unit. v grows upwards (walls) and up the slope towards the apex (roofs); tile rows run round cones. Other materials use the wall density.",
+    "roof": {
+      "appliesTo": [
+        "TC_Slate"
+      ],
+      "measured": "village.glb Roof_Tower_RoundTiles / MI_RoundTiles: u 0.236 around the cone, v 0.212 up the slope (Roof_RoundTiles_6x6 0.269 / 0.240; area-weighted kit 0.230)",
+      "u": 0.236,
+      "v": 0.212
+    },
+    "wall": {
+      "appliesTo": [
+        "TC_Limestone",
+        "TC_LimestoneDark"
+      ],
+      "measured": "village.glb Wall_UnevenBrick_Straight / MI_UnevenBrick: u 0.500 along the wall, v 0.475 up (area-weighted kit: MI_Brick 0.448, MI_UnevenBrick 0.478)",
+      "u": 0.5,
+      "v": 0.475
+    }
+  }
+}

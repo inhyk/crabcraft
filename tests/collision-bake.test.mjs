@@ -59,11 +59,23 @@ test('current Dawnreach and Frostlight geometry keep distinct landmarks and boun
   assert.equal(snow.heightAt(0, 70), 5);
   assert.equal(dawn.heightAt(0, 70), 4);
   assert.equal(dawn.collision.shapes.some(s => s.kind === 0 && s.c.x === -11 && s.c.z === 53), false);
-  // Six homes and the seven rock outcrops of src/sim/world/snowGround.ts.
-  assert.equal(snowData.shapes.filter(s => s[0] === 1).length, 6 + 7);
+  // The village's 58 boxes (18 kit buildings, the gate's watchtower among them, and the chapel's bell tower; benches, the stall, the cart, two terrace tables, the forge yard's
+  // bench and weapon stand, two wagons and 14 garden fences; six woodpiles; eight door steps; snowVillageLayout.ts), the seven rock outcrops of src/sim/world/snowGround.ts,
+  // 14 from frostThroneLayout.ts (the throne dais, curtain wall, gatehouse and keep, the lean-to, its woodpile and sled, six overlook parapet runs and the ridge camp's chest)
+  // and the open fields' 18 (six fence segments of the miners' trail, the ore wagon, two crates and nine logs; snowFieldsLayout.ts).
+  assert.equal(snowData.shapes.filter(s => s[0] === 1).length, 58 + 7 + 14 + 18);
   const fountain = snowData.shapes.find(s => s[0] === 0 && s[1] === -13 && s[2] === 65);
   assert.ok(fountain);
-  assert.equal(snow.raycastSolid({x:-18,y:6,z:56},{x:-2,y:6,z:56}),null);
+  // Frostlight's own street plan (src/sim/world/snowLayout.ts): nothing solid stands on the centreline of any street, lane or road.
+  const plan = await import((await bundle('src/sim/world/snowLayout.ts', 'snow-layout')).url);
+  // A metre over the ground in steps of at most a metre, so the ray never dips into a rise.
+  for (const w of plan.FROST_WAYS) for (let k = 1; k < w.points.length; k++) {
+    const [ax, az] = w.points[k - 1], [bx, bz] = w.points[k], n = Math.ceil(Math.hypot(bx - ax, bz - az));
+    for (let i = 0; i < n; i++) {
+      const x0 = ax + (bx - ax) * i / n, z0 = az + (bz - az) * i / n, x1 = ax + (bx - ax) * (i + 1) / n, z1 = az + (bz - az) * (i + 1) / n;
+      assert.equal(snow.raycastSolid({x:x0,y:snow.heightAt(x0,z0)+1,z:z0},{x:x1,y:snow.heightAt(x1,z1)+1,z:z1}), null, `${w.id} segment ${k} is open`);
+    }
+  }
   const y = (fountain[4] + fountain[5]) / 2;
   assert.notEqual(snow.raycastSolid({x:-17,y,z:65}, {x:-9,y,z:65}), null);
   assert.equal(snow.raycastSolid({x:-17,y:fountain[5]+1,z:65}, {x:-9,y:fountain[5]+1,z:65}), null);

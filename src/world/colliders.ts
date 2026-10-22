@@ -5,6 +5,7 @@ import { Collision } from './collision';
 import { registerDressing } from './dressing';
 import { scatterFoliage } from './foliage';
 import { registerFountain } from './fountain';
+import { registerKingsRoad } from './kingsRoad';
 import { LOTS, POI_DEFS } from './layout';
 import { registerLighthouse } from './lighthouse';
 import type { Terrain } from './terrain';
@@ -19,6 +20,7 @@ export function layoutClawhaven(terrain: Terrain, quality: 'low' | 'high') {
   registerLighthouse(col);
   const wreck = layoutWreck(col);
   registerDressing(terrain, col);
+  registerKingsRoad(terrain, col);
   const foliage = scatterFoliage(terrain, col, quality);
   col.buildBlocked();
   return { col, fountainY, wreck, foliage };

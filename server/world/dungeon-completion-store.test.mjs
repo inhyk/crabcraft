@@ -190,3 +190,36 @@ test('charactersWithPendingDungeonAwards lists exactly the characters with an un
   assert.equal((await characters.getOwned(c.accountId, c.characterId)).revision, saved.revision);
   for (const bad of [['not-a-character'], [d.characterId, d.characterId]]) await assert.rejects(dungeons.charactersWithPendingDungeonAwards(bad), code('invalid'));
 });
+
+test('saveCheckpoints writes dungeon award receipts with the checkpoints of one batch in one transaction, or nothing', async () => {
+  const fresh = [];
+  for (const [i, a] of accounts.entries()) fresh.push(await characters.create(a, identity(`Batch${i}`)));
+  const [c, d, e] = fresh, ids = fresh.map(x => x.characterId);
+  const runId = randomUUID(), area = `dungeon:${runId}`;
+  const seal = await dungeons.recordDungeonCompletion(validateDungeonCompletionManifest({ kind: 'dungeon-clear-v1',
+    candidate: { run: { area, runId }, tier: 35, completedTick: 1, finalWave: [1, 2, 3].map(id => ({ area, id, life: 1 })), baseXp: 10, coins: 2 },
+    recipients: [c, d].map(x => ({ characterId: x.characterId, accountId: x.accountId })) }));
+  const awardFor = x => seal.awardIds.find(id => JSON.parse(id)[3] === x.characterId);
+  const write = (x, extra = {}) => ({ accountId: x.accountId, characterId: x.characterId, expectedRevision: x.revision,
+    checkpoint: { ...x.checkpoint, progress: { ...x.checkpoint.progress, xp: 10, coins: 2 } }, appliedGrantIds: [], ...extra });
+  const receipts = async () => (await pool.query('SELECT award_id,applied_revision::int AS r FROM world_dungeon_award_receipts WHERE award_id=ANY($1::text[]) ORDER BY award_id', [seal.awardIds])).rows;
+  // Another character's award, one award in two entries, or one stale entry fails the whole batch with nothing written.
+  for (const [bad, expected] of [
+    [[write(c, { appliedDungeonAwardIds: [awardFor(d)] }), write(e)], 'not_found'],
+    [[write(c, { appliedDungeonAwardIds: [awardFor(c)] }), write(d, { appliedDungeonAwardIds: [awardFor(c)] })], 'invalid'],
+    [[write(c, { appliedDungeonAwardIds: [awardFor(c)] }), write(d, { appliedDungeonAwardIds: [awardFor(d)] }), { ...write(e), expectedRevision: e.revision + 1 }], 'conflict'],
+  ]) {
+    await assert.rejects(characters.saveCheckpoints(bad), code(expected));
+    assert.deepEqual(await receipts(), []);
+    for (const x of fresh) assert.equal((await characters.getOwned(x.accountId, x.characterId)).revision, x.revision);
+  }
+  const saved = await characters.saveCheckpoints([write(c, { appliedDungeonAwardIds: [awardFor(c)] }), write(d, { appliedDungeonAwardIds: [awardFor(d)] }), write(e)]);
+  assert.deepEqual(saved.map(s => s.revision), fresh.map(x => x.revision + 1));
+  for (const s of saved) assert.deepEqual(await characters.getOwned(s.accountId, s.characterId), s);
+  assert.deepEqual(await receipts(), [[awardFor(c), saved[0].revision], [awardFor(d), saved[1].revision]].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([award_id, r]) => ({ award_id, r })));
+  assert.deepEqual(await dungeons.charactersWithPendingDungeonAwards(ids), new Set());
+  assert.deepEqual((await characters.loadForRecovery(c.accountId, c.characterId, [], [awardFor(c)])).dungeonAwards, [{ id: awardFor(c), appliedRevision: saved[0].revision }]);
+  // A second receipt of the same award is refused, so a retried batch can never pay it twice.
+  await assert.rejects(characters.saveCheckpoints([{ ...write(saved[0]), appliedDungeonAwardIds: [awardFor(c)] }, write(saved[2])]), code('already_applied'));
+  assert.equal((await characters.getOwned(c.accountId, c.characterId)).revision, saved[0].revision);
+});

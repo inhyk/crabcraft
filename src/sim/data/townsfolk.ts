@@ -1,5 +1,6 @@
 import type { AmbientSpawn, ClassId, WorldId, WorldQuery } from '../types.ts';
 import { immutable } from '../events.ts';
+import { FROST_TOWN_POINTS } from '../world/snowLayout.ts';
 /** Exact Game.init appearance stream: mulberry32(1337), four draws per resident. */
 export const TOWNSFOLK_SPECS:readonly {readonly race:string;readonly sex:'male'|'female';readonly classId:ClassId;readonly shell:number;readonly crest:number;readonly led:number;readonly name:string}[]=immutable([
  {race:'human',sex:'male',classId:'warrior',shell:0,crest:3,led:1,name:'Clawdia'},
@@ -14,6 +15,7 @@ export const TOWNSFOLK_SPECS:readonly {readonly race:string;readonly sex:'male'|
 export const TOWNSFOLK_POINTS:readonly(readonly[number,number])[]=immutable([[8,-6],[-7,7],[26,2],[44,2],[-22,-3],[0,-24],[-1,20],[56,1]]);
 export const STAR_RESIDENT_POINTS:readonly(readonly[number,number])[]=immutable([[-15,62],[0,61],[15,62],[-15,44],[0,36],[15,44],[0,72],[0,24]]);
 export const DAWN_TOWN_POINTS:readonly(readonly[number,number])[]=immutable([[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]]);
+/** World V and VI's frontier town (Frostlight's former grid); Frostlight's townsfolk follow its own plan, FROST_TOWN_POINTS. */
 export const SNOW_TOWN_POINTS:readonly(readonly[number,number])[]=immutable([[-16,56],[16,56],[-16,38],[16,38],[-16,74],[16,80],[16,68]]);
 /** Next 24 draws after the 32 appearance draws, before actor-radius collision resolution.
  * These are immutable world-layout values, not draws from the mutable gameplay RNG.
@@ -30,7 +32,7 @@ export const TOWNSFOLK_INITIAL:readonly {readonly x:number;readonly z:number;rea
 ]);
 /** Stable ambient slots are distinct from hostile enemy eN/wire identities. */
 export function createTownsfolk(world:WorldId,query:WorldQuery):readonly AmbientSpawn[] {
- const coordinates=world==='w1'?TOWNSFOLK_POINTS:world==='w2'?STAR_RESIDENT_POINTS:world==='w3'?DAWN_TOWN_POINTS:SNOW_TOWN_POINTS;
+ const coordinates=world==='w1'?TOWNSFOLK_POINTS:world==='w2'?STAR_RESIDENT_POINTS:world==='w3'?DAWN_TOWN_POINTS:world==='w4'?FROST_TOWN_POINTS:SNOW_TOWN_POINTS;
  const at=(x:number,z:number)=>({x,y:query.heightAt(x,z),z}),points=coordinates.map(([x,z])=>at(x,z));
  const wanderRadius=world==='w1'?5:world==='w2'?2.5:world==='w3'?1.8:1.5;
  const route=world==='w2'?{points:[...points,...[[-6,49],[-6,61],[6,49],[6,61]].map(([x,z])=>at(x,z))],radiusPadding:.15,step:.5}:undefined;

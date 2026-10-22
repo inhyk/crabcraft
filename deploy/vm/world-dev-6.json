@@ -194,6 +194,11 @@
       }
     }
   },
+  "dungeons": {
+    "enabled": true,
+    "tiers": [35, 50, 75, 150, 200, 250, 350, 450, 550, 650],
+    "maxPendingAwards": 8
+  },
   "characters": {
     "maxCharactersPerAccount": 3
   }

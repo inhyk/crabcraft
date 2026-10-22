@@ -4,6 +4,7 @@ import type { SnowSpray } from './snowSpray';
 import type { Unit } from './unit';
 import { addPatch } from '../world/materials';
 import { SNOW_SURFACE_GLSL } from './snowTerrain';
+import { placeholderFarMap, SNOW_FAR_SHADOW_GLSL, type SnowFarShadow } from './snowFarShadow';
 
 /*
  * The Frostlight snow material: the most important pixels in the world. Ports SNOWFLOW's snow.fragment.wgsl and
@@ -28,6 +29,8 @@ export interface SnowSurfaceOptions {
   relief?: number;
   glints?: number;
   subsurface?: number;
+  /** The island-wide sun shadow the snow falls back to past the live shadow box. */
+  far?: SnowFarShadow;
 }
 
 /** Tileable grain: rounded crystals with dark crevices (SNOWFLOW detailBake). RG normal, B cavity. */
@@ -84,6 +87,8 @@ varying vec4 vSnowInfo;
 varying vec4 vSnowWind;
 float snowWrapAmt=.32;
 float snowSunVis=1.;
+// Where the far shadow map is read (only past the live map's edge): this pixel and its landform normal.
+vec3 snowFarW=vec3(0.),snowFarN=vec3(0.,1.,0.);
 vec3 snowUnpack(vec2 rg){vec2 xy=rg*2.-1.;return vec3(xy,sqrt(max(0.,1.-dot(xy,xy))));}
 // Reoriented normal mapping: the detail keeps the base's tilt.
 vec3 snowRNM(vec3 base,vec3 detail){vec3 t=base+vec3(0.,0.,1.),u=detail*vec3(-1.,-1.,1.);return normalize(t*dot(t,u)-u*t.z);}
@@ -160,22 +165,29 @@ void RE_Direct_Snow(const in IncidentLight directLight,const in vec3 geometryPos
  */
 const SNOW_SHADOW = /* glsl */ `
 #if defined( USE_SHADOWMAP ) && defined( SHADOWMAP_TYPE_PCF ) && NUM_DIR_LIGHT_SHADOWS > 0
+${SNOW_FAR_SHADOW_GLSL}
 float snowGetShadow(sampler2DShadow shadowMap,vec2 shadowMapSize,float shadowIntensity,float shadowBias,float shadowRadius,vec4 shadowCoord){
   shadowCoord.xyz/=shadowCoord.w;shadowCoord.z+=shadowBias;
-  if(shadowCoord.x<0.||shadowCoord.x>1.||shadowCoord.y<0.||shadowCoord.y>1.||shadowCoord.z>1.)return 1.;
-  float radius=2.6/shadowMapSize.x,phi=interleavedGradientNoise(gl_FragCoord.xy)*PI2,s=0.;
-  #ifdef SNOW_LOW
-  const int TAPS=5;
-  #else
-  const int TAPS=10;
-  #endif
-  for(int i=0;i<TAPS;i++)s+=texture(shadowMap,vec3(shadowCoord.xy+vogelDiskSample(i,TAPS,phi)*radius,shadowCoord.z));
-  // Fade out toward the shadow box's edge, so a wide view never shows where the map ends as a straight line.
+  // How far inside the live map this pixel is: past its edge (or depth) the far map takes over, and toward the
+  // edge the two are blended, so a wide view never shows where the live map ends.
   vec2 sb=min(shadowCoord.xy,1.-shadowCoord.xy);
-  return mix(1.,s/float(TAPS),shadowIntensity*smoothstep(0.,.08,min(sb.x,sb.y)));
+  float live=shadowCoord.z>1.?0.:smoothstep(0.,.08,min(sb.x,sb.y)),s=1.;
+  if(live>0.){
+    float radius=2.6/shadowMapSize.x,phi=interleavedGradientNoise(gl_FragCoord.xy)*PI2;s=0.;
+    #ifdef SNOW_LOW
+    const int TAPS=5;
+    #else
+    const int TAPS=10;
+    #endif
+    for(int i=0;i<TAPS;i++)s+=texture(shadowMap,vec3(shadowCoord.xy+vogelDiskSample(i,TAPS,phi)*radius,shadowCoord.z));
+    s/=float(TAPS);
+  }
+  if(live<1.)s=mix(snowFarShadowAt(snowFarW,snowFarN),s,live);
+  return mix(1.,s,shadowIntensity);
 }
 #else
 #define snowGetShadow getShadow
+float snowFarShadowAt(vec3 w,vec3 n){return 1.;}
 #endif
 `;
 
@@ -233,6 +245,7 @@ const SNOW_STATE = /* glsl */ `
   }
   diffuseColor.rgb=sAlb;
   snowWrapAmt=mix(.32,.08,max(sComp*.6,sRock));
+  snowFarW=sW;snowFarN=sN0;
 `;
 
 const SNOW_NORMAL = /* glsl */ `
@@ -297,6 +310,7 @@ export function applySnowSurface(material: THREE.MeshStandardMaterial, deform: S
     snowGlintStrength: { value: opts.glints ?? 2.2 },
     snowScatterStrength: { value: opts.subsurface ?? 0.42 },
     snowGrain: { value: grain },
+    ...(opts.far?.uniforms ?? { snowFarMap: { value: placeholderFarMap() }, snowFarMatrix: { value: new THREE.Matrix4() }, snowFarInfo: { value: new THREE.Vector4() } }),
   };
   const tmp = new THREE.Vector3();
   material.userData.snowSurface = uniforms;

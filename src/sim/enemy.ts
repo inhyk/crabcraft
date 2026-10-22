@@ -1,7 +1,7 @@
 import type { ActionId, ActionRequest, AreaServices, DebugValue, EnemySpawn, EntityRef, HitPlan, SimUnit, Vec3 } from './types.ts';
 import { actionRequest, actionHitDelay } from './data/actions.ts';
 import { immutable } from './events.ts';
-import { worldChapter, populationRadius, validatePopulation, angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
+import { chapterWorld, worldChapter, populationRadius, validatePopulation, angleDiff, turnToward as turn, distXZ as distance } from './math.ts';
 import { gapTo as gap, moveTo, speedMul, lineOfSight as unitLineOfSight } from './unit.ts';
 export { angleDiff, turn, distance, gap, speedMul };
 import { dungeonEnemyStats } from './data/dungeon-enemies.ts';
@@ -39,7 +39,7 @@ export class Enemy {
   private rand(a:number,b:number){return a+(b-a)*this.services.random.next();}
   private scaledStats():EnemyStats{
     if(this.spawn.role==='dungeon')return dungeonEnemyStats(this.spawn.dungeonTier,this.dungeonCaptain);
-    const s=this.services,players=s.players(),partyLevel=Math.max(1,...players.map(p=>p.level)),chapter=worldChapter(s.world);
+    const s=this.services,players=s.players(),partyLevel=Math.max(1,...players.map(p=>p.level)),chapter=worldChapter(chapterWorld(s.world));
     const rustCleared=players.some(p=>s.player(p.ref)?.state.flags.rustCleared===true);
     return enemyStats(this.kind,s.policy.enemyLevel(this.spawn,{partyLevel,rustCleared,chapter}),chapter,this.spawn.role);
   }
@@ -60,7 +60,7 @@ export class Enemy {
   update(dt:number):void{
     const s=this.services,u=this.actor,now=s.time,p=s.targetFor(this.unit);
     if(this.isEcho&&s.world!=='w2')return;
-    const dynamic=!this.isAdd&&!this.isDungeon&&s.policy.populationRadius!==undefined,clearance=this.isDungeon?0:enemyRespawnClearance(this.kind,worldChapter(s.world),this.spawn.role),radius=dynamic?populationRadius(s.policy.populationRadius!(this.spawn)):clearance;
+    const dynamic=!this.isAdd&&!this.isDungeon&&s.policy.populationRadius!==undefined,clearance=this.isDungeon?0:enemyRespawnClearance(this.kind,worldChapter(chapterWorld(s.world)),this.spawn.role),radius=dynamic?populationRadius(s.policy.populationRadius!(this.spawn)):clearance;
     const players=s.players().filter(p=>p.alive&&!p.hidden),density=players.filter(p=>distance(p,this.spawn.home)<radius).length,clear=players.every(p=>distance(p,this.spawn.home)>=clearance);
     if(!this.isAdd&&!this.isEcho&&dynamic){const desired=validatePopulation(s.policy.enemyPopulation(this.spawn,density)).desired;if(this.state==='gone'){if(desired&&clear)this.respawnAt(this.spawn.home.x,this.spawn.home.z);return;}if(this.state==='idle'&&!desired&&clear&&u.hp>=u.maxHp&&now-u.lastCombat>=5){this.despawn();return;}}
     if(this.state==='gone')return;

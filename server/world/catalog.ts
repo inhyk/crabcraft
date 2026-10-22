@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { WIRE_SCHEMA_REVISION } from './gameplay/protocol.ts';
 import { createHash } from 'node:crypto';
 import { loadBakedWorld, type BakedCollision, type BakedWorld } from '../../src/sim/world/baked.ts';
 import { realActionData } from '../../src/sim/data/actions.ts';
@@ -16,6 +17,7 @@ import { motionData } from '../../src/sim/data/pose.ts';
 import { PERSONAL_FLAG_IDS } from '../../src/sim/persistence.ts';
 import { RACES } from '../../src/data/races.ts';
 import type { GameplayCatalog } from './gameplay/protocol.ts';
+import { dungeonFor, type DungeonTier } from '../../src/sim/data/dungeons.ts';
 
 export const PUBLIC_WORLDS = Object.freeze(['w1', 'w2', 'w3', 'w4'] as const);
 export const OPTIONAL_WORLDS = Object.freeze(['w5', 'w6'] as const);
@@ -92,12 +94,19 @@ export async function loadWorldCatalog(options: WorldCatalogOptions): Promise<Re
   return worlds;
 }
 
-/** Public, non-secret decoding catalog; no action samples or character/account data. */
-export function createGameplayCatalog(worlds: ReadonlyMap<WorldId, LoadedWorldDefinition>): GameplayCatalog {
+/**
+ * Public, non-secret decoding catalog; no action samples or character/account data.
+ * options.dungeons: the tiers the host runs (its dungeon policy), advertised so the browser can offer them.
+ */
+export function createGameplayCatalog(worlds: ReadonlyMap<WorldId, LoadedWorldDefinition>, options: { dungeons?: readonly DungeonTier[] } = {}): GameplayCatalog {
+  const tiers = options.dungeons ? [...options.dungeons].sort((a, b) => a - b) : undefined;
+  if (tiers && (!tiers.length || new Set(tiers).size !== tiers.length || tiers.some(tier => !dungeonFor(tier) || !worlds.has(`w${dungeonFor(tier)!.chapter}` as WorldId)))) throw new Error('invalid catalog dungeon tiers');
   const definitions = [...worlds.values()].flatMap(w => [w.publicDefinition, ...w.encounterDefinitions.values()]);
   const unique = (values: readonly string[]) => Object.freeze([...new Set(values)].sort());
   const appearanceLimits = Object.fromEntries(Object.entries(RACES).map(([race, spec]) => [race, Object.freeze({ shell: spec.shellColors.length, crest: spec.crestStyles.length, led: spec.ledColors.length })]));
   const fields = {
+    wireSchemaRevision: WIRE_SCHEMA_REVISION,
+    ...(tiers ? { dungeons: Object.freeze(tiers) } : {}),
     poseProviderVersion: realActionData.version,
     archetypes: unique([...Object.keys(motionData.archetypes), ...definitions.flatMap(d => d.bosses.map(b => `boss-${b.profile}`))]),
     actions: unique(Object.keys(motionData.clips)), abilities: unique(Object.values(CLASSES).flatMap(c => c.abilities.map(a => a.id))),
