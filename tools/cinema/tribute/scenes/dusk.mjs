@@ -685,9 +685,9 @@ const tower = {
     // Low among the rubble, the tower over it; craning up the front as the giant climbs.
     keys: [
       { t: 0, p: { g: [-47, 1.3, 5] }, l: CP(-3, 21, 26), fov: 50 },
-      { t: 1.0, p: { g: [-46.6, 1.6, 4.4] }, l: CP(-3, 22, 26), fov: 49 },
-      { t: 2.6, p: { g: [-45.8, 3.6, 3.4] }, l: CP(-3.5, 25.5, 26), fov: 46 },
-      { t: 4.5, p: { g: [-44, 9, 1.5] }, l: CP(-4, 33, 26), fov: 42 },
+      { t: 1.0, p: { g: [-46.6, 1.6, 4.4] }, l: CP(-3, 21.5, 26), fov: 44 },
+      { t: 2.6, p: { g: [-45.8, 3.6, 3.4] }, l: CP(-3.2, 24, 26), fov: 40 },
+      { t: 4.5, p: { g: [-44, 9, 1.5] }, l: CP(-3.6, 31, 26), fov: 38 },
     ],
     ease: 'sine',
   },
@@ -697,6 +697,11 @@ const tower = {
     ...WALL_FIRES(-6),
     { t: -6, kind: 'dusk-climb', actor: 'g', limbs: CLIMB_LIMBS, ...CLIMB_POSE },
     ...GIANT_FX(-6),
+    // Flat on the lit front it went dark: a pale key close over its back (falling off before the stone)
+    // and cold edges down both sides.
+    { t: -6, kind: 'light', at: { a: 'g', body: true, o: [0.8, 3.2, 0.6] }, color: '#ffe2b0', intensity: 90, distance: 5.5, flicker: 0.12 },
+    { t: -6, kind: 'light', at: { a: 'g', body: true, o: [-2.8, 1.8, 2.2] }, color: '#a8b8ff', intensity: 45, distance: 4 },
+    { t: -6, kind: 'light', at: { a: 'g', body: true, o: [2.8, 1.8, 2.2] }, color: '#a8b8ff', intensity: 45, distance: 4 },
     // Out of the white burn: a short warm haze that clears off the tower.
     { t: 0, kind: 'fade', color: '#ffe2b8', curve: [[0, 0.7], [0.08, 0.3], [0.18, 0]] },
     // 137.0: the fireball comes in from the left and strikes the belfry at 137.15.
