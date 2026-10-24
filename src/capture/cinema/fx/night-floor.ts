@@ -12,7 +12,10 @@
 //                   litter (leaves in the tile, 120), size (clod size, 1) }: lumpy earth clods and small stones
 //                   seated in the ground, a bumpy cracked soil, sparse crumpled and broken leaves,
 //                 blade: 'tuft' (off unless given): the grass grows in tufts of tapered, curved blades of mixed
-//                   width and height fanning out from their root }
+//                   width and height fanning out from their root,
+//                 gust (off unless given): { from: [x, z], t, amp (0.25), decay (1.1 s), hz (1.4) }: a blast's
+//                   shock reaching the grass at shot second t: every blade is thrown away from `from` (amp:
+//                   tip travel per unit of blade height) and rocks back and forth as the push dies away }
 import * as THREE from 'three';
 import { mulberry, num, registerEffect, type Effect, type FxContext } from '../fx';
 import type { FxCue } from '../types';
@@ -362,6 +365,9 @@ function tuftBlade(width: number): THREE.BufferGeometry {
 class Floor implements Effect {
   private group = new THREE.Group();
   private uTime = { value: 0 };
+  /** The gust's world direction (x, z) and its push now (see `gust`). */
+  private uGust = { value: new THREE.Vector3() };
+  private gust: { t: number; amp: number; decay: number; hz: number } | null = null;
   private mats: THREE.Material[] = [];
   private geos: THREE.BufferGeometry[] = [];
   private tex: THREE.Texture;
@@ -434,10 +440,18 @@ class Floor implements Effect {
     const grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
     const uTime = this.uTime;
     const wind = num(cue.wind, 0.06);
+    const uGust = this.uGust;
+    const g = cue.gust as { from?: [number, number]; t?: number; amp?: number; decay?: number; hz?: number } | undefined;
+    if (g?.from) {
+      const dir = new THREE.Vector2((x0 + x1) / 2 - g.from[0], (z0 + z1) / 2 - g.from[1]).normalize();
+      uGust.value.set(dir.x, dir.y, 0);
+      this.gust = { t: num(g.t, 0), amp: num(g.amp, 0.25), decay: num(g.decay, 1.1), hz: num(g.hz, 1.4) };
+    }
     grassMat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = uTime;
+      sh.uniforms.uGust = uGust;
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;')
+        .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uGust;')
         .replace(
           '#include <begin_vertex>',
           `#include <begin_vertex>
@@ -445,7 +459,13 @@ class Floor implements Effect {
           float ph = ip.x * 0.37 + ip.z * 0.23;
           float hh = position.y * position.y;
           transformed.x += ${wind.toFixed(4)} * hh * (sin(uTime * 1.6 + ph) + 0.45 * sin(uTime * 3.7 + ph * 1.9));
-          transformed.z += ${(wind * 0.5).toFixed(4)} * hh * sin(uTime * 2.3 + ph * 1.3);`,
+          transformed.z += ${(wind * 0.5).toFixed(4)} * hh * sin(uTime * 2.3 + ph * 1.3);
+          if (uGust.z != 0.0) {
+            // The push is along a world direction: take it into the blade's own (scaled, turned) frame.
+            mat3 im = mat3(instanceMatrix);
+            vec3 gw = vec3(uGust.x, 0.0, uGust.y) * uGust.z * hh * length(im[1]) * (0.75 + 0.5 * sin(ph * 3.1));
+            transformed += inverse(im) * gw;
+          }`,
         );
     };
     const grass = new THREE.InstancedMesh(blade, grassMat, count);
@@ -559,6 +579,12 @@ class Floor implements Effect {
 
   update(ctx: FxContext): void {
     this.uTime.value = ctx.t;
+    const g = this.gust;
+    if (g) {
+      // Thrown over in a tenth of a second, then a damped rocking.
+      const age = ctx.t - g.t;
+      this.uGust.value.z = age <= 0 ? 0 : g.amp * Math.min(1, age / 0.1) * Math.exp(-age / g.decay) * Math.cos(2 * Math.PI * g.hz * Math.max(0, age - 0.1));
+    }
   }
 
   dispose(): void {
