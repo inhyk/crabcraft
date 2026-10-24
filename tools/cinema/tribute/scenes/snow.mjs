@@ -186,6 +186,25 @@ function handheld(cam, amp) {
   };
 }
 
+/**
+ * Camera keys held at least `clear(t)` units over the snow under the lens (smoothly). The face's frames measure `up`
+ * from the ground under the dwarf, and the bank east of the road rises 0.6 a unit, so the close-ups sank the lens up
+ * to 1.2 units into it: the terrain is culled from below, and its far edge read as a stray band across the snow.
+ */
+function overGround(cam, clear) {
+  return {
+    ...cam,
+    keys: cam.keys.map((key) => {
+      const c = clear(key.t);
+      const k = c;
+      const floor = ground(key.p[0], key.p[2]) + c;
+      const y = key.p[1];
+      const h = Math.max(k - Math.abs(y - floor), 0) / k;
+      return { ...key, p: [key.p[0], +(Math.max(y, floor) + (h * h * k) / 4).toFixed(3), key.p[2]] };
+    }),
+  };
+}
+
 // Both squared to the slope, a little sunk into the powder.
 const cast2 = (dwarfAt, beastAt, yaw) => [
   { id: 'dwarf', spec: DWARF, at: dwarfAt, yaw, align: 0.8, sink: 0.03 },
@@ -195,6 +214,18 @@ const HIDE = ['mira-ice-prison'];
 // The last north-road lamp stood where the opening's lens passes. Move the complete lamp west,
 // for both opening views, while leaving the game world's placement untouched.
 const LAMP_CLEARANCE = { t: -3, kind: 'snow-lamp-offset', at: [6.078627274048131, -18.125775308568286], offset: [-10, 0] };
+// The aurora ridge's ring of standing stones (src/game/frostThroneLayout.ts, RIDGE) stands across the climb: its three
+// east stones sit on the walk, so they go under the snow for the opening (the west three still line the road), and
+// the observer's armillary and chest step east out of the beast's reach.
+const WALK_CLEARANCE = {
+  t: -3,
+  kind: 'snow-props',
+  moves: [
+    ...[[8.65, -29.83], [9.6, -34], [8.65, -38.17]].map((at) => ({ at, by: 'sink', radius: 2.3 })),
+    { at: [13.2, -30.4], by: [1.6, -0.4], radius: 1.3 },
+    { at: [15.1, -33.4], by: [1.4, 0], radius: 0.9 },
+  ],
+};
 
 // The blunderbuss (src/capture/cinema/fx/snow-gun.ts) in his right claw in place of the sword: slung low at
 // his side, then on 52.7 s a dip and a swing up onto his shoulder, overshooting and settling by 53.4 s.
@@ -255,7 +286,7 @@ const face = {
     },
   },
   cam: {
-    ...handheld(
+    ...overGround(handheld(
       move([
         // Out of the white onto the fur itself: the snow-caked moustache under his right eye, a hand's breadth
         // from the lens, then up and back to the original's close-up of his face.
@@ -288,7 +319,7 @@ const face = {
       ]),
       // Hand-held from the shoulder shot on, looser once they climb away into the storm.
       (t) => (t < 9 ? 0 : t < 10 ? (t - 9) * 0.012 : t < S(57.2) ? 0.012 : Math.min(0.035, 0.012 + (t - S(57.2)) * 0.046)),
-    ),
+    ), (t) => 0.02 + 0.28 * smooth01((t - 1.2) / 1.8)),
     focus: 'dwarf',
     range: 2.5,
   },
@@ -298,10 +329,12 @@ const face = {
     { t: S(59.1), kind: 'snow-powder', at: W(-4.5, 0.2, 3.4, S(59.1)), count: 40, flakes: 70, spread: 4.5, rise: 1.4, size: 1.1, life: 1.2 },
     // The spindrift over the lens thinned while it is a hand's breadth from the fur, back as he turns; the gust.
     ...blizzard({ wind: [0.65, -2.2, 6.9] }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.035], [2.6, 0.035], [4.6, 0.12], [S(59.1), 0.12], [S(59.3), 0.38], [S(59.7), 0.2], [S(60.3), 0.12]] } : c)),
-    // The storm swallows the valley and the city while he stares into it, and lifts off the city at 58.5 s.
-    { t: -3, kind: 'snow-fog', color: '#dde2ec', density: [[0, 0.014], [3.6, 0.02], [5.2, 0.04], [8.6, 0.05], [S(57.9), 0.05], [S(58.3), 0.032], [S(58.7), 0.021], [S(59.5), 0.015], [S(61.0), 0.012]] },
+    // The storm swallows the valley and the city while he stares into it (the road below him too, while the lens
+    // looks down the bank at him), and lifts off the city at 58.5 s.
+    { t: -3, kind: 'snow-fog', color: '#dde2ec', density: [[0, 0.014], [3.6, 0.03], [5.0, 0.075], [7.6, 0.075], [9.2, 0.05], [S(57.9), 0.05], [S(58.3), 0.032], [S(58.7), 0.021], [S(59.5), 0.015], [S(61.0), 0.012]] },
     CITY,
     LAMP_CLEARANCE,
+    WALK_CLEARANCE,
     // Out of the white as late as the original, which is clear at 41.2 s.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.5, 0.85], [1.0, 0.55], [1.45, 0.2], [1.75, 0]] },
     // The LEDs dimmed while the lens is on the moustache, so the fur reads before the glare.
@@ -371,6 +404,7 @@ const wide = {
     { t: -3, kind: 'snow-fog', color: '#d6dbe7', density: [[0, 0.016], [5.4, 0.017], [6.6, 0.034], [7.7, 0.038]] },
     CITY,
     LAMP_CLEARANCE,
+    WALK_CLEARANCE,
     // The fir the camera draws back past, at the right from 64 s.
     { t: -3, kind: 'snow-pines', trees: [WB(16.8, 10.3, 0), WB(26, 14, 0)].map((p, i) => [+p[0].toFixed(2), +p[2].toFixed(2), [0.85, 1.0][i]]) },
     { t: 6.1, kind: 'snow-leaves', count: 200, box: [12, 7, 12], drift: [-2.5, -1.2, 3.5], size: 0.09, near: 1.4, color: '#a2482a', color2: '#c98a3c', fadeIn: 0.6 },
