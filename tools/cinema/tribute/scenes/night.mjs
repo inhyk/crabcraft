@@ -1,9 +1,10 @@
 // Scene 'night' of the tribute (see ../timeline.mjs for the song ranges it fills).
 //
 // night-elf (68.7 to 93.0): out of white with leaves into the Moonpool Grove at night, graded violet;
-// the night elf alert among the ferns, a spin and a dash, a long tracking run through the pines,
-// her change in a violet burst, a run along the headland cliff and a leap across the moon, then a
-// cyan whoosh into darkness.
+// the night elf alert among the ferns, a spin and a dash, a long tracking run through the pines
+// (elf-actions.mjs turns most of it into her breakdance moves), then one take from her change in a pink
+// burst, carried on at a run, along the headland to its cliff and a leap across the moon into the sea,
+// then a cyan whoosh into darkness.
 // night-undead (93.0 to 111.0): Starhaven's Fallen Star Ruins, graded grave green, in one take like the
 // original's: the undead's claw stamps down and a molten blight spreads out of the step, the lens sweeps
 // low round it, climbs his leg to his face and drops to look up at him channelling while boulders climb
@@ -14,13 +15,12 @@
 // The run through the pines and the camera beside it were planned off-line from the forest's tree
 // collision circles (clear of every trunk); the leap's lifts come from the headland's height field.
 import { ELF, UNDEAD } from '../cast.mjs';
+import { DIVE_SEAM } from './elf-actions.mjs';
 
 // Cut points (song seconds).
 const ELF_IN = 68.7;
 const ELF_RUN = 74.6;
 const ELF_CHANGE = 88.0;
-const ELF_LEDGE = 89.0;
-const ELF_LEAP = 90.0;
 const ELF_WHOOSH = 91.75;
 const UNDEAD_IN = 93.0;
 const UNDEAD_OUT = 111.0;
@@ -132,7 +132,6 @@ const runPath = [
   const [x, z] = runAt(t);
   return { t, x, z, lift: liftAt(t) };
 });
-const RUN_END = runAt(RUN_LEN);
 /**
  * The camera's lane, 7 units west of her smoothed line, and the pines that stood on it (centres,
  * from the forest scatter): dropped for the shot so trunks pass beside the lens, never across it.
@@ -208,12 +207,12 @@ const PUSH_CLEAR = {
 /** Grass blades right at the lens (they cross the frame as pale bars at this height). */
 const PUSH_GRASS = { ...PUSH_CLEAR, skip: '^$', cut: PUSH_CLEAR.cut.filter((_, i) => i % 4 === 0).map(([x, z]) => [x, z, 1.3]) };
 
-// The headland's east cliff over the sea: the beast runs up the edge (D), springs off it at 89.5 s as
-// in the original, crosses the moon and dives into the sea on the original's loudest splash (91.64 s).
-const LEDGE_FROM = [165.9, -160.4];
+// The headland's east cliff over the sea: the change, the beast's run up to the edge, its spring off it
+// at 89.5 s as in the original, across the moon and down into the sea on the original's loudest
+// splash (91.64 s), all one take (night-elf-dive).
 /** The edge it springs from (ground height measured), and where it hits the water (2-3 deep). */
 const TAKEOFF = [169.2, 23.73, -155.8];
-const SPRING = ELF_LEDGE + 0.5;
+const SPRING = 89.5;
 const DIVE = 91.64;
 const SPLASH = [176.0, 0, -157.0];
 /** The flight: 26 units/s up, gravity (about 3.5 g) that lands it in the sea on the dive's frame. */
@@ -227,13 +226,98 @@ function flyAt(song, dy = 0) {
   return [TAKEOFF[0] + FLY_V[0] * s, TAKEOFF[1] + FLY_V[1] * s - 0.5 * FLY_G * s * s + dy, TAKEOFF[2] + FLY_V[2] * s];
 }
 const APEX = flyAt(SPRING + FLY_UP / FLY_G);
-/** The leap's camera, over the sea south-east of the cliff; the moon sits just above the apex from it. */
-const LEAP_CAM = [185.0, 27.0, -166.0];
-const MOON_DIR = [APEX[0] - LEAP_CAM[0], APEX[1] + 1.2 - LEAP_CAM[1], APEX[2] - LEAP_CAM[2]];
 const fly = (t) => ({ kind: 'night-fly', t, actor: 'beast', from: TAKEOFF, vel: FLY_V, g: FLY_G, pitch: 0.7 });
 /** The beast: the game's scavenger rig re-dressed sleek black-violet, long and low, violet eyes. */
 const beast = { id: 'beast', enemy: 'scavenger', scale: 1.5 };
 const SHADE = { kind: 'night-shade', t: -3, actor: 'beast', body: '#150c24', glow: '#b45cff', eyes: '#d890ff', stretch: [1, 0.8, 1.3] };
+
+// The dive take (shot seconds from ELF_CHANGE). The 720 shot ends with her running on and springing,
+// the pink burst already lit (DIVE_SEAM): the take picks her up at the top of that spring on the
+// headland, carried on at the same speed, and the beast comes out of the burst still travelling,
+// lands, runs up the edge along its flight line and springs off it at SPRING.
+/** The run's line: straight into the flight's heading. */
+const DIVE_DIR = (() => {
+  const h = Math.hypot(FLY_V[0], FLY_V[2]);
+  return [FLY_V[0] / h, FLY_V[2] / h];
+})();
+/** To the run's right: south, toward the drop, the lens's side. */
+const DIVE_SIDE = [DIVE_DIR[1], -DIVE_DIR[0]];
+/** Her speed and lift at the top of the spring (the seam with the 720 shot). */
+const SEAM_V = DIVE_SEAM.v;
+const SEAM_LIFT = DIVE_SEAM.lift;
+/** The hop out of the burst lands at HOP; the beast then picks up to RUN_V by HOP + 0.5. */
+const HOP = 0.3;
+const RUN_V = 11.5;
+const RUN_ACC = (RUN_V - SEAM_V) / 0.5;
+const TAKE_SPRING = SPRING - ELF_CHANGE;
+/** Distance along the line at take second t. */
+function diveS(t) {
+  if (t <= HOP) return SEAM_V * t;
+  const u = Math.min(t - HOP, 0.5);
+  return SEAM_V * HOP + SEAM_V * u + 0.5 * RUN_ACC * u * u + RUN_V * Math.max(0, t - HOP - 0.5);
+}
+const DIVE_FROM = [TAKEOFF[0] - DIVE_DIR[0] * diveS(TAKE_SPRING), TAKEOFF[2] - DIVE_DIR[1] * diveS(TAKE_SPRING)];
+/** Ground point of the run at take second t (to the takeoff), and its lift. */
+const diveAt = (t) => {
+  const s = diveS(Math.min(t, TAKE_SPRING));
+  return [DIVE_FROM[0] + DIVE_DIR[0] * s, DIVE_FROM[1] + DIVE_DIR[1] * s];
+};
+const diveLift = (t) => (t < HOP ? SEAM_LIFT * (1 - (t / HOP) ** 2) : 0);
+/** One path for both of them (she is hidden as the beast takes over), keyed every 1/48 s. */
+const divePath = Array.from({ length: Math.round(TAKE_SPRING * 48) + 1 }, (_, i) => {
+  const t = i / 48;
+  const [x, z] = diveAt(t);
+  return { t, x, z, lift: diveLift(t) };
+});
+/** The plateau's height along the run (flat: 23.7 to 24.1). */
+const PLATEAU = 23.9;
+/**
+ * The camera: low beside the run on its sea side, trucking with it; at the edge it sails on out over
+ * the drop and rises so the beast crosses the moon at the apex, then drops faster than it does, so the
+ * beast falls past the moon down toward the lens and hits the sea just in front of it.
+ * Anchors [t, x, y, z]; keys are taken from them on an even 0.25 s beat (the spline is uniform per key).
+ */
+const DIVE_CAM = [
+  ...[0, 0.5, 1.0, TAKE_SPRING].map((t) => {
+    const [x, z] = diveAt(t);
+    const k = t / TAKE_SPRING;
+    const side = 7.6 - 1.2 * k;
+    const lead = 1.6 - 0.8 * k;
+    return [t, x + DIVE_SIDE[0] * side + DIVE_DIR[0] * lead, PLATEAU + 1.0 + 1.0 * k * k, z + DIVE_SIDE[1] * side + DIVE_DIR[1] * lead];
+  }),
+  [2.25, 171.6, 27.6, -165.2],
+  [2.75, 174.5, 17.0, -167.5],
+  [3.25, 177.0, 8.0, -167.0],
+  [DIVE - ELF_CHANGE, 178.4, 5.6, -165.8],
+  [ELF_WHOOSH - ELF_CHANGE, 178.7, 5.2, -165.6],
+];
+function diveCamAt(t) {
+  let i = 1;
+  while (i < DIVE_CAM.length - 1 && t > DIVE_CAM[i][0]) i++;
+  const [a, b] = [DIVE_CAM[i - 1], DIVE_CAM[i]];
+  const k = Math.min(1, Math.max(0, (t - a[0]) / (b[0] - a[0])));
+  return [1, 2, 3].map((j) => a[j] + (b[j] - a[j]) * k);
+}
+/** Where the lens looks: her, then the beast on the ground, its flight, then the water it hits. */
+function diveLook(t) {
+  if (t <= TAKE_SPRING) {
+    const [x, z] = diveAt(t);
+    return [x, PLATEAU + 0.7 + diveLift(t), z];
+  }
+  if (t < DIVE - ELF_CHANGE - 0.1) return flyAt(ELF_CHANGE + t, -0.6);
+  return [SPLASH[0], 0.8, SPLASH[2]];
+}
+const DIVE_KEYS = Array.from({ length: Math.round((ELF_WHOOSH - ELF_CHANGE) / 0.25) + 1 }, (_, i) => {
+  const t = Math.min(i * 0.25, ELF_WHOOSH - ELF_CHANGE);
+  const air = t > TAKE_SPRING ? Math.min(1, (t - TAKE_SPRING) / 0.75) : 0;
+  return { t, p: diveCamAt(t), l: diveLook(t), fov: 42 - 2 * air + 4 * Math.max(0, (t - 2.6) / 1.15) };
+});
+/** The moon sits just behind the apex from where the lens is then. */
+const APEX_T = SPRING + FLY_UP / FLY_G - ELF_CHANGE;
+const MOON_DIR = (() => {
+  const c = diveCamAt(APEX_T);
+  return [APEX[0] - c[0], APEX[1] + 1.4 - c[1], APEX[2] - c[2]];
+})();
 
 const elf = { id: 'elf', spec: ELF };
 
@@ -364,114 +448,50 @@ const elfShots = [
     ],
   }),
 
-  // The change: in the pink burst she is gone; the shadow beast bursts out of it and away.
-  cut('night-elf-change', ELF_CHANGE, ELF_LEDGE, 1, {
+  // One take from the change to the dive: out of the pink burst she has sprung into, carried on by the
+  // run, the beast lands running, races up the headland to the cliff's edge, springs off it on 89.5 s,
+  // crosses the moon as the lens sails out over the drop after it, and the lens sinks with it to the
+  // sea and its splash on the dive's frame (91.64 s).
+  cut('night-elf-dive', ELF_CHANGE, ELF_WHOOSH, 1, {
     mood: 1,
-    view: view({ dof: true, bokeh: 2, exposure: 1.45, saturation: -0.06, contrast: 0.04 }),
-    fog: MIST,
-    anchor: [-90.5, 97],
-    actors: [{ ...elf, at: RUN_END }, { ...beast, at: RUN_END }],
-    tracks: {
-      elf: { path: [{ t: 0, x: RUN_END[0], z: RUN_END[1], lift: 1.15 }], show: [[-2, true], [0.1, false]], faces: [{ t: -2, expr: 'focused' }] },
-      beast: {
-        path: [
-          { t: 0.08, x: RUN_END[0], z: RUN_END[1] + 0.2, lift: 1.0 },
-          { t: 0.45, x: RUN_END[0] + 0.5, z: RUN_END[1] + 3.2, lift: 0 },
-          { t: 1.0, x: RUN_END[0] + 1.3, z: RUN_END[1] + 8.3, lift: 0 },
-        ],
-        show: [[-2, false], [0.08, true]],
-        faces: [{ t: -2, expr: 'angry' }],
-      },
-    },
-    cam: {
-      ease: 'linear',
-      focus: 'beast',
-      range: 4,
-      keys: [
-        { t: 0, p: { g: [RUN_END[0] - 6.8, 1.1, RUN_END[1] - 0.6] }, l: { g: [RUN_END[0], 1.5, RUN_END[1] + 0.8] }, fov: 42 },
-        { t: 0.35, p: { g: [RUN_END[0] - 6.6, 1.0, RUN_END[1] + 0.6] }, l: { a: 'beast', o: [0, 0.6, 0.8] }, fov: 41 },
-        { t: 1.0, p: { g: [RUN_END[0] - 5.6, 0.9, RUN_END[1] + 4.6] }, l: { a: 'beast', o: [0, 0.5, 1.4] }, fov: 40 },
-      ],
-    },
-    fx: [
-      LAVENDER,
-      SHADE,
-      // The light she changes in, in depth: shafts through the mist, sparks round the shape, glowing
-      // smoke; it streams away behind the beast as it breaks out.
-      { kind: 'elf-aura', t: -0.04, pre: 0, at: { g: [RUN_END[0], 1.7, RUN_END[1]] }, size: 1.05, d: 0.75, color: '#ff3fd0', color2: '#ffa6f2', light: 22, gain: 0.6, stream: 0.3, streamDir: [-0.4, 0.5, -4] },
-      { kind: 'night-veil', t: -1, alpha: [[0, 0.14], [0.12, 0.15], [0.45, 0.05], [0.85, 0]], color: '#ff6ad6', gain: 1.2 },
-      { kind: 'night-glow', t: -1, at: { g: [RUN_END[0], 1.5, RUN_END[1]] }, color: '#ff4fd0', size: 3.2, k: [[0, 0.7], [0.4, 0.25], [1, 0.05]] },
-      // Pink smoke trailing off the beast as it breaks out.
-      { kind: 'night-glow', t: 0.08, at: { a: 'beast', o: [0, 0.6, -0.8] }, color: '#d86cff', size: 1.6, k: [[0.08, 1.2], [0.6, 0.3], [1, 0.05]] },
-      { kind: 'light', t: -1, at: { a: 'beast', o: [1.6, 1.8, -0.6] }, color: '#c27bff', intensity: 14, distance: 7 },
-      { kind: 'light', t: -1, at: { a: 'beast', o: [-2.2, 1.4, 0.8] }, color: '#b8b0ff', intensity: 10, distance: 7 },
-      { kind: 'motes', t: -1, count: 400, box: [10, 6, 10], drift: [0.3, 0.5, 0.2], size: 0.055, color: '#ff9cf0', color2: '#e0b8ff' },
-      { kind: 'leaves', t: -1, count: 500, box: [10, 6, 10], drift: [1.5, -0.6, 0.8], size: 0.11, color: '#4a2a5a', color2: '#7a4a7a', opacity: 0.85, seed: 6 },
-    ],
-  }),
-
-  // The beast runs up the cliff's edge, side on over the sea, and springs off it into the sky.
-  cut('night-elf-ledge', ELF_LEDGE, ELF_LEAP, 1, {
-    mood: 1,
-    view: view({ exposure: 1.15 }),
+    view: view({ exposure: 1.25 }),
+    // A moonlit sea haze: the cliff face the beast falls past reads as violet depth behind it, not black.
+    fog: { color: '#3c3680', density: 0.022 },
     anchor: [TAKEOFF[0], TAKEOFF[2]],
-    actors: [{ ...beast, at: LEDGE_FROM }],
+    actors: [{ ...elf, at: DIVE_FROM }, { ...beast, at: DIVE_FROM }],
     tracks: {
-      beast: {
-        path: [
-          { t: 0, x: LEDGE_FROM[0], z: LEDGE_FROM[1] },
-          { t: 0.5, x: TAKEOFF[0], z: TAKEOFF[2] },
-        ],
-        faces: [{ t: -2, expr: 'angry' }],
+      elf: { path: divePath, show: [[-2, true], [0.08, false]], faces: [{ t: -2, expr: 'focused' }] },
+      beast: { path: divePath, show: [[-2, false], [0.06, true]], faces: [{ t: -2, expr: 'angry' }] },
+    },
+    cam: { ease: 'linear', keys: DIVE_KEYS },
+    fx: [
+      VIOLET,
+      SHADE,
+      fly(TAKE_SPRING),
+      { kind: 'night-moon', t: -3, dir: MOON_DIR, size: 13, glow: 4.5, glowA: 0.8 },
+      // The light she changes in, left where she sprang: shafts, sparks round the shape, glowing smoke
+      // that streams on after the beast as it runs out of it.
+      {
+        kind: 'elf-aura', t: -0.042, pre: 0, at: { g: [DIVE_FROM[0] + DIVE_DIR[0] * 0.4, 1.5, DIVE_FROM[1] + DIVE_DIR[1] * 0.4] }, size: 1.05, d: 0.75,
+        color: '#ff3fd0', color2: '#ffa6f2', light: 22, gain: 0.6, stream: 0.2, streamDir: [DIVE_DIR[0] * 3.5, 0.5, DIVE_DIR[1] * 3.5],
       },
-    },
-    cam: {
-      ease: 'linear',
-      keys: [
-        { t: 0, p: [172.6, 24.6, -163.2], l: [166.4, 24.3, -159.6], fov: 42 },
-        { t: 0.5, p: [173.6, 24.9, -161.4], l: [169.2, 24.8, -155.8], fov: 42 },
-        { t: 1.0, p: [174.4, 25.4, -160.2], l: flyAt(ELF_LEAP, -3.5), fov: 48 },
-      ],
-    },
-    fx: [
-      VIOLET,
-      SHADE,
-      fly(0.5),
-      { kind: 'night-moon', t: -3, dir: [MOON_DIR[0], MOON_DIR[1] - 4, MOON_DIR[2]], size: 11, glow: 4.5, glowA: 0.7 },
-      { kind: 'light', t: -1, at: { a: 'beast', o: [-1.5, 1.5, 1] }, color: '#a9b8ff', intensity: 16, distance: 8 },
-      { kind: 'light', t: -1, at: { a: 'beast', o: [1.8, 2.2, -1.2] }, color: '#c27bff', intensity: 22, distance: 8 },
-      { kind: 'motes', t: -1, count: 200, box: [16, 6, 16], drift: [0.6, 0.1, 0.2], size: 0.05, color: '#d9c8ff', color2: '#bff6ff' },
-    ],
-  }),
-
-  // Across the moon, then down the cliff into the sea: the dive's splash on its frame (91.64 s).
-  cut('night-elf-leap', ELF_LEAP, ELF_WHOOSH, 1, {
-    mood: 1,
-    view: view({ exposure: 1.1 }),
-    anchor: [SPLASH[0], SPLASH[2]],
-    actors: [{ ...beast, at: [TAKEOFF[0], TAKEOFF[2]] }],
-    tracks: { beast: { faces: [{ t: -2, expr: 'angry' }] } },
-    cam: {
-      ease: 'linear',
-      keys: [
-        { t: 0, p: LEAP_CAM, l: flyAt(ELF_LEAP, -0.6), fov: 40 },
-        { t: 0.45, p: [184.6, 24.5, -165.6], l: flyAt(ELF_LEAP + 0.45, -0.6), fov: 40 },
-        { t: 0.95, p: [184.2, 18.0, -165.2], l: flyAt(ELF_LEAP + 0.95, -1.2), fov: 42 },
-        { t: 1.4, p: [183.8, 10.0, -164.8], l: flyAt(ELF_LEAP + 1.4, -2.0), fov: 44 },
-        { t: 1.75, p: [183.4, 6.5, -164.4], l: [SPLASH[0], 0.8, SPLASH[2]], fov: 44 },
-      ],
-    },
-    fx: [
-      VIOLET,
-      SHADE,
-      fly(SPRING - ELF_LEAP),
-      { kind: 'night-moon', t: -3, dir: MOON_DIR, size: 15, glow: 4.5, glowA: 0.8 },
-      // A violet top light that dies within 2.4 units: on the beast, never on the cliff face behind it.
-      { kind: 'light', t: -1, at: { a: 'beast', o: [0, 1.3, 0.8] }, color: '#c27bff', intensity: 10, distance: 2.4 },
-      { kind: 'motes', t: -1, count: 200, box: [16, 8, 16], drift: [0.6, 0.1, 0.2], size: 0.06, color: '#d9c8ff', color2: '#bff6ff' },
+      { kind: 'flash', t: -0.034, d: 0.2, rise: 0.02, a: 0.4, color: '#ff7ae0' },
+      { kind: 'night-veil', t: -1, alpha: [[0, 0.22], [0.12, 0.18], [0.45, 0.05], [0.85, 0]], color: '#ff6ad6', gain: 1.2 },
+      { kind: 'night-glow', t: -1, at: { g: [DIVE_FROM[0], 1.4, DIVE_FROM[1]] }, color: '#ff4fd0', size: 3.2, k: [[0, 0.7], [0.4, 0.25], [1, 0.05]] },
+      // Pink smoke trailing off the beast as it breaks out.
+      { kind: 'night-glow', t: 0.06, at: { a: 'beast', o: [0, 0.6, -0.8] }, color: '#d86cff', size: 1.6, k: [[0.06, 1.2], [0.6, 0.3], [1, 0.05]] },
+      // Moon key and violet rim on the run; over the drop a top light that dies within 2.4 units, on the
+      // beast and never on the cliff face behind it.
+      { kind: 'light', t: -1, until: TAKE_SPRING + 0.3, fadeOut: 0.3, at: { a: 'beast', o: [-1.5, 1.5, 1] }, color: '#a9b8ff', intensity: 16, distance: 8 },
+      { kind: 'light', t: -1, until: TAKE_SPRING + 0.3, fadeOut: 0.3, at: { a: 'beast', o: [1.8, 2.2, -1.2] }, color: '#c27bff', intensity: 22, distance: 8 },
+      { kind: 'light', t: TAKE_SPRING, fadeIn: 0.3, at: { a: 'beast', o: [0, 1.3, 0.8] }, color: '#c27bff', intensity: 10, distance: 2.4 },
+      // Moonlight off the sea on the cliff face as the beast falls past it, so it falls against rock, not black.
+      { kind: 'light', t: 2.6, fadeIn: 0.4, at: [178.5, 10, -161.5], color: '#8f96ff', intensity: 60, distance: 18 },
+      { kind: 'motes', t: -1, count: 260, box: [16, 8, 16], drift: [0.6, 0.1, 0.2], size: 0.055, color: '#d9c8ff', color2: '#bff6ff' },
+      { kind: 'motes', t: -1, until: 1.2, fadeOut: 0.4, count: 300, box: [10, 6, 10], drift: [0.3, 0.5, 0.2], size: 0.05, color: '#ff9cf0', color2: '#e0b8ff' },
       // The entry: a crown of spray round it and a white column thrown up the way it came in.
-      { kind: 'night-splash', t: DIVE - ELF_LEAP, at: [SPLASH[0], 0.05, SPLASH[2]], scale: 3.2, dir: [0, 0], count: 700, sheets: 220, mist: 30, up: 1.5, color: '#e6fcff', gain: 1.6, flare: 1.5, seed: 60 },
-      { kind: 'night-splash', t: DIVE - ELF_LEAP - 0.01, at: [SPLASH[0], 0.05, SPLASH[2]], scale: 2.6, dir: [0, 0], spread: 0.3, count: 600, sheets: 120, mist: 8, up: 2.3, drop: 1.4, color: '#f2feff', gain: 1.8, seed: 62 },
+      { kind: 'night-splash', t: DIVE - ELF_CHANGE, at: [SPLASH[0], 0.05, SPLASH[2]], scale: 3.2, dir: [0, 0], count: 700, sheets: 220, mist: 30, up: 1.5, color: '#e6fcff', gain: 1.6, flare: 1.5, seed: 60 },
+      { kind: 'night-splash', t: DIVE - ELF_CHANGE - 0.01, at: [SPLASH[0], 0.05, SPLASH[2]], scale: 2.6, dir: [0, 0], spread: 0.3, count: 600, sheets: 120, mist: 8, up: 2.3, drop: 1.4, color: '#f2feff', gain: 1.8, seed: 62 },
     ],
   }),
 
