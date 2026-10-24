@@ -977,11 +977,12 @@ const clashB = {
   cam: {
     // Low under the elf, swinging round as she whirls, then tilting down after him as he goes over.
     keys: [
-      { t: 0, p: polar(CO, EB + 72, 2.6, 0.2), l: polar(CO, EB, 0.9, 0.95), fov: 36 },
-      { t: 0.55, p: polar(CO, EB + 88, 2.4, 0.22), l: polar(CO, EB, 0.6, 0.85), fov: 35 },
+      // Back far enough that her whirling claws stay clear of the lens (closer, the blur smeared them across it).
+      { t: 0, p: polar(CO, EB + 70, 3.7, 0.3), l: polar(CO, EB, 0.9, 0.9), fov: 34 },
+      { t: 0.55, p: polar(CO, EB + 84, 3.5, 0.3), l: polar(CO, EB, 0.6, 0.8), fov: 34 },
       // Side on to his fall: the somersault in profile.
-      { t: 1.1, p: polar(CO, EB + 96, 2.8, 0.3), l: { a: 'o', o: [0, 0.55, 0], y0: true }, fov: 38 },
-      { t: 1.96, p: polar(CO, EB + 104, 3.1, 0.36), l: { a: 'o', o: [0, 0.4, 0], y0: true }, fov: 40 },
+      { t: 1.1, p: polar(CO, EB + 96, 3.4, 0.32), l: { a: 'o', o: [0, 0.55, 0], y0: true }, fov: 37 },
+      { t: 1.96, p: polar(CO, EB + 104, 3.5, 0.36), l: { a: 'o', o: [0, 0.4, 0], y0: true }, fov: 40 },
     ],
     ease: 'linear',
     focus: 'o',
