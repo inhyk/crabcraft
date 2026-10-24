@@ -12,9 +12,29 @@ const ss = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 const sgn = (x: number) => (x < 0 ? -1 : 1);
-/** Smooth blotches about a centimetre across (snow caked in patches). */
-const blotch = (p: V, f = 1) =>
-  0.5 + 0.5 * Math.sin(p.x * 210 * f + 1.3) * Math.sin(p.y * 170 * f + 0.7) * Math.sin(p.z * 190 * f + 2.1);
+const hash3 = (i: number, j: number, k: number) => {
+  let n = (i * 374761393 + j * 668265263 + k * 1274126177) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+};
+/** Smooth value noise, 0..1, one lattice cell per unit. */
+const vnoise = (x: number, y: number, z: number) => {
+  const i = Math.floor(x), j = Math.floor(y), k = Math.floor(z);
+  const u = ss(0, 1, x - i), v = ss(0, 1, y - j), w = ss(0, 1, z - k);
+  const L = (a: number, b: number, t: number) => a + (b - a) * t;
+  const plane = (kk: number) => L(L(hash3(i, j, kk), hash3(i + 1, j, kk), u), L(hash3(i, j + 1, kk), hash3(i + 1, j + 1, kk), u), v);
+  return L(plane(k), plane(k + 1), w);
+};
+/**
+ * Smooth blotches about a centimetre across (snow caked in patches): two octaves of value noise on skewed
+ * lattices, spread like the old product of three axis sines, which tiled the back in a checkerboard.
+ */
+const blotch = (p: V, f = 1) => {
+  const s = 95 * f;
+  const a = vnoise(s * (p.x + 0.31 * p.z), s * (p.y - 0.27 * p.x), s * (p.z + 0.22 * p.y));
+  const b = vnoise(2.03 * s * p.z + 7.1, 2.03 * s * p.x - 3.3, 2.03 * s * p.y + 1.7);
+  return 0.5 + 1.2 * ((a - 0.5) * 0.72 + (b - 0.5) * 0.28);
+};
 
 /** The LED window and the brow over it, kept clear of the mantle and the pelt. */
 const FACE = (p: V, m = 0) => Math.abs(p.x) < 0.057 + m && p.z > 0.05 && p.y > 0.029;
