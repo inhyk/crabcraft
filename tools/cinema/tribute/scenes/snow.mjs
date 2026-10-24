@@ -123,16 +123,16 @@ const toward = (p, target, d = 6) => {
 };
 /** The city's gate towers and keep, for the camera to look at. */
 const GATE_LOOK = G(GATE[0], GATE[1], 13);
-const CITY = { t: -3, kind: 'snow-city', at: GATE, yaw: 0, clear: [-46, -120, 46, -50] };
+const CITY = { t: -3, kind: 'snow-city', at: GATE, yaw: 0, clear: [-46, -120, 46, -50], windows: 0.9, reach: 0.45 };
 
 /**
  * The opening's look: the original is bright snow with deep shadows, saturated cold blues and a dark warm
  * dwarf, so more contrast and colour than COLD, a harder sun under less sky fill, a lavender-blue storm
  * that greys the distance instead of milking it, and a thinner veil over the lens.
  */
-const OPEN_VIEW = { ...COLD, exposure: 1.1, saturation: 0.16, contrast: 0.26 };
+const OPEN_VIEW = { ...COLD, exposure: 1.1, saturation: 0.1, contrast: 0.26 };
 const OPEN_FOG = '#bcc4e6';
-const OPEN_STORM = { sky: OPEN_FOG, zenith: '#8a95c8', sun: 0.8, hemi: 1.0, tint: [0.8, 0.88, 1.2], tint2: [0.88, 0.93, 1.12] };
+const OPEN_STORM = { sky: OPEN_FOG, zenith: '#a3abd3', sun: 0.8, hemi: 1.0, tint: [0.8, 0.88, 1.2], tint2: [0.88, 0.93, 1.12] };
 
 const OPEN = 39.5;
 const C_WIDE = 61.0;
@@ -313,11 +313,11 @@ const face = {
         { t: 9.0, p: F1(-2.4, 1.1, -2.8), l: F1(-0.2, 0.25, 1.5), fov: 36 },
         { t: S(49.3), p: F1(-2.3, 1.2, -3.4), l: F1(-0.5, 0.3, 2.5), fov: 38 },
         { t: S(50.2), p: F1(-2.2, 1.5, -4.6), l: F1(-1.1, 0.5, 2.8), fov: 38 },
-        { t: S(51.2), p: F1(-2.1, 2.0, -6.8), l: F1(-1.6, 1.4, 2.6), fov: 46 },
-        { t: S(52.6), p: F1(-2.0, 2.2, -7.8), l: F1(-1.9, 1.6, 2.2), fov: 46 },
-        { t: S(53.45), p: F1(-2.0, 2.3, -8.1), l: F1(-1.9, 1.6, 2.2), fov: 46 },
+        { t: S(51.2), p: F1(-2.1, 2.0, -6.8), l: F1(-1.6, 1.9, 2.6), fov: 48 },
+        { t: S(52.6), p: F1(-2.0, 2.2, -7.8), l: F1(-1.9, 1.6, 2.2), fov: 43 },
+        { t: S(53.45), p: F1(-2.0, 2.3, -8.1), l: F1(-1.9, 1.6, 2.2), fov: 43 },
         // Walking: following the two of them side by side, then out round behind the beast to its right...
-        { t: S(54.4), p: W(-2.6, 2.5, -7.9, S(54.4)), l: W(-1.9, 1.0, 3.0, S(54.4)), fov: 46 },
+        { t: S(54.4), p: W(-2.6, 2.5, -7.9, S(54.4)), l: W(-1.9, 1.0, 3.0, S(54.4)), fov: 44 },
         { t: S(55.4), p: W(-7.6, 1.7, -3.0, S(55.4)), l: W(-3.4, 1.1, 1.8, S(55.4)), fov: 40 },
         // ...low for the roar as it wheels round toward the lens...
         { t: S(55.9), p: W(-8.2, 1.25, -2.8, S(55.5)), l: W(-5.0, 1.6, 0.9, S(55.5)), fov: 38 },
