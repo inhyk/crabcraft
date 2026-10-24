@@ -60,18 +60,31 @@ function leapAt(song) {
   const u = Math.min(1, Math.max(0, (song - LEAP.up) / (LEAP.down - LEAP.up)));
   return [LEAP.from[0] + (LEAP.to[0] - LEAP.from[0]) * u, LEAP.from[1] + (LEAP.to[1] - LEAP.from[1]) * u, 4 * LEAP.h * u * (1 - u)];
 }
-/** The creek across her line, running east-west between the banks; ripples keep it moving. */
-const CREEK = [-91.25, 47.4];
-const CREEK_R = [7, 1.15];
-const CREEK_ALONG = Array.from({ length: 11 }, (_, i) => [CREEK[0] - 6 + i * 1.2, CREEK[1] + 0.25 * Math.sin(i * 1.7)]);
-const creekFx = () => [
-  {
-    kind: 'night-pool', t: -3, at: CREEK, size: CREEK_R, rise: 0.04, edge: 0.35,
-    deep: '#010104', shallow: '#070512', sky: '#1c1838', moon: [1, 0.22, 0.1], glint: 2.2, opacity: 0.96,
-    sheen: 1.0, sheenP: 18, crestK: 0.25, rim: 0.08,
-    hits: Array.from({ length: 12 }, (_, i) => [-1.2 + i * 0.27, CREEK[0] - 5 + ((i * 3.7) % 10), CREEK[1] + 0.5 * Math.sin(i * 2.3), 0.12]),
-  },
+/**
+ * The creek across her line: a channel cut into the forest floor (src/capture/cinema/fx/night-water.ts,
+ * night-creek), flowing west out of the Moonpool, with a steep rooted cut bank on her take-off side and a
+ * shingle bank where she lands. Both leap shots build the same creek and run its water on the song clock.
+ */
+const CREEK = { at: [-91.25, 47.3], from: -13, to: 6.5, taper: 2.5, half: 1.05, near: 0.5, far: 0.72, drop: 0.5, bed: 0.3, wander: [[0.35, 0.31, 0.6], [0.12, 0.93, 2.1]] };
+/** A point on its centre line (the effect's meander), `u` along it from `at`. */
+const creekAt = (u) => [CREEK.at[0] + u, CREEK.at[1] + CREEK.wander.reduce((v, [a, f, ph]) => v + a * Math.sin(f * u + ph), 0)];
+/** Song-time strikes on the water [t, u, dv, k]: clods off the near lip at take-off, the landing's spray, drips. */
+const CREEK_HITS = [
+  [78.44, 0.35, -0.95, 0.3], [78.5, -0.15, -0.8, 0.22], [79.74, -0.3, 0.95, 0.7], [79.8, 0.15, 0.75, 0.4], [79.9, -0.75, 0.55, 0.35],
+  [77.2, 2.2, 0.2, 0.18], [77.9, -2.6, -0.3, 0.15], [78.9, 1.1, 0.35, 0.15], [79.4, -1.6, 0.1, 0.18], [80.2, 0.9, -0.4, 0.15], [80.6, -3.1, 0.25, 0.15],
 ];
+/** No stones or roots where she takes off and lands, nor on either leap shot's lens path. */
+const CREEK_KEEP = () => [[...LEAP.from, 0.8], [...LEAP.to, 0.9], ...ELF_ACTIONS.map((b) => ({ ...b, ...RESTAGE[b.id] })).filter((a) => a.leap).flatMap((a) => {
+  const [start, end] = angles[a.camera];
+  return Array.from({ length: 7 }, (_, i) => [a.point[0] + start[0] + ((end[0] - start[0]) * i) / 6, a.point[1] + start[2] + ((end[2] - start[2]) * i) / 6, 0.6]);
+})];
+const creekFx = (t0) => [{
+  kind: 'night-creek', t: -3, ...CREEK, t0, flow: -0.55, seed: 47, keep: CREEK_KEEP(),
+  soil: FLOOR.soil, moss: FLOOR.moss, moon: [1, 0.22, 0.1], glint: 6, sheen: 0.3,
+  hits: CREEK_HITS.map(([t, ...h]) => [+(t - t0).toFixed(4), ...h]),
+  // Her heels rake the shallows of the far bank as she lands.
+  splashes: [{ t: +(LEAP.down - t0 - 0.02).toFixed(4), u: -0.3, side: 1, inset: 0.95, scale: 0.8, dir: [0, -0.7], count: 150, sheets: 34, mist: 1, mistA: 0.03, up: 0.6, drop: 0.7, flare: 0.6, color: '#d6e8ff', gain: 0.8, seed: 94 }],
+}];
 
 function actionShot(base, run) {
   const a = { ...base, ...RESTAGE[base.id] };
@@ -151,12 +164,13 @@ function actionShot(base, run) {
         const x = start[0] + (end[0] - start[0]) * t;
         const z = start[2] + (end[2] - start[2]) * t;
         return [[p[0] + x, p[1] + z, lens], ...(mid ? [[p[0] + x * 0.5, p[1] + z * 0.5, mid]] : [])];
-      }), ...(a.leap ? [[...LEAP.from, 2.2], [...LEAP.to, 2.2]] : []), ...(clear.keep ?? [])] },
-      { kind: 'night-clear', t: -3, skip: '^$', cut: [[...p, 3.4], [p[0], p[1] - 2.5, 2]] },
+      }), ...(a.leap ? [[...LEAP.from, 2.2], [...LEAP.to, 2.2], ...Array.from({ length: 21 }, (_, i) => [...creekAt(CREEK.from + i), 2.8])] : []), ...(clear.keep ?? [])], ...(a.leap ? { skip: 'grass|cinema-creek' } : {}) },
+      { kind: 'night-clear', t: -3, skip: a.leap ? 'cinema-creek' : '^$', cut: [[...p, 3.4], [p[0], p[1] - 2.5, 2]] },
       // A forest floor over the wood's flat ground; the coarse cone tufts around it give way to its fine grass.
       {
         ...FLOOR, box: [p[0] - 14, p[1] - 14, p[0] + 14, p[1] + 14],
-        ...(a.leap ? { clear: CREEK_ALONG.map(([x, z]) => [x, z, 1.25]), wet: 0.75 } : waterAt === undefined ? {} : { clear: [[...p, 1.9]], wet: 0.75 }),
+        // Over the leap the creek opens the cover and drops the blades inside its lips itself.
+        ...(waterAt === undefined ? {} : { clear: [[...p, 1.9]], wet: 0.75 }),
       },
       { kind: 'night-clear', t: -3, match: 'grass', skip: '^$', cut: Array.from({ length: 64 }, (_, i) => [p[0] - 14 + (i % 8) * 4, p[1] - 14 + Math.floor(i / 8) * 4, 3]) },
       ...trail,
@@ -165,10 +179,8 @@ function actionShot(base, run) {
       { kind: 'light', t: -3, at: G(p, 1.5, 2.7, -1.8), color: '#d0a5ff', intensity: 28, distance: 8 },
       // A moonlit rim from beyond her, away from the lens, that travels with her.
       { kind: 'light', t: -3, at: { a: 'elf', o: [2.4, 2.2, -0.8] }, color: '#efe6ff', intensity: 26, distance: 6 },
-      ...(a.leap ? creekFx() : []),
+      ...(a.leap ? creekFx(t0) : []),
       ...(a.leap && a.land !== undefined ? [
-        // Spray off the wet stones of the far bank as she lands.
-        { kind: 'night-splash', t: a.land - 0.02, at: { g: [p[0], 0.05, p[1] - 0.3] }, scale: 0.9, dir: [-0.6, 0.5], count: 140, sheets: 30, mist: 1, mistA: 0.03, up: 0.55, drop: 0.7, flare: 0.6, color: '#d6e8ff', gain: 0.8, seed: 94 },
         { kind: 'shake', t: a.land, d: 0.2, amp: 0.03 },
       ] : []),
       ...(waterAt === undefined ? [] : [
