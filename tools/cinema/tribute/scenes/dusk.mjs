@@ -589,9 +589,9 @@ const STRIKE = CP(3.2, 29, 27.8);
 const WALL_FIRES = (t0) => [
   { t: t0, kind: 'dusk-fire', spots: [[-12.6, 21.6, 28.2, 0.8], [12.4, 21.6, 28.2, 0.7], [-5.9, 38.2, 27.0, 0.55], [5.9, 38.2, 27.0, 0.5], [-9, 13, 28.6, 0.5], [8, 16.5, 28.6, 0.45]].map(([x, y, z, s]) => ({ at: CP(x, y, z), s })), height: 2.8, seed: 33, smoke: 0.7, glow: 0.3, wind: [1.4, -0.6] },
 ];
-const STRUCK_FIRES = (t0, k = 1) => [
-  { t: t0, kind: 'dusk-fire', spots: [[3.2, 28.6, 28.2, 1.3], [1.4, 27, 28.2, 0.9], [5.2, 30, 28.2, 0.9], [4, 32.5, 28.2, 1.1]].map(([x, y, z, s]) => ({ at: CP(x, y, z), s: s * k })), height: 3.0, seed: 31, smoke: 0.9, glow: 0.4, wind: [1.4, -0.6], fadeIn: 0.4 },
-  { t: t0, kind: 'dusk-plume', at: CP(3.5, 33, 28.5), rate: 3, life: 8, rise: 3, spread: 2, size0: 2.5, size1: 11, prewarm: 0, opacity: 0.75, wind: [2.2, -1], color: '#1e1412', glow: '#ff6a1a', glowH: 3, seed: 12 },
+const STRUCK_FIRES = (t0, k = 1, smoke = 1) => [
+  { t: t0, kind: 'dusk-fire', spots: [[3.2, 28.6, 28.2, 1.3], [1.4, 27, 28.2, 0.9], [5.2, 30, 28.2, 0.9], [4, 32.5, 28.2, 1.1]].map(([x, y, z, s]) => ({ at: CP(x, y, z), s: s * k })), height: 3.0, seed: 31, smoke: 0.9 * smoke, glow: 0.4, wind: [1.4, -0.6], fadeIn: 0.4 },
+  { t: t0, kind: 'dusk-plume', at: CP(3.5, 33, 28.5), rate: 3, life: 8, rise: 3, spread: 2, size0: 2.5, size1: 11, prewarm: 0, opacity: 0.75 * smoke, wind: [2.2, -1], color: '#1e1412', glow: '#ff6a1a', glowH: 3, seed: 12 },
   { t: t0, kind: 'light', at: CP(3.5, 29, 33), color: '#ff6a1a', intensity: 90, distance: 32, flicker: 0.35, fadeIn: 0.3 },
 ];
 
@@ -780,14 +780,25 @@ const PARAPET = (() => {
   }
   return out;
 })();
+// The giant on the warrior's left, on from dusk-giant (root lift 30, pitch 72): it hauls itself up over
+// the coping, the legs stepping up the wall, rears and slams (143.3) where he stood as he flips away.
+const GT = [G[0] + 0.4, G[1] - 0.3];
+const overLift = liftOn([[-2, 30], [0.1, 30], [0.75, 33.2], [1.96, 33.6]]);
+const OVER_LIMBS = {
+  LM: grips(overLift, 'LM', [[0.15, 0.42], [0.8, 1.05]], 2.4, (topLift(0.9) + topLift(1.4)) / 2),
+  RR: grips(overLift, 'RR', [[0.18, 0.45], [0.83, 1.08]], 2.4, (topLift(0.92) + topLift(1.4)) / 2),
+  RM: grips(overLift, 'RM', [[0.42, 0.7]], 2.4, (topLift(0.55) + topLift(1.2)) / 2),
+  LR: grips(overLift, 'LR', [[0.45, 0.72]], 2.4, (topLift(0.57) + topLift(1.2)) / 2),
+};
 const leap = {
   id: 'dusk-leap',
   ...span(C.leap, C.black),
   chapter: 7,
   anchor: [-40, 0],
   view: { ...TOWER_VIEW, dof: true, bokeh: 2 },
-  actors: [{ id: 'w', spec: ORC, at: [W0[0], W0[2]], yaw: Math.PI }],
+  actors: [GIANT_ACTOR, { id: 'w', spec: ORC, at: [W0[0], W0[2]], yaw: Math.PI }],
   tracks: {
+    g: { path: liftPath(overLift, -1.5, 1.96, () => GT[0], () => GT[1]), acts: [{ t: -0.7, clip: 'attack_slam', speed: 0.9 }, { t: 1.3 - 0.71, clip: 'attack_slam' }] },
     w: {
       path: Array.from({ length: 41 }, (_, i) => {
         const t = +((1.96 * i) / 40).toFixed(4);
@@ -800,10 +811,10 @@ const leap = {
   },
   cam: {
     keys: [
-      { t: 0, p: CP(-3.2, 37.6, 31.2), l: CP(1.6, 36.4, 26.8), fov: 36 },
-      { t: 0.8, p: CP(-3.3, 37.6, 31.6), l: CP(1.6, 37.0, 27.2), fov: 37 },
-      { t: 1.25, p: CP(-3.4, 37.5, 32.0), l: CP(1.6, 38.7, 28.2), fov: 39 },
-      { t: 1.96, p: CP(-3.5, 37.4, 32.4), l: CP(1.6, 38.4, 29.0), fov: 41 },
+      { t: 0, p: CP(5.5, 31.5, 38.5), l: CP(-0.4, 36.6, 26.5), fov: 35 },
+      { t: 0.8, p: CP(5.4, 31.4, 38.3), l: CP(0.2, 37.2, 26.8), fov: 33 },
+      { t: 1.25, p: CP(5.3, 31.3, 38.1), l: CP(1.0, 38.0, 27.8), fov: 28 },
+      { t: 1.96, p: CP(5.2, 31.2, 37.9), l: CP(1.2, 38.0, 28.6), fov: 27 },
     ],
     ease: 'sine',
     focus: 'w',
@@ -812,18 +823,18 @@ const leap = {
   fx: [
     ...TOWER_SKY(-6),
     ...WALL_FIRES(-6),
-    ...STRUCK_FIRES(-6, 0.8),
+    ...STRUCK_FIRES(-6, 0.8, 0.2),
+    ...GIANT_FX(-6),
+    { t: -6, kind: 'dusk-climb', actor: 'g', limbs: OVER_LIMBS, pitch: [[0, 72], [0.75, 52], [1.3, 44], [1.96, 46]], heave: [[0, 0], [0.4, 0.35], [0.75, 0.5], [1.96, 0.5]], sway: [[0, 0], [0.6, -3], [1.3, 3], [1.96, 0]] },
     // The parapet in weathered, soot-dark stone, the tower's limestone darkened with it: this close the
     // city's pale blocks read as placeholders.
     { t: -6, kind: 'dusk-merlons', boxes: PARAPET, seed: 5, color: '#352b27', color2: '#56463c', soot: 0.6 },
     { t: -6, kind: 'dusk-tide', mats: { TC_Limestone: { color: '#8e7a6e' }, TC_LimestoneDark: { color: '#6e5c52' } } },
     // The top still burning from the giant's blast: flames along the roof and parapet, thick smoke over
     // the spire.
-    { t: -6, kind: 'dusk-fire', spots: [[-3.5, 34.2, 25.6, 1.0], [-1.0, 35.6, 25.4, 0.8], [-5.5, 38.2, 26.6, 0.7], [5.6, 38.3, 26.8, 0.6], [0.4, 34.8, 23.5, 0.9]].map(([x, y, z, k]) => ({ at: CP(x, y, z), s: k })), height: 2.6, seed: 51, smoke: 0.8, glow: 0.4 },
-    { t: -6, kind: 'dusk-plume', at: CP(-2, 37, 23), rate: 4, life: 7, rise: 3.5, spread: 2.5, size0: 3, size1: 10, prewarm: 7, opacity: 0.85, wind: [1.5, -0.6], color: '#1a1210', glow: '#ff6a1a', glowH: 4, seed: 15 },
-    // Smoke rolling off the roof over the spire's foot and round the east pinnacle.
-    { t: -6, kind: 'dusk-plume', at: CP(-1.5, 35.5, 24.2), rate: 6, life: 4, rise: 1.6, spread: 1.2, size0: 1.6, size1: 4.5, prewarm: 4, opacity: 0.8, wind: [0.9, 0.4], color: '#140e0c', glow: '#ff5a14', glowH: 1.5, seed: 16 },
-    { t: -6, kind: 'dusk-plume', at: CP(5.4, 37.6, 27.9), rate: 6, life: 4, rise: 1.2, spread: 0.9, size0: 1.4, size1: 4, prewarm: 4, opacity: 0.85, wind: [0.9, 0.4], color: '#140e0c', glow: '#ff5a14', glowH: 1.2, seed: 17 },
+    { t: -6, kind: 'dusk-fire', spots: [[-3.5, 34.2, 25.6, 1.0], [-1.0, 35.6, 25.4, 0.8], [-5.5, 38.2, 26.6, 0.7], [5.6, 38.3, 26.8, 0.6], [0.4, 34.8, 23.5, 0.9]].map(([x, y, z, k]) => ({ at: CP(x, y, z), s: k })), height: 2.6, seed: 51, smoke: 0.35, glow: 0.4 },
+    // Thin and dark, behind them: thick lit smoke here washed the frame red and hid both crabs.
+    { t: -6, kind: 'dusk-plume', at: CP(1, 37, 20), rate: 3, life: 7, rise: 3.5, spread: 2.5, size0: 3, size1: 9, prewarm: 7, opacity: 0.55, wind: [1.5, -0.6], color: '#140e0e', glow: '#ff6a1a', glowH: 2, seed: 15 },
     { t: -6, kind: 'dusk-fire', spots: [{ at: CP(5.6, 38.3, 27.2), s: 1.3 }, { at: CP(5.2, 39.6, 27.4), s: 0.9 }, { at: CP(4.0, 36.4, 27.3), s: 0.7 }, { at: CP(-1.6, 36.2, 27.3), s: 0.7 }], height: 2.4, seed: 57, smoke: 0, glow: 0.4 },
     { t: -6, kind: 'light', at: { a: 'w', o: [-1.2, 1.2, -1.5] }, color: '#ff7a2a', intensity: 12, distance: 6, flicker: 0.4 },
     // A cool rim from the sky so the red crab stands off the fire.
@@ -833,7 +844,7 @@ const leap = {
     // Firelight from the burning roof before him.
     { t: -6, kind: 'light', at: { a: 'w', o: [-1.0, 0.8, 2.0] }, color: '#ff8a3a', intensity: 24, distance: 4.5, flicker: 0.4 },
     // 143.3: the giant's fire blooms behind him and the frame goes white by 143.8.
-    { t: 1.3, kind: 'dusk-blast', at: CP(6, 37.5, 24.5), r: 5, column: 0, light: 5000, distance: 30, flashA: 0.3, flashD: 0.1, flashColor: '#ffe0b0', shake: 0.12, puffs: 64, debris: 40, seed: 21 },
+    { t: 1.3, kind: 'dusk-blast', at: CP(-1, 36.5, 25.5), r: 5, column: 0, light: 5000, distance: 30, flashA: 0.3, flashD: 0.1, flashColor: '#ffe0b0', shake: 0.12, puffs: 64, debris: 40, seed: 21 },
     { t: 1.4, kind: 'fade', color: '#fff4e2', curve: [[1.5, 0], [1.62, 0.3], [1.72, 0.7], [1.8, 0.95], [1.96, 1]] },
   ],
 };
