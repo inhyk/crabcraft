@@ -4,6 +4,9 @@
 // the travelling energy while a claw or foot is supporting the body.
 import { ELF } from '../cast.mjs';
 
+/** Her speed and lift at the top of the 720 shot's last spring, where night.mjs night-elf-dive picks her up. */
+export const DIVE_SEAM = { v: 6.5, lift: 0.9 };
+
 export const ELF_ACTIONS = [
   { id: 'night-elf-toprock', at: 75.6, end: 76.55, clip: 'break_toprock', from: 1.39, to: 2.3, speed: 1.1, point: [-89, 26], yaw: -0.35, label: 'Toprock feint', camera: 'front' },
   { id: 'night-elf-sixstep', at: 76.55, end: 77.7, clip: 'break_sixstep', from: 1.1, to: 2.55, speed: 1.3, point: [-90, 37], yaw: 0.0, label: 'Six-step pivot', camera: 'high' },
@@ -12,12 +15,17 @@ export const ELF_ACTIONS = [
     faces: [{ t: -2, expr: 'angry' }, { t: 0.85, expr: 'focused' }],
     then: [{ t: 0.567, clip: 'break_backflip', from: 1.14, to: 1.825, speed: 0.8, fade: 0.01 }] },
   { id: 'night-elf-clawstand', at: 80.8, end: 82.8, clip: 'break_clawstand', from: 3.65, to: 6.425, speed: 1.55, point: [-92.5, 62], yaw: -0.2, label: 'Two-claw balance', camera: 'low' },
-  { id: 'night-elf-oneclaw', at: 82.8, end: 85.2, clip: 'break_oneclaw', from: 2.65, to: 5.65, speed: 1.5, approach: 0.25, point: [-92.5, 74], yaw: 0.1, label: 'One-claw release', camera: 'arc', splash: 1.58 },
+  // Balances on one claw at the pond's edge, comes down off it and bolts straight in: the splash on
+  // 84.38 s is her first strides into the water, and she runs on through it.
+  { id: 'night-elf-oneclaw', at: 82.8, end: 85.2, clip: 'break_oneclaw', from: 2.75, to: 5.25, speed: 1.9, approach: 0.1, point: [-92.5, 74], yaw: 0.1, label: 'One-claw release, then a dash through the pond', camera: 'pond',
+    dash: { t: 1.42, v: 4.6, acc: 0.25 }, pond: { in: 84.38, near: 0.35, rz: 1.9, rx: 2.3, level: 7.5 } },
   // Runs in low through the ferns, springs, travels the 720 through the air (lands on the 86.29 s thud),
-  // runs on and springs into the change.
+  // runs on and springs into the change, still travelling (night.mjs night-elf-dive picks her up there).
   { id: 'night-elf-720', at: 85.2, end: 88.0, clip: 'break_jumpspin', from: 0.78, to: 2.065, speed: 0.865, approach: 0.35, point: [-90.5, 92.4], yaw: 0, label: '720 jump spin and transformation', camera: 'hero', land: 1.09,
     faces: [{ t: -2, expr: 'focused' }, { t: 0.3, expr: 'angry' }],
-    keys: [[0, 0, -4.6, 0], [0.35, 0, -2.4, 0], [0.489, 0, -2.4, 0], [1.09, 0, 0, 0], [1.84, 0, 0, 0]] },
+    keys: [[0, 0, -4.6, 0], [0.35, 0, -2.4, 0], [0.489, 0, -2.4, 0], [1.09, 0, 0, 0], [1.84, 0, 0, 0]],
+    dash: { t: 1.84, v: DIVE_SEAM.v, acc: 0.35 }, spring: { t: 2.5, h: DIVE_SEAM.lift },
+    then: [{ t: 2.46, clip: 'jump', from: 0.9, to: 1.075, speed: 1, fade: 0.08 }, { t: 2.635, clip: 'jump', from: 1.075, to: 1.3, speed: 0.3, fade: 0.01 }] },
 ];
 
 /**
@@ -50,6 +58,8 @@ const angles = {
   wide: [[-6.2, 0.5, -4.2], [-5.2, 0.95, 2.1], 0.85, 50],
   low: [[-4.3, 0.6, 2.5], [-4.9, 1.0, -0.2], 0.88, 45],
   arc: [[-4.5, 1.25, 1.2], [-4.1, 1.1, -1.8], 0.70, 47],
+  // Low on the pond's moon side, the water's sheen between the lens and her, trucking with her dash.
+  pond: [[-4.6, 2.0, -0.8], [-4.4, 1.6, 2.4], 0.4, 44],
   // The low chase: knee high, keeping pace from beyond a row of trunks that flash across the lens.
   hero: [[-9.5, 0.6, -6.4], [-9.6, 0.8, 2.3], 0.4, 31, { near: 2.6, lens: 1.3, mid: 0, keep: [[-98.51, 89.24, 0.5], [-97.37, 87.17, 0.5]] }],
 };
@@ -60,6 +70,15 @@ function leapAt(song) {
   const u = Math.min(1, Math.max(0, (song - LEAP.up) / (LEAP.down - LEAP.up)));
   return [LEAP.from[0] + (LEAP.to[0] - LEAP.from[0]) * u, LEAP.from[1] + (LEAP.to[1] - LEAP.from[1]) * u, 4 * LEAP.h * u * (1 - u)];
 }
+/** How far a dash ({ t, v, acc }: off at t, up to v over acc seconds) has carried her by shot second t. */
+function dashed(d, t) {
+  if (!d || t <= d.t) return 0;
+  const u = t - d.t;
+  return u < d.acc ? (d.v * u * u) / (2 * d.acc) : (d.v * d.acc) / 2 + d.v * (u - d.acc);
+}
+/** A spring at the end of a dash ({ t, h }): up to h at the shot's end on a quarter sine, the top of the arc. */
+const sprung = (s, t, length) => (s && t > s.t ? s.h * Math.sin((Math.PI / 2) * Math.min(1, (t - s.t) / (length - s.t))) : 0);
+
 /**
  * The creek across her line: a channel cut into the forest floor (src/capture/cinema/fx/night-water.ts,
  * night-creek), flowing west out of the Moonpool, with a steep rooted cut bank on her take-off side and a
@@ -86,15 +105,79 @@ const creekFx = (t0) => [{
   splashes: [{ t: +(LEAP.down - t0 - 0.02).toFixed(4), u: -0.3, side: 1, inset: 0.95, scale: 0.8, dir: [0, -0.7], count: 150, sheets: 34, mist: 1, mistA: 0.03, up: 0.6, drop: 0.7, flare: 0.6, color: '#d6e8ff', gain: 0.8, seed: 94 }],
 }];
 
+/**
+ * The pond she dashes through (`pond`: { in: song second her first strides hit it, near: its near shore
+ * ahead of her point, rz, rx: its half lengths, level: its surface (measured: the wood falls away east,
+ * so it stands knee deep under her and laps up the slope toward the lens) }): still water with the sky's
+ * sheen on it, rings where every stride lands, the big splash as she runs in and a wake of spray.
+ */
+function pondFx(a, p, t0, path) {
+  const w = a.pond;
+  const at = [p[0], p[1] + w.near + w.rz];
+  const tin = +(w.in - t0).toFixed(4);
+  const where = (t) => {
+    const k = path.reduce((b, q) => (Math.abs(q.t - t) < Math.abs(b.t - t) ? q : b), path[0]);
+    return [k.x, k.z];
+  };
+  // Strides through the water every 0.1 s until she is out of it (or the cut).
+  const strides = [];
+  for (let t = tin; t < path.at(-1).t; t += 0.1) {
+    const [x, z] = where(t);
+    if (z > at[1] + w.rz - 0.2) break;
+    strides.push([+t.toFixed(4), x, z]);
+  }
+  const out = strides.at(-1);
+  const lead = (t) => { const [x, z] = where(t); return [x, z + 0.35]; };
+  return [
+    {
+      kind: 'night-pool', t: -3, at, size: [w.rx, w.rz], level: w.level, edge: 0.3,
+      // The moon well right of the lens's line, so its glitter only touches the water's right edge (ahead of
+      // the lens it frosted the whole sheet): dark water, the rings catching the light.
+      deep: '#030612', shallow: '#0b1028', sky: '#3c3a7c', moon: [0.75, 0.22, 1.2], glint: 1.2, opacity: 0.95,
+      sheen: 0.35, sheenP: 30, crestK: 1.2, rim: 0.14,
+      // Drips off the reeds while she balances (the surface moves like water before she reaches it),
+      // then a ring where every stride lands.
+      hits: [
+        ...[[0.15, -1.2, 0.6], [0.55, 1.0, -0.4], [0.95, -0.4, 1.1], [1.3, 1.5, 0.5]].map(([t, dx, dz]) => [t, at[0] + dx, at[1] + dz, 0.3]),
+        ...strides.map(([t, x, z], i) => [t, x, z + 0.3, i ? 0.9 : 1.6]),
+      ],
+    },
+    // Reeds and ferns out of the water and from between the lens and its sheen.
+    { kind: 'night-clear', t: -3, skip: '^$', cut: [[...at, Math.max(w.rx, w.rz) + 0.6], [at[0] - 2.2, at[1], 1.4]] },
+    // The strides in: thrown up and forward and out toward the lens, so her legs never hide it.
+    {
+      kind: 'night-splash', t: tin - 0.02, at: G(lead(tin), 0, 0.03, 0), scale: 1.35, dir: [-0.35, 0.7], count: 150, sheets: 70,
+      mist: 5, mistA: 0.06, up: 0.9, drop: 0.7, flare: 0.5, color: '#dce8ff', gain: 1.0, seed: 95,
+    },
+    {
+      kind: 'night-splash', t: tin, from: G(lead(tin), 0, 0.03, 0), to: G(lead(out[0]), 0, 0.03, 0), d: +(out[0] - tin).toFixed(4),
+      scale: 1.0, dir: [-0.3, 0.9], count: 220, sheets: 70, mist: 5, mistA: 0.05, up: 0.8, drop: 0.65, flare: 0.4, color: '#dce8ff', gain: 0.95, seed: 96,
+    },
+    { kind: 'shake', t: tin, d: 0.18, amp: 0.02 },
+  ];
+}
+
+/** Trunks off the sight lines from the trucking lens to her through a dash. */
+function dashSight(a, p, path, start, end0, end, length) {
+  const at = (t) => path.reduce((b, q) => (Math.abs(q.t - t) < Math.abs(b.t - t) ? q : b), path[0]);
+  return [0.25, 0.5, 0.75, 1].flatMap((f) => {
+    const t = a.dash.t + (length - a.dash.t) * f;
+    const k = a.dash.t / length;
+    const c = [0, 2].map((j) => start[j] + (end0[j] - start[j]) * k + (end[j] - (start[j] + (end0[j] - start[j]) * k)) * f);
+    const q = at(t);
+    return [0.3, 0.5, 0.7].map((u) => [p[0] + c[0] + (q.x - p[0] - c[0]) * u, p[1] + c[1] + (q.z - p[1] - c[1]) * u, 1.2]);
+  });
+}
+
 function actionShot(base, run) {
   const a = { ...base, ...RESTAGE[base.id] };
   const length = a.end - a.at;
-  const [start, end, target, fov, clear = {}] = angles[a.camera];
+  const [start, end0, target, fov, clear = {}] = angles[a.camera];
   const near = clear.near ?? 3.6;
   const lens = clear.lens ?? 2.5;
   const mid = clear.mid ?? 1.7;
   const p = a.point;
-  const waterAt = a.splash ?? (a.leap ? undefined : a.land);
+  const waterAt = a.pond ? undefined : a.splash ?? (a.leap ? undefined : a.land);
   const last = a.clip === 'break_jumpspin';
   const approach = a.approach ?? 0;
   const duration = (a.to - a.from) / a.speed;
@@ -119,14 +202,20 @@ function actionShot(base, run) {
     const before = approach > 0 ? Math.min(1, Math.max(0, 1 - t / approach)) : 0;
     const after = Math.max(0, t - recovery) / Math.max(0.01, length - recovery);
     const [dx, dz, lift] = a.keys ? keyed(t) : [0, -2.6 * before * before, 0];
-    return { t, x: p[0] + dx, z: p[1] + dz + (last ? 2.1 : 0.9) * after * after, yaw: a.yaw, lift: lift + (last ? 1.15 * after * after : 0) };
+    // A dash carries her off along her line (the path's speed runs the game's gait), else she eases on.
+    const on = a.dash ? dashed(a.dash, t) : 0.9 * after * after;
+    return { t, x: p[0] + dx, z: p[1] + dz + on, yaw: a.yaw, lift: lift + sprung(a.spring, t, length) };
   });
+  /** The camera trucks on with a dash: from the dash's start its end key moves on by most of its distance. */
+  const truck = a.dash ? 0.75 * dashed(a.dash, length) : 0;
+  const end = truck ? [end0[0], end0[1], end0[2] + truck] : end0;
   const trail = run.fx.filter((f) => ['leaves', 'motes'].includes(f.kind)).map((f) => ({ ...f, count: Math.round(f.count * 0.45), size: f.size * 0.65 }));
   // The run's own look (its lavender grade, mist and lens), so the moves sit in the same moonlit
   // wood as the close-up before them and the change after.
   const grade = run.fx.filter((f) => f.kind === 'night-grade');
   const air = a.leap ? [LEAP.up - t0, LEAP.down - t0] : a.land === undefined ? null : [approach + ((a.clip === 'break_backflip' ? 0.84 : 0.9) - a.from) / a.speed, a.land];
   const look = { y0: !last, body: last };
+  const camMid = truck ? { t: a.dash.t, p: G(p, ...start.map((v, j) => v + ((end0[j] - v) * a.dash.t) / length)), l: { a: 'elf', o: [0, target, 0.2 * a.dash.t / length], ...look }, fov: fov - a.dash.t / length } : null;
   return {
     id: a.id, at: a.at, length, chapter: 1, mood: 1,
     anchor: p,
@@ -152,6 +241,7 @@ function actionShot(base, run) {
         })
         : [
           { t: 0, p: G(p, ...start), l: { a: 'elf', o: [0, target, 0], ...look }, fov },
+          ...(camMid ? [camMid] : []),
           { t: length, p: G(p, ...end), l: { a: 'elf', o: [0, target, 0.2], ...look }, fov: fov - 1 },
         ],
     },
@@ -164,13 +254,16 @@ function actionShot(base, run) {
         const x = start[0] + (end[0] - start[0]) * t;
         const z = start[2] + (end[2] - start[2]) * t;
         return [[p[0] + x, p[1] + z, lens], ...(mid ? [[p[0] + x * 0.5, p[1] + z * 0.5, mid]] : [])];
-      }), ...(a.leap ? [[...LEAP.from, 2.2], [...LEAP.to, 2.2], ...Array.from({ length: 21 }, (_, i) => [...creekAt(CREEK.from + i), 2.8])] : []), ...(clear.keep ?? [])], ...(a.leap ? { skip: 'grass|cinema-creek' } : {}) },
-      { kind: 'night-clear', t: -3, skip: a.leap ? 'cinema-creek' : '^$', cut: [[...p, 3.4], [p[0], p[1] - 2.5, 2]] },
+      }), ...(a.dash ? dashSight(a, p, path, start, end0, end, length) : []), ...(a.leap ? [[...LEAP.from, 2.2], [...LEAP.to, 2.2], ...Array.from({ length: 21 }, (_, i) => [...creekAt(CREEK.from + i), 2.8])] : []), ...(clear.keep ?? [])], ...(a.leap ? { skip: 'grass|cinema-creek' } : {}) },
+      { kind: 'night-clear', t: -3, skip: a.leap ? 'cinema-creek' : '^$', cut: [[...p, 3.4], [p[0], p[1] - 2.5, 2],
+        // Nothing in the way of a dash.
+        ...(a.dash ? Array.from({ length: Math.ceil(dashed(a.dash, length)) + 1 }, (_, i) => [p[0], p[1] + i + 1, 1.4]) : [])] },
       // A forest floor over the wood's flat ground; the coarse cone tufts around it give way to its fine grass.
       {
         ...FLOOR, box: [p[0] - 14, p[1] - 14, p[0] + 14, p[1] + 14],
         // Over the leap the creek opens the cover and drops the blades inside its lips itself.
         ...(waterAt === undefined ? {} : { clear: [[...p, 1.9]], wet: 0.75 }),
+        ...(a.pond ? { clear: [[p[0], p[1] + a.pond.near + a.pond.rz, Math.max(a.pond.rx, a.pond.rz) + 0.3]], wet: 0.75 } : {}),
       },
       { kind: 'night-clear', t: -3, match: 'grass', skip: '^$', cut: Array.from({ length: 64 }, (_, i) => [p[0] - 14 + (i % 8) * 4, p[1] - 14 + Math.floor(i / 8) * 4, 3]) },
       ...trail,
@@ -188,6 +281,7 @@ function actionShot(base, run) {
         { kind: 'night-splash', t: waterAt, at: G(p, 0, 0.03, 0), scale: 1.2, dir: [-0.5, 0.8], count: 200, sheets: 45, mist: 1, mistA: 0.025, up: 0.65, drop: 0.8, flare: 0.5, color: '#d6e8ff', gain: 0.85, seed: 93 },
         { kind: 'shake', t: waterAt, d: 0.18, amp: 0.025 },
       ]),
+      ...(a.pond ? pondFx(a, p, t0, path) : []),
       ...(last ? [
         // The change's light in the mist, building from the magic's onset (87.81 s) to the burst.
         { kind: 'elf-aura', t: length - 0.05, pre: 0.15, at: { a: 'elf', o: [0, 0.5, 0] }, size: 1.2, d: 0.6, color: '#ff3fd0', color2: '#ffa6f2', light: 40, gain: 0.8 },
