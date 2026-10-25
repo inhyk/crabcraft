@@ -97,6 +97,37 @@ const STRIKE_AT = 112.42;
 const FIRE_AT = 120.2;
 /** The smoke of the strike, from STRIKE_AT, in a shot starting at song second `at`. */
 const STRIKE_SMOKE = (at) => ({ t: STRIKE_AT - at, kind: 'dusk-plume', at: [KNOLL_HIT[0], 4, KNOLL_HIT[1]], rate: 5, life: 9, rise: 3.2, spread: 3, size0: 5, size1: 13, wind: [2.2, 0.6], opacity: 0.32, color: '#8a6450', glow: '#ff7a2a', glowH: 7, glowK: 1.2, seed: 31 });
+/** Song second the fireball shows over the mesas. */
+const FALL_AT = 111.55;
+/** The knoll's crown round the strike (LAND's first knoll tops out near 5.2 here). */
+const KNOLL_TOP = 5.2;
+/**
+ * The strike and everything it leaves behind, in a shot starting at song second `at`: the fireball
+ * and its trail, the blast (fireball, debris, dust ring, smoke), a crater burning on the knoll with a
+ * smoke column and embers going up, and the heat's warmth on the lens. Every piece is a pure function
+ * of the song clock, so the same fire and smoke carry on across the cuts from 112.42 to the dive.
+ */
+const IMPACT = (at) => {
+  const o = STRIKE_AT - at;
+  const crater = (b, d, s) => ({ at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, KNOLL_TOP] : [v])), s });
+  return [
+    { t: FALL_AT - at, kind: 'dusk-fireball', from: [...flat(T, 74, 260)].flatMap((v, i) => (i === 0 ? [v, 120] : [v])), to: KNOLL_AT, d: STRIKE_AT - FALL_AT, size: 5, trail: 90, light: 0, distance: 1, accel: 1.3 },
+    { t: o, kind: 'dusk-blast', at: KNOLL_AT, r: 9, column: 2.5, light: 900, distance: 60, flashA: 0.45, flashD: 0.3, flashColor: '#ffe2b0', shake: 0.09, puffs: 56, debris: 36, smoke: '#5e4a40' },
+    { t: o, kind: 'shake', d: 0.5, amp: 0.07 },
+    // The heat still on the lens after the flash, fading over a second and a half.
+    { t: o, kind: 'fade', color: '#ffb070', curve: [[o, 0], [o + 0.25, 0.16], [o + 0.8, 0.1], [o + 2.2, 0]] },
+    // The crater burns on the knoll's crown: up at once, then sinking over five seconds to a low fire, so
+    // the far shore taking light at 120.2 still reads as a new fire.
+    { t: o, kind: 'dusk-fire', spots: [crater(63, 70, 1.6), crater(60.5, 71.5, 1.1), crater(65.5, 69, 1.2), crater(62, 66.5, 0.9), crater(64.5, 74, 0.9), crater(58.8, 69, 0.7), crater(67.2, 72, 0.7)], height: 4.5, gain: 1.5, glow: 1.4, seed: 63, smoke: 0, grow: [[o, 0], [o + 0.15, 1.35], [o + 1.2, 1.1], [o + 3.5, 0.8], [o + 5.5, 0.55], [o + 12, 0.45]] },
+    // The column over it: thick and lit from below at first, thinning as it climbs and drifts off.
+    { t: o, kind: 'dusk-plume', at: [KNOLL_HIT[0], KNOLL_TOP + 2, KNOLL_HIT[1]], rate: 9, life: 7, rise: 7, spread: 2.4, size0: 4, size1: 15, wind: [2.6, 0.8], opacity: 0.45, color: '#8e6e5e', glow: '#ff6a1e', glowH: 9, glowK: 1.3, seed: 37 },
+    STRIKE_SMOKE(at),
+    // Embers going up out of the fire.
+    { t: o, kind: 'embers', at: [KNOLL_HIT[0] + 2, KNOLL_TOP + 11, KNOLL_HIT[1]], box: [14, 22, 14], count: 320, drift: [1.2, 4.2, 0.4], size: 0.32, rise: 1, fadeIn: 0.25, offset: at - C.meteor + 30 },
+  ];
+};
+/** The blast's shock through the plateau's grass (a fifth of a second to cross the canyon). */
+const GUST = (at) => ({ from: KNOLL_HIT, t: STRIKE_AT - at + 0.2, amp: 0.3, decay: 1.3, hz: 1.3 });
 /** 120.2: the fire takes along the shore under the butte and black smoke climbs in columns. */
 const FIRE_UP = (at) => {
   const o = FIRE_AT - at;
@@ -112,7 +143,7 @@ const MOTES = (n = 260, box = [14, 6, 14]) => ({ t: -5, kind: 'motes', color: '#
 const TUFTS = ['grass-0', 'grass-1', 'grass-2'];
 /** The meadow's small props: low and dark against the sun, they read as blocks this close. */
 const PROPS = [...[1, 2, 3].flatMap((i) => [`Rock_Medium_${i}`, `Pebble_Round_${i}`, `DeadTree_${i}`]), ...[1, 2, 3, 4, 5].map((i) => `Petal_${i}`), 'Mushroom_Common', 'Clover_1', 'Bush_Common', 'Bush_Common_Flowers', 'Fern_1', 'Flower_3_Group', 'Flower_4_Group'];
-const DRY_FLOOR = ([x, z], half, seed) => ({ t: -6, kind: 'night-floor', box: [x - half, z - half, x + half, z + half], soil: '#4a3022', moss: '#5e5626', litter: '#6e4426', litter2: '#8a6a3a', grass: '#4e4e1e', tip: '#e2b464', count: 34, height: [0.16, 0.62], width: 0.026, wind: 0.09, drift: 0.4, seed });
+const DRY_FLOOR = ([x, z], half, seed, gust) => ({ t: -6, kind: 'night-floor', box: [x - half, z - half, x + half, z + half], soil: '#4a3022', moss: '#5e5626', litter: '#6e4426', litter2: '#8a6a3a', grass: '#4e4e1e', tip: '#e2b464', count: 34, height: [0.16, 0.62], width: 0.026, wind: 0.09, drift: 0.4, seed, gust });
 /** The sun's direction from T: its glare over the lens is drawn at this far point. */
 const SUN = [...flat(T, 42, 900)].flatMap((v, i) => (i === 0 ? [v, 210] : [v]));
 LAND.sun = SUN;
@@ -142,15 +173,12 @@ const meteor = {
   fx: [
     MESAS,
     LAND,
-    DRY_FLOOR(T, 9, 61),
+    DRY_FLOOR(T, 9, 61, GUST(C.meteor)),
     { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS] },
     // The white holds to 111.5, the glare burns through it and recedes by 112.6.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.45, 1], [0.7, 0.85], [0.95, 0.55], [1.15, 0.22], [1.35, 0.05], [1.5, 0]] },
     { t: 0, kind: 'dusk-glare', at: SUN, alpha: [[0, 1.4], [0.6, 1.4], [1.1, 1.0], [1.4, 0.55], [2, 0.42]], radius: [[0, 1.6], [0.6, 1.2], [1.2, 0.45], [1.5, 0.3], [2, 0.26]], color: '#fff6e8', color2: '#ffb468' },
-    { t: 0.55, kind: 'dusk-fireball', from: [...flat(T, 74, 260)].flatMap((v, i) => (i === 0 ? [v, 120] : [v])), to: KNOLL_AT, d: STRIKE_AT - C.meteor - 0.55, size: 5, trail: 90, light: 0, distance: 1, accel: 1.3 },
-    { t: STRIKE_AT - C.meteor, kind: 'dusk-blast', at: KNOLL_AT, r: 9, column: 2.5, light: 900, distance: 60, flashA: 0.45, flashD: 0.3, flashColor: '#ffe2b0', shake: 0.09, puffs: 56, debris: 36 },
-    { t: STRIKE_AT - C.meteor, kind: 'shake', d: 0.5, amp: 0.07 },
-    STRIKE_SMOKE(C.meteor),
+    ...IMPACT(C.meteor),
     { t: -5, kind: 'embers', at: polar(T, 210, 1, 1.2), box: [10, 4, 10], count: 500, drift: [0.6, 0.5, 0.3], size: 0.04 },
     MOTES(),
   ],
@@ -209,9 +237,9 @@ const rise = {
   fx: [
     MESAS,
     LAND,
-    DRY_FLOOR(T, 9, 61),
+    DRY_FLOOR(T, 9, 61, GUST(C.rise)),
     { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS, ...LONE_TREE] },
-    STRIKE_SMOKE(C.rise),
+    ...IMPACT(C.rise),
     MOTES(),
     EMPTY_CLAW,
     ...TAUREN_LIGHTS,
@@ -302,9 +330,9 @@ const reveal = {
   fx: [
     MESAS,
     LAND,
-    DRY_FLOOR(T, 9, 61),
+    DRY_FLOOR(T, 9, 61, GUST(C.reveal)),
     { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS, ...LONE_TREE] },
-    STRIKE_SMOKE(C.reveal),
+    ...IMPACT(C.reveal),
     ...FIRE_UP(C.reveal),
     MOTES(),
     ...TAUREN_LIGHTS,
@@ -346,9 +374,9 @@ const dive = {
   fx: [
     MESAS,
     LAND,
-    DRY_FLOOR(T, 9, 61),
+    DRY_FLOOR(T, 9, 61, GUST(C.dive)),
     { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS, ...LONE_TREE] },
-    STRIKE_SMOKE(C.dive),
+    ...IMPACT(C.dive),
     ...FIRE_UP(C.dive),
     MOTES(500, [24, 8, 24]),
     ...TAUREN_LIGHTS,
