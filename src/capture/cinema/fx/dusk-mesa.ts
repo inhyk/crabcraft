@@ -14,6 +14,54 @@ const smooth = (a: number, b: number, x: number) => {
   return k * k * (3 - 2 * k);
 };
 
+// -------------------------------------------------------------------------------- backdrop light
+
+/**
+ * Light for the sunset backdrops (mesas, dusk-land): the scene's lights leave a far cliff facing the
+ * lens one flat tone with the sun behind it, so these meshes light themselves: a low sun that rakes
+ * the flanks turned toward it, a violet sky fill from above, a red bounce from below, a hot rim on
+ * edges against the sun, and fine strata and seams on steep faces. cue.light: { sun: [bearing,
+ * elevation] (degrees), color, k, sky, skyK, ground, groundK, rim }.
+ */
+export function backdropLight(cue: FxCue): { uniforms: Record<string, { value: unknown }>; glsl: string } | null {
+  const L = cue.light as Record<string, unknown> | undefined;
+  if (!L) return null;
+  const [b, e] = ((L.sun as number[]) ?? [42, 13]).map((v) => (v * Math.PI) / 180);
+  return {
+    uniforms: {
+      uBlSun: { value: new THREE.Vector3(Math.sin(b) * Math.cos(e), Math.sin(e), Math.cos(b) * Math.cos(e)) },
+      uBlSunC: { value: new THREE.Color(String(L.color ?? '#ffb070')).multiplyScalar(num(L.k, 2)) },
+      uBlSky: { value: new THREE.Color(String(L.sky ?? '#6a4a7a')).multiplyScalar(num(L.skyK, 0.7)) },
+      uBlGnd: { value: new THREE.Color(String(L.ground ?? '#7a3420')).multiplyScalar(num(L.groundK, 0.3)) },
+      uBlRim: { value: num(L.rim, 1.2) },
+    },
+    glsl: /* glsl */ `
+      uniform vec3 uBlSun, uBlSunC, uBlSky, uBlGnd; uniform float uBlRim;
+      float blHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float blNoise(vec2 p) {
+        vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(blHash(i), blHash(i + vec2(1.0, 0.0)), u.x), mix(blHash(i + vec2(0.0, 1.0)), blHash(i + vec2(1.0, 1.0)), u.x), u.y);
+      }
+      vec3 blLight(vec3 albedo, vec3 n, vec3 wp, float occl) {
+        vec3 v = normalize(cameraPosition - wp);
+        // Strata and seams on the steep faces, gullies breaking them up.
+        float steep = smoothstep(0.85, 0.45, n.y);
+        float y = wp.y + (blNoise(wp.xz * 0.04) - 0.5) * 3.0;
+        float az = atan(n.x, abs(n.z) + 1e-3);
+        float gully = blNoise(vec2(az * 14.0 + wp.x * 0.02, y * 0.03));
+        float fine = 0.86 + 0.14 * sin(y * 2.1 + blNoise(wp.xz * 0.1) * 4.0);
+        float seam = 1.0 - 0.32 * smoothstep(0.9, 0.98, fract(y * 0.11 + 0.3 * blNoise(wp.xz * 0.02)));
+        albedo *= mix(1.0, fine * seam * (0.78 + 0.34 * gully), steep);
+        float sun = max(dot(n, uBlSun), 0.0);
+        float sky = 0.55 + 0.45 * n.y;
+        float gnd = max(-n.y, 0.0) * 0.6 + 0.25 * (1.0 - abs(n.y));
+        float rim = pow(clamp(1.0 - dot(n, v), 0.0, 1.0), 2.5) * smoothstep(-0.25, 0.4, dot(n, uBlSun)) * smoothstep(-0.6, 0.2, dot(-v, uBlSun));
+        vec3 c = albedo * (uBlSunC * sun + uBlSky * sky + uBlGnd * gnd) * occl;
+        return c + uBlSunC * rim * uBlRim * 0.35 * occl;
+      }`,
+  };
+}
+
 // ------------------------------------------------------------------------------------------ mesas
 
 const STRATA = ['#7a2e1c', '#a4482a', '#c06a3c', '#8a3a22', '#d08a58', '#9a4426', '#6a2618', '#b85a32', '#c97d4c', '#8e3a20'];
@@ -132,18 +180,20 @@ class Mesas implements Effect {
     const uK = { value: num(cue.hazeK, 0.0016) };
     const uMax = { value: num(cue.hazeMax, 0.85) };
     const uLift = { value: num(cue.lift, 0.12) };
+    const bl = backdropLight(cue);
+    const base0 = base;
     mat.onBeforeCompile = (sh) => {
-      Object.assign(sh.uniforms, { uHaze, uK, uMax, uLift });
+      Object.assign(sh.uniforms, { uHaze, uK, uMax, uLift }, bl?.uniforms ?? {});
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying float vWY;')
-        .replace('#include <project_vertex>', '#include <project_vertex>\nvWY = (modelMatrix * vec4(transformed, 1.0)).y;');
+        .replace('#include <common>', '#include <common>\nvarying float vWY; varying vec3 vMW; varying vec3 vMN;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvWY = (modelMatrix * vec4(transformed, 1.0)).y; vMW = (modelMatrix * vec4(transformed, 1.0)).xyz; vMN = normalize(mat3(modelMatrix) * objectNormal);');
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform vec3 uHaze; uniform float uK, uMax, uLift; varying float vWY;')
+        .replace('#include <common>', `#include <common>\nuniform vec3 uHaze; uniform float uK, uMax, uLift; varying float vWY; varying vec3 vMW; varying vec3 vMN;\n${bl?.glsl ?? ''}`)
         .replace(
           '#include <dithering_fragment>',
           `#include <dithering_fragment>
           float dist = length(vViewPosition);
-          gl_FragColor.rgb += diffuseColor.rgb * uLift;
+          ${bl ? `gl_FragColor.rgb = blLight(diffuseColor.rgb, normalize(vMN), vMW, 0.55 + 0.45 * smoothstep(${base0.toFixed(1)}, ${(base0 + 40).toFixed(1)}, vWY));` : 'gl_FragColor.rgb += diffuseColor.rgb * uLift;'}
           float hz = (1.0 - exp(-dist * uK)) * mix(1.0, 0.72, smoothstep(0.0, 140.0, vWY));
           gl_FragColor.rgb = mix(gl_FragColor.rgb, uHaze, clamp(hz, 0.0, uMax));`,
         );

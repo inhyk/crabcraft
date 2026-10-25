@@ -46,32 +46,64 @@ const MESA_RING = [
   [6, 600, 45, 90, 1.3, 30], [20, 480, 28, 70, 1.0, 0], [31, 700, 60, 115, 1.4, 70], [44, 560, 22, 64, 1.0, 20],
   [53, 760, 70, 125, 1.5, 40], [63, 480, 24, 60, 1.1, 0], [75, 610, 40, 92, 1.3, 100], [86, 520, 20, 74, 1.0, 10],
   [97, 720, 64, 108, 1.5, 60], [110, 500, 30, 62, 1.2, 120], [124, 640, 46, 96, 1.4, 30], [138, 560, 34, 70, 1.2, 50],
+  // A farther row, pale in the haze, and spires standing out on the floor nearer in.
+  [14, 1150, 80, 150, 1.6, 10], [38, 1300, 90, 170, 1.5, 80], [66, 1250, 70, 140, 1.4, 20], [90, 1350, 100, 160, 1.6, 50], [116, 1200, 80, 130, 1.5, 0],
+  [57, 360, 9, 58, 1.0, 0], [94, 420, 12, 66, 0.8, 30], [27, 380, 14, 52, 1.2, 60],
 ];
 const MESAS = {
   t: -6,
   kind: 'dusk-mesa',
   mesas: MESA_RING.map(([b, d, r, h, st, yw], i) => [...flat(T, b, d), r, h, i + 3, st, yw]),
-  base: -10,
+  base: -28,
   haze: '#ea8c6a',
-  hazeK: 0.0013,
-  hazeMax: 0.56,
+  hazeK: 0.0007,
+  hazeMax: 0.7,
   lift: 0.2,
+  light: { sun: [42, 13], color: '#ffae6a', k: 2.8, sky: '#5e3c78', skyK: 0.5, ground: '#8a3a22', groundK: 0.3, rim: 1.6 },
 };
-/** Where the fireball comes down: the shore at the foot of the near butte. */
+/** Past the shore the bay gives way to a red-rock canyon land (dusk-land): the plateau breaks off in
+ * benched cliffs to a valley floor where a river winds in from the mesas and passes under the lip. */
+const LAND_FLOOR = -20;
+const LAND_RISE = 0.008;
+/** The land's floor height (without its rolls) at a distance from T. */
+const landY = (d) => LAND_FLOOR + Math.max(0, d - 250) * LAND_RISE;
+const LAND = {
+  t: -6,
+  kind: 'dusk-land',
+  center: T,
+  arc: [-40, 190],
+  reach: 1500,
+  cut: 0.2,
+  floor: LAND_FLOOR,
+  drop: 24,
+  rise: LAND_RISE,
+  river: [[62, 1400], [68, 980], [76, 720], [69, 540], [80, 400], [90, 300], [80, 220], [88, 150], [101, 108], [96, 78], [106, 62], [122, 60], [142, 72], [168, 96], [190, 120]],
+  width: [4.5, 16],
+  knolls: [[64, 74, 12, 6], [46, 150, 18, 0], [84, 190, 15, -6], [116, 150, 14, -2], [30, 230, 24, 2], [120, 270, 26, 6], [58, 300, 20, -4]],
+  haze: '#ea8c6a',
+  hazeK: 0.0009,
+  hazeMax: 0.72,
+  light: MESAS.light,
+  sun: null,
+  sky: ['#f0a08c', '#ffe0b0'],
+};
+/** Where the fire takes later: the canyon floor at the foot of the near butte. */
 const SITE = flat(T, 70, 330);
-const SITE_AT = [SITE[0], 1, SITE[1]];
+/** Where the fireball comes down: the near knoll's shoulder across the canyon (LAND's first knoll). */
+const KNOLL_HIT = flat(T, 63, 70);
+const KNOLL_AT = [KNOLL_HIT[0], 3.5, KNOLL_HIT[1]];
 /** Song second the fireball strikes, and the one the fire takes and climbs (the original's 120.2). */
 const STRIKE_AT = 112.42;
 const FIRE_AT = 120.2;
 /** The smoke of the strike, from STRIKE_AT, in a shot starting at song second `at`. */
-const STRIKE_SMOKE = (at) => ({ t: STRIKE_AT - at, kind: 'dusk-plume', at: [SITE[0], 2, SITE[1]], rate: 3, life: 16, rise: 6, spread: 2.5, size0: 4, size1: 22, wind: [3, 1], opacity: 0.45, color: '#3a2a26', glow: '#d0581a', glowH: 16, seed: 31 });
+const STRIKE_SMOKE = (at) => ({ t: STRIKE_AT - at, kind: 'dusk-plume', at: [KNOLL_HIT[0], 4, KNOLL_HIT[1]], rate: 5, life: 9, rise: 3.2, spread: 3, size0: 5, size1: 13, wind: [2.2, 0.6], opacity: 0.32, color: '#8a6450', glow: '#ff7a2a', glowH: 7, glowK: 1.2, seed: 31 });
 /** 120.2: the fire takes along the shore under the butte and black smoke climbs in columns. */
 const FIRE_UP = (at) => {
   const o = FIRE_AT - at;
-  const spot = (b, d, s) => ({ at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, 0.5] : [v])), s });
+  const spot = (b, d, s) => ({ at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, landY(d) + 0.4] : [v])), s });
   return [
     { t: o - 0.1, kind: 'dusk-fire', spots: [spot(70, 330, 18), spot(68.4, 338, 14), spot(71.6, 324, 14), spot(66.8, 348, 10), spot(73.2, 318, 10), spot(69.2, 318, 8), spot(65.4, 358, 7)], height: 3.2, gain: 1.6, glow: 0.9, seed: 81, smoke: 0, grow: [[o - 0.05, 0], [o + 0.25, 0.55], [o + 0.7, 0.9], [o + 1.2, 1.1], [o + 4, 1.2]] },
-    ...[[70, 330, 0], [67.8, 344, 1], [72.4, 320, 2]].map(([b, d, k]) => ({ t: o + 0.05 * k, kind: 'dusk-plume', at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, 10] : [v])), rate: 9, life: 9, rise: 34, spread: 3.5, size0: 8, size1: 42, wind: [7, 2], opacity: 0.9, color: '#201412', glow: '#ff5a18', glowH: 30, glowK: 1.6, seed: 40 + k })),
+    ...[[70, 330, 0], [67.8, 344, 1], [72.4, 320, 2]].map(([b, d, k]) => ({ t: o + 0.05 * k, kind: 'dusk-plume', at: [...flat(T, b, d)].flatMap((v, i) => (i === 0 ? [v, landY(d) + 9] : [v])), rate: 9, life: 9, rise: 34, spread: 3.5, size0: 8, size1: 42, wind: [7, 2], opacity: 0.9, color: '#201412', glow: '#ff5a18', glowH: 30, glowK: 1.6, seed: 40 + k })),
   ];
 };
 const DUSK_VIEW = { exposure: 1.05, saturation: 0.18, contrast: 0.08, bloom: { intensity: 1.3, threshold: 0.75, radius: 0.8 }, vignette: { offset: 0.25, darkness: 0.6 } };
@@ -83,6 +115,7 @@ const PROPS = [...[1, 2, 3].flatMap((i) => [`Rock_Medium_${i}`, `Pebble_Round_${
 const DRY_FLOOR = ([x, z], half, seed) => ({ t: -6, kind: 'night-floor', box: [x - half, z - half, x + half, z + half], soil: '#4a3022', moss: '#5e5626', litter: '#6e4426', litter2: '#8a6a3a', grass: '#4e4e1e', tip: '#e2b464', count: 34, height: [0.16, 0.62], width: 0.026, wind: 0.09, drift: 0.4, seed });
 /** The sun's direction from T: its glare over the lens is drawn at this far point. */
 const SUN = [...flat(T, 42, 900)].flatMap((v, i) => (i === 0 ? [v, 210] : [v]));
+LAND.sun = SUN;
 
 // 111.0: white from the blast; the sun's glare burns through it over the plateau's grass and recedes
 // (112.3) off the red mesas across the bay while the fireball comes down among them (112.42). The
@@ -108,13 +141,15 @@ const meteor = {
   },
   fx: [
     MESAS,
+    LAND,
     DRY_FLOOR(T, 9, 61),
     { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS] },
     // The white holds to 111.5, the glare burns through it and recedes by 112.6.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.45, 1], [0.7, 0.85], [0.95, 0.55], [1.15, 0.22], [1.35, 0.05], [1.5, 0]] },
     { t: 0, kind: 'dusk-glare', at: SUN, alpha: [[0, 1.4], [0.6, 1.4], [1.1, 1.0], [1.4, 0.55], [2, 0.42]], radius: [[0, 1.6], [0.6, 1.2], [1.2, 0.45], [1.5, 0.3], [2, 0.26]], color: '#fff6e8', color2: '#ffb468' },
-    { t: 0.55, kind: 'dusk-fireball', from: [...flat(T, 76, 470)].flatMap((v, i) => (i === 0 ? [v, 190] : [v])), to: SITE_AT, d: STRIKE_AT - C.meteor - 0.55, size: 9, trail: 140, light: 0, distance: 1, accel: 1.3 },
-    { t: STRIKE_AT - C.meteor, kind: 'dusk-blast', at: SITE_AT, r: 8, column: 0, light: 0, distance: 1, flashA: 0.12, flashD: 0.18, flashColor: '#ffe2b0', shake: 0.04, puffs: 48, debris: 0, ring: 0 },
+    { t: 0.55, kind: 'dusk-fireball', from: [...flat(T, 74, 260)].flatMap((v, i) => (i === 0 ? [v, 120] : [v])), to: KNOLL_AT, d: STRIKE_AT - C.meteor - 0.55, size: 5, trail: 90, light: 0, distance: 1, accel: 1.3 },
+    { t: STRIKE_AT - C.meteor, kind: 'dusk-blast', at: KNOLL_AT, r: 9, column: 2.5, light: 900, distance: 60, flashA: 0.45, flashD: 0.3, flashColor: '#ffe2b0', shake: 0.09, puffs: 56, debris: 36 },
+    { t: STRIKE_AT - C.meteor, kind: 'shake', d: 0.5, amp: 0.07 },
     STRIKE_SMOKE(C.meteor),
     { t: -5, kind: 'embers', at: polar(T, 210, 1, 1.2), box: [10, 4, 10], count: 500, drift: [0.6, 0.5, 0.3], size: 0.04 },
     MOTES(),
@@ -173,6 +208,7 @@ const rise = {
   },
   fx: [
     MESAS,
+    LAND,
     DRY_FLOOR(T, 9, 61),
     { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS, ...LONE_TREE] },
     STRIKE_SMOKE(C.rise),
@@ -265,6 +301,7 @@ const reveal = {
   },
   fx: [
     MESAS,
+    LAND,
     DRY_FLOOR(T, 9, 61),
     { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS, ...LONE_TREE] },
     STRIKE_SMOKE(C.reveal),
@@ -299,14 +336,16 @@ const dive = {
       { t: 1.3, p: polar(T, TY - 100, 1.0, 2.0), l: AT(TY + 10, 30, -1), fov: 40 },
       // Past the shoulder, out over the edge and down the slope.
       { t: 1.75, p: polar(T, TY - 10, 2.0, 1.7), l: S(14, -1.2), fov: 44 },
-      { t: 2.3, p: S(7, 1.2), l: S(18, -2.2), fov: 50 },
-      { t: 3.0, p: S(15, 0.7), l: S(22, -3.0), fov: 56 },
+      // Off the lip and out over the canyon, tipping down onto the river below.
+      { t: 2.3, p: S(13, 2.6), l: AT(DUST_WIND + 4, 52, -12), fov: 50 },
+      { t: 3.0, p: AT(DUST_WIND + 2, 25, 3.2), l: AT(DUST_WIND + 6, 66, LAND_FLOOR - 1), fov: 56 },
     ],
     ease: 'linear',
     shake: 0.01,
   },
   fx: [
     MESAS,
+    LAND,
     DRY_FLOOR(T, 9, 61),
     { t: -6, kind: 'dusk-hide', names: [...TUFTS, ...PROPS, ...LONE_TREE] },
     STRIKE_SMOKE(C.dive),
@@ -315,8 +354,8 @@ const dive = {
     ...TAUREN_LIGHTS,
     { t: -6, kind: 'dusk-pose', actor: 't', pitch: [[0, -12], [0.5, -12], [1.3, -22]] },
     ...DUST(C.dive),
-    { t: 1.6, kind: 'dusk-haze', alpha: [[1.9, 0], [2.25, 0.25], [2.5, 0.55], [2.75, 0.85], [3.0, 0.92]], cover: [[1.9, 0.4], [3, 0.8]], color: '#6a1608', color2: '#d4461a', color3: '#ffb070', back: 0.65, flow: [-0.25, 0.05] },
-    { t: 2.2, kind: 'fade', color: '#c8401a', curve: [[2.3, 0], [2.6, 0.25], [3.0, 0.45]] },
+    { t: 1.6, kind: 'dusk-haze', alpha: [[2.1, 0], [2.45, 0.18], [2.7, 0.45], [2.88, 0.8], [3.0, 0.92]], cover: [[2.1, 0.4], [3, 0.8]], color: '#6a1608', color2: '#d4461a', color3: '#ffb070', back: 0.65, flow: [-0.25, 0.05] },
+    { t: 2.2, kind: 'fade', color: '#c8401a', curve: [[2.45, 0], [2.75, 0.25], [3.0, 0.45]] },
     { t: 1.8, kind: 'embers', at: S(16, 1.2), box: [10, 5, 10], count: 1400, drift: [0.6, 1.4, 0.3], size: 0.05 },
   ],
 };
