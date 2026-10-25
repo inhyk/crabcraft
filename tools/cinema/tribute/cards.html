@@ -25,6 +25,8 @@ const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 const glc = document.getElementById('g');
 const KO = '"Apple SD Gothic Neo", "Pretendard", sans-serif';
+// ?lang=en writes the map's names and the rating in English (the game's own English names).
+const EN = new URLSearchParams(location.search).get('lang') === 'en';
 
 // ----------------------------------------------------------------------------------- helpers
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -103,6 +105,9 @@ const LABELS = [
   ['별빛 항구', 3018, 1152, 44, 22.58, 22.98, true],
   ['서리 소나무 숲', 3050, 540, 54, 23.18, 23.65],
 ];
+const LABELS_EN = ['Clawhaven', 'Frostlight', 'Frozen Throne', 'Starhaven', 'Frostpine Woods'];
+// Clawhaven and Frostpine Woods run longer in English and would reach their coasts: nudged west onto the land.
+if (EN) LABELS.forEach((l, i) => { l[0] = LABELS_EN[i]; l[1] -= [50, 0, 0, 0, 90][i]; });
 const NL = LABELS.length;
 
 const SKW = 4096, SKH = 2048; // the globe's skin (the map baked equirectangular)
@@ -203,7 +208,9 @@ function buildField(data) {
  *  letters' edge, + inside). cx, cy: the name's centre in it. */
 const NAME_RANGE = 12;
 function roundedName(s, size, star) {
-  const font = `700 ${size}px ${KO}`, sp = Math.round(size * 0.4), pad = Math.ceil(size * 0.3) + NAME_RANGE;
+  // Cinzel's capitals run about twice as wide per letter as the gothic Hangul, so the English names keep
+  // a tighter spacing.
+  const font = EN ? `700 ${size}px Cinzel` : `700 ${size}px ${KO}`, sp = Math.round(size * (EN ? 0.12 : 0.4)), pad = Math.ceil(size * 0.3) + NAME_RANGE;
   const m = canvas(8, 8).getContext('2d'); m.font = font; m.letterSpacing = `${sp}px`;
   const tw = Math.ceil(m.measureText(s).width), w = tw + pad * 2, h = Math.ceil(size * 1.2) + pad * 2 + (star ? Math.ceil(size * 1.05) : 0);
   const cx = w / 2, cy = star ? h - pad - size * 0.6 : h / 2;
@@ -707,7 +714,7 @@ function drawRating(t, overMap) {
   const s = 330, x = W / 2 - s / 2, y = H / 2 - s / 2 - 60;
   ctx.fillStyle = '#2fa24a'; ctx.beginPath(); ctx.roundRect(x, y, s, s, 46); ctx.fill();
   ctx.fillStyle = '#ffffff'; ctx.font = '900 138px Cinzel'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('ALL', W / 2, y + s / 2 + 8);
-  ctx.font = `bold 60px "Apple SD Gothic Neo", sans-serif`; ctx.fillText('전체이용가', W / 2, y + s + 74);
+  ctx.font = `bold 60px "Apple SD Gothic Neo", sans-serif`; ctx.fillText(EN ? 'ALL AGES' : '전체이용가', W / 2, y + s + 74);
   ctx.restore();
 }
 

@@ -4,6 +4,7 @@
 //
 // Usage: node tools/cinema/tribute/cards.mjs --url http://localhost:5311 --islands <islands.json> --out <dir>
 //          [--only card-map] [--stills 10,20,32]   (stills at song seconds instead of recordings)
+//          [--lang en]   (the map's names and the rating in English)
 import { launchBrowser } from '../../lib/browser.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -19,6 +20,7 @@ const base = opt('--url', 'http://localhost:5311');
 const islands = JSON.parse(readFileSync(resolve(opt('--islands', 'islands.json')), 'utf8'));
 const outDir = resolve(opt('--out', 'cards'));
 const only = (opt('--only', '') || '').split(',').filter(Boolean);
+const lang = opt('--lang', '');
 const stills = (opt('--stills', '') || '').split(',').filter(Boolean).map(Number);
 mkdirSync(outDir, { recursive: true });
 
@@ -30,7 +32,7 @@ try {
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto(`${base}/tools/cinema/tribute/cards.html`, { waitUntil: 'load' });
+  await page.goto(`${base}/tools/cinema/tribute/cards.html${lang ? `?lang=${lang}` : ''}`, { waitUntil: 'load' });
   const t0 = Date.now();
   await page.evaluate((d) => window.cardsInit(d), islands);
   console.log(`cards ready in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
