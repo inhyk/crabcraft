@@ -83,9 +83,10 @@ function roofCap(prof:Profile,frame:RoofFrame,seed:number,eaves:THREE.Vector3[][
    let t=(T*load+.06*Math.max(0,1-Math.abs(x)/.6))*end-.05*(1-end),px=x,py=prof.at(x);
    if(edge){const [o,dn]=LIP[Math.abs(edge)-1],droop=(.85+.5*noise1(z*.9,seed+side*7))*end;px=x+side*o*droop;py=prof.at(xe*side)+(dn*T*load*droop)-(1-end)*.05;t=0;}
    pos.push(px,py+t,z);
-   // Occlusion: the roll tucks into shade under the eave, the lower slope dims toward it, and the cap thins into
-   // the tiles at the gables.
-   const o=(edge?1-.45*THREE.MathUtils.smoothstep(Math.abs(edge),3,6):1)*(.88+.12*end)*(1-.1*THREE.MathUtils.smoothstep(Math.abs(x)/xe,.55,1));occ.push(o,o,o);
+   // Occlusion: the roll's outer face, turned from the sky, is a step darker than the slope (the drip edge that
+   // outlines a roof from above), it tucks into shade under the eave, the lower slope dims toward it, and the cap
+   // thins into the tiles at the gables.
+   const o=(edge?1-.3*THREE.MathUtils.smoothstep(Math.abs(edge),1,3)-.4*THREE.MathUtils.smoothstep(Math.abs(edge),3,6):1)*(.88+.12*end)*(1-.1*THREE.MathUtils.smoothstep(Math.abs(x)/xe,.55,1));occ.push(o,o,o);
   }
   // Icicles hang from the lowest point of the roll.
   const lo=(s:number)=>new THREE.Vector3(s*(xe+.1),prof.at(xe*s)-.4*T,z).applyMatrix4(frame.m);
@@ -96,6 +97,15 @@ function roofCap(prof:Profile,frame:RoofFrame,seed:number,eaves:THREE.Vector3[][
  g.applyMatrix4(frame.m);g.computeVertexNormals();
  eaves.push(left,right);
  return g;
+}
+
+/**
+ * The board along each eave under the snow's cornice: a dark line between the white cap and the wall, so from above
+ * every roof keeps its edge against the snow on the ground.
+ */
+function roofFascia(prof:Profile,frame:RoofFrame){
+ const xe=Math.min(-prof.xmin,prof.xmax),top=prof.at(xe-.04)-.02,len=prof.zmax-prof.zmin-.04;
+ return [-1,1].map(s=>worldBox(.06,.32,len,.5).translate(s*(xe+.03),top-.16,(prof.zmin+prof.zmax)/2).applyMatrix4(frame.m));
 }
 
 /** Banked snow against each wall, highest at the wall, cleared in front of doors, following the ground. */
@@ -345,12 +355,13 @@ export async function buildSnowVillage(opts:SnowVillageOptions):Promise<SnowVill
  // Wall lanterns beside every door, as in Clawhaven.
  const lanterns:{pos:THREE.Vector3;yaw:number;s:number}[]=[];
  for(const d of [...builder.doorLamps,...chapel.doorLamps])lanterns.push({pos:d.pos,yaw:d.yaw,s:.75});
- group.add(homes.build());
 
  // Roof caps and the icicles under their eaves.
  const capGeos:THREE.BufferGeometry[]=[],eaves:THREE.Vector3[][]=[],profiles=new Map<string,Profile>();
- frames.roofs.forEach((r,i)=>{let p=profiles.get(r.piece);if(!p)profiles.set(r.piece,p=roofProfile(village,r.piece));capGeos.push(roofCap(p,r,i*7+3,eaves));});
- const snowMat=new THREE.MeshStandardMaterial({name:'frostlight-snow',color:'#e9f1f9',roughness:.84,vertexColors:true});snowMass(snowMat,{carve:1,white:.25});
+ const fascia=(village.materials.get('MI_WoodTrim') as THREE.MeshStandardMaterial).clone();fascia.name='frostlight-fascia';fascia.color.multiplyScalar(.32);fascia.metalness=0;fascia.metalnessMap=null;fascia.side=THREE.FrontSide;
+ frames.roofs.forEach((r,i)=>{let p=profiles.get(r.piece);if(!p)profiles.set(r.piece,p=roofProfile(village,r.piece));capGeos.push(roofCap(p,r,i*7+3,eaves));for(const g of roofFascia(p,r))homes.addGeometry(g,fascia,null,true);});
+ group.add(homes.build());
+ const snowMat=new THREE.MeshStandardMaterial({name:'frostlight-snow',color:'#e9f1f9',roughness:.84,vertexColors:true});snowMass(snowMat,{carve:1,white:.3,sun:.55});
  const caps=new THREE.Mesh(mergeGeometries(capGeos,false)!,snowMat);caps.name='frostlight-roof-snow';caps.receiveShadow=true;caps.castShadow=false;group.add(caps);
  const driftMat=new THREE.MeshStandardMaterial({name:'frostlight-drift',color:'#e8f2fc',roughness:.9,vertexColors:true});snowMass(driftMat,{lumps:.7});
  // Snowmen: their packed bodies share the drift mesh, the faces, arms, scarves and light cables one trim mesh.

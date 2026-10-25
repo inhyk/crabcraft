@@ -413,6 +413,15 @@ export class SnowSky {
   }
   /** Mean horizon luminance: the fog may reach twice this toward the sun. */
   private get hazeKnee() { const h = this.skyHorizon; return h.r * 0.2126 + h.g * 0.7152 + h.b * 0.0722; }
+  /**
+   * Fog density for a camera at height `cameraY` looking down by `lookY` (its forward's y). The haze lies in the
+   * low air over the snow: a view along the ground crosses all of it, a view from high above straight down only a
+   * thin column, so a high camera looking down sees the island crisp, as an aerial photograph does.
+   */
+  fogDensity(cameraY: number, lookY: number): number {
+    const t = (a: number, b: number, x: number) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+    return FOG_DENSITY * (1 - 0.72 * t(50, 150, cameraY) * t(0.45, 0.85, -lookY));
+  }
   update(time: number): void {
     this.material.uniforms.time.value = time;
   }
@@ -454,6 +463,8 @@ export class SnowSky {
   private _up?: THREE.Vector3;
 }
 
+/** Frostlight's haze along the ground (FogExp2 density). */
+const FOG_DENSITY = 0.0035;
 /** Half-width of the shadow box across the sun, metres. */
 const SHADOW_HALF = 70;
 /** How far up the sun ray the shadow camera sits: far enough to catch trees on the slopes toward the sun. */
