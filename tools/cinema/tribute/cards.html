@@ -878,10 +878,11 @@ window.cardsInit = async (islands) => {
   await document.fonts.load('500 30px Cinzel'); await document.fonts.load('900 138px Cinzel');
   LOGO = await img('/art/logo.webp');
   GL = initGL(islands);
-  // The presents line, sized like the original's (about 80 % of the width, wide-spaced small caps:
-  // Cinzel's lower case is small caps).
-  const text = 'Inhyuk Seo  &  Inkeun Seo  Present', font = '500 56px Cinzel';
-  let sp = 0; ctx.font = font; for (; sp < 60; sp += 0.5) { ctx.letterSpacing = `${sp}px`; if (ctx.measureText(text).width > W * 0.79) break; }
+  // The presents line in wide-spaced small caps (Cinzel's lower case is small caps). The spacing is the
+  // one that stretched the longer names line to the original's 80 % of the width; this shorter line keeps
+  // it rather than spreading its letters apart.
+  const text = 'Hyuk Bros. Presents', font = '500 56px Cinzel', fit = 'Inhyuk Seo  &  Inkeun Seo  Present';
+  let sp = 0; ctx.font = font; for (; sp < 60; sp += 0.5) { ctx.letterSpacing = `${sp}px`; if (ctx.measureText(fit).width > W * 0.79) break; }
   PRESENT = { text, font, spacing: `${sp}px` };
   ctx.letterSpacing = '0px';
   // The logo split for the forge: the frame with the lower word cut out, the word, the word cold.

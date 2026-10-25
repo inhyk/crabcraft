@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Cuts the tribute: the 2D cards and the 3D shots laid on the 24 fps grid of timeline.mjs, black
 // wherever nothing is rendered yet, letterboxed to 1920x1080 (2.2:1 picture), with the reference
-// soundtrack the user supplies (its audio stream is copied untouched; it never enters the repo).
+// soundtrack the user supplies (its audio stream is copied untouched unless --gain is given; it never
+// enters the repo).
 //
 // Usage: node tools/cinema/tribute/edit.mjs --soundtrack <video or audio file> --cards <dir>
 //          --shots <dir>[,<dir>...] --out <file.mp4> [--compare <file.mp4>] [--reference <video>]
-//          [--program <program.mjs>]
+//          [--program <program.mjs>] [--gain <dB>]
 // --compare also writes the original (from --reference, default the soundtrack file) above the
-// tribute, frame for frame, for review.
+// tribute, frame for frame, for review. --gain raises the soundtrack by that many dB and re-encodes it,
+// with a limiter that keeps the peaks under -1 dB (+4 takes the original's -15.4 LUFS to about -12).
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -26,6 +28,7 @@ const shotDirs = opt('--shots', '').split(',').filter(Boolean).map((d) => resolv
 const out = resolve(opt('--out', 'tribute.mp4'));
 const compare = opt('--compare', null);
 const reference = resolve(opt('--reference', soundtrack));
+const gain = Number(opt('--gain', 0));
 // The shots' timing comes from the program (default: this folder's program.mjs).
 const { shots } = await import(pathToFileURL(resolve(opt('--program', new URL('./program.mjs', import.meta.url).pathname))).href);
 if (!existsSync(soundtrack)) throw new Error(`soundtrack not found: ${soundtrack}`);
@@ -85,7 +88,7 @@ timeline.forEach((s, i) => {
 const audioIndex = nIn++;
 inputs.push('-i', soundtrack);
 filters.push(`${timeline.map((_, i) => `[v${i}]`).join('')}concat=n=${timeline.length}:v=1:a=0,pad=1920:1080:0:104:black[vout]`);
-run([...inputs, '-filter_complex', filters.join(';'), '-map', '[vout]', '-map', `${audioIndex}:a:0`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-c:a', 'copy', '-movflags', '+faststart', out]);
+run([...inputs, '-filter_complex', filters.join(';'), '-map', '[vout]', '-map', `${audioIndex}:a:0`, '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', '-r', String(FPS), ...(gain ? ['-af', `volume=${gain}dB,alimiter=limit=0.79:level=false`, '-c:a', 'aac', '-b:a', '256k'] : ['-c:a', 'copy']), '-movflags', '+faststart', out]);
 const got = frames(out);
 writeFileSync(out.replace(/\.mp4$/, '-timeline.json'), JSON.stringify({ frames: got, expected: total, segments: report }, null, 1));
 // A short picture drifts against the soundtrack: refuse it (a shot file rewritten mid-edit does this).
