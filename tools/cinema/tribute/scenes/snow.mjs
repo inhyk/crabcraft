@@ -77,13 +77,13 @@ const COLD = { exposure: 1.08, saturation: -0.2, contrast: 0.05, bloom: { intens
  * The blizzard: an overcast sky, flat light, a cold balance, three snow layers (near streaks, mid
  * streaks, far flakes) on the wind and spindrift over the lens. `heavy` scales the snow.
  */
-function blizzard({ wind = [-3, -2.5, 9], heavy = 1, sky = '#dde2ec', zenith = '#b3b9d0', sun = 0.45, hemi = 1.45, tint = [0.94, 0.96, 1.08], drift = 0.12, until } = {}) {
+function blizzard({ wind = [-3, -2.5, 9], heavy = 1, sky = '#dde2ec', zenith = '#b3b9d0', sun = 0.45, hemi = 1.45, tint = [0.94, 0.96, 1.08], tint2 = tint, drift = 0.12, until } = {}) {
   const u = until === undefined ? {} : { until, fadeOut: 0.01 };
   const k = (v, f) => v.map((x) => +(x * f).toFixed(3));
   return [
     { t: -3, kind: 'snow-sky', horizon: sky, zenith, ...u },
     { t: -3, kind: 'snow-light', sun, hemi, ...u },
-    { t: -3, kind: 'snow-grade', tint, ...u },
+    { t: -3, kind: 'snow-grade', tint, tint2, ...u },
     { t: -3, kind: 'snow-streaks', count: Math.round(1400 * heavy), box: [9, 6, 9], drift: k(wind, 1.2), gust: [2.5, 1, 3], size: 0.022, trail: 0.05, opacity: 0.95, near: 0.25, seed: 1, ...u },
     { t: -3, kind: 'snow-streaks', count: Math.round(6000 * heavy), box: [26, 14, 26], drift: wind, gust: [2, 1, 2.5], size: 0.018, trail: 0.045, opacity: 0.8, seed: 2, ...u },
     { t: -3, kind: 'snow', count: Math.round(9000 * heavy), box: [70, 34, 70], drift: k(wind, 0.9), size: 0.05, opacity: 0.5, seed: 3, ...u },
@@ -123,7 +123,16 @@ const toward = (p, target, d = 6) => {
 };
 /** The city's gate towers and keep, for the camera to look at. */
 const GATE_LOOK = G(GATE[0], GATE[1], 13);
-const CITY = { t: -3, kind: 'snow-city', at: GATE, yaw: 0, clear: [-46, -120, 46, -50] };
+const CITY = { t: -3, kind: 'snow-city', at: GATE, yaw: 0, clear: [-46, -120, 46, -50], windows: 0.9, reach: 0.45 };
+
+/**
+ * The opening's look: the original is bright snow with deep shadows, saturated cold blues and a dark warm
+ * dwarf, so more contrast and colour than COLD, a harder sun under less sky fill, a lavender-blue storm
+ * that greys the distance instead of milking it, and a thinner veil over the lens.
+ */
+const OPEN_VIEW = { ...COLD, exposure: 1.1, saturation: 0.1, contrast: 0.26 };
+const OPEN_FOG = '#bcc4e6';
+const OPEN_STORM = { sky: OPEN_FOG, zenith: '#a3abd3', sun: 0.8, hemi: 1.0, tint: [0.8, 0.88, 1.2], tint2: [0.88, 0.93, 1.12] };
 
 const OPEN = 39.5;
 const C_WIDE = 61.0;
@@ -186,6 +195,25 @@ function handheld(cam, amp) {
   };
 }
 
+/**
+ * Camera keys held at least `clear(t)` units over the snow under the lens (smoothly). The face's frames measure `up`
+ * from the ground under the dwarf, and the bank east of the road rises 0.6 a unit, so the close-ups sank the lens up
+ * to 1.2 units into it: the terrain is culled from below, and its far edge read as a stray band across the snow.
+ */
+function overGround(cam, clear) {
+  return {
+    ...cam,
+    keys: cam.keys.map((key) => {
+      const c = clear(key.t);
+      const k = c;
+      const floor = ground(key.p[0], key.p[2]) + c;
+      const y = key.p[1];
+      const h = Math.max(k - Math.abs(y - floor), 0) / k;
+      return { ...key, p: [key.p[0], +(Math.max(y, floor) + (h * h * k) / 4).toFixed(3), key.p[2]] };
+    }),
+  };
+}
+
 // Both squared to the slope, a little sunk into the powder.
 const cast2 = (dwarfAt, beastAt, yaw) => [
   { id: 'dwarf', spec: DWARF, at: dwarfAt, yaw, align: 0.8, sink: 0.03 },
@@ -195,6 +223,18 @@ const HIDE = ['mira-ice-prison'];
 // The last north-road lamp stood where the opening's lens passes. Move the complete lamp west,
 // for both opening views, while leaving the game world's placement untouched.
 const LAMP_CLEARANCE = { t: -3, kind: 'snow-lamp-offset', at: [6.078627274048131, -18.125775308568286], offset: [-10, 0] };
+// The aurora ridge's ring of standing stones (src/game/frostThroneLayout.ts, RIDGE) stands across the climb: its three
+// east stones sit on the walk, so they go under the snow for the opening (the west three still line the road), and
+// the observer's armillary and chest step east out of the beast's reach.
+const WALK_CLEARANCE = {
+  t: -3,
+  kind: 'snow-props',
+  moves: [
+    ...[[8.65, -29.83], [9.6, -34], [8.65, -38.17]].map((at) => ({ at, by: 'sink', radius: 2.3 })),
+    { at: [13.2, -30.4], by: [1.6, -0.4], radius: 1.3 },
+    { at: [15.1, -33.4], by: [1.4, 0], radius: 0.9 },
+  ],
+};
 
 // The blunderbuss (src/capture/cinema/fx/snow-gun.ts) in his right claw in place of the sword: slung low at
 // his side, then on 52.7 s a dip and a swing up onto his shoulder, overshooting and settling by 53.4 s.
@@ -228,7 +268,7 @@ const face = {
   anchor: D,
   hide: HIDE,
   // A tighter bloom, so the LEDs glow without veiling the moustache.
-  view: { ...COLD, dof: true, bokeh: 2.2, bloom: { intensity: 0.45, threshold: 1.2, radius: 0.4 } },
+  view: { ...OPEN_VIEW, dof: true, bokeh: 2.2, bloom: { intensity: 0.45, threshold: 1.2, radius: 0.4 } },
   actors: cast2(D, F1(-11.5, 0, 3.0).filter((_, i) => i !== 1), YAW1 + PI / 2),
   tracks: {
     dwarf: {
@@ -255,7 +295,7 @@ const face = {
     },
   },
   cam: {
-    ...handheld(
+    ...overGround(handheld(
       move([
         // Out of the white onto the fur itself: the snow-caked moustache under his right eye, a hand's breadth
         // from the lens, then up and back to the original's close-up of his face.
@@ -267,15 +307,17 @@ const face = {
         // Round his right side to his profile as he turns, and on behind him...
         { t: 6.4, p: F1(-2.4, 0.7, 1.9), l: F1(0, 0.72, 0.2), fov: 30 },
         { t: 8.2, p: F1(-2.35, 0.82, -0.25), l: F1(0, 0.8, 0.5), fov: 32 },
-        // ...to low over his right shoulder at 49.3 s, staring out into the storm; drifting right as the beast comes in.
-        { t: S(49.3), p: F1(-0.7, 0.72, -1.25), l: F1(0.15, 0.6, 4.5), fov: 36 },
-        // Drawing back and up off his shoulder to take in the beast on the bank beside him.
-        { t: S(50.2), p: F1(-0.8, 0.85, -1.8), l: F1(-0.4, 0.95, 4.5), fov: 40 },
-        { t: S(51.2), p: F1(-0.9, 1.2, -3.0), l: F1(-1.4, 1.7, 4.5), fov: 44 },
-        { t: S(52.6), p: F1(-0.95, 1.55, -4.1), l: F1(-1.8, 2.1, 4.0), fov: 44 },
-        { t: S(53.45), p: F1(-1.0, 1.65, -4.4), l: F1(-1.9, 2.0, 4.0), fov: 44 },
+        // ...to behind his right shoulder at 48.5-49.3 s, the whole of him on the left, staring out into the storm;
+        // drawing back and up as the beast comes in at the right, to a two-shot that holds both of them whole
+        // on the bank (the beast stands twice his size, so the lens keeps its distance).
+        { t: 9.0, p: F1(-2.4, 1.1, -2.8), l: F1(-0.2, 0.25, 1.5), fov: 36 },
+        { t: S(49.3), p: F1(-2.3, 1.2, -3.4), l: F1(-0.5, 0.3, 2.5), fov: 38 },
+        { t: S(50.2), p: F1(-2.2, 1.5, -4.6), l: F1(-1.1, 0.5, 2.8), fov: 38 },
+        { t: S(51.2), p: F1(-2.1, 2.0, -6.8), l: F1(-1.6, 1.9, 2.6), fov: 48 },
+        { t: S(52.6), p: F1(-2.0, 2.2, -7.8), l: F1(-1.9, 1.6, 2.2), fov: 43 },
+        { t: S(53.45), p: F1(-2.0, 2.3, -8.1), l: F1(-1.9, 1.6, 2.2), fov: 43 },
         // Walking: following the two of them side by side, then out round behind the beast to its right...
-        { t: S(54.4), p: W(-2.2, 2.4, -4.8, S(54.4)), l: W(-1.8, 0.8, 3.0, S(54.4)), fov: 42 },
+        { t: S(54.4), p: W(-2.6, 2.5, -7.9, S(54.4)), l: W(-1.9, 1.0, 3.0, S(54.4)), fov: 44 },
         { t: S(55.4), p: W(-7.6, 1.7, -3.0, S(55.4)), l: W(-3.4, 1.1, 1.8, S(55.4)), fov: 40 },
         // ...low for the roar as it wheels round toward the lens...
         { t: S(55.9), p: W(-8.2, 1.25, -2.8, S(55.5)), l: W(-5.0, 1.6, 0.9, S(55.5)), fov: 38 },
@@ -288,7 +330,7 @@ const face = {
       ]),
       // Hand-held from the shoulder shot on, looser once they climb away into the storm.
       (t) => (t < 9 ? 0 : t < 10 ? (t - 9) * 0.012 : t < S(57.2) ? 0.012 : Math.min(0.035, 0.012 + (t - S(57.2)) * 0.046)),
-    ),
+    ), (t) => 0.02 + 0.28 * smooth01((t - 1.2) / 1.8)),
     focus: 'dwarf',
     range: 2.5,
   },
@@ -297,11 +339,13 @@ const face = {
     { t: S(59.05), kind: 'snow-streaks', count: 3800, box: [14, 6, 14], drift: [-7.6, -1.2, 10.5], gust: [3, 1, 3], size: 0.026, trail: 0.07, opacity: 0.95, near: 0.4, seed: 9, fadeIn: 0.12, until: S(60.1), fadeOut: 0.5 },
     { t: S(59.1), kind: 'snow-powder', at: W(-4.5, 0.2, 3.4, S(59.1)), count: 40, flakes: 70, spread: 4.5, rise: 1.4, size: 1.1, life: 1.2 },
     // The spindrift over the lens thinned while it is a hand's breadth from the fur, back as he turns; the gust.
-    ...blizzard({ wind: [0.65, -2.2, 6.9] }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.035], [2.6, 0.035], [4.6, 0.12], [S(59.1), 0.12], [S(59.3), 0.38], [S(59.7), 0.2], [S(60.3), 0.12]] } : c)),
-    // The storm swallows the valley and the city while he stares into it, and lifts off the city at 58.5 s.
-    { t: -3, kind: 'snow-fog', color: '#dde2ec', density: [[0, 0.014], [3.6, 0.02], [5.2, 0.04], [8.6, 0.05], [S(57.9), 0.05], [S(58.3), 0.032], [S(58.7), 0.021], [S(59.5), 0.015], [S(61.0), 0.012]] },
+    ...blizzard({ wind: [0.65, -2.2, 6.9], ...OPEN_STORM }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.03], [2.6, 0.03], [4.6, 0.07], [S(59.1), 0.07], [S(59.3), 0.32], [S(59.7), 0.14], [S(60.3), 0.07]] } : c)),
+    // The storm swallows the valley and the city while he stares into it (the road below him too, while the lens
+    // looks down the bank at him), and lifts off the city at 58.5 s.
+    { t: -3, kind: 'snow-fog', color: OPEN_FOG, density: [[0, 0.012], [3.6, 0.024], [5.0, 0.055], [7.6, 0.055], [9.2, 0.03], [S(57.9), 0.03], [S(58.3), 0.024], [S(58.7), 0.018], [S(59.5), 0.014], [S(61.0), 0.012]] },
     CITY,
     LAMP_CLEARANCE,
+    WALK_CLEARANCE,
     // Out of the white as late as the original, which is clear at 41.2 s.
     { t: 0, kind: 'fade', color: '#ffffff', curve: [[0, 1], [0.5, 0.85], [1.0, 0.55], [1.45, 0.2], [1.75, 0]] },
     // The LEDs dimmed while the lens is on the moustache, so the fur reads before the glare.
@@ -349,7 +393,7 @@ const wide = {
   // Omit the fixed anchor: the stage follows the dwarf, keeping both crabs in the snow field.
   hide: HIDE,
   // No vignette and little bloom: the shot ends on flat white with leaves drawn over it.
-  view: { ...COLD, saturation: -0.3, vignette: null, bloom: { intensity: 0, threshold: 5 } },
+  view: { ...OPEN_VIEW, saturation: 0, vignette: null, bloom: { intensity: 0, threshold: 5 } },
   actors: cast2([WD.d0[0], WD.d0[2]], [WD.b0[0], WD.b0[2]], YAW1),
   tracks: {
     dwarf: { path: walkPath(0, 0, WIDE_AT, OPEN_END - OPEN, WIDE_AT) },
@@ -367,10 +411,11 @@ const wide = {
   fx: [
     // 66.5 s: the storm thickens into a veil over the gate.
     { t: 5.4, kind: 'snow-streaks', count: 5000, box: [20, 10, 20], drift: [0.8, -2.5, 9], gust: [2, 1, 3], size: 0.024, trail: 0.06, opacity: 0.9, seed: 12, fadeIn: 1.0 },
-    ...blizzard({ wind: [0.65, -2.5, 7.5], heavy: 1.2, drift: 0.12, sky: '#cdd3e2', zenith: '#9aa3c2' }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.12], [5.4, 0.12], [6.6, 0.42], [7.2, 0.5]] } : c)),
-    { t: -3, kind: 'snow-fog', color: '#d6dbe7', density: [[0, 0.016], [5.4, 0.017], [6.6, 0.034], [7.7, 0.038]] },
+    ...blizzard({ wind: [0.65, -2.5, 7.5], heavy: 1.2, drift: 0.12, ...OPEN_STORM }).map((c) => (c.kind === 'wash' ? { ...c, alpha: [[-3, 0.07], [5.4, 0.07], [6.6, 0.42], [7.2, 0.5]] } : c)),
+    { t: -3, kind: 'snow-fog', color: OPEN_FOG, density: [[0, 0.014], [5.4, 0.015], [6.6, 0.034], [7.7, 0.038]] },
     CITY,
     LAMP_CLEARANCE,
+    WALK_CLEARANCE,
     // The fir the camera draws back past, at the right from 64 s.
     { t: -3, kind: 'snow-pines', trees: [WB(16.8, 10.3, 0), WB(26, 14, 0)].map((p, i) => [+p[0].toFixed(2), +p[2].toFixed(2), [0.85, 1.0][i]]) },
     { t: 6.1, kind: 'snow-leaves', count: 200, box: [12, 7, 12], drift: [-2.5, -1.2, 3.5], size: 0.09, near: 1.4, color: '#a2482a', color2: '#c98a3c', fadeIn: 0.6 },
