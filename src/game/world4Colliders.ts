@@ -2,7 +2,8 @@
 import { snowHeight } from '../sim/world/ground';
 import { SNOW_ROCKS } from '../sim/world/snowGround';
 import { Collision } from '../world/collision';
-import { arenaPillars, citadelClears, registerFrostThrone } from './frostThroneLayout';
+import { arenaPillars, registerFrostThrone } from './frostThroneLayout';
+import { CLIFF_R, iceCliffs } from './frostCliffsLayout';
 import { registerSnowVillage } from './snowVillageLayout';
 import { registerFrostProps } from './frostPropsLayout';
 import { registerSnowFields } from './snowFieldsLayout';
@@ -30,11 +31,8 @@ export function layoutFrostlight(): Collision {
   registerFrostProps(col,h);
   const {x:fx,z:fz,radius}=SNOW_FOUNTAIN,fy=h(fx,fz);col.addCircle(fx,fz,radius,fy,fy+5);
   for(const {x,z,s} of snowTrees()){const y=h(x,z);col.addCircle(x,z,.6*s,y,y+10*s);}
-  for(let i=0;i<42;i++){
-    const a=i/42*Math.PI*2,x=Math.sin(a)*78,z=-42+Math.cos(a)*70;
-    if(Math.abs(x)<16&&z>-70||citadelClears(x,z))continue;
-    const y=h(x,z),height=6+i%5*3;col.addCircle(x,z,3.5,y,y+height);
-  }
+  // The ice cliffs ringing the north, each off the server's monster start points (frostCliffsLayout.ts).
+  for(const c of iceCliffs()){const y=h(c.x,c.z);col.addCircle(c.x,c.z,CLIFF_R,y,y+c.h);}
   // The arena's crystal pillars on their granite collars, the throne and the citadel (frostThroneLayout.ts).
   for(const {x,z} of arenaPillars()){const y=h(x,z);col.addCircle(x,z,1.9,y,y+10);}
   registerFrostThrone(col,h);
