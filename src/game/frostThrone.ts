@@ -168,8 +168,8 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
  for(let k=-6;k<=6;k++){
   const phi=k*.215+(rand()-.5)*.05,c=Math.cos(phi),len=3.6+7.6*Math.pow(c,1.6)+rand()*1.1;
   const ax=Math.sin(phi),ay=c,az=-.12-rand()*.1;
-  ice.push({x:cO.x+ax*.6,y:cO.y+ay*.6,z:cO.z,axis:[ax,ay,az],height:len,radius:.38+.32*c,seed:rand()*97});
-  if(Math.abs(k)<6){const p2=phi+.107;ice.push({x:cO.x+Math.sin(p2)*.8,y:cO.y+Math.cos(p2)*.8,z:cO.z-.35,axis:[Math.sin(p2),Math.cos(p2),-.25],height:len*.55,radius:.26,seed:rand()*97});}
+  ice.push({x:cO.x+ax*.6,y:cO.y+ay*.6,z:cO.z,axis:[ax,ay,az],height:len,radius:.38+.32*c,seed:rand()*97,plain:true});
+  if(Math.abs(k)<6){const p2=phi+.107;ice.push({x:cO.x+Math.sin(p2)*.8,y:cO.y+Math.cos(p2)*.8,z:cO.z-.35,axis:[Math.sin(p2),Math.cos(p2),-.25],height:len*.55,radius:.26,seed:rand()*97,plain:true});}
  }
  // Rime grown on the arms and at the plinth's corners.
  for(const s of [-1,1]){crystalCluster(3.0*s,yP+3.55,tz+1.2,1.3,.7,3,rand,ice);crystalCluster(3.4*s,yP-.05,tz+2.9,1.8,1.0,4,rand,ice);crystalCluster(7.2*s,Y,THRONE.front-.6,1.5,1.2,4,rand,ice);}
@@ -237,12 +237,12 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
   for(let u=.3;u<2*wl.half+1;u+=.32+rand()*.45)if(rand()<.65){const [ix,iy,iz]=w(u,wl.top-.05,-.38-rand()*.2);icicles.push({x:ix,y:iy,z:iz,axis:[(rand()-.5)*.1,-1,(rand()-.5)*.1],height:.2+rand()**2*1.5,radius:.04+rand()*.06,seed:rand()*97});}
  }
  {
-  // Gatehouse: three faces, the frozen gate, two lancets, bartizans at its front corners.
+  // Gatehouse: three faces with long-and-short quoins at the corners, the frozen gate, two lancets, bartizans.
   const b=groundMin(-gt.half,gt.z,gt.half,gt.z)-1.2;M.ground=h(0,gt.z);
   const R=(gt.apex-gt.spring)**2/(2*gt.open)+gt.open/2,xc=gt.open-R,margin=.95;
   const archTop=(x:number)=>{const ax=Math.abs(x);return ax>gt.open?-1:gt.spring+Math.sqrt(Math.max(0,R*R-(ax-xc)**2));};
-  const {w}=wallFace(gt.half,gt.z,-gt.half,gt.z,b,gt.top,{skip:(u,v)=>{const x=gt.half-u;return Math.abs(x)<gt.open+margin&&v<archTop(Math.min(Math.abs(x),gt.open))+margin;}});
-  for(const s of [-1,1])wallFace(s*gt.half,s>0?wl.z:gt.z,s*gt.half,s>0?gt.z:wl.z,b,gt.top,{len:1.9});
+  const {w}=wallFace(gt.half,gt.z,-gt.half,gt.z,b,gt.top,{quoins:1.35,skip:(u,v)=>{const x=gt.half-u;return Math.abs(x)<gt.open+margin&&v<archTop(Math.min(Math.abs(x),gt.open))+margin;}});
+  for(const s of [-1,1])wallFace(s*gt.half,s>0?wl.z:gt.z,s*gt.half,s>0?gt.z:wl.z,b,gt.top,{len:1.9,quoins:1.35});
   M.slab(w,0,b,.5,2*gt.half,gt.top-b-.02,gt.z-wl.z+.6,M.tint(.85),1,4);
   parapet(w,.2,2*gt.half-.2,gt.top,{merlon:1.05});
   // Voussoirs round the pointed arch, a little proud of the face, one stone at the apex.
@@ -339,7 +339,7 @@ export function frostThrone(opts:FrostThroneOptions):FrostThrone {
   const top=y+7.2;
   ice.push({x:p.x,y:y+.6,z:p.z,axis:[(rand()-.5)*.04,1,(rand()-.5)*.04],height:top-y-.4,radius:1.0,seed:rand()*97});
   for(let j=0;j<3;j++){const a=p.a+j*2.1+rand()*.4,d=.9+rand()*.3;ice.push({x:p.x+Math.sin(a)*d,y:y+.6,z:p.z+Math.cos(a)*d,axis:[Math.sin(a)*.18,1,Math.cos(a)*.18],height:2.4+rand()*2.6,radius:.42+rand()*.2,seed:rand()*97});}
-  for(let j=0;j<7;j++){const a=j/7*Math.PI*2+rand()*.3,tilt=.55+rand()*.25;ice.push({x:p.x+Math.sin(a)*.35,y:top-1.0,z:p.z+Math.cos(a)*.35,axis:[Math.sin(a)*tilt,1,Math.cos(a)*tilt],height:1.6+rand()*.9,radius:.2+rand()*.08,seed:rand()*97});}
+  for(let j=0;j<7;j++){const a=j/7*Math.PI*2+rand()*.3,tilt=.55+rand()*.25;ice.push({x:p.x+Math.sin(a)*.35,y:top-1.0,z:p.z+Math.cos(a)*.35,axis:[Math.sin(a)*tilt,1,Math.cos(a)*tilt],height:1.6+rand()*.9,radius:.2+rand()*.08,seed:rand()*97,plain:true});}
   flames.push({x:p.x,y:top-.25,z:p.z,size:1.65,cold:true});halos.push({x:p.x,y:top+.5,z:p.z,size:5,color:'#55eec4',power:.5});
  }
 

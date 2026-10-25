@@ -18,15 +18,16 @@ const TREE_HEIGHT=10.2,CROWN_WIDTH=1.12;
 /** Small deterministic integer hash: the same species, yaw and lean on every client. */
 function mix32(i:number){let h=Math.imul(i+1,0x9e3779b1);h^=h>>>15;h=Math.imul(h,0x85ebca6b);h^=h>>>13;return h>>>0;}
 
-/** Every snowTrees() entry as a kit pine. Resolves to a group of BatchedMeshes, one per kit material. `name` names the group. */
-export async function snowPines(trees:readonly {x:number;z:number;s:number}[],height:(x:number,z:number)=>number,name=SNOW_PINE_FOREST){
+/** Every snowTrees() entry as a kit pine, `sink` metres into the snow. Resolves to a group of BatchedMeshes, one per kit material. `name` names the group. */
+export async function snowPines(trees:readonly {x:number;z:number;s:number;sink?:number}[],height:(x:number,z:number)=>number,name=SNOW_PINE_FOREST){
  const nature=await loadKit('models/world/nature.glb'),forest=new Scatter(nature,name);
  const names=PINES.filter(n=>nature.has(n));
- trees.forEach(({x,z,s},i)=>{
+ trees.forEach(({x,z,s,sink=0},i)=>{
   const h=mix32(i),piece=names[h%names.length],box=nature.get(piece).box;
   const scale=TREE_HEIGHT*s/(box.max.y-box.min.y),yaw=(h>>>8&0xffff)/65536*Math.PI*2;
   const pitch=((h>>>4&0xf)/15-.5)*.05,roll=((h>>>24&0xf)/15-.5)*.05;
-  forest.add(piece,trs(x,height(x,z)-.12*scale,z,yaw,new THREE.Vector3(scale*CROWN_WIDTH,scale,scale*CROWN_WIDTH),pitch,roll));
+  // `sink`: metres buried under the drift (a young spruce in the open fields shows only its top).
+  forest.add(piece,trs(x,height(x,z)-.12*scale-sink,z,yaw,new THREE.Vector3(scale*CROWN_WIDTH,scale,scale*CROWN_WIDTH),pitch,roll));
  });
  // Deep spruce needles (cool, but green enough to stand apart from the blue shade) and a darker bark, each with
  // its own snow line; kit materials stay untouched.

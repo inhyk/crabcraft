@@ -5,7 +5,9 @@
 //
 //   snow-city  at: [x, z] gate centre on the wall line, yaw: front direction (0 faces +z), clear: [x0, z0, x1, z1]
 //              world box emptied of the world's meshes (and kit pines) smaller than `max` (default 60), and the
-//              usual envelope (t, until)
+//              usual envelope (t, until); windows (gain, 0 = off): a halo on every lit window that the storm
+//              dims by a softer fog (`reach`, 0.5: the share of the scene's fog density it feels), so the
+//              city's depth reads in points of light where its stone has gone into the white
 import * as THREE from 'three';
 import { snowCover } from '../../../game/snowCover';
 import { TownBuilder, type WallSet } from '../../../world/buildings';
@@ -24,6 +26,8 @@ const KEEP = 1.3;
 /** Kit batch that tints the window glass per placement (lit, dim or dark rooms), as the village does. */
 const FLUSH = /^(Window_|Door_|DoorFrame_)/;
 class TintBatch extends StaticBatch {
+  /** Centre and brightness of every lit window placed. */
+  readonly lit: { p: THREE.Vector3; k: number }[] = [];
   constructor(kit: Kit, name: string, private tint: Map<THREE.Material, () => number>) {
     super(kit, name);
   }
@@ -38,6 +42,11 @@ class TintBatch extends StaticBatch {
       for (let i = 0; i < n; i++) c.set([v, v, v, 1], i * 4);
       geo.setAttribute('color', new THREE.BufferAttribute(c, 4));
       castShadow = false;
+      if (v > 0.3) {
+        geo.computeBoundingBox();
+        const p = geo.boundingBox!.getCenter(new THREE.Vector3());
+        this.lit.push({ p: m ? p.applyMatrix4(m) : p, k: v });
+      }
     }
     super.addGeometry(geo, mat, m, castShadow);
   }
@@ -286,6 +295,18 @@ async function raise(at: [number, number], yaw: number, ground: Ground): Promise
     sp.scale.setScalar(g.size);
     group.add(sp);
   }
+  // Window halos, unfogged: City.update dims them by distance through the storm (opt-in, hidden by default).
+  const windows = new THREE.Group();
+  windows.name = 'snow-city-windows';
+  windows.visible = false;
+  for (const w of homes.lit) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: '#ffa04a', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, opacity: 0 }));
+    sp.position.copy(w.p);
+    sp.scale.setScalar(2.4);
+    sp.userData.k = w.k;
+    windows.add(sp);
+  }
+  group.add(windows);
   return group;
 }
 
@@ -349,6 +370,18 @@ class City implements Effect {
     for (const o of this.hidden) o.visible = !on;
     for (const [b, i] of this.culled) b.setVisibleAt(i, !on);
     if (this.group) this.group.visible = on;
+    const gain = num(this.cue.windows, 0);
+    const windows = this.group?.getObjectByName('snow-city-windows');
+    if (!windows) return;
+    windows.visible = on && gain > 0;
+    if (!windows.visible) return;
+    const fog = this.scene.fog;
+    const k = fog instanceof THREE.FogExp2 ? fog.density * num(this.cue.reach, 0.5) : 0;
+    for (const o of windows.children) {
+      const sp = o as THREE.Sprite;
+      const d = sp.position.distanceTo(ctx.camera.position);
+      (sp.material as THREE.SpriteMaterial).opacity = gain * (sp.userData.k as number) * Math.exp(-((k * d) ** 2)) * Math.min(1, Math.max(0, (d - 6) / 10));
+    }
   }
   dispose(): void {
     this.gone = true;
