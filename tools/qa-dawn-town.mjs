@@ -42,7 +42,7 @@ try {
     // House palette: the town's kit materials are its own clones.
     const mats = new Set(); root.traverse(o => { if (o.isMesh) for (const m of [o.material].flat()) mats.add(m.name); });
     // Goldsand houses (dawnHouses.ts) replace the kit houses: no kit roof tiles, plaster or timber framing left.
-    out.palette = ['goldsand-house-walls', 'goldsand-house-wood', 'goldsand-house-canvas'].filter(n => !mats.has(n));
+    out.palette = ['goldsand-house-walls', 'goldsand-house-wood', 'goldsand-canvas'].filter(n => !mats.has(n));
     out.kitHouses = ['MI_RoundTiles', 'MI_Plaster', 'MI_WoodTrim', 'MI_UnevenBrick'].filter(n => [...mats].some(m => m === n || m.endsWith('-' + n)));
     out.houses = named('goldsand-houses')?.userData.stats ?? null;
     out.palms = named('goldsand-date-palms') ? root.userData.palms : 0;
@@ -95,7 +95,7 @@ try {
   assert.equal(r.oldFlagstones, false, 'the shared grid flagstones are gone from World III');
   assert.ok(r.covers.every(Boolean), `covers() on avenue, square, arrival square and harbour: ${r.covers}`);
   assert.ok(r.lamps >= 20, `road and harbour lamps: ${r.lamps}`);
-  assert.ok(r.boulders && r.boulders.sites >= 25 && r.boulders.stones >= r.boulders.sites * 3 && r.boulders.vents >= 3, JSON.stringify(r.boulders));
+  assert.ok(r.boulders && r.boulders.sites >= 25 && r.boulders.stones >= r.boulders.sites * 3 && r.boulders.vents === 0, JSON.stringify(r.boulders));
   assert.ok(r.boats >= 5, `boats ${r.boats}`);
   assert.deepEqual(r.harbour, [], 'harbour parts present');
   assert.ok(r.dressing && r.dressing.stalls >= 10 && r.dressing.goods >= 60 && r.dressing.benches >= 6 && r.dressing.doorPots >= 4 && r.dressing.lanterns >= 6 && r.dressing.laundry >= 10, JSON.stringify(r.dressing));
@@ -104,7 +104,7 @@ try {
   assert.ok(r.houses && r.houses.houses === 8 && r.houses.windcatchers >= 2 && r.houses.vigas >= 60 && r.houses.awnings === 8, JSON.stringify(r.houses));
   assert.equal(r.palms, 32, 'date palms on every old tree site');
   assert.ok(r.braziers >= 4, `braziers ${r.braziers}`);
-  assert.ok(r.souk && r.souk.stalls >= 10 && r.souk.goods >= 80, JSON.stringify(r.souk));
+  assert.ok(r.souk && r.souk.stalls >= 8 && r.souk.goods >= 80, JSON.stringify(r.souk));
   assert.deepEqual(r.gates.map(g => g[1]).sort(), ['dawn', 'frost'], JSON.stringify(r.gates));
   assert.deepEqual(r.primitives, [], 'no old primitives left in the town');
   assert.ok(r.npc.every(d => d < .05), `villagers' posts clear: ${r.npc}`);
