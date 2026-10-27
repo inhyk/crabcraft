@@ -390,7 +390,9 @@ export function dawnCitadel(height:Height):DawnCitadel {
  const arena=dawnArena(h);
  root.add(lod,spires,glassMesh,arena.court,fire.group);
  root.userData.citadel={blocks:M.blocks,nearTriangles:nearGeo.index!.count/3,farTriangles:farGeo.index!.count/3,gilt:extra.length,spires:roofs.length,flames:flames.length,obelisks:citadelObelisks().length,windows:glass.pos.length/3};
- return {root,floor:arena.floor,update(time,quality){fire.update(time);arena.update(time,quality);},async dress(){
+ return {root,floor:arena.floor,update(time,quality){fire.update(time);arena.update(time,quality);
+  // Low quality swaps to the far slabs (joints drawn, a seventh of the triangles) at half the distance.
+  lod.levels[1].distance=quality==='low'?56:112;},async dress(){
   const props=await loadKit('models/world/props.glb');
   // Kit materials are shared with other worlds: patched clones only. Solarkan's cloth is crimson, its fittings gold.
   const variants=new Map<string,THREE.Material>();
