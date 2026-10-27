@@ -1,11 +1,11 @@
 // World III's colliders, registered without meshes, and the placements they share with the meshes.
 // DawnIsland builds its collision this way; tools/bake-collision.mjs bakes the same registration.
 import { dawnHeight } from '../sim/world/ground';
-import { TownBuilder } from '../world/buildings';
 import { Collision } from '../world/collision';
 import type { Lot } from '../world/layout';
 import { registerDawnScenery } from './dawnScenery';
 import { citadelHolds, registerDawnCitadel } from './dawnCitadelLayout';
+import { registerDawnHouses } from './dawnHousePlan';
 import type { IslandPath } from './islandPaths';
 
 export const DAWN_PATHS: IslandPath[] = [
@@ -83,7 +83,7 @@ export function dawnRocks() {
   return rocks;
 }
 
-/** Dawnharbor's homes, forge and tavern on both sides of the avenue. */
+/** Dawnharbor's eight lots (homes, forge and tavern) on both sides of the avenue; dawnHousePlan.ts builds on them. */
 export function dawnLots(): Lot[] {
   const lots: Lot[] = [];
   for (const side of [-1, 1])
@@ -138,8 +138,8 @@ export function layoutDawnreach(): Collision {
   for (const g of DAWN_GATES) for (const side of [-1, 1]) { const x = g.x + side * DAWN_GATE_JAMB; col.addCircle(x, g.z, 0.55, h(x, g.z), h(x, g.z) + 5.2); }
   for (const { x, z } of dawnLampPosts()) col.addCircle(x, z, 0.3, h(x, z), h(x, z) + 3.4);
   registerDawnScenery(h, col);
-  const builder = new TownBuilder(null, null, col, {});
-  for (const lot of dawnLots()) builder.build(lot);
+  // The desert quarter's blocks, stairs, palms and well (dawnHousePlan.ts); the lots stand inside it.
+  registerDawnHouses(h, col);
   for (const { x, z, scale } of dawnForest()) col.addCircle(x, z, 0.5 * scale, h(x, z), h(x, z) + 10);
   for (const { x, z } of dawnGrove()) col.addCircle(x, z, 0.4, h(x, z), h(x, z) + 8);
   return col;

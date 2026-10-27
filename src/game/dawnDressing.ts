@@ -60,7 +60,7 @@ function laundryMaterial(): THREE.MeshStandardMaterial {
 export interface DawnDressing {group: THREE.Group; update(time: number): void; stats: Record<string, number>}
 
 /** Raise the dressing; `npcSpots` are the villagers' posts (DawnIsland.town), `height` the gameplay surface. */
-export function dawnDressing(height: (x: number, z: number) => number, kits: {props: Kit; nature: Kit}, doors: readonly {pos: THREE.Vector3; yaw: number}[], npcSpots: readonly (readonly [number, number])[]): DawnDressing {
+export function dawnDressing(height: (x: number, z: number) => number, kits: {props: Kit; nature: Kit; village?: Kit}, doors: readonly {pos: THREE.Vector3; yaw: number}[], npcSpots: readonly (readonly [number, number])[], opts: {yardLaundry?: boolean} = {}): DawnDressing {
   const {props, nature} = kits;
   const group = new THREE.Group(); group.name = 'dawnharbor-dressing';
   const R = rng(9137);
@@ -171,7 +171,8 @@ export function dawnDressing(height: (x: number, z: number) => number, kits: {pr
   // Laundry: a line from each house's back corner to a forked pole, shirts and sheets pegged along it.
   const laundry: THREE.BufferGeometry[] = [], poles: THREE.BufferGeometry[] = [], lines: THREE.BufferGeometry[] = [];
   const COLS = ['#e8e2d2', '#5a8fa0', '#c9a24a', '#e9e5da', '#b3574a', '#7f9b6a'];
-  for (const d of doors) {
+  // The desert quarter (dawnHouses.ts) hangs its laundry on the roofs instead.
+  for (const d of opts.yardLaundry === false ? [] : doors) {
     const ox = Math.sin(d.yaw), oz = Math.cos(d.yaw), rx = Math.cos(d.yaw), rz = -Math.sin(d.yaw);
     // From the wall beside the door, back along the house side to a pole out in the yard.
     const a = new THREE.Vector3(d.pos.x - ox * 6.6 + rx * 3.4, d.pos.y + 1.4, d.pos.z - oz * 6.6 + rz * 3.4);
