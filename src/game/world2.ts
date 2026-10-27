@@ -28,6 +28,8 @@ import {StarWaystoneKit} from './starWaystone';
 import {StarMemorySealKit} from './starMemorySeal';
 import {StarOreKit} from './starOre';
 import {StarSun} from './starSun';
+import {STAR_MOON_DIR} from './starNight';
+import {StarNightRig} from './starNightRig';
 import {StarEnemyArmour} from './starEnemyArmour';
 import {StarThrone} from './starThrone';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
@@ -50,7 +52,8 @@ const NO_PORTAL=new THREE.Vector3(1e5,0,1e5);
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
   readonly root = new THREE.Group();
-  private readonly sun=new StarSun();
+  private readonly sun=new StarSun(STAR_MOON_DIR.clone().multiplyScalar(100));
+  private readonly night=new StarNightRig(this.sun.light);
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();
@@ -231,7 +234,7 @@ export class HiddenWorld {
     const shorePosition=new THREE.Vector3(ship.x-7,0,ship.z+7);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
     this.shorePortal=new StarPortal(shorePosition,'클로헤이븐 → 별빛 항구');w.root.add(this.shorePortal.root);
     this.thirdGate=new StarPortal(new THREE.Vector3(0,this.height(0,-41),-41),'별빛 항구 → 새벽의 섬');this.root.add(this.thirdGate.root);
-    this.root.add(this.sun.light,this.sun.light.target,new THREE.HemisphereLight('#869cff','#1a1028',1.0));
+    this.root.add(this.sun.light,this.sun.light.target,this.night.root);
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
     const surface=(island:{height(x:number,z:number):number})=>(x:number,z:number)=>island.height(x,z);
     this.hub=new TidecrownHub(game,this,{1:{root:w.root,height:this.originalHeight},2:{root:this.root,height:surface(this)},3:{root:this.third.root,height:surface(this.third)},4:{root:this.fourth.root,height:surface(this.fourth)},5:{root:this.fifth.root,height:surface(this.fifth)},6:{root:this.sixth.root,height:surface(this.sixth)}});
@@ -457,6 +460,7 @@ export class HiddenWorld {
       return;
     }
     const flags=observation?.flags??this.game.journey;
+    if(!this.rendered||this.chapter!==2)this.night.release(this.game.scene);
     this.hub.update(dt,time);
     this.snowGate.update(time);this.emberGate.update(time);
     if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
@@ -478,7 +482,7 @@ export class HiddenWorld {
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
     this.sun.update(position.x,position.z);
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
-    const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
+    this.night.apply(this.game.scene,this.game.engine.renderer);
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
     this.sea.update(time);
     this.armour?.update(time);this.throne.update(time);
@@ -637,7 +641,7 @@ export class HiddenWorld {
   }
   dispose(){
     this.hub.dispose();this.leaveTidecrown();this.tidecrownPeople?.dispose();if(this.tidecrown){this.game.scene.remove(this.tidecrown.root);this.tidecrown.dispose();this.tidecrown=undefined;}
-    this.ambience.dispose();this.fourth.disposeSnow();
+    this.ambience.dispose();this.fourth.disposeSnow();this.night.release(this.game.scene);this.night.dispose();
     this.showEpilogue();this.game.scene.remove(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
     for(const root of [this.root,this.shorePortal.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root])root.traverse(o=>{
