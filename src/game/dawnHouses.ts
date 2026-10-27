@@ -4,9 +4,8 @@ import {Scatter, StaticBatch, trs, type Kit} from '../world/kit';
 import {rng} from '../world/noise';
 import {lathe, tube} from '../world/geom';
 import {Acc, CL, CR, FIN, block, box, dawnCloth, dawnCraft, dawnPlaster, face, facePoint, type BlockFrame, type Face, type Hole} from './dawnAdobe';
-import {dawnPalmGrove} from './dawnPalms';
 import {dawnGlows, dawnRope, dawnWood, woodPart} from './dawnMaterials';
-import {DAWN_TINTS, DAWN_WELL, dawnBlocks, dawnPalms, stairFootprint, type DawnBlock, type DawnFace} from './dawnHousePlan';
+import {DAWN_TINTS, DAWN_WELL, dawnBlocks, stairFootprint, type DawnBlock, type DawnFace} from './dawnHousePlan';
 
 /*
  * Goldsand Harbor's desert quarter (World III), from the plan in dawnHousePlan.ts: flat-roofed blocks of whitewash,
@@ -15,7 +14,8 @@ import {DAWN_TINTS, DAWN_WELL, dawnBlocks, dawnPalms, stairFootprint, type DawnB
  * rows of roof-beam ends (vigas) and spouts, outside stairs to the roofs, three windcatcher towers, a domed shrine,
  * a forge with its chimney and fire, a tavern terrace, a spice shop, the healer's well, and life on the roofs: water
  * jars, rugs drying over parapets, laundry, ladders, shade sails, stair huts and roof gardens. Date palms stand in
- * scenes, not scattered. Everything shares five materials (plaster, craft, cloth, wood, palm fronds) plus the kit
+ * scenes (quarterPalms in the plan, drawn by dawnPalms.ts with the town's). Everything shares four materials (plaster,
+ * craft, cloth, wood) plus the kit
  * props (doors' pots and lanterns come from dawnDressing.ts through `doors`).
  */
 
@@ -36,17 +36,29 @@ export interface DawnQuarter {
 
 const faceYaw = (N: THREE.Vector3) => Math.atan2(N.x, N.z);
 
-export function dawnHouses(height: (x: number, z: number) => number, kits: {props: Kit; nature: Kit}): DawnQuarter {
+export function dawnHouses(heightW: (x: number, z: number) => number, kits: {props: Kit; nature: Kit}): DawnQuarter {
+  // Each block is built square to the axes about its centre, then turned by T (its yaw): every emitter (the Accs,
+  // wood, ropes, kit props and plants, door anchors, glows) and every ground lookup goes through T.
+  const T = new THREE.Matrix4(), _w = new V();
+  let turned = false, turnYaw = 0;
+  const height = (x: number, z: number) => { if (!turned) return heightW(x, z); _w.set(x, 0, z).applyMatrix4(T); return heightW(_w.x, _w.z); };
+  const toW = (p: THREE.Vector3) => turned ? p.clone().applyMatrix4(T) : p;
   const group = new THREE.Group(); group.name = 'goldsand-quarter';
   const wall = new Acc({uv: 'aPlUv', aux: 'aPl', k: 'aPlK'}), craft = new Acc({uv: 'aCrUv', aux: 'aCr'}), cloth = new Acc({uv: 'aClUv', aux: 'aCl'});
   craft.a3 = [0, 0, 0]; cloth.a3 = [0, 0, 0];
   const woods: THREE.BufferGeometry[] = [], ropes: THREE.BufferGeometry[] = [];
   const props = new StaticBatch(kits.props, 'goldsand-quarter-props'), plants = new Scatter(kits.nature, 'goldsand-quarter-plants');
   const doors: {pos: THREE.Vector3; yaw: number}[] = [], glows: {pos: THREE.Vector3; size: number}[] = [];
-  const stats: Record<string, number> = {blocks: 0, windows: 0, doors: 0, vigas: 0, bays: 0, windcatchers: 0, stairs: 0, jars: 0, rugs: 0, laundry: 0, sails: 0, ladders: 0, gardens: 0, carpets: 0, baskets: 0, awnings: 0, palms: 0, domes: 0};
-  const prop = (piece: string, x: number, y: number, z: number, yaw = 0, s = 1) => { if (kits.props.has(piece)) props.add(piece, trs(x, y, z, yaw, s)); };
-  const plant = (piece: string, x: number, y: number, z: number, yaw: number, s: number) => { if (kits.nature.has(piece)) plants.add(piece, trs(x, y, z, yaw, s)); };
-  const wood = (g: THREE.BufferGeometry, m: THREE.Matrix4, color: THREE.ColorRepresentation | null = null, paint = 0, axis = new V(1, 0, 0)) => { woods.push(woodPart(g, m, color, paint, axis)); g.dispose(); };
+  const stats: Record<string, number> = {blocks: 0, windows: 0, doors: 0, vigas: 0, bays: 0, windcatchers: 0, stairs: 0, jars: 0, rugs: 0, laundry: 0, sails: 0, ladders: 0, gardens: 0, carpets: 0, baskets: 0, awnings: 0, domes: 0};
+  const placed = (m: THREE.Matrix4) => turned ? T.clone().multiply(m) : m;
+  const prop = (piece: string, x: number, y: number, z: number, yaw = 0, s = 1) => { if (kits.props.has(piece)) props.add(piece, placed(trs(x, y, z, yaw, s))); };
+  const plant = (piece: string, x: number, y: number, z: number, yaw: number, s: number) => { if (kits.nature.has(piece)) plants.add(piece, placed(trs(x, y, z, yaw, s))); };
+  const wood = (g: THREE.BufferGeometry, m: THREE.Matrix4, color: THREE.ColorRepresentation | null = null, paint = 0, axis = new V(1, 0, 0)) => { woods.push(woodPart(g, placed(m), color, paint, axis)); g.dispose(); };
+  const turn = (b: DawnBlock | null) => {
+    turned = !!b && Math.abs(b.yaw) > 1e-6; turnYaw = turned ? b!.yaw : 0;
+    if (turned) T.makeTranslation(b!.x, 0, b!.z).multiply(new THREE.Matrix4().makeRotationY(b!.yaw)).multiply(new THREE.Matrix4().makeTranslation(-b!.x, 0, -b!.z));
+    for (const a of [wall, craft, cloth]) { a.xf = turned ? T : null; if (turned) a.nm.getNormalMatrix(T); }
+  };
   const basis = (p: THREE.Vector3, X: THREE.Vector3, Yv: THREE.Vector3, Z: THREE.Vector3) => new THREE.Matrix4().makeBasis(X, Yv, Z).setPosition(p);
   const blocks = dawnBlocks();
   const byId = new Map(blocks.map(b => [b.id, b]));
@@ -88,8 +100,10 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
       const pts = [P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)], uv = uvMetres ? [u0 * W, v0 * Hh, u1 * W, v0 * Hh, u1 * W, v1 * Hh, u0 * W, v1 * Hh] : [u0, v0, u1, v0, u1, v1, u0, v1];
       const sw = [sway(u0, v0), sway(u1, v0), sway(u1, v1), sway(u0, v1)];
       const n = new V().subVectors(pts[1], pts[0]).cross(new V().subVectors(pts[3], pts[0])).normalize();
-      if (n.y < -.2) n.negate();
-      for (const k of [0, 1, 2, 0, 2, 3]) { cloth.a3 = [sw[k], pattern, seed]; cloth.vert(pts[k], n, uv[k * 2], uv[k * 2 + 1]); }
+      // Keep the winding with the normal (double-sided: three flips the normal of back faces).
+      const flip = n.y < -.2;
+      if (flip) n.negate();
+      for (const k of flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) { cloth.a3 = [sw[k], pattern, seed]; cloth.vert(pts[k], n, uv[k * 2], uv[k * 2 + 1]); }
     }
   };
   const post = (x: number, y0: number, z: number, h: number, r = .06) => wood(new THREE.CylinderGeometry(r * .85, r, h, 7), trs(x, y0 + h / 2, z), null, 0, new V(0, 1, 0));
@@ -106,7 +120,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
   const line = (a: THREE.Vector3, b: THREE.Vector3, sag: number) => {
     const pts: THREE.Vector3[] = [];
     for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push(a.clone().lerp(b, t).add(new V(0, -sag * 4 * t * (1 - t), 0))); }
-    ropes.push(tube(pts, () => .012, 4));
+    ropes.push(turned ? tube(pts, () => .012, 4).applyMatrix4(T) : tube(pts, () => .012, 4));
     return (t: number) => a.clone().lerp(b, t).add(new V(0, -sag * 4 * t * (1 - t), 0));
   };
   const laundry = (a: THREE.Vector3, b: THREE.Vector3, R: () => number) => {
@@ -146,7 +160,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
       const P = (uu: number, vv: number) => a.clone().lerp(b, uu).lerp(d.clone().lerp(c, uu), vv).addScaledVector(f.N, .025 * Math.sin(Math.PI * uu) * vv);
       const q = [[i / nu, j / nv], [(i + 1) / nu, j / nv], [(i + 1) / nu, (j + 1) / nv], [i / nu, (j + 1) / nv]];
-      for (const k of [0, 1, 2, 0, 2, 3]) { cloth.a3 = [q[k][1] * .25, seed % 3 === 0 ? CL.kilim : CL.rug, seed]; cloth.vert(P(q[k][0], q[k][1]), f.N, q[k][0], 1 - q[k][1]); }
+      for (const k of [0, 2, 1, 0, 3, 2]) { cloth.a3 = [q[k][1] * .25, seed % 3 === 0 ? CL.kilim : CL.rug, seed]; cloth.vert(P(q[k][0], q[k][1]), f.N, q[k][0], 1 - q[k][1]); }
     }
     wood(new THREE.CylinderGeometry(.025, .025, w + .2, 6), basis(a.clone().lerp(b, .5).addScaledVector(f.N, .01), f.N, f.U, new V().crossVectors(f.N, f.U)), null, 0, new V(0, 1, 0));
     stats.carpets++;
@@ -193,6 +207,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
 
   interface Feature { f: DawnFace; h: Hole; style: 'lintel' | 'shutter' | 'none' | 'sill'; paint: string }
   for (const b of blocks) {
+    turn(b);
     const R = rng(b.seed), G = geometryOf(b);
     const floors = b.role === 'shrine' || b.role === 'forge' || b.role === 'wall' ? 1 : Math.max(1, Math.round(b.h / 3.2)), sh = b.h / floors;
     const style = b.seed % 3, paint = PAINT[b.seed % PAINT.length];
@@ -274,7 +289,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
         box(wall, s.x, height(s.x, s.z) + .02, s.z, w + .5, .2, .52, faceYaw(F.N));
         if (b.role !== 'wall') {
           const a = facePoint(F, uc, 1.55).addScaledVector(F.U, w / 2 + .38).addScaledVector(F.N, .1);
-          doors.push({pos: a, yaw: faceYaw(F.N)});
+          doors.push({pos: toW(a), yaw: faceYaw(F.N) + turnYaw});
         }
       }
     }
@@ -352,6 +367,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     }
   }
 
+  turn(null);
   // ---- Roles ---------------------------------------------------------------------------------------------------
   const roleBlock = (role: string) => blocks.find(b => b.role === role)!;
   // The shrine: an octagonal drum with arched lights, a tiled neck, a whitewashed dome and a brass sun finial; an
@@ -399,7 +415,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     // Corner horns (small rounded merlons) on the parapet.
     for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) box(wall, b.x + sx * (b.w / 2 - .45), G.top + .22, b.z + sz * (b.d / 2 - .45), .42, .45, .42);
     // Brass lamps beside the door.
-    for (const s of [-1, 1]) { const p = facePoint(F, uc + s * 1.35, 2.5).addScaledVector(F.N, .14); glows.push({pos: p, size: .9}); }
+    for (const s of [-1, 1]) { const p = facePoint(F, uc + s * 1.35, 2.5).addScaledVector(F.N, .14); glows.push({pos: toW(p), size: .9}); }
   }
   // The forge: a chimney stack with a sooty crown, the hearth's fire deep in the arch, the anvil and bench outside
   // under a canvas.
@@ -499,6 +515,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
 
   // ---- Roof life -----------------------------------------------------------------------------------------------
   for (const b of blocks) {
+    turn(b);
     if (b.role === 'wall' || b.role === 'shrine' || b.role === 'bridge') continue;
     const R = rng(b.seed * 3 + 1), fr = frames.get(b.id)!, G = geometryOf(b), yR = G.roof;
     const ix = b.w / 2 - .75, iz = b.d / 2 - .75;
@@ -549,9 +566,10 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     });
     wall.gy = G.ground;
   }
-  // Ladders from a lower roof up to a taller neighbour's parapet.
+  turn(null);
+  // Ladders from a lower roof up to a taller neighbour's parapet (between square-set blocks only).
   for (const a of blocks) for (const b of blocks) {
-    if (a === b || a.role === 'wall' || b.role === 'wall' || a.lift || b.lift || a.role === 'shrine') continue;
+    if (a === b || a.role === 'wall' || b.role === 'wall' || a.lift || b.lift || a.role === 'shrine' || a.yaw || b.yaw) continue;
     const ga = geometryOf(a), gb = geometryOf(b);
     if (gb.top - ga.roof < 2.4) continue;
     const gapX = Math.abs(a.x - b.x) - (a.w + b.w) / 2, gapZ = Math.abs(a.z - b.z) - (a.d + b.d) / 2;
@@ -573,6 +591,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
   // ---- Street scenes -------------------------------------------------------------------------------------------
   // Big water jars and herb pots at the lane-head doors; benches in the shrine forecourt shade; carpets on walls.
   for (const b of blocks) {
+    turn(b);
     if (!b.door || b.role !== 'house') continue;
     const fr = frames.get(b.id)!, F = fr.faces[b.door], R = rng(b.seed + 9);
     const at = (u: number, n: number) => facePoint(F, u, 0).addScaledVector(F.N, n);
@@ -580,6 +599,19 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     const q = at(F.L / 2 - 1.85, .38); pot(q.x, height(q.x, q.z), q.z, 1, b.seed + 1, R() < .5 ? 'Plant_7_Big' : 'Plant_1');
     if (b.seed % 3 === 0) wallCarpet(F, F.L / 2 + 1.9, .6, .85, 1.35, CLOTH[b.seed % CLOTH.length], b.seed);
     if (b.seed % 3 === 1) awning(F, F.L / 2 - 1.05, F.L / 2 + 1.05, 2.75, .9, .3, CLOTH[b.seed % CLOTH.length], b.seed % 2 === 0, false, b.seed);
+    // A ladder up the back of a low house to its roof.
+    if (b.h < 4.5 && b.seed % 3 === 2) {
+      const back = ({'x+': 'x-', 'x-': 'x+', 'z+': 'z-', 'z-': 'z+'} as const)[b.door], B = fr.faces[back];
+      const u = B.L * .3, foot = facePoint(B, u, 0).addScaledVector(B.N, 1.0), top = facePoint(B, u, b.h + b.para + .45).addScaledVector(B.N, .12);
+      foot.y = height(foot.x, foot.z); ladder(foot, top);
+    }
+  }
+  turn(null);
+  // Medina alleys: cloth stretched from wall to wall across the narrow side lanes, sagging, a little askew.
+  for (const [x0, x1, z0, z1, k] of [[7.4, 11.2, 23.4, 28.7, 0], [13.4, 16.8, 23.6, 28.5, 1], [-8, -12.2, 23.5, 28.7, 2], [-14.6, -17.6, 23.2, 28.8, 3], [16.6, 22.4, 72.6, 74.8, 4], [21.4, 25.6, 23.4, 28.4, 5]] as const) {
+    const y = height((x0 + x1) / 2, (z0 + z1) / 2) + 3.3 + (k % 2) * .3;
+    sheet(new V(x0, y, z0), new V(x1, y - .2, z0 + .1), new V(x1, y + .1, z1), new V(x0, y - .1, z1 - .1), CLOTH[(k * 2 + 1) % CLOTH.length], k % 2 ? CL.stripe : CL.plain, .35, (u, v) => .2 + .5 * Math.sin(Math.PI * u) * Math.sin(Math.PI * v), 300 + k, 5, 5);
+    stats.sails++;
   }
   // The walled yard (lane 26 east): a shade sail from the wall over a bench and jars.
   {
@@ -588,9 +620,6 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     prop('Bench', w.x + 1.0, yy, w.z, Math.PI / 2);
     for (let k = 0; k < 3; k++) jar(w.x + 3.4, yy, w.z + 1.2 - k * .5, 1.1, null, k);
   }
-  // Palms.
-  const palms = dawnPalmGrove(craft, dawnPalms(), height, 77);
-  stats.palms = palms.count;
 
   // ---- Meshes --------------------------------------------------------------------------------------------------
   const plaster = dawnPlaster(), craftM = dawnCraft(), clothM = dawnCloth(), woodM = dawnWood('goldsand-wood');
@@ -600,7 +629,6 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
   mesh(cloth.build(), clothM, 'goldsand-cloth');
   if (woods.length) { const g = mergeGeometries(woods, false)!; woods.forEach(w => w.dispose()); mesh(g, woodM, 'goldsand-wood'); }
   if (ropes.length) { const g = mergeGeometries(ropes.map(r => { const o = r.index ? r.toNonIndexed() : r; for (const k of Object.keys(o.attributes)) if (k !== 'position' && k !== 'normal') o.deleteAttribute(k); return o; }), false)!; mesh(g, dawnRope(), 'goldsand-ropes', false); }
-  group.add(palms.mesh);
   group.add(props.build());
   group.add(plants.build({boundsPadding: .3}));
   const glow = dawnGlows(glows, '#ffb35a', 'goldsand-fire-glows');
@@ -609,7 +637,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
   return {
     group, doors, stats,
     update(time) {
-      clothM.userData.time.value = time; palms.update(time);
+      clothM.userData.time.value = time;
       (glow.material as THREE.ShaderMaterial).uniforms.uTime.value = time;
     },
   };

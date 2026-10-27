@@ -19,7 +19,9 @@ await build({stdin: {contents: `export * from './src/game/dawnHousePlan.ts'; exp
 const plan = await import(new URL('../' + out, import.meta.url).href);
 await rm(out);
 const blocks = plan.dawnBlocks(), solid = blocks.filter(b => b.role !== 'bridge');
-const inBox = (b, x, z, m) => Math.abs(x - b.x) < b.w / 2 + m && Math.abs(z - b.z) < b.d / 2 + m;
+// Footprint tests in each block's own (turned) frame.
+const local = (b, x, z) => { const c = Math.cos(b.yaw), s = Math.sin(b.yaw), dx = x - b.x, dz = z - b.z; return [dx * c - dz * s, dx * s + dz * c]; };
+const inBox = (b, x, z, m) => { const [lx, lz] = local(b, x, z); return Math.abs(lx) < b.w / 2 + m && Math.abs(lz) < b.d / 2 + m; };
 const issues = [];
 for (const b of solid) {
   for (const t of [...plan.dawnForest(), ...plan.dawnGrove()]) if (inBox(b, t.x, t.z, 1)) issues.push(`tree in ${b.id}`);
@@ -28,13 +30,13 @@ for (const b of solid) {
   for (const g of plan.DAWN_GATES) if (inBox(b, g.x, g.z, 5)) issues.push(`gate by ${b.id}`);
   // Roads: no footprint corner or edge midpoint on a road.
   for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 1], [0, -1], [1, 0], [-1, 0], [0, 0]]) {
-    const x = b.x + sx * b.w / 2, z = b.z + sz * b.d / 2;
+    const [x, z] = plan.turnAbout(b, b.x + sx * b.w / 2, b.z + sz * b.d / 2);
     if (plan.roadClearance(x, z) < .3) issues.push(`${b.id} on a road at ${x.toFixed(1)},${z.toFixed(1)}`);
   }
 }
-for (const [x, z] of plan.dawnPalms()) if (plan.roadClearance(x, z) < .8) issues.push(`palm on a road ${x},${z}`);
-for (const [x, z] of plan.dawnPalms()) for (const b of solid) if (inBox(b, x, z, .45)) issues.push(`palm ${x},${z} in ${b.id}`);
-console.log('PLAN', JSON.stringify({blocks: blocks.length, windcatchers: blocks.filter(b => b.wind).length, stairs: blocks.filter(b => b.stair).length, palms: plan.dawnPalms().length, issues}));
+for (const [x, z] of plan.quarterPalms()) if (plan.roadClearance(x, z) < .8) issues.push(`palm on a road ${x},${z}`);
+for (const [x, z] of plan.quarterPalms()) for (const b of solid) if (inBox(b, x, z, .45)) issues.push(`palm ${x},${z} in ${b.id}`);
+console.log('PLAN', JSON.stringify({blocks: blocks.length, turned: blocks.filter(b => b.yaw).length, windcatchers: blocks.filter(b => b.wind).length, stairs: blocks.filter(b => b.stair).length, palms: plan.quarterPalms().length, issues}));
 assert.deepEqual(issues, [], 'the quarter keeps clear of trees, lamps, quest points, gates and roads');
 assert.equal(blocks.filter(b => b.wind).length, 3, 'three windcatchers');
 for (const role of ['shrine', 'forge', 'tavern', 'healer', 'shop', 'bridge']) assert.ok(blocks.some(b => b.role === role), role);
@@ -60,7 +62,7 @@ try {
   const r = await p.evaluate(() => {
     const g = window.app.current.game, t = g.world2.third, root = t.root, q = root.getObjectByName('goldsand-quarter'), out = {};
     out.stats = q?.userData.stats ?? null;
-    out.parts = ['goldsand-walls', 'goldsand-craft', 'goldsand-cloth', 'goldsand-wood', 'goldsand-palm-fronds'].filter(n => !q?.getObjectByName(n));
+    out.parts = ['goldsand-walls', 'goldsand-craft', 'goldsand-cloth', 'goldsand-wood'].filter(n => !q?.getObjectByName(n));
     // No village kit in World III; no primitive geometry inside the quarter.
     const mats = new Set(), prim = [];
     root.traverse(o => { if (o.isMesh) for (const m of [o.material].flat()) mats.add(m.name); });
@@ -112,7 +114,7 @@ try {
   assert.ok(s, 'goldsand-quarter present');
   assert.deepEqual(r.parts, [], 'quarter meshes present');
   assert.ok(s.blocks >= 28 && s.windows >= 60 && s.doors >= 14 && s.vigas >= 200 && s.bays >= 3, JSON.stringify(s));
-  assert.ok(s.windcatchers === 3 && s.domes === 1 && s.stairs >= 4 && s.palms >= 15, JSON.stringify(s));
+  assert.ok(s.windcatchers === 3 && s.domes === 1 && s.stairs >= 4, JSON.stringify(s));
   assert.ok(s.jars >= 20 && s.rugs >= 6 && s.laundry >= 10 && s.ladders >= 2 && s.sails >= 3 && s.carpets >= 6 && s.baskets >= 8 && s.awnings >= 5, JSON.stringify(s));
   assert.equal(r.kitHomes, false, 'kit houses gone');
   assert.deepEqual(r.kitMaterials, [], 'no village kit materials in World III');

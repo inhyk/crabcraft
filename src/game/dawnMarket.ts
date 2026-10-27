@@ -13,6 +13,36 @@ import {FROST_NOISE} from './frostPaving';
  * five meshes for the whole market.
  */
 
+/** Striped canvas (vertex colour the stripe's dye, uv.x across the stripes). */
+function clothMaterial(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({name: 'goldsand-canvas', color: '#ffffff', roughness: .95, vertexColors: true, side: THREE.DoubleSide});
+  addPatch(m, 'goldsand-canvas', (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vCu;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvCu=uv;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec2 vCu;\n${FROST_NOISE}`)
+      .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+        float st=step(.5,fract(vCu.x*3.));
+        vec3 c=mix(vColor.rgb,vec3(.86,.78,.64),st);
+        c*=.88+.14*(fpNoise(vCu*vec2(40.,6.))*.5+.5);
+        c*=1.-.25*smoothstep(.7,1.,vCu.y);
+        diffuseColor.rgb=c;`);
+  });
+  m.customProgramCacheKey = () => 'goldsand-canvas';
+  return m;
+}
+
+/** Glazed and unglazed terracotta: jars, chimney pots. */
+function terracottaMaterial(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({name: 'goldsand-terracotta', color: '#ffffff', roughness: .8, vertexColors: true});
+  addPatch(m, 'goldsand-terracotta', (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTw;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvTw=(modelMatrix*vec4(transformed,1.)).xyz;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vTw;\n${FROST_NOISE}`)
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb=vColor.rgb*(.85+.2*(fpNoise(vTw.xz*9.+vTw.y*7.)*.5+.5))*(.92+.08*sin(vTw.y*60.));');
+  });
+  m.customProgramCacheKey = () => 'goldsand-terracotta';
+  return m;
+}
+
+
 const SPICES = ['#c8501c', '#e3a21a', '#d6b02a', '#7a4a22', '#6f7a3a', '#9e2a1a'];
 const DYES = ['#2b3a7a', '#b5532c', '#2aa3a0', '#e3a21a'];
 
@@ -112,31 +142,4 @@ export function dawnMarket(spots: readonly {x: number; z: number; yaw: number}[]
   mk(heaps, new THREE.MeshStandardMaterial({name: 'goldsand-spice', color: '#ffffff', roughness: 1, vertexColors: true}), 'goldsand-souk-spices');
   group.userData.stalls = spots.length; group.userData.goods = goods;
   return {group, goods};
-}
-
-/** The souk's striped canvas and terracotta (first written for the earlier Goldsand houses). */
-export function clothMaterial(): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({name: 'goldsand-canvas', color: '#ffffff', roughness: .95, vertexColors: true, side: THREE.DoubleSide});
-  addPatch(m, 'goldsand-canvas', (shader) => {
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vCu;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvCu=uv;');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec2 vCu;\n${FROST_NOISE}`)
-      .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
-        float st=step(.5,fract(vCu.x*3.));
-        vec3 c=mix(vColor.rgb,vec3(.86,.78,.64),st);
-        c*=.88+.14*(fpNoise(vCu*vec2(40.,6.))*.5+.5);
-        c*=1.-.25*smoothstep(.7,1.,vCu.y);
-        diffuseColor.rgb=c;`);
-  });
-  m.customProgramCacheKey = () => 'goldsand-canvas';
-  return m;
-}
-export function terracottaMaterial(): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({name: 'goldsand-terracotta', color: '#ffffff', roughness: .8, vertexColors: true});
-  addPatch(m, 'goldsand-terracotta', (shader) => {
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTw;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvTw=(modelMatrix*vec4(transformed,1.)).xyz;');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vTw;\n${FROST_NOISE}`)
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb=vColor.rgb*(.85+.2*(fpNoise(vTw.xz*9.+vTw.y*7.)*.5+.5))*(.92+.08*sin(vTw.y*60.));');
-  });
-  m.customProgramCacheKey = () => 'goldsand-terracotta';
-  return m;
 }

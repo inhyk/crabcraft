@@ -2,7 +2,7 @@ import {dawnTown,type DawnTown} from './dawnTown';
 import {dawnHouses,type DawnQuarter} from './dawnHouses';
 import {dawnDressing,type DawnDressing} from './dawnDressing';
 import {dawnRequestLook} from './dawnRequestProps';
-import {dawnPalms,type DawnPalms,type PalmSpot} from './dawnFieldPalms';
+import {dawnPalms,type DawnPalms,type PalmSpot} from './dawnPalms';
 import {Scatter} from '../world/kit';
 import {StarWind} from './starWind';
 import * as THREE from 'three';
@@ -20,6 +20,7 @@ import {loadKit,trs} from '../world/kit';
 import {dawnHeight,DAWN_ARENA_HEIGHT} from '../sim/world/ground';
 import type {Poi} from '../world/types';
 import {dawnForest,dawnGrove,layoutDawnreach,roadClearance} from './world3Colliders';
+import {quarterPalms} from './dawnHousePlan';
 
 /** The third island has its own warm coast, inhabited ring town and volcanic citadel. */
 export class DawnIsland {
@@ -78,7 +79,9 @@ export class DawnIsland {
   for(const [name,m] of nature.materials){const c=m.clone();if(c instanceof THREE.MeshStandardMaterial&&TINT[name]){c.color.set(TINT[name]);c.side=THREE.DoubleSide;c.roughness=.9;}copies.set(m,c);nature.materials.set(name,c);}
   for(const piece of nature.pieces.values())for(const part of piece.parts)part.material=copies.get(part.material)!;
   // Date palms stand where the town's trees stood (their colliders are dawnForest()/dawnGrove()); the grove is an oasis.
-  const spots:PalmSpot[]=[...dawnForest().map(({i,x,z,a,scale})=>({x,z,h:5.6+scale*3.2,lean:.06+(i%5)*.03,dir:a,seed:i})),...dawnGrove().map(({i,x,z,a})=>({x,z,h:4.6+(i%4)*.9,lean:.1+(i%3)*.05,dir:a,seed:100+i}))];
+  const spots:PalmSpot[]=[...dawnForest().map(({i,x,z,a,scale})=>({x,z,h:5.6+scale*3.2,lean:.06+(i%5)*.03,dir:a,seed:i})),...dawnGrove().map(({i,x,z,a})=>({x,z,h:4.6+(i%4)*.9,lean:.1+(i%3)*.05,dir:a,seed:100+i})),
+   // The desert quarter's palms (dawnHousePlan.ts): door pairs, yards, forecourts and back gardens over the roofs.
+   ...quarterPalms().map(([x,z,h,lean],i)=>({x,z,h,lean,dir:i*2.39+.7,seed:200+i}))];
   this.palms=dawnPalms(spots,(x,z)=>this.height(x,z));this.root.add(this.palms.group);
   const count=spots.length;
   const dry=['Grass_Wispy_Short','Grass_Common_Short','Bush_Common'].filter(n=>nature.has(n)),oasis=['Fern_1','Grass_Common_Tall','Flower_3_Group','Flower_4_Group','Bush_Common_Flowers'].filter(n=>nature.has(n));
