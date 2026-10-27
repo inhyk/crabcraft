@@ -48,7 +48,8 @@ const spread=Math.max(...coast)-Math.min(...coast);
 assert.ok(spread>.04&&Math.min(...coast)>.82,`a wandering shoreline outside the walkable ellipse: ${Math.min(...coast).toFixed(3)}..${Math.max(...coast).toFixed(3)}`);
 // High land breaks off in bluffs to the north (the citadel's escarpment above the desert), low land shelves into the south as beach.
 const drop=(x,z,dx,dz)=>{let best=0;for(let s=0;s<30;s+=.5)best=Math.max(best,(dawnHeight(x+dx*s,z+dz*s)-dawnHeight(x+dx*(s+1),z+dz*(s+1))));return best;};
-const north=drop(0,-118,0,-1),south=drop(0,118,0,1);
+// The south probe runs east of the harbour box (x -40..20), which keeps dev's own quay-side shore and its step.
+const north=drop(0,-118,0,-1),south=drop(45,112,0,1);
 assert.ok(north>2.5&&south<1.2,`bluffs north (${north.toFixed(2)} m per m), beach south (${south.toFixed(2)})`);
 console.log('PASS ground: kept',keep.length,'points exactly, relief on',(changed/fields*100).toFixed(0)+'% of the fields, max slope',slope.toFixed(2),'coast',Math.min(...coast).toFixed(3)+'..'+Math.max(...coast).toFixed(3),'bluff',north.toFixed(2),'beach',south.toFixed(2));
 
