@@ -53,19 +53,17 @@ vec3 sandFine(vec2 p,float fp,float amp,float micro){
   if(amp<=.001)return o;
   vec2 w=SG_WIND,cw=vec2(-w.y,w.x);
   // Megaripples a metre apart where the wind sorts coarse grains, faint and broad.
-  float fm=1.-smoothstep(.25,1.1,fp);
+  float fm=1.-smoothstep(.08,.3,fp);
   if(fm>.001){
     vec3 n=snNoised(p*.21+vec2(3.1,-7.7));
     float ph=dot(p,w)/1.15+n.x*2.4;vec2 gp=w/1.15+n.yz*.21*2.4;
     vec2 r=snRipple(fract(ph));
-    float a=.022*amp*fm*smoothstep(.45,.75,snNoise(p*.045+vec2(-2.2,8.3)));
+    float a=.014*amp*fm*smoothstep(.55,.8,snNoise(p*.045+vec2(-2.2,8.3)));
     o+=vec3(r.x*a,r.y*a*gp);
   }
   // Wind ripples, a hand's breadth apart; their crests wander and fork.
-  float fr=1.-smoothstep(.05,.14,fp);
-  #ifdef SAND_LOW
-  fr*=1.-smoothstep(.03,.07,fp);
-  #endif
+  // Gone by the time a pixel spans a quarter of a ripple, or they alias into moire.
+  float fr=1.-smoothstep(.022,.055,fp);
   if(fr>.001){
     vec3 n1=snNoised(p*.85+vec2(7.1,1.9)),n2=snNoised(p*3.3+vec2(-4.4,2.6));
     float ph=dot(p,w)/.21+n1.x*1.9+n2.x*.45+dot(p,cw)*.06;

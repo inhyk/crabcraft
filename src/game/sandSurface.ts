@@ -61,7 +61,9 @@ float sdGlintOctave(vec2 p,float cell,vec3 N,vec3 H,vec3 T,vec3 B,float sharp){
 // The dunes' own shadows: march the baked ground toward the sun. Steps grow with distance, so a crest a hundred
 // metres off still shades the trough behind it; the edge softens with distance like a real penumbra.
 float sandSunVis=1.;
-float sandHorizon(vec3 P,vec3 L,vec3 N){
+// lattice is the clipmap's vertex spacing here: between coarse vertices the drawn surface sags under the bake's
+// crests, so the march starts a lattice step out and lifts its ray by part of one, or it shades itself in stripes.
+float sandHorizon(vec3 P,vec3 L,vec3 N,float lattice){
   // Facing away from the sun there is no direct light to shade.
   if(L.y<=0.||dot(N,L)<-.05)return 1.;
   #ifdef SAND_LOW
@@ -69,9 +71,9 @@ float sandHorizon(vec3 P,vec3 L,vec3 N){
   #else
   const int N_=12;const float G=1.62;
   #endif
-  float t=.45,vis=1.;
+  float t=.45+lattice,vis=1.,lift=.01+lattice*.12;
   for(int i=0;i<N_;i++){
-    vec3 q=P+L*t;
+    vec3 q=P+L*t+vec3(0.,lift,0.);
     // Close steps read the fine bake; past a few metres the coarse one resolves any crest that can shade here.
     float h=t<6.?sandGroundAt(q.xz).x:textureLod(sandFarTex,sandFarUV(q.xz),0.).x+SAND_H0;
     vis=min(vis,smoothstep(-1.,1.,(q.y-h)/(t*.028+.02)));
@@ -210,10 +212,10 @@ const SAND_STATE = /* glsl */ `
     alb=mix(alb,rock,sCliff);sRough=mix(sRough,.86,sCliff);
   }
   // Prints: sand turned over is a touch darker in the hollow (moister below), paler on the thrown rim.
-  alb*=1.-clamp(sDep*4.,0.,1.)*.12;
-  alb=mix(alb,pale,clamp(sBerm*9.,0.,1.)*.25*(1.-sWet));
+  alb*=1.-clamp(sDep*5.,0.,1.)*.2;
+  alb=mix(alb,pale,clamp(sBerm*12.,0.,1.)*.35*(1.-sWet));
   diffuseColor.rgb=alb;
-  sandSunVis=sandHorizon(sW,normalize(sandSunDir),normalize(vec3(-sGrad.x,1.,-sGrad.y)));
+  sandSunVis=sandHorizon(sW,normalize(sandSunDir),normalize(vec3(-sGrad.x,1.,-sGrad.y)),vSandInfo.x);
 `;
 
 const SAND_NORMAL = /* glsl */ `
@@ -221,7 +223,8 @@ const SAND_NORMAL = /* glsl */ `
   {
     vec2 g=sGrad+sDG;
     float rip=sRip*(1.-sCliff)*(1.-sVolc*.7)*(1.-clamp(sDep*6.+sBerm*12.,0.,1.));
-    vec3 fn=sandFine(sXZ,sFootMin*1.2,rip,1.);
+    // Band-limited to the pixel's wide axis: grazing views would otherwise alias ripples into moire.
+    vec3 fn=sandFine(sXZ,sFoot,rip,1.);
     g+=fn.yz*(1.-sWet*.6);
     // Broken sand at a print's rim: clumps, not a bevel.
     if(sBerm+sDepW>.002){vec3 cl=snNoised(sXZ*24.);g+=cl.yz*.04*clamp(sBerm*10.+sDepW,0.,1.)*(1.-smoothstep(.01,.05,sFoot));}
@@ -244,7 +247,7 @@ const SAND_AFTER = /* glsl */ `
     float back=pow(clamp(dot(sV,sL),0.,1.),6.)*nl;
     outgoingLight+=sandSunColor*diffuseColor.rgb*back*.06*sandSunVis*(1.-sWet);
     // Quartz glints, only into a low sun and only at grazing angles; a hint, not glitter.
-    outgoingLight+=sandSunColor*sdGlints(sXZ,sN,sV,sL,sFoot)*.035*sandSunVis*(1.-sWet)*(1.-sVolc)*(1.-sCliff);
+    outgoingLight+=sandSunColor*sdGlints(sXZ,sN,sV,sL,sFoot)*.012*sandSunVis*(1.-sWet)*(1.-sVolc)*(1.-sCliff);
   }
 `;
 
