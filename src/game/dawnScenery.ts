@@ -24,7 +24,7 @@ export class DawnScenery {
  constructor(height:(x:number,z:number)=>number){
   this.root.name='dawnreach-landmarks';
   const mat=(color:string,glow=0)=>new THREE.MeshStandardMaterial({color,roughness:.83,emissive:color,emissiveIntensity:glow});
-  const stone=mat('#666b76'),trim=mat('#baad88'),wood=mat('#855e43'),teal=mat('#397f82'),ivory=mat('#e7d6ae'),gold=mat('#f5c46c',.35),leaf=mat('#547654'),pink=mat('#e9a299');
+  const stone=mat('#666b76'),trim=mat('#baad88'),wood=mat('#855e43'),teal=mat('#397f82'),ivory=mat('#e7d6ae'),gold=mat('#f5c46c',.35);
   const box=new THREE.BoxGeometry(1,1,1),cyl=new THREE.CylinderGeometry(1,1,1,10),cone=new THREE.ConeGeometry(1,1,8),ball=new THREE.SphereGeometry(1,8,6);
   // Static dressing is instanced by material and geometry, including wall blocks and flower beds.
   const pools=new Map<string,{geo:THREE.BufferGeometry;mat:THREE.Material;transforms:THREE.Matrix4[]}>();
@@ -37,9 +37,7 @@ export class DawnScenery {
   place(cyl,stone,lx,ly+.3,lz,4,.6,4);place(cyl,ivory,lx,ly+6,lz,2.4,12,2.4);place(cyl,teal,lx,ly+7,lz,2.46,1,2.46);place(cyl,stone,lx,ly+12,lz,3,.4,3);place(cyl,gold,lx,ly+13.2,lz,1.3,2,1.3);place(cone,teal,lx,ly+15,lz,3.2,2,3.2);
   this.beacon.position.set(lx,ly+13.3,lz);const beamMat=new THREE.MeshBasicMaterial({color:'#ffdc96',transparent:true,opacity:.14,depthWrite:false,side:THREE.DoubleSide});const beam=new THREE.Mesh(new THREE.ConeGeometry(7,32,20,1,true),beamMat);beam.rotation.z=-Math.PI/2;beam.position.x=16;this.beacon.add(beam);this.root.add(this.beacon);
   for(let i=0;i<13;i++){const a=i/12*Math.PI*1.5;ground(box,ivory,lx+Math.cos(a)*6,lz+Math.sin(a)*6,.45,1.1,.45);}
-  // Terraced seaside orchard and rose beds, kept clear of the existing town doors.
-  for(const side of [-1,1])for(const z of [16,0,-18]){const x=side*17,y=height(x,z);place(box,stone,x,y+.2,z,9,.4,4);for(let i=0;i<7;i++){const px=x-3+i,py=height(px,z);place(ball,leaf,px,py+.55,z,.65,.5,1.4);place(ball,i%2?pink:gold,px,py+1,z+.2,.19,.19,.19);}}
-  for(const [x,z] of [[-57,68],[-72,40],[59,62]]){ground(box,wood,x,z,3,.3,.75,.6);for(const side of [-1,1])ground(box,stone,x+side,z,.3,.6,.7);}
+  // The garden beds along the avenue and the lookout benches are dawnDressing.ts (sandstone beds, kit plants and benches).
   // A fortress silhouette around, rather than inside, the boss's 20 m arena.
   for(const side of [-1,1]){for(let i=0;i<12;i++){const z=-47-i*5;ground(box,stone,side*35,z,2.6,9,5.1);ground(box,trim,side*35,z,3,1.3,2.2,9);}
    for(const z of TOWER_Z){const x=side*35,y=height(x,z);place(cyl,stone,x,y+7,z,5,14,5);place(cyl,trim,x,y+14,z,5.4,.6,5.4);place(cone,teal,x,y+17,z,6,6,6);}

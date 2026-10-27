@@ -1,5 +1,6 @@
 import {dawnTown,type DawnTown} from './dawnTown';
 import {dawnHouseMaterials} from './dawnHouses';
+import {dawnDressing,type DawnDressing} from './dawnDressing';
 import {Scatter} from '../world/kit';
 import {StarWind} from './starWind';
 import * as THREE from 'three';
@@ -24,6 +25,7 @@ export class DawnIsland {
  private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new StarSun();
  /** Dawnharbor's own streets, lamps, rocks, harbour and gate (dawnTown.ts). */
  readonly townLook:DawnTown;
+ private dressing:DawnDressing|null=null;
  height(x:number,z:number){
   return dawnHeight(x,z);
  }
@@ -67,17 +69,16 @@ export class DawnIsland {
    if(this.height(x,z)<3||roadClearance(x,z)<.5||Math.hypot(x+11,z-53)<5||Math.hypot(x-67,z-72)<9||Math.abs(x)>27&&Math.abs(x)<48&&z>16&&z<98)continue;
    const list=i%7?grasses:flowers;if(!list.length)continue;
    const scale=(i%7?.5:.55)+(i%5)*.08,name=list[i%list.length],bounds=nature.get(name).box,reach=Math.hypot(Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x)),Math.max(Math.abs(bounds.min.z),Math.abs(bounds.max.z)))*scale;
-   if(roadClearance(x,z)<reach+.25||Math.hypot(x,z-53)<14)continue;
+   // The avenue runs on to the harbour promenade (dawnHarbour.ts) past the end of DAWN_PATHS.
+   if(roadClearance(x,z)<reach+.25||Math.hypot(x,z-53)<14||Math.abs(x)<3.6+reach&&z>90)continue;
    forest.add(name,trs(x,this.height(x,z),z,i*2.39,scale));meadow++;
   }
   this.root.userData.meadowPlants=meadow;
   const woods=forest.build({boundsPadding:.3});this.root.add(woods);this.root.userData.leafyTrees=count;this.wind=new StarWind(woods);
+  // Market, fish market, benches, door pots and lanterns, laundry (dawnDressing.ts).
+  this.dressing=dawnDressing((x,z)=>this.height(x,z),{props,nature,village},builder.doorLamps,this.town);this.root.add(this.dressing.group);
   for(const piece of nature.pieces.values())for(const part of piece.parts)part.geometry.dispose();
-  const market=new StaticBatch(props,'dawnharbor-market');
-  const put=(name:string,x:number,z:number,yaw=0,scale=1,dy=0)=>{if(props.has(name))market.add(name,trs(x,this.height(x,z)+dy,z,yaw,scale));};
-  for(const side of [-1,1])for(const z of [37,57,74]){const x=side*23;put('Stall_Empty',x,z,side<0?Math.PI/2:-Math.PI/2);put('Barrel_Apples',x+side*2,z+1);put('Crate_Wooden',x+side*2,z-2);put('FarmCrate_Apple',x,z,0,1,.82);}
-  this.root.add(market.build());
  }
  private sunDir=new THREE.Vector3();
- update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
+ update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.dressing?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
 }
