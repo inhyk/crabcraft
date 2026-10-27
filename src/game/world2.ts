@@ -64,7 +64,7 @@ export class HiddenWorld {
    * A small warm key carried with the player's crab, a step toward the camera at its height: it lights the crab's
    * seen side more than the ground (about 4 m of reach), so the hero reads against the night fields.
    */
-  private readonly carry=new THREE.PointLight('#ffb27a',6,4.5,1.8);
+  private readonly carry=new THREE.PointLight('#ffb27a',9,4,2);
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();
