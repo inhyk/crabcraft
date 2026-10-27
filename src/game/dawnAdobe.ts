@@ -266,8 +266,11 @@ export class Acc {
   gy = 0; top = 0; ao = 1; k = 0;
   /** Non-wall uses: aux vector written as is. */
   a3: [number, number, number] | null = null;
+  /** Placement applied to everything emitted (a turned block), with its normal matrix; null for none. */
+  xf: THREE.Matrix4 | null = null; nm = new THREE.Matrix3();
   constructor(readonly names: {uv: string; aux: string; k?: string}) {}
   vert(p: THREE.Vector3, n: THREE.Vector3, u = 0, v = 0, ao = this.ao) {
+    if (this.xf) { p = _xp.copy(p).applyMatrix4(this.xf); n = _xn.copy(n).applyMatrix3(this.nm).normalize(); }
     this.P.push(p.x, p.y, p.z); this.N.push(n.x, n.y, n.z); this.C.push(this.col.r, this.col.g, this.col.b); this.T.push(u, v);
     if (this.a3) this.A.push(this.a3[0], this.a3[1], this.a3[2]); else this.A.push(p.y - this.gy, this.top - p.y, ao);
     this.K.push(this.k);
@@ -316,7 +319,7 @@ export class Acc {
     return g;
   }
 }
-const _n = new V(), _m = new V(), _a = new V(), _b = new V();
+const _n = new V(), _m = new V(), _a = new V(), _b = new V(), _xp = new V(), _xn = new V();
 
 /** An opening in a face, in metres: u along the face, v over the ground at the face. */
 export interface Hole {

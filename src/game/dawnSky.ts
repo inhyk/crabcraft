@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 /*
- * Dawnharbor's stolen dawn: the sun held a few degrees over the eastern sea. One sky function (dawnSkyRadiance)
+ * Dawnharbor's stolen dawn over the desert: the sun held low over the eastern sea. One sky function (dawnSkyRadiance)
  * is baked once on the CPU into a small LUT, mirror-symmetric about the sun's bearing like snowSky.ts; the dome,
  * the sea's reflections, the fog, the sun and the hemisphere light all read the same numbers, so the dust glowing
  * gold over the east, the deep desert blue overhead and the dusty rose band opposite the sun (the Belt of Venus
@@ -22,12 +22,12 @@ const mix3 = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + 
 const sat = (x: number) => Math.min(1, Math.max(0, x));
 const smooth = (a: number, b: number, x: number) => { const t = sat((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
-// The palette, linear. Brightness is in the renderer's units before tone mapping. A desert sunrise: deep clear
-// blue overhead, a band of dust glowing gold round the sun and dusty peach-rose round the back of the sky.
-const ZENITH_AWAY = lin(0x234d8c), ZENITH_SUN = lin(0x3563a3);
-const MID_AWAY = lin(0x7f9fc8), MID_SUN = lin(0xd9b994);
-const HORIZON_AWAY = lin(0xd9c0a8), HORIZON_SUN = lin(0xffbf73);
-const BELT = lin(0xedbca2), EARTH_SHADOW = lin(0x8f9cbc);
+// The palette, linear. Brightness is in the renderer's units before tone mapping. A desert sunrise: clear blue
+// overhead, warm dust haze all round the horizon glowing gold under the sun, a dusty rose band round the back.
+const ZENITH_AWAY = lin(0x2c66aa), ZENITH_SUN = lin(0x3a78b8);
+const MID_AWAY = lin(0x6f9fd2), MID_SUN = lin(0xe8bf90);
+const HORIZON_AWAY = lin(0xd8c0a4), HORIZON_SUN = lin(0xffbe6e);
+const BELT = lin(0xebbaa2), EARTH_SHADOW = lin(0xa3a6b5), DUST = lin(0xe9c48e);
 
 export interface DawnSkyOptions {
   /** Bearing of the sun, degrees: 0 faces +Z, 90 faces +X. */
@@ -54,9 +54,11 @@ export function dawnSkyRadiance(elev: number, cosPhi: number, sunElev: number, g
   col = mix3(col, hor, Math.exp(-e * (7 + 5 * (1 - toward))));
   // Opposite the sun: the Belt of Venus over the Earth's blue shadow.
   const away = (1 - toward) * (1 - toward);
-  const belt = Math.exp(-(((e - 0.13) / 0.075) ** 2)) * away * 0.55;
+  const belt = Math.exp(-(((e - 0.13) / 0.075) ** 2)) * away * 0.25;
   col = mix3(col, BELT, belt);
-  col = mix3(col, EARTH_SHADOW, Math.exp(-e * 38) * away * 0.55);
+  col = mix3(col, EARTH_SHADOW, Math.exp(-e * 38) * away * 0.3);
+  // Dust lifted off the desert: a warm ochre haze in the lowest few degrees all round.
+  col = mix3(col, DUST, Math.exp(-e * 16) * 0.55);
   // Forward glow round a low sun, wide and warm, brightest on the horizon.
   const mu = Math.cos(elev) * Math.cos(sunElev) * cosPhi + Math.sin(elev) * Math.sin(sunElev);
   const m = Math.max(0, mu), glow = 0.55 * Math.pow(m, 6) + 1.4 * Math.pow(m, 48);
@@ -118,7 +120,7 @@ void main(){
   // The sun: a large soft disc (stylised, about 1.3 degrees) with a hot core and a halo.
   float r=acos(clamp(mu,-1.,1.));
   float disc=1.-smoothstep(.019,.024,r);
-  col+=sunColor*(disc*9.+exp(-r*55.)*1.6+exp(-r*14.)*.45);
+  col+=sunColor*(disc*9.+exp(-r*55.)*1.4+exp(-r*14.)*.3);
   // Cumulus over the sea, lit from below and the side by the low sun. Each cloud is lit where its edge faces the
   // sun (its density falls off that way) and sits in lavender shade where it thickens away from it.
   if(d.y>-.02){
@@ -127,7 +129,7 @@ void main(){
     vec2 sdir=normalize(dawnSunDir.xz);
     vec2 wq=vec2(dkFbm(cp*.35+7.),dkFbm(cp*.35-3.))*1.3;
     float band=smoothstep(.0,.05,d.y)*(1.-smoothstep(.3,.7,d.y));
-    float cover=mix(.8,.7,band);
+    float cover=mix(.82,.72,band);
     float base=dkFbm(cp*.8+wq);
     float dens=smoothstep(cover,cover+.16,base)*band;
     float ahead=smoothstep(cover,cover+.16,dkFbm((cp+sdir*.22)*.8+wq))*band;
@@ -141,7 +143,7 @@ void main(){
     // Higher, thinner altocumulus flecks catching the first light.
     vec2 ap=d.xz/(d.y+.12)*1.5+vec2(time*.002,0.);
     float an=dkFbm(ap*1.3+vec2(9.,4.))*(.75+.25*sin(ap.x*5.+dkNoise(ap*2.)*3.));
-    float alto=smoothstep(.64,.82,an)*smoothstep(.1,.3,d.y)*(1.-smoothstep(.6,.95,d.y))*.6*(1.-dens);
+    float alto=smoothstep(.64,.82,an)*smoothstep(.1,.3,d.y)*(1.-smoothstep(.6,.95,d.y))*.35*(1.-dens);
     col=mix(col,mix(cloudShade*1.3,cloudLit*1.15,.35+.65*toward),alto);
   }
   // The last degrees dissolve into the fog the far sea already sits in.
@@ -166,6 +168,8 @@ export class DawnSky {
   /** HemisphereLight colours at intensity 1: the sky over level ground, the warm bounce off sand and grass. */
   readonly hemiSky: THREE.Color;
   readonly hemiGround: THREE.Color;
+  /** Extra sky fill the sand alone takes on top of the hemisphere light (sandSurface.ts). */
+  readonly sandSkyFill: THREE.Color;
   /** Mean horizon and zenith, for materials that fake a two-tone sky reflection. */
   readonly skyHorizon: THREE.Color;
   readonly skyZenith: THREE.Color;
@@ -255,16 +259,17 @@ export class DawnSky {
     }
     for (let c = 0; c < 3; c++) up[c] /= wsum;
     // The beam of a sun a few degrees up: gold, the blue mostly scattered out of it.
-    const beam = lin(0xffe0a2);
+    // Kasten-Young air mass at 11 degrees: the blue mostly scattered out of the beam, gold not orange.
+    const beam = lin(0xffd27a);
     this.sunColor = toColor(beam);
-    this.sunIntensity = 6.4;
+    this.sunIntensity = 5.6;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance.
+    // The dome's fill, its red pulled back, so shade on the sand reads cool blue-violet against the gold sun.
+    this.hemiSky = toColor([up[0] * 1.5, up[1] * 1.6, up[2] * 2.4] as V3, 1);
+    // Sand sees more of the sky than a wall does and keeps its shade bright blue-violet: the extra fill it alone adds.
+    this.sandSkyFill = toColor([up[0] * 0.95, up[1] * 0.85, up[2] * 1.5] as V3, 1);
     // Warm bounce off sunlit sand (albedo about 0.35), lit by the sun's beam and the sky.
     const albedo: V3 = [0.46, 0.33, 0.19], sunE = this.sunIntensity * Math.sin(el) * 1.6;
-    // The fill in shade: the dome, its blue kept, plus the light every shadow here gets back from the sunlit sand and
-    // stone round it (a court, an alley or a dune trough sees far more lit ground than open sky). Shade reads cool
-    // lilac blue against the gold sun and keeps about 40 % of the lit value: never navy (dawn-polish, report 1.8).
-    this.hemiSky = toColor([0, 1, 2].map(c => up[c] * [1.9, 2.1, 1.95][c] + albedo[c] * beam[c] * sunE * 0.2) as V3, 1);
     this.hemiGround = toColor([0, 1, 2].map(c => albedo[c] * (beam[c] * sunE + up[c] * 1.3)) as V3, 1.6);
     this.groundRadiance = [0, 1, 2].map(c => albedo[c] * 1.35 * (beam[c] * sunE * 0.8 + up[c] * Math.PI) / Math.PI) as V3;
     this.gain = gain;
@@ -281,8 +286,8 @@ export class DawnSky {
         sunColor: { value: toColor(sunTint, gain) },
         time: { value: 0 },
         hazeColor: { value: this.skyHorizon.clone() },
-        cloudShade: { value: toColor(lin(0xa7a6c6), gain * 0.95) },
-        cloudLit: { value: toColor(lin(0xffbf98), gain * 1.5) },
+        cloudShade: { value: toColor(lin(0xb4a6a4), gain * 0.95) },
+        cloudLit: { value: toColor(lin(0xffcf9c), gain * 1.5) },
       },
     });
     // World teardown disposes materials, not the textures in their uniforms.
@@ -360,8 +365,11 @@ export class DawnSky {
   private _up?: THREE.Vector3;
 }
 
-/** Morning haze along the ground (FogExp2 density). */
-const FOG_DENSITY = 0.0024;
+/**
+ * Haze on everything but the sand (FogExp2 density): light, so the town stays clear; the sand draws its own
+ * aerial perspective with height falloff (sandSurface.ts), and the sea melts into the dome's horizon band.
+ */
+const FOG_DENSITY = 0.0014;
 /** Half-width of the shadow box across the sun, metres. */
 const SHADOW_HALF = 72;
 /** How far up the sun ray the shadow camera sits: far enough for the citadel's towers to shade the climb. */

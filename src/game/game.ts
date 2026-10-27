@@ -113,7 +113,7 @@ const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vign
 // knee, so the sky round a low sun glows without a contour where it crosses the threshold.
 const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78, knee: true }, agxLook: { saturation: 1.32, power: 1.06 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
 /** Goldsand's desert sunrise: golden sand that does not wash grey, cool blue shade, warm lamps; bloom keys above the sunlit sand. */
-const DESERT_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.04, agxLook: { saturation: 1.5, power: 1.12 }, bloom: { intensity: 0.85, threshold: 1.25, smoothing: 0.3, radius: 0.75, knee: true }, grade: { lift: [0.004, 0.008, 0.02], warm: 0.5, white: 0.02, split: { shadow: [0.92, 1.0, 1.05], highlight: [1.07, 1.01, 0.82] } } };
+const DESERT_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.35, agxLook: { saturation: 1.5, power: 1.12 }, bloom: { intensity: 0.85, threshold: 1.25, smoothing: 0.3, radius: 0.75, knee: true }, grade: { lift: [0.004, 0.008, 0.02], warm: 0.5, white: 0.02, split: { shadow: [0.92, 0.97, 1.13], highlight: [1.05, 1.04, 0.8] } } };
 /** Tidecrown's late afternoon: rich and warm, sunlit stone golden and shade lilac; bloom keys above the stone, on lamps and windows. */
 const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.14, agxLook: { saturation: 1.34, power: 1.15 }, bloom: { intensity: 0.85, threshold: 1.45, smoothing: 0.3, radius: 0.75 }, grade: { lift: [0.013, 0.006, 0.032], warm: 0.55, white: 0.02, split: { shadow: [0.96, 0.975, 1.045], highlight: [1.11, 1.0, 0.8] } } };
 

@@ -60,7 +60,7 @@ function laundryMaterial(): THREE.MeshStandardMaterial {
 export interface DawnDressing {group: THREE.Group; update(time: number): void; stats: Record<string, number>}
 
 /** Raise the dressing; `npcSpots` are the villagers' posts (DawnIsland.town), `height` the gameplay surface. */
-export function dawnDressing(height: (x: number, z: number) => number, kits: {props: Kit; nature: Kit; village?: Kit}, doors: readonly {pos: THREE.Vector3; yaw: number}[], npcSpots: readonly (readonly [number, number])[], opts: {yardLaundry?: boolean} = {}): DawnDressing {
+export function dawnDressing(height: (x: number, z: number) => number, kits: {props: Kit; nature: Kit}, doors: readonly {pos: THREE.Vector3; yaw: number}[], npcSpots: readonly (readonly [number, number])[], opts: {yardLaundry?: boolean} = {}): DawnDressing {
   const {props, nature} = kits;
   const group = new THREE.Group(); group.name = 'dawnharbor-dressing';
   const R = rng(9137);
