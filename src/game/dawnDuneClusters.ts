@@ -30,13 +30,15 @@ export interface DuneCluster {id: string; kind: DuneClusterKind; x: number; z: n
 export const DUNE_CLUSTERS: readonly DuneCluster[] = [
   // West view's middle ground behind the crab: the caravan road's halt (aerial west).
   {id: 'caravanserai', kind: 'ruin', x: -74, z: 1, yaw: 2.6},
+  // The caravan's halt by the ruin: the cargo it left behind.
+  {id: 'halt-cargo', kind: 'amphorae', x: -67.5, z: -5, yaw: .4},
   // East view: framed between the palms, against the bright sea.
   {id: 'fallen-obelisk', kind: 'obelisk', x: 79, z: -4, yaw: 2.5},
   // Dunes view: on the crest, at the end of the lost caravan's track.
   {id: 'lost-camel', kind: 'bones', x: -109, z: -29, yaw: -.5},
   // Dunes2 view: the town's western edge, a long silhouette across the frame against the town and the sun.
   {id: 'west-fence', kind: 'fence', x: -101, z: 32, yaw: 2.2},
-  {id: 'west-cargo', kind: 'amphorae', x: -94, z: 38, yaw: .4},
+
   // Aerial: the eastern shore's beached cargo.
   {id: 'shore-cargo', kind: 'amphorae', x: 84, z: 44, yaw: -.8},
 ];
@@ -207,7 +209,7 @@ export function duneClusterParts(height: (x: number, z: number) => number): Dune
       for (const [u, w] of [[2.2, -1.2], [1, -2.6], [-2, -1.2], [2.6, 1.6]]) tuft(u, w);
     } else if (c.kind === 'fence') {
       // Stakes along u, a rail at two heights, frond stems lashed close between them; the windward side drowned.
-      const len = 9, stakes = Math.round(len / 1.15);
+      const len = 7, stakes = Math.round(len / 1.15);
       const bend = (u: number) => Math.sin(u / len * Math.PI) * .6;
       for (let i = 0; i <= stakes; i++) {
         const u = i * len / stakes - len / 2, lean = (R() - .5) * .2;
@@ -226,7 +228,7 @@ export function duneClusterParts(height: (x: number, z: number) => number): Dune
         }
         if (i < stakes) solid(u + len / stakes / 2, bend(u + len / stakes / 2), .4, 1.2);
       }
-      for (const [u, w] of [[-3.2, -.9], [.4, -1.1], [3.6, -.8], [-1.6, 1.2]]) tuft(u, w);
+      for (const [u, w] of [[-2.6, -.9], [2.8, -.8]]) tuft(u, w);
     }
   }
   return {pieces, solids, scrub, tree};
