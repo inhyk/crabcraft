@@ -53,7 +53,7 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
   const woods: THREE.BufferGeometry[] = [], ropes: THREE.BufferGeometry[] = [];
   const props = new StaticBatch(kits.props, 'goldsand-quarter-props'), plants = new Scatter(kits.nature, 'goldsand-quarter-plants');
   const doors: {pos: THREE.Vector3; yaw: number}[] = [], glows: {pos: THREE.Vector3; size: number}[] = [];
-  const stats: Record<string, number> = {blocks: 0, windows: 0, doors: 0, vigas: 0, bays: 0, windcatchers: 0, stairs: 0, jars: 0, rugs: 0, laundry: 0, sails: 0, ladders: 0, gardens: 0, carpets: 0, baskets: 0, awnings: 0, domes: 0};
+  const stats: Record<string, number> = {blocks: 0, windows: 0, doors: 0, vigas: 0, bays: 0, windcatchers: 0, stairs: 0, jars: 0, rugs: 0, laundry: 0, sails: 0, ladders: 0, gardens: 0, carpets: 0, baskets: 0, awnings: 0, domes: 0, parapets: 0, frames: 0};
   const placed = (m: THREE.Matrix4) => turned ? T.clone().multiply(m) : m;
   const prop = (piece: string, x: number, y: number, z: number, yaw = 0, s = 1) => { if (kits.props.has(piece)) props.add(piece, placed(trs(x, y, z, yaw, s))); };
   const plant = (piece: string, x: number, y: number, z: number, yaw: number, s: number) => { if (kits.nature.has(piece)) plants.add(piece, placed(trs(x, y, z, yaw, s))); };
@@ -293,6 +293,7 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
         const top = h.v1 + .14, yaw = faceYaw(F.N);
         for (const u of [h.u0 - .1, h.u1 + .1]) { const p = facePoint(F, u, top / 2 - .02).addScaledVector(F.N, .035); box(wall, p.x, p.y, p.z, .16, top + .04, .09, yaw); }
         { const p = facePoint(F, uc, top).addScaledVector(F.N, .035); box(wall, p.x, p.y, p.z, w + .36, .16, .09, yaw); }
+        stats.frames++;
         wall.col.set(DAWN_TINTS[b.tint]); wall.k = FINISH[b.tint];
       }
       if (h.kind === CR.door && h.v0 === 0) {
@@ -361,7 +362,7 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
           along(ax, s, 0, t0, Math.min(2.4, half), .26); along(ax, s, 0, t0 + .24, Math.min(1.2, half * .5), .22);
         }
       }
-      wall.top = G.top;
+      wall.top = G.top; stats.parapets++;
     }
     // Mashrabiya bay over the door on two-storey street fronts.
     if (b.door && floors > 1 && b.seed % 2 === 0 && b.role !== 'forge') {

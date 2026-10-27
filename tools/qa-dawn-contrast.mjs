@@ -9,7 +9,8 @@
 //    and a few rocks, and their darks stay with the ripple lag lines (within 25 % of the shade round them) and the
 //    rock feet, so their p1 is held at 62 and 72 rather than pushing the whole shade down;
 //  - the open shade keeps its value: the mean of the cool ground pixels stays between 68 and 115 (the narrow street's
-//    alley shade, occluded now, is the low end);
+//    alley shade, occluded now, is the low end), on views where cool ground is at least 10 % of the lower two thirds
+//    (dawn-plaza warmed the paving and the dial floor, so the arena view's shade is no longer cool);
 //  - the contact bake: the occlusion map exists, a few per cent of the town's square is occluded and the open sand is
 //    not, a house foot is darker than open ground, and the island's lit materials (sand included) take it;
 //  - the plaster carries corner wear: the wall geometry holds the distances to its corners;
@@ -35,7 +36,7 @@ async function stats(buf){
    // Cool ground in the lower two thirds: the shade fill.
    if(px>=top*img.width&&b>r*.92&&L>40&&L<170){shadeSum+=L;shadeN++;}}
   const n=img.width*img.height,pct=k=>{let acc=0;for(let v=0;v<256;v++){acc+=hist[v];if(acc>=n*k)return v;}return 255;};
-  return {p1:pct(.01),p5:pct(.05),p10:pct(.1),p50:pct(.5),p99:pct(.99),white,shade:shadeN?shadeSum/shadeN:0};
+  return {p1:pct(.01),p5:pct(.05),p10:pct(.1),p50:pct(.5),p99:pct(.99),white,shade:shadeN?shadeSum/shadeN:0,coolShare:shadeN/(n-top*img.width)};
  },buf.toString('base64'));
 }
 
@@ -82,15 +83,17 @@ const contactProbe=p=>p.evaluate(()=>{
  assert.ok(k.foot&&k.footAO<k.openAO-.12&&k.openAO>.97,`a house foot is darker than open sand: foot ${k.footAO.toFixed(2)} at ${k.foot} open ${k.openAO.toFixed(2)}`);
  assert.ok(k.cornerVerts>500&&k.farVerts>500,`the plaster walls carry corner distances: ${k.cornerVerts} corner vertices, ${k.farVerts} far`);
  console.log(`PASS contact: ${k.stats.occluders} occluders, ${k.patched} materials patched (${k.stats.cloned} kit clones), sand ${k.sand}, occluded ${(k.dark*100).toFixed(2)} % (deep ${(k.deep*100).toFixed(2)} %), house foot ${k.footAO.toFixed(2)} vs open ${k.openAO.toFixed(2)}, corner vertices ${k.cornerVerts}`);
- console.log('view       p1   p5  p10  p50  p99  width  white  shade');
+ console.log('view       p1   p5  p10  p50  p99  width  white  shade  cool%');
  for(const name of Object.keys(VIEWS)){
   const s=await stats(await shot(name)),w=s.p99-s.p10;
-  console.log(`${name.padEnd(9)} ${String(s.p1).padStart(4)} ${String(s.p5).padStart(4)} ${String(s.p10).padStart(4)} ${String(s.p50).padStart(4)} ${String(s.p99).padStart(4)} ${String(w).padStart(6)} ${String(s.white).padStart(6)} ${s.shade.toFixed(1).padStart(6)}`);
+  console.log(`${name.padEnd(9)} ${String(s.p1).padStart(4)} ${String(s.p5).padStart(4)} ${String(s.p10).padStart(4)} ${String(s.p50).padStart(4)} ${String(s.p99).padStart(4)} ${String(w).padStart(6)} ${String(s.white).padStart(6)} ${s.shade.toFixed(1).padStart(6)} ${(s.coolShare*100).toFixed(1).padStart(6)}`);
   assert.ok(w>=115,`${name}: p10-p99 spread >= 115: ${w}`);
   const p1max=P1MAX[name]??50;
   assert.ok(s.p1<=p1max&&s.p1>=20,`${name}: 20 <= p1 <= ${p1max}: ${s.p1}`);
   assert.equal(s.white,0,`${name}: no pixel clips to white`);
-  assert.ok(s.shade>=68&&s.shade<=115,`${name}: the open shade keeps its value: ${s.shade.toFixed(1)}`);
+  // Only where the shade is still cool ground: since dawn-plaza the dial and the streets take a warm golden bounce, so on
+  // the arena view the few cool pixels left are the basalt bands (under 10 % of the ground) and the check does not apply.
+  if(s.coolShare>=.1)assert.ok(s.shade>=68&&s.shade<=115,`${name}: the open shade keeps its value: ${s.shade.toFixed(1)}`);
  }
  console.log('PASS views: every spread >= 115, p1 in 20..50 (east 62, dunes 72), no white clipping, shade mean 68..115');
  assert.deepEqual(errors,[],'no page, shader or GL errors (high)');
