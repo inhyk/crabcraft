@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {injectStarLight} from './starLight';
 import {STAR_GRID} from '../sim/world/ground';
 import {onIslandPath,type IslandPath} from './islandPaths';
-import {starWildTint} from './starWilds';
+import {starSpurWear,starWildTint} from './starWilds';
 import {starFieldValue, starShade, starSoil} from './starGround';
 import {STAR_DETAIL,starNoise} from './starFieldLayout';
 import {starTrailDistance} from './world2Settlement';
@@ -120,7 +120,7 @@ export interface StarMeadow {
 }
 
 /** `exclude`: discs (x, z, r) where nothing grows: buildings, stalls, props. */
-export function starMeadow(height: (x: number, z: number) => number, paths: readonly IslandPath[], exclude: readonly (readonly [number, number, number])[]): StarMeadow {
+export function starMeadow(height: (x: number, z: number) => number, paths: readonly IslandPath[], exclude: readonly (readonly [number, number, number])[], paved: (x: number, z: number) => boolean = (x, z) => onIslandPath(paths, x, z)): StarMeadow {
   const {nx, nz, step, minX, minZ} = STAR_GRID;
   const hData = new Float32Array(nx * nz);
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) hData[j * nx + i] = height(minX + i * step, minZ + j * step);
@@ -133,7 +133,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
   for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
     const x = MAP_MIN_X + (i + .5) * MAP, z = MAP_MIN_Z + (j + .5) * MAP, y = height(x, z);
     const [sand, grass, worn] = starSoil(x, z, y);
-    let d = Math.max(0, grass - sand * 1.4) * (1 - worn * .9);
+    let d = Math.max(0, grass - sand * 1.4) * (1 - worn * .9) * (1 - starSpurWear(x, z));
     let near = Infinity;
     for (const [ex, ez, er] of exclude) near = Math.min(near, Math.hypot(x - ex, z - ez) - er);
     d *= smooth(near, 0, 1.2);
@@ -158,7 +158,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
     }
     if (Math.hypot(x, z - 55) < 8) d = 0;
     // Off the stones by a hand's width: test the cell's corners against the ways.
-    for (const [ox, oz] of [[0, 0], [-.45, -.45], [.45, -.45], [-.45, .45], [.45, .45]]) if (onIslandPath(paths, x + ox, z + oz)) { d = 0; break; }
+    for (const [ox, oz] of [[0, 0], [-.45, -.45], [.45, -.45], [-.45, .45], [.45, .45]]) if (paved(x + ox, z + oz)) { d = 0; break; }
     const o = (j * W + i) * 4;
     // The town's lawns are a full, short sward: dense or nothing, never a scatter of single blades.
     mask[o] = Math.round(Math.min(1, d * (town ? 1.8 : 1.15)) * 255);

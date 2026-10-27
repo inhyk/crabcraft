@@ -3,7 +3,7 @@ import {injectStarLight} from './starLight';
 import {STAR_GRID} from '../sim/world/ground';
 import type {StarMeadow} from './starMeadow';
 import type {StarFields} from './starFields';
-import {starWildTint} from './starWilds';
+import {starSpurWear,starWildTint} from './starWilds';
 import {GARDEN_TREES,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 import {starBoulders} from './starFieldSpots';
@@ -269,7 +269,8 @@ export function starFieldValue(x: number, z: number, y: number): number {
   const [, grass] = starSoil(x, z, y), rect = Math.hypot(Math.max(-50 - x, 0, x - 50), Math.max(6 - z, 0, z - 97));
   const open = starOpenMeadow(x, z, grass, 1 - smooth(rect, 0, 7), 1 - smooth(Math.hypot(x, z + 75), 22, 28));
   const [lush, wear] = starFieldWear(x, z);
-  return .5 + (wear * .5 - lush * .5) * open;
+  // The dead ends' earth paths are trodden pale wherever they run (star r5).
+  return Math.max(.5 + (wear * .5 - lush * .5) * open, .5 + .5 * starSpurWear(x, z));
 }
 /** Per vertex: how sandy, how grassy and how worn the ground is (0..1 each). */
 export function starSoil(x: number, z: number, y: number): [number, number, number] {
@@ -284,7 +285,7 @@ export function starSoil(x: number, z: number, y: number): [number, number, numb
   // Bare, trodden spots through the town's lawns (a few metres across, where feet and carts go), so a lawn has
   // large value steps of turf and earth instead of one even mat.
   const bare = town * smooth(starNoise(x / 7, z / 7, 63) + starNoise(x / 2.5, z / 2.5, 64) * .3, .16, .3);
-  let worn = Math.max(trail * .75, town * .22, bare * .9, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater);
+  let worn = Math.max(trail * .75, town * .22, bare * .9, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater, starSpurWear(x, z) * .95);
   // The sanctum's surround keeps a thin, patchy turf (tussocks and stones, starMeadow.ts and starFields.ts) instead of bare dirt.
   const grass = Math.max(0, 1 - sand * 1.1 - smooth(r, .9, .95)) * (1 - town * .12) * (1 - arena * .6) * (1 - crater * .8);
   // Out in the open meadow: bare trodden patches and tracks (starFieldWear) thin the sward to short turf.

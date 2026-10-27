@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import {starGroundColor} from './world2Ground';
 import {starCoast, starNoise, starSand, STAR_CRATER} from './starFieldLayout';
 import {starBoulders, starPlayDistance} from './starFieldSpots';
-import {nearStarObjective, starForestSpots, starTrailDistance, STAR_TRAILS} from './world2Settlement';
+import {nearStarObjective, starForestSpots, starLots, starTrailDistance, STAR_TRAILS} from './world2Settlement';
+import {starDoorLamps} from './starRooftops';
 import type {StarGlowSource} from './starLight';
 
 /*
@@ -147,4 +148,48 @@ export class StarFireflies {
     // Low quality keeps the clumps' fireflies and drops most of the trails'.
     this.points.geometry.setDrawRange(0, quality === 'low' ? this.count >> 1 : this.count);
   }
+}
+
+/**
+ * The town's dead-end ways (end point and outward direction, star r5): the paving frays out there (starPaving.ts)
+ * and a trodden earth path runs on to the nearest door, or a few metres into the grass when no door is near.
+ */
+export const STAR_WAY_ENDS: readonly (readonly [number, number, number, number, number])[] = [
+  // x, z, direction x, z, way width
+  [26, 55, 1, 0, 7], [-26, 55, -1, 0, 7], [-25, 36, -1, 0, 2.4], [20, 35, 1, 0, 2.4], [-22, 82, -1, 0, 2.4], [24, 84, 1, 0, 2.4],
+];
+export interface StarSpur { pts: [number, number][]; w: number }
+let spurCache: StarSpur[] | null = null;
+/** Each dead end's earth path: a curve from under the frayed stones to the nearest door (a step out from its sill). */
+export function starWaySpurs(): StarSpur[] {
+  if (spurCache) return spurCache;
+  const doors = starDoorLamps(starLots()).map((d) => [d.pos.x + Math.sin(d.yaw) * 1.4, d.pos.z + Math.cos(d.yaw) * 1.4] as const);
+  spurCache = STAR_WAY_ENDS.map(([x, z, dx, dz, width]) => {
+    const sx = x - dx * 2, sz = z - dz * 2;
+    let best: readonly [number, number] | null = null, bd = 24;
+    for (const d of doors) { const l = Math.hypot(d[0] - sx, d[1] - sz), ahead = (d[0] - sx) * dx + (d[1] - sz) * dz; if (ahead > 2 && l < bd) { bd = l; best = d; } }
+    const [ex, ez] = best ?? [sx + dx * 8, sz + dz * 8], reach = Math.max(3, Math.hypot(ex - sx, ez - sz) * .5);
+    const cx = sx + dx * reach, cz = sz + dz * reach, pts: [number, number][] = [];
+    for (let k = 0; k <= 16; k++) { const u = k / 16, a = (1 - u) * (1 - u), b = 2 * u * (1 - u), c = u * u; pts.push([a * sx + b * cx + c * ex, a * sz + b * cz + c * ez]); }
+    return {pts, w: Math.min(2.2, width * .45 + .4) * (best ? 1 : .8)};
+  });
+  return spurCache;
+}
+/** 0..1: how trodden (x, z) is by the dead ends' earth paths. */
+export function starSpurWear(x: number, z: number): number {
+  let wear = 0;
+  for (const s of starWaySpurs()) {
+    const [x0, z0] = s.pts[0], [x1, z1] = s.pts[s.pts.length - 1];
+    if (x < Math.min(x0, x1) - 4 || x > Math.max(x0, x1) + 4 || z < Math.min(z0, z1) - 4 || z > Math.max(z0, z1) + 4) continue;
+    let best = 1e9, at = 0;
+    for (let k = 1; k < s.pts.length; k++) {
+      const [ax, az] = s.pts[k - 1], [bx, bz] = s.pts[k], dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz;
+      const u = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / l2)), d = Math.hypot(x - ax - dx * u, z - az - dz * u);
+      if (d < best) { best = d; at = (k - 1 + u) / (s.pts.length - 1); }
+    }
+    // Narrower toward the door, ragged at the edge.
+    const half = s.w * .5 * (1 - .35 * at) + starNoise(x / 1.7, z / 1.7, 331) * .25;
+    wear = Math.max(wear, 1 - smooth(best, half * .55, half * 1.05));
+  }
+  return wear;
 }

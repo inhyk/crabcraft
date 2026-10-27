@@ -1,6 +1,7 @@
 import {starPaving} from './starPaving';
 import {starMeadow} from './starMeadow';
 import {starTreeDressing,starTreeSpecies} from './starTrees';
+import {STAR_WAY_ENDS} from './starWilds';
 import {starFields} from './starFields';
 import {starStories} from './starStories';
 import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_RING} from './starFieldLayout';
@@ -244,7 +245,9 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     {points:[[4.7,84],[24,84]],width:2.4},
     ...STAR_TRAILS.map(points=>({points,width:2.4,trim:false})),
   ];
-  root.add(starPaving(height,ways,STAR_TRAILS.length,{skyHorizon:new THREE.Color('#2a2552'),skyZenith:new THREE.Color('#0b1030'),pads:[{x:0,z:55,r:7.2,rings:7.2},{x:STAR_RING.x,z:STAR_RING.z,r:STAR_RING.r-1.3,rings:STAR_RING.r-1.3}],holes:[{x:0,z:55,r:3.7,kerb:.55}]}).root);
+  // Dead ends fray into earth paths to the nearest door (starWilds.ts); the ground reads the paths from starWaySpurs.
+  const paving=starPaving(height,ways,STAR_TRAILS.length,{skyHorizon:new THREE.Color('#2a2552'),skyZenith:new THREE.Color('#0b1030'),pads:[{x:0,z:55,r:7.2,rings:7.2},{x:STAR_RING.x,z:STAR_RING.z,r:STAR_RING.r-1.3,rings:STAR_RING.r-1.3}],holes:[{x:0,z:55,r:3.7,kerb:.55}],frays:STAR_WAY_ENDS.map(([x,z])=>({x,z}))});
+  root.add(paving.root);
   // The meadow underfoot grows round the buildings, stalls, wagons and quest props, never on the ways.
   const meadow=starMeadow(height,ways,[
     ...lots.map(l=>[l.x,l.z,Math.hypot(l.sx,l.sz)+1.4] as const),
@@ -255,7 +258,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     [STAR_CAMP.x-.5,STAR_CAMP.z,4.6],[STAR_BOAT.x,STAR_BOAT.z,3.4],
     // The keepers' ring floor and the miners' trodden yard.
     [STAR_RING.x,STAR_RING.z,STAR_RING.r-1.1],[STAR_MINE.x-2,STAR_MINE.z+1.5,4.2],
-  ]);
+  ],paving.root.userData.paved);
   root.add(meadow.mesh);
   for(const kit of [village,nature,props])for(const piece of kit.pieces.values())for(const part of piece.parts)part.geometry.dispose();
   return {root,lots,natureNames,meadow,fields};
