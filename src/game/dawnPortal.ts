@@ -131,6 +131,7 @@ export class DawnPortal {
     const light = new THREE.PointLight(frost ? '#9cc8ff' : '#ffb466', 10, 13, 1.4); light.position.set(0, SPRING, 1.2);
     this.root.add(light);
     this.root.userData.dawnGate = tone;
+    this.root.userData.sunburst = {rays: 9, spikes: 0};
   }
   update(time: number) { this.veil.uniforms.uTime.value = time; this.motes.uniforms.uTime.value = time; }
 }
