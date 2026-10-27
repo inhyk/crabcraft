@@ -3,13 +3,14 @@ import * as THREE from 'three';
 /** One shared clock bends the licensed island plants and their depth-map silhouettes. */
 export class StarWind {
   readonly time={value:0};
-  constructor(forest:THREE.Object3D){
+  /** `tealLeaves`: World II's night teal canopies (World III keeps the kit's green). */
+  constructor(forest:THREE.Object3D,opts:{tealLeaves?:boolean}={}){
     forest.traverse(object=>{
       if(!(object instanceof THREE.BatchedMesh))return;
       const material=object.material as THREE.MeshStandardMaterial;
       const tree=/^(Bark_NormalTree|Leaves_NormalTree)$/.test(material.name);
       if(!tree&&!/^(Leaves|Flowers|Grass)$/.test(material.name))return;
-      const reach={value:tree?8:1.5},strength={value:tree?1:.45},leaves=material.name.startsWith('Leaves');
+      const reach={value:tree?8:1.5},strength={value:tree?1:.45},leaves=!!opts.tealLeaves&&material.name.startsWith('Leaves');
       const patch=(target:THREE.Material)=>{
         target.onBeforeCompile=shader=>{
           shader.uniforms.uStarWindTime=this.time;

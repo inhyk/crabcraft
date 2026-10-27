@@ -142,7 +142,7 @@ export class HiddenWorld {
     const settlement=await buildStarSettlement((x,z)=>this.height(x,z));this.ground.meadow=settlement.meadow;this.ground.fields=settlement.fields;
     // Every World II collider, without meshes: the same registration the server bakes.
     this.collision=layoutStarhaven((x,z)=>this.height(x,z),settlement.natureNames).col;this.root.add(settlement.root);
-    this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!);
+    this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!,{tealLeaves:true});
     this.life=new StarVillageLife((x,z)=>this.height(x,z));this.root.add(this.life.root);
     const waystones=new StarWaystoneKit(),memorySeals=new StarMemorySealKit(),ore=new StarOreKit();
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES)) {
