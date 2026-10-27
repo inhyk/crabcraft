@@ -39,28 +39,32 @@ const metrics={};
 try{
   const {page,errors}=await open('high');
   // Scene: lights, roofline, sanctum, sea.
-  const r=await page.evaluate(()=>{
+  const r=await page.evaluate(async()=>{
     const g=window.app.current.game,w=g.world2,root=w.root,get=n=>root.getObjectByName(n);
-    const sun=get('star-island-sun'),moonDir=sun.position.clone().sub(sun.target.position).normalize(),moon=w.sky.root.getObjectByName('star-crescent-moon').position.clone().normalize();
+    // Star r4: the key is the moon again (starNight.ts STAR_KEY_DIR); the corona lights the sky and the sea.
+    const sun=get('star-island-sun'),moonDir=sun.position.clone().sub(sun.target.position).normalize(),moon=w.sky.root.getObjectByName('star-crescent-moon').position.clone().normalize(),keyDot=moonDir.dot(moon);
     const glow=get('star-player-glow');
     const roof=get('star-rooftops');const names={};roof?.traverse(o=>{if(o.isInstancedMesh)names[o.name]=o.count;else if(o.isMesh)names[o.name]=(names[o.name]??0)+1;});
     const settlement=get('starhaven-settlement');let darkGlass=0,leaves=[];settlement.traverse(o=>{if(o.isMesh&&o.material?.name==='MI_WindowGlass_Dark')darkGlass++;if(o.material?.name?.startsWith?.('Leaves'))leaves.push(o.material.customProgramCacheKey?.());});
     const floor=get('star-sanctum').children.find(o=>o.material?.name==='star-sanctum-floor');
     const rubble=get('star-sanctum-rubble'),stones=get('starhaven-loose-stones');
     const sea=w.sea.root.material.fragmentShader;
-    return {intensity:sun.intensity,radius:sun.shadow.radius,shadow:sun.shadow.intensity,moonDot:moonDir.dot(moon),glow:glow?{d:glow.distance,i:glow.intensity,off:glow.position.distanceTo(g.player.unit.pos)}:null,
+    return {intensity:sun.intensity,radius:sun.shadow.radius,shadow:sun.shadow.intensity,keyDot,glow:glow?{d:glow.distance,i:glow.intensity,off:glow.position.distanceTo(g.player.unit.pos)}:null,
       names,dome:!!get('star-observatory-dome'),darkGlass,leaves:[...new Set(leaves)],floor:floor?.material.color.getHexString(),rubble:rubble?.geometry.attributes.position.count??0,stones:stones?.geometry.attributes.position.count??0,
-      seaRing:/starAtmosphere\(reflected/.test(sea),seaPath:/eclPath/.test(sea)};
+      seaRing:/starAtmosphere\(reflected/.test(sea),seaPath:/eclPath/.test(sea),
+      lamps:{posts:get('starhaven-lantern-posts').count,...Object.fromEntries(get('starhaven-street-lamps-varied').children.map(o=>[o.name,o.count??1]))}};
   });
   console.log('W2',JSON.stringify(r));
   if(!metricsOnly){
-    assert.ok(r.intensity<=2.2&&r.intensity>=1.4,'moon key about half of the old 3.3: '+r.intensity);
+    assert.ok(r.intensity<=2.2&&r.intensity>=1.4,'key about half of the old 3.3: '+r.intensity);
     assert.ok(r.radius>=4,'soft moon shadows: radius '+r.radius);assert.ok(r.shadow<=.7,'partial moon shadows: '+r.shadow);
-    assert.ok(r.moonDot>.99,'shadows fall from the visible moon: '+r.moonDot);
+    assert.ok(r.keyDot>.99,'shadows fall from the visible moon: '+r.keyDot);
     assert.ok(r.glow&&r.glow.d<=7&&r.glow.off<3,'warm light carried with the crab: '+JSON.stringify(r.glow));
     assert.ok(r.names['star-roof-finials']>=18,'crescent finials on every ridge');assert.ok(r.dome,'observatory dome');
     assert.equal(r.names['star-roof-telescopes'],2);assert.ok(r.names['star-door-lantern-frames']>=10,'door lanterns');assert.equal(r.names['star-ridge-lantern-frames'],4);
     assert.ok(r.names['star-map-banners']>=9,'star-map banners');assert.ok(r.names['star-chimney-smoke']>=40,'chimney smoke');assert.ok(r.names['star-trail-lantern-posts']>=8,'trail lanterns');
+    assert.ok(r.lamps['starhaven-crook-posts']>=4&&r.lamps['starhaven-crystal-lamps']>=4&&r.lamps.posts<26,'varied street lamps: '+JSON.stringify(r.lamps));
+    assert.ok(r.names['star-cart-lanterns']>=1,'a lamp hung on a cart');
     assert.ok(r.darkGlass>=1,'the newcomers\' house has dark windows');
     assert.ok(r.leaves.length&&r.leaves.every(k=>k==='star-wind-v1-leaves'),'teal canopies: '+r.leaves);
     assert.equal(r.floor,'2a3346','dark slate sanctum floor');assert.ok(r.rubble>0&&r.stones>0,'rubble and loose stones');

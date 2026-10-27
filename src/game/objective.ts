@@ -30,10 +30,9 @@ export class ObjectiveMarker {
   /** Goldsand's brass sun discs and arrowhead (dawnGuide.ts) instead of the chevron and crumbs; set by the game. */
   dawn = false;
   private dawnGuide: DawnGuide | null = null;
-  /** Starhaven's moonlit glints (starGuide.ts) instead of the gold crumbs and chevron, and a silver beam; set by World II. */
+  /** Starhaven's guidance (starGuide.ts: moonlit glints, a ring and rising motes at the goal) instead of the gold beam, crumbs and chevron; set by World II. */
   star = false;
   private starGuide: StarGuide | null = null;
-  private beamStar = false;
 
   constructor(fx: FxPool) {
     this.beam = fx.spawn('pillar', Infinity);
@@ -87,17 +86,10 @@ export class ObjectiveMarker {
     }
     this.frostGuide?.hide();
     const show = this.enabled && !!target;
-    if (this.star !== this.beamStar) {
-      // The beam in moonlight silver while Starhaven shows, gold everywhere else.
-      this.beamStar = this.star;
-      const u = this.beam.u;
-      if (this.star) { (u.uColor.value as THREE.Color).setRGB(0.42, 0.5, 0.72); (u.uColor2.value as THREE.Color).setRGB(0.36, 0.62, 0.62); }
-      else { (u.uColor.value as THREE.Color).copy(C.gold).multiplyScalar(0.6); (u.uColor2.value as THREE.Color).copy(C.goldSoft).multiplyScalar(0.5); }
-    }
     if (this.star) (this.starGuide ??= new StarGuide(this.group)).update(time, world, from, target, via, combat, show);
     else this.starGuide?.hide();
     const dist = target ? Math.hypot(target.x - from.x, target.z - from.z) : 0;
-    this.beam.mesh.visible = show && dist > 5;
+    this.beam.mesh.visible = show && dist > 5 && !this.star;
     if (target && this.beam.mesh.visible) {
       this.beam.mesh.position.set(target.x, world.heightAt(target.x, target.z), target.z);
       const r = 0.5 + Math.min(1.2, dist / 80);

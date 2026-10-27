@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {STAR_FOG_DENSITY,STAR_HORIZON,STAR_MOONLIGHT,STAR_MOON_INTENSITY,STAR_MOON_SHADOW,STAR_SHADE_GROUND,STAR_SHADE_INTENSITY,STAR_SHADE_SKY,STAR_SKY_GLSL} from './starNight';
+import {STAR_FOG,STAR_FOG_DENSITY,STAR_MOONLIGHT,STAR_MOON_INTENSITY,STAR_MOON_SHADOW,STAR_SHADE_GROUND,STAR_SHADE_INTENSITY,STAR_SHADE_SKY,STAR_SKY_GLSL} from './starNight';
 
 /**
  * Starhaven's lights, fog and image-based light, all from starNight.ts. The scene's environment map is the shore's
@@ -31,7 +31,7 @@ export class StarNightRig {
   apply(scene:THREE.Scene,renderer:THREE.WebGLRenderer,camera?:THREE.Camera){
     // The haze lies low: looked through from high above (the overview) there is far less of it in the way.
     const lift=camera?THREE.MathUtils.smoothstep(camera.position.y,25,140):0;
-    const fog=scene.fog;if(fog instanceof THREE.FogExp2){fog.color.copy(STAR_HORIZON);fog.density=STAR_FOG_DENSITY*(1-.62*lift);}
+    const fog=scene.fog;if(fog instanceof THREE.FogExp2){fog.color.copy(STAR_FOG);fog.density=STAR_FOG_DENSITY*(1-.62*lift);}
     if(!this.env)this.bake(renderer);
     if(scene.environment!==this.env!.texture){this.saved={environment:scene.environment,intensity:scene.environmentIntensity};scene.environment=this.env!.texture;}
     scene.environmentIntensity=1.6;

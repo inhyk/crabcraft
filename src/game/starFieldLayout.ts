@@ -78,3 +78,19 @@ export function starSand(x: number, z: number): number {
   const edge = .78 - .025 * starFbm(x * .045, z * .045, 7, 2);
   return smooth(r, edge, edge + .045) * (1 - starBluff(x, z) * .85);
 }
+
+const sm = (x: number, a: number, b: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+/**
+ * The meadow's large-scale value (5 to 15 m): [lush, wear], each 0..1. Lush: deep tussock beds, taller and darker.
+ * Wear: bare trodden patches and the sinuous tracks animals and shepherds wore across the fields, short silvered turf
+ * over pale earth. The rest is plain meadow, so a field reads in three values, not one even texture. Presentation only.
+ */
+export function starFieldWear(x: number, z: number): [number, number] {
+  const n = starNoise(x / 13, z / 13, 141) * .85 + starNoise(x / 5.5, z / 5.5, 142) * .3;
+  const lush = sm(n, .1, .28);
+  const bare = 1 - sm(n, -.42, -.26);
+  // Tracks: where a slow noise crosses zero, wobbled, about 2 m wide, fading in and out along their length.
+  const t = Math.abs(starNoise(x / 38, z / 38, 143) + .18 * starNoise(x / 8, z / 8, 144));
+  const track = (1 - sm(t, .022, .06)) * sm(starNoise(x / 30, z / 30, 145), -.25, .05);
+  return [lush * (1 - track), Math.max(bare, track)];
+}

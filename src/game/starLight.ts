@@ -14,6 +14,18 @@ export const STAR_LAMPS: readonly (readonly [number, number])[] = Array.from({le
   const side = i % 2 ? 1 : -1, z = 86 - Math.floor(i / 2) * 6;
   return [side * 5.75, z] as const;
 });
+/**
+ * What stands at each lamp place (starLanterns.ts): iron posts of three heights, a crook post with a hung lantern, a
+ * crystal lamp on a stone plinth (cool light), or nothing (a gap: the street's rhythm is not a metronome). Rows run
+ * from the harbour (z 86) to the stairs, left then right.
+ */
+export type StarLampKind = 'post' | 'tall' | 'short' | 'crook' | 'crystal' | 'none';
+export const STAR_LAMP_KIND: readonly StarLampKind[] = [
+  'post', 'post', 'crook', 'tall', 'none', 'crystal', 'post', 'short', 'crystal', 'crook', 'tall', 'post', 'crook', 'none',
+  'post', 'crystal', 'crook', 'post', 'tall', 'none', 'crystal', 'crystal', 'post', 'crook', 'short', 'post',
+];
+/** Light colour and strength per lamp place (crystal lamps cool and softer, gaps dark). */
+export const STAR_LAMP_LIGHT: readonly [THREE.Color, number][] = STAR_LAMP_KIND.map((k) => k === 'none' ? [new THREE.Color('#000000'), 0] : k === 'crystal' ? [new THREE.Color('#9fe4ff'), .55] : [new THREE.Color('#ffb45e'), k === 'short' ? .8 : k === 'tall' ? 1.15 : 1]);
 /** The lantern's glass centre above its foot (starLanterns.ts). */
 export const STAR_LAMP_LIFT = 3.28;
 /** Linear warm lamp light: radiant intensity of one lantern (irradiance at 1 m). */
@@ -34,7 +46,8 @@ export const STAR_LIGHT_UNIFORMS = {
 };
 
 const fmt = (n: number) => n.toFixed(3);
-const LAMP_GLSL_ARRAY = `const vec2 SL_LAMP[${STAR_LAMPS.length}]=vec2[${STAR_LAMPS.length}](${STAR_LAMPS.map(([x, z]) => `vec2(${fmt(x)},${fmt(z)})`).join(',')});`;
+const LAMP_GLSL_ARRAY = `const vec2 SL_LAMP[${STAR_LAMPS.length}]=vec2[${STAR_LAMPS.length}](${STAR_LAMPS.map(([x, z]) => `vec2(${fmt(x)},${fmt(z)})`).join(',')});
+const vec3 SL_LAMPC[${STAR_LAMPS.length}]=vec3[${STAR_LAMPS.length}](${STAR_LAMP_LIGHT.map(([c, k]) => `vec3(${fmt(c.r * k / LAMP_COLOR.r)},${fmt(c.g * k / LAMP_COLOR.g)},${fmt(c.b * k / LAMP_COLOR.b)})`).join(',')});`;
 
 /** GLSL: `starBakedLight(xz)` the ground's baked irradiance; `starLampLight(p, n)` the lamps' on any surface. */
 export const STAR_LIGHT_GLSL = /* glsl */ `
@@ -50,11 +63,11 @@ vec3 starLampLight(vec3 p,vec3 n){
   float k=clamp(floor((${fmt(STAR_LAMPS[0][1])}-p.z)/6.+.5),0.,${fmt(STAR_LAMPS.length / 2 - 1)});
   vec3 e=vec3(0.);
   for(int j=-1;j<=1;j++)for(int s=0;s<2;s++){
-    int i=int(k)*2+j*2+s;if(i<0||i>=${STAR_LAMPS.length})continue;
+    int i=int(k)*2+j*2+s;if(i<0||i>=${STAR_LAMPS.length}||SL_LAMPC[i].g<=0.)continue;
     vec3 L=vec3(SL_LAMP[i].x,${fmt(3 + STAR_LAMP_LIFT)},SL_LAMP[i].y)-p;float d2=dot(L,L);
     float w=clamp(1.-d2*d2/${fmt(LAMP_REACH ** 4)},0.,1.),id=inversesqrt(d2),down=max(L.y*id,0.);
     // The lantern's roof sends its light down: a cos^2 lobe about the vertical.
-    e+=max(dot(n,L*id),0.)/d2*w*w*down*down;
+    e+=SL_LAMPC[i]*max(dot(n,L*id),0.)/d2*w*w*down*down;
   }
   return e*vec3(${fmt(LAMP_COLOR.r * LAMP_I)},${fmt(LAMP_COLOR.g * LAMP_I)},${fmt(LAMP_COLOR.b * LAMP_I)});
 }
@@ -65,10 +78,11 @@ vec3 starLampGlint(vec3 p,vec3 n,vec3 V,float shin){
   float e=0.;
   // Reflections reach further than light: the next few lamps toward the eye too.
   for(int j=-3;j<=3;j++)for(int s=0;s<2;s++){
-    int i=int(k)*2+j*2+s;if(i<0||i>=${STAR_LAMPS.length})continue;
+    // Gaps (no lamp) are skipped.
+    int i=int(k)*2+j*2+s;if(i<0||i>=${STAR_LAMPS.length}||SL_LAMPC[i].g<=0.)continue;
     vec3 L=vec3(SL_LAMP[i].x,${fmt(3 + STAR_LAMP_LIFT)},SL_LAMP[i].y)-p;float d2=dot(L,L);L*=inversesqrt(d2);
     float h=max(dot(n,normalize(L+V)),0.);
-    e+=pow(h,shin)*(shin+8.)/25.13/(1.+d2*.02);
+    e+=pow(h,shin)*(shin+8.)/25.13/(1.+d2*.02)*SL_LAMPC[i].g;
   }
   return e*vec3(${fmt(LAMP_COLOR.r)},${fmt(LAMP_COLOR.g)},${fmt(LAMP_COLOR.b)});
 }
@@ -126,11 +140,11 @@ export function bakeStarLight(glows: readonly StarGlowSource[]): THREE.DataTextu
   };
   c.copy(LAMP_COLOR).multiplyScalar(LAMP_I);
   const h = STAR_LAMP_LIFT, h2 = h * h;
-  for (const [x, z] of STAR_LAMPS) each(x, z, LAMP_REACH, (dx, dz) => {
+  for (const [i, [x, z]] of STAR_LAMPS.entries()) { const [lc, lk] = STAR_LAMP_LIGHT[i]; if (!lk) continue; c.copy(lc).multiplyScalar(LAMP_I * lk); each(x, z, LAMP_REACH, (dx, dz) => {
     const d2 = dx * dx + dz * dz + h2, w = Math.max(0, 1 - d2 * d2 / LAMP_REACH ** 4);
     const c = h / Math.sqrt(d2);
     return c * c * c / d2 * w * w;
-  });
+  }); }
   for (const g of glows) {
     c.set(g.color).multiplyScalar(g.strength);
     const r = g.radius;

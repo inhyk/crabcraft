@@ -226,7 +226,9 @@ diffuseColor.a*=spAlpha;
 `;
 
 const ROUGH = /* glsl */ `
-roughnessFactor=mix(mix(.78,.3,spWet),.9,max(spDrift,spGap));
+// Each stone wet to its own degree (no two neighbours shine alike, so the middle never reads as one bright band), and
+// the worn middle a little duller.
+roughnessFactor=mix(mix(.78,.42+.34*fract(spId*7.31)+.12*spMid,spWet),.9,max(spDrift,spGap));
 roughnessFactor=mix(roughnessFactor,.95,spJ*(1.-spWet));
 `;
 
@@ -246,9 +248,11 @@ const OUT = /* glsl */ `{
   // Wet stone gives back the night sky.
   vec3 nW=inverseTransformDirection(normal,viewMatrix),V=normalize(cameraPosition-vSpW),R=reflect(-V,nW);
   float F=.04+.96*pow(1.-clamp(dot(nW,V),0.,1.),5.);
-  outgoingLight+=mix(spSkyH,spSkyZ,smoothstep(0.,.6,R.y))*F*spWet*.45;
-  // And the lanterns, as long warm smears down the wet middle of the street.
-  outgoingLight+=starLampGlint(vSpW,nW,V,mix(18.,90.,spWet))*(.08+.5*spWet)*F*3.;
+  // Half as strong down the worn middle, where the wet stones line up into one stripe seen along the avenue.
+  float spSheen=spWet*(1.-.5*spMid)*(.55+.45*fract(spId*7.31));
+  outgoingLight+=mix(spSkyH,spSkyZ,smoothstep(0.,.6,R.y))*F*spSheen*.45;
+  // And the lanterns, as long warm smears down the wet stones of the street.
+  outgoingLight+=starLampGlint(vSpW,nW,V,mix(18.,90.,spWet))*(.08+.5*spSheen)*F*3.;
 }
 #include <opaque_fragment>`;
 
