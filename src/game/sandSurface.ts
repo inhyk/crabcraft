@@ -253,12 +253,13 @@ const SAND_AFTER = /* glsl */ `
       vec3 Ls=normalize(vec3(sL.x,.65,sL.z));
       float rel=(dot(sN,Ls)-Ls.y)*1.5;
       // Faces turned from the sun see the deep blue half of the sky: dimmer only a little, and bluer.
-      vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):max(rel,-.5)*vec3(.3,.16,-.12);
+      vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):min(-rel,.6)*vec3(.14,.22,.5);
       // Hollows see less sky than crests (the bake's height against its blur a few metres round).
       float open=clamp(sCrest*.18,-.16,.1);
       // The lilac only where the sun is not: in sunlight the gold stays clean.
       float sunlit=smoothstep(.4,1.6,dot(reflectedLight.directDiffuse,vec3(.3,.59,.11))/max(dot(reflectedLight.indirectDiffuse,vec3(.3,.59,.11)),1e-4));
-      outgoingLight+=reflectedLight.indirectDiffuse*(vec3(-.3,-.1,.48)*(1.-sWet)*(1.-sunlit)+relC+open);
+      // Open sand in shade is lit from the whole bright desert round it, not the sky alone: a little more fill.
+      outgoingLight+=reflectedLight.indirectDiffuse*((vec3(-.3,-.1,.48)*(1.-sWet)+vec3(.18,.22,.24))*(1.-sunlit)+relC+open);
     }
     // Wet sand mirrors the sky.
     vec3 R=reflect(-sV,sN);
