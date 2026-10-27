@@ -131,10 +131,11 @@ export function contactPatch(mat: THREE.Material, u: ContactUniforms, extra = ''
     Object.assign(shader.uniforms, u);
     shader.vertexShader = v.replace('#include <common>', `#include <common>\n${VERT_HEAD}`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>\n${VERT_BODY}`);
-    shader.fragmentShader = f.replace('#include <common>', `#include <common>\n${VERT_HEAD}${CONTACT_GLSL}`)
+    // dawnAO: this fragment's occlusion, for fills a material adds after the lights (the sand's sky fill).
+    shader.fragmentShader = f.replace('#include <common>', `#include <common>\n#define DAWN_CONTACT\n${VERT_HEAD}${CONTACT_GLSL}\nfloat dawnAO=1.;`)
       .replace('#include <aomap_fragment>', /* glsl */ `#include <aomap_fragment>
       { float dAO=dawnContactAO(vDawnAO,inverseTransformDirection(normal,viewMatrix))${extra ? `*(${extra})` : ''};
-        reflectedLight.indirectDiffuse*=dAO;reflectedLight.indirectSpecular*=mix(1.,dAO,.8); }`);
+        dawnAO=dAO;reflectedLight.indirectDiffuse*=dAO;reflectedLight.indirectSpecular*=mix(1.,dAO,.8); }`);
   });
 }
 

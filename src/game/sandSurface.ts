@@ -164,9 +164,9 @@ const SAND_STATE = /* glsl */ `
   float streak=snNoise(sWq*vec2(.035,.42))*.65+snNoise(sWq*vec2(.09,1.3))*.35;
   // Warm golden ochre, never orange; value carries the form.
   // Quartz sand reflects a broad spectrum: the gold comes mostly from the low sun, so shade can still go blue.
-  vec3 sand=sdLin(vec3(.82,.72,.53));
-  vec3 pale=sdLin(vec3(.9,.83,.66)),lag=sdLin(vec3(.7,.58,.44)),red=sdLin(vec3(.84,.68,.5));
-  vec3 alb=mix(sand,red,smoothstep(.3,.75,n1)*.3);
+  vec3 sand=sdLin(vec3(.84,.73,.5));
+  vec3 pale=sdLin(vec3(.91,.83,.63)),lag=sdLin(vec3(.72,.58,.42)),red=sdLin(vec3(.86,.68,.47));
+  vec3 alb=mix(sand,red,smoothstep(.3,.75,n1)*.45);
   alb=mix(alb,pale,smoothstep(.05,.7,sCrest)*.7);
   alb=mix(alb,lag,smoothstep(-.1,-.75,sCrest)*(.55+.3*n2));
   alb*=.94+.1*streak+.05*(n2-.5)+.05*(n3-.5);
@@ -253,7 +253,7 @@ const SAND_NORMAL = /* glsl */ `
     // Heavy minerals (magnetite, hornblende) settle in the ripple troughs: dark lines a hand apart, the lag the
     // crests lose. Only where ripples are resolved; on the trodden ground and the slip faces there are none.
     float sLagLine=smoothstep(.15,.9,-fn.x/(.0062*max(rip,.05)))*(1.-smoothstep(.02,.05,sFoot))*smoothstep(.2,.6,rip)*(1.-sWet);
-    diffuseColor.rgb*=1.-.54*sLagLine;
+    diffuseColor.rgb*=1.-.25*sLagLine;
     // Ripple micro-shadow: the ripple faces turned from a low sun hold shade a shadow map can never resolve.
     vec3 sLm=normalize(sandSunDir);
     float vD=smoothstep(-.02,.14,dot(sN,sLm)),vM=smoothstep(-.02,.14,dot(normalize(vec3(-sGrad.x,1.,-sGrad.y)),sLm));
@@ -266,21 +266,22 @@ const SAND_AFTER = /* glsl */ `
   {
     vec3 sL=normalize(sandSunDir),sV=normalize(cameraPosition-vSandWorld);
     float nl=clamp(dot(sN,sL),0.,1.);
-    // Out of the sun the sand is lit by the sky, and the sky is brightest low toward the sun: faces turned that way
-    // (ripple stoss sides, sunward dune flanks) catch more of it, so shade keeps the ripples and the dune forms
-    // instead of going flat. Quartz is near grey; its gold is mostly the sun's, so skylight on it reads lilac blue.
+    // The open sky over the sand: extra fill, weaker on faces that turn from it.
+    vec3 sFill=diffuseColor.rgb*sandSkyFill*RECIPROCAL_PI*(.55+.45*sN.y);
+    // Hidden sky is hidden from this fill too (dawnContact.ts, the occlusion the indirect light already took).
+    #ifdef DAWN_CONTACT
+    sFill*=dawnAO;
+    #endif
+    outgoingLight+=sFill;
+    // Out of the sun the sky is brightest low toward the sun: faces turned that way (ripple stoss sides, sunward
+    // dune flanks) catch more of it, faces turned away see the deep blue half (a shade bluer, hardly darker), and
+    // hollows see less of it than crests, so shade keeps the ripples and the dune forms instead of going flat.
     {
       vec3 Ls=normalize(vec3(sL.x,.65,sL.z));
       float rel=(dot(sN,Ls)-Ls.y)*1.5;
-      // Faces turned from the sun see the deep blue half of the sky and none of the lit desert: dimmer, and bluer
-      // for it (the warm part of the fill goes first).
-      vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):min(-rel,.6)*vec3(-.5,-.4,-.12);
-      // Hollows see less sky than crests (the bake's height against its blur a few metres round).
+      vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):min(-rel,.6)*vec3(0.,.06,.22);
       float open=clamp(sCrest*.18,-.16,.1);
-      // The lilac only where the sun is not: in sunlight the gold stays clean.
-      float sunlit=smoothstep(.4,1.6,dot(reflectedLight.directDiffuse,vec3(.3,.59,.11))/max(dot(reflectedLight.indirectDiffuse,vec3(.3,.59,.11)),1e-4));
-      // Open sand in shade is lit from the whole bright desert round it, not the sky alone: a little more fill.
-      outgoingLight+=reflectedLight.indirectDiffuse*((vec3(-.3,-.1,.48)*(1.-sWet)+vec3(.18,.22,.24))*(1.-sunlit)+relC+open);
+      outgoingLight+=(reflectedLight.indirectDiffuse+sFill)*(relC+open);
     }
     // Wet sand mirrors the sky.
     vec3 R=reflect(-sV,sN);

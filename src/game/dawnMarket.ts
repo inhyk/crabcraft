@@ -14,7 +14,7 @@ import {FROST_NOISE} from './frostPaving';
  */
 
 /** Striped canvas (vertex colour the stripe's dye, uv.x across the stripes). */
-function clothMaterial(): THREE.MeshStandardMaterial {
+export function clothMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({name: 'goldsand-canvas', color: '#ffffff', roughness: .95, vertexColors: true, side: THREE.DoubleSide});
   addPatch(m, 'goldsand-canvas', (shader) => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vCu;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvCu=uv;');
@@ -31,7 +31,7 @@ function clothMaterial(): THREE.MeshStandardMaterial {
 }
 
 /** Glazed and unglazed terracotta: jars, chimney pots. */
-function terracottaMaterial(): THREE.MeshStandardMaterial {
+export function terracottaMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({name: 'goldsand-terracotta', color: '#ffffff', roughness: .8, vertexColors: true});
   addPatch(m, 'goldsand-terracotta', (shader) => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTw;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvTw=(modelMatrix*vec4(transformed,1.)).xyz;');
@@ -47,7 +47,7 @@ const SPICES = ['#c8501c', '#e3a21a', '#d6b02a', '#7a4a22', '#6f7a3a', '#9e2a1a'
 const DYES = ['#2b3a7a', '#b5532c', '#2aa3a0', '#e3a21a'];
 
 /** Knotted rugs: border bands, a field of lozenges and a central medallion; vertex colour is the field colour. */
-function rugMaterial(): THREE.MeshStandardMaterial {
+export function rugMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({name: 'goldsand-rug', color: '#ffffff', roughness: 1, vertexColors: true});
   addPatch(m, 'goldsand-rug', (shader) => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vRu;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvRu=uv;');

@@ -6,7 +6,7 @@ import {FROST_NOISE} from './frostPaving';
 
 /*
  * Date palms for Goldsand Harbor. A leaning trunk with a slight S-curve, wrapped in the stubs of old frond bases (a
- * diamond pattern in the shader, a ridged silhouette in the geometry); a crown of arching fronds, each a folded
+ * ring every 12-18 cm up the trunk in the shader, nothing round it, the trunk itself round and gently uneven); a crown of arching fronds, each a folded
  * ribbon whose leaflets are cut by the shader (pinnate, alpha-tested, swaying with the wind), a skirt of dry fronds
  * hanging under the crown and clusters of dates. All palms are three merged meshes (trunks, fronds, dates).
  */
@@ -20,13 +20,16 @@ function trunkMaterial(): THREE.MeshStandardMaterial {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vPu;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvPu=uv;');
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${TRUNK_HEAD}`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
-        // Old frond bases: offset diamonds round the trunk (uv.x around 0..1, uv.y metres up).
-        vec2 q=vec2(vPu.x*9.,vPu.y/.24);q.x+=step(1.,mod(floor(q.y),2.))*.5;
-        vec2 f=abs(fract(q)-.5);float d=f.x+f.y;
-        float scar=smoothstep(.36,.5,d);
-        vec3 c=mix(vec3(.3,.2,.12),vec3(.45,.32,.2),fpNoise(vPu*vec2(30.,6.))*.5+.5);
-        c=mix(c,vec3(.17,.11,.07),scar*.7);
-        c*=.9+.15*(1.-f.y*2.);
+        // Rings up the trunk where old frond bases fell away (uv.y metres up, every 12-18 cm), nothing round it: a
+        // dark scar line under each ring's lip, the lip catching light, grey weathered fibre between.
+        float rq=vPu.y/.15+.35*fpNoise(vec2(vPu.y*1.7,3.1));float rf=fract(rq);
+        float scar=smoothstep(.0,.12,rf)*(1.-smoothstep(.12,.3,rf));
+        float lip=smoothstep(.75,.98,rf);
+        float tone=fpNoise(vec2(floor(rq)*.37,1.3))*.5+.5;
+        vec3 c=mix(vec3(.34,.25,.17),vec3(.48,.39,.29),tone*.6+.2);
+        c=mix(c,vec3(.6,.55,.47),smoothstep(.2,1.,vPu.y/8.)*.25);
+        c=mix(c,vec3(.15,.1,.07),scar*.75);
+        c*=1.+lip*.18;
         diffuseColor.rgb=c;`);
   });
   m.customProgramCacheKey = () => 'goldsand-palm-trunk';
@@ -45,12 +48,12 @@ function frondMaterial(time: {value: number}): THREE.MeshStandardMaterial {
         // uv.x: across the frond (-1..1 from the rachis), uv.y: along it (0 base .. 1 tip). Leaflets slant toward the tip.
         float ax=abs(vFu.x),along=vFu.y;
         float width=sin(3.14159*min(1.,along*1.15))*(1.-along*.35);
-        float k=(along*34.-ax*2.2);float lf=abs(fract(k)-.5);
-        float leaflet=step(lf,.36-ax*.12)*step(ax,width);
+        float k=(along*24.-ax*2.6);float lf=abs(fract(k)-.5);
+        float leaflet=step(lf,.4-ax*.1)*step(ax,width);
         float rachis=step(ax,.06);
         diffuseColor.a=max(leaflet,rachis)*step(.04,along);
         vec3 c=mix(vColor.rgb*.75,vColor.rgb,smoothstep(0.,1.,ax));
-        c*=.85+.25*(fpNoise(vec2(floor(k),along*3.))*.5+.5);
+        c*=.92+.1*(fpNoise(vec2(floor(k),along*3.))*.5+.5);
         c=mix(c,vec3(.55,.42,.22),smoothstep(.85,1.,along)*.6);
         diffuseColor.rgb=mix(c,vec3(.45,.36,.2),rachis);`);
   });
@@ -75,11 +78,11 @@ export function dawnPalms(spots: readonly PalmSpot[], height: (x: number, z: num
       const t = i / N, off = s.lean * s.h * (t * t * .9 + Math.sin(t * Math.PI) * .12);
       pts.push(new THREE.Vector3(s.x, y0 + t * s.h, s.z).addScaledVector(dir, off));
     }
-    const curve = new THREE.CatmullRomCurve3(pts), seg = 40, radial = 10, pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    const curve = new THREE.CatmullRomCurve3(pts), seg = 40, radial = 12, pos: number[] = [], uv: number[] = [], idx: number[] = [];
     const frames = curve.computeFrenetFrames(seg, false);
     for (let i = 0; i <= seg; i++) {
       const t = i / seg, c = curve.getPointAt(t), n = frames.normals[i], b = frames.binormals[i];
-      const yUp = t * s.h, ridge = 1 + .07 * Math.pow(Math.abs(Math.sin(yUp / .24 * Math.PI)), 3);
+      const yUp = t * s.h, ridge = 1 + .025 * Math.sin(yUp * 1.7) * Math.sin(yUp * .63);
       const r = (.24 - .08 * t + .12 * Math.exp(-t * 18)) * ridge;
       for (let j = 0; j <= radial; j++) {
         const a = j / radial * Math.PI * 2, cx = Math.cos(a), cy = Math.sin(a);
@@ -99,7 +102,7 @@ export function dawnPalms(spots: readonly PalmSpot[], height: (x: number, z: num
       const az = k * 2.39996 + R() * .3, len = dry ? 1.8 + R() * .5 : young ? 2.0 + R() * .4 : 2.6 + R() * .9;
       const rise = dry ? -1.25 - R() * .2 : young ? .9 + R() * .3 : .35 - R() * .55, droop = dry ? .1 : young ? .25 : .9 + R() * .4;
       const fd = new THREE.Vector3(Math.cos(az), 0, Math.sin(az));
-      const M = 12, fp: number[] = [], fu: number[] = [], fi: number[] = [], tip: number[] = [], col: number[] = [];
+      const M = 13, fp: number[] = [], fu: number[] = [], fi: number[] = [], tip: number[] = [], col: number[] = [];
       const green = dry ? new THREE.Color('#7a5f36') : new THREE.Color('#4f7a3a').offsetHSL((R() - .5) * .03, 0, (R() - .5) * .06);
       for (let i = 0; i <= M; i++) {
         const t = i / M, along = t * len;

@@ -7,7 +7,7 @@ import {dawnSandstone, solidPart} from './dawnMaterials';
  * Dawnharbor's gates: a sun gate of dressed sandstone. A three-step round dais, two jambs of coursed blocks with
  * moulded imposts, a round arch of bevelled voussoirs closed by a keystone that carries a gilded sun, and a crown of
  * gilded rays fanning out behind the arch. Inside the arch a dawn rises: a gradient from gold at the horizon to
- * rose and violet, a sun disc on the horizon line and slow rays turning, with motes drifting up through it.
+ * rose and violet, brightest along its horizon line, soft shafts rising and light leaking round the frame, dust drifting up its edges.
  * `tone` 'frost' cools the same gate for the road to Frostlight. Same interface as StarPortal (root, update).
  */
 
@@ -104,25 +104,30 @@ export class DawnPortal {
         void main(){
           float hor=${(DAIS + 1.05).toFixed(2)},y=vP.y-hor;
           vec3 c=mix(${cols[0]},${cols[1]},smoothstep(0.,1.6,y));c=mix(c,${cols[2]},smoothstep(1.4,3.6,y));c=mix(c,${cols[0]}*.6,smoothstep(0.,-.8,y));
-          vec2 sp=vP-vec2(0.,hor+.15);float r=length(sp);
-          float disc=1.-smoothstep(.55,.62,r),halo=exp(-r*1.4);
-          float ang=atan(sp.y,sp.x),rays=pow(max(0.,sin(ang*9.+uTime*.25)),6.)*exp(-r*.55)*step(-.15,sp.y);
+          // No sun disc: a dawn seen as light, brightest along its horizon line, rising through the arch in soft
+          // vertical shafts, and leaking brighter round the inside of the frame.
+          float band=exp(-y*y/.3)*(.75+.25*n(vec2(vP.x*1.7,uTime*.2)));
+          float shaft=smoothstep(.45,.95,n(vec2(vP.x*2.4+sin(uTime*.07)*.6,uTime*.05)))*smoothstep(-.3,.6,y)*(1.-smoothstep(1.4,3.8,y));
           float shim=n(vec2(vP.x*2.,vP.y*3.-uTime*.6))*.5+.5;
+          float ring=length(vec2(vP.x,max(vP.y-${SPRING.toFixed(2)},0.)));
+          float rim=smoothstep(${(RI - .7).toFixed(2)},${(RI - .05).toFixed(2)},max(ring,abs(vP.x)))*smoothstep(${DAIS.toFixed(2)},${(DAIS + .5).toFixed(2)},vP.y);
           float edge=smoothstep(0.,.35,${RI.toFixed(2)}-length(vec2(vP.x,max(vP.y-${SPRING.toFixed(2)},0.))))*smoothstep(${DAIS.toFixed(2)},${(DAIS + .3).toFixed(2)},vP.y);
-          vec3 col=c*(.32+.12*shim)+${cols[3]}*(disc*1.4+halo*.55+rays*.5);
+          vec3 col=c*(.42+.14*shim)+${cols[3]}*(band*.6+shaft*.28+rim*.36);
           gl_FragColor=vec4(col*edge,1.);
         }`,
     });
     const veil = new THREE.Mesh(veilGeo, this.veil); veil.name = 'dawn-gate-veil'; veil.renderOrder = 2;
     this.root.add(veil);
-    // Motes rising through the arch.
+    // Motes rising through the arch, drifting up its edges.
     const N = 90, mp = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) { const a = i * 2.39996, r = Math.sqrt((i + .5) / N); mp.set([Math.cos(a) * r * RI * .95, (i * .618) % 1, Math.sin(i * 3.7) * .35], i * 3); }
+    for (let i = 0; i < N; i++) { const a = i * 2.39996, r = .7 + .28 * ((i * .618034) % 1); mp.set([Math.cos(a) * r * RI * .95, (i * .618) % 1, Math.sin(i * 3.7) * .35], i * 3); }
     const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.BufferAttribute(mp, 3));
     this.motes = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: {uTime: {value: 0}},
       vertexShader: /* glsl */ `uniform float uTime;varying float vA;void main(){vec3 p=position;float t=fract(p.y+uTime*.06);
         p.y=${DAIS.toFixed(2)}+t*${(SPRING + RI - DAIS).toFixed(2)};p.x+=sin(uTime*.7+position.z*9.)*.12;
+        // Inside the opening: under the arch the edge closes in.
+        float lim=(p.y>${SPRING.toFixed(2)}?sqrt(max(${(RI * RI).toFixed(3)}-(p.y-${SPRING.toFixed(2)})*(p.y-${SPRING.toFixed(2)}),0.)):${RI.toFixed(2)})*.9;p.x=clamp(p.x,-lim,lim);
         vA=sin(t*3.14159);vec4 mv=modelViewMatrix*vec4(p,1.);gl_Position=projectionMatrix*mv;gl_PointSize=55./max(-mv.z,.5);}`,
       fragmentShader: `varying float vA;void main(){float d=length(gl_PointCoord-.5)*2.;float a=(1.-d*d)*vA;if(a<.01)discard;gl_FragColor=vec4(${frost ? 'vec3(.7,.88,1.)' : 'vec3(1.,.82,.5)'}*a,1.);}`,
     });
