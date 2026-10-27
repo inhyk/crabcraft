@@ -100,7 +100,7 @@ export const STAR_SKY_GLSL = /* glsl */ `
     float dust=smoothstep(.35,.75,nsN2(q*1.7+vec2(4.,1.))*.65+nsN2(q*4.4)*.35);
     float band=exp(-b*b*28.)*(.45+.75*clump)*(1.-.7*dust*exp(-b*b*80.));
     c+=vec3(.024,.026,.04)*band*smoothstep(.02,.3,d.y);
-    c+=starAurora(d,time,16)*.5;
+    c+=starAurora(d,time,12)*.5;
     return c;
   }
 `;

@@ -133,13 +133,12 @@ float sfObsidian=1.-smoothstep(1.93,1.96,sfR);
 }`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 {
-  // Sunk joints and the inlays' cut edges tilt the normal: they catch the moon and throw tiny shadows.
-  vec2 e=vec2(.03,0.);vec2 s1;
-  float h0=-.03*(1.-smoothstep(.02,.07,sfJoints(sfP,s1)))-.02*(1.-smoothstep(0.,.06,abs(sfIn+.015)))*(1.-sfSilver);
-  float hx=-.03*(1.-smoothstep(.02,.07,sfJoints(sfP+e.xy,s1)))-.02*(1.-smoothstep(0.,.06,abs(sfInlay(sfP+e.xy)+.015)))*(1.-sfSilver);
-  float hz=-.03*(1.-smoothstep(.02,.07,sfJoints(sfP+e.yx,s1)))-.02*(1.-smoothstep(0.,.06,abs(sfInlay(sfP+e.yx)+.015)))*(1.-sfSilver);
-  vec3 wn=normalize(vec3(-(hx-h0)/e.x,1.,-(hz-h0)/e.x));
-  normal=normalize(mix(normal,normalize((viewMatrix*vec4(wn,0.)).xyz),.85));
+  // Sunk joints and the inlays' cut edges as a bump (one evaluation, screen-space slope): they catch the moon.
+  float h=-.03*sfGroove-.02*(1.-smoothstep(0.,.06,abs(sfIn+.015)))*(1.-sfSilver);
+  vec2 dH=vec2(dFdx(h),dFdy(h));
+  vec3 sx=dFdx(-vViewPosition),sy=dFdy(-vViewPosition),r1=cross(sy,normal),r2=cross(normal,sx);
+  float det=dot(sx,r1);
+  normal=normalize(abs(det)*normal-sign(det)*(dH.x*r1+dH.y*r2));
 }`)
       .replace('#include <lights_physical_fragment>', `roughnessFactor=mix(roughnessFactor,.32,sfSilver);roughnessFactor=mix(roughnessFactor,.12,sfObsidian);roughnessFactor=mix(roughnessFactor,1.,sfGroove);metalnessFactor=mix(metalnessFactor,1.,sfSilver);
 #include <lights_physical_fragment>`)
