@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {injectStarLight} from './starLight';
 import {STAR_GRID} from '../sim/world/ground';
 import {onIslandPath,type IslandPath} from './islandPaths';
-import {starGroundColor} from './world2Ground';
+import {starWildTint} from './starWilds';
 import {starFieldValue, starShade, starSoil} from './starGround';
 import {STAR_DETAIL,starNoise} from './starFieldLayout';
 import {starTrailDistance} from './world2Settlement';
@@ -30,6 +30,7 @@ uniform vec3 smCenter;   // patch centre x, z; lattice spacing
 uniform float smN;       // tufts across the patch
 uniform float smTime;
 uniform vec3 smPlayer;
+uniform vec3 smCam;      // the camera: right under it the sward thins (star r5)
 attribute vec3 aBlade;   // height along the blade 0..1, side -1..1, blade index 0..2
 varying vec3 vSmCol;
 varying float vSmT;
@@ -67,6 +68,10 @@ float smBare=max(smoothstep(.16,.3,smPatch+(smK.x-.5)*.25),smTurf);
 float smHeart=1.-smoothstep(.4,1.6,smCd);
 // Thin out toward the patch's edge (and wherever the map says sparse); shrink before vanishing.
 float smKeep=smM.r*(1.-smoothstep(.62,.96,smDist))*mix(0.,1.,smBare)*mix(.72+.28*smHeart,1.,smTurf);
+// Right at the camera the sward opens up (a third of the tufts within 4 m, all of them by 13 m), so the near ground
+// reads as turf with gaps instead of a wall of blades.
+float smNear=length(smRoot-smCam.xz);
+smKeep*=mix(.32,1.,smoothstep(4.,13.,smNear));
 float smLive=step(smR2.x,smKeep);
 float smScale=smLive*smM.g*(.55+.6*smR2.y)*mix(1.,.35,smoothstep(.55,.95,smDist))*smoothstep(0.,.25,smKeep-smR2.x+.1);
 smScale*=(.62+.7*smK.y)*(.7+.45*smHeart)*mix(.6,1.,smBare);
@@ -159,7 +164,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
     mask[o] = Math.round(Math.min(1, d * (town ? 1.8 : 1.15)) * 255);
     mask[o + 1] = Math.round((town ? .34 : Math.max(tall, .8 + .2 * (1 - worn))) * 255);
     mask[o + 2] = Math.round((1 - starShade(x, z)) * 255); mask[o + 3] = Math.round(starFieldValue(x, z, y) * 255);
-    starGroundColor(x, z, y, c);
+    starWildTint(x, z, y, height, c);
     tint[o] = Math.round(Math.min(1, c.r) * 255); tint[o + 1] = Math.round(Math.min(1, c.g) * 255); tint[o + 2] = Math.round(Math.min(1, c.b) * 255); tint[o + 3] = 255;
     if (d > .2) grassCells++;
   }
@@ -184,7 +189,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
     smGrid: {value: new THREE.Vector4(minX, minZ, step, nx)}, smGridNz: {value: nz},
     smMap: {value: new THREE.Vector4(MAP_MIN_X, MAP_MIN_Z, 1 / MAP_W, 1 / MAP_H)},
     smCenter: {value: new THREE.Vector3(0, 0, params.high.s)}, smN: {value: params.high.n},
-    smTime: {value: 0}, smPlayer: {value: new THREE.Vector3()}, sgDetail: STAR_DETAIL,
+    smTime: {value: 0}, smPlayer: {value: new THREE.Vector3()}, smCam: {value: new THREE.Vector3()}, sgDetail: STAR_DETAIL,
   };
   const material = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .62, side: THREE.DoubleSide});
   material.name = 'starhaven-meadow-grass';
@@ -196,7 +201,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
       .replace('#include <begin_vertex>', '');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vSmCol;\nvarying float vSmT;\nvarying float vSmAo;\nvarying float vSmTurf;\nvarying vec3 vSmN;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, the tips catching the moon (silvered); mown turf stays close to the ground\'s own value.\nfloat smTip=smoothstep(.45,1.,vSmT);\ndiffuseColor.rgb=vSmCol*mix(mix(.5,1.,vSmTurf),mix(1.1,1.2,vSmTurf),smoothstep(0.,.8,vSmT))*mix(.6,1.,vSmAo);\ndiffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(1.8,2.1,2.6)+vec3(.03,.042,.065),smTip*(1.-.6*vSmTurf));')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, the tips catching the moon (silvered); mown turf stays close to the ground\'s own value.\nfloat smTip=smoothstep(.45,1.,vSmT);\ndiffuseColor.rgb=vSmCol*mix(mix(.5,1.,vSmTurf),mix(1.1,1.2,vSmTurf),smoothstep(0.,.8,vSmT))*mix(.6,1.,vSmAo);\ndiffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(1.85,2.,2.2)+vec3(.035,.042,.055),smTip*(1.-.6*vSmTurf));')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(.9,.6,vSmT);')
       // Both faces lit as the front: grass is thin enough to let the moon through.
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n// Both faces lit as the turf they stand in: the terrain\'s world normal, whichever face is seen.\nnormal=normalize((viewMatrix*vec4(vSmN,0.)).xyz);');
@@ -221,7 +226,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
       // The patch sits ahead of the camera so what is in view is covered, little is spent behind it.
       uniforms.smCenter.value.x = camera.position.x + fwd.x / l * reach * .72;
       uniforms.smCenter.value.y = camera.position.z + fwd.z / l * reach * .72;
-      uniforms.smTime.value = time; uniforms.smPlayer.value.copy(player);
+      uniforms.smTime.value = time; uniforms.smPlayer.value.copy(player); uniforms.smCam.value.copy(camera.position);
     },
   };
 }

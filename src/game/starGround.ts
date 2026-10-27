@@ -3,7 +3,7 @@ import {injectStarLight} from './starLight';
 import {STAR_GRID} from '../sim/world/ground';
 import type {StarMeadow} from './starMeadow';
 import type {StarFields} from './starFields';
-import {starGroundColor} from './world2Ground';
+import {starWildTint} from './starWilds';
 import {GARDEN_TREES,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 import {starBoulders} from './starFieldSpots';
@@ -209,7 +209,7 @@ export function starGround(height: (x: number, z: number) => number, anisotropy:
   const pos = land.attributes.position, colors: number[] = [], soil: number[] = [], field: number[] = [], c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i), y = height(x, z);
-    pos.setY(i, y); starGroundColor(x, z, y, c); colors.push(c.r, c.g, c.b);
+    pos.setY(i, y); starWildTint(x, z, y, height, c); colors.push(c.r, c.g, c.b);
     soil.push(...starSoil(x, z, y), starShade(x, z)); field.push(starFieldValue(x, z, y));
   }
   if (Math.abs(pos.getX(0) - minX) > 1e-6 || Math.abs(pos.getZ(0) - minZ) > 1e-6) throw new Error('starGround: mesh and grid disagree');

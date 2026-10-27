@@ -39,6 +39,7 @@ import {StarNightRig} from './starNightRig';
 import {StarEnemyArmour} from './starEnemyArmour';
 import {throneSolids} from './starThrone';
 import {StarSanctum} from './starSanctum';
+import {StarFireflies,starWildGlows} from './starWilds';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
 import {layoutStarhaven,starCrystalGarden,starRoadGuides} from './world2Colliders';
 import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
@@ -66,6 +67,8 @@ export class HiddenWorld {
    * seen side more than the ground (about 4 m of reach), so the hero reads against the night fields.
    */
   private readonly carry=new THREE.PointLight('#ffb27a',9,4,2);
+  /** A cool rim behind the player's crab, away from the camera (star r5): its silhouette separates from the fields. */
+  private readonly rim=new THREE.PointLight('#a9c6ff',16,3.4,2);
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();
@@ -128,6 +131,7 @@ export class HiddenWorld {
   private wind:StarWind|null=null;
   private nav:NavHints|null=null;
   private ambience:StarAmbience;
+  private fireflies:StarFireflies;
   waypoint(from:THREE.Vector3,goal:THREE.Vector3,now:number){return this.nav?.waypoint(from,goal,now)??goal;}
   private basePois = new Map<string, {position:THREE.Vector3;yaw:number}>();
   private basePeople: THREE.Vector3[] = [];
@@ -241,14 +245,17 @@ export class HiddenWorld {
     crystalGlow.push(...starDoorLampGlows(starLots()),...starTrailLanternGlows(starTrailLanternSpots()));
     // The fallen-star ruin's armillary at the east trail's end keeps a pale pool of its own, so the trail leads to light.
     crystalGlow.push({x:80,z:-40,radius:4.2,color:'#9fd8ff',strength:1.1});
+    // The wilds' moon-flower clumps light their patches (starWilds.ts).
+    crystalGlow.push(...starWildGlows());
     this.groundLight=bakeStarLight(crystalGlow);
+    this.fireflies=new StarFireflies((x,z)=>this.height(x,z));this.root.add(this.fireflies.points);
     this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
     const ship=w.pois.wreck.position;
     const shorePosition=new THREE.Vector3(ship.x-7,0,ship.z+7);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
     this.shorePortal=new StarPortal(shorePosition,'클로헤이븐 → 별빛 항구');w.root.add(this.shorePortal.root);
     this.thirdGate=new StarGate(new THREE.Vector3(0,this.height(0,-41),-41),'별빛 항구 → 골드샌드 항구');this.root.add(this.thirdGate.root);
-    this.carry.name='star-player-glow';this.root.add(this.sun.light,this.sun.light.target,this.night.root,this.carry);
+    this.carry.name='star-player-glow';this.rim.name='star-player-rim';this.root.add(this.sun.light,this.sun.light.target,this.night.root,this.carry,this.rim);
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
     const surface=(island:{height(x:number,z:number):number})=>(x:number,z:number)=>island.height(x,z);
     this.hub=new TidecrownHub(game,this,{1:{root:w.root,height:this.originalHeight},2:{root:this.root,height:surface(this)},3:{root:this.third.root,height:surface(this.third)},4:{root:this.fourth.root,height:surface(this.fourth)},5:{root:this.fifth.root,height:surface(this.fifth)},6:{root:this.sixth.root,height:surface(this.sixth)}});
@@ -496,12 +503,12 @@ export class HiddenWorld {
     const echo=this.game.enemies.find(e=>e.isEcho);
     if(!observation&&echo&&this.game.multiplayer?.battle.authority!==false&&echo.state==='gone'&&time>this.echoAt&&!this.game.encounter.engaged){echo.home.set(0,this.height(0,-22),-22);echo.respawnAt(0,-22);this.echoAt=time+120;this.game.hud.messages.info(t('녹의 폭군의 잔영이 별길에 나타났어요!','An echo of the Rust Tyrant has appeared on the Starroad!'));}
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
-    this.sun.update(position.x,position.z);{const c=this.game.camera.position,dx=c.x-position.x,dz=c.z-position.z,l=Math.hypot(dx,dz)||1;this.carry.position.set(position.x+dx/l*1.3,position.y+1.35,position.z+dz/l*1.3);}
+    this.sun.update(position.x,position.z);{const c=this.game.camera.position,dx=c.x-position.x,dz=c.z-position.z,l=Math.hypot(dx,dz)||1;this.carry.position.set(position.x+dx/l*1.3,position.y+1.35,position.z+dz/l*1.3);this.rim.position.set(position.x-dx/l*1.25,position.y+1.15,position.z-dz/l*1.25);}
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
     this.night.apply(this.game.scene,this.game.engine.renderer,this.game.camera);
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
     this.sea.update(time);this.ground.update(time,this.game.engine.quality,this.game.camera,position);
-    this.armour?.update(time);this.throne.update(time);
+    this.armour?.update(time);this.throne.update(time);this.fireflies.update(time,this.game.engine.renderer.getPixelRatio(),this.game.engine.quality);
     this.wind?.update(time);
     if(!observation)for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
     for(const memory of this.memories){

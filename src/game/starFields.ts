@@ -6,6 +6,7 @@ import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,starNoise,starSand} from './starFieldL
 import {starBoulders,starCraterShards,starPlayDistance} from './starFieldSpots';
 import {nearStarObjective,starTrailDistance} from './world2Settlement';
 import {trs,type Scatter} from '../world/kit';
+import {starWildClumps,STAR_WILD_TINTS} from './starWilds';
 
 /*
  * Starhaven's fields: sculpted boulders of dark island stone with violet crystal veins and moss on their shoulders
@@ -194,6 +195,12 @@ export function starFields(height: (x: number, z: number) => number, scatter: Sc
     const count = 3 + Math.floor(rand(ci * 50 + k) * 3);
     for (let f = 0; f < count; f++) spots.push([x + (rand(ci * 90 + k * 7 + f) - .5) * .7, z + (rand(ci * 91 + k * 5 + f) - .5) * .7, ci * 100 + k * 10 + f]);
   }
+  // The wilds' clumps (starWilds.ts): bigger flowers of one colour, each clump lighting its patch of ground.
+  const wild: [number, number, number, number, number][] = [];
+  for (const [ci, c] of starWildClumps().entries()) for (let k = 0; k < c.n; k++) {
+    const a = k * 2.39996 + ci, d = c.r * Math.sqrt((k + .5) / c.n);
+    for (let f = 0; f < 3; f++) wild.push([c.x + Math.cos(a) * d + (rand(ci * 70 + k * 3 + f) - .5) * .6, c.z + Math.sin(a) * d + (rand(ci * 71 + k * 3 + f) - .5) * .6, 50000 + ci * 100 + k * 10 + f, c.tint, 1.5 + .5 * rand(ci * 13 + k + f)]);
+  }
   const flowerGeo = moonFlowerGeometry();
   const flowerMat = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .55, side: THREE.DoubleSide});
   flowerMat.name = 'starhaven-moonflower';
@@ -208,7 +215,7 @@ export function starFields(height: (x: number, z: number) => number, scatter: Sc
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vColor.rgb*vMfGlow*(.9+.5*sin(sbTime*(.8+fract(vMfPhase)*.6)+vMfPhase))*1.4;');
   };
   flowerMat.customProgramCacheKey = () => 'starhaven-moonflower';
-  const flowers = new THREE.InstancedMesh(flowerGeo, flowerMat, Math.max(1, spots.length));
+  const flowers = new THREE.InstancedMesh(flowerGeo, flowerMat, Math.max(1, spots.length + wild.length));
   const teal = new THREE.Color('#5ff0d6'), violet = new THREE.Color('#b47dff'), pale = new THREE.Color('#c9d6ff'), col = new THREE.Color();
   spots.forEach(([x, z, i], k) => {
     const s = .8 + .5 * rand(i + 3);
@@ -216,7 +223,11 @@ export function starFields(height: (x: number, z: number) => number, scatter: Sc
     col.copy(rand(i + 4) < .45 ? teal : rand(i + 4) < .85 ? violet : pale);
     flowers.setColorAt(k, col);
   });
-  flowers.count = spots.length;
+  wild.forEach(([x, z, i, tint, s], k) => {
+    flowers.setMatrixAt(spots.length + k, trs(x, height(x, z) - .01, z, rand(i) * 6.28, s, (rand(i + 1) - .5) * .3, (rand(i + 2) - .5) * .3));
+    flowers.setColorAt(spots.length + k, col.set(STAR_WILD_TINTS[tint]));
+  });
+  flowers.count = spots.length + wild.length;
   flowers.name = 'starhaven-moonflowers'; flowers.receiveShadow = true;
   root.add(flowers);
 
@@ -237,6 +248,6 @@ export function starFields(height: (x: number, z: number) => number, scatter: Sc
     if (!clear(name, x, z, s)) continue;
     scatter.add(name, trs(x, height(x, z), z, rand(i + 7200) * 6.28, s));accents++;
   }
-  root.userData = {boulders: boulders.length, solidBoulders: boulders.filter((b) => b.solid).length, shards: starCraterShards().length, moonflowers: spots.length, accents};
+  root.userData = {boulders: boulders.length, solidBoulders: boulders.filter((b) => b.solid).length, shards: starCraterShards().length, moonflowers: spots.length + wild.length, wildFlowers: wild.length, accents};
   return {root, update(t) { time.value = t; }};
 }

@@ -1,5 +1,6 @@
 import {starPaving} from './starPaving';
 import {starMeadow} from './starMeadow';
+import {starTreeDressing,starTreeSpecies} from './starTrees';
 import {starFields} from './starFields';
 import {starStories} from './starStories';
 import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_RING} from './starFieldLayout';
@@ -157,6 +158,10 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   const stories=starStories(height,put);
   root.add(dressing.build(),villageProps.build());
   const scatter=new Scatter(nature,'star-island-forests');
+  // The island's tree species (starTrees.ts): moon-silvered and crystal-infused crowns are the kit's trees in
+  // materials of their own (starWind.ts shades them by material.userData.starVariant); snags are built.
+  const variantOf=(variant:string)=>(m:THREE.Material)=>{const c=m.clone();c.userData.starVariant=variant;return c;};
+  const silverTrees=new Scatter(nature,'star-island-silver-trees'),crystalTrees=new Scatter(nature,'star-island-crystal-trees');
   const rand=forestRand;
   const natureNames=[...nature.pieces.keys()];
   const treeNames=natureNames.filter(n=>STAR_TREE_NAME.test(n));
@@ -176,7 +181,8 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   // The forest's rock spots hold sculpted field boulders now (starFields.ts).
   for(const p of starForestSpots()) {
     if(p.rock||!treeNames.length)continue;
-    scatter.add(treeNames[p.i%treeNames.length],trs(p.x,height(p.x,p.z),p.z,p.yaw,p.scale));
+    const species=starTreeSpecies(p.i);if(species==='snag')continue;
+    (species==='silver'?silverTrees:species==='crystal'?crystalTrees:scatter).add(treeNames[p.i%treeNames.length],trs(p.x,height(p.x,p.z),p.z,p.yaw,p.scale));
   }
   let gardenTrees=0;
   for(const [x,z] of GARDEN_TREES){
@@ -225,7 +231,9 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   // Boulders, the crater's shards, moon-flowers, and the kit's ferns, clover and wildflowers through the meadows.
   const field=starFields(height,scatter,natureNames,clearPaving);root.add(field.root,stories.root);
   const fields={root:field.root,update(t:number){field.update(t);stories.update(t);rooftops.update(t);}};
-  root.add(scatter.build({boundsPadding:.2}));
+  const forests=scatter.build({boundsPadding:.2});
+  forests.add(silverTrees.build({boundsPadding:.2,materialFor:variantOf('silver')}),crystalTrees.build({boundsPadding:.2,materialFor:variantOf('crystal')}));
+  root.add(forests,starTreeDressing(height));
   // Starhaven's own moonlit setts, kerbs and trail flags (starPaving.ts); the fountain keeps its basin clear.
   const ways:IslandPath[]=[
     {points:[[0,92],[0,-54]],width:9.5,trim:true},
