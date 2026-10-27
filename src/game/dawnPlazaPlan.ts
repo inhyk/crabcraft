@@ -17,7 +17,7 @@ export const DAWN_PLAZA: readonly PlazaSpot[] = [
   { x: -5.35, z: 60.9, yaw: 0, kind: 'trough' },
   { x: -7.1, z: 67.4, yaw: 0, kind: 'hitch' },
   { x: 6.5, z: 58.5, yaw: -.25, kind: 'cargo' },
-  { x: 6.5, z: 79.2, yaw: .12, kind: 'cart' },
+  { x: 6.2, z: 79.6, yaw: .12, kind: 'cart' },
   { x: -6.6, z: 48.2, yaw: 0, kind: 'canopy' },
   // Offerings laid before Solarkan's gate, either side of the avenue below the fire bowls (low, not solid).
   { x: -7.4, z: -36.6, yaw: Math.PI + .2, kind: 'offering' },

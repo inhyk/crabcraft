@@ -133,7 +133,7 @@ daSandy=0.;
 if(daCourt<.5){
  // Sand blown up onto the dial: banked against the curb in tongues reaching a few metres in, in the joints first.
  float tongue=fpNoise(vec2(dAng*3.2,1.7))*.6+fpNoise(dP*.35+4.)*.4+.25*sin(dAng+.6);
- float reach=1.2+3.4*smoothstep(-.3,.8,tongue);
+ float reach=.5+4.8*smoothstep(.05,.85,tongue);
  float edge=smoothstep(${CITADEL_ARENA.r.toFixed(1)}-reach,${CITADEL_ARENA.r.toFixed(1)}-.2,dR+fpNoise(dP*1.3)*.35);
  float lvl=edge*1.25+dJoint*.6*smoothstep(${(CITADEL_ARENA.r - 6).toFixed(1)},${CITADEL_ARENA.r.toFixed(1)},dR)-.35+fpNoise(dP*2.1)*.15;
  daSandy=smoothstep(.05,.35,lvl);

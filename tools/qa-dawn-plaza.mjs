@@ -96,7 +96,7 @@ try {
     out.citadelBanners = (() => { let n = 0; t.root.traverse(o => { if (o.userData?.citadel?.banners) n = o.userData.citadel.banners; }); return n; })();
     // Solids: a crab dropped on each scene's centre is pushed out.
     const v = g.player.unit.pos.clone(), rr = g.player.unit.radius;
-    const probe = [[-6.3, 58.1], [-5.35, 60.9], [-7.1, 67.4], [6.5, 79.2], [-24.8, -73.2], [24.0, -88.0]];
+    const probe = [[-6.3, 58.1], [-5.35, 60.9], [-7.1, 67.4], [6.2, 79.6], [-24.8, -73.2], [24.0, -88.0]];
     out.notSolid = probe.filter(([x, z]) => { w.resolveCollision(x, z, rr, v); return Math.hypot(v.x - x, v.y - z) < .2; }).map(a => a.join(','));
     return out;
   });

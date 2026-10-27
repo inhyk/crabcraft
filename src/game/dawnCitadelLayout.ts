@@ -73,7 +73,7 @@ export function colonnadeColumns(): { x: number; z: number }[] {
  */
 export const CITADEL_DAIS = 22.6;
 export const COURT_RUINS: readonly { x: number; z: number; kind: 'stump' | 'drum' | 'capital'; yaw: number; h: number }[] = [
-  { x: -24.8, z: -73.2, kind: 'stump', yaw: .3, h: 1.7 }, { x: -23.1, z: -70.5, kind: 'drum', yaw: .4, h: 0 },
+  { x: -24.8, z: -73.2, kind: 'stump', yaw: .3, h: 1.7 }, { x: -23.6, z: -70.3, kind: 'drum', yaw: .4, h: 0 },
   { x: -25.7, z: -69.4, kind: 'drum', yaw: 1.9, h: 0 }, { x: -23.5, z: -74.9, kind: 'capital', yaw: 2.6, h: 0 },
   { x: 25.0, z: -75.6, kind: 'stump', yaw: 1.1, h: 1.05 }, { x: 23.3, z: -72.3, kind: 'drum', yaw: -.7, h: 0 },
   { x: 25.9, z: -72.6, kind: 'capital', yaw: .9, h: 0 },
