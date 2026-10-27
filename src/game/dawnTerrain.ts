@@ -6,7 +6,7 @@ import { addPatch } from '../world/materials';
  * Dawnharbor's ground: one mesh sampled vertex by vertex from dawnHeight() (the server's own surface), 1.25 m apart
  * over the island and its shelf, with a surface hint per vertex (sand, volcanic ground, trodden ground) from
  * dawnGround.ts. The material is the standard lit one with the albedo, the normal and the roughness drawn in the
- * shader: rippled dry sand that darkens and shines where the sea wets it, coastal grass in green and gold patches
+ * shader: rippled dry sand that darkens and shines where the sea wets it, desert scrub in olive and straw patches
  * with worn ground along the lanes, basalt and red scree up the volcanic climb, and banded rock on the bluffs, the
  * bands projected on the face's own plane so steep ground does not stretch.
  */
@@ -58,18 +58,18 @@ void dawnGroundSurface(){
   float rgrad=mix(.9,-3.6,lee),rfade=(1.-smoothstep(.03,.09,px))*(.25+.75*smoothstep(.3,.7,dgNoise(p.xz*.09+1.3)));
   // Sand: dry and pale above the tide, darker and glossy where the sea wets it.
   float wet=1.-smoothstep(dawnSea+.08,dawnSea+.75+n2*.35,p.y);
-  vec3 dry=dgLin(vec3(.88,.77,.6))*(.92+.12*n2)*(.95+.08*n3)*(.92+.16*n5)*(1.+.05*rfade*(rf-.5));
-  vec3 damp=dgLin(vec3(.56,.46,.35))*(.9+.15*n2);
+  vec3 dry=dgLin(vec3(.88,.71,.49))*(.92+.12*n2)*(.95+.08*n3)*(.92+.16*n5)*(1.+.05*rfade*(rf-.5));
+  vec3 damp=dgLin(vec3(.58,.45,.32))*(.9+.15*n2);
   vec3 sand=mix(dry,damp,wet);
-  // Coastal grass: green and gold patches, darker lush clumps, a fine grain.
-  vec3 grass=mix(dgLin(vec3(.45,.56,.28)),dgLin(vec3(.66,.63,.33)),smoothstep(.36,.7,n1));
-  grass=mix(grass,dgLin(vec3(.33,.45,.22)),smoothstep(.55,.82,n2)*.55);
+  // Desert scrub: olive and straw, a darker green only in the clumps (and round the grove's spring).
+  vec3 grass=mix(dgLin(vec3(.5,.52,.3)),dgLin(vec3(.7,.64,.38)),smoothstep(.36,.7,n1));
+  grass=mix(grass,dgLin(vec3(.36,.43,.22)),smoothstep(.55,.82,n2)*.55);
   grass*=(.8+.32*n3)*(.8+.4*n4)*(.86+.28*n5);
   // Straw-dry patches on the crests, and sand breaking through only toward the beaches.
   grass=mix(grass,dgLin(vec3(.76,.67,.42))*(.85+.3*n4),smoothstep(.68,.86,n2)*.55);
   grass=mix(grass,dry*.95,smoothstep(.55,.8,n2*.6+sandW)*.7);
   // Trodden ground beside the lanes: packed earth with grass in the hollows.
-  vec3 earth=dgLin(vec3(.74,.62,.46))*(.88+.2*n3)*(.85+.3*n5);
+  vec3 earth=dgLin(vec3(.78,.62,.44))*(.88+.2*n3)*(.85+.3*n5);
   float worn=wornW*smoothstep(.25,.65,n2*.8+wornW*.45);
   // Volcanic climb: dark basalt, grey scree, rusty ash.
   vec3 volc=mix(dgLin(vec3(.36,.32,.31)),dgLin(vec3(.54,.48,.43)),smoothstep(.35,.7,n2));

@@ -5,8 +5,8 @@
 // the southern beaches), and the coast past the walkable ellipse is reshaped: a noisy shoreline with headlands,
 // sand beaches that shelve into the sea where the land is low, and bluffs that drop to a rocky foot where it is high.
 
-/** Height of the still sea around Dawnharbor. */
-export const DAWN_SEA = 0.25;
+/** Height of the still sea around Dawnharbor (the harbour's quay and pier are built for it). */
+export const DAWN_SEA = 0.2;
 /** The walkable ellipse (queries.ts DAWN_BOUNDS): x / 122, (z - 3) / 149. The coast never starts inside 0.845. */
 const RX = 122, RZ = 149, CZ = 3;
 
@@ -109,14 +109,27 @@ function inland(x: number, z: number, open: number, r: number): number {
   const rolling = fbm(x / 42 + 1.7, z / 42 - 6.3, 3) * 3.1;
   const south = smoothstep(z, 10, 70);
   const rim = smoothstep(r, 0.56, 0.8) * (3.6 - 1.6 * south);
-  // Dunes pile behind the southern beaches.
-  const dune = dunes(x, z) * 2.3 * south * smoothstep(r, 0.6, 0.76);
+  // Dunes over the open desert, piled highest behind the southern beaches.
+  const dune = dunes(x, z) * (1.6 + 0.8 * south) * smoothstep(r, 0.3, 0.55);
   return h + open * (rolling + rim + dune);
 }
 
 /** Dawnharbor's ground height. */
+/** The old island's whole surface: inland, then the plain shelving shore it had (dev 997d68a). */
+function oldGround(x: number, z: number, r: number): number {
+  return r > 0.86 ? 4 - (r - 0.83) * 65 : oldInland(x, z);
+}
+/** The harbour, quay and pier keep the old ground exactly in x -40..20, z 90..160; the new coast fades in over 12 m. */
+const HARBOUR = [-40, 20, 90, 160] as const;
+function harbourBlend(x: number, z: number): number {
+  const dx = Math.max(HARBOUR[0] - x, 0, x - HARBOUR[1]), dz = Math.max(HARBOUR[2] - z, 0, z - HARBOUR[3]);
+  return smooth01(Math.hypot(dx, dz) / 12);
+}
+
 export function dawnGround(x: number, z: number, arenaHeight: number): number {
   const r = Math.hypot(x / RX, (z - CZ) / RZ);
+  const keepHarbour = harbourBlend(x, z);
+  if (keepHarbour <= 0) return oldGround(x, z, r);
   const open = dawnOpen(x, z);
   let h = inland(x, z, open, r);
   const start = dawnShoreStart(x, z);
@@ -129,6 +142,7 @@ export function dawnGround(x: number, z: number, arenaHeight: number): number {
     const bluff = t < face ? h + (foot - h) * Math.pow(smooth01(t / face), 0.8) : foot - (t - face) * 75;
     h = Math.max(-16, beach + (bluff - beach) * cliff);
   }
+  if (keepHarbour < 1) h = oldGround(x, z, r) + (h - oldGround(x, z, r)) * keepHarbour;
   const arena = 1 - smoothstep(Math.hypot(x, z + 72), 21, 31);
   return h + (arenaHeight - h) * arena;
 }
@@ -139,13 +153,15 @@ export function dawnGround(x: number, z: number, arenaHeight: number): number {
  */
 export function dawnSurface(x: number, z: number, h: number, out: number[]): number[] {
   const r = Math.hypot(x / RX, (z - CZ) / RZ), start = dawnShoreStart(x, z), open = dawnOpen(x, z);
-  const south = smoothstep(z, 10, 70);
   const beach = smoothstep(r, start - 0.05, start - 0.005) * (1 - smoothstep(h, 4.5, 8));
-  const dune = south * smoothstep(r, 0.62, 0.74) * open;
+  // The open fields are desert: sand, broken by rare patches of dry scrub, greener only round the grove's spring.
+  const scrub = smoothstep(dawnNoise(x / 9 + 3.3, z / 9 - 7.1) + dawnNoise(x / 31 - 1.2, z / 31 + 4.4) * 0.6, 0.55, 1.1);
+  const oasis = Math.max(1 - smoothstep(Math.hypot(x + 60, z - 42), 10, 22), 1 - smoothstep(Math.hypot(x - 67, z - 72), 6, 13));
+  const dune = open * (0.95 - 0.55 * scrub) * (1 - 0.7 * oasis);
   // The town's sandy streets and the harbour front.
   const town = (1 - smoothstep(Math.abs(x), 20, 30)) * smoothstep(z, 14, 24) * (1 - smoothstep(z, 120, 126));
   const harbour = smoothstep(z, 96, 112) * (1 - smoothstep(Math.abs(x), 30, 44));
-  out[0] = Math.min(1, Math.max(beach, dune * 0.9, town * 0.35, harbour));
+  out[0] = Math.min(1, Math.max(beach, dune, town * 0.6, harbour, (1 - open) * (1 - oasis) * 0.5));
   out[1] = Math.max(smoothstep(-z, 30, 46), smoothstep(h, 11, 14));
   // Trodden ground: along the lanes and through the town only, not round every kept quest point.
   let lane = Infinity;

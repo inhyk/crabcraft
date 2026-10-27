@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 /*
- * Dawnharbor's stolen dawn: the sun held a few degrees over the eastern sea. One sky function (dawnSkyRadiance)
+ * Dawnharbor's stolen dawn over the desert: the sun held low over the eastern sea. One sky function (dawnSkyRadiance)
  * is baked once on the CPU into a small LUT, mirror-symmetric about the sun's bearing like snowSky.ts; the dome,
  * the sea's reflections, the fog, the sun and the hemisphere light all read the same numbers, so the gold over the
  * east, the violet zenith and the rose band opposite the sun (the Belt of Venus over the Earth's blue shadow) are
@@ -22,10 +22,11 @@ const sat = (x: number) => Math.min(1, Math.max(0, x));
 const smooth = (a: number, b: number, x: number) => { const t = sat((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
 // The palette, linear. Brightness is in the renderer's units before tone mapping.
-const ZENITH_AWAY = lin(0x2a3570), ZENITH_SUN = lin(0x45559a);
-const MID_AWAY = lin(0x7d82bd), MID_SUN = lin(0xe7a98f);
-const HORIZON_AWAY = lin(0x9a90b6), HORIZON_SUN = lin(0xffb46b);
-const BELT = lin(0xf0a6a6), EARTH_SHADOW = lin(0x6f7aa8);
+// A desert sunrise: clear deep blue overhead, warm dust haze all round the horizon, gold under the sun.
+const ZENITH_AWAY = lin(0x1b4688), ZENITH_SUN = lin(0x2c5c9c);
+const MID_AWAY = lin(0x6f9bcb), MID_SUN = lin(0xeab78c);
+const HORIZON_AWAY = lin(0xd6b896), HORIZON_SUN = lin(0xffb258);
+const BELT = lin(0xebbaa2), EARTH_SHADOW = lin(0xa3a6b5), DUST = lin(0xe4c49a);
 
 export interface DawnSkyOptions {
   /** Bearing of the sun, degrees: 0 faces +Z, 90 faces +X. */
@@ -52,9 +53,11 @@ export function dawnSkyRadiance(elev: number, cosPhi: number, sunElev: number, g
   col = mix3(col, hor, Math.exp(-e * (7 + 5 * (1 - toward))));
   // Opposite the sun: the Belt of Venus over the Earth's blue shadow.
   const away = (1 - toward) * (1 - toward);
-  const belt = Math.exp(-(((e - 0.13) / 0.075) ** 2)) * away * 0.55;
+  const belt = Math.exp(-(((e - 0.13) / 0.075) ** 2)) * away * 0.25;
   col = mix3(col, BELT, belt);
-  col = mix3(col, EARTH_SHADOW, Math.exp(-e * 38) * away * 0.55);
+  col = mix3(col, EARTH_SHADOW, Math.exp(-e * 38) * away * 0.3);
+  // Dust lifted off the desert: a warm ochre haze in the lowest few degrees all round.
+  col = mix3(col, DUST, Math.exp(-e * 16) * 0.55);
   // Forward glow round a low sun, wide and warm, brightest on the horizon.
   const mu = Math.cos(elev) * Math.cos(sunElev) * cosPhi + Math.sin(elev) * Math.sin(sunElev);
   const m = Math.max(0, mu), glow = 0.55 * Math.pow(m, 6) + 1.4 * Math.pow(m, 48);
@@ -116,7 +119,7 @@ void main(){
   // The sun: a large soft disc (stylised, about 1.3 degrees) with a hot core and a halo.
   float r=acos(clamp(mu,-1.,1.));
   float disc=1.-smoothstep(.019,.024,r);
-  col+=sunColor*(disc*9.+exp(-r*55.)*1.6+exp(-r*14.)*.45);
+  col+=sunColor*(disc*9.+exp(-r*55.)*1.4+exp(-r*14.)*.3);
   // Cumulus over the sea, lit from below and the side by the low sun. Each cloud is lit where its edge faces the
   // sun (its density falls off that way) and sits in lavender shade where it thickens away from it.
   if(d.y>-.02){
@@ -125,7 +128,7 @@ void main(){
     vec2 sdir=normalize(dawnSunDir.xz);
     vec2 wq=vec2(dkFbm(cp*.35+7.),dkFbm(cp*.35-3.))*1.3;
     float band=smoothstep(.0,.05,d.y)*(1.-smoothstep(.3,.7,d.y));
-    float cover=mix(.72,.6,band);
+    float cover=mix(.82,.72,band);
     float base=dkFbm(cp*.8+wq);
     float dens=smoothstep(cover,cover+.16,base)*band;
     float ahead=smoothstep(cover,cover+.16,dkFbm((cp+sdir*.22)*.8+wq))*band;
@@ -139,7 +142,7 @@ void main(){
     // Higher, thinner altocumulus flecks catching the first light.
     vec2 ap=d.xz/(d.y+.12)*1.5+vec2(time*.002,0.);
     float an=dkFbm(ap*1.3+vec2(9.,4.))*(.75+.25*sin(ap.x*5.+dkNoise(ap*2.)*3.));
-    float alto=smoothstep(.64,.82,an)*smoothstep(.1,.3,d.y)*(1.-smoothstep(.6,.95,d.y))*.6*(1.-dens);
+    float alto=smoothstep(.64,.82,an)*smoothstep(.1,.3,d.y)*(1.-smoothstep(.6,.95,d.y))*.35*(1.-dens);
     col=mix(col,mix(cloudShade*1.3,cloudLit*1.15,.35+.65*toward),alto);
   }
   // The last degrees dissolve into the fog the far sea already sits in.
@@ -213,14 +216,14 @@ export class DawnSky {
     }
     for (let c = 0; c < 3; c++) up[c] /= wsum;
     // The beam of a sun a few degrees up: gold, the blue mostly scattered out of it.
-    const beam = lin(0xffc58c);
+    const beam = lin(0xffc884);
     this.sunColor = toColor(beam);
     this.sunIntensity = 4.6;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance.
     // The dome's violet fill, its red pulled back a little by the sea's blue-green bounce, so shade reads cool lilac.
     this.hemiSky = toColor([up[0] * 1.75, up[1] * 2.15, up[2] * 1.85] as V3, 1);
-    // Warm bounce off sunlit sand and grass (albedo about 0.3), lit by the sun's beam and the sky.
-    const albedo: V3 = [0.36, 0.29, 0.2], sunE = this.sunIntensity * Math.sin(el) * 1.6;
+    // Warm bounce off sunlit sand (albedo about 0.4), lit by the sun's beam and the sky.
+    const albedo: V3 = [0.46, 0.37, 0.25], sunE = this.sunIntensity * Math.sin(el) * 1.6;
     this.hemiGround = toColor([0, 1, 2].map(c => albedo[c] * (beam[c] * sunE + up[c] * 1.3)) as V3, 1.6);
     this.uniforms = { dawnSkyLUT: { value: lut }, dawnSunDir: { value: this.sunDir } };
     const sunTint = lin(0xffd9a0);
@@ -235,8 +238,8 @@ export class DawnSky {
         sunColor: { value: toColor(sunTint, gain) },
         time: { value: 0 },
         hazeColor: { value: this.skyHorizon.clone() },
-        cloudShade: { value: toColor(lin(0x9d93c4), gain * 0.95) },
-        cloudLit: { value: toColor(lin(0xffbf98), gain * 1.5) },
+        cloudShade: { value: toColor(lin(0xb4a6a4), gain * 0.95) },
+        cloudLit: { value: toColor(lin(0xffcf9c), gain * 1.5) },
       },
     });
     // World teardown disposes materials, not the textures in their uniforms.
@@ -315,7 +318,7 @@ export class DawnSky {
 }
 
 /** Morning haze along the ground (FogExp2 density). */
-const FOG_DENSITY = 0.0024;
+const FOG_DENSITY = 0.0027;
 /** Half-width of the shadow box across the sun, metres. */
 const SHADOW_HALF = 72;
 /** How far up the sun ray the shadow camera sits: far enough for the citadel's towers to shade the climb. */
