@@ -95,6 +95,9 @@ function moonFlowerGeometry(): THREE.BufferGeometry {
 
 export interface StarFields { root: THREE.Group; update(time: number): void }
 
+/** Within reach of a sanctum obelisk's foot (the twelve old column footprints, r 21 round the floor). */
+const throneNear = (x: number, z: number) => { for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; if (Math.hypot(x - Math.sin(a) * 21, z + 75 - Math.cos(a) * 21) < 2.4) return true; } return false; };
+
 /** Boulders, shards and moon-flowers (meshes of their own); `scatter` receives the kit's meadow plants. */
 export function starFields(height: (x: number, z: number) => number, scatter: Scatter, natureNames: readonly string[], clear: (name: string, x: number, z: number, scale: number) => boolean): StarFields {
   const root = new THREE.Group(); root.name = 'starhaven-fields';
@@ -124,6 +127,47 @@ export function starFields(height: (x: number, z: number) => number, scatter: Sc
   const boulderMesh = new THREE.Mesh(boulderGeo, boulderMaterial(time));
   boulderMesh.name = 'starhaven-field-boulders'; boulderMesh.castShadow = boulderMesh.receiveShadow = true;
   root.add(boulderMesh);
+
+  // Loose stones where the ground lies bare: round the sanctum's ring, on the ruin's plaza, beside the starroad and
+  // along the trails' edges, gathered in little drifts (a big one, two or three middling, a few chips). Too small to
+  // be solid; one merged mesh in the boulders' stone.
+  {
+    const small = Array.from({length: 6}, (_, i) => boulderGeometry({r: 1, h: .55 + .1 * (i % 3), seed: 7300 + i * 53}, 3));
+    const loose: THREE.BufferGeometry[] = [];
+    const zones: {x: number; z: number; r0: number; r1: number; n: number}[] = [
+      {x: 0, z: -75, r0: 19.6, r1: 28, n: 46}, {x: 80, z: -40, r0: 3.5, r1: 15, n: 22}, {x: STAR_CRATER.x, z: STAR_CRATER.z, r0: STAR_CRATER.r * 1.05, r1: STAR_CRATER.r * 1.7, n: 12},
+      {x: 0, z: -30, r0: 5.6, r1: 10, n: 18},
+    ];
+    let seed = 0;
+    for (const zn of zones) for (let k = 0; k < zn.n; k++) {
+      seed++;
+      const a = rand(seed * 3.1) * Math.PI * 2, d = zn.r0 + (zn.r1 - zn.r0) * Math.sqrt(rand(seed * 5.7));
+      let cx = zn.x + Math.cos(a) * d, cz = zn.z + Math.sin(a) * d;
+      // The starroad zone is two strips either side of the paving.
+      if (zn.x === 0 && zn.z === -30) { cx = (rand(seed) < .5 ? -1 : 1) * (5.4 + rand(seed * 2.3) * 3.5); cz = -6 - rand(seed * 4.1) * 46; }
+      if (Math.abs(cx) < 5.3 && cz > -60 && cz < 92) continue;
+      if (zn.z === -75 && throneNear(cx, cz)) continue;
+      if (nearStarObjective(cx, cz, -9) || starTrailDistance(cx, cz) < 1.4) continue;
+      const drift = 2 + Math.floor(rand(seed * 7.7) * 4);
+      for (let j = 0; j < drift; j++) {
+        const big = j === 0, r = big ? .22 + .2 * rand(seed + j * 11) : .07 + .13 * rand(seed + j * 13);
+        const x = cx + (j ? (rand(seed * 9 + j) - .5) * 1.6 : 0), z = cz + (j ? (rand(seed * 8 + j) - .5) * 1.6 : 0);
+        const g = small[(seed + j) % small.length].clone();
+        e.set((rand(seed + j * 3) - .5) * .5, rand(seed + j * 5) * 6.28, (rand(seed + j * 7) - .5) * .5);
+        m.compose(v.set(x, height(x, z) - r * .25, z), q.setFromEuler(e), new THREE.Vector3(r, r * (.6 + .4 * rand(seed + j)), r * (.8 + .4 * rand(seed + j * 2))));
+        g.applyMatrix4(m);
+        const p = g.getAttribute('position'), ground = new Float32Array(p.count);
+        for (let k2 = 0; k2 < p.count; k2++) ground[k2] = height(p.getX(k2), p.getZ(k2));
+        g.setAttribute('aGround', new THREE.BufferAttribute(ground, 1));
+        loose.push(g);
+      }
+    }
+    small.forEach((g) => g.dispose());
+    const looseMesh = new THREE.Mesh(mergeGeometries(loose, false)!, boulderMesh.material);
+    loose.forEach((g) => g.dispose());
+    looseMesh.name = 'starhaven-loose-stones'; looseMesh.castShadow = looseMesh.receiveShadow = true;
+    root.add(looseMesh);
+  }
 
   // The fallen star's shards: faceted crystal, bright inside, half buried and tilted out from the impact.
   const shardGeo: THREE.BufferGeometry[] = [];

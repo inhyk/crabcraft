@@ -4,7 +4,8 @@ import {STAR_GRID} from '../sim/world/ground';
 import {onIslandPath,type IslandPath} from './islandPaths';
 import {starGroundColor} from './world2Ground';
 import {starShade, starSoil} from './starGround';
-import {STAR_DETAIL} from './starFieldLayout';
+import {STAR_DETAIL,starNoise} from './starFieldLayout';
+import {starTrailDistance} from './world2Settlement';
 
 /*
  * The meadow underfoot: tufts of three blades on a world-locked jittered lattice that travels with the view, so
@@ -96,7 +97,7 @@ vec3 smTint=texture2D(smTint,smUv).rgb;
 // Tone by clump: some greener, some silvered, some going to seed (warmer, paler).
 vec3 smClumpTone=smK2.y<.33?vec3(.92,1.06,1.02):smK2.y<.66?vec3(1.06,1.04,1.1):vec3(1.14,1.08,.9);
 // Value varies clump by clump (some deep, some silvered) so a field reads as tussocks, not one flat sheet.
-vSmCol=smTint*(.9+.2*smR2.y)*mix(.62+.7*smK.x,1.02+.2*smK.x,smTurf)*smClumpTone*mix(vec3(1.),vec3(1.18,1.1,.8),step(.86,smR.y));
+vSmCol=smTint*(.9+.2*smR2.y)*mix(.45+1.05*smK.x,1.02+.2*smK.x,smTurf)*mix(.68+.64*smPatch,1.,smTurf)*smClumpTone*mix(vec3(1.),vec3(1.18,1.1,.8),step(.86,smR.y));
 vSmT=smT;vSmAo=mix(smM.b,1.,smTurf*.6);vSmTurf=smTurf;
 `;
 
@@ -125,12 +126,30 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
     d *= smooth(near, 0, 1.2);
     // Off the stones by a hand's width: test the cell's corners against the ways.
     for (const [ox, oz] of [[0, 0], [-.45, -.45], [.45, -.45], [-.45, .45], [.45, .45]]) if (onIslandPath(paths, x + ox, z + oz)) { d = 0; break; }
-    if (Math.hypot(x, z - 55) < 8 || Math.hypot(x, z + 75) < 25) d = 0;
     const town = Math.abs(x) < 54 && z > 3 && z < 100;
+    let tall = 0;
+    // Grass strips along the trails' and the starroad's edges, outside the town: a taller fringe where the worn
+    // earth meets the meadow, ragged so it never follows the kerb exactly.
+    if (!town && d < .9) {
+      const t = starTrailDistance(x, z), rag = starNoise(x / 3, z / 3, 41);
+      const trailEdge = (1 - smooth(Math.abs(t - 1.9 - rag * .5), .25, .9)) * (t > 1.3 ? 1 : 0);
+      const roadEdge = z < 0 && z > -58 ? (1 - smooth(Math.abs(Math.abs(x) - 6.2 - rag * .6), .3, 1.1)) * (Math.abs(x) > 5 ? 1 : 0) : 0;
+      tall = Math.max(trailEdge, roadEdge) * smooth(rag, .05, .3) * (1 - sand);
+      d = Math.max(d, tall * .95);
+    }
+    // Round the sanctum: no grass on the floor or at the obelisks' feet, sparse tussocks in the ring outside.
+    const ra = Math.hypot(x, z + 75);
+    if (ra < 25) {
+      let foot = 9;
+      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; foot = Math.min(foot, Math.hypot(x - Math.sin(a) * 21, z + 75 - Math.cos(a) * 21)); }
+      const ring = ra > 19.4 && foot > 2.1 && !(Math.abs(x) < 5.5 && z > -58) ? smooth(starNoise(x / 2.5, z / 2.5, 57), .15, .45) * .6 : 0;
+      d = ring; tall = Math.max(tall, ring);
+    }
+    if (Math.hypot(x, z - 55) < 8) d = 0;
     const o = (j * W + i) * 4;
     // The town's lawns are a full, short sward: dense or nothing, never a scatter of single blades.
     mask[o] = Math.round(Math.min(1, d * (town ? 1.8 : 1.15)) * 255);
-    mask[o + 1] = Math.round((town ? .34 : .8 + .2 * (1 - worn)) * 255);
+    mask[o + 1] = Math.round((town ? .34 : Math.max(tall, .8 + .2 * (1 - worn))) * 255);
     mask[o + 2] = Math.round((1 - starShade(x, z)) * 255); mask[o + 3] = 255;
     starGroundColor(x, z, y, c);
     tint[o] = Math.round(Math.min(1, c.r) * 255); tint[o + 1] = Math.round(Math.min(1, c.g) * 255); tint[o + 2] = Math.round(Math.min(1, c.b) * 255); tint[o + 3] = 255;
@@ -169,7 +188,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
       .replace('#include <begin_vertex>', '');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vSmCol;\nvarying float vSmT;\nvarying float vSmAo;\nvarying float vSmTurf;\nvarying vec3 vSmN;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, the tips catching the moon (silvered); mown turf stays close to the ground\'s own value.\nfloat smTip=smoothstep(.45,1.,vSmT);\ndiffuseColor.rgb=vSmCol*mix(mix(.5,1.,vSmTurf),mix(1.1,1.2,vSmTurf),smoothstep(0.,.8,vSmT))*mix(.6,1.,vSmAo);\ndiffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(1.5,1.75,2.2)+vec3(.022,.03,.05),smTip*(1.-.6*vSmTurf));')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, the tips catching the moon (silvered); mown turf stays close to the ground\'s own value.\nfloat smTip=smoothstep(.45,1.,vSmT);\ndiffuseColor.rgb=vSmCol*mix(mix(.5,1.,vSmTurf),mix(1.1,1.2,vSmTurf),smoothstep(0.,.8,vSmT))*mix(.6,1.,vSmAo);\ndiffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(1.8,2.1,2.6)+vec3(.03,.042,.065),smTip*(1.-.6*vSmTurf));')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(.9,.6,vSmT);')
       // Both faces lit as the front: grass is thin enough to let the moon through.
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n// Both faces lit as the turf they stand in: the terrain\'s world normal, whichever face is seen.\nnormal=normalize((viewMatrix*vec4(vSmN,0.)).xyz);');

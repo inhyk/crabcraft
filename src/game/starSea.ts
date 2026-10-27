@@ -42,8 +42,9 @@ export class StarSea {
             1.,cos(p1)*.009*wave1+sin(p2)*.007*wave2+(cos(s1)*.003+cos(s2)*.004+cos(s3)*.002)*broad));
           vec3 reflected=reflect(-view,normal);
           float depth=max(0.,world.y-coastHeight(world.xz));
-          float shallows=1.-smoothstep(.2,7.,depth);
-          vec3 water=mix(vec3(.007,.015,.035),vec3(.016,.065,.078),shallows);
+          // Shallows fade out over a wide band (no hard teal ring round the island from above), deep blue-green.
+          float shallows=pow(1.-smoothstep(.2,14.,depth),1.6);
+          vec3 water=mix(vec3(.007,.015,.035),vec3(.014,.045,.06),shallows);
           float fresnel=.04+.96*pow(1.-max(0.,dot(view,normal)),5.);
           // The sky without the eclipse's ring (a ring broken up by waves reads as a melted blot): the corona's light
           // comes back instead as a glitter path, a narrow column stretched toward the eye under the eclipse.
@@ -64,10 +65,12 @@ export class StarSea {
           float shin=mix(14.,96.,detail);
           float glint=pow(max(0.,dot(normal,halfLight)),shin)*(shin+8.)/104.;
           color+=glint*vec3(.24,.23,.31)*(.65+.35*sin(p1+p2)*detail+.35*(1.-detail));
-          float front=.38+.12*sin(time*.8+world.x*.025);
-          float foam=exp(-pow((depth-front)/.38,2.))*smoothstep(0.,.12,depth);
-          foam*=.65+.35*sin(world.x*.7+world.z*.4-time*.5);
-          color+=foam*vec3(.09,.18,.17);
+          // Surf: a thin broken line of white water at the beach and a fainter second line further out, lacy, not a band.
+          float front=.3+.1*sin(time*.8+world.x*.025);
+          float lace=smoothstep(.35,.75,nsN2(world.xz*.9+vec2(time*.15,-time*.1))*.7+nsN2(world.xz*3.1-time*.2)*.3);
+          float foam=exp(-pow((depth-front)/.22,2.))*smoothstep(0.,.08,depth)*(.35+.65*lace);
+          foam+=exp(-pow((depth-1.6-.4*sin(time*.5+world.z*.03))/.35,2.))*lace*.3;
+          color+=foam*vec3(.16,.19,.22);
           vec3 horizon=starAtmosphere(vec3(reflected.x,0.,reflected.z),time)*.8;
           color=mix(color,horizon,smoothstep(350.,1250.,distanceToEye));
           gl_FragColor=vec4(color,1.);

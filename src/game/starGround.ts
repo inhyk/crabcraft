@@ -88,10 +88,12 @@ float sgBlade=mix(.5,sgT(sgP,.47,1.9).b,sgF2),sgBlade2=mix(.5,sgT(sgP,.19,.9).b,
 vec3 sgNw=normalize(vSgN);
 float sgSlope=1.-sgNw.y;
 // Coverage, ragged at every scale so no edge follows a contour or the grid.
-float sgSand=smoothstep(.35,.65,vSgSoil.x+(sgMid-.5)*.45+(sgFine-.5)*.3);
+// A strand of sand at the waterline all round the island (the sea lies at y -3): a beach band seen from above.
+float sgShore=1.-smoothstep(-2.2,-.9,vSgW.y+(sgMid-.5)*.6);
+float sgSand=max(smoothstep(.35,.65,vSgSoil.x+(sgMid-.5)*.45+(sgFine-.5)*.3),sgShore);
 float sgWorn=smoothstep(.3,.7,vSgSoil.z+(sgMid-.5)*.5+(sgFine-.5)*.35);
 float sgGrass=smoothstep(.38,.62,vSgSoil.y+(sgMacro2-.5)*.35+(sgFine-.5)*.4+(sgClump.g-.5)*.25*sgF1)*(1.-sgSand)*(1.-sgWorn*.85);
-float sgRock=smoothstep(.36,.55,sgSlope+(sgMid-.5)*.25);
+float sgRock=smoothstep(.36,.55,sgSlope+(sgMid-.5)*.25)*(1.-sgShore*.85);
 // Crater: scorched, glassy and cracked inside, ash thrown out round the rim.
 float sgCd=length(sgP-vec2(${STAR_CRATER.x.toFixed(1)},${STAR_CRATER.z.toFixed(1)}))/${STAR_CRATER.r.toFixed(1)};
 float sgScorch=(1.-smoothstep(.55,1.3,sgCd+(sgMid-.5)*.5+(sgFine-.5)*.3))*.92;
@@ -114,9 +116,13 @@ sgS=mix(sgS,sgS*vec3(.5,.52,.6),sgWet);
 float sgPeb=(1.-smoothstep(.1,.16,sgClump.g))*step(.62,sgH(floor(sgP/2.1*24.)))*sgF2;
 sgS=mix(sgS,vec3(.2,.195,.21),sgPeb*.7);
 // Packed earth: dark, gritty, pebbles worn flat.
-vec3 sgE=vec3(.12,.104,.094)*(.75+.5*sgMid)*(.85+.3*sgFine);
+vec3 sgE=vec3(.12,.104,.094)*(.75+.5*sgMid)*(.85+.3*sgFine)*(.72+.56*sgMacro2);
+// Gravel: pale chips with lit tops among darker grit, and damp darker hollows, so bare ground is never one flat tone.
 float sgEPeb=(1.-smoothstep(.16,.26,sgClump.g))*sgF1;
-sgE=mix(sgE,vec3(.2,.19,.2)*(.8+.4*sgClump.r),sgEPeb*.35);
+float sgGrit=(1.-smoothstep(.08,.14,sgT(sgP,.9,1.7).g))*sgF2;
+sgE=mix(sgE,vec3(.2,.19,.2)*(.8+.4*sgClump.r),sgEPeb*.55);
+sgE=mix(sgE,vec3(.26,.25,.27),sgGrit*.5);
+sgE*=mix(1.,.62,smoothstep(.55,.8,sgT(sgP,7.,2.9).r)*.8);
 sgE=mix(sgE,sgTint*.55,.25);
 // Stone of the bluffs: dark slate in beds, a violet glint of crystal in the partings.
 float sgBed=vSgW.y*1.7+sgT(sgP,23.,1.3).r*2.4;
@@ -256,6 +262,7 @@ export function starSoil(x: number, z: number, y: number): [number, number, numb
   const arena = 1 - smooth(Math.hypot(x, z + 75), 22, 28);
   const crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .75, STAR_CRATER.r * 1.2);
   const worn = Math.max(trail * .75, town * .22, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater);
-  const grass = Math.max(0, 1 - sand * 1.1 - smooth(r, .9, .95)) * (1 - town * .12) * (1 - arena) * (1 - crater * .8);
+  // The sanctum's surround keeps a thin, patchy turf (tussocks and stones, starMeadow.ts and starFields.ts) instead of bare dirt.
+  const grass = Math.max(0, 1 - sand * 1.1 - smooth(r, .9, .95)) * (1 - town * .12) * (1 - arena * .6) * (1 - crater * .8);
   return [sand, grass, worn];
 }

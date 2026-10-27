@@ -7,7 +7,7 @@ import type {IslandPath} from './islandPaths';
 import * as THREE from 'three';
 import {starLanterns,starhavenMaterial} from './starLanterns';
 import {STAR_LAMPS,setStarDoorLamps} from './starLight';
-import {doorLanternAt,recordRooftops,starDoorLamps,starRooftops,starSettlers,STAR_ROOF_ROLES} from './starRooftops';
+import {doorLanternAt,recordRooftops,starDoorLamps,starRooftops,starSettlers,starTrailLanterns,STAR_ROOF_ROLES} from './starRooftops';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
 import { TownBuilder } from '../world/buildings';
 import type { Collision } from '../world/collision';
@@ -43,6 +43,8 @@ export function starTrailDistance(x:number,z:number){
 export function nearStarObjective(x:number,z:number,padding=0){
   return Object.entries(STAR_OBJECTIVES).some(([kind,p])=>Math.hypot(x-p[0],z-p[1])<(kind.startsWith('explore-')?13:4)+padding);
 }
+/** The pilgrim trails' lanterns outside the town (not on the starroad, which has its crystals, nor at a quest site). */
+export const starTrailLanternSpots=()=>starTrailLanterns(STAR_TRAILS,(x,z)=>nearStarObjective(x,z,-5)||(Math.abs(x)<9&&z<3));
 export const STAR_WALKS = [[-15,62],[0,61],[15,62],[-15,44],[0,36],[15,44],[0,72],[0,24]];
 /** The nature kit's leafy trees: the forest uses them, and their trunks are solid. */
 export const STAR_TREE_NAME=/^CommonTree_[1-5]$/;
@@ -120,7 +122,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   setStarDoorLamps(starDoorLamps(lots).map(d=>{const p=doorLanternAt(d);return [p.x,p.y,p.z] as const;}));
   for(const lot of lots)(lot.id===STAR_ROOF_ROLES.empty?emptyBuilder:builder).build(lot);
   root.add(batch.build());
-  const rooftops=starRooftops(village,roofline,lots);root.add(rooftops.root);
+  const rooftops=starRooftops(village,roofline,lots,{spots:starTrailLanternSpots(),height});root.add(rooftops.root);
   const dressing=new StaticBatch(props,'starhaven-market');
   const villageProps=new StaticBatch(village,'starhaven-gardens');
   const residents=Object.values(STAR_TOWN);

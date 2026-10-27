@@ -32,6 +32,32 @@ export function starDoorLampGlows(lots: readonly Lot[]) {
   return starDoorLamps(lots).map((d) => ({x: d.pos.x + Math.sin(d.yaw) * .9, z: d.pos.z + Math.cos(d.yaw) * .9, radius: 1.9, color: '#ffa850', strength: 2.1}));
 }
 
+/**
+ * Lanterns along the pilgrim trails outside the town, every 13 m or so on alternate sides, so the side trails read at
+ * night and from above. Thin posts, not solid (like the high street's lanterns). (x, z, yaw toward the trail.)
+ */
+export function starTrailLanterns(trails: readonly (readonly (readonly [number, number])[])[], skip: (x: number, z: number) => boolean): [number, number, number][] {
+  const out: [number, number, number][] = [];
+  for (const [ti, t] of trails.entries()) {
+    let carry = 6, side = ti % 2 ? 1 : -1;
+    for (let i = 1; i < t.length; i++) {
+      const [ax, az] = t[i - 1], [bx, bz] = t[i], len = Math.hypot(bx - ax, bz - az), dx = (bx - ax) / len, dz = (bz - az) / len;
+      for (let d = carry; d < len; d += 13) {
+        const x = ax + dx * d - dz * side * 2.05, z = az + dz * d + dx * side * 2.05;
+        side = -side;
+        if (Math.abs(x) < 54 && z > 3 && z < 100) continue;
+        if (skip(x, z)) continue;
+        out.push([x, z, Math.atan2(-dz * side, dx * side)]);
+      }
+      carry = (carry - len) % 13; if (carry < 0) carry += 13;
+    }
+  }
+  return out;
+}
+export function starTrailLanternGlows(spots: readonly [number, number, number][]) {
+  return spots.map(([x, z]) => ({x, z, radius: 2.1, color: '#ffae58', strength: 2.4}));
+}
+
 /** Records the house pieces the town builder places that the roofline needs. */
 export function recordRooftops(batch: StaticBatch) {
   const rec = {roofs: [] as {name: string; m: THREE.Matrix4}[], chimneys: [] as {name: string; m: THREE.Matrix4}[]};
@@ -147,7 +173,7 @@ export interface StarRooftops { root: THREE.Group; update(time: number): void; c
  * The roofline, doorsteps and the newcomers' house. `village` is the kit (for the pieces' extents), `rec` what
  * recordRooftops saw, `lots` the settlement's lots.
  */
-export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops>, lots: readonly Lot[]): StarRooftops {
+export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops>, lots: readonly Lot[], trail: {spots: readonly [number, number, number][]; height: (x: number, z: number) => number}): StarRooftops {
   const root = new THREE.Group(); root.name = 'star-rooftops';
   const silver = silverMaterial(), v = new THREE.Vector3(), w = new THREE.Vector3(), m = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
   const lotAt = (p: THREE.Vector3) => lots.reduce((b, l) => Math.hypot(l.x - p.x, l.z - p.z) < Math.hypot(b.x - p.x, b.z - p.z) ? l : b);
@@ -214,7 +240,12 @@ export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops
   const bracket = new THREE.BoxGeometry(.04, .04, .34); bracket.translate(0, .36, -.16);
   const pole = new THREE.CylinderGeometry(.03, .04, 1.1, 6); pole.translate(0, -.75, 0);
   const doorFrame = lit([frame.clone(), bracket]), poleFrame = lit([frame.clone(), pole]);
-  const n = doors.length + ridgeLamps.length;
+  // Trail posts: a crook-headed iron post, the lantern hung from its arm over the trail side.
+  const post = new THREE.CylinderGeometry(.045, .07, 2.5, 6); post.translate(0, -1.0, -.42);
+  const arm = new THREE.BoxGeometry(.04, .04, .46); arm.translate(0, .32, -.2);
+  const foot = new THREE.CylinderGeometry(.16, .2, .18, 6); foot.translate(0, -2.16, -.42);
+  const trailFrame = lit([frame.clone(), post, arm, foot]);
+  const n = doors.length + ridgeLamps.length + trail.spots.length;
   const frames = new THREE.InstancedMesh(doorFrame, iron(), doors.length); frames.name = 'star-door-lantern-frames';
   const poles = new THREE.InstancedMesh(poleFrame, iron(), ridgeLamps.length); poles.name = 'star-ridge-lantern-frames';
   const glassMat = new THREE.MeshStandardMaterial({color: '#3a2412', emissive: '#ffb45e', emissiveIntensity: 2.4, roughness: .3, name: 'star-lantern-glass'});
@@ -227,7 +258,12 @@ export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops
     const p = r.a.clone().lerp(r.b, .72);
     m.compose(v.set(p.x, p.y + 1.25, p.z), q.identity(), one);poles.setMatrixAt(i, m);panes.setMatrixAt(doors.length + i, m);
   });
-  frames.castShadow = poles.castShadow = true; root.add(frames, poles, panes); counts.doorLanterns = doors.length; counts.ridgeLanterns = ridgeLamps.length;
+  const trailPosts = new THREE.InstancedMesh(trailFrame, iron(), trail.spots.length); trailPosts.name = 'star-trail-lantern-posts';
+  trail.spots.forEach(([x, z, yaw], i) => {
+    m.compose(v.set(x, trail.height(x, z) + 2.2, z), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, yaw), one);trailPosts.setMatrixAt(i, m);panes.setMatrixAt(doors.length + ridgeLamps.length + i, m);
+  });
+  counts.trailLanterns = trail.spots.length;
+  frames.castShadow = poles.castShadow = trailPosts.castShadow = true; root.add(frames, poles, panes, trailPosts); counts.doorLanterns = doors.length; counts.ridgeLanterns = ridgeLamps.length;
 
   // Star-map banners beside the doors, on the side away from the lantern (not on the newcomers' empty house).
   {

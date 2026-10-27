@@ -11,8 +11,8 @@ import {t} from '../i18n';
 import type { Game } from './game';
 import type { Poi } from '../world/types';
 import { snapshotMap } from './snapshots';
-import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS, starLots } from './world2Settlement';
-import {starDoorLampGlows} from './starRooftops';
+import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS, starLots, starTrailLanternSpots } from './world2Settlement';
+import {starDoorLampGlows,starTrailLanternGlows} from './starRooftops';
 import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
@@ -234,7 +234,9 @@ export class HiddenWorld {
     // The miners' torch.
     {const [tx,tz]=rot(-6.4,1.8,STAR_MINE.yaw);crystalGlow.push({x:STAR_MINE.x+tx,z:STAR_MINE.z+tz,radius:2.4,color:'#ff9a4a',strength:2.2});}
     // The door lanterns' pools (starRooftops.ts).
-    crystalGlow.push(...starDoorLampGlows(starLots()));
+    crystalGlow.push(...starDoorLampGlows(starLots()),...starTrailLanternGlows(starTrailLanternSpots()));
+    // The fallen-star ruin's armillary at the east trail's end keeps a pale pool of its own, so the trail leads to light.
+    crystalGlow.push({x:80,z:-40,radius:4.2,color:'#9fd8ff',strength:1.1});
     this.groundLight=bakeStarLight(crystalGlow);
     this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
