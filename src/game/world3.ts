@@ -32,7 +32,7 @@ export class DawnIsland {
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
  private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new THREE.DirectionalLight();
  /** The stolen dawn (dawnSky.ts): the sun low over the eastern sea; sun, hemisphere, fog and sea all read it. */
- readonly sky=new DawnSky({azimuth:112,elevation:11});private sea:DawnSea;
+ readonly sky=new DawnSky({azimuth:112,elevation:13});private sea:DawnSea;
  /** Goldsand's desert: a clipmap round the player (sandTerrain.ts), prints that the wind fills in, sand kicked up by runners. */
  readonly terrain:SandTerrain;readonly deform=sandDeform(40);readonly spray:SandSpray;readonly drift:SandDrift;private footfalls:SandFootfalls;private refreshSand:()=>void;
  /** Dawnharbor's own streets, lamps, rocks, harbour and gate (dawnTown.ts). */
@@ -107,6 +107,12 @@ export class DawnIsland {
  private sunDir=new THREE.Vector3();
  /** The fog for a camera: the dawn's horizon in the direction it looks, thinner seen from high above. */
  fog(camera:THREE.Camera,fog:THREE.FogExp2){const e=camera.matrixWorld.elements;this.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.sky.fogDensity(e[13],-e[9]);}
+ private envSaved:{env:THREE.Texture|null;k:number}|null=null;
+ /** While Goldsand is shown the scene reflects its own dawn (DawnSky.environment), not World I's noon; restored when it hides. */
+ useEnvironment(scene:THREE.Scene,renderer:THREE.WebGLRenderer,shown:boolean){
+  if(shown){const env=this.sky.environment(renderer);if(scene.environment!==env){this.envSaved={env:scene.environment,k:scene.environmentIntensity};scene.environment=env;}scene.environmentIntensity=this.sky.envIntensity;}
+  else if(this.envSaved){if(scene.environment===this.sky.environment(renderer))scene.environment=this.envSaved.env;scene.environmentIntensity=this.envSaved.k;this.envSaved=null;}
+ }
  /** Low quality: a coarser clipmap and bake, no finest ripples, the sea's fine ripples, a cloud octave and half the shadow map. */
  setQuality(q:'high'|'low'){this.terrain.setQuality(q);this.drift.setQuality(q);this.sea.setQuality(q);this.sky.setQuality(q);}
  /** Prints for every crab near the player, one step of the sand field, the kicked sand. Runs only while Goldsand is shown. */

@@ -462,6 +462,7 @@ export class HiddenWorld {
     this.snowGate.update(time);this.emberGate.update(time);
     if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
     if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);this.fourth.updateSnow(dt,this.game.engine.renderer,this.game.units,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.snowRequests.update(time,!!observation);}
+    this.third.useEnvironment(this.game.scene,this.game.engine.renderer,this.chapter===3&&this.rendered);
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
     this.thirdGate.root.visible=!!flags?.trueCleared||this.game.creatorTravel;
     if(this.chapter===3){this.third.setQuality(this.game.engine.quality);this.third.update(time,!!flags?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.third.updateSand(dt,this.game.engine.renderer,this.game.units,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.dawnRequests.update(time,!!observation);}
