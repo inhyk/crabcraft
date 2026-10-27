@@ -25,6 +25,8 @@ import type {Poi} from '../world/types';
 import {dawnForest,dawnGrove,layoutDawnreach,roadClearance} from './world3Colliders';
 import {quarterPalms} from './dawnHousePlan';
 import {dawnContact,contactPatch,type DawnContact} from './dawnContact';
+import {dawnDuneClusters} from './dawnDuneClusters';
+import {DAWN_SAND} from './dawnPaving';
 
 /** The third island has its own warm coast, inhabited ring town and volcanic citadel. */
 export class DawnIsland {
@@ -123,6 +125,9 @@ export class DawnIsland {
   // Grouped scenes of goods on the bare ground: a caravan's rest, merchants' stacks, potters' yards (dawnGoods.ts).
   // The square's well, trough, hitching rail, cargo, hand cart and shade canopy (dawnPlazaPlan.ts) are scenes of the same kind.
   this.root.add(dawnGoods([...DAWN_GOODS,...DAWN_PLAZA],(x,z)=>this.height(x,z)));
+  // The open desert's stories: ruins, a fallen obelisk, lost cargo, bones, a wind fence, caravan tracks (dawnDuneClusters.ts).
+  const duneScrub=new Scatter(nature,'goldsand-dune-scrub');
+  this.root.add(dawnDuneClusters((x,z)=>this.height(x,z),DAWN_SAND.clone(),{add:(n,m)=>duneScrub.add(n,m),has:n=>nature.has(n)}).group,duneScrub.build({boundsPadding:.3}));
   for(const piece of nature.pieces.values())for(const part of piece.parts)part.geometry.dispose();
  }
  /** Dawnharbor's request props (dawnRequestProps.ts) in place of the shared placeholders. */

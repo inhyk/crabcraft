@@ -78,6 +78,9 @@ float sandHorizon(vec3 P,vec3 L,vec3 N,float lattice){
   #else
   const int N_=12;const float G=1.62;
   #endif
+  // Start on the baked surface: the drawn one sags under a crest between coarse vertices, and a march from the sag
+  // shades the brink in lattice-shaped steps (a staircase along every far crest).
+  P.y=max(P.y,sandGroundAt(P.xz).x);
   float t=.45+lattice,vis=1.,lift=.01+lattice*.12;
   for(int i=0;i<N_;i++){
     vec3 q=P+L*t+vec3(0.,lift,0.);
@@ -164,10 +167,10 @@ const SAND_STATE = /* glsl */ `
   float streak=snNoise(sWq*vec2(.035,.42))*.65+snNoise(sWq*vec2(.09,1.3))*.35;
   // Warm golden ochre, never orange; value carries the form.
   // Quartz sand reflects a broad spectrum: the gold comes mostly from the low sun, so shade can still go blue.
-  vec3 sand=sdLin(vec3(.84,.73,.5));
-  vec3 pale=sdLin(vec3(.91,.83,.63)),lag=sdLin(vec3(.72,.58,.42)),red=sdLin(vec3(.86,.68,.47));
+  vec3 sand=sdLin(vec3(.84,.715,.47));
+  vec3 pale=sdLin(vec3(.89,.78,.535)),lag=sdLin(vec3(.72,.58,.42)),red=sdLin(vec3(.86,.68,.47));
   vec3 alb=mix(sand,red,smoothstep(.3,.75,n1)*.45);
-  alb=mix(alb,pale,smoothstep(.05,.7,sCrest)*.7);
+  alb=mix(alb,pale,smoothstep(.05,.7,sCrest)*.6);
   alb=mix(alb,lag,smoothstep(-.1,-.75,sCrest)*(.55+.3*n2));
   alb*=.94+.1*streak+.05*(n2-.5)+.05*(n3-.5);
   alb*=mix(1.,.9+.2*n4,fG);
@@ -216,9 +219,9 @@ const SAND_STATE = /* glsl */ `
   alb=mix(alb,alb*sdLin(vec3(.93,.9,.88)),(1.-sOpen)*.6);
   // The citadel climb: scoria and basalt, with sand drifted into its hollows.
   if(sVolc>.01){
-    // Rust-red cinders and dark basalt grit, with the sand drifted back over them.
-    vec3 sc=mix(sdLin(vec3(.5,.33,.25)),sdLin(vec3(.68,.45,.32)),smoothstep(.3,.7,n2))*(.85+.3*n3)*(.8+.4*n4);
-    sc=mix(sc,sdLin(vec3(.38,.3,.27)),smoothstep(.6,.85,n3)*.6);
+    // Goldsand: no cinders. Desert pavement of sandstone gravel, honey and iron-brown, the sand drifted back over it.
+    vec3 sc=mix(sdLin(vec3(.6,.43,.28)),sdLin(vec3(.74,.55,.36)),smoothstep(.3,.7,n2))*(.85+.3*n3)*(.8+.4*n4);
+    sc=mix(sc,sdLin(vec3(.5,.36,.25)),smoothstep(.6,.85,n3)*.5);
     sc=mix(sc,alb,smoothstep(.4,.75,n1*.7+n4*.3+(-sCrest)*.4)*.6);
     alb=mix(alb,sc,sVolc*.85);
   }

@@ -87,6 +87,12 @@ float sgShore(vec2 p,float h,float t){
   float bluff=t<face?h+(foot-h)*pow(sg01(t/face),.8):foot-(t-face)*75.;
   return max(-16.,beach+(bluff-beach)*cliff);
 }
+float sandMainland(vec2 p){
+  vec2 e=vec2(p.x/SG_RX,(p.y-SG_CZ)/SG_RZ);float l=length(e);
+  if(l<1e-6)return 0.;
+  float wander=sgFbm(p/70.+vec2(9.1,-4.4),2)*.32;
+  return sgStep(dot(e,vec2(-.8660254,-.5))/l+wander,.34,.72);
+}
 // The old island's whole surface, which the harbour box keeps (oldGround).
 float sgOldGround(vec2 p,float r){return r>.86?4.-(r-.83)*65.:sgOldInland(p);}
 float sgCoastGround(vec2 p){
@@ -103,7 +109,8 @@ float sgCoastGround(vec2 p){
     float dune=sgCoastDunes(p)*(1.6+.8*south)*sgStep(r,.3,.55);
     h+=open*(rolling+rim+dune);
   }
-  h=sgShore(p,h,r-sgShoreStart(p));
+  float s0=sgShoreStart(p);
+  h=sgShore(p,h,r-(s0+(12.-s0)*sandMainland(p)));
   return keepHarbour<1.?sgOldGround(p,r)+(h-sgOldGround(p,r))*keepHarbour:h;
 }
 float sgSmin(float a,float b,float k){float h=max(k-abs(a-b),0.)/k;return min(a,b)-h*h*k*.25;}
@@ -141,12 +148,6 @@ float sandOpen(vec2 p){
   float hx=abs(p.x+10.)-30.,hz=abs(p.y-125.)-35.;
   d=min(d,length(max(vec2(hx,hz),0.))+min(max(hx,hz),0.));
   return sg01(max(0.,d)/12.);
-}
-float sandMainland(vec2 p){
-  vec2 e=vec2(p.x/SG_RX,(p.y-SG_CZ)/SG_RZ);float l=length(e);
-  if(l<1e-6)return 0.;
-  float wander=sgFbm(p/70.+vec2(9.1,-4.4),2)*.32;
-  return sgStep(dot(e,vec2(-.8660254,-.5))/l+wander,.34,.72);
 }
 float sgSandGround(vec2 p){
   float r=sgRadius(p),m=sandMainland(p);
