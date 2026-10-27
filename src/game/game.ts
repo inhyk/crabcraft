@@ -1471,7 +1471,7 @@ export class Game {
       this.respawning = false;
       await this.app.blackout(false, 900);
       this.vfx.mendGlow(p);
-      this.hud.messages.info(this.world2.chapter>=5?t('껍질을 회복하고 원정 마을로 돌아왔어요.','Shell mended, you return to the expedition village.'):this.world2.chapter===4?t('껍질을 회복하고 눈꽃 마을로 돌아왔어요.','Shell mended, you return to Snowfall Village.'):this.world2.chapter===3?t('껍질을 회복하고 새벽 항구로 돌아왔어요.','Shell mended, you return to Dawnharbor.'):this.world2.chapter===2
+      this.hud.messages.info(this.world2.chapter>=5?t('껍질을 회복하고 원정 마을로 돌아왔어요.','Shell mended, you return to the expedition village.'):this.world2.chapter===4?t('껍질을 회복하고 눈꽃 마을로 돌아왔어요.','Shell mended, you return to Snowfall Village.'):this.world2.chapter===3?t('껍질을 회복하고 골드샌드 항구로 돌아왔어요.','Shell mended, you return to Goldsand Harbor.'):this.world2.chapter===2
         ?t('껍질을 회복하고 별빛 항구의 포탈 곁으로 돌아왔어요.','Shell mended, you return to the portal in Starhaven.')
         :t('껍질을 회복하고 클로헤이븐 광장으로 돌아왔어요.','Shell mended, you return to Clawhaven Square.'));
     })();

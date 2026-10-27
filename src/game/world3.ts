@@ -28,7 +28,7 @@ export class DawnIsland {
  readonly arena:Poi={id:'bossArena',position:new THREE.Vector3(0,DAWN_ARENA_HEIGHT,-72),yaw:0,radius:20};
  /** Every World III collider, without meshes: the same registration the server bakes. */
  readonly collision=layoutDawnreach();
- readonly portal=new DawnPortal(new THREE.Vector3(-12,dawnHeight(-12,84),84),'새벽 항구 → 별빛 항구');
+ readonly portal=new DawnPortal(new THREE.Vector3(-12,dawnHeight(-12,84),84),'골드샌드 항구 → 별빛 항구');
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
  private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new THREE.DirectionalLight();
  /** The stolen dawn (dawnSky.ts): the sun low over the eastern sea; sun, hemisphere, fog and sea all read it. */

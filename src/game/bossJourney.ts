@@ -196,7 +196,7 @@ export class BossJourney {
     } else if (boss === this.game.worldBoss) {
       if(this.trueCleared) return;
       this.trueCleared=true;
-      this.game.hud.chat.system(t('세 번째 왕관을 되찾았습니다. 새벽의 섬으로 가는 항로가 열렸어요.','The third crown is reclaimed. The sea route to Dawnreach is open.'));
+      this.game.hud.chat.system(t('세 번째 왕관을 되찾았습니다. 골드샌드 항구로 가는 항로가 열렸어요.','The third crown is reclaimed. The sea route to Goldsand Harbor is open.'));
     } else {
       if (this.abyssCleared) return;
       this.abyssCleared = true;
@@ -307,7 +307,7 @@ export class BossJourney {
       h('div',{class:'ce-stars'}),h('span',{class:'ce-kicker'},'CHAPTER I · THE TIDELANDS'),
       h('div',{class:'ce-crown'},'♛'),h('h1',null,t('심해의 왕관','The Deep Crown')),
       h('p',null,t('녹의 파도가 잠들고, 해안에 다시 빛이 돌아왔습니다.','The rust tide sleeps. Light has returned to the shore.')),
-      h('div',{class:'ce-reveal'},h('span',null,t('하지만 왕관 속에는 또 하나의 별이 잠들어 있었습니다.','But another star was hidden inside the crown…')),h('h2',null,t('WORLD II · 잊힌 별의 섬','WORLD II · Isle of Forgotten Stars')),h('p',null,t('수정 유적 · 20레벨 일식 여왕 · 새벽의 섬으로 이어지는 항로','Crystal ruins · Level 20 Eclipse Queen · A route to Dawnreach'))),
+      h('div',{class:'ce-reveal'},h('span',null,t('하지만 왕관 속에는 또 하나의 별이 잠들어 있었습니다.','But another star was hidden inside the crown…')),h('h2',null,t('WORLD II · 잊힌 별의 섬','WORLD II · Isle of Forgotten Stars')),h('p',null,t('수정 유적 · 20레벨 일식 여왕 · 골드샌드 항구로 이어지는 항로','Crystal ruins · Level 20 Eclipse Queen · A route to Goldsand Harbor'))),
       h('button',{type:'button',disabled:true,onclick:()=>this.finishChapterEnding()},t('새로운 모험을 시작하기 →','Begin a new adventure →')));
     g.app.ui.append(this.chapterEnding);
   }

@@ -184,7 +184,7 @@ export class Hud {
     }
     if(on&&this.deathEl){
       this.deathEl.querySelector('.big')!.textContent=t('쓰러졌어요','You have fallen');
-      this.deathEl.querySelector('.sub')!.textContent=this.game.world2.chapter===3?t('새벽 항구의 포탈 곁에서 다시 일어납니다…','You will awaken beside the portal in Dawnharbor…'):this.game.world2.chapter===2
+      this.deathEl.querySelector('.sub')!.textContent=this.game.world2.chapter===3?t('골드샌드 항구의 포탈 곁에서 다시 일어납니다…','You will awaken beside the portal in Goldsand Harbor…'):this.game.world2.chapter===2
         ?t('별빛 항구의 포탈 곁에서 다시 일어납니다…','You will awaken beside the portal in Starhaven…')
         :t('클로헤이븐 광장에서 다시 일어납니다…','You will awaken in Clawhaven Square…');
     }

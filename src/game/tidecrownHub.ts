@@ -26,7 +26,7 @@ export interface Arrival { readonly x: number; readonly z: number; readonly yaw:
 export const HUB_WORLDS: readonly { chapter: HubChapter; ko: string; en: string }[] = [
   { chapter: 1, ko: '클로헤이븐', en: 'Clawhaven' },
   { chapter: 2, ko: '별빛 항구', en: 'Starhaven' },
-  { chapter: 3, ko: '새벽 항구', en: 'Dawnharbor' },
+  { chapter: 3, ko: '골드샌드 항구', en: 'Goldsand Harbor' },
   { chapter: 4, ko: '눈꽃 마을', en: 'Snowfall Village' },
   { chapter: 5, ko: '잿불 군도', en: 'Emberreach' },
   { chapter: 6, ko: '하늘숲', en: 'Skybloom' },
