@@ -131,7 +131,8 @@ export const STAR_SKY_GLSL = /* glsl */ `
   vec3 starAtmosphere(vec3 direction,float time){
     vec3 d=normalize(direction);
     vec2 e=starEclipseAt(d);
-    return starGradient(d)*mix(.06,1.,smoothstep(.97,1.01,e.x))+starAuroraGlow(d,time)*.09+starEclipseLight(e,time,false)*.5;
+    // Reflections carry the corona's light, not the disc: a black blot broken up by the waves reads as a fault.
+    return starGradient(d)+starAuroraGlow(d,time)*.09+starEclipseLight(e,time,false)*.35;
   }
   vec3 starSkyRadiance(vec3 direction,float time){
     vec3 d=normalize(direction);

@@ -1,6 +1,6 @@
 // Where Starhaven's field boulders, crater shards and story props stand. Positions only: starFields.ts and
 // starStories.ts dress them, world2Colliders.ts registers the solid ones for the browser and the server bake.
-import {rot,STAR_BOAT,STAR_CAMP,STAR_CRATER,STAR_KEEP_POINTS,STAR_MINE,STAR_MINE_PROPS,starBluff,starCoast,starNoise} from './starFieldLayout';
+import {rot,STAR_BOAT,STAR_CAMP,STAR_CRATER,STAR_KEEP_POINTS,STAR_MINE,STAR_MINE_PROPS,STAR_RING,starBluff,starCoast,starNoise} from './starFieldLayout';
 import {nearStarObjective,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 
@@ -50,6 +50,8 @@ export function starBoulders(): StarBoulder[] {
     for (const s of STAR_STORY_SOLIDS) if (Math.hypot(x - s.x, z - s.z) < r + s.r + 1.5) return false;
     if (Math.hypot(x - STAR_CAMP.x, z - STAR_CAMP.z) < r + 6.5) return false;
     if (Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z) < r + STAR_CRATER.r * .95) return false;
+    // The keepers' ring and the miners' yard stay clear.
+    if (Math.hypot(x - STAR_RING.x, z - STAR_RING.z) < r + STAR_RING.r + .8 || Math.hypot(x - STAR_MINE.x, z - STAR_MINE.z) < r + 6) return false;
     for (const b of out) if (Math.hypot(x - b.x, z - b.z) < r + b.r + .5) return false;
     return true;
   };
