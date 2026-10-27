@@ -35,8 +35,12 @@ void dawnGroundSurface(){
   float n1=dgFbm(p.xz*.045),n2=dgFbm(p.xz*.37+3.1),n3=dgNoise(p.xz*2.6);
   float sandW=vDS.x,volcW=vDS.y,wornW=vDS.z;
   // Decimetre and centimetre grain, faded out before a pixel covers it.
+  #ifdef DAWN_LOW
+  float f4=0.,f5=0.,n4=.5,n5=.5;
+  #else
   float f4=1.-smoothstep(.04,.16,px),f5=1.-smoothstep(.015,.06,px);
   float n4=mix(.5,dgNoise(p.xz*8.3),f4),n5=mix(.5,dgNoise(p.xz*23.+7.),f5);
+  #endif
   // Wind ripples on the sand: a gentle stoss slope and a short steep lee, crests across the wind.
   vec2 wind=normalize(dawnWind);
   float ph=dot(p.xz,wind)*1.75+dgNoise(p.xz*.35)*1.2+dgNoise(p.xz*1.9)*.25;
@@ -54,7 +58,7 @@ void dawnGroundSurface(){
   // Sandy patches break through the grass toward the beaches.
   grass=mix(grass,dry*.95,smoothstep(.62,.8,n2+sandW*.5)*.6);
   // Trodden ground beside the lanes: packed earth with grass in the hollows.
-  vec3 earth=dgLin(vec3(.64,.54,.4))*(.88+.2*n3)*(.85+.3*n5);
+  vec3 earth=dgLin(vec3(.74,.62,.46))*(.88+.2*n3)*(.85+.3*n5);
   float worn=wornW*smoothstep(.25,.65,n2*.8+wornW*.45);
   // Volcanic climb: dark basalt, grey scree, rusty ash.
   vec3 volc=mix(dgLin(vec3(.36,.32,.31)),dgLin(vec3(.54,.48,.43)),smoothstep(.35,.7,n2));
@@ -82,7 +86,7 @@ void dawnGroundSurface(){
   vec2 g=vec2(0.);
   float sandy=smoothstep(.3,.7,sandW)*(1.-steep)*(1.-volcW);
   g+=wind*rgrad*.075*sandy*rfade*(1.-wet*.8);
-  vec3 gn=dgNoised(p.xz*1.7),gb=dgNoised(p.xz*8.3);
+  vec3 gn=dgNoised(p.xz*1.7),gb=f4>0.?dgNoised(p.xz*8.3):vec3(0.);
   g+=(gn.yz*.06+gb.yz*.03*f4)*(1.-sandy)*(1.-steep);
   vec3 bn=dgNoised(fp*vec2(.35,1.4)+vec2(0.,warp));
   vec3 nw=normalize(ng+vec3(-g.x,0.,-g.y));
@@ -133,6 +137,12 @@ export function dawnTerrain(height: (x: number, z: number) => number, opts: { st
   applyDawnGround(material);
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'dawn-ground';
+  mesh.userData.setQuality = (q: 'high' | 'low') => {
+    const low = q === 'low', d = (material.defines ??= {});
+    if (('DAWN_LOW' in d) === low) return;
+    if (low) d.DAWN_LOW = ''; else delete d.DAWN_LOW;
+    material.needsUpdate = true;
+  };
   mesh.receiveShadow = true;
   // No self-shadowing: at an 11 degree sun the shadow map cannot resolve gentle dunes and would band them with acne.
   mesh.castShadow = false;

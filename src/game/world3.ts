@@ -24,7 +24,7 @@ export class DawnIsland {
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
  private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new THREE.DirectionalLight();
  /** The stolen dawn (dawnSky.ts): the sun low over the eastern sea; sun, hemisphere, fog and sea all read it. */
- readonly sky=new DawnSky({azimuth:112,elevation:11});private sea:DawnSea;
+ readonly sky=new DawnSky({azimuth:112,elevation:11});private sea:DawnSea;private ground:THREE.Mesh;
  private rotating:THREE.Object3D[]=[];
  height(x:number,z:number){
   return dawnHeight(x,z);
@@ -36,7 +36,7 @@ export class DawnIsland {
   const gold=new THREE.MeshStandardMaterial({color:'#ffd67a',emissive:'#d57b23',emissiveIntensity:.65,metalness:.6,roughness:.35});
   const lava=new THREE.MeshStandardMaterial({color:'#ff763b',emissive:'#ff4612',emissiveIntensity:1.2});
   // Ground sampled from the server's dawnHeight(), its sand, grass, scree and bluffs drawn in the shader (dawnTerrain.ts).
-  this.root.add(dawnTerrain((x,z)=>this.height(x,z)),this.sky.mesh);
+  this.ground=dawnTerrain((x,z)=>this.height(x,z));this.root.add(this.ground,this.sky.mesh);
   this.sea=dawnSea(this.sky,(x,z)=>this.height(x,z));this.root.add(this.sea.mesh);
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
   // The town square uses the terrain and paving; a flat raised disc cut through its sloping roads.
@@ -85,5 +85,7 @@ export class DawnIsland {
  }
  /** The fog for a camera: the dawn's horizon in the direction it looks, thinner seen from high above. */
  fog(camera:THREE.Camera,fog:THREE.FogExp2){const e=camera.matrixWorld.elements;this.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.sky.fogDensity(e[13],-e[9]);}
+ /** Low quality drops the ground's centimetre grain, the sea's fine ripples, a cloud octave and half the shadow map. */
+ setQuality(q:'high'|'low'){this.ground.userData.setQuality(q);this.sea.setQuality(q);this.sky.setQuality(q);}
  update(time:number,_rescued:boolean,x:number,z:number){this.wind?.update(time);this.sky.followSun(x,this.height(x,z),z);this.sky.update(time);this.sea.update(time);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
 }

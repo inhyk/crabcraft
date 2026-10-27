@@ -103,7 +103,12 @@ float dkNoise(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
   float a=dot(dkHash(i)*2.-1.,f),b=dot(dkHash(i+vec2(1.,0.))*2.-1.,f-vec2(1.,0.));
   float c=dot(dkHash(i+vec2(0.,1.))*2.-1.,f-vec2(0.,1.)),d=dot(dkHash(i+vec2(1.))*2.-1.,f-vec2(1.));
   return mix(mix(a,b,u.x),mix(c,d,u.x),u.y)*1.4+.5;}
-float dkFbm(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*dkNoise(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(3.1,-1.7);a*=.5;}return s;}
+#ifdef DAWN_LOW
+const int DK_OCT=3;
+#else
+const int DK_OCT=4;
+#endif
+float dkFbm(vec2 p){float s=0.,a=.5;for(int i=0;i<DK_OCT;i++){s+=a*dkNoise(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(3.1,-1.7);a*=.5;}return s;}
 void main(){
   vec3 d=normalize(vWorld-cameraPosition);
   vec3 col=dawnSky(d);
@@ -265,6 +270,15 @@ export class DawnSky {
   }
   update(time: number): void {
     this.material.uniforms.time.value = time;
+  }
+  /** Low quality: three cloud octaves and a 1024 shadow map. */
+  setQuality(q: 'high' | 'low'): void {
+    const low = q === 'low', m = this.material;
+    if (('DAWN_LOW' in m.defines) === low) return;
+    m.defines = low ? { DAWN_LOW: '' } : {};
+    m.needsUpdate = true;
+    const light = this.sunRig;
+    if (light) { light.shadow.mapSize.setScalar(low ? 1024 : 2048); light.shadow.map?.dispose(); light.shadow.map = null; this.shadowTexel.set((2 * SHADOW_HALF) / light.shadow.mapSize.x, (light.shadow.camera.top - light.shadow.camera.bottom) / light.shadow.mapSize.y); }
   }
   /** Make `light` this sky's sun, with a shadow box that follows the player, wide across the sun and short along it. */
   attachSun(light: THREE.DirectionalLight, mapSize = 2048): void {

@@ -56,8 +56,12 @@ void main(){
   }
   // Fine ripples for the glitter, faded with distance before they alias.
   float fade=1.-smoothstep(40.,320.,dist);
+  #ifndef DAWN_LOW
   vec3 r1=swNoised(p*1.3+vec2(time*.31,time*.17)),r2=swNoised(p*2.7-vec2(time*.23,-time*.29));
   g+=(r1.yz*1.3+r2.yz*2.7)*.035*fade;
+  #else
+  g+=swNoised(p*1.3+vec2(time*.31,time*.17)).yz*.05*fade;
+  #endif
   g+=swNoised(p*.18+vec2(time*.05,0.)).yz*.18*.18;
   vec3 n=normalize(vec3(-g.x,1.,-g.y));
   vec3 r=reflect(-v,n);r.y=abs(r.y)+.004;
@@ -110,7 +114,7 @@ function groundTexture(height: (x: number, z: number) => number, box: THREE.Vect
   return t;
 }
 
-export interface DawnSea { mesh: THREE.Mesh; update(time: number): void }
+export interface DawnSea { mesh: THREE.Mesh; update(time: number): void; setQuality(q: 'high' | 'low'): void }
 
 export function dawnSea(sky: DawnSky, height: (x: number, z: number) => number, low = false): DawnSea {
   const box = new THREE.Vector4(-180, -195, 360, 400);
@@ -143,5 +147,9 @@ export function dawnSea(sky: DawnSky, height: (x: number, z: number) => number, 
   mesh.name = 'dawn-sea';
   mesh.position.y = DAWN_SEA;
   mesh.renderOrder = 1;
-  return { mesh, update(time) { material.uniforms.time.value = time; } };
+  return {
+    mesh,
+    update(time) { material.uniforms.time.value = time; },
+    setQuality(q) { const low = q === 'low'; if (('DAWN_LOW' in material.defines) === low) return; material.defines = low ? { DAWN_LOW: '' } : {}; material.needsUpdate = true; },
+  };
 }
