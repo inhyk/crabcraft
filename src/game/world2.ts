@@ -40,6 +40,8 @@ import {StarEnemyArmour} from './starEnemyArmour';
 import {throneSolids} from './starThrone';
 import {StarSanctum} from './starSanctum';
 import {StarFireflies,starWildGlows} from './starWilds';
+import {starTreeGlows} from './starTrees';
+import {starEclipseGlows} from './starEclipseStory';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
 import {layoutStarhaven,starCrystalGarden,starRoadGuides} from './world2Colliders';
 import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
@@ -68,7 +70,7 @@ export class HiddenWorld {
    */
   private readonly carry=new THREE.PointLight('#ffb27a',9,4,2);
   /** A cool rim behind the player's crab, away from the camera (star r5): its silhouette separates from the fields. */
-  private readonly rim=new THREE.PointLight('#a9c6ff',16,3.4,2);
+  private readonly rim=new THREE.PointLight('#a9c6ff',6,2.6,2);
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();
@@ -246,7 +248,7 @@ export class HiddenWorld {
     // The fallen-star ruin's armillary at the east trail's end keeps a pale pool of its own, so the trail leads to light.
     crystalGlow.push({x:80,z:-40,radius:4.2,color:'#9fd8ff',strength:1.1});
     // The wilds' moon-flower clumps light their patches (starWilds.ts).
-    crystalGlow.push(...starWildGlows());
+    crystalGlow.push(...starWildGlows(),...starTreeGlows(),...starEclipseGlows());
     this.groundLight=bakeStarLight(crystalGlow);
     this.fireflies=new StarFireflies((x,z)=>this.height(x,z));this.root.add(this.fireflies.points);
     this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);

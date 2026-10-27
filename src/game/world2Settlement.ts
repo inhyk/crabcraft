@@ -2,6 +2,7 @@ import {starPaving} from './starPaving';
 import {starMeadow} from './starMeadow';
 import {starTreeDressing,starTreeSpecies} from './starTrees';
 import {STAR_WAY_ENDS} from './starWilds';
+import {starEclipseStory} from './starEclipseStory';
 import {starFields} from './starFields';
 import {starStories} from './starStories';
 import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_RING} from './starFieldLayout';
@@ -231,7 +232,9 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   root.userData.meadowPlants=meadowCount;
   // Boulders, the crater's shards, moon-flowers, and the kit's ferns, clover and wildflowers through the meadows.
   const field=starFields(height,scatter,natureNames,clearPaving);root.add(field.root,stories.root);
-  const fields={root:field.root,update(t:number){field.update(t);stories.update(t);rooftops.update(t);}};
+  // What the eclipse did: the fallen column, the astronomer's table, the pilgrim's pack, the shards (starEclipseStory.ts).
+  const eclipse=starEclipseStory(height);root.add(eclipse.root);
+  const fields={root:field.root,update(t:number){field.update(t);stories.update(t);rooftops.update(t);eclipse.update(t);}};
   const forests=scatter.build({boundsPadding:.2});
   forests.add(silverTrees.build({boundsPadding:.2,materialFor:variantOf('silver')}),crystalTrees.build({boundsPadding:.2,materialFor:variantOf('crystal')}));
   root.add(forests,starTreeDressing(height));

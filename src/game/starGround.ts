@@ -7,7 +7,7 @@ import {starSpurWear,starWildTint} from './starWilds';
 import {GARDEN_TREES,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 import {starBoulders} from './starFieldSpots';
-import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,starCoast,starFieldWear,starNoise,starSand} from './starFieldLayout';
+import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,STAR_SCORCHES,starCoast,starFieldWear,starNoise,starSand} from './starFieldLayout';
 
 /*
  * Starhaven's ground by moonlight: beach sand by the sea, meadow grass inland, packed earth in the town and along the
@@ -98,6 +98,10 @@ float sgRock=smoothstep(.36,.55,sgSlope+(sgMid-.5)*.25)*(1.-sgShore*.85);
 // Crater: scorched, glassy and cracked inside, ash thrown out round the rim.
 float sgCd=length(sgP-vec2(${STAR_CRATER.x.toFixed(1)},${STAR_CRATER.z.toFixed(1)}))/${STAR_CRATER.r.toFixed(1)};
 float sgScorch=(1.-smoothstep(.55,1.3,sgCd+(sgMid-.5)*.5+(sgFine-.5)*.3))*.92;
+// Where the eclipse's shards struck (star r5): small burns, ragged and streaked outward.
+float sgBurn=0.;
+${STAR_SCORCHES.map((s) => `{vec2 d=sgP-vec2(${s.x.toFixed(2)},${s.z.toFixed(2)});float r=length(d)/${s.r.toFixed(2)};float st=abs(sin(atan(d.y,d.x)*7.+sgMid*6.));sgBurn=max(sgBurn,(1.-smoothstep(.45,1.15,r+(sgMid-.5)*.5+(sgFine-.5)*.3-st*.18*smoothstep(.4,1.,r))));}`).join('\n')}
+sgScorch=max(sgScorch,sgBurn*.85);
 // Region tint (vertex colour) is the meadow's moonlit green, the sand's lavender grey or the town's earth.
 vec3 sgTint=vColor.rgb;
 // Meadow: broad lush and dry swathes, darker hollows, clumps and blades.
@@ -281,7 +285,8 @@ export function starSoil(x: number, z: number, y: number): [number, number, numb
   // Inside the town the ground is trodden earth with grass in the quiet corners; the arena's ring is bare.
   const town = 1 - smooth(rect(-50, 50, 6, 97), 0, 7), avenue = 1 - smooth(Math.abs(x), 6, 9.5) * 1;
   const arena = 1 - smooth(Math.hypot(x, z + 75), 22, 28);
-  const crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .75, STAR_CRATER.r * 1.2);
+  let crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .75, STAR_CRATER.r * 1.2);
+  for (const s of STAR_SCORCHES) crater = Math.max(crater, (1 - smooth(Math.hypot(x - s.x, z - s.z), s.r * .5, s.r * 1.05)) * .85);
   // Bare, trodden spots through the town's lawns (a few metres across, where feet and carts go), so a lawn has
   // large value steps of turf and earth instead of one even mat.
   const bare = town * smooth(starNoise(x / 7, z / 7, 63) + starNoise(x / 2.5, z / 2.5, 64) * .3, .16, .3);
