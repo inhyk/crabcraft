@@ -23,8 +23,8 @@ export class DawnIsland {
  readonly portal=new StarPortal(this.spawn,'새벽 항구 → 별빛 항구');
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
  private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new THREE.DirectionalLight();
- /** The stolen dawn (dawnSky.ts): the sun a few degrees over the eastern sea; sun, hemisphere, fog and sea all read it. */
- readonly sky=new DawnSky({azimuth:112,elevation:6});private sea:DawnSea;
+ /** The stolen dawn (dawnSky.ts): the sun low over the eastern sea; sun, hemisphere, fog and sea all read it. */
+ readonly sky=new DawnSky({azimuth:112,elevation:11});private sea:DawnSea;
  private rotating:THREE.Object3D[]=[];
  height(x:number,z:number){
   return dawnHeight(x,z);

@@ -49,8 +49,10 @@ void dawnGroundSurface(){
   vec3 earth=dgLin(vec3(.64,.54,.4))*(.88+.2*n3);
   float worn=wornW*smoothstep(.25,.65,n2*.8+wornW*.45);
   // Volcanic climb: dark basalt, grey scree, rusty ash.
-  vec3 volc=mix(dgLin(vec3(.25,.23,.24)),dgLin(vec3(.43,.38,.36)),smoothstep(.35,.7,n2));
-  volc=mix(volc,dgLin(vec3(.47,.31,.25)),smoothstep(.6,.85,n1)*.6)*(.85+.25*n3);
+  vec3 volc=mix(dgLin(vec3(.36,.32,.31)),dgLin(vec3(.54,.48,.43)),smoothstep(.35,.7,n2));
+  volc=mix(volc,dgLin(vec3(.58,.4,.31)),smoothstep(.55,.85,n1)*.7)*(.85+.25*n3);
+  // Tough grass clings on in the hollows of the lower climb.
+  volc=mix(volc,grass*.85,smoothstep(.55,.8,n2)*(1.-smoothstep(9.,14.,p.y))*.6);
   vec3 col=grass;
   col=mix(col,earth,worn);
   col=mix(col,sand,smoothstep(.3,.7,sandW));

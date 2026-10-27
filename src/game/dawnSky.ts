@@ -206,12 +206,13 @@ export class DawnSky {
     // The beam of a sun a few degrees up: gold, the blue mostly scattered out of it.
     const beam = lin(0xffc58c);
     this.sunColor = toColor(beam);
-    this.sunIntensity = 3.3;
+    this.sunIntensity = 4.6;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance.
-    this.hemiSky = toColor(up, 1.25);
+    // The dome's violet fill, its red pulled back a little by the sea's blue-green bounce, so shade reads cool lilac.
+    this.hemiSky = toColor([up[0] * 1.75, up[1] * 2.15, up[2] * 1.85] as V3, 1);
     // Warm bounce off sunlit sand and grass (albedo about 0.3), lit by the sun's beam and the sky.
     const albedo: V3 = [0.36, 0.29, 0.2], sunE = this.sunIntensity * Math.sin(el) * 1.6;
-    this.hemiGround = toColor([0, 1, 2].map(c => albedo[c] * (beam[c] * sunE + up[c] * 1.25)) as V3, 1);
+    this.hemiGround = toColor([0, 1, 2].map(c => albedo[c] * (beam[c] * sunE + up[c] * 1.3)) as V3, 1.6);
     this.uniforms = { dawnSkyLUT: { value: lut }, dawnSunDir: { value: this.sunDir } };
     const sunTint = lin(0xffd9a0);
     this.material = new THREE.ShaderMaterial({
@@ -271,7 +272,7 @@ export class DawnSky {
     Object.assign(cam, { left: -SHADOW_HALF, right: SHADOW_HALF, bottom: -along - 26, top: along + 34, near: 1, far: SUN_DISTANCE + 150 });
     cam.updateProjectionMatrix();
     light.shadow.bias = -0.0004;
-    light.shadow.normalBias = 0.1;
+    light.shadow.normalBias = 0.16;
     this.shadowTexel.set((2 * SHADOW_HALF) / mapSize, (cam.top - cam.bottom) / mapSize);
     this.sunRig = light;
     this.followSun(0, 0, 0);

@@ -145,8 +145,11 @@ export function dawnSurface(x: number, z: number, h: number, out: number[]): num
   // The town's sandy streets and the harbour front.
   const town = (1 - smoothstep(Math.abs(x), 20, 30)) * smoothstep(z, 14, 24) * (1 - smoothstep(z, 120, 126));
   const harbour = smoothstep(z, 96, 112) * (1 - smoothstep(Math.abs(x), 30, 44));
-  out[0] = Math.min(1, Math.max(beach, dune * 0.9, town * 0.8, harbour));
+  out[0] = Math.min(1, Math.max(beach, dune * 0.9, town * 0.35, harbour));
   out[1] = Math.max(smoothstep(-z, 30, 46), smoothstep(h, 11, 14));
-  out[2] = (1 - open) * (1 - out[0]) * (1 - smoothstep(-z, 34, 44));
+  // Trodden ground: along the lanes and through the town only, not round every kept quest point.
+  let lane = Infinity;
+  for (const [ax, az, bx, bz, w] of KEEP_SEGS) lane = Math.min(lane, segDist(x, z, ax, az, bx, bz) - w * 0.55);
+  out[2] = Math.max(1 - smoothstep(lane, 0, 6), town * 0.7) * (1 - out[0] * 0.6) * (1 - smoothstep(-z, 34, 44));
   return out;
 }
