@@ -84,7 +84,7 @@ try {
   assert.equal(high.groundMaterial, 'starhaven-night-ground');
   assert.equal(high.vertices, 141 * 161);
   assert.equal(high.worst, 0, 'browser ground differs from the server bake');
-  assert.ok(high.paving && high.paving.segments >= 20 && high.paving.pads === 1 && high.paving.holes === 1, 'moonlit paving present');
+  assert.ok(high.paving && high.paving.segments >= 20 && high.paving.pads === 2 && high.paving.holes === 1, 'moonlit paving present (the square and the keepers\' ring floor)');
   assert.ok(high.coversAvenue && !high.coversField && !high.coversFountain, 'paving covers() agrees with the layout');
   assert.equal(high.meadowMaterial, 'starhaven-meadow-grass');
   assert.ok(high.meadowInstances > 25000, 'meadow density at high quality');
