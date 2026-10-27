@@ -16,7 +16,7 @@ try{
   else{assert.ok(stats.pavers>500,JSON.stringify(stats));assert.ok(stats.clippedJunctionStones>0);}assert.ok(stats.finite);if(chapter===3)assert.equal(stats.trees,32);
   await p.waitForTimeout(1400);await p.screenshot({path:`tmp/qa/paving-world-${chapter}-junction.png`});
   await p.evaluate(()=>{const f=window.app.current.game.follow;f.pitch=.55;f.distance=9;f.cut();});await p.waitForTimeout(500);await p.screenshot({path:`tmp/qa/paving-world-${chapter}-close.png`});
-  console.log(`PASS World ${chapter}: junction clipping active, ${stats.pavers} paving fragments, finite geometry; World III canopy ${stats.trees}`);
+  console.log(`PASS World ${chapter}: ${chapter===2?`shader paving over ${stats.segments} segments`:`junction clipping active, ${stats.pavers} paving fragments`}, finite geometry; World III canopy ${stats.trees}`);
  }
  assert.deepEqual(errors,[]);console.log('PASS zero browser errors');
 }finally{await browser.close();}
