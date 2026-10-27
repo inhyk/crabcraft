@@ -82,7 +82,9 @@ void main(){
   vec3 hv=normalize(dawnSunDir+v);
   float shin=mix(260.,1400.,fade);
   float spec=pow(max(dot(n,hv),0.),shin)*(shin+2.)/8.;
-  col+=sunLight*spec*.09*fres*5.;
+  // Far out the facets blur into a broad glow along the sun's bearing: the path the glints run down.
+  float broad=pow(max(dot(n,hv),0.),70.)*(1.-fade*.6);
+  col+=sunLight*(spec*.45+broad*.6)*fres;
   // Foam: lines of surf running up the shelf, a lacy wash at the very edge, broken by noise.
   float lace=swNoised(p*.9+vec2(time*.08,-time*.05)).x;
   float run=fract(depth*.85-time*.16+lace*.35);
