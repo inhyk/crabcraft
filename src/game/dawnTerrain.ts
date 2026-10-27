@@ -55,8 +55,9 @@ void dawnGroundSurface(){
   vec3 grass=mix(dgLin(vec3(.45,.56,.28)),dgLin(vec3(.66,.63,.33)),smoothstep(.36,.7,n1));
   grass=mix(grass,dgLin(vec3(.33,.45,.22)),smoothstep(.55,.82,n2)*.55);
   grass*=(.8+.32*n3)*(.8+.4*n4)*(.86+.28*n5);
-  // Sandy patches break through the grass toward the beaches.
-  grass=mix(grass,dry*.95,smoothstep(.62,.8,n2+sandW*.5)*.6);
+  // Straw-dry patches on the crests, and sand breaking through only toward the beaches.
+  grass=mix(grass,dgLin(vec3(.76,.67,.42))*(.85+.3*n4),smoothstep(.68,.86,n2)*.55);
+  grass=mix(grass,dry*.95,smoothstep(.55,.8,n2*.6+sandW)*.7);
   // Trodden ground beside the lanes: packed earth with grass in the hollows.
   vec3 earth=dgLin(vec3(.74,.62,.46))*(.88+.2*n3)*(.85+.3*n5);
   float worn=wornW*smoothstep(.25,.65,n2*.8+wornW*.45);
