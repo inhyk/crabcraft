@@ -43,6 +43,8 @@ export class DawnIsland {
  private palms:DawnPalms|null=null;
  /** Goldsand Harbor's desert quarter: houses, shrine, forge, tavern, windcatchers, palms (dawnHouses.ts). */
  quarter:DawnQuarter|null=null;
+ /** dawnHeight bound once, so the per-frame sand step allocates nothing. */
+ private readonly heightAt=(x:number,z:number)=>dawnHeight(x,z);
  height(x:number,z:number){
   return dawnHeight(x,z);
  }
@@ -50,7 +52,7 @@ export class DawnIsland {
   this.root.name='WORLD III · Dawnreach';this.root.visible=false;
   // The desert: dawnHeight()'s GLSL twin baked on the GPU, placed by a clipmap, shaded as sand (sandTerrain.ts, sandSurface.ts).
   const sandMat=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.93,metalness:0});
-  this.terrain=new SandTerrain(sandMat,this.deform);this.refreshSand=applySandSurface(sandMat,this.deform,{sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith});
+  this.terrain=new SandTerrain(sandMat,this.deform);this.refreshSand=applySandSurface(sandMat,this.deform,{sky:this.sky.uniforms,sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,skyFill:this.sky.sandSkyFill});
   // Paving and the arena floor take no prints and throw no sand.
   const bare=(x:number,z:number)=>roadClearance(x,z)<.15||Math.hypot(x,z+72)<22.5;
   this.footfalls=new SandFootfalls(bare);this.spray=new SandSpray(this.root,{sun:this.sun,bare});
@@ -113,7 +115,7 @@ export class DawnIsland {
  /** Low quality: a coarser clipmap and bake, no finest ripples, the sea's fine ripples, a cloud octave and half the shadow map. */
  setQuality(q:'high'|'low'){this.terrain.setQuality(q);this.drift.setQuality(q);this.sea.setQuality(q);this.sky.setQuality(q);}
  /** Prints for every crab near the player, one step of the sand field, the kicked sand. Runs only while Goldsand is shown. */
- updateSand(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'){this.terrain.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSand();}
+ updateSand(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'){this.terrain.prepare(renderer);this.footfalls.update(units,this.deform,this.heightAt,x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSand();}
  disposeSand(){this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
  update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.terrain.follow(x,z);this.drift.update(time,x,z);this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.position,this.sun.target.position));this.wind?.update(time);this.citadel.update(time,quality);this.palms?.update(time);this.dressing?.update(time);this.quarter?.update(time);this.sky.followSun(x,this.height(x,z),z);this.sky.update(time);this.sea.update(time);this.scenery.update(time);this.portal.update(time);}
 }
