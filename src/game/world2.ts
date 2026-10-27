@@ -60,8 +60,11 @@ export class HiddenWorld {
   readonly root = new THREE.Group();
   private readonly sun=new StarSun(STAR_MOON_DIR.clone().multiplyScalar(100));
   private readonly night=new StarNightRig(this.sun.light);
-  /** A small warm light carried with the player's crab (about 4 m), so the hero reads against the night fields. */
-  private readonly carry=new THREE.PointLight('#ffb27a',4,5.5,1.6);
+  /**
+   * A small warm key carried with the player's crab, a step toward the camera at its height: it lights the crab's
+   * seen side more than the ground (about 4 m of reach), so the hero reads against the night fields.
+   */
+  private readonly carry=new THREE.PointLight('#ffb27a',6,4.5,1.8);
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();
@@ -491,7 +494,7 @@ export class HiddenWorld {
     const echo=this.game.enemies.find(e=>e.isEcho);
     if(!observation&&echo&&this.game.multiplayer?.battle.authority!==false&&echo.state==='gone'&&time>this.echoAt&&!this.game.encounter.engaged){echo.home.set(0,this.height(0,-22),-22);echo.respawnAt(0,-22);this.echoAt=time+120;this.game.hud.messages.info(t('녹의 폭군의 잔영이 별길에 나타났어요!','An echo of the Rust Tyrant has appeared on the Starroad!'));}
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
-    this.sun.update(position.x,position.z);this.carry.position.set(position.x,position.y+2.1,position.z+.4);
+    this.sun.update(position.x,position.z);{const c=this.game.camera.position,dx=c.x-position.x,dz=c.z-position.z,l=Math.hypot(dx,dz)||1;this.carry.position.set(position.x+dx/l*1.3,position.y+1.35,position.z+dz/l*1.3);}
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
     this.night.apply(this.game.scene,this.game.engine.renderer,this.game.camera);
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);

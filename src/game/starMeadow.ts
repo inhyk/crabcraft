@@ -124,8 +124,6 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
     let near = Infinity;
     for (const [ex, ez, er] of exclude) near = Math.min(near, Math.hypot(x - ex, z - ez) - er);
     d *= smooth(near, 0, 1.2);
-    // Off the stones by a hand's width: test the cell's corners against the ways.
-    for (const [ox, oz] of [[0, 0], [-.45, -.45], [.45, -.45], [-.45, .45], [.45, .45]]) if (onIslandPath(paths, x + ox, z + oz)) { d = 0; break; }
     const town = Math.abs(x) < 54 && z > 3 && z < 100;
     let tall = 0;
     // Grass strips along the trails' and the starroad's edges, outside the town: a taller fringe where the worn
@@ -146,6 +144,8 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
       d = ring; tall = Math.max(tall, ring);
     }
     if (Math.hypot(x, z - 55) < 8) d = 0;
+    // Off the stones by a hand's width: test the cell's corners against the ways.
+    for (const [ox, oz] of [[0, 0], [-.45, -.45], [.45, -.45], [-.45, .45], [.45, .45]]) if (onIslandPath(paths, x + ox, z + oz)) { d = 0; break; }
     const o = (j * W + i) * 4;
     // The town's lawns are a full, short sward: dense or nothing, never a scatter of single blades.
     mask[o] = Math.round(Math.min(1, d * (town ? 1.8 : 1.15)) * 255);

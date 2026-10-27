@@ -156,7 +156,9 @@ float sfObsidian=1.-smoothstep(1.93,1.96,sfR);
 #include <lights_physical_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 // The inlay glows a cold silver-teal (#9fe8ff) so the star map reads across the dark slate.
-totalEmissiveRadiance+=vec3(.35,.8,1.)*sfSilver*.42;
+// The twelve moon faces in the outer band are wide silver fills: they glow less than the lines, so they read as
+// polished discs set in the stone rather than lamps.
+totalEmissiveRadiance+=vec3(.35,.8,1.)*sfSilver*.42*(1.-.7*step(14.9,sfR)*step(sfR,16.3));
 // The eclipse at the centre burns: its corona's inlay gives pearly light, brightest at the limb, and a rose
 // chromosphere edges the obsidian; the rings further out stay moonlit silver.
 {
