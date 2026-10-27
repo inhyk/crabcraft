@@ -1,6 +1,7 @@
 import {dawnTown,type DawnTown} from './dawnTown';
 import {dawnHouseMaterials} from './dawnHouses';
 import {dawnDressing,type DawnDressing} from './dawnDressing';
+import {dawnRequestLook} from './dawnRequestProps';
 import {Scatter} from '../world/kit';
 import {StarWind} from './starWind';
 import * as THREE from 'three';
@@ -79,6 +80,8 @@ export class DawnIsland {
   this.dressing=dawnDressing((x,z)=>this.height(x,z),{props,nature,village},builder.doorLamps,this.town);this.root.add(this.dressing.group);
   for(const piece of nature.pieces.values())for(const part of piece.parts)part.geometry.dispose();
  }
+ /** Dawnharbor's request props (dawnRequestProps.ts) in place of the shared placeholders. */
+ questProps(){return dawnRequestLook();}
  private sunDir=new THREE.Vector3();
  update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.dressing?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
 }

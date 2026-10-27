@@ -179,7 +179,7 @@ export class HiddenWorld {
 
 
   constructor(private game: Game) {
-    this.dawnRequests=new DawnRequests(game,this.third);
+    this.dawnRequests=new DawnRequests(game,this.third,undefined,this.third.questProps());
     this.snowRequests=new DawnRequests(game,this.fourth,SNOW_POINTS,this.fourth.questProps());
     this.emberRequests=new DawnRequests(game,this.fifth,FRONTIER_POINTS[5]);this.skyRequests=new DawnRequests(game,this.sixth,FRONTIER_POINTS[6]);
     this.emberGate=this.fourth.gate(new THREE.Vector3(14,this.fourth.height(14,84),84),'설원 → 잿불 군도');this.fourth.root.add(this.emberGate.root);

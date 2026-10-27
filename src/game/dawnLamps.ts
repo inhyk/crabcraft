@@ -20,6 +20,30 @@ export interface DawnLamps {group: THREE.Group; flames: THREE.Vector3[]; update(
 /** `extra`: lamps standing on masonry at height y (no foot, a shorter post), e.g. the harbour parapet's piers. */
 export function dawnLamps(height: (x: number, z: number) => number, extra: readonly {x: number; y: number; z: number; yaw: number}[] = []): DawnLamps {
   const group = new THREE.Group(); group.name = 'dawnharbor-road-lamps';
+  const all = [...dawnLampPosts().map(p => ({...p, y: null as number | null})), ...extra.map(p => ({...p, y: p.y as number | null}))];
+  const {stone, iron, panes, flames} = lampParts(height, all);
+  const add = (geos: THREE.BufferGeometry[], mat: THREE.Material, name: string, shadow: boolean) => {
+    const g = mergeGeometries(geos, false)!; geos.forEach(x => x.dispose());
+    g.computeBoundingSphere();
+    const mesh = new THREE.Mesh(g, mat); mesh.name = name; mesh.castShadow = shadow; mesh.receiveShadow = true; group.add(mesh);
+  };
+  add(stone, dawnSandstone('dawnharbor-lamp-foot'), 'dawnharbor-lamp-feet', true);
+  add(iron, dawnIron(), 'dawnharbor-lamp-iron', true);
+  add(panes, dawnLanternGlass(), 'dawnharbor-lamp-glass', false);
+  const halo = dawnGlows(flames.map(pos => ({pos, size: 1.5})), '#ffb763', 'dawnharbor-lamp-halos');
+  group.add(halo);
+  group.userData.lamps = flames.length;
+  // The solid posts (the ones on the ground; lamps on masonry stand past the walk limit).
+  group.userData.posts = dawnLampPosts().map(p => [p.x, p.z]);
+  return {group, flames, update(time) { (halo.material as THREE.ShaderMaterial).uniforms.uTime.value = time; }};
+}
+
+/**
+ * The lamps' geometry, world space, merged per material by the caller: stone feet, iron (post, arm, scrolls, lantern
+ * frame), glass panes (uv kept: the glow is hottest low in the pane), and where each flame burns. `y` set: the lamp
+ * stands on masonry at that height, no foot and a shorter post.
+ */
+export function lampParts(height: (x: number, z: number) => number, all: readonly {x: number; z: number; yaw: number; y: number | null}[]) {
   const foot = lathe([[0, 0], [.33, 0], [.33, .1], [.29, .14], [.25, .16], [.21, .22], [.2, .44], [.24, .5], [.29, .53], [.29, .6], [.2, .64], [0, .64]], 28);
   const post = lathe([[0, .6], [.1, .6], [.11, .66], [.075, .72], [.062, .8], [.052, 2.4], [.075, 2.44], [.075, 2.5], [.055, 2.54], [.05, ARM_Y + .02], [.07, ARM_Y + .05], [.07, ARM_Y + .1], [.04, ARM_Y + .14], [.045, ARM_Y + .2], [.02, ARM_Y + .3], [0, ARM_Y + .32]], 14);
   // The arm: straight out, ending in a small down-turned curl for the hook; a scrolled brace under it.
@@ -37,7 +61,6 @@ export function dawnLamps(height: (x: number, z: number) => number, extra: reado
   const mullion = new THREE.CylinderGeometry(.008, .008, .42, 4);
   const stone: THREE.BufferGeometry[] = [], iron: THREE.BufferGeometry[] = [], panes: THREE.BufferGeometry[] = [], flames: THREE.Vector3[] = [];
   const m = new THREE.Matrix4(), l = new THREE.Matrix4();
-  const all = [...dawnLampPosts().map(p => ({...p, y: null as number | null})), ...extra.map(p => ({...p, y: p.y as number | null}))];
   for (const p of all) {
     // The foot sits a little into the ground on the downhill side; a lamp on masonry stands on it, shorter.
     let low = Infinity;
@@ -62,19 +85,6 @@ export function dawnLamps(height: (x: number, z: number) => number, extra: reado
     panes.push(solidPart(glass, lm, true));
     flames.push(new THREE.Vector3(0, -LANTERN_DROP, 0).applyMatrix4(lm));
   }
-  const add = (geos: THREE.BufferGeometry[], mat: THREE.Material, name: string, shadow: boolean) => {
-    const g = mergeGeometries(geos, false)!; geos.forEach(x => x.dispose());
-    g.computeBoundingSphere();
-    const mesh = new THREE.Mesh(g, mat); mesh.name = name; mesh.castShadow = shadow; mesh.receiveShadow = true; group.add(mesh);
-  };
-  add(stone, dawnSandstone('dawnharbor-lamp-foot'), 'dawnharbor-lamp-feet', true);
-  add(iron, dawnIron(), 'dawnharbor-lamp-iron', true);
-  add(panes, dawnLanternGlass(), 'dawnharbor-lamp-glass', false);
   for (const g of [foot, post, arm, brace, scroll, hook, cap, glass, tray, mullion]) g.dispose();
-  const halo = dawnGlows(flames.map(pos => ({pos, size: 1.5})), '#ffb763', 'dawnharbor-lamp-halos');
-  group.add(halo);
-  group.userData.lamps = flames.length;
-  // The solid posts (the ones on the ground; lamps on masonry stand past the walk limit).
-  group.userData.posts = dawnLampPosts().map(p => [p.x, p.z]);
-  return {group, flames, update(time) { (halo.material as THREE.ShaderMaterial).uniforms.uTime.value = time; }};
+  return {stone, iron, panes, flames};
 }
