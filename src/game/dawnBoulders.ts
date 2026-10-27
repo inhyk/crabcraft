@@ -54,10 +54,19 @@ function boulderMaterial(uniforms: {dbTime: {value: number}; dbSand: {value: THR
         float occ=vColor.r,bed=vColor.g,above=vDbK.z;
         float n1=dbN3(vDbW*.55,bA),n2=dbN3(vDbW*2.4,bA),n3=dbN3(vDbW*9.,bA);
         // Sandstone: cross-bedded laminae of honey, cream and rose, varnished darker on the steep faces.
-        float lam=sin(vDbW.y*7.5+n1*.8)*.5+.5,lam2=sin(vDbW.y*23.+n2*1.5)*.5+.5;
-        vec3 ss=mix(vec3(.5,.28,.12),vec3(.7,.48,.27),lam*.7+bed*.3-.15);
-        ss=mix(ss,vec3(.55,.3,.2),smoothstep(.62,.9,n1*.5+.5)*.45);
-        ss*=.9+.12*lam2;
+        // Beds of uneven thickness in world height (never stretched with the stone), each its own tone (honey,
+        // cream, rose, a darker iron band now and then), thin recessed partings between them, cross-bedded laminae
+        // slanting inside the thick ones.
+        float by=vDbW.y+n1*.12,bi=floor(by/.42),bh=fpHash12(vec2(bi,7.1));
+        float bt=.28+.5*bh,bf=fract(by/.42);
+        float bk=fpHash12(vec2(bi,3.3));
+        vec3 bedC=bk<.3?vec3(.7,.47,.26):bk<.55?vec3(.76,.58,.38):bk<.82?vec3(.66,.4,.27):vec3(.48,.28,.16);
+        float lamX=sin((vDbW.y-dot(vDbW.xz,vec2(.55,.3))*(bh-.5))*38.+n2*1.2)*.5+.5;
+        vec3 ss=bedC*(.9+.12*lamX*step(.45,bh));
+        float part=1.-smoothstep(.0,.06,min(bf,1.-bf));
+        ss*=1.-part*.35;
+        ss=mix(ss,vec3(.55,.3,.2),smoothstep(.62,.9,n1*.5+.5)*.3);
+        float lam2=lamX;
         ss=mix(ss,ss*vec3(.72,.62,.55),(1.-bN.y*bN.y)*smoothstep(.2,.7,fpNoise(vec2(vDbW.x+vDbW.z,vDbW.y*.15)*2.))*.5);
         // Basalt: near-black, vesicles, rusty weathering; the tops bleached and warmed by the sun.
         float ves=smoothstep(.55,.8,fpNoise(vDbW.xz*17.+vDbW.y*9.)*.5+.5);
@@ -121,6 +130,8 @@ function windCarve(g: THREE.BufferGeometry, neck: number, R: () => number) {
     const f = (y - y0) / bed + ph, fr = f - Math.floor(f);
     const ledge = 1 + .045 * THREE.MathUtils.smoothstep(fr, .55, .8) - .03 * THREE.MathUtils.smoothstep(fr, .85, 1);
     p.setX(i, p.getX(i) * under * ledge); p.setZ(i, p.getZ(i) * under * ledge);
+    // A flat caprock: the harder top bed planed level by the wind, a little proud of the face below.
+    if (t > .78) { p.setY(i, y0 + H * (.78 + (t - .78) * .3)); p.setX(i, p.getX(i) * 1.04); p.setZ(i, p.getZ(i) * 1.04); }
   }
   g.computeVertexNormals();
 }
