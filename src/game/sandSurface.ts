@@ -4,6 +4,7 @@ import type { SandSpray } from './sandSpray';
 import type { Unit } from './unit';
 import { addPatch } from '../world/materials';
 import { SAND_SURFACE_GLSL } from './sandTerrain';
+import { DAWN_SKY_GLSL } from './dawnSky';
 
 /*
  * Goldsand's sand material, shaded as carefully as Frostlight's snow (snowSurface.ts) on a MeshStandardMaterial
@@ -20,6 +21,8 @@ import { SAND_SURFACE_GLSL } from './sandTerrain';
  */
 
 export interface SandSurfaceOptions {
+  /** The baked dawn sky (DawnSky.uniforms): the haze over the far sand takes the sky's colour in each direction. */
+  sky: { dawnSkyLUT: THREE.IUniform; dawnSunDir: THREE.IUniform };
   /** Light the glints and back-scatter answer to. Its world direction and radiance are read every frame. */
   sun: THREE.DirectionalLight;
   /** The sky's horizon and zenith radiance, for the sky wet sand reflects. */
@@ -28,6 +31,7 @@ export interface SandSurfaceOptions {
 }
 
 const SURFACE_FRAGMENT_HEAD = /* glsl */ `
+${DAWN_SKY_GLSL}
 uniform vec3 sandSunDir;
 uniform vec3 sandSunColor;
 uniform vec3 sandSkyHorizon;
@@ -147,8 +151,8 @@ const SAND_STATE = /* glsl */ `
   float streak=snNoise(sWq*vec2(.035,.42))*.65+snNoise(sWq*vec2(.09,1.3))*.35;
   // Warm golden ochre, never orange; value carries the form.
   // Quartz sand reflects a broad spectrum: the gold comes mostly from the low sun, so shade can still go blue.
-  vec3 sand=sdLin(vec3(.82,.72,.53));
-  vec3 pale=sdLin(vec3(.9,.83,.66)),lag=sdLin(vec3(.7,.58,.44)),red=sdLin(vec3(.84,.68,.5));
+  vec3 sand=sdLin(vec3(.84,.73,.5));
+  vec3 pale=sdLin(vec3(.91,.83,.63)),lag=sdLin(vec3(.72,.58,.42)),red=sdLin(vec3(.86,.68,.47));
   vec3 alb=mix(sand,red,smoothstep(.3,.75,n1)*.45);
   alb=mix(alb,pale,smoothstep(.05,.7,sCrest)*.7);
   alb=mix(alb,lag,smoothstep(-.1,-.75,sCrest)*(.55+.3*n2));
@@ -225,8 +229,11 @@ const SAND_NORMAL = /* glsl */ `
     g+=fn.yz*(1.-sWet*.6);
     // Broken sand at a print's rim: clumps, not a bevel.
     if(sBerm+sDepW>.002){vec3 cl=snNoised(sXZ*24.);g+=cl.yz*.04*clamp(sBerm*10.+sDepW,0.,1.)*(1.-smoothstep(.01,.05,sFoot));}
-    // Gravel and scrub stand proud of the sand.
     sN=normalize(vec3(-g.x,1.,-g.y));
+    // Ripple micro-shadow: the ripple faces turned from a low sun hold shade a shadow map can never resolve.
+    vec3 sLm=normalize(sandSunDir);
+    float vD=smoothstep(-.02,.14,dot(sN,sLm)),vM=smoothstep(-.02,.14,dot(normalize(vec3(-sGrad.x,1.,-sGrad.y)),sLm));
+    diffuseColor.rgb*=1.+clamp(vD-vM,-1.,0.)*.22;
   }
   normal=normalize((viewMatrix*vec4(sN,0.)).xyz);
 `;
@@ -245,7 +252,34 @@ const SAND_AFTER = /* glsl */ `
     outgoingLight+=sandSunColor*diffuseColor.rgb*back*.06*sandSunVis*(1.-sWet);
     // Quartz glints, only into a low sun and only at grazing angles; a hint, not glitter.
     outgoingLight+=sandSunColor*sdGlints(sXZ,sN,sV,sL,sFoot)*.012*sandSunVis*(1.-sWet)*(1.-sVolc)*(1.-sCliff);
+    // Aerial perspective: a thin haze with distance and a denser dust layer that thins with height, coloured by the
+    // sky in this very direction (gold toward the sun, blue-grey away), plus the dust's forward glow round the sun.
+    vec3 toP=vSandWorld-cameraPosition;float dist=length(toP);vec3 dir=toP/max(dist,1e-3);
+    float hz=clamp((1.-exp(-dist*1.1e-4))+.85*(1.-exp(-dist*5.5e-4*exp(-max(vSandWorld.y,0.)/45.))),0.,1.);
+    vec3 skyHaze=dawnSky(vec3(dir.x,max(dir.y,.02),dir.z));
+    float mu=dot(dir,sL),mie=(1.-.64)/pow(1.64-1.6*mu,1.5)/12.566;
+    outgoingLight=mix(outgoingLight,skyHaze,hz)+skyHaze*clamp(mie*5.,0.,1.5)*hz*.22;
   }
+`;
+
+/**
+ * Sand's diffuse with Journey's contrast (John Edwards, GDC 2013): the light's angle is judged on a normal whose
+ * vertical part is squashed, then steepened, so flat sand under an 11 degree sun reads lit gold instead of the
+ * near-grazing grey a plain Lambert gives it, and the terminator on the dunes stays sharp. Blended with Lambert so
+ * the dunes keep their modelling. Specular stays physical.
+ */
+const SAND_DIRECT = /* glsl */ `
+#undef RE_Direct
+#define RE_Direct RE_Direct_Sand
+void RE_Direct_Sand(const in IncidentLight directLight,const in vec3 geometryPosition,const in vec3 geometryNormal,const in vec3 geometryViewDir,const in vec3 geometryClearcoatNormal,const in PhysicalMaterial material,inout ReflectedLight reflectedLight){
+  float nl=saturate(dot(geometryNormal,directLight.direction));
+  vec3 nW=inverseTransformDirection(geometryNormal,viewMatrix),lW=inverseTransformDirection(directLight.direction,viewMatrix);
+  float journey=saturate(dot(normalize(vec3(nW.x,nW.y*.3,nW.z)),lW)*4.);
+  float diffuse=mix(nl,journey*.62,.75);
+  reflectedLight.directSpecular+=nl*directLight.color*BRDF_GGX(directLight.direction,geometryViewDir,geometryNormal,material)*material.multiScatteringCompensation;
+  vec3 F=F_Schlick(material.specularColor,material.specularF90,saturate(dot(geometryViewDir,normalize(directLight.direction+geometryViewDir))));
+  reflectedLight.directDiffuse+=diffuse*directLight.color*BRDF_Lambert(material.diffuseContribution)*(1.-F);
+}
 `;
 
 /** Patch the clipmap's sand material in place. Call the returned function once a frame before it draws. */
@@ -253,6 +287,7 @@ export function applySandSurface(material: THREE.MeshStandardMaterial, deform: S
   const sunDir = new THREE.Vector3(0, 1, 0), sunColor = new THREE.Color();
   const uniforms = {
     ...deform.uniforms,
+    ...opts.sky,
     sandSunDir: { value: sunDir },
     sandSunColor: { value: sunColor },
     sandSkyHorizon: { value: opts.skyHorizon },
@@ -262,6 +297,8 @@ export function applySandSurface(material: THREE.MeshStandardMaterial, deform: S
   material.userData.sandSurface = uniforms;
   // The scene's environment map belongs to another world; the sand is lit by Goldsand's sky alone.
   material.envMapIntensity = 0;
+  // The sand hazes itself (SAND_AFTER), by height as well as distance.
+  material.fog = false;
   const refresh = () => {
     opts.sun.getWorldPosition(sunDir);
     opts.sun.target.getWorldPosition(tmp);
@@ -273,6 +310,7 @@ export function applySandSurface(material: THREE.MeshStandardMaterial, deform: S
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${SAND_SURFACE_GLSL}\n${SURFACE_FRAGMENT_HEAD}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${SAND_STATE}`)
+      .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>\n${SAND_DIRECT}`)
       .replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin.replace('? getShadow( directionalShadowMap[ i ]', '? sandSunVis * getShadow( directionalShadowMap[ i ]'))
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor=sRough;')
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${SAND_NORMAL}`)

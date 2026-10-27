@@ -218,12 +218,12 @@ export class DawnSky {
     for (let c = 0; c < 3; c++) up[c] /= wsum;
     // The beam of a sun a few degrees up: gold, the blue mostly scattered out of it.
     // Kasten-Young air mass at 11 degrees: the blue mostly scattered out of the beam, gold not orange.
-    const beam = lin(0xffcb72);
+    const beam = lin(0xffd27a);
     this.sunColor = toColor(beam);
     this.sunIntensity = 5.6;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance.
     // The dome's fill, its red pulled back, so shade on the sand reads cool blue-violet against the gold sun.
-    this.hemiSky = toColor([up[0] * 0.75, up[1] * 1.45, up[2] * 1.6] as V3, 1);
+    this.hemiSky = toColor([up[0] * 2.45, up[1] * 2.45, up[2] * 3.9] as V3, 1);
     // Warm bounce off sunlit sand (albedo about 0.35), lit by the sun's beam and the sky.
     const albedo: V3 = [0.46, 0.33, 0.19], sunE = this.sunIntensity * Math.sin(el) * 1.6;
     this.hemiGround = toColor([0, 1, 2].map(c => albedo[c] * (beam[c] * sunE + up[c] * 1.3)) as V3, 1.6);
@@ -319,8 +319,11 @@ export class DawnSky {
   private _up?: THREE.Vector3;
 }
 
-/** Morning haze along the ground (FogExp2 density). */
-const FOG_DENSITY = 0.0027;
+/**
+ * Haze on everything but the sand (FogExp2 density): light, so the town stays clear; the sand draws its own
+ * aerial perspective with height falloff (sandSurface.ts), and the sea melts into the dome's horizon band.
+ */
+const FOG_DENSITY = 0.0014;
 /** Half-width of the shadow box across the sun, metres. */
 const SHADOW_HALF = 72;
 /** How far up the sun ray the shadow camera sits: far enough for the citadel's towers to shade the climb. */
