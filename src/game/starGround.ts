@@ -3,7 +3,7 @@ import {injectStarLight} from './starLight';
 import {STAR_GRID} from '../sim/world/ground';
 import type {StarMeadow} from './starMeadow';
 import type {StarFields} from './starFields';
-import {starSpurWear,starWildTint} from './starWilds';
+import {starSpurWear,starWildness,starWildTint} from './starWilds';
 import {GARDEN_TREES,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 import {starBoulders} from './starFieldSpots';
@@ -262,7 +262,8 @@ export function starShade(x: number, z: number): number {
   }
   let ao = 0;
   for (const [sx, sz, r] of shadeSpots) { const dx = x - sx, dz = z - sz; if (Math.abs(dx) > r || Math.abs(dz) > r) continue; ao = Math.max(ao, 1 - smooth(Math.hypot(dx, dz), r * .25, r)); }
-  return ao * .7;
+  // Out in the lighter wilds the shade under a crown or a stone is deeper, so the fields keep their darks (star r5).
+  return ao * (.7 + .2 * starWildness(x, z));
 }
 /** How much (x, z) is open meadow, where the fields' large-scale value (starFieldWear) applies: grassy, outside the town and the sanctum's ring. */
 export function starOpenMeadow(x: number, z: number, grass: number, town = 0, arena = 0): number {

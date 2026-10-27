@@ -45,7 +45,8 @@ export function starWildTint(x: number, z: number, y: number, height: (x: number
   teal.setRGB(.92, 1.06, 1.04);violet.setRGB(1.06, .94, 1.1);
   const hue = swathe > 0 ? teal.lerp(white, 1 - smooth(swathe, 0, .35)) : violet.lerp(white, 1 - smooth(-swathe, 0, .35));
   out.multiply(hue);
-  return out.multiplyScalar(1 + w * (.72 + relief * .2 + swathe * .14));
+  // Hollows sink further than rises lift, so the lighter fields keep their darks (the frame's value range widens).
+  return out.multiplyScalar(Math.max(.45, 1 + w * (.72 + relief * (relief < 0 ? .34 : .2) + swathe * .14)));
 }
 
 export interface StarWildClump { x: number; z: number; r: number; n: number; tint: 0 | 1 | 2 }
