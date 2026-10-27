@@ -6,7 +6,7 @@ import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,starNoise,starSand} from './starFieldL
 import {starBoulders,starCraterShards,starPlayDistance} from './starFieldSpots';
 import {nearStarObjective,starTrailDistance} from './world2Settlement';
 import {trs,type Scatter} from '../world/kit';
-import {starWildClumps,STAR_WILD_TINTS} from './starWilds';
+import {starWildClumps,STAR_WAY_ENDS,STAR_WILD_TINTS} from './starWilds';
 
 /*
  * Starhaven's fields: sculpted boulders of dark island stone with violet crystal veins and moss on their shoulders
@@ -138,6 +138,8 @@ export function starFields(height: (x: number, z: number) => number, scatter: Sc
     const zones: {x: number; z: number; r0: number; r1: number; n: number}[] = [
       {x: 0, z: -75, r0: 19.6, r1: 28, n: 46}, {x: 80, z: -40, r0: 3.5, r1: 15, n: 22}, {x: STAR_CRATER.x, z: STAR_CRATER.z, r0: STAR_CRATER.r * 1.05, r1: STAR_CRATER.r * 1.7, n: 12},
       {x: 0, z: -30, r0: 5.6, r1: 10, n: 18},
+      // Star r5: setts worked loose where the town's dead-end ways fray into earth.
+      ...STAR_WAY_ENDS.map(([x, z, dx, dz, w]) => ({x: x + dx * .5, z: z + dz * .5, r0: w * .3, r1: w * .3 + 2.2, n: w > 4 ? 6 : 3})),
     ];
     let seed = 0;
     for (const zn of zones) for (let k = 0; k < zn.n; k++) {
