@@ -2,24 +2,23 @@ import * as THREE from 'three';
 import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {loadKit,StaticBatch,trs} from '../world/kit';
 import {addPatch,stylise} from '../world/materials';
-import {lathe} from '../world/geom';
-import {FROST_NOISE} from './frostPaving';
 import {planeWarp,ringWarp,type V3,type Warp} from './frostMasonry';
-import {Glass,windowAt} from './frostThrone';
+import {Glass} from './frostThrone';
 import {frostFire,type Flame,type Halo} from './frostFire';
 import {DawnMason,dawnMasonryMaterial} from './dawnMasonry';
 import {dawnArena} from './dawnArena';
-import {CITADEL_APPROACH,CITADEL_ARENA,CITADEL_BRAZIERS,CITADEL_GATE,CITADEL_KEEP,CITADEL_TOWERS,CITADEL_WALL,SOUTH_RUN,citadelObelisks,type CitadelTower} from './dawnCitadelLayout';
+import {CITADEL_APPROACH,CITADEL_ARENA,CITADEL_BRAZIERS,CITADEL_COLONNADE,CITADEL_GATE,CITADEL_KEEP,CITADEL_TOWERS,CITADEL_WALL,SOUTH_RUN,citadelObelisks,colonnadeColumns} from './dawnCitadelLayout';
 
 /*
- * Solarkan's Twilight Citadel: the old sun temple-fortress on Dawnharbor's north plateau, taken in the stolen dawn.
- * Banded masonry (dawnMasonry.ts: black basalt coursed with honey limestone, gilded string courses), laid block by
- * block: a gatehouse astride the avenue with an ablaq pointed arch, its raised bronze portcullis and the eclipsed sun
- * over it; battered round towers with machicolated parapets, gilded scale spires crowned with sun discs, or open
- * fire platforms; curtain walls round a paved temple court; the keep at the north end of the court with the great
- * eclipse on its face and the tallest spire on the island, the landmark from the harbour. Round the sun-dial floor
- * (dawnArena.ts) stand eight basalt sun pillars carrying fire bowls; obelisks with gilded pyramidions line the
- * ascent. Solarkan's banners (the props kit, dyed) hang from the gate, the towers and the keep.
+ * Solarkan's Twilight Citadel: the desert sun temple on Goldsand Harbor's north plateau, taken in the stolen dawn,
+ * built in the Egyptian manner. Banded masonry (dawnMasonry.ts: warm sandstone coursed with cream limestone, basalt
+ * for accents, gilt strings and emblems), laid block by block: a twin-pylon gateway on the ascent, its battered wings
+ * crowned with cavetto cornices, the lintelled portal between them under a winged sun, flagstaffs flying Solarkan's
+ * banners and the eclipse carved high on each wing; square battered towers with fire bowls or gilt suns; battered
+ * curtain walls with cavetto cornices round a paved temple court; porticoes of papyrus columns inside the side
+ * walls; the sanctuary at the north end of the court with the eclipse carved over its portal and the great eclipsed
+ * sun on its roof, the landmark from the harbour. Round the sun-dial floor (dawnArena.ts) stand eight basalt sun
+ * pillars carrying fire bowls; basalt obelisks with gilt pyramidions line the ascent.
  */
 
 type Height=(x:number,z:number)=>number;
@@ -53,42 +52,12 @@ function asStone(g:THREE.BufferGeometry,tint:V3,gilt:boolean|number,ground:numbe
  return out;
 }
 
-/** Gilded copper scales for the spires: a canvas of overlapping scales, worn darker in patches by the shader. */
-function scaleMaterial():THREE.MeshStandardMaterial{
- const S=128,c=document.createElement('canvas');c.width=c.height=S;const x=c.getContext('2d')!;
- const b=document.createElement('canvas');b.width=b.height=S;const y=b.getContext('2d')!;
- x.fillStyle='#6b4a1f';x.fillRect(0,0,S,S);y.fillStyle='#000';y.fillRect(0,0,S,S);
- let s=7;const r=()=>(s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296;
- // Rows of round-bottomed scales, each overlapping the row below (drawn top row first, so lower rows sit over).
- const rows=4,cols=4,w=S/cols,h=S/rows;
- for(let j=-1;j<=rows;j++)for(let i=-1;i<=cols;i++){
-  const cx=(i+(j%2?.5:0))*w+w/2,cy=j*h;
-  const v=.78+r()*.3,g=x.createRadialGradient(cx,cy+h*.2,1,cx,cy+h*.4,w*.62);
-  g.addColorStop(0,`rgb(${255*v|0},${205*v|0},${110*v|0})`);g.addColorStop(.8,`rgb(${228*v|0},${160*v|0},${64*v|0})`);g.addColorStop(1,'#5a3b14');
-  x.fillStyle=g;x.beginPath();x.moveTo(cx-w/2,cy);x.lineTo(cx-w/2,cy+h*.45);x.arc(cx,cy+h*.45,w/2,Math.PI,0,true);x.lineTo(cx+w/2,cy);x.closePath();x.fill();
-  const bg=y.createRadialGradient(cx,cy+h*.1,1,cx,cy+h*.45,w*.55);bg.addColorStop(0,'#fff');bg.addColorStop(.85,'#aaa');bg.addColorStop(1,'#000');
-  y.fillStyle=bg;y.beginPath();y.moveTo(cx-w/2,cy);y.lineTo(cx-w/2,cy+h*.45);y.arc(cx,cy+h*.45,w/2,Math.PI,0,true);y.lineTo(cx+w/2,cy);y.closePath();y.fill();
- }
- const map=new THREE.CanvasTexture(c);map.colorSpace=THREE.SRGBColorSpace;map.wrapS=map.wrapT=THREE.RepeatWrapping;map.anisotropy=4;
- const bump=new THREE.CanvasTexture(b);bump.wrapS=bump.wrapT=THREE.RepeatWrapping;
- const m=new THREE.MeshStandardMaterial({name:'dawn-citadel-spire-scales',map,bumpMap:bump,bumpScale:2.2,metalness:.82,roughness:.36,envMapIntensity:.7,color:'#ffe2b0'});
- m.onBeforeCompile=sh=>{
-  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vSpW;').replace('#include <fog_vertex>','#include <fog_vertex>\nvSpW=(modelMatrix*vec4(transformed,1.)).xyz;');
-  sh.fragmentShader=sh.fragmentShader.replace('#include <common>',`#include <common>\n${FROST_NOISE}\nvarying vec3 vSpW;\nfloat spWorn;`)
-   .replace('#include <map_fragment>','#include <map_fragment>\nspWorn=smoothstep(.3,.8,fpNoise(vSpW.xz*.5+vSpW.y*.21)*.5+.5+fpNoise(vec2(vSpW.x+vSpW.z,vSpW.y)*1.7)*.2);\n// Soot and age streak the gold down the cone; the tarnish is bronze-dark, not grey.\ndiffuseColor.rgb*=mix(vec3(1.),vec3(.42,.3,.2),spWorn*.75);')
-   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=mix(.32,.6,spWorn);')
-   .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.09,.06,.03)*(1.-spWorn);');
- };
- m.customProgramCacheKey=()=>'dawn-citadel-spire-scales';
- return m;
-}
-
 export function dawnCitadel(height:Height):DawnCitadel {
  const h=height,root=new THREE.Group();root.name='dawn-twilight-citadel';
  const rand=stream(30117),M=new DawnMason(rand,3),glass=new Glass();
  // The far mason lays the same citadel as plain slabs, its joints and bands drawn in the shader, past ~110 m.
  const F=new DawnMason(stream(30118),4);F.course=1;M.far=F;
- const flames:Flame[]=[],halos:Halo[]=[],extra:THREE.BufferGeometry[]=[],roofs:THREE.BufferGeometry[]=[];
+ const flames:Flame[]=[],halos:Halo[]=[],extra:THREE.BufferGeometry[]=[];
  const banners:{x:number;y:number;z:number;yaw:number;s:number}[]=[];
  const G=CITADEL_GATE,W=CITADEL_WALL,K=CITADEL_KEEP,A=CITADEL_ARENA;
  const groundMin=(x0:number,z0:number,x1:number,z1:number)=>{let m=Infinity;for(let i=0;i<=8;i++){const k=i/8;m=Math.min(m,h(x0+(x1-x0)*k,z0+(z1-z0)*k));}return m;};
@@ -112,58 +81,61 @@ export function dawnCitadel(height:Height):DawnCitadel {
  const gild=(g:THREE.BufferGeometry,ground=0)=>extra.push(asStone(g,[1,1,1],true,ground));
  const basalt=(g:THREE.BufferGeometry,k=.5)=>extra.push(asStone(g,[.03*k*2,.028*k*2,.027*k*2],false,-99));
 
- /** Machicolated parapet along a face: corbels, the projecting walk, merlons with pale caps, a gilt string below. */
- const parapet=(w:Warp,u0:number,u1:number,v:number,o:{out?:number;merlon?:number;corbels?:boolean}={})=>{
-  const out=o.out??.55;
-  M.gilt=true;for(let u=u0;u<u1-.05;){const ww=Math.min(2.2,u1-u);M.block(w,u,v-1.02,-.08,ww,.14,.3,{bevel:.03});u+=ww;}M.gilt=false;
-  if(o.corbels!==false){M.stone='pale';for(let u=u0+.3;u<u1-.5;u+=1.2){M.block(w,u,v-.85,-out,.46,.42,out+.4,{bevel:.04});M.block(w,u+.04,v-.43,-out,.38,.43,out+.4,{bevel:.04});}M.stone=null;}
-  for(let u=u0-.1;u<u1+.1-.05;){const ww=Math.min(1.7+rand()*.7,u1+.1-u);M.block(w,u+.02,v,-out,ww-.04,.55,out+.5,{bevel:.05,far:true});u+=ww;}
-  const mw=o.merlon??1.15;
-  for(let u=u0+.2;u+mw<=u1-.1;u+=mw+.8){
-   M.stone='basalt';M.block(w,u,v+.55,-out+.05,mw,1.25,.7,{bevel:.06,closed:true,far:true});
-   M.stone='pale';M.block(w,u-.06,v+1.8,-out-.01,mw+.12,.22,.82,{bevel:.05,closed:true});M.stone=null;
-  }
+ /** A dressed monolith: a square block tapering from w0 to w1, flat-faced, its own tint. */
+ const mono=(x:number,z:number,y0:number,hgt:number,w0:number,w1:number,yaw:number,tint:V3,ground:number)=>{
+  const g=new THREE.CylinderGeometry(w1/Math.SQRT2,w0/Math.SQRT2,hgt,4,1).rotateY(Math.PI/4+yaw).translate(x,y0+hgt/2,z).toNonIndexed();g.computeVertexNormals();
+  extra.push(asStone(g,tint,false,ground));
  };
-
- /** A round machicolated crown at radius r: pale corbels, the parapet wall over them with a gilt string, merlons, the floor. */
- const crown=(x:number,z:number,r:number,top:number)=>{
-  const C=2*Math.PI,ring=ringWarp(x,z,r);
-  M.stone='pale';for(let u=.3;u<C*r-.4;u+=1.2){M.block(ring,u,top-1.9,-.66,.46,.44,1.1,{bevel:.04});M.block(ring,u+.04,top-1.46,-.66,.38,.42,1.1,{bevel:.04});}M.stone=null;
-  M.face(ringWarp(x,z,r+.66),0,C*(r+.66),top-1.04,top,{len:1.9,course:1.04,depth:.75,curve:.7,core:0});
-  M.gilt=true;for(let u=0;u<C*(r+.74)-.05;){const ww=Math.min(1.6,C*(r+.74)-u);M.block(ringWarp(x,z,r+.74),u,top-1.12,0,ww,.12,.12,{bevel:.02,seg:2});u+=ww;}M.gilt=false;
-  const mr=r+.66,mC=C*mr;
-  for(let u=.1,k=0;u<mC-1.1;u+=1.95,k++){M.stone='basalt';M.block(ringWarp(x,z,mr),u,top,0,1.1,1.25,.7,{bevel:.06,seg:2,closed:true,far:true});M.stone='pale';M.block(ringWarp(x,z,mr+.06),u-.06,top+1.25,0,1.22,.22,.82,{bevel:.05,seg:2,closed:true});M.stone=null;}
-  M.disc(x,top-.25,z,r-.05,28);
+ /** A face of a battered mass: foot a-b at v = v0, top c-d at v = v1, outward (nx, nz). */
+ const quad=(ax:number,az:number,bx:number,bz:number,cx:number,cz:number,dx:number,dz:number,nx:number,nz:number,v0:number,v1:number)=>{
+  const L=Math.hypot(bx-ax,bz-az),Hh=v1-v0;
+  const w:Warp=(u,v,t)=>{const k=clamp01((v-v0)/Hh),f=u/L,px=ax+(bx-ax)*f,pz=az+(bz-az)*f,qx=cx+(dx-cx)*f,qz=cz+(dz-cz)*f;return [px+(qx-px)*k-nx*t,v,pz+(qz-pz)*k-nz*t];};
+  return {w,L};
  };
- /** A battered round tower: flared plinth, banded courses, slits and lancets, machicolations, and its crown. */
- const tower=(t:CitadelTower,faces:number[])=>{
-  const {x,z,r,top}=t,g0=h(x,z),C=2*Math.PI;M.ground=groundMin(x-r,z,x+r,z);
-  const base=M.ground-1.5,plinth=M.ground+3.2;
-  // Batter: the plinth flares a metre out at the foot.
-  const batter:Warp=(u,v,tt)=>{const k=clamp01((plinth-v)/(plinth-base)),rr=r+.95*k-tt,a=u/(r+.95);return [x+Math.sin(a)*rr,v,z+Math.cos(a)*rr];};
-  M.face(batter,0,C*(r+.95),base,plinth,{len:2.2,course:.9,depth:.8,curve:.7});
-  M.stone='pale';M.face(ringWarp(x,z,r+.12),0,C*(r+.12),plinth,plinth+.5,{len:1.6,course:.5,depth:.5,curve:.6,core:0});M.stone=null;
-  M.face(ringWarp(x,z,r),0,C*r,plinth+.5,top-1.9,{len:2.1,course:1.05,depth:.6,curve:.75});
-  crown(x,z,r,top);
-  // Windows: a lancet high on each face asked for, slits below, all lit from within.
-  for(const a of faces){const u=a*r;windowAt(M,glass,ringWarp(x,z,r),u,top-8.5,top-6.6,.55,EMBER);windowAt(M,glass,ringWarp(x,z,r),u+(rand()<.5?.7:-.7),top-15,top-13.8,.22,EMBER);}
-  if(t.crown==='spire'){
-   // Gilded scale spire, a concave cone over a drum, the finial a small sun.
-   const H=r*2.9,R=r+.25,yb=top+.35;
-   M.face(ringWarp(x,z,r-.15),0,C*(r-.15),top,top+1.35,{len:1.6,course:.68,depth:.4,curve:.6,core:0});
-   const prof:[number,number][]=[[R+.28,0],[R+.1,.18],[R,.5],[R*.8,H*.22],[R*.56,H*.45],[R*.32,H*.68],[R*.14,H*.87],[R*.05,H*.97],[.04,H]];
-   roofs.push(lathe(prof,28,.9).translate(x,yb+1,z));
-   finial(x,yb+1+H,z,.9+r*.08);
-  }else{
-   // Open fire platform: a great gilt bowl on a pale drum, the fire seen from the town.
-   M.stone='pale';M.face(ringWarp(x,z,1.25),0,C*1.25,top,top+1.1,{len:1.3,course:.55,depth:.5,curve:.5,core:0});M.stone=null;M.disc(x,top+1.08,z,1.25,16);
-   gild(new THREE.LatheGeometry([[0,0],[.5,.02],[.95,.2],[1.55,.55],[1.85,.88],[1.9,.98],[1.75,1.0],[.5,.7],[0,.7]].map(([a,b])=>new THREE.Vector2(a,b)),24).translate(x,top+1.08,z),g0);
-   flames.push({x,y:top+2.2,z,size:3.4,cold:false},{x:x+.7,y:top+1.9,z:z+.4,size:2.2,cold:false},{x:x-.6,y:top+1.9,z:z-.5,size:2.4,cold:false});
-   halos.push({x,y:top+3.2,z,size:11,color:'#ff9a3c',power:.5});
-  }
-  banners.push({x:x+Math.sin(faces[0])*(r+.3),y:top-2.4,z:z+Math.cos(faces[0])*(r+.3),yaw:faces[0],s:1.6});
+ /** Courses round a rectangle (x xa..xb, z za..zz) grown by p: one step of a cornice. Sides: front +z, right +x, back -z, left -x. */
+ const ring=(xa:number,xb:number,za:number,zz:number,v0:number,v1:number,p:number,sides=[1,1,1,1])=>{
+  const o={len:1.8,course:v1-v0,depth:.6+p,core:0};
+  if(sides[0])wallFace(xb+p,zz+p,xa-p,zz+p,v0,v1,o);
+  if(sides[1])wallFace(xb+p,za-p,xb+p,zz+p,v0,v1,o);
+  if(sides[2])wallFace(xa-p,za-p,xb+p,za-p,v0,v1,o);
+  if(sides[3])wallFace(xa-p,zz+p,xa-p,za-p,v0,v1,o);
  };
-
+ /** The cavetto cornice: three courses flaring out (the top one limestone) and the flat roof over them. */
+ const cornice=(xa:number,xb:number,za:number,zz:number,v:number)=>{
+  ring(xa,xb,za,zz,v,v+.42,.18);ring(xa,xb,za,zz,v+.42,v+.84,.45);M.stone='pale';ring(xa,xb,za,zz,v+.84,v+1.4,.78);M.stone=null;
+  M.slab((u,vv,t)=>[xa-.78+u,vv,za-.78+t],0,v+1.1,0,xb-xa+1.56,.28,zz-za+1.56,M.paleTint(.95),1,4);
+ };
+ /** A limestone roll moulding from p to q (the corner tori and the band under each cornice). */
+ const roll=(px:number,py:number,pz:number,qx:number,qy:number,qz:number,r=.2)=>{
+  const d=new THREE.Vector3(qx-px,qy-py,qz-pz),len=d.length(),g=new THREE.CylinderGeometry(r,r,len,10,1);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize())).translate((px+qx)/2,(py+qy)/2,(pz+qz)/2);
+  extra.push(asStone(g,M.paleTint(1.05),false,py));
+ };
+ /**
+  * A battered block in the Egyptian manner: its top the rectangle xa..xb, za..zz at `top`, each side (front +z,
+  * right +x, back -z, left -x) leaning out by bat[i] to the foot at b and laid from from[i] up; the roof, the
+  * cavetto cornice, tori up the corners and round the top. Returns the four faces.
+  */
+ const battered=(xa:number,xb:number,za:number,zz:number,b:number,top:number,bat:readonly number[],from:readonly number[])=>{
+  const fx0=xa-bat[3],fx1=xb+bat[1],fz0=za-bat[2],fz1=zz+bat[0];
+  const faces=[quad(fx0,fz1,fx1,fz1,xa,zz,xb,zz,0,1,b,top),quad(fx1,fz1,fx1,fz0,xb,zz,xb,za,1,0,b,top),quad(fx1,fz0,fx0,fz0,xb,za,xa,za,0,-1,b,top),quad(fx0,fz0,fx0,fz1,xa,za,xa,zz,-1,0,b,top)];
+  faces.forEach(({w,L},i)=>{if(from[i]<top-.5)M.face(w,0,L,from[i],top,{len:2.9,course:1.2,depth:.75,quoins:1.5});});
+  M.slab((u,v,t)=>[xa+u,v,za+t],0,top-.5,0,xb-xa,.5,zz-za,M.tint(.85),1,4);
+  cornice(xa,xb,za,zz,top);
+  const k=1.2/(top-b),corner:[number,number,number,number,number,number][]=[[fx1,fz1,xb,zz,0,1],[fx1,fz0,xb,za,1,2],[fx0,fz0,xa,za,2,3],[fx0,fz1,xa,zz,3,0]];
+  for(const [px,pz,qx,qz,i,j] of corner)if(from[i]<=b+.01&&from[j]<=b+.01)roll(px+(qx-px)*k,b+1.2,pz+(qz-pz)*k,qx,top,qz);
+  roll(xa-.1,top-.12,zz+.06,xb+.1,top-.12,zz+.06);roll(xb+.06,top-.12,za-.1,xb+.06,top-.12,zz+.1);roll(xa-.1,top-.12,za-.06,xb+.1,top-.12,za-.06);roll(xa-.06,top-.12,za-.1,xa-.06,top-.12,zz+.1);
+  return faces;
+ };
+ /** A small deep window: an ember-lit pane in a proud limestone frame (jambs, lintel, sill). */
+ const slot=(w:Warp,u:number,v0:number,v1:number,wd:number)=>{
+  const P=(uu:number,vv:number)=>w(uu,vv,-.07),c=(vv:number):V3=>{const k=1.25-.5*clamp01((vv-v0)/(v1-v0));return [EMBER[0]*k,EMBER[1]*k,EMBER[2]*k];};
+  for(const [a,bq,cq] of [[[u-wd/2,v0],[u+wd/2,v0],[u+wd/2,v1]],[[u-wd/2,v0],[u+wd/2,v1],[u-wd/2,v1]]] as [number,number][][])for(const [uu,vv] of [a,bq,cq]){glass.pos.push(...P(uu,vv));glass.col.push(...c(vv));}
+  M.stone='pale';
+  for(const sx of [-1,1])M.block(w,sx<0?u-wd/2-.3:u+wd/2,v0-.05,-.16,.3,v1-v0+.1,.46,{bevel:.04,closed:true});
+  M.block(w,u-wd/2-.42,v1+.05,-.2,wd+.84,.34,.5,{bevel:.04,closed:true});M.block(w,u-wd/2-.36,v0-.32,-.2,wd+.72,.27,.5,{bevel:.04,closed:true});
+  M.stone=null;
+ };
  /** A sun on a stem: gilt ball, a ring of sixteen rays and a dark moon across its face (the stolen dawn). */
  function finial(x:number,y:number,z:number,s:number){
   gild(new THREE.CylinderGeometry(.05*s,.09*s,1.2*s,8).translate(x,y+.4*s,z));
@@ -177,11 +149,16 @@ export function dawnCitadel(height:Height):DawnCitadel {
   halos.push({x,y:cy,z,size:3.4*s,color:'#ffb35a',power:.35});
  }
 
+ /** Geometries built round the origin, then leaned by `tilt` (about x), turned by `yaw` and placed at (cx, cy, cz). */
+ const place=(geos:{g:THREE.BufferGeometry;gilt:boolean;k?:number}[],cx:number,cy:number,cz:number,tilt=0,yaw=0)=>{
+  const m=new THREE.Matrix4().makeTranslation(cx,cy,cz).multiply(new THREE.Matrix4().makeRotationY(yaw)).multiply(new THREE.Matrix4().makeRotationX(tilt));
+  for(const {g,gilt,k} of geos){g.applyMatrix4(m);if(gilt)gild(g,cy-10);else basalt(g,k);}
+ };
  /** The eclipsed sun as a relief on a south face at zf: gilt disc, sixteen rays (alternately flame-waved), rim and the basalt moon. */
- const emblem=(cx:number,cy:number,zf:number,R:number)=>{
-  const rot=(g:THREE.BufferGeometry)=>g.rotateX(Math.PI/2);
-  gild(rot(new THREE.CylinderGeometry(R,R,.18,48)).translate(cx,cy,zf+.09));
-  gild(new THREE.TorusGeometry(R*1.04,.08*R,8,56).translate(cx,cy,zf+.18));
+ const emblem=(cx:number,cy:number,zf:number,R:number,tilt=0,yaw=0)=>{
+  const rot=(g:THREE.BufferGeometry)=>g.rotateX(Math.PI/2),out:{g:THREE.BufferGeometry;gilt:boolean;k?:number}[]=[];
+  out.push({g:rot(new THREE.CylinderGeometry(R,R,.18,48)).translate(0,0,.09),gilt:true});
+  out.push({g:new THREE.TorusGeometry(R*1.04,.08*R,8,56).translate(0,0,.18),gilt:true});
   for(let k=0;k<16;k++){
    const a=k/16*Math.PI*2,len=(k%2?.42:.7)*R,wide=(k%2?.1:.14)*R,sh=new THREE.Shape();
    // A wavy flame ray or a straight one, as a flat gilt blade.
@@ -189,69 +166,104 @@ export function dawnCitadel(height:Height):DawnCitadel {
    else{sh.moveTo(-wide,0);sh.lineTo(0,len);sh.lineTo(wide,0);}
    sh.closePath();
    const g=new THREE.ExtrudeGeometry(sh,{depth:.12,bevelEnabled:true,bevelThickness:.03,bevelSize:.025,bevelSegments:1,curveSegments:6});
-   gild(g.translate(0,R*1.06,0).rotateZ(-a).translate(cx,cy,zf+.02));
+   out.push({g:g.translate(0,R*1.06,0).rotateZ(-a).translate(0,0,.02),gilt:true});
   }
-  basalt(rot(new THREE.CylinderGeometry(R*.9,R*.9,.24,48)).translate(cx+R*.26,cy+R*.16,zf+.3),.45);
+  out.push({g:rot(new THREE.CylinderGeometry(R*.9,R*.9,.24,48)).translate(R*.26,R*.16,.3),gilt:false,k:.45});
+  place(out,cx,cy,zf,tilt,yaw);
   // The corona where the moon lets the sun through.
-  halos.push({x:cx-R*.55,y:cy-R*.32,z:zf+.9,size:R*3.4,color:'#ffae4a',power:.42},{x:cx,y:cy,z:zf+.6,size:R*5,color:'#ff8a3a',power:.16});
+  const sz=Math.cos(yaw);
+  halos.push({x:cx-R*.55*sz,y:cy-R*.32,z:zf+.9*sz,size:R*3.4,color:'#ffae4a',power:.42},{x:cx,y:cy,z:zf+.6*sz,size:R*5,color:'#ff8a3a',power:.16});
+ };
+ /** The winged sun over a portal: the eclipsed disc between two great spread wings of layered gilt feathers. */
+ const wingedSun=(cx:number,cy:number,zf:number,R:number,yaw=0)=>{
+  const out:{g:THREE.BufferGeometry;gilt:boolean;k?:number}[]=[];
+  out.push({g:new THREE.CylinderGeometry(R,R,.2,40).rotateX(Math.PI/2).translate(0,0,.1),gilt:true});
+  out.push({g:new THREE.CylinderGeometry(R*.84,R*.84,.26,40).rotateX(Math.PI/2).translate(R*.22,R*.14,.22),gilt:false,k:.45});
+  for(const s of [-1,1])for(let layer=0;layer<3;layer++){
+   // Each layer a row of feathers, shorter toward the front, so the wing reads in three tiers.
+   const sh=new THREE.Shape(),span=R*(4.3-layer*.9),y0=R*(.42-layer*.28),n=7-layer*2,x=(v:number)=>s*v;
+   sh.moveTo(x(R*.95),y0);sh.quadraticCurveTo(x(span*.6),y0+R*.32,x(span),y0+R*.12);
+   for(let i=0;i<=n;i++){const t=1-i/n,fx=R*.95+(span-R*.95)*t,fy=y0-R*(.34+.22*(1-t));sh.lineTo(x(fx+R*.12),fy+R*.1);sh.lineTo(x(fx),fy);}
+   sh.lineTo(x(R*.95),y0-R*.36);sh.closePath();
+   const g=new THREE.ExtrudeGeometry(sh,{depth:.08,bevelEnabled:true,bevelThickness:.02,bevelSize:.02,bevelSegments:1,curveSegments:5});
+   out.push({g:g.translate(0,0,.04+layer*.07),gilt:true});
+  }
+  place(out,cx,cy,zf,0,yaw);
+  halos.push({x:cx,y:cy,z:zf+.7*Math.cos(yaw),size:R*4.2,color:'#ffae4a',power:.3});
  };
 
- // ---- Gatehouse.
+ // ---- The pylon gateway: two battered wings with cavetto cornices, a lower portal between them under a winged sun,
+ // flagstaffs with Solarkan's banners before the wings and the eclipse carved high on each.
  {
-  const g0=h(0,G.front),b=groundMin(-G.half,G.front,G.half,G.front)-1.2,spring=g0+G.spring,apex=g0+G.apex,top=G.top;
+  const g0=h(0,G.front),bat=G.batter,top=G.top,apex=g0+G.apex,ptop=g0+G.portal,x0=G.open+1.1,zf=G.front,zb=G.back;
+  const b=groundMin(-G.half-bat,zf+bat,G.half+bat,zf+bat)-1.2,H=top-b;
   M.ground=g0;
-  const R=(apex-spring)**2/(2*G.open)+G.open/2,xc=G.open-R,margin=1.0;
-  const archTop=(x:number)=>{const ax=Math.abs(x);return ax>G.open?-1:spring+Math.sqrt(Math.max(0,R*R-(ax-xc)**2));};
-  const opening=(x:number,v:number)=>Math.abs(x)<G.open+margin&&v<archTop(Math.min(Math.abs(x),G.open))+margin;
-  for(const zf of [G.front,G.back]){
-   const south=zf===G.front;
-   const {w}=openFace(south?G.half:-G.half,zf,south?-G.half:G.half,zf,b,top,G.half,G.open+margin,apex+margin,{quoins:1.3,skip:(u,v)=>opening(south?G.half-u:u-G.half,v)});
-   parapet(w,.2,2*G.half-.2,top,{merlon:1.05});
-   // Ablaq voussoirs round the pointed arch, basalt and limestone in turn, a gilt keystone.
-   const sgn=south?1:-1,zz=zf+sgn*.12;
-   for(const s of [-1,1]){
-    const a1=Math.acos(clamp01((R-G.open)/R)),n=7;
-    for(let i=0;i<n;i++){
-     const aa=a1*i/n,ab=a1*(i+1)/n;
-     const vw:Warp=(u,v,t)=>{const a=aa+(ab-aa)*clamp01(u/(R*(ab-aa))),rr=R+v;return [s*(xc+rr*Math.cos(a)),spring+rr*Math.sin(a),zz-sgn*t];};
-     M.stone=(i+(s>0?1:0))%2?'pale':'basalt';M.block(vw,.03,0,0,R*(ab-aa)-.06,margin,.9,{bevel:.07,seg:2});M.stone=null;
-    }
-    for(let v=b+1.2,k=0;v<spring-.05;k++){const hh=Math.min(.9+rand()*.3,spring-v);M.stone=k%2?'pale':'basalt';const x0=s>0?G.open:-G.open-margin;M.block(front(zz),-(x0+margin),v,0,margin,hh-.04,.9,{bevel:.06,closed:true});M.stone=null;v+=hh;}
+  M.ground=g0;
+  for(const s of [-1,1]){
+   const xi=s*x0,xo=s*G.half,lo=Math.min(xi,xo),hi=Math.max(xi,xo);
+   battered(lo,hi,zb,zf,b,top,s>0?[bat,bat,bat,0]:[bat,0,bat,bat],s>0?[b,b,b,ptop-.4]:[b,ptop-.4,b,b]);
+   // The eclipse carved high on the wing, leaning with the batter.
+   const ey=top-6.4,eo=bat*(1-(ey-b)/H);
+   emblem(s*(x0+G.half)/2,ey,zf+eo,1.9,-Math.atan(bat/H));
+   // Flagstaffs before the wing, gilt, each flying a long banner.
+   for(const px of [s*(x0+1.15),s*(G.half-.9)]){
+    const pz=zf+bat+.45,py=h(px,pz)-.3;
+    extra.push(asStone(new THREE.CylinderGeometry(.1,.15,top+4.2-py,8).translate(px,(py+top+4.2)/2,pz),[1,1,1],.7,py));
+    gild(new THREE.SphereGeometry(.24,10,8).translate(px,top+4.35,pz),py);
+    extra.push(asStone(new THREE.CylinderGeometry(.05,.05,1.9,6).rotateZ(Math.PI/2).translate(px,top+3.35,pz+.12),[1,1,1],.7,py));
+    banners.push({x:px,y:top+3.3,z:pz+.18,yaw:0,s:2.3});
    }
-   M.gilt=true;M.block(front(zz),-.55,apex-.3,south?0:-.9,1.1,1.25,.9,{bevel:.06,closed:true});M.gilt=false;
   }
-  // The passage: limestone reveals and a basalt vault, the portcullis raised into it, bronze and gilt.
-  for(const s of [-1,1])M.face(planeWarp(s*G.open,s>0?G.front:G.back,0,s>0?-1:1),0,G.front-G.back,b,apex,{len:1.6,course:.9,depth:.4});
-  M.slab(front(G.front),-G.half,top-.6,0,2*G.half,.6,G.front-G.back,M.tint(.8),1,4);
-  M.slab((u,v,t)=>[-G.open+u,v,G.back+t],0,apex-.1,0,2*G.open,.4,G.front-G.back,M.tint(.6),1,8);
-  for(let i=0;i<=8;i++){const x=-G.open+.2+(2*G.open-.4)*i/8;extra.push(asStone(new THREE.BoxGeometry(.11,2.6,.11).translate(x,apex-1.45,(G.front+G.back)/2+.6),[1,1,1],.7,g0));}
-  for(let j=0;j<3;j++)extra.push(asStone(new THREE.BoxGeometry(2*G.open-.2,.1,.13).translate(0,apex-2.5+j*.9,(G.front+G.back)/2+.6),[1,1,1],.7,g0));
-  for(let i=0;i<=8;i++){const x=-G.open+.2+(2*G.open-.4)*i/8;gild(new THREE.ConeGeometry(.09,.32,4).rotateX(Math.PI).translate(x,apex-2.92,(G.front+G.back)/2+.6),g0);}
-  // The eclipsed sun over the arch, banners either side.
-  emblem(0,apex+4.4,G.front,2.05);
-  for(const s of [-1,1])banners.push({x:s*5.6,y:top-1.6,z:G.front+.25,yaw:0,s:1.45});
+  // The portal: jambs and lintel between the wings, limestone above the opening, its own cornice and the winged sun.
+  for(const zz of [zf,zb]){
+   const south=zz===zf,ax=south?x0:-x0,bx=-ax;
+   openFace(ax,zz,bx,zz,b,apex,x0,G.open,apex,{len:1.6,course:.95,depth:.7,quoins:.9,skip:(u,v)=>Math.abs(u-x0)<G.open&&v<apex});
+   M.stone='pale';wallFace(ax,zz,bx,zz,apex,ptop,{len:2.2,course:(ptop-apex)/3,depth:.7});M.stone=null;
+   wingedSun(0,(apex+ptop)/2+.1,zz+(south?.08:-.08),.95,south?0:Math.PI);
+  }
+  M.slab((u,v,t)=>[-x0+u,v,zb+t],0,ptop-.5,0,2*x0,.5,zf-zb,M.tint(.85),1,4);
+  cornice(-x0,x0,zb,zf,ptop);
+  // The passage: limestone reveals, a stone ceiling, the bronze portcullis raised into it.
+  for(const s of [-1,1]){M.stone='pale';M.face(planeWarp(s*G.open,s>0?zf:zb,0,s>0?-1:1),0,zf-zb,b,apex,{len:1.6,course:.9,depth:.4});M.stone=null;}
+  M.slab((u,v,t)=>[-G.open+u,v,zb+t],0,apex-.1,0,2*G.open,.4,zf-zb,M.tint(.6),1,8);
+  for(let i=0;i<=8;i++){const x=-G.open+.2+(2*G.open-.4)*i/8;extra.push(asStone(new THREE.BoxGeometry(.11,2.6,.11).translate(x,apex-1.45,(zf+zb)/2+.6),[1,1,1],.7,g0));}
+  for(let j=0;j<3;j++)extra.push(asStone(new THREE.BoxGeometry(2*G.open-.2,.1,.13).translate(0,apex-2.5+j*.9,(zf+zb)/2+.6),[1,1,1],.7,g0));
+  for(let i=0;i<=8;i++){const x=-G.open+.2+(2*G.open-.4)*i/8;gild(new THREE.ConeGeometry(.09,.32,4).rotateX(Math.PI).translate(x,apex-2.92,(zf+zb)/2+.6),g0);}
  }
- // ---- Towers: gate pair, corners, the mid towers of the side walls.
+ // ---- Towers: square and battered, the corners crowned with fire, the mid towers with a sun on a stem.
  CITADEL_TOWERS.forEach(t=>{
-  const faces=t.z>-60?(t.x<0?[0,-.9]:[0,.9]):t.z<-90?(t.x<0?[-2.2,Math.PI]:[2.2,Math.PI]):[t.x<0?-Math.PI/2:Math.PI/2];
-  tower(t,faces);
+  const {x,z,r:a,top}=t,bat=.9,b=groundMin(x-a-bat,z,x+a+bat,z)-1.4;M.ground=b+1.4;
+  const faces=battered(x-a,x+a,z-a,z+a,b,top,[bat,bat,bat,bat],[b,b,b,b]);
+  const out=[x>0?1:3,...(z>-60?[0]:z<-90?[2]:[])];
+  for(const i of out){const {w,L}=faces[i];slot(w,L/2,top-6.4,top-4.6,.5);slot(w,L/2,top-13,top-11.6,.34);
+   const nx=i===1?1:i===3?-1:0,nz=i===0?1:i===2?-1:0;banners.push({x:x+nx*(a+.3),y:top-.5,z:z+nz*(a+.3),yaw:Math.atan2(nx,nz),s:1.7});}
+  const y=top+1.4;
+  if(t.crown==='fire'){
+   // A great gilt fire bowl on a limestone drum, the fire seen from the town.
+   mono(x,z,y,.9,2.6,2.3,0,M.paleTint(),y);
+   gild(new THREE.LatheGeometry([[0,0],[.5,.02],[.95,.2],[1.55,.55],[1.85,.88],[1.9,.98],[1.75,1.0],[.5,.7],[0,.7]].map(([p,q])=>new THREE.Vector2(p,q)),24).translate(x,y+.9,z),y);
+   flames.push({x,y:y+2,z,size:3.4,cold:false},{x:x+.7,y:y+1.7,z:z+.4,size:2.2,cold:false},{x:x-.6,y:y+1.7,z:z-.5,size:2.4,cold:false});
+   halos.push({x,y:y+3,z,size:11,color:'#ff9a3c',power:.5});
+  }else{mono(x,z,y,1.1,2.2,1.8,0,M.paleTint(),y);finial(x,y+1.1,z,1.25);}
  });
- // ---- Curtain walls: banded outer and inner faces, the walk between, the machicolated parapet outside.
+ // ---- Curtain walls: a battered banded outer face, the inner face, the walk between, the cavetto cornice outside.
  {
   const run=(ax:number,az:number,bx:number,bz:number)=>{
    const L=Math.hypot(bx-ax,bz-az),ux=(bx-ax)/L,uz=(bz-az)/L,nx=uz,nz=-ux;
    const b=groundMin(ax,az,bx,bz)-1.2;M.ground=b+1.2;
-   const {w}=wallFace(ax,az,bx,bz,b,W.top);
+   // The outer face leans out to its foot (a metre of batter), the walk and parapet stand plumb above.
+   const w=planeWarp(ax,az,ux,uz),wb:Warp=(u,v,t)=>w(u,v,t-.95*clamp01((W.top-2.2-v)/(W.top-2.2-b)));
+   M.face(wb,0,L,b,W.top,{len:2.1,course:1.05,depth:.6});
    // The inner face, the court side, three metres in.
    const ix=ax-nx*W.thick,iz=az-nz*W.thick,jx=bx-nx*W.thick,jz=bz-nz*W.thick;
    const bi=groundMin(ix,iz,jx,jz)-1.2;M.ground=bi+1.2;
-   wallFace(jx,jz,ix,iz,bi,W.top-.05,{len:2.4,course:1.12});
-   M.slab(w,0,W.top-.6,.55,L,.6,W.thick-1.05,M.tint(.8),1,4);
-   parapet(w,.4,L-.4,W.top);
-   // A low pale parapet on the court side of the walk.
-   M.stone='pale';M.face(planeWarp(jx,jz,-ux,-uz),.3,L-.3,W.top,W.top+.9,{len:1.8,course:.9,depth:.45,core:0});M.stone=null;
-   // Arrow slits, lit.
-   for(let u=3.2;u<L-3;u+=6.4)windowAt(M,glass,w,u,W.top-5.4,W.top-4.3,.2,EMBER);
+   wallFace(jx,jz,ix,iz,bi,W.top+1.4,{len:2.4,course:1.12});
+   // The cavetto cornice along the outer face, a torus under it, and the flat walk over the whole thickness.
+   for(const [p,v0,v1] of [[.18,W.top,W.top+.42],[.45,W.top+.42,W.top+.84],[.78,W.top+.84,W.top+1.4]] as const){if(p>.7)M.stone='pale';M.face((u,v,t)=>w(u,v,t-p),0,L,v0,v1,{len:1.8,course:v1-v0,depth:.6+p,core:0});M.stone=null;}
+   M.slab(w,0,W.top+1.1,-.78,L,.3,W.thick+.78,M.paleTint(.95),1,4);
+   {const [px,,pz]=w(0,0,-.06),[qx,,qz]=w(L,0,-.06);roll(px,W.top-.12,pz,qx,W.top-.12,qz);}
+   // Small deep windows, lit.
+   for(let u=3.2;u<L-3;u+=6.4)slot(wb,u,W.top-5.6,W.top-4.4,.32);
   };
   for(const s of [-1,1]){
    // South: the low terrace wall from the gate tower to the corner tower, stepped down the slope in level runs,
@@ -282,60 +294,65 @@ export function dawnCitadel(height:Height):DawnCitadel {
   // Back: corner to keep, keep to corner (outer face north).
   run(-34+3.6,W.back,-K.hx-.2,W.back);run(K.hx+.2,W.back,34-3.6,W.back);
  }
- // ---- The keep.
+ // ---- Porticoes along the inside of the side walls: sandstone columns with gilt-necked papyrus capitals carrying
+ // a limestone architrave that roofs the walk back to the wall, a shaded colonnade either side of the court.
  {
-  const x0=K.x-K.hx,x1=K.x+K.hx,zs=K.z+K.hz,zn=K.z-K.hz;
-  const faces:[number,number,number,number][]=[[x1,zs,x0,zs],[x0,zn,x1,zn],[x1,zn,x1,zs],[x0,zs,x0,zn]];
-  const g0=h(K.x,zs),door={half:2.1,spring:g0+4.4,apex:g0+6.4};
-  const doorR=(door.apex-door.spring)**2/(2*door.half)+door.half/2,dxc=door.half-doorR;
-  const doorTop=(x:number)=>{const ax=Math.abs(x);return ax>door.half?-1:door.spring+Math.sqrt(Math.max(0,doorR*doorR-(ax-dxc)**2));};
-  faces.forEach(([ax,az,bx,bz],i)=>{
-   const b=groundMin(ax,az,bx,bz)-1.4;M.ground=b+1.4;
-   const skip=i===0?(u:number,v:number)=>{const x=K.hx-u;return Math.abs(x)<door.half+.9&&v<doorTop(Math.min(Math.abs(x),door.half))+.9;}:undefined;
-   const {w,L}=skip?openFace(ax,az,bx,bz,b,K.top,K.hx,door.half+.9,door.apex+.9,{quoins:1.4,skip}):wallFace(ax,az,bx,bz,b,K.top,{quoins:1.4});
-   parapet(w,1.6,L-1.6,K.top);
-  });
-  M.slab((u,v,t)=>[x0+u,v,zn+t],0,K.top-.6,0,2*K.hx,.4,2*K.hz,M.tint(.9),1,4);
-  // The door: ablaq voussoirs, a bronze-gilt door in its dark recess, two steps up to it.
-  const zz=zs+.12;
+  const C=CITADEL_COLONNADE,cols=colonnadeColumns();
   for(const s of [-1,1]){
-   const a1=Math.acos(clamp01((doorR-door.half)/doorR)),n=5;
-   for(let i=0;i<n;i++){const aa=a1*i/n,ab=a1*(i+1)/n;const vw:Warp=(u,v,t)=>{const a=aa+(ab-aa)*clamp01(u/(doorR*(ab-aa))),rr=doorR+v;return [s*(dxc+rr*Math.cos(a)),door.spring+rr*Math.sin(a),zz-t];};M.stone=(i+(s>0?1:0))%2?'pale':'basalt';M.block(vw,.03,0,0,doorR*(ab-aa)-.06,.9,.8,{bevel:.06,seg:2});M.stone=null;}
-   for(let v=g0-.4,k=0;v<door.spring-.05;k++){const hh=Math.min(.85,door.spring-v);M.stone=k%2?'pale':'basalt';M.block(front(zz),-(s>0?door.half+.9:-door.half),v,0,.9,hh-.04,.8,{bevel:.05,closed:true});M.stone=null;v+=hh;}
+   const run=cols.filter(c=>Math.sign(c.x)===s),top=Math.max(...run.map(c=>h(c.x,c.z)))+C.h;
+   for(const c of run){
+    const y=h(c.x,c.z)-.3,ht=top-y;M.ground=y+.3;
+    const prof=[[0,0],[.78,0],[.78,.22],[.66,.3],[.6,.4],[.56,.62],[.55,ht*.5],[.48,ht-1.25],[.5,ht-1.18],[.5,ht-1.06],[.47,ht-1.0],[.66,ht-.62],[.8,ht-.36],[.84,ht-.28],[.55,ht-.24],[0,ht-.24]].map(([a,b])=>new THREE.Vector2(a,b));
+    extra.push(asStone(new THREE.LatheGeometry(prof,16).translate(c.x,y,c.z),M.tint(1.05),false,y+.3));
+    gild(new THREE.TorusGeometry(.5,.06,6,20).rotateX(Math.PI/2).translate(c.x,y+ht-1.12,c.z),y);
+    mono(c.x,c.z,top-.26,.3,1.2,1.2,0,M.paleTint(),y+.3);
+   }
+   // The architrave over the columns, deep enough to roof the walk to the wall, and a cornice along its face.
+   const xf=s*(C.x-.62),depth=W.side-W.thick-C.x+.62+.2,za=C.z0+1.4,zb=C.z1-1.4,M0=planeWarp(xf,s>0?za:zb,0,s>0?-1:1);
+   M.ground=top-C.h;M.stone='pale';
+   M.face(M0,0,za-zb,top+.04,top+.86,{len:C.step,course:.82,depth,core:0});
+   M.gilt=true;M.block(M0,.1,top+.86,-.05,za-zb-.2,.12,.2,{bevel:.02,seg:6});M.gilt=false;
+   M.face(planeWarp(xf-s*.3,s>0?za+.3:zb-.3,0,s>0?-1:1),0,za-zb+.6,top+.98,top+1.38,{len:2.2,course:.4,depth:depth+.3,core:0});
+   M.stone=null;
   }
-  M.slab(front(zs-1.4),-door.half,g0-.5,0,2*door.half,door.apex-g0+.5,.2,M.tint(.35),1,1);
+ }
+ // ---- The keep: Solarkan's sanctuary, battered on three sides, its plumb front toward the arena with a lintelled
+ // portal under a winged sun, the eclipse carved above, and on its roof the great eclipsed sun the harbour sees.
+ {
+  const x0=K.x-K.hx,x1=K.x+K.hx,zs=K.z+K.hz,zn=K.z-K.hz,bat=.8;
+  const g0=h(K.x,zs),b=groundMin(x0-bat,zn-bat,x1+bat,zs)-1.4,door={half:2.1,top:g0+6.6};
+  M.ground=b+1.4;
+  battered(x0,x1,zn,zs,b,K.top,[0,bat,bat,bat],[K.top,b,b,b]);
+  M.ground=g0;
+  const {w:fw}=openFace(x1,zs,x0,zs,b,K.top,K.hx,door.half+.5,door.top+.6,{quoins:1.4,skip:(u,v)=>Math.abs(K.hx-u)<door.half+.5&&v<door.top+.6});
+  // The portal: limestone jambs and lintel proud of the face, a small cornice, the winged sun over it.
+  const zz=zs+.1;M.stone='pale';
+  for(const s of [-1,1])for(let v=g0-.4,k=0;v<door.top-.05;k++){const hh=Math.min(.95,door.top-v);M.block(front(zz),-(s>0?door.half+.9:-door.half),v,-.1,.9,hh-.04,.8,{bevel:.05,closed:true});v+=hh;}
+  M.block(front(zz),-(door.half+1.1),door.top,-.12,2*door.half+2.2,1.0,.9,{bevel:.06,closed:true,far:true});
+  M.block(front(zz),-(door.half+1.3),door.top+1.0,-.3,2*door.half+2.6,.3,1.1,{bevel:.04,closed:true});
+  M.block(front(zz),-(door.half+1.45),door.top+1.3,-.45,2*door.half+2.9,.32,1.25,{bevel:.04,closed:true});
+  M.stone=null;
+  wingedSun(0,door.top+.5,zz+.12,.42);
+  M.slab(front(zs-1.4),-door.half,g0-.5,0,2*door.half,door.top-g0+.5,.2,M.tint(.35),1,1);
+  for(const s of [-1,1])M.slab(planeWarp(s*door.half,s>0?zs:zs-1.4,0,s>0?-1:1),0,g0-.5,0,1.4,door.top-g0+.5,.3,M.tint(.55),1,1);
+  M.slab(front(zs),-door.half,door.top-.05,0,2*door.half,.3,1.4,M.tint(.5),1,8);
   for(const s of [-1,1]){
-   const lh=door.spring-g0+.6,lx=s*(door.half/2),lz=zs-1.25;
+   const lh=door.top-g0+.1,lx=s*(door.half/2),lz=zs-1.25;
    extra.push(asStone(new THREE.BoxGeometry(door.half-.06,lh,.14).translate(lx,g0+lh/2-.1,lz),[1,1,1],.7,g0));
    // Gilt bands across the leaf and a grid of studs.
    for(const f of [.18,.5,.82])gild(new THREE.BoxGeometry(door.half-.16,.12,.05).translate(lx,g0-.1+lh*f,lz+.09),g0);
    for(let i=0;i<3;i++)for(let j=0;j<5;j++)gild(new THREE.SphereGeometry(.055,6,4).translate(lx+(i-1)*door.half*.28,g0-.1+lh*(.3+j*.1)+(j>1?lh*.06:0),lz+.1),g0);
   }
   M.stone='pale';for(let k=0;k<2;k++)box(-door.half-1.4+k*.5,door.half+1.4-k*.5,g0-.6,g0+.18+k*.2,zs+1.6-k*.7,1.6,.05);M.stone=null;
-  // Lancets either side, the great eclipse above the door, turrets at the corners, the great spire on top.
-  const fw=planeWarp(x1,zs,-1,0);
-  for(const s of [-1,1]){windowAt(M,glass,fw,K.hx+s*5.9,g0+8.4,g0+11.4,.7,EMBER);windowAt(M,glass,fw,K.hx+s*5.9,K.top-6.2,K.top-4.4,.5,EMBER);}
+  // Windows either side, the eclipse carved above the portal.
+  for(const s of [-1,1]){slot(fw,K.hx+s*6,g0+9,g0+11.6,.55);slot(fw,K.hx+s*6,K.top-6.4,K.top-4.6,.42);}
   emblem(0,K.top-11,zs,2.9);
-  for(const s of [-1,1])M.slab(planeWarp(s*door.half,s>0?zs:zs-1.4,0,s>0?-1:1),0,g0-.5,0,1.4,door.apex-g0+.5,.3,M.tint(.55),1,1);
-  M.slab(front(zs),-door.half,door.apex-.05,0,2*door.half,.3,1.4,M.tint(.5),1,8);
-  for(const [tx,tz] of [[x0,zs],[x1,zs],[x0,zn],[x1,zn]]){
-   const b=h(tx,tz)-1.5;M.ground=b+1.5;const top=K.top+4.6,ring=ringWarp(tx,tz,K.turret),C=2*Math.PI*K.turret;
-   M.face(ring,0,C,b,top,{len:1.7,course:1.05,depth:.55,curve:.7});
-   M.stone='pale';for(let u=0;u<C-.3;u+=.95)M.block(ring,u,top-.7,-.5,.36,.7,.9,{bevel:.04});M.stone=null;
-   M.face(ringWarp(tx,tz,K.turret+.45),0,2*Math.PI*(K.turret+.45),top,top+1.0,{len:1.6,course:1.0,depth:.6,curve:.7,core:0});
-   M.disc(tx,top+.98,tz,K.turret+.45,16);
-   const Hs=6.5,R=K.turret+.55;roofs.push(lathe([[R+.2,0],[R,.3],[R*.66,Hs*.3],[R*.34,Hs*.62],[R*.12,Hs*.9],[.04,Hs]],20,.9).translate(tx,top+1,tz));
-   finial(tx,top+1+Hs,tz,.8);
-  }
-  // The great spire: an octagonal drum with lancets, then the gilded cone, the eclipsed sun at its tip.
-  const dr=5.4,dTop=K.top+5;M.ground=K.top;
-  M.face(ringWarp(K.x,K.z,dr),0,2*Math.PI*dr,K.top-.6,dTop-1.9,{len:1.9,course:1.0,depth:.55,curve:.8});
-  for(let k=0;k<8;k++)windowAt(M,glass,ringWarp(K.x,K.z,dr),(k+.5)/8*2*Math.PI*dr,K.top+.9,K.top+2.6,.42,EMBER);
-  crown(K.x,K.z,dr,dTop);
-  const Hs=K.spire,R=dr+.1;
-  roofs.push(lathe([[R+.35,0],[R+.1,.25],[R,.7],[R*.78,Hs*.16],[R*.55,Hs*.36],[R*.34,Hs*.58],[R*.17,Hs*.8],[R*.06,Hs*.95],[.05,Hs]],40,.9).translate(K.x,dTop+.2,K.z));
-  finial(K.x,dTop+.2+Hs,K.z,2.6);
-  halos.push({x:K.x,y:dTop+Hs+5,z:K.z,size:22,color:'#ffb060',power:.22});
+  // The great sun on the roof: a stepped limestone base, a cradle, the eclipsed disc carved on both faces.
+  const y=K.top+1.4,R=4.4;M.ground=y;
+  mono(K.x,K.z,y,1.1,9,8.4,0,M.paleTint(),y);mono(K.x,K.z,y+1.1,.9,6.4,6,0,M.paleTint(1.05),y);mono(K.x,K.z,y+2,1.2,2.6,1.9,0,M.tint(),y);
+  const cy=y+3.2+R*.98;
+  emblem(K.x,cy,K.z+.2,R);emblem(K.x,cy,K.z-.2,R,0,Math.PI);
+  halos.push({x:K.x,y:cy,z:K.z,size:30,color:'#ffb060',power:.2});
  }
  // ---- The arena: the carved curb round the dial, the sun pillars with their fire bowls.
  {
@@ -349,17 +366,12 @@ export function dawnCitadel(height:Height):DawnCitadel {
   }
   M.stone=null;
   const bowl=[[0,0],[.3,.02],[.6,.14],[.95,.42],[1.12,.66],[1.15,.74],[1.02,.76],[.3,.5],[0,.5]].map(([a,b])=>new THREE.Vector2(a,b));
-  /** A dressed monolith: a square block tapering from w0 to w1, flat-faced, its own tint. */
-  const mono=(x:number,z:number,y0:number,hgt:number,w0:number,w1:number,yaw:number,tint:V3,ground:number)=>{
-   const g=new THREE.CylinderGeometry(w1/Math.SQRT2,w0/Math.SQRT2,hgt,4,1).rotateY(Math.PI/4+yaw).translate(x,y0+hgt/2,z).toNonIndexed();g.computeVertexNormals();
-   extra.push(asStone(g,tint,false,ground));
-  };
   const plinth=(x:number,z:number,y:number,w:number,yaw:number)=>{mono(x,z,y-.6,1.02,w+.7,w+.62,yaw,M.paleTint(),y);mono(x,z,y+.42,.5,w+.26,w+.2,yaw,M.paleTint(1.05),y);};
   for(const o of citadelObelisks()){
    const y=h(o.x,o.z);M.ground=y;const yaw=-o.a;
    plinth(o.x,o.z,y,1.5,yaw);
    // Three basalt drums, polished, a fine joint between each.
-   for(let k=0;k<3;k++)mono(o.x,o.z,y+.92+k*2.14,2.11,1.5-k*.1,1.4-k*.1,yaw,M.tint(1.1),y);
+   for(let k=0;k<3;k++)mono(o.x,o.z,y+.92+k*2.14,2.11,1.5-k*.1,1.4-k*.1,yaw,M.basaltTint(1.1),y);
    // Capital: a pale collar and a gilt band, then the fire bowl.
    mono(o.x,o.z,y+7.34,.56,1.5,1.8,yaw,M.paleTint(),y);
    gild(new THREE.CylinderGeometry(1.86/Math.SQRT2,1.86/Math.SQRT2,.22,4,1).rotateY(Math.PI/4+yaw).translate(o.x,y+8.01,o.z).toNonIndexed(),y);
@@ -371,7 +383,7 @@ export function dawnCitadel(height:Height):DawnCitadel {
   for(const s of [-1,1])for(const z of CITADEL_APPROACH.z){
    const x=s*CITADEL_APPROACH.x,y=h(x,z);M.ground=y;
    plinth(x,z,y,1.15,0);
-   mono(x,z,y+.92,7.24,1.15,.72,0,M.tint(1.15),y);
+   mono(x,z,y+.92,7.24,1.15,.72,0,M.basaltTint(1.2),y);
    gild(new THREE.ConeGeometry(.36*Math.SQRT2,1.1,4).rotateY(Math.PI/4).translate(x,y+8.7,z),y);
    const fx=x-s*(1.15+(.72-1.15)*.35)/2-s*.05;
    gild(new THREE.CylinderGeometry(.32,.32,.06,20).rotateZ(Math.PI/2).translate(fx,y+6.3,z),y);
@@ -386,7 +398,7 @@ export function dawnCitadel(height:Height):DawnCitadel {
   }
  }
 
- // ---- Meshes: one stone (near and far by LOD), one gilded scale, one window glass, the fire; the dial and the court.
+ // ---- Meshes: one stone (near and far by LOD), one window glass, the fire; the dial and the court.
  const stoneMat=dawnMasonryMaterial('dawn-citadel-stone');
  const nearGeo=mergeGeometries([M.geometry(),...extra],false)!;nearGeo.computeBoundingSphere();
  const farGeo=mergeGeometries([F.geometry(),...extra],false)!;farGeo.computeBoundingSphere();
@@ -394,12 +406,11 @@ export function dawnCitadel(height:Height):DawnCitadel {
  const near=new THREE.Mesh(nearGeo,stoneMat);near.name='dawn-citadel-stone';near.castShadow=near.receiveShadow=true;near.position.copy(lodAt).negate();
  const far=new THREE.Mesh(farGeo,stoneMat);far.name='dawn-citadel-stone-far';far.castShadow=far.receiveShadow=true;far.position.copy(lodAt).negate();
  lod.addLevel(near,0);lod.addLevel(far,112);
- const spires=new THREE.Mesh(mergeGeometries(roofs,false)!,scaleMaterial());spires.name='dawn-citadel-spires';spires.castShadow=spires.receiveShadow=true;
  const glassMesh=glass.mesh('dawn-citadel-ember-glass');
  const fire=frostFire('dawn-citadel-fire',flames,halos,9137,6);
  const arena=dawnArena(h);
- root.add(lod,spires,glassMesh,arena.court,fire.group);
- root.userData.citadel={blocks:M.blocks,nearTriangles:nearGeo.index!.count/3,farTriangles:farGeo.index!.count/3,gilt:extra.length,spires:roofs.length,flames:flames.length,obelisks:citadelObelisks().length,windows:glass.pos.length/3};
+ root.add(lod,glassMesh,arena.court,fire.group);
+ root.userData.citadel={blocks:M.blocks,nearTriangles:nearGeo.index!.count/3,farTriangles:farGeo.index!.count/3,gilt:extra.length,towers:CITADEL_TOWERS.length,columns:colonnadeColumns().length,flames:flames.length,obelisks:citadelObelisks().length,windows:glass.pos.length/3};
  return {root,floor:arena.floor,update(time,quality){fire.update(time);arena.update(time,quality);
   // Low quality swaps to the far slabs (joints drawn, a seventh of the triangles) at half the distance.
   lod.levels[1].distance=quality==='low'?56:112;},async dress(){

@@ -1,4 +1,4 @@
-// Solarkan's citadel (src/game/dawnCitadel.ts): built, batched, no primitives left in its footprint, its gate,
+// Solarkan's desert sun temple (src/game/dawnCitadel.ts): built, batched, no primitives left in its footprint, its gate,
 // court and arena open, its walls solid, quest points clear, zero browser and shader errors at high and low quality.
 // Usage: CC_QA_BASE=http://127.0.0.1:5612 node tools/qa-dawn-citadel.mjs
 import assert from 'node:assert/strict';
@@ -42,7 +42,9 @@ try{
   const points={'dawn-seal-a':[-18,-20],'dawn-seal-b':[18,-35],'dawn-seal-c':[-16,-44],'dawn-lamp-c':[-7,-22],'dawn-ore-c':[22,-25],lighthouse:[0,-40],beacon:[0,-44]};
   const moved=Object.entries(points).filter(([,[x,z]])=>!open(x,z,1)).map(([k])=>k);
   const draws=[];c.traverse(o=>{if(o.isMesh||o.isPoints)draws.push(o.name);});
-  return {stats:s,draws,platform:{name:platform?.name,top:platform.position.y+platform.geometry.parameters.height/2,radius:platform.geometry.parameters.radiusTop,material:platform.material.name},prims,moved,
+  // The style sheet forbids cone roofs and spires: no such mesh in the citadel.
+  const spires=draws.filter(n=>/spire|roof|cone/i.test(n));
+  return {stats:s,draws,spires,platform:{name:platform?.name,top:platform.position.y+platform.geometry.parameters.height/2,radius:platform.geometry.parameters.radiusTop,material:platform.material.name},prims,moved,
    gateOpen:ray(0,-28,0,-52),passage:[open(0,-41),open(0,-43),open(0,-45),open(2.4,-43)],arenaOpen:open(0,-72,3)&&open(0,-52.5)&&open(18,-72)&&open(-18,-72),
    eastWall:ray(10,-75,50,-75)!==null,backWall:ray(0,-90,0,-125)!==null,southWall:ray(20,-40,20,-52)!==null,lod:!!c.getObjectByName('dawn-citadel-lod'),court:!!c.getObjectByName('dawn-temple-court')};
  });
@@ -50,8 +52,8 @@ try{
  assert.equal(facts.platform.name,'dawn-boss-platform');assert.ok(Math.abs(facts.platform.top-19.05)<1e-8);assert.equal(facts.platform.radius,21);assert.equal(facts.platform.material,'dawn-sundial-floor');
  assert.deepEqual(facts.prims,[],'primitive meshes left in the citadel footprint');
  assert.ok(facts.stats.blocks>3000,`masonry blocks ${facts.stats.blocks}`);assert.ok(facts.stats.nearTriangles>facts.stats.farTriangles,'far LOD is lighter');
- assert.equal(facts.stats.obelisks,8);assert.equal(facts.stats.spires,9);assert.ok(facts.stats.flames>=20,`flames ${facts.stats.flames}`);assert.ok(facts.stats.windows>0);assert.ok(facts.stats.banners>=10);
- assert.ok(facts.lod&&facts.court);assert.ok(facts.draws.length<=10,`citadel draws ${facts.draws.length}: ${facts.draws.join(', ')}`);
+ assert.equal(facts.stats.obelisks,8);assert.equal(facts.stats.towers,6);assert.equal(facts.stats.columns,26);assert.ok(facts.stats.flames>=20,`flames ${facts.stats.flames}`);assert.ok(facts.stats.windows>0);assert.ok(facts.stats.banners>=10);
+ assert.ok(facts.lod&&facts.court);assert.deepEqual(facts.spires,[]);assert.ok(facts.draws.length<=10,`citadel draws ${facts.draws.length}: ${facts.draws.join(', ')}`);
  assert.deepEqual(facts.moved,[],'quest points inside new solids');
  assert.equal(facts.gateOpen,null,'avenue through the gate is open');assert.deepEqual(facts.passage,[true,true,true,true]);assert.ok(facts.arenaOpen);
  assert.ok(facts.eastWall&&facts.backWall&&facts.southWall,'walls are solid');

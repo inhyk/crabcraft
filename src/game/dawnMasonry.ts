@@ -3,13 +3,13 @@ import {Masonry,type BlockOpts,type V3,type Warp} from './frostMasonry';
 import {FROST_NOISE} from './frostPaving';
 
 /*
- * Solarkan's citadel stone: the sun temple was raised in courses of black vesicular basalt banded with honey
- * limestone (ablaq), its string courses, merlon caps and emblems gilded. The mason (frostMasonry.ts Masonry, every
- * block its own chamfered prism over a mortar core) lays the same walls; this one picks a basalt or a limestone tint
- * by the height of each block, so the bands run round the whole citadel at the same level, and marks gilded pieces
- * through the mason's per-vertex `snow` channel (here: gilt). dawnMasonryMaterial() weathers it for a hot coast:
- * sun-bleached tops, sand blown into the foot of every wall, soot run down from the fire platforms and the
- * braziers, orange lichen on the pale stone, and gold leaf worn back to bronze on the edges.
+ * Solarkan's citadel stone: the desert sun temple was raised in courses of warm sandstone banded with cream
+ * limestone, black basalt kept for accents (obelisks, pillar drums, voussoirs), its string courses and emblems
+ * gilded. The mason (frostMasonry.ts Masonry, every block its own chamfered prism over a mortar core) lays the same
+ * walls; this one picks a sandstone or a limestone tint by the height of each block, so the bands run round the whole
+ * citadel at the same level, and marks gilded pieces through the mason's per-vertex `snow` channel (here: gilt).
+ * dawnMasonryMaterial() weathers it for the desert: sun-bleached tops, sand blown into the foot of every wall and
+ * lodged on the ledges, dark desert varnish run down the faces, and gold leaf worn back to bronze on the edges.
  */
 
 /** Height bands of limestone in the basalt: pale where (y - y0) mod period < pale. The shader uses the same rule. */
@@ -19,8 +19,8 @@ export const isPale = (y: number) => { const k = (((y - DAWN_BANDS.y0) % DAWN_BA
 export class DawnMason extends Masonry {
   /** Lay the limestone bands (walls, towers); off for plain basalt pieces. */
   bands = true;
-  /** Force every block laid next to limestone (quoins, dressings) or basalt; null follows the bands. */
-  stone: 'pale' | 'basalt' | null = null;
+  /** Force every block laid next to limestone (quoins, dressings), sandstone or basalt (accents); null follows the bands. */
+  stone: 'pale' | 'sand' | 'basalt' | null = null;
   private p: () => number;
   constructor(rand: () => number, salt = 0) {
     super(rand, salt);
@@ -31,24 +31,30 @@ export class DawnMason extends Masonry {
   set gilt(on: boolean) { this.snow = on ? 1 : 0; }
   get gilt() { return this.snow > .5; }
 
-  /** Black basalt, every stone its own: brown-black, blue-black, a rusty one now and then. */
+  /** Warm sandstone, every stone its own: ochre, a redder one, a paler one now and then, some darkened. */
   override tint(k = 1, rng: () => number = this.rand): V3 {
     const a = rng(), b = rng(), c = rng();
-    const v = (b < .12 ? 1.45 : b > .9 ? .7 : .85 + (b - .12) * .4) * (.052 + c * .02);
-    const rust = a < .1 ? .012 : 0, blue = a > .88 ? .006 : 0;
-    return [(v + rust * 1.5 - blue) * k, (v * .94 + rust * .4) * k, (v * .9 + blue * 1.2) * k];
+    const v = (b < .08 ? 1.1 : b > .94 ? .86 : .94 + (b - .08) * .14) * (.3 + c * .03);
+    const hue: V3 = a < .12 ? [1.04, .7, .44] : a > .9 ? [1, .76, .52] : [1, .72, .46];
+    return [v * hue[0] * k, v * hue[1] * k, v * hue[2] * k];
   }
-  /** Honey limestone: cream, ochre and a pinkish one, each stone its own. */
+  /** Black basalt for accents: brown-black, blue-black. */
+  basaltTint(k = 1): V3 {
+    const r = this.p, b = r(), c = r();
+    const v = (b > .85 ? 1.3 : .9 + b * .2) * (.05 + c * .018);
+    return [v * k, v * .95 * k, v * .92 * k];
+  }
+  /** Cream limestone: ivory, a warmer one, a greyer one, each stone its own. */
   paleTint(k = 1): V3 {
     const r = this.p, a = r(), b = r();
-    const v = (.82 + b * .36) * (b > .93 ? .78 : 1);
-    const hue: V3 = a < .18 ? [1.06, .86, .62] : a > .85 ? [1.04, .8, .66] : [1, .82, .58];
-    return [.4 * v * hue[0] * k, .4 * v * hue[1] * k, .4 * v * hue[2] * k];
+    const v = (.84 + b * .3) * (b > .94 ? .82 : 1);
+    const hue: V3 = a < .18 ? [1.04, .92, .74] : a > .85 ? [.98, .93, .84] : [1, .9, .72];
+    return [.46 * v * hue[0] * k, .46 * v * hue[1] * k, .46 * v * hue[2] * k];
   }
   override block(warp: Warp, u0: number, v0: number, t0: number, w: number, h: number, d: number, o: BlockOpts = {}): void {
     if (!this.gilt && this.course !== 2) {
-      const pale = this.stone ? this.stone === 'pale' : this.bands && isPale(v0 + h / 2);
-      if (pale) o = {...o, tint: this.paleTint()};
+      if (this.stone === 'basalt') o = {...o, tint: this.basaltTint()};
+      else if (this.stone ? this.stone === 'pale' : this.bands && isPale(v0 + h / 2)) o = {...o, tint: this.paleTint()};
     }
     super.block(warp, u0, v0, t0, w, h, d, o);
   }
@@ -86,8 +92,8 @@ export function dawnMasonryMaterial(name: string): THREE.MeshStandardMaterial {
           float mJ=(1.-smoothstep(0.,fwidth(mBx)*1.2+.03,min(mFx,1.-mFx))*smoothstep(0.,fwidth(mY)/(e1-e0)*1.2+.05,min(mFy,1.-mFy)))*(1.-abs(mNW.y));
           float mH1=fpHash12(vec2(mCi*1.7+3.,mBi));
           float mK=mod(vMW.y-${DAWN_BANDS.y0.toFixed(2)},${DAWN_BANDS.period.toFixed(2)});
-          vec3 mPale=vec3(.4,.328,.232)*(.82+.36*fpHash12(vec2(mBi*.37+5.,mCi)));
-          vec3 mBas=vec3(.06,.056,.053)*(mH1<.14?1.4:mH1>.9?.7:.85+(mH1-.14)*.4);
+          vec3 mPale=vec3(.46,.41,.33)*(.84+.3*fpHash12(vec2(mBi*.37+5.,mCi)));
+          vec3 mBas=vec3(.3,.215,.138)*(mH1<.14?1.18:mH1>.9?.78:.9+(mH1-.14)*.22);
           diffuseColor.rgb=(mK<${DAWN_BANDS.pale.toFixed(2)}&&mGilt<.5?mPale:mBas)*mix(1.,.45,mJ);
         }
         float mL=dot(diffuseColor.rgb,vec3(.3,.59,.11)),mBasalt=1.-smoothstep(.07,.16,mL);
@@ -101,20 +107,20 @@ export function dawnMasonryMaterial(name: string): THREE.MeshStandardMaterial {
           diffuseColor.rgb*=mix(1.,mix(1.,.62,smoothstep(.62,.8,mG1))*mix(1.,1.25,smoothstep(.7,.86,1.-mG1))*(1.-smoothstep(.72,.86,mG2)*mBasalt*.6),mNear*(1.-mGilt));
         }
         // The joints: lime mortar, pale and sandy, receding to the stone's value with distance.
-        if(vMC>1.5)diffuseColor.rgb=mix(vec3(.2,.17,.13)*(.75+.5*(mN*.5+.5)),vec3(.05,.045,.04),smoothstep(.008,.035,mFoot)*.8);
-        // Soot run down from the tops in long streaks, stronger on the limestone.
+        if(vMC>1.5)diffuseColor.rgb=mix(vec3(.3,.25,.19)*(.75+.5*(mN*.5+.5)),vec3(.14,.1,.07),smoothstep(.008,.035,mFoot)*.8);
+        // Desert varnish run down from the tops in long dark streaks, stronger on the limestone.
         vec2 mTw=normalize(vec2(-mNW.z,mNW.x)+1e-4);float mAlong=dot(vMW.xz,mTw);
         float mSoot=smoothstep(.4,.8,fpNoise(vec2(mAlong*.55,vMW.y*.035+mW*.4))*.5+.5)*mSide*(1.-mGilt);
-        diffuseColor.rgb*=mix(vec3(1.),vec3(.42,.38,.36),mSoot*(.35+.65*(1.-mBasalt)));
-        // Orange lichen on the limestone, sparse.
+        diffuseColor.rgb*=mix(vec3(1.),vec3(.5,.4,.32),mSoot*.6*(1.-mBasalt));
+        // Iron-red stain blooms here and there on the sandstone.
         float mLich=smoothstep(.8,.94,mW*.5+.5+mN*.12)*mSide*(1.-mBasalt)*(1.-mGilt);
-        diffuseColor.rgb*=mix(vec3(1.),vec3(1.35,.95,.45),mLich*.7);
+        diffuseColor.rgb*=mix(vec3(1.),vec3(1.12,.82,.66),mLich*.6);
         // Sun-bleached tops; sand blown against the foot and lodged on the ledges.
         float mUp=mNW.y+mN*.1;
         diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*1.25+vec3(.03,.025,.015),smoothstep(.6,.95,mUp)*(1.-mGilt)*.7);
         mDust=(1.-smoothstep(.0,1.4+mN*.8,mAbove))*.75*mSide;
         mDust=max(mDust,smoothstep(.75,.95,mUp)*smoothstep(.2,.6,mW*.6+.35)*.65);
-        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.42,.33,.22)*(.85+.3*(mN*.5+.5)),mDust*(1.-mGilt*.5));
+        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.5,.38,.24)*(.85+.3*(mN*.5+.5)),mDust*(1.-mGilt*.5));
         // Gilt: gold leaf over bronze, worn back in patches; bronze (doors, grilles) is .7 in the same channel.
         float mBronze=mGilt*(1.-step(.85,vMS));
         mWorn=mix(smoothstep(.35,.75,(mGilt>.5?MN(2.3,51.):0.)*.5+.5+mN*.2)*.7+mSoot*.3,.2,mBronze);
