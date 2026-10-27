@@ -96,8 +96,8 @@ export function starCrystalCluster(): THREE.BufferGeometry {
 
 export type CrystalTint = 'amethyst' | 'moonshade' | 'teal' | 'violet';
 const TINTS: Record<CrystalTint, {deep: P3; glow: P3; tip: P3}> = {
-  amethyst: {deep: [0.035, 0.008, 0.11], glow: [0.36, 0.07, 0.95], tip: [0.86, 0.6, 1.0]},
-  violet: {deep: [0.07, 0.02, 0.18], glow: [0.42, 0.13, 1.0], tip: [0.85, 0.7, 1.0]},
+  amethyst: {deep: [0.03, 0.012, 0.11], glow: [0.3, 0.15, 0.95], tip: [0.9, 0.82, 1.0]},
+  violet: {deep: [0.06, 0.02, 0.18], glow: [0.36, 0.18, 1.0], tip: [0.92, 0.84, 1.0]},
   moonshade: {deep: [0.006, 0.025, 0.12], glow: [0.05, 0.3, 1.0], tip: [0.6, 0.85, 1.0]},
   teal: {deep: [0.008, 0.07, 0.08], glow: [0.04, 0.62, 0.58], tip: [0.6, 1.0, 0.94]},
 };

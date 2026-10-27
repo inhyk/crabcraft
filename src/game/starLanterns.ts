@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import {StoneBuilder} from './starMasonry';
+import {groundGlow} from './starGlow';
 
 /*
  * Starhaven's street lanterns and the town's own materials. A lantern: an octagonal iron post on a stepped foot,
  * collars, a bracket ring, and a four-paned lantern with a hipped roof and finial; its warm glass is the light, and
  * a pool of that light lies on the paving under each one (additive, so it warms whatever stone it falls on). Two
- * instanced draws for the 26 lanterns (iron, glass) and one for the pools.
+ * instanced draws for the 26 lanterns (iron, glass) and one merged mesh for the pools.
  */
 
 function lanternGeometry() {
@@ -24,23 +25,17 @@ function lanternGeometry() {
   return {iron: iron.geometry('starhaven-lantern-iron'), glass: glass.geometry('starhaven-lantern-glass')};
 }
 
-export function starLanterns(points: {x: number; y: number; z: number}[]) {
+export function starLanterns(points: {x: number; y: number; z: number}[], height: (x: number, z: number) => number) {
   const {iron, glass} = lanternGeometry();
   const ironMat = new THREE.MeshStandardMaterial({color: '#2a2c38', metalness: .85, roughness: .38, flatShading: true, envMapIntensity: 2});ironMat.name = 'starhaven-lantern-iron';
   const glassMat = new THREE.MeshStandardMaterial({color: '#ffd9a0', emissive: '#ffb55a', emissiveIntensity: 3.2, roughness: .25, flatShading: true});glassMat.name = 'starhaven-lantern-glass';
   const posts = new THREE.InstancedMesh(iron, ironMat, points.length), panes = new THREE.InstancedMesh(glass, glassMat, points.length);
   posts.name = 'starhaven-lantern-posts';panes.name = 'starhaven-lantern-panes';
-  const pool = new THREE.InstancedMesh(new THREE.PlaneGeometry(9, 9).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
-    name: 'starhaven-lamp-pool', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-    vertexShader: 'varying vec2 vU;void main(){vU=uv*2.-1.;gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.);}',
-    // Inverse-square-ish falloff from a lamp 3.3 m up, so the pool has a bright heart and a long soft edge.
-    fragmentShader: 'varying vec2 vU;void main(){float r=length(vU)*4.5;float i=3.3*3.3/pow(3.3*3.3+r*r,1.5)*3.3;i*=1.-smoothstep(3.2,4.5,r);gl_FragColor=vec4(vec3(1.,.62,.3)*i*.13,1.);}',
-  }), points.length);
-  pool.name = 'starhaven-lamp-pools';
+  // Warm pools on the paving, laid on the ground's own heights (starGlow.ts).
+  const pool = groundGlow('starhaven-lamp-pools', height, points.map(p => ({x: p.x, z: p.z, r: 4.6, color: '#ff9e4d', strength: .2, lift: 3.3})));
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), s = new THREE.Vector3(1, 1, 1);
   points.forEach((p, i) => {
     m.compose(new THREE.Vector3(p.x, p.y, p.z), q.setFromAxisAngle(up, Math.PI / 4), s);posts.setMatrixAt(i, m);panes.setMatrixAt(i, m);
-    m.compose(new THREE.Vector3(p.x, p.y + .04, p.z), q.identity(), s);pool.setMatrixAt(i, m);
   });
   posts.castShadow = true;posts.receiveShadow = true;
   const pools = new THREE.Group();pools.name = 'starhaven-lamp-pool-group';pools.add(pool);
@@ -64,7 +59,7 @@ export function starhavenMaterial(name: string, m: THREE.Material) {
     m.customProgramCacheKey = () => 'starhaven-roof';
     m.roughness = .55;m.envMapIntensity = 1.5;
   } else if (name === 'MI_Plaster') m.color.set('#cfd0e2');
-  else if (name === 'MI_WoodTrim') m.color.set('#b4abb6');
+  else if (name === 'MI_WoodTrim') m.color.set('#a8968c');
   else if (name === 'MI_MetalOrnaments') { m.color.set('#c9cfe4');m.metalness = Math.max(m.metalness, .8);m.roughness = .35; }
   else if (name === 'MI_UnevenBrick' || name === 'MI_RockTrim' || name === 'MI_Brick') m.color.set('#c2c3d4');
 }

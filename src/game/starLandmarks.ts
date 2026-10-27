@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Collision } from '../world/collision';
 import {facetedStarCrystal,starCrystalRadius} from './starCrystal';
 import {starCrystalCluster,starCrystalMaterial} from './starCrystals';
+import {groundGlow} from './starGlow';
 
 /** Moonshade's six crystal leaves around the glade. */
 function moonshadeLeaves(){
@@ -45,7 +46,7 @@ export class StarLandmarks {
     moonshadeLeaves().forEach(({x,z,h,rotation,scale},i)=>{
       matrix.compose(new THREE.Vector3(x,height(x,z)+h*.55,z),rotation,scale);crystals.setMatrixAt(i,matrix);
     });
-    crystals.castShadow=true;this.root.add(crystals);
+    crystals.castShadow=true;this.root.add(crystals,groundGlow('moonshade-crystal-glow',height,moonshadeLeaves().map(({x,z,h})=>({x,z,r:3.2+h*.4,color:'#4f8dff',strength:.16,lift:1.2+h*.3}))));
     // Memory Sanctuary: its piers and carved arch are the sanctum's pilgrims' gate (starSanctum.ts).
     // Fallen Star Observatory: an antique celestial instrument above the ruined reflecting pool.
     this.astrolabe=new THREE.Group();this.astrolabe.position.set(80,height(80,-40)+6.5,-40);this.root.add(this.astrolabe);

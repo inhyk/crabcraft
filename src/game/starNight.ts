@@ -7,14 +7,14 @@ import * as THREE from 'three';
  * the aurora hangs over the northern sea, behind the arena.
  */
 
-/** Unit direction to the moon (and so the moonlight's direction of travel reversed). About 25 degrees up. */
-export const STAR_MOON_DIR = new THREE.Vector3(-0.8, 0.42, -0.43).normalize();
+/** Unit direction to the moon (and so the moonlight's direction of travel reversed). About 31 degrees up. */
+export const STAR_MOON_DIR = new THREE.Vector3(-0.8, 0.55, -0.43).normalize();
 /** Linear colours. Zenith and horizon of the clear sky; the horizon is also the fog. */
 export const STAR_ZENITH = new THREE.Color().setRGB(0.0045, 0.0075, 0.026);
 export const STAR_HORIZON = new THREE.Color().setRGB(0.032, 0.04, 0.085);
 /** Moonlight: cool silver, strong enough to cast crisp shadows and read the ground against the sky. */
 export const STAR_MOONLIGHT = new THREE.Color().setRGB(0.62, 0.74, 1.0);
-export const STAR_MOON_INTENSITY = 3.8;
+export const STAR_MOON_INTENSITY = 3.3;
 /** Shade: the sky dome's light from above, the dark heather's bounce from below. */
 export const STAR_SHADE_SKY = new THREE.Color().setRGB(0.1, 0.14, 0.34);
 export const STAR_SHADE_GROUND = new THREE.Color().setRGB(0.018, 0.012, 0.03);

@@ -19,6 +19,7 @@ import {StarGate} from './starGate';
 import { StarVillageLife } from './world2Life';
 import {starGroundColor} from './world2Ground';
 import {starCrystalCluster,starCrystalMaterial} from './starCrystals';
+import {groundGlow,type GlowSpot} from './starGlow';
 import {collectibleShadow} from './collectibleShadow';
 import {StarSky} from './starSky';
 import {StarSea} from './starSea';
@@ -211,15 +212,16 @@ export class HiddenWorld {
     this.sea=new StarSea();this.root.add(this.sea.root);
     // Jagged crystal gardens frame the open combat paths. One geometry/material per family.
     const crystals=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('amethyst'),90);crystals.name='star-island-crystal-gardens';const matrix=new THREE.Matrix4();
+    const crystalGlow:GlowSpot[]=[];
     starCrystalGarden((x,z)=>this.height(x,z)).forEach((c,i)=>{
       if(c.clear)matrix.makeScale(0,0,0);
       else{
         matrix.compose(new THREE.Vector3(c.x,c.y+c.h*.5,c.z),c.q,c.scale);
-        this.crystalSolids.push(c.solid);
+        this.crystalSolids.push(c.solid);crystalGlow.push({x:c.x,z:c.z,r:2.4+c.h*.45,color:'#8f6bff',strength:.16,lift:.9+c.h*.35});
       }
       crystals.setMatrixAt(i,matrix);
     });
-    crystals.castShadow=true;this.root.add(crystals);
+    crystals.castShadow=true;this.root.add(crystals,groundGlow('star-island-crystal-glow',(x,z)=>this.height(x,z),crystalGlow));
     // The Eclipse Queen's sanctum: carved floor, obelisks on the old twelve footprints, the pilgrims' gate.
     this.throne=new StarSanctum((x,z)=>this.height(x,z));
     this.root.add(this.throne.root);this.obstacles.push(...throneSolids());
@@ -228,7 +230,7 @@ export class HiddenWorld {
       // Small teal crystals grown beside the starroad, every five metres.
       const guides=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('teal',{glow:1.3}),starRoadGuides().length),m=new THREE.Matrix4(),q=new THREE.Quaternion();guides.name='star-road-wayfinders';
       for(const [i,[x,z]] of starRoadGuides().entries()){m.compose(new THREE.Vector3(x,this.height(x,z)+.55,z),q.setFromAxisAngle(new THREE.Vector3(0,1,0),i*2.4),new THREE.Vector3(.7,1.1,.7));guides.setMatrixAt(i,m);}
-      guides.castShadow=true;this.root.add(guides);
+      guides.castShadow=true;this.root.add(guides,groundGlow('star-road-wayfinder-glow',(x,z)=>this.height(x,z),starRoadGuides().map(([x,z])=>({x,z,r:2.4,color:'#3fe0cc',strength:.16,lift:.9}))));
     }
     this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.

@@ -94,7 +94,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       const c=m.clone();
       // Light the actual glass panes, including their original lattice and shutter occlusion.
       if(name==='MI_WindowGlass'&&c instanceof THREE.MeshStandardMaterial){c.color.set('#4d301c');c.emissive.set('#ffb65e');c.emissiveIntensity=1.15;c.roughness=.25;c.transparent=false;c.opacity=1;c.depthWrite=true;}
-      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#d9eed7');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;}
+      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#9fd6c6');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;}
       if(kit===village)starhavenMaterial(name,c);
       copies.set(m,c);kit.materials.set(name,c);
     }
@@ -125,9 +125,10 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   if(village.has('Prop_Wagon'))for(const x of [-15,15])villageProps.add('Prop_Wagon',trs(x,3,88,x>0?.4:-.4));
   for(const lot of lots)for(let j=-2;j<=2;j++)if(village.has('Prop_WoodenFence_Single'))villageProps.add('Prop_WoodenFence_Single',trs(lot.x+j*2,3,lot.z-7,0));
   // Iron lanterns along the high street, each with its pool of light (starLanterns.ts).
-  const lanterns=starLanterns(Array.from({length:26},(_,i)=>{const side=i%2?1:-1,z=86-Math.floor(i/2)*6,x=side*(z>20?8:6);return {x,y:height(x,z),z};}));
+  const lanterns=starLanterns(Array.from({length:26},(_,i)=>{const side=i%2?1:-1,z=86-Math.floor(i/2)*6,x=side*(z>20?8:6);return {x,y:height(x,z),z};}),height);
   root.add(lanterns.posts,lanterns.panes,lanterns.pools);
-  for(const [x,z] of [[0,57],[-25,36],[20,35],[0,76]]){const light=new THREE.PointLight('#ffc78b',18,30,1.5);light.position.set(x,7,z);root.add(light);}
+  // The lanterns' own pools carry the street light now; these four only warm the squares a little.
+  for(const [x,z] of [[0,57],[-25,36],[20,35],[0,76]]){const light=new THREE.PointLight('#ffc78b',8,30,1.5);light.position.set(x,7,z);root.add(light);}
   root.add(dressing.build(),villageProps.build());
   const scatter=new Scatter(nature,'star-island-forests');
   const rand=forestRand;
