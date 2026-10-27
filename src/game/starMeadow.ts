@@ -3,7 +3,7 @@ import {injectStarLight} from './starLight';
 import {STAR_GRID} from '../sim/world/ground';
 import {onIslandPath,type IslandPath} from './islandPaths';
 import {starGroundColor} from './world2Ground';
-import {starShade, starSoil} from './starGround';
+import {starFieldValue, starShade, starSoil} from './starGround';
 import {STAR_DETAIL,starNoise} from './starFieldLayout';
 import {starTrailDistance} from './world2Settlement';
 
@@ -70,6 +70,9 @@ float smKeep=smM.r*(1.-smoothstep(.62,.96,smDist))*mix(0.,1.,smBare)*mix(.72+.28
 float smLive=step(smR2.x,smKeep);
 float smScale=smLive*smM.g*(.55+.6*smR2.y)*mix(1.,.35,smoothstep(.55,.95,smDist))*smoothstep(0.,.25,smKeep-smR2.x+.1);
 smScale*=(.62+.7*smK.y)*(.7+.45*smHeart)*mix(.6,1.,smBare);
+// The fields' large-scale value: tussock beds stand taller, trodden ground is grazed short.
+float smLush=max(.5-smM.a,0.)*2.,smWear=max(smM.a-.5,0.)*2.;
+smScale*=1.+.6*smLush-.45*smWear;
 // Each blade of the tuft: its own lean, height and turn; the clump's common lean on top.
 float smB=aBlade.z,smA=smR.x*6.2831+smB*2.1,smLean=.3+.4*fract(smR.y*7.+smB*.37);
 vec2 smDir=normalize(vec2(cos(smA),sin(smA))+vec2(cos(smK2.x*6.28),sin(smK2.x*6.28))*.9),smSide=vec2(-smDir.y,smDir.x);
@@ -97,7 +100,9 @@ vec3 smTint=texture2D(smTint,smUv).rgb;
 // Tone by clump: some greener, some silvered, some going to seed (warmer, paler).
 vec3 smClumpTone=smK2.y<.33?vec3(.92,1.06,1.02):smK2.y<.66?vec3(1.06,1.04,1.1):vec3(1.14,1.08,.9);
 // Value varies clump by clump (some deep, some silvered) so a field reads as tussocks, not one flat sheet.
-vSmCol=smTint*(.9+.2*smR2.y)*mix(.45+1.05*smK.x,1.02+.2*smK.x,smTurf)*mix(.68+.64*smPatch,1.,smTurf)*smClumpTone*mix(vec3(1.),vec3(1.18,1.1,.8),step(.86,smR.y));
+vSmCol=smTint*(.9+.2*smR2.y)*mix(.6+.8*smK.x,1.02+.2*smK.x,smTurf)*mix(.68+.64*smPatch,1.,smTurf)*smClumpTone*mix(vec3(1.),vec3(1.18,1.1,.8),step(.86,smR.y));
+// Large-scale value on top: the beds deep and teal, the trodden turf silvered and pale.
+vSmCol*=mix(vec3(1.),vec3(.5,.64,.68),smLush)*mix(vec3(1.),vec3(1.6,1.56,1.5),smWear);
 vSmT=smT;vSmAo=mix(smM.b,1.,smTurf*.6);vSmTurf=smTurf;
 `;
 
@@ -113,7 +118,8 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
   const hData = new Float32Array(nx * nz);
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) hData[j * nx + i] = height(minX + i * step, minZ + j * step);
   const hTex = new THREE.DataTexture(hData, nx, nz, THREE.RedFormat, THREE.FloatType); hTex.needsUpdate = true;
-  // Density (r), blade height (g), and a soft occlusion (b) from the nearby paving and walls; tint at the same texels.
+  // Density (r), blade height (g), a soft occlusion (b) from the nearby paving and walls and the fields' large-scale
+  // value (a: 0 lush, .5 plain, 1 worn; starFieldValue); tint at the same texels.
   const W = MAP_W / MAP, H = MAP_H / MAP, mask = new Uint8Array(W * H * 4), tint = new Uint8Array(W * H * 4), c = new THREE.Color();
   let grassCells = 0;
   const smooth = THREE.MathUtils.smoothstep;
@@ -150,7 +156,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
     // The town's lawns are a full, short sward: dense or nothing, never a scatter of single blades.
     mask[o] = Math.round(Math.min(1, d * (town ? 1.8 : 1.15)) * 255);
     mask[o + 1] = Math.round((town ? .34 : Math.max(tall, .8 + .2 * (1 - worn))) * 255);
-    mask[o + 2] = Math.round((1 - starShade(x, z)) * 255); mask[o + 3] = 255;
+    mask[o + 2] = Math.round((1 - starShade(x, z)) * 255); mask[o + 3] = Math.round(starFieldValue(x, z, y) * 255);
     starGroundColor(x, z, y, c);
     tint[o] = Math.round(Math.min(1, c.r) * 255); tint[o + 1] = Math.round(Math.min(1, c.g) * 255); tint[o + 2] = Math.round(Math.min(1, c.b) * 255); tint[o + 3] = 255;
     if (d > .2) grassCells++;
