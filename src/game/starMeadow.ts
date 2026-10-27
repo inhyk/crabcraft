@@ -50,15 +50,25 @@ vec2 smRoot=(smCell+.15+.7*smR)*smCenter.z;
 vec2 smUv=(smRoot-smMap.xy)*smMap.zw;
 vec4 smM=texture2D(smMask,smUv);
 float smDist=length(smRoot-smCenter.xy)/(smN*smCenter.z*.5);
+// Clumps: the nearest of a jittered 2.4 m lattice of roots; blades of one clump share height, lean and tone, and
+// stand taller at its heart. Bare patches: a slow noise thins the sward to nothing in places.
+vec2 smCc=floor(smRoot/2.4),smBest=vec2(0.);float smCd=9.;
+for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 c=smCc+vec2(i,j),q=(c+.15+.7*smHash22(c+3.7))*2.4;float d=length(smRoot-q);if(d<smCd){smCd=d;smBest=c;}}
+vec2 smK=smHash22(smBest+11.1),smK2=smHash22(smBest+29.3);
+vec2 smPc=floor(smRoot/9.),smPf=fract(smRoot/9.);smPf=smPf*smPf*(3.-2.*smPf);
+float smPatch=mix(mix(smHash22(smPc).x,smHash22(smPc+vec2(1.,0.)).x,smPf.x),mix(smHash22(smPc+vec2(0.,1.)).x,smHash22(smPc+1.).x,smPf.x),smPf.y);
+float smBare=smoothstep(.1,.32,smPatch+(smK.x-.5)*.25);
+float smHeart=1.-smoothstep(.4,1.6,smCd);
 // Thin out toward the patch's edge (and wherever the map says sparse); shrink before vanishing.
-float smKeep=smM.r*(1.-smoothstep(.62,.96,smDist));
+float smKeep=smM.r*(1.-smoothstep(.62,.96,smDist))*mix(.12,1.,smBare)*(.72+.28*smHeart);
 float smLive=step(smR2.x,smKeep);
 float smScale=smLive*smM.g*(.55+.6*smR2.y)*mix(1.,.35,smoothstep(.55,.95,smDist))*smoothstep(0.,.25,smKeep-smR2.x+.1);
-// Each blade of the tuft: its own lean, height and turn.
-float smB=aBlade.z,smA=smR.x*6.2831+smB*2.1,smLean=.25+.35*fract(smR.y*7.+smB*.37);
-vec2 smDir=vec2(cos(smA),sin(smA)),smSide=vec2(-smDir.y,smDir.x);
+smScale*=(.62+.7*smK.y)*(.7+.45*smHeart)*mix(.6,1.,smBare);
+// Each blade of the tuft: its own lean, height and turn; the clump's common lean on top.
+float smB=aBlade.z,smA=smR.x*6.2831+smB*2.1,smLean=.3+.4*fract(smR.y*7.+smB*.37);
+vec2 smDir=normalize(vec2(cos(smA),sin(smA))+vec2(cos(smK2.x*6.28),sin(smK2.x*6.28))*.9),smSide=vec2(-smDir.y,smDir.x);
 vec2 smOff=smDir*(.05+.06*smB)*(smB>0.?1.:0.);
-float smH=(.26+.26*fract(smR2.y*5.3+smB*.61))*smScale,smW=.045+.03*fract(smR.x*3.1+smB);
+float smH=(.26+.26*fract(smR2.y*5.3+smB*.61))*smScale,smW=.06+.035*fract(smR.x*3.1+smB);
 float smT=aBlade.x;
 // Wind: slow swells and quick flutter; the player's crab parts the grass round it.
 vec2 smBase=smRoot+smOff;
@@ -68,12 +78,16 @@ vec2 smAway=smBase-smPlayer.xz;float smPd=length(smAway);
 smWind+=smPd>1e-3?smAway/smPd*(1.-smoothstep(.4,1.4,smPd))*.9:vec2(0.);
 vec2 smBend=(smDir*smLean+smWind)*smT*smT*smH;
 float smGround=smHeightAt(smBase);
-vec3 transformed=vec3(smBase.x+smSide.x*aBlade.y*smW*(1.-smT)+smBend.x,smGround+smT*smH*(1.-.25*smT*length(smDir*smLean+smWind)),smBase.y+smSide.y*aBlade.y*smW*(1.-smT)+smBend.y);
+// A full blade that narrows late (not a straight spike), so tips read soft.
+float smTaper=1.-smT*smT;
+vec3 transformed=vec3(smBase.x+smSide.x*aBlade.y*smW*smTaper+smBend.x,smGround+smT*smH*(1.-.3*smT*length(smDir*smLean+smWind)),smBase.y+smSide.y*aBlade.y*smW*smTaper+smBend.y);
 if(smScale<.02)transformed=vec3(0.,-1e4,0.);
 // Lit mostly as the ground it stands in, turned a little toward its own face.
 vec3 objectNormal=normalize(vec3(smDir.x*.35,1.,smDir.y*.35));
 vec3 smTint=texture2D(smTint,smUv).rgb;
-vSmCol=smTint*(.8+.4*smR2.y)*mix(vec3(1.),vec3(1.25,1.15,.75),step(.8,smR.y))*mix(vec3(1.),vec3(.85,.95,1.15),step(smR.y,.15));
+// Tone by clump: some greener, some silvered, some going to seed (warmer, paler).
+vec3 smClumpTone=smK2.y<.33?vec3(.92,1.06,1.02):smK2.y<.66?vec3(1.06,1.04,1.1):vec3(1.14,1.08,.9);
+vSmCol=smTint*(.88+.24*smR2.y)*(.86+.28*smK.x)*smClumpTone*mix(vec3(1.),vec3(1.18,1.1,.8),step(.86,smR.y));
 vSmT=smT;vSmAo=smM.b;
 `;
 
@@ -145,7 +159,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
       .replace('#include <begin_vertex>', '');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vSmCol;\nvarying float vSmT;\nvarying float vSmAo;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, moonlit toward the tips.\ndiffuseColor.rgb=vSmCol*mix(.55,1.45,smoothstep(0.,.9,vSmT))*mix(.5,1.,vSmAo);')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, moonlit toward the tips.\ndiffuseColor.rgb=vSmCol*mix(.72,1.3,smoothstep(0.,.9,vSmT))*mix(.6,1.,vSmAo);')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(.9,.6,vSmT);')
       // Both faces lit as the front: grass is thin enough to let the moon through.
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal*=faceDirection;\n#endif');

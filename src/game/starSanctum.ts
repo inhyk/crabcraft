@@ -145,7 +145,14 @@ float sfObsidian=1.-smoothstep(1.93,1.96,sfR);
       .replace('#include <lights_physical_fragment>', `roughnessFactor=mix(roughnessFactor,.32,sfSilver);roughnessFactor=mix(roughnessFactor,.12,sfObsidian);roughnessFactor=mix(roughnessFactor,1.,sfGroove);metalnessFactor=mix(metalnessFactor,1.,sfSilver);
 #include <lights_physical_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-totalEmissiveRadiance+=vec3(.05,.07,.13)*sfSilver;`);
+totalEmissiveRadiance+=vec3(.05,.07,.13)*sfSilver;
+// The eclipse at the centre burns: its corona's inlay gives pearly light, brightest at the limb, and a rose
+// chromosphere edges the obsidian; the rings further out stay moonlit silver.
+{
+  float cor=sfSilver*(1.-smoothstep(2.,5.2,sfR));
+  totalEmissiveRadiance+=vec3(.95,.88,.72)*cor*(.35+1.4*exp(-(sfR-2.05)*1.6));
+  totalEmissiveRadiance+=vec3(1.,.32,.55)*exp(-pow((sfR-1.93)/.05,2.))*.9;
+}`);
   };
   m.customProgramCacheKey = () => 'star-sanctum-floor';
   return m;
@@ -162,6 +169,35 @@ export function gateArchBoxes(height: (x: number, z: number) => number) {
   return out;
 }
 
+/**
+ * Eclipse emblems at the given placements (local +Z faces out): an obsidian disc in a silver ring with sixteen
+ * corona rays, and a thin pale ring of light just outside the disc, so the sign reads at night. One draw each.
+ */
+function eclipseEmblems(at: THREE.Matrix4[], silver: THREE.Material): THREE.Group {
+  const g = new THREE.Group();g.name = 'star-eclipse-emblems';
+  const rays = new StoneBuilder();
+  for (let k = 0; k < 16; k++) {
+    const a = k / 16 * Math.PI * 2, l = k % 2 ? .5 : .85, r0 = .66;
+    const c = new THREE.Vector3(Math.cos(a) * r0, Math.sin(a) * r0, 0), tip = new THREE.Vector3(Math.cos(a) * (r0 + l), Math.sin(a) * (r0 + l), .02);
+    const side = new THREE.Vector3(-Math.sin(a), Math.cos(a), 0).multiplyScalar(.1), back = new THREE.Vector3(0, 0, -.12);
+    rays.tri(c.clone().add(side), c.clone().sub(side), tip, [0, 0], [0, 0], [0, 0], new THREE.Vector3(0, 0, 1));
+    rays.tri(c.clone().add(side).add(back), tip, c.clone().add(side), [0, 0], [0, 0], [0, 0], side);
+    rays.tri(c.clone().sub(side).add(back), c.clone().sub(side), tip, [0, 0], [0, 0], [0, 0], side.clone().negate());
+  }
+  const parts: [THREE.BufferGeometry, THREE.Material, string][] = [
+    [rays.geometry('star-eclipse-rays'), silver, 'star-eclipse-rays'],
+    [new THREE.TorusGeometry(.62, .08, 8, 48), silver, 'star-eclipse-ring'],
+    [new THREE.CircleGeometry(.56, 40).translate(0, 0, .01), new THREE.MeshStandardMaterial({color: '#05050b', roughness: .12, metalness: .3}), 'star-eclipse-disc'],
+    [new THREE.TorusGeometry(.585, .022, 6, 64).translate(0, 0, .05), new THREE.MeshBasicMaterial({color: new THREE.Color(2.2, 2.05, 1.7), toneMapped: true}), 'star-eclipse-corona'],
+  ];
+  for (const [geo, mat, name] of parts) {
+    const mesh = new THREE.InstancedMesh(geo, mat, at.length);mesh.name = name;
+    at.forEach((m, i) => mesh.setMatrixAt(i, m));
+    mesh.castShadow = name !== 'star-eclipse-corona';mesh.receiveShadow = true;g.add(mesh);
+  }
+  return g;
+}
+
 export class StarSanctum {
   readonly root = new THREE.Group();
   /** The twelve obelisk footprints, solid to movement and sight (unchanged from the old colonnade). */
@@ -174,10 +210,22 @@ export class StarSanctum {
 
     const body = new StoneBuilder(), trim = new StoneBuilder(), m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
     const crownAt: {x: number; y: number; z: number; tint: number; yaw: number}[] = [];
+    const emblems: THREE.Matrix4[] = [];
     throneSolids().forEach(({x, z}, i) => {
       const H = OBELISK_H[i], y = height(x, z), yaw = Math.atan2(CENTER.x - x, CENTER.y - z), crown = i !== 0;
       m.compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(up, yaw), one);
+      if (i === 0) {
+        // In the gate: not a pillar that hides the floor but a waist-high altar, its top a slab tilted to the pilgrim
+        // with the eclipse set in it; the arch frames the sanctum over it.
+        body.stack([{y: -.45, hw: 1.25, ch: .34}, {y: .3, hw: 1.25, ch: .34}, {y: .3, hw: 1.08, ch: .3}, {y: .42, hw: 1.06, ch: .29},
+          {y: .42, hw: .82, ch: .22}, {y: .98, hw: .78, ch: .21}, {y: .98, hw: 1.0, ch: .27}, {y: 1.16, hw: 1.0, ch: .27}], m);
+        trim.stack([{y: .3, hw: 1.12, ch: .31}, {y: .36, hw: 1.12, ch: .31}], m);
+        emblems.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y + 1.34, z + .05), new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.1, 0, 0)), new THREE.Vector3(.78, .78, .78)));
+        return;
+      }
       body.stack(obeliskCourses(H, crown), m);
+      // The north obelisk behind the queen wears the eclipse under its crown, facing the gate.
+      if (i === 6) emblems.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y + H - 2.3, z + .7), new THREE.Quaternion(), new THREE.Vector3(.72, .72, .72)));
       // Silver: a band above the plinth, one at the die's moulding, one under the capital.
       for (const [y0, hw, ch] of [[.78, .9, .24], [2.17, .76, .17], [H - 1.27, .58, .135]] as const) trim.stack([{y: y0, hw, ch}, {y: y0 + .1, hw, ch}], m);
       if (crown) {
@@ -229,22 +277,9 @@ export class StarSanctum {
     const archGeo = arch.geometry('star-gate-arch');
     const gateMat = moonstoneMaterial({color: '#a8a8b8', block: [1.05, 2]});
     const archMesh = new THREE.Mesh(archGeo, gateMat);archMesh.name = 'star-gate-arch';archMesh.castShadow = archMesh.receiveShadow = true;this.root.add(archMesh);
-    // The eclipse on the keystone's south face: a dark moon in a silver corona.
-    const eclipse = new StoneBuilder();
-    const ey = ys + GATE.rise + .32, ez = z0 + hd + .2;
-    for (let k = 0; k < 16; k++) {
-      const a = k / 16 * Math.PI * 2, l = k % 2 ? .5 : .85, r0 = .66;
-      const c = new THREE.Vector3(Math.cos(a) * r0, ey + Math.sin(a) * r0, ez), tip = new THREE.Vector3(Math.cos(a) * (r0 + l), ey + Math.sin(a) * (r0 + l), ez + .02);
-      const side = new THREE.Vector3(-Math.sin(a), Math.cos(a), 0).multiplyScalar(.1), back = new THREE.Vector3(0, 0, -.12);
-      eclipse.tri(c.clone().add(side), c.clone().sub(side), tip, [0, 0], [0, 0], [0, 0], new THREE.Vector3(0, 0, 1));
-      eclipse.tri(c.clone().add(side).add(back), tip, c.clone().add(side), [0, 0], [0, 0], [0, 0], side);
-      eclipse.tri(c.clone().sub(side).add(back), c.clone().sub(side), tip, [0, 0], [0, 0], [0, 0], side.clone().negate());
-    }
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(.62, .08, 8, 48), silver);ring.position.set(0, ey, ez);
-    const moon = new THREE.Mesh(new THREE.CircleGeometry(.56, 40), new THREE.MeshStandardMaterial({color: '#05050b', roughness: .15, metalness: .2}));moon.position.set(0, ey, ez + .01);
-    const rays = new THREE.Mesh(eclipse.geometry('star-gate-corona'), silver);
-    for (const o of [ring, moon, rays]) { o.name = 'star-gate-eclipse';this.root.add(o); }
-
+    // The eclipse on the keystone's south face, on the altar and on the north obelisk: a dark moon in a silver corona.
+    emblems.push(new THREE.Matrix4().compose(new THREE.Vector3(0, ys + GATE.rise + .32, z0 + hd + .2), new THREE.Quaternion(), one));
+    this.root.add(eclipseEmblems(emblems, silver));
     const bodyMesh = new THREE.Mesh(body.geometry('star-sanctum-obelisks'), stone);bodyMesh.name = 'star-sanctum-obelisks';bodyMesh.castShadow = bodyMesh.receiveShadow = true;
     const trimMesh = new THREE.Mesh(trim.geometry('star-sanctum-silver'), silver);trimMesh.name = 'star-sanctum-silver';trimMesh.castShadow = true;
     const pierMesh = new THREE.Mesh(piers.geometry('sanctuary-gate-piers'), gateMat);pierMesh.name = 'sanctuary-gate-piers';pierMesh.castShadow = pierMesh.receiveShadow = true;

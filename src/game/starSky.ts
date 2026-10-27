@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {STAR_ATMOSPHERE,STAR_MOON_POSITION} from './starAtmosphere';
+import {STAR_ECLIPSE_DIR,STAR_ECLIPSE_R} from './starNight';
 
 /** Stars on the dome; a third of them crowd the milky band (starNight.ts's great circle). */
 export const STAR_POINT_COUNT=2400;
@@ -54,6 +55,8 @@ export class StarSky {
           // Few bright stars, many faint: a power law, with a slow twinkle and stars near the horizon dimmed.
           float mag=pow(seed,3.);
           brightness=(.42+.9*mag)*(.8+.2*sin(time*(.55+seed)+seed*41.))*smoothstep(.0,.06,normalize(position).y);
+          // None behind the eclipse's disc or lost in its corona.
+          brightness*=smoothstep(${(STAR_ECLIPSE_R*1.6).toFixed(4)},${(STAR_ECLIPSE_R*3.).toFixed(4)},acos(clamp(dot(normalize(position),vec3(${STAR_ECLIPSE_DIR.x.toFixed(5)},${STAR_ECLIPSE_DIR.y.toFixed(5)},${STAR_ECLIPSE_DIR.z.toFixed(5)})),-1.,1.)));
           tint=mix(vec3(.62,.75,1.),vec3(1.,.86,.66),fract(seed*7.31));
           vec4 view=modelViewMatrix*vec4(position,1.);
           gl_Position=projectionMatrix*view;
