@@ -70,13 +70,16 @@ export class DawnIsland {
   // Use the same textured foliage kit as World I: real branching trunks and leaf clusters.
   const nature=await loadKit('models/world/nature.glb'),forest=new Scatter(nature,'dawnreach-leafy-trees');
   const copies=new Map<THREE.Material,THREE.Material>();
-  for(const [name,m] of nature.materials){const c=m.clone();if(c instanceof THREE.MeshStandardMaterial&&name.startsWith('Leaves')){c.color.set('#e4efc9');c.side=THREE.DoubleSide;c.roughness=.9;}copies.set(m,c);nature.materials.set(name,c);}
+  for(const [name,m] of nature.materials){const c=m.clone();if(c instanceof THREE.MeshStandardMaterial&&name.startsWith('Leaves')){c.color.set('#e4efc9');c.side=THREE.DoubleSide;c.roughness=.9;}
+   // Desert grass: sun-bleached straw, not a lawn.
+   if(c instanceof THREE.MeshStandardMaterial&&name==='Grass'){c.color.set('#e8c995');c.roughness=.95;}copies.set(m,c);nature.materials.set(name,c);}
   for(const piece of nature.pieces.values())for(const part of piece.parts)part.material=copies.get(part.material)!;
   const trees=['CommonTree_1','CommonTree_2','CommonTree_3','CommonTree_4','CommonTree_5'].filter(n=>nature.has(n));
   let count=0;
   for(const {i,x,z,a,scale} of dawnForest()){forest.add(trees[i%trees.length],trs(x,this.height(x,z),z,a,scale));count++;}
   for(const {i,x,z,a} of dawnGrove()){forest.add(trees[i%trees.length],trs(x,this.height(x,z),z,a,.67));count++;}
-  const grasses=['Grass_Common_Short','Grass_Wispy_Short','Fern_1'].filter(n=>nature.has(n)),flowers=['Flower_3_Group','Flower_4_Group','Bush_Common_Flowers'].filter(n=>nature.has(n));
+  // Sparse dry tussocks on the sand; no ferns or flower beds in a desert.
+  const grasses=['Grass_Wispy_Short','Grass_Common_Short','Grass_Wispy_Tall'].filter(n=>nature.has(n)),flowers:string[]=[];
   let meadow=0;
   for(let i=0;i<1100;i++){
    const x=Math.sin(i*127.1+9)*85,z=-18+(Math.sin(i*311.7+21)*.5+.5)*122;

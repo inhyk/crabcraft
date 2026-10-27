@@ -58,6 +58,26 @@ float sdGlintOctave(vec2 p,float cell,vec3 N,vec3 H,vec3 T,vec3 B,float sharp){
   vec3 facet=normalize(N+(T*cos(ang)+B*sin(ang))*(.12+r2.y*.3));
   return disc*pow(clamp(dot(facet,H),0.,1.),sharp);
 }
+// The dunes' own shadows: march the baked ground toward the sun. Steps grow with distance, so a crest a hundred
+// metres off still shades the trough behind it; the edge softens with distance like a real penumbra.
+float sandSunVis=1.;
+float sandHorizon(vec3 P,vec3 L){
+  if(L.y<=0.)return 0.;
+  #ifdef SAND_LOW
+  const int N=11;const float G=1.55;
+  #else
+  const int N=18;const float G=1.38;
+  #endif
+  float t=.45,vis=1.;
+  for(int i=0;i<N;i++){
+    vec3 q=P+L*t;
+    float h=sandGroundAt(q.xz).x;
+    vis=min(vis,smoothstep(-1.,1.,(q.y-h)/(t*.028+.02)));
+    if(vis<=0.)break;
+    t*=G;
+  }
+  return vis;
+}
 float sdGlints(vec2 p,vec3 N,vec3 V,vec3 L,float fp){
   vec3 H=normalize(V+L);
   vec3 up=abs(N.y)>.95?vec3(1.,0.,0.):vec3(0.,1.,0.);
@@ -124,8 +144,9 @@ const SAND_STATE = /* glsl */ `
   vec2 sWq=vec2(dot(sXZ,SG_WIND),dot(sXZ,vec2(-SG_WIND.y,SG_WIND.x)));
   float streak=snNoise(sWq*vec2(.035,.42))*.65+snNoise(sWq*vec2(.09,1.3))*.35;
   // Warm golden ochre, never orange; value carries the form.
-  vec3 sand=sdLin(vec3(.87,.71,.48));
-  vec3 pale=sdLin(vec3(.94,.84,.65)),lag=sdLin(vec3(.74,.57,.4)),red=sdLin(vec3(.86,.65,.44));
+  // Quartz sand reflects a broad spectrum: the gold comes mostly from the low sun, so shade can still go blue.
+  vec3 sand=sdLin(vec3(.82,.72,.53));
+  vec3 pale=sdLin(vec3(.9,.83,.66)),lag=sdLin(vec3(.7,.58,.44)),red=sdLin(vec3(.84,.68,.5));
   vec3 alb=mix(sand,red,smoothstep(.3,.75,n1)*.45);
   alb=mix(alb,pale,smoothstep(.05,.7,sCrest)*.7);
   alb=mix(alb,lag,smoothstep(-.1,-.75,sCrest)*(.55+.3*n2));
@@ -187,6 +208,7 @@ const SAND_STATE = /* glsl */ `
   alb*=1.-clamp(sDep*4.,0.,1.)*.12;
   alb=mix(alb,pale,clamp(sBerm*9.,0.,1.)*.25*(1.-sWet));
   diffuseColor.rgb=alb;
+  sandSunVis=sandHorizon(sW,normalize(sandSunDir));
 `;
 
 const SAND_NORMAL = /* glsl */ `
@@ -215,9 +237,9 @@ const SAND_AFTER = /* glsl */ `
     outgoingLight+=sky*fr*.5*sWet;
     // Rough grains throw light back toward the sun (the opposition surge): sand looking down-sun brightens.
     float back=pow(clamp(dot(sV,sL),0.,1.),6.)*nl;
-    outgoingLight+=sandSunColor*diffuseColor.rgb*back*.06*(1.-sWet);
+    outgoingLight+=sandSunColor*diffuseColor.rgb*back*.06*sandSunVis*(1.-sWet);
     // Quartz glints, only into a low sun and only at grazing angles; a hint, not glitter.
-    outgoingLight+=sandSunColor*sdGlints(sXZ,sN,sV,sL,sFoot)*.035*(1.-sWet)*(1.-sVolc)*(1.-sCliff);
+    outgoingLight+=sandSunColor*sdGlints(sXZ,sN,sV,sL,sFoot)*.035*sandSunVis*(1.-sWet)*(1.-sVolc)*(1.-sCliff);
   }
 `;
 
@@ -246,6 +268,7 @@ export function applySandSurface(material: THREE.MeshStandardMaterial, deform: S
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${SAND_SURFACE_GLSL}\n${SURFACE_FRAGMENT_HEAD}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${SAND_STATE}`)
+      .replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin.replace('? getShadow( directionalShadowMap[ i ]', '? sandSunVis * getShadow( directionalShadowMap[ i ]'))
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor=sRough;')
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${SAND_NORMAL}`)
       .replace('#include <opaque_fragment>', `${SAND_AFTER}\n#include <opaque_fragment>`);
