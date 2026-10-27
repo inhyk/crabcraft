@@ -86,6 +86,9 @@ export class HiddenWorld {
   private sea: StarSea;
   private obstacles: { x:number; z:number; r:number }[] = [];
   private crystalSolids: {x:number;z:number;r:number;y0:number;y1:number}[] = [];
+  /** The field crystals' layout and the baked ground light (for QA). */
+  crystalSpots: ReturnType<typeof starCrystalGarden> = [];
+  groundLight: THREE.DataTexture | null = null;
   private portal: StarGate;
   private shorePortal: StarPortal;
   private travelArmed=false;
@@ -200,7 +203,7 @@ export class HiddenWorld {
     this.ground=starGround((x,z)=>this.height(x,z),Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy()));this.root.add(this.ground.mesh);
     this.sea=new StarSea();this.root.add(this.sea.root);
     // Field crystals in clusters with their stories (starCrystalLayout.ts); the miners' cut stumps are a second draw.
-    const spots=starCrystalGarden((x,z)=>this.height(x,z)),whole=spots.filter(c=>!c.cut),cut=spots.filter(c=>c.cut);
+    const spots=starCrystalGarden((x,z)=>this.height(x,z)),whole=spots.filter(c=>!c.cut),cut=spots.filter(c=>c.cut);this.crystalSpots=spots;
     const crystals=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('amethyst'),whole.length);crystals.name='star-island-crystal-gardens';
     const stumps=new THREE.InstancedMesh(starCrystalStump(),starCrystalMaterial('amethyst'),cut.length);stumps.name='star-island-crystal-stumps';
     const matrix=new THREE.Matrix4(),at=new THREE.Vector3();
@@ -227,7 +230,7 @@ export class HiddenWorld {
     for(const {x,z,h} of moonshadeLeaves())crystalGlow.push({x,z,radius:1.6+h*.25,color:'#4f8dff',strength:.9});
     // The miners' torch.
     {const [tx,tz]=rot(-6.4,1.8,STAR_MINE.yaw);crystalGlow.push({x:STAR_MINE.x+tx,z:STAR_MINE.z+tz,radius:2.4,color:'#ff9a4a',strength:2.2});}
-    bakeStarLight(crystalGlow);
+    this.groundLight=bakeStarLight(crystalGlow);
     this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
     const ship=w.pois.wreck.position;
