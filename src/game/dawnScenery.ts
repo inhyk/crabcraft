@@ -24,23 +24,14 @@ export class DawnScenery {
  constructor(height:(x:number,z:number)=>number){
   this.root.name='dawnreach-landmarks';
   const mat=(color:string,glow=0)=>new THREE.MeshStandardMaterial({color,roughness:.83,emissive:color,emissiveIntensity:glow});
-  const stone=mat('#666b76'),trim=mat('#baad88'),wood=mat('#855e43'),teal=mat('#397f82'),ivory=mat('#e7d6ae'),gold=mat('#f5c46c',.35),leaf=mat('#547654'),pink=mat('#e9a299'),dark=mat('#323946');
+  const stone=mat('#666b76'),trim=mat('#baad88'),wood=mat('#855e43'),teal=mat('#397f82'),ivory=mat('#e7d6ae'),gold=mat('#f5c46c',.35),leaf=mat('#547654'),pink=mat('#e9a299');
   const box=new THREE.BoxGeometry(1,1,1),cyl=new THREE.CylinderGeometry(1,1,1,10),cone=new THREE.ConeGeometry(1,1,8),ball=new THREE.SphereGeometry(1,8,6);
   // Static dressing is instanced by material and geometry, including wall blocks and flower beds.
   const pools=new Map<string,{geo:THREE.BufferGeometry;mat:THREE.Material;transforms:THREE.Matrix4[]}>();
   const place=(geo:THREE.BufferGeometry,m:THREE.Material,x:number,y:number,z:number,sx:number,sy:number,sz:number,ry=0)=>{const key=geo.uuid+m.uuid;let pool=pools.get(key);if(!pool){pool={geo,mat:m,transforms:[]};pools.set(key,pool);}const matrix=new THREE.Matrix4().compose(new THREE.Vector3(x,y,z),new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),ry),new THREE.Vector3(sx,sy,sz));pool.transforms.push(matrix);};
   const ground=(geo:THREE.BufferGeometry,m:THREE.Material,x:number,z:number,sx:number,sy:number,sz:number,dy=0,ry=0)=>place(geo,m,x,height(x,z)+sy/2+dy,z,sx,sy,sz,ry);
   const flag=(x:number,z:number,color:string)=>{const y=height(x,z);place(cyl,wood,x,y+3,z,.09,6,.09);const cloth=new THREE.Mesh(new THREE.PlaneGeometry(1.4,2.4,4,1),new THREE.MeshStandardMaterial({color,side:THREE.DoubleSide,roughness:1}));cloth.position.set(x+.75,y+4.5,z);this.root.add(cloth);this.flags.push(cloth);place(ball,gold,x,y+6.1,z,.18,.18,.18);};
-  // Harbor frontage: low deck follows the playable ground; the moored ship is scenery offshore.
-  for(let i=0;i<18;i++)ground(box,wood,-10,91+i*1.5,5,.12,1.38,.02);
-  for(const side of [-1,1])for(let i=0;i<7;i++)ground(cyl,wood,-10+side*2.8,92+i*4.1,.2,1.5,.2);
-  const ship=new THREE.Group();ship.name='dawn-harbor-ship';ship.position.set(17,.7,142);ship.rotation.y=-.25;this.root.add(ship);
-  const hull=new THREE.Mesh(ball,wood);hull.scale.set(3,1.7,8);ship.add(hull);
-  for(const x of [-2.1,2.1]){const rail=new THREE.Mesh(box,wood);rail.position.set(x,1,0);rail.scale.set(.22,.7,12);ship.add(rail);}
-  const mast=new THREE.Mesh(cyl,wood);mast.position.y=5.5;mast.scale.set(.16,12,.16);ship.add(mast);
-  const sail=new THREE.Mesh(new THREE.PlaneGeometry(5,6),new THREE.MeshStandardMaterial({color:'#dfcfaa',side:THREE.DoubleSide}));sail.position.set(2,7,0);ship.add(sail);
-  for(const x of [-24,12])flag(x,104,'#398b91');
-  for(const [x,z] of [[-19,84],[-21,86],[8,99],[11,101]]){ground(cyl,wood,x,z,.55,1.2,.55);ground(cyl,dark,x,z,.57,.1,.57,.25);}
+  // The harbour (deck, boats, barrels and banners) is dawnHarbour.ts.
   // A pearl-colored lighthouse and lookout garden on the eastern headland.
   const lx=LIGHT.x,lz=LIGHT.z,ly=height(lx,lz);
   place(cyl,stone,lx,ly+.3,lz,4,.6,4);place(cyl,ivory,lx,ly+6,lz,2.4,12,2.4);place(cyl,teal,lx,ly+7,lz,2.46,1,2.46);place(cyl,stone,lx,ly+12,lz,3,.4,3);place(cyl,gold,lx,ly+13.2,lz,1.3,2,1.3);place(cone,teal,lx,ly+15,lz,3.2,2,3.2);

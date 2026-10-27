@@ -17,7 +17,8 @@ const LANTERN_DROP = .38;
 
 export interface DawnLamps {group: THREE.Group; flames: THREE.Vector3[]; update(time: number): void}
 
-export function dawnLamps(height: (x: number, z: number) => number): DawnLamps {
+/** `extra`: lamps standing on masonry at height y (no foot, a shorter post), e.g. the harbour parapet's piers. */
+export function dawnLamps(height: (x: number, z: number) => number, extra: readonly {x: number; y: number; z: number; yaw: number}[] = []): DawnLamps {
   const group = new THREE.Group(); group.name = 'dawnharbor-road-lamps';
   const foot = lathe([[0, 0], [.33, 0], [.33, .1], [.29, .14], [.25, .16], [.21, .22], [.2, .44], [.24, .5], [.29, .53], [.29, .6], [.2, .64], [0, .64]], 28);
   const post = lathe([[0, .6], [.1, .6], [.11, .66], [.075, .72], [.062, .8], [.052, 2.4], [.075, 2.44], [.075, 2.5], [.055, 2.54], [.05, ARM_Y + .02], [.07, ARM_Y + .05], [.07, ARM_Y + .1], [.04, ARM_Y + .14], [.045, ARM_Y + .2], [.02, ARM_Y + .3], [0, ARM_Y + .32]], 14);
@@ -36,17 +37,22 @@ export function dawnLamps(height: (x: number, z: number) => number): DawnLamps {
   const mullion = new THREE.CylinderGeometry(.008, .008, .42, 4);
   const stone: THREE.BufferGeometry[] = [], iron: THREE.BufferGeometry[] = [], panes: THREE.BufferGeometry[] = [], flames: THREE.Vector3[] = [];
   const m = new THREE.Matrix4(), l = new THREE.Matrix4();
-  for (const p of dawnLampPosts()) {
-    // The foot sits a little into the ground on the downhill side.
+  const all = [...dawnLampPosts().map(p => ({...p, y: null as number | null})), ...extra.map(p => ({...p, y: p.y as number | null}))];
+  for (const p of all) {
+    // The foot sits a little into the ground on the downhill side; a lamp on masonry stands on it, shorter.
     let low = Infinity;
     for (let a = 0; a < 8; a++) low = Math.min(low, height(p.x + Math.cos(a * .785) * .33, p.z + Math.sin(a * .785) * .33));
-    const y = low - .06;
+    const onWall = p.y !== null, y = onWall ? p.y! - .6 * .7 : low - .06;
     // Local +x is the arm's direction.
+    const ys = onWall ? .7 : 1;
     m.compose(new THREE.Vector3(p.x, y, p.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.yaw - Math.PI / 2), new THREE.Vector3(1, 1, 1));
-    stone.push(solidPart(foot, m));
-    for (const g of [post, arm, brace, scroll]) iron.push(solidPart(g, m));
-    iron.push(solidPart(hook, l.multiplyMatrices(m, new THREE.Matrix4().makeTranslation(REACH + .05, ARM_Y - .07, 0))));
-    const lm = new THREE.Matrix4().multiplyMatrices(m, new THREE.Matrix4().makeTranslation(REACH + .05, ARM_Y - .1, 0).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 6)));
+    const mp = m.clone().multiply(new THREE.Matrix4().makeScale(1, ys, 1));
+    if (!onWall) stone.push(solidPart(foot, m));
+    for (const g of [post, brace, scroll]) iron.push(solidPart(g, mp));
+    // The arm and the lantern keep their shape; only the post is shorter.
+    iron.push(solidPart(arm, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, ARM_Y * (ys - 1), 0))));
+    iron.push(solidPart(hook, l.multiplyMatrices(m, new THREE.Matrix4().makeTranslation(REACH + .05, ARM_Y * ys - .07, 0))));
+    const lm = new THREE.Matrix4().multiplyMatrices(m, new THREE.Matrix4().makeTranslation(REACH + .05, ARM_Y * ys - .1, 0).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 6)));
     iron.push(solidPart(cap, lm), solidPart(tray, lm));
     for (let k = 0; k < 6; k++) {
       const a = k / 6 * Math.PI * 2, r = .13;

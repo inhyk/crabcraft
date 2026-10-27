@@ -29,6 +29,11 @@ export const roadClearance = (x: number, z: number) => {
   return best;
 };
 
+/** Dawnharbor's two sun gates (dawnPortal.ts): the arrival gate at the spawn and the road to Frostlight. */
+export const DAWN_GATES = [{ x: -12, z: 84 }, { x: 14, z: 84 }] as const;
+/** Half the distance between a gate's jambs, centre to centre. */
+export const DAWN_GATE_JAMB = 3.1;
+
 /** Quest lamps (dawnQuests.ts DAWN_POINTS dawn-lamp-*) the town's own lamps keep clear of. */
 const QUEST_LAMPS: [number, number][] = [[-7, 20], [7, 0], [-7, -22]];
 /**
@@ -129,6 +134,7 @@ export function layoutDawnreach(): Collision {
     const y = h(x, z);
     col.addCircle(x, z, r + 1, y, y + 7);
   }
+  for (const g of DAWN_GATES) for (const side of [-1, 1]) { const x = g.x + side * DAWN_GATE_JAMB; col.addCircle(x, g.z, 0.55, h(x, g.z), h(x, g.z) + 5.2); }
   for (const { x, z } of dawnLampPosts()) col.addCircle(x, z, 0.3, h(x, z), h(x, z) + 3.4);
   registerDawnScenery(h, col);
   const builder = new TownBuilder(null, null, col, {});

@@ -227,9 +227,9 @@ float dpInlay=0.;vec3 dpInlayC=vec3(0.);
 // Sandstone from several beds: honey, cream, rose and ochre, now and then a dark basalt sett.
 float dpV=fract(dpId*17.13),dpW2=fract(dpId*3.7);
 vec3 dpStone=mix(vec3(.36,.24,.13),vec3(.5,.39,.25),dpW2);
-dpStone=mix(dpStone,vec3(.42,.21,.14),step(.8,dpV)*.8);
-dpStone=mix(dpStone,vec3(.5,.34,.14),step(.66,dpV)*step(dpV,.8)*.6);
-dpStone=mix(dpStone,vec3(.13,.12,.115),step(dpV,.05)*dpMain*(1.-dpRing));
+dpStone=mix(dpStone,vec3(.44,.25,.16),step(.86,dpV)*.6);
+dpStone=mix(dpStone,vec3(.5,.35,.17),step(.7,dpV)*step(dpV,.86)*.5);
+dpStone=mix(dpStone,vec3(.16,.14,.12),step(dpV,.03)*dpMain*(1.-dpRing));
 if(dpKerb>.5)dpStone=mix(vec3(.55,.5,.41),vec3(.64,.58,.47),dpW2);
 // Bedding: faint parallel laminae across each block, the grain of a sandstone.
 dpStone*=.9+.14*sin(dot(dpLoc,vec2(.3,1.))*48.+dpId*30.+fpNoise(dpP*3.)*2.)*(1.-dpFar);

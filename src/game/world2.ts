@@ -15,6 +15,7 @@ import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAIL
 import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
+import { DawnPortal } from './dawnPortal';
 import { StarVillageLife } from './world2Life';
 import {starGroundColor} from './world2Ground';
 import {facetedStarCrystal} from './starCrystal';
@@ -62,7 +63,7 @@ export class HiddenWorld {
   private emberGate:FrostPortal;
   readonly dawnRequests:DawnRequests;
   readonly snowRequests:DawnRequests;
-  private snowGate:StarPortal;
+  private snowGate:DawnPortal;
   private thirdGate:StarPortal;
   private echoAt=0;
   readonly spawn = new THREE.Vector3(0, 3, 86);
@@ -187,7 +188,7 @@ export class HiddenWorld {
     this.baseRoot=w.root;
     this.originalHeight=w.heightAt.bind(w);this.originalCollision=w.resolveCollision.bind(w);this.originalRay=w.raycastSolid.bind(w);
     this.root.visible=false;game.scene.add(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);
-    this.snowGate=new StarPortal(new THREE.Vector3(14,this.third.height(14,84),84),'새벽 항구 → 서리빛 설원');this.third.root.add(this.snowGate.root);
+    this.snowGate=new DawnPortal(new THREE.Vector3(14,this.third.height(14,84),84),'새벽 항구 → 서리빛 설원','frost');this.third.root.add(this.snowGate.root);
     this.sky=new StarSky();this.root.add(this.sky.root);
     const land=new THREE.PlaneGeometry(280,320,140,160);land.rotateX(-Math.PI/2);
     const pos=land.attributes.position,colors=[];

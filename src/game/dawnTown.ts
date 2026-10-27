@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {dawnBoulders} from './dawnBoulders';
 import {dawnLamps} from './dawnLamps';
+import {dawnHarbour,harbourPaths} from './dawnHarbour';
 import {dawnPaving} from './dawnPaving';
 import {DAWN_PATHS} from './world3Colliders';
 
@@ -19,9 +20,11 @@ export interface DawnTown {
 
 export function dawnTown(height: (x: number, z: number) => number): DawnTown {
   const root = new THREE.Group(); root.name = 'dawnharbor-town';
-  const paving = dawnPaving(height, DAWN_PATHS, {pads: DAWN_SQUARES});
+  const paving = dawnPaving(height, [...DAWN_PATHS, ...harbourPaths()], {pads: DAWN_SQUARES});
+  const harbour = dawnHarbour(height);
+  root.add(harbour.group);
   root.add(paving.root);
-  const lamps = dawnLamps(height);
+  const lamps = dawnLamps(height, harbour.group.userData.lampSpots);
   root.add(lamps.group);
   const boulders = dawnBoulders(height);
   root.add(boulders.group);
@@ -33,6 +36,7 @@ export function dawnTown(height: (x: number, z: number) => number): DawnTown {
       paving.setSun(sunDir);
       lamps.update(time);
       boulders.update(time);
+      harbour.update(time);
     },
   };
 }
