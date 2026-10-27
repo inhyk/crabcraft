@@ -100,8 +100,8 @@ try {
   assert.ok(r.dressing && r.dressing.stalls >= 10 && r.dressing.goods >= 60 && r.dressing.benches >= 6 && r.dressing.doorPots >= 4 && r.dressing.lanterns >= 6, JSON.stringify(r.dressing));
   assert.ok(r.quarter && r.quarter.blocks >= 28 && r.quarter.windcatchers === 3 && r.quarter.laundry >= 10, `desert quarter (rooftop laundry): ${JSON.stringify(r.quarter)}`);
   assert.deepEqual(r.palette, [], 'no village kit house materials left');
-  // Date palms on every old tree site (32) and the quarter's own (dawnHousePlan.ts quarterPalms, 18).
-  assert.equal(r.palms, 32 + 18, 'date palms on the old tree sites and in the quarter');
+  // Date palms on every old tree site (32) and the quarter's own (dawnHousePlan.ts quarterPalms, 19).
+  assert.equal(r.palms, 32 + 19, 'date palms on the old tree sites and in the quarter');
   assert.ok(r.braziers >= 4, `braziers ${r.braziers}`);
   assert.ok(r.souk && r.souk.stalls >= 8 && r.souk.goods >= 80, JSON.stringify(r.souk));
   assert.deepEqual(r.gates.map(g => g[1]).sort(), ['dawn', 'frost'], JSON.stringify(r.gates));

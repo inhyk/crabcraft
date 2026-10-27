@@ -100,8 +100,10 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
       const pts = [P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)], uv = uvMetres ? [u0 * W, v0 * Hh, u1 * W, v0 * Hh, u1 * W, v1 * Hh, u0 * W, v1 * Hh] : [u0, v0, u1, v0, u1, v1, u0, v1];
       const sw = [sway(u0, v0), sway(u1, v0), sway(u1, v1), sway(u0, v1)];
       const n = new V().subVectors(pts[1], pts[0]).cross(new V().subVectors(pts[3], pts[0])).normalize();
-      if (n.y < -.2) n.negate();
-      for (const k of [0, 1, 2, 0, 2, 3]) { cloth.a3 = [sw[k], pattern, seed]; cloth.vert(pts[k], n, uv[k * 2], uv[k * 2 + 1]); }
+      // Keep the winding with the normal (double-sided: three flips the normal of back faces).
+      const flip = n.y < -.2;
+      if (flip) n.negate();
+      for (const k of flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) { cloth.a3 = [sw[k], pattern, seed]; cloth.vert(pts[k], n, uv[k * 2], uv[k * 2 + 1]); }
     }
   };
   const post = (x: number, y0: number, z: number, h: number, r = .06) => wood(new THREE.CylinderGeometry(r * .85, r, h, 7), trs(x, y0 + h / 2, z), null, 0, new V(0, 1, 0));
@@ -158,7 +160,7 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
     for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
       const P = (uu: number, vv: number) => a.clone().lerp(b, uu).lerp(d.clone().lerp(c, uu), vv).addScaledVector(f.N, .025 * Math.sin(Math.PI * uu) * vv);
       const q = [[i / nu, j / nv], [(i + 1) / nu, j / nv], [(i + 1) / nu, (j + 1) / nv], [i / nu, (j + 1) / nv]];
-      for (const k of [0, 1, 2, 0, 2, 3]) { cloth.a3 = [q[k][1] * .25, seed % 3 === 0 ? CL.kilim : CL.rug, seed]; cloth.vert(P(q[k][0], q[k][1]), f.N, q[k][0], 1 - q[k][1]); }
+      for (const k of [0, 2, 1, 0, 3, 2]) { cloth.a3 = [q[k][1] * .25, seed % 3 === 0 ? CL.kilim : CL.rug, seed]; cloth.vert(P(q[k][0], q[k][1]), f.N, q[k][0], 1 - q[k][1]); }
     }
     wood(new THREE.CylinderGeometry(.025, .025, w + .2, 6), basis(a.clone().lerp(b, .5).addScaledVector(f.N, .01), f.N, f.U, new V().crossVectors(f.N, f.U)), null, 0, new V(0, 1, 0));
     stats.carpets++;
@@ -605,6 +607,12 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
     }
   }
   turn(null);
+  // Medina alleys: cloth stretched from wall to wall across the narrow side lanes, sagging, a little askew.
+  for (const [x0, x1, z0, z1, k] of [[7.4, 11.2, 23.4, 28.7, 0], [13.4, 16.8, 23.6, 28.5, 1], [-8, -12.2, 23.5, 28.7, 2], [-14.6, -17.6, 23.2, 28.8, 3], [16.6, 22.4, 72.6, 74.8, 4], [21.4, 25.6, 23.4, 28.4, 5]] as const) {
+    const y = height((x0 + x1) / 2, (z0 + z1) / 2) + 3.3 + (k % 2) * .3;
+    sheet(new V(x0, y, z0), new V(x1, y - .2, z0 + .1), new V(x1, y + .1, z1), new V(x0, y - .1, z1 - .1), CLOTH[(k * 2 + 1) % CLOTH.length], k % 2 ? CL.stripe : CL.plain, .35, (u, v) => .2 + .5 * Math.sin(Math.PI * u) * Math.sin(Math.PI * v), 300 + k, 5, 5);
+    stats.sails++;
+  }
   // The walled yard (lane 26 east): a shade sail from the wall over a bench and jars.
   {
     const w = byId.get('e-26w')!, yy = height(w.x, w.z);

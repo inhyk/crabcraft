@@ -158,6 +158,8 @@ export function quarterPalms(): [number, number, number, number][] {
     [30.4, 76.6, 8.6, .1], [-30.2, 85.6, 7.4, .16], [31.2, 93.4, 9.2, .08], [-36.6, 93.6, 8, .12],
     // Back gardens rising over the roofs.
     [47.6, 47.2, 9.6, .06], [-47.4, 34.2, 9.2, .1], [-46.4, 58.4, 8.8, .12], [47.8, 66.4, 8.4, .1],
+    // The medina courtyard behind the east alley of lane 26.
+    [16.4, 34.5, 8, .08],
   ];
 }
 
