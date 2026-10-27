@@ -16,7 +16,7 @@ export const CITADEL_ARENA = { x: 0, z: -72, y: DAWN_ARENA_HEIGHT, r: 21, curb: 
  * ground at the front, `top` the wings' top. It stands south of z -45.2 so the arena's camera (and a player's,
  * fighting at the south edge) looks over the open court, not into it.
  */
-export const CITADEL_GATE = { half: 12.5, front: -40.4, back: -44.8, open: 3.4, apex: 9.4, portal: 13.8, top: 34.5, batter: 1.2 } as const;
+export const CITADEL_GATE = { half: 12.5, front: -40.4, back: -44.8, open: 3.4, apex: 9.4, portal: 13.8, top: 34.5, batter: 2.3 } as const;
 
 /** A square battered tower: `r` the half width at the top; 'sun': a gilt sun on a stem; 'fire': a fire bowl. */
 export interface CitadelTower { x: number; z: number; r: number; top: number; crown: 'sun' | 'fire' }
