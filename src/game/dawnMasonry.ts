@@ -66,10 +66,13 @@ export function dawnMasonryMaterial(name: string): THREE.MeshStandardMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${FROST_NOISE}\nvarying float vMG;\nvarying float vMS;\nvarying float vMC;\nvarying vec3 vMW;\nvarying vec3 vMN;\nfloat mGilt;\nfloat mWorn;\nfloat mDust;`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
-        vec3 mNW=normalize(vMN),mA=abs(mNW)/(abs(mNW.x)+abs(mNW.y)+abs(mNW.z));
-        #define M3(f,o) (fpNoise(vMW.zy*(f)+(o))*mA.x+fpNoise(vMW.xz*(f)+(o))*mA.y+fpNoise(vMW.xy*(f)+(o))*mA.z)
-        float mN=M3(3.1,0.),mSide=1.-abs(mNW.y),mAbove=vMW.y-vMG;
-        float mNear=1.-smoothstep(.004,.02,length(fwidth(vMW)));
+        // One projection per fragment, on the plane the face mostly lies in: walls and towers read the same, at a
+        // third of the noise of a triplanar blend.
+        vec3 mNW=normalize(vMN);
+        vec2 mUV=abs(mNW.y)>.7?vMW.xz:(abs(mNW.x)>abs(mNW.z)?vMW.zy:vMW.xy);
+        #define MN(f,o) fpNoise(mUV*(f)+(o))
+        float mSide=1.-abs(mNW.y),mAbove=vMW.y-vMG;
+        float mFoot=length(fwidth(vMW)),mNear=1.-smoothstep(.004,.02,mFoot);
         mGilt=step(.5,vMS);
         // Far slabs: the courses drawn (uneven heights, stones of uneven length), the limestone bands at the same
         // levels the near mason lays them, each stone its own value.
@@ -88,47 +91,48 @@ export function dawnMasonryMaterial(name: string): THREE.MeshStandardMaterial {
           diffuseColor.rgb=(mK<${DAWN_BANDS.pale.toFixed(2)}&&mGilt<.5?mPale:mBas)*mix(1.,.45,mJ);
         }
         float mL=dot(diffuseColor.rgb,vec3(.3,.59,.11)),mBasalt=1.-smoothstep(.07,.16,mL);
-        // Broad mottling and grain up close; basalt is pitted with vesicles, the limestone fine-grained.
-        diffuseColor.rgb*=.82+.26*(M3(.7,2.)*.5+.5);
-        float mG1=M3(38.,5.)*.5+.5,mG2=M3(91.,9.)*.5+.5;
-        diffuseColor.rgb*=mix(1.,mix(1.,.6,smoothstep(.62,.8,mG1))*mix(1.,1.3,smoothstep(.66,.84,mG2)),mNear*(1.-mGilt));
-        float mVes=smoothstep(.72,.86,M3(23.,11.)*.5+.5)*mBasalt*mNear;
-        diffuseColor.rgb*=1.-mVes*.6;
+        float mN=MN(.7,2.),mW=MN(.13,41.);
+        // Broad mottling and weather bigger than a stone.
+        diffuseColor.rgb*=(.82+.26*(mN*.5+.5))*(.8+.36*smoothstep(.15,.85,mW*.5+.5));
+        // Up close: grain, and the basalt pitted with vesicles.
+        mDust=0.;
+        if(mNear>0.){
+          float mG1=MN(38.,5.)*.5+.5,mG2=MN(23.,11.)*.5+.5;
+          diffuseColor.rgb*=mix(1.,mix(1.,.62,smoothstep(.62,.8,mG1))*mix(1.,1.25,smoothstep(.7,.86,1.-mG1))*(1.-smoothstep(.72,.86,mG2)*mBasalt*.6),mNear*(1.-mGilt));
+        }
         // The joints: lime mortar, pale and sandy, receding to the stone's value with distance.
-        float mJFar=smoothstep(.008,.035,length(fwidth(vMW)));
-        if(vMC>1.5)diffuseColor.rgb=mix(vec3(.2,.17,.13)*(.75+.5*(M3(1.3,7.)*.5+.5)),vec3(.05,.045,.04),mJFar*.8);
-        // Weather bigger than a stone: bleached and darkened patches, soot run down from the tops in long streaks.
-        diffuseColor.rgb*=.8+.36*smoothstep(.15,.85,M3(.13,41.)*.5+.5);
+        if(vMC>1.5)diffuseColor.rgb=mix(vec3(.2,.17,.13)*(.75+.5*(mN*.5+.5)),vec3(.05,.045,.04),smoothstep(.008,.035,mFoot)*.8);
+        // Soot run down from the tops in long streaks, stronger on the limestone.
         vec2 mTw=normalize(vec2(-mNW.z,mNW.x)+1e-4);float mAlong=dot(vMW.xz,mTw);
-        float mSoot=smoothstep(.45,.8,fpNoise(vec2(mAlong*.55,vMW.y*.035+fpNoise(vec2(mAlong*.25,3.))*.5))*.5+.5)*smoothstep(.0,.6,fpNoise(vec2(mAlong*.9+9.,vMW.y*.08))*.5+.5);
-        diffuseColor.rgb*=mix(vec3(1.),vec3(.42,.38,.36),mSoot*mSide*(1.-mGilt)*(.35+.65*(1.-mBasalt)));
-        // Orange lichen on the limestone, sparse, on the shaded faces.
-        float mLich=smoothstep(.78,.92,M3(.9,31.)*.5+.5+mN*.06)*mSide*(1.-mBasalt)*(1.-mGilt);
+        float mSoot=smoothstep(.4,.8,fpNoise(vec2(mAlong*.55,vMW.y*.035+mW*.4))*.5+.5)*mSide*(1.-mGilt);
+        diffuseColor.rgb*=mix(vec3(1.),vec3(.42,.38,.36),mSoot*(.35+.65*(1.-mBasalt)));
+        // Orange lichen on the limestone, sparse.
+        float mLich=smoothstep(.8,.94,mW*.5+.5+mN*.12)*mSide*(1.-mBasalt)*(1.-mGilt);
         diffuseColor.rgb*=mix(vec3(1.),vec3(1.35,.95,.45),mLich*.7);
-        // Sun-bleached tops and upper chamfers; sand blown against the foot and lodged on the ledges.
+        // Sun-bleached tops; sand blown against the foot and lodged on the ledges.
         float mUp=mNW.y+mN*.1;
         diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*1.25+vec3(.03,.025,.015),smoothstep(.6,.95,mUp)*(1.-mGilt)*.7);
-        mDust=(1.-smoothstep(.0,1.4+M3(.6,23.)*.8,mAbove))*.75*mSide;
-        mDust=max(mDust,smoothstep(.75,.95,mUp)*smoothstep(.2,.6,fpNoise(vMW.xz*1.3+7.)*.6+.35)*.65);
-        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.42,.33,.22)*(.85+.3*mG1),mDust*(1.-mGilt*.5));
-        // Gilt: gold leaf over bronze, worn back on the edges and in patches; the bronze darkened by soot.
-        // Bronze (doors, grilles) is marked .7 in the same channel: dark, little worn, a warm sheen.
+        mDust=(1.-smoothstep(.0,1.4+mN*.8,mAbove))*.75*mSide;
+        mDust=max(mDust,smoothstep(.75,.95,mUp)*smoothstep(.2,.6,mW*.6+.35)*.65);
+        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.42,.33,.22)*(.85+.3*(mN*.5+.5)),mDust*(1.-mGilt*.5));
+        // Gilt: gold leaf over bronze, worn back in patches; bronze (doors, grilles) is .7 in the same channel.
         float mBronze=mGilt*(1.-step(.85,vMS));
-        mWorn=mix(smoothstep(.35,.75,M3(2.3,51.)*.5+.5+mN*.2)*.7+mSoot*.3,.2,mBronze);
-        vec3 mGold=mix(mix(vec3(.95,.58,.19),vec3(.2,.12,.05),mWorn),vec3(.15,.085,.04)*(.8+.4*(M3(1.7,61.)*.5+.5)),mBronze);
+        mWorn=mix(smoothstep(.35,.75,(mGilt>.5?MN(2.3,51.):0.)*.5+.5+mN*.2)*.7+mSoot*.3,.2,mBronze);
+        vec3 mGold=mix(mix(vec3(.95,.58,.19),vec3(.2,.12,.05),mWorn),vec3(.15,.085,.04)*(.8+.4*(mN*.5+.5)),mBronze);
         diffuseColor.rgb=mix(diffuseColor.rgb,mGold,mGilt);`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(mix(.9,.97,mDust),mix(.3,.62,mWorn),mGilt);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor=mGilt*mix(.88,.55,mWorn);')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(.16,.09,.03)*mGilt*(1.-mWorn)*.35;')
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(.35,1.,mGilt);')
       .replace('#include <normal_fragment_maps>', /* glsl */ `#include <normal_fragment_maps>
-        {
-          // Chisel marks and vesicles: a small world-space bump, smoother on the gilt.
-          #define MF(q) (fpNoise((q).zy*14.+1.)*mA.x+fpNoise((q).xz*14.+1.)*mA.y+fpNoise((q).xy*14.+1.)*mA.z)
-          float e=.012,f0=MF(vMW);
-          vec3 g=vec3(MF(vMW+vec3(e,0.,0.))-f0,MF(vMW+vec3(0.,e,0.))-f0,MF(vMW+vec3(0.,0.,e))-f0)/e;
+        if(mNear>0.){
+          // Chisel marks and vesicles up close: a small bump in the face's plane, smoother on the gilt.
+          float e=.015,f0=MN(14.,1.),fu=fpNoise((mUV+vec2(e,0.))*14.+1.)-f0,fv=fpNoise((mUV+vec2(0.,e))*14.+1.)-f0;
+          vec3 pu=abs(mNW.y)>.7?vec3(1.,0.,0.):(abs(mNW.x)>abs(mNW.z)?vec3(0.,0.,1.):vec3(1.,0.,0.));
+          vec3 pv=abs(mNW.y)>.7?vec3(0.,0.,1.):vec3(0.,1.,0.);
+          vec3 g=(pu*fu+pv*fv)/e;
           vec3 nW=inverseTransformDirection(normal,viewMatrix);
-          g=(g-dot(g,nW)*nW)*.007*(1.-mGilt*.7);
+          g=(g-dot(g,nW)*nW)*.007*(1.-mGilt*.7)*mNear;
           nW=normalize(nW-g);
           normal=normalize((viewMatrix*vec4(nW,0.)).xyz);
         }`);

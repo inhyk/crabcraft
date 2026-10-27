@@ -20,7 +20,7 @@ uniform float daTime;
 uniform float daDetail;
 uniform float daCourt;
 varying vec3 vDaW;
-float daGilt;float daBas;float daPolish;float daH;float daGlow;
+float daGilt;float daBas;float daPolish;float daH;float daGlow;float daWorn;
 float daBand(float r,float a,float b,float aa){return smoothstep(a-aa,a+aa,r)*(1.-smoothstep(b-aa,b+aa,r));}
 float daSeg(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;return length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.,1.));}
 // A small sun (disc and eight rays) or a crescent moon, in glyph units (-1..1).
@@ -38,7 +38,7 @@ float dR=length(dP),dAng=atan(dP.x,dP.y);
 float dFoot=max(length(fwidth(vDaW.xz)),1e-4);
 float dAA=dFoot*.75;
 float dNear=1.-smoothstep(.015,.06,dFoot);
-daGilt=0.;daBas=0.;daH=0.;daGlow=0.;daPolish=0.;
+daGilt=0.;daBas=0.;daH=0.;daGlow=0.;daPolish=0.;daWorn=.5;
 vec3 dCol;
 // ---- Limestone courses: rings 1.5 m wide, flags ~1.8 m long, every ring staggered, every flag its own.
 float dR0=daCourt>.5?${CITADEL_ARENA.curb.toFixed(2)}:4.5,dCw=daCourt>.5?1.9:1.5;
@@ -56,7 +56,7 @@ dCol=mix(dLime,vec3(.055,.05,.047)*(.85+.3*dH1),dCourtBas);
 daBas=dCourtBas*.5;
 // Wear on the flags: broad stain, fine grain, a chamfer at every joint (lit edge, dark cut).
 dCol*=.84+.24*(fpNoise(vDaW.xz*.35+1.)*.5+.5);
-dCol*=mix(1.,.86+.26*(fpNoise(vDaW.xz*9.)*.5+.5),dNear);
+if(dNear>0.)dCol*=mix(1.,.86+.26*(fpNoise(vDaW.xz*9.)*.5+.5),dNear);
 float dEdge=smoothstep(dJw+.09,dJw,min(dJu,dJr));
 daH-=dJoint*.6+dEdge*.25;
 // Cracked flags here and there: a jagged hairline across.
@@ -107,8 +107,8 @@ if(daCourt<.5){
  float gold=max(max(max(inSun*(1.-inMoon),inRay*(1.-inSun)),ring1),max(max(tick*b1,glyph*b2),max(max(scr*b3,hourL),fil)));
  daGilt=gold;
  daPolish=exp(-pow((dR-10.)/5.,2.))*.6;
- float dWorn=smoothstep(.3,.75,fpNoise(vDaW.xz*1.9+11.)*.5+.5+fpNoise(vDaW.xz*7.)*.2-daPolish);
- dCol=mix(dCol,mix(vec3(.86,.46,.09),vec3(.33,.18,.05),dWorn*.7),daGilt);
+ if(gold>0.)daWorn=smoothstep(.3,.75,fpNoise(vDaW.xz*1.9+11.)*.5+.5+fpNoise(vDaW.xz*7.)*.2*dNear-daPolish);
+ dCol=mix(dCol,mix(vec3(.86,.46,.09),vec3(.33,.18,.05),daWorn*.7),daGilt);
  // The moon over the sun: polished basalt, a thin burning rim (the corona) round it.
  dCol=mix(dCol,vec3(.025,.022,.022),inMoon*(1.-smoothstep(1.9,2.,dR)));
  daBas=max(daBas,inMoon);
@@ -126,11 +126,10 @@ if(daCourt<.5){
 }
 dCol*=mix(1.,.3,dJoint);
 // Soot: the boss's fire scorched across the stone in bursts.
-if(daDetail>.5){
- float soot=0.;
- for(int i=0;i<5;i++){vec2 c=vec2(sin(float(i)*2.4+1.)*(5.+float(i)*2.6),cos(float(i)*2.4+1.)*(5.+float(i)*2.6));vec2 d=dP-c;float a=atan(d.y,d.x);
-  soot=max(soot,exp(-dot(d,d)/(4.+float(i)))*(.55+.45*fpNoise(vec2(a*3.,length(d)*.6)+float(i)*7.)));}
- dCol*=1.-soot*.55*(1.-daCourt);
+if(daDetail>.5&&daCourt<.5){
+ // One noise field, thresholded into bursts and streaked radially from the centre (the fight's fire).
+ float soot=smoothstep(.35,.85,fpNoise(vec2(dAng*2.6,dR*.18)+3.)*.6+fpNoise(dP*.22+9.)*.5)*(1.-smoothstep(16.,20.,dR));
+ dCol*=1.-soot*.5;
 }
 diffuseColor.rgb*=dCol;
 `;
@@ -148,7 +147,7 @@ function dialMaterial(name: string, court: boolean, uniforms: Record<string, THR
       .replace('#include <common>', `#include <common>\n${HEAD}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${DIAL}`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        float gWorn=smoothstep(.3,.75,fpNoise(vDaW.xz*1.9+11.)*.5+.5+fpNoise(vDaW.xz*7.)*.2-daPolish);
+        float gWorn=daWorn;
         roughnessFactor=mix(mix(.86,.5,daBas),mix(.28,.55,gWorn),daGilt);`)
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor=daGilt*mix(.45,.25,gWorn);')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.14)*daGlow*1.1+vec3(.36,.15,.02)*daGilt*(1.-gWorn*.7)*.6;')
