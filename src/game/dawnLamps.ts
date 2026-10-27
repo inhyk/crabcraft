@@ -74,5 +74,7 @@ export function dawnLamps(height: (x: number, z: number) => number, extra: reado
   const halo = dawnGlows(flames.map(pos => ({pos, size: 1.5})), '#ffb763', 'dawnharbor-lamp-halos');
   group.add(halo);
   group.userData.lamps = flames.length;
+  // The solid posts (the ones on the ground; lamps on masonry stand past the walk limit).
+  group.userData.posts = dawnLampPosts().map(p => [p.x, p.z]);
   return {group, flames, update(time) { (halo.material as THREE.ShaderMaterial).uniforms.uTime.value = time; }};
 }
