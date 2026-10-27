@@ -461,6 +461,7 @@ export class HiddenWorld {
     }
     const flags=observation?.flags??this.game.journey;
     if(!this.rendered||this.chapter!==2)this.night.release(this.game.scene);
+    if(this.game.objective)this.game.objective.star=this.rendered&&this.chapter===2&&!this.inTidecrown;
     this.hub.update(dt,time);
     this.snowGate.update(time);this.emberGate.update(time);
     if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
