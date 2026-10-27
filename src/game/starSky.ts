@@ -53,7 +53,7 @@ export class StarSky {
         void main(){
           // Few bright stars, many faint: a power law, with a slow twinkle and stars near the horizon dimmed.
           float mag=pow(seed,3.);
-          brightness=(.28+.9*mag)*(.8+.2*sin(time*(.55+seed)+seed*41.))*smoothstep(.0,.18,normalize(position).y);
+          brightness=(.42+.9*mag)*(.8+.2*sin(time*(.55+seed)+seed*41.))*smoothstep(.0,.06,normalize(position).y);
           tint=mix(vec3(.62,.75,1.),vec3(1.,.86,.66),fract(seed*7.31));
           vec4 view=modelViewMatrix*vec4(position,1.);
           gl_Position=projectionMatrix*view;

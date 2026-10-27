@@ -11,7 +11,7 @@ try {
   await page.addInitScript(()=>localStorage.setItem('cc.hintsSeen','1'));
   await page.goto((process.env.CC_QA_URL??'http://127.0.0.1:5192/')+'?screen=game');
   await page.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});
-  await page.evaluate(()=>{const g=window.app.current.game;g.god=true;g.world2.enter();g.player.unit.teleport(g.world,0,55,0);});
+  await page.evaluate(()=>{const g=window.app.current.game;g.god=true;g.creatorTravel=true;g.world2.enter();g.player.unit.teleport(g.world,0,55,0);});
   await page.waitForTimeout(1800);
   const result=await page.evaluate(()=>{
     const g=window.app.current.game,e=g.engine,sky=g.world2.sky;
@@ -24,7 +24,7 @@ try {
     const full=render(),rawFull=raw();stars.visible=false;const noStars=render(),rawNoStars=raw();stars.visible=true;
     sky.update(150,g.camera,1);const later=render(),rawLater=raw();
     // The moon hangs where the moonlight comes from (low in the west-north-west): look at it to see it.
-    const keep=g.camera.position.clone();g.camera.position.set(0,20,55);g.camera.lookAt(moon.position.clone().normalize().multiplyScalar(500).add(g.camera.position));g.camera.updateMatrixWorld();sky.update(150,g.camera,1);
+    const keep=g.camera.position.clone();g.camera.position.set(0,20,55);{const m=moon.position.clone().normalize(),e=Math.asin(m.y)-.21,h=Math.hypot(m.x,m.z);g.camera.lookAt(g.camera.position.x+m.x/h*Math.cos(e)*500,g.camera.position.y+Math.sin(e)*500,g.camera.position.z+m.z/h*Math.cos(e)*500);}g.camera.updateMatrixWorld();sky.update(150,g.camera,1);
     const moonFull=render(),rawMoonFull=raw();moon.visible=false;const noMoon=render(),rawNoMoon=raw();moon.visible=true;
     g.camera.position.copy(keep);g.camera.lookAt(0,6,43);g.camera.updateMatrixWorld();sky.update(150,g.camera,1);
     const structure={count:stars.geometry.attributes.position.count,draws:sky.root.children.length,fog:sky.root.children.map(o=>o.material.fog),depth:stars.material.depthWrite};
@@ -43,6 +43,7 @@ try {
     }
     return answer;
   },result);
+  console.log('SKY DIFFERENCES',JSON.stringify(differences));
   assert.equal(result.structure.count,2400);assert.equal(result.structure.draws,3);assert.deepEqual(result.structure.fog,[false,false,false]);assert.equal(result.structure.depth,false);
   assert.equal(result.tracked,0);assert.equal(result.ratio,2);
   assert.ok(differences.stars.pixels>100);assert.ok(differences.moon.pixels>100);assert.ok(differences.animation.pixels>1000);

@@ -226,7 +226,7 @@ export class HiddenWorld {
     // The settlement owns the stone trails; keep only the luminous wayfinders here.
     {
       // Small teal crystals grown beside the starroad, every five metres.
-      const guides=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('teal',{glow:1.3}),14),m=new THREE.Matrix4(),q=new THREE.Quaternion();guides.name='star-road-wayfinders';
+      const guides=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('teal',{glow:1.3}),starRoadGuides().length),m=new THREE.Matrix4(),q=new THREE.Quaternion();guides.name='star-road-wayfinders';
       for(const [i,[x,z]] of starRoadGuides().entries()){m.compose(new THREE.Vector3(x,this.height(x,z)+.55,z),q.setFromAxisAngle(new THREE.Vector3(0,1,0),i*2.4),new THREE.Vector3(.7,1.1,.7));guides.setMatrixAt(i,m);}
       guides.castShadow=true;this.root.add(guides);
     }

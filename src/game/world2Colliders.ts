@@ -35,9 +35,9 @@ export function starCrystalGarden(height: (x: number, z: number) => number) {
   return out;
 }
 
-/** Small teal crystals beside the starroad (world2.ts), every five metres, alternating sides. */
+/** Small teal crystals beside the starroad (world2.ts), every five metres, alternating sides; none where a pilgrim trail crosses. */
 export function starRoadGuides(): [number, number][] {
-  return Array.from({ length: 14 }, (_, i) => [(i % 2 ? 1 : -1) * 6.5, 5 - i * 5]);
+  return Array.from({ length: 14 }, (_, i) => [(i % 2 ? 1 : -1) * 6.5, 5 - i * 5] as [number, number]).filter(([x, z]) => starTrailDistance(x, z) > 2.4);
 }
 
 export function layoutStarhaven(height: (x: number, z: number) => number, natureNames: readonly string[]) {

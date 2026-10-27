@@ -87,6 +87,8 @@ float sfInlay(vec2 p){
     d=min(d,length(p-A)-(.09+.1*sfH(vec2(mod(c,sn),5.))));
     if(sfH(vec2(mod(c,sn),3.))>.35)d=min(d,sfSeg(p,A,B)-.018);
   }
+  // Stars set into the obsidian eclipse, so the dark disc reads as night, not a hole.
+  if(r<1.8){vec2 gc=floor(p/.46);vec2 o=vec2(sfH(gc+9.),sfH(gc+4.))*.3+.08;if(sfH(gc+7.)>.5)d=min(d,length(p-gc*.46-o)-(.02+.035*sfH(gc+2.)));}
   // The twelve phases in the outer band.
   float pn=12.,ps=floor((a+3.14159265)/6.2831853*pn),pa=(ps+.5)/pn*6.2831853-3.14159265;
   vec2 C=vec2(sin(pa),-cos(pa))*15.6,q=p-C;
@@ -162,6 +164,8 @@ export function gateArchBoxes(height: (x: number, z: number) => number) {
 
 export class StarSanctum {
   readonly root = new THREE.Group();
+  /** The twelve obelisk footprints, solid to movement and sight (unchanged from the old colonnade). */
+  readonly solids = throneSolids();
   private crowns: THREE.InstancedMesh[] = [];
   constructor(height: (x: number, z: number) => number) {
     this.root.name = 'star-sanctum';

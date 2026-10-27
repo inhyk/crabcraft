@@ -30,7 +30,7 @@ interface Piece { base: P3; axis: P3; len: number; r: number; seed: number }
 
 /** The cluster's crystals in the old unit space: ground line at y = -0.5 once placed. */
 function pieces(): Piece[] {
-  const out: Piece[] = [{base: [0, -1, 0], axis: [0.03, 1, -0.02], len: 1.98, r: 0.4, seed: 1}];
+  const out: Piece[] = [{base: [0, -0.97, 0], axis: [0.03, 1, -0.02], len: 1.95, r: 0.4, seed: 1}];
   const sats = [
     {a: 0.3, d: 0.3, lean: 0.36, len: 1.02, r: 0.2},
     {a: 1.55, d: 0.33, lean: 0.42, len: 0.78, r: 0.17},
