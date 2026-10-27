@@ -10,10 +10,11 @@ import {addPatch} from '../world/materials';
  * sit in the junctions and the open shade keeps its value.
  *
  * Bake (once, when the quarter is built): every solid of the island is drawn from straight above into a height
- * field of how far it stands over the ground (sandGroundTex, the sand's own bake), clipped to the first few metres
- * (a tower counts as tall as a house: what hides the sky low down is the near wall, not the height of it). A second pass turns the field into ground occlusion: for
- * each texel, eight directions, the highest horizon any solid raises within a few metres (the horizon-based AO of
- * Bavoil and Sainz, 2008, on a height field instead of a depth buffer).
+ * field of how far it stands over the ground (sandGroundTex, the sand's own bake), clamped to the first few metres
+ * (a tower counts as tall as a house: what hides the sky low down is the near wall, not its height). Cut-out
+ * leaves, glass and glows stay out. A second pass turns the field into ground occlusion: for each texel, eight
+ * directions, the highest horizon any solid raises within eight metres (the horizon-based AO of Bavoil and Sainz,
+ * 2008, on a height field instead of a depth buffer).
  *
  * Shading: every lit material of the island multiplies its indirect light by the occlusion at its own foot, faded
  * out over the first metres up a wall (walls meet the ground dark, their tops stay clean), and up-facing surfaces
@@ -22,7 +23,7 @@ import {addPatch} from '../world/materials';
 
 /** The baked square: the sand's fine bake (sandTerrain.ts NEAR), so both read the same uv. */
 export const CONTACT_RECT = {x: -165, z: -160, size: 330};
-/** Height over the ground counted as an occluder, metres: a man-height band, not roofs, canopies or towers. */
+/** Heights over the ground are clamped to this, metres: roofs, crowns and towers count as a wall this high. */
 const CAP = 4.2;
 /** Lower than this is paving, kerbs and guide discs: ground, not an occluder. */
 const FLOOR = .28;
