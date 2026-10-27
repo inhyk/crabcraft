@@ -14,11 +14,11 @@ export const STAR_ZENITH = new THREE.Color().setRGB(0.0045, 0.0075, 0.026);
 export const STAR_HORIZON = new THREE.Color().setRGB(0.032, 0.04, 0.085);
 /** Moonlight: cool silver, strong enough to cast crisp shadows and read the ground against the sky. */
 export const STAR_MOONLIGHT = new THREE.Color().setRGB(0.62, 0.74, 1.0);
-export const STAR_MOON_INTENSITY = 3.4;
+export const STAR_MOON_INTENSITY = 3.8;
 /** Shade: the sky dome's light from above, the dark heather's bounce from below. */
 export const STAR_SHADE_SKY = new THREE.Color().setRGB(0.1, 0.14, 0.34);
 export const STAR_SHADE_GROUND = new THREE.Color().setRGB(0.018, 0.012, 0.03);
-export const STAR_SHADE_INTENSITY = 0.85;
+export const STAR_SHADE_INTENSITY = 0.75;
 export const STAR_FOG_DENSITY = 0.0042;
 
 const v3 = (v: THREE.Vector3 | THREE.Color) => v instanceof THREE.Color ? `vec3(${v.r.toFixed(4)},${v.g.toFixed(4)},${v.b.toFixed(4)})` : `vec3(${v.x.toFixed(5)},${v.y.toFixed(5)},${v.z.toFixed(5)})`;
@@ -51,9 +51,11 @@ export const STAR_SKY_GLSL = /* glsl */ `
   vec3 starAurora(vec3 d,float t,int layers){
     if(d.y<.004)return vec3(0.);
     vec3 acc=vec3(0.);float n=float(layers);
+    // A per-pixel offset of the layers turns their steps into fine grain instead of bands.
+    float jit=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(.06711056,.00583715))));
     for(int i=0;i<16;i++){
       if(i>=layers)break;
-      float f=(float(i)+.5)/n,h=1.+f*3.2;
+      float f=(float(i)+jit)/n,h=1.+f*3.2;
       vec2 p=d.xz*(h/d.y);
       // Two folded sheets: the near one bright, a fainter one behind and offset.
       float a=p.y-starCurtain(p.x,t),b=p.y-(starCurtain(p.x*.8+9.,t*1.3)-5.);
@@ -72,9 +74,19 @@ export const STAR_SKY_GLSL = /* glsl */ `
     }
     return acc*smoothstep(.004,.05,d.y)*(2.2/n);
   }
+  // The aurora as a reflection sees it: no layers, a smooth glow over the northern sea with its rays.
+  vec3 starAuroraGlow(vec3 d,float t){
+    if(d.y<.002)return vec3(0.);
+    float north=smoothstep(.1,.8,-d.z*inversesqrt(max(dot(d.xz,d.xz),1e-4)));
+    float az=atan(d.x,-d.z),e=d.y;
+    float foot=smoothstep(.02,.08,e)*exp(-max(e-.08,0.)*7.);
+    float rays=.5*nsN1(az*9.+t*.05)+.5*nsN1(az*23.-t*.09);
+    vec3 col=mix(vec3(.08,1.,.5),vec3(.5,.22,1.),smoothstep(.08,.3,e));
+    return col*north*foot*(.35+.9*rays*rays);
+  }
   vec3 starAtmosphere(vec3 direction,float time){
     vec3 d=normalize(direction);
-    return starGradient(d)+starAurora(d,time,4)*.35;
+    return starGradient(d)+starAuroraGlow(d,time)*.09;
   }
   vec3 starSkyRadiance(vec3 direction,float time){
     vec3 d=normalize(direction);

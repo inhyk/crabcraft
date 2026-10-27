@@ -34,7 +34,7 @@ export function starLanterns(points: {x: number; y: number; z: number}[]) {
     name: 'starhaven-lamp-pool', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     vertexShader: 'varying vec2 vU;void main(){vU=uv*2.-1.;gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.);}',
     // Inverse-square-ish falloff from a lamp 3.3 m up, so the pool has a bright heart and a long soft edge.
-    fragmentShader: 'varying vec2 vU;void main(){float r=length(vU)*4.5;float i=3.3*3.3/pow(3.3*3.3+r*r,1.5)*3.3;i*=1.-smoothstep(3.2,4.5,r);gl_FragColor=vec4(vec3(1.,.62,.3)*i*.17,1.);}',
+    fragmentShader: 'varying vec2 vU;void main(){float r=length(vU)*4.5;float i=3.3*3.3/pow(3.3*3.3+r*r,1.5)*3.3;i*=1.-smoothstep(3.2,4.5,r);gl_FragColor=vec4(vec3(1.,.62,.3)*i*.13,1.);}',
   }), points.length);
   pool.name = 'starhaven-lamp-pools';
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), s = new THREE.Vector3(1, 1, 1);
