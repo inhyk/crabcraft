@@ -65,7 +65,8 @@ async function run(quality) {
   const shots = {};
   for (const [name, [x, z, yaw, pitch, dist]] of Object.entries(views)) {
     await page.evaluate(([x, z, yaw, pitch, dist]) => {
-      const g = window.app.current.game; g.player.unit.teleport(g.world, x, z, yaw + Math.PI);
+      // Residents wander in and out of frame (their gear alone is a dozen draws): count the world, not them (nor the roaming enemies).
+      const g = window.app.current.game; for (const u of [...g.npcs.map((n) => n.unit), ...g.townsfolk.map((t) => t.unit), ...g.enemies.map((e) => e.unit)]) u.hidden = true; g.player.unit.teleport(g.world, x, z, yaw + Math.PI);
       g.follow.cut(); g.follow.yaw = yaw; g.follow.pitch = pitch; g.follow.distance = dist;
     }, [x, z, yaw, pitch, dist]);
     await page.waitForTimeout(900);
