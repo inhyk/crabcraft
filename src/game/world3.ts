@@ -7,6 +7,7 @@ import {dawnSea,type DawnSea} from './dawnSea';
 import {SandTerrain,sandDeform,SAND_GROUND_READ} from './sandTerrain';
 import {applySandSurface,SandFootfalls} from './sandSurface';
 import {SandSpray} from './sandSpray';
+import {SandDrift} from './sandDrift';
 import type {Unit} from './unit';
 import {DawnScenery} from './dawnScenery';
 import {StarPortal} from './portal';
@@ -29,7 +30,7 @@ export class DawnIsland {
  /** The stolen dawn (dawnSky.ts): the sun low over the eastern sea; sun, hemisphere, fog and sea all read it. */
  readonly sky=new DawnSky({azimuth:112,elevation:11});private sea:DawnSea;
  /** Goldsand's desert: a clipmap round the player (sandTerrain.ts), prints that the wind fills in, sand kicked up by runners. */
- readonly terrain:SandTerrain;readonly deform=sandDeform(40);readonly spray:SandSpray;private footfalls:SandFootfalls;private refreshSand:()=>void;
+ readonly terrain:SandTerrain;readonly deform=sandDeform(40);readonly spray:SandSpray;readonly drift:SandDrift;private footfalls:SandFootfalls;private refreshSand:()=>void;
  private rotating:THREE.Object3D[]=[];
  height(x:number,z:number){
   return dawnHeight(x,z);
@@ -46,7 +47,9 @@ export class DawnIsland {
   // Paving and the arena floor take no prints and throw no sand.
   const bare=(x:number,z:number)=>roadClearance(x,z)<.15||Math.hypot(x,z+72)<22.5;
   this.footfalls=new SandFootfalls(bare);this.spray=new SandSpray(this.root,{sun:this.sun,bare});
-  this.root.add(this.terrain.mesh,this.sky.mesh);
+  // Sand blowing off the crests (sandDrift.ts).
+  this.drift=new SandDrift({sunDir:this.sky.sunDir,sunLight:this.sky.sunColor.clone().multiplyScalar(this.sky.sunIntensity),sky:this.sky.hemiSky,bounce:this.sky.hemiGround,ground:this.terrain.uniforms});
+  this.root.add(this.terrain.mesh,this.drift.mesh,this.sky.mesh);
   // The sea reads its depth from the same bake.
   this.sea=dawnSea(this.sky,{uniforms:this.terrain.uniforms,read:SAND_GROUND_READ});this.root.add(this.sea.mesh);
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
@@ -100,9 +103,9 @@ export class DawnIsland {
  /** The fog for a camera: the dawn's horizon in the direction it looks, thinner seen from high above. */
  fog(camera:THREE.Camera,fog:THREE.FogExp2){const e=camera.matrixWorld.elements;this.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.sky.fogDensity(e[13],-e[9]);}
  /** Low quality: a coarser clipmap and bake, no finest ripples, the sea's fine ripples, a cloud octave and half the shadow map. */
- setQuality(q:'high'|'low'){this.terrain.setQuality(q);this.sea.setQuality(q);this.sky.setQuality(q);}
+ setQuality(q:'high'|'low'){this.terrain.setQuality(q);this.drift.setQuality(q);this.sea.setQuality(q);this.sky.setQuality(q);}
  /** Prints for every crab near the player, one step of the sand field, the kicked sand. Runs only while Goldsand is shown. */
  updateSand(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'){this.terrain.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSand();}
  disposeSand(){this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
- update(time:number,_rescued:boolean,x:number,z:number){this.terrain.follow(x,z);this.wind?.update(time);this.sky.followSun(x,this.height(x,z),z);this.sky.update(time);this.sea.update(time);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
+ update(time:number,_rescued:boolean,x:number,z:number){this.terrain.follow(x,z);this.drift.update(time,x,z);this.wind?.update(time);this.sky.followSun(x,this.height(x,z),z);this.sky.update(time);this.sea.update(time);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
 }

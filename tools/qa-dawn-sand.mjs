@@ -4,7 +4,7 @@
 // carries wind-shaped dunes: a dune sea with slip faces at the angle of repose past the walkable ellipse. In the
 // game: the clipmap replaced the fixed ground mesh, its GLSL twin and bakes agree with dawnHeight() to centimetres,
 // a walking crab prints the sand and the wind fills the prints back in, running kicks sand while paving takes no
-// print and throws none, and high and low quality render without page, shader or GL errors. Writes tmp/qa/dawn-sand-*.png.
+// print and throws none, sand blows off the crests in one draw, and high and low quality render without page, shader or GL errors. Writes tmp/qa/dawn-sand-*.png.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {launchBrowser} from './lib/browser.mjs';
@@ -78,7 +78,8 @@ const inspect=p=>p.evaluate(async()=>{const g=window.app.current.game,w=g.world2
  pr.forEach((v,i)=>{const h=dawnHeight(...pts[i]);twin=Math.max(twin,Math.abs(v[0]-h));bake=Math.max(bake,Math.abs(v[1]-h));openErr=Math.max(openErr,Math.abs(v[4]-sandOpen(...pts[i])));});
  fr.forEach((v,i)=>{const h=dawnHeight(...far[i]);farTwin=Math.max(farTwin,Math.abs(v[0]-h));farBake=Math.max(farBake,Math.abs(v[1]-h));steep=Math.max(steep,Math.hypot(v[2],v[3]));});
  const hemi=[];root.traverse(o=>{if(o.isHemisphereLight)hemi.push(o);});
- return {clip:!!clip,visible:clip?.visible,layout:t.mesh.userData.layout,res:t.mesh.userData.groundRes,leftovers,twin,bake,farTwin,farBake,openErr,steep,
+ const drift=root.getObjectByName('goldsand-blowing-sand');
+ return {drift:drift?{visible:drift.visible,streamers:drift.userData.streamers,drawn:drift.userData.drawn??drift.userData.streamers,index:drift.geometry.drawRange.count}:null,clip:!!clip,visible:clip?.visible,layout:t.mesh.userData.layout,res:t.mesh.userData.groundRes,leftovers,twin,bake,farTwin,farBake,openErr,steep,
   draws:clip?1:0,low:'SAND_LOW' in (clip.material.defines??{}),sea:!!root.getObjectByName('dawn-sea'),hemi:hemi.length,view:g.engine.viewOptions?.agxLook?.saturation};});
 try{
  for(const quality of ['high','low']){
@@ -91,6 +92,7 @@ try{
   assert.ok(s.bake<(quality==='high'?.02:.05),`the baked ground the sand stands on is dawnHeight() on walkable ground: ${s.bake.toFixed(4)} m`);
   assert.ok(s.farTwin<.02&&s.farBake<(quality==='high'?.6:1.2)&&s.steep>.55,`the dune sea's bake: twin ${s.farTwin.toFixed(3)} m, bake ${s.farBake.toFixed(3)} m, steepest ${s.steep.toFixed(2)}`);
   assert.ok(s.view>1.3,'Goldsand\'s own post look is on');
+  assert.ok(s.drift&&s.drift.visible&&s.drift.drawn===(quality==='low'?s.drift.streamers/2:s.drift.streamers),`sand blows off the crests in one draw, half the streamers on low: ${JSON.stringify(s.drift)}`);
   console.log(`PASS ${quality}: clipmap ${s.layout.levels} rings from ${s.layout.spacing} m, bake ${s.res}, twin ${(s.twin*100).toFixed(2)} cm and bake ${(s.bake*100).toFixed(2)} cm off dawnHeight on walkable ground, dune sea bake ${(s.farBake*100).toFixed(1)} cm`);
   if(quality==='high'){
    // Open sand west of the town, well clear of paving: walk it, then let the wind work.
