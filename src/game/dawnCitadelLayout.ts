@@ -66,6 +66,21 @@ export function colonnadeColumns(): { x: number; z: number }[] {
   return out;
 }
 
+/**
+ * Ruins in the court round the dial: broken column stumps (`h` their standing height), drums rolled off them and a
+ * fallen capital, in four groups between the sun pillars, all outside the dais kerb (radius `CITADEL_DAIS`) and clear
+ * of the colonnade. Solid: the server bakes a circle for each.
+ */
+export const CITADEL_DAIS = 22.6;
+export const COURT_RUINS: readonly { x: number; z: number; kind: 'stump' | 'drum' | 'capital'; yaw: number; h: number }[] = [
+  { x: -24.8, z: -73.2, kind: 'stump', yaw: .3, h: 1.7 }, { x: -23.1, z: -70.5, kind: 'drum', yaw: .4, h: 0 },
+  { x: -25.7, z: -69.4, kind: 'drum', yaw: 1.9, h: 0 }, { x: -23.5, z: -74.9, kind: 'capital', yaw: 2.6, h: 0 },
+  { x: 25.0, z: -75.6, kind: 'stump', yaw: 1.1, h: 1.05 }, { x: 23.3, z: -72.3, kind: 'drum', yaw: -.7, h: 0 },
+  { x: 25.9, z: -72.6, kind: 'capital', yaw: .9, h: 0 },
+  { x: -21.7, z: -58.3, kind: 'drum', yaw: 1.2, h: 0 }, { x: -23.0, z: -59.8, kind: 'drum', yaw: .1, h: 0 },
+  { x: 24.0, z: -88.0, kind: 'stump', yaw: 2.2, h: 2.4 }, { x: 21.7, z: -86.0, kind: 'drum', yaw: .9, h: 0 },
+];
+
 export const CITADEL_BRAZIERS: readonly { x: number; z: number }[] = [
   { x: -5.4, z: -37.4 }, { x: 5.4, z: -37.4 },
   { x: -7.6, z: -98.4 }, { x: 7.6, z: -98.4 },
@@ -100,4 +115,5 @@ export function registerDawnCitadel(h: Height, col: Collision): void {
   for (const o of citadelObelisks()) col.addCircle(o.x, o.z, 1.35, low(o.x, o.z), h(o.x, o.z) + 9);
   for (const s of [-1, 1]) for (const z of CITADEL_APPROACH.z) col.addCircle(s * CITADEL_APPROACH.x, z, 1.1, low(s * CITADEL_APPROACH.x, z), h(s * CITADEL_APPROACH.x, z) + 8);
   for (const b of CITADEL_BRAZIERS) col.addCircle(b.x, b.z, .75, low(b.x, b.z), h(b.x, b.z) + 2.4);
+  for (const r of COURT_RUINS) col.addCircle(r.x, r.z, r.kind === 'stump' ? .8 : r.kind === 'drum' ? .62 : .7, h(r.x, r.z) - 1, h(r.x, r.z) + (r.kind === 'stump' ? r.h : 1.15));
 }

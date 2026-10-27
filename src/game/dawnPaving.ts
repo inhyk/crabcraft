@@ -271,8 +271,8 @@ float dpPolish=smoothstep(.25,.9,dpTrod)*(1.-dpKerb);
 dpStone=mix(dpStone,mix(vec3(dot(dpStone,vec3(.33))),dpStone,.82)*1.14,dpPolish*.6);
 dpStone*=mix(.88,1.,max(dpWear,dpPolish));
 // Cracked flags: a jagged hairline across one flag in six, sand in the crack.
-if(dpFar<.99&&fpHash12(vec2(dpId*3.1,5.7))>.83){
-  vec2 cl=dpLoc/max(dpHalfS,vec2(.05));float cc=abs(cl.y-(fpNoise(cl*1.9+dpId*7.)*.55+cl.x*(fract(dpId*9.3)-.5)));
+if(dpFar<.99&&fpHash12(vec2(dpId*3.1,5.7))>.88){
+  vec2 cl=dpLoc/max(dpHalfS,vec2(.05));float cc=abs(cl.y-(fpNoise(cl*1.3+dpId*7.)*.16+fpNoise(cl*6.+dpId*3.)*.05+cl.x*(fract(dpId*9.3)-.5)*1.2+(fract(dpId*4.1)-.5)*.6));
   dpStone*=1.-(1.-smoothstep(.004,.01+dpFw*1.5,cc*min(dpHalfS.x,dpHalfS.y)))*.5*(1.-dpFar)*(1.-smoothstep(.7,.95,abs(cl.x)));
 }
 dpStone=mix(dpStone,dpInlayC,dpInlay);

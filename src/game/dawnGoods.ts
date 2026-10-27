@@ -63,6 +63,9 @@ export function dawnGoods(spots: readonly GoodsSpot[], height: (x: number, z: nu
   const rim = new THREE.TorusGeometry(.53, .045, 6, 22);
   const hub = new THREE.CylinderGeometry(.09, .09, .2, 10);
   const glass = new THREE.CylinderGeometry(.03, .025, .07, 8);
+  // Offerings: a fruit or flower head, a clay oil lamp.
+  const ball = new THREE.IcosahedronGeometry(1, 1);
+  const lamp = lathe([[0, 0], [.05, 0], [.07, .025], [.06, .045], [.02, .05], [0, .05]], 10).scale(1, 1, 1.5);
   let pieces = 0;
   for (const [si, s] of spots.entries()) {
     const R = rng(7101 + si * 31), c = Math.cos(s.yaw), sn = Math.sin(s.yaw);
@@ -215,6 +218,24 @@ export function dawnGoods(spots: readonly GoodsSpot[], height: (x: number, z: nu
         for (const [x, z] of [[.08, .06], [-.1, -.05], [.02, -.12]] as const) { clay.push(tint(solidPart(glass, M(x, .41, z)), '#a8673e')); }
         jar(1.95, -1.0, true); jar(2.15, -.55, false);
         pieces += 6;
+      } else if (kind === 'offering') {
+        // A low altar of two sandstone blocks and a slab, laid with dates, pomegranates and marigold garlands, clay
+        // oil lamps and a jar of oil; more offerings on a rug before it, a tipped bowl of grain.
+        for (const t of [-.48, .48]) stone.push(solidPart(box, M(t, .14, 0, 0, .34, .42, .56)));
+        stone.push(solidPart(box, M(0, .4, 0, 0, 1.4, .12, .74)));
+        const fruit = (x: number, y: number, z: number, r: number, col: string) => { clay.push(tint(solidPart(ball, M(x, y + r * .8, z, R() * 6, r, r * .9, r)), col)); };
+        for (let k = 0; k < 7; k++) fruit(-.5 + k * .16 + (R() - .5) * .05, .46, -.12 + (R() - .5) * .1, .055, k % 3 ? '#8e1f22' : '#b5532c');
+        for (let k = 0; k < 9; k++) fruit(.22 + (R() - .5) * .3, .46 + (k > 5 ? .05 : 0), .16 + (R() - .5) * .2, .03, '#4a2a18');
+        // Marigold garlands along the front edge and draped over the ends.
+        for (let k = 0; k < 18; k++) { const t = k / 17; fruit(-.68 + t * 1.36, .38 - .1 * Math.sin(Math.PI * t), .38, .032, k % 2 ? '#e3a21a' : '#d9631c'); }
+        for (const t of [-.62, .62]) for (let k = 0; k < 5; k++) fruit(t, .38 - k * .07, .3 - k * .02, .03, k % 2 ? '#e3a21a' : '#d9631c');
+        for (const x of [-.45, 0, .45]) { clay.push(tint(solidPart(lamp, M(x, .46, .2, R() * 6)), '#a8673e')); pieces++; }
+        jar(-.95, .25, true); jar(.95, -.15, false); jar(1.1, .3, false);
+        rug(0, .95, 1.5, .8, .05, .025);
+        clay.push(tint(solidPart(pot, M(-.35, .03, 1.05, 0, .8, .5, .8, 1.3)), '#c98a52'));
+        for (let k = 0; k < 14; k++) fruit(-.12 + (R() - .5) * .4, .02, 1.1 + (R() - .5) * .3, .018, '#d9b77a');
+        for (let k = 0; k < 6; k++) fruit(.3 + (R() - .5) * .3, .03, .95 + (R() - .5) * .2, .04, k % 2 ? '#e3a21a' : '#d9631c');
+        pieces += 4;
       }
     };
     if (s.kind === 'rest') {
@@ -254,7 +275,7 @@ export function dawnGoods(spots: readonly GoodsSpot[], height: (x: number, z: nu
       rug(1.6, .6, 1.2, .9, .4);
     }
   }
-  [box, amph, pot, crock, sack, bundle, skin, arch, pole, pad, pail, knob, rim, hub, glass].forEach(g => g.dispose());
+  [box, amph, pot, crock, sack, bundle, skin, arch, pole, pad, pail, knob, rim, hub, glass, ball, lamp].forEach(g => g.dispose());
   const mk = (geos: THREE.BufferGeometry[], mat: THREE.Material, name: string, shadow = true) => {
     if (!geos.length) return;
     const g = mergeGeometries(geos, false)!; geos.forEach(x => x.dispose()); g.computeBoundingSphere();

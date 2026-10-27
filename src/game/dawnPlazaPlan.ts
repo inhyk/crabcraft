@@ -5,11 +5,11 @@
 // Dressed with intent: the caravans come in through the arrival gate and tie up at the hitching rail, the market's
 // two rows lead to the well at the square's harbour corner and its trough, the harbour's cargo comes up the avenue on
 // a hand cart and is stacked at the square's east corner for the stalls, and a striped shade canopy over benches and
-// a tea table takes the square's citadel corner. Every scene keeps off the avenue, the cross street and the side
+// a tea table takes the square's citadel corner. Before the temple gate, offerings are laid on low altars. Every scene keeps off the avenue, the cross street and the side
 // lanes, the villagers' posts, the quest points and the lamps (qa-dawn-plaza checks).
 import type { Collision } from '../world/collision';
 
-export type PlazaKind = 'well' | 'trough' | 'hitch' | 'cargo' | 'cart' | 'canopy';
+export type PlazaKind = 'well' | 'trough' | 'hitch' | 'cargo' | 'cart' | 'canopy' | 'offering';
 export interface PlazaSpot { x: number; z: number; yaw: number; kind: PlazaKind }
 
 export const DAWN_PLAZA: readonly PlazaSpot[] = [
@@ -19,6 +19,9 @@ export const DAWN_PLAZA: readonly PlazaSpot[] = [
   { x: 6.5, z: 58.5, yaw: -.25, kind: 'cargo' },
   { x: 6.5, z: 79.2, yaw: .12, kind: 'cart' },
   { x: -6.6, z: 48.2, yaw: 0, kind: 'canopy' },
+  // Offerings laid before Solarkan's gate, either side of the avenue below the fire bowls (low, not solid).
+  { x: -7.4, z: -36.6, yaw: Math.PI + .2, kind: 'offering' },
+  { x: 7.4, z: -36.6, yaw: Math.PI - .2, kind: 'offering' },
 ];
 
 /** Sizes the meshes are built to (local metres). */
@@ -52,7 +55,7 @@ export function plazaSolids(): ({ x: number; z: number; r: number; h: number } |
     else if (s.kind === 'hitch') out.push({ x: s.x, z: s.z, hx: .14, hz: 1.32, yaw: s.yaw, h: PLAZA_SIZE.hitch.h });
     else if (s.kind === 'cargo') { const [x, z] = plazaAt(s, -.1, 0); out.push({ x, z, hx: PLAZA_SIZE.cargo.hx, hz: PLAZA_SIZE.cargo.hz, yaw: s.yaw, h: PLAZA_SIZE.cargo.h }); }
     else if (s.kind === 'cart') out.push({ x: s.x, z: s.z, hx: PLAZA_SIZE.cart.hx, hz: PLAZA_SIZE.cart.hz, yaw: s.yaw, h: PLAZA_SIZE.cart.h });
-    else for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+    else if (s.kind === 'canopy') for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
       const [x, z] = plazaAt(s, sx * PLAZA_SIZE.canopy.hx, sz * PLAZA_SIZE.canopy.hz);
       out.push({ x, z, r: .12, h: PLAZA_SIZE.canopy.h });
     }

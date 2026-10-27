@@ -8,7 +8,7 @@ import {frostFire,type Flame,type Halo} from './frostFire';
 import {DawnMason,GRANITE,dawnMasonryMaterial} from './dawnMasonry';
 import {dawnArena} from './dawnArena';
 import {DAWN_FIRE,setDawnFires,updateDawnFires} from './dawnFire';
-import {CITADEL_APPROACH,CITADEL_ARENA,CITADEL_BRAZIERS,CITADEL_COLONNADE,CITADEL_GATE,CITADEL_KEEP,CITADEL_TOWERS,CITADEL_WALL,SOUTH_RUN,citadelObelisks,colonnadeColumns} from './dawnCitadelLayout';
+import {COURT_RUINS,CITADEL_DAIS,CITADEL_APPROACH,CITADEL_ARENA,CITADEL_BRAZIERS,CITADEL_COLONNADE,CITADEL_GATE,CITADEL_KEEP,CITADEL_TOWERS,CITADEL_WALL,SOUTH_RUN,citadelObelisks,colonnadeColumns} from './dawnCitadelLayout';
 
 /*
  * Solarkan's Twilight Citadel: the desert sun temple on Goldsand Harbor's north plateau, taken in the stolen dawn,
@@ -385,6 +385,40 @@ export function dawnCitadel(height:Height):DawnCitadel {
    M.gilt=true;M.block(M0,.1,top+.86,-.05,za-zb-.2,.12,.2,{bevel:.02,seg:6});M.gilt=false;
    M.face(planeWarp(xf-s*.3,s>0?za+.3:zb-.3,0,s>0?-1:1),0,za-zb+.6,top+.98,top+1.38,{len:2.2,course:.4,depth:depth+.3,core:0});
    M.stone=null;
+   // Solarkan's banners hung from the architrave between columns, facing the dial.
+   for(const z of [-63.75,-81.25])banners.push({x:s*(C.x-1.05),y:top+.7,z,yaw:-s*Math.PI/2,s:1.9});
+  }
+  // And on the back wall either side of the keep, long ones from the wall head.
+  for(const x of [-21,-14.2,14.2,21])banners.push({x,y:W.top-.2,z:W.back+W.thick+.3,yaw:0,s:2.3});
+ }
+ // ---- Ruins round the dial: a low kerb of blocks marking the dais, and in the court broken column stumps with their
+ // drums rolled off, a fallen capital, half sunk in the drifted sand (solid: COURT_RUINS in the layout).
+ {
+  const tint=M.tint(1.05),N=Math.round(2*Math.PI*CITADEL_DAIS/1.25);
+  for(let i=0;i<N;i++){
+   const a=(i+.5)/N*Math.PI*2,x=Math.sin(a)*CITADEL_DAIS,z=CITADEL_ARENA.z+Math.cos(a)*CITADEL_DAIS;
+   // The gate passage stays open: no kerb across the avenue's end.
+   if(Math.abs(x)<4.2&&z>CITADEL_ARENA.z)continue;
+   const y=h(x,z),len=2*Math.PI*CITADEL_DAIS/N-.06;
+   extra.push(asStone(new THREE.BoxGeometry(len,.5,.42).rotateY(a).translate(x,y+.02,z),M.tint(.98+.1*((i*7)%5)/5),false,y));
+  }
+  const col=(H:number)=>[[0,0],[.78,0],[.78,.22],[.66,.3],[.6,.4],[.56,.62],[.55,H],[0,H]].map(([a,b])=>new THREE.Vector2(a,b));
+  for(const r of COURT_RUINS){
+   const y=h(r.x,r.z);
+   if(r.kind==='stump'){
+    const g=new THREE.LatheGeometry(col(r.h),16),p=g.getAttribute('position');
+    // A broken top: the last ring and the centre jagged.
+    for(let i=0;i<p.count;i++)if(p.getY(i)>r.h-.01){const a=Math.atan2(p.getZ(i),p.getX(i));p.setY(i,r.h+.22*Math.sin(a*3+r.yaw*5)+.12*Math.sin(a*7+1.3)-(Math.hypot(p.getX(i),p.getZ(i))<.01?.1:0));}
+    g.deleteAttribute('normal');g.computeVertexNormals();
+    extra.push(asStone(g.rotateY(r.yaw).translate(r.x,y-.25,r.z),tint,false,y));
+   }else if(r.kind==='drum'){
+    const g=new THREE.CylinderGeometry(.55,.55,.78,16,1).rotateZ(Math.PI/2).rotateY(r.yaw).translate(r.x,y+.42,r.z);
+    extra.push(asStone(g,tint,false,y));
+   }else{
+    const g=new THREE.LatheGeometry([[0,0],[.5,0],[.62,.3],[.78,.58],[.84,.68],[.55,.74],[0,.74]].map(([a,b])=>new THREE.Vector2(a,b)),16);
+    extra.push(asStone(g.rotateZ(Math.PI/2+.15).rotateY(r.yaw).translate(r.x,y+.55,r.z),tint,false,y));
+    gild(new THREE.TorusGeometry(.5,.05,6,18).rotateY(Math.PI/2).rotateZ(.15).rotateY(r.yaw).translate(r.x,y+.55,r.z),y);
+   }
   }
  }
  // ---- The keep: Solarkan's sanctuary, battered on three sides, its plumb front toward the arena with a lintelled

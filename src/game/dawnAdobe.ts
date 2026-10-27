@@ -70,8 +70,8 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
     float adH(vec3 p){vec3 n=normalize(vAdN);float vt;vec2 q=adPlane(p,n,vt);
       float h=fpNoise(q*2.3)*.5+fpNoise(q*7.1)*.18;
       if(vPlK>.5&&vPlK<1.5){float row=floor(q.y/.34),yy=q.y-row*.34,bl=.55+.35*fpHash12(vec2(row,7.)),bx=q.x/bl+fpHash12(vec2(row,3.));
-        float jd=min(min(fract(bx),1.-fract(bx))*bl,min(yy,.34-yy));h+=smoothstep(0.,.02,jd)*.55+fpNoise(q*16.)*.25;}
-      else if(vPlK>1.5){vec3 b=adBond(q,vec2(.4,.13));h+=smoothstep(0.,.025,b.z)*.9+fpNoise(q*16.)*.25;}
+        float jd=min(min(fract(bx),1.-fract(bx))*bl,min(yy,.34-yy));h+=(smoothstep(0.,.02,jd)*.55+fpNoise(q*16.)*.25)*vt;}
+      else if(vPlK>1.5){vec3 b=adBond(q,vec2(.4,.13));h+=(smoothstep(0.,.025,b.z)*.9+fpNoise(q*16.)*.25)*vt;}
       return h*.012;}`,
     color: /* glsl */ `{
       vec3 n=normalize(vAdN);float vert;vec2 q=adPlane(vAdW,n,vert);
@@ -140,7 +140,7 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
       // The roof slabs below the parapet are bare packed mud, darker and browner than the lime above them (the
       // caps keep the wash): seen from the streets and the heights they part the houses from the sand by value.
       float slab=smoothstep(.22,.42,vPl.y)*(1.-smoothstep(.15,.6,vert));
-      vec3 earth=mix(tint*.55,vec3(.4,.28,.17),.6)*(.8+.28*mott)*(.93+.1*fine);
+      vec3 earth=mix(tint*.55,vec3(.46,.29,.15),.6)*(.8+.28*mott)*(.93+.1*fine);
       earth*=1.-.12*smoothstep(.55,.75,fpNoise(q*.9+5.)*.5+.5);
       mud=mix(mud,earth,slab);
       c=mix(mud,c,smoothstep(.15,.6,vert));
