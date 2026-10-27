@@ -75,7 +75,7 @@ function wallMaterial(): THREE.MeshStandardMaterial {
 }
 
 /** Striped canvas (vertex colour the stripe's dye, uv.x across the stripes). */
-function clothMaterial(): THREE.MeshStandardMaterial {
+export function clothMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({name: 'goldsand-canvas', color: '#ffffff', roughness: .95, vertexColors: true, side: THREE.DoubleSide});
   addPatch(m, 'goldsand-canvas', (shader) => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vCu;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvCu=uv;');

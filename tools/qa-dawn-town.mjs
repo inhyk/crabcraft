@@ -41,7 +41,13 @@ try {
     out.dressing = named('dawnharbor-dressing')?.userData.stats ?? null;
     // House palette: the town's kit materials are its own clones.
     const mats = new Set(); root.traverse(o => { if (o.isMesh) for (const m of [o.material].flat()) mats.add(m.name); });
-    out.palette = ['dawnharbor-MI_Plaster', 'dawnharbor-MI_RoundTiles', 'dawnharbor-MI_WoodTrim'].filter(n => !mats.has(n));
+    // Goldsand houses (dawnHouses.ts) replace the kit houses: no kit roof tiles, plaster or timber framing left.
+    out.palette = ['goldsand-house-walls', 'goldsand-house-wood', 'goldsand-house-canvas'].filter(n => !mats.has(n));
+    out.kitHouses = ['MI_RoundTiles', 'MI_Plaster', 'MI_WoodTrim', 'MI_UnevenBrick'].filter(n => [...mats].some(m => m === n || m.endsWith('-' + n)));
+    out.houses = named('goldsand-houses')?.userData.stats ?? null;
+    out.palms = named('goldsand-date-palms') ? root.userData.palms : 0;
+    out.braziers = named('goldsand-braziers')?.userData.braziers ?? 0;
+    out.souk = named('goldsand-souk')?.userData ?? null;
     out.gates = [];
     root.traverse(o => { if (o.userData?.dawnGate) out.gates.push([o.name, o.userData.dawnGate, +o.position.x.toFixed(1), +o.position.z.toFixed(1)]); });
     // Old primitives: anything in World III (outside the quest markers, which are their own module) built from
@@ -92,8 +98,13 @@ try {
   assert.ok(r.boulders && r.boulders.sites >= 25 && r.boulders.stones >= r.boulders.sites * 3 && r.boulders.vents >= 3, JSON.stringify(r.boulders));
   assert.ok(r.boats >= 5, `boats ${r.boats}`);
   assert.deepEqual(r.harbour, [], 'harbour parts present');
-  assert.ok(r.dressing && r.dressing.stalls >= 10 && r.dressing.goods >= 40 && r.dressing.benches >= 6 && r.dressing.doorPots >= 4 && r.dressing.lanterns >= 6 && r.dressing.laundry >= 10, JSON.stringify(r.dressing));
-  assert.deepEqual(r.palette, [], 'coastal house palette materials');
+  assert.ok(r.dressing && r.dressing.stalls >= 10 && r.dressing.goods >= 60 && r.dressing.benches >= 6 && r.dressing.doorPots >= 4 && r.dressing.lanterns >= 6 && r.dressing.laundry >= 10, JSON.stringify(r.dressing));
+  assert.deepEqual(r.palette, [], 'Goldsand house materials');
+  assert.deepEqual(r.kitHouses, [], 'no kit (W1) house materials in World III');
+  assert.ok(r.houses && r.houses.houses === 8 && r.houses.windcatchers >= 2 && r.houses.vigas >= 60 && r.houses.awnings === 8, JSON.stringify(r.houses));
+  assert.equal(r.palms, 32, 'date palms on every old tree site');
+  assert.ok(r.braziers >= 4, `braziers ${r.braziers}`);
+  assert.ok(r.souk && r.souk.stalls >= 10 && r.souk.goods >= 80, JSON.stringify(r.souk));
   assert.deepEqual(r.gates.map(g => g[1]).sort(), ['dawn', 'frost'], JSON.stringify(r.gates));
   assert.deepEqual(r.primitives, [], 'no old primitives left in the town');
   assert.ok(r.npc.every(d => d < .05), `villagers' posts clear: ${r.npc}`);
