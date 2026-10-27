@@ -81,7 +81,7 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
       // Metres to the nearest corner along the wall; the corner arris itself is 0.
       float corner=1.-smoothstep(.0,.75+.5*fine,min(vPlE.x,vPlE.y));
       // Coats of limewash laid years apart: broad patches a shade creamier or greyer, a faint lip where one ends.
-      float coat=fpFbm(q*.17+31.)*.5+.5;
+      float coat=(fpNoise(q*.17+31.)*.65+fpNoise(q*.43+7.)*.35)*.5+.5;
       c*=mix(vec3(1.),mix(vec3(.93,.9,.86),vec3(1.02,.99,.93),smoothstep(.35,.65,coat)),vert);
       c*=1.-.035*(1.-smoothstep(0.,.025,abs(coat-.5)))*vert;
       // Trowel sweeps.
