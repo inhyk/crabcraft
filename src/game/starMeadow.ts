@@ -152,6 +152,8 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
   material.customProgramCacheKey = () => 'starhaven-meadow-grass';
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'starhaven-meadow'; mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false;
+  // For QA: where grass may grow (r of each 1 m texel from MAP_MIN_X, MAP_MIN_Z).
+  mesh.userData.mask = {data: mask, width: W, height: H, minX: MAP_MIN_X, minZ: MAP_MIN_Z, cell: MAP};
   const fwd = new THREE.Vector3();
   let current: 'high' | 'low' = 'high';
   return {

@@ -193,7 +193,7 @@ spStone=mix(spStone,vec3(.3,.29,.31)*(.85+.3*fract(spId*5.)),max(spKerbBand,spHo
 spStone*=.84+.32*(spNoise(spP*5.3+spId*13.)*.5+.5);
 float spNear=1.-smoothstep(.006,.03,spFoot);
 if(spNear>0.)spStone*=1.+spNoise(spP*43.)*.18*spNear+spNoise(spP*97.)*.12*(1.-smoothstep(.003,.008,spFoot));
-spStone=mix(spStone,vec3(.24,.235,.245)*(.85+.3*(spN1*.5+.5)),spBlur);
+spStone=mix(spStone,vec3(.16,.155,.17)*(.85+.3*(spN1*.5+.5)),spBlur);
 // Lichen on the crowns of stones off the beaten line; worn ones polished darker.
 float spLichen=smoothstep(.55,.8,spNoise(spP*3.1+spId*5.)*.5+.5)*spMossy*(1.-spBlur)*.55;
 spStone=mix(spStone,vec3(.36,.42,.33),spLichen*.5);

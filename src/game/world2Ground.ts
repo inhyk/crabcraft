@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {starTrailDistance} from './world2Settlement';
+import {starNoise} from './starFieldLayout';
 
 // Moonlit albedos of the island's regions. starGround.ts paints grass, sand, earth and stone over them; the monitor's
 // scenery uses them as they are.
@@ -12,6 +13,7 @@ const townEarth=new THREE.Color('#566a52');
 const pathDust=new THREE.Color('#8d8678');
 const arenaSlate=new THREE.Color('#42485e');
 const smooth=THREE.MathUtils.smoothstep;
+const heathTint=new THREE.Color();
 const patch=(x:number,z:number,cx:number,cz:number,inner:number,outer:number)=>1-smooth(Math.hypot(x-cx,z-cz),inner,outer);
 
 /** Continuous, deterministic region tints. Only presentation changes; collision remains the height grid. */
@@ -26,6 +28,9 @@ export function starGroundColor(x:number,z:number,height:number,out:THREE.Color)
   // A worn strip along the trails blends smoothly back into each local region.
   const trail=(1-smooth(starTrailDistance(x,z),1,4.2))*(1-smooth(coast,.82,1));
   out.lerp(pathDust,trail*.3);
+  // Heather: violet swathes through the open meadow, Starhaven's own colour in its grass (the meadow's blades share it).
+  const heath=smooth(starNoise(x/36,z/36,91)+starNoise(x/11,z/11,92)*.25,.12,.32)*smooth(townEdge,0,14);
+  out.multiply(heathTint.setRGB(1-.22*heath,1-.28*heath,1+.3*heath));
   out.lerp(arenaSlate,patch(x,z,0,-75,20,29)*.9);
   // Broad lush and dry swathes; higher ground a touch paler.
   const variation=Math.sin(x*.17+Math.sin(z*.11)*2)*Math.cos(z*.13-x*.045);
