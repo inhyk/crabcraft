@@ -163,10 +163,18 @@ export function duneClusterParts(height: (x: number, z: number) => number): Dune
       const flat = (g: THREE.BufferGeometry) => { const f = g.toNonIndexed(); g.dispose(); f.computeVertexNormals(); return f; };
       const shaft = flat(new THREE.CylinderGeometry(b1 / Math.SQRT2, b0 / Math.SQRT2, L, 4, 6).rotateY(Math.PI / 4).translate(0, L / 2, 0));
       const pyr = flat(new THREE.ConeGeometry(b1 / Math.SQRT2, .7, 4, 1).rotateY(Math.PI / 4).translate(0, L + .35, 0));
-      const tilt = -1.0, foot = -1.6; // from upright toward +u: the shaft rises at about 33 degrees
+      const tilt = -1.0; // from upright toward +u: the shaft rises at about 33 degrees
+      // A third of its length is drowned: the axis enters the sand drift on its foot (DAWN_OBELISK_DRIFT) a third
+      // of the way up, a half-width under the surface there.
+      const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(q.setFromEuler(e.set(0, .1 - c.yaw, tilt, 'YXZ')));
+      const y0 = height(c.x, c.z), at = (t: number) => height(c.x + dir.x * t, c.z + dir.z * t);
+      const foot = at(L / 3) - (b0 + (b1 - b0) / 3) * .45 - dir.y * L / 3 - y0;
       put(shaft, 5, GRANITE, 0, 0, foot, 0, .1, tilt);
       put(pyr, 4, GILT, 0, 0, foot, 0, .1, tilt);
-      for (let t = 1.5; t < L; t += 1.5) { const h = foot + Math.cos(tilt) * t + .6; if (h > .6) solid(Math.sin(-tilt) * t, 0, .8, h); }
+      for (let t = 1.5; t < L; t += 1.5) {
+        const sx = c.x + dir.x * t, sz = c.z + dir.z * t, h = y0 + foot + dir.y * t + .6 - height(sx, sz);
+        if (h > .6) solids.push({x: sx, z: sz, r: .8, h});
+      }
       // Its plinth, tipped, and two chips knocked off the shaft.
       put(block(2, .9, 2), 0, stone(), -2.2, -1.8, -.25, .25, .4, -.18);
       solid(-2.2, -1.8, 1.2, .8);

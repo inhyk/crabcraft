@@ -1,4 +1,4 @@
-import { CZ, DAWN_SEA, DAWN_WIND, DUNE_DRIFT, DUNE_FIELD, DUNE_SEA, KEEP_DISCS, KEEP_SEGS, RX, RZ, SAND_ROCKS } from '../sim/world/dawnGround';
+import { CZ, DAWN_SEA, DAWN_WIND, DUNE_DRIFT, DUNE_FIELD, DUNE_SEA, KEEP_DISCS, KEEP_SEGS, ROCK_SAND_SIDE, ROCK_SAND_TAIL, RX, RZ, SAND_ROCKS } from '../sim/world/dawnGround';
 import { DAWN_ARENA_HEIGHT } from '../sim/world/ground';
 
 /*
@@ -24,7 +24,8 @@ ${duneConst('SG_DUNE_DRIFT', DUNE_DRIFT)}
 const vec4 SG_KEEP_SEGS[${KEEP_SEGS.length}]=vec4[${KEEP_SEGS.length}](${KEEP_SEGS.map((s) => `vec4(${f(s[0])},${f(s[1])},${f(s[2])},${f(s[3])})`).join(',')});
 const float SG_KEEP_SEGW[${KEEP_SEGS.length}]=float[${KEEP_SEGS.length}](${KEEP_SEGS.map((s) => f(s[4])).join(',')});
 const vec3 SG_KEEP_DISCS[${KEEP_DISCS.length}]=vec3[${KEEP_DISCS.length}](${KEEP_DISCS.map((d) => `vec3(${f(d[0])},${f(d[1])},${f(d[2])})`).join(',')});
-const vec3 SG_ROCKS[${SAND_ROCKS.length}]=vec3[${SAND_ROCKS.length}](${SAND_ROCKS.map((d) => `vec3(${f(d[0])},${f(d[1])},${f(d[2])})`).join(',')});
+const vec4 SG_ROCKS[${SAND_ROCKS.length}]=vec4[${SAND_ROCKS.length}](${SAND_ROCKS.map((d) => `vec4(${f(d[0])},${f(d[1])},${f(d[2])},${f(d[3])})`).join(',')});
+const float SG_ROCK_SIDE=${f(ROCK_SAND_SIDE)},SG_ROCK_TAIL=${f(ROCK_SAND_TAIL)};
 float sg01(float t){t=clamp(t,0.,1.);return t*t*(3.-2.*t);}
 float sgStep(float x,float a,float b){return sg01((x-a)/(b-a));}
 float sgHash(vec2 p){
@@ -128,17 +129,30 @@ float sgDune(float a,float c,vec4 k,float seed,float amp,float under){
   float e=sgSmin(ys,yl,kc)-under;
   return under+(e>=kf?e:e<=-kf?0.:(e+kf)*(e+kf)/(4.*kf));
 }
+// stoneSand() and rockSand() in dawnGround.ts: skirt, lee tail and scour round each stone, kept off gameplay ground.
+float sgStoneSand(float a,float c,float s){
+  float d=length(vec2(a,c));
+  if(d>SG_ROCK_SIDE&&(a<0.||a>SG_ROCK_TAIL||abs(c)>SG_ROCK_SIDE))return 0.;
+  float m=max(0.,d-.85);
+  float skirt=.36*s*exp(-m*m*2.4)*(1.-sgStep(d,2.1,SG_ROCK_SIDE));
+  float tail=0.;
+  if(a>0.&&a<SG_ROCK_TAIL){float t=a/SG_ROCK_TAIL,w=.12+.8*pow(1.-t,.7),q=c/w;tail=.36*s*pow(1.-t,1.6)*exp(-q*q)*sgStep(a,0.,.6);}
+  float k=.12*s,h=max(k-abs(skirt-tail),0.)/k;
+  float y=max(skirt,tail)+h*h*k*.25;
+  if(a<0.){float n=d-1.25;y-=exp(-n*n*6.)*sg01(-a*2.)*.07*(1.-sgStep(d,2.1,SG_ROCK_SIDE));}
+  return y;
+}
 float sgRockSand(vec2 p){
   float h=0.;
   for(int i=0;i<${SAND_ROCKS.length};i++){
-    vec3 k=SG_ROCKS[i];vec2 d=p-k.xy;float r=k.z;
-    if(abs(d.x)>r*7.||abs(d.y)>r*7.)continue;
-    float a=dot(d,SG_WIND)/r,c=(-d.x*SG_WIND.y+d.y*SG_WIND.x)/r,d2=a*a+c*c;
-    float rise=a>0.?1.-exp(-a*1.8):0.;
-    h+=exp(-d2*.9)*.18*r+rise*rise*exp(-a/2.4)*exp(-c*c*1.3)*.3*r;
-    if(a<0.){float m=sqrt(d2)-1.2;h-=exp(-m*m*6.)*sg01(-a*2.)*.08*r;}
+    vec4 k=SG_ROCKS[i];vec2 d=p-k.xy;float r=k.z;
+    if(abs(d.x)>r*SG_ROCK_TAIL||abs(d.y)>r*SG_ROCK_TAIL)continue;
+    h+=sgStoneSand(dot(d,SG_WIND)/r,(-d.x*SG_WIND.y+d.y*SG_WIND.x)/r,k.w)*r;
   }
-  return h;
+  if(h==0.)return 0.;
+  vec2 q=vec2(abs(p.x)-41.,abs(p.y+82.55)-38.95);
+  float cit=length(max(q,0.))+min(max(q.x,q.y),0.);
+  return h*sg01((sgKeepCore(p)-1.)/6.)*sg01((cit-1.)/5.);
 }
 // sandOpen: 0 on gameplay ground, 1 in the open.
 float sandOpen(vec2 p){
@@ -159,7 +173,6 @@ float sgSandGround(vec2 p){
   float big=m*sgStep(r,.84,1.3);
   if(big>0.)sand=sgDune(a,c,SG_DUNE_SEA,SG_DUNE_SEA_SEED,big,sand);
   h+=sand;
-  h+=sgRockSand(p);
   float s0=sgShoreStart(p),start=s0+(12.-s0)*m;
   return sgShore(p,h,r-start);
 }
@@ -169,6 +182,7 @@ float sandGroundH(vec2 p){
   if(open<=0.)h=sgCoastGround(p);
   else if(open>=1.)h=sgSandGround(p);
   else{float c=sgCoastGround(p);h=c+(sgSandGround(p)-c)*open;}
+  h+=sgRockSand(p);
   float arena=1.-sgStep(length(vec2(p.x,p.y+72.)),21.,31.);
   return h+(SG_ARENA-h)*arena;
 }

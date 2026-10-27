@@ -212,28 +212,78 @@ export function dune(a: number, c: number, k: DuneKind, amp: number, under: numb
   return under + (e >= kf ? e : e <= -kf ? 0 : ((e + kf) * (e + kf)) / (4 * kf));
 }
 
-/** Rocks in the open the wind has built sand round: (x, z, radius). dawnRocks() south of the citadel. */
-export const SAND_ROCKS: readonly (readonly [number, number, number])[] = (() => {
-  const out: [number, number, number][] = [];
-  for (let i = 0; i < 32; i++) {
-    const a = (i / 32) * Math.PI * 2, x = Math.sin(a) * 67, z = -45 + Math.cos(a) * 50;
-    if (Math.abs(x) < 12 || z < -24) continue;
-    out.push([x, z, 2 + (i % 3)]);
+/**
+ * World III's rock groups (dawnBoulders.ts builds them, world3Colliders.ts registers them): (i, x, z, r). The ring
+ * round Solarkan's citadel keeps its old sites; the six that stood in the open fields in front of the east and west
+ * views now make one outcrop each in those views' middle ground (25-60 m from their cameras, off the open dune faces).
+ */
+export const DAWN_ROCKS: readonly { i: number; x: number; z: number; r: number }[] = (() => {
+  const moved: Record<number, readonly [number, number]> = { 3: [56, -38], 4: [77, -27], 5: [70, -20], 6: [67, -29], 27: [-70, -21], 28: [-75, -29], 29: [-56, -38] };
+  const out: { i: number; x: number; z: number; r: number }[] = [];
+  // Sites 0 and 16 stood on the avenue, 13 to 19 inside the citadel (dawnCitadelLayout.ts citadelHolds).
+  for (let i = 1; i < 32; i++) {
+    if (i >= 13 && i <= 19) continue;
+    const a = (i / 32) * Math.PI * 2, [x, z] = moved[i] ?? [Math.sin(a) * 67, -45 + Math.cos(a) * 50];
+    out.push({ i, x, z, r: 2 + (i % 3) });
   }
   return out;
 })();
-/** Sand the wind piles round each rock: a low mound, a tail downwind, a scoured hollow on the windward side. */
-function rockSand(x: number, z: number): number {
-  let h = 0;
-  for (const [rx, rz, r] of SAND_ROCKS) {
-    const dx = x - rx, dz = z - rz;
-    if (Math.abs(dx) > r * 7 || Math.abs(dz) > r * 7) continue;
-    const a = (dx * DAWN_WIND[0] + dz * DAWN_WIND[1]) / r, c = (-dx * DAWN_WIND[1] + dz * DAWN_WIND[0]) / r, d2 = a * a + c * c;
-    const rise = a > 0 ? 1 - Math.exp(-a * 1.8) : 0;
-    h += Math.exp(-d2 * 0.9) * 0.18 * r + rise * rise * Math.exp(-a / 2.4) * Math.exp(-c * c * 1.3) * 0.3 * r;
-    if (a < 0) { const m = Math.sqrt(d2) - 1.2; h -= Math.exp(-m * m * 6) * smooth01(-a * 2) * 0.08 * r; }
+/** Hoodoos (a column under a caprock) are the even sites of radius 3 and up; the rest are mesas. */
+export const dawnRockTall = (i: number, r: number) => r >= 3 && i % 2 === 0;
+/**
+ * The drift the fallen obelisk's foot is drowned in: 1.6 m up its shaft from the foot (dawnDuneClusters.ts
+ * DUNE_CLUSTERS 'fallen-obelisk' at 79, -4; the shaft leans toward -0.62, 0.57).
+ */
+export const DAWN_OBELISK_DRIFT = [78, -3.1] as const;
+/**
+ * Where the wind piles sand round a stone: (x, z, r, s), r the stone's radius, s how high the sand climbs on it
+ * relative to r. Every rock group and the obelisk's foot.
+ */
+export const SAND_ROCKS: readonly (readonly [number, number, number, number])[] = [
+  ...DAWN_ROCKS.map(({ i, x, z, r }) => [x, z, r, dawnRockTall(i, r) ? 1.35 : 1] as const),
+  [DAWN_OBELISK_DRIFT[0], DAWN_OBELISK_DRIFT[1], 2.6, 1.1] as const,
+];
+/** How far a stone's sand reaches, in its radii: back to windward and to the sides, and downwind (the tail's end). */
+export const ROCK_SAND_SIDE = 2.6, ROCK_SAND_TAIL = 5.5;
+/**
+ * Sand the wind piles round one stone at wind-frame offsets (a downwind, c across, in its radii): a skirt that
+ * buries its foot (flat over the stone, falling away past 1.3 radii), a sand shadow in its lee (as high as the skirt
+ * at the stone, tapering to a point 5.5 radii downwind, narrowing as it goes) and a scoured hollow where the wind
+ * strikes it. Exactly 0 outside the footprint. Metres per metre of radius.
+ */
+function stoneSand(a: number, c: number, s: number): number {
+  const d = Math.hypot(a, c);
+  if (d > ROCK_SAND_SIDE && (a < 0 || a > ROCK_SAND_TAIL || Math.abs(c) > ROCK_SAND_SIDE)) return 0;
+  const skirt = 0.36 * s * Math.exp(-(Math.max(0, d - 0.85) ** 2) * 2.4) * (1 - smoothstep(d, 2.1, ROCK_SAND_SIDE));
+  let tail = 0;
+  if (a > 0 && a < ROCK_SAND_TAIL) {
+    const t = a / ROCK_SAND_TAIL, w = 0.12 + 0.8 * Math.pow(1 - t, 0.7);
+    tail = 0.36 * s * Math.pow(1 - t, 1.6) * Math.exp(-((c / w) ** 2)) * smoothstep(a, 0, 0.6);
   }
-  return h;
+  // A smooth maximum, so the skirt runs into the tail without a crease.
+  const k = 0.12 * s, h = Math.max(k - Math.abs(skirt - tail), 0) / k;
+  let y = Math.max(skirt, tail) + h * h * k * 0.25;
+  if (a < 0) { const m = d - 1.25; y -= Math.exp(-m * m * 6) * smooth01(-a * 2) * 0.07 * (1 - smoothstep(d, 2.1, ROCK_SAND_SIDE)); }
+  return y;
+}
+/** Distance outside Solarkan's citadel (its walls and keep, as citadelHolds), metres. */
+function citadelDistance(x: number, z: number): number {
+  const qx = Math.abs(x) - 41, qz = Math.abs(z + 82.55) - 38.95;
+  return Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
+}
+/**
+ * Sand round every stone, metres, on the citadel plateau as in the open; none on the town block, the lanes, any
+ * quest point or point of interest, nor in the citadel, so gameplay ground keeps its height exactly.
+ */
+export function rockSand(x: number, z: number): number {
+  let h = 0;
+  for (const [rx, rz, r, s] of SAND_ROCKS) {
+    const dx = x - rx, dz = z - rz;
+    if (Math.abs(dx) > r * ROCK_SAND_TAIL || Math.abs(dz) > r * ROCK_SAND_TAIL) continue;
+    h += stoneSand((dx * DAWN_WIND[0] + dz * DAWN_WIND[1]) / r, (-dx * DAWN_WIND[1] + dz * DAWN_WIND[0]) / r, s) * r;
+  }
+  if (h === 0) return 0;
+  return h * smooth01((keepCore(x, z) - 1) / 6) * smooth01((citadelDistance(x, z) - 1) / 5);
 }
 
 /** 0 on gameplay ground, 1 in the open: the dawn coast's keep, the harbour, the citadel climb only inside the island. */
@@ -271,7 +321,6 @@ function sandGround(x: number, z: number): number {
   const big = m * smoothstep(r, 0.84, 1.3);
   if (big > 0) sand = dune(a, c, DUNE_SEA, big, sand);
   h += sand;
-  h += rockSand(x, z);
   // The mainland's coast runs away from the island; elsewhere the dawn coast's beaches and bluffs.
   const s0 = dawnShoreStart(x, z), start = s0 + (12 - s0) * m;
   return shore(x, z, h, r - start);
@@ -287,6 +336,8 @@ export function dawnCoastHeight(x: number, z: number, arenaHeight: number): numb
 export function dawnGround(x: number, z: number, arenaHeight: number): number {
   const open = sandOpen(x, z);
   let h = open <= 0 ? coastGround(x, z) : open >= 1 ? sandGround(x, z) : coastGround(x, z) + (sandGround(x, z) - coastGround(x, z)) * open;
+  // Sand round the stones, on the open sand and the citadel plateau alike.
+  h += rockSand(x, z);
   const arena = 1 - smoothstep(Math.hypot(x, z + 72), 21, 31);
   return h + (arenaHeight - h) * arena;
 }

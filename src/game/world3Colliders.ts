@@ -1,6 +1,7 @@
 // World III's colliders, registered without meshes, and the placements they share with the meshes.
 // DawnIsland builds its collision this way; tools/bake-collision.mjs bakes the same registration.
 import { dawnHeight } from '../sim/world/ground';
+import { DAWN_ROCKS } from '../sim/world/dawnGround';
 import { Collision } from '../world/collision';
 import type { Lot } from '../world/layout';
 import { registerDawnScenery } from './dawnScenery';
@@ -72,17 +73,9 @@ const onPath = (path: IslandPath, x: number, z: number) => {
   return best;
 };
 
-/** Volcanic rocks ringing the citadel, leaving the avenue open. */
+/** The rock groups (dawnGround.ts DAWN_ROCKS): the ring round the citadel and the east and west outcrops. */
 export function dawnRocks() {
-  const rocks: { i: number; x: number; z: number; r: number }[] = [];
-  for (let i = 0; i < 32; i++) {
-    const a = (i / 32) * Math.PI * 2,
-      x = Math.sin(a) * 67,
-      z = -45 + Math.cos(a) * 50;
-    if (Math.abs(x) < 12 || citadelHolds(x, z)) continue;
-    rocks.push({ i, x, z, r: 2 + (i % 3) });
-  }
-  return rocks;
+  return DAWN_ROCKS.map(({ i, x, z, r }) => ({ i, x, z, r }));
 }
 
 /** Dawnharbor's eight lots (homes, forge and tavern) on both sides of the avenue; dawnHousePlan.ts builds on them. */

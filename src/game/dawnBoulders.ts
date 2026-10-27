@@ -3,7 +3,7 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {rng} from '../world/noise';
 import {addPatch} from '../world/materials';
 import {FROST_NOISE} from './frostPaving';
-import {DAWN_WIND} from '../sim/world/dawnGround';
+import {DAWN_WIND, dawnRockTall, rockSand} from '../sim/world/dawnGround';
 import {dawnGlows} from './dawnMaterials';
 import {DAWN_SAND} from './dawnPaving';
 import {dawnRocks} from './world3Colliders';
@@ -107,82 +107,96 @@ function ringNoise(R: () => number, terms: number) {
 }
 
 /**
- * Wind-carved sandstone built the way it weathers, bed by bed (stone-local, y up, x along the wind): every bed is a
- * prism of its own outline with a rounded upper edge, hard beds standing proud and soft ones recessed, so the strata
- * read as crisp ledges and partings in silhouette, not as paint on a blob. The lowest beds are sand-blasted into a
- * neck (the undercut of a yardang foot, deep enough on a hoodoo to leave the caprock overhanging), the top bed is
- * planed flat. The outline is a yardang's: long along the wind, the windward nose blunt and the lee tail tapered.
- * Beds stop at hard creases (each bed's sides, its ledge and the cap own their vertices). Vertex colour: r the
- * skylight a face sees (dark under an overhang and low on the neck), g the bed's tone.
+ * Wind-carved sandstone, one mass (stone-local, y up, x along the wind). The surface is one sheet of rings from the
+ * buried foot to the top, so joints, the outline and the grain run through every bed; the beds are carved into it,
+ * not stacked: each is of its own thickness (0.5 to 1.6 times the mean), sand-blasted back toward its base (5 to
+ * 25 % on a mesa, a few % up a hoodoo's column) under a lip that rounds over into the shelf of the bed above, its rim
+ * wandering in height and broken back in chips where it crumbled. A mesa stands near-vertical with a slight batter,
+ * its top domed a little and its rim rounded; a hoodoo is one column tapering downward under a caprock barely wider
+ * than its top. The outline is a yardang's: long along the wind, the windward nose blunt and the lee tail tapered.
+ * Vertex colour: r the skylight a face sees (dark in the undercuts), g the bed's tone.
  */
 export function strataGeometry(k: StrataStone): THREE.BufferGeometry {
-  const R = rng(k.seed * 7919 + 13), M = k.kind === 'slab' ? 16 : 30;
+  const R = rng(k.seed * 7919 + 13), slab = k.kind === 'slab', hoodoo = k.kind === 'hoodoo', M = slab ? 18 : 34;
   const outline = ringNoise(R, 4);
-  const bury = k.kind === 'slab' ? k.h * .35 : k.h * .22, top = k.h, H = top + bury;
-  // Joints: two or three vertical cracks cut through the whole stack, the stone splitting along them.
-  const joints = k.kind === 'slab' ? [] : Array.from({length: 2 + Math.floor(R() * 2)}, () => [R() * Math.PI * 2, .05 + R() * .05, .08 + R() * .08]);
-  // Beds alternate: thick soft ones the wind hollows into a concave slope, thin hard ones that stand out as ledges.
-  type Bed = {y0: number; y1: number; s: number; hard: boolean; tone: number; own: (t: number) => number; ox: number; oz: number};
+  const bury = k.h * (slab ? .35 : .3), top = k.h, H = top + bury;
+  // Joints: two or three vertical cracks through the whole mass, the stone splitting along them.
+  const joints = slab ? [] : Array.from({length: 2 + Math.floor(R() * 2)}, () => [R() * Math.PI * 2, .05 + R() * .05, .06 + R() * .07]);
+  // Grain of the whole mass: a few sines in angle and height, the same through every bed.
+  const grain = Array.from({length: 3}, (_, j) => [5 + j * 6 + Math.floor(R() * 3), (2.4 + R() * 2) * (j + 1) / k.r, R() * 6.3, .022 / (j + 1)]);
+  type Bed = {y0: number; y1: number; u: number; lip: number; tone: number; own: (t: number) => number; rim: (t: number) => number; chips: number[][]};
+  const nb = slab ? 2 : hoodoo ? 5 + Math.floor(R() * 2) : 4 + Math.floor(R() * 3);
+  const w = Array.from({length: nb}, () => .5 + R() * 1.1);
+  if (hoodoo) w[nb - 1] = Math.max(w[nb - 1], 1.1);
+  const sum = w.reduce((a, b) => a + b, 0);
   const beds: Bed[] = [];
-  if (k.kind === 'slab') {
-    const mid = -bury + H * (.45 + R() * .2);
-    beds.push({y0: -bury, y1: mid, s: 1, hard: false, tone: R(), own: ringNoise(R, 2), ox: 0, oz: 0}, {y0: mid, y1: top, s: .97, hard: true, tone: R(), own: ringNoise(R, 2), ox: 0, oz: 0});
-  } else {
-    let y = -bury, hard = R() < .4;
-    while (y < top - .05) {
-      let th = hard ? Math.max(.12, H * (.05 + R() * .05)) : H * (.13 + R() * .14);
-      if (top - (y + th) < Math.max(.15, H * .08)) th = top - y;
-      const t = (y + th / 2 + bury) / H;
-      // Section: the sand-blasted neck low down (deep on a hoodoo), the caprock wider than what holds it up.
-      let s = k.kind === 'hoodoo' ? .48 + .52 * THREE.MathUtils.smoothstep(t, .3, .82) : .78 + .22 * THREE.MathUtils.smoothstep(t, .04, .38);
-      s *= hard ? 1.05 : .97;
-      beds.push({y0: y, y1: y + th, s, hard, tone: R(), own: ringNoise(R, 3), ox: (R() - .5) * .08, oz: (R() - .5) * .08});
-      y += th; hard = !hard;
-    }
-    const cap = beds[beds.length - 1];
-    cap.s = Math.max(cap.s, k.kind === 'hoodoo' ? 1.1 : 1.02); cap.hard = true;
-    beds[0].s *= 1.05; // the buried foot flares into the sand
+  let y = -bury;
+  for (let b = 0; b < nb; b++) {
+    const th = H * w[b] / sum, cap = b === nb - 1;
+    const u = slab ? .04 + R() * .06 : hoodoo ? (cap ? .14 + R() * .08 : .03 + R() * .05) : (cap ? .1 + R() * .1 : .05 + R() * .2);
+    const chips = Array.from({length: 2 + Math.floor(R() * 3)}, () => [R() * Math.PI * 2, .12 + R() * .2, .04 + R() * .07]);
+    beds.push({y0: y, y1: y + th, u, lip: .7 + R() * .14, tone: R(), own: ringNoise(R, 3), rim: ringNoise(R, 3), chips});
+    y += th;
   }
-  const pos: number[] = [], col: number[] = [], idx: number[] = [];
-  const at = (bed: Bed, i: number, scale: number, yy: number, occ: number) => {
-    const th = i / M * Math.PI * 2, c = Math.cos(th), sn = Math.sin(th);
-    let rad = 1 + .16 * outline(th) + (bed.hard ? .04 : .08) * bed.own(th);
-    for (const [ja, jw, jd] of joints) { const d = Math.atan2(Math.sin(th - ja), Math.cos(th - ja)); rad *= 1 - jd * Math.exp(-((d / jw) ** 2)); }
-    rad *= k.r * scale;
-    // Yardang outline: long downwind (+x), the lee tail narrower.
-    const x = c * rad * k.elong * (c > 0 ? 1.12 : .9) + bed.ox * k.r, z = sn * rad * (1 - .28 * Math.max(0, c)) + bed.oz * k.r;
-    pos.push(x, yy, z); col.push(occ, bed.tone, 0);
-    return pos.length / 3 - 1;
+  /** The body's width up the stone, t 0 (buried foot) to 1 (top). */
+  const body = (t: number, cap: boolean) => slab ? 1 - .05 * t : hoodoo ? (cap ? 1 : .5 + .38 * THREE.MathUtils.smoothstep(t, .05, .8)) : (1.04 - .12 * t) * (1 + .06 * (1 - THREE.MathUtils.smoothstep(t, 0, .25)));
+  /** Outline factor round the stone for bed `bed` at angle th; `lipW` weights the crumbled chips (on the lip only). */
+  const round = (bed: Bed, th: number, yy: number, lipW: number) => {
+    let r = 1 + .16 * outline(th) + .05 * bed.own(th);
+    for (const [ja, jw, jd] of joints) { const d = Math.atan2(Math.sin(th - ja), Math.cos(th - ja)); r *= 1 - jd * Math.exp(-((d / jw) ** 2)); }
+    for (const [ca, cw, cd] of bed.chips) { const d = Math.atan2(Math.sin(th - ca), Math.cos(th - ca)); r *= 1 - cd * lipW * Math.exp(-((d / cw) ** 4)); }
+    for (const [n, f, ph, a] of grain) r *= 1 + a * Math.sin(th * n + yy * f + ph);
+    return r;
   };
-  const band = (rings: number[]) => { // quads between consecutive rings of M vertices each
-    for (let r = 1; r < rings.length; r++) for (let i = 0; i < M; i++) {
-      const a = rings[r - 1] + i, b = rings[r - 1] + (i + 1) % M, c = rings[r] + i, d = rings[r] + (i + 1) % M;
-      idx.push(a, c, b, b, c, d);
-    }
+  /** Radius factor in bed b at s (0 its base, `lip` its widest), with the bed's undercut. */
+  const wall = (b: number, s: number) => {
+    const bed = beds[b], t = (bed.y0 + s * (bed.y1 - bed.y0) + bury) / H;
+    return body(t, b === nb - 1) * (1 - bed.u * Math.pow(1 - THREE.MathUtils.smoothstep(s, 0, bed.lip), 1.4));
   };
-  const ring = (bed: Bed, scale: number, yy: number, occ: number) => { let first = -1; for (let i = 0; i < M; i++) { const v = at(bed, i, scale, yy, occ); if (first < 0) first = v; } return first; };
+  const pos: number[] = [], col: number[] = [], idx: number[] = [], rings: number[] = [];
   const occAt = (yy: number) => .5 + .5 * THREE.MathUtils.smoothstep((yy + bury) / H, .1, .9);
-  for (let b = 0; b < beds.length; b++) {
-    const bed = beds[b], next = beds[b + 1], th = bed.y1 - bed.y0;
-    const ch = Math.min(bed.hard ? .06 : .14, th * .3), inset = ch / k.r * .8;
-    // Under an overhanging bed this one sees little sky; a hollow soft bed is darker in its waist.
-    const shade = next && next.s > bed.s ? .55 : 1, below = b && beds[b - 1].s > bed.s ? .7 : 1;
-    const rings = [ring(bed, bed.s * (bed.hard ? 1 : .985), bed.y0, occAt(bed.y0) * below)];
-    if (!bed.hard) rings.push(ring(bed, bed.s * .88, bed.y0 + th * .5, occAt(bed.y0 + th * .5) * .85 * Math.min(shade, below) ** .5));
-    rings.push(ring(bed, bed.s * .975, bed.y1 - ch, occAt(bed.y1) * shade), ring(bed, bed.s * .975 - inset, bed.y1 - ch * .12, occAt(bed.y1) * shade));
-    band(rings);
+  /** One ring of M vertices: radius factor rad(th), height yy(th), skylight occ. */
+  const ring = (rad: (th: number) => number, yy: (th: number) => number, occ: number, tone: number) => {
+    rings.push(pos.length / 3);
+    for (let i = 0; i < M; i++) {
+      const th = i / M * Math.PI * 2, c = Math.cos(th), sn = Math.sin(th), rr = rad(th) * k.r;
+      pos.push(c * rr * k.elong * (c > 0 ? 1.12 : .9), yy(th), sn * rr * (1 - .28 * Math.max(0, c))); col.push(occ, tone, 0);
+    }
+  };
+  for (let b = 0; b < nb; b++) {
+    const bed = beds[b], th = bed.y1 - bed.y0, next = beds[b + 1];
+    // The rim wanders in height (up to a fifth of the bed), most at the lip, none at the bed's foot.
+    const yAt = (s: number) => (t: number) => bed.y0 + s * th + bed.rim(t) * th * .1 * Math.sin(Math.PI * THREE.MathUtils.clamp((s - bed.lip * .4) / (1 - bed.lip * .4), 0, 1));
+    const dark = (s: number) => 1 - .5 * Math.min(1, bed.u / .2) * Math.pow(1 - THREE.MathUtils.smoothstep(s, 0, bed.lip), 1.4);
+    for (const s of [0, bed.lip * .3, bed.lip * .65, bed.lip]) {
+      const yy = yAt(s);
+      ring((t) => round(bed, t, yy(t), s / bed.lip) * wall(b, s), yy, occAt(bed.y0 + s * th) * dark(s), bed.tone);
+    }
+    const lipY = yAt(bed.lip), lipR = (t: number) => round(bed, t, lipY(t), 1) * wall(b, bed.lip);
     if (next) {
-      // The parting: a ledge (the next bed set back) or the underside of an overhang, its own crease.
-      const l0 = ring(bed, bed.s * .975 - inset, bed.y1 - ch * .12, .85 * shade), l1 = ring(next, next.s * (next.hard ? 1 : .985), bed.y1, .8);
-      band([l0, l1]);
+      // The lip rounds over (a quarter ellipse) onto the shelf at the foot of the bed above.
+      const nextR = (t: number) => round(next, t, bed.y1, 0) * wall(b + 1, 0);
+      for (const q of [.4, .75]) {
+        const cq = Math.cos(q * Math.PI / 2), sq = Math.sin(q * Math.PI / 2), yy = (t: number) => lipY(t) + (bed.y1 - lipY(t)) * sq;
+        ring((t) => nextR(t) + (lipR(t) - nextR(t)) * cq, yy, occAt(bed.y1) * (.9 + .1 * cq), bed.tone);
+      }
     } else {
-      // The caprock's planed top, fanned from its middle.
-      const c0 = ring(bed, bed.s * .975 - inset, bed.y1 - ch * .12, 1);
-      pos.push(bed.ox * k.r, bed.y1 - ch * .05, bed.oz * k.r); col.push(1, bed.tone, 0);
-      const cv = pos.length / 3 - 1;
-      for (let i = 0; i < M; i++) idx.push(c0 + i, cv, c0 + (i + 1) % M);
+      // The top: the rim rounds over into a low dome, a little uneven.
+      const rr = slab ? .1 : hoodoo ? .14 : .1, dome = (hoodoo ? .07 : .04) * k.r;
+      for (const q of [.35, .7, 1]) {
+        const cq = Math.cos(q * Math.PI / 2), sq = Math.sin(q * Math.PI / 2);
+        ring((t) => lipR(t) * (1 - rr * (1 - cq)), (t) => lipY(t) + (top - lipY(t)) * sq, 1, bed.tone);
+      }
+      for (const f of [.75, .45, .2]) ring((t) => lipR(t) * (1 - rr) * f, (t) => top + dome * (1 - f * f) + bed.rim(t) * .02 * k.r * f, 1, bed.tone);
+      pos.push(0, top + dome, 0); col.push(1, bed.tone, 0);
     }
   }
+  for (let r = 1; r < rings.length; r++) for (let i = 0; i < M; i++) {
+    const a = rings[r - 1] + i, b = rings[r - 1] + (i + 1) % M, c = rings[r] + i, d = rings[r] + (i + 1) % M;
+    idx.push(a, c, b, b, c, d);
+  }
+  const last = rings[rings.length - 1], cv = pos.length / 3 - 1;
+  for (let i = 0; i < M; i++) idx.push(last + i, cv, last + (i + 1) % M);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -201,12 +215,13 @@ export function dawnBoulders(height: (x: number, z: number) => number, sand = DA
   // Every stone's long axis lies along the wind, give or take; local +x is downwind.
   const windYaw = -Math.atan2(DAWN_WIND[1], DAWN_WIND[0]);
   const reach = (g: THREE.BufferGeometry) => { const p = g.getAttribute('position'); let m = 0; for (let v = 0; v < p.count; v++) m = Math.max(m, Math.hypot(p.getX(v), p.getZ(v))); return m; };
+  const bare = (x: number, z: number) => height(x, z) - rockSand(x, z);
   const fit = (g: THREE.BufferGeometry, max: number) => { const m = reach(g); if (m > max) g.scale(max / m, 1, max / m); return Math.min(m, max); };
   for (const site of dawnBoulderSites()) {
     const R = rng(site.i * 977 + 31);
     // The main stone fills most of the collider (radius r + 1): a mesa block, or on every other big site a hoodoo.
-    const tall = site.r >= 3 && site.i % 2 === 0;
-    const main: StrataStone = {r: site.r * .62, h: tall ? site.r * 1.7 : site.r * (.85 + R() * .3), kind: tall ? 'hoodoo' : 'mesa', elong: 1.1 + R() * .25, seed: site.i * 31 + 3};
+    const tall = dawnRockTall(site.i, site.r);
+    const main: StrataStone = {r: site.r * .62, h: tall ? site.r * 1.85 : site.r * (.95 + R() * .3), kind: tall ? 'hoodoo' : 'mesa', elong: 1.1 + R() * .25, seed: site.i * 31 + 3};
     const parts: {g: THREE.BufferGeometry; dx: number; dz: number; yaw: number; tilt: number}[] = [];
     const mg = strataGeometry(main); fit(mg, site.r + .55);
     parts.push({g: mg, dx: 0, dz: 0, yaw: windYaw + (R() - .5) * .5, tilt: 0});
@@ -220,8 +235,12 @@ export function dawnBoulders(height: (x: number, z: number) => number, sand = DA
     }
     for (const [k, s] of parts.entries()) {
       const x = site.x + s.dx, z = site.z + s.dz, g = s.g, m = reach(g);
+      // The main stone stands on the ground under the sand (rockSand), so the skirt the wind piled round it buries its
+      // foot; the blocks fallen off it lie on that sand, sunk a quarter of their height.
       let low = Infinity;
-      for (let a = 0; a < 12; a++) for (const f of [.4, .9]) low = Math.min(low, height(x + Math.cos(a * .52) * m * f, z + Math.sin(a * .52) * m * f));
+      const ground = k ? height : bare;
+      for (let a = 0; a < 12; a++) for (const f of [.4, .9]) low = Math.min(low, ground(x + Math.cos(a * .52) * m * f, z + Math.sin(a * .52) * m * f));
+      if (k) { g.computeBoundingBox(); low -= g.boundingBox!.max.y * .25; }
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, s.yaw, s.tilt, 'YXZ'));
       g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, low, z), q, new THREE.Vector3(1, 1, 1)));
       const pos = g.getAttribute('position') as THREE.BufferAttribute, kind = new Float32Array(pos.count * 3);
