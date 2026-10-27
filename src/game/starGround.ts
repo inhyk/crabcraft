@@ -275,7 +275,8 @@ export function starFieldValue(x: number, z: number, y: number): number {
   const open = starOpenMeadow(x, z, grass, 1 - smooth(rect, 0, 7), 1 - smooth(Math.hypot(x, z + 75), 22, 28));
   const [lush, wear] = starFieldWear(x, z);
   // The dead ends' earth paths are trodden pale wherever they run (star r5).
-  return Math.max(.5 + (wear * .5 - lush * .5) * open, .5 + .5 * starSpurWear(x, z));
+  const value = .5 + (wear * .5 - lush * .5) * open, spur = starSpurWear(x, z);
+  return spur > 0 ? Math.max(value, .5 + .5 * spur) : value;
 }
 /** Per vertex: how sandy, how grassy and how worn the ground is (0..1 each). */
 export function starSoil(x: number, z: number, y: number): [number, number, number] {
