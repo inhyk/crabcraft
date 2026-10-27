@@ -222,7 +222,6 @@ float spWet=smoothstep(.15,.6,spN1*.6+spNoise(spP*.6+9.)*.5+spMid*.25)*(1.-spDri
 spCol*=mix(1.,.78,spWet);
 diffuseColor.rgb=spCol;
 diffuseColor.a*=spAlpha;
-float spSlope=0.;
 `;
 
 const ROUGH = /* glsl */ `

@@ -15,15 +15,19 @@ const rect=(x:number,z:number,ax:number,bx:number,az:number,bz:number)=>Math.hyp
 /** Distance outside the town, the avenue and the boss floor (0 inside them). */
 const playDistance=(x:number,z:number)=>Math.min(Math.max(0,Math.hypot(x,z+75)-24),rect(x,z,-9,9,-100,105),rect(x,z,-54,54,3,100));
 
-/** The pre-2026-10-28 island: town, avenue and arena level, the exploration medallions flattened. */
-export function starBaseHeight(x:number,z:number){
+/** The natural island with the exploration medallions flattened. */
+function medallionHeight(x:number,z:number){
   let y=naturalHeight(x,z);
   for(const kind of ['explore-west','explore-east'] as const){
     const p=STAR_OBJECTIVES[kind]!,d=Math.hypot(x-p[0],z-p[1]);
     if(d<13)y=MathUtils.lerp(naturalHeight(...p),y,MathUtils.smoothstep(d,8,13));
   }
+  return y;
+}
+/** The pre-2026-10-28 island: town, avenue and arena level, the exploration medallions flattened. */
+export function starBaseHeight(x:number,z:number){
   // Keep the existing town, avenue and boss floor level; blend their outer edges into hills.
-  return MathUtils.lerp(3,y,MathUtils.smoothstep(playDistance(x,z),0,6));
+  return MathUtils.lerp(3,medallionHeight(x,z),MathUtils.smoothstep(playDistance(x,z),0,6));
 }
 
 /**
@@ -68,8 +72,23 @@ export function starRelief(x:number,z:number){
   return rises+swell+dunes+beach+cliff+knoll+crater;
 }
 
+/** 0 where an objective or kept point needs its old ground, 1 elsewhere (the play areas are handled by the blend). */
+function pointKeep(x:number,z:number){
+  let keep=1;
+  for(const [kind,p] of Object.entries(STAR_OBJECTIVES)){
+    const d=Math.hypot(x-p[0],z-p[1]),explore=kind.startsWith('explore-');
+    keep=Math.min(keep,smooth(d,explore?16:7,explore?27:15));
+  }
+  for(const [px,pz,r] of STAR_KEEP_POINTS)keep=Math.min(keep,smooth(Math.hypot(x-px,z-pz),r,r+8));
+  return keep;
+}
 function shapedHeight(x:number,z:number){
-  return starBaseHeight(x,z)+starRelief(x,z)*starReliefKeep(x,z);
+  const base=starBaseHeight(x,z),d=playDistance(x,z);
+  // The old blend climbed from the level town into the hills within 6 m (slopes past 1:1 beside the avenue). Up to
+  // 3 m out it stays as it was; beyond, the climb is eased out over 24 m.
+  const blend=d<3?MathUtils.smoothstep(d,0,6):.5+.5*smooth(d,3,27);
+  const shaped=MathUtils.lerp(3,medallionHeight(x,z)+starRelief(x,z)*starReliefKeep(x,z),blend);
+  return base+(shaped-base)*pointKeep(x,z);
 }
 
 export function buildStarHeights(){
