@@ -49,13 +49,16 @@ void dawnGroundSurface(){
   float f4=0.,f5=0.,n4=.5,n5=.5;
   #else
   float f4=1.-smoothstep(.04,.16,px),f5=1.-smoothstep(.015,.06,px);
-  float n4=mix(.5,dgNoise(p.xz*8.3),f4),n5=mix(.5,dgNoise(p.xz*23.+7.),f5);
+  float n4=f4>0.?mix(.5,dgNoise(p.xz*8.3),f4):.5,n5=f5>0.?mix(.5,dgNoise(p.xz*23.+7.),f5):.5;
   #endif
   // Wind ripples on the sand: a gentle stoss slope and a short steep lee, crests across the wind.
   vec2 wind=normalize(dawnWind);
-  float ph=dot(p.xz,wind)*1.75+dgNoise(p.xz*.35)*1.2+dgNoise(p.xz*1.9)*.25;
-  float rf=fract(ph),lee=smoothstep(.7,.82,rf)*(1.-smoothstep(.97,1.,rf));
-  float rgrad=mix(.9,-3.6,lee),rfade=(1.-smoothstep(.03,.09,px))*(.25+.75*smoothstep(.3,.7,dgNoise(p.xz*.09+1.3)));
+  float rf=.5,rgrad=0.,rfade=1.-smoothstep(.03,.09,px);
+  if(rfade>0.){
+    float ph=dot(p.xz,wind)*1.75+dgNoise(p.xz*.35)*1.2+dgNoise(p.xz*1.9)*.25;
+    rf=fract(ph);float lee=smoothstep(.7,.82,rf)*(1.-smoothstep(.97,1.,rf));
+    rgrad=mix(.9,-3.6,lee);rfade*=.25+.75*smoothstep(.3,.7,dgNoise(p.xz*.09+1.3));
+  }
   // Sand: dry and pale above the tide, darker and glossy where the sea wets it.
   float wet=1.-smoothstep(dawnSea+.08,dawnSea+.75+n2*.35,p.y);
   vec3 dry=dgLin(vec3(.88,.71,.49))*(.92+.12*n2)*(.95+.08*n3)*(.92+.16*n5)*(1.+.05*rfade*(rf-.5));

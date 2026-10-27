@@ -46,7 +46,10 @@ void main(){
   // Swells: a few long Gerstner-like trains off the open sea, slowed and steepened in the shallows.
   vec2 g=vec2(0.);
   float shoal=1.-smoothstep(.5,6.,depth)*.6;
+  // Far away the shortest trains are below a pixel: three trains past 150 m.
+  int trains=dist>150.?3:5;
   for(int i=0;i<5;i++){
+    if(i>=trains)break;
     float fi=float(i);
     float ang=(fi-2.)*.35+sin(fi*1.7)*.2;
     vec2 dir=vec2(cos(ang)*swellDir.x-sin(ang)*swellDir.y,sin(ang)*swellDir.x+cos(ang)*swellDir.y);
