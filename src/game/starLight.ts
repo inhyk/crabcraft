@@ -63,7 +63,7 @@ vec3 starLampLight(vec3 p,vec3 n){
   float k=clamp(floor((${fmt(STAR_LAMPS[0][1])}-p.z)/6.+.5),0.,${fmt(STAR_LAMPS.length / 2 - 1)});
   vec3 e=vec3(0.);
   for(int j=-1;j<=1;j++)for(int s=0;s<2;s++){
-    int i=int(k)*2+j*2+s;if(i<0||i>=${STAR_LAMPS.length})continue;
+    int i=int(k)*2+j*2+s;if(i<0||i>=${STAR_LAMPS.length}||SL_LAMPC[i].g<=0.)continue;
     vec3 L=vec3(SL_LAMP[i].x,${fmt(3 + STAR_LAMP_LIFT)},SL_LAMP[i].y)-p;float d2=dot(L,L);
     float w=clamp(1.-d2*d2/${fmt(LAMP_REACH ** 4)},0.,1.),id=inversesqrt(d2),down=max(L.y*id,0.);
     // The lantern's roof sends its light down: a cos^2 lobe about the vertical.
@@ -78,7 +78,8 @@ vec3 starLampGlint(vec3 p,vec3 n,vec3 V,float shin){
   float e=0.;
   // Reflections reach further than light: the next few lamps toward the eye too.
   for(int j=-3;j<=3;j++)for(int s=0;s<2;s++){
-    int i=int(k)*2+j*2+s;if(i<0||i>=${STAR_LAMPS.length})continue;
+    // Gaps (no lamp) are skipped.
+    int i=int(k)*2+j*2+s;if(i<0||i>=${STAR_LAMPS.length}||SL_LAMPC[i].g<=0.)continue;
     vec3 L=vec3(SL_LAMP[i].x,${fmt(3 + STAR_LAMP_LIFT)},SL_LAMP[i].y)-p;float d2=dot(L,L);L*=inversesqrt(d2);
     float h=max(dot(n,normalize(L+V)),0.);
     e+=pow(h,shin)*(shin+8.)/25.13/(1.+d2*.02)*SL_LAMPC[i].g;
