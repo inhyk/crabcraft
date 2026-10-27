@@ -135,7 +135,7 @@ const SAND_STATE = /* glsl */ `
   // Metres up the beach from the waterline (height over the landform's slope), so the wet band keeps its width
   // whether the beach is steep or flat; only on the beach itself, not in hollows inland.
   float sShoreD=max(sAbove,0.)/max(length(sG.yz),.03),sBeach=1.-smoothstep(.9,1.7,sAbove);
-  float sWetN=snNoise(sXZ*.21+vec2(4.,-2.));
+  float sWetN=sBeach>0.?snNoise(sXZ*.21+vec2(4.,-2.)):0.;
   float sWet=max(1.-smoothstep(.06,.55+.25*snNoise(sXZ*.13),sAbove),(1.-smoothstep(2.,3.4+.9*sWetN,sShoreD))*sBeach);
   float sDamp=max((1.-smoothstep(.4,1.6,sAbove)),(1.-smoothstep(3.2,6.5+1.5*sWetN,sShoreD))*sBeach)*(1.-sWet);
   float sR=sgRadius(sXZ);
@@ -191,7 +191,7 @@ const SAND_STATE = /* glsl */ `
   float swash=smoothstep(.85,1.,sin((sAbove*9.+snNoise(sXZ*.4)*2.)*3.14159))*sWet*(1.-smoothstep(0.,.3,-sAbove));
   // The last waves' reach: thin lines of drying foam and froth along the top of the wet band, broken and wandering.
   float swL=0.;
-  for(int i=0;i<2;i++){float at=(i==0?.7:2.1+.5*sWetN)+.45*snNoise(sXZ*vec2(.3,.3)+float(i)*7.3),w=.07+.05*(snNoise(sXZ*1.7+float(i))*.5+.5);
+  if(sBeach>0.)for(int i=0;i<2;i++){float at=(i==0?.7:2.1+.5*sWetN)+.45*snNoise(sXZ*vec2(.3,.3)+float(i)*7.3),w=.07+.05*(snNoise(sXZ*1.7+float(i))*.5+.5);
     swL=max(swL,(1.-smoothstep(w*.4,w,abs(sShoreD-at)))*smoothstep(.2,.55,snNoise(sXZ*.9+float(i)*3.1)*.5+.5+(i==0?.25:0.)));}
   swL*=sBeach*(1.-smoothstep(.06,.0,sAbove));
   alb=mix(alb,sdLin(vec3(.47,.37,.27))*(.9+.15*n3),sWet*.85);
