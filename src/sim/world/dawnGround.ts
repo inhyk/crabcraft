@@ -151,7 +151,10 @@ function coastGround(x: number, z: number): number {
   const keepHarbour = harbourBlend(x, z);
   if (keepHarbour <= 0) return oldGround(x, z, r);
   const open = dawnOpen(x, z);
-  const h = shore(x, z, inland(x, z, open, r), r - dawnShoreStart(x, z));
+  // Where the mainland's desert claims the bearing the coast runs away with it (sandGround()): without this the
+  // plateau broke off in a sea bluff inside the dune sea, a trench seen from above.
+  const s0 = dawnShoreStart(x, z), m = sandMainland(x, z);
+  const h = shore(x, z, inland(x, z, open, r), r - (s0 + (12 - s0) * m));
   return keepHarbour < 1 ? oldGround(x, z, r) + (h - oldGround(x, z, r)) * keepHarbour : h;
 }
 
