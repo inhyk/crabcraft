@@ -463,7 +463,7 @@ export class HiddenWorld {
     if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);this.fourth.updateSnow(dt,this.game.engine.renderer,this.game.units,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.snowRequests.update(time,!!observation);}
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
     this.thirdGate.root.visible=!!flags?.trueCleared||this.game.creatorTravel;
-    if(this.chapter===3){this.third.setQuality(this.game.engine.quality);this.third.update(time,!!flags?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);this.dawnRequests.update(time,!!observation);}
+    if(this.chapter===3){this.third.setQuality(this.game.engine.quality);this.third.update(time,!!flags?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);this.third.updateSand(dt,this.game.engine.renderer,this.game.units,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.dawnRequests.update(time,!!observation);}
     if(!observation&&!this.game.ending.active&&!this.game.controlsLocked){
       const distance=Math.hypot(this.game.player.unit.pos.x-this.portalPosition.x,this.game.player.unit.pos.z-this.portalPosition.z);
       if(distance>4.5)this.travelArmed=true;
@@ -637,7 +637,7 @@ export class HiddenWorld {
   }
   dispose(){
     this.hub.dispose();this.leaveTidecrown();this.tidecrownPeople?.dispose();if(this.tidecrown){this.game.scene.remove(this.tidecrown.root);this.tidecrown.dispose();this.tidecrown=undefined;}
-    this.ambience.dispose();this.fourth.disposeSnow();
+    this.ambience.dispose();this.fourth.disposeSnow();this.third.disposeSand();
     this.showEpilogue();this.game.scene.remove(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
     for(const root of [this.root,this.shorePortal.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root])root.traverse(o=>{

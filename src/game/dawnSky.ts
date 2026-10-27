@@ -21,11 +21,12 @@ const mix3 = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + 
 const sat = (x: number) => Math.min(1, Math.max(0, x));
 const smooth = (a: number, b: number, x: number) => { const t = sat((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
-// The palette, linear. Brightness is in the renderer's units before tone mapping.
-const ZENITH_AWAY = lin(0x2a3570), ZENITH_SUN = lin(0x45559a);
-const MID_AWAY = lin(0x7d82bd), MID_SUN = lin(0xe7a98f);
-const HORIZON_AWAY = lin(0x9a90b6), HORIZON_SUN = lin(0xffb46b);
-const BELT = lin(0xf0a6a6), EARTH_SHADOW = lin(0x6f7aa8);
+// The palette, linear. Brightness is in the renderer's units before tone mapping. A desert sunrise: deep clear
+// blue overhead, a band of dust glowing gold round the sun and dusty peach-rose round the back of the sky.
+const ZENITH_AWAY = lin(0x234d8c), ZENITH_SUN = lin(0x3563a3);
+const MID_AWAY = lin(0x7f9fc8), MID_SUN = lin(0xd9b994);
+const HORIZON_AWAY = lin(0xd9c0a8), HORIZON_SUN = lin(0xffbf73);
+const BELT = lin(0xedbca2), EARTH_SHADOW = lin(0x8f9cbc);
 
 export interface DawnSkyOptions {
   /** Bearing of the sun, degrees: 0 faces +Z, 90 faces +X. */
@@ -125,7 +126,7 @@ void main(){
     vec2 sdir=normalize(dawnSunDir.xz);
     vec2 wq=vec2(dkFbm(cp*.35+7.),dkFbm(cp*.35-3.))*1.3;
     float band=smoothstep(.0,.05,d.y)*(1.-smoothstep(.3,.7,d.y));
-    float cover=mix(.72,.6,band);
+    float cover=mix(.8,.7,band);
     float base=dkFbm(cp*.8+wq);
     float dens=smoothstep(cover,cover+.16,base)*band;
     float ahead=smoothstep(cover,cover+.16,dkFbm((cp+sdir*.22)*.8+wq))*band;
@@ -213,14 +214,14 @@ export class DawnSky {
     }
     for (let c = 0; c < 3; c++) up[c] /= wsum;
     // The beam of a sun a few degrees up: gold, the blue mostly scattered out of it.
-    const beam = lin(0xffc58c);
+    const beam = lin(0xffd29c);
     this.sunColor = toColor(beam);
     this.sunIntensity = 4.6;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance.
-    // The dome's violet fill, its red pulled back a little by the sea's blue-green bounce, so shade reads cool lilac.
-    this.hemiSky = toColor([up[0] * 1.75, up[1] * 2.15, up[2] * 1.85] as V3, 1);
-    // Warm bounce off sunlit sand and grass (albedo about 0.3), lit by the sun's beam and the sky.
-    const albedo: V3 = [0.36, 0.29, 0.2], sunE = this.sunIntensity * Math.sin(el) * 1.6;
+    // The dome's fill, its red pulled back, so shade on the sand reads cool blue-violet against the gold sun.
+    this.hemiSky = toColor([up[0] * 1.25, up[1] * 1.75, up[2] * 2.55] as V3, 1);
+    // Warm bounce off sunlit sand (albedo about 0.35), lit by the sun's beam and the sky.
+    const albedo: V3 = [0.46, 0.33, 0.19], sunE = this.sunIntensity * Math.sin(el) * 1.6;
     this.hemiGround = toColor([0, 1, 2].map(c => albedo[c] * (beam[c] * sunE + up[c] * 1.3)) as V3, 1.6);
     this.uniforms = { dawnSkyLUT: { value: lut }, dawnSunDir: { value: this.sunDir } };
     const sunTint = lin(0xffd9a0);
@@ -235,7 +236,7 @@ export class DawnSky {
         sunColor: { value: toColor(sunTint, gain) },
         time: { value: 0 },
         hazeColor: { value: this.skyHorizon.clone() },
-        cloudShade: { value: toColor(lin(0x9d93c4), gain * 0.95) },
+        cloudShade: { value: toColor(lin(0xa7a6c6), gain * 0.95) },
         cloudLit: { value: toColor(lin(0xffbf98), gain * 1.5) },
       },
     });

@@ -165,13 +165,13 @@ export const DUNE_DRIFT: DuneKind = { lambda: 8.5, height: 0.45, slip: 0.42, cre
 /** Polynomial smooth minimum: the two meet in a fillet `k` high. */
 const smin = (a: number, b: number, k: number) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
 
-/** Out-parameter of dune(): how much (x, z) lies on a slip face, 0..1. */
-export const DUNE_LEE = [0];
 /**
- * One dune class at wind-frame coordinates (a downwind, c across), `amp` 0..1 scaling its height. Metres.
+ * One dune class at wind-frame coordinates (a downwind, c across), `amp` 0..1 scaling its height, riding on
+ * `under` (the smaller dunes at this point, metres). Those ride its windward slope and fill the trough after it;
+ * its slip face is a clean plane that cuts them off, as a big dune's avalanche face buries what it overtakes.
  * The crest line wanders and breaks into segments; where a segment thins its crest trails downwind (the horns).
  */
-export function dune(a: number, c: number, k: DuneKind, amp: number): number {
+export function dune(a: number, c: number, k: DuneKind, amp: number, under: number): number {
   const L = k.lambda;
   // Segments along the crest, a couple of wavelengths long, drifting slowly downwind.
   const seg = smooth01((dawnNoise(c / (1.7 * L) + k.seed, a / (4.3 * L) - k.seed) + 0.25) / 0.7);
@@ -181,15 +181,16 @@ export function dune(a: number, c: number, k: DuneKind, amp: number): number {
   const phase = a / L + 0.55 * dawnNoise(c / (2.6 * L) - k.seed, a / (5.1 * L) + 2.3) + 0.12 * dawnNoise(c / (0.9 * L) + 5.1, a / (6 * L) - k.seed) - 0.2 * (1 - seg);
   const t = phase - Math.floor(phase);
   const d = (t - k.crest) * L, stoss = k.crest * L;
-  // Windward: u^2 (2 - u) climbs out of the trough with no kink and reaches the brink still rising.
-  const u = Math.max(0, Math.min(1, 1 - Math.abs(d) / stoss));
-  const ys = H * u * u * (2 - u);
-  const yl = H - k.slip * d;
   // A sharp brink, rounded over a few decimetres so no lattice has to carry a crease; a concave apron at the foot.
   const kc = 0.1 + 0.07 * H, kf = 0.25 + 0.2 * H;
-  const y = -smin(-smin(ys, yl, kc), 0, kf) - kf * 0.25;
-  DUNE_LEE[0] = H > 0.05 && d > 0 ? smooth01((ys - yl) / kc) * smooth01(y / (0.25 * H)) : 0;
-  return y;
+  // Windward: u^2 (2 - u) climbs out of the trough with no kink and reaches the brink still rising. It starts kf
+  // under the floor, so the apron below leaves the trough exactly where the slip face's foot comes back to it.
+  const u = Math.max(0, Math.min(1, 1 - Math.abs(d) / stoss)), s = u * u * (2 - u);
+  const ys = under + (H + kf) * s - kf;
+  const yl = H - k.slip * d;
+  // The apron: e above the floor, eased onto it over kf either side.
+  const e = smin(ys, yl, kc) - under;
+  return under + (e >= kf ? e : e <= -kf ? 0 : ((e + kf) * (e + kf)) / (4 * kf));
 }
 
 /** Rocks in the open the wind has built sand round: (x, z, radius). dawnRocks() south of the citadel. */
@@ -244,19 +245,23 @@ function sandGround(x: number, z: number): number {
   // The desert plain swells gently and lifts toward the mainland, where the island's northern rise levels out.
   const far = m * smoothstep(r, 0.9, 1.6);
   let h = oldInland(x, z) - 13 * smoothstep(-z, 5, 55) * far + fbm(a / 90 + 4.2, c / 140 - 1.3, 2) * 1.6 + m * smoothstep(r, 0.84, 1.5) * 7;
-  // The dune sea past the walkable ellipse; its stoss slopes carry the field dunes (compound dunes).
-  let lee = 0;
+  // Three sizes nest: drifts (a few degrees off the main wind) ride the walkable dunes, which ride the dune sea's
+  // windward slopes past the walkable ellipse (compound dunes); each slip face cuts what it overtakes.
+  let sand = dune(a * 0.996 + c * 0.087, c * 0.996 - a * 0.087, DUNE_DRIFT, smoothstep(dawnNoise(x / 23 + 7.7, z / 23 - 3.1), -0.3, 0.3), 0);
+  sand = dune(a, c, DUNE_FIELD, 0.45 + 0.55 * smoothstep(r, 0.3, 0.8), sand);
   const big = m * smoothstep(r, 0.84, 1.3);
-  if (big > 0) { h += dune(a, c, DUNE_SEA, big); lee = DUNE_LEE[0]; }
-  const fieldAmp = (0.45 + 0.55 * smoothstep(r, 0.3, 0.8)) * (1 - lee * 0.85);
-  h += dune(a, c, DUNE_FIELD, fieldAmp);
-  lee = Math.max(lee, DUNE_LEE[0]);
-  // Drifts in the troughs and on the windward slopes, a few degrees off the main wind.
-  h += dune(a * 0.996 + c * 0.087, c * 0.996 - a * 0.087, DUNE_DRIFT, (1 - lee) * smoothstep(dawnNoise(x / 23 + 7.7, z / 23 - 3.1), -0.3, 0.3));
+  if (big > 0) sand = dune(a, c, DUNE_SEA, big, sand);
+  h += sand;
   h += rockSand(x, z);
   // The mainland's coast runs away from the island; elsewhere the dawn coast's beaches and bluffs.
   const s0 = dawnShoreStart(x, z), start = s0 + (12 - s0) * m;
   return shore(x, z, h, r - start);
+}
+
+/** The dawn coast's height with the arena: what every piece of gameplay ground keeps exactly (for QA). */
+export function dawnCoastHeight(x: number, z: number, arenaHeight: number): number {
+  const h = coastGround(x, z), arena = 1 - smoothstep(Math.hypot(x, z + 72), 21, 31);
+  return h + (arenaHeight - h) * arena;
 }
 
 /** Goldsand's ground height (World III): the dawn coast on gameplay ground, the desert everywhere else. */

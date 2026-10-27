@@ -3,8 +3,8 @@ import { DAWN_SEA } from '../sim/world/dawnGround';
 import { DAWN_SKY_GLSL, type DawnSky } from './dawnSky';
 
 /*
- * Dawnharbor's sea. One plane, one draw: the water's depth comes from the island's ground baked once into a small
- * height texture, so the colour runs from wet sand through shallow turquoise to the deep blue offshore, foam laps
+ * Dawnharbor's sea. One plane, one draw: the water's depth comes from the ground the desert baked on the GPU
+ * (sandTerrain.ts), so the colour runs from wet sand through shallow turquoise to the deep blue offshore, foam laps
  * the shore where the water thins, and the edge melts into the sand instead of cutting it. Long swells and fine
  * ripples tilt the surface; it reflects the dawn sky's own LUT, and the low sun lays a glitter path across it.
  */
@@ -24,8 +24,6 @@ void main(){
 const SEA_FRAGMENT = /* glsl */ `
 #include <common>
 ${DAWN_SKY_GLSL}
-uniform sampler2D seaGround;
-uniform vec4 seaBox;
 uniform float seaLevel;
 uniform float time;
 uniform vec3 sunLight;
@@ -38,7 +36,7 @@ float swHash(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);r
 vec3 swNoised(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f),du=6.*f*(1.-f);
   float a=swHash(i),b=swHash(i+vec2(1.,0.)),c=swHash(i+vec2(0.,1.)),d=swHash(i+vec2(1.));
   return vec3(a+(b-a)*u.x+(c-a)*u.y+(a-b-c+d)*u.x*u.y,du*(vec2(b-a,c-a)+(a-b-c+d)*u.yx));}
-float groundAt(vec2 p){vec2 uv=(p-seaBox.xy)/seaBox.zw;if(any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.))))return -30.;return texture2D(seaGround,uv).r;}
+#include <sea_ground>
 void main(){
   vec2 p=vWorld.xz;
   vec3 toEye=cameraPosition-vWorld;float dist=length(toEye);vec3 v=toEye/dist;
@@ -101,36 +99,23 @@ void main(){
 }
 `;
 
-/** The island's ground sampled for the sea's depth: x, z bounds and a texture of heights. */
-function groundTexture(height: (x: number, z: number) => number, box: THREE.Vector4, res: number): THREE.DataTexture {
-  const data = new Uint16Array(res * res);
-  for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
-    const x = box.x + ((i + 0.5) / res) * box.z, z = box.y + ((j + 0.5) / res) * box.w;
-    data[j * res + i] = THREE.DataUtils.toHalfFloat(Math.max(-30, Math.min(40, height(x, z))));
-  }
-  const t = new THREE.DataTexture(data, res, res, THREE.RedFormat, THREE.HalfFloatType);
-  t.minFilter = t.magFilter = THREE.LinearFilter;
-  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-  t.colorSpace = THREE.NoColorSpace;
-  t.needsUpdate = true;
-  return t;
-}
-
 export interface DawnSea { mesh: THREE.Mesh; update(time: number): void; setQuality(q: 'high' | 'low'): void }
 
-export function dawnSea(sky: DawnSky, height: (x: number, z: number) => number, low = false): DawnSea {
-  const box = new THREE.Vector4(-180, -195, 360, 400);
-  const ground = groundTexture(height, box, low ? 192 : 320);
+/**
+ * The ground under the sea: GLSL that defines `vec4 sandGroundAt(vec2 p)` (height first) and the uniforms it reads.
+ * The sea shares the desert's own bake (sandTerrain.ts), so the shore it foams on is the shore the sand draws.
+ */
+export interface SeaGround { read: string; uniforms: Record<string, THREE.IUniform> }
+
+export function dawnSea(sky: DawnSky, ground: SeaGround): DawnSea {
   const sunLight = sky.sunColor.clone().multiplyScalar(sky.sunIntensity);
   const material = new THREE.ShaderMaterial({
     name: 'dawn-sea',
     vertexShader: SEA_VERTEX,
-    fragmentShader: SEA_FRAGMENT,
+    fragmentShader: SEA_FRAGMENT.replace('#include <sea_ground>', `${ground.read}\nfloat groundAt(vec2 p){return sandGroundAt(p).x;}`),
     transparent: true,
     fog: true,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-      seaGround: { value: null },
-      seaBox: { value: box },
       seaLevel: { value: DAWN_SEA },
       time: { value: 0 },
       sunLight: { value: sunLight },
@@ -139,10 +124,9 @@ export function dawnSea(sky: DawnSky, height: (x: number, z: number) => number, 
     }]),
   });
   // merge() clones textures; hand the shared ones in after it.
-  material.uniforms.seaGround.value = ground;
+  Object.assign(material.uniforms, ground.uniforms);
   material.uniforms.dawnSkyLUT = sky.uniforms.dawnSkyLUT;
   material.uniforms.dawnSunDir = sky.uniforms.dawnSunDir;
-  material.addEventListener('dispose', () => ground.dispose());
   const geo = new THREE.PlaneGeometry(2400, 2400, 1, 1);
   geo.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geo, material);
