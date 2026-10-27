@@ -94,6 +94,14 @@ export function starCrystalCluster(): THREE.BufferGeometry {
   return g;
 }
 
+/** A cluster the miners cut down: everything above cut (local units) sheared off flat, its cut face pale. */
+export function starCrystalStump(cut = -0.12): THREE.BufferGeometry {
+  const g = starCrystalCluster(), p = g.getAttribute('position'), h = g.getAttribute('aH');
+  for (let i = 0; i < p.count; i++) if (p.getY(i) > cut) { p.setY(i, cut); h.setX(i, Math.max(h.getX(i), .85)); }
+  g.computeVertexNormals(); g.computeBoundingBox(); g.computeBoundingSphere(); g.name = 'star-crystal-stump';
+  return g;
+}
+
 export type CrystalTint = 'amethyst' | 'moonshade' | 'teal' | 'violet';
 const TINTS: Record<CrystalTint, {deep: P3; glow: P3; tip: P3}> = {
   amethyst: {deep: [0.03, 0.012, 0.11], glow: [0.3, 0.15, 0.95], tip: [0.9, 0.82, 1.0]},

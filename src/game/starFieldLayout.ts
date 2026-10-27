@@ -12,6 +12,22 @@ export const STAR_CAMP = {x: 44, z: -60, r: 15} as const;
 /** A fishermen's skiff hauled up the western beach, bow to the dunes. */
 export const STAR_BOAT = {x: -95, z: 33, yaw: 1.25} as const;
 
+/** The miners' camp: a cart, crates and tools by a seam of crystal they have been cutting. */
+export const STAR_MINE = {x: 66, z: 56, yaw: -0.5} as const;
+/** The mine's props and their footprints (starStories.ts dresses them; solid ones are colliders). */
+export const STAR_MINE_PROPS: readonly {name: string; dx: number; dz: number; yaw: number; scale?: number; r: number; h: number}[] = [
+  {name: 'Anvil_Log', dx: -4.2, dz: 1.2, yaw: 1.9, r: .6, h: .9},
+  {name: 'Crate_Wooden', dx: -3.4, dz: 3.3, yaw: 1.2, r: .55, h: .9},
+  {name: 'Crate_Wooden', dx: -2.6, dz: 3.4, yaw: .3, r: .55, h: .9},
+  {name: 'Crate_Metal', dx: -1.6, dz: 4.3, yaw: -.4, scale: .85, r: .5, h: .8},
+  {name: 'Barrel', dx: -5.6, dz: 3.4, yaw: 0, r: .45, h: 1},
+];
+
+/** The keepers' ring: seven tall crystals on a circle, open toward the sanctum. */
+export const STAR_RING = {x: -30, z: -60, r: 6.2} as const;
+/** A point (x, z) turned by yaw about the origin, as the story props are laid out. */
+export function rot(x: number, z: number, yaw: number): [number, number] { return [x * Math.cos(yaw) + z * Math.sin(yaw), -x * Math.sin(yaw) + z * Math.cos(yaw)]; }
+
 /** Gameplay points outside the flattened town, avenue and arena that keep their exact ground. */
 export const STAR_KEEP_POINTS: readonly (readonly [number, number, number])[] = [
   // [x, z, radius of untouched ground]; objectives get their own radii from STAR_OBJECTIVES.

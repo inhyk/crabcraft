@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {injectStarLight} from './starLight';
 import {STAR_GRID} from '../sim/world/ground';
 import type {StarMeadow} from './starMeadow';
 import type {StarFields} from './starFields';
@@ -218,6 +219,7 @@ export function starGround(height: (x: number, z: number) => number, anisotropy:
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${GROUND_ROUGH}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${GROUND_NORMAL}`)
       .replace('#include <emissivemap_fragment>', GROUND_EMISSIVE);
+    injectStarLight(shader, 'vSgW');
   };
   material.customProgramCacheKey = () => 'starhaven-night-ground';
   const mesh = new THREE.Mesh(land, material); mesh.name = 'star-island-ground'; mesh.receiveShadow = true;
@@ -235,7 +237,7 @@ export function starShade(x: number, z: number): number {
     shadeSpots = [
       ...starForestSpots().filter((p) => !p.rock).map((p) => [p.x, p.z, 2.6 * p.scale] as [number, number, number]),
       ...GARDEN_TREES.map(([gx, gz]) => [gx, gz, 2.4] as [number, number, number]),
-      ...starCrystalGarden(() => 0).filter((c) => !c.clear).map((c) => [c.x, c.z, c.solid.r * 1.6 + .8] as [number, number, number]),
+      ...starCrystalGarden(() => 0).map((c) => [c.x, c.z, c.solid.r * 1.6 + .8] as [number, number, number]),
       ...starBoulders().map((b) => [b.x, b.z, b.r * 1.5 + .3] as [number, number, number]),
     ];
   }

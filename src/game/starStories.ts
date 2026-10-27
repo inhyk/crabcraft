@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {boulderGeometry} from './snowRocks';
-import {STAR_BOAT,STAR_CAMP} from './starFieldLayout';
+import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_MINE_PROPS} from './starFieldLayout';
 import {STAR_STORY_SOLIDS} from './starFieldSpots';
 
 /*
@@ -168,6 +168,19 @@ export function starStories(height: (x: number, z: number) => number, put: Put):
   put('Rope_2', bx - gx * .9, bz - gz * .9, 1.2, 1);
   put('Bucket_Metal', bx + gx * .7 - .6, bz + gz * .7 + .9, 0, .7);
 
+  // The miners' camp by the crystal seam: their cart, crates, barrel and tools, a torch, and a timber hoist over
+  // the stumps they cut (starCrystalLayout.ts places the seam and the props' footprints).
+  const {x: mx, z: mz, yaw: myaw} = STAR_MINE;
+  for (const p of STAR_MINE_PROPS) { const [rx, rz] = rot(p.dx, p.dz, myaw); put(p.name, mx + rx, mz + rz, myaw + p.yaw, p.scale ?? 1); }
+  for (const [dx, dz, name, yaw, sc] of [[-2.1, 2.5, 'Pickaxe_Bronze', 1.1, 1], [-3.2, 4.6, 'Axe_Bronze', 2.3, .9], [-5.2, 1.6, 'Rope_1', .4, 1], [-.9, 3.1, 'Bag', .7, .85], [-6.4, 1.8, 'Torch_Metal', 0, 1]] as const) {
+    const [rx, rz] = rot(dx, dz, myaw); put(name, mx + rx, mz + rz, myaw + yaw, sc);
+  }
+  {
+    // Three poles lashed at the top over the seam, a rope hanging to a sling.
+    const [hx, hz] = rot(1.6, 1.4, myaw), top = new THREE.Vector3(mx + hx, height(mx + hx, mz + hz) + 3.4, mz + hz);
+    for (let k = 0; k < 3; k++) { const a = k * 2.094 + myaw, foot = new THREE.Vector3(top.x + Math.cos(a) * 1.7, 0, top.z + Math.sin(a) * 1.7); foot.y = height(foot.x, foot.z) - .1; wood.push(tint(pole(foot, top.clone().add(new THREE.Vector3(Math.cos(a) * -.15, .25, Math.sin(a) * -.15)), .07, .055, 7), C('#3a2b22'), .15, k + 20)); }
+    wood.push(tint(pole(top, top.clone().add(new THREE.Vector3(0, -2.2, 0)), .018, .018, 5), C('#8a7a5c')));
+  }
   const merge = (list: THREE.BufferGeometry[]) => { const g = mergeGeometries(list.map((p) => p.index ? p.toNonIndexed() : p), false)!; list.forEach((p) => p.dispose()); return g; };
   const add = (list: THREE.BufferGeometry[], mat: THREE.MeshStandardMaterial, name: string) => { const mesh = new THREE.Mesh(merge(list), mat); mesh.name = name; mesh.castShadow = mesh.receiveShadow = true; root.add(mesh); };
   add(canvas, new THREE.MeshStandardMaterial({vertexColors: true, color: '#b5a688', roughness: .92, side: THREE.DoubleSide}), 'starhaven-camp-canvas');

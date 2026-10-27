@@ -26,8 +26,10 @@ export class StarNightRig {
     dome.geometry.dispose();(dome.material as THREE.Material).dispose();
   }
   /** Each shown frame: the night's fog and environment. */
-  apply(scene:THREE.Scene,renderer:THREE.WebGLRenderer){
-    const fog=scene.fog;if(fog instanceof THREE.FogExp2){fog.color.copy(STAR_HORIZON);fog.density=STAR_FOG_DENSITY;}
+  apply(scene:THREE.Scene,renderer:THREE.WebGLRenderer,camera?:THREE.Camera){
+    // The haze lies low: looked through from high above (the overview) there is far less of it in the way.
+    const lift=camera?THREE.MathUtils.smoothstep(camera.position.y,25,140):0;
+    const fog=scene.fog;if(fog instanceof THREE.FogExp2){fog.color.copy(STAR_HORIZON);fog.density=STAR_FOG_DENSITY*(1-.62*lift);}
     if(!this.env)this.bake(renderer);
     if(scene.environment!==this.env!.texture){this.saved={environment:scene.environment,intensity:scene.environmentIntensity};scene.environment=this.env!.texture;}
     scene.environmentIntensity=1.6;

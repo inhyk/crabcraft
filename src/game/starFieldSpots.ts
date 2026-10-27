@@ -1,6 +1,6 @@
 // Where Starhaven's field boulders, crater shards and story props stand. Positions only: starFields.ts and
 // starStories.ts dress them, world2Colliders.ts registers the solid ones for the browser and the server bake.
-import {STAR_BOAT,STAR_CAMP,STAR_CRATER,STAR_KEEP_POINTS,starBluff,starCoast,starNoise} from './starFieldLayout';
+import {rot,STAR_BOAT,STAR_CAMP,STAR_CRATER,STAR_KEEP_POINTS,STAR_MINE,STAR_MINE_PROPS,starBluff,starCoast,starNoise} from './starFieldLayout';
 import {nearStarObjective,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 
@@ -26,6 +26,8 @@ export const STAR_STORY_SOLIDS: readonly {x: number; z: number; r: number; h: nu
   {x: STAR_CAMP.x + 2.4, z: STAR_CAMP.z - 1.6, r: .45, h: 2},
   {x: STAR_BOAT.x + Math.sin(STAR_BOAT.yaw) * 1.6, z: STAR_BOAT.z + Math.cos(STAR_BOAT.yaw) * 1.6, r: 1.05, h: 1.2},
   {x: STAR_BOAT.x - Math.sin(STAR_BOAT.yaw) * 1.6, z: STAR_BOAT.z - Math.cos(STAR_BOAT.yaw) * 1.6, r: 1.05, h: 1.2},
+  // The miners' cart, crates and barrel (starCrystalLayout.ts).
+  ...STAR_MINE_PROPS.map(p => { const [rx, rz] = rot(p.dx, p.dz, STAR_MINE.yaw); return {x: STAR_MINE.x + rx, z: STAR_MINE.z + rz, r: p.r, h: p.h}; }),
 ];
 
 let cached: StarBoulder[] | null = null;
@@ -37,7 +39,7 @@ let cached: StarBoulder[] | null = null;
 export function starBoulders(): StarBoulder[] {
   if (cached) return cached;
   const homes = starEnemyHomes();
-  const crystals = starCrystalGarden(() => 0).filter((c) => !c.clear).map((c) => c.solid);
+  const crystals = starCrystalGarden(() => 0).map((c) => c.solid);
   const out: StarBoulder[] = [];
   const free = (x: number, z: number, r: number) => {
     if (starPlayDistance(x, z) < r + 3 || starTrailDistance(x, z) < r + 2.2 || nearStarObjective(x, z, r + 1)) return false;

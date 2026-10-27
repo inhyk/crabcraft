@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {injectStarLight} from './starLight';
 import {STAR_GRID} from '../sim/world/ground';
 import {onIslandPath,type IslandPath} from './islandPaths';
 import {starGroundColor} from './world2Ground';
@@ -148,6 +149,8 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(.9,.6,vSmT);')
       // Both faces lit as the front: grass is thin enough to let the moon through.
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal*=faceDirection;\n#endif');
+    // Lamp pools and crystal glow light each blade where it stands (starLight.ts).
+    injectStarLight(shader, null);
   };
   material.customProgramCacheKey = () => 'starhaven-meadow-grass';
   const mesh = new THREE.Mesh(geo, material);

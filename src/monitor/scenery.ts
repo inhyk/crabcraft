@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {bakeStarLight} from '../game/starLight';
 import { createWorld } from '../world/provider';
 import { DawnIsland } from '../game/world3';
 import { SnowIsland } from '../game/world4';
@@ -82,13 +83,11 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
   sun.light.color.copy(STAR_MOONLIGHT); sun.light.intensity = STAR_MOON_INTENSITY;
   scene.add(sky.root, sea.root, sun.light, sun.light.target, new THREE.HemisphereLight(STAR_SHADE_SKY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY));
   const throne = new StarSanctum(height); scene.add(throne.root);
-  const gardens = new THREE.InstancedMesh(starCrystalCluster(), starCrystalMaterial('amethyst'), 90), matrix = new THREE.Matrix4();
-  starCrystalGarden(height).forEach((c, i) => {
-    if (c.clear) matrix.makeScale(0, 0, 0);
-    else matrix.compose(new THREE.Vector3(c.x, c.y + c.h * .5, c.z), c.q, c.scale);
-    gardens.setMatrixAt(i, matrix);
-  });
+  const spots = starCrystalGarden(height), gardens = new THREE.InstancedMesh(starCrystalCluster(), starCrystalMaterial('amethyst'), spots.length), matrix = new THREE.Matrix4();
+  spots.forEach((c, i) => gardens.setMatrixAt(i, matrix.compose(new THREE.Vector3(c.x, c.y + c.h * .5, c.z), c.q, c.scale)));
   scene.add(gardens);
+  // The lamps' and crystals' light on the ground, as in the game (starLight.ts).
+  bakeStarLight(spots.map(c => ({x: c.x, z: c.z, radius: .9 + c.h * .28, color: '#8f6bff', strength: .75 + c.h * .06})));
   let collision: ReturnType<typeof layoutStarhaven>;
   try {
     const settlement = await buildStarSettlement(height); scene.add(settlement.root);

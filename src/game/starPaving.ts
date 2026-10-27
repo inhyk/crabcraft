@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {injectStarLight} from './starLight';
 import {onIslandPath,type IslandPath} from './islandPaths';
 import {pavingGround} from './pavingLayout';
 import {STAR_DETAIL} from './starFieldLayout';
@@ -246,6 +247,8 @@ const OUT = /* glsl */ `{
   vec3 nW=inverseTransformDirection(normal,viewMatrix),V=normalize(cameraPosition-vSpW),R=reflect(-V,nW);
   float F=.04+.96*pow(1.-clamp(dot(nW,V),0.,1.),5.);
   outgoingLight+=mix(spSkyH,spSkyZ,smoothstep(0.,.6,R.y))*F*spWet*.45;
+  // And the lanterns, as long warm smears down the wet middle of the street.
+  outgoingLight+=starLampGlint(vSpW,nW,V,mix(18.,90.,spWet))*(.08+.5*spWet)*F*3.;
 }
 #include <opaque_fragment>`;
 
@@ -294,6 +297,7 @@ export function starPaving(height: (x: number, z: number) => number, paths: Isla
     minX = Math.min(minX, s.ax - s.half - 1, s.bx - s.half - 1); maxX = Math.max(maxX, s.ax + s.half + 1, s.bx + s.half + 1);
     minZ = Math.min(minZ, s.az - s.half - 1, s.bz - s.half - 1); maxZ = Math.max(maxZ, s.az + s.half + 1, s.bz + s.half + 1);
   }
+  for (const p of pads) { minX = Math.min(minX, p.x - p.r - 1); maxX = Math.max(maxX, p.x + p.r + 1); minZ = Math.min(minZ, p.z - p.r - 1); maxZ = Math.max(maxZ, p.z + p.r + 1); }
   minX = Math.floor(minX / CELL) * CELL; minZ = Math.floor(minZ / CELL) * CELL;
   const tx = Math.ceil((maxX - minX) / TILE), tz = Math.ceil((maxZ - minZ) / TILE);
   const tiles: number[][] = [];
@@ -359,6 +363,7 @@ export function starPaving(height: (x: number, z: number) => number, paths: Isla
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${ROUGH}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${NORMAL}`)
       .replace('#include <opaque_fragment>', OUT);
+    injectStarLight(shader, 'vSpW');
   };
   material.customProgramCacheKey = () => 'starhaven-moonlit-paving';
   const surface = new THREE.Mesh(geo, material);

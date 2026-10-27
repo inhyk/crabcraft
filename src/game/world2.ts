@@ -17,8 +17,10 @@ import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
 import {StarGate} from './starGate';
 import { StarVillageLife } from './world2Life';
-import {starCrystalCluster,starCrystalMaterial} from './starCrystals';
-import {groundGlow,type GlowSpot} from './starGlow';
+import {starCrystalCluster,starCrystalMaterial,starCrystalStump} from './starCrystals';
+import {bakeStarLight,type StarGlowSource} from './starLight';
+import {rot,STAR_MINE} from './starFieldLayout';
+import {moonshadeLeaves} from './starLandmarks';
 import {starGround,type StarGround} from './starGround';
 import {collectibleShadow} from './collectibleShadow';
 import {StarSky} from './starSky';
@@ -197,18 +199,19 @@ export class HiddenWorld {
     this.sky=new StarSky();this.root.add(this.sky.root);
     this.ground=starGround((x,z)=>this.height(x,z),Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy()));this.root.add(this.ground.mesh);
     this.sea=new StarSea();this.root.add(this.sea.root);
-    // Jagged crystal gardens frame the open combat paths. One geometry/material per family.
-    const crystals=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('amethyst'),90);crystals.name='star-island-crystal-gardens';const matrix=new THREE.Matrix4();
-    const crystalGlow:GlowSpot[]=[];
-    starCrystalGarden((x,z)=>this.height(x,z)).forEach((c,i)=>{
-      if(c.clear)matrix.makeScale(0,0,0);
-      else{
-        matrix.compose(new THREE.Vector3(c.x,c.y+c.h*.5,c.z),c.q,c.scale);
-        this.crystalSolids.push(c.solid);crystalGlow.push({x:c.x,z:c.z,r:2.4+c.h*.45,color:'#8f6bff',strength:.16,lift:.9+c.h*.35});
-      }
-      crystals.setMatrixAt(i,matrix);
+    // Field crystals in clusters with their stories (starCrystalLayout.ts); the miners' cut stumps are a second draw.
+    const spots=starCrystalGarden((x,z)=>this.height(x,z)),whole=spots.filter(c=>!c.cut),cut=spots.filter(c=>c.cut);
+    const crystals=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('amethyst'),whole.length);crystals.name='star-island-crystal-gardens';
+    const stumps=new THREE.InstancedMesh(starCrystalStump(),starCrystalMaterial('amethyst'),cut.length);stumps.name='star-island-crystal-stumps';
+    const matrix=new THREE.Matrix4(),at=new THREE.Vector3();
+    const crystalGlow:StarGlowSource[]=[];
+    for(const [mesh,list] of [[crystals,whole],[stumps,cut]] as const)list.forEach((c,i)=>{
+      mesh.setMatrixAt(i,matrix.compose(at.set(c.x,c.y+c.h*.5,c.z),c.q,c.scale));
+      this.crystalSolids.push(c.solid);
+      // A crystal's light on the ground grows with its size; cut ones only glow at their faces.
+      crystalGlow.push({x:c.x,z:c.z,radius:.9+c.h*.28,color:c.site==='ring'?'#a78bff':'#8f6bff',strength:c.cut?.5:.75+c.h*.06});
     });
-    crystals.castShadow=true;this.root.add(crystals,groundGlow('star-island-crystal-glow',(x,z)=>this.height(x,z),crystalGlow));
+    crystals.castShadow=stumps.castShadow=true;this.root.add(crystals,stumps);
     // The Eclipse Queen's sanctum: carved floor, obelisks on the old twelve footprints, the pilgrims' gate.
     this.throne=new StarSanctum((x,z)=>this.height(x,z));
     this.root.add(this.throne.root);this.obstacles.push(...throneSolids());
@@ -217,8 +220,14 @@ export class HiddenWorld {
       // Small teal crystals grown beside the starroad, every five metres.
       const guides=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('teal',{glow:1.3}),starRoadGuides().length),m=new THREE.Matrix4(),q=new THREE.Quaternion();guides.name='star-road-wayfinders';
       for(const [i,[x,z]] of starRoadGuides().entries()){m.compose(new THREE.Vector3(x,this.height(x,z)+.55,z),q.setFromAxisAngle(new THREE.Vector3(0,1,0),i*2.4),new THREE.Vector3(.7,1.1,.7));guides.setMatrixAt(i,m);}
-      guides.castShadow=true;this.root.add(guides,groundGlow('star-road-wayfinder-glow',(x,z)=>this.height(x,z),starRoadGuides().map(([x,z])=>({x,z,r:2.4,color:'#3fe0cc',strength:.16,lift:.9}))));
+      guides.castShadow=true;this.root.add(guides);
+      for(const [x,z] of starRoadGuides())crystalGlow.push({x,z,radius:1.1,color:'#3fe0cc',strength:.9});
     }
+    // The lamps', crystals' and Moonshade's light on the ground, baked once (starLight.ts).
+    for(const {x,z,h} of moonshadeLeaves())crystalGlow.push({x,z,radius:1.6+h*.25,color:'#4f8dff',strength:.9});
+    // The miners' torch.
+    {const [tx,tz]=rot(-6.4,1.8,STAR_MINE.yaw);crystalGlow.push({x:STAR_MINE.x+tx,z:STAR_MINE.z+tz,radius:2.4,color:'#ff9a4a',strength:2.2});}
+    bakeStarLight(crystalGlow);
     this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
     const ship=w.pois.wreck.position;
@@ -473,7 +482,7 @@ export class HiddenWorld {
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
     this.sun.update(position.x,position.z);
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
-    this.night.apply(this.game.scene,this.game.engine.renderer);
+    this.night.apply(this.game.scene,this.game.engine.renderer,this.game.camera);
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
     this.sea.update(time);this.ground.update(time,this.game.engine.quality,this.game.camera,position);
     this.armour?.update(time);this.throne.update(time);

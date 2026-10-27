@@ -2,10 +2,11 @@ import {starPaving} from './starPaving';
 import {starMeadow} from './starMeadow';
 import {starFields} from './starFields';
 import {starStories} from './starStories';
-import {STAR_BOAT,STAR_CAMP} from './starFieldLayout';
+import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_RING} from './starFieldLayout';
 import type {IslandPath} from './islandPaths';
 import * as THREE from 'three';
 import {starLanterns,starhavenMaterial} from './starLanterns';
+import {STAR_LAMPS} from './starLight';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
 import { TownBuilder } from '../world/buildings';
 import type { Collision } from '../world/collision';
@@ -130,10 +131,8 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   if(village.has('Prop_Wagon'))for(const x of [-15,15])villageProps.add('Prop_Wagon',trs(x,3,88,x>0?.4:-.4));
   for(const lot of lots)for(let j=-2;j<=2;j++)if(village.has('Prop_WoodenFence_Single'))villageProps.add('Prop_WoodenFence_Single',trs(lot.x+j*2,3,lot.z-7,0));
   // Iron lanterns along the high street, each with its pool of light (starLanterns.ts).
-  const lanterns=starLanterns(Array.from({length:26},(_,i)=>{const side=i%2?1:-1,z=86-Math.floor(i/2)*6,x=side*(z>20?8:6);return {x,y:height(x,z),z};}),height);
-  root.add(lanterns.posts,lanterns.panes,lanterns.pools);
-  // The lanterns' own pools carry the street light now; these four only warm the squares a little.
-  for(const [x,z] of [[0,57],[-25,36],[20,35],[0,76]]){const light=new THREE.PointLight('#ffc78b',8,30,1.5);light.position.set(x,7,z);root.add(light);}
+  const lanterns=starLanterns(STAR_LAMPS.map(([x,z])=>({x,y:height(x,z),z})));
+  root.add(lanterns.posts,lanterns.panes);
   // The stargazer's camp and the beached skiff; their kit props join the market's batch.
   const stories=starStories(height,put);
   root.add(dressing.build(),villageProps.build());
@@ -205,7 +204,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     {points:[[4.7,84],[24,84]],width:2.4},
     ...STAR_TRAILS.map(points=>({points,width:2.4,trim:false})),
   ];
-  root.add(starPaving(height,ways,STAR_TRAILS.length,{skyHorizon:new THREE.Color('#2a2552'),skyZenith:new THREE.Color('#0b1030'),pads:[{x:0,z:55,r:7.2,rings:7.2}],holes:[{x:0,z:55,r:3.7,kerb:.55}]}).root);
+  root.add(starPaving(height,ways,STAR_TRAILS.length,{skyHorizon:new THREE.Color('#2a2552'),skyZenith:new THREE.Color('#0b1030'),pads:[{x:0,z:55,r:7.2,rings:7.2},{x:STAR_RING.x,z:STAR_RING.z,r:STAR_RING.r-1.3,rings:STAR_RING.r-1.3}],holes:[{x:0,z:55,r:3.7,kerb:.55}]}).root);
   // The meadow underfoot grows round the buildings, stalls, wagons and quest props, never on the ways.
   const meadow=starMeadow(height,ways,[
     ...lots.map(l=>[l.x,l.z,Math.hypot(l.sx,l.sz)+1.4] as const),
@@ -214,6 +213,8 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     ...Array.from({length:18},(_,i)=>[(i%2?1:-1)*(19+i%3*3),30+Math.floor(i/2)*6,1.1] as const),
     // The camp's trodden circle and the skiff's berth.
     [STAR_CAMP.x-.5,STAR_CAMP.z,4.6],[STAR_BOAT.x,STAR_BOAT.z,3.4],
+    // The keepers' ring floor and the miners' trodden yard.
+    [STAR_RING.x,STAR_RING.z,STAR_RING.r-1.1],[STAR_MINE.x-2,STAR_MINE.z+1.5,4.2],
   ]);
   root.add(meadow.mesh);
   for(const kit of [village,nature,props])for(const piece of kit.pieces.values())for(const part of piece.parts)part.geometry.dispose();

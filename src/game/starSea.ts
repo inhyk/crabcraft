@@ -28,14 +28,18 @@ export class StarSea {
           vec3 view=normalize(cameraPosition-world);
           float distanceToEye=length(cameraPosition.xz-world.xz);
           float detail=1.-smoothstep(30.,220.,distanceToEye);
-          float p1=dot(world.xz,vec2(.8,.6))*.35-time*.5+sin(world.z*.073+time*.18)*1.3;
-          float p2=dot(world.xz,vec2(-.4,.9))*.48+time*.38+sin(world.x*.053-time*.13)*1.8;
-          float swell=dot(world.xz,vec2(.7,-.5))*.16-time*.24;
+          // Every train's crests bend with slow noise, so seen from above no crest line runs straight across the bay.
+          float sw=nsN2(world.xz*.012+time*.01)*6.28,sw2=nsN2(world.xz*.031-time*.013+7.)*6.28;
+          float p1=dot(world.xz,vec2(.8,.6))*.35-time*.5+sin(world.z*.073+time*.18)*1.3+sw*1.4+sw2*.6;
+          float p2=dot(world.xz,vec2(-.4,.9))*.48+time*.38+sin(world.x*.053-time*.13)*1.8-sw*1.1+sw2*.8;
           float wave1=detail*(1.-smoothstep(.45,2.,fwidth(p1)));
           float wave2=detail*(1.-smoothstep(.45,2.,fwidth(p2)));
-          float broad=1.-smoothstep(.45,2.,fwidth(swell));
-          vec3 normal=normalize(vec3(sin(p1)*.012*wave1+cos(p2)*.008*wave2+sin(swell)*.007*broad,
-            1.,cos(p1)*.009*wave1+sin(p2)*.007*wave2+cos(swell)*.005*broad));
+          // Swell: three trains crossing, their phases bent by slow noise, so no single crest line repeats across
+          // the bay; it fades out with distance where it would alias into stripes, and a rougher glint takes over.
+          float s1=dot(world.xz,vec2(.7,-.5))*.16-time*.24+sw,s2=dot(world.xz,vec2(-.2,-.95))*.11-time*.19+sw*.7,s3=dot(world.xz,vec2(.95,.3))*.21-time*.3-sw*.5;
+          float broad=1.-smoothstep(60.,320.,distanceToEye);
+          vec3 normal=normalize(vec3(sin(p1)*.012*wave1+cos(p2)*.008*wave2+(sin(s1)*.004+sin(s2)*.003+sin(s3)*.003)*broad,
+            1.,cos(p1)*.009*wave1+sin(p2)*.007*wave2+(cos(s1)*.003+cos(s2)*.004+cos(s3)*.002)*broad));
           vec3 reflected=reflect(-view,normal);
           float depth=max(0.,world.y-coastHeight(world.xz));
           float shallows=1.-smoothstep(.2,7.,depth);
@@ -45,8 +49,10 @@ export class StarSea {
           reflection=mix(reflection,vec3(.045,.045,.09),.28);
           vec3 color=mix(water,reflection,fresnel*.65);
           vec3 halfLight=normalize(view+moonDirection);
-          float glint=pow(max(0.,dot(normal,halfLight)),96.);
-          color+=glint*vec3(.24,.23,.31)*(.65+.35*sin(p1+p2));
+          // Waves too small to draw still scatter the moon: the farther, the broader and dimmer its glint.
+          float shin=mix(14.,96.,detail);
+          float glint=pow(max(0.,dot(normal,halfLight)),shin)*(shin+8.)/104.;
+          color+=glint*vec3(.24,.23,.31)*(.65+.35*sin(p1+p2)*detail+.35*(1.-detail));
           float front=.38+.12*sin(time*.8+world.x*.025);
           float foam=exp(-pow((depth-front)/.38,2.))*smoothstep(0.,.12,depth);
           foam*=.65+.35*sin(world.x*.7+world.z*.4-time*.5);
