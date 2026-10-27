@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {STAR_GRID} from '../sim/world/ground';
 import {onIslandPath,type IslandPath} from './islandPaths';
 import {starGroundColor} from './world2Ground';
-import {starSoil} from './starGround';
+import {starShade, starSoil} from './starGround';
 import {STAR_DETAIL} from './starFieldLayout';
 
 /*
@@ -106,7 +106,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
     const o = (j * W + i) * 4;
     mask[o] = Math.round(Math.min(1, d * 1.15) * 255);
     mask[o + 1] = Math.round((town ? .55 : .8 + .2 * (1 - worn)) * 255);
-    mask[o + 2] = 255; mask[o + 3] = 255;
+    mask[o + 2] = Math.round((1 - starShade(x, z)) * 255); mask[o + 3] = 255;
     starGroundColor(x, z, y, c);
     tint[o] = Math.round(Math.min(1, c.r) * 255); tint[o + 1] = Math.round(Math.min(1, c.g) * 255); tint[o + 2] = Math.round(Math.min(1, c.b) * 255); tint[o + 3] = 255;
     if (d > .2) grassCells++;
@@ -144,7 +144,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
       .replace('#include <begin_vertex>', '');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vSmCol;\nvarying float vSmT;\nvarying float vSmAo;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, moonlit toward the tips.\ndiffuseColor.rgb=vSmCol*mix(.55,1.45,smoothstep(0.,.9,vSmT));')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, moonlit toward the tips.\ndiffuseColor.rgb=vSmCol*mix(.55,1.45,smoothstep(0.,.9,vSmT))*mix(.5,1.,vSmAo);')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(.9,.6,vSmT);')
       // Both faces lit as the front: grass is thin enough to let the moon through.
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal*=faceDirection;\n#endif');

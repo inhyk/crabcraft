@@ -3,7 +3,9 @@ import {STAR_GRID} from '../sim/world/ground';
 import type {StarMeadow} from './starMeadow';
 import type {StarFields} from './starFields';
 import {starGroundColor} from './world2Ground';
-import {starTrailDistance} from './world2Settlement';
+import {GARDEN_TREES,starForestSpots,starTrailDistance} from './world2Settlement';
+import {starCrystalGarden} from './world2Colliders';
+import {starBoulders} from './starFieldSpots';
 import {STAR_CRATER,STAR_DETAIL,starCoast,starSand} from './starFieldLayout';
 
 /*
@@ -67,7 +69,7 @@ uniform float sgTime;
 uniform float sgDetail;
 varying vec3 vSgW;
 varying vec3 vSgN;
-varying vec3 vSgSoil;
+varying vec4 vSgSoil;
 // One texture, many scales: each read is turned and shifted so no two scales line up.
 vec4 sgT(vec2 p,float s,float a){float c=cos(a),d=sin(a);return texture2D(sgTex,vec2(c*p.x-d*p.y,d*p.x+c*p.y)/s+a*3.7);}
 float sgH(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
@@ -103,7 +105,7 @@ sgG*=.72+.56*sgBlade;sgG*=.86+.28*sgBlade2;
 // Sand: pale and fine, rippled across the sea wind, darker and wet where the sea reaches it.
 float sgRipPhase=dot(sgP,vec2(-.6,.8))*4.2+sgT(sgP,9.,.4).r*7.+sgFine*2.;
 float sgRip=sin(sgRipPhase)*.5+.5;
-vec3 sgS=vec3(.105,.1,.112)*(.82+.36*sgMid)*(.9+.2*sgFine);
+vec3 sgS=vec3(.1,.104,.135)*(.82+.36*sgMid)*(.9+.2*sgFine);
 sgS*=mix(1.,.9+.2*sgRip,sgF1);
 float sgWet=1.-smoothstep(-.6,.55,vSgW.y+(sgMid-.5)*.5);
 sgS=mix(sgS,sgS*vec3(.5,.52,.6),sgWet);
@@ -129,6 +131,8 @@ sgCol=mix(sgCol,sgAsh,sgScorch);
 float sgRim=exp(-pow((sgCd-1.15)/.22,2.))*(.6+.4*sgFine);
 sgCol=mix(sgCol,vec3(.14,.12,.11)*(.8+.4*sgMid),sgRim*.55);
 // Far off, a whole meadow averages out: keep its broad patches, nothing finer.
+// Contact shade under trees, crystals and boulders (vertex w), ragged at its edge.
+sgCol*=1.-vSgSoil.w*(.55+.25*sgFine);
 diffuseColor.rgb=sgCol;
 // Micro relief for the light: blades and clumps, ripples, pebbles, bedding, the crater's glassy cracks.
 float sgRelief=sgGrass*((sgBlade-.5)*.02+(sgClump.r-.5)*.03)+sgSand*(1.-sgWet)*(sgRip-.5)*.022*sgF1+(1.-sgGrass)*(1.-sgSand)*(sgEPeb*.012+(sgFine-.5)*.01)+sgRock*smoothstep(0.,.1,sgBedF)*.06*sgF1;
@@ -187,11 +191,11 @@ export function starGround(height: (x: number, z: number) => number, anisotropy:
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i), y = height(x, z);
     pos.setY(i, y); starGroundColor(x, z, y, c); colors.push(c.r, c.g, c.b);
-    soil.push(...starSoil(x, z, y));
+    soil.push(...starSoil(x, z, y), starShade(x, z));
   }
   if (Math.abs(pos.getX(0) - minX) > 1e-6 || Math.abs(pos.getZ(0) - minZ) > 1e-6) throw new Error('starGround: mesh and grid disagree');
   land.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  land.setAttribute('aSoil', new THREE.Float32BufferAttribute(soil, 3));
+  land.setAttribute('aSoil', new THREE.Float32BufferAttribute(soil, 4));
   land.computeVertexNormals();
   const texture = noiseTexture(); texture.anisotropy = anisotropy;
   const uniforms = {sgTex: {value: texture}, sgTime: {value: 0}, sgDetail: STAR_DETAIL};
@@ -201,7 +205,7 @@ export function starGround(height: (x: number, z: number) => number, anisotropy:
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 aSoil;\nvarying vec3 vSgW;\nvarying vec3 vSgN;\nvarying vec3 vSgSoil;')
+      .replace('#include <common>', '#include <common>\nattribute vec4 aSoil;\nvarying vec3 vSgW;\nvarying vec3 vSgN;\nvarying vec4 vSgSoil;')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\nvSgW=(modelMatrix*vec4(transformed,1.)).xyz;vSgN=normalize(mat3(modelMatrix)*objectNormal);vSgSoil=aSoil;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${GROUND_HEAD}`)
@@ -220,6 +224,21 @@ export function starGround(height: (x: number, z: number) => number, anisotropy:
 }
 
 const smooth = THREE.MathUtils.smoothstep;
+let shadeSpots: [number, number, number][] | null = null;
+/** 0..0.7 contact shade at (x, z): the ground darkens under each tree's crown, crystal and boulder. */
+export function starShade(x: number, z: number): number {
+  if (!shadeSpots) {
+    shadeSpots = [
+      ...starForestSpots().filter((p) => !p.rock).map((p) => [p.x, p.z, 2.6 * p.scale] as [number, number, number]),
+      ...GARDEN_TREES.map(([gx, gz]) => [gx, gz, 2.4] as [number, number, number]),
+      ...starCrystalGarden(() => 0).filter((c) => !c.clear).map((c) => [c.x, c.z, c.solid.r * 1.6 + .8] as [number, number, number]),
+      ...starBoulders().map((b) => [b.x, b.z, b.r * 1.5 + .3] as [number, number, number]),
+    ];
+  }
+  let ao = 0;
+  for (const [sx, sz, r] of shadeSpots) { const dx = x - sx, dz = z - sz; if (Math.abs(dx) > r || Math.abs(dz) > r) continue; ao = Math.max(ao, 1 - smooth(Math.hypot(dx, dz), r * .25, r)); }
+  return ao * .7;
+}
 /** Per vertex: how sandy, how grassy and how worn the ground is (0..1 each). */
 export function starSoil(x: number, z: number, y: number): [number, number, number] {
   const {r} = starCoast(x, z);

@@ -73,7 +73,7 @@ export function starForestSpots(){
   return spots;
 }
 // Leafy garden trees bring the forest into view from the village streets.
-const GARDEN_TREES=[[-15,33],[14,34],[-15,81],[15,81],[-55,28],[55,30],[-56,58],[57,60],[-54,87],[55,88]];
+export const GARDEN_TREES=[[-15,33],[14,34],[-15,81],[15,81],[-55,28],[55,30],[-56,58],[57,60],[-54,87],[55,88]];
 const gardenScale=(x:number)=>Math.abs(x)<20?.68:.95;
 
 /** Homes, tree trunks and garden trees of the settlement, without meshes. */
@@ -98,7 +98,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       const c=m.clone();
       // Light the actual glass panes, including their original lattice and shutter occlusion.
       if(name==='MI_WindowGlass'&&c instanceof THREE.MeshStandardMaterial){c.color.set('#4d301c');c.emissive.set('#ffb65e');c.emissiveIntensity=1.15;c.roughness=.25;c.transparent=false;c.opacity=1;c.depthWrite=true;}
-      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#d9eed7');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;}
+      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#93cfc4');c.emissive.set('#10302c');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;}
       copies.set(m,c);kit.materials.set(name,c);
     }
     for(const piece of kit.pieces.values())for(const part of piece.parts)part.material=copies.get(part.material)!;
