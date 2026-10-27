@@ -93,7 +93,8 @@ export class ObjectiveMarker {
     if (this.star) (this.starGuide ??= new StarGuide(this.group)).update(time, world, from, target, via, combat, show);
     else this.starGuide?.hide();
     const dist = target ? Math.hypot(target.x - from.x, target.z - from.z) : 0;
-    this.beam.mesh.visible = show && dist > 5;
+    // Starhaven marks the objective with a ring and rising motes (starGuide.ts), not a pillar of light.
+    this.beam.mesh.visible = show && dist > 5 && !this.star;
     if (target && this.beam.mesh.visible) {
       this.beam.mesh.position.set(target.x, world.heightAt(target.x, target.z), target.z);
       const r = 0.5 + Math.min(1.2, dist / 80);

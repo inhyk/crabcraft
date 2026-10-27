@@ -6,7 +6,9 @@ import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_RING} from './starFieldLayout';
 import type {IslandPath} from './islandPaths';
 import * as THREE from 'three';
 import {starLanterns,starhavenMaterial} from './starLanterns';
-import {STAR_LAMPS,setStarDoorLamps} from './starLight';
+import {STAR_LAMPS,STAR_LAMP_KIND,setStarDoorLamps} from './starLight';
+import {starCrystalCluster,starCrystalMaterial} from './starCrystals';
+import {moonstoneMaterial} from './starMasonry';
 import {doorLanternAt,recordRooftops,starDoorLamps,starRooftops,starSettlers,starTrailLanterns,STAR_ROOF_ROLES} from './starRooftops';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
 import { TownBuilder } from '../world/buildings';
@@ -122,7 +124,6 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   setStarDoorLamps(starDoorLamps(lots).map(d=>{const p=doorLanternAt(d);return [p.x,p.y,p.z] as const;}));
   for(const lot of lots)(lot.id===STAR_ROOF_ROLES.empty?emptyBuilder:builder).build(lot);
   root.add(batch.build());
-  const rooftops=starRooftops(village,roofline,lots,{spots:starTrailLanternSpots(),height});root.add(rooftops.root);
   const dressing=new StaticBatch(props,'starhaven-market');
   const villageProps=new StaticBatch(village,'starhaven-gardens');
   const residents=Object.values(STAR_TOWN);
@@ -142,11 +143,16 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   if(bench)for(const [x,z] of [[-8,55],[8,55],[-8,61],[8,61]])put(bench,x,z,x<0?Math.PI/2:-Math.PI/2);
   if(village.has('Prop_Wagon'))for(const x of [-15,15])villageProps.add('Prop_Wagon',trs(x,3,88,x>0?.4:-.4));
   // The newcomers moving in: their loaded cart and boxes at the empty house's door.
-  starSettlers(lots.find(l=>l.id===STAR_ROOF_ROLES.empty)!,put);
+  const cart=starSettlers(lots.find(l=>l.id===STAR_ROOF_ROLES.empty)!,put);
+  // Lanterns hung on the carts: the newcomers' and the harbour wagon (at a corner of each bed).
+  const cartLamps:THREE.Vector3[]=[];
+  if(props.has('Stall_Cart_Empty')){const b=props.get('Stall_Cart_Empty').box;cartLamps.push(new THREE.Vector3(b.max.x*.85,b.max.y*.55+1.05,b.max.z*.8).applyMatrix4(trs(cart.x,height(cart.x,cart.z),cart.z,cart.yaw)));}
+  if(village.has('Prop_Wagon')){const b=village.get('Prop_Wagon').box;cartLamps.push(new THREE.Vector3(b.max.x*.8,b.max.y+.75,b.max.z*.75).applyMatrix4(trs(15,3,88,.4)));}
+  const rooftops=starRooftops(village,roofline,lots,{spots:starTrailLanternSpots(),height},cartLamps);root.add(rooftops.root);
   for(const lot of lots)for(let j=-2;j<=2;j++)if(village.has('Prop_WoodenFence_Single'))villageProps.add('Prop_WoodenFence_Single',trs(lot.x+j*2,3,lot.z-7,0));
   // Iron lanterns along the high street, each with its pool of light (starLanterns.ts).
-  const lanterns=starLanterns(STAR_LAMPS.map(([x,z])=>({x,y:height(x,z),z})));
-  root.add(lanterns.posts,lanterns.panes);
+  const lanterns=starLanterns(STAR_LAMPS.map(([x,z])=>({x,y:height(x,z),z})),STAR_LAMP_KIND,{geometry:starCrystalCluster(),material:starCrystalMaterial('teal',{glow:1.5}),plinth:moonstoneMaterial({color:'#a8a8b8',name:'starhaven-crystal-lamp-stone'})});
+  root.add(lanterns.posts,lanterns.panes,lanterns.others);
   // The stargazer's camp and the beached skiff; their kit props join the market's batch.
   const stories=starStories(height,put);
   root.add(dressing.build(),villageProps.build());

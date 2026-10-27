@@ -7,6 +7,24 @@ import type { World } from '../world/types';
 
 const GLINTS = 9;
 const SPACING = 2.2;
+const MOTES = 14;
+
+/** The objective's mark on the ground: a thin moonlit ring with a slowly turning dashed ring outside it. */
+const ringFrag = /* glsl */ `
+uniform float uTime;
+uniform float uAlpha;
+varying vec2 vUv;
+void main() {
+  vec2 p = (vUv * 2.0 - 1.0) * 2.4;
+  float r = length(p), a = atan(p.y, p.x);
+  float w = fwidth(r) * 1.5;
+  float ring = 1.0 - smoothstep(0.03, 0.03 + w, abs(r - 1.55));
+  float dash = (1.0 - smoothstep(0.02, 0.02 + w, abs(r - 1.95))) * step(0.45, fract(a / 6.2831853 * 16.0 + uTime * 0.04));
+  float glow = exp(-pow((r - 1.55) / 0.35, 2.0)) * 0.25 + exp(-r * r * 1.4) * 0.08;
+  float k = (ring * 1.2 + dash * 0.7 + glow) * uAlpha * (0.8 + 0.2 * sin(uTime * 2.0));
+  if (k < 0.002) discard;
+  gl_FragColor = vec4(mix(vec3(0.45, 0.95, 0.9), vec3(1.2, 1.25, 1.4), ring) * k, k);
+}`;
 
 const vert = /* glsl */ `
 attribute float aBright;
@@ -84,14 +102,56 @@ export class StarGuide {
       this.mat.uniforms.uScale.value = h / (2 * Math.tan(THREE.MathUtils.degToRad(fov / 2)));
     };
     this.group.add(this.points);
+    // The objective itself: a ring on the ground and motes drifting up from it (in place of a light pillar).
+    this.ringMat = new THREE.ShaderMaterial({
+      vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+      fragmentShader: ringFrag, uniforms: {uTime: {value: 0}, uAlpha: {value: 1}},
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    });
+    this.ring = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 4.8).rotateX(-Math.PI / 2), this.ringMat);
+    this.ring.name = 'star-guide-ring'; this.ring.renderOrder = 7; this.ring.frustumCulled = false;
+    const mg = new THREE.BufferGeometry();
+    mg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MOTES * 3), 3));
+    this.moteBright = new THREE.BufferAttribute(new Float32Array(MOTES), 1);
+    mg.setAttribute('aBright', this.moteBright);
+    mg.setAttribute('aSeed', new THREE.BufferAttribute(Float32Array.from({length: MOTES}, (_, i) => (Math.sin(i * 78.233) * 43758.5453) % 1 * .5 + .5), 1));
+    this.motes = new THREE.Points(mg, this.mat);
+    this.motes.name = 'star-guide-motes'; this.motes.frustumCulled = false; this.motes.renderOrder = 7;
+    this.target.add(this.ring, this.motes);
+    parent.add(this.target);
     this.hide();
   }
+  private ring: THREE.Mesh;
+  private ringMat: THREE.ShaderMaterial;
+  private motes: THREE.Points;
+  private moteBright: THREE.BufferAttribute;
+  /** The objective's ring and motes (shown even when the glints are not). */
+  readonly target = new THREE.Group();
 
-  hide(): void { this.group.visible = false; }
+  hide(): void { this.group.visible = false; this.target.visible = false; }
+
+  /** The ring and motes at the objective: shown from 5 m off, faded in over the next 8. */
+  private mark(time: number, world: World, target: THREE.Vector3 | null, dist: number, show: boolean): void {
+    this.target.visible = show && !!target && dist > 5;
+    if (!target || !this.target.visible) return;
+    const y = world.heightAt(target.x, target.z);
+    this.ring.position.set(target.x, y + 0.06, target.z);
+    this.ringMat.uniforms.uTime.value = time;
+    this.ringMat.uniforms.uAlpha.value = Math.min(1, (dist - 5) / 8);
+    const pos = this.motes.geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < MOTES; i++) {
+      const s = (Math.sin(i * 12.9898) * 43758.5453) % 1, life = (time * (0.12 + 0.05 * Math.abs(s)) + i / MOTES) % 1;
+      const a = i * 2.39996 + time * 0.2, r = 0.4 + 1.2 * Math.abs(Math.sin(i * 3.7));
+      pos.setXYZ(i, target.x + Math.cos(a) * r, y + 0.3 + life * 3.2, target.z + Math.sin(a) * r);
+      this.moteBright.setX(i, Math.sin(life * Math.PI) * 0.9 * this.ringMat.uniforms.uAlpha.value);
+    }
+    pos.needsUpdate = true; this.moteBright.needsUpdate = true;
+  }
 
   /** Same contract as ObjectiveMarker's crumbs: from the player toward `via` (or the target). */
   update(time: number, world: World, from: THREE.Vector3, target: THREE.Vector3 | null, via: THREE.Vector3 | null, combat: boolean, show: boolean): void {
     const dist = target ? Math.hypot(target.x - from.x, target.z - from.z) : 0;
+    this.mark(time, world, target, dist, show);
     this.group.visible = show && !!target && !combat && dist > 10;
     if (!target || !this.group.visible) return;
     this.mat.uniforms.uTime.value = time;
@@ -114,6 +174,7 @@ export class StarGuide {
   dispose(): void {
     this.points.geometry.dispose();
     this.mat.dispose();
+    this.motes.geometry.dispose();this.ring.geometry.dispose();this.ringMat.dispose();this.target.removeFromParent();
     this.group.removeFromParent();
   }
 }

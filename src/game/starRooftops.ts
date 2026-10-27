@@ -173,7 +173,7 @@ export interface StarRooftops { root: THREE.Group; update(time: number): void; c
  * The roofline, doorsteps and the newcomers' house. `village` is the kit (for the pieces' extents), `rec` what
  * recordRooftops saw, `lots` the settlement's lots.
  */
-export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops>, lots: readonly Lot[], trail: {spots: readonly [number, number, number][]; height: (x: number, z: number) => number}): StarRooftops {
+export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops>, lots: readonly Lot[], trail: {spots: readonly [number, number, number][]; height: (x: number, z: number) => number}, cartLamps: readonly THREE.Vector3[] = []): StarRooftops {
   const root = new THREE.Group(); root.name = 'star-rooftops';
   const silver = silverMaterial(), v = new THREE.Vector3(), w = new THREE.Vector3(), m = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
   const lotAt = (p: THREE.Vector3) => lots.reduce((b, l) => Math.hypot(l.x - p.x, l.z - p.z) < Math.hypot(b.x - p.x, b.z - p.z) ? l : b);
@@ -188,7 +188,7 @@ export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops
 
   // Crescent finials on both ends of every ridge.
   const fin = new THREE.InstancedMesh(finialGeometry(), silver, houses.length * 2); fin.name = 'star-roof-finials';
-  const big = new THREE.Vector3(1.7, 1.7, 1.7);
+  const big = new THREE.Vector3(2.3, 2.3, 2.3);
   houses.forEach((r, i) => [r.a, r.b].forEach((p, k) => fin.setMatrixAt(i * 2 + k, m.compose(p, q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, r.yaw + Math.PI / 2), big))));
   fin.castShadow = true; root.add(fin); counts.finials = fin.count;
 
@@ -245,7 +245,11 @@ export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops
   const arm = new THREE.BoxGeometry(.04, .04, .46); arm.translate(0, .32, -.2);
   const foot = new THREE.CylinderGeometry(.16, .2, .18, 6); foot.translate(0, -2.16, -.42);
   const trailFrame = lit([frame.clone(), post, arm, foot]);
-  const n = doors.length + ridgeLamps.length + trail.spots.length;
+  const n = doors.length + ridgeLamps.length + trail.spots.length + cartLamps.length;
+  // Lamps on the carts: a lantern hung from a short pole lashed to the cart's corner.
+  const cartPole = new THREE.CylinderGeometry(.03, .035, 1.3, 5); cartPole.translate(0, -.5, -.22);
+  const cartArm = new THREE.BoxGeometry(.03, .03, .26); cartArm.translate(0, .32, -.11);
+  const carts = new THREE.InstancedMesh(lit([frame.clone(), cartPole, cartArm]), iron(), Math.max(1, cartLamps.length)); carts.name = 'star-cart-lanterns'; carts.count = cartLamps.length;
   const frames = new THREE.InstancedMesh(doorFrame, iron(), doors.length); frames.name = 'star-door-lantern-frames';
   const poles = new THREE.InstancedMesh(poleFrame, iron(), ridgeLamps.length); poles.name = 'star-ridge-lantern-frames';
   const glassMat = new THREE.MeshStandardMaterial({color: '#3a2412', emissive: '#ffb45e', emissiveIntensity: 2.4, roughness: .3, name: 'star-lantern-glass'});
@@ -263,6 +267,8 @@ export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops
     m.compose(v.set(x, trail.height(x, z) + 2.2, z), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, yaw), one);trailPosts.setMatrixAt(i, m);panes.setMatrixAt(doors.length + ridgeLamps.length + i, m);
   });
   counts.trailLanterns = trail.spots.length;
+  cartLamps.forEach((p, i) => { m.compose(p, q.identity(), one);carts.setMatrixAt(i, m);panes.setMatrixAt(doors.length + ridgeLamps.length + trail.spots.length + i, m); });
+  counts.cartLanterns = cartLamps.length; root.add(carts);
   frames.castShadow = poles.castShadow = trailPosts.castShadow = true; root.add(frames, poles, panes, trailPosts); counts.doorLanterns = doors.length; counts.ridgeLanterns = ridgeLamps.length;
 
   // Star-map banners beside the doors, on the side away from the lantern (not on the newcomers' empty house).
@@ -299,13 +305,14 @@ export function starRooftops(village: Kit, rec: ReturnType<typeof recordRooftops
  * The newcomers moving in: their cart before the empty house, piled and roped; crates, a chest and the chairs at the
  * door. Kit props go to the market's batch through `put` (x, z, yaw, scale, lift).
  */
-export function starSettlers(lot: Lot, put: (name: string, x: number, z: number, yaw?: number, scale?: number, dy?: number) => void) {
+export function starSettlers(lot: Lot, put: (name: string, x: number, z: number, yaw?: number, scale?: number, dy?: number) => void): {x: number; z: number; yaw: number} {
   const f = lot.yaw, fx = Math.sin(f), fz = Math.cos(f), rx = Math.cos(f), rz = -Math.sin(f);
   // Local (right, out) from the house's front centre to world.
   const at = (r: number, o: number): [number, number] => [lot.x + fx * (lot.sz * 2 / 2 + o) + rx * r, lot.z + fz * (lot.sz * 2 / 2 + o) + rz * r];
   const P = (name: string, r: number, o: number, yaw = 0, s = 1, dy = 0) => { const [x, z] = at(r, o); put(name, x, z, f + yaw, s, dy); };
   // The cart, side on to the house, a little off the door.
   P('Stall_Cart_Empty', 2.6, 4.2, Math.PI / 2 + .12);
+  const [cx, cz] = at(2.6, 4.2), cart = {x: cx, z: cz, yaw: f + Math.PI / 2 + .12};
   // Its load: a table upside down, a chest, crates and a sack, stools on top.
   P('Crate_Wooden', 2.3, 4.0, .1, .9, .78);P('Crate_Wooden', 3.0, 4.4, -.2, .8, .78);P('Chest_Wood', 2.5, 4.3, .4, .9, 1.45);
   P('Stool', 2.9, 4.0, .3, 1, 1.5);P('Bag', 2.0, 4.5, 1, 1, .8);P('Barrel', 3.4, 3.9, 0, .8, .78);
@@ -313,4 +320,5 @@ export function starSettlers(lot: Lot, put: (name: string, x: number, z: number,
   P('Crate_Wooden', -1.6, .9, .3);P('Crate_Wooden', -1.55, .95, .1, .85, .78);P('Crate_Wooden', -2.5, 1.2, -.4, .9);
   P('Shelf_Simple', -2.2, .35, Math.PI, .9);P('Table_Large', 1.6, 1.8, .5, .85);P('Stool', 1.0, 2.6, .9);P('Stool', 2.3, 1.4, 2.2, 1, 0);
   P('Bag', -.9, 1.6, .2);P('Rope_2', -2.5, 1.2, 0, 1, .82);P('Vase_2', 1.4, 1.6, 0, 1, .82);
+  return cart;
 }
