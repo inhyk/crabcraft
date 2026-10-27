@@ -119,70 +119,88 @@ function ringNoise(R: () => number, terms: number) {
 export function strataGeometry(k: StrataStone): THREE.BufferGeometry {
   const R = rng(k.seed * 7919 + 13), slab = k.kind === 'slab', hoodoo = k.kind === 'hoodoo', M = slab ? 18 : 34;
   const outline = ringNoise(R, 4);
+  // The plan is jointed, not turned: a polygon of five to seven faces (the joint planes the block split along), its
+  // corners rounded by blending with the smooth outline.
+  const sides = slab ? 4 + Math.floor(R() * 2) : 5 + Math.floor(R() * 3), poly: [number, number][] = [];
+  for (let i = 0; i < sides; i++) { const a = (i + (R() - .5) * .5) / sides * Math.PI * 2, r = 1 + (R() - .5) * .24; poly.push([Math.cos(a) * r, Math.sin(a) * r]); }
+  const plan = (th: number) => {
+    const dx = Math.cos(th), dz = Math.sin(th);
+    let best = 2;
+    for (let i = 0; i < sides; i++) {
+      const [ax, az] = poly[i], [bx, bz] = poly[(i + 1) % sides], ex = bx - ax, ez = bz - az, den = dx * ez - dz * ex;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = (ax * ez - az * ex) / den, u = (ax * dz - az * dx) / den;
+      if (t > 0 && u >= -1e-6 && u <= 1 + 1e-6) best = Math.min(best, t);
+    }
+    return best / Math.cos(Math.PI / sides) * .97;
+  };
   const bury = k.h * (slab ? .35 : .3), top = k.h, H = top + bury;
   // Joints: two or three vertical cracks through the whole mass, the stone splitting along them.
   const joints = slab ? [] : Array.from({length: 2 + Math.floor(R() * 2)}, () => [R() * Math.PI * 2, .05 + R() * .05, .06 + R() * .07]);
   // Grain of the whole mass: a few sines in angle and height, the same through every bed.
   const grain = Array.from({length: 3}, (_, j) => [5 + j * 6 + Math.floor(R() * 3), (2.4 + R() * 2) * (j + 1) / k.r, R() * 6.3, .022 / (j + 1)]);
-  type Bed = {y0: number; y1: number; u: number; lip: number; tone: number; own: (t: number) => number; rim: (t: number) => number; chips: number[][]};
-  const nb = slab ? 2 : hoodoo ? 5 + Math.floor(R() * 2) : 4 + Math.floor(R() * 3);
+  type Bed = {y0: number; y1: number; u: number; lip: number; tone: number; own: (t: number) => number; rim: (t: number) => number; deep: (t: number) => number; chips: number[][]};
+  const nb = slab ? 2 : hoodoo ? 7 + Math.floor(R() * 2) : 5 + Math.floor(R() * 3);
   const w = Array.from({length: nb}, () => .5 + R() * 1.1);
-  if (hoodoo) w[nb - 1] = Math.max(w[nb - 1], 1.1);
+  if (hoodoo) w[nb - 1] = Math.max(w[nb - 1], 1.3);
   const sum = w.reduce((a, b) => a + b, 0);
   const beds: Bed[] = [];
   let y = -bury;
   for (let b = 0; b < nb; b++) {
     const th = H * w[b] / sum, cap = b === nb - 1;
-    const u = slab ? .04 + R() * .06 : hoodoo ? (cap ? .14 + R() * .08 : .03 + R() * .05) : (cap ? .1 + R() * .1 : .05 + R() * .2);
-    const chips = Array.from({length: 2 + Math.floor(R() * 3)}, () => [R() * Math.PI * 2, .12 + R() * .2, .04 + R() * .07]);
-    beds.push({y0: y, y1: y + th, u, lip: .7 + R() * .14, tone: R(), own: ringNoise(R, 3), rim: ringNoise(R, 3), chips});
+    // The undercut: 5 to 25 % of the bed's thickness, sand-blasted back under its lip (the caprock's a little more).
+    const u = (cap ? .2 + R() * .1 : .05 + R() * .2) * th / k.r;
+    const chips = Array.from({length: 2 + Math.floor(R() * 3)}, () => [R() * Math.PI * 2, .12 + R() * .2, .03 + R() * .05]);
+    beds.push({y0: y, y1: y + th, u, lip: .84 + R() * .08, tone: R(), own: ringNoise(R, 3), rim: ringNoise(R, 3), deep: ringNoise(R, 2), chips});
     y += th;
   }
   /** The body's width up the stone, t 0 (buried foot) to 1 (top). */
-  const body = (t: number, cap: boolean) => slab ? 1 - .05 * t : hoodoo ? (cap ? 1 : .5 + .38 * THREE.MathUtils.smoothstep(t, .05, .8)) : (1.04 - .12 * t) * (1 + .06 * (1 - THREE.MathUtils.smoothstep(t, 0, .25)));
+  const body = (t: number, cap: boolean) => slab ? 1 - .05 * t : hoodoo ? (cap ? 1 : .52 + .38 * THREE.MathUtils.smoothstep(t, .02, .78)) : (1.04 - .12 * t) * (1 + .06 * (1 - THREE.MathUtils.smoothstep(t, 0, .25)));
   /** Outline factor round the stone for bed `bed` at angle th; `lipW` weights the crumbled chips (on the lip only). */
   const round = (bed: Bed, th: number, yy: number, lipW: number) => {
-    let r = 1 + .16 * outline(th) + .05 * bed.own(th);
+    let r = plan(th) * .62 + .38 + .12 * outline(th) + .03 * bed.own(th);
     for (const [ja, jw, jd] of joints) { const d = Math.atan2(Math.sin(th - ja), Math.cos(th - ja)); r *= 1 - jd * Math.exp(-((d / jw) ** 2)); }
     for (const [ca, cw, cd] of bed.chips) { const d = Math.atan2(Math.sin(th - ca), Math.cos(th - ca)); r *= 1 - cd * lipW * Math.exp(-((d / cw) ** 4)); }
     for (const [n, f, ph, a] of grain) r *= 1 + a * Math.sin(th * n + yy * f + ph);
     return r;
   };
   /** Radius factor in bed b at s (0 its base, `lip` its widest), with the bed's undercut. */
-  const wall = (b: number, s: number) => {
+  // The undercut is deepest on some sides and gone on others (the bed flush with the one above), so no bed reads as a
+  // disc all the way round.
+  const wall = (b: number, s: number, th: number) => {
     const bed = beds[b], t = (bed.y0 + s * (bed.y1 - bed.y0) + bury) / H;
-    return body(t, b === nb - 1) * (1 - bed.u * Math.pow(1 - THREE.MathUtils.smoothstep(s, 0, bed.lip), 1.4));
+    return body(t, b === nb - 1) * (1 - bed.u * Math.max(0, .35 + 1.4 * bed.deep(th)) * (1 - s / bed.lip) ** 1.2);
   };
   const pos: number[] = [], col: number[] = [], idx: number[] = [], rings: number[] = [];
   const occAt = (yy: number) => .5 + .5 * THREE.MathUtils.smoothstep((yy + bury) / H, .1, .9);
   /** One ring of M vertices: radius factor rad(th), height yy(th), skylight occ. */
-  const ring = (rad: (th: number) => number, yy: (th: number) => number, occ: number, tone: number) => {
+  const ring = (rad: (th: number) => number, yy: (th: number) => number, occ: number | ((th: number) => number), tone: number) => {
     rings.push(pos.length / 3);
     for (let i = 0; i < M; i++) {
       const th = i / M * Math.PI * 2, c = Math.cos(th), sn = Math.sin(th), rr = rad(th) * k.r;
-      pos.push(c * rr * k.elong * (c > 0 ? 1.12 : .9), yy(th), sn * rr * (1 - .28 * Math.max(0, c))); col.push(occ, tone, 0);
+      pos.push(c * rr * k.elong * (c > 0 ? 1.12 : .9), yy(th), sn * rr * (1 - .28 * Math.max(0, c))); col.push(typeof occ === 'number' ? occ : occ(th), tone, 0);
     }
   };
   for (let b = 0; b < nb; b++) {
     const bed = beds[b], th = bed.y1 - bed.y0, next = beds[b + 1];
     // The rim wanders in height (up to a fifth of the bed), most at the lip, none at the bed's foot.
-    const yAt = (s: number) => (t: number) => bed.y0 + s * th + bed.rim(t) * th * .1 * Math.sin(Math.PI * THREE.MathUtils.clamp((s - bed.lip * .4) / (1 - bed.lip * .4), 0, 1));
-    const dark = (s: number) => 1 - .5 * Math.min(1, bed.u / .2) * Math.pow(1 - THREE.MathUtils.smoothstep(s, 0, bed.lip), 1.4);
-    for (const s of [0, bed.lip * .3, bed.lip * .65, bed.lip]) {
+    const yAt = (s: number) => (t: number) => bed.y0 + s * th + bed.rim(t) * th * .08 * Math.sin(Math.PI * THREE.MathUtils.clamp((s - bed.lip * .4) / (1 - bed.lip * .4), 0, 1));
+    const dark = (s: number, t: number) => 1 - .45 * Math.min(1, bed.u * Math.max(0, .35 + 1.4 * bed.deep(t)) / .08) * (1 - s / bed.lip) ** 1.2;
+    for (const s of [0, bed.lip * .45, bed.lip]) {
       const yy = yAt(s);
-      ring((t) => round(bed, t, yy(t), s / bed.lip) * wall(b, s), yy, occAt(bed.y0 + s * th) * dark(s), bed.tone);
+      ring((t) => round(bed, t, yy(t), s / bed.lip) * wall(b, s, t), yy, (t) => occAt(bed.y0 + s * th) * dark(s, t), bed.tone);
     }
-    const lipY = yAt(bed.lip), lipR = (t: number) => round(bed, t, lipY(t), 1) * wall(b, bed.lip);
+    const lipY = yAt(bed.lip), lipR = (t: number) => round(bed, t, lipY(t), 1) * wall(b, bed.lip, t);
     if (next) {
       // The lip rounds over (a quarter ellipse) onto the shelf at the foot of the bed above.
-      const nextR = (t: number) => round(next, t, bed.y1, 0) * wall(b + 1, 0);
-      for (const q of [.4, .75]) {
+      const nextR = (t: number) => round(next, t, bed.y1, 0) * wall(b + 1, 0, t);
+      for (const q of [.5]) {
         const cq = Math.cos(q * Math.PI / 2), sq = Math.sin(q * Math.PI / 2), yy = (t: number) => lipY(t) + (bed.y1 - lipY(t)) * sq;
         ring((t) => nextR(t) + (lipR(t) - nextR(t)) * cq, yy, occAt(bed.y1) * (.9 + .1 * cq), bed.tone);
       }
     } else {
       // The top: the rim rounds over into a low dome, a little uneven.
-      const rr = slab ? .1 : hoodoo ? .14 : .1, dome = (hoodoo ? .07 : .04) * k.r;
+      const rr = slab ? .08 : hoodoo ? .1 : .07, dome = (hoodoo ? .07 : .04) * k.r;
       for (const q of [.35, .7, 1]) {
         const cq = Math.cos(q * Math.PI / 2), sq = Math.sin(q * Math.PI / 2);
         ring((t) => lipR(t) * (1 - rr * (1 - cq)), (t) => lipY(t) + (top - lipY(t)) * sq, 1, bed.tone);

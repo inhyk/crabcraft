@@ -136,9 +136,9 @@ float sgStoneSand(float a,float c,float s){
   float m=max(0.,d-.85);
   float skirt=.36*s*exp(-m*m*2.4)*(1.-sgStep(d,2.1,SG_ROCK_SIDE));
   float tail=0.;
-  if(a>0.&&a<SG_ROCK_TAIL){float t=a/SG_ROCK_TAIL,w=.12+.8*pow(1.-t,.7),q=c/w;tail=.36*s*pow(1.-t,1.6)*exp(-q*q)*sgStep(a,0.,.6);}
-  float k=.12*s,h=max(k-abs(skirt-tail),0.)/k;
-  float y=max(skirt,tail)+h*h*k*.25;
+  if(a>0.&&a<SG_ROCK_TAIL){float t=a/SG_ROCK_TAIL,w=.3+.65*pow(1.-t,.7),q=c/w;tail=.36*s*pow(1.-t,1.6)*exp(-q*q)*sgStep(a,0.,.6)*(1.-sgStep(abs(c),SG_ROCK_SIDE-.8,SG_ROCK_SIDE));}
+  float k=min(.12*s,skirt+tail),f=max(k-abs(skirt-tail),0.);
+  float y=max(skirt,tail)+(k>0.?f*f/(4.*k):0.);
   if(a<0.){float n=d-1.25;y-=exp(-n*n*6.)*sg01(-a*2.)*.07*(1.-sgStep(d,2.1,SG_ROCK_SIDE));}
   return y;
 }
@@ -146,7 +146,7 @@ float sgRockSand(vec2 p){
   float h=0.;
   for(int i=0;i<${SAND_ROCKS.length};i++){
     vec4 k=SG_ROCKS[i];vec2 d=p-k.xy;float r=k.z;
-    if(abs(d.x)>r*SG_ROCK_TAIL||abs(d.y)>r*SG_ROCK_TAIL)continue;
+    if(abs(d.x)>r*(SG_ROCK_TAIL+SG_ROCK_SIDE)||abs(d.y)>r*(SG_ROCK_TAIL+SG_ROCK_SIDE))continue;
     h+=sgStoneSand(dot(d,SG_WIND)/r,(-d.x*SG_WIND.y+d.y*SG_WIND.x)/r,k.w)*r;
   }
   if(h==0.)return 0.;

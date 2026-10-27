@@ -244,11 +244,11 @@ export const SAND_ROCKS: readonly (readonly [number, number, number, number])[] 
   [DAWN_OBELISK_DRIFT[0], DAWN_OBELISK_DRIFT[1], 2.6, 1.1] as const,
 ];
 /** How far a stone's sand reaches, in its radii: back to windward and to the sides, and downwind (the tail's end). */
-export const ROCK_SAND_SIDE = 2.6, ROCK_SAND_TAIL = 5.5;
+export const ROCK_SAND_SIDE = 2.6, ROCK_SAND_TAIL = 4.2;
 /**
  * Sand the wind piles round one stone at wind-frame offsets (a downwind, c across, in its radii): a skirt that
  * buries its foot (flat over the stone, falling away past 1.3 radii), a sand shadow in its lee (as high as the skirt
- * at the stone, tapering to a point 5.5 radii downwind, narrowing as it goes) and a scoured hollow where the wind
+ * at the stone, tapering to a blunt point 4.2 radii downwind, narrowing as it goes) and a scoured hollow where the wind
  * strikes it. Exactly 0 outside the footprint. Metres per metre of radius.
  */
 function stoneSand(a: number, c: number, s: number): number {
@@ -257,12 +257,12 @@ function stoneSand(a: number, c: number, s: number): number {
   const skirt = 0.36 * s * Math.exp(-(Math.max(0, d - 0.85) ** 2) * 2.4) * (1 - smoothstep(d, 2.1, ROCK_SAND_SIDE));
   let tail = 0;
   if (a > 0 && a < ROCK_SAND_TAIL) {
-    const t = a / ROCK_SAND_TAIL, w = 0.12 + 0.8 * Math.pow(1 - t, 0.7);
-    tail = 0.36 * s * Math.pow(1 - t, 1.6) * Math.exp(-((c / w) ** 2)) * smoothstep(a, 0, 0.6);
+    const t = a / ROCK_SAND_TAIL, w = 0.3 + 0.65 * Math.pow(1 - t, 0.7);
+    tail = 0.36 * s * Math.pow(1 - t, 1.6) * Math.exp(-((c / w) ** 2)) * smoothstep(a, 0, 0.6) * (1 - smoothstep(Math.abs(c), ROCK_SAND_SIDE - 0.8, ROCK_SAND_SIDE));
   }
-  // A smooth maximum, so the skirt runs into the tail without a crease.
-  const k = 0.12 * s, h = Math.max(k - Math.abs(skirt - tail), 0) / k;
-  let y = Math.max(skirt, tail) + h * h * k * 0.25;
+  // A smooth maximum, so the skirt runs into the tail without a crease; its fillet shrinks to nothing where both do.
+  const k = Math.min(0.12 * s, skirt + tail), f = Math.max(k - Math.abs(skirt - tail), 0);
+  let y = Math.max(skirt, tail) + (k > 0 ? (f * f) / (4 * k) : 0);
   if (a < 0) { const m = d - 1.25; y -= Math.exp(-m * m * 6) * smooth01(-a * 2) * 0.07 * (1 - smoothstep(d, 2.1, ROCK_SAND_SIDE)); }
   return y;
 }
@@ -279,7 +279,7 @@ export function rockSand(x: number, z: number): number {
   let h = 0;
   for (const [rx, rz, r, s] of SAND_ROCKS) {
     const dx = x - rx, dz = z - rz;
-    if (Math.abs(dx) > r * ROCK_SAND_TAIL || Math.abs(dz) > r * ROCK_SAND_TAIL) continue;
+    if (Math.abs(dx) > r * (ROCK_SAND_TAIL + ROCK_SAND_SIDE) || Math.abs(dz) > r * (ROCK_SAND_TAIL + ROCK_SAND_SIDE)) continue;
     h += stoneSand((dx * DAWN_WIND[0] + dz * DAWN_WIND[1]) / r, (-dx * DAWN_WIND[1] + dz * DAWN_WIND[0]) / r, s) * r;
   }
   if (h === 0) return 0;
