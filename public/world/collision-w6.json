@@ -2,7 +2,7 @@
 "format":"crabcraft-collision",
 "version":1,
 "world":"w6",
-"source":"678528a074228a813395c36da6ba3ea3c038a441a00a31bd4e4db41db1ba9ced",
+"source":"a4fb0bd9164ca31ecf8dac333e48857aa2759305611fc2a692a7cddaded9b984",
 "ground":{"kind":"frontier","chapter":6},
 "heightAt":"ground",
 "cells":{"minX":-150,"minZ":-175,"step":2,"nx":151,"nz":176,"blocked":null},
