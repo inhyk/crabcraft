@@ -7,6 +7,7 @@ import {Glass} from './frostThrone';
 import {frostFire,type Flame,type Halo} from './frostFire';
 import {DawnMason,GRANITE,dawnMasonryMaterial} from './dawnMasonry';
 import {dawnArena} from './dawnArena';
+import {DAWN_FIRE,setDawnFires,updateDawnFires} from './dawnFire';
 import {CITADEL_APPROACH,CITADEL_ARENA,CITADEL_BRAZIERS,CITADEL_COLONNADE,CITADEL_GATE,CITADEL_KEEP,CITADEL_TOWERS,CITADEL_WALL,SOUTH_RUN,citadelObelisks,colonnadeColumns} from './dawnCitadelLayout';
 
 /*
@@ -34,8 +35,6 @@ export interface DawnCitadel {
 function stream(seed:number){let s=seed>>>0;return()=>(s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296;}
 const clamp01=(v:number)=>Math.min(1,Math.max(0,v));
 const EMBER:V3=[2.6,1.05,.3];
-/** Candela of each arena fire light. */
-const ARENA_FIRE=150;
 
 /** A three.js geometry recast for the masonry mesh: one tint, gilt or not, no uvs. */
 function asStone(g:THREE.BufferGeometry,tint:V3,gilt:boolean|number,ground:number):THREE.BufferGeometry{
@@ -467,15 +466,13 @@ export function dawnCitadel(height:Height):DawnCitadel {
  const fire=frostFire('dawn-citadel-fire',flames,halos,9137,6);
  const arena=dawnArena(h);
  root.add(lod,glassMesh,arena.court,fire.group);
- // Two of the sun pillars' fire bowls (the pair across the dial's middle) as real lights: the court lies in the
- // citadel's shadow at this low sun, and the fire is what warms its stone, half the floor each, flickering.
- const fireLights=citadelObelisks().filter(o=>o.i===4||o.i===5).map(o=>{
-  const l=new THREE.PointLight('#ffa957',ARENA_FIRE,36,1.5);l.name='dawn-arena-fire';l.position.set(o.x*.93,h(o.x,o.z)+9.4,o.z);root.add(l);return l;
- });
+ // Two of the sun pillars' fire bowls (the pair across the dial's middle) light the court, half the floor each,
+ // flickering; drawn by the citadel's own materials only (dawnFire.ts).
+ {const [a,b]=citadelObelisks().filter(o=>o.i===4||o.i===5).map(o=>new THREE.Vector3(o.x*.93,h(o.x,o.z)+9.4,o.z));setDawnFires(a,b);root.userData.arenaFires=DAWN_FIRE;}
  root.userData.citadel={blocks:M.blocks,nearTriangles:nearGeo.index!.count/3,farTriangles:farGeo.index!.count/3,gilt:extra.length,towers:CITADEL_TOWERS.length,columns:colonnadeColumns().length,flames:flames.length,obelisks:citadelObelisks().length,windows:glass.pos.length/3};
  return {root,floor:arena.floor,update(time,quality){fire.update(time);arena.update(time,quality);
-  // Low quality drops the two fire lights (every lit pixel in the world would pay for them).
-  for(let i=0;i<fireLights.length;i++){const l=fireLights[i];l.visible=quality==='high';l.intensity=ARENA_FIRE*(1+.07*Math.sin(time*7.3+i*2.1)+.05*Math.sin(time*12.9+i));}
+  // Low quality puts the arena's fire light out.
+  updateDawnFires(time,quality==='high');
   // Low quality swaps to the far slabs (joints drawn, a seventh of the triangles) at half the distance.
   lod.levels[1].distance=quality==='low'?56:112;},async dress(){
   const props=await loadKit('models/world/props.glb');

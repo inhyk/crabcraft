@@ -10,7 +10,7 @@
 //    arena pillars; the portals carry the carved sunburst and no gilt spikes;
 //  - the guidance is the brass sun discs and arrowhead, the old additive discs hidden;
 //  - the beach shelves gently through the waterline so the wet band is metres wide (dawnHeight, the server's too);
-//  - two arena fire lights on high quality, none on low; zero page, shader or GL errors at high and low.
+//  - the arena's two fires (in the citadel's materials, no scene PointLights) lit on high quality, out on low; zero page, shader or GL errors at high and low.
 // Writes tmp/qa/dawn-polish-*.png.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
@@ -78,16 +78,17 @@ async function open(quality){
  const {p,errors,shot,w1env}=await open('high');
  const scene=await p.evaluate(()=>{
   const g=window.app.current.game,third=g.world2.third,root=third.root;
-  const fire=[];root.traverse(o=>{if(o.isPointLight&&o.name==='dawn-arena-fire')fire.push(o.visible);});
+  const fu=root.getObjectByName('dawn-twilight-citadel').userData.arenaFires,fire=fu.dawnFireCol.value.map(c=>c.r>1),lights=[];root.traverse(o=>{if(o.isPointLight)lights.push(o.name);});
   const portals=[];g.scene.traverse(o=>{if(o.userData?.sunburst)portals.push({...o.userData.sunburst,gilt:(()=>{const m=o.getObjectByName('dawn-gate-gilt');m.geometry.computeBoundingBox();return m.geometry.boundingBox.max.y;})()});});
   // Masonry channels: granite on the avenue obelisks, its colour red.
   const stone=root.getObjectByName('dawn-citadel-stone'),sn=stone.geometry.getAttribute('aSnow'),col=stone.geometry.getAttribute('color');let gran=0,r=0,gg=0,b=0;
   for(let i=0;i<sn.count;i++)if(Math.abs(sn.getX(i)-.25)<1e-3){gran++;r+=col.getX(i);gg+=col.getY(i);b+=col.getZ(i);}
   const discs=g.objective.group.getObjectByName('goldsand-guide-discs'),arrow=g.objective.group.getObjectByName('goldsand-guide-arrow');
-  return {fire,portals,gran,granRGB:[r/gran,gg/gran,b/gran],env:g.scene.environment===third.sky.environment(g.engine.renderer),envK:g.scene.environmentIntensity,
+  return {fire,lights,portals,gran,granRGB:[r/gran,gg/gran,b/gran],env:g.scene.environment===third.sky.environment(g.engine.renderer),envK:g.scene.environmentIntensity,
    dawn:g.objective.dawn,discs:discs?{count:discs.count,metal:discs.material.metalness}:null,arrow:!!arrow,sun:third.sky.sunElevation*180/Math.PI,hemi:third.sky.hemiSky.toArray()};
  });
- assert.deepEqual(scene.fire,[true,true],'two arena fire lights on high quality');
+ assert.deepEqual(scene.fire,[true,true],'two arena fires light the court on high quality');
+ assert.ok(!scene.lights.includes('dawn-arena-fire'),'the arena fires are drawn by the citadel materials, not scene PointLights');
  assert.equal(scene.portals.length,2,'both Goldsand portals carry the carved sunburst');
  for(const s of scene.portals){assert.equal(s.spikes,0);assert.ok(s.gilt<2.15+3.5+.75,`no gilt spike reaches past the sunburst: ${s.gilt.toFixed(2)}`);}
  assert.ok(scene.gran>0&&scene.granRGB[0]>2*scene.granRGB[1]&&scene.granRGB[0]>.18,`red granite obelisks: ${scene.gran} vertices ${scene.granRGB.map(v=>v.toFixed(3))}`);
@@ -132,8 +133,8 @@ async function open(quality){
 {
  const {p,errors,shot}=await open('low');
  await shot('arena');await shot('arrival');
- const low=await p.evaluate(()=>{const g=window.app.current.game,f=[];g.world2.third.root.traverse(o=>{if(o.isPointLight&&o.name==='dawn-arena-fire')f.push(o.visible);});return {fire:f,discs:!!g.objective.group.getObjectByName('goldsand-guide-discs')};});
- assert.deepEqual(low.fire,[false,false],'low quality drops the arena fire lights');
+ const low=await p.evaluate(()=>{const g=window.app.current.game,f=g.world2.third.root.getObjectByName('dawn-twilight-citadel').userData.arenaFires.dawnFireCol.value.map(c=>c.r>1);return {fire:f,discs:!!g.objective.group.getObjectByName('goldsand-guide-discs')};});
+ assert.deepEqual(low.fire,[false,false],'low quality puts the arena fires out');
  assert.ok(low.discs,'low quality keeps the brass guidance');
  assert.deepEqual(errors,[],'no page, shader or GL errors (low)');
  console.log('PASS low: fire lights off, brass guidance kept, zero errors');

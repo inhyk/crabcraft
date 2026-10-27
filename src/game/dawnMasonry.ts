@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {DAWN_FIRE,DAWN_FIRE_HEAD,DAWN_FIRE_LIGHT} from './dawnFire';
 import {Masonry,type BlockOpts,type V3,type Warp} from './frostMasonry';
 import {FROST_NOISE} from './frostPaving';
 
@@ -69,11 +70,12 @@ export function dawnMasonryMaterial(name: string): THREE.MeshStandardMaterial {
   material.name = name;
   material.envMapIntensity = .55;
   material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, DAWN_FIRE);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aGround;\nattribute float aSnow;\nattribute float aCourse;\nvarying float vMG;\nvarying float vMS;\nvarying float vMC;\nvarying vec3 vMW;\nvarying vec3 vMN;')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\nvMG=aGround;vMS=aSnow;vMC=aCourse;vMW=(modelMatrix*vec4(transformed,1.)).xyz;vMN=normalize(mat3(modelMatrix)*objectNormal);');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${FROST_NOISE}\nvarying float vMG;\nvarying float vMS;\nvarying float vMC;\nvarying vec3 vMW;\nvarying vec3 vMN;\nfloat mGilt;\nfloat mGran;\nfloat mWorn;\nfloat mDust;`)
+      .replace('#include <common>', `#include <common>\n${FROST_NOISE}\nvarying float vMG;\nvarying float vMS;\nvarying float vMC;\nvarying vec3 vMW;\nvarying vec3 vMN;\n${DAWN_FIRE_HEAD}\nfloat mGilt;\nfloat mGran;\nfloat mWorn;\nfloat mDust;`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
         // One projection per fragment, on the plane the face mostly lies in: walls and towers read the same, at a
         // third of the noise of a triplanar blend.
@@ -137,7 +139,7 @@ export function dawnMasonryMaterial(name: string): THREE.MeshStandardMaterial {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(mix(mix(.9,.97,mDust),.42+mDust*.4,mGran),mix(.3,.62,mWorn),mGilt);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor=mGilt*mix(.88,.55,mWorn);')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(.16,.09,.03)*mGilt*(1.-mWorn)*.35;')
-      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(.35,1.,mGilt);')
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(.35,1.,mGilt);\n${DAWN_FIRE_LIGHT}`)
       .replace('#include <normal_fragment_maps>', /* glsl */ `#include <normal_fragment_maps>
         if(mNear>0.){
           // Chisel marks and vesicles up close: a small bump in the face's plane, smoother on the gilt.
