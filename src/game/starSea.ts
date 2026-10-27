@@ -46,20 +46,29 @@ export class StarSea {
           float shallows=pow(1.-smoothstep(.2,14.,depth),1.6);
           vec3 water=mix(vec3(.007,.015,.035),vec3(.014,.045,.06),shallows);
           float fresnel=.04+.96*pow(1.-max(0.,dot(view,normal)),5.);
-          // The sky without the eclipse's ring (a ring broken up by waves reads as a melted blot): the corona's light
-          // comes back instead as a glitter path, a narrow column stretched toward the eye under the eclipse.
+          // The sky without the eclipse (its ring broken up by waves reads as a melted blot); the totality glow at the
+          // sea line comes with the gradient. The eclipse itself comes back stretched toward the eye as waves stretch a
+          // low light: its disc a dark gap in the water, its corona a narrow glitter path round and below the gap.
           vec3 reflection=starGradient(reflected)+starAuroraGlow(reflected,time)*.09;
           reflection=mix(reflection,vec3(.045,.045,.09),.28);
-          float eclPath;
+          float eclPath,eclDark;
           {
             vec3 rd=normalize(reflected);
             float daz=atan(rd.x,-rd.z)-atan(STAR_ECL.x,-STAR_ECL.z);
             float del=asin(clamp(rd.y,-1.,1.))-asin(STAR_ECL.y);
-            float path=exp(-daz*daz/.0025)*exp(-abs(del)/.1)*smoothstep(.02,.35,(cameraPosition.z-world.z)/max(distanceToEye,1.));
-            float sparkle=.45+.55*smoothstep(.2,.9,sin(p1*1.7)*.5+.5);
-            eclPath=path*sparkle*.6;
+            float toward=smoothstep(.02,.35,(cameraPosition.z-world.z)/max(distanceToEye,1.));
+            // Disc radii, the vertical stretched about twice (rougher water nearer the eye stretches more).
+            float stretch=1.7+.7*detail;
+            float rr=length(vec2(daz*cos(asin(STAR_ECL.y))/STAR_ECL_R,del/(STAR_ECL_R*stretch)));
+            eclDark=(1.-smoothstep(.75,1.05,rr))*toward;
+            float corona=pow(max(rr,1.),-2.5)*smoothstep(.95,1.08,rr)*(1.-smoothstep(2.,3.,rr));
+            // Below the image a narrow column of glints runs on toward the eye.
+            float tail=exp(-daz*daz/.0016)*exp(-max(-del,0.)/.12)*step(del,0.)*smoothstep(1.,1.6,rr)*.35;
+            float sparkle=.25+.75*smoothstep(.35,.95,sin(p1*1.7+sw2)*.5+.5)*smoothstep(.2,.8,sin(p2*1.3)*.5+.5);
+            eclPath=(corona*.9+tail)*sparkle*toward;
           }
-          vec3 color=mix(water,reflection,fresnel*.65)+vec3(.92,.87,.74)*eclPath;
+          reflection*=1.-.6*eclDark;
+          vec3 color=mix(water,reflection,fresnel*.65)*(1.-.35*eclDark)+vec3(.92,.87,.76)*eclPath;
           vec3 halfLight=normalize(view+moonDirection);
           // Waves too small to draw still scatter the moon: the farther, the broader and dimmer its glint.
           float shin=mix(14.,96.,detail);

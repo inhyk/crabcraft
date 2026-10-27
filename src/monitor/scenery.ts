@@ -12,7 +12,7 @@ import { StarSea } from '../game/starSea';
 import { StarSun } from '../game/starSun';
 import { StarSanctum } from '../game/starSanctum';
 import { starCrystalCluster, starCrystalMaterial } from '../game/starCrystals';
-import { STAR_HORIZON, STAR_MOON_DIR, STAR_MOONLIGHT, STAR_MOON_INTENSITY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY, STAR_SHADE_SKY } from '../game/starNight';
+import { STAR_FOG, STAR_MOON_DIR, STAR_MOONLIGHT, STAR_MOON_INTENSITY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY, STAR_SHADE_SKY } from '../game/starNight';
 import { starCrystalGarden, layoutStarhaven } from '../game/world2Colliders';
 
 export type Scenery = {
@@ -93,6 +93,6 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
     const settlement = await buildStarSettlement(height); scene.add(settlement.root);
     collision = layoutStarhaven(height, settlement.natureNames);
   } catch (e) { dispose(); throw e; }
-  scene.fog = new THREE.FogExp2(STAR_HORIZON.clone(), .003);
+  scene.fog = new THREE.FogExp2(STAR_FOG.clone(), .003);
   return { scene, height, raycast: (a, b) => collision.col.raycast(a, b), update: (_dt, t, camera, p) => { sky.update(t, camera, 1); sea.update(t); sun.update(p.x, p.z); throne.update(t); }, dispose };
 }
