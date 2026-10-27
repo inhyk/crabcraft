@@ -24,7 +24,7 @@ export const LAVA_CAMERAS = {
   a: {name: 'sanctuary-volcano', x: 0, z: -60, yaw: 0, pitch: -.02, distance: 14},
   b: {name: 'edge-sea', x: 104, z: -50, yaw: -1.5, pitch: .3, distance: 10},
   c: {name: 'aerial', x: 0, z: -78, yaw: .35, pitch: 1.0, distance: 165},
-  d: {name: 'toe-closeup', x: 6.5, z: -95, yaw: .55, pitch: .38, distance: 9},
+  d: {name: 'toe-closeup', x: -9, z: -96, yaw: .2, pitch: .25, distance: 6},
 };
 
 const browser = await launchBrowser({headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio']});

@@ -96,7 +96,6 @@ export class FrontierIsland {
   if(fire){
    const volcano=add(new THREE.CylinderGeometry(8,28,38,18,4,true),stone,0,ly+9,-128);volcano.name='ember-volcano';
    this.lava=new EmberLava({height:(x,z)=>this.height(x,z),ly});this.root.add(this.lava.root);
-   add(new THREE.TorusGeometry(11,.5,6,40),stone,0,ly+27,-128).rotation.x=Math.PI/2;
   }else{
    add(new THREE.CylinderGeometry(3.5,6,36,10),wood,0,ly+18,-112).name='skybloom-world-tree';
    for(let i=0;i<7;i++){const a=i/7*Math.PI*2,x=Math.sin(a)*10,z=-112+Math.cos(a)*10;const b=add(new THREE.CylinderGeometry(.6,1.4,20,6),wood,x*.5,ly+26,z+(-112-z)*.5);b.rotation.z=-Math.sin(a)*.8;b.rotation.x=Math.cos(a)*.8;const canopy=add(new THREE.IcosahedronGeometry(12,1),new THREE.MeshStandardMaterial({color:i%2?'#67ac86':'#3b947d',roughness:.8}),x,ly+38+i%3*3,z);canopy.scale.y=.65;}
