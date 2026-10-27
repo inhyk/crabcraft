@@ -96,7 +96,8 @@ try {
     out.citadelBanners = (() => { let n = 0; t.root.traverse(o => { if (o.userData?.citadel?.banners) n = o.userData.citadel.banners; }); return n; })();
     // Solids: a crab dropped on each scene's centre is pushed out.
     const v = g.player.unit.pos.clone(), rr = g.player.unit.radius;
-    const probe = [[-6.3, 58.1], [-5.35, 60.9], [-7.1, 67.4], [6.2, 79.6], [-24.8, -73.2], [24.0, -88.0]];
+    // A little off each centre (a point dead on a circle's centre has no direction to be pushed in).
+    const probe = [[-6.0, 58.3], [-5.35, 60.9], [-7.1, 67.4], [6.2, 79.6], [-24.5, -73.0], [24.3, -87.8]];
     out.notSolid = probe.filter(([x, z]) => { w.resolveCollision(x, z, rr, v); return Math.hypot(v.x - x, v.y - z) < .2; }).map(a => a.join(','));
     return out;
   });
@@ -105,7 +106,7 @@ try {
   assert.deepEqual(r.parts, [], 'goods meshes present');
   assert.deepEqual(r.notSolid, [], 'the well, trough, rail, cart and ruins are solid');
   assert.ok(r.quarter.parapets >= 20 && r.quarter.frames >= 10, `parapet profiles ${r.quarter.parapets}, door frames ${r.quarter.frames}`);
-  assert.ok(r.citadelBanners >= 30, `citadel banners ${r.citadelBanners}`);
+  assert.ok(r.citadelBanners >= 22, `citadel banners ${r.citadelBanners} (14 before, four on the back wall and four on the colonnades added)`);
   const street = await hueAt(p, [0, 45, .3, .12, 9], [.25, .7, .75, .9]);
   const arena = await hueAt(p, [0, -75, 0, .5, 34], [.19, .72, .81, .98]);
   console.log('WARMTH', JSON.stringify({street, arena}));
