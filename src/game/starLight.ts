@@ -74,6 +74,24 @@ vec3 starLampGlint(vec3 p,vec3 n,vec3 V,float shin){
 }
 `;
 
+/** Door lanterns (world positions of their glass), set by the settlement before its walls first compile. */
+let DOOR_LAMPS: readonly (readonly [number, number, number])[] = [];
+export function setStarDoorLamps(points: readonly (readonly [number, number, number])[]) { DOOR_LAMPS = points; }
+const DOOR_I = 9, DOOR_REACH = 4.5;
+/** GLSL: `starDoorLight(p, n)`, the door lanterns' warm light on a wall (empty when there are none). */
+function doorLightGLSL() {
+  if (!DOOR_LAMPS.length) return 'vec3 starDoorLight(vec3 p,vec3 n){return vec3(0.);}';
+  return `const vec3 SL_DOOR[${DOOR_LAMPS.length}]=vec3[${DOOR_LAMPS.length}](${DOOR_LAMPS.map(([x, y, z]) => `vec3(${fmt(x)},${fmt(y)},${fmt(z)})`).join(',')});
+vec3 starDoorLight(vec3 p,vec3 n){
+  float e=0.;
+  for(int i=0;i<${DOOR_LAMPS.length};i++){
+    vec3 L=SL_DOOR[i]-p;float d2=dot(L,L);if(d2>${fmt(DOOR_REACH * DOOR_REACH)})continue;
+    float w=1.-d2/${fmt(DOOR_REACH * DOOR_REACH)};
+    e+=max(dot(n,L*inversesqrt(d2)),0.)/(d2+.25)*w*w;
+  }
+  return e*vec3(${fmt(LAMP_COLOR.r * DOOR_I)},${fmt(LAMP_COLOR.g * DOOR_I)},${fmt(LAMP_COLOR.b * DOOR_I)});
+}`;
+}
 /**
  * Adds the baked light to a MeshStandardMaterial's diffuse. `world` is a GLSL expression for the fragment's world
  * position (vec3); `lamps` also lights it from the lanterns analytically (for upright surfaces off the baked ground).
@@ -83,12 +101,12 @@ export function injectStarLight(shader: {uniforms: Record<string, THREE.IUniform
   const baked = opts.baked ?? true, lamps = opts.lamps ?? false, s = fmt(opts.scale ?? 1);
   const wp = world ?? 'starWorldFromView(-vViewPosition)';
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', `#include <common>\n${STAR_LIGHT_GLSL}`)
+    .replace('#include <common>', `#include <common>\n${STAR_LIGHT_GLSL}\n${lamps ? doorLightGLSL() : ''}`)
     .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
 {
   vec3 slP=${wp};vec3 slN=inverseTransformDirection(normal,viewMatrix);vec3 slE=vec3(0.);
   ${baked ? 'slE+=starBakedLight(slP.xz)*clamp(slN.y*.6+.4,0.,1.);' : ''}
-  ${lamps ? 'slE+=starLampLight(slP,slN);' : ''}
+  ${lamps ? 'slE+=starLampLight(slP,slN)+starDoorLight(slP,slN);' : ''}
   reflectedLight.indirectDiffuse+=slE*${s}*BRDF_Lambert(diffuseColor.rgb);
 }`);
 }

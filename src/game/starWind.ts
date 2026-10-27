@@ -9,7 +9,7 @@ export class StarWind {
       const material=object.material as THREE.MeshStandardMaterial;
       const tree=/^(Bark_NormalTree|Leaves_NormalTree)$/.test(material.name);
       if(!tree&&!/^(Leaves|Flowers|Grass)$/.test(material.name))return;
-      const reach={value:tree?8:1.5},strength={value:tree?1:.45};
+      const reach={value:tree?8:1.5},strength={value:tree?1:.45},leaves=material.name.startsWith('Leaves');
       const patch=(target:THREE.Material)=>{
         target.onBeforeCompile=shader=>{
           shader.uniforms.uStarWindTime=this.time;
@@ -44,8 +44,12 @@ float starBend=clamp(position.y/uStarWindReach,0.,1.);
 float starSlope=6.*starBend*(1.-starBend)/uStarWindReach;
 objectNormal.y-=dot(objectNormal.xz,starWind(starNormalAnchor))*starSlope;
 `);
+          // Leaves keep to the night's teal-green (#3f6f63): the kit's grass-green, about a third less saturated, turned
+          // toward blue. Bark and flowers keep their own colour.
+          if(leaves&&target===material)shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`#include <map_fragment>
+{float l=dot(diffuseColor.rgb,vec3(.299,.587,.114));diffuseColor.rgb=mix(vec3(l),diffuseColor.rgb,.68)*vec3(.8,.98,1.08);}`);
         };
-        target.customProgramCacheKey=()=> 'star-wind-v1';
+        target.customProgramCacheKey=()=>leaves&&target===material?'star-wind-v1-leaves':'star-wind-v1';
       };
       patch(material);
       const depth=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,

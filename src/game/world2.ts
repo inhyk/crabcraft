@@ -11,7 +11,8 @@ import {t} from '../i18n';
 import type { Game } from './game';
 import type { Poi } from '../world/types';
 import { snapshotMap } from './snapshots';
-import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS } from './world2Settlement';
+import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS, starLots } from './world2Settlement';
+import {starDoorLampGlows} from './starRooftops';
 import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
@@ -60,7 +61,7 @@ export class HiddenWorld {
   private readonly sun=new StarSun(STAR_MOON_DIR.clone().multiplyScalar(100));
   private readonly night=new StarNightRig(this.sun.light);
   /** A small warm light carried with the player's crab (about 4 m), so the hero reads against the night fields. */
-  private readonly carry=new THREE.PointLight('#ffb27a',5.5,6.5,1.6);
+  private readonly carry=new THREE.PointLight('#ffb27a',4,5.5,1.6);
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();
@@ -232,6 +233,8 @@ export class HiddenWorld {
     for(const {x,z,h} of moonshadeLeaves())crystalGlow.push({x,z,radius:1.6+h*.25,color:'#4f8dff',strength:.9});
     // The miners' torch.
     {const [tx,tz]=rot(-6.4,1.8,STAR_MINE.yaw);crystalGlow.push({x:STAR_MINE.x+tx,z:STAR_MINE.z+tz,radius:2.4,color:'#ff9a4a',strength:2.2});}
+    // The door lanterns' pools (starRooftops.ts).
+    crystalGlow.push(...starDoorLampGlows(starLots()));
     this.groundLight=bakeStarLight(crystalGlow);
     this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
