@@ -112,8 +112,10 @@ export function dawnMasonryMaterial(name: string): THREE.MeshStandardMaterial {
         mDust=max(mDust,smoothstep(.75,.95,mUp)*smoothstep(.2,.6,fpNoise(vMW.xz*1.3+7.)*.6+.35)*.65);
         diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.42,.33,.22)*(.85+.3*mG1),mDust*(1.-mGilt*.5));
         // Gilt: gold leaf over bronze, worn back on the edges and in patches; the bronze darkened by soot.
-        mWorn=smoothstep(.35,.75,M3(2.3,51.)*.5+.5+mN*.2)*.7+mSoot*.3;
-        vec3 mGold=mix(vec3(1.,.66,.26),vec3(.2,.12,.055),mWorn);
+        // Bronze (doors, grilles) is marked .7 in the same channel: dark, little worn, a warm sheen.
+        float mBronze=mGilt*(1.-step(.85,vMS));
+        mWorn=mix(smoothstep(.35,.75,M3(2.3,51.)*.5+.5+mN*.2)*.7+mSoot*.3,.2,mBronze);
+        vec3 mGold=mix(mix(vec3(.95,.58,.19),vec3(.2,.12,.05),mWorn),vec3(.15,.085,.04)*(.8+.4*(M3(1.7,61.)*.5+.5)),mBronze);
         diffuseColor.rgb=mix(diffuseColor.rgb,mGold,mGilt);`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(mix(.9,.97,mDust),mix(.3,.62,mWorn),mGilt);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor=mGilt*mix(.88,.55,mWorn);')

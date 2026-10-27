@@ -65,7 +65,8 @@ if(daDetail>.5&&fpHash12(vec2(dFi*1.3,dRi+9.))>.86){
  dJoint=max(dJoint,(1.-smoothstep(.005,.005+dAA+.008,cc))*.8);
 }
 if(daCourt<.5){
- // ---- The dial proper.
+ // ---- The dial proper; the medallion inside 4.45 m is one inlaid piece, no joints.
+ if(dR<4.45){daH=0.;dJoint=0.;}
  // Centre: the gold sun, the basalt moon across it, rays on a basalt ground.
  float sunD=dR-1.7,moonD=length(dP-vec2(.52,-.36))-1.5;
  float inSun=1.-smoothstep(-dAA,dAA,sunD),inMoon=1.-smoothstep(-dAA,dAA,moonD);
@@ -79,7 +80,7 @@ if(daCourt<.5){
  float ring1=daBand(dR,4.38,4.52,dAA);
  // Band 1, minutes: 48 ticks, every fourth long.
  float b1=daBand(dR,5.55,6.55,dAA),tk=fract(dAng/6.2831853*48.+.5)-.5,tL=mod(floor(dAng/6.2831853*48.+.5),4.)==0.?.36:.18;
- float tick=(1.-smoothstep(.03,.03+dAA,abs(tk)*6.2831853*6.05/48.))*(1.-smoothstep(tL-dAA,tL+dAA,abs(dR-6.05)));
+ float tick=(1.-smoothstep(.05,.05+dAA,abs(tk)*6.2831853*6.05/48.))*(1.-smoothstep(tL-dAA,tL+dAA,abs(dR-6.05)));
  // Band 2: the hours, sun and moon in turn; at the keep (north) the eclipse.
  float b2=daBand(dR,12.4,13.6,dAA),hu=dAng/6.2831853*24.+.5,hi=floor(hu),hx=fract(hu)-.5;
  vec2 gq=vec2(hx*6.2831853*13./24.,dR-13.)/.5;
@@ -89,13 +90,13 @@ if(daCourt<.5){
  // Band 3: a running flame scroll between two gilt fillets.
  float b3=daBand(dR,19.25,20.45,dAA);
  float scroll=abs(dR-19.85-.3*sin(dAng*20.*3.)+.05*sin(dAng*20.*9.));
- float scr=1.-smoothstep(.045,.045+dAA,scroll);
+ float scr=1.-smoothstep(.07,.07+dAA,scroll);
  // Hour lines: twelve gilt rays across the limestone between the bands.
  float hl=fract(dAng/6.2831853*12.+.5)-.5,hlD=abs(hl)*6.2831853*dR/12.;
- float hourL=(1.-smoothstep(.035,.035+dAA,hlD))*(daBand(dR,6.75,12.2,dAA)+daBand(dR,13.8,19.05,dAA));
+ float hourL=(1.-smoothstep(.06,.06+dAA,hlD))*(daBand(dR,6.75,12.2,dAA)+daBand(dR,13.8,19.05,dAA));
  // Fillets: thin gold strips on every band edge.
  float fil=0.;
- for(int i=0;i<6;i++){float e=i==0?5.55:i==1?6.55:i==2?12.4:i==3?13.6:i==4?19.25:20.45;fil=max(fil,1.-smoothstep(.03,.03+dAA,abs(dR-e)));}
+ for(int i=0;i<6;i++){float e=i==0?5.55:i==1?6.55:i==2?12.4:i==3?13.6:i==4?19.25:20.45;fil=max(fil,1.-smoothstep(.05,.05+dAA,abs(dR-e)));}
  float basalt=max(max(inDisc,b1),max(b2,b3));
  vec3 bas=vec3(.042,.039,.037)*(.85+.3*(fpNoise(vDaW.xz*1.7)*.5+.5));
  dCol=mix(dCol,bas,basalt);daBas=basalt;
@@ -105,17 +106,18 @@ if(daCourt<.5){
  dJoint*=1.-basalt;
  float gold=max(max(max(inSun*(1.-inMoon),inRay*(1.-inSun)),ring1),max(max(tick*b1,glyph*b2),max(max(scr*b3,hourL),fil)));
  daGilt=gold;
+ daPolish=exp(-pow((dR-10.)/5.,2.))*.6;
+ float dWorn=smoothstep(.3,.75,fpNoise(vDaW.xz*1.9+11.)*.5+.5+fpNoise(vDaW.xz*7.)*.2-daPolish);
+ dCol=mix(dCol,mix(vec3(.86,.46,.09),vec3(.33,.18,.05),dWorn*.7),daGilt);
  // The moon over the sun: polished basalt, a thin burning rim (the corona) round it.
  dCol=mix(dCol,vec3(.025,.022,.022),inMoon*(1.-smoothstep(1.9,2.,dR)));
  daBas=max(daBas,inMoon);
  float cor=exp(-max(moonD,0.)*9.)*(1.-inMoon)*(1.-smoothstep(1.6,2.6,dR));
  daGlow=cor*(.8+.2*sin(daTime*1.3))+inSun*(1.-inMoon)*.35;
- // Where feet go: the gold worn bright on the ring the fight circles, dull and tarnished elsewhere.
- daPolish=exp(-pow((dR-10.)/5.,2.))*.6;
 }else{
  // Sand blown into the court: in the joints, drifted against the walls and in the corners.
  vec2 w=vDaW.xz;
- float dWall=min(${(CITADEL_WALL.side - CITADEL_WALL.thick).toFixed(2)}-abs(w.x),min(w.y-(${(CITADEL_WALL.back + CITADEL_WALL.thick).toFixed(2)}),${(CITADEL_WALL.south - CITADEL_WALL.thick).toFixed(2)}-w.y));
+ float dWall=min(${(CITADEL_WALL.side - CITADEL_WALL.thick).toFixed(2)}-abs(w.x),min(w.y-(${(CITADEL_WALL.back + CITADEL_WALL.thick).toFixed(2)}),${(CITADEL_WALL.south - 1).toFixed(2)}-w.y));
  float sand=smoothstep(.45,.85,fpNoise(w*.16+3.)*.5+.5+exp(-max(dWall,0.)/2.6)*.55+fpNoise(w*.9)*.12);
  dCol=mix(dCol,vec3(.47,.37,.25)*(.88+.2*(fpNoise(w*3.)*.5+.5)),sand*.85);
  dJoint*=1.-sand*.6;
@@ -148,8 +150,8 @@ function dialMaterial(name: string, court: boolean, uniforms: Record<string, THR
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         float gWorn=smoothstep(.3,.75,fpNoise(vDaW.xz*1.9+11.)*.5+.5+fpNoise(vDaW.xz*7.)*.2-daPolish);
         roughnessFactor=mix(mix(.86,.5,daBas),mix(.28,.55,gWorn),daGilt);`)
-      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor=daGilt*mix(.92,.6,gWorn);')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.14)*daGlow*1.1+vec3(.14,.08,.025)*daGilt*(1.-gWorn)*.4;')
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor=daGilt*mix(.45,.25,gWorn);')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.14)*daGlow*1.1+vec3(.36,.15,.02)*daGilt*(1.-gWorn*.7)*.6;')
       .replace('#include <normal_fragment_maps>', /* glsl */ `#include <normal_fragment_maps>
         {
           float h=daH*.012+fpNoise(vDaW.xz*.8)*.004;
@@ -179,18 +181,21 @@ export function dawnArena(height: (x: number, z: number) => number): DawnArena {
   // wholly inside the dial left out (the shader cuts the rest at its edge).
   const W = CITADEL_WALL, G = CITADEL_GATE, step = .75;
   const pos: number[] = [], idx: number[] = [];
-  const grid = (x0: number, x1: number, z0: number, z1: number) => {
+  const grid = (x0: number, x1: number, z0: number, z1: number, keep = (_x: number, _z: number) => true) => {
     const nx = Math.ceil((x1 - x0) / step), nz = Math.ceil((z1 - z0) / step), base = pos.length / 3;
     for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz; pos.push(x, height(x, z) + .035, z); }
     const inside = (k: number) => Math.hypot(pos[(base + k) * 3] - CITADEL_ARENA.x, pos[(base + k) * 3 + 2] - CITADEL_ARENA.z) < CITADEL_ARENA.r - .6;
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
       const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
       if (inside(a) && inside(b) && inside(c) && inside(d)) continue;
+      const mx = (pos[(base + a) * 3] + pos[(base + d) * 3]) / 2, mz = (pos[(base + a) * 3 + 2] + pos[(base + d) * 3 + 2]) / 2;
+      if (!keep(mx, mz)) continue;
       idx.push(base + a, base + c, base + b, base + b, base + c, base + d);
     }
   };
-  grid(-(W.side - W.thick) - .4, W.side - W.thick + .4, W.back + W.thick - .4, W.south - W.thick + .4);
-  grid(-G.open - .3, G.open + .3, W.south - W.thick + .4, G.front + 1.6);
+  // The court runs from the back wall to the low south wall, and between the gate towers on to the gate's back.
+  grid(-(W.side - W.thick) - .4, W.side - W.thick + .4, W.back + W.thick - .4, G.back, (x, z) => z < W.south - .9 || Math.abs(x) < G.half + 2.2);
+  grid(-G.open - .3, G.open + .3, G.back - .2, G.front + 1.2);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
   const court = new THREE.Mesh(g, dialMaterial('dawn-temple-court', true, uniforms));

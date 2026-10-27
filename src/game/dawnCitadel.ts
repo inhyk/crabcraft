@@ -9,7 +9,7 @@ import {Glass,windowAt} from './frostThrone';
 import {frostFire,type Flame,type Halo} from './frostFire';
 import {DawnMason,dawnMasonryMaterial} from './dawnMasonry';
 import {dawnArena} from './dawnArena';
-import {CITADEL_APPROACH,CITADEL_ARENA,CITADEL_BRAZIERS,CITADEL_GATE,CITADEL_KEEP,CITADEL_TOWERS,CITADEL_WALL,citadelObelisks,type CitadelTower} from './dawnCitadelLayout';
+import {CITADEL_APPROACH,CITADEL_ARENA,CITADEL_BRAZIERS,CITADEL_GATE,CITADEL_KEEP,CITADEL_TOWERS,CITADEL_WALL,SOUTH_RUN,citadelObelisks,type CitadelTower} from './dawnCitadelLayout';
 
 /*
  * Solarkan's Twilight Citadel: the old sun temple-fortress on Dawnharbor's north plateau, taken in the stolen dawn.
@@ -37,7 +37,7 @@ const clamp01=(v:number)=>Math.min(1,Math.max(0,v));
 const EMBER:V3=[2.6,1.05,.3];
 
 /** A three.js geometry recast for the masonry mesh: one tint, gilt or not, no uvs. */
-function asStone(g:THREE.BufferGeometry,tint:V3,gilt:boolean,ground:number):THREE.BufferGeometry{
+function asStone(g:THREE.BufferGeometry,tint:V3,gilt:boolean|number,ground:number):THREE.BufferGeometry{
  const n=g.getAttribute('position').count;
  const out=new THREE.BufferGeometry();
  out.setAttribute('position',g.getAttribute('position').clone());
@@ -46,7 +46,7 @@ function asStone(g:THREE.BufferGeometry,tint:V3,gilt:boolean,ground:number):THRE
  const col=new Float32Array(n*3);for(let i=0;i<n;i++)col.set(tint,i*3);
  out.setAttribute('color',new THREE.BufferAttribute(col,3));
  out.setAttribute('aGround',new THREE.BufferAttribute(new Float32Array(n).fill(ground),1));
- out.setAttribute('aSnow',new THREE.BufferAttribute(new Float32Array(n).fill(gilt?1:0),1));
+ out.setAttribute('aSnow',new THREE.BufferAttribute(new Float32Array(n).fill(typeof gilt==='number'?gilt:gilt?1:0),1));
  out.setAttribute('aCourse',new THREE.BufferAttribute(new Float32Array(n),1));
  if(g.getIndex())out.setIndex(g.getIndex()!.clone());
  else{const idx=new Uint32Array(n);for(let i=0;i<n;i++)idx[i]=i;out.setIndex(new THREE.BufferAttribute(idx,1));}
@@ -214,8 +214,8 @@ export function dawnCitadel(height:Height):DawnCitadel {
   for(const s of [-1,1])M.face(planeWarp(s*G.open,s>0?G.front:G.back,0,s>0?-1:1),0,G.front-G.back,b,apex,{len:1.6,course:.9,depth:.4});
   M.slab(front(G.front),-G.half,top-.6,0,2*G.half,.6,G.front-G.back,M.tint(.8),1,4);
   M.slab((u,v,t)=>[-G.open+u,v,G.back+t],0,apex-.1,0,2*G.open,.4,G.front-G.back,M.tint(.6),1,8);
-  for(let i=0;i<=8;i++){const x=-G.open+.2+(2*G.open-.4)*i/8;gild(new THREE.BoxGeometry(.11,2.6,.11).translate(x,apex-1.45,(G.front+G.back)/2+.6),g0);}
-  for(let j=0;j<3;j++)gild(new THREE.BoxGeometry(2*G.open-.2,.1,.13).translate(0,apex-2.5+j*.9,(G.front+G.back)/2+.6),g0);
+  for(let i=0;i<=8;i++){const x=-G.open+.2+(2*G.open-.4)*i/8;extra.push(asStone(new THREE.BoxGeometry(.11,2.6,.11).translate(x,apex-1.45,(G.front+G.back)/2+.6),[1,1,1],.7,g0));}
+  for(let j=0;j<3;j++)extra.push(asStone(new THREE.BoxGeometry(2*G.open-.2,.1,.13).translate(0,apex-2.5+j*.9,(G.front+G.back)/2+.6),[1,1,1],.7,g0));
   for(let i=0;i<=8;i++){const x=-G.open+.2+(2*G.open-.4)*i/8;gild(new THREE.ConeGeometry(.09,.32,4).rotateX(Math.PI).translate(x,apex-2.92,(G.front+G.back)/2+.6),g0);}
   // The eclipsed sun over the arch, banners either side.
   emblem(0,apex+4.4,G.front,2.05);
@@ -244,9 +244,26 @@ export function dawnCitadel(height:Height):DawnCitadel {
    for(let u=3.2;u<L-3;u+=6.4)windowAt(M,glass,w,u,W.top-5.4,W.top-4.3,.2,EMBER);
   };
   for(const s of [-1,1]){
-   // South: from the gate tower to the corner tower (outer face south); runs go left to right seen from outside.
-   const x0=s*(10.6+3.2),x1=s*(34-3.6);
-   if(s>0)run(x1,W.south,x0,W.south);else run(x0,W.south,x1,W.south);
+   // South: the low terrace wall from the gate tower to the corner tower, stepped down the slope in level runs,
+   // basalt with a pale coping, the court open over it.
+   {
+    const n=6,tops:number[]=[],bases:number[]=[],ax=s>0?SOUTH_RUN[1]:-SOUTH_RUN[1],bx=s>0?SOUTH_RUN[0]:-SOUTH_RUN[0],L=Math.abs(bx-ax),ux=Math.sign(bx-ax),w=planeWarp(ax,W.south,ux,0);
+    for(let k=0;k<n;k++){
+     const u0=L*k/n-(k?.02:0),u1=L*(k+1)/n,xa=ax+ux*u0,xb=ax+ux*u1;
+     let gmax=-Infinity;for(let i=0;i<=6;i++)gmax=Math.max(gmax,h(xa+(xb-xa)*i/6,W.south),h(xa+(xb-xa)*i/6,W.south-1));
+     const b=groundMin(xa,W.south,xb,W.south)-1,top=gmax+W.low;M.ground=b+1;
+     M.face(w,u0,u1,b,top,{len:1.9,course:.85,depth:.45});
+     M.face(planeWarp(xb,W.south-1,-ux,0),L-u1,L-u0,b,top,{len:1.9,course:.85,depth:.45});
+     M.slab(w,u0,b,.4,u1-u0,top-b,.2,M.tint(.7),1,16|32);
+     M.stone='pale';for(let u=u0;u<u1-.05;){const ww=Math.min(1.5+rand()*.6,u1-u);M.block(w,u+.02,top,-.12,ww-.04,.32,1.24,{bevel:.05,closed:true,far:true});u+=ww;}M.stone=null;
+     tops.push(top);bases.push(b);
+    }
+    // Pale piers where the runs step, rising over both, so the coping never ends in the air.
+    for(let k=0;k<=n;k++){
+     const u=Math.min(L-.6,Math.max(.6,L*k/n)),t=Math.max(tops[Math.max(0,k-1)],tops[Math.min(n-1,k)])+.45,bb=Math.min(bases[Math.max(0,k-1)],bases[Math.min(n-1,k)]);
+     M.stone='pale';M.block(w,u-.6,bb,-.2,1.2,t-bb,1.4,{bevel:.06,closed:true,far:true});M.block(w,u-.7,t,-.3,1.4,.24,1.6,{bevel:.05,closed:true});M.stone=null;
+    }
+   }
    // Sides: corner to mid tower to corner.
    for(const [za,zb] of [[-50-3.6,-76+2.8],[-76-2.8,-102+3.6]] as const){
     if(s>0)run(W.side,zb,W.side,za);else run(-W.side,za,-W.side,zb);
@@ -277,7 +294,13 @@ export function dawnCitadel(height:Height):DawnCitadel {
    for(let v=g0-.4,k=0;v<door.spring-.05;k++){const hh=Math.min(.85,door.spring-v);M.stone=k%2?'pale':'basalt';M.block(front(zz),-(s>0?door.half+.9:-door.half),v,0,.9,hh-.04,.8,{bevel:.05,closed:true});M.stone=null;v+=hh;}
   }
   M.slab(front(zs-1.4),-door.half,g0-.5,0,2*door.half,door.apex-g0+.5,.2,M.tint(.35),1,1);
-  for(const s of [-1,1]){const leaf=new THREE.BoxGeometry(door.half-.06,door.spring-g0+.6,.14);gild(leaf.translate(s*(door.half/2),g0+(door.spring-g0+.6)/2-.1,zs-1.25),g0);}
+  for(const s of [-1,1]){
+   const lh=door.spring-g0+.6,lx=s*(door.half/2),lz=zs-1.25;
+   extra.push(asStone(new THREE.BoxGeometry(door.half-.06,lh,.14).translate(lx,g0+lh/2-.1,lz),[1,1,1],.7,g0));
+   // Gilt bands across the leaf and a grid of studs.
+   for(const f of [.18,.5,.82])gild(new THREE.BoxGeometry(door.half-.16,.12,.05).translate(lx,g0-.1+lh*f,lz+.09),g0);
+   for(let i=0;i<3;i++)for(let j=0;j<5;j++)gild(new THREE.SphereGeometry(.055,6,4).translate(lx+(i-1)*door.half*.28,g0-.1+lh*(.3+j*.1)+(j>1?lh*.06:0),lz+.1),g0);
+  }
   M.stone='pale';for(let k=0;k<2;k++)box(-door.half-1.4+k*.5,door.half+1.4-k*.5,g0-.6,g0+.18+k*.2,zs+1.6-k*.7,1.6,.05);M.stone=null;
   // Lancets either side, the great eclipse above the door, turrets at the corners, the great spire on top.
   const fw=planeWarp(x1,zs,-1,0);
@@ -316,22 +339,20 @@ export function dawnCitadel(height:Height):DawnCitadel {
   }
   M.stone=null;
   const bowl=[[0,0],[.3,.02],[.6,.14],[.95,.42],[1.12,.66],[1.15,.74],[1.02,.76],[.3,.5],[0,.5]].map(([a,b])=>new THREE.Vector2(a,b));
-  /** A square shaft tapering from w0 to w1 over hgt, laid in courses (four warped faces). */
-  const shaft=(x:number,z:number,y0:number,hgt:number,w0:number,w1:number,yaw:number,o:{len?:number;course?:number}={})=>{
-   for(let f=0;f<4;f++){
-    const a=yaw+f*Math.PI/2,ca=Math.cos(a),sa=Math.sin(a);
-    const warp:Warp=(u,v,t)=>{const k=clamp01((v-y0)/hgt),hw=(w0+(w1-w0)*k)/2,s=(u-w0/2)/(w0/2)*hw,out=hw-t;return [x+ca*s+sa*out,v,z-sa*s+ca*out];};
-    M.face(warp,0,w0,y0,y0+hgt,{len:o.len??1.2,course:o.course??.9,depth:.45,core:0});
-   }
+  /** A dressed monolith: a square block tapering from w0 to w1, flat-faced, its own tint. */
+  const mono=(x:number,z:number,y0:number,hgt:number,w0:number,w1:number,yaw:number,tint:V3,ground:number)=>{
+   const g=new THREE.CylinderGeometry(w1/Math.SQRT2,w0/Math.SQRT2,hgt,4,1).rotateY(Math.PI/4+yaw).translate(x,y0+hgt/2,z).toNonIndexed();g.computeVertexNormals();
+   extra.push(asStone(g,tint,false,ground));
   };
-  const plinth=(x:number,z:number,y:number,w:number,yaw:number)=>{M.stone='pale';shaft(x,z,y-.6,1.05,w+.6,w+.6,yaw,{len:1.1,course:.5});shaft(x,z,y+.45,.5,w+.2,w+.2,yaw,{len:1,course:.5});M.stone=null;};
+  const plinth=(x:number,z:number,y:number,w:number,yaw:number)=>{mono(x,z,y-.6,1.02,w+.7,w+.62,yaw,M.paleTint(),y);mono(x,z,y+.42,.5,w+.26,w+.2,yaw,M.paleTint(1.05),y);};
   for(const o of citadelObelisks()){
    const y=h(o.x,o.z);M.ground=y;const yaw=-o.a;
    plinth(o.x,o.z,y,1.5,yaw);
-   M.stone='basalt';shaft(o.x,o.z,y+.95,6.4,1.5,1.2,yaw,{len:1.3,course:1.1});M.stone=null;
+   // Three basalt drums, polished, a fine joint between each.
+   for(let k=0;k<3;k++)mono(o.x,o.z,y+.92+k*2.14,2.11,1.5-k*.1,1.4-k*.1,yaw,M.tint(1.1),y);
    // Capital: a pale collar and a gilt band, then the fire bowl.
-   M.stone='pale';shaft(o.x,o.z,y+7.35,.55,1.55,1.75,yaw,{len:1.2,course:.55});M.stone=null;
-   M.gilt=true;shaft(o.x,o.z,y+7.9,.22,1.8,1.8,yaw,{len:1.9,course:.22});M.gilt=false;
+   mono(o.x,o.z,y+7.34,.56,1.5,1.8,yaw,M.paleTint(),y);
+   gild(new THREE.CylinderGeometry(1.86/Math.SQRT2,1.86/Math.SQRT2,.22,4,1).rotateY(Math.PI/4+yaw).translate(o.x,y+8.01,o.z).toNonIndexed(),y);
    gild(new THREE.LatheGeometry(bowl,20).translate(o.x,y+8.1,o.z),y);
    flames.push({x:o.x,y:y+8.85,z:o.z,size:1.9,cold:false},{x:o.x+.3,y:y+8.7,z:o.z-.2,size:1.2,cold:false});
    halos.push({x:o.x,y:y+9.4,z:o.z,size:5.2,color:'#ff9c40',power:.5});
@@ -340,16 +361,16 @@ export function dawnCitadel(height:Height):DawnCitadel {
   for(const s of [-1,1])for(const z of CITADEL_APPROACH.z){
    const x=s*CITADEL_APPROACH.x,y=h(x,z);M.ground=y;
    plinth(x,z,y,1.15,0);
-   M.stone='basalt';shaft(x,z,y+.95,7.2,1.15,.72,0,{len:1.2,course:1.2});M.stone=null;
+   mono(x,z,y+.92,7.24,1.15,.72,0,M.tint(1.15),y);
    gild(new THREE.ConeGeometry(.36*Math.SQRT2,1.1,4).rotateY(Math.PI/4).translate(x,y+8.7,z),y);
    const fx=x-s*(1.15+(.72-1.15)*.35)/2-s*.05;
    gild(new THREE.CylinderGeometry(.32,.32,.06,20).rotateZ(Math.PI/2).translate(fx,y+6.3,z),y);
-   for(let k=0;k<12;k++){const a=k/12*Math.PI*2;gild(new THREE.ConeGeometry(.05,k%2?.2:.32,4).translate(0,.36+(k%2?.1:.16),0).rotateX(a).translate(fx,y+6.3,z),y);}
+   gild(new THREE.TorusGeometry(.42,.035,6,28).rotateY(Math.PI/2).translate(fx,y+6.3,z),y);
   }
   // Fire bowls on pedestals before the gate and at the keep's door.
   for(const br of CITADEL_BRAZIERS){
    const y=h(br.x,br.z);M.ground=y;
-   M.stone='pale';shaft(br.x,br.z,y-.5,.8,1.3,1.3,0,{len:1.3,course:.4});M.stone='basalt';shaft(br.x,br.z,y+.3,1.1,.8,.7,0,{len:.9,course:.55});M.stone=null;
+   mono(br.x,br.z,y-.5,.8,1.3,1.24,0,M.paleTint(),y);mono(br.x,br.z,y+.3,1.1,.82,.7,0,M.tint(1.1),y);
    gild(new THREE.LatheGeometry(bowl,20).scale(.8,.8,.8).translate(br.x,y+1.4,br.z),y);
    flames.push({x:br.x,y:y+2.05,z:br.z,size:1.6,cold:false});halos.push({x:br.x,y:y+2.5,z:br.z,size:4.4,color:'#ff9c40',power:.55});
   }
