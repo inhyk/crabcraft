@@ -253,7 +253,7 @@ const SAND_NORMAL = /* glsl */ `
     // Heavy minerals (magnetite, hornblende) settle in the ripple troughs: dark lines a hand apart, the lag the
     // crests lose. Only where ripples are resolved; on the trodden ground and the slip faces there are none.
     float sLagLine=smoothstep(.15,.9,-fn.x/(.0062*max(rip,.05)))*(1.-smoothstep(.02,.05,sFoot))*smoothstep(.2,.6,rip)*(1.-sWet);
-    diffuseColor.rgb*=1.-.5*sLagLine;
+    diffuseColor.rgb*=1.-.54*sLagLine;
     // Ripple micro-shadow: the ripple faces turned from a low sun hold shade a shadow map can never resolve.
     vec3 sLm=normalize(sandSunDir);
     float vD=smoothstep(-.02,.14,dot(sN,sLm)),vM=smoothstep(-.02,.14,dot(normalize(vec3(-sGrad.x,1.,-sGrad.y)),sLm));

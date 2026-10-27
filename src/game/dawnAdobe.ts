@@ -63,9 +63,9 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
     vec3 adBond(vec2 q,vec2 size){float row=floor(q.y/size.y);vec2 b=vec2(q.x/size.x+.5*mod(row,2.),q.y/size.y);vec2 f=fract(b);
       vec2 d=min(f,1.-f)*size;return vec3(floor(b),min(d.x,d.y));}`;
   patch(m, 'goldsand-plaster', {
-    attrs: 'attribute vec3 aPl;\nattribute float aPlK;\n',
-    vary: 'varying vec3 vPl;\nvarying float vPlK;\n',
-    vBody: 'vPl=aPl;vPlK=aPlK;',
+    attrs: 'attribute vec3 aPl;\nattribute float aPlK;\nattribute vec2 aPlUv;\n',
+    vary: 'varying vec3 vPl;\nvarying float vPlK;\nvarying vec2 vPlE;\n',
+    vBody: 'vPl=aPl;vPlK=aPlK;vPlE=aPlUv;',
     head: plane + /* glsl */ `
     float adH(vec3 p){vec3 n=normalize(vAdN);float vt;vec2 q=adPlane(p,n,vt);
       float h=fpNoise(q*2.3)*.5+fpNoise(q*7.1)*.18;
@@ -78,11 +78,17 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
       vec3 tint=diffuseColor.rgb;
       float mott=fpFbm(q*.3)*.5+.5,fine=fpNoise(q*6.3)*.5+.5,gr=fpNoise(q*23.)*.5+.5;
       vec3 c=tint*(.86+.22*mott)*(.94+.09*fine)*(.97+.05*gr);
+      // Metres to the nearest corner along the wall; the corner arris itself is 0.
+      float corner=1.-smoothstep(.0,.75+.5*fine,min(vPlE.x,vPlE.y));
+      // Coats of limewash laid years apart: broad patches a shade creamier or greyer, a faint lip where one ends.
+      float coat=fpFbm(q*.17+31.)*.5+.5;
+      c*=mix(vec3(1.),mix(vec3(.93,.9,.86),vec3(1.02,.99,.93),smoothstep(.35,.65,coat)),vert);
+      c*=1.-.035*(1.-smoothstep(0.,.025,abs(coat-.5)))*vert;
       // Trowel sweeps.
       c*=1.+.03*sin(q.x*1.9+fpNoise(q*.8)*4.+q.y*2.6)*vert;
       if(vPlK<.5){
         // Whitewash worn through to mudbrick: more near the foot, a dark lip of plaster round each patch.
-        float wn=fpFbm(q*.5+17.)*.5+.5,wb=wn+.24*(1.-smoothstep(0.,1.4,vPl.x))-.05;
+        float wn=fpFbm(q*.5+17.)*.5+.5,wb=wn+.24*(1.-smoothstep(0.,1.4,vPl.x))-.05+.22*corner;
         float wear=smoothstep(.7,.712,wb)*vert;
         vec3 bd=adBond(q,vec2(.4,.13));
         vec3 brick=vec3(.6,.4,.25)*(.8+.3*fpHash12(bd.xy))*(.9+.15*gr);
@@ -108,12 +114,23 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
         brick=mix(c*vec3(.8,.76,.72),brick,smoothstep(.006,.018,bd.z));
         c=mix(brick,c*1.05,render*vert+(1.-vert));
       }
-      // Damp, sand-splashed foot.
+      // Damp, sand-splashed foot, and the band of blown sand and dirt the wind piles against it (20 to 40 cm,
+      // ragged top, the splash speckled above it).
       float foot=1.-smoothstep(0.,.4+.45*(fpNoise(q*1.6)*.5+.5),vPl.x);
       c=mix(c,c*vec3(.76,.64,.5),foot*.7*vert);
+      float bandTop=.2+.2*(fpNoise(vec2(q.x*.9,3.))*.5+.5)+.05*fpNoise(vec2(q.x*7.,1.));
+      float band=1.-smoothstep(bandTop-.04,bandTop+.02,vPl.x);
+      float speck=smoothstep(.62,.8,fpNoise(q*vec2(9.,14.))*.5+.5)*(1.-smoothstep(bandTop,bandTop+.5,vPl.x));
+      vec3 dirt=vec3(.62,.47,.32)*(.85+.25*fine);
+      c=mix(c,dirt,(band*.85+speck*.35)*vert);
+      // Corners and arrises: handled, rubbed and dusty.
+      c*=1.-.1*corner*vert;
       // Streaks under the roof edge.
       float st=smoothstep(.45,.9,fpNoise(vec2(q.x*1.4,7.))*.5+.5+.25*fpNoise(vec2(q.x*8.,q.y*.5)));
       c*=1.-.17*st*(1.-smoothstep(0.,2.4,vPl.y))*step(.04,vPl.y)*vert;
+      // Long tea-coloured runs from the parapet's spouts and the sills, a few metres down the wash.
+      float run=smoothstep(.7,.92,fpNoise(vec2(q.x*2.6,1.7))*.5+.5)*(.6+.4*(fpNoise(vec2(q.x*11.,q.y*.35))*.5+.5));
+      c=mix(c,c*vec3(.8,.72,.62),run*.38*(1.-smoothstep(.3,4.8,vPl.y))*step(.04,vPl.y)*vert);
       // Roof slabs and caps: smooth mud plaster in the wall's hue, trodden darker in patches.
       vec3 mud=mix(tint,vec3(.8,.68,.52),.45)*(.86+.18*mott)*(.95+.06*fine);
       c=mix(mud,c,smoothstep(.15,.6,vert));
@@ -266,11 +283,17 @@ export class Acc {
   gy = 0; top = 0; ao = 1; k = 0;
   /** Non-wall uses: aux vector written as is. */
   a3: [number, number, number] | null = null;
+  /**
+   * When set, every vertex takes this uv whatever the caller passes. The walls lock it far (9, 9) and unlock it only
+   * where face() and block() write the distances along the wall to its two ends (corner wear in dawnPlaster).
+   */
+  uvLock: [number, number] | null = null;
   /** Placement applied to everything emitted (a turned block), with its normal matrix; null for none. */
   xf: THREE.Matrix4 | null = null; nm = new THREE.Matrix3();
   constructor(readonly names: {uv: string; aux: string; k?: string}) {}
   vert(p: THREE.Vector3, n: THREE.Vector3, u = 0, v = 0, ao = this.ao) {
     if (this.xf) { p = _xp.copy(p).applyMatrix4(this.xf); n = _xn.copy(n).applyMatrix3(this.nm).normalize(); }
+    if (this.uvLock) { u = this.uvLock[0]; v = this.uvLock[1]; }
     this.P.push(p.x, p.y, p.z); this.N.push(n.x, n.y, n.z); this.C.push(this.col.r, this.col.g, this.col.b); this.T.push(u, v);
     if (this.a3) this.A.push(this.a3[0], this.a3[1], this.a3[2]); else this.A.push(p.y - this.gy, this.top - p.y, ao);
     this.K.push(this.k);
@@ -331,7 +354,7 @@ export interface Hole {
 }
 
 /** A face of a block: bottom-left origin at the block's base, along-face U, outward N (horizontal). */
-export interface Face { O: THREE.Vector3; U: THREE.Vector3; N: THREE.Vector3; L: number; H: number; bat: number; ground: number }
+export interface Face { O: THREE.Vector3; U: THREE.Vector3; N: THREE.Vector3; L: number; H: number; bat: number; ground: number; /** Its ends are a block's corners (wear there). */ ends?: boolean }
 
 /** Point on a face: u along, v over the ground (battered inward with height). */
 export function facePoint(f: Face, u: number, v: number, out = new V()): THREE.Vector3 {
@@ -352,7 +375,11 @@ export function face(wall: Acc, craft: Acc, f: Face, holes: Hole[]) {
     const block = holes.filter(h => h.v0 <= ya + 1e-4 && h.v1 >= yb - 1e-4).sort((a, b) => a.u0 - b.u0);
     let u = 0;
     for (const h of [...block, {u0: f.L, u1: f.L}]) {
-      if (h.u0 - u > 1e-4) wall.quad(facePoint(f, u, ya, p[0]), facePoint(f, h.u0, ya, p[1]), facePoint(f, h.u0, yb, p[2]), facePoint(f, u, yb, p[3]), nf);
+      // uv: metres to each end of the wall, the corners (both interpolate exactly; their min peaks mid-wall).
+      const lock = wall.uvLock, e0 = f.ends ? 0 : 9;
+      wall.uvLock = null;
+      if (h.u0 - u > 1e-4) wall.quad(facePoint(f, u, ya, p[0]), facePoint(f, h.u0, ya, p[1]), facePoint(f, h.u0, yb, p[2]), facePoint(f, u, yb, p[3]), nf, [u + e0, f.L - u + e0, h.u0 + e0, f.L - h.u0 + e0, h.u0 + e0, f.L - h.u0 + e0, u + e0, f.L - u + e0]);
+      wall.uvLock = lock;
       u = Math.max(u, h.u1);
     }
   }
@@ -387,8 +414,9 @@ function hole(wall: Acc, craft: Acc, f: Face, h: Hole, nf: THREE.Vector3) {
     const [u0, v0] = pts[i], [u1, v1] = pts[(i + 1) % pts.length];
     const a = facePoint(f, u0, v0), b = facePoint(f, u1, v1), want = new V().copy(cen).sub(_a.copy(a).lerp(b, .5));
     want.addScaledVector(f.N, -want.dot(f.N));
-    const deep = h.kind === CR.room ? (h.depth > 1.5 ? .08 : h.depth > .6 ? .22 : .4) : .6;
-    const front = h.depth > 1.5 ? .55 : h.depth > .6 ? .75 : .95;
+    // Deep reveals: the sky reaches only the outer lip; a room's reveal is dark at the back.
+    const deep = h.kind === CR.room ? (h.depth > 1.5 ? .06 : h.depth > .6 ? .15 : .24) : .36;
+    const front = h.depth > 1.5 ? .5 : h.depth > .6 ? .7 : .86;
     wall.quad(a, b, back(b), back(a), want, undefined, [front, front, deep, deep]);
   }
   // Back panel: the room, the door leaf or the screen.
@@ -438,18 +466,20 @@ export function block(wall: Acc, craft: Acc, o: {cx: number; cz: number; w: numb
   wall.gy = ground; wall.top = top;
   const g = ground - base;
   const faces = {
-    'z+': {O: new V(cx - (hw - rb), base, cz + hd), U: new V(1, 0, 0), N: new V(0, 0, 1), L: 2 * (hw - rb), H: Hf, bat, ground: g},
-    'x+': {O: new V(cx + hw, base, cz + (hd - rb)), U: new V(0, 0, -1), N: new V(1, 0, 0), L: 2 * (hd - rb), H: Hf, bat, ground: g},
-    'z-': {O: new V(cx + (hw - rb), base, cz - hd), U: new V(-1, 0, 0), N: new V(0, 0, -1), L: 2 * (hw - rb), H: Hf, bat, ground: g},
-    'x-': {O: new V(cx - hw, base, cz - (hd - rb)), U: new V(0, 0, 1), N: new V(-1, 0, 0), L: 2 * (hd - rb), H: Hf, bat, ground: g},
+    'z+': {O: new V(cx - (hw - rb), base, cz + hd), U: new V(1, 0, 0), N: new V(0, 0, 1), L: 2 * (hw - rb), H: Hf, bat, ground: g, ends: true},
+    'x+': {O: new V(cx + hw, base, cz + (hd - rb)), U: new V(0, 0, -1), N: new V(1, 0, 0), L: 2 * (hd - rb), H: Hf, bat, ground: g, ends: true},
+    'z-': {O: new V(cx + (hw - rb), base, cz - hd), U: new V(-1, 0, 0), N: new V(0, 0, -1), L: 2 * (hw - rb), H: Hf, bat, ground: g, ends: true},
+    'x-': {O: new V(cx - hw, base, cz - (hd - rb)), U: new V(0, 0, 1), N: new V(-1, 0, 0), L: 2 * (hd - rb), H: Hf, bat, ground: g, ends: true},
   };
   for (const k of ['z+', 'x+', 'z-', 'x-'] as const) face(wall, craft, faces[k], o.holes?.[k] ?? []);
   // Corners: ruled strips from the bottom radius to the top one.
   const lo = ring(cx, cz, hw, hd, rb, base), hi = ring(cx, cz, hw - bat, hd - bat, r, top - .08);
+  const lock = wall.uvLock;wall.uvLock = [0, 0];
   for (let c = 0; c < 4; c++) for (let i = 0; i < 4; i++) {
     const a = lo[c * 5 + i], b = lo[c * 5 + i + 1], cc = hi[c * 5 + i + 1], d = hi[c * 5 + i];
     wall.quad(a, b, cc, d, _b.set((a.x + b.x) / 2 - cx, 0, (a.z + b.z) / 2 - cz).clone());
   }
+  wall.uvLock = lock;
   if (o.cap !== false) {
     // Parapet cap with rounded arrises, the inner face, and the roof slab.
     const t = o.thick ?? .3, hx = hw - bat, hz = hd - bat;
