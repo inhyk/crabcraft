@@ -11,12 +11,21 @@ import { addPatch } from '../world/materials';
  * bands projected on the face's own plane so steep ground does not stretch.
  */
 
+/** The broad patch noise, per vertex: the same value noise and 4-octave fBm as the pixel layers. */
+const VERTEX_NOISE = /* glsl */ `
+float dgHashV(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
+float dgNoiseV(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
+  return mix(mix(dgHashV(i),dgHashV(i+vec2(1.,0.)),u.x),mix(dgHashV(i+vec2(0.,1.)),dgHashV(i+vec2(1.)),u.x),u.y);}
+float dgFbmV(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*dgNoiseV(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(5.3,-2.1);a*=.5;}return s/.9375;}
+`;
+
 const SURFACE_GLSL = /* glsl */ `
 uniform float dawnSea;
 uniform vec2 dawnWind;
 varying vec3 vDW;
 varying vec3 vDN;
 varying vec3 vDS;
+varying float vDN1;
 float dgHash(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
 float dgNoise(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
   return mix(mix(dgHash(i),dgHash(i+vec2(1.,0.)),u.x),mix(dgHash(i+vec2(0.,1.)),dgHash(i+vec2(1.)),u.x),u.y);}
@@ -24,7 +33,7 @@ float dgNoise(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
 vec3 dgNoised(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f),du=6.*f*(1.-f);
   float a=dgHash(i),b=dgHash(i+vec2(1.,0.)),c=dgHash(i+vec2(0.,1.)),d=dgHash(i+vec2(1.));
   return vec3(a+(b-a)*u.x+(c-a)*u.y+(a-b-c+d)*u.x*u.y,du*(vec2(b-a,c-a)+(a-b-c+d)*u.yx));}
-float dgFbm(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*dgNoise(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(5.3,-2.1);a*=.5;}return s/.9375;}
+float dgFbm3(vec2 p){float s=0.,a=.5;for(int i=0;i<3;i++){s+=a*dgNoise(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(5.3,-2.1);a*=.5;}return s/.875;}
 vec3 dgLin(vec3 c){return c*c*(c*.3+.7);}
 // Output of dawnGroundSurface(): the albedo, the world normal and the roughness.
 vec3 dgAlbedo;vec3 dgNormal;float dgRough;
@@ -32,7 +41,8 @@ void dawnGroundSurface(){
   vec3 p=vDW;vec3 ng=normalize(vDN);
   float slope=1.-ng.y;
   float px=length(fwidth(p.xz));
-  float n1=dgFbm(p.xz*.045),n2=dgFbm(p.xz*.37+3.1),n3=dgNoise(p.xz*2.6);
+  // n1 (tens of metres) comes from the vertices; finer layers per pixel.
+  float n1=vDN1,n2=dgFbm3(p.xz*.37+3.1),n3=dgNoise(p.xz*2.6);
   float sandW=vDS.x,volcW=vDS.y,wornW=vDS.z;
   // Decimetre and centimetre grain, faded out before a pixel covers it.
   #ifdef DAWN_LOW
@@ -73,13 +83,16 @@ void dawnGroundSurface(){
   // Bluffs: bands of tuff and sandstone, basalt up the volcano; projected on the face so they run level.
   float steep=smoothstep(.3,.55,slope);
   vec2 fp=vec2(dot(p.xz,normalize(vec2(-ng.z,ng.x)+1e-5)),p.y);
-  float warp=dgNoise(fp*vec2(.08,.3))*2.2;
-  float band=dgNoise(vec2(fp.x*.05,(fp.y+warp)*1.7));
-  float crack=smoothstep(.55,.9,dgNoise(fp*vec2(.9,.22)));
-  vec3 tuff=mix(dgLin(vec3(.58,.48,.4)),dgLin(vec3(.72,.6,.48)),band)*(.86+.2*n3)*(1.-crack*.35);
-  vec3 basalt=mix(dgLin(vec3(.24,.22,.23)),dgLin(vec3(.36,.32,.31)),band)*(1.-crack*.4);
-  vec3 rock=mix(tuff,basalt,max(volcW,smoothstep(9.,13.,p.y)));
-  col=mix(col,rock,steep);
+  float warp=0.;vec3 bn=vec3(0.);
+  if(steep>0.){
+    warp=dgNoise(fp*vec2(.08,.3))*2.2;
+    float band=dgNoise(vec2(fp.x*.05,(fp.y+warp)*1.7));
+    float crack=smoothstep(.55,.9,dgNoise(fp*vec2(.9,.22)));
+    vec3 tuff=mix(dgLin(vec3(.58,.48,.4)),dgLin(vec3(.72,.6,.48)),band)*(.86+.2*n3)*(1.-crack*.35);
+    vec3 basalt=mix(dgLin(vec3(.24,.22,.23)),dgLin(vec3(.36,.32,.31)),band)*(1.-crack*.4);
+    col=mix(col,mix(tuff,basalt,max(volcW,smoothstep(9.,13.,p.y))),steep);
+    bn=dgNoised(fp*vec2(.35,1.4)+vec2(0.,warp));
+  }
   // Cavities darken: the foot of the bluffs and the dune troughs hold less sky.
   col*=1.-.18*smoothstep(.15,.4,slope)*(1.-steep);
   dgAlbedo=col;
@@ -89,7 +102,6 @@ void dawnGroundSurface(){
   g+=wind*rgrad*.075*sandy*rfade*(1.-wet*.8);
   vec3 gn=dgNoised(p.xz*1.7),gb=f4>0.?dgNoised(p.xz*8.3):vec3(0.);
   g+=(gn.yz*.06+gb.yz*.03*f4)*(1.-sandy)*(1.-steep);
-  vec3 bn=dgNoised(fp*vec2(.35,1.4)+vec2(0.,warp));
   vec3 nw=normalize(ng+vec3(-g.x,0.,-g.y));
   vec3 fx=normalize(vec3(-ng.z,0.,ng.x)+1e-5);
   nw=normalize(nw+(fx*bn.y*.12+vec3(0.,1.,0.)*bn.z*.18)*steep);
@@ -105,8 +117,8 @@ export function applyDawnGround(material: THREE.MeshStandardMaterial): void {
   addPatch(material, 'dawnharbor-ground', (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 dawnSurf;\nvarying vec3 vDW;\nvarying vec3 vDN;\nvarying vec3 vDS;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDW=(modelMatrix*vec4(transformed,1.)).xyz;vDN=normalize(mat3(modelMatrix)*objectNormal);vDS=dawnSurf;');
+      .replace('#include <common>', '#include <common>\nattribute vec3 dawnSurf;\nvarying vec3 vDW;\nvarying vec3 vDN;\nvarying vec3 vDS;\nvarying float vDN1;\n'+VERTEX_NOISE)
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDW=(modelMatrix*vec4(transformed,1.)).xyz;vDN=normalize(mat3(modelMatrix)*objectNormal);vDS=dawnSurf;vDN1=dgFbmV(vDW.xz*.045);');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${SURFACE_GLSL}`)
       .replace('#include <color_fragment>', '#include <color_fragment>\ndawnGroundSurface();diffuseColor.rgb*=dgAlbedo;')
