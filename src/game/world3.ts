@@ -1,5 +1,5 @@
 import {dawnTown,type DawnTown} from './dawnTown';
-import {dawnHouseMaterials} from './dawnHouses';
+import {dawnHouses,type DawnQuarter} from './dawnHouses';
 import {dawnDressing,type DawnDressing} from './dawnDressing';
 import {dawnRequestLook} from './dawnRequestProps';
 import {Scatter} from '../world/kit';
@@ -8,11 +8,10 @@ import * as THREE from 'three';
 import {StarSun} from './starSun';
 import {DawnScenery} from './dawnScenery';
 import {DawnPortal} from './dawnPortal';
-import {loadKit,StaticBatch,trs} from '../world/kit';
-import {TownBuilder} from '../world/buildings';
+import {loadKit,trs} from '../world/kit';
 import {dawnHeight,DAWN_ARENA_HEIGHT} from '../sim/world/ground';
 import type {Poi} from '../world/types';
-import {dawnForest,dawnGrove,dawnLots,layoutDawnreach,roadClearance} from './world3Colliders';
+import {dawnForest,dawnGrove,layoutDawnreach,roadClearance} from './world3Colliders';
 
 /** The third island has its own warm coast, inhabited ring town and volcanic citadel. */
 export class DawnIsland {
@@ -27,6 +26,8 @@ export class DawnIsland {
  /** Dawnharbor's own streets, lamps, rocks, harbour and gate (dawnTown.ts). */
  readonly townLook:DawnTown;
  private dressing:DawnDressing|null=null;
+ /** Goldsand Harbor's desert quarter: houses, shrine, forge, tavern, windcatchers, palms (dawnHouses.ts). */
+ quarter:DawnQuarter|null=null;
  height(x:number,z:number){
   return dawnHeight(x,z);
  }
@@ -51,9 +52,7 @@ export class DawnIsland {
   this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',.9));const sun=this.sun.light;sun.name='dawnreach-sun';sun.color.set('#ffe6b3');sun.intensity=2.8;this.root.add(sun,sun.target);
  }
  async buildSettlement(){
-  const village=await loadKit('models/world/village.glb'),props=await loadKit('models/world/props.glb');
-  const homes=new StaticBatch(village,'dawnharbor-homes'),builder=new TownBuilder(village,homes,null,dawnHouseMaterials(village));
-  for(const lot of dawnLots())builder.build(lot);this.root.add(homes.build());
+  const props=await loadKit('models/world/props.glb');
   // Use the same textured foliage kit as World I: real branching trunks and leaf clusters.
   const nature=await loadKit('models/world/nature.glb'),forest=new Scatter(nature,'dawnreach-leafy-trees');
   const copies=new Map<THREE.Material,THREE.Material>();
@@ -77,11 +76,12 @@ export class DawnIsland {
   this.root.userData.meadowPlants=meadow;
   const woods=forest.build({boundsPadding:.3});this.root.add(woods);this.root.userData.leafyTrees=count;this.wind=new StarWind(woods);
   // Market, fish market, benches, door pots and lanterns, laundry (dawnDressing.ts).
-  this.dressing=dawnDressing((x,z)=>this.height(x,z),{props,nature,village},builder.doorLamps,this.town);this.root.add(this.dressing.group);
+  this.quarter=dawnHouses((x,z)=>this.height(x,z),{props,nature});this.root.add(this.quarter.group);
+  this.dressing=dawnDressing((x,z)=>this.height(x,z),{props,nature},this.quarter.doors,this.town,{yardLaundry:false});this.root.add(this.dressing.group);
   for(const piece of nature.pieces.values())for(const part of piece.parts)part.geometry.dispose();
  }
  /** Dawnharbor's request props (dawnRequestProps.ts) in place of the shared placeholders. */
  questProps(){return dawnRequestLook();}
  private sunDir=new THREE.Vector3();
- update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.dressing?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
+ update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.dressing?.update(time);this.quarter?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
 }
