@@ -187,10 +187,11 @@ if(dpAlpha<.004)discard;
 vec2 dpQ;float dpRH,dpS0,dpS1,dpSalt;
 // The frame's axes in world xz, so the shadow taps can walk towards the sun in course space.
 vec2 dpAx1,dpAx2;
-dpQ=dpP;dpRH=dpRing>.5?.92:dpMain>.5?.62:.78;dpS0=0.;dpS1=0.;dpSalt=dpRing>.5?31.:dpMain>.5?0.:7.;dpAx1=vec2(1.,0.);dpAx2=vec2(0.,1.);
+// Squares: straight random courses (rows of flags of every length, jittered joints), cheaper than the streets' cells.
+dpQ=dpP;dpRH=dpRing>.5?.66:dpMain>.5?.62:.78;dpS0=.55;dpS1=1.15;dpSalt=dpRing>.5?31.:dpMain>.5?0.:7.;dpAx1=vec2(1.,0.);dpAx2=vec2(0.,1.);
 dpQ+=vec2(fpNoise(dpP*2.3),fpNoise(dpP*2.3+7.))*.014;
 float dpId;vec2 dpLoc,dpHalfS,dpG;
-float dpOut=dpFlag(dpQ,dpRH,dpSalt,dpId,dpLoc,dpHalfS,dpG);
+float dpOut=dpRing>.5?dpCourse(dpQ,dpRH,dpS0,dpS1,dpSalt,dpId,dpLoc,dpHalfS,dpG):dpFlag(dpQ,dpRH,dpSalt,dpId,dpLoc,dpHalfS,dpG);
 float dpCrown=.3;
 // Kerb stones: long, pale, set proud, with a gutter joint between them and the paving.
 if(dpKerb>.5){
@@ -284,22 +285,21 @@ vec3 dpCol=dpRock*(1.-dpRecess*.35);
 // so the drifts, the free ends and the edges match the dunes in colour, grain and light (no seam, no rectangle).
 // Carts and walkers have pressed their tracks into it: two wheel ruts wandering along each way and footprints.
 float dpTrack=0.;
-if(dpSandA>.02){
+// Near and mid distance only (a rut is 9 cm wide), and only where the sand lies thick enough to hold a print.
+if(dpSandA>.3&&dpFoot<.03&&dpKerb<.5){
   float w=fpNoise(vec2(dpAlong*.035,dpSeed+1.))*(dpMain>.5?1.6:.45),g=dpMain>.5?.78:.62;
-  float rut=1.-smoothstep(.045,.09+dpFoot*2.,abs(abs(dpAcross-w)-g));
-  rut*=smoothstep(.2,.55,fpNoise(vec2(dpAlong*.4,dpSeed))*.5+.5+.25);
-  float st=.66,k=floor(dpAlong/st),side=mod(k,2.)*2.-1.;
-  vec2 fc=vec2((k+.5)*st,w*.6-.9+side*.12+fpNoise(vec2(k*.7,dpSeed+9.))*.08);
-  vec2 fd=(vec2(dpAlong,dpAcross)-fc)/vec2(.13,.06);
-  float print=(1.-smoothstep(.7,1.,length(fd)))*step(.35,fpHash12(vec2(k,dpSeed+4.)))*(1.-smoothstep(.04,.09,dpFoot));
-  dpTrack=max(rut*.85,print*.7)*(1.-dpKerb)*smoothstep(.3,.9,dpSandA);
+  float rut=(1.-smoothstep(.045,.09+dpFoot*2.,abs(abs(dpAcross-w)-g)))*(.55+.45*step(.3,fract(dpAlong*.23+dpSeed)));
+  float st=.66,k=floor(dpAlong/st),side=mod(k,2.)*2.-1.,hk=fpHash12(vec2(k,dpSeed+4.));
+  vec2 fd=(vec2(dpAlong,dpAcross)-vec2((k+.5)*st,w*.6-.9+side*.12+(hk-.5)*.16))/vec2(.13,.06);
+  float print=(1.-smoothstep(.7,1.,length(fd)))*step(.35,hk)*(1.-smoothstep(.015,.03,dpFoot));
+  dpTrack=max(rut*.85,print*.7)*smoothstep(.3,.9,dpSandA);
 }
 diffuseColor.rgb*=mix(dpCol,dpSand*.62,dpTrack);
 diffuseColor.a*=dpAlpha*max(1.-dpSandA*.97,dpTrack*.42);
 float dpShade=1.;
 if(dpDetail>.5&&dpSandA<.99&&dpFar<.99&&dpKerb<.5&&dpFoot<.05){
   float sl=max(length(dpSun.xz),1e-3);vec2 sd=dpSun.xz/sl;float tanE=dpSun.y/sl,h0=max(dpH,dpS*dpSandA),occ=0.;
-  for(int k=1;k<=2;k++){float d=float(k*k)*.016;float id2;vec2 l2,h2,g2,cg2;float sl2;vec2 q2=dpQ+vec2(dot(sd,dpAx1),dot(sd,dpAx2))*d;float o2=dpFlag(q2,dpRH,dpSalt,id2,l2,h2,g2);float hk=dpDome(-o2,id2,l2,h2,.3,sl2,cg2);occ=max(occ,clamp(((hk-h0)*DP_RELIEF-d*tanE)/.005,0.,1.));}
+  for(int k=1;k<=2;k++){float d=float(k*k)*.016;float id2;vec2 l2,h2,g2,cg2;float sl2;vec2 q2=dpQ+vec2(dot(sd,dpAx1),dot(sd,dpAx2))*d;float o2=dpRing>.5?dpCourse(q2,dpRH,dpS0,dpS1,dpSalt,id2,l2,h2,g2):dpFlag(q2,dpRH,dpSalt,id2,l2,h2,g2);float hk=dpDome(-o2,id2,l2,h2,.3,sl2,cg2);occ=max(occ,clamp(((hk-h0)*DP_RELIEF-d*tanE)/.005,0.,1.));}
   dpShade=1.-occ*.75;
 }
 `;
