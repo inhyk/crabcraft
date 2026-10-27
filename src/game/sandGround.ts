@@ -85,18 +85,24 @@ float sgShore(vec2 p,float h,float t){
   float bluff=t<face?h+(foot-h)*pow(sg01(t/face),.8):foot-(t-face)*75.;
   return max(-16.,beach+(bluff-beach)*cliff);
 }
+// The old island's whole surface, which the harbour box keeps (oldGround).
+float sgOldGround(vec2 p,float r){return r>.86?4.-(r-.83)*65.:sgOldInland(p);}
 float sgCoastGround(vec2 p){
   float r=sgRadius(p);
+  vec2 hd=max(max(vec2(-40.,90.)-p,p-vec2(20.,160.)),0.);
+  float keepHarbour=sg01(length(hd)/12.);
+  if(keepHarbour<=0.)return sgOldGround(p,r);
   float open=sg01(max(0.,min(sgKeepCore(p),p.y+30.))/12.);
   float h=sgOldInland(p);
   if(open>0.){
     float rolling=sgFbm(p/42.+vec2(1.7,-6.3),3)*3.1;
     float south=sgStep(p.y,10.,70.);
     float rim=sgStep(r,.56,.8)*(3.6-1.6*south);
-    float dune=sgCoastDunes(p)*2.3*south*sgStep(r,.6,.76);
+    float dune=sgCoastDunes(p)*(1.6+.8*south)*sgStep(r,.3,.55);
     h+=open*(rolling+rim+dune);
   }
-  return sgShore(p,h,r-sgShoreStart(p));
+  h=sgShore(p,h,r-sgShoreStart(p));
+  return keepHarbour<1.?sgOldGround(p,r)+(h-sgOldGround(p,r))*keepHarbour:h;
 }
 float sgSmin(float a,float b,float k){float h=max(k-abs(a-b),0.)/k;return min(a,b)-h*h*k*.25;}
 // One dune class riding on the smaller dunes under it (dune() in dawnGround.ts).

@@ -5,8 +5,8 @@
 // the southern beaches), and the coast past the walkable ellipse is reshaped: a noisy shoreline with headlands,
 // sand beaches that shelve into the sea where the land is low, and bluffs that drop to a rocky foot where it is high.
 
-/** Height of the still sea around Dawnharbor. */
-export const DAWN_SEA = 0.25;
+/** Height of the still sea around Dawnharbor (the harbour's quay and pier are built for it). */
+export const DAWN_SEA = 0.2;
 /** The walkable ellipse (queries.ts DAWN_BOUNDS): x / 122, (z - 3) / 149. The coast never starts inside 0.845. */
 export const RX = 122, RZ = 149, CZ = 3;
 
@@ -113,8 +113,8 @@ function inland(x: number, z: number, open: number, r: number): number {
   const rolling = fbm(x / 42 + 1.7, z / 42 - 6.3, 3) * 3.1;
   const south = smoothstep(z, 10, 70);
   const rim = smoothstep(r, 0.56, 0.8) * (3.6 - 1.6 * south);
-  // Dunes pile behind the southern beaches.
-  const dune = dunes(x, z) * 2.3 * south * smoothstep(r, 0.6, 0.76);
+  // Dunes over the open desert, piled highest behind the southern beaches.
+  const dune = dunes(x, z) * (1.6 + 0.8 * south) * smoothstep(r, 0.3, 0.55);
   return h + open * (rolling + rim + dune);
 }
 
@@ -131,12 +131,25 @@ function shore(x: number, z: number, h: number, t: number): number {
   return Math.max(-16, beach + (bluff - beach) * cliff);
 }
 
+/** The old island's whole surface: inland, then the plain shelving shore it had (dev 997d68a). */
+function oldGround(x: number, z: number, r: number): number {
+  return r > 0.86 ? 4 - (r - 0.83) * 65 : oldInland(x, z);
+}
+/** The harbour, quay and pier keep the old ground exactly in x -40..20, z 90..160; the new coast fades in over 12 m. */
+const HARBOUR = [-40, 20, 90, 160] as const;
+function harbourBlend(x: number, z: number): number {
+  const dx = Math.max(HARBOUR[0] - x, 0, x - HARBOUR[1]), dz = Math.max(HARBOUR[2] - z, 0, z - HARBOUR[3]);
+  return smooth01(Math.hypot(dx, dz) / 12);
+}
+
 /** The dawn coast's ground before the sand (the dawn-sky landform), without the arena. */
 function coastGround(x: number, z: number): number {
   const r = Math.hypot(x / RX, (z - CZ) / RZ);
+  const keepHarbour = harbourBlend(x, z);
+  if (keepHarbour <= 0) return oldGround(x, z, r);
   const open = dawnOpen(x, z);
-  let h = inland(x, z, open, r);
-  return shore(x, z, h, r - dawnShoreStart(x, z));
+  const h = shore(x, z, inland(x, z, open, r), r - dawnShoreStart(x, z));
+  return keepHarbour < 1 ? oldGround(x, z, r) + (h - oldGround(x, z, r)) * keepHarbour : h;
 }
 
 

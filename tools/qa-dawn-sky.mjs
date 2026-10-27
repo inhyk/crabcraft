@@ -1,4 +1,4 @@
-// Dawnharbor's dawn (World III): the baked dawn sky with the sun low in the east, the depth-coloured sea, the
+// Dawnharbor's desert dawn (World III): the baked desert-sunrise sky with the sun low in the east, the depth-coloured sea, the
 // reshaped coast and fields, and the shader ground. Checks that the server's dawnHeight() keeps every piece of
 // gameplay ground at its old height and the fields stay walkable; that the old gradient sphere, flat metallic sea
 // plane, vertex-colour plate, sun ball, cloud blobs and foam rings are gone; that sun, hemisphere and fog read the
@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {launchBrowser} from './lib/browser.mjs';
 import {dawnHeight,DAWN_ARENA_HEIGHT} from '../src/sim/world/ground.ts';
+import {DAWN_SEA} from '../src/sim/world/dawnGround.ts';
 import {DAWN_POINTS} from '../src/sim/data/quests.ts';
 await mkdir('tmp/qa',{recursive:true});
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5611';
@@ -32,6 +33,11 @@ for(let x=-30;x<=30;x+=2)for(let z=85;z<=120;z+=2)keep.push([x,z]);
 for(const side of [-1,1])for(const z of [37,57,74])keep.push([side*23,z],[side*25,z+1],[side*25,z-2]);
 // The climb, the gate and the citadel plateau with the arena: everything north of z = -40.
 for(let x=-60;x<=60;x+=3)for(let z=-110;z<=-40;z+=3)if(Math.hypot(x/122,(z-3)/149)<.84)keep.push([x,z]);
+// The harbour, its quay and pier (dawn-town lane): the whole box x -40..20, z 90..160 keeps the old ground and shore.
+const oldShore=(x,z)=>{const r=Math.hypot(x/122,(z-3)/149);return r>.86?4-(r-.83)*65:old(x,z);};
+let harbour=0;for(let x=-40;x<=20;x+=.5)for(let z=90;z<=160;z+=.5)harbour=Math.max(harbour,Math.abs(dawnHeight(x,z)-oldShore(x,z)));
+assert.equal(harbour,0,'the harbour box keeps its exact old ground and shore');
+assert.equal(DAWN_SEA,.2,'the sea surface stays at y = 0.2 for the quay');
 let kept=0;for(const [x,z] of keep)kept=Math.max(kept,Math.abs(dawnHeight(x,z)-old(x,z)));
 assert.equal(kept,0,'gameplay ground keeps its exact old height');
 for(let r=0;r<=21;r+=3)for(let i=0;i<24;i++){const a=i/24*Math.PI*2;assert.equal(dawnHeight(Math.sin(a)*r,-72+Math.cos(a)*r),DAWN_ARENA_HEIGHT);}
@@ -46,11 +52,14 @@ assert.equal(below,0,'no walkable ground drowns');
 const coast=[];for(let i=0;i<180;i++){const a=i/180*Math.PI*2;let t=.75;while(t<1.2&&dawnHeight(Math.sin(a)*122*t,3+Math.cos(a)*149*t)>.25)t+=.002;coast.push(t);}
 const spread=Math.max(...coast)-Math.min(...coast);
 assert.ok(spread>.04&&Math.min(...coast)>.82,`a wandering shoreline outside the walkable ellipse: ${Math.min(...coast).toFixed(3)}..${Math.max(...coast).toFixed(3)}`);
-// High land breaks off in bluffs to the north (the citadel's escarpment above the desert), low land shelves into the south as beach.
-const drop=(x,z,dx,dz)=>{let best=0;for(let s=0;s<30;s+=.5)best=Math.max(best,(dawnHeight(x+dx*s,z+dz*s)-dawnHeight(x+dx*(s+1),z+dz*(s+1))));return best;};
-const north=drop(0,-118,0,-1),south=drop(0,118,0,1);
-assert.ok(north>2.5&&south<1.2,`bluffs north (${north.toFixed(2)} m per m), beach south (${south.toFixed(2)})`);
-console.log('PASS ground: kept',keep.length,'points exactly, relief on',(changed/fields*100).toFixed(0)+'% of the fields, max slope',slope.toFixed(2),'coast',Math.min(...coast).toFixed(3)+'..'+Math.max(...coast).toFixed(3),'bluff',north.toFixed(2),'beach',south.toFixed(2));
+// High land breaks off in bluffs to the north, low land shelves into the south-east as beach.
+// Mean slope of the shore along a ray out of the centre at bearing a, from where the land falls below `top` to the sea.
+const shoreSlope=(a,top)=>{let t=.6,p0=null,p1=null;const at=t=>[Math.sin(a)*122*t,3+Math.cos(a)*149*t];
+ for(;t<1.2;t+=.0005){const [x,z]=at(t),h=dawnHeight(x,z);if(p0===null&&h<top)p0=[x,z,h];if(p0&&h<=DAWN_SEA){p1=[x,z,h];break;}}
+ return (p0[2]-p1[2])/Math.max(.01,Math.hypot(p1[0]-p0[0],p1[1]-p0[1]));};
+const north=shoreSlope(Math.PI*.92,8),south=shoreSlope(Math.PI*.22,3);
+assert.ok(north>2&&south<1,`bluffs north (${north.toFixed(2)} m per m), beach south-east (${south.toFixed(2)})`);
+console.log('PASS ground: harbour box exact, sea at',DAWN_SEA,', kept',keep.length,'points exactly, relief on',(changed/fields*100).toFixed(0)+'% of the fields, max slope',slope.toFixed(2),'coast',Math.min(...coast).toFixed(3)+'..'+Math.max(...coast).toFixed(3),'bluff',north.toFixed(2),'beach',south.toFixed(2));
 
 // --- In the game --------------------------------------------------------------------------------------------------
 async function load(quality){const p=await browser.newPage({viewport:{width:1280,height:800}});p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error'&&/shader|program|WebGL|GL_/i.test(m.text()))errors.push(m.text().slice(0,300));});p.setDefaultTimeout(60000);
@@ -78,7 +87,7 @@ const inspect=p=>p.evaluate(()=>{const g=window.app.current.game,w=g.world2.thir
  // Fog toward the sun is warm, away from it cool, and the dome's haze band follows it.
  const fog=g.scene.fog,cam=g.camera,warm=[],fogOf=(dx,dz)=>{cam.position.set(0,10,0);cam.lookAt(dx,10,dz);cam.updateMatrixWorld();w.fog(cam,fog);return fog.color.clone();};
  const east=fogOf(w.sky.sunDir.x,w.sky.sunDir.z),west=fogOf(-w.sky.sunDir.x,-w.sky.sunDir.z);
- return {ground:!!ground&&ground.visible,sea:!!sea,sky:sky?.material?.name,leftovers,rings:ground.userData.layout?.levels,
+ return {ground:!!ground&&ground.visible,sea:!!sea,seaY:sea.position.y,sky:sky?.material?.name,leftovers,rings:ground.userData.layout?.levels,
   sunDot:sd.dot(w.sky.sunDir),sunEl:Math.asin(w.sky.sunDir.y)*180/Math.PI,sunAz:Math.atan2(w.sky.sunDir.x,w.sky.sunDir.z)*180/Math.PI,shadow:sun.castShadow,map:sun.shadow.mapSize.x,
   hemi:hemi.length,hemiSky:hemi[0]?.color.equals(w.sky.hemiSky),hemiGround:hemi[0]?.groundColor.equals(w.sky.hemiGround),
   east:[east.r,east.g,east.b],west:[west.r,west.g,west.b],seaLUT:sea.material.uniforms.dawnSkyLUT.value===sky.material.uniforms.dawnSkyLUT.value,
@@ -88,7 +97,7 @@ try{
   const p=await load(quality);const s=await inspect(p);
   assert.ok(s.ground&&s.sea&&s.sky==='dawn-sky',`the dawn ground, sea and sky are built: ${JSON.stringify(s)}`);
   assert.deepEqual(s.leftovers,[],'no old sky sphere, sea plane, vertex-colour plate, sun ball, cloud blob or foam ring is left');
-  assert.equal(s.rings,9,'the sand clipmap is the ground');
+  assert.ok(s.rings===9&&Math.abs(s.seaY-.2)<1e-9,'the sand clipmap is the ground and the sea sits at y = 0.2');
   assert.ok(s.sunDot>.999&&s.sunEl>5&&s.sunEl<16&&s.sunAz>80&&s.sunAz<130&&s.shadow,`a low sun in the east casts the shadows: ${s.sunEl.toFixed(1)} deg up, bearing ${s.sunAz.toFixed(0)}`);
   assert.ok(s.hemi===1&&s.hemiSky&&s.hemiGround&&s.seaLUT,'hemisphere light and the sea read the same sky');
   assert.ok(s.east[0]>s.west[0]*1.1&&s.east[0]/s.east[2]>s.west[0]/s.west[2],`fog is warm toward the sun, cool away: ${JSON.stringify([s.east,s.west])}`);
