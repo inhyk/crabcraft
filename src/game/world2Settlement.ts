@@ -179,14 +179,26 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     scatter.add(name,trs(x,height(x,z),z,gardenTrees*2.39996,gardenScale(x)));gardenTrees++;
   }
   root.userData.gardenTrees=gardenTrees;
-  for(let i=0;i<240;i++) {
-    const x=(rand(i+1800)-.5)*105,z=10+rand(i+2500)*86;
-    if(Math.abs(x)<12||lots.some(l=>Math.abs(x-l.x)<l.sx+3&&Math.abs(z-l.z)<l.sz+4))continue;
-    if(flowerNames.length){
-      const name=flowerNames[i%flowerNames.length];
-      if(clearPaving(name,x,z,.7))scatter.add(name,trs(x,height(x,z),z,rand(i+3000)*6.28,.7));
-    }
+  // The lawns' middle scale: colonies, not a sprinkle. Poisson-spaced centres (about 7 m apart); each grows one
+  // kind (wildflowers, clover or a tussock of short grass) as a big plant, two or three middling and a few small
+  // ones, close together.
+  const cloverNames=natureNames.filter(n=>/^Clover_[12]$/.test(n)),tuftNames=['Grass_Common_Short','Grass_Wispy_Short'].filter(n=>nature.has(n));
+  const colonies:[number,number][]=[];
+  for(let i=0;i<900&&colonies.length<70;i++){
+    const x=(rand(i+1800)-.5)*104,z=10+rand(i+2500)*86;
+    if(Math.abs(x)<7||lots.some(l=>Math.abs(x-l.x)<l.sx+3&&Math.abs(z-l.z)<l.sz+4))continue;
+    if(colonies.some(([cx,cz])=>Math.hypot(cx-x,cz-z)<7))continue;
+    colonies.push([x,z]);
   }
+  colonies.forEach(([cx,cz],c)=>{
+    const kind=c%5<2?flowerNames:c%5<4?cloverNames:tuftNames;if(!kind.length)return;
+    const n=3+Math.floor(rand(c+3100)*7);
+    for(let k=0;k<n;k++){
+      const a=rand(c*31+k)*6.28,d=k?.35+Math.sqrt(rand(c*17+k))*1.3:0,x=cx+Math.cos(a)*d,z=cz+Math.sin(a)*d;
+      const name=kind[(c+k)%kind.length],sc=(k?.5+.35*rand(c*7+k):.95)*(kind===tuftNames?.8:.75);
+      if(clearPaving(name,x,z,sc))scatter.add(name,trs(x,height(x,z),z,rand(c*13+k)*6.28,sc));
+    }
+  });
   // Low meadows soften the cleared exploration sites without hiding markers or attack circles.
   // All plants use the original licensed kit and stay batched with the island's foliage.
   const meadowFlowers=flowerNames.filter(n=>/^Flower_[34]_Group$/.test(n));

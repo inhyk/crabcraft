@@ -7,7 +7,7 @@ import {starGroundColor} from './world2Ground';
 import {GARDEN_TREES,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 import {starBoulders} from './starFieldSpots';
-import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,starCoast,starSand} from './starFieldLayout';
+import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,starCoast,starNoise,starSand} from './starFieldLayout';
 
 /*
  * Starhaven's ground by moonlight: beach sand by the sea, meadow grass inland, packed earth in the town and along the
@@ -104,6 +104,8 @@ vec3 sgG=sgTint*(.5+.7*sgMacro);
 sgG=mix(sgG,sgG*vec3(1.18,1.12,.82),smoothstep(.52,.72,sgMacro2)*.55);
 sgG*=mix(1.,.55,smoothstep(.45,.75,sgMid)*.75);
 sgG*=.8+.4*sgClump.r;
+// Swaths a few metres across: lush dark, silvered pale, in steps rather than a smooth wash.
+sgG*=mix(.72,1.3,smoothstep(.4,.62,sgT(sgP,9.,.45).r));
 sgG*=.72+.56*sgBlade;sgG*=.86+.28*sgBlade2;
 // Sand: pale and fine, rippled across the sea wind, darker and wet where the sea reaches it.
 float sgRipPhase=dot(sgP,vec2(-.6,.8))*4.2+sgT(sgP,9.,.4).r*7.+sgFine*2.;
@@ -261,7 +263,10 @@ export function starSoil(x: number, z: number, y: number): [number, number, numb
   const town = 1 - smooth(rect(-50, 50, 6, 97), 0, 7), avenue = 1 - smooth(Math.abs(x), 6, 9.5) * 1;
   const arena = 1 - smooth(Math.hypot(x, z + 75), 22, 28);
   const crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .75, STAR_CRATER.r * 1.2);
-  const worn = Math.max(trail * .75, town * .22, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater);
+  // Bare, trodden spots through the town's lawns (a few metres across, where feet and carts go), so a lawn has
+  // large value steps of turf and earth instead of one even mat.
+  const bare = town * smooth(starNoise(x / 7, z / 7, 63) + starNoise(x / 2.5, z / 2.5, 64) * .3, .16, .3);
+  const worn = Math.max(trail * .75, town * .22, bare * .9, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater);
   // The sanctum's surround keeps a thin, patchy turf (tussocks and stones, starMeadow.ts and starFields.ts) instead of bare dirt.
   const grass = Math.max(0, 1 - sand * 1.1 - smooth(r, .9, .95)) * (1 - town * .12) * (1 - arena * .6) * (1 - crater * .8);
   return [sand, grass, worn];
