@@ -30,6 +30,8 @@ export interface DawnBlock {
   lift?: number;
   /** Lot this block stands on (dawnLots), for the lane-head door. */
   lot?: string;
+  /** Turn about its centre (radians, as THREE's rotation.y and Collision.addBox): the medina's blocks are not square to the streets. */
+  yaw: number;
   seed: number;
 }
 
@@ -38,22 +40,23 @@ export const DAWN_LANES = [26, 45, 64, 83] as const;
 
 // Blocks per side in avenue-relative units: u = distance from the avenue's centreline (|x|), z as the world.
 // [id, u, z, w(along u), d, h, para, tint, role, door ('in' = toward the avenue), extras]
-type Row = [string, number, number, number, number, number, number, number, DawnRole, ('in' | 'out' | 'z+' | 'z-' | null), Partial<{ wind: [number, number]; stair: ['in' | 'out' | 'z+' | 'z-', 1 | -1]; lift: number; lot: string }>?];
+type Row = [string, number, number, number, number, number, number, number, DawnRole, ('in' | 'out' | 'z+' | 'z-' | null), Partial<{ wind: [number, number]; stair: ['in' | 'out' | 'z+' | 'z-', 1 | -1]; lift: number; lot: string; yaw: number }>?];
+// (yaw in degrees.)
 const EAST: Row[] = [
   // Lane 26: the lot house, a low mudbrick wing behind with a roof garden, a three-storey tower house with the
   // first windcatcher, and a walled yard toward the avenue.
   ['e-26', 35, 26, 6, 6, 6.4, .7, 0, 'house', 'in', {lot: 'dawn-1-0'}],
-  ['e-26b', 41.6, 25, 5.2, 7.4, 3.4, .6, 2, 'house', null],
+  ['e-26b', 41.6, 25, 5.2, 7.4, 3.4, .6, 2, 'house', null, {yaw: -5}],
   ['e-26c', 40.2, 31.6, 6, 4.4, 9.4, .8, 3, 'house', 'z+', {wind: [1, 0]}],
   ['e-26w', 32.3, 32.6, .55, 5.4, 2.3, 0, 1, 'wall', null],
   ['e-26w2', 35, 35.1, 5.9, .55, 2.3, 0, 1, 'wall', null],
   // Lane 45: a spice shop facing the avenue, the lot house, a low back house.
   ['e-39', 33.4, 39.4, 4.8, 5.2, 3.7, .6, 4, 'shop', 'in'],
   ['e-45', 38, 45, 6, 6, 6.6, .7, 1, 'house', 'in', {lot: 'dawn-1-1'}],
-  ['e-45b', 43.6, 40.4, 5, 5.6, 3.6, .6, 2, 'house', null, {stair: ['out', -1]}],
+  ['e-45b', 43.8, 40.4, 5, 5.6, 3.6, .6, 2, 'house', null, {stair: ['out', -1], yaw: 6}],
   // The cross street's east end: the domed shrine, a low house behind it.
   ['e-shrine', 34.6, 53.4, 7, 7, 4.8, .6, 0, 'shrine', 'in'],
-  ['e-53b', 42.2, 54.6, 5, 6.4, 3.4, .6, 3, 'house', null],
+  ['e-53b', 42.4, 54.6, 5, 6.4, 3.4, .6, 3, 'house', null, {yaw: -4}],
   // Lane 64: the forge (open front, chimney), a two-storey house behind, a small house with a stair to its roof.
   ['e-64', 35, 64, 8, 8, 4.4, .6, 1, 'forge', 'in', {lot: 'dawn-1-2'}],
   ['e-64b', 42.6, 60.6, 5, 6, 6.6, .7, 4, 'house', null],
@@ -62,17 +65,30 @@ const EAST: Row[] = [
   ['e-83n', 38, 78.6, 6, 4.6, 6.6, .7, 0, 'house', 'z+', {lot: 'dawn-1-3'}],
   ['e-83s', 38, 88.7, 6, 4.6, 6.6, .7, 3, 'house', 'z-'],
   ['e-83x', 38, 83.6, 6, 5.6, 6.6, .7, 0, 'bridge', null, {lift: 3.3}],
-  ['e-90', 44, 91, 5, 6, 3.6, .6, 2, 'house', null],
+  ['e-90', 44.2, 91, 5, 6, 3.6, .6, 2, 'house', null, {yaw: 7}],
+  // The medina between the avenue and the old rows (see WEST).
+  ['em-d1', 9.6, 21, 5.6, 4.6, 3.6, .6, 3, 'house', 'z+', {yaw: 4}],
+  ['em-d2', 15.4, 21.2, 5, 5, 6.4, .7, 0, 'house', 'z+', {yaw: -3}],
+  ['em-d3', 24.6, 20.8, 6, 5, 3.4, .6, 2, 'house', 'z+', {yaw: 6}],
+  ['em-a1', 9.9, 31.2, 6.6, 5.2, 6.6, .7, 1, 'house', 'z-', {yaw: -2}],
+  ['em-a2', 16.9, 30.6, 6, 4.4, 3.6, .6, 4, 'house', 'z-', {yaw: 3}],
+  ['em-a3', 9.4, 36.8, 5.8, 3.4, 3.4, .6, 2, 'house', 'in'],
+  ['em-aw', 16.2, 36.5, 6.4, .5, 2.4, 0, 1, 'wall', null, {yaw: 2}],
+  ['em-a4', 23.8, 31, 6.4, 5.6, 9.2, .8, 3, 'house', 'z-', {yaw: 5}],
+  ['em-b1', 8.2, 68.8, 3.4, 4.2, 3.6, .6, 0, 'house', 'z-'],
+  ['em-b2', 20.5, 70.2, 9, 5.6, 6.6, .7, 4, 'house', 'z-', {yaw: -4}],
+  ['em-b3', 21.5, 76.4, 6, 3.8, 3.4, .6, 2, 'house', 'out', {yaw: 2}],
+  ['em-c1', 22.2, 88.6, 5.4, 3.6, 6.4, .7, 3, 'house', 'z-', {yaw: 3}],
 ];
 const WEST: Row[] = [
   // Lane 26: a one-storey lot house with a stair to a shaded roof, a two-storey house behind, a corner house south.
   ['w-26', 35, 26, 6, 6, 3.6, .6, 3, 'house', 'in', {lot: 'dawn--1-0', stair: ['z-', 1]}],
   ['w-26b', 41, 27.4, 6, 8, 6.6, .7, 0, 'house', null],
-  ['w-19', 34, 19.2, 5, 4.6, 6.4, .7, 2, 'house', 'in'],
+  ['w-19', 34, 19.2, 5, 4.6, 6.4, .7, 2, 'house', 'in', {yaw: -4}],
   // Lane 45: a two-storey house toward the avenue, the three-storey lot tower house, a back house.
   ['w-37', 32.8, 36.4, 5, 5.8, 6.6, .7, 4, 'house', 'in'],
   ['w-45', 38, 45, 6, 6, 9.2, .8, 1, 'house', 'in', {lot: 'dawn--1-1'}],
-  ['w-45b', 43.6, 39.6, 5, 5.4, 3.6, .6, 2, 'house', null],
+  ['w-45b', 43.8, 39.6, 5, 5.4, 3.6, .6, 2, 'house', null, {yaw: 5}],
   // The cross street's west end: the healer's house.
   ['w-healer', 34, 53.6, 6, 6.2, 4.4, .6, 0, 'healer', 'in'],
   // Lane 64: the tavern (lot), its two-storey back house with the second windcatcher.
@@ -83,7 +99,19 @@ const WEST: Row[] = [
   ['w-78', 33, 77.9, 5, 4.2, 3.6, .6, 4, 'house', 'in', {stair: ['out', 1]}],
   ['w-83', 38, 83, 6, 6, 6.6, .7, 0, 'house', 'in', {lot: 'dawn--1-3'}],
   ['w-88', 43.6, 88.4, 5, 6, 9.4, .8, 2, 'house', null, {wind: [0, .6]}],
-  ['w-90', 33.2, 90.6, 5, 4.2, 3.6, .6, 3, 'house', 'in'],
+  ['w-90', 33.2, 90.6, 5, 4.2, 3.6, .6, 3, 'house', 'in', {yaw: 4}],
+  // The medina between the avenue and the old rows: clusters at a slant round small courtyards, their walls making
+  // the side lanes narrow alleys (the arrival's view up the avenue stays open: nothing west of the avenue at z 62-78).
+  ['wm-d1', 12.6, 21.2, 5, 4.4, 6.4, .7, 4, 'house', 'z+', {yaw: -5}],
+  ['wm-d2', 20.4, 20.6, 6.6, 5.2, 3.6, .6, 2, 'house', 'z+', {yaw: 4}],
+  ['wm-d3', 26.8, 21.2, 4.2, 4.4, 3.4, .6, 0, 'house', 'z+', {yaw: -2}],
+  ['wm-a1', 10.6, 31, 8, 5, 3.6, .6, 0, 'house', 'z-', {yaw: 3}],
+  ['wm-a2', 18.6, 31.6, 6, 6, 8.8, .8, 1, 'house', 'z-', {yaw: -4}],
+  ['wm-a3', 11.2, 36.8, 9, 3.4, 3.4, .6, 3, 'house', 'in', {yaw: -2}],
+  ['wm-a4', 25, 30.8, 4.4, 5, 4.2, .6, 4, 'house', 'z-', {yaw: 6}],
+  ['wm-aw', 18.4, 36.5, 5.6, .5, 2.4, 0, 2, 'wall', null, {yaw: -3}],
+  ['wm-b3', 24.2, 69.6, 6, 4.6, 3.6, .6, 4, 'house', 'z-', {yaw: 3}],
+  ['wm-c1', 20.5, 90.8, 5, 4.4, 3.6, .6, 1, 'house', 'z-', {yaw: -3}],
 ];
 
 const faceOf = (side: 1 | -1, f: 'in' | 'out' | 'z+' | 'z-'): DawnFace => f === 'in' ? (side > 0 ? 'x-' : 'x+') : f === 'out' ? (side > 0 ? 'x+' : 'x-') : f;
@@ -96,12 +124,18 @@ export function dawnBlocks(): DawnBlock[] {
       id, x: side * u, z, w, d, h, para, tint, role, door: door ? faceOf(side, door) : undefined,
       wind: ex.wind ? {dx: side * ex.wind[0], dz: ex.wind[1]} : undefined,
       stair: ex.stair ? {face: faceOf(side, ex.stair[0]), dir: ex.stair[1]} : undefined,
-      lift: ex.lift, lot: ex.lot, seed: (side > 0 ? 101 : 211) + i * 17,
+      lift: ex.lift, lot: ex.lot, yaw: (ex.yaw ?? 0) * Math.PI / 180, seed: (side > 0 ? 101 : 211) + i * 17,
     }));
   return out;
 }
 
-/** The outside stair's run: its footprint (centre, half extents) in world space, or null. */
+/** A point of a block's unturned frame turned about its centre into the world. */
+export function turnAbout(b: DawnBlock, x: number, z: number): [number, number] {
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw), dx = x - b.x, dz = z - b.z;
+  return [b.x + dx * c + dz * s, b.z - dx * s + dz * c];
+}
+
+/** The outside stair's run: its footprint (centre, half extents) in the block's unturned frame, or null. */
 export function stairFootprint(b: DawnBlock): { x: number; z: number; hx: number; hz: number } | null {
   if (!b.stair) return null;
   const run = Math.min(b.h * 1.05, (b.stair.face[0] === 'x' ? b.d : b.w) - .4), wide = .95;
@@ -136,9 +170,9 @@ export function registerDawnHouses(height: (x: number, z: number) => number, col
     // A bridge room stands over the road: overhead only, nothing to walk into.
     if (b.role === 'bridge') continue;
     const y = height(b.x, b.z);
-    col.addBox(b.x, b.z, b.w / 2 + .1, b.d / 2 + .1, 0, y - 2, y + b.h + b.para + 6);
+    col.addBox(b.x, b.z, b.w / 2 + .1, b.d / 2 + .1, b.yaw, y - 2, y + b.h + b.para + 6);
     const s = stairFootprint(b);
-    if (s) col.addBox(s.x, s.z, s.hx + .05, s.hz + .05, 0, y - 1, y + b.h);
+    if (s) { const [sx, sz] = turnAbout(b, s.x, s.z); col.addBox(sx, sz, s.hx + .05, s.hz + .05, b.yaw, y - 1, y + b.h); }
   }
   for (const [x, z] of quarterPalms()) { const y = height(x, z); col.addCircle(x, z, .32, y, y + 8); }
   { const y = height(DAWN_WELL.x, DAWN_WELL.z); col.addCircle(DAWN_WELL.x, DAWN_WELL.z, DAWN_WELL.r, y, y + 1.1); }

@@ -19,7 +19,9 @@ await build({stdin: {contents: `export * from './src/game/dawnHousePlan.ts'; exp
 const plan = await import(new URL('../' + out, import.meta.url).href);
 await rm(out);
 const blocks = plan.dawnBlocks(), solid = blocks.filter(b => b.role !== 'bridge');
-const inBox = (b, x, z, m) => Math.abs(x - b.x) < b.w / 2 + m && Math.abs(z - b.z) < b.d / 2 + m;
+// Footprint tests in each block's own (turned) frame.
+const local = (b, x, z) => { const c = Math.cos(b.yaw), s = Math.sin(b.yaw), dx = x - b.x, dz = z - b.z; return [dx * c - dz * s, dx * s + dz * c]; };
+const inBox = (b, x, z, m) => { const [lx, lz] = local(b, x, z); return Math.abs(lx) < b.w / 2 + m && Math.abs(lz) < b.d / 2 + m; };
 const issues = [];
 for (const b of solid) {
   for (const t of [...plan.dawnForest(), ...plan.dawnGrove()]) if (inBox(b, t.x, t.z, 1)) issues.push(`tree in ${b.id}`);
@@ -28,13 +30,13 @@ for (const b of solid) {
   for (const g of plan.DAWN_GATES) if (inBox(b, g.x, g.z, 5)) issues.push(`gate by ${b.id}`);
   // Roads: no footprint corner or edge midpoint on a road.
   for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 1], [0, -1], [1, 0], [-1, 0], [0, 0]]) {
-    const x = b.x + sx * b.w / 2, z = b.z + sz * b.d / 2;
+    const [x, z] = plan.turnAbout(b, b.x + sx * b.w / 2, b.z + sz * b.d / 2);
     if (plan.roadClearance(x, z) < .3) issues.push(`${b.id} on a road at ${x.toFixed(1)},${z.toFixed(1)}`);
   }
 }
 for (const [x, z] of plan.quarterPalms()) if (plan.roadClearance(x, z) < .8) issues.push(`palm on a road ${x},${z}`);
 for (const [x, z] of plan.quarterPalms()) for (const b of solid) if (inBox(b, x, z, .45)) issues.push(`palm ${x},${z} in ${b.id}`);
-console.log('PLAN', JSON.stringify({blocks: blocks.length, windcatchers: blocks.filter(b => b.wind).length, stairs: blocks.filter(b => b.stair).length, palms: plan.quarterPalms().length, issues}));
+console.log('PLAN', JSON.stringify({blocks: blocks.length, turned: blocks.filter(b => b.yaw).length, windcatchers: blocks.filter(b => b.wind).length, stairs: blocks.filter(b => b.stair).length, palms: plan.quarterPalms().length, issues}));
 assert.deepEqual(issues, [], 'the quarter keeps clear of trees, lamps, quest points, gates and roads');
 assert.equal(blocks.filter(b => b.wind).length, 3, 'three windcatchers');
 for (const role of ['shrine', 'forge', 'tavern', 'healer', 'shop', 'bridge']) assert.ok(blocks.some(b => b.role === role), role);
