@@ -5,6 +5,7 @@ import type { World } from '../world/types';
 import type { FxPool, Fx } from './vfx/effects';
 import { C } from './vfx/vfx';
 import { FrostGuide } from './frostGuide';
+import { DawnGuide } from './dawnGuide';
 
 const CRUMBS = 9;
 const SPACING = 2.2;
@@ -25,6 +26,9 @@ export class ObjectiveMarker {
   /** Frostlight's own guidance (frostGuide.ts) instead of the pillar, chevron and crumbs; set by the game. */
   frost = false;
   private frostGuide: FrostGuide | null = null;
+  /** Goldsand's brass sun discs and arrowhead (dawnGuide.ts) instead of the chevron and crumbs; set by the game. */
+  dawn = false;
+  private dawnGuide: DawnGuide | null = null;
 
   constructor(fx: FxPool) {
     this.beam = fx.spawn('pillar', Infinity);
@@ -87,6 +91,14 @@ export class ObjectiveMarker {
       this.beam.u.uAlpha.value = (0.45 + Math.sin(time * 2.2) * 0.12) * Math.min(1, (dist - 5) / 8);
     }
     const near = !show || dist < 7;
+    if (this.dawn) {
+      this.chevron.visible = this.crumbs.visible = false;
+      this.dawnGuide ??= new DawnGuide(this.group);
+      if (near || !target) { this.dawnGuide.hide(); return; }
+      this.dawnGuide.update(time, world, from, via ?? target, dist, !combat);
+      return;
+    }
+    this.dawnGuide?.hide();
     this.chevron.visible = !near && !combat;
     this.crumbs.visible = !near && !combat && dist > 10;
     if (near || !target) return;
@@ -130,6 +142,7 @@ export class ObjectiveMarker {
     this.crumbs.dispose();
     this.crumbMat.dispose();
     this.frostGuide?.dispose();
+    this.dawnGuide?.dispose();
     this.group.removeFromParent();
   }
 }

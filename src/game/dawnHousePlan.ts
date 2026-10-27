@@ -8,7 +8,7 @@ import type { Collision } from '../world/collision';
 
 export type DawnRole = 'house' | 'tavern' | 'forge' | 'shrine' | 'healer' | 'shop' | 'wall' | 'bridge';
 /** Wall finishes: whitewash, honey sandstone, raw mudbrick, ochre wash, rose wash. */
-export const DAWN_TINTS = ['#efe4cf', '#d3a978', '#b07a4c', '#d8b484', '#e2c3a6'] as const;
+export const DAWN_TINTS = ['#e8dccb', '#d3a978', '#b07a4c', '#d8b484', '#e2c3a6'] as const;
 /** Face a door or feature looks out of, in world axes. */
 export type DawnFace = 'x+' | 'x-' | 'z+' | 'z-';
 

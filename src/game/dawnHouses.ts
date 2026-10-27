@@ -263,7 +263,7 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
       // The bridge room: windows over the road on both open faces.
       for (const f of ['x+', 'x-'] as const) { const L = G.L[f]; for (const u of [L * .3, L * .7]) { add(f, {u0: u - .3, u1: u + .3, v0: b.lift! + 1.1, v1: b.lift! + 2.15, arch: true, depth: .4, kind: CR.lattice, color: WOOD_DARK, glow: .3}, 'sill'); stats.windows++; } }
     }
-    wall.col.set(b.role === 'shrine' ? '#f3eadb' : DAWN_TINTS[b.tint]); wall.k = b.role === 'shrine' ? FIN.plaster : FINISH[b.tint];
+    wall.col.set(b.role === 'shrine' ? '#ebdfcc' : DAWN_TINTS[b.tint]); wall.k = b.role === 'shrine' ? FIN.plaster : FINISH[b.tint];
     const fr = block(wall, craft, {cx: b.x, cz: b.z, w: b.w, d: b.d, base: G.base, ground: G.ground, roof: G.roof, para: b.para, holes, soffit: !!b.lift, thick: b.role === 'wall' ? b.w < b.d ? b.w / 2 - .02 : b.d / 2 - .02 : .3, r: b.role === 'wall' ? .2 : .3, batter: b.role === 'wall' ? .012 : .022, cap: true});
     frames.set(b.id, fr);
     stats.blocks++;
@@ -374,7 +374,7 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
   // alfiz frame round the door, stone benches either side, corner horns on the parapet.
   {
     const b = roleBlock('shrine'), fr = frames.get(b.id)!, G = geometryOf(b), F = fr.faces[b.door!];
-    wall.col.set('#f3eadb'); wall.k = FIN.plaster; wall.gy = G.ground; wall.top = G.top + 6;
+    wall.col.set('#ebdfcc'); wall.k = FIN.plaster; wall.gy = G.ground; wall.top = G.top + 6;
     const a = 2.15, drumH = 1.25, y0 = G.roof - .05, side = 2 * a * Math.tan(Math.PI / 8);
     for (let k = 0; k < 8; k++) {
       const phi = k * Math.PI / 4, N = new V(Math.sin(phi), 0, Math.cos(phi)), U = new V().crossVectors(Y, N);

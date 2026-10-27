@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {FROST_NOISE} from './frostPaving';
+import {DAWN_FIRE,DAWN_FIRE_HEAD,DAWN_FIRE_LIGHT} from './dawnFire';
 import {CITADEL_ARENA,CITADEL_GATE,CITADEL_WALL} from './dawnCitadelLayout';
 
 /*
@@ -139,12 +140,12 @@ function dialMaterial(name: string, court: boolean, uniforms: Record<string, THR
   const m = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .85, envMapIntensity: .6, ...(court ? {polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2} : {})});
   m.name = name;
   m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms, {daCourt: {value: court ? 1 : 0}});
+    Object.assign(shader.uniforms, uniforms, DAWN_FIRE, {daCourt: {value: court ? 1 : 0}});
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vDaW;')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\nvDaW=(modelMatrix*vec4(transformed,1.)).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${HEAD}`)
+      .replace('#include <common>', `#include <common>\n${HEAD}\n${DAWN_FIRE_HEAD}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${DIAL}`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         float gWorn=daWorn;
@@ -160,7 +161,7 @@ function dialMaterial(name: string, court: boolean, uniforms: Record<string, THR
           if(nW.y>.5){nW=normalize(nW+vec3(-g.x,0.,-g.y));normal=normalize((viewMatrix*vec4(nW,0.)).xyz);}
         }`)
       // Gold takes the warm sky, stone keeps a dull sheen (the low sun across a whole floor reads as plastic).
-      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(.45,1.,daGilt);');
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(.45,1.,daGilt);\n${DAWN_FIRE_LIGHT}`);
   };
   m.customProgramCacheKey = () => `dawn-dial-${court ? 'court' : 'floor'}`;
   return m;

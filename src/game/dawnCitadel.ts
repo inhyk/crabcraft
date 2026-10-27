@@ -5,8 +5,9 @@ import {addPatch,stylise} from '../world/materials';
 import {planeWarp,ringWarp,type V3,type Warp} from './frostMasonry';
 import {Glass} from './frostThrone';
 import {frostFire,type Flame,type Halo} from './frostFire';
-import {DawnMason,dawnMasonryMaterial} from './dawnMasonry';
+import {DawnMason,GRANITE,dawnMasonryMaterial} from './dawnMasonry';
 import {dawnArena} from './dawnArena';
+import {DAWN_FIRE,setDawnFires,updateDawnFires} from './dawnFire';
 import {CITADEL_APPROACH,CITADEL_ARENA,CITADEL_BRAZIERS,CITADEL_COLONNADE,CITADEL_GATE,CITADEL_KEEP,CITADEL_TOWERS,CITADEL_WALL,SOUTH_RUN,citadelObelisks,colonnadeColumns} from './dawnCitadelLayout';
 
 /*
@@ -52,6 +53,34 @@ function asStone(g:THREE.BufferGeometry,tint:V3,gilt:boolean|number,ground:numbe
  return out;
 }
 
+/** Wrap a geometry laid in a face's frame (x along u, y up v, z out of the face) onto `w` at (u, v), t proud. */
+function onFace(g:THREE.BufferGeometry,w:Warp,u:number,v:number,t:number):void{
+ const p=g.getAttribute('position');
+ for(let i=0;i<p.count;i++){const q=w(u+p.getX(i),v+p.getY(i),t-p.getZ(i));p.setXYZ(i,q[0],q[1],q[2]);}
+ p.needsUpdate=true;g.deleteAttribute('normal');g.computeVertexNormals();
+}
+/** One relief figure, 2.5 m high: a crab seen from the front, both great claws raised to hold up a gilt sun. */
+function crabBearer(face:number):{g:THREE.BufferGeometry;gilt:boolean}[]{
+ const out:{g:THREE.BufferGeometry;gilt:boolean}[]=[],ex={depth:.08,bevelEnabled:true,bevelThickness:.03,bevelSize:.025,bevelSegments:1,curveSegments:10};
+ const shape=(f:(s:THREE.Shape)=>void)=>{const s=new THREE.Shape();f(s);return s;};
+ const add=(s:THREE.Shape,gilt=false,m?:THREE.Matrix4)=>{const g=new THREE.ExtrudeGeometry(s,ex).toNonIndexed();if(m)g.applyMatrix4(m);g.scale(.88*face,.88,1);g.deleteAttribute('uv');out.push({g,gilt});};
+ // Carapace: a broad shield, scalloped at the front edge; two eye stalks.
+ add(shape(s=>{s.moveTo(-.6,.72);s.bezierCurveTo(-.62,1.02,-.3,1.08,0,1.08);s.bezierCurveTo(.3,1.08,.62,1.02,.6,.72);s.bezierCurveTo(.5,.5,-.5,.5,-.6,.72);}));
+ for(const e of [-1,1])add(shape(s=>{s.moveTo(e*.12-.03,1.04);s.lineTo(e*.12+.03,1.04);s.lineTo(e*.15+.03,1.22);s.absarc(e*.15,1.25,.055,0,Math.PI*2,false);}));
+ for(const k of [-1,1]){
+  // Three walking legs a side, bent at the knee, splayed out to the ground line.
+  for(let i=0;i<3;i++){const y=.62+i*.07,x=.5+i*.04,kx=.88+i*.1,ky=.42+i*.05,fx=.92+i*.16;
+   add(shape(s=>{s.moveTo(k*x,y+.05);s.lineTo(k*kx,ky+.06);s.lineTo(k*fx,0);s.lineTo(k*(fx-.07),0);s.lineTo(k*(kx-.06),ky);s.lineTo(k*x,y-.04);}));}
+  // The arm up and out, then the claw: a heavy palm and two fingers closing on the sun's rim.
+  add(shape(s=>{s.moveTo(k*.5,.86);s.quadraticCurveTo(k*.9,1.05,k*.86,1.45);s.lineTo(k*.74,1.45);s.quadraticCurveTo(k*.76,1.12,k*.44,.98);}));
+  add(shape(s=>{s.moveTo(k*.66,1.42);s.quadraticCurveTo(k*1.0,1.55,k*.86,1.98);s.lineTo(k*.62,2.22);s.lineTo(k*.6,2.06);s.lineTo(k*.7,1.9);s.quadraticCurveTo(k*.62,1.72,k*.52,1.88);s.lineTo(k*.46,1.8);s.quadraticCurveTo(k*.54,1.5,k*.66,1.42);}));
+ }
+ // The sun it bears: a disc and twelve short rays, gilt.
+ add(shape(s=>{s.absarc(0,2.3,.34,0,Math.PI*2,false);}),true);
+ for(let i=0;i<12;i++){const a=i/12*Math.PI*2;add(shape(s=>{s.moveTo(-.045,.39);s.lineTo(.045,.39);s.lineTo(0,.55);}),true,new THREE.Matrix4().makeTranslation(0,2.3,0).multiply(new THREE.Matrix4().makeRotationZ(a)));}
+ return out;
+}
+
 export function dawnCitadel(height:Height):DawnCitadel {
  const h=height,root=new THREE.Group();root.name='dawn-twilight-citadel';
  const rand=stream(30117),M=new DawnMason(rand,3),glass=new Glass();
@@ -82,9 +111,9 @@ export function dawnCitadel(height:Height):DawnCitadel {
  const basalt=(g:THREE.BufferGeometry,k=.5)=>extra.push(asStone(g,[.03*k*2,.028*k*2,.027*k*2],false,-99));
 
  /** A dressed monolith: a square block tapering from w0 to w1, flat-faced, its own tint. */
- const mono=(x:number,z:number,y0:number,hgt:number,w0:number,w1:number,yaw:number,tint:V3,ground:number)=>{
+ const mono=(x:number,z:number,y0:number,hgt:number,w0:number,w1:number,yaw:number,tint:V3,ground:number,channel=0)=>{
   const g=new THREE.CylinderGeometry(w1/Math.SQRT2,w0/Math.SQRT2,hgt,4,1).rotateY(Math.PI/4+yaw).translate(x,y0+hgt/2,z).toNonIndexed();g.computeVertexNormals();
-  extra.push(asStone(g,tint,false,ground));
+  extra.push(asStone(g,tint,channel,ground));
  };
  /** A face of a battered mass: foot a-b at v = v0, top c-d at v = v1, outward (nx, nz). */
  const quad=(ax:number,az:number,bx:number,bz:number,cx:number,cz:number,dx:number,dz:number,nx:number,nz:number,v0:number,v1:number)=>{
@@ -201,13 +230,39 @@ export function dawnCitadel(height:Height):DawnCitadel {
   M.ground=g0;
   for(const s of [-1,1]){
    const xi=s*x0,xo=s*G.half,lo=Math.min(xi,xo),hi=Math.max(xi,xo);
-   battered(lo,hi,zb,zf,b,top,s>0?[bat,bat,bat,0]:[bat,0,bat,bat],s>0?[b,b,b,ptop-.4]:[b,ptop-.4,b,b]);
+   const faces=battered(lo,hi,zb,zf,b,top,s>0?[bat,bat,bat,0]:[bat,0,bat,bat],s>0?[b,b,b,ptop-.4]:[b,ptop-.4,b,b]);
    // The eclipse carved high on the wing, leaning with the batter.
    const ey=top-6.4,eo=bat*(1-(ey-b)/H);
    emblem(s*(x0+G.half)/2,ey,zf+eo,1.9,-Math.atan(bat/H));
-   // Flagstaffs before the wing, gilt, each flying a long banner.
-   for(const px of [s*(x0+1.15),s*(G.half-.9)]){
-    const pz=zf+bat+.45,py=h(px,pz)-.3;
+   // The front face's frame: u along the foot (the quad's left foot first), v up, t into the wall.
+   const F0=faces[0],fx0=lo-(s>0?0:bat),fx1=hi+(s>0?bat:0),uAt=(x:number)=>(x-fx0)/(fx1-fx0)*F0.L;
+   const poles=[s*(x0+1.5),s*(G.half-.9)];
+   // Flagstaff niches: a tall channel up the batter for each pole, its pale jambs proud of the face, its back dark.
+   for(const px of poles){
+    const u=uAt(px),gy=h(px,zf+bat)-.4;M.ground=gy;
+    M.stone='pale';for(const k of [-1,1])M.block(F0.w,u+k*.55-.17,gy,-.34,.34,top-3.2-gy,.6,{bevel:.06});M.stone=null;
+    M.block(F0.w,u-.38,gy,-.02,.76,top-3.2-gy,.3,{bevel:.02,tint:M.basaltTint(2.2)});
+    M.stone='pale';M.block(F0.w,u-.8,top-3.2,-.4,1.6,.5,.7,{bevel:.05});M.stone=null;
+   }
+   // A great relief band across the front between the niches: Solarkan's procession, crab bearers each lifting a
+   // gilt sun, between pale fillets with a running frieze of small suns, cut proud of the coursed face.
+   {
+    const ua=uAt(poles[0])+(s>0?1.1:-1.1),ub=uAt(poles[1])-(s>0?1.1:-1.1),u0=Math.min(ua,ub),u1=Math.max(ua,ub);
+    const v0=top-15.2,v1=top-9.6;M.ground=v0;
+    M.stone='pale';
+    M.block(F0.w,u0-.15,v0-.42,-.22,u1-u0+.3,.42,.55,{bevel:.05});M.block(F0.w,u0-.15,v1,-.22,u1-u0+.3,.42,.55,{bevel:.05});
+    M.stone=null;
+    const n=Math.max(2,Math.round((u1-u0)/2.3)),step=(u1-u0)/n,pale=M.paleTint(1.12);
+    for(let i=0;i<n;i++){
+     const cu=u0+(i+.5)*step,face=s>0?-1:1;
+     for(const g of crabBearer(face)){onFace(g.g,F0.w,cu,v0+.25,-.06);extra.push(asStone(g.g,g.gilt?[1,1,1]:pale,g.gilt,v0));}
+    }
+    for(let u=u0+.4;u<u1-.2;u+=.8)for(const vv of [v0-.21,v1+.21]){const g=new THREE.CylinderGeometry(.13,.13,.06,12).rotateX(Math.PI/2).translate(0,0,-.03);onFace(g,F0.w,u,vv,-.24);gild(g,v0);}
+   }
+   // Flagstaffs in the niches, gilt, each flying a long banner; bronze clamps hold them to the face.
+   for(const px of poles){
+    const pz=zf+bat*(1-1.2/H)-.15,py=h(px,pz)-.3;
+    for(const cy of [top-12,top-5]){const fz=zf+bat*(1-(cy-b)/H)-.3;extra.push(asStone(new THREE.BoxGeometry(.42,.2,pz-fz+.12).translate(px,cy,(fz+pz)/2),[1,1,1],.7,py));}
     extra.push(asStone(new THREE.CylinderGeometry(.1,.15,top+4.2-py,8).translate(px,(py+top+4.2)/2,pz),[1,1,1],.7,py));
     gild(new THREE.SphereGeometry(.24,10,8).translate(px,top+4.35,pz),py);
     extra.push(asStone(new THREE.CylinderGeometry(.05,.05,1.9,6).rotateZ(Math.PI/2).translate(px,top+3.35,pz+.12),[1,1,1],.7,py));
@@ -383,7 +438,8 @@ export function dawnCitadel(height:Height):DawnCitadel {
   for(const s of [-1,1])for(const z of CITADEL_APPROACH.z){
    const x=s*CITADEL_APPROACH.x,y=h(x,z);M.ground=y;
    plinth(x,z,y,1.15,0);
-   mono(x,z,y+.92,7.24,1.15,.72,0,M.basaltTint(1.2),y);
+   // Red Aswan granite, polished, speckled (dawnMasonry reads channel GRANITE); black basalt stays on the arena pillars.
+   mono(x,z,y+.92,7.24,1.15,.72,0,[.25*(.92+rand()*.16),.105,.072],y,GRANITE);
    gild(new THREE.ConeGeometry(.36*Math.SQRT2,1.1,4).rotateY(Math.PI/4).translate(x,y+8.7,z),y);
    const fx=x-s*(1.15+(.72-1.15)*.35)/2-s*.05;
    gild(new THREE.CylinderGeometry(.32,.32,.06,20).rotateZ(Math.PI/2).translate(fx,y+6.3,z),y);
@@ -410,8 +466,13 @@ export function dawnCitadel(height:Height):DawnCitadel {
  const fire=frostFire('dawn-citadel-fire',flames,halos,9137,6);
  const arena=dawnArena(h);
  root.add(lod,glassMesh,arena.court,fire.group);
+ // Two of the sun pillars' fire bowls (the pair across the dial's middle) light the court, half the floor each,
+ // flickering; drawn by the citadel's own materials only (dawnFire.ts).
+ {const [a,b]=citadelObelisks().filter(o=>o.i===4||o.i===5).map(o=>new THREE.Vector3(o.x*.93,h(o.x,o.z)+9.4,o.z));setDawnFires(a,b);root.userData.arenaFires=DAWN_FIRE;}
  root.userData.citadel={blocks:M.blocks,nearTriangles:nearGeo.index!.count/3,farTriangles:farGeo.index!.count/3,gilt:extra.length,towers:CITADEL_TOWERS.length,columns:colonnadeColumns().length,flames:flames.length,obelisks:citadelObelisks().length,windows:glass.pos.length/3};
  return {root,floor:arena.floor,update(time,quality){fire.update(time);arena.update(time,quality);
+  // Low quality puts the arena's fire light out.
+  updateDawnFires(time,quality==='high');
   // Low quality swaps to the far slabs (joints drawn, a seventh of the triangles) at half the distance.
   lod.levels[1].distance=quality==='low'?56:112;},async dress(){
   const props=await loadKit('models/world/props.glb');

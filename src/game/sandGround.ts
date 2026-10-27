@@ -80,7 +80,9 @@ float sgCoastDunes(vec2 p){
 float sgShore(vec2 p,float h,float t){
   if(t<=0.)return h;
   float cliff=sgStep(h,6.5,10.5);
-  float beach=t<.06?h+(SG_SEA-.55-h)*sg01(t/.06):SG_SEA-.55-(t-.06)*60.;
+  // dawnGround.ts shore(): the bank, the berm a metre up, the gentle foreshore, the shelf.
+  float u=t/.1,top=min(h,SG_SEA+.9),low=SG_SEA-.55;
+  float beach=u<.35?h+(top-h)*sg01(u/.35):u<1.?top+(low-top)*(u-.35)/.65:low-(t-.1)*60.;
   float face=.024,foot=.9+sgNoise(p*.2)*.5;
   float bluff=t<face?h+(foot-h)*pow(sg01(t/face),.8):foot-(t-face)*75.;
   return max(-16.,beach+(bluff-beach)*cliff);

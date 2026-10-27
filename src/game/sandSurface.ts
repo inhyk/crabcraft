@@ -139,8 +139,12 @@ const SAND_STATE = /* glsl */ `
   }
   // Where the sand is: the sea's reach, the citadel's scoria climb, the bluffs.
   float sAbove=sW.y-SG_SEA;
-  float sWet=1.-smoothstep(.06,.55+.25*snNoise(sXZ*.13),sAbove);
-  float sDamp=(1.-smoothstep(.4,1.6,sAbove))*(1.-sWet);
+  // Metres up the beach from the waterline (height over the landform's slope), so the wet band keeps its width
+  // whether the beach is steep or flat; only on the beach itself, not in hollows inland.
+  float sShoreD=max(sAbove,0.)/max(length(sG.yz),.03),sBeach=1.-smoothstep(.9,1.7,sAbove);
+  float sWetN=sBeach>0.?snNoise(sXZ*.21+vec2(4.,-2.)):0.;
+  float sWet=max(1.-smoothstep(.06,.55+.25*snNoise(sXZ*.13),sAbove),(1.-smoothstep(2.,3.4+.9*sWetN,sShoreD))*sBeach);
+  float sDamp=max((1.-smoothstep(.4,1.6,sAbove)),(1.-smoothstep(3.2,6.5+1.5*sWetN,sShoreD))*sBeach)*(1.-sWet);
   float sR=sgRadius(sXZ);
   // Scoria only where the citadel's rock breaks through: round the arena and under the walls, in broken patches.
   float sVolc=smoothstep(-46.,-58.,sXZ.y)*(1.-smoothstep(.8,.88,sR))*(1.-sOpen)*smoothstep(.35,.6,snNoise(sXZ*.045+vec2(5.,2.))+smoothstep(-60.,-80.,sXZ.y)*.4);
@@ -154,9 +158,9 @@ const SAND_STATE = /* glsl */ `
   float streak=snNoise(sWq*vec2(.035,.42))*.65+snNoise(sWq*vec2(.09,1.3))*.35;
   // Warm golden ochre, never orange; value carries the form.
   // Quartz sand reflects a broad spectrum: the gold comes mostly from the low sun, so shade can still go blue.
-  vec3 sand=sdLin(vec3(.84,.73,.5));
-  vec3 pale=sdLin(vec3(.91,.83,.63)),lag=sdLin(vec3(.72,.58,.42)),red=sdLin(vec3(.86,.68,.47));
-  vec3 alb=mix(sand,red,smoothstep(.3,.75,n1)*.45);
+  vec3 sand=sdLin(vec3(.82,.72,.53));
+  vec3 pale=sdLin(vec3(.9,.83,.66)),lag=sdLin(vec3(.7,.58,.44)),red=sdLin(vec3(.84,.68,.5));
+  vec3 alb=mix(sand,red,smoothstep(.3,.75,n1)*.3);
   alb=mix(alb,pale,smoothstep(.05,.7,sCrest)*.7);
   alb=mix(alb,lag,smoothstep(-.1,-.75,sCrest)*(.55+.3*n2));
   alb*=.94+.1*streak+.05*(n2-.5)+.05*(n3-.5);
@@ -192,9 +196,16 @@ const SAND_STATE = /* glsl */ `
   // Damp and wet sand where the sea reaches; swash lines left by the last waves.
   alb=mix(alb,alb*sdLin(vec3(.74,.7,.66)),sDamp);
   float swash=smoothstep(.85,1.,sin((sAbove*9.+snNoise(sXZ*.4)*2.)*3.14159))*sWet*(1.-smoothstep(0.,.3,-sAbove));
+  // The last waves' reach: thin lines of drying foam and froth along the top of the wet band, broken and wandering.
+  float swL=0.;
+  if(sBeach>0.)for(int i=0;i<2;i++){float at=(i==0?.7:2.1+.5*sWetN)+.45*snNoise(sXZ*vec2(.3,.3)+float(i)*7.3),w=.07+.05*(snNoise(sXZ*1.7+float(i))*.5+.5);
+    swL=max(swL,(1.-smoothstep(w*.4,w,abs(sShoreD-at)))*smoothstep(.2,.55,snNoise(sXZ*.9+float(i)*3.1)*.5+.5+(i==0?.25:0.)));}
+  swL*=sBeach*(1.-smoothstep(.06,.0,sAbove));
   alb=mix(alb,sdLin(vec3(.47,.37,.27))*(.9+.15*n3),sWet*.85);
   alb=mix(alb,pale*.95,swash*.35);
-  sRough=mix(sRough,.32,sWet*smoothstep(-.1,.2,-sAbove+.25));
+  alb=mix(alb,sdLin(vec3(.93,.9,.84)),swL*.75);
+  // Wet sand is glossy: a film of water over the grains, the low sun and the sky mirrored in it.
+  sRough=mix(sRough,mix(.3,.5,smoothstep(1.,3.,sShoreD)),sWet*(1.-swL));
   // Gameplay ground is trodden: packed, a shade darker, rippled only faintly (sandRippleAmp).
   alb=mix(alb,alb*sdLin(vec3(.93,.9,.88)),(1.-sOpen)*.6);
   // The citadel climb: scoria and basalt, with sand drifted into its hollows.
@@ -245,8 +256,21 @@ const SAND_AFTER = /* glsl */ `
   {
     vec3 sL=normalize(sandSunDir),sV=normalize(cameraPosition-vSandWorld);
     float nl=clamp(dot(sN,sL),0.,1.);
-    // The open sky over the sand: extra fill, weaker on faces that turn from it.
-    outgoingLight+=diffuseColor.rgb*sandSkyFill*RECIPROCAL_PI*(.55+.45*sN.y);
+    // Out of the sun the sand is lit by the sky, and the sky is brightest low toward the sun: faces turned that way
+    // (ripple stoss sides, sunward dune flanks) catch more of it, so shade keeps the ripples and the dune forms
+    // instead of going flat. Quartz is near grey; its gold is mostly the sun's, so skylight on it reads lilac blue.
+    {
+      vec3 Ls=normalize(vec3(sL.x,.65,sL.z));
+      float rel=(dot(sN,Ls)-Ls.y)*1.5;
+      // Faces turned from the sun see the deep blue half of the sky: dimmer only a little, and bluer.
+      vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):min(-rel,.6)*vec3(.14,.22,.5);
+      // Hollows see less sky than crests (the bake's height against its blur a few metres round).
+      float open=clamp(sCrest*.18,-.16,.1);
+      // The lilac only where the sun is not: in sunlight the gold stays clean.
+      float sunlit=smoothstep(.4,1.6,dot(reflectedLight.directDiffuse,vec3(.3,.59,.11))/max(dot(reflectedLight.indirectDiffuse,vec3(.3,.59,.11)),1e-4));
+      // Open sand in shade is lit from the whole bright desert round it, not the sky alone: a little more fill.
+      outgoingLight+=reflectedLight.indirectDiffuse*((vec3(-.3,-.1,.48)*(1.-sWet)+vec3(.18,.22,.24))*(1.-sunlit)+relC+open);
+    }
     // Wet sand mirrors the sky.
     vec3 R=reflect(-sV,sN);
     vec3 sky=mix(sandSkyHorizon,sandSkyZenith,smoothstep(0.,.6,R.y));

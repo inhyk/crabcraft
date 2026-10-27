@@ -176,6 +176,8 @@ dpS+=smoothstep(.7,.9,fpNoise(dpP*.5+11.)*.5+.5+dpN2*.06)*.8;
 dpS-=dpTrod*(.4+dpN2*.2);
 float dpB=.12+.6*smoothstep(-.1,.8,dpRag)+dpN2*.08;
 dpS+=smoothstep(-dpB-.25,-dpB+.3,dpSd)*1.1*(1.-dpKerb*.75);
+// The open desert drifts a metre in over every edge, deeper where a tongue of it has crossed.
+dpS+=smoothstep(-1.-dpN1*.4,-.05,dpSd)*(.55+dpN2*.3)*(1.-dpKerb*.6);
 dpS+=smoothstep(.3,1.,vDpDrift)*smoothstep(-2.4-dpN1*1.2,-.2,dpSd)*1.7;
 dpS+=dpEnd*(2.+dpN1*.6);
 float dpAlpha=(1.-smoothstep(1.7,2.4,dpS))*(1.-smoothstep(.03,${REACH.toFixed(2)},dpSd+fpNoise(dpP*1.9)*.05));
@@ -216,6 +218,10 @@ dpH=mix(dpH,.6,dpFar);dpHs=mix(dpHs,.6,dpBlur);
 float dpSandJ=smoothstep(-dpSw,dpSw,dpS-dpHs-.05)*(1.-dpKerb*.5);
 float dpSB=dpS+fpNoise(dpP*2.7+5.1)*.12+fpNoise(dpP*7.3)*.06,dpBw=max(fwidth(dpSB),1e-4);
 float dpBlanket=clamp((dpSB-1.05)/(dpBw*1.4)+.5,0.,1.);
+// Toward the margin whole stones are gone, taken or buried, more of them the nearer the edge (up to about 70 %):
+// the paving frays into the sand instead of ending on a line. Kerbs, set deeper, go less often.
+{float gone=step(fpHash12(vec2(dpId*7.31+dpSalt,3.7)),(.68-dpKerb*.45)*smoothstep(-1.15,-.1,dpSd+dpN1*.3));
+ dpBlanket=max(dpBlanket,gone*smoothstep(.0,.03+dpFw,-dpOut+.02));}
 float dpSandA=max(dpSandJ,dpBlanket);
 // The sun inlay in the town square: honey rays on rose, in small square tesserae.
 float dpInlay=0.;vec3 dpInlayC=vec3(0.);
