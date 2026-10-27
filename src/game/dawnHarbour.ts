@@ -346,6 +346,21 @@ export function dawnHarbour(height: (x: number, z: number) => number): DawnHarbo
   }
   // At anchor off the harbour, where the old ship rode.
   boat({len: 9.5, beam: 2.9, depth: 1.15, paint: '#3a5878', seed: 5}, 17, SEA_Y + .62, 146, -.25 + Math.PI, {mast: 9});
+  // A fishing landing on the east beach, the coast the town sees from the hill and from above: a timber jetty on
+  // piles out past the swash, a sailing boat alongside, two skiffs drawn up on the sand.
+  {
+    const z0 = 40, xa = 107.6, xb = 119.5, dy = SEA_Y + .85, plank = new THREE.BoxGeometry(1, 1, 1), pile = new THREE.CylinderGeometry(.11, .13, 1, 8);
+    for (let x = xa; x < xb; x += .34) wood.push(woodPart(plank, M(x + .15, dy, z0, 0, .3, .07, 1.7 + (R() - .5) * .08), null, 0, new THREE.Vector3(0, 0, 1)));
+    for (const sz of [-1, 1]) wood.push(woodPart(plank, M((xa + xb) / 2, dy - .1, z0 + sz * .7, 0, xb - xa, .14, .12), null, 0));
+    for (let x = xa + .4; x <= xb; x += 2.2) for (const sz of [-1, 1]) {
+      const fy = Math.min(height(x, z0 + sz * .82), SEA_Y) - .8, top = dy + (sz > 0 && Math.round(x) % 2 ? .55 : .05);
+      wood.push(woodPart(pile, M(x, (fy + top) / 2, z0 + sz * .82, 0, 1, top - fy, 1), null, 0, new THREE.Vector3(0, 1, 0)));
+    }
+    plank.dispose(); pile.dispose();
+    boat({len: 6.8, beam: 2.1, depth: .9, paint: '#7a3a2e', seed: 6}, 116.2, SEA_Y + .45, z0 + 2.1, Math.PI / 2 + .04, {mast: 6.4});
+    for (const [bx, bz, yaw, paint, seed] of [[103.2, 46.5, 2.2, '#2e6f78', 7], [105.4, 33.2, 1.0, '#c58a3a', 8]] as const)
+      boat({len: 4.3, beam: 1.4, depth: .58, paint, seed}, bx, height(bx, bz) + .42, bz, yaw, {tilt: .26, float: false, oars: true});
+  }
   // Mooring lines from the boats' bows and sterns to the pier's bollards and piles.
   for (const [b, d0, d1] of [[moorL, STAIR + 5.5, STAIR + 12.5], [moorR, STAIR + 3.6, STAIR + 8.2], [moorR2, STAIR + 10.5, STAIR + 15]] as const) {
     const s = Math.sign((b.x - pierPoint.x) * side.x + (b.y - pierPoint.y) * side.y);

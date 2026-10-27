@@ -262,16 +262,14 @@ export class DawnSky {
     // Kasten-Young air mass at 11 degrees: the blue mostly scattered out of the beam, gold not orange.
     const beam = lin(0xffd27a);
     this.sunColor = toColor(beam);
-    this.sunIntensity = 6.4;
+    this.sunIntensity = 5.6;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance.
+    // The dome's fill, its red pulled back, so shade on the sand reads cool blue-violet against the gold sun.
+    this.hemiSky = toColor([up[0] * 1.5, up[1] * 1.6, up[2] * 2.4] as V3, 1);
     // Sand sees more of the sky than a wall does and keeps its shade bright blue-violet: the extra fill it alone adds.
     this.sandSkyFill = toColor([up[0] * 0.95, up[1] * 0.85, up[2] * 1.5] as V3, 1);
     // Warm bounce off sunlit sand (albedo about 0.35), lit by the sun's beam and the sky.
     const albedo: V3 = [0.46, 0.33, 0.19], sunE = this.sunIntensity * Math.sin(el) * 1.6;
-    // The fill in shade: the dome, its blue kept, plus the light every shadow here gets back from the sunlit sand and
-    // stone round it (a court, an alley or a dune trough sees far more lit ground than open sky). Shade reads cool
-    // lilac blue against the gold sun and keeps about 40 % of the lit value: never navy (dawn-polish, report 1.8).
-    this.hemiSky = toColor([0, 1, 2].map(c => up[c] * [1.9, 2.1, 1.95][c] + albedo[c] * beam[c] * sunE * 0.2) as V3, 1);
     this.hemiGround = toColor([0, 1, 2].map(c => albedo[c] * (beam[c] * sunE + up[c] * 1.3)) as V3, 1.6);
     this.groundRadiance = [0, 1, 2].map(c => albedo[c] * 1.35 * (beam[c] * sunE * 0.8 + up[c] * Math.PI) / Math.PI) as V3;
     this.gain = gain;
