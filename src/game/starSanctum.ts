@@ -6,7 +6,7 @@ import {starCrystalCluster,starCrystalMaterial} from './starCrystals';
 /*
  * The Eclipse Queen's sanctum, a ruined observatory of moonstone: the combat floor is one disc whose shader carves
  * a star map into the paving (coursed slabs, sunk joints, worn where feet go) with silver inlay (an eclipse at the
- * centre, rays, a band of constellations and the twelve phases of the moon); twelve obelisks on the old column
+ * centre, rays, a band of constellations and twelve small constellations round the edge); twelve obelisks on the old column
  * footprints carry crystal crowns in silver cradles; the pilgrims' gate on the approach (the sanctuary's piers at
  * (+-4.8,-55)) is a carved arch whose trumeau is the southern obelisk. Every solid keeps its old collider.
  */
@@ -69,7 +69,7 @@ float sfJoints(vec2 p,out vec2 slab){
   slab=vec2(float(k),cell);
   return min(dr,dt);
 }
-// Silver inlay (distance in metres): the eclipse, its rays, the ring lines, the star map, the moon's phases.
+// Silver inlay (distance in metres): the eclipse, its rays, the ring lines, the star map, the edge's constellations.
 float sfInlay(vec2 p){
   float r=length(p),a=atan(p.x,-p.y);
   float d=abs(r-2.05)-.06;
@@ -95,15 +95,19 @@ float sfInlay(vec2 p){
   }
   // Stars set into the obsidian eclipse, so the dark disc reads as night, not a hole.
   if(r<1.8){vec2 gc=floor(p/.46);vec2 o=vec2(sfH(gc+9.),sfH(gc+4.))*.3+.08;if(sfH(gc+7.)>.5)d=min(d,length(p-gc*.46-o)-(.02+.035*sfH(gc+2.)));}
-  // The twelve phases in the outer band.
+  // Twelve small constellations in the outer band, one per sector: three to five stars joined by fine lines.
   float pn=12.,ps=floor((a+3.14159265)/6.2831853*pn),pa=(ps+.5)/pn*6.2831853-3.14159265;
-  vec2 C=vec2(sin(pa),-cos(pa))*15.6,q=p-C;
-  float disc=length(q)-.62;
-  float phase=(ps/pn)*2.-1.;
-  vec2 tang=vec2(cos(pa),sin(pa));
-  float shadow=length(q-tang*phase*1.25)-.62;
-  d=min(d,abs(disc)-.03);
-  d=min(d,max(disc,-shadow));
+  vec2 rad=vec2(sin(pa),-cos(pa)),tang=vec2(cos(pa),sin(pa)),C=rad*15.6;
+  float gn=3.+floor(sfH(vec2(ps,21.))*2.99);
+  vec2 prev=vec2(0.);
+  for(int i=0;i<5;i++){
+    if(float(i)>=gn)break;
+    float fi=float(i);
+    vec2 S=C+tang*((fi/(gn-1.)-.5)*1.5+(sfH(vec2(ps,30.+fi))-.5)*.3)+rad*(sfH(vec2(ps,40.+fi))-.5)*.75;
+    d=min(d,length(p-S)-(.045+.045*sfH(vec2(ps,50.+fi))));
+    if(i>0)d=min(d,sfSeg(p,prev,S)-.013);
+    prev=S;
+  }
   return d;
 }
 `;
@@ -128,7 +132,7 @@ float sfR=length(sfP);
 float sfObsidian=1.-smoothstep(1.93,1.96,sfR);
 {
   // Three values: a dark slate field, mid-grey moonstone bands (the rings round the eclipse, the star-map band's
-  // edges and the outer course with the phases), bright silver-teal inlay.
+  // edges and the outer course with its constellations), bright silver-teal inlay.
   float tone=.84+.3*sfH(sfSlab*vec2(17.,3.)+.5);
   float mott=sfN(sfP*1.1)*.55+sfN(sfP*4.3)*.3+sfN(sfP*13.)*.15;
   float worn=exp(-pow(sfP.x/3.2,2.))*smoothstep(-2.,10.,sfP.y)+exp(-pow((sfR-6.8)/2.4,2.))*.5;
@@ -156,9 +160,7 @@ float sfObsidian=1.-smoothstep(1.93,1.96,sfR);
 #include <lights_physical_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 // The inlay glows a cold silver-teal (#9fe8ff) so the star map reads across the dark slate.
-// The twelve moon faces in the outer band are wide silver fills: they glow less than the lines, so they read as
-// polished discs set in the stone rather than lamps.
-totalEmissiveRadiance+=vec3(.35,.8,1.)*sfSilver*.42*(1.-.7*step(14.9,sfR)*step(sfR,16.3));
+totalEmissiveRadiance+=vec3(.35,.8,1.)*sfSilver*.42;
 // The eclipse at the centre burns: its corona's inlay gives pearly light, brightest at the limb, and a rose
 // chromosphere edges the obsidian; the rings further out stay moonlit silver.
 {
