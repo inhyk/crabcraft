@@ -6,7 +6,8 @@ import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_RING} from './starFieldLayout';
 import type {IslandPath} from './islandPaths';
 import * as THREE from 'three';
 import {starLanterns,starhavenMaterial} from './starLanterns';
-import {STAR_LAMPS} from './starLight';
+import {STAR_LAMPS,setStarDoorLamps} from './starLight';
+import {doorLanternAt,recordRooftops,starDoorLamps,starRooftops,starSettlers,starTrailLanterns,STAR_ROOF_ROLES} from './starRooftops';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
 import { TownBuilder } from '../world/buildings';
 import type { Collision } from '../world/collision';
@@ -42,6 +43,8 @@ export function starTrailDistance(x:number,z:number){
 export function nearStarObjective(x:number,z:number,padding=0){
   return Object.entries(STAR_OBJECTIVES).some(([kind,p])=>Math.hypot(x-p[0],z-p[1])<(kind.startsWith('explore-')?13:4)+padding);
 }
+/** The pilgrim trails' lanterns outside the town (not on the starroad, which has its crystals, nor at a quest site). */
+export const starTrailLanternSpots=()=>starTrailLanterns(STAR_TRAILS,(x,z)=>nearStarObjective(x,z,-5)||(Math.abs(x)<9&&z<3));
 export const STAR_WALKS = [[-15,62],[0,61],[15,62],[-15,44],[0,36],[15,44],[0,72],[0,24]];
 /** The nature kit's leafy trees: the forest uses them, and their trunks are solid. */
 export const STAR_TREE_NAME=/^CommonTree_[1-5]$/;
@@ -107,10 +110,19 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     for(const piece of kit.pieces.values())for(const part of piece.parts)part.material=copies.get(part.material)!;
   }
   const batch=new StaticBatch(village,'starhaven-homes');
+  // The roofline module reads the roofs and chimneys as they are placed (starRooftops.ts).
+  const roofline=recordRooftops(batch);
   const builder=new TownBuilder(village,batch,null,{});
+  // The newcomers' house is not lived in yet: its windows are dark glass.
+  const glass=village.materials.get('MI_WindowGlass'),dark=glass instanceof THREE.MeshStandardMaterial?glass.clone():null;
+  if(dark){dark.emissive.set('#000000');dark.emissiveIntensity=0;dark.color.set('#0d1018');dark.roughness=.15;dark.metalness=.4;dark.name='MI_WindowGlass_Dark';}
+  const emptyBuilder=new TownBuilder(village,batch,null,dark?{MI_WindowGlass:dark}:{});
   const lots=starLots();
-  for(const lot of lots)builder.build(lot);
+  // Door lanterns light the house fronts (starLight.ts) before any wall compiles.
+  setStarDoorLamps(starDoorLamps(lots).map(d=>{const p=doorLanternAt(d);return [p.x,p.y,p.z] as const;}));
+  for(const lot of lots)(lot.id===STAR_ROOF_ROLES.empty?emptyBuilder:builder).build(lot);
   root.add(batch.build());
+  const rooftops=starRooftops(village,roofline,lots,{spots:starTrailLanternSpots(),height});root.add(rooftops.root);
   const dressing=new StaticBatch(props,'starhaven-market');
   const villageProps=new StaticBatch(village,'starhaven-gardens');
   const residents=Object.values(STAR_TOWN);
@@ -129,6 +141,8 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   }
   if(bench)for(const [x,z] of [[-8,55],[8,55],[-8,61],[8,61]])put(bench,x,z,x<0?Math.PI/2:-Math.PI/2);
   if(village.has('Prop_Wagon'))for(const x of [-15,15])villageProps.add('Prop_Wagon',trs(x,3,88,x>0?.4:-.4));
+  // The newcomers moving in: their loaded cart and boxes at the empty house's door.
+  starSettlers(lots.find(l=>l.id===STAR_ROOF_ROLES.empty)!,put);
   for(const lot of lots)for(let j=-2;j<=2;j++)if(village.has('Prop_WoodenFence_Single'))villageProps.add('Prop_WoodenFence_Single',trs(lot.x+j*2,3,lot.z-7,0));
   // Iron lanterns along the high street, each with its pool of light (starLanterns.ts).
   const lanterns=starLanterns(STAR_LAMPS.map(([x,z])=>({x,y:height(x,z),z})));
@@ -192,7 +206,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   root.userData.meadowPlants=meadowCount;
   // Boulders, the crater's shards, moon-flowers, and the kit's ferns, clover and wildflowers through the meadows.
   const field=starFields(height,scatter,natureNames,clearPaving);root.add(field.root,stories.root);
-  const fields={root:field.root,update(t:number){field.update(t);stories.update(t);}};
+  const fields={root:field.root,update(t:number){field.update(t);stories.update(t);rooftops.update(t);}};
   root.add(scatter.build({boundsPadding:.2}));
   // Starhaven's own moonlit setts, kerbs and trail flags (starPaving.ts); the fountain keeps its basin clear.
   const ways:IslandPath[]=[
