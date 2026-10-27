@@ -61,9 +61,8 @@ try{
   assert.equal(r.roof,'starhaven-roof');
   assert.deepEqual(r.crowns,[7,6]);
   assert.deepEqual(r.clusterNames,['star-crystal-cluster','star-crystal-cluster','star-crystal-cluster']);
-  // Since star r3 the key light is the corona: it comes from the eclipse's bearing (starNight.ts STAR_KEY_DIR).
-  const key=await page.evaluate(async()=>{const {STAR_ECLIPSE_DIR:e}=await import('/src/game/starNight.ts');const sun=window.app.current.game.world2.root.getObjectByName('star-island-sun');const d=sun.position.clone().sub(sun.target.position);const h=Math.hypot(d.x,d.z),he=Math.hypot(e.x,e.z);return (d.x*e.x+d.z*e.z)/h/he;});
-  assert.ok(r.rig);assert.ok(key>.999,'the key light comes from the eclipse\'s bearing: '+key);
+  // Star r3 made the corona the key; star r4 gave the key back to the drawn moon (starNight.ts STAR_KEY_DIR).
+  assert.ok(r.rig);assert.ok(r.moonDot>.999,'moonlight comes from the drawn moon');
   assert.ok(r.view,'Starhaven view active');assert.ok(r.envNight&&r.envNight!==shore.env,'night environment');
   assert.ok(r.los>=5);assert.ok(r.solid>0);assert.ok(r.maxExcess<.001);assert.ok(r.pierExcess<.001);assert.ok(r.obExcess<.001);
   assert.equal(r.stars,2400);

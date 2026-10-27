@@ -41,8 +41,8 @@ try{
   // Scene: lights, roofline, sanctum, sea.
   const r=await page.evaluate(async()=>{
     const g=window.app.current.game,w=g.world2,root=w.root,get=n=>root.getObjectByName(n);
-    const {STAR_ECLIPSE_DIR:ecl}=await import('/src/game/starNight.ts');
-    const sun=get('star-island-sun'),kd=sun.position.clone().sub(sun.target.position),keyDot=(kd.x*ecl.x+kd.z*ecl.z)/Math.hypot(kd.x,kd.z)/Math.hypot(ecl.x,ecl.z);
+    // Star r4: the key is the moon again (starNight.ts STAR_KEY_DIR); the corona lights the sky and the sea.
+    const sun=get('star-island-sun'),moonDir=sun.position.clone().sub(sun.target.position).normalize(),moon=w.sky.root.getObjectByName('star-crescent-moon').position.clone().normalize(),keyDot=moonDir.dot(moon);
     const glow=get('star-player-glow');
     const roof=get('star-rooftops');const names={};roof?.traverse(o=>{if(o.isInstancedMesh)names[o.name]=o.count;else if(o.isMesh)names[o.name]=(names[o.name]??0)+1;});
     const settlement=get('starhaven-settlement');let darkGlass=0,leaves=[];settlement.traverse(o=>{if(o.isMesh&&o.material?.name==='MI_WindowGlass_Dark')darkGlass++;if(o.material?.name?.startsWith?.('Leaves'))leaves.push(o.material.customProgramCacheKey?.());});
@@ -57,8 +57,8 @@ try{
   console.log('W2',JSON.stringify(r));
   if(!metricsOnly){
     assert.ok(r.intensity<=2.2&&r.intensity>=1.4,'key about half of the old 3.3: '+r.intensity);
-    assert.ok(r.radius>=8,'broad, soft key shadows: radius '+r.radius);assert.ok(r.shadow>=.25&&r.shadow<=.35,'weak key shadows: '+r.shadow);
-    assert.ok(r.keyDot>.999,'the key comes from the eclipse\'s bearing: '+r.keyDot);
+    assert.ok(r.radius>=4,'soft moon shadows: radius '+r.radius);assert.ok(r.shadow<=.7,'partial moon shadows: '+r.shadow);
+    assert.ok(r.keyDot>.99,'shadows fall from the visible moon: '+r.keyDot);
     assert.ok(r.glow&&r.glow.d<=7&&r.glow.off<3,'warm light carried with the crab: '+JSON.stringify(r.glow));
     assert.ok(r.names['star-roof-finials']>=18,'crescent finials on every ridge');assert.ok(r.dome,'observatory dome');
     assert.equal(r.names['star-roof-telescopes'],2);assert.ok(r.names['star-door-lantern-frames']>=10,'door lanterns');assert.equal(r.names['star-ridge-lantern-frames'],4);

@@ -49,7 +49,7 @@ function crookGeometry() {
 
 /**
  * The high street's lamp places dressed by kind (STAR_LAMP_KIND): iron posts at three heights, crook posts with a
- * hung lantern, crystal lamps on moonstone plinths, and gaps. One instanced draw per part.
+ * hung lantern, crystal lamps on octagonal moonstone pedestals, and gaps. One instanced draw per part.
  */
 export function starLanterns(points: {x: number; y: number; z: number}[], kinds: readonly string[], crystal: {geometry: THREE.BufferGeometry; material: THREE.Material; plinth: THREE.Material}) {
   const {iron, glass} = lanternGeometry(), crook = crookGeometry();
@@ -69,9 +69,11 @@ export function starLanterns(points: {x: number; y: number; z: number}[], kinds:
   const cWood = new THREE.InstancedMesh(crook.wood, woodMat, crookList.length), cIron = new THREE.InstancedMesh(crook.iron, ironMat, crookList.length), cGlass = new THREE.InstancedMesh(crook.glass, glassMat, crookList.length);
   cWood.name = 'starhaven-crook-posts';cIron.name = 'starhaven-crook-iron';cGlass.name = 'starhaven-crook-panes';
   crookList.forEach(({p}, n) => { m.compose(v.set(p.x + Math.sign(p.x) * .45, p.y, p.z), q.setFromAxisAngle(up, p.x > 0 ? Math.PI : 0), s.set(1, 1, 1));cWood.setMatrixAt(n, m);cIron.setMatrixAt(n, m);cGlass.setMatrixAt(n, m); });
-  // Crystal lamps: a waist-high moonstone plinth with a crown of pale crystal.
-  const pl = new StoneBuilder();
-  for (const {p} of crystalList) pl.stack([{y: -.2, hw: .42, ch: .12}, {y: .18, hw: .42, ch: .12}, {y: .18, hw: .32, ch: .09}, {y: .95, hw: .27, ch: .08}, {y: .95, hw: .36, ch: .1}, {y: 1.08, hw: .36, ch: .1}], new THREE.Matrix4().makeTranslation(p.x, p.y, p.z));
+  // Crystal lamps: a waist-high moonstone pedestal, a regular octagon in plan (chamfer .586 of the half width): a
+  // stepped foot, a slender tapering shaft with a collar, and a flared cap cradling a crown of pale crystal.
+  const pl = new StoneBuilder(), o8 = (y: number, hw: number) => ({y, hw, ch: hw * .586});
+  for (const {p, i} of crystalList) pl.stack([o8(-.2, .38), o8(.06, .38), o8(.06, .31), o8(.16, .31), o8(.16, .2), o8(.24, .18), o8(.78, .15),
+    o8(.78, .19), o8(.84, .19), o8(.84, .15), o8(.9, .16), o8(.9, .2), o8(1., .29), o8(1.08, .29)], new THREE.Matrix4().makeRotationY(i * .4).setPosition(p.x, p.y, p.z));
   const plinths = new THREE.Mesh(pl.geometry('starhaven-crystal-lamp-plinths'), crystal.plinth);plinths.name = 'starhaven-crystal-lamp-plinths';
   const gems = new THREE.InstancedMesh(crystal.geometry, crystal.material, crystalList.length);gems.name = 'starhaven-crystal-lamps';
   crystalList.forEach(({p, i}, n) => { m.compose(v.set(p.x, p.y + 1.08 + .55, p.z), q.setFromAxisAngle(up, i * 1.7), s.set(.55, 1.1, .55));gems.setMatrixAt(n, m); });
