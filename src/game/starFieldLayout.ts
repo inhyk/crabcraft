@@ -2,6 +2,9 @@
 // that tell a story out in the fields. Numbers only, shared by the height grid (world2Height.ts, which the server
 // bakes), the ground shader (starGround.ts), the field dressing (starFields.ts) and the colliders (world2Colliders.ts).
 
+/** High (1) or low (0) quality detail, shared uniform of Starhaven's ground, paving and field shaders. */
+export const STAR_DETAIL = {value: 1};
+
 /** Fallen-star crater: a bowl with a thrown-up rim, shards of the star still glowing in it. */
 export const STAR_CRATER = {x: -36, z: -16, r: 6.5} as const;
 /** The stargazer's camp, on a grassy rise looking south over the sea to the aurora. */

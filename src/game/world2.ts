@@ -122,7 +122,7 @@ export class HiddenWorld {
   async buildSettlement() {
     await this.third.buildSettlement();await this.fourth.buildSettlement();
     this.dawnRequests.build();this.snowRequests.build();this.emberRequests.build();this.skyRequests.build();
-    const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
+    const settlement=await buildStarSettlement((x,z)=>this.height(x,z));this.ground.meadow=settlement.meadow;
     // Every World II collider, without meshes: the same registration the server bakes.
     this.collision=layoutStarhaven((x,z)=>this.height(x,z),settlement.natureNames).col;this.root.add(settlement.root);
     this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!);
@@ -467,7 +467,7 @@ export class HiddenWorld {
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
-    this.sea.update(time);this.ground.update(time,this.game.engine.quality);
+    this.sea.update(time);this.ground.update(time,this.game.engine.quality,this.game.camera,position);
     this.armour?.update(time);this.throne.update(time);
     this.wind?.update(time);
     if(!observation)for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);

@@ -1,4 +1,6 @@
-import {islandPaths} from './islandPaths';
+import {starPaving} from './starPaving';
+import {starMeadow} from './starMeadow';
+import type {IslandPath} from './islandPaths';
 import * as THREE from 'three';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
 import { TownBuilder } from '../world/buildings';
@@ -189,7 +191,8 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   }
   root.userData.meadowPlants=meadowCount;
   root.add(scatter.build({boundsPadding:.2}));
-  root.add(islandPaths(height,[
+  // Starhaven's own moonlit setts, kerbs and trail flags (starPaving.ts); the fountain keeps its basin clear.
+  const ways:IslandPath[]=[
     {points:[[0,92],[0,-54]],width:9.5,trim:true},
     {points:[[-26,55],[26,55]],width:7,trim:true},
     {points:[[-4.7,36],[-25,36]],width:2.4},
@@ -197,7 +200,16 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     {points:[[-4.7,82],[-22,82]],width:2.4},
     {points:[[4.7,84],[24,84]],width:2.4},
     ...STAR_TRAILS.map(points=>({points,width:2.4,trim:false})),
-  ],2));
+  ];
+  root.add(starPaving(height,ways,STAR_TRAILS.length,{skyHorizon:new THREE.Color('#2a2552'),skyZenith:new THREE.Color('#0b1030'),pads:[{x:0,z:55,r:7.2,rings:7.2}],holes:[{x:0,z:55,r:3.7,kerb:.55}]}).root);
+  // The meadow underfoot grows round the buildings, stalls, wagons and quest props, never on the ways.
+  const meadow=starMeadow(height,ways,[
+    ...lots.map(l=>[l.x,l.z,Math.hypot(l.sx,l.sz)+1.4] as const),
+    ...[[-12,48],[12,48],[-12,70],[12,70],[-15,88],[15,88]].map(([x,z])=>[x,z,2.6] as const),
+    ...Object.entries(STAR_OBJECTIVES).filter(([k])=>!k.startsWith('explore-')).map(([,p])=>[p[0],p[1],1.7] as const),
+    ...Array.from({length:18},(_,i)=>[(i%2?1:-1)*(19+i%3*3),30+Math.floor(i/2)*6,1.1] as const),
+  ]);
+  root.add(meadow.mesh);
   for(const kit of [village,nature,props])for(const piece of kit.pieces.values())for(const part of piece.parts)part.geometry.dispose();
-  return {root,lots,natureNames};
+  return {root,lots,natureNames,meadow};
 }

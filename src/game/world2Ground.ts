@@ -4,11 +4,11 @@ import {starTrailDistance} from './world2Settlement';
 // Moonlit albedos of the island's regions. starGround.ts paints grass, sand, earth and stone over them; the monitor's
 // scenery uses them as they are.
 const beachGrass=new THREE.Color('#717866');
-const meadow=new THREE.Color('#4d6a58');
+const meadow=new THREE.Color('#4c7354');
 const moonshade=new THREE.Color('#3d7470');
 const ruinDust=new THREE.Color('#77708a');
 const pilgrimHeather=new THREE.Color('#665a7c');
-const townEarth=new THREE.Color('#6d6a58');
+const townEarth=new THREE.Color('#566a52');
 const pathDust=new THREE.Color('#8d8678');
 const arenaSlate=new THREE.Color('#42485e');
 const smooth=THREE.MathUtils.smoothstep;
@@ -22,7 +22,7 @@ export function starGroundColor(x:number,z:number,height:number,out:THREE.Color)
   out.lerp(ruinDust,patch(x,z,80,-40,22,58)*.7);
   out.lerp(pilgrimHeather,patch(x,z,0,-42,12,43)*.55);
   const townEdge=Math.max(Math.abs(x)-43,Math.abs(z-53)-45);
-  out.lerp(townEarth,(1-smooth(townEdge,-4,12))*.6);
+  out.lerp(townEarth,(1-smooth(townEdge,-4,12))*.5);
   // A worn strip along the trails blends smoothly back into each local region.
   const trail=(1-smooth(starTrailDistance(x,z),1,4.2))*(1-smooth(coast,.82,1));
   out.lerp(pathDust,trail*.3);

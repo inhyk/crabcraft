@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import {STAR_GRID} from '../sim/world/ground';
+import type {StarMeadow} from './starMeadow';
 import {starGroundColor} from './world2Ground';
 import {starTrailDistance} from './world2Settlement';
-import {STAR_CRATER,starCoast,starSand} from './starFieldLayout';
+import {STAR_CRATER,STAR_DETAIL,starCoast,starSand} from './starFieldLayout';
 
 /*
  * Starhaven's ground by moonlight: beach sand by the sea, meadow grass inland, packed earth in the town and along the
@@ -93,9 +94,9 @@ float sgScorch=1.-smoothstep(.75,1.7,sgCd+(sgMid-.5)*.6+(sgFine-.5)*.3);
 // Region tint (vertex colour) is the meadow's moonlit green, the sand's lavender grey or the town's earth.
 vec3 sgTint=vColor.rgb;
 // Meadow: broad lush and dry swathes, darker hollows, clumps and blades.
-vec3 sgG=sgTint*(.78+.44*sgMacro);
+vec3 sgG=sgTint*(.5+.7*sgMacro);
 sgG=mix(sgG,sgG*vec3(1.18,1.12,.82),smoothstep(.52,.72,sgMacro2)*.55);
-sgG*=mix(1.,.62,smoothstep(.5,.78,sgMid)*.6);
+sgG*=mix(1.,.55,smoothstep(.45,.75,sgMid)*.75);
 sgG*=.8+.4*sgClump.r;
 sgG*=.72+.56*sgBlade;sgG*=.86+.28*sgBlade2;
 // Sand: pale and fine, rippled across the sea wind, darker and wet where the sea reaches it.
@@ -109,9 +110,9 @@ sgS=mix(sgS,sgS*vec3(.5,.52,.6),sgWet);
 float sgPeb=(1.-smoothstep(.1,.16,sgClump.g))*step(.62,sgH(floor(sgP/2.1*24.)))*sgF2;
 sgS=mix(sgS,vec3(.62,.6,.64),sgPeb*.7);
 // Packed earth: dark, gritty, pebbles worn flat.
-vec3 sgE=vec3(.19,.172,.168)*(.8+.4*sgMid)*(.85+.3*sgFine);
+vec3 sgE=vec3(.12,.104,.094)*(.75+.5*sgMid)*(.85+.3*sgFine);
 float sgEPeb=(1.-smoothstep(.16,.26,sgClump.g))*sgF1;
-sgE=mix(sgE,vec3(.3,.29,.31)*(.8+.4*sgClump.r),sgEPeb*.6);
+sgE=mix(sgE,vec3(.2,.19,.2)*(.8+.4*sgClump.r),sgEPeb*.35);
 sgE=mix(sgE,sgTint*.55,.25);
 // Stone of the bluffs: dark slate in beds, a violet glint of crystal in the partings.
 float sgBed=vSgW.y*1.7+sgT(sgP,23.,1.3).r*2.4;
@@ -134,7 +135,7 @@ sgRelief-=sgCrack*.03*sgScorch;
 
 const GROUND_ROUGH = /* glsl */ `
 // Dew on the grass catches the moon, wet sand mirrors it, dry sand and earth are dull, the crater glass is slick.
-roughnessFactor=mix(mix(mix(.92,.88,sgSand),.58+.18*sgClump.r,sgGrass),.74,sgRock);
+roughnessFactor=mix(mix(mix(.92,.88,sgSand),.86+.08*sgClump.r,sgGrass),.74,sgRock);
 roughnessFactor=mix(roughnessFactor,.28,sgWet*sgSand);
 roughnessFactor=mix(roughnessFactor,.38,sgScorch*smoothstep(1.,.4,sgCd));
 `;
@@ -166,7 +167,9 @@ if(sgDetail>.5){
 export interface StarGround {
   mesh: THREE.Mesh;
   texture: THREE.DataTexture;
-  update(time: number, quality: 'high' | 'low'): void;
+  /** The meadow underfoot (starMeadow.ts), once the settlement has grown it. */
+  meadow: StarMeadow | null;
+  update(time: number, quality: 'high' | 'low', camera: THREE.Camera, player: THREE.Vector3): void;
 }
 
 /** The island's ground over the gameplay grid; `height` is the island surface (HiddenWorld.height). */
@@ -184,7 +187,7 @@ export function starGround(height: (x: number, z: number) => number, anisotropy:
   land.setAttribute('aSoil', new THREE.Float32BufferAttribute(soil, 3));
   land.computeVertexNormals();
   const texture = noiseTexture(); texture.anisotropy = anisotropy;
-  const uniforms = {sgTex: {value: texture}, sgTime: {value: 0}, sgDetail: {value: 1}};
+  const uniforms = {sgTex: {value: texture}, sgTime: {value: 0}, sgDetail: STAR_DETAIL};
   // `map` holds the noise for the anisotropy setting and disposal; the shader reads it itself.
   const material = new THREE.MeshStandardMaterial({map: texture, vertexColors: true, roughness: .9, metalness: 0});
   material.name = 'starhaven-night-ground';
@@ -203,7 +206,10 @@ export function starGround(height: (x: number, z: number) => number, anisotropy:
   };
   material.customProgramCacheKey = () => 'starhaven-night-ground';
   const mesh = new THREE.Mesh(land, material); mesh.name = 'star-island-ground'; mesh.receiveShadow = true;
-  return {mesh, texture, update(time, quality) { uniforms.sgTime.value = time; uniforms.sgDetail.value = quality === 'low' ? 0 : 1; }};
+  return {
+    mesh, texture, meadow: null,
+    update(time, quality, camera, player) { uniforms.sgTime.value = time; STAR_DETAIL.value = quality === 'low' ? 0 : 1; this.meadow?.update(time, camera, player, quality); },
+  };
 }
 
 const smooth = THREE.MathUtils.smoothstep;
@@ -217,7 +223,7 @@ export function starSoil(x: number, z: number, y: number): [number, number, numb
   const town = 1 - smooth(rect(-50, 50, 6, 97), 0, 7), avenue = 1 - smooth(Math.abs(x), 6, 9.5) * 1;
   const arena = 1 - smooth(Math.hypot(x, z + 75), 22, 28);
   const crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .9, STAR_CRATER.r * 1.6);
-  const worn = Math.max(trail * .9, town * .55, avenue * (z > -100 && z < 105 ? .8 : 0), arena * .9, crater);
-  const grass = Math.max(0, 1 - sand * 1.1 - smooth(r, .9, .95)) * (1 - town * .35) * (1 - arena) * (1 - crater * .8);
+  const worn = Math.max(trail * .75, town * .22, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater);
+  const grass = Math.max(0, 1 - sand * 1.1 - smooth(r, .9, .95)) * (1 - town * .12) * (1 - arena) * (1 - crater * .8);
   return [sand, grass, worn];
 }
