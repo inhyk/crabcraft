@@ -129,14 +129,14 @@ export function dawnBoulders(height: (x: number, z: number) => number, sand = ne
       if (k === 0 && site.basalt) {
         // A jointed basalt crag: fractured faces and columns, its foot buried in the slope.
         const h = site.r * 1.15;
-        g = cragGeometry({x, z, r: s.r, h, yaw: s.yaw, seed: site.i * 13 + 5} as Parameters<typeof cragGeometry>[0], 15);
+        g = cragGeometry({x, z, r: s.r, h, yaw: s.yaw, seed: site.i * 13 + 5} as Parameters<typeof cragGeometry>[0], 11);
         const n = g.getAttribute('position').count, c = new Float32Array(n * 3);
         const nr = g.getAttribute('normal') as THREE.BufferAttribute;
         for (let v = 0; v < n; v++) c.set([.75 + .25 * Math.max(0, nr.getY(v)), .6 + .4 * fractH(v * .618), 1], v * 3);
         g.setAttribute('color', new THREE.BufferAttribute(c, 3));
         m = new THREE.Matrix4().compose(new THREE.Vector3(x, low - .3 * h, z), q, new THREE.Vector3(s.r, s.r, s.r));
       } else {
-        g = boulderGeometry({r: s.r, h: s.h, seed: site.i * 31 + k * 7 + 3}, k === 0 ? (site.r >= 3 ? 13 : 11) : 7, site.basalt ? 1.8 : 1);
+        g = boulderGeometry({r: s.r, h: s.h, seed: site.i * 31 + k * 7 + 3}, k === 0 ? (site.r >= 3 ? 10 : 8) : 5, site.basalt ? 1.8 : 1);
         m = new THREE.Matrix4().compose(new THREE.Vector3(x, low - .12 * s.h, z), q, new THREE.Vector3(1, 1, 1));
       }
       g.applyMatrix4(m);
