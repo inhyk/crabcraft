@@ -69,7 +69,7 @@ const inspect=p=>p.evaluate(()=>{const g=window.app.current.game,w=g.world2.thir
  const leftovers=[];root.traverse(o=>{if(!o.isMesh)return;const t=o.geometry.type,q=o.geometry.parameters??{};
   if(t==='PlaneGeometry'&&q.width>=200&&o!==sea&&o!==ground)leftovers.push('plane '+(o.name||t));
   if(t==='SphereGeometry'&&q.radius>=14&&o!==sky)leftovers.push('sphere '+q.radius);
-  if(o.material?.vertexColors&&o.geometry.attributes.position.count>10000)leftovers.push('vertex-colour ground');
+  if(t==='PlaneGeometry'&&o.material?.vertexColors)leftovers.push('vertex-colour ground');
   if(o.material?.isMeshBasicMaterial&&o.material.transparent&&t==='BufferGeometry'&&o.geometry.attributes.position.count===768)leftovers.push('foam ring');
   if(o.material?.isMeshBasicMaterial&&o.material.transparent&&t==='SphereGeometry'&&o.scale.y<=3.01&&o.scale.x>=17)leftovers.push('cloud blob');});
  // The rendered ground is the server's surface at its vertices.
