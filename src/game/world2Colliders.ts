@@ -5,6 +5,7 @@ import { Collision } from '../world/collision';
 import { facetedStarCrystal, starCrystalRadius } from './starCrystal';
 import { throneSolids } from './starThrone';
 import { registerStarVillageLife } from './world2Life';
+import { STAR_STORY_SOLIDS, starBoulders, starCraterShards } from './starFieldSpots';
 import { nearStarObjective, registerStarSettlement, STAR_OBJECTIVES, starTrailDistance } from './world2Settlement';
 
 const rand = (i: number) => {
@@ -43,6 +44,11 @@ export function layoutStarhaven(height: (x: number, z: number) => number, nature
   for (const o of obstacles) col.addCircle(o.x, o.z, o.r, height(o.x, o.z), height(o.x, o.z) + 12);
   for (const c of starCrystalGarden(height)) if (!c.clear) col.addCircle(c.solid.x, c.solid.z, c.solid.r, c.solid.y0, c.solid.y1);
   registerStarVillageLife(height, col);
+  // Field boulders, the crater's great shard and the story props (starFieldSpots.ts).
+  for (const b of starBoulders()) if (b.solid) { const y = height(b.x, b.z); col.addCircle(b.x, b.z, b.r * 0.82, y - 0.3, y + b.h * 1.5); }
+  const shard = starCraterShards()[0];
+  col.addCircle(shard.x, shard.z, 0.85, height(shard.x, shard.z) - 0.5, height(shard.x, shard.z) + shard.h);
+  for (const s of STAR_STORY_SOLIDS) col.addCircle(s.x, s.z, s.r, height(s.x, s.z) - 0.3, height(s.x, s.z) + s.h);
   // Quest props: waystone frames and ore beds.
   for (const [kind, [x, z]] of Object.entries(STAR_OBJECTIVES)) {
     const y = height(x, z);

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {STAR_GRID} from '../sim/world/ground';
 import type {StarMeadow} from './starMeadow';
+import type {StarFields} from './starFields';
 import {starGroundColor} from './world2Ground';
 import {starTrailDistance} from './world2Settlement';
 import {STAR_CRATER,STAR_DETAIL,starCoast,starSand} from './starFieldLayout';
@@ -90,7 +91,7 @@ float sgGrass=smoothstep(.38,.62,vSgSoil.y+(sgMacro2-.5)*.35+(sgFine-.5)*.4+(sgC
 float sgRock=smoothstep(.36,.55,sgSlope+(sgMid-.5)*.25);
 // Crater: scorched, glassy and cracked inside, ash thrown out round the rim.
 float sgCd=length(sgP-vec2(${STAR_CRATER.x.toFixed(1)},${STAR_CRATER.z.toFixed(1)}))/${STAR_CRATER.r.toFixed(1)};
-float sgScorch=1.-smoothstep(.75,1.7,sgCd+(sgMid-.5)*.6+(sgFine-.5)*.3);
+float sgScorch=(1.-smoothstep(.55,1.3,sgCd+(sgMid-.5)*.5+(sgFine-.5)*.3))*.92;
 // Region tint (vertex colour) is the meadow's moonlit green, the sand's lavender grey or the town's earth.
 vec3 sgTint=vColor.rgb;
 // Meadow: broad lush and dry swathes, darker hollows, clumps and blades.
@@ -102,13 +103,13 @@ sgG*=.72+.56*sgBlade;sgG*=.86+.28*sgBlade2;
 // Sand: pale and fine, rippled across the sea wind, darker and wet where the sea reaches it.
 float sgRipPhase=dot(sgP,vec2(-.6,.8))*4.2+sgT(sgP,9.,.4).r*7.+sgFine*2.;
 float sgRip=sin(sgRipPhase)*.5+.5;
-vec3 sgS=vec3(.40,.385,.44)*(.86+.28*sgMid)*(.92+.16*sgFine);
+vec3 sgS=vec3(.105,.1,.112)*(.82+.36*sgMid)*(.9+.2*sgFine);
 sgS*=mix(1.,.9+.2*sgRip,sgF1);
 float sgWet=1.-smoothstep(-.6,.55,vSgW.y+(sgMid-.5)*.5);
 sgS=mix(sgS,sgS*vec3(.5,.52,.6),sgWet);
 // Shells and pebbles on the strand.
 float sgPeb=(1.-smoothstep(.1,.16,sgClump.g))*step(.62,sgH(floor(sgP/2.1*24.)))*sgF2;
-sgS=mix(sgS,vec3(.62,.6,.64),sgPeb*.7);
+sgS=mix(sgS,vec3(.2,.195,.21),sgPeb*.7);
 // Packed earth: dark, gritty, pebbles worn flat.
 vec3 sgE=vec3(.12,.104,.094)*(.75+.5*sgMid)*(.85+.3*sgFine);
 float sgEPeb=(1.-smoothstep(.16,.26,sgClump.g))*sgF1;
@@ -123,13 +124,17 @@ vec3 sgCol=sgE;
 sgCol=mix(sgCol,sgS,sgSand);
 sgCol=mix(sgCol,sgG,sgGrass);
 sgCol=mix(sgCol,sgR,sgRock);
-vec3 sgAsh=mix(vec3(.07,.06,.08),vec3(.03,.025,.04),smoothstep(.2,.9,1.-sgCd))*(.8+.4*sgFine);
+vec3 sgAsh=mix(vec3(.085,.075,.07),vec3(.035,.03,.04),smoothstep(.3,.9,1.-sgCd))*(.75+.5*sgFine)*(.8+.4*sgClump.r);
 sgCol=mix(sgCol,sgAsh,sgScorch);
+float sgRim=exp(-pow((sgCd-1.15)/.22,2.))*(.6+.4*sgFine);
+sgCol=mix(sgCol,vec3(.14,.12,.11)*(.8+.4*sgMid),sgRim*.55);
 // Far off, a whole meadow averages out: keep its broad patches, nothing finer.
 diffuseColor.rgb=sgCol;
 // Micro relief for the light: blades and clumps, ripples, pebbles, bedding, the crater's glassy cracks.
 float sgRelief=sgGrass*((sgBlade-.5)*.02+(sgClump.r-.5)*.03)+sgSand*(1.-sgWet)*(sgRip-.5)*.022*sgF1+(1.-sgGrass)*(1.-sgSand)*(sgEPeb*.012+(sgFine-.5)*.01)+sgRock*smoothstep(0.,.1,sgBedF)*.06*sgF1;
-float sgCrack=(1.-smoothstep(.02,.07,sgClump.a))*smoothstep(1.05,.55,sgCd)*sgF1;
+vec2 sgCv=sgP-vec2(${STAR_CRATER.x.toFixed(1)},${STAR_CRATER.z.toFixed(1)});float sgCa=atan(sgCv.y,sgCv.x);
+float sgRad=abs(sin(sgCa*5.5+sgT(sgP,6.,.2).r*5.+sgCd*2.));
+float sgCrack=max(1.-smoothstep(.03,.1,sgT(sgP,1.3,.9).a),(1.-smoothstep(.0,.06+.05*sgCd,sgRad))*smoothstep(1.2,.6,sgCd))*smoothstep(1.15,.25,sgCd)*sgF1;
 sgRelief-=sgCrack*.03*sgScorch;
 `;
 
@@ -160,7 +165,7 @@ if(sgDetail>.5){
   float speck=on*(1.-smoothstep(.02,.06,d))*(.55+.45*sin(sgTime*(.6+r*1.3)+r2*40.))*sgF2;
   totalEmissiveRadiance+=mix(vec3(.12,.55,.5),vec3(.42,.22,.75),step(.5,r2))*speck*1.6;
   // Embers of the fallen star still glow in the crater's cracks.
-  totalEmissiveRadiance+=vec3(.42,.2,.8)*sgCrack*sgScorch*(.55+.45*sin(sgTime*.7+sgMid*9.))*.8;
+  totalEmissiveRadiance+=vec3(.42,.16,.9)*sgCrack*sgScorch*(.6+.4*sin(sgTime*.7+sgMid*9.))*.9;
 }
 `;
 
@@ -169,6 +174,8 @@ export interface StarGround {
   texture: THREE.DataTexture;
   /** The meadow underfoot (starMeadow.ts), once the settlement has grown it. */
   meadow: StarMeadow | null;
+  /** The field dressing's clock (starFields.ts). */
+  fields: StarFields | null;
   update(time: number, quality: 'high' | 'low', camera: THREE.Camera, player: THREE.Vector3): void;
 }
 
@@ -207,8 +214,8 @@ export function starGround(height: (x: number, z: number) => number, anisotropy:
   material.customProgramCacheKey = () => 'starhaven-night-ground';
   const mesh = new THREE.Mesh(land, material); mesh.name = 'star-island-ground'; mesh.receiveShadow = true;
   return {
-    mesh, texture, meadow: null,
-    update(time, quality, camera, player) { uniforms.sgTime.value = time; STAR_DETAIL.value = quality === 'low' ? 0 : 1; this.meadow?.update(time, camera, player, quality); },
+    mesh, texture, meadow: null, fields: null,
+    update(time, quality, camera, player) { uniforms.sgTime.value = time; STAR_DETAIL.value = quality === 'low' ? 0 : 1; this.meadow?.update(time, camera, player, quality); this.fields?.update(time); },
   };
 }
 
@@ -222,7 +229,7 @@ export function starSoil(x: number, z: number, y: number): [number, number, numb
   // Inside the town the ground is trodden earth with grass in the quiet corners; the arena's ring is bare.
   const town = 1 - smooth(rect(-50, 50, 6, 97), 0, 7), avenue = 1 - smooth(Math.abs(x), 6, 9.5) * 1;
   const arena = 1 - smooth(Math.hypot(x, z + 75), 22, 28);
-  const crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .9, STAR_CRATER.r * 1.6);
+  const crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .75, STAR_CRATER.r * 1.2);
   const worn = Math.max(trail * .75, town * .22, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater);
   const grass = Math.max(0, 1 - sand * 1.1 - smooth(r, .9, .95)) * (1 - town * .12) * (1 - arena) * (1 - crater * .8);
   return [sand, grass, worn];

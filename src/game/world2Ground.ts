@@ -3,7 +3,7 @@ import {starTrailDistance} from './world2Settlement';
 
 // Moonlit albedos of the island's regions. starGround.ts paints grass, sand, earth and stone over them; the monitor's
 // scenery uses them as they are.
-const beachGrass=new THREE.Color('#717866');
+const beachGrass=new THREE.Color('#5d7560');
 const meadow=new THREE.Color('#4c7354');
 const moonshade=new THREE.Color('#3d7470');
 const ruinDust=new THREE.Color('#77708a');

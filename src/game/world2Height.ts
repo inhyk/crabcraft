@@ -35,7 +35,7 @@ export function starReliefKeep(x:number,z:number){
   let keep=smooth(playDistance(x,z),3,15);
   for(const [kind,p] of Object.entries(STAR_OBJECTIVES)){
     const d=Math.hypot(x-p[0],z-p[1]),explore=kind.startsWith('explore-');
-    keep=Math.min(keep,smooth(d,explore?16:5.5,explore?27:14));
+    keep=Math.min(keep,smooth(d,explore?16:7,explore?27:15));
   }
   for(const [px,pz,r] of STAR_KEEP_POINTS)keep=Math.min(keep,smooth(Math.hypot(x-px,z-pz),r,r+8));
   return keep;

@@ -1,5 +1,8 @@
 import {starPaving} from './starPaving';
 import {starMeadow} from './starMeadow';
+import {starFields} from './starFields';
+import {starStories} from './starStories';
+import {STAR_BOAT,STAR_CAMP} from './starFieldLayout';
 import type {IslandPath} from './islandPaths';
 import * as THREE from 'three';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
@@ -55,8 +58,8 @@ export function starLots():Lot[]{
 }
 
 const forestRand=(i:number)=>{const a=Math.sin(i*127.1+23.7)*43758.5453;return a-Math.floor(a);};
-/** Island forest: every fifth spot a rock, the rest trees. Positions only; names come from the kit. */
-function starForest(){
+/** Island forest: every fifth spot a rock (a field boulder, starFieldSpots.ts), the rest trees. Positions only. */
+export function starForestSpots(){
   const spots:{i:number;x:number;z:number;rock:boolean;scale:number;yaw:number}[]=[];
   for(let i=0;i<340;i++) {
     const x=(forestRand(i+100)-.5)*215,z=(forestRand(i+900)-.5)*255+10;
@@ -78,7 +81,7 @@ export function registerStarSettlement(height:(x:number,z:number)=>number,collis
   const builder=new TownBuilder(null,null,collision,{});
   for(const lot of starLots())builder.build(lot);
   if(!natureNames.some(n=>STAR_TREE_NAME.test(n)))return;
-  for(const p of starForest())if(!p.rock)collision.addCircle(p.x,p.z,.5*p.scale,height(p.x,p.z),height(p.x,p.z)+8);
+  for(const p of starForestSpots())if(!p.rock)collision.addCircle(p.x,p.z,.5*p.scale,height(p.x,p.z),height(p.x,p.z)+8);
   for(const [x,z] of GARDEN_TREES)collision.addCircle(x,z,.5*gardenScale(x),height(x,z),height(x,z)+9);
 }
 
@@ -135,12 +138,13 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   }
   root.add(poles,bulbs);
   for(const [x,z] of [[0,57],[-25,36],[20,35],[0,76]]){const light=new THREE.PointLight('#ffc78b',18,30,1.5);light.position.set(x,7,z);root.add(light);}
+  // The stargazer's camp and the beached skiff; their kit props join the market's batch.
+  const stories=starStories(height,put);
   root.add(dressing.build(),villageProps.build());
   const scatter=new Scatter(nature,'star-island-forests');
   const rand=forestRand;
   const natureNames=[...nature.pieces.keys()];
   const treeNames=natureNames.filter(n=>STAR_TREE_NAME.test(n));
-  const rockNames=[...nature.pieces.keys()].filter(n=>/^Rock_Medium_/.test(n));
   const flowerNames=[...nature.pieces.keys()].filter(n=>/Flower_[34]_Group|Bush_Common_Flowers/.test(n));
   // A plant's leaves extend beyond its origin. Keep its full footprint and wind off the paving.
   const plantRadius=new Map<string,number>();
@@ -154,9 +158,10 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     const rect=(ax:number,bx:number,az:number,bz:number)=>Math.hypot(Math.max(ax-x,0,x-bx),Math.max(az-z,0,z-bz));
     return Math.min(rect(-4.9,4.9,-72.9,92.9),rect(-26.9,26.9,51.1,58.9),rect(-26,-4.7,34.8,37.2),rect(4.7,21,33.8,36.2),rect(-23,-4.7,80.8,83.2),rect(4.7,25,82.8,85.2),Math.max(0,starTrailDistance(x,z)-1.15),residentClearance(x,z))>radius*scale;
   };
-  for(const p of starForest()) {
-    const list=p.rock?rockNames:treeNames;if(!list.length)continue;
-    scatter.add(list[p.i%list.length],trs(p.x,height(p.x,p.z),p.z,p.yaw,p.scale));
+  // The forest's rock spots hold sculpted field boulders now (starFields.ts).
+  for(const p of starForestSpots()) {
+    if(p.rock||!treeNames.length)continue;
+    scatter.add(treeNames[p.i%treeNames.length],trs(p.x,height(p.x,p.z),p.z,p.yaw,p.scale));
   }
   let gardenTrees=0;
   for(const [x,z] of GARDEN_TREES){
@@ -190,6 +195,9 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     }
   }
   root.userData.meadowPlants=meadowCount;
+  // Boulders, the crater's shards, moon-flowers, and the kit's ferns, clover and wildflowers through the meadows.
+  const field=starFields(height,scatter,natureNames,clearPaving);root.add(field.root,stories.root);
+  const fields={root:field.root,update(t:number){field.update(t);stories.update(t);}};
   root.add(scatter.build({boundsPadding:.2}));
   // Starhaven's own moonlit setts, kerbs and trail flags (starPaving.ts); the fountain keeps its basin clear.
   const ways:IslandPath[]=[
@@ -208,8 +216,10 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     ...[[-12,48],[12,48],[-12,70],[12,70],[-15,88],[15,88]].map(([x,z])=>[x,z,2.6] as const),
     ...Object.entries(STAR_OBJECTIVES).filter(([k])=>!k.startsWith('explore-')).map(([,p])=>[p[0],p[1],1.7] as const),
     ...Array.from({length:18},(_,i)=>[(i%2?1:-1)*(19+i%3*3),30+Math.floor(i/2)*6,1.1] as const),
+    // The camp's trodden circle and the skiff's berth.
+    [STAR_CAMP.x-.5,STAR_CAMP.z,4.6],[STAR_BOAT.x,STAR_BOAT.z,3.4],
   ]);
   root.add(meadow.mesh);
   for(const kit of [village,nature,props])for(const piece of kit.pieces.values())for(const part of piece.parts)part.geometry.dispose();
-  return {root,lots,natureNames,meadow};
+  return {root,lots,natureNames,meadow,fields};
 }
