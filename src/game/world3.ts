@@ -1,4 +1,4 @@
-import {islandPaths} from './islandPaths';
+import {dawnTown,type DawnTown} from './dawnTown';
 import {Scatter} from '../world/kit';
 import {StarWind} from './starWind';
 import * as THREE from 'three';
@@ -9,7 +9,7 @@ import {loadKit,StaticBatch,trs} from '../world/kit';
 import {TownBuilder} from '../world/buildings';
 import {dawnHeight,DAWN_ARENA_HEIGHT} from '../sim/world/ground';
 import type {Poi} from '../world/types';
-import {DAWN_PATHS,dawnForest,dawnGrove,dawnLots,dawnRocks,layoutDawnreach,roadClearance} from './world3Colliders';
+import {dawnForest,dawnGrove,dawnLots,dawnRocks,layoutDawnreach,roadClearance} from './world3Colliders';
 
 /** The third island has its own warm coast, inhabited ring town and volcanic citadel. */
 export class DawnIsland {
@@ -22,6 +22,8 @@ export class DawnIsland {
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
  private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new StarSun();
  private rotating:THREE.Object3D[]=[];
+ /** Dawnharbor's own streets, lamps, rocks, harbour and gate (dawnTown.ts). */
+ readonly townLook:DawnTown;
  height(x:number,z:number){
   return dawnHeight(x,z);
  }
@@ -39,15 +41,11 @@ export class DawnIsland {
   const sea=new THREE.Mesh(new THREE.PlaneGeometry(1800,1800),new THREE.MeshStandardMaterial({color:'#245e74',roughness:.3,metalness:.4,transparent:true,opacity:.94}));sea.rotation.x=-Math.PI/2;sea.position.y=.2;this.root.add(sea);
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
   // The town square uses the terrain and paving; a flat raised disc cut through its sloping roads.
-  // A walkable, lit ascent to the fortress, built directly over the analytic surface.
-  for(let i=0;i<72;i++){const z=83-i*2.12,y=this.height(0,z);
-   if(i%5===0)for(const side of [-1,1]){add(new THREE.CylinderGeometry(.14,.22,2.4,6),stone,side*5.1,y+1.2,z);add(new THREE.OctahedronGeometry(.42),gold,side*5.1,y+2.6,z);}
-  }
   for(const side of [-1,1]){const tower=add(new THREE.CylinderGeometry(3.6,4.4,15,10),stone,side*27,this.height(side*27,-56)+7.5,-56);add(new THREE.ConeGeometry(4.6,6,10),roof,tower.position.x,tower.position.y+10.5,-56);}
   const floor=add(new THREE.CylinderGeometry(21,22,1.3,64),stone,0,DAWN_ARENA_HEIGHT-.6,-72);floor.name='dawn-boss-platform';
   for(const r of [6,13,20]){const ring=add(new THREE.TorusGeometry(r,.07,5,96),gold,0,DAWN_ARENA_HEIGHT+.12,-72);ring.rotation.x=Math.PI/2;}
   for(const {i,x,z,r} of dawnRocks()){const y=this.height(x,z);const rock=add(new THREE.DodecahedronGeometry(r,0),stone,x,y+r*.65,z);rock.scale.y=1.5;if(i%3===0){const core=add(new THREE.OctahedronGeometry(.8),lava,x,y+3,z);this.rotating.push(core);}}
-  this.root.add(islandPaths((x,z)=>this.height(x,z),DAWN_PATHS,3));
+  this.townLook=dawnTown((x,z)=>this.height(x,z));this.root.add(this.townLook.root);
   this.scenery=new DawnScenery((x,z)=>this.height(x,z));this.root.add(this.scenery.root);
   this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',.9));const sun=this.sun.light;sun.name='dawnreach-sun';sun.color.set('#ffe6b3');sun.intensity=2.8;this.root.add(sun,sun.target);
  }
@@ -82,5 +80,6 @@ export class DawnIsland {
   for(const side of [-1,1])for(const z of [37,57,74]){const x=side*23;put('Stall_Empty',x,z,side<0?Math.PI/2:-Math.PI/2);put('Barrel_Apples',x+side*2,z+1);put('Crate_Wooden',x+side*2,z-2);put('FarmCrate_Apple',x,z,0,1,.82);}
   this.root.add(market.build());
  }
- update(time:number,_rescued:boolean,x:number,z:number){this.wind?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
+ private sunDir=new THREE.Vector3();
+ update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
 }

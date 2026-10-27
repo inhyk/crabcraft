@@ -29,6 +29,41 @@ export const roadClearance = (x: number, z: number) => {
   return best;
 };
 
+/** Quest lamps (dawnQuests.ts DAWN_POINTS dawn-lamp-*) the town's own lamps keep clear of. */
+const QUEST_LAMPS: [number, number][] = [[-7, 20], [7, 0], [-7, -22]];
+/**
+ * Dawnharbor's road lamps: an iron post on a sandstone foot, its arm and lantern reaching over the road (yaw points
+ * from the post to the lantern). Staggered down the avenue, paired at the squares and at the cross street.
+ */
+export function dawnLampPosts() {
+  const posts: { x: number; z: number; yaw: number }[] = [];
+  const edge = 4.2 + 0.75;
+  const clear = (x: number, z: number) => QUEST_LAMPS.every(([qx, qz]) => Math.hypot(qx - x, qz - z) >= 5) && DAWN_PATHS.slice(1).every((p) => onPath(p, x, z) > 0.6);
+  for (let i = 0; i < 10; i++) {
+    const z = 88 - i * 13;
+    if (Math.abs(z - 53) < 11) continue;
+    // Alternate sides; a lamp that would stand in a side street or by a quest lamp crosses the road.
+    for (const side of i % 2 ? [1, -1] : [-1, 1]) {
+      if (!clear(side * edge, z)) continue;
+      posts.push({ x: side * edge, z, yaw: side < 0 ? Math.PI / 2 : -Math.PI / 2 });
+      break;
+    }
+  }
+  // The town square's four corners, just off its ring, lanterns leaning in over the stones.
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) posts.push({ x: sx * 7.6, z: 53 + sz * 7.6, yaw: Math.atan2(-sx, -sz) });
+  // The avenue's gate into the square from the harbour, and the arrival square's western edge.
+  posts.push({ x: 4.95, z: 69.5, yaw: -Math.PI / 2 }, { x: -16.9, z: 79.2, yaw: Math.atan2(1, 0.45) });
+  return posts;
+}
+const onPath = (path: IslandPath, x: number, z: number) => {
+  let best = Infinity;
+  for (let i = 1; i < path.points.length; i++) {
+    const [ax, az] = path.points[i - 1], [bx, bz] = path.points[i], dx = bx - ax, dz = bz - az, t = clamp01(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz));
+    best = Math.min(best, Math.hypot(x - ax - dx * t, z - az - dz * t) - path.width / 2);
+  }
+  return best;
+};
+
 /** Volcanic rocks ringing the citadel, leaving the avenue open. */
 export function dawnRocks() {
   const rocks: { i: number; x: number; z: number; r: number }[] = [];
@@ -93,6 +128,7 @@ export function layoutDawnreach(): Collision {
     const y = h(x, z);
     col.addCircle(x, z, r + 1, y, y + 7);
   }
+  for (const { x, z } of dawnLampPosts()) col.addCircle(x, z, 0.3, h(x, z), h(x, z) + 3.4);
   registerDawnScenery(h, col);
   const builder = new TownBuilder(null, null, col, {});
   for (const lot of dawnLots()) builder.build(lot);
