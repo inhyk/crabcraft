@@ -15,6 +15,7 @@ import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAIL
 import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
+import {StarGate} from './starGate';
 import { StarVillageLife } from './world2Life';
 import {starGroundColor} from './world2Ground';
 import {starCrystalCluster,starCrystalMaterial} from './starCrystals';
@@ -67,7 +68,7 @@ export class HiddenWorld {
   readonly dawnRequests:DawnRequests;
   readonly snowRequests:DawnRequests;
   private snowGate:StarPortal;
-  private thirdGate:StarPortal;
+  private thirdGate:StarGate;
   private echoAt=0;
   readonly spawn = new THREE.Vector3(0, 3, 86);
   readonly arena: Poi = { id:'bossArena',position:new THREE.Vector3(0,3,-75),yaw:0,radius:17 };
@@ -82,7 +83,7 @@ export class HiddenWorld {
   private sea: StarSea;
   private obstacles: { x:number; z:number; r:number }[] = [];
   private crystalSolids: {x:number;z:number;r:number;y0:number;y1:number}[] = [];
-  private portal: StarPortal;
+  private portal: StarGate;
   private shorePortal: StarPortal;
   private travelArmed=false;
   private travelAt=0;
@@ -229,12 +230,12 @@ export class HiddenWorld {
       for(const [i,[x,z]] of starRoadGuides().entries()){m.compose(new THREE.Vector3(x,this.height(x,z)+.55,z),q.setFromAxisAngle(new THREE.Vector3(0,1,0),i*2.4),new THREE.Vector3(.7,1.1,.7));guides.setMatrixAt(i,m);}
       guides.castShadow=true;this.root.add(guides);
     }
-    this.portal=new StarPortal(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
+    this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
     const ship=w.pois.wreck.position;
     const shorePosition=new THREE.Vector3(ship.x-7,0,ship.z+7);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
     this.shorePortal=new StarPortal(shorePosition,'클로헤이븐 → 별빛 항구');w.root.add(this.shorePortal.root);
-    this.thirdGate=new StarPortal(new THREE.Vector3(0,this.height(0,-41),-41),'별빛 항구 → 새벽의 섬');this.root.add(this.thirdGate.root);
+    this.thirdGate=new StarGate(new THREE.Vector3(0,this.height(0,-41),-41),'별빛 항구 → 새벽의 섬');this.root.add(this.thirdGate.root);
     this.root.add(this.sun.light,this.sun.light.target,this.night.root);
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
     const surface=(island:{height(x:number,z:number):number})=>(x:number,z:number)=>island.height(x,z);
