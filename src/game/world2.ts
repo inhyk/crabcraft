@@ -12,7 +12,7 @@ import type { Game } from './game';
 import type { Poi } from '../world/types';
 import { snapshotMap } from './snapshots';
 import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS, starLots, starTrailLanternSpots } from './world2Settlement';
-import {starDoorLampGlows,starTrailLanternGlows} from './starRooftops';
+import {starDoorLampGlows,starTrailLanternGlows,starWindowSpillGlows,STAR_ROOF_ROLES} from './starRooftops';
 import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
@@ -242,7 +242,7 @@ export class HiddenWorld {
     // The miners' torch.
     {const [tx,tz]=rot(-6.4,1.8,STAR_MINE.yaw);crystalGlow.push({x:STAR_MINE.x+tx,z:STAR_MINE.z+tz,radius:2.4,color:'#ff9a4a',strength:2.2});}
     // The door lanterns' pools (starRooftops.ts).
-    crystalGlow.push(...starDoorLampGlows(starLots()),...starTrailLanternGlows(starTrailLanternSpots()));
+    crystalGlow.push(...starDoorLampGlows(starLots()),...starTrailLanternGlows(starTrailLanternSpots()),...starWindowSpillGlows(starLots(),STAR_ROOF_ROLES.empty));
     // The fallen-star ruin's armillary at the east trail's end keeps a pale pool of its own, so the trail leads to light.
     crystalGlow.push({x:80,z:-40,radius:4.2,color:'#9fd8ff',strength:1.1});
     // The wilds' moon-flower clumps light their patches (starWilds.ts).
