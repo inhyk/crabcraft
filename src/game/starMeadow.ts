@@ -33,6 +33,8 @@ attribute vec3 aBlade;   // height along the blade 0..1, side -1..1, blade index
 varying vec3 vSmCol;
 varying float vSmT;
 varying float vSmAo;
+varying float vSmTurf;
+varying vec3 vSmN;
 vec2 smHash22(vec2 p){vec3 p3=fract(vec3(p.xyx)*vec3(.1031,.1030,.0973));p3+=dot(p3,p3.yzx+33.33);return fract((p3.xx+p3.yz)*p3.zy);}
 float smHeightAt(vec2 p){
   vec2 g=clamp((p-smGrid.xy)/smGrid.z,vec2(0.),vec2(smGrid.w-1.,smGridNz-1.));
@@ -58,10 +60,12 @@ for(int j=0;j<=1;j++)for(int i=0;i<=1;i++){vec2 c=smCc+vec2(i,j),q=(c+.3+.4*smHa
 vec2 smK=smHash22(smBest+11.1),smK2=smHash22(smBest+29.3);
 vec2 smPc=floor(smRoot/9.),smPf=fract(smRoot/9.);smPf=smPf*smPf*(3.-2.*smPf);
 float smPatch=mix(mix(smHash22(smPc).x,smHash22(smPc+vec2(1.,0.)).x,smPf.x),mix(smHash22(smPc+vec2(0.,1.)).x,smHash22(smPc+1.).x,smPf.x),smPf.y);
-float smBare=smoothstep(.1,.32,smPatch+(smK.x-.5)*.25);
+// Bare patches are bare (no stray blades left standing in them: those read as confetti); mown turf has none.
+float smTurf=1.-smoothstep(.36,.5,smM.g);
+float smBare=max(smoothstep(.16,.3,smPatch+(smK.x-.5)*.25),smTurf);
 float smHeart=1.-smoothstep(.4,1.6,smCd);
 // Thin out toward the patch's edge (and wherever the map says sparse); shrink before vanishing.
-float smKeep=smM.r*(1.-smoothstep(.62,.96,smDist))*mix(.12,1.,smBare)*(.72+.28*smHeart);
+float smKeep=smM.r*(1.-smoothstep(.62,.96,smDist))*mix(0.,1.,smBare)*mix(.72+.28*smHeart,1.,smTurf);
 float smLive=step(smR2.x,smKeep);
 float smScale=smLive*smM.g*(.55+.6*smR2.y)*mix(1.,.35,smoothstep(.55,.95,smDist))*smoothstep(0.,.25,smKeep-smR2.x+.1);
 smScale*=(.62+.7*smK.y)*(.7+.45*smHeart)*mix(.6,1.,smBare);
@@ -69,7 +73,8 @@ smScale*=(.62+.7*smK.y)*(.7+.45*smHeart)*mix(.6,1.,smBare);
 float smB=aBlade.z,smA=smR.x*6.2831+smB*2.1,smLean=.3+.4*fract(smR.y*7.+smB*.37);
 vec2 smDir=normalize(vec2(cos(smA),sin(smA))+vec2(cos(smK2.x*6.28),sin(smK2.x*6.28))*.9),smSide=vec2(-smDir.y,smDir.x);
 vec2 smOff=smDir*(.05+.06*smB)*(smB>0.?1.:0.);
-float smH=(.26+.26*fract(smR2.y*5.3+smB*.61))*smScale,smW=.06+.035*fract(smR.x*3.1+smB);
+// Short turf on the town's mown lawns (map height under .5): finer blades, so they read as a sward, not confetti.
+float smH=(.26+.26*fract(smR2.y*5.3+smB*.61))*smScale,smW=(.042+.026*fract(smR.x*3.1+smB))*mix(1.,.7,smTurf);
 float smT=aBlade.x;
 // Wind: slow swells and quick flutter; the player's crab parts the grass round it.
 vec2 smBase=smRoot+smOff;
@@ -83,13 +88,16 @@ float smGround=smHeightAt(smBase);
 float smTaper=1.-smT*smT;
 vec3 transformed=vec3(smBase.x+smSide.x*aBlade.y*smW*smTaper+smBend.x,smGround+smT*smH*(1.-.3*smT*length(smDir*smLean+smWind)),smBase.y+smSide.y*aBlade.y*smW*smTaper+smBend.y);
 if(smScale<.02)transformed=vec3(0.,-1e4,0.);
-// Lit mostly as the ground it stands in, turned a little toward its own face.
-vec3 objectNormal=normalize(vec3(smDir.x*.35,1.,smDir.y*.35));
+// Lit as the ground it stands in (the terrain's own normal, so a blade is never darker than the turf round it),
+// turned only a little toward its own face.
+float smGx=smHeightAt(smBase+vec2(.6,0.))-smHeightAt(smBase-vec2(.6,0.)),smGz=smHeightAt(smBase+vec2(0.,.6))-smHeightAt(smBase-vec2(0.,.6));
+vec3 objectNormal=vec3(0.,1.,0.);vSmN=normalize(vec3(-smGx/1.2+smDir.x*.12,1.,-smGz/1.2+smDir.y*.12));
 vec3 smTint=texture2D(smTint,smUv).rgb;
 // Tone by clump: some greener, some silvered, some going to seed (warmer, paler).
 vec3 smClumpTone=smK2.y<.33?vec3(.92,1.06,1.02):smK2.y<.66?vec3(1.06,1.04,1.1):vec3(1.14,1.08,.9);
-vSmCol=smTint*(.88+.24*smR2.y)*(.86+.28*smK.x)*smClumpTone*mix(vec3(1.),vec3(1.18,1.1,.8),step(.86,smR.y));
-vSmT=smT;vSmAo=smM.b;
+// Value varies clump by clump (some deep, some silvered) so a field reads as tussocks, not one flat sheet.
+vSmCol=smTint*(.9+.2*smR2.y)*mix(.62+.7*smK.x,1.02+.2*smK.x,smTurf)*smClumpTone*mix(vec3(1.),vec3(1.18,1.1,.8),step(.86,smR.y));
+vSmT=smT;vSmAo=mix(smM.b,1.,smTurf*.6);vSmTurf=smTurf;
 `;
 
 export interface StarMeadow {
@@ -120,8 +128,9 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
     if (Math.hypot(x, z - 55) < 8 || Math.hypot(x, z + 75) < 25) d = 0;
     const town = Math.abs(x) < 54 && z > 3 && z < 100;
     const o = (j * W + i) * 4;
-    mask[o] = Math.round(Math.min(1, d * 1.15) * 255);
-    mask[o + 1] = Math.round((town ? .55 : .8 + .2 * (1 - worn)) * 255);
+    // The town's lawns are a full, short sward: dense or nothing, never a scatter of single blades.
+    mask[o] = Math.round(Math.min(1, d * (town ? 1.8 : 1.15)) * 255);
+    mask[o + 1] = Math.round((town ? .34 : .8 + .2 * (1 - worn)) * 255);
     mask[o + 2] = Math.round((1 - starShade(x, z)) * 255); mask[o + 3] = 255;
     starGroundColor(x, z, y, c);
     tint[o] = Math.round(Math.min(1, c.r) * 255); tint[o + 1] = Math.round(Math.min(1, c.g) * 255); tint[o + 2] = Math.round(Math.min(1, c.b) * 255); tint[o + 3] = 255;
@@ -159,11 +168,11 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
       .replace('#include <beginnormal_vertex>', VERT_BODY)
       .replace('#include <begin_vertex>', '');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vSmCol;\nvarying float vSmT;\nvarying float vSmAo;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, moonlit toward the tips.\ndiffuseColor.rgb=vSmCol*mix(.72,1.3,smoothstep(0.,.9,vSmT))*mix(.6,1.,vSmAo);')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSmCol;\nvarying float vSmT;\nvarying float vSmAo;\nvarying float vSmTurf;\nvarying vec3 vSmN;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, the tips catching the moon (silvered); mown turf stays close to the ground\'s own value.\nfloat smTip=smoothstep(.45,1.,vSmT);\ndiffuseColor.rgb=vSmCol*mix(mix(.5,1.,vSmTurf),mix(1.1,1.2,vSmTurf),smoothstep(0.,.8,vSmT))*mix(.6,1.,vSmAo);\ndiffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(1.25,1.4,1.75)+vec3(.012,.016,.026),smTip*smTip*(1.-.6*vSmTurf));')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(.9,.6,vSmT);')
       // Both faces lit as the front: grass is thin enough to let the moon through.
-      .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal*=faceDirection;\n#endif');
+      .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n// Both faces lit as the turf they stand in: the terrain\'s world normal, whichever face is seen.\nnormal=normalize((viewMatrix*vec4(vSmN,0.)).xyz);');
     // Lamp pools and crystal glow light each blade where it stands (starLight.ts).
     injectStarLight(shader, null);
   };

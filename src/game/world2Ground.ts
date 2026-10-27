@@ -4,9 +4,10 @@ import {starNoise} from './starFieldLayout';
 
 // Moonlit albedos of the island's regions. starGround.ts paints grass, sand, earth and stone over them; the monitor's
 // scenery uses them as they are.
-const beachGrass=new THREE.Color('#5b706a');
-const meadow=new THREE.Color('#456c62');
-const moonshade=new THREE.Color('#3d7470');
+// Night grass a value step under the paths and bare earth (style sheet: #3f5b5a / #2e4646), so fields read dark.
+const beachGrass=new THREE.Color('#4c625f');
+const meadow=new THREE.Color('#37574f');
+const moonshade=new THREE.Color('#305d5a');
 const ruinDust=new THREE.Color('#77708a');
 const pilgrimHeather=new THREE.Color('#665a7c');
 const townEarth=new THREE.Color('#52685c');

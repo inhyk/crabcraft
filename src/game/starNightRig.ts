@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {STAR_FOG_DENSITY,STAR_HORIZON,STAR_MOONLIGHT,STAR_MOON_INTENSITY,STAR_SHADE_GROUND,STAR_SHADE_INTENSITY,STAR_SHADE_SKY,STAR_SKY_GLSL} from './starNight';
+import {STAR_FOG_DENSITY,STAR_HORIZON,STAR_MOONLIGHT,STAR_MOON_INTENSITY,STAR_MOON_SHADOW,STAR_SHADE_GROUND,STAR_SHADE_INTENSITY,STAR_SHADE_SKY,STAR_SKY_GLSL} from './starNight';
 
 /**
  * Starhaven's lights, fog and image-based light, all from starNight.ts. The scene's environment map is the shore's
@@ -15,6 +15,8 @@ export class StarNightRig {
     this.root.name='star-night-rig';this.shade.name='star-night-shade';this.root.add(this.shade);
     moon.color.copy(STAR_MOONLIGHT);moon.intensity=STAR_MOON_INTENSITY;
     moon.shadow.bias=-.0004;moon.shadow.normalBias=.035;
+    // Soft, partial moon shadows (PCF radius; shadow intensity lets the shade's light into them).
+    moon.shadow.radius=STAR_MOON_SHADOW.radius;moon.shadow.intensity=STAR_MOON_SHADOW.intensity;
   }
   private bake(renderer:THREE.WebGLRenderer){
     const scene=new THREE.Scene();

@@ -20,13 +20,19 @@ export const STAR_ECLIPSE_R = 3.4 * Math.PI / 180;
 /** Linear colours. Zenith and horizon of the clear sky; the horizon is also the fog. */
 export const STAR_ZENITH = new THREE.Color().setRGB(0.0045, 0.0075, 0.026);
 export const STAR_HORIZON = new THREE.Color().setRGB(0.032, 0.04, 0.085);
-/** Moonlight: cool silver, strong enough to cast crisp shadows and read the ground against the sky. */
-export const STAR_MOONLIGHT = new THREE.Color().setRGB(0.62, 0.74, 1.0);
-export const STAR_MOON_INTENSITY = 3.3;
+/**
+ * Moonlight: cool silver. The moon (west-north-west, visible in the sky) is the key; the eclipse in the north is a
+ * landmark, not a light. Under a half-dark sky the key is moonlight, not sunlight: about half the old strength, its
+ * shadows soft and only partly dark (StarNightRig), the shade's sky light carrying the rest.
+ */
+export const STAR_MOONLIGHT = new THREE.Color().setRGB(0.64, 0.75, 1.0);
+export const STAR_MOON_INTENSITY = 1.75;
+/** How dark a moon shadow is (1 = black) and how soft its edge (PCF radius in texels). */
+export const STAR_MOON_SHADOW = {intensity: 0.62, radius: 5};
 /** Shade: the sky dome's light from above, the dark heather's bounce from below. */
 export const STAR_SHADE_SKY = new THREE.Color().setRGB(0.1, 0.14, 0.34);
 export const STAR_SHADE_GROUND = new THREE.Color().setRGB(0.018, 0.012, 0.03);
-export const STAR_SHADE_INTENSITY = 0.75;
+export const STAR_SHADE_INTENSITY = 1.05;
 export const STAR_FOG_DENSITY = 0.0042;
 
 const v3 = (v: THREE.Vector3 | THREE.Color) => v instanceof THREE.Color ? `vec3(${v.r.toFixed(4)},${v.g.toFixed(4)},${v.b.toFixed(4)})` : `vec3(${v.x.toFixed(5)},${v.y.toFixed(5)},${v.z.toFixed(5)})`;
