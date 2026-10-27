@@ -116,6 +116,8 @@ const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, thresho
 const DESERT_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.35, agxLook: { saturation: 1.5, power: 1.12 }, bloom: { intensity: 0.85, threshold: 1.25, smoothing: 0.3, radius: 0.75, knee: true }, grade: { lift: [0.004, 0.008, 0.02], warm: 0.5, white: 0.02, split: { shadow: [0.92, 0.97, 1.13], highlight: [1.05, 1.04, 0.8] } } };
 /** Tidecrown's late afternoon: rich and warm, sunlit stone golden and shade lilac; bloom keys above the stone, on lamps and windows. */
 const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.14, agxLook: { saturation: 1.34, power: 1.15 }, bloom: { intensity: 0.85, threshold: 1.45, smoothing: 0.3, radius: 0.75 }, grade: { lift: [0.013, 0.006, 0.032], warm: 0.55, white: 0.02, split: { shadow: [0.96, 0.975, 1.045], highlight: [1.11, 1.0, 0.8] } } };
+/** Starhaven's night: deep sky, moonlit ground that reads against it, warm lamps and crystals that bloom (starNight.ts). */
+const STAR_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.06, agxLook: { saturation: 1.24, power: 1.14 }, bloom: { intensity: 1.15, threshold: 0.95, smoothing: 0.3, radius: 0.72, knee: true }, vignette: { offset: 0.32, darkness: 0.55 }, grade: { lift: [0.002, 0.004, 0.012], warm: 0.65, white: 0.0, split: { shadow: [0.96, 0.98, 1.06], highlight: [1.05, 1.02, 0.95] } } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },
@@ -823,7 +825,7 @@ export class Game {
     this.world.update(dt, worldTime, this.camera);
     this.world2.update(dt,worldTime);
     // The game's own views follow the world shown; endings and captures that set their own are left alone.
-    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW||view===TIDECROWN_VIEW||view===DESERT_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
+    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW||view===TIDECROWN_VIEW||view===DESERT_VIEW||view===STAR_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
     if (!paused) this.zoneLines?.update();
     this.lighthouseSecret?.update();
     // A spectator view shows no HUD and plays no music.
@@ -1527,7 +1529,7 @@ export class Game {
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }
 
-  private gameView(): ViewOptions { return this.world2?.inTidecrown ? TIDECROWN_VIEW : this.world2?.fourth.root.visible ? FROST_VIEW : this.world2?.third.root.visible ? DESERT_VIEW : GAME_VIEW; }
+  private gameView(): ViewOptions { return this.world2?.inTidecrown ? TIDECROWN_VIEW : this.world2?.fourth.root.visible ? FROST_VIEW : this.world2?.third.root.visible ? DESERT_VIEW : this.world2?.root.visible ? STAR_VIEW : GAME_VIEW; }
 
   /** A duel keeps the adventure alive, even when entered from a shared victory celebration. */
   resumeFriendAdventure(authority:boolean):void {

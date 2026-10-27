@@ -6,6 +6,7 @@ import type { FxPool, Fx } from './vfx/effects';
 import { C } from './vfx/vfx';
 import { FrostGuide } from './frostGuide';
 import { DawnGuide } from './dawnGuide';
+import { StarGuide } from './starGuide';
 
 const CRUMBS = 9;
 const SPACING = 2.2;
@@ -29,6 +30,10 @@ export class ObjectiveMarker {
   /** Goldsand's brass sun discs and arrowhead (dawnGuide.ts) instead of the chevron and crumbs; set by the game. */
   dawn = false;
   private dawnGuide: DawnGuide | null = null;
+  /** Starhaven's moonlit glints (starGuide.ts) instead of the gold crumbs and chevron, and a silver beam; set by World II. */
+  star = false;
+  private starGuide: StarGuide | null = null;
+  private beamStar = false;
 
   constructor(fx: FxPool) {
     this.beam = fx.spawn('pillar', Infinity);
@@ -82,6 +87,15 @@ export class ObjectiveMarker {
     }
     this.frostGuide?.hide();
     const show = this.enabled && !!target;
+    if (this.star !== this.beamStar) {
+      // The beam in moonlight silver while Starhaven shows, gold everywhere else.
+      this.beamStar = this.star;
+      const u = this.beam.u;
+      if (this.star) { (u.uColor.value as THREE.Color).setRGB(0.42, 0.5, 0.72); (u.uColor2.value as THREE.Color).setRGB(0.36, 0.62, 0.62); }
+      else { (u.uColor.value as THREE.Color).copy(C.gold).multiplyScalar(0.6); (u.uColor2.value as THREE.Color).copy(C.goldSoft).multiplyScalar(0.5); }
+    }
+    if (this.star) (this.starGuide ??= new StarGuide(this.group)).update(time, world, from, target, via, combat, show);
+    else this.starGuide?.hide();
     const dist = target ? Math.hypot(target.x - from.x, target.z - from.z) : 0;
     this.beam.mesh.visible = show && dist > 5;
     if (target && this.beam.mesh.visible) {
@@ -99,8 +113,8 @@ export class ObjectiveMarker {
       return;
     }
     this.dawnGuide?.hide();
-    this.chevron.visible = !near && !combat;
-    this.crumbs.visible = !near && !combat && dist > 10;
+    this.chevron.visible = !near && !combat && !this.star;
+    this.crumbs.visible = !near && !combat && dist > 10 && !this.star;
     if (near || !target) return;
     const lead = via ?? target;
     const leadDist = Math.max(0.001, Math.hypot(lead.x - from.x, lead.z - from.z));
@@ -143,6 +157,7 @@ export class ObjectiveMarker {
     this.crumbMat.dispose();
     this.frostGuide?.dispose();
     this.dawnGuide?.dispose();
+    this.starGuide?.dispose();
     this.group.removeFromParent();
   }
 }

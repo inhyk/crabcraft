@@ -11,14 +11,19 @@ import {t} from '../i18n';
 import type { Game } from './game';
 import type { Poi } from '../world/types';
 import { snapshotMap } from './snapshots';
-import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS } from './world2Settlement';
+import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS, starLots, starTrailLanternSpots } from './world2Settlement';
+import {starDoorLampGlows,starTrailLanternGlows} from './starRooftops';
 import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
 import { DawnPortal } from './dawnPortal';
+import {StarGate} from './starGate';
 import { StarVillageLife } from './world2Life';
-import {starGroundColor} from './world2Ground';
-import {facetedStarCrystal} from './starCrystal';
+import {starCrystalCluster,starCrystalMaterial,starCrystalStump} from './starCrystals';
+import {bakeStarLight,type StarGlowSource} from './starLight';
+import {rot,STAR_MINE} from './starFieldLayout';
+import {moonshadeLeaves} from './starLandmarks';
+import {starGround,type StarGround} from './starGround';
 import {collectibleShadow} from './collectibleShadow';
 import {StarSky} from './starSky';
 import {StarSea} from './starSea';
@@ -29,10 +34,13 @@ import {StarWaystoneKit} from './starWaystone';
 import {StarMemorySealKit} from './starMemorySeal';
 import {StarOreKit} from './starOre';
 import {StarSun} from './starSun';
+import {STAR_MOON_DIR} from './starNight';
+import {StarNightRig} from './starNightRig';
 import {StarEnemyArmour} from './starEnemyArmour';
-import {StarThrone} from './starThrone';
+import {throneSolids} from './starThrone';
+import {StarSanctum} from './starSanctum';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
-import {layoutStarhaven,starCrystalGarden} from './world2Colliders';
+import {layoutStarhaven,starCrystalGarden,starRoadGuides} from './world2Colliders';
 import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
 import type {TidecrownIsland} from './tidecrown/island';
 import type {TidecrownResidents} from './tidecrownResidents';
@@ -51,7 +59,13 @@ const NO_PORTAL=new THREE.Vector3(1e5,0,1e5);
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
   readonly root = new THREE.Group();
-  private readonly sun=new StarSun();
+  private readonly sun=new StarSun(STAR_MOON_DIR.clone().multiplyScalar(100));
+  private readonly night=new StarNightRig(this.sun.light);
+  /**
+   * A small warm key carried with the player's crab, a step toward the camera at its height: it lights the crab's
+   * seen side more than the ground (about 4 m of reach), so the hero reads against the night fields.
+   */
+  private readonly carry=new THREE.PointLight('#ffb27a',6,4.5,1.8);
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();
@@ -64,7 +78,7 @@ export class HiddenWorld {
   readonly dawnRequests:DawnRequests;
   readonly snowRequests:DawnRequests;
   private snowGate:DawnPortal;
-  private thirdGate:StarPortal;
+  private thirdGate:StarGate;
   private echoAt=0;
   readonly spawn = new THREE.Vector3(0, 3, 86);
   readonly arena: Poi = { id:'bossArena',position:new THREE.Vector3(0,3,-75),yaw:0,radius:17 };
@@ -72,14 +86,17 @@ export class HiddenWorld {
   private originalHeight: Game['world']['heightAt'];
   private originalCollision: Game['world']['resolveCollision'];
   private originalRay: Game['world']['raycastSolid'];
-  private groundTexture:THREE.DataTexture;
+  private ground:StarGround;
   private groundHeights=buildStarHeights();
   private rotations: THREE.Object3D[] = [];
   private sky: StarSky;
   private sea: StarSea;
   private obstacles: { x:number; z:number; r:number }[] = [];
   private crystalSolids: {x:number;z:number;r:number;y0:number;y1:number}[] = [];
-  private portal: StarPortal;
+  /** The field crystals' layout and the baked ground light (for QA). */
+  crystalSpots: ReturnType<typeof starCrystalGarden> = [];
+  groundLight: THREE.DataTexture | null = null;
+  private portal: StarGate;
   private shorePortal: StarPortal;
   private travelArmed=false;
   private travelAt=0;
@@ -107,7 +124,7 @@ export class HiddenWorld {
   private collision: Collision | null = null;
   private life:StarVillageLife|null=null;
   private armour:StarEnemyArmour|null=null;
-  private throne:StarThrone;
+  private throne:StarSanctum;
   private wind:StarWind|null=null;
   private nav:NavHints|null=null;
   private ambience:StarAmbience;
@@ -123,10 +140,10 @@ export class HiddenWorld {
   async buildSettlement() {
     await this.third.buildSettlement();await this.fourth.buildSettlement();
     this.dawnRequests.build();this.snowRequests.build();this.emberRequests.build();this.skyRequests.build();
-    const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
+    const settlement=await buildStarSettlement((x,z)=>this.height(x,z));this.ground.meadow=settlement.meadow;this.ground.fields=settlement.fields;
     // Every World II collider, without meshes: the same registration the server bakes.
     this.collision=layoutStarhaven((x,z)=>this.height(x,z),settlement.natureNames).col;this.root.add(settlement.root);
-    this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!);
+    this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!,{tealLeaves:true});
     this.life=new StarVillageLife((x,z)=>this.height(x,z));this.root.add(this.life.root);
     const waystones=new StarWaystoneKit(),memorySeals=new StarMemorySealKit(),ore=new StarOreKit();
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES)) {
@@ -190,49 +207,48 @@ export class HiddenWorld {
     this.root.visible=false;game.scene.add(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);
     this.snowGate=new DawnPortal(new THREE.Vector3(14,this.third.height(14,84),84),'골드샌드 항구 → 서리빛 설원','frost');this.third.root.add(this.snowGate.root);
     this.sky=new StarSky();this.root.add(this.sky.root);
-    const land=new THREE.PlaneGeometry(280,320,140,160);land.rotateX(-Math.PI/2);
-    const pos=land.attributes.position,colors=[];
-    const groundColor=new THREE.Color();
-    for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i),y=this.height(x,z);pos.setY(i,y);starGroundColor(x,z,y,groundColor);colors.push(groundColor.r,groundColor.g,groundColor.b);}
-    land.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));land.computeVertexNormals();
-    const pixels=new Uint8Array(128*128*4);
-    for(let z=0;z<128;z++)for(let x=0;x<128;x++){
-      const hash=Math.sin(x*127.1+z*311.7)*43758.5453,grain=(hash-Math.floor(hash))*.18;
-      const vein=Math.pow(Math.abs(Math.sin(x*.12+Math.sin(z*.09)*2)),20)*.12;
-      const shade=Math.round((.68+grain-vein)*255),i=(z*128+x)*4;
-      pixels.set([shade,shade,shade,255],i);
-    }
-    const texture=this.groundTexture=new THREE.DataTexture(pixels,128,128);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(18,18);texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearMipmapLinearFilter;texture.generateMipmaps=true;texture.anisotropy=Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy());texture.needsUpdate=true;
-    const ground=new THREE.Mesh(land,new THREE.MeshStandardMaterial({map:texture,vertexColors:true,roughness:.94,metalness:.08}));ground.name='star-island-ground';ground.receiveShadow=true;this.root.add(ground);
+    this.ground=starGround((x,z)=>this.height(x,z),Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy()));this.root.add(this.ground.mesh);
     this.sea=new StarSea();this.root.add(this.sea.root);
-    const stone=new THREE.MeshStandardMaterial({color:'#3c3b57',roughness:.78,metalness:.3});
-    const crystal=new THREE.MeshStandardMaterial({color:'#a57bff',emissive:'#6524c9',emissiveIntensity:1.5,metalness:.5,roughness:.2});
-    const teal=new THREE.MeshStandardMaterial({color:'#b0fff1',emissive:'#26afba',emissiveIntensity:1.3,metalness:.6,roughness:.25});
-    // Jagged crystal gardens frame the open combat paths. One geometry/material per family.
-    const crystalFaces=crystal.clone();crystalFaces.vertexColors=true;crystalFaces.flatShading=true;crystalFaces.emissiveIntensity=.45;crystalFaces.metalness=.35;crystalFaces.roughness=.3;
-    const crystals=new THREE.InstancedMesh(facetedStarCrystal(),crystalFaces,90);crystals.name='star-island-crystal-gardens';const matrix=new THREE.Matrix4();
-    starCrystalGarden((x,z)=>this.height(x,z)).forEach((c,i)=>{
-      if(c.clear)matrix.makeScale(0,0,0);
-      else{
-        matrix.compose(new THREE.Vector3(c.x,c.y+c.h*.5,c.z),c.q,c.scale);
-        this.crystalSolids.push(c.solid);
-      }
-      crystals.setMatrixAt(i,matrix);
+    // Field crystals in clusters with their stories (starCrystalLayout.ts); the miners' cut stumps are a second draw.
+    const spots=starCrystalGarden((x,z)=>this.height(x,z)),whole=spots.filter(c=>!c.cut),cut=spots.filter(c=>c.cut);this.crystalSpots=spots;
+    const crystals=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('amethyst'),whole.length);crystals.name='star-island-crystal-gardens';
+    const stumps=new THREE.InstancedMesh(starCrystalStump(),starCrystalMaterial('amethyst'),cut.length);stumps.name='star-island-crystal-stumps';
+    const matrix=new THREE.Matrix4(),at=new THREE.Vector3();
+    const crystalGlow:StarGlowSource[]=[];
+    for(const [mesh,list] of [[crystals,whole],[stumps,cut]] as const)list.forEach((c,i)=>{
+      mesh.setMatrixAt(i,matrix.compose(at.set(c.x,c.y+c.h*.5,c.z),c.q,c.scale));
+      this.crystalSolids.push(c.solid);
+      // A crystal's light on the ground grows with its size; cut ones only glow at their faces.
+      crystalGlow.push({x:c.x,z:c.z,radius:.9+c.h*.28,color:c.site==='ring'?'#a78bff':'#8f6bff',strength:c.cut?.5:.75+c.h*.06});
     });
-    crystals.castShadow=true;this.root.add(crystals);
-    this.throne=new StarThrone((x,z)=>this.height(x,z),stone,teal,crystal);
-    this.root.add(this.throne.root);this.obstacles.push(...this.throne.solids);
-    const disk=new THREE.Mesh(new THREE.CylinderGeometry(17,18,.3,64),stone);disk.position.copy(this.arena.position);disk.position.y=2.93;disk.receiveShadow=true;this.root.add(disk);
-    for(const r of [3,9,16]){const ring=new THREE.Mesh(new THREE.TorusGeometry(r,.045,5,96),teal);ring.rotation.x=Math.PI/2;ring.position.set(0,3.12,-75);this.root.add(ring);}
+    crystals.castShadow=stumps.castShadow=true;this.root.add(crystals,stumps);
+    // The Eclipse Queen's sanctum: carved floor, obelisks on the old twelve footprints, the pilgrims' gate.
+    this.throne=new StarSanctum((x,z)=>this.height(x,z));
+    this.root.add(this.throne.root);this.obstacles.push(...throneSolids());
     // The settlement owns the stone trails; keep only the luminous wayfinders here.
-    for(let i=0;i<14;i++){const z=5-i*5,x=(i%2?1:-1)*6.5;const gem=new THREE.Mesh(new THREE.OctahedronGeometry(.4),teal);gem.position.set(x,this.height(x,z)+1,z);this.root.add(gem);this.rotations.push(gem);}
-    this.portal=new StarPortal(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
+    {
+      // Small teal crystals grown beside the starroad, every five metres.
+      const guides=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('teal',{glow:1.3}),starRoadGuides().length),m=new THREE.Matrix4(),q=new THREE.Quaternion();guides.name='star-road-wayfinders';
+      for(const [i,[x,z]] of starRoadGuides().entries()){m.compose(new THREE.Vector3(x,this.height(x,z)+.55,z),q.setFromAxisAngle(new THREE.Vector3(0,1,0),i*2.4),new THREE.Vector3(.7,1.1,.7));guides.setMatrixAt(i,m);}
+      guides.castShadow=true;this.root.add(guides);
+      for(const [x,z] of starRoadGuides())crystalGlow.push({x,z,radius:1.1,color:'#3fe0cc',strength:.9});
+    }
+    // The lamps', crystals' and Moonshade's light on the ground, baked once (starLight.ts).
+    for(const {x,z,h} of moonshadeLeaves())crystalGlow.push({x,z,radius:1.6+h*.25,color:'#4f8dff',strength:.9});
+    // The miners' torch.
+    {const [tx,tz]=rot(-6.4,1.8,STAR_MINE.yaw);crystalGlow.push({x:STAR_MINE.x+tx,z:STAR_MINE.z+tz,radius:2.4,color:'#ff9a4a',strength:2.2});}
+    // The door lanterns' pools (starRooftops.ts).
+    crystalGlow.push(...starDoorLampGlows(starLots()),...starTrailLanternGlows(starTrailLanternSpots()));
+    // The fallen-star ruin's armillary at the east trail's end keeps a pale pool of its own, so the trail leads to light.
+    crystalGlow.push({x:80,z:-40,radius:4.2,color:'#9fd8ff',strength:1.1});
+    this.groundLight=bakeStarLight(crystalGlow);
+    this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
     const ship=w.pois.wreck.position;
     const shorePosition=new THREE.Vector3(ship.x-7,0,ship.z+7);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
     this.shorePortal=new StarPortal(shorePosition,'클로헤이븐 → 별빛 항구');w.root.add(this.shorePortal.root);
-    this.thirdGate=new StarPortal(new THREE.Vector3(0,this.height(0,-41),-41),'별빛 항구 → 골드샌드 항구');this.root.add(this.thirdGate.root);
-    this.root.add(this.sun.light,this.sun.light.target,new THREE.HemisphereLight('#869cff','#1a1028',1.0));
+    this.thirdGate=new StarGate(new THREE.Vector3(0,this.height(0,-41),-41),'별빛 항구 → 골드샌드 항구');this.root.add(this.thirdGate.root);
+    this.carry.name='star-player-glow';this.root.add(this.sun.light,this.sun.light.target,this.night.root,this.carry);
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
     const surface=(island:{height(x:number,z:number):number})=>(x:number,z:number)=>island.height(x,z);
     this.hub=new TidecrownHub(game,this,{1:{root:w.root,height:this.originalHeight},2:{root:this.root,height:surface(this)},3:{root:this.third.root,height:surface(this.third)},4:{root:this.fourth.root,height:surface(this.fourth)},5:{root:this.fifth.root,height:surface(this.fifth)},6:{root:this.sixth.root,height:surface(this.sixth)}});
@@ -458,6 +474,8 @@ export class HiddenWorld {
       return;
     }
     const flags=observation?.flags??this.game.journey;
+    if(!this.rendered||this.chapter!==2)this.night.release(this.game.scene);
+    if(this.game.objective)this.game.objective.star=this.rendered&&this.chapter===2&&!this.inTidecrown;
     this.hub.update(dt,time);
     this.snowGate.update(time);this.emberGate.update(time);
     if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
@@ -478,11 +496,11 @@ export class HiddenWorld {
     const echo=this.game.enemies.find(e=>e.isEcho);
     if(!observation&&echo&&this.game.multiplayer?.battle.authority!==false&&echo.state==='gone'&&time>this.echoAt&&!this.game.encounter.engaged){echo.home.set(0,this.height(0,-22),-22);echo.respawnAt(0,-22);this.echoAt=time+120;this.game.hud.messages.info(t('녹의 폭군의 잔영이 별길에 나타났어요!','An echo of the Rust Tyrant has appeared on the Starroad!'));}
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
-    this.sun.update(position.x,position.z);
+    this.sun.update(position.x,position.z);{const c=this.game.camera.position,dx=c.x-position.x,dz=c.z-position.z,l=Math.hypot(dx,dz)||1;this.carry.position.set(position.x+dx/l*1.3,position.y+1.35,position.z+dz/l*1.3);}
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
-    const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
+    this.night.apply(this.game.scene,this.game.engine.renderer,this.game.camera);
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
-    this.sea.update(time);
+    this.sea.update(time);this.ground.update(time,this.game.engine.quality,this.game.camera,position);
     this.armour?.update(time);this.throne.update(time);
     this.wind?.update(time);
     if(!observation)for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
@@ -639,7 +657,7 @@ export class HiddenWorld {
   }
   dispose(){
     this.hub.dispose();this.leaveTidecrown();this.tidecrownPeople?.dispose();if(this.tidecrown){this.game.scene.remove(this.tidecrown.root);this.tidecrown.dispose();this.tidecrown=undefined;}
-    this.ambience.dispose();this.fourth.disposeSnow();this.third.disposeSand();
+    this.ambience.dispose();this.fourth.disposeSnow();this.third.disposeSand();this.night.release(this.game.scene);this.night.dispose();
     this.showEpilogue();this.game.scene.remove(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
     for(const root of [this.root,this.shorePortal.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root])root.traverse(o=>{
@@ -656,6 +674,6 @@ export class HiddenWorld {
       }
     });
     const ownedTextures=new Set<THREE.Texture>();for(const m of mats){const map=(m as THREE.MeshStandardMaterial).map;if(map?.userData.islandPaving)ownedTextures.add(map);}for(const texture of ownedTextures)texture.dispose();
-    this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
+    this.ground.texture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
   }
 }
