@@ -2,19 +2,10 @@ import * as THREE from 'three';
 import type {Collision} from '../world/collision';
 
 const LIGHT={x:67,z:72};
-const TOWER_Z=[-48,-103];
-const backWallX=(i:number)=>-35+i*5;
 
-/** The lighthouse, citadel towers, gatehouses and walls are solid; the avenue and arena stay open. */
+/** The lighthouse is solid (the citadel registers its own walls, dawnCitadelLayout.ts). */
 export function registerDawnScenery(height:(x:number,z:number)=>number,collision:Collision){
   const ly=height(LIGHT.x,LIGHT.z);collision.addCircle(LIGHT.x,LIGHT.z,3.2,ly,ly+17);
-  for(const side of [-1,1]){
-   for(const z of TOWER_Z){const x=side*35,y=height(x,z);collision.addCircle(x,z,5.4,y,y+20);}
-   const y=height(side*13,-44);collision.addCircle(side*13,-44,2,y,y+8);
-   // Collision matches the long wall footprint. Center avenue and arena stay open.
-   for(let z=-56;z>=-96;z-=4)collision.addCircle(side*35,z,2,height(side*35,z),height(side*35,z)+10);
-  }
-  for(let i=0;i<15;i++){const x=backWallX(i);collision.addCircle(x,-105,2.8,height(x,-105),height(x,-105)+12);}
 }
 
 /** Deterministic landmarks, pooled static props and a small animated skyline. */
@@ -24,13 +15,12 @@ export class DawnScenery {
  constructor(height:(x:number,z:number)=>number){
   this.root.name='dawnreach-landmarks';
   const mat=(color:string,glow=0)=>new THREE.MeshStandardMaterial({color,roughness:.83,emissive:color,emissiveIntensity:glow});
-  const stone=mat('#666b76'),trim=mat('#baad88'),wood=mat('#855e43'),teal=mat('#397f82'),ivory=mat('#e7d6ae'),gold=mat('#f5c46c',.35);
+  const stone=mat('#666b76'),teal=mat('#397f82'),ivory=mat('#e7d6ae'),gold=mat('#f5c46c',.35);
   const box=new THREE.BoxGeometry(1,1,1),cyl=new THREE.CylinderGeometry(1,1,1,10),cone=new THREE.ConeGeometry(1,1,8),ball=new THREE.SphereGeometry(1,8,6);
   // Static dressing is instanced by material and geometry, including wall blocks and flower beds.
   const pools=new Map<string,{geo:THREE.BufferGeometry;mat:THREE.Material;transforms:THREE.Matrix4[]}>();
   const place=(geo:THREE.BufferGeometry,m:THREE.Material,x:number,y:number,z:number,sx:number,sy:number,sz:number,ry=0)=>{const key=geo.uuid+m.uuid;let pool=pools.get(key);if(!pool){pool={geo,mat:m,transforms:[]};pools.set(key,pool);}const matrix=new THREE.Matrix4().compose(new THREE.Vector3(x,y,z),new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),ry),new THREE.Vector3(sx,sy,sz));pool.transforms.push(matrix);};
   const ground=(geo:THREE.BufferGeometry,m:THREE.Material,x:number,z:number,sx:number,sy:number,sz:number,dy=0,ry=0)=>place(geo,m,x,height(x,z)+sy/2+dy,z,sx,sy,sz,ry);
-  const flag=(x:number,z:number,color:string)=>{const y=height(x,z);place(cyl,wood,x,y+3,z,.09,6,.09);const cloth=new THREE.Mesh(new THREE.PlaneGeometry(1.4,2.4,4,1),new THREE.MeshStandardMaterial({color,side:THREE.DoubleSide,roughness:1}));cloth.position.set(x+.75,y+4.5,z);this.root.add(cloth);this.flags.push(cloth);place(ball,gold,x,y+6.1,z,.18,.18,.18);};
   // The harbour (deck, boats, barrels and banners) is dawnHarbour.ts.
   // A pearl-colored lighthouse and lookout garden on the eastern headland.
   const lx=LIGHT.x,lz=LIGHT.z,ly=height(lx,lz);
@@ -38,13 +28,7 @@ export class DawnScenery {
   this.beacon.position.set(lx,ly+13.3,lz);const beamMat=new THREE.MeshBasicMaterial({color:'#ffdc96',transparent:true,opacity:.14,depthWrite:false,side:THREE.DoubleSide});const beam=new THREE.Mesh(new THREE.ConeGeometry(7,32,20,1,true),beamMat);beam.rotation.z=-Math.PI/2;beam.position.x=16;this.beacon.add(beam);this.root.add(this.beacon);
   for(let i=0;i<13;i++){const a=i/12*Math.PI*1.5;ground(box,ivory,lx+Math.cos(a)*6,lz+Math.sin(a)*6,.45,1.1,.45);}
   // The garden beds along the avenue and the lookout benches are dawnDressing.ts (sandstone beds, kit plants and benches).
-  // A fortress silhouette around, rather than inside, the boss's 20 m arena.
-  for(const side of [-1,1]){for(let i=0;i<12;i++){const z=-47-i*5;ground(box,stone,side*35,z,2.6,9,5.1);ground(box,trim,side*35,z,3,1.3,2.2,9);}
-   for(const z of TOWER_Z){const x=side*35,y=height(x,z);place(cyl,stone,x,y+7,z,5,14,5);place(cyl,trim,x,y+14,z,5.4,.6,5.4);place(cone,teal,x,y+17,z,6,6,6);}
-   const y=height(side*13,-44);place(box,stone,side*13,y+4,-44,3,8,4);flag(side*17,-44,'#b46b4b');
-  }
-  for(let i=0;i<15;i++){const x=backWallX(i);ground(box,stone,x,-105,5.1,10,2.6);ground(box,trim,x,-105,2.3,1.2,3,10);}
-  const gateY=height(0,-44);place(box,trim,0,gateY+9,-44,29,1.4,4.2);place(cone,gold,0,gateY+11,-44,1.5,2,1.5);
+  // Solarkan's citadel round the boss's arena is dawnCitadel.ts.
   // Clouds, gulls and foam add motion without adding real-time lights or shadow maps.
   const cloudMat=new THREE.MeshBasicMaterial({color:'#f0d6bb',transparent:true,opacity:.45,depthWrite:false});for(let i=0;i<12;i++){const c=new THREE.Mesh(ball,cloudMat);c.position.set(-170+i*31,75+i%3*9,-150-i%4*16);c.scale.set(17+i%4*4,3,7);this.root.add(c);}
   const sun=new THREE.Mesh(new THREE.SphereGeometry(15,20,12),new THREE.MeshBasicMaterial({color:'#ffe1a1'}));sun.position.set(-160,83,-360);this.root.add(sun);

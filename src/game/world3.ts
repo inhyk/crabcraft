@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import {StarSun} from './starSun';
 import {DawnScenery} from './dawnScenery';
 import {DawnPortal} from './dawnPortal';
+import {dawnCitadel,type DawnCitadel} from './dawnCitadel';
 import {loadKit,StaticBatch,trs} from '../world/kit';
 import {TownBuilder} from '../world/buildings';
 import {dawnHeight,DAWN_ARENA_HEIGHT} from '../sim/world/ground';
@@ -27,15 +28,13 @@ export class DawnIsland {
  /** Dawnharbor's own streets, lamps, rocks, harbour and gate (dawnTown.ts). */
  readonly townLook:DawnTown;
  private dressing:DawnDressing|null=null;
+ private citadel:DawnCitadel;
  height(x:number,z:number){
   return dawnHeight(x,z);
  }
  constructor(){
   this.root.name='WORLD III · Dawnreach';this.root.visible=false;
-  const stone=new THREE.MeshStandardMaterial({color:'#393c4b',roughness:.9});
   const sand=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.95,vertexColors:true});
-  const roof=new THREE.MeshStandardMaterial({color:'#267b82',roughness:.7});
-  const gold=new THREE.MeshStandardMaterial({color:'#ffd67a',emissive:'#d57b23',emissiveIntensity:.65,metalness:.6,roughness:.35});
   const land=new THREE.PlaneGeometry(300,350,120,140);land.rotateX(-Math.PI/2);const p=land.getAttribute('position'),col=[];
   for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i),y=this.height(x,z);p.setY(i,y);const c=new THREE.Color(y>12?'#747478':y<3?'#d2bd90':Math.abs(x)>24?'#84976a':'#cbbb95');col.push(c.r,c.g,c.b);}
   land.setAttribute('color',new THREE.Float32BufferAttribute(col,3));land.computeVertexNormals();const ground=new THREE.Mesh(land,sand);ground.receiveShadow=true;this.root.add(ground);
@@ -43,14 +42,15 @@ export class DawnIsland {
   const sea=new THREE.Mesh(new THREE.PlaneGeometry(1800,1800),new THREE.MeshStandardMaterial({color:'#245e74',roughness:.3,metalness:.4,transparent:true,opacity:.94}));sea.rotation.x=-Math.PI/2;sea.position.y=.2;this.root.add(sea);
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
   // The town square uses the terrain and paving; a flat raised disc cut through its sloping roads.
-  for(const side of [-1,1]){const tower=add(new THREE.CylinderGeometry(3.6,4.4,15,10),stone,side*27,this.height(side*27,-56)+7.5,-56);add(new THREE.ConeGeometry(4.6,6,10),roof,tower.position.x,tower.position.y+10.5,-56);}
-  const floor=add(new THREE.CylinderGeometry(21,22,1.3,64),stone,0,DAWN_ARENA_HEIGHT-.6,-72);floor.name='dawn-boss-platform';
-  for(const r of [6,13,20]){const ring=add(new THREE.TorusGeometry(r,.07,5,96),gold,0,DAWN_ARENA_HEIGHT+.12,-72);ring.rotation.x=Math.PI/2;}
+  // Solarkan's citadel (dawnCitadel.ts); the boss platform keeps its name and size, its top the carved sun-dial.
+  this.citadel=dawnCitadel((x,z)=>this.height(x,z));this.root.add(this.citadel.root);
+  const floor=add(new THREE.CylinderGeometry(21,22,1.3,160),this.citadel.floor,0,DAWN_ARENA_HEIGHT-.6,-72);floor.name='dawn-boss-platform';floor.castShadow=false;
   this.townLook=dawnTown((x,z)=>this.height(x,z));this.root.add(this.townLook.root);
   this.scenery=new DawnScenery((x,z)=>this.height(x,z));this.root.add(this.scenery.root);
   this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',.9));const sun=this.sun.light;sun.name='dawnreach-sun';sun.color.set('#ffe6b3');sun.intensity=2.8;this.root.add(sun,sun.target);
  }
  async buildSettlement(){
+  await this.citadel.dress();
   const village=await loadKit('models/world/village.glb'),props=await loadKit('models/world/props.glb');
   const homes=new StaticBatch(village,'dawnharbor-homes'),builder=new TownBuilder(village,homes,null,dawnHouseMaterials(village));
   for(const lot of dawnLots())builder.build(lot);this.root.add(homes.build());
@@ -83,5 +83,5 @@ export class DawnIsland {
  /** Dawnharbor's request props (dawnRequestProps.ts) in place of the shared placeholders. */
  questProps(){return dawnRequestLook();}
  private sunDir=new THREE.Vector3();
- update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.dressing?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
+ update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.citadel.update(time,quality);this.dressing?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
 }
