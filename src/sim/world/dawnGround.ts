@@ -8,7 +8,7 @@
 /** Height of the still sea around Dawnharbor. */
 export const DAWN_SEA = 0.25;
 /** The walkable ellipse (queries.ts DAWN_BOUNDS): x / 122, (z - 3) / 149. The coast never starts inside 0.845. */
-const RX = 122, RZ = 149, CZ = 3;
+export const RX = 122, RZ = 149, CZ = 3;
 
 const smooth01 = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 const smoothstep = (x: number, a: number, b: number) => smooth01((x - a) / (b - a));
@@ -40,14 +40,14 @@ function fbm(x: number, z: number, octaves: number): number {
 }
 
 /** Ground that must keep its old height, as segments (ax, az, bx, bz, half width) and discs (x, z, r). */
-const KEEP_SEGS: readonly (readonly [number, number, number, number, number])[] = [
+export const KEEP_SEGS: readonly (readonly [number, number, number, number, number])[] = [
   // The avenue from the harbour to the citadel gate, and the market cross street.
   [0, 124, 0, -50, 13], [-30, 53, 30, 53, 7],
   // The garden lane west to Seabreeze Gardens and the lane east to the lighthouse.
   [-5, 74, -28, 75, 7], [-28, 75, -50, 64, 7], [-50, 64, -62, 48, 7],
   [4, 75, 28, 84, 7], [28, 84, 48, 84, 7], [48, 84, 61, 76, 7],
 ];
-const KEEP_DISCS: readonly (readonly [number, number, number])[] = [
+export const KEEP_DISCS: readonly (readonly [number, number, number])[] = [
   // Quest points (dawnQuests.ts DAWN_POINTS): crates, herbs, lamps, ore, pearls, seals and the three lookouts.
   [-12, 76, 6], [12, 70, 6], [-12, 62, 6], [-55, 44, 7], [-62, 38, 7], [-56, 30, 7], [-7, 20, 6], [7, 0, 6], [-7, -22, 6],
   [24, 6, 7], [32, -8, 7], [22, -25, 7], [68, 30, 7], [72, 18, 7], [64, 4, 7], [-18, -20, 6], [18, -35, 6], [-16, -44, 6],
@@ -60,18 +60,22 @@ const segDist = (x: number, z: number, ax: number, az: number, bx: number, bz: n
   const t = l2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2)) : 0;
   return Math.hypot(x - ax - dx * t, z - az - dz * t);
 };
+/** Distance past the town block, the lanes and every kept point, metres (negative inside). */
+function keepCore(x: number, z: number): number {
+  const qx = Math.abs(x) - 50, qz = Math.abs(z - 68) - 54;
+  let d = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
+  for (const [ax, az, bx, bz, w] of KEEP_SEGS) d = Math.min(d, segDist(x, z, ax, az, bx, bz) - w);
+  for (const [cx, cz, r] of KEEP_DISCS) d = Math.min(d, Math.hypot(x - cx, z - cz) - r);
+  return d;
+}
 /** Distance past every piece of kept ground, metres (0 inside one). */
 function keepDistance(x: number, z: number): number {
   // The town block, harbour to the southern lanes, and everything north of the fields: the climb, the gate and the
   // citadel plateau keep their exact ground.
-  const qx = Math.abs(x) - 50, qz = Math.abs(z - 68) - 54;
-  let d = Math.min(Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0), z + 30);
-  for (const [ax, az, bx, bz, w] of KEEP_SEGS) d = Math.min(d, segDist(x, z, ax, az, bx, bz) - w);
-  for (const [cx, cz, r] of KEEP_DISCS) d = Math.min(d, Math.hypot(x - cx, z - cz) - r);
-  return Math.max(0, d);
+  return Math.max(0, Math.min(keepCore(x, z), z + 30));
 }
 /** 0 on kept ground, 1 in the open field; the relief rises over 12 m so nothing steps. */
-export function dawnOpen(x: number, z: number): number {
+function dawnOpen(x: number, z: number): number {
   return smooth01(keepDistance(x, z) / 12);
 }
 
@@ -89,12 +93,12 @@ export function dawnShoreStart(x: number, z: number): number {
   return 0.845 + 0.075 * smooth01(n * 0.9 + 0.45);
 }
 
-/** Wind off the southern sea, (x, z): dune crests run across it, ripples on the sand too. */
-export const DAWN_WIND = [0.34, -0.94] as const;
+/** The dawn coast's wind off the southern sea, for its low dune rim (coastGround). */
+const COAST_WIND = [0.34, -0.94] as const;
 
 /** Dune crests: rounded ridges across the wind, broken into fields. Metres, about 0..1. */
 function dunes(x: number, z: number): number {
-  const a = x * DAWN_WIND[0] + z * DAWN_WIND[1], c = -x * DAWN_WIND[1] + z * DAWN_WIND[0];
+  const a = x * COAST_WIND[0] + z * COAST_WIND[1], c = -x * COAST_WIND[1] + z * COAST_WIND[0];
   const warp = dawnNoise(c * 0.03 + 5.2, a * 0.02 - 1.9) * 2.2;
   const r = 1 - Math.abs(dawnNoise(a / 17 + warp, c / 42 + 3.7));
   const crest = r * r * (3 - 2 * r);
@@ -114,42 +118,151 @@ function inland(x: number, z: number, open: number, r: number): number {
   return h + open * (rolling + rim + dune);
 }
 
-/** Dawnharbor's ground height. */
-export function dawnGround(x: number, z: number, arenaHeight: number): number {
+/**
+ * The coast: `t` is how far past the shore's start (x, z) lies, in units of the ellipse. Low land shelves into the
+ * sea as a beach; high land breaks off as a bluff with a rocky foot.
+ */
+function shore(x: number, z: number, h: number, t: number): number {
+  if (t <= 0) return h;
+  const cliff = smoothstep(h, 6.5, 10.5);
+  const beach = t < 0.06 ? h + (DAWN_SEA - 0.55 - h) * smooth01(t / 0.06) : DAWN_SEA - 0.55 - (t - 0.06) * 60;
+  const face = 0.024, foot = 0.9 + dawnNoise(x * 0.2, z * 0.2) * 0.5;
+  const bluff = t < face ? h + (foot - h) * Math.pow(smooth01(t / face), 0.8) : foot - (t - face) * 75;
+  return Math.max(-16, beach + (bluff - beach) * cliff);
+}
+
+/** The dawn coast's ground before the sand (the dawn-sky landform), without the arena. */
+function coastGround(x: number, z: number): number {
   const r = Math.hypot(x / RX, (z - CZ) / RZ);
   const open = dawnOpen(x, z);
   let h = inland(x, z, open, r);
-  const start = dawnShoreStart(x, z);
-  if (r > start) {
-    // Low land shelves into the sea as a beach; high land breaks off as a bluff with a rocky foot.
-    const cliff = smoothstep(h, 6.5, 10.5);
-    const t = r - start;
-    const beach = t < 0.06 ? h + (DAWN_SEA - 0.55 - h) * smooth01(t / 0.06) : DAWN_SEA - 0.55 - (t - 0.06) * 60;
-    const face = 0.024, foot = 0.9 + dawnNoise(x * 0.2, z * 0.2) * 0.5;
-    const bluff = t < face ? h + (foot - h) * Math.pow(smooth01(t / face), 0.8) : foot - (t - face) * 75;
-    h = Math.max(-16, beach + (bluff - beach) * cliff);
-  }
-  const arena = 1 - smoothstep(Math.hypot(x, z + 72), 21, 31);
-  return h + (arenaHeight - h) * arena;
+  return shore(x, z, h, r - dawnShoreStart(x, z));
 }
 
+
+// ---- Goldsand: the desert harbour --------------------------------------------------------------------------------
+// The same philosophy as Frostlight's snowfield (snowGround.ts): one prevailing wind shapes every scale. Dunes are
+// not an fBm: each is an asymmetric ridge across the wind (a long, convex windward stoss slope, a sharp brink and a
+// straight lee slip face at the angle of repose, a concave apron at its foot), broken along the crest into
+// barchanoid segments whose horns trail downwind. Three sizes nest: a dune sea of 10-16 m crests on the mainland
+// past the walkable ellipse, walkable 2-3 m dunes over the open fields, and half-metre drifts riding their stoss
+// slopes. Rocks in the open grow sand tails downwind. Wind ripples (decimetres) are visual only and live in the
+// shader. Gameplay ground keeps the dawn coast's height exactly, so the town, the roads, every quest point, the
+// harbour and the citadel climb are untouched. The GLSL twin of everything below is src/game/sandGround.ts.
+
+/** Direction the wind blows over Goldsand, (x, z), unit: toward bearing 67 degrees, off the desert in the WNW. */
+// Held 45 degrees off the sun's bearing (112), Frostlight's rule: ripples and crests are lit from the side.
+export const DAWN_WIND = [0.92050485, 0.39073113] as const;
+/** Centre of the mainland the desert comes from, (x, z) unit, as seen from the island's middle. */
+const MAINLAND = [-0.8660254, -0.5] as const;
+
+/** A dune class: wavelength along the wind, crest height, slip face slope, where the crest sits in the period. */
+interface DuneKind { lambda: number; height: number; slip: number; crest: number; seed: number }
+export const DUNE_SEA: DuneKind = { lambda: 105, height: 15, slip: 0.66, crest: 0.72, seed: 3.7 };
+export const DUNE_FIELD: DuneKind = { lambda: 34, height: 2.4, slip: 0.5, crest: 0.74, seed: 11.3 };
+export const DUNE_DRIFT: DuneKind = { lambda: 8.5, height: 0.45, slip: 0.42, crest: 0.7, seed: 23.9 };
+
+/** Polynomial smooth minimum: the two meet in a fillet `k` high. */
+const smin = (a: number, b: number, k: number) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
+
+/** Out-parameter of dune(): how much (x, z) lies on a slip face, 0..1. */
+export const DUNE_LEE = [0];
 /**
- * Surface hints for the renderer at (x, z), 0..1 each: sand (beaches, dunes, the harbour), volcanic ground (the
- * climb to the citadel) and trodden ground (around the kept lanes and town). Not used by the simulation.
+ * One dune class at wind-frame coordinates (a downwind, c across), `amp` 0..1 scaling its height. Metres.
+ * The crest line wanders and breaks into segments; where a segment thins its crest trails downwind (the horns).
  */
-export function dawnSurface(x: number, z: number, h: number, out: number[]): number[] {
-  const r = Math.hypot(x / RX, (z - CZ) / RZ), start = dawnShoreStart(x, z), open = dawnOpen(x, z);
-  const south = smoothstep(z, 10, 70);
-  const beach = smoothstep(r, start - 0.05, start - 0.005) * (1 - smoothstep(h, 4.5, 8));
-  const dune = south * smoothstep(r, 0.62, 0.74) * open;
-  // The town's sandy streets and the harbour front.
-  const town = (1 - smoothstep(Math.abs(x), 20, 30)) * smoothstep(z, 14, 24) * (1 - smoothstep(z, 120, 126));
-  const harbour = smoothstep(z, 96, 112) * (1 - smoothstep(Math.abs(x), 30, 44));
-  out[0] = Math.min(1, Math.max(beach, dune * 0.9, town * 0.35, harbour));
-  out[1] = Math.max(smoothstep(-z, 30, 46), smoothstep(h, 11, 14));
-  // Trodden ground: along the lanes and through the town only, not round every kept quest point.
-  let lane = Infinity;
-  for (const [ax, az, bx, bz, w] of KEEP_SEGS) lane = Math.min(lane, segDist(x, z, ax, az, bx, bz) - w * 0.55);
-  out[2] = Math.max(1 - smoothstep(lane, 0, 6), town * 0.7) * (1 - out[0] * 0.6) * (1 - smoothstep(-z, 34, 44));
+export function dune(a: number, c: number, k: DuneKind, amp: number): number {
+  const L = k.lambda;
+  // Segments along the crest, a couple of wavelengths long, drifting slowly downwind.
+  const seg = smooth01((dawnNoise(c / (1.7 * L) + k.seed, a / (4.3 * L) - k.seed) + 0.25) / 0.7);
+  const H = k.height * amp * seg;
+  // Phase across the period: the crest line wanders (low frequency, so the phase always advances downwind) and
+  // the horns of a thinning segment lag downwind.
+  const phase = a / L + 0.55 * dawnNoise(c / (2.6 * L) - k.seed, a / (5.1 * L) + 2.3) + 0.12 * dawnNoise(c / (0.9 * L) + 5.1, a / (6 * L) - k.seed) - 0.2 * (1 - seg);
+  const t = phase - Math.floor(phase);
+  const d = (t - k.crest) * L, stoss = k.crest * L;
+  // Windward: u^2 (2 - u) climbs out of the trough with no kink and reaches the brink still rising.
+  const u = Math.max(0, Math.min(1, 1 - Math.abs(d) / stoss));
+  const ys = H * u * u * (2 - u);
+  const yl = H - k.slip * d;
+  // A sharp brink, rounded over a few decimetres so no lattice has to carry a crease; a concave apron at the foot.
+  const kc = 0.1 + 0.07 * H, kf = 0.25 + 0.2 * H;
+  const y = -smin(-smin(ys, yl, kc), 0, kf) - kf * 0.25;
+  DUNE_LEE[0] = H > 0.05 && d > 0 ? smooth01((ys - yl) / kc) * smooth01(y / (0.25 * H)) : 0;
+  return y;
+}
+
+/** Rocks in the open the wind has built sand round: (x, z, radius). dawnRocks() south of the citadel. */
+export const SAND_ROCKS: readonly (readonly [number, number, number])[] = (() => {
+  const out: [number, number, number][] = [];
+  for (let i = 0; i < 32; i++) {
+    const a = (i / 32) * Math.PI * 2, x = Math.sin(a) * 67, z = -45 + Math.cos(a) * 50;
+    if (Math.abs(x) < 12 || z < -24) continue;
+    out.push([x, z, 2 + (i % 3)]);
+  }
   return out;
+})();
+/** Sand the wind piles round each rock: a low mound, a tail downwind, a scoured hollow on the windward side. */
+function rockSand(x: number, z: number): number {
+  let h = 0;
+  for (const [rx, rz, r] of SAND_ROCKS) {
+    const dx = x - rx, dz = z - rz;
+    if (Math.abs(dx) > r * 7 || Math.abs(dz) > r * 7) continue;
+    const a = (dx * DAWN_WIND[0] + dz * DAWN_WIND[1]) / r, c = (-dx * DAWN_WIND[1] + dz * DAWN_WIND[0]) / r, d2 = a * a + c * c;
+    const rise = a > 0 ? 1 - Math.exp(-a * 1.8) : 0;
+    h += Math.exp(-d2 * 0.9) * 0.18 * r + rise * rise * Math.exp(-a / 2.4) * Math.exp(-c * c * 1.3) * 0.3 * r;
+    if (a < 0) { const m = Math.sqrt(d2) - 1.2; h -= Math.exp(-m * m * 6) * smooth01(-a * 2) * 0.08 * r; }
+  }
+  return h;
+}
+
+/** 0 on gameplay ground, 1 in the open: the dawn coast's keep, the harbour, the citadel climb only inside the island. */
+export function sandOpen(x: number, z: number): number {
+  const r = Math.hypot(x / RX, (z - CZ) / RZ);
+  let d = keepCore(x, z);
+  // The citadel and everything north of the fields, as far as the island's own coast.
+  d = Math.min(d, Math.max(z + 30, (r - 0.86) * 130));
+  // The harbour, quay to pier head.
+  const hx = Math.abs(x + 10) - 30, hz = Math.abs(z - 125) - 35;
+  d = Math.min(d, Math.hypot(Math.max(hx, 0), Math.max(hz, 0)) + Math.min(Math.max(hx, hz), 0));
+  return smooth01(Math.max(0, d) / 12);
+}
+
+/** How much the mainland's desert claims this bearing, 0..1. */
+export function sandMainland(x: number, z: number): number {
+  const ex = x / RX, ez = (z - CZ) / RZ, l = Math.hypot(ex, ez);
+  if (l < 1e-6) return 0;
+  // The bearing's claim wanders with bays and headlands, so the mainland's coast never runs straight.
+  const wander = fbm(x / 70 + 9.1, z / 70 - 4.4, 2) * 0.32;
+  return smoothstep((ex * MAINLAND[0] + ez * MAINLAND[1]) / l + wander, 0.34, 0.72);
+}
+
+/** Goldsand's open ground before the arena: desert plain, dunes, the mainland's dune sea, the coast. */
+function sandGround(x: number, z: number): number {
+  const r = Math.hypot(x / RX, (z - CZ) / RZ), m = sandMainland(x, z);
+  const a = x * DAWN_WIND[0] + z * DAWN_WIND[1], c = -x * DAWN_WIND[1] + z * DAWN_WIND[0];
+  // The desert plain swells gently and lifts toward the mainland, where the island's northern rise levels out.
+  const far = m * smoothstep(r, 0.9, 1.6);
+  let h = oldInland(x, z) - 13 * smoothstep(-z, 5, 55) * far + fbm(a / 90 + 4.2, c / 140 - 1.3, 2) * 1.6 + m * smoothstep(r, 0.84, 1.5) * 7;
+  // The dune sea past the walkable ellipse; its stoss slopes carry the field dunes (compound dunes).
+  let lee = 0;
+  const big = m * smoothstep(r, 0.84, 1.3);
+  if (big > 0) { h += dune(a, c, DUNE_SEA, big); lee = DUNE_LEE[0]; }
+  const fieldAmp = (0.45 + 0.55 * smoothstep(r, 0.3, 0.8)) * (1 - lee * 0.85);
+  h += dune(a, c, DUNE_FIELD, fieldAmp);
+  lee = Math.max(lee, DUNE_LEE[0]);
+  // Drifts in the troughs and on the windward slopes, a few degrees off the main wind.
+  h += dune(a * 0.996 + c * 0.087, c * 0.996 - a * 0.087, DUNE_DRIFT, (1 - lee) * smoothstep(dawnNoise(x / 23 + 7.7, z / 23 - 3.1), -0.3, 0.3));
+  h += rockSand(x, z);
+  // The mainland's coast runs away from the island; elsewhere the dawn coast's beaches and bluffs.
+  const s0 = dawnShoreStart(x, z), start = s0 + (12 - s0) * m;
+  return shore(x, z, h, r - start);
+}
+
+/** Goldsand's ground height (World III): the dawn coast on gameplay ground, the desert everywhere else. */
+export function dawnGround(x: number, z: number, arenaHeight: number): number {
+  const open = sandOpen(x, z);
+  let h = open <= 0 ? coastGround(x, z) : open >= 1 ? sandGround(x, z) : coastGround(x, z) + (sandGround(x, z) - coastGround(x, z)) * open;
+  const arena = 1 - smoothstep(Math.hypot(x, z + 72), 21, 31);
+  return h + (arenaHeight - h) * arena;
 }
