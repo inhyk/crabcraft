@@ -58,6 +58,7 @@ uniform float dpDetail;
 uniform vec3 dpSun;
 uniform vec3 dpSand;
 uniform vec3 dpSkyH;
+uniform vec3 dpBounce;
 varying float vDpDrift;
 varying vec3 vDpWorld;
 ${FROST_NOISE}
@@ -175,9 +176,9 @@ float dpS=.5-dpWear*1.1+dpN1*.45+dpN2*.16;
 dpS+=smoothstep(.7,.9,fpNoise(dpP*.5+11.)*.5+.5+dpN2*.06)*.8;
 dpS-=dpTrod*(.4+dpN2*.2);
 float dpB=.12+.6*smoothstep(-.1,.8,dpRag)+dpN2*.08;
-dpS+=smoothstep(-dpB-.25,-dpB+.3,dpSd)*1.1*(1.-dpKerb*.75);
+dpS+=smoothstep(-dpB-.25,-dpB+.3,dpSd)*1.1*(1.-dpKerb*.35);
 // The open desert drifts a metre in over every edge, deeper where a tongue of it has crossed.
-dpS+=smoothstep(-1.-dpN1*.4,-.05,dpSd)*(.55+dpN2*.3)*(1.-dpKerb*.6);
+dpS+=smoothstep(-1.-dpN1*.4,-.05,dpSd)*(.55+dpN2*.3)*(1.-dpKerb*.25);
 dpS+=smoothstep(.3,1.,vDpDrift)*smoothstep(-2.4-dpN1*1.2,-.2,dpSd)*1.7;
 dpS+=dpEnd*(2.+dpN1*.6);
 float dpAlpha=(1.-smoothstep(1.7,2.4,dpS))*(1.-smoothstep(.03,${REACH.toFixed(2)},dpSd+fpNoise(dpP*1.9)*.05));
@@ -186,11 +187,10 @@ if(dpAlpha<.004)discard;
 vec2 dpQ;float dpRH,dpS0,dpS1,dpSalt;
 // The frame's axes in world xz, so the shadow taps can walk towards the sun in course space.
 vec2 dpAx1,dpAx2;
-if(dpRing>.5){vec2 v=dpP-dpRingC;float r=length(v);dpQ=vec2(atan(v.y,v.x)*max(r,.6),r);dpRH=.36;dpS0=.34;dpS1=.56;dpSalt=31.;dpAx2=v/max(r,1e-3);dpAx1=vec2(-dpAx2.y,dpAx2.x);}
-else{dpQ=dpP;dpRH=dpMain>.5?.62:.78;dpS0=0.;dpS1=0.;dpSalt=dpMain>.5?0.:7.;dpAx1=vec2(1.,0.);dpAx2=vec2(0.,1.);}
+dpQ=dpP;dpRH=dpRing>.5?.92:dpMain>.5?.62:.78;dpS0=0.;dpS1=0.;dpSalt=dpRing>.5?31.:dpMain>.5?0.:7.;dpAx1=vec2(1.,0.);dpAx2=vec2(0.,1.);
 dpQ+=vec2(fpNoise(dpP*2.3),fpNoise(dpP*2.3+7.))*.014;
 float dpId;vec2 dpLoc,dpHalfS,dpG;
-float dpOut=dpRing>.5?dpCourse(dpQ,dpRH,dpS0,dpS1,dpSalt,dpId,dpLoc,dpHalfS,dpG):dpFlag(dpQ,dpRH,dpSalt,dpId,dpLoc,dpHalfS,dpG);
+float dpOut=dpFlag(dpQ,dpRH,dpSalt,dpId,dpLoc,dpHalfS,dpG);
 float dpCrown=.3;
 // Kerb stones: long, pale, set proud, with a gutter joint between them and the paving.
 if(dpKerb>.5){
@@ -215,75 +215,101 @@ float dpHs=mix(dpH,dpTop*dpArr,.25)+(fract(dpId*13.7)-.5)*.12*(1.-dpBlur)+(fpNoi
 float dpSw=max(.05,dpSlope*dpFw*.8)+dpFar*.1+dpBlur*.25;
 dpH=mix(dpH,.6,dpFar);dpHs=mix(dpHs,.6,dpBlur);
 // Sand: grains settle in the joints round every stone first, then a drift closes over whole stones.
-float dpSandJ=smoothstep(-dpSw,dpSw,dpS-dpHs-.05)*(1.-dpKerb*.5);
+float dpSandJ=smoothstep(-dpSw,dpSw,dpS-dpHs-.05)*(1.-dpKerb*.3);
 float dpSB=dpS+fpNoise(dpP*2.7+5.1)*.12+fpNoise(dpP*7.3)*.06,dpBw=max(fwidth(dpSB),1e-4);
 float dpBlanket=clamp((dpSB-1.05)/(dpBw*1.4)+.5,0.,1.);
 // Toward the margin whole stones are gone, taken or buried, more of them the nearer the edge (up to about 70 %):
 // the paving frays into the sand instead of ending on a line. Kerbs, set deeper, go less often.
-{float gone=step(fpHash12(vec2(dpId*7.31+dpSalt,3.7)),(.68-dpKerb*.45)*smoothstep(-1.15,-.1,dpSd+dpN1*.3));
+{float gone=step(fpHash12(vec2(dpId*7.31+dpSalt,3.7)),(.7-dpKerb*.25)*smoothstep(-1.4,-.1,dpSd+dpN1*.35));
  dpBlanket=max(dpBlanket,gone*smoothstep(.0,.03+dpFw,-dpOut+.02));}
 float dpSandA=max(dpSandJ,dpBlanket);
-// The sun inlay in the town square: honey rays on rose, in small square tesserae.
-float dpInlay=0.;vec3 dpInlayC=vec3(0.);
+// The sun inlay in the town square: a carved sun of honey limestone set in rose sandstone, brass fillets round every
+// piece and a basalt rim. Large pieces with cut joints, no small tesserae (at a grazing view those read as a checker).
+float dpInlay=0.,dpBrass=0.;vec3 dpInlayC=vec3(0.);
 {
   vec2 v=dpP-dpSunInlay.xy;float r=length(v);
-  if(dpSunInlay.z>0.&&r<dpSunInlay.z+.12){
-    vec2 tq=v/.11,tc=floor(tq),tf=fract(tq)-.5;vec2 cv=(tc+.5)*.11;float cr=length(cv),ca=atan(cv.y,cv.x);
-    float R=dpSunInlay.z,ray=abs(fract(ca/6.2831853*12.)-.5)*2.;
-    float rayLen=mix(.6,1.,step(.5,fract(ca/6.2831853*6.+.25)));
-    float disc=step(cr,R*.34),rim=step(abs(cr-R*.4),.06),rayM=step(R*.44,cr)*step(cr,R*rayLen)*step(ray,(1.-(cr-R*.44)/(R*rayLen-R*.44))*.75);
-    float band=step(abs(cr-R+.08),.07);
-    float th=fpHash12(tc);
-    vec3 rose=vec3(.42,.17,.11),honey=vec3(.68,.45,.16),cream=vec3(.62,.55,.42),deep=vec3(.2,.11,.07);
-    dpInlayC=mix(cream,rose,step(.5,th*.4+.3))*.9;
-    dpInlayC=mix(dpInlayC,honey,max(disc,rayM));
-    dpInlayC=mix(dpInlayC,deep,max(rim,band));
-    dpInlayC*=.84+.3*fract(th*7.1);
-    float te=max(abs(tf.x),abs(tf.y));
-    dpInlay=step(cr,R)*(1.-smoothstep(.5-.08,.5,te)*.7*(1.-dpBlur));
-    dpInlayC=mix(dpInlayC,vec3(.16,.13,.1),smoothstep(.42,.5,te)*(1.-dpBlur)*.7);
+  if(dpSunInlay.z>0.&&r<dpSunInlay.z+.2){
+    float R=dpSunInlay.z,a=atan(v.y,v.x),aa=max(dpFoot*.7,.004),u=a/6.2831853*12.;
+    float k=floor(u+.5),longR=mod(k,2.)<.5?R*.9:R*.68,ru=abs(u-k)/12.*6.2831853*r;
+    float hw=.36*(1.-clamp((r-R*.36)/(longR-R*.36),0.,1.))+.012;
+    float dRay=max(ru-hw,max(R*.38-r,r-longR));
+    float inRay=1.-smoothstep(-aa,aa,dRay),disc=1.-smoothstep(R*.33-aa,R*.33+aa,r);
+    float rim=smoothstep(R-.24-aa,R-.24+aa,r);
+    // Field pieces: 24 radial flags in two rings; their joints.
+    float fu=a/6.2831853*24.,fj=min(abs(fract(fu)-.5)*2.,1.)*6.2831853*r/24.*.5;
+    float jr=abs(r-R*.66);
+    float fieldJ=(1.-smoothstep(.006,.006+aa,min(abs(.5-fract(fu))*6.2831853*r/24.,jr)))*(1.-rim)*(1.-inRay)*(1.-disc);
+    float fid=fpHash12(vec2(floor(fu),step(R*.66,r)));
+    vec3 rose=vec3(.4,.19,.12)*(.88+.22*fid),honey=vec3(.66,.45,.21),basalt=vec3(.07,.06,.055);
+    dpInlayC=mix(rose,honey*(.92+.12*fpNoise(dpP*3.)),max(inRay,disc));
+    dpInlayC=mix(dpInlayC,basalt*(.9+.2*fpNoise(dpP*5.)),rim);
+    dpInlayC*=1.-fieldJ*.55;
+    // Brass fillets: round the rays, the disc and both edges of the rim; a brass boss in the middle.
+    float fil=max(1.-smoothstep(.016,.016+aa,abs(dRay)),max(1.-smoothstep(.016,.016+aa,abs(r-R*.33)),max(1.-smoothstep(.018,.018+aa,abs(r-R+.24)),1.-smoothstep(.018,.018+aa,abs(r-R+.02)))));
+    fil=max(fil,1.-smoothstep(R*.12-aa,R*.12+aa,r));
+    dpBrass=fil*(1.-smoothstep(R-.02,R+.02,r));
+    dpInlayC=mix(dpInlayC,vec3(.72,.5,.2)*(.85+.25*fpNoise(dpP*7.)),dpBrass);
+    dpInlay=1.-smoothstep(R-aa,R+aa,r);
+    dpBrass*=dpInlay;
   }
 }
-// Sandstone from several beds: honey, cream, rose and ochre, now and then a dark basalt sett.
+// Sandstone from several beds: honey, cream, rose and ochre, now and then a darker umber flag.
 float dpV=fract(dpId*17.13),dpW2=fract(dpId*3.7);
-vec3 dpStone=mix(vec3(.46,.29,.14),vec3(.62,.44,.25),dpW2);
-dpStone=mix(dpStone,vec3(.44,.25,.16),step(.86,dpV)*.6);
-dpStone=mix(dpStone,vec3(.5,.35,.17),step(.7,dpV)*step(dpV,.86)*.5);
+vec3 dpStone=mix(vec3(.5,.35,.18),vec3(.64,.5,.29),dpW2);
+dpStone=mix(dpStone,vec3(.44,.29,.17),step(.86,dpV)*.6);
+dpStone=mix(dpStone,vec3(.56,.4,.18),step(.7,dpV)*step(dpV,.86)*.5);
 
-if(dpKerb>.5)dpStone=mix(vec3(.55,.5,.41),vec3(.64,.58,.47),dpW2);
+if(dpKerb>.5)dpStone=mix(vec3(.6,.45,.28),vec3(.68,.52,.33),dpW2);
 // Bedding: faint parallel laminae across each block, the grain of a sandstone.
 dpStone*=.97+.05*sin(dot(dpLoc,vec2(.3,1.))*40.+dpId*30.+fpNoise(dpP*3.)*3.)*(1.-dpFar);
 dpStone*=.84+.32*(fpNoise(dpP*4.7+dpId*13.)*.5+.5);
-dpStone=mix(dpStone,vec3(.52,.35,.19)*(.88+.24*(fpNoise(dpP*.9+3.)*.5+.5)),dpBlur);
+dpStone=mix(dpStone,vec3(.55,.37,.19)*(.88+.24*(fpNoise(dpP*.9+3.)*.5+.5)),dpBlur);
 float dpNear=1.-smoothstep(.006,.03,dpFoot);
 if(dpNear>0.)dpStone*=1.+fpNoise(dpP*41.)*.18*(1.-smoothstep(.008,.017,dpFoot))+fpNoise(dpP*97.)*.12*(1.-smoothstep(.0035,.0075,dpFoot));
-// Feet polish the middle: paler, less grain, a soft sheen.
+// Feet polish the middle: paler, smoother, a soft sheen; off the trodden line the flags keep a darker patina.
 float dpPolish=smoothstep(.25,.9,dpTrod)*(1.-dpKerb);
-dpStone=mix(dpStone,mix(vec3(dot(dpStone,vec3(.33))),dpStone,.75)*1.16,dpPolish*.7);
-dpStone=mix(dpStone,dpInlayC,dpInlay*(1.-dpRing*0.)*step(.5,dpInlay));
-vec3 dpJoint=mix(dpSand*.62,dpSand*.82,dpN1*.5+.5);
-vec3 dpRock=mix(dpStone,dpJoint,dpJc*(1.-step(.5,dpInlay)));
-// Sand: dry and pale on the drifts, darker and finer packed in the joints.
-vec3 dpSandC=dpSand*(.92+.12*fpNoise(dpP*3.1));
-dpSandC=mix(dpSandC*.8,dpSandC,smoothstep(.0,.6,dpS-dpHs));
-vec3 dpCol=mix(dpRock,dpSandC,dpSandA);
+dpStone=mix(dpStone,mix(vec3(dot(dpStone,vec3(.33))),dpStone,.82)*1.14,dpPolish*.6);
+dpStone*=mix(.88,1.,max(dpWear,dpPolish));
+// Cracked flags: a jagged hairline across one flag in six, sand in the crack.
+if(dpFar<.99&&fpHash12(vec2(dpId*3.1,5.7))>.83){
+  vec2 cl=dpLoc/max(dpHalfS,vec2(.05));float cc=abs(cl.y-(fpNoise(cl*1.9+dpId*7.)*.55+cl.x*(fract(dpId*9.3)-.5)));
+  dpStone*=1.-(1.-smoothstep(.004,.01+dpFw*1.5,cc*min(dpHalfS.x,dpHalfS.y)))*.5*(1.-dpFar)*(1.-smoothstep(.7,.95,abs(cl.x)));
+}
+dpStone=mix(dpStone,dpInlayC,dpInlay);
+vec3 dpJoint=mix(dpSand*.5,dpSand*.7,dpN1*.5+.5);
+vec3 dpRock=mix(dpStone,dpJoint,dpJc*(1.-dpInlay));
 float dpRecess=clamp((dpTop*.9-max(dpS,dpH))/.55,0.,1.)*(1.-dpFar*.75)*(1.-dpSandA*.8);
-dpCol*=1.-dpRecess*.35;
-// Sand ripples on the drifts.
-float dpRip=sin(dot(dpP,vec2(.8,.6))*9.+fpNoise(dpP*.7)*5.)*.5+.5;
-dpCol*=1.-dpBlanket*dpRip*.06*(1.-dpBlur);
-diffuseColor.rgb*=dpCol;
-diffuseColor.a*=dpAlpha;
+vec3 dpCol=dpRock*(1.-dpRecess*.35);
+// Sand over the stones is the desert's own: where it lies the paving thins away and the terrain's sand shows through,
+// so the drifts, the free ends and the edges match the dunes in colour, grain and light (no seam, no rectangle).
+// Carts and walkers have pressed their tracks into it: two wheel ruts wandering along each way and footprints.
+float dpTrack=0.;
+if(dpSandA>.02){
+  float w=fpNoise(vec2(dpAlong*.035,dpSeed+1.))*(dpMain>.5?1.6:.45),g=dpMain>.5?.78:.62;
+  float rut=1.-smoothstep(.045,.09+dpFoot*2.,abs(abs(dpAcross-w)-g));
+  rut*=smoothstep(.2,.55,fpNoise(vec2(dpAlong*.4,dpSeed))*.5+.5+.25);
+  float st=.66,k=floor(dpAlong/st),side=mod(k,2.)*2.-1.;
+  vec2 fc=vec2((k+.5)*st,w*.6-.9+side*.12+fpNoise(vec2(k*.7,dpSeed+9.))*.08);
+  vec2 fd=(vec2(dpAlong,dpAcross)-fc)/vec2(.13,.06);
+  float print=(1.-smoothstep(.7,1.,length(fd)))*step(.35,fpHash12(vec2(k,dpSeed+4.)))*(1.-smoothstep(.04,.09,dpFoot));
+  dpTrack=max(rut*.85,print*.7)*(1.-dpKerb)*smoothstep(.3,.9,dpSandA);
+}
+diffuseColor.rgb*=mix(dpCol,dpSand*.62,dpTrack);
+diffuseColor.a*=dpAlpha*max(1.-dpSandA*.97,dpTrack*.42);
 float dpShade=1.;
 if(dpDetail>.5&&dpSandA<.99&&dpFar<.99&&dpKerb<.5&&dpFoot<.05){
   float sl=max(length(dpSun.xz),1e-3);vec2 sd=dpSun.xz/sl;float tanE=dpSun.y/sl,h0=max(dpH,dpS*dpSandA),occ=0.;
-  for(int k=1;k<=2;k++){float d=float(k*k)*.016;float id2;vec2 l2,h2,g2,cg2;float sl2;vec2 q2=dpQ+vec2(dot(sd,dpAx1),dot(sd,dpAx2))*d;float o2=dpRing>.5?dpCourse(q2,dpRH,dpS0,dpS1,dpSalt,id2,l2,h2,g2):dpFlag(q2,dpRH,dpSalt,id2,l2,h2,g2);float hk=dpDome(-o2,id2,l2,h2,.3,sl2,cg2);occ=max(occ,clamp(((hk-h0)*DP_RELIEF-d*tanE)/.005,0.,1.));}
+  for(int k=1;k<=2;k++){float d=float(k*k)*.016;float id2;vec2 l2,h2,g2,cg2;float sl2;vec2 q2=dpQ+vec2(dot(sd,dpAx1),dot(sd,dpAx2))*d;float o2=dpFlag(q2,dpRH,dpSalt,id2,l2,h2,g2);float hk=dpDome(-o2,id2,l2,h2,.3,sl2,cg2);occ=max(occ,clamp(((hk-h0)*DP_RELIEF-d*tanE)/.005,0.,1.));}
   dpShade=1.-occ*.75;
 }
 `;
 
 const ROUGH = /* glsl */ `
-roughnessFactor=mix(mix(.86,.62,dpPolish),.97,dpSandA);
+roughnessFactor=mix(mix(mix(.86,.62,dpPolish),.97,dpSandA),.38,dpBrass);
+`;
+
+const METAL = /* glsl */ `
+metalnessFactor=dpBrass*.75;
 `;
 
 const NORMAL = /* glsl */ `
@@ -306,17 +332,23 @@ const NORMAL = /* glsl */ `
 `;
 
 const LIGHT = /* glsl */ `#include <lights_fragment_end>
+// Golden bounce: the sunlit sand and walls all round throw warm light into the street (the sky alone left it blue-grey).
+reflectedLight.indirectDiffuse+=diffuseColor.rgb*(1.-dpBrass*.75)*dpBounce*RECIPROCAL_PI;
 reflectedLight.directDiffuse*=dpShade;
 reflectedLight.directSpecular=min(reflectedLight.directSpecular*dpShade,vec3(.25));`;
 
 /** Linear albedo of the town's blown sand (style sheet sand mid #c9955a, a little paler). Shared with the rocks. */
 export const DAWN_SAND = new THREE.Color(.62, .4, .2);
+/** The street's golden bounce (linear irradiance): the low sun off the sand and the walls, into the shade. */
+export const DAWN_BOUNCE = new THREE.Color(1., .74, .38);
 
 export interface DawnPavingOptions {
   /** Paved squares; `sun` inlays the dawn sun at the centre of that one. */
   pads?: readonly {x: number; z: number; r: number; sun?: number}[];
   /** Linear albedo of the blown sand, matched to the beach. */
   sand?: THREE.Color;
+  /** Linear irradiance of the warm bounce off the sunlit sand and walls (indirect, added to the sky's). */
+  bounce?: THREE.Color;
 }
 export interface DawnPaving {
   root: THREE.Group;
@@ -432,6 +464,7 @@ export function dawnPaving(height: (x: number, z: number) => number, paths: Isla
     dpSun: {value: new THREE.Vector3(-.4, .9, .2).normalize()},
     dpSand: {value: opts.sand ?? DAWN_SAND.clone()},
     dpSkyH: {value: new THREE.Color(.9, .7, .5)},
+    dpBounce: {value: opts.bounce ?? DAWN_BOUNCE.clone()},
   };
   const material = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .85, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
   material.name = 'dawnharbor-sandstone-paving';
@@ -444,6 +477,7 @@ export function dawnPaving(height: (x: number, z: number) => number, paths: Isla
       .replace('#include <common>', `#include <common>\n${HEAD}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${COLOR}`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${ROUGH}`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>\n${METAL}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${NORMAL}`)
       .replace('#include <lights_fragment_end>', LIGHT);
   };

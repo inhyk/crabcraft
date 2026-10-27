@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {FROST_NOISE} from './frostPaving';
 import {DAWN_FIRE,DAWN_FIRE_HEAD,DAWN_FIRE_LIGHT} from './dawnFire';
 import {CITADEL_ARENA,CITADEL_GATE,CITADEL_WALL} from './dawnCitadelLayout';
+import {DAWN_BOUNCE} from './dawnPaving';
 
 /*
  * Solarkan's sun-dial floor and the temple court round it. The floor is the old sun temple's dial: honey limestone
@@ -20,6 +21,8 @@ uniform vec3 daCenter;
 uniform float daTime;
 uniform float daDetail;
 uniform float daCourt;
+uniform vec3 daBounce;
+float daSandy;
 varying vec3 vDaW;
 float daGilt;float daBas;float daPolish;float daH;float daGlow;float daWorn;
 float daBand(float r,float a,float b,float aa){return smoothstep(a-aa,a+aa,r)*(1.-smoothstep(b-aa,b+aa,r));}
@@ -126,6 +129,19 @@ if(daCourt<.5){
  if(dR<${(CITADEL_ARENA.r + .02).toFixed(2)})discard;
 }
 dCol*=mix(1.,.3,dJoint);
+daSandy=0.;
+if(daCourt<.5){
+ // Sand blown up onto the dial: banked against the curb in tongues reaching a few metres in, in the joints first.
+ float tongue=fpNoise(vec2(dAng*3.2,1.7))*.6+fpNoise(dP*.35+4.)*.4+.25*sin(dAng+.6);
+ float reach=1.2+3.4*smoothstep(-.3,.8,tongue);
+ float edge=smoothstep(${CITADEL_ARENA.r.toFixed(1)}-reach,${CITADEL_ARENA.r.toFixed(1)}-.2,dR+fpNoise(dP*1.3)*.35);
+ float lvl=edge*1.25+dJoint*.6*smoothstep(${(CITADEL_ARENA.r - 6).toFixed(1)},${CITADEL_ARENA.r.toFixed(1)},dR)-.35+fpNoise(dP*2.1)*.15;
+ daSandy=smoothstep(.05,.35,lvl);
+ vec3 sandC=vec3(.72,.54,.3)*(.9+.14*(fpNoise(dP*3.3)*.5+.5));
+ sandC*=1.-.05*(sin(dot(dP,vec2(.8,.6))*9.+fpNoise(dP*.7)*5.)*.5+.5)*daSandy;
+ dCol=mix(dCol,sandC,daSandy);
+ daGilt*=1.-daSandy;daBas*=1.-daSandy;daGlow*=1.-daSandy;daH=mix(daH,.2,daSandy);
+}
 // Soot: the boss's fire scorched across the stone in bursts.
 if(daDetail>.5&&daCourt<.5){
  // One noise field, thresholded into bursts and streaked radially from the centre (the fight's fire).
@@ -140,7 +156,7 @@ function dialMaterial(name: string, court: boolean, uniforms: Record<string, THR
   const m = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .85, envMapIntensity: .6, ...(court ? {polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2} : {})});
   m.name = name;
   m.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms, DAWN_FIRE, {daCourt: {value: court ? 1 : 0}});
+    Object.assign(shader.uniforms, uniforms, DAWN_FIRE, {daCourt: {value: court ? 1 : 0}, daBounce: {value: DAWN_BOUNCE.clone().multiplyScalar(1.35)}});
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vDaW;')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\nvDaW=(modelMatrix*vec4(transformed,1.)).xyz;');
@@ -161,7 +177,9 @@ function dialMaterial(name: string, court: boolean, uniforms: Record<string, THR
           if(nW.y>.5){nW=normalize(nW+vec3(-g.x,0.,-g.y));normal=normalize((viewMatrix*vec4(nW,0.)).xyz);}
         }`)
       // Gold takes the warm sky, stone keeps a dull sheen (the low sun across a whole floor reads as plastic).
-      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(.45,1.,daGilt);\n${DAWN_FIRE_LIGHT}`);
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\nreflectedLight.directSpecular*=mix(.45,1.,daGilt);
+        // Golden bounce off the sunlit court walls and sand: the shade on the floor goes warm, not blue-grey.
+        reflectedLight.indirectDiffuse+=diffuseColor.rgb*(1.-metalnessFactor)*daBounce*RECIPROCAL_PI;\n${DAWN_FIRE_LIGHT}`);
   };
   m.customProgramCacheKey = () => `dawn-dial-${court ? 'court' : 'floor'}`;
   return m;
