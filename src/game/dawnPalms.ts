@@ -78,7 +78,7 @@ export function dawnPalms(spots: readonly PalmSpot[], height: (x: number, z: num
       const t = i / N, off = s.lean * s.h * (t * t * .9 + Math.sin(t * Math.PI) * .12);
       pts.push(new THREE.Vector3(s.x, y0 + t * s.h, s.z).addScaledVector(dir, off));
     }
-    const curve = new THREE.CatmullRomCurve3(pts), seg = 48, radial = 14, pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    const curve = new THREE.CatmullRomCurve3(pts), seg = 40, radial = 12, pos: number[] = [], uv: number[] = [], idx: number[] = [];
     const frames = curve.computeFrenetFrames(seg, false);
     for (let i = 0; i <= seg; i++) {
       const t = i / seg, c = curve.getPointAt(t), n = frames.normals[i], b = frames.binormals[i];
@@ -102,7 +102,7 @@ export function dawnPalms(spots: readonly PalmSpot[], height: (x: number, z: num
       const az = k * 2.39996 + R() * .3, len = dry ? 1.8 + R() * .5 : young ? 2.0 + R() * .4 : 2.6 + R() * .9;
       const rise = dry ? -1.25 - R() * .2 : young ? .9 + R() * .3 : .35 - R() * .55, droop = dry ? .1 : young ? .25 : .9 + R() * .4;
       const fd = new THREE.Vector3(Math.cos(az), 0, Math.sin(az));
-      const M = 18, fp: number[] = [], fu: number[] = [], fi: number[] = [], tip: number[] = [], col: number[] = [];
+      const M = 13, fp: number[] = [], fu: number[] = [], fi: number[] = [], tip: number[] = [], col: number[] = [];
       const green = dry ? new THREE.Color('#7a5f36') : new THREE.Color('#4f7a3a').offsetHSL((R() - .5) * .03, 0, (R() - .5) * .06);
       for (let i = 0; i <= M; i++) {
         const t = i / M, along = t * len;
