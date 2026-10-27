@@ -167,8 +167,8 @@ const SAND_STATE = /* glsl */ `
   float streak=snNoise(sWq*vec2(.035,.42))*.65+snNoise(sWq*vec2(.09,1.3))*.35;
   // Warm golden ochre, never orange; value carries the form.
   // Quartz sand reflects a broad spectrum: the gold comes mostly from the low sun, so shade can still go blue.
-  vec3 sand=sdLin(vec3(.84,.73,.5));
-  vec3 pale=sdLin(vec3(.9,.8,.57)),lag=sdLin(vec3(.72,.58,.42)),red=sdLin(vec3(.86,.68,.47));
+  vec3 sand=sdLin(vec3(.84,.715,.47));
+  vec3 pale=sdLin(vec3(.89,.78,.535)),lag=sdLin(vec3(.72,.58,.42)),red=sdLin(vec3(.86,.68,.47));
   vec3 alb=mix(sand,red,smoothstep(.3,.75,n1)*.45);
   alb=mix(alb,pale,smoothstep(.05,.7,sCrest)*.6);
   alb=mix(alb,lag,smoothstep(-.1,-.75,sCrest)*(.55+.3*n2));
