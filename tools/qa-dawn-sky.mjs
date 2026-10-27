@@ -1,9 +1,10 @@
 // Dawnharbor's dawn (World III): the baked dawn sky with the sun low in the east, the depth-coloured sea, the
 // reshaped coast and fields, and the shader ground. Checks that the server's dawnHeight() keeps every piece of
-// gameplay ground at its old height and the fields stay walkable; that the rendered ground is dawnHeight() itself;
-// that the old gradient sphere, flat metallic sea plane, vertex-colour plate, sun ball, cloud blobs and foam rings
-// are gone; that sun, hemisphere and fog read the one sky; and that high and low quality both render without
-// errors. Writes tmp/qa/dawn-sky-*.png.
+// gameplay ground at its old height and the fields stay walkable; that the old gradient sphere, flat metallic sea
+// plane, vertex-colour plate, sun ball, cloud blobs and foam rings are gone; that sun, hemisphere and fog read the
+// one sky; and that high and low quality both render without errors. Writes tmp/qa/dawn-sky-*.png.
+// Since Goldsand (the desert harbour) the ground is the sand clipmap: tools/qa-dawn-sand.mjs holds it to
+// dawnHeight() on the GPU, so this script checks only that it is the ground drawn here.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {launchBrowser} from './lib/browser.mjs';
@@ -45,7 +46,7 @@ assert.equal(below,0,'no walkable ground drowns');
 const coast=[];for(let i=0;i<180;i++){const a=i/180*Math.PI*2;let t=.75;while(t<1.2&&dawnHeight(Math.sin(a)*122*t,3+Math.cos(a)*149*t)>.25)t+=.002;coast.push(t);}
 const spread=Math.max(...coast)-Math.min(...coast);
 assert.ok(spread>.04&&Math.min(...coast)>.82,`a wandering shoreline outside the walkable ellipse: ${Math.min(...coast).toFixed(3)}..${Math.max(...coast).toFixed(3)}`);
-// High land breaks off in bluffs to the north, low land shelves into the south as beach.
+// High land breaks off in bluffs to the north (the citadel's escarpment above the desert), low land shelves into the south as beach.
 const drop=(x,z,dx,dz)=>{let best=0;for(let s=0;s<30;s+=.5)best=Math.max(best,(dawnHeight(x+dx*s,z+dz*s)-dawnHeight(x+dx*(s+1),z+dz*(s+1))));return best;};
 const north=drop(0,-118,0,-1),south=drop(0,118,0,1);
 assert.ok(north>2.5&&south<1.2,`bluffs north (${north.toFixed(2)} m per m), beach south (${south.toFixed(2)})`);
@@ -64,7 +65,7 @@ async function load(quality){const p=await browser.newPage({viewport:{width:1280
 async function shot(p,at,eye,look,path){await p.evaluate(([at,eye,look])=>{const g=window.app.current.game,h=(x,z)=>g.world.heightAt(x,z);g.player.unit.teleport(g.world,at[0],at[1],0);
  window.__cam={p:[eye[0],Math.max(h(eye[0],eye[2]),.25)+eye[1],eye[2]],t:[look[0],Math.max(h(look[0],look[2]),.25)+look[1],look[2]]};},[at,eye,look]);await p.waitForTimeout(1600);await p.screenshot({path});}
 const inspect=p=>p.evaluate(()=>{const g=window.app.current.game,w=g.world2.third,root=w.root,find=n=>root.getObjectByName(n);
- const ground=find('dawn-ground'),sea=find('dawn-sea'),sky=find('dawn-sky'),sun=find('dawnreach-sun');
+ const ground=find('goldsand-clipmap'),sea=find('dawn-sea'),sky=find('dawn-sky'),sun=find('dawnreach-sun');
  // Old primitives: the gradient sphere, the flat sea and plate, the sun ball, the cloud blobs, the foam rings.
  const leftovers=[];root.traverse(o=>{if(!o.isMesh)return;const t=o.geometry.type,q=o.geometry.parameters??{};
   if(t==='PlaneGeometry'&&q.width>=200&&o!==sea&&o!==ground)leftovers.push('plane '+(o.name||t));
@@ -72,30 +73,28 @@ const inspect=p=>p.evaluate(()=>{const g=window.app.current.game,w=g.world2.thir
   if(t==='PlaneGeometry'&&o.material?.vertexColors)leftovers.push('vertex-colour ground');
   if(o.material?.isMeshBasicMaterial&&o.material.transparent&&t==='BufferGeometry'&&o.geometry.attributes.position.count===768)leftovers.push('foam ring');
   if(o.material?.isMeshBasicMaterial&&o.material.transparent&&t==='SphereGeometry'&&o.scale.y<=3.01&&o.scale.x>=17)leftovers.push('cloud blob');});
- // The rendered ground is the server's surface at its vertices.
- const pos=ground.geometry.attributes.position;let err=0;for(let i=0;i<pos.count;i+=97)err=Math.max(err,Math.abs(pos.getY(i)-g.world.heightAt(pos.getX(i),pos.getZ(i))));
  const hemi=[];root.traverse(o=>{if(o.isHemisphereLight)hemi.push(o);});
  const sd=sun.position.clone().sub(sun.target.position).normalize();
  // Fog toward the sun is warm, away from it cool, and the dome's haze band follows it.
  const fog=g.scene.fog,cam=g.camera,warm=[],fogOf=(dx,dz)=>{cam.position.set(0,10,0);cam.lookAt(dx,10,dz);cam.updateMatrixWorld();w.fog(cam,fog);return fog.color.clone();};
  const east=fogOf(w.sky.sunDir.x,w.sky.sunDir.z),west=fogOf(-w.sky.sunDir.x,-w.sky.sunDir.z);
- return {ground:!!ground,sea:!!sea,sky:sky?.material?.name,leftovers,err,step:ground.userData.step,verts:pos.count,surf:!!ground.geometry.attributes.dawnSurf,
+ return {ground:!!ground&&ground.visible,sea:!!sea,sky:sky?.material?.name,leftovers,rings:ground.userData.layout?.levels,
   sunDot:sd.dot(w.sky.sunDir),sunEl:Math.asin(w.sky.sunDir.y)*180/Math.PI,sunAz:Math.atan2(w.sky.sunDir.x,w.sky.sunDir.z)*180/Math.PI,shadow:sun.castShadow,map:sun.shadow.mapSize.x,
   hemi:hemi.length,hemiSky:hemi[0]?.color.equals(w.sky.hemiSky),hemiGround:hemi[0]?.groundColor.equals(w.sky.hemiGround),
   east:[east.r,east.g,east.b],west:[west.r,west.g,west.b],seaLUT:sea.material.uniforms.dawnSkyLUT.value===sky.material.uniforms.dawnSkyLUT.value,
-  low:['DAWN_LOW' in (ground.material.defines??{}),'DAWN_LOW' in sea.material.defines,'DAWN_LOW' in sky.material.defines],calls:g.engine.renderer.info.render.calls};});
+  low:['SAND_LOW' in (ground.material.defines??{}),'DAWN_LOW' in sea.material.defines,'DAWN_LOW' in sky.material.defines],calls:g.engine.renderer.info.render.calls};});
 try{
  for(const quality of ['high','low']){
   const p=await load(quality);const s=await inspect(p);
   assert.ok(s.ground&&s.sea&&s.sky==='dawn-sky',`the dawn ground, sea and sky are built: ${JSON.stringify(s)}`);
   assert.deepEqual(s.leftovers,[],'no old sky sphere, sea plane, vertex-colour plate, sun ball, cloud blob or foam ring is left');
-  assert.ok(s.err<1e-4&&s.step<=1.25&&s.verts>60000&&s.surf,`the ground mesh is dawnHeight() sampled every ${s.step} m: ${s.err}`);
+  assert.equal(s.rings,9,'the sand clipmap is the ground');
   assert.ok(s.sunDot>.999&&s.sunEl>5&&s.sunEl<16&&s.sunAz>80&&s.sunAz<130&&s.shadow,`a low sun in the east casts the shadows: ${s.sunEl.toFixed(1)} deg up, bearing ${s.sunAz.toFixed(0)}`);
   assert.ok(s.hemi===1&&s.hemiSky&&s.hemiGround&&s.seaLUT,'hemisphere light and the sea read the same sky');
   assert.ok(s.east[0]>s.west[0]*1.1&&s.east[0]/s.east[2]>s.west[0]/s.west[2],`fog is warm toward the sun, cool away: ${JSON.stringify([s.east,s.west])}`);
   assert.deepEqual(s.low,quality==='low'?[true,true,true]:[false,false,false],`${quality} quality defines`);
   assert.equal(s.map,quality==='low'?1024:2048,'shadow map follows quality');
-  console.log(`PASS ${quality}: ground ${s.verts} verts at ${s.step} m (max ${s.err.toExponential(1)} m off dawnHeight), sun ${s.sunEl.toFixed(1)} deg at bearing ${s.sunAz.toFixed(0)}, map ${s.map}, ${s.calls} calls`);
+  console.log(`PASS ${quality}: sand clipmap ${s.rings} rings, sun ${s.sunEl.toFixed(1)} deg at bearing ${s.sunAz.toFixed(0)}, map ${s.map}, ${s.calls} calls`);
   if(quality==='high'){
    await shot(p,[0,60],[-14,9,40],[10,2,72],'tmp/qa/dawn-sky-town.png');
    await shot(p,[60,98],[50,7,86],[80,0,120],'tmp/qa/dawn-sky-shore.png');
