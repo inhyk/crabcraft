@@ -118,19 +118,23 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
       // ragged top, the splash speckled above it).
       float foot=1.-smoothstep(0.,.4+.45*(fpNoise(q*1.6)*.5+.5),vPl.x);
       c=mix(c,c*vec3(.76,.64,.5),foot*.7*vert);
-      float bandTop=.2+.2*(fpNoise(vec2(q.x*.9,3.))*.5+.5)+.05*fpNoise(vec2(q.x*7.,1.));
-      float band=1.-smoothstep(bandTop-.04,bandTop+.02,vPl.x);
-      float speck=smoothstep(.62,.8,fpNoise(q*vec2(9.,14.))*.5+.5)*(1.-smoothstep(bandTop,bandTop+.5,vPl.x));
-      vec3 dirt=vec3(.62,.47,.32)*(.85+.25*fine);
-      c=mix(c,dirt,(band*.85+speck*.35)*vert);
+      if(vPl.x<1.){
+        float bandTop=.2+.2*(fpNoise(vec2(q.x*.9,3.))*.5+.5)+.05*fpNoise(vec2(q.x*7.,1.));
+        float band=1.-smoothstep(bandTop-.04,bandTop+.02,vPl.x);
+        float speck=smoothstep(.62,.8,fpNoise(q*vec2(9.,14.))*.5+.5)*(1.-smoothstep(bandTop,bandTop+.5,vPl.x));
+        vec3 dirt=vec3(.62,.47,.32)*(.85+.25*fine);
+        c=mix(c,dirt,(band*.85+speck*.35)*vert);
+      }
       // Corners and arrises: handled, rubbed and dusty.
       c*=1.-.1*corner*vert;
       // Streaks under the roof edge.
       float st=smoothstep(.45,.9,fpNoise(vec2(q.x*1.4,7.))*.5+.5+.25*fpNoise(vec2(q.x*8.,q.y*.5)));
       c*=1.-.17*st*(1.-smoothstep(0.,2.4,vPl.y))*step(.04,vPl.y)*vert;
       // Long tea-coloured runs from the parapet's spouts and the sills, a few metres down the wash.
-      float run=smoothstep(.7,.92,fpNoise(vec2(q.x*2.6,1.7))*.5+.5)*(.6+.4*(fpNoise(vec2(q.x*11.,q.y*.35))*.5+.5));
-      c=mix(c,c*vec3(.8,.72,.62),run*.38*(1.-smoothstep(.3,4.8,vPl.y))*step(.04,vPl.y)*vert);
+      if(vPl.y<4.8&&vPl.y>.04&&vert>.01){
+        float run=smoothstep(.7,.92,fpNoise(vec2(q.x*2.6,1.7))*.5+.5)*(.6+.4*(fpNoise(vec2(q.x*11.,q.y*.35))*.5+.5));
+        c=mix(c,c*vec3(.8,.72,.62),run*.38*(1.-smoothstep(.3,4.8,vPl.y))*vert);
+      }
       // Roof slabs and caps: smooth mud plaster in the wall's hue, trodden darker in patches.
       vec3 mud=mix(tint,vec3(.8,.68,.52),.45)*(.86+.18*mott)*(.95+.06*fine);
       c=mix(mud,c,smoothstep(.15,.6,vert));
