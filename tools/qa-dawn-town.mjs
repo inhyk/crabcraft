@@ -94,7 +94,7 @@ try {
   assert.equal(r.oldFlagstones, false, 'the shared grid flagstones are gone from World III');
   assert.ok(r.covers.every(Boolean), `covers() on avenue, square, arrival square and harbour: ${r.covers}`);
   assert.ok(r.lamps >= 20, `road and harbour lamps: ${r.lamps}`);
-  assert.ok(r.boulders && r.boulders.sites >= 25 && r.boulders.stones >= r.boulders.sites * 3 && r.boulders.vents === 0, JSON.stringify(r.boulders));
+  assert.ok(r.boulders && r.boulders.sites >= 24 /* 30 sites less the 6 inside the citadel walls */ && r.boulders.stones >= r.boulders.sites * 3 && r.boulders.vents === 0, JSON.stringify(r.boulders));
   assert.ok(r.boats >= 5, `boats ${r.boats}`);
   assert.deepEqual(r.harbour, [], 'harbour parts present');
   assert.ok(r.dressing && r.dressing.stalls >= 10 && r.dressing.goods >= 40 && r.dressing.benches >= 6 && r.dressing.doorPots >= 4 && r.dressing.lanterns >= 6, JSON.stringify(r.dressing));
