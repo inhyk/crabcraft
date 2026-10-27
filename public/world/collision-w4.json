@@ -2,7 +2,7 @@
 "format":"crabcraft-collision",
 "version":1,
 "world":"w4",
-"source":"0adad3aa433ce320f7623dcaed70eb6da15dba8892769bd8d620480e1bb11708",
+"source":"133ad3e6a6571d6aec2f35a975b3536ed187ddb0cdbde96701498e28c307e437",
 "ground":{"kind":"snow"},
 "heightAt":"ground",
 "cells":{"minX":-150,"minZ":-175,"step":2,"nx":151,"nz":176,"blocked":null},
