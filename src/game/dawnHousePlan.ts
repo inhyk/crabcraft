@@ -110,8 +110,8 @@ export function stairFootprint(b: DawnBlock): { x: number; z: number; hx: number
   return {x: b.x + b.stair.dir * (b.w / 2 - run / 2 - .2), z: b.z + out * (b.d / 2 + wide / 2), hx: run / 2, hz: wide / 2};
 }
 
-/** Date palms of the quarter's scenes: [x, z, height, lean, solid]. */
-export function dawnPalms(): [number, number, number, number][] {
+/** Date palms of the quarter's scenes: [x, z, height, lean] (drawn by dawnPalms.ts with the town's palms). */
+export function quarterPalms(): [number, number, number, number][] {
   return [
     // Flanking the shrine's door and in its forecourt.
     [29.6, 49.2, 7.2, .1], [29.4, 57.8, 8.4, .16],
@@ -140,6 +140,6 @@ export function registerDawnHouses(height: (x: number, z: number) => number, col
     const s = stairFootprint(b);
     if (s) col.addBox(s.x, s.z, s.hx + .05, s.hz + .05, 0, y - 1, y + b.h);
   }
-  for (const [x, z] of dawnPalms()) { const y = height(x, z); col.addCircle(x, z, .32, y, y + 8); }
+  for (const [x, z] of quarterPalms()) { const y = height(x, z); col.addCircle(x, z, .32, y, y + 8); }
   { const y = height(DAWN_WELL.x, DAWN_WELL.z); col.addCircle(DAWN_WELL.x, DAWN_WELL.z, DAWN_WELL.r, y, y + 1.1); }
 }

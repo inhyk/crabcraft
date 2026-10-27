@@ -7,6 +7,7 @@ import {tube} from '../world/geom';
 import {DAWN_POINTS} from './dawnQuests';
 import {lanternFlame} from './frostLantern';
 import {coastAt} from './dawnHarbour';
+import {dawnMarket} from './dawnMarket';
 import {dawnGlows, dawnRope, dawnSandstone, dawnWood, solidPart, woodPart} from './dawnMaterials';
 import {DAWN_GATES, dawnLampPosts, roadClearance} from './world3Colliders';
 
@@ -59,11 +60,14 @@ function laundryMaterial(): THREE.MeshStandardMaterial {
 export interface DawnDressing {group: THREE.Group; update(time: number): void; stats: Record<string, number>}
 
 /** Raise the dressing; `npcSpots` are the villagers' posts (DawnIsland.town), `height` the gameplay surface. */
-export function dawnDressing(height: (x: number, z: number) => number, kits: {props: Kit; nature: Kit; village?: Kit}, doors: readonly {pos: THREE.Vector3; yaw: number}[], npcSpots: readonly (readonly [number, number])[], opts: {yardLaundry?: boolean} = {}): DawnDressing {
+export function dawnDressing(height: (x: number, z: number) => number, kits: {props: Kit; nature: Kit}, doors: readonly {pos: THREE.Vector3; yaw: number}[], npcSpots: readonly (readonly [number, number])[], opts: {yardLaundry?: boolean} = {}): DawnDressing {
   const {props, nature} = kits;
   const group = new THREE.Group(); group.name = 'dawnharbor-dressing';
   const R = rng(9137);
-  const over: Record<string, THREE.Material> = {MI_Trim_Cloth: awningCloth(props.materials.get('MI_Trim_Cloth')!)};
+  // Kit hardware reads as brass in Goldsand (lanterns, hoops, fittings), never black iron.
+  const brass = (props.materials.get('MI_Trim_Metal')!.clone()) as THREE.MeshStandardMaterial;
+  brass.name = 'goldsand-kit-brass'; brass.color.set('#e0b45a'); brass.metalness = .8; brass.roughness = .4;
+  const over: Record<string, THREE.Material> = {MI_Trim_Cloth: awningCloth(props.materials.get('MI_Trim_Cloth')!), MI_Trim_Metal: brass};
   const batch = new StaticBatch(props, 'dawnharbor-props'), plants = new Scatter(nature, 'dawnharbor-plants');
   const stats: Record<string, number> = {stalls: 0, goods: 0, benches: 0, planters: 0, doorPots: 0, lanterns: 0, laundry: 0, gear: 0};
   // Keep-out discs: villagers' posts (and the paths they walk between), quest points, lamps and gates.
@@ -80,27 +84,23 @@ export function dawnDressing(height: (x: number, z: number) => number, kits: {pr
   const plant = (piece: string, x: number, y: number, z: number, yaw: number, s: number) => { if (nature.has(piece)) plants.add(piece, trs(x, y, z, yaw, s)); };
   const local = (x: number, z: number, yaw: number, lx: number, lz: number) => [x + Math.cos(yaw) * lx + Math.sin(yaw) * lz, z - Math.sin(yaw) * lx + Math.cos(yaw) * lz] as const;
 
-  // The market: stalls round the town square, fronts to the centre, counters laid with goods.
-  const GOODS = [['FarmCrate_Apple', 'FarmCrate_Carrot', 'FarmCrate_Apple'], ['Vase_4', 'Vase_2', 'Pot_1'], ['Bag', 'FarmCrate_Carrot', 'Mug'], ['Coin_Pile', 'Mug', 'CandleStick_Triple'], ['FarmCrate_Apple', 'Vase_4', 'Bag']];
-  // Two rows: along the cross street's north side facing it, and south of the square facing the street there.
+  // The souk: canopy stalls in two rows (dawnMarket.ts), along the cross street's north side facing it and south of
+  // the square facing the street there; stock beside each from the kit.
   const stallSpots: [number, number, number][] = [
     ...[-17, -13.5, -10, 10, 13.5, 17].map(x => [x, 59.3, Math.PI] as [number, number, number]),
     ...[-13, -9, 9, 13].map(x => [x, 40.8, 0] as [number, number, number]),
   ];
+  const souk: {x: number; z: number; yaw: number}[] = [];
   for (const [k, [x, z, yaw0]] of stallSpots.entries()) {
     const yaw = yaw0 + (R() - .5) * .08;
     if (!clear(x, z, 1.3) || roadClearance(x, z) < .9) continue;
-    put('Stall_Empty', x, z, yaw);
-    stats.stalls++;
-    const goods = GOODS[k % GOODS.length];
-    goods.forEach((g, j) => { const [gx, gz] = local(x, z, yaw, (j - 1) * .58, .08); if (put(g, gx, gz, yaw + (R() - .5) * .3, g.startsWith('Farm') ? .9 : 1, .84)) stats.goods++; });
-    // Stock beside and behind: barrels, stacked crates, a sack, a stool for the seller.
-    const [bx, bz] = local(x, z, yaw, 1.45, -.15), [cx, cz] = local(x, z, yaw, -1.4, -.35), [sx, sz] = local(x, z, yaw, .4, -1.05);
-    put(k % 2 ? 'Barrel_Apples' : 'Barrel', bx, bz, R() * 6);
-    put('Crate_Wooden', cx, cz, yaw + .2); put('Crate_Wooden', cx + .05, cz, yaw - .1, .8, .86);
-    put('Stool', sx, sz, R() * 6);
-    stats.goods += 4;
+    souk.push({x, z, yaw}); stats.stalls++;
+    const [bx, bz] = local(x, z, yaw, k % 2 ? 1.72 : -1.72, -.6), [sx, sz] = local(x, z, yaw, .5, .2);
+    put(k % 3 ? 'Barrel' : 'Bag', bx, bz, R() * 6, .9);
+    put('Stool', sx, sz, R() * 6, .9);
   }
+  const market = dawnMarket(souk, height);
+  group.add(market.group); stats.goods += market.goods;
 
   // The fish market and fishing gear on the promenade: carts, barrels and buckets of the catch, lobster pots, rope.
   for (const [a, cart] of [[-.17, true], [-.03, false], [.12, true], [.21, false]] as const) {
@@ -142,7 +142,8 @@ export function dawnDressing(height: (x: number, z: number) => number, kits: {pr
     top.computeVertexNormals(); soil.push(solidPart(top, trs(x, y + .3, z))); top.dispose();
     for (let i = 0; i < 9; i++) {
       const px = x - W / 2 + .9 + i * (W - 1.8) / 8, pz = z + (i % 2 ? .6 : -.6);
-      plant(['Bush_Common_Flowers', 'Plant_1', 'Flower_4_Group', 'Plant_7_Big', 'Flower_3_Group'][i % 5], px, y + .28, pz, R() * 6, .45 + R() * .2);
+      // Desert planting: agave-like rosettes, dusty bushes and wiry grass.
+      plant(['Plant_7_Big', 'Bush_Common', 'Grass_Wispy_Tall', 'Plant_1', 'Bush_Common'][i % 5], px, y + .28, pz, R() * 6, .45 + R() * .2);
     }
     stats.planters++;
   }

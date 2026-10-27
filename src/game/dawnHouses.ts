@@ -4,9 +4,8 @@ import {Scatter, StaticBatch, trs, type Kit} from '../world/kit';
 import {rng} from '../world/noise';
 import {lathe, tube} from '../world/geom';
 import {Acc, CL, CR, FIN, block, box, dawnCloth, dawnCraft, dawnPlaster, face, facePoint, type BlockFrame, type Face, type Hole} from './dawnAdobe';
-import {dawnPalmGrove} from './dawnPalms';
 import {dawnGlows, dawnRope, dawnWood, woodPart} from './dawnMaterials';
-import {DAWN_TINTS, DAWN_WELL, dawnBlocks, dawnPalms, stairFootprint, type DawnBlock, type DawnFace} from './dawnHousePlan';
+import {DAWN_TINTS, DAWN_WELL, dawnBlocks, stairFootprint, type DawnBlock, type DawnFace} from './dawnHousePlan';
 
 /*
  * Goldsand Harbor's desert quarter (World III), from the plan in dawnHousePlan.ts: flat-roofed blocks of whitewash,
@@ -15,7 +14,8 @@ import {DAWN_TINTS, DAWN_WELL, dawnBlocks, dawnPalms, stairFootprint, type DawnB
  * rows of roof-beam ends (vigas) and spouts, outside stairs to the roofs, three windcatcher towers, a domed shrine,
  * a forge with its chimney and fire, a tavern terrace, a spice shop, the healer's well, and life on the roofs: water
  * jars, rugs drying over parapets, laundry, ladders, shade sails, stair huts and roof gardens. Date palms stand in
- * scenes, not scattered. Everything shares five materials (plaster, craft, cloth, wood, palm fronds) plus the kit
+ * scenes (quarterPalms in the plan, drawn by dawnPalms.ts with the town's). Everything shares four materials (plaster,
+ * craft, cloth, wood) plus the kit
  * props (doors' pots and lanterns come from dawnDressing.ts through `doors`).
  */
 
@@ -43,7 +43,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
   const woods: THREE.BufferGeometry[] = [], ropes: THREE.BufferGeometry[] = [];
   const props = new StaticBatch(kits.props, 'goldsand-quarter-props'), plants = new Scatter(kits.nature, 'goldsand-quarter-plants');
   const doors: {pos: THREE.Vector3; yaw: number}[] = [], glows: {pos: THREE.Vector3; size: number}[] = [];
-  const stats: Record<string, number> = {blocks: 0, windows: 0, doors: 0, vigas: 0, bays: 0, windcatchers: 0, stairs: 0, jars: 0, rugs: 0, laundry: 0, sails: 0, ladders: 0, gardens: 0, carpets: 0, baskets: 0, awnings: 0, palms: 0, domes: 0};
+  const stats: Record<string, number> = {blocks: 0, windows: 0, doors: 0, vigas: 0, bays: 0, windcatchers: 0, stairs: 0, jars: 0, rugs: 0, laundry: 0, sails: 0, ladders: 0, gardens: 0, carpets: 0, baskets: 0, awnings: 0, domes: 0};
   const prop = (piece: string, x: number, y: number, z: number, yaw = 0, s = 1) => { if (kits.props.has(piece)) props.add(piece, trs(x, y, z, yaw, s)); };
   const plant = (piece: string, x: number, y: number, z: number, yaw: number, s: number) => { if (kits.nature.has(piece)) plants.add(piece, trs(x, y, z, yaw, s)); };
   const wood = (g: THREE.BufferGeometry, m: THREE.Matrix4, color: THREE.ColorRepresentation | null = null, paint = 0, axis = new V(1, 0, 0)) => { woods.push(woodPart(g, m, color, paint, axis)); g.dispose(); };
@@ -588,9 +588,6 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     prop('Bench', w.x + 1.0, yy, w.z, Math.PI / 2);
     for (let k = 0; k < 3; k++) jar(w.x + 3.4, yy, w.z + 1.2 - k * .5, 1.1, null, k);
   }
-  // Palms.
-  const palms = dawnPalmGrove(craft, dawnPalms(), height, 77);
-  stats.palms = palms.count;
 
   // ---- Meshes --------------------------------------------------------------------------------------------------
   const plaster = dawnPlaster(), craftM = dawnCraft(), clothM = dawnCloth(), woodM = dawnWood('goldsand-wood');
@@ -600,7 +597,6 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
   mesh(cloth.build(), clothM, 'goldsand-cloth');
   if (woods.length) { const g = mergeGeometries(woods, false)!; woods.forEach(w => w.dispose()); mesh(g, woodM, 'goldsand-wood'); }
   if (ropes.length) { const g = mergeGeometries(ropes.map(r => { const o = r.index ? r.toNonIndexed() : r; for (const k of Object.keys(o.attributes)) if (k !== 'position' && k !== 'normal') o.deleteAttribute(k); return o; }), false)!; mesh(g, dawnRope(), 'goldsand-ropes', false); }
-  group.add(palms.mesh);
   group.add(props.build());
   group.add(plants.build({boundsPadding: .3}));
   const glow = dawnGlows(glows, '#ffb35a', 'goldsand-fire-glows');
@@ -609,7 +605,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
   return {
     group, doors, stats,
     update(time) {
-      clothM.userData.time.value = time; palms.update(time);
+      clothM.userData.time.value = time;
       (glow.material as THREE.ShaderMaterial).uniforms.uTime.value = time;
     },
   };

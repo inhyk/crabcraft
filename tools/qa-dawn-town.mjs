@@ -44,6 +44,9 @@ try {
     const mats = new Set(); root.traverse(o => { if (o.isMesh) for (const m of [o.material].flat()) mats.add(m.name); });
     out.palette = [...mats].filter(n => /MI_(Plaster|RoundTiles|WoodTrim|UnevenBrick|Brick|RockTrim)/.test(n));
     out.quarter = named('goldsand-quarter')?.userData.stats ?? null;
+    out.palms = named('goldsand-date-palms') ? root.userData.palms : 0;
+    out.braziers = named('goldsand-braziers')?.userData.braziers ?? 0;
+    out.souk = named('goldsand-souk')?.userData ?? null;
     out.gates = [];
     root.traverse(o => { if (o.userData?.dawnGate) out.gates.push([o.name, o.userData.dawnGate, +o.position.x.toFixed(1), +o.position.z.toFixed(1)]); });
     // Old primitives: anything in World III (outside the quest markers, which are their own module) built from
@@ -91,12 +94,16 @@ try {
   assert.equal(r.oldFlagstones, false, 'the shared grid flagstones are gone from World III');
   assert.ok(r.covers.every(Boolean), `covers() on avenue, square, arrival square and harbour: ${r.covers}`);
   assert.ok(r.lamps >= 20, `road and harbour lamps: ${r.lamps}`);
-  assert.ok(r.boulders && r.boulders.sites >= 25 && r.boulders.stones >= r.boulders.sites * 3 && r.boulders.vents >= 3, JSON.stringify(r.boulders));
+  assert.ok(r.boulders && r.boulders.sites >= 25 && r.boulders.stones >= r.boulders.sites * 3 && r.boulders.vents === 0, JSON.stringify(r.boulders));
   assert.ok(r.boats >= 5, `boats ${r.boats}`);
   assert.deepEqual(r.harbour, [], 'harbour parts present');
-  assert.ok(r.dressing && r.dressing.stalls >= 10 && r.dressing.goods >= 40 && r.dressing.benches >= 6 && r.dressing.doorPots >= 4 && r.dressing.lanterns >= 6, JSON.stringify(r.dressing));
-  assert.ok(r.quarter && r.quarter.laundry >= 10, `rooftop laundry: ${JSON.stringify(r.quarter)}`);
+  assert.ok(r.dressing && r.dressing.stalls >= 10 && r.dressing.goods >= 60 && r.dressing.benches >= 6 && r.dressing.doorPots >= 4 && r.dressing.lanterns >= 6, JSON.stringify(r.dressing));
+  assert.ok(r.quarter && r.quarter.blocks >= 28 && r.quarter.windcatchers === 3 && r.quarter.laundry >= 10, `desert quarter (rooftop laundry): ${JSON.stringify(r.quarter)}`);
   assert.deepEqual(r.palette, [], 'no village kit house materials left');
+  // Date palms on every old tree site (32) and the quarter's own (dawnHousePlan.ts quarterPalms, 18).
+  assert.equal(r.palms, 32 + 18, 'date palms on the old tree sites and in the quarter');
+  assert.ok(r.braziers >= 4, `braziers ${r.braziers}`);
+  assert.ok(r.souk && r.souk.stalls >= 8 && r.souk.goods >= 80, JSON.stringify(r.souk));
   assert.deepEqual(r.gates.map(g => g[1]).sort(), ['dawn', 'frost'], JSON.stringify(r.gates));
   assert.deepEqual(r.primitives, [], 'no old primitives left in the town');
   assert.ok(r.npc.every(d => d < .05), `villagers' posts clear: ${r.npc}`);

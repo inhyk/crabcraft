@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import {dawnBoulders} from './dawnBoulders';
-import {dawnLamps} from './dawnLamps';
+import {dawnBraziers, dawnLamps} from './dawnLamps';
 import {dawnHarbour,harbourPaths} from './dawnHarbour';
 import {dawnPaving} from './dawnPaving';
-import {DAWN_PATHS} from './world3Colliders';
+import {DAWN_GATES, DAWN_PATHS} from './world3Colliders';
 
 /*
  * Dawnharbor's town look, World III only: sandstone streets, road lamps, sculpted boulders, the harbour and the
@@ -26,6 +26,9 @@ export function dawnTown(height: (x: number, z: number) => number): DawnTown {
   root.add(paving.root);
   const lamps = dawnLamps(height, harbour.group.userData.lampSpots);
   root.add(lamps.group);
+  // Braziers flank both gates on the side players arrive from.
+  const braziers = dawnBraziers(height, DAWN_GATES.flatMap(g => [{x: g.x - 4.6, z: g.z + 1.6}, {x: g.x + 4.6, z: g.z + 1.6}]));
+  root.add(braziers.group);
   const boulders = dawnBoulders(height);
   root.add(boulders.group);
   let q: 'high' | 'low' | null = null;
@@ -36,6 +39,7 @@ export function dawnTown(height: (x: number, z: number) => number): DawnTown {
       paving.setSun(sunDir);
       lamps.update(time);
       boulders.update(time);
+      braziers.update(time);
       harbour.update(time);
     },
   };

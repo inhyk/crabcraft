@@ -2,6 +2,7 @@ import {dawnTown,type DawnTown} from './dawnTown';
 import {dawnHouses,type DawnQuarter} from './dawnHouses';
 import {dawnDressing,type DawnDressing} from './dawnDressing';
 import {dawnRequestLook} from './dawnRequestProps';
+import {dawnPalms,type DawnPalms,type PalmSpot} from './dawnPalms';
 import {Scatter} from '../world/kit';
 import {StarWind} from './starWind';
 import * as THREE from 'three';
@@ -12,6 +13,7 @@ import {loadKit,trs} from '../world/kit';
 import {dawnHeight,DAWN_ARENA_HEIGHT} from '../sim/world/ground';
 import type {Poi} from '../world/types';
 import {dawnForest,dawnGrove,layoutDawnreach,roadClearance} from './world3Colliders';
+import {quarterPalms} from './dawnHousePlan';
 
 /** The third island has its own warm coast, inhabited ring town and volcanic citadel. */
 export class DawnIsland {
@@ -28,6 +30,7 @@ export class DawnIsland {
  private dressing:DawnDressing|null=null;
  /** Goldsand Harbor's desert quarter: houses, shrine, forge, tavern, windcatchers, palms (dawnHouses.ts). */
  quarter:DawnQuarter|null=null;
+ private palms:DawnPalms|null=null;
  height(x:number,z:number){
   return dawnHeight(x,z);
  }
@@ -54,27 +57,34 @@ export class DawnIsland {
  async buildSettlement(){
   const props=await loadKit('models/world/props.glb');
   // Use the same textured foliage kit as World I: real branching trunks and leaf clusters.
-  const nature=await loadKit('models/world/nature.glb'),forest=new Scatter(nature,'dawnreach-leafy-trees');
+  const nature=await loadKit('models/world/nature.glb'),forest=new Scatter(nature,'goldsand-scrub');
+  // Desert scrub: the kit's grass dried to straw, its twisted-tree bush to dusty olive; green stays at the oasis.
   const copies=new Map<THREE.Material,THREE.Material>();
-  for(const [name,m] of nature.materials){const c=m.clone();if(c instanceof THREE.MeshStandardMaterial&&name.startsWith('Leaves')){c.color.set('#e4efc9');c.side=THREE.DoubleSide;c.roughness=.9;}copies.set(m,c);nature.materials.set(name,c);}
+  const TINT:Record<string,string>={Grass:'#d9b77a',Leaves_TwistedTree:'#a39361',Leaves:'#c9d6a0',Leaves_NormalTree:'#d7e4b6'};
+  for(const [name,m] of nature.materials){const c=m.clone();if(c instanceof THREE.MeshStandardMaterial&&TINT[name]){c.color.set(TINT[name]);c.side=THREE.DoubleSide;c.roughness=.9;}copies.set(m,c);nature.materials.set(name,c);}
   for(const piece of nature.pieces.values())for(const part of piece.parts)part.material=copies.get(part.material)!;
-  const trees=['CommonTree_1','CommonTree_2','CommonTree_3','CommonTree_4','CommonTree_5'].filter(n=>nature.has(n));
-  let count=0;
-  for(const {i,x,z,a,scale} of dawnForest()){forest.add(trees[i%trees.length],trs(x,this.height(x,z),z,a,scale));count++;}
-  for(const {i,x,z,a} of dawnGrove()){forest.add(trees[i%trees.length],trs(x,this.height(x,z),z,a,.67));count++;}
-  const grasses=['Grass_Common_Short','Grass_Wispy_Short','Fern_1'].filter(n=>nature.has(n)),flowers=['Flower_3_Group','Flower_4_Group','Bush_Common_Flowers'].filter(n=>nature.has(n));
+  // Date palms stand where the town's trees stood (their colliders are dawnForest()/dawnGrove()); the grove is an oasis.
+  const spots:PalmSpot[]=[...dawnForest().map(({i,x,z,a,scale})=>({x,z,h:5.6+scale*3.2,lean:.06+(i%5)*.03,dir:a,seed:i})),...dawnGrove().map(({i,x,z,a})=>({x,z,h:4.6+(i%4)*.9,lean:.1+(i%3)*.05,dir:a,seed:100+i})),
+   // The desert quarter's palms (dawnHousePlan.ts): door pairs, yards, forecourts and back gardens over the roofs.
+   ...quarterPalms().map(([x,z,h,lean],i)=>({x,z,h,lean,dir:i*2.39+.7,seed:200+i}))];
+  this.palms=dawnPalms(spots,(x,z)=>this.height(x,z));this.root.add(this.palms.group);
+  const count=spots.length;
+  const dry=['Grass_Wispy_Short','Grass_Common_Short','Bush_Common'].filter(n=>nature.has(n)),oasis=['Fern_1','Grass_Common_Tall','Flower_3_Group','Flower_4_Group','Bush_Common_Flowers'].filter(n=>nature.has(n));
   let meadow=0;
   for(let i=0;i<1100;i++){
    const x=Math.sin(i*127.1+9)*85,z=-18+(Math.sin(i*311.7+21)*.5+.5)*122;
    if(this.height(x,z)<3||roadClearance(x,z)<.5||Math.hypot(x+11,z-53)<5||Math.hypot(x-67,z-72)<9||Math.abs(x)>27&&Math.abs(x)<48&&z>16&&z<98)continue;
-   const list=i%7?grasses:flowers;if(!list.length)continue;
-   const scale=(i%7?.5:.55)+(i%5)*.08,name=list[i%list.length],bounds=nature.get(name).box,reach=Math.hypot(Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x)),Math.max(Math.abs(bounds.min.z),Math.abs(bounds.max.z)))*scale;
+   const atOasis=Math.hypot(x+65,z-45)<15;
+   // Sparse tufts on the sand; the oasis is lush.
+   if(!atOasis&&i%3)continue;
+   const list=atOasis?oasis:dry;if(!list.length)continue;
+   const name=list[i%list.length],scale=name==='Bush_Common'?.38+(i%4)*.06:.45+(i%5)*.07,bounds=nature.get(name).box,reach=Math.hypot(Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x)),Math.max(Math.abs(bounds.min.z),Math.abs(bounds.max.z)))*scale;
    // The avenue runs on to the harbour promenade (dawnHarbour.ts) past the end of DAWN_PATHS.
    if(roadClearance(x,z)<reach+.25||Math.hypot(x,z-53)<14||Math.abs(x)<3.6+reach&&z>90)continue;
    forest.add(name,trs(x,this.height(x,z),z,i*2.39,scale));meadow++;
   }
   this.root.userData.meadowPlants=meadow;
-  const woods=forest.build({boundsPadding:.3});this.root.add(woods);this.root.userData.leafyTrees=count;this.wind=new StarWind(woods);
+  const woods=forest.build({boundsPadding:.3});this.root.add(woods);this.root.userData.leafyTrees=count;this.root.userData.palms=count;this.wind=new StarWind(woods);
   // Market, fish market, benches, door pots and lanterns, laundry (dawnDressing.ts).
   this.quarter=dawnHouses((x,z)=>this.height(x,z),{props,nature});this.root.add(this.quarter.group);
   this.dressing=dawnDressing((x,z)=>this.height(x,z),{props,nature},this.quarter.doors,this.town,{yardLaundry:false});this.root.add(this.dressing.group);
@@ -83,5 +93,5 @@ export class DawnIsland {
  /** Dawnharbor's request props (dawnRequestProps.ts) in place of the shared placeholders. */
  questProps(){return dawnRequestLook();}
  private sunDir=new THREE.Vector3();
- update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.dressing?.update(time);this.quarter?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
+ update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.dressing?.update(time);this.quarter?.update(time);this.palms?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
 }

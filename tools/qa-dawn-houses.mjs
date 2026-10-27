@@ -32,9 +32,9 @@ for (const b of solid) {
     if (plan.roadClearance(x, z) < .3) issues.push(`${b.id} on a road at ${x.toFixed(1)},${z.toFixed(1)}`);
   }
 }
-for (const [x, z] of plan.dawnPalms()) if (plan.roadClearance(x, z) < .8) issues.push(`palm on a road ${x},${z}`);
-for (const [x, z] of plan.dawnPalms()) for (const b of solid) if (inBox(b, x, z, .45)) issues.push(`palm ${x},${z} in ${b.id}`);
-console.log('PLAN', JSON.stringify({blocks: blocks.length, windcatchers: blocks.filter(b => b.wind).length, stairs: blocks.filter(b => b.stair).length, palms: plan.dawnPalms().length, issues}));
+for (const [x, z] of plan.quarterPalms()) if (plan.roadClearance(x, z) < .8) issues.push(`palm on a road ${x},${z}`);
+for (const [x, z] of plan.quarterPalms()) for (const b of solid) if (inBox(b, x, z, .45)) issues.push(`palm ${x},${z} in ${b.id}`);
+console.log('PLAN', JSON.stringify({blocks: blocks.length, windcatchers: blocks.filter(b => b.wind).length, stairs: blocks.filter(b => b.stair).length, palms: plan.quarterPalms().length, issues}));
 assert.deepEqual(issues, [], 'the quarter keeps clear of trees, lamps, quest points, gates and roads');
 assert.equal(blocks.filter(b => b.wind).length, 3, 'three windcatchers');
 for (const role of ['shrine', 'forge', 'tavern', 'healer', 'shop', 'bridge']) assert.ok(blocks.some(b => b.role === role), role);
@@ -60,7 +60,7 @@ try {
   const r = await p.evaluate(() => {
     const g = window.app.current.game, t = g.world2.third, root = t.root, q = root.getObjectByName('goldsand-quarter'), out = {};
     out.stats = q?.userData.stats ?? null;
-    out.parts = ['goldsand-walls', 'goldsand-craft', 'goldsand-cloth', 'goldsand-wood', 'goldsand-palm-fronds'].filter(n => !q?.getObjectByName(n));
+    out.parts = ['goldsand-walls', 'goldsand-craft', 'goldsand-cloth', 'goldsand-wood'].filter(n => !q?.getObjectByName(n));
     // No village kit in World III; no primitive geometry inside the quarter.
     const mats = new Set(), prim = [];
     root.traverse(o => { if (o.isMesh) for (const m of [o.material].flat()) mats.add(m.name); });
@@ -112,7 +112,7 @@ try {
   assert.ok(s, 'goldsand-quarter present');
   assert.deepEqual(r.parts, [], 'quarter meshes present');
   assert.ok(s.blocks >= 28 && s.windows >= 60 && s.doors >= 14 && s.vigas >= 200 && s.bays >= 3, JSON.stringify(s));
-  assert.ok(s.windcatchers === 3 && s.domes === 1 && s.stairs >= 4 && s.palms >= 15, JSON.stringify(s));
+  assert.ok(s.windcatchers === 3 && s.domes === 1 && s.stairs >= 4, JSON.stringify(s));
   assert.ok(s.jars >= 20 && s.rugs >= 6 && s.laundry >= 10 && s.ladders >= 2 && s.sails >= 3 && s.carpets >= 6 && s.baskets >= 8 && s.awnings >= 5, JSON.stringify(s));
   assert.equal(r.kitHomes, false, 'kit houses gone');
   assert.deepEqual(r.kitMaterials, [], 'no village kit materials in World III');
