@@ -168,6 +168,8 @@ export class DawnSky {
   /** HemisphereLight colours at intensity 1: the sky over level ground, the warm bounce off sand and grass. */
   readonly hemiSky: THREE.Color;
   readonly hemiGround: THREE.Color;
+  /** Extra sky fill the sand alone takes on top of the hemisphere light (sandSurface.ts). */
+  readonly sandSkyFill: THREE.Color;
   /** Mean horizon and zenith, for materials that fake a two-tone sky reflection. */
   readonly skyHorizon: THREE.Color;
   readonly skyZenith: THREE.Color;
@@ -223,7 +225,9 @@ export class DawnSky {
     this.sunIntensity = 5.6;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance.
     // The dome's fill, its red pulled back, so shade on the sand reads cool blue-violet against the gold sun.
-    this.hemiSky = toColor([up[0] * 2.45, up[1] * 2.45, up[2] * 3.9] as V3, 1);
+    this.hemiSky = toColor([up[0] * 1.5, up[1] * 1.6, up[2] * 2.4] as V3, 1);
+    // Sand sees more of the sky than a wall does and keeps its shade bright blue-violet: the extra fill it alone adds.
+    this.sandSkyFill = toColor([up[0] * 0.95, up[1] * 0.85, up[2] * 1.5] as V3, 1);
     // Warm bounce off sunlit sand (albedo about 0.35), lit by the sun's beam and the sky.
     const albedo: V3 = [0.46, 0.33, 0.19], sunE = this.sunIntensity * Math.sin(el) * 1.6;
     this.hemiGround = toColor([0, 1, 2].map(c => albedo[c] * (beam[c] * sunE + up[c] * 1.3)) as V3, 1.6);

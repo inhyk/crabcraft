@@ -28,6 +28,8 @@ export interface SandSurfaceOptions {
   /** The sky's horizon and zenith radiance, for the sky wet sand reflects. */
   skyHorizon: THREE.Color;
   skyZenith: THREE.Color;
+  /** Extra blue sky fill on the sand alone, so its shade stays bright blue-violet without bluing the town. */
+  skyFill: THREE.Color;
 }
 
 const SURFACE_FRAGMENT_HEAD = /* glsl */ `
@@ -36,6 +38,7 @@ uniform vec3 sandSunDir;
 uniform vec3 sandSunColor;
 uniform vec3 sandSkyHorizon;
 uniform vec3 sandSkyZenith;
+uniform vec3 sandSkyFill;
 varying vec3 vSandWorld;
 varying vec4 vSandInfo;
 vec3 sdLin(vec3 c){return c*c*(c*.3+.7);}
@@ -242,6 +245,8 @@ const SAND_AFTER = /* glsl */ `
   {
     vec3 sL=normalize(sandSunDir),sV=normalize(cameraPosition-vSandWorld);
     float nl=clamp(dot(sN,sL),0.,1.);
+    // The open sky over the sand: extra fill, weaker on faces that turn from it.
+    outgoingLight+=diffuseColor.rgb*sandSkyFill*RECIPROCAL_PI*(.55+.45*sN.y);
     // Wet sand mirrors the sky.
     vec3 R=reflect(-sV,sN);
     vec3 sky=mix(sandSkyHorizon,sandSkyZenith,smoothstep(0.,.6,R.y));
@@ -292,6 +297,7 @@ export function applySandSurface(material: THREE.MeshStandardMaterial, deform: S
     sandSunColor: { value: sunColor },
     sandSkyHorizon: { value: opts.skyHorizon },
     sandSkyZenith: { value: opts.skyZenith },
+    sandSkyFill: { value: opts.skyFill },
   };
   const tmp = new THREE.Vector3();
   material.userData.sandSurface = uniforms;
