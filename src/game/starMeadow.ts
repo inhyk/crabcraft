@@ -125,7 +125,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
   geo.setAttribute('position', new THREE.Float32BufferAttribute(new Array(blade.length).fill(0), 3));
   geo.setAttribute('aBlade', new THREE.Float32BufferAttribute(blade, 3));
   geo.setIndex(index);
-  const params = {high: {s: .26, n: 176}, low: {s: .38, n: 104}};
+  const params = {high: {s: .26, n: 160}, low: {s: .38, n: 100}};
   geo.instanceCount = params.high.n ** 2;
   const uniforms = {
     smHeight: {value: hTex}, smMask: {value: maskTex}, smTint: {value: tintTex},

@@ -102,7 +102,7 @@ export function starFields(height: (x: number, z: number) => number, scatter: Sc
   const rand = (i: number) => { const a = Math.sin(i * 57.3 + 7.7) * 43758.5453; return a - Math.floor(a); };
 
   // Boulders: ten sculpted shapes, each placed turned, stretched and sunk into the slope; one merged mesh.
-  const shapes = Array.from({length: 10}, (_, i) => boulderGeometry({r: 1, h: .7 + .1 * (i % 3), seed: 4100 + i * 37}, 12));
+  const shapes = Array.from({length: 10}, (_, i) => boulderGeometry({r: 1, h: .7 + .1 * (i % 3), seed: 4100 + i * 37}, 9));
   const placed: THREE.BufferGeometry[] = [];
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3();
   const boulders = starBoulders();
@@ -136,8 +136,8 @@ export function starFields(height: (x: number, z: number) => number, scatter: Sc
   const shards = new THREE.Mesh(mergeGeometries(shardGeo, false)!, new THREE.MeshStandardMaterial({color: '#b49cff', emissive: '#8a50ff', emissiveIntensity: 2.1, vertexColors: true, flatShading: true, metalness: .3, roughness: .18}));
   shardGeo.forEach((g) => g.dispose());
   shards.name = 'starhaven-crater-shards'; shards.castShadow = true;
-  const shardLight = new THREE.PointLight('#9a6bff', 9, 14, 1.6); shardLight.position.set(STAR_CRATER.x, height(STAR_CRATER.x, STAR_CRATER.z) + 1.6, STAR_CRATER.z);
-  root.add(shards, shardLight);
+  // No light of its own (each point light costs every lit pixel on the island): the ground glows round it instead.
+  root.add(shards);
 
   // Moon-flowers: clumps in the moss of the crystalwood, round the crater, on the camp's knoll and by the trails.
   const spots: [number, number, number][] = [];

@@ -194,8 +194,8 @@ export function starStories(height: (x: number, z: number) => number, put: Put):
   flame.position.set(cx, cy + .02, cz); flame.name = 'starhaven-camp-flame';
   const embers = new THREE.Mesh(new THREE.CircleGeometry(.32, 16).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({color: '#1a0d08', emissive: '#ff5a1a', emissiveIntensity: 1.6, roughness: 1}));
   embers.position.set(cx, cy + .03, cz);
-  const light = new THREE.PointLight('#ff9a4a', 7, 11, 1.8); light.position.set(cx, cy + .9, cz);
-  root.add(flame, embers, light);
+  // The fire's light on the ground is painted by the ground shader (starGround.ts), not a point light.
+  root.add(flame, embers);
   root.userData = {camp: [cx, cz], boat: [bx, bz]};
-  return {root, update(t) { time.value = t; light.intensity = 6.5 + Math.sin(t * 11) * .6 + Math.sin(t * 17.3) * .4; }};
+  return {root, update(t) { time.value = t; }};
 }

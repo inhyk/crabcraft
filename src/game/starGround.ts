@@ -6,7 +6,7 @@ import {starGroundColor} from './world2Ground';
 import {GARDEN_TREES,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 import {starBoulders} from './starFieldSpots';
-import {STAR_CRATER,STAR_DETAIL,starCoast,starSand} from './starFieldLayout';
+import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,starCoast,starSand} from './starFieldLayout';
 
 /*
  * Starhaven's ground by moonlight: beach sand by the sea, meadow grass inland, packed earth in the town and along the
@@ -168,6 +168,10 @@ if(sgDetail>.5){
   float on=step(.93,r)*sgGrass*(1.-sgWorn);
   float speck=on*(1.-smoothstep(.02,.06,d))*(.55+.45*sin(sgTime*(.6+r*1.3)+r2*40.))*sgF2;
   totalEmissiveRadiance+=mix(vec3(.12,.55,.5),vec3(.42,.22,.75),step(.5,r2))*speck*1.6;
+  // The camp fire's warm pool and the fallen star's violet glow on the ground round them.
+  float fire=length(sgP-vec2(${(STAR_CAMP.x).toFixed(1)},${STAR_CAMP.z.toFixed(1)}));
+  totalEmissiveRadiance+=vec3(1.,.5,.2)*diffuseColor.rgb*exp(-fire*fire*.09)*(5.+.6*sin(sgTime*11.)+.4*sin(sgTime*17.3));
+  totalEmissiveRadiance+=vec3(.55,.35,1.)*diffuseColor.rgb*exp(-sgCd*sgCd*1.4)*3.;
   // Embers of the fallen star still glow in the crater's cracks.
   totalEmissiveRadiance+=vec3(.42,.16,.9)*sgCrack*sgScorch*(.6+.4*sin(sgTime*.7+sgMid*9.))*.9;
 }
