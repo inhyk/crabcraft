@@ -66,6 +66,17 @@ export function dawnIron(name = 'dawnharbor-iron'): THREE.MeshStandardMaterial {
   return m;
 }
 
+/** Polished and tarnished brass: warm metal, a green-brown patina in the hollows and on the undersides. */
+export function dawnBrass(name = 'goldsand-brass'): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({name, color: '#ffffff', roughness: .35, metalness: .85});
+  worldPatch(m, 'dw-brass', /* glsl */ `
+    vec3 bw=dwTri(normalize(vDwN));
+    float tarn=smoothstep(.45,.8,dwN3(vDwW*5.,bw)*.5+.5+(-normalize(vDwN).y)*.25);
+    diffuseColor.rgb*=mix(vec3(.79,.56,.2),vec3(.33,.3,.17),tarn*.55);`, 'roughnessFactor=mix(.3,.7,tarn);');
+  m.customProgramCacheKey = () => 'dw-brass';
+  return m;
+}
+
 /** Lantern glass: amber, hottest low in the pane where the flame burns. */
 export function dawnLanternGlass(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({name: 'dawnharbor-lantern-glass', color: '#3a2410', emissive: '#ffb35a', emissiveIntensity: 2.4, roughness: .15, metalness: 0});

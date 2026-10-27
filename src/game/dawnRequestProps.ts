@@ -3,7 +3,7 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {lathe} from '../world/geom';
 import {rng} from '../world/noise';
 import type {RequestLook, RequestSite, RequestState} from './dawnRequests';
-import {dawnIron, dawnLanternGlass, dawnSandstone, dawnWood, solidPart, woodPart} from './dawnMaterials';
+import {dawnBrass, dawnLanternGlass, dawnSandstone, dawnWood, solidPart, woodPart} from './dawnMaterials';
 import {lampParts} from './dawnLamps';
 import {boulderGeometry} from './snowRocks';
 
@@ -23,7 +23,7 @@ const RING_FRAG = /* glsl */ `uniform float uTime;uniform float uR;varying vec2 
 export function dawnRequestLook(): RequestLook {
   const items: {style: string; group: THREE.Group; ring: THREE.Mesh; glass?: THREE.MeshStandardMaterial; halo?: THREE.Mesh; sigil?: THREE.MeshStandardMaterial}[] = [];
   const ringMat = new THREE.ShaderMaterial({transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: {uTime: {value: 0}, uR: {value: 1}}, vertexShader: RING_VERT, fragmentShader: RING_FRAG});
-  const stoneMat = dawnSandstone('dawnharbor-request-stone'), woodMat = dawnWood('dawnharbor-request-wood'), ironMat = dawnIron('dawnharbor-request-iron');
+  const stoneMat = dawnSandstone('dawnharbor-request-stone'), woodMat = dawnWood('dawnharbor-request-wood'), ironMat = dawnBrass('goldsand-request-brass');
   const agaveMat = new THREE.MeshStandardMaterial({name: 'dawnharbor-agave', color: '#ffffff', vertexColors: true, roughness: .75, side: THREE.DoubleSide});
   const basaltMat = new THREE.MeshStandardMaterial({name: 'dawnharbor-ore-rock', color: '#2a2724', roughness: .85, vertexColors: true});
   const goldMat = new THREE.MeshStandardMaterial({name: 'dawnharbor-ore-gold', color: '#f0c050', metalness: .9, roughness: .25, emissive: '#c07018', emissiveIntensity: .9});
