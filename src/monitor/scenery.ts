@@ -12,7 +12,7 @@ import { StarSea } from '../game/starSea';
 import { StarSun } from '../game/starSun';
 import { StarSanctum } from '../game/starSanctum';
 import { starCrystalCluster, starCrystalMaterial } from '../game/starCrystals';
-import { STAR_FOG, STAR_MOON_DIR, STAR_MOONLIGHT, STAR_MOON_INTENSITY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY, STAR_SHADE_SKY } from '../game/starNight';
+import { STAR_FOG, STAR_KEY_DIR, STAR_MOONLIGHT, STAR_MOON_INTENSITY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY, STAR_SHADE_SKY } from '../game/starNight';
 import { starCrystalGarden, layoutStarhaven } from '../game/world2Colliders';
 
 export type Scenery = {
@@ -79,7 +79,7 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
   land.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); land.computeVertexNormals();
   scene.add(new THREE.Mesh(land, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .94, metalness: .08 })));
   // The island's one night (starNight.ts): the same moon, shade and fog as the game.
-  const sky = new StarSky(), sea = new StarSea(), sun = new StarSun(STAR_MOON_DIR.clone().multiplyScalar(100));
+  const sky = new StarSky(), sea = new StarSea(), sun = new StarSun(STAR_KEY_DIR.clone().multiplyScalar(100));
   sun.light.color.copy(STAR_MOONLIGHT); sun.light.intensity = STAR_MOON_INTENSITY;
   scene.add(sky.root, sea.root, sun.light, sun.light.target, new THREE.HemisphereLight(STAR_SHADE_SKY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY));
   const throne = new StarSanctum(height); scene.add(throne.root);

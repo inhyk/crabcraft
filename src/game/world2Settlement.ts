@@ -6,7 +6,9 @@ import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_RING} from './starFieldLayout';
 import type {IslandPath} from './islandPaths';
 import * as THREE from 'three';
 import {starLanterns,starhavenMaterial} from './starLanterns';
-import {STAR_LAMPS,setStarDoorLamps} from './starLight';
+import {STAR_LAMPS,STAR_LAMP_KIND,setStarDoorLamps} from './starLight';
+import {starCrystalCluster,starCrystalMaterial} from './starCrystals';
+import {moonstoneMaterial} from './starMasonry';
 import {doorLanternAt,recordRooftops,starDoorLamps,starRooftops,starSettlers,starTrailLanterns,STAR_ROOF_ROLES} from './starRooftops';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
 import { TownBuilder } from '../world/buildings';
@@ -103,7 +105,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       const c=m.clone();
       // Light the actual glass panes, including their original lattice and shutter occlusion.
       if(name==='MI_WindowGlass'&&c instanceof THREE.MeshStandardMaterial){c.color.set('#4d301c');c.emissive.set('#ffb65e');c.emissiveIntensity=1.15;c.roughness=.25;c.transparent=false;c.opacity=1;c.depthWrite=true;}
-      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#9fd6c6');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;}
+      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#7aa99d');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;c.roughness=.92;c.metalness=0;}
       if(kit===village)starhavenMaterial(name,c);
       copies.set(m,c);kit.materials.set(name,c);
     }
@@ -122,7 +124,6 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   setStarDoorLamps(starDoorLamps(lots).map(d=>{const p=doorLanternAt(d);return [p.x,p.y,p.z] as const;}));
   for(const lot of lots)(lot.id===STAR_ROOF_ROLES.empty?emptyBuilder:builder).build(lot);
   root.add(batch.build());
-  const rooftops=starRooftops(village,roofline,lots,{spots:starTrailLanternSpots(),height});root.add(rooftops.root);
   const dressing=new StaticBatch(props,'starhaven-market');
   const villageProps=new StaticBatch(village,'starhaven-gardens');
   const residents=Object.values(STAR_TOWN);
@@ -142,11 +143,16 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   if(bench)for(const [x,z] of [[-8,55],[8,55],[-8,61],[8,61]])put(bench,x,z,x<0?Math.PI/2:-Math.PI/2);
   if(village.has('Prop_Wagon'))for(const x of [-15,15])villageProps.add('Prop_Wagon',trs(x,3,88,x>0?.4:-.4));
   // The newcomers moving in: their loaded cart and boxes at the empty house's door.
-  starSettlers(lots.find(l=>l.id===STAR_ROOF_ROLES.empty)!,put);
+  const cart=starSettlers(lots.find(l=>l.id===STAR_ROOF_ROLES.empty)!,put);
+  // Lanterns hung on the carts: the newcomers' and the harbour wagon (at a corner of each bed).
+  const cartLamps:THREE.Vector3[]=[];
+  if(props.has('Stall_Cart_Empty')){const b=props.get('Stall_Cart_Empty').box;cartLamps.push(new THREE.Vector3(b.max.x*.85,b.max.y*.55+1.05,b.max.z*.8).applyMatrix4(trs(cart.x,height(cart.x,cart.z),cart.z,cart.yaw)));}
+  if(village.has('Prop_Wagon')){const b=village.get('Prop_Wagon').box;cartLamps.push(new THREE.Vector3(b.max.x*.8,b.max.y+.75,b.max.z*.75).applyMatrix4(trs(15,3,88,.4)));}
+  const rooftops=starRooftops(village,roofline,lots,{spots:starTrailLanternSpots(),height},cartLamps);root.add(rooftops.root);
   for(const lot of lots)for(let j=-2;j<=2;j++)if(village.has('Prop_WoodenFence_Single'))villageProps.add('Prop_WoodenFence_Single',trs(lot.x+j*2,3,lot.z-7,0));
   // Iron lanterns along the high street, each with its pool of light (starLanterns.ts).
-  const lanterns=starLanterns(STAR_LAMPS.map(([x,z])=>({x,y:height(x,z),z})));
-  root.add(lanterns.posts,lanterns.panes);
+  const lanterns=starLanterns(STAR_LAMPS.map(([x,z])=>({x,y:height(x,z),z})),STAR_LAMP_KIND,{geometry:starCrystalCluster(),material:starCrystalMaterial('teal',{glow:1.5}),plinth:moonstoneMaterial({color:'#a8a8b8',name:'starhaven-crystal-lamp-stone'})});
+  root.add(lanterns.posts,lanterns.panes,lanterns.others);
   // The stargazer's camp and the beached skiff; their kit props join the market's batch.
   const stories=starStories(height,put);
   root.add(dressing.build(),villageProps.build());
@@ -179,14 +185,26 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     scatter.add(name,trs(x,height(x,z),z,gardenTrees*2.39996,gardenScale(x)));gardenTrees++;
   }
   root.userData.gardenTrees=gardenTrees;
-  for(let i=0;i<240;i++) {
-    const x=(rand(i+1800)-.5)*105,z=10+rand(i+2500)*86;
-    if(Math.abs(x)<12||lots.some(l=>Math.abs(x-l.x)<l.sx+3&&Math.abs(z-l.z)<l.sz+4))continue;
-    if(flowerNames.length){
-      const name=flowerNames[i%flowerNames.length];
-      if(clearPaving(name,x,z,.7))scatter.add(name,trs(x,height(x,z),z,rand(i+3000)*6.28,.7));
-    }
+  // The lawns' middle scale: colonies, not a sprinkle. Poisson-spaced centres (about 7 m apart); each grows one
+  // kind (wildflowers, clover or a tussock of short grass) as a big plant, two or three middling and a few small
+  // ones, close together.
+  const cloverNames=natureNames.filter(n=>/^Clover_[12]$/.test(n)),tuftNames=['Grass_Common_Short','Grass_Wispy_Short'].filter(n=>nature.has(n));
+  const colonies:[number,number][]=[];
+  for(let i=0;i<900&&colonies.length<70;i++){
+    const x=(rand(i+1800)-.5)*104,z=10+rand(i+2500)*86;
+    if(Math.abs(x)<7||lots.some(l=>Math.abs(x-l.x)<l.sx+3&&Math.abs(z-l.z)<l.sz+4))continue;
+    if(colonies.some(([cx,cz])=>Math.hypot(cx-x,cz-z)<7))continue;
+    colonies.push([x,z]);
   }
+  colonies.forEach(([cx,cz],c)=>{
+    const kind=c%5<2?flowerNames:c%5<4?cloverNames:tuftNames;if(!kind.length)return;
+    const n=3+Math.floor(rand(c+3100)*7);
+    for(let k=0;k<n;k++){
+      const a=rand(c*31+k)*6.28,d=k?.35+Math.sqrt(rand(c*17+k))*1.3:0,x=cx+Math.cos(a)*d,z=cz+Math.sin(a)*d;
+      const name=kind[(c+k)%kind.length],sc=(k?.5+.35*rand(c*7+k):.95)*(kind===tuftNames?.8:.75);
+      if(clearPaving(name,x,z,sc))scatter.add(name,trs(x,height(x,z),z,rand(c*13+k)*6.28,sc));
+    }
+  });
   // Low meadows soften the cleared exploration sites without hiding markers or attack circles.
   // All plants use the original licensed kit and stay batched with the island's foliage.
   const meadowFlowers=flowerNames.filter(n=>/^Flower_[34]_Group$/.test(n));

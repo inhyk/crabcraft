@@ -33,7 +33,7 @@ import {StarWaystoneKit} from './starWaystone';
 import {StarMemorySealKit} from './starMemorySeal';
 import {StarOreKit} from './starOre';
 import {StarSun} from './starSun';
-import {STAR_MOON_DIR} from './starNight';
+import {STAR_KEY_DIR} from './starNight';
 import {StarNightRig} from './starNightRig';
 import {StarEnemyArmour} from './starEnemyArmour';
 import {throneSolids} from './starThrone';
@@ -58,13 +58,13 @@ const NO_PORTAL=new THREE.Vector3(1e5,0,1e5);
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
   readonly root = new THREE.Group();
-  private readonly sun=new StarSun(STAR_MOON_DIR.clone().multiplyScalar(100));
+  private readonly sun=new StarSun(STAR_KEY_DIR.clone().multiplyScalar(100));
   private readonly night=new StarNightRig(this.sun.light);
   /**
    * A small warm key carried with the player's crab, a step toward the camera at its height: it lights the crab's
    * seen side more than the ground (about 4 m of reach), so the hero reads against the night fields.
    */
-  private readonly carry=new THREE.PointLight('#ffb27a',6,4.5,1.8);
+  private readonly carry=new THREE.PointLight('#ffb27a',9,4,2);
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();

@@ -55,12 +55,15 @@ try{
   console.log('W2',JSON.stringify(r));
   assert.deepEqual(r.primitives,[]);
   assert.equal(r.gates.length,2);
-  assert.deepEqual(r.instanced,['starhaven-lantern-posts:26','starhaven-lantern-panes:26']);
+  // 13 iron posts of the 26 lamp places since star r3: the rest are crook posts, crystal lamps and gaps (starLight.ts STAR_LAMP_KIND).
+  assert.deepEqual(r.instanced,['starhaven-lantern-posts:13','starhaven-lantern-panes:13']);
   assert.equal(r.poles,0);
   assert.equal(r.roof,'starhaven-roof');
   assert.deepEqual(r.crowns,[7,6]);
   assert.deepEqual(r.clusterNames,['star-crystal-cluster','star-crystal-cluster','star-crystal-cluster']);
-  assert.ok(r.rig);assert.ok(r.moonDot>.999,'moonlight comes from the drawn moon');
+  // Since star r3 the key light is the corona: it comes from the eclipse's bearing (starNight.ts STAR_KEY_DIR).
+  const key=await page.evaluate(async()=>{const {STAR_ECLIPSE_DIR:e}=await import('/src/game/starNight.ts');const sun=window.app.current.game.world2.root.getObjectByName('star-island-sun');const d=sun.position.clone().sub(sun.target.position);const h=Math.hypot(d.x,d.z),he=Math.hypot(e.x,e.z);return (d.x*e.x+d.z*e.z)/h/he;});
+  assert.ok(r.rig);assert.ok(key>.999,'the key light comes from the eclipse\'s bearing: '+key);
   assert.ok(r.view,'Starhaven view active');assert.ok(r.envNight&&r.envNight!==shore.env,'night environment');
   assert.ok(r.los>=5);assert.ok(r.solid>0);assert.ok(r.maxExcess<.001);assert.ok(r.pierExcess<.001);assert.ok(r.obExcess<.001);
   assert.equal(r.stars,2400);

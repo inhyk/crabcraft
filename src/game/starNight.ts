@@ -16,15 +16,19 @@ export const STAR_MOON_DIR = new THREE.Vector3(-0.8, 0.55, -0.43).normalize();
  * island's key light and shadows; the eclipse lights the sky, the sea and, through the sky, the shade and the fog.
  */
 export const STAR_ECLIPSE_DIR = new THREE.Vector3(-0.045, Math.tan(7.5 * Math.PI / 180), -1).normalize();
+/**
+ * The key light's direction: the moon's. (Star r3 tried the eclipse's bearing as the key; side light from the moon keeps
+ * the roofs' planes and the cobbles readable and the fields brighter, and the corona lights the sky and the sea instead.)
+ */
+export const STAR_KEY_DIR = STAR_MOON_DIR.clone();
 /** Angular radius of the black disc (radians). */
 export const STAR_ECLIPSE_R = 3.4 * Math.PI / 180;
 /** Linear colours. Zenith and horizon of the clear sky; the horizon is also the fog. */
 export const STAR_ZENITH = new THREE.Color().setRGB(0.0045, 0.0075, 0.026);
 export const STAR_HORIZON = new THREE.Color().setRGB(0.032, 0.04, 0.085);
 /**
- * Moonlight: cool silver. The moon (west-north-west, visible in the sky) is the key; the eclipse in the north is a
- * landmark, not a light. Under a half-dark sky the key is moonlight, not sunlight: about half the old strength, its
- * shadows soft and only partly dark (StarNightRig), the shade's sky light carrying the rest.
+ * Moonlight: cool silver, the key from the visible moon (west-north-west). Under a half-dark sky it is about half the
+ * old strength, its shadows soft and only partly dark (StarNightRig), the shade's sky light carrying the rest.
  */
 export const STAR_MOONLIGHT = new THREE.Color().setRGB(0.64, 0.75, 1.0);
 export const STAR_MOON_INTENSITY = 2.0;

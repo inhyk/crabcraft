@@ -95,12 +95,14 @@ if(smScale<.02)transformed=vec3(0.,-1e4,0.);
 // Lit as the ground it stands in (the terrain's own normal, so a blade is never darker than the turf round it),
 // turned only a little toward its own face.
 float smGx=smHeightAt(smBase+vec2(.6,0.))-smHeightAt(smBase-vec2(.6,0.)),smGz=smHeightAt(smBase+vec2(0.,.6))-smHeightAt(smBase-vec2(0.,.6));
-vec3 objectNormal=vec3(0.,1.,0.);vSmN=normalize(vec3(-smGx/1.2+smDir.x*.12,1.,-smGz/1.2+smDir.y*.12));
+vec3 objectNormal=vec3(0.,1.,0.);// Per blade: turned toward its own face and curling over toward the tip, so each blade shades a little differently.
+vec2 smTilt=(smDir*(.18+.3*smT)+(smR2-.5)*.35)*(1.-.5*smTurf);
+vSmN=normalize(vec3(-smGx/1.2+smTilt.x,1.,-smGz/1.2+smTilt.y));
 vec3 smTint=texture2D(smTint,smUv).rgb;
 // Tone by clump: some greener, some silvered, some going to seed (warmer, paler).
 vec3 smClumpTone=smK2.y<.33?vec3(.92,1.06,1.02):smK2.y<.66?vec3(1.06,1.04,1.1):vec3(1.14,1.08,.9);
 // Value varies clump by clump (some deep, some silvered) so a field reads as tussocks, not one flat sheet.
-vSmCol=smTint*(.9+.2*smR2.y)*mix(.6+.8*smK.x,1.02+.2*smK.x,smTurf)*mix(.68+.64*smPatch,1.,smTurf)*smClumpTone*mix(vec3(1.),vec3(1.18,1.1,.8),step(.86,smR.y));
+vSmCol=smTint*(.9+.2*smR2.y)*mix(.6+.8*smK.x,1.02+.2*smK.x,smTurf)*mix(.68+.64*smPatch,.8+.4*smPatch,smTurf)*smClumpTone*mix(vec3(1.),vec3(1.18,1.1,.8),step(.86,smR.y));
 // Large-scale value on top: the beds deep and teal, the trodden turf silvered and pale.
 vSmCol*=mix(vec3(1.),vec3(.5,.64,.68),smLush)*mix(vec3(1.),vec3(1.6,1.56,1.5),smWear);
 vSmT=smT;vSmAo=mix(smM.b,1.,smTurf*.6);vSmTurf=smTurf;

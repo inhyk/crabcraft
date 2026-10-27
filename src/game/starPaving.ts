@@ -226,7 +226,7 @@ diffuseColor.a*=spAlpha;
 `;
 
 const ROUGH = /* glsl */ `
-roughnessFactor=mix(mix(.78,.3,spWet),.9,max(spDrift,spGap));
+roughnessFactor=mix(mix(.78,.42,spWet),.9,max(spDrift,spGap));
 roughnessFactor=mix(roughnessFactor,.95,spJ*(1.-spWet));
 `;
 
