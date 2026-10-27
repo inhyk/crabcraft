@@ -1,5 +1,6 @@
 import {islandPaths} from './islandPaths';
 import * as THREE from 'three';
+import {starLanterns,starhavenMaterial} from './starLanterns';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
 import { TownBuilder } from '../world/buildings';
 import type { Collision } from '../world/collision';
@@ -94,6 +95,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       // Light the actual glass panes, including their original lattice and shutter occlusion.
       if(name==='MI_WindowGlass'&&c instanceof THREE.MeshStandardMaterial){c.color.set('#4d301c');c.emissive.set('#ffb65e');c.emissiveIntensity=1.15;c.roughness=.25;c.transparent=false;c.opacity=1;c.depthWrite=true;}
       if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#d9eed7');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;}
+      if(kit===village)starhavenMaterial(name,c);
       copies.set(m,c);kit.materials.set(name,c);
     }
     for(const piece of kit.pieces.values())for(const part of piece.parts)part.material=copies.get(part.material)!;
@@ -122,16 +124,9 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   if(bench)for(const [x,z] of [[-8,55],[8,55],[-8,61],[8,61]])put(bench,x,z,x<0?Math.PI/2:-Math.PI/2);
   if(village.has('Prop_Wagon'))for(const x of [-15,15])villageProps.add('Prop_Wagon',trs(x,3,88,x>0?.4:-.4));
   for(const lot of lots)for(let j=-2;j<=2;j++)if(village.has('Prop_WoodenFence_Single'))villageProps.add('Prop_WoodenFence_Single',trs(lot.x+j*2,3,lot.z-7,0));
-  const lampMat=new THREE.MeshStandardMaterial({color:'#ffd295',emissive:'#ffae4d',emissiveIntensity:2.8,roughness:.4});
-  const poleMat=new THREE.MeshStandardMaterial({color:'#343442',metalness:.7,roughness:.45});
-  const poles=new THREE.InstancedMesh(new THREE.CylinderGeometry(.09,.18,3.4,6),poleMat,26);
-  const bulbs=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.26),lampMat,26);
-  for(let i=0;i<26;i++) {
-    const side=i%2?1:-1, z=86-Math.floor(i/2)*6, x=side*(z>20?8:6);
-    poles.setMatrixAt(i,trs(x,height(x,z)+1.7,z));bulbs.setMatrixAt(i,trs(x,height(x,z)+3.5,z));
-    if(props.has('Lantern_Wall'))put('Lantern_Wall',x,z,side>0?-Math.PI/2:Math.PI/2,.8,2.5);
-  }
-  root.add(poles,bulbs);
+  // Iron lanterns along the high street, each with its pool of light (starLanterns.ts).
+  const lanterns=starLanterns(Array.from({length:26},(_,i)=>{const side=i%2?1:-1,z=86-Math.floor(i/2)*6,x=side*(z>20?8:6);return {x,y:height(x,z),z};}));
+  root.add(lanterns.posts,lanterns.panes,lanterns.pools);
   for(const [x,z] of [[0,57],[-25,36],[20,35],[0,76]]){const light=new THREE.PointLight('#ffc78b',18,30,1.5);light.position.set(x,7,z);root.add(light);}
   root.add(dressing.build(),villageProps.build());
   const scatter=new Scatter(nature,'star-island-forests');
