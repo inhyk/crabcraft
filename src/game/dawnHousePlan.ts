@@ -8,7 +8,7 @@ import type { Collision } from '../world/collision';
 
 export type DawnRole = 'house' | 'tavern' | 'forge' | 'shrine' | 'healer' | 'shop' | 'wall' | 'bridge';
 /** Wall finishes: whitewash, honey sandstone, raw mudbrick, ochre wash, rose wash. */
-export const DAWN_TINTS = ['#efe4cf', '#d9a86a', '#b07a4c', '#d8b07a', '#e2c3a6'] as const;
+export const DAWN_TINTS = ['#efe4cf', '#d3a978', '#b07a4c', '#d8b484', '#e2c3a6'] as const;
 /** Face a door or feature looks out of, in world axes. */
 export type DawnFace = 'x+' | 'x-' | 'z+' | 'z-';
 
@@ -76,11 +76,11 @@ const WEST: Row[] = [
   // The cross street's west end: the healer's house.
   ['w-healer', 34, 53.6, 6, 6.2, 4.4, .6, 0, 'healer', 'in'],
   // Lane 64: the tavern (lot), its two-storey back house with the second windcatcher.
-  ['w-64', 35, 64, 8, 8, 6.8, .7, 1, 'tavern', 'in', {lot: 'dawn--1-2'}],
+  ['w-64', 35, 63.8, 8, 7.6, 6.8, .7, 1, 'tavern', 'in', {lot: 'dawn--1-2'}],
   ['w-60b', 42.2, 59.8, 5, 6, 7, .7, 3, 'house', null, {wind: [0, -.6]}],
   // Lane 83 (the arrival side): the lot house with a small wing, a corner house by the gate, a tall back house with
   // the third windcatcher.
-  ['w-78', 33, 77.9, 5, 4.2, 3.6, .6, 4, 'house', 'in', {stair: ['in', -1]}],
+  ['w-78', 33, 77.9, 5, 4.2, 3.6, .6, 4, 'house', 'in', {stair: ['out', 1]}],
   ['w-83', 38, 83, 6, 6, 6.6, .7, 0, 'house', 'in', {lot: 'dawn--1-3'}],
   ['w-88', 43.6, 88.4, 5, 6, 9.4, .8, 2, 'house', null, {wind: [0, .6]}],
   ['w-90', 33.2, 90.6, 5, 4.2, 3.6, .6, 3, 'house', 'in'],

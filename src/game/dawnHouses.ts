@@ -175,7 +175,8 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     sheet(cs[0], cs[1], cs[2], cs[3], color, CL.plain, .2, (u, v) => .25 + .5 * Math.sin(Math.PI * u) * Math.sin(Math.PI * v), seed, 6, 6);
     stats.sails++;
   };
-  const vigaGeo = () => new THREE.CylinderGeometry(.07, .08, .66, 7);
+  const vigaGeo = () => new THREE.CylinderGeometry(.095, .105, .7, 8);
+  const VIGA = '#4e3624';
 
   // ---- Openings per block ---------------------------------------------------------------------------------------
   const keyFaces: DawnFace[] = ['z+', 'x+', 'z-', 'x-'];
@@ -212,7 +213,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
         if (f === b.door) {
           doorU = L / 2;
           if (b.role === 'forge') { doorW = 3.8; add(f, {u0: doorU - 1.9, u1: doorU + 1.9, v0: 0, v1: 3.35, arch: true, depth: 3.6, kind: CR.room, glow: 1.4}); }
-          else if (b.role === 'shop') { doorW = 2.4; add(f, {u0: doorU - 1.2, u1: doorU + 1.2, v0: 0, v1: 2.55, arch: true, depth: .7, kind: CR.room, glow: .55}); }
+          else if (b.role === 'shop') { doorW = 2.4; add(f, {u0: doorU - 1.2, u1: doorU + 1.2, v0: 0, v1: 2.55, arch: true, depth: 1.8, kind: CR.room, glow: .55}); }
           else if (b.role === 'shrine') { doorW = 1.9; add(f, {u0: doorU - .95, u1: doorU + .95, v0: 0, v1: 3.1, arch: true, depth: .6, kind: CR.door, color: '#c9a24a', tiled: true}); }
           else {
             doorW = b.role === 'tavern' ? 1.6 : 1.25;
@@ -289,7 +290,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
         for (let u = .45 + (R() * .1); u < L - .3; u += step) {
           if ((holes[f] ?? []).some(h => u > h.u0 - .2 && u < h.u1 + .2 && v > h.v0 - .25 && v < h.v1 + .35)) continue;
           const out = .26 + R() * .08, p = facePoint(F, u, v + (R() - .5) * .03).addScaledVector(F.N, out);
-          wood(vigaGeo(), basis(p, F.U, F.N, new V().crossVectors(F.U, F.N)), null, 0, new V(0, 1, 0));
+          wood(vigaGeo(), basis(p, F.U, F.N, new V().crossVectors(F.U, F.N)), VIGA, .55 + R() * .3, new V(0, 1, 0));
           stats.vigas++;
         }
       }
@@ -325,7 +326,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
       const tf = block(wall, craft, {cx: tx, cz: tz, w: sz, d: sz, base: G.roof - .1, ground: G.roof - .1, roof: G.roof + rise, para: .35, holes: th, r: .14, batter: .012, thick: .22});
       for (const f of keyFaces) {
         const F = tf.faces[f];
-        for (const u of [F.L * .22, F.L * .78]) wood(vigaGeo().scale(1, 1.1, 1), basis(facePoint(F, u, rise - .18).addScaledVector(F.N, .26), F.U, F.N, new V().crossVectors(F.U, F.N)), null, 0, new V(0, 1, 0));
+        for (const u of [F.L * .22, F.L * .78]) wood(vigaGeo().scale(.8, 1.1, .8), basis(facePoint(F, u, rise - .18).addScaledVector(F.N, .26), F.U, F.N, new V().crossVectors(F.U, F.N)), VIGA, .6, new V(0, 1, 0));
       }
       // A cornice slab under the cap.
       box(wall, tx, G.roof + rise - .02, tz, sz + .16, .1, sz + .16);

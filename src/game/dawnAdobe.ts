@@ -69,7 +69,9 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
     head: plane + /* glsl */ `
     float adH(vec3 p){vec3 n=normalize(vAdN);float vt;vec2 q=adPlane(p,n,vt);
       float h=fpNoise(q*2.3)*.5+fpNoise(q*7.1)*.18;
-      if(vPlK>.5){vec3 b=adBond(q,vPlK<1.5?vec2(.64,.32):vec2(.4,.13));h+=smoothstep(0.,.025,b.z)*(vPlK<1.5?1.4:.9)+fpNoise(q*16.)*.25;}
+      if(vPlK>.5&&vPlK<1.5){float row=floor(q.y/.34),yy=q.y-row*.34,bl=.55+.35*fpHash12(vec2(row,7.)),bx=q.x/bl+fpHash12(vec2(row,3.));
+        float jd=min(min(fract(bx),1.-fract(bx))*bl,min(yy,.34-yy));h+=smoothstep(0.,.02,jd)*.55+fpNoise(q*16.)*.25;}
+      else if(vPlK>1.5){vec3 b=adBond(q,vec2(.4,.13));h+=smoothstep(0.,.025,b.z)*.9+fpNoise(q*16.)*.25;}
       return h*.012;}`,
     color: /* glsl */ `{
       vec3 n=normalize(vAdN);float vert;vec2 q=adPlane(vAdW,n,vert);
@@ -88,12 +90,16 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
         c=mix(c,brick,wear);
         c*=1.-.22*(smoothstep(.665,.7,wb)-wear)*vert;
       }else if(vPlK<1.5){
-        // Coursed sandstone: each block its own shade, worn arrises, sanded joints.
-        vec3 bd=adBond(q,vec2(.64,.32));
-        float k=fpHash12(bd.xy+3.);
-        c*=(.86+.24*k)*mix(1.,.92+.1*fpNoise(q*3.+k*9.),.6);
-        c=mix(vec3(.72,.6,.44)*tint.r,c,smoothstep(.006,.02,bd.z)*vert+(1.-vert));
-        c*=1.-.1*(1.-smoothstep(.0,.06,bd.z))*vert;
+        // Coursed sandstone: courses of two heights, blocks of varied length, each its own shade; thin sanded joints;
+        // faint bedding streaks.
+        float row=floor(q.y/.34),ch=mod(row,2.)<.5?.3:.38,yy=q.y-row*.34;
+        float bl=.55+.35*fpHash12(vec2(row,7.)),bx=q.x/bl+fpHash12(vec2(row,3.));vec2 bid=vec2(floor(bx),row);
+        float jx=min(fract(bx),1.-fract(bx))*bl,jy=min(yy,.34-yy),jd=min(jx,jy);
+        float k=fpHash12(bid+3.);
+        vec3 sc=c*(.93+.12*k)*(1.+.05*sin(q.y*28.+fpNoise(q*1.5)*3.));
+        float joint=1.-smoothstep(.004,.012,jd);
+        c=mix(c,mix(sc,c*vec3(1.08,1.04,.98),joint*.8),vert);
+        c*=1.-.08*(1.-smoothstep(0.,.04,jd))*vert;
       }else{
         // Mudbrick under patches of mud render.
         vec3 bd=adBond(q,vec2(.4,.13));
@@ -108,8 +114,9 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
       // Streaks under the roof edge.
       float st=smoothstep(.45,.9,fpNoise(vec2(q.x*1.4,7.))*.5+.5+.25*fpNoise(vec2(q.x*8.,q.y*.5)));
       c*=1.-.17*st*(1.-smoothstep(0.,2.4,vPl.y))*step(.04,vPl.y)*vert;
-      // Roof slabs: trodden, a little darker.
-      c*=mix(1.,.9+.08*fine,1.-vert);
+      // Roof slabs and caps: smooth mud plaster in the wall's hue, trodden darker in patches.
+      vec3 mud=mix(tint,vec3(.8,.68,.52),.45)*(.86+.18*mott)*(.95+.06*fine);
+      c=mix(mud,c,smoothstep(.15,.6,vert));
       diffuseColor.rgb=c*vPl.z;
     }`,
     rough: 'roughnessFactor=mix(.95,.86,step(.5,vPlK)*step(vPlK,1.5));',
@@ -146,7 +153,7 @@ export function dawnCraft(): THREE.MeshStandardMaterial {
         // Painted planks: seams, paint chipped to grey wood low and at the edges, iron straps and studs.
         float pw=.17,px=fract(uv.x/pw),seam=smoothstep(0.,.05,px)*smoothstep(1.,.95,px);
         vec3 wood=vec3(.42,.36,.3)*(.8+.3*fpNoise(vec2(uv.x*6.,uv.y*.6)+seed));
-        float chip=smoothstep(.55,.6,fpFbm(uv*vec2(4.,1.6)+seed)*.5+.5+.25*(1.-smoothstep(0.,.5,uv.y)));
+        float chip=smoothstep(.66,.7,fpFbm(uv*vec2(10.,3.5)+seed)*.5+.5+.18*(1.-smoothstep(0.,.35,uv.y)));
         c=mix(tint*(.88+.2*fpNoise(vec2(uv.x*3.,uv.y*25.))),wood,chip)*mix(.45,1.,seam);
         float strap=0.;for(int i=0;i<2;i++){float y=i==0?.4:1.75;strap=max(strap,1.-smoothstep(.03,.04,abs(uv.y-y)));}
         vec2 sd=vec2(fract(uv.x/pw)-.5,0.);float stud=0.;for(int i=0;i<3;i++){float y=.4+float(i)*.68;stud=max(stud,1.-smoothstep(.018,.026,length(vec2(sd.x*pw,uv.y-y))));}
@@ -362,8 +369,9 @@ function hole(wall: Acc, craft: Acc, f: Face, h: Hole, nf: THREE.Vector3) {
     const [u0, v0] = pts[i], [u1, v1] = pts[(i + 1) % pts.length];
     const a = facePoint(f, u0, v0), b = facePoint(f, u1, v1), want = new V().copy(cen).sub(_a.copy(a).lerp(b, .5));
     want.addScaledVector(f.N, -want.dot(f.N));
-    const deep = h.kind === CR.room ? .42 : .62;
-    wall.quad(a, b, back(b), back(a), want, undefined, [.95, .95, deep, deep]);
+    const deep = h.kind === CR.room ? (h.depth > 1.5 ? .08 : h.depth > .6 ? .22 : .4) : .6;
+    const front = h.depth > 1.5 ? .55 : h.depth > .6 ? .75 : .95;
+    wall.quad(a, b, back(b), back(a), want, undefined, [front, front, deep, deep]);
   }
   // Back panel: the room, the door leaf or the screen.
   const prevA3 = craft.a3, prevCol = craft.col.clone();

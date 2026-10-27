@@ -1,5 +1,5 @@
-// World III Dawnharbor town QA: the sandstone paving, road lamps, boulder groups, harbour, market dressing, house
-// palette and the two sun gates are present; no primitive of the old town is left (dodecahedron rocks, lava
+// World III Dawnharbor town QA: the sandstone paving, road lamps, boulder groups, harbour, market dressing, the desert
+// quarter in place of the kit houses and the two sun gates are present; no primitive of the old town is left (dodecahedron rocks, lava
 // octahedra, cylinder lamps, flagstone tiles, box-ring portals); villagers' posts, quest points and enemy homes stay
 // clear of the new solids and the main ways stay walkable; zero page/GL errors at high and low quality.
 //   CC_QA_BASE=http://127.0.0.1:5613 node tools/qa-dawn-town.mjs
@@ -39,9 +39,11 @@ try {
     out.boats = named('dawnharbor-harbour')?.userData.boats ?? 0;
     out.harbour = ['dawnharbor-quay-wall', 'dawnharbor-pier', 'dawnharbor-quay-stone', 'dawnharbor-nets', 'dawnharbor-ropes'].filter(n => !named(n));
     out.dressing = named('dawnharbor-dressing')?.userData.stats ?? null;
-    // House palette: the town's kit materials are its own clones.
+    // Houses: the desert quarter (dawnHouses.ts, checked in qa-dawn-houses.mjs) replaced the kit houses; no village
+    // kit material is left in World III.
     const mats = new Set(); root.traverse(o => { if (o.isMesh) for (const m of [o.material].flat()) mats.add(m.name); });
-    out.palette = ['dawnharbor-MI_Plaster', 'dawnharbor-MI_RoundTiles', 'dawnharbor-MI_WoodTrim'].filter(n => !mats.has(n));
+    out.palette = [...mats].filter(n => /MI_(Plaster|RoundTiles|WoodTrim|UnevenBrick|Brick|RockTrim)/.test(n));
+    out.quarter = named('goldsand-quarter')?.userData.stats ?? null;
     out.gates = [];
     root.traverse(o => { if (o.userData?.dawnGate) out.gates.push([o.name, o.userData.dawnGate, +o.position.x.toFixed(1), +o.position.z.toFixed(1)]); });
     // Old primitives: anything in World III (outside the quest markers, which are their own module) built from
@@ -92,8 +94,9 @@ try {
   assert.ok(r.boulders && r.boulders.sites >= 25 && r.boulders.stones >= r.boulders.sites * 3 && r.boulders.vents >= 3, JSON.stringify(r.boulders));
   assert.ok(r.boats >= 5, `boats ${r.boats}`);
   assert.deepEqual(r.harbour, [], 'harbour parts present');
-  assert.ok(r.dressing && r.dressing.stalls >= 10 && r.dressing.goods >= 40 && r.dressing.benches >= 6 && r.dressing.doorPots >= 4 && r.dressing.lanterns >= 6 && r.dressing.laundry >= 10, JSON.stringify(r.dressing));
-  assert.deepEqual(r.palette, [], 'coastal house palette materials');
+  assert.ok(r.dressing && r.dressing.stalls >= 10 && r.dressing.goods >= 40 && r.dressing.benches >= 6 && r.dressing.doorPots >= 4 && r.dressing.lanterns >= 6, JSON.stringify(r.dressing));
+  assert.ok(r.quarter && r.quarter.laundry >= 10, `rooftop laundry: ${JSON.stringify(r.quarter)}`);
+  assert.deepEqual(r.palette, [], 'no village kit house materials left');
   assert.deepEqual(r.gates.map(g => g[1]).sort(), ['dawn', 'frost'], JSON.stringify(r.gates));
   assert.deepEqual(r.primitives, [], 'no old primitives left in the town');
   assert.ok(r.npc.every(d => d < .05), `villagers' posts clear: ${r.npc}`);
