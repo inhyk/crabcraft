@@ -16,7 +16,7 @@ import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
 import { StarVillageLife } from './world2Life';
-import {starGroundColor} from './world2Ground';
+import {starGround,type StarGround} from './starGround';
 import {facetedStarCrystal} from './starCrystal';
 import {collectibleShadow} from './collectibleShadow';
 import {StarSky} from './starSky';
@@ -71,7 +71,7 @@ export class HiddenWorld {
   private originalHeight: Game['world']['heightAt'];
   private originalCollision: Game['world']['resolveCollision'];
   private originalRay: Game['world']['raycastSolid'];
-  private groundTexture:THREE.DataTexture;
+  private ground:StarGround;
   private groundHeights=buildStarHeights();
   private rotations: THREE.Object3D[] = [];
   private sky: StarSky;
@@ -189,20 +189,7 @@ export class HiddenWorld {
     this.root.visible=false;game.scene.add(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);
     this.snowGate=new StarPortal(new THREE.Vector3(14,this.third.height(14,84),84),'새벽 항구 → 서리빛 설원');this.third.root.add(this.snowGate.root);
     this.sky=new StarSky();this.root.add(this.sky.root);
-    const land=new THREE.PlaneGeometry(280,320,140,160);land.rotateX(-Math.PI/2);
-    const pos=land.attributes.position,colors=[];
-    const groundColor=new THREE.Color();
-    for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i),y=this.height(x,z);pos.setY(i,y);starGroundColor(x,z,y,groundColor);colors.push(groundColor.r,groundColor.g,groundColor.b);}
-    land.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));land.computeVertexNormals();
-    const pixels=new Uint8Array(128*128*4);
-    for(let z=0;z<128;z++)for(let x=0;x<128;x++){
-      const hash=Math.sin(x*127.1+z*311.7)*43758.5453,grain=(hash-Math.floor(hash))*.18;
-      const vein=Math.pow(Math.abs(Math.sin(x*.12+Math.sin(z*.09)*2)),20)*.12;
-      const shade=Math.round((.68+grain-vein)*255),i=(z*128+x)*4;
-      pixels.set([shade,shade,shade,255],i);
-    }
-    const texture=this.groundTexture=new THREE.DataTexture(pixels,128,128);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(18,18);texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearMipmapLinearFilter;texture.generateMipmaps=true;texture.anisotropy=Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy());texture.needsUpdate=true;
-    const ground=new THREE.Mesh(land,new THREE.MeshStandardMaterial({map:texture,vertexColors:true,roughness:.94,metalness:.08}));ground.name='star-island-ground';ground.receiveShadow=true;this.root.add(ground);
+    this.ground=starGround((x,z)=>this.height(x,z),Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy()));this.root.add(this.ground.mesh);
     this.sea=new StarSea();this.root.add(this.sea.root);
     const stone=new THREE.MeshStandardMaterial({color:'#3c3b57',roughness:.78,metalness:.3});
     const crystal=new THREE.MeshStandardMaterial({color:'#a57bff',emissive:'#6524c9',emissiveIntensity:1.5,metalness:.5,roughness:.2});
@@ -480,7 +467,7 @@ export class HiddenWorld {
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
     const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
-    this.sea.update(time);
+    this.sea.update(time);this.ground.update(time,this.game.engine.quality);
     this.armour?.update(time);this.throne.update(time);
     this.wind?.update(time);
     if(!observation)for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
@@ -654,6 +641,6 @@ export class HiddenWorld {
       }
     });
     const ownedTextures=new Set<THREE.Texture>();for(const m of mats){const map=(m as THREE.MeshStandardMaterial).map;if(map?.userData.islandPaving)ownedTextures.add(map);}for(const texture of ownedTextures)texture.dispose();
-    this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
+    this.ground.texture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
   }
 }
