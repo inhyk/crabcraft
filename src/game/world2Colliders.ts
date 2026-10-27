@@ -34,6 +34,11 @@ export function starCrystalGarden(height: (x: number, z: number) => number) {
   return out;
 }
 
+/** Small teal crystals beside the starroad (world2.ts), every five metres, alternating sides. */
+export function starRoadGuides(): [number, number][] {
+  return Array.from({ length: 14 }, (_, i) => [(i % 2 ? 1 : -1) * 6.5, 5 - i * 5]);
+}
+
 export function layoutStarhaven(height: (x: number, z: number) => number, natureNames: readonly string[]) {
   const terrain = { minX: -140, minZ: -150, step: 2, nx: 141, nz: 161, heightAt: height, h: new Float32Array(141 * 161) };
   for (let j = 0; j < terrain.nz; j++) for (let i = 0; i < terrain.nx; i++) terrain.h[j * terrain.nx + i] = height(terrain.minX + i * 2, terrain.minZ + j * 2);
@@ -42,6 +47,7 @@ export function layoutStarhaven(height: (x: number, z: number) => number, nature
   const obstacles = throneSolids();
   for (const o of obstacles) col.addCircle(o.x, o.z, o.r, height(o.x, o.z), height(o.x, o.z) + 12);
   for (const c of starCrystalGarden(height)) if (!c.clear) col.addCircle(c.solid.x, c.solid.z, c.solid.r, c.solid.y0, c.solid.y1);
+  for (const [x, z] of starRoadGuides()) col.addCircle(x, z, 0.62, height(x, z) - 0.5, height(x, z) + 1.9);
   registerStarVillageLife(height, col);
   // Quest props: waystone frames and ore beds.
   for (const [kind, [x, z]] of Object.entries(STAR_OBJECTIVES)) {

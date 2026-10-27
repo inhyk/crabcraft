@@ -17,7 +17,7 @@ import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
 import { StarVillageLife } from './world2Life';
 import {starGroundColor} from './world2Ground';
-import {facetedStarCrystal} from './starCrystal';
+import {starCrystalCluster,starCrystalMaterial} from './starCrystals';
 import {collectibleShadow} from './collectibleShadow';
 import {StarSky} from './starSky';
 import {StarSea} from './starSea';
@@ -31,9 +31,10 @@ import {StarSun} from './starSun';
 import {STAR_MOON_DIR} from './starNight';
 import {StarNightRig} from './starNightRig';
 import {StarEnemyArmour} from './starEnemyArmour';
-import {StarThrone} from './starThrone';
+import {throneSolids} from './starThrone';
+import {StarSanctum} from './starSanctum';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
-import {layoutStarhaven,starCrystalGarden} from './world2Colliders';
+import {layoutStarhaven,starCrystalGarden,starRoadGuides} from './world2Colliders';
 import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
 import type {TidecrownIsland} from './tidecrown/island';
 import type {TidecrownResidents} from './tidecrownResidents';
@@ -109,7 +110,7 @@ export class HiddenWorld {
   private collision: Collision | null = null;
   private life:StarVillageLife|null=null;
   private armour:StarEnemyArmour|null=null;
-  private throne:StarThrone;
+  private throne:StarSanctum;
   private wind:StarWind|null=null;
   private nav:NavHints|null=null;
   private ambience:StarAmbience;
@@ -207,12 +208,8 @@ export class HiddenWorld {
     const texture=this.groundTexture=new THREE.DataTexture(pixels,128,128);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(18,18);texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearMipmapLinearFilter;texture.generateMipmaps=true;texture.anisotropy=Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy());texture.needsUpdate=true;
     const ground=new THREE.Mesh(land,new THREE.MeshStandardMaterial({map:texture,vertexColors:true,roughness:.94,metalness:.08}));ground.name='star-island-ground';ground.receiveShadow=true;this.root.add(ground);
     this.sea=new StarSea();this.root.add(this.sea.root);
-    const stone=new THREE.MeshStandardMaterial({color:'#3c3b57',roughness:.78,metalness:.3});
-    const crystal=new THREE.MeshStandardMaterial({color:'#a57bff',emissive:'#6524c9',emissiveIntensity:1.5,metalness:.5,roughness:.2});
-    const teal=new THREE.MeshStandardMaterial({color:'#b0fff1',emissive:'#26afba',emissiveIntensity:1.3,metalness:.6,roughness:.25});
     // Jagged crystal gardens frame the open combat paths. One geometry/material per family.
-    const crystalFaces=crystal.clone();crystalFaces.vertexColors=true;crystalFaces.flatShading=true;crystalFaces.emissiveIntensity=.45;crystalFaces.metalness=.35;crystalFaces.roughness=.3;
-    const crystals=new THREE.InstancedMesh(facetedStarCrystal(),crystalFaces,90);crystals.name='star-island-crystal-gardens';const matrix=new THREE.Matrix4();
+    const crystals=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('amethyst'),90);crystals.name='star-island-crystal-gardens';const matrix=new THREE.Matrix4();
     starCrystalGarden((x,z)=>this.height(x,z)).forEach((c,i)=>{
       if(c.clear)matrix.makeScale(0,0,0);
       else{
@@ -222,12 +219,16 @@ export class HiddenWorld {
       crystals.setMatrixAt(i,matrix);
     });
     crystals.castShadow=true;this.root.add(crystals);
-    this.throne=new StarThrone((x,z)=>this.height(x,z),stone,teal,crystal);
-    this.root.add(this.throne.root);this.obstacles.push(...this.throne.solids);
-    const disk=new THREE.Mesh(new THREE.CylinderGeometry(17,18,.3,64),stone);disk.position.copy(this.arena.position);disk.position.y=2.93;disk.receiveShadow=true;this.root.add(disk);
-    for(const r of [3,9,16]){const ring=new THREE.Mesh(new THREE.TorusGeometry(r,.045,5,96),teal);ring.rotation.x=Math.PI/2;ring.position.set(0,3.12,-75);this.root.add(ring);}
+    // The Eclipse Queen's sanctum: carved floor, obelisks on the old twelve footprints, the pilgrims' gate.
+    this.throne=new StarSanctum((x,z)=>this.height(x,z));
+    this.root.add(this.throne.root);this.obstacles.push(...throneSolids());
     // The settlement owns the stone trails; keep only the luminous wayfinders here.
-    for(let i=0;i<14;i++){const z=5-i*5,x=(i%2?1:-1)*6.5;const gem=new THREE.Mesh(new THREE.OctahedronGeometry(.4),teal);gem.position.set(x,this.height(x,z)+1,z);this.root.add(gem);this.rotations.push(gem);}
+    {
+      // Small teal crystals grown beside the starroad, every five metres.
+      const guides=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('teal',{glow:1.3}),14),m=new THREE.Matrix4(),q=new THREE.Quaternion();guides.name='star-road-wayfinders';
+      for(const [i,[x,z]] of starRoadGuides().entries()){m.compose(new THREE.Vector3(x,this.height(x,z)+.55,z),q.setFromAxisAngle(new THREE.Vector3(0,1,0),i*2.4),new THREE.Vector3(.7,1.1,.7));guides.setMatrixAt(i,m);}
+      guides.castShadow=true;this.root.add(guides);
+    }
     this.portal=new StarPortal(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
     const ship=w.pois.wreck.position;
