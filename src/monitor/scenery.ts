@@ -48,8 +48,8 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
     scene.add(island.root);
     try { await island.buildSettlement(); } catch (e) { dispose(); throw e; }
     island.root.visible = true;
-    scene.fog = new THREE.FogExp2('#bfc4b2', .0025);
-    return { scene, height: (x, z) => island.height(x, z), raycast: (a, b) => island.collision.raycast(a, b), update: (_dt, t, _cam, p) => island.update(t, false, p.x, p.z), dispose };
+    scene.fog = new THREE.FogExp2(island.sky.skyHorizon, .0025);
+    return { scene, height: (x, z) => island.height(x, z), raycast: (a, b) => island.collision.raycast(a, b), update: (_dt, t, cam, p) => { island.update(t, false, p.x, p.z); if (scene.fog instanceof THREE.FogExp2) island.fog(cam, scene.fog); }, dispose };
   }
   if (area === 4) {
     const island = new SnowIsland();

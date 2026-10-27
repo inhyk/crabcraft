@@ -6,7 +6,13 @@ import {dawnPalms,type DawnPalms,type PalmSpot} from './dawnFieldPalms';
 import {Scatter} from '../world/kit';
 import {StarWind} from './starWind';
 import * as THREE from 'three';
-import {StarSun} from './starSun';
+import {DawnSky} from './dawnSky';
+import {dawnSea,type DawnSea} from './dawnSea';
+import {SandTerrain,sandDeform,SAND_GROUND_READ} from './sandTerrain';
+import {applySandSurface,SandFootfalls} from './sandSurface';
+import {SandSpray} from './sandSpray';
+import {SandDrift} from './sandDrift';
+import type {Unit} from './unit';
 import {DawnScenery} from './dawnScenery';
 import {DawnPortal} from './dawnPortal';
 import {dawnCitadel,type DawnCitadel} from './dawnCitadel';
@@ -24,7 +30,11 @@ export class DawnIsland {
  readonly collision=layoutDawnreach();
  readonly portal=new DawnPortal(new THREE.Vector3(-12,dawnHeight(-12,84),84),'새벽 항구 → 별빛 항구');
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
- private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new StarSun();
+ private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new THREE.DirectionalLight();
+ /** The stolen dawn (dawnSky.ts): the sun low over the eastern sea; sun, hemisphere, fog and sea all read it. */
+ readonly sky=new DawnSky({azimuth:112,elevation:11});private sea:DawnSea;
+ /** Goldsand's desert: a clipmap round the player (sandTerrain.ts), prints that the wind fills in, sand kicked up by runners. */
+ readonly terrain:SandTerrain;readonly deform=sandDeform(40);readonly spray:SandSpray;readonly drift:SandDrift;private footfalls:SandFootfalls;private refreshSand:()=>void;
  /** Dawnharbor's own streets, lamps, rocks, harbour and gate (dawnTown.ts). */
  readonly townLook:DawnTown;
  private dressing:DawnDressing|null=null;
@@ -37,12 +47,17 @@ export class DawnIsland {
  }
  constructor(){
   this.root.name='WORLD III · Dawnreach';this.root.visible=false;
-  const sand=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.95,vertexColors:true});
-  const land=new THREE.PlaneGeometry(300,350,120,140);land.rotateX(-Math.PI/2);const p=land.getAttribute('position'),col=[];
-  for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i),y=this.height(x,z);p.setY(i,y);const c=new THREE.Color(y>12?'#747478':y<3?'#d2bd90':Math.abs(x)>24?'#84976a':'#cbbb95');col.push(c.r,c.g,c.b);}
-  land.setAttribute('color',new THREE.Float32BufferAttribute(col,3));land.computeVertexNormals();const ground=new THREE.Mesh(land,sand);ground.receiveShadow=true;this.root.add(ground);
-  const sky=new THREE.Mesh(new THREE.SphereGeometry(850,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;void main(){float h=clamp(normalize(v).y,0.,1.);vec3 c=mix(vec3(.93,.59,.32),vec3(.12,.32,.62),smoothstep(0.,.12,h));c=mix(c,vec3(.035,.12,.36),smoothstep(.12,.8,h));gl_FragColor=vec4(c,1.);}'}));sky.renderOrder=-100;this.root.add(sky);
-  const sea=new THREE.Mesh(new THREE.PlaneGeometry(1800,1800),new THREE.MeshStandardMaterial({color:'#245e74',roughness:.3,metalness:.4,transparent:true,opacity:.94}));sea.rotation.x=-Math.PI/2;sea.position.y=.2;this.root.add(sea);
+  // The desert: dawnHeight()'s GLSL twin baked on the GPU, placed by a clipmap, shaded as sand (sandTerrain.ts, sandSurface.ts).
+  const sandMat=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.93,metalness:0});
+  this.terrain=new SandTerrain(sandMat,this.deform);this.refreshSand=applySandSurface(sandMat,this.deform,{sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith});
+  // Paving and the arena floor take no prints and throw no sand.
+  const bare=(x:number,z:number)=>roadClearance(x,z)<.15||Math.hypot(x,z+72)<22.5;
+  this.footfalls=new SandFootfalls(bare);this.spray=new SandSpray(this.root,{sun:this.sun,bare});
+  // Sand blowing off the crests (sandDrift.ts).
+  this.drift=new SandDrift({sunDir:this.sky.sunDir,sunLight:this.sky.sunColor.clone().multiplyScalar(this.sky.sunIntensity),sky:this.sky.hemiSky,bounce:this.sky.hemiGround,ground:this.terrain.uniforms});
+  this.root.add(this.terrain.mesh,this.drift.mesh,this.sky.mesh);
+  // The sea reads its depth from the same bake.
+  this.sea=dawnSea(this.sky,{uniforms:this.terrain.uniforms,read:SAND_GROUND_READ});this.root.add(this.sea.mesh);
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
   // The town square uses the terrain and paving; a flat raised disc cut through its sloping roads.
   // Solarkan's citadel (dawnCitadel.ts); the boss platform keeps its name and size, its top the carved sun-dial.
@@ -50,7 +65,7 @@ export class DawnIsland {
   const floor=add(new THREE.CylinderGeometry(21,22,1.3,160),this.citadel.floor,0,DAWN_ARENA_HEIGHT-.6,-72);floor.name='dawn-boss-platform';floor.castShadow=false;
   this.townLook=dawnTown((x,z)=>this.height(x,z));this.root.add(this.townLook.root);
   this.scenery=new DawnScenery((x,z)=>this.height(x,z));this.root.add(this.scenery.root);
-  this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',.9));const sun=this.sun.light;sun.name='dawnreach-sun';sun.color.set('#ffe6b3');sun.intensity=2.8;this.root.add(sun,sun.target);
+  this.root.add(this.portal.root,new THREE.HemisphereLight(this.sky.hemiSky,this.sky.hemiGround,1));const sun=this.sun;sun.name='dawnreach-sun';this.sky.attachSun(sun);this.root.add(sun,sun.target);
  }
  async buildSettlement(){
   await this.citadel.dress();
@@ -90,5 +105,12 @@ export class DawnIsland {
  /** Dawnharbor's request props (dawnRequestProps.ts) in place of the shared placeholders. */
  questProps(){return dawnRequestLook();}
  private sunDir=new THREE.Vector3();
- update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.citadel.update(time,quality);this.palms?.update(time);this.dressing?.update(time);this.quarter?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
+ /** The fog for a camera: the dawn's horizon in the direction it looks, thinner seen from high above. */
+ fog(camera:THREE.Camera,fog:THREE.FogExp2){const e=camera.matrixWorld.elements;this.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.sky.fogDensity(e[13],-e[9]);}
+ /** Low quality: a coarser clipmap and bake, no finest ripples, the sea's fine ripples, a cloud octave and half the shadow map. */
+ setQuality(q:'high'|'low'){this.terrain.setQuality(q);this.drift.setQuality(q);this.sea.setQuality(q);this.sky.setQuality(q);}
+ /** Prints for every crab near the player, one step of the sand field, the kicked sand. Runs only while Goldsand is shown. */
+ updateSand(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'){this.terrain.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSand();}
+ disposeSand(){this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
+ update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.terrain.follow(x,z);this.drift.update(time,x,z);this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.position,this.sun.target.position));this.wind?.update(time);this.citadel.update(time,quality);this.palms?.update(time);this.dressing?.update(time);this.quarter?.update(time);this.sky.followSun(x,this.height(x,z),z);this.sky.update(time);this.sea.update(time);this.scenery.update(time);this.portal.update(time);}
 }
