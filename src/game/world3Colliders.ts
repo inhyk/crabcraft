@@ -5,6 +5,7 @@ import { TownBuilder } from '../world/buildings';
 import { Collision } from '../world/collision';
 import type { Lot } from '../world/layout';
 import { registerDawnScenery } from './dawnScenery';
+import { citadelHolds, registerDawnCitadel } from './dawnCitadelLayout';
 import type { IslandPath } from './islandPaths';
 
 export const DAWN_PATHS: IslandPath[] = [
@@ -36,7 +37,7 @@ export function dawnRocks() {
     const a = (i / 32) * Math.PI * 2,
       x = Math.sin(a) * 67,
       z = -45 + Math.cos(a) * 50;
-    if (Math.abs(x) < 12) continue;
+    if (Math.abs(x) < 12 || citadelHolds(x, z)) continue;
     rocks.push({ i, x, z, r: 2 + (i % 3) });
   }
   return rocks;
@@ -63,7 +64,7 @@ export function dawnForest() {
     const a = i * 2.39996,
       x = Math.sin(a) * (56 + (i % 5) * 5),
       z = 30 + Math.cos(a) * 66;
-    if (roadClearance(x, z) < 4 || Math.abs(x) < 14 || Math.hypot(x - 67, z - 72) < 12 || Math.hypot(x, z + 72) < 32 || (Math.abs(x) > 28 && Math.abs(x) < 48 && z > 17 && z < 96)) continue;
+    if (roadClearance(x, z) < 4 || Math.abs(x) < 14 || Math.hypot(x - 67, z - 72) < 12 || Math.hypot(x, z + 72) < 32 || citadelHolds(x, z) || (Math.abs(x) > 28 && Math.abs(x) < 48 && z > 17 && z < 96)) continue;
     if ((Math.abs(z - (75 + (x + 5) * 0.15)) < 4 && x < 0 && x > -53) || (Math.abs(z - 84) < 5 && x > 14 && x < 61)) continue;
     trees.push({ i, x, z, a, scale: 0.75 + (i % 4) * 0.12 });
   }
@@ -87,8 +88,8 @@ export function dawnGrove() {
 export function layoutDawnreach(): Collision {
   const h = dawnHeight;
   const col = new Collision({ minX: -150, minZ: -175, step: 2, nx: 151, nz: 176, h: new Float32Array(151 * 176), heightAt: h });
-  // The citadel's flanking towers and the rock ring.
-  for (const side of [-1, 1]) col.addCircle(side * 27, -56, 4.5, 4, 35);
+  // Solarkan's citadel (dawnCitadelLayout.ts) and the rock ring.
+  registerDawnCitadel(h, col);
   for (const { x, z, r } of dawnRocks()) {
     const y = h(x, z);
     col.addCircle(x, z, r + 1, y, y + 7);

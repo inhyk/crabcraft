@@ -4,6 +4,7 @@ import {StarWind} from './starWind';
 import * as THREE from 'three';
 import {StarSun} from './starSun';
 import {DawnScenery} from './dawnScenery';
+import {dawnCitadel,type DawnCitadel} from './dawnCitadel';
 import {StarPortal} from './portal';
 import {loadKit,StaticBatch,trs} from '../world/kit';
 import {TownBuilder} from '../world/buildings';
@@ -21,7 +22,7 @@ export class DawnIsland {
  readonly portal=new StarPortal(this.spawn,'새벽 항구 → 별빛 항구');
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
  private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new StarSun();
- private rotating:THREE.Object3D[]=[];
+ private rotating:THREE.Object3D[]=[];private citadel:DawnCitadel;
  height(x:number,z:number){
   return dawnHeight(x,z);
  }
@@ -29,7 +30,6 @@ export class DawnIsland {
   this.root.name='WORLD III · Dawnreach';this.root.visible=false;
   const stone=new THREE.MeshStandardMaterial({color:'#393c4b',roughness:.9});
   const sand=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.95,vertexColors:true});
-  const roof=new THREE.MeshStandardMaterial({color:'#267b82',roughness:.7});
   const gold=new THREE.MeshStandardMaterial({color:'#ffd67a',emissive:'#d57b23',emissiveIntensity:.65,metalness:.6,roughness:.35});
   const lava=new THREE.MeshStandardMaterial({color:'#ff763b',emissive:'#ff4612',emissiveIntensity:1.2});
   const land=new THREE.PlaneGeometry(300,350,120,140);land.rotateX(-Math.PI/2);const p=land.getAttribute('position'),col=[];
@@ -40,18 +40,20 @@ export class DawnIsland {
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
   // The town square uses the terrain and paving; a flat raised disc cut through its sloping roads.
   // A walkable, lit ascent to the fortress, built directly over the analytic surface.
+  // The lamps stop below the citadel's gate (z -46.5); its braziers light the rest.
   for(let i=0;i<72;i++){const z=83-i*2.12,y=this.height(0,z);
-   if(i%5===0)for(const side of [-1,1]){add(new THREE.CylinderGeometry(.14,.22,2.4,6),stone,side*5.1,y+1.2,z);add(new THREE.OctahedronGeometry(.42),gold,side*5.1,y+2.6,z);}
+   if(i%5===0&&z>-42)for(const side of [-1,1]){add(new THREE.CylinderGeometry(.14,.22,2.4,6),stone,side*5.1,y+1.2,z);add(new THREE.OctahedronGeometry(.42),gold,side*5.1,y+2.6,z);}
   }
-  for(const side of [-1,1]){const tower=add(new THREE.CylinderGeometry(3.6,4.4,15,10),stone,side*27,this.height(side*27,-56)+7.5,-56);add(new THREE.ConeGeometry(4.6,6,10),roof,tower.position.x,tower.position.y+10.5,-56);}
-  const floor=add(new THREE.CylinderGeometry(21,22,1.3,64),stone,0,DAWN_ARENA_HEIGHT-.6,-72);floor.name='dawn-boss-platform';
-  for(const r of [6,13,20]){const ring=add(new THREE.TorusGeometry(r,.07,5,96),gold,0,DAWN_ARENA_HEIGHT+.12,-72);ring.rotation.x=Math.PI/2;}
+  // Solarkan's citadel (dawnCitadel.ts); the boss platform keeps its name and size, its top the carved sun-dial.
+  this.citadel=dawnCitadel((x,z)=>this.height(x,z));this.root.add(this.citadel.root);
+  const floor=add(new THREE.CylinderGeometry(21,22,1.3,160),this.citadel.floor,0,DAWN_ARENA_HEIGHT-.6,-72);floor.name='dawn-boss-platform';floor.castShadow=false;
   for(const {i,x,z,r} of dawnRocks()){const y=this.height(x,z);const rock=add(new THREE.DodecahedronGeometry(r,0),stone,x,y+r*.65,z);rock.scale.y=1.5;if(i%3===0){const core=add(new THREE.OctahedronGeometry(.8),lava,x,y+3,z);this.rotating.push(core);}}
   this.root.add(islandPaths((x,z)=>this.height(x,z),DAWN_PATHS,3));
   this.scenery=new DawnScenery((x,z)=>this.height(x,z));this.root.add(this.scenery.root);
   this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',.9));const sun=this.sun.light;sun.name='dawnreach-sun';sun.color.set('#ffe6b3');sun.intensity=2.8;this.root.add(sun,sun.target);
  }
  async buildSettlement(){
+  await this.citadel.dress();
   const village=await loadKit('models/world/village.glb'),props=await loadKit('models/world/props.glb');
   const homes=new StaticBatch(village,'dawnharbor-homes'),builder=new TownBuilder(village,homes,null,{});
   for(const lot of dawnLots())builder.build(lot);this.root.add(homes.build());
@@ -82,5 +84,5 @@ export class DawnIsland {
   for(const side of [-1,1])for(const z of [37,57,74]){const x=side*23;put('Stall_Empty',x,z,side<0?Math.PI/2:-Math.PI/2);put('Barrel_Apples',x+side*2,z+1);put('Crate_Wooden',x+side*2,z-2);put('FarmCrate_Apple',x,z,0,1,.82);}
   this.root.add(market.build());
  }
- update(time:number,_rescued:boolean,x:number,z:number){this.wind?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
+ update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.wind?.update(time);this.citadel.update(time,quality);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
 }
