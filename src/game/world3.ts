@@ -2,7 +2,9 @@ import {islandPaths} from './islandPaths';
 import {Scatter} from '../world/kit';
 import {StarWind} from './starWind';
 import * as THREE from 'three';
-import {StarSun} from './starSun';
+import {DawnSky} from './dawnSky';
+import {dawnSea,type DawnSea} from './dawnSea';
+import {dawnTerrain} from './dawnTerrain';
 import {DawnScenery} from './dawnScenery';
 import {StarPortal} from './portal';
 import {loadKit,StaticBatch,trs} from '../world/kit';
@@ -20,7 +22,9 @@ export class DawnIsland {
  readonly collision=layoutDawnreach();
  readonly portal=new StarPortal(this.spawn,'새벽 항구 → 별빛 항구');
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
- private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new StarSun();
+ private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new THREE.DirectionalLight();
+ /** The stolen dawn (dawnSky.ts): the sun a few degrees over the eastern sea; sun, hemisphere, fog and sea all read it. */
+ readonly sky=new DawnSky({azimuth:112,elevation:6});private sea:DawnSea;
  private rotating:THREE.Object3D[]=[];
  height(x:number,z:number){
   return dawnHeight(x,z);
@@ -28,15 +32,12 @@ export class DawnIsland {
  constructor(){
   this.root.name='WORLD III · Dawnreach';this.root.visible=false;
   const stone=new THREE.MeshStandardMaterial({color:'#393c4b',roughness:.9});
-  const sand=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.95,vertexColors:true});
   const roof=new THREE.MeshStandardMaterial({color:'#267b82',roughness:.7});
   const gold=new THREE.MeshStandardMaterial({color:'#ffd67a',emissive:'#d57b23',emissiveIntensity:.65,metalness:.6,roughness:.35});
   const lava=new THREE.MeshStandardMaterial({color:'#ff763b',emissive:'#ff4612',emissiveIntensity:1.2});
-  const land=new THREE.PlaneGeometry(300,350,120,140);land.rotateX(-Math.PI/2);const p=land.getAttribute('position'),col=[];
-  for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i),y=this.height(x,z);p.setY(i,y);const c=new THREE.Color(y>12?'#747478':y<3?'#d2bd90':Math.abs(x)>24?'#84976a':'#cbbb95');col.push(c.r,c.g,c.b);}
-  land.setAttribute('color',new THREE.Float32BufferAttribute(col,3));land.computeVertexNormals();const ground=new THREE.Mesh(land,sand);ground.receiveShadow=true;this.root.add(ground);
-  const sky=new THREE.Mesh(new THREE.SphereGeometry(850,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;void main(){float h=clamp(normalize(v).y,0.,1.);vec3 c=mix(vec3(.93,.59,.32),vec3(.12,.32,.62),smoothstep(0.,.12,h));c=mix(c,vec3(.035,.12,.36),smoothstep(.12,.8,h));gl_FragColor=vec4(c,1.);}'}));sky.renderOrder=-100;this.root.add(sky);
-  const sea=new THREE.Mesh(new THREE.PlaneGeometry(1800,1800),new THREE.MeshStandardMaterial({color:'#245e74',roughness:.3,metalness:.4,transparent:true,opacity:.94}));sea.rotation.x=-Math.PI/2;sea.position.y=.2;this.root.add(sea);
+  // Ground sampled from the server's dawnHeight(), its sand, grass, scree and bluffs drawn in the shader (dawnTerrain.ts).
+  this.root.add(dawnTerrain((x,z)=>this.height(x,z)),this.sky.mesh);
+  this.sea=dawnSea(this.sky,(x,z)=>this.height(x,z));this.root.add(this.sea.mesh);
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};
   // The town square uses the terrain and paving; a flat raised disc cut through its sloping roads.
   // A walkable, lit ascent to the fortress, built directly over the analytic surface.
@@ -49,7 +50,7 @@ export class DawnIsland {
   for(const {i,x,z,r} of dawnRocks()){const y=this.height(x,z);const rock=add(new THREE.DodecahedronGeometry(r,0),stone,x,y+r*.65,z);rock.scale.y=1.5;if(i%3===0){const core=add(new THREE.OctahedronGeometry(.8),lava,x,y+3,z);this.rotating.push(core);}}
   this.root.add(islandPaths((x,z)=>this.height(x,z),DAWN_PATHS,3));
   this.scenery=new DawnScenery((x,z)=>this.height(x,z));this.root.add(this.scenery.root);
-  this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',.9));const sun=this.sun.light;sun.name='dawnreach-sun';sun.color.set('#ffe6b3');sun.intensity=2.8;this.root.add(sun,sun.target);
+  this.root.add(this.portal.root,new THREE.HemisphereLight(this.sky.hemiSky,this.sky.hemiGround,1));const sun=this.sun;sun.name='dawnreach-sun';this.sky.attachSun(sun);this.root.add(sun,sun.target);
  }
  async buildSettlement(){
   const village=await loadKit('models/world/village.glb'),props=await loadKit('models/world/props.glb');
@@ -82,5 +83,7 @@ export class DawnIsland {
   for(const side of [-1,1])for(const z of [37,57,74]){const x=side*23;put('Stall_Empty',x,z,side<0?Math.PI/2:-Math.PI/2);put('Barrel_Apples',x+side*2,z+1);put('Crate_Wooden',x+side*2,z-2);put('FarmCrate_Apple',x,z,0,1,.82);}
   this.root.add(market.build());
  }
- update(time:number,_rescued:boolean,x:number,z:number){this.wind?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
+ /** The fog for a camera: the dawn's horizon in the direction it looks, thinner seen from high above. */
+ fog(camera:THREE.Camera,fog:THREE.FogExp2){const e=camera.matrixWorld.elements;this.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.sky.fogDensity(e[13],-e[9]);}
+ update(time:number,_rescued:boolean,x:number,z:number){this.wind?.update(time);this.sky.followSun(x,this.height(x,z),z);this.sky.update(time);this.sea.update(time);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
 }

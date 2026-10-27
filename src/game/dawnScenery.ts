@@ -20,7 +20,7 @@ export function registerDawnScenery(height:(x:number,z:number)=>number,collision
 /** Deterministic landmarks, pooled static props and a small animated skyline. */
 export class DawnScenery {
  readonly root=new THREE.Group();private flags:THREE.Object3D[]=[];private birds:THREE.Group[]=[];
- private beacon=new THREE.Group();private foam:THREE.MeshBasicMaterial;
+ private beacon=new THREE.Group();
  constructor(height:(x:number,z:number)=>number){
   this.root.name='dawnreach-landmarks';
   const mat=(color:string,glow=0)=>new THREE.MeshStandardMaterial({color,roughness:.83,emissive:color,emissiveIntensity:glow});
@@ -56,13 +56,9 @@ export class DawnScenery {
   }
   for(let i=0;i<15;i++){const x=backWallX(i);ground(box,stone,x,-105,5.1,10,2.6);ground(box,trim,x,-105,2.3,1.2,3,10);}
   const gateY=height(0,-44);place(box,trim,0,gateY+9,-44,29,1.4,4.2);place(cone,gold,0,gateY+11,-44,1.5,2,1.5);
-  // Clouds, gulls and foam add motion without adding real-time lights or shadow maps.
-  const cloudMat=new THREE.MeshBasicMaterial({color:'#f0d6bb',transparent:true,opacity:.45,depthWrite:false});for(let i=0;i<12;i++){const c=new THREE.Mesh(ball,cloudMat);c.position.set(-170+i*31,75+i%3*9,-150-i%4*16);c.scale.set(17+i%4*4,3,7);this.root.add(c);}
-  const sun=new THREE.Mesh(new THREE.SphereGeometry(15,20,12),new THREE.MeshBasicMaterial({color:'#ffe1a1'}));sun.position.set(-160,83,-360);this.root.add(sun);
+  // Gulls add motion without adding real-time lights or shadow maps; the sky, its clouds and the surf are dawnSky.ts and dawnSea.ts.
   for(let i=0;i<6;i++){const bird=new THREE.Group();for(const side of [-1,1]){const wing=new THREE.Mesh(new THREE.ConeGeometry(.32,2,3),ivory);wing.rotation.z=side*1.25;wing.position.x=side*.7;bird.add(wing);}bird.name='dawn-gull';this.root.add(bird);this.birds.push(bird);}
-  this.foam=new THREE.MeshBasicMaterial({color:'#e5e9d0',transparent:true,opacity:.32,depthWrite:false,side:THREE.DoubleSide});
-  for(const r of [.889,.914]){const positions=[];for(let i=0;i<128;i++){for(const [a,d] of [[i,r],[(i+1),r],[(i+1),r+.004],[i,r],[(i+1),r+.004],[i,r+.004]]){const angle=a/128*Math.PI*2;positions.push(Math.sin(angle)*122*d,.29,3+Math.cos(angle)*149*d);}}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));this.root.add(new THREE.Mesh(geo,this.foam));}
   for(const pool of pools.values()){const m=new THREE.InstancedMesh(pool.geo,pool.mat,pool.transforms.length);pool.transforms.forEach((matrix,i)=>m.setMatrixAt(i,matrix));m.castShadow=m.receiveShadow=true;m.computeBoundingSphere();this.root.add(m);}
  }
- update(time:number){this.beacon.rotation.y=time*.18;this.foam.opacity=.27+Math.sin(time*.65)*.07;this.flags.forEach((f,i)=>{f.rotation.y=Math.sin(time*1.4+i)*.18;f.rotation.z=Math.sin(time*1.8+i)*.035;});this.birds.forEach((b,i)=>{const a=time*.07+i*1.1;b.position.set(Math.cos(a)*(45+i*5),25+Math.sin(time*.8+i)*1.5,65+Math.sin(a)*35);b.rotation.y=-a;b.rotation.z=Math.sin(time*2+i)*.1;});}
+ update(time:number){this.beacon.rotation.y=time*.18;this.flags.forEach((f,i)=>{f.rotation.y=Math.sin(time*1.4+i)*.18;f.rotation.z=Math.sin(time*1.8+i)*.035;});this.birds.forEach((b,i)=>{const a=time*.07+i*1.1;b.position.set(Math.cos(a)*(45+i*5),25+Math.sin(time*.8+i)*1.5,65+Math.sin(a)*35);b.rotation.y=-a;b.rotation.z=Math.sin(time*2+i)*.1;});}
 }

@@ -1,5 +1,6 @@
 // Ground height of the four worlds, shared by the browser and the server (numbers only).
 import { snowGround } from './snowGround.ts';
+import { dawnGround } from './dawnGround.ts';
 
 export interface HeightGrid {
   minX: number;
@@ -55,15 +56,9 @@ export function starSurfaceHeight(heights: ArrayLike<number>, x: number, z: numb
 }
 
 export const DAWN_ARENA_HEIGHT=19;
-/** World III: an analytic island, a warm coast rising to the citadel. */
+/** World III: the analytic island, its open fields and coast reshaped (dawnGround.ts), the arena raised to 19 m. */
 export function dawnHeight(x: number, z: number): number {
-  const radial = Math.hypot(x / 122, (z - 3) / 149);
-  const shore = 4 - Math.max(0, radial - 0.83) * 65;
-  const upland = 13 * smoothstep(-z, 5, 55);
-  const hills = Math.sin(x * 0.045) * Math.sin(z * 0.04) * 2 * (1 - Math.exp((-x * x) / 400));
-  const natural=radial > 0.86 ? shore : 4 + upland + hills;
-  const arena=1-smoothstep(Math.hypot(x,z+72),21,31);
-  return natural+(DAWN_ARENA_HEIGHT-natural)*arena;
+  return dawnGround(x, z, DAWN_ARENA_HEIGHT);
 }
 
 /** World IV: Frostlight's carved snowfield (snowGround.ts), the old shore, trail and arena kept where gameplay needs them. */
