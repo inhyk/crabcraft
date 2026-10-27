@@ -34,23 +34,31 @@ void dawnGroundSurface(){
   float px=length(fwidth(p.xz));
   float n1=dgFbm(p.xz*.045),n2=dgFbm(p.xz*.37+3.1),n3=dgNoise(p.xz*2.6);
   float sandW=vDS.x,volcW=vDS.y,wornW=vDS.z;
+  // Decimetre and centimetre grain, faded out before a pixel covers it.
+  float f4=1.-smoothstep(.04,.16,px),f5=1.-smoothstep(.015,.06,px);
+  float n4=mix(.5,dgNoise(p.xz*8.3),f4),n5=mix(.5,dgNoise(p.xz*23.+7.),f5);
+  // Wind ripples on the sand: a gentle stoss slope and a short steep lee, crests across the wind.
+  vec2 wind=normalize(dawnWind);
+  float ph=dot(p.xz,wind)*1.75+dgNoise(p.xz*.35)*1.2+dgNoise(p.xz*1.9)*.25;
+  float rf=fract(ph),lee=smoothstep(.7,.82,rf)*(1.-smoothstep(.97,1.,rf));
+  float rgrad=mix(.9,-3.6,lee),rfade=(1.-smoothstep(.03,.09,px))*(.25+.75*smoothstep(.3,.7,dgNoise(p.xz*.09+1.3)));
   // Sand: dry and pale above the tide, darker and glossy where the sea wets it.
   float wet=1.-smoothstep(dawnSea+.08,dawnSea+.75+n2*.35,p.y);
-  vec3 dry=dgLin(vec3(.88,.77,.6))*(.92+.12*n2)*(.95+.08*n3);
+  vec3 dry=dgLin(vec3(.88,.77,.6))*(.92+.12*n2)*(.95+.08*n3)*(.92+.16*n5)*(1.+.05*rfade*(rf-.5));
   vec3 damp=dgLin(vec3(.56,.46,.35))*(.9+.15*n2);
   vec3 sand=mix(dry,damp,wet);
   // Coastal grass: green and gold patches, darker lush clumps, a fine grain.
   vec3 grass=mix(dgLin(vec3(.45,.56,.28)),dgLin(vec3(.66,.63,.33)),smoothstep(.36,.7,n1));
   grass=mix(grass,dgLin(vec3(.33,.45,.22)),smoothstep(.55,.82,n2)*.55);
-  grass*=.8+.32*n3;
+  grass*=(.8+.32*n3)*(.8+.4*n4)*(.86+.28*n5);
   // Sandy patches break through the grass toward the beaches.
   grass=mix(grass,dry*.95,smoothstep(.62,.8,n2+sandW*.5)*.6);
   // Trodden ground beside the lanes: packed earth with grass in the hollows.
-  vec3 earth=dgLin(vec3(.64,.54,.4))*(.88+.2*n3);
+  vec3 earth=dgLin(vec3(.64,.54,.4))*(.88+.2*n3)*(.85+.3*n5);
   float worn=wornW*smoothstep(.25,.65,n2*.8+wornW*.45);
   // Volcanic climb: dark basalt, grey scree, rusty ash.
   vec3 volc=mix(dgLin(vec3(.36,.32,.31)),dgLin(vec3(.54,.48,.43)),smoothstep(.35,.7,n2));
-  volc=mix(volc,dgLin(vec3(.58,.4,.31)),smoothstep(.55,.85,n1)*.7)*(.85+.25*n3);
+  volc=mix(volc,dgLin(vec3(.58,.4,.31)),smoothstep(.55,.85,n1)*.7)*(.85+.25*n3)*(.75+.5*n4)*(.85+.3*n5);
   // Tough grass clings on in the hollows of the lower climb.
   volc=mix(volc,grass*.85,smoothstep(.55,.8,n2)*(1.-smoothstep(9.,14.,p.y))*.6);
   vec3 col=grass;
@@ -73,12 +81,9 @@ void dawnGroundSurface(){
   // Shading normal: ripples on the sand across the wind, grain in the grass, bands and cracks on the rock.
   vec2 g=vec2(0.);
   float sandy=smoothstep(.3,.7,sandW)*(1.-steep)*(1.-volcW);
-  vec2 wind=normalize(dawnWind);
-  float ph=dot(p.xz,wind)*10.5+dgNoise(p.xz*.35)*7.;
-  float ripple=1.-smoothstep(.04,.12,px);
-  g+=wind*cos(ph)*.055*10.5*.1*sandy*ripple*(1.-wet*.8);
-  vec3 gn=dgNoised(p.xz*1.7);
-  g+=gn.yz*.07*(1.-sandy)*(1.-steep)*(1.-smoothstep(.15,.6,px));
+  g+=wind*rgrad*.075*sandy*rfade*(1.-wet*.8);
+  vec3 gn=dgNoised(p.xz*1.7),gb=dgNoised(p.xz*8.3);
+  g+=(gn.yz*.06+gb.yz*.03*f4)*(1.-sandy)*(1.-steep);
   vec3 bn=dgNoised(fp*vec2(.35,1.4)+vec2(0.,warp));
   vec3 nw=normalize(ng+vec3(-g.x,0.,-g.y));
   vec3 fx=normalize(vec3(-ng.z,0.,ng.x)+1e-5);
@@ -129,7 +134,8 @@ export function dawnTerrain(height: (x: number, z: number) => number, opts: { st
   const mesh = new THREE.Mesh(geo, material);
   mesh.name = 'dawn-ground';
   mesh.receiveShadow = true;
-  mesh.castShadow = true;
+  // No self-shadowing: at an 11 degree sun the shadow map cannot resolve gentle dunes and would band them with acne.
+  mesh.castShadow = false;
   mesh.userData.step = step;
   return mesh;
 }

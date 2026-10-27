@@ -103,7 +103,7 @@ float dkNoise(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
   float a=dot(dkHash(i)*2.-1.,f),b=dot(dkHash(i+vec2(1.,0.))*2.-1.,f-vec2(1.,0.));
   float c=dot(dkHash(i+vec2(0.,1.))*2.-1.,f-vec2(0.,1.)),d=dot(dkHash(i+vec2(1.))*2.-1.,f-vec2(1.));
   return mix(mix(a,b,u.x),mix(c,d,u.x),u.y)*1.4+.5;}
-float dkFbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*dkNoise(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(3.1,-1.7);a*=.5;}return s;}
+float dkFbm(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*dkNoise(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(3.1,-1.7);a*=.5;}return s;}
 void main(){
   vec3 d=normalize(vWorld-cameraPosition);
   vec3 col=dawnSky(d);
@@ -112,26 +112,30 @@ void main(){
   float r=acos(clamp(mu,-1.,1.));
   float disc=1.-smoothstep(.019,.024,r);
   col+=sunColor*(disc*9.+exp(-r*55.)*1.6+exp(-r*14.)*.45);
-  // A deck of cumulus over the sea, lit from below by the low sun: gold-rose undersides toward it, violet away.
+  // Cumulus over the sea, lit from below and the side by the low sun. Each cloud is lit where its edge faces the
+  // sun (its density falls off that way) and sits in lavender shade where it thickens away from it.
   if(d.y>-.02){
-    float y=max(d.y,0.)+.035;
-    vec2 cp=d.xz/y*.55+vec2(time*.004,time*.0016);
-    float n=dkFbm(cp*.9);
-    float band=smoothstep(.0,.06,d.y)*(1.-smoothstep(.22,.55,d.y));
-    float cover=mix(.66,.56,band);
-    float dens=smoothstep(cover,cover+.2,n)*band;
-    // Higher, thinner altocumulus: rippled flecks catching the first light.
-    vec2 ap=d.xz/(d.y+.12)*1.6+vec2(time*.002,0.);
-    float an=dkFbm(ap*1.4+vec2(9.,4.))*(.7+.3*sin(ap.x*6.+dkNoise(ap*2.)*3.));
-    float alto=smoothstep(.62,.8,an)*smoothstep(.08,.3,d.y)*(1.-smoothstep(.6,.95,d.y))*.75;
-    float toward=pow(max(0.,dot(normalize(d.xz+1e-5),normalize(dawnSunDir.xz))*.5+.5),2.2);
-    float thin=dens*(1.-dens)*4.;
-    vec3 lit=mix(cloudShade,cloudLit,toward)+sunColor*thin*pow(max(mu,0.),12.)*2.5;
-    // Bellies darker than the rims: denser cores sit in their own shade.
-    vec3 cc=mix(lit,cloudShade*.8,smoothstep(.55,1.,dens)*(1.-toward)*.5);
-    col=mix(col,cc,dens*.92);
-    vec3 ac=mix(cloudShade*1.15,cloudLit*1.2,toward*.8+.2);
-    col=mix(col,ac,alto*(1.-dens));
+    float y=max(d.y,0.)+.03;
+    vec2 cp=d.xz/y*.42+vec2(time*.003,time*.0012);
+    vec2 sdir=normalize(dawnSunDir.xz);
+    vec2 wq=vec2(dkFbm(cp*.35+7.),dkFbm(cp*.35-3.))*1.3;
+    float band=smoothstep(.0,.05,d.y)*(1.-smoothstep(.3,.7,d.y));
+    float cover=mix(.72,.6,band);
+    float base=dkFbm(cp*.8+wq);
+    float dens=smoothstep(cover,cover+.16,base)*band;
+    float ahead=smoothstep(cover,cover+.16,dkFbm((cp+sdir*.22)*.8+wq))*band;
+    float lit=clamp(.55+(dens-ahead)*2.2,0.,1.);
+    float toward=pow(max(0.,dot(normalize(d.xz+1e-5),sdir)*.5+.5),2.);
+    vec3 shade=mix(cloudShade,cloudShade*1.25+cloudLit*.15,toward);
+    vec3 cc=mix(shade,cloudLit*mix(.75,1.25,toward),lit*(.45+.55*toward));
+    // Silver-gold rims where thin cloud lies across the sun.
+    cc+=sunColor*dens*(1.-dens)*4.*pow(max(mu,0.),10.)*1.8;
+    col=mix(col,cc,dens*.94);
+    // Higher, thinner altocumulus flecks catching the first light.
+    vec2 ap=d.xz/(d.y+.12)*1.5+vec2(time*.002,0.);
+    float an=dkFbm(ap*1.3+vec2(9.,4.))*(.75+.25*sin(ap.x*5.+dkNoise(ap*2.)*3.));
+    float alto=smoothstep(.64,.82,an)*smoothstep(.1,.3,d.y)*(1.-smoothstep(.6,.95,d.y))*.6*(1.-dens);
+    col=mix(col,mix(cloudShade*1.3,cloudLit*1.15,.35+.65*toward),alto);
   }
   // The last degrees dissolve into the fog the far sea already sits in.
   col=mix(col,hazeColor,1.-smoothstep(-.012,.045,d.y));
@@ -226,8 +230,8 @@ export class DawnSky {
         sunColor: { value: toColor(sunTint, gain) },
         time: { value: 0 },
         hazeColor: { value: this.skyHorizon.clone() },
-        cloudShade: { value: toColor(mix3(lin(0x6c6a9a), MID_AWAY, 0.3), gain * 0.85) },
-        cloudLit: { value: toColor(lin(0xffb38a), gain * 1.35) },
+        cloudShade: { value: toColor(lin(0x9d93c4), gain * 0.95) },
+        cloudLit: { value: toColor(lin(0xffbf98), gain * 1.5) },
       },
     });
     // World teardown disposes materials, not the textures in their uniforms.
@@ -297,7 +301,7 @@ export class DawnSky {
 }
 
 /** Morning haze along the ground (FogExp2 density). */
-const FOG_DENSITY = 0.0029;
+const FOG_DENSITY = 0.0024;
 /** Half-width of the shadow box across the sun, metres. */
 const SHADOW_HALF = 72;
 /** How far up the sun ray the shadow camera sits: far enough for the citadel's towers to shade the climb. */
