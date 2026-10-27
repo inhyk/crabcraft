@@ -279,7 +279,8 @@ const SAND_AFTER = /* glsl */ `
     {
       vec3 Ls=normalize(vec3(sL.x,.65,sL.z));
       float rel=(dot(sN,Ls)-Ls.y)*1.5;
-      vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):min(-rel,.6)*vec3(0.,.06,.22);
+      // Turned away, the face also loses the lit desert's bounce (warm first): occlusion by orientation, a little darker.
+      vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):min(-rel,.6)*vec3(-.32,-.2,.12);
       float open=clamp(sCrest*.18,-.16,.1);
       outgoingLight+=(reflectedLight.indirectDiffuse+sFill)*(relC+open);
     }
