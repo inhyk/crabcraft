@@ -125,6 +125,12 @@ const SAND_STATE = /* glsl */ `
   float sLee=smoothstep(.3,.5,sSlope)*smoothstep(.1,.5,-dot(sGrad,SG_WIND)/max(sSlope,1e-4));
   // Crest (scoured) against trough (lag), metres above the blurred ground.
   float sCrest=clamp((sW.y-sAround)*.9,-1.,1.);
+  // Cavities see less sky (dawnContact.ts takes it from the indirect light): the foot of a slip face and the
+  // trough under a crest (metres under the few-metre blur), and the dune hollows (under a twenty-metre blur).
+  float sBig=sAround;
+  if(sNearW>0.)sBig=mix(sBig,textureLod(sandGroundTex,sGUV,7.).x+SAND_H0,sNearW);
+  if(sNearW<1.){vec2 fu=sandFarUV(sXZ);if(sandIn(fu))sBig=mix(textureLod(sandFarTex,fu,3.).x+SAND_H0,sBig,sNearW);}
+  float sCav=(1.-.42*smoothstep(.0,1.,(sAround-sW.y)/1.4))*(1.-.38*smoothstep(.0,1.,(sBig-sW.y)/5.));
   // Footprint field: depression, berm. The gradient's step widens with the pixel.
   vec2 sDG=vec2(0.);float sDep=0.,sBerm=0.,sDepW=0.;
   float sFall=snowDeformFalloff(sXZ);
@@ -244,6 +250,10 @@ const SAND_NORMAL = /* glsl */ `
     // Broken sand at a print's rim: clumps, not a bevel.
     if(sBerm+sDepW>.002){vec3 cl=snNoised(sXZ*24.);g+=cl.yz*.04*clamp(sBerm*10.+sDepW,0.,1.)*(1.-smoothstep(.01,.05,sFoot));}
     sN=normalize(vec3(-g.x,1.,-g.y));
+    // Heavy minerals (magnetite, hornblende) settle in the ripple troughs: dark lines a hand apart, the lag the
+    // crests lose. Only where ripples are resolved; on the trodden ground and the slip faces there are none.
+    float sLagLine=smoothstep(.15,.9,-fn.x/(.0062*max(rip,.05)))*(1.-smoothstep(.02,.05,sFoot))*smoothstep(.2,.6,rip)*(1.-sWet);
+    diffuseColor.rgb*=1.-.25*sLagLine;
     // Ripple micro-shadow: the ripple faces turned from a low sun hold shade a shadow map can never resolve.
     vec3 sLm=normalize(sandSunDir);
     float vD=smoothstep(-.02,.14,dot(sN,sLm)),vM=smoothstep(-.02,.14,dot(normalize(vec3(-sGrad.x,1.,-sGrad.y)),sLm));
@@ -258,6 +268,10 @@ const SAND_AFTER = /* glsl */ `
     float nl=clamp(dot(sN,sL),0.,1.);
     // The open sky over the sand: extra fill, weaker on faces that turn from it.
     vec3 sFill=diffuseColor.rgb*sandSkyFill*RECIPROCAL_PI*(.55+.45*sN.y);
+    // Hidden sky is hidden from this fill too (dawnContact.ts, the occlusion the indirect light already took).
+    #ifdef DAWN_CONTACT
+    sFill*=dawnAO;
+    #endif
     outgoingLight+=sFill;
     // Out of the sun the sky is brightest low toward the sun: faces turned that way (ripple stoss sides, sunward
     // dune flanks) catch more of it, faces turned away see the deep blue half (a shade bluer, hardly darker), and
@@ -265,7 +279,8 @@ const SAND_AFTER = /* glsl */ `
     {
       vec3 Ls=normalize(vec3(sL.x,.65,sL.z));
       float rel=(dot(sN,Ls)-Ls.y)*1.5;
-      vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):min(-rel,.6)*vec3(0.,.06,.22);
+      // Turned away, the face also loses the lit desert's bounce (warm first): occlusion by orientation, a little darker.
+      vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):min(-rel,.6)*vec3(-.32,-.2,.12);
       float open=clamp(sCrest*.18,-.16,.1);
       outgoingLight+=(reflectedLight.indirectDiffuse+sFill)*(relC+open);
     }
@@ -302,7 +317,7 @@ void RE_Direct_Sand(const in IncidentLight directLight,const in vec3 geometryPos
   float nl=saturate(dot(geometryNormal,directLight.direction));
   vec3 nW=inverseTransformDirection(geometryNormal,viewMatrix),lW=inverseTransformDirection(directLight.direction,viewMatrix);
   float journey=saturate(dot(normalize(vec3(nW.x,nW.y*.3,nW.z)),lW)*4.);
-  float diffuse=mix(nl,journey*.62,.75);
+  float diffuse=mix(nl,journey*.72,.75);
   reflectedLight.directSpecular+=nl*directLight.color*BRDF_GGX(directLight.direction,geometryViewDir,geometryNormal,material)*material.multiScatteringCompensation;
   vec3 F=F_Schlick(material.specularColor,material.specularF90,saturate(dot(geometryViewDir,normalize(directLight.direction+geometryViewDir))));
   reflectedLight.directDiffuse+=diffuse*directLight.color*BRDF_Lambert(material.diffuseContribution)*(1.-F);

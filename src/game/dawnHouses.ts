@@ -45,6 +45,8 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
   const toW = (p: THREE.Vector3) => turned ? p.clone().applyMatrix4(T) : p;
   const group = new THREE.Group(); group.name = 'goldsand-quarter';
   const wall = new Acc({uv: 'aPlUv', aux: 'aPl', k: 'aPlK'}), craft = new Acc({uv: 'aCrUv', aux: 'aCr'}), cloth = new Acc({uv: 'aClUv', aux: 'aCl'});
+  // Wall uv: metres to the wall's two corners (dawnPlaster wears the corners); far wherever block() does not say.
+  wall.uvLock = [9, 9];
   craft.a3 = [0, 0, 0]; cloth.a3 = [0, 0, 0];
   const woods: THREE.BufferGeometry[] = [], ropes: THREE.BufferGeometry[] = [];
   const props = new StaticBatch(kits.props, 'goldsand-quarter-props'), plants = new Scatter(kits.nature, 'goldsand-quarter-plants');
