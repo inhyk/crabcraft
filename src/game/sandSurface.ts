@@ -11,8 +11,8 @@ import { SAND_SURFACE_GLSL } from './sandTerrain';
  *
  * Albedo follows what the wind does to sand. Crests the wind scours are paler and finer; troughs keep the coarse,
  * darker, redder lag, and the flattest interdunes are paved with varnished gravel; slip faces are a shade darker and
- * smooth, streaked by grain flows; dry scrub holds a few stable hollows; the sea darkens and glosses the sand it
- * reaches. The citadel's climb is scoria with sand drifted into it, and the bluffs are bedded sandstone.
+ * smooth, streaked by grain flows; stable flats carry a greyer crust where scrub once held them; the sea darkens and
+ * glosses the sand it reaches. The dunes shade each other: the bake is marched toward the sun. The citadel's climb is scoria with sand drifted into it, and the bluffs are bedded sandstone.
  *
  * The normal sums slopes before it becomes a normal: the landform's slope read per pixel from the bake, the wind
  * ripples and megaripples (sandFine, band-limited to the pixel), the footprint field, and a grain at three scales.

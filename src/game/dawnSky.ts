@@ -3,9 +3,10 @@ import * as THREE from 'three';
 /*
  * Dawnharbor's stolen dawn: the sun held a few degrees over the eastern sea. One sky function (dawnSkyRadiance)
  * is baked once on the CPU into a small LUT, mirror-symmetric about the sun's bearing like snowSky.ts; the dome,
- * the sea's reflections, the fog, the sun and the hemisphere light all read the same numbers, so the gold over the
- * east, the violet zenith and the rose band opposite the sun (the Belt of Venus over the Earth's blue shadow) are
- * one sky everywhere. The dome adds the solar disc with its halo and a deck of lit cumulus on the shader side.
+ * the sea's reflections, the fog, the sun and the hemisphere light all read the same numbers, so the dust glowing
+ * gold over the east, the deep desert blue overhead and the dusty rose band opposite the sun (the Belt of Venus
+ * over the Earth's blue shadow) are one sky everywhere. The dome adds the solar disc with its halo and a few lit
+ * cumulus on the shader side.
  */
 
 const LUT_W = 64;
