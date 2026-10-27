@@ -3,15 +3,15 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {rng} from '../world/noise';
 import {addPatch} from '../world/materials';
 import {FROST_NOISE} from './frostPaving';
-import {boulderGeometry} from './snowRocks';
+import {DAWN_WIND} from '../sim/world/dawnGround';
 import {dawnGlows} from './dawnMaterials';
 import {DAWN_SAND} from './dawnPaving';
 import {dawnRocks} from './world3Colliders';
 
 /*
  * The rock groups ringing the citadel, World III's sculpted boulders. Each collider site (dawnRocks(), radius r + 1)
- * holds a main boulder and two or three companions, cut from snowRocks.ts's boulderGeometry (fracture planes with
- * rounded edges, a tilted bedding) and painted here: warm cross-bedded sandstone on the southern, seaward arc; dark
+ * holds a main stone and two or three companions, built bed by bed (strataGeometry: mesas, hoodoos, fallen slabs,
+ * long along the wind) and painted here: warm cross-bedded sandstone on the southern, seaward arc; dark
  * vesicular basalt towards the volcano, with sun-baked tops, ochre and grey-green lichen and blown sand banked at
  * the foot. Every third basalt group is split by a lava fissure that glows and breathes. All of it is one mesh and
  * one draw (plus one draw of vent glows).
@@ -57,14 +57,17 @@ function boulderMaterial(uniforms: {dbTime: {value: number}; dbSand: {value: THR
         // Beds of uneven thickness in world height (never stretched with the stone), each its own tone (honey,
         // cream, rose, a darker iron band now and then), thin recessed partings between them, cross-bedded laminae
         // slanting inside the thick ones.
-        float by=vDbW.y+n1*.12,bi=floor(by/.42),bh=fpHash12(vec2(bi,7.1));
-        float bt=.28+.5*bh,bf=fract(by/.42);
-        float bk=fpHash12(vec2(bi,3.3));
-        vec3 bedC=bk<.3?vec3(.7,.47,.26):bk<.55?vec3(.76,.58,.38):bk<.82?vec3(.66,.4,.27):vec3(.48,.28,.16);
-        float lamX=sin((vDbW.y-dot(vDbW.xz,vec2(.55,.3))*(bh-.5))*38.+n2*1.2)*.5+.5;
+        // The beds are geometry (strataGeometry): each carries its tone in vertex colour g; inside it laminae of a
+        // hand's thickness, a recessed parting now and then.
+        float by=vDbW.y+n1*.05,bi=floor(by/.13),bh=fpHash12(vec2(bi,7.1)),bf=fract(by/.13);
+        float bk=bed;
+        vec3 bedC=bk<.3?vec3(.7,.45,.24):bk<.55?vec3(.77,.58,.36):bk<.82?vec3(.68,.41,.23):vec3(.52,.3,.15);
+        bedC*=.93+.1*bh;
+        float side=1.-smoothstep(.55,.85,abs(bN.y));
+        float lamX=mix(.5,sin((vDbW.y-dot(vDbW.xz,vec2(.55,.3))*(bh-.5))*38.+n2*1.2)*.5+.5,side);
         vec3 ss=bedC*(.9+.12*lamX*step(.45,bh));
-        float part=1.-smoothstep(.0,.06,min(bf,1.-bf));
-        ss*=1.-part*.35;
+        float part=(1.-smoothstep(.0,.08,min(bf,1.-bf)))*step(.72,bh);
+        ss*=1.-part*.25*side;
         ss=mix(ss,vec3(.55,.3,.2),smoothstep(.62,.9,n1*.5+.5)*.3);
         float lam2=lamX;
         ss=mix(ss,ss*vec3(.72,.62,.55),(1.-bN.y*bN.y)*smoothstep(.2,.7,fpNoise(vec2(vDbW.x+vDbW.z,vDbW.y*.15)*2.))*.5);
@@ -82,7 +85,7 @@ function boulderMaterial(uniforms: {dbTime: {value: number}; dbSand: {value: THR
         bC=mix(bC,lc*(.85+.3*n3),lich*.8*(1.-vDbK.y));
         // Blown sand banked against the foot and lodged on the ledges.
         float wind=max(0.,dot(bN.xz,normalize(vec2(.9,.35))));
-        float skirt=1.-smoothstep(.03,mix(.32,.16,vDbK.x)+.2*(n2*.5+.5)+.55*wind,above);
+        float skirt=1.-smoothstep(.03,.38+.25*(n2*.5+.5)+.8*wind,above);
         float ledge=smoothstep(.84,.96,bN.y+n2*.08)*smoothstep(.6,.85,n1*.5+.5)*(1.-vDbK.x*.85);
         float sand=max(skirt,ledge*.8);
         // Heat: the rock around a fissure is reddened and the parting itself glows.
@@ -102,7 +105,7 @@ function boulderMaterial(uniforms: {dbTime: {value: number}; dbSand: {value: THR
           float fade=(1.-smoothstep(14.,45.,length(vViewPosition)))*(1.-sand*.7);
           if(fade>.01){
             vec3 q=vDbW;float e=.03;
-            #define DB_H(Q) (fpNoise((Q).xz*3.+(Q).y)*.35+fpNoise((Q).zy*11.)*.2+fpNoise((Q).xy*11.)*.2+vDbK.x*smoothstep(.55,.8,fpNoise((Q).xz*17.+(Q).y*9.)*.5+.5)*-.3+(1.-vDbK.x)*sin((Q).y*23.+fpNoise((Q).xz*2.4)*3.)*.12)
+            #define DB_H(Q) (fpNoise((Q).xz*3.+(Q).y)*.35+(fpNoise((Q).zy*11.)*bA.x+fpNoise((Q).xz*11.+3.1)*bA.y+fpNoise((Q).xy*11.)*bA.z)*.3+vDbK.x*smoothstep(.55,.8,fpNoise((Q).xz*17.+(Q).y*9.)*.5+.5)*-.3+(1.-vDbK.x)*side*sin((Q).y*23.+fpNoise((Q).xz*2.4)*3.)*.12)
             float h0=DB_H(q);
             vec3 g=vec3(DB_H(q+vec3(e,0.,0.))-h0,DB_H(q+vec3(0.,e,0.))-h0,DB_H(q+vec3(0.,0.,e))-h0)/e;
             vec3 nw=inverseTransformDirection(normal,viewMatrix);
@@ -115,25 +118,100 @@ function boulderMaterial(uniforms: {dbTime: {value: number}; dbSand: {value: THR
   return m;
 }
 
+/** One stone's form: a flat-topped mesa block, a hoodoo (narrow neck under a wide caprock) or a fallen slab. */
+export interface StrataStone {r: number; h: number; kind: 'mesa' | 'hoodoo' | 'slab'; elong: number; seed: number}
+
+/** A smooth periodic noise round the outline: a few sines with random phases, about -1..1. */
+function ringNoise(R: () => number, terms: number) {
+  const f: [number, number, number][] = [];
+  for (let k = 0; k < terms; k++) f.push([2 + k * 2 + Math.floor(R() * 2), R() * Math.PI * 2, 1 / (1 + k * .8)]);
+  const norm = f.reduce((a, [, , w]) => a + w, 0);
+  return (t: number) => f.reduce((a, [n, ph, w]) => a + Math.sin(t * n + ph) * w, 0) / norm;
+}
+
 /**
- * Wind carving in place (stone-local, y up): the foot is undercut by sand-blast (a narrower neck in the lowest
- * third, a mushroom or hoodoo when deep), and the strata stand out as horizontal ledges where harder beds resist.
+ * Wind-carved sandstone built the way it weathers, bed by bed (stone-local, y up, x along the wind): every bed is a
+ * prism of its own outline with a rounded upper edge, hard beds standing proud and soft ones recessed, so the strata
+ * read as crisp ledges and partings in silhouette, not as paint on a blob. The lowest beds are sand-blasted into a
+ * neck (the undercut of a yardang foot, deep enough on a hoodoo to leave the caprock overhanging), the top bed is
+ * planed flat. The outline is a yardang's: long along the wind, the windward nose blunt and the lee tail tapered.
+ * Beds stop at hard creases (each bed's sides, its ledge and the cap own their vertices). Vertex colour: r the
+ * skylight a face sees (dark under an overhang and low on the neck), g the bed's tone.
  */
-function windCarve(g: THREE.BufferGeometry, neck: number, R: () => number) {
-  const p = g.getAttribute('position') as THREE.BufferAttribute;
-  let y0 = Infinity, y1 = -Infinity;
-  for (let i = 0; i < p.count; i++) { y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i)); }
-  const H = y1 - y0, bed = .32 + R() * .18, ph = R() * 6;
-  for (let i = 0; i < p.count; i++) {
-    const y = p.getY(i), t = (y - y0) / H;
-    const under = neck + (1 - neck) * THREE.MathUtils.smoothstep(t, .06, .42) + (1 - neck) * .25 * (1 - THREE.MathUtils.smoothstep(t, 0, .07));
-    const f = (y - y0) / bed + ph, fr = f - Math.floor(f);
-    const ledge = 1 + .045 * THREE.MathUtils.smoothstep(fr, .55, .8) - .03 * THREE.MathUtils.smoothstep(fr, .85, 1);
-    p.setX(i, p.getX(i) * under * ledge); p.setZ(i, p.getZ(i) * under * ledge);
-    // A flat caprock: the harder top bed planed level by the wind, a little proud of the face below.
-    if (t > .78) { p.setY(i, y0 + H * (.78 + (t - .78) * .3)); p.setX(i, p.getX(i) * 1.04); p.setZ(i, p.getZ(i) * 1.04); }
+export function strataGeometry(k: StrataStone): THREE.BufferGeometry {
+  const R = rng(k.seed * 7919 + 13), M = k.kind === 'slab' ? 16 : 30;
+  const outline = ringNoise(R, 4);
+  const bury = k.kind === 'slab' ? k.h * .35 : k.h * .22, top = k.h, H = top + bury;
+  // Joints: two or three vertical cracks cut through the whole stack, the stone splitting along them.
+  const joints = k.kind === 'slab' ? [] : Array.from({length: 2 + Math.floor(R() * 2)}, () => [R() * Math.PI * 2, .05 + R() * .05, .08 + R() * .08]);
+  // Beds alternate: thick soft ones the wind hollows into a concave slope, thin hard ones that stand out as ledges.
+  type Bed = {y0: number; y1: number; s: number; hard: boolean; tone: number; own: (t: number) => number; ox: number; oz: number};
+  const beds: Bed[] = [];
+  if (k.kind === 'slab') {
+    const mid = -bury + H * (.45 + R() * .2);
+    beds.push({y0: -bury, y1: mid, s: 1, hard: false, tone: R(), own: ringNoise(R, 2), ox: 0, oz: 0}, {y0: mid, y1: top, s: .97, hard: true, tone: R(), own: ringNoise(R, 2), ox: 0, oz: 0});
+  } else {
+    let y = -bury, hard = R() < .4;
+    while (y < top - .05) {
+      let th = hard ? Math.max(.12, H * (.05 + R() * .05)) : H * (.13 + R() * .14);
+      if (top - (y + th) < Math.max(.15, H * .08)) th = top - y;
+      const t = (y + th / 2 + bury) / H;
+      // Section: the sand-blasted neck low down (deep on a hoodoo), the caprock wider than what holds it up.
+      let s = k.kind === 'hoodoo' ? .48 + .52 * THREE.MathUtils.smoothstep(t, .3, .82) : .78 + .22 * THREE.MathUtils.smoothstep(t, .04, .38);
+      s *= hard ? 1.05 : .97;
+      beds.push({y0: y, y1: y + th, s, hard, tone: R(), own: ringNoise(R, 3), ox: (R() - .5) * .08, oz: (R() - .5) * .08});
+      y += th; hard = !hard;
+    }
+    const cap = beds[beds.length - 1];
+    cap.s = Math.max(cap.s, k.kind === 'hoodoo' ? 1.1 : 1.02); cap.hard = true;
+    beds[0].s *= 1.05; // the buried foot flares into the sand
   }
+  const pos: number[] = [], col: number[] = [], idx: number[] = [];
+  const at = (bed: Bed, i: number, scale: number, yy: number, occ: number) => {
+    const th = i / M * Math.PI * 2, c = Math.cos(th), sn = Math.sin(th);
+    let rad = 1 + .16 * outline(th) + (bed.hard ? .04 : .08) * bed.own(th);
+    for (const [ja, jw, jd] of joints) { const d = Math.atan2(Math.sin(th - ja), Math.cos(th - ja)); rad *= 1 - jd * Math.exp(-((d / jw) ** 2)); }
+    rad *= k.r * scale;
+    // Yardang outline: long downwind (+x), the lee tail narrower.
+    const x = c * rad * k.elong * (c > 0 ? 1.12 : .9) + bed.ox * k.r, z = sn * rad * (1 - .28 * Math.max(0, c)) + bed.oz * k.r;
+    pos.push(x, yy, z); col.push(occ, bed.tone, 0);
+    return pos.length / 3 - 1;
+  };
+  const band = (rings: number[]) => { // quads between consecutive rings of M vertices each
+    for (let r = 1; r < rings.length; r++) for (let i = 0; i < M; i++) {
+      const a = rings[r - 1] + i, b = rings[r - 1] + (i + 1) % M, c = rings[r] + i, d = rings[r] + (i + 1) % M;
+      idx.push(a, c, b, b, c, d);
+    }
+  };
+  const ring = (bed: Bed, scale: number, yy: number, occ: number) => { let first = -1; for (let i = 0; i < M; i++) { const v = at(bed, i, scale, yy, occ); if (first < 0) first = v; } return first; };
+  const occAt = (yy: number) => .5 + .5 * THREE.MathUtils.smoothstep((yy + bury) / H, .1, .9);
+  for (let b = 0; b < beds.length; b++) {
+    const bed = beds[b], next = beds[b + 1], th = bed.y1 - bed.y0;
+    const ch = Math.min(bed.hard ? .06 : .14, th * .3), inset = ch / k.r * .8;
+    // Under an overhanging bed this one sees little sky; a hollow soft bed is darker in its waist.
+    const shade = next && next.s > bed.s ? .55 : 1, below = b && beds[b - 1].s > bed.s ? .7 : 1;
+    const rings = [ring(bed, bed.s * (bed.hard ? 1 : .985), bed.y0, occAt(bed.y0) * below)];
+    if (!bed.hard) rings.push(ring(bed, bed.s * .88, bed.y0 + th * .5, occAt(bed.y0 + th * .5) * .85 * Math.min(shade, below) ** .5));
+    rings.push(ring(bed, bed.s * .975, bed.y1 - ch, occAt(bed.y1) * shade), ring(bed, bed.s * .975 - inset, bed.y1 - ch * .12, occAt(bed.y1) * shade));
+    band(rings);
+    if (next) {
+      // The parting: a ledge (the next bed set back) or the underside of an overhang, its own crease.
+      const l0 = ring(bed, bed.s * .975 - inset, bed.y1 - ch * .12, .85 * shade), l1 = ring(next, next.s * (next.hard ? 1 : .985), bed.y1, .8);
+      band([l0, l1]);
+    } else {
+      // The caprock's planed top, fanned from its middle.
+      const c0 = ring(bed, bed.s * .975 - inset, bed.y1 - ch * .12, 1);
+      pos.push(bed.ox * k.r, bed.y1 - ch * .05, bed.oz * k.r); col.push(1, bed.tone, 0);
+      const cv = pos.length / 3 - 1;
+      for (let i = 0; i < M; i++) idx.push(c0 + i, cv, c0 + (i + 1) % M);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
   g.computeVertexNormals();
+  return g;
 }
 
 export interface DawnBoulders {group: THREE.Group; update(time: number): void}
@@ -143,30 +221,36 @@ export function dawnBoulders(height: (x: number, z: number) => number, sand = DA
   const group = new THREE.Group(); group.name = 'dawnreach-boulders';
   const geos: THREE.BufferGeometry[] = [], vents: {pos: THREE.Vector3; size: number}[] = [];
   let count = 0;
+  // Every stone's long axis lies along the wind, give or take; local +x is downwind.
+  const windYaw = -Math.atan2(DAWN_WIND[1], DAWN_WIND[0]);
+  const reach = (g: THREE.BufferGeometry) => { const p = g.getAttribute('position'); let m = 0; for (let v = 0; v < p.count; v++) m = Math.max(m, Math.hypot(p.getX(v), p.getZ(v))); return m; };
+  const fit = (g: THREE.BufferGeometry, max: number) => { const m = reach(g); if (m > max) g.scale(max / m, 1, max / m); return Math.min(m, max); };
   for (const site of dawnBoulderSites()) {
     const R = rng(site.i * 977 + 31);
-    // The main stone fills most of the collider; companions lean against it, all inside radius r + 0.9.
-    const stones: {dx: number; dz: number; r: number; h: number; yaw: number}[] = [{dx: 0, dz: 0, r: site.r * .8, h: site.r * 1.15, yaw: R() * Math.PI * 2}];
+    // The main stone fills most of the collider (radius r + 1): a mesa block, or on every other big site a hoodoo.
+    const tall = site.r >= 3 && site.i % 2 === 0;
+    const main: StrataStone = {r: site.r * .62, h: tall ? site.r * 1.7 : site.r * (.85 + R() * .3), kind: tall ? 'hoodoo' : 'mesa', elong: 1.1 + R() * .25, seed: site.i * 31 + 3};
+    const parts: {g: THREE.BufferGeometry; dx: number; dz: number; yaw: number; tilt: number}[] = [];
+    const mg = strataGeometry(main); fit(mg, site.r + .55);
+    parts.push({g: mg, dx: 0, dz: 0, yaw: windYaw + (R() - .5) * .5, tilt: 0});
+    // Companions: blocks fallen off the caprock lying tilted half in the sand, and a low stack or two.
     const n = 2 + Math.floor(R() * 2);
     for (let k = 0; k < n; k++) {
-      const a = R() * Math.PI * 2, rr = site.r * (.3 + R() * .22), d = Math.min(site.r * .82 + rr * .4, site.r + .9 - rr);
-      stones.push({dx: Math.cos(a) * d, dz: Math.sin(a) * d, r: rr, h: rr * (.7 + R() * .4), yaw: R() * Math.PI * 2});
+      const slab = k === 0 || R() < .4, rr = site.r * (slab ? .3 + R() * .15 : .22 + R() * .14);
+      const g = strataGeometry({r: rr, h: slab ? rr * (.5 + R() * .25) : rr * (.9 + R() * .5), kind: slab ? 'slab' : 'mesa', elong: 1.05 + R() * .3, seed: site.i * 31 + k * 7 + 5});
+      const m = reach(g), a = R() * Math.PI * 2, d = Math.max(0, Math.min(site.r * .75 + m * .5, site.r + .85 - m));
+      parts.push({g, dx: Math.cos(a) * d, dz: Math.sin(a) * d, yaw: R() * Math.PI * 2, tilt: slab ? .1 + R() * .22 : 0});
     }
-    for (const [k, s] of stones.entries()) {
-      const x = site.x + s.dx, z = site.z + s.dz;
+    for (const [k, s] of parts.entries()) {
+      const x = site.x + s.dx, z = site.z + s.dz, g = s.g, m = reach(g);
       let low = Infinity;
-      for (let a = 0; a < 12; a++) for (const f of [.4, .9]) low = Math.min(low, height(x + Math.cos(a * .52) * s.r * f, z + Math.sin(a * .52) * s.r * f));
-      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-      const tall = k === 0 && site.r >= 3 && site.i % 2 === 0;
-      const g = boulderGeometry({r: s.r, h: tall ? s.r * 1.55 : s.h, seed: site.i * 31 + k * 7 + 3}, k === 0 ? (site.r >= 3 ? 11 : 9) : 6, 1.3);
-      windCarve(g, k === 0 ? (tall ? .55 : .68) : .8, R);
-      const m = new THREE.Matrix4().compose(new THREE.Vector3(x, low - .1 * s.h, z), q, new THREE.Vector3(1, 1, 1));
-      g.applyMatrix4(m);
+      for (let a = 0; a < 12; a++) for (const f of [.4, .9]) low = Math.min(low, height(x + Math.cos(a * .52) * m * f, z + Math.sin(a * .52) * m * f));
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, s.yaw, s.tilt, 'YXZ'));
+      g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, low, z), q, new THREE.Vector3(1, 1, 1)));
       const pos = g.getAttribute('position') as THREE.BufferAttribute, kind = new Float32Array(pos.count * 3);
       for (let v = 0; v < pos.count; v++) kind.set([site.basalt ? 1 : 0, site.vent && k === 0 ? 1 : 0, pos.getY(v) - height(pos.getX(v), pos.getZ(v))], v * 3);
       g.setAttribute('aKind', new THREE.BufferAttribute(kind, 3));
       geos.push(g); count++;
-      // The vent breathes heat over the split crown of the main stone.
       if (site.vent && k === 0) { g.computeBoundingBox(); vents.push({pos: new THREE.Vector3(x, g.boundingBox!.max.y + .2, z), size: 2.2 + site.r * .5}); }
     }
   }
