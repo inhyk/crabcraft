@@ -98,7 +98,7 @@ float dpFlag(vec2 q,float S,float salt,out float id,out vec2 local,out vec2 half
   vec2 best=vec2(0.),bc=vec2(0.);float bd=1e9;
   for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 c=vec2(float(i),float(j));vec2 o=c+.12+.76*fpHash22(gi+c+salt);vec2 d=o-gf;float dd=dot(d,d);if(dd<bd){bd=dd;best=d;bc=c;}}
   float ed=1e9;vec2 en=vec2(1.,0.);
-  for(int j=-2;j<=2;j++)for(int i=-2;i<=2;i++){vec2 c=bc+vec2(float(i),float(j));vec2 o=c+.12+.76*fpHash22(gi+c+salt);vec2 d=o-gf;vec2 dv=d-best;if(dot(dv,dv)>1e-5){vec2 n=normalize(dv);float e=dot(.5*(best+d),n);if(e<ed){ed=e;en=n;}}}
+  for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 c=bc+vec2(float(i),float(j));vec2 o=c+.12+.76*fpHash22(gi+c+salt);vec2 d=o-gf;vec2 dv=d-best;if(dot(dv,dv)>1e-5){vec2 n=normalize(dv);float e=dot(.5*(best+d),n);if(e<ed){ed=e;en=n;}}}
   id=fpHash12(gi+bc+salt*1.7);
   local=-best*S;halfSz=vec2(S*.42);grad=en;
   // ed: distance to the nearest edge (cell units, positive inside). Joints a few centimetres wide, corners rounded.
@@ -269,9 +269,9 @@ dpCol*=1.-dpBlanket*dpRip*.06*(1.-dpBlur);
 diffuseColor.rgb*=dpCol;
 diffuseColor.a*=dpAlpha;
 float dpShade=1.;
-if(dpDetail>.5&&dpSandA<.99&&dpFar<.99&&dpKerb<.5){
+if(dpDetail>.5&&dpSandA<.99&&dpFar<.99&&dpKerb<.5&&dpFoot<.05){
   float sl=max(length(dpSun.xz),1e-3);vec2 sd=dpSun.xz/sl;float tanE=dpSun.y/sl,h0=max(dpH,dpS*dpSandA),occ=0.;
-  for(int k=1;k<=3;k++){float d=float(k*k)*.012;float id2;vec2 l2,h2,g2,cg2;float sl2;vec2 q2=dpQ+vec2(dot(sd,dpAx1),dot(sd,dpAx2))*d;float o2=dpRing>.5?dpCourse(q2,dpRH,dpS0,dpS1,dpSalt,id2,l2,h2,g2):dpFlag(q2,dpRH,dpSalt,id2,l2,h2,g2);float hk=dpDome(-o2,id2,l2,h2,.3,sl2,cg2);occ=max(occ,clamp(((hk-h0)*DP_RELIEF-d*tanE)/.005,0.,1.));}
+  for(int k=1;k<=2;k++){float d=float(k*k)*.016;float id2;vec2 l2,h2,g2,cg2;float sl2;vec2 q2=dpQ+vec2(dot(sd,dpAx1),dot(sd,dpAx2))*d;float o2=dpRing>.5?dpCourse(q2,dpRH,dpS0,dpS1,dpSalt,id2,l2,h2,g2):dpFlag(q2,dpRH,dpSalt,id2,l2,h2,g2);float hk=dpDome(-o2,id2,l2,h2,.3,sl2,cg2);occ=max(occ,clamp(((hk-h0)*DP_RELIEF-d*tanE)/.005,0.,1.));}
   dpShade=1.-occ*.75;
 }
 `;
