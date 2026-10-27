@@ -195,7 +195,7 @@ export function dawnCraft(): THREE.MeshStandardMaterial {
 }
 
 /** dawnCloth patterns (aCl.y): plain, striped, rug, carpet. */
-export const CL = {plain: 0, stripe: 1, rug: 2} as const;
+export const CL = {plain: 0, stripe: 1, rug: 2, kilim: 3} as const;
 
 export function dawnCloth(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({name: 'goldsand-cloth', color: '#ffffff', roughness: .95, vertexColors: true, side: THREE.DoubleSide});
@@ -211,6 +211,17 @@ export function dawnCloth(): THREE.MeshStandardMaterial {
       float weave=.92+.08*sin(vAdW.x*190.+vAdW.z*170.)*sin(vAdW.y*210.);
       vec3 c=tint;
       if(pat>.5&&pat<1.5){float s=step(.5,fract(uv.x/.36));c=mix(tint,vec3(.9,.84,.72),s*.85);}
+      else if(pat>2.5){
+        // Kilim: bands across the rug, stepped zigzags in the wide ones, a plain selvedge.
+        float y=uv.y*7.,band=floor(y),fy=fract(y);
+        vec3 ind=vec3(.09,.12,.3),sf=vec3(.8,.55,.12),cr=vec3(.86,.78,.62);
+        float k=mod(band,4.);
+        c=k<1.?tint:k<2.?cr:k<3.?tint*.7:ind;
+        float zz=abs(fract(uv.x*5.+(k<2.?.0:.5))-.5)*2.;zz=floor(zz*4.)/4.;
+        c=mix(c,k<2.?sf:cr,step(abs(fy-.5)*2.,zz*.7)*step(.5,mod(band,2.)));
+        c=mix(c,ind,1.-smoothstep(.04,.05,min(uv.x,1.-uv.x)));
+        c*=.9+.1*fpNoise(uv*30.);
+      }
       else if(pat>1.5){
         // Rug: field, guard stripes and a border, a stepped diamond medallion. uv is 0..1 across the rug.
         vec2 d=min(uv,1.-uv);float e=min(d.x,d.y);

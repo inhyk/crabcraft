@@ -130,7 +130,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     const d0 = i0.clone().add(new V(0, -.3, 0)), d1 = i1.clone().add(new V(0, -.3, 0));
     const total = out + .38 + .3, s1 = out / total, s2 = (out + .38) / total;
     const seg = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3, va: number, vb: number) => {
-      cloth.col.set(color); cloth.a3 = [0, CL.rug, seed];
+      cloth.col.set(color); cloth.a3 = [0, seed % 2 ? CL.kilim : CL.rug, seed];
       const n = new V().subVectors(b, a).cross(new V().subVectors(d, a)).normalize();
       for (const [p, uu, vv] of [[a, 0, va], [b, 1, va], [c, 1, vb], [a, 0, va], [c, 1, vb], [d, 0, vb]] as const) cloth.vert(p, n, uu, vv);
     };
@@ -146,7 +146,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
       const P = (uu: number, vv: number) => a.clone().lerp(b, uu).lerp(d.clone().lerp(c, uu), vv).addScaledVector(f.N, .025 * Math.sin(Math.PI * uu) * vv);
       const q = [[i / nu, j / nv], [(i + 1) / nu, j / nv], [(i + 1) / nu, (j + 1) / nv], [i / nu, (j + 1) / nv]];
-      for (const k of [0, 1, 2, 0, 2, 3]) { cloth.a3 = [q[k][1] * .25, CL.rug, seed]; cloth.vert(P(q[k][0], q[k][1]), f.N, q[k][0], 1 - q[k][1]); }
+      for (const k of [0, 1, 2, 0, 2, 3]) { cloth.a3 = [q[k][1] * .25, seed % 3 === 0 ? CL.kilim : CL.rug, seed]; cloth.vert(P(q[k][0], q[k][1]), f.N, q[k][0], 1 - q[k][1]); }
     }
     wood(new THREE.CylinderGeometry(.025, .025, w + .2, 6), basis(a.clone().lerp(b, .5).addScaledVector(f.N, .01), f.N, f.U, new V().crossVectors(f.N, f.U)), null, 0, new V(0, 1, 0));
     stats.carpets++;
@@ -212,8 +212,8 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
         let doorU = -10, doorW = 0;
         if (f === b.door) {
           doorU = L / 2;
-          if (b.role === 'forge') { doorW = 3.8; add(f, {u0: doorU - 1.9, u1: doorU + 1.9, v0: 0, v1: 3.35, arch: true, depth: 3.6, kind: CR.room, glow: 1.4}); }
-          else if (b.role === 'shop') { doorW = 2.4; add(f, {u0: doorU - 1.2, u1: doorU + 1.2, v0: 0, v1: 2.55, arch: true, depth: 1.8, kind: CR.room, glow: .55}); }
+          if (b.role === 'forge') { doorW = 3.8; add(f, {u0: doorU - 1.9, u1: doorU + 1.9, v0: 0, v1: 3.35, arch: true, depth: 3.6, kind: CR.room, glow: .16}); }
+          else if (b.role === 'shop') { doorW = 2.4; add(f, {u0: doorU - 1.2, u1: doorU + 1.2, v0: 0, v1: 2.55, arch: true, depth: 1.8, kind: CR.room, glow: .2}); }
           else if (b.role === 'shrine') { doorW = 1.9; add(f, {u0: doorU - .95, u1: doorU + .95, v0: 0, v1: 3.1, arch: true, depth: .6, kind: CR.door, color: '#c9a24a', tiled: true}); }
           else {
             doorW = b.role === 'tavern' ? 1.6 : 1.25;
@@ -290,7 +290,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
         for (let u = .45 + (R() * .1); u < L - .3; u += step) {
           if ((holes[f] ?? []).some(h => u > h.u0 - .2 && u < h.u1 + .2 && v > h.v0 - .25 && v < h.v1 + .35)) continue;
           const out = .26 + R() * .08, p = facePoint(F, u, v + (R() - .5) * .03).addScaledVector(F.N, out);
-          wood(vigaGeo(), basis(p, F.U, F.N, new V().crossVectors(F.U, F.N)), VIGA, .55 + R() * .3, new V(0, 1, 0));
+          wood(vigaGeo(), basis(p, F.U, F.N, new V().crossVectors(F.U, F.N)), VIGA, .85 + R() * .15, new V(0, 1, 0));
           stats.vigas++;
         }
       }
@@ -411,7 +411,7 @@ export function dawnHouses(height: (x: number, z: number) => number, kits: {prop
     wall.col.set('#2c2420'); box(wall, cx, G.roof + 3.6 + .02, cz, .7, .02, .7);
     wall.gy = G.ground;
     const hearth = facePoint(F, F.L / 2, .7).addScaledVector(F.N, -3.2);
-    for (const [du, dv, s] of [[0, 0, 2.2], [-.5, .25, 1.4], [.6, .1, 1.2], [0, .9, 1.6]]) glows.push({pos: hearth.clone().addScaledVector(F.U, du).add(new V(0, dv, 0)), size: s});
+    for (const [du, dv, s] of [[0, -.25, .9], [-.35, -.1, .6], [.4, -.2, .55]]) glows.push({pos: hearth.clone().addScaledVector(F.U, du).add(new V(0, dv, 0)), size: s});
     const yaw = faceYaw(F.N), at = (u: number, n: number) => facePoint(F, u, 0).addScaledVector(F.N, n);
     const an = at(F.L / 2 - 2.6, 1.3); prop('Anvil_Log', an.x, height(an.x, an.z), an.z, yaw + .3); prop('Anvil', an.x, height(an.x, an.z) + .62, an.z, yaw + .3);
     const wb = at(F.L / 2 + 2.9, 1.1); prop('Workbench', wb.x, height(wb.x, wb.z), wb.z, yaw + Math.PI / 2);

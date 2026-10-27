@@ -121,7 +121,7 @@ try {
   assert.deepEqual(r.npcPushed, [], "villagers' posts clear");
   assert.deepEqual(r.unreached, [], 'every target reachable from the square');
   assert.deepEqual(routes, [], 'lanes, cross street and both harbour roads open');
-  for (const [name, x, z, yaw, pitch, dist] of [['street', 27, 64, -1.4, .14, 9], ['square', 4, 50, -1.0, .35, 22], ['shrine', 24, 53.4, -1.57, .18, 10], ['tavern', -26, 64, 1.57, .16, 9], ['roofs', 38, 60, -.6, .9, 24], ['sabat', 29, 84, -1.57, .12, 8]]) {
+  for (const [name, x, z, yaw, pitch, dist] of [['street', 27, 64, -1.4, .14, 9], ['square', 4, 50, -1.0, .35, 22], ['shrine', 24, 53.4, -1.57, .18, 10], ['tavern', -26, 64, 1.57, .16, 9], ['roofs', 36, 62, -.6, .62, 16], ['sabat', 29, 84, -1.57, .12, 8]]) {
     await p.evaluate(([x, z, yaw, pitch, dist]) => { const g = window.app.current.game; g.player.unit.teleport(g.world, x, z, yaw + Math.PI); g.follow.yaw = yaw; g.follow.pitch = pitch; g.follow.distance = dist; g.follow.cut(); }, [x, z, yaw, pitch, dist]);
     await p.waitForTimeout(900);
     await p.screenshot({path: `tmp/qa/dawn-houses-${name}.png`});
