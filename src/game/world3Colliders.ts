@@ -6,6 +6,7 @@ import type { Lot } from '../world/layout';
 import { registerDawnScenery } from './dawnScenery';
 import { citadelHolds, registerDawnCitadel } from './dawnCitadelLayout';
 import { registerDawnHouses } from './dawnHousePlan';
+import { registerDuneClusters } from './dawnDuneClusters';
 import type { IslandPath } from './islandPaths';
 
 export const DAWN_PATHS: IslandPath[] = [
@@ -142,5 +143,7 @@ export function layoutDawnreach(): Collision {
   registerDawnHouses(h, col);
   for (const { x, z, scale } of dawnForest()) col.addCircle(x, z, 0.5 * scale, h(x, z), h(x, z) + 10);
   for (const { x, z } of dawnGrove()) col.addCircle(x, z, 0.4, h(x, z), h(x, z) + 8);
+  // The open desert's ruins, obelisk, cargo, bones and wind fence (dawnDuneClusters.ts).
+  registerDuneClusters(h, col);
   return col;
 }
