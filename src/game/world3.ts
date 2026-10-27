@@ -5,6 +5,7 @@ import {dawnDressing,type DawnDressing} from './dawnDressing';
 import {dawnRequestLook} from './dawnRequestProps';
 import {dawnPalms,type DawnPalms,type PalmSpot} from './dawnPalms';
 import {Scatter} from '../world/kit';
+import {rng} from '../world/noise';
 import {StarWind} from './starWind';
 import * as THREE from 'three';
 import {DawnSky} from './dawnSky';
@@ -87,14 +88,22 @@ export class DawnIsland {
    ...quarterPalms().map(([x,z,h,lean],i)=>({x,z,h,lean,dir:i*2.39+.7,seed:200+i}))];
   this.palms=dawnPalms(spots,(x,z)=>this.height(x,z));this.root.add(this.palms.group);
   const count=spots.length;
-  const dry=['Grass_Wispy_Short','Grass_Common_Short','Bush_Common'].filter(n=>nature.has(n)),oasis=['Fern_1','Grass_Common_Tall','Flower_3_Group','Flower_4_Group','Bush_Common_Flowers'].filter(n=>nature.has(n));
+  const dry=['Grass_Wispy_Short'].filter(n=>nature.has(n)),oasis=['Fern_1','Grass_Common_Tall','Flower_3_Group','Flower_4_Group','Bush_Common_Flowers'].filter(n=>nature.has(n));
   let meadow=0;
-  for(let i=0;i<1100;i++){
-   const x=Math.sin(i*127.1+9)*85,z=-18+(Math.sin(i*311.7+21)*.5+.5)*122;
+  // Scrub grows in clumps where the sand holds water, in the hollows (lower than the ground five metres round), not
+  // in rows: cluster centres, Poisson-spaced plants inside each; the first four clumps are the oasis.
+  const R=rng(4207),cand:[number,number][]=[];
+  for(let c=0;c<80;c++){
+   const oasisC=c<4,cx=oasisC?-65+(R()-.5)*16:(R()*2-1)*85,cz=oasisC?45+(R()-.5)*16:-18+R()*122;
+   let ring=0;for(let k=0;k<6;k++){const a=k/6*Math.PI*2;ring+=this.height(cx+Math.cos(a)*5,cz+Math.sin(a)*5);}
+   if(!oasisC&&ring/6-this.height(cx,cz)<.05&&R()>.2)continue;
+   const n=oasisC?16:3+Math.floor(R()*7),rad=oasisC?5:1.6+R()*2.4,pts:[number,number][]=[];
+   for(let t=0;t<n*8&&pts.length<n;t++){const a=R()*Math.PI*2,r=Math.sqrt(R())*rad,x=cx+Math.cos(a)*r,z=cz+Math.sin(a)*r;if(pts.every(([px,pz])=>Math.hypot(px-x,pz-z)>.8))pts.push([x,z]);}
+   cand.push(...pts);
+  }
+  for(const [i,[x,z]] of cand.entries()){
    if(this.height(x,z)<3||roadClearance(x,z)<.5||Math.hypot(x+11,z-53)<5||Math.hypot(x-67,z-72)<9||Math.abs(x)>27&&Math.abs(x)<48&&z>16&&z<98)continue;
    const atOasis=Math.hypot(x+65,z-45)<15;
-   // Sparse tufts on the sand; the oasis is lush.
-   if(!atOasis&&i%3)continue;
    const list=atOasis?oasis:dry;if(!list.length)continue;
    const name=list[i%list.length],scale=name==='Bush_Common'?.38+(i%4)*.06:.45+(i%5)*.07,bounds=nature.get(name).box,reach=Math.hypot(Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x)),Math.max(Math.abs(bounds.min.z),Math.abs(bounds.max.z)))*scale;
    // The avenue runs on to the harbour promenade (dawnHarbour.ts) past the end of DAWN_PATHS.
