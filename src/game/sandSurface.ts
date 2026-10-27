@@ -61,17 +61,19 @@ float sdGlintOctave(vec2 p,float cell,vec3 N,vec3 H,vec3 T,vec3 B,float sharp){
 // The dunes' own shadows: march the baked ground toward the sun. Steps grow with distance, so a crest a hundred
 // metres off still shades the trough behind it; the edge softens with distance like a real penumbra.
 float sandSunVis=1.;
-float sandHorizon(vec3 P,vec3 L){
-  if(L.y<=0.)return 0.;
+float sandHorizon(vec3 P,vec3 L,vec3 N){
+  // Facing away from the sun there is no direct light to shade.
+  if(L.y<=0.||dot(N,L)<-.05)return 1.;
   #ifdef SAND_LOW
-  const int N=11;const float G=1.55;
+  const int N_=8;const float G=2.;
   #else
-  const int N=18;const float G=1.38;
+  const int N_=12;const float G=1.62;
   #endif
   float t=.45,vis=1.;
-  for(int i=0;i<N;i++){
+  for(int i=0;i<N_;i++){
     vec3 q=P+L*t;
-    float h=sandGroundAt(q.xz).x;
+    // Close steps read the fine bake; past a few metres the coarse one resolves any crest that can shade here.
+    float h=t<6.?sandGroundAt(q.xz).x:textureLod(sandFarTex,sandFarUV(q.xz),0.).x+SAND_H0;
     vis=min(vis,smoothstep(-1.,1.,(q.y-h)/(t*.028+.02)));
     if(vis<=0.)break;
     t*=G;
@@ -134,7 +136,8 @@ const SAND_STATE = /* glsl */ `
   float sWet=1.-smoothstep(.06,.55+.25*snNoise(sXZ*.13),sAbove);
   float sDamp=(1.-smoothstep(.4,1.6,sAbove))*(1.-sWet);
   float sR=sgRadius(sXZ);
-  float sVolc=smoothstep(-26.,-36.,sXZ.y)*(1.-smoothstep(.8,.9,sR))*(1.-sOpen*.85);
+  // Scoria only where the citadel's rock breaks through: round the arena and under the walls, in broken patches.
+  float sVolc=smoothstep(-46.,-58.,sXZ.y)*(1.-smoothstep(.8,.88,sR))*(1.-sOpen)*smoothstep(.35,.6,snNoise(sXZ*.045+vec2(5.,2.))+smoothstep(-60.,-80.,sXZ.y)*.4);
   float sCliff=smoothstep(.62,.95,sSlope)*(1.-sLee*.8);
   // Patch fields, tens of metres and metres across.
   float n1=snNoise(sXZ*.031+vec2(3.7,1.1)),n2=snNoise(sXZ*.13+vec2(-1.9,6.3)),n3=snNoise(sXZ*.61);
@@ -190,9 +193,11 @@ const SAND_STATE = /* glsl */ `
   alb=mix(alb,alb*sdLin(vec3(.93,.9,.88)),(1.-sOpen)*.6);
   // The citadel climb: scoria and basalt, with sand drifted into its hollows.
   if(sVolc>.01){
-    vec3 sc=mix(sdLin(vec3(.36,.25,.21)),sdLin(vec3(.55,.36,.27)),smoothstep(.3,.7,n2))*(.85+.3*n3)*(.8+.4*n4);
-    sc=mix(sc,alb*.95,smoothstep(.45,.75,n1+(-sCrest)*.4)*.75);
-    alb=mix(alb,sc,sVolc);
+    // Rust-red cinders and dark basalt grit, with the sand drifted back over them.
+    vec3 sc=mix(sdLin(vec3(.5,.33,.25)),sdLin(vec3(.68,.45,.32)),smoothstep(.3,.7,n2))*(.85+.3*n3)*(.8+.4*n4);
+    sc=mix(sc,sdLin(vec3(.38,.3,.27)),smoothstep(.6,.85,n3)*.6);
+    sc=mix(sc,alb,smoothstep(.4,.75,n1*.7+n4*.3+(-sCrest)*.4)*.6);
+    alb=mix(alb,sc,sVolc*.85);
   }
   // Bluffs: bedded sandstone, projected on the face so the beds run level.
   if(sCliff>.01){
@@ -208,7 +213,7 @@ const SAND_STATE = /* glsl */ `
   alb*=1.-clamp(sDep*4.,0.,1.)*.12;
   alb=mix(alb,pale,clamp(sBerm*9.,0.,1.)*.25*(1.-sWet));
   diffuseColor.rgb=alb;
-  sandSunVis=sandHorizon(sW,normalize(sandSunDir));
+  sandSunVis=sandHorizon(sW,normalize(sandSunDir),normalize(vec3(-sGrad.x,1.,-sGrad.y)));
 `;
 
 const SAND_NORMAL = /* glsl */ `
