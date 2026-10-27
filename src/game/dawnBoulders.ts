@@ -3,8 +3,9 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {rng} from '../world/noise';
 import {addPatch} from '../world/materials';
 import {FROST_NOISE} from './frostPaving';
-import {boulderGeometry,cragGeometry} from './snowRocks';
+import {boulderGeometry} from './snowRocks';
 import {dawnGlows} from './dawnMaterials';
+import {DAWN_SAND} from './dawnPaving';
 import {dawnRocks} from './world3Colliders';
 
 /*
@@ -18,13 +19,13 @@ import {dawnRocks} from './world3Colliders';
 
 /** Sites whose z lies south of this are sandstone; the rest basalt. */
 const SANDSTONE_Z = -32;
-const fractH = (v: number) => v - Math.floor(v);
 
 export interface DawnBoulderSite {i: number; x: number; z: number; r: number; basalt: boolean; vent: boolean}
 export function dawnBoulderSites(): DawnBoulderSite[] {
   return dawnRocks().map(({i, x, z, r}) => {
-    const basalt = z < SANDSTONE_Z;
-    return {i, x, z, r, basalt, vent: basalt && i % 3 === 0};
+    // Goldsand (style sheet): every group is sandstone; no dark rock, no lava.
+    void SANDSTONE_Z;
+    return {i, x, z, r, basalt: false, vent: false};
   });
 }
 
@@ -53,8 +54,8 @@ function boulderMaterial(uniforms: {dbTime: {value: number}; dbSand: {value: THR
         float occ=vColor.r,bed=vColor.g,above=vDbK.z;
         float n1=dbN3(vDbW*.55,bA),n2=dbN3(vDbW*2.4,bA),n3=dbN3(vDbW*9.,bA);
         // Sandstone: cross-bedded laminae of honey, cream and rose, varnished darker on the steep faces.
-        float lam=sin(vDbW.y*7.5+dot(vDbW.xz,vec2(.6,.35))*1.4+n1*2.2)*.5+.5,lam2=sin(vDbW.y*23.+n2*3.)*.5+.5;
-        vec3 ss=mix(vec3(.46,.29,.16),vec3(.66,.52,.34),lam*.7+bed*.3-.15);
+        float lam=sin(vDbW.y*7.5+n1*.8)*.5+.5,lam2=sin(vDbW.y*23.+n2*1.5)*.5+.5;
+        vec3 ss=mix(vec3(.5,.28,.12),vec3(.7,.48,.27),lam*.7+bed*.3-.15);
         ss=mix(ss,vec3(.55,.3,.2),smoothstep(.62,.9,n1*.5+.5)*.45);
         ss*=.9+.12*lam2;
         ss=mix(ss,ss*vec3(.72,.62,.55),(1.-bN.y*bN.y)*smoothstep(.2,.7,fpNoise(vec2(vDbW.x+vDbW.z,vDbW.y*.15)*2.))*.5);
@@ -71,7 +72,8 @@ function boulderMaterial(uniforms: {dbTime: {value: number}; dbSand: {value: THR
         vec3 lc=mix(vec3(.42,.27,.05),vec3(.2,.22,.13),smoothstep(.4,.7,fpNoise(vDbW.xz*.8+3.)*.5+.5));
         bC=mix(bC,lc*(.85+.3*n3),lich*.8*(1.-vDbK.y));
         // Blown sand banked against the foot and lodged on the ledges.
-        float skirt=1.-smoothstep(.03,mix(.32,.16,vDbK.x)+.2*(n2*.5+.5),above);
+        float wind=max(0.,dot(bN.xz,normalize(vec2(.9,.35))));
+        float skirt=1.-smoothstep(.03,mix(.32,.16,vDbK.x)+.2*(n2*.5+.5)+.55*wind,above);
         float ledge=smoothstep(.84,.96,bN.y+n2*.08)*smoothstep(.6,.85,n1*.5+.5)*(1.-vDbK.x*.85);
         float sand=max(skirt,ledge*.8);
         // Heat: the rock around a fissure is reddened and the parting itself glows.
@@ -104,10 +106,29 @@ function boulderMaterial(uniforms: {dbTime: {value: number}; dbSand: {value: THR
   return m;
 }
 
+/**
+ * Wind carving in place (stone-local, y up): the foot is undercut by sand-blast (a narrower neck in the lowest
+ * third, a mushroom or hoodoo when deep), and the strata stand out as horizontal ledges where harder beds resist.
+ */
+function windCarve(g: THREE.BufferGeometry, neck: number, R: () => number) {
+  const p = g.getAttribute('position') as THREE.BufferAttribute;
+  let y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < p.count; i++) { y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i)); }
+  const H = y1 - y0, bed = .32 + R() * .18, ph = R() * 6;
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i), t = (y - y0) / H;
+    const under = neck + (1 - neck) * THREE.MathUtils.smoothstep(t, .06, .42) + (1 - neck) * .25 * (1 - THREE.MathUtils.smoothstep(t, 0, .07));
+    const f = (y - y0) / bed + ph, fr = f - Math.floor(f);
+    const ledge = 1 + .045 * THREE.MathUtils.smoothstep(fr, .55, .8) - .03 * THREE.MathUtils.smoothstep(fr, .85, 1);
+    p.setX(i, p.getX(i) * under * ledge); p.setZ(i, p.getZ(i) * under * ledge);
+  }
+  g.computeVertexNormals();
+}
+
 export interface DawnBoulders {group: THREE.Group; update(time: number): void}
 
 /** Every rock group as one merged mesh, placed on the gameplay surface. */
-export function dawnBoulders(height: (x: number, z: number) => number, sand = new THREE.Color(.6, .49, .31)): DawnBoulders {
+export function dawnBoulders(height: (x: number, z: number) => number, sand = DAWN_SAND.clone()): DawnBoulders {
   const group = new THREE.Group(); group.name = 'dawnreach-boulders';
   const geos: THREE.BufferGeometry[] = [], vents: {pos: THREE.Vector3; size: number}[] = [];
   let count = 0;
@@ -124,21 +145,11 @@ export function dawnBoulders(height: (x: number, z: number) => number, sand = ne
       const x = site.x + s.dx, z = site.z + s.dz;
       let low = Infinity;
       for (let a = 0; a < 12; a++) for (const f of [.4, .9]) low = Math.min(low, height(x + Math.cos(a * .52) * s.r * f, z + Math.sin(a * .52) * s.r * f));
-      let g: THREE.BufferGeometry, m: THREE.Matrix4;
       const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-      if (k === 0 && site.basalt) {
-        // A jointed basalt crag: fractured faces and columns, its foot buried in the slope.
-        const h = site.r * 1.15;
-        g = cragGeometry({x, z, r: s.r, h, yaw: s.yaw, seed: site.i * 13 + 5} as Parameters<typeof cragGeometry>[0], 11);
-        const n = g.getAttribute('position').count, c = new Float32Array(n * 3);
-        const nr = g.getAttribute('normal') as THREE.BufferAttribute;
-        for (let v = 0; v < n; v++) c.set([.75 + .25 * Math.max(0, nr.getY(v)), .6 + .4 * fractH(v * .618), 1], v * 3);
-        g.setAttribute('color', new THREE.BufferAttribute(c, 3));
-        m = new THREE.Matrix4().compose(new THREE.Vector3(x, low - .3 * h, z), q, new THREE.Vector3(s.r, s.r, s.r));
-      } else {
-        g = boulderGeometry({r: s.r, h: s.h, seed: site.i * 31 + k * 7 + 3}, k === 0 ? (site.r >= 3 ? 10 : 8) : 5, site.basalt ? 1.8 : 1);
-        m = new THREE.Matrix4().compose(new THREE.Vector3(x, low - .12 * s.h, z), q, new THREE.Vector3(1, 1, 1));
-      }
+      const tall = k === 0 && site.r >= 3 && site.i % 2 === 0;
+      const g = boulderGeometry({r: s.r, h: tall ? s.r * 1.55 : s.h, seed: site.i * 31 + k * 7 + 3}, k === 0 ? (site.r >= 3 ? 11 : 9) : 6, 1.3);
+      windCarve(g, k === 0 ? (tall ? .55 : .68) : .8, R);
+      const m = new THREE.Matrix4().compose(new THREE.Vector3(x, low - .1 * s.h, z), q, new THREE.Vector3(1, 1, 1));
       g.applyMatrix4(m);
       const pos = g.getAttribute('position') as THREE.BufferAttribute, kind = new Float32Array(pos.count * 3);
       for (let v = 0; v < pos.count; v++) kind.set([site.basalt ? 1 : 0, site.vent && k === 0 ? 1 : 0, pos.getY(v) - height(pos.getX(v), pos.getZ(v))], v * 3);

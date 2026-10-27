@@ -90,6 +90,21 @@ float dpCourse(vec2 q,float RH,float SL0,float SL1,float salt0,out float id,out 
   grad=vec2(ca*g.x+sa*g.y,-sa*g.x+ca*g.y);
   return ol+min(max(dq.x,dq.y),0.)-rc;
 }
+// Irregular flags: a jittered cell grid, each point paved by its nearest centre. Signed distance to the flag's
+// outline (bisector with the nearest neighbour, rounded), its id, offset from its centre, a nominal half size and
+// the outline's outward direction.
+float dpFlag(vec2 q,float S,float salt,out float id,out vec2 local,out vec2 halfSz,out vec2 grad){
+  vec2 g=q/S,gi=floor(g),gf=fract(g);
+  vec2 best=vec2(0.),bc=vec2(0.);float bd=1e9;
+  for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 c=vec2(float(i),float(j));vec2 o=c+.12+.76*fpHash22(gi+c+salt);vec2 d=o-gf;float dd=dot(d,d);if(dd<bd){bd=dd;best=d;bc=c;}}
+  float ed=1e9;vec2 en=vec2(1.,0.);
+  for(int j=-2;j<=2;j++)for(int i=-2;i<=2;i++){vec2 c=bc+vec2(float(i),float(j));vec2 o=c+.12+.76*fpHash22(gi+c+salt);vec2 d=o-gf;vec2 dv=d-best;if(dot(dv,dv)>1e-5){vec2 n=normalize(dv);float e=dot(.5*(best+d),n);if(e<ed){ed=e;en=n;}}}
+  id=fpHash12(gi+bc+salt*1.7);
+  local=-best*S;halfSz=vec2(S*.42);grad=en;
+  // ed: distance to the nearest edge (cell units, positive inside). Joints a few centimetres wide, corners rounded.
+  float jw=.018+.014*fract(id*3.17);
+  return -(ed*S-jw);
+}
 // A worn stone's height (stone units, 0 in the joint): a rounded arris, then a gently domed, tilted top.
 float dpDome(float de,float id,vec2 l,vec2 h,float crown,out float slope,out vec2 crownG){
   const float R=.04;
@@ -170,11 +185,10 @@ vec2 dpQ;float dpRH,dpS0,dpS1,dpSalt;
 // The frame's axes in world xz, so the shadow taps can walk towards the sun in course space.
 vec2 dpAx1,dpAx2;
 if(dpRing>.5){vec2 v=dpP-dpRingC;float r=length(v);dpQ=vec2(atan(v.y,v.x)*max(r,.6),r);dpRH=.36;dpS0=.34;dpS1=.56;dpSalt=31.;dpAx2=v/max(r,1e-3);dpAx1=vec2(-dpAx2.y,dpAx2.x);}
-else if(dpMain>.5){dpQ=vec2(dpAcross,dpAlong);dpRH=.27;dpS0=.24;dpS1=.44;dpSalt=0.;dpAx1=vec2(dpDir.y,-dpDir.x);dpAx2=dpDir;}
-else{dpQ=vec2(dpAlong,dpAcross+dpHalf);dpRH=.52;dpS0=.48;dpS1=.86;dpSalt=dpSeed*3.7;dpAx1=dpDir;dpAx2=vec2(dpDir.y,-dpDir.x);}
+else{dpQ=dpP;dpRH=dpMain>.5?.62:.78;dpS0=0.;dpS1=0.;dpSalt=dpMain>.5?0.:7.;dpAx1=vec2(1.,0.);dpAx2=vec2(0.,1.);}
 dpQ+=vec2(fpNoise(dpP*2.3),fpNoise(dpP*2.3+7.))*.014;
 float dpId;vec2 dpLoc,dpHalfS,dpG;
-float dpOut=dpCourse(dpQ,dpRH,dpS0,dpS1,dpSalt,dpId,dpLoc,dpHalfS,dpG);
+float dpOut=dpRing>.5?dpCourse(dpQ,dpRH,dpS0,dpS1,dpSalt,dpId,dpLoc,dpHalfS,dpG):dpFlag(dpQ,dpRH,dpSalt,dpId,dpLoc,dpHalfS,dpG);
 float dpCrown=.3;
 // Kerb stones: long, pale, set proud, with a gutter joint between them and the paving.
 if(dpKerb>.5){
@@ -226,22 +240,22 @@ float dpInlay=0.;vec3 dpInlayC=vec3(0.);
 }
 // Sandstone from several beds: honey, cream, rose and ochre, now and then a dark basalt sett.
 float dpV=fract(dpId*17.13),dpW2=fract(dpId*3.7);
-vec3 dpStone=mix(vec3(.36,.24,.13),vec3(.5,.39,.25),dpW2);
+vec3 dpStone=mix(vec3(.46,.29,.14),vec3(.62,.44,.25),dpW2);
 dpStone=mix(dpStone,vec3(.44,.25,.16),step(.86,dpV)*.6);
 dpStone=mix(dpStone,vec3(.5,.35,.17),step(.7,dpV)*step(dpV,.86)*.5);
-dpStone=mix(dpStone,vec3(.16,.14,.12),step(dpV,.03)*dpMain*(1.-dpRing));
+
 if(dpKerb>.5)dpStone=mix(vec3(.55,.5,.41),vec3(.64,.58,.47),dpW2);
 // Bedding: faint parallel laminae across each block, the grain of a sandstone.
-dpStone*=.9+.14*sin(dot(dpLoc,vec2(.3,1.))*48.+dpId*30.+fpNoise(dpP*3.)*2.)*(1.-dpFar);
+dpStone*=.97+.05*sin(dot(dpLoc,vec2(.3,1.))*40.+dpId*30.+fpNoise(dpP*3.)*3.)*(1.-dpFar);
 dpStone*=.84+.32*(fpNoise(dpP*4.7+dpId*13.)*.5+.5);
-dpStone=mix(dpStone,vec3(.4,.29,.18)*(.88+.24*(fpNoise(dpP*.9+3.)*.5+.5)),dpBlur);
+dpStone=mix(dpStone,vec3(.52,.35,.19)*(.88+.24*(fpNoise(dpP*.9+3.)*.5+.5)),dpBlur);
 float dpNear=1.-smoothstep(.006,.03,dpFoot);
 if(dpNear>0.)dpStone*=1.+fpNoise(dpP*41.)*.18*(1.-smoothstep(.008,.017,dpFoot))+fpNoise(dpP*97.)*.12*(1.-smoothstep(.0035,.0075,dpFoot));
 // Feet polish the middle: paler, less grain, a soft sheen.
 float dpPolish=smoothstep(.25,.9,dpTrod)*(1.-dpKerb);
 dpStone=mix(dpStone,mix(vec3(dot(dpStone,vec3(.33))),dpStone,.75)*1.16,dpPolish*.7);
 dpStone=mix(dpStone,dpInlayC,dpInlay*(1.-dpRing*0.)*step(.5,dpInlay));
-vec3 dpJoint=mix(vec3(.11,.085,.06),vec3(.2,.16,.11),dpN1*.5+.5);
+vec3 dpJoint=mix(dpSand*.62,dpSand*.82,dpN1*.5+.5);
 vec3 dpRock=mix(dpStone,dpJoint,dpJc*(1.-step(.5,dpInlay)));
 // Sand: dry and pale on the drifts, darker and finer packed in the joints.
 vec3 dpSandC=dpSand*(.92+.12*fpNoise(dpP*3.1));
@@ -257,7 +271,7 @@ diffuseColor.a*=dpAlpha;
 float dpShade=1.;
 if(dpDetail>.5&&dpSandA<.99&&dpFar<.99&&dpKerb<.5){
   float sl=max(length(dpSun.xz),1e-3);vec2 sd=dpSun.xz/sl;float tanE=dpSun.y/sl,h0=max(dpH,dpS*dpSandA),occ=0.;
-  for(int k=1;k<=3;k++){float d=float(k*k)*.012;float id2;vec2 l2,h2,g2,cg2;float sl2;float o2=dpCourse(dpQ+vec2(dot(sd,dpAx1),dot(sd,dpAx2))*d,dpRH,dpS0,dpS1,dpSalt,id2,l2,h2,g2);float hk=dpDome(-o2,id2,l2,h2,.3,sl2,cg2);occ=max(occ,clamp(((hk-h0)*DP_RELIEF-d*tanE)/.005,0.,1.));}
+  for(int k=1;k<=3;k++){float d=float(k*k)*.012;float id2;vec2 l2,h2,g2,cg2;float sl2;vec2 q2=dpQ+vec2(dot(sd,dpAx1),dot(sd,dpAx2))*d;float o2=dpRing>.5?dpCourse(q2,dpRH,dpS0,dpS1,dpSalt,id2,l2,h2,g2):dpFlag(q2,dpRH,dpSalt,id2,l2,h2,g2);float hk=dpDome(-o2,id2,l2,h2,.3,sl2,cg2);occ=max(occ,clamp(((hk-h0)*DP_RELIEF-d*tanE)/.005,0.,1.));}
   dpShade=1.-occ*.75;
 }
 `;
@@ -288,6 +302,9 @@ const NORMAL = /* glsl */ `
 const LIGHT = /* glsl */ `#include <lights_fragment_end>
 reflectedLight.directDiffuse*=dpShade;
 reflectedLight.directSpecular=min(reflectedLight.directSpecular*dpShade,vec3(.25));`;
+
+/** Linear albedo of the town's blown sand (style sheet sand mid #c9955a, a little paler). Shared with the rocks. */
+export const DAWN_SAND = new THREE.Color(.62, .4, .2);
 
 export interface DawnPavingOptions {
   /** Paved squares; `sun` inlays the dawn sun at the centre of that one. */
@@ -407,7 +424,7 @@ export function dawnPaving(height: (x: number, z: number) => number, paths: Isla
     dpSunInlay: {value: new THREE.Vector3(sunPad?.x ?? 0, sunPad?.z ?? 0, sunPad?.sun ?? 0)},
     dpDetail: {value: 1},
     dpSun: {value: new THREE.Vector3(-.4, .9, .2).normalize()},
-    dpSand: {value: opts.sand ?? new THREE.Color(.6, .49, .31)},
+    dpSand: {value: opts.sand ?? DAWN_SAND.clone()},
     dpSkyH: {value: new THREE.Color(.9, .7, .5)},
   };
   const material = new THREE.MeshStandardMaterial({color: '#ffffff', roughness: .85, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
