@@ -216,7 +216,8 @@ const TONGUE_COLOR = /* glsl */ `
   float wS=max(leveeW,1.-smoothstep(.0,.35,act));
   float wP=(1.-smoothstep(pe-.12,pe+.12,ac))*(1.-wS);
   float wB=max(0.,1.-wS-wP);
-  lStatic=wS;
+  // At rest means no time term at all: no swell under this pixel either.
+  lStatic=wS*(1.-step(1e-5,vLC.y));
   float e=clamp((ac-pe)/max(.84-pe,.05),0.,1.);
   float prof=1.-e*e;
   // On the toe's face X barely changes while the surface climbs; add the height so the face is not combed.
@@ -562,7 +563,9 @@ function buildTongue(def: TongueDef, sup: Support, quality: LavaQuality): Tongue
       const act = 1 - smooth(.2, 1.1, out);
       aLA.set([XmAt(s), c, w, temperature(s) * mix(.08, 1, act)], i * 4);
       aLB.set([act, lev, U0 / speed(s), lobeAt(s)], i * 4);
-      aLC.set([0, act * smooth(sFoot, sEnd - 1, s) * clamp(dist / 1.2, 0, 1), clamp(s / sEnd, 0, 1.2), h], i * 4);
+      // Swell only well inside the active lobe: nothing that is meant to be at rest (levees, stopped lobes) may move.
+      const swell = smooth(.95, 1, act) * (lev > 1e-3 ? 0 : 1) * smooth(sFoot + 2.5, sEnd - 1, s) * clamp((dist - .3) / 1.2, 0, 1);
+      aLC.set([0, swell, clamp(s / sEnd, 0, 1.2), h], i * 4);
       shadeH[i] = smin(domeHeight(dist, YIELD_D, .9), cap, .3) + (h - smin(domeHeight(dist), cap, .15));
     }
   }
