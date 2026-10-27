@@ -31,6 +31,8 @@ export class DawnIsland {
  readonly sky=new DawnSky({azimuth:112,elevation:11});private sea:DawnSea;
  /** Goldsand's desert: a clipmap round the player (sandTerrain.ts), prints that the wind fills in, sand kicked up by runners. */
  readonly terrain:SandTerrain;readonly deform=sandDeform(40);readonly spray:SandSpray;readonly drift:SandDrift;private footfalls:SandFootfalls;private refreshSand:()=>void;
+ /** dawnHeight bound once, so the per-frame sand step allocates nothing. */
+ private readonly heightAt=(x:number,z:number)=>dawnHeight(x,z);
  private rotating:THREE.Object3D[]=[];
  height(x:number,z:number){
   return dawnHeight(x,z);
@@ -105,7 +107,7 @@ export class DawnIsland {
  /** Low quality: a coarser clipmap and bake, no finest ripples, the sea's fine ripples, a cloud octave and half the shadow map. */
  setQuality(q:'high'|'low'){this.terrain.setQuality(q);this.drift.setQuality(q);this.sea.setQuality(q);this.sky.setQuality(q);}
  /** Prints for every crab near the player, one step of the sand field, the kicked sand. Runs only while Goldsand is shown. */
- updateSand(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'){this.terrain.prepare(renderer);this.footfalls.update(units,this.deform,(px,pz)=>this.height(px,pz),x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSand();}
+ updateSand(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'){this.terrain.prepare(renderer);this.footfalls.update(units,this.deform,this.heightAt,x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSand();}
  disposeSand(){this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
  update(time:number,_rescued:boolean,x:number,z:number){this.terrain.follow(x,z);this.drift.update(time,x,z);this.wind?.update(time);this.sky.followSun(x,this.height(x,z),z);this.sky.update(time);this.sea.update(time);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
 }
