@@ -231,9 +231,6 @@ export function dawnCitadel(height:Height):DawnCitadel {
   for(const s of [-1,1]){
    const xi=s*x0,xo=s*G.half,lo=Math.min(xi,xo),hi=Math.max(xi,xo);
    const faces=battered(lo,hi,zb,zf,b,top,s>0?[bat,bat,bat,0]:[bat,0,bat,bat],s>0?[b,b,b,ptop-.4]:[b,ptop-.4,b,b]);
-   // The eclipse carved high on the wing, leaning with the batter.
-   const ey=top-6.4,eo=bat*(1-(ey-b)/H);
-   emblem(s*(x0+G.half)/2,ey,zf+eo,1.9,-Math.atan(bat/H));
    // The front face's frame: u along the foot (the quad's left foot first), v up, t into the wall.
    const F0=faces[0],fx0=lo-(s>0?0:bat),fx1=hi+(s>0?bat:0),uAt=(x:number)=>(x-fx0)/(fx1-fx0)*F0.L;
    const poles=[s*(x0+1.5),s*(G.half-.9)];
@@ -258,6 +255,25 @@ export function dawnCitadel(height:Height):DawnCitadel {
      for(const g of crabBearer(face)){onFace(g.g,F0.w,cu,v0+.25,-.06);extra.push(asStone(g.g,g.gilt?[1,1,1]:pale,g.gilt,v0));}
     }
     for(let u=u0+.4;u<u1-.2;u+=.8)for(const vv of [v0-.21,v1+.21]){const g=new THREE.CylinderGeometry(.13,.13,.06,12).rotateX(Math.PI/2).translate(0,0,-.03);onFace(g,F0.w,u,vv,-.24);gild(g,v0);}
+   }
+   // A vertical relief band up the middle of the wing above the procession (the pylon's only roundel is the winged
+   // sun over the portal): a pale framed strip of carved glyphs, suns and crescents in turn, with a gilt cartouche
+   // line down each side.
+   {
+    const um=(uAt(poles[0])+uAt(poles[1]))/2,va=top-9.2,vb=top-2.6;M.ground=va;
+    M.stone='pale';
+    for(const k of [-1,1])M.block(F0.w,um+k*.8-.12,va,-.18,.24,vb-va,.45,{bevel:.04});
+    M.block(F0.w,um-.92,vb,-.24,1.84,.32,.5,{bevel:.04});
+    M.stone=null;
+    const pale=M.paleTint(1.1),n=Math.floor((vb-va-.3)/1.15);
+    for(let k=0;k<n;k++){
+     const vv=va+.55+k*1.15,sh=new THREE.Shape();
+     if(k%2===0){sh.absarc(0,0,.3,0,Math.PI*2,false);for(let r=0;r<8;r++){const a=r/8*Math.PI*2,h2=new THREE.Path();h2.absarc(Math.cos(a)*.42,Math.sin(a)*.42,.05,0,Math.PI*2,true);sh.holes.push(h2);}}
+     else{sh.absarc(0,0,.34,Math.PI*.25,Math.PI*1.75,false);sh.absarc(.14,0,.27,Math.PI*1.7,Math.PI*.3,true);}
+     const g=new THREE.ExtrudeGeometry(sh,{depth:.07,bevelEnabled:true,bevelThickness:.025,bevelSize:.02,bevelSegments:1,curveSegments:12}).toNonIndexed();g.deleteAttribute('uv');
+     onFace(g,F0.w,um,vv,-.05);extra.push(asStone(g,pale,false,va));
+    }
+    for(const k of [-1,1]){const g=new THREE.BoxGeometry(.05,vb-va-.2,.03).translate(0,(vb-va-.2)/2,0);onFace(g,F0.w,um+k*.58,va+.1,-.06);gild(g,va);}
    }
    // Flagstaffs in the niches, gilt, each flying a long banner; bronze clamps hold them to the face.
    for(const px of poles){
