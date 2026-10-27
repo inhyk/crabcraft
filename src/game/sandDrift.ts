@@ -12,7 +12,7 @@ import { SAND_GROUND_READ } from './sandTerrain';
  */
 
 /** Streamers on high; low draws half. */
-const COUNT = 260;
+const COUNT = 200;
 /** Segments along a streamer. */
 const SEG = 12;
 /** Side of the square the streamers are born in, centred on the player, m. */
@@ -71,7 +71,7 @@ void main(){
     *(1.-smoothstep(${(SPAN / 2 - 24).toFixed(1)},${(SPAN / 2 - 2).toFixed(1)},dist))*smoothstep(1.2,4.,near);
   // Through shade or sun: the dunes' shadow, a few steps toward the sun through the bake.
   vSdSun=1.;
-  {vec3 L=normalize(sdSunDir);float t=1.5;for(int i=0;i<6;i++){vec3 q=wp+L*t;vSdSun=min(vSdSun,smoothstep(-.5,.5,q.y-sdGround(q.xz)));t*=1.9;}}
+  {vec3 L=normalize(sdSunDir);float t=1.5;for(int i=0;i<4;i++){vec3 q=wp+L*t;vSdSun=min(vSdSun,smoothstep(-.5,.5,q.y-sdGround(q.xz)));t*=2.6;}}
   vec4 mvPosition=viewMatrix*vec4(wp,1.);
   gl_Position=projectionMatrix*mvPosition;
   #include <fog_vertex>

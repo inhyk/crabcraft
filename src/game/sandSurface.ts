@@ -91,12 +91,9 @@ float sdGlints(vec2 p,vec3 N,vec3 V,vec3 L,float fp){
   float gate=graze*smoothstep(.02,.3,nl);
   if(gate<=.001)return 0.;
   float a=.035,fa=1.-smoothstep(a*.5,a*2.,fp);
+  if(fa<=.001)return 0.;
   float sum=0.;
   if(fa>.001)sum+=sdGlintOctave(p,a,N,H,T,B,900.)*fa;
-  #ifndef SAND_LOW
-  float b=.11,fb=1.-smoothstep(b*.5,b*2.,fp);
-  if(fb>.001)sum+=sdGlintOctave(p+vec2(53.1,17.9),b,N,H,T,B,1600.)*fb;
-  #endif
   return sum*gate;
 }
 `;
@@ -144,7 +141,7 @@ const SAND_STATE = /* glsl */ `
   // Patch fields, tens of metres and metres across.
   float n1=snNoise(sXZ*.031+vec2(3.7,1.1)),n2=snNoise(sXZ*.13+vec2(-1.9,6.3)),n3=snNoise(sXZ*.61);
   float fG=1.-smoothstep(.02,.09,sFoot);
-  float n4=mix(.5,snNoise(sXZ*4.3+vec2(2.2,9.1)),fG);
+  float n4=fG>.001?mix(.5,snNoise(sXZ*4.3+vec2(2.2,9.1)),fG):.5;
   // Wind streaks: faint bands along the wind where finer, paler sand has been sorted out.
   vec2 sWq=vec2(dot(sXZ,SG_WIND),dot(sXZ,vec2(-SG_WIND.y,SG_WIND.x)));
   float streak=snNoise(sWq*vec2(.035,.42))*.65+snNoise(sWq*vec2(.09,1.3))*.35;
