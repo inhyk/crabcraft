@@ -216,7 +216,7 @@ const TONGUE_COLOR = /* glsl */ `
   vec4 cp=texture2D(uCrust,vec2(Y,X-uShift)/TILE+vec2(.5,.13));
   float jit=texture2D(uCrust,vec2(Y,X)/TILE*.11+.3).a;
   float a=fract(uPhB+jit),b=fract(a+.5);
-  float st=1./2.6; // torn plates stretched along the flow
+  float st=1./1.7; // torn plates stretched along the flow
   vec4 bA=texture2D(uCrust,vec2(Y,(X-${U0}*prof*${T_BAND}.*a)*st)/TILE+vec2(.21,.0));
   vec4 bB=texture2D(uCrust,vec2(Y,(X-${U0}*prof*${T_BAND}.*b)*st)/TILE+vec2(.58,.71));
   vec4 cb=mix(bA,bB,abs(2.*a-1.));
@@ -235,7 +235,9 @@ const TONGUE_COLOR = /* glsl */ `
   // Rope folds: crest lines bowed downstream (the middle runs ahead), crowding where the flow slows.
   float ropeAmp=.06*smoothstep(.25,.7,vLC.z)*(1.-open)*(1.-face);
   float dP,dS;
-  float phP=(X-uShift+.9*vLA.y*vLA.y)/1.1,phS=(X+.9*vLA.y*vLA.y)/1.1;
+  // Bow about 0.45 half-widths in metres (material units are compressed by vLB.z), wobbling with the crust.
+  float bow=.45*vLA.z*vLB.z*vLA.y*vLA.y;
+  float phP=(X-uShift+bow)/1.1+.35*nz,phS=(X+bow)/1.1+.35*cs.a;
   float rP=lRopeH(phP,dP),rS=lRopeH(phS,dS);
   float kS=wS*(1.-leveeW);
   lRope=rP*wP*ropeAmp/.06;
@@ -251,7 +253,9 @@ const TONGUE_COLOR = /* glsl */ `
   // dimming to a dull skin at the plate's edge. Stopped lobes and levees have cooled through.
   float pulse=mix(1.,.86+.14*sin(uPulse+id*6.283),1.-wS);
   float inner=mix(.5,.93,act*(1.-leveeW))*mix(1.,.86,smoothstep(.3,.9,vLC.z));
-  float heat=inner*mix(1.,.62,smoothstep(0.,cw+aa,r))*(.86+.14*nz)*pulse+.06*wB;
+  // On cooling crust only some cracks still glow; the others have sealed dark.
+  float gate=mix(smoothstep(.38,.7,nz+.25*id),1.,open);
+  float heat=inner*mix(1.,.62,smoothstep(0.,cw+aa,r))*(.86+.14*nz)*pulse*mix(.45,1.,gate)+.06*wB;
   lEmit=lavaBB(heat)*lCrack;
   // A moving toe's face: melt squeezing out in a seam along its foot, the crust above it stretched and dark.
   float seam=face*(1.-smoothstep(.05,.2,vLC.w))*smoothstep(.0,.03,vLC.w)*smoothstep(.25,.6,nz+.2*sin(uPulse*.5+vLW.x*1.7+vLW.z*1.3));
@@ -266,7 +270,7 @@ const TONGUE_COLOR = /* glsl */ `
   // Rope relief, analytic: along s (via the material compression) and across.
   float dXP=ropeAmp*wP*dP/1.1,dXS=.035*kS*dS/1.1;
   float dhds=(dXP+dXS)*vLB.z;
-  float dhdv=(dXP+dXS)*1.8*vLA.y/max(vLA.z,.3);
+  float dhdv=(dXP+dXS)*.9*vLB.z*vLA.y;
   lRopeG=vec2(dhds,dhdv);
 }
 `;
@@ -329,7 +333,8 @@ function poolColor(sea: boolean): string {
   margin=exp(-pow((shore-8.)/4.,2.));
   // Broad cool rafts and hot open leads, fixed in space; plates drift through them.
   float macro=texture2D(uCrust,p/900.+.17).a*.6+texture2D(uCrust,p/310.+.53).a*.4;
-  temp=max(mix(.35,1.,smoothstep(.32,.64,macro)),.85*exp(-max(shore,0.)/45.)*flowW);
+  // Near the island the sea is stirred by the volcano's own outflow: hotter, more open within ~60 m of the shore.
+  temp=max(mix(.35,1.,smoothstep(.32,.64,macro)),.93*(1.-smoothstep(25.,80.,shore))*flowW);
   lMelt=smoothstep(.7,.85,macro);
   ` : /* glsl */ `
   // Convection cell: crust is born over the upwelling in the middle, drifts out and founders at the walls.
