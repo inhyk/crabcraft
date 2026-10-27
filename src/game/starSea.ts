@@ -50,14 +50,24 @@ export class StarSea {
           // comes back instead as a glitter path, a narrow column stretched toward the eye under the eclipse.
           vec3 reflection=starGradient(reflected)+starAuroraGlow(reflected,time)*.09;
           reflection=mix(reflection,vec3(.045,.045,.09),.28);
+          // The eclipse in the water as a still mirror sees it: the disc dark, the corona round it (a smooth reflection keeps
+          // the disc a clean shape instead of a wave-broken blot); the glitter path below carries the waves.
+          float disc;
+          {
+            vec3 calm=reflect(-view,vec3(0.,1.,0.));
+            vec2 ce=starEclipseAt(calm);
+            disc=(1.-smoothstep(.93,1.05,ce.x))*step(0.,calm.y);
+            reflection=reflection*(1.-.85*disc)+starEclipseLight(ce,time,false)*.22*step(0.,calm.y);
+          }
           float eclPath;
           {
             vec3 rd=normalize(reflected);
             float daz=atan(rd.x,-rd.z)-atan(STAR_ECL.x,-STAR_ECL.z);
             float del=asin(clamp(rd.y,-1.,1.))-asin(STAR_ECL.y);
             float path=exp(-daz*daz/.0025)*exp(-abs(del)/.1)*smoothstep(.02,.35,(cameraPosition.z-world.z)/max(distanceToEye,1.));
-            float sparkle=.45+.55*smoothstep(.2,.9,sin(p1*1.7)*.5+.5);
-            eclPath=path*sparkle*.6;
+            // Glitter from wave facets (noise, not the swell's regular crests), none inside the mirrored disc.
+            float sparkle=.35+.65*smoothstep(.45,.85,nsN2(world.xz*vec2(1.6,.5)+vec2(time*.4,-time*.25)));
+            eclPath=path*sparkle*.6*(1.-disc);
           }
           vec3 color=mix(water,reflection,fresnel*.65)+vec3(.92,.87,.74)*eclPath;
           vec3 halfLight=normalize(view+moonDirection);

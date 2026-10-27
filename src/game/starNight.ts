@@ -15,20 +15,26 @@ export const STAR_MOON_DIR = new THREE.Vector3(-0.8, 0.55, -0.43).normalize();
  * the moon keeps the island's light and shadows; the eclipse is the sky's landmark and the sanctum's sign.
  */
 export const STAR_ECLIPSE_DIR = new THREE.Vector3(-0.045, Math.tan(7.5 * Math.PI / 180), -1).normalize();
+/**
+ * The key light: the corona. A total eclipse lights the land as a broad, soft source from its quarter of the sky, so
+ * the island's directional light comes from the eclipse's bearing (north), raised to 22 degrees (the corona and the
+ * glow under it light the land from higher than the disc's own 7.5), with weak, very soft shadows. The moon stays in
+ * the west sky as a landmark.
+ */
+export const STAR_KEY_DIR = new THREE.Vector3(STAR_ECLIPSE_DIR.x, 0, STAR_ECLIPSE_DIR.z).normalize().multiplyScalar(Math.cos(22 * Math.PI / 180)).setY(Math.sin(22 * Math.PI / 180)).normalize();
 /** Angular radius of the black disc (radians). */
 export const STAR_ECLIPSE_R = 3.4 * Math.PI / 180;
 /** Linear colours. Zenith and horizon of the clear sky; the horizon is also the fog. */
 export const STAR_ZENITH = new THREE.Color().setRGB(0.0045, 0.0075, 0.026);
 export const STAR_HORIZON = new THREE.Color().setRGB(0.032, 0.04, 0.085);
 /**
- * Moonlight: cool silver. The moon (west-north-west, visible in the sky) is the key; the eclipse in the north is a
- * landmark, not a light. Under a half-dark sky the key is moonlight, not sunlight: about half the old strength, its
- * shadows soft and only partly dark (StarNightRig), the shade's sky light carrying the rest.
+ * The key's colour: the corona's pearly silver. About half the old moonlight's strength, its shadows soft and only
+ * partly dark (StarNightRig), the shade's sky light carrying the rest.
  */
-export const STAR_MOONLIGHT = new THREE.Color().setRGB(0.64, 0.75, 1.0);
-export const STAR_MOON_INTENSITY = 2.0;
-/** How dark a moon shadow is (1 = black) and how soft its edge (PCF radius in texels). */
-export const STAR_MOON_SHADOW = {intensity: 0.62, radius: 5};
+export const STAR_MOONLIGHT = new THREE.Color().setRGB(0.74, 0.78, 0.95);
+export const STAR_MOON_INTENSITY = 1.75;
+/** How dark a key-light shadow is (1 = black) and how soft its edge (PCF radius in texels): a broad source. */
+export const STAR_MOON_SHADOW = {intensity: 0.32, radius: 10};
 /** Shade: the sky dome's light from above, the dark heather's bounce from below. */
 export const STAR_SHADE_SKY = new THREE.Color().setRGB(0.1, 0.14, 0.34);
 export const STAR_SHADE_GROUND = new THREE.Color().setRGB(0.018, 0.012, 0.03);
@@ -59,6 +65,12 @@ export const STAR_SKY_GLSL = /* glsl */ `
     c+=vec3(.012,.016,.03)*exp(-y*14.);
     float m=max(dot(d,STAR_MOON),0.);
     c+=vec3(.05,.065,.11)*pow(m,6.)+vec3(.12,.15,.24)*pow(m,60.);
+    // The eclipse's horizon: all round the sky, the lit world beyond the moon's shadow glows low orange into pink
+    // over the first few degrees (as in a real totality), strongest under the eclipse.
+    float hz=max(d.y,0.)/.087;
+    vec3 band=mix(vec3(.8,.29,.14),vec3(.48,.15,.25),smoothstep(0.,.55,hz));
+    float under=.6+.4*pow(max(dot(normalize(vec3(d.x,0.,d.z)+1e-5),normalize(vec3(STAR_ECL.x,0.,STAR_ECL.z))),0.),2.);
+    c+=band*.055*under*(1.-smoothstep(.15,1.,hz))*smoothstep(-.03,0.,d.y);
     if(d.y<0.)c=mix(c,${v3(STAR_HORIZON)}*.55,smoothstep(0.,-.2,d.y));
     return c;
   }
@@ -110,19 +122,20 @@ export const STAR_SKY_GLSL = /* glsl */ `
   // rose chromosphere with a few prominences, and the diamond ring where the last bead of sun shows on the limb.
   vec3 starEclipseLight(vec2 e,float t,bool streamers){
     float r=e.x,a=e.y;
-    if(r>7.)return vec3(0.);
+    if(r>3.3)return vec3(0.);
     float out1=max(r-1.,0.);
     vec3 col=vec3(0.);
-    float inner=exp(-out1*6.)*1.15+exp(-out1*1.8)*.32;
+    // The corona: brightness falling about r^-2.5 from the limb, and five irregular streamers (lobes of uneven width
+    // and length, two to three disc radii) that widen as they reach out.
+    float inner=pow(max(r,1.),-2.5)*.42+exp(-out1*9.)*.6;
     if(streamers){
-      // Streamers: angular noise with a slow twist outward, longer near the eclipse's 'equator' (left and right).
-      float tw=a+out1*.18*sin(a*2.+1.3);
-      float s=.55*nsN1(tw*4.77+3.1)+.3*nsN1(tw*11.3-1.7)+.15*nsN1(tw*27.+t*.02);
-      float eq=.55+.45*abs(cos(a));
-      float len=(.3+1.5*s*s*s)*eq;
-      inner+=exp(-out1/max(len,.05))*(.12+.8*s*s*s)*smoothstep(0.,.08,out1);
-      inner*=.85+.15*sin(t*.3+a*3.);
+      const float SA[5]=float[5](.35,1.42,2.6,3.55,5.1);const float SL[5]=float[5](3.,2.2,2.7,2.1,2.5);const float SW[5]=float[5](.16,.11,.2,.13,.17);
+      float lobes=0.;
+      for(int i=0;i<5;i++){float da=atan(sin(a-SA[i]-out1*.06),cos(a-SA[i]-out1*.06)),w=SW[i]*(1.+out1*.55);lobes+=exp(-da*da/(w*w))*(1.-smoothstep(SL[i]*.55,SL[i],r));}
+      inner*=1.+lobes*4.5;
+      inner*=.9+.1*sin(t*.3+a*3.);
     }
+    inner*=1.-smoothstep(2.8,3.2,r);
     col+=vec3(.92,.87,.74)*inner*smoothstep(.985,1.,r);
     // Chromosphere and prominences: rose, hugging the limb.
     float limb=exp(-pow(out1/.035,2.))*smoothstep(.99,1.,r);

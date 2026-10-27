@@ -103,7 +103,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       const c=m.clone();
       // Light the actual glass panes, including their original lattice and shutter occlusion.
       if(name==='MI_WindowGlass'&&c instanceof THREE.MeshStandardMaterial){c.color.set('#4d301c');c.emissive.set('#ffb65e');c.emissiveIntensity=1.15;c.roughness=.25;c.transparent=false;c.opacity=1;c.depthWrite=true;}
-      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#9fd6c6');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;}
+      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#7aa99d');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;c.roughness=.92;c.metalness=0;}
       if(kit===village)starhavenMaterial(name,c);
       copies.set(m,c);kit.materials.set(name,c);
     }

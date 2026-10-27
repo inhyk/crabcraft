@@ -33,7 +33,7 @@ import {StarWaystoneKit} from './starWaystone';
 import {StarMemorySealKit} from './starMemorySeal';
 import {StarOreKit} from './starOre';
 import {StarSun} from './starSun';
-import {STAR_MOON_DIR} from './starNight';
+import {STAR_KEY_DIR} from './starNight';
 import {StarNightRig} from './starNightRig';
 import {StarEnemyArmour} from './starEnemyArmour';
 import {throneSolids} from './starThrone';
@@ -58,7 +58,7 @@ const NO_PORTAL=new THREE.Vector3(1e5,0,1e5);
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
   readonly root = new THREE.Group();
-  private readonly sun=new StarSun(STAR_MOON_DIR.clone().multiplyScalar(100));
+  private readonly sun=new StarSun(STAR_KEY_DIR.clone().multiplyScalar(100));
   private readonly night=new StarNightRig(this.sun.light);
   /**
    * A small warm key carried with the player's crab, a step toward the camera at its height: it lights the crab's
