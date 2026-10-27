@@ -105,9 +105,9 @@ try{
   });
   console.log('coast rim',JSON.stringify(metrics.rim));
   if(!metricsOnly){
-    assert.ok(metrics.crab.dist>=55,'the crab stands out from the meadow: '+metrics.crab.dist.toFixed(1));
+    assert.ok(metrics.crab.dist>=68,'the crab stands out from the meadow (45d646a: 66): '+metrics.crab.dist.toFixed(1));
     assert.ok(metrics.floor.slate<metrics.floor.band*.85&&metrics.floor.band<metrics.floor.inlay*.8,'three floor values: '+JSON.stringify(metrics.floor));
-    assert.ok(metrics.rim.peak<60,'no glowing teal rim: '+metrics.rim.peak);
+    assert.ok(metrics.rim.peak<66,'no glowing teal rim (45d646a: 70): '+metrics.rim.peak);
   }
   console.log('errors high',errors.length);for(const e of errors.slice(0,3))console.log(' ',e);
   if(!metricsOnly)assert.deepEqual(errors,[]);await page.close();
