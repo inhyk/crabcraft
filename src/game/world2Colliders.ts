@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Collision } from '../world/collision';
 import { facetedStarCrystal, starCrystalRadius } from './starCrystal';
 import { throneSolids } from './starThrone';
+import { gateArchBoxes } from './starSanctum';
 import { registerStarVillageLife } from './world2Life';
 import { nearStarObjective, registerStarSettlement, STAR_OBJECTIVES, starTrailDistance } from './world2Settlement';
 
@@ -47,6 +48,8 @@ export function layoutStarhaven(height: (x: number, z: number) => number, nature
   const obstacles = throneSolids();
   for (const o of obstacles) col.addCircle(o.x, o.z, o.r, height(o.x, o.z), height(o.x, o.z) + 12);
   for (const c of starCrystalGarden(height)) if (!c.clear) col.addCircle(c.solid.x, c.solid.z, c.solid.r, c.solid.y0, c.solid.y1);
+  // The pilgrims' gate's arch, above head height: sight only (the camera), never movement.
+  for (const b of gateArchBoxes(height)) col.addBox(b.x, b.z, b.hx, b.hz, 0, b.y0, b.y1, true);
   for (const [x, z] of starRoadGuides()) col.addCircle(x, z, 0.62, height(x, z) - 0.5, height(x, z) + 1.9);
   registerStarVillageLife(height, col);
   // Quest props: waystone frames and ore beds.
