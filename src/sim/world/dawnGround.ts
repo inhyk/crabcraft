@@ -125,7 +125,10 @@ function inland(x: number, z: number, open: number, r: number): number {
 function shore(x: number, z: number, h: number, t: number): number {
   if (t <= 0) return h;
   const cliff = smoothstep(h, 6.5, 10.5);
-  const beach = t < 0.06 ? h + (DAWN_SEA - 0.55 - h) * smooth01(t / 0.06) : DAWN_SEA - 0.55 - (t - 0.06) * 60;
+  // A dune bank down to a berm a metre over the sea, then a long gentle foreshore (about 1 in 5) through the
+  // waterline, so the swash has a wet band metres wide to darken; then the shelf drops away.
+  const u = t / 0.1, top = Math.min(h, DAWN_SEA + 0.9), low = DAWN_SEA - 0.55;
+  const beach = u < 0.35 ? h + (top - h) * smooth01(u / 0.35) : u < 1 ? top + (low - top) * (u - 0.35) / 0.65 : low - (t - 0.1) * 60;
   const face = 0.024, foot = 0.9 + dawnNoise(x * 0.2, z * 0.2) * 0.5;
   const bluff = t < face ? h + (foot - h) * Math.pow(smooth01(t / face), 0.8) : foot - (t - face) * 75;
   return Math.max(-16, beach + (bluff - beach) * cliff);

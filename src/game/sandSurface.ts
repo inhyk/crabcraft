@@ -132,8 +132,12 @@ const SAND_STATE = /* glsl */ `
   }
   // Where the sand is: the sea's reach, the citadel's scoria climb, the bluffs.
   float sAbove=sW.y-SG_SEA;
-  float sWet=1.-smoothstep(.06,.55+.25*snNoise(sXZ*.13),sAbove);
-  float sDamp=(1.-smoothstep(.4,1.6,sAbove))*(1.-sWet);
+  // Metres up the beach from the waterline (height over the landform's slope), so the wet band keeps its width
+  // whether the beach is steep or flat; only on the beach itself, not in hollows inland.
+  float sShoreD=max(sAbove,0.)/max(length(sG.yz),.03),sBeach=1.-smoothstep(.9,1.7,sAbove);
+  float sWetN=snNoise(sXZ*.21+vec2(4.,-2.));
+  float sWet=max(1.-smoothstep(.06,.55+.25*snNoise(sXZ*.13),sAbove),(1.-smoothstep(2.,3.4+.9*sWetN,sShoreD))*sBeach);
+  float sDamp=max((1.-smoothstep(.4,1.6,sAbove)),(1.-smoothstep(3.2,6.5+1.5*sWetN,sShoreD))*sBeach)*(1.-sWet);
   float sR=sgRadius(sXZ);
   // Scoria only where the citadel's rock breaks through: round the arena and under the walls, in broken patches.
   float sVolc=smoothstep(-46.,-58.,sXZ.y)*(1.-smoothstep(.8,.88,sR))*(1.-sOpen)*smoothstep(.35,.6,snNoise(sXZ*.045+vec2(5.,2.))+smoothstep(-60.,-80.,sXZ.y)*.4);
@@ -185,9 +189,16 @@ const SAND_STATE = /* glsl */ `
   // Damp and wet sand where the sea reaches; swash lines left by the last waves.
   alb=mix(alb,alb*sdLin(vec3(.74,.7,.66)),sDamp);
   float swash=smoothstep(.85,1.,sin((sAbove*9.+snNoise(sXZ*.4)*2.)*3.14159))*sWet*(1.-smoothstep(0.,.3,-sAbove));
+  // The last waves' reach: thin lines of drying foam and froth along the top of the wet band, broken and wandering.
+  float swL=0.;
+  for(int i=0;i<2;i++){float at=(i==0?.7:2.1+.5*sWetN)+.45*snNoise(sXZ*vec2(.3,.3)+float(i)*7.3),w=.07+.05*(snNoise(sXZ*1.7+float(i))*.5+.5);
+    swL=max(swL,(1.-smoothstep(w*.4,w,abs(sShoreD-at)))*smoothstep(.2,.55,snNoise(sXZ*.9+float(i)*3.1)*.5+.5+(i==0?.25:0.)));}
+  swL*=sBeach*(1.-smoothstep(.06,.0,sAbove));
   alb=mix(alb,sdLin(vec3(.47,.37,.27))*(.9+.15*n3),sWet*.85);
   alb=mix(alb,pale*.95,swash*.35);
-  sRough=mix(sRough,.32,sWet*smoothstep(-.1,.2,-sAbove+.25));
+  alb=mix(alb,sdLin(vec3(.93,.9,.84)),swL*.75);
+  // Wet sand is glossy: a film of water over the grains, the low sun and the sky mirrored in it.
+  sRough=mix(sRough,mix(.3,.5,smoothstep(1.,3.,sShoreD)),sWet*(1.-swL));
   // Gameplay ground is trodden: packed, a shade darker, rippled only faintly (sandRippleAmp).
   alb=mix(alb,alb*sdLin(vec3(.93,.9,.88)),(1.-sOpen)*.6);
   // The citadel climb: scoria and basalt, with sand drifted into its hollows.
