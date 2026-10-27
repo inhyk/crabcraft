@@ -50,10 +50,11 @@ vec2 smRoot=(smCell+.15+.7*smR)*smCenter.z;
 vec2 smUv=(smRoot-smMap.xy)*smMap.zw;
 vec4 smM=texture2D(smMask,smUv);
 float smDist=length(smRoot-smCenter.xy)/(smN*smCenter.z*.5);
-// Clumps: the nearest of a jittered 2.4 m lattice of roots; blades of one clump share height, lean and tone, and
+// Clumps: the nearest of a jittered 2.4 m lattice of seeds; blades of one clump share height, lean and tone, and
 // stand taller at its heart. Bare patches: a slow noise thins the sward to nothing in places.
-vec2 smCc=floor(smRoot/2.4),smBest=vec2(0.);float smCd=9.;
-for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 c=smCc+vec2(i,j),q=(c+.15+.7*smHash22(c+3.7))*2.4;float d=length(smRoot-q);if(d<smCd){smCd=d;smBest=c;}}
+vec2 smCc=floor(smRoot/2.4-.5),smBest=vec2(0.);float smCd=9.;
+// The four lattice cells round the root (its jittered seeds keep to the middle of their cells, so this finds the nearest).
+for(int j=0;j<=1;j++)for(int i=0;i<=1;i++){vec2 c=smCc+vec2(i,j),q=(c+.3+.4*smHash22(c+3.7))*2.4;float d=length(smRoot-q);if(d<smCd){smCd=d;smBest=c;}}
 vec2 smK=smHash22(smBest+11.1),smK2=smHash22(smBest+29.3);
 vec2 smPc=floor(smRoot/9.),smPf=fract(smRoot/9.);smPf=smPf*smPf*(3.-2.*smPf);
 float smPatch=mix(mix(smHash22(smPc).x,smHash22(smPc+vec2(1.,0.)).x,smPf.x),mix(smHash22(smPc+vec2(0.,1.)).x,smHash22(smPc+1.).x,smPf.x),smPf.y);
