@@ -117,7 +117,11 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
       // Roof slabs and caps: smooth mud plaster in the wall's hue, trodden darker in patches.
       vec3 mud=mix(tint,vec3(.8,.68,.52),.45)*(.86+.18*mott)*(.95+.06*fine);
       c=mix(mud,c,smoothstep(.15,.6,vert));
-      diffuseColor.rgb=c*vPl.z;
+      c*=vPl.z;
+      // Lime is never paper white: the brightest wash keeps its warm cream and stays under 0.8 albedo, so a wall
+      // square to the low sun rolls off gold instead of clipping (dawn-polish).
+      float cm=max(c.r,max(c.g,c.b));c*=cm>.7?(.7+(.8-.7)*(1.-exp(-(cm-.7)/.1)))/cm:1.;
+      diffuseColor.rgb=c;
     }`,
     rough: 'roughnessFactor=mix(.95,.86,step(.5,vPlK)*step(vPlK,1.5));',
     normal: bump('adH', '1.'),

@@ -5,7 +5,7 @@ import {addPatch,stylise} from '../world/materials';
 import {planeWarp,ringWarp,type V3,type Warp} from './frostMasonry';
 import {Glass} from './frostThrone';
 import {frostFire,type Flame,type Halo} from './frostFire';
-import {DawnMason,dawnMasonryMaterial} from './dawnMasonry';
+import {DawnMason,GRANITE,dawnMasonryMaterial} from './dawnMasonry';
 import {dawnArena} from './dawnArena';
 import {CITADEL_APPROACH,CITADEL_ARENA,CITADEL_BRAZIERS,CITADEL_COLONNADE,CITADEL_GATE,CITADEL_KEEP,CITADEL_TOWERS,CITADEL_WALL,SOUTH_RUN,citadelObelisks,colonnadeColumns} from './dawnCitadelLayout';
 
@@ -84,9 +84,9 @@ export function dawnCitadel(height:Height):DawnCitadel {
  const basalt=(g:THREE.BufferGeometry,k=.5)=>extra.push(asStone(g,[.03*k*2,.028*k*2,.027*k*2],false,-99));
 
  /** A dressed monolith: a square block tapering from w0 to w1, flat-faced, its own tint. */
- const mono=(x:number,z:number,y0:number,hgt:number,w0:number,w1:number,yaw:number,tint:V3,ground:number)=>{
+ const mono=(x:number,z:number,y0:number,hgt:number,w0:number,w1:number,yaw:number,tint:V3,ground:number,channel=0)=>{
   const g=new THREE.CylinderGeometry(w1/Math.SQRT2,w0/Math.SQRT2,hgt,4,1).rotateY(Math.PI/4+yaw).translate(x,y0+hgt/2,z).toNonIndexed();g.computeVertexNormals();
-  extra.push(asStone(g,tint,false,ground));
+  extra.push(asStone(g,tint,channel,ground));
  };
  /** A face of a battered mass: foot a-b at v = v0, top c-d at v = v1, outward (nx, nz). */
  const quad=(ax:number,az:number,bx:number,bz:number,cx:number,cz:number,dx:number,dz:number,nx:number,nz:number,v0:number,v1:number)=>{
@@ -385,7 +385,8 @@ export function dawnCitadel(height:Height):DawnCitadel {
   for(const s of [-1,1])for(const z of CITADEL_APPROACH.z){
    const x=s*CITADEL_APPROACH.x,y=h(x,z);M.ground=y;
    plinth(x,z,y,1.15,0);
-   mono(x,z,y+.92,7.24,1.15,.72,0,M.basaltTint(1.2),y);
+   // Red Aswan granite, polished, speckled (dawnMasonry reads channel GRANITE); black basalt stays on the arena pillars.
+   mono(x,z,y+.92,7.24,1.15,.72,0,[.25*(.92+rand()*.16),.105,.072],y,GRANITE);
    gild(new THREE.ConeGeometry(.36*Math.SQRT2,1.1,4).rotateY(Math.PI/4).translate(x,y+8.7,z),y);
    const fx=x-s*(1.15+(.72-1.15)*.35)/2-s*.05;
    gild(new THREE.CylinderGeometry(.32,.32,.06,20).rotateZ(Math.PI/2).translate(fx,y+6.3,z),y);

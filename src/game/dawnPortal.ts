@@ -22,7 +22,7 @@ export class DawnPortal {
     const frost = tone === 'frost';
     const stone = dawnSandstone(frost ? 'dawnharbor-gate-stone-frost' : 'dawnharbor-gate-stone');
     if (frost) stone.color.set('#dfe6ee');
-    const gold = new THREE.MeshStandardMaterial({name: 'dawnharbor-gate-gilt', color: frost ? '#d8e6f2' : '#e8b24a', metalness: .9, roughness: .3, emissive: frost ? '#3a6c9a' : '#a8521a', emissiveIntensity: .35});
+    const gold = new THREE.MeshStandardMaterial({name: 'dawnharbor-gate-gilt', color: frost ? '#d8e6f2' : '#d6a54a', metalness: .9, roughness: .34, emissive: frost ? '#3a6c9a' : '#6a4316', emissiveIntensity: .22});
     const parts: THREE.BufferGeometry[] = [], gilt: THREE.BufferGeometry[] = [];
     const M = (x: number, y: number, z: number, rz = 0, s: THREE.Vector3 = new THREE.Vector3(1, 1, 1)) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rz)), s);
     // Dais: three round steps, the top one a little worn in the middle.
@@ -71,13 +71,18 @@ export class DawnPortal {
         gilt.push(solidPart(ray, M(Math.cos(a) * (.3 + len / 2), cy + Math.sin(a) * (.3 + len / 2), z - face * .04, a - Math.PI / 2, new THREE.Vector3(1, 1, .35)))); ray.dispose();
       }
     }
-    // The crown of rays behind the arch: gilded blades, long and short, fanning from the arch's centre.
+    // A carved sandstone sunburst behind the arch: nine tapering rays, long and short, cut in relief from a fan of
+    // stone, each long ray inlaid with a thin bronze-gilt line (the old gilded spikes clashed with the palette).
     const blades: THREE.BufferGeometry[] = [];
-    for (let k = 0; k <= 16; k++) {
-      const a = Math.PI * (k / 16), len = k % 2 ? .75 : 1.35;
-      const s = new THREE.Shape(); s.moveTo(-.11, 0); s.lineTo(.11, 0); s.lineTo(0, len); s.closePath();
-      const g = new THREE.ExtrudeGeometry(s, {depth: .04, bevelEnabled: true, bevelThickness: .015, bevelSize: .015, bevelSegments: 1});
-      blades.push(solidPart(g, M(Math.cos(a) * (RO + .05), SPRING + Math.sin(a) * (RO + .05), -DEPTH / 2 + .1, a - Math.PI / 2))); g.dispose();
+    for (let k = 0; k <= 8; k++) {
+      const a = Math.PI * (k / 8), len = k % 2 ? .62 : 1.05, w0 = .2, w1 = .05, s = new THREE.Shape();
+      s.moveTo(-w0, 0); s.lineTo(w0, 0); s.lineTo(w1, len - .04); s.quadraticCurveTo(0, len + .03, -w1, len - .04); s.closePath();
+      const g = new THREE.ExtrudeGeometry(s, {depth: .2, bevelEnabled: true, bevelThickness: .03, bevelSize: .025, bevelSegments: 1, curveSegments: 3});
+      parts.push(solidPart(g, M(Math.cos(a) * (RO - .05), SPRING + Math.sin(a) * (RO - .05), -DEPTH / 2 - .02, a - Math.PI / 2))); g.dispose();
+      if (k % 2 === 0) for (const face of [0, 1]) {
+        const line = new THREE.BoxGeometry(.035, len * .62, .02);
+        blades.push(solidPart(line, M(Math.cos(a) * (RO + len * .36), SPRING + Math.sin(a) * (RO + len * .36), face ? -DEPTH / 2 + .22 : -DEPTH / 2 - .06, a - Math.PI / 2))); line.dispose();
+      }
     }
     const stoneGeo = mergeGeometries(parts, false)!, giltGeo = mergeGeometries([...gilt, ...blades], false)!;
     [...parts, ...gilt, ...blades].forEach(g => g.dispose());

@@ -245,7 +245,9 @@ const SAND_AFTER = /* glsl */ `
       vec3 relC=rel>0.?min(rel,.8)*vec3(1.,.95,.85):max(rel,-.5)*vec3(.3,.16,-.12);
       // Hollows see less sky than crests (the bake's height against its blur a few metres round).
       float open=clamp(sCrest*.18,-.16,.1);
-      outgoingLight+=reflectedLight.indirectDiffuse*(vec3(-.3,-.1,.48)*(1.-sWet)+relC+open);
+      // The lilac only where the sun is not: in sunlight the gold stays clean.
+      float sunlit=smoothstep(.4,1.6,dot(reflectedLight.directDiffuse,vec3(.3,.59,.11))/max(dot(reflectedLight.indirectDiffuse,vec3(.3,.59,.11)),1e-4));
+      outgoingLight+=reflectedLight.indirectDiffuse*(vec3(-.3,-.1,.48)*(1.-sWet)*(1.-sunlit)+relC+open);
     }
     // Wet sand mirrors the sky.
     vec3 R=reflect(-sV,sN);
