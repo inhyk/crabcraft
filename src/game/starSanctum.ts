@@ -103,7 +103,7 @@ float sfInlay(vec2 p){
 `;
 
 function sanctumFloorMaterial(): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({color: '#7d819c', roughness: .78, metalness: 0});
+  const m = new THREE.MeshStandardMaterial({color: '#2a3346', roughness: .72, metalness: 0});
   m.name = 'star-sanctum-floor';
   m.onBeforeCompile = shader => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSfWorld;')
@@ -122,6 +122,9 @@ float sfR=length(sfP);
 float sfObsidian=1.-smoothstep(1.93,1.96,sfR);
 {
   float tone=.82+.32*sfH(sfSlab*vec2(17.,3.)+.5);
+  // Three values: dark slate courses, every other course a paler moonstone band, the inlay glowing over both.
+  float sfBand=sfSlab.x>.5&&mod(sfSlab.x,2.)>.5?1.:0.;
+  tone*=mix(1.,2.8,sfBand);
   float mott=sfN(sfP*1.1)*.55+sfN(sfP*4.3)*.3+sfN(sfP*13.)*.15;
   // Worn where feet go: the approach from the south gate and the circle round the eclipse.
   float worn=exp(-pow(sfP.x/3.2,2.))*smoothstep(-2.,10.,sfP.y)+exp(-pow((sfR-6.8)/2.4,2.))*.5;
@@ -131,7 +134,7 @@ float sfObsidian=1.-smoothstep(1.93,1.96,sfR);
   stone=mix(stone,stone*.55,sfRim*.6*(1.-sfSilver));
   vec3 obs=vec3(.012,.012,.022);
   diffuseColor.rgb=mix(stone,obs,sfObsidian);
-  diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.78,.8,.9),sfSilver);
+  diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.55,.62,.7),sfSilver);
 }`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 {
@@ -145,7 +148,8 @@ float sfObsidian=1.-smoothstep(1.93,1.96,sfR);
       .replace('#include <lights_physical_fragment>', `roughnessFactor=mix(roughnessFactor,.32,sfSilver);roughnessFactor=mix(roughnessFactor,.12,sfObsidian);roughnessFactor=mix(roughnessFactor,1.,sfGroove);metalnessFactor=mix(metalnessFactor,1.,sfSilver);
 #include <lights_physical_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-totalEmissiveRadiance+=vec3(.05,.07,.13)*sfSilver;
+// The inlay's lines carry the sanctum's light: pale cyan silver, brightest along their cut edges.
+totalEmissiveRadiance+=vec3(.42,.82,1.)*sfSilver*smoothstep(4.8,5.6,sfR)*.95;
 // The eclipse at the centre burns: its corona's inlay gives pearly light, brightest at the limb, and a rose
 // chromosphere edges the obsidian; the rings further out stay moonlit silver.
 {
