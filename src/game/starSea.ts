@@ -60,15 +60,21 @@ export class StarSea {
             // Disc radii, the vertical stretched about twice (rougher water nearer the eye stretches more).
             float stretch=1.7+.7*detail;
             float rr=length(vec2(daz*cos(asin(STAR_ECL.y))/STAR_ECL_R,del/(STAR_ECL_R*stretch)));
-            eclDark=(1.-smoothstep(.75,1.05,rr))*toward;
-            float corona=pow(max(rr,1.),-2.5)*smoothstep(.95,1.08,rr)*(1.-smoothstep(2.,3.,rr));
-            // Below the image a narrow column of glints runs on toward the eye.
-            float tail=exp(-daz*daz/.0016)*exp(-max(-del,0.)/.12)*step(del,0.)*smoothstep(1.,1.6,rr)*.35;
             float sparkle=.25+.75*smoothstep(.35,.95,sin(p1*1.7+sw2)*.5+.5)*smoothstep(.2,.8,sin(p2*1.3)*.5+.5);
-            eclPath=(corona*.9+tail)*sparkle*toward;
+            // The dark image's edge is broken by the waves (a crisp black shape on the water reads as a hole), and it
+            // is only a shade darker than the sea round it.
+            float rw=rr+(sparkle-.6)*.35;
+            // Seen from high up (the overview, the sanctum from above) the image would span the bay as a dark arch: there
+            // the water shows only the glitter column.
+            float low=1.-smoothstep(6.,14.,cameraPosition.y);
+            eclDark=(1.-smoothstep(.55,1.1,rw))*toward*low;
+            float corona=pow(max(rw,1.),-2.5)*smoothstep(.9,1.1,rw)*(1.-smoothstep(2.,3.,rr));
+            // Below the image a narrow column of glints runs on toward the eye.
+            float tail=exp(-daz*daz/.0016)*exp(-max(-del,0.)/.12)*mix(1.,step(del,0.)*smoothstep(1.,1.6,rr),low)*.35;
+            eclPath=(corona*.9*low+tail)*sparkle*toward;
           }
-          reflection*=1.-.6*eclDark;
-          vec3 color=mix(water,reflection,fresnel*.65)*(1.-.35*eclDark)+vec3(.92,.87,.76)*eclPath;
+          reflection*=1.-.45*eclDark;
+          vec3 color=mix(water,reflection,fresnel*.65)*(1.-.2*eclDark)+vec3(.92,.87,.76)*eclPath;
           vec3 halfLight=normalize(view+moonDirection);
           // Waves too small to draw still scatter the moon: the farther, the broader and dimmer its glint.
           float shin=mix(14.,96.,detail);
