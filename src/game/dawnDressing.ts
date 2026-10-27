@@ -164,6 +164,15 @@ export function dawnDressing(height: (x: number, z: number) => number, kits: {pr
       plant(['Bush_Common_Flowers', 'Flower_4_Group', 'Flower_3_Group'][stats.doorPots % 3], px, height(px, pz) + .42, pz, R() * 6, .3);
       stats.doorPots++;
     }
+    // Fronts on the avenue and round the square: a bench against the wall past the lantern, and a big potted plant.
+    if (Math.abs(d.pos.x) < 14 || Math.hypot(d.pos.x - SQ.x, d.pos.z - SQ.z) < 22) {
+      const bx = d.pos.x + ox * .42 + rx * 1.15, bz = d.pos.z + oz * .42 + rz * 1.15;
+      if (clear(bx, bz, .9) && roadClearance(bx, bz) > .2 && put('Bench', bx, bz, d.yaw, .9)) stats.benches++;
+      const vx = d.pos.x + ox * .5 + rx * 2.35, vz = d.pos.z + oz * .5 + rz * 2.35;
+      if (clear(vx, vz, .5) && roadClearance(vx, vz) > .2 && put('Vase_4', vx, vz, R() * 6, 1.35)) {
+        plant(stats.planters % 2 ? 'Plant_7_Big' : 'Bush_Common_Flowers', vx, height(vx, vz) + .62, vz, R() * 6, .5); stats.planters++;
+      }
+    }
     const lm = trs(d.pos.x, d.pos.y + .55, d.pos.z, d.yaw, .7);
     putAt('Lantern_Wall', lm); glows.push({pos: lanternFlame(lm), size: 1.1}); stats.lanterns++;
   }
