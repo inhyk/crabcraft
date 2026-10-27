@@ -45,9 +45,20 @@ export class StarSea {
           float shallows=1.-smoothstep(.2,7.,depth);
           vec3 water=mix(vec3(.007,.015,.035),vec3(.016,.065,.078),shallows);
           float fresnel=.04+.96*pow(1.-max(0.,dot(view,normal)),5.);
-          vec3 reflection=starAtmosphere(reflected,time);
+          // The sky without the eclipse's ring (a ring broken up by waves reads as a melted blot): the corona's light
+          // comes back instead as a glitter path, a narrow column stretched toward the eye under the eclipse.
+          vec3 reflection=starGradient(reflected)+starAuroraGlow(reflected,time)*.09;
           reflection=mix(reflection,vec3(.045,.045,.09),.28);
-          vec3 color=mix(water,reflection,fresnel*.65);
+          float eclPath;
+          {
+            vec3 rd=normalize(reflected);
+            float daz=atan(rd.x,-rd.z)-atan(STAR_ECL.x,-STAR_ECL.z);
+            float del=asin(clamp(rd.y,-1.,1.))-asin(STAR_ECL.y);
+            float path=exp(-daz*daz/.0025)*exp(-abs(del)/.1)*smoothstep(.02,.35,(cameraPosition.z-world.z)/max(distanceToEye,1.));
+            float sparkle=.45+.55*smoothstep(.2,.9,sin(p1*1.7)*.5+.5);
+            eclPath=path*sparkle*.6;
+          }
+          vec3 color=mix(water,reflection,fresnel*.65)+vec3(.92,.87,.74)*eclPath;
           vec3 halfLight=normalize(view+moonDirection);
           // Waves too small to draw still scatter the moon: the farther, the broader and dimmer its glint.
           float shin=mix(14.,96.,detail);

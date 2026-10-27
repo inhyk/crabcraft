@@ -169,7 +169,7 @@ export function starMeadow(height: (x: number, z: number) => number, paths: read
       .replace('#include <begin_vertex>', '');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vSmCol;\nvarying float vSmT;\nvarying float vSmAo;\nvarying float vSmTurf;\nvarying vec3 vSmN;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, the tips catching the moon (silvered); mown turf stays close to the ground\'s own value.\nfloat smTip=smoothstep(.45,1.,vSmT);\ndiffuseColor.rgb=vSmCol*mix(mix(.5,1.,vSmTurf),mix(1.1,1.2,vSmTurf),smoothstep(0.,.8,vSmT))*mix(.6,1.,vSmAo);\ndiffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(1.25,1.4,1.75)+vec3(.012,.016,.026),smTip*smTip*(1.-.6*vSmTurf));')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n// Dark in the thatch, the tips catching the moon (silvered); mown turf stays close to the ground\'s own value.\nfloat smTip=smoothstep(.45,1.,vSmT);\ndiffuseColor.rgb=vSmCol*mix(mix(.5,1.,vSmTurf),mix(1.1,1.2,vSmTurf),smoothstep(0.,.8,vSmT))*mix(.6,1.,vSmAo);\ndiffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(1.5,1.75,2.2)+vec3(.022,.03,.05),smTip*(1.-.6*vSmTurf));')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(.9,.6,vSmT);')
       // Both faces lit as the front: grass is thin enough to let the moon through.
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n// Both faces lit as the turf they stand in: the terrain\'s world normal, whichever face is seen.\nnormal=normalize((viewMatrix*vec4(vSmN,0.)).xyz);');
