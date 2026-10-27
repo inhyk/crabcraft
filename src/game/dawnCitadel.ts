@@ -97,6 +97,16 @@ export function dawnCitadel(height:Height):DawnCitadel {
   const L=Math.hypot(bx-ax,bz-az),w=planeWarp(ax,az,(bx-ax)/L,(bz-az)/L);M.face(w,0,L,v0,v1,{len:2.1,course:1.05,depth:.6,...o});return {w,L};
  };
  const front=(zf:number)=>planeWarp(0,zf,-1,0);
+ /**
+  * A face with an opening centred at u = mid, `half` wide, `head` high: the near mason lays it block by block round
+  * the opening; the far slabs (which know nothing of openings) are laid here in three pieces round it.
+  */
+ const openFace=(ax:number,az:number,bx:number,bz:number,v0:number,v1:number,mid:number,half:number,head:number,o:Parameters<DawnMason['face']>[5])=>{
+  const far=M.far;M.far=null;const r=wallFace(ax,az,bx,bz,v0,v1,o);M.far=far;
+  if(far){far.ground=M.ground;far.snow=0;const t=far.tint(1.05),d=.6;
+   far.slab(r.w,0,v0,0,mid-half,v1-v0,d,t,1,1|4|32);far.slab(r.w,mid+half,v0,0,r.L-mid-half,v1-v0,d,t,1,1|4|16);far.slab(r.w,mid-half,head,0,2*half,v1-head,d,t,1,1|4|8);}
+  return r;
+ };
  const box=(x0:number,x1:number,y0:number,y1:number,zf:number,d:number,bevel=.07,tint?:V3)=>M.block(front(zf),-x1,y0,0,x1-x0,y1-y0,d,{bevel,tint,closed:true,far:true});
  /** A gilded piece from a three.js geometry. */
  const gild=(g:THREE.BufferGeometry,ground=0)=>extra.push(asStone(g,[1,1,1],true,ground));
@@ -195,7 +205,7 @@ export function dawnCitadel(height:Height):DawnCitadel {
   const opening=(x:number,v:number)=>Math.abs(x)<G.open+margin&&v<archTop(Math.min(Math.abs(x),G.open))+margin;
   for(const zf of [G.front,G.back]){
    const south=zf===G.front;
-   const {w}=wallFace(south?G.half:-G.half,zf,south?-G.half:G.half,zf,b,top,{quoins:1.3,skip:(u,v)=>opening(south?G.half-u:u-G.half,v)});
+   const {w}=openFace(south?G.half:-G.half,zf,south?-G.half:G.half,zf,b,top,G.half,G.open+margin,apex+margin,{quoins:1.3,skip:(u,v)=>opening(south?G.half-u:u-G.half,v)});
    parapet(w,.2,2*G.half-.2,top,{merlon:1.05});
    // Ablaq voussoirs round the pointed arch, basalt and limestone in turn, a gilt keystone.
    const sgn=south?1:-1,zz=zf+sgn*.12;
@@ -282,7 +292,7 @@ export function dawnCitadel(height:Height):DawnCitadel {
   faces.forEach(([ax,az,bx,bz],i)=>{
    const b=groundMin(ax,az,bx,bz)-1.4;M.ground=b+1.4;
    const skip=i===0?(u:number,v:number)=>{const x=K.hx-u;return Math.abs(x)<door.half+.9&&v<doorTop(Math.min(Math.abs(x),door.half))+.9;}:undefined;
-   const {w,L}=wallFace(ax,az,bx,bz,b,K.top,{quoins:1.4,skip});
+   const {w,L}=skip?openFace(ax,az,bx,bz,b,K.top,K.hx,door.half+.9,door.apex+.9,{quoins:1.4,skip}):wallFace(ax,az,bx,bz,b,K.top,{quoins:1.4});
    parapet(w,1.6,L-1.6,K.top);
   });
   M.slab((u,v,t)=>[x0+u,v,zn+t],0,K.top-.6,0,2*K.hx,.4,2*K.hz,M.tint(.9),1,4);
