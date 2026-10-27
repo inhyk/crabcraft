@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {dawnBoulders} from './dawnBoulders';
 import {dawnLamps} from './dawnLamps';
 import {dawnPaving} from './dawnPaving';
 import {DAWN_PATHS} from './world3Colliders';
@@ -22,6 +23,8 @@ export function dawnTown(height: (x: number, z: number) => number): DawnTown {
   root.add(paving.root);
   const lamps = dawnLamps(height);
   root.add(lamps.group);
+  const boulders = dawnBoulders(height);
+  root.add(boulders.group);
   let q: 'high' | 'low' | null = null;
   return {
     root,
@@ -29,6 +32,7 @@ export function dawnTown(height: (x: number, z: number) => number): DawnTown {
       if (quality !== q) { q = quality; paving.setQuality(quality); }
       paving.setSun(sunDir);
       lamps.update(time);
+      boulders.update(time);
     },
   };
 }

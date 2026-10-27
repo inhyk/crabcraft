@@ -1,4 +1,5 @@
 import {dawnTown,type DawnTown} from './dawnTown';
+import {dawnHouseMaterials} from './dawnHouses';
 import {Scatter} from '../world/kit';
 import {StarWind} from './starWind';
 import * as THREE from 'three';
@@ -9,7 +10,7 @@ import {loadKit,StaticBatch,trs} from '../world/kit';
 import {TownBuilder} from '../world/buildings';
 import {dawnHeight,DAWN_ARENA_HEIGHT} from '../sim/world/ground';
 import type {Poi} from '../world/types';
-import {dawnForest,dawnGrove,dawnLots,dawnRocks,layoutDawnreach,roadClearance} from './world3Colliders';
+import {dawnForest,dawnGrove,dawnLots,layoutDawnreach,roadClearance} from './world3Colliders';
 
 /** The third island has its own warm coast, inhabited ring town and volcanic citadel. */
 export class DawnIsland {
@@ -21,7 +22,6 @@ export class DawnIsland {
  readonly portal=new StarPortal(this.spawn,'새벽 항구 → 별빛 항구');
  readonly town:[number,number][]=[[-16,48],[16,48],[-26,38],[26,38],[-20,64],[20,80],[20,64]];
  private wind:StarWind|null=null;private scenery:DawnScenery;private sun=new StarSun();
- private rotating:THREE.Object3D[]=[];
  /** Dawnharbor's own streets, lamps, rocks, harbour and gate (dawnTown.ts). */
  readonly townLook:DawnTown;
  height(x:number,z:number){
@@ -33,7 +33,6 @@ export class DawnIsland {
   const sand=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.95,vertexColors:true});
   const roof=new THREE.MeshStandardMaterial({color:'#267b82',roughness:.7});
   const gold=new THREE.MeshStandardMaterial({color:'#ffd67a',emissive:'#d57b23',emissiveIntensity:.65,metalness:.6,roughness:.35});
-  const lava=new THREE.MeshStandardMaterial({color:'#ff763b',emissive:'#ff4612',emissiveIntensity:1.2});
   const land=new THREE.PlaneGeometry(300,350,120,140);land.rotateX(-Math.PI/2);const p=land.getAttribute('position'),col=[];
   for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i),y=this.height(x,z);p.setY(i,y);const c=new THREE.Color(y>12?'#747478':y<3?'#d2bd90':Math.abs(x)>24?'#84976a':'#cbbb95');col.push(c.r,c.g,c.b);}
   land.setAttribute('color',new THREE.Float32BufferAttribute(col,3));land.computeVertexNormals();const ground=new THREE.Mesh(land,sand);ground.receiveShadow=true;this.root.add(ground);
@@ -44,14 +43,13 @@ export class DawnIsland {
   for(const side of [-1,1]){const tower=add(new THREE.CylinderGeometry(3.6,4.4,15,10),stone,side*27,this.height(side*27,-56)+7.5,-56);add(new THREE.ConeGeometry(4.6,6,10),roof,tower.position.x,tower.position.y+10.5,-56);}
   const floor=add(new THREE.CylinderGeometry(21,22,1.3,64),stone,0,DAWN_ARENA_HEIGHT-.6,-72);floor.name='dawn-boss-platform';
   for(const r of [6,13,20]){const ring=add(new THREE.TorusGeometry(r,.07,5,96),gold,0,DAWN_ARENA_HEIGHT+.12,-72);ring.rotation.x=Math.PI/2;}
-  for(const {i,x,z,r} of dawnRocks()){const y=this.height(x,z);const rock=add(new THREE.DodecahedronGeometry(r,0),stone,x,y+r*.65,z);rock.scale.y=1.5;if(i%3===0){const core=add(new THREE.OctahedronGeometry(.8),lava,x,y+3,z);this.rotating.push(core);}}
   this.townLook=dawnTown((x,z)=>this.height(x,z));this.root.add(this.townLook.root);
   this.scenery=new DawnScenery((x,z)=>this.height(x,z));this.root.add(this.scenery.root);
   this.root.add(this.portal.root,new THREE.HemisphereLight('#ffe8be','#233a53',.9));const sun=this.sun.light;sun.name='dawnreach-sun';sun.color.set('#ffe6b3');sun.intensity=2.8;this.root.add(sun,sun.target);
  }
  async buildSettlement(){
   const village=await loadKit('models/world/village.glb'),props=await loadKit('models/world/props.glb');
-  const homes=new StaticBatch(village,'dawnharbor-homes'),builder=new TownBuilder(village,homes,null,{});
+  const homes=new StaticBatch(village,'dawnharbor-homes'),builder=new TownBuilder(village,homes,null,dawnHouseMaterials(village));
   for(const lot of dawnLots())builder.build(lot);this.root.add(homes.build());
   // Use the same textured foliage kit as World I: real branching trunks and leaf clusters.
   const nature=await loadKit('models/world/nature.glb'),forest=new Scatter(nature,'dawnreach-leafy-trees');
@@ -81,5 +79,5 @@ export class DawnIsland {
   this.root.add(market.build());
  }
  private sunDir=new THREE.Vector3();
- update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);for(const r of this.rotating){r.rotation.y=time*.45;r.rotation.z=Math.sin(time*.8+r.position.x)*.15;}}
+ update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.light.position,this.sun.light.target.position));this.wind?.update(time);this.sun.update(x,z);this.scenery.update(time);this.portal.update(time);}
 }

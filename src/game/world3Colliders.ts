@@ -84,7 +84,8 @@ export function dawnLots(): Lot[] {
     for (let i = 0; i < 4; i++) {
       const x = side * (i % 2 ? 38 : 35),
         z = 26 + i * 19;
-      lots.push({ id: `dawn-${side}-${i}`, kind: i === 2 ? (side === 1 ? 'forge' : 'tavern') : 'house', x, z, yaw: side < 0 ? Math.PI / 2 : -Math.PI / 2, sx: i === 2 ? 4 : 3, sz: i === 2 ? 4 : 3, floors: i % 2 ? 2 : 1, style: (i + (side > 0 ? 2 : 0)) % 4, h: dawnHeight(x, z) });
+      lots.push({ id: `dawn-${side}-${i}`, kind: i === 2 ? (side === 1 ? 'forge' : 'tavern') : 'house', x, z, yaw: side < 0 ? Math.PI / 2 : -Math.PI / 2, sx: i === 2 ? 4 : 3, sz: i === 2 ? 4 : 3, floors: i % 2 ? 2 : 1, // Plaster walls only (styles 2 and 3): limewashed upper storeys, no half-timbering as in World I.
+        style: 2 + ((i + (side > 0 ? 1 : 0)) % 2), h: dawnHeight(x, z) });
     }
   return lots;
 }
