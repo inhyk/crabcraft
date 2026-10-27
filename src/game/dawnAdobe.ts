@@ -137,6 +137,12 @@ export function dawnPlaster(): THREE.MeshStandardMaterial {
       }
       // Roof slabs and caps: smooth mud plaster in the wall's hue, trodden darker in patches.
       vec3 mud=mix(tint,vec3(.8,.68,.52),.45)*(.86+.18*mott)*(.95+.06*fine);
+      // The roof slabs below the parapet are bare packed mud, darker and browner than the lime above them (the
+      // caps keep the wash): seen from the streets and the heights they part the houses from the sand by value.
+      float slab=smoothstep(.22,.42,vPl.y)*(1.-smoothstep(.15,.6,vert));
+      vec3 earth=mix(tint*.55,vec3(.4,.28,.17),.6)*(.8+.28*mott)*(.93+.1*fine);
+      earth*=1.-.12*smoothstep(.55,.75,fpNoise(q*.9+5.)*.5+.5);
+      mud=mix(mud,earth,slab);
       c=mix(mud,c,smoothstep(.15,.6,vert));
       c*=vPl.z;
       // Lime is never paper white: the brightest wash keeps its warm cream and stays under 0.8 albedo, so a wall

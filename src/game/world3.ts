@@ -1,5 +1,6 @@
 import {dawnTown,type DawnTown} from './dawnTown';
 import {DAWN_GOODS,dawnGoods} from './dawnGoods';
+import {DAWN_PLAZA} from './dawnPlazaPlan';
 import {dawnHouses,type DawnQuarter} from './dawnHouses';
 import {dawnDressing,type DawnDressing} from './dawnDressing';
 import {dawnRequestLook} from './dawnRequestProps';
@@ -120,7 +121,8 @@ export class DawnIsland {
   this.quarter=dawnHouses((x,z)=>this.height(x,z),{props,nature});this.root.add(this.quarter.group);
   this.dressing=dawnDressing((x,z)=>this.height(x,z),{props,nature},this.quarter.doors,this.town,{yardLaundry:false});this.root.add(this.dressing.group);
   // Grouped scenes of goods on the bare ground: a caravan's rest, merchants' stacks, potters' yards (dawnGoods.ts).
-  this.root.add(dawnGoods(DAWN_GOODS,(x,z)=>this.height(x,z)));
+  // The square's well, trough, hitching rail, cargo, hand cart and shade canopy (dawnPlazaPlan.ts) are scenes of the same kind.
+  this.root.add(dawnGoods([...DAWN_GOODS,...DAWN_PLAZA],(x,z)=>this.height(x,z)));
   for(const piece of nature.pieces.values())for(const part of piece.parts)part.geometry.dispose();
  }
  /** Dawnharbor's request props (dawnRequestProps.ts) in place of the shared placeholders. */

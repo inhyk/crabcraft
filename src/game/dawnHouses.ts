@@ -25,6 +25,8 @@ const FINISH = [FIN.plaster, FIN.ashlar, FIN.mudbrick, FIN.plaster, FIN.plaster]
 const PAINT = ['#2b3a7a', '#2aa3a0', '#4a78a0', '#c98a1a', '#a5482a', '#3f6e4a', '#356f86'];
 const CLOTH = ['#2b3a7a', '#e3a21a', '#b5532c', '#c9b48e', '#7a2f3a', '#2f6f78'];
 const WOOD_DARK = '#5a3d26';
+/** Door frames: indigo, turquoise, ochre, madder lime. */
+const FRAMES = ['#34508f', '#2e8a86', '#b88a35', '#9a4630', '#3f6e86'];
 
 export interface DawnQuarter {
   group: THREE.Group;
@@ -276,7 +278,7 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
     // Opening details.
     for (const {f, h, style: st, paint: pc} of feats) {
       const F = fr.faces[f], uc = (h.u0 + h.u1) / 2, w = h.u1 - h.u0;
-      if (st === 'lintel') wood(new THREE.BoxGeometry(w + .36, .12, .26), basis(facePoint(F, uc, h.v1 + .07).addScaledVector(F.N, .05), F.U, Y, F.N), null, 0);
+      if (st === 'lintel') wood(new THREE.BoxGeometry(w + .36, .12, .26), basis(facePoint(F, uc, h.v1 + .07).addScaledVector(F.N, .05), F.U, Y, F.N), VIGA, .8);
       if (st === 'sill' || st === 'shutter') { const p = facePoint(F, uc, h.v0 - .04).addScaledVector(F.N, .05); box(wall, p.x, p.y, p.z, w + .18, .08, .16, faceYaw(F.N)); }
       if (st === 'shutter') {
         const hh = (h.arch ? h.v1 - w / 2 : h.v1) - h.v0 + .02;
@@ -284,6 +286,14 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
           const u = s < 0 ? h.u0 - w / 4 - .02 : h.u1 + w / 4 + .02, p = facePoint(F, u, h.v0 + hh / 2).addScaledVector(F.N, .045);
           wood(new THREE.BoxGeometry(w / 2, hh, .035), basis(p, F.U, Y, F.N), pc, .9, new V(0, 1, 0));
         }
+      }
+      if (h.kind === CR.door && h.v0 === 0 && b.role !== 'wall' && b.role !== 'shrine' && b.seed % 3 !== 2) {
+        // A painted frame round the doorway (indigo, turquoise, ochre or madder lime), a dark accent the sand never has.
+        wall.col.set(FRAMES[(b.seed >> 2) % FRAMES.length]); wall.k = FIN.plaster;
+        const top = h.v1 + .14, yaw = faceYaw(F.N);
+        for (const u of [h.u0 - .1, h.u1 + .1]) { const p = facePoint(F, u, top / 2 - .02).addScaledVector(F.N, .035); box(wall, p.x, p.y, p.z, .16, top + .04, .09, yaw); }
+        { const p = facePoint(F, uc, top).addScaledVector(F.N, .035); box(wall, p.x, p.y, p.z, w + .36, .16, .09, yaw); }
+        wall.col.set(DAWN_TINTS[b.tint]); wall.k = FINISH[b.tint];
       }
       if (h.kind === CR.door && h.v0 === 0) {
         // Threshold step, and the door's anchor for the dressing (beside the door, as TownBuilder's).
@@ -298,12 +308,14 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
     if (b.role === 'wall') continue;
     // Vigas: roof-beam ends out of the long faces (beams span the short way), and floor beams on upper storeys.
     const long: DawnFace[] = b.w >= b.d ? ['z+', 'z-'] : ['x+', 'x-'];
+    // Each house has its own beam rhythm: close-set, regular or wide.
+    const rhythm = [.58, .74, .92, 1.12][b.seed % 4];
     for (const f of long) {
       const F = fr.faces[f], L = F.L, levels = [G.roof - .16 - G.ground];
       if (b.role === 'bridge') levels[0] = G.roof - .16 - G.ground;
       for (let fl = 1; fl < floors; fl++) levels.push(fl * sh - .12);
       for (const v of levels) {
-        const step = v > b.h - .5 ? .74 : .95;
+        const step = v > b.h - .5 ? rhythm : rhythm * 1.3;
         for (let u = .45 + (R() * .1); u < L - .3; u += step) {
           if ((holes[f] ?? []).some(h => u > h.u0 - .2 && u < h.u1 + .2 && v > h.v0 - .25 && v < h.v1 + .35)) continue;
           const out = .26 + R() * .08, p = facePoint(F, u, v + (R() - .5) * .03).addScaledVector(F.N, out);
@@ -317,6 +329,39 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
       const f = b.w >= b.d ? (b.seed % 2 ? 'x+' : 'x-') : (b.seed % 2 ? 'z+' : 'z-'), F = fr.faces[f];
       const p = facePoint(F, F.L * (.3 + .4 * R()), b.h + .06).addScaledVector(F.N, .3);
       wood(new THREE.BoxGeometry(.16, .1, .75), basis(p, F.U, Y, F.N).multiply(new THREE.Matrix4().makeRotationX(.12)), null, 0, new V(0, 0, 1));
+    }
+    // Parapet profile: plain, stepped corners, stepped-triangle merlons (shurafat), rounded corner pinnacles, or a
+    // raised centre on the long faces, so no two neighbours share a roofline.
+    const pv = b.role === 'bridge' || b.role === 'shrine' ? 0 : (b.seed >> 1) % 5;
+    if (pv) {
+      wall.col.set(DAWN_TINTS[b.tint]); wall.k = FINISH[b.tint]; wall.gy = G.ground; wall.top = G.top + 1;
+      const hx = b.w / 2 - fr.bat - .15, hz = b.d / 2 - fr.bat - .15, t0 = G.top - .02;
+      const along = (f: 'x' | 'z', s: number, u: number, y: number, len: number, hh: number, th = .3) => f === 'z' ? box(wall, b.x + u, y + hh / 2, b.z + s * hz, len, hh, th) : box(wall, b.x + s * hx, y + hh / 2, b.z + u, th, hh, len);
+      if (pv === 1) {
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+          along('z', sz, sx * (hx - .55), t0, 1.1, .3); along('x', sx, sz * (hz - .55), t0, 1.1, .3);
+          along('z', sz, sx * (hx - .28), t0 + .28, .56, .3); along('x', sx, sz * (hz - .28), t0 + .28, .56, .3);
+        }
+      } else if (pv === 2) {
+        for (const [f, half, other] of [['z', hx, -1], ['z', hx, 1], ['x', hz, -1], ['x', hz, 1]] as const) {
+          const n = Math.max(2, Math.floor((half * 2 - .3) / .62)), sp = (half * 2 - .3) / n;
+          for (let i = 0; i <= n; i++) { const u = -half + .15 + i * sp; along(f, other, u, t0, .34, .2, .26); along(f, other, u, t0 + .18, .16, .17, .2); }
+        }
+      } else if (pv === 3) {
+        const fin = lathe([[0, 0], [.2, 0], [.2, .22], [.16, .46], [.08, .64], [0, .7]], 10);
+        const spots: [number, number][] = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
+        if (b.w > 4.5) spots.push([0, -hz], [0, hz]);
+        if (b.d > 4.5) spots.push([-hx, 0], [hx, 0]);
+        for (const [x, z] of spots) wall.geo(fin, new THREE.Matrix4().makeTranslation(b.x + x, t0, b.z + z));
+        fin.dispose();
+      } else {
+        for (const f of long) {
+          const s = f[1] === '+' ? 1 : -1, ax = f[0] === 'z' ? 'z' : 'x', half = ax === 'z' ? hx : hz;
+          if (half < 1.6) continue;
+          along(ax, s, 0, t0, Math.min(2.4, half), .26); along(ax, s, 0, t0 + .24, Math.min(1.2, half * .5), .22);
+        }
+      }
+      wall.top = G.top;
     }
     // Mashrabiya bay over the door on two-storey street fronts.
     if (b.door && floors > 1 && b.seed % 2 === 0 && b.role !== 'forge') {
@@ -600,7 +645,7 @@ export function dawnHouses(heightW: (x: number, z: number) => number, kits: {pro
     const p = at(F.L / 2 - 1.3, .42); jar(p.x, height(p.x, p.z), p.z, 1.25, null, b.seed);
     const q = at(F.L / 2 - 1.85, .38); pot(q.x, height(q.x, q.z), q.z, 1, b.seed + 1, R() < .5 ? 'Plant_7_Big' : 'Plant_1');
     if (b.seed % 3 === 0) wallCarpet(F, F.L / 2 + 1.9, .6, .85, 1.35, CLOTH[b.seed % CLOTH.length], b.seed);
-    if (b.seed % 3 === 1) awning(F, F.L / 2 - 1.05, F.L / 2 + 1.05, 2.75, .9, .3, CLOTH[b.seed % CLOTH.length], b.seed % 2 === 0, false, b.seed);
+    if (b.seed % 3 !== 0) awning(F, F.L / 2 - 1.05, F.L / 2 + 1.05, 2.75 + (b.seed % 3 === 2 ? .2 : 0), .9, .3, CLOTH[b.seed % CLOTH.length], b.seed % 2 === 0, false, b.seed);
     // A ladder up the back of a low house to its roof.
     if (b.h < 4.5 && b.seed % 3 === 2) {
       const back = ({'x+': 'x-', 'x-': 'x+', 'z+': 'z-', 'z-': 'z+'} as const)[b.door], B = fr.faces[back];
