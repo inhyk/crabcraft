@@ -9,9 +9,10 @@ import { starGroundColor } from '../game/world2Ground';
 import { StarSky } from '../game/starSky';
 import { StarSea } from '../game/starSea';
 import { StarSun } from '../game/starSun';
-import { StarThrone } from '../game/starThrone';
+import { StarSanctum } from '../game/starSanctum';
+import { starCrystalCluster, starCrystalMaterial } from '../game/starCrystals';
+import { STAR_HORIZON, STAR_MOON_DIR, STAR_MOONLIGHT, STAR_MOON_INTENSITY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY, STAR_SHADE_SKY } from '../game/starNight';
 import { starCrystalGarden, layoutStarhaven } from '../game/world2Colliders';
-import { facetedStarCrystal } from '../game/starCrystal';
 
 export type Scenery = {
   scene: THREE.Scene;
@@ -76,13 +77,12 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
   }
   land.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); land.computeVertexNormals();
   scene.add(new THREE.Mesh(land, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .94, metalness: .08 })));
-  const sky = new StarSky(), sea = new StarSea(), sun = new StarSun();
-  scene.add(sky.root, sea.root, sun.light, sun.light.target, new THREE.HemisphereLight('#869cff', '#1a1028', 1));
-  const stone = new THREE.MeshStandardMaterial({ color: '#3c3b57', roughness: .78, metalness: .3 });
-  const crystal = new THREE.MeshStandardMaterial({ color: '#a57bff', emissive: '#6524c9', emissiveIntensity: 1.5, metalness: .5, roughness: .2 });
-  const teal = new THREE.MeshStandardMaterial({ color: '#b0fff1', emissive: '#26afba', emissiveIntensity: 1.3, metalness: .6, roughness: .25 });
-  const throne = new StarThrone(height, stone, teal, crystal); scene.add(throne.root);
-  const gardens = new THREE.InstancedMesh(facetedStarCrystal(), crystal, 90), matrix = new THREE.Matrix4();
+  // The island's one night (starNight.ts): the same moon, shade and fog as the game.
+  const sky = new StarSky(), sea = new StarSea(), sun = new StarSun(STAR_MOON_DIR.clone().multiplyScalar(100));
+  sun.light.color.copy(STAR_MOONLIGHT); sun.light.intensity = STAR_MOON_INTENSITY;
+  scene.add(sky.root, sea.root, sun.light, sun.light.target, new THREE.HemisphereLight(STAR_SHADE_SKY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY));
+  const throne = new StarSanctum(height); scene.add(throne.root);
+  const gardens = new THREE.InstancedMesh(starCrystalCluster(), starCrystalMaterial('amethyst'), 90), matrix = new THREE.Matrix4();
   starCrystalGarden(height).forEach((c, i) => {
     if (c.clear) matrix.makeScale(0, 0, 0);
     else matrix.compose(new THREE.Vector3(c.x, c.y + c.h * .5, c.z), c.q, c.scale);
@@ -94,6 +94,6 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
     const settlement = await buildStarSettlement(height); scene.add(settlement.root);
     collision = layoutStarhaven(height, settlement.natureNames);
   } catch (e) { dispose(); throw e; }
-  scene.fog = new THREE.FogExp2('#211e3b', .003);
+  scene.fog = new THREE.FogExp2(STAR_HORIZON.clone(), .003);
   return { scene, height, raycast: (a, b) => collision.col.raycast(a, b), update: (_dt, t, camera, p) => { sky.update(t, camera, 1); sea.update(t); sun.update(p.x, p.z); throne.update(t); }, dispose };
 }

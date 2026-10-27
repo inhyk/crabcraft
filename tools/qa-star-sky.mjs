@@ -22,25 +22,28 @@ try {
     const render=()=>{e.composer.render(0);return e.canvas.toDataURL();};
     const raw=()=>{e.renderer.setRenderTarget(null);e.renderer.clear();e.renderer.render(g.scene,g.camera);return e.canvas.toDataURL();};
     const full=render(),rawFull=raw();stars.visible=false;const noStars=render(),rawNoStars=raw();stars.visible=true;
-    moon.visible=false;const noMoon=render(),rawNoMoon=raw();moon.visible=true;
     sky.update(150,g.camera,1);const later=render(),rawLater=raw();
+    // The moon hangs where the moonlight comes from (low in the west-north-west): look at it to see it.
+    const keep=g.camera.position.clone();g.camera.position.set(0,20,55);g.camera.lookAt(moon.position.clone().normalize().multiplyScalar(500).add(g.camera.position));g.camera.updateMatrixWorld();sky.update(150,g.camera,1);
+    const moonFull=render(),rawMoonFull=raw();moon.visible=false;const noMoon=render(),rawNoMoon=raw();moon.visible=true;
+    g.camera.position.copy(keep);g.camera.lookAt(0,6,43);g.camera.updateMatrixWorld();sky.update(150,g.camera,1);
     const structure={count:stars.geometry.attributes.position.count,draws:sky.root.children.length,fog:sky.root.children.map(o=>o.material.fog),depth:stars.material.depthWrite};
     g.camera.position.addScalar(40);sky.update(150,g.camera,2);
     const tracked=sky.root.position.distanceTo(g.camera.position),ratio=stars.material.uniforms.pixelRatio.value;
-    return {full,noStars,noMoon,later,rawFull,rawNoStars,rawNoMoon,rawLater,structure,tracked,ratio,memory:{...e.renderer.info.memory}};
+    return {full,noStars,noMoon,later,rawFull,rawNoStars,rawNoMoon,rawLater,moonFull,rawMoonFull,structure,tracked,ratio,memory:{...e.renderer.info.memory}};
   });
-  const differences=await page.evaluate(async({full,noStars,noMoon,later,rawFull,rawNoStars,rawNoMoon,rawLater})=>{
+  const differences=await page.evaluate(async({full,noStars,noMoon,later,rawFull,rawNoStars,rawNoMoon,rawLater,moonFull,rawMoonFull})=>{
     const pixels=async(url)=>{const image=new Image();image.src=url;await image.decode();const canvas=new OffscreenCanvas(image.width,image.height),ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);return ctx.getImageData(0,0,image.width,image.height).data;};
-    const post=await pixels(full),unfiltered=await pixels(rawFull),answer={};
+    const post=await pixels(full),unfiltered=await pixels(rawFull),moonPost=await pixels(moonFull),moonRaw=await pixels(rawMoonFull),answer={};
     for(const [name,url] of Object.entries({stars:noStars,moon:noMoon,animation:later,rawStars:rawNoStars,rawMoon:rawNoMoon,rawAnimation:rawLater})){
-      const original=name.startsWith('raw')?unfiltered:post;
+      const original=name==='moon'?moonPost:name==='rawMoon'?moonRaw:name.startsWith('raw')?unfiltered:post;
       const other=await pixels(url);let count=0,ground=0;
       for(let i=0;i<original.length;i+=4){const d=Math.abs(original[i]-other[i])+Math.abs(original[i+1]-other[i+1])+Math.abs(original[i+2]-other[i+2]);if(d>12){count++;if(i/(1440*4)>400)ground++;}}
       answer[name]={pixels:count,ground};
     }
     return answer;
   },result);
-  assert.equal(result.structure.count,980);assert.equal(result.structure.draws,3);assert.deepEqual(result.structure.fog,[false,false,false]);assert.equal(result.structure.depth,false);
+  assert.equal(result.structure.count,2400);assert.equal(result.structure.draws,3);assert.deepEqual(result.structure.fog,[false,false,false]);assert.equal(result.structure.depth,false);
   assert.equal(result.tracked,0);assert.equal(result.ratio,2);
   assert.ok(differences.stars.pixels>100);assert.ok(differences.moon.pixels>100);assert.ok(differences.animation.pixels>1000);
   // Bloom can move a threshold in SMAA by a pixel. Require exact isolation before postprocessing.
