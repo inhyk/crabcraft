@@ -21,6 +21,7 @@ import {dawnHeight,DAWN_ARENA_HEIGHT} from '../sim/world/ground';
 import type {Poi} from '../world/types';
 import {dawnForest,dawnGrove,layoutDawnreach,roadClearance} from './world3Colliders';
 import {quarterPalms} from './dawnHousePlan';
+import {dawnContact,contactPatch,type DawnContact} from './dawnContact';
 
 /** The third island has its own warm coast, inhabited ring town and volcanic citadel. */
 export class DawnIsland {
@@ -43,6 +44,8 @@ export class DawnIsland {
  private palms:DawnPalms|null=null;
  /** Goldsand Harbor's desert quarter: houses, shrine, forge, tavern, windcatchers, palms (dawnHouses.ts). */
  quarter:DawnQuarter|null=null;
+ /** Contact shade where things meet the ground and in the sand's hollows (dawnContact.ts), baked once the quarter stands. */
+ readonly contact:DawnContact;private kitMaterials=new Set<THREE.Material>();
  /** dawnHeight bound once, so the per-frame sand step allocates nothing. */
  private readonly heightAt=(x:number,z:number)=>dawnHeight(x,z);
  height(x:number,z:number){
@@ -53,6 +56,7 @@ export class DawnIsland {
   // The desert: dawnHeight()'s GLSL twin baked on the GPU, placed by a clipmap, shaded as sand (sandTerrain.ts, sandSurface.ts).
   const sandMat=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.93,metalness:0});
   this.terrain=new SandTerrain(sandMat,this.deform);this.refreshSand=applySandSurface(sandMat,this.deform,{sky:this.sky.uniforms,sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,skyFill:this.sky.sandSkyFill});
+  this.contact=dawnContact(this.terrain.uniforms.sandGroundTex);contactPatch(sandMat,this.contact.uniforms,'sCav');
   // Paving and the arena floor take no prints and throw no sand.
   const bare=(x:number,z:number)=>roadClearance(x,z)<.15||Math.hypot(x,z+72)<22.5;
   this.footfalls=new SandFootfalls(bare);this.spray=new SandSpray(this.root,{sun:this.sun,bare});
@@ -72,9 +76,9 @@ export class DawnIsland {
  }
  async buildSettlement(){
   await this.citadel.dress();
-  const props=await loadKit('models/world/props.glb');
+  const props=await loadKit('models/world/props.glb');for(const m of props.materials.values())this.kitMaterials.add(m);
   // Use the same textured foliage kit as World I: real branching trunks and leaf clusters.
-  const nature=await loadKit('models/world/nature.glb'),forest=new Scatter(nature,'goldsand-scrub');
+  const nature=await loadKit('models/world/nature.glb'),forest=new Scatter(nature,'goldsand-scrub');for(const m of nature.materials.values())this.kitMaterials.add(m);
   // Desert scrub: the kit's grass dried to straw, its twisted-tree bush to dusty olive; green stays at the oasis.
   const copies=new Map<THREE.Material,THREE.Material>();
   const TINT:Record<string,string>={Grass:'#d9b77a',Leaves_TwistedTree:'#a39361',Leaves:'#c9d6a0',Leaves_NormalTree:'#d7e4b6'};
@@ -121,7 +125,7 @@ export class DawnIsland {
  /** Low quality: a coarser clipmap and bake, no finest ripples, the sea's fine ripples, a cloud octave and half the shadow map. */
  setQuality(q:'high'|'low'){this.terrain.setQuality(q);this.drift.setQuality(q);this.sea.setQuality(q);this.sky.setQuality(q);}
  /** Prints for every crab near the player, one step of the sand field, the kicked sand. Runs only while Goldsand is shown. */
- updateSand(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'){this.terrain.prepare(renderer);this.footfalls.update(units,this.deform,this.heightAt,x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSand();}
- disposeSand(){this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
+ updateSand(dt:number,renderer:THREE.WebGLRenderer,units:readonly Unit[],x:number,z:number,quality:'high'|'low'){this.terrain.prepare(renderer);if(this.quarter&&!this.contact.baked)this.contact.bake(renderer,this.root,new Set<THREE.Object3D>([this.terrain.mesh,this.sky.mesh,this.sea.mesh,this.drift.mesh,this.spray.mesh]),this.kitMaterials);this.footfalls.update(units,this.deform,this.heightAt,x,z,this.spray,dt);this.deform.step(renderer,dt,x,z,quality);this.spray.update(dt,x,z,quality);this.refreshSand();}
+ disposeSand(){this.contact.dispose();this.deform.dispose();this.spray.dispose();this.terrain.dispose();}
  update(time:number,_rescued:boolean,x:number,z:number,quality:'high'|'low'='high'){this.terrain.follow(x,z);this.drift.update(time,x,z);this.townLook.update(time,quality,this.sunDir.subVectors(this.sun.position,this.sun.target.position));this.wind?.update(time);this.citadel.update(time,quality);this.palms?.update(time);this.dressing?.update(time);this.quarter?.update(time);this.sky.followSun(x,this.height(x,z),z);this.sky.update(time);this.sea.update(time);this.scenery.update(time);this.portal.update(time);}
 }
