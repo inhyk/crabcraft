@@ -18,7 +18,8 @@ const quality = process.env.CC_QA_QUALITY ?? 'high';
 const before = process.env.CC_QA_BEFORE === '1';
 await mkdir(out, {recursive: true});
 
-/** Player position the follow camera orbits, and the follow camera's yaw, pitch and distance. */
+/** Player position the follow camera orbits, and the follow camera's yaw, pitch and distance. The player is turned to
+ * face away from the camera, otherwise the idle camera eases round behind it (player.ts) and the shot drifts. */
 export const LAVA_CAMERAS = {
   a: {name: 'sanctuary-volcano', x: 0, z: -60, yaw: 0, pitch: -.02, distance: 14},
   b: {name: 'edge-sea', x: 104, z: -50, yaw: -1.5, pitch: .3, distance: 10},
@@ -57,7 +58,7 @@ try {
   await p.evaluate(() => { window.app.ui.style.visibility = 'hidden'; const u = window.app.current.game.player.unit; u.hidden = true; u.rig.root.visible = false; });
   const shoot = async (key) => {
     const c = LAVA_CAMERAS[key];
-    await p.evaluate(c => { const g = window.app.current.game; g.player.unit.teleport(g.world, c.x, c.z); g.player.unit.rig.root.visible = false; g.follow.yaw = c.yaw; g.follow.pitch = c.pitch; g.follow.distance = c.distance; g.follow.cut(); }, c);
+    await p.evaluate(c => { const g = window.app.current.game; g.player.unit.teleport(g.world, c.x, c.z, c.yaw - Math.PI); g.player.unit.rig.root.visible = false; g.follow.yaw = c.yaw; g.follow.pitch = c.pitch; g.follow.distance = c.distance; g.follow.cut(); }, c);
     await p.waitForTimeout(1800);
     const file = `${out}/ember-lava-${label}-${key}-${c.name}.png`;
     await p.screenshot({path: file});
@@ -68,13 +69,15 @@ try {
   if (!before) {
     for (const key of ['d', 'a']) {
       const c = LAVA_CAMERAS[key];
-      await p.evaluate(c => { const g = window.app.current.game; g.player.unit.teleport(g.world, c.x, c.z); g.follow.yaw = c.yaw; g.follow.pitch = c.pitch; g.follow.distance = c.distance; g.follow.cut(); }, c);
+      await p.evaluate(c => { const g = window.app.current.game; g.player.unit.teleport(g.world, c.x, c.z, c.yaw - Math.PI); g.follow.yaw = c.yaw; g.follow.pitch = c.pitch; g.follow.distance = c.distance; g.follow.cut(); }, c);
       await p.waitForTimeout(1500);
-      const r = await p.evaluate(async () => {
+      const r = await p.evaluate(async (noBloom) => {
         const g = window.app.current.game, eng = g.engine, gl = eng.renderer.getContext(), lava = g.world2.fifth.lava;
         // Particles, spinning gems and banners are not lava; hide them so they cannot cross the lava pixels.
         const hidden = [];
         g.world2.fifth.root.traverse(o => { if (o.isPoints || o.geometry?.type === 'OctahedronGeometry' || o.userData?.banner) { if (o.visible) { hidden.push(o); o.visible = false; } } });
+        // CC_QA_NOBLOOM=1 (diagnostic): measure without bloom, to tell glow spilling from flowing lava apart from a resting surface that moves.
+        if (noBloom) eng.setView(g.scene, g.camera, {vignette: {offset: .3, darkness: .5}});
         const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, n = W * H * 4;
         const read = () => { const px = new Uint8Array(n); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
         // Frames at display rate: wait for the next animation frame, render it, read it back.
@@ -84,22 +87,29 @@ try {
         lava.setMask(1); await step(); const mask = read(); lava.setMask(2); await step(); const swap = read(); lava.setMask(0);
         await step(); await step();
         const frames = []; for (let i = 0; i < 24; i++) { await step(); frames.push(read()); }
-        let still = 0, flow = 0, sumS = 0, sumF = 0, maxS = 0;
-        for (let i = 0; i < n; i += 4) {
-          const r = mask[i];
-          // Lava pixels are the ones whose colour flips between the two mask renders; anything else is scenery.
-          const bb = mask[i + 2], r2 = swap[i], b2 = swap[i + 2];
-          const isStill = r - bb > 60 && b2 - r2 > 60, isFlow = bb - r > 60 && r2 - b2 > 60;
-          if (!isStill && !isFlow) continue;
+        // Classify: lava pixels are the ones whose colour flips between the two mask renders; anything else is scenery.
+        const cls = new Uint8Array(W * H); // 1 at rest, 2 flowing
+        for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+          const r = mask[i], bb = mask[i + 2], r2 = swap[i], b2 = swap[i + 2];
+          cls[p] = r - bb > 60 && b2 - r2 > 60 ? 1 : bb - r > 60 && r2 - b2 > 60 ? 2 : 0;
+        }
+        // Flowing lava within 8 px (dilated): bloom from its glow can reach the resting pixels next to it.
+        const R = 8, near = new Uint8Array(W * H), tmp = new Uint8Array(W * H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let f = 0; for (let k = -R; k <= R && !f; k++) { const xx = x + k; if (xx >= 0 && xx < W && cls[y * W + xx] === 2) f = 1; } tmp[y * W + x] = f; }
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let f = 0; for (let k = -R; k <= R && !f; k++) { const yy = y + k; if (yy >= 0 && yy < H && tmp[yy * W + x]) f = 1; } near[y * W + x] = f; }
+        let still = 0, flow = 0, core = 0, sumS = 0, sumF = 0, sumC = 0, maxS = 0, scen = 0, sumN = 0;
+        for (let p = 0, i = 0; p < W * H; p++, i += 4) {
+          if (!cls[p]) { if (!near[p] && p % 7 === 0) { let d = 0; for (let f = 1; f < 24; f++) { const a = frames[f], b = frames[f - 1]; d += (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3; } scen++; sumN += d / 23; } continue; }
           let d = 0;
           for (let f = 1; f < 24; f++) { const a = frames[f], b = frames[f - 1]; d += (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3; }
           d /= 23;
-          if (isStill) { still++; sumS += d; maxS = Math.max(maxS, d); } else { flow++; sumF += d; }
+          if (cls[p] === 1) { still++; sumS += d; maxS = Math.max(maxS, d); if (!near[p]) { core++; sumC += d; } } else { flow++; sumF += d; }
         }
         for (const o of hidden) o.visible = true;
         eng.renderer.setAnimationLoop(eng.frame);
-        return {stillPixels: still, flowPixels: flow, stillMAE: still ? sumS / still : NaN, stillMaxPixel: maxS, flowMAE: flow ? sumF / flow : NaN};
-      });
+        if (noBloom) eng.setView(g.scene, g.camera, {bloom: {intensity: .9, threshold: .9}, vignette: {offset: .3, darkness: .5}});
+        return {stillPixels: still, flowPixels: flow, stillMAE: still ? sumS / still : NaN, stillMaxPixel: maxS, stillFar8pxPixels: core, stillFar8pxMAE: core ? sumC / core : NaN, flowMAE: flow ? sumF / flow : NaN, sceneryMAE: scen ? sumN / scen : NaN};
+      }, process.env.CC_QA_NOBLOOM === '1');
       console.log(`stillness ${key}`, JSON.stringify(r));
       assert.ok(r.stillPixels > 2000, `camera ${key} sees lava at rest`);
       assert.ok(r.stillMAE < .5, `camera ${key} lava at rest is still: MAE ${r.stillMAE}`);

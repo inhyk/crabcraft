@@ -17,9 +17,13 @@ import * as THREE from 'three';
  *   downstream crowd towards the toe.
  * - Lobes: Bingham dome h = sqrt(2 d (dist + 8 d)), i.e. crest sqrt(2 d R) and an edge step of 4 d, sized from volume
  *   (R = (15 V / (8 pi sqrt(2 d)))^0.4); toes and side lobes are bulges of the same mesh, the outline wanders, a
- *   clinker band and a darker halo blur the edge on the ground. Shading normals come from a blurred thickness on the
+ *   clinker band and a darker halo blur the edge on the ground. Shading normals come from a softer, blurred dome on the
  *   smooth cone, so lobes read round while positions hug the faceted cone.
  * - Gloss is a clear coat (roughness 0.32+) only on young crust and rope crests, broken up; no roughness under 0.30.
+ *
+ * The tongues lie on the cone and the terrain as they are: no channel is carved (ground.ts and the collision bake are
+ * untouched), the levees are built on top instead, and lava has no collision, so crabs can walk into the lobes.
+ * EmberLava.zones and emberLavaZones() mark where it lies.
  */
 
 export type LavaQuality = 'high' | 'low';
@@ -77,6 +81,11 @@ function bakeCrust(size: number): THREE.DataTexture {
   }
   // Width of the crack between plates a and b: 0 welded shut, else 0.45..1.35.
   const crackWidth = (a: number, b: number) => { const o = hash1(Math.min(a, b) * 977.3 + Math.max(a, b) * 131.7); return o < .32 ? 0 : .45 + .9 * (o - .32) / .68; };
+  // Widths towards the 5 x 5 neighbourhood of every cell, computed once (the pixel loop only looks them up).
+  const widths = new Float32Array(n * n * 25);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+    widths[(j * n + i) * 25 + (dz + 2) * 5 + dx + 2] = crackWidth(j * n + i, wrap(j + dz, n) * n + wrap(i + dx, n));
+  }
   const m = n * 5, qx = new Float32Array(m * m), qz = new Float32Array(m * m);
   for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) { const k = j * m + i; qx[k] = i + .5 + .9 * (hash1(k * 1.7 + 31) - .5); qz[k] = j + .5 + .9 * (hash1(k * 2.9 + 47) - .5); }
   const L = 32, lat = new Float32Array(L * L);
@@ -88,18 +97,18 @@ function bakeCrust(size: number): THREE.DataTexture {
   };
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const fx = (x + .5) / size * n, fz = (y + .5) / size * n, cx = Math.floor(fx), cz = Math.floor(fz);
-    let best = 1e9, bx = 0, bz = 0, bk = 0;
+    let best = 1e9, bx = 0, bz = 0, bk = 0, bi = 0, bj = 0;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const ix = cx + dx, iz = cz + dz, k = wrap(iz, n) * n + wrap(ix, n);
       const ox = px[k] - wrap(ix, n) + ix, oz = pz[k] - wrap(iz, n) + iz, d = (ox - fx) ** 2 + (oz - fz) ** 2;
-      if (d < best) { best = d; bx = ox; bz = oz; bk = k; }
+      if (d < best) { best = d; bx = ox; bz = oz; bk = k; bi = ix; bj = iz; }
     }
     // Distance to each cell border (perpendicular bisector), divided by that crack's width; welded borders skipped.
     let edge = 1e9;
     for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
-      const ix = cx + dx, iz = cz + dz, k = wrap(iz, n) * n + wrap(ix, n);
-      if (k === bk) continue;
-      const w = crackWidth(bk, k);
+      if (!dz && !dx) continue;
+      const ix = bi + dx, iz = bj + dz, k = wrap(iz, n) * n + wrap(ix, n);
+      const w = widths[bk * 25 + (dz + 2) * 5 + dx + 2];
       if (!w) continue;
       const ox = px[k] - wrap(ix, n) + ix, oz = pz[k] - wrap(iz, n) + iz, ex = ox - bx, ez = oz - bz, el = Math.hypot(ex, ez);
       if (el < 1e-5) continue;
@@ -193,7 +202,7 @@ varying vec3 vLT;
 varying vec3 vLS;
 varying vec3 vLW;
 float lRopeH(float ph,out float d){float cs=.5+.5*cos(6.2832*ph),c3=cs*cs*cs;d=-12.566*c3*sin(6.2832*ph);return c3*cs;}
-float lCrack,lGloss,lStatic,lRope,lRopeS;
+float lCrack,lGloss,lStatic;
 vec3 lEmit;
 vec4 lC;
 `;
@@ -240,7 +249,6 @@ const TONGUE_COLOR = /* glsl */ `
   float phP=(X-uShift+bow)/1.1+.35*nz,phS=(X+bow)/1.1+.35*cs.a;
   float rP=lRopeH(phP,dP),rS=lRopeH(phS,dS);
   float kS=wS*(1.-leveeW);
-  lRope=rP*wP*ropeAmp/.06;
   // Albedo: basalt crust, older and greyer on levees, fine cooling cracks; no baked shading.
   vec3 bas=vec3(.032,.028,.029)*(.7+.6*nz)*(.85+.3*id);
   bas=mix(bas,vec3(.062,.056,.054)*(.75+.5*nz),leveeW*.85);
@@ -332,11 +340,13 @@ function poolColor(sea: boolean): string {
   flowW=smoothstep(3.,10.,shore);
   margin=exp(-pow((shore-8.)/4.,2.));
   // Broad cool rafts and hot open leads, fixed in space; plates drift through them.
-  float macro=texture2D(uCrust,p/900.+.17).a*.6+texture2D(uCrust,p/310.+.53).a*.4;
+  float macro=texture2D(uCrust,p/430.+.17).a;
+  float jit=macro*2.3; // the phase offset varies as slowly as the rafts
   // Near the island the sea is stirred by the volcano's own outflow: hotter, more open within ~60 m of the shore.
-  temp=max(mix(.35,1.,smoothstep(.32,.64,macro)),.93*(1.-smoothstep(25.,80.,shore))*flowW);
+  temp=max(mix(.35,1.,smoothstep(.36,.7,macro)),.84*(1.-smoothstep(20.,70.,shore))*flowW);
   lMelt=smoothstep(.7,.85,macro);
   ` : /* glsl */ `
+  float jit=texture2D(uCrust,p/TILE*.21+.4).a*2.3;
   // Convection cell: crust is born over the upwelling in the middle, drifts out and founders at the walls.
   vec2 d=p-uCentre.xy;float rr=length(d),R=uCentre.z;
   vel=d/max(rr,.01)*.1*smoothstep(0.,2.5,rr)*(1.-smoothstep(R-1.2,R-.2,rr))+vec2(-d.y,d.x)*.012;
@@ -348,7 +358,6 @@ function poolColor(sea: boolean): string {
   lStatic=1.-step(.001,flowW);
   vel*=flowW;
   vec2 q=p/TILE;
-  float jit=texture2D(uCrust,q*.21+.4).a;
   float a=fract(uPh+jit),b=fract(a+.5);
   float ang=1.9*flowW;mat2 rot=mat2(cos(ang),sin(ang),-sin(ang),cos(ang));
   vec4 A=texture2D(uCrust,(p-vel*${period}.*a)/TILE);
@@ -358,7 +367,7 @@ function poolColor(sea: boolean): string {
   // Far away the cracks average out to a warm crust instead of sparkling.
   float far=smoothstep(.1,.4,length(fwidth(q*${CELLS}.)));
   // Melt between the plates: wide in hot leads, hairline under the cool rafts.
-  float cw=(mix(.08,.62,pow(smoothstep(.4,1.,temp),1.5))+lMelt*.15+margin*.16)*mix(.7,1.25,nz);
+  float cw=(mix(.07,.46,pow(smoothstep(.45,1.,temp),1.6))+lMelt*.15+margin*.16)*mix(.7,1.25,nz);
   float aa=fwidth(r)*1.1+.004;
   lCrack=mix(1.-smoothstep(cw-aa,cw+aa,r),clamp(cw*1.15,0.,1.),far);
   float fineLine=(1.-smoothstep(.0,.06+fwidth(fine),fine))*(1.-far);
@@ -525,7 +534,7 @@ function buildTongue(def: TongueDef, sup: Support, quality: LavaQuality): Tongue
   const pos = new Float32Array(count * 3), shadePos = new Float32Array(count * 3);
   const aLA = new Float32Array(count * 4), aLB = new Float32Array(count * 4), aLC = new Float32Array(count * 4);
   const thick = new Float32Array(count), base = new Float32Array(count * 3), baseS = new Float32Array(count * 3), nrm = new Float32Array(count * 3);
-  const sArr = new Float32Array(count), cArr = new Float32Array(count), shadeH = new Float32Array(count);
+  const sArr = new Float32Array(count), shadeH = new Float32Array(count);
   const supNormal = (x: number, z: number, k: number) => {
     const e = .25, hx = sup.at(x + e, z, false, k) - sup.at(x - e, z, false, k), hz = sup.at(x, z + e, false, k) - sup.at(x, z - e, false, k);
     const v = new THREE.Vector3(-hx, 2 * e, -hz); return v.normalize();
@@ -548,7 +557,7 @@ function buildTongue(def: TongueDef, sup: Support, quality: LavaQuality): Tongue
       base[i * 3] = x; base[i * 3 + 1] = y0; base[i * 3 + 2] = z;
       baseS[i * 3] = x; baseS[i * 3 + 1] = yS; baseS[i * 3 + 2] = z;
       nrm[i * 3] = ns.x; nrm[i * 3 + 1] = ns.y; nrm[i * 3 + 2] = ns.z;
-      thick[i] = h; sArr[i] = s; cArr[i] = c;
+      thick[i] = h; sArr[i] = s;
       const out = def.side && sign === def.side.sign ? Math.max(0, Math.abs(v) - halfW(s)) : 0;
       const act = 1 - smooth(.2, 1.1, out);
       aLA.set([XmAt(s), c, w, temperature(s) * mix(.08, 1, act)], i * 4);
@@ -662,6 +671,7 @@ export class EmberLava {
   private readonly seaUniforms = { uPh: { value: 0 }, uCentre: { value: new THREE.Vector3() } };
   private readonly lakeUniforms = { uPh: { value: 0 }, uCentre: { value: new THREE.Vector3() } };
   private readonly tongueGeo: Record<LavaQuality, THREE.BufferGeometry[]> = { high: [], low: [] };
+  private readonly support: Support;
   private readonly tongueMeshes: THREE.Mesh[] = [];
   private readonly lip: THREE.Mesh;
   private readonly lipGeo: Record<LavaQuality, THREE.BufferGeometry>;
@@ -674,7 +684,8 @@ export class EmberLava {
     this.root.name = 'ember-lava';
     const cone: Cone = { x: 0, z: -128, baseY: opts.ly - 10, topY: opts.ly + 28, baseR: 28, topR: 8, segments: 18 };
     const sup = new Support(cone, opts.height);
-    this.crust = bakeCrust(512);
+    this.support = sup;
+    this.crust = bakeCrust(256);
     this.common.uCrust.value = this.crust;
     this.quality = storedQuality();
     this.common.uDetail.value = this.quality === 'high' ? 1 : 0;
@@ -683,7 +694,9 @@ export class EmberLava {
     const seaGeo = new THREE.PlaneGeometry(1800, 1800);
     seaGeo.rotateX(-Math.PI / 2);
     const sea = new THREE.Mesh(seaGeo, this.poolMaterial(true));
-    sea.position.y = .15; sea.name = 'molten-sea'; sea.receiveShadow = true;
+    // Drawn after the island's opaque meshes, so the depth test skips the sea under the land.
+    // No shadow lookups: the sun's shadow box (+-105 m round the island) barely reaches the sea, and it is most of the screen.
+    sea.position.y = .15; sea.name = 'molten-sea'; sea.receiveShadow = false; sea.renderOrder = 1;
     this.root.add(sea);
 
     // Crater: a lava lake inside a rampart that spills into the tongues.
@@ -691,7 +704,7 @@ export class EmberLava {
     this.lakeUniforms.uCentre.value.set(cone.x, cone.z, sup.lakeR);
     const lakeGeo = new THREE.CircleGeometry(sup.lakeR + .35, 72); lakeGeo.rotateX(-Math.PI / 2);
     const lake = new THREE.Mesh(lakeGeo, this.poolMaterial(false));
-    lake.position.set(cone.x, sup.lakeY, cone.z); lake.name = 'lava-crater-lake'; lake.receiveShadow = true;
+    lake.position.set(cone.x, sup.lakeY, cone.z); lake.name = 'lava-crater-lake';
     crater.add(lake);
     this.lipGeo = { high: lipGeometry(sup, 'high'), low: lipGeometry(sup, 'low') };
     this.lip = new THREE.Mesh(this.lipGeo[this.quality], this.lipMaterial(sup.lakeY, cone));
@@ -699,17 +712,17 @@ export class EmberLava {
     crater.add(this.lip);
     this.zones.push({ x: cone.x, z: cone.z, radius: 13, kind: 'crater' });
 
-    // Tongues: both detail levels are built now; a quality change swaps geometry, nothing is built per frame.
+    // Tongues at the current detail; the other level is built once, the first time the quality switches to it.
     const tongues = new THREE.Group(); tongues.name = 'lava-tongues'; this.root.add(tongues);
     const tongueMat = this.tongueMaterial();
     const outlines: TongueBuild['outline'][] = [];
     TONGUES.forEach((def, i) => {
-      const hi = buildTongue(def, sup, 'high'), lo = buildTongue(def, sup, 'low');
-      this.tongueGeo.high.push(hi.geometry); this.tongueGeo.low.push(lo.geometry);
-      const mesh = new THREE.Mesh(this.tongueGeo[this.quality][i], tongueMat);
+      const built = buildTongue(def, sup, this.quality);
+      this.tongueGeo[this.quality][i] = built.geometry;
+      const mesh = new THREE.Mesh(built.geometry, tongueMat);
       mesh.name = `lava-tongue-${i}`; mesh.receiveShadow = true;
       tongues.add(mesh); this.tongueMeshes.push(mesh);
-      outlines.push(hi.outline); this.zones.push(...hi.zones);
+      outlines.push(built.outline); this.zones.push(...built.zones);
     });
 
     // Edges on the ground: a darker halo and a band of clinker crumbs, half of them pushed into the lava's edge.
@@ -726,7 +739,7 @@ export class EmberLava {
     if (q === this.quality) return;
     this.quality = q;
     this.common.uDetail.value = q === 'high' ? 1 : 0;
-    this.tongueMeshes.forEach((m, i) => { m.geometry = this.tongueGeo[q][i]; });
+    this.tongueMeshes.forEach((m, i) => { m.geometry = this.tongueGeo[q][i] ??= buildTongue(TONGUES[i], this.support, q).geometry; });
     this.lip.geometry = this.lipGeo[q];
     this.clinker.count = q === 'high' ? this.clinkerCount : Math.floor(this.clinkerCount / 2);
   }
