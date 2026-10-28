@@ -26,12 +26,12 @@ try{
    const sanctuary=island.root.getObjectByName('skybloom-sanctuary');
    const names=sanctuary?sanctuary.children.map(c=>c.name):[];
    const v=new (island.root.position.constructor)(),court={x:0,z:-72},y=island.height(0,-72);
-   // Primitives left in the sanctuary and the tree's ground: north of the gate, off the road lamps' line.
+   // Primitives left in the sanctuary and the tree's ground (the old octahedron road lamps are gone too).
    const left=[];
    island.root.traverse(o=>{
     if(!o.isMesh||o.isInstancedMesh||o.parent===sanctuary)return;const t=o.geometry.type;if(!THREE_TYPES.includes(t)&&!(t==='BoxGeometry'))return;
     o.getWorldPosition(v);if(Object.values(points).some(([x,z])=>Math.hypot(v.x-x,v.z-z)<3))return;// quest props are not the sanctuary's
-    const nearCourt=Math.hypot(v.x-court.x,v.z-court.z)<26&&!(Math.abs(Math.abs(v.x)-6)<.6),nearTree=Math.hypot(v.x,v.z+112)<32;
+    const nearCourt=Math.hypot(v.x-court.x,v.z-court.z)<26,nearTree=Math.hypot(v.x,v.z+112)<32;
     if(nearCourt||nearTree)left.push(`${t}@${v.x.toFixed(1)},${v.y.toFixed(1)},${v.z.toFixed(1)}`);
    });
    // Instanced scenery (paving, garden, grass) with an instance on the court.
@@ -52,16 +52,18 @@ try{
     lanternMat:sanctuary?.getObjectByName('sky-seed-lanterns')?.material.name,crownDepth:!!sanctuary?.getObjectByName('sky-world-tree-crown')?.customDepthMaterial};
   },points);
   console.log(quality,JSON.stringify(r));
-  assert.deepEqual(r.names,['sky-world-tree-wood','sky-sanctuary-stone','sky-world-tree-crown','sky-seed-lanterns','sky-sanctuary-court'],'one mesh per material');
+  assert.deepEqual(r.names,['sky-world-tree-wood','sky-sanctuary-stone','sky-world-tree-crown','sky-world-tree-crown-core','sky-seed-lanterns','sky-sanctuary-court','sky-root-fall'],'one mesh per material');
   assert.deepEqual(r.left,[],'old sanctuary primitives remain');
   assert.deepEqual(r.onCourt,[],'instanced scenery on the court');
   assert.ok(Math.abs(r.discMin-.012)<1e-4&&Math.abs(r.discMax-.012)<1e-4,`court floor lift ${r.discMin}..${r.discMax}`);
   assert.ok(r.flat<1e-6,`arena ground not flat: ${r.flat}`);
   assert.deepEqual(r.blocked,[],'points inside solids');
-  assert.equal(r.shapes,84,'W6 solids (66 before + 14 buttress flanks + 2 arch feet + 2 gate posts)');
-  assert.equal(r.stats.limbs,7);assert.equal(r.stats.columns,9);assert.ok(r.stats.lanterns>=15,`lanterns ${r.stats.lanterns}`);assert.ok(r.stats.roots>=16,`roots ${r.stats.roots}`);
-  assert.ok(r.stats.cards>(quality==='high'?3000:1500),`cards ${r.stats.cards}`);assert.ok(r.crownDepth,'crown casts leafy shadows');
-  for(const [name,x,z,yaw,pitch,dist] of [['tree',0,-40,0,.12,30],['arena',0,-75,0,.5,34]]){
+  assert.equal(r.shapes,134,'W6 solids (65 frontier + 1 trunk + 14 buttress flanks + 2 arch feet + 2 gate posts + 50 sky-ground)');
+  // The landmark: crown top 55-70 m over the trunk's foot in five masses, roots over the north lip.
+  assert.ok(r.stats.crownTop>=55&&r.stats.crownTop<=70,`crown top ${r.stats.crownTop} m`);assert.equal(r.stats.limbs,5);assert.ok(r.stats.spills>=8,`roots over the lip ${r.stats.spills}`);
+  assert.equal(r.stats.columns,8);assert.ok(r.stats.lanterns>=15,`lanterns ${r.stats.lanterns}`);assert.ok(r.stats.roots>=20,`roots ${r.stats.roots}`);
+  assert.ok(r.stats.cards>(quality==='high'?900:450),`cards ${r.stats.cards}`);assert.ok(r.crownDepth,'crown casts leafy shadows');
+  for(const [name,x,z,yaw,pitch,dist] of [['tree',0,-40,0,.12,30],['approach',0,-30,0,.22,26],['arena',0,-75,0,.5,34],['north',0,-118,3.14,.15,40]]){
    await p.evaluate(([x,z,yaw,pitch,dist])=>{const g=window.app.current.game;g.player.unit.teleport(g.world,x,z,yaw+Math.PI);g.follow.yaw=yaw;g.follow.pitch=pitch;g.follow.distance=dist;g.follow.cut();},[x,z,yaw,pitch,dist]);
    await p.waitForTimeout(1500);await p.screenshot({path:`tmp/qa/sky-tree-${quality}-${name}.png`});
   }
