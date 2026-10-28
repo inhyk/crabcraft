@@ -38,6 +38,8 @@ import { FLOW_CELL, LavaFlow, type FlowArea, type FlowDeposit, type FlowSource }
  *   oxidised rim and a contact line at the foot. Cooling rock keeps a dull red only deep in some cracks, fading with
  *   its temperature over a few minutes.
  * - Gloss (roughness down to 0.34) only on young crust and rope crests, broken up; no roughness under 0.30.
+ * - The crust takes the sun's and the sky's strength but only half their tint (CRUST_LIGHT), so it reads as dark basalt
+ *   under World V's amber sun and violet sky; the sea's crust barely takes the sun's highlight (SEA_SPECULAR).
  *
  * The tongues lie on the cone and the terrain as they are: no channel is carved (ground.ts and the collision bake are
  * untouched), the levees are built on top instead, and lava has no collision, so crabs can walk into the lobes. It is
@@ -181,6 +183,11 @@ vec3 lavaBB(float t){
   c=mix(c,vec3(1.,.5,.12),smoothstep(1.,1.2,t));
   return c*(7.*t*t*t);
 }
+// Greys a light's colour by k, keeping its luminance (CRUST_LIGHT). World V lights its near-black basalt with a low amber
+// sun and a violet sky; on a surface this dark nothing but the lights' tints shows, so a neutral crust read as saturated
+// brown and purple (HSV saturation median about 0.45 at the volcano foot). The crust keeps the lights' strength, its
+// glints and its own albedo; only the lights' colour is greyed, by LIGHT_GREY. Cracks and their glow keep all of it.
+vec3 lavaGrey(vec3 c,float k){return mix(c,vec3(dot(c,vec3(.2126,.7152,.0722))),k);}
 // Surface gradient of a scalar height from screen derivatives (world space), for crack relief.
 vec3 lavaBumpGrad(vec3 p,vec3 n,float h){
   vec3 dpx=dFdx(p),dpy=dFdy(p);
@@ -188,6 +195,20 @@ vec3 lavaBumpGrad(vec3 p,vec3 n,float h){
   float det=dot(dpx,r1);
   if(abs(det)<1e-8)return vec3(0.);
   return (dFdx(h)*r1+dFdy(h)*r2)/det;
+}
+`;
+
+/** Greys the light the crust reflects (see lavaGrey): diffuse through the albedo, so an albedo tint (the oxidised rim)
+ * stays; specular as it is. After <aomap_fragment>, with lCrack set. */
+const LIGHT_GREY = .5;
+const CRUST_LIGHT = /* glsl */ `
+{
+  float k=${LIGHT_GREY.toFixed(2)}*(1.-lCrack);
+  vec3 alb=max(diffuseColor.rgb,vec3(1e-5));
+  reflectedLight.directDiffuse=lavaGrey(reflectedLight.directDiffuse/alb,k)*alb;
+  reflectedLight.indirectDiffuse=lavaGrey(reflectedLight.indirectDiffuse/alb,k)*alb;
+  reflectedLight.directSpecular=lavaGrey(reflectedLight.directSpecular,k);
+  reflectedLight.indirectSpecular=lavaGrey(reflectedLight.indirectSpecular,k);
 }
 `;
 
@@ -340,6 +361,7 @@ const TONGUE_NORMAL = /* glsl */ `
 const TONGUE_EMIT = /* glsl */ `
 totalEmissiveRadiance=lEmit;
 `;
+const TONGUE_LIGHT = `#include <aomap_fragment>\n${CRUST_LIGHT}`;
 
 /* Pool shaders (molten sea, crater lake) -------------------------------------------------------------------------- */
 
@@ -350,7 +372,7 @@ ${LAVA_COMMON}
 uniform float uPh;
 uniform vec3 uCentre; // crater: centre x, z and lake radius
 varying vec3 vLW;
-float lCrack,lStatic,lMelt;
+float lCrack,lStatic,lMelt,lFar;
 vec3 lEmit;
 vec4 lC;
 // Sea hex tiling (after Mikkelsen 2022): a triangle grid of hex centres, each with its own offset, rotation and scale
@@ -443,6 +465,7 @@ function poolColor(sea: boolean): string {
   float r=lC.r,fine=lC.b,id=lC.g,nz=lC.a;
   // Far away the cracks average out to a warm crust instead of sparkling.
   float far=smoothstep(.1,.4,length(fwidth(q*${CELLS}.)));
+  lFar=far;
   // Melt between the plates: wide in hot leads, hairline under the cool rafts.
   float cw=(mix(.07,.46,pow(smoothstep(.45,1.,temp),1.6))+lMelt*.15+margin*.16)*mix(.7,1.25,nz);
   float aa=fwidth(r)*1.1+.004;
@@ -462,6 +485,18 @@ function poolColor(sea: boolean): string {
 const POOL_ROUGH = /* glsl */ `
 // Crust .86; molten cracks .4; the broad open melt (hot leads, the lake's upwelling) .36 for one soft highlight.
 roughnessFactor=max(mix(mix(.86,.4,lCrack),.36,lMelt*lCrack),.3);
+`;
+/** The sea from the sun's side: low sun, grazing view, so the Fresnel term lit the cool rafts as a pale sheen across
+ * the plates. Far away the cracks average into lCrack, and their gloss (0.4) spread over the whole surface; there the
+ * crust keeps its own roughness (the averaged glow stays). The sun's highlight is cut to 15 % on the crust and 50 % on
+ * the cracks, so plates read as dark crust towards the sun as well. */
+const SEA_ROUGH = /* glsl */ `
+float lGl=lCrack*(1.-lFar);
+roughnessFactor=max(mix(mix(.86,.4,lGl),.36,lMelt*lGl),.3);
+`;
+const SEA_SPECULAR = /* glsl */ `
+#include <aomap_fragment>
+reflectedLight.directSpecular*=mix(.15,.5,lGl);
 `;
 const POOL_NORMAL = /* glsl */ `
 if(uDetail>.5){
@@ -643,6 +678,7 @@ const FLOW_CAVITY = /* glsl */ `
 #include <aomap_fragment>
 reflectedLight.directDiffuse*=lCav;reflectedLight.directSpecular*=lCav;
 reflectedLight.indirectDiffuse*=lCav;reflectedLight.indirectSpecular*=lCav;
+${CRUST_LIGHT}
 `;
 const FLOW_NORMAL = /* glsl */ `
 {
@@ -1242,6 +1278,7 @@ export class EmberLava {
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${TONGUE_ROUGH}`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${TONGUE_NORMAL}`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${TONGUE_EMIT}`)
+        .replace('#include <aomap_fragment>', TONGUE_LIGHT)
         .replace('#include <dithering_fragment>', MASK_OUT);
     };
     m.customProgramCacheKey = () => 'ember-lava-tongue';
@@ -1260,9 +1297,10 @@ export class EmberLava {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${POOL_FRAG_HEAD}`)
         .replace('#include <color_fragment>', `#include <color_fragment>\n${poolColor(sea)}`)
-        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${POOL_ROUGH}`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${sea ? SEA_ROUGH : POOL_ROUGH}`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${POOL_NORMAL}`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${POOL_EMIT}`)
+        .replace('#include <aomap_fragment>', sea ? SEA_SPECULAR : '#include <aomap_fragment>')
         .replace('#include <dithering_fragment>', MASK_OUT);
     };
     m.customProgramCacheKey = () => m.name;
