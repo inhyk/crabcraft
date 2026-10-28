@@ -11,7 +11,7 @@ try {
   await p.goto((process.env.CC_QA_BASE??'http://127.0.0.1:5221')+'/?screen=game');await p.locator('.launch-notice-start').click();
   await p.waitForSelector(`.loading[data-chapter="${chapter}"]`);
   const expectedImage=['loading-','loading-starhaven.webp','loading-dawnharbor.webp','loading-frostlight.webp'][chapter-1];
-  const expectedTitle=(language==='ko'?['클로헤이븐','별빛 항구','새벽 항구','눈꽃 마을']:['Clawhaven','Starhaven','Dawnharbor','Snowfall Village'])[chapter-1];
+  const expectedTitle=(language==='ko'?['클로헤이븐','별빛 항구','골드샌드 항구','눈꽃 마을']:['Clawhaven','Starhaven','Goldsand Harbor','Snowfall Village'])[chapter-1];
   assert.equal(await p.locator('.ld-title').textContent(),expectedTitle);
   const background=await p.locator('.ld-art').evaluate(el=>getComputedStyle(el).backgroundImage);assert.ok(background.includes(expectedImage),background);
   assert.equal(await p.evaluate(async()=>{const url=getComputedStyle(document.querySelector('.ld-art')).backgroundImage.match(/url\(["']?(.*?)["']?\)/)[1];const im=new Image();im.src=url;await im.decode();return im.naturalWidth>500&&im.naturalHeight>300;}),true);

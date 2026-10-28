@@ -11,13 +11,19 @@ import {t} from '../i18n';
 import type { Game } from './game';
 import type { Poi } from '../world/types';
 import { snapshotMap } from './snapshots';
-import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS } from './world2Settlement';
+import { buildStarSettlement, STAR_TOWN, STAR_WALKS, STAR_OBJECTIVES, STAR_TRAILS, starLots, starTrailLanternSpots } from './world2Settlement';
+import {starDoorLampGlows,starTrailLanternGlows,starWindowSpillGlows,STAR_ROOF_ROLES} from './starRooftops';
 import { QUESTS, type ObjectiveKind, type ObjectiveDef } from './quests';
 import type { Collision } from '../world/collision';
 import { StarPortal } from './portal';
+import { DawnPortal } from './dawnPortal';
+import {StarGate} from './starGate';
 import { StarVillageLife } from './world2Life';
-import {starGroundColor} from './world2Ground';
-import {facetedStarCrystal} from './starCrystal';
+import {starCrystalCluster,starCrystalMaterial,starCrystalStump} from './starCrystals';
+import {bakeStarLight,type StarGlowSource} from './starLight';
+import {rot,STAR_MINE} from './starFieldLayout';
+import {moonshadeLeaves} from './starLandmarks';
+import {starGround,type StarGround} from './starGround';
 import {collectibleShadow} from './collectibleShadow';
 import {StarSky} from './starSky';
 import {StarSea} from './starSea';
@@ -28,10 +34,16 @@ import {StarWaystoneKit} from './starWaystone';
 import {StarMemorySealKit} from './starMemorySeal';
 import {StarOreKit} from './starOre';
 import {StarSun} from './starSun';
+import {STAR_KEY_DIR} from './starNight';
+import {StarNightRig} from './starNightRig';
 import {StarEnemyArmour} from './starEnemyArmour';
-import {StarThrone} from './starThrone';
+import {throneSolids} from './starThrone';
+import {StarSanctum} from './starSanctum';
+import {StarFireflies,starWildGlows} from './starWilds';
+import {starTreeGlows} from './starTrees';
+import {starEclipseGlows} from './starEclipseStory';
 import {buildStarHeights,starSurfaceHeight} from './world2Height';
-import {layoutStarhaven,starCrystalGarden} from './world2Colliders';
+import {layoutStarhaven,starCrystalGarden,starRoadGuides} from './world2Colliders';
 import {DAWN_BOUNDS,resolveOnIsland,STAR_BOUNDS,SNOW_BOUNDS} from '../sim/world/queries';
 import type {TidecrownIsland} from './tidecrown/island';
 import type {TidecrownResidents} from './tidecrownResidents';
@@ -50,7 +62,15 @@ const NO_PORTAL=new THREE.Vector3(1e5,0,1e5);
 /** A separate, deterministic realm; all clients build the same island and collision surface. */
 export class HiddenWorld {
   readonly root = new THREE.Group();
-  private readonly sun=new StarSun();
+  private readonly sun=new StarSun(STAR_KEY_DIR.clone().multiplyScalar(100));
+  private readonly night=new StarNightRig(this.sun.light);
+  /**
+   * A small warm key carried with the player's crab, a step toward the camera at its height: it lights the crab's
+   * seen side more than the ground (about 4 m of reach), so the hero reads against the night fields.
+   */
+  private readonly carry=new THREE.PointLight('#ffb27a',8,2.3,2);
+  /** A cool rim behind the player's crab, away from the camera (star r5): its silhouette separates from the fields. */
+  private readonly rim=new THREE.PointLight('#b4ccff',18,1.7,2);
   readonly trails=STAR_TRAILS;
   chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1;
   readonly third=new DawnIsland();
@@ -62,8 +82,8 @@ export class HiddenWorld {
   private emberGate:FrostPortal;
   readonly dawnRequests:DawnRequests;
   readonly snowRequests:DawnRequests;
-  private snowGate:StarPortal;
-  private thirdGate:StarPortal;
+  private snowGate:DawnPortal;
+  private thirdGate:StarGate;
   private echoAt=0;
   readonly spawn = new THREE.Vector3(0, 3, 86);
   readonly arena: Poi = { id:'bossArena',position:new THREE.Vector3(0,3,-75),yaw:0,radius:17 };
@@ -71,14 +91,17 @@ export class HiddenWorld {
   private originalHeight: Game['world']['heightAt'];
   private originalCollision: Game['world']['resolveCollision'];
   private originalRay: Game['world']['raycastSolid'];
-  private groundTexture:THREE.DataTexture;
+  private ground:StarGround;
   private groundHeights=buildStarHeights();
   private rotations: THREE.Object3D[] = [];
   private sky: StarSky;
   private sea: StarSea;
   private obstacles: { x:number; z:number; r:number }[] = [];
   private crystalSolids: {x:number;z:number;r:number;y0:number;y1:number}[] = [];
-  private portal: StarPortal;
+  /** The field crystals' layout and the baked ground light (for QA). */
+  crystalSpots: ReturnType<typeof starCrystalGarden> = [];
+  groundLight: THREE.DataTexture | null = null;
+  private portal: StarGate;
   private shorePortal: StarPortal;
   private travelArmed=false;
   private travelAt=0;
@@ -86,7 +109,7 @@ export class HiddenWorld {
   resetPortalArrival(){this.travelArmed=false;this.travelAt=this.game.time+3;}
   private baseNames:string[]=[];
   get portalPosition(){const hub=this.hub?.point();if(hub)return hub;if(this.tidecrownSaved)return NO_PORTAL;if(this.chapter===6)return this.sixth.spawn;if(this.chapter===5)return this.game.player.unit.pos.distanceTo(this.fifth.next!.root.position)<7?this.fifth.next!.root.position:this.fifth.spawn;if(this.chapter===4&&this.game.player.unit.pos.distanceTo(this.emberGate.root.position)<7)return this.emberGate.root.position;if(this.chapter===4)return this.fourth.spawn;if(this.chapter===3)return this.game.player.unit.pos.distanceTo(this.snowGate.root.position)<7?this.snowGate.root.position:this.third.spawn;if(this.chapter===2&&this.game.player.unit.pos.distanceTo(this.thirdGate.root.position)<6)return this.thirdGate.root.position;return this.chapter===2?this.spawn:this.shorePortal.root.position;}
-  portalLabel(){const hub=this.hub.label();if(hub)return hub;if(this.chapter===6)return t('월드 5 · 잿불 군도로 돌아가기','Return to World V · Emberreach');if(this.chapter===5)return this.portalPosition===this.fifth.spawn?t('월드 4 · 설원으로 돌아가기','Return to World IV · Frostlight'):t('월드 6 · 하늘숲으로','Travel to World VI · Skybloom');if(this.chapter===4&&this.portalPosition===this.emberGate.root.position)return t('월드 5 · 잿불 군도로 (보레아스 승리 필요)','World V · Emberreach (defeat Boreas first)');return this.chapter===4?t('월드 3으로 돌아가기','Return to World III'):this.chapter===3&&this.portalPosition===this.snowGate.root.position?t('월드 4 · 서리빛 설원으로 (100레벨 왕 승리 필요)','World IV · Frostlight (defeat Solarkan first)'):this.chapter===3?t('월드 2로 돌아가기','Return to World II'):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?t('월드 3 · 새벽의 섬으로','World III · Sail to Dawnreach'):this.chapter===2?t('월드 1로 돌아가기','Return to World I'):t('월드 2로 이동','Travel to World II');}
+  portalLabel(){const hub=this.hub.label();if(hub)return hub;if(this.chapter===6)return t('월드 5 · 잿불 군도로 돌아가기','Return to World V · Emberreach');if(this.chapter===5)return this.portalPosition===this.fifth.spawn?t('월드 4 · 설원으로 돌아가기','Return to World IV · Frostlight'):t('월드 6 · 하늘숲으로','Travel to World VI · Skybloom');if(this.chapter===4&&this.portalPosition===this.emberGate.root.position)return t('월드 5 · 잿불 군도로 (보레아스 승리 필요)','World V · Emberreach (defeat Boreas first)');return this.chapter===4?t('월드 3으로 돌아가기','Return to World III'):this.chapter===3&&this.portalPosition===this.snowGate.root.position?t('월드 4 · 서리빛 설원으로 (100레벨 왕 승리 필요)','World IV · Frostlight (defeat Solarkan first)'):this.chapter===3?t('월드 2로 돌아가기','Return to World II'):this.chapter===2&&this.portalPosition===this.thirdGate.root.position?t('월드 3 · 골드샌드 항구로','World III · Sail to Goldsand Harbor'):this.chapter===2?t('월드 1로 돌아가기','Return to World I'):t('월드 2로 이동','Travel to World II');}
   canTravel(chapter:1|2|3|4|5|6){return chapter===1||this.game.creatorTravel||this.game.multiplayer?.battle.applying||(chapter>=5?!!this.game.journey?.frostCleared:chapter===4?!!this.game.journey?.finalCleared:chapter===2?!!this.game.journey?.abyssCleared:!!this.game.journey?.abyssCleared&&!!this.game.journey?.trueCleared);}
   /** Why `chapter`'s world is still closed (the boss to beat first), or null when it is open. */
   travelLock(chapter:1|2|3|4|5|6){return this.canTravel(chapter)?null:chapter>=5?t('보레아스를 물리치면 새로운 원정 월드가 열려요.','Defeat Boreas to unlock the frontier worlds.'):chapter===4?t('100레벨 솔라칸을 이겨야 눈 월드가 열려요.','Defeat level 100 Solarkan to unlock Frostlight.'):chapter===2?t('10레벨 심해의 군주를 이겨야 월드2가 열려요.','Defeat the level 10 Lord of the Deep to unlock World II.'):t('월드2의 20레벨 일식 여왕을 이겨야 월드3가 열려요.','Defeat the level 20 Eclipse Queen to unlock World III.');}
@@ -106,10 +129,11 @@ export class HiddenWorld {
   private collision: Collision | null = null;
   private life:StarVillageLife|null=null;
   private armour:StarEnemyArmour|null=null;
-  private throne:StarThrone;
+  private throne:StarSanctum;
   private wind:StarWind|null=null;
   private nav:NavHints|null=null;
   private ambience:StarAmbience;
+  private fireflies:StarFireflies;
   waypoint(from:THREE.Vector3,goal:THREE.Vector3,now:number){return this.nav?.waypoint(from,goal,now)??goal;}
   private basePois = new Map<string, {position:THREE.Vector3;yaw:number}>();
   private basePeople: THREE.Vector3[] = [];
@@ -122,10 +146,10 @@ export class HiddenWorld {
   async buildSettlement() {
     await this.third.buildSettlement();await this.fourth.buildSettlement();
     this.dawnRequests.build();this.snowRequests.build();this.emberRequests.build();this.skyRequests.build();
-    const settlement=await buildStarSettlement((x,z)=>this.height(x,z));
+    const settlement=await buildStarSettlement((x,z)=>this.height(x,z));this.ground.meadow=settlement.meadow;this.ground.fields=settlement.fields;
     // Every World II collider, without meshes: the same registration the server bakes.
     this.collision=layoutStarhaven((x,z)=>this.height(x,z),settlement.natureNames).col;this.root.add(settlement.root);
-    this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!);
+    this.wind=new StarWind(settlement.root.getObjectByName('star-island-forests')!,{tealLeaves:true});
     this.life=new StarVillageLife((x,z)=>this.height(x,z));this.root.add(this.life.root);
     const waystones=new StarWaystoneKit(),memorySeals=new StarMemorySealKit(),ore=new StarOreKit();
     for(const [kind,point] of Object.entries(STAR_OBJECTIVES)) {
@@ -178,7 +202,7 @@ export class HiddenWorld {
 
 
   constructor(private game: Game) {
-    this.dawnRequests=new DawnRequests(game,this.third);
+    this.dawnRequests=new DawnRequests(game,this.third,undefined,this.third.questProps());
     this.snowRequests=new DawnRequests(game,this.fourth,SNOW_POINTS,this.fourth.questProps());
     this.emberRequests=new DawnRequests(game,this.fifth,FRONTIER_POINTS[5]);this.skyRequests=new DawnRequests(game,this.sixth,FRONTIER_POINTS[6]);
     this.emberGate=this.fourth.gate(new THREE.Vector3(14,this.fourth.height(14,84),84),'설원 → 잿불 군도');this.fourth.root.add(this.emberGate.root);
@@ -187,51 +211,53 @@ export class HiddenWorld {
     this.baseRoot=w.root;
     this.originalHeight=w.heightAt.bind(w);this.originalCollision=w.resolveCollision.bind(w);this.originalRay=w.raycastSolid.bind(w);
     this.root.visible=false;game.scene.add(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);
-    this.snowGate=new StarPortal(new THREE.Vector3(14,this.third.height(14,84),84),'새벽 항구 → 서리빛 설원');this.third.root.add(this.snowGate.root);
+    this.snowGate=new DawnPortal(new THREE.Vector3(14,this.third.height(14,84),84),'골드샌드 항구 → 서리빛 설원','frost');this.third.root.add(this.snowGate.root);
     this.sky=new StarSky();this.root.add(this.sky.root);
-    const land=new THREE.PlaneGeometry(280,320,140,160);land.rotateX(-Math.PI/2);
-    const pos=land.attributes.position,colors=[];
-    const groundColor=new THREE.Color();
-    for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i),y=this.height(x,z);pos.setY(i,y);starGroundColor(x,z,y,groundColor);colors.push(groundColor.r,groundColor.g,groundColor.b);}
-    land.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));land.computeVertexNormals();
-    const pixels=new Uint8Array(128*128*4);
-    for(let z=0;z<128;z++)for(let x=0;x<128;x++){
-      const hash=Math.sin(x*127.1+z*311.7)*43758.5453,grain=(hash-Math.floor(hash))*.18;
-      const vein=Math.pow(Math.abs(Math.sin(x*.12+Math.sin(z*.09)*2)),20)*.12;
-      const shade=Math.round((.68+grain-vein)*255),i=(z*128+x)*4;
-      pixels.set([shade,shade,shade,255],i);
-    }
-    const texture=this.groundTexture=new THREE.DataTexture(pixels,128,128);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(18,18);texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearMipmapLinearFilter;texture.generateMipmaps=true;texture.anisotropy=Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy());texture.needsUpdate=true;
-    const ground=new THREE.Mesh(land,new THREE.MeshStandardMaterial({map:texture,vertexColors:true,roughness:.94,metalness:.08}));ground.name='star-island-ground';ground.receiveShadow=true;this.root.add(ground);
+    this.ground=starGround((x,z)=>this.height(x,z),Math.min(8,game.engine.renderer.capabilities.getMaxAnisotropy()));this.root.add(this.ground.mesh);
     this.sea=new StarSea();this.root.add(this.sea.root);
-    const stone=new THREE.MeshStandardMaterial({color:'#3c3b57',roughness:.78,metalness:.3});
-    const crystal=new THREE.MeshStandardMaterial({color:'#a57bff',emissive:'#6524c9',emissiveIntensity:1.5,metalness:.5,roughness:.2});
-    const teal=new THREE.MeshStandardMaterial({color:'#b0fff1',emissive:'#26afba',emissiveIntensity:1.3,metalness:.6,roughness:.25});
-    // Jagged crystal gardens frame the open combat paths. One geometry/material per family.
-    const crystalFaces=crystal.clone();crystalFaces.vertexColors=true;crystalFaces.flatShading=true;crystalFaces.emissiveIntensity=.45;crystalFaces.metalness=.35;crystalFaces.roughness=.3;
-    const crystals=new THREE.InstancedMesh(facetedStarCrystal(),crystalFaces,90);crystals.name='star-island-crystal-gardens';const matrix=new THREE.Matrix4();
-    starCrystalGarden((x,z)=>this.height(x,z)).forEach((c,i)=>{
-      if(c.clear)matrix.makeScale(0,0,0);
-      else{
-        matrix.compose(new THREE.Vector3(c.x,c.y+c.h*.5,c.z),c.q,c.scale);
-        this.crystalSolids.push(c.solid);
-      }
-      crystals.setMatrixAt(i,matrix);
+    // Field crystals in clusters with their stories (starCrystalLayout.ts); the miners' cut stumps are a second draw.
+    const spots=starCrystalGarden((x,z)=>this.height(x,z)),whole=spots.filter(c=>!c.cut),cut=spots.filter(c=>c.cut);this.crystalSpots=spots;
+    const crystals=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('amethyst'),whole.length);crystals.name='star-island-crystal-gardens';
+    const stumps=new THREE.InstancedMesh(starCrystalStump(),starCrystalMaterial('amethyst'),cut.length);stumps.name='star-island-crystal-stumps';
+    const matrix=new THREE.Matrix4(),at=new THREE.Vector3();
+    const crystalGlow:StarGlowSource[]=[];
+    for(const [mesh,list] of [[crystals,whole],[stumps,cut]] as const)list.forEach((c,i)=>{
+      mesh.setMatrixAt(i,matrix.compose(at.set(c.x,c.y+c.h*.5,c.z),c.q,c.scale));
+      this.crystalSolids.push(c.solid);
+      // A crystal's light on the ground grows with its size; cut ones only glow at their faces.
+      crystalGlow.push({x:c.x,z:c.z,radius:.9+c.h*.28,color:c.site==='ring'?'#a78bff':'#8f6bff',strength:c.cut?.5:.75+c.h*.06});
     });
-    crystals.castShadow=true;this.root.add(crystals);
-    this.throne=new StarThrone((x,z)=>this.height(x,z),stone,teal,crystal);
-    this.root.add(this.throne.root);this.obstacles.push(...this.throne.solids);
-    const disk=new THREE.Mesh(new THREE.CylinderGeometry(17,18,.3,64),stone);disk.position.copy(this.arena.position);disk.position.y=2.93;disk.receiveShadow=true;this.root.add(disk);
-    for(const r of [3,9,16]){const ring=new THREE.Mesh(new THREE.TorusGeometry(r,.045,5,96),teal);ring.rotation.x=Math.PI/2;ring.position.set(0,3.12,-75);this.root.add(ring);}
+    crystals.castShadow=stumps.castShadow=true;this.root.add(crystals,stumps);
+    // The Eclipse Queen's sanctum: carved floor, obelisks on the old twelve footprints, the pilgrims' gate.
+    this.throne=new StarSanctum((x,z)=>this.height(x,z));
+    this.root.add(this.throne.root);this.obstacles.push(...throneSolids());
     // The settlement owns the stone trails; keep only the luminous wayfinders here.
-    for(let i=0;i<14;i++){const z=5-i*5,x=(i%2?1:-1)*6.5;const gem=new THREE.Mesh(new THREE.OctahedronGeometry(.4),teal);gem.position.set(x,this.height(x,z)+1,z);this.root.add(gem);this.rotations.push(gem);}
-    this.portal=new StarPortal(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
+    {
+      // Small teal crystals grown beside the starroad, every five metres.
+      const guides=new THREE.InstancedMesh(starCrystalCluster(),starCrystalMaterial('teal',{glow:1.3}),starRoadGuides().length),m=new THREE.Matrix4(),q=new THREE.Quaternion();guides.name='star-road-wayfinders';
+      for(const [i,[x,z]] of starRoadGuides().entries()){m.compose(new THREE.Vector3(x,this.height(x,z)+.55,z),q.setFromAxisAngle(new THREE.Vector3(0,1,0),i*2.4),new THREE.Vector3(.7,1.1,.7));guides.setMatrixAt(i,m);}
+      guides.castShadow=true;this.root.add(guides);
+      for(const [x,z] of starRoadGuides())crystalGlow.push({x,z,radius:1.1,color:'#3fe0cc',strength:.9});
+    }
+    // The lamps', crystals' and Moonshade's light on the ground, baked once (starLight.ts).
+    for(const {x,z,h} of moonshadeLeaves())crystalGlow.push({x,z,radius:1.6+h*.25,color:'#4f8dff',strength:.9});
+    // The miners' torch.
+    {const [tx,tz]=rot(-6.4,1.8,STAR_MINE.yaw);crystalGlow.push({x:STAR_MINE.x+tx,z:STAR_MINE.z+tz,radius:2.4,color:'#ff9a4a',strength:2.2});}
+    // The door lanterns' pools (starRooftops.ts).
+    crystalGlow.push(...starDoorLampGlows(starLots()),...starTrailLanternGlows(starTrailLanternSpots()),...starWindowSpillGlows(starLots(),STAR_ROOF_ROLES.empty));
+    // The fallen-star ruin's armillary at the east trail's end keeps a pale pool of its own, so the trail leads to light.
+    crystalGlow.push({x:80,z:-40,radius:4.2,color:'#9fd8ff',strength:1.1});
+    // The wilds' moon-flower clumps light their patches (starWilds.ts).
+    crystalGlow.push(...starWildGlows(),...starTreeGlows(),...starEclipseGlows());
+    this.groundLight=bakeStarLight(crystalGlow);
+    this.fireflies=new StarFireflies((x,z)=>this.height(x,z));this.root.add(this.fireflies.points);
+    this.portal=new StarGate(this.spawn,'별빛 항구 → 클로헤이븐');this.root.add(this.portal.root);
     // The eastern street is open; the old spawn-relative site overlapped the tavern porch.
     const ship=w.pois.wreck.position;
     const shorePosition=new THREE.Vector3(ship.x-7,0,ship.z+7);shorePosition.y=w.heightAt(shorePosition.x,shorePosition.z);
     this.shorePortal=new StarPortal(shorePosition,'클로헤이븐 → 별빛 항구');w.root.add(this.shorePortal.root);
-    this.thirdGate=new StarPortal(new THREE.Vector3(0,this.height(0,-41),-41),'별빛 항구 → 새벽의 섬');this.root.add(this.thirdGate.root);
-    this.root.add(this.sun.light,this.sun.light.target,new THREE.HemisphereLight('#869cff','#1a1028',1.0));
+    this.thirdGate=new StarGate(new THREE.Vector3(0,this.height(0,-41),-41),'별빛 항구 → 골드샌드 항구');this.root.add(this.thirdGate.root);
+    this.carry.name='star-player-glow';this.rim.name='star-player-rim';this.root.add(this.sun.light,this.sun.light.target,this.night.root,this.carry,this.rim);
     for(const p of [new THREE.Vector3(0,8,86),new THREE.Vector3(0,10,-75)]){const light=new THREE.PointLight('#8e5dff',28,35,1.5);light.position.copy(p);this.root.add(light);}
     const surface=(island:{height(x:number,z:number):number})=>(x:number,z:number)=>island.height(x,z);
     this.hub=new TidecrownHub(game,this,{1:{root:w.root,height:this.originalHeight},2:{root:this.root,height:surface(this)},3:{root:this.third.root,height:surface(this.third)},4:{root:this.fourth.root,height:surface(this.fourth)},5:{root:this.fifth.root,height:surface(this.fifth)},6:{root:this.sixth.root,height:surface(this.sixth)}});
@@ -242,7 +268,7 @@ export class HiddenWorld {
     if(this.chapter>=5){const fire=this.chapter===5;this.game.npcs.forEach(n=>{n.unit.name=n.def.name;n.unit.title=fire?t('잿불 원정대 주민','Emberreach Expedition Resident'):t('하늘숲 원정대 주민','Skybloom Expedition Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=fire?(e.kind==='scrapling'?t('잿불 껍질 약탈자','Ember-shell Raider'):t('흑요석 유적 파수병','Obsidian Sentinel')):(e.kind==='scrapling'?t('가시덩굴 약탈자','Thornvine Raider'):t('하늘숲 유적 수호자','Skybloom Guardian'));return;}
 
     if(this.chapter===4){this.game.frostBoss.freed.name=t('미라 · 사라진 친구','Mira · The Missing Friend');this.game.npcs.forEach(n=>{n.unit.name=n.def.name;n.unit.title=t('눈꽃 마을의 주민','Snowfall Village Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('서리 껍질 약탈자','Frost-shell Raider'):t('빙하 성채 파수병','Glacial Sentinel');return;}
-    if(this.chapter===3){this.game.dawnBoss.freed.name=t('새벽 성채의 수호자','Dawnkeeper');const names=[['새벽 항구의 로안 선장','Captain Roan'],['새벽의 사제 셀레네','Selene of Dawn'],['의무관 산호','Medic Coral'],['성문 수비대장 바론','Gatewarden Baron'],['여관주인 메리','Innkeeper Merry'],['항해사 루멘','Navigator Lumen'],['대장장이 플린','Smith Flynn']];this.game.npcs.forEach((n,i)=>{n.unit.name=t(names[i][0],names[i][1]);n.unit.title=t('새벽 항구의 주민','Dawnharbor Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('잿빛 해안 약탈자','Ash Coast Raider'):t('황혼 성채 파수병','Twilight Sentinel');return;}
+    if(this.chapter===3){this.game.dawnBoss.freed.name=t('새벽 성채의 수호자','Dawnkeeper');const names=[['골드샌드 항구의 로안 선장','Captain Roan'],['새벽의 사제 셀레네','Selene of Dawn'],['의무관 산호','Medic Coral'],['성문 수비대장 바론','Gatewarden Baron'],['여관주인 메리','Innkeeper Merry'],['항해사 루멘','Navigator Lumen'],['대장장이 플린','Smith Flynn']];this.game.npcs.forEach((n,i)=>{n.unit.name=t(names[i][0],names[i][1]);n.unit.title=t('골드샌드 항구의 주민','Goldsand Harbor Resident');});for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('잿빛 해안 약탈자','Ash Coast Raider'):t('황혼 성채 파수병','Twilight Sentinel');return;}
     if(this.chapter!==2)return;
     for(const e of this.game.enemies)if(!e.isAdd)e.unit.name=e.kind==='scrapling'?t('수정 껍질 파수꾼','Crystal-shell Sentry'):t('별빛 유적 수호자','Star-ruin Guardian');
   }
@@ -341,7 +367,7 @@ export class HiddenWorld {
     g.enemies.filter(e=>!e.isAdd).forEach((e,i)=>{if(e.isEcho||e.kind==='jellyfish'){e.despawn();return;}const slot=e.islandSlot;const x=slot!==null?(slot%2?1:-1)*(48+Math.floor(slot/2)*5):(i%2?1:-1)*(43+i%4*8),z=slot!==null?14-Math.floor(slot/2)*20:16-Math.floor(i/2)*10;e.home.set(x,third.height(x,z),z);if(authority)e.respawnAt(x,z);});
     g.quests.setChapter(3);g.hud.hints.setChapter(3);this.refreshLanguage();g.hud.tracker.update(g.quests);if(g.hud.questLog.open)g.hud.questLog.render();
     g.player.respawn();g.player.unit.teleport(w,0,82,Math.PI);g.follow.cut();g.follow.yaw=0;g.zone='';
-    g.hud.messages.banner(()=>t('WORLD III · 새벽을 잃은 섬','WORLD III · Isle of the Stolen Dawn'),()=>t('100레벨 황혼의 왕을 물리치고 설원으로 가는 길을 여세요','Defeat the level 100 Twilight King to open the route to Frostlight'),'zone');
+    g.hud.messages.banner(()=>t('WORLD III · 새벽을 잃은 사막','WORLD III · Desert of the Stolen Dawn'),()=>t('100레벨 황혼의 왕을 물리치고 설원으로 가는 길을 여세요','Defeat the level 100 Twilight King to open the route to Frostlight'),'zone');
     g.hud.chat.system(t('보레아스가 미라를 설원으로 데려갔어요. 솔라칸을 이겨 설원으로 가는 길을 여세요.','Boreas has taken Mira to Frostlight. Defeat Solarkan to open the route to the snowfields.'));
     g.hud.minimap.setSnapshot(snapshotMap(g.engine.renderer,g.scene,{minX:-150,maxX:150,minZ:-175,maxZ:175,topY:110},[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));g.journey?.save();
   }
@@ -457,13 +483,16 @@ export class HiddenWorld {
       return;
     }
     const flags=observation?.flags??this.game.journey;
+    if(!this.rendered||this.chapter!==2)this.night.release(this.game.scene);
+    if(this.game.objective)this.game.objective.star=this.rendered&&this.chapter===2&&!this.inTidecrown;
     this.hub.update(dt,time);
     this.snowGate.update(time);this.emberGate.update(time);
     if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
     if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);this.fourth.updateSnow(dt,this.game.engine.renderer,this.game.units,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.snowRequests.update(time,!!observation);}
+    this.third.useEnvironment(this.game.scene,this.game.engine.renderer,this.chapter===3&&this.rendered);
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
     this.thirdGate.root.visible=!!flags?.trueCleared||this.game.creatorTravel;
-    if(this.chapter===3){this.third.update(time,!!flags?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z);this.dawnRequests.update(time,!!observation);}
+    if(this.chapter===3){this.third.setQuality(this.game.engine.quality);this.third.update(time,!!flags?.finalCleared,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.third.updateSand(dt,this.game.engine.renderer,this.game.units,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.dawnRequests.update(time,!!observation);}
     if(!observation&&!this.game.ending.active&&!this.game.controlsLocked){
       const distance=Math.hypot(this.game.player.unit.pos.x-this.portalPosition.x,this.game.player.unit.pos.z-this.portalPosition.z);
       if(distance>4.5)this.travelArmed=true;
@@ -472,16 +501,16 @@ export class HiddenWorld {
     if(!this.rendered)return;
     if(this.chapter>=5){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set(this.chapter===5?'#a07b70':'#b6dcce');fog.density=.0023;}return;}
     if(this.chapter===4){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){const e=this.game.camera.matrixWorld.elements;this.fourth.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.fourth.sky.fogDensity(e[13],-e[9]);}return;}
-    if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#a4b5c4');fog.density=.0025;}return;}
+    if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2)this.third.fog(this.game.camera,fog);return;}
     const echo=this.game.enemies.find(e=>e.isEcho);
     if(!observation&&echo&&this.game.multiplayer?.battle.authority!==false&&echo.state==='gone'&&time>this.echoAt&&!this.game.encounter.engaged){echo.home.set(0,this.height(0,-22),-22);echo.respawnAt(0,-22);this.echoAt=time+120;this.game.hud.messages.info(t('녹의 폭군의 잔영이 별길에 나타났어요!','An echo of the Rust Tyrant has appeared on the Starroad!'));}
     const position=this.game.player.unit.pos,right=this.game.camera.matrixWorld.elements;
-    this.sun.update(position.x,position.z);
+    this.sun.update(position.x,position.z);{const c=this.game.camera.position,dx=c.x-position.x,dz=c.z-position.z,l=Math.hypot(dx,dz)||1;this.carry.position.set(position.x+dx/l*.9,position.y+1.15,position.z+dz/l*.9);this.rim.position.set(position.x-dx/l*.75,position.y+1.05,position.z-dz/l*.75);}
     this.ambience.update(time,this.regionAt(position.x,position.z),position.x,position.z,right[0],right[2],this.game.player.inCombat||this.game.encounter.engaged||this.game.ending.active||!this.game.player.unit.alive);
-    const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#17152e');fog.density=.007;}
+    this.night.apply(this.game.scene,this.game.engine.renderer,this.game.camera);
     this.sky.update(time,this.game.camera,this.game.engine.renderer.getPixelRatio());this.life?.update(time);
-    this.sea.update(time);
-    this.armour?.update(time);this.throne.update(time);
+    this.sea.update(time);this.ground.update(time,this.game.engine.quality,this.game.camera,position);
+    this.armour?.update(time);this.throne.update(time);this.fireflies.update(time,this.game.engine.renderer.getPixelRatio(),this.game.engine.quality);
     this.wind?.update(time);
     if(!observation)for(const [kind,point] of Object.entries(STAR_OBJECTIVES))if(kind.startsWith('explore-')&&Math.hypot(this.game.player.unit.pos.x-point[0],this.game.player.unit.pos.z-point[1])<5)this.game.quests.bump(kind as ObjectiveKind);
     for(const memory of this.memories){
@@ -637,7 +666,7 @@ export class HiddenWorld {
   }
   dispose(){
     this.hub.dispose();this.leaveTidecrown();this.tidecrownPeople?.dispose();if(this.tidecrown){this.game.scene.remove(this.tidecrown.root);this.tidecrown.dispose();this.tidecrown=undefined;}
-    this.ambience.dispose();this.fourth.disposeSnow();
+    this.ambience.dispose();this.fourth.disposeSnow();this.third.disposeSand();this.night.release(this.game.scene);this.night.dispose();
     this.showEpilogue();this.game.scene.remove(this.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root);this.baseRoot.remove(this.shorePortal.root);
     const mats=new Set<THREE.Material>(),geos=new Set<THREE.BufferGeometry>();
     for(const root of [this.root,this.shorePortal.root,this.third.root,this.fourth.root,this.fifth.root,this.sixth.root])root.traverse(o=>{
@@ -654,6 +683,6 @@ export class HiddenWorld {
       }
     });
     const ownedTextures=new Set<THREE.Texture>();for(const m of mats){const map=(m as THREE.MeshStandardMaterial).map;if(map?.userData.islandPaving)ownedTextures.add(map);}for(const texture of ownedTextures)texture.dispose();
-    this.groundTexture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
+    this.ground.texture.dispose();for(const g of geos)g.dispose();for(const m of mats)m.dispose();
   }
 }

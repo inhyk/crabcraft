@@ -6,9 +6,9 @@ await mkdir('tmp/qa',{recursive:true});
 const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist']});
 try {
  const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto((process.env.CC_QA_URL||'http://127.0.0.1:5192')+'/?screen=game');await page.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});
+ await page.goto((process.env.CC_QA_URL||'http://127.0.0.1:5192')+'/?screen=game');await page.locator('.launch-notice-start').click();await page.waitForFunction(()=>window.app?.current?.game?.loaded,null,{timeout:90000});
  const result=await page.evaluate(()=>{
-  const g=window.app.current.game;g.god=true;g.world2.enter();const forest=g.world2.root.getObjectByName('star-island-forests'),violations=[];let checked=0,vertices=0;
+  const g=window.app.current.game;g.god=true;g.creatorTravel=true;g.world2.enter();const forest=g.world2.root.getObjectByName('star-island-forests'),violations=[];let checked=0,vertices=0;
   const rectDistance=(x,z,ax,bx,az,bz)=>Math.hypot(Math.max(ax-x,0,x-bx),Math.max(az-z,0,z-bz));
   const personClearance=(x,z)=>Math.min(...g.npcs.map(n=>Math.hypot(x-n.unit.pos.x,z-n.unit.pos.z)-1.8));
   const trailDistance=(x,z)=>{let best=Infinity;for(const path of g.world2.trails)for(let i=1;i<path.length;i++){const [ax,az]=path[i-1],[bx,bz]=path[i],dx=bx-ax,dz=bz-az,t=Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz)));best=Math.min(best,Math.hypot(x-ax-t*dx,z-az-t*dz));}return best;};
