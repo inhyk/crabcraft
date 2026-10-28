@@ -7,6 +7,7 @@ import {emberRocks} from './emberRocks';
 import {emberPlants,emberRubble} from './emberPlants';
 import {emberCourt} from './emberCourt';
 import {refreshEmberDetail} from './emberNoise';
+import {emberCamp} from './emberCamp';
 
 export interface EmberWildsOptions {
  height: (x: number, z: number) => number;
@@ -34,6 +35,8 @@ export class EmberWilds {
   const plants = emberPlants({height: opts.height, zones: opts.zones, features: rocks.features});
   this.root.add(...plants.meshes);
   this.root.userData.plants = plants.stats;
+  // Kit props load after the island is built; the camp appears when they arrive.
+  emberCamp(opts.height).then((g) => { this.root.add(g); this.root.userData.camp = g.children.length; }).catch((e) => console.warn('ember camp', e));
  }
  update(time: number) { refreshEmberDetail(time); for (const u of this.updaters) u(time); }
 }
