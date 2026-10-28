@@ -4,6 +4,8 @@ import {FRONTIER_TOWN,layoutFrontier,frontierTrees,type FrontierChapter} from '.
 import {StarPortal} from './portal';
 import type {Poi} from '../world/types';
 import {islandPaths} from './islandPaths';
+import {skyTreeQuality,skyWorldTree} from './skyWorldTree';
+import {SKY_TREE_TIME} from './skyTreeMaterials';
 /** World VI Skybloom, split from the shared frontier so its design can grow apart from World V. */
 export class SkybloomIsland {
  readonly root=new THREE.Group();
@@ -97,12 +99,12 @@ export class SkybloomIsland {
    for(const side of [-1,1]){const lava=add(new THREE.PlaneGeometry(8,160,1,32),this.flowMaterial(true),side*91,1,0);lava.rotation.x=-Math.PI/2;lava.castShadow=false;}
    add(new THREE.TorusGeometry(11,.5,6,40),stone,0,ly+27,-128).rotation.x=Math.PI/2;
   }else{
-   add(new THREE.CylinderGeometry(3.5,6,36,10),wood,0,ly+18,-112).name='skybloom-world-tree';
-   for(let i=0;i<7;i++){const a=i/7*Math.PI*2,x=Math.sin(a)*10,z=-112+Math.cos(a)*10;const b=add(new THREE.CylinderGeometry(.6,1.4,20,6),wood,x*.5,ly+26,z+(-112-z)*.5);b.rotation.z=-Math.sin(a)*.8;b.rotation.x=Math.cos(a)*.8;const canopy=add(new THREE.IcosahedronGeometry(12,1),new THREE.MeshStandardMaterial({color:i%2?'#67ac86':'#3b947d',roughness:.8}),x,ly+38+i%3*3,z);canopy.scale.y=.65;}
    for(let i=0;i<9;i++){const a=i*2.4,x=Math.sin(a)*145,z=Math.cos(a)*160;add(new THREE.ConeGeometry(8+i%3*3,22,6),stone,x,12+i%4*9,z).rotation.z=Math.PI;add(new THREE.CylinderGeometry(8+i%3*3,7,2,8),roofMat,x,24+i%4*9,z);}
   }
   for(let i=0;i<10;i++){const a=(i+1)/12*Math.PI*2,x=Math.sin(a)*23,z=-72+Math.cos(a)*23;if(z>-56)continue;const y=this.height(x,z);add(new THREE.CylinderGeometry(.9,1.4,9,8),stone,x,y+4.5,z);const gem=add(new THREE.OctahedronGeometry(.8),glow,x,y+9.8,z);this.rotating.push(gem);}
   this.makeDetails(fire,stone,wood,metal,glow,foliage);
+  // World tree, its roots, vines and seed lanterns (skyWorldTree.ts).
+  this.root.add(skyWorldTree((x,z)=>this.height(x,z),skyTreeQuality()).root);
   // A low sea of lava / clouds and gradient sky distinguish the worlds at first glance.
   const sea=add(new THREE.PlaneGeometry(1800,1800),this.flowMaterial(fire),0,.15,0);sea.rotation.x=-Math.PI/2;sea.castShadow=false;sea.name=fire?'molten-sea':'sea-of-clouds';
   const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{top:{value:new THREE.Color(fire?'#271728':'#438ca7')},bottom:{value:new THREE.Color(fire?'#dd8b5f':'#d3efda')}},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;uniform vec3 top;uniform vec3 bottom;void main(){gl_FragColor=vec4(mix(bottom,top,smoothstep(0.,.65,normalize(v).y)),1.);}'});
@@ -150,12 +152,9 @@ export class SkybloomIsland {
    const flowers=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.25,0),petal,180);
    for(let i=0;i<180;i++){const side=i%2?1:-1,x=side*(41+(i%9)*1.2),z=28+(i%23)*2.8;dummy.position.set(x,y(x,z)+.3,z);dummy.rotation.y=i;dummy.scale.setScalar(.75+i%3*.3);dummy.updateMatrix();flowers.setMatrixAt(i,dummy.matrix);flowers.setColorAt(i,new THREE.Color(i%3?'#f7d6c0':'#b9b5ff'));}detail.add(flowers);
    for(const side of [-1,1])for(const z of [38,65]){const x=side*47,by=y(x,z);add(new THREE.CylinderGeometry(4,4.3,.5,16),stone,x,by+.2,z);const crown=add(new THREE.IcosahedronGeometry(3,1),foliage,x,by+1,z);crown.scale.y=.3;}
-   for(let i=0;i<10;i++){const a=i*Math.PI/5,x=Math.sin(a)*11,z=-112+Math.cos(a)*11;add(new THREE.CylinderGeometry(.035,.035,6+i%3,4),metal,x,y(0,-72)+26,z);add(new THREE.OctahedronGeometry(.5),glow,x,y(0,-72)+22-i%3*.5,z);}
-   // Root arches sit beyond the north rim of the fight.
-   for(const side of [-1,1]){const arch=add(new THREE.TorusGeometry(8,.65,6,24,Math.PI),wood,side*22,y(side*22,-108)+2,-108);arch.rotation.y=side*.5;}
   }
   this.root.userData.frontierDetailMeshes=detail.children.length;
  }
  private flowMaterial(fire:boolean){const m=new THREE.ShaderMaterial({uniforms:{time:{value:0},hot:{value:fire?1:0}},vertexShader:'varying vec2 v;void main(){v=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec2 v;uniform float time;uniform float hot;void main(){float w=.5+.5*sin(v.x*90.+sin(v.y*70.+time*.15)*2.);vec3 lava=mix(vec3(.27,.035,.025),vec3(1.,.36,.025),pow(w,4.));vec3 cloud=mix(vec3(.64,.8,.8),vec3(.93,.98,.93),w);gl_FragColor=vec4(mix(cloud,lava,hot),1.);}'});this.animated.push(m);return m;}
- update(time:number){this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
+ update(time:number){SKY_TREE_TIME.value=time;this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
 }
