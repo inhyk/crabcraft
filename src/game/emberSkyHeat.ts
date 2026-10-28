@@ -49,7 +49,7 @@ if(uHeatOn>0.){
   float shore=hm.r*exp(-max(0.,vHeatW.y-${SEA_Y.toFixed(2)})*.1);
   vec3 L=normalize(vec3(hm.b,-.55,hm.a));
   float facing=max(0.,dot(normalize(vHeatN),L));
-  float heat=(shore+hm.g)*(.3+1.9*facing);
+  float heat=(shore+hm.g)*(.45+1.7*facing);
   heat*=1.+.09*sin(uHeatTime*1.3+vHeatW.x*.21+vHeatW.z*.17)+.05*sin(uHeatTime*3.1+vHeatW.z*.5);
   totalEmissiveRadiance+=diffuseColor.rgb*uHeatColor*heat*uHeatOn*EMBER_HEAT_SCALE;
 }
@@ -88,7 +88,7 @@ export class EmberHeat {
  readonly uniforms={
   uHeatMap:{value:null as THREE.Texture|null},
   uHeatBox:{value:new THREE.Vector4(BOX.minX,BOX.minZ,1/BOX.sizeX,1/BOX.sizeZ)},
-  uHeatColor:{value:new THREE.Color('#ff5a1e').multiplyScalar(1.8)},
+  uHeatColor:{value:new THREE.Color('#ff5a1e').multiplyScalar(1.4)},
   uHeatTime:{value:0},
   uHeatOn:{value:0},
  };

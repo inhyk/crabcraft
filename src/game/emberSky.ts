@@ -225,7 +225,7 @@ const FOG_DENSITY = .0026;
  * World V's view exposure (game.ts EMBER_VIEW). It opens the lit surfaces and the emitters; the dome and the fog divide
  * it back out so the sky keeps its own values and stays darker than the lava, the forges and the windows.
  */
-export const EMBER_EXPOSURE = 1.75;
+export const EMBER_EXPOSURE = 2.0;
 
 export class EmberSky {
   readonly baked: BakedEmberSky;
@@ -242,7 +242,7 @@ export class EmberSky {
    */
   readonly hemiSky = new THREE.Color('#9a94c0');
   readonly hemiGround = new THREE.Color('#3b3546');
-  readonly hemiIntensity = 1.6;
+  readonly hemiIntensity = 2.0;
   /** Mean horizon, linear. */
   readonly skyHorizon: THREE.Color;
   readonly envIntensity = .5;
