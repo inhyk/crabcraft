@@ -17,9 +17,9 @@ import {EMBER_DETAIL,EMBER_NOISE} from './emberNoise';
  * (plus shadows) for every rock on the island.
  */
 
-type V3 = [number, number, number];
+export type V3 = [number, number, number];
 /** Kinds the rock shader tells apart. */
-const K = {column: 0, cone: 1, obsidian: 2, arch: 3, wood: 4, boulder: 5} as const;
+export const K = {column: 0, cone: 1, obsidian: 2, arch: 3, wood: 4, boulder: 5, dressed: 6} as const;
 
 function rng(seed: number) { let s = (seed * 2654435761) >>> 0 || 1; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 const fract = (v: number) => v - Math.floor(v);
@@ -34,7 +34,7 @@ function vnoise(x: number, y: number, z: number) {
 }
 
 /** Collects triangles with their attributes; flat pieces add triangles, smooth ones add whole geometries. */
-class Builder {
+export class Builder {
  pos: number[] = []; nrm: number[] = []; col: number[] = []; mat: number[] = []; aux: number[] = [];
  constructor(private readonly ground: (x: number, z: number) => number, private readonly heat: (x: number, y: number, z: number) => number) {}
  private vert(p: V3, n: V3, c: THREE.Color, kind: number, gloss: number, glow: number, seed: number) {
@@ -68,7 +68,7 @@ class Builder {
 }
 
 /** sRGB hex to a linear colour, scaled. */
-const C = (hex: string, k = 1) => new THREE.Color(hex).multiplyScalar(k);
+export const C = (hex: string, k = 1) => new THREE.Color(hex).multiplyScalar(k);
 
 /** A hexagonal basalt column from below ground to a chamfered top on a tilted plane. */
 function column(b: Builder, cx: number, cz: number, r: number, y0: number, top: number, tx: number, tz: number, rot: number, col: THREE.Color, seed: number) {
@@ -329,6 +329,10 @@ if(rkKind<.5){
   rkC*=1.-.45*joint;
   rkC*=1.+.12*(1.-smoothstep(.03,.12,jf))*rkWall*(1.-joint);
 }
+if(rkKind>5.5){
+  // Dressed stone: tooled in fine vertical flutes, edges worn paler.
+  rkC*=1.+.05*sin(rkQ.x*40.)*rkFine*rkWall;
+}
 if(rkKind>3.5&&rkKind<4.5){
   // Charred bark: blocky alligator cracks, near black between.
   vec3 cel=egCells(vec2(rkQ.x*2.3,rkQ.y*1.1)+rkSeed);
@@ -412,6 +416,8 @@ export interface EmberRocksOptions {
  height: (x: number, z: number) => number;
  zones: readonly LavaZone[];
  features: readonly EmberFeature[];
+ /** More pieces in the same mesh and material (the forge court's columns). */
+ extra?: (b: Builder) => void;
 }
 
 /** Builds the rock mesh and the crystal mesh. Features on the lava (zones read at runtime) are skipped. */
@@ -442,6 +448,7 @@ export function emberRocks(opts: EmberRocksOptions) {
    for (let k = 0; k < 3 + e.r * 2; k++) { const a = R() * 6.3, rr = e.r * (.4 + R() * .8); boulder(b, height, e.x + Math.sin(a) * rr, e.z + Math.cos(a) * rr, .25 + R() * .3 * e.r, R() * 40, C('#2c2d34', .9 + .2 * R())); }
   }
  }
+ opts.extra?.(b);
  const rockGeo = b.build();
  const uniforms = {egDetail: EMBER_DETAIL, rkTime: {value: 0}};
  const rockMat = new THREE.MeshStandardMaterial({color: '#ffffff', vertexColors: true, roughness: .88, metalness: 0});

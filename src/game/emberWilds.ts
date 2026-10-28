@@ -5,6 +5,7 @@ import {emberGround} from './emberGround';
 import {emberPaving} from './emberPaving';
 import {emberRocks} from './emberRocks';
 import {emberPlants} from './emberPlants';
+import {emberCourt} from './emberCourt';
 import {refreshEmberDetail} from './emberNoise';
 
 export interface EmberWildsOptions {
@@ -25,7 +26,9 @@ export class EmberWilds {
   this.root.add(ground.mesh); this.updaters.push(ground.update);
   const paving = emberPaving(opts.height, EMBER_PATHS);
   this.root.add(paving.root); this.updaters.push(paving.update);
-  const rocks = emberRocks({height: opts.height, zones: opts.zones, features: EMBER_FEATURES});
+  const court = emberCourt({height: opts.height, ly: opts.ly});
+  this.root.add(court.root); this.updaters.push(court.update);
+  const rocks = emberRocks({height: opts.height, zones: opts.zones, features: EMBER_FEATURES, extra: court.addColumns});
   this.root.add(rocks.rocks, rocks.crystals); this.updaters.push(rocks.update);
   this.root.userData.rocks = rocks.stats;
   const plants = emberPlants({height: opts.height, zones: opts.zones, features: rocks.features});
