@@ -191,8 +191,9 @@ function buildSkirt(b: Builder, falls: {p: V3; dir: V3; w: number; len: number}[
     for (let q = 0; q < n; q++) {
       const d = d0 + (len * q) / (n - 1), y = l.y - d;
       o = Math.max(o, (d > 2.9 ? faceOffset(s, y, d) : 0.3) + 0.3 + r0);
-      const sway = Math.sin(q * 0.9 + k) * 0.25 * (q / n);
-      pts.push([l.x + l.nx * o - l.nz * sway, y, l.z + l.nz * o + l.nx * sway]);
+      // Roots wander and kink as they hang; vines swing in a slow S.
+      const u = q / (n - 1), sway = (Math.sin(q * 0.8 + k * 2.1) * (vine ? 0.7 : 0.8) + Math.sin(q * 0.35 + k) * 0.5) * u;
+      pts.push([l.x + l.nx * (o + Math.abs(sway) * 0.3) - l.nz * sway, y, l.z + l.nz * (o + Math.abs(sway) * 0.3) + l.nx * sway]);
       radii.push(r0 * (1 - 0.85 * (q / (n - 1))));
     }
     const c = vine ? mix3(VINE, MOSS, hash(k, 6)) : mix3(ROOT, BARK_DARK, hash(k, 6));
@@ -303,6 +304,13 @@ function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>
       b.place(block, blk, () => (k === 2 ? GOLD : STONE), CUT);
     }
     for (let k = 0; k < 3; k++) put(new THREE.Vector3(x + (hash(k, seed, 18) - 0.5) * 6, y + 0.35, z + (hash(k, seed, 19) - 0.5) * 6), [1.1, 0.8, 1.1], STONE, 0.4 + k * 0.3);
+  }
+  // Rock lobes hanging under the main mass, so no isle ends in a single point.
+  for (let k = 0; k < 3; k++) {
+    const a = hash(k, seed, 25) * Math.PI * 2, rr = R * (0.25 + 0.3 * hash(k, seed, 26)), D = depth(a), dd = D * (0.45 + 0.2 * hash(k, seed, 27));
+    const rad = R * (0.16 + 0.1 * hash(k, seed, 28));
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(cx + Math.sin(a) * rr, ty - 0.5 - dd, cz + Math.cos(a) * rr), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, a, 0)), new THREE.Vector3(rad, rad * 2.2, rad));
+    b.place(blob, m, () => [0.84, 0.84, 0.84], ROCK);
   }
   for (const ft of isle.falls ?? []) {
     const ro = R * outline(ft) * 0.9, y = ty - 1.6;
