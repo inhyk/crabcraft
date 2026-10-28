@@ -1,11 +1,15 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { frontierTrees } from './realmLayout';
+import { FLOW_CELL, LavaFlow, type FlowArea, type FlowDeposit, type FlowSource } from './emberLavaFlow';
 
 /*
  * Emberreach's lava: a molten sea round the island, a brimming crater lake and its flows. Live flows spill through
- * notches in the crater rim, wander down the cone and stop on the plateau in thick lobes; one breaks out of the main
- * flow halfway down, one stalled high on the cone, one older flow has crusted through. No simulation: one crust
- * texture baked here at load, shaders on MeshStandardMaterial (so the lava takes the sun, the hemisphere and the
- * World V fog) and meshes whose topology never changes.
+ * notches in the crater rim, wander down the cone and run onto the plateau, where they feed lava that spreads and stops
+ * (emberLavaFlow.ts, a GPU yield-stress height field); one breaks out of the main flow halfway down, one stalled high
+ * on the cone, one older flow has crusted through. One crust texture baked here at load, shaders on
+ * MeshStandardMaterial (so the lava takes the sun, the hemisphere and the World V fog) and meshes whose topology never
+ * changes.
  *
  * What makes it read thick rather than wet:
  * - Crust plates with glowing cracks (black-body HDR, peaks 2-4 so GAME_VIEW's bloom at 0.9 catches them; mid
@@ -18,15 +22,21 @@ import * as THREE from 'three';
  *   blend over |c| with smoothsteps 0.2+ wide, never a per-pixel switch.
  * - Material coordinates follow the travel time, so plates and rope folds bunch up where the flow slows: ropes bowed
  *   downstream crowd towards the toe.
- * - Lobes: Bingham dome h = sqrt(2 d (dist + 8 d)), i.e. crest sqrt(2 d R) and an edge step of 4 d, under a rounded
- *   1.1 m shoulder, sized from volume (R = (15 V / (8 pi sqrt(2 d)))^0.4); toes and side lobes are bulges of the same
- *   mesh, the outline wanders, a clinker band and a darker halo blur the edge on the ground. Shading normals come from a softer, blurred dome on the
- *   smooth cone, so lobes read round while positions hug the faceted cone.
+ * - Lobes on the plateau are simulated: each live tongue ends in a short nose just past the cone foot and feeds the
+ *   height field there in episodes; fronts advance, slow and stop as yield domes (crest sqrt(2 d R), edge step), crust
+ *   over and cool to dark rock; the next episode breaks out at an old lobe's margin. The grid mesh is lifted by the
+ *   field in its vertex shader, lit by normals from a blurrier field, carries its crust with the sim's velocity while it
+ *   moves and has no time term at rest; a glowing seam runs along moving fronts, clinker crumbs (a fixed pool placed on
+ *   the GPU) and a darkening halo blur its margins. Where float render targets are missing the tongues end in the
+ *   analytic lobes instead: Bingham domes h = sqrt(2 d (dist + 8 d)) under a rounded 1.1 m shoulder, sized from volume
+ *   (R = (15 V / (8 pi sqrt(2 d)))^0.4), toes and side lobes bulges of the same mesh, shading normals from a softer,
+ *   blurred dome on the smooth cone.
  * - Gloss (roughness down to 0.34) only on young crust and rope crests, broken up; no roughness under 0.30.
  *
  * The tongues lie on the cone and the terrain as they are: no channel is carved (ground.ts and the collision bake are
- * untouched), the levees are built on top instead, and lava has no collision, so crabs can walk into the lobes.
- * EmberLava.zones and emberLavaZones() mark where it lies.
+ * untouched), the levees are built on top instead, and lava has no collision, so crabs can walk into the lobes. It is
+ * all client-local and cosmetic: each player's lava runs its own simulation. EmberLava.zones and emberLavaZones() mark
+ * where it lies, the toe zones covering everywhere the simulated lava can reach.
  */
 
 export type LavaQuality = 'high' | 'low';
@@ -426,6 +436,132 @@ const MASK_OUT = /* glsl */ `
 if(uMask>.5){float still=step(.999,lStatic);if(uMask>1.5)still=1.-still;gl_FragColor=vec4(still,0.,1.-still,1.);}
 `;
 
+/* Simulated lava on the plateau (emberLavaFlow.ts) -------------------------------------------------------------- */
+
+/** Plates on the simulated lava, m, and the dual-phase period of its crust, s. */
+const PLATE_FLOW = 1.05, TILE_FLOW = CELLS * PLATE_FLOW, T_FLOW = 10;
+/** How far the tongues run onto the ground before the simulated lava takes over, m. */
+const FLOW_NOSE = 1.4;
+
+const FLOW_VERT_HEAD = /* glsl */ `
+attribute vec2 aCell;
+uniform sampler2D uFR0;
+uniform highp sampler2D uFBase;
+uniform vec2 uFTexel;
+varying vec2 vFU;
+varying vec3 vFW;
+float fGround(ivec2 i){return texelFetch(uFBase,clamp(i,ivec2(0),textureSize(uFBase,0)-1),0).r;}
+float fShade(ivec2 i,vec2 uv){return fGround(i)+texture2D(uFR0,uv).g;}
+`;
+/** Shading normal from the blurred thickness on the ground (isaac #944: normals softer than positions, so domes and
+ * fronts light round while the mesh keeps its step). */
+const FLOW_VERT_NORMAL = /* glsl */ `
+ivec2 fI=ivec2(aCell/uFTexel);
+vec2 fX=vec2(uFTexel.x,0.),fZ=vec2(0.,uFTexel.y);
+float fdx=fShade(fI+ivec2(1,0),aCell+fX)-fShade(fI-ivec2(1,0),aCell-fX);
+float fdz=fShade(fI+ivec2(0,1),aCell+fZ)-fShade(fI-ivec2(0,1),aCell-fZ);
+vec3 objectNormal=normalize(vec3(-fdx,${(2 * FLOW_CELL).toFixed(3)},-fdz));
+`;
+/** Lift each vertex by the lava's thickness, or the 3x3-blurred thickness where that is more, so a front rounds over
+ * two cells instead of standing up as a one-cell wall; a cell with nothing sinks 0.12 m into the ground (no degenerate
+ * triangles). Only that shallow, so the triangles that dip under the ground at the foot show as slivers, not teeth. */
+const FLOW_VERT_BEGIN = /* glsl */ `
+vec3 transformed=vec3(position);
+vec4 fR=texture2D(uFR0,aCell);
+float fH=max(fR.r,fR.a);
+transformed.y+=fH-.12*(1.-smoothstep(.02,.08,fH));
+vFU=aCell;
+`;
+const FLOW_VERT_TAIL = 'vFW=(modelMatrix*vec4(transformed,1.)).xyz;';
+const FLOW_FRAG_HEAD = /* glsl */ `
+${LAVA_COMMON}
+uniform sampler2D uFR0;
+uniform sampler2D uFR1;
+uniform float uPhF;
+varying vec2 vFU;
+varying vec3 vFW;
+float lCrack,lGloss,lStatic,lEdge;
+vec3 lEmit;
+vec4 lC;
+`;
+const FLOW_COLOR = /* glsl */ `
+{
+  const float TILE=${TILE_FLOW.toFixed(2)};
+  vec4 r0=texture2D(uFR0,vFU),r1=texture2D(uFR1,vFU);
+  float T=r0.b,act=r1.z;
+  vec2 vel=r1.xy;
+  // Moving lava carries its crust (dual phase along the sim's velocity); lava at rest has no time term at all. The two
+  // phases are blended as crack masks, not as distances, which would open blobs where their networks cross.
+  float wM=smoothstep(.002,.012,length(vel));
+  lStatic=1.-step(1e-5,wM);
+  vec2 p=vFW.xz;
+  vec4 cs=texture2D(uCrust,p/TILE);
+  float jit=texture2D(uCrust,p/TILE*.11+.3).a;
+  float a=fract(uPhF+jit),b=fract(a+.5),wB=abs(2.*a-1.);
+  vec2 adv=vel*${T_FLOW}.;
+  vec4 A=texture2D(uCrust,(p-adv*a)/TILE);
+  vec4 B=texture2D(uCrust,(p-adv*b)/TILE+vec2(.37,.71));
+  lC=mix(cs,mix(A,B,wB),wM);
+  float fine=lC.b,id=lC.g,nz=cs.a;
+  float hot=smoothstep(.3,.95,T);
+  // The margin: the lowest ~0.3 m of a front is a rubbly clinker skin; a moving hot front squeezes a glowing seam out
+  // along its foot. Measured on the filtered thickness, not the interpolated vertex lift, so the band follows the
+  // front smoothly instead of showing the triangles.
+  float hr=max(r0.r,r0.a);
+  lEdge=1.-smoothstep(.08,.36,hr);
+  float cw=((.035+.05*hot+.05*hot*hot*wM)*(1.-.7*lEdge))*mix(.7,1.25,nz);
+  float aS=fwidth(cs.r)*1.1+.004,aA=fwidth(A.r)*1.1+.004,aB=fwidth(B.r)*1.1+.004;
+  float kS=1.-smoothstep(cw-aS,cw+aS,cs.r),kA=1.-smoothstep(cw-aA,cw+aA,A.r),kB=1.-smoothstep(cw-aB,cw+aB,B.r);
+  lCrack=mix(kS,mix(kA,kB,wB),wM);
+  // Distance into the plate, for the heat falling off from a crack's middle (each phase its own).
+  float eS=smoothstep(0.,cw+aS,cs.r),eM=mix(smoothstep(0.,cw+aA,A.r),smoothstep(0.,cw+aB,B.r),wB);
+  float edge=mix(eS,eM,wM);
+  float fineLine=1.-smoothstep(.0,.06+fwidth(fine),fine);
+  vec3 bas=vec3(.024,.021,.022)*(.7+.6*nz)*(.8+.4*id);
+  bas*=1.-.45*fineLine*(1.-hot);
+  // Old rock is a flatter dark grey; the clinker margin is darker, broken rubble.
+  bas=mix(bas,vec3(.026,.025,.026)*(.7+.6*nz),(1.-smoothstep(.0,.2,T))*.6);
+  float rub=texture2D(uCrust,p/2.9+.53).a;
+  bas=mix(bas,vec3(.04,.034,.033)*(.5+1.*rub),lEdge*.85);
+  diffuseColor.rgb=bas*(1.-lCrack);
+  // Glow: the cracks show the inside's heat, brightest along their middle; cooling crust seals most of them dark.
+  // The inside cools slower than the skin: cracks stay a dull red for a minute or two after the lobe has frozen.
+  float inner=.93*pow(smoothstep(.03,.92,T),.6);
+  float gate=mix(smoothstep(.4,.72,nz+.25*id),1.,hot);
+  float pulse=mix(1.,.86+.14*sin(uPulse+id*6.283),wM);
+  float heat=inner*mix(1.,.62,edge)*(.86+.14*nz)*pulse*mix(.35,1.,gate);
+  lEmit=lavaBB(heat)*lCrack;
+  float seam=smoothstep(.04,.3,act)*hot*smoothstep(.045,.065,hr)*(1.-smoothstep(.08,.12,hr))*smoothstep(.3,.55,rub+.3*nz);
+  lEmit+=lavaBB(.9*inner/.93)*seam;
+  diffuseColor.rgb*=1.-seam;
+  lEmit+=lavaBB(T*.5)*fineLine*hot*wM*(1.-lCrack)*.5;
+  float young=smoothstep(.62,.8,id)*hot*(1.-lCrack)*smoothstep(.02,.06,lC.r-cw)*(1.-smoothstep(.06,.16,lC.r-cw));
+  lGloss=uDetail*wM*(1.-lEdge)*young*.7*smoothstep(.15,.35,fine);
+}
+`;
+const FLOW_ROUGH = /* glsl */ `
+roughnessFactor=mix(mix(.86,.93,lStatic),.42,lCrack);
+roughnessFactor=mix(roughnessFactor,.96,lEdge*(1.-lCrack));
+roughnessFactor=mix(roughnessFactor,.34,lGloss);
+roughnessFactor=max(roughnessFactor,.3);
+`;
+const FLOW_NORMAL = /* glsl */ `
+{
+  vec3 nW=inverseTransformDirection(normal,viewMatrix);
+  // Relief fades with distance (not with the triangle's screen footprint, which jumps between facets of a steep front)
+  // and on the clinker margin.
+  float near=1.-smoothstep(12.,30.,distance(cameraPosition,vFW));
+  // Plates domed between their cracks, the fine cooling cracks, and wrinkles in the skin at two scales.
+  vec2 wq=vFW.xz;
+  float wr=texture2D(uCrust,wq/2.1+.17).a*.6+texture2D(uCrust,wq/.9+.61).a*.4;
+  float hc=(-.07*lCrack+.08*sqrt(lC.r)-.018*(1.-smoothstep(0.,.08,lC.b))+.045*wr)*near*(1.-lEdge);
+  vec3 g=lavaBumpGrad(vFW,nW,hc);
+  g-=dot(g,nW)*nW;
+  nW=normalize(nW-g);
+  normal=normalize((viewMatrix*vec4(nW,0.)).xyz);
+}
+`;
+
 /* ---------------------------------------------------------------------------------------------------------------- */
 /* Geometry                                                                                                            */
 
@@ -471,6 +607,10 @@ const TONGUES: TongueDef[] = [
   // East flank: a narrow live flow.
   { angle: 58 * DEG, width: 2.2, wander: [[1.1, 14, 5.5], [.3, 7, .7]], run: 5.5, bend: -.09, volume: 13, heat: 1, notch: .8, seed: 6, toes: [[.4, 1.0, .32], [-.35, 1.4, .32]], side: null },
 ];
+type TongueMode = 'sim' | 'lobe';
+interface TongueSet { geo: Record<LavaQuality, THREE.BufferGeometry[]>; halo: THREE.Mesh; clinker: THREE.InstancedMesh; count: number; zones: LavaZone[] }
+/** Steps run at once the first time the simulated lava is drawn. */
+const FLOW_WARM_STEPS = 450;
 const tongueNotches = () => TONGUES.filter(d => d.notch > 0).map(d => ({ a: d.angle, d: d.notch, w: (d.width / 2 + .8) / 8.7 }));
 
 /** The surfaces lava lies on: crater lip with its spillway notches, faceted cone, and the terrain mesh exactly as frontierIsland triangulates it. */
@@ -553,11 +693,14 @@ function angleFn(defs: TongueDef[], i: number, sup: Support): (rho: number) => n
   return rho => parent(rho) + b.drift * smooth(b.rho, b.rho + 9, rho) / rho + own(rho) * smooth(b.rho, b.rho + 5, rho);
 }
 
-/** One tongue: a ribbon parametrised by s (along) and c (across, -1..1) from inside the crater lake (or its parent) to its toes. */
-function buildTongue(defs: TongueDef[], which: number, sup: Support, quality: LavaQuality): TongueBuild {
+/** One tongue: a ribbon parametrised by s (along) and c (across, -1..1) from inside the crater lake (or its parent) to its toes.
+ * With `sim` the flow ends in a short nose just past the cone foot, where it feeds the simulated lava (emberLavaFlow.ts);
+ * without, it ends in its analytic lobe (the fallback where float render targets are missing). */
+function buildTongue(defs: TongueDef[], which: number, sup: Support, quality: LavaQuality, sim = false): TongueBuild {
   const def = defs[which], cone = sup.cone, branch = !!def.branch;
   const angleAt = angleFn(defs, which, sup);
-  const rho0 = def.branch ? def.branch.rho : 6.9, foot = sup.footRadius(def.angle), rhoEnd = def.stub ? def.run : foot + def.run;
+  const nose = sim && !def.stub;
+  const rho0 = def.branch ? def.branch.rho : 6.9, foot = sup.footRadius(def.angle), rhoEnd = def.stub ? def.run : foot + (nose ? FLOW_NOSE : def.run);
   // Centre line in xz, sampled finely, with its 3D arc length.
   const N = 900, cx: number[] = [], cz: number[] = [], cs: number[] = [], crho: number[] = [];
   const rhoMax = rhoEnd + 6;
@@ -578,7 +721,7 @@ function buildTongue(defs: TongueDef[], which: number, sup: Support, quality: La
   };
   const sLip = branch ? 0 : sAtRho(sup.crestR), sFoot = sAtRho(foot), sEnd = sAtRho(rhoEnd);
   // A flow that stalled on the cone ends in a blunt snout, barely wider than its channel.
-  const R = def.stub ? Math.min(lobeRadius(def.volume), def.width / 2 * 1.15) : lobeRadius(def.volume);
+  const R = def.stub || nose ? Math.min(lobeRadius(def.volume), def.width / 2 * 1.15) : lobeRadius(def.volume);
   // Where the front starts spreading into its lobe: the cone foot, or higher up for a flow that stalled on the cone.
   const sSpread = Math.min(sFoot, sEnd - 1.8 * R);
   // A breakout carries lava that has already run from the rim to where it leaves its parent.
@@ -586,14 +729,15 @@ function buildTongue(defs: TongueDef[], which: number, sup: Support, quality: La
   const w0 = branch ? .45 : Math.min(1.1, def.width / 2) * .9;
   const halfW = (s: number) => mix(mix(w0, def.width / 2, smooth(sLip, sLip + 6, s)), R, smooth(sSpread - 1.5, sEnd - R * .5, s));
   // Side lobe: an elliptic bulge on one flank, sized from its own volume.
-  const sideR = def.side ? lobeRadius(def.side.volume) : 0, sSide = sSpread + 1.4 + sideR * .3, sideLen = sideR * 1.05;
-  const bulge = (s: number) => { if (!def.side) return 0; const u = (s - sSide) / sideLen; return Math.abs(u) >= 1 ? 0 : sideR * .95 * Math.sqrt(1 - u * u); };
-  const halfSide = (s: number, sign: number) => halfW(s) + (def.side && def.side.sign === sign ? bulge(s) : 0);
+  const side0 = nose ? null : def.side;
+  const sideR = side0 ? lobeRadius(side0.volume) : 0, sSide = sSpread + 1.4 + sideR * .3, sideLen = sideR * 1.05;
+  const bulge = (s: number) => { if (!side0) return 0; const u = (s - sSide) / sideLen; return Math.abs(u) >= 1 ? 0 : sideR * .95 * Math.sqrt(1 - u * u); };
+  const halfSide = (s: number, sign: number) => halfW(s) + (side0 && side0.sign === sign ? bulge(s) : 0);
   // The front: rounded corners, flat-topped toes pushing out of it, an outline that wanders.
   const Rf = R * .85;
   const front = (c: number) => {
     let f = sEnd + Rf * (Math.sqrt(Math.max(0, 1 - c * c)) - 1);
-    for (const [tc, amp, w] of def.toes) f += amp * Math.exp(-(((c - tc) / w) ** 4));
+    for (const [tc, amp, w] of def.toes) f += amp * (nose ? .25 : 1) * Math.exp(-(((c - tc) / w) ** 4));
     return f + .22 * Math.sin(c * 7.3 + def.seed * 2.1) + .12 * Math.sin(c * 17.1 + def.seed);
   };
   // Speed falls from the cone speed to the toe speed; material coordinate X = U0 * travel time (bunches where slow).
@@ -652,12 +796,12 @@ function buildTongue(defs: TongueDef[], which: number, sup: Support, quality: La
       baseS[i * 3] = x; baseS[i * 3 + 1] = yS; baseS[i * 3 + 2] = z;
       nrm[i * 3] = ns.x; nrm[i * 3 + 1] = ns.y; nrm[i * 3 + 2] = ns.z;
       thick[i] = h; sArr[i] = s;
-      const out = def.side && sign === def.side.sign ? Math.max(0, Math.abs(v) - halfW(s)) : 0;
+      const out = side0 && sign === side0.sign ? Math.max(0, Math.abs(v) - halfW(s)) : 0;
       const act = (1 - smooth(.2, 1.1, out)) * live;
       aLA.set([XmAt(s), c, w, temperature(s) * mix(.08, 1, 1 - smooth(.2, 1.1, out))], i * 4);
       aLB.set([act, lev, U0 / speed(s), lobeAt(s)], i * 4);
       // Swell only well inside the active lobe: nothing that is meant to be at rest (levees, stopped lobes) may move.
-      const swell = smooth(.95, 1, act) * (lev > 1e-3 ? 0 : 1) * smooth(sSpread + 2.5, sEnd - 1, s) * clamp((dist - .3) / 1.2, 0, 1);
+      const swell = nose ? 0 : smooth(.95, 1, act) * (lev > 1e-3 ? 0 : 1) * smooth(sSpread + 2.5, sEnd - 1, s) * clamp((dist - .3) / 1.2, 0, 1);
       aLC.set([0, swell, clamp((s + sAge) / (sEnd + sAge), 0, 1.2), h], i * 4);
       shadeH[i] = smin(lobeHeight(dist, 1.8), cap, .3) * taper + (h - hBase);
     }
@@ -733,10 +877,52 @@ function buildTongue(defs: TongueDef[], which: number, sup: Support, quality: La
   // Footprint on the ground for props to avoid.
   const zones: LavaZone[] = [];
   if (!def.stub) {
+    // Under the simulated lava the toe zones are its reach discs instead (flowLayout).
     for (let s = Math.max(0, sAtRho(foot - 2)); s < sEnd; s += 2.5) { const cl = centre(s); zones.push({ x: cl.x, z: cl.z, radius: Math.max(halfSide(s, -1), halfSide(s, 1)) + 1, kind: 'tongue' }); }
-    const cl = centre(sEnd - R * .4); zones.push({ x: cl.x, z: cl.z, radius: R + 2.2, kind: 'toe' });
+    if (!nose) { const cl = centre(sEnd - R * .4); zones.push({ x: cl.x, z: cl.z, radius: R + 2.2, kind: 'toe' }); }
   }
   return { geometry: g, outline, zones };
+}
+
+/** Episodes of the live flows on the ground: m3/s while feeding, feed and period (s), phase. Uneven on purpose; the
+ * main flow brings the most, the breakout the least. About 0.24 m3/s on average in all. */
+const FEEDS: Record<number, [number, number, number, number]> = {
+  0: [.3, 40, 180, 140],
+  1: [.36, 46, 200, 20],
+  2: [.22, 34, 170, 95],
+  5: [.3, 40, 190, 160],
+};
+/** Where the simulated lava lives: the noses of the tongues that reach the ground feed it, every such flow starts with
+ * an older cold lobe of 80 % of its analytic lobe's volume against its nose, and lava may spread over a disc 10.5 m
+ * round a point 4 m beyond its nose. */
+function flowLayout(sup: Support) {
+  const cone = sup.cone, sources: FlowSource[] = [], deposits: FlowDeposit[] = [], areas: FlowArea[] = [];
+  TONGUES.forEach((def, i) => {
+    if (def.stub) return;
+    const foot = sup.footRadius(def.angle), ang = angleFn(TONGUES, i, sup);
+    const at = (rho: number) => { const a = ang(rho); return { x: cone.x + Math.sin(a) * rho, z: cone.z + Math.cos(a) * rho }; };
+    const dirAt = (rho: number) => { const p = at(rho - .5), q = at(rho + .5), l = Math.hypot(q.x - p.x, q.z - p.z) || 1; return { x: (q.x - p.x) / l, z: (q.z - p.z) / l }; };
+    const nose = at(foot + FLOW_NOSE * .5), nd = dirAt(foot + FLOW_NOSE * .5);
+    // The old lobe's back edge tucks under the nose (it is 1.25 R long along the flow).
+    const R = lobeRadius(def.volume * .8), dep = at(foot + FLOW_NOSE * .5 + R), dd = dirAt(foot + FLOW_NOSE * .5 + R);
+    areas.push({ x: nose.x + nd.x * 4, z: nose.z + nd.z * 4, radius: 10.5 });
+    deposits.push({ x: dep.x, z: dep.z, dirX: dd.x, dirZ: dd.z, volume: def.volume * .8, seed: def.seed });
+    const f = FEEDS[i];
+    if (def.heat >= 1 && f) sources.push({ x: nose.x, z: nose.z, dirX: nd.x, dirZ: nd.z, rate: f[0], feed: f[1], period: f[2], phase: f[3], seed: def.seed });
+  });
+  return { sources, deposits, areas };
+}
+/** Distance to what lava must keep off on the plateau, m: the sanctuary and its ring of pillars (26.5 m round (0, -72)),
+ * the obsidian trees, and the island's edge. */
+function flowClearance(areas: FlowArea[]) {
+  const pad = 12, minX = Math.min(...areas.map(a => a.x - a.radius)) - pad, maxX = Math.max(...areas.map(a => a.x + a.radius)) + pad;
+  const minZ = Math.min(...areas.map(a => a.z - a.radius)) - pad, maxZ = Math.max(...areas.map(a => a.z + a.radius)) + pad;
+  const trees = frontierTrees(5).filter(t => t.x > minX && t.x < maxX && t.z > minZ && t.z < maxZ);
+  return (x: number, z: number) => {
+    let c = Math.min(Math.hypot(x, z + 72) - 26.5, (.8 - Math.hypot(x / 128, (z - 2) / 155)) * 130);
+    for (const t of trees) c = Math.min(c, Math.hypot(x - t.x, z - t.z) - (2.3 * t.s + .4));
+    return c;
+  };
 }
 
 /** The crater rampart, turned from the lip profile, cut by the spillway notches and sunk into the cone at its foot. */
@@ -774,15 +960,29 @@ export class EmberLava {
   private readonly tongueUniforms = { uShift: { value: 0 }, uPhB: { value: 0 }, uSwell: { value: 0 } };
   private readonly seaUniforms = { uPh: { value: 0 }, uCentre: { value: new THREE.Vector3() } };
   private readonly lakeUniforms = { uPh: { value: 0 }, uCentre: { value: new THREE.Vector3() } };
-  private readonly tongueGeo: Record<LavaQuality, THREE.BufferGeometry[]> = { high: [], low: [] };
+  /** Tongue geometry, halo and clinker per mode: 'sim' tongues end in a nose that feeds the simulated lava, 'lobe'
+   * tongues end in analytic lobes (the fallback, built the first time it is needed). */
+  private readonly tongueSets: Partial<Record<TongueMode, TongueSet>> = {};
   private readonly support: Support;
   private readonly tongueMeshes: THREE.Mesh[] = [];
+  private readonly tongueGroup: THREE.Group;
   private readonly lip: THREE.Mesh;
   private readonly lipGeo: Record<LavaQuality, THREE.BufferGeometry>;
-  private readonly clinker: THREE.InstancedMesh;
-  private readonly clinkerCount: number;
   private quality: LavaQuality = 'high';
   private qualityAt = -1e9;
+  private mode: TongueMode = 'sim';
+  /** The simulated lava on the plateau (emberLavaFlow.ts); its meshes are hidden when it cannot run. */
+  readonly flow: LavaFlow;
+  private readonly flowGroup = new THREE.Group();
+  private readonly flowGeo: Record<LavaQuality, THREE.BufferGeometry>;
+  private readonly flowLava: THREE.Mesh;
+  private readonly flowHalo: THREE.Mesh;
+  private readonly flowClinker: THREE.InstancedMesh;
+  private readonly flowClinkerCount: number;
+  private readonly flowUniforms = { uPhF: { value: 0 } };
+  /** Captured from the first draw of a lava mesh; the simulation renders with it in update(). */
+  private renderer: THREE.WebGLRenderer | null = null;
+  private flowStarted = false;
 
   constructor(opts: EmberLavaOptions) {
     this.root.name = 'ember-lava';
@@ -817,35 +1017,86 @@ export class EmberLava {
     this.zones.push({ x: cone.x, z: cone.z, radius: 13, kind: 'crater' });
 
     // Tongues at the current detail; the other level is built once, the first time the quality switches to it.
-    const tongues = new THREE.Group(); tongues.name = 'lava-tongues'; this.root.add(tongues);
+    const tongues = this.tongueGroup = new THREE.Group(); tongues.name = 'lava-tongues'; this.root.add(tongues);
     const tongueMat = this.tongueMaterial();
-    const outlines: TongueBuild['outline'][] = [];
+    const set = this.tongueSet('sim');
     TONGUES.forEach((_, i) => {
-      const built = buildTongue(TONGUES, i, sup, this.quality);
-      this.tongueGeo[this.quality][i] = built.geometry;
-      const mesh = new THREE.Mesh(built.geometry, tongueMat);
+      const mesh = new THREE.Mesh(set.geo[this.quality][i], tongueMat);
       mesh.name = `lava-tongue-${i}`; mesh.receiveShadow = true;
       tongues.add(mesh); this.tongueMeshes.push(mesh);
-      outlines.push(built.outline); this.zones.push(...built.zones);
     });
+    this.zones.push(...set.zones);
 
-    // Edges on the ground: a darker halo and a band of clinker crumbs, half of them pushed into the lava's edge.
-    tongues.add(this.halo(outlines, sup));
-    const clinker = this.clinkerPool(outlines, sup);
-    this.clinker = clinker.mesh; this.clinkerCount = clinker.count;
-    this.clinker.count = this.quality === 'high' ? this.clinkerCount : Math.floor(this.clinkerCount / 2);
-    tongues.add(this.clinker);
+    // The simulated lava at the foot: a grid mesh lifted by the height field, a darkening halo and clinker crumbs
+    // round its margins, all drawn after the land so the cells sunk into the ground cost no shading.
+    const lay = flowLayout(sup);
+    this.flow = new LavaFlow({ ground: (x, z) => sup.at(x, z, true, 0), areas: lay.areas, clearance: flowClearance(lay.areas), sources: lay.sources, deposits: lay.deposits, d: YIELD_D });
+    for (const a of lay.areas) this.zones.push({ x: a.x, z: a.z, radius: a.radius, kind: 'toe' });
+    const g1 = this.flow.meshGeometry(1);
+    this.flowGeo = { high: g1, low: this.flow.meshGeometry(2, g1) };
+    this.flowGroup.name = 'lava-flow'; this.root.add(this.flowGroup);
+    this.flowLava = new THREE.Mesh(this.flowGeo[this.quality], this.flowMaterial());
+    this.flowLava.name = 'lava-flow-surface'; this.flowLava.receiveShadow = true; this.flowLava.renderOrder = 1;
+    this.flowHalo = new THREE.Mesh(this.flowGeo[this.quality], this.flowHaloMaterial());
+    this.flowHalo.name = 'lava-flow-halo'; this.flowHalo.renderOrder = 2;
+    const fc = this.flowClinkerPool();
+    this.flowClinker = fc.mesh; this.flowClinkerCount = fc.count;
+    this.flowClinker.count = this.quality === 'high' ? fc.count : Math.floor(fc.count / 2);
+    this.flowGroup.add(this.flowLava, this.flowHalo, this.flowClinker);
+    const capture = (r: THREE.WebGLRenderer) => { this.renderer = r; };
+    this.flowLava.onBeforeRender = capture; sea.onBeforeRender = capture;
     this.root.userData.lavaZones = this.zones;
   }
+
+  /** Builds (once) the tongue geometry at the current detail, its halo and its clinker for a mode, and returns it. */
+  private tongueSet(mode: TongueMode): TongueSet {
+    const have = this.tongueSets[mode];
+    if (have) {
+      if (!have.geo[this.quality].length) TONGUES.forEach((_, i) => { have.geo[this.quality][i] = buildTongue(TONGUES, i, this.support, this.quality, mode === 'sim').geometry; });
+      return have;
+    }
+    const geo: Record<LavaQuality, THREE.BufferGeometry[]> = { high: [], low: [] };
+    const outlines: TongueBuild['outline'][] = [], zones: LavaZone[] = [];
+    TONGUES.forEach((_, i) => {
+      const built = buildTongue(TONGUES, i, this.support, this.quality, mode === 'sim');
+      geo[this.quality][i] = built.geometry; outlines.push(built.outline); zones.push(...built.zones);
+    });
+    // Edges on the ground: a darker halo and a band of clinker crumbs, half of them pushed into the lava's edge.
+    const halo = this.halo(outlines, this.support), clinker = this.clinkerPool(outlines, this.support);
+    clinker.mesh.count = this.quality === 'high' ? clinker.count : Math.floor(clinker.count / 2);
+    this.tongueGroup.add(halo, clinker.mesh);
+    const set: TongueSet = { geo, halo, clinker: clinker.mesh, count: clinker.count, zones };
+    this.tongueSets[mode] = set;
+    return set;
+  }
+
+  /** Simulated lava on (the default) or the analytic lobes (where float render targets are missing, and for A/B
+   * measurements). */
+  setFlow(on: boolean) {
+    const mode: TongueMode = on ? 'sim' : 'lobe';
+    if (mode === this.mode) return;
+    this.mode = mode;
+    const set = this.tongueSet(mode);
+    this.tongueMeshes.forEach((m, i) => { m.geometry = set.geo[this.quality][i]; });
+    for (const k of ['sim', 'lobe'] as const) { const s = this.tongueSets[k]; if (s) s.halo.visible = s.clinker.visible = k === mode; }
+    set.clinker.count = this.quality === 'high' ? set.count : Math.floor(set.count / 2);
+    this.flowGroup.visible = on;
+  }
+  get flowOn() { return this.mode === 'sim'; }
 
   /** Switch detail; called by update() when the stored setting changes. */
   setQuality(q: LavaQuality) {
     if (q === this.quality) return;
     this.quality = q;
     this.common.uDetail.value = q === 'high' ? 1 : 0;
-    this.tongueMeshes.forEach((m, i) => { m.geometry = this.tongueGeo[q][i] ??= buildTongue(TONGUES, i, this.support, q).geometry; });
+    const set = this.tongueSet(this.mode);
+    this.tongueMeshes.forEach((m, i) => { m.geometry = set.geo[q][i]; });
     this.lip.geometry = this.lipGeo[q];
-    this.clinker.count = q === 'high' ? this.clinkerCount : Math.floor(this.clinkerCount / 2);
+    set.clinker.count = q === 'high' ? set.count : Math.floor(set.count / 2);
+    // Low detail: the simulation is the same (it is cheap and its look must not change), drawn on every other cell,
+    // with half the clinker.
+    this.flowLava.geometry = this.flowHalo.geometry = this.flowGeo[q];
+    this.flowClinker.count = q === 'high' ? this.flowClinkerCount : Math.floor(this.flowClinkerCount / 2);
   }
 
   /** QA: 1 renders the stillness mask (red = no time term, blue = flowing), 2 the same with colours swapped, 0 off. */
@@ -860,6 +1111,16 @@ export class EmberLava {
     this.seaUniforms.uPh.value = fract(time / T_SEA);
     this.lakeUniforms.uPh.value = fract(time / T_LAKE);
     this.common.uPulse.value = (time * .4) % TAU;
+    this.flowUniforms.uPhF.value = fract(time / T_FLOW);
+    if (this.mode === 'sim' && this.renderer) {
+      if (!this.flowStarted) {
+        this.flowStarted = true;
+        // A little history, so the first look already has lava on the move.
+        this.flow.advance(this.renderer, FLOW_WARM_STEPS);
+      }
+      this.flow.update(this.renderer, time);
+      if (!this.flow.supported) this.setFlow(false);
+    }
   }
 
   private tongueMaterial() {
@@ -901,6 +1162,126 @@ export class EmberLava {
         .replace('#include <dithering_fragment>', MASK_OUT);
     };
     m.customProgramCacheKey = () => m.name;
+    return m;
+  }
+
+  /** The simulated lava: the tongue's crust, cracks and black-body glow, driven by the sim's temperature and velocity. */
+  private flowMaterial() {
+    const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .86, metalness: 0 });
+    m.name = 'ember-lava-flow';
+    m.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.common, this.flowUniforms, this.flow.uniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\n${FLOW_VERT_HEAD}`)
+        .replace('#include <beginnormal_vertex>', FLOW_VERT_NORMAL)
+        .replace('#include <begin_vertex>', FLOW_VERT_BEGIN)
+        .replace('#include <fog_vertex>', `#include <fog_vertex>\n${FLOW_VERT_TAIL}`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${FLOW_FRAG_HEAD}`)
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${FLOW_COLOR}`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${FLOW_ROUGH}`)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${FLOW_NORMAL}`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${TONGUE_EMIT}`)
+        .replace('#include <dithering_fragment>', MASK_OUT);
+    };
+    m.customProgramCacheKey = () => 'ember-lava-flow';
+    return m;
+  }
+
+  /** Darken-only halo round the simulated lava, as the tongues' halo: about 0.5 m wide (from the blurred thickness),
+   * 28 % darker at the margin. Its vertices sink under the lava inside and into the ground far from it. */
+  private flowHaloMaterial() {
+    const m = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    m.blending = THREE.CustomBlending; m.blendEquation = THREE.AddEquation; m.blendSrc = THREE.ZeroFactor; m.blendDst = THREE.SrcColorFactor;
+    m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;
+    m.name = 'ember-lava-flow-halo';
+    m.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.flow.uniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec2 aCell;\nuniform sampler2D uFR0;\nvarying float vHalo;')
+        .replace('#include <begin_vertex>', /* glsl */ `vec3 transformed=vec3(position);
+          {
+            vec4 fc=texture2D(uFR0,aCell);
+            vHalo=.28*smoothstep(.004,.1,fc.g)*(1.-smoothstep(.006,.03,fc.r));
+            transformed.y+=fc.r>.012?-.05:(vHalo>.002?.04:-.4);
+          }`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vHalo;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.a=vHalo;')
+        .replace('#include <fog_fragment>', /* glsl */ `
+          float haloFog = 0.;
+          #ifdef USE_FOG
+            #ifdef FOG_EXP2
+              haloFog = 1. - exp(- fogDensity * fogDensity * vFogDepth * vFogDepth);
+            #else
+              haloFog = smoothstep(fogNear, fogFar, vFogDepth);
+            #endif
+          #endif
+          gl_FragColor = vec4(vec3(1. - diffuseColor.a * (1. - haloFog)), 1.);`);
+    };
+    m.customProgramCacheKey = () => 'ember-lava-flow-halo';
+    return m;
+  }
+
+  /** Clinker for the simulated lava: a fixed pool of crumbs scattered over its whole reach (about 5 per m2); each one
+   * reads the height field and shows only where it sits in the 0.5 m band outside a margin or on the margin itself,
+   * so the band follows the fronts. Rotation and size come from per-instance data, the instance matrix only places it. */
+  private flowClinkerPool() {
+    const spots = this.flow.clinkerSpots();
+    const order = spots.map((_, i) => i).sort((a, b) => hash1(a * 7.7) - hash1(b * 7.7));
+    const box = new THREE.BoxGeometry(2, 2, 2);
+    box.deleteAttribute('normal'); box.deleteAttribute('uv');
+    const geo = mergeVertices(box);
+    const p = geo.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) { const f = .55 + .45 * hash1(i * 3.9 + 1); p.setXYZ(i, p.getX(i) * f, p.getY(i) * (.7 + .3 * hash1(i * 5.1)), p.getZ(i) * (.6 + .4 * hash1(i * 7.3))); }
+    const ck = new Float32Array(spots.length * 4);
+    const mesh = new THREE.InstancedMesh(geo, this.flowClinkerMaterial(), Math.max(1, spots.length));
+    const mtx = new THREE.Matrix4();
+    order.forEach((src, i) => {
+      const sp = spots[src], h = hash1(src * 8.9 + 3), inside = hash1(src * 2.9) < .45;
+      ck.set([sp.seed, (inside ? .05 + .05 * h : .035 + .07 * Math.pow(h, 1.5)), inside ? 1 : 0, hash1(src * 4.4)], i * 4);
+      mesh.setMatrixAt(i, mtx.makeTranslation(sp.x, sp.y, sp.z));
+    });
+    geo.setAttribute('aCk', new THREE.InstancedBufferAttribute(ck, 4));
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.receiveShadow = true;
+    mesh.name = 'lava-flow-clinker';
+    mesh.computeBoundingSphere();
+    mesh.boundingSphere!.radius += 4;
+    return { mesh, count: spots.length };
+  }
+
+  private flowClinkerMaterial() {
+    const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .95, metalness: 0, flatShading: true });
+    m.name = 'ember-lava-flow-clinker';
+    m.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.common, this.flow.uniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec4 aCk;\nuniform sampler2D uFR0;\nuniform vec4 uFGrid;\nvarying vec3 vLW;')
+        .replace('#include <begin_vertex>', /* glsl */ `vec3 transformed;
+          {
+            vec3 ip=instanceMatrix[3].xyz;
+            vec4 fc=texture2D(uFR0,(ip.xz-uFGrid.xy)/uFGrid.zw);
+            // Outside crumbs lie on the ground within the blurred margin; inside ones ride the lava's lowest edge.
+            float outB=smoothstep(.02,.09,fc.g)*(1.-smoothstep(.006,.03,fc.r))*(1.-aCk.z);
+            float inB=smoothstep(.03,.1,fc.r)*(1.-smoothstep(.22,.4,fc.r))*aCk.z;
+            float show=max(outB,inB);
+            float a1=aCk.x*6.2832,a2=aCk.w*6.2832;
+            mat3 R=mat3(cos(a1),0.,-sin(a1),0.,1.,0.,sin(a1),0.,cos(a1))*mat3(1.,0.,0.,0.,cos(a2),sin(a2),0.,-sin(a2),cos(a2));
+            transformed=R*(position*vec3(1.+.5*aCk.w,.6,1.))*aCk.y*show;
+            transformed.y+=(inB>outB?fc.r*.85:0.)+aCk.y*.25*show;
+          }`)
+        .replace('#include <fog_vertex>', '#include <fog_vertex>\nvLW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform sampler2D uCrust;\nuniform float uMask;\nvarying vec3 vLW;')
+        .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+          {
+            vec4 t=texture2D(uCrust,vLW.xz/7.3+vLW.y*.05);
+            diffuseColor.rgb=vec3(.05,.043,.043)*(.6+.8*t.a)*(.8+.4*t.g);
+          }`)
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\nif(uMask>.5)gl_FragColor=uMask>1.5?vec4(0.,0.,1.,1.):vec4(1.,0.,0.,1.);');
+    };
+    m.customProgramCacheKey = () => 'ember-lava-flow-clinker';
     return m;
   }
 
@@ -1059,6 +1440,8 @@ export function emberLavaZones(height: (x: number, z: number) => number, ly: num
   const cone: Cone = { x: 0, z: -128, baseY: ly - 10, topY: ly + 28, baseR: 28, topR: 8, segments: 18 };
   const sup = new Support(cone, height, tongueNotches());
   const zones: LavaZone[] = [{ x: cone.x, z: cone.z, radius: 13, kind: 'crater' }];
-  TONGUES.forEach((_, i) => zones.push(...buildTongue(TONGUES, i, sup, 'low').zones));
+  TONGUES.forEach((_, i) => zones.push(...buildTongue(TONGUES, i, sup, 'low', true).zones));
+  // The simulated lava's toes can reach anywhere in these discs (it is blocked outside them).
+  for (const a of flowLayout(sup).areas) zones.push({ x: a.x, z: a.z, radius: a.radius, kind: 'toe' });
   return zones;
 }
