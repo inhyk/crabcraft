@@ -1,22 +1,24 @@
 import * as THREE from 'three';
 import {kitOnce} from './frostCraft';
 import {StaticBatch} from '../world/kit';
-import {SKY_BANNERS, SKY_BENCHES, SKY_CART, SKY_HOUSES, SKY_LANTERNS, SKY_STALLS, type HouseRole} from './skyTownLayout';
-import {CLOTH, Frame, ROOF, STONE, WOOD, archFrame, archPanel, archShape, atlasUv, beam, bx, clothSheet, disc, hipRoof, lath, ring, rod, sagPoints, skyMaterials, townCtx, type Height, type TownCtx} from './skyTownKit';
+import {HOUSE, HOUSE_WINGS, SKY_FESTOONS, SKY_HOUSES, festoonPoles, skyTownPlan, type HouseRole} from './skyTownLayout';
+import {CLOTH, Frame, M, ROOF, STONE, WOOD, archFrame, archPanel, archShape, atlasUv, beam, bx, clothSheet, disc, hipRoof, lath, ring, rod, sagPoints, skyMaterials, townCtx, type Height, type TownCtx} from './skyTownKit';
 import {skyHarbour} from './skyHarbour';
 
 /*
  * Skybloom's town (World VI): six garden-harbour houses (cream ashlar ground floor, jettied timber-and-plaster upper
- * floor with a front balcony, turquoise glazed hip roof with swept eaves and gilt caps, round windows lit warm, a sign
- * and props that say who lives there), the seed and kite market, carved lantern posts, cloth banners, bench scenes and
- * the sky-ship harbour (skyHarbour.ts). Parts merge into one mesh per material (skyTownKit.ts); kit props (barrels,
+ * floor with a front balcony, deep teal glazed hip roof with swept eaves and a gilt ridge, round windows lit warm, a
+ * sign and props that say who lives there), the seed and kite market, lantern posts gathered at the market, the harbour
+ * and the benches, festoons of paper lanterns over three street ends, cloth banners at the harbour gate and the market,
+ * and the sky-ship harbour (skyHarbour.ts). Values (style-w6): walls cream 170-210 grey, roofs a step darker than the
+ * grass (glazed #1f6a6e), timber #8a5f3a, so wall, roof, grass, path and crab each read apart in greyscale. Parts merge into one mesh per material (skyTownKit.ts); kit props (barrels,
  * sacks, rope, flowers, vines) arrive with the GLBs and merge per kit material.
  */
 
 const V = THREE.Vector3;
 const C = {
-  stone: '#e6dcc4', trim: '#efe5cd', rubble: '#cbbd9c', plaster: '#f2eadb', timber: '#a8794a', timberDark: '#7f5a36',
-  roof: '#2f8f8a', cap: '#226f6b', gold: '#d4a64a', glass: new THREE.Color('#ffb45e').multiplyScalar(1.35), rope: '#c2a678',
+  stone: '#e6dcc4', trim: '#efe5cd', rubble: '#cbbd9c', plaster: '#f2eadb', timber: '#8a5f3a', timberDark: '#694629',
+  roof: '#1f6a6e', roofB: '#1d6569', cap: '#174f53', gold: '#d4a64a', glass: new THREE.Color('#ffb45e').multiplyScalar(1.35), rope: '#c2a678',
 };
 const DOORS = ['#2f8f8a', '#3a6f9e', '#2f8f8a', '#b4553f', '#3a6f9e', '#5b8a4a'];
 
@@ -25,11 +27,13 @@ export interface SkyTown {group: THREE.Group; update(time: number): void; stats:
 export function skyTown(h: Height, low = false): SkyTown {
   const ctx = townCtx(h, low), mats = skyMaterials();
   SKY_HOUSES.forEach((s, i) => house(ctx, s.x, s.z, s.yaw, s.role, i));
-  for (const s of SKY_STALLS) stall(ctx, s.x, s.z, s.yaw, s.goods);
+  const plan = skyTownPlan();
+  for (const s of plan.stalls) stall(ctx, s.x, s.z, s.yaw, s.goods);
   cart(ctx);
-  for (const [x, z] of SKY_LANTERNS) lanternPost(ctx, x, z, x < 0 ? 0 : Math.PI);
-  SKY_BANNERS.forEach(([x, z], i) => banner(ctx, x, z, i));
-  for (const b of SKY_BENCHES) benchScene(ctx, b.x, b.z, b.yaw);
+  for (const [x, z] of plan.lanterns) lanternPost(ctx, x, z, x < 0 ? 0 : Math.PI);
+  for (const f of SKY_FESTOONS) festoon(ctx, f);
+  plan.banners.forEach(([x, z], i) => banner(ctx, x, z, i));
+  for (const b of plan.benches) benchScene(ctx, b.x, b.z, b.yaw);
   const harbour = skyHarbour(ctx);
   const group = new THREE.Group(); group.name = 'skybloom-town';
   const parts: [keyof Pick<TownCtx, 'stone' | 'timber' | 'roof' | 'metal' | 'glow' | 'cloth'>, THREE.Material, boolean][] = [
@@ -61,7 +65,7 @@ async function dressKits(ctx: TownCtx, group: THREE.Group) {
 // ---- Houses ------------------------------------------------------------------------------------------------------
 
 /** Footprint half sizes in the house frame (local x along the street front, +z out of the front door). */
-const WX = 5.1, WZ = 4.6, G = 3.3, JET = .3, U = 2.9;
+const {WX, WZ, G, JET, U} = HOUSE;
 
 function house(ctx: TownCtx, x: number, z: number, yaw: number, role: HouseRole, idx: number) {
   const {h} = ctx;
@@ -150,16 +154,23 @@ function house(ctx: TownCtx, x: number, z: number, yaw: number, role: HouseRole,
   if (!ctx.low) ctx.kits.push({file: 'village', piece: idx % 2 ? 'Prop_Vine1' : 'Prop_Vine5', ...wpos(f, (idx % 2 ? 1 : -1) * (WX + .12), 0, WZ - .6), yaw: f.yw(idx % 2 ? Math.PI / 2 : -Math.PI / 2), size: 3.2});
   // Roof: turquoise glazed hip with swept eaves, soffit boards, fascia, gilt-capped hips, ridge and finials.
   const ey = y1 + .08, rise = [3.5, 3.2, 3.8, 3.4, 3.6, 3.3][idx % 6], a = ux + 1.25, b = uz + 1.2;
+  // The gardener's house wears a planted roof terrace instead of the hip; every other house gets its roof below.
+  if (role === 'garden') roofTerrace(ctx, f, ux, uz, ey, idx);
+  else {
   const r = hipRoof(a, b, rise, [.6, .5, .72, .55, .66, .5][idx % 6]);
   const rf = f.m(0, ey, 0), tint = (p: THREE.Vector3) => .9 + .1 * Math.sin(p.x * .7 + p.z * .9 + idx);
-  roof.add(r.top, rf, idx % 2 ? C.roof : '#2b8783', ROOF.tiles, seed, tint);
+  roof.add(r.top, rf, idx % 2 ? C.roof : C.roofB, ROOF.tiles, seed, tint);
   timber.add(r.soffit, rf, C.timber, WOOD.planks, seed);
   timber.add(r.fascia, rf, C.timberDark, WOOD.beam, seed);
   for (const line of r.hips) roof.add(rod(line.map(p => p.clone().add(new V(0, .06, 0))), .1, 6), rf, C.cap, ROOF.cap, seed);
-  if (r.ridge.length) roof.add(rod(r.ridge.map(p => p.clone().add(new V(0, .06, 0))), .13, 6), rf, C.cap, ROOF.cap, seed);
+  if (r.ridge.length) metal.add(rod(r.ridge.map(p => p.clone().add(new V(0, .07, 0))), .14, 8), rf, C.gold);
   for (const p of r.corners) metal.add(lath([[.09, 0], [.07, .1], [.03, .32], [0, .42]], 8), f.F.clone().multiply(new THREE.Matrix4().makeTranslation(p.x, ey + p.y, p.z)).multiply(new THREE.Matrix4().makeRotationAxis(new V(p.z, 0, -p.x).normalize(), -.9)), C.gold);
   const ends = role === 'inn' || role === 'tea' ? [] : r.ridge.length ? r.ridge : [new V(0, rise, 0)];
   for (const p of ends) metal.add(lath([[.16, 0], [.2, .1], [.08, .22], [.12, .34], [.05, .5], [.02, .78], [0, .8]], 10), f.m(p.x, ey + p.y + .05, p.z), C.gold);
+  // Seen from the air each roof carries its own trade: dormers, chimneys and back wings (roofscape below).
+  roofscape(ctx, f, role, idx, ey, rise, b);
+  }
+  const wing = HOUSE_WINGS[role]; if (wing) backWing(ctx, f, wing, idx);
   // Wind chime under the front eave: gilt hoop and five rods on threads.
   {
     const cx = -ux - .45, cz = uz + .5, cy = ey - .25;
@@ -243,7 +254,7 @@ function roleProps(ctx: TownCtx, f: Frame, role: HouseRole, idx: number, ridgeY:
     timber.add(new THREE.CylinderGeometry(.02, .02, 1.7, 4), f.m(hx, hy - 1.1, hz1 - .2), C.rope, WOOD.beam, seed);
     kit('props', 'Crate_Wooden', hx, hz1 - .2, .75, .3, hy - 2.7);
     kit('props', 'Crate_Wooden', 4.2, WZ + 1.3, .8, .2); kit('props', 'Crate_Wooden', 4.35, WZ + 2.25, .7, -.4); kit('props', 'Crate_Wooden', 4.25, WZ + 1.6, .62, .9, gy(4.2, WZ + 1.3) + .8);
-    kit('props', 'Barrel', 3.0, WZ + 2.6, .95, 0); kit('props', 'Rope_3', 2.6, WZ + 1.4, .25, .5); kit('props', 'Rope_2', 3.2, WZ + 1.45, .22, 1.1, gy(4.2, WZ + 1.3) + .8);
+    kit('props', 'Barrel', 3.3, WZ + 2.6, .95, 0); kit('props', 'Rope_3', 2.6, WZ + 1.4, .25, .5); kit('props', 'Rope_2', 3.2, WZ + 1.45, .22, 1.1, gy(4.2, WZ + 1.3) + .8);
     // A spare propeller leaning on the side wall and rolled sails on a rack.
     const pf = f.m(WX + .35, 1.15, 1.6, Math.PI / 2, 0, -.18);
     metal.add(lath([[.1, -.12], [.13, 0], [.1, .12], [0, .14]], 10), pf.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), C.gold);
@@ -277,9 +288,9 @@ function roleProps(ctx: TownCtx, f: Frame, role: HouseRole, idx: number, ridgeY:
     for (let k = 0; k < 5; k++) { const g = new THREE.CylinderGeometry(.05, .05, .7, 8); const uv = g.getAttribute('uv') as THREE.BufferAttribute; for (let i = 0; i < uv.count; i++) { const [u, v] = atlasUv(CLOTH.sail, uv.getX(i) * .1, uv.getY(i) * .4); uv.setXY(i, u, v); } cloth.add(g, f.m(3.9 + Math.cos(k * 1.3) * .16, gy(3.9, WZ + 1.3) + 1.1, WZ + 1.3 + Math.sin(k * 1.3) * .16, k, .25 * Math.cos(k), .2 * Math.sin(k)), '#f4ead2', 0, k); }
   } else if (role === 'inn') {
     // Table and stools under a lantern string, barrels by the wall; a lantern cupola on the roof.
-    kit('props', 'Table_Large', 3.6, WZ + 2.2, .85, Math.PI / 2);
-    for (const [sx, sz] of [[2.8, 1.5], [2.8, 2.9], [4.4, 1.5], [4.4, 2.9]]) kit('props', 'Stool', sx, WZ + sz, .5, sx);
-    for (const [mx, mz] of [[3.5, 1.9], [3.75, 2.6]]) kit('props', 'Mug', mx, WZ + mz, .14, mx * 2, gy(3.6, WZ + 2.2) + .86);
+    kit('props', 'Table_Large', 3.9, WZ + 2.2, .85, Math.PI / 2);
+    for (const [sx, sz] of [[3.1, 1.5], [3.1, 2.9], [4.7, 1.5], [4.7, 2.9]]) kit('props', 'Stool', sx, WZ + sz, .5, sx);
+    for (const [mx, mz] of [[3.8, 1.9], [4.05, 2.6]]) kit('props', 'Mug', mx, WZ + mz, .14, mx * 2, gy(3.9, WZ + 2.2) + .86);
     kit('props', 'Barrel', -WX - .55, 1.4, .95, 0); kit('props', 'Barrel', -WX - .6, 2.5, .95, .5); kit('props', 'Barrel', -WX - .55, 1.95, .8, 1, gy(-WX - .55, 1.4) + .95);
     const pole = new V(5.3, 0, WZ + 3.6); timber.add(lath([[.08, 0], [.08, 2.7], [.05, 2.8], [0, 2.82]], 6), f.m(pole.x, gy(pole.x, pole.z), pole.z), C.timber, WOOD.beam, seed);
     const a = new V(WX - .2, G - .1, WZ + .1), b = new V(pole.x, gy(pole.x, pole.z) + 2.65, pole.z);
@@ -288,7 +299,7 @@ function roleProps(ctx: TownCtx, f: Frame, role: HouseRole, idx: number, ridgeY:
     cupola(ctx, f, ridgeY, idx);
   } else if (role === 'tea') {
     // A sail awning over low tables with cushions and teapots; paper lanterns; a cupola on the roof.
-    const ax = 3.6, az = WZ + 2.0;
+    const ax = 4.3, az = WZ + 2.0;
     for (const [px, pz] of [[ax - 1.6, az + 1.2], [ax + 1.6, az + 1.2]]) timber.add(lath([[.08, 0], [.08, 2.25], [.05, 2.35], [0, 2.37]], 6), f.m(px, gy(px, pz), pz), C.timber, WOOD.beam, seed);
     const aw = clothSheet(3.4, 3.25, CLOTH.awning, {nx: 8, ny: 7, sag: -.16});
     cloth.add(aw, f.m(ax, G - .2, WZ + .05, 0, .23 - Math.PI / 2), '#ffffff', .2, 1);
@@ -313,7 +324,7 @@ function roleProps(ctx: TownCtx, f: Frame, role: HouseRole, idx: number, ridgeY:
     timber.add(bx(2.0, .08, .7), f.m(bx0, b0 + .78, bz0, .15), C.timber, WOOD.planks, seed);
     for (const dx of [-.85, .85]) timber.add(bx(.08, .78, .6), f.m(bx0 + dx * Math.cos(.15), b0 + .39, bz0 - dx * Math.sin(.15), .15), C.timberDark, WOOD.beam, seed);
     for (let k = 0; k < 3; k++) { const tx = bx0 - .6 + k * .6; timber.add(bx(.5, .1, .4), f.m(tx, b0 + .87, bz0 - .07 * k, .15), C.timberDark, WOOD.planks, seed + k); if (!ctx.low) kit('nature', 'Plant_7', tx, bz0 - .07 * k, .25, k, b0 + .92); }
-    const pots: [number, number, number][] = [[-3.2, WZ + 1.2, .5], [-3.9, WZ + 1.8, .38], [-2.6, WZ + 2.0, .32], [-4.4, WZ + .9, .44], [2.7, WZ + 2.6, .4]];
+    const pots: [number, number, number][] = [[-3.2, WZ + 1.2, .5], [-3.9, WZ + 1.8, .38], [-2.6, WZ + 2.0, .32], [-4.4, WZ + .9, .44], [3.0, WZ + 2.6, .4]];
     pots.forEach(([px, pz, s], k) => {
       const p0 = gy(px, pz);
       stone.add(lath([[0, 0], [.22, 0], [.27, .06], [.3, .42], [.36, .46], [.36, .52], [.3, .52]], 12), f.m(px, p0, pz, k, 0, 0, s * 2), k % 2 ? '#3fb7b0' : '#e8dcc0', STONE.ceramic, seed + k);
@@ -457,7 +468,7 @@ function kite(ctx: TownCtx, f: Frame, x: number, y: number, z: number, k: number
 }
 
 function cart(ctx: TownCtx) {
-  const {x, z, yaw} = SKY_CART;
+  const {x, z, yaw} = skyTownPlan().cart;
   ctx.kits.push({file: 'props', piece: 'Stall_Cart_Empty', x, y: ctx.h(x, z), z, yaw, size: 2.3});
   const f = new Frame(x, ctx.h(x, z), z, yaw);
   for (let k = 0; k < 6; k++) jar(ctx, f.m(-.6 + (k % 3) * .45, .92, -.15 + Math.floor(k / 3) * .3), k + 1);
@@ -504,4 +515,120 @@ function benchScene(ctx: TownCtx, x: number, z: number, yaw: number) {
     if (!ctx.low) { ctx.kits.push({file: 'nature', piece: 'Bush_Common_Flowers', ...wpos(f, sx, gy + .6, 0), yaw: x + sx, size: .75}); ctx.kits.push({file: 'nature', piece: 'Flower_4_Group', ...wpos(f, sx + .25, gy + .62, .25), yaw: x - sx, size: .5}); }
   }
   ctx.stats.benches = (ctx.stats.benches ?? 0) + 1;
+}
+
+/** Paper-lantern festoon over a street end: two slim poles on stone feet, a sagging rope, seven lanterns in warm tones. */
+function festoon(ctx: TownCtx, fs: (typeof SKY_FESTOONS)[number]) {
+  const [[ax, az], [bx0, bz]] = festoonPoles(fs), tops: THREE.Vector3[] = [];
+  for (const [x, z] of [[ax, az], [bx0, bz]]) {
+    const y = ctx.h(x, z) - .08, f = new Frame(x, y, z, 0);
+    ctx.stone.add(lath([[.22, -.2], [.22, .16], [.15, .24], [0, .24]], 8), f.m(0, 0, 0), C.trim, STONE.dressed, x);
+    ctx.timber.add(lath([[.08, 0], [.07, 1.4], [.085, 1.46], [.065, 1.52], [.055, 3.5], [0, 3.52]], 7), f.m(0, .22, 0), C.timber, WOOD.beam, z);
+    ctx.metal.add(lath([[.07, 0], [.05, .1], [.02, .24], [0, .3]], 8), f.m(0, 3.72, 0), C.gold);
+    tops.push(new V(x, y + 3.55, z));
+  }
+  ctx.timber.add(rod(sagPoints(tops[0], tops[1], .55, 10), .014, 3), null, C.rope, WOOD.beam, 0);
+  const tones = ['#ffc070', '#f6a6c0', '#ffd98a', '#9fe8d8', '#ffc070', '#ff9d7a', '#ffd98a'];
+  const pts = sagPoints(tops[0], tops[1], .55, 8);
+  for (let k = 1; k < 8; k++) paperLantern(ctx, M(pts[k].x, pts[k].y, pts[k].z, k * .7), .8 + (k % 3) * .1, new THREE.Color(tones[k - 1]).multiplyScalar(1.55));
+  ctx.stats.festoons = (ctx.stats.festoons ?? 0) + 1;
+}
+
+/** Height of a house roof's front or back slope above the eaves at distance d from the ridge line (hipRoof's profile). */
+const slopeY = (rise: number, b: number, d: number) => rise * Math.pow(Math.max(0, 1 - Math.abs(d) / b), 1.45);
+
+/** Chimneys and dormers by trade, so the six roofs read apart from the air. */
+function roofscape(ctx: TownCtx, f: Frame, role: HouseRole, idx: number, ey: number, rise: number, b: number) {
+  const chimneys: Record<HouseRole, [number, number][]> = {chandler: [[-2.6, -1.9]], lantern: [[3.0, -1.6]], maps: [[-2.8, -1.4]], inn: [[2.4, -2.0], [-3.4, -1.2]], tea: [[-1.8, -2.2]], garden: []};
+  for (const [cx, cz] of chimneys[role]) chimney(ctx, f, cx, cz, ey + slopeY(rise, b, cz), ey + rise + .7, idx);
+  if (role === 'lantern' || role === 'tea' || role === 'chandler') for (const dx of role === 'chandler' ? [1.6] : [-2.0, 2.0]) dormer(ctx, f, dx, b * .5, ey, rise, b, idx, role === 'tea' ? -1 : 1);
+}
+
+/** Stone stack through the roof: ashlar shaft, dressed cap, two teal chimney pots. */
+function chimney(ctx: TownCtx, f: Frame, x: number, z: number, y0: number, y1: number, idx: number) {
+  const h = y1 - y0 + .5;
+  ctx.stone.add(bx(.78, h, .66, [1, 2, 1]), f.m(x, y0 - .5 + h / 2, z), C.stone, STONE.ashlar, idx + x);
+  ctx.stone.add(bx(.98, .14, .86), f.m(x, y1 + .07, z), C.trim, STONE.dressed, idx);
+  for (const dx of [-.18, .18]) ctx.stone.add(lath([[.12, 0], [.13, .2], [.1, .32], [.12, .36], [0, .36]], 10), f.m(x + dx, y1 + .14, z), '#2f7f7a', STONE.ceramic, idx + dx);
+}
+
+/** A dormer on the front (side = 1) or back slope: plaster cheeks, a round gilt window lit warm, a small hip roof. */
+function dormer(ctx: TownCtx, f: Frame, x: number, z: number, ey: number, rise: number, b: number, idx: number, side: number) {
+  const zz = z * side, yb = ey + slopeY(rise, b, z) - .35, yt = yb + 1.25, depth = 1.9, ry = side > 0 ? 0 : Math.PI;
+  const dm = (lx: number, ly: number, lz: number, yaw = 0) => f.m(x + lx, ly, zz + lz * side, ry + yaw);
+  ctx.stone.add(bx(1.4, yt - yb, depth), dm(0, (yb + yt) / 2, -depth / 2 + .05), C.plaster, STONE.plaster, idx);
+  for (const sx of [-.7, .7]) ctx.timber.add(bx(.12, yt - yb + .05, .12), dm(sx, (yb + yt) / 2, .06), C.timber, WOOD.beam, idx);
+  ctx.metal.add(ring(.34, .05), dm(0, yb + .72, .07), C.gold);
+  ctx.glow.add(disc(.31, 14), dm(0, yb + .72, .06), C.glass.clone().multiplyScalar(.9));
+  const r = hipRoof(1.15, .95, .6, .18, {ns: 8, nt: 5, soffit: .06, fascia: .1});
+  const rm = dm(0, yt, -depth / 2 + .15, Math.PI / 2);
+  ctx.roof.add(r.top, rm, C.roofB, ROOF.tiles, idx);
+  ctx.timber.add(r.soffit, rm, C.timber, WOOD.planks, idx);
+  ctx.timber.add(r.fascia, rm, C.timberDark, WOOD.beam, idx);
+  ctx.metal.add(rod(r.ridge.map(p => p.clone().add(new V(0, .05, 0))), .06, 6), rm, C.gold);
+}
+
+/** One-storey back wing (store, kitchen) under its own low hip roof: the house reads as an L from the air. */
+function backWing(ctx: TownCtx, f: Frame, w: {lx: number; lz: number; hx: number; hz: number}, idx: number) {
+  const H = HOUSE.G + .5, p = f.p(w.lx, 0, w.lz), g = ctx.h(p.x, p.z) - f.y, seed = idx * 3.3;
+  ctx.stone.add(bx(w.hx * 2 + .3, H - g + 1.4, w.hz * 2 + .3, [1, 2, 1]), f.m(w.lx, (H + g - 1.4) / 2 - .7 + .02, w.lz), C.rubble, STONE.rubble, seed);
+  ctx.stone.add(bx(w.hx * 2, H, w.hz * 2, [1, 3, 1]), f.m(w.lx, H / 2, w.lz), C.stone, STONE.ashlar, seed);
+  ctx.stone.add(bx(w.hx * 2 + .25, .18, w.hz * 2 + .25), f.m(w.lx, H, w.lz), C.trim, STONE.dressed, seed);
+  // Round windows on the long sides, a plank door at the far end.
+  for (const sx of [-1, 1]) for (const dz of [-w.hz * .45, w.hz * .45]) {
+    ctx.metal.add(ring(.32, .05), f.m(w.lx + sx * (w.hx + .02), H * .55, w.lz + dz, sx * Math.PI / 2), C.gold);
+    ctx.glow.add(disc(.29, 14), f.m(w.lx + sx * (w.hx + .01), H * .55, w.lz + dz, sx * Math.PI / 2), C.glass.clone().multiplyScalar(.8));
+  }
+  ctx.stone.add(archFrame(1.2, 2.2, .2, .2), f.m(w.lx, 0, w.lz - w.hz - .06, Math.PI), C.trim, STONE.dressed, seed);
+  ctx.timber.add(archPanel(1.2, 2.2, .07), f.m(w.lx, 0, w.lz - w.hz - .02, Math.PI), DOORS[(idx + 2) % DOORS.length], WOOD.painted, seed);
+  const a = Math.max(w.hx, w.hz) + .7, bb = Math.min(w.hx, w.hz) + .7, rise = 1.7, along = w.hz > w.hx;
+  const r = hipRoof(a, bb, rise, .35, {ns: 12, nt: 6});
+  const rf = f.m(w.lx, H + .12, w.lz, along ? Math.PI / 2 : 0);
+  ctx.roof.add(r.top, rf, C.roof, ROOF.tiles, seed);
+  ctx.timber.add(r.soffit, rf, C.timber, WOOD.planks, seed);
+  ctx.timber.add(r.fascia, rf, C.timberDark, WOOD.beam, seed);
+  for (const line of r.hips) ctx.roof.add(rod(line.map(q => q.clone().add(new V(0, .05, 0))), .08, 5), rf, C.cap, ROOF.cap, seed);
+  ctx.metal.add(rod(r.ridge.map(q => q.clone().add(new V(0, .06, 0))), .1, 6), rf, C.gold);
+  chimney(ctx, f, w.lx + w.hx * .4, w.lz - w.hz * .35, H + .12 + rise * .3, H + rise + .9, idx);
+}
+
+/**
+ * The gardener's planted roof: a flat timber roof with a deep fascia, a stone parapet with dressed coping, a plank
+ * deck, planters of shrubs and flowers round the edge, a pergola hung with vines and a small tiled stair hut.
+ */
+function roofTerrace(ctx: TownCtx, f: Frame, ux: number, uz: number, ey: number, idx: number) {
+  const {stone, timber, roof, metal} = ctx, seed = idx * 2.7, A = ux + .55, B = uz + .55;
+  timber.add(bx(A * 2 + .5, .32, B * 2 + .5), f.m(0, ey + .1, 0), C.timberDark, WOOD.beam, seed);
+  timber.add(bx(A * 2, .08, B * 2), f.m(0, ey + .3, 0), C.timber, WOOD.planks, seed);
+  for (const [w, d, x, z] of [[A * 2 + .4, .3, 0, B], [A * 2 + .4, .3, 0, -B], [.3, B * 2, A, 0], [.3, B * 2, -A, 0]] as const) {
+    stone.add(bx(w, .7, d), f.m(x, ey + .6, z), C.plaster, STONE.plaster, seed);
+    stone.add(bx(w + .12, .1, d + .12), f.m(x, ey + 1.0, z), C.trim, STONE.dressed, seed);
+  }
+  // Planters along the parapet with shrubs and flowers; a lawn bed in the middle.
+  const beds: [number, number, number, number][] = [[-A + .6, -B + 1.6, .9, 2.4], [-A + .6, B - 1.8, .9, 2.0], [A - .6, -B + 1.4, .9, 2.0], [-1.2, B - .6, 3.2, .8], [2.2, -B + .6, 2.6, .8]];
+  beds.forEach(([x, z, w, d], k) => {
+    timber.add(bx(w, .45, d), f.m(x, ey + .55, z), C.timber, WOOD.planks, seed + k);
+    stone.add(bx(w - .12, .04, d - .12), f.m(x, ey + .79, z), '#4f8f63', STONE.dressed, seed + k);
+    if (!ctx.low) for (let q = 0; q < Math.max(2, Math.round(Math.max(w, d) / .8)); q++) {
+      const t = (q + .5) / Math.max(2, Math.round(Math.max(w, d) / .8)) - .5, px = x + (w > d ? t * w * .85 : 0), pz = z + (w > d ? 0 : t * d * .85), p = f.p(px, ey + .8, pz);
+      ctx.kits.push({file: 'nature', piece: (q + k) % 3 === 0 ? 'Flower_4_Group' : (q + k) % 3 === 1 ? 'Bush_Common_Flowers' : 'Flower_3_Group', x: p.x, y: p.y, z: p.z, yaw: f.yw(q * 1.3 + k), size: .55 + (q % 2) * .15});
+    }
+  });
+  stone.add(bx(3.0, .06, 2.4), f.m(.6, ey + .37, .3), '#5f9a64', STONE.dressed, seed);
+  // Pergola over the bench end, vines hanging from its beams.
+  const px0 = .8, px1 = A - .5, pz0 = -.6, pz1 = B - .5;
+  for (const [x, z] of [[px0, pz0], [px1, pz0], [px0, pz1], [px1, pz1]]) timber.add(lath([[.09, 0], [.08, 2.1], [.11, 2.2], [0, 2.22]], 6), f.m(x, ey + .34, z), C.timber, WOOD.beam, seed);
+  for (const z of [pz0, pz1]) timber.add(beam(new V(px0 - .3, ey + 2.5, z), new V(px1 + .3, ey + 2.5, z), .14, .2), f.F, C.timberDark, WOOD.beam, seed);
+  for (let k = 0; k <= 5; k++) { const x = px0 + (px1 - px0) * k / 5; timber.add(beam(new V(x, ey + 2.68, pz0 - .3), new V(x, ey + 2.68, pz1 + .3), .08, .12), f.F, C.timber, WOOD.beam, seed + k); }
+  if (!ctx.low) for (const [x, z] of [[px0 + .4, pz0], [px1 - .6, pz1], [px0 + 1.4, pz1]]) { const p = f.p(x, ey + 2.6, z); ctx.kits.push({file: 'village', piece: x > 2 ? 'Prop_Vine2' : 'Prop_Vine4', x: p.x, y: p.y, z: p.z, yaw: f.yw(x), size: 1.5, hang: true}); }
+  ctx.kits.push({file: 'props', piece: 'Bench', ...(() => { const p = f.p((px0 + px1) / 2, ey + .34, pz1 - .5); return {x: p.x, y: p.y, z: p.z}; })(), yaw: f.yw(Math.PI), size: .8});
+  // Stair hut in the back corner: plaster box, round window, a small tiled hip roof with a gilt finial.
+  const hx = -A + 1.3, hz = -B + 1.3;
+  stone.add(bx(2.0, 2.1, 2.0), f.m(hx, ey + 1.38, hz), C.plaster, STONE.plaster, seed);
+  metal.add(ring(.3, .045), f.m(hx + 1.02, ey + 1.5, hz, Math.PI / 2), C.gold);
+  ctx.glow.add(disc(.27, 14), f.m(hx + 1.01, ey + 1.5, hz, Math.PI / 2), C.glass);
+  const r = hipRoof(1.45, 1.45, 1.1, .3, {ns: 10, nt: 6, soffit: .08, fascia: .12}), rf = f.m(hx, ey + 2.42, hz);
+  roof.add(r.top, rf, C.roof, ROOF.tiles, seed); timber.add(r.soffit, rf, C.timber, WOOD.planks, seed); timber.add(r.fascia, rf, C.timberDark, WOOD.beam, seed);
+  for (const line of r.hips) roof.add(rod(line.map(q => q.clone().add(new V(0, .04, 0))), .06, 5), rf, C.cap, ROOF.cap, seed);
+  metal.add(lath([[.1, 0], [.12, .08], [.05, .16], [.08, .26], [.03, .4], [0, .6]], 10), f.m(hx, ey + 3.5, hz), C.gold);
 }

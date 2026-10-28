@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {realmHeight} from '../sim/world/ground';
-import {SKY_CARGO,SKY_CART,SKY_GLASSHOUSE,SKY_MAST,SKY_STALLS} from './skyTownLayout';
+import {SKY_CARGO,SKY_GLASSHOUSE,SKY_MAST,skyTownPlan,skyTownBare,skyTownMarketGround} from './skyTownLayout';
 
 /*
  * Skybloom's ground plan, shared by the ground shader (skyGround.ts), the meadow (skyMeadow.ts), the paving
@@ -137,8 +137,9 @@ const rectDist=(x:number,z:number,cx:number,cz:number,hx:number,hz:number)=>Math
 function townSolidDist(x:number,z:number){
  let d=1e9;
  for(const [hx,hz] of SKY_HOUSES)d=Math.min(d,rectDist(x,z,hx,hz,5.3,5.8));
- for(const s of SKY_STALLS)d=Math.min(d,Math.hypot(x-s.x,z-s.z)-2.7);
- d=Math.min(d,Math.hypot(x-SKY_CART.x,z-SKY_CART.z)-1.4,Math.hypot(x-SKY_MAST.x,z-SKY_MAST.z)-2.3,rectDist(x,z,SKY_GLASSHOUSE.x,SKY_GLASSHOUSE.z,SKY_GLASSHOUSE.hx,SKY_GLASSHOUSE.hz));
+ const {stalls,cart}=skyTownPlan();
+ for(const s of stalls)d=Math.min(d,Math.hypot(x-s.x,z-s.z)-2.7);
+ d=Math.min(d,Math.hypot(x-cart.x,z-cart.z)-1.4,Math.hypot(x-SKY_MAST.x,z-SKY_MAST.z)-2.3,rectDist(x,z,SKY_GLASSHOUSE.x,SKY_GLASSHOUSE.z,SKY_GLASSHOUSE.hx,SKY_GLASSHOUSE.hz));
  for(const c of SKY_CARGO)d=Math.min(d,rectDist(x,z,c.x,c.z,c.hx,c.hz));
  return d;
 }
@@ -319,6 +320,8 @@ export function skyGroundMap():SkyGroundMap{
  const soil=new Uint8Array(n*4),aux=new Uint8Array(n*4),extra=new Uint8Array(n*4),u8=(v:number)=>Math.max(0,Math.min(255,Math.round(v*255)));
  // Doors face the high street (x +-24.7); the market stalls and the cart stand on worn ground.
  const doors=SKY_HOUSES.map(([hx,hz])=>[hx-Math.sign(hx)*6.1,hz] as const);
+ // The market's trodden ground follows the town's stalls (skyTownLayout.ts).
+ const market=skyTownMarketGround(),{stalls,cart}=skyTownPlan();
  for(let j=0;j<h;j++)for(let i=0;i<w;i++){
   const x=minX+i+.5,z=minZ+j+.5,k=j*w+i,o=k*4;
   const town=skyTown(x,z),pd=skyPathDistance(x,z),rag=fbm(x/3,z/3,5),edgeR=skyEdge(x,z);
@@ -330,7 +333,8 @@ export function skyGroundMap():SkyGroundMap{
   let doorWear=0;
   for(const [dx,dz] of doors){const e=Math.hypot((x-dx)/1.7,(z-dz)/2.7);doorWear=Math.max(doorWear,(1-smooth(e+rag*.3,.35,1.25)));}
   worn=Math.max(worn,doorWear*.9);
-  for(const s of [...SKY_STALLS,SKY_CART]){const d=Math.hypot(x-s.x,z-s.z);worn=Math.max(worn,(1-smooth(d+rag*1.2,2,4.2))*.7);}
+  for(const s of [...stalls,cart]){const d=Math.hypot(x-s.x,z-s.z);worn=Math.max(worn,(1-smooth(d+rag*1.2,2,4.2))*.7);}
+  for(const m of market){const d=rectDist(x,z,m.x,m.z,m.hx,m.hz);worn=Math.max(worn,(1-smooth(d+rag,0,2.5))*.8);}
   const ra=Math.hypot(x-SKY_ARENA.x,z-SKY_ARENA.z);worn=Math.max(worn,(1-smooth(ra+rag*1.5,SKY_ARENA.r,SKY_ARENA.r+4))*.75);
   worn=Math.max(worn,(1-smooth(wt+rag*2,7,12))*.6);
   // Moss in the shade and in damp hollows, bare soil in a few open patches.
@@ -348,6 +352,7 @@ export function skyGroundMap():SkyGroundMap{
    for(const [hx,hz] of SKY_HOUSES)if(rectDist(x,z,hx,hz,5.4,5.9)<.6){isBare=true;break;}
    if(townSolidDist(x,z)<.3)isBare=true;
    if(Math.hypot(x+12,z-84)<3.2||ra<SKY_ARENA.r+.6||wt<7)isBare=true;
+   if(skyTownBare(x,z))isBare=true;// the town's boardwalk, sheds, cargo and stalls (skyTownLayout.ts)
    for(let q=0;q<10&&!isBare;q++){const a=(q+1)/12*Math.PI*2,px=Math.sin(a)*23,pz=-72+Math.cos(a)*23;if(pz<=-56&&Math.hypot(x-px,z-pz)<2)isBare=true;}
   }
   // Blade height: short mown turf in town, tall at the forest's edge and the field margins.
