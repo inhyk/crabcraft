@@ -118,7 +118,7 @@ try{
   // Flower drifts in the standard east and west views (cap.mjs cameras, foes away): blossom pixels over the ground
   // band (tools/sky-flower-share.py) must be 8-15% (style sheet; advisor #19).
   if(quality==='high'){
-   await p.evaluate(()=>{const g=window.app.current.game;g.follow.__orig=g.follow.update;g.follow.update=function(){const s=window.__cam;const cp=Math.cos(s.pitch);this.camera.position.set(s.tx+Math.sin(s.yaw)*cp*s.dist,s.ty+Math.sin(s.pitch)*s.dist,s.tz+Math.cos(s.yaw)*cp*s.dist);this.camera.lookAt(s.tx,s.ty,s.tz);};
+   await p.evaluate(()=>{const g=window.app.current.game;g.follow.__orig=g.follow.update;g.follow.update=function(...a){const s=window.__cam;if(!s)return this.__orig.apply(this,a);const cp=Math.cos(s.pitch);this.camera.position.set(s.tx+Math.sin(s.yaw)*cp*s.dist,s.ty+Math.sin(s.pitch)*s.dist,s.tz+Math.cos(s.yaw)*cp*s.dist);this.camera.lookAt(s.tx,s.ty,s.tz);};
     const away=()=>{for(const e of g.enemies)e.unit.teleport?.(g.world,200,200);requestAnimationFrame(away);};away();});
    const shots=[];
    for(const [name,x,z,yaw] of [['east',60,-5,-1.57],['west',-60,-5,1.57]]){
