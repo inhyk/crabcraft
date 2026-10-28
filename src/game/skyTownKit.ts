@@ -269,7 +269,8 @@ export function skyMaterials(): SkyMaterials {
       // Weathering: moss and damp at the foot, faint sky-lit rain streaks down vertical faces.
       float foot=1.-smoothstep(.0,.6+g*.4,vSw.y-vSk.x);c=mix(c,c*vec3(.76,.84,.7),foot*.4*(1.-abs(n.y)));
       float streak=skN(vec2(q.x*3.1,vSw.y*.15))*(1.-abs(n.y));c*=1.-streak*.04;
-      diffuseColor.rgb=c;}`,
+      // A touch over the paving: the street stones went a value step down (advisor #21 b), the walls stay the brightest.
+      diffuseColor.rgb=c*1.06;}`,
     rough: `{float k=floor(vSk.y+.5);if(k==4.)roughnessFactor=.32;}`,
     normal: BUMP('skStoneH(vSw)', '1.', 30),
   });
