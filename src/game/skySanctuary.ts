@@ -80,8 +80,8 @@ cStone*=1.-stain*.16;
 // Joints: dark, mossy toward the rim and under the tree (north), a little grass at the kerb.
 float jw=.05+.02*sF;
 float joint=1.-smoothstep(jw*.4,jw,cEdge);
-float mossy=clamp(smoothstep(8.,20.,cr)*.55+smoothstep(.0,-14.,cq.y)*.3+(skN(vSkW.xz*.4)-.5)*.9,0.,1.);
-vec3 jointC=mix(vec3(.085,.075,.065),mix(vec3(.045,.085,.03),vec3(.1,.17,.05),sF),smoothstep(.25,.75,mossy));
+float mossy=clamp(smoothstep(10.,20.,cr)*.4+smoothstep(.0,-14.,cq.y)*.25+(skN(vSkW.xz*.4)-.5)*1.1,0.,1.);
+vec3 jointC=mix(vec3(.15,.13,.11)*(.8+.3*sF),mix(vec3(.04,.075,.03),vec3(.085,.14,.045),sF),smoothstep(.35,.85,mossy));
 // Moss creeps out of the joints over the stone edges near the rim.
 float creep=(1.-smoothstep(jw,jw+.22*mossy,cEdge))*smoothstep(.45,.9,mossy)*smoothstep(.5,.8,skN(vSkW.xz*1.7));
 vec3 cCol=mix(cStone,jointC,max(joint,creep*.8));
@@ -180,8 +180,11 @@ function buildSanctuary(height:Height,high:boolean,parts:SkyParts){
  const gy=(x:number)=>height(x,SKY_GATE.z),S=SKY_GATE.halfSpan,H=SKY_GATE.height,top=Math.max(gy(-S),gy(S),gy(0));
  for(const side of [-1,1]){
   const x=side*S,g=gy(x);
-  parts.stone.push(turned(x,SKY_GATE.z,g,[-.4,.2,.9,1.0,1.08,1.25,1.4,1.45],(h,a)=>{const oct=1+.04*Math.pow(Math.abs(Math.cos(a*4)),8);return h<.9?1.45*oct:h<1.08?1.52*oct:h<1.25?1.38:h<1.4?1.3:.9;},high?40:28,g));
-  const spine=new THREE.CatmullRomCurve3([new THREE.Vector3(x,g+1.2,SKY_GATE.z),new THREE.Vector3(x*.98,g+4.5,SKY_GATE.z),new THREE.Vector3(x*.9,top+7.6,SKY_GATE.z),new THREE.Vector3(x*.55,top+10.4,SKY_GATE.z),new THREE.Vector3(x*.12,top+H-.4,SKY_GATE.z),new THREE.Vector3(-x*.08,top+H-.9,SKY_GATE.z)],false,'centripetal');
+  // Plinth: a moulded foot, a panelled die and a cornice the roots climb out of.
+  const ph=[-.4,.3,.36,.44,.52,.6,.68,.76,.84,1.9,1.98,2.08,2.18,2.3,2.36,2.4];
+  parts.stone.push(turned(x,SKY_GATE.z,g,ph,(h,a)=>{const oct=1+.05*Math.pow(Math.abs(Math.cos(a*4)),10),panel=1-.025*Math.pow(Math.abs(Math.sin(a*4)),.5);
+   return h<.3?1.62*oct:h<.36?1.55*oct:h<.6?1.44+.08*Math.sin(Math.PI*(h-.36)/.24):h<.84?1.3:h<1.9?1.22*oct*panel:h<1.98?1.3:h<2.18?1.36+.08*Math.sin(Math.PI*(h-1.98)/.2):h<2.36?1.5*oct:.95;},high?40:28,g));
+  const spine=new THREE.CatmullRomCurve3([new THREE.Vector3(x,g+2.1,SKY_GATE.z),new THREE.Vector3(x*.98,g+4.8,SKY_GATE.z),new THREE.Vector3(x*.9,top+7.6,SKY_GATE.z),new THREE.Vector3(x*.55,top+10.4,SKY_GATE.z),new THREE.Vector3(x*.12,top+H-.4,SKY_GATE.z),new THREE.Vector3(-x*.08,top+H-.9,SKY_GATE.z)],false,'centripetal');
   const f=spine.computeFrenetFrames(90,false);
   for(let s=0;s<3;s++){
    const pts:THREE.Vector3[]=[];

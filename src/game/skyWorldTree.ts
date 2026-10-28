@@ -58,18 +58,24 @@ export function buildSkyTree(height:Height,quality:'high'|'low',parts:SkyParts){
    const t=len/reach,r=r0*Math.pow(1-t,1.15)+.12;
    if(spill>0){pts.push(new THREE.Vector3(x,pts[pts.length-1].y-step*1.3,z));radii.push(r);x+=Math.cos(dir)*.5;z+=Math.sin(dir)*.5;len+=step;continue;}
    const g=height(x,z);pts.push(new THREE.Vector3(x,g+r*(.12+.25*Math.sin(len*.55+salt)),z));radii.push(r);
-   if(Math.hypot(x-SKY_COURT.x,z-SKY_COURT.z)<SKY_COURT.radius+1.1){pts[pts.length-1].y=g-r*.8;break;}
+   if(Math.hypot(x-SKY_COURT.x,z-SKY_COURT.z)<SKY_COURT.radius+1.4){
+    // At the court's kerb the root thins over its last few metres and sinks under the stone.
+    const n=pts.length,k=Math.min(5,n-1);for(let i=1;i<=k;i++){const f=(k-i+1)/(k+1);radii[n-i]*=.25+.75*(1-f);}
+    pts[n-1].y=g-radii[n-1]*1.2;break;
+   }
    if(islandEdge(x,z)>.835){spill=1;}
    dir+=(Math.sin(len*.37+salt*3.1)*.12+(rand()-.5)*.08);
    for(const [px,pz] of pillars){const d=Math.hypot(x-px,z-pz);if(d<3.2){const away=Math.atan2(z-pz,x-px),diff=wrap(away-dir);dir+=diff*.35;}}
    x+=Math.cos(dir)*step;z+=Math.sin(dir)*step;len+=step;
   }
   if(pts.length<3)return;
+  // Close the tip: one more point a little on and down, radius to nothing.
+  {const a=pts[pts.length-2],b=pts[pts.length-1],d=b.clone().sub(a).setY(0).normalize();pts.push(b.clone().addScaledVector(d,.9).setY(b.y-(spill?1.2:.35)));radii.push(.02);}
   const curve=new THREE.CatmullRomCurve3(pts,false,'centripetal'),segs=Math.max(6,Math.round(pts.length*(high?2.2:1.4)));
   const rings=curveRings(curve,segs),rad=high?14:9,furrows=Math.max(5,Math.round(r0*2*Math.PI/.9));
   bark.push(sweep(rings,rad,(j,a)=>{const u=j/segs,i=Math.min(radii.length-1,u*(radii.length-1)),i0=Math.floor(i),f=i-i0,r=radii[i0]*(1-f)+radii[Math.min(i0+1,radii.length-1)]*f;
    // Roots flatten where they lie on the ground: wide sideways, low on top.
-   return r*(1+.22*Math.cos(2*a)+.06*Math.sin(a*5+u*9));},
+   return r*(1-.2*Math.cos(2*a)+.06*Math.sin(a*5+u*9));},
    (_j,_a,p)=>{const g=height(p.x,p.z),above=p.y-g;return [THREE.MathUtils.clamp(.6+above*.35,.55,1),THREE.MathUtils.clamp(1-above/1.4,0,1)];},furrows));
   rootCount++;
  };

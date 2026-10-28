@@ -56,8 +56,8 @@ float bf=abs(fract(bq.x+bw*.7)-.5)*2.;
 float plate=smoothstep(.05,.32,bf+(skN(bq*vec2(1.7,.35))-.5)*.16);
 float cell=floor(bq.x+bw*.7);
 // Plates crack across now and then, so the furrows read as bark, not fluting.
-float brk=smoothstep(.6,.74,skN(vec2(cell*3.7,bq.y*.6)));
-plate*=1.-brk*.7;
+float brk=smoothstep(.62,.8,skN(vec2(cell*3.7+bq.x*.6,bq.y*.6)));
+plate*=1.-brk*.55;
 float grain=mix(.5,skN(bq*vec2(5.,1.1)),uSkDetail);
 float bh=plate*(.78+.22*grain);
 float tone=skN(vSkW.xz*.07+vSkW.y*.045);
@@ -69,7 +69,7 @@ float moss=smoothstep(.42,.9,vSkN.y*.85+mN*.5-.12);
 moss=max(moss,smoothstep(.25,.85,vAo.y*(1.25-plate*.55)+(mN-.5)*.7));
 vec3 mossC=mix(vec3(.075,.17,.06),vec3(.19,.31,.1),mN);
 diffuseColor.rgb=mix(barkC,mossC,moss*.92)*vAo.x;
-float skHeight=bh*.07*(1.-moss)+moss*mN*.025;`)
+float skHeight=bh*.05*(1.-moss)+moss*mN*.02;`)
    .replace('#include <normal_fragment_maps>',BUMP);
  };
  return m;
@@ -88,9 +88,8 @@ float n1=skN(sp.xz*.45+sp.y*vec2(.71,.53)),n2=mix(.5,skN(sp.xz*2.6-sp.y*vec2(.4,
 vec3 stoneC=mix(vec3(.55,.51,.41),vec3(.76,.7,.57),n1)*(.9+.16*n2);
 // Rain streaks: thin, vertical, from the ledges down.
 float streak=skN(vec2(sp.x*4.1+sp.z*3.7,sp.y*.12));
-stoneC*=1.-.14*smoothstep(.55,.95,streak)*(1.-abs(sn.y));
-float pit=smoothstep(.8,.9,skN(sp.xz*9.+sp.y*vec2(5.3,4.1)))*uSkDetail;
-stoneC*=1.-pit*.12;
+stoneC*=1.-.1*smoothstep(.6,.95,streak)*(1.-abs(sn.y));
+float pit=0.;
 float mN=skN(sp.xz*.6+sp.y*.3);
 float moss=smoothstep(.55,.95,sn.y*.6+mN*.55)*smoothstep(.2,.6,mN);
 moss=max(moss,smoothstep(.3,.9,vAo.y+(mN-.5)*.8));
