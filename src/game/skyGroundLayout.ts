@@ -73,13 +73,13 @@ function garden(name:string,ctrl:[number,number][],h0:number,h1:number):SkyWay{
 export const SKY_WAYS:SkyWay[]=[
  avenue(),
  // Doors (houses at x +-30, fronts at +-24.7), each path past a townsfolk spot; lantern posts (skyTownLayout) kept clear.
- garden('garden-w38',[[-3,31],[-9,34.4],[-16,38],[-20.5,38.7],[-24.6,38]],2.2,1.6),
- garden('garden-w56',[[-3,69],[-9.5,63.6],[-13,58.4],[-16,56],[-20.5,55.4],[-24.6,56]],2.2,1.6),
- garden('garden-w74',[[-3,75],[-8.5,76.4],[-12.5,76.4],[-16,74],[-20.5,73.5],[-24.6,74]],2.2,1.6),
- garden('garden-e38',[[3,44],[9,41.6],[16,38],[20.5,37.4],[24.6,38]],2.2,1.6),
- garden('garden-e56',[[3,60],[9,58],[16,56],[20.5,55.5],[24.6,56]],2.2,1.6),
- garden('garden-e74',[[3,62],[8,65.5],[12,69.5],[16,71],[20.5,73.4],[24.6,74]],2.2,1.6),
- garden('garden-e80',[[3,88],[9,85],[16,80],[19.5,76.8],[22.6,74.8]],2.1,1.5),
+ garden('garden-w38',[[-3,31],[-9,34.4],[-16,38],[-20.5,38.7],[-23.2,38]],2.2,1.6),
+ garden('garden-w56',[[-3,69],[-9.5,63.6],[-13,58.4],[-16,56],[-20.5,55.4],[-23.2,56]],2.2,1.6),
+ garden('garden-w74',[[-3,75],[-8.5,76.4],[-12.5,76.4],[-16,74],[-20.5,73.5],[-23.2,74]],2.2,1.6),
+ garden('garden-e38',[[3,44],[9,41.6],[16,38],[20.5,37.4],[23.2,38]],2.2,1.6),
+ garden('garden-e56',[[3,60],[9,58],[16,56],[20.5,55.5],[23.2,56]],2.2,1.6),
+ garden('garden-e74',[[3,62],[8,65.5],[12,69.5],[16,71],[20.5,73.4],[23.2,74]],2.2,1.6),
+ garden('garden-e80',[[3,88],[9,85],[16,80],[19.5,76.8],[22,74.9]],2.1,1.5),
  // The spawn portal's lane.
  garden('spawn-lane',[[-13,84],[-8,84.9],[-3,84]],2.1,2.3),
  // Out to the herb grove behind the gardener's house, and to the shore lookout past the map maker's.
@@ -184,8 +184,8 @@ export const SKY_ROCK_GROUPS=[{name:'east-field-stones',x:77,z:5,r:4,n:5},{name:
  * hue: 0 pink .. 1 butter (skyBloomHue's scale).
  */
 export const SKY_DRIFTS=[
- {x:50,z:-13,len:15,wid:4,hue:.08},{x:57,z:7,len:11,wid:3,hue:.62},{x:72,z:-24,len:9,wid:2.6,hue:.92},
- {x:-50,z:2,len:15,wid:4,hue:.62},{x:-56,z:-17,len:11,wid:3,hue:.92},{x:-72,z:8,len:9,wid:2.6,hue:.08},
+ {x:45,z:-10,len:17,wid:6,hue:.08},{x:52,z:5,len:13,wid:4.2,hue:.62},{x:57,z:-21,len:10,wid:3.4,hue:.92},
+ {x:-45,z:-2,len:19,wid:7,hue:.62},{x:-52,z:-17,len:13,wid:4.4,hue:.08},{x:-56,z:9,len:10,wid:3.4,hue:.92},
  {x:13,z:-19,len:11,wid:3,hue:.92},{x:-16,z:-30,len:10,wid:2.8,hue:.62},{x:-14,z:2,len:9,wid:2.6,hue:.08},
 ];
 /** Whether a tree of scale s may stand at (x, z). */

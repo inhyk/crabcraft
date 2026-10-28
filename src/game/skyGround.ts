@@ -162,7 +162,7 @@ sgCol=mix(sgCol,sgDc*(.85+.3*sgR2),sgDot*sgF2);
 // far off only a light lift of its hue (a pale wash over green turns grey).
 // Irregular specks from two turned noise reads (never a lattice), denser where the drift is thicker.
 float sgSpN=sgT(sgP,1.3,1.37).r*.65+sgT(sgP,.53,2.71).r*.35;
-float sgSpT=1.-sgFl*.42;
+float sgSpT=1.-sgFl*.5;
 float sgDab=smoothstep(sgSpT,sgSpT+.05,sgSpN)*(1.-sgF2)*sgF1*step(.05,sgFl);
 float sgSpH=sgT(sgP,2.9,.61).b;
 sgCol=mix(sgCol,(sgSpH>.8?sgBloom(fract(sgA.g+.5)):sgFc)*(.85+.3*sgSpH),sgDab*.85);
