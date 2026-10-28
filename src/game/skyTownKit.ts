@@ -123,7 +123,7 @@ export function archPanel(w: number, h: number, depth: number) {
   return new THREE.ExtrudeGeometry(archShape(w, h), {depth, bevelEnabled: false, curveSegments: 10});
 }
 /** Ring (round window frame) in the xy plane. */
-export const ring = (r: number, t: number, seg = 24) => new THREE.TorusGeometry(r, t, 6, seg);
+export const ring = (r: number, t: number, seg = 16) => new THREE.TorusGeometry(r, t, 4, seg);
 /** Flat disc in the xy plane facing +z. */
 export const disc = (r: number, seg = 20) => new THREE.CircleGeometry(r, seg);
 
@@ -300,9 +300,10 @@ export function skyMaterials(): SkyMaterials {
         c=mix(c,c*vec3(1.1,1.04,.92),smoothstep(.55,1.,skF(u*.35+vSk.z))*.3);
       }else{c*=.92+.12*skN(vSu*vec2(3.,1.));}
       diffuseColor.rgb=c;}`,
-    rough: `{float k=floor(vSk.y+.5);if(k==0.){float x=fract(vSu.x/.3);roughnessFactor=mix(.7,.26,pow(sin(3.14159*x),.5))+skN(vSu*2.)*.1;}}`,
+    rough: `{float k=floor(vSk.y+.5);if(k==0.){float x=fract(vSu.x/.3);roughnessFactor=mix(.72,.42,pow(sin(3.14159*x),.5))+skN(vSu*2.)*.1;}}`,
     normal: BUMP('(floor(vSk.y+.5)==0.?skTileH(vSu):0.)', '1.', 45),
   });
+  roof.envMapIntensity = .5;
   // Gilt brass trim, finials, lantern cages.
   const metal = new THREE.MeshStandardMaterial({name: 'sky-brass', color: '#ffffff', roughness: .38, metalness: .55, vertexColors: true});
   patch(metal, 'sky-brass-v1', {color: `{diffuseColor.rgb*=.9+.18*skN(vSw.xz*4.+vSw.y*3.);}`});

@@ -16,7 +16,7 @@ import {skyHarbour} from './skyHarbour';
 const V = THREE.Vector3;
 const C = {
   stone: '#e6dcc4', trim: '#efe5cd', rubble: '#cbbd9c', plaster: '#f2eadb', timber: '#a8794a', timberDark: '#7f5a36',
-  roof: '#2f8f8a', cap: '#226f6b', gold: '#d4a64a', glass: new THREE.Color('#ffcf86').multiplyScalar(1.75), rope: '#c2a678',
+  roof: '#2f8f8a', cap: '#226f6b', gold: '#d4a64a', glass: new THREE.Color('#ffb45e').multiplyScalar(1.35), rope: '#c2a678',
 };
 const DOORS = ['#2f8f8a', '#3a6f9e', '#2f8f8a', '#b4553f', '#3a6f9e', '#5b8a4a'];
 
@@ -119,7 +119,7 @@ function house(ctx: TownCtx, x: number, z: number, yaw: number, role: HouseRole,
     for (const bx0 of [-.3, .3]) timber.add(bx(.05, 1.8, .05), f.m(wx + bx0, .85 + .9, WZ + .08), C.timberDark, WOOD.beam, seed);
     timber.add(bx(1.2, .05, .05), f.m(wx, .85 + 1.15, WZ + .08), C.timberDark, WOOD.beam, seed);
     timber.add(bx(1.4, .32, .36), f.m(wx, .64, WZ + .2), C.timber, WOOD.planks, seed);
-    if (!ctx.low) for (const k of [-.42, 0, .42]) ctx.kits.push({file: 'nature', piece: k === 0 ? 'Flower_4_Group' : 'Flower_3_Group', ...wpos(f, wx + k, .8, WZ + .2), yaw: f.yw(k * 3), size: .45});
+    if (!ctx.low) for (const k of [-.3, .3]) ctx.kits.push({file: 'nature', piece: k < 0 ? 'Flower_4_Group' : 'Flower_3_Group', ...wpos(f, wx + k, .8, WZ + .2), yaw: f.yw(k * 3), size: .45});
   }
   // Side and back ground-floor windows.
   for (const [lx, lz, ry] of [[WX + .02, 0, Math.PI / 2], [-WX - .02, 0, -Math.PI / 2], [0, -WZ - .02, Math.PI]] as const) {
@@ -130,7 +130,7 @@ function house(ctx: TownCtx, x: number, z: number, yaw: number, role: HouseRole,
   const bw = 3.8, bd = 1.5, by = y0 - .06;
   timber.add(bx(bw * 2, .16, bd), f.m(0, by, uz + bd / 2), C.timber, WOOD.planks, seed);
   for (const px of [-3.65, -1.3, 1.3, 3.65]) { tb(new V(px, G - 1.0, WZ + .02), new V(px, by - .08, uz + bd - .25), .16, C.timberDark); }
-  const rail = (a: THREE.Vector3, b: THREE.Vector3) => { tb(a.clone().setY(by + 1.0), b.clone().setY(by + 1.0), .12); tb(a.clone().setY(by + .14), b.clone().setY(by + .14), .08); const n = Math.round(a.distanceTo(b) / .24); for (let k = 1; k < n; k++) { const p = a.clone().lerp(b, k / n); timber.add(lath([[.035, 0], [.05, .12], [.03, .4], [.045, .7], [.035, .86], [0, .86]], 6), f.m(p.x, by + .14, p.z), C.timber, WOOD.beam, seed + k); } };
+  const rail = (a: THREE.Vector3, b: THREE.Vector3) => { tb(a.clone().setY(by + 1.0), b.clone().setY(by + 1.0), .12); tb(a.clone().setY(by + .14), b.clone().setY(by + .14), .08); const n = Math.round(a.distanceTo(b) / .24); for (let k = 1; k < n; k++) { const p = a.clone().lerp(b, k / n); timber.add(bx(.06, .86, .06), f.m(p.x, by + .57, p.z), C.timber, WOOD.beam, seed + k); } };
   const fr = uz + bd - .06;
   rail(new V(-bw + .06, 0, fr), new V(bw - .06, 0, fr));
   for (const sx of [-1, 1]) rail(new V(sx * (bw - .06), 0, uz + .05), new V(sx * (bw - .06), 0, fr));
@@ -149,8 +149,8 @@ function house(ctx: TownCtx, x: number, z: number, yaw: number, role: HouseRole,
   // A climbing vine on one front corner.
   if (!ctx.low) ctx.kits.push({file: 'village', piece: idx % 2 ? 'Prop_Vine1' : 'Prop_Vine5', ...wpos(f, (idx % 2 ? 1 : -1) * (WX + .12), 0, WZ - .6), yaw: f.yw(idx % 2 ? Math.PI / 2 : -Math.PI / 2), size: 3.2});
   // Roof: turquoise glazed hip with swept eaves, soffit boards, fascia, gilt-capped hips, ridge and finials.
-  const ey = y1 + .08, rise = 3.5, a = ux + 1.25, b = uz + 1.2;
-  const r = hipRoof(a, b, rise, .6);
+  const ey = y1 + .08, rise = [3.5, 3.2, 3.8, 3.4, 3.6, 3.3][idx % 6], a = ux + 1.25, b = uz + 1.2;
+  const r = hipRoof(a, b, rise, [.6, .5, .72, .55, .66, .5][idx % 6]);
   const rf = f.m(0, ey, 0), tint = (p: THREE.Vector3) => .9 + .1 * Math.sin(p.x * .7 + p.z * .9 + idx);
   roof.add(r.top, rf, idx % 2 ? C.roof : '#2b8783', ROOF.tiles, seed, tint);
   timber.add(r.soffit, rf, C.timber, WOOD.planks, seed);
@@ -273,6 +273,7 @@ function roleProps(ctx: TownCtx, f: Frame, role: HouseRole, idx: number, ridgeY:
     stone.add(new THREE.SphereGeometry(.362, 18, 12, 0, Math.PI * 2, .6, .5), f.m(gx, g0 + 1.2, gz, .5), '#d8c48c', STONE.ceramic, seed);
     metal.add(ring(.42, .02, 24), f.m(gx, g0 + 1.2, gz, .3, 0, .4), C.gold);
     kit('props', 'Barrel', 3.9, WZ + 1.3, .95, .3);
+    turret(ctx, f, WX - .25, WZ - .25, idx);
     for (let k = 0; k < 5; k++) { const g = new THREE.CylinderGeometry(.05, .05, .7, 8); const uv = g.getAttribute('uv') as THREE.BufferAttribute; for (let i = 0; i < uv.count; i++) { const [u, v] = atlasUv(CLOTH.sail, uv.getX(i) * .1, uv.getY(i) * .4); uv.setXY(i, u, v); } cloth.add(g, f.m(3.9 + Math.cos(k * 1.3) * .16, gy(3.9, WZ + 1.3) + 1.1, WZ + 1.3 + Math.sin(k * 1.3) * .16, k, .25 * Math.cos(k), .2 * Math.sin(k)), '#f4ead2', 0, k); }
   } else if (role === 'inn') {
     // Table and stools under a lantern string, barrels by the wall; a lantern cupola on the roof.
@@ -307,6 +308,7 @@ function roleProps(ctx: TownCtx, f: Frame, role: HouseRole, idx: number, ridgeY:
     for (let k = 0; k <= 4; k++) timber.add(beam(new V(WX + .14, .1, -3 + k * 1.5), new V(WX + .14, 2.9, -3 + k * 1.5), .06), f.F, C.timber, WOOD.beam, seed);
     for (let k = 0; k <= 4; k++) timber.add(beam(new V(WX + .16, .5 + k * .6, -3.1), new V(WX + .16, .5 + k * .6, 3.1), .05), f.F, C.timber, WOOD.beam, seed);
     if (!ctx.low) for (const pz of [-2.2, .4, 2.6]) ctx.kits.push({file: 'village', piece: pz > 0 ? 'Prop_Vine6' : 'Prop_Vine9', ...wpos(f, WX + .3, 0, pz), yaw: f.yw(Math.PI / 2), size: 2.6});
+    glasshouse(ctx, f, idx);
     const bx0 = 3.8, bz0 = WZ + 1.7, b0 = gy(bx0, bz0);
     timber.add(bx(2.0, .08, .7), f.m(bx0, b0 + .78, bz0, .15), C.timber, WOOD.planks, seed);
     for (const dx of [-.85, .85]) timber.add(bx(.08, .78, .6), f.m(bx0 + dx * Math.cos(.15), b0 + .39, bz0 - dx * Math.sin(.15), .15), C.timberDark, WOOD.beam, seed);
@@ -322,6 +324,44 @@ function roleProps(ctx: TownCtx, f: Frame, role: HouseRole, idx: number, ridgeY:
     metal.add(rod([new V(wx + .14, w0 + .08, wz), new V(wx + .38, w0 + .32, wz), new V(wx + .46, w0 + .36, wz)], .02, 5), f.F, '#7fb0a8');
     metal.add(rod([new V(wx - .1, w0 + .34, wz), new V(wx, w0 + .5, wz), new V(wx + .1, w0 + .34, wz)], .015, 4), f.F, '#7fb0a8');
   }
+}
+
+/** The map maker's corner turret: corbelled out above the ground floor, round windows, a ribbed glazed dome. */
+function turret(ctx: TownCtx, f: Frame, x: number, z: number, idx: number) {
+  const R = 1.15, y0 = G - .7, y1 = G + .14 + U + .9;
+  ctx.stone.add(lath([[.3, 0], [R * .7, .3], [R + .08, .7], [R + .08, .82], [0, .82]], 18), f.m(x, y0 - .1, z), C.trim, STONE.dressed, idx);
+  ctx.stone.add(new THREE.CylinderGeometry(R, R, y1 - y0 - .7, 18, 2, true), f.m(x, (y0 + .7 + y1) / 2, z), C.plaster, STONE.plaster, idx);
+  ctx.stone.add(new THREE.CylinderGeometry(R + .1, R + .1, .16, 18), f.m(x, y1, z), C.trim, STONE.dressed, idx);
+  for (let k = 0; k < 3; k++) { const a = k * Math.PI / 2 + Math.PI / 4 - Math.PI / 2 * (k === 2 ? -2 : 0); ctx.metal.add(ring(.3, .045), f.m(x + Math.sin(a) * (R + .02), y1 - 1.0, z + Math.cos(a) * (R + .02), a), C.gold); ctx.glow.add(disc(.28, 14), f.m(x + Math.sin(a) * (R + .01), y1 - 1.0, z + Math.cos(a) * (R + .01), a), C.glass); }
+  const dome = new THREE.SphereGeometry(R + .25, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+  { const uv = dome.getAttribute('uv') as THREE.BufferAttribute; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * Math.PI * 2 * (R + .25), (1 - uv.getY(i)) * 2.2); }
+  ctx.roof.add(dome, f.m(x, y1 + .06, z, 0, 0, 0, [1, 1.25, 1]), C.roof, ROOF.tiles, idx);
+  for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, pts: THREE.Vector3[] = []; for (let j = 0; j <= 8; j++) { const p = j / 8 * Math.PI / 2; pts.push(new V(x + Math.sin(a) * Math.cos(p) * (R + .29), y1 + .06 + Math.sin(p) * (R + .29) * 1.25, z + Math.cos(a) * Math.cos(p) * (R + .29))); } ctx.metal.add(rod(pts, .035, 4), f.F, C.gold); }
+  ctx.metal.add(lath([[.12, 0], [.14, .1], [.05, .24], [.09, .36], [.02, .6], [0, .9]], 10), f.m(x, y1 + .06 + (R + .25) * 1.25 - .05, z), C.gold);
+}
+
+/** The gardener's lean-to glasshouse against the north wall: stone kerb, timber glazing bars, pale glass. */
+function glasshouse(ctx: TownCtx, f: Frame, idx: number) {
+  const x0 = -WX, x1 = -WX - 2.6, z0 = -3.1, z1 = 3.1, hi = 3.0, lo = 2.0;
+  const p0 = f.p(x1, 0, 0), g0 = ctx.h(p0.x, p0.z) - f.y;
+  ctx.stone.add(bx(2.7, .9, 6.4), f.m((x0 + x1) / 2 - .05, g0 - .05, 0), C.stone, STONE.ashlar, idx);
+  const glass = '#bfe0da', slope = Math.atan2(hi - lo, x0 - x1), run = Math.hypot(hi - lo, x0 - x1);
+  ctx.stone.add(bx(run, .04, z1 - z0), f.m((x0 + x1) / 2, (hi + lo) / 2 + .02, 0, 0, 0, -slope), glass, STONE.ceramic, idx);
+  ctx.stone.add(bx(.04, lo - g0 - .4, z1 - z0), f.m(x1, (lo + g0 + .4) / 2, 0), glass, STONE.ceramic, idx);
+  for (const zz of [z0, z1]) {
+    // End panels face outward: the south one drawn from the open side, the north one turned round from the wall.
+    const w = x0 - x1, a = zz > 0 ? lo : hi, b = zz > 0 ? hi : lo, sh = new THREE.Shape();
+    sh.moveTo(0, g0 + .4); sh.lineTo(w, g0 + .4); sh.lineTo(w, b); sh.lineTo(0, a); sh.lineTo(0, g0 + .4);
+    ctx.stone.add(new THREE.ShapeGeometry(sh), zz > 0 ? f.m(x1, 0, zz) : f.m(x0, 0, zz, Math.PI), glass, STONE.ceramic, idx);
+  }
+  for (let k = 0; k <= 6; k++) {
+    const zz = z0 + (z1 - z0) * k / 6;
+    ctx.timber.add(beam(new V(x1, g0 + .4, zz), new V(x1, lo, zz), .08), f.F, C.timber, WOOD.beam, idx);
+    ctx.timber.add(beam(new V(x1 - .02, lo, zz), new V(x0, hi, zz), .08), f.F, C.timber, WOOD.beam, idx);
+  }
+  for (const yy of [1.2]) ctx.timber.add(beam(new V(x1 - .02, yy, z0), new V(x1 - .02, yy, z1), .07), f.F, C.timber, WOOD.beam, idx);
+  ctx.timber.add(beam(new V(x1 - .03, lo + .02, z0 - .05), new V(x1 - .03, lo + .02, z1 + .05), .12), f.F, C.timberDark, WOOD.beam, idx);
+  if (!ctx.low) for (const zz of [-2.2, -.4, 1.6]) ctx.kits.push({file: 'nature', piece: 'Plant_1', ...wpos(f, x1 + .9, g0 + .4, zz), yaw: zz, size: .7});
 }
 
 /** A round-windowed lantern tower on the ridge with its own little swept roof. */

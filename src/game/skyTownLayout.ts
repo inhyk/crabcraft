@@ -24,9 +24,9 @@ export const SKY_STALLS: {x: number; z: number; yaw: number; goods: 'seeds' | 'k
 ];
 /** A hand cart of pollen jars and sacks beside the kite stall. */
 export const SKY_CART = {x: 10.5, z: 14.5, yaw: -2.2};
-/** Carved lantern posts: pairs framing each cross street, then staggered down the road to the sanctuary. */
+/** Carved lantern posts: one each side of each cross street (staggered), then down the road to the sanctuary. */
 export const SKY_LANTERNS: [number, number][] = [
-  [-5.6, 79], [5.6, 69], [-5.6, 69], [5.6, 79], [-5.6, 61], [5.6, 61], [-5.6, 51], [5.6, 51], [-5.6, 43], [5.6, 43], [-5.6, 33], [5.6, 33],
+  [-5.6, 79], [5.6, 69], [-5.6, 61], [5.6, 51], [-5.6, 43], [5.6, 33],
   [-5.6, 11], [5.6, -1], [-5.6, -14], [5.6, -28],
 ];
 /** Cloth banners on tall poles: the harbour gate, the market entrance, the road out of town. */
@@ -38,10 +38,15 @@ export const SKY_BENCHES: {x: number; z: number; yaw: number}[] = [
 /** Harbour: a boardwalk from the end of the high street to a pier head out over the cloud sea. */
 export const SKY_PIER = {x: 0, z0: 95, z1: 150, half: 2.6, headZ: 131, headHalf: 5.2, gateZ: 104};
 export const SKY_AIRSHIP = {x: 7.9, z: 141, yaw: 0};
+/** Mooring mast east of the chandler's: a second airship rides at its top, seen from the arrival. */
+export const SKY_MAST = {x: 45, z: 58, height: 23};
 /** Cargo on the grass beside the boardwalk (box half sizes). */
 export const SKY_CARGO: {x: number; z: number; hx: number; hz: number}[] = [
   {x: 5.4, z: 109, hx: 1.3, hz: 1.6}, {x: -5.2, z: 113, hx: 1.1, hz: 1.2},
 ];
+
+/** The gardener's lean-to glasshouse on the north side of the house at (-30, 38) (box half sizes). */
+export const SKY_GLASSHOUSE = {x: -30, z: 44.5, hx: 3.2, hz: 1.4};
 
 /** Solids the town adds in World VI (stalls, posts, cargo); World V never calls this. */
 export function layoutSkyTown(col: Collision, heightAt: (x: number, z: number) => number) {
@@ -52,4 +57,6 @@ export function layoutSkyTown(col: Collision, heightAt: (x: number, z: number) =
   for (const [x, z] of SKY_BANNERS) post(x, z, .26, 6.5);
   for (const c of SKY_CARGO) { const y = heightAt(c.x, c.z); col.addBox(c.x, c.z, c.hx, c.hz, 0, y - 1, y + 2.2); }
   for (const sx of [-1, 1]) post(SKY_PIER.x + sx * 3.25, SKY_PIER.gateZ, .3, 5.5);
+  post(SKY_MAST.x, SKY_MAST.z, 2.3, SKY_MAST.height);
+  { const g = SKY_GLASSHOUSE, y = heightAt(g.x, g.z); col.addBox(g.x, g.z, g.hx, g.hz, 0, y - 1, y + 3); }
 }
