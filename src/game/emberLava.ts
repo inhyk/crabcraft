@@ -15,7 +15,8 @@ import { FLOW_CELL, LavaFlow, type FlowArea, type FlowDeposit, type FlowSource }
  * - Crust plates with glowing cracks (black-body HDR, peaks 2-4 so GAME_VIEW's bloom at 0.9 catches them; mid
  *   temperatures stay under 0.9). On the flows the plates are anisotropic, longer along the flow, torn into streaks in
  *   the shear bands; open melt at the spillway crusts over within about 12 m down the cone. The sea mixes big cool
- *   rafts with hot leads broken into plates a third the size.
+ *   rafts (plates about 3.6 m, a house or two across from the air) with hot leads broken into plates a third the size;
+ *   hex tiling (three taps, each with its own offset, rotation and scale) hides the 58 m texture repeat.
  * - Plug flow on the tongues: the middle slides as a block (its pattern moves exactly with it, never resets), the
  *   shear bands at the sides tear the plates into streaks (dual-phase advection with a global 5 s period, which alone
  *   bounds the stretch), levees and stopped toes are crust at rest and carry no time term at all. Plug, band and rest
@@ -79,11 +80,13 @@ const U0 = .6;
 const U_TOE = .22;
 /** Plate sizes (m) and the plates per texture repeat. */
 const CELLS = 16;
-const PLATE_TONGUE = 1.5, PLATE_SEA = 8, PLATE_LAKE = 1.1;
+const PLATE_TONGUE = 1.5, PLATE_SEA = 3.6, PLATE_LAKE = 1.1;
 const TILE_TONGUE = CELLS * PLATE_TONGUE, TILE_SEA = CELLS * PLATE_SEA, TILE_LAKE = CELLS * PLATE_LAKE;
 /** Dual-phase periods, s: the life of a pattern before it is renewed. The shear bands renew in proportion to the plug
  * speed (U0 T_BAND = 3 m of stretch at most); the sea and the crater lake are slow pools and keep their long periods. */
 const T_BAND = 5, T_SEA = 12, T_LAKE = 12;
+/** Hex centres per sea texture repeat (about 26 m apart), where the sea's taps change their offset, rotation and scale. */
+const HEX_SEA = 2.2;
 
 /* ---------------------------------------------------------------------------------------------------------------- */
 /* Crust texture: R distance to the nearest open crack (0 crack .. 1 plate middle), G plate id, B distance to the fine */
@@ -350,6 +353,37 @@ varying vec3 vLW;
 float lCrack,lStatic,lMelt;
 vec3 lEmit;
 vec4 lC;
+// Sea hex tiling (after Mikkelsen 2022): a triangle grid of hex centres, each with its own offset, rotation and scale
+// (0.8-1.25) of the crust; a point takes the three of its triangle, weighted by its barycentric weights sharpened to the
+// 4th power. A tap's cracks keep their width down to half weight, then narrow to nothing (they are never cross-faded),
+// so where two hexes meet the plates of both nets are cut by each other's tapering cracks, never blurred or thinned.
+// Taps under 2 % are skipped (most pixels read one or two). Explicit gradients from the untransformed coordinate keep
+// the mip level steady where the taps change.
+// Out: r crack distance and b fine cracks (min), g plate id and a noise (weighted); r2 the hot leads' cracks (2.7x).
+vec2 seaHash(vec2 v){return fract(sin(vec2(dot(v,vec2(127.1,311.7)),dot(v,vec2(269.5,183.3))))*43758.5453);}
+void seaTap(vec2 v,float w,vec2 uv,vec2 dx,vec2 dy,float hot,inout vec4 c,inout float ws,inout float r2){
+  if(w<.02)return;
+  vec2 h=seaHash(v);
+  float an=h.x*6.2832,sc=mix(.8,1.25,fract(h.y*13.7));
+  mat2 M=mat2(cos(an),sin(an),-sin(an),cos(an))*sc;
+  vec2 u=M*uv+h;
+  vec4 t=textureGrad(uCrust,u,M*dx,M*dy);
+  float fade=(1.-smoothstep(.12,.5,w))*1.2;
+  c.r=min(c.r,t.r+fade);c.b=min(c.b,t.b+fade);c.ga+=t.ga*w;ws+=w;
+  if(hot>.001)r2=min(r2,textureGrad(uCrust,u*2.7+vec2(.31,.57),M*dx*2.7,M*dy*2.7).r+fade);
+}
+vec4 seaHex(vec2 uv,vec2 dx,vec2 dy,float hot,out float r2){
+  // A gentle shear of the grid bends the hex borders, so no straight line of crack ends shows from the air.
+  vec2 st=uv*${HEX_SEA.toFixed(2)}+.25*sin(uv.yx*vec2(2.1,1.7)+vec2(1.3,.4));
+  vec2 sk=vec2(st.x-.57735027*st.y,1.15470054*st.y),b=floor(sk),f=sk-b;
+  float z=1.-f.x-f.y,s=step(z,0.),s2=2.*s-1.;
+  vec3 w=pow(max(vec3(-z*s2,s-f.y*s2,s-f.x*s2),0.),vec3(4.));w/=w.x+w.y+w.z;
+  vec4 c=vec4(9.,0.,9.,0.);float ws=0.;r2=9.;
+  seaTap(b+vec2(s),w.x,uv,dx,dy,hot,c,ws,r2);
+  seaTap(b+vec2(s,1.-s),w.y,uv,dx,dy,hot,c,ws,r2);
+  seaTap(b+vec2(1.-s,s),w.z,uv,dx,dy,hot,c,ws,r2);
+  return vec4(min(c.r,1.),c.g/ws,min(c.b,1.),c.a/ws);
+}
 `;
 function poolColor(sea: boolean): string {
   const tile = sea ? TILE_SEA : TILE_LAKE, period = sea ? T_SEA : T_LAKE;
@@ -391,25 +425,29 @@ function poolColor(sea: boolean): string {
   vec2 q=p/TILE;
   float a=fract(uPh+jit),b=fract(a+.5);
   float ang=1.9*flowW;mat2 rot=mat2(cos(ang),sin(ang),-sin(ang),cos(ang));
-  vec4 A=texture2D(uCrust,(p-vel*${period}.*a)/TILE);
-  vec4 B=texture2D(uCrust,rot*((p-vel*${period}.*b)/TILE)+vec2(.37,.71)*flowW);
-  lC=mix(A,B,abs(2.*a-1.)*flowW);
   ${sea ? /* glsl */ `// Hot leads: thinner crust broken into plates a third the size; the cool rafts stay whole, so the sea mixes
-  // big rafts and small plates instead of one net at one scale. The mask varies over hundreds of metres.
+  // big rafts and small plates instead of one net at one scale. The mask varies over hundreds of metres. Both
+  // phases are hex-tiled (each on its own grid, which drifts with its plates).
   float sm=smoothstep(.5,.64,macro);
-  if(sm>.001){
-    vec2 o2=vec2(.31,.57);
-    float r2=mix(texture2D(uCrust,(p-vel*${period}.*a)/TILE*2.7+o2).r,texture2D(uCrust,rot*((p-vel*${period}.*b)/TILE*2.7)+o2).r,abs(2.*a-1.)*flowW);
-    lC.r=min(lC.r,mix(1.,r2*1.6,sm));
-  }
-  float scale=mix(1.,2.7,sm);` : 'float scale=1.;'}
+  vec2 qdx=dFdx(q),qdy=dFdy(q);
+  float rA2,rB2,wB=abs(2.*a-1.)*flowW;
+  vec4 A=seaHex((p-vel*${period}.*a)/TILE,qdx,qdy,sm,rA2);
+  vec4 B=seaHex(rot*((p-vel*${period}.*b)/TILE)+vec2(.37,.71)*flowW,rot*qdx,rot*qdy,sm,rB2);
+  lC=mix(A,B,wB);
+  // The small plates fade out on their own (from 2.7x nearer than the big ones), so far hot leads still show the big
+  // net with wide glowing cracks instead of one smooth wash; hotFar brings back their average glow.
+  float hotFar=smoothstep(.1,.4,length(fwidth(q*${CELLS}.))*2.7)*sm;
+  if(sm>.001)lC.r=min(lC.r,mix(1.,mix(rA2,rB2,wB)*1.6,sm-hotFar));` : /* glsl */ `vec4 A=texture2D(uCrust,(p-vel*${period}.*a)/TILE);
+  vec4 B=texture2D(uCrust,rot*((p-vel*${period}.*b)/TILE)+vec2(.37,.71)*flowW);
+  lC=mix(A,B,abs(2.*a-1.)*flowW);`}
   float r=lC.r,fine=lC.b,id=lC.g,nz=lC.a;
   // Far away the cracks average out to a warm crust instead of sparkling.
-  float far=smoothstep(.1,.4,length(fwidth(q*${CELLS}.))*scale);
+  float far=smoothstep(.1,.4,length(fwidth(q*${CELLS}.)));
   // Melt between the plates: wide in hot leads, hairline under the cool rafts.
   float cw=(mix(.07,.46,pow(smoothstep(.45,1.,temp),1.6))+lMelt*.15+margin*.16)*mix(.7,1.25,nz);
   float aa=fwidth(r)*1.1+.004;
   lCrack=mix(1.-smoothstep(cw-aa,cw+aa,r),clamp(cw*1.15,0.,1.),far);
+  ${sea ? 'lCrack=mix(lCrack,max(lCrack,clamp(cw*1.15,0.,1.)),hotFar*.45);' : ''}
   float fineLine=(1.-smoothstep(.0,.06+fwidth(fine),fine))*(1.-far);
   vec3 bas=vec3(.026,.023,.024)*(.7+.6*nz)*(.85+.3*id);
   bas*=1.-.45*fineLine*(1.-smoothstep(.6,1.,temp));
