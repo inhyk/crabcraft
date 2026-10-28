@@ -82,6 +82,8 @@ spStone=mix(spStone,vec3(.52,.58,.4),spLich*.45);
 spStone=mix(spStone,vec3(.82,.62,.24),smoothstep(.86,.93,spNoise(spP*7.+spId)*.5+.5)*spMossy*.5*(1.-spBlur));
 // The trodden middle: smoother, a little darker and warmer.
 spStone*=mix(1.,.9,spMid*.7);
+// One value step under the cream walls: the paving is a wide surface and must not be the frame's brightest (advisor #21 b).
+spStone*=.72;
 // Joints: grass and moss at the edges, dark grit in the trodden middle.
 vec3 spTurf=mix(spTurfA,spTurfB,spN2*.5+.5)*(.75+.5*(spNoise(spP*6.)*.5+.5));
 vec3 spGrit=mix(vec3(.26,.22,.15),spTurfA*.8,.35);
