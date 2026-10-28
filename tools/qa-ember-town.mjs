@@ -20,7 +20,7 @@ const SHOTS = {
   street: {x: 0, z: 45, yaw: .3, pitch: .12, distance: 9},
   furnace: {x: 3, z: 72, yaw: .2, pitch: .12, distance: 10},
   smithy: {x: -21.3, z: 45.1, yaw: .96, pitch: .2, distance: 12},
-  yard: {x: 0, z: 55, yaw: .5, pitch: .5, distance: 40},
+  yard: {x: 8, z: 82, yaw: .4, pitch: .4, distance: 14},
   quay: {x: 2, z: 122, yaw: 2.7, pitch: .35, distance: 24},
 };
 

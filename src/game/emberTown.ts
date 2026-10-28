@@ -141,7 +141,7 @@ function solidMaterial(lights: number, uniforms: {uTime: THREE.IUniform<number>;
     // pitted faces, chamfered arrises tilting the normal, thin lighter mortar.
     float rub=step(1.5,pat);float ka=(.5+.18*rub)*etK,kb=(.34+.14*rub)*etK,per=ka+kb;
     float pr=floor(etQ.y/per),fy=etQ.y-pr*per,top=step(ka,fy);float row=pr*2.+top,hgt=mix(ka,kb,top);fy-=top*ka;
-    float w=(.78+.62*etH(vec2(row,etSeed+3.)))*etK*(1.+.35*rub);float x=etQ.x+etH(vec2(row,etSeed))*3.;float c=floor(x/w);float fx=x-c*w;
+    float w=(.5+1.15*etH(vec2(row,etSeed+3.)))*etK*(1.+.35*rub);float x=etQ.x+etH(vec2(row,etSeed))*3.;float c=floor(x/w);float fx=x-c*w;
     float sp=etH(vec2(c,row)+etSeed*.7);if(sp<.38){float at=w*(.35+.3*etH(vec2(row,c)));if(fx>at){fx-=at;w-=at;c+=.5;}else w=at;}
     float jit=(etN(etQ*4.+etSeed)-.5)*.04*etK*(.3+rub);
     float e=min(min(fx,w-fx),min(fy,hgt-fy))+jit;
@@ -501,7 +501,7 @@ export class EmberTown {
     // Plinth (rubble, battered, sunk into the slope) and walls (dressed basalt, battered).
     this.S(frustum(W + .6, D + .6, W + .1, D + .1, 2.2), L(0, -1.2, 0), '#433f44', PAT.rubble, 1.2, .95, 0, B, seed);
     const wb = 1.0, hx = (y: number) => (W - .5 * (y - wb) / (Ht - wb)) / 2, hz = (y: number) => (D - .5 * (y - wb) / (Ht - wb)) / 2;
-    this.S(frustum(W, D, W - .5, D - .5, Ht - wb), L(0, wb, 0), wallHex, PAT.ashlar, 1.4, .9, 0, B, seed + 1);
+    this.S(frustum(W, D, W - .5, D - .5, Ht - wb), L(0, wb, 0), wallHex, PAT.ashlar, .76, .9, 0, B, seed + 1);
     // Quoins: alternating long and short pale blocks up every corner.
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (let i = 0, y = wb + .25; y < Ht - .2; i++, y += .5) {
       const a = (i + (sx * sz > 0 ? 0 : 1)) % 2 ? .95 : .55, b = (i + (sx * sz > 0 ? 0 : 1)) % 2 ? .55 : .95;
@@ -520,7 +520,7 @@ export class EmberTown {
     const steps = 5;
     for (const sz of [-1, 1]) for (let k = 0; k < steps; k++) {
       const hw = (hx(Ht) + .15) * (1 - k / steps) + .25, y = Ht + k * Hr / steps, th = Hr / steps;
-      this.S(box(2 * hw, th, .62), L(0, y + th / 2, sz * gz), wallHex, PAT.ashlar, 1.4, .9, 0, B, seed + 2);
+      this.S(box(2 * hw, th, .62), L(0, y + th / 2, sz * gz), wallHex, PAT.ashlar, .76, .9, 0, B, seed + 2);
       for (const s of [-1, 1]) this.S(box(.62, .16, .76), L(s * (hw - .26), y + th + .06, sz * gz), '#6a6360', PAT.plain, 1, .9, 0, B);
       if (k === steps - 1) { this.S(box(2 * hw + .1, .16, .76), L(0, y + th + .06, sz * gz), '#6a6360', PAT.plain, 1, .9, 0, B); this.S(new THREE.ConeGeometry(.09, .9, 6).translate(0, .45, 0), L(0, y + th + .14, sz * gz), '#c8923c', PAT.plain, 1, .3, .9, B); }
     }
@@ -528,7 +528,7 @@ export class EmberTown {
     { const m = L(0, Ht + Hr * .42, gz + .32); this.S(new THREE.TorusGeometry(.5, .13, 5, 12), m, '#80776f', PAT.plain, 1, .9, 0, B); this.G(new THREE.CircleGeometry(.44, 12), m, lin('#ff9a3c', 1.5), .1, seed); this.S(box(.05, .9, .05).translate(0, 0, .04), m, '#1f1e22', PAT.plain, 1, .5, .8, B); this.S(box(.9, .05, .05).translate(0, 0, .04), m, '#1f1e22', PAT.plain, 1, .5, .8, B); }
     // Big chimney stack with soot and a corbelled cap; smoke and sparks rise from it.
     const big = h.role === 'smelter' ? 1.25 : 1, chx = (h.role === 'inn' ? 2.6 : -2.8), chz = -2.2, top = Ht + Hr + 2.6 * big;
-    this.S(frustum(1.6 * big, 1.6 * big, 1.4 * big, 1.4 * big, top - Ht + .6 - 1.2), L(chx, Ht - .6, chz), wallHex, PAT.ashlar, .8, .9, 0, B, seed + 3);
+    this.S(frustum(1.6 * big, 1.6 * big, 1.4 * big, 1.4 * big, top - Ht + .6 - 1.2), L(chx, Ht - .6, chz), wallHex, PAT.ashlar, .6, .9, 0, B, seed + 3);
     this.S(frustum(1.4 * big, 1.4 * big, 1.36 * big, 1.36 * big, 1.2), L(chx, top - 1.2, chz), '#2b2729', PAT.ashlar, .8, .95, 0, B, seed + 4);
     this.S(box(1.85 * big, .24, 1.85 * big), L(chx, top + .1, chz), '#6f6862', PAT.plain, 1, .9, 0, B);
     for (const s of [-1, 1]) this.S(cyl(.24, .2, .6, 8), L(chx + s * .35 * big, top + .5, chz), '#2c2a2d', PAT.plate, 0, .5, .75, B);
@@ -544,7 +544,7 @@ export class EmberTown {
       for (const s of [-1, 1]) this.S(box(.36, wb - g0 + .25, .42 * n + .25), L(s * 1.28, g0 + (wb - g0 + .25) / 2, D / 2 + .05 + (.42 * n + .25) / 2), '#5a5452', PAT.ashlar, .6, .9, 0, B, 12 + s); }
     const forge = h.roof === 'iron';
     if (forge) this.forgeMouth(h, L(-3.2, wb, fz(wb + 1.5)), toW, B, seed);
-    else if (h.role !== 'inn') { this.window(L(-3.2, wb + 1.6, fz(wb + 1.6)), 1.6, 1.6, B, true, 2.1); const [px, pz] = toW(-3.2, D / 2 + 2.2); this.light(px, B + 2.2, pz, 7, '#ff9a4a', 1.3); this.pool(px, pz, 3.0, '#ff8a3a', .5, seed); }
+    else if (h.role !== 'inn') { this.window(L(-3.2, wb + 1.6, fz(wb + 1.6)), 1.6, 1.6, B, true, 2.1); const [px, pz] = toW(-3.2, D / 2 + 2.2); this.light(px, B + 2.2, pz, 7, '#ff9a4a', 1.3); this.pool(px, pz, 3.2, '#ff8a3a', .6, seed); }
     else { this.window(L(-3.3, wb + 1.7, fz(wb + 1.7)), 1.5, 1.5, B, true, 1.9); this.window(L(-3.3, wb + 4.4, fz(wb + 4.4)), 1.0, 1.2, B, false); this.window(L(3.3, wb + 4.4, fz(wb + 4.4)), 1.0, 1.2, B, false); this.light(...this.at(toW, -3.3, D / 2 + 1, B + 2.4), 7, '#ff9a4a', 1.4); }
     this.window(L(3.3, wb + 1.7, fz(wb + 1.7)), 1.0, 1.35, B, h.role === 'inn' || h.role === 'glassblower');
     for (const s of [-1, 1]) {
@@ -589,7 +589,7 @@ export class EmberTown {
     for (const s of [-1, 1]) this.S(box(.06, .06, 1.9).applyMatrix4(trs(s * 1.6, 3.5, 1.4, 0, -.45)), m, '#1f1e22', PAT.plain, 1, .5, .8, base);
     const p = new V(0, 1.3, 1.6).applyMatrix4(m);
     this.light(p.x, p.y + .2, p.z, 9, '#ff8a3a', 2.6);
-    const g = new V(0, 0, 3.1).applyMatrix4(m); this.pool(g.x, g.z, 3.6, '#ff6a24', .5, seed);
+    const g = new V(0, 0, 3.1).applyMatrix4(m); this.pool(g.x, g.z, 3.8, '#ff6a24', .66, seed);
     this.sparks.push({x: p.x, y: p.y + 1.2, z: p.z, s: .3, n: 8});
     void h; void toW;
     this.stats.forgeMouths++;
@@ -805,7 +805,7 @@ export class EmberTown {
     const rAt = (y: number) => { for (let k = 1; k < prof.length; k++) if (y <= prof[k][1]) { const [ra, ya] = prof[k - 1], [rb, yb] = prof[k]; return ra + (rb - ra) * (y - ya) / (yb - ya); } return prof[prof.length - 1][0]; };
     // Plinth (rubble, octagonal, stepped), the shaft, a pale collar.
     this.S(lathe([[0, -.8], [F.plinth + .2, -.8], [F.plinth, .1], [F.plinth - .5, .1], [F.plinth - .55, .45], [0, .45]], 8).rotateY(Math.PI / 8), m, '#3d3a40', PAT.rubble, 1.1, .95, 0, y0, 3);
-    this.S(lathe([...prof, [F.r - 1.65, 10.75], [0, 10.75]], 20), m, '#423e42', PAT.ashlar, 1.5, .9, 0, y0, 5);
+    this.S(lathe([...prof, [F.r - 1.65, 10.75], [0, 10.75]], 20), m, '#423e42', PAT.ashlar, .85, .9, 0, y0, 5);
     this.S(lathe([[F.r - 1.75, 10.6], [F.r - 1.25, 10.7], [F.r - 1.2, 11.1], [F.r - 1.8, 11.15]], 16), m, '#6a6360', PAT.ashlar, .6, .9, 0, y0, 6);
     this.S(cyl(F.r - 1.2, F.r - 1.2, .12, 20).translate(0, 11.18, 0), m, '#c8923c', PAT.plain, 1, .32, .9, y0);
     // Hoops and straps.
