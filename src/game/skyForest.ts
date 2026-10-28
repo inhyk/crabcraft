@@ -18,7 +18,7 @@ const srgb=(hex:string)=>new THREE.Color(hex);
 /** Crown tints per species (linear), picked per tree. */
 const CROWNS:Record<SkyTreeSpecies,THREE.Color[]>={
  jade:[srgb('#3f8f80'),srgb('#5fae95'),srgb('#4c9c86'),srgb('#57a48a')],
- silver:[srgb('#5f9f98'),srgb('#6eae9e'),srgb('#548f8c')],
+ silver:[srgb('#6fb3a6'),srgb('#7cc0ad'),srgb('#62a59f')],
  blossom:[srgb('#ec9cc4'),srgb('#e48cba'),srgb('#f2b2d2')],
  white:[srgb('#f7f5f2'),srgb('#f6eef4'),srgb('#eef0f6')],
 };

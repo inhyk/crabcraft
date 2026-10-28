@@ -54,7 +54,7 @@ const rectDist=(x:number,z:number,cx:number,cz:number,hx:number,hz:number)=>Math
  * group of a view: east of town a blossom grove round a mossy outcrop, west a silver twisted elder over a fern dell.
  */
 export type SkyTreeSpecies='jade'|'blossom'|'white'|'silver';
-export interface SkyTreeSpot{i:number;x:number;z:number;s:number;species:SkyTreeSpecies;yaw:number;/** Visual size over the spot's scale (focal groups stand taller; the collider stays). */grand:number}
+export interface SkyTreeSpot{/** frontierTrees' generator index; 100 and up for the groves' own trees (W6-only colliders). */i:number;x:number;z:number;s:number;species:SkyTreeSpecies;yaw:number;/** Visual size over the spot's scale (focal groups stand taller; the collider stays). */grand:number}
 /** Focal groups (east and west views): where the shrubs, rocks and a fallen log gather. */
 export const SKY_GROVES=[
  {name:'east-blossom-grove',x:76,z:-6,r:12},
@@ -75,7 +75,19 @@ export function skyTrees():SkyTreeSpot[]{
   const h=skyHash(t.i,7,61);
   t.species=hero[t.i]??(h<.18?'blossom':h<.28?'white':h<.5?'silver':'jade');
   t.yaw=skyHash(t.i,3,9)*Math.PI*2;
-  for(const [gi,g] of SKY_GROVES.entries())if(gi<2&&Math.hypot(t.x-g.x,t.z-g.z)<g.r*1.3)t.grand=1.4;
+  for(const [gi,g] of SKY_GROVES.entries())if(gi<2&&Math.hypot(t.x-g.x,t.z-g.z)<g.r*1.3)t.grand=1.3;
+ }
+ // The two focal groves get three trees of their own, close together, so each view has a massed group.
+ const groveSpecies:SkyTreeSpecies[][]=[['blossom','white','blossom'],['silver','silver','jade']];
+ for(let gi=0;gi<2;gi++){
+  const g=SKY_GROVES[gi];let placed=0;
+  for(let k=0;k<40&&placed<3;k++){
+   const a=skyHash(gi,k,91)*Math.PI*2,d=(.3+.55*skyHash(gi,k,92))*g.r,x=g.x+Math.cos(a)*d,z=g.z+Math.sin(a)*d,s=1+.25*skyHash(gi,k,93);
+   // Never between the east/west views' camera and the crab (the views stand at x ±34..60, z -5).
+   const line=Math.abs(z+5)<6&&Math.abs(x)<64;
+   if(line||skyEdge(x,z)>.74||skyPathDistance(x,z)<4||!skyClearOfPoints(x,z,1.5)||treeCache.some(t=>Math.hypot(t.x-x,t.z-z)<4.5+2*(t.s+s)))continue;
+   treeCache.push({i:100+gi*10+placed,x,z,s,species:groveSpecies[gi][placed],yaw:skyHash(gi,k,94)*Math.PI*2,grand:1.15});placed++;
+  }
  }
  return treeCache;
 }
@@ -87,8 +99,8 @@ const KEEP_CLEAR:[number,number,number][]=[
  [-12,78,3],[12,72,3],[-12,56,3],[-47,40,4],[-52,28,4],[-44,14,4],[-7,26,3],[7,4,3],[-7,-22,3],[-50,26,9],[61,22,6],[0,-34,4],
  [36,8,4],[44,-6,8],[34,-22,4],[62,34,4],[68,20,4],[60,4,4],[-17,-34,4],[17,-42,4],[-16,-54,4],[16,68,5],[16,56,5],[-16,74,5],[0,-44,6],[-12,84,4],
 ];
-/** Enemy homes (createFrontierDefinition): x ±(44..65), z 20 down in 12 m rows; boulders keep off their wander discs. */
-for(let index=0;index<12;index++){const x=(index%2?1:-1)*(44+index%4*7),z=20-Math.floor(index/2)*12;KEEP_CLEAR.push([x,z,6.5]);}
+/** Enemy homes (createFrontierDefinition, up to 16 + 16): x ±(44..65), z 20 down in 12 m rows; solids keep off their wander discs. */
+for(let index=0;index<32;index++){const x=(index%2?1:-1)*(44+index%4*7),z=20-Math.floor(index/2)*12;KEEP_CLEAR.push([x,z,6.5]);}
 export function skyClearOfPoints(x:number,z:number,margin=0){for(const [px,pz,r] of KEEP_CLEAR)if(Math.hypot(x-px,z-pz)<r+margin)return false;return true;}
 /** How far (x, z) is from every way's paved edge (negative on the paving). */
 export function skyPathDistance(x:number,z:number){
@@ -127,7 +139,7 @@ export function skyProps():SkyProp[]{
    if(!ok)continue;for(const f of [-.45,0,.45])solids.push({x:x+Math.cos(yaw)*len*f,z:z+Math.sin(yaw)*len*f,r:.7});
    out.push({kind:'log',x,z,s:len,yaw});break;
   }
-  const n=big?26:14;
+  const n=big?38:14;
   for(let k=0;k<n;k++){
    const a=skyHash(gi,k,31)*Math.PI*2,d=Math.sqrt(skyHash(gi,k,32))*g.r*1.25,x=g.x+Math.cos(a)*d,z=g.z+Math.sin(a)*d;
    if(skyEdge(x,z)>.76||skyPathDistance(x,z)<1.5||!skyClearOfPoints(x,z,-1.5)||solids.some(s=>Math.hypot(s.x-x,s.z-z)<s.r+.3))continue;
@@ -156,6 +168,8 @@ export function skyProps():SkyProp[]{
 /** Colliders for the solid props (boulders, stones, logs): x, z, radius, height above the ground. */
 export function skySolids():{x:number;z:number;r:number;h:number}[]{
  const out:{x:number;z:number;r:number;h:number}[]=[];
+ // The groves' own trees (the frontier's spots already have theirs in layoutFrontier).
+ for(const t of skyTrees())if(t.i>=100)out.push({x:t.x,z:t.z,r:.7*t.s,h:12*t.s});
  for(const p of skyProps()){
   if(p.kind==='boulder')out.push({x:p.x,z:p.z,r:p.s*1.15,h:p.s*1.6});
   else if(p.kind==='stone')out.push({x:p.x,z:p.z,r:p.s*1.05,h:p.s*1.1});
@@ -205,11 +219,11 @@ export function skyGroundMap():SkyGroundMap{
   let worn=(1-smooth(pd,.0,.9+rag*.9))*.55*smooth(fbm(x/2.5,z/2.5,6),-.2,.35);
   for(const [hx,hz] of SKY_HOUSES){const door=Math.hypot((x-hx)/2.6,(z-hz-7.2)/1.8);worn=Math.max(worn,(1-smooth(door+rag*.25,.5,1.4))*.9);}
   for(const side of [-1,1]){const d=rectDist(x,z,side*21.5,23,5,3.2);worn=Math.max(worn,(1-smooth(d+rag,0,2.5))*.8);}
-  worn=Math.max(worn,town*smooth(fbm(x/9,z/9,8),.25,.45)*.6);
+  worn=Math.max(worn,town*smooth(fbm(x/9,z/9,8),.35,.5)*.35);
   const ra=Math.hypot(x-SKY_ARENA.x,z-SKY_ARENA.z);worn=Math.max(worn,(1-smooth(ra+rag*1.5,SKY_ARENA.r,SKY_ARENA.r+4))*.75);
   worn=Math.max(worn,(1-smooth(wt+rag*2,7,12))*.6);
   // Moss in the shade and in damp hollows, bare soil in a few open patches.
-  const patch=fbm(x/11,z/11,13),moss=Math.max(ao*1.2,smooth(patch,.35,.6)*.7)*(1-town*.7),dirt=smooth(-patch,.6,.75)*smooth(fbm(x/3.5,z/3.5,14),-.1,.3)*(1-town)*.85;
+  const patch=fbm(x/11,z/11,13),moss=Math.max(ao*1.2,smooth(patch,.42,.65)*.5)*(1-town*.7),dirt=smooth(-patch,.6,.75)*smooth(fbm(x/3.5,z/3.5,14),-.1,.3)*(1-town)*.85;
   const grass=Math.max(0,1-worn*1.05)*(1-.35*dirt);
   // Wildflowers in drifts: long swathes combed by the wind, thick at the forest's edge, none on worn ground.
   const wx=x*.8+z*.6,wz=-x*.6+z*.8,drift=fbm(wx/22,wz/7,17)+.35*fbm(x/4,z/4,19);

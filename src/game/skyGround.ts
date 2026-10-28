@@ -11,7 +11,7 @@ import {SKY_GRID,SKY_MAP,skyGroundMap,skyHeight} from './skyGroundLayout';
  */
 
 const SIZE=256;
-/** Tileable noise, four channels: fbm, cellular F1 (pebbles), fine blade noise, cellular F2 - F1 (cracks). */
+/** Tileable noise, four channels: fbm, cellular F1 (pebbles), fine blade noise, a smooth three-octave fbm for the broad swathes. */
 function noiseTexture():THREE.DataTexture{
  const hash=(i:number,j:number,s:number)=>{let h=Math.imul(i,0x27d4eb2d)^Math.imul(j,0x165667b1)^Math.imul(s,0x9e3779b1);h=Math.imul(h^(h>>>15),0x2c1b3c6d);h=Math.imul(h^(h>>>12),0x297a2d39);return ((h^(h>>>15))>>>0)/4294967296;};
  const wrap=(i:number,p:number)=>((i%p)+p)%p;
@@ -30,7 +30,7 @@ function noiseTexture():THREE.DataTexture{
  for(let y=0;y<SIZE;y++)for(let x=0;x<SIZE;x++){
   const o=(y*SIZE+x)*4,[f1,f2]=cell(x,y,24,3);
   data[o]=u8(.5+fbm(x,y,4,6,11)*.95);data[o+1]=u8(Math.min(1,f1/.75));
-  data[o+2]=u8(.5+(fbm(x,y,64,2,23)*.7+grad(x,y,128,31)*.3)*1.1);data[o+3]=u8(Math.min(1,(f2-f1)/.5));
+  data[o+2]=u8(.5+(fbm(x,y,64,2,23)*.7+grad(x,y,128,31)*.3)*1.1);data[o+3]=u8(.5+fbm(x,y,4,3,41)*1.15);void f2;
  }
  const t=new THREE.DataTexture(data,SIZE,SIZE,THREE.RGBAFormat);
  t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearMipmapLinearFilter;t.generateMipmaps=true;t.colorSpace=THREE.NoColorSpace;t.name='skybloom-ground-noise';t.needsUpdate=true;
@@ -70,9 +70,14 @@ vec2 sgUv=(sgP-sgMap.xy)*sgMap.zw;
 vec4 sgS=texture2D(sgSoil,sgUv),sgA=texture2D(sgAux,sgUv);
 float sgFoot=length(fwidth(sgP));
 float sgF1=1.-smoothstep(.05,.22,sgFoot),sgF2=1.-smoothstep(.012,.06,sgFoot),sgF3=1.-smoothstep(.004,.016,sgFoot);
-float sgMacro=sgT(sgP,150.,.3).r,sgMacro2=sgT(sgP,53.,1.1).r,sgMid=sgT(sgP,13.,2.).r,sgSw=sgT(sgP,7.5,.45).r;
-float sgFine=mix(.5,sgT(sgP,3.1,.7).r,sgF1);
-vec4 sgClump=sgT(sgP,1.9,2.6);
+// Broad swathes from the smooth channel: patches, never speckle, at every distance.
+// Each is two reads at incommensurate periods and turns, so no repeat lines up anywhere.
+float sgMacro=sgT(sgP,150.,.3).a,sgMacro2=(sgT(sgP,53.,1.1).a+sgT(sgP,87.,2.9).a-1.)*1.3+.5;
+float sgMid=(sgT(sgP,13.,2.).a+sgT(sgP,21.7,.8).a-1.)*1.35+.5,sgSw=(sgT(sgP,9.1,.45).a+sgT(sgP,15.3,2.4).a-1.)*1.35+.5;
+float sgFine=mix(.5,sgT(sgP,3.1,.7).r,1.-smoothstep(.04,.16,sgFoot));
+// The small scales repeat every few metres: each fades to its mean well before its period is a few dozen pixels.
+float sgFcl=1.-smoothstep(.025,.1,sgFoot);
+vec4 sgClump=mix(vec4(.5),sgT(sgP,1.9,2.6),sgFcl);
 float sgBlade=mix(.5,sgT(sgP,.43,1.9).b,sgF2),sgBlade2=mix(.5,sgT(sgP,.17,.9).b,sgF3);
 vec3 sgNw=normalize(vSgN);
 float sgSlope=1.-sgNw.y;
@@ -86,8 +91,8 @@ float sgRock=smoothstep(.42,.6,sgSlope+(sgMid-.5)*.2);
 // Meadow: broad swathes between the lit and the deeper green, cool blue-green in the hollows, dry pale tips in sun.
 vec3 sgG=mix(sgDeep,sgLit,smoothstep(.3,.7,sgMacro));
 sgG=mix(sgG,sgShadeC,smoothstep(.6,.85,sgMacro2)*.35);
-sgG=mix(sgG,sgDry,smoothstep(.5,.72,sgSw)*.45*(1.-sgMoss));
-sgG*=mix(1.,.72,smoothstep(.45,.78,sgMid)*.6);
+sgG=mix(sgG,sgDry,smoothstep(.45,.85,sgSw)*.3*(1.-sgMoss));
+sgG*=mix(1.,.78,smoothstep(.4,.85,sgMid)*.55);
 sgG*=.82+.36*sgClump.r;
 sgG*=.76+.48*sgBlade;sgG*=.88+.24*sgBlade2;
 // Dry tips catch the sun: fine pale flecks where the blades stand tall.
@@ -96,10 +101,10 @@ sgG=mix(sgG,sgDry*1.1,smoothstep(.62,.8,sgBlade)*.35*sgF2*sgA.a);
 vec3 sgM=mix(vec3(.06,.15,.05),vec3(.16,.27,.07),sgClump.r)*(.85+.3*sgFine);
 // Soil: warm earth with pale pebbles and dark grit.
 vec3 sgE=vec3(.2,.14,.09)*(.75+.5*sgMid)*(.85+.3*sgFine);
-float sgPeb=(1.-smoothstep(.12,.2,sgClump.g))*sgF1;
+float sgPeb=(1.-smoothstep(.12,.2,sgClump.g))*sgFcl;
 sgE=mix(sgE,vec3(.52,.48,.4)*(.8+.4*sgClump.r),sgPeb*.75);
 // Trodden earth by the ways and doors: pale, warm, gritty; packed darker in its middle.
-vec3 sgW=vec3(.46,.38,.27)*(.8+.4*sgMid)*(.86+.28*sgFine);
+vec3 sgW=vec3(.56,.48,.35)*(.8+.4*sgMid)*(.86+.28*sgFine);
 float sgGrit=(1.-smoothstep(.08,.14,sgT(sgP,.8,1.7).g))*sgF2;
 sgW=mix(sgW,vec3(.62,.58,.5),sgGrit*.5);
 sgW=mix(sgW,sgW*.8,smoothstep(.75,1.,sgS.g)*.5);
@@ -121,7 +126,7 @@ vec2 sgCc=(sgCell+.2+.6*vec2(sgR1,sgR2))*.32;
 float sgDot=(1.-smoothstep(.035,.075,length(sgP-sgCc)))*step(sgR1,sgFl*.85);
 vec3 sgDc=sgR2<.12?sgBloom(fract(sgA.g+.5)):sgFc;
 sgCol=mix(sgCol,sgDc*(.85+.3*sgR2),sgDot*sgF2);
-sgCol=mix(sgCol,mix(sgCol,sgFc,.5),sgFl*(1.-sgF2)*.32);
+sgCol=mix(sgCol,mix(sgCol,sgFc,.5),sgFl*(1.-sgF2)*.2);
 // Contact shade: blue-violet, deepest at the foot, ragged at its edge.
 float sgAo=sgA.r*(.75+.5*sgFine);
 sgCol*=mix(vec3(1.),vec3(.52,.58,.7),sgAo);
