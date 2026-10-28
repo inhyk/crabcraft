@@ -24,7 +24,7 @@ export const SKY_ROOT_ARCH_FEET:readonly (readonly [number,number])[]=[[24.5,-10
  * The root gate over the approach road, behind the arena camera and clear of the lighthouse and quest points: a tall
  * pointed arch whose crown rises out of the approach views' frame, so its posts frame the trunk instead of crossing it.
  */
-export const SKY_GATE={z:-40,halfSpan:9.2,height:21};
+export const SKY_GATE={z:-40,halfSpan:12,height:21};
 /** Where the spring leaves the roots and pours over the north lip (x, z on the lip). */
 export const SKY_SPRING={x:-4.5,z:-126.2};
 

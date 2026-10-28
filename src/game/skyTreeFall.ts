@@ -88,12 +88,12 @@ export function skyRootFall(height:Height,quality:'high'|'low'):THREE.Mesh{
  // Sheet: off the lip and down to the spray, widening, a slight bow outward.
  const lipY=height(lx-nx*.3,lz-nz*.3)-.05,L=lipY-(CLOUD_Y+14),rows=quality==='high'?34:22;
  const sx=-nz,sz=nx;
- strip(rows,6,(u,v)=>{const drop=L*Math.pow(u,1.1),t=Math.sqrt(2*drop/9.8),out=.35+2.4*t+drop*.03,w=2.5*(1+3.4*Math.pow(u,.6)),bow=(1-4*(v-.5)*(v-.5))*.25*w,s=(v-.5)*w;
+ strip(rows,6,(u,v)=>{const drop=L*Math.pow(u,1.1),t=Math.sqrt(2*drop/9.8),out=.35+2.4*t+drop*.03,w=3*(1+6*Math.pow(u,.6)),bow=(1-4*(v-.5)*(v-.5))*.25*w,s=(v-.5)*w;
   return [lx+nx*(out+bow)+sx*s,lipY+.15-drop-(u<.02?0:0),lz+nz*(out+bow)+sz*s];},1,L);
  // Spray: puffs along the lower half of the sheet and a bank at its foot.
  const n=quality==='high'?22:14;let seed=7;const r=()=>(seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296;
  for(let i=0;i<n;i++){
-  const u=.42+.58*(i/n),drop=L*u,t=Math.sqrt(2*drop/9.8),out=.35+2.4*t+drop*.03+(r()-.3)*3,w=2.5*(1+3.4*Math.pow(u,.6)),s=(r()-.5)*w*1.1,size=5+u*14+r()*5;
+  const u=.42+.58*(i/n),drop=L*u,t=Math.sqrt(2*drop/9.8),out=.35+2.4*t+drop*.03+(r()-.3)*3,w=3*(1+6*Math.pow(u,.6)),s=(r()-.5)*w*1.1,size=5+u*14+r()*5;
   const cx=lx+nx*out+sx*s,cy=lipY-drop+(r()-.5)*4,cz=lz+nz*out+sz*s,base=pos.length/3;
   for(const [a,b] of [[0,0],[1,0],[1,1],[0,1]]){pos.push(cx,cy,cz);uv.push(a,b);kind.push(2);corner.push(r(),size);}
   idx.push(base,base+1,base+2,base,base+2,base+3);
