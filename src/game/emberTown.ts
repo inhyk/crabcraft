@@ -176,7 +176,7 @@ function solidMaterial(lights: number, uniforms: {uTime: THREE.IUniform<number>;
     st*=mix(1.,.9,smoothstep(3.,1.,abs(yr-16.)));
     float ash=smoothstep(.5,.85,etN(vWP.xz*.45+3.)*.7+etN(vWP.xz*1.7)*.3)*smoothstep(8.,14.,yr);
     vec3 jt=mix(vec3(.07,.066,.072),uMortar*.5,.25+.55*ash);
-    st=mix(st,uMortar*.62*(.9+.2*etN(vWP.xz*6.)),ash*.55);
+    st=mix(st,uMortar*.5*(.9+.2*etN(vWP.xz*6.)),ash*.55);
     diffuseColor.rgb=mix(st,jt,mo);etRough=1.+.15*mo;
     vec2 tl=vec2(smoothstep(.06,0.,(1.-fu)*6.2832*rm/n)-smoothstep(.06,0.,fu*6.2832*rm/n),smoothstep(.06,0.,(1.-fr)*cw)-smoothstep(.06,0.,fr*cw));
     vec2 tr=vec2(-sin(yth),cos(yth)),rd=vec2(cos(yth),sin(yth));
@@ -755,7 +755,7 @@ export class EmberTown {
     }
     for (let i = 0; i < nr; i++) for (let j = 0; j < na; j++) { const a = i * na + j, b = i * na + (j + 1) % na, c = a + na, d = b + na; idx.push(a, b, c, b, d, c); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-    this.S(g, new THREE.Matrix4(), '#6a6a6f', PAT.yard, 1, .82, 0, -99, 0);
+    this.S(g, new THREE.Matrix4(), '#58585d', PAT.yard, 1, .82, 0, -99, 0);
     // Kerb: long dressed stones on the rim, open at the avenue, the lanes and the spawn portal.
     const gaps: [number, number][] = [[0, 5.2], [180, 5.2], [290, 3.4], [79, 3.4], [206.6, 4.2]];
     const n = Math.round(TAU * C.r / 1.25);
