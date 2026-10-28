@@ -30,18 +30,26 @@ import * as THREE from 'three';
  * Speed: the rule fixes the shape, K and the pass rate fix how fast it gets there (isaac #1282): 30 steps/s of one pass,
  * decoupled from the frame rate, at most 4 steps a frame. That keeps a lobe close to its yield dome while it is fed, so
  * its front follows R ~ V^0.4: quick at first, slowing as it grows, still within a few seconds of the feed stopping.
- * More passes changed nothing visible (3 and 4 tried) and cost the GPU. The grid is 0.25 m, under 2 d = 0.28 m, so a
- * film keeps a gradient to carry its shear and lobes stop instead of thinning into a pancake (isaac
- * kResolvedFilmCells = 2).
+ * Its speed is therefore set by the feed rate, not by K or the passes (K 0.14 and 2 passes moved a fed front by under
+ * 0.1 m): a front runs at about 0.4 R / t, so the episodes feed 0.7-1 m3/s for 14-23 s, which drives a front 20-30 cm/s
+ * in its first seconds and still over 5 cm/s when the feed dies away (the main flow's: 1.5 m at 1 s, 2.9 m at 10 s,
+ * 3.6 m at 20 s, stopped at 3.8 m). More passes changed nothing visible (3 and 4 tried) and cost the GPU. The grid is
+ * 0.25 m, under 2 d = 0.28 m, so a film keeps a gradient to carry its shear and lobes stop instead of thinning into a
+ * pancake (isaac kResolvedFilmCells = 2).
  *
- * Episodes: each live tongue feeds for 34-46 s every 170-200 s. A source over old lava turns into a breakout at the
- * old field's margin (chosen from a CPU copy of the field read back without stalling every 3 s), and stops feeding cells
- * already 0.9-1.7 m thick, so lava spreads into lobes beside and over the old ones instead of stacking a tower.
+ * Episodes: each live tongue feeds every 44 s (the main flow and its breakout, the two in sight of the sanctuary,
+ * half a period apart) or 60 s (the outer two), starting up to 4 s late in its slot, 0.85-1.15x its nominal length and
+ * rate, so at almost any moment some lobe is on the move (an advancing front in 87-89 % of the time, never more than
+ * 10-13 s without one). A source over old lava turns into a breakout at the old field's margin (chosen from a CPU copy
+ * of the field read back without stalling every 3 s), mostly ahead along the flow, and stops feeding cells already
+ * 0.9-1.7 m thick, so lava spreads into lobes beside and over the old ones instead of stacking a tower.
  *
  * Bounded forever: lava only lives inside the reach discs (blocked outside, stiffer within 3 m of any border, so fronts
- * stop short of it), and cold lava subsides into the ground at 0.4 mm/s plus its thickness over 40 minutes (2-5 cm a
- * minute, nothing a frame can show), so the field settles where subsidence takes away what the episodes bring (an
- * hour's run levels off after ~25 min at 130-145 m3 over 250-272 m2 of the 1102 m2 reach, crests at most 1.6 m).
+ * stop short of it), and cold lava subsides into the ground at 1 mm/s plus its thickness over 650 s (a 1 m lobe sinks
+ * about 2.5 mm/s, under a pixel over the half second a stillness check sees), so the field settles where subsidence
+ * takes away what the episodes bring, with bare ground left between the lobes for the next breakouts (an hour's run
+ * levels off after ~10 min at 240-265 m3 over 420-445 m2 of the 1102 m2 reach, crests at most 1.6 m). Weaker
+ * subsidence lets the field fill the reach up to the feed cap and the episodes stop feeding.
  * Nothing is ever removed at once.
  */
 
@@ -53,7 +61,7 @@ const PASSES = 1;
 const MAX_STEPS_PER_FRAME = 4;
 const MAX_SOURCES = 6;
 /** Radius of a source's feeding disc, m. */
-const SOURCE_R = 1.5;
+const SOURCE_R = 1;
 /** Feed temperature; cooling: dT/dt = -T (K0 + K1 / h); cold rock keeps darkening at KC; freezing below TF. */
 const T_SRC = .92, K0 = .003, K1 = .003, KC = .0025, TF = .3;
 /** Pair flux factor: 8 neighbours, sum of weights 6.83, so a pass moves at most K * 6.83 = 0.68 of a cell's hot layer,
@@ -62,10 +70,14 @@ const FLUX_K = .1;
 /** Gaps under this do not move (isaac kFlowResolutionM): a dome reaches rest exactly instead of creeping forever. */
 const FLUX_EPS = .0005;
 /** Subsidence of cold lava: SUBSIDE m/s plus its thickness over SUBSIDE_T s, so tall old piles go faster. */
-const SUBSIDE = .0004, SUBSIDE_T = 2400;
+const SUBSIDE = .001, SUBSIDE_T = 650;
 /** A source stops feeding cells already this thick (m, smoothly between the two), so each episode breaks out where the
  * old lava is thinnest instead of stacking a tower on the nose. */
 const CAP0 = .9, CAP1 = 1.7;
+/** An episode's feed ramps up over RAMP_UP s and dies away over its last RAMP_DOWN s. */
+const RAMP_UP = 1.5, RAMP_DOWN = 4;
+/** Latest start of an episode in its slot, s. */
+const JITTER = 4;
 
 export interface FlowSource {
   /** Nose of the feeding tongue on the ground, and its downhill direction (unit, xz). */
@@ -445,32 +457,40 @@ export class LavaFlow {
 
   /** Source rate at sim time t, m3/s, and the episode it belongs to. */
   sourceRate(s: FlowSource, t: number) {
-    const tt = t + s.phase, ep = Math.floor(tt / s.period), u = tt - ep * s.period;
-    const env = smooth(0, 4, u) * (1 - smooth(s.feed - 6, s.feed, u));
-    return { rate: s.rate * env, episode: ep };
+    const tt = t + s.phase, ep = Math.floor(tt / s.period);
+    // Each episode starts up to JITTER s into its slot and runs 0.85-1.15x the nominal length at 0.85-1.15x the rate.
+    const u = tt - ep * s.period - JITTER * hash(s.seed * 1.37 + ep * 3.91);
+    const feed = s.feed * (.85 + .3 * hash(s.seed * 2.71 + ep * 1.13));
+    const env = smooth(0, RAMP_UP, u) * (1 - smooth(feed - RAMP_DOWN, feed, u));
+    return { rate: s.rate * (.85 + .3 * hash(s.seed * 4.19 + ep * 2.07)) * env, episode: ep };
   }
 
   /** Where a source feeds in an episode. On bare ground (or before the first snapshot) just ahead of its nose. Over old
    * lava it is a breakout: rays fan out from the nose (+-70 degrees), each finds where the lava on it ends, and one of
-   * those margins is picked (downhill and nearer ones likelier); the new lava wells up 0.7 m
-   * inside that margin, as if fed through the old lobe. One episode in four piles over the nose instead. */
+   * those margins is picked (ahead along the flow, where players watch from, and nearer ones likelier); the new lava
+   * wells up 0.7 m inside that margin, as if fed through the old lobe. One episode in eight piles over the nose instead. */
   private sourceAt(si: number, ep: number) {
     const key = `${si}:${ep}`;
     let e = this.srcNorm.get(key);
     if (e) return e;
     const s = this.sources[si], C = FLOW_CELL, R = SOURCE_R, snap = this.snap;
     const h = (x: number, z: number) => { const k = this.cellAt(x, z); return k < 0 || !snap ? 0 : snap[k * 4] + snap[k * 4 + 1]; };
+    const open = (x: number, z: number) => { const k = this.cellAt(x, z); return k >= 0 && this.base[k * 4 + 1] > .5; };
     const room = (x: number, z: number) => { const k = this.cellAt(x, z); return k >= 0 && this.base[k * 4 + 1] > .5 && this.base[k * 4 + 2] < 1.6; };
     let x = s.x + s.dirX * .6, z = s.z + s.dirZ * .6;
-    if (snap && h(x, z) > .15 && hash(s.seed * 5.3 + ep * 1.9) > .25) {
+    // Over old lava it breaks out; one episode in eight piles over the nose instead, unless the nose is already near the
+    // feed cap (it would barely feed).
+    if (snap && h(x, z) > .15 && (hash(s.seed * 5.3 + ep * 1.9 + 2.9) > .125 || h(x, z) > CAP0 - .2)) {
       const picks: { x: number; z: number; w: number }[] = [];
       for (let a = -70; a <= 70; a += 10) {
         const th = a * Math.PI / 180, dx = s.dirX * Math.cos(th) - s.dirZ * Math.sin(th), dz = s.dirZ * Math.cos(th) + s.dirX * Math.sin(th);
         for (let d = .6; d < 11; d += C) {
           const px = s.x + dx * d, pz = s.z + dz * d;
-          if (!room(px, pz)) break;
+          // A ray may cross the stiff band along a border (a nose can sit in it) but not leave the reach; the margin it
+          // finds counts only where the lava can still spread.
+          if (!open(px, pz)) break;
           if (h(px, pz) < .12) {
-            if (d > 1) picks.push({ x: px - dx * .7, z: pz - dz * .7, w: Math.exp(-d / 7) * (.15 + Math.cos(th) ** 2) * (.3 + hash(s.seed * 7.7 + ep * 2.3 + a)) });
+            if (d > 1 && room(px, pz)) picks.push({ x: px - dx * .7, z: pz - dz * .7, w: Math.exp(-d / 9) * (.08 + Math.cos(th) ** 4) * (.3 + hash(s.seed * 7.7 + ep * 2.3 + a)) });
             break;
           }
         }

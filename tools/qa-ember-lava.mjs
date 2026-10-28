@@ -3,9 +3,10 @@
 // Stillness: with the camera fixed, 24 consecutive frames are read back; over the pixels the lava's own mask marks as
 // having no time term (cooled crust, levees, stopped toes, the crater lip, clinker) the mean absolute difference
 // between neighbouring frames (0-255) must stay near zero. Flowing lava is exempt.
-// Simulated lava (emberLavaFlow.ts): it steps in real time; on bare ground one source fed for 40 s grows a lobe whose
-// volume rises while it feeds and whose front stops within a few seconds of the feed stopping; with the sources and
-// subsidence off the volume holds to 0.1 %.
+// Simulated lava (emberLavaFlow.ts): it steps in real time; on bare ground the main flow's source fed as one of its
+// episodes (0.9 m3/s for 20 s) grows a lobe whose volume rises while it feeds, whose front visibly advances (at least
+// 1.2 m between 1 s and 10 s, 0.6 m in the first 4 s of that) and stops within a few seconds of the feed stopping; with
+// the sources and subsidence off the volume holds to 0.1 %.
 //
 // Usage: CC_QA_BASE=http://127.0.0.1:5262 node tools/qa-ember-lava.mjs
 //   CC_QA_OUT=tmp/qa   where the PNGs go       CC_QA_LABEL=after   file name prefix
@@ -130,8 +131,8 @@ try {
     const lobe = await p.evaluate(() => {
       const g = window.app.current.game, f = g.world2.fifth.lava.flow, R = g.engine.renderer, rows = [];
       f.reset(R, false);
-      f.override = (i, t) => (i === 1 && t < 40 ? .36 : 0);
-      for (let t = 0; t <= 120; t += 5) { if (t) f.advance(R, 150); const s = f.stats(R); rows.push({t: Math.round(s.time), volume: +s.total.toFixed(3), front: +s.fronts[1].toFixed(2), maxH: +s.maxH.toFixed(2)}); }
+      f.override = (i, t) => (i === 1 && t < 20 ? .9 : 0);
+      for (let t = 0; t <= 120; t += t < 10 ? 1 : 5) { if (t) f.advance(R, (t <= 10 ? 1 : 5) * 30); const s = f.stats(R); rows.push({t: Math.round(s.time), volume: +s.total.toFixed(3), front: +s.fronts[1].toFixed(2), maxH: +s.maxH.toFixed(2)}); }
       f.override = null; f.feeding = false; f.subsiding = false;
       const m0 = f.stats(R).total; f.advance(R, 30 * 60); const m1 = f.stats(R).total;
       f.feeding = true; f.subsiding = true;
@@ -140,10 +141,12 @@ try {
     });
     const at = t => lobe.rows.find(r => r.t === t);
     console.log('flow lobe', lobe.rows.map(r => `${r.t}s ${r.volume}m3 front ${r.front}m`).join(' | '));
-    assert.ok(at(10).volume > .5 && at(20).volume > at(10).volume && at(40).volume > at(20).volume, 'volume rises while the source feeds');
-    assert.ok(at(40).front > at(10).front + .5, `the front advances: ${at(10).front} -> ${at(40).front} m`);
-    assert.ok(at(120).front - at(60).front < .05, `the front stops after the feed: ${at(60).front} -> ${at(120).front} m`);
-    assert.ok(Math.abs(at(120).volume / at(60).volume - 1) < .01, 'volume holds once fed');
+    assert.ok(at(5).volume > .5 && at(10).volume > at(5).volume && at(20).volume > at(10).volume, 'volume rises while the source feeds');
+    assert.ok(at(5).front > at(1).front + .6 && at(10).front > at(1).front + 1.2, `the front advances fast: ${at(1).front} -> ${at(5).front} -> ${at(10).front} m`);
+    assert.ok(at(20).front > at(10).front + .3, `the front keeps advancing while fed: ${at(10).front} -> ${at(20).front} m`);
+    assert.ok(Math.abs(at(120).front - at(30).front) < .05, `the front stops after the feed: ${at(30).front} -> ${at(120).front} m`);
+    // Cold lava subsides (about 2 mm/s on a 1 m lobe), so the hold is checked while the lobe is still mostly hot.
+    assert.ok(Math.abs(at(60).volume / at(30).volume - 1) < .01, 'volume holds once fed');
     const drift = Math.abs(lobe.mass[1] / lobe.mass[0] - 1);
     console.log('flow mass', lobe.mass.map(v => v.toFixed(4)).join(' -> '), `drift ${(drift * 100).toExponential(2)} %`);
     assert.ok(drift < 1e-3, 'mass is conserved with sources and subsidence off');

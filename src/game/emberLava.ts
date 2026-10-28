@@ -17,7 +17,7 @@ import { FLOW_CELL, LavaFlow, type FlowArea, type FlowDeposit, type FlowSource }
  *   the shear bands; open melt at the spillway crusts over within about 12 m down the cone. The sea mixes big cool
  *   rafts with hot leads broken into plates a third the size.
  * - Plug flow on the tongues: the middle slides as a block (its pattern moves exactly with it, never resets), the
- *   shear bands at the sides tear the plates into streaks (dual-phase advection with a global 10 s period, which alone
+ *   shear bands at the sides tear the plates into streaks (dual-phase advection with a global 5 s period, which alone
  *   bounds the stretch), levees and stopped toes are crust at rest and carry no time term at all. Plug, band and rest
  *   blend over |c| with smoothsteps 0.2+ wide, never a per-pixel switch.
  * - Material coordinates follow the travel time, so plates and rope folds bunch up where the flow slows: ropes bowed
@@ -73,15 +73,17 @@ const lobeHeight = (dist: number, sh = 1.1, d = YIELD_D) => {
 const smin = (a: number, b: number, k: number) => { const h = clamp(.5 + .5 * (b - a) / k, 0, 1); return mix(b, a, h) - k * h * (1 - h); };
 const smax = (a: number, b: number, k: number) => { if (k <= 1e-4) return Math.max(a, b); const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.max(a, b) + h * h * k * .25; };
 
-/** Plug speed on the cone and at the toe, m/s; material coordinates are measured at the cone speed. */
-const U0 = .3;
-const U_TOE = .11;
+/** Plug speed on the cone and at the toe, m/s; material coordinates are measured at the cone speed. Fast enough that a
+ * player sees the crust slide within a few seconds, in step with the lobes it feeds at the foot. */
+const U0 = .6;
+const U_TOE = .22;
 /** Plate sizes (m) and the plates per texture repeat. */
 const CELLS = 16;
 const PLATE_TONGUE = 1.5, PLATE_SEA = 8, PLATE_LAKE = 1.1;
 const TILE_TONGUE = CELLS * PLATE_TONGUE, TILE_SEA = CELLS * PLATE_SEA, TILE_LAKE = CELLS * PLATE_LAKE;
-/** Dual-phase periods, s: the life of a pattern before it is renewed, long because that is what viscosity looks like. */
-const T_BAND = 10, T_SEA = 12, T_LAKE = 12;
+/** Dual-phase periods, s: the life of a pattern before it is renewed. The shear bands renew in proportion to the plug
+ * speed (U0 T_BAND = 3 m of stretch at most); the sea and the crater lake are slow pools and keep their long periods. */
+const T_BAND = 5, T_SEA = 12, T_LAKE = 12;
 
 /* ---------------------------------------------------------------------------------------------------------------- */
 /* Crust texture: R distance to the nearest open crack (0 crack .. 1 plate middle), G plate id, B distance to the fine */
@@ -443,8 +445,9 @@ if(uMask>.5){float still=step(.999,lStatic);if(uMask>1.5)still=1.-still;gl_FragC
 
 /* Simulated lava on the plateau (emberLavaFlow.ts) -------------------------------------------------------------- */
 
-/** Plates on the simulated lava, m, and the dual-phase period of its crust, s. */
-const PLATE_FLOW = 1.05, TILE_FLOW = CELLS * PLATE_FLOW, T_FLOW = 10;
+/** Plates on the simulated lava, m, and the dual-phase period of its crust, s: fed lobes move at 0.1-0.2 m/s (p90,
+ * up to 0.37), so a pattern slides about one plate before it is renewed; shorter periods read as the cracks morphing. */
+const PLATE_FLOW = 1.05, TILE_FLOW = CELLS * PLATE_FLOW, T_FLOW = 6;
 /** How far the tongues run onto the ground before the simulated lava takes over, m. */
 const FLOW_NOSE = 1.4;
 
@@ -943,13 +946,15 @@ function buildTongue(defs: TongueDef[], which: number, sup: Support, quality: La
   return { geometry: g, outline, zones };
 }
 
-/** Episodes of the live flows on the ground: m3/s while feeding, feed and period (s), phase. Uneven on purpose; the
- * main flow brings the most, the breakout the least. About 0.24 m3/s on average in all. */
+/** Episodes of the live flows on the ground: m3/s while feeding, feed and period (s), phase. The main flow and its
+ * breakout (in sight of the sanctuary) feed every 44 s, half a period apart; the outer two every 60 s. Short, strong
+ * pulses, so fronts move at a pace a player sees (emberLavaFlow.ts, Speed). About 1 m3/s scheduled on average in all,
+ * 0.6-0.7 delivered (the feed cap holds back what lands on thick lava). */
 const FEEDS: Record<number, [number, number, number, number]> = {
-  0: [.3, 40, 180, 140],
-  1: [.36, 46, 200, 20],
-  2: [.22, 34, 170, 95],
-  5: [.3, 40, 190, 160],
+  0: [.8, 16, 60, 40],
+  1: [.9, 20, 44, 38],
+  2: [.8, 20, 44, 16],
+  5: [.8, 16, 60, 10],
 };
 /** Where the simulated lava lives: the noses of the tongues that reach the ground feed it, every such flow starts with
  * an older cold lobe of 80 % of its analytic lobe's volume against its nose, and lava may spread over a disc 10.5 m
@@ -1175,8 +1180,8 @@ export class EmberLava {
     if (this.mode === 'sim' && this.renderer) {
       if (!this.flowStarted) {
         this.flowStarted = true;
-        // A little history, so the first look already has lava on the move. No episode starts within it, so it needs no
-        // snapshots (each would be a read-back stall); the start snapshot is the CPU copy of the start state.
+        // A little history, so the first look already has lava on the move. Episodes that start within it break out of
+        // the start state, whose snapshot is the CPU copy, so it needs no read-backs (each would be a stall).
         this.flow.advance(this.renderer, FLOW_WARM_STEPS, false);
       }
       this.flow.update(this.renderer, time);
