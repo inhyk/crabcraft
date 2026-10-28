@@ -286,8 +286,8 @@ export function skyMaterials(): SkyMaterials {
       diffuseColor.rgb=c;}`,
     normal: BUMP('(floor(vSk.y+.5)>=1.?smoothstep(.004,.02,skBoard(vSu).z)*.012:0.)+skN(vec2(vSu.x*.9,vSu.y*38.))*.004', '1.', 22),
   });
-  // Turquoise glazed barrel tiles: courses up the slope (uv.y), rolls across it (uv.x); glossy, darker in the pans.
-  const roof = new THREE.MeshStandardMaterial({name: 'sky-roof', color: '#ffffff', roughness: .34, metalness: .05, vertexColors: true});
+  // Deep teal glazed barrel tiles: courses up the slope (uv.y), rolls across it (uv.x); glossy, darker in the pans.
+  const roof = new THREE.MeshStandardMaterial({name: 'sky-roof', color: '#ffffff', roughness: .42, metalness: .05, vertexColors: true});
   patch(roof, 'sky-roof-v1', {
     head: /* glsl */ `
     float skTileH(vec2 u){float x=fract(u.x/.3),y=fract(u.y/.27);float roll=sin(3.14159*x);return roll*.045+y*.022-(1.-smoothstep(0.,.08,y))*.018;}`,
@@ -303,7 +303,8 @@ export function skyMaterials(): SkyMaterials {
     rough: `{float k=floor(vSk.y+.5);if(k==0.){float x=fract(vSu.x/.3);roughnessFactor=mix(.72,.42,pow(sin(3.14159*x),.5))+skN(vSu*2.)*.1;}}`,
     normal: BUMP('(floor(vSk.y+.5)==0.?skTileH(vSu):0.)', '1.', 45),
   });
-  roof.envMapIntensity = .5;
+  // Deep teal glaze (#1f6a6e): the sky's reflection stays faint so the roofs sit a step below the grass in value.
+  roof.envMapIntensity = .3;
   // Gilt brass trim, finials, lantern cages.
   const metal = new THREE.MeshStandardMaterial({name: 'sky-brass', color: '#ffffff', roughness: .38, metalness: .55, vertexColors: true});
   patch(metal, 'sky-brass-v1', {color: `{diffuseColor.rgb*=.9+.18*skN(vSw.xz*4.+vSw.y*3.);}`});

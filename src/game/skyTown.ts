@@ -1,22 +1,24 @@
 import * as THREE from 'three';
 import {kitOnce} from './frostCraft';
 import {StaticBatch} from '../world/kit';
-import {SKY_BANNERS, SKY_BENCHES, SKY_CART, SKY_HOUSES, SKY_LANTERNS, SKY_STALLS, type HouseRole} from './skyTownLayout';
-import {CLOTH, Frame, ROOF, STONE, WOOD, archFrame, archPanel, archShape, atlasUv, beam, bx, clothSheet, disc, hipRoof, lath, ring, rod, sagPoints, skyMaterials, townCtx, type Height, type TownCtx} from './skyTownKit';
+import {HOUSE, SKY_BANNERS, SKY_BENCHES, SKY_CART, SKY_FESTOONS, SKY_HOUSES, SKY_LANTERNS, SKY_STALLS, festoonPoles, type HouseRole} from './skyTownLayout';
+import {CLOTH, Frame, M, ROOF, STONE, WOOD, archFrame, archPanel, archShape, atlasUv, beam, bx, clothSheet, disc, hipRoof, lath, ring, rod, sagPoints, skyMaterials, townCtx, type Height, type TownCtx} from './skyTownKit';
 import {skyHarbour} from './skyHarbour';
 
 /*
  * Skybloom's town (World VI): six garden-harbour houses (cream ashlar ground floor, jettied timber-and-plaster upper
- * floor with a front balcony, turquoise glazed hip roof with swept eaves and gilt caps, round windows lit warm, a sign
- * and props that say who lives there), the seed and kite market, carved lantern posts, cloth banners, bench scenes and
- * the sky-ship harbour (skyHarbour.ts). Parts merge into one mesh per material (skyTownKit.ts); kit props (barrels,
+ * floor with a front balcony, deep teal glazed hip roof with swept eaves and a gilt ridge, round windows lit warm, a
+ * sign and props that say who lives there), the seed and kite market, lantern posts gathered at the market, the harbour
+ * and the benches, festoons of paper lanterns over three street ends, cloth banners at the harbour gate and the market,
+ * and the sky-ship harbour (skyHarbour.ts). Values (style-w6): walls cream 170-210 grey, roofs a step darker than the
+ * grass (glazed #1f6a6e), timber #8a5f3a, so wall, roof, grass, path and crab each read apart in greyscale. Parts merge into one mesh per material (skyTownKit.ts); kit props (barrels,
  * sacks, rope, flowers, vines) arrive with the GLBs and merge per kit material.
  */
 
 const V = THREE.Vector3;
 const C = {
-  stone: '#e6dcc4', trim: '#efe5cd', rubble: '#cbbd9c', plaster: '#f2eadb', timber: '#a8794a', timberDark: '#7f5a36',
-  roof: '#2f8f8a', cap: '#226f6b', gold: '#d4a64a', glass: new THREE.Color('#ffb45e').multiplyScalar(1.35), rope: '#c2a678',
+  stone: '#e6dcc4', trim: '#efe5cd', rubble: '#cbbd9c', plaster: '#f2eadb', timber: '#8a5f3a', timberDark: '#694629',
+  roof: '#1f6a6e', roofB: '#1d6569', cap: '#174f53', gold: '#d4a64a', glass: new THREE.Color('#ffb45e').multiplyScalar(1.35), rope: '#c2a678',
 };
 const DOORS = ['#2f8f8a', '#3a6f9e', '#2f8f8a', '#b4553f', '#3a6f9e', '#5b8a4a'];
 
@@ -28,6 +30,7 @@ export function skyTown(h: Height, low = false): SkyTown {
   for (const s of SKY_STALLS) stall(ctx, s.x, s.z, s.yaw, s.goods);
   cart(ctx);
   for (const [x, z] of SKY_LANTERNS) lanternPost(ctx, x, z, x < 0 ? 0 : Math.PI);
+  for (const f of SKY_FESTOONS) festoon(ctx, f);
   SKY_BANNERS.forEach(([x, z], i) => banner(ctx, x, z, i));
   for (const b of SKY_BENCHES) benchScene(ctx, b.x, b.z, b.yaw);
   const harbour = skyHarbour(ctx);
@@ -61,7 +64,7 @@ async function dressKits(ctx: TownCtx, group: THREE.Group) {
 // ---- Houses ------------------------------------------------------------------------------------------------------
 
 /** Footprint half sizes in the house frame (local x along the street front, +z out of the front door). */
-const WX = 5.1, WZ = 4.6, G = 3.3, JET = .3, U = 2.9;
+const {WX, WZ, G, JET, U} = HOUSE;
 
 function house(ctx: TownCtx, x: number, z: number, yaw: number, role: HouseRole, idx: number) {
   const {h} = ctx;
@@ -152,11 +155,11 @@ function house(ctx: TownCtx, x: number, z: number, yaw: number, role: HouseRole,
   const ey = y1 + .08, rise = [3.5, 3.2, 3.8, 3.4, 3.6, 3.3][idx % 6], a = ux + 1.25, b = uz + 1.2;
   const r = hipRoof(a, b, rise, [.6, .5, .72, .55, .66, .5][idx % 6]);
   const rf = f.m(0, ey, 0), tint = (p: THREE.Vector3) => .9 + .1 * Math.sin(p.x * .7 + p.z * .9 + idx);
-  roof.add(r.top, rf, idx % 2 ? C.roof : '#2b8783', ROOF.tiles, seed, tint);
+  roof.add(r.top, rf, idx % 2 ? C.roof : C.roofB, ROOF.tiles, seed, tint);
   timber.add(r.soffit, rf, C.timber, WOOD.planks, seed);
   timber.add(r.fascia, rf, C.timberDark, WOOD.beam, seed);
   for (const line of r.hips) roof.add(rod(line.map(p => p.clone().add(new V(0, .06, 0))), .1, 6), rf, C.cap, ROOF.cap, seed);
-  if (r.ridge.length) roof.add(rod(r.ridge.map(p => p.clone().add(new V(0, .06, 0))), .13, 6), rf, C.cap, ROOF.cap, seed);
+  if (r.ridge.length) metal.add(rod(r.ridge.map(p => p.clone().add(new V(0, .07, 0))), .14, 8), rf, C.gold);
   for (const p of r.corners) metal.add(lath([[.09, 0], [.07, .1], [.03, .32], [0, .42]], 8), f.F.clone().multiply(new THREE.Matrix4().makeTranslation(p.x, ey + p.y, p.z)).multiply(new THREE.Matrix4().makeRotationAxis(new V(p.z, 0, -p.x).normalize(), -.9)), C.gold);
   const ends = role === 'inn' || role === 'tea' ? [] : r.ridge.length ? r.ridge : [new V(0, rise, 0)];
   for (const p of ends) metal.add(lath([[.16, 0], [.2, .1], [.08, .22], [.12, .34], [.05, .5], [.02, .78], [0, .8]], 10), f.m(p.x, ey + p.y + .05, p.z), C.gold);
@@ -504,4 +507,21 @@ function benchScene(ctx: TownCtx, x: number, z: number, yaw: number) {
     if (!ctx.low) { ctx.kits.push({file: 'nature', piece: 'Bush_Common_Flowers', ...wpos(f, sx, gy + .6, 0), yaw: x + sx, size: .75}); ctx.kits.push({file: 'nature', piece: 'Flower_4_Group', ...wpos(f, sx + .25, gy + .62, .25), yaw: x - sx, size: .5}); }
   }
   ctx.stats.benches = (ctx.stats.benches ?? 0) + 1;
+}
+
+/** Paper-lantern festoon over a street end: two slim poles on stone feet, a sagging rope, seven lanterns in warm tones. */
+function festoon(ctx: TownCtx, fs: (typeof SKY_FESTOONS)[number]) {
+  const [[ax, az], [bx0, bz]] = festoonPoles(fs), tops: THREE.Vector3[] = [];
+  for (const [x, z] of [[ax, az], [bx0, bz]]) {
+    const y = ctx.h(x, z) - .08, f = new Frame(x, y, z, 0);
+    ctx.stone.add(lath([[.22, -.2], [.22, .16], [.15, .24], [0, .24]], 8), f.m(0, 0, 0), C.trim, STONE.dressed, x);
+    ctx.timber.add(lath([[.08, 0], [.07, 1.4], [.085, 1.46], [.065, 1.52], [.055, 3.5], [0, 3.52]], 7), f.m(0, .22, 0), C.timber, WOOD.beam, z);
+    ctx.metal.add(lath([[.07, 0], [.05, .1], [.02, .24], [0, .3]], 8), f.m(0, 3.72, 0), C.gold);
+    tops.push(new V(x, y + 3.55, z));
+  }
+  ctx.timber.add(rod(sagPoints(tops[0], tops[1], .55, 10), .014, 3), null, C.rope, WOOD.beam, 0);
+  const tones = ['#ffc070', '#f6a6c0', '#ffd98a', '#9fe8d8', '#ffc070', '#ff9d7a', '#ffd98a'];
+  const pts = sagPoints(tops[0], tops[1], .55, 8);
+  for (let k = 1; k < 8; k++) paperLantern(ctx, M(pts[k].x, pts[k].y, pts[k].z, k * .7), .8 + (k % 3) * .1, new THREE.Color(tones[k - 1]).multiplyScalar(1.55));
+  ctx.stats.festoons = (ctx.stats.festoons ?? 0) + 1;
 }

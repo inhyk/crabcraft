@@ -1,17 +1,19 @@
 import * as THREE from 'three';
-import {SKY_AIRSHIP, SKY_CARGO, SKY_MAST, SKY_PIER} from './skyTownLayout';
-import {Bucket, CLOTH, M, ROOF, STONE, WOOD, atlasUv, beam, bx, clothSheet, disc, hipRoof, lath, ring, rod, sagPoints, skyMaterials, type TownCtx} from './skyTownKit';
+import {SKY_AIRSHIP, SKY_CARGO, SKY_MAST, SKY_PIER, SKY_SHEDS} from './skyTownLayout';
+import {Bucket, CLOTH, Frame, M, ROOF, STONE, WOOD, atlasUv, beam, bx, clothSheet, disc, hipRoof, lath, ring, rod, sagPoints, skyMaterials, type TownCtx} from './skyTownKit';
 import {hangingLantern, lanternPost, signEmblem} from './skyTown';
 
 /*
  * The sky harbour at Skybloom's south rim: a plank boardwalk from the end of the high street through a tiled timber
  * gate, out past the cliff on piles into the cloud sea, to a pier head with bollards, a cargo crane, a signal mast
- * and lanterns. A small airship lies moored alongside: plank hull with a painted strake and a gilt rail, a cabin
+ * and lanterns; a sail-roofed cargo shed and the harbourmaster's booth stand at the boardwalk head (the only sail-cloth
+ * roofs in town). The gate is low so the pier head and its ship read through it from the street; a rope closes it,
+ * since gameplay heights stay on the meadow that falls away under the deck. A small airship lies moored alongside: plank hull with a painted strake and a gilt rail, a cabin
  * with its own glazed roof, a striped gas envelope with gilt bands and fins, rigging, and a turning propeller.
  */
 
 const V = THREE.Vector3;
-const C = {stone: '#e6dcc4', trim: '#efe5cd', timber: '#a8794a', timberDark: '#7f5a36', deck: '#b58a58', roof: '#2f8f8a', cap: '#226f6b', gold: '#d4a64a', rope: '#c2a678', plaster: '#f2eadb', paint: '#2f8f8a', glass: new THREE.Color('#ffb45e').multiplyScalar(1.35)};
+const C = {stone: '#e6dcc4', trim: '#efe5cd', timber: '#8a5f3a', timberDark: '#694629', deck: '#9c7048', roof: '#1f6a6e', cap: '#174f53', gold: '#d4a64a', rope: '#c2a678', plaster: '#f2eadb', paint: '#2f8f8a', glass: new THREE.Color('#ffb45e').multiplyScalar(1.35)};
 
 export function skyHarbour(ctx: TownCtx) {
   const {h, stone, timber, metal} = ctx;
@@ -68,6 +70,7 @@ export function skyHarbour(ctx: TownCtx) {
   for (const sx of [-1, 1]) lanternPost(ctx, P.x + sx * (P.headHalf - .45), P.headZ + 1.0, sx < 0 ? 0 : Math.PI, dy);
   for (const sx of [-1, 1]) lanternPost(ctx, P.x + sx * (P.headHalf - .45), P.z1 - .5, sx < 0 ? 0 : Math.PI, dy);
   gate(ctx, P.x, P.gateZ, dy);
+  for (const s of SKY_SHEDS) shed(ctx, s);
   crane(ctx, P.x - P.headHalf + 1.1, P.headZ + 5.5, dy);
   signalMast(ctx, P.x - P.headHalf + .8, P.z1 - 2.6, dy);
   // Cargo waiting by the boardwalk and on the head.
@@ -77,8 +80,7 @@ export function skyHarbour(ctx: TownCtx) {
       {file: 'props', piece: 'Barrel', x: c.x - s * .2, y, z: c.z + .9, yaw: 0, size: 1.0}, {file: 'props', piece: 'Bag', x: c.x + s * .8, y, z: c.z + .3, yaw: 1, size: .65}, {file: 'props', piece: 'Rope_2', x: c.x - s * .9, y, z: c.z - .7, yaw: 0, size: .22});
   }
   ctx.kits.push({file: 'props', piece: 'Crate_Wooden', x: P.x + 3.6, y: dy, z: P.headZ + 2.2, yaw: .4, size: .8}, {file: 'props', piece: 'Barrel', x: P.x + 4.2, y: dy, z: P.headZ + 3.4, yaw: 0, size: .9},
-    {file: 'props', piece: 'Bag', x: P.x + 3.4, y: dy, z: P.headZ + 3.2, yaw: 2, size: .6}, {file: 'props', piece: 'Bench', x: P.x - 2.2, y: dy, z: P.z1 - .9, yaw: 0, size: .85},
-    {file: 'props', piece: 'Bench', x: P.x - 3.2, y: h(P.x - 3.2, 118), z: 118, yaw: -.25, size: .85});
+    {file: 'props', piece: 'Bag', x: P.x + 3.4, y: dy, z: P.headZ + 3.2, yaw: 2, size: .6}, {file: 'props', piece: 'Bench', x: P.x - 2.2, y: dy, z: P.z1 - .9, yaw: 0, size: .85});
   const ship = airship(ctx, SKY_AIRSHIP.x, dy, SKY_AIRSHIP.z);
   const moored = mooringMast(ctx, SKY_MAST.x, SKY_MAST.z, SKY_MAST.height);
   group.add(ship.prop, moored.prop);
@@ -92,27 +94,32 @@ function gate(ctx: TownCtx, x: number, z: number, dy: number) {
   for (const sx of [-1, 1]) {
     const px = x + sx * 3.25, y = h(px, z) - .1;
     stone.add(lath([[.42, -.3], [.42, .3], [.32, .4], [.3, .7], [.34, .76], [.26, .82], [0, .82]], 10), new THREE.Matrix4().makeTranslation(px, y, z), C.trim, STONE.dressed, sx);
-    timber.add(lath([[.2, 0], [.18, .4], [.16, 3.4], [.2, 3.5], [.16, 3.6], [.16, 4.0], [0, 4.0]], 10), new THREE.Matrix4().makeTranslation(px, y + .8, z), C.timber, WOOD.beam, sx);
-    for (const cy of [1.6, 3.55]) metal.add(new THREE.CylinderGeometry(.19, .19, .08, 12), new THREE.Matrix4().makeTranslation(px, y + .8 + cy, z), C.gold);
+    timber.add(lath([[.2, 0], [.18, .4], [.16, 2.1], [.2, 2.2], [.16, 2.3], [.16, 2.7], [0, 2.7]], 10), new THREE.Matrix4().makeTranslation(px, y + .8, z), C.timber, WOOD.beam, sx);
+    for (const cy of [1.2, 2.25]) metal.add(new THREE.CylinderGeometry(.19, .19, .08, 12), new THREE.Matrix4().makeTranslation(px, y + .8 + cy, z), C.gold);
   }
-  const top = dy + 4.75;
+  const top = dy + 3.3;
   timber.add(beam(new V(x - 4.3, top, z), new V(x + 4.3, top, z), .34, .42), null, C.timberDark, WOOD.beam, 7);
-  timber.add(beam(new V(x - 3.4, top - .9, z), new V(x + 3.4, top - .9, z), .22, .26), null, C.timber, WOOD.beam, 8);
-  for (const sx of [-1, 1]) timber.add(beam(new V(x + sx * 3.25, top - 1.6, z), new V(x + sx * 2.2, top - .9, z), .14), null, C.timber, WOOD.beam, 9);
-  const r = hipRoof(4.75, .95, .85, .5, {ns: 16, nt: 5, soffit: .1, fascia: .14});
+  timber.add(beam(new V(x - 3.4, top - .62, z), new V(x + 3.4, top - .62, z), .2, .24), null, C.timber, WOOD.beam, 8);
+  for (const sx of [-1, 1]) timber.add(beam(new V(x + sx * 3.25, top - 1.3, z), new V(x + sx * 2.4, top - .62, z), .13), null, C.timber, WOOD.beam, 9);
+  const r = hipRoof(4.75, .95, .62, .42, {ns: 16, nt: 5, soffit: .1, fascia: .14});
   const rf = new THREE.Matrix4().makeTranslation(x, top + .24, z);
   roof.add(r.top, rf, C.roof, ROOF.tiles, 9);
   timber.add(r.soffit, rf, C.timber, WOOD.planks, 9);
   timber.add(r.fascia, rf, C.timberDark, WOOD.beam, 9);
   for (const line of r.hips) roof.add(rod(line.map(p => p.clone().add(new V(0, .05, 0))), .08, 5), rf, C.cap, ROOF.cap, 9);
-  roof.add(rod(r.ridge.map(p => p.clone().add(new V(0, .05, 0))), .1, 6), rf, C.cap, ROOF.cap, 9);
+  metal.add(rod(r.ridge.map(p => p.clone().add(new V(0, .06, 0))), .11, 8), rf, C.gold);
   for (const p of r.ridge) metal.add(lath([[.12, 0], [.15, .08], [.06, .18], [.09, .28], [.03, .42], [0, .62]], 10), new THREE.Matrix4().makeTranslation(x + p.x, top + .24 + p.y, z), C.gold);
   // Sign under the tie beam: the harbour's airship emblem on both faces.
-  timber.add(bx(1.5, .7, .07), new THREE.Matrix4().makeTranslation(x, top - 1.55, z), C.timberDark, WOOD.planks, 3);
-  for (const sx of [-.55, .55]) timber.add(new THREE.CylinderGeometry(.01, .01, .3, 3), new THREE.Matrix4().makeTranslation(x + sx, top - 1.07, z), C.rope, WOOD.beam, 0);
-  signEmblem(ctx, new THREE.Matrix4().makeTranslation(x, top - 1.55, z).multiply(new THREE.Matrix4().makeScale(1.3, 1.3, 1)), 'chandler', .045);
-  metal.add(bx(1.56, .05, .1), new THREE.Matrix4().makeTranslation(x, top - 1.18, z), C.gold);
-  for (const sx of [-1, 1]) { metal.add(rod([new V(x + sx * 3.9, top - .2, z), new V(x + sx * 3.9, top - .45, z)], .02, 4), null, C.gold); hangingLantern(ctx, new THREE.Matrix4().makeTranslation(x + sx * 3.9, top - .45, z), 1.1); }
+  timber.add(bx(1.3, .56, .07), new THREE.Matrix4().makeTranslation(x, top - 1.12, z), C.timberDark, WOOD.planks, 3);
+  for (const sx of [-.48, .48]) timber.add(new THREE.CylinderGeometry(.01, .01, .2, 3), new THREE.Matrix4().makeTranslation(x + sx, top - .76, z), C.rope, WOOD.beam, 0);
+  signEmblem(ctx, new THREE.Matrix4().makeTranslation(x, top - 1.12, z).multiply(new THREE.Matrix4().makeScale(1.1, 1.1, 1)), 'chandler', .045);
+  metal.add(bx(1.36, .05, .1), new THREE.Matrix4().makeTranslation(x, top - .83, z), C.gold);
+  for (const sx of [-1, 1]) { metal.add(rod([new V(x + sx * 3.9, top - .2, z), new V(x + sx * 3.9, top - .4, z)], .02, 4), null, C.gold); hangingLantern(ctx, new THREE.Matrix4().makeTranslation(x + sx * 3.9, top - .4, z), 1.0); }
+  // The boarding rope across the gate: brass rings on the posts, a thick sagging rope with a tassel.
+  { const g0 = h(x, z) - .1, a = new V(x - 3.05, g0 + 1.25, z), b = new V(x + 3.05, g0 + 1.25, z);
+    for (const p of [a, b]) metal.add(ring(.09, .025, 10), new THREE.Matrix4().makeTranslation(p.x, p.y, p.z), C.gold);
+    timber.add(rod(sagPoints(a, b, .32, 12), .045, 6), null, '#a4262a', WOOD.beam, 0);
+    metal.add(lath([[.0, 0], [.05, -.04], [.06, -.12], [.03, -.3], [0, -.32]], 8), new THREE.Matrix4().makeTranslation(x, g0 + .92, z), C.gold); }
 }
 
 /** Cargo crane: stone foot, mast, a jib over the cloud side, pulley, rope and a net of sacks; winch drum below. */
@@ -284,4 +291,57 @@ function mooringMast(ctx: TownCtx, x: number, z: number, H: number) {
   const ship = airship(ctx, cup.x + 8.5, top + 1.0 - 7.6 - .5, z, -Math.PI / 2, false);
   ctx.stats.mast = 1;
   return ship;
+}
+
+/**
+ * Sail-roofed harbour building: stone feet and sill, timber posts and plates, plank back and side walls, a gable of
+ * striped sail cloth laced over a ridge pole with rope ties, and inside it either stacked cargo (shed) or a counter
+ * with ledgers under a lantern (booth). Local +z faces the boardwalk side.
+ */
+function shed(ctx: TownCtx, s: (typeof SKY_SHEDS)[number]) {
+  const {h, stone, timber, metal, cloth} = ctx, {hx, hz} = s;
+  let base = -Infinity, low = Infinity;
+  for (const [i, j] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) { const c = Math.cos(s.yaw), sn = Math.sin(s.yaw), lx = i * (hx + .3), lz = j * (hz + .3); const y = h(s.x + lx * c + lz * sn, s.z - lx * sn + lz * c); base = Math.max(base, y); low = Math.min(low, y); }
+  const f = new Frame(s.x, base + .2, s.z, s.yaw), seed = s.x * 3.1, booth = s.kind === 'booth';
+  const wallH = booth ? 2.3 : 2.6, ridge = wallH + (booth ? 1.15 : 1.45);
+  // Plinth: dressed stone sill over rubble down into the ground.
+  stone.add(bx(hx * 2 + .4, base - low + .7, hz * 2 + .4, [1, 2, 1]), f.m(0, -(base - low + .7) / 2 + .02, 0), '#c4b694', STONE.rubble, seed);
+  stone.add(bx(hx * 2 + .5, .12, hz * 2 + .5), f.m(0, .06, 0), C.trim, STONE.dressed, seed);
+  const corners: [number, number][] = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
+  for (const [px, pz] of corners) timber.add(lath([[.15, 0], [.13, .3], [.12, wallH - .2], [.15, wallH - .1], [0, wallH]], 8), f.m(px, .1, pz), C.timber, WOOD.beam, seed + px);
+  if (!booth) for (const px of [-hx / 3, hx / 3]) timber.add(lath([[.12, 0], [.11, wallH - .1], [0, wallH]], 8), f.m(px, .1, hz), C.timber, WOOD.beam, seed + px);
+  for (const pz of [-hz, hz]) timber.add(beam(new V(-hx - .25, wallH, pz), new V(hx + .25, wallH, pz), .2, .24), f.F, C.timberDark, WOOD.beam, seed);
+  for (const px of [-hx, hx]) timber.add(beam(new V(px, wallH, -hz - .2), new V(px, wallH, hz + .2), .18, .22), f.F, C.timberDark, WOOD.beam, seed);
+  // Back wall of planks (booth: stone up to the counter on the front too, plastered above the back).
+  timber.add(bx(hx * 2, wallH - .2, .1), f.m(0, (wallH - .2) / 2 + .14, -hz + .02), C.timber, WOOD.planks, seed);
+  if (booth) for (const sx of [-1, 1]) timber.add(bx(.1, wallH - .2, hz * 2 - .2), f.m(sx * (hx - .02), (wallH - .2) / 2 + .14, 0), C.timber, WOOD.planks, seed + sx);
+  // The shed's ends stay open above a low plank rail, so its cargo reads from the street and the pier.
+  else for (const sx of [-1, 1]) for (const ry of [.55, 1.0]) timber.add(bx(.08, .12, hz * 2 - .2), f.m(sx * (hx - .02), ry, 0), C.timberDark, WOOD.beam, seed + sx);
+  // Gable: king posts, ridge pole, two sail-cloth slopes lapping past the eaves, rope lacing at the gable ends.
+  for (const px of [-hx - .15, hx + .15]) timber.add(beam(new V(px, wallH - .05, 0), new V(px, ridge + .05, 0), .14), f.F, C.timberDark, WOOD.beam, seed);
+  timber.add(rod([new V(-hx - .55, ridge, 0), new V(hx + .55, ridge, 0)], .1, 8), f.F, C.timberDark, WOOD.beam, seed);
+  const run = hz + .55, th = Math.atan2(ridge - wallH + .25, run), slope = Math.hypot(run, ridge - wallH + .25);
+  for (const side of [0, Math.PI]) cloth.add(clothSheet(hx * 2 + 1.0, slope, CLOTH.sail, {nx: 12, ny: 6, sag: -.2}), f.m(0, ridge + .06, 0, side, th - Math.PI / 2), '#ffffff', .04, seed + side);
+  for (const px of [-hx - .45, hx + .45]) for (const sz of [-1, 1]) timber.add(rod([new V(px, ridge - .02, 0), new V(px, wallH - .15, sz * (hz + .45))], .015, 3), f.F, C.rope, WOOD.beam, 0);
+  for (const px of [-hx - .55, hx + .55]) metal.add(new THREE.SphereGeometry(.1, 8, 6), f.m(px, ridge, 0), C.gold);
+  hangingLantern(ctx, f.m(hx * .55, wallH - .18, hz + .1), 1.0);
+  const kit = (piece: string, lx: number, lz: number, size: number, yaw = 0, ly = .14) => { const p = f.p(lx, ly, lz); ctx.kits.push({file: 'props', piece, x: p.x, y: p.y, z: p.z, yaw: f.yw(yaw), size}); };
+  if (booth) {
+    // Counter across the open front, a ledger and an inkpot on it, the harbour's airship sign on a gilt arm.
+    timber.add(bx(hx * 2 - .2, .1, .7), f.m(0, 1.12, hz - .25), C.timberDark, WOOD.planks, seed);
+    stone.add(bx(hx * 2 - .2, 1.0, .3, [1, 2, 1]), f.m(0, .6, hz - .1), C.stone, STONE.ashlar, seed);
+    timber.add(bx(.55, .06, .4), f.m(-.4, 1.2, hz - .25, .2), '#e8dcc0', WOOD.planks, seed);
+    stone.add(new THREE.CylinderGeometry(.06, .07, .1, 8), f.m(.3, 1.22, hz - .3), '#2d4f6e', STONE.ceramic, seed);
+    metal.add(rod([new V(hx - .2, wallH - .3, hz + .05), new V(hx - .2, wallH - .25, hz + 1.0)], .03, 5), f.F, C.gold);
+    timber.add(bx(.8, .55, .06), f.m(hx - .2, wallH - .75, hz + .75, Math.PI / 2), C.timberDark, WOOD.planks, 3);
+    signEmblem(ctx, f.m(hx - .2, wallH - .75, hz + .75, Math.PI / 2), 'chandler', .035);
+    kit('Barrel', -hx - .7, hz - .4, .9, .3, h(f.p(-hx - .7, 0, hz - .4).x, f.p(-hx - .7, 0, hz - .4).z) - f.y);
+  } else {
+    // Cargo under the sail: crates stacked two high, barrels, sacks, a coil of rope; a hand truck at the door.
+    kit('Crate_Wooden', -hx + .9, -hz + .9, .95, .1); kit('Crate_Wooden', -hx + .95, -hz + .9, .8, -.3, 1.09); kit('Crate_Wooden', -hx + 2.0, -hz + .85, .9, .4);
+    kit('Barrel', hx - .7, -hz + .7, 1.0); kit('Barrel', hx - .75, -hz + 1.6, 1.0, .6); kit('Barrel', hx - 1.55, -hz + .7, .9, 1.2);
+    kit('Bag', .2, -hz + .6, .7, 1); kit('Bag', .8, -hz + .7, .65, 2.3); kit('Bag', .5, -hz + .75, .55, .4, .7);
+    kit('Rope_2', -.6, .4, .3, .5);
+  }
+  ctx.stats.sheds = (ctx.stats.sheds ?? 0) + 1;
 }
