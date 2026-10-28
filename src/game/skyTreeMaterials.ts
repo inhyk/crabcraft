@@ -53,7 +53,7 @@ export function skyBarkMaterial():THREE.MeshStandardMaterial{
 vec2 bq=vBark;
 float bw=skN(vec2(bq.x*.9,bq.y*.2))-.5;
 float bf=abs(fract(bq.x+bw*.7)-.5)*2.;
-float plate=smoothstep(.16,.58,bf);
+float plate=smoothstep(.05,.32,bf+(skN(bq*vec2(1.7,.35))-.5)*.16);
 float cell=floor(bq.x+bw*.7);
 // Plates crack across now and then, so the furrows read as bark, not fluting.
 float brk=smoothstep(.6,.74,skN(vec2(cell*3.7,bq.y*.6)));
@@ -61,7 +61,7 @@ plate*=1.-brk*.7;
 float grain=mix(.5,skN(bq*vec2(5.,1.1)),uSkDetail);
 float bh=plate*(.78+.22*grain);
 float tone=skN(vSkW.xz*.07+vSkW.y*.045);
-vec3 barkC=mix(vec3(.07,.068,.078),mix(vec3(.30,.29,.28),vec3(.47,.45,.41),tone),bh);
+vec3 barkC=mix(vec3(.13,.125,.14),mix(vec3(.34,.33,.31),vec3(.52,.5,.46),tone),bh);
 float lich=smoothstep(.7,.8,skN(bq*vec2(2.1,.8)+7.))*plate*uSkDetail;
 barkC=mix(barkC,vec3(.56,.6,.5),lich*.55);
 float mN=skN(vSkW.xz*.33+vSkW.y*.19);
@@ -85,17 +85,18 @@ export function skyStoneMaterial():THREE.MeshStandardMaterial{
    .replace('#include <color_fragment>',/* glsl */`
 vec3 sp=vSkW,sn=vSkN;
 float n1=skN(sp.xz*.45+sp.y*vec2(.71,.53)),n2=mix(.5,skN(sp.xz*2.6-sp.y*vec2(.4,1.9)),uSkDetail);
-vec3 stoneC=mix(vec3(.56,.5,.38),vec3(.78,.71,.56),n1)*(.88+.24*n2);
-float streak=skN(vec2(sp.x*2.3+sp.z*2.9,sp.y*.22));
-stoneC*=1.-.22*smoothstep(.5,.9,streak)*(1.-abs(sn.y));
-float pit=smoothstep(.78,.86,skN(sp.xz*7.+sp.y*3.1))*uSkDetail;
-stoneC*=1.-pit*.25;
+vec3 stoneC=mix(vec3(.55,.51,.41),vec3(.76,.7,.57),n1)*(.9+.16*n2);
+// Rain streaks: thin, vertical, from the ledges down.
+float streak=skN(vec2(sp.x*4.1+sp.z*3.7,sp.y*.12));
+stoneC*=1.-.14*smoothstep(.55,.95,streak)*(1.-abs(sn.y));
+float pit=smoothstep(.8,.9,skN(sp.xz*9.+sp.y*vec2(5.3,4.1)))*uSkDetail;
+stoneC*=1.-pit*.12;
 float mN=skN(sp.xz*.6+sp.y*.3);
 float moss=smoothstep(.55,.95,sn.y*.6+mN*.55)*smoothstep(.2,.6,mN);
 moss=max(moss,smoothstep(.3,.9,vAo.y+(mN-.5)*.8));
 vec3 mossC=mix(vec3(.08,.18,.065),vec3(.2,.32,.11),mN);
 diffuseColor.rgb=mix(stoneC,mossC,moss*.9)*vAo.x;
-float skHeight=(n2*.02-pit*.015)*(1.-moss);`)
+float skHeight=(n2*.012-pit*.008)*(1.-moss);`)
    .replace('#include <normal_fragment_maps>',BUMP);
  };
  return m;

@@ -4,7 +4,8 @@ import {FRONTIER_TOWN,layoutFrontier,frontierTrees,type FrontierChapter} from '.
 import {StarPortal} from './portal';
 import type {Poi} from '../world/types';
 import {islandPaths} from './islandPaths';
-import {skyTreeQuality,skyWorldTree} from './skyWorldTree';
+import {skyTreeQuality} from './skyWorldTree';
+import {skySanctuaryScene} from './skySanctuary';
 import {SKY_TREE_TIME} from './skyTreeMaterials';
 /** World VI Skybloom, split from the shared frontier so its design can grow apart from World V. */
 export class SkybloomIsland {
@@ -91,8 +92,6 @@ export class SkybloomIsland {
   for(let i=0;i<2200;i++){const x=Math.sin(i*127.13)*89,z=Math.sin(i*311.71)*115;gardenDummy.position.set(x,this.height(x,z)+.03,z);gardenDummy.rotation.set(0,i*.7,0);gardenDummy.scale.setScalar(.45+i%6*.13);if(Math.abs(x)<10||Math.hypot(x/128,(z-2)/155)>.76||Math.abs(x)<42&&z>26&&z<94||Math.hypot(x,z+72)<24)gardenDummy.scale.setScalar(0);gardenDummy.updateMatrix();grass.setMatrixAt(i,gardenDummy.matrix);}grass.computeBoundingSphere();this.root.add(grass);
   // Northern destination: a smoking volcanic caldera or a luminous world tree.
   const ly=this.height(0,-72);
-  add(new THREE.CylinderGeometry(20,22,.4,64),stone,0,ly-.19,-72);
-  for(const r of [8,19.5]){const ring=add(new THREE.TorusGeometry(r,.07,5,80),glow,0,ly+.04,-72);ring.rotation.x=-Math.PI/2;}
   if(fire){
    const volcano=add(new THREE.CylinderGeometry(8,28,38,18,4,true),stone,0,ly+9,-128);volcano.name='ember-volcano';
    const crater=add(new THREE.CylinderGeometry(8,5,2,32),glow,0,ly+27,-128);crater.name='lava-crater';
@@ -101,10 +100,9 @@ export class SkybloomIsland {
   }else{
    for(let i=0;i<9;i++){const a=i*2.4,x=Math.sin(a)*145,z=Math.cos(a)*160;add(new THREE.ConeGeometry(8+i%3*3,22,6),stone,x,12+i%4*9,z).rotation.z=Math.PI;add(new THREE.CylinderGeometry(8+i%3*3,7,2,8),roofMat,x,24+i%4*9,z);}
   }
-  for(let i=0;i<10;i++){const a=(i+1)/12*Math.PI*2,x=Math.sin(a)*23,z=-72+Math.cos(a)*23;if(z>-56)continue;const y=this.height(x,z);add(new THREE.CylinderGeometry(.9,1.4,9,8),stone,x,y+4.5,z);const gem=add(new THREE.OctahedronGeometry(.8),glow,x,y+9.8,z);this.rotating.push(gem);}
   this.makeDetails(fire,stone,wood,metal,glow,foliage);
-  // World tree, its roots, vines and seed lanterns (skyWorldTree.ts).
-  this.root.add(skyWorldTree((x,z)=>this.height(x,z),skyTreeQuality()).root);
+  // World tree and its sanctuary: court, columns, root gate, vines and seed lanterns (skySanctuary.ts).
+  this.root.add(skySanctuaryScene((x,z)=>this.height(x,z),skyTreeQuality()).root);
   // A low sea of lava / clouds and gradient sky distinguish the worlds at first glance.
   const sea=add(new THREE.PlaneGeometry(1800,1800),this.flowMaterial(fire),0,.15,0);sea.rotation.x=-Math.PI/2;sea.castShadow=false;sea.name=fire?'molten-sea':'sea-of-clouds';
   const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{top:{value:new THREE.Color(fire?'#271728':'#438ca7')},bottom:{value:new THREE.Color(fire?'#dd8b5f':'#d3efda')}},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;uniform vec3 top;uniform vec3 bottom;void main(){gl_FragColor=vec4(mix(bottom,top,smoothstep(0.,.65,normalize(v).y)),1.);}'});
@@ -136,11 +134,7 @@ export class SkybloomIsland {
    for(let k=0;k<5;k++){const m=add(fire?new THREE.OctahedronGeometry(.28):new THREE.SphereGeometry(.27,7,5),fire?glow:foliage,x-1.5+k*.75,by+1.65,z);m.rotation.y=k;}
    for(let k=0;k<3;k++){const bx=x+side*(4+k%2),bz=z+k*1.3;add(new THREE.BoxGeometry(1,1,1),wood,bx,y(bx,bz)+.5,bz);add(new THREE.BoxGeometry(1.05,.12,1.05),metal,bx,y(bx,bz)+.8,bz);}
   }
-  // Inlaid sanctuary paving is flat with the collision ground, never above attack warnings.
-  const cells:[number,number][]=[];for(let x=-8;x<=8;x++)for(let z=-8;z<=8;z++)if(Math.hypot(x*2.1,z*2.1)<18)cells.push([x,z]);
-  const paving=new THREE.InstancedMesh(new THREE.BoxGeometry(2.02,.025,2.02),stone,cells.length),dummy=new THREE.Object3D();
-  cells.forEach(([x,z],i)=>{dummy.position.set(x*2.1,y(0,-72)+.001,-72+z*2.1);dummy.updateMatrix();paving.setMatrixAt(i,dummy.matrix);paving.setColorAt(i,new THREE.Color(fire?'#77625d':'#9ab7a0').multiplyScalar(.85+(i%5)*.045));});paving.receiveShadow=true;detail.add(paving);
-  for(let i=0;i<12;i++){const a=i*Math.PI/6,x=Math.sin(a)*18,z=-72+Math.cos(a)*18;const rune=add(new THREE.BoxGeometry(.16,.03,1.4),glow,x,y(0,-72)+.04,z);rune.rotation.y=a;}
+  const dummy=new THREE.Object3D();
   if(fire){
    // Layered basalt cliffs, glowing fissures and an outdoor furnace.
    for(const side of [-1,1])for(let i=0;i<12;i++){const x=side*(84+i%3*5),z=-95+i*15,by=y(x,z);const rock=add(new THREE.CylinderGeometry(1.8,2.3,5+i%4,6),stone,x,by+2,z);rock.rotation.y=i*.4;add(new THREE.BoxGeometry(.12,2+i%3,.15),glow,x-side*1.9,by+2,z);}

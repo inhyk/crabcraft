@@ -1,23 +1,19 @@
 import * as THREE from 'three';
-import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {CardBatch,curveRings,seedLantern,skyRandom,sweep,type Ring} from './skyTreeGeometry';
 import {SKY_BUTTRESSES,SKY_COURT,SKY_ROOT_ARCH_FEET,SKY_TREE} from './skyTreeLayout';
-import {SKY_TREE_DETAIL,skyBarkMaterial,skyFoliageMaterials,skyLanternMaterial} from './skyTreeMaterials';
+import {SKY_TREE_DETAIL} from './skyTreeMaterials';
 
 /*
  * World VI's world tree: a pale silver trunk on seven buttress flanks that twist as they rise and run out into
  * surface roots (to the court's rim, round the island and over its north edge), two root arches that leave the trunk
  * and dive back into the ground, seven great limbs with their branches, and a crown of jade leaf masses with blossom
  * in it, vines and seed lanterns hanging from the limbs. Bark is one mesh, leaves and vines one card mesh, lanterns
- * one mesh. Positions come from skyTreeLayout.ts, which also gives the server its solids.
+ * one mesh (skySanctuary.ts merges them). Positions come from skyTreeLayout.ts, which also gives the server its solids.
  */
 
-export interface SkyTreeBuild {
- root:THREE.Group;
- /** Shell centres and radii of the crown's leaf masses (QA and the sanctuary's lantern placement). */
- masses:{c:THREE.Vector3;r:number}[];
- stats:{barkTriangles:number;cards:number;lanterns:number;roots:number;limbs:number};
-}
+/** Geometry the tree and the sanctuary pour into, merged into one mesh per material (skySanctuary.ts). */
+export interface SkyParts {bark:THREE.BufferGeometry[];stone:THREE.BufferGeometry[];cards:CardBatch;lanterns:THREE.BufferGeometry[];lanternCount:number}
+export function skyParts():SkyParts{return {bark:[],stone:[],cards:new CardBatch(),lanterns:[],lanternCount:0};}
 
 type Height=(x:number,z:number)=>number;
 /** The graphics tier the player picked (World VI builds once, before the engine's tier is at hand). */
@@ -26,11 +22,10 @@ const UP=new THREE.Vector3(0,1,0);
 /** Ground ellipse of the island (realmHeight): beyond .83 the ground falls away. */
 const islandEdge=(x:number,z:number)=>Math.hypot(x/128,(z-2)/155);
 
-export function skyWorldTree(height:Height,quality:'high'|'low'):SkyTreeBuild{
- const root=new THREE.Group();root.name='skybloom-world-tree';
+export function buildSkyTree(height:Height,quality:'high'|'low',parts:SkyParts){
  const rand=skyRandom(6151),high=quality==='high';SKY_TREE_DETAIL.value=high?1:0;
  const X=SKY_TREE.x,Z=SKY_TREE.z,Y=height(X,Z);
- const bark:THREE.BufferGeometry[]=[];
+ const bark=parts.bark;
  // The trunk's axis sways a little as it rises.
  const axis=(h:number)=>new THREE.Vector3(X+.7*Math.sin(h*.075),Y+h,Z+.5*Math.sin(h*.06+1));
  const twist=(h:number)=>.034*Math.max(h,0);
@@ -41,15 +36,15 @@ export function skyWorldTree(height:Height,quality:'high'|'low'):SkyTreeBuild{
  };
  const flankR=(h:number,a:number)=>{
   const k=Math.max(h,0),R0=baseR(0);let r=0;
-  for(const [az,reach,s] of SKY_BUTTRESSES){const d=wrap(a-az-twist(h)),w=.17+.016*k,amp=(reach-R0)*s*Math.exp(-k/2.7)+1.1*s*Math.exp(-k/9);r=Math.max(r,amp*Math.exp(-(d*d)/(w*w)));}
+  for(const [az,reach,s] of SKY_BUTTRESSES){const d=wrap(a-az-twist(h)),w=.17+.016*k,amp=(reach-R0)*s*Math.pow(Math.max(0,1-k/10.5),1.9)+1.2*s*Math.exp(-k/9);r=Math.max(r,amp*Math.exp(-(d*d)/(w*w)));}
   return r;
  };
  {
   // Trunk: rings from below ground to the dome where the limbs have taken the wood.
   const J=high?52:36,radial=high?112:72,rings:Ring[]=[],hs:number[]=[];
-  for(let j=0;j<=J;j++){const h=-2.5+33.5*Math.pow(j/J,1.55);hs.push(h);rings.push({c:axis(h),n:new THREE.Vector3(1,0,0),b:new THREE.Vector3(0,0,1),along:h,twist:-twist(h)/(Math.PI*2)*46});}
+  for(let j=0;j<=J;j++){const h=-2.5+33.5*Math.pow(j/J,1.55);hs.push(h);rings.push({c:axis(h),n:new THREE.Vector3(1,0,0),b:new THREE.Vector3(0,0,1),along:h,twist:-twist(h)/(Math.PI*2)*36});}
   bark.push(sweep(rings,radial,(j,a)=>{const h=hs[j];return Math.max(.4,baseR(h)+flankR(h,a)+.14*Math.sin(a*13+h*.5)+.09*Math.sin(a*29-h*.9));},
-   (j,a)=>{const h=hs[j],f=flank(h,a),low=Math.exp(-Math.max(h,0)/3.5);return [THREE.MathUtils.clamp(.55+.45*f*low+(1-low)*.45,.3,1)*(.72+.28*THREE.MathUtils.smoothstep(h,-1,2.5)),THREE.MathUtils.clamp(1-h/3.2,0,1)];},46));
+   (j,a)=>{const h=hs[j],f=flank(h,a),low=Math.exp(-Math.max(h,0)/3.5);return [THREE.MathUtils.clamp(.62+.38*f*low+(1-low)*.38,.45,1)*(.8+.2*THREE.MathUtils.smoothstep(h,-1,2.5)),THREE.MathUtils.clamp(1-h/3.2,0,1)];},36));
  }
  // Surface roots: from each flank's blade out over the ground; they stop at the court's rim, steer round the
  // pillars and, northwards, spill over the island's edge and hang into the clouds.
@@ -121,7 +116,7 @@ export function skyWorldTree(height:Height,quality:'high'|'low'):SkyTreeBuild{
  for(let i=0;i<5;i++){const a=i/5*Math.PI*2+.4,c=axis(30).add(new THREE.Vector3(Math.cos(a)*7,7+i%2*3,Math.sin(a)*7));masses.push({c,r:10.5});}
  masses.push({c:axis(30).add(new THREE.Vector3(0,12,0)),r:9.5});
  // Leaf cards over every mass's shell, skipping cards buried in a neighbour; a darker inner layer fills the gaps.
- const cards=new CardBatch(),centroid=new THREE.Vector3();masses.forEach(m=>centroid.add(m.c));centroid.divideScalar(masses.length);
+ const cards=parts.cards,centroid=new THREE.Vector3();masses.forEach(m=>centroid.add(m.c));centroid.divideScalar(masses.length);
  const col=new THREE.Color(),nrm=new THREE.Vector3(),dir=new THREE.Vector3(),p=new THREE.Vector3(),g=new THREE.Vector3();
  const JADE=[new THREE.Color('#2f7a6c'),new THREE.Color('#3f8f80'),new THREE.Color('#5fae95'),new THREE.Color('#86c39a')];
  const BLOSSOM=[new THREE.Color('#f2b8c6'),new THREE.Color('#f7f0ea'),new THREE.Color('#f5cfd8')];
@@ -150,7 +145,7 @@ export function skyWorldTree(height:Height,quality:'high'|'low'):SkyTreeBuild{
   }
  });
  // Vines: stems hanging from the limbs' undersides, leaves along them; some end in a seed lantern.
- const lanterns:THREE.BufferGeometry[]=[];const VINE=new THREE.Color('#3a7a5e');let lanternCount=0;
+ const lanterns=parts.lanterns;const VINE=new THREE.Color('#3a7a5e');let lanternCount=0;
  hangs.forEach((h,i)=>{
   const start=h.p.clone().addScaledVector(UP,-h.r*.85),ground=height(start.x,start.z),room=start.y-ground;
   if(room<9)return;
@@ -162,14 +157,7 @@ export function skyWorldTree(height:Height,quality:'high'|'low'):SkyTreeBuild{
   for(let k=0;k<len/.42;k++){const q=vc.getPointAt(Math.min(1,k*.42/len+rand()*.03));q.x+=(rand()-.5)*.5;q.z+=(rand()-.5)*.5;dir.set(rand()-.5,rand()-.3,rand()-.5).normalize();col.copy(VINE).multiplyScalar(.8+rand()*.5);if(rand()<.12)col.copy(BLOSSOM[1]);cards.add(q,.42+rand()*.2,rand()*6.3,col,dir,rand()<.12?1:0);}
   if(lantern){lanterns.push(seedLantern(vc.getPointAt(1),1.25,rand()));lanternCount++;}
  });
- // Bark: one mesh.
- const barkGeo=mergeGeometries(bark,false)!;bark.forEach(b=>b.dispose());
- const barkMesh=new THREE.Mesh(barkGeo,skyBarkMaterial());barkMesh.name='sky-world-tree-wood';barkMesh.castShadow=barkMesh.receiveShadow=true;root.add(barkMesh);
- const fol=skyFoliageMaterials(),cardGeo=cards.build(cardHalf*1.3);
- const leaves=new THREE.Mesh(cardGeo,fol.leaves);leaves.name='sky-world-tree-crown';leaves.customDepthMaterial=fol.depth;fol.leaves.shadowSide=THREE.DoubleSide;leaves.castShadow=true;leaves.receiveShadow=true;root.add(leaves);
- if(lanterns.length){const lg=mergeGeometries(lanterns,false)!;lanterns.forEach(l=>l.dispose());const lm=new THREE.Mesh(lg,skyLanternMaterial());lm.name='sky-world-tree-lanterns';root.add(lm);}
- const barkTriangles=(barkGeo.index?barkGeo.index.count:0)/3;
- root.userData.skyTree={barkTriangles,cards:cards.count,lanterns:lanternCount,roots:rootCount,limbs:LIMBS.length};
- return {root,masses,stats:{barkTriangles,cards:cards.count,lanterns:lanternCount,roots:rootCount,limbs:LIMBS.length}};
+ parts.lanternCount+=lanternCount;
+ return {masses,cardHalf,stats:{cards:cards.count,lanterns:lanternCount,roots:rootCount,limbs:LIMBS.length}};
 }
 

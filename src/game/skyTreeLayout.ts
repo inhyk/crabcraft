@@ -15,8 +15,8 @@ export const SKY_BUTTRESSES:readonly (readonly [number,number,number])[]=[
 ];
 /** The two root arches: they leave the trunk and dive back into the ground at these feet. */
 export const SKY_ROOT_ARCH_FEET:readonly (readonly [number,number])[]=[[22.5,-101],[-22.5,-101]];
-/** The root gate over the approach road: its two posts. */
-export const SKY_GATE={z:-50,halfSpan:7.4,height:11.5};
+/** The root gate over the approach road, behind the arena camera and clear of the lighthouse and quest points: its two posts. */
+export const SKY_GATE={z:-40,halfSpan:7.4,height:11.5};
 
 /** World VI only: the trunk with its buttress flanks, the root arches' feet and the gate posts. */
 export function layoutSkyTree(col:Collision,heightAt:(x:number,z:number)=>number){

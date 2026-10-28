@@ -66,21 +66,31 @@ export class CardBatch{
  * A seed lantern hanging at `top`: a ribbed husk (eight ribs) lit between them, a honey wood cap and a small drip at
  * the bottom. aGlow = (glow, phase).
  */
-export function seedLantern(top:THREE.Vector3,scale:number,phase:number):THREE.BufferGeometry{
- const radial=24,rows=14,H=1.55*scale,pos:number[]=[],col:number[]=[],glow:number[]=[],idx:number[]=[];
+export function seedLantern(top:THREE.Vector3,scale:number,phase:number):THREE.BufferGeometry{return pod(top,scale,phase,false);}
+/** A seed bloom standing on `base`: six petals closed round a lit heart, their tips parted at the top. */
+export function seedBloom(base:THREE.Vector3,scale:number,phase:number):THREE.BufferGeometry{return pod(base,scale,phase,true);}
+function pod(top:THREE.Vector3,scale:number,phase:number,upright:boolean):THREE.BufferGeometry{
+ const radial=24,rows=14,H=1.55,pos:number[]=[],col:number[]=[],glow:number[]=[],idx:number[]=[];
  const rib=new THREE.Color('#9a6a3c'),skin=new THREE.Color('#ffe2a8'),cap=new THREE.Color('#6d4a2c');
  const c=new THREE.Color();
  const profile:[number,number,number][]=[];// (radius, y down from top, kind 0 cap 1 husk 2 drip)
- profile.push([.001,0,0],[.16,-.02,0],[.2,-.1,0],[.13,-.16,0]);
- for(let i=0;i<=rows;i++){const t=i/rows,r=Math.pow(Math.sin(Math.PI*(.06+.9*t)),.85)*.5*(1-.18*t)+.06;profile.push([r,-.16-t*(H-.36),1]);}
- profile.push([.07,-H+.16,2],[.04,-H+.02,2],[.001,-H,2]);
+ if(upright){
+  // Bottom up, flipped below: a stone-green calyx, then the petals swelling and closing to a parted tip.
+  profile.push([.001,0,0],[.24,-.02,0],[.3,-.12,0],[.22,-.22,0]);
+  for(let i=0;i<=rows;i++){const t=i/rows,r=Math.pow(Math.sin(Math.PI*(.12+.8*t)),.7)*.55*(1-.25*t)+.03;profile.push([r,-.22-t*(H-.3),1]);}
+  profile.push([.06,-H+.04,1],[.001,-H,1]);
+ }else{
+  profile.push([.001,0,0],[.16,-.02,0],[.2,-.1,0],[.13,-.16,0]);
+  for(let i=0;i<=rows;i++){const t=i/rows,r=Math.pow(Math.sin(Math.PI*(.06+.9*t)),.85)*.5*(1-.18*t)+.06;profile.push([r,-.16-t*(H-.36),1]);}
+  profile.push([.07,-H+.16,2],[.04,-H+.02,2],[.001,-H,2]);
+ }
  for(let j=0;j<profile.length;j++){const [r,y,kind]=profile[j];for(let k=0;k<=radial;k++){
-  const a=k/radial*Math.PI*2,ribK=Math.pow(Math.abs(Math.cos(a*4)),10),rr=r*scale*(kind===1?1+.07*ribK:1);
-  pos.push(top.x+Math.cos(a)*rr,top.y+y,top.z+Math.sin(a)*rr);
+  const a=k/radial*Math.PI*2,ribK=Math.pow(Math.abs(Math.cos(a*(upright?3:4))),upright?3:10),rr=r*scale*(kind===1?(upright?.88+.2*ribK:1+.07*ribK):1);
+  pos.push(top.x+Math.cos(a)*rr,top.y+(upright?-y:y)*scale,top.z+Math.sin(a)*rr);
   if(kind===1){c.copy(skin).lerp(rib,ribK);glow.push((1-ribK*.85)*(.55+.45*Math.sin(Math.PI*(j-4)/rows)),phase);}else{c.copy(kind===0?cap:rib);glow.push(kind===2?.35:0,phase);}
   col.push(c.r,c.g,c.b);
  }}
- for(let j=0;j<profile.length-1;j++)for(let k=0;k<radial;k++){const a=j*(radial+1)+k,b=a+radial+1;idx.push(a,a+1,b,a+1,b+1,b);}
+ for(let j=0;j<profile.length-1;j++)for(let k=0;k<radial;k++){const a=j*(radial+1)+k,b=a+radial+1;if(upright)idx.push(a,b,a+1,a+1,b,b+1);else idx.push(a,a+1,b,a+1,b+1,b);}
  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));g.setAttribute('aGlow',new THREE.Float32BufferAttribute(glow,2));g.setIndex(idx);g.computeVertexNormals();
  return g;
 }
