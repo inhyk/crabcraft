@@ -171,17 +171,17 @@ function solidMaterial(lights: number, uniforms: {uTime: THREE.IUniform<number>;
     vec3 st=diffuseColor.rgb*(.86+.22*id)*(.88+.16*etN(vWP.xz*11.+id*7.)+.08*etN(vWP.xz*2.3));
     st=mix(st,st*vec3(.74,.75,.8),step(id,.07));st=mix(st,st*vec3(1.08,.98,.93),step(.95,id)*.6);
     // Soot fans out from the furnace and the tap channels; a darker trodden ring; ash drifts lie in patches.
-    float soot=(1.-smoothstep(5.5,12.,yr))*.45+(1.-smoothstep(9.,26.,yr))*.15;
+    float soot=(1.-smoothstep(5.5,14.,yr))*.5+(1.-smoothstep(9.,26.,yr))*.2;
     st*=1.-soot*(.6+.4*etN(vWP.xz*.9));
     st*=mix(1.,.9,smoothstep(3.,1.,abs(yr-16.)));
-    float ash=smoothstep(.5,.85,etN(vWP.xz*.45+3.)*.7+etN(vWP.xz*1.7)*.3)*smoothstep(8.,14.,yr);
-    vec3 jt=mix(vec3(.07,.066,.072),uMortar*.5,.25+.55*ash);
-    st=mix(st,uMortar*.5*(.9+.2*etN(vWP.xz*6.)),ash*.55);
+    float ash=smoothstep(.58,.9,etN(vWP.xz*.45+3.)*.7+etN(vWP.xz*1.7)*.3)*smoothstep(8.,14.,yr);
+    vec3 jt=mix(vec3(.07,.066,.072),uMortar*.4,.15+.5*ash);
+    st=mix(st,uMortar*.36*(.9+.2*etN(vWP.xz*6.)),ash*.4);
     diffuseColor.rgb=mix(st,jt,mo);etRough=1.+.15*mo;
     vec2 tl=vec2(smoothstep(.06,0.,(1.-fu)*6.2832*rm/n)-smoothstep(.06,0.,fu*6.2832*rm/n),smoothstep(.06,0.,(1.-fr)*cw)-smoothstep(.06,0.,fr*cw));
     vec2 tr=vec2(-sin(yth),cos(yth)),rd=vec2(cos(yth),sin(yth));
     etBev=(tl.x*vec3(tr.x,0.,tr.y)+tl.y*vec3(rd.x,0.,rd.y))*.35*(1.-mo);
-    etSeed=mo*(1.-smoothstep(6.,9.5,yr))*smoothstep(.45,.75,etN(vWP.xz*.9+4.))*(.6+.4*etN(vWP.xz*1.3+uTime*.05));
+    etSeed=mo*(1.-smoothstep(5.,13.,yr))*smoothstep(.4,.72,etN(vWP.xz*.9+4.))*(.6+.4*etN(vWP.xz*1.3+uTime*.05));
   }else if(pat>3.5){
     // Roof and armour plates: standing seams, laps with rivets; etK is the verdigris on copper (0 = blackened iron).
     float sx=fract(etQ.x/.62),sy=fract(etQ.y/.95);
@@ -755,7 +755,7 @@ export class EmberTown {
     }
     for (let i = 0; i < nr; i++) for (let j = 0; j < na; j++) { const a = i * na + j, b = i * na + (j + 1) % na, c = a + na, d = b + na; idx.push(a, b, c, b, d, c); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-    this.S(g, new THREE.Matrix4(), '#58585d', PAT.yard, 1, .82, 0, -99, 0);
+    this.S(g, new THREE.Matrix4(), '#41434c', PAT.yard, 1, .82, 0, -99, 0);
     // Kerb: long dressed stones on the rim, open at the avenue, the lanes and the spawn portal.
     const gaps: [number, number][] = [[0, 5.2], [180, 5.2], [290, 3.4], [79, 3.4], [206.6, 4.2]];
     const n = Math.round(TAU * C.r / 1.25);
