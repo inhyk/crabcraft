@@ -10,7 +10,7 @@ import {EMBER_DETAIL,EMBER_NOISE} from './emberNoise';
  * is a grid. Same footprint and `covers` contract as islandPaths; the court's floor (r 20) is left open.
  */
 
-const MAX_SEG = 8;
+const MAX_SEG = 12;
 const CELL = .5;
 const LIFT = .03;
 /** Visible paving ends this far past a path's edge: inside onIslandPath's trim margin (.3). */
@@ -120,19 +120,20 @@ float epMid=1.-smoothstep(.3,.95,abs(epAcross)/max(epHalf,.5));
 float epAshy=smoothstep(-.7,.15,epSd+epRag*.4)*.7+smoothstep(.55,.85,egNoise(epP*.6+11.)*.5+.5)*.45*(1.-epMid);
 // Stone: lighter cut basalt, a few darker and a few warm-scorched; kerbs darker and longer.
 float epV=fract(epId*17.13);
-vec3 epStone=mix(vec3(.33,.335,.36),vec3(.43,.43,.45),fract(epId*3.7));
-epStone=mix(epStone,vec3(.24,.245,.27),step(epV,.14)*.85);
-epStone=mix(epStone,vec3(.38,.34,.33),step(.94,epV)*.5);
-epStone=mix(epStone,vec3(.26,.265,.29)*(.9+.2*fract(epId*5.)),epKerb);
+vec3 epStone=mix(vec3(.4,.4,.42),vec3(.5,.495,.5),fract(epId*3.7));
+epStone=mix(epStone,vec3(.33,.335,.36),step(epV,.14)*.85);
+epStone=mix(epStone,vec3(.47,.42,.4),step(.94,epV)*.5);
+// Kerbs: long dressed blocks, the palest stone on the way, so the edge reads against the ground.
+epStone=mix(epStone,vec3(.5,.495,.5)*(.94+.12*fract(epId*5.)),epKerb);
 epStone*=.86+.28*(egNoise(epP*4.3+epId*13.)*.5+.5);
 float epNear=1.-smoothstep(.006,.035,epFoot);
 // Tooling: fine parallel dressing marks across each flag, only up close.
 if(epNear>0.)epStone*=1.+(sin((epLoc.x*.6+epLoc.y)*90.+epId*20.)*.035+egNoise(epP*40.)*.06)*epNear;
-epStone=mix(epStone,vec3(.36,.36,.38)*(.9+.2*(epN1*.5+.5)),epBlur*.7);
+epStone=mix(epStone,vec3(.44,.44,.455)*(.9+.2*(epN1*.5+.5)),epBlur*.7);
 // The trodden middle is polished a little darker; the heat browns the stones by the court.
 epStone*=mix(1.,.88,epMid*.6);
 epStone=mix(epStone,epStone*vec3(.86,.8,.78),epHeatBase*.35);
-vec3 epAshC=vec3(.5,.48,.49)*(.9+.2*epN2);
+vec3 epAshC=vec3(.52,.5,.51)*(.9+.2*epN2);
 vec3 epJoint=mix(vec3(.08,.075,.08),epAshC,clamp(.35+epAshy,0.,1.));
 epJoint=mix(epJoint,vec3(.12,.05,.03),epGlowJ);
 vec3 epCol=mix(epStone,epJoint,epJ);
