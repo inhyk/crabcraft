@@ -96,6 +96,17 @@ function blobTemplate(detail: number) {
   const g = mergeVertices(new THREE.IcosahedronGeometry(1, detail).deleteAttribute('normal').deleteAttribute('uv'));
   return {pos: g.getAttribute('position').array as Float32Array, idx: g.getIndex()!.array};
 }
+/** A cauliflower crown mass: a welded icosphere pushed out by two scales of noise, so no canopy is a smooth ball. */
+function crownTemplate() {
+  const g = mergeVertices(new THREE.IcosahedronGeometry(1, 2).deleteAttribute('normal').deleteAttribute('uv'));
+  const p = g.getAttribute('position').array as Float32Array;
+  for (let i = 0; i < p.length; i += 3) {
+    const x = p[i], y = p[i + 1], z = p[i + 2];
+    const k = 1 + 0.22 * (vn(x * 2.2 + 5, z * 2.2 + y * 1.3, 3) - 0.5) * 2 + 0.1 * (vn(x * 5.5 + y * 3.1, z * 5.5, 4) - 0.5) * 2;
+    p[i] = x * k; p[i + 1] = y * k * (y < 0 ? 0.7 : 1); p[i + 2] = z * k;
+  }
+  return {pos: p, idx: g.getIndex()!.array};
+}
 /** A box template with a few segments, so cut stone takes the bevelled lighting of smooth normals at its edges. */
 function blockTemplate() {
   const g = mergeVertices(new THREE.BoxGeometry(1, 1, 1, 2, 2, 2).deleteAttribute('normal').deleteAttribute('uv'));
@@ -268,16 +279,17 @@ export const SKY_ISLES: readonly Isle[] = [
 
 /** Underside profile (refs-w6-sky 3.1): depth fraction -> radius fraction. An overhang under the lip, then strata steps. */
 const PROFILE_T = [0, 0.05, 0.13, 0.3, 0.45, 0.62, 0.8, 1], PROFILE_R = [1, 1.05, 0.82, 0.74, 0.58, 0.47, 0.3, 0.1];
+const profileAt = (f: number) => { let k = 0; while (k < PROFILE_T.length - 2 && f > PROFILE_T[k + 1]) k++; return PROFILE_R[k] + (PROFILE_R[k + 1] - PROFILE_R[k]) * sat((f - PROFILE_T[k]) / (PROFILE_T[k + 1] - PROFILE_T[k])); };
 
 
-function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>, block: ReturnType<typeof blockTemplate>, falls: {p: V3; dir: V3; w: number; len: number}[]) {
+function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>, crown: ReturnType<typeof crownTemplate>, block: ReturnType<typeof blockTemplate>, falls: {p: V3; dir: V3; w: number; len: number}[]) {
   const {x: cx, z: cz, y: ty, r: R, seed} = isle, M = Math.max(isle.rock ? 20 : 40, Math.round(R * 4)), K = isle.rock ? 3 : 7;
   const outline = (t: number) => 1 + 0.2 * (ring(t, 5, seed) - 0.5) * 2 + 0.07 * (ring(t, 17, seed + 1) - 0.5) * 2;
   // Depth: big isles 0.6 to 0.9 of their diameter, bare rocks deeper than wide.
   const D0 = R * (isle.rock ? 1.9 : 1.3 + 0.3 * hash(seed, 3)), depth = (t: number) => D0 * (0.88 + 0.24 * ring(t, 3, seed + 2));
   const topY = (x: number, z: number, e: number) => ty + R * 0.05 * (vn(x / 9, z / 9, seed) - 0.5) * 2 + R * 0.04 * (1 - e * e) - 0.5 * smooth(0.82, 1, e);
   // The underside hangs off-centre (a symmetric one reads as a spinning top).
-  const lean = hash(seed, 5) * Math.PI * 2, leanR = R * (0.15 + 0.1 * hash(seed, 6));
+  const lean = hash(seed, 5) * Math.PI * 2, leanR = R * (0.24 + 0.12 * hash(seed, 6));
   const base = b.pos.length / 3;
   const cap = (x: number, z: number, e: number): V3 => {
     if (isle.rock) return mix3(MOSS, SOIL, smooth(0.6, 1, e) * 0.5);
@@ -347,17 +359,18 @@ function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>
   // Trees: pale silver trunks, teal-to-jade canopy masses, blossom on some isles.
   for (let k = 0; k < isle.trees; k++) {
     const a = hash(k, seed, 13) * Math.PI * 2, rr = R * (k === 0 ? 0.15 : 0.35 + 0.35 * hash(k, seed, 14)), x = cx + Math.sin(a) * rr, z = cz + Math.cos(a) * rr;
-    const y = topY(x, z, rr / R), h = (7 + hash(k, seed, 15) * 6) * Math.min(1.25, 0.55 + R / 40), lean = (hash(k, seed, 16) - 0.5) * 0.25;
+    const y = topY(x, z, rr / R), h = (6 + hash(k, seed, 15) * 5) * Math.min(1.25, 0.55 + R / 40), lean = (hash(k, seed, 16) - 0.5) * 0.25;
     const pts: V3[] = [], radii: number[] = [];
     for (let q = 0; q <= 6; q++) { const u = q / 6; pts.push([x + Math.sin(a) * lean * h * u * u, y - 0.4 + h * u, z + Math.cos(a) * lean * h * u * u]); radii.push(h * 0.06 * (1.6 - u) * (q === 0 ? 1.4 : 1)); }
     b.tube(pts, radii, 7, (q, s) => mix3(BARK, BARK_DARK, 0.3 * (1 - q / 6) + 0.25 * hash(q, s, seed)));
-    const top = pts[6], cr = h * 0.42, blooms = isle.blossom && k % 2 === 0;
-    for (let m = 0; m < 5; m++) {
-      const ma = m * 2.4 + a, mr = m === 0 ? 0 : cr * 0.62, sc = cr * (m === 0 ? 1 : 0.62 + 0.2 * hash(m, k, seed));
-      const mx = top[0] + Math.sin(ma) * mr, my = top[1] + (m === 0 ? cr * 0.15 : -cr * 0.15 + hash(m, k, seed + 1) * cr * 0.3), mz = top[2] + Math.cos(ma) * mr;
-      const mtx = new THREE.Matrix4().compose(new THREE.Vector3(mx, my, mz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ma, 0)), new THREE.Vector3(sc, sc * 0.72, sc));
+    // A full crown: one big mass over the trunk and a ring of smaller ones hanging lower, lit top, deep teal under.
+    const top = pts[6], cr = h * 0.4, blooms = isle.blossom && k % 2 === 0, masses = 7;
+    for (let m = 0; m < masses; m++) {
+      const ma = m * 2.4 + a, mr = m === 0 ? 0 : cr * (0.7 + 0.2 * hash(m, k, seed + 2)), sc = cr * (m === 0 ? 1.05 : 0.55 + 0.2 * hash(m, k, seed));
+      const mx = top[0] + Math.sin(ma) * mr, my = top[1] + (m === 0 ? cr * 0.2 : -cr * 0.35 + hash(m, k, seed + 1) * cr * 0.45), mz = top[2] + Math.cos(ma) * mr;
+      const mtx = new THREE.Matrix4().compose(new THREE.Vector3(mx, my, mz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ma, 0)), new THREE.Vector3(sc, sc * 0.78, sc));
       const tone = blooms && m % 2 ? BLOSSOM[(m + k) % 3] : CANOPY[(m + k) % 3];
-      b.place(blob, mtx, (px, py, pz, ny) => mix3(mix3(tone, CANOPY[0], blooms && m % 2 ? 0.15 : 0), [tone[0] * 0.45, tone[1] * 0.55, tone[2] * 0.62], sat(0.5 - ny * 0.6) * (0.7 + 0.3 * vn(px, pz, py))), PAINT);
+      b.place(crown, mtx, (px, py, pz, ny) => mix3(mix3(tone, CANOPY[0], blooms && m % 2 ? 0.15 : 0), [tone[0] * 0.42, tone[1] * 0.55, tone[2] * 0.62], sat(0.45 - ny * 0.75) * (0.75 + 0.25 * vn(px * 1.3, pz * 1.3, py))), PAINT);
     }
   }
   // A ruined arch of cream stone with turquoise and gold trim on the ruin isles.
@@ -380,8 +393,9 @@ function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>
   }
   // Two or three pendant lobes off the low end, on the side the underside already leans to: no single point.
   for (let k = 0; k < 2 + Math.round(hash(seed, 24)); k++) {
-    const a = lean + (k - 1) * 1.7 + (hash(k, seed, 25) - 0.5), D = depth(a), dd = D * (0.62 + 0.18 * hash(k, seed, 27));
-    const rr = R * (0.12 + 0.16 * hash(k, seed, 26)), rad = R * (0.13 + 0.07 * hash(k, seed, 28)), f = dd / D;
+    // Each one bulges out of the face where the profile has narrowed, so it shows on the silhouette.
+    const a = lean + (k - 1) * 1.9 + (hash(k, seed, 25) - 0.5) * 0.6, D = depth(a), f = 0.62 + 0.26 * hash(k, seed, 27), dd = D * f;
+    const rr = R * outline(a) * profileAt(f) * 0.85, rad = R * (0.14 + 0.07 * hash(k, seed, 28));
     const px = cx + Math.sin(lean) * leanR * Math.pow(f, 1.5) + Math.sin(a) * rr, pz = cz + Math.cos(lean) * leanR * Math.pow(f, 1.5) + Math.cos(a) * rr;
     const m = new THREE.Matrix4().compose(new THREE.Vector3(px, ty - 0.5 - dd, pz), new THREE.Quaternion().setFromEuler(new THREE.Euler((hash(k, seed, 29) - 0.5) * 0.4, a, 0)), new THREE.Vector3(rad, rad * 2.1, rad * 0.9));
     const c = mix3(ROCK_MID, ROCK_LOW, 0.7), j = 0.8 / ROCK_TOP[0];
@@ -390,7 +404,7 @@ function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>
   for (const ft of isle.falls ?? []) {
     // An isle's spring is small: it pours off the lip, widens and is lost in spray long before the clouds.
     const ro = R * outline(ft) * 1.02, y = ty - 0.9;
-    falls.push({p: [cx + Math.sin(ft) * ro, y, cz + Math.cos(ft) * ro], dir: [Math.sin(ft), 0, Math.cos(ft)], w: Math.max(2.4, R * 0.13), len: Math.min(y - CLOUD_TOP, 14 + R * 1.1)});
+    falls.push({p: [cx + Math.sin(ft) * ro, y, cz + Math.cos(ft) * ro], dir: [Math.sin(ft), 0, Math.cos(ft)], w: Math.max(2.4, R * 0.13), len: Math.min(y - CLOUD_TOP, 10 + R * 0.8)});
   }
 }
 
@@ -605,7 +619,8 @@ export function skybloomLand(colors: {mist: THREE.Color; cloudLit: THREE.Color; 
   const b = new Builder(), falls: {p: V3; dir: V3; w: number; len: number}[] = [];
   buildSkirt(b, falls);
   const blob = blobTemplate(2), block = blockTemplate();
-  for (const isle of SKY_ISLES) buildIsle(b, isle, blob, block, falls);
+  const crown = crownTemplate();
+  for (const isle of SKY_ISLES) buildIsle(b, isle, blob, crown, block, falls);
   const land = new THREE.Mesh(b.geometry(), landMaterial(colors.mist, colors.bounce));
   land.name = 'skybloom-cliffs-and-isles';
   // Below the grass and far off: no shadow pass for it (the island's sun box covers only the play area).

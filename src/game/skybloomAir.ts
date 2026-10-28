@@ -213,7 +213,8 @@ export class SkybloomAir {
     this.sunRight.crossVectors(THREE.Object3D.DEFAULT_UP, sky.sunDir).normalize(); this.sunUp.crossVectors(sky.sunDir, this.sunRight).normalize();
     this.followSun(0, 10, 0);
     sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.12;
-    this.hemi.color.copy(sky.hemiSky); this.hemi.groundColor.copy(sky.hemiGround); this.hemi.intensity = 1;
+    // The fill is a little under the dome's own level: shade keeps 40 to 55 percent of the lit value, not a wash.
+    this.hemi.color.copy(sky.hemiSky); this.hemi.groundColor.copy(sky.hemiGround); this.hemi.intensity = 0.75;
     root.add(sun, sun.target, this.hemi);
     root.userData.skybloomAir = {cloudY: CLOUD_Y, ...this.stats};
     this.animated.push(sky.material, clouds.material, ...land.animated, petalMat, birdMat);
