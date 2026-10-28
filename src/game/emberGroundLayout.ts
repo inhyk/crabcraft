@@ -18,13 +18,13 @@ const f=(kind:EmberKind,x:number,z:number,r:number,h:number,yaw=0):EmberFeature=
 export const EMBER_FEATURES:readonly EmberFeature[]=[
  // East: the crystal grotto.
  f('columns',93,-5,5.2,7.5,.3),f('crystal',85.5,-5.5,3,4.2,.2),f('crystal',80,-1,1.3,1.6,1.1),f('crystal',89.5,3,1.4,1.9,2.2),
- f('crystal',82.5,-13,1.1,1.4,.6),f('crystal',92,-13,1.2,1.7,2.9),f('columns',85,-26,3.8,5.5,1.2),f('cone',83,13,3.4,2.4),
+ f('crystal',82.5,-13,1.1,1.4,.6),f('crystal',92,-13,1.2,1.7,2.9),f('columns',85,-26,3.8,5.5,1.2),f('cone',83,13,3.4,3.6),
  f('obsidian',97,10,2.4,2.2,.8),f('charred',75,-17,1,6.5,.4),f('charred',77,7,1,5.2,2.1),
  // West: the lava-tube arch, spanning north-south so it faces the field.
  f('arch',-87,-4,6.5,7,0),f('crystal',-88.5,-3.5,1.5,2,1.4),f('crystal',-84,-12.5,1,1.3,.3),f('columns',-82,-25,4.4,6.5,.7),
- f('columns',-95,11,3.4,5,2.2),f('obsidian',-77,9,2.2,2,1.9),f('cone',-73,-36,3,2.2),f('charred',-70,5,1,5.8,1.3),f('charred',-75,-15,1,6.2,2.6),
+ f('columns',-95,11,3.4,5,2.2),f('obsidian',-77,9,2.2,2,1.9),f('cone',-73,-36,3,3.2),f('charred',-70,5,1,5.8,1.3),f('charred',-75,-15,1,6.2,2.6),
  // North flanks of the forge court.
- f('columns',35,-93,5,8.5,.9),f('columns',-37,-90,5,7.5,2.4),f('cone',40,-78,3.6,2.8),f('cone',-47,-66,3.1,2.4),
+ f('columns',35,-93,5,8.5,.9),f('columns',-37,-90,5,7.5,2.4),f('cone',40,-78,3.6,3.8),f('cone',-47,-66,3.1,3.3),
  f('obsidian',37,-110,2.4,2.3,.3),f('crystal',-31,-101,1.4,1.9,.8),f('crystal',56,-90,1.3,1.6,2.3),
  f('columns',38,-57,2.6,4.2,.4),f('charred',33,-51,1,5.5,.9),f('charred',-34,-47,1,6,1.7),f('charred',-56,-80,1,5,2.8),
  // Shoreline stacks where the east and west edges fall to the sea.
@@ -32,7 +32,7 @@ export const EMBER_FEATURES:readonly EmberFeature[]=[
  f('columns',95,31,3.4,4.6,.9),f('columns',-96,34,3.2,4.4,2.7),
  // Town corners.
  f('obsidian',71,60,3,2.6,1.4),f('columns',83,47,4,5,.5),f('crystal',75,72,1.2,1.5,.9),f('charred',60,79,1,6,0),f('charred',67,92,1,5,1.1),f('charred',57,47,1,5.4,2.3),
- f('columns',-75,62,4.4,6,2.1),f('cone',-64,82,3,2.2),f('crystal',-81,45,1.3,1.6,1.9),f('charred',-58,47,1,5.6,.6),f('charred',-55,93,1,5,1.8),
+ f('columns',-75,62,4.4,6,2.1),f('cone',-64,82,3,3.1),f('crystal',-81,45,1.3,1.6,1.9),f('charred',-58,47,1,5.6,.6),f('charred',-55,93,1,5,1.8),
  // Mid fields: something to steer by, nothing in the enemies' way.
  f('obsidian',-30,-12,1.8,1.6,.7),f('charred',78,25,1,5.5,2.4),f('charred',-80,22,1,5,.2),
 ];
