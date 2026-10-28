@@ -1,7 +1,7 @@
 // World II fifth round: the wilds by moonlight. (1) The wild views (tmp/cap.mjs east, west, aerial: 1600x900, crab in
 // frame, no HUD) are lighter than c82accf's (mean CIELAB L*), and east and aerial spread wider (p10 to p99 of L*); the
 // west view loses the dark tree that hid the crab, so its spread may fall a little but not by more than 2.5; the crab
-// stands out more in the west view than it did and keeps a clear step over the ground in the east. (2) Lit points in
+// stands out more than it did in both (its box against a ring round it, mean L*). (2) Lit points in
 // the wilds: glowing moon-flower clumps and their light on the ground, fireflies. (3) Three tree species (silver,
 // crystal, snag) beside the night teal, every kit trunk and crown in World II's night shading, the hero crystal tree's
 // crystals at its roots. (4) Dead-end ways fray: inside the old box but off the laid stones at the tip, an earth path
@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5628',before=process.env.CC_QA_BEFORE,metricsOnly=!!process.env.QA_METRICS_ONLY;
 /** c82accf in the same views (measured 2026-10-28 with this script's camera). */
-const BEFORE={east:{L:17.94,spread:43.25,crab:16.7},west:{L:24.42,spread:58.72,crab:4.4},aerial:{L:16.97,spread:34.01}};
+const BEFORE={east:{L:17.93,spread:43.24,crab:17.11},west:{L:24.42,spread:58.72,crab:4.47},aerial:{L:16.97,spread:33.98}};
 await mkdir('tmp/qa',{recursive:true});
 const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 async function open(url,quality){
@@ -112,7 +112,7 @@ try{
     for(const k of ['east','aerial'])assert.ok(A[k].spread>B[k].spread,`${k}: wider value range (${r2(A[k].spread)} vs ${r2(B[k].spread)})`);
     assert.ok(A.west.spread>B.west.spread-2.5,`west: value range within 2.5 of before (${r2(A.west.spread)} vs ${r2(B.west.spread)})`);
     assert.ok(A.west.crab>B.west.crab+5,`west: the crab stands out (${r2(A.west.crab)} vs ${r2(B.west.crab)})`);
-    assert.ok(A.east.crab>=12,`east: the crab keeps a clear step over the ground (${r2(A.east.crab)})`);
+    assert.ok(A.east.crab>B.east.crab,`east: the crab stands out more (${r2(A.east.crab)} vs ${r2(B.east.crab)})`);
     assert.deepEqual(errors,[]);
     assert.ok(lowR.drawn<lowR.all,'low draws fewer fireflies');assert.deepEqual(low.errors,[]);
   }
