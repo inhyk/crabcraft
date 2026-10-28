@@ -62,6 +62,8 @@ float smPd=smPathD(smRoot);
 // Density: the map's grass, none where bare or on the stones; a grassy fringe laps the paving's edge.
 float smKeep=smS.r*(1.-step(.5,smA.b))*smoothstep(-.12,.35,smPd)*(1.-smoothstep(.62,.96,smDist))*mix(.55,1.,smoothstep(.14,.32,smPatch+(smK.x-.5)*.3))*(.72+.28*smHeart);
 smKeep*=mix(.4,1.,smoothstep(3.,11.,length(smRoot-smCam.xz)));
+// No blades past World VI's cliff lip (skybloomIsles.ts SKY_LIP): they would float over the cloud sea.
+smKeep*=1.-step(.832,length(vec2(smRoot.x/128.,(smRoot.y-2.)/155.)));
 float smLive=step(smR2.x,smKeep);
 float smTall=smA.a*(1.+.35*smoothstep(.2,1.2,smPd)*(1.-smoothstep(1.2,3.,smPd)));
 float smScale=smLive*mix(1.,.35,smoothstep(.55,.95,smDist))*smoothstep(0.,.25,smKeep-smR2.x+.1)*(.62+.7*smK.y)*(.7+.45*smHeart);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {SkybloomSky} from './skybloomSky';
 import {skybloomClouds,CLOUD_Y} from './skybloomClouds';
-import {skybloomLand,clipTerrainToLip} from './skybloomIsles';
+import {skybloomLand,clipTerrainToLip,lipScale} from './skybloomIsles';
 
 /*
  * Everything in Skybloom's air, built from one sky: the dome, the sun and the hemisphere light it implies, the fog
@@ -153,8 +153,8 @@ function birdGeometry(): THREE.InstancedBufferGeometry {
 const PETALS = 900;
 
 export class SkybloomAir {
-  /** A clear late morning: the sun 29 degrees up in the north-west, so views up the avenue see the canopy rim-lit, long shadows toward the camera. */
-  readonly sky = new SkybloomSky({azimuth: 220, elevation: 29, gain: 1.12});
+  /** A clear late morning: the sun 35 degrees up in the east-south-east, a three-quarter side light on the default look up the avenue to the world tree (style-w6.md). */
+  readonly sky = new SkybloomSky({azimuth: 67.5, elevation: 35, gain: 1.12});
   readonly sun = new THREE.DirectionalLight();
   readonly hemi = new THREE.HemisphereLight();
   /** Materials with a `time` uniform for the island's update. */
@@ -163,7 +163,7 @@ export class SkybloomAir {
   private clouds?: THREE.ShaderMaterial;
   private bound: {env: THREE.Texture | null; intensity: number} | null = null;
   private quality: 'high' | 'low' | null = null;
-  readonly stats = {isles: 0, falls: 0, terrainClipped: 0};
+  readonly stats = {isles: 0, falls: 0, terrainClipped: 0, lipMax: 0};
 
   /** Build it all under `root`. `terrain` (the island's ground mesh) is clipped to the cliff's lip. */
   mount(root: THREE.Object3D, terrain?: THREE.Mesh | null): THREE.ShaderMaterial[] {
@@ -173,10 +173,13 @@ export class SkybloomAir {
     this.clouds = clouds.material;
     root.add(clouds.mesh);
     const mist = sky.cloudShade.clone().lerp(sky.cloudLit, 0.35);
-    const land = skybloomLand({mist, cloudLit: sky.cloudLit});
+    // Cloud bounce on rock undersides (#c9d3e8 at about 0.4 of the lit cloud, refs-w6-sky 3.1).
+    const bounce = new THREE.Color('#c9d3e8').multiplyScalar(0.42);
+    const land = skybloomLand({mist, cloudLit: sky.cloudLit, bounce});
     root.add(land.land, land.falls, land.mist);
     this.stats.isles = land.isles; this.stats.falls = land.fallCount;
     if (terrain) this.stats.terrainClipped = clipTerrainToLip(terrain.geometry);
+    for (let i = 0; i < 720; i++) this.stats.lipMax = Math.max(this.stats.lipMax, lipScale((i / 720) * Math.PI * 2));
     // Petals and pollen: positions live on the GPU, wrapped round the camera.
     const seeds = new Float32Array(PETALS * 4);
     for (let i = 0; i < seeds.length; i++) { const h = Math.sin(i * 12.9898 + 78.233) * 43758.5453; seeds[i] = h - Math.floor(h); }
@@ -211,7 +214,8 @@ export class SkybloomAir {
     this.sunRight.crossVectors(THREE.Object3D.DEFAULT_UP, sky.sunDir).normalize(); this.sunUp.crossVectors(sky.sunDir, this.sunRight).normalize();
     this.followSun(0, 10, 0);
     sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.12;
-    this.hemi.color.copy(sky.hemiSky); this.hemi.groundColor.copy(sky.hemiGround); this.hemi.intensity = 1;
+    // The fill is a little under the dome's own level: shade keeps 40 to 55 percent of the lit value, not a wash.
+    this.hemi.color.copy(sky.hemiSky); this.hemi.groundColor.copy(sky.hemiGround); this.hemi.intensity = 0.75;
     root.add(sun, sun.target, this.hemi);
     root.userData.skybloomAir = {cloudY: CLOUD_Y, ...this.stats};
     this.animated.push(sky.material, clouds.material, ...land.animated, petalMat, birdMat);
