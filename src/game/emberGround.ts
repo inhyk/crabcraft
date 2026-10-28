@@ -125,11 +125,25 @@ egBas*=.9+.2*(egN3*.5+.5);
 egBas*=1.+egNoise(egP*.34+5.)*.16+egNoise(egP*1.1-2.)*.08;
 egBas*=1.+(egNoise(egP*2.7)*.1+egNoise(egP*11.)*.1+egNoise(egP*29.)*.08)*(1.-smoothstep(.03,.25,egFoot));
 vec3 egSheetC=mix(vec3(.12,.125,.15),vec3(.16,.16,.19),egRope)*(.92+.16*egN3);
-vec3 egAshC=mix(vec3(.3,.29,.31),vec3(.36,.35,.365),egStreak)*(.9+.12*egN3)*(.9+.1*egRip*(1.-smoothstep(.03,.15,egFoot)))*(1.+egNoise(egP*13.)*.05*egNear);
+vec3 egAshC=mix(vec3(.36,.35,.37),vec3(.43,.415,.43),egStreak)*(.9+.12*egN3)*(.9+.1*egRip*(1.-smoothstep(.03,.15,egFoot)))*(1.+egNoise(egP*13.)*.05*egNear);
 vec3 egCol=mix(egBas,egSheetC,egSheet);
 egCol=mix(egCol,egBas*mix(.45,.85+.45*egAaC.y,egAa),egAaM*(1.-smoothstep(.06,.3,egFoot)*.5));
 egCol=mix(egCol,egAshC,egAsh);
 egCol=mix(egCol,mix(vec3(.4,.39,.38),vec3(.5,.48,.46),egPebId),egPeb*.8);
+// Large scale, read from the air: old cooled flows fanning south from the volcano (dark, smoother, glassy), their
+// edges heaped into pale ash-dusted levees, and long ash streaks blown east-west across everything.
+vec2 egV=egP-vec2(0.,-128.);
+float egVd=length(egV),egVa=atan(egV.x,egV.y);
+float egFlowN=egFbm(vec2(egVa*5.,egVd*.012)+vec2(egNoise(egP*.018)*.7,egNoise(egP*.05)*.15)+3.7);
+float egFlowFar=1.-smoothstep(170.,250.,egVd);
+float egFlow=smoothstep(.04,.1,egFlowN)*egFlowFar*(1.-egShore);
+float egLevee=(1.-smoothstep(.0,.07+egFoot*.05,abs(egFlowN-.01)))*egFlowFar*(1.-egShore);
+float egWind=smoothstep(.05,.5,egFbm(vec2(egP.x*.0065,egP.y*.032)+11.)+egNoise(egP*.06)*.12);
+// Between the flows the old ground lies under ash: broad pale plains against the dark tongues.
+egCol=mix(egCol,egAshC,(1.-egFlow)*egFlowFar*.42*(1.-egHeat));
+egCol=mix(egCol,mix(vec3(.12,.125,.15),vec3(.16,.16,.185),egN3*.5+.5),egFlow*.72*(1.-egAsh*.5));
+egCol=mix(egCol,egAshC*1.06,egLevee*.5);
+egCol=mix(egCol,egAshC*1.1,egWind*.55*(1.-egFlow*.4));
 // Heat scorches the ground darker and rust-red, crazed by finer cracks.
 vec3 egScorch=mix(vec3(.16,.12,.12),vec3(.1,.08,.085),egN3*.5+.5);
 egCol=mix(egCol,egScorch,smoothstep(.15,.85,egHeat)*.85);
@@ -148,6 +162,7 @@ diffuseColor.rgb=egSrgb(egCol);
 const ROUGH = /* glsl */ `
 roughnessFactor=mix(.93,.62+.2*egRope,egSheet);
 roughnessFactor=mix(roughnessFactor,.98,egAsh);
+roughnessFactor=mix(roughnessFactor,.72,egFlow*(1.-egAsh)*(1.-egWind*.6));
 `;
 
 const NORMAL = /* glsl */ `

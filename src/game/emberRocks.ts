@@ -37,16 +37,16 @@ function vnoise(x: number, y: number, z: number) {
 export class Builder {
  pos: number[] = []; nrm: number[] = []; col: number[] = []; mat: number[] = []; aux: number[] = [];
  constructor(private readonly ground: (x: number, z: number) => number, private readonly heat: (x: number, y: number, z: number) => number) {}
- private vert(p: V3, n: V3, c: THREE.Color, kind: number, gloss: number, glow: number, seed: number) {
+ private vert(p: V3, n: V3, c: THREE.Color, kind: number, gloss: number, glow: number, seed: number, u = .5) {
   this.pos.push(p[0], p[1], p[2]); this.nrm.push(n[0], n[1], n[2]); this.col.push(c.r, c.g, c.b);
   this.mat.push(kind, gloss, glow, seed);
-  this.aux.push(p[1] - this.ground(p[0], p[2]), this.heat(p[0], p[1], p[2]));
+  this.aux.push(p[1] - this.ground(p[0], p[2]), this.heat(p[0], p[1], p[2]), u);
  }
  /** One flat triangle (counter-clockwise seen from outside). */
- tri(a: V3, b: V3, c: V3, col: THREE.Color, kind: number, gloss = 0, seed = 0, glow: (p: V3) => number = () => 0) {
+ tri(a: V3, b: V3, c: V3, col: THREE.Color, kind: number, gloss = 0, seed = 0, glow: (p: V3) => number = () => 0, us?: V3) {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
   let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
-  for (const p of [a, b, c]) this.vert(p, [nx, ny, nz], col, kind, gloss, glow(p), seed);
+  this.vert(a, [nx, ny, nz], col, kind, gloss, glow(a), seed, us?.[0]); this.vert(b, [nx, ny, nz], col, kind, gloss, glow(b), seed, us?.[1]); this.vert(c, [nx, ny, nz], col, kind, gloss, glow(c), seed, us?.[2]);
  }
  quad(a: V3, b: V3, c: V3, d: V3, col: THREE.Color, kind: number, gloss = 0, seed = 0, glow?: (p: V3) => number) { this.tri(a, b, c, col, kind, gloss, seed, glow); this.tri(a, c, d, col, kind, gloss, seed, glow); }
  /** A whole geometry (normals already computed), in world space. */
@@ -61,7 +61,7 @@ export class Builder {
   g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
   g.setAttribute('aRkMat', new THREE.Float32BufferAttribute(this.mat, 4));
-  g.setAttribute('aRkAux', new THREE.Float32BufferAttribute(this.aux, 2));
+  g.setAttribute('aRkAux', new THREE.Float32BufferAttribute(this.aux, 3));
   g.computeBoundingSphere();
   return g;
  }
@@ -70,32 +70,147 @@ export class Builder {
 /** sRGB hex to a linear colour, scaled. */
 export const C = (hex: string, k = 1) => new THREE.Color(hex).multiplyScalar(k);
 
-/** A hexagonal basalt column from below ground to a chamfered top on a tilted plane. */
-function column(b: Builder, cx: number, cz: number, r: number, y0: number, top: number, tx: number, tz: number, rot: number, col: THREE.Color, seed: number) {
- const outer: V3[] = [], inner: V3[] = [], base: V3[] = [];
- const yAt = (x: number, z: number) => top + tx * (x - cx) + tz * (z - cz);
+/** An orthonormal frame round axis `a` (unit): u across, v = u x a, so (u, a, v) turns like (x, y, z). */
+function frame(a: V3, rot: number): {u: V3; v: V3} {
+ let hx = 0, hy = 0, hz = 1; if (Math.abs(a[2]) > .9) { hx = 1; hz = 0; }
+ // u0 = h x a
+ let ux = hy * a[2] - hz * a[1], uy = hz * a[0] - hx * a[2], uz = hx * a[1] - hy * a[0]; const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+ const vx0 = uy * a[2] - uz * a[1], vy0 = uz * a[0] - ux * a[2], vz0 = ux * a[1] - uy * a[0];
+ const c = Math.cos(rot), s = Math.sin(rot);
+ return {u: [ux * c + vx0 * s, uy * c + vy0 * s, uz * c + vz0 * s], v: [vx0 * c - ux * s, vy0 * c - uy * s, vz0 * c - uz * s]};
+}
+
+/**
+ * A hexagonal basalt prism along axis `a` from `o`: sides, a chamfered top cut on a plane tilted by (tu, tv) per metre
+ * across, and (for loose drums) a flat base cap. Face 0 points along u rotated by 30 degrees, as the lattice wants.
+ */
+function prism(b: Builder, o: V3, a: V3, rot: number, len: number, r: number, tu: number, tv: number, col: THREE.Color, seed: number, capBase = false) {
+ const {u, v} = frame(a, rot);
+ const P = (s: number, x: number, y: number): V3 => [o[0] + a[0] * s + u[0] * x + v[0] * y, o[1] + a[1] * s + u[1] * x + v[1] * y, o[2] + a[2] * s + u[2] * x + v[2] * y];
+ const top = (x: number, y: number) => len + tu * x + tv * y;
+ const base: V3[] = [], outer: V3[] = [], inner: V3[] = [], ch = Math.min(.12, r * .16);
  for (let k = 0; k < 6; k++) {
-  const a = rot + k * Math.PI / 3, ca = Math.cos(a), sa = Math.sin(a), rr = r * (.93 + .14 * hash3(cx, cz, k));
-  const x = cx + ca * rr, z = cz + sa * rr, xi = cx + ca * rr * .86, zi = cz + sa * rr * .86;
-  base.push([x, y0, z]); outer.push([x, yAt(x, z) - .08, z]); inner.push([xi, yAt(xi, zi), zi]);
+  const ang = k * Math.PI / 3, rr = r * (.95 + .1 * hash3(seed, k, 3.1)), x = Math.cos(ang) * rr, y = Math.sin(ang) * rr;
+  base.push(P(0, x, y)); outer.push(P(top(x, y) - ch, x, y)); inner.push(P(top(x * .84, y * .84), x * .84, y * .84));
  }
- const c: V3 = [cx, yAt(cx, cz) + .015, cz];
+ const c = P(top(0, 0) + .01, 0, 0), c0 = P(0, 0, 0);
  for (let k = 0; k < 6; k++) {
   const k1 = (k + 1) % 6;
-  b.quad(base[k], outer[k], outer[k1], base[k1], col, K.column, 0, seed);
+  // Side faces carry u across them (0 to 1) so the shader can darken the seams between columns.
+  b.tri(base[k], outer[k], outer[k1], col, K.column, 0, seed, undefined, [0, 0, 1]); b.tri(base[k], outer[k1], base[k1], col, K.column, 0, seed, undefined, [0, 1, 1]);
   b.quad(outer[k], inner[k], inner[k1], outer[k1], col, K.column, 0, seed);
   b.tri(inner[k], c, inner[k1], col, K.column, 0, seed);
+  if (capBase) b.tri(base[k1], c0, base[k], col, K.column, 0, seed);
  }
 }
 
-/** A column segment lying on the ground (fallen from a stack). */
-function fallen(b: Builder, ground: (x: number, z: number) => number, x: number, z: number, len: number, r: number, yaw: number, col: THREE.Color, seed: number) {
- const ax = Math.sin(yaw), az = Math.cos(yaw), y = ground(x, z) + r * .55;
- const ring = (s: number): V3[] => Array.from({length: 6}, (_, k) => { const a = k * Math.PI / 3 + seed, u = Math.cos(a) * r, v = Math.sin(a) * r; return [x + ax * s * len / 2 + az * u, y + v, z + az * s * len / 2 - ax * u] as V3; });
- const p0 = ring(-1), p1 = ring(1);
- for (let k = 0; k < 6; k++) { const k1 = (k + 1) % 6; b.quad(p0[k], p0[k1], p1[k1], p1[k], col, K.column, 0, seed); }
- const c0: V3 = [x - ax * len / 2, y, z - az * len / 2], c1: V3 = [x + ax * len / 2, y, z + az * len / 2];
- for (let k = 0; k < 6; k++) { const k1 = (k + 1) % 6; b.tri(c0, p0[k1], p0[k], col, K.column, 0, seed); b.tri(c1, p1[k], p1[k1], col, K.column, 0, seed); }
+/** A column drum or broken length lying on the ground, a flat face down, sunk a little. */
+function drum(b: Builder, ground: (x: number, z: number) => number, x: number, z: number, len: number, r: number, yaw: number, roll: number, col: THREE.Color, seed: number) {
+ const ax = Math.sin(yaw), az = Math.cos(yaw), dip = (ground(x + ax * len / 2, z + az * len / 2) - ground(x - ax * len / 2, z - az * len / 2)) / len;
+ const a: V3 = [ax, dip, az], al = Math.hypot(ax, dip, az); a[0] /= al; a[1] /= al; a[2] /= al;
+ const o: V3 = [x - a[0] * len / 2, ground(x, z) + r * .78 - a[1] * len / 2, z - a[2] * len / 2];
+ prism(b, o, a, roll, len, r, (hash3(seed, 1, 2) - .5) * .5, (hash3(seed, 2, 1) - .5) * .5, col, seed, true);
+}
+
+/** Angular scree: a short, randomly turned prism half buried (basalt breaks into blocks, not pebbles). */
+function block(b: Builder, ground: (x: number, z: number) => number, x: number, z: number, s: number, seed: number, col: THREE.Color) {
+ const R = rng(seed * 31 + 7), th = R() * Math.PI * 2, tilt = .3 + R() * 1.1;
+ const a: V3 = [Math.sin(th) * Math.sin(tilt), Math.cos(tilt), Math.cos(th) * Math.sin(tilt)], len = s * (.7 + R() * .9);
+ prism(b, [x - a[0] * len * .45, ground(x, z) - s * .35 - a[1] * len * .3, z - a[2] * len * .45], a, R() * 6, len, s * .62, (R() - .5) * .9, (R() - .5) * .9, col, seed, true);
+}
+
+/** Smooth fan of talus round a footprint: ash-grey, lumpy, burying the column feet so the stack grows out of the ground. */
+function apron(b: Builder, ground: (x: number, z: number) => number, cx: number, cz: number, edge: (th: number) => number, rise: number, reach: number, seed: number) {
+ const N = 44, rings = [[-.9, 1], [-.2, .92], [.35, .62], [.75, .32], [1, .1], [1.25, -.08]] as const, pos: number[] = [], idx: number[] = [];
+ for (const [t, hk] of rings) for (let s = 0; s < N; s++) {
+  const th = s / N * Math.PI * 2, wob = 1 + .3 * vnoise(Math.cos(th) * 2.1 + seed, t, Math.sin(th) * 2.1);
+  const rr = edge(th) + t * reach * wob + .25 * vnoise(Math.cos(th) * 5, seed + t * 3, Math.sin(th) * 5);
+  const x = cx + Math.cos(th) * rr, z = cz + Math.sin(th) * rr;
+  const lump = .12 * vnoise(x * 1.7, seed, z * 1.7) + .06 * vnoise(x * 4.1, seed * 2, z * 4.1);
+  pos.push(x, ground(x, z) + Math.max(-.12, hk * rise * (.7 + .5 * (vnoise(Math.cos(th) * 1.3, seed * .7, Math.sin(th) * 1.3) * .5 + .5)) + (hk > 0 ? lump : 0)), z);
+ }
+ for (let i = 0; i < rings.length - 1; i++) for (let s = 0; s < N; s++) { const p = i * N + s, q = i * N + (s + 1) % N; idx.push(p, q, p + N, q, q + N, p + N); }
+ const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+ b.geo(g, (p) => C('#3d3c43', .85 + .3 * (vnoise(p[0] * .7, p[1], p[2] * .7) * .5 + .5)), K.boulder, 0, seed % 61); g.dispose();
+}
+
+/**
+ * Columnar basalt: bundles of 7 to 20 hexagonal columns on their own jittered lattices, set apart with talus between
+ * them. In each bundle the heights fall away from an off-centre peak (tallest two to four times the shortest), every
+ * top is broken on a tilted plane and a few columns are snapped short, so no outline is a flat-topped or stepped mass.
+ * The stack leans a few degrees; talus buries the feet, fallen drums and angular blocks lie on it, and a column or
+ * two leans out of the face where it broke away.
+ */
+/** Columns per bundle and tallest-to-shortest ratio of every bundle built (rocks stats, QA). */
+const bundleLog: {n: number; ratio: number}[] = [];
+
+function columnCluster(b: Builder, ground: (x: number, z: number) => number, e: EmberFeature) {
+ const R = rng(e.seed), cy = Math.cos(e.yaw), sy = Math.sin(e.yaw);
+ const sp = Math.min(1, .66 + .035 * e.h + .1 * R()), tile = sp * .577;
+ const la = R() * Math.PI * 2, lean = .03 + .05 * R(), lx0 = Math.sin(la) * lean, lz0 = Math.cos(la) * lean;
+ const fa = R() * Math.PI * 2;
+ const toW = (lx: number, lz: number): [number, number] => [e.x + lx * cy + lz * sy, e.z - lx * sy + lz * cy];
+ const palette = ['#363941', '#30333b', '#3d3f47', '#2b2e36', '#3a383f', '#33353b'];
+ const edgeLoc: number[] = new Array(48).fill(0);
+ // Bundles of 7 to 20 columns each, set apart with talus between them; one or two on a small stack, up to five on a big one.
+ const nb = Math.max(1, Math.min(5, Math.round(e.r * e.r / 7)));
+ const bundles: {x: number; z: number; rb: number; n: number; H: number}[] = [];
+ for (let k = 0, tries = 0; k < nb && tries < 60; tries++) {
+  const n = 7 + Math.floor(R() * 14), rb = sp * Math.sqrt(n * .866 / Math.PI) + .2;
+  const a = R() * Math.PI * 2, d = k === 0 ? R() * e.r * .25 : (e.r - rb) * (.45 + .55 * R());
+  const bx = Math.cos(a) * d, bz = Math.sin(a) * d * .85;
+  if (Math.hypot(bx, bz) + rb > e.r * 1.05 && k > 0) continue;
+  if (bundles.some((o) => Math.hypot(o.x - bx, o.z - bz) < (o.rb + rb) * .8)) continue;
+  bundles.push({x: bx, z: bz, rb, n, H: e.h * (k === 0 ? 1 : .5 + .45 * R())}); k++;
+ }
+ for (const bu of bundles) {
+  // The bundle's own lattice: turned its own way, the cells nearest its centre taken (a compact, ragged bunch).
+  const brot = R() * Math.PI / 3, bc = Math.cos(brot), bs = Math.sin(brot), m = Math.ceil(bu.rb / sp) + 2, cells: [number, number, number][] = [];
+  for (let j = -m; j <= m; j++) for (let i = -m; i <= m; i++) {
+   const u = (i + j * .5) * sp, v = j * sp * .866, lx = bu.x + u * bc - v * bs, lz = bu.z + u * bs + v * bc;
+   cells.push([lx, lz, Math.hypot(u, v) + R() * sp * .45]);
+  }
+  cells.sort((p, q) => p[2] - q[2]);
+  const peakA = R() * Math.PI * 2, px = bu.x + Math.cos(peakA) * bu.rb * .45, pz = bu.z + Math.sin(peakA) * bu.rb * .45;
+  const bl: V3 = [lx0 + (R() - .5) * .05, 1, lz0 + (R() - .5) * .05];
+  const rot = -e.yaw - brot - Math.PI / 6;
+  let hMin = Infinity, hMax = 0;
+  for (const [lx, lz] of cells.slice(0, bu.n)) {
+   const [x, z] = toW(lx, lz), g = ground(x, z);
+   // Heights fall away from an off-centre peak: the shortest about a third of the tallest; some snapped lower still.
+   const dp = Math.min(1, Math.hypot(lx - px, lz - pz) / (bu.rb * 1.3));
+   let h = bu.H * (.3 + .7 * Math.pow(1 - dp, 1.1)) * (.86 + .28 * R());
+   if (R() < .12) h *= .45 + .3 * R();
+   h = Math.max(.5, bu.H * .29, h); hMin = Math.min(hMin, h); hMax = Math.max(hMax, h);
+   const th = Math.atan2(z - e.z, x - e.x), bin = Math.floor(((th / (Math.PI * 2)) + 1) % 1 * 48);
+   edgeLoc[bin] = Math.max(edgeLoc[bin], Math.hypot(x - e.x, z - e.z) + tile);
+   const ax: V3 = [bl[0] + (R() - .5) * .03, 1, bl[2] + (R() - .5) * .03], al = Math.hypot(ax[0], ax[1], ax[2]); ax[0] /= al; ax[1] /= al; ax[2] /= al;
+   // Every top broken: cut on a tilted plane, some steeply.
+   const tilt = .3 + .45 * R(), ta = R() * Math.PI * 2;
+   prism(b, [x, g - 1.2, z], ax, rot + (R() - .5) * .07, h + 1.2, tile * (.92 + .05 * R()), Math.cos(ta) * tilt, Math.sin(ta) * tilt, C(palette[Math.floor(R() * palette.length)], .78 + .44 * R()), R() * 100);
+  }
+  bundleLog.push({n: bu.n, ratio: hMax / hMin});
+ }
+ // Fill gaps in the outline so the talus hugs the stack.
+ for (let k = 0; k < 48; k++) if (!edgeLoc[k]) edgeLoc[k] = Math.max(edgeLoc[(k + 47) % 48], edgeLoc[(k + 1) % 48]) || e.r * .6;
+ const edge = (th: number) => { const f = (((th / (Math.PI * 2)) % 1) + 1) % 1 * 48, k = Math.floor(f) % 48, t = f - Math.floor(f); return (edgeLoc[k] * (1 - t) + edgeLoc[(k + 1) % 48] * t) * .82; };
+ const rise = Math.min(1.7, .2 * e.h + .2), reach = 1.6 + e.r * .45;
+ apron(b, ground, e.x, e.z, edge, rise, reach, e.seed);
+ // Columns that broke away and lean out of the face, resting on the talus.
+ for (let k = 0; k < 1 + Math.floor(e.r / 2.5); k++) {
+  const th = fa + Math.PI * (.5 + R()), rr = edge(th) + .2, x = e.x + Math.cos(th) * rr, z = e.z + Math.sin(th) * rr;
+  const out = .35 + R() * .3, ax: V3 = [Math.cos(th) * Math.sin(out), Math.cos(out), Math.sin(th) * Math.sin(out)];
+  prism(b, [x, ground(x, z) - .6, z], ax, R() * 6, e.h * (.35 + .25 * R()), tile * (.85 + .1 * R()), (R() - .5) * .8, (R() - .5) * .8, C(palette[k % palette.length]), R() * 100);
+ }
+ // Drums and blocks on the talus and the ground beyond, thickest at the foot.
+ for (let k = 0; k < 3 + Math.floor(e.r * .9); k++) {
+  const th = R() * Math.PI * 2, rr = edge(th) + reach * (.25 + R() * .9), x = e.x + Math.cos(th) * rr, z = e.z + Math.sin(th) * rr;
+  drum(b, ground, x, z, sp * (.5 + R() * 1.1), tile * (.8 + .15 * R()), R() * Math.PI, R() * 6, C(palette[Math.floor(R() * palette.length)], .9 + .2 * R()), R() * 100);
+ }
+ for (let k = 0; k < 14 + Math.floor(e.r * 5); k++) {
+  const th = R() * Math.PI * 2, rr = edge(th) + reach * Math.pow(R(), .7) * 1.25, x = e.x + Math.cos(th) * rr, z = e.z + Math.sin(th) * rr;
+  block(b, ground, x, z, .14 + R() * .3 * Math.min(1.5, sp), Math.floor(R() * 1e5), C(palette[Math.floor(R() * palette.length)], .85 + .3 * R()));
+ }
 }
 
 /** A rounded, lumpy boulder (smooth normals), sunk a third into the ground. */
@@ -122,56 +237,46 @@ function smoothNormals(g: THREE.BufferGeometry) {
  }
 }
 
-function columnCluster(b: Builder, ground: (x: number, z: number) => number, e: EmberFeature) {
- const R = rng(e.seed), sp = 1.22, n = Math.ceil(e.r / sp) + 1, cy = Math.cos(e.yaw), sy = Math.sin(e.yaw);
- const palette = ['#3b3e46', '#33363e', '#43454d', '#2e3038', '#3e3c42'];
- for (let j = -n; j <= n; j++) for (let i = -n; i <= n; i++) {
-  const lx = (i + j * .5) * sp + (R() - .5) * .12, lz = j * sp * .866 + (R() - .5) * .12;
-  const d = Math.hypot(lx, lz) / e.r;
-  if (d > 1 || d > .72 && R() < .35) continue;
-  const x = e.x + lx * cy + lz * sy, z = e.z - lx * sy + lz * cy;
-  let h = e.h * (1 - Math.pow(d, 1.5) * .72) * (.68 + .4 * R());
-  if (R() < .13) h *= .3;
-  const g = ground(x, z), seed = R() * 100;
-  column(b, x, z, sp * .5 * (.9 + .08 * R()), g - .9, g + Math.max(.35, h), (R() - .5) * .38, (R() - .5) * .38, e.yaw + (R() - .5) * .25, C(palette[Math.floor(R() * palette.length)], .9 + .2 * R()), seed);
- }
- // Fallen segments and rubble round the foot.
- for (let k = 0; k < 2 + Math.floor(e.r / 2); k++) {
-  const a = R() * Math.PI * 2, r = e.r + .6 + R() * 2.4, x = e.x + Math.sin(a) * r, z = e.z + Math.cos(a) * r;
-  fallen(b, ground, x, z, .9 + R() * 1.5, .38 + R() * .18, R() * Math.PI, C('#3a3c44', .9 + .2 * R()), R() * 9);
- }
- for (let k = 0; k < 4 + e.r * 1.5; k++) {
-  const a = R() * Math.PI * 2, r = e.r * .8 + R() * 3.5, x = e.x + Math.sin(a) * r, z = e.z + Math.cos(a) * r;
-  boulder(b, ground, x, z, .18 + R() * .35, R() * 50, C('#373941', .85 + .3 * R()));
- }
-}
-
-/** A lumpy cinder cone from a lathe profile, its crater glowing toward the vent. */
+/**
+ * A spatter cone: steep flanks of welded spatter (lumpy at two scales), a ragged rim breached on one side, a deep
+ * crater glowing toward its vent. Scoria is dark at the foot and oxidised rust-red toward the rim, with sulfur
+ * crusting a few spots of the lip.
+ */
 function spatterCone(b: Builder, ground: (x: number, z: number) => number, e: EmberFeature) {
- const R = rng(e.seed), segs = 28, H = e.h, r = e.r;
- const prof: [number, number, number][] = [[1.12, -.5, 0], [1, 0, 0], [.82, .3, 0], [.6, .66, 0], [.44, .92, 0], [.36, 1, 0], [.3, .93, .25], [.2, .7, .65], [.1, .5, 1]];
- const g0 = ground(e.x, e.z), pos: number[] = [], glow: number[] = [], idx: number[] = [];
+ const R = rng(e.seed), segs = 40, H = e.h, r = e.r, breach = R() * Math.PI * 2;
+ const prof: [number, number, number][] = [[1.18, -.45, 0], [1, 0, 0], [.88, .2, 0], [.74, .45, 0], [.6, .7, 0], [.48, .9, 0], [.4, 1, 0], [.33, .97, .05], [.27, .8, .3], [.2, .62, .7], [.11, .48, 1]];
+ const g0 = ground(e.x, e.z), pos: number[] = [], glow: number[] = [], hf: number[] = [], idx: number[] = [];
  for (let i = 0; i < prof.length; i++) for (let s = 0; s < segs; s++) {
-  const a = s / segs * Math.PI * 2, [pr, ph, pg] = prof[i];
-  const lump = 1 + .14 * vnoise(Math.cos(a) * 2.2 + e.seed, ph * 3, Math.sin(a) * 2.2) + .06 * vnoise(Math.cos(a) * 6, ph * 7 + e.seed, Math.sin(a) * 6);
-  const rad = pr * r * lump * (i > 4 ? 1 : 1 + .08 * Math.sin(a * 2 + e.seed));
-  const x = e.x + Math.cos(a) * rad, z = e.z + Math.sin(a) * rad;
-  const y = i === 0 ? ground(x, z) - .5 : i === 1 ? ground(x, z) + .02 : g0 + ph * H * (1 + .08 * vnoise(Math.cos(a) * 3, e.seed, Math.sin(a) * 3));
-  pos.push(x, y, z); glow.push(pg);
+  const a = s / segs * Math.PI * 2, [pr, ph, pg] = prof[i], ca = Math.cos(a), sa = Math.sin(a);
+  const lump = 1 + .13 * vnoise(ca * 2.4 + e.seed, ph * 3, sa * 2.4) + .07 * vnoise(ca * 7, ph * 9 + e.seed, sa * 7);
+  const rad = pr * r * lump * (1 + .07 * Math.sin(a * 2 + e.seed));
+  const x = e.x + ca * rad, z = e.z + sa * rad;
+  // The breach lowers the rim over about 70 degrees; the rim itself is notched.
+  const db = Math.abs(Math.atan2(Math.sin(a - breach), Math.cos(a - breach))), cut = Math.max(0, 1 - db / .62);
+  const rim = Math.max(0, 1 - Math.abs(ph - 1) / .45) * (.1 * vnoise(ca * 5 + e.seed, 3.3, sa * 5) - .3 * cut * cut);
+  const y = i === 0 ? ground(x, z) - .5 : i === 1 ? ground(x, z) + .02 : g0 + (ph + rim) * H * (1 + .06 * vnoise(ca * 3, e.seed, sa * 3));
+  pos.push(x, y, z); glow.push(pg); hf.push(Math.max(0, ph));
  }
  for (let i = 0; i < prof.length - 1; i++) for (let s = 0; s < segs; s++) {
   const a = i * segs + s, bb = i * segs + (s + 1) % segs, c = a + segs, d = bb + segs;
   idx.push(a, c, bb, bb, c, d);
  }
  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
- const glowAt = new Map<string, number>(); for (let i = 0; i < glow.length; i++) glowAt.set(`${pos[i * 3].toFixed(3)},${pos[i * 3 + 2].toFixed(3)}`, glow[i]);
- b.geo(g, (p) => C('#3a3438', .85 + .25 * (vnoise(p[0] * .8, p[1] * .8, p[2] * .8) * .5 + .5)), K.cone, 0, e.seed % 97, (p) => glowAt.get(`${p[0].toFixed(3)},${p[2].toFixed(3)}`) ?? 0);
+ const key = (x: number, z: number) => `${x.toFixed(3)},${z.toFixed(3)}`, glowAt = new Map<string, number>(), hAt = new Map<string, number>();
+ for (let i = 0; i < glow.length; i++) { glowAt.set(key(pos[i * 3], pos[i * 3 + 2]), glow[i]); hAt.set(key(pos[i * 3], pos[i * 3 + 2]), hf[i]); }
+ const dark = C('#2c282c'), rust = C('#5c3227'), sulfur = C('#a8913e'), tmp = new THREE.Color();
+ b.geo(g, (p) => {
+  const h = hAt.get(key(p[0], p[2])) ?? 0, n = vnoise(p[0] * .9, p[1] * .9, p[2] * .9) * .5 + .5, n2 = vnoise(p[0] * 2.3 + 5, p[1] * 2.3, p[2] * 2.3) * .5 + .5;
+  tmp.copy(dark).lerp(rust, Math.min(1, Math.max(0, (h - .45) / .45)) * (.45 + .55 * n));
+  if (h > .85 && n2 > .74) tmp.lerp(sulfur, Math.min(1, (n2 - .74) * 5) * .7);
+  return tmp.clone().multiplyScalar(.85 + .3 * n2);
+ }, K.cone, 0, e.seed % 97, (p) => glowAt.get(key(p[0], p[2])) ?? 0);
  g.dispose();
  // The vent: a little molten pool at the crater's bottom.
- const vg = new THREE.CircleGeometry(r * .12, 10); vg.rotateX(-Math.PI / 2); vg.translate(e.x, g0 + .5 * H + .03, e.z);
+ const vg = new THREE.CircleGeometry(r * .13, 12); vg.rotateX(-Math.PI / 2); vg.translate(e.x, g0 + .48 * H + .03, e.z);
  b.geo(vg, C('#3a1a14'), K.cone, 0, 0, () => 1.3); vg.dispose();
- // Spatter bombs scattered round it.
- for (let k = 0; k < 7; k++) { const a = R() * Math.PI * 2, rr = r * (1.05 + R() * .8); boulder(b, ground, e.x + Math.sin(a) * rr, e.z + Math.cos(a) * rr, .15 + R() * .25, R() * 40, C('#2f2a2e', .9 + .2 * R())); }
+ // Spatter bombs and welded clots scattered round it, more on the breach side.
+ for (let k = 0; k < 11; k++) { const a = k < 5 ? breach + (R() - .5) * 1.2 : R() * Math.PI * 2, rr = r * (1.05 + R() * .9); boulder(b, ground, e.x + Math.cos(a) * rr, e.z + Math.sin(a) * rr, .14 + R() * .26, R() * 40, C(R() < .4 ? '#4a2c26' : '#2f2a2e', .9 + .2 * R())); }
 }
 
 /** Glassy obsidian chunks with conchoidal facets (flat normals, tilted out of the ground). */
@@ -304,7 +409,7 @@ uniform float rkTime;
 varying vec3 vRkW;
 varying vec3 vRkN;
 varying vec4 vRkMat;
-varying vec2 vRkAux;
+varying vec3 vRkAux;
 ${EMBER_NOISE}
 `;
 
@@ -328,6 +433,11 @@ if(rkKind<.5){
   float joint=(1.-smoothstep(.0,.03+rkFoot*.4,jf))*rkWall*step(.35,fract(floor(jy)*.37+rkSeed));
   rkC*=1.-.45*joint;
   rkC*=1.+.12*(1.-smoothstep(.03,.12,jf))*rkWall*(1.-joint);
+  // Seams between columns: shadowed gaps at the face edges and a worn, paler arris just inside them; the face itself
+  // bellies a little (lighter mid-face), so each column reads as a separate stripe even in shade.
+  float fu=vRkAux.z,fe=min(fu,1.-fu)*2.;
+  float fw=clamp(fwidth(fu)*1.5,.02,.4);
+  rkC*=mix(.42,1.,smoothstep(.0,fw+.06,fe))*(1.+.16*smoothstep(fw+.06,fw+.2,fe)*(1.-smoothstep(.3,.6,fe))*rkFine)*(.93+.1*fe);
 }
 if(rkKind>5.5){
   // Dressed stone: tooled in fine vertical flutes, edges worn paler.
@@ -354,6 +464,15 @@ roughnessFactor=mix(roughnessFactor,.95,rkDust);
 `;
 
 const ROCK_NORMAL = /* glsl */ `
+if(rkKind>1.5&&rkKind<2.5&&vRkMat.y>.5){
+  // Conchoidal fracture: each facet scooped into shallow shells with ripple rings round their point of impact.
+  vec3 cel=egCells(rkQ*1.5+rkSeed);
+  float h=-cel.z*cel.z*.09+sin(cel.z*34.+cel.y*6.)*.0035*(1.-smoothstep(.02,.08,rkFoot))+smoothstep(.0,.05,cel.x)*.01;
+  vec3 dx=dFdx(-vViewPosition),dy=dFdy(-vViewPosition);
+  float hx=dFdx(h),hy=dFdy(h);
+  vec3 r1=cross(dy,normal),r2=cross(normal,dx);float det=dot(dx,r1);
+  if(abs(det)>1e-12)normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2));
+}
 if(egDetail>.5&&vRkMat.y<.5){
   // Rough grain, only where it can be seen.
   float h=(rkN2*.012+egNoise(rkQ*13.)*.006)*rkFine;
@@ -438,6 +557,7 @@ export function emberRocks(opts: EmberRocksOptions) {
   return Math.min(1.5, h);
  };
  const b = new Builder(height, heat);
+ bundleLog.length = 0;
  for (const e of features) {
   if (e.kind === 'columns') columnCluster(b, height, e);
   else if (e.kind === 'cone') spatterCone(b, height, e);
@@ -459,7 +579,7 @@ export function emberRocks(opts: EmberRocksOptions) {
  rockMat.onBeforeCompile = (shader) => {
   Object.assign(shader.uniforms, uniforms);
   shader.vertexShader = shader.vertexShader
-   .replace('#include <common>', '#include <common>\nattribute vec4 aRkMat;\nattribute vec2 aRkAux;\nvarying vec3 vRkW;\nvarying vec3 vRkN;\nvarying vec4 vRkMat;\nvarying vec2 vRkAux;')
+   .replace('#include <common>', '#include <common>\nattribute vec4 aRkMat;\nattribute vec3 aRkAux;\nvarying vec3 vRkW;\nvarying vec3 vRkN;\nvarying vec4 vRkMat;\nvarying vec3 vRkAux;')
    .replace('#include <fog_vertex>', '#include <fog_vertex>\nvRkW=(modelMatrix*vec4(transformed,1.)).xyz;vRkN=normalize(mat3(modelMatrix)*objectNormal);vRkMat=aRkMat;vRkAux=aRkAux;');
   shader.fragmentShader = shader.fragmentShader
    .replace('#include <common>', `#include <common>\n${ROCK_HEAD}`)
@@ -497,7 +617,8 @@ export function emberRocks(opts: EmberRocksOptions) {
 
  return {
   rocks, crystals: crystalMesh, features,
-  stats: {features: features.length, skippedOnLava: opts.features.length - features.length, rockTriangles: rockGeo.getAttribute('position').count / 3, crystalTriangles: cp.length / 9},
+  stats: {features: features.length, skippedOnLava: opts.features.length - features.length, rockTriangles: rockGeo.getAttribute('position').count / 3, crystalTriangles: cp.length / 9,
+   bundles: {count: bundleLog.length, minColumns: Math.min(...bundleLog.map((u) => u.n)), maxColumns: Math.max(...bundleLog.map((u) => u.n)), minRatio: +Math.min(...bundleLog.map((u) => u.ratio)).toFixed(2), maxRatio: +Math.max(...bundleLog.map((u) => u.ratio)).toFixed(2), medianRatio: +bundleLog.map((u) => u.ratio).sort((p, q) => p - q)[bundleLog.length >> 1].toFixed(2)}},
   update(time: number) { uniforms.rkTime.value = time; },
  };
 }
