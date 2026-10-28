@@ -64,6 +64,8 @@ float smKeep=smS.r*(1.-step(.5,smA.b))*smoothstep(-.12,.35,smPd)*(1.-smoothstep(
 smKeep*=mix(.4,1.,smoothstep(3.,11.,length(smRoot-smCam.xz)));
 // Clover patches: the turf there is short and open, the clover leaves (ground shader) show between the blades.
 smKeep*=1.-.55*smE.r;
+// In a drift the turf thins so the blossoms (instanced near, painted beyond) carry the colour.
+smKeep*=1.-.42*smoothstep(.3,.9,smS.a);
 float smLive=step(smR2.x,smKeep);
 float smTall=smA.a*(1.+.35*smoothstep(.2,1.2,smPd)*(1.-smoothstep(1.2,3.,smPd)));
 float smScale=smLive*mix(1.,.35,smoothstep(.55,.95,smDist))*smoothstep(0.,.25,smKeep-smR2.x+.1)*(.62+.7*smK.y)*(.7+.45*smHeart);
@@ -108,14 +110,14 @@ float smKeep=smS.a*(1.-step(.5,smA.b))*smoothstep(1.5,2.,smPathD(smRoot)+.3)*(1.
 float smLive=step(smR2.x,smKeep*1.1);
 float smScale=smLive*mix(1.,.4,smoothstep(.55,.95,smDist))*(.75+.5*smR2.y);
 // aBlade: x height 0..1 (stem) or 2 for the head, y the petal angle (head) or the stem side, z ring 0 centre .. 1 petal tip.
-float smH=(.24+.22*smR.y)*smScale*(.8+.4*smA.a);
+float smH=(.32+.24*smR.y)*smScale*(.85+.4*smA.a);
 float smGust=sin(smTime*1.1+dot(smRoot,vec2(.13,.09)))*.5+.5;
 vec2 smAway=smRoot-smPlayer.xz;float smPl=length(smAway);
 vec2 smWind=vec2(.8,.6)*(.05+.07*smGust)+(smPl>1e-3?smAway/smPl*(1.-smoothstep(.3,1.2,smPl))*.25:vec2(0.));
 float smGround=smHeightAt(smRoot);
 vec3 transformed;
 float smHead=step(1.5,aBlade.x);
-float smPetalR=(.055+.035*smR2.x)*smScale;
+float smPetalR=(.07+.04*smR2.x)*smScale;
 if(smHead<.5){
   float t=aBlade.x;vec2 side=vec2(cos(smR.x*6.28),sin(smR.x*6.28))*aBlade.y*.008*smScale*(1.-t);
   transformed=vec3(smRoot.x+side.x+smWind.x*t*t*smH,smGround+t*smH,smRoot.y+side.y+smWind.y*t*t*smH);
@@ -201,7 +203,7 @@ export function skyMeadow(soil:THREE.DataTexture,aux:THREE.DataTexture,extra:THR
  const c0=fl.length/3;fl.push(2,0,0);
  for(let k=0;k<10;k++){const a=k/10*Math.PI*2;fl.push(2,a,k%2?.45:1);}
  for(let k=0;k<10;k++)flIdx.push(c0,c0+1+k,c0+1+(k+1)%10);
- const flowerParams={high:{s:.42,n:96},low:{s:.6,n:56}};
+ const flowerParams={high:{s:.3,n:140},low:{s:.5,n:60}};
  const flowers=make('skybloom-meadow-flowers',FLOWER,latticeGeometry(fl,flIdx,flowerParams.high.n**2),flowerParams,.6);
  const root=new THREE.Group();root.name='skybloom-meadow';root.add(grass.mesh,flowers.mesh);
  let quality:'high'|'low'='high';

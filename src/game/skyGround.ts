@@ -93,7 +93,7 @@ float sgRock=smoothstep(.42,.6,sgSlope+(sgMid-.5)*.2);
 vec3 sgG=mix(sgDeep,sgLit,smoothstep(.3,.7,sgMacro));
 sgG=mix(sgG,sgShadeC,smoothstep(.6,.85,sgMacro2)*.35);
 sgG=mix(sgG,sgDry,smoothstep(.45,.85,sgSw)*.3*(1.-sgMoss));
-sgG*=mix(1.,.78,smoothstep(.4,.85,sgMid)*.55);
+sgG*=mix(1.,.8,smoothstep(.4,.85,sgMid)*.35);
 sgG*=.82+.36*sgClump.r;
 sgG*=.76+.48*sgBlade;sgG*=.88+.24*sgBlade2;
 // Dry tips catch the sun: fine pale flecks where the blades stand tall.
@@ -149,12 +149,20 @@ if(sgPb>.01&&sgF1>.001){
 // with a stray of another; far off the drift averages into a soft tint of its colour.
 float sgFl=sgS.a*(1.-sgWorn)*(1.-sgRock);
 vec3 sgFc=sgBloom(sgA.g);
-vec2 sgCell=floor(sgP/.32);float sgR1=sgH(sgCell),sgR2=sgH(sgCell+19.7);
-vec2 sgCc=(sgCell+.2+.6*vec2(sgR1,sgR2))*.32;
-float sgDot=(1.-smoothstep(.035,.075,length(sgP-sgCc)))*step(sgR1,sgFl*.85);
+vec2 sgCell=floor(sgP/.24);float sgR1=sgH(sgCell),sgR2=sgH(sgCell+19.7);
+vec2 sgCc=(sgCell+.22+.56*vec2(sgR1,sgR2))*.24;
+float sgDot=(1.-smoothstep(.045,.08,length(sgP-sgCc)))*step(sgR1,sgFl*.95);
 vec3 sgDc=sgR2<.12?sgBloom(fract(sgA.g+.5)):sgFc;
 sgCol=mix(sgCol,sgDc*(.85+.3*sgR2),sgDot*sgF2);
-sgCol=mix(sgCol,mix(sgCol,sgFc,.5),sgFl*(1.-sgF2)*.2);
+// Mid distance: the blossoms as dabs on a coarser lattice, so a drift reads as flecks of colour across the field;
+// far off only a light lift of its hue (a pale wash over green turns grey).
+// Irregular specks from two turned noise reads (never a lattice), denser where the drift is thicker.
+float sgSpN=sgT(sgP,1.3,1.37).r*.65+sgT(sgP,.53,2.71).r*.35;
+float sgSpT=1.-sgFl*.42;
+float sgDab=smoothstep(sgSpT,sgSpT+.05,sgSpN)*(1.-sgF2)*sgF1*step(.05,sgFl);
+float sgSpH=sgT(sgP,2.9,.61).b;
+sgCol=mix(sgCol,(sgSpH>.8?sgBloom(fract(sgA.g+.5)):sgFc)*(.85+.3*sgSpH),sgDab*.85);
+sgCol=mix(sgCol,sgCol*.65+sgFc*.35,smoothstep(.2,.9,sgFl)*(1.-sgF1)*.35);
 // Contact shade: blue-violet, deepest at the foot, ragged at its edge.
 float sgAo=sgA.r*(.75+.5*sgFine);
 sgCol*=mix(vec3(1.),vec3(.52,.58,.7),sgAo);

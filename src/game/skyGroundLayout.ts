@@ -74,7 +74,7 @@ export const SKY_WAYS:SkyWay[]=[
  avenue(),
  // Doors (houses at x +-30, fronts at +-24.7), each path past a townsfolk spot; lantern posts (skyTownLayout) kept clear.
  garden('garden-w38',[[-3,31],[-9,34.4],[-16,38],[-20.5,38.7],[-24.6,38]],2.2,1.6),
- garden('garden-w56',[[-3,51],[-9,53.4],[-16,56],[-20.5,56.6],[-24.6,56]],2.2,1.6),
+ garden('garden-w56',[[-3,69],[-9.5,63.6],[-13,58.4],[-16,56],[-20.5,55.4],[-24.6,56]],2.2,1.6),
  garden('garden-w74',[[-3,75],[-8.5,76.4],[-12.5,76.4],[-16,74],[-20.5,73.5],[-24.6,74]],2.2,1.6),
  garden('garden-e38',[[3,44],[9,41.6],[16,38],[20.5,37.4],[24.6,38]],2.2,1.6),
  garden('garden-e56',[[3,60],[9,58],[16,56],[20.5,55.5],[24.6,56]],2.2,1.6),
@@ -84,7 +84,7 @@ export const SKY_WAYS:SkyWay[]=[
  garden('spawn-lane',[[-13,84],[-8,84.9],[-3,84]],2.1,2.3),
  // Out to the herb grove behind the gardener's house, and to the shore lookout past the map maker's.
  garden('herb-path',[[-12,36.2],[-19,32.6],[-27,30],[-37,28.3],[-45,27],[-50,26],[-51.5,25.6]],1.7,1.35),
- garden('shore-path',[[12,39.8],[18,34.2],[26,29.6],[34,28.2],[44,25.4],[54,23],[61,22],[62.5,21.8]],1.7,1.35),
+ garden('shore-path',[[3,9],[10,9.6],[20,12.6],[31,15.4],[42,18.6],[52,21.4],[61,22],[62.5,21.8]],1.8,1.35),
 ];
 /** Round clearings where the long paths end: paved, ragged, with a ring of stones left in the grass. */
 export const SKY_CLEARINGS:{x:number;z:number;r:number}[]=[{x:-50.5,z:25.8,r:3.2},{x:61.5,z:22,r:3.4}];
@@ -159,8 +159,8 @@ export type SkyTreeSpecies='jade'|'blossom'|'white'|'silver';
 export interface SkyTreeSpot{/** stable id within the forest */i:number;x:number;z:number;s:number;species:SkyTreeSpecies;yaw:number;/** visual size over the collider's scale */grand:number}
 export interface SkyGrove{name:string;x:number;z:number;r:number;species:SkyTreeSpecies[];/** boulders in its outcrop (0 for none) */rocks:number;log:boolean}
 export const SKY_GROVES:SkyGrove[]=[
- {name:'east-blossom-grove',x:84,z:-17,r:10,species:['blossom','white','blossom','jade','blossom','jade'],rocks:4,log:true},
- {name:'west-elder-dell',x:-82,z:-14,r:10,species:['silver','silver','jade','white','silver'],rocks:4,log:true},
+ {name:'east-blossom-grove',x:81,z:-13,r:9,species:['blossom','white','blossom','jade','blossom','jade'],rocks:4,log:true},
+ {name:'west-elder-dell',x:-79,z:-12,r:9,species:['silver','silver','jade','white','silver'],rocks:4,log:true},
  {name:'town-west-garden',x:-45,z:63,r:6,species:['blossom','jade','white'],rocks:0,log:false},
  {name:'town-east-garden',x:43,z:42,r:4.5,species:['jade','blossom'],rocks:0,log:false},
  {name:'harbour-west',x:-37,z:95,r:7,species:['jade','white','jade','blossom'],rocks:2,log:false},
@@ -177,6 +177,17 @@ export const SKY_GROVES:SkyGrove[]=[
 /** Rock groups out in the open fields (3-5 stones, sizes 4 : 1), so each field has a secondary accent. */
 export const SKY_ROCK_GROUPS=[{name:'east-field-stones',x:77,z:5,r:4,n:5},{name:'west-field-stones',x:-71,z:1,r:4,n:4}];
 
+/**
+ * Planted drifts (Jekyll): long soft-edged swathes along the wind (x .8, z .6), one colour each with a stray of
+ * another, cool beside warm. Each field view gets them on the near slope between the camera and the crab (the
+ * ground beyond falls away to the rim); the approach gets two.
+ * hue: 0 pink .. 1 butter (skyBloomHue's scale).
+ */
+export const SKY_DRIFTS=[
+ {x:50,z:-13,len:15,wid:4,hue:.08},{x:57,z:7,len:11,wid:3,hue:.62},{x:72,z:-24,len:9,wid:2.6,hue:.92},
+ {x:-50,z:2,len:15,wid:4,hue:.62},{x:-56,z:-17,len:11,wid:3,hue:.92},{x:-72,z:8,len:9,wid:2.6,hue:.08},
+ {x:13,z:-19,len:11,wid:3,hue:.92},{x:-16,z:-30,len:10,wid:2.8,hue:.62},{x:-14,z:2,len:9,wid:2.6,hue:.08},
+];
 /** Whether a tree of scale s may stand at (x, z). */
 function freeForTree(x:number,z:number,s:number){
  if(skyEdge(x,z)>.755||skyPathDistance(x,z)<3+1.2*s||!skyClearOfPoints(x,z,1.6))return false;
@@ -194,7 +205,7 @@ export function skyTrees():SkyTreeSpot[]{
    const a=skyHash(gi,k,91)*Math.PI*2,d=placed===0?skyHash(gi,k,92)*g.r*.3:(.35+.65*Math.sqrt(skyHash(gi,k,92)))*g.r;
    const x=g.x+Math.cos(a)*d,z=g.z+Math.sin(a)*d,s=placed===0?1.18+.12*skyHash(gi,k,93):.8+.35*skyHash(gi,k,93);
    if(!freeForTree(x,z,s)||out.some(t=>Math.hypot(t.x-x,t.z-z)<2.4*(t.s+s)+.6))continue;
-   out.push({i:gi*10+placed,x,z,s,species:g.species[placed],yaw:skyHash(gi,k,94)*Math.PI*2,grand:placed===0&&gi<2?1.18:1.04});placed++;
+   out.push({i:gi*10+placed,x,z,s,species:g.species[placed],yaw:skyHash(gi,k,94)*Math.PI*2,grand:gi<2?(placed===0?1.32:1.14):1.04});placed++;
   }
  });
  treeCache=out;return out;
@@ -320,12 +331,14 @@ export function skyGroundMap():SkyGroundMap{
   const ra=Math.hypot(x-SKY_ARENA.x,z-SKY_ARENA.z);worn=Math.max(worn,(1-smooth(ra+rag*1.5,SKY_ARENA.r,SKY_ARENA.r+4))*.75);
   worn=Math.max(worn,(1-smooth(wt+rag*2,7,12))*.6);
   // Moss in the shade and in damp hollows, bare soil in a few open patches.
-  const patch=fbm(x/11,z/11,13),moss=Math.max(ao*1.2,smooth(patch,.42,.65)*.5)*(1-town*.7),dirt=smooth(-patch,.6,.75)*smooth(fbm(x/3.5,z/3.5,14),-.1,.3)*(1-town)*.85;
+  const patch=fbm(x/11,z/11,13),moss=Math.max(ao*1.2,smooth(patch,.42,.65)*.5)*(1-town*.7),dirt=smooth(-patch,.68,.8)*smooth(fbm(x/3.5,z/3.5,14),-.1,.3)*(1-town)*.85;
   const grass=Math.max(0,1-worn*1.05)*(1-.35*dirt);
   // Wildflowers in drifts (style sheet: 8-15% of the ground): long swathes combed along the wind (3 : 1), thickest at
   // the forest's edge, none on worn ground or within 1.5 m of a way, few in the mown town.
   const wx=x*.8+z*.6,wz=-x*.6+z*.8,drift=fbm(wx/24,wz/8,17)+.3*fbm(x/4,z/4,19);
-  let flowers=smooth(drift+edge[k]*.4-.45*town,.33,.56)*(1-worn)*(1-dirt*.6)*(1-smooth(edgeR,.74,.8));
+  let flowers=smooth(drift+edge[k]*.4-.45*town,.33,.56),hue=skyBloomHue(x,z);
+  for(const d of SKY_DRIFTS){const u=((x-d.x)*.8+(z-d.z)*.6)/d.len,v=(-(x-d.x)*.6+(z-d.z)*.8)/d.wid,e=Math.hypot(u,v)+rag*.18,f=1-smooth(e,.55,1);if(f>flowers*.7){hue=d.hue;}flowers=Math.max(flowers,f);}
+  flowers*=(1-worn)*(1-dirt*.6)*(1-smooth(edgeR,.74,.8));
   flowers*=smooth(pd,1.5,2.4);
   let isBare=bare[k]===1;
   if(!isBare){
@@ -342,7 +355,7 @@ export function skyGroundMap():SkyGroundMap{
   // Pebbles: kicked to the ways' margins, at the doors and round the clearings.
   const pebbles=clamp01((1-smooth(pd,-.1,1.4))*.75*smooth(fbm(x/1.6,z/1.6,47),-.3,.25)+doorWear*.5);
   soil[o]=u8(grass);soil[o+1]=u8(worn);soil[o+2]=u8(.5+.5*(dirt-moss));soil[o+3]=u8(flowers);
-  aux[o]=u8(ao);aux[o+1]=u8(skyBloomHue(x,z));aux[o+2]=isBare?255:0;aux[o+3]=u8(tall);
+  aux[o]=u8(ao);aux[o+1]=u8(hue);aux[o+2]=isBare?255:0;aux[o+3]=u8(tall);
   extra[o]=u8(clover);extra[o+1]=u8(pebbles);extra[o+2]=u8(fringe);extra[o+3]=u8(town);
  }
  mapCache={soil,aux,extra,w,h};return mapCache;
