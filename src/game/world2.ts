@@ -452,6 +452,7 @@ export class HiddenWorld {
     g.hud.minimap.setSnapshot(chapter===1?g.takeMapSnapshot():snapshotMap(g.engine.renderer,g.scene,bounds,[g.vfx.group,g.objective.group,...g.units.map(u=>u.rig.root)]));
   }
   update(dt:number,time:number,observation?:{flags:Readonly<Record<string,boolean>>}) {
+    if(this.chapter!==5||!this.rendered||this.tidecrownSaved)this.fifth.air?.release(this.game.scene);
     if(this.tidecrownSaved&&this.tidecrown){
       const p=this.game.player.unit.pos,fog=this.game.scene.fog;this.tidecrown.update(time,p.x,p.z,this.game.camera);this.tidecrownPeople?.update(dt);this.hub.update(dt,time);
       if(fog instanceof THREE.FogExp2){fog.color.copy(this.tidecrown.fog.color);fog.density=this.tidecrown.fog.density;}
@@ -471,7 +472,8 @@ export class HiddenWorld {
       if(this.travelArmed&&distance<1.7&&this.game.time>this.travelAt){this.travelArmed=false;this.travelAt=this.game.time+3;this.travel();}
     }
     if(!this.rendered)return;
-    if(this.chapter>=5){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set(this.chapter===5?'#a07b70':'#b6dcce');fog.density=.0023;}return;}
+    if(this.chapter===5){this.fifth.air?.apply(this.game.scene,this.game.camera,this.game.engine.renderer);return;}
+    if(this.chapter>=5){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#b6dcce');fog.density=.0023;}return;}
     if(this.chapter===4){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){const e=this.game.camera.matrixWorld.elements;this.fourth.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.fourth.sky.fogDensity(e[13],-e[9]);}return;}
     if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#a4b5c4');fog.density=.0025;}return;}
     const echo=this.game.enemies.find(e=>e.isEcho);

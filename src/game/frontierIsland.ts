@@ -5,6 +5,7 @@ import {StarPortal} from './portal';
 import type {Poi} from '../world/types';
 import {islandPaths} from './islandPaths';
 import {EmberLava} from './emberLava';
+import {EmberAir} from './emberSkyAir';
 /** Two new frontiers: distinct silhouettes, instanced nature and GPU-only ambient particles. */
 export class FrontierIsland {
  readonly root=new THREE.Group();
@@ -16,6 +17,8 @@ export class FrontierIsland {
  readonly next:StarPortal|null;
  /** World V's lava: molten sea, crater lake and the tongues down the volcano (emberLava.ts). */
  readonly lava:EmberLava|null=null;
+ /** World V's sky, light, fog, heat, plume, ash and coast (emberSky*.ts). */
+ readonly air:EmberAir|null=null;
  private animated:THREE.ShaderMaterial[]=[];
  private rotating:THREE.Object3D[]=[];
  height(x:number,z:number){return realmHeight(this.chapter,x,z);}
@@ -93,8 +96,9 @@ export class FrontierIsland {
   const ly=this.height(0,-72);
   add(new THREE.CylinderGeometry(20,22,.4,64),stone,0,ly-.19,-72);
   for(const r of [8,19.5]){const ring=add(new THREE.TorusGeometry(r,.07,5,80),glow,0,ly+.04,-72);ring.rotation.x=-Math.PI/2;}
+  let volcano:THREE.Mesh|null=null;
   if(fire){
-   const volcano=add(new THREE.CylinderGeometry(8,28,38,18,4,true),stone,0,ly+9,-128);volcano.name='ember-volcano';
+   volcano=add(new THREE.CylinderGeometry(8,28,38,18,4,true),stone,0,ly+9,-128);volcano.name='ember-volcano';
    this.lava=new EmberLava({height:(x,z)=>this.height(x,z),ly});this.root.add(this.lava.root);
   }else{
    add(new THREE.CylinderGeometry(3.5,6,36,10),wood,0,ly+18,-112).name='skybloom-world-tree';
@@ -105,11 +109,8 @@ export class FrontierIsland {
   this.makeDetails(fire,stone,wood,metal,glow,foliage);
   // A low sea of lava / clouds and gradient sky distinguish the worlds at first glance.
   if(!fire){const sea=add(new THREE.PlaneGeometry(1800,1800),this.flowMaterial(false),0,.15,0);sea.rotation.x=-Math.PI/2;sea.castShadow=false;sea.name='sea-of-clouds';}
-  const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{top:{value:new THREE.Color(fire?'#271728':'#438ca7')},bottom:{value:new THREE.Color(fire?'#dd8b5f':'#d3efda')}},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;uniform vec3 top;uniform vec3 bottom;void main(){gl_FragColor=vec4(mix(bottom,top,smoothstep(0.,.65,normalize(v).y)),1.);}'});
-  const sky=add(new THREE.SphereGeometry(850,32,20),skyMat,0,0,0);sky.renderOrder=-100;sky.castShadow=false;
-  const particles=new THREE.BufferGeometry(),p=new Float32Array(360*3);for(let i=0;i<360;i++)p.set([Math.sin(i*127.1)*90,Math.sin(i*311.7)*14+20,Math.sin(i*74.7)*110],i*3);particles.setAttribute('position',new THREE.BufferAttribute(p,3));
-  const sparks=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{time:{value:0},tint:{value:new THREE.Color(fire?'#ffd292':'#a2ffe5')}},vertexShader:'uniform float time;void main(){vec3 p=position;p.y=mod(p.y+time*.8,40.)+4.;p.x+=sin(time*.4+p.z)*.5;vec4 mv=modelViewMatrix*vec4(p,1.);gl_PointSize=clamp(100./max(1.,-mv.z),1.,5.);gl_Position=projectionMatrix*mv;}',fragmentShader:'uniform vec3 tint;void main(){float a=1.-smoothstep(.05,.5,length(gl_PointCoord-.5));gl_FragColor=vec4(tint,a*.75);}'});this.animated.push(sparks);this.root.add(new THREE.Points(particles,sparks));
-  const sun=new THREE.DirectionalLight(fire?'#ffd2a8':'#fff5cd',fire?2.5:2.6);sun.position.set(45,90,40);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=sun.shadow.camera.bottom=-105;sun.shadow.camera.right=sun.shadow.camera.top=105;sun.shadow.camera.near=1;sun.shadow.camera.far=240;sun.shadow.bias=-.00015;sun.shadow.normalBias=.12;sun.shadow.camera.updateProjectionMatrix();this.root.add(sun,sun.target,new THREE.HemisphereLight(fire?'#dab0a6':'#c9f4ea',fire?'#44303e':'#344a3a',.75),this.back.root);if(this.next)this.root.add(this.next.root);
+  if(fire&&volcano&&this.lava)this.air=new EmberAir({root:this.root,height:(x,z)=>this.height(x,z),ly,volcano,zones:this.lava.zones,noHeat:[this.lava.root,this.back.root,...(this.next?[this.next.root]:[])]});
+  this.root.add(this.back.root);if(this.next)this.root.add(this.next.root);
  }
  /** Small scenery shares geometry and material; roads and battle space stay unobstructed. */
  private makeDetails(fire:boolean,stone:THREE.Material,wood:THREE.Material,metal:THREE.Material,glow:THREE.Material,foliage:THREE.Material){
@@ -157,5 +158,5 @@ export class FrontierIsland {
   this.root.userData.frontierDetailMeshes=detail.children.length;
  }
  private flowMaterial(fire:boolean){const m=new THREE.ShaderMaterial({uniforms:{time:{value:0},hot:{value:fire?1:0}},vertexShader:'varying vec2 v;void main(){v=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec2 v;uniform float time;uniform float hot;void main(){float w=.5+.5*sin(v.x*90.+sin(v.y*70.+time*.15)*2.);vec3 lava=mix(vec3(.27,.035,.025),vec3(1.,.36,.025),pow(w,4.));vec3 cloud=mix(vec3(.64,.8,.8),vec3(.93,.98,.93),w);gl_FragColor=vec4(mix(cloud,lava,hot),1.);}'});this.animated.push(m);return m;}
- update(time:number){this.lava?.update(time);this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
+ update(time:number){this.lava?.update(time);this.air?.update(time);this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
 }
