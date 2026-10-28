@@ -113,7 +113,7 @@ const GAME_VIEW: ViewOptions = { bloom: { intensity: 0.9, threshold: 0.9 }, vign
 // knee, so the sky round a low sun glows without a contour where it crosses the threshold.
 const FROST_VIEW: ViewOptions = { ...GAME_VIEW, bloom: { intensity: 1.6, threshold: 1.05, smoothing: 0.35, radius: 0.78, knee: true }, agxLook: { saturation: 1.32, power: 1.06 }, grade: { lift: [0.005, 0.009, 0.018], warm: 0.7, white: 0.16 } };
 /** Skybloom's clear high air: bloom keys above the sunlit cloud sea (only lamps, glints and the sun glow), saturated blue, cool lifted shade. */
-const SKY_VIEW: ViewOptions = { ...GAME_VIEW, agxLook: { saturation: 1.28, power: 1.08 }, bloom: { intensity: 0.7, threshold: 2.1, smoothing: 0.4, radius: 0.72, knee: true }, grade: { lift: [0.004, 0.008, 0.02], warm: 0.35, white: 0.05 } };
+const SKY_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.1, agxLook: { saturation: 1.28, power: 1.08 }, bloom: { intensity: 0.7, threshold: 2.1, smoothing: 0.4, radius: 0.72, knee: true }, grade: { lift: [0.008, 0.008, 0.012], warm: 0.45, white: 0.05 } };
 /** Tidecrown's late afternoon: rich and warm, sunlit stone golden and shade lilac; bloom keys above the stone, on lamps and windows. */
 const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.14, agxLook: { saturation: 1.34, power: 1.15 }, bloom: { intensity: 0.85, threshold: 1.45, smoothing: 0.3, radius: 0.75 }, grade: { lift: [0.013, 0.006, 0.032], warm: 0.55, white: 0.02, split: { shadow: [0.96, 0.975, 1.045], highlight: [1.11, 1.0, 0.8] } } };
 

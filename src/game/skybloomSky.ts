@@ -197,7 +197,7 @@ export class SkybloomSky {
   /** Uniforms anything that reflects or fades into this sky shares with the dome. */
   readonly uniforms: { skyLUT: { value: THREE.DataTexture }; skySunDir: { value: THREE.Vector3 } };
   /** scene.environmentIntensity while Skybloom is shown: glints and a little directional fill; the hemisphere does the rest. */
-  readonly envIntensity = 0.45;
+  readonly envIntensity = 0.22;
   private readonly horizon: Float32Array;
   private readonly sunAz: THREE.Vector2;
   private readonly elevation: number;
@@ -245,15 +245,15 @@ export class SkybloomSky {
     for (let c = 0; c < 3; c++) up[c] /= wsum;
     // A high sun in thin air: warm white (#fff2d6), barely reddened.
     this.sunColor = toColor(SUN_TINT);
-    this.sunIntensity = 3.6;
+    this.sunIntensity = 4.2;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance. The fill keeps
     // its blue so shade reads blue-violet (#5a6a9a range) against the warm sun, never black or olive.
-    this.hemiSky = toColor([up[0] * 4.3, up[1] * 4, up[2] * 4] as V3, 1);
-    // From below: grass bounce on the island, the bright cloud sea under the isles; a cool lavender-green between.
-    this.hemiGround = toColor(lin(0x8a9a9c), 0.55);
+    this.hemiSky = toColor([up[0] * 7.6, up[1] * 4.1, up[2] * 1.35] as V3, 1);
+    // From below: sunlit grass and cream stone bounce, warm green-gold (shade on undersides keeps the lit hue).
+    this.hemiGround = toColor(lin(0xb3b07a), 0.6);
     // Cloud tops: albedo 0.9 under this sun and sky, as a MeshStandardMaterial would light them.
     const albedo = 0.9, sunE = this.sunIntensity;
-    this.cloudLit = toColor([0, 1, 2].map(c => albedo / Math.PI * (SUN_TINT[c] * sunE + up[c] * Math.PI * 0.9)) as V3);
+    this.cloudLit = toColor([0, 1, 2].map(c => albedo / Math.PI * (SUN_TINT[c] * sunE + up[c] * Math.PI * 0.9) * 1.7) as V3);
     const shade = lin(0xaab6dc);
     this.cloudShade = toColor([0, 1, 2].map(c => shade[c] * (0.35 + up[c] * 2.2)) as V3);
     this.uniforms = { skyLUT: { value: lut }, skySunDir: { value: this.sunDir } };

@@ -203,18 +203,21 @@ function buildSkirt(b: Builder, falls: {p: V3; dir: V3; w: number; len: number}[
 
 interface Isle {x: number; z: number; y: number; r: number; seed: number; trees: number; ruin?: boolean; garden?: boolean; blossom?: boolean; falls?: number[]}
 /** Floating isles at varied distance: near ones read in detail, far ones go blue in the haze. */
-export const SKY_ISLES: readonly Isle[] = [
-  {x: 205, z: -150, y: 26, r: 26, seed: 1, trees: 3, ruin: true, falls: [3.6]},
-  {x: -235, z: -105, y: 42, r: 32, seed: 2, trees: 4, garden: true, blossom: true, falls: [1.4]},
-  {x: 300, z: 55, y: 14, r: 21, seed: 3, trees: 2, garden: true},
-  {x: -300, z: 20, y: 22, r: 24, seed: 4, trees: 2, ruin: true, falls: [1.9]},
-  {x: 70, z: -430, y: 72, r: 44, seed: 5, trees: 6, ruin: true, blossom: true, falls: [0.2, 5.9]},
-  {x: 250, z: 300, y: 8, r: 28, seed: 6, trees: 3, blossom: true},
-  {x: -215, z: 255, y: 34, r: 18, seed: 7, trees: 2, garden: true, falls: [0.9]},
-  {x: -470, z: -310, y: 88, r: 40, seed: 8, trees: 5, ruin: true},
-  {x: 168, z: 40, y: 20, r: 8, seed: 9, trees: 1},
-  {x: 520, z: -240, y: 48, r: 36, seed: 10, trees: 4, blossom: true},
+/**
+ * Placed by bearing (degrees clockwise from north, so most sit in the views that look north up the avenue) and
+ * distance from the island's middle; each top sits 5 to 15 degrees above a ground camera's horizon (eye about 15 m),
+ * so isles appear in ground-level frames, and pours its falls toward the island.
+ */
+const ISLE_PLAN: readonly (readonly [number, number, number, number, number, Partial<Isle>])[] = [
+  // bearing, distance, radius, elevation, trees, extras
+  [-27, 235, 26, 9, 3, {ruin: true}], [25, 265, 30, 11, 4, {garden: true, blossom: true}], [-50, 390, 36, 7, 5, {ruin: true, blossom: true}],
+  [52, 330, 24, 6, 2, {garden: true}], [9, 540, 46, 13, 6, {ruin: true, blossom: true}], [92, 270, 22, 4.5, 2, {ruin: true}],
+  [-88, 285, 27, 5, 3, {garden: true, blossom: true}], [128, 350, 30, 7, 3, {blossom: true}], [-132, 300, 20, 9, 2, {garden: true}], [70, 178, 9, 4.5, 1, {}],
 ];
+export const SKY_ISLES: readonly Isle[] = ISLE_PLAN.map(([b, d, r, el, trees, extra], i) => {
+  const a = THREE.MathUtils.degToRad(b), x = Math.sin(a) * d, z = -Math.cos(a) * d, toIsland = Math.atan2(-x, -z);
+  return {x, z, y: 15 + d * Math.tan(THREE.MathUtils.degToRad(el)) - r * 0.25, r, seed: i + 1, trees, ...extra, falls: i % 3 === 2 ? [toIsland - 0.5, toIsland + 0.6] : i === 9 ? [] : [toIsland + (i % 2 ? 0.45 : -0.45)]};
+});
 
 function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>, block: ReturnType<typeof blockTemplate>, falls: {p: V3; dir: V3; w: number; len: number}[]) {
   const {x: cx, z: cz, y: ty, r: R, seed} = isle, M = Math.max(48, Math.round(R * 4.5)), K = 7;

@@ -153,8 +153,8 @@ function birdGeometry(): THREE.InstancedBufferGeometry {
 const PETALS = 900;
 
 export class SkybloomAir {
-  /** A clear late morning: the sun 42 degrees up in the south-east, behind most views that look north. */
-  readonly sky = new SkybloomSky({azimuth: 138, elevation: 42, gain: 1.12});
+  /** A clear late morning: the sun 29 degrees up in the north-west, so views up the avenue see the canopy rim-lit, long shadows toward the camera. */
+  readonly sky = new SkybloomSky({azimuth: 220, elevation: 29, gain: 1.12});
   readonly sun = new THREE.DirectionalLight();
   readonly hemi = new THREE.HemisphereLight();
   /** Materials with a `time` uniform for the island's update. */
@@ -204,10 +204,12 @@ export class SkybloomAir {
     // The sun and the fill the sky implies. The shadow box covers the whole play area from this sun.
     const sun = this.sun;
     sun.color.copy(sky.sunColor); sun.intensity = sky.sunIntensity;
-    sun.position.copy(sky.sunDir).multiplyScalar(170).add(new THREE.Vector3(0, 8, -2)); sun.target.position.set(0, 8, -2);
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, {left: -112, right: 112, top: 112, bottom: -112, near: 1, far: 360});
+    Object.assign(sun.shadow.camera, {left: -SHADOW_HALF, right: SHADOW_HALF, top: SHADOW_HALF, bottom: -SHADOW_HALF, near: 1, far: SUN_DISTANCE + 160});
     sun.shadow.camera.updateProjectionMatrix();
+    this.shadowTexel = (2 * SHADOW_HALF) / 2048;
+    this.sunRight.crossVectors(THREE.Object3D.DEFAULT_UP, sky.sunDir).normalize(); this.sunUp.crossVectors(sky.sunDir, this.sunRight).normalize();
+    this.followSun(0, 10, 0);
     sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.12;
     this.hemi.color.copy(sky.hemiSky); this.hemi.groundColor.copy(sky.hemiGround); this.hemi.intensity = 1;
     root.add(sun, sun.target, this.hemi);
@@ -227,9 +229,10 @@ export class SkybloomAir {
     }
     const env = this.sky.environment(renderer);
     if (scene.environment !== env) { this.bound = {env: scene.environment, intensity: scene.environmentIntensity}; scene.environment = env; scene.environmentIntensity = this.sky.envIntensity; }
-    const fog = scene.fog;
+    const fog = scene.fog, e = camera.matrixWorld.elements;
+    // The shadow box sits ahead of the camera, where the frame's shadows are.
+    this.followSun(e[12] - e[8] * 45, 10, e[14] - e[10] * 45);
     if (fog instanceof THREE.FogExp2) {
-      const e = camera.matrixWorld.elements;
       this.sky.fogColor(-e[8], -e[10], fog.color);
       fog.density = this.sky.fogDensity(e[13], -e[9]);
     }
@@ -241,5 +244,19 @@ export class SkybloomAir {
       this.petals?.geometry.setDrawRange(0, low ? PETALS / 3 : PETALS);
     }
   }
+  /** Re-centre the shadow box on (x, y, z), snapped to whole texels so shadow edges do not crawl. */
+  private followSun(x: number, y: number, z: number): void {
+    const p = this.tmp.set(x, y, z), t = this.shadowTexel, sun = this.sun, dir = this.sky.sunDir;
+    const pr = Math.round(p.dot(this.sunRight) / t) * t, pu = Math.round(p.dot(this.sunUp) / t) * t, pf = p.dot(dir);
+    sun.target.position.copy(this.sunRight).multiplyScalar(pr).addScaledVector(this.sunUp, pu).addScaledVector(dir, pf);
+    sun.position.copy(sun.target.position).addScaledVector(dir, SUN_DISTANCE);
+  }
+  private shadowTexel = 0.1;
+  private readonly sunRight = new THREE.Vector3();
+  private readonly sunUp = new THREE.Vector3();
+  private readonly tmp = new THREE.Vector3();
   private readonly tmpSize = new THREE.Vector2();
 }
+
+/** Half-width of the shadow box (metres) and how far up the sun ray its camera sits: a low sun's long shadows fit. */
+const SHADOW_HALF = 95, SUN_DISTANCE = 210;

@@ -11,7 +11,7 @@ import {SKYBLOOM_SKY_GLSL,type SkybloomSky} from './skybloomSky';
  */
 
 /** Cloud sea base height and billow amplitudes, metres. The island's lip sits 5 to 18 m up. */
-export const CLOUD_Y = -40;
+export const CLOUD_Y = -55;
 const MACRO_AMP = 30, DETAIL_AMP = 6;
 /** World metres per texture tile at the two scales. */
 const MACRO_TILE = 640, DETAIL_TILE = 170;
