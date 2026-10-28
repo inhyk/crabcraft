@@ -1,32 +1,40 @@
 import * as THREE from 'three';
 import {starTrailDistance} from './world2Settlement';
+import {starNoise} from './starFieldLayout';
 
-const coastalSlate=new THREE.Color('#304650');
-const islandMoss=new THREE.Color('#69755b');
-const moonshade=new THREE.Color('#477c76');
-const ruinDust=new THREE.Color('#8a7d8b');
-const pilgrimHeather=new THREE.Color('#706c88');
-const townEarth=new THREE.Color('#8b8369');
-const pathDust=new THREE.Color('#aaa28b');
+// Moonlit albedos of the island's regions. starGround.ts paints grass, sand, earth and stone over them; the monitor's
+// scenery uses them as they are.
+// Night grass a value step under the paths and bare earth (style sheet: #3f5b5a / #2e4646), so fields read dark.
+const beachGrass=new THREE.Color('#4c625f');
+const meadow=new THREE.Color('#37574f');
+const moonshade=new THREE.Color('#305d5a');
+const ruinDust=new THREE.Color('#77708a');
+const pilgrimHeather=new THREE.Color('#665a7c');
+const townEarth=new THREE.Color('#52685c');
+const pathDust=new THREE.Color('#8d8678');
 const arenaSlate=new THREE.Color('#42485e');
 const smooth=THREE.MathUtils.smoothstep;
+const heathTint=new THREE.Color();
 const patch=(x:number,z:number,cx:number,cz:number,inner:number,outer:number)=>1-smooth(Math.hypot(x-cx,z-cz),inner,outer);
 
-/** Continuous, deterministic biome colours. Only presentation changes; collision remains the height grid. */
+/** Continuous, deterministic region tints. Only presentation changes; collision remains the height grid. */
 export function starGroundColor(x:number,z:number,height:number,out:THREE.Color):THREE.Color {
   const coast=Math.hypot(x/115,(z-10)/140);
-  out.copy(coastalSlate).lerp(islandMoss,(1-smooth(coast,.78,1.02))*.85);
-  out.lerp(moonshade,patch(x,z,-75,-35,19,56)*.82);
-  out.lerp(ruinDust,patch(x,z,80,-40,22,58)*.8);
-  out.lerp(pilgrimHeather,patch(x,z,0,-42,12,43)*.6);
+  out.copy(beachGrass).lerp(meadow,1-smooth(coast,.66,.86));
+  out.lerp(moonshade,patch(x,z,-75,-35,19,56)*.8);
+  out.lerp(ruinDust,patch(x,z,80,-40,22,58)*.7);
+  out.lerp(pilgrimHeather,patch(x,z,0,-42,12,43)*.55);
   const townEdge=Math.max(Math.abs(x)-43,Math.abs(z-53)-45);
-  out.lerp(townEarth,(1-smooth(townEdge,-4,12))*.72);
-  // A worn strip beneath stepping stones blends smoothly back into each local biome.
+  out.lerp(townEarth,(1-smooth(townEdge,-4,12))*.5);
+  // A worn strip along the trails blends smoothly back into each local region.
   const trail=(1-smooth(starTrailDistance(x,z),1,4.2))*(1-smooth(coast,.82,1));
   out.lerp(pathDust,trail*.3);
+  // Heather: violet swathes through the open meadow, Starhaven's own colour in its grass (the meadow's blades share it).
+  const heath=smooth(starNoise(x/36,z/36,91)+starNoise(x/11,z/11,92)*.25,.12,.32)*smooth(townEdge,0,14);
+  out.multiply(heathTint.setRGB(1-.22*heath,1-.28*heath,1+.3*heath));
   out.lerp(arenaSlate,patch(x,z,0,-75,20,29)*.9);
-  // Broad mineral and moss patches avoid a flat tint without noisy combat-floor detail.
+  // Broad lush and dry swathes; higher ground a touch paler.
   const variation=Math.sin(x*.17+Math.sin(z*.11)*2)*Math.cos(z*.13-x*.045);
   const elevation=THREE.MathUtils.clamp((height-3)*.012,-.06,.06);
-  return out.multiplyScalar(1+variation*.075+elevation);
+  return out.multiplyScalar(1+variation*.06+elevation);
 }

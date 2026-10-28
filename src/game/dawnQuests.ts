@@ -11,13 +11,13 @@ export const DAWN_QUESTS = {
     "giver": "brinebeard",
     "turnIn": "coralline",
     "offer": [
-      "Recover three marked supply crates around Dawnharbor, then bring them to Medic Coral."
+      "Recover three marked supply crates around Goldsand Harbor, then bring them to Medic Coral."
     ],
-    "progress": "Recover three marked supply crates around Dawnharbor, then bring them to Medic Coral.",
+    "progress": "Recover three marked supply crates around Goldsand Harbor, then bring them to Medic Coral.",
     "complete": [
       "The medicine has reached our village. Mira would be proud of you."
     ],
-    "summary": "Recover three marked supply crates around Dawnharbor, then bring them to Medic Coral.",
+    "summary": "Recover three marked supply crates around Goldsand Harbor, then bring them to Medic Coral.",
     "readyHint": "Return to the villager marked on your map.",
     "objectives": [
       {
@@ -277,13 +277,13 @@ export const DAWN_QUESTS = {
     "giver": "rattlebolt",
     "turnIn": "brinebeard",
     "offer": [
-      "Deliver Lumen’s sealed report to Captain Roan in Dawnharbor."
+      "Deliver Lumen’s sealed report to Captain Roan in Goldsand Harbor."
     ],
-    "progress": "Deliver Lumen’s sealed report to Captain Roan in Dawnharbor.",
+    "progress": "Deliver Lumen’s sealed report to Captain Roan in Goldsand Harbor.",
     "complete": [
       "Boreas took Mira through the snow portal. Now we know where to search."
     ],
-    "summary": "Deliver Lumen’s sealed report to Captain Roan in Dawnharbor.",
+    "summary": "Deliver Lumen’s sealed report to Captain Roan in Goldsand Harbor.",
     "readyHint": "Return to the villager marked on your map.",
     "objectives": [
       {
@@ -478,9 +478,9 @@ export const DAWN_KOREAN = {
   "d10": {
     "title": "정찰대의 편지",
     "offer": [
-      "루멘이 맡긴 봉인된 정찰 보고서를 새벽 항구의 로안 선장에게 전해 주세요."
+      "루멘이 맡긴 봉인된 정찰 보고서를 골드샌드 항구의 로안 선장에게 전해 주세요."
     ],
-    "progress": "루멘이 맡긴 봉인된 정찰 보고서를 새벽 항구의 로안 선장에게 전해 주세요.",
+    "progress": "루멘이 맡긴 봉인된 정찰 보고서를 골드샌드 항구의 로안 선장에게 전해 주세요.",
     "complete": [
       "보레아스가 미라를 설원 포탈로 데려갔다고 하네. 이제 찾을 곳을 알았어."
     ],
