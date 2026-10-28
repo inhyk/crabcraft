@@ -116,20 +116,32 @@ function blockTemplate() {
   return {pos: p, idx: g.getIndex()!.array};
 }
 
+/** Bearings (rad) of the springs that pour off the main island, away from the harbour and the portal. */
+const FALLS_MAIN = [1.62, 4.66, 3.62, 2.72];
 const angDiff = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 /**
  * Capes of the lip by bearing (rad, 0 faces +Z, PI/2 faces +X): centre, half-width, how far out (fraction of the lip
- * radius). Only outward, so nothing inside the play bound (edge .8) moves; none on the falls or the north strip.
+ * radius). Only outward, so nothing inside the play bound (edge .8) moves; none on the falls or the north strip. The
+ * long east and west flanks carry the most, so no stretch of the outline runs straight for more than ~30 m.
  */
 const CAPES: readonly (readonly [number, number, number])[] = [
-  [0.42, 0.13, 0.085], [1.12, 0.17, 0.06], [2.22, 0.12, 0.1], [3.98, 0.14, 0.075], [5.18, 0.11, 0.095], [5.78, 0.16, 0.06],
+  [0.42, 0.09, 0.1], [0.9, 0.05, 0.06], [1.12, 0.08, 0.09], [1.36, 0.05, 0.07], [1.92, 0.07, 0.11], [2.22, 0.08, 0.1],
+  [3.98, 0.09, 0.09], [4.32, 0.05, 0.1], [4.9, 0.05, 0.07], [5.18, 0.08, 0.12], [5.45, 0.05, 0.06], [5.78, 0.1, 0.07],
+  [6.1, 0.05, 0.05],
 ];
-/** The lip's edge value at bearing t: the ellipse, pushed out into capes and a broken, never-smooth outline. */
+/** The lip's edge value at bearing t: the ellipse, pushed out into headlands and bays that never run straight. */
 export function lipScale(t: number): number {
-  let b = 0.026 * ring(t, 11, 21) + 0.014 * ring(t, 29, 22);
-  for (const [c, w, a] of CAPES) { const d = angDiff(t, c) / w; b += a * Math.exp(-d * d); }
+  // Warped bearing, so the lobes come at uneven spacing; big lobes, then a rugged middle scale whose strength itself
+  // wanders (rocky stretches and quiet sweeping bays), then a fine ragged edge.
+  const w = t + 0.22 * (ring(t, 5, 24) - 0.5) + 0.08 * (ring(t, 11, 25) - 0.5);
+  const lobe = ring(w, 6, 21), mid = ring(w, 17, 22), cove = ring(w, 29, 27), fine = ring(w, 53, 23), rough = smooth(0.25, 0.75, ring(t, 7, 26));
+  let b = 0.1 * lobe * lobe + (0.05 + 0.05 * rough) * mid + (0.02 + 0.025 * rough) * cove * cove + (0.008 + 0.01 * rough) * fine;
+  for (const [c, w2, a] of CAPES) { const d = angDiff(t, c) / w2; b += a * Math.exp(-d * d); }
+  // Quieter where the springs pour over and at the harbour's pier, so the falls and the moorings keep their footing.
+  for (const ft of FALLS_MAIN) { const d = angDiff(t, ft) / 0.05; b *= 1 - 0.6 * Math.exp(-d * d); }
+  { const d = angDiff(t, 0) / 0.08; b *= 1 - 0.7 * Math.exp(-d * d); }
   // The north strip (|x| < 30 under the world tree) belongs to the tree lane's roots: the plain ellipse there.
-  return SKY_LIP * (1 + b * smooth(0.3, 0.5, Math.abs(angDiff(t, Math.PI))));
+  return SKY_LIP * (1 + b * smooth(0.27, 0.42, Math.abs(angDiff(t, Math.PI))));
 }
 const lipPoint = (t: number, k = 1) => { const e = lipScale(t) * k; return [RX * e * Math.sin(t), CZ + RZ * e * Math.cos(t)]; };
 /** Grass height on the lip at bearing t: the play surface's own height at the ellipse, rolling down a little on capes. */
@@ -162,8 +174,6 @@ export function clipTerrainToLip(g: THREE.BufferGeometry): number {
   return moved;
 }
 
-/** Bearings (rad) of the springs that pour off the main island, away from the harbour and the portal. */
-const FALLS_MAIN = [1.62, 4.66, 3.62, 2.72];
 
 /** Radial offset of the rock face from the lip line, metres, at bearing-arc s and height y, `d` below the lip. */
 function faceOffset(s: number, y: number, d: number): number {

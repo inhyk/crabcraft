@@ -269,7 +269,8 @@ export function skyMaterials(): SkyMaterials {
       // Weathering: moss and damp at the foot, faint sky-lit rain streaks down vertical faces.
       float foot=1.-smoothstep(.0,.6+g*.4,vSw.y-vSk.x);c=mix(c,c*vec3(.76,.84,.7),foot*.4*(1.-abs(n.y)));
       float streak=skN(vec2(q.x*3.1,vSw.y*.15))*(1.-abs(n.y));c*=1.-streak*.04;
-      diffuseColor.rgb=c;}`,
+      // A touch over the paving: the street stones went a value step down (advisor #21 b), the walls stay the brightest.
+      diffuseColor.rgb=c*1.06;}`,
     rough: `{float k=floor(vSk.y+.5);if(k==4.)roughnessFactor=.32;}`,
     normal: BUMP('skStoneH(vSw)', '1.', 30),
   });
@@ -298,16 +299,17 @@ export function skyMaterials(): SkyMaterials {
       float k=floor(vSk.y+.5);vec3 c=diffuseColor.rgb;
       if(k==0.){vec2 u=vSu;float x=fract(u.x/.3),y=fract(u.y/.27);vec2 id=floor(vec2(u.x/.3,u.y/.27));
         float roll=sin(3.14159*x);float h=skH(id+vSk.z*3.);
-        // Deep glaze: the pans and courses sit under the albedo so lit roofs land at grey 55-80 with the reflection cut.
-        c*=(.78+.26*h)*.72;c=mix(c,c*vec3(.86,1.06,1.04),step(.86,skH(id+5.)));
-        c*=mix(.5,1.,pow(roll,.6));c*=mix(.62,1.,smoothstep(0.,.14,y));
+        // SKY_VIEW's dark contrast (pivot .55, darks 1.7) crushes anything under ~0.3 display toward black, so the glaze
+        // carries a lifted teal and shallow pans: lit roofs land at grey 55-80 on screen, a step under the grass.
+        c*=(.82+.22*h)*1.18;c=mix(c,c*vec3(.86,1.06,1.04),step(.86,skH(id+5.)));
+        c*=mix(.7,1.,pow(roll,.6));c*=mix(.8,1.,smoothstep(0.,.14,y));
         c=mix(c,c*vec3(1.1,1.04,.92),smoothstep(.55,1.,skF(u*.35+vSk.z))*.3);
       }else{c*=.92+.12*skN(vSu*vec2(3.,1.));}
       diffuseColor.rgb=c;}`,
     rough: `{float k=floor(vSk.y+.5);if(k==0.){float x=fract(vSu.x/.3);roughnessFactor=mix(.74,.46,pow(sin(3.14159*x),.5))+skN(vSu*2.)*.08;}}`,
     normal: BUMP('(floor(vSk.y+.5)==0.?skTileH(vSu):0.)', '1.', 45),
     // The sky and the white cloud sea mirrored in the glaze would lift the roofs to the grass's value: keep a third.
-    lights: 'reflectedLight.indirectSpecular*=.35;',
+    lights: 'reflectedLight.indirectSpecular*=.35;reflectedLight.indirectDiffuse*=2.7;',
   });
   // Gilt brass trim, finials, lantern cages.
   const metal = new THREE.MeshStandardMaterial({name: 'sky-brass', color: '#ffffff', roughness: .38, metalness: .55, vertexColors: true});

@@ -141,7 +141,20 @@ vSmT=smHead;vSmAo=1.-smA.r*.6;
 
 const FRAG_COLOR=/* glsl */`#include <color_fragment>
 float smTipF=smoothstep(.4,1.,vSmT);
-diffuseColor.rgb=mix(vSmCol*mix(.55,1.,smoothstep(0.,.7,vSmT)),vSmTip,smTipF*.65)*vSmAo;
+// Deep turf: the blades' feet sit in their own shade, so a sunlit field keeps dark gaps between blades (r3: the
+// east and west views had no darks under the cloud sea, p10 ~110).
+diffuseColor.rgb=mix(vSmCol*mix(.36,1.,smoothstep(0.,.75,vSmT)),vSmTip,smTipF*.65)*vSmAo;
+#if NUM_DIR_LIGHTS > 0
+// Against the sun the camera sees the blades' shaded faces: the turf darkens toward the light (strongest at the feet,
+// the tips keep their glow), so a backlit field has depth instead of reading milky. Front-lit views are unchanged.
+{vec3 smV=inverseTransformDirection(-vViewPosition,viewMatrix),smL=inverseTransformDirection(directionalLights[0].direction,viewMatrix);
+ float smBack=smoothstep(.35,.9,dot(normalize(smV.xz+1e-5),normalize(smL.xz+1e-5)));
+ diffuseColor.rgb*=1.-smBack*mix(.7,.44,smTipF);
+ // Green blades turn to the sheet's teal grass shade (#3d6f66 family) on that side; blossoms keep their own hue.
+ diffuseColor.rgb*=mix(vec3(1.),vec3(.7,1.08,1.06),smBack*step(diffuseColor.r,diffuseColor.g*.92));
+ // Out of the sun's wash the petals and blades show their full colour: a little richer on the shaded side.
+ diffuseColor.rgb=max(mix(vec3(dot(diffuseColor.rgb,vec3(.2126,.7152,.0722))),diffuseColor.rgb,1.+.6*smBack),0.);}
+#endif
 `;
 
 /** An instanced lattice geometry: per-vertex aBlade triples (positions are built in the shader). */

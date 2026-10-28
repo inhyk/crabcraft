@@ -20,7 +20,8 @@ const CROWNS:Record<SkyTreeSpecies,THREE.Color[]>={
  jade:[srgb('#3f8f80'),srgb('#5fae95'),srgb('#4c9c86'),srgb('#57a48a')],
  silver:[srgb('#6fb3a6'),srgb('#7cc0ad'),srgb('#62a59f')],
  blossom:[srgb('#ec9cc4'),srgb('#e48cba'),srgb('#f2b2d2')],
- white:[srgb('#f7f5f2'),srgb('#f6eef4'),srgb('#eef0f6')],
+ // The 'white' blossom species: pale pink, so the crowns read as foliage masses rather than white blobs (r3).
+ white:[srgb('#f2d6de'),srgb('#f0d0da'),srgb('#f4dbe2')],
 };
 const BARK=[srgb('#b9b6b2'),srgb('#c4c2bf'),srgb('#adaaa8')];
 /** Tree height (m) at spot scale 1; the colliders stay the spots' own (layoutFrontier). */
@@ -30,6 +31,7 @@ const LEAF_HEAD=/* glsl */`
 varying vec3 vSfTint;
 varying float vSfAo;
 varying vec3 vSfW;
+varying float vSfY;
 `;
 /** Leaves: the kit's alpha cut-out and baked shading (vertex colour), the instance's tint, a little hue drift. */
 function leafMaterial(src:THREE.Material,name:string,blossomRim:boolean):THREE.Material{
@@ -39,7 +41,7 @@ function leafMaterial(src:THREE.Material,name:string,blossomRim:boolean):THREE.M
   shader.vertexShader=shader.vertexShader
    .replace('#include <common>',`#include <common>\n${LEAF_HEAD}\nuniform float uTime;\nuniform vec2 uWind;`)
    .replace('#include <color_vertex>',`#include <color_vertex>
-    vSfAo=dot(color.rgb,vec3(.333));
+    vSfAo=dot(color.rgb,vec3(.333));vSfY=position.y;
     #ifdef USE_BATCHING_COLOR
     vSfTint=getBatchingColor(getIndirectIndex(gl_DrawID)).rgb;
     #else
@@ -63,8 +65,12 @@ function leafMaterial(src:THREE.Material,name:string,blossomRim:boolean):THREE.M
     // The kit's baked shading: deep inside the crown, bright on its outer shell; tint from the instance.
     float sfL=smoothstep(.05,.95,vSfAo);
     vec3 sfC=vSfTint*mix(.55,1.15,sfL);
-    // White blossom crowns: a cool lilac shade side and a warm cream sun side, never a flat white blob (advisor #21 a).
-    if(min(vSfTint.r,min(vSfTint.g,vSfTint.b))>.8)sfC=mix(vec3(.584,.539,.686),vec3(.930,.896,.822),sfL);
+    // Pale pink blossom crowns (#f2d6de): a dusky mauve shade inside and under the crown, the tint only on the sunlit
+    // outer shell, so each crown reads as masses with form instead of a flat white blob (advisor #21 a, r3).
+    if(vSfTint.r>.8&&min(vSfTint.g,vSfTint.b)>.6){
+      // Kit crowns span about y 2.4..9 (metres before the instance scale): the lower half sits in its own shade.
+      float sfUp=smoothstep(3.,8.,vSfY);
+      sfC=mix(vec3(.34,.19,.28),vSfTint*1.04,smoothstep(.12,1.,sfL*.75+sfUp*.45));}
     // Patches across a crown drift a little in hue and value, so a canopy reads as masses, not one colour.
     float sfN=sfH(floor(vSfW*.7));
     sfC*=.9+.2*sfN;
