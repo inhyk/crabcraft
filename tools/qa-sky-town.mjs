@@ -137,8 +137,9 @@ try{
   // Greyscale separation (style-w6 values): roofs a step under the grass, walls and path above it, the crab apart.
   for(const name of ['arrivalF','village','street']){
    const v=values[name],m=k=>v[k]?.p50;
-   assert.ok(m('roof')!=null&&m('grass')!=null&&m('wall')!=null&&m('path')!=null,`${quality} ${name}: classes missing ${JSON.stringify(v)}`);
-   assert.ok(m('roof')<=m('grass')-25,`${quality} ${name}: roof ${m('roof')} not a step under grass ${m('grass')}`);
+   // The street's one near house is the gardener's, whose roof is a planted terrace: no glaze there.
+   assert.ok((m('roof')!=null||name==='street')&&m('grass')!=null&&m('wall')!=null&&m('path')!=null,`${quality} ${name}: classes missing ${JSON.stringify(v)}`);
+   if(m('roof')!=null)assert.ok(m('roof')<=m('grass')-25,`${quality} ${name}: roof ${m('roof')} not a step under grass ${m('grass')}`);
    // The band applies where roofs are seen from above; the street's low camera sees the far glaze at a grazing angle.
    if(name!=='street')assert.ok(m('roof')>=45&&m('roof')<=90,`${quality} ${name}: roof grey ${m('roof')}`);
    const ks=['roof','wall','grass','path','crab'].filter(k=>m(k)!=null);
