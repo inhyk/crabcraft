@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import {onIslandPath,type IslandPath} from './islandPaths';
-import {SKY_ARENA,skyHeight,skyRenderedHeight} from './skyGroundLayout';
+import {SKY_ARENA,SKY_WAY_FIELD,skyHeight,skyOnPath,skyRenderedHeight,skyWayFieldData} from './skyGroundLayout';
 import {SKY_DETAIL,SKY_GRASS} from './skyGround';
 
 /*
@@ -9,15 +8,15 @@ import {SKY_DETAIL,SKY_GRASS} from './skyGround';
  * a cellular tiling of flags, each a little domed and chipped at the arris, from several beds of limestone (cream,
  * honey, a few grey-blue). The middle of each way is trodden smooth and a touch darker, the joints there are grit;
  * toward the edges moss and grass fill the joints, stones go missing and the turf laps over, so the ways end softly
- * in the meadow. Everything visible stays inside onIslandPath(), so `covers` agrees with what is drawn.
+ * in the meadow. The ways' shape comes from one baked field (skyGroundLayout.skyWayFieldData: signed distance, across,
+ * kind at 0.5 m), so curved garden paths cost the same as straight ones; `covers` reads the same field.
  */
 
-const CELL=.5,LIFT=.03,REACH=.26,MAX_SEG=8;
+const CELL=.5,LIFT=.03,REACH=.26;
 
 const HEAD=/* glsl */`
-uniform vec4 spSeg[${MAX_SEG}];
-uniform vec4 spInfo[${MAX_SEG}]; // half width, kind (1 avenue, 0 street), joins (1 at a, 2 at b), along at a
-uniform int spCount;
+uniform sampler2D spField; // r signed distance past the paved edge, g across (0 middle .. 1 edge), b kind (1 avenue)
+uniform vec4 spFieldMap;   // minX, minZ, 1/width, 1/height (m)
 uniform vec3 spHole;
 uniform float sgDetail;
 uniform vec3 spTurfA,spTurfB;
@@ -47,20 +46,8 @@ const COLOR=/* glsl */`
 vec2 spP=vSpW.xz;
 vec2 spDpx=dFdx(spP),spDpy=dFdy(spP);
 float spFoot=length(abs(spDpx)+abs(spDpy));
-float spSd=1e3,spBest=1e3,spKind=0.,spAlong=0.,spAcross=0.,spHalf=1.;
-for(int k=0;k<${MAX_SEG};k++){
-  if(k>=spCount)break;
-  vec4 s=spSeg[k],info=spInfo[k];
-  vec2 jn=vec2(mod(info.z,2.),floor(info.z*.5));
-  vec2 ab=s.zw-s.xy;float L=length(ab);vec2 dir=ab/L,ap=spP-s.xy;
-  float t=dot(ap,dir),across=dot(ap,vec2(dir.y,-dir.x));
-  float ovA=-t,ovB=t-L,ovJ=max(max(ovA*jn.x,ovB*jn.y),0.);
-  vec2 bd=vec2(abs(across)-info.x,max(mix(ovA,-1e3,jn.x),mix(ovB,-1e3,jn.y)));
-  float d=ovJ>0.?length(vec2(ovJ,across))-info.x:length(max(bd,0.))+min(max(bd.x,bd.y),0.);
-  spSd=spSmin(spSd,d,.35);
-  float rank=d-info.x*.08;
-  if(rank<spBest){spBest=rank;spKind=info.y;spAlong=t+info.w;spAcross=across;spHalf=info.x;}
-}
+vec4 spF=texture2D(spField,(spP-spFieldMap.xy)*spFieldMap.zw);
+float spSd=spF.r,spKind=step(.5,spF.b),spAcrossN=spF.g;
 if(length(spP-spHole.xy)<spHole.z)discard;
 float spN1=spNoise(spP*.29+1.7)*.6+spNoise(spP*.81-4.1)*.4,spN2=spNoise(spP*2.3+4.);
 float spRag=spNoise(spP*1.1+2.3)*.6+spNoise(spP*3.7)*.4;
@@ -78,7 +65,7 @@ float spJ=(1.-smoothstep(-spFw,spFw,-spOut-.006))*min(1.,.03/spFw)*(1.-spBlur*.7
 float spEdge=smoothstep(-1.1,-.05,spSd+spRag*.25);
 float spSkip=step(fract(spId*13.7),.02+.62*spEdge*spEdge+.08*smoothstep(.2,.6,spN1));
 // The middle of each way is trodden smooth; moss and grass hold where feet do not go.
-float spMid=1.-smoothstep(.25,.9,abs(spAcross)/max(spHalf,.5));
+float spMid=1.-smoothstep(.25,.9,spAcrossN);
 float spMossy=clamp((1.-spMid)*.85+spN1*.4+spEdge*.5,0.,1.);
 // Limestone from several beds: cream, honey, a pale grey-blue; each stone weathered to its own value.
 float spV=fract(spId*17.13);
@@ -126,47 +113,29 @@ if(sgDetail>.5){
 }
 `;
 
-interface Seg{ax:number;az:number;bx:number;bz:number;half:number;kind:number;joins:number;along:number;first:boolean;last:boolean}
-function segBox(s:Seg,x:number,z:number){
- const dx=s.bx-s.ax,dz=s.bz-s.az,L=Math.hypot(dx,dz),ux=dx/L,uz=dz/L,px=x-s.ax,pz=z-s.az;
- const t=px*ux+pz*uz,across=Math.abs(px*uz-pz*ux),ovJ=Math.max(s.first?0:-t,s.last?0:t-L,0);
- if(ovJ>0)return Math.hypot(ovJ,across)-s.half;
- const bx=across-s.half,by=Math.max(s.first?-t:-1e3,s.last?t-L:-1e3);
- return Math.hypot(Math.max(bx,0),Math.max(by,0))+Math.min(Math.max(bx,by),0);
-}
-
-/** Skybloom's ways (same footprint and `covers` contract as islandPaths). Ways 6 m wide or more are avenues. */
-export function skyPaving(paths:IslandPath[]):THREE.Group{
+/** Skybloom's ways: the avenue and the garden paths (skyGroundLayout.SKY_WAYS), one mesh, one draw. */
+export function skyPaving():THREE.Group{
  const root=new THREE.Group();root.name='world6-skybloom-paving';
- const segs:Seg[]=[];
- for(const p of paths){
-  let along=0;
-  for(let k=1;k<p.points.length;k++){
-   const [ax,az]=p.points[k-1],[bx,bz]=p.points[k],len=Math.hypot(bx-ax,bz-az);if(len<.001)continue;
-   const first=k===1,last=k===p.points.length-1;
-   segs.push({ax,az,bx,bz,half:p.width/2,kind:p.width>=6?1:0,joins:(first?0:1)+(last?0:2),along,first,last});along+=len;
-  }
- }
- if(segs.length>MAX_SEG)throw new Error(`skyPaving: ${segs.length} segments, max ${MAX_SEG}`);
- const hole={x:SKY_ARENA.x,z:SKY_ARENA.z,r:SKY_ARENA.r};
- let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
- for(const s of segs){minX=Math.min(minX,s.ax-s.half-1,s.bx-s.half-1);maxX=Math.max(maxX,s.ax+s.half+1,s.bx+s.half+1);minZ=Math.min(minZ,s.az-s.half-1,s.bz-s.half-1);maxZ=Math.max(maxZ,s.az+s.half+1,s.bz+s.half+1);}
- minX=Math.floor(minX/CELL)*CELL;minZ=Math.floor(minZ/CELL)*CELL;
- const sdNet=(x:number,z:number)=>segs.reduce((d,s)=>Math.min(d,segBox(s,x,z)),Infinity);
+ const F=SKY_WAY_FIELD,hole={x:SKY_ARENA.x,z:SKY_ARENA.z,r:SKY_ARENA.r};
+ const minX=F.minX,minZ=F.minZ,maxX=F.minX+F.w*F.cell,maxZ=F.minZ+F.h*F.cell;
+ const data=skyWayFieldData();
  const ground=(x:number,z:number)=>Math.max(skyHeight(x,z),skyRenderedHeight(x,z));
  const nx=Math.ceil((maxX-minX)/CELL),nz=Math.ceil((maxZ-minZ)/CELL);
  const vid=new Int32Array((nx+1)*(nz+1)).fill(-1),pos:number[]=[],index:number[]=[];
  const vert=(i:number,j:number)=>{const k=j*(nx+1)+i;if(vid[k]<0){const x=minX+i*CELL,z=minZ+j*CELL;vid[k]=pos.length/3;pos.push(x,ground(x,z)+LIFT,z);}return vid[k];};
  for(let j=0;j<nz;j++)for(let i=0;i<nx;i++){
+  // The mesh's cells are the field's texels (same origin, same 0.5 m).
   const cx=minX+(i+.5)*CELL,cz=minZ+(j+.5)*CELL;
-  if(sdNet(cx,cz)>REACH+CELL*.72||Math.hypot(cx-hole.x,cz-hole.z)<hole.r-CELL*.72)continue;
+  if(data[(j*F.w+i)*4]>REACH+CELL*.72||Math.hypot(cx-hole.x,cz-hole.z)<hole.r-CELL*.72)continue;
   const a=vert(i,j),b=vert(i+1,j),c=vert(i,j+1),d=vert(i+1,j+1);index.push(a,c,b,b,c,d);
  }
  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.setIndex(index);geo.computeVertexNormals();geo.computeBoundingSphere();
+ const half=new Uint16Array(data.length);for(let k=0;k<data.length;k++)half[k]=THREE.DataUtils.toHalfFloat(data[k]);
+ const field=new THREE.DataTexture(half,F.w,F.h,THREE.RGBAFormat,THREE.HalfFloatType);
+ field.magFilter=field.minFilter=THREE.LinearFilter;field.colorSpace=THREE.NoColorSpace;field.name='skybloom-way-field';field.needsUpdate=true;
  const uniforms={
-  spSeg:{value:Array.from({length:MAX_SEG},(_,i)=>segs[i]?new THREE.Vector4(segs[i].ax,segs[i].az,segs[i].bx,segs[i].bz):new THREE.Vector4())},
-  spInfo:{value:Array.from({length:MAX_SEG},(_,i)=>segs[i]?new THREE.Vector4(segs[i].half,segs[i].kind,segs[i].joins,segs[i].along):new THREE.Vector4())},
-  spCount:{value:segs.length},spHole:{value:new THREE.Vector3(hole.x,hole.z,hole.r)},sgDetail:SKY_DETAIL,
+  spField:{value:field},spFieldMap:{value:new THREE.Vector4(F.minX,F.minZ,1/(F.w*F.cell),1/(F.h*F.cell))},
+  spHole:{value:new THREE.Vector3(hole.x,hole.z,hole.r)},sgDetail:SKY_DETAIL,
   spTurfA:{value:SKY_GRASS.deep.clone().multiplyScalar(.85)},spTurfB:{value:SKY_GRASS.lit.clone()},
  };
  const material=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.85,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
@@ -183,7 +152,8 @@ export function skyPaving(paths:IslandPath[]):THREE.Group{
  material.customProgramCacheKey=()=>'skybloom-limestone-paving';
  const surface=new THREE.Mesh(geo,material);surface.name='skybloom-paving-surface';surface.receiveShadow=true;surface.renderOrder=-1;
  root.add(surface);
- root.userData.covers=(x:number,z:number)=>onIslandPath(paths,x,z);
- root.userData.stats={segments:segs.length,cells:index.length/6,vertices:pos.length/3};
+ root.userData.covers=(x:number,z:number)=>skyOnPath(x,z)&&Math.hypot(x-hole.x,z-hole.z)>=hole.r;
+ root.userData.stats={field:[F.w,F.h],cells:index.length/6,vertices:pos.length/3};
+ root.userData.wayField=field;
  return root;
 }

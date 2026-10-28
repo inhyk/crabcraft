@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import {SKY_GRID,SKY_MAP,SKY_PATHS,skyHeight} from './skyGroundLayout';
+import {SKY_GRID,SKY_MAP,SKY_WAY_FIELD,skyHeight} from './skyGroundLayout';
 import {SKY_BLOOMS,SKY_DETAIL,SKY_GRASS} from './skyGround';
 
 /*
  * Skybloom's meadow underfoot: grass clumps and wildflowers on world-locked jittered lattices that travel with the
  * camera (two instanced draws, no per-instance data). The vertex shader finds its cell from gl_InstanceID, reads the
  * terrain's own 2 m triangles from a height texture and the ground map (grass, worn, flowers, shade, drift colour,
- * blade height; skyGroundLayout.skyGroundMap), keeps off the paving by the ways' own segments, and bends each blade in
+ * blade height, clover; skyGroundLayout.skyGroundMap), keeps off the paving by the ways' baked field, and bends each blade in
  * the wind and away from the crab. Far clumps thin and shrink before the patch's edge, where the ground shader's
  * painted grass and flower drifts take over.
  */
@@ -23,8 +23,9 @@ uniform float smN;
 uniform float smTime;
 uniform vec3 smPlayer;
 uniform vec3 smCam;
-uniform vec4 smSeg[6]; // the ways: ax, az, bx, bz
-uniform float smHalf[6];
+uniform sampler2D smField; // the ways (skyGroundLayout.skyWayFieldData): r signed distance past the paved edge
+uniform vec4 smFieldMap;
+uniform sampler2D smExtra;
 uniform vec3 smLit,smDeep,smDry,smShadeC;
 uniform vec3 smB0,smB1,smB2,smB3;
 vec2 smHash22(vec2 p){vec3 p3=fract(vec3(p.xyx)*vec3(.1031,.1030,.0973));p3+=dot(p3,p3.yzx+33.33);return fract((p3.xx+p3.yz)*p3.zy);}
@@ -36,9 +37,8 @@ float smHeightAt(vec2 p){
 }
 // Distance past the paving's edge (kerbs included), negative on the stones.
 float smPathD(vec2 p){
-  float best=1e3;
-  for(int k=0;k<6;k++){vec4 s=smSeg[k];vec2 ab=s.zw-s.xy;float t=clamp(dot(p-s.xy,ab)/max(dot(ab,ab),1e-4),0.,1.);best=min(best,length(s.xy+ab*t-p)-smHalf[k]);}
-  return best;
+  vec2 uv=(p-smFieldMap.xy)*smFieldMap.zw;
+  return any(lessThan(uv,vec2(0.)))||any(greaterThan(uv,vec2(1.)))?60.:textureLod(smField,uv,0.).r-.3;
 }
 vec3 smBloom(float h){return h<.25?smB0:h<.5?smB1:h<.75?smB2:smB3;}
 `;
@@ -50,7 +50,7 @@ vec2 smCell=floor(smCenter.xy/smCenter.z)+vec2(mod(smId,smN),floor(smId/smN))-fl
 vec2 smR=smHash22(smCell),smR2=smHash22(smCell+71.3);
 vec2 smRoot=(smCell+.15+.7*smR)*smCenter.z;
 vec2 smUv=(smRoot-smMap.xy)*smMap.zw;
-vec4 smS=texture2D(smSoil,smUv),smA=texture2D(smAux,smUv);
+vec4 smS=texture2D(smSoil,smUv),smA=texture2D(smAux,smUv),smE=texture2D(smExtra,smUv);
 float smDist=length(smRoot-smCenter.xy)/(smN*smCenter.z*.5);
 vec2 smCc=floor(smRoot/2.2-.5),smBest=vec2(0.);float smCd=9.;
 for(int j=0;j<=1;j++)for(int i=0;i<=1;i++){vec2 c=smCc+vec2(i,j),q=(c+.3+.4*smHash22(c+3.7))*2.2;float d=length(smRoot-q);if(d<smCd){smCd=d;smBest=c;}}
@@ -62,13 +62,15 @@ float smPd=smPathD(smRoot);
 // Density: the map's grass, none where bare or on the stones; a grassy fringe laps the paving's edge.
 float smKeep=smS.r*(1.-step(.5,smA.b))*smoothstep(-.12,.35,smPd)*(1.-smoothstep(.62,.96,smDist))*mix(.55,1.,smoothstep(.14,.32,smPatch+(smK.x-.5)*.3))*(.72+.28*smHeart);
 smKeep*=mix(.4,1.,smoothstep(3.,11.,length(smRoot-smCam.xz)));
+// Clover patches: the turf there is short and open, the clover leaves (ground shader) show between the blades.
+smKeep*=1.-.55*smE.r;
 float smLive=step(smR2.x,smKeep);
 float smTall=smA.a*(1.+.35*smoothstep(.2,1.2,smPd)*(1.-smoothstep(1.2,3.,smPd)));
 float smScale=smLive*mix(1.,.35,smoothstep(.55,.95,smDist))*smoothstep(0.,.25,smKeep-smR2.x+.1)*(.62+.7*smK.y)*(.7+.45*smHeart);
 float smB=aBlade.z,smAng=smR.x*6.2831+smB*2.1,smLean=.3+.4*fract(smR.y*7.+smB*.37);
 vec2 smDir=normalize(vec2(cos(smAng),sin(smAng))+vec2(cos(smK2.x*6.28),sin(smK2.x*6.28))*.9),smSide=vec2(-smDir.y,smDir.x);
 vec2 smOff=smDir*(.05+.07*smB)*(smB>0.?1.:0.);
-float smH=(.22+.34*fract(smR2.y*5.3+smB*.61))*smScale*mix(.5,1.02,smTall),smW=.032+.022*fract(smR.x*3.1+smB);
+float smH=(.22+.34*fract(smR2.y*5.3+smB*.61))*smScale*mix(.5,1.02,smTall)*(1.-.4*smE.r),smW=.032+.022*fract(smR.x*3.1+smB);
 float smT=aBlade.x;
 vec2 smBase=smRoot+smOff;
 float smGust=sin(smTime*.9+dot(smBase,vec2(.11,.07)))*.5+sin(smTime*2.1+dot(smBase,vec2(-.23,.31)))*.25;
@@ -102,7 +104,7 @@ vec2 smRoot=(smCell+.12+.76*smR)*smCenter.z;
 vec2 smUv=(smRoot-smMap.xy)*smMap.zw;
 vec4 smS=texture2D(smSoil,smUv),smA=texture2D(smAux,smUv);
 float smDist=length(smRoot-smCenter.xy)/(smN*smCenter.z*.5);
-float smKeep=smS.a*(1.-step(.5,smA.b))*smoothstep(.2,.8,smPathD(smRoot))*(1.-smoothstep(.6,.95,smDist));
+float smKeep=smS.a*(1.-step(.5,smA.b))*smoothstep(1.5,2.,smPathD(smRoot)+.3)*(1.-smoothstep(.6,.95,smDist));
 float smLive=step(smR2.x,smKeep*1.1);
 float smScale=smLive*mix(1.,.4,smoothstep(.55,.95,smDist))*(.75+.5*smR2.y);
 // aBlade: x height 0..1 (stem) or 2 for the head, y the petal angle (head) or the stem side, z ring 0 centre .. 1 petal tip.
@@ -149,21 +151,17 @@ function latticeGeometry(verts:number[],index:number[],count:number){
 
 export interface SkyMeadow{root:THREE.Group;grass:THREE.Mesh;flowers:THREE.Mesh;setQuality(q:'high'|'low'):void;update(time:number,player:THREE.Vector3):void}
 /** The meadow: grass and wildflowers, two instanced draws that follow the camera (set in onBeforeRender). */
-export function skyMeadow(soil:THREE.DataTexture,aux:THREE.DataTexture):SkyMeadow{
+export function skyMeadow(soil:THREE.DataTexture,aux:THREE.DataTexture,extra:THREE.DataTexture,field:THREE.Texture):SkyMeadow{
  const {nx,nz,step,minX,minZ}=SKY_GRID;
  const hData=new Float32Array(nx*nz);
  for(let j=0;j<nz;j++)for(let i=0;i<nx;i++)hData[j*nx+i]=skyHeight(minX+i*step,minZ+j*step);
  const hTex=new THREE.DataTexture(hData,nx,nz,THREE.RedFormat,THREE.FloatType);hTex.needsUpdate=true;
- const segs:THREE.Vector4[]=[],halves:number[]=[];
- for(const p of SKY_PATHS)for(let k=1;k<p.points.length;k++){segs.push(new THREE.Vector4(p.points[k-1][0],p.points[k-1][1],p.points[k][0],p.points[k][1]));halves.push(p.width/2+(p.trim?.3:0));}
- while(segs.length<6){segs.push(new THREE.Vector4(1e4,1e4,1e4,1e4));halves.push(0);}
- if(segs.length>6)throw new Error('skyMeadow: more than six way segments');
  const shared={
   smHeight:{value:hTex},smSoil:{value:soil},smAux:{value:aux},
   smGrid:{value:new THREE.Vector4(minX,minZ,step,nx)},smGridNz:{value:nz},
   smMap:{value:new THREE.Vector4(SKY_MAP.minX,SKY_MAP.minZ,1/SKY_MAP.w,1/SKY_MAP.h)},
   smTime:{value:0},smPlayer:{value:new THREE.Vector3()},smCam:{value:new THREE.Vector3()},
-  smSeg:{value:segs},smHalf:{value:halves},sgDetail:SKY_DETAIL,
+  smField:{value:field},smFieldMap:{value:new THREE.Vector4(SKY_WAY_FIELD.minX,SKY_WAY_FIELD.minZ,1/(SKY_WAY_FIELD.w*SKY_WAY_FIELD.cell),1/(SKY_WAY_FIELD.h*SKY_WAY_FIELD.cell))},smExtra:{value:extra},sgDetail:SKY_DETAIL,
   smLit:{value:SKY_GRASS.lit},smDeep:{value:SKY_GRASS.deep},smDry:{value:SKY_GRASS.dry},smShadeC:{value:SKY_GRASS.shade},
   smB0:{value:SKY_BLOOMS[0]},smB1:{value:SKY_BLOOMS[1]},smB2:{value:SKY_BLOOMS[2]},smB3:{value:SKY_BLOOMS[3]},
  };
