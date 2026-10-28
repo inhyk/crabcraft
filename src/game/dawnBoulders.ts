@@ -134,7 +134,7 @@ export function strataGeometry(k: StrataStone): THREE.BufferGeometry {
     }
     return best / Math.cos(Math.PI / sides) * .97;
   };
-  const bury = k.h * (slab ? .35 : .3), top = k.h, H = top + bury;
+  const bury = k.h * (slab ? .35 : .45), top = k.h, H = top + bury;
   // Joints: two or three vertical cracks through the whole mass, the stone splitting along them.
   const joints = slab ? [] : Array.from({length: 2 + Math.floor(R() * 2)}, () => [R() * Math.PI * 2, .05 + R() * .05, .06 + R() * .07]);
   // Grain of the whole mass: a few sines in angle and height, the same through every bed.
@@ -155,7 +155,7 @@ export function strataGeometry(k: StrataStone): THREE.BufferGeometry {
     y += th;
   }
   /** The body's width up the stone, t 0 (buried foot) to 1 (top). */
-  const body = (t: number, cap: boolean) => slab ? 1 - .05 * t : hoodoo ? (cap ? 1 : .52 + .38 * THREE.MathUtils.smoothstep(t, .02, .78)) : (1.04 - .12 * t) * (1 + .06 * (1 - THREE.MathUtils.smoothstep(t, 0, .25)));
+  const body = (t: number, cap: boolean) => slab ? 1 - .05 * t : hoodoo ? (cap ? 1 : .45 + .45 * THREE.MathUtils.smoothstep(t, .25, .85)) : (1.04 - .12 * t) * (1 + .06 * (1 - THREE.MathUtils.smoothstep(t, 0, .25)));
   /** Outline factor round the stone for bed `bed` at angle th; `lipW` weights the crumbled chips (on the lip only). */
   const round = (bed: Bed, th: number, yy: number, lipW: number) => {
     let r = plan(th) * .62 + .38 + .12 * outline(th) + .03 * bed.own(th);
@@ -230,6 +230,7 @@ export function dawnBoulders(height: (x: number, z: number) => number, sand = DA
   const group = new THREE.Group(); group.name = 'dawnreach-boulders';
   const geos: THREE.BufferGeometry[] = [], vents: {pos: THREE.Vector3; size: number}[] = [];
   let count = 0;
+  const mains: {i: number; tall: boolean; base: number; top: number; foot: number; width: number[]}[] = [];
   // Every stone's long axis lies along the wind, give or take; local +x is downwind.
   const windYaw = -Math.atan2(DAWN_WIND[1], DAWN_WIND[0]);
   const reach = (g: THREE.BufferGeometry) => { const p = g.getAttribute('position'); let m = 0; for (let v = 0; v < p.count; v++) m = Math.max(m, Math.hypot(p.getX(v), p.getZ(v))); return m; };
@@ -258,12 +259,30 @@ export function dawnBoulders(height: (x: number, z: number) => number, sand = DA
       let low = Infinity;
       const ground = k ? height : bare;
       for (let a = 0; a < 12; a++) for (const f of [.4, .9]) low = Math.min(low, ground(x + Math.cos(a * .52) * m * f, z + Math.sin(a * .52) * m * f));
-      if (k) { g.computeBoundingBox(); low -= g.boundingBox!.max.y * .25; }
+      g.computeBoundingBox();
+      if (k) low -= g.boundingBox!.max.y * .25;
+      else {
+        // Sunk so the sand round its foot buries 30 % of its height, wherever its foot stands; never so high that
+        // its buried foot (45 % of its height under the origin) comes out of the ground beneath.
+        let foot = 0;
+        for (let a = 0; a < 12; a++) foot += height(x + Math.cos(a * .52) * m * .8, z + Math.sin(a * .52) * m * .8) / 12;
+        low = Math.min(foot - .3 * g.boundingBox!.max.y, low + .4 * main.h);
+      }
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, s.yaw, s.tilt, 'YXZ'));
       g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, low, z), q, new THREE.Vector3(1, 1, 1)));
       const pos = g.getAttribute('position') as THREE.BufferAttribute, kind = new Float32Array(pos.count * 3);
       for (let v = 0; v < pos.count; v++) kind.set([site.basalt ? 1 : 0, site.vent && k === 0 ? 1 : 0, pos.getY(v) - height(pos.getX(v), pos.getZ(v))], v * 3);
       g.setAttribute('aKind', new THREE.BufferAttribute(kind, 3));
+      if (!k) {
+        // The main stone's burial (for QA): the sand round its foot against its height over the ground beneath.
+        let foot = 0;
+        for (let a = 0; a < 12; a++) foot += height(x + Math.cos(a * .52) * m * .8, z + Math.sin(a * .52) * m * .8) / 12;
+        g.computeBoundingBox();
+        // Its width up the part above the sand: mean radius in ten bands, foot to top.
+        const top = g.boundingBox!.max.y, sum = new Float64Array(10), n = new Float64Array(10), p = g.getAttribute('position');
+        for (let v = 0; v < p.count; v++) { const b = Math.floor((p.getY(v) - foot) / (top - foot) * 10); if (b >= 0 && b < 10) { sum[b] += Math.hypot(p.getX(v) - x, p.getZ(v) - z); n[b]++; } }
+        mains.push({i: site.i, tall, base: low, top, foot, width: Array.from(sum, (v, b) => +(v / Math.max(1, n[b])).toFixed(2))});
+      }
       geos.push(g); count++;
       if (site.vent && k === 0) { g.computeBoundingBox(); vents.push({pos: new THREE.Vector3(x, g.boundingBox!.max.y + .2, z), size: 2.2 + site.r * .5}); }
     }
@@ -276,6 +295,6 @@ export function dawnBoulders(height: (x: number, z: number) => number, sand = DA
   group.add(mesh);
   const glow = dawnGlows(vents, '#ff6a1c', 'dawnreach-vent-glows');
   group.add(glow);
-  group.userData.stones = count; group.userData.sites = dawnBoulderSites().length; group.userData.vents = vents.length;
+  group.userData.stones = count; group.userData.sites = dawnBoulderSites().length; group.userData.vents = vents.length; group.userData.mains = mains;
   return {group, update(time) { uniforms.dbTime.value = time; (glow.material as THREE.ShaderMaterial).uniforms.uTime.value = time; }};
 }
