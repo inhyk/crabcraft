@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {realmHeight} from '../sim/world/ground';
 import {frontierTrees} from './realmLayout';
 import {onIslandPath,type IslandPath} from './islandPaths';
+import {skyTownBare,skyTownMarketGround} from './skyTownLayout';
 
 /*
  * Skybloom's ground plan, shared by the ground shader (skyGround.ts), the meadow (skyMeadow.ts), the paving
@@ -207,6 +208,8 @@ export function skyGroundMap():SkyGroundMap{
   if(p.kind==='boulder'||p.kind==='stone')splat(p.x,p.z,p.s*.9,(_d,i)=>{bare[i]=1;});
   splat(p.x,p.z,4,(d,i)=>{edge[i]=Math.max(edge[i],(1-smooth(d,1,4))*.7);});
  }
+ // The market's trodden ground follows the town's stalls (skyTownLayout.ts).
+ const market=skyTownMarketGround();
  const soil=new Uint8Array(n*4),aux=new Uint8Array(n*4),u8=(v:number)=>Math.max(0,Math.min(255,Math.round(v*255)));
  for(let j=0;j<h;j++)for(let i=0;i<w;i++){
   const x=minX+i+.5,z=minZ+j+.5,k=j*w+i,o=k*4;
@@ -218,7 +221,7 @@ export function skyGroundMap():SkyGroundMap{
   // Beside the ways only a ragged trodden lip: the turf laps up to the stones.
   let worn=(1-smooth(pd,.0,.9+rag*.9))*.55*smooth(fbm(x/2.5,z/2.5,6),-.2,.35);
   for(const [hx,hz] of SKY_HOUSES){const door=Math.hypot((x-hx)/2.6,(z-hz-7.2)/1.8);worn=Math.max(worn,(1-smooth(door+rag*.25,.5,1.4))*.9);}
-  for(const side of [-1,1]){const d=rectDist(x,z,side*21.5,23,5,3.2);worn=Math.max(worn,(1-smooth(d+rag,0,2.5))*.8);}
+  for(const m of market){const d=rectDist(x,z,m.x,m.z,m.hx,m.hz);worn=Math.max(worn,(1-smooth(d+rag,0,2.5))*.8);}
   worn=Math.max(worn,town*smooth(fbm(x/9,z/9,8),.35,.5)*.35);
   const ra=Math.hypot(x-SKY_ARENA.x,z-SKY_ARENA.z);worn=Math.max(worn,(1-smooth(ra+rag*1.5,SKY_ARENA.r,SKY_ARENA.r+4))*.75);
   worn=Math.max(worn,(1-smooth(wt+rag*2,7,12))*.6);
@@ -232,8 +235,8 @@ export function skyGroundMap():SkyGroundMap{
   let isBare=bare[k]===1;
   if(!isBare){
    for(const [hx,hz] of SKY_HOUSES)if(rectDist(x,z,hx,hz,5.4,5.9)<.6){isBare=true;break;}
-   for(const side of [-1,1])if(rectDist(x,z,side*21.5,23,4.6,2.6)<.3)isBare=true;
    if(Math.hypot(x+12,z-84)<3.2||ra<SKY_ARENA.r+.6||wt<7)isBare=true;
+   if(skyTownBare(x,z))isBare=true;// the town's boardwalk, sheds, cargo and stalls (skyTownLayout.ts)
    for(let q=0;q<10&&!isBare;q++){const a=(q+1)/12*Math.PI*2,px=Math.sin(a)*23,pz=-72+Math.cos(a)*23;if(pz<=-56&&Math.hypot(x-px,z-pz)<2)isBare=true;}
   }
   // Blade height: short mown turf in town, tall at the forest's edge and the field margins.

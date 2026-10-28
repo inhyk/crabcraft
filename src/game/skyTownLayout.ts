@@ -91,7 +91,7 @@ export const festoonPoles = (f: (typeof SKY_FESTOONS)[number]) => f.poles.map(([
 export const SKY_PIER = {x: 0, z0: 95, z1: 150, half: 2.6, headZ: 131, headHalf: 5.2, gateZ: 101.5};
 export const SKY_AIRSHIP = {x: 7.9, z: 141, yaw: 0};
 /** Mooring mast east of the chandler's: a second airship rides at its top, seen from the arrival and from the air. */
-export const SKY_MAST = {x: 45, z: 58, height: 14};
+export const SKY_MAST = {x: 45, z: 58, height: 12.5};
 /** The harbour's sail-roofed buildings beside the boardwalk head, open to it (local +z): a cargo shed and the harbourmaster's booth. */
 export const SKY_SHEDS: {x: number; z: number; yaw: number; hx: number; hz: number; kind: 'cargo' | 'booth'}[] = [
   {x: 10.8, z: 98.6, yaw: -Math.PI / 2 + .14, hx: 3.0, hz: 2.3, kind: 'cargo'},
@@ -130,4 +130,23 @@ export function layoutSkyTown(col: Collision, heightAt: (x: number, z: number) =
   { const y = heightAt(SKY_PIER.x, SKY_PIER.gateZ); col.addBox(SKY_PIER.x, SKY_PIER.gateZ, 3.0, .2, 0, y - 1, y + 3); }
   post(SKY_MAST.x, SKY_MAST.z, 2.3, SKY_MAST.height);
   { const g = SKY_GLASSHOUSE, y = heightAt(g.x, g.z); col.addBox(g.x, g.z, g.hx, g.hz, 0, y - 1, y + 3); }
+}
+
+const inRect = (x: number, z: number, cx: number, cz: number, hx: number, hz: number, yaw: number) => {
+  const dx = x - cx, dz = z - cz, c = Math.cos(yaw), s = Math.sin(yaw);
+  return Math.abs(c * dx - s * dz) <= hx && Math.abs(s * dx + c * dz) <= hz;
+};
+/** Ground the town covers (the boardwalk, sheds, cargo, stalls, the mast's foot): the meadow grows no blades there. */
+export function skyTownBare(x: number, z: number): boolean {
+  const P = SKY_PIER;
+  if (z > P.z0 - 1.2 && z < P.z1 + .5 && Math.abs(x - P.x) < P.half + .35) return true;
+  if (Math.abs(z - P.z0 + .6) < .6 && Math.abs(x - P.x) < P.half + 1.2) return true;
+  for (const s of SKY_SHEDS) if (inRect(x, z, s.x, s.z, s.hx + .35, s.hz + .35, s.yaw)) return true;
+  for (const c of SKY_CARGO) if (inRect(x, z, c.x, c.z, c.hx + .2, c.hz + .2, 0)) return true;
+  for (const s of skyTownPlan().stalls) if (inRect(x, z, s.x, s.z, 2.5, 1.4, s.yaw)) return true;
+  return Math.abs(x - SKY_MAST.x) < 2.3 && Math.abs(z - SKY_MAST.z) < 2.3;
+}
+/** Trodden ground round the market: one rectangle per stall (centre, half sizes along world x and z). */
+export function skyTownMarketGround(): {x: number; z: number; hx: number; hz: number}[] {
+  return skyTownPlan().stalls.map(s => ({x: s.x - Math.sin(s.yaw) * .6, z: s.z - Math.cos(s.yaw) * .6, hx: 3.1, hz: 3.8}));
 }
