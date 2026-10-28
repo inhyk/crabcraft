@@ -4,6 +4,7 @@ import {FRONTIER_TOWN,layoutFrontier,frontierTrees,type FrontierChapter} from '.
 import {StarPortal} from './portal';
 import type {Poi} from '../world/types';
 import {islandPaths} from './islandPaths';
+import {SkybloomAir} from './skybloomAir';
 /** World VI Skybloom, split from the shared frontier so its design can grow apart from World V. */
 export class SkybloomIsland {
  readonly root=new THREE.Group();
@@ -14,6 +15,8 @@ export class SkybloomIsland {
  readonly back:StarPortal;
  readonly next:StarPortal|null;
  private animated:THREE.ShaderMaterial[]=[];
+ /** Sky, sun, fog, environment, cloud sea, cliff skirt, floating isles, falls and drifting petals (skybloomAir.ts). */
+ readonly air=new SkybloomAir();
  private rotating:THREE.Object3D[]=[];
  height(x:number,z:number){return realmHeight(this.chapter,x,z);}
  readonly chapter:FrontierChapter=6;
@@ -99,17 +102,10 @@ export class SkybloomIsland {
   }else{
    add(new THREE.CylinderGeometry(3.5,6,36,10),wood,0,ly+18,-112).name='skybloom-world-tree';
    for(let i=0;i<7;i++){const a=i/7*Math.PI*2,x=Math.sin(a)*10,z=-112+Math.cos(a)*10;const b=add(new THREE.CylinderGeometry(.6,1.4,20,6),wood,x*.5,ly+26,z+(-112-z)*.5);b.rotation.z=-Math.sin(a)*.8;b.rotation.x=Math.cos(a)*.8;const canopy=add(new THREE.IcosahedronGeometry(12,1),new THREE.MeshStandardMaterial({color:i%2?'#67ac86':'#3b947d',roughness:.8}),x,ly+38+i%3*3,z);canopy.scale.y=.65;}
-   for(let i=0;i<9;i++){const a=i*2.4,x=Math.sin(a)*145,z=Math.cos(a)*160;add(new THREE.ConeGeometry(8+i%3*3,22,6),stone,x,12+i%4*9,z).rotation.z=Math.PI;add(new THREE.CylinderGeometry(8+i%3*3,7,2,8),roofMat,x,24+i%4*9,z);}
   }
   for(let i=0;i<10;i++){const a=(i+1)/12*Math.PI*2,x=Math.sin(a)*23,z=-72+Math.cos(a)*23;if(z>-56)continue;const y=this.height(x,z);add(new THREE.CylinderGeometry(.9,1.4,9,8),stone,x,y+4.5,z);const gem=add(new THREE.OctahedronGeometry(.8),glow,x,y+9.8,z);this.rotating.push(gem);}
   this.makeDetails(fire,stone,wood,metal,glow,foliage);
-  // A low sea of lava / clouds and gradient sky distinguish the worlds at first glance.
-  const sea=add(new THREE.PlaneGeometry(1800,1800),this.flowMaterial(fire),0,.15,0);sea.rotation.x=-Math.PI/2;sea.castShadow=false;sea.name=fire?'molten-sea':'sea-of-clouds';
-  const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{top:{value:new THREE.Color(fire?'#271728':'#438ca7')},bottom:{value:new THREE.Color(fire?'#dd8b5f':'#d3efda')}},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;uniform vec3 top;uniform vec3 bottom;void main(){gl_FragColor=vec4(mix(bottom,top,smoothstep(0.,.65,normalize(v).y)),1.);}'});
-  const sky=add(new THREE.SphereGeometry(850,32,20),skyMat,0,0,0);sky.renderOrder=-100;sky.castShadow=false;
-  const particles=new THREE.BufferGeometry(),p=new Float32Array(360*3);for(let i=0;i<360;i++)p.set([Math.sin(i*127.1)*90,Math.sin(i*311.7)*14+20,Math.sin(i*74.7)*110],i*3);particles.setAttribute('position',new THREE.BufferAttribute(p,3));
-  const sparks=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{time:{value:0},tint:{value:new THREE.Color(fire?'#ffd292':'#a2ffe5')}},vertexShader:'uniform float time;void main(){vec3 p=position;p.y=mod(p.y+time*.8,40.)+4.;p.x+=sin(time*.4+p.z)*.5;vec4 mv=modelViewMatrix*vec4(p,1.);gl_PointSize=clamp(100./max(1.,-mv.z),1.,5.);gl_Position=projectionMatrix*mv;}',fragmentShader:'uniform vec3 tint;void main(){float a=1.-smoothstep(.05,.5,length(gl_PointCoord-.5));gl_FragColor=vec4(tint,a*.75);}'});this.animated.push(sparks);this.root.add(new THREE.Points(particles,sparks));
-  const sun=new THREE.DirectionalLight(fire?'#ffd2a8':'#fff5cd',fire?2.5:2.6);sun.position.set(45,90,40);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=sun.shadow.camera.bottom=-105;sun.shadow.camera.right=sun.shadow.camera.top=105;sun.shadow.camera.near=1;sun.shadow.camera.far=240;sun.shadow.bias=-.00015;sun.shadow.normalBias=.12;sun.shadow.camera.updateProjectionMatrix();this.root.add(sun,sun.target,new THREE.HemisphereLight(fire?'#dab0a6':'#c9f4ea',fire?'#44303e':'#344a3a',.75),this.back.root);if(this.next)this.root.add(this.next.root);
+  this.animated.push(...this.air.mount(this.root,this.root.getObjectByName('frontier-terrain') as THREE.Mesh|undefined));this.root.add(this.back.root);if(this.next)this.root.add(this.next.root);
  }
  /** Small scenery shares geometry and material; roads and battle space stay unobstructed. */
  private makeDetails(fire:boolean,stone:THREE.Material,wood:THREE.Material,metal:THREE.Material,glow:THREE.Material,foliage:THREE.Material){
