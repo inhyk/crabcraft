@@ -96,13 +96,17 @@ float egN1=egFbm(egP*.021+1.3),egN2=egFbm(egP*.073-4.1),egN3=egNoise(egP*.31+9.)
 // Ash lies in the hills' hollows (ground.ts: sin(x .047) sin(z .035)) and in wind streaks running east-west.
 float egHill=sin(egP.x*.047)*sin(egP.y*.035)*(1.-exp(-egP.x*egP.x/900.));
 float egStreak=egNoise(vec2(egP.x*.07,egP.y*.19)+3.)*.5+.5;
-float egAshF=-egHill*.45+egN2*.45+egStreak*.22+.2+egN3*.1+egNoise(egP*.9)*.04;
+float egAshF=-egHill*.45+egN2*.45+egStreak*.22+.2+egN3*.1+egNoise(egP*.9)*.09+egNoise(egP*2.7)*.05;
 float egAsh=smoothstep(.52,.565,egAshF)*.85+smoothstep(.565,.8,egAshF)*.15;
 // Wind ripples on the drifts, crests running north-south.
 float egRip=sin(egP.x*5.1+egNoise(egP*.7)*4.+egNoise(egP*2.3)*.8)*.5+.5;
 egAsh*=1.-egHeat*.85;
 // Cooled pahoehoe sheets: dark, smoother, with rope folds bowed downhill (south); none under the ash.
-float egSheet=smoothstep(.12,.3,egFbm(egP*.017+17.)-.08)*(1.-egAsh)*(1.-egShore);
+float egSheet=smoothstep(.05,.22,egFbm(egP*.017+17.)-.08)*(1.-egAsh)*(1.-egShore);
+// Clinker (a'a) fields: rubbly blocks with dark gaps, where the sheets broke up.
+float egAaM=smoothstep(.15,.55,egNoise(egP*.045+31.)+egNoise(egP*.4)*.12)*(1.-egSheet)*(1.-egAsh*.9)*(1.-egShore);
+vec3 egAaC=egCells(egP*2.7+egWarp*2.);
+float egAa=smoothstep(.02,.16+egFoot*.5,egAaC.x+egNoise(egP*9.)*.04);
 float egRopeU=egP.y*1.35+sin(egP.x*.23+egN3*2.)*2.4+egFbm(egP*.12)*3.;
 float egRope=(sin(egRopeU*6.2832)*.5+.5);
 // Cracked crust where the ground shrank: polygons a metre or two across, more of them near heat.
@@ -114,15 +118,16 @@ float egGravM=smoothstep(.3,.6,egNoise(egP*.09+21.))*(1.-egSheet)*(1.-egHeat*.8)
 float egPeb=0.,egPebId=0.;
 if(egDetail>.5&&egNear>0.&&egGravM>0.){vec3 c=egCells(egP*6.3);egPebId=c.y;egPeb=(1.-smoothstep(.16,.3,c.z+egNoise(egP*30.)*.05))*step(.3+.5*(1.-egGravM),c.y)*egNear;}
 // Colour (sRGB values, converted): basalt from charcoal to blue-grey, lit by the swells.
-vec3 egBas=mix(vec3(.17,.18,.21),vec3(.27,.28,.31),smoothstep(-.6,.6,egN1));
+vec3 egBas=mix(vec3(.15,.16,.19),vec3(.29,.295,.325),smoothstep(-.45,.45,egN1));
 egBas=mix(egBas,vec3(.2,.2,.22),smoothstep(.2,.7,egN2)*.4);
 egBas*=.9+.2*(egN3*.5+.5);
 // Mid-scale blotches of rougher and smoother rock, and grit up close.
 egBas*=1.+egNoise(egP*.34+5.)*.16+egNoise(egP*1.1-2.)*.08;
 egBas*=1.+(egNoise(egP*2.7)*.1+egNoise(egP*11.)*.1+egNoise(egP*29.)*.08)*(1.-smoothstep(.03,.25,egFoot));
 vec3 egSheetC=mix(vec3(.12,.125,.15),vec3(.16,.16,.19),egRope)*(.92+.16*egN3);
-vec3 egAshC=mix(vec3(.34,.33,.355),vec3(.41,.4,.415),egStreak)*(.9+.12*egN3)*(.9+.1*egRip*(1.-smoothstep(.03,.15,egFoot)))*(1.+egNoise(egP*13.)*.05*egNear);
+vec3 egAshC=mix(vec3(.3,.29,.31),vec3(.36,.35,.365),egStreak)*(.9+.12*egN3)*(.9+.1*egRip*(1.-smoothstep(.03,.15,egFoot)))*(1.+egNoise(egP*13.)*.05*egNear);
 vec3 egCol=mix(egBas,egSheetC,egSheet);
+egCol=mix(egCol,egBas*mix(.45,.85+.45*egAaC.y,egAa),egAaM*(1.-smoothstep(.06,.3,egFoot)*.5));
 egCol=mix(egCol,egAshC,egAsh);
 egCol=mix(egCol,mix(vec3(.4,.39,.38),vec3(.5,.48,.46),egPebId),egPeb*.8);
 // Heat scorches the ground darker and rust-red, crazed by finer cracks.
@@ -148,7 +153,7 @@ roughnessFactor=mix(roughnessFactor,.98,egAsh);
 const NORMAL = /* glsl */ `
 if(egDetail>.5){
   float egScoria=(egNoise(egP*3.3)*.6+egNoise(egP*8.1)*.4)*(1.-egAsh*.8)*(1.-egSheet*.7);
-  float egH=(egRope*.022*egSheet+egRip*.008*egAsh+egPeb*.03-egCrack*.03-egLip*.02+egScoria*.035+egNoise(egP*17.)*.008*(1.-egAsh*.6))*(1.-smoothstep(.04,.25,egFoot));
+  float egH=(egAa*egAaM*.06+egRope*.022*egSheet+egRip*.008*egAsh+egPeb*.03-egCrack*.03-egLip*.02+egScoria*.035+egNoise(egP*17.)*.008*(1.-egAsh*.6))*(1.-smoothstep(.04,.25,egFoot));
   normal=egBump(normal,egH,egDpx,egDpy);
 }
 `;

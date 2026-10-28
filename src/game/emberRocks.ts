@@ -418,6 +418,8 @@ export interface EmberRocksOptions {
  features: readonly EmberFeature[];
  /** More pieces in the same mesh and material (the forge court's columns). */
  extra?: (b: Builder) => void;
+ /** Loose field stones (emberPlants.emberRubble). */
+ rubble?: readonly {x: number; z: number; s: number; seed: number}[];
 }
 
 /** Builds the rock mesh and the crystal mesh. Features on the lava (zones read at runtime) are skipped. */
@@ -449,6 +451,7 @@ export function emberRocks(opts: EmberRocksOptions) {
   }
  }
  opts.extra?.(b);
+ for (const r of opts.rubble ?? []) boulder(b, height, r.x, r.z, r.s, r.seed, C(r.seed % 3 < 1 ? '#2c2d34' : '#3a3b42', .85 + .03 * (r.seed % 10)));
  const rockGeo = b.build();
  const uniforms = {egDetail: EMBER_DETAIL, rkTime: {value: 0}};
  const rockMat = new THREE.MeshStandardMaterial({color: '#ffffff', vertexColors: true, roughness: .88, metalness: 0});

@@ -4,7 +4,7 @@ import {EMBER_FEATURES,EMBER_PATHS} from './emberGroundLayout';
 import {emberGround} from './emberGround';
 import {emberPaving} from './emberPaving';
 import {emberRocks} from './emberRocks';
-import {emberPlants} from './emberPlants';
+import {emberPlants,emberRubble} from './emberPlants';
 import {emberCourt} from './emberCourt';
 import {refreshEmberDetail} from './emberNoise';
 
@@ -28,7 +28,7 @@ export class EmberWilds {
   this.root.add(paving.root); this.updaters.push(paving.update);
   const court = emberCourt({height: opts.height, ly: opts.ly});
   this.root.add(court.root); this.updaters.push(court.update);
-  const rocks = emberRocks({height: opts.height, zones: opts.zones, features: EMBER_FEATURES, extra: court.addColumns});
+  const rocks = emberRocks({height: opts.height, zones: opts.zones, features: EMBER_FEATURES, extra: court.addColumns, rubble: emberRubble(opts.zones, EMBER_FEATURES)});
   this.root.add(rocks.rocks, rocks.crystals); this.updaters.push(rocks.update);
   this.root.userData.rocks = rocks.stats;
   const plants = emberPlants({height: opts.height, zones: opts.zones, features: rocks.features});

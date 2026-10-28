@@ -67,14 +67,31 @@ export interface EmberPlantsOptions {
  features: readonly EmberFeature[];
 }
 
-export function emberPlants(opts: EmberPlantsOptions) {
- const {height, zones, features} = opts;
+/** Whether (x, z) must stay clear of scatter: roads, town, court, lava, quest props, rock footprints, the shore. */
+export function emberBlocked(zones: readonly LavaZone[], features: readonly EmberFeature[]) {
  const quest = Object.values(FRONTIER_POINTS[5]);
- const blockedBy = (x: number, z: number, pad: number) =>
+ return (x: number, z: number, pad: number) =>
   onIslandPath(EMBER_PATHS, x, z) || Math.hypot(x / 128, (z - 2) / 155) > .79 || Math.abs(x) < 44 && z > 22 && z < 97 || Math.hypot(x, z + 72) < 26 ||
   zones.some((zn) => Math.hypot(zn.x - x, zn.z - z) < zn.radius + 2.5) || quest.some(([qx, qz]) => Math.hypot(qx - x, qz - z) < 1.8) ||
   features.some((e) => { const d = Math.hypot(e.x - x, e.z - z); return e.kind === 'charred' ? d < .6 : e.kind === 'arch' ? false : d < e.r * .92 + pad; }) ||
   features.some((e) => { if (e.kind !== 'arch') return false; const s = Math.sin(e.yaw), c = Math.cos(e.yaw); return [-1, 1].some((k) => Math.hypot(e.x + s * e.r * k - x, e.z + c * e.r * k - z) < 2.4 + pad || Math.hypot(e.x + s * e.r * k + c * 2.8 * k - x, e.z + c * e.r * k - s * 2.8 * k - z) < 2.4 + pad); });
+}
+
+/** Loose rubble out in the fields: a few dozen clumps of small stones, none where enemies are homed. */
+export function emberRubble(zones: readonly LavaZone[], features: readonly EmberFeature[]) {
+ const blocked = emberBlocked(zones, features), R = rng(9011), out: {x: number; z: number; s: number; seed: number}[] = [];
+ const homes: [number, number][] = []; for (let i = 0; i < 20; i++) homes.push([(i % 2 ? 1 : -1) * (44 + i % 4 * 7), 20 - Math.floor(i / 2) * 12]);
+ for (let k = 0; k < 60; k++) {
+  const cx = (R() - .5) * 200, cz = (R() - .5) * 240 - 10;
+  if (blocked(cx, cz, 1) || homes.some(([hx, hz]) => Math.hypot(hx - cx, hz - cz) < 4)) continue;
+  for (let j = 0; j < 4 + Math.floor(R() * 7); j++) { const a = R() * 6.3, r = Math.sqrt(R()) * 3, x = cx + Math.sin(a) * r, z = cz + Math.cos(a) * r; if (!blocked(x, z, .3)) out.push({x, z, s: .1 + R() * R() * .45, seed: R() * 99}); }
+ }
+ return out;
+}
+
+export function emberPlants(opts: EmberPlantsOptions) {
+ const {height, zones, features} = opts;
+ const blockedBy = emberBlocked(zones, features);
  const R = rng(5150);
  type P = {x: number; z: number; s: number; a: number};
  const grass: P[] = [], ferns: P[] = [], shrubs: P[] = [];
