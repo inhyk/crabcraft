@@ -153,8 +153,8 @@ function birdGeometry(): THREE.InstancedBufferGeometry {
 const PETALS = 900;
 
 export class SkybloomAir {
-  /** A clear late morning: the sun 29 degrees up in the north-west, so views up the avenue see the canopy rim-lit, long shadows toward the camera. */
-  readonly sky = new SkybloomSky({azimuth: 220, elevation: 29, gain: 1.12});
+  /** A clear late morning: the sun 35 degrees up in the east-south-east, a three-quarter side light on the default look up the avenue to the world tree (style-w6.md). */
+  readonly sky = new SkybloomSky({azimuth: 67.5, elevation: 35, gain: 1.12});
   readonly sun = new THREE.DirectionalLight();
   readonly hemi = new THREE.HemisphereLight();
   /** Materials with a `time` uniform for the island's update. */
@@ -173,7 +173,9 @@ export class SkybloomAir {
     this.clouds = clouds.material;
     root.add(clouds.mesh);
     const mist = sky.cloudShade.clone().lerp(sky.cloudLit, 0.35);
-    const land = skybloomLand({mist, cloudLit: sky.cloudLit});
+    // Cloud bounce on rock undersides (#c9d3e8 at about 0.4 of the lit cloud, refs-w6-sky 3.1).
+    const bounce = new THREE.Color('#c9d3e8').multiplyScalar(0.42);
+    const land = skybloomLand({mist, cloudLit: sky.cloudLit, bounce});
     root.add(land.land, land.falls, land.mist);
     this.stats.isles = land.isles; this.stats.falls = land.fallCount;
     if (terrain) this.stats.terrainClipped = clipTerrainToLip(terrain.geometry);

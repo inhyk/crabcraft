@@ -194,6 +194,8 @@ export class SkybloomSky {
   /** The cloud sea's sunlit tops and its lavender shade, renderer units (lit by this sun and this sky). */
   readonly cloudLit: THREE.Color;
   readonly cloudShade: THREE.Color;
+  /** The deep lanes between billows: bluer and darker than the flank shade (clear late-morning air, #9dc0e5 family). */
+  readonly cloudDeep: THREE.Color;
   /** Uniforms anything that reflects or fades into this sky shares with the dome. */
   readonly uniforms: { skyLUT: { value: THREE.DataTexture }; skySunDir: { value: THREE.Vector3 } };
   /** scene.environmentIntensity while Skybloom is shown: glints and a little directional fill; the hemisphere does the rest. */
@@ -251,11 +253,12 @@ export class SkybloomSky {
     this.hemiSky = toColor([up[0] * 7.6, up[1] * 4.1, up[2] * 1.35] as V3, 1);
     // From below: sunlit grass and cream stone bounce, warm green-gold (shade on undersides keeps the lit hue).
     this.hemiGround = toColor(lin(0xb3b07a), 0.6);
-    // Cloud tops: albedo 0.9 under this sun and sky, as a MeshStandardMaterial would light them.
-    const albedo = 0.9, sunE = this.sunIntensity;
-    this.cloudLit = toColor([0, 1, 2].map(c => albedo / Math.PI * (SUN_TINT[c] * sunE + up[c] * Math.PI * 0.9) * 1.7) as V3);
-    const shade = lin(0xaab6dc);
-    this.cloudShade = toColor([0, 1, 2].map(c => shade[c] * (0.35 + up[c] * 2.2)) as V3);
+    // The cloud sea's three tones, set where SKY_VIEW's exposure, AgX look and grade (game.ts) put them on screen:
+    // sunlit tops #f2f5fa, flank shade #b9c8e6, the deep lanes between billows #a4bde0 (style-w6.md, refs 6.5 / 9.6).
+    // Solved back through that pipeline, so they stay right only while SKY_VIEW does.
+    this.cloudLit = toColor([1.76, 1.99, 2.96]);
+    this.cloudShade = toColor([0.384, 0.468, 0.844]);
+    this.cloudDeep = toColor([0.27, 0.38, 0.71]);
     this.uniforms = { skyLUT: { value: lut }, skySunDir: { value: this.sunDir } };
     const towers = TOWERS.map(([a, h, w]) => new THREE.Vector3(a, h, w));
     this.material = new THREE.ShaderMaterial({
@@ -289,6 +292,9 @@ export class SkybloomSky {
   environment(renderer: THREE.WebGLRenderer): THREE.Texture {
     if (this.env) return this.env;
     const W = 128, H = 64, data = new Uint16Array(W * H * 4), el = this.elevation;
+    // Grass albedo (#6f8f5a) under this sun and sky: radiance = albedo x irradiance / pi.
+    const grass = lin(0x6f8f5a), eGround = this.sunIntensity * Math.sin(el) + this.hemiSky.g;
+    const bounce: V3 = [grass[0] * eGround / Math.PI, grass[1] * eGround / Math.PI, grass[2] * eGround / Math.PI];
     // Equirect: u is the bearing (three.js: u = atan(dir.z, dir.x) / 2pi + .5), v the elevation.
     for (let j = 0; j < H; j++) {
       const e = ((j + 0.5) / H - 0.5) * Math.PI;
@@ -296,8 +302,9 @@ export class SkybloomSky {
         const phi = ((i + 0.5) / W - 0.5) * 2 * Math.PI, dx = Math.cos(phi), dz = Math.sin(phi);
         const cosb = dx * this.sunAz.x + dz * this.sunAz.y;
         let v = skybloomRadiance(e, cosb, el, this.gain);
-        // Straight down the cloud sea is lit tops, brighter than its hazed edge.
-        if (e < 0) v = mix3(v, [this.cloudLit.r * 0.8, this.cloudLit.g * 0.8, this.cloudLit.b * 0.8], smooth(-0.05, -0.6, e));
+        // Below the horizon an island object sees the meadow it stands on, not the cloud sea: sunlit grass bounce.
+        // (A bright cloud floor here lit every downward leaf card white and washed the frame milky.)
+        if (e < 0) v = mix3(v, bounce, smooth(-0.02, -0.3, e));
         const o = (j * W + i) * 4;
         data[o] = THREE.DataUtils.toHalfFloat(v[0]); data[o + 1] = THREE.DataUtils.toHalfFloat(v[1]);
         data[o + 2] = THREE.DataUtils.toHalfFloat(v[2]); data[o + 3] = THREE.DataUtils.toHalfFloat(1);
