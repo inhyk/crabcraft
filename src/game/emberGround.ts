@@ -98,6 +98,12 @@ float egHill=sin(egP.x*.047)*sin(egP.y*.035)*(1.-exp(-egP.x*egP.x/900.));
 float egStreak=egNoise(vec2(egP.x*.07,egP.y*.19)+3.)*.5+.5;
 float egAshF=-egHill*.45+egN2*.45+egStreak*.22+.2+egN3*.1+egNoise(egP*.9)*.09+egNoise(egP*2.7)*.05;
 float egAsh=smoothstep(.52,.565,egAshF)*.85+smoothstep(.565,.8,egAshF)*.15;
+// Ash settles only where the face looks up, and in patches: dark basalt shows between the drifts, so no field reads
+// as one pale sheet (one did, and World V read as World IV's snow at dusk).
+float egUp=smoothstep(.93,.99,inverseTransformDirection(normalize(vNormal),viewMatrix).y);
+// Built from the swells' own noise (no extra octaves): ash on the high swells, so the low dark basalt shows between.
+float egPatch=smoothstep(-.12,.2,egN1*.55+egN2*.5+egN3*.14)*egUp;
+egAsh*=.3+.7*egPatch;
 // Wind ripples on the drifts, crests running north-south.
 float egRip=sin(egP.x*5.1+egNoise(egP*.7)*4.+egNoise(egP*2.3)*.8)*.5+.5;
 egAsh*=1.-egHeat*.85;
@@ -118,14 +124,14 @@ float egGravM=smoothstep(.3,.6,egNoise(egP*.09+21.))*(1.-egSheet)*(1.-egHeat*.8)
 float egPeb=0.,egPebId=0.;
 if(egDetail>.5&&egNear>0.&&egGravM>0.){vec3 c=egCells(egP*6.3);egPebId=c.y;egPeb=(1.-smoothstep(.16,.3,c.z+egNoise(egP*30.)*.05))*step(.3+.5*(1.-egGravM),c.y)*egNear;}
 // Colour (sRGB values, converted): basalt from charcoal to blue-grey, lit by the swells.
-vec3 egBas=mix(vec3(.15,.16,.19),vec3(.29,.295,.325),smoothstep(-.45,.45,egN1));
+vec3 egBas=mix(vec3(.13,.145,.178),vec3(.26,.27,.308),smoothstep(-.45,.45,egN1));
 egBas=mix(egBas,vec3(.2,.2,.22),smoothstep(.2,.7,egN2)*.4);
 egBas*=.9+.2*(egN3*.5+.5);
 // Mid-scale blotches of rougher and smoother rock, and grit up close.
 egBas*=1.+egNoise(egP*.34+5.)*.16+egNoise(egP*1.1-2.)*.08;
 egBas*=1.+(egNoise(egP*2.7)*.1+egNoise(egP*11.)*.1+egNoise(egP*29.)*.08)*(1.-smoothstep(.03,.25,egFoot));
 vec3 egSheetC=mix(vec3(.12,.125,.15),vec3(.16,.16,.19),egRope)*(.92+.16*egN3);
-vec3 egAshC=mix(vec3(.36,.35,.37),vec3(.43,.415,.43),egStreak)*(.9+.12*egN3)*(.9+.1*egRip*(1.-smoothstep(.03,.15,egFoot)))*(1.+egNoise(egP*13.)*.05*egNear);
+vec3 egAshC=mix(vec3(.345,.335,.36),vec3(.42,.405,.43),egStreak)*(.9+.12*egN3)*(.9+.1*egRip*(1.-smoothstep(.03,.15,egFoot)))*(1.+egNoise(egP*13.)*.05*egNear);
 vec3 egCol=mix(egBas,egSheetC,egSheet);
 egCol=mix(egCol,egBas*mix(.45,.85+.45*egAaC.y,egAa),egAaM*(1.-smoothstep(.06,.3,egFoot)*.5));
 egCol=mix(egCol,egAshC,egAsh);
@@ -138,12 +144,12 @@ float egFlowN=egFbm(vec2(egVa*5.,egVd*.012)+vec2(egNoise(egP*.018)*.7,egNoise(eg
 float egFlowFar=1.-smoothstep(170.,250.,egVd);
 float egFlow=smoothstep(.04,.1,egFlowN)*egFlowFar*(1.-egShore);
 float egLevee=(1.-smoothstep(.0,.07+egFoot*.05,abs(egFlowN-.01)))*egFlowFar*(1.-egShore);
-float egWind=smoothstep(.05,.5,egFbm(vec2(egP.x*.0065,egP.y*.032)+11.)+egNoise(egP*.06)*.12);
+float egWind=smoothstep(.18,.5,egFbm(vec2(egP.x*.0065,egP.y*.032)+11.)+egNoise(egP*.06)*.12)*(.25+.75*egPatch);
 // Between the flows the old ground lies under ash: broad pale plains against the dark tongues.
-egCol=mix(egCol,egAshC,(1.-egFlow)*egFlowFar*.42*(1.-egHeat));
+egCol=mix(egCol,egAshC,(1.-egFlow)*egFlowFar*.5*egPatch*(1.-egHeat));
 egCol=mix(egCol,mix(vec3(.12,.125,.15),vec3(.16,.16,.185),egN3*.5+.5),egFlow*.72*(1.-egAsh*.5));
 egCol=mix(egCol,egAshC*1.06,egLevee*.5);
-egCol=mix(egCol,egAshC*1.1,egWind*.55*(1.-egFlow*.4));
+egCol=mix(egCol,egAshC*1.06,egWind*.45*(1.-egFlow*.4));
 // Heat scorches the ground darker and rust-red, crazed by finer cracks.
 vec3 egScorch=mix(vec3(.16,.12,.12),vec3(.1,.08,.085),egN3*.5+.5);
 egCol=mix(egCol,egScorch,smoothstep(.15,.85,egHeat)*.85);

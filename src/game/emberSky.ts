@@ -233,16 +233,17 @@ export class EmberSky {
   readonly mesh: THREE.Mesh;
   readonly sunDir: THREE.Vector3;
   /** Direct sun, linear: colour (max channel 1) and intensity for the DirectionalLight. */
-  readonly sunColor = new THREE.Color('#ffbd84');
-  readonly sunIntensity = 2.9;
+  readonly sunColor = new THREE.Color('#ffbf8a');
+  readonly sunIntensity = 2.75;
   /**
-   * HemisphereLight: a violet-grey fill from the smoke above and violet-grey from below, so shade sits at about
-   * #3b3546 on screen and never goes black. The lava's warm bounce from below is the heat light's (emberSkyHeat.ts),
-   * only within 15 m of lava.
+   * HemisphereLight: a smoky grey fill from above, barely violet, and violet-grey from below, so shade sits at about
+   * #3b3546 on screen and never goes black. The fill was #968cc6 (saturation .29): with the amber sun on top it tinted
+   * every up-facing face lilac and the ash read as snow at dusk next to World IV. The lava's warm bounce from below is
+   * the heat light's (emberSkyHeat.ts), only within 15 m of lava.
    */
-  readonly hemiSky = new THREE.Color('#968cc6');
+  readonly hemiSky = new THREE.Color('#7f8a9e');
   readonly hemiGround = new THREE.Color('#3b3546');
-  readonly hemiIntensity = 2.45;
+  readonly hemiIntensity = 2.6;
   /** Mean horizon, linear. */
   readonly skyHorizon: THREE.Color;
   readonly envIntensity = .5;
@@ -296,7 +297,7 @@ export class EmberSky {
   fogColor(x: number, z: number, out: THREE.Color): THREE.Color {
     this.horizonToward(x, z, out);
     const l = out.r * .2126 + out.g * .7152 + out.b * .0722;
-    out.lerp(this.tmpColor.setRGB(l, l * .96, l * 1.1, THREE.LinearSRGBColorSpace), .45).multiplyScalar(.7);
+    out.lerp(this.tmpColor.setRGB(l * .95, l * .99, l * 1.08, THREE.LinearSRGBColorSpace), .45).multiplyScalar(.7);
     this.material.uniforms.hazeColor.value.copy(out);
     return out;
   }
