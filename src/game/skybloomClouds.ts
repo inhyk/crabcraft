@@ -147,6 +147,8 @@ void main(){
   vec3 d=-v;
   vec3 far=skybloomSky(vec3(d.x,min(d.y,-.03),d.z));
   col=mix(col,far,pow(smoothstep(600.,2300.,dist),1.5));
+  // The last of the sea, a breath under the horizon, goes into the same haze the dome's horizon band is: no knife cut.
+  col=mix(col,skybloomSky(vec3(d.x,.012,d.z)),smoothstep(-.06,-.012,d.y)*smoothstep(900.,2000.,dist)*.7);
   gl_FragColor=vec4(col,1.);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
