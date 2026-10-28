@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import {WORLD_UNIFORMS} from '../world/materials';
-import {SKY_PATHS} from './skyGroundLayout';
 import {SKY_DETAIL,skyGround} from './skyGround';
 import {skyMeadow} from './skyMeadow';
 import {skyPaving} from './skyPaving';
@@ -10,8 +9,8 @@ const FAR=new THREE.Vector3(1e4,0,1e4);
 /** Skybloom's ground and forest: terrain, paving, meadow (grass and wildflowers), trees and undergrowth. */
 export class SkyGroundLane{
  readonly ground=skyGround();
- readonly paving=skyPaving(SKY_PATHS);
- readonly meadow=skyMeadow(this.ground.soil,this.ground.aux);
+ readonly paving=skyPaving();
+ readonly meadow=skyMeadow(this.ground.soil,this.ground.aux,this.ground.extra,this.paving.userData.wayField);
  /** Resolves once the kit forest is in the scene. */
  readonly forest:Promise<THREE.Group|null>;
  constructor(root:THREE.Object3D){

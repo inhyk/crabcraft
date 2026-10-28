@@ -39,7 +39,7 @@ function noiseTexture():THREE.DataTexture{
 /** The ground map's two layers as linear textures. */
 export function skyGroundTextures(){
  const m=skyGroundMap(),mk=(d:Uint8Array,name:string)=>{const t=new THREE.DataTexture(d,m.w,m.h,THREE.RGBAFormat);t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearFilter;t.colorSpace=THREE.NoColorSpace;t.name=name;t.needsUpdate=true;return t;};
- return {soil:mk(m.soil,'skybloom-soil-map'),aux:mk(m.aux,'skybloom-aux-map')};
+ return {soil:mk(m.soil,'skybloom-soil-map'),aux:mk(m.aux,'skybloom-aux-map'),extra:mk(m.extra,'skybloom-extra-map')};
 }
 
 /** Shared by the ground, the meadow and the paving: 1 on high quality, 0 on low. */
@@ -53,6 +53,7 @@ const HEAD=/* glsl */`
 uniform sampler2D sgTex;
 uniform sampler2D sgSoil;
 uniform sampler2D sgAux;
+uniform sampler2D sgExtra;
 uniform vec4 sgMap;
 uniform float sgDetail;
 uniform vec3 sgLit,sgDeep,sgDry,sgShadeC;
@@ -67,7 +68,7 @@ vec3 sgBloom(float h){return h<.25?sgB0:h<.5?sgB1:h<.75?sgB2:sgB3;}
 const COLOR=/* glsl */`
 vec2 sgP=vSgW.xz;
 vec2 sgUv=(sgP-sgMap.xy)*sgMap.zw;
-vec4 sgS=texture2D(sgSoil,sgUv),sgA=texture2D(sgAux,sgUv);
+vec4 sgS=texture2D(sgSoil,sgUv),sgA=texture2D(sgAux,sgUv),sgX=texture2D(sgExtra,sgUv);
 float sgFoot=length(fwidth(sgP));
 float sgF1=1.-smoothstep(.05,.22,sgFoot),sgF2=1.-smoothstep(.012,.06,sgFoot),sgF3=1.-smoothstep(.004,.016,sgFoot);
 // Broad swathes from the smooth channel: patches, never speckle, at every distance.
@@ -92,7 +93,7 @@ float sgRock=smoothstep(.42,.6,sgSlope+(sgMid-.5)*.2);
 vec3 sgG=mix(sgDeep,sgLit,smoothstep(.3,.7,sgMacro));
 sgG=mix(sgG,sgShadeC,smoothstep(.6,.85,sgMacro2)*.35);
 sgG=mix(sgG,sgDry,smoothstep(.45,.85,sgSw)*.3*(1.-sgMoss));
-sgG*=mix(1.,.78,smoothstep(.4,.85,sgMid)*.55);
+sgG*=mix(1.,.8,smoothstep(.4,.85,sgMid)*.35);
 sgG*=.82+.36*sgClump.r;
 sgG*=.76+.48*sgBlade;sgG*=.88+.24*sgBlade2;
 // Dry tips catch the sun: fine pale flecks where the blades stand tall.
@@ -117,16 +118,55 @@ sgCol=mix(sgCol,sgM,sgMoss*(1.-sgDirt));
 sgCol=mix(sgCol,sgG,sgGrass*(1.-sgDirt*.85)*(1.-sgMoss*.55));
 sgCol=mix(sgCol,sgW,sgWorn);
 sgCol=mix(sgCol,sgR,sgRock);
+// Clover in soft patches (mown lawns, the ways' fringes): cooler and darker than the grass. Up close each leaf is a
+// trefoil of round leaflets with a pale chevron; further off the patch keeps its tone and a few white heads.
+float sgClv=smoothstep(.22,.55,sgX.r+(sgMid-.5)*.35+(sgClump.r-.5)*.2*sgF1)*(1.-sgWorn)*(1.-sgRock)*(1.-sgDirt);
+if(sgClv>.001){
+  vec3 sgCv=mix(vec3(.035,.15,.075),vec3(.06,.22,.1),sgClump.g)*(.85+.3*sgFine);
+  // Mid distance: the patch's own leafy mottle (light leaf tops, dark gaps).
+  float sgCm=mix(.5,sgT(sgP,.57,1.9).r*.6+sgT(sgP,.23,.8).r*.4,sgF1);
+  sgCv*=.72+.6*sgCm;
+  float sgCf=1.-smoothstep(.012,.04,sgFoot);
+  if(sgCf>.001){
+    vec2 c=floor(sgP/.17),q=fract(sgP/.17)-.5;float r0=sgH(c),a0=r0*6.2832,lf=0.,ch=0.;
+    q-=(vec2(sgH(c+3.1),sgH(c+7.7))-.5)*.3;
+    for(int k=0;k<3;k++){float a=a0+float(k)*2.0944;vec2 d=q-vec2(cos(a),sin(a))*.17;float l=length(d);lf=max(lf,1.-smoothstep(.13,.155,l));ch=max(ch,(1.-smoothstep(.015,.035,abs(l-.075)))*step(l,.13));}
+    vec3 sgLeaf=mix(sgCv*.55,sgCv*1.25,lf);sgLeaf=mix(sgLeaf,sgLeaf*1.5+vec3(.03,.05,.03),ch*.6*lf);
+    sgCv=mix(sgCv,sgLeaf,sgCf*step(r0,.85));
+  }
+  vec2 hc=floor(sgP/.5);float hr=sgH(hc+41.),hr2=sgH(hc+13.);vec2 hcc=(hc+.25+.5*vec2(hr,hr2))*.5;
+  float sgHead=(1.-smoothstep(.03,.055,length(sgP-hcc)))*step(hr,.22)*sgF2;
+  sgCv=mix(sgCv,mix(vec3(.82,.8,.74),vec3(.85,.6,.66),step(.8,hr2)),sgHead);
+  sgCol=mix(sgCol,sgCv,sgClv*(.75+.25*sgF2));
+}
+// Pebbles kicked to the ways' margins and the doorsteps: pale limestone chips with a dark rim on the soil and grass.
+float sgPb=sgX.g*(1.-sgRock);
+if(sgPb>.01&&sgF1>.001){
+  float pc=sgT(sgP,1.1,.35).g,pc2=sgT(sgP,.47,2.2).g;
+  float peb=max((1.-smoothstep(.1,.17,pc))*step(.35,sgFine),(1.-smoothstep(.08,.13,pc2))*sgF2);
+  float rim=(1.-smoothstep(.17,.24,pc))*(1.-peb);
+  vec3 pcol=mix(vec3(.55,.5,.41),vec3(.7,.66,.56),sgClump.r)*(.85+.3*sgFine);
+  sgCol=mix(sgCol,sgCol*.7,rim*sgPb*.5*sgF1);
+  sgCol=mix(sgCol,pcol,peb*smoothstep(.15,.6,sgPb)*sgF1);
+}
 // Wildflowers painted into the sward: one blossom per small cell where the drift is thick, the drift's colour
 // with a stray of another; far off the drift averages into a soft tint of its colour.
 float sgFl=sgS.a*(1.-sgWorn)*(1.-sgRock);
 vec3 sgFc=sgBloom(sgA.g);
-vec2 sgCell=floor(sgP/.32);float sgR1=sgH(sgCell),sgR2=sgH(sgCell+19.7);
-vec2 sgCc=(sgCell+.2+.6*vec2(sgR1,sgR2))*.32;
-float sgDot=(1.-smoothstep(.035,.075,length(sgP-sgCc)))*step(sgR1,sgFl*.85);
+vec2 sgCell=floor(sgP/.24);float sgR1=sgH(sgCell),sgR2=sgH(sgCell+19.7);
+vec2 sgCc=(sgCell+.22+.56*vec2(sgR1,sgR2))*.24;
+float sgDot=(1.-smoothstep(.045,.08,length(sgP-sgCc)))*step(sgR1,sgFl*.95);
 vec3 sgDc=sgR2<.12?sgBloom(fract(sgA.g+.5)):sgFc;
 sgCol=mix(sgCol,sgDc*(.85+.3*sgR2),sgDot*sgF2);
-sgCol=mix(sgCol,mix(sgCol,sgFc,.5),sgFl*(1.-sgF2)*.2);
+// Mid distance: the blossoms as dabs on a coarser lattice, so a drift reads as flecks of colour across the field;
+// far off only a light lift of its hue (a pale wash over green turns grey).
+// Irregular specks from two turned noise reads (never a lattice), denser where the drift is thicker.
+float sgSpN=sgT(sgP,1.3,1.37).r*.65+sgT(sgP,.53,2.71).r*.35;
+float sgSpT=1.-sgFl*.5;
+float sgDab=smoothstep(sgSpT,sgSpT+.05,sgSpN)*(1.-sgF2)*sgF1*step(.05,sgFl);
+float sgSpH=sgT(sgP,2.9,.61).b;
+sgCol=mix(sgCol,(sgSpH>.8?sgBloom(fract(sgA.g+.5)):sgFc)*(.85+.3*sgSpH),sgDab*.85);
+sgCol=mix(sgCol,sgCol*.65+sgFc*.35,smoothstep(.2,.9,sgFl)*(1.-sgF1)*.35);
 // Contact shade: blue-violet, deepest at the foot, ragged at its edge.
 float sgAo=sgA.r*(.75+.5*sgFine);
 sgCol*=mix(vec3(1.),vec3(.52,.58,.7),sgAo);
@@ -148,7 +188,7 @@ if(sgDetail>.5){
 }
 `;
 
-export interface SkyGround{mesh:THREE.Mesh;noise:THREE.DataTexture;soil:THREE.DataTexture;aux:THREE.DataTexture}
+export interface SkyGround{mesh:THREE.Mesh;noise:THREE.DataTexture;soil:THREE.DataTexture;aux:THREE.DataTexture;extra:THREE.DataTexture}
 /** Skybloom's terrain over the gameplay grid (same 2 m mesh as before: one vertex per height sample). */
 export function skyGround():SkyGround{
  const {nx,nz,step,minX,minZ}=SKY_GRID;
@@ -157,8 +197,8 @@ export function skyGround():SkyGround{
  for(let i=0;i<pos.count;i++)pos.setY(i,skyHeight(pos.getX(i),pos.getZ(i)));
  if(Math.abs(pos.getX(0)-minX)>1e-6||Math.abs(pos.getZ(0)-minZ)>1e-6)throw new Error('skyGround: mesh and grid disagree');
  land.computeVertexNormals();
- const noise=noiseTexture(),{soil,aux}=skyGroundTextures();
- const uniforms={sgTex:{value:noise},sgSoil:{value:soil},sgAux:{value:aux},sgMap:{value:new THREE.Vector4(SKY_MAP.minX,SKY_MAP.minZ,1/SKY_MAP.w,1/SKY_MAP.h)},sgDetail:SKY_DETAIL,
+ const noise=noiseTexture(),{soil,aux,extra}=skyGroundTextures();
+ const uniforms={sgTex:{value:noise},sgSoil:{value:soil},sgAux:{value:aux},sgExtra:{value:extra},sgMap:{value:new THREE.Vector4(SKY_MAP.minX,SKY_MAP.minZ,1/SKY_MAP.w,1/SKY_MAP.h)},sgDetail:SKY_DETAIL,
   sgLit:{value:SKY_GRASS.lit},sgDeep:{value:SKY_GRASS.deep},sgDry:{value:SKY_GRASS.dry},sgShadeC:{value:SKY_GRASS.shade},
   sgB0:{value:SKY_BLOOMS[0]},sgB1:{value:SKY_BLOOMS[1]},sgB2:{value:SKY_BLOOMS[2]},sgB3:{value:SKY_BLOOMS[3]}};
  // `map` holds the noise for anisotropy and disposal; the shader reads it itself.
@@ -178,5 +218,5 @@ export function skyGround():SkyGround{
  };
  material.customProgramCacheKey=()=>'skybloom-meadow-ground';
  const mesh=new THREE.Mesh(land,material);mesh.name='skybloom-ground';mesh.receiveShadow=true;
- return {mesh,noise,soil,aux};
+ return {mesh,noise,soil,aux,extra};
 }

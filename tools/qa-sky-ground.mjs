@@ -2,12 +2,15 @@
 // (skyMeadow.ts), the limestone paving (skyPaving.ts) and the recoloured kit forest with its boulders and logs
 // (skyForest.ts) replace the vertex-colour terrain with its speck canvas, the checker islandPaths tiles, the
 // cylinder-and-icosahedron trees, the triangle grass and the icosahedron gardens. Checks, in Node: the W6-only
-// colliders stay clear of every quest, NPC and enemy point and of the ways, and World V's layout has none of them.
+// colliders (the grouped forest included) stay clear of every quest, NPC and enemy point, the ways and the houses, and
+// World V keeps its own layout; the trees stand in groups; the avenue bends and the garden paths curve; quest and NPC
+// spots stay on the paving; flower drifts cover 8-15% of the open ground and keep 1.5 m off the ways.
 // In the browser at high and low quality: the new parts are there with sane counts, none of the old primitives is
 // left, the terrain sits on the gameplay heights, every W6 collider is in the client's collision, zero errors.
 // Writes tmp/qa/sky-ground-*.png.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
+import {execFileSync} from 'node:child_process';
 import {launchBrowser} from './lib/browser.mjs';
 import {bundle} from './collision-bake-lib.mjs';
 await mkdir('tmp/qa',{recursive:true});
@@ -23,20 +26,46 @@ for(const s of solids){
  assert.ok(layout.skyPathDistance(s.x,s.z)>s.r+1,`solid at ${s.x.toFixed(1)},${s.z.toFixed(1)} on a way`);
  assert.ok(layout.skyEdge(s.x,s.z)<.78,'solid off the playable island');
  assert.ok(Math.hypot(s.x,s.z+72)>26,'solid in the sanctuary');
+ for(const [hx,hz] of layout.SKY_HOUSES)assert.ok(Math.hypot(Math.max(Math.abs(s.x-hx)-5.3,0),Math.max(Math.abs(s.z-hz)-5.8,0))>s.r+1,'solid against a house');
 }
 for(const [id,x,z] of [['spawn',0,82],['forge',16,68],['chapel',16,56],['tavern',-16,74],['grove',-50,26],['shore',61,22],['wreck',44,-6],['lighthouse',0,-44]])for(const s of solids)assert.ok(Math.hypot(s.x-x,s.z-z)>s.r+1.5,`solid inside POI ${id}`);
+// W6's colliders are this lane's: the frontier's strewn tree spots are gone from W6, W5 keeps all of them.
 const w5=realm.layoutFrontier(5),w6=realm.layoutFrontier(6),trees=layout.skyTrees();
-const grove=trees.filter(t=>t.i>=100).length,kinds=c=>c.shapes.length;
-assert.equal(kinds(w6)-kinds(w5),realm.frontierTrees(6).length-realm.frontierTrees(5).length+solids.length,'W6 adds exactly its own solids; W5 keeps its layout');
-assert.ok(grove>=4&&grove<=6,`grove trees ${grove}`);
+const at=(col,x,z,r)=>col.shapes.some(c=>c.kind===0&&Math.hypot(c.c.x-x,c.c.z-z)<1e-3&&Math.abs(c.c.r-r)<1e-3);
+for(const t of realm.frontierTrees(5))assert.ok(at(w5,t.x,t.z,1.3*t.s),'W5 tree collider missing');
+assert.equal(realm.frontierTrees(6).filter(t=>at(w6,t.x,t.z,.7*t.s)).length,0,'W6 still has frontier tree spots');
+assert.equal(solids.filter(s=>at(w6,s.x,s.z,s.r)).length,solids.length,'W6 missing lane solids');
+assert.equal(solids.filter(s=>at(w5,s.x,s.z,s.r)).length,0,'W5 got W6 solids');
+// The forest stands in groups: every tree inside its grove, focal groves massed, nothing in a row on the rim.
+const groves=layout.SKY_GROVES,per=groves.map(()=>0);
+for(const t of trees){const g=groves[Math.floor(t.i/10)];assert.ok(Math.hypot(t.x-g.x,t.z-g.z)<=g.r+.01,`tree ${t.i} outside ${g.name}`);per[Math.floor(t.i/10)]++;assert.ok(layout.skyEdge(t.x,t.z)<=.755,'tree on the rim');}
+assert.ok(per[0]>=5&&per[1]>=4,`focal groves ${per[0]} / ${per[1]}`);
 const species=new Set(trees.map(t=>t.species));assert.deepEqual([...species].sort(),['blossom','jade','silver','white']);
-console.log('PASS layout',{trees:trees.length,grove,solids:solids.length,w5:kinds(w5),w6:kinds(w6),points:points.length});
+// Ways: the avenue bends (centre off the axis by 4 m or more between the market and the gate) and passes the root gate square;
+// every garden path curves (sagitta from its chord at least 0.8 m); quest, NPC and POI spots stand on or within 1.5 m of paving.
+const bend=Math.max(...[...Array(41)].map((_,k)=>Math.abs(layout.skyAvenueAt(10-k).x)));
+assert.ok(bend>=4,`avenue bend ${bend}`);assert.ok(Math.abs(layout.skyAvenueAt(-40).x)<.5&&Math.abs(layout.skyAvenueAt(-50).x)<.5,'avenue off the gate');
+for(const w of layout.SKY_WAYS.filter(w=>w.kind===0&&w.name!=='spawn-lane')){
+ const [ax,az]=w.pts[0],[bx,bz]=w.pts[w.pts.length-1],L=Math.hypot(bx-ax,bz-az);
+ const sag=Math.max(...w.pts.map(([x,z])=>Math.abs((x-ax)*(bz-az)-(z-az)*(bx-ax))/L));
+ assert.ok(sag>=.8,`${w.name} is straight (${sag.toFixed(2)} m)`);
+}
+const paved=[['crate-a',-12,78],['crate-b',12,72],['crate-c',-12,56],['herb-b',-52,28],['lamp-b',7,4],['lamp-c',-7,-22],['visit-a',-50,26],['visit-b',61,22],['visit-c',0,-34],
+ ['spawn',-12,84],['lighthouse',0,-44],['beacon',0,-46],['forge',16,68],...[[-16,56],[16,56],[-16,38],[16,38],[-16,74],[16,80],[16,68]].map(([x,z])=>['npc',x,z])];
+for(const [id,x,z] of paved)assert.ok(layout.skyPathDistance(x,z)<=1.5,`${id} (${x},${z}) is ${layout.skyPathDistance(x,z).toFixed(1)} m off the paving`);
+// The ways keep out of the houses (only the door step touches the front).
+for(const [hx,hz] of layout.SKY_HOUSES)for(let x=hx-4.8;x<=hx+4.8;x+=.4)for(let z=hz-5.3;z<=hz+5.3;z+=.4)assert.ok(layout.skyPathDistance(x,z)>0,`paving inside the house at ${hx},${hz}`);
+// Wildflower drifts: 8-15% of the open island, none within 1.5 m of a way.
+const m=layout.skyGroundMap();let open=0,fl=0,near=0;
+for(let j=0;j<m.h;j++)for(let i=0;i<m.w;i++){const x=-150+i+.5,z=-175+j+.5,o=(j*m.w+i)*4;if(layout.skyEdge(x,z)>.8||m.aux[o+2]>127||layout.skyPathDistance(x,z)<0)continue;open++;if(m.soil[o+3]>127){fl++;if(layout.skyPathDistance(x,z)<1.5)near++;}}
+const share=fl/open;assert.ok(share>=.08&&share<=.15,`flower share ${(share*100).toFixed(1)}%`);assert.equal(near,0,'flowers within 1.5 m of a way');
+console.log('PASS layout',{trees:trees.length,groves:per.join(' '),solids:solids.length,w5:w5.shapes.length,w6:w6.shapes.length,points:points.length,avenueBend:+bend.toFixed(2),flowerShare:+(share*100).toFixed(1)});
 
 // --- Browser.
 const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 async function load(quality){
- const p=await browser.newPage({viewport:{width:1280,height:800}});
+ const p=await browser.newPage({viewport:{width:1600,height:900}});
  p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error'&&/shader|program|WebGL|GL_/i.test(m.text()))errors.push(m.text().slice(0,300));});
  p.setDefaultTimeout(120000);
  await p.addInitScript(quality=>{localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'Sky QA'}));localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.language','ko');localStorage.setItem('cc.quality',quality);},quality);
@@ -64,8 +93,8 @@ try{
     if(o.isInstancedMesh&&o.count===2200)old.push('triangle grass');
     if(o.isMesh&&t==='CylinderGeometry'&&q.radiusTop===4&&q.radiusBottom===4.3)old.push('planter');
     if(o.material?.map?.isCanvasTexture&&o.name.includes('terrain'))old.push('speck canvas');});
-   // The terrain sits on the gameplay heights.
-   const pos=ground.geometry.getAttribute('position');let maxErr=0;for(let i=0;i<pos.count;i+=97){const d=Math.abs(pos.getY(i)-window.app.current.game.world2.sixth.height(pos.getX(i),pos.getZ(i)));if(d>maxErr)maxErr=d;}
+   // The terrain sits on the gameplay heights inside the playable rim (sky-air lowers the mesh past the cliff lip).
+   const pos=ground.geometry.getAttribute('position');let maxErr=0;for(let i=0;i<pos.count;i+=97){if(Math.hypot(pos.getX(i)/128,(pos.getZ(i)-2)/155)>.8)continue;const d=Math.abs(pos.getY(i)-window.app.current.game.world2.sixth.height(pos.getX(i),pos.getZ(i)));if(d>maxErr)maxErr=d;}
    // Every W6 solid is in the client's collision (a circle at its spot).
    const col=window.app.current.game.world2.sixth.collision,missing=solids.filter(q=>!col.shapes.some(c=>c.kind===0&&Math.hypot(c.c.x-q.x,c.c.z-q.z)<1e-3&&Math.abs(c.c.r-q.r)<1e-3)).length;
    const grass=meadow.children.find(m=>m.name==='skybloom-meadow-grass'),flowers=meadow.children.find(m=>m.name==='skybloom-meadow-flowers');
@@ -76,16 +105,30 @@ try{
   assert.deepEqual(s.old,[],`old primitives left: ${s.old}`);
   assert.ok(s.maxErr<1e-4,`terrain off the gameplay heights by ${s.maxErr}`);
   assert.equal(s.missing,0,'W6 solids missing from the client collision');
-  assert.ok(s.forest.trees>=54&&s.forest.boulders>=8&&s.forest.logs>=4&&s.forest.shrubs>=60&&s.forest.ferns>=50&&s.forest.flowers>=15,'forest counts');
+  assert.ok(s.forest.trees>=40&&s.forest.boulders>=8&&s.forest.stones>=10&&s.forest.logs>=4&&s.forest.shrubs>=60&&s.forest.ferns>=50&&s.forest.flowers>=6,'forest counts');
   assert.deepEqual(Object.keys(s.forest.species).sort(),['blossom','jade','silver','white']);
   assert.ok(s.batches.length<=9,`forest draws ${s.batches.length}`);
-  assert.ok(s.paving.segments===6&&s.paving.cells>3000,'paving');
-  if(quality==='high')assert.ok(s.grass===150*150&&s.flowers===96*96,'high meadow');
-  else assert.ok(s.grass===90*90&&s.flowers===56*56,'low meadow is cheaper');
+  assert.ok(s.paving.cells>8000&&s.paving.field[0]>200,'paving');
+  if(quality==='high')assert.ok(s.grass===150*150&&s.flowers===150*150,'high meadow');
+  else assert.ok(s.grass===90*90&&s.flowers===64*64,'low meadow is cheaper');
   await p.screenshot({path:`tmp/qa/sky-ground-${quality}-east.png`});
   // The avenue, close: flags, grassy joints, the meadow up to the stones.
   await p.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,0,45,Math.PI);g.follow.yaw=.3;g.follow.pitch=.2;g.follow.distance=8;g.follow.cut();});
   await p.waitForTimeout(1500);await p.screenshot({path:`tmp/qa/sky-ground-${quality}-avenue.png`});
+  // Flower drifts in the standard east and west views (cap.mjs cameras, foes away): blossom pixels over the ground
+  // band (tools/sky-flower-share.py) must be 8-15% (style sheet; advisor #19).
+  if(quality==='high'){
+   await p.evaluate(()=>{const g=window.app.current.game;g.follow.__orig=g.follow.update;g.follow.update=function(){const s=window.__cam;const cp=Math.cos(s.pitch);this.camera.position.set(s.tx+Math.sin(s.yaw)*cp*s.dist,s.ty+Math.sin(s.pitch)*s.dist,s.tz+Math.cos(s.yaw)*cp*s.dist);this.camera.lookAt(s.tx,s.ty,s.tz);};
+    const away=()=>{for(const e of g.enemies)e.unit.teleport?.(g.world,200,200);requestAnimationFrame(away);};away();});
+   const shots=[];
+   for(const [name,x,z,yaw] of [['east',60,-5,-1.57],['west',-60,-5,1.57]]){
+    await p.evaluate(([x,z,yaw])=>{const g=window.app.current.game;g.player.unit.teleport(g.world,x,z,yaw+Math.PI);const u=g.player.unit.pos;window.__cam={tx:u.x,ty:u.y+1.2,tz:u.z,yaw,pitch:.3,dist:26};},[x,z,yaw]);
+    await p.waitForTimeout(2600);const path=`tmp/qa/sky-ground-flowers-${name}.png`;await p.screenshot({path});shots.push(path);
+   }
+   for(const line of execFileSync('python3',['tools/sky-flower-share.py',...shots]).toString().trim().split('\n')){
+    const share=+line.match(/flower ([\d.]+)%/)[1];console.log(line);assert.ok(share>=8&&share<=15,`flower area ${share}% (8-15%): ${line}`);
+   }
+  }
   await p.close();
  }
  assert.deepEqual(errors,[]);
