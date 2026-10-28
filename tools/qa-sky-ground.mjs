@@ -10,6 +10,7 @@
 // Writes tmp/qa/sky-ground-*.png.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
+import {execFileSync} from 'node:child_process';
 import {launchBrowser} from './lib/browser.mjs';
 import {bundle} from './collision-bake-lib.mjs';
 await mkdir('tmp/qa',{recursive:true});
@@ -64,7 +65,7 @@ console.log('PASS layout',{trees:trees.length,groves:per.join(' '),solids:solids
 const browser=await launchBrowser({headless:true,args:['--use-angle=metal','--enable-gpu','--ignore-gpu-blocklist','--mute-audio']});
 const errors=[];
 async function load(quality){
- const p=await browser.newPage({viewport:{width:1280,height:800}});
+ const p=await browser.newPage({viewport:{width:1600,height:900}});
  p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error'&&/shader|program|WebGL|GL_/i.test(m.text()))errors.push(m.text().slice(0,300));});
  p.setDefaultTimeout(120000);
  await p.addInitScript(quality=>{localStorage.setItem('cc.spec',JSON.stringify({race:'human',sex:'male',classId:'warrior',shell:0,crest:0,led:0,name:'Sky QA'}));localStorage.setItem('cc.hintsSeen','1');localStorage.setItem('cc.language','ko');localStorage.setItem('cc.quality',quality);},quality);
@@ -92,8 +93,8 @@ try{
     if(o.isInstancedMesh&&o.count===2200)old.push('triangle grass');
     if(o.isMesh&&t==='CylinderGeometry'&&q.radiusTop===4&&q.radiusBottom===4.3)old.push('planter');
     if(o.material?.map?.isCanvasTexture&&o.name.includes('terrain'))old.push('speck canvas');});
-   // The terrain sits on the gameplay heights.
-   const pos=ground.geometry.getAttribute('position');let maxErr=0;for(let i=0;i<pos.count;i+=97){const d=Math.abs(pos.getY(i)-window.app.current.game.world2.sixth.height(pos.getX(i),pos.getZ(i)));if(d>maxErr)maxErr=d;}
+   // The terrain sits on the gameplay heights inside the playable rim (sky-air lowers the mesh past the cliff lip).
+   const pos=ground.geometry.getAttribute('position');let maxErr=0;for(let i=0;i<pos.count;i+=97){if(Math.hypot(pos.getX(i)/128,(pos.getZ(i)-2)/155)>.8)continue;const d=Math.abs(pos.getY(i)-window.app.current.game.world2.sixth.height(pos.getX(i),pos.getZ(i)));if(d>maxErr)maxErr=d;}
    // Every W6 solid is in the client's collision (a circle at its spot).
    const col=window.app.current.game.world2.sixth.collision,missing=solids.filter(q=>!col.shapes.some(c=>c.kind===0&&Math.hypot(c.c.x-q.x,c.c.z-q.z)<1e-3&&Math.abs(c.c.r-q.r)<1e-3)).length;
    const grass=meadow.children.find(m=>m.name==='skybloom-meadow-grass'),flowers=meadow.children.find(m=>m.name==='skybloom-meadow-flowers');
@@ -108,12 +109,26 @@ try{
   assert.deepEqual(Object.keys(s.forest.species).sort(),['blossom','jade','silver','white']);
   assert.ok(s.batches.length<=9,`forest draws ${s.batches.length}`);
   assert.ok(s.paving.cells>8000&&s.paving.field[0]>200,'paving');
-  if(quality==='high')assert.ok(s.grass===150*150&&s.flowers===140*140,'high meadow');
-  else assert.ok(s.grass===90*90&&s.flowers===60*60,'low meadow is cheaper');
+  if(quality==='high')assert.ok(s.grass===150*150&&s.flowers===150*150,'high meadow');
+  else assert.ok(s.grass===90*90&&s.flowers===64*64,'low meadow is cheaper');
   await p.screenshot({path:`tmp/qa/sky-ground-${quality}-east.png`});
   // The avenue, close: flags, grassy joints, the meadow up to the stones.
   await p.evaluate(()=>{const g=window.app.current.game;g.player.unit.teleport(g.world,0,45,Math.PI);g.follow.yaw=.3;g.follow.pitch=.2;g.follow.distance=8;g.follow.cut();});
   await p.waitForTimeout(1500);await p.screenshot({path:`tmp/qa/sky-ground-${quality}-avenue.png`});
+  // Flower drifts in the standard east and west views (cap.mjs cameras, foes away): blossom pixels over the ground
+  // band (tools/sky-flower-share.py) must be 8-15% (style sheet; advisor #19).
+  if(quality==='high'){
+   await p.evaluate(()=>{const g=window.app.current.game;g.follow.__orig=g.follow.update;g.follow.update=function(){const s=window.__cam;const cp=Math.cos(s.pitch);this.camera.position.set(s.tx+Math.sin(s.yaw)*cp*s.dist,s.ty+Math.sin(s.pitch)*s.dist,s.tz+Math.cos(s.yaw)*cp*s.dist);this.camera.lookAt(s.tx,s.ty,s.tz);};
+    const away=()=>{for(const e of g.enemies)e.unit.teleport?.(g.world,200,200);requestAnimationFrame(away);};away();});
+   const shots=[];
+   for(const [name,x,z,yaw] of [['east',60,-5,-1.57],['west',-60,-5,1.57]]){
+    await p.evaluate(([x,z,yaw])=>{const g=window.app.current.game;g.player.unit.teleport(g.world,x,z,yaw+Math.PI);const u=g.player.unit.pos;window.__cam={tx:u.x,ty:u.y+1.2,tz:u.z,yaw,pitch:.3,dist:26};},[x,z,yaw]);
+    await p.waitForTimeout(2600);const path=`tmp/qa/sky-ground-flowers-${name}.png`;await p.screenshot({path});shots.push(path);
+   }
+   for(const line of execFileSync('python3',['tools/sky-flower-share.py',...shots]).toString().trim().split('\n')){
+    const share=+line.match(/flower ([\d.]+)%/)[1];console.log(line);assert.ok(share>=8&&share<=15,`flower area ${share}% (8-15%): ${line}`);
+   }
+  }
   await p.close();
  }
  assert.deepEqual(errors,[]);
