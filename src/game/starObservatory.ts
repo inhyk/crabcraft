@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type {Collision} from '../world/collision';
 import {starTrailDistance} from './world2Settlement';
+import {boulderGeometry} from './snowRocks';
 
 const COLUMN_HEIGHTS=[5,4.5,3.8,5,4.6,3.2,4.8,5,3.6,4.5];
 const column=(i:number)=>{const a=i/10*Math.PI*2;return {a,x:80+Math.cos(a)*9,z:-40+Math.sin(a)*9,h:COLUMN_HEIGHTS[i]};};
@@ -38,11 +39,13 @@ export class StarObservatory {
     }
     for(const mesh of [shafts,bases,capitals,bands,runes]){mesh.castShadow=true;mesh.receiveShadow=true;this.root.add(mesh);}
     // Reuse the deterministic rubble field, keeping stones off the marked walking trails.
-    const rubble=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(.7,0),stone,64);rubble.name='observatory-rubble';
+    // Broken masonry as fractured stone (star r5: no faceted dodecahedra), smooth shaded in the columns' colour.
+    const rubbleStone=stone.clone();rubbleStone.flatShading=false;rubbleStone.name='observatory-rubble-stone';
+    const rubble=new THREE.InstancedMesh(boulderGeometry({r:.7,h:.45,seed:5207},4),rubbleStone,64);rubble.name='observatory-rubble';
     for(let i=0;i<64;i++){
       const a=i*2.39996,r=10+(i*11%80)/10,x=80+Math.cos(a)*r,z=-40+Math.sin(a)*r;
       if(starTrailDistance(x,z)<2.2){matrix.makeScale(0,0,0);rubble.setMatrixAt(i,matrix);continue;}
-      rotation.setFromEuler(new THREE.Euler(i*.3,i,.4));matrix.compose(new THREE.Vector3(x,height(x,z)+.3,z),rotation,new THREE.Vector3(.5+i%3*.2,.4+i%2*.2,.7));rubble.setMatrixAt(i,matrix);
+      matrix.compose(new THREE.Vector3(x,height(x,z)-.05,z),rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),i*1.7),new THREE.Vector3(.5+i%3*.2,.6+i%2*.25,.7));rubble.setMatrixAt(i,matrix);
     }
     rubble.castShadow=true;this.root.add(rubble);
     const y=height(80,-40);

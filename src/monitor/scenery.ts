@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {bakeStarLight} from '../game/starLight';
 import { createWorld } from '../world/provider';
 import { DawnIsland } from '../game/world3';
 import { SnowIsland } from '../game/world4';
@@ -10,9 +11,10 @@ import { starGroundColor } from '../game/world2Ground';
 import { StarSky } from '../game/starSky';
 import { StarSea } from '../game/starSea';
 import { StarSun } from '../game/starSun';
-import { StarThrone } from '../game/starThrone';
+import { StarSanctum } from '../game/starSanctum';
+import { starCrystalCluster, starCrystalMaterial } from '../game/starCrystals';
+import { STAR_FOG, STAR_KEY_DIR, STAR_MOONLIGHT, STAR_MOON_INTENSITY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY, STAR_SHADE_SKY } from '../game/starNight';
 import { starCrystalGarden, layoutStarhaven } from '../game/world2Colliders';
-import { facetedStarCrystal } from '../game/starCrystal';
 
 export type Scenery = {
   scene: THREE.Scene;
@@ -49,8 +51,8 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
     scene.add(island.root);
     try { await island.buildSettlement(); } catch (e) { dispose(); throw e; }
     island.root.visible = true;
-    scene.fog = new THREE.FogExp2('#bfc4b2', .0025);
-    return { scene, height: (x, z) => island.height(x, z), raycast: (a, b) => island.collision.raycast(a, b), update: (_dt, t, _cam, p) => island.update(t, false, p.x, p.z), dispose };
+    scene.fog = new THREE.FogExp2(island.sky.skyHorizon, .0025);
+    return { scene, height: (x, z) => island.height(x, z), raycast: (a, b) => island.collision.raycast(a, b), update: (_dt, t, cam, p) => { island.update(t, false, p.x, p.z); if (scene.fog instanceof THREE.FogExp2) island.fog(cam, scene.fog); }, dispose };
   }
   if (area === 4) {
     const island = new SnowIsland();
@@ -77,24 +79,21 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
   }
   land.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); land.computeVertexNormals();
   scene.add(new THREE.Mesh(land, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .94, metalness: .08 })));
-  const sky = new StarSky(), sea = new StarSea(), sun = new StarSun();
-  scene.add(sky.root, sea.root, sun.light, sun.light.target, new THREE.HemisphereLight('#869cff', '#1a1028', 1));
-  const stone = new THREE.MeshStandardMaterial({ color: '#3c3b57', roughness: .78, metalness: .3 });
-  const crystal = new THREE.MeshStandardMaterial({ color: '#a57bff', emissive: '#6524c9', emissiveIntensity: 1.5, metalness: .5, roughness: .2 });
-  const teal = new THREE.MeshStandardMaterial({ color: '#b0fff1', emissive: '#26afba', emissiveIntensity: 1.3, metalness: .6, roughness: .25 });
-  const throne = new StarThrone(height, stone, teal, crystal); scene.add(throne.root);
-  const gardens = new THREE.InstancedMesh(facetedStarCrystal(), crystal, 90), matrix = new THREE.Matrix4();
-  starCrystalGarden(height).forEach((c, i) => {
-    if (c.clear) matrix.makeScale(0, 0, 0);
-    else matrix.compose(new THREE.Vector3(c.x, c.y + c.h * .5, c.z), c.q, c.scale);
-    gardens.setMatrixAt(i, matrix);
-  });
+  // The island's one night (starNight.ts): the same moon, shade and fog as the game.
+  const sky = new StarSky(), sea = new StarSea(), sun = new StarSun(STAR_KEY_DIR.clone().multiplyScalar(100));
+  sun.light.color.copy(STAR_MOONLIGHT); sun.light.intensity = STAR_MOON_INTENSITY;
+  scene.add(sky.root, sea.root, sun.light, sun.light.target, new THREE.HemisphereLight(STAR_SHADE_SKY, STAR_SHADE_GROUND, STAR_SHADE_INTENSITY));
+  const throne = new StarSanctum(height); scene.add(throne.root);
+  const spots = starCrystalGarden(height), gardens = new THREE.InstancedMesh(starCrystalCluster(), starCrystalMaterial('amethyst'), spots.length), matrix = new THREE.Matrix4();
+  spots.forEach((c, i) => gardens.setMatrixAt(i, matrix.compose(new THREE.Vector3(c.x, c.y + c.h * .5, c.z), c.q, c.scale)));
   scene.add(gardens);
+  // The lamps' and crystals' light on the ground, as in the game (starLight.ts).
+  bakeStarLight(spots.map(c => ({x: c.x, z: c.z, radius: .9 + c.h * .28, color: '#8f6bff', strength: .75 + c.h * .06})));
   let collision: ReturnType<typeof layoutStarhaven>;
   try {
     const settlement = await buildStarSettlement(height); scene.add(settlement.root);
     collision = layoutStarhaven(height, settlement.natureNames);
   } catch (e) { dispose(); throw e; }
-  scene.fog = new THREE.FogExp2('#211e3b', .003);
+  scene.fog = new THREE.FogExp2(STAR_FOG.clone(), .003);
   return { scene, height, raycast: (a, b) => collision.col.raycast(a, b), update: (_dt, t, camera, p) => { sky.update(t, camera, 1); sea.update(t); sun.update(p.x, p.z); throne.update(t); }, dispose };
 }

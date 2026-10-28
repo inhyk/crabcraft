@@ -91,7 +91,7 @@ export class SnowIsland {
   const dark=new THREE.MeshStandardMaterial({color:'#344959',roughness:.9});
   // Grown ice (SNOWFLOW's crystal shape and shading). The seed fixes the formations for every player.
   const {material:iceGlass,refresh:refreshIce}=iceMaterial({sun:this.sun,skyHorizon:this.sky.skyHorizon,skyZenith:this.sky.skyZenith,snowBounce:this.sky.snowBounce});this.refreshIce=refreshIce;this.iceGlass=iceGlass;
-  this.portal=this.gate(this.spawn,'서리빛 설원 → 새벽 항구');
+  this.portal=this.gate(this.spawn,'서리빛 설원 → 골드샌드 항구');
   let seed=20261018;const rand=()=>(seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296;
   const iceMesh=(list:Crystal[],name:string)=>{const m=new THREE.Mesh(crystalGeometry(list),iceGlass);m.name=name;m.castShadow=true;this.root.add(m);return m;};
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.root.add(m);return m;};

@@ -148,7 +148,7 @@ try {
   console.log(`PASS the captain's F opens the choice: ${fresh.buttons.map((b) => b.label).join(' | ')}; open and locked match canTravel`);
 
   // 3. A locked world refuses with its own message, in the dialogue and from the sail itself.
-  await p.getByRole('button', { name: '🔒 월드 III · 새벽 항구', exact: true }).click();
+  await p.getByRole('button', { name: '🔒 월드 III · 골드샌드 항구', exact: true }).click();
   await reveal();
   const lock3 = await p.evaluate(() => window.app.current.game.world2.travelLock(3));
   assert.equal(await p.evaluate(() => window.__H.text()), lock3);

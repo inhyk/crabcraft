@@ -1,5 +1,18 @@
-import {islandPaths} from './islandPaths';
+import {starPaving} from './starPaving';
+import {starMeadow} from './starMeadow';
+import {starTreeDressing,starTreeSpecies} from './starTrees';
+import {STAR_WAY_ENDS} from './starWilds';
+import {starEclipseStory} from './starEclipseStory';
+import {starFields} from './starFields';
+import {starStories} from './starStories';
+import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_RING} from './starFieldLayout';
+import type {IslandPath} from './islandPaths';
 import * as THREE from 'three';
+import {starLanterns,starhavenMaterial} from './starLanterns';
+import {STAR_LAMPS,STAR_LAMP_KIND,setStarDoorLamps} from './starLight';
+import {starCrystalCluster,starCrystalMaterial} from './starCrystals';
+import {moonstoneMaterial} from './starMasonry';
+import {doorLanternAt,recordRooftops,starDoorLamps,starRooftops,starSettlers,starTrailLanterns,STAR_ROOF_ROLES} from './starRooftops';
 import { loadKit, StaticBatch, Scatter, trs } from '../world/kit';
 import { TownBuilder } from '../world/buildings';
 import type { Collision } from '../world/collision';
@@ -35,6 +48,8 @@ export function starTrailDistance(x:number,z:number){
 export function nearStarObjective(x:number,z:number,padding=0){
   return Object.entries(STAR_OBJECTIVES).some(([kind,p])=>Math.hypot(x-p[0],z-p[1])<(kind.startsWith('explore-')?13:4)+padding);
 }
+/** The pilgrim trails' lanterns outside the town (not on the starroad, which has its crystals, nor at a quest site). */
+export const starTrailLanternSpots=()=>starTrailLanterns(STAR_TRAILS,(x,z)=>nearStarObjective(x,z,-5)||(Math.abs(x)<9&&z<3));
 export const STAR_WALKS = [[-15,62],[0,61],[15,62],[-15,44],[0,36],[15,44],[0,72],[0,24]];
 /** The nature kit's leafy trees: the forest uses them, and their trunks are solid. */
 export const STAR_TREE_NAME=/^CommonTree_[1-5]$/;
@@ -53,8 +68,8 @@ export function starLots():Lot[]{
 }
 
 const forestRand=(i:number)=>{const a=Math.sin(i*127.1+23.7)*43758.5453;return a-Math.floor(a);};
-/** Island forest: every fifth spot a rock, the rest trees. Positions only; names come from the kit. */
-function starForest(){
+/** Island forest: every fifth spot a rock (a field boulder, starFieldSpots.ts), the rest trees. Positions only. */
+export function starForestSpots(){
   const spots:{i:number;x:number;z:number;rock:boolean;scale:number;yaw:number}[]=[];
   for(let i=0;i<340;i++) {
     const x=(forestRand(i+100)-.5)*215,z=(forestRand(i+900)-.5)*255+10;
@@ -68,7 +83,7 @@ function starForest(){
   return spots;
 }
 // Leafy garden trees bring the forest into view from the village streets.
-const GARDEN_TREES=[[-15,33],[14,34],[-15,81],[15,81],[-55,28],[55,30],[-56,58],[57,60],[-54,87],[55,88]];
+export const GARDEN_TREES=[[-15,33],[14,34],[-15,81],[15,81],[-55,28],[55,30],[-56,58],[57,60],[-54,87],[55,88]];
 const gardenScale=(x:number)=>Math.abs(x)<20?.68:.95;
 
 /** Homes, tree trunks and garden trees of the settlement, without meshes. */
@@ -76,7 +91,7 @@ export function registerStarSettlement(height:(x:number,z:number)=>number,collis
   const builder=new TownBuilder(null,null,collision,{});
   for(const lot of starLots())builder.build(lot);
   if(!natureNames.some(n=>STAR_TREE_NAME.test(n)))return;
-  for(const p of starForest())if(!p.rock)collision.addCircle(p.x,p.z,.5*p.scale,height(p.x,p.z),height(p.x,p.z)+8);
+  for(const p of starForestSpots())if(!p.rock)collision.addCircle(p.x,p.z,.5*p.scale,height(p.x,p.z),height(p.x,p.z)+8);
   for(const [x,z] of GARDEN_TREES)collision.addCircle(x,z,.5*gardenScale(x),height(x,z),height(x,z)+9);
 }
 
@@ -93,15 +108,24 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
       const c=m.clone();
       // Light the actual glass panes, including their original lattice and shutter occlusion.
       if(name==='MI_WindowGlass'&&c instanceof THREE.MeshStandardMaterial){c.color.set('#4d301c');c.emissive.set('#ffb65e');c.emissiveIntensity=1.15;c.roughness=.25;c.transparent=false;c.opacity=1;c.depthWrite=true;}
-      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#d9eed7');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;}
+      if(name.startsWith('Leaves')&&c instanceof THREE.MeshStandardMaterial){c.color.set('#7aa99d');c.emissive.set('#163025');c.emissiveIntensity=.12;c.side=THREE.DoubleSide;c.roughness=.92;c.metalness=0;}
+      if(kit===village)starhavenMaterial(name,c);
       copies.set(m,c);kit.materials.set(name,c);
     }
     for(const piece of kit.pieces.values())for(const part of piece.parts)part.material=copies.get(part.material)!;
   }
   const batch=new StaticBatch(village,'starhaven-homes');
+  // The roofline module reads the roofs and chimneys as they are placed (starRooftops.ts).
+  const roofline=recordRooftops(batch);
   const builder=new TownBuilder(village,batch,null,{});
+  // The newcomers' house is not lived in yet: its windows are dark glass.
+  const glass=village.materials.get('MI_WindowGlass'),dark=glass instanceof THREE.MeshStandardMaterial?glass.clone():null;
+  if(dark){dark.emissive.set('#000000');dark.emissiveIntensity=0;dark.color.set('#0d1018');dark.roughness=.15;dark.metalness=.4;dark.name='MI_WindowGlass_Dark';}
+  const emptyBuilder=new TownBuilder(village,batch,null,dark?{MI_WindowGlass:dark}:{});
   const lots=starLots();
-  for(const lot of lots)builder.build(lot);
+  // Door lanterns light the house fronts (starLight.ts) before any wall compiles.
+  setStarDoorLamps(starDoorLamps(lots).map(d=>{const p=doorLanternAt(d);return [p.x,p.y,p.z] as const;}));
+  for(const lot of lots)(lot.id===STAR_ROOF_ROLES.empty?emptyBuilder:builder).build(lot);
   root.add(batch.build());
   const dressing=new StaticBatch(props,'starhaven-market');
   const villageProps=new StaticBatch(village,'starhaven-gardens');
@@ -121,24 +145,28 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   }
   if(bench)for(const [x,z] of [[-8,55],[8,55],[-8,61],[8,61]])put(bench,x,z,x<0?Math.PI/2:-Math.PI/2);
   if(village.has('Prop_Wagon'))for(const x of [-15,15])villageProps.add('Prop_Wagon',trs(x,3,88,x>0?.4:-.4));
+  // The newcomers moving in: their loaded cart and boxes at the empty house's door.
+  const cart=starSettlers(lots.find(l=>l.id===STAR_ROOF_ROLES.empty)!,put);
+  // Lanterns hung on the carts: the newcomers' and the harbour wagon (at a corner of each bed).
+  const cartLamps:THREE.Vector3[]=[];
+  if(props.has('Stall_Cart_Empty')){const b=props.get('Stall_Cart_Empty').box;cartLamps.push(new THREE.Vector3(b.max.x*.85,b.max.y*.55+1.05,b.max.z*.8).applyMatrix4(trs(cart.x,height(cart.x,cart.z),cart.z,cart.yaw)));}
+  if(village.has('Prop_Wagon')){const b=village.get('Prop_Wagon').box;cartLamps.push(new THREE.Vector3(b.max.x*.8,b.max.y+.75,b.max.z*.75).applyMatrix4(trs(15,3,88,.4)));}
+  const rooftops=starRooftops(village,roofline,lots,{spots:starTrailLanternSpots(),height},cartLamps);root.add(rooftops.root);
   for(const lot of lots)for(let j=-2;j<=2;j++)if(village.has('Prop_WoodenFence_Single'))villageProps.add('Prop_WoodenFence_Single',trs(lot.x+j*2,3,lot.z-7,0));
-  const lampMat=new THREE.MeshStandardMaterial({color:'#ffd295',emissive:'#ffae4d',emissiveIntensity:2.8,roughness:.4});
-  const poleMat=new THREE.MeshStandardMaterial({color:'#343442',metalness:.7,roughness:.45});
-  const poles=new THREE.InstancedMesh(new THREE.CylinderGeometry(.09,.18,3.4,6),poleMat,26);
-  const bulbs=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.26),lampMat,26);
-  for(let i=0;i<26;i++) {
-    const side=i%2?1:-1, z=86-Math.floor(i/2)*6, x=side*(z>20?8:6);
-    poles.setMatrixAt(i,trs(x,height(x,z)+1.7,z));bulbs.setMatrixAt(i,trs(x,height(x,z)+3.5,z));
-    if(props.has('Lantern_Wall'))put('Lantern_Wall',x,z,side>0?-Math.PI/2:Math.PI/2,.8,2.5);
-  }
-  root.add(poles,bulbs);
-  for(const [x,z] of [[0,57],[-25,36],[20,35],[0,76]]){const light=new THREE.PointLight('#ffc78b',18,30,1.5);light.position.set(x,7,z);root.add(light);}
+  // Iron lanterns along the high street, each with its pool of light (starLanterns.ts).
+  const lanterns=starLanterns(STAR_LAMPS.map(([x,z])=>({x,y:height(x,z),z})),STAR_LAMP_KIND,{geometry:starCrystalCluster(),material:starCrystalMaterial('teal',{glow:1.5}),plinth:moonstoneMaterial({color:'#a8a8b8',name:'starhaven-crystal-lamp-stone'})});
+  root.add(lanterns.posts,lanterns.panes,lanterns.others);
+  // The stargazer's camp and the beached skiff; their kit props join the market's batch.
+  const stories=starStories(height,put);
   root.add(dressing.build(),villageProps.build());
   const scatter=new Scatter(nature,'star-island-forests');
+  // The island's tree species (starTrees.ts): moon-silvered and crystal-infused crowns are the kit's trees in
+  // materials of their own (starWind.ts shades them by material.userData.starVariant); snags are built.
+  const variantOf=(variant:string)=>(m:THREE.Material)=>{const c=m.clone();c.userData.starVariant=variant;return c;};
+  const silverTrees=new Scatter(nature,'star-island-silver-trees'),crystalTrees=new Scatter(nature,'star-island-crystal-trees');
   const rand=forestRand;
   const natureNames=[...nature.pieces.keys()];
   const treeNames=natureNames.filter(n=>STAR_TREE_NAME.test(n));
-  const rockNames=[...nature.pieces.keys()].filter(n=>/^Rock_Medium_/.test(n));
   const flowerNames=[...nature.pieces.keys()].filter(n=>/Flower_[34]_Group|Bush_Common_Flowers/.test(n));
   // A plant's leaves extend beyond its origin. Keep its full footprint and wind off the paving.
   const plantRadius=new Map<string,number>();
@@ -152,9 +180,11 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     const rect=(ax:number,bx:number,az:number,bz:number)=>Math.hypot(Math.max(ax-x,0,x-bx),Math.max(az-z,0,z-bz));
     return Math.min(rect(-4.9,4.9,-72.9,92.9),rect(-26.9,26.9,51.1,58.9),rect(-26,-4.7,34.8,37.2),rect(4.7,21,33.8,36.2),rect(-23,-4.7,80.8,83.2),rect(4.7,25,82.8,85.2),Math.max(0,starTrailDistance(x,z)-1.15),residentClearance(x,z))>radius*scale;
   };
-  for(const p of starForest()) {
-    const list=p.rock?rockNames:treeNames;if(!list.length)continue;
-    scatter.add(list[p.i%list.length],trs(p.x,height(p.x,p.z),p.z,p.yaw,p.scale));
+  // The forest's rock spots hold sculpted field boulders now (starFields.ts).
+  for(const p of starForestSpots()) {
+    if(p.rock||!treeNames.length)continue;
+    const species=starTreeSpecies(p.i);if(species==='snag')continue;
+    (species==='silver'?silverTrees:species==='crystal'?crystalTrees:scatter).add(treeNames[p.i%treeNames.length],trs(p.x,height(p.x,p.z),p.z,p.yaw,p.scale));
   }
   let gardenTrees=0;
   for(const [x,z] of GARDEN_TREES){
@@ -163,14 +193,26 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     scatter.add(name,trs(x,height(x,z),z,gardenTrees*2.39996,gardenScale(x)));gardenTrees++;
   }
   root.userData.gardenTrees=gardenTrees;
-  for(let i=0;i<240;i++) {
-    const x=(rand(i+1800)-.5)*105,z=10+rand(i+2500)*86;
-    if(Math.abs(x)<12||lots.some(l=>Math.abs(x-l.x)<l.sx+3&&Math.abs(z-l.z)<l.sz+4))continue;
-    if(flowerNames.length){
-      const name=flowerNames[i%flowerNames.length];
-      if(clearPaving(name,x,z,.7))scatter.add(name,trs(x,height(x,z),z,rand(i+3000)*6.28,.7));
-    }
+  // The lawns' middle scale: colonies, not a sprinkle. Poisson-spaced centres (about 7 m apart); each grows one
+  // kind (wildflowers, clover or a tussock of short grass) as a big plant, two or three middling and a few small
+  // ones, close together.
+  const cloverNames=natureNames.filter(n=>/^Clover_[12]$/.test(n)),tuftNames=['Grass_Common_Short','Grass_Wispy_Short'].filter(n=>nature.has(n));
+  const colonies:[number,number][]=[];
+  for(let i=0;i<900&&colonies.length<70;i++){
+    const x=(rand(i+1800)-.5)*104,z=10+rand(i+2500)*86;
+    if(Math.abs(x)<7||lots.some(l=>Math.abs(x-l.x)<l.sx+3&&Math.abs(z-l.z)<l.sz+4))continue;
+    if(colonies.some(([cx,cz])=>Math.hypot(cx-x,cz-z)<7))continue;
+    colonies.push([x,z]);
   }
+  colonies.forEach(([cx,cz],c)=>{
+    const kind=c%5<2?flowerNames:c%5<4?cloverNames:tuftNames;if(!kind.length)return;
+    const n=3+Math.floor(rand(c+3100)*7);
+    for(let k=0;k<n;k++){
+      const a=rand(c*31+k)*6.28,d=k?.35+Math.sqrt(rand(c*17+k))*1.3:0,x=cx+Math.cos(a)*d,z=cz+Math.sin(a)*d;
+      const name=kind[(c+k)%kind.length],sc=(k?.5+.35*rand(c*7+k):.95)*(kind===tuftNames?.8:.75);
+      if(clearPaving(name,x,z,sc))scatter.add(name,trs(x,height(x,z),z,rand(c*13+k)*6.28,sc));
+    }
+  });
   // Low meadows soften the cleared exploration sites without hiding markers or attack circles.
   // All plants use the original licensed kit and stay batched with the island's foliage.
   const meadowFlowers=flowerNames.filter(n=>/^Flower_[34]_Group$/.test(n));
@@ -188,8 +230,16 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     }
   }
   root.userData.meadowPlants=meadowCount;
-  root.add(scatter.build({boundsPadding:.2}));
-  root.add(islandPaths(height,[
+  // Boulders, the crater's shards, moon-flowers, and the kit's ferns, clover and wildflowers through the meadows.
+  const field=starFields(height,scatter,natureNames,clearPaving);root.add(field.root,stories.root);
+  // What the eclipse did: the fallen column, the astronomer's table, the pilgrim's pack, the shards (starEclipseStory.ts).
+  const eclipse=starEclipseStory(height);root.add(eclipse.root);
+  const fields={root:field.root,update(t:number){field.update(t);stories.update(t);rooftops.update(t);eclipse.update(t);}};
+  const forests=scatter.build({boundsPadding:.2});
+  forests.add(silverTrees.build({boundsPadding:.2,materialFor:variantOf('silver')}),crystalTrees.build({boundsPadding:.2,materialFor:variantOf('crystal')}));
+  root.add(forests,starTreeDressing(height));
+  // Starhaven's own moonlit setts, kerbs and trail flags (starPaving.ts); the fountain keeps its basin clear.
+  const ways:IslandPath[]=[
     {points:[[0,92],[0,-54]],width:9.5,trim:true},
     {points:[[-26,55],[26,55]],width:7,trim:true},
     {points:[[-4.7,36],[-25,36]],width:2.4},
@@ -197,7 +247,22 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     {points:[[-4.7,82],[-22,82]],width:2.4},
     {points:[[4.7,84],[24,84]],width:2.4},
     ...STAR_TRAILS.map(points=>({points,width:2.4,trim:false})),
-  ],2));
+  ];
+  // Dead ends fray into earth paths to the nearest door (starWilds.ts); the ground reads the paths from starWaySpurs.
+  const paving=starPaving(height,ways,STAR_TRAILS.length,{skyHorizon:new THREE.Color('#2a2552'),skyZenith:new THREE.Color('#0b1030'),pads:[{x:0,z:55,r:7.2,rings:7.2},{x:STAR_RING.x,z:STAR_RING.z,r:STAR_RING.r-1.3,rings:STAR_RING.r-1.3}],holes:[{x:0,z:55,r:3.7,kerb:.55}],frays:STAR_WAY_ENDS.map(([x,z])=>({x,z}))});
+  root.add(paving.root);
+  // The meadow underfoot grows round the buildings, stalls, wagons and quest props, never on the ways.
+  const meadow=starMeadow(height,ways,[
+    ...lots.map(l=>[l.x,l.z,Math.hypot(l.sx,l.sz)+1.4] as const),
+    ...[[-12,48],[12,48],[-12,70],[12,70],[-15,88],[15,88]].map(([x,z])=>[x,z,2.6] as const),
+    ...Object.entries(STAR_OBJECTIVES).filter(([k])=>!k.startsWith('explore-')).map(([,p])=>[p[0],p[1],1.7] as const),
+    ...Array.from({length:18},(_,i)=>[(i%2?1:-1)*(19+i%3*3),30+Math.floor(i/2)*6,1.1] as const),
+    // The camp's trodden circle and the skiff's berth.
+    [STAR_CAMP.x-.5,STAR_CAMP.z,4.6],[STAR_BOAT.x,STAR_BOAT.z,3.4],
+    // The keepers' ring floor and the miners' trodden yard.
+    [STAR_RING.x,STAR_RING.z,STAR_RING.r-1.1],[STAR_MINE.x-2,STAR_MINE.z+1.5,4.2],
+  ],paving.root.userData.paved);
+  root.add(meadow.mesh);
   for(const kit of [village,nature,props])for(const piece of kit.pieces.values())for(const part of piece.parts)part.geometry.dispose();
-  return {root,lots,natureNames};
+  return {root,lots,natureNames,meadow,fields};
 }

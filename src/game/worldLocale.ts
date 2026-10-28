@@ -1,7 +1,8 @@
 import {t} from '../i18n';
 
 // Stable region keys also drive music and travel logic. Translate only their presentation.
-const REGIONS:Record<string,readonly [string,string,string]>={
+// An optional fourth entry is the English name when it differs from the key (World III kept its key 'Dawnharbor').
+const REGIONS:Record<string,readonly [string,string,string,string?]>={
   'Emberharbor':['잿불 항구','화산 바다를 건너 세운 대장장이들의 마을','A smiths’ haven above the molten sea'],
   'Obsidian Wilds':['흑요석 황야','불꽃 광석과 잃어버린 탐험대의 흔적','Fire ore and traces of lost expeditions'],
   'Ember Sanctuary':['잿불 성역','불의 봉인을 복구하고 하늘숲으로 향하세요','Restore the fire seals and travel to Skybloom'],
@@ -12,7 +13,7 @@ const REGIONS:Record<string,readonly [string,string,string]>={
   'Frostpine Woods':['서리 소나무 숲','눈꽃이 내려앉은 침엽수 사이의 순찰길','Patrol beneath snow-laden evergreen boughs'],
   'Aurora Snowfields':['오로라 설원','서리 파수병을 물리치며 300레벨을 향해','Defeat frost sentinels and grow toward level 300'],
   'The Frozen Throne':['얼음 왕좌','300레벨 영원의 서리왕 보레아스가 기다립니다','Level 300 Boreas, King of Eternal Frost, awaits'],
-  'Dawnharbor':['새벽 항구','돛과 등불 아래 다시 모인 친구들','Friends reunited beneath sails and lanterns'],
+  'Dawnharbor':['골드샌드 항구','모래바다와 바다가 만나는 사암 항구','A sandstone port where the dunes meet the sea','Goldsand Harbor'],
   'Twilight Citadel':['황혼 성채','성벽 너머, 빼앗긴 새벽과 친구를 되찾으세요','Reclaim your friend and the stolen dawn beyond the walls'],
   'The Dawn Ascent':['새벽으로 오르는 길','꽃이 핀 계단에서 황혼의 성문까지','From flowering terraces to the twilight gate'],
   'Dawnwatch Lighthouse':['새벽 등대','황금빛 등불이 돌아갈 항로를 밝힙니다','A golden beacon lights the way home'],
@@ -33,7 +34,7 @@ const REGIONS:Record<string,readonly [string,string,string]>={
   'The Pilgrim’s Starroad':['순례자의 별길','빛나는 길 끝에 남겨진 약속','A promise at the end of a shining path'],
   'The Forgotten Star':['잊힌 별의 섬','새로운 이웃과 잃어버린 별의 이야기','New neighbours and the story of a lost star'],
 };
-export const regionName=(key:string)=>REGIONS[key]?t(REGIONS[key][0],key):key;
+export const regionName=(key:string)=>REGIONS[key]?t(REGIONS[key][0],REGIONS[key][3]??key):key;
 export const regionSubtitle=(key:string)=>REGIONS[key]?t(REGIONS[key][1],REGIONS[key][2]):'';
 
 const LOADING_LABELS:Record<string,string>={
@@ -64,7 +65,7 @@ export function loadingTips(chapter: 1 | 2 | 3 | 4 | 5 | 6 = 1){return chapter>=
   t('300레벨이 되면 얼음 왕좌의 보레아스에게 도전할 수 있어요.','Reach level 300 to challenge Boreas at the Frozen Throne.'),
   t('기술 위에 마우스를 올리면 바닥에서 실제 공격 범위를 확인할 수 있어요.','Hover over a skill to see its actual range on the ground.'),
 ] : chapter === 3 ? [
-  t('새벽 항구의 주민들에게 말을 걸어 월드 3 퀘스트를 받아 보세요.','Speak to the people of Dawnharbor to accept World III quests.'),
+  t('골드샌드 항구의 주민들에게 말을 걸어 월드 3 퀘스트를 받아 보세요.','Speak to the people of Goldsand Harbor to accept World III quests.'),
   t('100레벨이 되면 황혼 성채의 솔라칸에게 도전할 수 있어요.','Reach level 100 to challenge Solarkan in the Twilight Citadel.'),
   t('솔라칸을 물리치면 눈 월드로 가는 길이 열려요.','Defeat Solarkan to open the way to the snow world.'),
 ] : chapter === 2 ? [

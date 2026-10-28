@@ -4,7 +4,7 @@ import { COAST } from '../world/layout';
 import type { MonitorPlayer, MonitorSnapshot } from '../../server/monitor';
 import type { Views } from './views';
 
-const WORLD_NAMES = ['위치 확인 중', '클로헤이븐', '별빛 항구', '새벽의 섬', '서리빛 설원', '잿불 군도', '하늘숲'];
+const WORLD_NAMES = ['위치 확인 중', '클로헤이븐', '별빛 항구', '골드샌드 항구', '서리빛 설원', '잿불 군도', '하늘숲'];
 const host = location.hostname;
 const environment = host === 'crab-dev.seonn.dev' ? 'DEV' : host === 'crab.seonn.dev' ? 'MAIN' : 'LOCAL';
 const root = document.getElementById('monitor')!;

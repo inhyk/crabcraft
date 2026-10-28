@@ -1,0 +1,301 @@
+import * as THREE from 'three';
+import {injectStarLight} from './starLight';
+import {STAR_GRID} from '../sim/world/ground';
+import type {StarMeadow} from './starMeadow';
+import type {StarFields} from './starFields';
+import {starSpurWear,starWildness,starWildTint} from './starWilds';
+import {GARDEN_TREES,starForestSpots,starTrailDistance} from './world2Settlement';
+import {starCrystalGarden} from './world2Colliders';
+import {starBoulders} from './starFieldSpots';
+import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,STAR_SCORCHES,starCoast,starFieldWear,starNoise,starSand} from './starFieldLayout';
+
+/*
+ * Starhaven's ground by moonlight: beach sand by the sea, meadow grass inland, packed earth in the town and along the
+ * pilgrim trails, bare stone where the bluffs break off. The mesh is the gameplay height grid itself (one vertex per
+ * STAR_GRID sample, so collision and picture agree); per vertex it carries the region's tint (starGroundColor) and how
+ * sandy, grassy and worn the ground is. The shader paints the rest in world space from one small tileable noise
+ * texture read at six scales, each turned a different way, so nothing repeats: broad lush and dry patches, clumps,
+ * blades, pebbles, wind ripples on the sand and wet sand at the waterline, strata on the bluffs, scorched glassy
+ * ground in the fallen star's crater. Detail fades to its mean before it can shimmer, and a few specks of star-moss
+ * glow in the grass.
+ */
+
+const SIZE = 256;
+/** Tileable noise, four channels: fbm, cellular F1 (pebbles), fine blade noise, cellular F2 - F1 (cracks). */
+function noiseTexture(): THREE.DataTexture {
+  const hash = (i: number, j: number, s: number) => {
+    let h = Math.imul(i, 0x27d4eb2d) ^ Math.imul(j, 0x165667b1) ^ Math.imul(s, 0x9e3779b1);
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d); h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+    return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+  };
+  const wrap = (i: number, p: number) => ((i % p) + p) % p;
+  // Periodic gradient noise with `p` cells across the texture.
+  const grad = (x: number, y: number, p: number, s: number) => {
+    const fx = x * p / SIZE, fy = y * p / SIZE, ix = Math.floor(fx), iy = Math.floor(fy), u = fx - ix, v = fy - iy;
+    const q = (t: number) => t * t * t * (t * (t * 6 - 15) + 10), qu = q(u), qv = q(v);
+    const g = (i: number, j: number, dx: number, dy: number) => { const a = hash(wrap(ix + i, p), wrap(iy + j, p), s) * Math.PI * 2; return Math.cos(a) * dx + Math.sin(a) * dy; };
+    const a = g(0, 0, u, v), b = g(1, 0, u - 1, v), c = g(0, 1, u, v - 1), d = g(1, 1, u - 1, v - 1);
+    return a + (b - a) * qu + (c - a) * qv + (a - b - c + d) * qu * qv;
+  };
+  const fbm = (x: number, y: number, p0: number, oct: number, s: number) => { let sum = 0, amp = .5, p = p0; for (let i = 0; i < oct; i++) { sum += grad(x, y, p, s + i) * amp; amp *= .5; p *= 2; } return sum; };
+  // Cellular: jittered points in a periodic grid of `p` cells.
+  const cell = (x: number, y: number, p: number, s: number) => {
+    const fx = x * p / SIZE, fy = y * p / SIZE, ix = Math.floor(fx), iy = Math.floor(fy);
+    let f1 = 9, f2 = 9;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const cx = ix + i, cy = iy + j, px = cx + .1 + .8 * hash(wrap(cx, p), wrap(cy, p), s), py = cy + .1 + .8 * hash(wrap(cx, p), wrap(cy, p), s + 7);
+      const d = Math.hypot(fx - px, fy - py);
+      if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
+    }
+    return [f1, f2];
+  };
+  const data = new Uint8Array(SIZE * SIZE * 4);
+  const u8 = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255)));
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+    const o = (y * SIZE + x) * 4, [f1, f2] = cell(x, y, 24, 3);
+    data[o] = u8(.5 + fbm(x, y, 4, 6, 11) * .95);
+    data[o + 1] = u8(Math.min(1, f1 / .75));
+    data[o + 2] = u8(.5 + (fbm(x, y, 64, 2, 23) * .7 + grad(x, y, 128, 31) * .3) * 1.1);
+    data[o + 3] = u8(Math.min(1, (f2 - f1) / .5));
+  }
+  const t = new THREE.DataTexture(data, SIZE, SIZE, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true; t.colorSpace = THREE.NoColorSpace; t.name = 'starhaven-ground-noise'; t.needsUpdate = true;
+  return t;
+}
+
+const GROUND_HEAD = /* glsl */ `
+uniform sampler2D sgTex;
+uniform float sgTime;
+uniform float sgDetail;
+varying vec3 vSgW;
+varying vec3 vSgN;
+varying vec4 vSgSoil;
+varying float vSgField;
+// One texture, many scales: each read is turned and shifted so no two scales line up.
+vec4 sgT(vec2 p,float s,float a){float c=cos(a),d=sin(a);return texture2D(sgTex,vec2(c*p.x-d*p.y,d*p.x+c*p.y)/s+a*3.7);}
+float sgH(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
+`;
+
+const GROUND_COLOR = /* glsl */ `
+vec2 sgP=vSgW.xz;
+// The pixel's ground footprint: detail is faded to its mean before it is a pixel wide.
+float sgFoot=length(fwidth(sgP));
+float sgF1=1.-smoothstep(.05,.22,sgFoot),sgF2=1.-smoothstep(.012,.06,sgFoot),sgF3=1.-smoothstep(.004,.016,sgFoot);
+float sgMacro=sgT(sgP,170.,.3).r,sgMacro2=sgT(sgP,61.,1.1).r,sgMid=sgT(sgP,14.,2.).r;
+float sgFine=mix(.5,sgT(sgP,3.3,.7).r,sgF1);
+vec4 sgClump=sgT(sgP,2.1,2.6);
+float sgBlade=mix(.5,sgT(sgP,.47,1.9).b,sgF2),sgBlade2=mix(.5,sgT(sgP,.19,.9).b,sgF3);
+vec3 sgNw=normalize(vSgN);
+float sgSlope=1.-sgNw.y;
+// Coverage, ragged at every scale so no edge follows a contour or the grid.
+// A strand of sand at the waterline all round the island (the sea lies at y -3): a beach band seen from above.
+float sgShore=1.-smoothstep(-2.2,-.9,vSgW.y+(sgMid-.5)*.6);
+float sgSand=max(smoothstep(.35,.65,vSgSoil.x+(sgMid-.5)*.45+(sgFine-.5)*.3),sgShore);
+float sgWorn=smoothstep(.3,.7,vSgSoil.z+(sgMid-.5)*.5+(sgFine-.5)*.35);
+float sgGrass=smoothstep(.38,.62,vSgSoil.y+(sgMacro2-.5)*.35+(sgFine-.5)*.4+(sgClump.g-.5)*.25*sgF1)*(1.-sgSand)*(1.-sgWorn*.85);
+float sgRock=smoothstep(.36,.55,sgSlope+(sgMid-.5)*.25)*(1.-sgShore*.85);
+// Crater: scorched, glassy and cracked inside, ash thrown out round the rim.
+float sgCd=length(sgP-vec2(${STAR_CRATER.x.toFixed(1)},${STAR_CRATER.z.toFixed(1)}))/${STAR_CRATER.r.toFixed(1)};
+float sgScorch=(1.-smoothstep(.55,1.3,sgCd+(sgMid-.5)*.5+(sgFine-.5)*.3))*.92;
+// Where the eclipse's shards struck (star r5): small burns, ragged and streaked outward.
+float sgBurn=0.;
+${STAR_SCORCHES.map((s) => `{vec2 d=sgP-vec2(${s.x.toFixed(2)},${s.z.toFixed(2)});float r=length(d)/${s.r.toFixed(2)};float st=abs(sin(atan(d.y,d.x)*7.+sgMid*6.));sgBurn=max(sgBurn,(1.-smoothstep(.45,1.15,r+(sgMid-.5)*.5+(sgFine-.5)*.3-st*.18*smoothstep(.4,1.,r))));}`).join('\n')}
+sgScorch=max(sgScorch,sgBurn*.85);
+// Region tint (vertex colour) is the meadow's moonlit green, the sand's lavender grey or the town's earth.
+vec3 sgTint=vColor.rgb;
+// Meadow: broad lush and dry swathes, darker hollows, clumps and blades.
+vec3 sgG=sgTint*(.5+.7*sgMacro);
+sgG=mix(sgG,sgG*vec3(1.18,1.12,.82),smoothstep(.52,.72,sgMacro2)*.55);
+sgG*=mix(1.,.55,smoothstep(.45,.75,sgMid)*.75);
+sgG*=.8+.4*sgClump.r;
+// Swaths a few metres across: lush dark, silvered pale, in steps rather than a smooth wash.
+sgG*=mix(.72,1.3,smoothstep(.4,.62,sgT(sgP,9.,.45).r));
+sgG*=.72+.56*sgBlade;sgG*=.86+.28*sgBlade2;
+// The fields' large-scale value (starFieldValue): deep tussock beds darker and tealer, trodden ground paler.
+float sgLush=max(.5-vSgField,0.)*2.,sgWear=max(vSgField-.5,0.)*2.;
+sgG*=mix(vec3(1.),vec3(.52,.66,.7),sgLush)*(1.+.45*sgWear);
+// Sand: pale and fine, rippled across the sea wind, darker and wet where the sea reaches it.
+float sgRipPhase=dot(sgP,vec2(-.6,.8))*4.2+sgT(sgP,9.,.4).r*7.+sgFine*2.;
+float sgRip=sin(sgRipPhase)*.5+.5;
+vec3 sgS=vec3(.1,.104,.135)*(.82+.36*sgMid)*(.9+.2*sgFine);
+sgS*=mix(1.,.9+.2*sgRip,sgF1);
+float sgWet=1.-smoothstep(-.6,.55,vSgW.y+(sgMid-.5)*.5);
+sgS=mix(sgS,sgS*vec3(.5,.52,.6),sgWet);
+// Shells and pebbles on the strand.
+float sgPeb=(1.-smoothstep(.1,.16,sgClump.g))*step(.62,sgH(floor(sgP/2.1*24.)))*sgF2;
+sgS=mix(sgS,vec3(.2,.195,.21),sgPeb*.7);
+// Packed earth: dark, gritty, pebbles worn flat.
+vec3 sgE=vec3(.12,.104,.094)*(.75+.5*sgMid)*(.85+.3*sgFine)*(.72+.56*sgMacro2);
+// Gravel: pale chips with lit tops among darker grit, and damp darker hollows, so bare ground is never one flat tone.
+float sgEPeb=(1.-smoothstep(.16,.26,sgClump.g))*sgF1;
+float sgGrit=(1.-smoothstep(.08,.14,sgT(sgP,.9,1.7).g))*sgF2;
+sgE=mix(sgE,vec3(.2,.19,.2)*(.8+.4*sgClump.r),sgEPeb*.55);
+sgE=mix(sgE,vec3(.26,.25,.27),sgGrit*.5);
+sgE*=mix(1.,.62,smoothstep(.55,.8,sgT(sgP,7.,2.9).r)*.8);
+sgE=mix(sgE,sgTint*.55,.25);
+// Trodden meadow earth: pale and dry under the moon, a value step over the turf round it.
+sgE=mix(sgE,sgE*vec3(1.55,1.55,1.6)+vec3(.012,.013,.018),sgWear);
+// Stone of the bluffs: dark slate in beds, a violet glint of crystal in the partings.
+float sgBed=vSgW.y*1.7+sgT(sgP,23.,1.3).r*2.4;
+float sgBedF=fract(sgBed);
+vec3 sgR=vec3(.15,.15,.19)*(.7+.6*sgT(vec2(sgP.x+sgP.y,vSgW.y*3.),4.,.2).r)*(.86+.28*step(.5,fract(floor(sgBed)*.618)));
+sgR*=1.-.45*(1.-smoothstep(.0,.08,sgBedF))*sgF1;
+vec3 sgCol=sgE;
+sgCol=mix(sgCol,sgS,sgSand);
+sgCol=mix(sgCol,sgG,sgGrass);
+sgCol=mix(sgCol,sgR,sgRock);
+vec3 sgAsh=mix(vec3(.085,.075,.07),vec3(.035,.03,.04),smoothstep(.3,.9,1.-sgCd))*(.75+.5*sgFine)*(.8+.4*sgClump.r);
+sgCol=mix(sgCol,sgAsh,sgScorch);
+float sgRim=exp(-pow((sgCd-1.15)/.22,2.))*(.6+.4*sgFine);
+sgCol=mix(sgCol,vec3(.14,.12,.11)*(.8+.4*sgMid),sgRim*.55);
+// Far off, a whole meadow averages out: keep its broad patches, nothing finer.
+// Contact shade under trees, crystals and boulders (vertex w), ragged at its edge.
+sgCol*=1.-vSgSoil.w*(.55+.25*sgFine);
+diffuseColor.rgb=sgCol;
+// Micro relief for the light: blades and clumps, ripples, pebbles, bedding, the crater's glassy cracks.
+float sgRelief=sgGrass*((sgBlade-.5)*.02+(sgClump.r-.5)*.03)+sgSand*(1.-sgWet)*(sgRip-.5)*.022*sgF1+(1.-sgGrass)*(1.-sgSand)*(sgEPeb*.012+(sgFine-.5)*.01)+sgRock*smoothstep(0.,.1,sgBedF)*.06*sgF1;
+vec2 sgCv=sgP-vec2(${STAR_CRATER.x.toFixed(1)},${STAR_CRATER.z.toFixed(1)});float sgCa=atan(sgCv.y,sgCv.x);
+float sgRad=abs(sin(sgCa*5.5+sgT(sgP,6.,.2).r*5.+sgCd*2.));
+float sgCrack=max(1.-smoothstep(.03,.1,sgT(sgP,1.3,.9).a),(1.-smoothstep(.0,.06+.05*sgCd,sgRad))*smoothstep(1.2,.6,sgCd))*smoothstep(1.15,.25,sgCd)*sgF1;
+sgRelief-=sgCrack*.03*sgScorch;
+`;
+
+const GROUND_ROUGH = /* glsl */ `
+// Dew on the grass catches the moon, wet sand mirrors it, dry sand and earth are dull, the crater glass is slick.
+roughnessFactor=mix(mix(mix(.92,.88,sgSand),.86+.08*sgClump.r,sgGrass),.74,sgRock);
+roughnessFactor=mix(roughnessFactor,.28,sgWet*sgSand);
+roughnessFactor=mix(roughnessFactor,.38,sgScorch*smoothstep(1.,.4,sgCd));
+`;
+
+const GROUND_NORMAL = /* glsl */ `
+if(sgDetail>.5){
+  // The relief's slope from screen derivatives, back into the ground plane.
+  vec2 dpx=dFdx(sgP),dpy=dFdy(sgP);float dhx=dFdx(sgRelief),dhy=dFdy(sgRelief),det=dpx.x*dpy.y-dpx.y*dpy.x;
+  vec2 g=abs(det)>1e-12?clamp(vec2(dhx*dpy.y-dhy*dpx.y,dpx.x*dhy-dpy.x*dhx)/det,-.8,.8):vec2(0.);
+  vec3 nW=inverseTransformDirection(normal,viewMatrix);
+  nW=normalize(nW+vec3(-g.x,0.,-g.y));
+  normal=normalize((viewMatrix*vec4(nW,0.)).xyz);
+}
+`;
+
+const GROUND_EMISSIVE = /* glsl */ `#include <emissivemap_fragment>
+if(sgDetail>.5){
+  // Star-moss: a few glowing specks in the grass, teal or violet, each breathing on its own clock.
+  vec2 cell=floor(sgP/.9);float r=sgH(cell),r2=sgH(cell+17.3);
+  vec2 c=(cell+.2+.6*vec2(r,r2))*.9;float d=length(sgP-c);
+  float on=step(.93,r)*sgGrass*(1.-sgWorn);
+  float speck=on*(1.-smoothstep(.02,.06,d))*(.55+.45*sin(sgTime*(.6+r*1.3)+r2*40.))*sgF2;
+  totalEmissiveRadiance+=mix(vec3(.12,.55,.5),vec3(.42,.22,.75),step(.5,r2))*speck*1.6;
+  // The camp fire's warm pool and the fallen star's violet glow on the ground round them.
+  float fire=length(sgP-vec2(${(STAR_CAMP.x).toFixed(1)},${STAR_CAMP.z.toFixed(1)}));
+  totalEmissiveRadiance+=vec3(1.,.5,.2)*diffuseColor.rgb*exp(-fire*fire*.09)*(5.+.6*sin(sgTime*11.)+.4*sin(sgTime*17.3));
+  totalEmissiveRadiance+=vec3(.55,.35,1.)*diffuseColor.rgb*exp(-sgCd*sgCd*1.4)*3.;
+  // Embers of the fallen star still glow in the crater's cracks.
+  totalEmissiveRadiance+=vec3(.42,.16,.9)*sgCrack*sgScorch*(.6+.4*sin(sgTime*.7+sgMid*9.))*.9;
+}
+`;
+
+export interface StarGround {
+  mesh: THREE.Mesh;
+  texture: THREE.DataTexture;
+  /** The meadow underfoot (starMeadow.ts), once the settlement has grown it. */
+  meadow: StarMeadow | null;
+  /** The field dressing's clock (starFields.ts). */
+  fields: StarFields | null;
+  update(time: number, quality: 'high' | 'low', camera: THREE.Camera, player: THREE.Vector3): void;
+}
+
+/** The island's ground over the gameplay grid; `height` is the island surface (HiddenWorld.height). */
+export function starGround(height: (x: number, z: number) => number, anisotropy: number): StarGround {
+  const {nx, nz, step, minX, minZ} = STAR_GRID;
+  const land = new THREE.PlaneGeometry((nx - 1) * step, (nz - 1) * step, nx - 1, nz - 1); land.rotateX(-Math.PI / 2);
+  const pos = land.attributes.position, colors: number[] = [], soil: number[] = [], field: number[] = [], c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i), y = height(x, z);
+    pos.setY(i, y); starWildTint(x, z, y, height, c); colors.push(c.r, c.g, c.b);
+    soil.push(...starSoil(x, z, y), starShade(x, z)); field.push(starFieldValue(x, z, y));
+  }
+  if (Math.abs(pos.getX(0) - minX) > 1e-6 || Math.abs(pos.getZ(0) - minZ) > 1e-6) throw new Error('starGround: mesh and grid disagree');
+  land.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  land.setAttribute('aSoil', new THREE.Float32BufferAttribute(soil, 4));
+  land.setAttribute('aField', new THREE.Float32BufferAttribute(field, 1));
+  land.computeVertexNormals();
+  const texture = noiseTexture(); texture.anisotropy = anisotropy;
+  const uniforms = {sgTex: {value: texture}, sgTime: {value: 0}, sgDetail: STAR_DETAIL};
+  // `map` holds the noise for the anisotropy setting and disposal; the shader reads it itself.
+  const material = new THREE.MeshStandardMaterial({map: texture, vertexColors: true, roughness: .9, metalness: 0});
+  material.name = 'starhaven-night-ground';
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aSoil;\nattribute float aField;\nvarying vec3 vSgW;\nvarying vec3 vSgN;\nvarying vec4 vSgSoil;\nvarying float vSgField;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvSgW=(modelMatrix*vec4(transformed,1.)).xyz;vSgN=normalize(mat3(modelMatrix)*objectNormal);vSgSoil=aSoil;vSgField=aField;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${GROUND_HEAD}`)
+      .replace('#include <map_fragment>', '')
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${GROUND_COLOR}`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${GROUND_ROUGH}`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${GROUND_NORMAL}`)
+      .replace('#include <emissivemap_fragment>', GROUND_EMISSIVE);
+    injectStarLight(shader, 'vSgW');
+  };
+  material.customProgramCacheKey = () => 'starhaven-night-ground';
+  const mesh = new THREE.Mesh(land, material); mesh.name = 'star-island-ground'; mesh.receiveShadow = true;
+  return {
+    mesh, texture, meadow: null, fields: null,
+    update(time, quality, camera, player) { uniforms.sgTime.value = time; STAR_DETAIL.value = quality === 'low' ? 0 : 1; this.meadow?.update(time, camera, player, quality); this.fields?.update(time); },
+  };
+}
+
+const smooth = THREE.MathUtils.smoothstep;
+let shadeSpots: [number, number, number][] | null = null;
+/** 0..0.7 contact shade at (x, z): the ground darkens under each tree's crown, crystal and boulder. */
+export function starShade(x: number, z: number): number {
+  if (!shadeSpots) {
+    shadeSpots = [
+      ...starForestSpots().filter((p) => !p.rock).map((p) => [p.x, p.z, 2.6 * p.scale] as [number, number, number]),
+      ...GARDEN_TREES.map(([gx, gz]) => [gx, gz, 2.4] as [number, number, number]),
+      ...starCrystalGarden(() => 0).map((c) => [c.x, c.z, c.solid.r * 1.6 + .8] as [number, number, number]),
+      ...starBoulders().map((b) => [b.x, b.z, b.r * 1.5 + .3] as [number, number, number]),
+    ];
+  }
+  let ao = 0;
+  for (const [sx, sz, r] of shadeSpots) { const dx = x - sx, dz = z - sz; if (Math.abs(dx) > r || Math.abs(dz) > r) continue; ao = Math.max(ao, 1 - smooth(Math.hypot(dx, dz), r * .25, r)); }
+  // Out in the lighter wilds the shade under a crown or a stone is deeper, so the fields keep their darks (star r5).
+  return ao * (.7 + .2 * starWildness(x, z));
+}
+/** How much (x, z) is open meadow, where the fields' large-scale value (starFieldWear) applies: grassy, outside the town and the sanctum's ring. */
+export function starOpenMeadow(x: number, z: number, grass: number, town = 0, arena = 0): number {
+  return smooth(grass, .5, .8) * (1 - town) * (1 - arena) * smooth(Math.hypot(x, z + 75), 26, 32);
+}
+/** The meadow's value per point, 0 (lush) .. 0.5 (plain) .. 1 (worn), only in open meadow (plain elsewhere). */
+export function starFieldValue(x: number, z: number, y: number): number {
+  const [, grass] = starSoil(x, z, y), rect = Math.hypot(Math.max(-50 - x, 0, x - 50), Math.max(6 - z, 0, z - 97));
+  const open = starOpenMeadow(x, z, grass, 1 - smooth(rect, 0, 7), 1 - smooth(Math.hypot(x, z + 75), 22, 28));
+  const [lush, wear] = starFieldWear(x, z);
+  // The dead ends' earth paths are trodden pale wherever they run (star r5).
+  const value = .5 + (wear * .5 - lush * .5) * open, spur = starSpurWear(x, z);
+  return spur > 0 ? Math.max(value, .5 + .5 * spur) : value;
+}
+/** Per vertex: how sandy, how grassy and how worn the ground is (0..1 each). */
+export function starSoil(x: number, z: number, y: number): [number, number, number] {
+  const {r} = starCoast(x, z);
+  const sand = Math.max(starSand(x, z), 1 - smooth(y, -.8, .9));
+  const trail = 1 - smooth(starTrailDistance(x, z), 1.3, 3.6);
+  const rect = (ax: number, bx: number, az: number, bz: number) => Math.hypot(Math.max(ax - x, 0, x - bx), Math.max(az - z, 0, z - bz));
+  // Inside the town the ground is trodden earth with grass in the quiet corners; the arena's ring is bare.
+  const town = 1 - smooth(rect(-50, 50, 6, 97), 0, 7), avenue = 1 - smooth(Math.abs(x), 6, 9.5) * 1;
+  const arena = 1 - smooth(Math.hypot(x, z + 75), 22, 28);
+  let crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .75, STAR_CRATER.r * 1.2);
+  for (const s of STAR_SCORCHES) crater = Math.max(crater, (1 - smooth(Math.hypot(x - s.x, z - s.z), s.r * .5, s.r * 1.05)) * .85);
+  // Bare, trodden spots through the town's lawns (a few metres across, where feet and carts go), so a lawn has
+  // large value steps of turf and earth instead of one even mat.
+  const bare = town * smooth(starNoise(x / 7, z / 7, 63) + starNoise(x / 2.5, z / 2.5, 64) * .3, .16, .3);
+  let worn = Math.max(trail * .75, town * .22, bare * .9, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater, starSpurWear(x, z) * .95);
+  // The sanctum's surround keeps a thin, patchy turf (tussocks and stones, starMeadow.ts and starFields.ts) instead of bare dirt.
+  const grass = Math.max(0, 1 - sand * 1.1 - smooth(r, .9, .95)) * (1 - town * .12) * (1 - arena * .6) * (1 - crater * .8);
+  // Out in the open meadow: bare trodden patches and tracks (starFieldWear) thin the sward to short turf.
+  worn = Math.max(worn, starFieldWear(x, z)[1] * .72 * starOpenMeadow(x, z, grass, town, arena));
+  return [sand, grass, worn];
+}
