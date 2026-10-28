@@ -34,7 +34,7 @@ export class ObjectiveMarker {
   /** Starhaven's guidance (starGuide.ts: moonlit glints, a ring and rising motes at the goal) instead of the gold beam, crumbs and chevron; set by World II. */
   star = false;
   private starGuide: StarGuide | null = null;
-  /** Emberreach's brass studs with coals and arrowhead (emberGuide.ts) instead of the chevron and crumbs; set by World V. */
+  /** Emberreach's lava-stone markers with glowing cracks and arrowhead (emberGuide.ts) instead of the chevron and crumbs; set by World V. */
   ember = false;
   private emberGuide: EmberGuide | null = null;
 

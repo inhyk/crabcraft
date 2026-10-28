@@ -135,41 +135,56 @@ function apron(b: Builder, ground: (x: number, z: number) => number, cx: number,
 }
 
 /**
- * Columnar basalt: a mass of near-touching hexagonal columns on a jittered hex lattice. The top is a mesa (not a
- * cone, which read as stairs): level over most of the footprint, tilted toward one face, falling over its outer
- * column or two, with neighbouring columns broken at different heights and a few snapped short. The whole stack
- * leans a few degrees; talus buries the feet, fallen drums and angular blocks lie on it, and a column or two leans
- * out of the face where it broke away.
+ * Columnar basalt: bundles of 7 to 20 hexagonal columns on their own jittered lattices, set apart with talus between
+ * them. In each bundle the heights fall away from an off-centre peak (tallest two to four times the shortest), every
+ * top is broken on a tilted plane and a few columns are snapped short, so no outline is a flat-topped or stepped mass.
+ * The stack leans a few degrees; talus buries the feet, fallen drums and angular blocks lie on it, and a column or
+ * two leans out of the face where it broke away.
  */
 function columnCluster(b: Builder, ground: (x: number, z: number) => number, e: EmberFeature) {
  const R = rng(e.seed), cy = Math.cos(e.yaw), sy = Math.sin(e.yaw);
- const sp = Math.min(.9, .55 + .035 * e.h + .1 * R()), ar = .68 + .22 * R(), n = Math.ceil(e.r / (sp * .866)) + 1;
+ const sp = Math.min(1, .66 + .035 * e.h + .1 * R()), tile = sp * .577;
  const la = R() * Math.PI * 2, lean = .03 + .05 * R(), lx0 = Math.sin(la) * lean, lz0 = Math.cos(la) * lean;
- const fa = R() * Math.PI * 2, fx = Math.cos(fa), fz = Math.sin(fa);
+ const fa = R() * Math.PI * 2;
  const toW = (lx: number, lz: number): [number, number] => [e.x + lx * cy + lz * sy, e.z - lx * sy + lz * cy];
  const palette = ['#363941', '#30333b', '#3d3f47', '#2b2e36', '#3a383f', '#33353b'];
- const rot = -e.yaw - Math.PI / 6;
  const edgeLoc: number[] = new Array(48).fill(0);
- const tile = sp * .577;
- for (let j = -n; j <= n; j++) for (let i = -n; i <= n; i++) {
-  const lx = (i + j * .5) * sp + (R() - .5) * .06 * sp, lz = j * sp * .866 + (R() - .5) * .06 * sp;
-  const d = Math.hypot(lx / e.r, lz / (e.r * ar));
-  const rag = .12 * vnoise(lx * .5 + e.seed, 1.7, lz * .5);
-  if (d > .98 + rag) continue;
-  if (d > .82 + rag && R() < .3) continue;
-  const [x, z] = toW(lx, lz), g = ground(x, z);
-  // Mesa profile, a tilt toward one face, broad swells and column-scale breaks.
-  const side = (lx * fx + lz * fz) / e.r;
-  let h = e.h * (1 - .82 * Math.pow(Math.max(0, (d - .5) / .5), 1.8)) * (1 + .14 * side);
-  h *= 1 + .22 * vnoise(lx * .55 + e.seed * .1, 4.2, lz * .55) + (R() - .5) * .3;
-  const snapped = R() < (d > .7 ? .24 : .1);
-  if (snapped) h *= .35 + .4 * R();
-  h = Math.max(.4, h);
-  const th = Math.atan2(z - e.z, x - e.x), bin = Math.floor(((th / (Math.PI * 2)) + 1) % 1 * 48);
-  edgeLoc[bin] = Math.max(edgeLoc[bin], Math.hypot(x - e.x, z - e.z) + tile);
-  const ax: V3 = [lx0 + (R() - .5) * .03, 1, lz0 + (R() - .5) * .03], al = Math.hypot(ax[0], ax[1], ax[2]); ax[0] /= al; ax[1] /= al; ax[2] /= al;
-  const tilt = snapped ? .55 : .2;
-  prism(b, [x, g - 1.2, z], ax, rot + (R() - .5) * .07, h + 1.2, tile * (.92 + .05 * R()), (R() - .5) * tilt, (R() - .5) * tilt, C(palette[Math.floor(R() * palette.length)], .78 + .44 * R()), R() * 100);
+ // Bundles of 7 to 20 columns each, set apart with talus between them; one or two on a small stack, up to five on a big one.
+ const nb = Math.max(1, Math.min(5, Math.round(e.r * e.r / 7)));
+ const bundles: {x: number; z: number; rb: number; n: number; H: number}[] = [];
+ for (let k = 0, tries = 0; k < nb && tries < 60; tries++) {
+  const n = 7 + Math.floor(R() * 14), rb = sp * Math.sqrt(n * .866 / Math.PI) + .2;
+  const a = R() * Math.PI * 2, d = k === 0 ? R() * e.r * .25 : (e.r - rb) * (.45 + .55 * R());
+  const bx = Math.cos(a) * d, bz = Math.sin(a) * d * .85;
+  if (Math.hypot(bx, bz) + rb > e.r * 1.05 && k > 0) continue;
+  if (bundles.some((o) => Math.hypot(o.x - bx, o.z - bz) < (o.rb + rb) * .8)) continue;
+  bundles.push({x: bx, z: bz, rb, n, H: e.h * (k === 0 ? 1 : .5 + .45 * R())}); k++;
+ }
+ for (const bu of bundles) {
+  // The bundle's own lattice: turned its own way, the cells nearest its centre taken (a compact, ragged bunch).
+  const brot = R() * Math.PI / 3, bc = Math.cos(brot), bs = Math.sin(brot), m = Math.ceil(bu.rb / sp) + 2, cells: [number, number, number][] = [];
+  for (let j = -m; j <= m; j++) for (let i = -m; i <= m; i++) {
+   const u = (i + j * .5) * sp, v = j * sp * .866, lx = bu.x + u * bc - v * bs, lz = bu.z + u * bs + v * bc;
+   cells.push([lx, lz, Math.hypot(u, v) + R() * sp * .45]);
+  }
+  cells.sort((p, q) => p[2] - q[2]);
+  const peakA = R() * Math.PI * 2, px = bu.x + Math.cos(peakA) * bu.rb * .45, pz = bu.z + Math.sin(peakA) * bu.rb * .45;
+  const bl: V3 = [lx0 + (R() - .5) * .05, 1, lz0 + (R() - .5) * .05];
+  const rot = -e.yaw - brot - Math.PI / 6;
+  for (const [lx, lz] of cells.slice(0, bu.n)) {
+   const [x, z] = toW(lx, lz), g = ground(x, z);
+   // Heights fall away from an off-centre peak: the shortest about a third of the tallest; some snapped lower still.
+   const dp = Math.min(1, Math.hypot(lx - px, lz - pz) / (bu.rb * 1.3));
+   let h = bu.H * (.3 + .7 * Math.pow(1 - dp, 1.1)) * (.86 + .28 * R());
+   if (R() < .12) h *= .45 + .3 * R();
+   h = Math.max(.5, h);
+   const th = Math.atan2(z - e.z, x - e.x), bin = Math.floor(((th / (Math.PI * 2)) + 1) % 1 * 48);
+   edgeLoc[bin] = Math.max(edgeLoc[bin], Math.hypot(x - e.x, z - e.z) + tile);
+   const ax: V3 = [bl[0] + (R() - .5) * .03, 1, bl[2] + (R() - .5) * .03], al = Math.hypot(ax[0], ax[1], ax[2]); ax[0] /= al; ax[1] /= al; ax[2] /= al;
+   // Every top broken: cut on a tilted plane, some steeply.
+   const tilt = .3 + .45 * R(), ta = R() * Math.PI * 2;
+   prism(b, [x, g - 1.2, z], ax, rot + (R() - .5) * .07, h + 1.2, tile * (.92 + .05 * R()), Math.cos(ta) * tilt, Math.sin(ta) * tilt, C(palette[Math.floor(R() * palette.length)], .78 + .44 * R()), R() * 100);
+  }
  }
  // Fill gaps in the outline so the talus hugs the stack.
  for (let k = 0; k < 48; k++) if (!edgeLoc[k]) edgeLoc[k] = Math.max(edgeLoc[(k + 47) % 48], edgeLoc[(k + 1) % 48]) || e.r * .6;
