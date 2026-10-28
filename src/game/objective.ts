@@ -7,6 +7,7 @@ import { C } from './vfx/vfx';
 import { FrostGuide } from './frostGuide';
 import { DawnGuide } from './dawnGuide';
 import { StarGuide } from './starGuide';
+import { EmberGuide } from './emberGuide';
 
 const CRUMBS = 9;
 const SPACING = 2.2;
@@ -33,6 +34,9 @@ export class ObjectiveMarker {
   /** Starhaven's guidance (starGuide.ts: moonlit glints, a ring and rising motes at the goal) instead of the gold beam, crumbs and chevron; set by World II. */
   star = false;
   private starGuide: StarGuide | null = null;
+  /** Emberreach's brass studs with coals and arrowhead (emberGuide.ts) instead of the chevron and crumbs; set by World V. */
+  ember = false;
+  private emberGuide: EmberGuide | null = null;
 
   constructor(fx: FxPool) {
     this.beam = fx.spawn('pillar', Infinity);
@@ -105,6 +109,14 @@ export class ObjectiveMarker {
       return;
     }
     this.dawnGuide?.hide();
+    if (this.ember) {
+      this.chevron.visible = this.crumbs.visible = false;
+      this.emberGuide ??= new EmberGuide(this.group);
+      if (near || !target) { this.emberGuide.hide(); return; }
+      this.emberGuide.update(time, world, from, via ?? target, dist, !combat);
+      return;
+    }
+    this.emberGuide?.hide();
     this.chevron.visible = !near && !combat && !this.star;
     this.crumbs.visible = !near && !combat && dist > 10 && !this.star;
     if (near || !target) return;
@@ -150,6 +162,7 @@ export class ObjectiveMarker {
     this.frostGuide?.dispose();
     this.dawnGuide?.dispose();
     this.starGuide?.dispose();
+    this.emberGuide?.dispose();
     this.group.removeFromParent();
   }
 }
