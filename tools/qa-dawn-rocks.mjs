@@ -9,7 +9,7 @@
 //  - in the game: every main stone is buried 20-40 % of its height by the sand round its foot, each hoodoo is one
 //    column narrowing downward (its lowest band above the sand under 0.85 of its widest band under the cap) under a cap
 //    at most 1.3 times that; every site is registered in the island's collision (and so in the server bake), clear of villagers
-//    and enemy homes;
+//    and enemy homes, and pushes no quest prop off its point;
 //  - the obelisk: the sand over its axis a third of the way up its shaft, a drift over its foot;
 //  - zero page, shader or GL errors at high and low quality; low quality builds the same rocks.
 //   CC_QA_BASE=http://127.0.0.1:5630 node tools/qa-dawn-rocks.mjs
@@ -91,6 +91,12 @@ try {
     const w3 = await import('/src/game/world3Colliders.ts'), m = await import('/src/game/dawnDuneClusters.ts');
     const sites = w3.dawnRocks();
     const registered = sites.filter((s) => t.collision.solidAt(s.x, t.height(s.x, s.z) + 1, s.z)).length;
+    // No rock pushes a quest prop off its point (dawnRequests.ts resolves each prop, radius 1, against the collision).
+    const q = await import('/src/sim/data/quests.ts'), pushed = [];
+    for (const [id, [x, z]] of Object.entries(q.DAWN_POINTS)) {
+      const out = t.collision.resolve(x, z, 1, {x: 0, y: 0, set(a, b) { this.x = a; this.y = b; return this; }});
+      if (Math.hypot(out.x - x, out.y - z) > 1e-6 && sites.some((s) => Math.hypot(s.x - x, s.z - z) < s.r + 3)) pushed.push(id);
+    }
     const homes = g.enemies.map((e) => [e.home?.x ?? e.unit.pos.x, e.home?.z ?? e.unit.pos.z]).filter(([x, z]) => Math.hypot(x, z) > .5);
     const folk = g.units.filter((u) => !g.enemies.some((e) => e.unit === u) && u !== g.player.unit).map((u) => [u.pos.x, u.pos.z]);
     let enemy = Infinity, villager = Infinity, worst = '';
@@ -109,7 +115,7 @@ try {
     fx /= nf; fy /= nf; fz /= nf; tx /= nt; ty /= nt; tz /= nt;
     const axis = (f) => { const x = fx + (tx - fx) * f, y = fy + (ty - fy) * f, z = fz + (tz - fz) * f; return +(t.height(x, z) - y).toFixed(2); };
     for (const pc of parts.pieces) pc.g.dispose();
-    return {worst, mains: rocks.userData.mains, stones: rocks.userData.stones, sites: sites.length, registered, enemy, villager, homes: homes.length, folk: folk.length,
+    return {pushed, worst, mains: rocks.userData.mains, stones: rocks.userData.stones, sites: sites.length, registered, enemy, villager, homes: homes.length, folk: folk.length,
       obelisk: {at: [ob.x, ob.z], third: axis(1 / 3), quarter: axis(.25), half: axis(.5), foot: axis(0)}};
   });
   const bury = r.mains.map((s) => ({i: s.i, tall: s.tall, f: (s.foot - s.base) / (s.top - s.base)}));
@@ -120,6 +126,7 @@ try {
     const w = s.width, low = w.slice(0, 3).find((v) => v > 0), col = Math.max(...w.slice(3, 8)), cap = Math.max(...w.slice(8));
     assert.ok(low < .85 * col && cap <= 1.3 * col, `hoodoo ${s.i}: one column narrowing downward under a cap a little wider: ${w.join(' ')}`);
   }
+  assert.deepEqual(r.pushed, [], 'no rock pushes a quest prop off its point');
   assert.equal(r.registered, r.sites, `every rock site registered in the island's collision: ${r.registered}/${r.sites}`);
   assert.ok(r.homes > 10 && r.folk > 5 && r.enemy > 1.5 && r.villager > 4, `rocks clear of enemy homes (${r.enemy.toFixed(1)} m, ${r.worst}) and villagers (${r.villager.toFixed(1)} m)`);
   assert.ok(r.obelisk.third > 0 && r.obelisk.foot > 1, `the obelisk's axis is under the sand a third of the way up: ${JSON.stringify(r.obelisk)}`);

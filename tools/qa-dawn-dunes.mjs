@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {launchBrowser} from './lib/browser.mjs';
 import {dawnHeight, DAWN_ARENA_HEIGHT} from '../src/sim/world/ground.ts';
-import {dawnCoastHeight, dawnShoreStart, sandMainland, RX, RZ, CZ} from '../src/sim/world/dawnGround.ts';
+import {dawnCoastHeight, dawnShoreStart, rockSand, sandMainland, RX, RZ, CZ} from '../src/sim/world/dawnGround.ts';
 import {DAWN_POINTS} from '../src/sim/data/quests.ts';
 
 const base = process.env.CC_QA_BASE ?? 'http://127.0.0.1:5626';
@@ -31,7 +31,9 @@ await mkdir('tmp/qa', {recursive: true});
 if (!measureOnly) {
   const keep = [[-12, 84], [0, 82], [14, 84], [-16, 48], [16, 48], [-26, 38], [26, 38], [-20, 64], [20, 80], [20, 64], [-55, 36], [55, 36], [55, -25], [0, -40], [0, -44], [67, 72], ...Object.values(DAWN_POINTS)];
   for (let x = -40; x <= 20; x += 1) for (let z = 90; z <= 160; z += 2) keep.push([x, z]);
-  for (let x = -60; x <= 60; x += 2) for (let z = -110; z <= -30; z += 2) if (Math.hypot(x / RX, (z - CZ) / RZ) < .84) keep.push([x, z]);
+  // The plateau, but for the sand the wind piles round its ring of rocks (dawn-rocks: rockSand, never on a quest point,
+  // the avenue or the arena; qa-dawn-rocks holds those exactly).
+  for (let x = -60; x <= 60; x += 2) for (let z = -110; z <= -30; z += 2) if (Math.hypot(x / RX, (z - CZ) / RZ) < .84 && rockSand(x, z) === 0) keep.push([x, z]);
   for (let z = 94; z >= -49; z -= 1) for (const x of [-4.2, 0, 4.2]) keep.push([x, z]);
   for (let r = 0; r <= 21; r += 3) for (let i = 0; i < 24; i++) keep.push([Math.sin(i / 24 * Math.PI * 2) * r, -72 + Math.cos(i / 24 * Math.PI * 2) * r]);
   let off = 0, reach = 0;
