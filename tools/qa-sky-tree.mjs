@@ -63,7 +63,7 @@ try{
   assert.ok(r.stats.crownTop>=55&&r.stats.crownTop<=70,`crown top ${r.stats.crownTop} m`);assert.equal(r.stats.limbs,5);assert.ok(r.stats.spills>=8,`roots over the lip ${r.stats.spills}`);
   assert.equal(r.stats.columns,8);assert.ok(r.stats.lanterns>=15,`lanterns ${r.stats.lanterns}`);assert.ok(r.stats.roots>=20,`roots ${r.stats.roots}`);
   assert.ok(r.stats.cards>(quality==='high'?900:450),`cards ${r.stats.cards}`);assert.ok(r.crownDepth,'crown casts leafy shadows');
-  for(const [name,x,z,yaw,pitch,dist] of [['tree',0,-40,0,.12,30],['approach',0,-30,0,.22,26],['arena',0,-75,0,.5,34],['north',0,-118,3.14,.15,40]]){
+  for(const [name,x,z,yaw,pitch,dist] of [['tree',0,-40,0,.12,30],['approach',0,-30,0,.22,26],['arena',0,-75,0,.5,34]]){
    await p.evaluate(([x,z,yaw,pitch,dist])=>{const g=window.app.current.game;g.player.unit.teleport(g.world,x,z,yaw+Math.PI);g.follow.yaw=yaw;g.follow.pitch=pitch;g.follow.distance=dist;g.follow.cut();},[x,z,yaw,pitch,dist]);
    await p.waitForTimeout(1500);await p.screenshot({path:`tmp/qa/sky-tree-${quality}-${name}.png`});
   }
