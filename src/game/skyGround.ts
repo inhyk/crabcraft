@@ -167,6 +167,9 @@ float sgDab=smoothstep(sgSpT,sgSpT+.05,sgSpN)*(1.-sgF2)*sgF1*step(.05,sgFl);
 float sgSpH=sgT(sgP,2.9,.61).b;
 sgCol=mix(sgCol,(sgSpH>.8?sgBloom(fract(sgA.g+.5)):sgFc)*(.85+.3*sgSpH),sgDab*.85);
 sgCol=mix(sgCol,sgCol*.65+sgFc*.35,smoothstep(.2,.9,sgFl)*(1.-sgF1)*.35);
+// Turf floor near the camera: the gaps between the blades sit in the sward's own shade (cool, deep), so a sunlit
+// field up close keeps darks between its blades instead of reading as a pale wash (r3, east view p10).
+sgCol=mix(sgCol,sgCol*vec3(.42,.5,.55),sgGrass*(1.-sgWorn)*(1.-sgClv)*sgF2*(1.-smoothstep(.32,.6,sgBlade))*.85);
 // Contact shade: blue-violet, deepest at the foot, ragged at its edge.
 float sgAo=sgA.r*(.75+.5*sgFine);
 sgCol*=mix(vec3(1.),vec3(.52,.58,.7),sgAo);
