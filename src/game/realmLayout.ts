@@ -13,7 +13,8 @@ export function frontierTrees(chapter:FrontierChapter){
 export function layoutFrontier(chapter:FrontierChapter){
  const heightAt=(x:number,z:number)=>realmHeight(chapter,x,z);
  const col=new Collision({minX:-150,minZ:-175,step:2,nx:151,nz:176,h:new Float32Array(151*176),heightAt});
- for(const side of [-1,1])for(let i=0;i<3;i++){const x=side*30,z=38+i*18,y=heightAt(x,z);col.addBox(x,z,5.3,5.8,0,y,y+10);}
+ // World VI's six street houses; World V's ring of houses round the furnace yard comes from layoutEmberTown.
+ if(chapter===6)for(const side of [-1,1])for(let i=0;i<3;i++){const x=side*30,z=38+i*18,y=heightAt(x,z);col.addBox(x,z,5.3,5.8,0,y,y+10);}
  if(chapter===5)layoutEmberGround(col,heightAt);else for(const {x,z,s}of frontierTrees(chapter)){const y=heightAt(x,z);col.addCircle(x,z,.7*s,y,y+12*s);}
  if(chapter===6)col.addCircle(0,-112,6,heightAt(0,-112),heightAt(0,-112)+36);else col.addCircle(0,-128,24,heightAt(0,-128),heightAt(0,-128)+36);
  if(chapter===5)layoutEmberTown(col,heightAt);
