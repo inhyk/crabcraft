@@ -401,7 +401,7 @@ export function starPaving(height: (x: number, z: number) => number, paths: Isla
     const hw = s.half * (.66 + .34 * THREE.MathUtils.smoothstep(tEnd, 0, FRAY)), he = s.half * .66, ov = he - tEnd;
     return ov > 0 ? Math.hypot(ov, across) - he : across - hw;
   };
-  root.userData.paved = (x: number, z: number) => holeDist(x, z) >= 0 && (tileOf(x, z).some((k) => frayed(segs[k], x, z) <= .05) || padDist(x, z) <= .05);
+  root.userData.paved = (x: number, z: number) => holeDist(x, z) >= 0 && (tileOf(x, z).some((k) => frayed(segs[k], x, z) <= .12) || padDist(x, z) <= .12);
   root.userData.covers = (x: number, z: number) => holeDist(x, z) >= 0 && (onIslandPath(paths, x, z) || padDist(x, z) <= .3);
   root.userData.stats = {segments: segs.length, pads: pads.length, holes: holes.length, cells: index.length / 6, vertices: pos.length / 3, tiles: tiles.length, maxPerTile: Math.max(...tiles.map(t => t.length))};
   return {root};

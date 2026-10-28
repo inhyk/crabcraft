@@ -42,11 +42,14 @@ export function starWildTint(x: number, z: number, y: number, height: (x: number
   if (w <= 0) return out;
   const relief = THREE.MathUtils.clamp(starRelief(height, x, z), -1.6, 1.6);
   const swathe = starNoise(x / 26, z / 26, 311) + starNoise(x / 9, z / 9, 312) * .25;
-  teal.setRGB(.92, 1.06, 1.04);violet.setRGB(1.06, .94, 1.1);
+  teal.setRGB(.96, 1.04, 1.03);violet.setRGB(1.05, .95, 1.08);
   const hue = swathe > 0 ? teal.lerp(white, 1 - smooth(swathe, 0, .35)) : violet.lerp(white, 1 - smooth(-swathe, 0, .35));
   out.multiply(hue);
   // Hollows sink further than rises lift, so the lighter fields keep their darks (the frame's value range widens).
-  return out.multiplyScalar(Math.max(.45, 1 + w * (.72 + relief * (relief < 0 ? .34 : .2) + swathe * .14)));
+  out.multiplyScalar(Math.max(.45, 1 + w * (.72 + relief * (relief < 0 ? .34 : .2) + swathe * .14)));
+  // Moonlight greys what it lifts: the lighter fields lose a little saturation, so they read silvered, not teal neon.
+  const l = out.r * .2126 + out.g * .7152 + out.b * .0722, k = 1 - .22 * w;
+  return out.setRGB(l + (out.r - l) * k, l + (out.g - l) * k, l + (out.b - l) * k);
 }
 
 export interface StarWildClump { x: number; z: number; r: number; n: number; tint: 0 | 1 | 2 }
