@@ -28,12 +28,12 @@ export function houseToWorld(hs: {x: number; z: number; yaw: number}, lx: number
 /** Each trade's yard props in the house frame (lx, lz, radius): the solids in front of and beside the walls. */
 const WZ = HOUSE.WZ, WX = HOUSE.WX;
 export const HOUSE_YARD: Record<HouseRole, [number, number, number][]> = {
-  chandler: [[4.25, WZ + 1.75, 1.0], [3.0, WZ + 2.6, .5]],
+  chandler: [[4.25, WZ + 1.75, 1.0], [3.3, WZ + 2.6, .5]],
   lantern: [[2.75, WZ + 1.7, .2], [5.05, WZ + 1.7, .2], [-3.6, WZ + 1.6, .85]],
   maps: [[-3.6, WZ + 1.4, .45], [3.9, WZ + 1.3, .5]],
-  inn: [[3.6, WZ + 2.2, 1.25], [-WX - .58, 1.95, .85], [5.3, WZ + 3.6, .15]],
-  tea: [[2.8, WZ + 2.1, 1.05], [4.5, WZ + 1.8, 1.05], [2.0, WZ + 3.2, .15], [5.2, WZ + 3.2, .15]],
-  garden: [[3.8, WZ + 1.7, 1.0], [-3.5, WZ + 1.5, .9], [2.7, WZ + 2.6, .35]],
+  inn: [[3.9, WZ + 2.2, 1.25], [-WX - .58, 1.95, .85], [5.3, WZ + 3.6, .15]],
+  tea: [[3.5, WZ + 2.1, 1.05], [5.2, WZ + 1.8, 1.05], [2.7, WZ + 3.2, .15], [5.9, WZ + 3.2, .15]],
+  garden: [[3.8, WZ + 1.7, 1.0], [-3.5, WZ + 1.5, .9], [3.0, WZ + 2.6, .35]],
 };
 
 /**
@@ -52,28 +52,33 @@ export function clearOfWays(x: number, z: number, gap: number): [number, number]
 }
 const away = <T extends {x: number; z: number}>(o: T, gap: number): T => { const [x, z] = clearOfWays(o.x, o.z, gap); return {...o, x, z}; };
 
-/** Market stalls facing the high street (yaw: local +z toward the road). */
-export const SKY_STALLS: {x: number; z: number; yaw: number; goods: 'seeds' | 'kites'}[] = [
-  away({x: -11.5, z: 19, yaw: Math.PI / 2, goods: 'seeds' as const}, 4.4),
-  away({x: 11.5, z: 21, yaw: -Math.PI / 2, goods: 'kites' as const}, 4.4),
-];
-/** A hand cart of pollen jars and sacks beside the kite stall. */
-export const SKY_CART = away({x: 10.5, z: 14.5, yaw: -2.2}, 2.2);
-/**
- * Carved lantern posts, gathered where people stop: the market (two by the stalls), the harbour head (by the sheds)
- * and each bench scene. Hanging lanterns on the houses and festoons over the street ends light the rest of the town.
- */
-export const SKY_LANTERNS: [number, number][] = [
-  [-14.6, 23.4], [14.2, 16.6], [-6.4, 98.5], [7.2, 96.8],
-  ...([[10.6, 45.6], [-10.6, 66.4], [-11.2, 28.2]] as [number, number][]),
-].map(([x, z]) => clearOfWays(x, z, 1.2));
-/** Cloth banners on tall poles: a pair at the harbour gate, a cluster of three round the market. */
-export const SKY_BANNERS: [number, number][] = ([[-6.5, 91], [6.5, 91], [-15.2, 16.2], [15.6, 24.4], [16.8, 13.6]] as [number, number][])
-  .map(([x, z]) => clearOfWays(x, z, 1.3));
-/** Benches with planters around them (yaw: the way a sitter faces). */
-export const SKY_BENCHES: {x: number; z: number; yaw: number}[] = [
-  {x: 9, z: 47, yaw: -Math.PI / 2}, {x: -9, z: 65, yaw: Math.PI / 2}, {x: -9.5, z: 26.5, yaw: Math.PI / 2 + .3},
-].map(b => away(b, 2.4));
+export interface SkyTownPlan {
+  /** Market stalls facing the high street (yaw: local +z toward the road). */
+  stalls: {x: number; z: number; yaw: number; goods: 'seeds' | 'kites'}[];
+  /** A hand cart of pollen jars and sacks beside the kite stall. */
+  cart: {x: number; z: number; yaw: number};
+  /**
+   * Carved lantern posts, gathered where people stop: the market (two by the stalls), the harbour head (by the sheds)
+   * and each bench scene. Hanging lanterns on the houses and festoons over the street ends light the rest of the town.
+   */
+  lanterns: [number, number][];
+  /** Cloth banners on tall poles: a pair at the harbour gate, a cluster of three round the market. */
+  banners: [number, number][];
+  /** Benches with planters around them (yaw: the way a sitter faces). */
+  benches: {x: number; z: number; yaw: number}[];
+}
+let plan: SkyTownPlan | null = null;
+/** The street furniture, stepped off the ways on first use (the ways module may still be loading at import time). */
+export function skyTownPlan(): SkyTownPlan {
+  if (plan) return plan;
+  return plan = {
+    stalls: [away({x: -11.5, z: 19, yaw: Math.PI / 2, goods: 'seeds' as const}, 4.4), away({x: 11.5, z: 21, yaw: -Math.PI / 2, goods: 'kites' as const}, 4.4)],
+    cart: away({x: 10.5, z: 14.5, yaw: -2.2}, 2.2),
+    lanterns: ([[-14.6, 23.4], [14.2, 16.6], [-6.4, 98.5], [7.2, 96.8], [10.6, 45.6], [-10.6, 66.4], [-11.2, 28.2]] as [number, number][]).map(([x, z]) => clearOfWays(x, z, 1.2)),
+    banners: ([[-6.5, 91], [6.5, 91], [-15.2, 16.2], [15.6, 24.4], [16.8, 13.6]] as [number, number][]).map(([x, z]) => clearOfWays(x, z, 1.3)),
+    benches: [{x: 9, z: 47, yaw: -Math.PI / 2}, {x: -9, z: 65, yaw: Math.PI / 2}, {x: -9.5, z: 26.5, yaw: Math.PI / 2 + .3}].map(b => away(b, 2.4)),
+  };
+}
 /** Festoons of paper lanterns across the street end in front of three houses: the two poles' house-frame spots. */
 export const SKY_FESTOONS: {house: number; poles: [[number, number], [number, number]]}[] = [
   {house: 0, poles: [[-3.5, WZ + 3.0], [3.5, WZ + 3.8]]},
@@ -113,10 +118,11 @@ export function layoutSkyTown(col: Collision, heightAt: (x: number, z: number) =
     const y = heightAt(hs.x, hs.z); col.addBox(hs.x, hs.z, WX + .25, WZ + .25, hs.yaw, y - 2, y + 12);
     for (const [lx, lz, r] of HOUSE_YARD[hs.role]) { const [x, z] = houseToWorld(hs, lx, lz); post(x, z, r, 2.6); }
   }
-  for (const s of SKY_STALLS) { const y = heightAt(s.x, s.z); col.addBox(s.x, s.z, 2.4, 1.3, s.yaw, y - 1, y + 3.4); }
-  { const y = heightAt(SKY_CART.x, SKY_CART.z); col.addBox(SKY_CART.x, SKY_CART.z, 1.1, .8, SKY_CART.yaw, y - 1, y + 1.6); }
-  for (const [x, z] of SKY_LANTERNS) post(x, z, .3, 3.6);
-  for (const [x, z] of SKY_BANNERS) post(x, z, .26, 6.5);
+  const {stalls, cart, lanterns, banners} = skyTownPlan();
+  for (const s of stalls) { const y = heightAt(s.x, s.z); col.addBox(s.x, s.z, 2.4, 1.3, s.yaw, y - 1, y + 3.4); }
+  { const y = heightAt(cart.x, cart.z); col.addBox(cart.x, cart.z, 1.1, .8, cart.yaw, y - 1, y + 1.6); }
+  for (const [x, z] of lanterns) post(x, z, .3, 3.6);
+  for (const [x, z] of banners) post(x, z, .26, 6.5);
   for (const f of SKY_FESTOONS) for (const [x, z] of festoonPoles(f)) post(x, z, .16, 3.6);
   for (const s of SKY_SHEDS) { const y = heightAt(s.x, s.z); col.addBox(s.x, s.z, s.hx, s.hz, s.yaw, y - 2, y + 4.5); }
   for (const c of SKY_CARGO) { const y = heightAt(c.x, c.z); col.addBox(c.x, c.z, c.hx, c.hz, 0, y - 1, y + 2.2); }

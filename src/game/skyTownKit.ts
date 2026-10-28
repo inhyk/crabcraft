@@ -206,7 +206,7 @@ float skH(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(
 float skN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(skH(i),skH(i+vec2(1.,0.)),f.x),mix(skH(i+vec2(0.,1.)),skH(i+1.),f.x),f.y);}
 float skF(vec2 p){return skN(p)*.55+skN(p*2.3+7.1)*.3+skN(p*5.1+3.3)*.15;}
 `;
-type Code = {head?: string; vHead?: string; color?: string; rough?: string; normal?: string; vBegin?: string; emissive?: string; lights?: string};
+type Code = {head?: string; vHead?: string; color?: string; rough?: string; normal?: string; vBegin?: string; emissive?: string; lights?: string; ao?: [number, number]};
 function patch(mat: THREE.Material, key: string, o: Code, uniforms: Record<string, THREE.IUniform> = {}) {
   addPatch(mat, key, (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -216,7 +216,7 @@ function patch(mat: THREE.Material, key: string, o: Code, uniforms: Record<strin
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvSk=aSk;vSu=aSu;vSw=(modelMatrix*vec4(transformed,1.)).xyz;vSn=normalize(mat3(modelMatrix)*objectNormal);');
     let f = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vSk;\nvarying vec2 vSu;\nvarying vec3 vSw;\nvarying vec3 vSn;\n' + NOISE + (o.head ?? ''))
-      .replace('#include <color_fragment>', '#include <color_fragment>\n{float skAo=mix(.5,1.,smoothstep(0.,1.15,vSw.y-vSk.x));diffuseColor.rgb*=skAo;}\n' + (o.color ?? ''));
+      .replace('#include <color_fragment>', `#include <color_fragment>\n{float skAo=mix(${(o.ao?.[0] ?? .5).toFixed(2)},1.,smoothstep(0.,${(o.ao?.[1] ?? 1.15).toFixed(2)},vSw.y-vSk.x));diffuseColor.rgb*=skAo;}\n` + (o.color ?? ''));
     if (o.rough) f = f.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + o.rough);
     if (o.normal) f = f.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + o.normal);
     if (o.emissive) f = f.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + o.emissive);
@@ -253,20 +253,22 @@ export function skyMaterials(): SkyMaterials {
    vec2 q=skPlane(p,n);vec3 b=k==3.?skBond(q+vec2(0.,.11),.42,.75):skBond(q,.5,1.05);
    float j=smoothstep(.006,.04,b.z);return j*.02+skN(q*7.)*.006*j;}`;
   patch(stone, 'sky-stone-v1', {
+    // Cream walls keep their value: a short soft contact shade at the foot, not the half-dark band timber gets.
+    ao: [.74, .7],
     head: plane,
     color: /* glsl */ `{
       vec3 n=normalize(vSn);float k=floor(vSk.y+.5);vec2 q=skPlane(vSw,n);float g=skF(q*1.7+vSk.z);
       vec3 c=diffuseColor.rgb;
       if(k==1.||k==3.){vec3 b=k==3.?skBond(q+vec2(0.,.11),.42,.75):skBond(q,.5,1.05);float id=skH(b.xy+vSk.z*7.);
-        c*=.86+.2*id+.08*(g-.5);c=mix(c,c*vec3(.93,.95,.9),step(.8,skH(b.xy+2.3)));
-        float jt=1.-smoothstep(.008,.035,b.z);c=mix(c,c*vec3(.62,.6,.58),jt*.85);
+        c*=.93+.14*id+.06*(g-.5);c=mix(c,c*vec3(.94,.96,.92),step(.8,skH(b.xy+2.3)));
+        float jt=1.-smoothstep(.008,.03,b.z);c=mix(c,c*vec3(.7,.68,.66),jt*.8);
         c*=1.-(1.-smoothstep(.03,.09,b.z))*.08;}
       else if(k==2.){c*=.95+.09*(g-.5)+.04*skN(q*13.);}
       else if(k==4.){c*=.94+.1*skN(q*9.);}
       else c*=.93+.12*(g-.5)+.05*skN(q*11.);
       // Weathering: moss and damp at the foot, faint sky-lit rain streaks down vertical faces.
-      float foot=1.-smoothstep(.0,.9+g*.6,vSw.y-vSk.x);c=mix(c,c*vec3(.72,.8,.66),foot*.55*(1.-abs(n.y)));
-      float streak=skN(vec2(q.x*3.1,vSw.y*.15))*(1.-abs(n.y));c*=1.-streak*.07;
+      float foot=1.-smoothstep(.0,.6+g*.4,vSw.y-vSk.x);c=mix(c,c*vec3(.76,.84,.7),foot*.4*(1.-abs(n.y)));
+      float streak=skN(vec2(q.x*3.1,vSw.y*.15))*(1.-abs(n.y));c*=1.-streak*.04;
       diffuseColor.rgb=c;}`,
     rough: `{float k=floor(vSk.y+.5);if(k==4.)roughnessFactor=.32;}`,
     normal: BUMP('skStoneH(vSw)', '1.', 30),
