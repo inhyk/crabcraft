@@ -25,6 +25,11 @@ export function houseToWorld(hs: {x: number; z: number; yaw: number}, lx: number
   const c = Math.cos(hs.yaw), s = Math.sin(hs.yaw);
   return [hs.x + lx * c + lz * s, hs.z - lx * s + lz * c];
 }
+/** One-storey back wings (house frame: centre lx, lz behind the back wall, half sizes): the chandler's store, the inn's kitchen. */
+export const HOUSE_WINGS: Record<HouseRole, {lx: number; lz: number; hx: number; hz: number} | null> = {
+  chandler: {lx: -1.4, lz: -HOUSE.WZ - 2.2, hx: 2.6, hz: 2.4}, inn: {lx: 1.2, lz: -HOUSE.WZ - 2.0, hx: 3.0, hz: 2.2},
+  lantern: null, maps: null, tea: null, garden: null,
+};
 /** Each trade's yard props in the house frame (lx, lz, radius): the solids in front of and beside the walls. */
 const WZ = HOUSE.WZ, WX = HOUSE.WX;
 export const HOUSE_YARD: Record<HouseRole, [number, number, number][]> = {
@@ -117,6 +122,7 @@ export function layoutSkyTown(col: Collision, heightAt: (x: number, z: number) =
     // Ground floor and plinth (the balcony and jetty ride above a crab's head).
     const y = heightAt(hs.x, hs.z); col.addBox(hs.x, hs.z, WX + .25, WZ + .25, hs.yaw, y - 2, y + 12);
     for (const [lx, lz, r] of HOUSE_YARD[hs.role]) { const [x, z] = houseToWorld(hs, lx, lz); post(x, z, r, 2.6); }
+    const w = HOUSE_WINGS[hs.role]; if (w) { const [x, z] = houseToWorld(hs, w.lx, w.lz), y0 = heightAt(x, z); col.addBox(x, z, w.hx + .15, w.hz + .15, hs.yaw, y0 - 2, y0 + 6); }
   }
   const {stalls, cart, lanterns, banners} = skyTownPlan();
   for (const s of stalls) { const y = heightAt(s.x, s.z); col.addBox(s.x, s.z, 2.4, 1.3, s.yaw, y - 1, y + 3.4); }
