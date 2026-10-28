@@ -143,7 +143,7 @@ function apron(b: Builder, ground: (x: number, z: number) => number, cx: number,
  */
 function columnCluster(b: Builder, ground: (x: number, z: number) => number, e: EmberFeature) {
  const R = rng(e.seed), cy = Math.cos(e.yaw), sy = Math.sin(e.yaw);
- const sp = Math.min(1.02, .6 + .05 * e.h + .12 * R()), ar = .68 + .22 * R(), n = Math.ceil(e.r / (sp * .866)) + 1;
+ const sp = Math.min(.9, .55 + .035 * e.h + .1 * R()), ar = .68 + .22 * R(), n = Math.ceil(e.r / (sp * .866)) + 1;
  const la = R() * Math.PI * 2, lean = .03 + .05 * R(), lx0 = Math.sin(la) * lean, lz0 = Math.cos(la) * lean;
  const fa = R() * Math.PI * 2, fx = Math.cos(fa), fz = Math.sin(fa);
  const toW = (lx: number, lz: number): [number, number] => [e.x + lx * cy + lz * sy, e.z - lx * sy + lz * cy];
