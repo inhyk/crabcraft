@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {launchBrowser} from './lib/browser.mjs';
 import {dawnHeight,DAWN_ARENA_HEIGHT} from '../src/sim/world/ground.ts';
-import {DAWN_SEA} from '../src/sim/world/dawnGround.ts';
+import {DAWN_SEA,rockSand} from '../src/sim/world/dawnGround.ts';
 import {DAWN_POINTS} from '../src/sim/data/quests.ts';
 await mkdir('tmp/qa',{recursive:true});
 const base=process.env.CC_QA_BASE??'http://127.0.0.1:5611';
@@ -32,7 +32,8 @@ for(const w of DAWN_PATHS)for(let k=1;k<w.points.length;k++){const [ax,az]=w.poi
 for(let x=-30;x<=30;x+=2)for(let z=85;z<=120;z+=2)keep.push([x,z]);
 for(const side of [-1,1])for(const z of [37,57,74])keep.push([side*23,z],[side*25,z+1],[side*25,z-2]);
 // The climb, the gate and the citadel plateau with the arena: everything north of z = -40.
-for(let x=-60;x<=60;x+=3)for(let z=-110;z<=-40;z+=3)if(Math.hypot(x/122,(z-3)/149)<.84)keep.push([x,z]);
+// The plateau, but for the sand piled round its ring of rocks (dawn-rocks rockSand; qa-dawn-rocks holds quest points, the avenue and the arena exactly).
+for(let x=-60;x<=60;x+=3)for(let z=-110;z<=-40;z+=3)if(Math.hypot(x/122,(z-3)/149)<.84&&rockSand(x,z)===0)keep.push([x,z]);
 // The harbour, its quay and pier (dawn-town lane): the whole box x -40..20, z 90..160 keeps the old ground and shore.
 const oldShore=(x,z)=>{const r=Math.hypot(x/122,(z-3)/149);return r>.86?4-(r-.83)*65:old(x,z);};
 let harbour=0;for(let x=-40;x<=20;x+=.5)for(let z=90;z<=160;z+=.5)harbour=Math.max(harbour,Math.abs(dawnHeight(x,z)-oldShore(x,z)));

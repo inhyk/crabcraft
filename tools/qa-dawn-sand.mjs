@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {launchBrowser} from './lib/browser.mjs';
 import {dawnHeight,DAWN_ARENA_HEIGHT} from '../src/sim/world/ground.ts';
-import {dawnCoastHeight,sandOpen,DAWN_WIND,DUNE_SEA} from '../src/sim/world/dawnGround.ts';
+import {dawnCoastHeight,rockSand,sandOpen,DAWN_WIND,DUNE_SEA} from '../src/sim/world/dawnGround.ts';
 import {DAWN_BOUNDS} from '../src/sim/world/queries.ts';
 import {DAWN_POINTS} from '../src/sim/data/quests.ts';
 await mkdir('tmp/qa',{recursive:true});
@@ -29,7 +29,8 @@ for(const w of layout.paths)for(let k=1;k<w.points.length;k++){const [ax,az]=w.p
  for(let t=0;t<=1;t+=1/Math.ceil(L))for(const a of [-1,-.5,0,.5,1]){const d=a*w.width/2;keep.push([ax+(bx-ax)*t+nx*d,az+(bz-az)*t+nz*d]);}}
 for(const side of [-1,1])for(const z of [37,57,74])keep.push([side*23,z],[side*25,z+1],[side*25,z-2]);
 for(let x=-40;x<=20;x+=1)for(let z=90;z<=160;z+=1)keep.push([x,z]);
-for(let x=-60;x<=60;x+=2)for(let z=-110;z<=-30;z+=2)if(Math.hypot(x/122,(z-3)/149)<.84)keep.push([x,z]);
+// The plateau, but for the sand piled round its ring of rocks (dawn-rocks rockSand; qa-dawn-rocks holds quest points, the avenue and the arena exactly).
+for(let x=-60;x<=60;x+=2)for(let z=-110;z<=-30;z+=2)if(Math.hypot(x/122,(z-3)/149)<.84&&rockSand(x,z)===0)keep.push([x,z]);
 let kept=0,open=0;for(const [x,z] of keep){kept=Math.max(kept,Math.abs(dawnHeight(x,z)-coast(x,z)));open=Math.max(open,sandOpen(x,z));}
 assert.equal(kept,0,'gameplay ground keeps the dawn coast\'s exact height');
 assert.equal(open,0,'no gameplay point is open to the desert');

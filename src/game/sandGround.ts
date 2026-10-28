@@ -134,9 +134,9 @@ float sgStoneSand(float a,float c,float s){
   float d=length(vec2(a,c));
   if(d>SG_ROCK_SIDE&&(a<0.||a>SG_ROCK_TAIL||abs(c)>SG_ROCK_SIDE))return 0.;
   float m=max(0.,d-.85);
-  float skirt=.36*s*exp(-m*m*1.3)*(1.-sgStep(d,2.3,SG_ROCK_SIDE));
+  float skirt=.3*s*exp(-m*m*.8)*(1.-sgStep(d,2.3,SG_ROCK_SIDE));
   float tail=0.;
-  if(a>0.&&a<SG_ROCK_TAIL){float t=a/SG_ROCK_TAIL,w=.3+.65*pow(1.-t,.7),q=c/w;tail=.45*s*pow(1.-t,1.1)*exp(-q*q)*sgStep(a,0.,.6)*(1.-sgStep(abs(c),SG_ROCK_SIDE-.8,SG_ROCK_SIDE));}
+  if(a>0.&&a<SG_ROCK_TAIL){float t=a/SG_ROCK_TAIL,w=.4+.75*pow(1.-t,.7),q=c/w;tail=.4*s*pow(1.-t,1.1)*exp(-q*q)*sgStep(a,0.,.6)*(1.-sgStep(abs(c),SG_ROCK_SIDE-.8,SG_ROCK_SIDE));}
   float k=min(.12*s,skirt+tail),f=max(k-abs(skirt-tail),0.);
   float y=max(skirt,tail)+(k>0.?f*f/(4.*k):0.);
   if(a<0.){float n=d-1.25;y-=exp(-n*n*6.)*sg01(-a*2.)*.07*(1.-sgStep(d,2.3,SG_ROCK_SIDE));}

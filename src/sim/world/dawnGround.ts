@@ -219,7 +219,7 @@ export function dune(a: number, c: number, k: DuneKind, amp: number, under: numb
  * Moved sites also keep two metres clear of the enemy homes (world2.ts, Dawnharbor's packs) and the quest points.
  */
 export const DAWN_ROCKS: readonly { i: number; x: number; z: number; r: number }[] = (() => {
-  const moved: Record<number, readonly [number, number]> = { 2: [28, -1], 3: [60, -44], 4: [77, -27], 5: [72, -21], 6: [68, -28], 7: [62, -38], 9: [63, -58], 21: [-53, -71], 23: [-68, -56], 26: [-65, -23], 27: [-72, -17], 28: [-75, -29], 29: [-53, -40] };
+  const moved: Record<number, readonly [number, number]> = { 2: [28, -1], 3: [60, -44], 4: [77, -27], 5: [73, -20], 6: [68, -28], 7: [62, -38], 9: [63, -58], 21: [-53, -71], 23: [-68, -56], 26: [-65, -23], 27: [-72, -17], 28: [-75, -29], 29: [-53, -40] };
   const out: { i: number; x: number; z: number; r: number }[] = [];
   // Sites 0 and 16 stood on the avenue, 13 to 19 inside the citadel (dawnCitadelLayout.ts citadelHolds).
   for (let i = 1; i < 32; i++) {
@@ -255,11 +255,11 @@ export const ROCK_SAND_SIDE = 3.1, ROCK_SAND_TAIL = 4.2;
 function stoneSand(a: number, c: number, s: number): number {
   const d = Math.hypot(a, c);
   if (d > ROCK_SAND_SIDE && (a < 0 || a > ROCK_SAND_TAIL || Math.abs(c) > ROCK_SAND_SIDE)) return 0;
-  const skirt = 0.36 * s * Math.exp(-(Math.max(0, d - 0.85) ** 2) * 1.3) * (1 - smoothstep(d, 2.3, ROCK_SAND_SIDE));
+  const skirt = 0.3 * s * Math.exp(-(Math.max(0, d - 0.85) ** 2) * 0.8) * (1 - smoothstep(d, 2.3, ROCK_SAND_SIDE));
   let tail = 0;
   if (a > 0 && a < ROCK_SAND_TAIL) {
-    const t = a / ROCK_SAND_TAIL, w = 0.3 + 0.65 * Math.pow(1 - t, 0.7);
-    tail = 0.45 * s * Math.pow(1 - t, 1.1) * Math.exp(-((c / w) ** 2)) * smoothstep(a, 0, 0.6) * (1 - smoothstep(Math.abs(c), ROCK_SAND_SIDE - 0.8, ROCK_SAND_SIDE));
+    const t = a / ROCK_SAND_TAIL, w = 0.4 + 0.75 * Math.pow(1 - t, 0.7);
+    tail = 0.4 * s * Math.pow(1 - t, 1.1) * Math.exp(-((c / w) ** 2)) * smoothstep(a, 0, 0.6) * (1 - smoothstep(Math.abs(c), ROCK_SAND_SIDE - 0.8, ROCK_SAND_SIDE));
   }
   // A smooth maximum, so the skirt runs into the tail without a crease; its fillet shrinks to nothing where both do.
   const k = Math.min(0.12 * s, skirt + tail), f = Math.max(k - Math.abs(skirt - tail), 0);
