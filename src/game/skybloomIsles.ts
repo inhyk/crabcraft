@@ -255,7 +255,7 @@ interface Isle {x: number; z: number; y: number; r: number; seed: number; trees:
  */
 const ISLE_PLAN: readonly (readonly [number, number, number, number, number, Partial<Isle>])[] = [
   // bearing, distance, radius, elevation, trees, extras
-  [-27, 250, 24, 9, 3, {ruin: true}], [28, 290, 27, 12, 4, {garden: true, blossom: true}], [96, 300, 21, 6, 3, {blossom: true}],
+  [-27, 250, 24, 9, 3, {ruin: true}], [28, 290, 27, 12, 4, {garden: true, blossom: true}], [94, 245, 24, 6, 3, {blossom: true}],
   [-56, 470, 11, 7, 2, {ruin: true}], [62, 520, 12, 10, 2, {garden: true}], [9, 640, 13, 14, 2, {blossom: true}],
   [-100, 430, 12, 5, 2, {garden: true, blossom: true}], [140, 410, 10, 8, 1, {}], [-142, 380, 11, 11, 2, {ruin: true}],
 ];
@@ -265,7 +265,7 @@ const ROCKS: readonly (readonly [number, number, number, number, number])[] = [
 ];
 const ISLE_BASE: Isle[] = ISLE_PLAN.map(([b, d, r, el, trees, extra], i) => {
   const a = THREE.MathUtils.degToRad(b), x = Math.sin(a) * d, z = -Math.cos(a) * d, toIsland = Math.atan2(-x, -z);
-  return {x, z, y: 15 + d * Math.tan(THREE.MathUtils.degToRad(el)) - r * 0.25, r, seed: i + 1, trees, ...extra, falls: i < 3 ? [toIsland + (i % 2 ? 0.5 : -0.5)] : i === 4 ? [toIsland + 0.4] : []};
+  return {x, z, y: 15 + d * Math.tan(THREE.MathUtils.degToRad(el)) - r * 0.25, r, seed: i + 1, trees, ...extra, falls: i === 2 ? [toIsland - 0.12] : i < 3 ? [toIsland + (i % 2 ? 0.5 : -0.5)] : i === 4 ? [toIsland + 0.4] : []};
 });
 export const SKY_ISLES: readonly Isle[] = [
   ...ISLE_BASE,
@@ -404,7 +404,7 @@ function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>
   for (const ft of isle.falls ?? []) {
     // An isle's spring is small: it pours off the lip, widens and is lost in spray long before the clouds.
     const ro = R * outline(ft) * 1.02, y = ty - 0.9;
-    falls.push({p: [cx + Math.sin(ft) * ro, y, cz + Math.cos(ft) * ro], dir: [Math.sin(ft), 0, Math.cos(ft)], w: Math.max(2.4, R * 0.13), len: Math.min(y - CLOUD_TOP, 10 + R * 0.8)});
+    falls.push({p: [cx + Math.sin(ft) * ro, y, cz + Math.cos(ft) * ro], dir: [Math.sin(ft), 0, Math.cos(ft)], w: Math.max(2.4, R * 0.17), len: Math.min(y - CLOUD_TOP, 12 + R * 0.9)});
   }
 }
 
@@ -528,7 +528,8 @@ void main(){
   // Sheet near the lip, ropes in the middle, spray at the end: the mask's threshold climbs as it falls.
   float rope=smoothstep(.25+.35*v,.55+.3*v,s+.15*(1.-edge));
   float body=mix(1.,rope,smoothstep(.04,.35,v))*mix(edge,sqrt(edge),v);
-  vec3 col=mix(waterColor,foamColor,clamp(.35+.9*smoothstep(.35,.75,s)+v*.6,0.,1.));
+  // Cyan water between white ropes up top, all white spray low down: the colour, not just the alpha, reads as water.
+  vec3 col=mix(waterColor,foamColor,clamp(.12+.85*smoothstep(.4,.78,s)+v*.55,0.,1.));
   // Lip: a bright glassy curl.
   col=mix(col,foamColor*1.15,1.-smoothstep(0.,.05,v));
   float a=body*(1.-smoothstep(.5,1.,v))*.9;

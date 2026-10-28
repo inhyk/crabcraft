@@ -108,6 +108,7 @@ uniform float time;
 uniform vec3 hazeColor;
 uniform vec3 cloudShade;
 uniform vec3 cloudLit;
+uniform vec3 cloudDeep;
 uniform vec3 towers[${TOWERS.length}];
 varying vec3 vWorld;
 void main(){
@@ -127,40 +128,44 @@ void main(){
     float cir=smoothstep(.58,.86,streak)*smoothstep(.04,.25,d.y)*(1.-smoothstep(.65,.98,d.y)*.6);
     col=mix(col,mix(cloudShade*1.2,cloudLit*1.05,.55+.45*toward),cir*.55);
   }
-  // Cumulus towers boiling up out of the cloud sea at the horizon: a dome per tower with a cauliflower edge,
-  // lit on the flank toward the sun, hazed because they are tens of kilometres off.
+  // Cumulus towers boiling up out of the cloud sea at the horizon: each a stack of six lumps of different sizes
+  // (a cauliflower outline, taller in the middle) on a flat base in shade, lit on the flank toward the sun and hazed
+  // because they are tens of kilometres off.
   if(d.y>-.03&&d.y<.2){
     float az=atan(d.x,d.z);
-    float best=0.,side=0.,top=1.;
+    float inside=-1.,top=1.;vec2 nrm=vec2(0.,1.);
     for(int i=0;i<${TOWERS.length};i++){
       vec3 t=towers[i];
-      float da=atan(sin(az-t.x),cos(az-t.x))/t.z;
-      float h=t.y*sqrt(max(0.,1.-da*da));
-      // Stacked turrets: the tower is several billows, not one smooth dome.
-      h*=1.-.22*smoothstep(.2,.9,abs(da))*(.5+.5*sin(da*7.+t.x*9.));
-      if(h>best){best=h;side=da;top=t.y;}
+      float da=atan(sin(az-t.x),cos(az-t.x));
+      if(abs(da)>t.z*1.4)continue;
+      for(int j=0;j<6;j++){
+        float fj=float(j),s1=fract(sin(fj*12.99+t.x*7.13)*43758.5),s2=fract(sin(fj*7.31+t.x*3.17)*24634.6);
+        // Outer lumps low and wide, inner ones stacked higher and smaller.
+        float ox=(s1-.5)*2.*t.z*(1.-fj/7.);
+        float r=t.z*(.26+.22*s2)*(1.-.25*fj/6.);
+        float cy=max(.004,(t.y-r)*(1.-abs(ox)/(t.z*1.15)));
+        vec2 q=vec2(da-ox,max(d.y-cy,0.));
+        float inn=r-length(q);
+        if(inn>inside){inside=inn;nrm=length(q)>1e-5?q/length(q):vec2(0.,1.);top=t.y;}
+      }
     }
-    // The cloud sea's own crest along the horizon.
-    float crest=.006+.006*sbNoise(vec2(az*9.,1.3))+.004*sbNoise(vec2(az*31.,7.));
-    float edge=.012*(sbFbm(vec2(az*26.,d.y*60.)-vec2(time*.002,0.))-.5);
-    float hh=max(best,crest)+edge*step(crest,best);
-    float dens=1.-smoothstep(hh-.006,hh+.002,d.y);
+    float edge=.0035*(sbFbm(vec2(az*60.,d.y*90.)+3.)-.5);
+    float dens=smoothstep(-.0015,.0025,inside+edge);
     if(dens>0.){
-      // Flank normal: across the tower and up its dome, toward the viewer.
       vec3 across=vec3(cos(az),0.,-sin(az));
-      float up=clamp(d.y/max(top,.02),0.,1.);
-      vec3 n=normalize(across*side*.9+vec3(0.,1.,0.)*(.35+up*.8)-d*.6);
-      float bill=sbFbm(vec2(az*40.,d.y*70.)+3.);
-      float lit=clamp(dot(n,skySunDir)*.6+.45+(bill-.5)*.55,0.,1.);
-      vec3 cc=mix(cloudShade,cloudLit*mix(.9,1.1,toward),lit);
-      // Distance: tens of kilometres of the same haze the horizon is made of.
-      cc=mix(cc,hazeColor,.32+.25*(1.-up));
+      vec3 n=normalize(across*nrm.x+vec3(0.,1.,0.)*nrm.y-d*.45);
+      float bill=sbFbm(vec2(az*70.,d.y*110.)+7.);
+      float lit=clamp(dot(n,skySunDir)*.7+.42+(bill-.5)*.5,0.,1.);
+      vec3 cc=mix(cloudShade,cloudLit*mix(.92,1.08,toward),lit);
+      // Flat shaded base: the bottom fifth of each tower sits in its own shade.
+      cc=mix(cc,cloudDeep,(1.-smoothstep(.0,top*.22,d.y))*.75);
+      cc=mix(cc,hazeColor,.3);
       col=mix(col,cc,dens);
     }
   }
   // A haze band on the horizon itself; below it the dome is the far cloud sea (past the camera's far plane), as
   // bright as the sea's own far field so the two meet without a grey strip.
-  col=mix(col,hazeColor,(1.-smoothstep(0.,.03,d.y))*smoothstep(-.03,-.004,d.y)*.85);
+  col=mix(col,hazeColor,(1.-smoothstep(-.005,.065,d.y))*smoothstep(-.035,-.006,d.y)*.85);
   gl_FragColor=vec4(col,1.);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -275,7 +280,8 @@ export class SkybloomSky {
         time: { value: 0 },
         hazeColor: { value: this.skyHorizon.clone() },
         cloudShade: { value: this.cloudShade.clone().multiplyScalar(1.05) },
-        cloudLit: { value: this.cloudLit.clone().multiplyScalar(0.8) },
+        cloudLit: { value: this.cloudLit.clone().multiplyScalar(0.95) },
+        cloudDeep: { value: this.cloudDeep.clone() },
         towers: { value: towers },
       },
     });
@@ -348,5 +354,8 @@ export class SkybloomSky {
   get sunElevation() { return this.elevation; }
 }
 
-/** Haze over everything but the cloud sea (FogExp2 density): far isles go blue, the town stays crisp. */
-const FOG_DENSITY = 0.0019;
+/**
+ * Haze over everything but the cloud sea (FogExp2 density): about 6 percent at 200 m, so the town, the trees and
+ * the hero isles keep their colour, half by the mid isles at 640 m, blue past a kilometre.
+ */
+const FOG_DENSITY = 0.0013;

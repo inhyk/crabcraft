@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {SkybloomSky} from './skybloomSky';
 import {skybloomClouds,CLOUD_Y} from './skybloomClouds';
 import {skybloomLand,clipTerrainToLip,lipScale} from './skybloomIsles';
+import {skybloomContact} from './skybloomContact';
 
 /*
  * Everything in Skybloom's air, built from one sky: the dome, the sun and the hemisphere light it implies, the fog
@@ -159,6 +160,11 @@ export class SkybloomAir {
   readonly hemi = new THREE.HemisphereLight();
   /** Materials with a `time` uniform for the island's update. */
   readonly animated: THREE.ShaderMaterial[] = [];
+  /** Contact shade under canopies, eaves and arches (skybloomContact.ts), baked once the island is built. */
+  readonly contact = skybloomContact();
+  private built = false;
+  private root: THREE.Object3D | null = null;
+  private skip = new Set<THREE.Object3D>();
   private petals?: THREE.Points;
   private clouds?: THREE.ShaderMaterial;
   private bound: {env: THREE.Texture | null; intensity: number} | null = null;
@@ -168,6 +174,7 @@ export class SkybloomAir {
   /** Build it all under `root`. `terrain` (the island's ground mesh) is clipped to the cliff's lip. */
   mount(root: THREE.Object3D, terrain?: THREE.Mesh | null): THREE.ShaderMaterial[] {
     const sky = this.sky;
+    this.root = root;
     root.add(sky.mesh);
     const clouds = skybloomClouds(sky);
     this.clouds = clouds.material;
@@ -177,6 +184,7 @@ export class SkybloomAir {
     const bounce = new THREE.Color('#c9d3e8').multiplyScalar(0.42);
     const land = skybloomLand({mist, cloudLit: sky.cloudLit, bounce});
     root.add(land.land, land.falls, land.mist);
+    this.skip.add(land.land).add(land.falls).add(land.mist);
     this.stats.isles = land.isles; this.stats.falls = land.fallCount;
     if (terrain) this.stats.terrainClipped = clipTerrainToLip(terrain.geometry);
     for (let i = 0; i < 720; i++) this.stats.lipMax = Math.max(this.stats.lipMax, lipScale((i / 720) * Math.PI * 2));
@@ -197,6 +205,7 @@ export class SkybloomAir {
       petalMat.uniforms.pixel.value = renderer.getDrawingBufferSize(this.tmpSize).y / (2 * Math.tan(THREE.MathUtils.degToRad((cam.fov ?? 45) / 2)));
     };
     root.add(petals);
+    this.skip.add(petals);
     const birdMat = new THREE.ShaderMaterial({
       name: 'skybloom-gulls', vertexShader: BIRD_VERT, fragmentShader: BIRD_FRAG, side: THREE.DoubleSide, fog: true,
       uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {time: {value: 0}, birdLit: {value: sky.cloudLit.clone().multiplyScalar(0.85)}, birdTip: {value: new THREE.Color('#3e4a66')}}]),
@@ -222,6 +231,11 @@ export class SkybloomAir {
     return this.animated;
   }
 
+  /** The contact bake waits for what is still loading (the kit forest, the town's dressing). */
+  whenBuilt(ready: Promise<unknown>): void {
+    ready.then(() => { this.built = true; }, () => { this.built = true; });
+  }
+
   /**
    * Per frame from world2: while Skybloom is shown, the fog takes the sky's horizon in the camera's direction and
    * this sky's environment map is bound; once it is not, the map that was there before comes back.
@@ -230,6 +244,12 @@ export class SkybloomAir {
     if (!active) {
       if (this.bound) { if (scene.environment === this.sky.environment(renderer)) { scene.environment = this.bound.env; scene.environmentIntensity = this.bound.intensity; } this.bound = null; }
       return;
+    }
+    if (this.built && !this.contact.baked && this.root) {
+      // The meadow's blades are receivers, never occluders.
+      const meadow = this.root.getObjectByName('skybloom-meadow');
+      if (meadow) this.skip.add(meadow);
+      this.contact.bake(renderer, this.root, this.skip);
     }
     const env = this.sky.environment(renderer);
     if (scene.environment !== env) { this.bound = {env: scene.environment, intensity: scene.environmentIntensity}; scene.environment = env; scene.environmentIntensity = this.sky.envIntensity; }

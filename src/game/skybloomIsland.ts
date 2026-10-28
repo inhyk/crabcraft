@@ -52,7 +52,7 @@ export class SkybloomIsland {
   this.makeDetails(fire,stone,metal,glow);
   // World tree and its sanctuary: court, columns, root gate, vines and seed lanterns (skySanctuary.ts).
   this.root.add(skySanctuaryScene((x,z)=>this.height(x,z),skyTreeQuality()).root);
-  this.animated.push(...this.air.mount(this.root,this.ground.ground.mesh));this.root.add(this.back.root);if(this.next)this.root.add(this.next.root);
+  this.animated.push(...this.air.mount(this.root,this.ground.ground.mesh));this.air.whenBuilt(Promise.all([town.ready,this.ground.forest]));this.root.add(this.back.root);if(this.next)this.root.add(this.next.root);
  }
  /** Small scenery shares geometry and material; roads and battle space stay unobstructed. */
  private makeDetails(fire:boolean,stone:THREE.Material,metal:THREE.Material,glow:THREE.Material){
