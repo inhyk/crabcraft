@@ -101,7 +101,8 @@ float egAsh=smoothstep(.52,.565,egAshF)*.85+smoothstep(.565,.8,egAshF)*.15;
 // Ash settles only where the face looks up, and in patches: dark basalt shows between the drifts, so no field reads
 // as one pale sheet (one did, and World V read as World IV's snow at dusk).
 float egUp=smoothstep(.93,.99,inverseTransformDirection(normalize(vNormal),viewMatrix).y);
-float egPatch=smoothstep(-.1,.24,egFbm(egP*.05+23.)+egNoise(egP*.37-6.)*.2+egNoise(egP*1.3)*.06)*egUp;
+// Built from the swells' own noise (no extra octaves): ash on the high swells, so the low dark basalt shows between.
+float egPatch=smoothstep(-.12,.2,egN1*.55+egN2*.5+egN3*.14)*egUp;
 egAsh*=.3+.7*egPatch;
 // Wind ripples on the drifts, crests running north-south.
 float egRip=sin(egP.x*5.1+egNoise(egP*.7)*4.+egNoise(egP*2.3)*.8)*.5+.5;
