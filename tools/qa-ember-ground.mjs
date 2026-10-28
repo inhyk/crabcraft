@@ -93,13 +93,16 @@ try {
     const check = (ok, msg) => { if (!ok) { failed++; console.log('FAIL', quality, msg); } else console.log('ok  ', quality, msg); };
     check(r.hasWilds && !r.sixthWilds, 'ground lane exists in World V only');
     check(r.rocks && r.rocks.rockTriangles > 40000 && r.rocks.features >= 40, `rocks built (${r.rocks?.features} features, ${r.rocks?.rockTriangles} triangles)`);
+    const bu = r.rocks.bundles;
+    check(bu.count >= 20 && bu.minColumns >= 7 && bu.maxColumns <= 20, `basalt in bundles of 7-20 columns (${bu.count} bundles, ${bu.minColumns}-${bu.maxColumns} columns)`);
+    check(bu.minRatio >= 1.8 && bu.maxRatio <= 4.2, `height ratio within a bundle 2-4x (median ${bu.medianRatio}, range ${bu.minRatio}-${bu.maxRatio})`);
     check(r.rocks.skippedOnLava === 0, `no feature in a lava zone (${r.rocks.skippedOnLava} skipped)`);
     check(r.camp > 0, `miners' camp loaded (${r.camp} batches)`);
     check(r.meshes <= 16, `ground lane draws in ${r.meshes} meshes (<= 16)`);
     check(r.paving && r.paving.segments === r.pathSegs, `paving follows EMBER_PATHS (${r.paving?.segments} of ${r.pathSegs} segments)`);
     check(r.blocked.length === 0, 'quest points, NPCs, enemy homes, spawn and portals clear ' + r.blocked.slice(0, 6).join(' '));
     check(r.lavaHits.length === 0, 'no solid in a lava zone ' + r.lavaHits.slice(0, 4).join(' '));
-    check(r.guide.ember && !r.guide.crumbs, `World V hides the gold crumbs (ember ${r.guide.ember}, crumbs ${r.guide.crumbs}, studs ${r.guide.studs}, arrow ${r.guide.arrow})`);
+    check(r.guide.ember && !r.guide.crumbs, `World V hides the gold crumbs for lava-stone markers (ember ${r.guide.ember}, crumbs ${r.guide.crumbs}, studs ${r.guide.studs}, arrow ${r.guide.arrow})`);
     check(!w1.ember && !w1.studs && !w6.ember && !w6.studs, 'other worlds keep their own guidance (no ember studs in W1 or W6)');
     // Albedo bands (style-w5.md: paths 105-130, ground 75-95) depend on ember-sky's exposure; the lane owns the order.
     check(vals.road >= vals.ground + 12, `paving lighter than the ground (road ${vals.road}, ground ${vals.ground}; bands 105-130 / 75-95)`);

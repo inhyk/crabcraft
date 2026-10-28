@@ -141,6 +141,9 @@ function apron(b: Builder, ground: (x: number, z: number) => number, cx: number,
  * The stack leans a few degrees; talus buries the feet, fallen drums and angular blocks lie on it, and a column or
  * two leans out of the face where it broke away.
  */
+/** Columns per bundle and tallest-to-shortest ratio of every bundle built (rocks stats, QA). */
+const bundleLog: {n: number; ratio: number}[] = [];
+
 function columnCluster(b: Builder, ground: (x: number, z: number) => number, e: EmberFeature) {
  const R = rng(e.seed), cy = Math.cos(e.yaw), sy = Math.sin(e.yaw);
  const sp = Math.min(1, .66 + .035 * e.h + .1 * R()), tile = sp * .577;
@@ -171,13 +174,14 @@ function columnCluster(b: Builder, ground: (x: number, z: number) => number, e: 
   const peakA = R() * Math.PI * 2, px = bu.x + Math.cos(peakA) * bu.rb * .45, pz = bu.z + Math.sin(peakA) * bu.rb * .45;
   const bl: V3 = [lx0 + (R() - .5) * .05, 1, lz0 + (R() - .5) * .05];
   const rot = -e.yaw - brot - Math.PI / 6;
+  let hMin = Infinity, hMax = 0;
   for (const [lx, lz] of cells.slice(0, bu.n)) {
    const [x, z] = toW(lx, lz), g = ground(x, z);
    // Heights fall away from an off-centre peak: the shortest about a third of the tallest; some snapped lower still.
    const dp = Math.min(1, Math.hypot(lx - px, lz - pz) / (bu.rb * 1.3));
    let h = bu.H * (.3 + .7 * Math.pow(1 - dp, 1.1)) * (.86 + .28 * R());
    if (R() < .12) h *= .45 + .3 * R();
-   h = Math.max(.5, h);
+   h = Math.max(.5, bu.H * .29, h); hMin = Math.min(hMin, h); hMax = Math.max(hMax, h);
    const th = Math.atan2(z - e.z, x - e.x), bin = Math.floor(((th / (Math.PI * 2)) + 1) % 1 * 48);
    edgeLoc[bin] = Math.max(edgeLoc[bin], Math.hypot(x - e.x, z - e.z) + tile);
    const ax: V3 = [bl[0] + (R() - .5) * .03, 1, bl[2] + (R() - .5) * .03], al = Math.hypot(ax[0], ax[1], ax[2]); ax[0] /= al; ax[1] /= al; ax[2] /= al;
@@ -185,6 +189,7 @@ function columnCluster(b: Builder, ground: (x: number, z: number) => number, e: 
    const tilt = .3 + .45 * R(), ta = R() * Math.PI * 2;
    prism(b, [x, g - 1.2, z], ax, rot + (R() - .5) * .07, h + 1.2, tile * (.92 + .05 * R()), Math.cos(ta) * tilt, Math.sin(ta) * tilt, C(palette[Math.floor(R() * palette.length)], .78 + .44 * R()), R() * 100);
   }
+  bundleLog.push({n: bu.n, ratio: hMax / hMin});
  }
  // Fill gaps in the outline so the talus hugs the stack.
  for (let k = 0; k < 48; k++) if (!edgeLoc[k]) edgeLoc[k] = Math.max(edgeLoc[(k + 47) % 48], edgeLoc[(k + 1) % 48]) || e.r * .6;
@@ -552,6 +557,7 @@ export function emberRocks(opts: EmberRocksOptions) {
   return Math.min(1.5, h);
  };
  const b = new Builder(height, heat);
+ bundleLog.length = 0;
  for (const e of features) {
   if (e.kind === 'columns') columnCluster(b, height, e);
   else if (e.kind === 'cone') spatterCone(b, height, e);
@@ -611,7 +617,8 @@ export function emberRocks(opts: EmberRocksOptions) {
 
  return {
   rocks, crystals: crystalMesh, features,
-  stats: {features: features.length, skippedOnLava: opts.features.length - features.length, rockTriangles: rockGeo.getAttribute('position').count / 3, crystalTriangles: cp.length / 9},
+  stats: {features: features.length, skippedOnLava: opts.features.length - features.length, rockTriangles: rockGeo.getAttribute('position').count / 3, crystalTriangles: cp.length / 9,
+   bundles: {count: bundleLog.length, minColumns: Math.min(...bundleLog.map((u) => u.n)), maxColumns: Math.max(...bundleLog.map((u) => u.n)), minRatio: +Math.min(...bundleLog.map((u) => u.ratio)).toFixed(2), maxRatio: +Math.max(...bundleLog.map((u) => u.ratio)).toFixed(2), medianRatio: +bundleLog.map((u) => u.ratio).sort((p, q) => p - q)[bundleLog.length >> 1].toFixed(2)}},
   update(time: number) { uniforms.rkTime.value = time; },
  };
 }
