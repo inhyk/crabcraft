@@ -42,7 +42,8 @@ async function values(p){
  await p.evaluate(()=>{window.__cam=null;});
  for(const [n,v] of Object.entries(out)){
   assert.ok(v.p10>=25&&v.p10<=100,`${n}: p10 ${v.p10} (lifted blacks read milky)`);assert.ok(v.p50>=125&&v.p50<=190,`${n}: p50 ${v.p50}`);
-  assert.ok(v.p90>=205&&v.p90<=240,`${n}: p90 ${v.p90}`);assert.ok(v.p99>=(n==='aerial'?232:220),`${n}: p99 ${v.p99} (no white cloud tops)`);
+  // Town views sit lower since the flagstones went a step under the walls (advisor #21b); the sky views keep 205.
+  assert.ok(v.p90>=(n==='arrivalF'?195:205)&&v.p90<=240,`${n}: p90 ${v.p90}`);assert.ok(v.p99>=(n==='aerial'?232:220),`${n}: p99 ${v.p99} (no white cloud tops)`);
   assert.ok(v.sat>=(n==='aerial'?.17:.22)&&v.sat<=.42,`${n}: saturation ${v.sat}`);assert.ok(v.over200>=8&&v.over200<=45,`${n}: over 200 ${v.over200}%`);
  }
  return out;
