@@ -61,12 +61,12 @@ void main(){
   float age=fract(uTime/life+aSeed.x);
   vAge=age;vSeed=aSeed.y;
   float h=pow(age,.72)*118.;
-  float spread=3.+age*26.;
+  float spread=4.+age*34.;
   vec2 side=vec2(cos(aSeed.z*6.283),sin(aSeed.z*6.283))*spread*aSeed.w*.55;
   vec2 drift=uWind*pow(age,1.7)*78.;
   float swirl=sin(uTime*.07+aSeed.y*20.)*age*5.;
   vec3 c=uCrater+vec3(side.x+drift.x+swirl,h,side.y+drift.y-swirl*.5);
-  float size=(11.+age*52.)*(.75+.5*aSeed.y);
+  float size=(15.+age*62.)*(.75+.5*aSeed.y);
   vec4 mv=viewMatrix*vec4(c,1.);
   vRot=aSeed.z*6.283+uTime*.015*(aSeed.y-.5);
   float cr=cos(vRot),sr=sin(vRot);
@@ -95,7 +95,7 @@ varying float vSeed;
 ${FOG_PARS}
 void main(){
   vec4 p=texture2D(uPuff,vUv);
-  float a=p.a*smoothstep(0.,.07,vAge)*(1.-smoothstep(.55,1.,vAge))*.92;
+  float a=p.a*smoothstep(0.,.07,vAge)*(1.-smoothstep(.62,1.,vAge))*.95;
   if(a<.004)discard;
   // A sphere's normal across the billboard (screen-space), bent by the puff's own lumps.
   vec2 c=(vUv-.5)*2.;
@@ -103,9 +103,9 @@ void main(){
   vec3 n=normalize(vec3(c*1.1,sqrt(max(.05,1.-dot(c,c)))+(p.r-.5)*.6));
   float sun=max(0.,dot(n,uSunView)*.6+.4);
   vec3 base=mix(uSmoke,uSmokeHigh,smoothstep(8.,70.,vHeight))*(.7+.45*p.r);
-  vec3 col=base*(.45+1.1*sun*uSunColor);
+  vec3 col=base*(.5+.75*sun*uSunColor);
   // The crater lights the smoke from underneath: strong at the vent, gone a few tens of metres up.
-  float under=exp(-vHeight/22.)*(.55+.45*clamp(-n.y*1.4+.5,0.,1.));
+  float under=exp(-vHeight/9.)*(.55+.45*clamp(-n.y*1.4+.5,0.,1.));
   col+=uGlow*under*(1.+.4*vSeed);
   col=mix(col,fogColor,emberFog(vDepth)*.85);
   gl_FragColor=vec4(col*a,a);
@@ -157,9 +157,9 @@ void main(){
       size=.07+.07*aSeed.y;
       vKind=1.;
     }else{
-      a=(.32+.5*vol)*(.6+.4*aSeed.y);
-      col=mix(vec3(.21,.2,.22),vec3(.42,.4,.41),aSeed.z);
-      size=.07+.1*aSeed.x;
+      a=(.28+.45*vol)*(.6+.4*aSeed.y);
+      col=mix(vec3(.16,.15,.17),vec3(.34,.32,.34),aSeed.z);
+      size=.04+.06*aSeed.x;
       vKind=0.;
     }
     // Fade at the box walls so the wrap never pops.
@@ -168,7 +168,7 @@ void main(){
   }
   vec4 mv=viewMatrix*vec4(p,1.);
   vDepth=-mv.z;
-  gl_PointSize=clamp(size*projectionMatrix[1][1]*uViewH*.5/max(.5,vDepth),1.,24.);
+  gl_PointSize=clamp(size*projectionMatrix[1][1]*uViewH*.5/max(.5,vDepth),1.,vKind>.5?14.:7.);
   // Sub-pixel particles keep their energy as alpha instead of vanishing.
   float px=size*projectionMatrix[1][1]*uViewH*.5/max(.5,vDepth);
   a*=clamp(px,.25,1.);
@@ -216,7 +216,7 @@ export class EmberPlume {
    name:'ember-plume',vertexShader:PLUME_VERT,fragmentShader:PLUME_FRAG,transparent:true,depthWrite:false,fog:true,
    blending:THREE.CustomBlending,blendSrc:THREE.OneFactor,blendDst:THREE.OneMinusSrcAlphaFactor,
    uniforms:{...fog,uTime:{value:0},uCrater:{value:o.crater},uWind:{value:o.wind},uPuff:{value:this.puff},uSunView:{value:this.sunView},
-    uSunColor:{value:o.sunColor.clone().multiplyScalar(1.15)},uSmoke:{value:new THREE.Color('#2a2427')},uSmokeHigh:{value:new THREE.Color('#5e5558')},uGlow:{value:new THREE.Color('#ff5a1e').multiplyScalar(1.6)}},
+    uSunColor:{value:o.sunColor.clone().multiplyScalar(1.15)},uSmoke:{value:new THREE.Color('#262224')},uSmokeHigh:{value:new THREE.Color('#5d585c')},uGlow:{value:new THREE.Color('#ff5a1e').multiplyScalar(1.1)}},
   });
   const plume=new THREE.Mesh(geo,this.plumeMat);plume.name='ember-volcano-plume';plume.renderOrder=3;plume.frustumCulled=true;
   // Air: fountain embers, rising embers and ash.
@@ -272,7 +272,7 @@ VolSurf volSurf(){
   // Gullies: streaks around the cone that run straight down the slope, deeper toward the top.
   float g=vFbm(vec2(ang*9.,vVolW.y*.05));
   float g2=vNoise(vec2(ang*31.,vVolW.y*.08));
-  s.gully=smoothstep(.35,.7,g)*.7+g2*.3;
+  s.gully=smoothstep(.3,.75,g)*.55+g2*.2+.25*vFbm(vec2(ang*5.,vVolW.y*.21));
   // Strata: tilted bands of ash and lava, broken by noise.
   float y=vVolW.y+(vFbm(vec2(ang*3.,vVolW.y*.1))-.5)*5.+sin(ang*2.)*1.5;
   s.strata=fract(y/2.3);
@@ -290,7 +290,7 @@ VolSurf vs=volSurf();
   float band=step(.62,vs.strata)*.8+step(.86,vs.strata)*.2;
   vec3 c=mix(basalt,ash,band*.85);
   c=mix(c,ox,smoothstep(.4,.55,vs.strata)*(1.-smoothstep(.55,.62,vs.strata))*.8);
-  c*=.7+.6*vs.gully;
+  c*=.78+.4*vs.gully;
   // Ash settles lighter on the lower slopes, the summit is scorched dark and warm.
   c=mix(c,vec3(.13,.12,.125),smoothstep(.45,.0,vs.top)*.35);
   c=mix(c,vec3(.05,.025,.02),smoothstep(.75,1.,vs.top)*.6);

@@ -55,7 +55,7 @@ export class EmberAir {
   this.heat.patchTree(this.root,this.noHeat);
  }
  update(time:number){
-  this.sky.update(time);this.plume.update(time);this.heat.uniforms.uHeatTime.value=time%600;
+  this.sky.update(time);this.plume.update(time);this.heat.uniforms.uHeatTime.value=time%600;this.heat.uniforms.uHeatOn.value=1;
   // Lit materials added later (other builders, loaded kits) pick up the heat light too.
   if(time-this.patchedAt>2||time<this.patchedAt){this.patchedAt=time;this.heat.patchTree(this.root,this.noHeat);}
  }
@@ -66,7 +66,6 @@ export class EmberAir {
   const env=this.env??=this.sky.environment(renderer);
   if(scene.environment!==env){this.prevEnv=scene.environment;this.prevEnvIntensity=scene.environmentIntensity;scene.environment=env;}
   scene.environmentIntensity=this.sky.envIntensity;
-  this.heat.uniforms.uHeatOn.value=1;
   this.plume.view(camera,this.height(e[12],e[14]),renderer.domElement.height);
  }
  /** When World V is not shown: the heat light off, the scene's previous environment back. */

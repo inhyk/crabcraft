@@ -42,7 +42,7 @@ const fbm3 = (x: number, y: number, z: number, oct = 4) => { let s = 0, a = .5, 
 const lin = (hex: string) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b] as [number, number, number]; };
 /** Palette (sRGB hex, used linear). */
 const P = {
-  hzSun: lin('#e9a466'), hzAway: lin('#a4544a'), mid: lin('#5f3b43'), zenith: lin('#1d1b29'),
+  hzSun: lin('#e9a466'), hzAway: lin('#9a5048'), mid: lin('#443944'), zenith: lin('#1b1a25'),
   lava: lin('#ff5a1e'), smoke: lin('#2b2329'), smokeLit: lin('#8a4a36'), seaDark: lin('#24120f'), sun: lin('#ffb070'),
 };
 /** Rows crowd the horizon: v in 0..1 to elevation in radians and back (the shader inverts it). */
@@ -225,7 +225,7 @@ export class EmberSky {
   readonly mesh: THREE.Mesh;
   readonly sunDir: THREE.Vector3;
   /** Direct sun, linear: colour (max channel 1) and intensity for the DirectionalLight. */
-  readonly sunColor = new THREE.Color('#ffb070');
+  readonly sunColor = new THREE.Color('#ffbd84');
   readonly sunIntensity = 3.4;
   /** HemisphereLight colours at intensity 1: violet-grey sky fill, warm lava bounce from below. */
   readonly hemiSky: THREE.Color;
@@ -287,7 +287,7 @@ export class EmberSky {
   fogColor(x: number, z: number, out: THREE.Color): THREE.Color {
     this.horizonToward(x, z, out);
     const l = out.r * .2126 + out.g * .7152 + out.b * .0722;
-    out.lerp(this.tmpColor.setRGB(l, l, l * 1.08, THREE.LinearSRGBColorSpace), .22).multiplyScalar(.82);
+    out.lerp(this.tmpColor.setRGB(l, l, l * 1.1, THREE.LinearSRGBColorSpace), .38).multiplyScalar(.8);
     this.material.uniforms.hazeColor.value.copy(out);
     return out;
   }

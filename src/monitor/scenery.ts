@@ -63,7 +63,8 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
   if (area === 5 || area === 6) {
     const island = area === 6 ? new SkybloomIsland() : new FrontierIsland(area);
     scene.add(island.root); island.root.visible = true;
-    scene.fog = new THREE.FogExp2(area === 5 ? '#3d2a2c' : '#bcd6ea', .003);
+    const air = island instanceof FrontierIsland ? island.air : null;
+    scene.fog = new THREE.FogExp2(air ? air.sky.skyHorizon.clone().multiplyScalar(.82) : area === 5 ? '#3d2a2c' : '#bcd6ea', .003);
     return { scene, height: (x, z) => island.height(x, z), raycast: (a, b) => island.collision.raycast(a, b), update: (_dt, t) => island.update(t), dispose };
   }
   // World II shares its exact terrain samples, biome colours, town kit and major landmarks.
