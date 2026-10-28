@@ -31,6 +31,11 @@ import { FLOW_CELL, LavaFlow, type FlowArea, type FlowDeposit, type FlowSource }
  *   analytic lobes instead: Bingham domes h = sqrt(2 d (dist + 8 d)) under a rounded 1.1 m shoulder, sized from volume
  *   (R = (15 V / (8 pi sqrt(2 d)))^0.4), toes and side lobes bulges of the same mesh, shading normals from a softer,
  *   blurred dome on the smooth cone.
+ * - The simulated lobes take the tongues' near-black basalt: plates and cracks unfolded up their fronts, pahoehoe
+ *   ropes concentric with the margin (from the thickness each cell froze at), a cavity term that darkens cracks and
+ *   troughs for specular light too, a glassy skin (0.62-0.82) so light breaks into glints, then a clinker skin, an
+ *   oxidised rim and a contact line at the foot. Cooling rock keeps a dull red only deep in some cracks, fading with
+ *   its temperature over a few minutes.
  * - Gloss (roughness down to 0.34) only on young crust and rope crests, broken up; no roughness under 0.30.
  *
  * The tongues lie on the cone and the terrain as they are: no channel is carved (ground.ts and the collision bake are
@@ -450,29 +455,40 @@ uniform highp sampler2D uFBase;
 uniform vec2 uFTexel;
 varying vec2 vFU;
 varying vec3 vFW;
+varying float vLift;
+varying vec3 vFN;
 float fGround(ivec2 i){return texelFetch(uFBase,clamp(i,ivec2(0),textureSize(uFBase,0)-1),0).r;}
-float fShade(ivec2 i,vec2 uv){return fGround(i)+texture2D(uFR0,uv).g;}
+// The lift the mesh draws at a vertex (see FLOW_VERT_BEGIN): the thickness (3x3-rounded) where there is lava, the
+// blurred thickness less 4 cm beside it, sunk 0.6 m far from it.
+float fLift(vec4 r){return mix(max(r.r,r.a),mix(-.6,r.a*1.3-.05,smoothstep(.01,.05,r.a)),1.-smoothstep(.005,.02,r.r));}
+// Shading height: the 5x5-blurred thickness on the domes; at the margin the drawn lift itself, so the shoulder turns
+// away from the light where the mesh does instead of reading as a soft ramp.
+// (Cut off at 0.12 m under the ground: the deep sink of far cells is not a slope to light.)
+float fShade(ivec2 i,vec2 uv,float w){vec4 r=texture2D(uFR0,uv);return fGround(i)+mix(max(fLift(r),-.12),r.g,w);}
 `;
-/** Shading normal from the blurred thickness on the ground (isaac #944: normals softer than positions, so domes and
- * fronts light round while the mesh keeps its step). */
+/** Shading normal from the blurred thickness on the ground (isaac #944: normals softer than positions, so domes light
+ * round), from the drawn thickness at the margin so the shoulder reads. */
 const FLOW_VERT_NORMAL = /* glsl */ `
 ivec2 fI=ivec2(aCell/uFTexel);
 vec2 fX=vec2(uFTexel.x,0.),fZ=vec2(0.,uFTexel.y);
-float fdx=fShade(fI+ivec2(1,0),aCell+fX)-fShade(fI-ivec2(1,0),aCell-fX);
-float fdz=fShade(fI+ivec2(0,1),aCell+fZ)-fShade(fI-ivec2(0,1),aCell-fZ);
+float fW=smoothstep(.25,.6,texture2D(uFR0,aCell).r);
+float fdx=fShade(fI+ivec2(1,0),aCell+fX,fW)-fShade(fI-ivec2(1,0),aCell-fX,fW);
+float fdz=fShade(fI+ivec2(0,1),aCell+fZ,fW)-fShade(fI-ivec2(0,1),aCell-fZ,fW);
 vec3 objectNormal=normalize(vec3(-fdx,${(2 * FLOW_CELL).toFixed(3)},-fdz));
 `;
-/** Lift each vertex by the lava's thickness, or the 3x3-blurred thickness where that is more, so a front rounds over
- * two cells instead of standing up as a one-cell wall; a cell with nothing sinks 0.12 m into the ground (no degenerate
- * triangles). Only that shallow, so the triangles that dip under the ground at the foot show as slivers, not teeth. */
+/** Lift each covered vertex by the lava's thickness, or the 3x3-blurred thickness where that is more, so the top
+ * rolls over convexly. An empty vertex beside the lava takes the blurred thickness less 4 cm (steeper than the blur
+ * alone, so the front leaves the ground as a shoulder instead of a ramp), its ground contact following the blurred
+ * field's smooth contour. Far from the lava it sinks 0.6 m: deep enough that the empty triangles stay under the ground
+ * even across the cone foot's crease on the half-resolution mesh (they would show as black teeth there). */
 const FLOW_VERT_BEGIN = /* glsl */ `
 vec3 transformed=vec3(position);
 vec4 fR=texture2D(uFR0,aCell);
-float fH=max(fR.r,fR.a);
-transformed.y+=fH-.12*(1.-smoothstep(.02,.08,fH));
+vLift=fLift(fR);
+transformed.y+=vLift;
 vFU=aCell;
 `;
-const FLOW_VERT_TAIL = 'vFW=(modelMatrix*vec4(transformed,1.)).xyz;';
+const FLOW_VERT_TAIL = 'vFW=(modelMatrix*vec4(transformed,1.)).xyz;vFN=normalize(mat3(modelMatrix)*objectNormal);';
 const FLOW_FRAG_HEAD = /* glsl */ `
 ${LAVA_COMMON}
 uniform sampler2D uFR0;
@@ -480,7 +496,10 @@ uniform sampler2D uFR1;
 uniform float uPhF;
 varying vec2 vFU;
 varying vec3 vFW;
-float lCrack,lGloss,lStatic,lEdge;
+varying float vLift;
+varying vec3 vFN;
+float lRopeH(float ph,out float d){float cs=.5+.5*cos(6.2832*ph),c3=cs*cs*cs;d=-12.566*c3*sin(6.2832*ph);return c3*cs;}
+float lCrack,lGloss,lStatic,lEdge,lRope,lHot,lCav;
 vec3 lEmit;
 vec4 lC;
 `;
@@ -494,7 +513,9 @@ const FLOW_COLOR = /* glsl */ `
   // phases are blended as crack masks, not as distances, which would open blobs where their networks cross.
   float wM=smoothstep(.002,.012,length(vel));
   lStatic=1.-step(1e-5,wM);
-  vec2 p=vFW.xz;
+  // Material coordinates on the ground plane, unfolded up the fronts (shifted outward by the height above the ground
+  // along the smooth normal), so a front's face carries crust instead of one stretched texel.
+  vec2 p=vFW.xz+normalize(vFN).xz*clamp(vLift,0.,.6)*1.4;
   vec4 cs=texture2D(uCrust,p/TILE);
   float jit=texture2D(uCrust,p/TILE*.11+.3).a;
   float a=fract(uPhF+jit),b=fract(a+.5),wB=abs(2.*a-1.);
@@ -504,46 +525,83 @@ const FLOW_COLOR = /* glsl */ `
   lC=mix(cs,mix(A,B,wB),wM);
   float fine=lC.b,id=lC.g,nz=cs.a;
   float hot=smoothstep(.3,.95,T);
-  // The margin: the lowest ~0.3 m of a front is a rubbly clinker skin; a moving hot front squeezes a glowing seam out
-  // along its foot. Measured on the filtered thickness, not the interpolated vertex lift, so the band follows the
-  // front smoothly instead of showing the triangles.
+  lHot=hot;
+  // The margin, from the mesh's interpolated lift (exact where it meets the ground): the lowest ~0.12 m of a front is
+  // a rubbly clinker skin, under it a thin oxidised rim and the contact line. Above it the face keeps the crust.
   float hr=max(r0.r,r0.a);
-  lEdge=1.-smoothstep(.08,.36,hr);
-  float cw=((.035+.05*hot+.05*hot*hot*wM)*(1.-.7*lEdge))*mix(.7,1.25,nz);
+  lEdge=1.-smoothstep(.03,.16,vLift);
+  float rim=1.-smoothstep(.02,.09,vLift);
+  float contact=1.-smoothstep(-.02,.08,vLift);
+  float cw=((.042+.05*hot+.05*hot*hot*wM)*(1.-.5*lEdge))*mix(.7,1.25,nz);
   float aS=fwidth(cs.r)*1.1+.004,aA=fwidth(A.r)*1.1+.004,aB=fwidth(B.r)*1.1+.004;
   float kS=1.-smoothstep(cw-aS,cw+aS,cs.r),kA=1.-smoothstep(cw-aA,cw+aA,A.r),kB=1.-smoothstep(cw-aB,cw+aB,B.r);
   lCrack=mix(kS,mix(kA,kB,wB),wM);
+  // As it cools only the middle of a crack still shows the heat, deep down: the glowing core narrows to under half
+  // the crack's width.
+  float cc=cw*mix(.4,1.,hot);
+  float gS=1.-smoothstep(cc-aS,cc+aS,cs.r),gA=1.-smoothstep(cc-aA,cc+aA,A.r),gB=1.-smoothstep(cc-aB,cc+aB,B.r);
+  float core=mix(gS,mix(gA,gB,wB),wM);
   // Distance into the plate, for the heat falling off from a crack's middle (each phase its own).
   float eS=smoothstep(0.,cw+aS,cs.r),eM=mix(smoothstep(0.,cw+aA,A.r),smoothstep(0.,cw+aB,B.r),wB);
   float edge=mix(eS,eM,wM);
   float fineLine=1.-smoothstep(.0,.06+fwidth(fine),fine);
-  vec3 bas=vec3(.024,.021,.022)*(.7+.6*nz)*(.8+.4*id);
+  // Pahoehoe ropes on the lobe's skin, concentric with its margin, so their crests bow out the way the lobe spread: a
+  // yield dome h = sqrt(2 d x) puts x = h^2 / 2d metres in from its margin. In patches, never on the clinker margin
+  // or the flat middle of a big lobe; at rest they come from the thickness alone (no time term).
+  float big=texture2D(uCrust,p/6.3+.29).a,wob=texture2D(uCrust,p/1.9+.71).a;
+  // From the 5x5-blurred thickness the lava had when it froze (subsidence does not move the folds), smooth enough that
+  // they do not show the cells.
+  float xin=r1.w*r1.w/${(2 * YIELD_D).toFixed(2)};
+  float dR,rope=lRopeH(xin/.3+2.6*big+.9*wob,dR);
+  float ropeW=smoothstep(.42,.6,big+.25*wob)*smoothstep(.12,.45,xin)*(1.-smoothstep(2.6,4.2,xin))*(1.-.5*wM);
+  // Torn into short arcs: a fold runs a metre or two, then breaks.
+  ropeW*=smoothstep(.25,.5,texture2D(uCrust,vec2(p.x+p.y,p.y-p.x)/3.1+.13).a+.3*rope);
+  lRope=.05*ropeW*rope;
+  // Albedo: near-black basalt as on the tongues, darkening into the cracks and the rope troughs; fine cooling cracks.
+  vec3 bas=vec3(.022,.02,.021)*(.7+.6*nz)*(.85+.3*id);
   bas*=1.-.45*fineLine*(1.-hot);
-  // Old rock is a flatter dark grey; the clinker margin is darker, broken rubble.
-  bas=mix(bas,vec3(.026,.025,.026)*(.7+.6*nz),(1.-smoothstep(.0,.2,T))*.6);
+  // Cavities: plates darken into their cracks, rope troughs under their crests. Applied to the light as a whole
+  // (specular included, see FLOW_CAVITY), or a dark rough skin reads as a grey haze.
+  lCav=mix(.4,1.,smoothstep(0.,cw*2.8+aS,lC.r))*(1.-.5*ropeW*(1.-smoothstep(.0,.4,rope)))*(1.-.85*lCrack);
+  // Clinker skin low on the front, then a thin oxidised rim (rust-dark) and the contact line where it meets the ground.
   float rub=texture2D(uCrust,p/2.9+.53).a;
-  bas=mix(bas,vec3(.04,.034,.033)*(.5+1.*rub),lEdge*.85);
+  bas=mix(bas,vec3(.014,.013,.013)*(.5+1.*rub),lEdge*.75);
+  bas=mix(bas,vec3(.016,.009,.007)*(.6+.8*rub),rim*.8);
   diffuseColor.rgb=bas*(1.-lCrack);
-  // Glow: the cracks show the inside's heat, brightest along their middle; cooling crust seals most of them dark.
-  // The inside cools slower than the skin: cracks stay a dull red for a minute or two after the lobe has frozen.
-  float inner=.93*pow(smoothstep(.03,.92,T),.6);
-  float gate=mix(smoothstep(.4,.72,nz+.25*id),1.,hot);
+  // Glow: the cracks show the inside's heat, brightest along their middle. Hot lava glows across every crack; cooling
+  // rock keeps a dull red only deep in some of them, fading as its temperature falls (a monotonic fade over a few
+  // minutes, the temperature channel alone); under T 0.1 it is dark.
+  float inner=.93*pow(smoothstep(.04,.92,T),.6);
+  float gate=mix(smoothstep(.42,.72,nz+.3*id),1.,hot);
   float pulse=mix(1.,.86+.14*sin(uPulse+id*6.283),wM);
-  float heat=inner*mix(1.,.62,edge)*(.86+.14*nz)*pulse*mix(.35,1.,gate);
-  lEmit=lavaBB(heat)*lCrack;
-  float seam=smoothstep(.04,.3,act)*hot*smoothstep(.045,.065,hr)*(1.-smoothstep(.08,.12,hr))*smoothstep(.3,.55,rub+.3*nz);
+  float heat=inner*mix(1.,.62,edge)*(.86+.14*nz)*pulse;
+  lEmit=lavaBB(heat)*core*gate;
+  // A moving hot front squeezes a glowing seam out along its foot; elsewhere the foot is the dark contact line.
+  float seam=smoothstep(.04,.3,act)*hot*(1.-smoothstep(.05,.12,vLift))*smoothstep(-.03,.0,vLift)*smoothstep(.3,.55,rub+.3*nz);
   lEmit+=lavaBB(.9*inner/.93)*seam;
   diffuseColor.rgb*=1.-seam;
+  // The rubbly margin is dark too: its rubble shadows itself.
+  lCav*=mix(1.,.35+.45*rub,lEdge*(1.-hot))*(1.-.85*contact*(1.-seam));
+  // Stretching skin on moving lava tears along its fine cracks too.
   lEmit+=lavaBB(T*.5)*fineLine*hot*wM*(1.-lCrack)*.5;
+  // Clear coat: broken glints on the domed middles of young plates (moving) and on rope crests, fresher ones glossier.
   float young=smoothstep(.62,.8,id)*hot*(1.-lCrack)*smoothstep(.02,.06,lC.r-cw)*(1.-smoothstep(.06,.16,lC.r-cw));
-  lGloss=uDetail*wM*(1.-lEdge)*young*.7*smoothstep(.15,.35,fine);
+  float crest=smoothstep(.55,.9,rope)*ropeW*smoothstep(.45,.7,nz+.5*fine)*mix(.45,.85,smoothstep(.04,.3,T));
+  lGloss=uDetail*(1.-lEdge)*(1.-lCrack)*max(young*.7*wM*smoothstep(.15,.35,fine),crest);
 }
 `;
+/** Cooled pahoehoe skin is glassy: 0.62-0.82 by plate, so light breaks into glints on its relief instead of a hazy
+ * sheen; molten cracks 0.42, cold cracks and the clinker margin rough; broken glints on crests 0.36; never under 0.30. */
 const FLOW_ROUGH = /* glsl */ `
-roughnessFactor=mix(mix(.86,.93,lStatic),.42,lCrack);
-roughnessFactor=mix(roughnessFactor,.96,lEdge*(1.-lCrack));
-roughnessFactor=mix(roughnessFactor,.34,lGloss);
+roughnessFactor=mix(mix(.62,.82,fract(lC.g*7.3)),mix(.92,.42,lHot),lCrack);
+roughnessFactor=mix(roughnessFactor,.95,lEdge*(1.-lCrack));
+roughnessFactor=mix(roughnessFactor,.36,lGloss);
 roughnessFactor=max(roughnessFactor,.3);
+`;
+const FLOW_CAVITY = /* glsl */ `
+#include <aomap_fragment>
+reflectedLight.directDiffuse*=lCav;reflectedLight.directSpecular*=lCav;
+reflectedLight.indirectDiffuse*=lCav;reflectedLight.indirectSpecular*=lCav;
 `;
 const FLOW_NORMAL = /* glsl */ `
 {
@@ -552,9 +610,10 @@ const FLOW_NORMAL = /* glsl */ `
   // and on the clinker margin.
   float near=1.-smoothstep(12.,30.,distance(cameraPosition,vFW));
   // Plates domed between their cracks, the fine cooling cracks, and wrinkles in the skin at two scales.
-  vec2 wq=vFW.xz;
+  vec2 wq=vFW.xz+normalize(vFN).xz*clamp(vLift,0.,.6)*1.4;
   float wr=texture2D(uCrust,wq/2.1+.17).a*.6+texture2D(uCrust,wq/.9+.61).a*.4;
-  float hc=(-.07*lCrack+.08*sqrt(lC.r)-.018*(1.-smoothstep(0.,.08,lC.b))+.045*wr)*near*(1.-lEdge);
+  float rb=texture2D(uCrust,wq/.55+.37).a;
+  float hc=((-.07*lCrack+.08*sqrt(lC.r)-.018*(1.-smoothstep(0.,.08,lC.b))+.045*wr+lRope)*(1.-.6*lEdge)+.04*rb*lEdge)*near;
   vec3 g=lavaBumpGrad(vFW,nW,hc);
   g-=dot(g,nW)*nW;
   nW=normalize(nW-g);
@@ -906,7 +965,8 @@ function flowLayout(sup: Support) {
     // The old lobe's back edge tucks under the nose (it is 1.25 R long along the flow).
     const R = lobeRadius(def.volume * .8), dep = at(foot + FLOW_NOSE * .5 + R), dd = dirAt(foot + FLOW_NOSE * .5 + R);
     areas.push({ x: nose.x + nd.x * 4, z: nose.z + nd.z * 4, radius: 10.5 });
-    deposits.push({ x: dep.x, z: dep.z, dirX: dd.x, dirZ: dd.z, volume: def.volume * .8, seed: def.seed });
+    // A live flow's old lobe froze recently (its deepest cracks still glow for a few minutes); the older flow's is cold.
+    deposits.push({ x: dep.x, z: dep.z, dirX: dd.x, dirZ: dd.z, volume: def.volume * .8, seed: def.seed, temp: def.heat >= 1 ? .3 : .04 });
     const f = FEEDS[i];
     if (def.heat >= 1 && f) sources.push({ x: nose.x, z: nose.z, dirX: nd.x, dirZ: nd.z, rate: f[0], feed: f[1], period: f[2], phase: f[3], seed: def.seed });
   });
@@ -1115,8 +1175,9 @@ export class EmberLava {
     if (this.mode === 'sim' && this.renderer) {
       if (!this.flowStarted) {
         this.flowStarted = true;
-        // A little history, so the first look already has lava on the move.
-        this.flow.advance(this.renderer, FLOW_WARM_STEPS);
+        // A little history, so the first look already has lava on the move. No episode starts within it, so it needs no
+        // snapshots (each would be a read-back stall); the start snapshot is the CPU copy of the start state.
+        this.flow.advance(this.renderer, FLOW_WARM_STEPS, false);
       }
       this.flow.update(this.renderer, time);
       if (!this.flow.supported) this.setFlow(false);
@@ -1181,6 +1242,7 @@ export class EmberLava {
         .replace('#include <color_fragment>', `#include <color_fragment>\n${FLOW_COLOR}`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${FLOW_ROUGH}`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${FLOW_NORMAL}`)
+        .replace('#include <aomap_fragment>', FLOW_CAVITY)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${TONGUE_EMIT}`)
         .replace('#include <dithering_fragment>', MASK_OUT);
     };
@@ -1202,8 +1264,11 @@ export class EmberLava {
         .replace('#include <begin_vertex>', /* glsl */ `vec3 transformed=vec3(position);
           {
             vec4 fc=texture2D(uFR0,aCell);
-            vHalo=.28*smoothstep(.004,.1,fc.g)*(1.-smoothstep(.006,.03,fc.r));
-            transformed.y+=fc.r>.012?-.05:(vHalo>.002?.04:-.4);
+            vHalo=.3*smoothstep(.004,.1,fc.g)*(1.-smoothstep(.006,.03,fc.r));
+            // On the ground just above it, but under the lava's own margin vertices (they rise with the blurred
+            // thickness, see FLOW_VERT_BEGIN), so the halo never paints the foot of the front.
+            float lavaY=mix(-.6,fc.a*1.3-.05,smoothstep(.01,.05,fc.a));
+            transformed.y+=fc.r>.012?-.05:(vHalo>.002?(lavaY>0.?min(.03,lavaY-.03):.03):-.4);
           }`);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vHalo;')
@@ -1223,23 +1288,23 @@ export class EmberLava {
     return m;
   }
 
-  /** Clinker for the simulated lava: a fixed pool of crumbs scattered over its whole reach (about 5 per m2); each one
+  /** Clinker for the simulated lava: a fixed pool of crumbs scattered over its whole reach (about 11 per m2); each one
    * reads the height field and shows only where it sits in the 0.5 m band outside a margin or on the margin itself,
    * so the band follows the fronts. Rotation and size come from per-instance data, the instance matrix only places it. */
   private flowClinkerPool() {
     const spots = this.flow.clinkerSpots();
     const order = spots.map((_, i) => i).sort((a, b) => hash1(a * 7.7) - hash1(b * 7.7));
-    const box = new THREE.BoxGeometry(2, 2, 2);
-    box.deleteAttribute('normal'); box.deleteAttribute('uv');
-    const geo = mergeVertices(box);
+    const ico = new THREE.IcosahedronGeometry(1.3, 0);
+    ico.deleteAttribute('normal'); ico.deleteAttribute('uv');
+    const geo = mergeVertices(ico);
     const p = geo.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) { const f = .55 + .45 * hash1(i * 3.9 + 1); p.setXYZ(i, p.getX(i) * f, p.getY(i) * (.7 + .3 * hash1(i * 5.1)), p.getZ(i) * (.6 + .4 * hash1(i * 7.3))); }
     const ck = new Float32Array(spots.length * 4);
     const mesh = new THREE.InstancedMesh(geo, this.flowClinkerMaterial(), Math.max(1, spots.length));
     const mtx = new THREE.Matrix4();
     order.forEach((src, i) => {
-      const sp = spots[src], h = hash1(src * 8.9 + 3), inside = hash1(src * 2.9) < .45;
-      ck.set([sp.seed, (inside ? .05 + .05 * h : .035 + .07 * Math.pow(h, 1.5)), inside ? 1 : 0, hash1(src * 4.4)], i * 4);
+      const sp = spots[src], h = hash1(src * 8.9 + 3), inside = hash1(src * 2.9) < .3;
+      ck.set([sp.seed, (inside ? .045 + .05 * h : .05 + .09 * Math.pow(h, 1.5)), inside ? 1 : 0, hash1(src * 4.4)], i * 4);
       mesh.setMatrixAt(i, mtx.makeTranslation(sp.x, sp.y, sp.z));
     });
     geo.setAttribute('aCk', new THREE.InstancedBufferAttribute(ck, 4));
@@ -1262,14 +1327,15 @@ export class EmberLava {
           {
             vec3 ip=instanceMatrix[3].xyz;
             vec4 fc=texture2D(uFR0,(ip.xz-uFGrid.xy)/uFGrid.zw);
-            // Outside crumbs lie on the ground within the blurred margin; inside ones ride the lava's lowest edge.
-            float outB=smoothstep(.02,.09,fc.g)*(1.-smoothstep(.006,.03,fc.r))*(1.-aCk.z);
+            // Outside crumbs lie on the ground in a band just outside the drawn margin (where the 3x3 field, which
+            // places the margin, has faded but the 5x5 one has not); inside ones are half buried in the lava's foot.
+            float outB=smoothstep(.004,.03,fc.g)*(1.-smoothstep(.04,.07,fc.a))*(1.-aCk.z);
             float inB=smoothstep(.03,.1,fc.r)*(1.-smoothstep(.22,.4,fc.r))*aCk.z;
-            float show=max(outB,inB);
+            float show=sqrt(max(outB,inB));
             float a1=aCk.x*6.2832,a2=aCk.w*6.2832;
             mat3 R=mat3(cos(a1),0.,-sin(a1),0.,1.,0.,sin(a1),0.,cos(a1))*mat3(1.,0.,0.,0.,cos(a2),sin(a2),0.,-sin(a2),cos(a2));
             transformed=R*(position*vec3(1.+.5*aCk.w,.6,1.))*aCk.y*show;
-            transformed.y+=(inB>outB?fc.r*.85:0.)+aCk.y*.25*show;
+            transformed.y+=(inB>outB?fc.r*.6:0.)+aCk.y*.25*show;
           }`)
         .replace('#include <fog_vertex>', '#include <fog_vertex>\nvLW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
       shader.fragmentShader = shader.fragmentShader
@@ -1277,7 +1343,7 @@ export class EmberLava {
         .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
           {
             vec4 t=texture2D(uCrust,vLW.xz/7.3+vLW.y*.05);
-            diffuseColor.rgb=vec3(.05,.043,.043)*(.6+.8*t.a)*(.8+.4*t.g);
+            diffuseColor.rgb=vec3(.036,.031,.03)*(.6+.8*t.a)*(.8+.4*t.g);
           }`)
         .replace('#include <dithering_fragment>', '#include <dithering_fragment>\nif(uMask>.5)gl_FragColor=uMask>1.5?vec4(0.,0.,1.,1.):vec4(1.,0.,0.,1.);');
     };

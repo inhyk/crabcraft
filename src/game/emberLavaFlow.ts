@@ -11,7 +11,9 @@ import * as THREE from 'three';
  *         B temperature 0..1 (the hot layer's; on a cold cell it keeps cooling for the shading), A the cell's ground
  *         height and yield multiplier packed (static, carried through; -1 where lava may not go), so a pass reads
  *         one texture per neighbour
- *   flow  RG velocity (m/s, smoothed), B activity (smoothed flux); half float
+ *   flow  RG velocity (m/s, smoothed), B activity (smoothed flux), A the thickness the lava had when it last held
+ *         hot lava (it froze at that), which subsidence does not touch: the crust's rope folds follow it, so they hold
+ *         still on rock that is slowly subsiding; half float
  *
  * One pass, every pair of the 8 neighbours (diagonals sqrt 2 away, weight 1/sqrt 2):
  *   rest = min(4 d, 2 d D / (h_i + h_j))       the yield rule: a pair stands while h_mean * drop / D <= d
@@ -72,7 +74,9 @@ export interface FlowSource {
   rate: number; feed: number; period: number; phase: number;
   seed: number;
 }
-export interface FlowDeposit { x: number; z: number; dirX: number; dirZ: number; volume: number; seed: number }
+/** An old cold lobe in the start state; `temp` is its rock temperature (0.3 just frozen, its deepest cracks still
+ * glowing; under 0.1 cooled through), 0.3 if left out. */
+export interface FlowDeposit { x: number; z: number; dirX: number; dirZ: number; volume: number; seed: number; temp?: number }
 export interface FlowArea { x: number; z: number; radius: number }
 export interface LavaFlowOptions {
   /** Ground under the lava (terrain and cone exactly as drawn). */
@@ -180,7 +184,7 @@ void main(){
   if(dot(v,v)<1e-8)v=vec2(0.);
   if(act<2e-4)act=0.;
   oState=vec4(hh,hc,T,s0.a);
-  oFlow=vec4(v,act,0.);
+  oFlow=vec4(v,act,hh>0.?hh+hc:f0.w);
 }
 `;
 
@@ -191,11 +195,12 @@ precision highp sampler2D;
 uniform sampler2D uInit;
 layout(location=0) out highp vec4 oState;
 layout(location=1) out highp vec4 oFlow;
-void main(){oState=texelFetch(uInit,ivec2(gl_FragCoord.xy),0);oFlow=vec4(0.);}
+void main(){vec4 s=texelFetch(uInit,ivec2(gl_FragCoord.xy),0);oState=s;oFlow=vec4(0.,0.,0.,s.a<0.?0.:s.r+s.g);}
 `;
 
 /** What the meshes read (half float, linear): R0 total thickness, 5x5-blurred thickness (normals, halo, clinker),
- * temperature, 3x3-blurred thickness (the rounded front of the drawn surface); R1 velocity, activity, hot thickness. Empty cells take their thickest neighbour's
+ * temperature, 3x3-blurred thickness (the rounded front of the drawn surface); R1 velocity, activity, 5x5-blurred
+ * thickness at freezing (the rope folds). Empty cells take their thickest neighbour's
  * temperature, velocity and activity, so filtering across the edge does not fade the front. */
 const PREP_FRAG = /* glsl */ `
 precision highp float;
@@ -211,19 +216,19 @@ void main(){
   vec4 s=texelFetch(uState,c,0);
   vec4 f=texelFetch(uFlow,c,0);
   float h=s.r+s.g;
-  float blur=0.,wsum=0.,b3=0.,best=h;
+  float blur=0.,wsum=0.,b3=0.,best=h,fz=0.;
   vec4 bs=s,bf=f;
   for(int j=-2;j<=2;j++)for(int i=-2;i<=2;i++){
     ivec2 q=clamp(c+ivec2(i,j),ivec2(0),sz-1);
     vec4 sq=texelFetch(uState,q,0);
     float hq=sq.r+sq.g;
     float w=float((i==0?6:abs(i)==1?4:1)*(j==0?6:abs(j)==1?4:1));
-    blur+=hq*w;wsum+=w;
+    blur+=hq*w;wsum+=w;fz+=texelFetch(uFlow,q,0).a*w;
     if(abs(i)<=1&&abs(j)<=1)b3+=hq*float((i==0?2:1)*(j==0?2:1));
     if(abs(i)<=1&&abs(j)<=1&&h<1e-4&&hq>best){best=hq;bs=sq;bf=texelFetch(uFlow,q,0);}
   }
   o0=vec4(h,blur/wsum,bs.b,b3/16.);
-  o1=vec4(bf.xy,bf.z,s.r);
+  o1=vec4(bf.xy,bf.z,fz/wsum);
 }
 `;
 
@@ -357,8 +362,8 @@ export class LavaFlow {
         const h = Math.sqrt(2 * d * (dist + 2 * d)) * smooth(0, .3, dist);
         const k = (j * nx + i) * 4;
         st[k + 1] = Math.max(st[k + 1], h);
-        // Still warm inside: its cracks glow a dull red for the first minutes.
-        st[k + 2] = .3;
+        // A recent lobe is still warm inside: its deepest cracks glow a dull red for the first minutes.
+        st[k + 2] = Math.max(st[k + 2], dep.temp ?? .3);
       }
     }
     return st;
@@ -430,8 +435,9 @@ export class LavaFlow {
     this.read = 0;
     this.time = 0; this.steps = 0; this.bank = 0; this.srcNorm.clear();
     this.prepare(renderer);
-    // A first snapshot at once (one stall, at start-up), so the first episodes can break out of the old lobes too.
-    this.snap = this.readState(renderer); this.snapAt = 0;
+    // The first snapshot is the start state itself, copied on the CPU (no read-back stall), so the first episodes can
+    // break out of the old lobes too.
+    this.snap = new Float32Array(this.initTex.image.data as Float32Array); this.snapAt = 0;
     renderer.setRenderTarget(prev);
     if (!deposits) { (this.initTex.image.data as Float32Array).set(this.startState(this.opts.deposits)); this.initTex.needsUpdate = true; }
     this.ready = true;
@@ -606,21 +612,21 @@ export class LavaFlow {
       idx.push(a, c, b, b, c, d);
     }
     g.setIndex(nx * nz > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : new THREE.Uint16BufferAttribute(idx, 1));
-    // Positions sit on the ground; the lava rises above it by a few metres at most.
+    // Positions sit on the ground; the lava rises above it by a few metres at most, empty cells sink under it.
     g.computeBoundingBox();
-    g.boundingBox!.max.y += 4;
+    g.boundingBox!.max.y += 4; g.boundingBox!.min.y -= 1;
     g.boundingSphere = g.boundingBox!.getBoundingSphere(new THREE.Sphere());
     return g;
   }
 
-  /** Clinker crumb candidates: about 5 per m2 over the reach, jittered; the shader shows the ones at a margin. */
+  /** Clinker crumb candidates: about 11 per m2 over the reach, jittered; the shader shows the ones at a margin. */
   clinkerSpots() {
     const out: { x: number; z: number; y: number; seed: number }[] = [];
     for (let j = 0; j < this.nz; j += 2) for (let i = 0; i < this.nx; i += 2) {
       if (!this.allowed(i, j) && !this.allowed(i + 1, j + 1)) continue;
-      for (let n = 0; n < 2; n++) {
-        if (n && hash((j * this.nx + i) * 5.1) > .35) continue;
-        const s = (j * this.nx + i) * 2 + n, x = this.x0 + (i + hash(s * 1.37) * 2) * FLOW_CELL, z = this.z0 + (j + hash(s * 2.11) * 2) * FLOW_CELL;
+      for (let n = 0; n < 4; n++) {
+        if (n && hash((j * this.nx + i) * 5.1 + n * 1.7) > .62) continue;
+        const s = (j * this.nx + i) * 4 + n, x = this.x0 + (i + hash(s * 1.37) * 2) * FLOW_CELL, z = this.z0 + (j + hash(s * 2.11) * 2) * FLOW_CELL;
         out.push({ x, z, y: this.opts.ground(x, z), seed: hash(s * 3.3) });
       }
     }
