@@ -3,6 +3,7 @@ import { createWorld } from '../world/provider';
 import { DawnIsland } from '../game/world3';
 import { SnowIsland } from '../game/world4';
 import { FrontierIsland } from '../game/frontierIsland';
+import { SkybloomIsland } from '../game/skybloomIsland';
 import { buildStarHeights, starSurfaceHeight } from '../game/world2Height';
 import { buildStarSettlement } from '../game/world2Settlement';
 import { starGroundColor } from '../game/world2Ground';
@@ -60,7 +61,7 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
     return { scene, height: (x, z) => island.height(x, z), raycast: (a, b) => island.collision.raycast(a, b), update: (_dt, t, _cam, p) => island.update(t, p.x, p.z), dispose };
   }
   if (area === 5 || area === 6) {
-    const island = new FrontierIsland(area);
+    const island = area === 6 ? new SkybloomIsland() : new FrontierIsland(area);
     scene.add(island.root); island.root.visible = true;
     scene.fog = new THREE.FogExp2(area === 5 ? '#3d2a2c' : '#bcd6ea', .003);
     return { scene, height: (x, z) => island.height(x, z), raycast: (a, b) => island.collision.raycast(a, b), update: (_dt, t) => island.update(t), dispose };

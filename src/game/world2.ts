@@ -1,4 +1,5 @@
 import {FrontierIsland} from './frontierIsland';
+import {SkybloomIsland} from './skybloomIsland';
 import {FRONTIER_POINTS} from './frontierQuests';
 import {FRONTIER_BOUNDS} from './realmLayout';
 import * as THREE from 'three';
@@ -56,7 +57,7 @@ export class HiddenWorld {
   readonly third=new DawnIsland();
   readonly fourth=new SnowIsland();
   readonly fifth=new FrontierIsland(5);
-  readonly sixth=new FrontierIsland(6);
+  readonly sixth=new SkybloomIsland();
   readonly emberRequests:DawnRequests;
   readonly skyRequests:DawnRequests;
   private emberGate:FrostPortal;
