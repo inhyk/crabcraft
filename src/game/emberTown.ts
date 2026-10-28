@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type {LavaZone} from './emberLava';
 import {
   FORGE_BANNERS, FORGE_BARGE, FORGE_CRANE, FORGE_D, FORGE_HOUSES, FORGE_JETTY, FORGE_LANTERNS, FORGE_QUAY, FORGE_RAIL,
-  FORGE_STALLS, FORGE_W, FORGE_YARD, GLASS_KILN, SMELTER_TOWER, forgeYaw, type ForgeHouse,
+  FORGE_GATE, FORGE_STALLS, FORGE_W, FORGE_YARD, GLASS_KILN, SMELTER_TOWER, forgeYaw, type ForgeHouse,
 } from './emberTownLayout';
 
 /*
@@ -129,19 +129,26 @@ function solidMaterial(lights: number, uniforms: {uTime: THREE.IUniform<number>;
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>\n#define ET_LIGHTS ${lights}\nuniform float uTime;uniform vec4 uLP[16];uniform vec4 uLC[16];uniform vec3 uMortar;varying vec4 vPat;varying vec2 vRM;varying vec3 vWP;varying vec3 vWN;\n${NOISE}`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
-  vec3 N0=normalize(vWN);vec2 etQ;
-  if(abs(N0.y)>.72)etQ=vWP.xz;else{vec2 t=normalize(vec2(-N0.z,N0.x));etQ=vec2(dot(vWP.xz,t),vWP.y);}
+  vec3 N0=normalize(vWN);vec2 etQ;vec3 etU=vec3(1.,0.,0.),etV=vec3(0.,0.,1.),etBev=vec3(0.);
+  if(abs(N0.y)>.72)etQ=vWP.xz;else{vec2 t=normalize(vec2(-N0.z,N0.x));etQ=vec2(dot(vWP.xz,t),vWP.y);etU=vec3(t.x,0.,t.y);etV=vec3(0.,1.,0.);}
   float pat=vPat.x,etK=vPat.y,etSeed=vPat.z,etRough=1.;
   if(pat>.5&&pat<2.5){
-    // Dressed stone (1) or rubble (2): staggered courses, block tint, bevelled arrises, lighter recessed mortar.
-    float rub=step(1.5,pat);float hgt=(.44+.2*rub)*etK;float row=floor(etQ.y/hgt);
-    float w=(.82+.5*etH(vec2(row,etSeed+3.)))*etK*(1.+.4*rub);float x=etQ.x+etH(vec2(row,etSeed))*3.;float c=floor(x/w);
-    vec2 f=vec2(fract(x/w)*w,fract(etQ.y/hgt)*hgt);
-    float e=min(min(f.x,w-f.x),min(f.y,hgt-f.y))+(etN(etQ*5.)-.5)*.05*etK*(.4+rub);
-    float mo=1.-smoothstep(.016*etK,.04*etK,e);
-    float bt=.76+.42*etH(vec2(c,row)+etSeed);
-    vec3 st=diffuseColor.rgb*bt*(.86+.24*etN(etQ*6.+etSeed))*(.8+.2*smoothstep(.03,.14,e));
-    diffuseColor.rgb=mix(st,uMortar*(.82+.2*etN(etQ*3.)),mo);etRough=1.+.15*mo;
+    // Dressed stone (1) or rubble (2): courses alternating tall and short, blocks of mixed length (some split),
+    // pitted faces, chamfered arrises tilting the normal, thin lighter mortar.
+    float rub=step(1.5,pat);float ka=(.5+.18*rub)*etK,kb=(.34+.14*rub)*etK,per=ka+kb;
+    float pr=floor(etQ.y/per),fy=etQ.y-pr*per,top=step(ka,fy);float row=pr*2.+top,hgt=mix(ka,kb,top);fy-=top*ka;
+    float w=(.78+.62*etH(vec2(row,etSeed+3.)))*etK*(1.+.35*rub);float x=etQ.x+etH(vec2(row,etSeed))*3.;float c=floor(x/w);float fx=x-c*w;
+    float sp=etH(vec2(c,row)+etSeed*.7);if(sp<.38){float at=w*(.35+.3*etH(vec2(row,c)));if(fx>at){fx-=at;w-=at;c+=.5;}else w=at;}
+    float jit=(etN(etQ*4.+etSeed)-.5)*.04*etK*(.3+rub);
+    float e=min(min(fx,w-fx),min(fy,hgt-fy))+jit;
+    float mo=1.-smoothstep(.01*etK,.026*etK,e);
+    float bh=etH(vec2(c,row)+etSeed);float bt=.84+.3*bh;
+    vec3 st=diffuseColor.rgb*bt*mix(vec3(1.),vec3(1.06,.99,.95),etH(vec2(row,c)+2.))*(.88+.16*etN(etQ*15.+etSeed)+.06*etN(etQ*3.));
+    float bv=.075*etK;st*=.86+.14*smoothstep(0.,bv*1.6,e);
+    diffuseColor.rgb=mix(st,uMortar*(.85+.2*etN(etQ*5.)),mo);etRough=1.+.12*mo;
+    vec2 tl=vec2((1.-smoothstep(0.,bv,w-fx))-(1.-smoothstep(0.,bv,fx)),(1.-smoothstep(0.,bv,hgt-fy))-(1.-smoothstep(0.,bv,fy)));
+    tl+=(vec2(etH(vec2(c,row+9.)),etH(vec2(row,c+5.)))-.5)*.22;
+    etBev=(tl.x*etU+tl.y*etV)*.5*(1.-mo);
   }else if(pat>2.5&&pat<3.5){
     // Planks: boards across u, grain along v, dark gaps.
     float w=.2*etK;float b=floor(etQ.x/w);float f=fract(etQ.x/w);
@@ -161,6 +168,7 @@ function solidMaterial(lights: number, uniforms: {uTime: THREE.IUniform<number>;
   diffuseColor.rgb*=mix(vec3(.46,.44,.52),vec3(1.),smoothstep(0.,1.5,vWP.y-vPat.w));`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=clamp(vRM.x*etRough,.08,1.);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor=vRM.y;')
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal=normalize(normal+mat3(viewMatrix)*etBev);')
       .replace('#include <emissivemap_fragment>', /* glsl */ `#include <emissivemap_fragment>
   {vec3 warm=vec3(0.);
    for(int i=0;i<ET_LIGHTS;i++){vec3 d=uLP[i].xyz-vWP;float r=uLP[i].w;float dl=length(d);
@@ -393,8 +401,8 @@ export class EmberTown {
     this.S(frustum(1.7, .8, 1.8, .9, .62), m, '#55504f', PAT.ashlar, .5, .9, 0, base, 7);
     this.S(box(1.5, .02, .6).translate(0, .55, 0), m, '#141418', PAT.plain, 1, .08, .3, base);
   }
-  private brazier(x: number, z: number, s: number, phase: number) {
-    const y = this.h(x, z), m = trs(x, y, z, phase);
+  private brazier(x: number, z: number, s: number, phase: number, at?: number) {
+    const y = at ?? this.h(x, z), m = trs(x, y, z, phase);
     for (let i = 0; i < 3; i++) { const a = i / 3 * TAU; this.S(box(.06, 1.05 * s, .06).translate(0, .52 * s, 0).applyMatrix4(trs(Math.cos(a) * .3 * s, 0, Math.sin(a) * .3 * s, -a, 0, .22)), m, '#2a292d', PAT.plain, 1, .5, .8, y); }
     this.S(lathe([[.1, 0], [.38, .1], [.52, .32], [.55, .36], [.5, .36], [.36, .16], [0, .1]].map(([r, h]) => [r * s, h * s] as [number, number]), 12).translate(0, .95 * s, 0), m, '#2f2d31', PAT.plate, 0, .5, .8, y);
     this.G(lathe([[0, .3 * s], [.46 * s, .3 * s], [.3 * s, .42 * s], [0, .46 * s]], 10).translate(0, .95 * s, 0), m, lin('#ff7a24', 2.2), .4, phase);
@@ -786,8 +794,10 @@ export class EmberTown {
   }
 
   /* -- arrival quay -- */
+  /** Quay deck height: the island's brow carried out over the slope to the quay wall. */
+  private deck(x: number, z: number) { return this.h(x, Math.min(z, FORGE_QUAY.brow - 1)) + .06; }
   private harbour() {
-    const Q = FORGE_QUAY, J = FORGE_JETTY, deck = (x: number, z: number) => this.h(x, Math.min(z, Q.brow - 1)) + .06;
+    const Q = FORGE_QUAY, J = FORGE_JETTY, deck = (x: number, z: number) => this.deck(x, z);
     // Apron: a conformed slab of flagstones from z0 to z1, its skirt dropping into the sea.
     const nx = 22, nz = 21, top: number[] = [];
     const g = new THREE.PlaneGeometry(Q.x1 - Q.x0, Q.z1 - Q.z0, nx, nz); g.rotateX(-Math.PI / 2);
@@ -822,9 +832,42 @@ export class EmberTown {
     { const px = -8, pz = 120, y = deck(px, pz), m = trs(px, y, pz, .3); this.S(box(1.8, .14, 1.4).translate(0, .07, 0), m, '#4a3426', PAT.plank, .6, .9, 0, y); for (let i = 0; i < 16; i++) { const l = Math.floor(i / 4); this.S(frustum(.32, .66, .26, .58, .13).applyMatrix4(trs((i % 2 - .5) * .7, .2 + l * .14, ((i >> 1) % 2 - .5) * .5, l % 2 ? Math.PI / 2 : 0)), m, l === 3 ? '#c69c56' : '#6f6a6c', PAT.plain, 1, .32, .9, y); } }
     this.rails(FORGE_RAIL.x, FORGE_RAIL.z0, FORGE_RAIL.x, FORGE_RAIL.z1);
     this.cart(FORGE_RAIL.x, 110, 0, 'ore', 700); this.cart(FORGE_RAIL.x, 117, 0, 'ingot', 701);
-    this.brazier(J.x - 4.5, Q.z1 - 3.5, 1.1, 5); this.brazier(J.x + 4.5, Q.z1 - 3.5, 1.1, 6);
+    this.brazier(J.x - 4.5, Q.z1 - 3.5, 1.1, 5, deck(J.x - 4.5, Q.z1 - 3.5)); this.brazier(J.x + 4.5, Q.z1 - 3.5, 1.1, 6, deck(J.x + 4.5, Q.z1 - 3.5));
+    this.gate();
     // Harbour master's tally board and a heat-shield shelter by the rails.
     { const m = trs(13, deck(13, 106), 106, -.4); for (const sx of [-1, 1]) for (const sz of [-1, 1]) this.S(box(.12, 2.8, .12).translate(sx * 1.4, 1.4, sz * 1.0), m, '#232226', PAT.plain, 1, .45, .85, deck(13, 106)); this.S(box(3.4, .07, 2.6).applyMatrix4(trs(0, 2.9, 0, 0, .12)), m, '#3c393b', PAT.plate, 0, .5, .75, deck(13, 106), 9); this.crate(m.clone().multiply(trs(-.6, 0, .2)), deck(13, 106), 620); this.crate(m.clone().multiply(trs(.6, 0, -.1, .4)), deck(13, 106), 621); this.barrel(m.clone().multiply(trs(.5, 0, .7)), deck(13, 106), 622); }
+  }
+  /** Harbour gate: battered basalt pylons with braziers, an iron truss with the town's brass crest and chains. */
+  private gate() {
+    const G = FORGE_GATE, y = Math.min(this.deck(-G.x, G.z), this.deck(G.x, G.z)), top = 6.4;
+    for (const s of [-1, 1]) {
+      const x = s * G.x, by = this.h(x, G.z), m = trs(x, by, G.z);
+      this.S(frustum(2.9, 2.9, 2.5, 2.5, 1.4).translate(0, -.4, 0), m, '#433f44', PAT.rubble, 1, .95, 0, by, 60 + s);
+      this.S(frustum(2.4, 2.4, 1.95, 1.95, top - 1.0).translate(0, 1.0, 0), m, '#5d5859', PAT.ashlar, .85, .9, 0, by, 62 + s);
+      for (let i = 0, yy = 1.25; yy < top - .3; i++, yy += .5) for (const [cx, cz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        const hw = (2.4 - .45 * (yy - 1) / (top - 1)) / 2, a = (i + (cx * cz > 0 ? 0 : 1)) % 2 ? .8 : .5;
+        this.S(box(a, .47, 1.3 - a), m.clone().multiply(trs(cx * (hw - a / 2 + .05), yy, cz * (hw - (1.3 - a) / 2 + .05))), '#7b7470', PAT.plain, 1, .9, 0, by, i);
+      }
+      this.S(box(2.4, .3, 2.4).translate(0, top + .15, 0), m, '#7d756f', PAT.plain, 1, .9, 0, by);
+      this.brazier(x, G.z, 1.15, 7 + s, by + top + .3);
+      // Banner on the town face of each pylon.
+      const bw = 1.3, bh = 3.0, g = new THREE.PlaneGeometry(bw, bh, 4, 10), P = g.getAttribute('position'), U = g.getAttribute('uv');
+      for (let k = 0; k < P.count; k++) { P.setZ(k, Math.sin(P.getX(k) / bw * TAU * 1.5 + s) * .04); U.setX(k, U.getX(k) * .5 + (s > 0 ? .5 : 0)); }
+      g.computeVertexNormals();
+      this.cloth.col = [1, 1, 1];
+      this.cloth.add(g, trs(x, by + top - .55 - bh / 2, G.z - 1.13, Math.PI), undefined, (_x, py) => { const t = (bh / 2 - py) / bh; return [t * t * .6, s * 2.1]; });
+      this.S(cyl(.035, .035, bw + .3, 6).rotateZ(Math.PI / 2), trs(x, by + top - .5, G.z - 1.16), '#1f1e22', PAT.plain, 1, .45, .85, by);
+    }
+    // Truss between the pylons: two chords and diagonals, the crest hanging under it on chains.
+    const span = 2 * G.x - 1.9, ty = y + top - .7;
+    for (const dy of [0, .9]) this.S(box(span, .16, .16), trs(0, ty + dy, G.z), '#262529', PAT.plain, 1, .45, .85, y);
+    for (let i = 0; i < 6; i++) { const x0 = -span / 2 + i * span / 6, x1 = x0 + span / 6; const len = Math.hypot(x1 - x0, .9); this.S(box(.08, len, .08), trs((x0 + x1) / 2, ty + .45, G.z, 0, 0, (i % 2 ? 1 : -1) * Math.atan2(x1 - x0, .9)), '#262529', PAT.plain, 1, .45, .85, y); }
+    for (const s of [-1, 1]) for (let k = 0; k < 4; k++) this.S(new THREE.TorusGeometry(.09, .025, 4, 8).scale(1, 1.4, 1), trs(s * .7, ty - .2 - k * .22, G.z, k % 2 ? Math.PI / 2 : 0), '#2a2629', PAT.plain, 1, .5, .8, y);
+    const crest = new THREE.Shape(); crest.moveTo(-.95, .45); crest.lineTo(.7, .45); crest.quadraticCurveTo(1.15, .42, 1.05, .25); crest.lineTo(.45, .2); crest.lineTo(.3, -.1); crest.lineTo(.55, -.5); crest.lineTo(-.6, -.5); crest.lineTo(-.4, -.1); crest.lineTo(-.55, .2); crest.lineTo(-.95, .25); crest.closePath();
+    const cm = trs(0, ty - 1.45, G.z);
+    this.S(new THREE.ExtrudeGeometry(crest, {depth: .12, bevelEnabled: true, bevelSize: .03, bevelThickness: .03, bevelSegments: 1}).translate(0, 0, -.06), cm, '#c8923c', PAT.plain, 1, .3, .9, y);
+    const flame = new THREE.Shape(); flame.moveTo(-.35, .5); flame.quadraticCurveTo(-.45, .9, -.05, 1.35); flame.quadraticCurveTo(.05, 1.0, .12, 1.15); flame.quadraticCurveTo(.45, .85, .35, .5); flame.closePath();
+    this.G(new THREE.ExtrudeGeometry(flame, {depth: .08, bevelEnabled: false}).translate(0, -.05, -.04), cm, lin('#ff7a24', 2.4), .3, 9);
   }
   private barge() {
     const b = FORGE_BARGE, sea = .15, m = trs(b.x, sea, b.z, 0, 0, .015);
@@ -844,13 +887,14 @@ export class EmberTown {
     this.S(box(Bm - .2, .14, L - .3), m.clone().multiply(trs(0, 1.22, 0)), '#4a3a30', PAT.plank, .8, .9, 0, sea, 41);
     // Deckhouse with its stack, lit port, cargo of ore and ingots, a bow chain wheel.
     const dm = m.clone().multiply(trs(0, 1.29, -L / 2 + 2.4));
-    this.S(box(3.0, 1.9, 2.6).translate(0, .95, 0), dm, '#4a454a', PAT.ashlar, .6, .9, 0, sea, 42);
-    this.S(box(3.4, .12, 3.0).translate(0, 1.96, 0), dm, '#2f2c30', PAT.plate, 0, .5, .75, sea);
-    this.S(cyl(.32, .28, 2.6, 10).translate(.7, 3.2, -.4), dm, '#2c2a2e', PAT.plate, 0, .5, .75, sea);
-    for (const s of [-1, 1]) this.G(new THREE.PlaneGeometry(.6, .5).rotateY(s * Math.PI / 2).translate(s * 1.51, 1.1, 0), dm, lin('#ff9a3c', 1.7), .15, s);
-    this.G(new THREE.PlaneGeometry(.7, .5).translate(-.5, 1.1, 1.31), dm, lin('#ff9a3c', 1.7), .15, 2);
-    const stack = new V(.7, 4.5, -.4).applyMatrix4(dm); this.puffs.push({x: stack.x, y: stack.y, z: stack.z, s: .7}); this.sparks.push({x: stack.x, y: stack.y, z: stack.z, s: .3, n: 6});
-    const lp = new V(0, 1.4, 2).applyMatrix4(dm); this.light(lp.x, lp.y, lp.z, 6, '#ff9a4a', 1.2);
+    this.S(box(3.2, 2.6, 2.8).translate(0, 1.3, 0), dm, '#4a454a', PAT.ashlar, .6, .9, 0, sea, 42);
+    this.S(prism(3.6, .7, 3.2).translate(0, 2.6, 0), dm, '#3a3638', PAT.plate, 0, .5, .75, sea, 43);
+    this.S(cyl(.36, .3, 4.2, 10).translate(.8, 3.8, -.6), dm, '#2c2a2e', PAT.plate, 0, .5, .75, sea);
+    for (const s of [-1, 1]) this.S(box(.12, .55, L - 1), m.clone().multiply(trs(s * (Bm / 2 - .05), 1.45, 0)), '#3a3638', PAT.plate, 0, .5, .75, sea, 44);
+    for (const s of [-1, 1]) this.G(new THREE.PlaneGeometry(.6, .5).rotateY(s * Math.PI / 2).translate(s * 1.61, 1.5, 0), dm, lin('#ff9a3c', 1.7), .15, s);
+    this.G(new THREE.PlaneGeometry(.7, .5).translate(-.5, 1.5, 1.41), dm, lin('#ff9a3c', 1.7), .15, 2);
+    const stack = new V(.8, 5.95, -.6).applyMatrix4(dm); this.puffs.push({x: stack.x, y: stack.y, z: stack.z, s: .7}); this.sparks.push({x: stack.x, y: stack.y, z: stack.z, s: .3, n: 6});
+    const lp = new V(0, 1.6, 2.2).applyMatrix4(dm); this.light(lp.x, lp.y, lp.z, 6, '#ff9a4a', 1.2);
     for (let i = 0; i < 2; i++) { const c = new V((i - .5) * 2.2, 1.29, .4 + i * 2.6).applyMatrix4(m); this.heap(c.x, c.z, 1.1, 16, '#4b3a3a', 800 + i * 9, .1, c.y); }
     for (let i = 0; i < 9; i++) { const im = m.clone().multiply(trs(-1.2 + (i % 3) * .6, 1.36 + Math.floor(i / 3) * .13, 5.6, (i % 2) * Math.PI / 2)); this.G(frustum(.3, .6, .24, .52, .11), im, lin('#ff8a2a', i > 5 ? 1.8 : .7), .2, i); }
     this.S(cyl(.5, .5, .3, 14).rotateZ(Math.PI / 2), m.clone().multiply(trs(0, 1.6, L / 2 - .7)), '#2a292c', PAT.plain, 1, .45, .85, sea);
@@ -864,7 +908,7 @@ export class EmberTown {
     }
   }
   private crane() {
-    const c = FORGE_CRANE, y = this.h(c.x, c.z) + .06, m = trs(c.x, y, c.z, -.7);
+    const c = FORGE_CRANE, b = FORGE_BARGE, y = this.deck(c.x, c.z), m = trs(c.x, y, c.z, Math.atan2(b.x - c.x, b.z - 6 - c.z));
     this.S(frustum(2.8, 2.8, 2.2, 2.2, 1.0), m, '#4f4b4e', PAT.ashlar, .8, .9, 0, y, 50);
     this.S(cyl(.7, .7, .3, 14).translate(0, 1.15, 0), m, '#2c2a2e', PAT.plate, 0, .45, .8, y);
     // Lattice mast and jib (iron), counterweight of stone, a winch drum, a hanging crate of ingots.
@@ -872,14 +916,14 @@ export class EmberTown {
     const mast = 7.5;
     for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) bar(new V(sx * .45, 1.3, sz * .45), new V(sx * .3, mast, sz * .3), .14);
     for (let k = 0; k < 5; k++) { const y0 = 1.3 + k * (mast - 1.3) / 5, y1 = y0 + (mast - 1.3) / 5, r0 = .45 - .15 * k / 5, r1 = .45 - .15 * (k + 1) / 5; bar(new V(-r0, y0, r0), new V(r1, y1, r1)); bar(new V(r0, y0, -r0), new V(r1, y1, r1)); bar(new V(-r0, y0, -r0), new V(-r1, y1, r1)); }
-    const tip = new V(0, mast + 2.2, 9.5), root = new V(0, mast - .3, 0);
+    const reach = Math.hypot(b.x - c.x, b.z - 6 - c.z) - .5, tip = new V(0, mast + 2.2, reach), root = new V(0, mast - .3, 0);
     bar(root, tip, .2); bar(new V(0, mast + 1.4, 0), tip, .08); bar(new V(0, mast + 1.4, 0), new V(0, mast - .3, -2.6), .08); bar(new V(0, mast - .4, 0), new V(0, mast - .4, -2.6), .16);
     bar(new V(0, mast - .3, 0), new V(0, mast + 1.4, 0), .14);
     this.S(box(1.4, 1.0, 1.0), m.clone().multiply(trs(0, mast - .9, -2.6)), '#4f4b4e', PAT.ashlar, .5, .9, 0, y, 51);
     this.S(cyl(.35, .35, .9, 12).rotateZ(Math.PI / 2).translate(0, 1.9, .7), m, '#3a383c', PAT.plain, 1, .45, .85, y);
-    bar(tip, new V(0, mast - 3.2, 9.5), .03);
-    this.crate(m.clone().multiply(trs(0, mast - 4.0, 9.5, .3)), -99, 900, 1.0, .8);
-    this.S(new THREE.TorusGeometry(.18, .04, 4, 8), m.clone().multiply(trs(0, mast - 3.1, 9.5)), '#2b292d', PAT.plain, 1, .45, .85, y);
+    bar(tip, new V(0, mast - 3.2, reach), .03);
+    this.crate(m.clone().multiply(trs(0, mast - 4.0, reach, .3)), -99, 900, 1.0, .8);
+    this.S(new THREE.TorusGeometry(.18, .04, 4, 8), m.clone().multiply(trs(0, mast - 3.1, reach)), '#2b292d', PAT.plain, 1, .45, .85, y);
   }
 
   /* -- assembly -- */

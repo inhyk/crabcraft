@@ -32,11 +32,14 @@ export const forgeYaw = (h: ForgeHouse) => h.side > 0 ? -Math.PI / 2 : Math.PI /
 export const FORGE_YARD = {x: -46, z: 55};
 export const FORGE_STALLS = [{x: -20, z: 22, side: -1 as const}, {x: 20, z: 22, side: 1 as const}];
 /** Arrival quay south of the spawn: paved apron to the island's brow, its wall standing in the lava sea. */
-export const FORGE_QUAY = {x0: -26, x1: 18, z0: 100, brow: 129, z1: 142};
-export const FORGE_JETTY = {x: -6, half: 2.1, z0: 142, z1: 170};
-export const FORGE_BARGE = {x: -.4, z: 156, len: 17, beam: 5.4};
-export const FORGE_CRANE = {x: 12, z: 124};
-export const FORGE_RAIL = {x: 6, z0: 102, z1: 123};
+export const FORGE_QUAY = {x0: -26, x1: 18, z0: 97, brow: 129, z1: 142};
+export const FORGE_JETTY = {x: 0, half: 2.1, z0: 142, z1: 170};
+export const FORGE_BARGE = {x: 5.9, z: 156, len: 17, beam: 5.4};
+/** Harbour gate on the avenue's axis where the quay begins: two pylons either side of the road. */
+export const FORGE_GATE = {z: 99.5, x: 5.4};
+/** Cargo crane at the quay's sea corner (beyond the crab's reach), its jib over the barge. */
+export const FORGE_CRANE = {x: 12, z: 138};
+export const FORGE_RAIL = {x: 9, z0: 103, z1: 124};
 /** Avenue lanterns (the old lamp rows) and banner posts. */
 export const FORGE_LANTERNS: [number, number][] = [];
 for (let z = 82; z > -62; z -= 12) for (const side of [-1, 1]) FORGE_LANTERNS.push([side * 6, z]);
@@ -58,7 +61,7 @@ export function forgeSolids(): ForgeSolid[] {
   out.push({x: kx, z: kz, r: GLASS_KILN.r, h: 3});
   out.push({x: FORGE_YARD.x, z: FORGE_YARD.z, hx: 1.8, hz: 1.3, yaw: 0, h: 3});
   for (const s of FORGE_STALLS) out.push({x: s.x, z: s.z, hx: 2.7, hz: 1.2, yaw: 0, h: 3});
-  out.push({x: FORGE_CRANE.x, z: FORGE_CRANE.z, r: 1.5, h: 9});
+  for (const s of [-1, 1]) out.push({x: s * FORGE_GATE.x, z: FORGE_GATE.z, hx: 1.25, hz: 1.25, yaw: 0, h: 8});
   for (const z of [110, 117]) out.push({x: FORGE_RAIL.x, z, hx: .8, hz: 1.2, yaw: 0, h: 1.8});
   return out;
 }
