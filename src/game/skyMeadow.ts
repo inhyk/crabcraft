@@ -63,7 +63,7 @@ float smPd=smPathD(smRoot);
 float smKeep=smS.r*(1.-step(.5,smA.b))*smoothstep(-.12,.35,smPd)*(1.-smoothstep(.62,.96,smDist))*mix(.55,1.,smoothstep(.14,.32,smPatch+(smK.x-.5)*.3))*(.72+.28*smHeart);
 smKeep*=mix(.4,1.,smoothstep(3.,11.,length(smRoot-smCam.xz)));
 // Clover patches: the turf there is short and open, the clover leaves (ground shader) show between the blades.
-smKeep*=1.-.55*smE.r;
+smKeep*=1.-.3*smE.r;
 // In a drift the turf thins so the blossoms (instanced near, painted beyond) carry the colour.
 smKeep*=1.-.42*smoothstep(.3,.9,smS.a);
 float smLive=step(smR2.x,smKeep);

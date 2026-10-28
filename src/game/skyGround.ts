@@ -123,12 +123,16 @@ sgCol=mix(sgCol,sgR,sgRock);
 float sgClv=smoothstep(.22,.55,sgX.r+(sgMid-.5)*.35+(sgClump.r-.5)*.2*sgF1)*(1.-sgWorn)*(1.-sgRock)*(1.-sgDirt);
 if(sgClv>.001){
   vec3 sgCv=mix(vec3(.035,.15,.075),vec3(.06,.22,.1),sgClump.g)*(.85+.3*sgFine);
-  if(sgF3>.001){
+  // Mid distance: the patch's own leafy mottle (light leaf tops, dark gaps).
+  float sgCm=mix(.5,sgT(sgP,.57,1.9).r*.6+sgT(sgP,.23,.8).r*.4,sgF1);
+  sgCv*=.72+.6*sgCm;
+  float sgCf=1.-smoothstep(.012,.04,sgFoot);
+  if(sgCf>.001){
     vec2 c=floor(sgP/.17),q=fract(sgP/.17)-.5;float r0=sgH(c),a0=r0*6.2832,lf=0.,ch=0.;
     q-=(vec2(sgH(c+3.1),sgH(c+7.7))-.5)*.3;
     for(int k=0;k<3;k++){float a=a0+float(k)*2.0944;vec2 d=q-vec2(cos(a),sin(a))*.17;float l=length(d);lf=max(lf,1.-smoothstep(.13,.155,l));ch=max(ch,(1.-smoothstep(.015,.035,abs(l-.075)))*step(l,.13));}
     vec3 sgLeaf=mix(sgCv*.55,sgCv*1.25,lf);sgLeaf=mix(sgLeaf,sgLeaf*1.5+vec3(.03,.05,.03),ch*.6*lf);
-    sgCv=mix(sgCv,sgLeaf,sgF3*step(r0,.85));
+    sgCv=mix(sgCv,sgLeaf,sgCf*step(r0,.85));
   }
   vec2 hc=floor(sgP/.5);float hr=sgH(hc+41.),hr2=sgH(hc+13.);vec2 hcc=(hc+.25+.5*vec2(hr,hr2))*.5;
   float sgHead=(1.-smoothstep(.03,.055,length(sgP-hcc)))*step(hr,.22)*sgF2;
