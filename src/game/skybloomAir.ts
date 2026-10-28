@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {SkybloomSky} from './skybloomSky';
 import {skybloomClouds,CLOUD_Y} from './skybloomClouds';
-import {skybloomLand,clipTerrainToLip} from './skybloomIsles';
+import {skybloomLand,clipTerrainToLip,lipScale} from './skybloomIsles';
 
 /*
  * Everything in Skybloom's air, built from one sky: the dome, the sun and the hemisphere light it implies, the fog
@@ -163,7 +163,7 @@ export class SkybloomAir {
   private clouds?: THREE.ShaderMaterial;
   private bound: {env: THREE.Texture | null; intensity: number} | null = null;
   private quality: 'high' | 'low' | null = null;
-  readonly stats = {isles: 0, falls: 0, terrainClipped: 0};
+  readonly stats = {isles: 0, falls: 0, terrainClipped: 0, lipMax: 0};
 
   /** Build it all under `root`. `terrain` (the island's ground mesh) is clipped to the cliff's lip. */
   mount(root: THREE.Object3D, terrain?: THREE.Mesh | null): THREE.ShaderMaterial[] {
@@ -179,6 +179,7 @@ export class SkybloomAir {
     root.add(land.land, land.falls, land.mist);
     this.stats.isles = land.isles; this.stats.falls = land.fallCount;
     if (terrain) this.stats.terrainClipped = clipTerrainToLip(terrain.geometry);
+    for (let i = 0; i < 720; i++) this.stats.lipMax = Math.max(this.stats.lipMax, lipScale((i / 720) * Math.PI * 2));
     // Petals and pollen: positions live on the GPU, wrapped round the camera.
     const seeds = new Float32Array(PETALS * 4);
     for (let i = 0; i < seeds.length; i++) { const h = Math.sin(i * 12.9898 + 78.233) * 43758.5453; seeds[i] = h - Math.floor(h); }
