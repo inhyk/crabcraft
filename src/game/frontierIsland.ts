@@ -4,6 +4,7 @@ import {FRONTIER_TOWN,layoutFrontier,frontierTrees,type FrontierChapter} from '.
 import {StarPortal} from './portal';
 import type {Poi} from '../world/types';
 import {islandPaths} from './islandPaths';
+import {EmberLava} from './emberLava';
 /** Two new frontiers: distinct silhouettes, instanced nature and GPU-only ambient particles. */
 export class FrontierIsland {
  readonly root=new THREE.Group();
@@ -13,6 +14,8 @@ export class FrontierIsland {
  readonly collision;
  readonly back:StarPortal;
  readonly next:StarPortal|null;
+ /** World V's lava: molten sea, crater lake and the tongues down the volcano (emberLava.ts). */
+ readonly lava:EmberLava|null=null;
  private animated:THREE.ShaderMaterial[]=[];
  private rotating:THREE.Object3D[]=[];
  height(x:number,z:number){return realmHeight(this.chapter,x,z);}
@@ -92,9 +95,7 @@ export class FrontierIsland {
   for(const r of [8,19.5]){const ring=add(new THREE.TorusGeometry(r,.07,5,80),glow,0,ly+.04,-72);ring.rotation.x=-Math.PI/2;}
   if(fire){
    const volcano=add(new THREE.CylinderGeometry(8,28,38,18,4,true),stone,0,ly+9,-128);volcano.name='ember-volcano';
-   const crater=add(new THREE.CylinderGeometry(8,5,2,32),glow,0,ly+27,-128);crater.name='lava-crater';
-   for(const side of [-1,1]){const lava=add(new THREE.PlaneGeometry(8,160,1,32),this.flowMaterial(true),side*91,1,0);lava.rotation.x=-Math.PI/2;lava.castShadow=false;}
-   add(new THREE.TorusGeometry(11,.5,6,40),stone,0,ly+27,-128).rotation.x=Math.PI/2;
+   this.lava=new EmberLava({height:(x,z)=>this.height(x,z),ly});this.root.add(this.lava.root);
   }else{
    add(new THREE.CylinderGeometry(3.5,6,36,10),wood,0,ly+18,-112).name='skybloom-world-tree';
    for(let i=0;i<7;i++){const a=i/7*Math.PI*2,x=Math.sin(a)*10,z=-112+Math.cos(a)*10;const b=add(new THREE.CylinderGeometry(.6,1.4,20,6),wood,x*.5,ly+26,z+(-112-z)*.5);b.rotation.z=-Math.sin(a)*.8;b.rotation.x=Math.cos(a)*.8;const canopy=add(new THREE.IcosahedronGeometry(12,1),new THREE.MeshStandardMaterial({color:i%2?'#67ac86':'#3b947d',roughness:.8}),x,ly+38+i%3*3,z);canopy.scale.y=.65;}
@@ -103,7 +104,7 @@ export class FrontierIsland {
   for(let i=0;i<10;i++){const a=(i+1)/12*Math.PI*2,x=Math.sin(a)*23,z=-72+Math.cos(a)*23;if(z>-56)continue;const y=this.height(x,z);add(new THREE.CylinderGeometry(.9,1.4,9,8),stone,x,y+4.5,z);const gem=add(new THREE.OctahedronGeometry(.8),glow,x,y+9.8,z);this.rotating.push(gem);}
   this.makeDetails(fire,stone,wood,metal,glow,foliage);
   // A low sea of lava / clouds and gradient sky distinguish the worlds at first glance.
-  const sea=add(new THREE.PlaneGeometry(1800,1800),this.flowMaterial(fire),0,.15,0);sea.rotation.x=-Math.PI/2;sea.castShadow=false;sea.name=fire?'molten-sea':'sea-of-clouds';
+  if(!fire){const sea=add(new THREE.PlaneGeometry(1800,1800),this.flowMaterial(false),0,.15,0);sea.rotation.x=-Math.PI/2;sea.castShadow=false;sea.name='sea-of-clouds';}
   const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{top:{value:new THREE.Color(fire?'#271728':'#438ca7')},bottom:{value:new THREE.Color(fire?'#dd8b5f':'#d3efda')}},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;uniform vec3 top;uniform vec3 bottom;void main(){gl_FragColor=vec4(mix(bottom,top,smoothstep(0.,.65,normalize(v).y)),1.);}'});
   const sky=add(new THREE.SphereGeometry(850,32,20),skyMat,0,0,0);sky.renderOrder=-100;sky.castShadow=false;
   const particles=new THREE.BufferGeometry(),p=new Float32Array(360*3);for(let i=0;i<360;i++)p.set([Math.sin(i*127.1)*90,Math.sin(i*311.7)*14+20,Math.sin(i*74.7)*110],i*3);particles.setAttribute('position',new THREE.BufferAttribute(p,3));
@@ -156,5 +157,5 @@ export class FrontierIsland {
   this.root.userData.frontierDetailMeshes=detail.children.length;
  }
  private flowMaterial(fire:boolean){const m=new THREE.ShaderMaterial({uniforms:{time:{value:0},hot:{value:fire?1:0}},vertexShader:'varying vec2 v;void main(){v=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec2 v;uniform float time;uniform float hot;void main(){float w=.5+.5*sin(v.x*90.+sin(v.y*70.+time*.15)*2.);vec3 lava=mix(vec3(.27,.035,.025),vec3(1.,.36,.025),pow(w,4.));vec3 cloud=mix(vec3(.64,.8,.8),vec3(.93,.98,.93),w);gl_FragColor=vec4(mix(cloud,lava,hot),1.);}'});this.animated.push(m);return m;}
- update(time:number){this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
+ update(time:number){this.lava?.update(time);this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
 }

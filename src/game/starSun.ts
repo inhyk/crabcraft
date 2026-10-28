@@ -3,12 +3,17 @@ import * as THREE from 'three';
 /** Keep the existing 2048px moonlight shadow around the traveler, snapped in light space. */
 export class StarSun {
   readonly light=new THREE.DirectionalLight('#d6b9ff',1.8);
-  private readonly offset=new THREE.Vector3(-40,90,20);
-  private readonly right=new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0),this.offset).normalize();
-  private readonly up=new THREE.Vector3().crossVectors(this.offset,this.right).normalize();
+  private readonly offset:THREE.Vector3;
+  private readonly right:THREE.Vector3;
+  private readonly up:THREE.Vector3;
   private readonly texel=150/2048;
-  private readonly determinant=this.right.x*this.up.z-this.right.z*this.up.x;
-  constructor(){
+  private readonly determinant:number;
+  /** `offset`: from the followed point toward the light; World III keeps the original. */
+  constructor(offset=new THREE.Vector3(-40,90,20)){
+    this.offset=offset.clone();
+    this.right=new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0),this.offset).normalize();
+    this.up=new THREE.Vector3().crossVectors(this.offset,this.right).normalize();
+    this.determinant=this.right.x*this.up.z-this.right.z*this.up.x;
     const key=this.light;key.name='star-island-sun';key.position.copy(this.offset);key.castShadow=true;
     key.shadow.mapSize.set(2048,2048);
     Object.assign(key.shadow.camera,{left:-75,right:75,top:75,bottom:-75,near:1,far:180});
