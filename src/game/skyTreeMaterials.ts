@@ -61,7 +61,8 @@ plate*=1.-brk*.55;
 float grain=mix(.5,skN(bq*vec2(5.,1.1)),uSkDetail);
 float bh=plate*(.78+.22*grain);
 float tone=skN(vSkW.xz*.07+vSkW.y*.045);
-vec3 barkC=mix(vec3(.13,.125,.14),mix(vec3(.34,.33,.31),vec3(.52,.5,.46),tone),bh);
+// World-tree bark: lit #8f877a over grooves #4e4a48, darker than the town's pale trees so it holds against the sky.
+vec3 barkC=mix(vec3(.074,.068,.064),mix(vec3(.22,.195,.165),vec3(.33,.295,.24),tone),bh);
 float lich=smoothstep(.7,.8,skN(bq*vec2(2.1,.8)+7.))*plate*uSkDetail;
 barkC=mix(barkC,vec3(.56,.6,.5),lich*.55);
 float mN=skN(vSkW.xz*.33+vSkW.y*.19);
@@ -163,6 +164,15 @@ export function skyFoliageMaterials(){
    .replace('#include <begin_vertex>',`${CARD_BILLBOARD}\nvec3 transformed=position+(skR*aCorner.x+skU*aCorner.y)*aSize+skSway;`);
  };
  return {leaves,depth};
+}
+
+/**
+ * The crown's cores: dark jade under the cards (vertex colour), normals bent out from the mass centre, a floor of
+ * light so a gap in the leaves reads as deep foliage, never as a black hole.
+ */
+export function skyCrownCoreMaterial():THREE.MeshStandardMaterial{
+ const m=new THREE.MeshStandardMaterial({color:'#ffffff',vertexColors:true,roughness:.95,emissive:'#0f2a27',emissiveIntensity:1});m.name='sky-world-tree-crown-core';
+ return m;
 }
 
 /** Seed lanterns: a ribbed husk lit from inside (aGlow = (glow, phase)), breathing slowly. */

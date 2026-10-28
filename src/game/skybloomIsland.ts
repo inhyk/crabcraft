@@ -41,8 +41,6 @@ export class SkybloomIsland {
   this.ground=new SkyGroundLane(this.root);
   // Six garden-harbour houses, the market, lanterns, banners and the sky harbour: skyTown.ts (one mesh per material).
   const town=skyTown((x,z)=>this.height(x,z),lowQuality());this.root.add(town.group);this.town6=town;
-  // Road lamps south of the sanctuary approach stay for the tree lane; the town's carved lantern posts replace the rest.
-  for(let z=-50;z>-62;z-=12)for(const side of [-1,1]){const x=side*6,y=this.height(x,z);add(new THREE.CylinderGeometry(.12,.21,2.8,6),metal,x,y+1.4,z);add(new THREE.OctahedronGeometry(.5),glow,x,y+3,z);const rim=add(new THREE.TorusGeometry(.65,.07,5,12),metal,x,y+3,z);rim.rotation.x=Math.PI/2;}
   this.root.userData.frontierTrees=frontierTrees(chapter).length;
   // Northern destination: a smoking volcanic caldera or a luminous world tree.
   const ly=this.height(0,-72);
