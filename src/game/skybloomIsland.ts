@@ -4,6 +4,9 @@ import {FRONTIER_TOWN,layoutFrontier,frontierTrees,type FrontierChapter} from '.
 import {StarPortal} from './portal';
 import type {Poi} from '../world/types';
 import {islandPaths} from './islandPaths';
+import {skyTown,type SkyTown} from './skyTown';
+
+const lowQuality=()=>{try{return localStorage.getItem('cc.quality')==='low';}catch{return false;}};
 /** World VI Skybloom, split from the shared frontier so its design can grow apart from World V. */
 export class SkybloomIsland {
  readonly root=new THREE.Group();
@@ -15,6 +18,7 @@ export class SkybloomIsland {
  readonly next:StarPortal|null;
  private animated:THREE.ShaderMaterial[]=[];
  private rotating:THREE.Object3D[]=[];
+ private town6:SkyTown|null=null;
  height(x:number,z:number){return realmHeight(this.chapter,x,z);}
  readonly chapter:FrontierChapter=6;
  constructor(){
@@ -38,45 +42,14 @@ export class SkybloomIsland {
   for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i),y=this.height(x,z);pos.setY(i,y);const edge=Math.hypot(x/128,(z-2)/155),c=new THREE.Color(fire?(edge>.8?'#68433c':z<-30?'#65515b':'#7d675b'):(edge>.8?'#7cbda6':Math.abs(x)>42?'#477659':'#9bac72'));c.multiplyScalar(.93+.07*Math.sin(x*.61+z*.47));colors.push(c.r,c.g,c.b);}
   terrain.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));terrain.computeVertexNormals();add(terrain,new THREE.MeshStandardMaterial({vertexColors:true,map:groundMap,roughness:.96}),0,0,0).name='frontier-terrain';
   this.root.add(islandPaths((x,z)=>this.height(x,z),[{points:[[0,94],[0,28],[0,-72]],width:8,trim:true},...[38,56,74].map(z=>({points:[[-23,z],[23,z]] as [number,number][],width:4,trim:true})),{points:[[-12,84],[0,84]],width:4,trim:true},...(fire?[{points:[[0,-44],[26,-44]] as [number,number][],width:4,trim:true}]:[])],chapter));
-  // Open central square, six homes and workshop details outside every road.
-  for(const side of [-1,1])for(let i=0;i<3;i++){
-   const x=side*30,z=38+i*18,y=this.height(x,z);
-   add(new THREE.BoxGeometry(10,5.5,11),fire?stone:wood,x,y+2.75,z);
-   for(const dx of [-4.7,4.7])add(new THREE.BoxGeometry(.4,5.9,11.3),metal,x+dx,y+2.95,z);
-   const roof=add(new THREE.ConeGeometry(8.2,fire?3:5,fire?4:6),roofMat,x,y+7.5,z);roof.rotation.y=Math.PI/4;
-   add(new THREE.BoxGeometry(2,3,.25),wood,x,y+1.5,z+5.6);
-   for(const dx of [-3,3]){add(new THREE.BoxGeometry(1.9,1.7,.35),metal,x+dx,y+3,z+5.6);add(new THREE.BoxGeometry(1.4,1.2,.4),glow,x+dx,y+3,z+5.62);}
-   if(fire){add(new THREE.CylinderGeometry(.7,.9,5,8),stone,x+2,y+8,z);add(new THREE.TorusGeometry(.8,.13,6,12),metal,x+2,y+10.5,z).rotation.x=Math.PI/2;}
-   else{const balcony=add(new THREE.CylinderGeometry(7,7,.35,8),wood,x,y+.4,z);balcony.scale.z=.95;for(const a of [-.7,0,.7])add(new THREE.CylinderGeometry(.12,.16,2,6),metal,x+Math.sin(a)*6,y+1.4,z+Math.cos(a)*6);}
-  }
-  // Timber frames, tiled eaves and gardens make each home a lived-in village.
+  // Six garden-harbour houses, the market, lanterns, banners and the sky harbour: skyTown.ts (one mesh per material).
+  const town=skyTown((x,z)=>this.height(x,z),lowQuality());this.root.add(town.group);this.town6=town;
   const foliage=new THREE.MeshStandardMaterial({color:fire?'#977046':'#56976c',roughness:1});
-  for(const side of [-1,1])for(let i=0;i<3;i++){
-   const x=side*30,z=38+i*18,y=this.height(x,z);
-   for(const dx of [-5,0,5])add(new THREE.BoxGeometry(.24,5.6,.3),wood,x+dx,y+2.8,z+5.75);
-   for(const h of [.35,4.8])add(new THREE.BoxGeometry(10.2,.22,.3),metal,x,y+h,z+5.75);
-   for(const dx of [-3,3]){add(new THREE.BoxGeometry(2.3,.35,.9),wood,x+dx,y+1.8,z+6);for(let k=-1;k<=1;k++)add(new THREE.IcosahedronGeometry(.45,0),foliage,x+dx+k*.6,y+2.1,z+6);}
-   const awning=add(new THREE.BoxGeometry(4,.16,2),roofMat,x,y+3.6,z+6.4);awning.rotation.x=.16;
-   for(const dx of [-1.8,1.8])add(new THREE.CylinderGeometry(.08,.12,3.4,6),metal,x+dx,y+1.7,z+7.2);
-   for(const dx of [-7,7]){const by=this.height(x+dx,z+3);add(new THREE.CylinderGeometry(.65,.7,1.2,10),wood,x+dx,by+.6,z+3);for(const h of [.2,1])add(new THREE.TorusGeometry(.69,.06,4,10),metal,x+dx,by+h,z+3).rotation.x=Math.PI/2;}
-   for(let k=0;k<8;k++){const a=add(new THREE.BoxGeometry(.7,.08,4.8),metal,x-3.8+k*1.1,y+7.3,z+3);a.rotation.x=.45;}
-  }
-  const blocks:THREE.Matrix4[]=[],colorsBrick:THREE.Color[]=[];const brickDummy=new THREE.Object3D();
-  for(const side of [-1,1])for(let i=0;i<3;i++){
-   const x=side*30,z=38+i*18,y=this.height(x,z);
-   for(let row=0;row<7;row++)for(let c=0;c<8;c++){
-    const bx=x-4.45+c*1.27+(row%2)*.25;if(Math.abs(bx-x)<1.4&&row<4)continue;
-    brickDummy.position.set(bx,y+.35+row*.7,z+5.54);brickDummy.scale.set(1.2,.62,.16);brickDummy.rotation.set(0,0,0);brickDummy.updateMatrix();blocks.push(brickDummy.matrix.clone());colorsBrick.push(new THREE.Color(fire?'#8b7770':'#92734f').multiplyScalar(.8+(row+c)%4*.09));
-   }
-   for(const dx of [-5.1,5.1]){const beam=add(new THREE.BoxGeometry(.24,5.5,.3),wood,x+dx,y+2.75,z+5.65);beam.rotation.z=dx>0?-.18:.18;}
-   for(let k=0;k<12;k++){const tile=add(new THREE.BoxGeometry(.7,.15,1.1),roofMat,x-4.1+k*.75,y+7.4,z);tile.rotation.z=.06*Math.sin(k);}
-   add(new THREE.BoxGeometry(10.6,.23,.5),wood,x,y+5.5,z+5.9);
-  }
-  const brickwork=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),stone,blocks.length);blocks.forEach((matrix,i)=>{brickwork.setMatrixAt(i,matrix);brickwork.setColorAt(i,colorsBrick[i]);});brickwork.castShadow=brickwork.receiveShadow=true;this.root.add(brickwork);
   // Low decorative plants stay clear of roads and personal quest props.
   const garden=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.65,0),foliage,160),gardenDummy=new THREE.Object3D();
   for(let i=0;i<160;i++){const a=i*2.39996,r=35+i%8*8,x=Math.sin(a)*r,z=Math.cos(a)*110;gardenDummy.position.set(x,this.height(x,z)+.2,z);gardenDummy.scale.set(1.1,.35+i%4*.15,.8);if(Math.abs(x)<24||Math.hypot(x/128,(z-2)/155)>.77)gardenDummy.scale.setScalar(0);gardenDummy.rotation.y=a;gardenDummy.updateMatrix();garden.setMatrixAt(i,gardenDummy.matrix);}garden.castShadow=true;garden.computeBoundingSphere();this.root.add(garden);
-  for(let z=82;z>-62;z-=12)for(const side of [-1,1]){const x=side*6,y=this.height(x,z);add(new THREE.CylinderGeometry(.12,.21,2.8,6),metal,x,y+1.4,z);add(new THREE.OctahedronGeometry(.5),glow,x,y+3,z);const rim=add(new THREE.TorusGeometry(.65,.07,5,12),metal,x,y+3,z);rim.rotation.x=Math.PI/2;}
+  // Road lamps south of the sanctuary approach stay for the tree lane; the town's carved lantern posts replace the rest.
+  for(let z=-50;z>-62;z-=12)for(const side of [-1,1]){const x=side*6,y=this.height(x,z);add(new THREE.CylinderGeometry(.12,.21,2.8,6),metal,x,y+1.4,z);add(new THREE.OctahedronGeometry(.5),glow,x,y+3,z);const rim=add(new THREE.TorusGeometry(.65,.07,5,12),metal,x,y+3,z);rim.rotation.x=Math.PI/2;}
   // One instanced forest: complete broad leaves in Skybloom, obsidian spires in Emberreach.
   const trees=frontierTrees(chapter),dummy=new THREE.Object3D();
   const trunks=new THREE.InstancedMesh(fire?new THREE.ConeGeometry(2.3,10,5):new THREE.CylinderGeometry(.45,.85,12,7),fire?stone:wood,trees.length);
@@ -102,7 +75,7 @@ export class SkybloomIsland {
    for(let i=0;i<9;i++){const a=i*2.4,x=Math.sin(a)*145,z=Math.cos(a)*160;add(new THREE.ConeGeometry(8+i%3*3,22,6),stone,x,12+i%4*9,z).rotation.z=Math.PI;add(new THREE.CylinderGeometry(8+i%3*3,7,2,8),roofMat,x,24+i%4*9,z);}
   }
   for(let i=0;i<10;i++){const a=(i+1)/12*Math.PI*2,x=Math.sin(a)*23,z=-72+Math.cos(a)*23;if(z>-56)continue;const y=this.height(x,z);add(new THREE.CylinderGeometry(.9,1.4,9,8),stone,x,y+4.5,z);const gem=add(new THREE.OctahedronGeometry(.8),glow,x,y+9.8,z);this.rotating.push(gem);}
-  this.makeDetails(fire,stone,wood,metal,glow,foliage);
+  this.makeDetails(fire,stone,wood,metal,glow);
   // A low sea of lava / clouds and gradient sky distinguish the worlds at first glance.
   const sea=add(new THREE.PlaneGeometry(1800,1800),this.flowMaterial(fire),0,.15,0);sea.rotation.x=-Math.PI/2;sea.castShadow=false;sea.name=fire?'molten-sea':'sea-of-clouds';
   const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{top:{value:new THREE.Color(fire?'#271728':'#438ca7')},bottom:{value:new THREE.Color(fire?'#dd8b5f':'#d3efda')}},vertexShader:'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec3 v;uniform vec3 top;uniform vec3 bottom;void main(){gl_FragColor=vec4(mix(bottom,top,smoothstep(0.,.65,normalize(v).y)),1.);}'});
@@ -112,28 +85,10 @@ export class SkybloomIsland {
   const sun=new THREE.DirectionalLight(fire?'#ffd2a8':'#fff5cd',fire?2.5:2.6);sun.position.set(45,90,40);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=sun.shadow.camera.bottom=-105;sun.shadow.camera.right=sun.shadow.camera.top=105;sun.shadow.camera.near=1;sun.shadow.camera.far=240;sun.shadow.bias=-.00015;sun.shadow.normalBias=.12;sun.shadow.camera.updateProjectionMatrix();this.root.add(sun,sun.target,new THREE.HemisphereLight(fire?'#dab0a6':'#c9f4ea',fire?'#44303e':'#344a3a',.75),this.back.root);if(this.next)this.root.add(this.next.root);
  }
  /** Small scenery shares geometry and material; roads and battle space stay unobstructed. */
- private makeDetails(fire:boolean,stone:THREE.Material,wood:THREE.Material,metal:THREE.Material,glow:THREE.Material,foliage:THREE.Material){
+ private makeDetails(fire:boolean,stone:THREE.Material,wood:THREE.Material,metal:THREE.Material,glow:THREE.Material){
   const detail=new THREE.Group();detail.name=fire?'ember-forge-village-details':'skybloom-living-garden';this.root.add(detail);
   const add=(geo:THREE.BufferGeometry,mat:THREE.Material,x:number,y:number,z:number)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;detail.add(m);return m;};
   const y=(x:number,z:number)=>this.height(x,z);
-  // Banners and benches frame the road without covering the view of residents.
-  const cloth=new THREE.MeshStandardMaterial({color:fire?'#a5482b':'#3a8d7b',side:THREE.DoubleSide,roughness:.85});
-  const bannerGeo=new THREE.PlaneGeometry(1.7,2.9,4,8);
-  for(const z of [76,40,10,-24])for(const side of [-1,1]){
-   const x=side*10,by=y(x,z);add(new THREE.CylinderGeometry(.09,.16,5.5,6),metal,x,by+2.75,z);
-   const flag=add(bannerGeo,cloth,x+side*.85,by+3.9,z);flag.rotation.y=side*.25;flag.userData.banner=true;this.rotating.push(flag);
-   add(new THREE.OctahedronGeometry(.24),glow,x,by+5.7,z);
-   if(z>20){add(new THREE.BoxGeometry(3,.25,.9),wood,x,by+.8,z+3);for(const dx of [-1,1])add(new THREE.BoxGeometry(.2,.8,.7),metal,x+dx,by+.4,z+3);}
-  }
-  // Two market stalls: layered awnings, crates and wares make the expedition feel inhabited.
-  for(const side of [-1,1]){
-   const x=side*20,z=22,by=y(x,z);
-   add(new THREE.BoxGeometry(5,.25,2.2),wood,x,by+1.25,z);
-   for(const dx of [-2.2,2.2])for(const dz of [-1,1])add(new THREE.CylinderGeometry(.09,.12,3.8,6),wood,x+dx,by+1.9,z+dz);
-   for(let k=0;k<6;k++){const awning=add(new THREE.BoxGeometry(.9,.1,3),k%2?cloth:metal,x-2.25+k*.9,by+3.8,z);awning.rotation.x=.13;}
-   for(let k=0;k<5;k++){const m=add(fire?new THREE.OctahedronGeometry(.28):new THREE.SphereGeometry(.27,7,5),fire?glow:foliage,x-1.5+k*.75,by+1.65,z);m.rotation.y=k;}
-   for(let k=0;k<3;k++){const bx=x+side*(4+k%2),bz=z+k*1.3;add(new THREE.BoxGeometry(1,1,1),wood,bx,y(bx,bz)+.5,bz);add(new THREE.BoxGeometry(1.05,.12,1.05),metal,bx,y(bx,bz)+.8,bz);}
-  }
   // Inlaid sanctuary paving is flat with the collision ground, never above attack warnings.
   const cells:[number,number][]=[];for(let x=-8;x<=8;x++)for(let z=-8;z<=8;z++)if(Math.hypot(x*2.1,z*2.1)<18)cells.push([x,z]);
   const paving=new THREE.InstancedMesh(new THREE.BoxGeometry(2.02,.025,2.02),stone,cells.length),dummy=new THREE.Object3D();
@@ -149,7 +104,6 @@ export class SkybloomIsland {
    const petal=new THREE.MeshStandardMaterial({color:'#f4cfb4',emissive:'#9d5d81',emissiveIntensity:.12,roughness:.8});
    const flowers=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.25,0),petal,180);
    for(let i=0;i<180;i++){const side=i%2?1:-1,x=side*(41+(i%9)*1.2),z=28+(i%23)*2.8;dummy.position.set(x,y(x,z)+.3,z);dummy.rotation.y=i;dummy.scale.setScalar(.75+i%3*.3);dummy.updateMatrix();flowers.setMatrixAt(i,dummy.matrix);flowers.setColorAt(i,new THREE.Color(i%3?'#f7d6c0':'#b9b5ff'));}detail.add(flowers);
-   for(const side of [-1,1])for(const z of [38,65]){const x=side*47,by=y(x,z);add(new THREE.CylinderGeometry(4,4.3,.5,16),stone,x,by+.2,z);const crown=add(new THREE.IcosahedronGeometry(3,1),foliage,x,by+1,z);crown.scale.y=.3;}
    for(let i=0;i<10;i++){const a=i*Math.PI/5,x=Math.sin(a)*11,z=-112+Math.cos(a)*11;add(new THREE.CylinderGeometry(.035,.035,6+i%3,4),metal,x,y(0,-72)+26,z);add(new THREE.OctahedronGeometry(.5),glow,x,y(0,-72)+22-i%3*.5,z);}
    // Root arches sit beyond the north rim of the fight.
    for(const side of [-1,1]){const arch=add(new THREE.TorusGeometry(8,.65,6,24,Math.PI),wood,side*22,y(side*22,-108)+2,-108);arch.rotation.y=side*.5;}
@@ -157,5 +111,5 @@ export class SkybloomIsland {
   this.root.userData.frontierDetailMeshes=detail.children.length;
  }
  private flowMaterial(fire:boolean){const m=new THREE.ShaderMaterial({uniforms:{time:{value:0},hot:{value:fire?1:0}},vertexShader:'varying vec2 v;void main(){v=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec2 v;uniform float time;uniform float hot;void main(){float w=.5+.5*sin(v.x*90.+sin(v.y*70.+time*.15)*2.);vec3 lava=mix(vec3(.27,.035,.025),vec3(1.,.36,.025),pow(w,4.));vec3 cloud=mix(vec3(.64,.8,.8),vec3(.93,.98,.93),w);gl_FragColor=vec4(mix(cloud,lava,hot),1.);}'});this.animated.push(m);return m;}
- update(time:number){this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
+ update(time:number){this.town6?.update(time);this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
 }
