@@ -35,6 +35,7 @@ export class EmberAir {
  private prevEnv:THREE.Texture|null=null;
  private prevEnvIntensity=1;
  private patchedAt=-1e9;
+ private idleScans=0;
  private readonly root:THREE.Object3D;
  private readonly noHeat:THREE.Object3D[];
  private readonly height:(x:number,z:number)=>number;
@@ -57,7 +58,8 @@ export class EmberAir {
  update(time:number){
   this.sky.update(time);this.plume.update(time);this.heat.uniforms.uHeatTime.value=time%600;this.heat.uniforms.uHeatOn.value=1;
   // Lit materials added later (other builders, loaded kits) pick up the heat light too.
-  if(time-this.patchedAt>2||time<this.patchedAt){this.patchedAt=time;this.heat.patchTree(this.root,this.noHeat);}
+  // Scans every 2 s until ten in a row find nothing new.
+  if(this.idleScans<10&&(time-this.patchedAt>2||time<this.patchedAt)){this.patchedAt=time;this.idleScans=this.heat.patchTree(this.root,this.noHeat)?0:this.idleScans+1;}
  }
  /** Per frame while World V is shown: fog toward the view, the dome's environment, the heat light, the ash box. */
  apply(scene:THREE.Scene,camera:THREE.Camera,renderer:THREE.WebGLRenderer){
