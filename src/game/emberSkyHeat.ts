@@ -49,13 +49,16 @@ if(uHeatOn>0.){
   float shore=hm.r*exp(-max(0.,vHeatW.y-${SEA_Y.toFixed(2)})*.1);
   vec3 L=normalize(vec3(hm.b,-.55,hm.a));
   float facing=max(0.,dot(normalize(vHeatN),L));
-  float heat=(shore+hm.g)*(.3+1.9*facing);
+  float heat=(shore+hm.g)*(.45+1.7*facing);
   heat*=1.+.09*sin(uHeatTime*1.3+vHeatW.x*.21+vHeatW.z*.17)+.05*sin(uHeatTime*3.1+vHeatW.z*.5);
-  totalEmissiveRadiance+=diffuseColor.rgb*uHeatColor*heat*uHeatOn;
+  totalEmissiveRadiance+=diffuseColor.rgb*uHeatColor*heat*uHeatOn*EMBER_HEAT_SCALE;
 }
 `;
 
 export interface HeatSample {shore:number;flow:number;dx:number;dz:number}
+
+/** The heat reaches 8 m from the lava's edge at full strength and is gone by 15 m: beyond that the island is cool basalt. */
+const reach=(d:number)=>{const t=Math.min(1,Math.max(0,(d-8)/7));return 1-t*t*(3-2*t);};
 
 /** Pure bake of the heat map (RGBA float, RES x RES over BOX). */
 export function bakeEmberHeat(zones:readonly LavaZone[]):Float32Array {
@@ -64,9 +67,9 @@ export function bakeEmberHeat(zones:readonly LavaZone[]):Float32Array {
   const x=BOX.minX+(i+.5)/RES*BOX.sizeX,z=BOX.minZ+(j+.5)/RES*BOX.sizeZ;
   const e=Math.hypot(x/128,(z-2)/155);
   let shore=1;
-  if(e<SHORE_E){const r=Math.hypot(x,z-2),d=(SHORE_E-e)*(e>.02?r/e:140);shore=Math.exp(-d/13);}
+  if(e<SHORE_E){const r=Math.hypot(x,z-2),d=(SHORE_E-e)*(e>.02?r/e:140);shore=Math.exp(-d/10)*reach(d);}
   let flow=0;
-  for(const zn of zones){const w=zn.kind==='crater'?.75:zn.kind==='toe'?1:.8;const d=Math.max(0,Math.hypot(x-zn.x,z-zn.z)-zn.radius*.75);flow+=w*Math.exp(-d/4.5);}
+  for(const zn of zones){const w=zn.kind==='crater'?.75:zn.kind==='toe'?1:.8,c=Math.hypot(x-zn.x,z-zn.z);flow+=w*Math.exp(-Math.max(0,c-zn.radius*.75)/4.5)*reach(Math.max(0,c-zn.radius));}
   flow=Math.min(1.4,flow);
   const k=(j*RES+i)*4;data[k]=shore;data[k+1]=flow;total[j*RES+i]=shore+flow;
  }
@@ -85,7 +88,7 @@ export class EmberHeat {
  readonly uniforms={
   uHeatMap:{value:null as THREE.Texture|null},
   uHeatBox:{value:new THREE.Vector4(BOX.minX,BOX.minZ,1/BOX.sizeX,1/BOX.sizeZ)},
-  uHeatColor:{value:new THREE.Color('#ff5a1e').multiplyScalar(2.4)},
+  uHeatColor:{value:new THREE.Color('#ff5a1e').multiplyScalar(1.4)},
   uHeatTime:{value:0},
   uHeatOn:{value:0},
  };
@@ -111,15 +114,16 @@ export class EmberHeat {
   if(this.seen.has(m))return false;this.seen.add(m);
   if(!(m instanceof THREE.MeshStandardMaterial||m instanceof THREE.MeshLambertMaterial||m instanceof THREE.MeshPhongMaterial))return false;
   if(m.userData.noEmberHeat)return false;
-  const prev=m.onBeforeCompile,prevKey=m.customProgramCacheKey,u=this.uniforms;
+  // userData.emberHeatScale: a surface that should take less of it (the volcano's cone stands in its own flows).
+  const prev=m.onBeforeCompile,prevKey=m.customProgramCacheKey,u=this.uniforms,scale=(+m.userData.emberHeatScale||1).toFixed(3);
   m.onBeforeCompile=function(this:THREE.Material,shader,renderer){
    prev.call(this,shader,renderer);
    if(!shader.vertexShader.includes('#include <project_vertex>')||!shader.fragmentShader.includes('#include <emissivemap_fragment>'))return;
    Object.assign(shader.uniforms,u);
    shader.vertexShader=VERT_HEAD+shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n'+VERT_TAIL);
-   shader.fragmentShader=FRAG_HEAD+shader.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\n'+FRAG_TAIL);
+   shader.fragmentShader=`#define EMBER_HEAT_SCALE ${scale}\n`+FRAG_HEAD+shader.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\n'+FRAG_TAIL);
   };
-  m.customProgramCacheKey=function(this:THREE.Material){return prevKey.call(this)+'|ember-heat';};
+  m.customProgramCacheKey=function(this:THREE.Material){return prevKey.call(this)+'|ember-heat'+(scale==='1.000'?'':scale);};
   m.needsUpdate=true;
   return true;
  }

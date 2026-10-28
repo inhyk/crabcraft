@@ -253,7 +253,7 @@ export class EmberPlume {
  */
 export function volcanoMaterial(cx:number,cz:number,baseY:number,topY:number):THREE.MeshStandardMaterial{
  const m=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.92,metalness:0});
- m.name='ember-volcano-strata';
+ m.name='ember-volcano-strata';m.userData.emberHeatScale=.3;
  const u={uCone:{value:new THREE.Vector4(cx,cz,baseY,topY)}};
  m.onBeforeCompile=shader=>{
   Object.assign(shader.uniforms,u);

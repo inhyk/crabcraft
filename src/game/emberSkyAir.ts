@@ -27,6 +27,8 @@ export class EmberAir {
  readonly sky=new EmberSky({azimuth:72,elevation:19});
  readonly sun=new THREE.DirectionalLight();
  readonly hemi:THREE.HemisphereLight;
+ /** Cool rim on the player's crab, low behind it from the camera: it grazes the shell's back edges (red shell against orange lava) without lighting its top. */
+ readonly rim=new THREE.PointLight('#9fc4ff',9,2.4,2);
  readonly heat:EmberHeat;
  readonly plume:EmberPlume;
  readonly shore:THREE.Group;
@@ -43,14 +45,15 @@ export class EmberAir {
   this.root=o.root;this.height=o.height;
   const quality=storedQuality();
   this.sky.attachSun(this.sun);
-  this.hemi=new THREE.HemisphereLight(this.sky.hemiSky,this.sky.hemiGround,1);
+  this.hemi=new THREE.HemisphereLight(this.sky.hemiSky,this.sky.hemiGround,this.sky.hemiIntensity);
   this.heat=new EmberHeat(o.zones);
   o.volcano.material=volcanoMaterial(0,-128,o.ly-10,o.ly+28);
   const wind=new THREE.Vector2(-.42,-.91).normalize();
   this.plume=new EmberPlume({crater:new THREE.Vector3(0,o.ly+27,-128),sunDir:this.sky.sunDir,sunColor:this.sky.sunColor,wind,heat:this.heat.uniforms,quality});
   const shore=buildEmberShore({height:o.height,ly:o.ly,zones:o.zones,quality});
   this.shore=shore.root;this.counts={columns:shore.columns,spatter:shore.spatter};
-  o.root.add(this.sky.mesh,this.sun,this.sun.target,this.hemi,this.plume.root,this.shore);
+  this.rim.name='ember-player-rim';
+  o.root.add(this.sky.mesh,this.sun,this.sun.target,this.hemi,this.rim,this.plume.root,this.shore);
   this.noHeat=[...o.noHeat,this.sky.mesh,this.plume.root];
   this.root.userData.emberAir=this;
   this.heat.patchTree(this.root,this.noHeat);
@@ -61,9 +64,10 @@ export class EmberAir {
   // Scans every 2 s until ten in a row find nothing new.
   if(this.idleScans<10&&(time-this.patchedAt>2||time<this.patchedAt)){this.patchedAt=time;this.idleScans=this.heat.patchTree(this.root,this.noHeat)?0:this.idleScans+1;}
  }
- /** Per frame while World V is shown: fog toward the view, the dome's environment, the heat light, the ash box. */
- apply(scene:THREE.Scene,camera:THREE.Camera,renderer:THREE.WebGLRenderer){
+ /** Per frame while World V is shown: fog toward the view, the dome's environment, the heat light, the ash box, the crab's rim. */
+ apply(scene:THREE.Scene,camera:THREE.Camera,renderer:THREE.WebGLRenderer,player?:THREE.Vector3){
   const fog=scene.fog,e=camera.matrixWorld.elements;
+  if(player){const dx=e[12]-player.x,dz=e[14]-player.z,l=Math.hypot(dx,dz)||1;this.rim.position.set(player.x-dx/l*1.4,player.y+1.15,player.z-dz/l*1.4);}
   if(fog instanceof THREE.FogExp2){this.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.sky.fogDensity(e[13],-e[9]);}
   const env=this.env??=this.sky.environment(renderer);
   if(scene.environment!==env){this.prevEnv=scene.environment;this.prevEnvIntensity=scene.environmentIntensity;scene.environment=env;}
