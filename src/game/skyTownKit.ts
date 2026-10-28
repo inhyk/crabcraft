@@ -206,7 +206,7 @@ float skH(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(
 float skN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(skH(i),skH(i+vec2(1.,0.)),f.x),mix(skH(i+vec2(0.,1.)),skH(i+1.),f.x),f.y);}
 float skF(vec2 p){return skN(p)*.55+skN(p*2.3+7.1)*.3+skN(p*5.1+3.3)*.15;}
 `;
-type Code = {head?: string; vHead?: string; color?: string; rough?: string; normal?: string; vBegin?: string; emissive?: string};
+type Code = {head?: string; vHead?: string; color?: string; rough?: string; normal?: string; vBegin?: string; emissive?: string; lights?: string};
 function patch(mat: THREE.Material, key: string, o: Code, uniforms: Record<string, THREE.IUniform> = {}) {
   addPatch(mat, key, (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -220,6 +220,7 @@ function patch(mat: THREE.Material, key: string, o: Code, uniforms: Record<strin
     if (o.rough) f = f.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + o.rough);
     if (o.normal) f = f.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + o.normal);
     if (o.emissive) f = f.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + o.emissive);
+    if (o.lights) f = f.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n' + o.lights);
     shader.fragmentShader = f;
   });
 }
@@ -295,16 +296,17 @@ export function skyMaterials(): SkyMaterials {
       float k=floor(vSk.y+.5);vec3 c=diffuseColor.rgb;
       if(k==0.){vec2 u=vSu;float x=fract(u.x/.3),y=fract(u.y/.27);vec2 id=floor(vec2(u.x/.3,u.y/.27));
         float roll=sin(3.14159*x);float h=skH(id+vSk.z*3.);
-        c*=.78+.26*h;c=mix(c,c*vec3(.86,1.06,1.04),step(.86,skH(id+5.)));
+        // Deep glaze: the pans and courses sit under the albedo so lit roofs land at grey 55-80 with the reflection cut.
+        c*=(.78+.26*h)*.72;c=mix(c,c*vec3(.86,1.06,1.04),step(.86,skH(id+5.)));
         c*=mix(.5,1.,pow(roll,.6));c*=mix(.62,1.,smoothstep(0.,.14,y));
         c=mix(c,c*vec3(1.1,1.04,.92),smoothstep(.55,1.,skF(u*.35+vSk.z))*.3);
       }else{c*=.92+.12*skN(vSu*vec2(3.,1.));}
       diffuseColor.rgb=c;}`,
-    rough: `{float k=floor(vSk.y+.5);if(k==0.){float x=fract(vSu.x/.3);roughnessFactor=mix(.72,.42,pow(sin(3.14159*x),.5))+skN(vSu*2.)*.1;}}`,
+    rough: `{float k=floor(vSk.y+.5);if(k==0.){float x=fract(vSu.x/.3);roughnessFactor=mix(.74,.46,pow(sin(3.14159*x),.5))+skN(vSu*2.)*.08;}}`,
     normal: BUMP('(floor(vSk.y+.5)==0.?skTileH(vSu):0.)', '1.', 45),
+    // The sky and the white cloud sea mirrored in the glaze would lift the roofs to the grass's value: keep a third.
+    lights: 'reflectedLight.indirectSpecular*=.35;',
   });
-  // Deep teal glaze (#1f6a6e): the sky's reflection stays faint so the roofs sit a step below the grass in value.
-  roof.envMapIntensity = .3;
   // Gilt brass trim, finials, lantern cages.
   const metal = new THREE.MeshStandardMaterial({name: 'sky-brass', color: '#ffffff', roughness: .38, metalness: .55, vertexColors: true});
   patch(metal, 'sky-brass-v1', {color: `{diffuseColor.rgb*=.9+.18*skN(vSw.xz*4.+vSw.y*3.);}`});
