@@ -12,9 +12,9 @@ import {SKYBLOOM_SKY_GLSL,type SkybloomSky} from './skybloomSky';
 
 /** Cloud sea base height and billow amplitudes, metres. The island's lip sits 5 to 18 m up. */
 export const CLOUD_Y = -40;
-const MACRO_AMP = 16, DETAIL_AMP = 4.5;
+const MACRO_AMP = 30, DETAIL_AMP = 6;
 /** World metres per texture tile at the two scales. */
-const MACRO_TILE = 560, DETAIL_TILE = 150;
+const MACRO_TILE = 640, DETAIL_TILE = 170;
 const TEX = 256, GRAD_K = 0.08;
 
 const hash = (x: number, y: number, s: number) => { const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return h - Math.floor(h); };
@@ -61,10 +61,10 @@ varying vec3 vWorld;
 varying vec2 vUv1;
 void main(){
   vec4 w=modelMatrix*vec4(position,1.);
-  vUv1=w.xz/${MACRO_TILE}.+vec2(time*.0021,time*.0009);
+  vUv1=w.xz/${MACRO_TILE.toFixed(1)}+vec2(time*.0021,time*.0009);
   float far=length(w.xz-cameraPosition.xz);
   // Billows flatten into the far field, where they are a few pixels tall and only shimmer.
-  w.y+=texture2D(puff,vUv1).r*${MACRO_AMP}.*(1.-smoothstep(900.,1600.,far));
+  w.y+=texture2D(puff,vUv1).r*${MACRO_AMP.toFixed(1)}*(1.-smoothstep(900.,1600.,far));
   vWorld=w.xyz;
   gl_Position=projectionMatrix*viewMatrix*w;
 }
@@ -85,31 +85,35 @@ void main(){
   vec4 a=texture2D(puff,vUv1);
   // The small scale is turned against the big one so the two tiles never line up.
   const mat2 R=mat2(.8,.6,-.6,.8);
-  vec2 uv2=R*vWorld.xz/${DETAIL_TILE}.+vec2(-time*.0035,time*.0026);
+  vec2 uv2=R*vWorld.xz/${DETAIL_TILE.toFixed(1)}+vec2(-time*.0035,time*.0026);
   vec4 b=texture2D(puff,uv2);
   float detail=1.-smoothstep(250.,900.,dist);
-  vec2 g1=(a.gb-.5)/GK*${MACRO_AMP}./${MACRO_TILE}.;
-  vec2 g2=((b.gb-.5)/GK*${DETAIL_AMP}./${DETAIL_TILE}.)*R*detail;
+  vec2 g1=(a.gb-.5)/GK*${MACRO_AMP.toFixed(1)}/${MACRO_TILE.toFixed(1)};
+  vec2 g2=((b.gb-.5)/GK*${DETAIL_AMP.toFixed(1)}/${DETAIL_TILE.toFixed(1)})*R*detail;
   vec2 g=g1+g2;
   vec3 n=normalize(vec3(-g.x,1.,-g.y));
   float h=a.r*.78+b.r*.22*detail;
   // Self-shadow: the big billow between this point and the sun.
-  vec2 s=normalize(skySunDir.xz)*(1./${MACRO_TILE}.)*38.;
+#ifdef CLOUD_LOW
+  float shadow=0.;
+#else
+  vec2 s=normalize(skySunDir.xz)*(1./${MACRO_TILE.toFixed(1)})*38.;
   float ahead=max(texture2D(puff,vUv1+s).r,texture2D(puff,vUv1+s*2.2).r*.92);
   float shadow=smoothstep(.04,.22,ahead-a.r)*(.85-.35*a.r);
+#endif
   float ndl=dot(n,skySunDir);
   float lit=smoothstep(-.3,.8,ndl)*(1.-shadow);
   // Valleys between the domes sit deep in their own shade, the top of each puff is the brightest white.
-  float valley=1.-smoothstep(.05,.6,h);
-  vec3 col=cloudShade*(1.-valley*.38)+(cloudLit-cloudShade)*lit*(.72+.28*smoothstep(.2,.9,h));
+  float valley=1.-smoothstep(.05,.55,h);
+  vec3 col=cloudShade*(1.-valley*.5)+(cloudLit-cloudShade)*lit*(.55+.45*smoothstep(.15,.85,h));
   // Silver-warm rim where a lit flank turns away from the viewer.
   float rim=pow(1.-max(dot(n,v),0.),3.)*max(ndl,0.);
   col+=rimColor*rim*.5*detail;
   // The far field melts into the dome's own colour below the horizon (the same LUT), so the edge is invisible.
   vec3 d=-v;
   vec3 far=skybloomSky(vec3(d.x,min(d.y,-.03),d.z));
-  float haze=smoothstep(120.,1650.,dist);
-  col=mix(col,far,pow(haze,.75));
+  float haze=smoothstep(260.,2000.,dist);
+  col=mix(col,far,pow(haze,1.1));
   gl_FragColor=vec4(col,1.);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

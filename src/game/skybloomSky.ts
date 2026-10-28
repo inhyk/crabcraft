@@ -245,10 +245,10 @@ export class SkybloomSky {
     for (let c = 0; c < 3; c++) up[c] /= wsum;
     // A high sun in thin air: warm white (#fff2d6), barely reddened.
     this.sunColor = toColor(SUN_TINT);
-    this.sunIntensity = 4.4;
+    this.sunIntensity = 3.6;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance. The fill keeps
     // its blue so shade reads blue-violet (#5a6a9a range) against the warm sun, never black or olive.
-    this.hemiSky = toColor([up[0] * 1.45, up[1] * 1.55, up[2] * 2.1] as V3, 1);
+    this.hemiSky = toColor([up[0] * 4.3, up[1] * 4, up[2] * 4] as V3, 1);
     // From below: grass bounce on the island, the bright cloud sea under the isles; a cool lavender-green between.
     this.hemiGround = toColor(lin(0x8a9a9c), 0.55);
     // Cloud tops: albedo 0.9 under this sun and sky, as a MeshStandardMaterial would light them.

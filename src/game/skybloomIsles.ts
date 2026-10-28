@@ -135,11 +135,12 @@ const FALLS_MAIN = [1.62, 4.66, 3.62, 2.72];
 
 /** Radial offset of the rock face from the lip line, metres, at bearing-arc s and height y, `d` below the lip. */
 function faceOffset(s: number, y: number, d: number): number {
-  const layer = 5.5 + 1.6 * vn(s / 60, 3.1, 4);
-  const f = (((y + 3 * vn(s / 40, y / 50, 5)) / layer) % 1 + 1) % 1;
-  const ledge = 1.4 * Math.pow(1 - f, 1.3);
-  const buttress = 3.2 * (vn(s / 11, y / 32, 6) - 0.5) * 2 + 1.1 * (vn(s / 3.8, y / 8, 7) - 0.5) * 2;
-  return -0.6 + (ledge + buttress) * smooth(2.5, 10, d) - 0.035 * d - 0.0032 * d * d;
+  const layer = 7 + 4 * vn(s / 70, 3.1, 4);
+  const f = (((y + 5 * vn(s / 45, y / 60, 5)) / layer) % 1 + 1) % 1;
+  const ledge = 1.6 * Math.pow(1 - f, 1.4);
+  // Big rounded bulges and recesses along the cliff, vertical ribs within them.
+  const bulge = 5 * (vn(s / 26, y / 55, 6) - 0.5) * 2, rib = 1.6 * (vn(s / 5, y / 22, 7) - 0.5) * 2;
+  return -0.6 + (ledge + bulge + rib) * smooth(2.5, 12, d) - 0.06 * d - 0.0055 * d * d;
 }
 
 /** The skirt: lip roll, soil band with roots, then bedded rock down past the deepest cloud valley. */
@@ -180,8 +181,9 @@ function buildSkirt(b: Builder, falls: {p: V3; dir: V3; w: number; len: number}[
     b.quad(a, c, a + 1, c + 1);
   }
   // Roots and vines hang from the soil band; they follow the face out over the ledges and never cut into it.
-  for (let k = 0; k < 340; k++) {
-    const t = hash(k, 1) * Math.PI * 2, l = skyLip(t), s = (t / (Math.PI * 2)) * perim;
+  for (let k = 0; k < 260; k++) {
+    // Roots come in clumps where a tree above reaches the edge, with bare rock between.
+    const clump = Math.floor(k / 6.5), t = hash(clump, 1) * Math.PI * 2 + (hash(k, 41) - 0.5) * 0.09, l = skyLip(t), s = (t / (Math.PI * 2)) * perim;
     if (FALLS_MAIN.some(ft => Math.abs(Math.atan2(Math.sin(t - ft), Math.cos(t - ft))) * perim / (Math.PI * 2) < 4)) continue;
     const vine = hash(k, 2) < 0.4, len = (vine ? 6 : 3) + hash(k, 3) * (vine ? 18 : 12), d0 = 0.8 + hash(k, 4) * 1.8;
     const n = 9, pts: V3[] = [], radii: number[] = [], r0 = vine ? 0.07 + hash(k, 5) * 0.05 : 0.14 + hash(k, 5) * 0.16;
@@ -216,7 +218,7 @@ export const SKY_ISLES: readonly Isle[] = [
 function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>, block: ReturnType<typeof blockTemplate>, falls: {p: V3; dir: V3; w: number; len: number}[]) {
   const {x: cx, z: cz, y: ty, r: R, seed} = isle, M = Math.max(48, Math.round(R * 4.5)), K = 7;
   const outline = (t: number) => 1 + 0.2 * (ring(t, 5, seed) - 0.5) * 2 + 0.07 * (ring(t, 17, seed + 1) - 0.5) * 2;
-  const depth = (t: number) => R * (1.05 + 0.75 * ring(t, 3, seed + 2) + 0.25 * ring(t, 9, seed + 3));
+  const depth = (t: number) => R * (0.8 + 0.45 * ring(t, 3, seed + 2) + 0.2 * ring(t, 9, seed + 3));
   const topY = (x: number, z: number, e: number) => ty + R * 0.05 * (vn(x / 9, z / 9, seed) - 0.5) * 2 + R * 0.04 * (1 - e * e) - 0.5 * smooth(0.82, 1, e);
   const base = b.pos.length / 3;
   // Top cap, centre ring first: drifts of grass shades with a flower bed on garden isles.
@@ -242,7 +244,7 @@ function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>
     for (let j = 1; j <= U; j++) {
       const u = j / U, dd = j === 1 ? 0.9 : j === 2 ? 2.2 : 2.2 + (D - 2.2) * Math.pow((j - 2) / (U - 2), 1.1);
       const y = ty - 0.5 - dd;
-      let r = ro * Math.pow(1 - Math.min(1, dd / D), 0.8) + (j <= 2 ? 0.3 - j * 0.35 : 0);
+      let r = ro * Math.pow(Math.max(0, 1 - Math.pow(Math.min(1, dd / D), 1.7)), 0.62) + (j <= 2 ? 0.3 - j * 0.35 : 0);
       if (j > 2) { const f = (((y + 2.5 * vn(s / 20, y / 30, seed + 7)) / 4.5) % 1 + 1) % 1; r += (0.9 * Math.pow(1 - f, 1.3) + 1.6 * (vn(s / 6, y / 14, seed + 8) - 0.5)) * Math.min(1, r / 3); }
       r = Math.max(0, r);
       if (j === U) r = 0;
@@ -261,7 +263,7 @@ function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>
     const t = hash(k, seed, 9) * Math.PI * 2, ro = R * outline(t) * 0.97, len = 2 + hash(k, seed, 10) * R * 0.45, n = 7;
     const pts: V3[] = [], radii: number[] = [], r0 = 0.08 + hash(k, seed, 11) * 0.14;
     for (let q = 0; q < n; q++) {
-      const d = 0.6 + (len * q) / (n - 1), rr = Math.max(ro * Math.pow(1 - Math.min(1, d / depth(t)), 0.8) + 0.25, 0) + 0.2;
+      const d = 0.6 + (len * q) / (n - 1), rr = Math.max(ro * Math.pow(Math.max(0, 1 - Math.pow(Math.min(1, d / depth(t)), 1.7)), 0.62) + 0.25, 0) + 0.2;
       pts.push([cx + Math.sin(t) * rr, ty - 0.5 - d, cz + Math.cos(t) * rr]);
       radii.push(r0 * (1 - 0.8 * q / (n - 1)));
     }
@@ -306,12 +308,6 @@ function buildIsle(b: Builder, isle: Isle, blob: ReturnType<typeof blobTemplate>
     const ro = R * outline(ft) * 0.9, y = ty - 1.6;
     falls.push({p: [cx + Math.sin(ft) * ro, y, cz + Math.cos(ft) * ro], dir: [Math.sin(ft), 0, Math.cos(ft)], w: Math.max(1.6, R * 0.09), len: y - (CLOUD_Y + 4)});
   }
-  // A few loose rocks drifting with the isle.
-  for (let k = 0; k < 3; k++) {
-    const a = hash(k, seed, 20) * Math.PI * 2, d = R * (1.25 + 0.4 * hash(k, seed, 21)), s = 1 + hash(k, seed, 22) * R * 0.08;
-    const m = new THREE.Matrix4().compose(new THREE.Vector3(cx + Math.sin(a) * d, ty - R * 0.3 - hash(k, seed, 23) * R * 0.6, cz + Math.cos(a) * d), new THREE.Quaternion().setFromEuler(new THREE.Euler(hash(k, seed, 24), a, 0)), new THREE.Vector3(s, s * 1.4, s));
-    b.place(blob, m, (_x, _y, _z, ny) => ny > 0.55 ? mix3(MOSS, GRASS[1], 0.5) : [0.85, 0.85, 0.85], ROCK);
-  }
 }
 
 const LAND_VERT_PARS = /* glsl */ `
@@ -354,9 +350,10 @@ function landMaterial(mist: THREE.Color): THREE.MeshStandardMaterial {
   if(rockW>.01){
     // Bedded limestone: beds of cream, sand, rose ochre and lavender grey, warped, with dark seams between.
     float warp=lNoise(wp*.045)*7.+lNoise(wp*.21)*1.3;
-    float yy=(wp.y+warp)/2.7,bed=floor(yy),f=fract(yy);
+    float yy=(wp.y+warp)/3.4,bed=floor(yy),f=fract(yy);
     float hsh=lHash(vec3(bed,3.1,7.7));
-    vec3 c=hsh<.3?vec3(.79,.72,.57):hsh<.55?vec3(.62,.55,.42):hsh<.75?vec3(.6,.47,.38):hsh<.92?vec3(.5,.49,.56):vec3(.84,.79,.68);
+    vec3 c=hsh<.32?vec3(.78,.71,.56):hsh<.55?vec3(.56,.53,.48):hsh<.72?vec3(.66,.52,.37):hsh<.88?vec3(.46,.45,.51):vec3(.34,.31,.3);
+    c=mix(c,vec3(.8,.74,.6),.25*lNoise(wp*.02));
     c*=.86+.22*grain;
     float seam=smoothstep(.0,.07,f)*smoothstep(1.,.9,f);
     c*=.62+.38*seam;
@@ -468,7 +465,7 @@ varying float vSeed;
 void main(){
   vUv=uv;vSeed=aPuff.w;
   vec3 c=aPuff.xyz+vec3(sin(time*.05+aPuff.w*9.)*2.,sin(time*.08+aPuff.w*5.)*.8,0.);
-  float size=6.+fract(aPuff.w*13.7)*10.;
+  float size=(aPuff.w<.0?1.:1.)*(14.+fract(aPuff.w*13.7)*16.);
   vec4 mvPosition=viewMatrix*vec4(c,1.);
   mvPosition.xy+=position.xy*size;
   gl_Position=projectionMatrix*mvPosition;
@@ -485,7 +482,7 @@ void main(){
   vec2 p=vUv-.5;float r=length(p)*2.;
   float a=(1.-smoothstep(.2,1.,r))*(.55+.45*sin(atan(p.y,p.x)*3.+vSeed*20.)*.3);
   vec3 col=mix(mistColor,litColor,smoothstep(-.3,.4,p.y));
-  gl_FragColor=vec4(col,a*.55);
+  gl_FragColor=vec4(col,a*.7);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
@@ -522,9 +519,10 @@ export function skybloomLand(colors: {mist: THREE.Color; cloudLit: THREE.Color})
   // Mist: at each fall's foot and in a broken ring where the cliff meets the cloud tops.
   const puffs: number[] = [];
   falls.forEach((f, k) => { for (let i = 0; i < 6; i++) puffs.push(f.p[0] + f.dir[0] * (3 + i) + (hash(i, k, 30) - 0.5) * 8, f.p[1] - f.len + 4 + i * 1.5, f.p[2] + f.dir[2] * (3 + i) + (hash(i, k, 31) - 0.5) * 8, hash(i, k, 32)); });
-  for (let i = 0; i < 90; i++) {
-    const t = (i / 90) * Math.PI * 2 + hash(i, 33) * 0.05, l = skyLip(t), o = -2 + hash(i, 34) * 6;
-    puffs.push(l.x + l.nx * o, CLOUD_Y + 10 + hash(i, 35) * 9, l.z + l.nz * o, hash(i, 36));
+  // Two broken rings hug the cliff foot so the rock sinks into billows instead of ending on a line.
+  for (let i = 0; i < 170; i++) {
+    const t = (i / 170) * Math.PI * 2 + hash(i, 33) * 0.04, l = skyLip(t), o = -14 + hash(i, 34) * 16 + (i % 2) * 8;
+    puffs.push(l.x + l.nx * o, CLOUD_Y + 14 + hash(i, 35) * 12 + (i % 2) * 6, l.z + l.nz * o, hash(i, 36));
   }
   const quad = new THREE.PlaneGeometry(1, 1), mistGeo = new THREE.InstancedBufferGeometry();
   mistGeo.index = quad.index; mistGeo.setAttribute('position', quad.getAttribute('position')); mistGeo.setAttribute('uv', quad.getAttribute('uv'));
