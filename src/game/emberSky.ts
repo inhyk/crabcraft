@@ -225,7 +225,7 @@ const FOG_DENSITY = .0026;
  * World V's view exposure (game.ts EMBER_VIEW). It opens the lit surfaces and the emitters; the dome and the fog divide
  * it back out so the sky keeps its own values and stays darker than the lava, the forges and the windows.
  */
-export const EMBER_EXPOSURE = 2.0;
+export const EMBER_EXPOSURE = 2.1;
 
 export class EmberSky {
   readonly baked: BakedEmberSky;
@@ -234,15 +234,15 @@ export class EmberSky {
   readonly sunDir: THREE.Vector3;
   /** Direct sun, linear: colour (max channel 1) and intensity for the DirectionalLight. */
   readonly sunColor = new THREE.Color('#ffbd84');
-  readonly sunIntensity = 3.4;
+  readonly sunIntensity = 2.9;
   /**
    * HemisphereLight: a violet-grey fill from the smoke above and violet-grey from below, so shade sits at about
    * #3b3546 on screen and never goes black. The lava's warm bounce from below is the heat light's (emberSkyHeat.ts),
    * only within 15 m of lava.
    */
-  readonly hemiSky = new THREE.Color('#9a94c0');
+  readonly hemiSky = new THREE.Color('#968cc6');
   readonly hemiGround = new THREE.Color('#3b3546');
-  readonly hemiIntensity = 2.0;
+  readonly hemiIntensity = 2.45;
   /** Mean horizon, linear. */
   readonly skyHorizon: THREE.Color;
   readonly envIntensity = .5;

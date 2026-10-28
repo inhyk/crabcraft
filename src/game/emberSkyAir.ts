@@ -27,8 +27,8 @@ export class EmberAir {
  readonly sky=new EmberSky({azimuth:72,elevation:19});
  readonly sun=new THREE.DirectionalLight();
  readonly hemi:THREE.HemisphereLight;
- /** Cool rim on the player's crab, behind it from the camera: the red shell separates from the orange lava. */
- readonly rim=new THREE.PointLight('#9fc4ff',20,2,2);
+ /** Cool rim on the player's crab, low behind it from the camera: it grazes the shell's back edges (red shell against orange lava) without lighting its top. */
+ readonly rim=new THREE.PointLight('#9fc4ff',9,2.4,2);
  readonly heat:EmberHeat;
  readonly plume:EmberPlume;
  readonly shore:THREE.Group;
@@ -67,7 +67,7 @@ export class EmberAir {
  /** Per frame while World V is shown: fog toward the view, the dome's environment, the heat light, the ash box, the crab's rim. */
  apply(scene:THREE.Scene,camera:THREE.Camera,renderer:THREE.WebGLRenderer,player?:THREE.Vector3){
   const fog=scene.fog,e=camera.matrixWorld.elements;
-  if(player){const dx=e[12]-player.x,dz=e[14]-player.z,l=Math.hypot(dx,dz)||1;this.rim.position.set(player.x-dx/l*.8,player.y+1.55,player.z-dz/l*.8);}
+  if(player){const dx=e[12]-player.x,dz=e[14]-player.z,l=Math.hypot(dx,dz)||1;this.rim.position.set(player.x-dx/l*1.4,player.y+1.15,player.z-dz/l*1.4);}
   if(fog instanceof THREE.FogExp2){this.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.sky.fogDensity(e[13],-e[9]);}
   const env=this.env??=this.sky.environment(renderer);
   if(scene.environment!==env){this.prevEnv=scene.environment;this.prevEnvIntensity=scene.environmentIntensity;scene.environment=env;}

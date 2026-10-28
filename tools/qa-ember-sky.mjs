@@ -24,21 +24,23 @@ const VALUE_VIEWS = {arrivalF: [-3, 68, -.75, .28, 20], village: [0, 55, .5, .5,
 const TARGET = {p50: [55, 85], sat: [.25, .4], skyTop: .15, max: 230, p10: 20};
 
 /** values.py in the page: greyscale percentiles, clip, saturation median, where the brightest 1% sits, and how much of it is sky. */
-async function frameValues(p, png, bare) {
-  return p.evaluate(async ([a, b]) => {
+async function frameValues(p, png, bare, unlit) {
+  return p.evaluate(async ([a, b, c]) => {
     const load = async b64 => { const bm = await createImageBitmap(await (await fetch('data:image/png;base64,' + b64)).blob()); const c = new OffscreenCanvas(bm.width, bm.height), x = c.getContext('2d'); x.drawImage(bm, 0, 0); return x.getImageData(0, 0, bm.width, bm.height); };
-    const im = await load(a), sky = await load(b), d = im.data, s = sky.data, n = im.width * im.height, h = im.height;
+    const im = await load(a), sky = await load(b), dark = (await load(c)).data, d = im.data, s = sky.data, n = im.width * im.height, h = im.height;
     const g = new Float32Array(n), sat = new Float32Array(n);
     for (let i = 0; i < n; i++) { const r = d[i * 4] / 255, gg = d[i * 4 + 1] / 255, bb = d[i * 4 + 2] / 255, mx = Math.max(r, gg, bb), mn = Math.min(r, gg, bb); g[i] = (.299 * r + .587 * gg + .114 * bb) * 255; sat[i] = mx > 0 ? (mx - mn) / mx : 0; }
     const sorted = Float32Array.from(g).sort(), pct = q => sorted[Math.min(n - 1, Math.floor(q / 100 * n))];
-    const top = pct(99); let topN = 0, upper = 0, skyN = 0;
+    const top = pct(99); let topN = 0, upper = 0, skyN = 0, emitN = 0;
     for (let i = 0; i < n; i++) if (g[i] >= top) {
       topN++; if (Math.floor(i / im.width) < h * .35) upper++;
       // Sky: the pixel goes (almost) black once the dome is hidden.
-      const gs = .299 * s[i * 4] + .587 * s[i * 4 + 1] + .114 * s[i * 4 + 2]; if (gs < 12 && g[i] - gs > 20) skyN++;
+      const gs = .299 * s[i * 4] + .587 * s[i * 4 + 1] + .114 * s[i * 4 + 2]; if (gs < 12 && g[i] - gs > 20) { skyN++; continue; }
+      // Emissive: keeps at least half its value with the sun, fill, environment, rim and heat light off.
+      if (.299 * dark[i * 4] + .587 * dark[i * 4 + 1] + .114 * dark[i * 4 + 2] >= g[i] * .5) emitN++;
     }
-    return {p10: Math.round(pct(10)), p50: Math.round(pct(50)), p99: Math.round(pct(99)), max: Math.round(sorted[n - 1]), clip: +(sorted.filter(v => v >= 254.5).length / n * 100).toFixed(2), sat: +Float32Array.from(sat).sort()[n >> 1].toFixed(2), upper35: +(upper / topN).toFixed(2), skyTop: +(skyN / topN).toFixed(2)};
-  }, [png.toString('base64'), bare.toString('base64')]);
+    return {p10: Math.round(pct(10)), p50: Math.round(pct(50)), p99: Math.round(pct(99)), max: Math.round(sorted[n - 1]), clip: +(sorted.filter(v => v >= 254.5).length / n * 100).toFixed(2), sat: +Float32Array.from(sat).sort()[n >> 1].toFixed(2), upper35: +(upper / topN).toFixed(2), skyTop: +(skyN / topN).toFixed(2), emitTop: +(emitN / topN).toFixed(2)};
+  }, [png.toString('base64'), bare.toString('base64'), unlit.toString('base64')]);
 }
 
 const VIEWS = [
@@ -143,12 +145,16 @@ async function run(quality) {
       await p.waitForTimeout(400);
       const bare = await p.screenshot();
       await p.evaluate(() => { const a = window.app.current.game.world2.fifth.air; a.sky.mesh.visible = true; window.app.current.game.scene.background = window.__bg; });
-      values[name] = await frameValues(p, png, bare);
+      await p.evaluate(() => { const a = window.app.current.game.world2.fifth.air; window.__lights = [a.sun.intensity, a.hemi.intensity, a.rim.intensity, a.sky.envIntensity, a.heat.uniforms.uHeatColor.value.clone()]; a.sun.intensity = a.hemi.intensity = a.rim.intensity = 0; a.sky.envIntensity = 0; a.heat.uniforms.uHeatColor.value.setRGB(0, 0, 0); });
+      await p.waitForTimeout(400);
+      const unlit = await p.screenshot();
+      await p.evaluate(() => { const a = window.app.current.game.world2.fifth.air, l = window.__lights; a.sun.intensity = l[0]; a.hemi.intensity = l[1]; a.rim.intensity = l[2]; a.sky.envIntensity = l[3]; a.heat.uniforms.uHeatColor.value.copy(l[4]); });
+      values[name] = await frameValues(p, png, bare, unlit);
     }
     await p.evaluate(() => { window.__cam = null; window.__stopAway = true; const g = window.app.current.game; g.follow.update = g.follow.__orig; });
     r.values = values;
-    console.log('view p10 p50 p99 max clip% satMed top1%InUpper35% skyShareOfTop1%');
-    for (const [n, v] of Object.entries(values)) console.log(n, v.p10, v.p50, v.p99, v.max, v.clip, v.sat, v.upper35, v.skyTop);
+    console.log('view p10 p50 p99 max clip% satMed top1%InUpper35% skyShareOfTop1% emissiveShareOfTop1%');
+    for (const [n, v] of Object.entries(values)) console.log(n, v.p10, v.p50, v.p99, v.max, v.clip, v.sat, v.upper35, v.skyTop, v.emitTop);
     for (const [n, v] of Object.entries(values)) {
       assert.ok(v.p50 >= TARGET.p50[0] && v.p50 <= TARGET.p50[1], `${n}: p50 ${v.p50} outside ${TARGET.p50}`);
       assert.ok(v.sat >= TARGET.sat[0] && v.sat <= TARGET.sat[1], `${n}: saturation median ${v.sat} outside ${TARGET.sat}`);

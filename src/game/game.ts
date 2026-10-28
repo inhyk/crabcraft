@@ -120,7 +120,7 @@ const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.14, agxLook: { s
 /** Starhaven's night: deep sky, moonlit ground that reads against it, warm lamps and crystals that bloom (starNight.ts). */
 const STAR_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.06, agxLook: { saturation: 1.24, power: 1.14 }, bloom: { intensity: 1.15, threshold: 0.95, smoothing: 0.3, radius: 0.72, knee: true }, vignette: { offset: 0.32, darkness: 0.55 }, grade: { lift: [0.002, 0.004, 0.012], warm: 0.65, white: 0.0, split: { shadow: [0.96, 0.98, 1.06], highlight: [1.05, 1.02, 0.95] } } };
 /** Emberreach: no colour grade (the amber lives in the sky and fog only); exposure opens the basalt to mid values and AgX's look is neutral so the frame is not orange; bloom keys above lit stone, on lava, forges and windows. */
-const EMBER_VIEW: ViewOptions = { ...GAME_VIEW, exposure: EMBER_EXPOSURE, agxLook: { saturation: 0.95, power: 1.06 }, bloom: { intensity: 1.0, threshold: 1.0, smoothing: 0.3, radius: 0.75, knee: true } };
+const EMBER_VIEW: ViewOptions = { ...GAME_VIEW, exposure: EMBER_EXPOSURE, agxLook: { saturation: 1.0, power: 1.06 }, bloom: { intensity: 1.0, threshold: 1.0, smoothing: 0.3, radius: 0.75, knee: true } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },
