@@ -63,6 +63,8 @@ function leafMaterial(src:THREE.Material,name:string,blossomRim:boolean):THREE.M
     // The kit's baked shading: deep inside the crown, bright on its outer shell; tint from the instance.
     float sfL=smoothstep(.05,.95,vSfAo);
     vec3 sfC=vSfTint*mix(.55,1.15,sfL);
+    // White blossom crowns: a cool lilac shade side and a warm cream sun side, never a flat white blob (advisor #21 a).
+    if(min(vSfTint.r,min(vSfTint.g,vSfTint.b))>.8)sfC=mix(vec3(.584,.539,.686),vec3(.930,.896,.822),sfL);
     // Patches across a crown drift a little in hue and value, so a canopy reads as masses, not one colour.
     float sfN=sfH(floor(vSfW*.7));
     sfC*=.9+.2*sfN;
