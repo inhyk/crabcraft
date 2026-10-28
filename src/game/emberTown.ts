@@ -1,17 +1,21 @@
 import * as THREE from 'three';
 import type {LavaZone} from './emberLava';
 import {
-  FORGE_BANNERS, FORGE_BARGE, FORGE_CRANE, FORGE_D, FORGE_HOUSES, FORGE_JETTY, FORGE_LANTERNS, FORGE_QUAY, FORGE_RAIL,
-  FORGE_GATE, FORGE_STALLS, FORGE_W, FORGE_YARD, GLASS_KILN, SMELTER_TOWER, forgeYaw, type ForgeHouse,
+  FORGE_BANNERS, FORGE_BARGE, FORGE_BEDS, FORGE_BRAZIERS, FORGE_C, FORGE_HOIST, FORGE_CRANE, FORGE_FURNACE, FORGE_HOUSES, FORGE_JETTY,
+  FORGE_LANTERNS, FORGE_OPEN_FORGE, FORGE_QUAY, FORGE_RAIL, FORGE_GATE, FORGE_STALLS, GLASS_KILN, forgeYaw, yardAt,
+  type ForgeHouse,
 } from './emberTownLayout';
+import {emberSurface} from './emberPaving';
 
 /*
- * Emberreach's forge town and arrival quay (World V), from the plan in emberTownLayout.ts: six battered basalt houses
- * with lighter mortar, crow-stepped gables, verdigris copper or riveted iron roofs, big stacks breathing smoke and
- * sparks, glowing forge mouths and windows; each house shows its trade in its yard (smithy, smelter, inn, armourer,
- * glassblower, ore merchant). Caged ember lanterns on basalt posts line the avenue, heavy banners hang from iron bars,
- * an outdoor forge works west of the smelter, and the south rim is a quay with a jetty out over the lava, a heat-proof
- * ore barge on its chain ferry and a cargo crane.
+ * Emberreach's forge works and arrival quay (World V), from the plan in emberTownLayout.ts: one round furnace yard
+ * paved in concentric courses of cut basalt round the town's blast furnace (iron-hooped basalt shaft, charging gallery,
+ * three glowing tap mouths feeding channels across the flags to casting beds), ringed by six battered basalt houses
+ * facing it, with lighter mortar, crow-stepped gables, verdigris copper roofs (riveted iron on the two forges), big
+ * stacks breathing smoke and sparks, lit windows and caged lanterns on wall brackets; each house shows its trade in
+ * front (smithy, ore house, inn, armourer, glassblower, ore merchant). Lantern posts and banners stand only where
+ * people gather: the yard's mouths, the quay and the sanctuary gate. The south rim is a quay with a jetty out over the
+ * lava, a heat-proof ore barge on its chain ferry and a cargo crane.
  * Draw calls: everything solid is one merged mesh (one material; masonry, planks and riveted plates are drawn in its
  * shader from world position, pattern id and roughness/metalness per vertex), plus one each for glows, cloth, ground
  * light pools, smoke, flames and sparks. Local fire light: up to 16 warm point sources lit in the solid shader (no
@@ -23,7 +27,7 @@ type Geo = THREE.BufferGeometry;
 type RGB = [number, number, number];
 const TAU = Math.PI * 2;
 /** Solid shader patterns. */
-const PAT = {plain: 0, ashlar: 1, rubble: 2, plank: 3, plate: 4};
+const PAT = {plain: 0, ashlar: 1, rubble: 2, plank: 3, plate: 4, yard: 5};
 const lin = (hex: string, k = 1): RGB => { const c = new THREE.Color(hex); return [c.r * k, c.g * k, c.b * k]; };
 const hash = (n: number) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 
@@ -122,12 +126,12 @@ function solidMaterial(lights: number, uniforms: {uTime: THREE.IUniform<number>;
   const m = new THREE.MeshStandardMaterial({vertexColors: true, roughness: 1, metalness: 1});
   m.name = 'ember-town-solid';
   m.onBeforeCompile = s => {
-    Object.assign(s.uniforms, uniforms, {uMortar: {value: new THREE.Color('#9a9188')}});
+    Object.assign(s.uniforms, uniforms, {uMortar: {value: new THREE.Color('#a39b92')}, uYard: {value: new THREE.Vector3(FORGE_C.x, FORGE_C.z, FORGE_C.r)}});
     s.vertexShader = s.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aPat;attribute vec2 aRM;varying vec4 vPat;varying vec2 vRM;varying vec3 vWP;varying vec3 vWN;')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\nvPat=aPat;vRM=aRM;vWP=(modelMatrix*vec4(transformed,1.)).xyz;vWN=normalize(mat3(modelMatrix)*objectNormal);');
     s.fragmentShader = s.fragmentShader
-      .replace('#include <common>', `#include <common>\n#define ET_LIGHTS ${lights}\nuniform float uTime;uniform vec4 uLP[16];uniform vec4 uLC[16];uniform vec3 uMortar;varying vec4 vPat;varying vec2 vRM;varying vec3 vWP;varying vec3 vWN;\n${NOISE}`)
+      .replace('#include <common>', `#include <common>\n#define ET_LIGHTS ${lights}\nuniform float uTime;uniform vec4 uLP[16];uniform vec4 uLC[16];uniform vec3 uMortar;uniform vec3 uYard;varying vec4 vPat;varying vec2 vRM;varying vec3 vWP;varying vec3 vWN;\n${NOISE}`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
   vec3 N0=normalize(vWN);vec2 etQ;vec3 etU=vec3(1.,0.,0.),etV=vec3(0.,0.,1.),etBev=vec3(0.);
   if(abs(N0.y)>.72)etQ=vWP.xz;else{vec2 t=normalize(vec2(-N0.z,N0.x));etQ=vec2(dot(vWP.xz,t),vWP.y);etU=vec3(t.x,0.,t.y);etV=vec3(0.,1.,0.);}
@@ -137,7 +141,7 @@ function solidMaterial(lights: number, uniforms: {uTime: THREE.IUniform<number>;
     // pitted faces, chamfered arrises tilting the normal, thin lighter mortar.
     float rub=step(1.5,pat);float ka=(.5+.18*rub)*etK,kb=(.34+.14*rub)*etK,per=ka+kb;
     float pr=floor(etQ.y/per),fy=etQ.y-pr*per,top=step(ka,fy);float row=pr*2.+top,hgt=mix(ka,kb,top);fy-=top*ka;
-    float w=(.78+.62*etH(vec2(row,etSeed+3.)))*etK*(1.+.35*rub);float x=etQ.x+etH(vec2(row,etSeed))*3.;float c=floor(x/w);float fx=x-c*w;
+    float w=(.5+1.15*etH(vec2(row,etSeed+3.)))*etK*(1.+.35*rub);float x=etQ.x+etH(vec2(row,etSeed))*3.;float c=floor(x/w);float fx=x-c*w;
     float sp=etH(vec2(c,row)+etSeed*.7);if(sp<.38){float at=w*(.35+.3*etH(vec2(row,c)));if(fx>at){fx-=at;w-=at;c+=.5;}else w=at;}
     float jit=(etN(etQ*4.+etSeed)-.5)*.04*etK*(.3+rub);
     float e=min(min(fx,w-fx),min(fy,hgt-fy))+jit;
@@ -154,6 +158,30 @@ function solidMaterial(lights: number, uniforms: {uTime: THREE.IUniform<number>;
     float w=.2*etK;float b=floor(etQ.x/w);float f=fract(etQ.x/w);
     float grain=etN(vec2(etQ.x*40.,etQ.y*2.5+b*7.));
     diffuseColor.rgb*=(.78+.36*etH(vec2(b,etSeed)))*(.8+.3*grain)*mix(.45,1.,smoothstep(0.,.06,f)*smoothstep(1.,.94,f));
+  }else if(pat>4.5){
+    // Furnace yard: concentric courses of cut flags round the furnace, staggered radial joints filled with ash, the
+    // joints nearest the furnace breathing heat (emissive below), a darker trodden ring.
+    vec2 yd=vWP.xz-uYard.xy;float yr=length(yd),yth=atan(yd.y,yd.x);
+    float cw=.72,ri=floor(yr/cw),fr=yr/cw-ri,rm=(ri+.5)*cw;
+    float n=max(8.,floor(6.2832*rm/(.85+.5*etH(vec2(ri,4.1)))));
+    float u=(yth/6.2832+.5+etH(vec2(ri,9.3)))*n,c=floor(u),fu=u-c;
+    float id=etH(vec2(c,ri)+1.7);
+    float e=min(min(fu,1.-fu)*6.2832*rm/n,min(fr,1.-fr)*cw)+(etN(vWP.xz*5.)-.5)*.025;
+    float mo=1.-smoothstep(.015,.04,e);
+    vec3 st=diffuseColor.rgb*(.86+.22*id)*(.88+.16*etN(vWP.xz*11.+id*7.)+.08*etN(vWP.xz*2.3));
+    st=mix(st,st*vec3(.74,.75,.8),step(id,.07));st=mix(st,st*vec3(1.08,.98,.93),step(.95,id)*.6);
+    // Soot fans out from the furnace and the tap channels; a darker trodden ring; ash drifts lie in patches.
+    float soot=(1.-smoothstep(5.5,12.,yr))*.45+(1.-smoothstep(9.,26.,yr))*.15;
+    st*=1.-soot*(.6+.4*etN(vWP.xz*.9));
+    st*=mix(1.,.9,smoothstep(3.,1.,abs(yr-16.)));
+    float ash=smoothstep(.5,.85,etN(vWP.xz*.45+3.)*.7+etN(vWP.xz*1.7)*.3)*smoothstep(8.,14.,yr);
+    vec3 jt=mix(vec3(.07,.066,.072),uMortar*.5,.25+.55*ash);
+    st=mix(st,uMortar*.62*(.9+.2*etN(vWP.xz*6.)),ash*.55);
+    diffuseColor.rgb=mix(st,jt,mo);etRough=1.+.15*mo;
+    vec2 tl=vec2(smoothstep(.06,0.,(1.-fu)*6.2832*rm/n)-smoothstep(.06,0.,fu*6.2832*rm/n),smoothstep(.06,0.,(1.-fr)*cw)-smoothstep(.06,0.,fr*cw));
+    vec2 tr=vec2(-sin(yth),cos(yth)),rd=vec2(cos(yth),sin(yth));
+    etBev=(tl.x*vec3(tr.x,0.,tr.y)+tl.y*vec3(rd.x,0.,rd.y))*.35*(1.-mo);
+    etSeed=mo*(1.-smoothstep(6.,9.5,yr))*smoothstep(.45,.75,etN(vWP.xz*.9+4.))*(.6+.4*etN(vWP.xz*1.3+uTime*.05));
   }else if(pat>3.5){
     // Roof and armour plates: standing seams, laps with rivets; etK is the verdigris on copper (0 = blackened iron).
     float sx=fract(etQ.x/.62),sy=fract(etQ.y/.95);
@@ -174,7 +202,8 @@ function solidMaterial(lights: number, uniforms: {uTime: THREE.IUniform<number>;
    for(int i=0;i<ET_LIGHTS;i++){vec3 d=uLP[i].xyz-vWP;float r=uLP[i].w;float dl=length(d);
     if(dl<r){float fa=1.-dl/r;fa*=fa;float ndl=max(dot(N0,d/dl)*.8+.2,0.);
      float fl=1.+.16*sin(uTime*(6.3+uLC[i].w)+uLC[i].w*3.1)+.09*sin(uTime*15.7+uLC[i].w*7.);warm+=uLC[i].rgb*fa*ndl*fl;}}
-   totalEmissiveRadiance+=warm*diffuseColor.rgb;}`);
+   totalEmissiveRadiance+=warm*diffuseColor.rgb;
+   if(vPat.x>4.5)totalEmissiveRadiance+=vec3(1.,.22,.04)*etSeed*.9;}`);
   };
   m.customProgramCacheKey = () => 'ember-town-solid-' + lights;
   return m;
@@ -313,7 +342,7 @@ export interface EmberTownOptions { height: (x: number, z: number) => number; zo
 
 export class EmberTown {
   readonly root = new THREE.Group();
-  readonly stats: Record<string, number> = {houses: 0, chimneys: 0, forgeMouths: 0, windows: 0, lanterns: 0, banners: 0, braziers: 0, carts: 0, blades: 0, lights: 0, pools: 0, smoke: 0, flames: 0, sparks: 0, skipped: 0};
+  readonly stats: Record<string, number> = {wallLanterns: 0, furnace: 0, houses: 0, chimneys: 0, forgeMouths: 0, windows: 0, lanterns: 0, banners: 0, braziers: 0, carts: 0, blades: 0, lights: 0, pools: 0, smoke: 0, flames: 0, sparks: 0, skipped: 0};
   private readonly time = {value: 0};
   private readonly lightPos: THREE.Vector4[] = [];
   private readonly lightCol: THREE.Vector4[] = [];
@@ -332,9 +361,12 @@ export class EmberTown {
   constructor(o: EmberTownOptions) {
     this.h = o.height; this.zones = o.zones; this.low = (o.quality ?? storedQuality()) === 'low';
     this.root.name = 'ember-forge-town';
+    this.yard();
+    this.furnace();
     for (const h of FORGE_HOUSES) this.house(h);
     this.outdoorForge();
-    FORGE_STALLS.forEach((s, i) => this.stall(s.x, s.z, s.side, i));
+    FORGE_STALLS.forEach((s, i) => { const [x, z] = yardAt(s.a, s.r); this.stall(x, z, -s.a * Math.PI / 180, i); });
+    FORGE_BRAZIERS.forEach((b, i) => this.brazier(...yardAt(b.a, b.r), 1.05, 11 + i));
     FORGE_LANTERNS.forEach(([x, z], i) => this.lantern(x, z, i));
     FORGE_BANNERS.forEach(([x, z], i) => this.bannerPost(x, z, i));
     this.harbour();
@@ -342,6 +374,8 @@ export class EmberTown {
   }
 
   /* -- placement helpers -- */
+  /** Walking surface: the yard's flags inside the furnace yard, the terrain elsewhere. */
+  private floor(x: number, z: number) { return Math.hypot(x - FORGE_C.x, z - FORGE_C.z) < FORGE_C.r ? emberSurface(this.h, x, z) + .07 : this.h(x, z); }
   private clearOfLava(x: number, z: number, r: number) {
     for (const zn of this.zones) if (Math.hypot(x - zn.x, z - zn.z) < zn.radius + r + 1) { this.stats.skipped++; return false; }
     return true;
@@ -410,7 +444,7 @@ export class EmberTown {
     this.stats.braziers++;
   }
   private cart(x: number, z: number, yaw: number, load: 'ore' | 'ingot', seed: number) {
-    const y = this.h(x, z), m = trs(x, y, z, yaw);
+    const y = this.floor(x, z) + .08, m = trs(x, y, z, yaw);
     this.S(frustum(.95, 1.5, 1.25, 1.85, .7, true).translate(0, .38, 0), m, '#3a3638', PAT.plate, 0, .55, .75, y, seed);
     for (const s of [-1, 1]) for (const t of [-.5, .5]) {
       this.S(cyl(.24, .24, .08, 10).rotateZ(Math.PI / 2).translate(s * .55, .24, t), m, '#26252a', PAT.plain, 1, .45, .85, y);
@@ -424,8 +458,9 @@ export class EmberTown {
   }
   private rails(x0: number, z0: number, x1: number, z1: number) {
     const len = Math.hypot(x1 - x0, z1 - z0), yaw = Math.atan2(x1 - x0, z1 - z0);
-    for (let t = .4; t < len; t += .9) { const x = x0 + (x1 - x0) * t / len, z = z0 + (z1 - z0) * t / len; this.S(box(1.6, .12, .26), trs(x, this.h(x, z) + .04, z, yaw), '#3f3029', PAT.plank, .4, .95, 0, this.h(x, z), t); }
-    for (const s of [-1, 1]) { const ox = Math.cos(yaw) * s * .55, oz = -Math.sin(yaw) * s * .55; const mx = (x0 + x1) / 2 + ox, mz = (z0 + z1) / 2 + oz; this.S(box(.09, .1, len), trs(mx, this.h(mx, mz) + .14, mz, yaw), '#5d5a5c', PAT.plain, 1, .3, .9, -99); }
+    for (let t = .4; t < len; t += .9) { const x = x0 + (x1 - x0) * t / len, z = z0 + (z1 - z0) * t / len, y = this.floor(x, z); this.S(box(1.6, .12, .26), trs(x, y + .02, z, yaw), '#3f3029', PAT.plank, .4, .95, 0, y, t); }
+    // Rails in short lengths so they follow the floor.
+    for (const s of [-1, 1]) for (let t = 0; t < len - .01; t += 3) { const l = Math.min(3, len - t), x = x0 + (x1 - x0) * (t + l / 2) / len + Math.cos(yaw) * s * .55, z = z0 + (z1 - z0) * (t + l / 2) / len - Math.sin(yaw) * s * .55; this.S(box(.09, .1, l), trs(x, this.floor(x, z) + .13, z, yaw), '#5d5a5c', PAT.plain, 1, .3, .9, -99); }
   }
   /** Lit window (protruding stone frame, glow pane, iron bars) on a wall plane through m (local +z out of the wall). */
   private window(m: THREE.Matrix4, w: number, hh: number, base: number, arch = false, k = 1.6) {
@@ -456,26 +491,26 @@ export class EmberTown {
   /* -- houses -- */
   private house(h: ForgeHouse) {
     const yaw = forgeYaw(h), cs = Math.cos(yaw), sn = Math.sin(yaw);
-    const W = FORGE_W, D = FORGE_D, Ht = h.wall, Hr = h.rise;
+    const W = h.w, D = h.d, Ht = h.wall, Hr = h.rise;
     const toW = (lx: number, lz: number): [number, number] => [h.x + lx * cs + lz * sn, h.z - lx * sn + lz * cs];
     let y0 = Infinity; for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const [x, z] = toW(sx * W / 2, sz * D / 2); y0 = Math.min(y0, this.h(x, z)); }
     const F = trs(h.x, y0, h.z, yaw), L = (x: number, y: number, z: number, ry = 0, rx = 0, rz = 0) => F.clone().multiply(trs(x, y, z, ry, rx, rz));
     const gy = (lx: number, lz: number) => { const [x, z] = toW(lx, lz); return this.h(x, z) - y0; };
-    const B = y0, wallHex = ['#5f5a5b', '#57534f', '#625c5a', '#5b5759', '#605a57', '#595557'][h.seed - 1];
+    const B = y0, wallHex = ['#47434a', '#433f43', '#4a4548', '#45424a', '#494447', '#434046'][h.seed - 1];
     const seed = h.seed * 11;
     // Plinth (rubble, battered, sunk into the slope) and walls (dressed basalt, battered).
     this.S(frustum(W + .6, D + .6, W + .1, D + .1, 2.2), L(0, -1.2, 0), '#433f44', PAT.rubble, 1.2, .95, 0, B, seed);
     const wb = 1.0, hx = (y: number) => (W - .5 * (y - wb) / (Ht - wb)) / 2, hz = (y: number) => (D - .5 * (y - wb) / (Ht - wb)) / 2;
-    this.S(frustum(W, D, W - .5, D - .5, Ht - wb), L(0, wb, 0), wallHex, PAT.ashlar, 1, .9, 0, B, seed + 1);
+    this.S(frustum(W, D, W - .5, D - .5, Ht - wb), L(0, wb, 0), wallHex, PAT.ashlar, .76, .9, 0, B, seed + 1);
     // Quoins: alternating long and short pale blocks up every corner.
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (let i = 0, y = wb + .25; y < Ht - .2; i++, y += .5) {
       const a = (i + (sx * sz > 0 ? 0 : 1)) % 2 ? .95 : .55, b = (i + (sx * sz > 0 ? 0 : 1)) % 2 ? .55 : .95;
-      this.S(box(a, .47, b), L(sx * (hx(y) - a / 2 + .05), y, sz * (hz(y) - b / 2 + .05)), '#7b7470', PAT.plain, 1, .9, 0, B, i);
+      this.S(box(a, .47, b), L(sx * (hx(y) - a / 2 + .05), y, sz * (hz(y) - b / 2 + .05)), '#5d5756', PAT.plain, 1, .9, 0, B, i);
     }
-    this.S(box(W - .2, .26, D - .2), L(0, Ht - .02, 0), '#6d6663', PAT.plain, 1, .9, 0, B);
+    this.S(box(W - .2, .26, D - .2), L(0, Ht - .02, 0), '#5a5452', PAT.plain, 1, .9, 0, B);
     // Roof: plates between crow-stepped gables, ridge along z (the gable faces the avenue).
     const eaveW = W / 2 + .45, slope = Math.atan2(Hr, eaveW), pl = Math.hypot(Hr, eaveW) + .05, gz = hz(Ht) - .3;
-    const roofHex = h.roof === 'copper' ? '#4f8f7f' : '#3d3a3c', patina = h.roof === 'copper' ? 1 : 0;
+    const roofHex = h.roof === 'copper' ? '#4f8f7f' : '#3d3a3a', patina = h.roof === 'copper' ? 1 : 0;
     for (const s of [-1, 1]) this.S(box(pl, .16, 2 * gz - .1), L(s * eaveW / 2, Ht + Hr / 2 - .1, 0, 0, 0, -s * slope), roofHex, PAT.plate, patina, h.roof === 'copper' ? .55 : .45, h.roof === 'copper' ? .45 : .7, B, seed);
     this.S(prism(W - .6, Hr - .1, 2 * gz - .2), L(0, Ht, 0), '#2a2629', PAT.plain, 1, .9, 0, B);
     this.S(box(.34, .3, 2 * gz + .3), L(0, Ht + Hr + .02, 0, 0, Math.PI / 4 * 0), '#2c2a2d', PAT.plate, 0, .4, .8, B);
@@ -485,15 +520,15 @@ export class EmberTown {
     const steps = 5;
     for (const sz of [-1, 1]) for (let k = 0; k < steps; k++) {
       const hw = (hx(Ht) + .15) * (1 - k / steps) + .25, y = Ht + k * Hr / steps, th = Hr / steps;
-      this.S(box(2 * hw, th, .62), L(0, y + th / 2, sz * gz), wallHex, PAT.ashlar, 1, .9, 0, B, seed + 2);
-      for (const s of [-1, 1]) this.S(box(.62, .16, .76), L(s * (hw - .26), y + th + .06, sz * gz), '#8a827b', PAT.plain, 1, .9, 0, B);
-      if (k === steps - 1) { this.S(box(2 * hw + .1, .16, .76), L(0, y + th + .06, sz * gz), '#8a827b', PAT.plain, 1, .9, 0, B); this.S(new THREE.ConeGeometry(.09, .9, 6).translate(0, .45, 0), L(0, y + th + .14, sz * gz), '#c8923c', PAT.plain, 1, .3, .9, B); }
+      this.S(box(2 * hw, th, .62), L(0, y + th / 2, sz * gz), wallHex, PAT.ashlar, .76, .9, 0, B, seed + 2);
+      for (const s of [-1, 1]) this.S(box(.62, .16, .76), L(s * (hw - .26), y + th + .06, sz * gz), '#6a6360', PAT.plain, 1, .9, 0, B);
+      if (k === steps - 1) { this.S(box(2 * hw + .1, .16, .76), L(0, y + th + .06, sz * gz), '#6a6360', PAT.plain, 1, .9, 0, B); this.S(new THREE.ConeGeometry(.09, .9, 6).translate(0, .45, 0), L(0, y + th + .14, sz * gz), '#c8923c', PAT.plain, 1, .3, .9, B); }
     }
     // Gable oculus, lit.
     { const m = L(0, Ht + Hr * .42, gz + .32); this.S(new THREE.TorusGeometry(.5, .13, 5, 12), m, '#80776f', PAT.plain, 1, .9, 0, B); this.G(new THREE.CircleGeometry(.44, 12), m, lin('#ff9a3c', 1.5), .1, seed); this.S(box(.05, .9, .05).translate(0, 0, .04), m, '#1f1e22', PAT.plain, 1, .5, .8, B); this.S(box(.9, .05, .05).translate(0, 0, .04), m, '#1f1e22', PAT.plain, 1, .5, .8, B); }
     // Big chimney stack with soot and a corbelled cap; smoke and sparks rise from it.
     const big = h.role === 'smelter' ? 1.25 : 1, chx = (h.role === 'inn' ? 2.6 : -2.8), chz = -2.2, top = Ht + Hr + 2.6 * big;
-    this.S(frustum(1.6 * big, 1.6 * big, 1.4 * big, 1.4 * big, top - Ht + .6 - 1.2), L(chx, Ht - .6, chz), wallHex, PAT.ashlar, .8, .9, 0, B, seed + 3);
+    this.S(frustum(1.6 * big, 1.6 * big, 1.4 * big, 1.4 * big, top - Ht + .6 - 1.2), L(chx, Ht - .6, chz), wallHex, PAT.ashlar, .6, .9, 0, B, seed + 3);
     this.S(frustum(1.4 * big, 1.4 * big, 1.36 * big, 1.36 * big, 1.2), L(chx, top - 1.2, chz), '#2b2729', PAT.ashlar, .8, .95, 0, B, seed + 4);
     this.S(box(1.85 * big, .24, 1.85 * big), L(chx, top + .1, chz), '#6f6862', PAT.plain, 1, .9, 0, B);
     for (const s of [-1, 1]) this.S(cyl(.24, .2, .6, 8), L(chx + s * .35 * big, top + .5, chz), '#2c2a2d', PAT.plate, 0, .5, .75, B);
@@ -507,7 +542,9 @@ export class EmberTown {
     { const g0 = Math.min(gy(0, D / 2 + 1.6), wb - .1), n = Math.max(1, Math.round((wb - g0) / .3)), sh = (wb - g0) / n;
       for (let i = 0; i < n; i++) this.S(box(2.2, sh + .02, .42 * (n - i) + .1), L(0, g0 + sh * (i + .5), D / 2 + .05 + (.42 * (n - i) + .1) / 2), '#6d6762', PAT.ashlar, .7, .9, 0, B, 9 + i);
       for (const s of [-1, 1]) this.S(box(.36, wb - g0 + .25, .42 * n + .25), L(s * 1.28, g0 + (wb - g0 + .25) / 2, D / 2 + .05 + (.42 * n + .25) / 2), '#5a5452', PAT.ashlar, .6, .9, 0, B, 12 + s); }
-    if (h.role !== 'inn') this.forgeMouth(h, L(-3.2, wb, fz(wb + 1.5)), toW, B, seed);
+    const forge = h.roof === 'iron';
+    if (forge) this.forgeMouth(h, L(-3.2, wb, fz(wb + 1.5)), toW, B, seed);
+    else if (h.role !== 'inn') { this.window(L(-3.2, wb + 1.6, fz(wb + 1.6)), 1.6, 1.6, B, true, 2.1); const [px, pz] = toW(-3.2, D / 2 + 2.2); this.light(px, B + 2.2, pz, 7, '#ff9a4a', 1.3); this.pool(px, pz, 3.2, '#ff8a3a', .6, seed); }
     else { this.window(L(-3.3, wb + 1.7, fz(wb + 1.7)), 1.5, 1.5, B, true, 1.9); this.window(L(-3.3, wb + 4.4, fz(wb + 4.4)), 1.0, 1.2, B, false); this.window(L(3.3, wb + 4.4, fz(wb + 4.4)), 1.0, 1.2, B, false); this.light(...this.at(toW, -3.3, D / 2 + 1, B + 2.4), 7, '#ff9a4a', 1.4); }
     this.window(L(3.3, wb + 1.7, fz(wb + 1.7)), 1.0, 1.35, B, h.role === 'inn' || h.role === 'glassblower');
     for (const s of [-1, 1]) {
@@ -516,6 +553,8 @@ export class EmberTown {
     }
     this.window(L(1.8, wb + 1.9, -hz(wb + 1.9), Math.PI), .9, 1.2, B);
     this.sign(h, L(1.25, wb + 3.2, fz(wb + 3.2)), B);
+    // Caged lantern on a wall bracket beside the door (the lamps live on the houses, not along the roads).
+    { const m = L(-1.55, wb + 2.75, fz(wb + 2.75)); this.S(box(.07, .07, .62).translate(0, .32, .31), m, '#1f1e22', PAT.plain, 1, .5, .8, B); this.S(box(.05, .45, .05).applyMatrix4(trs(0, .1, .12, 0, .7)), m, '#1f1e22', PAT.plain, 1, .5, .8, B); this.cageLantern(m.clone().multiply(trs(0, -.05, .58)), B, seed + 7, .75); const [px, pz] = toW(-1.55, D / 2 + 1.4); this.pool(px, pz, 2.4, '#ff9a48', .42, seed + 3); this.stats.wallLanterns++; }
     this.role(h, L, gy, toW, B, seed);
     // Back yard: coal bunker and stacked crates against the rear wall.
     { const lz = -D / 2 - 1.2; this.S(frustum(2.6, 1.4, 2.5, 1.3, .8), L(-2.4, gy(-2.4, lz) - .05, lz), '#4a4548', PAT.rubble, .7, .95, 0, B, seed); this.heap(...toW(-2.4, lz), .9, 8, '#232126', seed + 40); this.crate(L(2.6, gy(2.6, lz), lz, .4), B, seed); this.crate(L(2.6, gy(2.6, lz) + .7, lz, .9), B, seed + 1, .8, .6); this.barrel(L(4.2, gy(4.2, lz + .4), lz + .4), B, seed); }
@@ -550,7 +589,7 @@ export class EmberTown {
     for (const s of [-1, 1]) this.S(box(.06, .06, 1.9).applyMatrix4(trs(s * 1.6, 3.5, 1.4, 0, -.45)), m, '#1f1e22', PAT.plain, 1, .5, .8, base);
     const p = new V(0, 1.3, 1.6).applyMatrix4(m);
     this.light(p.x, p.y + .2, p.z, 9, '#ff8a3a', 2.6);
-    const g = new V(0, 0, 3.1).applyMatrix4(m); this.pool(g.x, g.z, 3.6, '#ff6a24', .5, seed);
+    const g = new V(0, 0, 3.1).applyMatrix4(m); this.pool(g.x, g.z, 3.8, '#ff6a24', .66, seed);
     this.sparks.push({x: p.x, y: p.y + 1.2, z: p.z, s: .3, n: 8});
     void h; void toW;
     this.stats.forgeMouths++;
@@ -576,7 +615,7 @@ export class EmberTown {
 
   /** The trade in the yard (house-local pockets either side of the side road: |lx| 2.6..6.5, lz 5.6..10.5). */
   private role(h: ForgeHouse, L: (x: number, y: number, z: number, ry?: number, rx?: number, rz?: number) => THREE.Matrix4, gy: (lx: number, lz: number) => number, toW: (lx: number, lz: number) => [number, number], B: number, seed: number) {
-    const D = FORGE_D, front = D / 2;
+    const D = h.d, front = D / 2;
     const ground = (lx: number, lz: number, ry = 0) => L(lx, gy(lx, lz), lz, ry);
     switch (h.role) {
       case 'smithy': {
@@ -590,22 +629,15 @@ export class EmberTown {
         break;
       }
       case 'smelter': {
-        const {lx, lz} = SMELTER_TOWER; const m = ground(lx, lz, .4), [tx, tz] = toW(lx, lz), ty = this.h(tx, tz);
-        this.S(lathe([[1.6, 0], [1.55, 1.2], [1.25, 4.6], [1.05, 6.6], [1.2, 6.8], [1.2, 7.1], [.9, 7.1], [.9, 6.9]], 14), m, '#5c5552', PAT.ashlar, .7, .92, 0, ty, seed + 9);
-        for (const y of [1.6, 3.4, 5.2]) this.S(cyl(1.52 - y * .065, 1.52 - y * .065, .16, 14).translate(0, y, 0), m, '#2b292d', PAT.plate, 0, .45, .8, ty);
-        this.G(this.archShape(.6, .45).translate(0, .55, 1.56), m, [1, 1, 1], .45, seed, (_x, y) => lin(y < .5 ? '#ffd36b' : '#ff6a1c', 3.2));
-        this.archRing(m.clone().multiply(trs(0, 0, 1.5)), .42, .78, .3, .22, 5, '#786f6a', ty);
-        this.G(new THREE.CircleGeometry(.85, 12).rotateX(-Math.PI / 2).translate(0, 7.12, 0), m, lin('#ff7a2a', 2.4), .4, seed);
-        // Tap channel to sand moulds with cooling ingots.
-        this.S(box(.5, .2, 1.6).translate(0, .1, 2.3), m, '#6c6460', PAT.plain, 1, .9, 0, ty);
-        this.G(box(.2, .05, 1.5).translate(0, .22, 2.3), m, lin('#ff7a1c', 2.8), .3, seed);
-        this.S(box(1.8, .3, 1.2).translate(0, .15, 3.7), m, '#7c705f', PAT.plain, 1, 1, 0, ty);
-        for (let i = 0; i < 6; i++) this.G(frustum(.3, .55, .24, .48, .1).translate((i % 3 - 1) * .5, .3, 3.45 + Math.floor(i / 3) * .55), m, lin(i < 3 ? '#ffb040' : '#ff5a14', i < 3 ? 2.6 : 1.3), .2, i);
-        const p = new V(0, .6, 1.9).applyMatrix4(m); this.light(p.x, p.y + .4, p.z, 8, '#ff7a2a', 2.6); this.pool(p.x, p.z + 0, 3.4, '#ff6a24', .55, 2);
-        this.puffs.push({x: tx, y: ty + 7.2, z: tz, s: 1.3}); this.sparks.push({x: tx, y: ty + 7.2, z: tz, s: .8, n: 18});
-        // Ore heap and a cart on the other side.
-        this.heap(...toW(4.8, front + 3.2), 1.5, 22, '#5a4440', seed + 30, .12);
-        this.cart(...toW(4.2, front + 6.2), forgeYaw(h) + Math.PI / 2, 'ore', seed);
+        // The ore house: ore and coal bins either side, a loaded cart on rails running out towards the furnace.
+        for (const [lx, hex, sd, hot] of [[-4.6, '#5a4440', 30, .1], [4.6, '#232126', 31, 0]] as [number, string, number, number][]) {
+          this.S(frustum(3.2, 2.2, 3.1, 2.1, .7), ground(lx, front + 3.0), '#3f3b40', PAT.rubble, .8, .95, 0, B, seed + sd);
+          this.heap(...toW(lx, front + 3.0), 1.3, 20, hex, seed + sd, hot, B + gy(lx, front + 3.0) + .55);
+        }
+        // Rails from the door to the foot of the furnace's skip hoist, one cart loaded on the way.
+        { const [ax, az] = toW(0, front + 1.4), [bx, bz] = yardAt(FORGE_HOIST.a, FORGE_HOIST.r + 1.6); this.rails(ax, az, bx, bz);
+          this.cart(ax + (bx - ax) * .42, az + (bz - az) * .42, Math.atan2(bx - ax, bz - az), 'ore', seed); }
+        this.barrel(ground(-6.1, front + 5.6), B, seed + 2);
         break;
       }
       case 'inn': {
@@ -711,6 +743,126 @@ export class EmberTown {
     this.S(new THREE.TorusGeometry(.06 * s, .015 * s, 4, 8).translate(0, hh / 2 + .3 * s, 0), m, '#29282c', PAT.plain, 1, .45, .85, base);
   }
 
+  /* -- furnace yard -- */
+  /** The yard's floor: one polar mesh conformed a few centimetres over the rendered terrain (the solid shader lays the
+   *  concentric courses), a kerb ring broken where the ways come in. */
+  private yard() {
+    const C = FORGE_C, r0 = FORGE_FURNACE.plinth - .6, nr = 26, na = 120, pos: number[] = [], idx: number[] = [];
+    const lift = (x: number, z: number) => emberSurface(this.h, x, z) + .07;
+    for (let i = 0; i <= nr; i++) for (let j = 0; j < na; j++) {
+      const r = r0 + (C.r - r0) * i / nr, t = j / na * TAU, x = C.x + Math.sin(t) * r, z = C.z - Math.cos(t) * r;
+      pos.push(x, lift(x, z), z);
+    }
+    for (let i = 0; i < nr; i++) for (let j = 0; j < na; j++) { const a = i * na + j, b = i * na + (j + 1) % na, c = a + na, d = b + na; idx.push(a, b, c, b, d, c); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    this.S(g, new THREE.Matrix4(), '#6a6a6f', PAT.yard, 1, .82, 0, -99, 0);
+    // Kerb: long dressed stones on the rim, open at the avenue, the lanes and the spawn portal.
+    const gaps: [number, number][] = [[0, 5.2], [180, 5.2], [290, 3.4], [79, 3.4], [206.6, 4.2]];
+    const n = Math.round(TAU * C.r / 1.25);
+    for (let k = 0; k < n; k++) {
+      const a = (k + .5) / n * 360, t = a * Math.PI / 180;
+      if (gaps.some(([g0, w]) => Math.abs(((a - g0 + 540) % 360) - 180) * Math.PI / 180 * C.r < w)) continue;
+      const [x, z] = yardAt(a, C.r - .2), y = lift(x, z) - .1;
+      this.S(box(1.18, .26, .46).translate(0, .13, 0), trs(x, y, z, -t + Math.PI / 2 * 0, 0, 0), '#4e4c52', PAT.plain, 1, .9, 0, y - .1, k);
+    }
+    // Tap channels from the furnace mouths to the casting beds; the beds hold ingots in sand moulds, some still glowing.
+    for (const [i, b] of FORGE_BEDS.entries()) {
+      const t = b.a * Math.PI / 180, r1 = FORGE_FURNACE.r + .9, r2 = b.r - 1.3, len = r2 - r1;
+      const [cx, cz] = yardAt(b.a, (r1 + r2) / 2), cy = lift(cx, cz);
+      const m = trs(cx, cy, cz, -t);
+      for (const s of [-1, 1]) this.S(box(.26, .16, len).translate(s * .36, .05, 0), m, '#55525a', PAT.plain, 1, .85, 0, cy - .1, i + s);
+      this.G(box(.42, .04, len).translate(0, .02, 0), m, [1, 1, 1], .35, i * 2.3, (_x, _y, z) => lin(z < 0 ? '#ffb24a' : '#ff6a1c', z < 0 ? 3.0 : 2.2));
+      const [bx, bz] = yardAt(b.a, b.r), by = lift(bx, bz), bm = trs(bx, by, bz, -t);
+      this.S(frustum(3.4, 2.6, 3.2, 2.4, .3).translate(0, -.08, 0), bm, '#4f4c52', PAT.ashlar, .5, .9, 0, by - .1, 70 + i);
+      this.S(box(2.9, .05, 2.1).translate(0, .22, 0), bm, '#7a6c5c', PAT.plain, 1, 1, 0, by - .1, i);
+      for (let k = 0; k < 8; k++) {
+        const lx = (k % 4 - 1.5) * .66, lz = (Math.floor(k / 4) - .5) * .9, hot = (k + i) % 3 !== 0;
+        const g2 = frustum(.34, .66, .28, .58, .11).translate(lx, .24, lz);
+        if (hot) this.G(g2, bm, lin(k < 4 ? '#ffb040' : '#ff5a14', k < 4 ? 2.6 : 1.4), .2, k + i); else this.S(g2, bm, '#3a383c', PAT.plain, 1, .4, .8, by);
+      }
+      this.pool(bx, bz, 3.2, '#ff7a2a', .5, i * 1.9);
+      this.sparks.push({x: bx, y: by + .4, z: bz, s: .25, n: 5});
+      // Beside each bed: a slag heap with a few still-hot lumps, cooled ingots stacked on a pallet.
+      { const [sx, sz] = yardAt(b.a + 17, b.r + .6); this.heap(sx, sz, 1.1, 16, '#2c2a30', 300 + i * 7, .12, lift(sx, sz)); }
+      { const [px, pz] = yardAt(b.a + (i === 2 ? 32 : -15), b.r + (i === 2 ? -.5 : .8)), py = lift(px, pz), pm = trs(px, py, pz, -t + .3); this.S(box(1.5, .12, 1.1).translate(0, .06, 0), pm, '#4a3426', PAT.plank, .6, .9, 0, py);
+        for (let k = 0; k < 10; k++) { const l = Math.floor(k / 4); this.S(frustum(.32, .66, .26, .58, .13).applyMatrix4(trs(((k % 4) % 2 - .5) * .62, .19 + l * .14, (Math.floor((k % 4) / 2) - .5) * .48, l % 2 ? Math.PI / 2 : 0)), pm, l === 2 ? '#8a6a46' : '#4b4a50', PAT.plain, 1, .32, .9, py); } }
+    }
+    // Round the rim: crates and barrels against the kerb.
+    for (const [k, a] of [232, 262, 100, 125, 160].entries()) {
+      const [x, z] = yardAt(a, C.r - 1.4), y = lift(x, z), m = trs(x, y, z, -a * Math.PI / 180 + Math.PI);
+      this.crate(m.clone().multiply(trs(-.6, 0, 0, .2)), y, 400 + k); this.crate(m.clone().multiply(trs(.5, 0, .1, -.3)), y, 410 + k, .8, .6);
+      if (k % 2) this.crate(m.clone().multiply(trs(-.5, .7, .05, .6)), y, 420 + k, .75, .55); else this.barrel(m.clone().multiply(trs(1.5, 0, .3)), y, 430 + k);
+    }
+  }
+
+  /** The town's blast furnace: battered basalt shaft in iron hoops and straps, a blast main round its waist, a charging
+   *  gallery, a verdigris gas cap over the glowing throat, three tap mouths, an inclined skip hoist up to the gallery. */
+  private furnace() {
+    const F = FORGE_FURNACE;
+    let y0 = Infinity; for (let a = 0; a < 360; a += 30) y0 = Math.min(y0, this.h(...yardAt(a, F.plinth)));
+    const m = trs(F.x, y0, F.z), L = (x: number, y: number, z: number, ry = 0, rx = 0, rz = 0) => m.clone().multiply(trs(x, y, z, ry, rx, rz));
+    const prof: [number, number][] = [[F.r + .1, .4], [F.r, 1.4], [F.r - .25, 3.6], [F.r - .85, 6.2], [F.r - 1.4, 9.0], [F.r - 1.65, 10.6]];
+    const rAt = (y: number) => { for (let k = 1; k < prof.length; k++) if (y <= prof[k][1]) { const [ra, ya] = prof[k - 1], [rb, yb] = prof[k]; return ra + (rb - ra) * (y - ya) / (yb - ya); } return prof[prof.length - 1][0]; };
+    // Plinth (rubble, octagonal, stepped), the shaft, a pale collar.
+    this.S(lathe([[0, -.8], [F.plinth + .2, -.8], [F.plinth, .1], [F.plinth - .5, .1], [F.plinth - .55, .45], [0, .45]], 8).rotateY(Math.PI / 8), m, '#3d3a40', PAT.rubble, 1.1, .95, 0, y0, 3);
+    this.S(lathe([...prof, [F.r - 1.65, 10.75], [0, 10.75]], 20), m, '#423e42', PAT.ashlar, .85, .9, 0, y0, 5);
+    this.S(lathe([[F.r - 1.75, 10.6], [F.r - 1.25, 10.7], [F.r - 1.2, 11.1], [F.r - 1.8, 11.15]], 16), m, '#6a6360', PAT.ashlar, .6, .9, 0, y0, 6);
+    this.S(cyl(F.r - 1.2, F.r - 1.2, .12, 20).translate(0, 11.18, 0), m, '#c8923c', PAT.plain, 1, .32, .9, y0);
+    // Hoops and straps.
+    for (const y of [1.2, 2.6, 4.2, 5.9, 7.6, 9.6]) { const r = rAt(y) + .06; this.S(cyl(r, r, .2, 20).translate(0, y, 0), m, '#2b292d', PAT.plate, 0, .42, .82, y0); }
+    for (let k = 0; k < 10; k++) {
+      const t = (k + .5) / 10 * TAU; if (F.taps.some(a => Math.abs(((t * 180 / Math.PI - a + 540) % 360) - 180) < 16)) continue;
+      for (let s = 1; s < prof.length; s++) { const [ra, ya] = prof[s - 1], [rb, yb] = prof[s], len = Math.hypot(rb - ra, yb - ya), rm = (ra + rb) / 2 + .05;
+        this.S(box(.22, len, .08), L(Math.sin(t) * rm, (ya + yb) / 2, Math.cos(t) * rm, t, Math.atan2(rb - ra, yb - ya)), '#2b292d', PAT.plain, 1, .45, .82, y0); }
+    }
+    // Blast main round the waist with downcomers to the tuyeres.
+    this.S(new THREE.TorusGeometry(F.r + .75, .32, 8, 28).rotateX(Math.PI / 2).translate(0, 4.6, 0), m, '#323035', PAT.plate, 0, .45, .8, y0, 8);
+    for (let k = 0; k < 8; k++) { const t = (k + .5) / 8 * TAU, ry = rAt(2.2), x0 = Math.sin(t), z0 = Math.cos(t);
+      this.S(cyl(.13, .13, 2.4, 6), L(x0 * (F.r + .7), 3.4, z0 * (F.r + .7)), '#2d2b30', PAT.plain, 1, .45, .82, y0);
+      this.S(cyl(.13, .13, F.r + .7 - ry, 6).rotateZ(Math.PI / 2), L(x0 * (F.r + .7 + ry) / 2, 2.2, z0 * (F.r + .7 + ry) / 2, t + Math.PI / 2), '#2d2b30', PAT.plain, 1, .45, .82, y0);
+      this.S(cyl(.2, .2, .14, 8).rotateZ(Math.PI / 2), L(x0 * (ry + .1), 2.2, z0 * (ry + .1), t + Math.PI / 2), '#c8923c', PAT.plain, 1, .32, .9, y0); }
+    // Charging gallery: iron deck on struts, rails, and the gas cap over the throat with its stack.
+    const gy = 9.0, gr = rAt(gy), go = gr + 1.7;
+    this.S(lathe([[gr - .05, 0], [go, 0], [go, .2], [gr - .05, .2]], 24).translate(0, gy, 0), m, '#3a3739', PAT.plate, 0, .5, .75, y0, 9);
+    for (let k = 0; k < 10; k++) { const t = k / 10 * TAU, x = Math.sin(t), z = Math.cos(t), rs = rAt(gy - 2.2);
+      const a = new V(x * rs, gy - 2.2, z * rs), b = new V(x * (go - .2), gy, z * (go - .2)), d = b.clone().sub(a), len = d.length();
+      this.S(box(.12, len, .12), m.clone().multiply(new THREE.Matrix4().compose(a.clone().lerp(b, .5), new THREE.Quaternion().setFromUnitVectors(new V(0, 1, 0), d.normalize()), new V(1, 1, 1))), '#252428', PAT.plain, 1, .45, .85, y0);
+      this.S(box(.07, 1.05, .07).translate(0, .52, 0), L(x * (go - .08), gy + .2, z * (go - .08)), '#252428', PAT.plain, 1, .45, .85, y0); }
+    for (const hh of [.6, 1.1]) this.S(new THREE.TorusGeometry(go - .08, .04, 4, 40).rotateX(Math.PI / 2).translate(0, gy + .2 + hh, 0), m, '#252428', PAT.plain, 1, .45, .85, y0);
+    this.G(new THREE.CircleGeometry(F.r - 1.75, 18).rotateX(-Math.PI / 2).translate(0, 11.2, 0), m, lin('#ff8a2a', 2.6), .45, 4);
+    for (let k = 0; k < 4; k++) { const t = (k + .5) / 4 * TAU; this.S(box(.14, 1.5, .14).translate(0, .75, 0), L(Math.sin(t) * 1.55, 11.15, Math.cos(t) * 1.55, t, 0, 0), '#252428', PAT.plain, 1, .45, .85, y0); }
+    this.S(lathe([[2.5, 0], [2.3, .25], [1.5, .9], [.75, 1.25], [.6, 1.3], [0, 1.3]], 16).translate(0, 12.5, 0), m, '#4f8f7f', PAT.plate, 1, .55, .45, y0, 10);
+    this.S(new THREE.TorusGeometry(2.48, .07, 4, 28).rotateX(Math.PI / 2).translate(0, 12.52, 0), m, '#c8923c', PAT.plain, 1, .32, .9, y0);
+    this.S(cyl(.55, .5, 2.6, 12).translate(0, 15.0, 0), m, '#2c2a2e', PAT.plate, 0, .5, .75, y0, 11);
+    this.S(cyl(.68, .68, .2, 12).translate(0, 16.3, 0), m, '#4f8f7f', PAT.plate, 1, .55, .45, y0, 12);
+    this.puffs.push({x: F.x, y: y0 + 16.4, z: F.z, s: 1.6}, {x: F.x + .3, y: y0 + 16.4, z: F.z - .2, s: 1.3});
+    this.sparks.push({x: F.x, y: y0 + 16.4, z: F.z, s: .9, n: 22}, {x: F.x, y: y0 + 11.6, z: F.z, s: .6, n: 12});
+    this.light(F.x, y0 + 10.4, F.z, 15, '#ff8a3a', 1.6);
+    // Tap mouths: built-out cheeks with an arched glowing mouth, an iron lintel, sparks; light and a pool in front.
+    for (const [i, a] of F.taps.entries()) {
+      const t = -a * Math.PI / 180, r = rAt(1.2), tm = m.clone().multiply(trs(0, 0, 0, t + Math.PI)).multiply(trs(0, 0, r - .25));
+      this.S(box(2.6, 2.7, 1.2).translate(0, 1.35, .3), tm, '#4f4b4f', PAT.ashlar, .8, .9, 0, y0, 20 + i);
+      this.G(this.archShape(1.1, .8).translate(0, .95, .92), tm, [1, 1, 1], .4, i * 3.1, (_x, y) => { const k = Math.min(1, Math.max(0, (y - .5) / 1.2)); return lin(k < .45 ? '#ffd36b' : '#ff6a1c', 3.6 - 1.8 * k); });
+      this.archRing(tm.clone().multiply(trs(0, 0, .88)), .72, 1.35, .3, .26, 7, '#6a6360', y0);
+      this.S(box(2.2, .24, .3).translate(0, 2.35, .95), tm, '#2b292d', PAT.plate, 0, .45, .8, y0, i);
+      const p = new V(0, .9, 2.0).applyMatrix4(tm); this.light(p.x, p.y + .5, p.z, 10, '#ff7a2a', 2.8);
+      const q = new V(0, 0, 3.2).applyMatrix4(tm); this.pool(q.x, q.z, 3.8, '#ff6a24', .58, i * 2.2);
+      this.sparks.push({x: p.x, y: p.y + .6, z: p.z, s: .35, n: 9});
+    }
+    // Inclined skip hoist: two lattice chords from a stone foot up to the gallery, a skip half-way with ore.
+    { const t = -FORGE_HOIST.a * Math.PI / 180, hm = m.clone().multiply(trs(0, 0, 0, t + Math.PI)), foot = new V(0, 0, FORGE_HOIST.r), top = new V(0, gy + .2, go - .2);
+      const fy = this.h(...yardAt(FORGE_HOIST.a, FORGE_HOIST.r)) - y0; foot.y = fy;
+      this.S(frustum(2.2, 1.8, 1.8, 1.5, .9).translate(0, fy - .2, FORGE_HOIST.r), hm, '#4f4b4f', PAT.ashlar, .6, .9, 0, y0, 30);
+      const bar = (a: THREE.Vector3, b: THREE.Vector3, w = .12) => { const d = b.clone().sub(a), len = d.length(); this.S(box(w, len, w), hm.clone().multiply(new THREE.Matrix4().compose(a.clone().lerp(b, .5), new THREE.Quaternion().setFromUnitVectors(new V(0, 1, 0), d.normalize()), new V(1, 1, 1))), '#28272b', PAT.plain, 1, .45, .85, y0); };
+      for (const s of [-1, 1]) { const a = foot.clone().add(new V(s * .7, .7, 0)), b = top.clone().add(new V(s * .7, .3, 0)); bar(a, b, .16); bar(a.clone().add(new V(0, .9, 0)), b.clone().add(new V(0, .9, 0)), .1);
+        for (let k = 0; k < 7; k++) { const u = k / 7, v = (k + 1) / 7; bar(a.clone().lerp(b, u), a.clone().lerp(b, v).add(new V(0, .9, 0)), .06); } }
+      for (let k = 0; k <= 7; k++) { const p = foot.clone().add(new V(0, .7, 0)).lerp(top.clone().add(new V(0, .3, 0)), k / 7); bar(p.clone().add(new V(-.7, 0, 0)), p.clone().add(new V(.7, 0, 0)), .08); }
+      const sk = foot.clone().add(new V(0, 1.2, 0)).lerp(top, .45), sm = hm.clone().multiply(trs(sk.x, sk.y, sk.z, 0, -Math.atan2(top.y - foot.y, foot.z - top.z) + Math.PI / 2 * 0));
+      this.S(frustum(1.0, 1.2, 1.2, 1.5, .8, true), sm, '#3a3638', PAT.plate, 0, .55, .75, y0, 31);
+      const sw = new V(0, .82, 0).applyMatrix4(sm); this.heap(sw.x, sw.z, .5, 7, '#5a4440', 33, .1, sw.y); }
+    this.stats.furnace++;
+  }
+
   /* -- street -- */
   private lantern(x: number, z: number, i: number) {
     if (!this.clearOfLava(x, z, .6)) return;
@@ -746,8 +898,8 @@ export class EmberTown {
     this.S(cyl(.035, .035, bw + .2, 6).rotateZ(Math.PI / 2).applyMatrix4(trs(0, 0, 0, Math.PI / 2)).translate(0, 5.42, 1.15), m, '#1f1e22', PAT.plain, 1, .45, .85, y);
     this.stats.banners++;
   }
-  private stall(x: number, z: number, side: -1 | 1, i: number) {
-    const y = this.h(x, z), m = trs(x, y, z, side > 0 ? -Math.PI / 2 : Math.PI / 2);
+  private stall(x: number, z: number, yaw: number, i: number) {
+    const y = this.h(x, z), m = trs(x, y, z, yaw);
     // Stone counter, iron frame, heat-shield awning.
     this.S(box(4.8, .95, 1.2).translate(0, .47, 0), m, '#5a5452', PAT.ashlar, .55, .9, 0, y, i);
     this.S(box(5.0, .12, 1.4).translate(0, 1.0, 0), m, '#6f6862', PAT.plain, 1, .9, 0, y);
@@ -764,14 +916,14 @@ export class EmberTown {
       for (let k = 0; k < 6; k++) this.G(frustum(.3, .55, .24, .48, .1).translate(-1.6 + (k % 3) * .38, 1.17, (Math.floor(k / 3) - .5) * .4), m, lin('#ff7a1c', 1.5 + k * .2), .2, k);
       for (let k = 0; k < 8; k++) this.S(frustum(.32, .66, .26, .58, .13).translate(1.0 + (k % 2) * .4, 1.08 + Math.floor(k / 4) * .14, ((k >> 1) % 2 - .5) * .5), m, '#77727a', PAT.plain, 1, .3, .9, y);
     }
-    this.brazier(...this.atM(m, side > 0 ? 3.2 : -3.2, 1.6), .85, i * 2.1);
+    this.brazier(...this.atM(m, i ? -3.2 : 3.2, 1.6), .85, i * 2.1);
     this.crate(m.clone().multiply(trs(-3.0, 0, -.8, .2)), y, i); this.crate(m.clone().multiply(trs(-3.1, .7, -.8, .5)), y, i + 1, .8, .6); this.barrel(m.clone().multiply(trs(3.1, 0, -.9)), y, i);
   }
   private atM(m: THREE.Matrix4, lx: number, lz: number): [number, number] { const p = new V(lx, 0, lz).applyMatrix4(m); return [p.x, p.z]; }
 
-  /** West of the smelter: hearth with hood and flue, bellows, anvil, quench trough, coal and tools. */
+  /** On the yard's west rim: hearth with hood and flue, bellows, anvil, quench trough, coal and tools. */
   private outdoorForge() {
-    const {x, z} = FORGE_YARD, y = this.h(x, z), m = trs(x, y, z, Math.PI / 2);
+    const [x, z] = yardAt(FORGE_OPEN_FORGE.a, FORGE_OPEN_FORGE.r), y = this.h(x, z), m = trs(x, y, z, -FORGE_OPEN_FORGE.a * Math.PI / 180);
     this.S(box(3.6, .95, 2.6).translate(0, .47, 0), m, '#55504f', PAT.ashlar, .7, .9, 0, y, 3);
     this.S(box(3.8, .14, 2.8).translate(0, 1.0, 0), m, '#6f6862', PAT.plain, 1, .9, 0, y);
     this.G(box(1.6, .1, 1.1).translate(0, 1.1, 0), m, [1, 1, 1], .4, 4, () => lin('#ff7a24', 2.6));

@@ -37,10 +37,13 @@ export const EMBER_FEATURES:readonly EmberFeature[]=[
  f('obsidian',-30,-12,1.8,1.6,.7),f('charred',78,25,1,5.5,2.4),
 ];
 
-/** World V's roads (the shared islandPaths footprint): the avenue to the court, three cross streets, the spawn and portal spurs. */
+/** World V's roads (the shared islandPaths footprint): the avenue from the quay into the furnace yard and on to the court, two lanes out of the yard, the spawn and portal spurs. */
 export const EMBER_PATHS:{points:[number,number][];width:number;trim:boolean}[]=[
- {points:[[0,94],[0,28],[0,-72]],width:8,trim:true},...[38,56,74].map(z=>({points:[[-23,z],[23,z]] as [number,number][],width:4,trim:true})),
- {points:[[-12,84],[0,84]],width:4,trim:true},{points:[[0,-44],[26,-44]],width:4,trim:true},
+ // The harbour avenue and the way north to the sanctuary end at the furnace yard's rim (emberTown.ts paves the yard,
+ // FORGE_C r 27); a west and an east lane leave it between the houses for the herb and ore fields.
+ {points:[[0,97],[0,86]],width:8,trim:true},{points:[[0,34],[0,-72]],width:8,trim:true},
+ {points:[[-24.9,51.7],[-47,43]],width:4,trim:true},{points:[[26.6,54.6],[49,50.5]],width:4,trim:true},
+ {points:[[-12,84],[-1,84]],width:4,trim:true},{points:[[0,-44],[26,-44]],width:4,trim:true},
 ];
 
 /** Glowing fissures, few and with a reason: each feeds a crystal grotto, leaves a lava toe or splits from a cone. */

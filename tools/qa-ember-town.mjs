@@ -1,7 +1,9 @@
-// World V forge town QA (emberTown.ts): the town, street and quay are built for chapter 5 only, from a handful of
-// draw calls; none of the old primitives in that scope are left (box houses with cone roofs, brick instancing, thin lamp
-// posts with octahedron bulbs, flag-quad banners, box stalls and benches, the box furnace); the new solids keep every
-// quest point, NPC spot, the spawn, the portals and the lava clear; zero page or shader errors at high and low quality.
+// World V forge town QA (emberTown.ts): the town is a ring of six houses facing one furnace yard with the blast furnace
+// in its middle (not World VI's straight cross), built for chapter 5 only from a handful of draw calls; iron roofs on
+// the two forges only; lantern posts and banners only at the yard, the quay and the sanctuary gate, lanterns on every
+// house; none of the old primitives in that scope are left; the solids (houses included, World V only) keep every quest
+// point, NPC spot, the spawn, the portals, the roads, a walk round the furnace and the lava clear, and World VI keeps its
+// six street-house boxes; zero page or shader errors at high and low quality.
 //
 // Usage: CC_QA_BASE=http://127.0.0.1:5653 node tools/qa-ember-town.mjs
 //   CC_QA_OUT=tmp/qa   where the PNGs go       CC_QA_QUALITY=high,low   qualities to run (default both)
@@ -16,8 +18,10 @@ await mkdir(out, {recursive: true});
 
 const SHOTS = {
   street: {x: 0, z: 45, yaw: .3, pitch: .12, distance: 9},
-  smithy: {x: -24, z: 40, yaw: 1.9, pitch: .25, distance: 14},
-  harbour: {x: 0, z: 92, yaw: 3.14, pitch: .3, distance: 30},
+  furnace: {x: 3, z: 72, yaw: .2, pitch: .12, distance: 10},
+  smithy: {x: -21.3, z: 45.1, yaw: .96, pitch: .2, distance: 12},
+  yard: {x: 8, z: 82, yaw: .4, pitch: .4, distance: 14},
+  quay: {x: 2, z: 122, yaw: 2.7, pitch: .35, distance: 24},
 };
 
 const browser = await launchBrowser({headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio']});
@@ -51,7 +55,8 @@ try {
       fifth.root.updateMatrixWorld(true);
       fifth.root.traverse(o => {
         if (!o.isMesh || forge.root.getObjectById(o.id) || o === forge.root) return;
-        let inForge = false; for (let q = o; q; q = q.parent) if (q === forge.root) inForge = true; if (inForge) return;
+        // Not this lane's: the town group itself, the portals and the quest props (waystones are drawn by DawnRequests).
+        let skip = false; for (let q = o; q; q = q.parent) if (q === forge.root || q === fifth.back.root || q === fifth.next?.root || q.name === 'Island village requests') skip = true; if (skip) return;
         if (o.isInstancedMesh) { if (o.count && o.geometry.type === 'BoxGeometry' && o.count > 200 && o.count < 400) left.houseParts++; return; }
         o.getWorldPosition(v);
         const t = o.geometry.type;
@@ -63,28 +68,47 @@ try {
         if (Math.abs(v.x + 46) < 8 && Math.abs(v.z - 55) < 5) left.furnace++;
       });
       res.leftovers = left;
-      // Solids: every quest point, NPC spot, the spawn, the two portals, the avenue and the side roads stay clear.
-      const solids = plan.forgeSolids();
-      const inside = (s, x, z, pad) => s.r !== undefined ? Math.hypot(x - s.x, z - s.z) < s.r + pad : Math.abs(x - s.x) < s.hx + pad && Math.abs(z - s.z) < s.hz + pad;
+      // Solids: every quest point, NPC spot, the spawn, the two portals, the roads and a walk round the furnace stay clear.
+      const solids = plan.forgeSolids(), ground = await import('/src/game/emberGroundLayout.ts');
+      const inside = (s, x, z, pad) => { if (s.r !== undefined) return Math.hypot(x - s.x, z - s.z) < s.r + pad; const c = Math.cos(s.yaw ?? 0), n = Math.sin(s.yaw ?? 0), dx = x - s.x, dz = z - s.z; return Math.abs(dx * c - dz * n) < s.hx + pad && Math.abs(dx * n + dz * c) < s.hz + pad; };
       const points = [...Object.entries(quests.FRONTIER_POINTS['5']).map(([k, [x, z]]) => [k, x, z]), ...realm.FRONTIER_TOWN.map(([x, z], i) => ['npc' + i, x, z]), ['spawn', fifth.spawn.x, fifth.spawn.z], ['next', fifth.next.root.position.x, fifth.next.root.position.z]];
       for (const s of solids) {
         for (const [k, x, z] of points) if (inside(s, x, z, 1.2)) res.blocked.push(k + '@' + s.x.toFixed(1) + ',' + s.z.toFixed(1));
-        for (let z = -60; z <= 94; z += 2) if (inside(s, 0, z, .2) || inside(s, 3.9, z, .2) || inside(s, -3.9, z, .2)) res.blocked.push('avenue z' + z);
-        for (const rz of [38, 56, 74]) for (let x = -23; x <= 23; x += 1) if (inside(s, x, rz, .1)) res.blocked.push('road ' + rz + ' x' + x);
+        for (const p of ground.EMBER_PATHS) for (let k = 1; k < p.points.length; k++) {
+          const [ax, az] = p.points[k - 1], [bx, bz] = p.points[k], len = Math.hypot(bx - ax, bz - az), nx = -(bz - az) / len, nz = (bx - ax) / len;
+          for (let t = 0; t <= len; t += 1) for (const o of [-1, 0, 1]) { const x = ax + (bx - ax) * t / len + nx * o * (p.width / 2 - .3), z = az + (bz - az) * t / len + nz * o * (p.width / 2 - .3); if (inside(s, x, z, .1)) res.blocked.push(`road ${ax},${az} t${t}`); }
+        }
+        // Through the yard: from the harbour mouth round either side of the furnace to the north mouth.
+        for (const side of [-1, 1]) for (let a = 0; a <= 180; a += 3) { const [x, z] = plan.yardAt(side * a, 15); if (inside(s, x, z, .8)) res.blocked.push(`yard walk ${side * a}`); }
+        for (const z of [34, 38, 42, 46, 74, 78, 82, 86]) if (inside(s, 0, z, .8)) res.blocked.push('yard mouth z' + z);
         for (const zn of fifth.lava.zones) if (Math.hypot(s.x - zn.x, s.z - zn.z) < zn.radius + 1) res.lavaHits.push(s.x + ',' + s.z);
       }
       // Same solids in the live collision (the browser's World V collider set comes from layoutFrontier(5)).
       const col = realm.layoutFrontier(5), col6 = realm.layoutFrontier(6);
       res.colliders = {w5: col.shapes.length, w6: col6.shapes.length, solids: solids.length};
       res.smoke = !!forge.root.getObjectByName('ember-town-smoke'); res.sparks = !!forge.root.getObjectByName('ember-town-sparks');
+      // The plan: houses ring the furnace and face it; iron roofs on the two forges only; lamps and banners clustered.
+      const C = plan.FORGE_C;
+      res.ring = plan.FORGE_HOUSES.map(h => { const [fx, fz] = plan.forgeLocal(h, 0, 1), r = Math.hypot(h.x - C.x, h.z - C.z); return {role: h.role, r: +r.toFixed(1), faces: Math.hypot(fx - C.x, fz - C.z) < r - .9, roof: h.roof}; });
+      const clusters = [[C.x, C.z, C.r + 4], [0, 118, 30], [0, -45, 10]];
+      res.loose = [...plan.FORGE_LANTERNS, ...plan.FORGE_BANNERS].filter(([x, z]) => !clusters.some(([cx, cz, r]) => Math.hypot(x - cx, z - cz) <= r)).map(p => p.join(','));
+      res.plan = {lanterns: plan.FORGE_LANTERNS.length, banners: plan.FORGE_BANNERS.length};
+      // World VI keeps its six street-house boxes (x = +-30, z = 38/56/74); World V has none of them.
+      const boxAt = (c, x, z) => c.shapes.some(sh => sh.kind === 1 && Math.abs(sh.b.x - x) < .01 && Math.abs(sh.b.z - z) < .01);
+      res.w6Houses = [-30, 30].flatMap(x => [38, 56, 74].map(z => boxAt(col6, x, z))).filter(Boolean).length;
+      res.w5OldHouses = [-30, 30].flatMap(x => [38, 56, 74].map(z => boxAt(col, x, z))).filter(Boolean).length;
       return res;
     });
 
     console.log(`[${quality}]`, JSON.stringify({stats: r.stats, forgeMeshes: r.forgeMeshes, names: r.forgeNames, tris: r.tris, leftovers: r.leftovers, colliders: r.colliders}));
     const check = (ok, msg) => { if (!ok) { failed++; console.log('FAIL', quality, msg); } else console.log('ok  ', quality, msg); };
     check(r.hasForge && !r.sixthForge, 'forge town exists in World V only');
-    check(r.stats.houses === 6 && r.stats.chimneys === 6 && r.stats.forgeMouths === 5, `six houses with chimneys, five forge mouths (${r.stats.houses}/${r.stats.chimneys}/${r.stats.forgeMouths})`);
-    check(r.stats.lanterns === 24 && r.stats.banners === 8, `24 avenue lanterns, 8 street banners (${r.stats.lanterns}/${r.stats.banners})`);
+    check(r.stats.houses === 6 && r.stats.chimneys === 6 && r.stats.forgeMouths === 2 && r.stats.wallLanterns === 6, `six houses with chimneys and wall lanterns, two forge mouths (${r.stats.houses}/${r.stats.chimneys}/${r.stats.wallLanterns}/${r.stats.forgeMouths})`);
+    check(r.stats.furnace === 1, 'the blast furnace stands in the yard');
+    check(r.ring.every(h => h.faces && h.r > 30 && h.r < 40), 'six houses ring the yard and face the furnace ' + JSON.stringify(r.ring.map(h => h.role + ':' + h.r)));
+    check(r.ring.filter(h => h.roof === 'iron').map(h => h.role).sort().join() === 'armourer,smithy', 'iron roofs on the two forges only');
+    check(r.stats.lanterns === r.plan.lanterns && r.stats.banners === r.plan.banners && r.loose.length === 0, `lanterns ${r.stats.lanterns}, banners ${r.stats.banners}, all at the yard, quay or sanctuary gate ${r.loose.join(' ')}`);
+    check(r.w6Houses === 6 && r.w5OldHouses === 0, `World VI keeps its 6 street-house boxes (${r.w6Houses}), World V has none (${r.w5OldHouses})`);
     check(r.stats.braziers >= 8 && r.stats.carts >= 5 && r.stats.blades >= 20, `braziers ${r.stats.braziers}, carts ${r.stats.carts}, blades ${r.stats.blades}`);
     check(r.stats.skipped === 0, `nothing placed in lava (${r.stats.skipped} skipped)`);
     check(r.forgeMeshes <= 8, `forge town draws in ${r.forgeMeshes} calls (<= 8)`);
