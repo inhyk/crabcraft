@@ -57,11 +57,11 @@ export const EMBER_FISSURES:readonly (readonly [number,number])[][]=[
  [[83,10],[78,5],[74,6]],
 ];
 
-/** Solid footprints (x, z, radius, height): the arch stands on its two legs, a charred tree on its trunk. */
+/** Solid footprints (x, z, radius, height): the arch stands on its two legs and their column buttresses, a charred tree on its trunk. */
 export function emberSolids(){
  const out:{x:number;z:number;r:number;h:number}[]=[];
  for(const e of EMBER_FEATURES){
-  if(e.kind==='arch'){const s=Math.sin(e.yaw),c=Math.cos(e.yaw);for(const k of [-1,1])out.push({x:e.x+s*e.r*k,z:e.z+c*e.r*k,r:1.9,h:e.h});}
+  if(e.kind==='arch'){const s=Math.sin(e.yaw),c=Math.cos(e.yaw);for(const k of [-1,1]){const fx=e.x+s*e.r*k,fz=e.z+c*e.r*k;out.push({x:fx,z:fz,r:1.9,h:e.h},{x:fx+c*2.8*k,z:fz-s*2.8*k,r:2,h:e.h*.55});}}
   else if(e.kind==='charred')out.push({x:e.x,z:e.z,r:.45,h:e.h});
   else out.push({x:e.x,z:e.z,r:e.kind==='columns'?e.r*.85:e.kind==='cone'?e.r*.7:e.r*.8,h:e.h});
  }

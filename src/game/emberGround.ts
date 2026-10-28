@@ -97,7 +97,7 @@ float egN1=egFbm(egP*.021+1.3),egN2=egFbm(egP*.073-4.1),egN3=egNoise(egP*.31+9.)
 float egHill=sin(egP.x*.047)*sin(egP.y*.035)*(1.-exp(-egP.x*egP.x/900.));
 float egStreak=egNoise(vec2(egP.x*.07,egP.y*.19)+3.)*.5+.5;
 float egAshF=-egHill*.45+egN2*.45+egStreak*.22+.2+egN3*.1+egNoise(egP*.9)*.04;
-float egAsh=smoothstep(.5,.6,egAshF)*.8+smoothstep(.6,.85,egAshF)*.2;
+float egAsh=smoothstep(.52,.565,egAshF)*.85+smoothstep(.565,.8,egAshF)*.15;
 // Wind ripples on the drifts, crests running north-south.
 float egRip=sin(egP.x*5.1+egNoise(egP*.7)*4.+egNoise(egP*2.3)*.8)*.5+.5;
 egAsh*=1.-egHeat*.85;
@@ -106,8 +106,8 @@ float egSheet=smoothstep(.12,.3,egFbm(egP*.017+17.)-.08)*(1.-egAsh)*(1.-egShore)
 float egRopeU=egP.y*1.35+sin(egP.x*.23+egN3*2.)*2.4+egFbm(egP*.12)*3.;
 float egRope=(sin(egRopeU*6.2832)*.5+.5);
 // Cracked crust where the ground shrank: polygons a metre or two across, more of them near heat.
-float egCrackM=max(smoothstep(.3,.55,egNoise(egP*.037-8.)),egHeat*.9)*(1.-egSheet*.8)*(1.-egAsh);
-vec3 egC=egCells(egP*mix(.34,.75,egHeat)+egWarp*.6+vec2(egNoise(egP*1.9),egNoise(egP*1.9+4.))*.12);
+float egCrackM=max(smoothstep(.32,.55,egNoise(egP*.037-8.)),egHeat*.9)*(1.-egSheet*.8)*(1.-egAsh);
+vec3 egC=egCells(egP*mix(.42,.8,egHeat)+egWarp*.6+vec2(egNoise(egP*1.9),egNoise(egP*1.9+4.))*.12);
 float egCrack=(1.-smoothstep(.0,.022+egFoot*.35,egC.x+egNoise(egP*6.)*.012))*egCrackM*(.55+.45*smoothstep(-.2,.4,egNoise(egP*.8+egC.y*7.)));
 // Pumice gravel in patches: pale pebbles a hand across.
 float egGravM=smoothstep(.3,.6,egNoise(egP*.09+21.))*(1.-egSheet)*(1.-egHeat*.8)*(1.-egAsh*.6);
@@ -117,9 +117,11 @@ if(egDetail>.5&&egNear>0.&&egGravM>0.){vec3 c=egCells(egP*6.3);egPebId=c.y;egPeb
 vec3 egBas=mix(vec3(.17,.18,.21),vec3(.27,.28,.31),smoothstep(-.6,.6,egN1));
 egBas=mix(egBas,vec3(.2,.2,.22),smoothstep(.2,.7,egN2)*.4);
 egBas*=.9+.2*(egN3*.5+.5);
-egBas*=1.+(egNoise(egP*2.7)*.08+egNoise(egP*11.)*.06)*(1.-smoothstep(.05,.3,egFoot));
+// Mid-scale blotches of rougher and smoother rock, and grit up close.
+egBas*=1.+egNoise(egP*.34+5.)*.16+egNoise(egP*1.1-2.)*.08;
+egBas*=1.+(egNoise(egP*2.7)*.1+egNoise(egP*11.)*.1+egNoise(egP*29.)*.08)*(1.-smoothstep(.03,.25,egFoot));
 vec3 egSheetC=mix(vec3(.12,.125,.15),vec3(.16,.16,.19),egRope)*(.92+.16*egN3);
-vec3 egAshC=mix(vec3(.39,.375,.4),vec3(.47,.455,.47),egStreak)*(.9+.12*egN3)*(.94+.06*egRip*(1.-smoothstep(.03,.15,egFoot)));
+vec3 egAshC=mix(vec3(.34,.33,.355),vec3(.41,.4,.415),egStreak)*(.9+.12*egN3)*(.9+.1*egRip*(1.-smoothstep(.03,.15,egFoot)))*(1.+egNoise(egP*13.)*.05*egNear);
 vec3 egCol=mix(egBas,egSheetC,egSheet);
 egCol=mix(egCol,egAshC,egAsh);
 egCol=mix(egCol,mix(vec3(.4,.39,.38),vec3(.5,.48,.46),egPebId),egPeb*.8);
@@ -145,7 +147,8 @@ roughnessFactor=mix(roughnessFactor,.98,egAsh);
 
 const NORMAL = /* glsl */ `
 if(egDetail>.5){
-  float egH=(egRope*.022*egSheet+egRip*.008*egAsh+egPeb*.03-egCrack*.03-egLip*.02+egNoise(egP*5.)*.01*(1.-egAsh*.6))*(1.-smoothstep(.04,.25,egFoot));
+  float egScoria=(egNoise(egP*3.3)*.6+egNoise(egP*8.1)*.4)*(1.-egAsh*.8)*(1.-egSheet*.7);
+  float egH=(egRope*.022*egSheet+egRip*.008*egAsh+egPeb*.03-egCrack*.03-egLip*.02+egScoria*.035+egNoise(egP*17.)*.008*(1.-egAsh*.6))*(1.-smoothstep(.04,.25,egFoot));
   normal=egBump(normal,egH,egDpx,egDpy);
 }
 `;

@@ -112,8 +112,9 @@ float epJ=(1.-smoothstep(-epFw,epFw,-epOut))*min(1.,.03/epFw)*(1.-epBlur*.6);
 float epHeatBase=smoothstep(10.,-60.,epP.y);
 float epN1=egNoise(epP*.12+4.),epN2=egNoise(epP*.45-2.);
 float epHot=clamp(epHeatBase*.7+smoothstep(.45,.85,epN1*.5+.5)*.4-.1,0.,1.)*(1.-epKerb*.8);
-// Only some flags have hot seams round them: a scatter that thickens toward the court, never the whole grid.
-float epGlowJ=smoothstep(.35,.7,epHot+epN2*.3)*step(.78-epHot*.38,fract(epId*5.91));
+// Hot seams: short meandering runs along the joints where the heat comes through, thicker toward the court.
+float epSeam=egNoise(epP*1.15+vec2(3.,9.))*.6+egNoise(epP*3.3)*.4;
+float epGlowJ=smoothstep(.42,.62,epSeam*.5+.5+epHot*.32-.28)*smoothstep(.15,.5,epHot);
 // Ash fills the rest of the joints and blows over the edges and the low stones.
 float epMid=1.-smoothstep(.3,.95,abs(epAcross)/max(epHalf,.5));
 float epAshy=smoothstep(-.7,.15,epSd+epRag*.4)*.7+smoothstep(.55,.85,egNoise(epP*.6+11.)*.5+.5)*.45*(1.-epMid);
@@ -163,7 +164,7 @@ const EMISSIVE = /* glsl */ `
   float flick=.8+.2*sin(epTime*1.1+epId*30.);
   totalEmissiveRadiance+=mix(vec3(1.,.2,.03),vec3(1.,.42,.1),epHot)*core*(1.+1.4*epHot)*flick;
   // A faint warm breath on the flags round a glowing joint.
-  totalEmissiveRadiance+=vec3(1.,.3,.08)*epGlowJ*.05*(1.-epJ)*epHot;
+  totalEmissiveRadiance+=vec3(1.,.3,.08)*epGlowJ*.03*(1.-epJ)*epHot;
 }
 `;
 
