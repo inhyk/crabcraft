@@ -51,7 +51,7 @@ async function run(quality) {
       for (const m of ms) {
         if (m.uniforms?.top && m.uniforms?.bottom) gradientSky++;
         if (o.isPoints && m.uniforms?.tint) oldSparks++;
-        if (o.isMesh && (m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) { lit++; if (String(m.customProgramCacheKey()).endsWith('|ember-heat')) heat++; }
+        if (o.isMesh && (m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) { lit++; if (String(m.customProgramCacheKey()).includes('|ember-heat')) heat++; }
       }
     });
     // Coast: every column and lump outside the walkable ellipse (FRONTIER_BOUNDS max .8) and outside the lava zones.

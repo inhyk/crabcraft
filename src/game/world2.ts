@@ -501,7 +501,7 @@ export class HiddenWorld {
       if(this.travelArmed&&distance<1.7&&this.game.time>this.travelAt){this.travelArmed=false;this.travelAt=this.game.time+3;this.travel();}
     }
     if(!this.rendered)return;
-    if(this.chapter===5){this.fifth.air?.apply(this.game.scene,this.game.camera,this.game.engine.renderer);return;}
+    if(this.chapter===5){this.fifth.air?.apply(this.game.scene,this.game.camera,this.game.engine.renderer,this.game.player.unit.pos);return;}
     if(this.chapter>=5){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#b6dcce');fog.density=.0023;}return;}
     if(this.chapter===4){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){const e=this.game.camera.matrixWorld.elements;this.fourth.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.fourth.sky.fogDensity(e[13],-e[9]);}return;}
     if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2)this.third.fog(this.game.camera,fog);return;}

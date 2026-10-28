@@ -39,10 +39,12 @@ function noise3(x: number, y: number, z: number): number {
 }
 const fbm3 = (x: number, y: number, z: number, oct = 4) => { let s = 0, a = .5, n = 0; for (let i = 0; i < oct; i++) { s += a * noise3(x, y, z); n += a; x = x * 2.07 + 5.3; y = y * 2.07 + 1.7; z = z * 2.07 + 9.1; a *= .5; } return s / n; };
 
+/** The horizon band against the first pass (11:30): 38% darker, so lava, forges and windows outshine the sky. */
+const HZ_DIM = .62;
 const lin = (hex: string) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b] as [number, number, number]; };
 /** Palette (sRGB hex, used linear). */
 const P = {
-  hzSun: lin('#e9a466'), hzAway: lin('#9a5048'), mid: lin('#443944'), zenith: lin('#1b1a25'),
+  hzSun: lin('#cf8c5c'), hzAway: lin('#9a5048'), mid: lin('#3a2a32'), zenith: lin('#2a1d24'),
   lava: lin('#ff5a1e'), smoke: lin('#2b2329'), smokeLit: lin('#8a4a36'), seaDark: lin('#24120f'), sun: lin('#ffb070'),
 };
 /** Rows crowd the horizon: v in 0..1 to elevation in radians and back (the shader inverts it). */
@@ -76,20 +78,21 @@ export function bakeEmberSky(opts: EmberSkyOptions = {}): BakedEmberSky {
   const sh = Math.hypot(sunDir[0], sunDir[2]), shx = sunDir[0] / sh, shz = sunDir[2] / sh;
   const radiance = (dx: number, dy: number, dz: number, out: number[]) => {
     const e = Math.asin(clamp(dy, -1, 1)), eDeg = e * 180 / Math.PI, h = Math.hypot(dx, dz) || 1;
-    const toward = (dx / h) * shx + (dz / h) * shz, side = Math.pow(toward * .5 + .5, 1.6);
+    const toward = (dx / h) * shx + (dz / h) * shz, side = Math.pow(toward * .5 + .5, 2.2);
     const mu = Math.max(0, dx * sunDir[0] + dy * sunDir[1] + dz * sunDir[2]);
     const shelf = shelfAt(dx, dy, dz);
     for (let c = 0; c < 3; c++) {
-      const hz = P.hzAway[c] + (P.hzSun[c] - P.hzAway[c]) * side;
+      const hz = (P.hzAway[c] + (P.hzSun[c] - P.hzAway[c]) * side) * HZ_DIM;
       let v: number;
       if (eDeg >= 0) {
-        v = hz + (P.mid[c] - hz) * smooth(0, 22, eDeg);
-        v += (P.zenith[c] - v) * smooth(8, 78, eDeg);
+        // The amber band stays within ~8 degrees of the horizon; above it the smoke is dark plum to the zenith.
+        v = hz + (P.mid[c] - hz) * smooth(0, 8, eDeg);
+        v += (P.zenith[c] - v) * smooth(6, 55, eDeg);
         // The lava sea lights the low haze from below all round.
-        v += P.lava[c] * .26 * Math.exp(-eDeg / 3.2);
+        v += P.lava[c] * .15 * Math.exp(-eDeg / 2.4);
         const under = Math.exp(-eDeg / 9);
         v += ((P.smoke[c] + P.smokeLit[c] * under + P.sun[c] * .35 * Math.pow(mu, 3)) - v) * shelf * .78;
-        v += P.sun[c] * (.32 * Math.pow(mu, 5) + .85 * Math.pow(mu, 42) + 2.4 * Math.pow(mu, 420)) * (1 - shelf * .55);
+        v += P.sun[c] * (.08 * Math.pow(mu, 5) + .35 * Math.pow(mu, 42) + 1.1 * Math.pow(mu, 420)) * (1 - shelf * .55);
       } else {
         // Below the horizon only the environment map sees it: the crusted sea with its glow.
         const sea = P.seaDark[c] + P.lava[c] * .1;
@@ -198,7 +201,7 @@ void main(){
   // A veiled sun: a soft disc the ash dims and reddens, no hard limb.
   float R=.016;
   float disc=smoothstep(cos(R*1.6),cos(R*.55),mu);
-  col+=sunColor*disc*mix(2.4,.5,veil)*(1.-veil*.3);
+  col+=sunColor*disc*mix(1.3,.35,veil)*(1.-veil*.3);
   // The rest of the archipelago on the rim of the sea, hazed, a vent glowing on the tallest.
   vec2 rim=texture2D(rimMap,vec2(atan(d.x,d.z)/PI2+.5,.5)).rg;
   float e=asin(clamp(d.y,-1.,1.));
@@ -218,6 +221,11 @@ void main(){
 `;
 
 const FOG_DENSITY = .0026;
+/**
+ * World V's view exposure (game.ts EMBER_VIEW). It opens the lit surfaces and the emitters; the dome and the fog divide
+ * it back out so the sky keeps its own values and stays darker than the lava, the forges and the windows.
+ */
+export const EMBER_EXPOSURE = 1.75;
 
 export class EmberSky {
   readonly baked: BakedEmberSky;
@@ -227,25 +235,26 @@ export class EmberSky {
   /** Direct sun, linear: colour (max channel 1) and intensity for the DirectionalLight. */
   readonly sunColor = new THREE.Color('#ffbd84');
   readonly sunIntensity = 3.4;
-  /** HemisphereLight colours at intensity 1: violet-grey sky fill, warm lava bounce from below. */
-  readonly hemiSky: THREE.Color;
-  readonly hemiGround = new THREE.Color('#6a2c1c');
+  /**
+   * HemisphereLight: a violet-grey fill from the smoke above and violet-grey from below, so shade sits at about
+   * #3b3546 on screen and never goes black. The lava's warm bounce from below is the heat light's (emberSkyHeat.ts),
+   * only within 15 m of lava.
+   */
+  readonly hemiSky = new THREE.Color('#9a94c0');
+  readonly hemiGround = new THREE.Color('#3b3546');
+  readonly hemiIntensity = 1.6;
   /** Mean horizon, linear. */
   readonly skyHorizon: THREE.Color;
   readonly envIntensity = .5;
   private readonly lut: THREE.DataTexture;
   private readonly rimTex: THREE.DataTexture;
   private env: THREE.Texture | null = null;
-  private readonly exposure = 1;
+  private readonly exposure = 1 / EMBER_EXPOSURE;
   private readonly sunAz: number;
   constructor(opts: EmberSkyOptions = {}) {
     const b = this.baked = bakeEmberSky(opts);
     this.sunDir = new THREE.Vector3(...b.sunDir);
     this.sunAz = Math.atan2(b.sunDir[0], b.sunDir[2]);
-    // Shade: the dome's own irradiance, its hue graded to violet-grey (#3b3546 in the shadows), its strength kept.
-    const up = b.skyUp, lum = up[0] * .2126 + up[1] * .7152 + up[2] * .0722;
-    const violet = new THREE.Color('#857fae'), vl = violet.r * .2126 + violet.g * .7152 + violet.b * .0722;
-    this.hemiSky = violet.multiplyScalar(lum / vl * 1.6 / Math.PI);
     const mean = [0, 0, 0];
     for (let i = 0; i < LUT_W; i++) for (let c = 0; c < 3; c++) mean[c] += b.horizon[i * 3 + c] / LUT_W;
     this.skyHorizon = new THREE.Color().setRGB(mean[0], mean[1], mean[2], THREE.LinearSRGBColorSpace);
@@ -266,7 +275,7 @@ export class EmberSky {
         skyLUT: { value: this.lut }, rimMap: { value: this.rimTex }, sunDir: { value: this.sunDir },
         sunColor: { value: new THREE.Color('#ffc890') }, exposure: { value: this.exposure }, time: { value: 0 },
         hazeColor: { value: this.skyHorizon.clone() }, cloudDark: { value: new THREE.Color('#2e2529') },
-        cloudLit: { value: new THREE.Color('#b0663a') }, lavaGlow: { value: new THREE.Color('#ff5a1e') }, clouds: { value: 1 },
+        cloudLit: { value: new THREE.Color('#7e4a2e') }, lavaGlow: { value: new THREE.Color('#ff5a1e') }, clouds: { value: 1 },
       },
     });
     this.material.addEventListener('dispose', () => { this.lut.dispose(); this.rimTex.dispose(); this.env?.dispose(); });
@@ -287,7 +296,7 @@ export class EmberSky {
   fogColor(x: number, z: number, out: THREE.Color): THREE.Color {
     this.horizonToward(x, z, out);
     const l = out.r * .2126 + out.g * .7152 + out.b * .0722;
-    out.lerp(this.tmpColor.setRGB(l, l, l * 1.1, THREE.LinearSRGBColorSpace), .38).multiplyScalar(.8);
+    out.lerp(this.tmpColor.setRGB(l, l * .96, l * 1.1, THREE.LinearSRGBColorSpace), .45).multiplyScalar(.7);
     this.material.uniforms.hazeColor.value.copy(out);
     return out;
   }
@@ -299,7 +308,8 @@ export class EmberSky {
   environment(renderer: THREE.WebGLRenderer): THREE.Texture {
     if (this.env) return this.env;
     const scene = new THREE.Scene(), mat = this.material.clone();
-    mat.uniforms.clouds.value = .6; mat.uniforms.hazeColor.value = this.skyHorizon.clone().multiplyScalar(.8);
+    // The environment lights surfaces, which take the view exposure like every other light: the dome at its own scale.
+    mat.uniforms.clouds.value = .6; mat.uniforms.exposure.value = 1; mat.uniforms.hazeColor.value = this.skyHorizon.clone().multiplyScalar(.8);
     mat.uniforms.skyLUT.value = this.lut; mat.uniforms.rimMap.value = this.rimTex; mat.uniforms.sunDir.value = this.sunDir;
     const dome = new THREE.Mesh(new THREE.SphereGeometry(40, 32, 16), mat); scene.add(dome);
     const pmrem = new THREE.PMREMGenerator(renderer);

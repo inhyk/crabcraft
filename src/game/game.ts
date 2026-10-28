@@ -66,6 +66,7 @@ import { PortraitStudio, snapshotMap } from './snapshots';
 import { Unit, type Reaction, type UnitKind } from './unit';
 import { mulberry32, pick, yawTo } from './util';
 import { Vfx, C } from './vfx/vfx';
+import { EMBER_EXPOSURE } from './emberSky';
 
 type CreateCrabWithExtras = (spec: CrabSpec, extras?: string[]) => Promise<CrabRig>;
 // The contract's createCrab takes one argument; the real model accepts gear extras as a second.
@@ -118,6 +119,8 @@ const DESERT_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.35, agxLook: { satu
 const TIDECROWN_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.14, agxLook: { saturation: 1.34, power: 1.15 }, bloom: { intensity: 0.85, threshold: 1.45, smoothing: 0.3, radius: 0.75 }, grade: { lift: [0.013, 0.006, 0.032], warm: 0.55, white: 0.02, split: { shadow: [0.96, 0.975, 1.045], highlight: [1.11, 1.0, 0.8] } } };
 /** Starhaven's night: deep sky, moonlit ground that reads against it, warm lamps and crystals that bloom (starNight.ts). */
 const STAR_VIEW: ViewOptions = { ...GAME_VIEW, exposure: 1.06, agxLook: { saturation: 1.24, power: 1.14 }, bloom: { intensity: 1.15, threshold: 0.95, smoothing: 0.3, radius: 0.72, knee: true }, vignette: { offset: 0.32, darkness: 0.55 }, grade: { lift: [0.002, 0.004, 0.012], warm: 0.65, white: 0.0, split: { shadow: [0.96, 0.98, 1.06], highlight: [1.05, 1.02, 0.95] } } };
+/** Emberreach: no colour grade (the amber lives in the sky and fog only); exposure opens the basalt to mid values and AgX's look is neutral so the frame is not orange; bloom keys above lit stone, on lava, forges and windows. */
+const EMBER_VIEW: ViewOptions = { ...GAME_VIEW, exposure: EMBER_EXPOSURE, agxLook: { saturation: 0.95, power: 1.06 }, bloom: { intensity: 1.0, threshold: 1.0, smoothing: 0.3, radius: 0.75, knee: true } };
 
 const ZONES: { name: string; anchors: PoiId[] }[] = [
   { name: 'Clawhaven', anchors: ['spawn', 'forge', 'chapel', 'tavern'] },
@@ -825,7 +828,7 @@ export class Game {
     this.world.update(dt, worldTime, this.camera);
     this.world2.update(dt,worldTime);
     // The game's own views follow the world shown; endings and captures that set their own are left alone.
-    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW||view===TIDECROWN_VIEW||view===DESERT_VIEW||view===STAR_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
+    const view=this.engine.viewOptions;if((view===GAME_VIEW||view===FROST_VIEW||view===TIDECROWN_VIEW||view===DESERT_VIEW||view===STAR_VIEW||view===EMBER_VIEW)&&view!==this.gameView())this.engine.setView(this.scene,this.camera,this.gameView());
     if (!paused) this.zoneLines?.update();
     this.lighthouseSecret?.update();
     // A spectator view shows no HUD and plays no music.
@@ -1529,7 +1532,7 @@ export class Game {
     this.hud.minimap.setZone(regionName(this.zone), this.player.inCombat);
   }
 
-  private gameView(): ViewOptions { return this.world2?.inTidecrown ? TIDECROWN_VIEW : this.world2?.fourth.root.visible ? FROST_VIEW : this.world2?.third.root.visible ? DESERT_VIEW : this.world2?.root.visible ? STAR_VIEW : GAME_VIEW; }
+  private gameView(): ViewOptions { return this.world2?.inTidecrown ? TIDECROWN_VIEW : this.world2?.fourth.root.visible ? FROST_VIEW : this.world2?.third.root.visible ? DESERT_VIEW : this.world2?.root.visible ? STAR_VIEW : this.world2?.fifth.root.visible ? EMBER_VIEW : GAME_VIEW; }
 
   /** A duel keeps the adventure alive, even when entered from a shared victory celebration. */
   resumeFriendAdventure(authority:boolean):void {
