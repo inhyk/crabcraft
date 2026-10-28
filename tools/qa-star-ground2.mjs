@@ -39,7 +39,8 @@ async function run(quality) {
     let worst = 0;
     for (let i = 0; i < pos.count; i++) worst = Math.max(worst, Math.abs(pos.getY(i) - serverH[i]));
     // Grass never grows on the ways: sample along the avenue, the square, the lanes and the trails.
-    const mk = meadow.userData.mask, covers = paving.userData.covers;
+    // Star r5: a dead end frays out inside its old box, and the turf grows up to the stones actually laid (`paved`).
+    const mk = meadow.userData.mask, covers = paving.userData.paved ?? paving.userData.covers;
     let onWays = 0, sampled = 0;
     for (let z = -50; z < 90; z += .7) for (let x = -26; x <= 26; x += .7) {
       if (!covers(x, z)) continue;

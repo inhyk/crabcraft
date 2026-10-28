@@ -1,6 +1,6 @@
 // Where Starhaven's field boulders, crater shards and story props stand. Positions only: starFields.ts and
 // starStories.ts dress them, world2Colliders.ts registers the solid ones for the browser and the server bake.
-import {rot,STAR_BOAT,STAR_CAMP,STAR_CRATER,STAR_KEEP_POINTS,STAR_MINE,STAR_MINE_PROPS,STAR_RING,starBluff,starCoast,starNoise} from './starFieldLayout';
+import {rot,STAR_BOAT,STAR_CAMP,STAR_CRATER,STAR_KEEP_POINTS,STAR_MINE,STAR_MINE_PROPS,STAR_RING,starBluff,starCoast,starEclipseSolids,starNoise} from './starFieldLayout';
 import {nearStarObjective,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 
@@ -28,6 +28,8 @@ export const STAR_STORY_SOLIDS: readonly {x: number; z: number; r: number; h: nu
   {x: STAR_BOAT.x - Math.sin(STAR_BOAT.yaw) * 1.6, z: STAR_BOAT.z - Math.cos(STAR_BOAT.yaw) * 1.6, r: 1.05, h: 1.2},
   // The miners' cart, crates and barrel (starCrystalLayout.ts).
   ...STAR_MINE_PROPS.map(p => { const [rx, rz] = rot(p.dx, p.dz, STAR_MINE.yaw); return {x: STAR_MINE.x + rx, z: STAR_MINE.z + rz, r: p.r, h: p.h}; }),
+  // The eclipse's marks (star r5): the fallen column's drums and the astronomer's table.
+  ...starEclipseSolids(),
 ];
 
 let cached: StarBoulder[] | null = null;

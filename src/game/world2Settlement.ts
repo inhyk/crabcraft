@@ -1,5 +1,8 @@
 import {starPaving} from './starPaving';
 import {starMeadow} from './starMeadow';
+import {starTreeDressing,starTreeSpecies} from './starTrees';
+import {STAR_WAY_ENDS} from './starWilds';
+import {starEclipseStory} from './starEclipseStory';
 import {starFields} from './starFields';
 import {starStories} from './starStories';
 import {STAR_BOAT,STAR_CAMP,STAR_MINE,STAR_RING} from './starFieldLayout';
@@ -157,6 +160,10 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   const stories=starStories(height,put);
   root.add(dressing.build(),villageProps.build());
   const scatter=new Scatter(nature,'star-island-forests');
+  // The island's tree species (starTrees.ts): moon-silvered and crystal-infused crowns are the kit's trees in
+  // materials of their own (starWind.ts shades them by material.userData.starVariant); snags are built.
+  const variantOf=(variant:string)=>(m:THREE.Material)=>{const c=m.clone();c.userData.starVariant=variant;return c;};
+  const silverTrees=new Scatter(nature,'star-island-silver-trees'),crystalTrees=new Scatter(nature,'star-island-crystal-trees');
   const rand=forestRand;
   const natureNames=[...nature.pieces.keys()];
   const treeNames=natureNames.filter(n=>STAR_TREE_NAME.test(n));
@@ -176,7 +183,8 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   // The forest's rock spots hold sculpted field boulders now (starFields.ts).
   for(const p of starForestSpots()) {
     if(p.rock||!treeNames.length)continue;
-    scatter.add(treeNames[p.i%treeNames.length],trs(p.x,height(p.x,p.z),p.z,p.yaw,p.scale));
+    const species=starTreeSpecies(p.i);if(species==='snag')continue;
+    (species==='silver'?silverTrees:species==='crystal'?crystalTrees:scatter).add(treeNames[p.i%treeNames.length],trs(p.x,height(p.x,p.z),p.z,p.yaw,p.scale));
   }
   let gardenTrees=0;
   for(const [x,z] of GARDEN_TREES){
@@ -224,8 +232,12 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
   root.userData.meadowPlants=meadowCount;
   // Boulders, the crater's shards, moon-flowers, and the kit's ferns, clover and wildflowers through the meadows.
   const field=starFields(height,scatter,natureNames,clearPaving);root.add(field.root,stories.root);
-  const fields={root:field.root,update(t:number){field.update(t);stories.update(t);rooftops.update(t);}};
-  root.add(scatter.build({boundsPadding:.2}));
+  // What the eclipse did: the fallen column, the astronomer's table, the pilgrim's pack, the shards (starEclipseStory.ts).
+  const eclipse=starEclipseStory(height);root.add(eclipse.root);
+  const fields={root:field.root,update(t:number){field.update(t);stories.update(t);rooftops.update(t);eclipse.update(t);}};
+  const forests=scatter.build({boundsPadding:.2});
+  forests.add(silverTrees.build({boundsPadding:.2,materialFor:variantOf('silver')}),crystalTrees.build({boundsPadding:.2,materialFor:variantOf('crystal')}));
+  root.add(forests,starTreeDressing(height));
   // Starhaven's own moonlit setts, kerbs and trail flags (starPaving.ts); the fountain keeps its basin clear.
   const ways:IslandPath[]=[
     {points:[[0,92],[0,-54]],width:9.5,trim:true},
@@ -236,7 +248,9 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     {points:[[4.7,84],[24,84]],width:2.4},
     ...STAR_TRAILS.map(points=>({points,width:2.4,trim:false})),
   ];
-  root.add(starPaving(height,ways,STAR_TRAILS.length,{skyHorizon:new THREE.Color('#2a2552'),skyZenith:new THREE.Color('#0b1030'),pads:[{x:0,z:55,r:7.2,rings:7.2},{x:STAR_RING.x,z:STAR_RING.z,r:STAR_RING.r-1.3,rings:STAR_RING.r-1.3}],holes:[{x:0,z:55,r:3.7,kerb:.55}]}).root);
+  // Dead ends fray into earth paths to the nearest door (starWilds.ts); the ground reads the paths from starWaySpurs.
+  const paving=starPaving(height,ways,STAR_TRAILS.length,{skyHorizon:new THREE.Color('#2a2552'),skyZenith:new THREE.Color('#0b1030'),pads:[{x:0,z:55,r:7.2,rings:7.2},{x:STAR_RING.x,z:STAR_RING.z,r:STAR_RING.r-1.3,rings:STAR_RING.r-1.3}],holes:[{x:0,z:55,r:3.7,kerb:.55}],frays:STAR_WAY_ENDS.map(([x,z])=>({x,z}))});
+  root.add(paving.root);
   // The meadow underfoot grows round the buildings, stalls, wagons and quest props, never on the ways.
   const meadow=starMeadow(height,ways,[
     ...lots.map(l=>[l.x,l.z,Math.hypot(l.sx,l.sz)+1.4] as const),
@@ -247,7 +261,7 @@ export async function buildStarSettlement(height:(x:number,z:number)=>number) {
     [STAR_CAMP.x-.5,STAR_CAMP.z,4.6],[STAR_BOAT.x,STAR_BOAT.z,3.4],
     // The keepers' ring floor and the miners' trodden yard.
     [STAR_RING.x,STAR_RING.z,STAR_RING.r-1.1],[STAR_MINE.x-2,STAR_MINE.z+1.5,4.2],
-  ]);
+  ],paving.root.userData.paved);
   root.add(meadow.mesh);
   for(const kit of [village,nature,props])for(const piece of kit.pieces.values())for(const part of piece.parts)part.geometry.dispose();
   return {root,lots,natureNames,meadow,fields};

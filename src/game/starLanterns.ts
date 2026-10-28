@@ -99,12 +99,33 @@ export function starhavenMaterial(name: string, m: THREE.Material) {
     m.customProgramCacheKey = () => 'starhaven-roof';
     m.roughness = .55;m.envMapIntensity = 1.5;
     return;
-  } else if (name === 'MI_Plaster') m.color.set('#cfd0e2');
-  else if (name === 'MI_WoodTrim') m.color.set('#a8968c');
+  } else if (name === 'MI_Plaster') m.color.set('#dcdced');
+  else if (name === 'MI_WoodTrim') m.color.set('#b9aba4');
   else if (name === 'MI_MetalOrnaments') { m.color.set('#c9cfe4');m.metalness = Math.max(m.metalness, .8);m.roughness = .35; }
-  else if (name === 'MI_UnevenBrick' || name === 'MI_RockTrim' || name === 'MI_Brick') m.color.set('#c2c3d4');
+  else if (name === 'MI_UnevenBrick' || name === 'MI_RockTrim' || name === 'MI_Brick') m.color.set('#cfd0de');
   else return;
-  // House fronts near the street catch the lanterns' light.
-  m.onBeforeCompile = shader => injectStarLight(shader, null, {baked: false, lamps: true});
-  m.customProgramCacheKey = () => 'starhaven-lamplit';
+  // Masonry and plaster stand on a course of pale dressed stone (the town's floor is at y 3), so a wall never sinks
+  // straight into the dark turf; timber keeps its own foot.
+  const plinth = name !== 'MI_WoodTrim';
+  // House fronts near the street catch the lanterns' light; every wall takes the moonlit sky's fill (star r5: the walls
+  // turned from the moon read a value step lighter than the turf in front of them).
+  m.onBeforeCompile = shader => {
+    injectStarLight(shader, null, {baked: false, lamps: true});
+    if (plinth) shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+{
+  vec3 hwP=starWorldFromView(-vViewPosition);
+  float course=hwP.y-3.;
+  float band=1.-smoothstep(.44,.47,course);
+  // Ashlar: two courses with offset joints, a pale weathered top edge, damp and darker at the turf.
+  float row=floor(course/.23),u=(hwP.x+hwP.z)*1.9+row*.5;
+  float joint=max(1.-smoothstep(.0,.025,abs(fract(course/.23)-.5)*.23-.09),1.-smoothstep(.0,.05,abs(fract(u)-.5)*2.-.92));
+  vec3 stone=vec3(.5,.52,.6)*(.85+.3*fract(sin(floor(u)*12.9+row*7.1)*437.5))*mix(.62,1.,smoothstep(.0,.2,course));
+  stone=mix(stone,vec3(.18,.18,.22),joint*.7);
+  stone=mix(stone,vec3(.66,.68,.76),smoothstep(.38,.44,course)*.7);
+  diffuseColor.rgb=mix(diffuseColor.rgb,stone,band);
+}`);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+{vec3 hwN=inverseTransformDirection(normal,viewMatrix);reflectedLight.indirectDiffuse+=BRDF_Lambert(diffuseColor.rgb)*vec3(.13,.16,.27)*(1.-abs(hwN.y)*.7);}`);
+  };
+  m.customProgramCacheKey = () => plinth ? 'starhaven-lamplit-plinth' : 'starhaven-lamplit';
 }

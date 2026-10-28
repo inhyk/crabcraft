@@ -31,6 +31,20 @@ export function doorLanternAt(d: {pos: THREE.Vector3; yaw: number}, out = new TH
 export function starDoorLampGlows(lots: readonly Lot[]) {
   return starDoorLamps(lots).map((d) => ({x: d.pos.x + Math.sin(d.yaw) * .9, z: d.pos.z + Math.cos(d.yaw) * .9, radius: 1.9, color: '#ffa850', strength: 2.1}));
 }
+/**
+ * Lamplight from the lit windows either side of each door, falling on the ground in front of the house (star r5).
+ * The newcomers' empty house (`dark`) throws none.
+ */
+export function starWindowSpillGlows(lots: readonly Lot[], dark?: string) {
+  const out: {x: number; z: number; radius: number; color: string; strength: number}[] = [];
+  const doors = starDoorLamps(lots);
+  for (const d of doors) {
+    if (dark) { const lot = lots.find((l) => l.id === dark); if (lot && Math.hypot(lot.x - d.pos.x, lot.z - d.pos.z) < Math.hypot(lot.sx, lot.sz) * 2 + 2) continue; }
+    const fx = Math.sin(d.yaw), fz = Math.cos(d.yaw), rx = fz, rz = -fx;
+    for (const side of [-1, 1]) out.push({x: d.pos.x + rx * side * 2.3 + fx * 1.5, z: d.pos.z + rz * side * 2.3 + fz * 1.5, radius: 1.35, color: '#ffb86a', strength: 1.15});
+  }
+  return out;
+}
 
 /**
  * Lanterns along the pilgrim trails outside the town, every 13 m or so on alternate sides, so the side trails read at

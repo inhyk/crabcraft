@@ -3,11 +3,11 @@ import {injectStarLight} from './starLight';
 import {STAR_GRID} from '../sim/world/ground';
 import type {StarMeadow} from './starMeadow';
 import type {StarFields} from './starFields';
-import {starGroundColor} from './world2Ground';
+import {starSpurWear,starWildness,starWildTint} from './starWilds';
 import {GARDEN_TREES,starForestSpots,starTrailDistance} from './world2Settlement';
 import {starCrystalGarden} from './world2Colliders';
 import {starBoulders} from './starFieldSpots';
-import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,starCoast,starFieldWear,starNoise,starSand} from './starFieldLayout';
+import {STAR_CAMP,STAR_CRATER,STAR_DETAIL,STAR_SCORCHES,starCoast,starFieldWear,starNoise,starSand} from './starFieldLayout';
 
 /*
  * Starhaven's ground by moonlight: beach sand by the sea, meadow grass inland, packed earth in the town and along the
@@ -98,6 +98,10 @@ float sgRock=smoothstep(.36,.55,sgSlope+(sgMid-.5)*.25)*(1.-sgShore*.85);
 // Crater: scorched, glassy and cracked inside, ash thrown out round the rim.
 float sgCd=length(sgP-vec2(${STAR_CRATER.x.toFixed(1)},${STAR_CRATER.z.toFixed(1)}))/${STAR_CRATER.r.toFixed(1)};
 float sgScorch=(1.-smoothstep(.55,1.3,sgCd+(sgMid-.5)*.5+(sgFine-.5)*.3))*.92;
+// Where the eclipse's shards struck (star r5): small burns, ragged and streaked outward.
+float sgBurn=0.;
+${STAR_SCORCHES.map((s) => `{vec2 d=sgP-vec2(${s.x.toFixed(2)},${s.z.toFixed(2)});float r=length(d)/${s.r.toFixed(2)};float st=abs(sin(atan(d.y,d.x)*7.+sgMid*6.));sgBurn=max(sgBurn,(1.-smoothstep(.45,1.15,r+(sgMid-.5)*.5+(sgFine-.5)*.3-st*.18*smoothstep(.4,1.,r))));}`).join('\n')}
+sgScorch=max(sgScorch,sgBurn*.85);
 // Region tint (vertex colour) is the meadow's moonlit green, the sand's lavender grey or the town's earth.
 vec3 sgTint=vColor.rgb;
 // Meadow: broad lush and dry swathes, darker hollows, clumps and blades.
@@ -209,7 +213,7 @@ export function starGround(height: (x: number, z: number) => number, anisotropy:
   const pos = land.attributes.position, colors: number[] = [], soil: number[] = [], field: number[] = [], c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i), y = height(x, z);
-    pos.setY(i, y); starGroundColor(x, z, y, c); colors.push(c.r, c.g, c.b);
+    pos.setY(i, y); starWildTint(x, z, y, height, c); colors.push(c.r, c.g, c.b);
     soil.push(...starSoil(x, z, y), starShade(x, z)); field.push(starFieldValue(x, z, y));
   }
   if (Math.abs(pos.getX(0) - minX) > 1e-6 || Math.abs(pos.getZ(0) - minZ) > 1e-6) throw new Error('starGround: mesh and grid disagree');
@@ -258,7 +262,8 @@ export function starShade(x: number, z: number): number {
   }
   let ao = 0;
   for (const [sx, sz, r] of shadeSpots) { const dx = x - sx, dz = z - sz; if (Math.abs(dx) > r || Math.abs(dz) > r) continue; ao = Math.max(ao, 1 - smooth(Math.hypot(dx, dz), r * .25, r)); }
-  return ao * .7;
+  // Out in the lighter wilds the shade under a crown or a stone is deeper, so the fields keep their darks (star r5).
+  return ao * (.7 + .2 * starWildness(x, z));
 }
 /** How much (x, z) is open meadow, where the fields' large-scale value (starFieldWear) applies: grassy, outside the town and the sanctum's ring. */
 export function starOpenMeadow(x: number, z: number, grass: number, town = 0, arena = 0): number {
@@ -269,7 +274,9 @@ export function starFieldValue(x: number, z: number, y: number): number {
   const [, grass] = starSoil(x, z, y), rect = Math.hypot(Math.max(-50 - x, 0, x - 50), Math.max(6 - z, 0, z - 97));
   const open = starOpenMeadow(x, z, grass, 1 - smooth(rect, 0, 7), 1 - smooth(Math.hypot(x, z + 75), 22, 28));
   const [lush, wear] = starFieldWear(x, z);
-  return .5 + (wear * .5 - lush * .5) * open;
+  // The dead ends' earth paths are trodden pale wherever they run (star r5).
+  const value = .5 + (wear * .5 - lush * .5) * open, spur = starSpurWear(x, z);
+  return spur > 0 ? Math.max(value, .5 + .5 * spur) : value;
 }
 /** Per vertex: how sandy, how grassy and how worn the ground is (0..1 each). */
 export function starSoil(x: number, z: number, y: number): [number, number, number] {
@@ -280,11 +287,12 @@ export function starSoil(x: number, z: number, y: number): [number, number, numb
   // Inside the town the ground is trodden earth with grass in the quiet corners; the arena's ring is bare.
   const town = 1 - smooth(rect(-50, 50, 6, 97), 0, 7), avenue = 1 - smooth(Math.abs(x), 6, 9.5) * 1;
   const arena = 1 - smooth(Math.hypot(x, z + 75), 22, 28);
-  const crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .75, STAR_CRATER.r * 1.2);
+  let crater = 1 - smooth(Math.hypot(x - STAR_CRATER.x, z - STAR_CRATER.z), STAR_CRATER.r * .75, STAR_CRATER.r * 1.2);
+  for (const s of STAR_SCORCHES) crater = Math.max(crater, (1 - smooth(Math.hypot(x - s.x, z - s.z), s.r * .5, s.r * 1.05)) * .85);
   // Bare, trodden spots through the town's lawns (a few metres across, where feet and carts go), so a lawn has
   // large value steps of turf and earth instead of one even mat.
   const bare = town * smooth(starNoise(x / 7, z / 7, 63) + starNoise(x / 2.5, z / 2.5, 64) * .3, .16, .3);
-  let worn = Math.max(trail * .75, town * .22, bare * .9, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater);
+  let worn = Math.max(trail * .75, town * .22, bare * .9, avenue * (z > -100 && z < 105 ? .7 : 0), arena * .9, crater, starSpurWear(x, z) * .95);
   // The sanctum's surround keeps a thin, patchy turf (tussocks and stones, starMeadow.ts and starFields.ts) instead of bare dirt.
   const grass = Math.max(0, 1 - sand * 1.1 - smooth(r, .9, .95)) * (1 - town * .12) * (1 - arena * .6) * (1 - crater * .8);
   // Out in the open meadow: bare trodden patches and tracks (starFieldWear) thin the sward to short turf.

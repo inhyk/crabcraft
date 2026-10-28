@@ -29,8 +29,10 @@ const CELL = .5;
 const LIFT = .03;
 /** Visible paving ends this far past a path's edge: inside onIslandPath's trim margin (.3). */
 const REACH = .26;
+/** A dead end frays out over this many metres (star r5). */
+const FRAY = 8;
 
-interface Seg { ax: number; az: number; bx: number; bz: number; half: number; kind: number; trim: boolean; along0: number; first: boolean; last: boolean }
+interface Seg { ax: number; az: number; bx: number; bz: number; half: number; kind: number; trim: boolean; along0: number; first: boolean; last: boolean; fray: number }
 
 const NOISE = /* glsl */ `
 vec2 spHash22(vec2 p){vec3 p3=fract(vec3(p.xyx)*vec3(.1031,.1030,.0973));p3+=dot(p3,p3.yzx+33.33);return fract((p3.xx+p3.yz)*p3.zy);}
@@ -49,6 +51,7 @@ uniform float spTileRows;
 #define SP_TILE_K ${TILE_K}
 #define SP_MAX_PAD ${MAX_PAD}
 #define SP_MAX_HOLE ${MAX_HOLE}
+#define SP_FRAY ${FRAY.toFixed(1)}
 // Paved squares (x, z, paved radius, rings radius) and clear holes (x, z, radius, ring kerb width).
 uniform vec4 spPad[SP_MAX_PAD];
 uniform int spPadCount;
@@ -111,7 +114,7 @@ vec2 spP=vSpW.xz;
 vec2 spDpx=dFdx(spP),spDpy=dFdy(spP);
 float spFoot=length(abs(spDpx)+abs(spDpy));
 // The network as a filleted union; the segment the pixel is deepest inside gives the pattern and its frame.
-float spSd=1e3,spBest=1e3,spKind=0.,spTrim=0.,spAlong=0.,spAcross=0.,spHalf=1.;
+float spSd=1e3,spBest=1e3,spKind=0.,spTrim=0.,spAlong=0.,spAcross=0.,spHalf=1.,spFray=1e3;
 ivec2 spTc=clamp(ivec2(floor((spP-spTileGrid.xy)*spTileGrid.z)),ivec2(0),ivec2(int(spTileGrid.w)-1,int(spTileRows)-1));
 int spTile=spTc.y*int(spTileGrid.w)+spTc.x;
 for(int q=0;q<SP_TILE_K/4;q++){
@@ -126,10 +129,16 @@ for(int q=0;q<SP_TILE_K/4;q++){
   float ovA=-t,ovB=t-L,ovJ=max(max(ovA*jn.x,ovB*jn.y),0.);
   vec2 bd=vec2(abs(across)-info.x,max(mix(ovA,-1e3,jn.x),mix(ovB,-1e3,jn.y)));
   float d=ovJ>0.?length(vec2(ovJ,across))-info.x:length(max(bd,0.))+min(max(bd.x,bd.y),0.);
+  // A dead end frays out (star r5): over its last few metres the way narrows to a rounded tongue, ragged at the edge.
+  float fr=texelFetch(spSegTex,ivec2(2,si),0).y,frA=mod(fr,2.),frB=floor(fr*.5),tEnd=min(frA>.5?t:1e3,frB>.5?L-t:1e3);
+  if(tEnd<SP_FRAY+2.){
+    float hw=info.x*mix(.66,1.,smoothstep(0.,SP_FRAY,tEnd+spNoise(spP*.7+3.)*1.2)),he=info.x*.66,ov=he-tEnd;
+    d=ov>0.?length(vec2(ov,across))-he:abs(across)-hw;
+  }
   spSd=spSmin(spSd,d,.25);
   // Prefer the wider way where two meet, so the avenue's kerbs and courses run through the junctions.
   float rank=d-info.x*.08;
-  if(rank<spBest){spBest=rank;spKind=info.y;spTrim=info.z;spAlong=t+texelFetch(spSegTex,ivec2(2,si),0).x;spAcross=across;spHalf=info.x;}
+  if(rank<spBest){spBest=rank;spKind=info.y;spTrim=info.z;spAlong=t+texelFetch(spSegTex,ivec2(2,si),0).x;spAcross=across;spHalf=info.x;spFray=tEnd;}
  }
  if(ids.w<.5)break;
 }
@@ -141,13 +150,15 @@ if(spHoleD<0.)discard;
 // Large-scale variation shared by everything below.
 float spN1=spNoise(spP*.31+1.7)*.6+spNoise(spP*.83-4.1)*.4,spN2=spNoise(spP*2.3+4.);
 float spEdgeRag=spNoise(spP*1.1+2.3)*.6+spNoise(spP*3.7)*.4;
-float spAlpha=1.-smoothstep(-.02,${REACH.toFixed(2)},spSd+spEdgeRag*.06);
+// Fraying: 0 on the made way, 1 at its frayed tip.
+float spFr=1.-smoothstep(0.,SP_FRAY,spFray);
+float spAlpha=1.-smoothstep(-.02,${REACH.toFixed(2)},spSd+spEdgeRag*mix(.06,.32,spFr));
 if(spAlpha<.004)discard;
 // Pattern. Trails (kind 2): irregular flags in grass. Elsewhere world-aligned courses (no seams at junctions),
 // rings round a plaza's middle, and kerbs in the outer band of trimmed ways and round the holes.
 float spKerbW=.34;
 bool spInPadRing=spRing>0.&&length(spP-spPadC)<spRing;
-float spKerbBand=spTrim>.5&&!spInPadRing?1.-step(spKerbW,-spSd):0.;
+float spKerbBand=spTrim>.5&&!spInPadRing&&spFray>SP_FRAY*.75?1.-step(spKerbW,-spSd):0.;
 float spHoleBand=spHoleK>0.?1.-step(spHoleK,spHoleD):0.;
 float spId,spOut;vec2 spLoc,spHalfS;
 vec2 spQ=spP+vec2(spNoise(spP*2.1),spNoise(spP*2.1+7.))*.02;
@@ -180,6 +191,8 @@ float spBlur=smoothstep(.08,.28,spFoot);
 float spJ=(1.-smoothstep(-spFw,spFw,-spOut-.004))*min(1.,.025/spFw)*(1.-spBlur*.7);
 // Trails: the stones thin out toward the edges, grass between them and over the missing ones.
 float spSkip=spKind>1.5?step(fract(spId*13.7),.06+.7*smoothstep(-.9,-.05,spSd)):0.;
+// A frayed end loses its stones toward the tip and at its edges: packed earth and grass come through.
+spSkip=max(spSkip,step(fract(spId*13.7),spFr*spFr*(.75+.25*smoothstep(-1.2,-.1,spSd))+spFr*.15));
 // Wear: the middle of each way and the plaza are trodden smooth; moss holds where feet do not go.
 float spMid=spKind>1.5?1.-smoothstep(.2,1.,abs(spAcross)):1.-smoothstep(.3,.95,abs(spAcross)/max(spHalf,.5));
 spMid=max(spMid*(1.-spKerbBand),(1.-smoothstep(1.,6.,spPadD+6.))*.8);
@@ -207,14 +220,16 @@ vec3 spJoint=mix(spGrit,spMossC,smoothstep(.25,.6,spMossy));
 spJoint=mix(spJoint,spSandC,smoothstep(.35,.8,spSandy)*.85);
 // Trail gaps are meadow, not joints.
 vec3 spTurf=mix(vec3(.05,.085,.06),vec3(.085,.11,.07),spN2*.5+.5);
-float spGap=spKind>1.5?max(1.-smoothstep(-.03,.02,-spOut),spSkip):0.;
+float spGap=spKind>1.5?max(1.-smoothstep(-.03,.02,-spOut),spSkip):spSkip;
+// Where a frayed way has lost its stones the gap is trodden earth with grit, turf only at the edges.
+spTurf=mix(spTurf,mix(vec3(.13,.115,.105),vec3(.2,.19,.2),step(.7,spNoise(spP*9.)*.5+.5))*(.8+.4*spN2),spFr*(1.-smoothstep(-.9,-.2,spSd))*step(spKind,1.5));
 vec3 spCol=mix(spStone,spJoint,spJ);
 spCol=mix(spCol,spTurf*(.8+.4*spNoise(spP*7.)),spGap*(1.-spBlur*.5));
 // Blown sand drifts over the stones from the edges and lies in the hollows.
 float spDrift=smoothstep(.55,.85,spSandy+spNoise(spP*.9+3.)*.3-spH*.3);
 spCol=mix(spCol,spSandC,spDrift*.8);
 // The kerb's outer lip sinks under the turf and the sand.
-float spLip=smoothstep(-.12,.0,spSd+spEdgeRag*.05);
+float spLip=smoothstep(-.12,.0,spSd+spEdgeRag*.05)*(1.-spFr);
 spCol=mix(spCol,mix(spTurf,spSandC,spSandy*.5),spLip*.8);
 float spRecess=(1.-smoothstep(0.,.4,spH))*(1.-spDrift)*(1.-spBlur)*.35;
 spCol*=1.-spRecess;
@@ -278,13 +293,15 @@ export interface StarPavingOptions {
   pads?: readonly {x: number; z: number; r: number; rings: number}[];
   /** Round clearances (a fountain's basin), with a ring of kerbstones `kerb` wide round each. */
   holes?: readonly {x: number; z: number; r: number; kerb: number}[];
+  /** Dead ends (a path's first or last point) that fray out into earth instead of stopping square. */
+  frays?: readonly {x: number; z: number}[];
 }
 export interface StarPaving { root: THREE.Group }
 
 /** Starhaven's ways (same `covers` contract as islandPaths). Ways 6 m wide or more are avenues, `trim` ones get kerbs, 2.4 m ones off the trims are trails. */
 export function starPaving(height: (x: number, z: number) => number, paths: IslandPath[], trails: number, opts: StarPavingOptions): StarPaving {
   const root = new THREE.Group(); root.name = 'world2-moonlit-paving';
-  const pads = opts.pads ?? [], holes = opts.holes ?? [];
+  const pads = opts.pads ?? [], holes = opts.holes ?? [], frays = opts.frays ?? [];
   const segs: Seg[] = [];
   paths.forEach((path, pi) => {
     let along = 0;
@@ -292,7 +309,9 @@ export function starPaving(height: (x: number, z: number) => number, paths: Isla
     for (let k = 1; k < path.points.length; k++) {
       const [ax, az] = path.points[k - 1], [bx, bz] = path.points[k], len = Math.hypot(bx - ax, bz - az);
       if (len < .001) continue;
-      segs.push({ax, az, bx, bz, half: path.width / 2, kind, trim: !!path.trim, along0: along, first: k === 1, last: k === path.points.length - 1});
+      const frayAt = (x: number, z: number) => frays.some((f) => Math.hypot(f.x - x, f.z - z) < .1);
+      const fray = (k === 1 && frayAt(ax, az) ? 1 : 0) + (k === path.points.length - 1 && frayAt(bx, bz) ? 2 : 0);
+      segs.push({ax, az, bx, bz, half: path.width / 2, kind, trim: !!path.trim, along0: along, first: k === 1, last: k === path.points.length - 1, fray});
       along += len;
     }
   });
@@ -336,7 +355,7 @@ export function starPaving(height: (x: number, z: number) => number, paths: Isla
   geo.setIndex(index); geo.computeVertexNormals(); geo.computeBoundingSphere();
 
   const segData = new Float32Array(segs.length * 12);
-  segs.forEach((s, i) => segData.set([s.ax, s.az, s.bx, s.bz, s.half, s.kind, s.trim ? 1 : 0, (s.first ? 0 : 1) + (s.last ? 0 : 2), s.along0, 0, 0, 0], i * 12));
+  segs.forEach((s, i) => segData.set([s.ax, s.az, s.bx, s.bz, s.half, s.kind, s.trim ? 1 : 0, (s.first ? 0 : 1) + (s.last ? 0 : 2), s.along0, s.fray, 0, 0], i * 12));
   const tileData = new Float32Array(tiles.length * TILE_K);
   tiles.forEach((list, t) => list.forEach((k, j) => { tileData[t * TILE_K + j] = k + 1; }));
   const tex = (data: Float32Array, w: number, h: number) => { const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType); t.needsUpdate = true; return t; };
@@ -373,6 +392,16 @@ export function starPaving(height: (x: number, z: number) => number, paths: Isla
   const surface = new THREE.Mesh(geo, material);
   surface.name = 'starhaven-paving-surface'; surface.receiveShadow = true; surface.renderOrder = -1;
   root.add(surface);
+  // Where stones are actually laid (the frayed tongues narrower than the ways' boxes): the meadow grows up to it.
+  const frayed = (s: Seg, x: number, z: number) => {
+    const d = segBox(s, x, z);if (!s.fray) return d;
+    const dx = s.bx - s.ax, dz = s.bz - s.az, L = Math.hypot(dx, dz), t = ((x - s.ax) * dx + (z - s.az) * dz) / L, across = Math.abs(((x - s.ax) * dz - (z - s.az) * dx) / L);
+    const tEnd = Math.min(s.fray & 1 ? t : 1e3, s.fray & 2 ? L - t : 1e3);
+    if (tEnd >= FRAY + 2) return d;
+    const hw = s.half * (.66 + .34 * THREE.MathUtils.smoothstep(tEnd, 0, FRAY)), he = s.half * .66, ov = he - tEnd;
+    return ov > 0 ? Math.hypot(ov, across) - he : across - hw;
+  };
+  root.userData.paved = (x: number, z: number) => holeDist(x, z) >= 0 && (tileOf(x, z).some((k) => frayed(segs[k], x, z) <= .12) || padDist(x, z) <= .12);
   root.userData.covers = (x: number, z: number) => holeDist(x, z) >= 0 && (onIslandPath(paths, x, z) || padDist(x, z) <= .3);
   root.userData.stats = {segments: segs.length, pads: pads.length, holes: holes.length, cells: index.length / 6, vertices: pos.length / 3, tiles: tiles.length, maxPerTile: Math.max(...tiles.map(t => t.length))};
   return {root};

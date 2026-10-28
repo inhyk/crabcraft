@@ -94,3 +94,30 @@ export function starFieldWear(x: number, z: number): [number, number] {
   const track = (1 - sm(t, .022, .06)) * sm(starNoise(x / 30, z / 30, 145), -.25, .05);
   return [lush * (1 - track), Math.max(bare, track)];
 }
+
+/*
+ * What the eclipse did (star r5): shards of the fallen star struck the island as the sun went out. One toppled the
+ * observatory's eighth column (its drums lie where they fell, outward from the ring) and scorched the ground at its
+ * foot; one burst beside the starroad, where a pilgrim dropped his pack and lantern and ran. The astronomer's table
+ * still stands by the armillary with the night's charts on it.
+ */
+const COL8 = 8 / 10 * Math.PI * 2;
+/** The fallen column: unit direction it fell (outward from the ring) and the stump's foot. */
+export const STAR_FALLEN = {x: 80 + Math.cos(COL8) * 9, z: -40 + Math.sin(COL8) * 9, dx: Math.cos(COL8), dz: Math.sin(COL8)} as const;
+/** Its pieces lying in the grass: distance out along the fall, sideways drift, length, yaw wobble; the last is the capital. */
+export const STAR_FALLEN_DRUMS: readonly {d: number; side: number; len: number; turn: number}[] = [
+  {d: 1.55, side: .1, len: 1.25, turn: .06}, {d: 2.95, side: .32, len: 1.05, turn: -.22}, {d: 4.2, side: .1, len: .8, turn: .4},
+];
+export const STAR_FALLEN_CAPITAL = {d: 5.35, side: -.65} as const;
+/** The astronomer's observing table by the armillary, and the scorch marks where the shards struck. */
+export const STAR_TABLE = {x: 74.6, z: -44.3, yaw: .75} as const;
+export const STAR_PILGRIM = {x: -9.3, z: -29.4, yaw: .4} as const;
+export const STAR_SCORCHES: readonly {x: number; z: number; r: number}[] = [
+  {x: -11.8, z: -33.1, r: 2.5}, {x: STAR_FALLEN.x + STAR_FALLEN.dx * 2.2 + 1.6, z: STAR_FALLEN.z + STAR_FALLEN.dz * 2.2 + .4, r: 2.1},
+];
+/** The story's solids (registered with the other story props, starFieldSpots.ts): the drums and the table. */
+export function starEclipseSolids(): {x: number; z: number; r: number; h: number}[] {
+  const out = STAR_FALLEN_DRUMS.map((p) => ({x: STAR_FALLEN.x + STAR_FALLEN.dx * p.d - STAR_FALLEN.dz * p.side, z: STAR_FALLEN.z + STAR_FALLEN.dz * p.d + STAR_FALLEN.dx * p.side, r: .62, h: 1.2}));
+  out.push({x: STAR_TABLE.x, z: STAR_TABLE.z, r: .8, h: 1});
+  return out;
+}

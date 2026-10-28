@@ -66,7 +66,8 @@ try{
     assert.ok(r.lamps['starhaven-crook-posts']>=4&&r.lamps['starhaven-crystal-lamps']>=4&&r.lamps.posts<26,'varied street lamps: '+JSON.stringify(r.lamps));
     assert.ok(r.names['star-cart-lanterns']>=1,'a lamp hung on a cart');
     assert.ok(r.darkGlass>=1,'the newcomers\' house has dark windows');
-    assert.ok(r.leaves.length&&r.leaves.every(k=>k==='star-wind-v1-leaves'),'teal canopies: '+r.leaves);
+    // Star r5: the kit trees' crowns take the night shading by species (teal, silver, crystal); bushes keep the teal.
+    assert.ok(r.leaves.length&&r.leaves.every(k=>k==='star-wind-v1-leaves'||/^star-wind-v2-night-Leaves_NormalTree-(teal|silver|crystal)$/.test(k)),'night canopies: '+r.leaves);
     assert.equal(r.floor,'2a3346','dark slate sanctum floor');assert.ok(r.rubble>0&&r.stones>0,'rubble and loose stones');
     assert.ok(!r.seaRing&&r.seaPath,'sea: glitter path, no reflected ring');
   }
