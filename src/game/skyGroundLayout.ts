@@ -86,6 +86,9 @@ export const SKY_WAYS:SkyWay[]=[
  garden('herb-path',[[-12,36.2],[-19,32.6],[-27,30],[-37,28.3],[-45,27],[-50,26],[-51.5,25.6]],1.7,1.35),
  garden('shore-path',[[3,9],[10,9.6],[20,12.6],[31,15.4],[42,18.6],[52,21.4],[61,22],[62.5,21.8]],1.8,1.35),
 ];
+/** The ways as plain polylines (IslandPath shape: points, full width at the widest sample) for callers that want them;
+ *  skyPathDistance / skyWayField are the exact test (per-sample widths, junction fillets, clearings). */
+export const SKY_PATHS:{points:[number,number][];width:number}[]=SKY_WAYS.map(w=>({points:w.pts.map(([x,z])=>[x,z] as [number,number]),width:2*Math.max(...w.pts.map(p=>p[2]))}));
 /** Round clearings where the long paths end: paved, ragged, with a ring of stones left in the grass. */
 export const SKY_CLEARINGS:{x:number;z:number;r:number}[]=[{x:-50.5,z:25.8,r:3.2},{x:61.5,z:22,r:3.4}];
 
