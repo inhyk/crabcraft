@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import {curveRings,seedBloom,seedLantern,skyRandom,sweep,type Ring} from './skyTreeGeometry';
+import {curveRings,seedBloom,skyRandom,sweep,type Ring} from './skyTreeGeometry';
 import {SKY_COURT,SKY_GATE} from './skyTreeLayout';
-import {SKY_NOISE,SKY_TREE_DETAIL,SKY_TREE_TIME,skyBarkMaterial,skyFoliageMaterials,skyLanternMaterial,skyStoneMaterial} from './skyTreeMaterials';
+import {SKY_NOISE,SKY_TREE_DETAIL,SKY_TREE_TIME,skyBarkMaterial,skyCrownCoreMaterial,skyFoliageMaterials,skyLanternMaterial,skyStoneMaterial} from './skyTreeMaterials';
+import {skyRootFall} from './skyTreeFall';
 import {buildSkyTree,skyParts,type SkyParts} from './skyWorldTree';
 
 /*
@@ -159,13 +160,23 @@ function column(x:number,z:number,y:number,high:boolean):THREE.BufferGeometry{
  },high?48:32,y);
 }
 
+/** A low moulded shrine (2 m) carrying a seed bloom, where the column on the tree's axis stood. */
+function shrine(x:number,z:number,y:number,high:boolean):THREE.BufferGeometry{
+ const hs=[-.4,.3,.36,.5,.62,.74,1.5,1.6,1.72,1.86,1.94,2.0,2.06];
+ return turned(x,z,y,hs,(h,a)=>{const oct=1+.05*Math.pow(Math.abs(Math.cos(a*4)),8),petal=Math.pow(Math.abs(Math.cos(a*4)),3);
+  return h<.3?1.85*oct:h<.36?1.78*oct:h<.62?1.6+.08*Math.sin(Math.PI*(h-.36)/.26):h<.74?1.42:h<1.5?(1.28-.08*Math.sin(Math.PI*(h-.74)/.76))*oct:h<1.6?1.34:h<1.94?(1.3+.38*(h-1.6)/.34)*(1+.1*petal):h<2.0?1.62:.7;},high?40:28,y);
+}
+
 /** The sanctuary's stone, roots and lights, poured into the shared parts. */
 function buildSanctuary(height:Height,high:boolean,parts:SkyParts){
  const rand=skyRandom(4243),{x:cx,z:cz}=SKY_COURT,cy=height(cx,cz);
  let columns=0;
  for(let i=0;i<10;i++){
   const a=(i+1)/12*Math.PI*2,x=Math.sin(a)*23,z=cz+Math.cos(a)*23;if(z>-56)continue;
-  const g=height(x,z),y=Math.min(g,cy+.02);parts.stone.push(column(x,z,y,high));columns++;
+  const g=height(x,z),y=Math.min(g,cy+.02);
+  // On the tree's axis a low shrine instead of a column, so from the avenue the court never hides the trunk's foot.
+  if(Math.abs(x)<1){parts.stone.push(shrine(x,z,y,high));parts.lanterns.push(seedBloom(new THREE.Vector3(x,y+2.05,z),1.25,rand()));parts.lanternCount++;continue;}
+  parts.stone.push(column(x,z,y,high));columns++;
   // A living root climbs the column from the ground to the capital, a few leaves where it rests.
   const ph=rand()*Math.PI*2,turns=1.15+rand()*.3,pts:THREE.Vector3[]=[];
   for(let k=0;k<=24;k++){const t=k/24,an=ph+t*turns*Math.PI*2,rr=(t<.06?1.9-t*8:1.34)+(t>.9?(t-.9)*3.5:0);pts.push(new THREE.Vector3(x+Math.cos(an)*rr,y-.25+t*8.2,z+Math.sin(an)*rr));}
@@ -175,31 +186,30 @@ function buildSanctuary(height:Height,high:boolean,parts:SkyParts){
   for(let k=0;k<14;k++){const t=.55+rand()*.45,q=c.getPointAt(t);n.set(q.x-x,.4,q.z-z).normalize();q.addScaledVector(n,.25);col.set(rand()<.2?'#f2b8c6':'#3f8f80').multiplyScalar(.8+rand()*.3);parts.cards.add(q,.38+rand()*.18,rand()*6.3,col,n,col.r>.5?1:0);}
   parts.lanterns.push(seedBloom(new THREE.Vector3(x,y+9.42,z),.95,rand()));parts.lanternCount++;
  }
- // The root gate: a moulded plinth each side, three roots braided up from it, leaning in to meet over the road,
- // blossom at the knot and a seed lantern hanging in the opening.
+ // The root gate: a moulded plinth each side and three roots braided up from it into a tall pointed arch. Its crown
+ // rises out of the avenue's frame, so from the approach the posts frame the trunk and nothing hangs across it.
  const gy=(x:number)=>height(x,SKY_GATE.z),S=SKY_GATE.halfSpan,H=SKY_GATE.height,top=Math.max(gy(-S),gy(S),gy(0));
  for(const side of [-1,1]){
   const x=side*S,g=gy(x);
   // Plinth: a moulded foot, a panelled die and a cornice the roots climb out of.
   const ph=[-.4,.3,.36,.44,.52,.6,.68,.76,.84,1.9,1.98,2.08,2.18,2.3,2.36,2.4];
   parts.stone.push(turned(x,SKY_GATE.z,g,ph,(h,a)=>{const oct=1+.05*Math.pow(Math.abs(Math.cos(a*4)),10),panel=1-.025*Math.pow(Math.abs(Math.sin(a*4)),.5);
-   return h<.3?1.62*oct:h<.36?1.55*oct:h<.6?1.44+.08*Math.sin(Math.PI*(h-.36)/.24):h<.84?1.3:h<1.9?1.22*oct*panel:h<1.98?1.3:h<2.18?1.36+.08*Math.sin(Math.PI*(h-1.98)/.2):h<2.36?1.5*oct:.95;},high?40:28,g));
-  const spine=new THREE.CatmullRomCurve3([new THREE.Vector3(x,g+2.1,SKY_GATE.z),new THREE.Vector3(x*.98,g+4.8,SKY_GATE.z),new THREE.Vector3(x*.9,top+7.6,SKY_GATE.z),new THREE.Vector3(x*.55,top+10.4,SKY_GATE.z),new THREE.Vector3(x*.12,top+H-.4,SKY_GATE.z),new THREE.Vector3(-x*.08,top+H-.9,SKY_GATE.z)],false,'centripetal');
-  const f=spine.computeFrenetFrames(90,false);
+   return (h<.3?1.62*oct:h<.36?1.55*oct:h<.6?1.44+.08*Math.sin(Math.PI*(h-.36)/.24):h<.84?1.3:h<1.9?1.22*oct*panel:h<1.98?1.3:h<2.18?1.36+.08*Math.sin(Math.PI*(h-1.98)/.2):h<2.36?1.5*oct:.95)*1.08;},high?40:28,g));
+  const spine=new THREE.CatmullRomCurve3([new THREE.Vector3(x,g+2.1,SKY_GATE.z),new THREE.Vector3(x*.99,g+7,SKY_GATE.z),new THREE.Vector3(x*.9,top+12.5,SKY_GATE.z),new THREE.Vector3(x*.64,top+17,SKY_GATE.z),new THREE.Vector3(x*.3,top+19.9,SKY_GATE.z),new THREE.Vector3(-x*.05,top+H-.2,SKY_GATE.z)],false,'centripetal');
+  const f=spine.computeFrenetFrames(110,false);
   for(let s=0;s<3;s++){
    const pts:THREE.Vector3[]=[];
-   for(let k=0;k<=90;k++){const t=k/90,an=s/3*Math.PI*2+t*Math.PI*2*2.4*side,rr=.42*(1-.35*t),p=spine.getPointAt(t);pts.push(p.addScaledVector(f.normals[k],Math.cos(an)*rr).addScaledVector(f.binormals[k],Math.sin(an)*rr));}
-   const c=new THREE.CatmullRomCurve3(pts),segs=high?110:60;
-   parts.bark.push(sweep(curveRings(c,segs),high?10:7,(j,a)=>(.36-.17*j/segs)*(1+.06*Math.sin(a*3+j*.3)),(j)=>[.82+.18*j/segs,THREE.MathUtils.clamp(1-j/segs*5,0,1)],4));
+   for(let k=0;k<=110;k++){const t=k/110,an=s/3*Math.PI*2+t*Math.PI*2*2.8*side,rr=.55*(1-.4*t),p=spine.getPointAt(t);pts.push(p.addScaledVector(f.normals[k],Math.cos(an)*rr).addScaledVector(f.binormals[k],Math.sin(an)*rr));}
+   const c=new THREE.CatmullRomCurve3(pts),segs=high?130:70;
+   parts.bark.push(sweep(curveRings(c,segs),high?10:7,(j,a)=>(.46-.22*j/segs)*(1+.06*Math.sin(a*3+j*.3)),(j)=>[.82+.18*j/segs,THREE.MathUtils.clamp(1-j/segs*5,0,1)],4));
   }
-  // Leaves along the upper half.
+  // Leaves in tufts along the arm, thicker toward the crown.
   const col=new THREE.Color(),n=new THREE.Vector3();
-  for(let k=0;k<26;k++){const t=.4+rand()*.6,q=spine.getPointAt(t);n.set(rand()-.5,rand()*.6,rand()-.5).normalize();q.addScaledVector(n,.55);col.set(rand()<.25?'#f2b8c6':rand()<.5?'#5fae95':'#3f8f80').multiplyScalar(.85+rand()*.25);parts.cards.add(q,.5+rand()*.25,rand()*6.3,col,n,col.r>.5?1:0);}
+  for(let k=0;k<34;k++){const t=.3+Math.pow(rand(),.7)*.7,q=spine.getPointAt(t);n.set(rand()-.5,rand()*.6,rand()-.5).normalize();q.addScaledVector(n,.7);col.set(rand()<.22?'#f2b8c6':rand()<.5?'#5fae95':'#3f8f80').multiplyScalar(.85+rand()*.25);parts.cards.add(q,.55+rand()*.3,rand()*6.3,col,n,col.r>.5?1:0);}
  }
  // Blossom over the knot.
- const knot=new THREE.Vector3(0,top+H-.5,SKY_GATE.z),col=new THREE.Color(),n=new THREE.Vector3();
- for(let k=0;k<70;k++){n.set(rand()*2-1,rand()*1.4-.4,rand()*2-1).normalize();const q=knot.clone().add(new THREE.Vector3(n.x*2.4,n.y*1.3+.4,n.z*1.6));const bloom=rand()<.55;col.set(bloom?(rand()<.5?'#f2b8c6':'#f7f0ea'):(rand()<.5?'#5fae95':'#3f8f80')).multiplyScalar(.9+rand()*.15);parts.cards.add(q,bloom?.62:.7,rand()*6.3,col,n.clone().add(new THREE.Vector3(0,.4,0)).normalize(),bloom?1:0);}
- parts.lanterns.push(seedLantern(new THREE.Vector3(0,top+H-1.2,SKY_GATE.z),1.15,.3));parts.lanternCount++;
+ const knot=new THREE.Vector3(0,top+H-.3,SKY_GATE.z),col=new THREE.Color(),n=new THREE.Vector3();
+ for(let k=0;k<60;k++){n.set(rand()*2-1,rand()*1.4-.4,rand()*2-1).normalize();const q=knot.clone().add(new THREE.Vector3(n.x*2.2,n.y*1.2+.3,n.z*1.4));const bloom=rand()<.55;col.set(bloom?(rand()<.5?'#f2b8c6':'#f7f0ea'):(rand()<.5?'#5fae95':'#3f8f80')).multiplyScalar(.9+rand()*.15);parts.cards.add(q,bloom?.62:.7,rand()*6.3,col,n.clone().add(new THREE.Vector3(0,.4,0)).normalize(),bloom?1:0);}
  return {columns};
 }
 
@@ -215,11 +225,14 @@ export function skySanctuaryScene(height:Height,quality:'high'|'low'):SkySanctua
  const stone=new THREE.Mesh(merge(parts.stone),skyStoneMaterial());stone.name='sky-sanctuary-stone';stone.castShadow=stone.receiveShadow=true;
  const fol=skyFoliageMaterials();fol.leaves.shadowSide=THREE.DoubleSide;
  const leaves=new THREE.Mesh(parts.cards.build(tree.cardHalf*1.3),fol.leaves);leaves.name='sky-world-tree-crown';leaves.customDepthMaterial=fol.depth;leaves.castShadow=leaves.receiveShadow=true;
+ // The crown's cores draw first, so the cards behind them fail the depth test instead of shading.
+ const cores=new THREE.Mesh(merge(parts.cores),skyCrownCoreMaterial());cores.name='sky-world-tree-crown-core';cores.receiveShadow=true;cores.renderOrder=-1;
  const lanterns=new THREE.Mesh(merge(parts.lanterns),skyLanternMaterial());lanterns.name='sky-seed-lanterns';
  const court=courtMesh(height,high);
- root.add(wood,stone,leaves,lanterns,court);
+ const fall=skyRootFall(height,quality);
+ root.add(wood,stone,leaves,cores,lanterns,court,fall);
  const tris=(m:THREE.Mesh)=>(m.geometry.index?m.geometry.index.count:m.geometry.getAttribute('position').count)/3;
- const stats={...tree.stats,lanterns:parts.lanternCount,columns:sanctuary.columns,woodTriangles:tris(wood),stoneTriangles:tris(stone),courtTriangles:tris(court),meshes:root.children.length};
+ const stats={...tree.stats,coreTriangles:tris(cores),cardTriangles:tris(leaves),lanterns:parts.lanternCount,columns:sanctuary.columns,woodTriangles:tris(wood),stoneTriangles:tris(stone),courtTriangles:tris(court),meshes:root.children.length};
  root.userData.skySanctuary=stats;
  return {root,stats};
 }
