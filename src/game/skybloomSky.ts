@@ -46,7 +46,8 @@ export function skybloomRadiance(elev: number, cosPhi: number, sunElev: number, 
   for (let c = 0; c < 3; c++) col[c] += SUN_TINT[c] * glow;
   // Below the horizon lies the cloud sea, hazed to one colour per bearing.
   // Seen edge-on and far off, the sunlit sea is the whitest thing in the frame: brighter than the haze above it.
-  if (elev < 0) { const sea = mix3(SEA_AWAY, SEA_SUN, Math.pow(toward, 1.6)), k = 1.35 + 0.1 * toward; col = mix3(col, [sea[0] * k, sea[1] * k, sea[2] * k], smooth(0, -0.025, elev)); }
+  // Away from the sun the far sea is a step dimmer (r4: front-lit, it blew out to a white floor in the west view).
+  if (elev < 0) { const sea = mix3(SEA_AWAY, SEA_SUN, Math.pow(toward, 1.6)), k = 1.12 + 0.3 * toward; col = mix3(col, [sea[0] * k, sea[1] * k, sea[2] * k], smooth(0, -0.025, elev)); }
   return [col[0] * gain, col[1] * gain, col[2] * gain];
 }
 

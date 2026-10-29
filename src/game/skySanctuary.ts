@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {curveRings,seedBloom,skyRandom,sweep,type Ring} from './skyTreeGeometry';
-import {SKY_COURT,SKY_GATE} from './skyTreeLayout';
+import {SKY_COURT,SKY_GATE,SKY_OVERLOOK} from './skyTreeLayout';
 import {SKY_NOISE,SKY_TREE_DETAIL,SKY_TREE_TIME,skyBarkMaterial,skyCrownCoreMaterial,skyFoliageMaterials,skyLanternMaterial,skyStoneMaterial} from './skyTreeMaterials';
 import {skyRootFall} from './skyTreeFall';
 import {buildSkyTree,skyParts,type SkyParts} from './skyWorldTree';
@@ -210,7 +210,59 @@ function buildSanctuary(height:Height,high:boolean,parts:SkyParts){
  // Blossom over the knot.
  const knot=new THREE.Vector3(0,top+H-.3,SKY_GATE.z),col=new THREE.Color(),n=new THREE.Vector3();
  for(let k=0;k<60;k++){n.set(rand()*2-1,rand()*1.4-.4,rand()*2-1).normalize();const q=knot.clone().add(new THREE.Vector3(n.x*2.2,n.y*1.2+.3,n.z*1.4));const bloom=rand()<.55;col.set(bloom?(rand()<.5?'#f2b8c6':'#f7f0ea'):(rand()<.5?'#5fae95':'#3f8f80')).multiplyScalar(.9+rand()*.15);parts.cards.add(q,bloom?.62:.7,rand()*6.3,col,n.clone().add(new THREE.Vector3(0,.4,0)).normalize(),bloom?1:0);}
+ buildOverlook(height,high,parts,rand);
  return {columns};
+}
+
+/**
+ * The west field's ruined overlook (SKY_OVERLOOK): fluted stumps broken off on a slant with a torn edge, a drum lying
+ * in the grass, a low shrine with a seed bloom, a root and ivy climbing the tall stump. Moss gathers low and on the
+ * breaks; the root and leaves are the dark accents against the cream stone and the bright cloud sea behind.
+ */
+function buildOverlook(height:Height,high:boolean,parts:SkyParts,rand:()=>number){
+ const O=SKY_OVERLOOK,radial=high?36:24,X=new THREE.Vector3(1,0,0),Z=new THREE.Vector3(0,0,1);
+ const fl=(a:number)=>Math.pow(.5+.5*Math.cos(a*14),2);
+ const tear=(a:number,seed:number)=>.62+.22*Math.sin(a*3+seed)+.12*Math.sin(a*7+seed*2.3)+.06*Math.sin(a*13+seed*5.1);
+ const moss=(above:number):[number,number]=>[.62+.38*THREE.MathUtils.smoothstep(above,0,1.8),THREE.MathUtils.clamp(1-above/1.4,0,1)];
+ O.stumps.forEach(([dx,dz,H],k)=>{
+  const x=O.x+dx,z=O.z+dz;let g=Infinity;for(let i=0;i<8;i++){const a=i/8*Math.PI*2;g=Math.min(g,height(x+Math.cos(a)*1.2,z+Math.sin(a)*1.2));}
+  const y=g,tilt=.32+.12*k,tn=new THREE.Vector3(Math.cos(tilt),Math.sin(tilt),0).applyAxisAngle(new THREE.Vector3(0,1,0),k*2.1+.7);
+  const hs=[-.4,.22,.3,.42,.56,.7,.82];for(let i=1;i<=(high?10:6);i++)hs.push(.82+(H-.5-.82)*i/(high?10:6));
+  const rings:Ring[]=hs.map(h=>({c:new THREE.Vector3(x,y+h,z),n:X.clone(),b:Z.clone(),along:h,twist:0}));
+  // The break: three rings on a tilted plane, each smaller and torn, closing to a point a little off the axis.
+  const bz=new THREE.Vector3().crossVectors(tn,new THREE.Vector3(0,1,0)).normalize();
+  for(const [lift,_] of [[0,0],[.18,0],[.3,0]] as const)rings.push({c:new THREE.Vector3(x,y+H-.3+lift,z),n:tn.clone(),b:bz.clone(),along:H,twist:0});
+  rings.push({c:new THREE.Vector3(x+.12,y+H,z-.08),n:tn.clone(),b:bz.clone(),along:H,twist:0});
+  const n=rings.length;
+  parts.stone.push(sweep(rings,radial,(j,a)=>1.15*stumpR(j,a),(j,_a,p)=>{const m=moss(p.y-y);return j>=n-4?[m[0]*.9,Math.max(m[1],.55)]:m;},1));
+  parts.stone[parts.stone.length-1].deleteAttribute('aBark');
+  function stumpR(j:number,a:number){
+   const h=hs[Math.min(j,hs.length-1)],oct=1+.035*Math.pow(Math.abs(Math.cos(a*4)),8);
+   if(j>=n-4){const t=j-(n-4);return t===3?.08:(.78-.05*fl(a))*(t===0?1:t===1?.92*tear(a,k*3.1):.55*tear(a,k*3.1+1.3));}
+   if(h<.22)return 1.32*oct;if(h<.3)return 1.32-(h-.22)/.08*.1;if(h<.56)return 1.1+.1*Math.sin(Math.PI*(h-.3)/.26);if(h<.82)return 1.02-.1*Math.sin(Math.PI*(h-.56)/.26);
+   return (.8-.04*(h-.82)/H)*(1-.05*fl(a));
+  }
+  if(k===0){
+   // A root climbs the tall stump and ivy hangs off its break.
+   const ph=rand()*Math.PI*2,pts:THREE.Vector3[]=[];
+   for(let q=0;q<=20;q++){const t=q/20,an=ph+t*1.3*Math.PI*2,rr=(t<.08?1.55-t*4:1.12)+(t>.92?(t-.92)*2:0);pts.push(new THREE.Vector3(x+Math.cos(an)*rr,y-.2+t*(H-.25),z+Math.sin(an)*rr));}
+   const c=new THREE.CatmullRomCurve3(pts),segs=high?44:26;
+   parts.bark.push(sweep(curveRings(c,segs),high?7:5,j=>.2-.1*j/segs,(j)=>[.8,THREE.MathUtils.clamp(1-j/segs*6,0,1)],3));
+   const col=new THREE.Color(),nr=new THREE.Vector3();
+   for(let q=0;q<16;q++){const t=.35+rand()*.65,p=c.getPointAt(t);nr.set(p.x-x,.3,p.z-z).normalize();p.addScaledVector(nr,.2);col.set(rand()<.18?'#f2b8c6':rand()<.5?'#2f7568':'#3f8f80').multiplyScalar(.72+rand()*.25);parts.cards.add(p,.34+rand()*.16,rand()*6.3,col,nr,col.r>.5?1:0);}
+  }
+ });
+ // The drum, lying where it fell, half sunk in the turf.
+ {const [dx,dz,yaw,len]=O.drum,cx=O.x+dx,cz=O.z+dz,ax=new THREE.Vector3(Math.cos(yaw),0,Math.sin(yaw)),up=new THREE.Vector3(0,1,0),side=new THREE.Vector3().crossVectors(ax,up);
+  const gy=height(cx,cz)+.5,ts=[-.5,-.5,-.47,-.3,-.1,.1,.3,.47,.5,.5],rings:Ring[]=ts.map(t=>({c:new THREE.Vector3(cx,gy,cz).addScaledVector(ax,t*len),n:up.clone(),b:side.clone(),along:t,twist:0}));
+  parts.stone.push(sweep(rings,radial,(j,a)=>{const e=j===0||j===ts.length-1;return e?.05:(j===1||j===ts.length-2?.7:.76)*(1-.05*fl(a))*(j===2||j===ts.length-3?.97:1);},(_j,_a,p)=>moss(p.y-gy+.75),1));
+  parts.stone[parts.stone.length-1].deleteAttribute('aBark');
+  const col=new THREE.Color(),nr=new THREE.Vector3();
+  for(let q=0;q<7;q++){const p=new THREE.Vector3(cx,gy+.6,cz).addScaledVector(ax,(rand()-.5)*len*.9);nr.set(rand()-.5,1,rand()-.5).normalize();col.set(rand()<.5?'#2f7568':'#4f8f63').multiplyScalar(.8+rand()*.2);parts.cards.add(p,.28+rand()*.12,rand()*6.3,col,nr,0);}
+ }
+ // The shrine with its seed bloom, a warm light against the sky.
+ {const x=O.x+O.shrine[0],z=O.z+O.shrine[1];let g=Infinity;for(let i=0;i<8;i++){const a=i/8*Math.PI*2;g=Math.min(g,height(x+Math.cos(a)*1.6,z+Math.sin(a)*1.6));}
+  parts.stone.push(shrine(x,z,g,high));parts.lanterns.push(seedBloom(new THREE.Vector3(x,g+2.05,z),1.05,rand()));parts.lanternCount++;}
 }
 
 export interface SkySanctuaryScene {root:THREE.Group;stats:Record<string,number>}

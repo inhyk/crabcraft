@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {realmHeight} from '../sim/world/ground';
+import {SKY_OVERLOOK} from './skyTreeLayout';
 import {SKY_CARGO,SKY_GLASSHOUSE,SKY_MAST,skyTownPlan,skyTownBare,skyTownMarketGround} from './skyTownLayout';
 
 /*
@@ -149,6 +150,8 @@ const KEEP_CLEAR:[number,number,number][]=[
  [-12,78,3],[12,72,3],[-12,56,3],[-47,40,4],[-52,28,4],[-44,14,4],[-7,26,3],[7,4,3],[-7,-22,3],[-50,26,9],[61,22,6],[0,-34,4],
  [36,8,4],[44,-6,8],[34,-22,4],[62,34,4],[68,20,4],[60,4,4],[-17,-34,4],[17,-42,4],[-16,-54,4],[16,68,5],[16,56,5],[-16,74,5],[0,-44,6],[-12,84,4],
  [-16,56,3],[-16,38,3],[16,38,3],[16,80,3],[-7.4,-40,2.5],[7.4,-40,2.5],
+ // The west field's ruined overlook (skyTreeLayout.SKY_OVERLOOK): trees and props keep off its stones.
+ [-72,3,5.5],
 ];
 /** Enemy homes (createFrontierDefinition, up to 16 + 16): x +-(44..65), z 20 down in 12 m rows; solids keep off their wander discs. */
 for(let index=0;index<32;index++){const x=(index%2?1:-1)*(44+index%4*7),z=20-Math.floor(index/2)*12;KEEP_CLEAR.push([x,z,6.5]);}
@@ -179,7 +182,8 @@ export const SKY_GROVES:SkyGrove[]=[
  {name:'south-east-copse',x:56,z:82,r:5,species:['blossom','jade','white'],rocks:0,log:false},
 ];
 /** Rock groups out in the open fields (3-5 stones, sizes 4 : 1), so each field has a secondary accent. */
-export const SKY_ROCK_GROUPS=[{name:'east-field-stones',x:77,z:5,r:4,n:5},{name:'west-field-stones',x:-71,z:1,r:4,n:4}];
+// The west field's accent is the ruined overlook now (skyTreeLayout.SKY_OVERLOOK), where its stones stood.
+export const SKY_ROCK_GROUPS=[{name:'east-field-stones',x:77,z:5,r:4,n:5}];
 
 /**
  * Planted drifts (Jekyll): long soft-edged swathes along the wind (x .8, z .6), one colour each with a stray of
@@ -188,10 +192,16 @@ export const SKY_ROCK_GROUPS=[{name:'east-field-stones',x:77,z:5,r:4,n:5},{name:
  * hue: 0 pink .. 1 butter (skyBloomHue's scale).
  */
 export const SKY_DRIFTS=[
- {x:45,z:-10,len:17,wid:6,hue:.08},{x:52,z:5,len:13,wid:4.2,hue:.62},{x:57,z:-21,len:10,wid:3.4,hue:.92},
- {x:-45,z:-2,len:19,wid:7,hue:.62},{x:-52,z:-17,len:13,wid:4.4,hue:.08},{x:-56,z:9,len:10,wid:3.4,hue:.92},
+ {x:47,z:-14,len:9,wid:3.2,hue:.08},{x:46,z:7,len:8,wid:2.8,hue:.62},{x:71,z:-16,len:9,wid:3,hue:.92},{x:70,z:8,len:7,wid:2.4,hue:.08},
+ {x:-47,z:5,len:9,wid:3.2,hue:.62},{x:-48,z:-16,len:8,wid:2.8,hue:.08},{x:-70,z:-18,len:8,wid:2.6,hue:.92},{x:-66,z:11,len:6,wid:2.2,hue:.08},
  {x:13,z:-19,len:11,wid:3,hue:.92},{x:-16,z:-30,len:10,wid:2.8,hue:.62},{x:-14,z:2,len:9,wid:2.6,hue:.08},
 ];
+/**
+ * Where the east and west views stand the crab: bare turf round each (r 6 to 8 m, ragged) so the crab reads, and
+ * inside FIELD_R only the planted clumps above flower, with plain grass between them (r4: the drift noise speckled
+ * the whole field and the crab was lost in it).
+ */
+const FIELD_SPOTS=[[60,-5],[-60,-5]] as const,FIELD_R=30;
 /** Whether a tree of scale s may stand at (x, z). */
 function freeForTree(x:number,z:number,s:number){
  if(skyEdge(x,z)>.755||skyPathDistance(x,z)<3+1.2*s||!skyClearOfPoints(x,z,1.6))return false;
@@ -343,16 +353,23 @@ export function skyGroundMap():SkyGroundMap{
   // Wildflowers in drifts (style sheet: 8-15% of the ground): long swathes combed along the wind (3 : 1), thickest at
   // the forest's edge, none on worn ground or within 1.5 m of a way, few in the mown town.
   const wx=x*.8+z*.6,wz=-x*.6+z*.8,drift=fbm(wx/24,wz/8,17)+.3*fbm(x/4,z/4,19);
-  let flowers=smooth(drift+edge[k]*.4-.45*town,.33,.56),hue=skyBloomHue(x,z);
+  let spotD=99;for(const [sx,sz] of FIELD_SPOTS)spotD=Math.min(spotD,Math.hypot(x-sx,z-sz));
+  let flowers=smooth(drift+edge[k]*.4-.45*town,.33,.56)*smooth(spotD,FIELD_R-6,FIELD_R+4),hue=skyBloomHue(x,z);
   for(const d of SKY_DRIFTS){const u=((x-d.x)*.8+(z-d.z)*.6)/d.len,v=(-(x-d.x)*.6+(z-d.z)*.8)/d.wid,e=Math.hypot(u,v)+rag*.18,f=1-smooth(e,.55,1);if(f>flowers*.7){hue=d.hue;}flowers=Math.max(flowers,f);}
   flowers*=(1-worn)*(1-dirt*.6)*(1-smooth(edgeR,.74,.8));
   flowers*=smooth(pd,1.5,2.4);
+  flowers*=smooth(spotD+rag*1.6,6,8);
+  // The overlook stands on trodden turf.
+  const dO=Math.hypot(x-SKY_OVERLOOK.x,z-SKY_OVERLOOK.z);worn=Math.max(worn,(1-smooth(dO+rag*1.5,3.2,6))*.4);
   let isBare=bare[k]===1;
   if(!isBare){
    for(const [hx,hz] of SKY_HOUSES)if(rectDist(x,z,hx,hz,5.4,5.9)<.6){isBare=true;break;}
    if(townSolidDist(x,z)<.3)isBare=true;
    if(Math.hypot(x+12,z-84)<3.2||ra<SKY_ARENA.r+.6||wt<7)isBare=true;
-   if(skyTownBare(x,z))isBare=true;// the town's boardwalk, sheds, cargo and stalls (skyTownLayout.ts)
+   if(skyTownBare(x,z))isBare=true;
+   // Nothing grows through the overlook's stones.
+   if(dO<6){const O=SKY_OVERLOOK;for(const [dx,dz] of O.stumps)if(Math.hypot(x-O.x-dx,z-O.z-dz)<1.45)isBare=true;if(Math.hypot(x-O.x-O.shrine[0],z-O.z-O.shrine[1])<1.95)isBare=true;
+    const [ddx,ddz,yaw,len]=O.drum,u=(x-O.x-ddx)*Math.cos(yaw)+(z-O.z-ddz)*Math.sin(yaw),v=-(x-O.x-ddx)*Math.sin(yaw)+(z-O.z-ddz)*Math.cos(yaw);if(Math.abs(u)<len*.52&&Math.abs(v)<.8)isBare=true;}// the town's boardwalk, sheds, cargo and stalls (skyTownLayout.ts)
    for(let q=0;q<10&&!isBare;q++){const a=(q+1)/12*Math.PI*2,px=Math.sin(a)*23,pz=-72+Math.cos(a)*23;if(pz<=-56&&Math.hypot(x-px,z-pz)<2)isBare=true;}
   }
   // Blade height: short mown turf in town, tall at the forest's edge and the field margins.
