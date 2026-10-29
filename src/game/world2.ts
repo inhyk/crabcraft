@@ -489,8 +489,10 @@ export class HiddenWorld {
     if(this.game.objective)this.game.objective.star=this.rendered&&this.chapter===2&&!this.inTidecrown;
     if(this.game.objective)this.game.objective.ember=this.rendered&&this.chapter===5&&!this.inTidecrown;
     this.hub.update(dt,time);
+    // Skybloom's fog follows its sky's horizon and its own environment map is bound only while it is shown.
+    this.sixth.air.frame(this.game.scene,this.game.camera,this.game.engine.renderer,this.game.engine.quality,this.chapter===6&&this.rendered);
     this.snowGate.update(time);this.emberGate.update(time);
-    if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
+    if(this.chapter>=5){if(this.chapter===5)this.fifth.update(time);else this.sixth.update(time,this.game.engine.quality,this.game.player.unit.pos);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
     if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);this.fourth.updateSnow(dt,this.game.engine.renderer,this.game.units,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.snowRequests.update(time,!!observation);}
     this.third.useEnvironment(this.game.scene,this.game.engine.renderer,this.chapter===3&&this.rendered);
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
@@ -503,7 +505,7 @@ export class HiddenWorld {
     }
     if(!this.rendered)return;
     if(this.chapter===5){this.fifth.air?.apply(this.game.scene,this.game.camera,this.game.engine.renderer,this.game.player.unit.pos);return;}
-    if(this.chapter>=5){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set('#b6dcce');fog.density=.0023;}return;}
+    if(this.chapter>=5)return;
     if(this.chapter===4){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){const e=this.game.camera.matrixWorld.elements;this.fourth.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.fourth.sky.fogDensity(e[13],-e[9]);}return;}
     if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2)this.third.fog(this.game.camera,fog);return;}
     const echo=this.game.enemies.find(e=>e.isEcho);

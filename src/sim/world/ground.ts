@@ -74,5 +74,21 @@ export function realmHeight(chapter:5|6,x:number,z:number):number {
  const hills=Math.sin(x*.047)*Math.sin(z*.035)*(chapter===5?2:1.4)*(1-Math.exp(-x*x/900));
  const y=6+rise*smoothstep(-z,0,65)+hills;
  const plaza=1-smoothstep(Math.hypot(x,z+72),20,28);
- return y+(6+rise-y)*plaza;
+ const h=y+(6+rise-y)*plaza;
+ return chapter===6?h-skybloomShoulder(x,z,edge):h;
+}
+
+/**
+ * World VI only: the outer meadows fall away toward the cliff lip, so the sea of clouds shows past the ridge from the
+ * town and the avenue. Zero (exactly) in every play zone: the town and harbour, the avenue, the sanctuary arena, the
+ * world tree's north strip, and every quest, NPC and enemy point (all lie inside edge .58).
+ */
+function skybloomShoulder(x:number,z:number,edge:number):number {
+ if(edge<=.58)return 0;
+ const out=(d:number,a:number,b:number)=>smoothstep(d,a,b);
+ const town=Math.hypot(Math.max(0,Math.abs(x)-46),Math.max(0,20-z,z-98));
+ const avenue=Math.abs(x)-(z>-72&&z<100?10:0)+(z<=-72||z>=100?99:0);
+ const arena=Math.hypot(x,z+72)-30,north=z<-90?Math.abs(x)-30:99;
+ const keep=out(town,0,14)*out(avenue,0,14)*out(arena,0,12)*out(north,0,14);
+ return 14*smoothstep(edge,.58,.83)*keep;
 }
