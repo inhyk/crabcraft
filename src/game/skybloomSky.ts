@@ -260,9 +260,10 @@ export class SkybloomSky {
       }
     }
     for (let c = 0; c < 3; c++) up[c] /= wsum;
-    // A high sun in thin air: warm white (#fff2d6), barely reddened.
+    // A morning sun in thin air: warm white (#fff2d6), barely reddened. Stronger than the old 35-degree sun's 4.2 so
+    // level ground, lit at sin 25 instead of sin 35, keeps its value while walls and crowns facing it get brighter.
     this.sunColor = toColor(SUN_TINT);
-    this.sunIntensity = 4.2;
+    this.sunIntensity = 4.9;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance. The fill keeps
     // its blue so shade reads blue-violet (#5a6a9a range) against the warm sun, never black or olive.
     this.hemiSky = toColor([up[0] * 7.6, up[1] * 4.1, up[2] * 1.35] as V3, 1);
