@@ -16,6 +16,8 @@ export const SKY_GRID={minX:-150,minZ:-175,step:2,nx:151,nz:176};
 export const SKY_MAP={minX:-150,minZ:-175,w:300,h:350};
 export const SKY_ARENA={x:0,z:-72,r:20};
 export const SKY_TREE={x:0,z:-112};
+/** The gate back to Emberreach (skybloomIsland.ts): just north-west of the spawn at -12, 84. */
+export const SKY_GATE=[-13,86.5] as const;
 
 export const skyHeight=(x:number,z:number)=>realmHeight(6,x,z);
 /** The rendered terrain's surface (the 2 m PlaneGeometry's own triangles), never under the gameplay surface. */
@@ -149,7 +151,7 @@ function townSolidDist(x:number,z:number){
 /** Every quest, NPC and enemy point in World VI (FRONTIER_POINTS[6] and the sim's POIs): solids keep away. */
 const KEEP_CLEAR:[number,number,number][]=[
  [-12,78,3],[12,72,3],[-12,56,3],[-47,40,4],[-52,28,4],[-44,14,4],[-7,26,3],[7,4,3],[-7,-22,3],[-50,26,9],[61,22,6],[0,-34,4],
- [36,8,4],[44,-6,8],[34,-22,4],[62,34,4],[68,20,4],[60,4,4],[-17,-34,4],[17,-42,4],[-16,-54,4],[16,68,5],[16,56,5],[-16,74,5],[0,-44,6],[-12,84,4],
+ [36,8,4],[44,-6,8],[34,-22,4],[62,34,4],[68,20,4],[60,4,4],[-17,-34,4],[17,-42,4],[-16,-54,4],[16,68,5],[16,56,5],[-16,74,5],[0,-44,6],[-12,84,4],[SKY_GATE[0],SKY_GATE[1],4.5],
  [-16,56,3],[-16,38,3],[16,38,3],[16,80,3],[-7.4,-40,2.5],[7.4,-40,2.5],
  // The west field's ruined overlook (skyTreeLayout.SKY_OVERLOOK): trees and props keep off its stones.
  [-72,3,5.5],
@@ -370,7 +372,7 @@ export function skyGroundMap():SkyGroundMap{
   if(!isBare){
    for(const [hx,hz] of SKY_HOUSES)if(rectDist(x,z,hx,hz,5.4,5.9)<.6){isBare=true;break;}
    if(townSolidDist(x,z)<.3)isBare=true;
-   if(Math.hypot(x+12,z-84)<3.2||ra<SKY_ARENA.r+.6||wt<7)isBare=true;
+   if(Math.hypot(x-SKY_GATE[0],z-SKY_GATE[1])<3.2||Math.hypot(x+12,z-84)<3.2||ra<SKY_ARENA.r+.6||wt<7)isBare=true;
    if(skyTownBare(x,z))isBare=true;
    // Nothing grows through the overlook's stones.
    if(dO<6){const O=SKY_OVERLOOK;for(const [dx,dz] of O.stumps)if(Math.hypot(x-O.x-dx,z-O.z-dz)<1.45)isBare=true;if(Math.hypot(x-O.x-O.shrine[0],z-O.z-O.shrine[1])<1.95)isBare=true;
