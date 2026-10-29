@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {SKY_AIRSHIP, SKY_CARGO, SKY_MAST, SKY_PIER, SKY_SHEDS} from './skyTownLayout';
+import {SKY_AIRSHIP, SKY_CARGO, SKY_LOADING, SKY_MAST, SKY_PIER, SKY_SHEDS} from './skyTownLayout';
 import {Bucket, CLOTH, Frame, M, ROOF, STONE, WOOD, atlasUv, beam, bx, clothSheet, disc, hipRoof, lath, ring, rod, sagPoints, skyMaterials, type TownCtx} from './skyTownKit';
 import {hangingLantern, lanternPost, signEmblem} from './skyTown';
 
@@ -289,8 +289,58 @@ function mooringMast(ctx: TownCtx, x: number, z: number, H: number) {
   hangingLantern(ctx, new THREE.Matrix4().makeTranslation(x - 1.0, top + 2.1, z + 1.0), 1);
   // The ship: bow toward the mast (-x), envelope nose seated in the cup.
   const ship = airship(ctx, cup.x + 8.5, top + 1.0 - 7.6 - .5, z, -Math.PI / 2, false);
+  loading(ctx, x, z, y0, top, cup.x + 8.5, top + 1.0 - 7.6, z);
   ctx.stats.mast = 1;
   return ship;
+}
+
+/**
+ * The mast's ship taking on cargo, on the side the town sees: a timber loading stage on the grass with steps, crates
+ * and a sack on it, a cleated gangway with rope rails up to the deck, and a derrick on the mast whose boom swings a
+ * crate in a rope sling over the gunwale. (mx, mz, y0, top): the mast's foot and platform; (sx, deck, sz): the ship's
+ * centre and gunwale height (airship(): bow along -x, beam along z, half-width 2 at mid-ship).
+ */
+function loading(ctx: TownCtx, mx: number, mz: number, y0: number, top: number, sx: number, deck: number, sz: number) {
+  const {h, timber, metal} = ctx, L = SKY_LOADING;
+  const g = h(L.x, L.z), sy = g + L.deck;
+  // Stage: plank deck on posts with braces, three steps down on the south side.
+  timber.add(bx(L.hx * 2, .14, L.hz * 2), new THREE.Matrix4().makeTranslation(L.x, sy - .07, L.z), C.deck, WOOD.planks, 81);
+  for (const ox of [-1, 1]) for (const oz of [-1, 1]) {
+    const px = L.x + ox * (L.hx - .15), pz = L.z + oz * (L.hz - .15);
+    timber.add(beam(new V(px, h(px, pz) - .3, pz), new V(px, sy - .1, pz), .2), null, C.timberDark, WOOD.beam, 82 + ox + oz);
+  }
+  for (const oz of [-1, 1]) timber.add(beam(new V(L.x - L.hx + .15, h(L.x, L.z) + .1, L.z + oz * (L.hz - .15)), new V(L.x + L.hx - .15, sy - .25, L.z + oz * (L.hz - .15)), .1), null, C.timberDark, WOOD.beam, 86);
+  for (let k = 0; k < 3; k++) { const sy0 = g + L.deck * (k + 1) / 4, zz = L.z + L.hz + .3 + (2 - k) * .32; timber.add(bx(1.3, .1, .34), new THREE.Matrix4().makeTranslation(L.x - .6, sy0, zz), C.deck, WOOD.planks, 87 + k); timber.add(beam(new V(L.x - .6, h(L.x - .6, zz) - .2, zz), new V(L.x - .6, sy0 - .05, zz), .12), null, C.timberDark, WOOD.beam, 90); }
+  ctx.kits.push({file: 'props', piece: 'Crate_Wooden', x: L.x + .8, y: sy, z: L.z - .3, yaw: .35, size: .9}, {file: 'props', piece: 'Crate_Wooden', x: L.x + .9, y: sy + .9, z: L.z - .35, yaw: .1, size: .7},
+    {file: 'props', piece: 'Bag', x: L.x + .2, y: sy, z: L.z + .6, yaw: 1.4, size: .7}, {file: 'props', piece: 'Barrel', x: L.x - 1.1, y: sy, z: L.z - .6, yaw: 0, size: .85});
+  // Gangway from the stage's north edge up to the gunwale amidships, cleats across, rope rails on posts.
+  const gx = L.x - .5, half = (zz: number) => Math.max(.04, Math.pow(Math.max(0, 1 - Math.pow(Math.abs(zz) / 6.5, zz > 0 ? 2.4 : 3.2)), .5));
+  const lz = sx - gx, gun = sz + 2.0 * half(lz) + .05, foot = new V(gx, sy + .02, L.z - L.hz + .2), head = new V(gx, deck + .45 * Math.pow(lz / 6.5, 2) + .05, gun - .1);
+  timber.add(beam(foot, head, 1.0, .09), null, C.deck, WOOD.planks, 91);
+  const run = head.clone().sub(foot), n = Math.floor(run.length() / .42);
+  for (let k = 1; k < n; k++) { const p = foot.clone().addScaledVector(run, k / n).add(new V(0, .06, 0)); timber.add(beam(p.clone().add(new V(-.48, 0, 0)), p.clone().add(new V(.48, 0, 0)), .06, .05), null, C.timberDark, WOOD.beam, 92); }
+  for (const ox of [-.5, .5]) {
+    const posts = [0, .5, 1].map(t => foot.clone().addScaledVector(run, t).add(new V(ox, 0, 0)));
+    for (const p of posts) timber.add(beam(p, p.clone().add(new V(0, .95, 0)), .07), null, C.timber, WOOD.beam, 93);
+    timber.add(rod(sagPoints(posts[0].clone().add(new V(0, .9, 0)), posts[2].clone().add(new V(0, .9, 0)), .12, 10), .03, 4), null, C.rope, WOOD.beam, 0);
+  }
+  // Derrick: a boom from the mast's south-east leg out over the bow quarter, a topping lift to the platform, and a
+  // crate in a rope sling hanging from its tip just outboard of the gunwale, on its way down onto the deck.
+  const pivot = new V(mx + 1.05, y0 + 5.2, mz + 1.05), tip = new V(sx - 3.6, top - .4, sz + 3.1);
+  timber.add(beam(pivot, tip, .2), null, C.timberDark, WOOD.beam, 94);
+  metal.add(beam(pivot.clone().add(new V(-.1, -.15, -.1)), pivot.clone().add(new V(.25, .15, .25)), .09), null, C.gold);
+  timber.add(rod(sagPoints(tip, new V(mx + .4, top + 1.05, mz + .4), .15, 8), .035, 4), null, C.rope, WOOD.beam, 0);
+  metal.add(new THREE.SphereGeometry(.14, 10, 8), new THREE.Matrix4().makeTranslation(tip.x, tip.y - .1, tip.z), C.gold);
+  const hook = new V(tip.x, deck + 2.5, tip.z), cr = new V(tip.x, deck + 1.05, tip.z);
+  timber.add(rod([tip, hook], .03, 4), null, C.rope, WOOD.beam, 0);
+  metal.add(ring(.12, .03, 12), new THREE.Matrix4().makeTranslation(hook.x, hook.y - .1, hook.z), C.gold);
+  ctx.kits.push({file: 'props', piece: 'Crate_Wooden', x: cr.x, y: cr.y, z: cr.z, yaw: .5, size: .85});
+  // The sling: four ropes from the hook to the crate's top corners and a lash round it.
+  const c = Math.cos(.5), s = Math.sin(.5), q = .42, ct = cr.y + .86;
+  for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) timber.add(rod([hook.clone().add(new V(0, -.18, 0)), new V(cr.x + (a * c + b * s) * q, ct, cr.z + (-a * s + b * c) * q)], .022, 3), null, C.rope, WOOD.beam, 0);
+  // Back on the stage a second sling waits, slack, round the barrel.
+  timber.add(rod(sagPoints(new V(L.x - 1.1, sy + 1.05, L.z - .6), new V(L.x - .2, sy + .05, L.z - .9), .25, 8), .025, 3), null, C.rope, WOOD.beam, 0);
+  void h(mx, mz);
 }
 
 /**

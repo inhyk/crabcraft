@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {realmHeight} from '../sim/world/ground';
 import {SKY_OVERLOOK} from './skyTreeLayout';
-import {SKY_CARGO,SKY_GLASSHOUSE,SKY_MAST,skyTownPlan,skyTownBare,skyTownMarketGround} from './skyTownLayout';
+import {SKY_CARGO,SKY_GLASSHOUSE,SKY_LOADING,SKY_MAST,skyTownPlan,skyTownBare,skyTownMarketGround} from './skyTownLayout';
 
 /*
  * Skybloom's ground plan, shared by the ground shader (skyGround.ts), the meadow (skyMeadow.ts), the paving
@@ -142,6 +142,7 @@ function townSolidDist(x:number,z:number){
  for(const s of stalls)d=Math.min(d,Math.hypot(x-s.x,z-s.z)-2.7);
  d=Math.min(d,Math.hypot(x-cart.x,z-cart.z)-1.4,Math.hypot(x-SKY_MAST.x,z-SKY_MAST.z)-2.3,rectDist(x,z,SKY_GLASSHOUSE.x,SKY_GLASSHOUSE.z,SKY_GLASSHOUSE.hx,SKY_GLASSHOUSE.hz));
  for(const c of SKY_CARGO)d=Math.min(d,rectDist(x,z,c.x,c.z,c.hx,c.hz));
+ d=Math.min(d,rectDist(x,z,SKY_LOADING.x,SKY_LOADING.z,SKY_LOADING.hx,SKY_LOADING.hz+.9));
  return d;
 }
 
