@@ -66,7 +66,7 @@ export async function scenery(area: number, renderer: THREE.WebGLRenderer): Prom
     const island = area === 6 ? new SkybloomIsland() : new FrontierIsland(area);
     scene.add(island.root); island.root.visible = true;
     const air = island instanceof FrontierIsland ? island.air : null;
-    scene.fog = new THREE.FogExp2(air ? air.sky.skyHorizon.clone().multiplyScalar(.82) : area === 5 ? '#3d2a2c' : '#bcd6ea', .003);
+    scene.fog = new THREE.FogExp2(island instanceof SkybloomIsland ? island.air.sky.skyHorizon : air ? air.sky.skyHorizon.clone().multiplyScalar(.82) : '#3d2a2c', .003);
     // The monitor tone-maps in the renderer at its own exposure, not World V's view exposure the dome divides out.
     if (air) air.sky.material.uniforms.exposure.value = 1;
     return { scene, height: (x, z) => island.height(x, z), raycast: (a, b) => island.collision.raycast(a, b), update: (_dt, t) => island.update(t), dispose };
