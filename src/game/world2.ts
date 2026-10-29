@@ -1,4 +1,5 @@
 import {FrontierIsland} from './frontierIsland';
+import {SkybloomIsland} from './skybloomIsland';
 import {FRONTIER_POINTS} from './frontierQuests';
 import {FRONTIER_BOUNDS} from './realmLayout';
 import * as THREE from 'three';
@@ -76,7 +77,7 @@ export class HiddenWorld {
   readonly third=new DawnIsland();
   readonly fourth=new SnowIsland();
   readonly fifth=new FrontierIsland(5);
-  readonly sixth=new FrontierIsland(6);
+  readonly sixth=new SkybloomIsland();
   readonly emberRequests:DawnRequests;
   readonly skyRequests:DawnRequests;
   private emberGate:FrostPortal;
@@ -486,8 +487,10 @@ export class HiddenWorld {
     if(!this.rendered||this.chapter!==2)this.night.release(this.game.scene);
     if(this.game.objective)this.game.objective.star=this.rendered&&this.chapter===2&&!this.inTidecrown;
     this.hub.update(dt,time);
+    // Skybloom's fog follows its sky's horizon and its own environment map is bound only while it is shown.
+    this.sixth.air.frame(this.game.scene,this.game.camera,this.game.engine.renderer,this.game.engine.quality,this.chapter===6&&this.rendered);
     this.snowGate.update(time);this.emberGate.update(time);
-    if(this.chapter>=5){(this.chapter===5?this.fifth:this.sixth).update(time);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
+    if(this.chapter>=5){if(this.chapter===5)this.fifth.update(time);else this.sixth.update(time,this.game.engine.quality,this.game.player.unit.pos);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
     if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);this.fourth.updateSnow(dt,this.game.engine.renderer,this.game.units,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.snowRequests.update(time,!!observation);}
     this.third.useEnvironment(this.game.scene,this.game.engine.renderer,this.chapter===3&&this.rendered);
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);
@@ -499,7 +502,7 @@ export class HiddenWorld {
       if(this.travelArmed&&distance<1.7&&this.game.time>this.travelAt){this.travelArmed=false;this.travelAt=this.game.time+3;this.travel();}
     }
     if(!this.rendered)return;
-    if(this.chapter>=5){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){fog.color.set(this.chapter===5?'#a07b70':'#b6dcce');fog.density=.0023;}return;}
+    if(this.chapter>=5){const fog=this.game.scene.fog;if(this.chapter===5&&fog instanceof THREE.FogExp2){fog.color.set('#a07b70');fog.density=.0023;}return;}
     if(this.chapter===4){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2){const e=this.game.camera.matrixWorld.elements;this.fourth.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.fourth.sky.fogDensity(e[13],-e[9]);}return;}
     if(this.chapter===3){const fog=this.game.scene.fog;if(fog instanceof THREE.FogExp2)this.third.fog(this.game.camera,fog);return;}
     const echo=this.game.enemies.find(e=>e.isEcho);
