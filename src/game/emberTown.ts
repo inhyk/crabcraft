@@ -810,6 +810,31 @@ export class EmberTown {
     }
   }
 
+  /** A cast in progress at one tap (local frame tm: mouth face at z .92, +z out): an iron runner on two stone saddles
+   *  carries the iron out of the mouth, a white-hot stream falls from its lip into the casting channel, splashing and
+   *  throwing sparks and fume where it lands. */
+  private pour(tm: THREE.Matrix4, y0: number) {
+    const L = (x: number, y: number, z: number) => tm.clone().multiply(trs(x, y, z));
+    // Runner: an iron trough lined with glowing iron, its lip spouted, on two dressed saddle blocks.
+    this.S(box(.5, .12, 1.15).translate(0, .78, 1.45), tm, '#2b292d', PAT.plate, 0, .45, .82, y0, 40);
+    for (const s of [-1, 1]) this.S(box(.08, .2, 1.15).translate(s * .21, .9, 1.45), tm, '#2b292d', PAT.plate, 0, .45, .82, y0, 41);
+    this.S(box(.32, .1, .26).translate(0, .78, 2.1), tm, '#2b292d', PAT.plate, 0, .45, .82, y0, 42);
+    for (const z of [1.15, 1.8]) this.S(box(.62, .72, .34).translate(0, .36, z), tm, '#4f4b4f', PAT.ashlar, .6, .9, 0, y0, 43);
+    this.G(box(.34, .04, 1.4).translate(0, .86, 1.5), tm, [1, 1, 1], .3, 1.3, (_x, _y, z) => lin(z < 1.3 ? '#ffd36b' : '#ffb04a', 3.2));
+    // The stream: a falling arc off the lip, thick at the lip and thinning as it falls, white-hot at the top.
+    const pts = Array.from({length: 7}, (_, k) => { const u = k / 6; return new V(0, .86 - .8 * u * u, 2.2 + .42 * u); });
+    const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, .085, 7, false);
+    { const P = tube.getAttribute('position'); for (let k = 0; k < P.count; k++) { const u = Math.min(1, Math.max(0, (.86 - P.getY(k)) / .8)), cx = 0, cy = .86 - .8 * u * u, cz = 2.2 + .42 * u, sc = 1 - .4 * u; P.setXYZ(k, cx + (P.getX(k) - cx) * sc, cy + (P.getY(k) - cy) * sc, cz + (P.getZ(k) - cz) * sc); } }
+    this.G(tube, tm, [1, 1, 1], .25, 2.1, (_x, y) => { const k = Math.min(1, Math.max(0, (.86 - y) / .8)); return lin(k < .5 ? '#fff0b0' : '#ffc45a', 4.2 - 1.2 * k); });
+    // Where it lands: a bright splash crown in the channel, sparks, fume, and the light thrown on the yard.
+    const land = new V(0, .07, 2.64).applyMatrix4(tm);
+    this.G(new THREE.CircleGeometry(.34, 12).rotateX(-Math.PI / 2).translate(0, .08, 2.64), tm, lin('#ffd36b', 3.4), .5, 3.3);
+    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + .4; this.G(new THREE.ConeGeometry(.035, .18 + .1 * (k % 2), 4).translate(0, .09, 0), L(Math.sin(a) * .22, .1, 2.64 + Math.cos(a) * .22).multiply(trs(0, 0, 0, 0, Math.cos(a) * .5, -Math.sin(a) * .5)), lin('#ffb24a', 3), .6, k); }
+    this.sparks.push({x: land.x, y: land.y + .2, z: land.z, s: .55, n: 18}, {x: land.x, y: land.y + .9, z: land.z, s: .3, n: 8});
+    this.puffs.push({x: land.x, y: land.y + .5, z: land.z, s: .45});
+    this.light(land.x, land.y + .8, land.z, 7, '#ffa040', 2.6);
+  }
+
   /** The town's blast furnace: battered basalt shaft in iron hoops and straps, a blast main round its waist, a charging
    *  gallery, a verdigris gas cap over the glowing throat, three tap mouths, an inclined skip hoist up to the gallery. */
   private furnace() {
@@ -863,6 +888,7 @@ export class EmberTown {
       const p = new V(0, .9, 2.0).applyMatrix4(tm); this.light(p.x, p.y + .5, p.z, 10, '#ff7a2a', 2.8);
       const q = new V(0, 0, 3.2).applyMatrix4(tm); this.pool(q.x, q.z, 3.8, '#ff6a24', .58, i * 2.2);
       this.sparks.push({x: p.x, y: p.y + .6, z: p.z, s: .35, n: 9});
+      if (i === 0) this.pour(tm, y0);
     }
     // Inclined skip hoist: two lattice chords from a stone foot up to the gallery, a skip half-way with ore.
     { const t = -FORGE_HOIST.a * Math.PI / 180, hm = m.clone().multiply(trs(0, 0, 0, t + Math.PI)), foot = new V(0, 0, FORGE_HOIST.r), top = new V(0, gy + .2, go - .2);
