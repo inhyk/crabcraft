@@ -66,7 +66,9 @@ void main(){
     occ+=pow(hor,1.3);
   }
   occ/=8.;
-  float ao=1.-clamp(occ*1.3,0.,.75);
+  // Open ground beside a wall keeps at least 0.4 of its sky: with the long morning shadows a deeper floor turned a
+  // house's shadow next to its wall into a black slab (r4, village view).
+  float ao=1.-clamp(occ*1.1,0.,.6);
   ao=mix(ao,min(ao,${UNDER.toFixed(2)}),smoothstep(.0,.3,hc));
   gl_FragColor=vec4(ao,0.,0.,1.);
 }`;

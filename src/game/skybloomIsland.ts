@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {realmHeight} from '../sim/world/ground';
 import {FRONTIER_TOWN,layoutFrontier,type FrontierChapter} from './realmLayout';
 import {StarPortal} from './portal';
+import {DawnPortal} from './dawnPortal';
 import type {Poi} from '../world/types';
 import {SkybloomAir} from './skybloomAir';
 import {SkyGroundLane} from './skyGroundLane';
@@ -18,7 +19,7 @@ export class SkybloomIsland {
  readonly town=FRONTIER_TOWN;
  readonly arena:Poi;
  readonly collision;
- readonly back:StarPortal;
+ readonly back:StarPortal|DawnPortal;
  readonly next:StarPortal|null;
  private animated:THREE.ShaderMaterial[]=[];
  /** Sky, sun, fog, environment, cloud sea, cliff skirt, floating isles, falls and drifting petals (skybloomAir.ts). */
@@ -32,7 +33,9 @@ export class SkybloomIsland {
  constructor(){
   const fire=false as boolean,chapter=this.chapter;this.root.name=fire?'WORLD V · Emberreach':'WORLD VI · Skybloom';this.root.visible=false;
   this.collision=layoutFrontier(chapter);this.arena={id:'bossArena',position:new THREE.Vector3(0,this.height(0,-72),-72),radius:20,yaw:0};
-  this.back=new StarPortal(this.spawn,fire?'잿불 항구 → 서리빛 설원':'하늘 항구 → 잿불 군도');
+  // The way back to Emberreach: a finished cream-and-gilt gate (dawnPortal.ts 'sky'), not the old dark primitive ring that
+  // clipped the village view's corner as a black blob (r4).
+  this.back=new DawnPortal(new THREE.Vector3(this.spawn.x,this.height(this.spawn.x,this.spawn.z),this.spawn.z),'하늘 항구 → 잿불 군도','sky');
   this.next=fire?new StarPortal(new THREE.Vector3(26,this.height(26,-44),-44),'잿불 성역 → 하늘숲'):null;
   const stone=new THREE.MeshStandardMaterial({color:fire?'#393239':'#d3d6b5',roughness:.82,metalness:fire?.25:.08});
   const metal=new THREE.MeshStandardMaterial({color:fire?'#77656b':'#b7b38a',metalness:.55,roughness:.4});
