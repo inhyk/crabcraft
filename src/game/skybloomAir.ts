@@ -231,8 +231,10 @@ export class SkybloomAir {
     this.followSun(0, 10, 0);
     sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.12;
     // The fill is about the dome's own level: under the raking morning sun shade keeps 40 to 55 percent of the lit
-    // value (0.75 left the long shadows at a quarter of it, p10 under 40).
-    this.hemi.color.copy(sky.hemiSky); this.hemi.groundColor.copy(sky.hemiGround); this.hemi.intensity = 0.95;
+    // value (0.75 left the long shadows at a quarter of it, p10 under 40). The sky half is lifted 1.45x and the grass
+    // bounce 1.5x: the houses' long shadows on the town lawns sat at a third of the lit turf and read as black slabs
+    // in the village view (r4 finish, all three judges); exposure stays where it is.
+    this.hemi.color.copy(sky.hemiSky).multiplyScalar(1.45); this.hemi.groundColor.copy(sky.hemiGround).multiplyScalar(1.5); this.hemi.intensity = 0.95;
     root.add(sun, sun.target, this.hemi);
     root.userData.skybloomAir = {cloudY: CLOUD_Y, ...this.stats};
     this.animated.push(sky.material, clouds.material, ...land.animated, petalMat, birdMat);
