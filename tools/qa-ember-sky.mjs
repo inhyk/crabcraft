@@ -21,7 +21,8 @@ await mkdir(out, {recursive: true});
 
 // [x, z, yaw, pitch, dist] as in cap.mjs: the camera orbits the crab standing at (x, z).
 const VALUE_VIEWS = {arrivalF: [-3, 68, -.75, .28, 20], village: [0, 55, .5, .5, 40], street: [0, 45, .3, .12, 9], east: [60, -5, -1.57, .3, 26], west: [-60, -5, 1.57, .3, 26], approach: [0, -30, 0, .22, 26], arena: [0, -75, 0, .5, 34], aerial: [0, 0, 0, 1.25, 180], tree: [0, -40, 0, .12, 30]};
-const TARGET = {p50: [55, 85], sat: [.25, .4], skyTop: .15, max: 230, p10: 20};
+// p50 floor 50, not 55: the cooled flow lobes put approach at 51, and lifting them toward 55 brings back the ash-as-snow look.
+const TARGET = {p50: [50, 85], sat: [.25, .4], skyTop: .15, max: 230, p10: 20};
 
 /** values.py in the page: greyscale percentiles, clip, saturation median, where the brightest 1% sits, and how much of it is sky. */
 async function frameValues(p, png, bare, unlit) {
