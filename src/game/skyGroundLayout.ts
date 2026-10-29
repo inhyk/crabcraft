@@ -189,13 +189,13 @@ export const SKY_ROCK_GROUPS=[{name:'east-field-stones',x:77,z:5,r:4,n:5}];
 /**
  * Planted drifts (Jekyll): long soft-edged swathes along the wind (x .8, z .6), one colour each with a stray of
  * another, cool beside warm. Each field view gets them on the near slope between the camera and the crab (the
- * ground beyond falls away to the rim); the approach gets two.
+ * ground beyond falls away to the rim); the approach gets one, near the camera.
  * hue: 0 pink .. 1 butter (skyBloomHue's scale).
  */
 export const SKY_DRIFTS=[
  {x:47,z:-14,len:13,wid:4.6,hue:.08},{x:46,z:7,len:12,wid:4.2,hue:.62},{x:41,z:-4,len:9,wid:3,hue:.92},{x:71,z:-16,len:9,wid:3,hue:.92},{x:70,z:8,len:7,wid:2.4,hue:.08},
  {x:-47,z:5,len:13,wid:4.6,hue:.62},{x:-48,z:-16,len:12,wid:4.2,hue:.08},{x:-41,z:-6,len:9,wid:3,hue:.08},{x:-70,z:-18,len:8,wid:2.6,hue:.92},{x:-66,z:11,len:6,wid:2.2,hue:.08},
- {x:13,z:-19,len:11,wid:3,hue:.92},{x:-16,z:-30,len:10,wid:2.8,hue:.62},{x:-14,z:2,len:9,wid:2.6,hue:.08},
+ {x:13,z:-19,len:11,wid:3,hue:.92},{x:-14,z:2,len:9,wid:2.6,hue:.08},
 ];
 /**
  * Where the east and west views stand the crab: bare turf round each (r 6 to 8 m, ragged) so the crab reads, and
@@ -360,6 +360,10 @@ export function skyGroundMap():SkyGroundMap{
   flowers*=(1-worn)*(1-dirt*.6)*(1-smooth(edgeR,.74,.8));
   flowers*=smooth(pd,1.5,2.4);
   flowers*=smooth(spotD+rag*1.6,6,8);
+  // The open meadow between the town and the sanctuary keeps only the drift by the near end of the approach: beyond
+  // the camera's grass blades a drift there is flat dabs on bare turf, and its long 3 : 1 sides read as knife-straight
+  // slabs of pale paving either side of the avenue (r4 finish, all three judges).
+  flowers*=1-(1-smooth(Math.abs(x)+rag*3,34,42))*smooth(-z+rag*3,24,30)*smooth(z+rag*3,-62,-56);
   // The overlook stands on trodden turf.
   const dO=Math.hypot(x-SKY_OVERLOOK.x,z-SKY_OVERLOOK.z);worn=Math.max(worn,(1-smooth(dO+rag*1.5,3.2,6))*.4);
   let isBare=bare[k]===1;
