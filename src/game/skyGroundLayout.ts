@@ -193,8 +193,8 @@ export const SKY_ROCK_GROUPS=[{name:'east-field-stones',x:77,z:5,r:4,n:5}];
  * hue: 0 pink .. 1 butter (skyBloomHue's scale).
  */
 export const SKY_DRIFTS=[
- {x:47,z:-14,len:9,wid:3.2,hue:.08},{x:46,z:7,len:8,wid:2.8,hue:.62},{x:71,z:-16,len:9,wid:3,hue:.92},{x:70,z:8,len:7,wid:2.4,hue:.08},
- {x:-47,z:5,len:9,wid:3.2,hue:.62},{x:-48,z:-16,len:8,wid:2.8,hue:.08},{x:-70,z:-18,len:8,wid:2.6,hue:.92},{x:-66,z:11,len:6,wid:2.2,hue:.08},
+ {x:47,z:-14,len:13,wid:4.6,hue:.08},{x:46,z:7,len:12,wid:4.2,hue:.62},{x:41,z:-4,len:9,wid:3,hue:.92},{x:71,z:-16,len:9,wid:3,hue:.92},{x:70,z:8,len:7,wid:2.4,hue:.08},
+ {x:-47,z:5,len:13,wid:4.6,hue:.62},{x:-48,z:-16,len:12,wid:4.2,hue:.08},{x:-41,z:-6,len:9,wid:3,hue:.08},{x:-70,z:-18,len:8,wid:2.6,hue:.92},{x:-66,z:11,len:6,wid:2.2,hue:.08},
  {x:13,z:-19,len:11,wid:3,hue:.92},{x:-16,z:-30,len:10,wid:2.8,hue:.62},{x:-14,z:2,len:9,wid:2.6,hue:.08},
 ];
 /**
