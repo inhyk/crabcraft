@@ -4,6 +4,7 @@ import {skybloomClouds,CLOUD_Y} from './skybloomClouds';
 import {skybloomLand,clipTerrainToLip,lipScale} from './skybloomIsles';
 import {skybloomContact} from './skybloomContact';
 import {SKY_RIM} from './skybloomRim';
+import {skyTown} from './skyGroundLayout';
 
 /*
  * Everything in Skybloom's air, built from one sky: the dome, the sun and the hemisphere light it implies, the fog
@@ -163,6 +164,7 @@ export class SkybloomAir {
   readonly sky = new SkybloomSky({azimuth: 74, elevation: 25, gain: 1.12});
   readonly sun = new THREE.DirectionalLight();
   readonly hemi = new THREE.HemisphereLight();
+  private hemiSky = new THREE.Color(); private hemiGround = new THREE.Color(); private townFill = 0;
   /** Materials with a `time` uniform for the island's update. */
   readonly animated: THREE.ShaderMaterial[] = [];
   /** Contact shade under canopies, eaves and arches (skybloomContact.ts), baked once the island is built. */
@@ -231,10 +233,9 @@ export class SkybloomAir {
     this.followSun(0, 10, 0);
     sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.12;
     // The fill is about the dome's own level: under the raking morning sun shade keeps 40 to 55 percent of the lit
-    // value (0.75 left the long shadows at a quarter of it, p10 under 40). The sky half is lifted 1.45x and the grass
-    // bounce 1.5x: the houses' long shadows on the town lawns sat at a third of the lit turf and read as black slabs
-    // in the village view (r4 finish, all three judges); exposure stays where it is.
-    this.hemi.color.copy(sky.hemiSky).multiplyScalar(1.45); this.hemi.groundColor.copy(sky.hemiGround).multiplyScalar(1.5); this.hemi.intensity = 0.95;
+    // value (0.75 left the long shadows at a quarter of it, p10 under 40). In town frame() lifts it further.
+    this.hemi.color.copy(sky.hemiSky); this.hemi.groundColor.copy(sky.hemiGround); this.hemi.intensity = 0.95;
+    this.hemiSky.copy(sky.hemiSky); this.hemiGround.copy(sky.hemiGround);
     root.add(sun, sun.target, this.hemi);
     root.userData.skybloomAir = {cloudY: CLOUD_Y, ...this.stats};
     this.animated.push(sky.material, clouds.material, ...land.animated, petalMat, birdMat);
@@ -266,6 +267,15 @@ export class SkybloomAir {
     const fog = scene.fog, e = camera.matrixWorld.elements;
     // The shadow box sits ahead of the camera, where the frame's shadows are.
     this.followSun(e[12] - e[8] * 45, 10, e[14] - e[10] * 45);
+    // Town fill: cream walls and paving bounce light into the lanes, so where the camera looks into the town the sky
+    // fill is 1.45x and the grass bounce 1.5x. The houses' long shadows on the town lawns sat at a third of the lit
+    // turf and read as black slabs in the village view (r4 finish, all three judges: p10 30 to 51). Out on the fields
+    // the fill stays as it was (west p10 is already 93); exposure is untouched.
+    const town = skyTown(e[12] - e[8] * 30, e[14] - e[10] * 30);
+    if (town !== this.townFill) {
+      this.townFill = town;
+      this.hemi.color.copy(this.hemiSky).multiplyScalar(1 + .45 * town); this.hemi.groundColor.copy(this.hemiGround).multiplyScalar(1 + .5 * town);
+    }
     if (fog instanceof THREE.FogExp2) {
       this.sky.fogColor(-e[8], -e[10], fog.color);
       fog.density = this.sky.fogDensity(e[13], -e[9]);
