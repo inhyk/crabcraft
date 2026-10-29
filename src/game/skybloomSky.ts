@@ -156,10 +156,14 @@ void main(){
         if(inn>inside){inside=inn;nrm=lq>1e-5?q/lq:vec2(0.,1.);top=t.y;}
       }
     }
-    float edge=.0045*(sbFbm(vec2(az*60.,d.y*90.)+3.)-.5)+.002*(sbFbm(vec2(az*190.,d.y*240.)+11.)-.5);
-    float dens=smoothstep(-.0015,.003,inside+edge);
-    // The foot sinks into the haze on a wavering line, never a level cut.
-    dens*=smoothstep(-.012,.016,d.y+.012*(sbFbm(vec2(az*35.,1.7))-.5));
+    // The noise only where a tower's edge can reach (the band is a third of the frame in the field views).
+    float dens=0.;
+    if(inside>-.005){
+      float edge=.0045*(sbFbm(vec2(az*60.,d.y*90.)+3.)-.5)+.002*(sbFbm(vec2(az*190.,d.y*240.)+11.)-.5);
+      dens=smoothstep(-.0015,.003,inside+edge);
+      // The foot sinks into the haze on a wavering line, never a level cut.
+      if(dens>0.)dens*=smoothstep(-.012,.016,d.y+.012*(sbFbm(vec2(az*35.,1.7))-.5));
+    }
     if(dens>0.){
       vec3 across=vec3(cos(az),0.,-sin(az));
       vec3 n=normalize(across*nrm.x+vec3(0.,1.,0.)*nrm.y-d*.45);

@@ -15,7 +15,7 @@ import {hangingLantern, lanternPost, signEmblem} from './skyTown';
 const V = THREE.Vector3;
 const C = {stone: '#e6dcc4', trim: '#efe5cd', timber: '#8a5f3a', timberDark: '#694629', deck: '#9c7048', roof: '#1f6a6e', cap: '#174f53', gold: '#d4a64a', rope: '#c2a678', plaster: '#f2eadb', paint: '#2f8f8a', glass: new THREE.Color('#ffb45e').multiplyScalar(1.35)};
 
-export function skyHarbour(ctx: TownCtx) {
+export function skyHarbour(ctx: TownCtx, mastCtx: TownCtx = ctx) {
   const {h, stone, timber, metal} = ctx;
   const P = SKY_PIER, group = new THREE.Group(); group.name = 'skybloom-harbour';
   // Deck level: the boardwalk sits on the ground at the end of the street and keeps that level out over the void.
@@ -82,7 +82,7 @@ export function skyHarbour(ctx: TownCtx) {
   ctx.kits.push({file: 'props', piece: 'Crate_Wooden', x: P.x + 3.6, y: dy, z: P.headZ + 2.2, yaw: .4, size: .8}, {file: 'props', piece: 'Barrel', x: P.x + 4.2, y: dy, z: P.headZ + 3.4, yaw: 0, size: .9},
     {file: 'props', piece: 'Bag', x: P.x + 3.4, y: dy, z: P.headZ + 3.2, yaw: 2, size: .6}, {file: 'props', piece: 'Bench', x: P.x - 2.2, y: dy, z: P.z1 - .9, yaw: 0, size: .85});
   const ship = airship(ctx, SKY_AIRSHIP.x, dy, SKY_AIRSHIP.z);
-  const moored = mooringMast(ctx, SKY_MAST.x, SKY_MAST.z, SKY_MAST.height);
+  const moored = mooringMast(mastCtx, SKY_MAST.x, SKY_MAST.z, SKY_MAST.height);
   group.add(ship.prop, moored.prop);
   ctx.stats.harbourPiles = piles.length;
   return {group, update(time: number) { ship.turn(time); moored.turn(time * .8 + 1); }};
