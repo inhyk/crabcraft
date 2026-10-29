@@ -1114,6 +1114,9 @@ export class EmberTown {
         this.pool(x, z, 1.6 + r * 1.6, '#ff6a24', .55, ph);
       }
       this.pool(v.x, v.z, 6.5, '#ff7a30', .32, g * 2.3);
+      // A wide, faint warm wash spilling toward the plain's middle: the ground behind a crab standing there glows, so
+      // the crab reads as a dark-red shape against warm light instead of against mid-grey ash.
+      this.pool(v.x - Math.sign(v.x) * 7, v.z - 1, 10, '#ff7a30', .5, g * 2.3 + 1);
       this.light(v.x, this.h(v.x, v.z) + 1.6, v.z, 9, '#ff7a30', 2.2);
       // The miners' traces: an ore cart drawn up to the heap, picks driven into it, a crate of sulfur.
       const [cx, cz, cyaw] = v.cart, [hx, hz, hr] = v.heap;
