@@ -6,6 +6,7 @@ import {
   type ForgeHouse,
 } from './emberTownLayout';
 import {emberSurface} from './emberPaving';
+import {EMBER_VENTS} from './emberGroundLayout';
 
 /*
  * Emberreach's forge works and arrival quay (World V), from the plan in emberTownLayout.ts: one round furnace yard
@@ -370,6 +371,7 @@ export class EmberTown {
     FORGE_LANTERNS.forEach(([x, z], i) => this.lantern(x, z, i));
     FORGE_BANNERS.forEach(([x, z], i) => this.bannerPost(x, z, i));
     this.harbour();
+    this.vents();
     this.finish();
   }
 
@@ -1076,6 +1078,41 @@ export class EmberTown {
     bar(tip, new V(0, mast - 3.2, reach), .03);
     this.crate(m.clone().multiply(trs(0, mast - 4.0, reach, .3)), -99, 900, 1.0, .8);
     this.S(new THREE.TorusGeometry(.18, .04, 4, 8), m.clone().multiply(trs(0, mast - 3.1, reach)), '#2b292d', PAT.plain, 1, .45, .85, y);
+  }
+
+  /* -- fumarole fields (emberGroundLayout.ts EMBER_VENTS; the vent cones themselves are emberRocks.ts) -- */
+  /** A miner's pick: ash handle, iron head with a point and a chisel end; local origin at the head. */
+  private pick(m: THREE.Matrix4, base: number) {
+    this.S(cyl(.032, .038, 1.05, 6).translate(0, -.5, 0), m, '#5a4434', PAT.plank, .5, .85, 0, base);
+    this.S(new THREE.ConeGeometry(.05, .4, 6).rotateZ(-Math.PI / 2).translate(.2, 0, 0), m, '#38373b', PAT.plain, 1, .35, .85, base);
+    this.S(box(.32, .08, .06).translate(-.16, 0, 0), m, '#38373b', PAT.plain, 1, .35, .85, base);
+    this.S(box(.1, .12, .1), m, '#2a292d', PAT.plain, 1, .4, .85, base);
+  }
+  private vents() {
+    for (const [g, v] of EMBER_VENTS.entries()) {
+      if (!this.clearOfLava(v.x, v.z, 6)) continue;
+      // Each vent: a white-hot throat with flame licks over the rim, lit steam rising and leaning downwind, sparks.
+      for (const [k, [x, z, r, hh]] of v.vents.entries()) {
+        const y = this.h(x, z), ph = g * 3.7 + k * 1.9;
+        this.G(new THREE.CircleGeometry(r * .3, 10).rotateX(-Math.PI / 2), trs(x, y + hh * .74, z), lin('#ffc46a', 3.2), .45, ph);
+        this.flames.push({x, y: y + hh * .82, z, s: .45 + r * .35});
+        this.puffs.push({x, y: y + hh + .1, z, s: .32 + r * .26});
+        this.sparks.push({x, y: y + hh, z, s: .2 + r * .1, n: 6});
+        this.pool(x, z, 1.6 + r * 1.6, '#ff6a24', .55, ph);
+      }
+      this.pool(v.x, v.z, 6.5, '#ff7a30', .32, g * 2.3);
+      this.light(v.x, this.h(v.x, v.z) + 1.6, v.z, 9, '#ff7a30', 2.2);
+      // The miners' traces: an ore cart drawn up to the heap, picks driven into it, a crate of sulfur.
+      const [cx, cz, cyaw] = v.cart, [hx, hz, hr] = v.heap;
+      this.cart(cx, cz, cyaw, 'ore', 500 + g * 17);
+      this.heap(hx, hz, hr, 26, '#5a4a3a', 520 + g * 29, .04);
+      this.heap(hx + .4, hz - .3, hr * .55, 9, '#9a8540', 560 + g * 13);
+      const hy = this.h(hx, hz);
+      this.pick(trs(hx - .3, hy + hr * .7 + .45, hz + .2, .6 + g, .45, .25), hy);
+      this.pick(trs(hx + hr * .7, hy + .62, hz - .5, 2.1 + g, -.6, .1), hy);
+      { const a = Math.atan2(cx - hx, cz - hz) + Math.PI / 2, x = hx + Math.sin(a) * (hr + .9), z = hz + Math.cos(a) * (hr + .9), y = this.h(x, z);
+        this.crate(trs(x, y - .04, z, a + .3, .04, -.03), y, 580 + g); this.barrel(trs(x + Math.sin(a) * 1.1, y - .03, z + Math.cos(a) * 1.1, a), y, 590 + g); }
+    }
   }
 
   /* -- assembly -- */
