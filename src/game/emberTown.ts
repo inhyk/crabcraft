@@ -464,6 +464,19 @@ export class EmberTown {
     // Rails in short lengths so they follow the floor.
     for (const s of [-1, 1]) for (let t = 0; t < len - .01; t += 3) { const l = Math.min(3, len - t), x = x0 + (x1 - x0) * (t + l / 2) / len + Math.cos(yaw) * s * .55, z = z0 + (z1 - z0) * (t + l / 2) / len - Math.sin(yaw) * s * .55; this.S(box(.09, .1, l), trs(x, this.floor(x, z) + .13, z, yaw), '#5d5a5c', PAT.plain, 1, .3, .9, -99); }
   }
+  /** Buffer stop at a rail end (x, z), the rails arriving along `yaw`: an iron-shod timber beam on two posts braced back
+   *  with raking struts, a heap of ballast behind it. */
+  private bufferStop(x: number, z: number, yaw: number) {
+    const y = this.floor(x, z), m = trs(x, y, z, yaw);
+    for (const s of [-1, 1]) {
+      this.S(box(.22, .62, .22).translate(s * .55, .31, 0), m, '#3f3029', PAT.plank, .5, .92, 0, y);
+      this.S(box(.14, .1, 1.05).applyMatrix4(new THREE.Matrix4().makeRotationX(.42)).translate(s * .55, .3, .5), m, '#3f3029', PAT.plank, .5, .92, 0, y);
+      this.S(cyl(.13, .13, .12, 10).rotateX(Math.PI / 2).translate(s * .55, .5, -.17), m, '#2a292d', PAT.plain, 1, .4, .85, y);
+    }
+    this.S(box(1.7, .28, .26).translate(0, .5, 0), m, '#4a3426', PAT.plank, .6, .9, 0, y);
+    this.S(box(1.74, .08, .3).translate(0, .66, 0), m, '#2b292d', PAT.plate, 0, .45, .8, y);
+    const [hx, hz] = [x + Math.sin(yaw) * .95, z + Math.cos(yaw) * .95]; this.heap(hx, hz, .7, 10, '#3a3739', 900 + Math.round(x * 7 + z));
+  }
   /** Lit window (protruding stone frame, glow pane, iron bars) on a wall plane through m (local +z out of the wall). */
   private window(m: THREE.Matrix4, w: number, hh: number, base: number, arch = false, k = 1.6) {
     const st = '#7d7571';
@@ -637,7 +650,7 @@ export class EmberTown {
           this.heap(...toW(lx, front + 3.0), 1.3, 20, hex, seed + sd, hot, B + gy(lx, front + 3.0) + .55);
         }
         // Rails from the door to the foot of the furnace's skip hoist, one cart loaded on the way.
-        { const [ax, az] = toW(0, front + 1.4), [bx, bz] = yardAt(FORGE_HOIST.a, FORGE_HOIST.r + 1.6); this.rails(ax, az, bx, bz);
+        { const [ax, az] = toW(0, front + 1.4), [bx, bz] = yardAt(FORGE_HOIST.a, FORGE_HOIST.r + 1.25); this.rails(ax, az, bx, bz); this.bufferStop(bx, bz, Math.atan2(bx - ax, bz - az));
           this.cart(ax + (bx - ax) * .42, az + (bz - az) * .42, Math.atan2(bx - ax, bz - az), 'ore', seed); }
         this.barrel(ground(-6.1, front + 5.6), B, seed + 2);
         break;
@@ -680,7 +693,7 @@ export class EmberTown {
         break;
       }
       case 'merchant': {
-        this.rails(...toW(-4.4, front + 1.2), ...toW(-4.4, front + 9.2));
+        this.rails(...toW(-4.4, front + 1.2), ...toW(-4.4, front + 9.2)); this.bufferStop(...toW(-4.4, front + 9.0), forgeYaw(h));
         this.cart(...toW(-4.4, front + 3.6), forgeYaw(h), 'ingot', seed);
         this.cart(...toW(-4.4, front + 7.0), forgeYaw(h), 'ore', seed + 3);
         // Counter with a balance scale, ingot stacks on a pallet, sacks.
