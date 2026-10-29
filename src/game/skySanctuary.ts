@@ -72,17 +72,20 @@ if(cr<3.4){
 float sN=skN(vSkW.xz*.5),sF=mix(.5,skN(vSkW.xz*3.1),uSkDetail);
 float tone=.86+.2*fract(cId*7.13);
 float mott=mix(.5,skN(vSkW.xz*.9+cId),uSkDetail);
-vec3 cStone=mix(vec3(.55,.51,.41),vec3(.72,.67,.54),sN)*tone*(.9+.12*sF+.1*mott);
-cStone=mix(cStone,cStone*vec3(1.06,.93,.86),cPetal);
+// A step under the town's paving: the court is the frame's biggest pale area and washed the crab out (r4).
+vec3 cStone=mix(vec3(.47,.43,.35),vec3(.62,.57,.46),sN)*tone*(.9+.12*sF+.1*mott);
+// The bloom's petals are inlaid in jade-green stone, so the pattern and the crab on it read from the arena camera.
+cStone=mix(cStone,mix(vec3(.13,.27,.22),vec3(.2,.37,.3),sN)*(.88+.2*sF+.08*mott),cPetal*.85);
 cStone*=1.+.08*(1.-smoothstep(4.,13.,cr));
 cStone=mix(cStone,cStone*.82,cKerb*.35);
 float stain=smoothstep(.62,.85,skN(vSkW.xz*.23+5.));
 cStone*=1.-stain*.16;
 // Joints: dark, mossy toward the rim and under the tree (north), a little grass at the kerb.
-float jw=.05+.02*sF;
+// Wide dark grout so the courses read at 30 m (r4).
+float jw=.085+.025*sF;
 float joint=1.-smoothstep(jw*.4,jw,cEdge);
 float mossy=clamp(smoothstep(10.,20.,cr)*.4+smoothstep(.0,-14.,cq.y)*.25+(skN(vSkW.xz*.4)-.5)*1.1,0.,1.);
-vec3 jointC=mix(vec3(.15,.13,.11)*(.8+.3*sF),mix(vec3(.04,.075,.03),vec3(.085,.14,.045),sF),smoothstep(.35,.85,mossy));
+vec3 jointC=mix(vec3(.085,.075,.065)*(.8+.3*sF),mix(vec3(.04,.075,.03),vec3(.085,.14,.045),sF),smoothstep(.35,.85,mossy));
 // Moss creeps out of the joints over the stone edges near the rim.
 float creep=(1.-smoothstep(jw,jw+.22*mossy,cEdge))*smoothstep(.45,.9,mossy)*smoothstep(.5,.8,skN(vSkW.xz*1.7));
 vec3 cCol=mix(cStone,jointC,max(joint,creep*.8));
