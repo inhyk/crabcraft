@@ -163,11 +163,11 @@ float egLevee=smoothstep(-3.6,-1.4,egLobeD)*(1.-smoothstep(-.9,.2+egFoot,egLobeD
 float egRidge=(sin(egLobeR*1.3+egNoise(egP*.4)*1.5)*.5+.5)*egFlow*(1.-smoothstep(.08,.35,egFoot));
 float egDrift=smoothstep(.05,.42,egFbm(vec2(egP.x*.011,egP.y*.017)+11.)+egNoise(egP*.05)*.14)*(1.-egFlow)*(1.-egHeat);
 egCol=mix(egCol,egAshC,egDrift*.55*(.4+.6*egPatch));
-vec3 egLobeC=mix(vec3(.095,.1,.12),vec3(.17,.168,.188),egLobeAge)*(.9+.1*egN3)*(.94+.1*egRidge);
+vec3 egLobeC=mix(vec3(.13,.135,.155),vec3(.21,.205,.225),egLobeAge)*(.9+.1*egN3)*(.94+.1*egRidge);
 egCol=mix(egCol,egLobeC,egFlow*(1.-egAsh*.6)*(1.-egShore));
 egCol=mix(egCol,egAshC*mix(.85,1.05,egLobeAge),egFlow*egLobeAge*egPatch*.45);
 egCol=mix(egCol,egAshC,egLevee*.45*(1.-egShore));
-egCol*=1.-.25*smoothstep(1.5,.2,egLobeD)*(1.-egFlow)*(1.-egShore);
+egCol*=1.-.14*smoothstep(1.5,.2,egLobeD)*(1.-egFlow)*(1.-egShore);
 // Heat scorches the ground darker and rust-red, crazed by finer cracks.
 vec3 egScorch=mix(vec3(.16,.12,.12),vec3(.1,.08,.085),egN3*.5+.5);
 egCol=mix(egCol,egScorch,smoothstep(.15,.85,egHeat)*.85);
