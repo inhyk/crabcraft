@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import {DawnIsland} from './world3';
 import {SNOW_POINTS} from './snowQuests';
 import {DawnRequests} from './dawnRequests';
+import {emberRequestLook} from './emberRequests';
 import {SnowIsland,SNOW_POI_POINTS} from './world4';
 import type {FrostPortal} from './frostPortal';
 import {t} from '../i18n';
@@ -205,7 +206,7 @@ export class HiddenWorld {
   constructor(private game: Game) {
     this.dawnRequests=new DawnRequests(game,this.third,undefined,this.third.questProps());
     this.snowRequests=new DawnRequests(game,this.fourth,SNOW_POINTS,this.fourth.questProps());
-    this.emberRequests=new DawnRequests(game,this.fifth,FRONTIER_POINTS[5]);this.skyRequests=new DawnRequests(game,this.sixth,FRONTIER_POINTS[6]);
+    this.emberRequests=new DawnRequests(game,this.fifth,FRONTIER_POINTS[5],emberRequestLook((x,z)=>this.fifth.height(x,z)));this.skyRequests=new DawnRequests(game,this.sixth,FRONTIER_POINTS[6]);
     this.emberGate=this.fourth.gate(new THREE.Vector3(14,this.fourth.height(14,84),84),'설원 → 잿불 군도');this.fourth.root.add(this.emberGate.root);
     this.ambience=new StarAmbience(game.audio);
     const w=game.world;
