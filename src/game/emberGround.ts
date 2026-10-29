@@ -115,10 +115,17 @@ vec3 egAaC=egCells(egP*2.7+egWarp*2.);
 float egAa=smoothstep(.02,.16+egFoot*.5,egAaC.x+egNoise(egP*9.)*.04);
 float egRopeU=egP.y*1.35+sin(egP.x*.23+egN3*2.)*2.4+egFbm(egP*.12)*3.;
 float egRope=(sin(egRopeU*6.2832)*.5+.5);
-// Cracked crust where the ground shrank: polygons a metre or two across, more of them near heat.
-float egCrackM=max(smoothstep(.32,.55,egNoise(egP*.037-8.)),egHeat*.9)*(1.-egSheet*.8)*(1.-egAsh);
+// Cracked crust where the ground shrank: polygons a metre or two across, more of them near heat. The density follows
+// a region field at two scales (about 90 m and 23 m), so whole stretches are smooth, others crazed, others split by a
+// second, finer generation of cracks; the crack width wanders too, and in some regions ash fills the cracks.
+float egReg=egNoise(egP*.011+40.)*.62+egNoise(egP*.043-17.)*.38;
+float egCrackM=max(smoothstep(-.18,.3,egReg),egHeat*.9)*(1.-egSheet*.8)*(1.-egAsh);
 vec3 egC=egCells(egP*mix(.42,.8,egHeat)+egWarp*.6+vec2(egNoise(egP*1.9),egNoise(egP*1.9+4.))*.12);
-float egCrack=(1.-smoothstep(.0,.022+egFoot*.35,egC.x+egNoise(egP*6.)*.012))*egCrackM*(.55+.45*smoothstep(-.2,.4,egNoise(egP*.8+egC.y*7.)));
+float egCw=.012+.022*smoothstep(-.35,.45,egNoise(egP*.07+3.));
+float egCrack=(1.-smoothstep(.0,egCw+egFoot*.35,egC.x+egNoise(egP*6.)*.012))*egCrackM*(.55+.45*smoothstep(-.2,.4,egNoise(egP*.8+egC.y*7.)));
+float egDense=smoothstep(.12,.5,egReg)*egCrackM*(1.-smoothstep(.06,.2,egFoot));
+if(egDense>.01){vec3 c2=egCells(egP*1.2+egWarp*.5+3.7);egCrack=max(egCrack,(1.-smoothstep(0.,.011+egFoot*.3,c2.x))*egDense*.7*step(.25,c2.y));}
+float egFill=smoothstep(.15,.55,egNoise(egP*.021+60.));
 // Pumice gravel in patches: pale pebbles a hand across.
 float egGravM=smoothstep(.3,.6,egNoise(egP*.09+21.))*(1.-egSheet)*(1.-egHeat*.8)*(1.-egAsh*.6);
 float egPeb=0.,egPebId=0.;
@@ -136,24 +143,35 @@ vec3 egCol=mix(egBas,egSheetC,egSheet);
 egCol=mix(egCol,egBas*mix(.45,.85+.45*egAaC.y,egAa),egAaM*(1.-smoothstep(.06,.3,egFoot)*.5));
 egCol=mix(egCol,egAshC,egAsh);
 egCol=mix(egCol,mix(vec3(.4,.39,.38),vec3(.5,.48,.46),egPebId),egPeb*.8);
-// Large scale, read from the air: old cooled flows fanning south from the volcano (dark, smoother, glassy), their
-// edges heaped into pale ash-dusted levees, and long ash streaks blown east-west across everything.
-vec2 egV=egP-vec2(0.,-128.);
-float egVd=length(egV),egVa=atan(egV.x,egV.y);
-float egFlowN=egFbm(vec2(egVa*5.,egVd*.012)+vec2(egNoise(egP*.018)*.7,egNoise(egP*.05)*.15)+3.7);
-float egFlowFar=1.-smoothstep(170.,250.,egVd);
-float egFlow=smoothstep(.04,.1,egFlowN)*egFlowFar*(1.-egShore);
-float egLevee=(1.-smoothstep(.0,.07+egFoot*.05,abs(egFlowN-.01)))*egFlowFar*(1.-egShore);
-float egWind=smoothstep(.18,.5,egFbm(vec2(egP.x*.0065,egP.y*.032)+11.)+egNoise(egP*.06)*.12)*(.25+.75*egPatch);
-// Between the flows the old ground lies under ash: broad pale plains against the dark tongues.
-egCol=mix(egCol,egAshC,(1.-egFlow)*egFlowFar*.5*egPatch*(1.-egHeat));
-egCol=mix(egCol,mix(vec3(.12,.125,.15),vec3(.16,.16,.185),egN3*.5+.5),egFlow*.72*(1.-egAsh*.5));
-egCol=mix(egCol,egAshC*1.06,egLevee*.5);
-egCol=mix(egCol,egAshC*1.06,egWind*.45*(1.-egFlow*.4));
+// Large scale, read from the air: cooled flow lobes fanning south from the volcano's foot, each a tongue with a rounded,
+// lobed front (capsules with their margins warped at two scales); the young ones dark and glassy, the old ones greyed
+// by ash, raised ash-dusted levees on their margins and pressure ridges bowed toward the front. Between them the old
+// ground lies under drifted ash.
+vec2 egV=egP-vec2(0.,-128.)+vec2(egNoise(egP*.04+2.),egNoise(egP*.04-6.))*7.+vec2(egNoise(egP*.12+1.),egNoise(egP*.12+8.))*2.4;
+float egLobeD=1e3,egLobeAge=0.,egLobeR=0.;
+for(int i=0;i<9;i++){
+  // Seven main tongues of uneven reach and width, two short breakouts off their flanks; each meanders as it goes.
+  float fi=float(i),br=step(6.5,fi),a=-.7+mod(fi*.45,1.5)+sin(fi*2.7)*.06+br*(fi>7.5?.22:-.3);
+  float st=mix(36.,72.+fi*4.,br),len=mix(96.+mod(fi*41.,70.),st+30.,br),w=mix(6.5+mod(fi*5.3,8.),5.5,br);
+  vec2 dir=vec2(sin(a),cos(a)),side=vec2(dir.y,-dir.x);
+  float t0=dot(egV,dir);vec2 q=egV-side*sin(t0*.035+fi*1.7)*7.*smoothstep(st,st+40.,t0);
+  float t=clamp(dot(q,dir),st,len),d=length(q-dir*t)-w*(.65+.5*smoothstep(st,len,t));
+  if(d<egLobeD){egLobeD=d;egLobeAge=fract(fi*.618+.15);egLobeR=length(q-dir*(len-w*2.2));}
+}
+float egFlow=1.-smoothstep(-.4,.4+egFoot*2.,egLobeD);
+float egLevee=smoothstep(-3.6,-1.4,egLobeD)*(1.-smoothstep(-.9,.2+egFoot,egLobeD));
+float egRidge=(sin(egLobeR*1.3+egNoise(egP*.4)*1.5)*.5+.5)*egFlow*(1.-smoothstep(.08,.35,egFoot));
+float egDrift=smoothstep(.05,.42,egFbm(vec2(egP.x*.011,egP.y*.017)+11.)+egNoise(egP*.05)*.14)*(1.-egFlow)*(1.-egHeat);
+egCol=mix(egCol,egAshC,egDrift*.55*(.4+.6*egPatch));
+vec3 egLobeC=mix(vec3(.095,.1,.12),vec3(.17,.168,.188),egLobeAge)*(.9+.1*egN3)*(.94+.1*egRidge);
+egCol=mix(egCol,egLobeC,egFlow*(1.-egAsh*.6)*(1.-egShore));
+egCol=mix(egCol,egAshC*mix(.85,1.05,egLobeAge),egFlow*egLobeAge*egPatch*.45);
+egCol=mix(egCol,egAshC,egLevee*.45*(1.-egShore));
+egCol*=1.-.25*smoothstep(1.5,.2,egLobeD)*(1.-egFlow)*(1.-egShore);
 // Heat scorches the ground darker and rust-red, crazed by finer cracks.
 vec3 egScorch=mix(vec3(.16,.12,.12),vec3(.1,.08,.085),egN3*.5+.5);
 egCol=mix(egCol,egScorch,smoothstep(.15,.85,egHeat)*.85);
-egCol=mix(egCol,vec3(.08,.08,.09),egCrack*.6);
+egCol=mix(egCol,mix(vec3(.08,.08,.09),egAshC*1.08,egFill*(1.-egHeat)),egCrack*.6);
 // Fissure: a black crust lip, a dusting of sulfur on a few, and a scorched halo across the ash.
 float egLip=1.-smoothstep(.12,.75,egFd);
 float egHalo=1.-smoothstep(.3,2.6,egFd);
@@ -166,15 +184,15 @@ diffuseColor.rgb=egSrgb(egCol);
 `;
 
 const ROUGH = /* glsl */ `
-roughnessFactor=mix(.93,.62+.2*egRope,egSheet);
+roughnessFactor=mix(.93,.76+.12*egRope,egSheet);
 roughnessFactor=mix(roughnessFactor,.98,egAsh);
-roughnessFactor=mix(roughnessFactor,.72,egFlow*(1.-egAsh)*(1.-egWind*.6));
+roughnessFactor=mix(roughnessFactor,.86-.06*(1.-egLobeAge),egFlow*(1.-egAsh));
 `;
 
 const NORMAL = /* glsl */ `
 if(egDetail>.5){
   float egScoria=(egNoise(egP*3.3)*.6+egNoise(egP*8.1)*.4)*(1.-egAsh*.8)*(1.-egSheet*.7);
-  float egH=(egAa*egAaM*.06+egRope*.022*egSheet+egRip*.008*egAsh+egPeb*.03-egCrack*.03-egLip*.02+egScoria*.035+egNoise(egP*17.)*.008*(1.-egAsh*.6))*(1.-smoothstep(.04,.25,egFoot));
+  float egH=(egRidge*.03+egLevee*.04+egAa*egAaM*.06+egRope*.022*egSheet+egRip*.008*egAsh+egPeb*.03-egCrack*.03-egLip*.02+egScoria*.035+egNoise(egP*17.)*.008*(1.-egAsh*.6))*(1.-smoothstep(.04,.25,egFoot));
   normal=egBump(normal,egH,egDpx,egDpy);
 }
 `;
