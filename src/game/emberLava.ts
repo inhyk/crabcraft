@@ -3,6 +3,7 @@ import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { frontierTrees } from './realmLayout';
 import { FLOW_CELL, LavaFlow, type FlowArea, type FlowDeposit, type FlowSource } from './emberLavaFlow';
 import { EmberLavaDrips } from './emberLavaDrips';
+import { PRINT_COLOR, PRINT_FRAG_HEAD, pressLava, type LavaWader } from './emberLavaPrints';
 
 /*
  * Emberreach's lava: a molten sea round the island, a brimming crater lake and its flows. Live flows spill through
@@ -570,6 +571,7 @@ const FLOW_FRAG_HEAD = /* glsl */ `
 ${LAVA_COMMON}
 uniform sampler2D uFR0;
 uniform sampler2D uFR1;
+${PRINT_FRAG_HEAD}
 uniform float uPhF;
 varying vec2 vFU;
 varying vec3 vFW;
@@ -665,6 +667,7 @@ const FLOW_COLOR = /* glsl */ `
   float young=smoothstep(.62,.8,id)*hot*(1.-lCrack)*smoothstep(.02,.06,lC.r-cw)*(1.-smoothstep(.06,.16,lC.r-cw));
   float crest=smoothstep(.55,.9,rope)*ropeW*smoothstep(.45,.7,nz+.5*fine)*mix(.45,.85,smoothstep(.04,.3,T));
   lGloss=uDetail*(1.-lEdge)*(1.-lCrack)*max(young*.7*wM*smoothstep(.15,.35,fine),crest);
+  ${PRINT_COLOR}
 }
 `;
 /** Cooled pahoehoe skin is glassy: 0.62-0.82 by plate, so light breaks into glints on its relief instead of a hazy
@@ -1248,7 +1251,8 @@ export class EmberLava {
   /** QA: 1 renders the stillness mask (red = no time term, blue = flowing), 2 the same with colours swapped, 0 off. */
   setMask(mode: 0 | 1 | 2) { this.common.uMask.value = mode; }
 
-  update(time: number) {
+  /** `waders`: the crabs that may wade through the simulated lava (emberLavaPrints.ts), `focus` the local player. */
+  update(time: number, waders?: readonly LavaWader[], focus?: LavaWader) {
     if (time - this.qualityAt > 2 || time < this.qualityAt) { this.qualityAt = time; this.setQuality(storedQuality()); }
     // Phases are wrapped here in double precision so the shaders never see a large time.
     this.tongueUniforms.uShift.value = (U0 * time) % TILE_TONGUE;
@@ -1266,6 +1270,7 @@ export class EmberLava {
         // the start state, whose snapshot is the CPU copy, so it needs no read-backs (each would be a stall).
         this.flow.advance(this.renderer, FLOW_WARM_STEPS, false);
       }
+      pressLava(this.flow, waders, focus);
       this.flow.update(this.renderer, time);
       if (!this.flow.supported) this.setFlow(false);
     }

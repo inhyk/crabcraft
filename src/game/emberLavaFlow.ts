@@ -6,7 +6,7 @@ import * as THREE from 'three';
  * in episodes; fronts advance, slow, stop as a dome with a step at the edge, crust over and cool; the next episode
  * breaks out beside or over the old lobe.
  *
- * State per 0.25 m cell (float32 ping-pong, two targets written in one pass):
+ * State per 0.25 m cell (float32 ping-pong, three targets written in one pass):
  *   state R hot (mobile) thickness, G cold thickness (rock: lies on the ground like terrain and never moves),
  *         B temperature 0..1 (the hot layer's; on a cold cell it keeps cooling for the shading), A the cell's ground
  *         height and yield multiplier packed (static, carried through; -1 where lava may not go), so a pass reads
@@ -14,6 +14,8 @@ import * as THREE from 'three';
  *   flow  RG velocity (m/s, smoothed), B activity (smoothed flux), A the thickness the lava had when it last held
  *         hot lava (it froze at that), which subsidence does not touch: the crust's rope folds follow it, so they hold
  *         still on rock that is slowly subsiding; half float
+ *   print R print memory (a crab pressed here lately), G glow of broken crust, B dent pressed into cold rock (negative
+ *         on its berm, scaled down as the rock subsides); half float (see MAX_PRESS below)
  *
  * One pass, every pair of the 8 neighbours (diagonals sqrt 2 away, weight 1/sqrt 2):
  *   rest = min(4 d, 2 d D / (h_i + h_j))       the yield rule: a pair stands while h_mean * drop / D <= d
@@ -78,6 +80,21 @@ const CAP0 = .9, CAP1 = 1.7;
 const RAMP_UP = 1.5, RAMP_DOWN = 4;
 /** Latest start of an episode in its slot, s. */
 const JITTER = 4;
+/** Prints (a crab wading through the lava), at most MAX_PRESS crabs at once. Each pushes lava outward down its press
+ * (1 in its middle, 0 at its radius): the hot layer at PRESS_K of the slope per pass, so it parts into a trench with the
+ * pushed-out volume piled as a berm round it (isaac_sim #661, #1470: press down and pile it in a ring, no rebound);
+ * cold rock at PRESS_KC, at most DENT_MAX per cell, a shallow dent with a cracked rim that stays (it only sinks with the
+ * rock). A pressed cell remembers it (print memory, 1 under a crab and its berm, gone linearly over PRINT_T s); while it
+ * does the yield depth drops to THIXO_D of itself and the relaxation runs at THIXO_K of its rate, so a trench in hot
+ * lava closes over a few seconds, all the way, instead of snapping shut in a tenth of a second or standing as a Bingham
+ * groove; as the memory fades the yield comes back and the surface stays as it closed. Breaking a skin shows the
+ * inside's heat, fading over GLOW_TAU s as it re-skins. All pairwise, so mass is conserved as in the yield rule. */
+const MAX_PRESS = 8;
+const PRESS_K = .08, PRESS_KC = .05, DENT_MAX = .07, PRINT_T = 7, GLOW_TAU = 2.2, THIXO_D = .1, THIXO_K = .04;
+/** The press and the memory's pair terms only run in a box round the presses of the last PRINT_T s (in 1 s slots),
+ * grown by PRINT_MARGIN past each press's radius: the memory reaches 0.75 m past it, and the cells along the box's edge
+ * must hold none, so both cells of every pair see the same memory. Elsewhere a pass costs one more fetch and write. */
+const PRINT_MARGIN = 1.5, PRINT_SLOTS = PRINT_T + 2;
 
 export interface FlowSource {
   /** Nose of the feeding tongue on the ground, and its downhill direction (unit, xz). */
@@ -124,11 +141,17 @@ precision highp int;
 precision highp sampler2D;
 uniform sampler2D uState;
 uniform sampler2D uFlow;
+uniform sampler2D uPrint;
 uniform vec4 uSrc[${MAX_SOURCES}]; // x, z, radius, thickness rate at full weight (m/s)
+uniform vec4 uPress[${MAX_PRESS}]; // x, z, radius, weight 0..1
+uniform int uPressN;
+uniform vec4 uPrintBox; // x0, z0, x1, z1 of the cells prints act on (empty when x0 > x1)
+uniform float uKp, uKpc, uDentMax, uMStep, uGDecay, uThD, uThK;
 uniform vec2 uOrigin;
 uniform float uDt, uCell, uK0, uK1, uKc, uTf, uSub, uSubT, uTsrc, uCap0, uCap1;
 layout(location=0) out highp vec4 oState;
 layout(location=1) out highp vec4 oFlow;
+layout(location=2) out highp vec4 oPrint;
 const ivec2 OFF[8]=ivec2[8](ivec2(1,0),ivec2(-1,0),ivec2(0,1),ivec2(0,-1),ivec2(1,1),ivec2(-1,-1),ivec2(1,-1),ivec2(-1,1));
 const float WT[8]=float[8](1.,1.,1.,1.,.70710678,.70710678,.70710678,.70710678);
 const float DS[8]=float[8](1.,1.,1.,1.,1.41421356,1.41421356,1.41421356,1.41421356);
@@ -137,43 +160,69 @@ uniform float uK, uD, uEps;
 // state.a = yield step * 128 + ground (ground under 128 m, the multiplier 1 + step / 8).
 float groundOf(float a){return a-floor(a/128.)*128.;}
 float dmulOf(float a){return 1.+floor(a/128.)/8.;}
-// The flux from cell A to cell B (negative: B to A), A the one first in row order, so both cells of a pair run the same
+// A crab's press at a cell: 1 under its middle, falling to 0 at its radius (lava is pushed down this slope, outward).
+float pressPot(ivec2 c){
+  vec2 p=uOrigin+(vec2(c)+.5)*uCell;
+  float P=0.;
+  for(int i=0;i<${MAX_PRESS};i++){if(i>=uPressN)break;vec4 q=uPress[i];P=max(P,q.w*(1.-smoothstep(0.,q.z,length(p-q.xy))));}
+  return P;
+}
+// The fluxes from cell A to cell B (negative: B to A), A the one first in row order, so both cells of a pair run the same
 // instructions on the same operands in the same roles and get the same number (GPU compilers reassociate freely).
-// x the flux, y the giver's temperature.
-vec2 pairFlux(vec4 a,vec4 b,float D,float W){
+// y: the yield flux and the giver's temperature; pr: the press flux of hot lava and its giver's temperature; cold: the
+// press flux of cold rock (a dent in crust, at most uDentMax deep per cell, tracked in print.b).
+// Print memory m (print.r) softens a pressed pair: lower yield depth and slower relaxation, so a trench refills over a
+// few seconds and levels out instead of snapping shut or standing as a Bingham groove.
+void pairFlux(vec4 a,vec4 b,vec4 pa,vec4 pb,ivec2 ca,ivec2 cb,float D,float W,bool live,out vec2 y,out vec2 pr,out float cold){
+  y=vec2(0.);pr=vec2(0.);cold=0.;
+  float m=smoothstep(0.,.35,max(pa.r,pb.r));
   float Ha=groundOf(a.a)+a.g+a.r,Hb=groundOf(b.a)+b.g+b.r;
   bool give=Ha>Hb;
   float hg=give?a.r:b.r,hr=give?b.r:a.r,tg=give?a.b:b.b;
-  if(hg<=0.)return vec2(0.);
-  float d=uD*((dmulOf(a.a)+dmulOf(b.a))*.5)*stiff(tg);
-  float rest=min(4.*d,2.*d*D/(hg+hr));
-  float gap=abs(Ha-Hb)-rest;
-  if(gap<=uEps)return vec2(0.);
-  float F=uK*W*min(gap,hg);
-  return vec2(give?F:-F,tg);
+  if(hg>0.){
+    float d=uD*((dmulOf(a.a)+dmulOf(b.a))*.5)*stiff(tg)*mix(1.,uThD,m);
+    float rest=min(4.*d,2.*d*D/(hg+hr));
+    float gap=abs(Ha-Hb)-rest;
+    if(gap>uEps){float F=uK*mix(1.,uThK,m)*W*min(gap,hg);y=vec2(give?F:-F,tg);}
+  }
+  if(live&&uPressN>0){
+    float dP=pressPot(ca)-pressPot(cb);
+    if(dP!=0.){
+      bool pg=dP>0.;
+      float h=pg?a.r:b.r,t=pg?a.b:b.b,hc=pg?a.g:b.g,dent=pg?pa.b:pb.b;
+      float Fp=uKp*W*abs(dP)*h;
+      pr=vec2(pg?Fp:-Fp,t);
+      float Fc=uKpc*W*abs(dP)*max(min(hc,uDentMax-dent),0.)*(1.-smoothstep(.02,.1,h));
+      cold=pg?Fc:-Fc;
+    }
+  }
 }
 void main(){
   ivec2 c=ivec2(gl_FragCoord.xy);
   ivec2 sz=textureSize(uState,0);
   vec4 s0=texelFetch(uState,c,0);
-  if(s0.a<0.){oState=s0;oFlow=vec4(0.);return;}
+  vec4 p0=texelFetch(uPrint,c,0);
+  if(s0.a<0.){oState=s0;oFlow=vec4(0.);oPrint=vec4(0.);return;}
+  vec2 p=uOrigin+(vec2(c)+.5)*uCell;
+  bool live=all(greaterThanEqual(p,uPrintBox.xy))&&all(lessThanEqual(p,uPrintBox.zw));
   vec4 f0=texelFetch(uFlow,c,0);
-  float dh=0.,dE=0.,flux=0.;
+  float dh=0.,dE=0.,flux=0.,dc=0.;
   vec2 mom=vec2(0.);
   for(int n=0;n<8;n++){
     ivec2 cn=c+OFF[n];
     if(cn.x<0||cn.y<0||cn.x>=sz.x||cn.y>=sz.y)continue;
     vec4 sn=texelFetch(uState,cn,0);
     if(sn.a<0.)continue;
+    vec4 pn=live?texelFetch(uPrint,cn,0):vec4(0.);
     bool first=OFF[n].y>0||(OFF[n].y==0&&OFF[n].x>0);
-    vec2 r=pairFlux(first?s0:sn,first?sn:s0,DS[n]*uCell,WT[n]);
+    vec2 ry,rp;float rc;
+    pairFlux(first?s0:sn,first?sn:s0,first?p0:pn,first?pn:p0,first?c:cn,first?cn:c,DS[n]*uCell,WT[n],live,ry,rp,rc);
     // Out of this cell: positive when this cell is A and gives, or is B and A takes from it.
-    float go=first?r.x:-r.x;
+    float go=first?ry.x:-ry.x,gp=first?rp.x:-rp.x,gc=first?rc:-rc;
     vec2 dir=vec2(OFF[n])/DS[n];
-    dh-=go;dE-=go*r.y;mom+=go*dir;flux+=abs(go);
+    dh-=go+gp;dE-=go*ry.y+gp*rp.y;mom+=(go+gp)*dir;flux+=abs(go)+abs(gp);dc-=gc;
   }
   // Feeding: full weight inside 0.4 of a source's radius, smoothly none at its edge (the CPU normalises the volume).
-  vec2 p=uOrigin+(vec2(c)+.5)*uCell;
   float feed=0.;
   for(int i=0;i<${MAX_SOURCES};i++){
     vec4 s=uSrc[i];
@@ -184,11 +233,27 @@ void main(){
   float hh=max(s0.r+dh+feed,0.);
   float E=s0.r*s0.b+dE+feed*uTsrc;
   float T=hh>1e-7?clamp(E/hh,0.,1.):s0.b;
-  float hc=s0.g;
+  float hc=max(s0.g+dc,0.);
+  float dent=p0.b-dc;
+  // Prints: the memory (softening) covers the press and its berm, the glow of broken crust shows the inside's heat
+  // where a crab breaks a skin; both fade, the dent in cold rock only goes with the rock.
+  float Pm=0.,Pg=0.;
+  for(int i=0;i<${MAX_PRESS};i++){
+    if(i>=uPressN||!live)break;
+    vec4 q=uPress[i];float r=length(p-q.xy);
+    Pm=max(Pm,q.w*(1.-smoothstep(q.z,q.z+.75,r)));
+    Pg=max(Pg,q.w*(1.-smoothstep(.55*q.z,q.z+.3,r)));
+  }
+  float pm=max(p0.r-uMStep,Pm);
+  float pg=max(p0.g*uGDecay,Pg*smoothstep(.1,.5,T)*step(.02,s0.r+s0.g));
+  if(pm<1e-3)pm=0.;
+  if(pg<2e-3)pg=0.;
   // Cooling, faster when thin; below the freezing point the hot layer becomes rock where it lies.
   if(hh>0.)T*=exp(-uDt*(uK0+uK1/max(hh,.05)));else T*=exp(-uDt*uKc);
   if(hh>0.&&T<uTf){hc+=hh;hh=0.;}
-  hc=max(hc-(uSub+hc/uSubT)*uDt,0.);
+  float hs=max(hc-(uSub+hc/uSubT)*uDt,0.);
+  dent*=hc>1e-6?hs/hc:0.;
+  hc=hs;
   // Velocity: flux per unit width over the thickness, in and out averaged, smoothed over ~0.4 s; exactly 0 at rest.
   vec2 vi=mom*uCell/(max(hh,.05)*uDt)*.5;
   vec2 v=mix(f0.xy,vi,.04);
@@ -197,6 +262,7 @@ void main(){
   if(act<2e-4)act=0.;
   oState=vec4(hh,hc,T,s0.a);
   oFlow=vec4(v,act,hh>0.?hh+hc:f0.w);
+  oPrint=vec4(pm,pg,abs(dent)<1e-6?0.:dent,0.);
 }
 `;
 
@@ -207,21 +273,26 @@ precision highp sampler2D;
 uniform sampler2D uInit;
 layout(location=0) out highp vec4 oState;
 layout(location=1) out highp vec4 oFlow;
-void main(){vec4 s=texelFetch(uInit,ivec2(gl_FragCoord.xy),0);oState=s;oFlow=vec4(0.,0.,0.,s.a<0.?0.:s.r+s.g);}
+layout(location=2) out highp vec4 oPrint;
+void main(){vec4 s=texelFetch(uInit,ivec2(gl_FragCoord.xy),0);oState=s;oFlow=vec4(0.,0.,0.,s.a<0.?0.:s.r+s.g);oPrint=vec4(0.);}
 `;
 
 /** What the meshes read (half float, linear): R0 total thickness, 5x5-blurred thickness (normals, halo, clinker),
  * temperature, 3x3-blurred thickness (the rounded front of the drawn surface); R1 velocity, activity, 5x5-blurred
- * thickness at freezing (the rope folds). Empty cells take their thickest neighbour's
- * temperature, velocity and activity, so filtering across the edge does not fade the front. */
+ * thickness at freezing (the rope folds); R2 the prints: broken-crust glow, dent in cold rock, print memory. Empty
+ * cells take their thickest neighbour's temperature, velocity and activity, so filtering across the edge does not fade
+ * the front. Where a crab has pressed (or a dent stays in the rock) the drawn surface and its normals follow the cells
+ * more closely, so the trench reads instead of being rounded over by the blurs. */
 const PREP_FRAG = /* glsl */ `
 precision highp float;
 precision highp int;
 precision highp sampler2D;
 uniform sampler2D uState;
 uniform sampler2D uFlow;
+uniform sampler2D uPrint;
 layout(location=0) out highp vec4 o0;
 layout(location=1) out highp vec4 o1;
+layout(location=2) out highp vec4 o2;
 void main(){
   ivec2 c=ivec2(gl_FragCoord.xy);
   ivec2 sz=textureSize(uState,0);
@@ -239,8 +310,11 @@ void main(){
     if(abs(i)<=1&&abs(j)<=1)b3+=hq*float((i==0?2:1)*(j==0?2:1));
     if(abs(i)<=1&&abs(j)<=1&&h<1e-4&&hq>best){best=hq;bs=sq;bf=texelFetch(uFlow,q,0);}
   }
-  o0=vec4(h,blur/wsum,bs.b,b3/16.);
+  vec4 pp=texelFetch(uPrint,c,0);
+  float pw=max(pp.r,smoothstep(.004,.03,abs(pp.b)));
+  o0=vec4(h,mix(blur/wsum,b3/16.,.5*pw),bs.b,mix(b3/16.,h,.6*pw));
   o1=vec4(bf.xy,bf.z,fz/wsum);
+  o2=vec4(pp.g,pp.b,pp.r,0.);
 }
 `;
 
@@ -259,6 +333,7 @@ export class LavaFlow {
   readonly uniforms = {
     uFR0: { value: null as THREE.Texture | null },
     uFR1: { value: null as THREE.Texture | null },
+    uFR2: { value: null as THREE.Texture | null },
     uFBase: { value: null as THREE.Texture | null },
     uFGrid: { value: new THREE.Vector4() }, // origin x, origin z, size x (m), size z (m)
     uFTexel: { value: new THREE.Vector2() },
@@ -273,6 +348,14 @@ export class LavaFlow {
   paused = false;
   /** QA: replaces the episode schedule, (source index, sim time) -> m3/s. */
   override: ((source: number, t: number) => number) | null = null;
+  /** Debug knob: prints off (mass-conservation test, A/B). */
+  prints = true;
+  /** Presses this frame (setPress), read by the next steps. */
+  pressCount = 0;
+  private readonly pressVec: THREE.Vector4[] = [];
+  /** Bounding boxes of the presses in each of the last PRINT_SLOTS seconds (x0, z0, x1, z1) and their seconds. */
+  private readonly slotBox = new Float32Array(PRINT_SLOTS * 4);
+  private readonly slotSec = new Float64Array(PRINT_SLOTS).fill(-1e9);
   supported = true;
   private readonly baseTex: THREE.DataTexture;
   private readonly initTex: THREE.DataTexture;
@@ -325,11 +408,12 @@ export class LavaFlow {
     // Until the first frame renders the targets, the meshes read an empty field.
     this.empty = new THREE.DataTexture(new Float32Array(4), 1, 1, THREE.RGBAFormat, THREE.FloatType);
     this.empty.needsUpdate = true;
-    this.uniforms.uFR0.value = this.uniforms.uFR1.value = this.empty;
+    this.uniforms.uFR0.value = this.uniforms.uFR1.value = this.uniforms.uFR2.value = this.empty;
     this.uniforms.uFBase.value = this.baseTex;
     this.uniforms.uFGrid.value.set(this.x0, this.z0, nx * C, nz * C);
     this.uniforms.uFTexel.value.set(1 / nx, 1 / nz);
     for (let i = 0; i < MAX_SOURCES; i++) this.srcVec.push(new THREE.Vector4());
+    for (let i = 0; i < MAX_PRESS; i++) this.pressVec.push(new THREE.Vector4());
     // The sim and prep passes only draw the cells the lava can reach (44 % of the grid), as runs along each row; the
     // others stay zero in both targets.
     this.sim = this.pass(SIM_FRAG, {
@@ -337,9 +421,12 @@ export class LavaFlow {
       uOrigin: { value: new THREE.Vector2(this.x0, this.z0) }, uK: { value: FLUX_K }, uD: { value: opts.d }, uEps: { value: FLUX_EPS },
       uDt: { value: 1 / (FLOW_STEP_HZ * PASSES) }, uCell: { value: C }, uK0: { value: K0 }, uK1: { value: K1 }, uKc: { value: KC },
       uTf: { value: TF }, uSub: { value: SUBSIDE }, uSubT: { value: SUBSIDE_T }, uTsrc: { value: T_SRC }, uCap0: { value: CAP0 }, uCap1: { value: CAP1 },
+      uPrint: { value: null }, uPress: { value: this.pressVec }, uPressN: { value: 0 }, uPrintBox: { value: new THREE.Vector4(1, 1, -1, -1) },
+      uKp: { value: PRESS_K }, uKpc: { value: PRESS_KC }, uDentMax: { value: DENT_MAX }, uThD: { value: THIXO_D }, uThK: { value: THIXO_K },
+      uMStep: { value: 1 / (FLOW_STEP_HZ * PASSES * PRINT_T) }, uGDecay: { value: Math.exp(-1 / (FLOW_STEP_HZ * PASSES * GLOW_TAU)) },
     }, this.runs(0));
     this.init = this.pass(INIT_FRAG, { uInit: { value: this.initTex } });
-    this.prep = this.pass(PREP_FRAG, { uState: { value: null }, uFlow: { value: null } }, this.runs(3));
+    this.prep = this.pass(PREP_FRAG, { uState: { value: null }, uFlow: { value: null }, uPrint: { value: null } }, this.runs(3));
   }
 
   /** Cell index of a world point, or -1 outside the grid. */
@@ -417,11 +504,11 @@ export class LavaFlow {
     if (!this.supported) return false;
     if (!renderer.capabilities.isWebGL2 || !renderer.extensions.has('EXT_color_buffer_float')) { this.supported = false; return false; }
     const mk = (type: THREE.TextureDataType, filter: THREE.MagnificationTextureFilter) => {
-      const t = new THREE.WebGLRenderTarget(this.nx, this.nz, { count: 2, type, format: THREE.RGBAFormat, minFilter: filter, magFilter: filter, depthBuffer: false, generateMipmaps: false });
+      const t = new THREE.WebGLRenderTarget(this.nx, this.nz, { count: 3, type, format: THREE.RGBAFormat, minFilter: filter, magFilter: filter, depthBuffer: false, generateMipmaps: false });
       return t;
     };
     this.targets = [mk(THREE.FloatType, THREE.NearestFilter), mk(THREE.FloatType, THREE.NearestFilter)];
-    for (const t of this.targets) t.textures[1].type = THREE.HalfFloatType;
+    for (const t of this.targets) t.textures[1].type = t.textures[2].type = THREE.HalfFloatType;
     this.render = mk(THREE.HalfFloatType, THREE.LinearFilter);
     this.reset(renderer);
     return true;
@@ -445,7 +532,7 @@ export class LavaFlow {
     this.draw(renderer, this.init, this.targets[1]);
     this.draw(renderer, this.init, this.targets[0]);
     this.read = 0;
-    this.time = 0; this.steps = 0; this.bank = 0; this.srcNorm.clear();
+    this.time = 0; this.steps = 0; this.bank = 0; this.srcNorm.clear(); this.slotSec.fill(-1e9);
     this.prepare(renderer);
     // The first snapshot is the start state itself, copied on the CPU (no read-back stall), so the first episodes can
     // break out of the old lobes too.
@@ -536,11 +623,15 @@ export class LavaFlow {
       v.set(at.x, at.z, SOURCE_R, rate / at.norm);
     }
     const u = this.sim.mat.uniforms;
+    const presses = this.prints ? this.pressCount : 0;
+    u.uPressN.value = presses;
+    this.printBox(presses, u.uPrintBox.value);
     u.uSub.value = this.subsiding ? SUBSIDE : 0;
     u.uSubT.value = this.subsiding ? SUBSIDE_T : 1e30;
     for (let p = 0; p < PASSES; p++) {
       u.uState.value = this.targets[this.read].textures[0];
       u.uFlow.value = this.targets[this.read].textures[1];
+      u.uPrint.value = this.targets[this.read].textures[2];
       this.draw(renderer, this.sim, this.targets[1 - this.read]);
       this.read = 1 - this.read;
     }
@@ -552,9 +643,11 @@ export class LavaFlow {
     const u = this.prep.mat.uniforms;
     u.uState.value = this.targets[this.read].textures[0];
     u.uFlow.value = this.targets[this.read].textures[1];
+    u.uPrint.value = this.targets[this.read].textures[2];
     this.draw(renderer, this.prep, this.render!);
     this.uniforms.uFR0.value = this.render!.textures[0];
     this.uniforms.uFR1.value = this.render!.textures[1];
+    this.uniforms.uFR2.value = this.render!.textures[2];
   }
 
   /** Advance by the frame's time: whole steps at the fixed rate, at most 4 a frame (the rest is dropped). */
@@ -587,6 +680,36 @@ export class LavaFlow {
     if (!this.targets.length) return out;
     renderer.readRenderTargetPixels(this.targets[this.read], 0, 0, this.nx, this.nz, out, undefined, 0);
     return out;
+  }
+
+  /** Adds this step's presses to the current second's box and writes the union of the last PRINT_T s into `out`
+   * (empty, x0 > x1, when nobody has pressed for that long). */
+  private printBox(presses: number, out: THREE.Vector4) {
+    const sec = Math.floor(this.time), b = this.slotBox, slot = ((sec % PRINT_SLOTS) + PRINT_SLOTS) % PRINT_SLOTS;
+    if (presses) {
+      const k = slot * 4;
+      if (this.slotSec[slot] !== sec) { this.slotSec[slot] = sec; b[k] = b[k + 1] = 1e9; b[k + 2] = b[k + 3] = -1e9; }
+      for (let i = 0; i < presses; i++) {
+        const q = this.pressVec[i], m = q.z + PRINT_MARGIN;
+        b[k] = Math.min(b[k], q.x - m); b[k + 1] = Math.min(b[k + 1], q.y - m); b[k + 2] = Math.max(b[k + 2], q.x + m); b[k + 3] = Math.max(b[k + 3], q.y + m);
+      }
+    }
+    out.set(1e9, 1e9, -1e9, -1e9);
+    for (let i = 0; i < PRINT_SLOTS; i++) {
+      if (sec - this.slotSec[i] > PRINT_T + 1) continue;
+      const k = i * 4;
+      out.set(Math.min(out.x, b[k]), Math.min(out.y, b[k + 1]), Math.max(out.z, b[k + 2]), Math.max(out.w, b[k + 3]));
+    }
+  }
+
+  /** Crabs pressing the lava for the coming steps: clearPresses() then setPress() for each (at most 8; the rest are
+   * dropped). x, z the body's middle, r its radius, m; w 0..1. Outside the grid a press does nothing. */
+  clearPresses() { this.pressCount = 0; }
+  setPress(x: number, z: number, r: number, w = 1) {
+    if (this.pressCount >= MAX_PRESS) return false;
+    if (x < this.x0 - r || z < this.z0 - r || x > this.x0 + this.nx * FLOW_CELL + r || z > this.z0 + this.nz * FLOW_CELL + r) return false;
+    this.pressVec[this.pressCount++].set(x, z, r, w);
+    return true;
   }
 
   stats(renderer: THREE.WebGLRenderer): FlowStats {

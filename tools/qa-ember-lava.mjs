@@ -10,6 +10,8 @@
 // episodes (0.9 m3/s for 20 s) grows a lobe whose volume rises while it feeds, whose front visibly advances (at least
 // 1.2 m between 1 s and 10 s, 0.6 m in the first 4 s of that) and stops within a few seconds of the feed stopping; with
 // the sources and subsidence off the volume holds to 0.1 %.
+// Prints: a crab walking (5 m/s) across a hot lobe parts it into a trench that refills within 6 s; across cold crust it
+// leaves a dent that is still there 10 s later; with prints on and off the volume holds to 0.1 %.
 //
 // Usage: CC_QA_BASE=http://127.0.0.1:5262 node tools/qa-ember-lava.mjs
 //   CC_QA_OUT=tmp/qa   where the PNGs go       CC_QA_LABEL=after   file name prefix
@@ -59,7 +61,7 @@ try {
   assert.ok(names.includes('molten-sea') && names.includes('lava-crater'), `chapter 5 lava objects: ${names}`);
   if (!before) assert.ok(names.includes('lava-tongues'), 'lava tongues');
   if (!before) assert.ok(names.includes('lava-drips'), 'lava drips');
-  const sixth = await p.evaluate(() => { const r = window.app.current.game.world2.sixth.root; return {lava: !!r.getObjectByName('molten-sea') || !!r.getObjectByName('lava-tongues') || !!r.getObjectByName('lava-drips'), clouds: !!r.getObjectByName('skybloom-cloud-sea')}; });
+  const sixth = await p.evaluate(() => { const r = window.app.current.game.world2.sixth.root; return {lava: !!r.getObjectByName('molten-sea') || !!r.getObjectByName('lava-tongues') || !!r.getObjectByName('lava-drips'), clouds: !!r.getObjectByName('sea-of-clouds') || !!r.getObjectByName('skybloom-cloud-sea')}; });
   assert.deepEqual(sixth, {lava: false, clouds: true});
 
   // Pictures of the place, not of the HUD or the player: hide both (the camera still orbits the player).
@@ -211,6 +213,80 @@ try {
     const drift = Math.abs(lobe.mass[1] / lobe.mass[0] - 1);
     console.log('flow mass', lobe.mass.map(v => v.toFixed(4)).join(' -> '), `drift ${(drift * 100).toExponential(2)} %`);
     assert.ok(drift < 1e-3, 'mass is conserved with sources and subsidence off');
+
+    // Prints (emberLavaPrints.ts): a crab pressed across a lobe at the game's walking speed (5 m/s), compared with the
+    // same run with prints off (the sim is deterministic), so the depth is the print's alone.
+    const pr = await p.evaluate(async () => {
+      const g = window.app.current.game, f = g.world2.fifth.lava.flow, R = g.engine.renderer, C = .25;
+      const surf = (st, x, z) => { const k = f.cellAt(x, z); return st[k * 4] + st[k * 4 + 1]; };
+      const centroid = (st, ch) => { let sx = 0, sz = 0, sw = 0; for (let j = 0; j < f.nz; j++) for (let i = 0; i < f.nx; i++) { const v = st[(j * f.nx + i) * 4 + ch]; if (v > .2) { sx += i * v; sz += j * v; sw += v; } } return [f.x0 + (sx / sw + .5) * C, f.z0 + (sz / sw + .5) * C]; };
+      const s1 = f.sources[1], ax = -s1.dirZ, az = s1.dirX;
+      // Fed 0-20 s from the main flow's nose; `until` s of history (30: hot, stopped; 290: frozen through).
+      const lobe = (until) => { f.reset(R, false); f.override = (i, t) => (i === 1 && t < 20 ? .9 : 0); f.advance(R, until * 30); };
+      const walk = (prints, until, ch, after) => {
+        lobe(until); f.prints = prints;
+        const st0 = f.readState(R), [cx, cz] = centroid(st0, ch), L = 6, v = 5, n = Math.round(L / v * 30), rows = [];
+        for (let s = 0; s < n + after * 30; s++) {
+          f.clearPresses();
+          if (s < n) { const u = -L / 2 + v * s / 30; f.setPress(cx + ax * u, cz + az * u, .6); }
+          f.advance(R, 1, false);
+          if (s >= n / 2 && (s - Math.round(n / 2)) % 15 === 0) rows.push({t: +((s - n / 2) / 30).toFixed(1), h: surf(f.readState(R), cx, cz)});
+        }
+        f.clearPresses(); f.prints = true;
+        return {rows, hot: st0[f.cellAt(cx, cz) * 4], cold: st0[f.cellAt(cx, cz) * 4 + 1]};
+      };
+      const depth = (on, off) => on.rows.map((r, i) => ({t: r.t, d: +(off.rows[i].h - r.h).toFixed(4)}));
+      const hotOn = walk(true, 30, 0, 8), hotOff = walk(false, 30, 0, 8);
+      const coldOn = walk(true, 290, 1, 14), coldOff = walk(false, 290, 1, 14);
+      // Mass: the hot lobe with sources and subsidence off, a crab walking back and forth across it for 20 s.
+      const mass = {};
+      for (const on of [true, false]) {
+        lobe(30); f.feeding = false; f.subsiding = false; f.prints = on;
+        const [cx, cz] = centroid(f.readState(R), 0), m0 = f.stats(R).total;
+        for (let s = 0; s < 600; s++) { f.clearPresses(); const u = 3 * Math.sin(s / 30 * 1.6); f.setPress(cx + ax * u, cz + az * u, .6); f.advance(R, 1, false); }
+        f.clearPresses(); f.advance(R, 300, false);
+        mass[on ? 'on' : 'off'] = [m0, f.stats(R).total];
+        f.feeding = true; f.subsiding = true; f.prints = true;
+      }
+      // Cost of a step (one sim pass; the prep pass runs once a frame on top): 600 steps, in wall time (the pipeline
+      // drained by read-backs) and on a GPU timer query where the browser has one (ANGLE on Metal reports far more than
+      // the wall time, so only the difference means anything), a crab pressing vs prints off (also the path when nobody
+      // has pressed for 7 s); best of three.
+      lobe(30); const [cx, cz] = centroid(f.readState(R), 0);
+      const gl = R.getContext(), tq = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+      const time = async (on) => {
+        let best = 1e9, wall = 1e9;
+        for (let k = 0; k < 3; k++) {
+          f.prints = on; f.clearPresses(); f.setPress(cx, cz, .6); f.readState(R);
+          const q = tq && gl.createQuery(), t0 = performance.now();
+          if (q) gl.beginQuery(tq.TIME_ELAPSED_EXT, q);
+          f.advance(R, 600, false);
+          if (q) gl.endQuery(tq.TIME_ELAPSED_EXT);
+          f.readState(R);
+          let ms = performance.now() - t0;
+          wall = Math.min(wall, ms);
+          if (q) { for (let w = 0; w < 100 && !gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE); w++) await new Promise(r => setTimeout(r, 20)); if (!gl.getParameter(tq.GPU_DISJOINT_EXT)) ms = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; gl.deleteQuery(q); }
+          best = Math.min(best, ms);
+        }
+        f.clearPresses(); f.prints = true; return {gpu: tq ? best / .6 : NaN, wall: wall / .6};
+      };
+      const cost = {off: await time(false), on: await time(true)};
+      f.override = null; f.reset(R, true); f.advance(R, 450);
+      return {hot: depth(hotOn, hotOff), cold: depth(coldOn, coldOff), hotCell: [hotOn.hot, hotOn.cold], coldCell: [coldOn.hot, coldOn.cold], mass, cost};
+    });
+    console.log('prints hot lobe', JSON.stringify(pr.hotCell), pr.hot.map(r => `${r.t}s ${r.d}`).join(' | '));
+    console.log('prints cold crust', JSON.stringify(pr.coldCell), pr.cold.filter((r, i) => i % 2 === 0).map(r => `${r.t}s ${r.d}`).join(' | '));
+    const hd = t => pr.hot.find(r => r.t === t).d, cd = t => pr.cold.find(r => r.t === t).d;
+    const hotMax = Math.max(...pr.hot.map(r => r.d));
+    assert.ok(pr.hotCell[0] > .3 && pr.coldCell[0] === 0 && pr.coldCell[1] > .3, 'the walks cross hot lava, then cold rock');
+    assert.ok(hotMax > .15, `a crab parts hot lava: trench ${hotMax} m`);
+    assert.ok(hd(6) < .5 * hotMax && hd(2) < hotMax && hd(4) < hd(2) && hd(6) < hd(4), `the trench refills within 6 s: ${hotMax} -> ${hd(2)} -> ${hd(4)} -> ${hd(6)} m`);
+    assert.ok(cd(1) > .01, `a crab dents cold crust: ${cd(1)} m`);
+    assert.ok(cd(11) > .9 * cd(1), `the dent stays for 10 s: ${cd(1)} -> ${cd(11)} m`);
+    const pd = v => Math.abs(v[1] / v[0] - 1);
+    console.log('prints mass', `on ${pr.mass.on.map(v => v.toFixed(4)).join(' -> ')} drift ${(pd(pr.mass.on) * 100).toExponential(2)} %`, `off ${pr.mass.off.map(v => v.toFixed(4)).join(' -> ')} drift ${(pd(pr.mass.off) * 100).toExponential(2)} %`);
+    assert.ok(pd(pr.mass.on) < 1e-3 && pd(pr.mass.off) < 1e-3, 'mass is conserved with prints on and off');
+    console.log('prints cost per step, us', JSON.stringify(pr.cost, (k, v) => typeof v === 'number' ? +v.toFixed(1) : v));
   }
   assert.deepEqual(errors, []);
   console.log('qa-ember-lava ok', label, quality);
