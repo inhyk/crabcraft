@@ -3,6 +3,9 @@
 // Stillness: with the camera fixed, 24 consecutive frames are read back; over the pixels the lava's own mask marks as
 // having no time term (cooled crust, levees, stopped toes, the crater lip, clinker) the mean absolute difference
 // between neighbouring frames (0-255) must stay near zero. Flowing lava is exempt.
+// Drips (emberLavaDrips.ts): they exist in chapter 5 only, the pool has its full size on high and fewer sites on low,
+// within one cycle (at most 7 s) live drips pinch off and their drops reach the lava under them (the counters update()
+// keeps, and the exported state over one period of every site), and the GPU time of drawing them alone is printed.
 // Simulated lava (emberLavaFlow.ts): it steps in real time; on bare ground the main flow's source fed as one of its
 // episodes (0.9 m3/s for 20 s) grows a lobe whose volume rises while it feeds, whose front visibly advances (at least
 // 1.2 m between 1 s and 10 s, 0.6 m in the first 4 s of that) and stops within a few seconds of the feed stopping; with
@@ -54,10 +57,11 @@ try {
   await p.evaluate(() => { const g = window.app.current.game; g.creatorTravel = true; g.world2.go(5); });
   await p.waitForTimeout(6500);
 
-  const names = await p.evaluate(() => { const r = window.app.current.game.world2.fifth.root; return ['molten-sea', 'lava-crater', 'lava-tongues'].filter(n => r.getObjectByName(n)); });
+  const names = await p.evaluate(() => { const r = window.app.current.game.world2.fifth.root; return ['molten-sea', 'lava-crater', 'lava-tongues', 'lava-drips'].filter(n => r.getObjectByName(n)); });
   assert.ok(names.includes('molten-sea') && names.includes('lava-crater'), `chapter 5 lava objects: ${names}`);
   if (!before) assert.ok(names.includes('lava-tongues'), 'lava tongues');
-  const sixth = await p.evaluate(() => { const r = window.app.current.game.world2.sixth.root; return {lava: !!r.getObjectByName('molten-sea') || !!r.getObjectByName('lava-tongues'), clouds: !!r.getObjectByName('sea-of-clouds') || !!r.getObjectByName('skybloom-cloud-sea')}; });
+  if (!before) assert.ok(names.includes('lava-drips'), 'lava drips');
+  const sixth = await p.evaluate(() => { const r = window.app.current.game.world2.sixth.root; return {lava: !!r.getObjectByName('molten-sea') || !!r.getObjectByName('lava-tongues') || !!r.getObjectByName('lava-drips'), clouds: !!r.getObjectByName('sea-of-clouds') || !!r.getObjectByName('skybloom-cloud-sea')}; });
   assert.deepEqual(sixth, {lava: false, clouds: true});
 
   // Pictures of the place, not of the HUD or the player: hide both (the camera still orbits the player).
@@ -122,6 +126,63 @@ try {
     }
   }
   if (!before) {
+    const drips = await p.evaluate(async () => {
+      const g = window.app.current.game, d = g.world2.fifth.lava.drips;
+      // Live: the counters update() keeps, over the longest cycle (7 s) and a little more.
+      const s0 = {...d.stats};
+      await new Promise(r => setTimeout(r, 7600));
+      const live = {pinches: d.stats.pinches - s0.pinches, landings: d.stats.landings - s0.landings};
+      // Exported state over one period of every active site, 20 ms apart: the string grows, pinches, the drop falls
+      // to the lava under it (never through it) and its splat appears; the string recoils within a second.
+      const t0 = g.engine.elapsed, sites = d.sites.slice(0, d.active).map((site, i) => {
+        let pinched = false, landed = false, lowest = Infinity, maxLen = 0, recoilEnd = 0, prev = null;
+        for (let t = 0; t <= site.period + 1; t += .02) {
+          const st = d.state(t0 + t)[i];
+          maxLen = Math.max(maxLen, st.length);
+          if (prev?.stage === 'grow' && st.stage === 'recoil') pinched = true;
+          if (st.drop) lowest = Math.min(lowest, st.dropY);
+          if (prev?.drop && !st.drop && st.splatAge >= 0 && st.splatAge < .05) landed = true;
+          if (prev?.stage === 'recoil' && st.stage === 'rest') recoilEnd = st.length;
+          prev = st;
+        }
+        return {id: site.id, period: +site.period.toFixed(2), fall: +site.fall.toFixed(3), maxLen: +maxLen.toFixed(2), pinched, landed, lowestAboveLand: +(lowest - site.land.y).toFixed(3), recoilEnd: +recoilEnd.toFixed(3)};
+      });
+      // GPU time of the drips alone from this camera: everything else hidden, no clears or shadow updates, 50 draws per
+      // timer query (one draw is below the timer's noise), the median of 9 queries divided by 50.
+      let gpuMs = null;
+      const R = g.engine.renderer, gl = R.getContext(), ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+      if (ext) {
+        const mine = new Set(), hidden = [];
+        d.root.traverse(o => mine.add(o));
+        g.scene.traverse(o => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && !mine.has(o) && o.visible) { hidden.push(o); o.visible = false; } });
+        R.setAnimationLoop(null);
+        const ac = R.autoClear, su = R.shadowMap.autoUpdate; R.autoClear = false; R.shadowMap.autoUpdate = false;
+        const qs = [];
+        for (let k = 0; k < 11; k++) {
+          R.clear(); const q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
+          for (let j = 0; j < 50; j++) R.render(g.scene, g.camera);
+          gl.endQuery(ext.TIME_ELAPSED_EXT); if (k >= 2) qs.push(q);
+          await new Promise(r => setTimeout(r, 30));
+        }
+        await new Promise(r => setTimeout(r, 400));
+        const ns = qs.map(q => gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE) ? gl.getQueryParameter(q, gl.QUERY_RESULT) : NaN).filter(Number.isFinite).sort((x, y) => x - y);
+        R.autoClear = ac; R.shadowMap.autoUpdate = su;
+        for (const o of hidden) o.visible = true;
+        R.setAnimationLoop(g.engine.frame);
+        gpuMs = ns.length ? +(ns[Math.floor(ns.length / 2)] / 50 / 1e6).toFixed(4) : null;
+      }
+      return {active: d.active, total: d.sites.length, live, sites, gpuMs};
+    });
+    console.log('drips', JSON.stringify({active: drips.active, total: drips.total, live: drips.live, gpuMs: drips.gpuMs}));
+    for (const s of drips.sites) console.log('drip', JSON.stringify(s));
+    assert.equal(drips.active, quality === 'low' ? Math.min(4, drips.total) : drips.total, 'drip sites for the quality');
+    assert.ok(drips.total >= 6, `6-10 drip sites: ${drips.total}`);
+    assert.ok(drips.live.pinches >= 1 && drips.live.landings >= 1, `live drips pinch off and land: ${JSON.stringify(drips.live)}`);
+    for (const s of drips.sites) {
+      assert.ok(s.pinched && s.landed, `drip ${s.id} pinches off and its drop lands within one cycle`);
+      assert.ok(s.lowestAboveLand > -.02, `drip ${s.id}'s drop stops at the lava: ${s.lowestAboveLand}`);
+      assert.ok(s.maxLen > s.recoilEnd + .3, `drip ${s.id} stretches and recoils: ${s.maxLen} -> ${s.recoilEnd} m`);
+    }
     const live = await p.evaluate(async () => {
       const lava = window.app.current.game.world2.fifth.lava, f = lava.flow, s0 = f.steps;
       await new Promise(r => setTimeout(r, 3000));
