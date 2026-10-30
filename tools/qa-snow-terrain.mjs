@@ -35,7 +35,9 @@ try{
  assert.ok(s.layout.spacing<0.1&&s.layout.levels>=8&&s.layout.half>=64,`inner rings under 10 cm, 8 levels: ${JSON.stringify(s.layout)}`);
  assert.ok(s.verts>100000&&s.tris>200000&&s.groundRes===2048,`one dense clipmap draw over a 2048 bake: ${JSON.stringify(s)}`);
  assert.ok(s.depth&&s.shadows.every(Boolean)&&s.culled===false,'the shadow pass runs the clipmap placement');
- assert.deepEqual(s.planes,[],'no flat ground or sea plane is left');
+ // The one wide plane allowed is the frozen sea's floes and leads (snowSeaIce.ts), laid over the clipmap's sea.
+ assert.ok(s.planes.includes('frostlight-sea-ice'),`the sea-ice sheet covers the frozen sea: ${JSON.stringify(s.planes)}`);
+ assert.deepEqual(s.planes.filter(n=>n!=='frostlight-sea-ice'),[],'no flat ground or sea plane is left');
  console.log('PASS the snowfield is a nested-ring clipmap, not a plane',JSON.stringify({layout:s.layout,verts:s.verts,tris:s.tris,groundRes:s.groundRes}));
 
  // The GPU ground (shader twin and bake) is the server's snowHeight(), height and slope.
@@ -89,7 +91,7 @@ try{
  const low=await load('low');
  const l=await structure(low);
  assert.ok(l.visible&&l.layout.spacing>s.layout.spacing&&l.verts<s.verts/2&&l.groundRes===1024,`low quality: coarser rings and bake: ${JSON.stringify({layout:l.layout,verts:l.verts,groundRes:l.groundRes})}`);
- assert.deepEqual(l.planes,[],'low quality has no flat plane either');
+ assert.deepEqual(l.planes.filter(n=>n!=='frostlight-sea-ice'),[],'low quality has no flat plane either');
  assert.ok(l.rocks.length===s.rocks.length&&l.ridges.visible,'low quality keeps the crags and ranges');
  await shot(low,[52,10],[46,2.6,22],[70,1.5,-20],'tmp/qa/snow-terrain-low.png');
  console.log('PASS low quality runs the same terrain on a coarser lattice',JSON.stringify({layout:l.layout,verts:l.verts,groundRes:l.groundRes}));

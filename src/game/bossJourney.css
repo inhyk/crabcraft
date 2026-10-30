@@ -28,3 +28,8 @@
 
 .bj-card.ember{--boss-color:#ff9357;background:linear-gradient(115deg,#381c17,#16171e)}
 .bj-card.sky{--boss-color:#87f6c7;background:linear-gradient(115deg,#153b35,#16171e)}
+
+/* A window that no longer holds its character's save (saveHold.ts): says so above the HUD until it reloads. */
+.save-hold-notice{position:absolute;left:50%;top:86px;z-index:70;transform:translateX(-50%);width:min(460px,calc(100vw - 32px));box-sizing:border-box;padding:14px 18px;border:1px solid #e1a556;border-radius:12px;background:linear-gradient(145deg,#2c1d12f2,#16131af2);color:#f6e4bf;text-align:center;box-shadow:0 14px 44px #000a;pointer-events:auto}
+.save-hold-notice p{margin:0 0 10px;font-size:15px;line-height:1.55}
+.save-hold-notice .cc-btn{min-width:140px}

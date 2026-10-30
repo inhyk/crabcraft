@@ -56,8 +56,9 @@ of the world's lamp geometry after filming.
 ## Night-elf action showcase
 
 `tribute/scenes/elf-actions.mjs` replaces only the original `night-elf-run`
-(74.6-88.0 seconds, edit frames 1790-2111) with seven shots. The close-up,
-transformation, cliff leap and the rest of the tribute retain their original specs.
+(74.6-88.0 seconds, edit frames 1790-2111) with seven shots. The close-up and the
+rest of the tribute retain their original specs. The transformation, the run along the headland,
+the leap across the moon and the dive are one take, `night-elf-dive` (88.0-91.75) in `night.mjs`.
 All seven actions play existing MuJoCo motion clips through the game runtime:
 
 | Shot | Song seconds | Source clip | Treatment |
@@ -67,13 +68,15 @@ All seven actions play existing MuJoCo motion clips through the game runtime:
 | night-elf-spin | 77.7-79.15 | break_spin | Ground spin excerpt, side view |
 | night-elf-backflip | 79.15-80.8 | break_backflip | Full takeoff, rotation and recovery, puddle hit at 79.72 |
 | night-elf-clawstand | 80.8-82.8 | break_clawstand | Balance and return to the feet |
-| night-elf-oneclaw | 82.8-85.2 | break_oneclaw | One-claw balance and release, water accent at 84.38 |
-| night-elf-720 | 85.2-88.0 | break_jumpspin | Full 720 and recovery at 0.58x, then the original transformation mark |
+| night-elf-oneclaw | 82.8-85.2 | break_oneclaw | One-claw balance at a pond's edge, then a dash through it: her first strides hit the water at 84.38 |
+| night-elf-720 | 85.2-88.0 | break_jumpspin | Full 720 and recovery at 0.58x, then a run and a spring into the change's burst |
 
 The shorter dance shots are excerpts, not complete policy rollouts. Grounded action
 roots stay planted. The jumps use the recorded floating-body pose; their stage path
-does not add another jump. Only the post-720 transformation lift is authored, matching
-the following shot at x=-90.5, z=94.5, lift=1.15. The 720 camera follows the recorded
+does not add another jump. After a move, a `dash` runs her off along her line (the
+path's speed drives the game's run gait, no looping clip). The 720's dash ends in an
+authored spring whose top (`DIVE_SEAM`: 6.5 units/s, lift 0.9) is where `night-elf-dive`
+picks her up on the headland as the burst covers the cut. The 720 camera follows the recorded
 floating body with `body: true` point references to keep the airborne crab prominent. The stage waits for referenced clips
 before starting its clock, so a cold cache cannot delay the first action.
 

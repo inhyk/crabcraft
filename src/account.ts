@@ -1,10 +1,20 @@
 import type {App,ScreenId} from './app';
 import {h} from './ui/dom';
 import {t} from './i18n';
-import {applyBundle,readBundle,setSaveProfile} from './accountStorage';
+import {applyBundle,loadBundle,readBundle,setSaveProfile,VAULT_KEY} from './accountStorage';
+import {vaultCoins,vaultValue} from './game/tidecrown/vaultLedger';
 import './account.css';
 
 type Session={username:string;revision:number;save?:Record<string,string>;updated:number};
+type Meta={revision:number;snapshot:string};
+// What this device last synced with each account. Since the vault the note is `cc.account.meta.v2:`: pages from before
+// the vault go on writing `cc.account.meta:`, whose snapshot may hold a vault this device's copy does not (their loads
+// skip it), so that note is read only where there is no v2 one yet, and compared without the vault.
+const META='cc.account.meta.v2:',OLD_META='cc.account.meta:';
+// `{user, coins}`: the guest vault a first sign-in took into a new account. Those coins leave the guest's vault once the
+// account has saved them, and meanwhile no other account's first sign-in takes them.
+const IMPORT='cc.vault.import';
+const importNote=():{user:string;coins:number}|null=>{try{const n=JSON.parse(localStorage.getItem(IMPORT)??'null');return n&&typeof n.user==='string'&&Number.isSafeInteger(n.coins)&&n.coins>0?n:null;}catch{return null;}};
 class AccountError extends Error{constructor(readonly code:string){super(code);}}
 // Set just before leaving for Google as `<time>:<screen>`, so the return trip knows it is a fresh sign-in and where to land.
 const PENDING='cc.account.pending',PENDING_MS=15*60000;
@@ -50,8 +60,11 @@ export class Account {
    // Back from Google: a new account starts empty and takes this device's guest adventure, as signup did;
    // an existing one loads its cloud save over this device's copy, as login did.
    fresh=!this.serverRoute&&pending&&session.revision===0&&!Object.keys(session.save??{}).length;
-   this.accept(session,!pending);
-   if(fresh){const guest=readBundle('');if(Object.keys(guest).length)applyBundle(session.username,guest);else fresh=false;}
+   await this.accept(session,!pending);
+   if(fresh){
+    const guest=readBundle(''),held=importNote();if(held&&held.user!==session.username)delete guest[VAULT_KEY];
+    if(Object.keys(guest).length){applyBundle(session.username,guest);const coins=vaultCoins(guest[VAULT_KEY]??null);if(coins)localStorage.setItem(IMPORT,JSON.stringify({user:session.username,coins}));}else fresh=false;
+   }
   }
   catch(e){if(e instanceof AccountError&&e.code==='session')setSaveProfile('');else{try{const previous=localStorage.getItem('cc.lastAccount');if(previous&&/^g[a-f0-9]{23}$/.test(previous)){this.username=previous;setSaveProfile(previous);this.state=errorText('network');}}catch{setSaveProfile('');}}}
   if(result==='error')this.state=errorText('error');
@@ -67,16 +80,24 @@ export class Account {
   const el=h('div',{class:'account-toast cc-passive',role:'status'},this.greeting);this.greeting='';
   this.app.overlay.append(el);setTimeout(()=>el.remove(),4200);
  }
- private accept(session:Session,restoreLocal=false){
+ private async accept(session:Session,restoreLocal=false){
   if(this.serverRoute){this.username=session.username;this.revision=session.revision;this.conflict=this.clash=false;this.state=t('Google 계정으로 로그인됨','Signed in with Google');return;}
-  const local=readBundle(session.username),cloud=JSON.stringify(session.save??{}),metaKey='cc.account.meta:'+session.username;
-  let meta:{revision:number;snapshot:string}|null=null;try{meta=JSON.parse(localStorage.getItem(metaKey)??'null');}catch{ /* No previous sync. */ }
-  const keepLocal=restoreLocal&&meta?.revision===session.revision&&Object.keys(local).length>0&&JSON.stringify(local)!==meta.snapshot;
+  const u=session.username,local=readBundle(u),cloud=JSON.stringify(session.save??{}),vaultKey=`cc.account.v1:${u}:${VAULT_KEY}`;
+  const note=(prefix:string):Meta|null=>{try{return JSON.parse(localStorage.getItem(prefix+u)??'null');}catch{return null;}};
+  const meta=note(META),old=meta?null:note(OLD_META),last=meta??old;
+  let synced:Record<string,string>={};try{synced=JSON.parse(last?.snapshot??'{}')??{};}catch{ /* Unreadable: nothing synced. */ }
+  // Compared key by key in any order; against an old note, without the vault.
+  const plain=(b:Record<string,string>)=>JSON.stringify(Object.entries(b).filter(([k])=>!old||k!==VAULT_KEY).sort(([x],[y])=>x<y?-1:x>y?1:0));
+  const keepLocal=restoreLocal&&last?.revision===session.revision&&Object.keys(local).length>0&&plain(local)!==plain(synced);
   if(session.save&&!keepLocal){
-   if(Object.keys(local).length&&JSON.stringify(local)!==cloud)localStorage.setItem('cc.account.backup:'+session.username,JSON.stringify(local));
-   applyBundle(session.username,session.save);
-  }
-  localStorage.setItem(metaKey,JSON.stringify({revision:session.revision,snapshot:cloud}));
+   // The backup keeps a vault the bundle leaves out as unreadable, so a load does not drop it unseen.
+   const raw=localStorage.getItem(vaultKey),backup=raw!==null&&!(VAULT_KEY in local)?{...local,[VAULT_KEY]:raw}:local;
+   if(Object.keys(backup).length&&JSON.stringify(backup)!==cloud)localStorage.setItem('cc.account.backup:'+u,JSON.stringify(backup));
+   await loadBundle(u,session.save);
+  }else if(keepLocal&&typeof session.save?.[VAULT_KEY]==='string'&&localStorage.getItem(vaultKey)===null)
+   // A copy without a vault has moved no coins since it last loaded one: the account's vault is the current one.
+   localStorage.setItem(vaultKey,session.save[VAULT_KEY]);
+  localStorage.setItem(META+u,JSON.stringify({revision:session.revision,snapshot:cloud}));
   this.username=session.username;this.revision=session.revision;setSaveProfile(session.username);localStorage.setItem('cc.lastAccount',session.username);
   this.saved=cloud;this.conflict=false;this.clash=false;this.state=t('계정에 저장됐어요.','Saved to your account.');this.app.reloadSpec();
  }
@@ -92,10 +113,22 @@ export class Account {
   let snapshot:string;try{snapshot=JSON.stringify(readBundle());}catch{return false;}
   if(snapshot===this.saved)return true;
   this.busy=true;this.state=t('계정에 저장 중…','Saving to your account…');this.updateStatus();
-  try{const session=await this.api('save',{revision:this.revision,save:JSON.parse(snapshot)});this.revision=session.revision;this.saved=snapshot;localStorage.setItem('cc.account.meta:'+this.username,JSON.stringify({revision:this.revision,snapshot}));this.state=t('계정에 저장됐어요.','Saved to your account.');return true;}
+  try{const session=await this.api('save',{revision:this.revision,save:JSON.parse(snapshot)});this.revision=session.revision;this.saved=snapshot;localStorage.setItem(META+this.username,JSON.stringify({revision:this.revision,snapshot}));this.settleImport();this.state=t('계정에 저장됐어요.','Saved to your account.');return true;}
   catch(e){const code=e instanceof AccountError?e.code:'network',clash=code==='conflict';this.conflict=clash||code==='session';this.state=errorText(code);if(!this.conflict)this.timer=window.setTimeout(()=>void this.flush(),15000);if(clash!==this.clash){this.clash=clash;this.render();}return false;}
   finally{this.busy=false;this.updateStatus();if(!this.conflict&&JSON.stringify(readBundle())!==snapshot)this.schedule();}
  }
+ /** The guest vault this account's first sign-in took leaves the guest now that the account has saved: what is left of
+  *  it if the guest's vault changed since (an unreadable guest vault stays as it is). */
+ private settleImport(){
+  try{
+   const held=importNote();if(held?.user!==this.username)return;
+   const guest=vaultCoins(localStorage.getItem(VAULT_KEY));if(guest===null)return;
+   localStorage.setItem(VAULT_KEY,vaultValue(Math.max(0,guest-held.coins)));localStorage.removeItem(IMPORT);
+  }catch{ /* No storage: the note stays for the next save. */ }
+ }
+ /** Why the account's saves are stopped until the player acts (another window saved first, or the login expired); null
+  *  while they run. */
+ get halted():'conflict'|'session'|null{return this.conflict?(this.clash?'conflict':'session'):null;}
  private updateStatus(){const el=this.modal?.querySelector('.account-status');if(el)el.textContent=this.state;}
  private async leaveGame(){if(this.busy)throw new AccountError('saving');await this.app.go('title');}
  /** Full-page redirect to Google and back: popups and Google's script do not work on this cross-origin isolated page. */
@@ -123,7 +156,7 @@ export class Account {
   const status=h('p',{class:'account-status',role:'status','aria-live':'polite'},this.state);
   const title=h('h2',null,t('모험가의 항해 기록','Your adventure log'));
   if(this.username){
-   const reload=h('button',{type:'button',class:'cc-btn ghost',onclick:()=>{void (async()=>{reload.disabled=true;try{await this.leaveGame();const session=await this.api('session');this.accept(session);this.render();}catch(e){this.state=errorText(e instanceof AccountError?e.code:'network');this.updateStatus();}finally{reload.disabled=false;}})();}},t('계정 저장 불러오기','Load account save'));
+   const reload=h('button',{type:'button',class:'cc-btn ghost',onclick:()=>{void (async()=>{reload.disabled=true;try{await this.leaveGame();const session=await this.api('session');await this.accept(session);this.render();}catch(e){this.state=errorText(e instanceof AccountError?e.code:'network');this.updateStatus();}finally{reload.disabled=false;}})();}},t('계정 저장 불러오기','Load account save'));
    const logout=h('button',{type:'button',class:'cc-btn ghost',onclick:()=>{void (async()=>{logout.disabled=true;try{await this.leaveGame();if(!await this.flush()){this.state+=' '+t('진행을 보관한 채 나가려면 아래 버튼을 눌러 주세요.','Use the button below to sign out and keep a local copy.');this.updateStatus();const force=h('button',{class:'cc-btn ghost',onclick:()=>void this.logout()},t('이 기기에 보관하고 로그아웃','Keep local copy and sign out'));d.append(force);return;}await this.logout();}catch{this.state=errorText('network');this.updateStatus();}finally{logout.disabled=false;}})();}},t('로그아웃','Sign out'));
    // Saving is automatic; loading the account save only resolves a conflict with another window.
    d.replaceChildren(close,title,h('p',{class:'account-name'},t('Google 계정으로 로그인됨','Signed in with Google')),h('p',null,t('캐릭터·레벨·퀘스트·월드 진행을 계정에 자동 저장해요.','Your character, level, quests and worlds save automatically.')),status,...(!this.serverRoute&&this.clash?[reload]:[]),logout);return;

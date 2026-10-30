@@ -5,6 +5,9 @@ import type { World } from '../world/types';
 import type { FxPool, Fx } from './vfx/effects';
 import { C } from './vfx/vfx';
 import { FrostGuide } from './frostGuide';
+import { DawnGuide } from './dawnGuide';
+import { StarGuide } from './starGuide';
+import { EmberGuide } from './emberGuide';
 
 const CRUMBS = 9;
 const SPACING = 2.2;
@@ -25,6 +28,15 @@ export class ObjectiveMarker {
   /** Frostlight's own guidance (frostGuide.ts) instead of the pillar, chevron and crumbs; set by the game. */
   frost = false;
   private frostGuide: FrostGuide | null = null;
+  /** Goldsand's brass sun discs and arrowhead (dawnGuide.ts) instead of the chevron and crumbs; set by the game. */
+  dawn = false;
+  private dawnGuide: DawnGuide | null = null;
+  /** Starhaven's guidance (starGuide.ts: moonlit glints, a ring and rising motes at the goal) instead of the gold beam, crumbs and chevron; set by World II. */
+  star = false;
+  private starGuide: StarGuide | null = null;
+  /** Emberreach's lava-stone markers with glowing cracks and arrowhead (emberGuide.ts) instead of the chevron and crumbs; set by World V. */
+  ember = false;
+  private emberGuide: EmberGuide | null = null;
 
   constructor(fx: FxPool) {
     this.beam = fx.spawn('pillar', Infinity);
@@ -78,8 +90,10 @@ export class ObjectiveMarker {
     }
     this.frostGuide?.hide();
     const show = this.enabled && !!target;
+    if (this.star) (this.starGuide ??= new StarGuide(this.group)).update(time, world, from, target, via, combat, show);
+    else this.starGuide?.hide();
     const dist = target ? Math.hypot(target.x - from.x, target.z - from.z) : 0;
-    this.beam.mesh.visible = show && dist > 5;
+    this.beam.mesh.visible = show && dist > 5 && !this.star;
     if (target && this.beam.mesh.visible) {
       this.beam.mesh.position.set(target.x, world.heightAt(target.x, target.z), target.z);
       const r = 0.5 + Math.min(1.2, dist / 80);
@@ -87,8 +101,24 @@ export class ObjectiveMarker {
       this.beam.u.uAlpha.value = (0.45 + Math.sin(time * 2.2) * 0.12) * Math.min(1, (dist - 5) / 8);
     }
     const near = !show || dist < 7;
-    this.chevron.visible = !near && !combat;
-    this.crumbs.visible = !near && !combat && dist > 10;
+    if (this.dawn) {
+      this.chevron.visible = this.crumbs.visible = false;
+      this.dawnGuide ??= new DawnGuide(this.group);
+      if (near || !target) { this.dawnGuide.hide(); return; }
+      this.dawnGuide.update(time, world, from, via ?? target, dist, !combat);
+      return;
+    }
+    this.dawnGuide?.hide();
+    if (this.ember) {
+      this.chevron.visible = this.crumbs.visible = false;
+      this.emberGuide ??= new EmberGuide(this.group);
+      if (near || !target) { this.emberGuide.hide(); return; }
+      this.emberGuide.update(time, world, from, via ?? target, dist, !combat);
+      return;
+    }
+    this.emberGuide?.hide();
+    this.chevron.visible = !near && !combat && !this.star;
+    this.crumbs.visible = !near && !combat && dist > 10 && !this.star;
     if (near || !target) return;
     const lead = via ?? target;
     const leadDist = Math.max(0.001, Math.hypot(lead.x - from.x, lead.z - from.z));
@@ -130,6 +160,9 @@ export class ObjectiveMarker {
     this.crumbs.dispose();
     this.crumbMat.dispose();
     this.frostGuide?.dispose();
+    this.dawnGuide?.dispose();
+    this.starGuide?.dispose();
+    this.emberGuide?.dispose();
     this.group.removeFromParent();
   }
 }

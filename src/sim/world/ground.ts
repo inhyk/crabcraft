@@ -1,5 +1,6 @@
 // Ground height of the four worlds, shared by the browser and the server (numbers only).
 import { snowGround } from './snowGround.ts';
+import { dawnGround } from './dawnGround.ts';
 
 export interface HeightGrid {
   minX: number;
@@ -55,15 +56,9 @@ export function starSurfaceHeight(heights: ArrayLike<number>, x: number, z: numb
 }
 
 export const DAWN_ARENA_HEIGHT=19;
-/** World III: an analytic island, a warm coast rising to the citadel. */
+/** World III: the analytic island, its open fields and coast reshaped (dawnGround.ts), the arena raised to 19 m. */
 export function dawnHeight(x: number, z: number): number {
-  const radial = Math.hypot(x / 122, (z - 3) / 149);
-  const shore = 4 - Math.max(0, radial - 0.83) * 65;
-  const upland = 13 * smoothstep(-z, 5, 55);
-  const hills = Math.sin(x * 0.045) * Math.sin(z * 0.04) * 2 * (1 - Math.exp((-x * x) / 400));
-  const natural=radial > 0.86 ? shore : 4 + upland + hills;
-  const arena=1-smoothstep(Math.hypot(x,z+72),21,31);
-  return natural+(DAWN_ARENA_HEIGHT-natural)*arena;
+  return dawnGround(x, z, DAWN_ARENA_HEIGHT);
 }
 
 /** World IV: Frostlight's carved snowfield (snowGround.ts), the old shore, trail and arena kept where gameplay needs them. */
@@ -79,5 +74,21 @@ export function realmHeight(chapter:5|6,x:number,z:number):number {
  const hills=Math.sin(x*.047)*Math.sin(z*.035)*(chapter===5?2:1.4)*(1-Math.exp(-x*x/900));
  const y=6+rise*smoothstep(-z,0,65)+hills;
  const plaza=1-smoothstep(Math.hypot(x,z+72),20,28);
- return y+(6+rise-y)*plaza;
+ const h=y+(6+rise-y)*plaza;
+ return chapter===6?h-skybloomShoulder(x,z,edge):h;
+}
+
+/**
+ * World VI only: the outer meadows fall away toward the cliff lip, so the sea of clouds shows past the ridge from the
+ * town and the avenue. Zero (exactly) in every play zone: the town and harbour, the avenue, the sanctuary arena, the
+ * world tree's north strip, and every quest, NPC and enemy point (all lie inside edge .58).
+ */
+function skybloomShoulder(x:number,z:number,edge:number):number {
+ if(edge<=.58)return 0;
+ const out=(d:number,a:number,b:number)=>smoothstep(d,a,b);
+ const town=Math.hypot(Math.max(0,Math.abs(x)-46),Math.max(0,20-z,z-98));
+ const avenue=Math.abs(x)-(z>-72&&z<100?10:0)+(z<=-72||z>=100?99:0);
+ const arena=Math.hypot(x,z+72)-30,north=z<-90?Math.abs(x)-30:99;
+ const keep=out(town,0,14)*out(avenue,0,14)*out(arena,0,12)*out(north,0,14);
+ return 14*smoothstep(edge,.58,.83)*keep;
 }

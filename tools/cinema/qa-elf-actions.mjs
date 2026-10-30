@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { openApp, advance } from '../trailer/lib.mjs';
 import { shots as original } from './tribute/scenes/night.mjs';
-import { ELF_ACTIONS, withElfActions } from './tribute/scenes/elf-actions.mjs';
+import { DIVE_SEAM, ELF_ACTIONS, withElfActions } from './tribute/scenes/elf-actions.mjs';
 const opt = (name, fallback) => process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : fallback;
 const shots = withElfActions(original);
 const selected = shots.filter((s) => ELF_ACTIONS.some((a) => a.id === s.id));
@@ -21,8 +21,12 @@ for (const shot of selected) {
 }
 assert.equal(edge, Math.round(88 * fps));
 for (const shot of original.filter((s) => s.id !== 'night-elf-run')) assert.deepEqual(shots.find((s) => s.id === shot.id), shot, `unrelated shot changed: ${shot.id}`);
-const last = selected.at(-1).tracks.elf.path.at(-1);
-assert.ok(Math.abs(last.x + 90.5) < 1e-6 && Math.abs(last.z - 94.5) < 1e-6 && Math.abs(last.lift - 1.15) < 1e-6, 'transform seam moved');
+// The 720 ends at the top of a running spring; night-elf-dive picks her up at that lift and speed.
+const [prev, last] = selected.at(-1).tracks.elf.path.slice(-2);
+const dive = shots.find((s) => s.id === 'night-elf-dive').tracks.elf.path;
+assert.ok(Math.abs(last.lift - DIVE_SEAM.lift) < 1e-6 && Math.abs(dive[0].lift - DIVE_SEAM.lift) < 1e-6, 'transform seam lift moved');
+const speed = (a, b) => Math.hypot(b.x - a.x, b.z - a.z) / (b.t - a.t);
+assert.ok(Math.abs(speed(prev, last) - DIVE_SEAM.v) < 0.05 && Math.abs(speed(dive[0], dive[1]) - DIVE_SEAM.v) < 0.05, 'transform seam speed moved');
 const app = await openApp({ base: opt('--url', 'http://127.0.0.1:5357'), query: 'screen=game', size: [1280, 582], dsf: 1 });
 const report = { editFrames: edge - Math.round(74.6 * fps), shots: [], errors: app.errors, failures: [] };
 try {

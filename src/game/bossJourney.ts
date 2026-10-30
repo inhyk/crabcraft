@@ -4,10 +4,12 @@ import type { Game } from './game';
 import type { Boss } from './boss';
 import type { CrabSpec } from '../crab/types';
 import { localStorageGet, localStorageSet } from '../app';
+import { SPECTATE } from '../spectate';
 import { h } from '../ui/dom';
 import { xpForLevel, canChallenge, patrolReward } from './progression';
 import {equipmentRank} from './equipment';
 import { QUEST_ORDER, QUESTS, type QuestStatus } from './quests';
+import { SaveHold } from './saveHold';
 import './bossJourney.css';
 
 function readJourneySave(key: string) {
@@ -47,6 +49,10 @@ export class BossJourney {
   private last = '';
   private saveAt = 0;
   private readonly key: string;
+  /** This window's hold on the character's save (saveHold.ts); none for a spectator, who saves nothing. */
+  readonly hold: SaveHold | null;
+  /** Shown once the hold is lost: this window saves no more until it reloads. */
+  private notice: HTMLElement | null = null;
   private readonly progress = h('p', { class: 'bj-progress' });
   private readonly patrol = h('p', { class: 'bj-patrol' });
   private readonly cards: { boss: Boss; status: HTMLElement; button: HTMLButtonElement }[] = [];
@@ -60,6 +66,8 @@ export class BossJourney {
   constructor(private readonly game: Game) {
     const spec = game.player.unit.rig.spec;
     this.key = BossJourney.saveKey(spec);
+    // Before restore() reads the coins, so that a move made in another window from here on is seen.
+    this.hold = SPECTATE ? null : new SaveHold(this.key, () => this.showLost());
     this.root = h('details', { class: 'boss-journey' }, h('summary', null, '⚔ 보스 여정'),
       h('div', { class: 'bj-heading' }, h('span', null, 'THE TIDELANDS'), h('strong', null, '세 왕관의 전설')), this.progress);
     for (const boss of [game.boss, game.finalBoss, game.worldBoss,game.dawnBoss,game.frostBoss,game.emberBoss,game.skyBoss]) {
@@ -128,9 +136,21 @@ export class BossJourney {
     } catch { /* A missing or damaged local save starts a fresh journey. */ }
   }
 
-  save() {
-    localStorageSet(this.key, JSON.stringify({emberCleared:this.emberCleared,skyCleared:this.skyCleared, xpBlessingUntil:this.game.player.xpBlessingUntil,frostCleared:this.frostCleared,achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,armorRank:this.game.player.armorRank,weaponOwned:this.game.player.weaponOwned,armorOwned:this.game.player.armorOwned,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
-      quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked, kingdom:this.game.world2.hub.kingdom?.snapshot() }));
+  /** Writes the journey now; false if storage refused it or this window no longer holds the character. */
+  save(): boolean {
+    const value = JSON.stringify({emberCleared:this.emberCleared,skyCleared:this.skyCleared, xpBlessingUntil:this.game.player.xpBlessingUntil,frostCleared:this.frostCleared,achievements:this.game.achievements?.snapshot(),coins:this.game.player.coins,attackRank:this.game.player.attackRank,armorRank:this.game.player.armorRank,weaponOwned:this.game.player.weaponOwned,armorOwned:this.game.player.armorOwned,finalCleared:this.finalCleared,moonwater:this.game.player.unit.blessingUntil===Infinity,beacon:this.game.world.getEnvironment().beacon,mood:this.game.world.getEnvironment().mood,chapter:this.game.world2.chapter,firstEnding:this.firstEndingSeen,trueCleared:this.trueCleared,xp: this.game.player.xp, rust: this.rustCleared, abyss: this.abyssCleared, kills: this.kills,
+      quests: this.game.quests.status, objectives: Object.fromEntries(this.game.quests.progress), trackedQuests:this.game.quests.tracked, kingdom:this.game.world2.hub.kingdom?.snapshot() });
+    return this.hold ? this.hold.write(value) : localStorageSet(this.key, value);
+  }
+
+  private showLost(): void {
+    this.notice?.remove();
+    this.notice = h('section', { class: 'save-hold-notice', role: 'alert' },
+      h('p', null, this.hold?.lost === 'loaded'
+        ? t('다른 창에서 계정 저장을 불러왔어요. 이 창의 진행은 이제 저장되지 않으니 새로 고쳐 주세요.', 'Another window loaded your account save. This window no longer saves, so please reload it.')
+        : t('다른 창에서 이 캐릭터의 코인이 바뀌었어요. 이 창의 진행은 이제 저장되지 않으니 새로 고쳐 주세요.', 'Another window changed this character’s coins. This window no longer saves, so please reload it.')),
+      h('button', { type: 'button', class: 'cc-btn', onclick: () => location.reload() }, t('새로 고치기', 'Reload')));
+    this.game.app.ui.append(this.notice);
   }
 
   onKill() {
@@ -176,7 +196,7 @@ export class BossJourney {
     } else if (boss === this.game.worldBoss) {
       if(this.trueCleared) return;
       this.trueCleared=true;
-      this.game.hud.chat.system(t('세 번째 왕관을 되찾았습니다. 새벽의 섬으로 가는 항로가 열렸어요.','The third crown is reclaimed. The sea route to Dawnreach is open.'));
+      this.game.hud.chat.system(t('세 번째 왕관을 되찾았습니다. 골드샌드 항구로 가는 항로가 열렸어요.','The third crown is reclaimed. The sea route to Goldsand Harbor is open.'));
     } else {
       if (this.abyssCleared) return;
       this.abyssCleared = true;
@@ -240,7 +260,7 @@ export class BossJourney {
   }
 
   /** Refresh copy while a solo Settings menu pauses simulation; never advance encounters. */
-  refreshLanguage(): void { this.last = ''; this.render(); }
+  refreshLanguage(): void { this.last = ''; this.render(); if (this.notice) this.showLost(); }
 
   private render(): void {
     const g = this.game, level = g.player.level;
@@ -287,7 +307,7 @@ export class BossJourney {
       h('div',{class:'ce-stars'}),h('span',{class:'ce-kicker'},'CHAPTER I · THE TIDELANDS'),
       h('div',{class:'ce-crown'},'♛'),h('h1',null,t('심해의 왕관','The Deep Crown')),
       h('p',null,t('녹의 파도가 잠들고, 해안에 다시 빛이 돌아왔습니다.','The rust tide sleeps. Light has returned to the shore.')),
-      h('div',{class:'ce-reveal'},h('span',null,t('하지만 왕관 속에는 또 하나의 별이 잠들어 있었습니다.','But another star was hidden inside the crown…')),h('h2',null,t('WORLD II · 잊힌 별의 섬','WORLD II · Isle of Forgotten Stars')),h('p',null,t('수정 유적 · 20레벨 일식 여왕 · 새벽의 섬으로 이어지는 항로','Crystal ruins · Level 20 Eclipse Queen · A route to Dawnreach'))),
+      h('div',{class:'ce-reveal'},h('span',null,t('하지만 왕관 속에는 또 하나의 별이 잠들어 있었습니다.','But another star was hidden inside the crown…')),h('h2',null,t('WORLD II · 잊힌 별의 섬','WORLD II · Isle of Forgotten Stars')),h('p',null,t('수정 유적 · 20레벨 일식 여왕 · 골드샌드 항구로 이어지는 항로','Crystal ruins · Level 20 Eclipse Queen · A route to Goldsand Harbor'))),
       h('button',{type:'button',disabled:true,onclick:()=>this.finishChapterEnding()},t('새로운 모험을 시작하기 →','Begin a new adventure →')));
     g.app.ui.append(this.chapterEnding);
   }
@@ -329,6 +349,7 @@ export class BossJourney {
   }
   dispose() {
     this.closeChapterEnding(); this.save(); this.root.remove();this.wallet.remove(); this.game.scene.remove(this.aura);
+    this.hold?.dispose(); this.notice?.remove();
     const materials = new Set<THREE.Material>();
     this.aura.traverse(o => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); materials.add(o.material); } });
     for (const m of materials) m.dispose();
