@@ -52,9 +52,11 @@ float shJoint=0.,shLow=smoothstep(2.4,.2,vShW.y);
   // Soot and glassy spatter near the lava, a little sulfur crust in the cracks above it.
   c=mix(c,vec3(.018,.015,.017),shLow*.75);
   // Column tops: weathered dark basalt under a skin of ash in patches, cracked across, never pale cut faces.
+#ifndef R4_NOTOP
   float shUp=smoothstep(.8,.95,normalize(cross(dFdx(vShW),dFdy(vShW))).y);
   c=mix(c,c*(.55+.25*n),shUp);
   c=mix(c,vec3(.2,.19,.2),shUp*smoothstep(.55,.8,shN(vShW.xz*2.3+vShSeed*4.))*.6);
+#endif
   c=mix(c,vec3(.32,.27,.09),smoothstep(.82,.95,n)*smoothstep(1.2,2.6,vShW.y)*(1.-smoothstep(4.,6.,vShW.y))*.35);
   diffuseColor.rgb=c;
 }`)

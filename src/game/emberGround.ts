@@ -69,8 +69,60 @@ function bakeGroundMap(zones: readonly LavaZone[], features: readonly EmberFeatu
  return tex;
 }
 
+/* JS twins of EMBER_NOISE's egHash22 / egNoise, for the bake below (float64 here, float32 on the GPU: they agree to ~1e-5). */
+const fract = (v: number) => v - Math.floor(v);
+function hash22(x: number, y: number, out: number[]) {
+ let a = fract(x * .1031), b = fract(y * .1030), c = fract(x * .0973);
+ const d = a * (b + 33.33) + b * (c + 33.33) + c * (a + 33.33); a += d; b += d; c += d;
+ out[0] = fract((a + b) * c); out[1] = fract((a + c) * b);
+}
+const H = [0, 0];
+function noise(px: number, py: number) {
+ const ix = Math.floor(px), iy = Math.floor(py), fx = px - ix, fy = py - iy, ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+ hash22(ix, iy, H); const a = (H[0] * 2 - 1) * fx + (H[1] * 2 - 1) * fy;
+ hash22(ix + 1, iy, H); const b = (H[0] * 2 - 1) * (fx - 1) + (H[1] * 2 - 1) * fy;
+ hash22(ix, iy + 1, H); const c = (H[0] * 2 - 1) * fx + (H[1] * 2 - 1) * (fy - 1);
+ hash22(ix + 1, iy + 1, H); const d = (H[0] * 2 - 1) * (fx - 1) + (H[1] * 2 - 1) * (fy - 1);
+ const ab = a + (b - a) * ux, cd = c + (d - c) * ux;
+ return (ab + (cd - ab) * uy) * 1.4;
+}
+const smooth = (e0: number, e1: number, v: number) => { const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+/** The cooled flow lobes fanning south from the volcano's foot, baked once (the shader used to walk all nine capsules per
+ *  pixel, about 0.7-1 ms in the open views): seven main tongues of uneven reach and width and two short breakouts off
+ *  their flanks, each meandering, their margins warped at two scales. Per texel: r = signed distance to the nearest
+ *  lobe's margin (m), g = that lobe's age, b, a = sin, cos of the pressure-ridge phase (distance to its front x 1.3). */
+function bakeLobeMap() {
+ const N = MAP, data = new Float32Array(N * N * 4), sx = RECT.w / N, sz = RECT.h / N;
+ const L = Array.from({length: 9}, (_, i) => {
+  const br = i > 6.5 ? 1 : 0, a = -.7 + (i * .45) % 1.5 + Math.sin(i * 2.7) * .06 + br * (i > 7.5 ? .22 : -.3);
+  const st = br ? 72 + i * 4 : 36, len = br ? st + 30 : 96 + (i * 41) % 70, w = br ? 5.5 : 6.5 + (i * 5.3) % 8;
+  return {i, st, len, w, dx: Math.sin(a), dz: Math.cos(a), age: fract(i * .618 + .15)};
+ });
+ for (let j = 0; j < N; j++) for (let k = 0; k < N; k++) {
+  const px = RECT.x0 + (k + .5) * sx, pz = RECT.z0 + (j + .5) * sz;
+  const vx = px + noise(px * .04 + 2, pz * .04 + 2) * 7 + noise(px * .12 + 1, pz * .12 + 1) * 2.4;
+  const vz = pz + 128 + noise(px * .04 - 6, pz * .04 - 6) * 7 + noise(px * .12 + 8, pz * .12 + 8) * 2.4;
+  let best = 1e3, age = 0, rr = 0;
+  for (const l of L) {
+   const sdx = l.dz, sdz = -l.dx, t0 = vx * l.dx + vz * l.dz, m = Math.sin(t0 * .035 + l.i * 1.7) * 7 * smooth(l.st, l.st + 40, t0);
+   const qx = vx - sdx * m, qz = vz - sdz * m, t = Math.max(l.st, Math.min(l.len, qx * l.dx + qz * l.dz));
+   const d = Math.hypot(qx - l.dx * t, qz - l.dz * t) - l.w * (.65 + .5 * smooth(l.st, l.len, t));
+   if (d < best) { best = d; age = l.age; rr = Math.hypot(qx - l.dx * (l.len - l.w * 2.2), qz - l.dz * (l.len - l.w * 2.2)); }
+  }
+  const o = (j * N + k) * 4;
+  data[o] = Math.max(-30, Math.min(30, best)); data[o + 1] = age; data[o + 2] = Math.sin(rr * 1.3); data[o + 3] = Math.cos(rr * 1.3);
+ }
+ const half = new Uint16Array(data.length);
+ for (let i = 0; i < data.length; i++) half[i] = THREE.DataUtils.toHalfFloat(data[i]);
+ const tex = new THREE.DataTexture(half, N, N, THREE.RGBAFormat, THREE.HalfFloatType);
+ tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false; tex.flipY = false;
+ tex.name = 'ember-ground-lobes'; tex.needsUpdate = true;
+ return tex;
+}
+
 const HEAD = /* glsl */ `
 uniform sampler2D egMap;
+uniform sampler2D egLobe;
 uniform vec4 egRect;
 uniform float egDetail;
 uniform float egTime;
@@ -124,7 +176,9 @@ vec3 egC=egCells(egP*mix(.42,.8,egHeat)+egWarp*.6+vec2(egNoise(egP*1.9),egNoise(
 float egCw=.012+.022*smoothstep(-.35,.45,egNoise(egP*.07+3.));
 float egCrack=(1.-smoothstep(.0,egCw+egFoot*.35,egC.x+egNoise(egP*6.)*.012))*egCrackM*(.55+.45*smoothstep(-.2,.4,egNoise(egP*.8+egC.y*7.)));
 float egDense=smoothstep(.12,.5,egReg)*egCrackM*(1.-smoothstep(.06,.2,egFoot));
+#ifndef R4_NODENSE
 if(egDense>.01){vec3 c2=egCells(egP*1.2+egWarp*.5+3.7);egCrack=max(egCrack,(1.-smoothstep(0.,.011+egFoot*.3,c2.x))*egDense*.7*step(.25,c2.y));}
+#endif
 float egFill=smoothstep(.15,.55,egNoise(egP*.021+60.));
 // Pumice gravel in patches: pale pebbles a hand across.
 float egGravM=smoothstep(.3,.6,egNoise(egP*.09+21.))*(1.-egSheet)*(1.-egHeat*.8)*(1.-egAsh*.6);
@@ -147,8 +201,12 @@ egCol=mix(egCol,mix(vec3(.4,.39,.38),vec3(.5,.48,.46),egPebId),egPeb*.8);
 // lobed front (capsules with their margins warped at two scales); the young ones dark and glassy, the old ones greyed
 // by ash, raised ash-dusted levees on their margins and pressure ridges bowed toward the front. Between them the old
 // ground lies under drifted ash.
+// (Baked by bakeLobeMap: distance to the nearest lobe's margin, its age, the pressure-ridge phase as sin, cos.)
+vec4 egL=texture2D(egLobe,(egP-egRect.xy)*egRect.zw);
+float egLobeD=egL.r,egLobeAge=egL.g,egRb=egNoise(egP*.4)*1.5;
+#ifdef R4_OLDLOBE
 vec2 egV=egP-vec2(0.,-128.)+vec2(egNoise(egP*.04+2.),egNoise(egP*.04-6.))*7.+vec2(egNoise(egP*.12+1.),egNoise(egP*.12+8.))*2.4;
-float egLobeD=1e3,egLobeAge=0.,egLobeR=0.;
+egLobeD=1e3;egLobeAge=0.;float egLobeR=0.;
 for(int i=0;i<9;i++){
   // Seven main tongues of uneven reach and width, two short breakouts off their flanks; each meanders as it goes.
   float fi=float(i),br=step(6.5,fi),a=-.7+mod(fi*.45,1.5)+sin(fi*2.7)*.06+br*(fi>7.5?.22:-.3);
@@ -158,9 +216,11 @@ for(int i=0;i<9;i++){
   float t=clamp(dot(q,dir),st,len),d=length(q-dir*t)-w*(.65+.5*smoothstep(st,len,t));
   if(d<egLobeD){egLobeD=d;egLobeAge=fract(fi*.618+.15);egLobeR=length(q-dir*(len-w*2.2));}
 }
+egL.ba=vec2(sin(egLobeR*1.3),cos(egLobeR*1.3));
+#endif
 float egFlow=1.-smoothstep(-.4,.4+egFoot*2.,egLobeD);
 float egLevee=smoothstep(-3.6,-1.4,egLobeD)*(1.-smoothstep(-.9,.2+egFoot,egLobeD));
-float egRidge=(sin(egLobeR*1.3+egNoise(egP*.4)*1.5)*.5+.5)*egFlow*(1.-smoothstep(.08,.35,egFoot));
+float egRidge=(dot(egL.ba,vec2(cos(egRb),sin(egRb)))*inversesqrt(max(dot(egL.ba,egL.ba),1e-6))*.5+.5)*egFlow*(1.-smoothstep(.08,.35,egFoot));
 float egDrift=smoothstep(.05,.42,egFbm(vec2(egP.x*.011,egP.y*.017)+11.)+egNoise(egP*.05)*.14)*(1.-egFlow)*(1.-egHeat);
 egCol=mix(egCol,egAshC,egDrift*.55*(.4+.6*egPatch));
 vec3 egLobeC=mix(vec3(.13,.135,.155),vec3(.21,.205,.225),egLobeAge)*(.9+.1*egN3)*(.94+.1*egRidge);
@@ -232,6 +292,7 @@ export function emberGround(opts: EmberGroundOptions) {
  const map = bakeGroundMap(opts.zones, opts.features);
  const uniforms = {
   egMap: {value: map},
+  egLobe: {value: bakeLobeMap()},
   egRect: {value: new THREE.Vector4(RECT.x0, RECT.z0, 1 / RECT.w, 1 / RECT.h)},
   egDetail: EMBER_DETAIL,
   egTime: {value: 0},

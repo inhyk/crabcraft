@@ -134,8 +134,10 @@ epStone=mix(epStone,vec3(.4,.4,.415)*(.9+.2*(epN1*.5+.5)),epBlur*.35);
 epStone*=1.-.16*epBlur;
 // Relaid stretches: metre-scale patches of older, darker or paler stone, and far off each course its own tone, so
 // down the way the paving still reads as laid stone in courses.
+#ifndef R4_NORELAY
 epStone*=.86+.26*smoothstep(-.5,.6,egNoise(epP*.21+5.)+egNoise(epP*.7-3.)*.3);
 epStone*=1.+(egHash12(vec2(floor(epAlong/.72),epHalf*7.))-.5)*.2*epBlur;
+#endif
 // Header courses every few metres: a band of long dark basalt bonds across the way; its edges stay crisp far off.
 float epBandU=mod(epAlong+1.1,4.6),epBandW=max(epFw*1.5,.004);
 float epBand=(1.-epKerb)*smoothstep(-epBandW,epBandW,epBandU-.06)*(1.-smoothstep(-epBandW,epBandW,epBandU-.5));
