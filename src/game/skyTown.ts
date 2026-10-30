@@ -34,25 +34,28 @@ export function skyTown(h: Height, low = false): SkyTown {
   for (const f of SKY_FESTOONS) festoon(ctx, f);
   plan.banners.forEach(([x, z], i) => banner(ctx, x, z, i));
   for (const b of plan.benches) benchScene(ctx, b.x, b.z, b.yaw);
-  const harbour = skyHarbour(ctx);
+  // The mooring mast and its ship stand out in the east meadow: their own meshes, so the town's merged meshes keep
+  // the town's bounds and stay culled in the field and approach views (r4).
+  const mast = townCtx(h, low), harbour = skyHarbour(ctx, mast);
   const group = new THREE.Group(); group.name = 'skybloom-town';
   const parts: [keyof Pick<TownCtx, 'stone' | 'timber' | 'roof' | 'metal' | 'glow' | 'cloth'>, THREE.Material, boolean][] = [
     ['stone', mats.stone, true], ['timber', mats.timber, true], ['roof', mats.roof, true], ['metal', mats.metal, true], ['glow', mats.glow, false], ['cloth', mats.cloth, true]];
-  for (const [k, mat, shadow] of parts) { ctx.stats[k + 'Tris'] = Math.round(ctx[k].tris); const m = ctx[k].mesh(mat, 'skybloom-town-' + k, shadow); if (m) group.add(m); }
+  for (const [k, mat, shadow] of parts) { ctx.stats[k + 'Tris'] = Math.round(ctx[k].tris + mast[k].tris); const m = ctx[k].mesh(mat, 'skybloom-town-' + k, shadow); if (m) group.add(m); const mm = mast[k].mesh(mat, 'skybloom-mast-' + k, shadow); if (mm) group.add(mm); }
+  Object.assign(ctx.stats, mast.stats);
   group.add(harbour.group);
-  const ready = dressKits(ctx, group);
+  const ready = Promise.all([dressKits(ctx, group, 'skybloom-town-'), dressKits(mast, group, 'skybloom-mast-')]).then(() => { ctx.stats.kitPieces += mast.kits.length; });
   return {group, stats: ctx.stats, ready, update(time) { mats.time.value = time; harbour.update(time); }};
 }
 
 /** Kit props merged per material once the GLBs load (one parse each, shared with Frostlight's loader). */
-async function dressKits(ctx: TownCtx, group: THREE.Group) {
+async function dressKits(ctx: TownCtx, group: THREE.Group, prefix: string) {
   const files = {props: 'models/world/props.glb', nature: 'models/world/nature.glb', village: 'models/world/village.glb'} as const;
   const want = new Set(ctx.kits.map(k => k.file));
   const kits = Object.fromEntries(await Promise.all([...want].map(async f => [f, await kitOnce(files[f])] as const)));
   const batches = new Map<string, StaticBatch>();
   for (const k of ctx.kits) {
     const kit = kits[k.file]; if (!kit?.has(k.piece)) continue;
-    let b = batches.get(k.file); if (!b) batches.set(k.file, b = new StaticBatch(kit, 'skybloom-town-' + k.file));
+    let b = batches.get(k.file); if (!b) batches.set(k.file, b = new StaticBatch(kit, prefix + k.file));
     const box = kit.get(k.piece).box, s = k.size / Math.max(1e-6, box.max.y - box.min.y);
     const m = new THREE.Matrix4().compose(new V(k.x, k.y, k.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(k.pitch ?? 0, k.yaw, k.roll ?? 0, 'YXZ')), new V(s, s, s))
       .multiply(new THREE.Matrix4().makeTranslation(-(box.min.x + box.max.x) / 2, k.hang ? -box.max.y : -box.min.y, -(box.min.z + box.max.z) / 2));

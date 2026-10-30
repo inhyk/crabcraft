@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {useRim} from './skybloomRim';
 
 /*
  * Materials of World VI's world tree and its sanctuary (skyWorldTree.ts, skySanctuary.ts): pale silver bark with
@@ -156,6 +157,7 @@ export function skyFoliageMaterials(){
    .replace('#include <emissivemap_fragment>',/* glsl */`#include <emissivemap_fragment>
 // Light through the leaves: crowns glow a little on their sunward rim and never fall to black inside.
 {float ndv=abs(dot(normal,normalize(vViewPosition)));totalEmissiveRadiance+=diffuseColor.rgb*(.05+.12*pow(1.-ndv,2.));}`);
+  useRim(s,.75,.45);
  };
  const depth=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,map,alphaTest:.5});depth.name='sky-world-tree-leaves-depth';
  depth.onBeforeCompile=s=>{

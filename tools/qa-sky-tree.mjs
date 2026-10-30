@@ -58,7 +58,7 @@ try{
   assert.ok(Math.abs(r.discMin-.012)<1e-4&&Math.abs(r.discMax-.012)<1e-4,`court floor lift ${r.discMin}..${r.discMax}`);
   assert.ok(r.flat<1e-6,`arena ground not flat: ${r.flat}`);
   assert.deepEqual(r.blocked,[],'points inside solids');
-  assert.equal(r.shapes,169,'W6 solids after the round-2 merges (55 sky-town + 86 sky-ground + 1 trunk + 14 buttress flanks + 2 arch feet + 2 gate posts + 9 landmark columns)');
+  assert.equal(r.shapes,172,'W6 solids after r4 (57 sky-town with the loading stage and its cargo + 82 sky-ground without the west field stones + 1 trunk + 14 buttress flanks + 2 arch feet + 2 gate posts + 9 landmark columns + 5 overlook stones)');
   // The landmark: crown top 55-70 m over the trunk's foot in five masses, roots over the north lip.
   assert.ok(r.stats.crownTop>=55&&r.stats.crownTop<=70,`crown top ${r.stats.crownTop} m`);assert.equal(r.stats.limbs,5);assert.ok(r.stats.spills>=8,`roots over the lip ${r.stats.spills}`);
   assert.equal(r.stats.columns,8);assert.ok(r.stats.lanterns>=15,`lanterns ${r.stats.lanterns}`);assert.ok(r.stats.roots>=20,`roots ${r.stats.roots}`);

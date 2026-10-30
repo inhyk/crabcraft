@@ -15,6 +15,17 @@ export type EmberKind='columns'|'cone'|'obsidian'|'arch'|'crystal'|'charred';
 export interface EmberFeature {kind:EmberKind;x:number;z:number;r:number;h:number;yaw:number;seed:number}
 
 const f=(kind:EmberKind,x:number,z:number,r:number,h:number,yaw=0):EmberFeature=>({kind,x,z,r,h,yaw,seed:Math.abs(Math.round(x*7.3+z*13.1))+1});
+/**
+ * Fumarole fields, one in the mid-ground of the east and of the west plain (25-50 m out from the field cameras, just
+ * behind where the crab stands): a few small spatter vents breathing lit steam over a glowing fissure, and the sulfur
+ * miners' traces beside them (an ore cart, an ore heap with picks driven in, a crate). The vents are drawn as cones
+ * by emberRocks.ts (solids from EMBER_FEATURES); steam, flames, pools and the miners' props by emberTown.ts.
+ * vents: x, z, radius, height. cart: x, z, yaw. heap: x, z, radius.
+ */
+export const EMBER_VENTS:readonly {x:number;z:number;vents:readonly (readonly [number,number,number,number])[];cart:readonly [number,number,number];heap:readonly [number,number,number]}[]=[
+ {x:71,z:-2,vents:[[70.6,-1.2,1.85,2.2],[73.4,-4.2,1.2,1.35],[68.8,-4.6,.85,.95]],cart:[75,2.6,.45],heap:[72.4,3.4,1.25]},
+ {x:-71,z:-1,vents:[[-70.6,-1.6,1.85,2.2],[-73.2,1.6,1.15,1.3],[-68.2,1.2,.8,.9]],cart:[-67.2,5.8,-.5],heap:[-70.2,6.1,1.2]},
+];
 export const EMBER_FEATURES:readonly EmberFeature[]=[
  // East: the crystal grotto.
  f('columns',93,-5,5.2,7.5,.3),f('crystal',85.5,-5.5,3,4.2,.2),f('crystal',80,-1,1.3,1.6,1.1),f('crystal',89.5,3,1.4,1.9,2.2),
@@ -35,6 +46,8 @@ export const EMBER_FEATURES:readonly EmberFeature[]=[
  f('columns',-75,62,4.4,6,2.1),f('cone',-64,82,3,3.1),f('crystal',-81,45,1.3,1.6,1.9),f('charred',-58,47,1,5.6,.6),f('charred',-55,93,1,5,1.8),
  // Mid fields: something to steer by, nothing in the enemies' way.
  f('obsidian',-30,-12,1.8,1.6,.7),f('charred',78,25,1,5.5,2.4),
+ // The fumarole vents.
+ ...EMBER_VENTS.flatMap(v=>v.vents.map(([x,z,r,h])=>f('cone',x,z,r,h))),
 ];
 
 /** World V's roads (the shared islandPaths footprint): the avenue from the quay into the furnace yard and on to the court, two lanes out of the yard, the spawn and portal spurs. */
@@ -57,6 +70,9 @@ export const EMBER_FISSURES:readonly (readonly [number,number])[][]=[
  [[43.5,-80],[48.5,-84],[54,-88.5]],
  [[-47,-63],[-51,-58],[-50,-52]],
  [[71,56.5],[66,52],[62.5,53.5]],
+ // Under the fumaroles: the east one runs on toward the miners' camp, the west one meets the arch's fissure.
+ [[65.5,-2.6],[68,-2.2],[70.6,-1.2],[72,-2.8],[73,-3.9],[76,-6],[78.5,-7.2]],
+ [[-66,-6.4],[-68.4,.8],[-70.6,-1.6],[-72.8,1.3],[-75,3.2]],
 ];
 
 /** The crystal miners' camp in front of the east grotto (emberCamp.ts): kit pieces in camp-local metres (lx across, lz toward the grotto). */
@@ -78,6 +94,7 @@ export function emberSolids(){
   else if(e.kind==='charred')out.push({x:e.x,z:e.z,r:.45,h:e.h});
   else out.push({x:e.x,z:e.z,r:e.kind==='columns'?e.r*.85:e.kind==='cone'?e.r*.7:e.r*.8,h:e.h});
  }
+ for(const v of EMBER_VENTS)out.push({x:v.cart[0],z:v.cart[1],r:1.15,h:1.5},{x:v.heap[0],z:v.heap[1],r:v.heap[2]*.8,h:1});
  {const c=Math.cos(EMBER_CAMP.yaw),s=Math.sin(EMBER_CAMP.yaw);for(const p of EMBER_CAMP.pieces)if(p.solid)out.push({x:EMBER_CAMP.x+c*p.lx+s*p.lz,z:EMBER_CAMP.z-s*p.lx+c*p.lz,r:p.solid.r,h:p.solid.h});}
  return out;
 }
