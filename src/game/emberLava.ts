@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { frontierTrees } from './realmLayout';
 import { FLOW_CELL, LavaFlow, type FlowArea, type FlowDeposit, type FlowSource } from './emberLavaFlow';
+import { EmberLavaDrips } from './emberLavaDrips';
+import { PRINT_COLOR, PRINT_FRAG_HEAD, pressLava, type LavaWader } from './emberLavaPrints';
 
 /*
  * Emberreach's lava: a molten sea round the island, a brimming crater lake and its flows. Live flows spill through
@@ -569,6 +571,7 @@ const FLOW_FRAG_HEAD = /* glsl */ `
 ${LAVA_COMMON}
 uniform sampler2D uFR0;
 uniform sampler2D uFR1;
+${PRINT_FRAG_HEAD}
 uniform float uPhF;
 varying vec2 vFU;
 varying vec3 vFW;
@@ -664,6 +667,7 @@ const FLOW_COLOR = /* glsl */ `
   float young=smoothstep(.62,.8,id)*hot*(1.-lCrack)*smoothstep(.02,.06,lC.r-cw)*(1.-smoothstep(.06,.16,lC.r-cw));
   float crest=smoothstep(.55,.9,rope)*ropeW*smoothstep(.45,.7,nz+.5*fine)*mix(.45,.85,smoothstep(.04,.3,T));
   lGloss=uDetail*(1.-lEdge)*(1.-lCrack)*max(young*.7*wM*smoothstep(.15,.35,fine),crest);
+  ${PRINT_COLOR}
 }
 `;
 /** Cooled pahoehoe skin is glassy: 0.62-0.82 by plate, so light breaks into glints on its relief instead of a hazy
@@ -1122,6 +1126,8 @@ export class EmberLava {
   /** Captured from the first draw of a lava mesh; the simulation renders with it in update(). */
   private renderer: THREE.WebGLRenderer | null = null;
   private flowStarted = false;
+  /** Drips over the spillway brinks and from toes low on the cone (emberLavaDrips.ts). */
+  readonly drips: EmberLavaDrips;
 
   constructor(opts: EmberLavaOptions) {
     this.root.name = 'ember-lava';
@@ -1165,6 +1171,10 @@ export class EmberLava {
       tongues.add(mesh); this.tongueMeshes.push(mesh);
     });
     this.zones.push(...set.zones);
+
+    // Drips (emberLavaDrips.ts): the flows' centre lines and the rock under them.
+    this.drips = new EmberLavaDrips({ ground: (x, z) => sup.at(x, z, true, 0), cone, spills: TONGUES.map((d, i) => ({ angleAt: angleFn(TONGUES, i, sup), heat: d.heat })), surfaces: this.tongueMeshes, mask: this.common.uMask }, this.quality);
+    this.root.add(this.drips.root);
 
     // The simulated lava at the foot: a grid mesh lifted by the height field, a darkening halo and clinker crumbs
     // round its margins, all drawn after the land so the cells sunk into the ground cost no shading.
@@ -1244,7 +1254,8 @@ export class EmberLava {
   /** QA: 1 renders the stillness mask (red = no time term, blue = flowing), 2 the same with colours swapped, 0 off. */
   setMask(mode: 0 | 1 | 2) { this.common.uMask.value = mode; }
 
-  update(time: number) {
+  /** `waders`: the crabs that may wade through the simulated lava (emberLavaPrints.ts), `focus` the local player. */
+  update(time: number, waders?: readonly LavaWader[], focus?: LavaWader) {
     if (time - this.qualityAt > 2 || time < this.qualityAt) { this.qualityAt = time; this.setQuality(storedQuality()); }
     // Phases are wrapped here in double precision so the shaders never see a large time.
     this.tongueUniforms.uShift.value = (U0 * time) % TILE_TONGUE;
@@ -1254,6 +1265,7 @@ export class EmberLava {
     this.lakeUniforms.uPh.value = fract(time / T_LAKE);
     this.common.uPulse.value = (time * .4) % TAU;
     this.flowUniforms.uPhF.value = fract(time / T_FLOW);
+    this.drips.update(time, this.quality);
     if (this.mode === 'sim' && this.renderer) {
       if (!this.flowStarted) {
         this.flowStarted = true;
@@ -1261,6 +1273,7 @@ export class EmberLava {
         // the start state, whose snapshot is the CPU copy, so it needs no read-backs (each would be a stall).
         this.flow.advance(this.renderer, FLOW_WARM_STEPS, false);
       }
+      pressLava(this.flow, waders, focus);
       this.flow.update(this.renderer, time);
       if (!this.flow.supported) this.setFlow(false);
     }

@@ -493,7 +493,7 @@ export class HiddenWorld {
     // Skybloom's fog follows its sky's horizon and its own environment map is bound only while it is shown.
     this.sixth.air.frame(this.game.scene,this.game.camera,this.game.engine.renderer,this.game.engine.quality,this.chapter===6&&this.rendered);
     this.snowGate.update(time);this.emberGate.update(time);
-    if(this.chapter>=5){if(this.chapter===5)this.fifth.update(time);else this.sixth.update(time,this.game.engine.quality,this.game.player.unit.pos);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
+    if(this.chapter>=5){if(this.chapter===5)this.fifth.update(time,this.game.units,this.game.player.unit);else this.sixth.update(time,this.game.engine.quality,this.game.player.unit.pos);(this.chapter===5?this.emberRequests:this.skyRequests).update(time,!!observation);}
     if(this.chapter===4){this.fourth.update(time,this.game.player.unit.pos.x,this.game.player.unit.pos.z,!!flags?.frostCleared);this.fourth.updateSnow(dt,this.game.engine.renderer,this.game.units,this.game.player.unit.pos.x,this.game.player.unit.pos.z,this.game.engine.quality);this.snowRequests.update(time,!!observation);}
     this.third.useEnvironment(this.game.scene,this.game.engine.renderer,this.chapter===3&&this.rendered);
     this.shorePortal.update(time);this.portal.update(time);this.thirdGate.update(time);

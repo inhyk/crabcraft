@@ -5,6 +5,7 @@ import {StarPortal} from './portal';
 import type {Poi} from '../world/types';
 import {EmberWilds} from './emberWilds';
 import {EmberLava} from './emberLava';
+import type {LavaWader} from './emberLavaPrints';
 import {EmberAir} from './emberSkyAir';
 import {EmberHaze} from './emberHaze';
 import {registerHeatHaze} from '../core/heatHaze';
@@ -80,5 +81,5 @@ export class FrontierIsland {
   this.root.userData.frontierDetailMeshes=detail.children.length;
  }
  private flowMaterial(fire:boolean){const m=new THREE.ShaderMaterial({uniforms:{time:{value:0},hot:{value:fire?1:0}},vertexShader:'varying vec2 v;void main(){v=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:'varying vec2 v;uniform float time;uniform float hot;void main(){float w=.5+.5*sin(v.x*90.+sin(v.y*70.+time*.15)*2.);vec3 lava=mix(vec3(.27,.035,.025),vec3(1.,.36,.025),pow(w,4.));vec3 cloud=mix(vec3(.64,.8,.8),vec3(.93,.98,.93),w);gl_FragColor=vec4(mix(cloud,lava,hot),1.);}'});this.animated.push(m);return m;}
- update(time:number){this.lava?.update(time);this.air?.update(time);this.wilds?.update(time);this.forge?.update(time);this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
+ update(time:number,waders?:readonly LavaWader[],focus?:LavaWader){this.lava?.update(time,waders,focus);this.air?.update(time);this.wilds?.update(time);this.forge?.update(time);this.back.update(time);this.next?.update(time);for(const m of this.animated)m.uniforms.time.value=time;for(const gem of this.rotating)if(gem.userData.banner)gem.rotation.y=Math.sin(time*1.7+gem.position.z)*.12;else gem.rotation.y=time*.5;}
 }
