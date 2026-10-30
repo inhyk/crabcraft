@@ -1233,6 +1233,9 @@ export class EmberLava {
   }
   get flowOn() { return this.mode === 'sim'; }
 
+  /** Height of the surface the lava lies on (crater lip, cone, terrain), for the heat haze's bake (emberHaze.ts). */
+  surfaceY(x: number, z: number) { return this.support.at(x, z, true, 0); }
+
   /** Switch detail; called by update() when the stored setting changes. */
   setQuality(q: LavaQuality) {
     if (q === this.quality) return;

@@ -4,6 +4,7 @@ import {EmberHeat} from './emberSkyHeat';
 import {EmberPlume,volcanoMaterial} from './emberSkyPlume';
 import {buildEmberShore} from './emberSkyShore';
 import type {LavaZone} from './emberLava';
+import type {EmberHaze} from './emberHaze';
 
 export interface EmberAirOptions {
  root:THREE.Object3D;
@@ -14,6 +15,8 @@ export interface EmberAirOptions {
  zones:readonly LavaZone[];
  /** Subtrees the heat light leaves alone (the lava itself, portals shared with other worlds). */
  noHeat:readonly THREE.Object3D[];
+ /** The heat haze over the lava (emberHaze.ts); it keeps the player sharp. */
+ haze?:EmberHaze;
 }
 
 function storedQuality():'high'|'low'{try{return localStorage.getItem('cc.quality')==='low'?'low':'high';}catch{return 'high';}}
@@ -41,8 +44,9 @@ export class EmberAir {
  private readonly root:THREE.Object3D;
  private readonly noHeat:THREE.Object3D[];
  private readonly height:(x:number,z:number)=>number;
+ private readonly haze:EmberHaze|null;
  constructor(o:EmberAirOptions){
-  this.root=o.root;this.height=o.height;
+  this.root=o.root;this.height=o.height;this.haze=o.haze??null;
   const quality=storedQuality();
   this.sky.attachSun(this.sun);
   this.hemi=new THREE.HemisphereLight(this.sky.hemiSky,this.sky.hemiGround,this.sky.hemiIntensity);
@@ -67,6 +71,7 @@ export class EmberAir {
  /** Per frame while World V is shown: fog toward the view, the dome's environment, the heat light, the ash box, the crab's rim. */
  apply(scene:THREE.Scene,camera:THREE.Camera,renderer:THREE.WebGLRenderer,player?:THREE.Vector3){
   const fog=scene.fog,e=camera.matrixWorld.elements;
+  if(this.haze)this.haze.focus=player??null;
   if(player){const dx=e[12]-player.x,dz=e[14]-player.z,l=Math.hypot(dx,dz)||1;this.rim.position.set(player.x-dx/l*1.4,player.y+1.15,player.z-dz/l*1.4);}
   if(fog instanceof THREE.FogExp2){this.sky.fogColor(-e[8],-e[10],fog.color);fog.density=this.sky.fogDensity(e[13],-e[9]);}
   const env=this.env??=this.sky.environment(renderer);
@@ -77,6 +82,7 @@ export class EmberAir {
  /** When World V is not shown: the heat light off, the scene's previous environment back. */
  release(scene:THREE.Scene){
   this.heat.uniforms.uHeatOn.value=0;
+  if(this.haze)this.haze.focus=null;
   if(!this.env||scene.environment!==this.env)return;
   scene.environment=this.prevEnv;scene.environmentIntensity=this.prevEnvIntensity;this.prevEnv=null;
  }

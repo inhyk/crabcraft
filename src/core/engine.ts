@@ -17,6 +17,7 @@ import {
   VignetteEffect,
 } from 'postprocessing';
 import { GradeEffect, type GradeOptions } from './grade';
+import { HeatHazeEffect, shownHeatHaze, type HeatHazeSource } from './heatHaze';
 
 /** Content tier: foliage density, shadow map size, particle counts. */
 export type Quality = 'low' | 'high';
@@ -158,6 +159,10 @@ export class Engine {
   private fxPass: EffectPass | null = null;
   private smaaPass: EffectPass | null = null;
   private viewOpts: ViewOptions = {};
+  /** The heat haze source in the chain (heatHaze.ts), or null. */
+  private haze: HeatHazeSource | null = null;
+  /** False keeps the heat haze out of the chain (QA, A/B timing). */
+  hazeAllowed = true;
   private fpsAcc = 0;
   private fpsFrames = 0;
   /** Smoothed frames per second, updated twice a second. */
@@ -226,6 +231,10 @@ export class Engine {
     this.composer.addPass(new RenderPass(scene, camera));
 
     const effects: Effect[] = [];
+    // Heat haze: only while a world that has one is shown, at the high tier, and not with depth of field (a convolution
+    // that would blur the frame the haze displaces).
+    this.haze = this.hazeWanted();
+    if (this.haze) effects.push(new HeatHazeEffect(camera, this.haze));
     if (opts.dof) {
       this.dof = new DepthOfFieldEffect(camera, {
         worldFocusDistance: opts.dof.focusDistance,
@@ -281,6 +290,16 @@ export class Engine {
     if (!this.dof) return;
     this.dof.cocMaterial.worldFocusDistance = distance;
     if (range !== undefined) this.dof.cocMaterial.worldFocusRange = range;
+  }
+
+  private hazeWanted(): HeatHazeSource | null {
+    if (!this.hazeAllowed || this.quality !== 'high' || this.viewOpts.dof) return null;
+    return shownHeatHaze(this.scene);
+  }
+
+  /** Whether the heat haze is in the effect chain. */
+  get hazeActive(): boolean {
+    return this.haze !== null;
   }
 
   get viewOptions(): Readonly<ViewOptions> {
@@ -524,6 +543,8 @@ export class Engine {
     this.elapsed += dt;
     const info: FrameInfo = { dt, elapsed: this.elapsed };
     for (const fn of this.updaters) fn(info);
+    // A world with heat haze shown or hidden (or the tier changed) since the chain was built: rebuild it.
+    if (this.hazeWanted() !== this.haze) this.setView(this.scene, this.camera, this.viewOpts);
     this.renderer.info.reset();
     const ext = this.timerExt;
     const gl = this.renderer.getContext() as WebGL2RenderingContext;
