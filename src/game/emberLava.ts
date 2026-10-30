@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { frontierTrees } from './realmLayout';
 import { FLOW_CELL, LavaFlow, type FlowArea, type FlowDeposit, type FlowSource } from './emberLavaFlow';
+import { EmberLavaDrips } from './emberLavaDrips';
 
 /*
  * Emberreach's lava: a molten sea round the island, a brimming crater lake and its flows. Live flows spill through
@@ -1122,6 +1123,8 @@ export class EmberLava {
   /** Captured from the first draw of a lava mesh; the simulation renders with it in update(). */
   private renderer: THREE.WebGLRenderer | null = null;
   private flowStarted = false;
+  /** Drips over the spillway brinks and from toes low on the cone (emberLavaDrips.ts). */
+  readonly drips: EmberLavaDrips;
 
   constructor(opts: EmberLavaOptions) {
     this.root.name = 'ember-lava';
@@ -1165,6 +1168,10 @@ export class EmberLava {
       tongues.add(mesh); this.tongueMeshes.push(mesh);
     });
     this.zones.push(...set.zones);
+
+    // Drips (emberLavaDrips.ts): the flows' centre lines and the rock under them.
+    this.drips = new EmberLavaDrips({ ground: (x, z) => sup.at(x, z, true, 0), cone, spills: TONGUES.map((d, i) => ({ angleAt: angleFn(TONGUES, i, sup), heat: d.heat })), surfaces: this.tongueMeshes, mask: this.common.uMask }, this.quality);
+    this.root.add(this.drips.root);
 
     // The simulated lava at the foot: a grid mesh lifted by the height field, a darkening halo and clinker crumbs
     // round its margins, all drawn after the land so the cells sunk into the ground cost no shading.
@@ -1251,6 +1258,7 @@ export class EmberLava {
     this.lakeUniforms.uPh.value = fract(time / T_LAKE);
     this.common.uPulse.value = (time * .4) % TAU;
     this.flowUniforms.uPhF.value = fract(time / T_FLOW);
+    this.drips.update(time, this.quality);
     if (this.mode === 'sim' && this.renderer) {
       if (!this.flowStarted) {
         this.flowStarted = true;
