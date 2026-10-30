@@ -7,6 +7,8 @@
 // episodes (0.9 m3/s for 20 s) grows a lobe whose volume rises while it feeds, whose front visibly advances (at least
 // 1.2 m between 1 s and 10 s, 0.6 m in the first 4 s of that) and stops within a few seconds of the feed stopping; with
 // the sources and subsidence off the volume holds to 0.1 %.
+// Heat haze (core/heatHaze.ts, emberHaze.ts): in the chain in chapter 5 at the high tier only; it moves some pixels over
+// the sea and none near the player. The stillness check runs with the haze barred: it measures the lava, not the air.
 //
 // Usage: CC_QA_BASE=http://127.0.0.1:5262 node tools/qa-ember-lava.mjs
 //   CC_QA_OUT=tmp/qa   where the PNGs go       CC_QA_LABEL=after   file name prefix
@@ -55,8 +57,11 @@ try {
   const names = await p.evaluate(() => { const r = window.app.current.game.world2.fifth.root; return ['molten-sea', 'lava-crater', 'lava-tongues'].filter(n => r.getObjectByName(n)); });
   assert.ok(names.includes('molten-sea') && names.includes('lava-crater'), `chapter 5 lava objects: ${names}`);
   if (!before) assert.ok(names.includes('lava-tongues'), 'lava tongues');
-  const sixth = await p.evaluate(() => { const r = window.app.current.game.world2.sixth.root; return {lava: !!r.getObjectByName('molten-sea') || !!r.getObjectByName('lava-tongues'), clouds: !!r.getObjectByName('sea-of-clouds')}; });
+  const sixth = await p.evaluate(() => { const r = window.app.current.game.world2.sixth.root; return {lava: !!r.getObjectByName('molten-sea') || !!r.getObjectByName('lava-tongues'), clouds: !!(r.getObjectByName('sea-of-clouds') || r.getObjectByName('skybloom-cloud-sea'))}; });
   assert.deepEqual(sixth, {lava: false, clouds: true});
+  const haze = await p.evaluate(() => { const e = window.app.current.game.engine; return {active: e.hazeActive, quality: e.quality}; });
+  console.log('heat haze', JSON.stringify(haze));
+  assert.equal(haze.active, haze.quality === 'high' && !before, `heat haze in chapter 5 only at the high tier: ${JSON.stringify(haze)}`);
 
   // Pictures of the place, not of the HUD or the player: hide both (the camera still orbits the player).
   await p.evaluate(() => { window.app.ui.style.visibility = 'hidden'; const u = window.app.current.game.player.unit; u.hidden = true; u.rig.root.visible = false; });
@@ -87,6 +92,7 @@ try {
         // Frames at display rate: wait for the next animation frame, render it, read it back.
         const step = async () => { await new Promise(requestAnimationFrame); eng.frame(); };
         eng.renderer.setAnimationLoop(null);
+        eng.hazeAllowed = false;
         await step(); await step();
         lava.setMask(1); await step(); const mask = read(); lava.setMask(2); await step(); const swap = read(); lava.setMask(0);
         await step(); await step();
@@ -110,6 +116,7 @@ try {
           if (cls[p] === 1) { still++; sumS += d; maxS = Math.max(maxS, d); if (!near[p]) { core++; sumC += d; } } else { flow++; sumF += d; }
         }
         for (const o of hidden) o.visible = true;
+        eng.hazeAllowed = true;
         eng.renderer.setAnimationLoop(eng.frame);
         if (noBloom) eng.setView(g.scene, g.camera, {bloom: {intensity: .9, threshold: .9}, vignette: {offset: .3, darkness: .5}});
         return {stillPixels: still, flowPixels: flow, stillMAE: still ? sumS / still : NaN, stillMaxPixel: maxS, stillFar8pxPixels: core, stillFar8pxMAE: core ? sumC / core : NaN, flowMAE: flow ? sumF / flow : NaN, sceneryMAE: scen ? sumN / scen : NaN};
@@ -118,6 +125,31 @@ try {
       assert.ok(r.stillPixels > 2000, `camera ${key} sees lava at rest`);
       assert.ok(r.stillMAE < .5, `camera ${key} lava at rest is still: MAE ${r.stillMAE}`);
     }
+  }
+  if (!before && quality === 'high') {
+    // The haze over the sea from the island's edge: the same instant drawn with and without it differs over the sea
+    // only, by a few pixels' shift (a broken screen would change much of the frame), and not round the player.
+    const c = LAVA_CAMERAS.b;
+    await p.evaluate(c => { const g = window.app.current.game; g.player.unit.teleport(g.world, c.x, c.z, c.yaw - Math.PI); g.follow.yaw = c.yaw; g.follow.pitch = c.pitch; g.follow.distance = c.distance; g.follow.cut(); }, c);
+    await p.waitForTimeout(1500);
+    const ab = await p.evaluate(async () => {
+      const e = window.app.current.game.engine, gl = e.renderer.getContext(), W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, t = e.timer, upd = t.update, get = t.getDelta;
+      let dt = 1 / 30; e.renderer.setAnimationLoop(null); t.update = () => t; t.getDelta = () => dt;
+      const step = async () => { await new Promise(requestAnimationFrame); e.frame(); };
+      const read = () => { const px = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+      try {
+        for (let i = 0; i < 4; i++) await step();
+        dt = 0; await step(); const a = read();
+        e.hazeAllowed = false; await step(); await step(); const b = read();
+        // readPixels rows run bottom up: y < 0.4 H is the lower part of the frame (the near ground and the player).
+        let moved = 0, low = 0;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 6) { moved++; if (y < H * .4) low++; } }
+        return {moved: +(moved / (W * H)).toFixed(4), lowerPart: +(low / Math.max(1, moved)).toFixed(4)};
+      } finally { e.hazeAllowed = true; t.update = upd; t.getDelta = get; e.renderer.setAnimationLoop(e.frame); }
+    });
+    console.log('heat haze over the sea', JSON.stringify(ab));
+    assert.ok(ab.moved > .005 && ab.moved < .25, `the haze shifts some pixels over the sea, not the frame: ${ab.moved}`);
+    assert.ok(ab.lowerPart < .05, `the near ground and the player are untouched: ${ab.lowerPart}`);
   }
   if (!before) {
     const live = await p.evaluate(async () => {

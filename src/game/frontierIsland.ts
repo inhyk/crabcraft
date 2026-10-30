@@ -6,6 +6,8 @@ import type {Poi} from '../world/types';
 import {EmberWilds} from './emberWilds';
 import {EmberLava} from './emberLava';
 import {EmberAir} from './emberSkyAir';
+import {EmberHaze} from './emberHaze';
+import {registerHeatHaze} from '../core/heatHaze';
 import {EmberTown} from './emberTown';
 /** Two new frontiers: distinct silhouettes, instanced nature and GPU-only ambient particles. */
 export class FrontierIsland {
@@ -56,7 +58,7 @@ export class FrontierIsland {
   if(this.lava){this.forge=new EmberTown({height:(x,z)=>this.height(x,z),zones:this.lava.zones});this.root.add(this.forge.root);}
   // A low sea of lava / clouds and gradient sky distinguish the worlds at first glance.
   if(!fire){const sea=add(new THREE.PlaneGeometry(1800,1800),this.flowMaterial(false),0,.15,0);sea.rotation.x=-Math.PI/2;sea.castShadow=false;sea.name='sea-of-clouds';}
-  if(fire&&volcano&&this.lava)this.air=new EmberAir({root:this.root,height:(x,z)=>this.height(x,z),ly,volcano,zones:this.lava.zones,noHeat:[this.lava.root,this.back.root,...(this.next?[this.next.root]:[])]});
+  if(fire&&volcano&&this.lava){const haze=new EmberHaze(this.root,this.lava);registerHeatHaze(haze);this.air=new EmberAir({root:this.root,height:(x,z)=>this.height(x,z),ly,volcano,zones:this.lava.zones,noHeat:[this.lava.root,this.back.root,...(this.next?[this.next.root]:[])],haze});}
   this.root.add(this.back.root);if(this.next)this.root.add(this.next.root);
  }
  /** Small scenery shares geometry and material; roads and battle space stay unobstructed. */
