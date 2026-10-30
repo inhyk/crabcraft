@@ -61,6 +61,9 @@ float ecSpokeD=abs(sin(ecA-ecSpokeA))*ecR;
 float ecSpoke=step(2.6,ecR)*step(ecR,19.15)*(1.-smoothstep(.1,.1+ecFw*2.,ecSpokeD));
 float ecRing=max(1.-smoothstep(.12,.12+ecFw*2.,abs(ecR-8.)),1.-smoothstep(.1,.1+ecFw*2.,abs(ecR-2.6)));
 float ecChan=max(ecSpoke,ecRing);
+// Distance to the nearest channel (m): heat bleeds onto the slabs beside it.
+float ecChanD=min(mix(1e3,ecSpokeD,step(2.6,ecR)*step(ecR,19.15)),min(abs(ecR-8.),abs(ecR-2.6)));
+float ecBleed=exp(-max(ecChanD-.1,0.)*2.4)*(1.-ecChan);
 // Runes cut beside the spokes every metre and a half: short strokes, a few worn away.
 float ecRuneU=ecR/1.5,ecRuneK=floor(ecRuneU),ecRuneH=egHash12(vec2(ecRuneK,ecSpokeA*3.));
 vec2 ecRq=vec2(fract(ecRuneU)-.5,(ecSpokeD-.42)/.22);
@@ -81,20 +84,33 @@ float ecBrass=1.-smoothstep(.035,.035+ecFw*1.5,abs(ecR-19.55));
 // Wear: polished middle, scorch blotches, ash in the joints, cracks across some slabs.
 float ecN1=egNoise(vEcW.xz*.25+3.),ecN2=egNoise(vEcW.xz*1.2-1.);
 float ecPolish=1.-smoothstep(4.,13.,ecR);
-float ecScorch=smoothstep(.25,.6,egNoise(vEcW.xz*.18+9.)+ecN2*.15)*(1.-ecKerb);
+// Soot only where the channels have scorched the slabs beside them, in patches along their length.
+float ecScorch=smoothstep(.1,.55,egNoise(vEcW.xz*.35+9.)*.5+.5+ecN2*.15)*exp(-ecChanD*1.1)*(1.-ecKerb)*(1.-ecChan);
 // One crack across a few slabs, wandering from edge to edge.
 float ecCa=fract(ecId*7.7)*3.1416,ecCl=dot(ecLoc,vec2(cos(ecCa),sin(ecCa)))+egNoise(ecLoc*4.+ecId*20.)*.12;
 float ecCrack=(1.-smoothstep(.0,.015+ecFoot*.4,abs(ecCl)))*step(.88,fract(ecId*13.1))*(1.-ecKerb)*step(2.6,ecR);
 float ecV=fract(ecId*17.3);
 vec3 ecStone=mix(vec3(.23,.235,.26),vec3(.31,.31,.33),fract(ecId*4.3));
-ecStone=mix(ecStone,vec3(.16,.155,.17),step(.86,ecV)*.8);
+ecStone=mix(ecStone,vec3(.19,.185,.2),step(.86,ecV)*.7);
 ecStone=mix(ecStone,vec3(.34,.335,.35)*(.9+.2*fract(ecId*5.)),ecKerb);
 ecStone=ecR<2.6?vec3(.07,.065,.08):ecStone;
 ecStone*=.86+.22*(egNoise(vEcW.xz*3.1+ecId*5.)*.5+.5);
 float ecNear=1.-smoothstep(.006,.035,ecFoot);
 if(ecNear>0.)ecStone*=1.+(egNoise(vEcW.xz*31.)*.07+sin((ecLoc.x+ecLoc.y*.3)*80.+ecId*13.)*.025)*ecNear;
 ecStone*=mix(1.,.86,ecPolish*.5);
-ecStone=mix(ecStone,vec3(.06,.05,.05),ecScorch*.55);
+// Each slab sits a little out of true: one side catches more light. Worn, chipped arrises read paler than the face,
+// and boots and blades have scuffed pale scratches into the polished middle.
+vec2 ecTilt=vec2(egHash12(vec2(ecId*31.,1.7)),egHash12(vec2(ecId*17.,4.1)))-.5;
+float ecFace=dot(ecLoc/max(ecHs,vec2(.1)),ecTilt);
+ecStone*=1.+ecFace*.22*(ecR>2.6?1.:0.);
+float ecArris=smoothstep(-.11,-.035,ecOut)*(1.-smoothstep(-.035,-.012,ecOut))*(ecR>2.6?1.:0.);
+float ecChip=smoothstep(.55,.8,egNoise(vEcW.xz*6.+ecId*7.)*.5+.5);
+ecStone=mix(ecStone,ecStone*1.35+vec3(.03),ecArris*(.45+.55*ecChip));
+float ecScuff=(1.-smoothstep(.0,.012+ecFoot*.3,abs(fract(dot(vEcW.xz,vec2(.8,.6))*1.7+egNoise(vEcW.xz*.9)*2.)-.5)-.47))*smoothstep(.55,.85,egNoise(vEcW.xz*.5+ecId)*.5+.5)*ecPolish*ecNear;
+ecStone=mix(ecStone,vec3(.36,.35,.36),ecScuff*.35);
+// Heat browns the slabs next to the channels.
+ecStone=mix(ecStone,ecStone*vec3(1.12,.9,.8),ecBleed*.6);
+ecStone=mix(ecStone,vec3(.09,.075,.07),ecScorch*.45);
 ecStone=mix(ecStone,vec3(.06,.06,.07),ecCrack*.7);
 vec3 ecAsh=vec3(.4,.385,.4)*(.9+.2*ecN2);
 vec3 ecCol=mix(ecStone,mix(vec3(.08,.075,.08),ecAsh,.55+.3*ecN1),ecJoint);
@@ -121,7 +137,7 @@ metalnessFactor=ecBrass*.85;
 
 const NORMAL = /* glsl */ `
 if(egDetail>.5){
-  float h=(smoothstep(0.,.06,-ecOut)*.035-ecChan*.015-ecRune*.012-ecCrack*.01+egNoise(vEcW.xz*9.)*.003*ecNear)*(1.-smoothstep(.05,.25,ecFoot));
+  float h=(ecFace*.05*smoothstep(0.,.06,-ecOut)+smoothstep(0.,.06,-ecOut)*.035-ecChan*.015-ecRune*.012-ecCrack*.01+egNoise(vEcW.xz*9.)*.003*ecNear)*(1.-smoothstep(.05,.25,ecFoot));
   normal=egBump(normal,h,ecDpx,ecDpy);
 }
 `;
@@ -136,6 +152,8 @@ const EMISSIVE = /* glsl */ `
   float worn=smoothstep(-.2,.5,egNoise(vEcW.xz*.6+2.));
   totalEmissiveRadiance+=vec3(1.,.26,.05)*ecChan*(crack*1.6+.12)*breathe*worn*(1.+(1.-smoothstep(2.6,9.,ecR))*.8);
   totalEmissiveRadiance+=vec3(1.,.38,.1)*ecRune*.55*breathe*worn;
+  // Glow bleeding from the channels onto the slabs and up into their joints.
+  totalEmissiveRadiance+=vec3(1.,.3,.07)*ecBleed*(.07+.25*ecJoint)*breathe*worn*(1.-ecKerb);
   totalEmissiveRadiance+=vec3(1.,.42,.12)*ecStar*.5*breathe;
   // The braziers' fire on the floor round each column.
   vec3 pool=vec3(0.);

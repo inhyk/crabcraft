@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type {LavaZone} from './emberLava';
+import {EMBER_NOISE} from './emberNoise';
 
 /*
  * Emberreach's coast. The play disc used to end in a smooth slope into the lava sea; now a basalt coast rings it:
@@ -8,7 +9,9 @@ import type {LavaZone} from './emberLava';
  *   foot where the cone stands over the sea; colonnade joints, soot near the lava, a glowing contact line where they
  *   stand in it;
  * - spatter: rounded glassy lumps and cooled lava toes along the waterline.
- * Two instanced draws. Nothing here is walkable (outside FRONTIER_BOUNDS, max .8 of the island ellipse) and nothing
+ * - crust: a band of cooled black crust on the sea in front of the columns, its plates parting toward the open lava,
+ *   the cracks between them hotter the further out, the outermost plates adrift; the island no longer ends in a line.
+ * Two instanced draws and the crust band. Nothing here is walkable (outside FRONTIER_BOUNDS, max .8 of the island ellipse) and nothing
  * stands in the lava zones; heights inside the play zones are untouched.
  */
 
@@ -48,6 +51,10 @@ float shJoint=0.,shLow=smoothstep(2.4,.2,vShW.y);
   c*=1.-shJoint*.55;
   // Soot and glassy spatter near the lava, a little sulfur crust in the cracks above it.
   c=mix(c,vec3(.018,.015,.017),shLow*.75);
+  // Column tops: weathered dark basalt under a skin of ash in patches, cracked across, never pale cut faces.
+  float shUp=smoothstep(.8,.95,normalize(cross(dFdx(vShW),dFdy(vShW))).y);
+  c=mix(c,c*(.55+.25*n),shUp);
+  c=mix(c,vec3(.2,.19,.2),shUp*smoothstep(.55,.8,shN(vShW.xz*2.3+vShSeed*4.))*.6);
   c=mix(c,vec3(.32,.27,.09),smoothstep(.82,.95,n)*smoothstep(1.2,2.6,vShW.y)*(1.-smoothstep(4.,6.,vShW.y))*.35);
   diffuseColor.rgb=c;
 }`)
@@ -55,8 +62,10 @@ float shJoint=0.,shLow=smoothstep(2.4,.2,vShW.y);
    .replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
 {
   // Where the rock stands in the lava it glows, flickering along the contact line, and the cracks above it smoulder.
+  // Broken into patches along the coast so the island never ends in one unbroken neon line; the crust takes over.
   float contact=1.-smoothstep(.12,.75,vShW.y-.15+shN(vShW.xz*1.3)*.35);
-  totalEmissiveRadiance+=vec3(3.,.7,.1)*contact*(.65+.35*shN(vShW.xz*.7+vShSeed*9.));
+  contact*=.2+.8*smoothstep(.4,.75,shN(vShW.xz*.4+vShSeed*5.));
+  totalEmissiveRadiance+=vec3(2.,.46,.07)*contact*(.65+.35*shN(vShW.xz*.7+vShSeed*9.));
   totalEmissiveRadiance+=vec3(1.4,.3,.05)*shJoint*smoothstep(3.5,.6,vShW.y)*.6;
 }`);
  };
@@ -86,6 +95,52 @@ function lump():THREE.BufferGeometry{
  }
  g.deleteAttribute('uv');g.computeVertexNormals();
  return g;
+}
+
+/** The crust band on the sea: island-ellipse rings e0..e1 (skipping the cone's foot), a few centimetres over the lava.
+ *  uv.x runs 0 at e .872 (the outer columns' feet) to 1 at e1; inside that (between the columns) it is negative: solid crust. */
+function crustBand(o:ShoreOptions):THREE.Mesh{
+ const e0=.85,e1=1.02,nA=720,nR=8,pos:number[]=[],uv:number[]=[],idx:number[]=[];
+ for(let j=0;j<=nR;j++)for(let i=0;i<=nA;i++){
+  const th=i/nA*Math.PI*2,e=e0+(e1-e0)*j/nR,x=RX*e*Math.sin(th),z=CZ+RZ*e*Math.cos(th);
+  pos.push(x,.21,z);uv.push((e-.872)/(e1-.872),Math.hypot(x-CONE.x,z-CONE.z));
+ }
+ for(let j=0;j<nR;j++)for(let i=0;i<nA;i++){const a=j*(nA+1)+i,b=a+1,c=a+nA+1,d=c+1;idx.push(a,c,b,b,c,d);}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();
+ const m=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.9,metalness:0,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2});
+ m.name='ember-shore-crust';
+ const zones=o.zones.slice(0,8).map(zn=>new THREE.Vector3(zn.x,zn.z,zn.radius+3));while(zones.length<8)zones.push(new THREE.Vector3(0,-1e4,0));
+ m.onBeforeCompile=shader=>{
+  shader.uniforms.ecZones={value:zones};
+  shader.vertexShader='varying vec3 vCrW;\nvarying vec2 vCrT;\n'+shader.vertexShader.replace('#include <uv_vertex>','#include <uv_vertex>\nvCrT=uv;').replace('#include <project_vertex>','#include <project_vertex>\nvCrW=(modelMatrix*vec4(transformed,1.)).xyz;');
+  shader.fragmentShader='varying vec3 vCrW;\nvarying vec2 vCrT;\nuniform vec3 ecZones[8];\n'+shader.fragmentShader
+   .replace('#include <common>','#include <common>\n'+EMBER_NOISE)
+   .replace('#include <color_fragment>',`#include <color_fragment>
+vec2 crP=vCrW.xz;
+float crFoot=length(abs(dFdx(crP))+abs(dFdy(crP)));
+// Outward position across the band, wobbled so the band's edges never follow the ellipse.
+float crT=vCrT.x+egNoise(crP*.035)*.22+egNoise(crP*.11)*.08;
+vec3 crC=egCells(crP*.55+vec2(egNoise(crP*.3),egNoise(crP*.3+4.))*.35);
+// Plates part toward the open lava: each plate (cell) drops out past its own reach; the cracks widen outward.
+float crKeep=crT-crC.y*.55;
+float crFade=min(smoothstep(30.,38.,vCrT.y),1.);
+for(int i=0;i<8;i++)crFade*=smoothstep(0.,6.,length(crP-ecZones[i].xy)-ecZones[i].z);
+if(crKeep>.42||crFade<.01)discard;
+float crW=.008+.1*smoothstep(-.1,.45,crKeep);
+float crCrack=1.-smoothstep(crW,crW+.03+crFoot*.4,crC.x);
+float crRim=1.-smoothstep(.0,.03+crFoot*.4,abs(crKeep-.42)*2.);
+vec3 crCol=mix(vec3(.05,.045,.05),vec3(.1,.09,.095),crC.y)*(.85+.3*(egNoise(crP*2.1)*.5+.5));
+crCol=mix(crCol,vec3(.24,.22,.23),smoothstep(.25,0.,crT)*.5*smoothstep(.4,.7,egNoise(crP*.8)*.5+.5));
+diffuseColor.rgb=egSrgb(mix(crCol,vec3(.12,.04,.02),max(crCrack,crRim)));
+float crGlow=max(crCrack,crRim*.45)*crFade;`)
+   .replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
+float crOut=smoothstep(-.3,.42,crKeep);
+totalEmissiveRadiance+=mix(vec3(1.,.2,.035),vec3(1.,.42,.1),smoothstep(.0,.42,crKeep))*crGlow*(.1+1.5*crOut*crOut);`)
+   .replace('#include <dithering_fragment>','#include <dithering_fragment>\ngl_FragColor.a=1.;');
+ };
+ m.customProgramCacheKey=()=>'ember-shore-crust';
+ const mesh=new THREE.Mesh(g,m);mesh.name='ember-coast-crust';mesh.receiveShadow=true;
+ return mesh;
 }
 
 export interface ShoreBuild {root:THREE.Group;columns:number;spatter:number}
@@ -171,6 +226,6 @@ export function buildEmberShore(o:ShoreOptions):ShoreBuild{
   spMesh.setMatrixAt(i,dummy.matrix);spMesh.setColorAt(i,colour.set(i%5?'#1c1a20':'#2a2629').multiplyScalar(.8+.4*rnd(i*1.3)));
  });
  spMesh.name='ember-coast-spatter';spMesh.receiveShadow=true;spMesh.computeBoundingSphere();
- root.add(colMesh,spMesh);
+ root.add(colMesh,spMesh,crustBand(o));
  return {root,columns:cols.length,spatter:spat.length};
 }
