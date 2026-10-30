@@ -1,6 +1,31 @@
 {
   "notes": [
     {
+      "version": "1.4.0",
+      "date": "2026-10-31",
+      "wiki": "https://wiki.repact.ai.kr/doc/2026-10-31-crabcraft-v140-GW5uzTmNOT",
+      "sections": [
+        {
+          "title": "잿불 군도",
+          "items": [
+            {
+              "head": "뜨거운 용암 위로 열기 아지랑이가 일렁여요.",
+              "body": "용암 바다, 분화구, 화산 줄기, 뜨거운 용암 덩어리 위의 공기가 흔들려요. 게는 흐려지지 않고 또렷하게 보여요."
+            }
+          ]
+        },
+        {
+          "title": "알아둘 점",
+          "items": [
+            {
+              "head": "아지랑이는 높은 그래픽 품질로 그릴 때만 나와요.",
+              "body": "느린 컴퓨터에서 용암 근처가 끊기면 메뉴의 그래픽 품질을 낮음으로 바꿔 보세요."
+            }
+          ]
+        }
+      ]
+    },
+    {
       "version": "1.3.0",
       "date": "2026-10-30",
       "wiki": "https://wiki.repact.ai.kr/doc/2026-10-30-crabcraft-v130-Lc5kSMAIHg",
