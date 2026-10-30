@@ -104,14 +104,10 @@ vec2 ecTilt=vec2(egHash12(vec2(ecId*31.,1.7)),egHash12(vec2(ecId*17.,4.1)))-.5;
 float ecFace=dot(ecLoc/max(ecHs,vec2(.1)),ecTilt);
 ecStone*=1.+ecFace*.22*(ecR>2.6?1.:0.);
 float ecArris=smoothstep(-.11,-.035,ecOut)*(1.-smoothstep(-.035,-.012,ecOut))*(ecR>2.6?1.:0.);
-#ifndef R4_NOCHIP
 float ecChip=smoothstep(.55,.8,egNoise(vEcW.xz*6.+ecId*7.)*.5+.5);
 ecStone=mix(ecStone,ecStone*1.35+vec3(.03),ecArris*(.45+.55*ecChip));
-#endif
-#ifndef R4_NOSCUFF
 float ecScuff=(1.-smoothstep(.0,.012+ecFoot*.3,abs(fract(dot(vEcW.xz,vec2(.8,.6))*1.7+egNoise(vEcW.xz*.9)*2.)-.5)-.47))*smoothstep(.55,.85,egNoise(vEcW.xz*.5+ecId)*.5+.5)*ecPolish*ecNear;
 ecStone=mix(ecStone,vec3(.36,.35,.36),ecScuff*.35);
-#endif
 // Heat browns the slabs next to the channels.
 ecStone=mix(ecStone,ecStone*vec3(1.12,.9,.8),ecBleed*.6);
 ecStone=mix(ecStone,vec3(.09,.075,.07),ecScorch*.45);
