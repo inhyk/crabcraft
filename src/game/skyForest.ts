@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {useRim} from './skybloomRim';
 import {loadKit,harmonise,type Kit} from '../world/kit';
 import {WORLD_UNIFORMS} from '../world/materials';
 import {boulderGeometry} from './snowRocks';
@@ -76,6 +77,7 @@ function leafMaterial(src:THREE.Material,name:string,blossomRim:boolean):THREE.M
     sfC*=.9+.2*sfN;
     ${blossomRim?'sfC=mix(sfC,sfC*vec3(.78,.62,.74),(1.-sfL)*.55);':'sfC=mix(sfC,sfC*vec3(.7,.86,1.),(1.-sfL)*.45);'}
     diffuseColor.rgb=sfC;`);
+  useRim(shader,.8,.45);
  };
  m.customProgramCacheKey=()=>name;
  return m;

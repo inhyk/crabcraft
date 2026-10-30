@@ -109,7 +109,8 @@ void main(){
   vec4 b=texture2D(puff,uv2);
   float detail=1.-smoothstep(300.,1000.,dist);
   vec2 g1=(a.gb-.5)/GK*${MACRO_AMP.toFixed(1)}*vAmp/${MACRO_TILE.toFixed(1)};
-  vec2 g2=((b.gb-.5)/GK*${DETAIL_AMP.toFixed(1)}/${DETAIL_TILE.toFixed(1)})*R*detail*.6;
+  // The small billows only soften the big ones' shading (r4: at .6 the sea read as a noisy lumpy mesh).
+  vec2 g2=((b.gb-.5)/GK*${DETAIL_AMP.toFixed(1)}/${DETAIL_TILE.toFixed(1)})*R*detail*.38;
   vec3 n=normalize(vec3(-(g1.x+g2.x),1.,-(g1.y+g2.y)));
   float h=a.r;
   vec3 L=skySunDir;
@@ -138,7 +139,8 @@ void main(){
   float cav=smoothstep(.0,.5,h+b.r*.12*detail);
   vec3 shade=mix(cloudDeep,cloudShade,cav);
   vec3 col=mix(shade,cloudLit,lit*mix(.45,1.,powder));
-  col*=mix(.82,1.,cav);
+  // Valleys keep their lavender shade so the sea has form even front-lit, with the sun behind the camera.
+  col*=mix(.74,1.,cav);
   // Warm silver where a lit flank turns away from the viewer, and looking toward the sun through thin edges.
   float rim=pow(1.-max(dot(n,v),0.),3.);
   float silver=pow(max(dot(-v,L),0.),8.);
@@ -146,7 +148,7 @@ void main(){
   // The far field melts into the dome's own colour below the horizon (the same LUT), so the edge is invisible.
   vec3 d=-v;
   vec3 far=skybloomSky(vec3(d.x,min(d.y,-.03),d.z));
-  col=mix(col,far,pow(smoothstep(600.,2300.,dist),1.5));
+  col=mix(col,far,pow(smoothstep(350.,2100.,dist),1.25));
   // The last of the sea, a breath under the horizon, goes into the same haze the dome's horizon band is: no knife cut.
   col=mix(col,skybloomSky(vec3(d.x,.012,d.z)),smoothstep(-.06,-.012,d.y)*smoothstep(900.,2000.,dist)*.7);
   gl_FragColor=vec4(col,1.);

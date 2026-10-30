@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {realmHeight} from '../sim/world/ground';
 import {FRONTIER_TOWN,layoutFrontier,type FrontierChapter} from './realmLayout';
 import {StarPortal} from './portal';
+import {DawnPortal} from './dawnPortal';
 import type {Poi} from '../world/types';
 import {SkybloomAir} from './skybloomAir';
 import {SkyGroundLane} from './skyGroundLane';
@@ -9,6 +10,7 @@ import {skyTreeQuality} from './skyWorldTree';
 import {skySanctuaryScene} from './skySanctuary';
 import {SKY_TREE_TIME} from './skyTreeMaterials';
 import {skyTown,type SkyTown} from './skyTown';
+import {SKY_GATE} from './skyGroundLayout';
 
 const lowQuality=()=>{try{return localStorage.getItem('cc.quality')==='low';}catch{return false;}};
 /** World VI Skybloom, split from the shared frontier so its design can grow apart from World V. */
@@ -18,7 +20,7 @@ export class SkybloomIsland {
  readonly town=FRONTIER_TOWN;
  readonly arena:Poi;
  readonly collision;
- readonly back:StarPortal;
+ readonly back:StarPortal|DawnPortal;
  readonly next:StarPortal|null;
  private animated:THREE.ShaderMaterial[]=[];
  /** Sky, sun, fog, environment, cloud sea, cliff skirt, floating isles, falls and drifting petals (skybloomAir.ts). */
@@ -32,7 +34,12 @@ export class SkybloomIsland {
  constructor(){
   const fire=false as boolean,chapter=this.chapter;this.root.name=fire?'WORLD V · Emberreach':'WORLD VI · Skybloom';this.root.visible=false;
   this.collision=layoutFrontier(chapter);this.arena={id:'bossArena',position:new THREE.Vector3(0,this.height(0,-72),-72),radius:20,yaw:0};
-  this.back=new StarPortal(this.spawn,fire?'잿불 항구 → 서리빛 설원':'하늘 항구 → 잿불 군도');
+  // The way back to Emberreach: a finished cream-and-gilt gate (dawnPortal.ts 'sky'), not the old dark primitive ring that
+  // clipped the village view's corner as a black blob (r4). It stands 2.7 m north-west of the spawn, which stays the
+  // travel point (the sim's gate:w5 at -12, 84, range 3.5): a crab in the arch still travels, and the dais no longer
+  // pokes into the village view's lower-left corner (r4 finish).
+  const [gx,gz]=SKY_GATE;
+  this.back=new DawnPortal(new THREE.Vector3(gx,this.height(gx,gz),gz),'하늘 항구 → 잿불 군도','sky');
   this.next=fire?new StarPortal(new THREE.Vector3(26,this.height(26,-44),-44),'잿불 성역 → 하늘숲'):null;
   const stone=new THREE.MeshStandardMaterial({color:fire?'#393239':'#d3d6b5',roughness:.82,metalness:fire?.25:.08});
   const metal=new THREE.MeshStandardMaterial({color:fire?'#77656b':'#b7b38a',metalness:.55,roughness:.4});
