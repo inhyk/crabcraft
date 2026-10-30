@@ -8,7 +8,8 @@ import {dawnSandstone, solidPart} from './dawnMaterials';
  * moulded imposts, a round arch of bevelled voussoirs closed by a keystone that carries a gilded sun, and a crown of
  * gilded rays fanning out behind the arch. Inside the arch a dawn rises: a gradient from gold at the horizon to
  * rose and violet, brightest along its horizon line, soft shafts rising and light leaking round the frame, dust drifting up its edges.
- * `tone` 'frost' cools the same gate for the road to Frostlight. Same interface as StarPortal (root, update).
+ * `tone` 'frost' cools the same gate for the road to Frostlight; 'sky' is Skybloom's cream limestone and gilt with a
+ * morning-sky veil. Same interface as StarPortal (root, update).
  */
 
 const SPRING = 2.15, RI = 2.7, RO = 3.5, DEPTH = .86, DAIS = .62;
@@ -17,11 +18,13 @@ export class DawnPortal {
   readonly root = new THREE.Group();
   private veil: THREE.ShaderMaterial;
   private motes: THREE.ShaderMaterial;
-  constructor(position: THREE.Vector3, label: string, tone: 'dawn' | 'frost' = 'dawn') {
+  constructor(position: THREE.Vector3, label: string, tone: 'dawn' | 'frost' | 'sky' = 'dawn') {
     this.root.position.copy(position); this.root.name = label;
-    const frost = tone === 'frost';
-    const stone = dawnSandstone(frost ? 'dawnharbor-gate-stone-frost' : 'dawnharbor-gate-stone');
+    const frost = tone === 'frost', sky = tone === 'sky';
+    const stone = dawnSandstone(frost ? 'dawnharbor-gate-stone-frost' : sky ? 'dawnharbor-gate-stone-sky' : 'dawnharbor-gate-stone');
     if (frost) stone.color.set('#dfe6ee');
+    // The sandstone's own tan times this comes out as Skybloom's cream limestone (#e6dcc4 family).
+    if (sky) stone.color.setRGB(1.3, 1.42, 1.7, THREE.LinearSRGBColorSpace);
     const gold = new THREE.MeshStandardMaterial({name: 'dawnharbor-gate-gilt', color: frost ? '#d8e6f2' : '#d6a54a', metalness: .9, roughness: .34, emissive: frost ? '#3a6c9a' : '#6a4316', emissiveIntensity: .22});
     const parts: THREE.BufferGeometry[] = [], gilt: THREE.BufferGeometry[] = [];
     const M = (x: number, y: number, z: number, rz = 0, s: THREE.Vector3 = new THREE.Vector3(1, 1, 1)) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rz)), s);
@@ -93,7 +96,7 @@ export class DawnPortal {
     const open = new THREE.Shape();
     open.moveTo(-RI, DAIS); open.lineTo(-RI, SPRING); open.absarc(0, SPRING, RI, Math.PI, 0, true); open.lineTo(RI, DAIS); open.closePath();
     const veilGeo = new THREE.ShapeGeometry(open, 24);
-    const cols = frost ? ['vec3(.55,.8,1.)', 'vec3(.35,.45,.95)', 'vec3(.12,.15,.45)', 'vec3(.85,.95,1.)'] : ['vec3(1.,.72,.3)', 'vec3(.95,.38,.42)', 'vec3(.35,.18,.55)', 'vec3(1.,.9,.6)'];
+    const cols = sky ? ['vec3(1.,.84,.5)', 'vec3(.5,.86,.88)', 'vec3(.22,.45,.8)', 'vec3(1.,.96,.8)'] : frost ? ['vec3(.55,.8,1.)', 'vec3(.35,.45,.95)', 'vec3(.12,.15,.45)', 'vec3(.85,.95,1.)'] : ['vec3(1.,.72,.3)', 'vec3(.95,.38,.42)', 'vec3(.35,.18,.55)', 'vec3(1.,.9,.6)'];
     this.veil = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
       uniforms: {uTime: {value: 0}},
@@ -133,7 +136,7 @@ export class DawnPortal {
     });
     const motes = new THREE.Points(mg, this.motes); motes.frustumCulled = false; motes.name = 'dawn-gate-motes';
     this.root.add(motes);
-    const light = new THREE.PointLight(frost ? '#9cc8ff' : '#ffb466', 10, 13, 1.4); light.position.set(0, SPRING, 1.2);
+    const light = new THREE.PointLight(frost ? '#9cc8ff' : sky ? '#ffd08e' : '#ffb466', 10, 13, 1.4); light.position.set(0, SPRING, 1.2);
     this.root.add(light);
     this.root.userData.dawnGate = tone;
     this.root.userData.sunburst = {rays: 9, spikes: 0};

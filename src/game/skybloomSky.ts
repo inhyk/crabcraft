@@ -46,7 +46,8 @@ export function skybloomRadiance(elev: number, cosPhi: number, sunElev: number, 
   for (let c = 0; c < 3; c++) col[c] += SUN_TINT[c] * glow;
   // Below the horizon lies the cloud sea, hazed to one colour per bearing.
   // Seen edge-on and far off, the sunlit sea is the whitest thing in the frame: brighter than the haze above it.
-  if (elev < 0) { const sea = mix3(SEA_AWAY, SEA_SUN, Math.pow(toward, 1.6)), k = 1.35 + 0.1 * toward; col = mix3(col, [sea[0] * k, sea[1] * k, sea[2] * k], smooth(0, -0.025, elev)); }
+  // Away from the sun the far sea is a step dimmer (r4: front-lit, it blew out to a white floor in the west view).
+  if (elev < 0) { const sea = mix3(SEA_AWAY, SEA_SUN, Math.pow(toward, 1.6)), k = 1.12 + 0.3 * toward; col = mix3(col, [sea[0] * k, sea[1] * k, sea[2] * k], smooth(0, -0.025, elev)); }
   return [col[0] * gain, col[1] * gain, col[2] * gain];
 }
 
@@ -128,37 +129,49 @@ void main(){
     float cir=smoothstep(.58,.86,streak)*smoothstep(.04,.25,d.y)*(1.-smoothstep(.65,.98,d.y)*.6);
     col=mix(col,mix(cloudShade*1.2,cloudLit*1.05,.55+.45*toward),cir*.55);
   }
-  // Cumulus towers boiling up out of the cloud sea at the horizon: each a stack of six lumps of different sizes
-  // (a cauliflower outline, taller in the middle) on a flat base in shade, lit on the flank toward the sun and hazed
-  // because they are tens of kilometres off.
+  // Cumulus towers boiling up out of the cloud sea at the horizon: each the union of six round lumps of different
+  // sizes (a cauliflower outline, taller in the middle) over a wide low dome, lit on the flank toward the sun and hazed
+  // because they are tens of kilometres off. Every lump is a whole disc and the foot dissolves into the horizon haze
+  // through noise, so no straight edge shows from any view (r4: the old lumps were columns with vertical sides and
+  // read as rectangular cards).
   if(d.y>-.03&&d.y<.2){
     float az=atan(d.x,d.z);
     float inside=-1.,top=1.;vec2 nrm=vec2(0.,1.);
     for(int i=0;i<${TOWERS.length};i++){
       vec3 t=towers[i];
       float da=atan(sin(az-t.x),cos(az-t.x));
-      if(abs(da)>t.z*1.4)continue;
+      if(abs(da)>t.z*1.5)continue;
+      // The wide low dome the lumps stand on, flattened: its inside in the same (radian) units as the lumps'.
+      vec2 qb=vec2(da/(t.z*1.08),d.y/(t.y*.42));
+      float lb=length(qb),inb=(1.-lb)*t.y*.3;
+      if(inb>inside){inside=inb;nrm=normalize(vec2(qb.x/(t.z*1.08),qb.y/(t.y*.42))+1e-6);top=t.y;}
       for(int j=0;j<6;j++){
         float fj=float(j),s1=fract(sin(fj*12.99+t.x*7.13)*43758.5),s2=fract(sin(fj*7.31+t.x*3.17)*24634.6);
         // Outer lumps low and wide, inner ones stacked higher and smaller.
-        float ox=(s1-.5)*2.*t.z*(1.-fj/7.);
+        float ox=(s1-.5)*1.7*t.z*(1.-fj/7.);
         float r=t.z*(.26+.22*s2)*(1.-.25*fj/6.);
-        float cy=max(.004,(t.y-r)*(1.-abs(ox)/(t.z*1.15)));
-        vec2 q=vec2(da-ox,max(d.y-cy,0.));
-        float inn=r-length(q);
-        if(inn>inside){inside=inn;nrm=length(q)>1e-5?q/length(q):vec2(0.,1.);top=t.y;}
+        float cy=max(r*.45,(t.y-r)*(1.-abs(ox)/(t.z*1.15)));
+        vec2 q=vec2(da-ox,d.y-cy);
+        float lq=length(q),inn=r-lq;
+        if(inn>inside){inside=inn;nrm=lq>1e-5?q/lq:vec2(0.,1.);top=t.y;}
       }
     }
-    float edge=.0035*(sbFbm(vec2(az*60.,d.y*90.)+3.)-.5);
-    float dens=smoothstep(-.0015,.0025,inside+edge);
+    // The noise only where a tower's edge can reach (the band is a third of the frame in the field views).
+    float dens=0.;
+    if(inside>-.005){
+      float edge=.0045*(sbFbm(vec2(az*60.,d.y*90.)+3.)-.5)+.002*(sbFbm(vec2(az*190.,d.y*240.)+11.)-.5);
+      dens=smoothstep(-.0015,.003,inside+edge);
+      // The foot sinks into the haze on a wavering line, never a level cut.
+      if(dens>0.)dens*=smoothstep(-.012,.016,d.y+.012*(sbFbm(vec2(az*35.,1.7))-.5));
+    }
     if(dens>0.){
       vec3 across=vec3(cos(az),0.,-sin(az));
       vec3 n=normalize(across*nrm.x+vec3(0.,1.,0.)*nrm.y-d*.45);
       float bill=sbFbm(vec2(az*70.,d.y*110.)+7.);
       float lit=clamp(dot(n,skySunDir)*.7+.42+(bill-.5)*.5,0.,1.);
       vec3 cc=mix(cloudShade,cloudLit*mix(.92,1.08,toward),lit);
-      // Flat shaded base: the bottom fifth of each tower sits in its own shade.
-      cc=mix(cc,cloudDeep,(1.-smoothstep(.0,top*.22,d.y))*.75);
+      // A shaded base: the lower fifth of each tower sits in its own shade.
+      cc=mix(cc,cloudDeep,(1.-smoothstep(.0,top*.22,d.y))*.6);
       cc=mix(cc,hazeColor,.3);
       col=mix(col,cc,dens);
     }
@@ -252,9 +265,10 @@ export class SkybloomSky {
       }
     }
     for (let c = 0; c < 3; c++) up[c] /= wsum;
-    // A high sun in thin air: warm white (#fff2d6), barely reddened.
+    // A morning sun in thin air: warm white (#fff2d6), barely reddened. Stronger than the old 35-degree sun's 4.2 so
+    // level ground, lit at sin 25 instead of sin 35, keeps its value while walls and crowns facing it get brighter.
     this.sunColor = toColor(SUN_TINT);
-    this.sunIntensity = 4.2;
+    this.sunIntensity = 4.9;
     // three.js HemisphereLight irradiance is the colour itself; the dome mean is about pi x radiance. The fill keeps
     // its blue so shade reads blue-violet (#5a6a9a range) against the warm sun, never black or olive.
     this.hemiSky = toColor([up[0] * 7.6, up[1] * 4.1, up[2] * 1.35] as V3, 1);

@@ -31,7 +31,7 @@ export class EmberAir {
  readonly sun=new THREE.DirectionalLight();
  readonly hemi:THREE.HemisphereLight;
  /** Cool rim on the player's crab, low behind it from the camera: it grazes the shell's back edges (red shell against orange lava) without lighting its top. */
- readonly rim=new THREE.PointLight('#9fc4ff',9,2.4,2);
+ readonly rim=new THREE.PointLight('#9fc4ff',15,2.9,2);
  readonly heat:EmberHeat;
  readonly plume:EmberPlume;
  readonly shore:THREE.Group;

@@ -12,7 +12,8 @@ import {EMBER_DETAIL,EMBER_NOISE} from './emberNoise';
  * - scorched, crazed ground glowing faintly in the cracks near the lava and down the shore to the molten sea;
  * - crystal light pooled on the ground, contact shade under rocks.
  * The fields that need distance (fissures, lava heat, contact shade, crystal light) are baked once into one RGBA8
- * map over the terrain; everything else is procedural from the world position, filtered by the pixel footprint.
+ * map over the terrain, the flow lobes and the large-scale noise fields into three half-float maps on the same texels;
+ * everything finer is procedural from the world position, filtered by the pixel footprint.
  */
 
 const RECT = {x0: -150, z0: -175, w: 300, h: 350};
@@ -69,8 +70,80 @@ function bakeGroundMap(zones: readonly LavaZone[], features: readonly EmberFeatu
  return tex;
 }
 
+/* JS twins of EMBER_NOISE's egHash22 / egNoise, for the bake below (float64 here, float32 on the GPU: they agree to ~1e-5). */
+const fract = (v: number) => v - Math.floor(v);
+function hash22(x: number, y: number, out: number[]) {
+ let a = fract(x * .1031), b = fract(y * .1030), c = fract(x * .0973);
+ const d = a * (b + 33.33) + b * (c + 33.33) + c * (a + 33.33); a += d; b += d; c += d;
+ out[0] = fract((a + b) * c); out[1] = fract((a + c) * b);
+}
+const H = [0, 0];
+function noise(px: number, py: number) {
+ const ix = Math.floor(px), iy = Math.floor(py), fx = px - ix, fy = py - iy, ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+ hash22(ix, iy, H); const a = (H[0] * 2 - 1) * fx + (H[1] * 2 - 1) * fy;
+ hash22(ix + 1, iy, H); const b = (H[0] * 2 - 1) * (fx - 1) + (H[1] * 2 - 1) * fy;
+ hash22(ix, iy + 1, H); const c = (H[0] * 2 - 1) * fx + (H[1] * 2 - 1) * (fy - 1);
+ hash22(ix + 1, iy + 1, H); const d = (H[0] * 2 - 1) * (fx - 1) + (H[1] * 2 - 1) * (fy - 1);
+ const ab = a + (b - a) * ux, cd = c + (d - c) * ux;
+ return (ab + (cd - ab) * uy) * 1.4;
+}
+const smooth = (e0: number, e1: number, v: number) => { const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+const fbm = (x: number, y: number) => noise(x, y) * .55 + noise(x * 2.03 + 7.1, y * 2.03 + 7.1) * .3 + noise(x * 4.11 - 3.7, y * 4.11 - 3.7) * .15;
+function halfTexture(data: Float32Array, name: string) {
+ const half = new Uint16Array(data.length);
+ for (let i = 0; i < data.length; i++) half[i] = THREE.DataUtils.toHalfFloat(data[i]);
+ const tex = new THREE.DataTexture(half, MAP, MAP, THREE.RGBAFormat, THREE.HalfFloatType);
+ tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false; tex.flipY = false;
+ tex.name = name; tex.needsUpdate = true;
+ return tex;
+}
+/** The shader's large-scale fields, baked once over the terrain (the same texels as the fissure map) instead of
+ *  evaluated per pixel; together they were about a third of the ground shader's noise and the cooled flow lobes alone
+ *  0.5-0.75 ms in the open views.
+ *  - lobe: the cooled flow lobes fanning south from the volcano's foot: seven main tongues of uneven reach and width
+ *    and two short breakouts off their flanks, each meandering, their margins warped at two scales. r = signed
+ *    distance to the nearest lobe's margin (m), g = that lobe's age, b, a = sin, cos of the pressure-ridge phase
+ *    (distance to its front x 1.3).
+ *  - lowA: value swells (fbm .021), pahoehoe sheets (fbm .017), crack regions (90 m and 23 m), ash drift (fbm .011 x
+ *    .017 plus noise .05); lowB: clinker fields (.045), crack fill (.021), gravel (.09), crack width (.07).
+ *  All are periods of 11 m and more against 0.6 m texels, so linear filtering reproduces them. */
+function bakeFieldMaps() {
+ const N = MAP, lobe = new Float32Array(N * N * 4), lowA = new Float32Array(N * N * 4), lowB = new Float32Array(N * N * 4);
+ const sx = RECT.w / N, sz = RECT.h / N;
+ const L = Array.from({length: 9}, (_, i) => {
+  const br = i > 6.5 ? 1 : 0, a = -.7 + (i * .45) % 1.5 + Math.sin(i * 2.7) * .06 + br * (i > 7.5 ? .22 : -.3);
+  const st = br ? 72 + i * 4 : 36, len = br ? st + 30 : 96 + (i * 41) % 70, w = br ? 5.5 : 6.5 + (i * 5.3) % 8;
+  return {i, st, len, w, dx: Math.sin(a), dz: Math.cos(a), age: fract(i * .618 + .15)};
+ });
+ for (let j = 0; j < N; j++) for (let k = 0; k < N; k++) {
+  const px = RECT.x0 + (k + .5) * sx, pz = RECT.z0 + (j + .5) * sz, o = (j * N + k) * 4;
+  const vx = px + noise(px * .04 + 2, pz * .04 + 2) * 7 + noise(px * .12 + 1, pz * .12 + 1) * 2.4;
+  const vz = pz + 128 + noise(px * .04 - 6, pz * .04 - 6) * 7 + noise(px * .12 + 8, pz * .12 + 8) * 2.4;
+  let best = 1e3, age = 0, rr = 0;
+  for (const l of L) {
+   const sdx = l.dz, sdz = -l.dx, t0 = vx * l.dx + vz * l.dz, m = Math.sin(t0 * .035 + l.i * 1.7) * 7 * smooth(l.st, l.st + 40, t0);
+   const qx = vx - sdx * m, qz = vz - sdz * m, t = Math.max(l.st, Math.min(l.len, qx * l.dx + qz * l.dz));
+   const d = Math.hypot(qx - l.dx * t, qz - l.dz * t) - l.w * (.65 + .5 * smooth(l.st, l.len, t));
+   if (d < best) { best = d; age = l.age; rr = Math.hypot(qx - l.dx * (l.len - l.w * 2.2), qz - l.dz * (l.len - l.w * 2.2)); }
+  }
+  lobe[o] = Math.max(-30, Math.min(30, best)); lobe[o + 1] = age; lobe[o + 2] = Math.sin(rr * 1.3); lobe[o + 3] = Math.cos(rr * 1.3);
+  lowA[o] = fbm(px * .021 + 1.3, pz * .021 + 1.3);
+  lowA[o + 1] = fbm(px * .017 + 17, pz * .017 + 17);
+  lowA[o + 2] = noise(px * .011 + 40, pz * .011 + 40) * .62 + noise(px * .043 - 17, pz * .043 - 17) * .38;
+  lowA[o + 3] = fbm(px * .011 + 11, pz * .017 + 11) + noise(px * .05, pz * .05) * .14;
+  lowB[o] = noise(px * .045 + 31, pz * .045 + 31);
+  lowB[o + 1] = noise(px * .021 + 60, pz * .021 + 60);
+  lowB[o + 2] = noise(px * .09 + 21, pz * .09 + 21);
+  lowB[o + 3] = noise(px * .07 + 3, pz * .07 + 3);
+ }
+ return {lobe: halfTexture(lobe, 'ember-ground-lobes'), lowA: halfTexture(lowA, 'ember-ground-low-a'), lowB: halfTexture(lowB, 'ember-ground-low-b')};
+}
+
 const HEAD = /* glsl */ `
 uniform sampler2D egMap;
+uniform sampler2D egLobe;
+uniform sampler2D egLowA;
+uniform sampler2D egLowB;
 uniform vec4 egRect;
 uniform float egDetail;
 uniform float egTime;
@@ -86,13 +159,17 @@ float egNear=1.-smoothstep(.03,.12,egFoot);
 // Baked fields: fissure distance (m), lava heat, contact shade, crystal light.
 vec2 egWarp=vec2(egNoise(egP*.9),egNoise(egP*.9+5.2))*.35+vec2(egNoise(egP*3.1),egNoise(egP*3.1-2.))*.08;
 vec4 egM=texture2D(egMap,(egP+egWarp-egRect.xy)*egRect.zw);
+// Low-frequency fields baked by bakeFieldMaps (periods of 11 m and more, so the 0.6 m texels hold them exactly):
+// a = value swells, sheets, crack regions, ash drift; b = clinker fields, crack fill, gravel, crack width.
+vec2 egUv=(egP-egRect.xy)*egRect.zw;
+vec4 egLa=texture2D(egLowA,egUv),egLb=texture2D(egLowB,egUv);
 float egFd=egM.r*${FISSURE_RANGE.toFixed(1)},egCrys=egM.a,egAo=egM.b;
 // The shore heats up toward the molten sea (the island's ellipse, as ground.ts shapes it).
 float egEdge=length(vec2(egP.x/128.,(egP.y-2.)/155.));
 float egShore=smoothstep(.79,.9,egEdge+egNoise(egP*.08)*.02);
 float egHeat=max(egM.g,egShore);
 // Large scale: value swells over the basalt.
-float egN1=egFbm(egP*.021+1.3),egN2=egFbm(egP*.073-4.1),egN3=egNoise(egP*.31+9.);
+float egN1=egLa.r,egN2=egFbm(egP*.073-4.1),egN3=egNoise(egP*.31+9.);
 // Ash lies in the hills' hollows (ground.ts: sin(x .047) sin(z .035)) and in wind streaks running east-west.
 float egHill=sin(egP.x*.047)*sin(egP.y*.035)*(1.-exp(-egP.x*egP.x/900.));
 float egStreak=egNoise(vec2(egP.x*.07,egP.y*.19)+3.)*.5+.5;
@@ -108,19 +185,27 @@ egAsh*=.3+.7*egPatch;
 float egRip=sin(egP.x*5.1+egNoise(egP*.7)*4.+egNoise(egP*2.3)*.8)*.5+.5;
 egAsh*=1.-egHeat*.85;
 // Cooled pahoehoe sheets: dark, smoother, with rope folds bowed downhill (south); none under the ash.
-float egSheet=smoothstep(.05,.22,egFbm(egP*.017+17.)-.08)*(1.-egAsh)*(1.-egShore);
+float egSheet=smoothstep(.05,.22,egLa.g-.08)*(1.-egAsh)*(1.-egShore);
 // Clinker (a'a) fields: rubbly blocks with dark gaps, where the sheets broke up.
-float egAaM=smoothstep(.15,.55,egNoise(egP*.045+31.)+egNoise(egP*.4)*.12)*(1.-egSheet)*(1.-egAsh*.9)*(1.-egShore);
+float egN4=egNoise(egP*.4);
+float egAaM=smoothstep(.15,.55,egLb.r+egN4*.12)*(1.-egSheet)*(1.-egAsh*.9)*(1.-egShore);
 vec3 egAaC=egCells(egP*2.7+egWarp*2.);
 float egAa=smoothstep(.02,.16+egFoot*.5,egAaC.x+egNoise(egP*9.)*.04);
 float egRopeU=egP.y*1.35+sin(egP.x*.23+egN3*2.)*2.4+egFbm(egP*.12)*3.;
 float egRope=(sin(egRopeU*6.2832)*.5+.5);
-// Cracked crust where the ground shrank: polygons a metre or two across, more of them near heat.
-float egCrackM=max(smoothstep(.32,.55,egNoise(egP*.037-8.)),egHeat*.9)*(1.-egSheet*.8)*(1.-egAsh);
+// Cracked crust where the ground shrank: polygons a metre or two across, more of them near heat. The density follows
+// a region field at two scales (about 90 m and 23 m), so whole stretches are smooth, others crazed, others split by a
+// second, finer generation of cracks; the crack width wanders too, and in some regions ash fills the cracks.
+float egReg=egLa.b;
+float egCrackM=max(smoothstep(-.18,.3,egReg),egHeat*.9)*(1.-egSheet*.8)*(1.-egAsh);
 vec3 egC=egCells(egP*mix(.42,.8,egHeat)+egWarp*.6+vec2(egNoise(egP*1.9),egNoise(egP*1.9+4.))*.12);
-float egCrack=(1.-smoothstep(.0,.022+egFoot*.35,egC.x+egNoise(egP*6.)*.012))*egCrackM*(.55+.45*smoothstep(-.2,.4,egNoise(egP*.8+egC.y*7.)));
+float egCw=.012+.022*smoothstep(-.35,.45,egLb.a);
+float egCrack=(1.-smoothstep(.0,egCw+egFoot*.35,egC.x+egNoise(egP*6.)*.012))*egCrackM*(.55+.45*smoothstep(-.2,.4,egNoise(egP*.8+egC.y*7.)));
+float egDense=smoothstep(.12,.5,egReg)*egCrackM*(1.-smoothstep(.06,.2,egFoot));
+if(egDense>.01){vec3 c2=egCells(egP*1.2+egWarp*.5+3.7);egCrack=max(egCrack,(1.-smoothstep(0.,.011+egFoot*.3,c2.x))*egDense*.7*step(.25,c2.y));}
+float egFill=smoothstep(.15,.55,egLb.g);
 // Pumice gravel in patches: pale pebbles a hand across.
-float egGravM=smoothstep(.3,.6,egNoise(egP*.09+21.))*(1.-egSheet)*(1.-egHeat*.8)*(1.-egAsh*.6);
+float egGravM=smoothstep(.3,.6,egLb.b)*(1.-egSheet)*(1.-egHeat*.8)*(1.-egAsh*.6);
 float egPeb=0.,egPebId=0.;
 if(egDetail>.5&&egNear>0.&&egGravM>0.){vec3 c=egCells(egP*6.3);egPebId=c.y;egPeb=(1.-smoothstep(.16,.3,c.z+egNoise(egP*30.)*.05))*step(.3+.5*(1.-egGravM),c.y)*egNear;}
 // Colour (sRGB values, converted): basalt from charcoal to blue-grey, lit by the swells.
@@ -136,24 +221,27 @@ vec3 egCol=mix(egBas,egSheetC,egSheet);
 egCol=mix(egCol,egBas*mix(.45,.85+.45*egAaC.y,egAa),egAaM*(1.-smoothstep(.06,.3,egFoot)*.5));
 egCol=mix(egCol,egAshC,egAsh);
 egCol=mix(egCol,mix(vec3(.4,.39,.38),vec3(.5,.48,.46),egPebId),egPeb*.8);
-// Large scale, read from the air: old cooled flows fanning south from the volcano (dark, smoother, glassy), their
-// edges heaped into pale ash-dusted levees, and long ash streaks blown east-west across everything.
-vec2 egV=egP-vec2(0.,-128.);
-float egVd=length(egV),egVa=atan(egV.x,egV.y);
-float egFlowN=egFbm(vec2(egVa*5.,egVd*.012)+vec2(egNoise(egP*.018)*.7,egNoise(egP*.05)*.15)+3.7);
-float egFlowFar=1.-smoothstep(170.,250.,egVd);
-float egFlow=smoothstep(.04,.1,egFlowN)*egFlowFar*(1.-egShore);
-float egLevee=(1.-smoothstep(.0,.07+egFoot*.05,abs(egFlowN-.01)))*egFlowFar*(1.-egShore);
-float egWind=smoothstep(.18,.5,egFbm(vec2(egP.x*.0065,egP.y*.032)+11.)+egNoise(egP*.06)*.12)*(.25+.75*egPatch);
-// Between the flows the old ground lies under ash: broad pale plains against the dark tongues.
-egCol=mix(egCol,egAshC,(1.-egFlow)*egFlowFar*.5*egPatch*(1.-egHeat));
-egCol=mix(egCol,mix(vec3(.12,.125,.15),vec3(.16,.16,.185),egN3*.5+.5),egFlow*.72*(1.-egAsh*.5));
-egCol=mix(egCol,egAshC*1.06,egLevee*.5);
-egCol=mix(egCol,egAshC*1.06,egWind*.45*(1.-egFlow*.4));
+// Large scale, read from the air: cooled flow lobes fanning south from the volcano's foot, each a tongue with a rounded,
+// lobed front (capsules with their margins warped at two scales); the young ones dark and glassy, the old ones greyed
+// by ash, raised ash-dusted levees on their margins and pressure ridges bowed toward the front. Between them the old
+// ground lies under drifted ash.
+// (Baked by bakeFieldMaps: distance to the nearest lobe's margin, its age, the pressure-ridge phase as sin, cos.)
+vec4 egL=texture2D(egLobe,egUv);
+float egLobeD=egL.r,egLobeAge=egL.g,egRb=egN4*1.5;
+float egFlow=1.-smoothstep(-.4,.4+egFoot*2.,egLobeD);
+float egLevee=smoothstep(-3.6,-1.4,egLobeD)*(1.-smoothstep(-.9,.2+egFoot,egLobeD));
+float egRidge=(dot(egL.ba,vec2(cos(egRb),sin(egRb)))*inversesqrt(max(dot(egL.ba,egL.ba),1e-6))*.5+.5)*egFlow*(1.-smoothstep(.08,.35,egFoot));
+float egDrift=smoothstep(.05,.42,egLa.a)*(1.-egFlow)*(1.-egHeat);
+egCol=mix(egCol,egAshC,egDrift*.55*(.4+.6*egPatch));
+vec3 egLobeC=mix(vec3(.13,.135,.155),vec3(.21,.205,.225),egLobeAge)*(.9+.1*egN3)*(.94+.1*egRidge);
+egCol=mix(egCol,egLobeC,egFlow*(1.-egAsh*.6)*(1.-egShore));
+egCol=mix(egCol,egAshC*mix(.85,1.05,egLobeAge),egFlow*egLobeAge*egPatch*.45);
+egCol=mix(egCol,egAshC,egLevee*.45*(1.-egShore));
+egCol*=1.-.14*smoothstep(1.5,.2,egLobeD)*(1.-egFlow)*(1.-egShore);
 // Heat scorches the ground darker and rust-red, crazed by finer cracks.
 vec3 egScorch=mix(vec3(.16,.12,.12),vec3(.1,.08,.085),egN3*.5+.5);
 egCol=mix(egCol,egScorch,smoothstep(.15,.85,egHeat)*.85);
-egCol=mix(egCol,vec3(.08,.08,.09),egCrack*.6);
+egCol=mix(egCol,mix(vec3(.08,.08,.09),egAshC*1.08,egFill*(1.-egHeat)),egCrack*.6);
 // Fissure: a black crust lip, a dusting of sulfur on a few, and a scorched halo across the ash.
 float egLip=1.-smoothstep(.12,.75,egFd);
 float egHalo=1.-smoothstep(.3,2.6,egFd);
@@ -166,15 +254,15 @@ diffuseColor.rgb=egSrgb(egCol);
 `;
 
 const ROUGH = /* glsl */ `
-roughnessFactor=mix(.93,.62+.2*egRope,egSheet);
+roughnessFactor=mix(.93,.76+.12*egRope,egSheet);
 roughnessFactor=mix(roughnessFactor,.98,egAsh);
-roughnessFactor=mix(roughnessFactor,.72,egFlow*(1.-egAsh)*(1.-egWind*.6));
+roughnessFactor=mix(roughnessFactor,.86-.06*(1.-egLobeAge),egFlow*(1.-egAsh));
 `;
 
 const NORMAL = /* glsl */ `
 if(egDetail>.5){
   float egScoria=(egNoise(egP*3.3)*.6+egNoise(egP*8.1)*.4)*(1.-egAsh*.8)*(1.-egSheet*.7);
-  float egH=(egAa*egAaM*.06+egRope*.022*egSheet+egRip*.008*egAsh+egPeb*.03-egCrack*.03-egLip*.02+egScoria*.035+egNoise(egP*17.)*.008*(1.-egAsh*.6))*(1.-smoothstep(.04,.25,egFoot));
+  float egH=(egRidge*.03+egLevee*.04+egAa*egAaM*.06+egRope*.022*egSheet+egRip*.008*egAsh+egPeb*.03-egCrack*.03-egLip*.02+egScoria*.035+egNoise(egP*17.)*.008*(1.-egAsh*.6))*(1.-smoothstep(.04,.25,egFoot));
   normal=egBump(normal,egH,egDpx,egDpy);
 }
 `;
@@ -211,9 +299,12 @@ export function emberGround(opts: EmberGroundOptions) {
  const pos = geo.getAttribute('position');
  for (let i = 0; i < pos.count; i++) pos.setY(i, opts.height(pos.getX(i), pos.getZ(i)));
  geo.computeVertexNormals();
- const map = bakeGroundMap(opts.zones, opts.features);
+ const map = bakeGroundMap(opts.zones, opts.features), fields = bakeFieldMaps();
  const uniforms = {
   egMap: {value: map},
+  egLobe: {value: fields.lobe},
+  egLowA: {value: fields.lowA},
+  egLowB: {value: fields.lowB},
   egRect: {value: new THREE.Vector4(RECT.x0, RECT.z0, 1 / RECT.w, 1 / RECT.h)},
   egDetail: EMBER_DETAIL,
   egTime: {value: 0},

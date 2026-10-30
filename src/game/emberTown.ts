@@ -6,6 +6,7 @@ import {
   type ForgeHouse,
 } from './emberTownLayout';
 import {emberSurface} from './emberPaving';
+import {EMBER_VENTS} from './emberGroundLayout';
 
 /*
  * Emberreach's forge works and arrival quay (World V), from the plan in emberTownLayout.ts: one round furnace yard
@@ -370,6 +371,7 @@ export class EmberTown {
     FORGE_LANTERNS.forEach(([x, z], i) => this.lantern(x, z, i));
     FORGE_BANNERS.forEach(([x, z], i) => this.bannerPost(x, z, i));
     this.harbour();
+    this.vents();
     this.finish();
   }
 
@@ -461,6 +463,19 @@ export class EmberTown {
     for (let t = .4; t < len; t += .9) { const x = x0 + (x1 - x0) * t / len, z = z0 + (z1 - z0) * t / len, y = this.floor(x, z); this.S(box(1.6, .12, .26), trs(x, y + .02, z, yaw), '#3f3029', PAT.plank, .4, .95, 0, y, t); }
     // Rails in short lengths so they follow the floor.
     for (const s of [-1, 1]) for (let t = 0; t < len - .01; t += 3) { const l = Math.min(3, len - t), x = x0 + (x1 - x0) * (t + l / 2) / len + Math.cos(yaw) * s * .55, z = z0 + (z1 - z0) * (t + l / 2) / len - Math.sin(yaw) * s * .55; this.S(box(.09, .1, l), trs(x, this.floor(x, z) + .13, z, yaw), '#5d5a5c', PAT.plain, 1, .3, .9, -99); }
+  }
+  /** Buffer stop at a rail end (x, z), the rails arriving along `yaw`: an iron-shod timber beam on two posts braced back
+   *  with raking struts, a heap of ballast behind it. */
+  private bufferStop(x: number, z: number, yaw: number) {
+    const y = this.floor(x, z), m = trs(x, y, z, yaw);
+    for (const s of [-1, 1]) {
+      this.S(box(.22, .62, .22).translate(s * .55, .31, 0), m, '#3f3029', PAT.plank, .5, .92, 0, y);
+      this.S(box(.14, .1, 1.05).applyMatrix4(new THREE.Matrix4().makeRotationX(.42)).translate(s * .55, .3, .5), m, '#3f3029', PAT.plank, .5, .92, 0, y);
+      this.S(cyl(.13, .13, .12, 10).rotateX(Math.PI / 2).translate(s * .55, .5, -.17), m, '#2a292d', PAT.plain, 1, .4, .85, y);
+    }
+    this.S(box(1.7, .28, .26).translate(0, .5, 0), m, '#4a3426', PAT.plank, .6, .9, 0, y);
+    this.S(box(1.74, .08, .3).translate(0, .66, 0), m, '#2b292d', PAT.plate, 0, .45, .8, y);
+    const [hx, hz] = [x + Math.sin(yaw) * .95, z + Math.cos(yaw) * .95]; this.heap(hx, hz, .7, 10, '#3a3739', 900 + Math.round(x * 7 + z));
   }
   /** Lit window (protruding stone frame, glow pane, iron bars) on a wall plane through m (local +z out of the wall). */
   private window(m: THREE.Matrix4, w: number, hh: number, base: number, arch = false, k = 1.6) {
@@ -635,7 +650,7 @@ export class EmberTown {
           this.heap(...toW(lx, front + 3.0), 1.3, 20, hex, seed + sd, hot, B + gy(lx, front + 3.0) + .55);
         }
         // Rails from the door to the foot of the furnace's skip hoist, one cart loaded on the way.
-        { const [ax, az] = toW(0, front + 1.4), [bx, bz] = yardAt(FORGE_HOIST.a, FORGE_HOIST.r + 1.6); this.rails(ax, az, bx, bz);
+        { const [ax, az] = toW(0, front + 1.4), [bx, bz] = yardAt(FORGE_HOIST.a, FORGE_HOIST.r + 1.25); this.rails(ax, az, bx, bz); this.bufferStop(bx, bz, Math.atan2(bx - ax, bz - az));
           this.cart(ax + (bx - ax) * .42, az + (bz - az) * .42, Math.atan2(bx - ax, bz - az), 'ore', seed); }
         this.barrel(ground(-6.1, front + 5.6), B, seed + 2);
         break;
@@ -678,7 +693,7 @@ export class EmberTown {
         break;
       }
       case 'merchant': {
-        this.rails(...toW(-4.4, front + 1.2), ...toW(-4.4, front + 9.2));
+        this.rails(...toW(-4.4, front + 1.2), ...toW(-4.4, front + 9.2)); this.bufferStop(...toW(-4.4, front + 9.0), forgeYaw(h));
         this.cart(...toW(-4.4, front + 3.6), forgeYaw(h), 'ingot', seed);
         this.cart(...toW(-4.4, front + 7.0), forgeYaw(h), 'ore', seed + 3);
         // Counter with a balance scale, ingot stacks on a pallet, sacks.
@@ -795,6 +810,31 @@ export class EmberTown {
     }
   }
 
+  /** A cast in progress at one tap (local frame tm: mouth face at z .92, +z out): an iron runner on two stone saddles
+   *  carries the iron out of the mouth, a white-hot stream falls from its lip into the casting channel, splashing and
+   *  throwing sparks and fume where it lands. */
+  private pour(tm: THREE.Matrix4, y0: number) {
+    const L = (x: number, y: number, z: number) => tm.clone().multiply(trs(x, y, z));
+    // Runner: an iron trough lined with glowing iron, its lip spouted, on two dressed saddle blocks.
+    this.S(box(.5, .12, 1.15).translate(0, .78, 1.45), tm, '#2b292d', PAT.plate, 0, .45, .82, y0, 40);
+    for (const s of [-1, 1]) this.S(box(.08, .2, 1.15).translate(s * .21, .9, 1.45), tm, '#2b292d', PAT.plate, 0, .45, .82, y0, 41);
+    this.S(box(.32, .1, .26).translate(0, .78, 2.1), tm, '#2b292d', PAT.plate, 0, .45, .82, y0, 42);
+    for (const z of [1.15, 1.8]) this.S(box(.62, .72, .34).translate(0, .36, z), tm, '#4f4b4f', PAT.ashlar, .6, .9, 0, y0, 43);
+    this.G(box(.34, .04, 1.4).translate(0, .86, 1.5), tm, [1, 1, 1], .3, 1.3, (_x, _y, z) => lin(z < 1.3 ? '#ffd36b' : '#ffb04a', 3.2));
+    // The stream: a falling arc off the lip, thick at the lip and thinning as it falls, white-hot at the top.
+    const pts = Array.from({length: 7}, (_, k) => { const u = k / 6; return new V(0, .86 - .8 * u * u, 2.2 + .42 * u); });
+    const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, .085, 7, false);
+    { const P = tube.getAttribute('position'); for (let k = 0; k < P.count; k++) { const u = Math.min(1, Math.max(0, (.86 - P.getY(k)) / .8)), cx = 0, cy = .86 - .8 * u * u, cz = 2.2 + .42 * u, sc = 1 - .4 * u; P.setXYZ(k, cx + (P.getX(k) - cx) * sc, cy + (P.getY(k) - cy) * sc, cz + (P.getZ(k) - cz) * sc); } }
+    this.G(tube, tm, [1, 1, 1], .25, 2.1, (_x, y) => { const k = Math.min(1, Math.max(0, (.86 - y) / .8)); return lin(k < .5 ? '#fff0b0' : '#ffc45a', 4.2 - 1.2 * k); });
+    // Where it lands: a bright splash crown in the channel, sparks, fume, and the light thrown on the yard.
+    const land = new V(0, .07, 2.64).applyMatrix4(tm);
+    this.G(new THREE.CircleGeometry(.34, 12).rotateX(-Math.PI / 2).translate(0, .08, 2.64), tm, lin('#ffd36b', 3.4), .5, 3.3);
+    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + .4; this.G(new THREE.ConeGeometry(.035, .18 + .1 * (k % 2), 4).translate(0, .09, 0), L(Math.sin(a) * .22, .1, 2.64 + Math.cos(a) * .22).multiply(trs(0, 0, 0, 0, Math.cos(a) * .5, -Math.sin(a) * .5)), lin('#ffb24a', 3), .6, k); }
+    this.sparks.push({x: land.x, y: land.y + .2, z: land.z, s: .55, n: 18}, {x: land.x, y: land.y + .9, z: land.z, s: .3, n: 8});
+    this.puffs.push({x: land.x, y: land.y + .5, z: land.z, s: .45});
+    this.light(land.x, land.y + .8, land.z, 7, '#ffa040', 2.6);
+  }
+
   /** The town's blast furnace: battered basalt shaft in iron hoops and straps, a blast main round its waist, a charging
    *  gallery, a verdigris gas cap over the glowing throat, three tap mouths, an inclined skip hoist up to the gallery. */
   private furnace() {
@@ -848,6 +888,7 @@ export class EmberTown {
       const p = new V(0, .9, 2.0).applyMatrix4(tm); this.light(p.x, p.y + .5, p.z, 10, '#ff7a2a', 2.8);
       const q = new V(0, 0, 3.2).applyMatrix4(tm); this.pool(q.x, q.z, 3.8, '#ff6a24', .58, i * 2.2);
       this.sparks.push({x: p.x, y: p.y + .6, z: p.z, s: .35, n: 9});
+      if (i === 0) this.pour(tm, y0);
     }
     // Inclined skip hoist: two lattice chords from a stone foot up to the gallery, a skip half-way with ore.
     { const t = -FORGE_HOIST.a * Math.PI / 180, hm = m.clone().multiply(trs(0, 0, 0, t + Math.PI)), foot = new V(0, 0, FORGE_HOIST.r), top = new V(0, gy + .2, go - .2);
@@ -1076,6 +1117,44 @@ export class EmberTown {
     bar(tip, new V(0, mast - 3.2, reach), .03);
     this.crate(m.clone().multiply(trs(0, mast - 4.0, reach, .3)), -99, 900, 1.0, .8);
     this.S(new THREE.TorusGeometry(.18, .04, 4, 8), m.clone().multiply(trs(0, mast - 3.1, reach)), '#2b292d', PAT.plain, 1, .45, .85, y);
+  }
+
+  /* -- fumarole fields (emberGroundLayout.ts EMBER_VENTS; the vent cones themselves are emberRocks.ts) -- */
+  /** A miner's pick: ash handle, iron head with a point and a chisel end; local origin at the head. */
+  private pick(m: THREE.Matrix4, base: number) {
+    this.S(cyl(.032, .038, 1.05, 6).translate(0, -.5, 0), m, '#5a4434', PAT.plank, .5, .85, 0, base);
+    this.S(new THREE.ConeGeometry(.05, .4, 6).rotateZ(-Math.PI / 2).translate(.2, 0, 0), m, '#38373b', PAT.plain, 1, .35, .85, base);
+    this.S(box(.32, .08, .06).translate(-.16, 0, 0), m, '#38373b', PAT.plain, 1, .35, .85, base);
+    this.S(box(.1, .12, .1), m, '#2a292d', PAT.plain, 1, .4, .85, base);
+  }
+  private vents() {
+    for (const [g, v] of EMBER_VENTS.entries()) {
+      if (!this.clearOfLava(v.x, v.z, 6)) continue;
+      // Each vent: a white-hot throat with flame licks over the rim, lit steam rising and leaning downwind, sparks.
+      for (const [k, [x, z, r, hh]] of v.vents.entries()) {
+        const y = this.h(x, z), ph = g * 3.7 + k * 1.9;
+        this.G(new THREE.CircleGeometry(r * .3, 10).rotateX(-Math.PI / 2), trs(x, y + hh * .74, z), lin('#ffc46a', 3.2), .45, ph);
+        this.flames.push({x, y: y + hh * .82, z, s: .45 + r * .35});
+        this.puffs.push({x, y: y + hh + .1, z, s: .32 + r * .26});
+        this.sparks.push({x, y: y + hh, z, s: .2 + r * .1, n: 6});
+        this.pool(x, z, 1.6 + r * 1.6, '#ff6a24', .55, ph);
+      }
+      this.pool(v.x, v.z, 6.5, '#ff7a30', .32, g * 2.3);
+      // A wide, faint warm wash spilling toward the plain's middle: the ground behind a crab standing there glows, so
+      // the crab reads as a dark-red shape against warm light instead of against mid-grey ash.
+      this.pool(v.x - Math.sign(v.x) * 7, v.z - 1, 10, '#ff7a30', .5, g * 2.3 + 1);
+      this.light(v.x, this.h(v.x, v.z) + 1.6, v.z, 9, '#ff7a30', 2.2);
+      // The miners' traces: an ore cart drawn up to the heap, picks driven into it, a crate of sulfur.
+      const [cx, cz, cyaw] = v.cart, [hx, hz, hr] = v.heap;
+      this.cart(cx, cz, cyaw, 'ore', 500 + g * 17);
+      this.heap(hx, hz, hr, 26, '#5a4a3a', 520 + g * 29, .04);
+      this.heap(hx + .4, hz - .3, hr * .55, 9, '#9a8540', 560 + g * 13);
+      const hy = this.h(hx, hz);
+      this.pick(trs(hx - .3, hy + hr * .7 + .45, hz + .2, .6 + g, .45, .25), hy);
+      this.pick(trs(hx + hr * .7, hy + .62, hz - .5, 2.1 + g, -.6, .1), hy);
+      { const a = Math.atan2(cx - hx, cz - hz) + Math.PI / 2, x = hx + Math.sin(a) * (hr + .9), z = hz + Math.cos(a) * (hr + .9), y = this.h(x, z);
+        this.crate(trs(x, y - .04, z, a + .3, .04, -.03), y, 580 + g); this.barrel(trs(x + Math.sin(a) * 1.1, y - .03, z + Math.cos(a) * 1.1, a), y, 590 + g); }
+    }
   }
 
   /* -- assembly -- */
