@@ -3,6 +3,8 @@ import {SkybloomSky} from './skybloomSky';
 import {skybloomClouds,CLOUD_Y} from './skybloomClouds';
 import {skybloomLand,clipTerrainToLip,lipScale} from './skybloomIsles';
 import {skybloomContact} from './skybloomContact';
+import {SKY_RIM} from './skybloomRim';
+import {skyTown} from './skyGroundLayout';
 
 /*
  * Everything in Skybloom's air, built from one sky: the dome, the sun and the hemisphere light it implies, the fog
@@ -154,10 +156,15 @@ function birdGeometry(): THREE.InstancedBufferGeometry {
 const PETALS = 900;
 
 export class SkybloomAir {
-  /** A clear late morning: the sun 35 degrees up in the east-south-east, a three-quarter side light on the default look up the avenue to the world tree (style-w6.md). */
-  readonly sky = new SkybloomSky({azimuth: 67.5, elevation: 35, gain: 1.12});
+  /**
+   * A clear morning: the sun 25 degrees up a little south of east, a raking side light on the default look up the avenue
+   * to the world tree, so the tree, the houses and the cloud billows throw long shadows and rims catch the light (r4:
+   * the sheet's 32-38 degrees read as flat midday in every view).
+   */
+  readonly sky = new SkybloomSky({azimuth: 74, elevation: 25, gain: 1.12});
   readonly sun = new THREE.DirectionalLight();
   readonly hemi = new THREE.HemisphereLight();
+  private hemiSky = new THREE.Color(); private hemiGround = new THREE.Color(); private townFill = 0;
   /** Materials with a `time` uniform for the island's update. */
   readonly animated: THREE.ShaderMaterial[] = [];
   /** Contact shade under canopies, eaves and arches (skybloomContact.ts), baked once the island is built. */
@@ -216,6 +223,8 @@ export class SkybloomAir {
     // The sun and the fill the sky implies. The shadow box covers the whole play area from this sun.
     const sun = this.sun;
     sun.color.copy(sky.sunColor); sun.intensity = sky.sunIntensity;
+    // Canopy rims (skybloomRim.ts) catch this sun: warm silver at about a fifth of its strength.
+    SKY_RIM.skRimSun.value.copy(sky.sunDir); SKY_RIM.skRimColor.value.copy(sky.sunColor).multiplyScalar(sky.sunIntensity * 0.2);
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, {left: -SHADOW_HALF, right: SHADOW_HALF, top: SHADOW_HALF, bottom: -SHADOW_HALF, near: 1, far: SUN_DISTANCE + 160});
     sun.shadow.camera.updateProjectionMatrix();
@@ -223,8 +232,10 @@ export class SkybloomAir {
     this.sunRight.crossVectors(THREE.Object3D.DEFAULT_UP, sky.sunDir).normalize(); this.sunUp.crossVectors(sky.sunDir, this.sunRight).normalize();
     this.followSun(0, 10, 0);
     sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.12;
-    // The fill is a little under the dome's own level: shade keeps 40 to 55 percent of the lit value, not a wash.
-    this.hemi.color.copy(sky.hemiSky); this.hemi.groundColor.copy(sky.hemiGround); this.hemi.intensity = 0.75;
+    // The fill is about the dome's own level: under the raking morning sun shade keeps 40 to 55 percent of the lit
+    // value (0.75 left the long shadows at a quarter of it, p10 under 40). In town frame() lifts it further.
+    this.hemi.color.copy(sky.hemiSky); this.hemi.groundColor.copy(sky.hemiGround); this.hemi.intensity = 0.95;
+    this.hemiSky.copy(sky.hemiSky); this.hemiGround.copy(sky.hemiGround);
     root.add(sun, sun.target, this.hemi);
     root.userData.skybloomAir = {cloudY: CLOUD_Y, ...this.stats};
     this.animated.push(sky.material, clouds.material, ...land.animated, petalMat, birdMat);
@@ -256,6 +267,15 @@ export class SkybloomAir {
     const fog = scene.fog, e = camera.matrixWorld.elements;
     // The shadow box sits ahead of the camera, where the frame's shadows are.
     this.followSun(e[12] - e[8] * 45, 10, e[14] - e[10] * 45);
+    // Town fill: cream walls and paving bounce light into the lanes, so where the camera looks into the town the sky
+    // fill is 1.45x and the grass bounce 1.5x. The houses' long shadows on the town lawns sat at a third of the lit
+    // turf and read as black slabs in the village view (r4 finish, all three judges: p10 30 to 51). Out on the fields
+    // the fill stays as it was (west p10 is already 93); exposure is untouched.
+    const town = skyTown(e[12] - e[8] * 30, e[14] - e[10] * 30);
+    if (town !== this.townFill) {
+      this.townFill = town;
+      this.hemi.color.copy(this.hemiSky).multiplyScalar(1 + .45 * town); this.hemi.groundColor.copy(this.hemiGround).multiplyScalar(1 + .5 * town);
+    }
     if (fog instanceof THREE.FogExp2) {
       this.sky.fogColor(-e[8], -e[10], fog.color);
       fog.density = this.sky.fogDensity(e[13], -e[9]);

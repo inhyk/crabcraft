@@ -28,6 +28,14 @@ export const SKY_GATE={z:-40,halfSpan:12,height:21};
 /** Where the spring leaves the roots and pours over the north lip (x, z on the lip). */
 export const SKY_SPRING={x:-4.5,z:-126.2};
 
+/**
+ * The ruined overlook in the west field (r4: the west view had no focal object): two broken fluted columns, a fallen
+ * drum and a small shrine carrying a seed bloom, on the crest where the meadow falls away to the cloud sea, 13 m past
+ * the west view's crab. Pieces are offsets from (x, z): stumps [dx, dz, height], the shrine [dx, dz], the drum
+ * [dx, dz, yaw, length].
+ */
+export const SKY_OVERLOOK={x:-73,z:4,stumps:[[-1.5,-1.3,5.6],[1.9,-1.8,3.0]] as const,shrine:[.3,1.6] as const,drum:[3.4,1.6,.55,1.7] as const};
+
 /** World VI only: the trunk with its buttress flanks, the root arches' feet and the gate posts. */
 export function layoutSkyTree(col:Collision,heightAt:(x:number,z:number)=>number){
  const y=heightAt(SKY_TREE.x,SKY_TREE.z);
@@ -38,4 +46,9 @@ export function layoutSkyTree(col:Collision,heightAt:(x:number,z:number)=>number
  }
  for(const [x,z] of SKY_ROOT_ARCH_FEET){const g=heightAt(x,z);col.addCircle(x,z,1.3,g-1,g+3);}
  for(const side of [-1,1]){const x=side*SKY_GATE.halfSpan,g=heightAt(x,SKY_GATE.z);col.addCircle(x,SKY_GATE.z,1.35,g-1,g+12);}
+ // The overlook's stones: the stumps, the shrine and the drum's two halves.
+ const O=SKY_OVERLOOK;
+ for(const [dx,dz,h] of O.stumps){const x=O.x+dx,z=O.z+dz,g=heightAt(x,z);col.addCircle(x,z,1.2,g-1,g+h);}
+ {const x=O.x+O.shrine[0],z=O.z+O.shrine[1],g=heightAt(x,z);col.addCircle(x,z,1.5,g-1,g+2.1);}
+ {const [dx,dz,yaw,len]=O.drum;for(const f of [-.3,.3]){const x=O.x+dx+Math.cos(yaw)*len*f,z=O.z+dz+Math.sin(yaw)*len*f,g=heightAt(x,z);col.addCircle(x,z,.85,g-1,g+1.5);}}
 }
