@@ -129,14 +129,27 @@ epStone*=.86+.28*(egNoise(epP*4.3+epId*13.)*.5+.5);
 float epNear=1.-smoothstep(.006,.035,epFoot);
 // Tooling: fine parallel dressing marks across each flag, only up close.
 if(epNear>0.)epStone*=1.+(sin((epLoc.x*.6+epLoc.y)*90.+epId*20.)*.035+egNoise(epP*40.)*.06)*epNear;
-epStone=mix(epStone,vec3(.44,.44,.455)*(.9+.2*(epN1*.5+.5)),epBlur*.7);
+// Far off the flags keep their own tones (no flat pale ribbon), and the sub-pixel joints still darken the way.
+epStone=mix(epStone,vec3(.4,.4,.415)*(.9+.2*(epN1*.5+.5)),epBlur*.35);
+epStone*=1.-.16*epBlur;
+// Relaid stretches: metre-scale patches of older, darker or paler stone, and far off each course its own tone, so
+// down the way the paving still reads as laid stone in courses.
+epStone*=.86+.26*smoothstep(-.5,.6,egNoise(epP*.21+5.)+egNoise(epP*.7-3.)*.3);
+epStone*=1.+(egHash12(vec2(floor(epAlong/.72),epHalf*7.))-.5)*.2*epBlur;
+// Header courses every few metres: a band of long dark basalt bonds across the way; its edges stay crisp far off.
+float epBandU=mod(epAlong+1.1,4.6),epBandW=max(epFw*1.5,.004);
+float epBand=(1.-epKerb)*smoothstep(-epBandW,epBandW,epBandU-.06)*(1.-smoothstep(-epBandW,epBandW,epBandU-.5));
+float epBandJ=(1.-epKerb)*max(1.-smoothstep(0.,epBandW*2.+.02,abs(epBandU-.03)),1.-smoothstep(0.,epBandW*2.+.02,abs(epBandU-.53)));
+epStone=mix(epStone,vec3(.25,.25,.27)*(.9+.2*fract(epId*9.1)),epBand*.85);
+// Untrimmed edges sit lower, sooted and broken, so the way has a dark border instead of a pale cut.
+epStone*=1.-.3*smoothstep(-.55,-.05,epSd+epRag*.15)*(1.-epKerb);
 // The trodden middle is polished a little darker; the heat browns the stones by the court.
 epStone*=mix(1.,.88,epMid*.6);
 epStone=mix(epStone,epStone*vec3(.86,.8,.78),epHeatBase*.35);
-vec3 epAshC=vec3(.52,.5,.51)*(.9+.2*epN2);
+vec3 epAshC=vec3(.47,.455,.465)*(.9+.2*epN2);
 vec3 epJoint=mix(vec3(.08,.075,.08),epAshC,clamp(.35+epAshy,0.,1.));
 epJoint=mix(epJoint,vec3(.12,.05,.03),epGlowJ);
-vec3 epCol=mix(epStone,epJoint,epJ);
+vec3 epCol=mix(epStone,epJoint,max(epJ,epBandJ*.85));
 // Ash drifts in from the edges, thicker in the hollows of the stones.
 float epH=clamp(1.-(1.-smoothstep(0.,.05,-epOut)),0.,1.)*(.85+.15*fract(epId*5.3));
 float epDrift=smoothstep(.62,.95,epAshy+egNoise(epP*1.1+3.)*.25-epH*.15);
@@ -149,6 +162,8 @@ diffuseColor.a*=epAlpha;
 
 const ROUGH = /* glsl */ `
 roughnessFactor=mix(.78-epMid*.12,.95,max(epJ,epDrift));
+// Grazing views far down the way: matte, or the polished middle mirrors the sky into a white ribbon.
+roughnessFactor=mix(roughnessFactor,.95,epBlur);
 `;
 
 const NORMAL = /* glsl */ `
